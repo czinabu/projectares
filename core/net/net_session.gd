@@ -67,7 +67,7 @@ signal world_invite_accepted(invite: Dictionary)
 signal base_visit_requested(owner_name: String, stash: Array, loadout: Dictionary)
 
 const DEFAULT_PORT := 24565
-const PROTOCOL := 5
+const PROTOCOL := 6
 const StashService := preload("res://core/account/stash_service.gd")
 const SocialService := preload("res://core/social/social_service.gd")
 ## Server physics ticks between state updates (2 = 30 a second).
@@ -112,6 +112,8 @@ var social_state := {}
 ## Client: the name to sign in with, and the secret that proves the account
 ## is yours (see `StashService.new_secret`).
 var player_name := "Raider"
+## Client: how this player's character looks, sent once signed in.
+var look := {}
 var secret := ""
 ## Client: your account as the server last sent it. Empty until signed in.
 var account := {}
@@ -138,6 +140,8 @@ var _peer_actor := {}    # peer id -> Actor (server)
 var _actor_peer := {}    # Actor -> peer id (server)
 var _joined_peers: Array[int] = []
 var _peer_account := {}  # peer id -> account id (server)
+var _peer_look := {}  # peer id -> appearance (server). Cosmetic only.
+var _joining_look := {}  # the look of the player being added right now (server)
 var _actor_account := {} # Actor -> account id, until the run is settled (server)
 var _input_queue := {}   # peer id -> [[seq, command array], ...] not yet played (server)
 var _queued_seq := {}    # peer id -> newest input number received (server)
@@ -300,6 +304,7 @@ func _on_peer_disconnected(peer: int) -> void:
 	_joined_peers.erase(peer)
 	_social_left(peer)
 	_peer_account.erase(peer)
+	_peer_look.erase(peer)
 	_input_queue.erase(peer)
 	_queued_seq.erase(peer)
 	var actor: Actor = _peer_actor.get(peer)
@@ -309,6 +314,10 @@ func _on_peer_disconnected(peer: int) -> void:
 
 
 func _on_server_actor_spawned(actor: Actor) -> void:
+	# A joining player's look is put on before anyone is told about them.
+	if not _joining_look.is_empty() and raid.state_for(actor) != null:
+		Look.set_appearance(actor, _joining_look)
+		_joining_look = {}
 	var id := _register(actor)
 	actor.died.connect(func(_a: Actor, info: DamageInfo) -> void: _dead_kind[id] = info.kind)
 	for peer in _joined_peers:
@@ -453,11 +462,36 @@ func _request_pick(track: String, variant_id: String) -> void:
 	_send_account(peer)
 
 
+## Lobby: how the player's character looks. Looks are cosmetic, so this is
+## the one thing a client gets to choose; it is still checked, and a look can
+## only name parts and colours that exist.
+@rpc("any_peer", "call_remote", "reliable")
+func _request_look(p_look: Dictionary) -> void:
+	var peer := _api.get_remote_sender_id()
+	if not is_server or not _peer_account.has(peer):
+		return
+	_peer_look[peer] = Look.clean_appearance(p_look)
+
+
+## Server: the look a signed-in player chose, or {} if they sent none.
+func look_for_peer(peer: int) -> Dictionary:
+	return _peer_look.get(peer, {})
+
+
+## Client: tells the server how this player looks. Takes effect on the next deploy.
+func send_look(p_look: Dictionary) -> void:
+	look = p_look
+	if not is_server and not account.is_empty():
+		_request_look.rpc_id(1, look)
+
+
 func _send_spawn(peer: int, actor: Actor) -> void:
 	var state := raid.state_for(actor)
 	var data := {}
 	if state != null:
 		data = {"kit": state.kit, "picks": state.picks}
+		if actor.has_meta("appearance"):
+			data["look"] = actor.get_meta("appearance")
 	else:
 		data = {"seed": raid.bot_seeds.get(actor, 0)}
 	_spawn.rpc_id(peer, _ids[actor], "player" if state != null else "bot", actor.display_name,
@@ -481,7 +515,9 @@ func _request_join() -> void:
 	if not deployed.ok:
 		_lobby_error.rpc_id(peer, deployed.error)
 		return
+	_joining_look = look_for_peer(peer)
 	var actor := raid.add_player(deployed.kit, deployed.picks, stash.snapshot(account_id).name)
+	_joining_look = {}
 	_actor_account[actor] = account_id
 	_send_account(peer)
 	_peer_actor[peer] = actor
@@ -706,6 +742,8 @@ func _account(snapshot: Dictionary) -> void:
 	var first := account.is_empty()
 	account = snapshot
 	if first:
+		if not look.is_empty():
+			_request_look.rpc_id(1, look)
 		signed_in.emit(account)
 	account_changed.emit(account)
 
@@ -756,6 +794,8 @@ func _spawn(id: int, kind: String, shown_name: String, node_name: String, at: Ve
 		actor.name = node_name
 		actor.display_name = shown_name
 		actor.is_player = id == my_actor_id
+		if data.has("look"):
+			Look.set_appearance(actor, data["look"])
 		raid.add_child(actor)
 		actor.global_position = at
 		Loadout.equip(actor, data.get("kit", []))

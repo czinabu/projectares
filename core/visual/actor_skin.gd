@@ -6,7 +6,6 @@ extends Node3D
 
 const Vfx := preload("res://core/visual/vfx.gd")
 const WeaponArm := preload("res://core/visual/weapon_arm.gd")
-const CHARACTER_SHADER := preload("res://assets/shaders/character.gdshader")
 
 var look: Node
 var actor: Actor
@@ -15,6 +14,7 @@ var _player: AnimationPlayer
 var _anims := {}
 var _current := ""
 var _weapons_seen := 0
+var _wired := {}
 var _flash_left := 0.0
 var _materials: Array[ShaderMaterial] = []
 var _thrust: Node3D
@@ -25,38 +25,14 @@ var arm: Node
 func _ready() -> void:
 	var skin_name: String = actor.get_meta("look", look.DEFAULT_SKIN)
 	var def: Dictionary = look.SKINS.get(skin_name, look.SKINS[look.DEFAULT_SKIN])
-	var scenes: Array = def["scenes"]
-	var path: String = look.CHARACTERS + scenes[hash(String(actor.name)) % scenes.size()]
-	var model: Node3D = look._instance(path)
-	if model == null:
+	var built: Dictionary = look.character(skin_name, actor.get_meta("appearance", {}), String(actor.name))
+	if built.is_empty():
 		return
+	var model: Node3D = built["model"]
+	_materials = built["materials"]
 	add_child(model)
 	# Pack models face +Z. Actors face -Z.
 	rotation.y = PI
-	for hidden: String in def.get("hide", []):
-		var node := model.find_child(hidden, true, false) as Node3D
-		if node:
-			node.visible = false
-	var tint: Color = def.get("tint", Color.WHITE)
-	for node in model.find_children("*", "MeshInstance3D", true, false):
-		var mesh_node := node as MeshInstance3D
-		for i in mesh_node.mesh.get_surface_count():
-			var source := mesh_node.get_active_material(i) as BaseMaterial3D
-			if source == null:
-				continue
-			var mat := ShaderMaterial.new()
-			mat.shader = CHARACTER_SHADER
-			if source.albedo_texture:
-				mat.set_shader_parameter("base_tex", source.albedo_texture)
-			mat.set_shader_parameter("base_color", source.albedo_color)
-			mat.set_shader_parameter("tint", tint)
-			for param: String in ["saturation", "brightness", "metal", "rough"]:
-				if def.has(param):
-					mat.set_shader_parameter(param, def[param])
-			if source.emission_enabled:
-				mat.set_shader_parameter("emission_color", source.emission * 2.5)
-			mesh_node.set_surface_override_material(i, mat)
-			_materials.append(mat)
 
 	_player = model.find_child("AnimationPlayer", true, false) as AnimationPlayer
 	if _player:
@@ -68,7 +44,7 @@ func _ready() -> void:
 					_player.get_animation(found).loop_mode = Animation.LOOP_LINEAR
 		_play("idle")
 		_player.advance(0.0)
-	_stand(model, def["height"])
+	look.stand_model(self, model, def["height"])
 	var skeleton := model.find_child("Skeleton3D", true, false) as Skeleton3D
 	if skeleton and def.has("grip_bone"):
 		arm = WeaponArm.new()
@@ -161,7 +137,15 @@ func _has_bare_weapon() -> bool:
 func _dress_weapons() -> void:
 	_weapons_seen = actor.weapons.size()
 	for weapon in actor.weapons:
-		if weapon.visual == null or weapon.visual.has_meta("dressed"):
+		if weapon.visual == null:
+			continue
+		# Shot effects belong to this skin, so a skin that replaces an earlier
+		# one wires them up again even though the models are already on.
+		var gun := weapon as Gun
+		if gun and not _wired.has(gun):
+			_wired[gun] = true
+			gun.fired.connect(_on_fired.bind(gun))
+		if weapon.visual.has_meta("dressed"):
 			continue
 		weapon.visual.set_meta("dressed", true)
 		var model: Node3D = look.weapon_model(weapon)
@@ -172,9 +156,6 @@ func _dress_weapons() -> void:
 			weapon.visual.add_child(model)
 		elif weapon is MeleeWeapon:
 			look.restyle_melee(weapon.visual)
-		var gun := weapon as Gun
-		if gun:
-			gun.fired.connect(_on_fired.bind(gun))
 
 
 func _on_fired(from: Vector3, to: Vector3, gun: Gun) -> void:
@@ -206,29 +187,6 @@ func _on_damaged(_info: DamageInfo) -> void:
 func _set_flash(amount: float) -> void:
 	for mat in _materials:
 		mat.set_shader_parameter("flash", amount)
-
-
-## Scales the model to `height` meters and puts its feet on the ground, going
-## by where the skeleton's bones are in the idle pose. Mesh bounds are no use
-## here: skinned meshes report their unposed size.
-func _stand(model: Node3D, height: float) -> void:
-	var skeleton := model.find_child("Skeleton3D", true, false) as Skeleton3D
-	if skeleton == null:
-		look._fit(model, "skin:" + model.name, height, true)
-		return
-	var to_skin := global_transform.affine_inverse() * skeleton.global_transform
-	var low := INF
-	var high := -INF
-	for i in skeleton.get_bone_count():
-		var y := (to_skin * skeleton.get_bone_global_pose(i).origin).y
-		low = minf(low, y)
-		high = maxf(high, y)
-	if high - low < 0.001:
-		return
-	# Bones stop at the ankle and the base of the head; allow for both ends.
-	var s := height / ((high - low) * 1.22)
-	model.scale *= s
-	model.position.y = -low * s + height * 0.06
 
 
 func _update_thrust() -> void:
