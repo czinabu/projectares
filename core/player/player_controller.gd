@@ -24,6 +24,10 @@ var actor: Actor
 var camera: Camera3D
 var view_mode := ViewMode.FIRST
 var mouse_sensitivity := 0.0022
+var invert_y := false
+## Set while the phone is open: the character stands still and the mouse is
+## left alone, so you can tap and type.
+var input_blocked := false
 var third_person_distance := 3.8
 var third_person_aim_distance := 2.2
 ## Camera distance while riding a vehicle, which is bigger than a person.
@@ -83,10 +87,13 @@ func _exit_tree() -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if input_blocked:
+		return
 	var captured := Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
 	if event is InputEventMouseMotion and captured:
 		yaw -= event.relative.x * mouse_sensitivity
-		pitch = clampf(pitch - event.relative.y * mouse_sensitivity, -1.5, 1.5)
+		var vertical: float = -event.relative.y if invert_y else event.relative.y
+		pitch = clampf(pitch - vertical * mouse_sensitivity, -1.5, 1.5)
 		_flick += event.relative
 	elif event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if captured else Input.MOUSE_MODE_CAPTURED
@@ -156,6 +163,15 @@ func _physics_process(delta: float) -> void:
 		return
 	var cmd := actor.cmd
 	cmd.clear_one_shots()
+	if input_blocked:
+		# Hands on the phone: let go of everything, keep facing the same way.
+		cmd.move = Vector2.ZERO
+		cmd.sprint = false
+		cmd.jump = false
+		cmd.primary = false
+		cmd.secondary = false
+		cmd.switch_weapon = -1
+		return
 	var captured := Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
 	cmd.yaw = yaw
 	cmd.pitch = pitch

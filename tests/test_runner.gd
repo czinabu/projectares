@@ -54,6 +54,7 @@ func _run() -> void:
 	await _test_nameplates_and_scoreboard()
 	await _test_online()
 	await _test_stash_service()
+	await _test_phone()
 	await _test_home_base()
 	await LookTests.run(self)
 
@@ -1434,6 +1435,8 @@ var _net_secrets := {}
 
 func _wipe_dir(dir: String) -> void:
 	if DirAccess.dir_exists_absolute(dir):
+		for sub in DirAccess.get_directories_at(dir):
+			_wipe_dir(dir.path_join(sub))
 		for f in DirAccess.get_files_at(dir):
 			DirAccess.remove_absolute(dir.path_join(f))
 		DirAccess.remove_absolute(dir)
@@ -2376,6 +2379,263 @@ func _test_stash_service() -> void:
 	for f in DirAccess.get_files_at(dir):
 		DirAccess.remove_absolute(dir.path_join(f))
 	DirAccess.remove_absolute(dir)
+
+
+# --- The phone ---------------------------------------------------------------
+
+const SocialService := preload("res://core/social/social_service.gd")
+const GameSettings := preload("res://core/settings/game_settings.gd")
+const PhoneScript := preload("res://core/phone/phone.gd")
+
+
+func _test_phone() -> void:
+	_test_social_service()
+	_test_game_settings()
+	await _test_phone_view()
+	await _test_online_phone()
+
+
+func _test_social_service() -> void:
+	print("Phone: the server's social service")
+	var social := SocialService.new()
+	social.persist = false
+	social.player_online("ana", "Ana")
+	social.player_online("ben", "Ben")
+	var snap := social.snapshot("ana", 1000.0)
+	check(snap.contacts.size() == 1 and snap.contacts[0].id == "ben" and snap.contacts[0].online
+			and snap.contacts[0].where == "lobby" and not snap.contacts[0].saved,
+			"everyone signed in to the server shows up as a contact, without you")
+	social.set_where("ben", "raid")
+	check(social.snapshot("ana", 1000.0).contacts[0].where == "raid", "contacts show where a player is")
+
+	var sent := social.send_message("ana", "ben", "  meet at the\nnorth exit  ", 1000.0)
+	check(sent.ok and sent.message.text == "meet at the north exit",
+			"a message is delivered with control characters stripped")
+	check(social.snapshot("ben", 1000.0).messages.size() == 1 and social.snapshot("ana", 1000.0).messages.size() == 1,
+			"both sides keep the message")
+	check(not social.send_message("ana", "ben", "   ", 1000.0).ok, "an empty message is refused")
+	check(not social.send_message("ana", "ana", "hi", 1000.0).ok, "you cannot message yourself")
+	check(not social.send_message("ana", "zed", "hi", 1000.0).ok, "you cannot message someone who is not here")
+	check(social.send_message("ana", "ben", "x".repeat(1000), 1001.0).message.text.length() == SocialService.MAX_MESSAGE,
+			"a long message is cut to the limit")
+	var accepted := 0
+	for i in 10:
+		if social.send_message("ana", "ben", "spam %d" % i, 1002.0).ok:
+			accepted += 1
+	check(accepted == SocialService.RATE_LIMIT - 2, "messages are rate limited")
+	check(social.send_message("ana", "ben", "later", 1002.0 + SocialService.RATE_WINDOW + 1.0).ok,
+			"the limit wears off")
+
+	# Saved contacts can be messaged while they are offline.
+	check(social.add_contact("ana", "ben").ok and social.snapshot("ana", 1100.0).contacts[0].saved, "a player can be saved as a contact")
+	check(not social.add_contact("ana", "nobody").ok, "only people you have met can be saved")
+	social.player_offline("ben")
+	var offline_snap := social.snapshot("ana", 1100.0)
+	check(offline_snap.contacts.size() == 1 and not offline_snap.contacts[0].online and offline_snap.contacts[0].name == "Ben",
+			"a saved contact stays listed, by name, when they leave")
+	check(social.send_message("ana", "ben", "see you tomorrow", 1100.0).ok, "a saved contact can be messaged while offline")
+	social.player_online("ben", "Ben")
+	var log: Array = social.snapshot("ben", 1100.0).messages
+	check(log[log.size() - 1].text == "see you tomorrow", "the message is waiting when they come back")
+
+	# Invites.
+	check(not social.invite("ana", "ben", "party", "ashfront", 1200.0).ok, "only raids and bases can be invited to")
+	check(not social.invite("ana", "zed", "world", "ashfront", 1200.0).ok, "only players online can be invited")
+	var made := social.invite("ana", "ben", "world", "ashfront", 1200.0)
+	check(made.ok and social.invites_for("ben", 1200.0).size() == 1 and social.invites_for("ana", 1200.0).is_empty(),
+			"an invite reaches only the player invited")
+	social.invite("ana", "ben", "world", "ashfront", 1201.0)
+	check(social.invites_for("ben", 1201.0).size() == 1, "a repeat invite replaces the old one")
+	social.invite("ana", "ben", "base", "", 1201.0)
+	var open: Array[Dictionary] = social.invites_for("ben", 1201.0)
+	check(open.size() == 2, "raid and base invites are separate")
+	var world_invite: Dictionary = open[0] if open[0].kind == "world" else open[1]
+	check(not social.answer_invite("ana", world_invite.id, true, 1202.0).ok, "only the invited player can answer")
+	var answer := social.answer_invite("ben", world_invite.id, true, 1202.0)
+	check(answer.ok and answer.accepted and answer.invite.world_id == "ashfront", "an accepted invite says where to go")
+	check(not social.answer_invite("ben", world_invite.id, true, 1202.0).ok, "an invite is answered once")
+	check(social.invites_for("ben", 1201.0 + SocialService.INVITE_SECONDS + 1.0).is_empty(), "invites expire")
+
+	# Blocking.
+	social.invite("ana", "ben", "world", "ashfront", 1300.0)
+	social.block("ben", "ana")
+	check(social.invites_for("ben", 1300.0).is_empty(), "blocking drops their open invites")
+	check(not social.send_message("ana", "ben", "hello?", 1300.0).ok and not social.invite("ana", "ben", "base", "", 1300.0).ok,
+			"a blocked player can no longer message or invite")
+	var ben_view := social.snapshot("ben", 1300.0)
+	check(ben_view.contacts.size() == 1 and ben_view.contacts[0].blocked, "a blocked player is listed as blocked")
+	social.unblock("ben", "ana")
+	check(social.send_message("ana", "ben", "hello again", 1400.0).ok, "unblocking lets them through again")
+
+	# Leaving drops invites; news always has the game's own.
+	social.invite("ana", "ben", "world", "ashfront", 1500.0)
+	social.player_offline("ana")
+	check(social.invites_for("ben", 1500.0).is_empty(), "invites from a player who left are gone")
+	check(social.snapshot("ben", 1500.0).news.size() == SocialService.GAME_NEWS.size(), "the phone gets the game news")
+	social.server_news.append({"date": "today", "title": "Double loot weekend", "body": "Caches hold more."})
+	check(social.news()[0].title == "Double loot weekend", "server news comes first")
+
+	# Saved social data survives a restart.
+	var dir := "user://test_social"
+	_wipe_dir(dir)
+	var saving := SocialService.new()
+	saving.save_dir = dir
+	saving.player_online("ana", "Ana")
+	saving.player_online("ben", "Ben")
+	saving.add_contact("ana", "ben")
+	saving.send_message("ben", "ana", "kept", 2000.0)
+	var reloaded := SocialService.new()
+	reloaded.save_dir = dir
+	var kept := reloaded.snapshot("ana", 2000.0)
+	check(kept.contacts.size() == 1 and kept.contacts[0].name == "Ben" and kept.messages[0].text == "kept",
+			"contacts and messages are saved per account")
+	_wipe_dir(dir)
+
+
+func _test_game_settings() -> void:
+	print("Phone: settings")
+	GameSettings.persist = false
+	GameSettings.reset()
+	GameSettings.set_value("mouse_sensitivity", 99.0)
+	GameSettings.set_value("field_of_view", 10.0)
+	GameSettings.set_value("master_volume", 0.5)
+	GameSettings.set_value("nonsense", 1)
+	check(is_equal_approx(GameSettings.mouse_sensitivity, GameSettings.SENSITIVITY_RANGE.y)
+			and is_equal_approx(GameSettings.field_of_view, GameSettings.FOV_RANGE.x), "settings are clamped to sane values")
+	check(not GameSettings.to_dict().has("nonsense"), "unknown settings are ignored")
+	var bus := AudioServer.get_bus_index("Master")
+	check(absf(AudioServer.get_bus_volume_db(bus) - linear_to_db(0.5)) < 0.01, "volume reaches the audio bus")
+	GameSettings.reset()
+	GameSettings.apply()
+
+
+func _test_phone_view() -> void:
+	print("Phone: the menu itself")
+	var phone: CanvasLayer = PhoneScript.new()
+	add_child(phone)
+	await frames(1)
+	var events: Array = []
+	phone.opened_changed.connect(func(open: bool) -> void: events.append(open))
+	phone.settings_changed.connect(func() -> void: events.append("settings"))
+	check(not phone.is_open and not phone.online(), "the phone starts put away and offline")
+	check(phone.unseen_news() == SocialService.GAME_NEWS.size(), "unread news is counted")
+	phone.toggle()
+	check(phone.is_open and events == [true], "the phone opens")
+	phone.open_app("news")
+	check(phone.unseen_news() == 0 and phone._body.get_child_count() == SocialService.GAME_NEWS.size(),
+			"news can be read offline")
+	phone.open_app("contacts")
+	check(phone._body.get_child_count() == 1, "offline, contacts explain how to reach players")
+	GameSettings.persist = false
+	phone.open_app("settings")
+	phone.change_setting("field_of_view", 95.0)
+	check(is_equal_approx(GameSettings.field_of_view, 95.0) and "settings" in events, "settings change from the phone")
+	phone.close()
+	check(not phone.is_open and events[events.size() - 1] == false, "the phone closes")
+
+	# In a raid, the phone stops the character and frees the mouse.
+	var raid := await _new_raid(91, false)
+	var controller := PlayerController.new()
+	controller.setup(raid.player)
+	raid.add_child(controller)
+	await frames(2)
+	controller.input_blocked = true
+	await frames(2)
+	check(raid.player.cmd.move == Vector2.ZERO and not raid.player.cmd.primary, "with the phone out the character lets go of the controls")
+	controller.input_blocked = false
+	await _end_raid(raid)
+	GameSettings.reset()
+	phone.queue_free()
+	await frames(1)
+
+
+func _test_online_phone() -> void:
+	print("Online: phones reach other players")
+	var port := 24851
+	_wipe_dir(NET_ACCOUNTS)
+	var pid := _start_server(port, ["--bots", "0"])
+	var ana := await _sign_in("Ana", port)
+	var ben := await _sign_in("Ben", port)
+	check(ana != null and ben != null, "two players sign in")
+	if ana == null or ben == null:
+		await _leave(ana)
+		await _leave(ben)
+		OS.kill(pid)
+		return
+	var sees := func(session: NetSession, who: String) -> bool:
+		for entry: Dictionary in session.social_state.get("contacts", []):
+			if entry.id == who and entry.online:
+				return true
+		return false
+	await _wait_until(func() -> bool: return sees.call(ana, "ben") and sees.call(ben, "ana"), 240)
+	check(sees.call(ana, "ben") and sees.call(ben, "ana"), "each phone lists the other player online")
+
+	var phone: CanvasLayer = PhoneScript.new()
+	add_child(phone)
+	phone.set_session(ben)
+	var notices: Array[String] = []
+	ben.social_notice.connect(func(text: String) -> void: notices.append(text))
+	ana.send_message("ben", "Want to run the docks?")
+	await _wait_until(func() -> bool: return phone.unread_count() == 1, 240)
+	check(phone.unread_count() == 1 and phone.conversation_with("ana")[0].text == "Want to run the docks?",
+			"a message arrives on the other phone, unread")
+	check(notices.any(func(t: String) -> bool: return t.contains("docks")), "it pops up as a notice")
+	phone.open()
+	phone.open_chat("ana")
+	check(phone.unread_count() == 0, "opening the conversation marks it read")
+	phone.send_message("ana", "Sure")
+	await _wait_until(func() -> bool: return ana.social_state.get("messages", []).size() == 2, 240)
+	check(ana.social_state.get("messages", []).size() == 2, "the reply goes back through the server")
+
+	# A raid invite: accepting it deploys into the same server's raid.
+	var accepted: Array = []
+	ben.world_invite_accepted.connect(func(invite: Dictionary) -> void: accepted.append(invite))
+	var ana_notices: Array[String] = []
+	ana.social_notice.connect(func(text: String) -> void: ana_notices.append(text))
+	ana.send_invite("ben", "world")
+	await _wait_until(func() -> bool: return phone.invites().size() == 1, 240)
+	check(phone.invites().size() == 1 and phone.invites()[0].kind == "world", "the invite shows on the phone")
+	phone.answer_invite(int(phone.invites()[0].id), true)
+	await _wait_until(func() -> bool: return not accepted.is_empty(), 240)
+	check(accepted.size() == 1 and accepted[0].world_id == "ashfront", "accepting tells the game where to go")
+	await _wait_until(func() -> bool: return ana_notices.any(func(t: String) -> bool: return t.contains("accepted")), 240)
+	check(ana_notices.any(func(t: String) -> bool: return t.contains("accepted")), "the inviter hears it was accepted")
+
+	# A base invite carries the owner's gear for a read-only visit.
+	var visits: Array = []
+	ben.base_visit_requested.connect(func(owner: String, owner_stash: Array, _loadout: Dictionary) -> void:
+		visits.append([owner, owner_stash]))
+	ana.send_invite("ben", "base")
+	await _wait_until(func() -> bool: return phone.invites().size() == 1, 240)
+	phone.answer_invite(int(phone.invites()[0].id), true)
+	await _wait_until(func() -> bool: return not visits.is_empty(), 240)
+	check(visits.size() == 1 and visits[0][0] == "Ana" and "rifle_carbine" in visits[0][1],
+			"accepting a base invite brings the owner's stash to show")
+
+	# Presence follows the player into the raid.
+	ana.deploy()
+	await _wait_until(func() -> bool:
+		return ben.social_state.get("contacts", []).any(func(c: Dictionary) -> bool: return c.id == "ana" and c.where == "raid"), 240)
+	check(ben.social_state.get("contacts", []).any(func(c: Dictionary) -> bool: return c.id == "ana" and c.where == "raid"),
+			"contacts show who is in the raid")
+
+	# Blocking is enforced by the server.
+	var errors: Array[String] = []
+	ana.social_error.connect(func(reason: String) -> void: errors.append(reason))
+	phone.change_contact("block", "ana")
+	await _wait_until(func() -> bool: return phone.contact("ana").get("blocked", false), 240)
+	ana.send_message("ben", "hello?")
+	await _wait_until(func() -> bool: return not errors.is_empty(), 240)
+	check(not errors.is_empty() and phone.conversation_with("ana").size() == 2, "a blocked player's messages are refused")
+
+	await _leave(ana)
+	await _wait_until(func() -> bool: return not sees.call(ben, "ana"), 240)
+	check(not sees.call(ben, "ana"), "a player who leaves goes offline on the other phones")
+	phone.queue_free()
+	await _leave(ben)
+	OS.kill(pid)
+	await frames(30)
+	_wipe_dir(NET_ACCOUNTS)
 
 
 ## Stands the actor in front of a home base display, looking at it.
