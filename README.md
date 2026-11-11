@@ -30,6 +30,7 @@ core loop and lays the foundation for online play and more worlds.
 | Loot, or get on and off a bike | E |
 | Ride a bike: throttle, brake or reverse, steer, boost | W, S, A / D, Shift |
 | Switch camera: first-person or third-person | V |
+| Scoreboard: who is still in, who got out, kills | Hold Tab |
 | Free the mouse | Esc |
 
 The jetpack runs on heat. Overheat it and you fall until it cools. Rooftop
@@ -112,7 +113,8 @@ core/            Shared by every world. Never names a specific world.
   ai/            Bot brain
   player/        Local input and camera
   ui/            HUD and hub
-  profile/       Stash and stats that persist between raids
+  profile/       Stash and stats that persist between raids (local play)
+  account/       Server-owned stashes for online play, and the shared gear rules
   progression/   Mastery: tracks and variants, XP tracking in a raid, hub panel
   net/           Online play: the server and client ends of a raid
 worlds/
@@ -161,3 +163,9 @@ godot --headless --path . res://tests/test_runner.tscn
 
 The suite plays real raids without a window: movement, flight, shooting, melee,
 looting, extraction, death, the storm timer, and bot behavior.
+
+## Host a server online
+
+To run a dedicated server on a cheap cloud machine so friends can join, follow
+[docs/hosting.md](docs/hosting.md). It uses the `Dockerfile` and `compose.yaml`
+in this folder and the **Linux Server** export preset.

@@ -4,6 +4,9 @@ extends Node
 ## Exits with code 0 when everything passes, 1 otherwise.
 
 const VehicleScript := preload("res://core/vehicle/vehicle.gd")
+const RaidRoster := preload("res://core/ui/raid_roster.gd")
+const NameplatesScript := preload("res://core/ui/nameplates.gd")
+const ScoreboardScript := preload("res://core/ui/scoreboard.gd")
 
 var _passed := 0
 var _failed := 0
@@ -44,7 +47,9 @@ func _run() -> void:
 	await _test_every_world()
 	await _test_frostline()
 	await _test_mastery()
+	await _test_nameplates_and_scoreboard()
 	await _test_online()
+	await _test_stash_service()
 
 
 func check(condition: bool, what: String) -> void:
@@ -341,6 +346,8 @@ func _test_main_flow() -> void:
 	await frames(5)
 	check(main.raid != null and not main.hub.visible, "deploying starts a raid")
 	check(main.controller.camera.current and main.hud != null, "raid has a camera and HUD")
+	check(main.nameplates != null and main.scoreboard != null and not main.scoreboard.visible,
+			"raid has nameplates and a scoreboard, closed until Tab is held")
 	var controller: PlayerController = main.controller
 	check(controller.view_mode == PlayerController.ViewMode.FIRST and not controller.is_third_person(),
 			"camera starts in first-person")
@@ -1458,6 +1465,100 @@ func _leave(session: NetSession) -> void:
 	await frames(2)
 
 
+func _test_nameplates_and_scoreboard() -> void:
+	print("Nameplates and scoreboard")
+	check(InputMap.has_action("scoreboard") and InputMap.action_get_events("scoreboard").any(
+			func(e: InputEvent) -> bool: return e is InputEventKey and e.physical_keycode == KEY_TAB),
+			"Tab is bound to the scoreboard")
+	var raid := Raid.new()
+	add_child(raid)
+	raid.start_server(Worlds.get_world("ashfront"), 71)
+	for bot in raid.bots:
+		bot.get_node("Brain").set_physics_process(false)
+	var a := raid.add_player([], {}, "Alpha")
+	var b := raid.add_player([], {}, "Bravo")
+	var c := raid.add_player([], {}, "Charlie")
+	await frames(5)
+	var roster := RaidRoster.new(raid, a)
+	roster.refresh()
+	var board := ScoreboardScript.new()
+	board.setup(raid, a)
+	raid.add_child(board)
+	await frames(1)
+	check(roster.entries.size() == 3 and roster.entries.all(
+			func(e: Dictionary) -> bool: return e.status == RaidRoster.IN_RAID),
+			"the roster lists every player as in the raid")
+	check(roster.bots_alive() == raid.bots.size(), "the roster counts the bots still standing")
+	b.kill("bullet", a)
+	raid._on_actor_extracted(c)
+	await frames(3)
+	roster.refresh()
+	var by_name := {}
+	for e in roster.entries:
+		by_name[e.name] = e
+	check(by_name.Alpha.kills == 1 and by_name.Alpha.is_me and by_name.Alpha.status == RaidRoster.IN_RAID,
+			"your kills are counted on the scoreboard")
+	check(by_name.Bravo.status == RaidRoster.DOWN, "a player who died shows as down")
+	check(by_name.Charlie.status == RaidRoster.EXTRACTED, "a player who left alive shows as extracted")
+	check(roster.entries[0].name == "Alpha", "players still in the raid are listed first")
+
+	check(not board.visible, "the scoreboard is closed until asked for")
+	board.show_board(true)
+	var rows: Array = board.rows()
+	check(board.visible and rows.size() == 3 and rows[0] == ["Alpha (you)", RaidRoster.IN_RAID, "1"],
+			"the scoreboard shows each player's name, status and kills")
+	board.show_board(false)
+	check(not board.visible, "the scoreboard closes again")
+
+	# Nameplates, high above the map so only the test's own wall can block the view.
+	var d := raid.add_player([], {}, "Delta")
+	var camera := Camera3D.new()
+	raid.add_child(camera)
+	camera.make_current()
+	var plates := NameplatesScript.new()
+	plates.setup(raid, a)
+	raid.add_child(plates)
+	var sky := a.global_position + Vector3(0, 120, 0)
+	var place := func(d_offset: Vector3, facing: Vector3) -> void:
+		a.global_position = sky
+		d.global_position = sky + d_offset
+		b.global_position = sky + Vector3(0, 0, -5)
+		camera.global_position = sky + Vector3(0, 1.6, 0)
+		camera.look_at(camera.global_position + facing)
+		plates.update_plates()
+	place.call(Vector3(0, -0.5, -10), Vector3.FORWARD)
+	var shown: Dictionary = plates.plates()
+	check(shown.has(d.get_instance_id()) and not shown.has(a.get_instance_id()),
+			"another player in view gets a nameplate, you do not")
+	check(not shown.has(b.get_instance_id()), "a player who is down has no nameplate")
+	if shown.has(d.get_instance_id()):
+		var plate: Control = shown[d.get_instance_id()]
+		var label: Label = plate.get_child(0)
+		var middle := camera.get_viewport().get_visible_rect().size * 0.5
+		check(label.text == "Delta" and plate.position.x < middle.x and plate.position.x + plate.size.x > middle.x,
+				"the nameplate carries the name and sits over the player")
+	place.call(Vector3(0, -0.5, -10), Vector3.BACK)
+	check(plates.plates().is_empty(), "no nameplate for a player behind you")
+	place.call(Vector3(0, -0.5, -(plates.max_distance + 5.0)), Vector3.FORWARD)
+	check(plates.plates().is_empty(), "no nameplate past the nameplate range")
+	var wall := StaticBody3D.new()
+	var shape := CollisionShape3D.new()
+	shape.shape = BoxShape3D.new()
+	shape.shape.size = Vector3(6, 6, 0.5)
+	wall.add_child(shape)
+	raid.add_child(wall)
+	wall.global_position = sky + Vector3(0, 1, -5)
+	await frames(1)
+	place.call(Vector3(0, -0.5, -10), Vector3.FORWARD)
+	check(plates.plates().is_empty(), "no nameplate through a wall")
+	wall.queue_free()
+	await frames(1)
+	d.kill("bullet")
+	place.call(Vector3(0, -0.5, -10), Vector3.FORWARD)
+	check(plates.plates().is_empty(), "the nameplate goes when the player goes down")
+	await _end_raid(raid)
+
+
 func _test_online() -> void:
 	print("Online: commands and raids with several players")
 	var cmd := ActorCommand.new()
@@ -1589,6 +1690,12 @@ func _test_online() -> void:
 			check(moved > 3.0, "one player's movement reaches the other through the server (%.1f m)" % moved)
 			var apart := seen.global_position.distance_to(alpha.raid.player.global_position)
 			check(apart < 2.0, "both clients agree where that player is (%.2f m apart)" % apart)
+		var roster := RaidRoster.new(bravo.raid, bravo.raid.player)
+		roster.refresh()
+		var names := roster.entries.map(func(e: Dictionary) -> String: return e.name)
+		check(roster.entries.size() == 2 and "Alpha" in names and "Bravo" in names
+				and roster.entries.all(func(e: Dictionary) -> bool: return e.status == RaidRoster.IN_RAID),
+				"a client's scoreboard lists both players and none of the bots")
 	await _leave(bravo)
 	await _leave(alpha)
 	OS.kill(pid)
@@ -1731,3 +1838,104 @@ func _test_online() -> void:
 	await _leave(alpha)
 	OS.kill(pid)
 	check(Combat.authoritative, "leaving an online raid hands damage back to this game")
+
+
+# --- Server-owned stash --------------------------------------------------------
+
+const StashService := preload("res://core/account/stash_service.gd")
+
+
+func _test_stash_service() -> void:
+	print("Server stash service")
+	var world := Worlds.get_world("ashfront")
+	var profile_stash := Profile.stash.duplicate()
+	var dir := "user://test_accounts_%d" % Time.get_ticks_usec()
+	var service := StashService.new()
+	service.save_dir = dir
+	var secret := StashService.new_secret()
+	check(secret.length() >= StashService.MIN_SECRET and secret != StashService.new_secret(), "secrets are long and random")
+
+	check(not service.sign_in("x", secret).ok, "a too-short name is refused")
+	check(not service.sign_in("Vex", "short").ok, "a weak secret is refused")
+	var first := service.sign_in("Vex Runner", secret)
+	check(first.ok and first.created and first.account_id == "vex_runner", "the first sign-in creates the account")
+	var again := service.sign_in("vex runner", secret)
+	check(again.ok and not again.created and again.account_id == "vex_runner", "the same name and secret sign back in")
+	check(not service.sign_in("Vex Runner", StashService.new_secret()).ok, "someone else's secret cannot take the name")
+	var id: String = first.account_id
+
+	var snap := service.snapshot(id)
+	check(snap.ok and "rifle_carbine" in snap.stash and "bike_scrapper" in snap.stash, "a new account gets the welcome and gear crates")
+	check(not snap.has("secret_hash") and not snap.has("salt"), "a snapshot carries no secrets")
+	var crate_size: int = snap.stash.size()
+	service.sign_in("Vex Runner", secret)
+	check(service.snapshot(id).stash.size() == crate_size, "crates are granted only once")
+
+	check(not service.equip(id, "primary", "dmr_longshot").ok, "the server refuses gear the account does not own")
+	check(not service.equip(id, "melee", "rifle_carbine").ok, "the server refuses gear in the wrong slot")
+	check(service.equip(id, "primary", "rifle_carbine").ok and service.equip(id, "frame", "frame_trooper").ok,
+			"owned gear equips")
+	check(not service.pick_mastery(id, "rifle", "cut_down").ok, "a locked mastery variant cannot be picked")
+
+	var deploy := service.deploy(id, world)
+	check(deploy.ok and "rifle_carbine" in deploy.kit and "frame_trooper" in deploy.kit, "deploying hands back the kit")
+	check(deploy.kit.count("medkit") == 2, "deploying takes the healing items")
+	var after_deploy: Array = service.snapshot(id).stash
+	check("rifle_carbine" not in after_deploy and "medkit" not in after_deploy, "deployed gear leaves the server stash")
+	check(not service.deploy(id, world).ok, "an account cannot deploy twice at once")
+	check(not service.equip(id, "primary", "rifle_carbine").ok, "the loadout is locked during a raid")
+
+	# A server crash mid-raid: a fresh service loads the save and returns the gear.
+	var restarted := StashService.new()
+	restarted.save_dir = dir
+	var reloaded := restarted.snapshot(id)
+	check(reloaded.ok and not reloaded.deployed and "rifle_carbine" in reloaded.stash and reloaded.stash.count("medkit") == 2,
+			"an unsettled deploy is returned after a restart")
+	check(reloaded.loadout.get("primary", "") == "rifle_carbine", "the loadout survives a restart")
+	check(restarted.sign_in("Vex Runner", secret).ok and not restarted.sign_in("Vex Runner", StashService.new_secret()).ok,
+			"sign-in still checks the secret after a restart")
+
+	# Extract from a real raid and settle its result.
+	deploy = restarted.deploy(id, world)
+	var raid := Raid.new()
+	raid.apply_to_profile = false
+	add_child(raid)
+	raid.start(world, 61, deploy.kit, deploy.picks)
+	for bot in raid.bots:
+		bot.get_node("Brain").set_physics_process(false)
+	await frames(3)
+	var results: Array[Dictionary] = []
+	raid.ended.connect(func(r: Dictionary) -> void: results.append(r))
+	raid.player.inventory.add_item("scrap_metal")
+	var exit_pos := raid.exits[0].global_position
+	raid.player.global_position = Vector3(exit_pos.x, 0.2, exit_pos.z)
+	await frames(300)
+	check(results.size() == 1 and results[0].outcome == "extracted", "the server-stash raid extracts")
+	if results.size() == 1:
+		check(restarted.settle(id, results[0]).ok, "the result settles")
+	var home := restarted.snapshot(id)
+	check("rifle_carbine" in home.stash and "scrap_metal" in home.stash and home.raids_extracted == 1,
+			"extracting brings gear and loot into the server stash")
+	check(not home.deployed and not restarted.settle(id, results[0] if results.size() == 1 else {}).ok,
+			"a result cannot be settled twice")
+	check(Profile.stash == profile_stash, "the server stash never touches the local profile")
+	await _end_raid(raid)
+
+	# Dying loses the deployed gear.
+	deploy = restarted.deploy(id, world)
+	restarted.settle(id, {"outcome": "died", "brought_home": [], "kills": 2, "mastery_xp": {"rifle": 999999}})
+	home = restarted.snapshot(id)
+	check("rifle_carbine" not in home.stash and home.loadout.get("primary", "") == "", "dying loses the gear and empties the slot")
+	check(home.kills == 2 and restarted.pick_mastery(id, "rifle", "cut_down").ok, "mastery XP is kept after death")
+
+	# A join that never happened gives everything back.
+	var before: Array = restarted.snapshot(id).stash
+	restarted.deploy(id, world)
+	check(restarted.cancel_deploy(id).ok and restarted.snapshot(id).stash.size() == before.size(),
+			"cancelling a deploy returns the gear")
+	check(restarted.snapshot("nobody").ok == false and not restarted.deploy("nobody", world).ok,
+			"unknown accounts are refused")
+
+	for f in DirAccess.get_files_at(dir):
+		DirAccess.remove_absolute(dir.path_join(f))
+	DirAccess.remove_absolute(dir)
