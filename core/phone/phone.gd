@@ -649,11 +649,17 @@ func _draw_mirror() -> void:
 		var row := _mirror_row(keys[i], i == mirror_row)
 		_body.add_child(row)
 		if i == mirror_row:
-			_scroll.ensure_control_visible.call_deferred(row)
+			_keep_in_view.call_deferred(row)
 	_body.add_child(_label("Up / down: choose   Left / right or the wheel: scroll", 13, Color(0.6, 0.6, 0.6)))
 	var shuffle := _button("Surprise me", func() -> void: wardrobe.randomize_look())
 	shuffle.focus_mode = Control.FOCUS_NONE
 	_body.add_child(shuffle)
+
+
+## Scrolls the phone so the chosen row shows, unless a redraw replaced it.
+func _keep_in_view(row: Control) -> void:
+	if is_instance_valid(row) and _body.is_ancestor_of(row):
+		_scroll.ensure_control_visible(row)
 
 
 func _mirror_row(key: String, selected: bool) -> PanelContainer:

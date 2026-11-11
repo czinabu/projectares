@@ -422,6 +422,7 @@ func _on_mirror_changed(up: bool) -> void:
 		return
 	# Level the gaze so the glass is in view. The camera mode stays as it is.
 	controller.pitch = clampf(controller.pitch, -0.15, 0.05)
+	_show_aim(false)
 	mirror = MirrorScript.new()
 	mirror.name = "Mirror"
 	mirror.setup(me, controller.camera)
@@ -436,6 +437,14 @@ func _put_away_mirror() -> void:
 	mirror = null
 	if controller != null and is_instance_valid(controller):
 		controller.body_layer = 0
+	_show_aim(true)
+
+
+## The crosshair (and the melee marks round it) on whichever HUD is up.
+func _show_aim(on: bool) -> void:
+	for overlay: Node in [hud, base_hud]:
+		if overlay != null and is_instance_valid(overlay) and overlay.has_method("show_aim"):
+			overlay.show_aim(on)
 
 
 ## Puts a new look on the player's character at once, wherever they are.

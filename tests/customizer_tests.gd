@@ -321,6 +321,7 @@ static func _run_mirror(t: Node) -> void:
 				"in first person the body stays drawn for the mirror, with the gear back on the body")
 		t.check(controller.camera.cull_mask & (1 << (MirrorScript.BODY_LAYER - 1)) == 0,
 				"but the player's own camera leaves it out")
+		t.check(not main.hud.crosshair.visible, "the crosshair is hidden so it does not sit on your face in the mirror")
 	var before: Dictionary = me.get_meta("appearance", {}).duplicate()
 	main.phone.mirror_step("body", 1)
 	await t.frames(2)
@@ -332,7 +333,8 @@ static func _run_mirror(t: Node) -> void:
 		await t.get_tree().process_frame
 	t.check(main.mirror == null and main.raid.find_children("Mirror", "", true, false).is_empty()
 			and controller.body_layer == 0 and not me.body_mesh.visible
-			and controller.camera.cull_mask == 0xFFFFF, "putting the phone away takes the mirror away")
+			and controller.camera.cull_mask == 0xFFFFF and main.hud.crosshair.visible,
+			"putting the phone away takes the mirror away and brings the crosshair back")
 
 	# Rendered: a reflection camera through the glass, and the body on its layer.
 	var was_enabled: bool = Look.enabled

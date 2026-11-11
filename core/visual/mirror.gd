@@ -31,6 +31,8 @@ var distance := 2.1
 var min_distance := 1.1
 ## How far to the viewer's left it stands, clear of the phone on the right.
 var side_offset := 0.3
+## How thick the frame is round the glass.
+var frame_width := 0.035
 ## Height of the reflection in pixels.
 var resolution := 900
 ## Seconds it takes to rise out of the floor.
@@ -94,30 +96,39 @@ func place() -> void:
 
 ## Where the middle of the glass is.
 func glass_centre() -> Vector3:
-	return global_transform * Vector3(0, 0.1 + height * 0.5, 0)
+	return global_transform * Vector3(0, 0.12 + height * 0.5, 0)
 
 
 func _build() -> void:
-	var dark := StandardMaterial3D.new()
-	dark.albedo_color = Color(0.13, 0.12, 0.11)
-	dark.metallic = 0.7
-	dark.roughness = 0.35
-	var trim := StandardMaterial3D.new()
-	trim.albedo_color = Color(1.0, 0.62, 0.22)
-	trim.emission_enabled = true
-	trim.emission = Color(1.0, 0.55, 0.2)
-	trim.emission_energy_multiplier = 1.4
-	var mid := 0.1 + height * 0.5
-	var bar := 0.09
-	# Frame, back panel, feet and a lit strip along the inside edge.
-	_part(Vector3(width + bar * 2.0, bar, 0.1), Vector3(0, mid + height * 0.5 + bar * 0.5, 0), dark)
-	_part(Vector3(width + bar * 2.0, bar, 0.1), Vector3(0, mid - height * 0.5 - bar * 0.5, 0), dark)
-	_part(Vector3(bar, height, 0.1), Vector3(-width * 0.5 - bar * 0.5, mid, 0), dark)
-	_part(Vector3(bar, height, 0.1), Vector3(width * 0.5 + bar * 0.5, mid, 0), dark)
-	_part(Vector3(width + bar * 2.0, height + bar * 2.0, 0.03), Vector3(0, mid, -0.06), dark)
-	_part(Vector3(width + bar * 2.0, 0.02, 0.02), Vector3(0, mid + height * 0.5, 0.05), trim)
+	# A slim frame of dark brushed metal with a pale chamfer round the glass,
+	# like a bevelled edge catching the light, and a soft shadow on the floor.
+	var metal := StandardMaterial3D.new()
+	metal.albedo_color = Color(0.3, 0.29, 0.28)
+	metal.metallic = 0.45
+	metal.roughness = 0.38
+	var bevel := StandardMaterial3D.new()
+	bevel.albedo_color = Color(0.62, 0.6, 0.56)
+	bevel.metallic = 0.9
+	bevel.roughness = 0.22
+	var mid := 0.12 + height * 0.5
+	var bar := frame_width
+	var outer := Vector2(width + bar * 2.0, height + bar * 2.0)
+	_part(Vector3(outer.x, bar, 0.05), Vector3(0, mid + height * 0.5 + bar * 0.5, -0.01), metal)
+	_part(Vector3(outer.x, bar, 0.05), Vector3(0, mid - height * 0.5 - bar * 0.5, -0.01), metal)
+	_part(Vector3(bar, height, 0.05), Vector3(-width * 0.5 - bar * 0.5, mid, -0.01), metal)
+	_part(Vector3(bar, height, 0.05), Vector3(width * 0.5 + bar * 0.5, mid, -0.01), metal)
+	# The chamfer: four thin strips just inside the frame, angled in to the glass.
+	var lip := 0.014
+	for edge: Array in [[Vector3(width, lip, 0.01), Vector3(0, mid + height * 0.5 - lip * 0.5, 0.004), Vector3(-0.6, 0, 0)],
+			[Vector3(width, lip, 0.01), Vector3(0, mid - height * 0.5 + lip * 0.5, 0.004), Vector3(0.6, 0, 0)],
+			[Vector3(lip, height, 0.01), Vector3(-width * 0.5 + lip * 0.5, mid, 0.004), Vector3(0, 0.6, 0)],
+			[Vector3(lip, height, 0.01), Vector3(width * 0.5 - lip * 0.5, mid, 0.004), Vector3(0, -0.6, 0)]]:
+		_part(edge[0], edge[1], bevel).rotation = edge[2]
+	_part(Vector3(outer.x, outer.y, 0.02), Vector3(0, mid, -0.04), metal)
+	# Two slim feet, swept back so it looks stood, not floating.
 	for side in [-1.0, 1.0]:
-		_part(Vector3(0.12, 0.06, 0.55), Vector3(side * (width * 0.5 + bar * 0.5), 0.03, 0), dark)
+		_part(Vector3(0.05, 0.04, 0.5), Vector3(side * (width * 0.5 - 0.1), 0.02, -0.12), metal)
+	_add_shadow(Vector2(outer.x + 0.9, 1.5))
 
 	_viewport = SubViewport.new()
 	_viewport.name = "Reflection"
@@ -133,13 +144,9 @@ func _build() -> void:
 	_viewport.add_child(_camera)
 	_camera.current = true
 
-	var glass_mat := StandardMaterial3D.new()
-	glass_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	glass_mat.albedo_texture = _viewport.get_texture()
-	glass_mat.albedo_color = Color(0.94, 0.96, 1.0)
-	# Seen from the front, the picture runs the other way.
-	glass_mat.uv1_scale = Vector3(-1.0, 1.0, 1.0)
-	glass_mat.uv1_offset = Vector3(1.0, 0.0, 0.0)
+	var glass_mat := ShaderMaterial.new()
+	glass_mat.shader = _glass_shader()
+	glass_mat.set_shader_parameter("reflection", _viewport.get_texture())
 	var quad := QuadMesh.new()
 	quad.size = Vector2(width, height)
 	_glass = MeshInstance3D.new()
@@ -152,7 +159,58 @@ func _build() -> void:
 	add_child(_glass)
 
 
-func _part(size: Vector3, at: Vector3, mat: Material) -> void:
+## The glass: the reflection, turned round as a mirror shows it, with a
+## faint cool tint, a soft darkening into the corners and a sheen at glancing
+## angles.
+static func _glass_shader() -> Shader:
+	var shader := Shader.new()
+	shader.code = """shader_type spatial;
+render_mode unshaded, cull_back;
+uniform sampler2D reflection : source_color, filter_linear;
+void fragment() {
+	vec2 uv = vec2(1.0 - UV.x, UV.y);
+	vec3 col = texture(reflection, uv).rgb * vec3(0.93, 0.96, 1.0);
+	vec2 d = abs(UV - 0.5) * 2.0;
+	float edge = smoothstep(0.82, 1.0, max(d.x, d.y));
+	col *= 1.0 - edge * 0.22;
+	float glance = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), 4.0);
+	ALBEDO = col + vec3(0.06, 0.07, 0.08) * glance;
+}
+"""
+	return shader
+
+
+## A soft dark patch on the floor under the mirror, so it sits on the ground.
+func _add_shadow(size: Vector2) -> void:
+	var gradient := Gradient.new()
+	gradient.set_color(0, Color(0, 0, 0, 0.75))
+	gradient.set_color(1, Color(0, 0, 0, 0.0))
+	gradient.add_point(0.45, Color(0, 0, 0, 0.45))
+	var texture := GradientTexture2D.new()
+	texture.gradient = gradient
+	texture.fill = GradientTexture2D.FILL_RADIAL
+	texture.fill_from = Vector2(0.5, 0.5)
+	texture.fill_to = Vector2(0.5, 0.0)
+	texture.width = 128
+	texture.height = 128
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.albedo_texture = texture
+	mat.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED
+	var plane := PlaneMesh.new()
+	plane.size = size
+	var shadow := MeshInstance3D.new()
+	shadow.name = "Shadow"
+	shadow.mesh = plane
+	shadow.material_override = mat
+	shadow.position = Vector3(0, 0.025, 0.0)
+	shadow.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	shadow.layers = 1 << (MIRROR_LAYER - 1)
+	add_child(shadow)
+
+
+func _part(size: Vector3, at: Vector3, mat: Material) -> MeshInstance3D:
 	var box := BoxMesh.new()
 	box.size = size
 	var part := MeshInstance3D.new()
@@ -161,6 +219,7 @@ func _part(size: Vector3, at: Vector3, mat: Material) -> void:
 	part.position = at
 	part.layers = 1 << (MIRROR_LAYER - 1)
 	add_child(part)
+	return part
 
 
 func _process(delta: float) -> void:
