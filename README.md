@@ -1,8 +1,9 @@
 # Project Ares
 
-A full-loot PvPvE extraction game with plug-in worlds, built in Godot 4.
-Drop into a world with gear you are willing to lose, fight and loot, and reach
-an exit before the storm closes. Die and everything you carried stays behind.
+A full-loot PvPvE war game with plug-in worlds, built in Godot 4. Each world
+is a warzone that never ends. Drop in with gear you are willing to lose, fight
+and loot for as long as you like, and bank what you find at a depot. Die and
+everything you carried stays behind, and you drop back in seconds later.
 
 This is the **Phase 0 prototype**: a raid against bots that proves the core
 loop and lays the foundation for online play and more worlds. Gameplay shapes
@@ -32,7 +33,9 @@ skies, animated models and effects (see "How it looks" below).
 | Loot, or get on and off a bike | E |
 | Ride a bike: throttle, brake or reverse, steer, boost | W, S, A / D, Shift |
 | Switch camera: first-person or third-person | V |
-| Scoreboard: who is still in, who got out, kills | Hold Tab |
+| Scoreboard: who is fighting, who is down, kills | Hold Tab |
+| Sign out and go home with what you carry (10 seconds, out of a fight) | L |
+| After dying: drop back in, or return to the hub | Enter, or L |
 | Open your phone: players, messages, invites, news, settings | P |
 | Free the mouse | Esc |
 
@@ -46,17 +49,19 @@ few seconds and restart on its own. That is Godot learning about new scripts.
 
 The hub has an **Online** section.
 
-- **Host a raid and join it** starts a server on your computer and connects you to it.
-- **Join a raid at this address** connects to someone else's server. On the same
+- **Host a world and join it** starts a server on your computer and connects you to it.
+- **Join a world at this address** connects to someone else's server. On the same
   network, that is the host's local address, for example `192.168.1.20`.
 - Connecting puts you in that server's lobby. The hub now shows the stash and
   loadout **the server keeps for you**, which is separate from your solo stash.
-  Pick your gear and press **Deploy online**. After a raid you come back to the
-  lobby.
+  Pick your gear and press **Deploy online**. Dying keeps you in the world:
+  press Enter to drop back in. Signing out (L) brings you back to the lobby.
 - The server knows you by your name plus a private key your game creates the
   first time. Everyone on a server needs a different name. A new name starts
   with the same starter crates as a solo profile.
-- Losing your connection in the middle of a raid counts as a death.
+- Losing your connection leaves your body standing in the world for 10
+  seconds, or 30 if you were in a fight. If nobody kills it, what you carried
+  goes back to your stash on that server.
 - To try it alone, run two copies of the game. In the Godot editor use
   Debug, Customize Run Instances, and enable two instances. Host in one window
   and join `127.0.0.1` in the other.
@@ -98,9 +103,10 @@ target was on your screen. Start a server with `--no-rewind` to feel the
 difference.
 
 What works online so far: seeing and fighting other players and bots, looting
-caches and bags, and riding vehicles, with the server deciding every hit,
-death, pickup and extraction. The server also owns your online stash: your
-game never tells it what gear you have.
+caches and bags, riding vehicles, banking at depots, dropping back in after a
+death and signing out, with the server deciding every hit, death and pickup.
+The server also owns your online stash: your game never tells it what gear
+you have.
 
 ## What is in the prototype
 
@@ -125,8 +131,8 @@ game never tells it what gear you have.
   flight rigs, ability chips, bikes parked in the garage, loot on shelves.
   Look at a piece of gear and press E to equip it for your next run.
 - Loadouts picked in the hub from your stash: primary weapon, melee weapon,
-  flight rig and armor frame. Equipped gear is at risk. Extract and it comes
-  home, die and it drops. Empty slots use a free scrap kit.
+  flight rig and armor frame. Equipped gear is at risk. Sign out alive and it
+  comes home, die and it drops. Empty slots use a free scrap kit.
 - Three kinds of flight rig: jetpacks for sustained lift, thruster boots for
   quick kicks upward, and glide wings that launch once and then soar.
 - An ability slot. Phase Step blinks you forward, Kinetic Barrier cuts damage
@@ -135,14 +141,26 @@ game never tells it what gear you have.
   hammer, three armor frames, and a better jetpack.
 - Motorbikes, the first vehicle. Put one in the vehicle slot and it is parked
   next to you when you deploy. Press E on any bike nobody is riding to take
-  it, including someone else's. Extract riding a bike and it goes to your
+  it, including someone else's. Sign out riding a bike and it goes to your
   stash; die or leave it behind and it is gone. Abandoned bikes wait by jump
   ramps around the city. Riding uses the third-person camera (V still
   switches), and pressing E in mid-air bails out with the bike's speed.
 - Mastery for every weapon type, ability and armor frame. Using gear earns XP
   for its type, levels unlock variants that trade one strength for another
   (never raw power), and you pick them in the hub. Mastery is kept when you die.
-- Two exits, a raid timer, and full loot on death.
+- Worlds that never end. There is no timer and no exit. Dead bots are
+  replaced, emptied caches refill, and bikes come back to their parking spots.
+- Depots, marked by green beacons. Stand in one for a few seconds to send
+  your backpack to your stash without leaving the fight. Healing stays on you.
+- Full loot on death, then straight back in. Dying drops everything you carry
+  in a bag where you fell. Press Enter to drop in again, away from the
+  fighting and protected for a few seconds, with whatever your loadout can
+  still supply from the stash, or the scrap kit.
+- Signing out. Press L, stay out of trouble for 10 seconds, and you go home
+  with everything on you. A hit, given or taken, cancels it. Quitting or
+  losing your connection online leaves your body standing in the world for
+  the same time (30 seconds if you were in a fight), so nobody escapes a
+  fight by closing the game.
 
 ## How the code is organized
 
@@ -154,7 +172,7 @@ core/            Shared by every world. Never names a specific world.
   vehicle/       Rideable vehicles (the motorbike)
   items/         Item database, inventory, loadouts
   interact/      Loot containers
-  raid/          Raid flow and extraction zones
+  raid/          The running world (Raid) and depots
   world/         The world contract (WorldDef) and the world registry
   ai/            Bot brain
   player/        Local input and camera
@@ -220,8 +238,13 @@ round: a relay mast in the middle (its top cache is the richest on the map and
 only flight reaches it), a ring of six outposts, and two rings of ice ridges for
 cover. Two enemy factions share the ice and fight each other as well as you:
 Wardens (slow, armored, long-range rifles) and Feral stalkers (fast, fragile,
-melee). The raid is shorter (10 minutes) and exits take longer to hold. It adds
-three items of its own: Cryo Cell, Signal Core and the Ice Axe.
+melee). It is a PvE world: players cannot hurt each other there, so it is the
+place to learn and gear up before Ashfront. It is also the gentle one. Dying
+there only drops your backpack; the gear you deployed with goes home with you
+(`WorldDef.keep_gear_on_death`). In return its caches hold basic gear and
+materials, and the rare and powerful gear is only found on Ashfront. Depots
+take longer to hold. It adds three items of its own: Cryo Cell, Signal Core and
+the Ice Axe.
 
 ## Run the tests
 
@@ -231,7 +254,8 @@ godot --headless --path . res://tests/test_runner.tscn
 ```
 
 The suite plays real raids without a window: movement, flight, shooting, melee,
-looting, extraction, death, the storm timer, and bot behavior.
+looting, banking, death and dropping back in, signing out, respawns, and bot
+behavior.
 
 ## Host a server online
 

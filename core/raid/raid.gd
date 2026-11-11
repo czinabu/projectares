@@ -1,14 +1,26 @@
 class_name Raid
 extends Node3D
-## One run of a world: builds the map, spawns everyone, tracks the timer, and
-## decides how the raid ends. It knows nothing about any specific world; it only
-## uses the WorldDef contract. It also knows nothing about cameras or the HUD,
-## so the same class can run on a headless server.
+## One running world. It never ends: it builds the map, spawns everyone, and
+## keeps the place alive by bringing bots, cache loot and vehicles back over
+## time. Players drop in, fight, bank what they carry at a depot, die and drop
+## in again, and leave when they choose. It knows nothing about any specific
+## world; it only uses the WorldDef contract. It also knows nothing about
+## cameras or the HUD, so the same class can run on a headless server.
+##
+## A player's stay is a string of lives. Each `add_player` starts one, and
+## `player_finished` ends it, as "died" (what they carried is in a bag on the
+## ground) or "left" (it all goes home). Whoever owns the stash, the local
+## profile or the server's accounts, then calls `add_player` again to drop
+## them back in.
 
-signal ended(result: Dictionary)
-## A player's run is over (died or extracted). In a solo raid this fires
-## together with `ended`. On a server the raid carries on for everyone else.
+## A player's life is over: they died, or signed out and left. The world
+## carries on for everyone else.
 signal player_finished(actor: Actor, result: Dictionary)
+## A player banked `items` at a depot. They are out of the backpack and belong
+## in the stash.
+signal player_banked(actor: Actor, items: Array)
+## A player's sign-out started, with `seconds_left` to go, or stopped (below zero).
+signal sign_out_changed(actor: Actor, seconds_left: float)
 signal actor_spawned(actor: Actor)
 signal actor_removed(actor: Actor)
 signal container_spawned(container: LootContainer)
@@ -17,6 +29,8 @@ signal vehicle_removed(vehicle: Node3D)
 
 ## Bots never start closer to the player than this, so a raid does not open with a fight.
 const MIN_BOT_SPAWN_DISTANCE := 40.0
+## A vehicle this close to its parking spot counts as still parked there.
+const PARKED_DISTANCE := 6.0
 const VehicleScript := preload("res://core/vehicle/vehicle.gd")
 const MasteryTracker := preload("res://core/progression/mastery_tracker.gd")
 
@@ -35,11 +49,12 @@ var player: Actor
 ## Everyone playing, by actor. See `PlayerState`.
 var players: Array[PlayerState] = []
 var bots: Array[Actor] = []
-var exits: Array[ExtractionZone] = []
+var depots: Array[Depot] = []
 var vehicles: Array[Node3D] = []
-var time_left := 0.0
+## Seconds this world has been running.
+var clock := 0.0
+## The local player's kills across every life of this stay.
 var kills := 0
-var is_over := false
 var rng := RandomNumberGenerator.new()
 ## The seed each bot was equipped with, so a client can rebuild the same bot.
 var bot_seeds := {}
@@ -52,6 +67,15 @@ var apply_to_profile := true
 var squad_spawn := false
 var _squad_marker := -1
 var _player_count := 0
+var _bot_count := 0
+## One per cache: { container, source, refill_in }.
+var _caches: Array[Dictionary] = []
+## Seconds until each dead bot is replaced.
+var _bot_respawns: Array[float] = []
+## One per vehicle marker: { marker, source, vehicle, empty_for }.
+var _parking: Array[Dictionary] = []
+## Vehicle -> seconds since anyone rode it.
+var _idle := {}
 
 
 ## Call after the Raid is in the scene tree. A fixed seed makes it repeatable.
@@ -92,7 +116,6 @@ func _setup(p_world: WorldDef, p_seed: int) -> void:
 		rng.seed = p_seed
 	else:
 		rng.randomize()
-	time_left = world.raid_duration
 
 	map = world.create_map()
 	map.name = "Map"
@@ -100,53 +123,125 @@ func _setup(p_world: WorldDef, p_seed: int) -> void:
 	if mode != Mode.CLIENT and map.has_method("bake_navigation"):
 		map.call("bake_navigation")
 
-	for node in _map_nodes("exit"):
-		var zone := node as ExtractionZone
-		if zone:
-			zone.hold_time = world.exit_hold_time
+	for node in _map_nodes("depot"):
+		var depot := node as Depot
+		if depot:
+			depot.hold_time = world.depot_hold_time
+			depot.can_bank = _can_bank
 			if mode != Mode.CLIENT:
-				zone.actor_extracted.connect(_on_actor_extracted)
-			exits.append(zone)
+				depot.actor_banked.connect(_on_actor_banked)
+			depots.append(depot)
 
 
 func _spawn_caches() -> void:
 	for marker in _map_nodes("spawn_cache"):
 		var source: String = marker.get_meta("loot_source", "cache")
-		spawn_container(world.roll_loot(source, rng), false, "cache", marker.global_position)
+		var cache := spawn_container(world.roll_loot(source, rng), false, "cache", marker.global_position)
+		_caches.append({"container": cache, "source": source, "refill_in": -1.0})
 
 
 func _physics_process(delta: float) -> void:
-	if is_over or world == null or mode == Mode.CLIENT:
+	if world == null:
 		return
-	time_left -= delta
-	if time_left <= 0.0:
-		for state in players.duplicate():
-			if not state.finished and not state.actor.is_dead:
-				state.actor.kill("storm")
-		if mode == Mode.SERVER:
-			is_over = true
+	clock += delta
+	_tick_sign_outs(delta)
+	if mode == Mode.CLIENT:
+		return
+	_tick_caches(delta)
+	_tick_bots(delta)
+	_tick_vehicles(delta)
 
 
-## Exit zone progress for the player, 0..1.
-func extract_progress() -> float:
+## An emptied cache fills up again after a while.
+func _tick_caches(delta: float) -> void:
+	for cache in _caches:
+		var container: LootContainer = cache.container
+		if not is_instance_valid(container) or not container.items.is_empty():
+			cache.refill_in = -1.0
+			continue
+		if cache.refill_in < 0.0:
+			cache.refill_in = world.cache_refill_time
+		cache.refill_in -= delta
+		if cache.refill_in <= 0.0:
+			cache.refill_in = -1.0
+			container.set_items(world.roll_loot(cache.source, rng))
+			container.changed.emit()
+
+
+## Every dead bot is replaced, so the world never runs out of enemies.
+func _tick_bots(delta: float) -> void:
+	for i in range(_bot_respawns.size() - 1, -1, -1):
+		_bot_respawns[i] -= delta
+		if _bot_respawns[i] > 0.0:
+			continue
+		_bot_respawns.remove_at(i)
+		var spawns := _map_nodes("spawn_bot")
+		if not spawns.is_empty():
+			_add_bot(spawns[_farthest_from_players(spawns)])
+
+
+## Vehicles nobody rides are cleared away, and empty parking spots get a new one.
+func _tick_vehicles(delta: float) -> void:
+	for vehicle in vehicles.duplicate():
+		if vehicle.get("rider") != null:
+			_idle[vehicle] = 0.0
+			continue
+		_idle[vehicle] = _idle.get(vehicle, 0.0) + delta
+		if _idle[vehicle] >= world.vehicle_respawn_time and not _is_parked(vehicle):
+			remove_vehicle(vehicle)
+	for spot in _parking:
+		if _is_parked(spot.vehicle):
+			spot.empty_for = 0.0
+			continue
+		spot.empty_for += delta
+		if spot.empty_for >= world.vehicle_respawn_time:
+			spot.empty_for = 0.0
+			spot.vehicle = _park_vehicle(spot.marker, spot.source)
+
+
+func _is_parked(vehicle: Variant) -> bool:
+	if vehicle == null or not is_instance_valid(vehicle) or vehicle not in vehicles:
+		return false
+	for spot in _parking:
+		var marker: Node3D = spot.marker
+		if spot.vehicle == vehicle:
+			return vehicle.global_position.distance_to(marker.global_position) < PARKED_DISTANCE
+	return false
+
+
+## Depot progress for the local player, 0..1.
+func bank_progress() -> float:
 	var best := 0.0
-	if player == null:
+	if player == null or not is_instance_valid(player):
 		return best
-	for zone in exits:
-		best = maxf(best, zone.progress_for(player))
+	for depot in depots:
+		best = maxf(best, depot.progress_for(player))
 	return best
 
 
-## Adds a player and returns their actor. In a solo raid the first one becomes
-## `player`. `p_kit` empty means the world's free scrap kit.
+func _can_bank(actor: Actor) -> bool:
+	var state := state_for(actor)
+	return state != null and not state.finished
+
+
+## Drops a player in and returns their actor: the start of one life. In a
+## solo raid the newest one is `player`, so calling this again after a death
+## drops the player back in. `p_kit` empty means the world's free scrap kit.
 func add_player(p_kit: Array = [], p_mastery: Dictionary = {}, p_name := "Raider") -> Actor:
 	var state := PlayerState.new()
 	state.kit.assign(p_kit if not p_kit.is_empty() else world.starter_loadout())
 	state.picks = p_mastery
 	var spawns := _map_nodes("spawn_player")
-	var marker := rng.randi() % maxi(spawns.size(), 1)
-	if mode == Mode.SERVER and not spawns.is_empty():
+	var marker := 0
+	# Anyone arriving in a world that is already running lands away from the
+	# fighting, and cannot be hurt for a moment.
+	var arriving := mode == Mode.SERVER or _player_count > 0
+	if mode == Mode.SOLO and player != null:
+		_remove_actor(player)
+	if arriving and not spawns.is_empty():
 		marker = _safest_spawn(spawns)
+	else:
+		marker = rng.randi() % maxi(spawns.size(), 1)
 	if squad_spawn:
 		if _squad_marker < 0:
 			_squad_marker = marker
@@ -165,14 +260,19 @@ func add_player(p_kit: Array = [], p_mastery: Dictionary = {}, p_name := "Raider
 	Loadout.equip(actor, state.kit)
 	state.actor = actor
 	state.mastery = MasteryTracker.new()
-	state.mastery.name = "Mastery" if players.is_empty() else "Mastery%d" % _player_count
+	state.mastery.name = "Mastery" if _player_count == 1 else "Mastery%d" % _player_count
 	add_child(state.mastery)
 	state.mastery.setup(actor, p_mastery)
 	players.append(state)
-	if mode == Mode.SOLO and player == null:
+	if mode == Mode.SOLO:
 		player = actor
 		mastery = state.mastery
+	if arriving:
+		actor.protected_left = world.spawn_protection
 	actor.died.connect(_on_actor_died)
+	actor.health.damaged.connect(func(_info: DamageInfo) -> void: _mark_combat(state))
+	actor.hit_confirmed.connect(func(_target: Actor, _info: DamageInfo, _lethal: bool) -> void:
+		_mark_combat(state))
 	world.on_spawn(actor)
 	actor_spawned.emit(actor)
 	# Their own vehicle, if they brought one, is parked beside them.
@@ -203,16 +303,81 @@ func _safest_spawn(spawns: Array[Node3D]) -> int:
 	return best
 
 
-## Takes a player out of the raid without a result, for a dropped connection.
-## Their gear falls where they stood.
+## For a dropped connection. Nobody escapes a fight by quitting: the body
+## stays where it stood, helpless, for the sign-out time (longer if they were
+## in a fight). If it survives, everything on it goes home.
 func remove_player(actor: Actor) -> void:
 	var state := state_for(actor)
 	if state == null:
 		return
 	if not state.finished and not actor.is_dead:
-		actor.kill("disconnect")
+		begin_sign_out(actor, true)
 		return
 	players.erase(state)
+
+
+## Starts a player's sign-out. It takes `WorldDef.sign_out_time` seconds and
+## taking or dealing damage cancels it, so it cannot be started in a fight.
+## `forced` is for a player who is gone: it cannot be cancelled, and the body
+## stands still until it ends. Returns false if it did not start.
+func begin_sign_out(actor: Actor, forced := false) -> bool:
+	var state := state_for(actor)
+	if state == null or state.finished or actor.is_dead or mode == Mode.CLIENT:
+		return false
+	var fighting := clock - state.last_combat < world.combat_time
+	if forced:
+		var wait := world.combat_log_time if fighting else world.sign_out_time
+		if state.sign_out_left >= 0.0:
+			wait = minf(wait, state.sign_out_left)
+		var yaw := actor.cmd.yaw
+		actor.cmd.apply_array(ActorCommand.new().to_array())
+		actor.cmd.yaw = yaw
+		state.sign_out_forced = true
+		state.sign_out_left = wait
+	elif state.sign_out_left >= 0.0:
+		return true
+	elif fighting:
+		actor.notice.emit("You cannot sign out in a fight")
+		return false
+	else:
+		state.sign_out_left = world.sign_out_time
+		actor.notice.emit("Signing out. Stay out of trouble for %d seconds" % ceili(world.sign_out_time))
+	state.sign_out_total = state.sign_out_left
+	sign_out_changed.emit(actor, state.sign_out_left)
+	return true
+
+
+func cancel_sign_out(actor: Actor) -> void:
+	var state := state_for(actor)
+	if state == null or state.sign_out_left < 0.0 or state.sign_out_forced or mode == Mode.CLIENT:
+		return
+	state.sign_out_left = -1.0
+	actor.notice.emit("Sign-out cancelled")
+	sign_out_changed.emit(actor, -1.0)
+
+
+## How far along an actor's sign-out is, 0..1, or below zero when there is none.
+func sign_out_progress(actor: Actor) -> float:
+	var state := state_for(actor)
+	if state == null or state.sign_out_left < 0.0 or state.sign_out_total <= 0.0:
+		return -1.0
+	return clampf(1.0 - state.sign_out_left / state.sign_out_total, 0.0, 1.0)
+
+
+func _tick_sign_outs(delta: float) -> void:
+	for state in players.duplicate():
+		if state.finished or state.sign_out_left < 0.0:
+			continue
+		state.sign_out_left = maxf(0.0, state.sign_out_left - delta)
+		# A client only shows the countdown. The server decides when it ends.
+		if state.sign_out_left <= 0.0 and mode != Mode.CLIENT:
+			_leave(state)
+
+
+func _mark_combat(state: PlayerState) -> void:
+	state.last_combat = clock
+	if state.sign_out_left >= 0.0 and not state.finished:
+		cancel_sign_out(state.actor)
 
 
 func state_for(actor: Actor) -> PlayerState:
@@ -241,16 +406,37 @@ func _spawn_bots() -> void:
 	if spawns.is_empty():
 		return
 	for i in world.bot_count:
-		var marker: Node3D = spawns[i % spawns.size()]
-		var at := marker.global_position + Vector3(rng.randf_range(-1, 1), 0, rng.randf_range(-1, 1))
-		var bot := spawn_bot("Bot%d" % i, at, rng.randi())
-		var brain := BotBrain.new()
-		brain.name = "Brain"
-		brain.seed_value = rng.randi()
-		bot.add_child(brain)
-		bot.died.connect(_on_actor_died)
-		world.on_spawn(bot)
-		actor_spawned.emit(bot)
+		_add_bot(spawns[i % spawns.size()])
+
+
+## A new bot with a brain, at a spawn marker.
+func _add_bot(marker: Node3D) -> Actor:
+	var at := marker.global_position + Vector3(rng.randf_range(-1, 1), 0, rng.randf_range(-1, 1))
+	var bot := spawn_bot("Bot%d" % _bot_count, at, rng.randi())
+	_bot_count += 1
+	var brain := BotBrain.new()
+	brain.name = "Brain"
+	brain.seed_value = rng.randi()
+	bot.add_child(brain)
+	bot.died.connect(_on_actor_died)
+	world.on_spawn(bot)
+	actor_spawned.emit(bot)
+	return bot
+
+
+## The marker farthest from every player still in the world.
+func _farthest_from_players(markers: Array[Node3D]) -> int:
+	var best := 0
+	var best_distance := -1.0
+	for i in markers.size():
+		var nearest := INF
+		for other in active_players():
+			if not other.is_dead:
+				nearest = minf(nearest, markers[i].global_position.distance_to(other.global_position))
+		if nearest > best_distance:
+			best_distance = nearest
+			best = i
+	return best
 
 
 ## Creates a bot equipped from `equip_seed`, with no brain. A client calls this
@@ -272,10 +458,15 @@ func spawn_bot(bot_name: String, at: Vector3, equip_seed: int) -> Actor:
 func _spawn_map_vehicles() -> void:
 	for marker in _map_nodes("spawn_vehicle"):
 		var source: String = marker.get_meta("loot_source", "vehicle")
-		for id in world.roll_loot(source, rng):
-			if ItemDB.has_tag(id, "vehicle"):
-				spawn_vehicle(id, marker.global_position + Vector3(0, 0.3, 0), marker.rotation.y)
-				break
+		_parking.append({"marker": marker, "source": source, "vehicle": _park_vehicle(marker, source),
+				"empty_for": 0.0})
+
+
+func _park_vehicle(marker: Node3D, source: String) -> Node3D:
+	for id in world.roll_loot(source, rng):
+		if ItemDB.has_tag(id, "vehicle"):
+			return spawn_vehicle(id, marker.global_position + Vector3(0, 0.3, 0), marker.rotation.y)
+	return null
 
 
 func spawn_vehicle(id: String, at: Vector3, heading: float) -> Node3D:
@@ -290,6 +481,18 @@ func spawn_vehicle(id: String, at: Vector3, heading: float) -> Node3D:
 	return vehicle
 
 
+## Takes a vehicle out of the world, putting its rider on their feet.
+func remove_vehicle(vehicle: Node3D) -> void:
+	if not is_instance_valid(vehicle):
+		return
+	if vehicle.get("rider") != null:
+		vehicle.call("dismount")
+	vehicles.erase(vehicle)
+	_idle.erase(vehicle)
+	vehicle_removed.emit(vehicle)
+	vehicle.queue_free()
+
+
 func spawn_container(items: Array, is_bag: bool, label: String, at: Vector3) -> LootContainer:
 	var container := LootContainer.new()
 	container.setup(items, is_bag, label)
@@ -302,8 +505,16 @@ func spawn_container(items: Array, is_bag: bool, label: String, at: Vector3) -> 
 func _on_actor_died(actor: Actor, info: DamageInfo) -> void:
 	world.on_death(actor, info)
 	var drops := actor.get_drop_items()
+	if state_for(actor) != null and world.keep_gear_on_death:
+		# A gentler world: a player's equipped gear goes home, not in the bag.
+		drops.assign(actor.inventory.items)
 	if not drops.is_empty():
-		spawn_container(drops, true, "%s's bag" % actor.display_name, actor.global_position)
+		var bag := spawn_container(drops, true, "%s's bag" % actor.display_name, actor.global_position)
+		# Bags do not pile up forever in a world that never ends.
+		if mode != Mode.CLIENT:
+			get_tree().create_timer(world.bag_lifetime, false, true).timeout.connect(func() -> void:
+				if is_instance_valid(bag):
+					bag.queue_free())
 	var killer := state_for(info.source as Actor) if info.source is Actor else null
 	if killer != null and killer.actor != actor:
 		killer.kills += 1
@@ -312,11 +523,15 @@ func _on_actor_died(actor: Actor, info: DamageInfo) -> void:
 		killer.actor.notice.emit("Killed %s" % actor.display_name)
 	var state := state_for(actor)
 	if state != null:
-		_finish_player(state, "died", info.kind)
-		if mode == Mode.SOLO:
+		var by: String = (info.source as Actor).display_name if info.source is Actor else ""
+		_finish_player(state, "died", info.kind, by)
+		# The local player's body stays for the camera until they drop in again.
+		if mode == Mode.SOLO and actor == player:
 			return
 	else:
 		bots.erase(actor)
+		if mode != Mode.CLIENT:
+			_bot_respawns.append(world.bot_respawn_time)
 	get_tree().create_timer(4.0).timeout.connect(_remove_actor.bind(actor))
 
 
@@ -326,79 +541,99 @@ func _remove_actor(actor: Actor) -> void:
 	var state := state_for(actor)
 	if state != null:
 		players.erase(state)
+		if is_instance_valid(state.mastery):
+			state.mastery.queue_free()
 	bots.erase(actor)
 	bot_seeds.erase(actor)
 	actor_removed.emit(actor)
 	actor.queue_free()
 
 
-func _on_actor_extracted(actor: Actor) -> void:
+func _on_actor_banked(actor: Actor) -> void:
 	var state := state_for(actor)
-	if state == null or state.finished or is_over:
+	if state == null or state.finished or actor.is_dead:
 		return
-	world.on_extract(actor)
-	# Everything carried comes home: surviving gear and the backpack, and the
-	# vehicle they rode out on, whoever it belonged to.
+	var items := Depot.bankable(actor)
+	if items.is_empty():
+		return
+	for id in items:
+		actor.inventory.remove_item(id)
+	state.banked.append_array(items)
+	actor.notice.emit("Banked %s (worth %d)" % [ItemDB.summarize(items), ItemDB.total_value(items)])
+	if apply_to_profile:
+		Profile.add_to_stash(items)
+	player_banked.emit(actor, items)
+
+
+## A sign-out finished: the player leaves alive and everything they carry
+## goes home, with the vehicle they are riding, whoever it belonged to.
+func _leave(state: PlayerState) -> void:
+	var actor := state.actor
+	if state.finished or actor.is_dead:
+		return
+	world.on_leave(actor)
 	var ridden := actor.vehicle
 	if ridden != null:
-		state.extracted_vehicle = ridden.get("item_id")
-	_finish_player(state, "extracted", "")
+		state.rode_home = ridden.get("item_id")
+	_finish_player(state, "left", "", "")
 	if mode == Mode.SERVER:
-		# They are gone from the raid, and so is the vehicle they rode out on.
+		# They are gone from the world, and so is the vehicle they rode out on.
 		if ridden != null:
-			ridden.call("dismount")
-			vehicles.erase(ridden)
-			vehicle_removed.emit(ridden)
-			ridden.queue_free()
+			remove_vehicle(ridden)
 		_remove_actor(actor)
 
 
-func _finish_player(state: PlayerState, outcome: String, cause: String) -> void:
+func _finish_player(state: PlayerState, outcome: String, cause: String, killed_by: String) -> void:
 	if state.finished:
 		return
 	state.finished = true
+	state.sign_out_left = -1.0
 	var actor := state.actor
-	var extracted := outcome == "extracted"
+	var left := outcome == "left"
 	var loot: Array[String] = []
 	var kept: Array[String] = []
 	var brought_home: Array[String] = []
 	var lost: Array[String] = []
-	if extracted:
+	if left:
 		loot.assign(actor.inventory.items)
 		kept.assign(actor.gear_items.filter(func(id: String) -> bool:
 			return not ItemDB.has_tag(id, "starter")))
 		brought_home.assign(actor.get_drop_items())
-		if state.extracted_vehicle != "":
-			kept.append(state.extracted_vehicle)
-			brought_home.append(state.extracted_vehicle)
+		if state.rode_home != "":
+			kept.append(state.rode_home)
+			brought_home.append(state.rode_home)
+	elif world.keep_gear_on_death:
+		lost.assign(actor.inventory.items)
+		kept.assign(actor.gear_items.filter(func(id: String) -> bool:
+			return not ItemDB.has_tag(id, "starter")))
+		brought_home.assign(kept)
 	else:
 		lost.assign(actor.get_drop_items())
 	# A vehicle you brought is lost unless you rode it (or another) back out.
 	var left_behind := state.deployed_vehicles.duplicate()
-	left_behind.erase(state.extracted_vehicle)
+	left_behind.erase(state.rode_home)
 	lost.append_array(left_behind)
 	var result := {
 		"outcome": outcome,
 		"cause": cause,
+		"killed_by": killed_by,
 		"world_id": world.id,
 		"loot": loot,
 		"kept_gear": kept,
 		"brought_home": brought_home,
 		"loot_value": ItemDB.total_value(loot),
 		"lost": lost,
+		"banked": state.banked.duplicate(),
+		"banked_value": ItemDB.total_value(state.banked),
 		"kills": state.kills,
-		"mastery_xp": state.mastery.report(extracted),
-		"time_in_raid": world.raid_duration - time_left,
+		"mastery_xp": state.mastery.report(),
 	}
 	if apply_to_profile:
 		apply_result(result)
 	player_finished.emit(actor, result)
-	if mode == Mode.SOLO and actor == player:
-		is_over = true
-		ended.emit(result)
 
 
-## Writes a finished run into the local profile: what came home, and the record.
+## Writes a finished life into the local profile: what came home, and the record.
 static func apply_result(result: Dictionary) -> void:
 	var home: Array = result.get("brought_home", [])
 	if not home.is_empty():
@@ -419,7 +654,7 @@ func _exit_tree() -> void:
 		Worlds.current = null
 
 
-## One player's run: who they are, what they brought, and how they are doing.
+## One life of a player: who they are, what they brought, and how they are doing.
 class PlayerState:
 	extends RefCounted
 
@@ -429,7 +664,17 @@ class PlayerState:
 	## Mastery variants the player deployed with (track -> variant id).
 	var picks := {}
 	var kills := 0
-	## Vehicle items the player deployed with. Lost unless they extract riding one.
+	## Vehicle items the player deployed with. Lost unless they leave riding one.
 	var deployed_vehicles: Array[String] = []
-	var extracted_vehicle := ""
+	## The vehicle they were riding when they left.
+	var rode_home := ""
+	## What they banked at depots this life. Already in the stash.
+	var banked: Array[String] = []
+	## Seconds left of a sign-out, or below zero when there is none.
+	var sign_out_left := -1.0
+	var sign_out_total := 0.0
+	## The player is gone and the body is waiting out the sign-out.
+	var sign_out_forced := false
+	## `Raid.clock` when they last gave or took a hit.
+	var last_combat := -INF
 	var finished := false

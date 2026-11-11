@@ -1,6 +1,6 @@
 extends CanvasLayer
-## Hold Tab in a raid to see everyone playing: who is still in, who got out,
-## who went down, and kills. Plain themed controls so the UI theme styles it.
+## Hold Tab in a raid to see everyone playing: who is fighting, who is down,
+## who has left, and kills across all their lives. Plain themed controls so the UI theme styles it.
 
 const RaidRoster := preload("res://core/ui/raid_roster.gd")
 
@@ -60,7 +60,7 @@ func _process(delta: float) -> void:
 		return
 	_refresh_left = refresh_interval
 	# The roster keeps watching while the board is closed, so someone who
-	# joins and extracts between looks is still listed.
+	# joins and leaves between looks is still listed.
 	if visible:
 		rebuild()
 	else:
@@ -79,9 +79,8 @@ func rebuild() -> void:
 	if roster == null:
 		return
 	roster.refresh()
-	var secs := int(maxf(raid.time_left, 0.0))
-	_title.text = "%s   %02d:%02d   Bots left %d" % [
-		raid.world.display_name if raid.world else "Raid", secs / 60, secs % 60, roster.bots_alive()]
+	_title.text = "%s   Bots %d" % [
+		raid.world.display_name if raid.world else "Raid", roster.bots_alive()]
 	for child in _grid.get_children():
 		_grid.remove_child(child)
 		child.queue_free()

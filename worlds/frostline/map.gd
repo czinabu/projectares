@@ -2,7 +2,7 @@ extends Node3D
 ## Greybox Frostline: a round glacier shelf around a central relay mast.
 ##
 ## Layout is radial rather than a grid: a mast in the middle, a ring of six
-## outposts, broken ice ridges for cover, and exits on the outer rim. Positions
+## outposts, broken ice ridges for cover, and depots on the outer rim. Positions
 ## are fixed with a seeded jitter, so the map is the same every raid while loot
 ## and spawns vary. Only the map contract in WorldDef matters to the rest of
 ## the game.
@@ -131,11 +131,11 @@ func _build_ridges() -> void:
 			_box(Vector3(length, height, 1.6), at, ROCK, -angle + PI / 2.0)
 
 
-## Exits on opposite sides of the rim, player spawns between them.
+## Depots on opposite sides of the rim, player spawns between them.
 func _build_rim() -> void:
 	for angle: float in [PI / 6.0, PI / 6.0 + PI]:
-		var zone := ExtractionZone.new()
-		zone.add_to_group("exit")
+		var zone := Depot.new()
+		zone.add_to_group("depot")
 		zone.position = _polar(RIM, angle) + Vector3(0, 2.0, 0)
 		add_child(zone)
 	for i in 4:
