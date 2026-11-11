@@ -2974,6 +2974,8 @@ func _test_plaza_online() -> void:
 			check(bo_me.health.health == bo_me.health.max_health and not bo_me.is_dead, "nobody can be shot in the plaza")
 			var looking := PlazaView.inspect_target(ada.raid, me, me.get_eye_position(), aim, 60.0, 9.0)
 			check(looking == bo_seen, "looking at a player picks them for the gear card")
+			check(PlazaView.gear_tag(bo_seen).begins_with(bo_seen.display_name.to_upper()) and "Kit worth" in PlazaView.gear_tag(bo_seen),
+					"their gear is written on a tag over their head")
 
 	# Through the gate: the same account, now in the warzone's lobby.
 	var war_port: int = ada.routes.get("ashfront", -1)
@@ -3030,11 +3032,20 @@ func _test_plaza_online() -> void:
 		var shops: Array = main.raid.map.shops()
 		if not shops.is_empty():
 			var shop_id: String = shops[0].id
+			var stall: Node3D = null
+			for front: Node in main.raid.get_tree().get_nodes_in_group("shop_front"):
+				if front.get_meta("shop_id", "") == shop_id and main.raid.map.is_ancestor_of(front):
+					stall = front
+			main.raid.player.global_position = stall.global_position + Vector3(0, 0.1, 0)
 			main.use_portal("shop:" + shop_id)
 			await frames(3)
 			check(main.shop_view != null and main.shop_view.panel.shop_filter == shop_id
 					and main.controller.input_blocked and main.raid != null,
 					"a storefront opens that shop's screen without leaving the plaza")
+			check(main.shop_screen != null and main.shop_screen.get_parent() == stall.get_node("Screen")
+					and main.shop_screen.focused and main.get_viewport().get_camera_3d() != main.controller.camera
+					and main.hud != null and not main.hud.visible and not main.plaza_view.visible,
+					"the shop comes up on the terminal on its counter and the view moves in to it")
 			var panel: Control = main.shop_view.panel
 			var before: int = panel.credits()
 			var stock: Array = panel.find_children("*", "Button", true, false).filter(func(b: Node) -> bool:
@@ -3047,7 +3058,9 @@ func _test_plaza_online() -> void:
 				check(main.shop_view.panel.credits() < before, "buying at the stall goes through the server")
 			main.close_shop()
 			await frames(2)
-			check(main.shop_view == null and not main.controller.input_blocked, "stepping away gives control back")
+			check(main.shop_view == null and main.shop_screen == null and not main.controller.input_blocked
+					and main.get_viewport().get_camera_3d() == main.controller.camera and main.hud.visible,
+					"stepping away gives control, the view and the HUD back")
 		main.use_portal("home")
 		await _wait_until(func() -> bool: return main.base != null, 600)
 		check(main.base != null and main.raid == null and main.hub.in_lobby(),

@@ -124,7 +124,7 @@ to run every raid world, or add `--no-plaza` for one world alone on the port.
 Joining a server puts you in its plaza, the Concourse: a walled safe zone
 shared by everyone on that server. Weapons are locked and nobody can be hurt.
 You appear wearing your equipped loadout, and it never leaves your stash, so
-nothing is at risk there. Look at another player to see what they are wearing.
+nothing is at risk there. Look at another player and a tag over their head lists what they are wearing.
 A bike in your loadout is parked beside you to ride around.
 
 Walk into a glowing pad and press **E** to use it:
@@ -134,7 +134,8 @@ Walk into a glowing pad and press **E** to use it:
   back in the Concourse.
 - **Quarters** (west): the door to your home base. Its door leads back here.
 - **Storefronts** (the corners): one for every shop. Step up to the counter
-  to buy and sell without leaving the plaza.
+  and press E to use its terminal: buy and sell on the screen without leaving
+  the plaza.
 - **Arena** and **Clan hall**: built, and closed until those features arrive.
 - **Exit** (south): leaves the server.
 

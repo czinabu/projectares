@@ -61,6 +61,9 @@ var base_hud: CanvasLayer
 var plaza_view: CanvasLayer
 ## The shop screen while trading at a plaza storefront, else null.
 var shop_view: ShopView
+## The storefront terminal's live screen showing `shop_view`, else null.
+var shop_screen: WorldScreen
+var _shop_viewport: SubViewport
 ## Server: every session it runs (the plaza first, then the raid worlds).
 var sessions: Array[NetSession] = []
 ## Client: where this server's plaza is, once you have been in it. Leaving a
@@ -499,6 +502,7 @@ func _show_hub(result: Dictionary) -> void:
 
 
 func _leave_raid() -> void:
+	close_shop()
 	_death_result = {}
 	controller = null
 	hud = null
@@ -832,22 +836,58 @@ func open_shop(shop_id: String) -> void:
 	shop_view.name = "ShopView"
 	shop_view.panel = panel
 	shop_view.closed.connect(close_shop)
+	# The shop comes up on the storefront's terminal, or on a screen held up
+	# in front of you where a storefront has none.
+	_shop_viewport = SubViewport.new()
+	_shop_viewport.name = "ShopScreen"
+	_shop_viewport.size = Vector2i(1280, 720)
+	_shop_viewport.disable_3d = true
+	_shop_viewport.add_child(shop_view)
+	raid.add_child(_shop_viewport)
+	shop_screen = WorldScreen.new()
+	shop_screen.name = "LiveScreen"
+	shop_screen.viewport = _shop_viewport
+	var stall := PlazaViewScript.portal_at(raid, raid.player.global_position) if raid.player else null
+	var mount := stall.get_node_or_null("Screen") as Node3D if stall else null
+	if mount:
+		mount.add_child(shop_screen)
+	else:
+		raid.add_child(shop_screen)
+		var me := raid.player
+		var ahead := Vector3(me.get_aim_dir().x, 0, me.get_aim_dir().z).normalized() if me else Vector3.FORWARD
+		var at := (me.get_eye_position() if me else Vector3.ZERO) + ahead * 1.4
+		shop_screen.global_transform = Transform3D(Basis.looking_at(ahead), at)
+	shop_screen.focus()
+	_show_overlays(false)
 	# Nothing changes here until the server answers; a refusal says why.
 	net.lobby_error.connect(func(reason: String) -> void:
 		if shop_view != null and is_instance_valid(shop_view) and shop_view.panel.has_method("show_message"):
 			shop_view.panel.call("show_message", reason))
-	raid.add_child(shop_view)
 	if controller != null and is_instance_valid(controller):
 		controller.input_blocked = true
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
 
+## The HUD, nameplates and plaza prompts step aside while a screen in the
+## world is in use, so nothing is drawn over it.
+func _show_overlays(on: bool) -> void:
+	for layer: CanvasLayer in [hud, nameplates, plaza_view]:
+		if layer != null and is_instance_valid(layer):
+			layer.visible = on and (layer != nameplates or GameSettings.show_nameplates)
+
+
 func close_shop() -> void:
 	if shop_view == null:
 		return
-	if is_instance_valid(shop_view):
-		shop_view.queue_free()
+	if shop_screen != null and is_instance_valid(shop_screen):
+		shop_screen.unfocus()
+		shop_screen.queue_free()
+	shop_screen = null
+	if _shop_viewport != null and is_instance_valid(_shop_viewport):
+		_shop_viewport.queue_free()
+	_shop_viewport = null
 	shop_view = null
+	_show_overlays(true)
 	if controller != null and is_instance_valid(controller) and raid != null:
 		controller.input_blocked = false
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
@@ -987,33 +1027,28 @@ static func _arg(args: PackedStringArray, flag: String, fallback: String) -> Str
 	return fallback
 
 
-## The frame round the shop screen at a storefront: a dimmed plaza behind, the
-## panel in the middle, and a way out (the button or Esc).
+## What a storefront's terminal shows: the shop panel on the screen's dark
+## glass, and a way out (the button or Esc).
 class ShopView:
-	extends CanvasLayer
+	extends Control
 
 	signal closed
 
 	var panel: Control
 
 	func _ready() -> void:
-		layer = 5
-		var shade := ColorRect.new()
-		shade.color = Color(0, 0, 0, 0.55)
-		shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-		add_child(shade)
-		var frame := PanelContainer.new()
-		frame.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
-		frame.custom_minimum_size = Vector2(760, 560)
-		frame.offset_left = -380
-		frame.offset_right = 380
-		frame.offset_top = -280
-		frame.offset_bottom = 280
-		add_child(frame)
+		set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		var glass := ColorRect.new()
+		glass.color = Color(0.025, 0.03, 0.035)
+		glass.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		add_child(glass)
 		var margin := MarginContainer.new()
-		for side: String in ["left", "right", "top", "bottom"]:
-			margin.add_theme_constant_override("margin_" + side, 18)
-		frame.add_child(margin)
+		margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		for side: String in ["left", "right"]:
+			margin.add_theme_constant_override("margin_" + side, 190)
+		for side: String in ["top", "bottom"]:
+			margin.add_theme_constant_override("margin_" + side, 40)
+		add_child(margin)
 		var box := VBoxContainer.new()
 		box.add_theme_constant_override("separation", 10)
 		margin.add_child(box)
@@ -1025,6 +1060,7 @@ class ShopView:
 		scroll.add_child(panel)
 		var leave := Button.new()
 		leave.text = "Step away  (Esc)"
+		leave.custom_minimum_size = Vector2(0, 44)
 		leave.pressed.connect(func() -> void: closed.emit())
 		box.add_child(leave)
 

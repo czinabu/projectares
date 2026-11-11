@@ -318,17 +318,49 @@ func _plaza_shots(out_dir: String, raid: Raid, camera: Camera3D, lineup: Array[A
 	var view: CanvasLayer = load("res://core/social/plaza_view.gd").new()
 	view.setup(raid, {})
 	raid.add_child(view)
-	var to := lineup[1].global_position - raid.player.global_position
-	controller.yaw = atan2(-to.x, -to.z)
-	controller.pitch = -0.05
-	await _settle(30)
-	await _shot(out_dir.path_join("%s_inspect.png" % raid.world.id))
+	# The line-up may have been cleared away by now; shoot whoever is left.
+	var subject: Actor = null
+	for other in lineup:
+		if is_instance_valid(other):
+			subject = other
+	if subject:
+		var to := subject.global_position - raid.player.global_position
+		controller.yaw = atan2(-to.x, -to.z)
+		controller.pitch = -0.05
+		await _settle(30)
+		await _shot(out_dir.path_join("%s_inspect.png" % raid.world.id))
 	for portal in get_tree().get_nodes_in_group("portal"):
 		if portal.get_meta("destination", "") == "home":
 			raid.player.global_position = portal.global_position + Vector3(0, 0.2, 0)
 			controller.yaw = PI / 2.0
 	await _settle(30)
 	await _shot(out_dir.path_join("%s_portal.png" % raid.world.id))
+	# A storefront's terminal, from its pad and then in use.
+	var stall: Node3D = get_tree().get_nodes_in_group("shop_front")[0]
+	var mount: Node3D = stall.get_node("Screen")
+	raid.player.global_position = stall.global_position + Vector3(0, 0.2, 0)
+	var to_screen := mount.global_position - raid.player.global_position
+	controller.yaw = atan2(-to_screen.x, -to_screen.z)
+	controller.pitch = -0.1
+	await _settle(30)
+	await _shot(out_dir.path_join("%s_stall.png" % raid.world.id))
+	var screen_view := SubViewport.new()
+	screen_view.size = Vector2i(1280, 720)
+	screen_view.disable_3d = true
+	var shop: Control = (load("res://core/main.gd") as GDScript).ShopView.new()
+	shop.panel = load("res://core/economy/shop_panel.gd").new()
+	shop.panel.set("shop_filter", stall.get_meta("shop_id", ""))
+	screen_view.add_child(shop)
+	raid.add_child(screen_view)
+	var live := WorldScreen.new()
+	live.viewport = screen_view
+	mount.add_child(live)
+	live.focus()
+	hud.visible = false
+	view.visible = false
+	await _settle(40)
+	await _shot(out_dir.path_join("%s_stall_screen.png" % raid.world.id))
+	live.unfocus()
 
 
 func _settle(count: int) -> void:
