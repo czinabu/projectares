@@ -1,8 +1,10 @@
 extends CanvasLayer
 ## Hold Tab in a raid to see everyone playing: who is fighting, who is down,
-## who has left, and kills across all their lives. Plain themed controls so the UI theme styles it.
+## who has left, kills across all their lives, and their renown and bounty. Plain themed controls so the UI theme styles it.
 
 const RaidRoster := preload("res://core/ui/raid_roster.gd")
+const RenownLedger := preload("res://core/progression/renown_ledger.gd")
+const COLUMNS := 4
 
 ## How often the roster is checked, and the table rebuilt while open, in seconds.
 var refresh_interval := 0.25
@@ -30,7 +32,7 @@ func _ready() -> void:
 	add_child(root)
 	_panel = PanelContainer.new()
 	_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_panel.custom_minimum_size = Vector2(520, 0)
+	_panel.custom_minimum_size = Vector2(680, 0)
 	root.add_child(_panel)
 	var margin := MarginContainer.new()
 	for side in ["left", "right", "top", "bottom"]:
@@ -43,7 +45,7 @@ func _ready() -> void:
 	box.add_child(_title)
 	box.add_child(HSeparator.new())
 	_grid = GridContainer.new()
-	_grid.columns = 3
+	_grid.columns = COLUMNS
 	box.add_child(_grid)
 	visible = false
 
@@ -87,18 +89,30 @@ func rebuild() -> void:
 	_cell("Player", true)
 	_cell("Status", true)
 	_cell("Kills", true)
+	_cell("Renown", true)
 	for entry in roster.entries:
 		_cell(("%s (you)" % entry.name) if entry.is_me else String(entry.name))
 		_cell(entry.status)
 		_cell(str(entry.kills) if roster.kills_known(entry) else "-")
+		_cell(renown_cell(entry))
 
 
-## The text in each row, for tests: [[name, status, kills], ...].
+## Rank and session renown, with the price on their head if there is one.
+static func renown_cell(entry: Dictionary) -> String:
+	var text := "%s  %d" % [RenownLedger.rank_name(entry.get("rank", 0)), entry.get("renown", 0)]
+	if entry.get("marked", false):
+		text += "  MARKED"
+	if entry.get("bounty", 0) > 0:
+		text += "  Bounty %d" % entry.bounty
+	return text
+
+
+## The text in each row, for tests: [[name, status, kills, renown], ...].
 func rows() -> Array:
 	var out := []
 	var cells := _grid.get_children()
-	for i in range(3, cells.size(), 3):
-		out.append([cells[i].text, cells[i + 1].text, cells[i + 2].text])
+	for i in range(COLUMNS, cells.size(), COLUMNS):
+		out.append([cells[i].text, cells[i + 1].text, cells[i + 2].text, cells[i + 3].text])
 	return out
 
 

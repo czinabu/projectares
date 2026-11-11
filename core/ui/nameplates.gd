@@ -1,16 +1,21 @@
 extends CanvasLayer
-## Names and health over other players you can see. Hidden behind walls,
-## behind you, past `max_distance`, and once someone is down, so a nameplate
-## never gives away more than your own eyes would.
+## Names, ranks and health over other players you can see. Hidden behind
+## walls, behind you, past `max_distance`, and once someone is down, so a
+## nameplate never gives away more than your own eyes would. The exceptions
+## are earned: a player on a long streak (`Actor.exposed`) and the Marked show
+## to everyone, through walls and at any distance.
 
 const RaidRoster := preload("res://core/ui/raid_roster.gd")
+const RenownLedger := preload("res://core/progression/renown_ledger.gd")
 
 ## Nameplates show up to this far away, in metres, fading over the last part.
 var max_distance := 45.0
 var fade_distance := 10.0
 ## Height above an actor's feet where the plate sits.
 var head_offset := 2.15
-var plate_size := Vector2(160, 34)
+var plate_size := Vector2(220, 34)
+## How strongly a hunted player's plate shows when eyes alone would not see them.
+var hunted_alpha := 0.8
 
 var raid: Raid
 ## The local player: never gets a plate, and does not block the view check.
@@ -55,7 +60,7 @@ func update_plates() -> void:
 				_plates[id] = plate
 			var label: Label = plate.get_child(0)
 			var bar: ProgressBar = plate.get_child(1)
-			label.text = actor.display_name
+			label.text = plate_text(actor)
 			bar.value = actor.health.health / maxf(actor.health.max_health, 0.001) * 100.0
 			plate.position = camera.unproject_position(at) - Vector2(plate_size.x * 0.5, plate_size.y)
 			plate.modulate.a = alpha
@@ -70,6 +75,23 @@ func update_plates() -> void:
 func _visibility(camera: Camera3D, actor: Actor, at: Vector3) -> float:
 	if camera.is_position_behind(at):
 		return 0.0
+	var seen := _sight(camera, actor, at)
+	if actor.exposed or actor.marked:
+		return maxf(seen, hunted_alpha)
+	return seen
+
+
+## The words on a plate: name, rank, and what hunting them would pay.
+static func plate_text(actor: Actor) -> String:
+	var text := "%s  %s" % [actor.display_name, RenownLedger.rank_name(actor.rank)]
+	if actor.marked:
+		text += "  MARKED"
+	if actor.bounty > 0:
+		text += "  Bounty %d" % actor.bounty
+	return text
+
+
+func _sight(camera: Camera3D, actor: Actor, at: Vector3) -> float:
 	var distance := camera.global_position.distance_to(at)
 	if distance > max_distance:
 		return 0.0

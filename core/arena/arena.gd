@@ -219,12 +219,13 @@ func key_of(actor: Actor) -> String:
 
 
 ## The arena's own kit rules: no healing and no vehicles in the pit.
-func add_player(p_kit: Array = [], p_mastery: Dictionary = {}, p_name := "Raider") -> Actor:
+func add_player(p_kit: Array = [], p_mastery: Dictionary = {}, p_name := "Raider",
+		p_owner := "", p_renown := 0) -> Actor:
 	var kit: Array[String] = []
 	for id: String in (p_kit if not p_kit.is_empty() else world.starter_loadout()):
 		if not ItemDB.has_tag(id, "heal") and not ItemDB.has_tag(id, "vehicle"):
 			kit.append(id)
-	var actor := super(kit, p_mastery, p_name)
+	var actor := super(kit, p_mastery, p_name, p_owner, p_renown)
 	_dirty = true
 	return actor
 

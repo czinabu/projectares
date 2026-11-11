@@ -14,7 +14,8 @@ const LEFT := "Left"
 var raid: Raid
 ## The local player, or null on a server.
 var me: Actor
-## One per player seen: { name, status, kills, is_me, lives }. `lives` maps
+## One per player seen: { name, status, kills, is_me, lives, renown, rank,
+## bounty, marked }. `lives` maps
 ## each actor of theirs that was seen to the kills it made.
 var entries: Array[Dictionary] = []
 var _by_name := {}
@@ -79,6 +80,12 @@ func refresh() -> void:
 			entry.kills_known = true
 		elif not entry.lives.has(id):
 			entry.lives[id] = 0
+		# Their newest body carries their standing.
+		if not actor.is_dead or not entry.has("renown"):
+			entry["renown"] = actor.renown
+			entry["rank"] = actor.rank
+			entry["bounty"] = actor.bounty
+			entry["marked"] = actor.marked
 		if actor.is_dead:
 			down[entry.name] = true
 		elif state == null or not state.finished:

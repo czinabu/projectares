@@ -1,7 +1,7 @@
 # Dedicated server image for Project Ares.
 #
 # Build:  docker build -t ares-server .
-# Run:    docker run -d -t --init --name ares -p 24565:24565/udp -v ares-data:/data ares-server
+# Run:    docker run -d -t --init --name ares -p 24565-24569:24565-24569/udp -v ares-data:/data ares-server
 #
 # The first build downloads Godot and its export templates (about 1.3 GB), so it
 # takes a few minutes. Later builds reuse that step and only re-export the game.
@@ -42,8 +42,8 @@ RUN useradd --create-home --shell /usr/sbin/nologin ares \
 COPY --from=build /src/build/server/ares_server.x86_64 /app/ares_server
 USER ares
 WORKDIR /home/ares
-# The raid, and the arena ten ports up.
-EXPOSE 24565/udp 24575/udp
+# The plaza and raid worlds, and the arena ten ports above the plaza.
+EXPOSE 24565-24569/udp 24575/udp
 # Player stashes are saved here. Keep it on a volume so they survive updates.
 VOLUME /data
 # Everything after "--" goes to the game. Override CMD to change the world,

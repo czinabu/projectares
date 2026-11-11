@@ -37,6 +37,14 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   `WorldDef.keep_gear_on_death` a dead player drops only the backpack and the
   equipped gear returns in the result's `kept`. A gentle world pays for that
   with basic loot tables; rare gear stays in the full-loot PvP world.
+- Renown (`core/progression/renown_ledger.gd`) is decided by the `Raid`'s
+  ledger and nowhere else. It is kept per owner key (`add_player`'s
+  `p_owner`: the account id online), never per name, so it carries across a
+  player's lives. Session renown is at stake on death; lifetime renown only
+  grows, sets the rank, and travels home in the result's `renown`. The
+  public part (rank, streak, bounty, exposed, marked) is copied onto the
+  `Actor` for views to read, and news for everyone goes out on
+  `Raid.war_feed`. Tune it with the ledger's vars.
 - Mastery pays for using gear, never for leaving alive, or signing out over
   and over would farm it.
 - Blocking and parrying happen in `Weapon.modify_incoming`, which `Combat.deal`
@@ -122,6 +130,19 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   (base, social hub) reports it with `NetSession._set_presence(peer, where)` and
   a name in `SocialService.PLACE_NAMES`. Settings live in
   `core/settings/game_settings.gd` (its own save file); a server never reads them.
+- Safe zones: a world with `WorldDef.safe_zone` (the plaza, `worlds/plaza`)
+  is a social space run by the same `Raid` and `NetSession`. `Combat.deal`
+  refuses every hit there, `Actor.weapons_locked` stops attacks, abilities
+  and healing, and `NetSession` shows the loadout with `StashService.showcase`
+  instead of `deploy`, so nothing leaves the stash and nothing is settled.
+  Doorways are "portal" markers (see `WorldDef`); `core/social/plaza_view.gd`
+  offers them and `main.gd use_portal` decides where each destination leads.
+  Use `Worlds.raid_worlds()` for anything you deploy into.
+- A server runs several `NetSession`s in one process (plaza on the port, raid
+  worlds after it, `main.gd start_server`), each raid in its own 3D world
+  (`NetSession.isolated`) and all sharing one `StashService`. Never use
+  `Worlds.current` for rules: ask `Worlds.of(node)` or `Raid.of(node)`, and
+  filter any scan of the "actors" group with `Raid.together`.
 - `Raid` never writes to `Profile` on a server. Results travel in the
   `player_finished` dictionary. Online the server settles them into the
   account; `Raid.apply_result` is only for the local solo profile.

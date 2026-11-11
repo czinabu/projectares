@@ -29,6 +29,7 @@ signal look_changed(appearance: Dictionary)
 const MasteryPanel := preload("res://core/progression/mastery_panel.gd")
 const CharacterPanel := preload("res://core/ui/character_panel.gd")
 const MasteryBook := preload("res://core/progression/mastery_book.gd")
+const RenownLedger := preload("res://core/progression/renown_ledger.gd")
 const ShopPanel := preload("res://core/economy/shop_panel.gd")
 const Economy := preload("res://core/economy/economy.gd")
 
@@ -55,6 +56,7 @@ var _connect_box: VBoxContainer
 var _lobby_box: VBoxContainer
 var _lobby_title: Label
 var _lobby_deploy: Button
+var _lobby_leave: Button
 
 
 func _ready() -> void:
@@ -154,7 +156,7 @@ func _ready() -> void:
 	_build_lobby(box)
 	var page := box
 	box = _solo_box
-	for world in Worlds.all():
+	for world in Worlds.raid_worlds():
 		var button := Button.new()
 		button.text = "Deploy to %s" % world.display_name
 		button.tooltip_text = world.description
@@ -226,13 +228,25 @@ func _refresh_gear() -> void:
 		Profile.validate_loadout()
 	_refresh_loadout()
 	var record: Variant = account if in_lobby() else Profile
-	_stash.text = "%s\nStash value %d   Drops %d   Left alive %d   Kills %d" % [
+	var lifetime := int(record.get("renown")) if record.get("renown") != null else 0
+	_stash.text = "%s\nStash value %d   Drops %d   Left alive %d   Kills %d\n%s" % [
 		ItemDB.summarize(stash_items()), ItemDB.total_value(stash_items()),
-		record.get("raids_played"), record.get("raids_extracted"), record.get("kills")]
+		record.get("raids_played"), record.get("raids_extracted"), record.get("kills"),
+		renown_text(lifetime)]
 	_shop.refresh()
 	# Clothing in the stash unlocks its outfits in the customizer.
 	character.owned = Economy.unlocked_outfits(stash_items())
 	character.set_appearance(Profile.appearance)
+
+
+## Rank and lifetime renown, as shown under the stash.
+static func renown_text(lifetime: int) -> String:
+	var rank := RenownLedger.rank_name(RenownLedger.rank_for(lifetime))
+	var more := RenownLedger.to_next_rank(lifetime)
+	if more <= 0:
+		return "Rank %s   Renown %d" % [rank, lifetime]
+	return "Rank %s   Renown %d   (%d to %s)" % [rank, lifetime, more,
+			RenownLedger.rank_name(RenownLedger.rank_for(lifetime) + 1)]
 
 
 ## Item ids in the stash that fit a slot, best first, without duplicates.
@@ -310,7 +324,7 @@ func _build_online(box: VBoxContainer) -> void:
 	var host_row := HBoxContainer.new()
 	_host_world = OptionButton.new()
 	_host_world.custom_minimum_size = Vector2(170, 0)
-	for world in Worlds.all():
+	for world in Worlds.raid_worlds():
 		_host_world.add_item(world.display_name)
 		_host_world.set_item_metadata(_host_world.item_count - 1, world.id)
 	host_row.add_child(_host_world)
@@ -357,10 +371,16 @@ func _build_lobby(box: VBoxContainer) -> void:
 	_lobby_deploy.add_theme_font_size_override("font_size", 22)
 	_lobby_deploy.pressed.connect(func() -> void: online_deploy_requested.emit())
 	_lobby_box.add_child(_lobby_deploy)
-	var leave := Button.new()
-	leave.text = "Leave the server"
-	leave.pressed.connect(func() -> void: online_leave_requested.emit())
-	_lobby_box.add_child(leave)
+	_lobby_leave = Button.new()
+	_lobby_leave.text = "Leave the server"
+	_lobby_leave.pressed.connect(func() -> void: online_leave_requested.emit())
+	_lobby_box.add_child(_lobby_leave)
+
+
+## What the lobby's leave button says: it leads back to the plaza when the
+## server has one.
+func set_leave_text(text: String) -> void:
+	_lobby_leave.text = text
 
 
 func in_lobby() -> bool:

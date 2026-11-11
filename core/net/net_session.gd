@@ -58,6 +58,8 @@ signal run_finished(result: Dictionary)
 signal failed(reason: String)
 ## Client: the connection dropped after joining.
 signal disconnected
+## Client: the server said which port each of its worlds runs on.
+signal routes_changed(routes: Dictionary)
 ## Client: the phone's contacts, messages, invites and news changed (see
 ## `SocialService.snapshot`).
 signal social_changed(social: Dictionary)
@@ -72,7 +74,7 @@ signal world_invite_accepted(invite: Dictionary)
 signal base_visit_requested(owner_name: String, stash: Array, loadout: Dictionary)
 
 const DEFAULT_PORT := 24565
-const PROTOCOL := 8
+const PROTOCOL := 9
 const StashService := preload("res://core/account/stash_service.gd")
 const Economy := preload("res://core/economy/economy.gd")
 const SocialService := preload("res://core/social/social_service.gd")
@@ -110,6 +112,14 @@ var world_id := ""
 ## the world's own) and whether players spawn together.
 var bot_count := -1
 var squad_spawn := false
+## Server, set before `host`: the raid gets a 3D world of its own, so several
+## sessions (a plaza and a warzone) can run in one process without their maps
+## colliding.
+var isolated := false
+## Where to find the other worlds on this server: world id -> port. A server
+## hosting a safe zone fills this in before `host`, and clients receive it
+## when they sign in, so a plaza gate knows where to send you.
+var routes := {}
 ## Client: called with the server's world, returns the kit to deploy with.
 ## Server: owns every player's stash, loadout and mastery. Set its
 ## `save_dir` or `persist` before `host`.
@@ -183,10 +193,12 @@ var _ride_entry: Array = [] # the server's last answer about your ride, once com
 var _sent_kills := {}    # actor id -> kill count last sent (server)
 var _board_sent := {}    # peer id -> [board text, tick sent] (server, arena)
 var _board_dirty := false
+var _sent_standing := {} # actor id -> public renown standing last sent (server)
 var _tick := 0
 var _died_at := {}       # peer id -> msec when their last life ended in a death (server)
 var _finished := false   # client: signed out, so the server closing the connection is expected
 var _can_redeploy := false # client: dead and still connected
+var _space: SubViewport  # the raid's own 3D world when `isolated` (server)
 
 
 func _enter_tree() -> void:
@@ -247,11 +259,23 @@ func _start_server_raid() -> void:
 	var world := world_for(world_id)
 	raid = world.new_raid()
 	raid.name = "Raid"
-	add_child(raid)
+	if isolated:
+		if _space == null:
+			_space = SubViewport.new()
+			_space.name = "Space"
+			_space.own_world_3d = true
+			_space.render_target_update_mode = SubViewport.UPDATE_DISABLED
+			add_child(_space)
+		_space.add_child(raid)
+	else:
+		add_child(raid)
 	raid.actor_spawned.connect(_on_server_actor_spawned)
 	raid.actor_removed.connect(_on_server_actor_removed)
 	raid.player_finished.connect(_on_server_player_finished)
 	raid.player_banked.connect(_on_server_player_banked)
+	raid.war_feed.connect(func(text: String) -> void:
+		for peer in _joined_peers:
+			_war_feed.rpc_id(peer, text))
 	raid.sign_out_changed.connect(_on_server_sign_out_changed)
 	raid.container_spawned.connect(_on_server_container_spawned)
 	raid.vehicle_spawned.connect(_on_server_vehicle_spawned)
@@ -307,6 +331,7 @@ func _clear_tables() -> void:
 	_ride_turn = 0.0
 	_ride_entry = []
 	_sent_kills.clear()
+	_sent_standing.clear()
 	_actor_account.clear()
 	_board_sent.clear()
 
@@ -365,6 +390,7 @@ func _on_server_actor_removed(actor: Actor) -> void:
 	_switches.erase(id)
 	_dead_kind.erase(id)
 	_sent_kills.erase(id)
+	_sent_standing.erase(id)
 	var peer: int = _actor_peer.get(actor, 0)
 	_actor_peer.erase(actor)
 	if peer != 0 and _peer_actor.get(peer) == actor:
@@ -489,6 +515,8 @@ func _sign_in(p_name: String, p_secret: String) -> void:
 			if other in _api.get_peers():
 				_api.multiplayer_peer.disconnect_peer(other)
 	_peer_account[peer] = result.account_id
+	if not routes.is_empty():
+		_routes.rpc_id(peer, routes)
 	_send_account(peer)
 	_social_joined(peer)
 
@@ -594,7 +622,10 @@ func _request_join() -> void:
 		_lobby_error.rpc_id(peer, "Not yet. You can drop in again in a moment.")
 		return
 	var account_id: String = _peer_account[peer]
-	var deployed: Dictionary = stash.deploy(account_id, raid.world)
+	# In a safe zone the loadout is worn, not risked: it never leaves the
+	# stash, and there is no run to settle afterwards.
+	var safe := raid.world.safe_zone
+	var deployed: Dictionary = stash.showcase(account_id, raid.world) if safe else stash.deploy(account_id, raid.world)
 	if not deployed.ok:
 		_lobby_error.rpc_id(peer, deployed.error)
 		return
@@ -603,9 +634,12 @@ func _request_join() -> void:
 	var returning := peer in _joined_peers
 	_joined_peers.erase(peer)
 	_joining_look = look_for_peer(peer)
-	var actor := raid.add_player(deployed.kit, deployed.picks, stash.snapshot(account_id).name)
+	var who: Dictionary = stash.snapshot(account_id)
+	# Renown is kept under the account, never under a name the client chose.
+	var actor := raid.add_player(deployed.kit, deployed.picks, who.name, account_id, int(who.get("renown", 0)))
 	_joining_look = {}
-	_actor_account[actor] = account_id
+	if not safe:
+		_actor_account[actor] = account_id
 	if raid is Arena:
 		raid.set_key(actor, account_id)
 	_send_account(peer)
@@ -626,7 +660,7 @@ func _request_join() -> void:
 		if peer in _api.get_peers():
 			_inventory.rpc_id(peer, actor.inventory.items))
 	_joined_peers.append(peer)
-	_social_moved(peer, "raid")
+	_social_moved(peer, "hub" if safe else "raid")
 	_welcome.rpc_id(peer, _ids[actor])
 	if returning:
 		_send_spawn(peer, actor)
@@ -640,6 +674,8 @@ func _request_join() -> void:
 		_send_vehicle(peer, id)
 	for id: int in _sent_kills:
 		_kills.rpc_id(peer, id, _sent_kills[id])
+	for id: int in _sent_standing:
+		_standing.rpc_id(peer, id, _sent_standing[id])
 
 
 ## Arena: a player in it asks for something (challenge, accept, bet...).
@@ -807,6 +843,12 @@ func _server_late_tick(_delta: float) -> void:
 			_sent_kills[id] = state.kills
 			for peer in _joined_peers:
 				_kills.rpc_id(peer, id, state.kills)
+		var actor := state.actor
+		var standing := [actor.renown, actor.rank, actor.streak, actor.bounty, actor.exposed, actor.marked]
+		if id >= 0 and _sent_standing.get(id, []) != standing:
+			_sent_standing[id] = standing
+			for peer in _joined_peers:
+				_standing.rpc_id(peer, id, standing)
 
 
 # ---------------------------------------------------------------- client ----
@@ -865,6 +907,15 @@ func _account(snapshot: Dictionary) -> void:
 			_request_look.rpc_id(1, look)
 		signed_in.emit(account)
 	account_changed.emit(account)
+
+
+@rpc("authority", "call_remote", "reliable")
+func _routes(p_routes: Dictionary) -> void:
+	routes.clear()
+	for id: Variant in p_routes:
+		if typeof(id) == TYPE_STRING and typeof(p_routes[id]) == TYPE_INT:
+			routes[id] = p_routes[id]
+	routes_changed.emit(routes)
 
 
 @rpc("authority", "call_remote", "reliable")
@@ -956,6 +1007,7 @@ func _spawn(id: int, kind: String, shown_name: String, node_name: String, at: Ve
 		raid.add_child(actor)
 		actor.global_position = at
 		Loadout.equip(actor, data.get("kit", []))
+		actor.weapons_locked = raid.world.safe_zone
 		Raid.MasteryTracker.apply_variants(actor, data.get("picks", {}))
 		raid.world.on_spawn(actor)
 		# Listed as a player, so the HUD and scoreboard can tell them from bots.
@@ -1212,6 +1264,26 @@ func _hurt(amount: float, kind: String) -> void:
 	var me: Actor = _actors.get(my_actor_id)
 	if me != null and not me.is_dead:
 		me.health.damaged.emit(DamageInfo.make(amount, null, kind))
+
+
+## A player's public renown: [renown, rank, streak, bounty, exposed, marked].
+@rpc("authority", "call_remote", "reliable")
+func _standing(id: int, standing: Array) -> void:
+	var actor: Actor = _actors.get(id)
+	if actor == null or not is_instance_valid(actor) or standing.size() < 6:
+		return
+	actor.renown = int(standing[0])
+	actor.rank = int(standing[1])
+	actor.streak = int(standing[2])
+	actor.bounty = int(standing[3])
+	actor.exposed = bool(standing[4])
+	actor.marked = bool(standing[5])
+
+
+@rpc("authority", "call_remote", "reliable")
+func _war_feed(text: String) -> void:
+	if raid != null:
+		raid.war_feed.emit(text)
 
 
 @rpc("authority", "call_remote", "reliable")

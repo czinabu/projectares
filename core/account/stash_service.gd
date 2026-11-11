@@ -61,6 +61,8 @@ class Account:
 	var raids_played := 0
 	var raids_extracted := 0
 	var kills := 0
+	## Lifetime renown. Only ever grows.
+	var renown := 0
 	## Money for the hub shops. Only ever changed here, on the server.
 	var credits := Economy.STARTING_CREDITS
 	var arena_wins := 0
@@ -85,6 +87,7 @@ class Account:
 			"raids_played": raids_played,
 			"raids_extracted": raids_extracted,
 			"kills": kills,
+			"renown": renown,
 			"credits": credits,
 			"arena_wins": arena_wins,
 			"arena_losses": arena_losses,
@@ -120,6 +123,7 @@ class Account:
 		raids_played = maxi(0, int(data.get("raids_played", 0)))
 		raids_extracted = maxi(0, int(data.get("raids_extracted", 0)))
 		kills = maxi(0, int(data.get("kills", 0)))
+		renown = maxi(0, int(data.get("renown", 0)))
 		credits = Economy.read_saved(data)
 		arena_wins = maxi(0, int(data.get("arena_wins", 0)))
 		arena_losses = maxi(0, int(data.get("arena_losses", 0)))
@@ -230,6 +234,7 @@ func snapshot(account_id: String) -> Dictionary:
 		"raids_played": account.raids_played,
 		"raids_extracted": account.raids_extracted,
 		"kills": account.kills,
+		"renown": account.renown,
 		"credits": account.credits,
 		"arena_wins": account.arena_wins,
 		"arena_losses": account.arena_losses,
@@ -349,6 +354,16 @@ func deploy(account_id: String, world: WorldDef) -> Dictionary:
 	return {"ok": true, "kit": kit, "picks": account.mastery.active_picks()}
 
 
+## The kit an account would deploy with, without taking anything out of the
+## stash. For safe zones, where gear is worn to be seen and nothing is at risk.
+func showcase(account_id: String, world: WorldDef) -> Dictionary:
+	var account := load_account(account_id)
+	if account == null:
+		return _fail("No such account.")
+	var kit := StashRules.checkout(account.stash.duplicate(), account.loadout.duplicate(), world)
+	return {"ok": true, "kit": kit, "picks": account.mastery.active_picks()}
+
+
 ## Puts loot a deployed player handed in at a depot into their stash.
 ## `items` must come from the server's own raid, never from a client.
 func bank(account_id: String, items: Array) -> Dictionary:
@@ -379,6 +394,7 @@ func settle(account_id: String, result: Dictionary) -> Dictionary:
 	if result.get("outcome", "") == "left":
 		account.raids_extracted += 1
 	account.kills += maxi(0, int(result.get("kills", 0)))
+	account.renown += maxi(0, int(result.get("renown", 0)))
 	account.credits = Economy.add(account.credits, Economy.payout(result))
 	var gained: Variant = result.get("mastery_xp", {})
 	if typeof(gained) == TYPE_DICTIONARY:

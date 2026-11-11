@@ -49,8 +49,9 @@ Get-Content $env:USERPROFILE\.ssh\id_ed25519.pub
 2. In the project, open **Firewalls**, create a firewall named `ares`, and give
    it two inbound rules:
    - **TCP, port 22** (so you can log in)
-   - **UDP, port 24565** (so players can join)
-   - **UDP, port 24575** (the arena, which runs beside the raid)
+   - **UDP, ports 24565-24569** (so players can join: the plaza is on 24565
+     and each raid world on the ports after it)
+   - **UDP, port 24575** (the arena, ten ports above the plaza)
 3. Open **Servers** and click **Add Server**:
    - **Location**: the one closest to you and your friends.
    - **Image**: Ubuntu 24.04.
@@ -100,7 +101,8 @@ exports the game, so give it a few minutes. Later builds are much faster.
 docker compose logs -f
 ```
 
-You should see `Server: running ashfront on port 24565`. Press **Ctrl+C** to
+You should see `Server: running ashfront on port 24566` and
+`Server: running plaza on port 24565`. Press **Ctrl+C** to
 stop watching the log; the server keeps running. It also restarts by itself if
 it crashes or the machine reboots.
 
@@ -145,7 +147,9 @@ To change the world, the bot count, or turn on squad spawns, edit the
 - `--squad-spawn` to put all players at one spawn point
 - `--arena-port 24575` to move the arena (it defaults to the raid port plus
   10), or `--no-arena` to run without one
-- `--port 24565` to change the port (then change the `ports:` line and the
+- leave out `--world` to run every raid world, each on its own port
+- `--no-plaza` to run one world alone on the port, with no social plaza
+- `--port 24565` to change the first port (then change the `ports:` line and the
   firewall rule to match, and join with `address:port`)
 
 ## Stop paying
@@ -158,7 +162,7 @@ takes the same steps.
 ## If something goes wrong
 
 - **Friends cannot connect, but the log says it is running.** Check that the
-  Hetzner firewall has the **UDP** rule for port 24565 (TCP is not enough) and
+  Hetzner firewall has the **UDP** rule for ports 24565-24569 (TCP is not enough) and
   that it is attached to the server.
 - **The build stops with "Killed" or runs out of memory.** The machine is too
   small. Rebuild it with a 2 GB or larger type.

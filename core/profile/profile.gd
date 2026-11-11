@@ -42,6 +42,8 @@ var online_secret := ""
 var appearance := Human.player_look({})
 ## Lives started, and lives that ended by leaving alive. The names are from
 ## when a life was a timed raid; they stay so old saves keep loading.
+## Lifetime renown: only ever grows, and sets your rank (see `RenownLedger`).
+var renown := 0
 var raids_played := 0
 var raids_extracted := 0
 var kills := 0
@@ -66,6 +68,7 @@ func reset() -> void:
 	raids_played = 0
 	raids_extracted = 0
 	kills = 0
+	renown = 0
 	credits = Economy.STARTING_CREDITS
 	arena_wins = 0
 	arena_losses = 0
@@ -190,6 +193,7 @@ func record_raid(result: Dictionary) -> void:
 	if result.get("outcome", "") == "left":
 		raids_extracted += 1
 	kills += result.get("kills", 0)
+	renown += maxi(0, int(result.get("renown", 0)))
 	credits = Economy.add(credits, Economy.payout(result))
 	var gained: Dictionary = result.get("mastery_xp", {})
 	for track: String in gained:
@@ -223,6 +227,7 @@ func save() -> void:
 		"raids_played": raids_played,
 		"raids_extracted": raids_extracted,
 		"kills": kills,
+		"renown": renown,
 		"credits": credits,
 		"arena_wins": arena_wins,
 		"arena_losses": arena_losses,
@@ -262,6 +267,7 @@ func load_profile() -> void:
 	raids_played = int(data.get("raids_played", 0))
 	raids_extracted = int(data.get("raids_extracted", 0))
 	kills = int(data.get("kills", 0))
+	renown = maxi(0, int(data.get("renown", 0)))
 	credits = Economy.read_saved(data)
 	arena_wins = maxi(0, int(data.get("arena_wins", 0)))
 	arena_losses = maxi(0, int(data.get("arena_losses", 0)))

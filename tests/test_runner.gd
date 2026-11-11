@@ -7,6 +7,7 @@ const VehicleScript := preload("res://core/vehicle/vehicle.gd")
 const RaidRoster := preload("res://core/ui/raid_roster.gd")
 const NameplatesScript := preload("res://core/ui/nameplates.gd")
 const ScoreboardScript := preload("res://core/ui/scoreboard.gd")
+const RenownLedger := preload("res://core/progression/renown_ledger.gd")
 const BaseLayout := preload("res://core/base/base_layout.gd")
 const BaseHudScript := preload("res://core/ui/base_hud.gd")
 const LookTests := preload("res://tests/look_tests.gd")
@@ -54,7 +55,10 @@ func _run() -> void:
 	await _test_frostline()
 	await _test_mastery()
 	await _test_nameplates_and_scoreboard()
+	await _test_renown()
 	await _test_online()
+	await _test_plaza()
+	await _test_plaza_online()
 	await _test_stash_service()
 	await _test_phone()
 	await _test_home_base()
@@ -1314,15 +1318,15 @@ func _test_vehicle_raids() -> void:
 ## Every world folder must honour the map contract and run a raid headless.
 func _test_every_world() -> void:
 	print("Every world plugs in")
-	check(Worlds.all().size() >= 2, "registry finds more than one world (%d)" % Worlds.all().size())
+	check(Worlds.raid_worlds().size() >= 2, "registry finds more than one world (%d)" % Worlds.raid_worlds().size())
 	var hub := Hub.new()
 	add_child(hub)
 	await frames(1)
 	var buttons := hub.find_children("*", "Button", true, false).filter(func(b: Node) -> bool:
 		return (b as Button).text.begins_with("Deploy to"))
-	check(buttons.size() == Worlds.all().size(), "the hub has a deploy button for every world")
+	check(buttons.size() == Worlds.raid_worlds().size(), "the hub has a deploy button for every world")
 	hub.queue_free()
-	for world in Worlds.all():
+	for world in Worlds.raid_worlds():
 		var kit := world.starter_loadout()
 		check(not kit.is_empty() and kit.all(func(id: String) -> bool: return ItemDB.has_item(id)),
 				"%s: starter loadout is valid items" % world.id)
@@ -1626,6 +1630,9 @@ func _wipe_dir(dir: String) -> void:
 func _start_server(port: int, extra: Array[String]) -> int:
 	var args := PackedStringArray(["--headless", "--path", ProjectSettings.globalize_path("res://"),
 			"--", "--server", "--world", "ashfront", "--port", str(port), "--accounts", NET_ACCOUNTS])
+	# One world alone on the port, unless the test asks for the plaza too.
+	if "--plaza" not in extra:
+		args.append("--no-plaza")
 	args.append_array(PackedStringArray(extra))
 	return OS.create_process(OS.get_executable_path(), args)
 
@@ -1743,7 +1750,7 @@ func _test_nameplates_and_scoreboard() -> void:
 	check(not board.visible, "the scoreboard is closed until asked for")
 	board.show_board(true)
 	var rows: Array = board.rows()
-	check(board.visible and rows.size() == 3 and rows[0] == ["Alpha (you)", RaidRoster.IN_RAID, "3"],
+	check(board.visible and rows.size() == 3 and rows[0].slice(0, 3) == ["Alpha (you)", RaidRoster.IN_RAID, "3"],
 			"the scoreboard shows each player's name, status and kills")
 	board.show_board(false)
 	check(not board.visible, "the scoreboard closes again")
@@ -1773,8 +1780,8 @@ func _test_nameplates_and_scoreboard() -> void:
 		var plate: Control = shown[d.get_instance_id()]
 		var label: Label = plate.get_child(0)
 		var middle := camera.get_viewport().get_visible_rect().size * 0.5
-		check(label.text == "Delta" and plate.position.x < middle.x and plate.position.x + plate.size.x > middle.x,
-				"the nameplate carries the name and sits over the player")
+		check(label.text == "Delta  Recruit" and plate.position.x < middle.x and plate.position.x + plate.size.x > middle.x,
+				"the nameplate carries the name and rank and sits over the player")
 	place.call(Vector3(0, -0.5, -10), Vector3.BACK)
 	check(plates.plates().is_empty(), "no nameplate for a player behind you")
 	place.call(Vector3(0, -0.5, -(plates.max_distance + 5.0)), Vector3.FORWARD)
@@ -1794,6 +1801,158 @@ func _test_nameplates_and_scoreboard() -> void:
 	d.kill("bullet")
 	place.call(Vector3(0, -0.5, -10), Vector3.FORWARD)
 	check(plates.plates().is_empty(), "the nameplate goes when the player goes down")
+	await _end_raid(raid)
+
+
+func _test_renown() -> void:
+	print("Renown and bounties")
+	# The ledger on its own: plain arithmetic.
+	var book := RenownLedger.new()
+	book.enter("ana", "Ana", 190)
+	book.enter("ben", "Ben")
+	check(book.bot_killed("ana") == 10 and book.bot_killed("ana") == 11,
+			"a bot kill pays renown, and each kill in a streak pays a little more")
+	var ana := book.get_standing("ana")
+	check(ana.renown == 21 and ana.lifetime == 211 and RenownLedger.rank_for(ana.lifetime) == 1
+			and RenownLedger.rank_name(1) == "Raider", "lifetime renown raises your rank")
+	check(RenownLedger.to_next_rank(211) == 589 and RenownLedger.to_next_rank(999999) == 0,
+			"the next rank says how far away it is")
+	book.get_standing("ben").renown = 400
+	check(book.marked() == "ben", "the living player with the most renown is the Marked")
+	var paid := book.player_died("ben", "ana")
+	check(paid.lost == 40 and paid.stolen == 40 and paid.marked and book.get_standing("ben").renown == 360,
+			"dying costs a tenth of your session renown")
+	check(paid.gain == 120 + 40 + book.marked_bonus and ana.renown == 21 + paid.gain,
+			"the killer gets the kill, the stolen share and the bonus for the Marked")
+	check(book.marked() == "ana", "a dead player is not the Marked")
+	book.enter("ben", "Ben")
+	check(book.get_standing("ben").renown == 360, "session renown carries into the next life")
+	var before := ana.renown
+	check(book.player_died("ben", "ana", true).gain == roundi(10 * 1.3) + 36,
+			"killing someone in the scrap kit pays almost nothing for the kill")
+	check(book.bounty_of("ana") == 0, "two player kills are not a bounty yet")
+	book.enter("ben", "Ben")
+	book.player_died("ben", "ana", true)
+	check(book.bounty_of("ana") == 150 and not book.is_exposed("ana"), "three player kills in one life put a price on you")
+	for i in 2:
+		book.enter("ben", "Ben")
+		book.player_died("ben", "ana", true)
+	check(book.bounty_of("ana") == 250 and book.is_exposed("ana"), "five show you to everyone")
+	book.enter("cy", "Cy")
+	var claim := book.player_died("ana", "cy")
+	check(claim.bounty == 250 and claim.gain >= 250 + 100 and book.bounty_of("ana") == 0
+			and ana.player_streak == 0, "the killer collects the bounty and the streak ends")
+	check(ana.lifetime > before + 190, "death never takes lifetime renown")
+	book.leave("ana")
+	check(book.get_standing("ana") == null, "leaving the world ends the session")
+
+	# In a running world.
+	var raid := Raid.new()
+	add_child(raid)
+	raid.apply_to_profile = false
+	raid.start_server(Worlds.get_world("ashfront"), 91)
+	for bot in raid.bots:
+		bot.get_node("Brain").set_physics_process(false)
+	var feed: Array[String] = []
+	raid.war_feed.connect(func(text: String) -> void: feed.append(text))
+	var results := {}
+	raid.player_finished.connect(func(actor: Actor, result: Dictionary) -> void:
+		results[actor.display_name] = result)
+	var kit: Array[String] = ["rifle_carbine", "frame_trooper"]
+	var hunter := raid.add_player(kit, {}, "Hunter", "acct-hunter", 900)
+	var prey := raid.add_player(kit, {}, "Prey", "acct-prey", 0)
+	await frames(3)
+	check(hunter.rank == 2 and prey.rank == 0 and hunter.renown == 0, "a player arrives with their rank and no session renown")
+	var notices: Array[String] = []
+	hunter.notice.connect(func(text: String) -> void: notices.append(text))
+	raid.bots[0].kill("bullet", hunter)
+	check(hunter.renown == 10 and hunter.streak == 1 and notices.size() == 1
+			and notices[0].begins_with("Killed ") and notices[0].ends_with("+10 renown"),
+			"killing a bot pays renown and says so")
+	check(feed.is_empty(), "bot kills stay out of the world feed")
+	raid.renown.get_standing("acct-prey").renown = 500
+	prey.kill("bullet", hunter)
+	await frames(2)
+	check(results.has("Prey") and results.Prey.renown_lost == 50 and results.Prey.renown_now == 450,
+			"a death reports the renown it cost")
+	check(hunter.renown == 10 + 110 + 50 + raid.renown.marked_bonus,
+			"the killer is paid for the kill, the share and the Marked (%d)" % hunter.renown)
+	check(feed.has("Hunter [Veteran] killed Prey [Recruit], the Marked"), "a player kill is announced with ranks (%s)" % " / ".join(feed))
+	check(hunter.marked and feed.has("Hunter is now the Marked"), "the new Marked is announced")
+	check("Renown lost: 50" in Hud.death_text(results.Prey, 0.0), "the death screen shows the renown lost")
+	for i in 2:
+		prey = raid.add_player(kit, {}, "Prey", "acct-prey", 0)
+		await frames(1)
+		prey.kill("bullet", hunter)
+		await frames(1)
+	check(hunter.bounty == 150 and feed.has("Hunter has a bounty of 150"), "three player kills announce a bounty")
+	check(Hud.standing_text(hunter).begins_with("Veteran   Renown ") and "BOUNTY 150" in Hud.standing_text(hunter)
+			and "THE MARKED" in Hud.standing_text(hunter), "the HUD shows your rank, renown and bounty")
+	check(NameplatesScript.plate_text(hunter) == "Hunter  Veteran  MARKED  Bounty 150", "a nameplate shows rank, the Marked and the bounty")
+	var roster := RaidRoster.new(raid, prey)
+	roster.refresh()
+	var row: Dictionary = roster.entries.filter(func(e: Dictionary) -> bool: return e.name == "Hunter")[0]
+	check(ScoreboardScript.renown_cell(row) == "Veteran  %d  MARKED  Bounty 150" % hunter.renown, "the scoreboard lists renown and bounties")
+	for i in 2:
+		prey = raid.add_player(kit, {}, "Prey", "acct-prey", 0)
+		await frames(1)
+		prey.kill("bullet", hunter)
+		await frames(1)
+	check(hunter.exposed and feed.any(func(text: String) -> bool: return text.begins_with("Hunter is exposed")),
+			"five player kills expose you to everyone")
+
+	# A hunted player's plate shows through a wall and at any distance.
+	var far := raid.add_player(kit, {}, "Far", "acct-far", 0)
+	var camera := Camera3D.new()
+	raid.add_child(camera)
+	camera.make_current()
+	var plates := NameplatesScript.new()
+	plates.setup(raid, far)
+	raid.add_child(plates)
+	hunter.global_position = Vector3(0, 300, -200)
+	far.global_position = Vector3(0, 300, 0)
+	camera.global_position = Vector3(0, 301.6, 0)
+	camera.look_at(Vector3(0, 301.6, -200))
+	await frames(2)
+	plates.update_plates()
+	check(plates.plates().has(hunter.get_instance_id()), "an exposed player's nameplate shows from across the map")
+	hunter.exposed = false
+	hunter.marked = false
+	plates.update_plates()
+	check(not plates.plates().has(hunter.get_instance_id()), "an ordinary player's does not")
+	plates.queue_free()
+	camera.queue_free()
+
+	# The bounty is paid out, and renown reaches the account.
+	var earned_before := hunter.renown
+	var avenger := raid.add_player(kit, {}, "Avenger", "acct-avenger", 0)
+	await frames(1)
+	hunter.kill("bullet", avenger)
+	await frames(2)
+	check(avenger.renown >= 250 + 100 and feed.any(func(text: String) -> bool:
+			return text.begins_with("Avenger [") and text.ends_with("and claimed a bounty of 250")),
+			"killing a hunted player pays their bounty")
+	check(results.Hunter.renown >= 0 and results.Hunter.renown_lost == int(floor(earned_before * 0.1)),
+			"the hunted player's last life reports its renown")
+	var avenger_renown := avenger.renown
+	raid.clock += 1000.0
+	raid.begin_sign_out(avenger)
+	for i in 800:
+		if results.has("Avenger"):
+			break
+		await frames(1)
+	check(results.has("Avenger") and results.Avenger.outcome == "left" and results.Avenger.renown == avenger_renown
+			and raid.renown.get_standing("acct-avenger") == null,
+			"signing out keeps the renown you earned and ends the session")
+	var was_persist := Profile.persist
+	Profile.persist = false
+	var had := Profile.renown
+	Profile.record_raid({"outcome": "died", "renown": 75})
+	check(Profile.renown == had + 75, "lifetime renown is saved with the profile")
+	Profile.renown = had
+	Profile.raids_played -= 1
+	Profile.persist = was_persist
+	check(Hub.renown_text(250) == "Rank Raider   Renown 250   (550 to Veteran)", "the hub shows your rank and what the next one takes")
 	await _end_raid(raid)
 
 
@@ -2033,6 +2192,8 @@ func _test_online() -> void:
 		var result := [{}]
 		bravo.run_finished.connect(func(r: Dictionary) -> void: result[0] = r)
 		var before := victim.health.health + victim.health.armor
+		var war_feed: Array[String] = []
+		bravo.raid.war_feed.connect(func(text: String) -> void: war_feed.append(text))
 		me.cmd.primary = true
 		for i in 600:
 			if target == null or not is_instance_valid(target) or target.is_dead or not result[0].is_empty():
@@ -2064,6 +2225,13 @@ func _test_online() -> void:
 			return mine != null and mine.kills == 1 and theirs != null and theirs.kills == 1
 		await _wait_until(scores, 90)
 		check(scores.call() and alpha.raid.kills == 1, "every client is told each player's kill count")
+		var famous := func() -> bool:
+			var seen := bravo.actor_for(alpha.my_actor_id)
+			return me.renown > 0 and seen != null and seen.renown == me.renown and seen.streak == 1
+		await _wait_until(famous, 90)
+		check(famous.call(), "the server tells every client the killer's renown (%d)" % me.renown)
+		check(war_feed.any(func(text: String) -> bool: return " killed " in text),
+				"the kill is announced to everyone in the world (%s)" % " / ".join(war_feed))
 		# The dead player's bag appears for the killer, who walks over and loots it.
 		var found: Array[LootContainer] = []
 		var find_bag := func() -> bool:
@@ -2553,6 +2721,236 @@ func _test_online_stash() -> void:
 # --- Server-owned stash --------------------------------------------------------
 
 const StashService := preload("res://core/account/stash_service.gd")
+
+
+func _test_plaza() -> void:
+	print("Plaza safe zone")
+	var plaza := Worlds.social_world()
+	check(plaza != null and plaza.safe_zone, "the registry finds a safe-zone world")
+	if plaza == null:
+		return
+	check(not Worlds.raid_worlds().has(plaza) and Worlds.raid_worlds().size() == Worlds.all().size() - 1,
+			"safe zones are not listed as worlds to deploy into")
+	var raid := Raid.new()
+	add_child(raid)
+	raid.mode = Raid.Mode.SERVER
+	raid.start_server(plaza, 5)
+	var kit: Array[String] = ["rifle_scrap", "blade_scrap", "jetpack_mk1", "plate_light", "field_dressing"]
+	var a := raid.add_player(kit, {}, "Ada")
+	var b := raid.add_player(kit, {}, "Bo")
+	await frames(20)
+	check(raid.bots.is_empty(), "no bots in the plaza")
+	check(raid.get_children().filter(func(n: Node) -> bool: return n is LootContainer).is_empty(), "no loot in the plaza")
+	check(a.is_on_floor() and b.is_on_floor(), "players stand on the plaza floor")
+	check(a.gear_items.size() >= 3 and a.weapons.size() == 2, "players wear their loadout (%d pieces)" % a.gear_items.size())
+	check(a.weapons_locked and b.weapons_locked, "weapons are locked in a safe zone")
+
+	# Shooting and swinging do nothing.
+	b.global_position = a.global_position + Basis(Vector3.UP, a.cmd.yaw) * Vector3(0, 0, -4)
+	await frames(2)
+	var gun := a.weapons[0] as Gun
+	var ammo: int = gun.ammo_in_mag
+	a.cmd.primary = true
+	a.cmd.primary_pressed = true
+	await frames(30)
+	a.cmd.primary = false
+	a.cmd.primary_pressed = false
+	check(gun.ammo_in_mag == ammo, "a held trigger fires nothing")
+	check(b.health.health == b.health.max_health, "nobody is hurt")
+	a.cmd.switch_weapon = 1
+	await frames(2)
+	a.cmd.switch_weapon = -1
+	check(a.active_weapon_index == 1, "weapons can still be drawn to show them")
+	var hit := Combat.deal(b, DamageInfo.make(50.0, a, "bullet", b.global_position))
+	check(not hit and b.health.health == b.health.max_health, "Combat refuses every hit in a safe zone")
+
+	# A fall off the map puts you back, unharmed.
+	b.global_position = Vector3(0, -40, 0)
+	await frames(3)
+	check(not b.is_dead and b.global_position.y > -1.0, "falling out puts you back at the arrival pad")
+
+	# Portals: one per raid world, plus home and the clan hall.
+	var portals := raid.map.get_children().filter(func(n: Node) -> bool: return n.is_in_group("portal"))
+	var destinations := portals.map(func(n: Node) -> String: return n.get_meta("destination", ""))
+	var all_worlds := Worlds.raid_worlds().all(func(w: WorldDef) -> bool: return ("world:" + w.id) in destinations)
+	check(all_worlds, "there is a deploy gate for every raid world")
+	check("home" in destinations, "there is a door to the home base")
+	check("clans" in destinations, "there is a clan hall")
+	check(portals.all(func(n: Node) -> bool: return n.get_meta("label", "") != ""), "every portal says where it goes")
+	# Shops are physical places: a storefront for each one the game has.
+	var shops: Array = raid.map.shops()
+	var fronts := portals.filter(func(n: Node) -> bool: return n.is_in_group("shop_front"))
+	check(fronts.size() == shops.size() and shops.all(func(entry: Dictionary) -> bool:
+		return ("shop:" + str(entry.id)) in destinations), "every shop has a storefront (%d)" % fronts.size())
+	var apart := true
+	for one: Node3D in portals:
+		for other: Node3D in portals:
+			if one != other and one.global_position.distance_to(other.global_position) < 5.5:
+				apart = false
+	check(apart, "no two doorways overlap")
+	var reachable := portals.all(func(n: Node) -> bool:
+		return (n as Node3D).global_position.length() < 50.0 and absf((n as Node3D).global_position.y) < 0.5)
+	check(reachable, "every portal is on the plaza floor")
+
+	# Leaving takes you and nothing else: no body, no bag.
+	raid.remove_player(b)
+	await frames(3)
+	check(not is_instance_valid(b) or b.is_queued_for_deletion(), "a player who leaves is simply gone")
+	check(raid.get_children().filter(func(n: Node) -> bool: return n is LootContainer).is_empty(), "leaving drops no bag")
+	check(raid.players.size() == 1, "the others stay")
+
+	# A warzone in the same process keeps its own rules.
+	var war := Raid.new()
+	add_child(war)
+	war.start(Worlds.get_world("ashfront"), 3)
+	for bot in war.bots:
+		bot.get_node("Brain").set_physics_process(false)
+	await frames(3)
+	check(Worlds.of(a) == plaza and Worlds.of(war.player).id == "ashfront", "each actor answers to its own world")
+	var foe := war.bots[0]
+	check(Combat.deal(foe, DamageInfo.make(5.0, war.player, "bullet", foe.global_position)), "the warzone still deals damage")
+	check(not Combat.deal(a, DamageInfo.make(5.0, war.player, "bullet", a.global_position)),
+			"a warzone hit cannot reach into the plaza")
+	check(not Combat.deal(foe, DamageInfo.make(5.0, a, "bullet", foe.global_position)),
+			"a plaza player cannot hurt anyone in the warzone")
+	await _end_raid(war)
+	await _end_raid(raid)
+
+
+func _test_plaza_online() -> void:
+	print("Plaza online: a shared safe zone beside the warzone")
+	const PlazaView := preload("res://core/social/plaza_view.gd")
+	var port := 24861
+	_wipe_dir(NET_ACCOUNTS)
+	var pid := _start_server(port, ["--plaza", "--bots", "0"])
+	var ada := await _join("Pia", port, {"primary": "rifle_carbine"})
+	check(ada != null, "a client walks into the server's plaza")
+	if ada == null:
+		OS.kill(pid)
+		return
+	check(ada.world_id == "plaza" and ada.raid.world.safe_zone, "the server's front door is the plaza")
+	check(ada.routes.get("ashfront", -1) == port + 1, "the plaza says where the warzone runs")
+	var me := ada.raid.player
+	check("rifle_carbine" in me.gear_items and me.weapons_locked, "you wear your loadout, with weapons locked")
+	await frames(30)
+	check(not ada.account.deployed and "rifle_carbine" in ada.account.stash,
+			"wearing gear in the plaza takes nothing out of the stash")
+
+	var bo := await _join("Pax", port, {"primary": "smg_stinger"} if "smg_stinger" in ada.account.stash else {})
+	check(bo != null, "a second player joins the plaza")
+	if bo != null:
+		await _wait_until(func() -> bool: return RaidRoster.players_in(ada.raid).size() == 2, 240)
+		var seen: Array[Actor] = RaidRoster.players_in(ada.raid).filter(func(a: Actor) -> bool: return a != me)
+		check(seen.size() == 1 and seen[0].display_name == "Pax", "players see each other by name")
+		if seen.size() == 1:
+			var bo_seen := seen[0]
+			var card := PlazaView.gear_lines(bo_seen)
+			var bo_gear: Array = bo.raid.player.gear_items
+			check(not card.is_empty() and card.all(func(line: Dictionary) -> bool: return line.id in bo_gear),
+					"you can read what another player is wearing (%d pieces)" % card.size())
+			# Bo walks; Ada sees it.
+			var from := bo_seen.global_position
+			bo.raid.player.cmd.move = Vector2(0, 1)
+			await frames(60)
+			bo.raid.player.cmd.move = Vector2.ZERO
+			check(bo_seen.global_position.distance_to(from) > 2.0, "movement is shared (%.1f m)" % bo_seen.global_position.distance_to(from))
+			# Ada aims at Bo and holds the trigger. Nothing happens.
+			var aim := (bo_seen.global_position + Vector3(0, 1.1, 0) - me.get_eye_position()).normalized()
+			me.cmd.yaw = atan2(-aim.x, -aim.z)
+			me.cmd.aim_dir = aim
+			me.cmd.primary = true
+			me.cmd.primary_pressed = true
+			await frames(60)
+			me.cmd.primary = false
+			var bo_me := bo.raid.player
+			check(bo_me.health.health == bo_me.health.max_health and not bo_me.is_dead, "nobody can be shot in the plaza")
+			var looking := PlazaView.inspect_target(ada.raid, me, me.get_eye_position(), aim, 60.0, 9.0)
+			check(looking == bo_seen, "looking at a player picks them for the gear card")
+
+	# Through the gate: the same account, now in the warzone's lobby.
+	var war_port: int = ada.routes.get("ashfront", -1)
+	await _leave(ada)
+	if bo != null:
+		await _wait_until(func() -> bool: return RaidRoster.players_in(bo.raid).size() == 1, 240)
+		check(RaidRoster.players_in(bo.raid).size() == 1, "a player who leaves is gone from the plaza")
+		check(bo.containers().is_empty(), "and leaves no bag behind")
+	var ada_war := await _sign_in("Pia", war_port)
+	check(ada_war != null and ada_war.world_id == "ashfront", "the gate leads to the warzone on the next port")
+	if ada_war != null:
+		check(ada_war.account.loadout.get("primary", "") == "rifle_carbine" and "rifle_carbine" in ada_war.account.stash,
+				"the account is the same one: loadout and stash carry over")
+		ada_war.deploy()
+		await _wait_until(func() -> bool: return ada_war.raid != null and ada_war.raid.player != null, 240)
+		await _wait_until(func() -> bool: return ada_war.account.deployed, 120)
+		check(ada_war.raid != null and not ada_war.raid.world.safe_zone and ada_war.account.deployed
+				and not ada_war.raid.player.weapons_locked, "deploying there is a real raid with gear at stake")
+		await _leave(ada_war)
+	await _leave(bo)
+
+	# The whole trip through the game's own flow.
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await frames(2)
+	Profile.player_name = "Quill"
+	main.join_online("127.0.0.1:%d" % port)
+	await _wait_until(func() -> bool: return main.raid != null and main.raid.player != null, 600)
+	check(main.raid != null and main.raid.world.safe_zone and main.plaza_view != null and not main.hub.visible,
+			"joining a server puts you in its plaza")
+	if main.raid != null:
+		var gate: Node3D = null
+		for node in get_tree().get_nodes_in_group("portal"):
+			if main.raid.map.is_ancestor_of(node) and node.get_meta("destination", "") == "world:ashfront":
+				gate = node
+		check(gate != null and PlazaView.portal_at(main.raid, gate.global_position) == gate
+				and PlazaView.portal_at(main.raid, Vector3(0, 0, 20)) == null, "standing in a gate offers the trip")
+		check(gate != null and PlazaView.prompt_for(gate, main.net.routes).begins_with("[E]")
+				and PlazaView.prompt_for(gate, {}).contains("closed"), "a gate to a world the server lacks is closed")
+		main.use_portal("clans")
+		check(main.raid != null, "the clan hall is not open yet")
+		main.use_portal("world:ashfront")
+		await _wait_until(func() -> bool:
+			return main.net != null and main.net.world_id == "ashfront" and not main.net.account.is_empty(), 600)
+		check(main.hub.in_lobby() and main.raid == null and main.hub.visible and main.net != null
+				and main.net.world_id == "ashfront", "using a gate takes you to that world's lobby")
+		main.leave_server()
+		await _wait_until(func() -> bool: return main.raid != null and main.raid.player != null, 600)
+		check(main.raid != null and main.raid.world.safe_zone, "leaving the lobby leads back to the plaza")
+		var shops: Array = main.raid.map.shops()
+		if not shops.is_empty():
+			var shop_id: String = shops[0].id
+			main.use_portal("shop:" + shop_id)
+			await frames(3)
+			check(main.shop_view != null and main.shop_view.panel.shop_filter == shop_id
+					and main.controller.input_blocked and main.raid != null,
+					"a storefront opens that shop's screen without leaving the plaza")
+			var panel: Control = main.shop_view.panel
+			var before: int = panel.credits()
+			var stock: Array = panel.find_children("*", "Button", true, false).filter(func(b: Node) -> bool:
+				return (b as Button).text.begins_with("Buy") and not (b as Button).disabled)
+			check(not stock.is_empty() and before > 0, "the stall shows stock and your credits on this server (%d)" % before)
+			if not stock.is_empty():
+				(stock[0] as Button).pressed.emit()
+				await _wait_until(func() -> bool:
+					return main.shop_view != null and main.shop_view.panel.credits() < before, 240)
+				check(main.shop_view.panel.credits() < before, "buying at the stall goes through the server")
+			main.close_shop()
+			await frames(2)
+			check(main.shop_view == null and not main.controller.input_blocked, "stepping away gives control back")
+		main.use_portal("home")
+		await _wait_until(func() -> bool: return main.base != null, 600)
+		check(main.base != null and main.raid == null and main.hub.in_lobby(),
+				"the quarters door opens your home base on the server's stash")
+		main.leave_base()
+		await _wait_until(func() -> bool: return main.raid != null and main.raid.player != null, 600)
+		check(main.base == null and main.raid != null and main.raid.world.safe_zone,
+				"the base's door leads back to the plaza")
+		main.use_portal("leave")
+		await frames(5)
+		check(main.net == null and main.raid == null and main.hub.visible and not main.hub.in_lobby(),
+				"the exit leaves the server")
+	main.queue_free()
+	OS.kill(pid)
+	await frames(30)
 
 
 func _test_stash_service() -> void:
@@ -3436,4 +3834,18 @@ func _test_online_arena() -> void:
 	OS.kill(pid)
 	await _leave(ash)
 	await _leave(bex)
+
+	# With the plaza: its routes point the arena gate at the arena's port.
+	port = 24841
+	pid = _start_server(port, ["--bots", "0", "--plaza"])
+	var visitor := await _sign_in("Vale", port)
+	check(visitor != null, "a client signs in to the plaza")
+	if visitor != null:
+		await _wait_until(func() -> bool: return visitor.routes.has("arena"), 240)
+		check(int(visitor.routes.get("arena", -1)) == port + 10, "the plaza's routes include the arena")
+		await _leave(visitor)
+		var fighter := await _join("Vale", port + 10)
+		check(fighter != null and fighter.raid is Arena, "the arena runs beside the plaza on the same server")
+		await _leave(fighter)
+	OS.kill(pid)
 	_wipe_dir(NET_ACCOUNTS)

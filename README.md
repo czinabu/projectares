@@ -92,6 +92,28 @@ A server can also run on its own, with no window:
 godot --headless --path . -- --server --world ashfront --port 24565
 ```
 
+That runs the plaza on port 24565 and Ashfront on 24566. Leave out `--world`
+to run every raid world, or add `--no-plaza` for one world alone on the port.
+
+### The Concourse
+
+Joining a server puts you in its plaza, the Concourse: a walled safe zone
+shared by everyone on that server. Weapons are locked and nobody can be hurt.
+You appear wearing your equipped loadout, and it never leaves your stash, so
+nothing is at risk there. Look at another player to see what they are wearing.
+A bike in your loadout is parked beside you to ride around.
+
+Walk into a glowing pad and press **E** to use it:
+
+- **World gates** (north): each leads to that world's lobby, where you set
+  your loadout and deploy. After a run, or when you leave the lobby, you are
+  back in the Concourse.
+- **Quarters** (west): the door to your home base. Its door leads back here.
+- **Storefronts** (the corners): one for every shop. Step up to the counter
+  to buy and sell without leaving the plaza.
+- **Arena** and **Clan hall**: built, and closed until those features arrive.
+- **Exit** (south): leaves the server.
+
 Add `--accounts <folder>` to choose where the server saves player stashes.
 
 To feel what a bad connection is like without leaving your desk, start the
@@ -112,6 +134,13 @@ you have.
 
 - First-person and third-person camera that you switch with V. It never changes
   on its own. Weapons are visible in your hand in both views.
+- Renown. Kills raise it, a streak makes each kill pay more, and dying hands
+  a tenth of it to your killer. Your lifetime total never drops and sets your
+  rank, which others see on your nameplate. Three player kills in one life put
+  a bounty on you, five show you to everyone through walls, and the player
+  with the most renown is the Marked, the richest kill in the world. Killing
+  someone in the free scrap kit pays almost nothing. Player kills, bounties
+  and the Marked are announced to everyone.
 - Hitscan rifle with reloads and aim down sights.
 - Rifle recoil that kicks your view and widens the spread under sustained fire.
 - Blade with a three-hit combo, a heavy lunge, and a dive slam from the air.
@@ -201,7 +230,7 @@ items or vehicles), a beaten fighter yields at 1 health instead of dying, and
 nothing is dropped. Only the two fighters in a bout can hurt each other. When
 nothing is queued, bot gladiators put on exhibition bouts for the crowd.
 
-Online, the dedicated server runs the arena on the raid port plus 10, sharing
+Online, the dedicated server runs the arena on the server port plus 10 (24575 by default, next to the plaza and raid worlds), sharing
 the same accounts. The server decides every result and pays every wager.
 
 ## How the code is organized
@@ -228,6 +257,7 @@ core/            Shared by every world. Never names a specific world.
   progression/   Mastery: tracks and variants, XP tracking in a raid, hub panel
   net/           Online play: the server and client ends of a raid
 worlds/
+  plaza/         The Concourse: the social safe zone (a world with safe_zone set)
   ashfront/      The first world: rules, loot tables, and its map
   frostline/     A second, smaller world that proves the plug-in contract
 assets/          Models, textures, sky, font and shaders, with LICENSES.md

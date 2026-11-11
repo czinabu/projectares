@@ -21,6 +21,8 @@ signal player_finished(actor: Actor, result: Dictionary)
 signal player_banked(actor: Actor, items: Array)
 ## A player's sign-out started, with `seconds_left` to go, or stopped (below zero).
 signal sign_out_changed(actor: Actor, seconds_left: float)
+## A line for everyone in the world: a player kill, a new bounty, the Marked.
+signal war_feed(text: String)
 signal actor_spawned(actor: Actor)
 signal actor_removed(actor: Actor)
 signal container_spawned(container: LootContainer)
@@ -33,6 +35,7 @@ const MIN_BOT_SPAWN_DISTANCE := 40.0
 const PARKED_DISTANCE := 6.0
 const VehicleScript := preload("res://core/vehicle/vehicle.gd")
 const MasteryTracker := preload("res://core/progression/mastery_tracker.gd")
+const RenownLedger := preload("res://core/progression/renown_ledger.gd")
 
 ## How this raid runs.
 ##   SOLO   - one local player, everything simulated here.
@@ -60,6 +63,9 @@ var rng := RandomNumberGenerator.new()
 var bot_seeds := {}
 ## The local player's mastery tracker.
 var mastery: MasteryTracker
+## Every player's renown in this world. It outlives their lives here.
+var renown := RenownLedger.new()
+var _marked_owner := ""
 ## When false, the raid reports results but leaves the stash alone, so a server
 ## never writes to a profile that is not the player's.
 var apply_to_profile := true
@@ -100,11 +106,13 @@ static func together(a: Node, b: Node) -> bool:
 ## Call after the Raid is in the scene tree. A fixed seed makes it repeatable.
 ## `p_kit` is the gear the player deploys with; empty means the free scrap kit.
 ## `p_mastery` maps mastery track -> picked variant id (see MasteryBook.active_picks).
-func start(p_world: WorldDef, p_seed: int = -1, p_kit: Array = [], p_mastery: Dictionary = {}) -> void:
+## `p_owner` and `p_renown` are the player's renown key and lifetime renown (see `add_player`).
+func start(p_world: WorldDef, p_seed: int = -1, p_kit: Array = [], p_mastery: Dictionary = {},
+		p_owner := "", p_renown := 0) -> void:
 	mode = Mode.SOLO
 	_setup(p_world, p_seed)
 	_spawn_caches()
-	add_player(p_kit, p_mastery, "You")
+	add_player(p_kit, p_mastery, "You", p_owner, p_renown)
 	_spawn_bots()
 	_spawn_map_vehicles()
 
@@ -166,9 +174,27 @@ func _physics_process(delta: float) -> void:
 	_tick_sign_outs(delta)
 	if mode == Mode.CLIENT:
 		return
+	if world.safe_zone:
+		_keep_everyone_safe()
+		return
 	_tick_caches(delta)
 	_tick_bots(delta)
 	_tick_vehicles(delta)
+
+
+## Safe zones have no deaths. Anyone who gets hurt anyway (a fall off the
+## map) is put back at a spawn point, whole.
+func _keep_everyone_safe() -> void:
+	for state in players:
+		var actor := state.actor
+		if not is_instance_valid(actor) or actor.is_dead:
+			continue
+		if actor.global_position.y < -15.0:
+			var spawns := _map_nodes("spawn_player")
+			actor.velocity = Vector3.ZERO
+			actor.global_position = spawns[rng.randi() % spawns.size()].global_position if not spawns.is_empty() \
+					else Vector3(0, 2, 0)
+		actor.health.health = actor.health.max_health
 
 
 ## An emptied cache fills up again after a while.
@@ -246,7 +272,11 @@ func _can_bank(actor: Actor) -> bool:
 ## Drops a player in and returns their actor: the start of one life. In a
 ## solo raid the newest one is `player`, so calling this again after a death
 ## drops the player back in. `p_kit` empty means the world's free scrap kit.
-func add_player(p_kit: Array = [], p_mastery: Dictionary = {}, p_name := "Raider") -> Actor:
+## `p_owner` says whose life this is (an account id), so renown carries over
+## from their earlier lives here; without it every life is a stranger's.
+## `p_renown` is their lifetime renown, which sets the rank others see.
+func add_player(p_kit: Array = [], p_mastery: Dictionary = {}, p_name := "Raider",
+		p_owner := "", p_renown := 0) -> Actor:
 	var state := PlayerState.new()
 	state.kit.assign(p_kit if not p_kit.is_empty() else world.starter_loadout())
 	state.picks = p_mastery
@@ -277,7 +307,11 @@ func add_player(p_kit: Array = [], p_mastery: Dictionary = {}, p_name := "Raider
 		at += Vector3(rng.randf_range(-2.5, 2.5), 0, rng.randf_range(-2.5, 2.5))
 	actor.global_position = at
 	Loadout.equip(actor, state.kit)
+	actor.weapons_locked = world.safe_zone
 	state.actor = actor
+	state.owner = p_owner if p_owner != "" else "#%d" % actor.get_instance_id()
+	if mode != Mode.CLIENT:
+		renown.enter(state.owner, p_name, p_renown)
 	state.mastery = MasteryTracker.new()
 	state.mastery.name = "Mastery" if _player_count == 1 else "Mastery%d" % _player_count
 	add_child(state.mastery)
@@ -293,13 +327,14 @@ func add_player(p_kit: Array = [], p_mastery: Dictionary = {}, p_name := "Raider
 	actor.hit_confirmed.connect(func(_target: Actor, _info: DamageInfo, _lethal: bool) -> void:
 		_mark_combat(state))
 	world.on_spawn(actor)
+	_publish_standing()
 	actor_spawned.emit(actor)
 	# Their own vehicle, if they brought one, is parked beside them.
 	for id in state.kit:
 		if ItemDB.has_tag(id, "vehicle"):
 			state.deployed_vehicles.append(id)
 			var side := Basis(Vector3.UP, actor.cmd.yaw) * Vector3(2.5, 0.3, -1.0)
-			spawn_vehicle(id, actor.global_position + side, actor.cmd.yaw)
+			state.parked.append(spawn_vehicle(id, actor.global_position + side, actor.cmd.yaw))
 	return actor
 
 
@@ -328,6 +363,17 @@ func _safest_spawn(spawns: Array[Node3D]) -> int:
 func remove_player(actor: Actor) -> void:
 	var state := state_for(actor)
 	if state == null:
+		return
+	if world.safe_zone:
+		# Nothing was at stake: they and the vehicle they showed off just go.
+		for vehicle in state.parked:
+			if is_instance_valid(vehicle):
+				if vehicle.get("rider") != null:
+					vehicle.call("dismount")
+				vehicles.erase(vehicle)
+				vehicle_removed.emit(vehicle)
+				vehicle.queue_free()
+		_remove_actor(actor)
 		return
 	if not state.finished and not actor.is_dead:
 		begin_sign_out(actor, true)
@@ -535,15 +581,22 @@ func _on_actor_died(actor: Actor, info: DamageInfo) -> void:
 				if is_instance_valid(bag):
 					bag.queue_free())
 	var killer := state_for(info.source as Actor) if info.source is Actor else null
-	if killer != null and killer.actor != actor:
+	var state := state_for(actor)
+	if killer != null and killer.actor == actor:
+		killer = null
+	var by: String = (info.source as Actor).display_name if info.source is Actor else ""
+	var gained := 0
+	if mode != Mode.CLIENT:
+		gained = _settle_renown(state, killer, actor, by)
+	if killer != null:
 		killer.kills += 1
 		if killer.actor == player:
 			kills += 1
-		killer.actor.notice.emit("Killed %s" % actor.display_name)
-	var state := state_for(actor)
+		killer.actor.notice.emit("Killed %s" % actor.display_name if gained <= 0
+				else "Killed %s   +%d renown" % [actor.display_name, gained])
 	if state != null:
-		var by: String = (info.source as Actor).display_name if info.source is Actor else ""
 		_finish_player(state, "died", info.kind, by)
+		_publish_standing()
 		# The local player's body stays for the camera until they drop in again.
 		if mode == Mode.SOLO and actor == player:
 			return
@@ -552,6 +605,76 @@ func _on_actor_died(actor: Actor, info: DamageInfo) -> void:
 		if mode != Mode.CLIENT:
 			_bot_respawns.append(world.bot_respawn_time)
 	get_tree().create_timer(4.0).timeout.connect(_remove_actor.bind(actor))
+
+
+## Pays out renown for a death and tells the world about it. Returns what
+## the killer gained.
+func _settle_renown(victim: PlayerState, killer: PlayerState, actor: Actor, by: String) -> int:
+	var gained := 0
+	if victim == null:
+		if killer != null:
+			gained = renown.bot_killed(killer.owner)
+			_publish_standing()
+		return gained
+	var paid := renown.player_died(victim.owner, killer.owner if killer != null else "",
+			_wears_scrap(actor))
+	victim.renown_lost = paid.lost
+	gained = paid.gain
+	if killer == null:
+		war_feed.emit("%s was killed by %s" % [actor.display_name, by] if by != ""
+				else "%s died" % actor.display_name)
+		return gained
+	var line := "%s killed %s" % [_feed_name(killer.actor), _feed_name(actor)]
+	if paid.marked:
+		line += ", the Marked"
+	if paid.bounty > 0:
+		line += ", and claimed a bounty of %d" % paid.bounty
+	war_feed.emit(line)
+	var streak: int = renown.get_standing(killer.owner).player_streak
+	if streak == renown.exposed_streak:
+		war_feed.emit("%s is exposed: everyone can see where they are" % killer.actor.display_name)
+	elif streak == renown.bounty_streak:
+		war_feed.emit("%s has a bounty of %d" % [killer.actor.display_name,
+				renown.bounty_of(killer.owner)])
+	return gained
+
+
+## A player's name with their rank, for the feed.
+func _feed_name(actor: Actor) -> String:
+	var state := state_for(actor)
+	var standing := renown.get_standing(state.owner) if state != null else null
+	if standing == null:
+		return actor.display_name
+	return "%s [%s]" % [actor.display_name, RenownLedger.rank_name(RenownLedger.rank_for(standing.lifetime))]
+
+
+static func _wears_scrap(actor: Actor) -> bool:
+	for id in actor.gear_items:
+		if not ItemDB.has_tag(id, "starter"):
+			return false
+	return true
+
+
+## Copies each player's public standing onto their actor, where nameplates,
+## the HUD and `NetSession` read it, and announces a new Marked.
+func _publish_standing() -> void:
+	if mode == Mode.CLIENT:
+		return
+	var top := renown.marked()
+	for state in players:
+		var standing := renown.get_standing(state.owner)
+		if standing == null or not is_instance_valid(state.actor):
+			continue
+		var actor := state.actor
+		actor.renown = standing.renown
+		actor.rank = RenownLedger.rank_for(standing.lifetime)
+		actor.streak = standing.streak
+		actor.bounty = renown.bounty_of(state.owner)
+		actor.exposed = renown.is_exposed(state.owner)
+		actor.marked = state.owner == top
+		if actor.marked and top != _marked_owner:
+			war_feed.emit("%s is now the Marked" % actor.display_name)
+	_marked_owner = top
 
 
 func _remove_actor(actor: Actor) -> void:
@@ -595,6 +718,8 @@ func _leave(state: PlayerState) -> void:
 	if ridden != null:
 		state.rode_home = ridden.get("item_id")
 	_finish_player(state, "left", "", "")
+	renown.leave(state.owner)
+	_publish_standing()
 	if mode == Mode.SERVER:
 		# They are gone from the world, and so is the vehicle they rode out on.
 		if ridden != null:
@@ -647,6 +772,13 @@ func _finish_player(state: PlayerState, outcome: String, cause: String, killed_b
 		"kills": state.kills,
 		"mastery_xp": state.mastery.report(),
 	}
+	var standing := renown.get_standing(state.owner)
+	if standing != null:
+		# What this life added to lifetime renown, what dying took from the
+		# session, and where the session stands now.
+		result["renown"] = standing.earned
+		result["renown_lost"] = state.renown_lost
+		result["renown_now"] = standing.renown
 	if apply_to_profile:
 		apply_result(result)
 	player_finished.emit(actor, result)
@@ -678,6 +810,9 @@ class PlayerState:
 	extends RefCounted
 
 	var actor: Actor
+	## Whose life this is. Renown is kept under this key across lives.
+	var owner := ""
+	var renown_lost := 0
 	var kit: Array[String] = []
 	var mastery: MasteryTracker
 	## Mastery variants the player deployed with (track -> variant id).
@@ -685,6 +820,8 @@ class PlayerState:
 	var kills := 0
 	## Vehicle items the player deployed with. Lost unless they leave riding one.
 	var deployed_vehicles: Array[String] = []
+	## The vehicles parked beside them when they arrived.
+	var parked: Array[Node3D] = []
 	## The vehicle they were riding when they left.
 	var rode_home := ""
 	## What they banked at depots this life. Already in the stash.

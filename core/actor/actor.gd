@@ -66,6 +66,9 @@ var frame_name := "No armor"
 var vehicle: Node3D = null
 
 var is_dead := false
+## Set in a safe zone: weapons can be drawn and shown but not used, and
+## abilities and healing do nothing.
+var weapons_locked := false
 var heal_time_left := 0.0
 var airborne_time := 0.0
 ## While staggered the actor cannot attack, block, dash or jump.
@@ -75,6 +78,15 @@ var riposte_left := 0.0
 ## Seconds left of drop-in protection: nothing can hurt this actor. It ends
 ## early the moment they attack someone (see `Combat.deal`).
 var protected_left := 0.0
+## Public reputation. Written by the `Raid` that decides it (online, copied
+## from the server); read by nameplates and the HUD. See `RenownLedger`.
+var renown := 0
+var rank := 0
+var streak := 0
+var bounty := 0
+## Everyone can see where this actor is.
+var exposed := false
+var marked := false
 var body_mesh: MeshInstance3D
 ## Holds the active weapon's model. A first-person camera may pose it itself.
 var hand := Node3D.new()
@@ -159,9 +171,10 @@ func _physics_process(delta: float) -> void:
 		_simulate_movement(delta)
 	_simulate_weapons(delta)
 	ability.tick(delta)
-	if cmd.ability_pressed and stagger_left <= 0.0:
+	if cmd.ability_pressed and stagger_left <= 0.0 and not weapons_locked:
 		ability.activate()
-	_simulate_heal(delta)
+	if not weapons_locked:
+		_simulate_heal(delta)
 	# On a client of an online raid, using things is the server's decision.
 	if cmd.interact_pressed and Combat.authoritative:
 		var target := find_interactable()
@@ -283,7 +296,7 @@ func _simulate_weapons(delta: float) -> void:
 		active_weapon_index = cmd.switch_weapon
 		_refresh_weapon_visuals()
 	var weapon := get_active_weapon()
-	if weapon and heal_time_left <= 0.0 and stagger_left <= 0.0:
+	if weapon and heal_time_left <= 0.0 and stagger_left <= 0.0 and not weapons_locked:
 		weapon.handle_input(cmd, delta)
 
 
