@@ -4,10 +4,14 @@ extends RefCounted
 ## It asks the current world whether the hit is allowed, so PvP rules,
 ## friendly fire and safe zones are decided by the world, not by weapons.
 
+## False on a client of an online raid. Hits are then decided by the server
+## and arrive as health updates, so nothing is dealt here.
+static var authoritative := true
+
 
 static func deal(target: Object, info: DamageInfo) -> bool:
 	var actor := target as Actor
-	if actor == null or actor.is_dead:
+	if actor == null or actor.is_dead or not authoritative:
 		return false
 	var world: WorldDef = Worlds.current
 	if world and not world.can_damage(info.source, actor, info):

@@ -6,15 +6,31 @@ extends Node3D
 ## so the same class can run on a headless server.
 
 signal ended(result: Dictionary)
+## A player's run is over (died or extracted). In a solo raid this fires
+## together with `ended`. On a server the raid carries on for everyone else.
+signal player_finished(actor: Actor, result: Dictionary)
+signal actor_spawned(actor: Actor)
+signal actor_removed(actor: Actor)
 
 ## Bots never start closer to the player than this, so a raid does not open with a fight.
 const MIN_BOT_SPAWN_DISTANCE := 40.0
 const VehicleScript := preload("res://core/vehicle/vehicle.gd")
 const MasteryTracker := preload("res://core/progression/mastery_tracker.gd")
 
+## How this raid runs.
+##   SOLO   - one local player, everything simulated here.
+##   SERVER - the authority for an online raid. Players join and leave.
+##   CLIENT - a view of a server's raid. Nothing here decides an outcome.
+enum Mode { SOLO, SERVER, CLIENT }
+
+var mode := Mode.SOLO
 var world: WorldDef
 var map: Node3D
+## The local player: the only one in a solo raid, your own actor on a client,
+## and null on a server.
 var player: Actor
+## Everyone playing, by actor. See `PlayerState`.
+var players: Array[PlayerState] = []
 var bots: Array[Actor] = []
 var exits: Array[ExtractionZone] = []
 var vehicles: Array[Node3D] = []
@@ -22,22 +38,51 @@ var time_left := 0.0
 var kills := 0
 var is_over := false
 var rng := RandomNumberGenerator.new()
-var _kit: Array[String] = []
-## Vehicle items the player deployed with. Lost unless they extract riding one.
-var _deployed_vehicles: Array[String] = []
-var _extracted_vehicle := ""
-## Mastery variants the player deployed with, and the XP they earn.
+## The seed each bot was equipped with, so a client can rebuild the same bot.
+var bot_seeds := {}
+## The local player's mastery tracker.
 var mastery: MasteryTracker
-var _mastery_picks := {}
+## When false, the raid reports results but leaves the stash alone, so a server
+## never writes to a profile that is not the player's.
+var apply_to_profile := true
+## Server: every player starts at the same spawn point, as one squad.
+var squad_spawn := false
+var _squad_marker := -1
+var _player_count := 0
 
 
 ## Call after the Raid is in the scene tree. A fixed seed makes it repeatable.
 ## `p_kit` is the gear the player deploys with; empty means the free scrap kit.
 ## `p_mastery` maps mastery track -> picked variant id (see MasteryBook.active_picks).
 func start(p_world: WorldDef, p_seed: int = -1, p_kit: Array = [], p_mastery: Dictionary = {}) -> void:
+	mode = Mode.SOLO
+	_setup(p_world, p_seed)
+	_spawn_caches()
+	add_player(p_kit, p_mastery, "You")
+	_spawn_bots()
+	_spawn_vehicles()
+
+
+## Starts the raid as the authority for an online game. Players are added with
+## `add_player` as they connect.
+func start_server(p_world: WorldDef, p_seed: int = -1) -> void:
+	mode = Mode.SERVER
+	apply_to_profile = false
+	_setup(p_world, p_seed)
+	_spawn_caches()
+	_spawn_bots()
+
+
+## Starts the raid as a view of a server's raid: the map only. Actors are added
+## by the network session as the server reports them.
+func start_client(p_world: WorldDef) -> void:
+	mode = Mode.CLIENT
+	apply_to_profile = false
+	_setup(p_world, 0)
+
+
+func _setup(p_world: WorldDef, p_seed: int) -> void:
 	world = p_world
-	_mastery_picks = p_mastery
-	_kit.assign(p_kit if not p_kit.is_empty() else world.starter_loadout())
 	Worlds.current = world
 	if p_seed >= 0:
 		rng.seed = p_seed
@@ -48,89 +93,178 @@ func start(p_world: WorldDef, p_seed: int = -1, p_kit: Array = [], p_mastery: Di
 	map = world.create_map()
 	map.name = "Map"
 	add_child(map)
-	if map.has_method("bake_navigation"):
+	if mode != Mode.CLIENT and map.has_method("bake_navigation"):
 		map.call("bake_navigation")
 
 	for node in _map_nodes("exit"):
 		var zone := node as ExtractionZone
 		if zone:
 			zone.hold_time = world.exit_hold_time
-			zone.actor_extracted.connect(_on_actor_extracted)
+			if mode != Mode.CLIENT:
+				zone.actor_extracted.connect(_on_actor_extracted)
 			exits.append(zone)
 
+
+func _spawn_caches() -> void:
 	for marker in _map_nodes("spawn_cache"):
 		var source: String = marker.get_meta("loot_source", "cache")
 		_spawn_container(world.roll_loot(source, rng), false, "cache", marker.global_position)
 
-	_spawn_player()
-	_spawn_bots()
-	_spawn_vehicles()
-
 
 func _physics_process(delta: float) -> void:
-	if is_over or world == null:
+	if is_over or world == null or mode == Mode.CLIENT:
 		return
 	time_left -= delta
-	if time_left <= 0.0 and player and not player.is_dead:
-		player.kill("storm")
+	if time_left <= 0.0:
+		for state in players.duplicate():
+			if not state.finished and not state.actor.is_dead:
+				state.actor.kill("storm")
+		if mode == Mode.SERVER:
+			is_over = true
 
 
 ## Exit zone progress for the player, 0..1.
 func extract_progress() -> float:
 	var best := 0.0
+	if player == null:
+		return best
 	for zone in exits:
 		best = maxf(best, zone.progress_for(player))
 	return best
 
 
-func _spawn_player() -> void:
+## Adds a player and returns their actor. In a solo raid the first one becomes
+## `player`. `p_kit` empty means the world's free scrap kit.
+func add_player(p_kit: Array = [], p_mastery: Dictionary = {}, p_name := "Raider") -> Actor:
+	var state := PlayerState.new()
+	state.kit.assign(p_kit if not p_kit.is_empty() else world.starter_loadout())
+	state.picks = p_mastery
 	var spawns := _map_nodes("spawn_player")
-	var at: Vector3 = spawns[rng.randi() % spawns.size()].global_position if not spawns.is_empty() else Vector3.ZERO
-	player = Actor.new()
-	player.name = "Player"
-	player.is_player = true
-	player.display_name = "You"
-	add_child(player)
-	player.global_position = at
-	Loadout.equip(player, _kit)
-	mastery = MasteryTracker.new()
-	mastery.name = "Mastery"
-	add_child(mastery)
-	mastery.setup(player, _mastery_picks)
-	player.died.connect(_on_actor_died)
-	world.on_spawn(player)
+	var marker := rng.randi() % maxi(spawns.size(), 1)
+	if mode == Mode.SERVER and not spawns.is_empty():
+		marker = _safest_spawn(spawns)
+	if squad_spawn:
+		if _squad_marker < 0:
+			_squad_marker = marker
+		marker = _squad_marker
+	var at: Vector3 = spawns[marker].global_position if not spawns.is_empty() else Vector3.ZERO
+	var actor := Actor.new()
+	actor.name = "Player" if _player_count == 0 else "Player%d" % _player_count
+	_player_count += 1
+	actor.is_player = mode == Mode.SOLO
+	actor.display_name = p_name
+	add_child(actor)
+	# Spread out players who arrive at the same spawn point.
+	if mode == Mode.SERVER:
+		at += Vector3(rng.randf_range(-2.5, 2.5), 0, rng.randf_range(-2.5, 2.5))
+	actor.global_position = at
+	Loadout.equip(actor, state.kit)
+	state.actor = actor
+	state.mastery = MasteryTracker.new()
+	state.mastery.name = "Mastery" if players.is_empty() else "Mastery%d" % _player_count
+	add_child(state.mastery)
+	state.mastery.setup(actor, p_mastery)
+	players.append(state)
+	if mode == Mode.SOLO and player == null:
+		player = actor
+		mastery = state.mastery
+	actor.died.connect(_on_actor_died)
+	world.on_spawn(actor)
+	actor_spawned.emit(actor)
+	return actor
+
+
+## The spawn point farthest from everyone already in the raid, so nobody
+## joins into the middle of a fight.
+func _safest_spawn(spawns: Array[Node3D]) -> int:
+	var others: Array[Actor] = []
+	others.append_array(bots)
+	others.append_array(active_players())
+	var best := 0
+	var best_distance := -1.0
+	for i in spawns.size():
+		var nearest := INF
+		for other in others:
+			if not other.is_dead:
+				nearest = minf(nearest, spawns[i].global_position.distance_to(other.global_position))
+		if nearest > best_distance:
+			best_distance = nearest
+			best = i
+	return best
+
+
+## Takes a player out of the raid without a result, for a dropped connection.
+## Their gear falls where they stood.
+func remove_player(actor: Actor) -> void:
+	var state := state_for(actor)
+	if state == null:
+		return
+	if not state.finished and not actor.is_dead:
+		actor.kill("disconnect")
+		return
+	players.erase(state)
+
+
+func state_for(actor: Actor) -> PlayerState:
+	for state in players:
+		if state.actor == actor:
+			return state
+	return null
+
+
+## Players still in the raid.
+func active_players() -> Array[Actor]:
+	var out: Array[Actor] = []
+	for state in players:
+		if not state.finished:
+			out.append(state.actor)
+	return out
 
 
 func _spawn_bots() -> void:
 	var spawns := _map_nodes("spawn_bot")
-	var far := spawns.filter(func(m: Node3D) -> bool:
-		return m.global_position.distance_to(player.global_position) > MIN_BOT_SPAWN_DISTANCE)
-	if not far.is_empty():
-		spawns = far
+	if player != null:
+		var far := spawns.filter(func(m: Node3D) -> bool:
+			return m.global_position.distance_to(player.global_position) > MIN_BOT_SPAWN_DISTANCE)
+		if not far.is_empty():
+			spawns = far
 	if spawns.is_empty():
 		return
 	for i in world.bot_count:
 		var marker: Node3D = spawns[i % spawns.size()]
-		var bot := Actor.new()
-		bot.name = "Bot%d" % i
-		add_child(bot)
-		bot.global_position = marker.global_position + Vector3(rng.randf_range(-1, 1), 0, rng.randf_range(-1, 1))
-		world.equip_bot(bot, rng)
+		var at := marker.global_position + Vector3(rng.randf_range(-1, 1), 0, rng.randf_range(-1, 1))
+		var bot := spawn_bot("Bot%d" % i, at, rng.randi())
 		var brain := BotBrain.new()
 		brain.name = "Brain"
 		brain.seed_value = rng.randi()
 		bot.add_child(brain)
 		bot.died.connect(_on_actor_died)
-		bots.append(bot)
 		world.on_spawn(bot)
+		actor_spawned.emit(bot)
+
+
+## Creates a bot equipped from `equip_seed`, with no brain. A client calls this
+## with the server's seed to get the same bot.
+func spawn_bot(bot_name: String, at: Vector3, equip_seed: int) -> Actor:
+	var bot := Actor.new()
+	bot.name = bot_name
+	add_child(bot)
+	bot.global_position = at
+	var equip_rng := RandomNumberGenerator.new()
+	equip_rng.seed = equip_seed
+	world.equip_bot(bot, equip_rng)
+	bot_seeds[bot] = equip_seed
+	bots.append(bot)
+	return bot
 
 
 ## Parks the player's own vehicle beside them, then fills the map's vehicle
 ## markers with abandoned ones anyone can take.
 func _spawn_vehicles() -> void:
-	for id in _kit:
+	var state := state_for(player)
+	for id in state.kit:
 		if ItemDB.has_tag(id, "vehicle"):
-			_deployed_vehicles.append(id)
+			state.deployed_vehicles.append(id)
 			var side := Basis(Vector3.UP, player.cmd.yaw) * Vector3(2.5, 0.3, -1.0)
 			spawn_vehicle(id, player.global_position + side, player.cmd.yaw)
 	for marker in _map_nodes("spawn_vehicle"):
@@ -165,48 +299,71 @@ func _on_actor_died(actor: Actor, info: DamageInfo) -> void:
 	var drops := actor.get_drop_items()
 	if not drops.is_empty():
 		_spawn_container(drops, true, "%s's bag" % actor.display_name, actor.global_position)
-	if actor == player:
-		_finish("died", info.kind)
+	var killer := state_for(info.source as Actor) if info.source is Actor else null
+	if killer != null and killer.actor != actor:
+		killer.kills += 1
+		if killer.actor == player:
+			kills += 1
+		killer.actor.notice.emit("Killed %s" % actor.display_name)
+	var state := state_for(actor)
+	if state != null:
+		_finish_player(state, "died", info.kind)
+		if mode == Mode.SOLO:
+			return
+	else:
+		bots.erase(actor)
+	get_tree().create_timer(4.0).timeout.connect(_remove_actor.bind(actor))
+
+
+func _remove_actor(actor: Actor) -> void:
+	if not is_instance_valid(actor):
 		return
+	var state := state_for(actor)
+	if state != null:
+		players.erase(state)
 	bots.erase(actor)
-	if info.source == player:
-		kills += 1
-		player.notice.emit("Killed %s" % actor.display_name)
-	get_tree().create_timer(4.0).timeout.connect(actor.queue_free)
+	bot_seeds.erase(actor)
+	actor_removed.emit(actor)
+	actor.queue_free()
 
 
 func _on_actor_extracted(actor: Actor) -> void:
-	if actor != player or is_over:
+	var state := state_for(actor)
+	if state == null or state.finished or is_over:
 		return
 	world.on_extract(actor)
 	# Everything carried comes home: surviving gear and the backpack, and the
 	# vehicle they rode out on, whoever it belonged to.
-	Profile.add_to_stash(actor.get_drop_items())
 	if actor.vehicle != null:
-		_extracted_vehicle = actor.vehicle.get("item_id")
-		Profile.add_to_stash([_extracted_vehicle])
-	_finish("extracted", "")
+		state.extracted_vehicle = actor.vehicle.get("item_id")
+	_finish_player(state, "extracted", "")
+	if mode == Mode.SERVER:
+		_remove_actor(actor)
 
 
-func _finish(outcome: String, cause: String) -> void:
-	if is_over:
+func _finish_player(state: PlayerState, outcome: String, cause: String) -> void:
+	if state.finished:
 		return
-	is_over = true
+	state.finished = true
+	var actor := state.actor
+	var extracted := outcome == "extracted"
 	var loot: Array[String] = []
-	if outcome == "extracted":
-		loot.assign(player.inventory.items)
 	var kept: Array[String] = []
-	if outcome == "extracted":
-		kept.assign(player.gear_items.filter(func(id: String) -> bool:
-			return not ItemDB.has_tag(id, "starter")))
-		if _extracted_vehicle != "":
-			kept.append(_extracted_vehicle)
+	var brought_home: Array[String] = []
 	var lost: Array[String] = []
-	if outcome != "extracted":
-		lost.assign(player.get_drop_items())
+	if extracted:
+		loot.assign(actor.inventory.items)
+		kept.assign(actor.gear_items.filter(func(id: String) -> bool:
+			return not ItemDB.has_tag(id, "starter")))
+		brought_home.assign(actor.get_drop_items())
+		if state.extracted_vehicle != "":
+			kept.append(state.extracted_vehicle)
+			brought_home.append(state.extracted_vehicle)
+	else:
+		lost.assign(actor.get_drop_items())
 	# A vehicle you brought is lost unless you rode it (or another) back out.
-	var left_behind := _deployed_vehicles.duplicate()
-	left_behind.erase(_extracted_vehicle)
+	var left_behind := state.deployed_vehicles.duplicate()
+	left_behind.erase(state.extracted_vehicle)
 	lost.append_array(left_behind)
 	var result := {
 		"outcome": outcome,
@@ -214,14 +371,27 @@ func _finish(outcome: String, cause: String) -> void:
 		"world_id": world.id,
 		"loot": loot,
 		"kept_gear": kept,
+		"brought_home": brought_home,
 		"loot_value": ItemDB.total_value(loot),
 		"lost": lost,
-		"kills": kills,
-		"mastery_xp": mastery.report(outcome == "extracted"),
+		"kills": state.kills,
+		"mastery_xp": state.mastery.report(extracted),
 		"time_in_raid": world.raid_duration - time_left,
 	}
+	if apply_to_profile:
+		apply_result(result)
+	player_finished.emit(actor, result)
+	if mode == Mode.SOLO and actor == player:
+		is_over = true
+		ended.emit(result)
+
+
+## Writes a finished run into the local profile: what came home, and the record.
+static func apply_result(result: Dictionary) -> void:
+	var home: Array = result.get("brought_home", [])
+	if not home.is_empty():
+		Profile.add_to_stash(home)
 	Profile.record_raid(result)
-	ended.emit(result)
 
 
 func _map_nodes(group: String) -> Array[Node3D]:
@@ -235,3 +405,19 @@ func _map_nodes(group: String) -> Array[Node3D]:
 func _exit_tree() -> void:
 	if Worlds.current == world:
 		Worlds.current = null
+
+
+## One player's run: who they are, what they brought, and how they are doing.
+class PlayerState:
+	extends RefCounted
+
+	var actor: Actor
+	var kit: Array[String] = []
+	var mastery: MasteryTracker
+	## Mastery variants the player deployed with (track -> variant id).
+	var picks := {}
+	var kills := 0
+	## Vehicle items the player deployed with. Lost unless they extract riding one.
+	var deployed_vehicles: Array[String] = []
+	var extracted_vehicle := ""
+	var finished := false
