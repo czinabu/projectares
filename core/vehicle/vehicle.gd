@@ -8,7 +8,7 @@ extends CharacterBody3D
 ## along on its seat.
 ##
 ## The vehicle is the item. Its `item_id` is what goes into a stash when
-## someone extracts riding it, and anyone can climb onto a vehicle nobody is
+## someone signs out riding it, and anyone can climb onto a vehicle nobody is
 ## riding, so a parked bike can be stolen.
 ##
 ## There is deliberately no `class_name` here: other scripts preload this file,

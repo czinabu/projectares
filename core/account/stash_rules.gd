@@ -7,7 +7,8 @@ extends RefCounted
 ## Load with `preload("res://core/account/stash_rules.gd")`.
 ##
 ## The rules: the stash is safe. Whatever is in the loadout leaves the stash
-## when you deploy, and only comes back if you extract. Starter (scrap) items
+## when you deploy, and only comes back if you leave the world alive. Loot
+## banked at a depot is added while you are out. Starter (scrap) items
 ## are free and never stored.
 
 

@@ -98,7 +98,7 @@ func _ready() -> void:
 			"A shockwave that hurts and staggers everyone near you.")
 
 	# Vehicles. Not carried: the Raid parks one next to you when you deploy, and
-	# whoever extracts riding it takes it home. Stats tune Vehicle.
+	# whoever signs out riding it takes it home. Stats tune Vehicle.
 	register("bike_scrapper", "Scrapper Bike", Rarity.UNCOMMON, 600, ["vehicle"],
 			{"max_speed": 22.0, "boost_speed": 29.0, "body_color": Color(0.6, 0.45, 0.3)},
 			"Rattly motorbike. Fast, loud, and no cover for the rider.")

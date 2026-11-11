@@ -20,8 +20,12 @@ var _backpack: Label
 var _prompt: Label
 var _view: Label
 var _feed: Label
-var _extract_bar: ProgressBar
+var _hold_bar: ProgressBar
+var _death: Label
 var _messages: Array[Dictionary] = []
+## The local player's last life, shown while they are down (see `show_death`).
+var _death_result := {}
+var _redeploy_wait := 0.0
 
 
 func setup(p_raid: Raid, p_controller: PlayerController) -> void:
@@ -70,8 +74,13 @@ func _ready() -> void:
 	_prompt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_place(_prompt, 0.5, 0.5, Vector2(-300, 40), Vector2(600, 30))
 
-	_extract_bar = _bar(root, Color(0.25, 1.0, 0.55))
-	_place(_extract_bar, 0.5, 0.5, Vector2(-150, 76), Vector2(300, 14))
+	_hold_bar = _bar(root, Color(0.25, 1.0, 0.55))
+	_place(_hold_bar, 0.5, 0.5, Vector2(-150, 76), Vector2(300, 14))
+
+	_death = _label(root, "", 24)
+	_death.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_death.visible = false
+	_place(_death, 0.5, 0.5, Vector2(-450, -190), Vector2(900, 200))
 
 	_vitals = _label(root, "", 16)
 	_place(_vitals, 0.0, 1.0, Vector2(18, -108), Vector2(500, 24))
@@ -110,9 +119,11 @@ func _process(delta: float) -> void:
 	if raid == null or raid.player == null or not is_instance_valid(raid.player):
 		return
 	var p := raid.player
-	var secs := int(maxf(raid.time_left, 0.0))
-	_timer.text = "%s   %02d:%02d" % [raid.world.display_name, secs / 60, secs % 60]
-	_timer.modulate = Color(1, 0.4, 0.3) if secs < 120 else Color.WHITE
+	_timer.text = raid.world.display_name
+	_redeploy_wait = maxf(0.0, _redeploy_wait - delta)
+	_death.visible = p.is_dead and not _death_result.is_empty()
+	if _death.visible:
+		_death.text = death_text(_death_result, _redeploy_wait)
 
 	_vitals.text = "Health %d   Armor %d (%s)   Stamina %d" % [
 		ceili(p.health.health), ceili(p.health.armor), p.frame_name, floori(p.stamina)]
@@ -145,7 +156,7 @@ func _process(delta: float) -> void:
 		p.inventory.items.size(), p.inventory.capacity, p.inventory.total_value(),
 		p.inventory.count_with_tag("heal")]
 
-	_view.text = "Camera: %s   press V to switch\nWASD move   Shift sprint   %s   Q dash   H heal   E loot%s\n1 / 2 or mouse wheel: switch weapon   %s" % [
+	_view.text = "Camera: %s   press V to switch\nWASD move   Shift sprint   %s   Q dash   H heal   E loot%s   L sign out\n1 / 2 or mouse wheel: switch weapon   %s" % [
 		PlayerController.VIEW_NAMES[controller.active_view()],
 		p.flight.controls_hint(),
 		"   G ability" if p.ability.enabled else "",
@@ -159,11 +170,16 @@ func _process(delta: float) -> void:
 		_view.text += "\nRiding %s   %d km/h   W throttle   S brake   A / D steer   Shift boost   E get off" % [
 			p.vehicle.get("display_name"), roundi(kmh)]
 
-	var progress := raid.extract_progress()
-	_extract_bar.visible = progress > 0.0
-	_extract_bar.value = progress * 100.0
-	if progress > 0.0:
-		_prompt.text = "Extracting..."
+	var banking := raid.bank_progress()
+	var leaving := raid.sign_out_progress(p)
+	_hold_bar.visible = (banking > 0.0 or leaving >= 0.0) and not p.is_dead
+	_hold_bar.value = (leaving if leaving >= 0.0 else banking) * 100.0
+	if p.is_dead:
+		_prompt.text = ""
+	elif leaving >= 0.0:
+		_prompt.text = "Signing out...   L to cancel"
+	elif banking > 0.0:
+		_prompt.text = "Banking your backpack..."
 	elif p.heal_time_left > 0.0:
 		_prompt.text = "Healing %.1f" % p.heal_time_left
 	else:
@@ -219,6 +235,35 @@ func _on_hit_confirmed(_target: Actor, info: DamageInfo, lethal: bool) -> void:
 
 func _on_player_damaged(info: DamageInfo) -> void:
 	_hurt_flash.color.a = clampf(_hurt_flash.color.a + 0.12 + info.amount * 0.012, 0.0, 0.45)
+
+
+## Shows what the local player's death cost them and how to carry on.
+## `wait` is how many seconds until they may drop back in.
+func show_death(result: Dictionary, wait: float) -> void:
+	_death_result = result
+	_redeploy_wait = wait
+
+
+## The words on the death screen.
+static func death_text(result: Dictionary, wait: float) -> String:
+	var by: String = result.get("killed_by", "")
+	var lost: Array = result.get("lost", [])
+	var lines: Array[String] = ["Killed by %s" % by if by != "" else "You died"]
+	lines.append("Lost: %s" % ItemDB.summarize(lost) if not lost.is_empty() else "Nothing lost")
+	var banked: Array = result.get("banked", [])
+	if not banked.is_empty():
+		lines.append("Banked before you fell: worth %d" % int(result.get("banked_value", 0)))
+	lines.append("")
+	if wait > 0.0:
+		lines.append("Drop back in in %d..." % ceili(wait))
+	else:
+		lines.append("Enter: drop back in      L: return to the hub")
+	return "\n".join(lines)
+
+
+## Puts a line in the message feed.
+func notify(text: String) -> void:
+	_on_notice(text)
 
 
 func _on_notice(text: String) -> void:

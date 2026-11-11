@@ -11,7 +11,7 @@ extends RefCounted
 ##   - Marker3D nodes in group "spawn_player"
 ##   - Marker3D nodes in group "spawn_bot"
 ##   - Marker3D nodes in group "spawn_cache" (optional meta "loot_source")
-##   - ExtractionZone nodes in group "exit"
+##   - Depot nodes in group "depot": where players bank what they carry
 ##   - optionally Marker3D nodes in group "spawn_vehicle" (optional meta
 ##     "loot_source", default "vehicle"). The Raid parks the first
 ##     vehicle-tagged item from `roll_loot` there, facing the marker's yaw.
@@ -23,10 +23,29 @@ extends RefCounted
 var id := ""
 var display_name := "Unnamed world"
 var description := ""
-## Seconds until the storm kills anyone still inside.
-var raid_duration := 900.0
+## How many bots the world keeps alive. A dead one is replaced after
+## `bot_respawn_time` seconds, away from the players.
 var bot_count := 8
-var exit_hold_time := 4.0
+var bot_respawn_time := 45.0
+## Seconds an emptied cache takes to fill again.
+var cache_refill_time := 240.0
+## Seconds before a vehicle that left its parking spot is replaced there, and
+## before a vehicle nobody rides is cleared away.
+var vehicle_respawn_time := 300.0
+## Seconds a dead actor's bag lies around before it is cleared away.
+var bag_lifetime := 300.0
+## Seconds to stand in a depot to bank what you carry.
+var depot_hold_time := 4.0
+## Seconds a sign-out takes. Taking or dealing damage cancels it.
+var sign_out_time := 10.0
+## Seconds the body of a player who quit in a fight stays in the world.
+var combat_log_time := 30.0
+## Seconds after a hit, given or taken, that a player counts as in a fight.
+var combat_time := 6.0
+## Seconds a player who just dropped in cannot be hurt. Ends when they attack.
+var spawn_protection := 4.0
+## Seconds between dying and being allowed to drop in again.
+var redeploy_delay := 3.0
 
 
 func create_map() -> Node3D:
@@ -68,5 +87,6 @@ func on_death(_actor: Actor, _info: DamageInfo) -> void:
 	pass
 
 
-func on_extract(_actor: Actor) -> void:
+## A player left the world alive, taking what they carried home.
+func on_leave(_actor: Actor) -> void:
 	pass

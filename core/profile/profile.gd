@@ -4,7 +4,7 @@ extends Node
 ## your stash (`core/account/stash_service.gd`) and this one is not used.
 ##
 ## Gear rules: the stash is safe. Whatever is in the loadout leaves the stash
-## when you deploy, and only comes back if you extract.
+## when you deploy, and only comes back if you leave the world alive.
 
 const SAVE_PATH := "user://profile.json"
 const MasteryBook := preload("res://core/progression/mastery_book.gd")
@@ -35,6 +35,8 @@ var player_name := "Raider"
 var last_server := "127.0.0.1"
 ## Proves to a server that an online account is yours. Made on first use.
 var online_secret := ""
+## Lives started, and lives that ended by leaving alive. The names are from
+## when a life was a timed raid; they stay so old saves keep loading.
 var raids_played := 0
 var raids_extracted := 0
 var kills := 0
@@ -120,7 +122,7 @@ func get_online_secret() -> String:
 
 func record_raid(result: Dictionary) -> void:
 	raids_played += 1
-	if result.get("outcome", "") == "extracted":
+	if result.get("outcome", "") == "left":
 		raids_extracted += 1
 	kills += result.get("kills", 0)
 	var gained: Dictionary = result.get("mastery_xp", {})

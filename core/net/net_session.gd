@@ -29,9 +29,14 @@ extends Node
 ## Connecting puts a client in the lobby: it signs in with a name and a secret,
 ## and the server answers with that account's stash and loadout from its
 ## `StashService`. Loadout changes are requests the server checks. `deploy`
-## enters the raid with the kit the server took out of the stash, and the
-## server settles the result into the stash when the run ends. A client never
-## sends a kit.
+## drops you into the world with the kit the server took out of the stash, and
+## the server settles each life into the stash when it ends. After a death the
+## client stays connected and `deploy` drops it in again. A client never sends
+## a kit.
+##
+## The server's raid never ends or restarts. A client that disconnects leaves
+## its body behind for a while (`Raid.remove_player`), and the server settles
+## that life when the body is killed or its sign-out runs out.
 ##
 ## Each session owns its own multiplayer API rooted at itself, so it works
 ## anywhere in the scene tree and several can live in one process.
@@ -43,19 +48,19 @@ signal signed_in(account: Dictionary)
 signal account_changed(account: Dictionary)
 ## Client: the server turned down a lobby request (equip, pick, deploy).
 signal lobby_error(reason: String)
-## Client: the raid view exists and your actor is in it.
+## Client: the raid view exists and your actor is in it. Fires again every
+## time you drop back in after a death.
 signal joined(raid: Raid)
-## Client: your run ended (died or extracted). The result is like a solo raid's.
+## Client: one life ended. `result.outcome` is "died" (you are still connected
+## and `deploy` drops you in again) or "left" (your sign-out finished).
 signal run_finished(result: Dictionary)
 ## Client: could not connect, or the server refused.
 signal failed(reason: String)
 ## Client: the connection dropped after joining.
 signal disconnected
-## Server: a fresh raid replaced a finished one.
-signal raid_restarted(raid: Raid)
 
 const DEFAULT_PORT := 24565
-const PROTOCOL := 4
+const PROTOCOL := 5
 const StashService := preload("res://core/account/stash_service.gd")
 ## Server physics ticks between state updates (2 = 30 a second).
 const TICKS_PER_SNAPSHOT := 2
@@ -78,7 +83,8 @@ const HISTORY_TICKS := 180
 const CORRECTION_RATE := 0.2
 ## Notices the server passes on to a player. Others are produced locally.
 const FORWARDED_NOTICES := ["Parry!", "Wrong side", "Guard broken", "Staggered", "Killed ", "Looted ",
-		"Backpack full", "Someone is riding it"]
+		"Backpack full", "Someone is riding it", "Banked ", "Signing out", "Sign-out cancelled",
+		"You cannot sign out"]
 
 var is_server := false
 var raid: Raid
@@ -150,9 +156,9 @@ var _ride_turn := 0.0    # heading error of your ride still to blend away (clien
 var _ride_entry: Array = [] # the server's last answer about your ride, once compared (client)
 var _sent_kills := {}    # actor id -> kill count last sent (server)
 var _tick := 0
-var _had_players := false
-var _restart_in := -1.0
-var _finished := false
+var _died_at := {}       # peer id -> msec when their last life ended in a death (server)
+var _finished := false   # client: signed out, so the server closing the connection is expected
+var _can_redeploy := false # client: dead and still connected
 
 
 func _enter_tree() -> void:
@@ -213,6 +219,8 @@ func _start_server_raid() -> void:
 	raid.actor_spawned.connect(_on_server_actor_spawned)
 	raid.actor_removed.connect(_on_server_actor_removed)
 	raid.player_finished.connect(_on_server_player_finished)
+	raid.player_banked.connect(_on_server_player_banked)
+	raid.sign_out_changed.connect(_on_server_sign_out_changed)
 	raid.container_spawned.connect(_on_server_container_spawned)
 	raid.vehicle_spawned.connect(_on_server_vehicle_spawned)
 	raid.vehicle_removed.connect(_on_server_vehicle_removed)
@@ -221,9 +229,6 @@ func _start_server_raid() -> void:
 	if bot_count >= 0:
 		world.bot_count = bot_count
 	raid.start_server(world)
-	_had_players = false
-	_restart_in = -1.0
-	raid_restarted.emit(raid)
 
 
 func _clear_tables() -> void:
@@ -280,6 +285,9 @@ func _on_peer_disconnected(peer: int) -> void:
 	_peer_account.erase(peer)
 	_input_queue.erase(peer)
 	_queued_seq.erase(peer)
+	_died_at.erase(peer)
+	# Their body stays in the world for a while. The run is settled into the
+	# account when it is killed or its sign-out runs out.
 	var actor: Actor = _peer_actor.get(peer)
 	if actor != null and is_instance_valid(actor) and raid != null:
 		raid.remove_player(actor)
@@ -370,10 +378,36 @@ func _on_server_player_finished(actor: Actor, result: Dictionary) -> void:
 	if account_id != "":
 		_actor_account.erase(actor)
 		stash.settle(account_id, result)
-		if online:
-			_account.rpc_id(peer, stash.snapshot(account_id))
+		# Everyone signed in to the account hears, including a player back in
+		# the lobby whose old body just finished its sign-out.
+		for other: int in _peer_account:
+			if _peer_account[other] == account_id and other in _api.get_peers():
+				_account.rpc_id(other, stash.snapshot(account_id))
+	if _peer_actor.get(peer) == actor:
+		# Free to drop in again, after a short wait if they died.
+		_peer_actor.erase(peer)
+		_input_queue.erase(peer)
+		if result.get("outcome", "") == "died":
+			_died_at[peer] = Time.get_ticks_msec()
 	if online:
 		_run_finished.rpc_id(peer, result)
+
+
+## Banked loot goes straight into the account's stash.
+func _on_server_player_banked(actor: Actor, items: Array) -> void:
+	var account_id: String = _actor_account.get(actor, "")
+	if account_id == "":
+		return
+	stash.bank(account_id, items)
+	var peer: int = _actor_peer.get(actor, 0)
+	if peer != 0 and peer in _api.get_peers():
+		_account.rpc_id(peer, stash.snapshot(account_id))
+
+
+func _on_server_sign_out_changed(actor: Actor, seconds_left: float) -> void:
+	var peer: int = _actor_peer.get(actor, 0)
+	if peer != 0 and peer in _api.get_peers():
+		_sign_out.rpc_id(peer, seconds_left)
 
 
 func _send_account(peer: int) -> void:
@@ -440,8 +474,9 @@ func _send_spawn(peer: int, actor: Actor) -> void:
 			String(actor.name), actor.global_position, actor.cmd.yaw, data)
 
 
-## Lobby: deploy into the running raid with the account's loadout. The kit
-## and picks come from the server's stash, never from the client.
+## Drop into the running world with the account's loadout: from the lobby,
+## or again after a death. The kit and picks come from the server's stash,
+## never from the client.
 @rpc("any_peer", "call_remote", "reliable")
 func _request_join() -> void:
 	if not is_server or raid == null:
@@ -449,20 +484,23 @@ func _request_join() -> void:
 	var peer := _api.get_remote_sender_id()
 	if _peer_actor.has(peer) or not _peer_account.has(peer):
 		return
-	if raid.is_over or _restart_in >= 0.0:
-		_lobby_error.rpc_id(peer, "That raid is ending. Try again in a moment.")
+	if Time.get_ticks_msec() - int(_died_at.get(peer, -1000000)) < raid.world.redeploy_delay * 1000.0:
+		_lobby_error.rpc_id(peer, "Not yet. You can drop in again in a moment.")
 		return
 	var account_id: String = _peer_account[peer]
 	var deployed: Dictionary = stash.deploy(account_id, raid.world)
 	if not deployed.ok:
 		_lobby_error.rpc_id(peer, deployed.error)
 		return
+	# A peer that is dropping back in already knows the world. It must hear
+	# which actor is its own before it hears that the actor exists.
+	var returning := peer in _joined_peers
+	_joined_peers.erase(peer)
 	var actor := raid.add_player(deployed.kit, deployed.picks, stash.snapshot(account_id).name)
 	_actor_account[actor] = account_id
 	_send_account(peer)
 	_peer_actor[peer] = actor
 	_actor_peer[actor] = peer
-	_had_players = true
 	actor.hit_confirmed.connect(_on_server_hit_confirmed.bind(peer))
 	actor.health.damaged.connect(func(info: DamageInfo) -> void:
 		if peer in _api.get_peers():
@@ -478,7 +516,10 @@ func _request_join() -> void:
 		if peer in _api.get_peers():
 			_inventory.rpc_id(peer, actor.inventory.items))
 	_joined_peers.append(peer)
-	_welcome.rpc_id(peer, _ids[actor], raid.time_left)
+	_welcome.rpc_id(peer, _ids[actor])
+	if returning:
+		_send_spawn(peer, actor)
+		return
 	for other: Actor in _ids:
 		if not other.is_dead:
 			_send_spawn(peer, other)
@@ -493,6 +534,20 @@ func _request_join() -> void:
 func _on_server_hit_confirmed(target: Actor, info: DamageInfo, lethal: bool, peer: int) -> void:
 	if peer in _api.get_peers() and _ids.has(target):
 		_hit_feedback.rpc_id(peer, _ids[target], info.amount, info.kind, lethal, info.blocked, info.parried)
+
+
+## In the world: start signing out, or call it off.
+@rpc("any_peer", "call_remote", "reliable")
+func _request_sign_out(start: bool) -> void:
+	if not is_server or raid == null:
+		return
+	var actor: Actor = _peer_actor.get(_api.get_remote_sender_id())
+	if actor == null or not is_instance_valid(actor):
+		return
+	if start:
+		raid.begin_sign_out(actor)
+	else:
+		raid.cancel_sign_out(actor)
 
 
 @rpc("any_peer", "call_remote", "unreliable_ordered")
@@ -556,7 +611,7 @@ func _seen_positions(attacker: Actor) -> Dictionary:
 	return _past.get(tick, {})
 
 
-func _server_late_tick(delta: float) -> void:
+func _server_late_tick(_delta: float) -> void:
 	if raid == null:
 		return
 	for id: int in _actors:
@@ -587,7 +642,7 @@ func _server_late_tick(delta: float) -> void:
 		for start in range(0, entries.size(), ACTORS_PER_PACKET):
 			var chunk := entries.slice(start, start + ACTORS_PER_PACKET)
 			for peer in _joined_peers:
-				_state.rpc_id(peer, _tick, raid.time_left, chunk)
+				_state.rpc_id(peer, _tick, chunk)
 		if not _vehicles.is_empty():
 			var rides: Array = []
 			for id: int in _vehicles:
@@ -604,28 +659,6 @@ func _server_late_tick(delta: float) -> void:
 			_sent_kills[id] = state.kills
 			for peer in _joined_peers:
 				_kills.rpc_id(peer, id, state.kills)
-	# A raid that ran out of time, or that everyone has left, makes way for a new one.
-	if _restart_in < 0.0 and (raid.is_over or (_had_players and raid.players.is_empty())):
-		_restart_in = 5.0 if raid.is_over else 1.0
-	if _restart_in >= 0.0:
-		_restart_in -= delta
-		if _restart_in < 0.0:
-			_restart_raid()
-
-
-func _restart_raid() -> void:
-	# Players in the old raid are sent home. Players waiting in the lobby stay.
-	for peer in _joined_peers:
-		if peer in _api.get_peers():
-			_peer_account.erase(peer)
-			_api.multiplayer_peer.disconnect_peer(peer)
-	_joined_peers.clear()
-	# Everyone should be settled by now. Anyone who is not gets their gear back.
-	for account_id: String in _actor_account.values():
-		stash.cancel_deploy(account_id)
-	raid.queue_free()
-	remove_child(raid)
-	_start_server_raid()
 
 
 # ---------------------------------------------------------------- client ----
@@ -701,14 +734,38 @@ func pick_mastery(track: String, variant_id: String) -> void:
 		_request_pick.rpc_id(1, track, variant_id)
 
 
-## Lobby: deploy into the server's raid. `joined` follows, or `lobby_error`.
+## Drop into the server's world: from the lobby, or again after a death.
+## `joined` follows, or `lobby_error`.
 func deploy() -> void:
-	if _is_connected() and not account.is_empty() and my_actor_id < 0:
+	if _is_connected() and not account.is_empty() and (my_actor_id < 0 or _can_redeploy):
 		_request_join.rpc_id(1)
 
 
+## In the world: ask the server to start your sign-out, or to call it off.
+func sign_out(start := true) -> void:
+	if _is_connected() and my_actor_id >= 0 and not _can_redeploy:
+		_request_sign_out.rpc_id(1, start)
+
+
 @rpc("authority", "call_remote", "reliable")
-func _welcome(actor_id: int, time_left: float) -> void:
+func _welcome(actor_id: int) -> void:
+	if raid != null:
+		# Dropping back in: the world is already here. Only your actor is new.
+		_can_redeploy = false
+		var corpse: Actor = raid.player
+		if corpse != null and is_instance_valid(corpse):
+			var state := raid.state_for(corpse)
+			if state != null:
+				raid.players.erase(state)
+			_actors.erase(_ids.get(corpse, -1))
+			_ids.erase(corpse)
+			corpse.queue_free()
+		raid.player = null
+		_history.clear()
+		_corrections.erase(my_actor_id)
+		_latest.erase(my_actor_id)
+		my_actor_id = actor_id
+		return
 	_clear_tables()
 	my_actor_id = actor_id
 	Combat.authoritative = false
@@ -716,7 +773,6 @@ func _welcome(actor_id: int, time_left: float) -> void:
 	raid.name = "Raid"
 	add_child(raid)
 	raid.start_client(Worlds.get_world(world_id))
-	raid.time_left = time_left
 
 
 @rpc("authority", "call_remote", "reliable")
@@ -782,8 +838,8 @@ func _kills(id: int, count: int) -> void:
 
 
 @rpc("authority", "call_remote", "unreliable_ordered")
-func _state(tick: int, time_left: float, entries: Array) -> void:
-	_after_lag(_receive_state.bind(tick, time_left, entries))
+func _state(tick: int, entries: Array) -> void:
+	_after_lag(_receive_state.bind(tick, entries))
 
 
 ## Runs `update` now, or after the simulated lag.
@@ -794,10 +850,9 @@ func _after_lag(update: Callable) -> void:
 		update.call()
 
 
-func _receive_state(tick: int, time_left: float, entries: Array) -> void:
+func _receive_state(tick: int, entries: Array) -> void:
 	if raid == null:
 		return
-	raid.time_left = time_left
 	if tick > _newest_tick:
 		_newest_tick = tick
 		_fresh_state = true
@@ -1001,9 +1056,22 @@ func _notice(text: String) -> void:
 			Sfx.play("loot")
 
 
+## Your sign-out started, with this many seconds to go, or stopped (below zero).
+@rpc("authority", "call_remote", "reliable")
+func _sign_out(seconds_left: float) -> void:
+	var me: Actor = _actors.get(my_actor_id)
+	var state := raid.state_for(me) if raid != null and me != null else null
+	if state != null:
+		state.sign_out_left = seconds_left
+		state.sign_out_total = maxf(seconds_left, 0.0)
+
+
 @rpc("authority", "call_remote", "reliable")
 func _run_finished(result: Dictionary) -> void:
-	_finished = true
+	if result.get("outcome", "") == "died":
+		_can_redeploy = true
+	else:
+		_finished = true
 	run_finished.emit(result)
 
 

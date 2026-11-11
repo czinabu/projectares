@@ -7,6 +7,12 @@ extends Node
 ## come from the character's eyes, so third-person never lets you shoot from
 ## behind cover.
 
+## The player pressed the sign-out key. Alive, that starts or cancels a
+## sign-out. Dead, it means going back to the hub.
+signal sign_out_requested
+## The player, dead, asked to drop back in.
+signal redeploy_requested
+
 enum ViewMode { FIRST, THIRD }
 ## How the melee side is picked: by flicking the mouse, or by the movement keys.
 enum StanceControl { MOUSE, MOVE }
@@ -102,6 +108,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		toggle_view()
 	elif event.is_action_pressed("melee_control"):
 		toggle_stance_control()
+	elif event.is_action_pressed("sign_out"):
+		sign_out_requested.emit()
+	elif event.is_action_pressed("redeploy") and is_instance_valid(actor) and actor.is_dead:
+		redeploy_requested.emit()
 
 
 func toggle_view() -> void:

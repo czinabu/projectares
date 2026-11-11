@@ -62,10 +62,9 @@ const FERAL_DROPS := [
 func _init() -> void:
 	id = "frostline"
 	display_name = "Frostline"
-	description = "Whiteout glacier station. Wardens and Ferals fight each other and you. Shorter raid, longer exits."
-	raid_duration = 600.0
+	description = "Whiteout glacier station. Wardens and Ferals fight each other and you. No PvP: other players are on your side."
 	bot_count = 9
-	exit_hold_time = 6.0
+	depot_hold_time = 6.0
 
 
 func register_items() -> void:
@@ -109,14 +108,15 @@ func roll_loot(source: String, rng: RandomNumberGenerator) -> Array[String]:
 	return out
 
 
-## Anyone can hurt anyone outside their own faction. Wardens and Ferals hunt
-## each other, so a fight between them is a chance to slip past or third-party.
+## A PvE world: nobody can hurt their own faction, and every player is in the
+## same one. Wardens and Ferals hunt each other, so a fight between them is a
+## chance to slip past or third-party.
 func can_damage(attacker: Node, target: Node, _info: DamageInfo) -> bool:
 	if attacker == target:
 		return false
 	var a := attacker as Actor
 	var t := target as Actor
-	if a and t and not a.is_player and not t.is_player and a.faction == t.faction:
+	if a and t and a.faction == t.faction:
 		return false
 	return true
 
