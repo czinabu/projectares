@@ -20,6 +20,7 @@ const KEY_ACTIONS := {
 	"weapon_1": KEY_1,
 	"weapon_2": KEY_2,
 	"scoreboard": KEY_TAB,
+	"phone": KEY_P,
 }
 
 const MOUSE_ACTIONS := {
