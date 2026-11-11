@@ -8,6 +8,8 @@ const Human := preload("res://core/visual/human.gd")
 
 ## The look changed. The hub's owner saves it and passes it on.
 signal changed(appearance: Dictionary)
+## The customizer was put away.
+signal customizer_closed
 
 ## The look being edited. Always a valid appearance.
 var appearance := {}
@@ -119,8 +121,9 @@ func show_customizer() -> void:
 
 
 func hide_customizer() -> void:
-	if _overlay:
+	if _overlay and _overlay.visible:
 		_overlay.visible = false
+		customizer_closed.emit()
 
 
 func is_customizing() -> bool:
