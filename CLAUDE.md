@@ -61,8 +61,14 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   feet back on the ground, or the actor falls through. Ashfront's map
   (`worlds/ashfront/map.gd`) works its ground and navigation mesh out once
   per run and shares them between copies (`_shared`), so a new copy is cheap.
-  Its strongpoints are "strongpoint" markers (see `WorldDef`); the capture
-  rules live in core, not in the map.
+- Strongpoints (`core/war/strongpoint.gd`, `Raid.strongpoints`): a map only
+  marks where they are (Marker3D nodes in the group "strongpoint", see the
+  map contract in `WorldDef`); the `Raid` runs them. A side is a string key
+  from `Raid.side_of`: one per bot faction, one per player, or one for all
+  players where `WorldDef.players_allied`. Only the authority decides who
+  holds a site; clients get it from `NetSession`, including whether a site is
+  theirs (`Strongpoint.viewer_holds`), and never see another player's key.
+  Send bots somewhere with `BotBrain.post_to`, not a second mechanism.
 - Mastery pays for using gear, never for leaving alive, or signing out over
   and over would farm it.
 - Blocking and parrying happen in `Weapon.modify_incoming`, which `Combat.deal`
@@ -78,6 +84,11 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   pick surfaces, an atmosphere and bot skins (`set_meta("look", ...)`) from
   its generic kits. Decoration in a map uses its own RNG so it cannot shift
   the gameplay layout.
+- Legs follow the actor's velocity, never its input (`core/visual/locomotion.gd`):
+  walk and run clips are measured from their feet and played at actual speed
+  over clip speed, the clip nearest the direction of travel is picked, and the
+  lower body turns the rest of the way while the spine keeps the chest on the
+  aim. Remote players work the same way from their replicated velocity.
 - People are built from parts (`core/visual/human.gd`): an "appearance" names
   a build, four parts and colours. It is cosmetic only and never trusted:
   always pass one through `Look.clean_appearance` / `Look.set_appearance`,
