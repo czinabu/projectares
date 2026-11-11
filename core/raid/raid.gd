@@ -149,7 +149,8 @@ func _setup(p_world: WorldDef, p_seed: int) -> void:
 	else:
 		rng.randomize()
 
-	war.scale = world.war_scale
+	# A safe zone is never at war.
+	war.scale = 0.0 if world.safe_zone else world.war_scale
 	map = world.create_map()
 	map.name = "Map"
 	map.set_meta("war_intensity", 0.0)
