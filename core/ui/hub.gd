@@ -166,7 +166,9 @@ func refresh(last_result: Dictionary) -> void:
 		"died":
 			var by: String = last_result.get("killed_by", "")
 			var how := "%s killed you" % by if by != "" else "You died"
-			_result.text = "%s and you lost %s." % [how, ItemDB.summarize(last_result.lost)]
+			var saved: Array = last_result.get("kept_gear", [])
+			_result.text = "%s and you lost %s.%s" % [how, ItemDB.summarize(last_result.lost),
+				"\nYour equipped gear came home: %s." % ItemDB.summarize(saved) if not saved.is_empty() else ""]
 			_result.modulate = Color(1.0, 0.45, 0.4)
 		_:
 			_result.text = ""

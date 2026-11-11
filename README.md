@@ -239,8 +239,12 @@ only flight reaches it), a ring of six outposts, and two rings of ice ridges for
 cover. Two enemy factions share the ice and fight each other as well as you:
 Wardens (slow, armored, long-range rifles) and Feral stalkers (fast, fragile,
 melee). It is a PvE world: players cannot hurt each other there, so it is the
-place to learn and gear up before Ashfront. Depots take longer to hold. It adds
-three items of its own: Cryo Cell, Signal Core and the Ice Axe.
+place to learn and gear up before Ashfront. It is also the gentle one. Dying
+there only drops your backpack; the gear you deployed with goes home with you
+(`WorldDef.keep_gear_on_death`). In return its caches hold basic gear and
+materials, and the rare and powerful gear is only found on Ashfront. Depots
+take longer to hold. It adds three items of its own: Cryo Cell, Signal Core and
+the Ice Axe.
 
 ## Run the tests
 

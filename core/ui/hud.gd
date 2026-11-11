@@ -250,6 +250,9 @@ static func death_text(result: Dictionary, wait: float) -> String:
 	var lost: Array = result.get("lost", [])
 	var lines: Array[String] = ["Killed by %s" % by if by != "" else "You died"]
 	lines.append("Lost: %s" % ItemDB.summarize(lost) if not lost.is_empty() else "Nothing lost")
+	var kept: Array = result.get("kept_gear", [])
+	if not kept.is_empty():
+		lines.append("Kept: %s" % ItemDB.summarize(kept))
 	var banked: Array = result.get("banked", [])
 	if not banked.is_empty():
 		lines.append("Banked before you fell: worth %d" % int(result.get("banked_value", 0)))

@@ -505,6 +505,9 @@ func spawn_container(items: Array, is_bag: bool, label: String, at: Vector3) -> 
 func _on_actor_died(actor: Actor, info: DamageInfo) -> void:
 	world.on_death(actor, info)
 	var drops := actor.get_drop_items()
+	if state_for(actor) != null and world.keep_gear_on_death:
+		# A gentler world: a player's equipped gear goes home, not in the bag.
+		drops.assign(actor.inventory.items)
 	if not drops.is_empty():
 		var bag := spawn_container(drops, true, "%s's bag" % actor.display_name, actor.global_position)
 		# Bags do not pile up forever in a world that never ends.
@@ -599,6 +602,11 @@ func _finish_player(state: PlayerState, outcome: String, cause: String, killed_b
 		if state.rode_home != "":
 			kept.append(state.rode_home)
 			brought_home.append(state.rode_home)
+	elif world.keep_gear_on_death:
+		lost.assign(actor.inventory.items)
+		kept.assign(actor.gear_items.filter(func(id: String) -> bool:
+			return not ItemDB.has_tag(id, "starter")))
+		brought_home.assign(kept)
 	else:
 		lost.assign(actor.get_drop_items())
 	# A vehicle you brought is lost unless you rode it (or another) back out.

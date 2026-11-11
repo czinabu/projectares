@@ -8,42 +8,41 @@ const MapScript := preload("res://worlds/frostline/map.gd")
 ## Share of bots that are Feral stalkers; the rest are Wardens.
 const FERAL_CHANCE := 0.45
 
+## Frostline is the gentle world, so its gear is the basic tier. Rare and
+## better gear only drops in the PvP world.
 const CACHE_TABLE := [
 	{"id": "scrap_metal", "weight": 30.0},
 	{"id": "circuit_board", "weight": 24.0},
 	{"id": "frost_cryo_cell", "weight": 18.0},
 	{"id": "medkit", "weight": 12.0},
 	{"id": "power_cell", "weight": 10.0},
-	{"id": "alloy_ingot", "weight": 5.0},
 	{"id": "smg_stinger", "weight": 3.0},
+	{"id": "rifle_carbine", "weight": 3.0},
 	{"id": "frame_runner", "weight": 3.0},
 	{"id": "boots_thruster", "weight": 2.5},
-	{"id": "frost_ice_axe", "weight": 2.0},
 ]
 
 ## Outpost roofs need a flight rig to reach.
 const ROOFTOP_TABLE := [
 	{"id": "frost_cryo_cell", "weight": 30.0},
-	{"id": "targeting_chip", "weight": 22.0},
-	{"id": "alloy_ingot", "weight": 18.0},
-	{"id": "frost_ice_axe", "weight": 10.0},
-	{"id": "dmr_longshot", "weight": 9.0},
+	{"id": "power_cell", "weight": 22.0},
+	{"id": "alloy_ingot", "weight": 12.0},
+	{"id": "hammer_breaker", "weight": 9.0},
 	{"id": "frame_trooper", "weight": 8.0},
 	{"id": "chip_barrier", "weight": 6.0},
-	{"id": "wings_glide", "weight": 5.0},
+	{"id": "boots_thruster", "weight": 5.0},
 ]
 
-## The top of the relay mast: the best and most exposed loot on the map.
+## The top of the relay mast: the best and most exposed loot on the map, and
+## the only place Frostline's own Ice Axe and Signal Core turn up.
 const RELAY_TABLE := [
 	{"id": "frost_signal_core", "weight": 30.0},
-	{"id": "reactor_core", "weight": 20.0},
-	{"id": "dmr_longshot", "weight": 15.0},
-	{"id": "chip_blink", "weight": 12.0},
-	{"id": "frame_bulwark", "weight": 10.0},
-	{"id": "lattice_shard", "weight": 6.0},
+	{"id": "frost_ice_axe", "weight": 25.0},
+	{"id": "alloy_ingot", "weight": 20.0},
+	{"id": "frame_trooper", "weight": 13.0},
+	{"id": "chip_barrier", "weight": 12.0},
 ]
 
-## Wardens carry station tech.
 const WARDEN_DROPS := [
 	{"id": "circuit_board", "weight": 40.0},
 	{"id": "power_cell", "weight": 30.0},
@@ -62,7 +61,8 @@ const FERAL_DROPS := [
 func _init() -> void:
 	id = "frostline"
 	display_name = "Frostline"
-	description = "Whiteout glacier station. Wardens and Ferals fight each other and you. No PvP: other players are on your side."
+	description = "Whiteout glacier station. Wardens and Ferals fight each other and you. No PvP, you keep your equipped gear when you die, and the loot is basic."
+	keep_gear_on_death = true
 	bot_count = 9
 	depot_hold_time = 6.0
 

@@ -1384,6 +1384,57 @@ func _test_frostline() -> void:
 		if factions.warden.size() >= 2:
 			check(not Combat.deal(factions.warden[1], DamageInfo.make(5.0, warden, "bullet")),
 					"a faction does not hurt itself")
+	# The gentle world: basic loot, and death only costs the backpack.
+	var gear_tags := ["weapon", "armor", "flight_rig", "ability", "vehicle"]
+	var too_good: Array[String] = []
+	for source: String in ["cache", "rooftop", "relay", "warden", "feral", "vehicle"]:
+		for i in 300:
+			for id in world.roll_loot(source, rng):
+				var is_gear := gear_tags.any(func(tag: String) -> bool: return ItemDB.has_tag(id, tag))
+				if is_gear and ItemDB.item_rarity(id) > ItemDB.Rarity.UNCOMMON and not id.begins_with("frost_") \
+						and id not in too_good:
+					too_good.append(id)
+	check(too_good.is_empty(), "Frostline only drops basic gear, apart from its own (%s)" % ", ".join(too_good))
+	var ash_gear: Array[String] = []
+	var ashfront := Worlds.get_world("ashfront")
+	for i in 300:
+		for id in ashfront.roll_loot("rooftop", rng):
+			if ItemDB.item_rarity(id) >= ItemDB.Rarity.RARE and ItemDB.has_tag(id, "weapon") and id not in ash_gear:
+				ash_gear.append(id)
+	check(ash_gear.size() >= 3, "the PvP world is where rare weapons drop (%d kinds)" % ash_gear.size())
+	await _end_raid(raid)
+	Profile.reset()
+	Profile.welcome_granted = true
+	Profile.add_to_stash(["rifle_carbine", "frame_trooper"])
+	Profile.equip("primary", "rifle_carbine")
+	Profile.equip("frame", "frame_trooper")
+	raid = Raid.new()
+	add_child(raid)
+	raid.start(world, 8, Profile.checkout_loadout(world))
+	for bot in raid.bots:
+		bot.get_node("Brain").set_physics_process(false)
+	await frames(3)
+	var gentle: Array[Dictionary] = []
+	raid.player_finished.connect(func(_a: Actor, r: Dictionary) -> void: gentle.append(r))
+	raid.player.inventory.add_item("frost_cryo_cell")
+	raid.player.kill("melee", raid.bots[0])
+	await frames(2)
+	var dropped := raid.get_children().filter(func(n: Node) -> bool:
+		return n is LootContainer and (n as LootContainer).is_bag)
+	check(dropped.size() == 1 and "frost_cryo_cell" in (dropped[0] as LootContainer).items
+			and "rifle_carbine" not in (dropped[0] as LootContainer).items,
+			"on a gentle world only the backpack drops when you die")
+	check(gentle.size() == 1 and gentle[0].outcome == "died" and "rifle_carbine" in gentle[0].kept_gear
+			and "frost_cryo_cell" in gentle[0].lost and "rifle_carbine" not in gentle[0].lost
+			and Hud.death_text(gentle[0], 0.0).contains("Kept"),
+			"the result says what was kept and what was lost")
+	check("rifle_carbine" in Profile.stash and "frame_trooper" in Profile.stash
+			and Profile.equipped("primary") == "rifle_carbine" and "frost_cryo_cell" not in Profile.stash,
+			"your equipped gear is back in the stash and still in the loadout")
+	var kit_again := Profile.checkout_loadout(world)
+	check("rifle_carbine" in kit_again, "so you drop back in with the same gear")
+	Profile.reset()
+	Profile.welcome_granted = true
 	# The ice axe is real gear: it equips as a melee weapon with its stats.
 	var axe_holder := Actor.new()
 	add_child(axe_holder)

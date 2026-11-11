@@ -33,6 +33,10 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   (`player_banked`). Never add a way to leave that skips `begin_sign_out`:
   a disconnect goes through `remove_player`, which leaves the body standing.
 - Drop-in protection is `Actor.protected_left`, checked in `Combat.deal`.
+- How harsh death is belongs to the world, not to `Raid`. With
+  `WorldDef.keep_gear_on_death` a dead player drops only the backpack and the
+  equipped gear returns in the result's `kept`. A gentle world pays for that
+  with basic loot tables; rare gear stays in the full-loot PvP world.
 - Mastery pays for using gear, never for leaving alive, or signing out over
   and over would farm it.
 - Blocking and parrying happen in `Weapon.modify_incoming`, which `Combat.deal`

@@ -44,6 +44,10 @@ var combat_log_time := 30.0
 var combat_time := 6.0
 ## Seconds a player who just dropped in cannot be hurt. Ends when they attack.
 var spawn_protection := 4.0
+## Death stakes. False is full loot: a dead player drops everything. True is
+## a gentler world: the gear they had equipped goes back to their stash and
+## only the backpack drops.
+var keep_gear_on_death := false
 ## Seconds between dying and being allowed to drop in again.
 var redeploy_delay := 3.0
 
