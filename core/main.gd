@@ -365,7 +365,8 @@ func _on_online_account_changed(account: Dictionary) -> void:
 		hub.update_account(account)
 		_refresh_base()
 		# Buying or selling clothing changes what the server lets you wear.
-		net.send_look(Profile.appearance)
+		if net != null:
+			net.send_look(Profile.appearance)
 
 
 func _on_online_joined(p_raid: Raid) -> void:
