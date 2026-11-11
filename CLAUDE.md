@@ -61,6 +61,14 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   holds a site; clients get it from `NetSession`, including whether a site is
   theirs (`Strongpoint.viewer_holds`), and never see another player's key.
   Send bots somewhere with `BotBrain.post_to`, not a second mechanism.
+- World events (`Raid.event`, `start_event`, `end_event`): one at a time, on
+  a timer the war speeds up, tuned by `WorldDef.event_interval`,
+  `event_lifetime` and `warlord_escort`. A supply pod is an ordinary
+  `LootContainer`; a warlord is an ordinary bot passed through
+  `WorldDef.make_warlord` (clients build the same one from `Raid.warlords`,
+  so keep that hook free of randomness). Event bots are extra and are never
+  respawned. Loot that should follow the war comes from
+  `WorldDef.roll_war_loot(source, rng, intensity)`, not `roll_loot`.
 - Mastery pays for using gear, never for leaving alive, or signing out over
   and over would farm it.
 - Blocking and parrying happen in `Weapon.modify_incoming`, which `Combat.deal`
