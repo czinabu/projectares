@@ -42,6 +42,8 @@ var ride_distance := 5.2
 ## separately from the on-foot view, which comes back when you get off.
 var ride_view := ViewMode.THIRD
 var base_fov := 80.0
+## The field of view while the camera is behind the character.
+var base_fov_third := 80.0
 var ads_fov := 55.0
 ## How far the mouse has to move, in pixels, to count as a stance flick.
 var flick_threshold := 45.0
@@ -243,7 +245,7 @@ func _process(delta: float) -> void:
 		if not hit.is_empty():
 			desired = pivot + (hit.position - pivot) * 0.85
 	camera.global_transform = Transform3D(look, desired)
-	camera.fov = lerpf(camera.fov, ads_fov if aiming else base_fov, 1.0 - exp(-14.0 * delta))
+	camera.fov = lerpf(camera.fov, ads_fov if aiming else wanted_base_fov(), 1.0 - exp(-14.0 * delta))
 	if _thrust_audio:
 		var thrusting := actor.flight.is_thrusting and not actor.is_dead
 		if thrusting and not _thrust_audio.playing:
@@ -279,6 +281,11 @@ func _on_hit_confirmed(_target: Actor, info: DamageInfo, lethal: bool) -> void:
 
 func _on_damaged(_info: DamageInfo) -> void:
 	Sfx.play("hurt")
+
+
+## The resting field of view for the view in use.
+func wanted_base_fov() -> float:
+	return base_fov_third if _wants_third_person() else base_fov
 
 
 func is_third_person() -> bool:
