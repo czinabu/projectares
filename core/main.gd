@@ -12,6 +12,7 @@ const ScoreboardScript := preload("res://core/ui/scoreboard.gd")
 const PhoneScript := preload("res://core/phone/phone.gd")
 const GameSettings := preload("res://core/settings/game_settings.gd")
 const BaseHudScript := preload("res://core/ui/base_hud.gd")
+const Economy := preload("res://core/economy/economy.gd")
 
 var hub: Hub
 var raid: Raid
@@ -60,6 +61,10 @@ func _ready() -> void:
 	hub.online_leave_requested.connect(leave_server)
 	_setup_phone()
 	hub.base_requested.connect(enter_base)
+	hub.look_changed.connect(func(appearance: Dictionary) -> void:
+		Profile.set_appearance(appearance, hub.character.owned)
+		if net != null:
+			net.send_look(Profile.appearance))
 
 
 func _notification(what: int) -> void:
@@ -93,6 +98,7 @@ func _open_base(stash: Array, loadout: Dictionary, owner_name: String) -> void:
 	add_child(base)
 	base.equip_requested.connect(_on_base_equip)
 	base.leave_requested.connect(leave_base)
+	Look.set_appearance(base.player, _my_look())
 	controller = PlayerController.new()
 	controller.setup(base.player)
 	base.add_child(controller)
@@ -145,8 +151,15 @@ func start_raid(world_id: String) -> void:
 	raid.name = "Raid"
 	add_child(raid)
 	raid.start(world, -1, Profile.checkout_loadout(world), Profile.mastery.active_picks())
+	Look.set_appearance(raid.player, _my_look())
 	_attach_player_view()
 	raid.ended.connect(_on_raid_ended)
+
+
+## The player's chosen look, limited to the clothing they own where they are:
+## the local stash solo, the server's stash in a lobby.
+func _my_look() -> Dictionary:
+	return Look.clean_appearance(Profile.appearance, Economy.unlocked_outfits(hub.stash_items()))
 
 
 func _attach_player_view() -> void:
@@ -309,6 +322,7 @@ func _try_join() -> void:
 	net.name = "Net"
 	net.player_name = Profile.player_name
 	net.secret = Profile.get_online_secret()
+	net.look = Profile.appearance
 	# `-- --lag 120 --loss 10` fakes a bad connection: milliseconds of delay
 	# each way, and the percent of input packets lost.
 	var args := OS.get_cmdline_user_args()
@@ -350,6 +364,8 @@ func _on_online_account_changed(account: Dictionary) -> void:
 	if raid == null:
 		hub.update_account(account)
 		_refresh_base()
+		# Buying or selling clothing changes what the server lets you wear.
+		net.send_look(Profile.appearance)
 
 
 func _on_online_joined(p_raid: Raid) -> void:

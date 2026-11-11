@@ -226,6 +226,24 @@ static func _hub(t: Node) -> void:
 			"the sell tab lists the stash, most valuable first")
 	shop.sell("", 1)
 	t.check(Profile.credits == 1450 and Profile.stash == (["hammer_breaker"] as Array[String]), "sell all loot sells only loot")
+	# Clothing from the Tailor unlocks its outfit in the customizer.
+	var look_before: Dictionary = Profile.appearance.duplicate()
+	var punk := {"build": "m", "head": "Punk", "body": "Punk", "legs": "Punk", "feet": "Punk"}
+	t.check(not hub.character.options_for("body").any(func(o: Array) -> bool: return o[0] == "Punk")
+			and Look.clean_appearance(punk, Profile.owned_outfits())["body"] != "Punk",
+			"an outfit you do not own is not offered and cannot be worn")
+	shop.buy("tailor", "outfit_punk")
+	t.check("outfit_punk" in Profile.stash and hub.character.options_for("body").any(func(o: Array) -> bool: return o[0] == "Punk"),
+			"buying clothing adds its outfit to the customizer")
+	Profile.set_appearance(punk)
+	t.check(Profile.appearance["body"] == "Punk" and Look.clean_appearance(punk, Profile.owned_outfits())["body"] == "Punk",
+			"owned clothing can be worn")
+	t.check(Look.clean_appearance(punk, Economy.unlocked_outfits(["rifle_carbine"]))["body"] != "Punk",
+			"a server whose stash lacks the clothing puts starter clothes on instead")
+	shop.sell("outfit_punk", 1)
+	t.check(Look.clean_appearance(Profile.appearance, Profile.owned_outfits())["body"] != "Punk",
+			"selling the clothing takes the outfit off again")
+	Profile.appearance = look_before
 	shop.shop_filter = "garage"
 	shop.refresh()
 	t.check(shop.tabs() == (["garage", "sell"] as Array[String]) and shop.current == "sell",

@@ -3,13 +3,13 @@
 importer="scene"
 importer_version=1
 type="PackedScene"
-uid="uid://okknqp4uqnwb"
-path="res://.godot/imported/Human_Swat.glb-687459c56d95ded363d37d8003c18a6e.scn"
+uid="uid://ck0ai5g3nnoj3"
+path="res://.godot/imported/m_Suit.glb-0fce9b79196fa681ab665e7d4312b18e.scn"
 
 [deps]
 
-source_file="res://assets/characters/Human_Swat.glb"
-dest_files=["res://.godot/imported/Human_Swat.glb-687459c56d95ded363d37d8003c18a6e.scn"]
+source_file="res://assets/characters/humans/m_Suit.glb"
+dest_files=["res://.godot/imported/m_Suit.glb-0fce9b79196fa681ab665e7d4312b18e.scn"]
 
 [params]
 

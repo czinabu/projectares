@@ -11,6 +11,7 @@ const BaseLayout := preload("res://core/base/base_layout.gd")
 const BaseHudScript := preload("res://core/ui/base_hud.gd")
 const LookTests := preload("res://tests/look_tests.gd")
 const EconomyTests := preload("res://tests/economy_tests.gd")
+const CustomizerTests := preload("res://tests/customizer_tests.gd")
 
 var _passed := 0
 var _failed := 0
@@ -58,6 +59,7 @@ func _run() -> void:
 	await _test_phone()
 	await _test_home_base()
 	await LookTests.run(self)
+	await CustomizerTests.run(self)
 	await _test_economy()
 
 

@@ -12,6 +12,7 @@ const MasteryBook := preload("res://core/progression/mastery_book.gd")
 const StashRules := preload("res://core/account/stash_rules.gd")
 ## The same money rules the server's StashService uses.
 const Economy := preload("res://core/economy/economy.gd")
+const Human := preload("res://core/visual/human.gd")
 ## Given once to every profile so there is gear to try loadouts with.
 const WELCOME_CRATE: Array[String] = ["rifle_carbine", "frame_trooper", "medkit", "medkit"]
 ## Later one-time crates, by name, so existing profiles get new kinds of gear
@@ -37,6 +38,8 @@ var player_name := "Raider"
 var last_server := "127.0.0.1"
 ## Proves to a server that an online account is yours. Made on first use.
 var online_secret := ""
+## How your character looks (see `core/visual/human.gd`). Cosmetic only.
+var appearance := Human.player_look({})
 var raids_played := 0
 var raids_extracted := 0
 var kills := 0
@@ -147,6 +150,19 @@ func _bank(result: Dictionary) -> Dictionary:
 	return result
 
 
+## Saves a look. Parts from outfits that are neither starter clothing nor in
+## `owned` (outfit ids) fall back to starter clothing. `owned` null means
+## what the local stash unlocks; online, pass what the server's stash unlocks.
+func set_appearance(p_appearance: Variant, owned: Variant = null) -> void:
+	appearance = Human.player_look(p_appearance, owned_outfits() if owned == null else owned)
+	save()
+
+
+## The customizer outfits the clothing in the local stash unlocks.
+func owned_outfits() -> Array[String]:
+	return Economy.unlocked_outfits(stash)
+
+
 ## The secret this game signs in to servers with, created the first time.
 func get_online_secret() -> String:
 	if online_secret.length() < 16:
@@ -189,6 +205,7 @@ func save() -> void:
 		"player_name": player_name,
 		"last_server": last_server,
 		"online_secret": online_secret,
+		"appearance": appearance,
 		"raids_played": raids_played,
 		"raids_extracted": raids_extracted,
 		"kills": kills,
@@ -223,6 +240,9 @@ func load_profile() -> void:
 	player_name = str(data.get("player_name", "Raider")).left(20)
 	last_server = str(data.get("last_server", "127.0.0.1")).left(80)
 	online_secret = str(data.get("online_secret", "")).left(128)
+	# Kept as chosen: clothing bought on a server is not in the local stash.
+	# What may actually be worn is checked wherever the look is used.
+	appearance = Human.sanitize(data.get("appearance"))
 	raids_played = int(data.get("raids_played", 0))
 	raids_extracted = int(data.get("raids_extracted", 0))
 	kills = int(data.get("kills", 0))

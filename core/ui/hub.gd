@@ -21,8 +21,11 @@ signal online_leave_requested
 signal phone_requested
 ## Walk around your home base, where the stash is on show.
 signal base_requested
+## The player changed how their character looks.
+signal look_changed(appearance: Dictionary)
 
 const MasteryPanel := preload("res://core/progression/mastery_panel.gd")
+const CharacterPanel := preload("res://core/ui/character_panel.gd")
 const MasteryBook := preload("res://core/progression/mastery_book.gd")
 const ShopPanel := preload("res://core/economy/shop_panel.gd")
 const Economy := preload("res://core/economy/economy.gd")
@@ -39,6 +42,7 @@ var _pickers := {}
 var _details := {}
 var _mastery: MasteryPanel
 var _shop: ShopPanel
+var character: CharacterPanel
 var _online_status: Label
 var _name_edit: LineEdit
 var _address_edit: LineEdit
@@ -108,6 +112,11 @@ func _ready() -> void:
 	_mastery.pick_requested.connect(func(track: String, variant_id: String) -> void:
 		online_pick_requested.emit(track, variant_id))
 	box.add_child(_mastery)
+
+	character = CharacterPanel.new()
+	character.appearance = Profile.appearance
+	character.changed.connect(func(appearance: Dictionary) -> void: look_changed.emit(appearance))
+	box.add_child(character)
 
 	_stash_title = _text("STASH", 20, Color(1.0, 0.55, 0.25))
 	box.add_child(_stash_title)
@@ -209,6 +218,9 @@ func _refresh_gear() -> void:
 		ItemDB.summarize(stash_items()), ItemDB.total_value(stash_items()),
 		record.get("raids_played"), record.get("raids_extracted"), record.get("kills")]
 	_shop.refresh()
+	# Clothing in the stash unlocks its outfits in the customizer.
+	character.owned = Economy.unlocked_outfits(stash_items())
+	character.set_appearance(Profile.appearance)
 
 
 ## Item ids in the stash that fit a slot, best first, without duplicates.
