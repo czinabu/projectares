@@ -40,6 +40,10 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   which is safe on a headless server. Online it travels in the spawn data as
   `data["look"]`; the server keeps what each signed-in player sent
   (`NetSession.look_for_peer`). `Raid` and gameplay never read it.
+  Players may only wear `Human.STARTER` clothes plus outfits they own:
+  `Human.player_look(raw, owned)` enforces it on the profile, in the
+  customizer and on the server. Better outfits are bought or earned, never
+  added to the starter list. Bots use `Human.sanitize` and can wear anything.
 - Only CC0 or similarly permissive assets, each recorded in `assets/LICENSES.md`.
 - Load assets that need importing (models, textures, fonts) with `load()` at
   runtime, not `preload`: a preload fails to parse on a fresh checkout before

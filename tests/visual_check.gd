@@ -16,9 +16,9 @@ func _ready() -> void:
 	await _shot(out_dir.path_join("hub.png"))
 	# The customizer, on a few looks.
 	var looks := [
-		{"build": "f", "head": "Punk", "body": "Soldier", "legs": "Worker", "feet": "SciFi", "skin": 3, "hair": 5, "top": 6, "bottom": 1},
-		{"build": "m", "head": "Adventurer", "body": "Swat", "legs": "Casual_2", "feet": "Farmer", "skin": 1, "hair": 2, "top": 3, "bottom": 0},
-		{"build": "m", "head": "Swat", "body": "Spacesuit", "legs": "Spacesuit", "feet": "Spacesuit", "skin": 5, "hair": 0, "top": 5, "bottom": 5},
+		{"build": "f", "head": "Adventurer", "body": "Casual", "legs": "Worker", "feet": "Worker", "skin": 3, "hair": 5, "top": 6, "bottom": 1},
+		{"build": "m", "head": "Casual_2", "body": "Casual_Hoodie", "legs": "Farmer", "feet": "Beach", "skin": 1, "hair": 2, "top": 3, "bottom": 0},
+		{"build": "m", "head": "Farmer", "body": "Beach", "legs": "Casual_2", "feet": "Casual_2", "skin": 5, "hair": 0, "top": 0, "bottom": 0},
 	]
 	for i in looks.size():
 		hub.character.set_appearance(looks[i])

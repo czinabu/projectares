@@ -11,6 +11,9 @@ signal changed(appearance: Dictionary)
 
 ## The look being edited. Always a valid appearance.
 var appearance := {}
+## Outfit ids (`Human.outfit_id`) this player owns on top of the starter
+## clothes. Only starter and owned outfits are offered.
+var owned: Array = []
 
 var _summary: Label
 var _overlay: Control
@@ -22,7 +25,7 @@ var _turn := 0.6
 
 
 func _ready() -> void:
-	appearance = Human.sanitize(appearance)
+	appearance = Human.player_look(appearance, owned)
 	add_theme_constant_override("separation", 4)
 	add_child(_label("CHARACTER", 20, Color(1.0, 0.55, 0.25)))
 	var row := HBoxContainer.new()
@@ -41,7 +44,7 @@ func _ready() -> void:
 
 ## Shows a look without announcing a change, e.g. the one loaded from disk.
 func set_appearance(p_appearance: Variant) -> void:
-	appearance = Human.sanitize(p_appearance)
+	appearance = Human.player_look(p_appearance, owned)
 	_refresh_summary()
 	if _overlay:
 		_sync_pickers()
@@ -57,7 +60,7 @@ func options_for(key: String) -> Array:
 			out.append([build, Human.BUILD_NAMES[build]])
 	elif key in Human.SLOTS:
 		var outfits: Dictionary = Human.OUTFITS[appearance["build"]]
-		for outfit: String in outfits:
+		for outfit in Human.wearable(appearance["build"], owned):
 			out.append([outfit, outfits[outfit]])
 	else:
 		var names: Array = Human.COLOR_KEYS[key][1]
@@ -66,21 +69,26 @@ func options_for(key: String) -> Array:
 	return out
 
 
-## Changes one choice. Switching build keeps the colours and resets the parts,
+## Changes one choice, if it is one the pickers offer. Switching build keeps the colours and resets the parts,
 ## since each build has its own outfits.
 func choose(key: String, value: Variant) -> void:
+	if not options_for(key).any(func(option: Array) -> bool: return option[0] == value):
+		return
 	var next := appearance.duplicate()
 	next[key] = value
-	_apply(Human.sanitize(next))
+	_apply(Human.player_look(next, owned))
 
 
 func randomize_look() -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.randomize()
-	var next := Human.random(rng)
+	var pool := {}
+	for build in Human.BUILDS:
+		pool[build] = Human.wearable(build, owned)
+	var next := Human.random(rng, pool)
 	next["top"] = rng.randi() % Human.CLOTH_COLORS.size()
 	next["bottom"] = rng.randi() % Human.CLOTH_COLORS.size()
-	_apply(Human.sanitize(next))
+	_apply(Human.player_look(next, owned))
 
 
 func _apply(next: Dictionary) -> void:
@@ -154,7 +162,7 @@ func _build_overlay() -> void:
 	side.add_theme_constant_override("separation", 8)
 	columns.add_child(side)
 	side.add_child(_label("YOUR CHARACTER", 28, Color(1.0, 0.55, 0.25)))
-	side.add_child(_label("Looks only. Nothing here changes how you play.", 13, Color(0.65, 0.65, 0.65)))
+	side.add_child(_label("Starter clothes. Looks only: nothing here changes how you play.", 13, Color(0.65, 0.65, 0.65)))
 	_add_picker(side, "build", "Build")
 	for slot in Human.SLOTS:
 		_add_picker(side, slot, Human.SLOT_NAMES[slot])

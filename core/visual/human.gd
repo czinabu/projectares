@@ -27,6 +27,12 @@ const OUTFITS := {
 		"Witch": "Mystic",
 	},
 }
+## The plain clothes everyone can wear from the start. Every other outfit has
+## to be owned (bought or earned) before a player may wear any part of it.
+const STARTER := {
+	"m": ["Casual_2", "Casual_Hoodie", "Farmer", "Beach"],
+	"f": ["Casual", "Worker", "Adventurer"],
+}
 const SKIN_TONES: Array[Color] = [
 	Color(0.96, 0.80, 0.69), Color(0.89, 0.69, 0.55), Color(0.78, 0.57, 0.42), Color(0.62, 0.43, 0.30),
 	Color(0.45, 0.30, 0.21), Color(0.30, 0.20, 0.14),
@@ -62,12 +68,39 @@ static func sanitize(raw: Variant) -> Dictionary:
 	var out := {"build": build}
 	for slot in SLOTS:
 		var part: Variant = source.get(slot)
-		out[slot] = part if typeof(part) == TYPE_STRING and outfits.has(part) else outfits.keys()[0]
+		out[slot] = part if typeof(part) == TYPE_STRING and outfits.has(part) else STARTER[build][0]
 	for key: String in COLOR_KEYS:
 		var names: Array = COLOR_KEYS[key][1]
 		var index: Variant = source.get(key)
 		# JSON hands numbers back as floats.
 		out[key] = clampi(int(index), 0, names.size() - 1) if typeof(index) in [TYPE_INT, TYPE_FLOAT] else 0
+	return out
+
+
+## The id an outfit is owned under: the build and the outfit, e.g. "m_Punk".
+static func outfit_id(build: String, outfit: String) -> String:
+	return "%s_%s" % [build, outfit]
+
+
+## The outfits of a build a player may wear: the starter clothes plus any in
+## `owned` (outfit ids), in the order the customizer lists them.
+static func wearable(build: String, owned: Array = []) -> Array[String]:
+	var out: Array[String] = []
+	for outfit: String in OUTFITS[build]:
+		if outfit in STARTER[build] or outfit_id(build, outfit) in owned:
+			out.append(outfit)
+	return out
+
+
+## A valid appearance a player is allowed to wear. Like `sanitize`, but any
+## part from an outfit that is neither starter clothing nor in `owned` falls
+## back to starter clothing. Bots and other non-players use `sanitize`.
+static func player_look(raw: Variant, owned: Array = []) -> Dictionary:
+	var out := sanitize(raw)
+	var allowed := wearable(out["build"], owned)
+	for slot in SLOTS:
+		if out[slot] not in allowed:
+			out[slot] = allowed[0]
 	return out
 
 

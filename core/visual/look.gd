@@ -604,8 +604,8 @@ func stand_model(holder: Node3D, model: Node3D, height: float) -> void:
 
 
 ## A valid appearance from anything a save file or a client hands over.
-func clean_appearance(raw: Variant) -> Dictionary:
-	return Human.sanitize(raw)
+func clean_appearance(raw: Variant, owned: Array = []) -> Dictionary:
+	return Human.player_look(raw, owned)
 
 
 ## The model for a held weapon, or null to keep the greybox one.

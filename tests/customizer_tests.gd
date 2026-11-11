@@ -24,6 +24,20 @@ static func run(t: Node) -> void:
 	t.check(mixed["head"] == "Punk" and mixed["body"] == "Soldier" and mixed["legs"] == "Worker"
 			and mixed["feet"] == "SciFi" and mixed["skin"] == 3, "a valid mixed look is kept as chosen")
 	t.check(Human.sanitize(JSON.parse_string(JSON.stringify(mixed))) == mixed, "a look survives a trip through a save file")
+	# Players start with plain clothes; the rest has to be owned.
+	t.check(Human.SLOTS.all(func(slot: String) -> bool: return plain[slot] in Human.STARTER[plain["build"]])
+			and Human.player_look(null) == plain, "the default look is starter clothing")
+	var locked := Human.player_look(mixed)
+	t.check(locked["head"] in Human.STARTER["f"] and locked["body"] in Human.STARTER["f"] and locked["legs"] == "Worker"
+			and locked["feet"] in Human.STARTER["f"] and locked["skin"] == 3 and locked["top"] == 6,
+			"a player cannot wear outfits they do not own, and keeps the rest of the look")
+	var unlocked := Human.player_look(mixed, [Human.outfit_id("f", "Punk"), Human.outfit_id("m", "Swat")])
+	t.check(unlocked["head"] == "Punk" and unlocked["body"] in Human.STARTER["f"], "owning an outfit unlocks its parts only")
+	t.check(Human.wearable("m").size() == Human.STARTER["m"].size()
+			and Human.wearable("m").all(func(o: String) -> bool: return o in Human.STARTER["m"]),
+			"with nothing owned only starter clothes are wearable")
+	t.check(Human.wearable("m", ["m_King"]).has("King") and not Human.wearable("f", ["m_King"]).has("King")
+			and Human.wearable("m", ["m_King"]).size() == Human.STARTER["m"].size() + 1, "an owned outfit is added for its build")
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 5
 	var pool := {"f": ["Worker", "Punk"]}
@@ -86,8 +100,9 @@ static func run(t: Node) -> void:
 	var was_persist := Profile.persist
 	Profile.persist = false
 	var before := Profile.appearance
-	Profile.set_appearance({"build": "f", "head": "Witch", "skin": 40})
-	t.check(Profile.appearance["build"] == "f" and Profile.appearance["head"] == "Witch"
+	Profile.set_appearance({"build": "f", "head": "Adventurer", "body": "Witch", "skin": 40})
+	t.check(Profile.appearance["build"] == "f" and Profile.appearance["head"] == "Adventurer"
+			and Profile.appearance["body"] in Human.STARTER["f"]
 			and Profile.appearance["skin"] == Human.SKIN_TONES.size() - 1, "the profile keeps a cleaned copy of the look")
 
 	# The hub panel.
@@ -98,23 +113,29 @@ static func run(t: Node) -> void:
 	t.check(panel != null and panel.appearance == Profile.appearance, "the hub shows the profile's look")
 	var heard := []
 	hub.look_changed.connect(func(appearance: Dictionary) -> void: heard.append(appearance))
-	panel.choose("body", "Punk")
-	t.check(heard.size() == 1 and heard[0]["body"] == "Punk" and heard[0]["head"] == "Witch",
+	panel.choose("body", "Worker")
+	t.check(heard.size() == 1 and heard[0]["body"] == "Worker" and heard[0]["head"] == "Adventurer",
 			"picking a part changes only that part and tells the game")
-	panel.choose("body", "Punk")
+	panel.choose("body", "Worker")
 	t.check(heard.size() == 1, "picking what is already worn changes nothing")
+	panel.choose("body", "Witch")
+	t.check(heard.size() == 1, "an outfit that is not owned cannot be picked")
 	panel.choose("build", "m")
 	t.check(heard.size() == 2 and heard[1]["build"] == "m" and Human.SLOTS.all(func(slot: String) -> bool:
 			return Human.OUTFITS["m"].has(heard[1][slot])) and heard[1]["skin"] == Profile.appearance["skin"],
 			"switching build swaps to that build's outfits and keeps the colours")
-	t.check(panel.options_for("head").size() == Human.OUTFITS["m"].size()
-			and panel.options_for("skin").size() == Human.SKIN_TONES.size(), "the pickers offer every outfit and colour")
+	t.check(panel.options_for("head").size() == Human.STARTER["m"].size()
+			and panel.options_for("skin").size() == Human.SKIN_TONES.size(), "the pickers offer starter clothes and every colour")
+	panel.owned = [Human.outfit_id("m", "King")]
+	t.check(panel.options_for("body").any(func(option: Array) -> bool: return option[0] == "King"),
+			"an owned outfit shows up in the pickers")
+	panel.owned = []
 	panel.show_customizer()
 	await t.frames(3)
 	t.check(panel.is_customizing() and panel._pickers.size() == 9 and panel._model != null,
 			"the customizer opens with a picker for each choice and a preview model")
 	panel.randomize_look()
-	t.check(heard.size() == 3 and Human.sanitize(heard[2]) == heard[2], "randomize picks a valid look")
+	t.check(heard.size() == 3 and Human.player_look(heard[2]) == heard[2], "randomize picks a look from starter clothes")
 	panel.hide_customizer()
 	t.check(not panel.is_customizing(), "done closes the customizer")
 	hub.queue_free()
@@ -151,7 +172,7 @@ static func run(t: Node) -> void:
 	var joined := server_raid.add_player([], {}, "Alpha")
 	Look.set_appearance(joined, {"build": "f", "head": "Nope", "skin": 2})
 	await t.frames(3)
-	t.check(joined.get_meta("appearance")["head"] == Human.OUTFITS["f"].keys()[0] and joined.get_meta("appearance")["skin"] == 2
+	t.check(joined.get_meta("appearance")["head"] == Human.STARTER["f"][0] and joined.get_meta("appearance")["skin"] == 2
 			and not joined.has_node("Skin"), "a headless server records a cleaned look and builds no model")
 	server_raid.queue_free()
 	await t.frames(2)
@@ -165,7 +186,7 @@ static func run(t: Node) -> void:
 	t.check(alpha != null, "a client signs in to set its look")
 	if alpha != null:
 		# Sent raw, to show the server does the checking.
-		alpha.send_look({"build": "f", "head": "Punk", "body": "Soldier", "legs": "Bogus", "feet": "SciFi", "skin": 3,
+		alpha.send_look({"build": "f", "head": "Adventurer", "body": "Soldier", "legs": "Bogus", "feet": "Worker", "skin": 3,
 				"hair": 500})
 		alpha.deploy()
 		await t._wait_until(func() -> bool: return alpha.raid != null and alpha.raid.player != null, 240)
@@ -176,9 +197,10 @@ static func run(t: Node) -> void:
 				return bravo.actor_for(alpha.my_actor_id) != null and alpha.actor_for(bravo.my_actor_id) != null, 180)
 			var seen: Actor = bravo.actor_for(alpha.my_actor_id)
 			var seen_look: Dictionary = seen.get_meta("appearance", {}) if seen != null else {}
-			t.check(seen_look.get("build") == "f" and seen_look.get("head") == "Punk" and seen_look.get("body") == "Soldier"
+			t.check(seen_look.get("build") == "f" and seen_look.get("head") == "Adventurer" and seen_look.get("feet") == "Worker"
 					and seen_look.get("skin") == 3, "another player sees the look that was chosen")
-			t.check(Human.OUTFITS["f"].has(seen_look.get("legs", "")) and seen_look.get("hair") == Human.HAIR_COLORS.size() - 1,
+			t.check(seen_look.get("legs", "") in Human.STARTER["f"] and seen_look.get("body", "") in Human.STARTER["f"]
+					and seen_look.get("hair") == Human.HAIR_COLORS.size() - 1,
 					"the server cleans a look before passing it on")
 			t.check(alpha.raid.player.get_meta("appearance", {}) == seen_look, "the player's own game shows the same look")
 			var other: Actor = alpha.actor_for(bravo.my_actor_id)

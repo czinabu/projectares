@@ -37,7 +37,7 @@ var last_server := "127.0.0.1"
 ## Proves to a server that an online account is yours. Made on first use.
 var online_secret := ""
 ## How your character looks (see `core/visual/human.gd`). Cosmetic only.
-var appearance := Human.sanitize({})
+var appearance := Human.player_look({})
 var raids_played := 0
 var raids_extracted := 0
 var kills := 0
@@ -114,7 +114,7 @@ func checkout_loadout(world: WorldDef) -> Array[String]:
 
 
 func set_appearance(p_appearance: Variant) -> void:
-	appearance = Human.sanitize(p_appearance)
+	appearance = Human.player_look(p_appearance)
 	save()
 
 
@@ -193,7 +193,7 @@ func load_profile() -> void:
 	player_name = str(data.get("player_name", "Raider")).left(20)
 	last_server = str(data.get("last_server", "127.0.0.1")).left(80)
 	online_secret = str(data.get("online_secret", "")).left(128)
-	appearance = Human.sanitize(data.get("appearance"))
+	appearance = Human.player_look(data.get("appearance"))
 	raids_played = int(data.get("raids_played", 0))
 	raids_extracted = int(data.get("raids_extracted", 0))
 	kills = int(data.get("kills", 0))
