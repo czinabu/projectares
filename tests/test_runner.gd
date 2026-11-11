@@ -10,6 +10,7 @@ const ScoreboardScript := preload("res://core/ui/scoreboard.gd")
 const BaseLayout := preload("res://core/base/base_layout.gd")
 const BaseHudScript := preload("res://core/ui/base_hud.gd")
 const LookTests := preload("res://tests/look_tests.gd")
+const CustomizerTests := preload("res://tests/customizer_tests.gd")
 
 var _passed := 0
 var _failed := 0
@@ -54,10 +55,12 @@ func _run() -> void:
 	await _test_nameplates_and_scoreboard()
 	await _test_online()
 	await _test_stash_service()
+	await _test_phone()
 	await _test_home_base()
 	await _test_arena()
 	await _test_online_arena()
 	await LookTests.run(self)
+	await CustomizerTests.run(self)
 
 
 func check(condition: bool, what: String) -> void:
@@ -154,7 +157,7 @@ func _test_raid_setup_and_movement() -> void:
 	var p := raid.player
 	check(p != null and p.is_player, "player spawns")
 	check(raid.bots.size() == raid.world.bot_count, "all bots spawn")
-	check(raid.exits.size() == 2, "map provides two exits")
+	check(raid.depots.size() == 2, "map provides two depots")
 	var caches := raid.get_children().filter(func(n: Node) -> bool: return n is LootContainer)
 	check(caches.size() >= 8, "loot caches are placed (%d)" % caches.size())
 	check(p.weapons.size() == 2 and p.flight.enabled and p.health.armor == 30.0,
@@ -193,7 +196,7 @@ func _test_combat_and_loot() -> void:
 	var p := raid.player
 	await frames(40)
 	# Stand in the exit cell, which is always open ground.
-	var arena := raid.exits[0].global_position
+	var arena := raid.depots[0].global_position
 	arena.y = 0.1
 	p.global_position = arena + Vector3(0, 0, 3)
 	p.cmd.yaw = 0.0
@@ -265,58 +268,148 @@ func _test_combat_and_loot() -> void:
 
 
 func _test_extraction() -> void:
-	print("Extraction")
+	print("Depots and signing out")
 	Profile.reset()
 	var raid := await _new_raid(44, false)
 	var results: Array[Dictionary] = []
-	raid.ended.connect(func(r: Dictionary) -> void: results.append(r))
+	raid.player_finished.connect(func(_a: Actor, r: Dictionary) -> void: results.append(r))
 	var p := raid.player
 	p.inventory.add_item("reactor_core")
 	p.inventory.add_item("medkit")
-	var exit_pos := raid.exits[1].global_position
-	p.global_position = Vector3(exit_pos.x, 0.2, exit_pos.z)
+	var bot := raid.bots[0]
+	var depot_pos := raid.depots[1].global_position
+	p.global_position = Vector3(depot_pos.x, 0.2, depot_pos.z)
+	bot.global_position = Vector3(depot_pos.x + 2.0, 0.2, depot_pos.z)
 	await frames(60)
-	check(raid.extract_progress() > 0.0, "standing in an exit starts the countdown")
-	check(results.is_empty(), "extraction is not instant")
+	check(raid.bank_progress() > 0.0, "standing in a depot starts the hold")
+	check(Profile.stash.is_empty(), "banking is not instant")
+	check(is_zero_approx(raid.depots[1].progress_for(bot)), "a bot cannot use a depot")
 	await frames(240)
-	check(results.size() == 1 and results[0].outcome == "extracted", "raid ends as extracted")
-	check("reactor_core" in Profile.stash and "medkit" in Profile.stash,
-			"backpack loot lands in the stash")
-	check(Profile.stash.size() == 2, "the free scrap kit is never stashed")
-	check(Profile.raids_extracted == 1, "profile records the extraction")
+	check("reactor_core" in Profile.stash and not p.inventory.has_item("reactor_core"),
+			"the depot sends the backpack to the stash")
+	check(p.inventory.has_item("medkit") and "medkit" not in Profile.stash, "healing stays with you")
+	check(results.is_empty() and not p.is_dead, "banking does not end your stay")
+	await frames(30)
+	check(is_zero_approx(raid.bank_progress()), "with nothing left to bank the depot does nothing")
+
+	check(raid.begin_sign_out(p) and raid.sign_out_progress(p) >= 0.0, "a sign-out starts out of a fight")
+	Combat.deal(p, DamageInfo.make(5.0, bot, "bullet"))
+	check(raid.sign_out_progress(p) < 0.0, "taking a hit cancels the sign-out")
+	check(not raid.begin_sign_out(p), "a sign-out cannot start in a fight")
+	raid.clock += raid.world.combat_time + 1.0
+	p.inventory.add_item("alloy_ingot")
+	check(raid.begin_sign_out(p), "once the fight is over it can")
+	raid.cancel_sign_out(p)
+	check(raid.sign_out_progress(p) < 0.0, "a sign-out can be called off")
+	raid.begin_sign_out(p)
+	raid.state_for(p).sign_out_left = 0.2
+	await frames(30)
+	check(results.size() == 1 and results[0].outcome == "left", "a finished sign-out ends the life as left")
+	check("reactor_core" in results[0].banked and results[0].banked_value == ItemDB.item_value("reactor_core"),
+			"the result lists what was banked")
+	check("alloy_ingot" in Profile.stash and "medkit" in Profile.stash, "what you carried comes home")
+	check(Profile.stash.size() == 3, "the free scrap kit is never stashed")
+	check(Profile.raids_extracted == 1, "the profile records leaving alive")
 	await _end_raid(raid)
 
 
 func _test_death() -> void:
-	print("Death")
+	print("Death and dropping back in")
 	Profile.reset()
 	var raid := await _new_raid(45, false)
 	var results: Array[Dictionary] = []
-	raid.ended.connect(func(r: Dictionary) -> void: results.append(r))
+	raid.player_finished.connect(func(_a: Actor, r: Dictionary) -> void: results.append(r))
 	var p := raid.player
+	var bot := raid.bots[0]
 	p.inventory.add_item("lattice_shard")
-	Combat.deal(p, DamageInfo.make(9999.0, raid.bots[0], "bullet"))
+	Combat.deal(p, DamageInfo.make(9999.0, bot, "bullet"))
 	await frames(2)
 	check(p.is_dead, "player can die")
-	check(results.size() == 1 and results[0].outcome == "died", "raid ends as died")
+	check(results.size() == 1 and results[0].outcome == "died" and results[0].killed_by == bot.display_name,
+			"the life ends as died and names the killer")
 	check(Profile.stash.is_empty(), "nothing reaches the stash on death")
 	var bags := raid.get_children().filter(func(n: Node) -> bool:
 		return n is LootContainer and (n as LootContainer).is_bag)
 	check(bags.size() == 1 and "lattice_shard" in (bags[0] as LootContainer).items
 			and "rifle_scrap" in (bags[0] as LootContainer).items,
 			"the player's gear and loot drop in a bag")
+	check(Hud.death_text(results[0], 0.0).contains(bot.display_name) and Hud.death_text(results[0], 0.0).contains("Enter")
+			and not Hud.death_text(results[0], 2.0).contains("Enter"),
+			"the death screen names the killer and offers to drop back in once the wait is over")
+
+	# The world carries on, and the same player drops back into it.
+	var again := raid.add_player([], {}, "You")
+	await frames(2)
+	check(raid.player == again and not again.is_dead and raid.players.size() == 1,
+			"dropping back in starts a new life in the same world")
+	check(not is_instance_valid(p) or p.is_queued_for_deletion(), "the old body is cleared away")
+	check(is_instance_valid(bags[0]) and "lattice_shard" in (bags[0] as LootContainer).items,
+			"the bag is still where you fell")
+	check(again.protected_left > 0.0 and not Combat.deal(again, DamageInfo.make(10.0, bot, "bullet"))
+			and is_equal_approx(again.health.health, again.health.max_health),
+			"a player who just dropped in cannot be hurt")
+	Combat.deal(bot, DamageInfo.make(1.0, again, "bullet"))
+	check(is_zero_approx(again.protected_left) and Combat.deal(again, DamageInfo.make(10.0, bot, "bullet")),
+			"attacking gives the protection up")
+	again.kill("test")
+	await frames(2)
+	check(results.size() == 2 and Profile.raids_played == 2, "every life is recorded")
 	await _end_raid(raid)
 
 
 func _test_storm() -> void:
-	print("Storm timer")
+	print("A world that never ends")
 	var raid := await _new_raid(46, false)
-	var results: Array[Dictionary] = []
-	raid.ended.connect(func(r: Dictionary) -> void: results.append(r))
-	raid.time_left = 0.05
+	var world := raid.world
+	var p := raid.player
+	var count := raid.bots.size()
+	raid.bots[0].kill("test")
+	await frames(2)
+	check(raid.bots.size() == count - 1 and raid._bot_respawns.size() == 1, "a dead bot is queued to be replaced")
+	raid._bot_respawns[0] = 0.05
 	await frames(10)
-	check(results.size() == 1 and results[0].outcome == "died" and results[0].cause == "storm",
-			"running out of time kills the player")
+	var newest: Actor = raid.bots[-1]
+	check(raid.bots.size() == count and not newest.is_dead and newest.has_node("Brain"),
+			"a new bot takes its place")
+	check(newest.global_position.distance_to(p.global_position) > 20.0, "it arrives away from the player")
+
+	var cache: LootContainer = raid._caches[0].container
+	cache.set_items([])
+	await frames(3)
+	check(raid._caches[0].refill_in > 0.0, "an emptied cache starts to refill")
+	raid._caches[0].refill_in = 0.05
+	await frames(10)
+	check(not cache.items.is_empty(), "the cache fills up again")
+
+	var spot: Dictionary = raid._parking[0]
+	var bike: Node3D = spot.vehicle
+	check(raid._is_parked(bike), "a bike waits at each parking spot")
+	bike.global_position = p.global_position + Vector3(2.0, 0.5, 0.0)
+	spot.empty_for = world.vehicle_respawn_time - 0.05
+	await frames(10)
+	check(spot.vehicle != bike and raid._is_parked(spot.vehicle), "a bike that left its spot is replaced there")
+	raid._idle[bike] = world.vehicle_respawn_time
+	await frames(3)
+	check(not is_instance_valid(bike) or bike.is_queued_for_deletion(), "a bike nobody rides is cleared away")
+	check(spot.vehicle in raid.vehicles, "a parked bike is never cleared away")
+
+	var is_bag := func(n: Node) -> bool:
+		return n is LootContainer and (n as LootContainer).is_bag and not n.is_queued_for_deletion()
+	var old_bags := raid.get_children().filter(is_bag)
+	var lifetime := world.bag_lifetime
+	world.bag_lifetime = 0.2
+	raid.bots[1].kill("test")
+	await frames(2)
+	var bags := raid.get_children().filter(func(n: Node) -> bool: return is_bag.call(n) and n not in old_bags)
+	check(bags.size() >= 1, "a dead bot drops a bag")
+	var bag_ids := bags.map(func(n: Node) -> int: return n.get_instance_id())
+	world.bag_lifetime = lifetime
+	await get_tree().create_timer(0.5).timeout
+	await frames(2)
+	check(bag_ids.all(func(id: int) -> bool: return not is_instance_id_valid(id)), "old bags are cleared away")
+	raid.clock = 100000.0
+	await frames(5)
+	check(not p.is_dead, "no storm ever comes for the player")
 	await _end_raid(raid)
 
 
@@ -330,7 +423,7 @@ func _test_bots_run() -> void:
 	var p := raid.player
 	await frames(40)
 	var bot := raid.bots[0]
-	var arena := raid.exits[0].global_position
+	var arena := raid.depots[0].global_position
 	p.global_position = Vector3(arena.x, 0.1, arena.z + 3.0)
 	bot.global_position = Vector3(arena.x, 0.1, arena.z - 5.0)
 	var health_before := p.health.health + p.health.armor
@@ -399,9 +492,36 @@ func _test_main_flow() -> void:
 	controller.toggle_view()
 	await frames(40)
 	check(controller.is_third_person(), "the toggle switches to third-person")
+	var corpse: Actor = main.raid.player
+	corpse.kill("test")
+	await frames(10)
+	check(main.raid != null and not main.hub.visible, "dying keeps you in the world")
+	main._on_redeploy_requested()
+	check(main.raid.player == corpse, "you cannot drop back in at once")
+	main._redeploy_at = 0
+	main._on_redeploy_requested()
+	await frames(5)
+	var reborn: Actor = main.raid.player
+	check(reborn != corpse and not reborn.is_dead and main.controller.actor == reborn
+			and main.controller.camera.current and main.hud.raid == main.raid,
+			"Enter drops you back in with the camera and HUD on your new body")
+	check(Input.mouse_mode == Input.MOUSE_MODE_CAPTURED or DisplayServer.get_name() == "headless",
+			"the mouse stays captured across a redeploy")
+	main._on_sign_out_requested()
+	check(main.raid.sign_out_progress(reborn) >= 0.0, "L starts a sign-out")
+	main._on_sign_out_requested()
+	check(main.raid.sign_out_progress(reborn) < 0.0, "L again calls it off")
+	main._on_sign_out_requested()
+	main.raid.state_for(reborn).sign_out_left = 0.1
+	await frames(90)
+	check(main.raid == null and main.hub.visible, "a finished sign-out returns to the hub")
+	main.start_raid("ashfront")
+	await frames(5)
 	main.raid.player.kill("test")
-	await frames(150)
-	check(main.raid == null and main.hub.visible, "dying returns to the hub")
+	await frames(5)
+	main._on_sign_out_requested()
+	await frames(2)
+	check(main.raid == null and main.hub.visible, "L while down returns to the hub")
 	main.queue_free()
 	await frames(2)
 
@@ -410,7 +530,7 @@ func _test_main_flow() -> void:
 func _duel(raid: Raid) -> Array:
 	var p := raid.player
 	await frames(40)
-	var arena := raid.exits[0].global_position
+	var arena := raid.depots[0].global_position
 	p.global_position = Vector3(arena.x, 0.1, arena.z + 3.0)
 	p.cmd.yaw = 0.0
 	p.cmd.aim_dir = Vector3.FORWARD
@@ -583,7 +703,7 @@ func _test_loadouts() -> void:
 	check(kit.count("medkit") == 2 and "field_dressing" not in kit, "up to two medkits come along")
 	check(Profile.stash == (["medkit", "scrap_metal"] as Array[String]), "deployed gear leaves the stash")
 
-	# Extract with the gear: it all comes home.
+	# Leave alive with the gear: it all comes home.
 	var raid := Raid.new()
 	add_child(raid)
 	raid.start(world, 60, kit)
@@ -601,15 +721,15 @@ func _test_loadouts() -> void:
 			"a heavy frame is slower and runs the jetpack hotter")
 	base.free()
 	var results: Array[Dictionary] = []
-	raid.ended.connect(func(r: Dictionary) -> void: results.append(r))
-	var exit_pos := raid.exits[0].global_position
-	p.global_position = Vector3(exit_pos.x, 0.2, exit_pos.z)
-	await frames(300)
-	check(results.size() == 1 and results[0].outcome == "extracted", "raid with a loadout extracts")
+	raid.player_finished.connect(func(_a: Actor, r: Dictionary) -> void: results.append(r))
+	raid.begin_sign_out(p)
+	raid.state_for(p).sign_out_left = 0.1
+	await frames(20)
+	check(results.size() == 1 and results[0].outcome == "left", "a life with a loadout ends by signing out")
 	check("rifle_carbine" in Profile.stash and "frame_bulwark" in Profile.stash and "hammer_breaker" in Profile.stash,
-			"extracting brings your gear home")
+			"leaving alive brings your gear home")
 	check("jetpack_mk1" not in Profile.stash and "rifle_scrap" not in Profile.stash, "scrap gear does not come home")
-	check(Profile.equipped("primary") == "rifle_carbine", "the loadout stays equipped after extracting")
+	check(Profile.equipped("primary") == "rifle_carbine", "the loadout stays equipped after leaving")
 	await _end_raid(raid)
 
 	# Die with the gear: it is gone and the slot empties.
@@ -648,7 +768,7 @@ func _test_loadouts() -> void:
 	Loadout._setup_weapon(shotgun, "shotgun_breacher", ItemDB.item_stats("shotgun_breacher"))
 	p.equip_weapon(shotgun)
 	p.cmd.switch_weapon = 2
-	var arena := raid.exits[0].global_position
+	var arena := raid.depots[0].global_position
 	p.global_position = Vector3(arena.x, 0.1, arena.z + 3.0)
 	var target := raid.bots[0]
 	target.global_position = p.global_position + Vector3(0, 0, -3.0)
@@ -908,7 +1028,7 @@ func _test_flight_rigs_and_abilities() -> void:
 	p = raid.player
 	check(p.ability.enabled and p.ability.effect == "blink" and "chip_blink" in p.gear_items,
 			"an ability item equips into the ability slot")
-	var arena := raid.exits[0].global_position
+	var arena := raid.depots[0].global_position
 	p.global_position = Vector3(arena.x, 0.1, arena.z + 3.0)
 	p.cmd.yaw = 0.0
 	p.cmd.aim_dir = Vector3.FORWARD
@@ -1155,15 +1275,13 @@ func _test_vehicle_raids() -> void:
 	check(ramps.size() == raid.vehicles.size() - 1, "every vehicle marker gets a bike")
 
 	var results: Array[Dictionary] = []
-	raid.ended.connect(func(r: Dictionary) -> void: results.append(r))
+	raid.player_finished.connect(func(_a: Actor, r: Dictionary) -> void: results.append(r))
 	var bike = own[0]
 	check(bike.mount(p), "you can ride your own bike")
-	var exit_pos := raid.exits[1].global_position
-	bike.global_position = Vector3(exit_pos.x, 0.4, exit_pos.z)
-	bike.velocity = Vector3.ZERO
-	bike.speed = 0.0
-	await frames(300)
-	check(results.size() == 1 and results[0].outcome == "extracted", "riding into an exit extracts")
+	raid.begin_sign_out(p)
+	raid.state_for(p).sign_out_left = 0.1
+	await frames(20)
+	check(results.size() == 1 and results[0].outcome == "left", "you can sign out in the saddle")
 	check("bike_raider" in Profile.stash and "bike_raider" in results[0].get("kept_gear", []),
 			"riding out takes the bike home")
 	await _end_raid(raid)
@@ -1178,7 +1296,7 @@ func _test_vehicle_raids() -> void:
 		bot.get_node("Brain").set_physics_process(false)
 	await frames(5)
 	var results2: Array[Dictionary] = []
-	raid2.ended.connect(func(r: Dictionary) -> void: results2.append(r))
+	raid2.player_finished.connect(func(_a: Actor, r: Dictionary) -> void: results2.append(r))
 	raid2.player.kill("test")
 	await frames(2)
 	check(results2.size() == 1 and "bike_raider" in results2[0].lost and "bike_raider" not in Profile.stash,
@@ -1208,7 +1326,7 @@ func _test_every_world() -> void:
 		await frames(3)
 		check(raid.player != null and not raid.player.is_dead, "%s: player spawns" % world.id)
 		check(raid.bots.size() == world.bot_count, "%s: all bots spawn" % world.id)
-		check(not raid.exits.is_empty(), "%s: map provides exits" % world.id)
+		check(not raid.depots.is_empty(), "%s: map provides depots" % world.id)
 		var caches := raid.get_children().filter(func(n: Node) -> bool: return n is LootContainer)
 		check(caches.size() >= 4, "%s: loot caches are placed (%d)" % [world.id, caches.size()])
 		var all_valid := true
@@ -1226,7 +1344,8 @@ func _test_every_world() -> void:
 					"%s: %s is armed and hostile" % [world.id, bot.display_name])
 			break
 		await frames(120)
-		check(not raid.is_over or raid.player.is_dead, "%s: a raid runs with bots thinking" % world.id)
+		check(raid.clock > 1.0 and raid.bots.size() + raid._bot_respawns.size() == world.bot_count,
+				"%s: the world runs with bots thinking" % world.id)
 		await _end_raid(raid)
 
 
@@ -1260,9 +1379,66 @@ func _test_frostline() -> void:
 		var feral: Actor = factions.feral[0]
 		check(Combat.deal(feral, DamageInfo.make(5.0, warden, "bullet")), "wardens and ferals hurt each other")
 		check(Combat.deal(raid.player, DamageInfo.make(5.0, feral, "melee")), "ferals hurt the player")
+		var ally := Actor.new()
+		raid.add_child(ally)
+		check(not Combat.deal(ally, DamageInfo.make(5.0, raid.player, "bullet"))
+				and not Combat.deal(raid.player, DamageInfo.make(5.0, ally, "bullet")),
+				"players cannot hurt each other on a PvE world")
+		ally.queue_free()
 		if factions.warden.size() >= 2:
 			check(not Combat.deal(factions.warden[1], DamageInfo.make(5.0, warden, "bullet")),
 					"a faction does not hurt itself")
+	# The gentle world: basic loot, and death only costs the backpack.
+	var gear_tags := ["weapon", "armor", "flight_rig", "ability", "vehicle"]
+	var too_good: Array[String] = []
+	for source: String in ["cache", "rooftop", "relay", "warden", "feral", "vehicle"]:
+		for i in 300:
+			for id in world.roll_loot(source, rng):
+				var is_gear := gear_tags.any(func(tag: String) -> bool: return ItemDB.has_tag(id, tag))
+				if is_gear and ItemDB.item_rarity(id) > ItemDB.Rarity.UNCOMMON and not id.begins_with("frost_") \
+						and id not in too_good:
+					too_good.append(id)
+	check(too_good.is_empty(), "Frostline only drops basic gear, apart from its own (%s)" % ", ".join(too_good))
+	var ash_gear: Array[String] = []
+	var ashfront := Worlds.get_world("ashfront")
+	for i in 300:
+		for id in ashfront.roll_loot("rooftop", rng):
+			if ItemDB.item_rarity(id) >= ItemDB.Rarity.RARE and ItemDB.has_tag(id, "weapon") and id not in ash_gear:
+				ash_gear.append(id)
+	check(ash_gear.size() >= 3, "the PvP world is where rare weapons drop (%d kinds)" % ash_gear.size())
+	await _end_raid(raid)
+	Profile.reset()
+	Profile.welcome_granted = true
+	Profile.add_to_stash(["rifle_carbine", "frame_trooper"])
+	Profile.equip("primary", "rifle_carbine")
+	Profile.equip("frame", "frame_trooper")
+	raid = Raid.new()
+	add_child(raid)
+	raid.start(world, 8, Profile.checkout_loadout(world))
+	for bot in raid.bots:
+		bot.get_node("Brain").set_physics_process(false)
+	await frames(3)
+	var gentle: Array[Dictionary] = []
+	raid.player_finished.connect(func(_a: Actor, r: Dictionary) -> void: gentle.append(r))
+	raid.player.inventory.add_item("frost_cryo_cell")
+	raid.player.kill("melee", raid.bots[0])
+	await frames(2)
+	var dropped := raid.get_children().filter(func(n: Node) -> bool:
+		return n is LootContainer and (n as LootContainer).is_bag)
+	check(dropped.size() == 1 and "frost_cryo_cell" in (dropped[0] as LootContainer).items
+			and "rifle_carbine" not in (dropped[0] as LootContainer).items,
+			"on a gentle world only the backpack drops when you die")
+	check(gentle.size() == 1 and gentle[0].outcome == "died" and "rifle_carbine" in gentle[0].kept_gear
+			and "frost_cryo_cell" in gentle[0].lost and "rifle_carbine" not in gentle[0].lost
+			and Hud.death_text(gentle[0], 0.0).contains("Kept"),
+			"the result says what was kept and what was lost")
+	check("rifle_carbine" in Profile.stash and "frame_trooper" in Profile.stash
+			and Profile.equipped("primary") == "rifle_carbine" and "frost_cryo_cell" not in Profile.stash,
+			"your equipped gear is back in the stash and still in the loadout")
+	var kit_again := Profile.checkout_loadout(world)
+	check("rifle_carbine" in kit_again, "so you drop back in with the same gear")
+	Profile.reset()
+	Profile.welcome_granted = true
 	# The ice axe is real gear: it equips as a melee weapon with its stats.
 	var axe_holder := Actor.new()
 	add_child(axe_holder)
@@ -1386,7 +1562,7 @@ func _test_mastery() -> void:
 	# Dying keeps every point of mastery earned.
 	Profile.reset()
 	var results: Array[Dictionary] = []
-	raid.ended.connect(func(r: Dictionary) -> void: results.append(r))
+	raid.player_finished.connect(func(_a: Actor, r: Dictionary) -> void: results.append(r))
 	p.kill("storm")
 	await frames(2)
 	var gained: Dictionary = results[0].get("mastery_xp", {}) if results.size() == 1 else {}
@@ -1397,11 +1573,9 @@ func _test_mastery() -> void:
 	check(Profile.stash.is_empty(), "the gear itself is still lost")
 	await _end_raid(raid)
 
-	# Extracting adds a bonus for every piece of gear you bring home.
+	# Leaving alive pays no bonus, so signing out again and again trains nothing.
 	raid = await _mastery_raid(71, kit, {})
-	var bonus := raid.mastery.report(true)
-	check(bonus.get("rifle", 0) == raid.mastery.xp_extract_bonus and bonus.has("blade")
-			and bonus.has("frame_light") and bonus.has("blink"), "extracting trains all the gear you carried")
+	check(raid.mastery.report().is_empty(), "carrying gear alone earns no mastery")
 	await _end_raid(raid)
 
 	# Hub: the panel shows the tracks of your loadout and what a raid earned.
@@ -1436,6 +1610,8 @@ var _net_secrets := {}
 
 func _wipe_dir(dir: String) -> void:
 	if DirAccess.dir_exists_absolute(dir):
+		for sub in DirAccess.get_directories_at(dir):
+			_wipe_dir(dir.path_join(sub))
 		for f in DirAccess.get_files_at(dir):
 			DirAccess.remove_absolute(dir.path_join(f))
 		DirAccess.remove_absolute(dir)
@@ -1530,7 +1706,7 @@ func _test_nameplates_and_scoreboard() -> void:
 			"the roster lists every player as in the raid")
 	check(roster.bots_alive() == raid.bots.size(), "the roster counts the bots still standing")
 	b.kill("bullet", a)
-	raid._on_actor_extracted(c)
+	raid._leave(raid.state_for(c))
 	await frames(3)
 	roster.refresh()
 	var by_name := {}
@@ -1539,13 +1715,29 @@ func _test_nameplates_and_scoreboard() -> void:
 	check(by_name.Alpha.kills == 1 and by_name.Alpha.is_me and by_name.Alpha.status == RaidRoster.IN_RAID,
 			"your kills are counted on the scoreboard")
 	check(by_name.Bravo.status == RaidRoster.DOWN, "a player who died shows as down")
-	check(by_name.Charlie.status == RaidRoster.EXTRACTED, "a player who left alive shows as extracted")
+	check(by_name.Charlie.status == RaidRoster.LEFT, "a player who left alive shows as left")
 	check(roster.entries[0].name == "Alpha", "players still in the raid are listed first")
+
+	# Bravo drops back in as a new actor and stays one row on the board.
+	var b2 := raid.add_player([], {}, "Bravo")
+	raid.bots[0].kill("bullet", b2)
+	await frames(2)
+	roster.refresh()
+	check(roster.entries.size() == 3 and by_name.Bravo.status == RaidRoster.IN_RAID and by_name.Bravo.kills == 1,
+			"a player who drops back in keeps one row on the board")
+	b2.kill("bullet", a)
+	b = raid.add_player([], {}, "Bravo")
+	raid.bots[0].kill("bullet", b)
+	b.kill("bullet", a)
+	await frames(2)
+	roster.refresh()
+	check(roster.entries.size() == 3 and by_name.Bravo.kills == 2 and by_name.Bravo.status == RaidRoster.DOWN
+			and by_name.Alpha.kills == 3, "kills add up across a player's lives")
 
 	check(not board.visible, "the scoreboard is closed until asked for")
 	board.show_board(true)
 	var rows: Array = board.rows()
-	check(board.visible and rows.size() == 3 and rows[0] == ["Alpha (you)", RaidRoster.IN_RAID, "1"],
+	check(board.visible and rows.size() == 3 and rows[0] == ["Alpha (you)", RaidRoster.IN_RAID, "3"],
 			"the scoreboard shows each player's name, status and kills")
 	board.show_board(false)
 	check(not board.visible, "the scoreboard closes again")
@@ -1644,23 +1836,49 @@ func _test_online() -> void:
 			and not a.is_player, "players join a server raid with their own kits")
 	var finished := []
 	raid.player_finished.connect(func(actor: Actor, result: Dictionary) -> void: finished.append([actor, result]))
-	var ended := [false]
-	raid.ended.connect(func(_r: Dictionary) -> void: ended[0] = true)
 	b.kill("bullet", a)
 	await frames(5)
 	check(finished.size() == 1 and finished[0][0] == b and finished[0][1].outcome == "died"
 			and "rifle_carbine" in finished[0][1].lost, "a player who dies gets their own result")
-	check(raid.state_for(a).kills == 1 and not raid.is_over and not ended[0] and not a.is_dead,
+	check(raid.state_for(a).kills == 1 and not a.is_dead and raid.active_players() == ([a] as Array[Actor]),
 			"the raid carries on for the others, and the kill is credited")
+	var b_again := raid.add_player([], {}, "Bravo")
+	check(raid.active_players().size() == 2 and b_again.protected_left > 0.0
+			and b_again.global_position.distance_to(a.global_position) > 10.0,
+			"the dead player drops back in, protected and away from the others")
+	var banked := []
+	raid.player_banked.connect(func(actor: Actor, items: Array) -> void: banked.append([actor, items]))
+	b_again.inventory.add_item("alloy_ingot")
+	var depot := raid.depots[0]
+	b_again.global_position = Vector3(depot.global_position.x, 0.2, depot.global_position.z)
+	await frames(int(raid.world.depot_hold_time * 60.0) + 30)
+	check(banked.size() == 1 and banked[0][0] == b_again and banked[0][1] == ["alloy_ingot"]
+			and not b_again.inventory.has_item("alloy_ingot"),
+			"a depot works for players on a server, and reports what was banked")
+	# A dropped connection leaves the body standing until its sign-out ends.
+	b_again.cmd.move = Vector2(0, 1)
+	raid.remove_player(b_again)
+	check(not b_again.is_dead and raid.sign_out_progress(b_again) >= 0.0 and b_again.cmd.move == Vector2.ZERO,
+			"a player who disconnects leaves a helpless body behind")
+	raid.cancel_sign_out(b_again)
+	Combat.deal(b_again, DamageInfo.make(5.0, a, "bullet"))
+	check(raid.sign_out_progress(b_again) >= 0.0, "that sign-out cannot be called off, by them or by a hit")
+	var wait_before: float = raid.state_for(b_again).sign_out_left
+	raid.remove_player(b_again)
+	check(raid.state_for(b_again).sign_out_left <= wait_before, "asking twice never makes the wait longer")
+	b_again.kill("bullet", a)
+	await frames(2)
+	check(finished.size() == 2 and finished[1][1].outcome == "died" and raid.state_for(a).kills == 2,
+			"a body that is killed before its sign-out ends is a death")
+	finished.remove_at(1)
 	check(Profile.stash.is_empty() and Profile.raids_played == 0, "a server raid never touches a profile")
 	a.inventory.add_item("scrap_metal")
-	raid._on_actor_extracted(a)
+	raid._leave(raid.state_for(a))
 	await frames(2)
-	check(finished.size() == 2 and finished[1][1].outcome == "extracted"
-			and "scrap_metal" in finished[1][1].brought_home, "an extracting player gets a result listing what comes home")
+	check(finished.size() == 2 and finished[1][1].outcome == "left"
+			and "scrap_metal" in finished[1][1].brought_home, "a player who leaves gets a result listing what comes home")
 	Raid.apply_result(finished[1][1])
 	check("scrap_metal" in Profile.stash and Profile.raids_extracted == 1, "the result can be applied to the player's own profile")
-	raid.remove_player(b)
 	await _end_raid(raid)
 	Profile.reset()
 
@@ -1685,11 +1903,11 @@ func _test_online() -> void:
 	var outcome := [{}]
 	raid.player_finished.connect(func(_a: Actor, r: Dictionary) -> void: outcome[0] = r)
 	var bags_before: int = announced.containers
-	raid._on_actor_extracted(rider)
+	raid._leave(raid.state_for(rider))
 	await frames(3)
 	check("bike_scrapper" in outcome[0].get("brought_home", []) and announced.removed == 1
-			and (not is_instance_valid(own_bike) or own_bike not in raid.vehicles), "extracting on a vehicle takes it home and out of the raid")
-	check(announced.containers == bags_before, "extracting leaves no loot bag behind")
+			and (not is_instance_valid(own_bike) or own_bike not in raid.vehicles), "leaving on a vehicle takes it home and out of the raid")
+	check(announced.containers == bags_before, "leaving alive drops no loot bag")
 	await _end_raid(raid)
 
 	print("Online: a real server and two clients")
@@ -1708,7 +1926,6 @@ func _test_online() -> void:
 			"the client has its own actor and leaves damage to the server")
 	await _wait_until(func() -> bool: return alpha.raid.bots.size() == world.bot_count, 180)
 	check(alpha.raid.bots.size() == world.bot_count, "the client sees the server's bots")
-	check(alpha.raid.time_left > 0.0 and alpha.raid.time_left < world.raid_duration, "the raid clock comes from the server")
 	var bravo := await _join("Bravo", port)
 	check(bravo != null, "a second client joins the same raid")
 	if bravo != null:
@@ -1875,6 +2092,42 @@ func _test_online() -> void:
 			check(bag_gone.call(), "the emptied bag disappears on the client too")
 		await _wait_until(func() -> bool: return alpha.actor_for(bravo.my_actor_id) == null, 400)
 		check(alpha.actor_for(bravo.my_actor_id) == null, "a dead player is removed from the other client's raid")
+
+		# Bravo is still connected, and drops back into the same world.
+		var dead_id := bravo.my_actor_id
+		var world_before := bravo.raid
+		bravo.deploy()
+		var back := func() -> bool:
+			return bravo.my_actor_id != dead_id and bravo.raid != null and bravo.raid.player != null \
+					and is_instance_valid(bravo.raid.player) and not bravo.raid.player.is_dead
+		await _wait_until(back, 300)
+		check(back.call() and bravo.raid == world_before and bravo.raid.player != victim,
+				"a dead player drops back into the same world without reconnecting")
+		await _wait_until(func() -> bool: return alpha.actor_for(bravo.my_actor_id) != null, 180)
+		check(alpha.actor_for(bravo.my_actor_id) != null and bravo.raid.players.size() == 2
+				and bravo.containers().size() == alpha.containers().size(),
+				"the other client sees them return, and they still see the world")
+		if back.call():
+			var from := bravo.raid.player.global_position
+			bravo.raid.player.cmd.move = Vector2(0, 1)
+			await frames(60)
+			bravo.raid.player.cmd.move = Vector2.ZERO
+			await frames(20)
+			var seen_again := alpha.actor_for(bravo.my_actor_id)
+			check(bravo.raid.player.global_position.distance_to(from) > 2.0 and seen_again != null
+					and seen_again.global_position.distance_to(bravo.raid.player.global_position) < 2.0,
+					"the new body answers to their input, on both screens")
+			# Signing out is asked of the server, and ends the stay alive.
+			result[0] = {}
+			await frames(int(world.combat_time * 60.0))
+			bravo.sign_out()
+			var counting := func() -> bool: return bravo.raid.sign_out_progress(bravo.raid.player) >= 0.0
+			await _wait_until(counting, 120)
+			check(counting.call(), "the server starts a sign-out and the client shows the countdown")
+			await _wait_until(func() -> bool: return not result[0].is_empty(), int(world.sign_out_time * 60.0) + 240)
+			check(result[0].get("outcome", "") == "left", "a finished sign-out ends the life as left")
+			await _wait_until(func() -> bool: return alpha.actor_for(bravo.my_actor_id) == null, 120)
+			check(alpha.actor_for(bravo.my_actor_id) == null, "a player who left is gone from the other client's world")
 	await _leave(bravo)
 	await _leave(alpha)
 	OS.kill(pid)
@@ -2017,7 +2270,8 @@ func _lagged_shots(port: int, extra: Array[String]) -> Array:
 		if target == seen:
 			hits[0] += 1)
 	dana.simulated_lag = 0.1
-	await frames(40)
+	# Eli just dropped in, and cannot be hurt until his protection runs out.
+	await frames(int(Worlds.get_world("ashfront").spawn_protection * 60.0) + 40)
 	# Eli backs away from Dana for some room, then strafes across her view.
 	var away := runner.global_position - me.global_position
 	away.y = 0.0
@@ -2231,15 +2485,26 @@ func _test_online_stash() -> void:
 		await _wait_until(func() -> bool: return cara.account.deployed, 120)
 		check(cara.account.deployed and "rifle_carbine" not in cara.account.stash and "medkit" not in cara.account.stash,
 				"deployed gear has left the server stash")
-	# Dropping the connection mid-raid counts as a death: the gear is gone.
+	# Dropping the connection leaves the body in the world for the sign-out
+	# time. Nobody kills it here, so the gear then comes home.
 	await _leave(cara)
 	await frames(30)
 	cara = await _sign_in("Cara", port)
 	check(cara != null, "the same name and secret sign back in")
 	if cara != null:
-		check(not cara.account.deployed and "rifle_carbine" not in cara.account.stash
-				and cara.account.loadout.get("primary", "") == "" and cara.account.raids_played == 1,
-				"the server settled the run: the carbine is lost and the slot is empty")
+		check(cara.account.deployed and "rifle_carbine" not in cara.account.stash,
+				"the body is still out there, with the gear on it")
+		var refused: Array[String] = []
+		cara.lobby_error.connect(func(reason: String) -> void: refused.append(reason))
+		cara.deploy()
+		await _wait_until(func() -> bool: return not refused.is_empty(), 120)
+		check(refused.size() == 1 and cara.raid == null, "you cannot drop in again while your old body stands")
+		await _wait_until(func() -> bool: return not cara.account.deployed,
+				int(Worlds.get_world("ashfront").sign_out_time * 60.0) + 300)
+		check(not cara.account.deployed and "rifle_carbine" in cara.account.stash
+				and cara.account.loadout.get("primary", "") == "rifle_carbine" and cara.account.raids_played == 1
+				and cara.account.raids_extracted == 1,
+				"the body survived its sign-out: the gear is home and the lobby is told")
 		check("bike_scrapper" in cara.account.stash, "gear that stayed in the stash is safe")
 	await _leave(cara)
 	OS.kill(pid)
@@ -2248,7 +2513,7 @@ func _test_online_stash() -> void:
 	# A new server process reads the same accounts from disk.
 	pid = _start_server(port + 1, ["--bots", "0"])
 	cara = await _sign_in("Cara", port + 1)
-	check(cara != null and cara.account.raids_played == 1 and "rifle_carbine" not in cara.account.stash,
+	check(cara != null and cara.account.raids_played == 1 and "rifle_carbine" in cara.account.stash,
 			"the stash survives a server restart")
 	await _leave(cara)
 	OS.kill(pid)
@@ -2334,7 +2599,7 @@ func _test_stash_service() -> void:
 	check(restarted.sign_in("Vex Runner", secret).ok and not restarted.sign_in("Vex Runner", StashService.new_secret()).ok,
 			"sign-in still checks the secret after a restart")
 
-	# Extract from a real raid and settle its result.
+	# Bank, then leave a real raid alive, and settle its result.
 	deploy = restarted.deploy(id, world)
 	var raid := Raid.new()
 	raid.apply_to_profile = false
@@ -2344,19 +2609,24 @@ func _test_stash_service() -> void:
 		bot.get_node("Brain").set_physics_process(false)
 	await frames(3)
 	var results: Array[Dictionary] = []
-	raid.ended.connect(func(r: Dictionary) -> void: results.append(r))
+	raid.player_finished.connect(func(_a: Actor, r: Dictionary) -> void: results.append(r))
+	check(restarted.bank(id, ["alloy_ingot", "rifle_scrap", "no_such_item"]).ok
+			and restarted.snapshot(id).stash.count("alloy_ingot") == 1
+			and "rifle_scrap" not in restarted.snapshot(id).stash and restarted.snapshot(id).deployed,
+			"banked loot reaches the stash while still deployed, and scrap never does")
 	raid.player.inventory.add_item("scrap_metal")
-	var exit_pos := raid.exits[0].global_position
-	raid.player.global_position = Vector3(exit_pos.x, 0.2, exit_pos.z)
-	await frames(300)
-	check(results.size() == 1 and results[0].outcome == "extracted", "the server-stash raid extracts")
+	raid.begin_sign_out(raid.player)
+	raid.state_for(raid.player).sign_out_left = 0.1
+	await frames(20)
+	check(results.size() == 1 and results[0].outcome == "left", "the server-stash life ends by leaving")
 	if results.size() == 1:
 		check(restarted.settle(id, results[0]).ok, "the result settles")
 	var home := restarted.snapshot(id)
 	check("rifle_carbine" in home.stash and "scrap_metal" in home.stash and home.raids_extracted == 1,
-			"extracting brings gear and loot into the server stash")
+			"leaving alive brings gear and loot into the server stash")
 	check(not home.deployed and not restarted.settle(id, results[0] if results.size() == 1 else {}).ok,
 			"a result cannot be settled twice")
+	check(not restarted.bank(id, ["alloy_ingot"]).ok, "nothing can be banked from the hub")
 	check(Profile.stash == profile_stash, "the server stash never touches the local profile")
 	await _end_raid(raid)
 
@@ -2378,6 +2648,263 @@ func _test_stash_service() -> void:
 	for f in DirAccess.get_files_at(dir):
 		DirAccess.remove_absolute(dir.path_join(f))
 	DirAccess.remove_absolute(dir)
+
+
+# --- The phone ---------------------------------------------------------------
+
+const SocialService := preload("res://core/social/social_service.gd")
+const GameSettings := preload("res://core/settings/game_settings.gd")
+const PhoneScript := preload("res://core/phone/phone.gd")
+
+
+func _test_phone() -> void:
+	_test_social_service()
+	_test_game_settings()
+	await _test_phone_view()
+	await _test_online_phone()
+
+
+func _test_social_service() -> void:
+	print("Phone: the server's social service")
+	var social := SocialService.new()
+	social.persist = false
+	social.player_online("ana", "Ana")
+	social.player_online("ben", "Ben")
+	var snap := social.snapshot("ana", 1000.0)
+	check(snap.contacts.size() == 1 and snap.contacts[0].id == "ben" and snap.contacts[0].online
+			and snap.contacts[0].where == "lobby" and not snap.contacts[0].saved,
+			"everyone signed in to the server shows up as a contact, without you")
+	social.set_where("ben", "raid")
+	check(social.snapshot("ana", 1000.0).contacts[0].where == "raid", "contacts show where a player is")
+
+	var sent := social.send_message("ana", "ben", "  meet at the\nnorth exit  ", 1000.0)
+	check(sent.ok and sent.message.text == "meet at the north exit",
+			"a message is delivered with control characters stripped")
+	check(social.snapshot("ben", 1000.0).messages.size() == 1 and social.snapshot("ana", 1000.0).messages.size() == 1,
+			"both sides keep the message")
+	check(not social.send_message("ana", "ben", "   ", 1000.0).ok, "an empty message is refused")
+	check(not social.send_message("ana", "ana", "hi", 1000.0).ok, "you cannot message yourself")
+	check(not social.send_message("ana", "zed", "hi", 1000.0).ok, "you cannot message someone who is not here")
+	check(social.send_message("ana", "ben", "x".repeat(1000), 1001.0).message.text.length() == SocialService.MAX_MESSAGE,
+			"a long message is cut to the limit")
+	var accepted := 0
+	for i in 10:
+		if social.send_message("ana", "ben", "spam %d" % i, 1002.0).ok:
+			accepted += 1
+	check(accepted == SocialService.RATE_LIMIT - 2, "messages are rate limited")
+	check(social.send_message("ana", "ben", "later", 1002.0 + SocialService.RATE_WINDOW + 1.0).ok,
+			"the limit wears off")
+
+	# Saved contacts can be messaged while they are offline.
+	check(social.add_contact("ana", "ben").ok and social.snapshot("ana", 1100.0).contacts[0].saved, "a player can be saved as a contact")
+	check(not social.add_contact("ana", "nobody").ok, "only people you have met can be saved")
+	social.player_offline("ben")
+	var offline_snap := social.snapshot("ana", 1100.0)
+	check(offline_snap.contacts.size() == 1 and not offline_snap.contacts[0].online and offline_snap.contacts[0].name == "Ben",
+			"a saved contact stays listed, by name, when they leave")
+	check(social.send_message("ana", "ben", "see you tomorrow", 1100.0).ok, "a saved contact can be messaged while offline")
+	social.player_online("ben", "Ben")
+	var log: Array = social.snapshot("ben", 1100.0).messages
+	check(log[log.size() - 1].text == "see you tomorrow", "the message is waiting when they come back")
+
+	# Invites.
+	check(not social.invite("ana", "ben", "party", "ashfront", 1200.0).ok, "only raids and bases can be invited to")
+	check(not social.invite("ana", "zed", "world", "ashfront", 1200.0).ok, "only players online can be invited")
+	var made := social.invite("ana", "ben", "world", "ashfront", 1200.0)
+	check(made.ok and social.invites_for("ben", 1200.0).size() == 1 and social.invites_for("ana", 1200.0).is_empty(),
+			"an invite reaches only the player invited")
+	social.invite("ana", "ben", "world", "ashfront", 1201.0)
+	check(social.invites_for("ben", 1201.0).size() == 1, "a repeat invite replaces the old one")
+	social.invite("ana", "ben", "base", "", 1201.0)
+	var open: Array[Dictionary] = social.invites_for("ben", 1201.0)
+	check(open.size() == 2, "raid and base invites are separate")
+	var world_invite: Dictionary = open[0] if open[0].kind == "world" else open[1]
+	check(not social.answer_invite("ana", world_invite.id, true, 1202.0).ok, "only the invited player can answer")
+	var answer := social.answer_invite("ben", world_invite.id, true, 1202.0)
+	check(answer.ok and answer.accepted and answer.invite.world_id == "ashfront", "an accepted invite says where to go")
+	check(not social.answer_invite("ben", world_invite.id, true, 1202.0).ok, "an invite is answered once")
+	check(social.invites_for("ben", 1201.0 + SocialService.INVITE_SECONDS + 1.0).is_empty(), "invites expire")
+
+	# Blocking.
+	social.invite("ana", "ben", "world", "ashfront", 1300.0)
+	social.block("ben", "ana")
+	check(social.invites_for("ben", 1300.0).is_empty(), "blocking drops their open invites")
+	check(not social.send_message("ana", "ben", "hello?", 1300.0).ok and not social.invite("ana", "ben", "base", "", 1300.0).ok,
+			"a blocked player can no longer message or invite")
+	var ben_view := social.snapshot("ben", 1300.0)
+	check(ben_view.contacts.size() == 1 and ben_view.contacts[0].blocked, "a blocked player is listed as blocked")
+	social.unblock("ben", "ana")
+	check(social.send_message("ana", "ben", "hello again", 1400.0).ok, "unblocking lets them through again")
+
+	# Leaving drops invites; news always has the game's own.
+	social.invite("ana", "ben", "world", "ashfront", 1500.0)
+	social.player_offline("ana")
+	check(social.invites_for("ben", 1500.0).is_empty(), "invites from a player who left are gone")
+	check(social.snapshot("ben", 1500.0).news.size() == SocialService.GAME_NEWS.size(), "the phone gets the game news")
+	social.server_news.append({"date": "today", "title": "Double loot weekend", "body": "Caches hold more."})
+	check(social.news()[0].title == "Double loot weekend", "server news comes first")
+
+	# Saved social data survives a restart.
+	var dir := "user://test_social"
+	_wipe_dir(dir)
+	var saving := SocialService.new()
+	saving.save_dir = dir
+	saving.player_online("ana", "Ana")
+	saving.player_online("ben", "Ben")
+	saving.add_contact("ana", "ben")
+	saving.send_message("ben", "ana", "kept", 2000.0)
+	var reloaded := SocialService.new()
+	reloaded.save_dir = dir
+	var kept := reloaded.snapshot("ana", 2000.0)
+	check(kept.contacts.size() == 1 and kept.contacts[0].name == "Ben" and kept.messages[0].text == "kept",
+			"contacts and messages are saved per account")
+	_wipe_dir(dir)
+
+
+func _test_game_settings() -> void:
+	print("Phone: settings")
+	GameSettings.persist = false
+	GameSettings.reset()
+	GameSettings.set_value("mouse_sensitivity", 99.0)
+	GameSettings.set_value("field_of_view", 10.0)
+	GameSettings.set_value("master_volume", 0.5)
+	GameSettings.set_value("nonsense", 1)
+	check(is_equal_approx(GameSettings.mouse_sensitivity, GameSettings.SENSITIVITY_RANGE.y)
+			and is_equal_approx(GameSettings.field_of_view, GameSettings.FOV_RANGE.x), "settings are clamped to sane values")
+	check(not GameSettings.to_dict().has("nonsense"), "unknown settings are ignored")
+	var bus := AudioServer.get_bus_index("Master")
+	check(absf(AudioServer.get_bus_volume_db(bus) - linear_to_db(0.5)) < 0.01, "volume reaches the audio bus")
+	GameSettings.reset()
+	GameSettings.apply()
+
+
+func _test_phone_view() -> void:
+	print("Phone: the menu itself")
+	var phone: CanvasLayer = PhoneScript.new()
+	add_child(phone)
+	await frames(1)
+	var events: Array = []
+	phone.opened_changed.connect(func(open: bool) -> void: events.append(open))
+	phone.settings_changed.connect(func() -> void: events.append("settings"))
+	check(not phone.is_open and not phone.online(), "the phone starts put away and offline")
+	check(phone.unseen_news() == SocialService.GAME_NEWS.size(), "unread news is counted")
+	phone.toggle()
+	check(phone.is_open and events == [true], "the phone opens")
+	phone.open_app("news")
+	check(phone.unseen_news() == 0 and phone._body.get_child_count() == SocialService.GAME_NEWS.size(),
+			"news can be read offline")
+	phone.open_app("contacts")
+	check(phone._body.get_child_count() == 1, "offline, contacts explain how to reach players")
+	GameSettings.persist = false
+	phone.open_app("settings")
+	phone.change_setting("field_of_view", 95.0)
+	check(is_equal_approx(GameSettings.field_of_view, 95.0) and "settings" in events, "settings change from the phone")
+	phone.close()
+	check(not phone.is_open and events[events.size() - 1] == false, "the phone closes")
+
+	# In a raid, the phone stops the character and frees the mouse.
+	var raid := await _new_raid(91, false)
+	var controller := PlayerController.new()
+	controller.setup(raid.player)
+	raid.add_child(controller)
+	await frames(2)
+	controller.input_blocked = true
+	await frames(2)
+	check(raid.player.cmd.move == Vector2.ZERO and not raid.player.cmd.primary, "with the phone out the character lets go of the controls")
+	controller.input_blocked = false
+	await _end_raid(raid)
+	GameSettings.reset()
+	phone.queue_free()
+	await frames(1)
+
+
+func _test_online_phone() -> void:
+	print("Online: phones reach other players")
+	var port := 24851
+	_wipe_dir(NET_ACCOUNTS)
+	var pid := _start_server(port, ["--bots", "0"])
+	var ana := await _sign_in("Ana", port)
+	var ben := await _sign_in("Ben", port)
+	check(ana != null and ben != null, "two players sign in")
+	if ana == null or ben == null:
+		await _leave(ana)
+		await _leave(ben)
+		OS.kill(pid)
+		return
+	var sees := func(session: NetSession, who: String) -> bool:
+		for entry: Dictionary in session.social_state.get("contacts", []):
+			if entry.id == who and entry.online:
+				return true
+		return false
+	await _wait_until(func() -> bool: return sees.call(ana, "ben") and sees.call(ben, "ana"), 240)
+	check(sees.call(ana, "ben") and sees.call(ben, "ana"), "each phone lists the other player online")
+
+	var phone: CanvasLayer = PhoneScript.new()
+	add_child(phone)
+	phone.set_session(ben)
+	var notices: Array[String] = []
+	ben.social_notice.connect(func(text: String) -> void: notices.append(text))
+	ana.send_message("ben", "Want to run the docks?")
+	await _wait_until(func() -> bool: return phone.unread_count() == 1, 240)
+	check(phone.unread_count() == 1 and phone.conversation_with("ana")[0].text == "Want to run the docks?",
+			"a message arrives on the other phone, unread")
+	check(notices.any(func(t: String) -> bool: return t.contains("docks")), "it pops up as a notice")
+	phone.open()
+	phone.open_chat("ana")
+	check(phone.unread_count() == 0, "opening the conversation marks it read")
+	phone.send_message("ana", "Sure")
+	await _wait_until(func() -> bool: return ana.social_state.get("messages", []).size() == 2, 240)
+	check(ana.social_state.get("messages", []).size() == 2, "the reply goes back through the server")
+
+	# A raid invite: accepting it deploys into the same server's raid.
+	var accepted: Array = []
+	ben.world_invite_accepted.connect(func(invite: Dictionary) -> void: accepted.append(invite))
+	var ana_notices: Array[String] = []
+	ana.social_notice.connect(func(text: String) -> void: ana_notices.append(text))
+	ana.send_invite("ben", "world")
+	await _wait_until(func() -> bool: return phone.invites().size() == 1, 240)
+	check(phone.invites().size() == 1 and phone.invites()[0].kind == "world", "the invite shows on the phone")
+	phone.answer_invite(int(phone.invites()[0].id), true)
+	await _wait_until(func() -> bool: return not accepted.is_empty(), 240)
+	check(accepted.size() == 1 and accepted[0].world_id == "ashfront", "accepting tells the game where to go")
+	await _wait_until(func() -> bool: return ana_notices.any(func(t: String) -> bool: return t.contains("accepted")), 240)
+	check(ana_notices.any(func(t: String) -> bool: return t.contains("accepted")), "the inviter hears it was accepted")
+
+	# A base invite carries the owner's gear for a read-only visit.
+	var visits: Array = []
+	ben.base_visit_requested.connect(func(owner: String, owner_stash: Array, _loadout: Dictionary) -> void:
+		visits.append([owner, owner_stash]))
+	ana.send_invite("ben", "base")
+	await _wait_until(func() -> bool: return phone.invites().size() == 1, 240)
+	phone.answer_invite(int(phone.invites()[0].id), true)
+	await _wait_until(func() -> bool: return not visits.is_empty(), 240)
+	check(visits.size() == 1 and visits[0][0] == "Ana" and "rifle_carbine" in visits[0][1],
+			"accepting a base invite brings the owner's stash to show")
+
+	# Presence follows the player into the raid.
+	ana.deploy()
+	await _wait_until(func() -> bool:
+		return ben.social_state.get("contacts", []).any(func(c: Dictionary) -> bool: return c.id == "ana" and c.where == "raid"), 240)
+	check(ben.social_state.get("contacts", []).any(func(c: Dictionary) -> bool: return c.id == "ana" and c.where == "raid"),
+			"contacts show who is in the raid")
+
+	# Blocking is enforced by the server.
+	var errors: Array[String] = []
+	ana.social_error.connect(func(reason: String) -> void: errors.append(reason))
+	phone.change_contact("block", "ana")
+	await _wait_until(func() -> bool: return phone.contact("ana").get("blocked", false), 240)
+	ana.send_message("ben", "hello?")
+	await _wait_until(func() -> bool: return not errors.is_empty(), 240)
+	check(not errors.is_empty() and phone.conversation_with("ana").size() == 2, "a blocked player's messages are refused")
+
+	await _leave(ana)
+	await _wait_until(func() -> bool: return not sees.call(ben, "ana"), 240)
+	check(not sees.call(ben, "ana"), "a player who leaves goes offline on the other phones")
+	phone.queue_free()
+	await _leave(ben)
+	OS.kill(pid)
+	await frames(30)
+	_wipe_dir(NET_ACCOUNTS)
 
 
 ## Stands the actor in front of a home base display, looking at it.

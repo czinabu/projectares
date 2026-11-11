@@ -20,6 +20,13 @@ static func deal(target: Object, info: DamageInfo) -> bool:
 	var world: WorldDef = Worlds.current
 	if world and not world.can_damage(info.source, actor, info):
 		return false
+	# Attacking gives up your own drop-in protection, and nothing gets
+	# through someone else's.
+	var striker := info.source as Actor
+	if striker and is_instance_valid(striker):
+		striker.protected_left = 0.0
+	if actor.protected_left > 0.0:
+		return false
 	actor.modify_incoming(info)
 	if info.amount > 0.0:
 		actor.health.apply_damage(info)

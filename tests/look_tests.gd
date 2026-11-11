@@ -29,17 +29,16 @@ static func run(t: Node) -> void:
 		t.check(ResourceLoader.exists(dir + "Color.jpg") and ResourceLoader.exists(dir + "NormalGL.jpg")
 				and ResourceLoader.exists(dir + "Roughness.jpg"), "surface '%s' has its textures" % kind)
 	for skin: String in Look.SKINS:
-		for scene: String in Look.SKINS[skin]["scenes"]:
+		for scene: String in Look.SKINS[skin].get("scenes", []):
 			t.check(ResourceLoader.exists(Look.CHARACTERS + scene), "skin '%s' has its model %s" % [skin, scene])
-	for skin: String in ["raider", "scavenger"]:
-		for scene: String in Look.SKINS[skin]["scenes"]:
-			var human: Node3D = Look._instance(Look.CHARACTERS + scene)
-			var human_anims := human.find_child("AnimationPlayer", true, false) as AnimationPlayer
-			var has_all := human_anims != null
-			for key: String in Look.HUMAN_ANIMS:
-				has_all = has_all and human_anims.has_animation(Look.HUMAN_ANIMS[key])
-			t.check(has_all, "human model %s has every animation the skin plays" % scene)
-			human.free()
+	for build in Look.Human.BUILDS:
+		var human: Node3D = Look._instance(Look.Human.rig_path(build))
+		var human_anims := human.find_child("AnimationPlayer", true, false) as AnimationPlayer
+		var has_all := human_anims != null
+		for key: String in Look.HUMAN_ANIMS:
+			has_all = has_all and human_anims.has_animation(Look.HUMAN_ANIMS[key])
+		t.check(has_all, "human rig %s has every animation the skin plays" % build)
+		human.free()
 	var crate := Look.prop("Lootbox.glb", 1.2)
 	var crate_size := Look.model_bounds(crate).size
 	t.check(absf(maxf(crate_size.x, maxf(crate_size.y, crate_size.z)) - 1.2) < 0.05, "a prop is scaled to the size asked for")

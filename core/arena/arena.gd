@@ -205,7 +205,6 @@ func _setup(p_world: WorldDef, p_seed: int) -> void:
 	for node in _map_nodes("arena_gate"):
 		gates[int(node.get_meta("side", 0)) % 2] = node.global_position
 	_gates = gates
-	time_left = 0.0
 
 
 ## The account a player's money and record belong to.
@@ -436,6 +435,7 @@ func _leave_tournament(actor: Actor) -> Dictionary:
 # --- Running bouts ---------------------------------------------------------------
 
 func _physics_process(delta: float) -> void:
+	super(delta)
 	if world == null:
 		return
 	if mode == Mode.CLIENT:
@@ -471,7 +471,6 @@ func _physics_process(delta: float) -> void:
 			if phase_left <= 0.0:
 				_clear_pit()
 	_keep_crowd_out()
-	time_left = phase_left
 	if _dirty:
 		_dirty = false
 		board_changed.emit()
@@ -531,6 +530,7 @@ static func refresh_fighter(fighter: Actor) -> void:
 	fighter.health.armor = fighter.health.max_armor
 	fighter.stamina = fighter.max_stamina
 	fighter.stagger_left = 0.0
+	fighter.protected_left = 0.0
 	fighter.heal_time_left = 0.0
 	fighter.flight.heat = 0.0
 	for weapon in fighter.weapons:
@@ -846,6 +846,24 @@ func _on_actor_died(actor: Actor, info: DamageInfo) -> void:
 		bots.erase(actor)
 	_dirty = true
 	get_tree().create_timer(1.0).timeout.connect(_remove_actor.bind(actor))
+
+
+## A dropped connection leaves at once: there is no gear to fight over, and
+## a fighter who goes forfeits their bout.
+func remove_player(actor: Actor) -> void:
+	var state := state_for(actor)
+	if state == null:
+		return
+	if not state.finished and not actor.is_dead:
+		actor.kill("disconnect")
+		return
+	players.erase(state)
+
+
+## There is no sign-out in the arena: you leave through the arena panel.
+func begin_sign_out(actor: Actor, _forced := false) -> bool:
+	_tell(actor, "Use \"Leave the arena\" on the arena panel")
+	return false
 
 
 func _remove_actor(actor: Actor) -> void:

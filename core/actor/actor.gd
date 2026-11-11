@@ -72,6 +72,9 @@ var airborne_time := 0.0
 var stagger_left := 0.0
 ## After a parry, the next melee hit inside this window hits harder.
 var riposte_left := 0.0
+## Seconds left of drop-in protection: nothing can hurt this actor. It ends
+## early the moment they attack someone (see `Combat.deal`).
+var protected_left := 0.0
 var body_mesh: MeshInstance3D
 ## Holds the active weapon's model. A first-person camera may pose it itself.
 var hand := Node3D.new()
@@ -171,6 +174,7 @@ func _physics_process(delta: float) -> void:
 func _simulate_timers(delta: float) -> void:
 	stagger_left = maxf(0.0, stagger_left - delta)
 	riposte_left = maxf(0.0, riposte_left - delta)
+	protected_left = maxf(0.0, protected_left - delta)
 	_stamina_wait = maxf(0.0, _stamina_wait - delta)
 	if _stamina_wait <= 0.0:
 		stamina = minf(max_stamina, stamina + stamina_regen * delta)

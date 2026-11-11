@@ -92,9 +92,9 @@ func _build_blocks() -> void:
 	for gx in GRID:
 		for gz in GRID:
 			var center := Vector3(-half + CELL * (gx + 0.5), 0, -half + CELL * (gz + 0.5))
-			var is_exit := (gx == 0 and gz == 0) or (gx == GRID - 1 and gz == GRID - 1)
-			if is_exit:
-				_add_exit(center)
+			var is_depot := (gx == 0 and gz == 0) or (gx == GRID - 1 and gz == GRID - 1)
+			if is_depot:
+				_add_depot(center)
 			elif _rng.randf() < 0.5:
 				_add_building(center)
 			else:
@@ -175,9 +175,9 @@ func _add_ramp_lot(center: Vector3, yaw: float) -> void:
 	marker.rotation.y = yaw
 
 
-func _add_exit(center: Vector3) -> void:
-	var zone := ExtractionZone.new()
-	zone.add_to_group("exit")
+func _add_depot(center: Vector3) -> void:
+	var zone := Depot.new()
+	zone.add_to_group("depot")
 	zone.position = center + Vector3(0, 2.0, 0)
 	add_child(zone)
 

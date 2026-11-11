@@ -38,10 +38,10 @@ func _init() -> void:
 	id = ID
 	display_name = "The Pit"
 	description = "Duels, tournaments and wagers. Nobody loses gear in the arena."
-	# Bouts keep their own clock. The raid timer never runs out here.
-	raid_duration = 1.0e9
 	bot_count = 0
 	gear_at_risk = false
+	# Nobody can be hurt outside a bout anyway, and fighters start together.
+	spawn_protection = 0.0
 
 
 func new_raid() -> Raid:

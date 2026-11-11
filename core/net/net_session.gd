@@ -29,9 +29,14 @@ extends Node
 ## Connecting puts a client in the lobby: it signs in with a name and a secret,
 ## and the server answers with that account's stash and loadout from its
 ## `StashService`. Loadout changes are requests the server checks. `deploy`
-## enters the raid with the kit the server took out of the stash, and the
-## server settles the result into the stash when the run ends. A client never
-## sends a kit.
+## drops you into the world with the kit the server took out of the stash, and
+## the server settles each life into the stash when it ends. After a death the
+## client stays connected and `deploy` drops it in again. A client never sends
+## a kit.
+##
+## The server's raid never ends or restarts. A client that disconnects leaves
+## its body behind for a while (`Raid.remove_player`), and the server settles
+## that life when the body is killed or its sign-out runs out.
 ##
 ## Each session owns its own multiplayer API rooted at itself, so it works
 ## anywhere in the scene tree and several can live in one process.
@@ -43,20 +48,33 @@ signal signed_in(account: Dictionary)
 signal account_changed(account: Dictionary)
 ## Client: the server turned down a lobby request (equip, pick, deploy).
 signal lobby_error(reason: String)
-## Client: the raid view exists and your actor is in it.
+## Client: the raid view exists and your actor is in it. Fires again every
+## time you drop back in after a death.
 signal joined(raid: Raid)
-## Client: your run ended (died or extracted). The result is like a solo raid's.
+## Client: one life ended. `result.outcome` is "died" (you are still connected
+## and `deploy` drops you in again) or "left" (your sign-out finished).
 signal run_finished(result: Dictionary)
 ## Client: could not connect, or the server refused.
 signal failed(reason: String)
 ## Client: the connection dropped after joining.
 signal disconnected
-## Server: a fresh raid replaced a finished one.
-signal raid_restarted(raid: Raid)
+## Client: the phone's contacts, messages, invites and news changed (see
+## `SocialService.snapshot`).
+signal social_changed(social: Dictionary)
+## Client: the server turned down a phone request (message, invite, contact).
+signal social_error(reason: String)
+## Client: something happened on the phone worth a pop-up ("Bo accepted").
+signal social_notice(text: String)
+## Client: you accepted an invite to the raid on this server.
+signal world_invite_accepted(invite: Dictionary)
+## Client: you accepted an invite to someone's home base. The owner's stash
+## and loadout come from the server, so a base can be shown read-only.
+signal base_visit_requested(owner_name: String, stash: Array, loadout: Dictionary)
 
 const DEFAULT_PORT := 24565
-const PROTOCOL := 5
+const PROTOCOL := 8
 const StashService := preload("res://core/account/stash_service.gd")
+const SocialService := preload("res://core/social/social_service.gd")
 const ArenaVenue := preload("res://core/arena/arena_venue.gd")
 ## Server physics ticks between arena board updates when nothing changed.
 const BOARD_RESEND_TICKS := 60
@@ -81,7 +99,8 @@ const HISTORY_TICKS := 180
 const CORRECTION_RATE := 0.2
 ## Notices the server passes on to a player. Others are produced locally.
 const FORWARDED_NOTICES := ["Parry!", "Wrong side", "Guard broken", "Staggered", "Killed ", "Looted ",
-		"Backpack full", "Someone is riding it"]
+		"Backpack full", "Someone is riding it", "Banked ", "Signing out", "Sign-out cancelled",
+		"You cannot sign out"]
 
 var is_server := false
 var raid: Raid
@@ -94,9 +113,16 @@ var squad_spawn := false
 ## Server: owns every player's stash, loadout and mastery. Set its
 ## `save_dir` or `persist` before `host`.
 var stash := StashService.new()
+## Server: presence, contacts, messages, invites and news for the phone. Its
+## files live in a `social` folder inside the stash's `save_dir`.
+var social := SocialService.new()
+## Client: the phone's view as the server last sent it. Empty until signed in.
+var social_state := {}
 ## Client: the name to sign in with, and the secret that proves the account
 ## is yours (see `StashService.new_secret`).
 var player_name := "Raider"
+## Client: how this player's character looks, sent once signed in.
+var look := {}
 var secret := ""
 ## Client: your account as the server last sent it. Empty until signed in.
 var account := {}
@@ -123,6 +149,8 @@ var _peer_actor := {}    # peer id -> Actor (server)
 var _actor_peer := {}    # Actor -> peer id (server)
 var _joined_peers: Array[int] = []
 var _peer_account := {}  # peer id -> account id (server)
+var _peer_look := {}  # peer id -> appearance (server). Cosmetic only.
+var _joining_look := {}  # the look of the player being added right now (server)
 var _actor_account := {} # Actor -> account id, until the run is settled (server)
 var _input_queue := {}   # peer id -> [[seq, command array], ...] not yet played (server)
 var _queued_seq := {}    # peer id -> newest input number received (server)
@@ -155,9 +183,9 @@ var _sent_kills := {}    # actor id -> kill count last sent (server)
 var _board_sent := {}    # peer id -> [board text, tick sent] (server, arena)
 var _board_dirty := false
 var _tick := 0
-var _had_players := false
-var _restart_in := -1.0
-var _finished := false
+var _died_at := {}       # peer id -> msec when their last life ended in a death (server)
+var _finished := false   # client: signed out, so the server closing the connection is expected
+var _can_redeploy := false # client: dead and still connected
 
 
 func _enter_tree() -> void:
@@ -194,6 +222,9 @@ func host(p_world_id: String, port := DEFAULT_PORT, max_players := 8) -> Error:
 		return err
 	is_server = true
 	world_id = p_world_id
+	social.persist = stash.persist
+	social.save_dir = stash.save_dir.path_join("social")
+	social.load_server_news(stash.save_dir.path_join("news.json"))
 	Combat.authoritative = true
 	_api.multiplayer_peer = peer
 	_api.peer_connected.connect(_on_peer_connected)
@@ -219,6 +250,8 @@ func _start_server_raid() -> void:
 	raid.actor_spawned.connect(_on_server_actor_spawned)
 	raid.actor_removed.connect(_on_server_actor_removed)
 	raid.player_finished.connect(_on_server_player_finished)
+	raid.player_banked.connect(_on_server_player_banked)
+	raid.sign_out_changed.connect(_on_server_sign_out_changed)
 	raid.container_spawned.connect(_on_server_container_spawned)
 	raid.vehicle_spawned.connect(_on_server_vehicle_spawned)
 	raid.vehicle_removed.connect(_on_server_vehicle_removed)
@@ -235,9 +268,6 @@ func _start_server_raid() -> void:
 			if peer in _api.get_peers():
 				_notice.rpc_id(peer, text))
 	raid.start_server(world)
-	_had_players = false
-	_restart_in = -1.0
-	raid_restarted.emit(raid)
 
 
 func _clear_tables() -> void:
@@ -292,9 +322,14 @@ func _on_peer_connected(peer: int) -> void:
 
 func _on_peer_disconnected(peer: int) -> void:
 	_joined_peers.erase(peer)
+	_social_left(peer)
 	_peer_account.erase(peer)
+	_peer_look.erase(peer)
 	_input_queue.erase(peer)
 	_queued_seq.erase(peer)
+	_died_at.erase(peer)
+	# Their body stays in the world for a while. The run is settled into the
+	# account when it is killed or its sign-out runs out.
 	var actor: Actor = _peer_actor.get(peer)
 	if actor != null and is_instance_valid(actor) and raid != null:
 		raid.remove_player(actor)
@@ -302,6 +337,10 @@ func _on_peer_disconnected(peer: int) -> void:
 
 
 func _on_server_actor_spawned(actor: Actor) -> void:
+	# A joining player's look is put on before anyone is told about them.
+	if not _joining_look.is_empty() and raid.state_for(actor) != null:
+		Look.set_appearance(actor, _joining_look)
+		_joining_look = {}
 	var id := _register(actor)
 	actor.died.connect(func(_a: Actor, info: DamageInfo) -> void: _dead_kind[id] = info.kind)
 	for peer in _joined_peers:
@@ -387,10 +426,39 @@ func _on_server_player_finished(actor: Actor, result: Dictionary) -> void:
 		# Nothing to settle where no gear was at risk (the arena).
 		if raid.world.gear_at_risk:
 			stash.settle(account_id, result)
-		if online:
-			_account.rpc_id(peer, stash.snapshot(account_id))
+		# Everyone signed in to the account hears, including a player back in
+		# the lobby whose old body just finished its sign-out.
+		for other: int in _peer_account:
+			if _peer_account[other] == account_id and other in _api.get_peers():
+				_account.rpc_id(other, stash.snapshot(account_id))
+	if _peer_actor.get(peer) == actor:
+		# Free to drop in again, after a short wait if they died.
+		_peer_actor.erase(peer)
+		_input_queue.erase(peer)
+		if result.get("outcome", "") == "died":
+			_died_at[peer] = Time.get_ticks_msec()
 	if online:
 		_run_finished.rpc_id(peer, result)
+		# A dead player is still in the world, about to drop back in.
+		if result.get("outcome", "") != "died":
+			_social_moved(peer, "lobby")
+
+
+## Banked loot goes straight into the account's stash.
+func _on_server_player_banked(actor: Actor, items: Array) -> void:
+	var account_id: String = _actor_account.get(actor, "")
+	if account_id == "":
+		return
+	stash.bank(account_id, items)
+	var peer: int = _actor_peer.get(actor, 0)
+	if peer != 0 and peer in _api.get_peers():
+		_account.rpc_id(peer, stash.snapshot(account_id))
+
+
+func _on_server_sign_out_changed(actor: Actor, seconds_left: float) -> void:
+	var peer: int = _actor_peer.get(actor, 0)
+	if peer != 0 and peer in _api.get_peers():
+		_sign_out.rpc_id(peer, seconds_left)
 
 
 func _send_account(peer: int) -> void:
@@ -419,6 +487,7 @@ func _sign_in(p_name: String, p_secret: String) -> void:
 				_api.multiplayer_peer.disconnect_peer(other)
 	_peer_account[peer] = result.account_id
 	_send_account(peer)
+	_social_joined(peer)
 
 
 ## Lobby: put a stash item in a loadout slot, or "" to empty the slot.
@@ -446,19 +515,45 @@ func _request_pick(track: String, variant_id: String) -> void:
 	_send_account(peer)
 
 
+## Lobby: how the player's character looks. Looks are cosmetic, so this is
+## the one thing a client gets to choose; it is still checked, and a look can
+## only name parts and colours that exist.
+@rpc("any_peer", "call_remote", "reliable")
+func _request_look(p_look: Dictionary) -> void:
+	var peer := _api.get_remote_sender_id()
+	if not is_server or not _peer_account.has(peer):
+		return
+	_peer_look[peer] = Look.clean_appearance(p_look)
+
+
+## Server: the look a signed-in player chose, or {} if they sent none.
+func look_for_peer(peer: int) -> Dictionary:
+	return _peer_look.get(peer, {})
+
+
+## Client: tells the server how this player looks. Takes effect on the next deploy.
+func send_look(p_look: Dictionary) -> void:
+	look = p_look
+	if not is_server and not account.is_empty():
+		_request_look.rpc_id(1, look)
+
+
 func _send_spawn(peer: int, actor: Actor) -> void:
 	var state := raid.state_for(actor)
 	var data := {}
 	if state != null:
 		data = {"kit": state.kit, "picks": state.picks}
+		if actor.has_meta("appearance"):
+			data["look"] = actor.get_meta("appearance")
 	else:
 		data = {"seed": raid.bot_seeds.get(actor, 0)}
 	_spawn.rpc_id(peer, _ids[actor], "player" if state != null else "bot", actor.display_name,
 			String(actor.name), actor.global_position, actor.cmd.yaw, data)
 
 
-## Lobby: deploy into the running raid with the account's loadout. The kit
-## and picks come from the server's stash, never from the client.
+## Drop into the running world with the account's loadout: from the lobby,
+## or again after a death. The kit and picks come from the server's stash,
+## never from the client.
 @rpc("any_peer", "call_remote", "reliable")
 func _request_join() -> void:
 	if not is_server or raid == null:
@@ -466,22 +561,27 @@ func _request_join() -> void:
 	var peer := _api.get_remote_sender_id()
 	if _peer_actor.has(peer) or not _peer_account.has(peer):
 		return
-	if raid.is_over or _restart_in >= 0.0:
-		_lobby_error.rpc_id(peer, "That raid is ending. Try again in a moment.")
+	if Time.get_ticks_msec() - int(_died_at.get(peer, -1000000)) < raid.world.redeploy_delay * 1000.0:
+		_lobby_error.rpc_id(peer, "Not yet. You can drop in again in a moment.")
 		return
 	var account_id: String = _peer_account[peer]
 	var deployed: Dictionary = stash.deploy(account_id, raid.world)
 	if not deployed.ok:
 		_lobby_error.rpc_id(peer, deployed.error)
 		return
+	# A peer that is dropping back in already knows the world. It must hear
+	# which actor is its own before it hears that the actor exists.
+	var returning := peer in _joined_peers
+	_joined_peers.erase(peer)
+	_joining_look = look_for_peer(peer)
 	var actor := raid.add_player(deployed.kit, deployed.picks, stash.snapshot(account_id).name)
+	_joining_look = {}
 	_actor_account[actor] = account_id
 	if raid is Arena:
 		raid.set_key(actor, account_id)
 	_send_account(peer)
 	_peer_actor[peer] = actor
 	_actor_peer[actor] = peer
-	_had_players = true
 	actor.hit_confirmed.connect(_on_server_hit_confirmed.bind(peer))
 	actor.health.damaged.connect(func(info: DamageInfo) -> void:
 		if peer in _api.get_peers():
@@ -497,7 +597,11 @@ func _request_join() -> void:
 		if peer in _api.get_peers():
 			_inventory.rpc_id(peer, actor.inventory.items))
 	_joined_peers.append(peer)
-	_welcome.rpc_id(peer, _ids[actor], raid.time_left)
+	_social_moved(peer, "raid")
+	_welcome.rpc_id(peer, _ids[actor])
+	if returning:
+		_send_spawn(peer, actor)
+		return
 	for other: Actor in _ids:
 		if not other.is_dead:
 			_send_spawn(peer, other)
@@ -548,6 +652,20 @@ func _send_boards() -> void:
 func _on_server_hit_confirmed(target: Actor, info: DamageInfo, lethal: bool, peer: int) -> void:
 	if peer in _api.get_peers() and _ids.has(target):
 		_hit_feedback.rpc_id(peer, _ids[target], info.amount, info.kind, lethal, info.blocked, info.parried)
+
+
+## In the world: start signing out, or call it off.
+@rpc("any_peer", "call_remote", "reliable")
+func _request_sign_out(start: bool) -> void:
+	if not is_server or raid == null:
+		return
+	var actor: Actor = _peer_actor.get(_api.get_remote_sender_id())
+	if actor == null or not is_instance_valid(actor):
+		return
+	if start:
+		raid.begin_sign_out(actor)
+	else:
+		raid.cancel_sign_out(actor)
 
 
 @rpc("any_peer", "call_remote", "unreliable_ordered")
@@ -611,7 +729,7 @@ func _seen_positions(attacker: Actor) -> Dictionary:
 	return _past.get(tick, {})
 
 
-func _server_late_tick(delta: float) -> void:
+func _server_late_tick(_delta: float) -> void:
 	if raid == null:
 		return
 	for id: int in _actors:
@@ -642,7 +760,7 @@ func _server_late_tick(delta: float) -> void:
 		for start in range(0, entries.size(), ACTORS_PER_PACKET):
 			var chunk := entries.slice(start, start + ACTORS_PER_PACKET)
 			for peer in _joined_peers:
-				_state.rpc_id(peer, _tick, raid.time_left, chunk)
+				_state.rpc_id(peer, _tick, chunk)
 		if not _vehicles.is_empty():
 			var rides: Array = []
 			for id: int in _vehicles:
@@ -660,28 +778,6 @@ func _server_late_tick(delta: float) -> void:
 			_sent_kills[id] = state.kills
 			for peer in _joined_peers:
 				_kills.rpc_id(peer, id, state.kills)
-	# A raid that ran out of time, or that everyone has left, makes way for a new one.
-	if _restart_in < 0.0 and (raid.is_over or (_had_players and raid.players.is_empty())):
-		_restart_in = 5.0 if raid.is_over else 1.0
-	if _restart_in >= 0.0:
-		_restart_in -= delta
-		if _restart_in < 0.0:
-			_restart_raid()
-
-
-func _restart_raid() -> void:
-	# Players in the old raid are sent home. Players waiting in the lobby stay.
-	for peer in _joined_peers:
-		if peer in _api.get_peers():
-			_peer_account.erase(peer)
-			_api.multiplayer_peer.disconnect_peer(peer)
-	_joined_peers.clear()
-	# Everyone should be settled by now. Anyone who is not gets their gear back.
-	for account_id: String in _actor_account.values():
-		stash.cancel_deploy(account_id)
-	raid.queue_free()
-	remove_child(raid)
-	_start_server_raid()
 
 
 # ---------------------------------------------------------------- client ----
@@ -736,6 +832,8 @@ func _account(snapshot: Dictionary) -> void:
 	var first := account.is_empty()
 	account = snapshot
 	if first:
+		if not look.is_empty():
+			_request_look.rpc_id(1, look)
 		signed_in.emit(account)
 	account_changed.emit(account)
 
@@ -757,14 +855,38 @@ func pick_mastery(track: String, variant_id: String) -> void:
 		_request_pick.rpc_id(1, track, variant_id)
 
 
-## Lobby: deploy into the server's raid. `joined` follows, or `lobby_error`.
+## Drop into the server's world: from the lobby, or again after a death.
+## `joined` follows, or `lobby_error`.
 func deploy() -> void:
-	if _is_connected() and not account.is_empty() and my_actor_id < 0:
+	if _is_connected() and not account.is_empty() and (my_actor_id < 0 or _can_redeploy):
 		_request_join.rpc_id(1)
 
 
+## In the world: ask the server to start your sign-out, or to call it off.
+func sign_out(start := true) -> void:
+	if _is_connected() and my_actor_id >= 0 and not _can_redeploy:
+		_request_sign_out.rpc_id(1, start)
+
+
 @rpc("authority", "call_remote", "reliable")
-func _welcome(actor_id: int, time_left: float) -> void:
+func _welcome(actor_id: int) -> void:
+	if raid != null:
+		# Dropping back in: the world is already here. Only your actor is new.
+		_can_redeploy = false
+		var corpse: Actor = raid.player
+		if corpse != null and is_instance_valid(corpse):
+			var state := raid.state_for(corpse)
+			if state != null:
+				raid.players.erase(state)
+			_actors.erase(_ids.get(corpse, -1))
+			_ids.erase(corpse)
+			corpse.queue_free()
+		raid.player = null
+		_history.clear()
+		_corrections.erase(my_actor_id)
+		_latest.erase(my_actor_id)
+		my_actor_id = actor_id
+		return
 	_clear_tables()
 	my_actor_id = actor_id
 	Combat.authoritative = false
@@ -773,7 +895,6 @@ func _welcome(actor_id: int, time_left: float) -> void:
 	raid.name = "Raid"
 	add_child(raid)
 	raid.start_client(world)
-	raid.time_left = time_left
 	if raid is Arena:
 		raid.send_request = arena_request
 
@@ -789,6 +910,8 @@ func _spawn(id: int, kind: String, shown_name: String, node_name: String, at: Ve
 		actor.name = node_name
 		actor.display_name = shown_name
 		actor.is_player = id == my_actor_id
+		if data.has("look"):
+			Look.set_appearance(actor, data["look"])
 		raid.add_child(actor)
 		actor.global_position = at
 		Loadout.equip(actor, data.get("kit", []))
@@ -841,8 +964,8 @@ func _kills(id: int, count: int) -> void:
 
 
 @rpc("authority", "call_remote", "unreliable_ordered")
-func _state(tick: int, time_left: float, entries: Array) -> void:
-	_after_lag(_receive_state.bind(tick, time_left, entries))
+func _state(tick: int, entries: Array) -> void:
+	_after_lag(_receive_state.bind(tick, entries))
 
 
 ## Runs `update` now, or after the simulated lag.
@@ -853,10 +976,9 @@ func _after_lag(update: Callable) -> void:
 		update.call()
 
 
-func _receive_state(tick: int, time_left: float, entries: Array) -> void:
+func _receive_state(tick: int, entries: Array) -> void:
 	if raid == null:
 		return
-	raid.time_left = time_left
 	if tick > _newest_tick:
 		_newest_tick = tick
 		_fresh_state = true
@@ -1087,9 +1209,22 @@ func _receive_board(p_board: Dictionary) -> void:
 		Arena.refresh_fighter(me)
 
 
+## Your sign-out started, with this many seconds to go, or stopped (below zero).
+@rpc("authority", "call_remote", "reliable")
+func _sign_out(seconds_left: float) -> void:
+	var me: Actor = _actors.get(my_actor_id)
+	var state := raid.state_for(me) if raid != null and me != null else null
+	if state != null:
+		state.sign_out_left = seconds_left
+		state.sign_out_total = maxf(seconds_left, 0.0)
+
+
 @rpc("authority", "call_remote", "reliable")
 func _run_finished(result: Dictionary) -> void:
-	_finished = true
+	if result.get("outcome", "") == "died":
+		_can_redeploy = true
+	else:
+		_finished = true
 	run_finished.emit(result)
 
 
@@ -1228,6 +1363,219 @@ func _client_late_tick() -> void:
 func _is_connected() -> bool:
 	return _api.multiplayer_peer != null \
 			and _api.multiplayer_peer.get_connection_status() == MultiplayerPeer.CONNECTION_CONNECTED
+
+
+# ---------------------------------------------------------------- social ----
+# The phone: who is online, messages, invites and news. The server keeps it all
+# in `social` (`core/social/social_service.gd`) and sends each player a fresh
+# snapshot whenever something they can see changes. A client only sends
+# requests; the server always knows who sent them from the peer's sign-in.
+
+## Server: a peer finished signing in.
+func _social_joined(peer: int) -> void:
+	var account_id: String = _peer_account[peer]
+	social.player_online(account_id, stash.snapshot(account_id).get("name", account_id), "lobby")
+	_broadcast_social()
+
+
+## Server: a signed-in peer is going away.
+func _social_left(peer: int) -> void:
+	var account_id: String = _peer_account.get(peer, "")
+	if account_id == "":
+		return
+	# Another connection for the same account may still be signed in.
+	for other: int in _peer_account:
+		if other != peer and _peer_account[other] == account_id:
+			return
+	social.player_offline(account_id)
+	_broadcast_social(peer)
+
+
+## Server: a player moved somewhere else ("lobby", "raid", or a place another
+## feature adds, see `SocialService.PLACE_NAMES`).
+func _social_moved(peer: int, where: String) -> void:
+	_set_presence(peer, where)
+
+
+func _set_presence(peer: int, where: String) -> void:
+	if not _peer_account.has(peer):
+		return
+	social.set_where(_peer_account[peer], where)
+	_broadcast_social()
+
+
+## Server: sends every signed-in player their phone snapshot. `skip` is a peer
+## that is on its way out.
+func _broadcast_social(skip := 0) -> void:
+	var peers := _api.get_peers()
+	for peer: int in _peer_account:
+		if peer != skip and peer in peers:
+			_send_social(peer)
+
+
+func _send_social(peer: int) -> void:
+	if _peer_account.has(peer) and peer in _api.get_peers():
+		_social.rpc_id(peer, social.snapshot(_peer_account[peer]))
+
+
+## Server: the peer signed in as `account_id`, or -1.
+func _peer_for_account(account_id: String) -> int:
+	for peer: int in _peer_account:
+		if _peer_account[peer] == account_id and peer in _api.get_peers():
+			return peer
+	return -1
+
+
+## The sender's account id, or "" when the sender has not signed in.
+func _social_sender() -> String:
+	if not is_server:
+		return ""
+	return _peer_account.get(_api.get_remote_sender_id(), "")
+
+
+func _social_result(peer: int, result: Dictionary, others: Array[String] = []) -> void:
+	if not result.ok:
+		_social_error.rpc_id(peer, result.error)
+	_send_social(peer)
+	for other in others:
+		var other_peer := _peer_for_account(other)
+		if other_peer > 0 and other_peer != peer:
+			_send_social(other_peer)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _request_message(to: String, text: String) -> void:
+	var from := _social_sender()
+	if from == "":
+		return
+	var peer := _api.get_remote_sender_id()
+	var result := social.send_message(from, to.left(64), text.left(SocialService.MAX_MESSAGE * 2))
+	var others: Array[String] = []
+	if result.ok:
+		others.append(to)
+	_social_result(peer, result, others)
+	if result.ok:
+		var to_peer := _peer_for_account(to)
+		if to_peer > 0:
+			_social_notice.rpc_id(to_peer, "%s: %s" % [result.message.from_name, result.message.text])
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _request_invite(to: String, kind: String) -> void:
+	var from := _social_sender()
+	if from == "":
+		return
+	var peer := _api.get_remote_sender_id()
+	var result := social.invite(from, to.left(64), kind.left(16), world_id)
+	var others: Array[String] = []
+	if result.ok:
+		others.append(to)
+	_social_result(peer, result, others)
+	if result.ok:
+		_social_notice.rpc_id(peer, "Invite sent to %s." % social.name_of(to))
+		var to_peer := _peer_for_account(to)
+		if to_peer > 0:
+			_social_notice.rpc_id(to_peer, _invite_text(result.invite))
+
+
+func _invite_text(invite: Dictionary) -> String:
+	if invite.kind == "base":
+		return "%s invites you to their home base." % invite.from_name
+	var world := Worlds.get_world(invite.get("world_id", ""))
+	return "%s invites you to %s." % [invite.from_name, world.display_name if world else "their raid"]
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _request_answer_invite(invite_id: int, accept: bool) -> void:
+	var account_id := _social_sender()
+	if account_id == "":
+		return
+	var peer := _api.get_remote_sender_id()
+	var result := social.answer_invite(account_id, invite_id, accept)
+	_social_result(peer, result)
+	if not result.ok:
+		return
+	var invite: Dictionary = result.invite
+	var from_peer := _peer_for_account(invite.from)
+	if from_peer > 0:
+		_social_notice.rpc_id(from_peer, "%s %s your invite." % [
+				social.name_of(account_id), "accepted" if accept else "declined"])
+	if not accept:
+		return
+	if invite.kind == "base":
+		# A base is a view of the owner's gear, so send just that.
+		var owner := stash.snapshot(invite.from)
+		_base_visit.rpc_id(peer, invite.from_name, owner.get("stash", []), owner.get("loadout", {}))
+	else:
+		_world_invite_accepted.rpc_id(peer, invite)
+
+
+## `action` is "add", "remove", "block" or "unblock".
+@rpc("any_peer", "call_remote", "reliable")
+func _request_contact(action: String, other: String) -> void:
+	var account_id := _social_sender()
+	if account_id == "":
+		return
+	var peer := _api.get_remote_sender_id()
+	other = other.left(64)
+	var result: Dictionary
+	match action:
+		"add": result = social.add_contact(account_id, other)
+		"remove": result = social.remove_contact(account_id, other)
+		"block": result = social.block(account_id, other)
+		"unblock": result = social.unblock(account_id, other)
+		_: return
+	_social_result(peer, result)
+
+
+@rpc("authority", "call_remote", "reliable")
+func _social(snapshot: Dictionary) -> void:
+	social_state = snapshot
+	social_changed.emit(snapshot)
+
+
+@rpc("authority", "call_remote", "reliable")
+func _social_error(reason: String) -> void:
+	social_error.emit(reason)
+
+
+@rpc("authority", "call_remote", "reliable")
+func _social_notice(text: String) -> void:
+	social_notice.emit(text)
+
+
+@rpc("authority", "call_remote", "reliable")
+func _world_invite_accepted(invite: Dictionary) -> void:
+	world_invite_accepted.emit(invite)
+
+
+@rpc("authority", "call_remote", "reliable")
+func _base_visit(owner_name: String, owner_stash: Array, owner_loadout: Dictionary) -> void:
+	base_visit_requested.emit(owner_name, owner_stash, owner_loadout)
+
+
+## Phone: message a player on this server, or a saved contact.
+func send_message(to: String, text: String) -> void:
+	if _is_connected() and not account.is_empty():
+		_request_message.rpc_id(1, to, text)
+
+
+## Phone: invite a player online here to this server's raid ("world") or to
+## your home base ("base").
+func send_invite(to: String, kind: String) -> void:
+	if _is_connected() and not account.is_empty():
+		_request_invite.rpc_id(1, to, kind)
+
+
+func answer_invite(invite_id: int, accept: bool) -> void:
+	if _is_connected() and not account.is_empty():
+		_request_answer_invite.rpc_id(1, invite_id, accept)
+
+
+## Phone: "add", "remove", "block" or "unblock" a contact.
+func change_contact(action: String, other: String) -> void:
+	if _is_connected() and not account.is_empty():
+		_request_contact.rpc_id(1, action, other)
 
 
 ## Containers and vehicles this session knows about. For tests and tools.

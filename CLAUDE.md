@@ -1,6 +1,7 @@
 # Project Ares: notes for AI sessions
 
-Full-loot PvPvE extraction game in Godot 4 (GDScript). See README.md for the
+Full-loot PvPvE war game in Godot 4 (GDScript). Each world is an endless
+warzone, not a timed raid (see the endless warzone rule below). See README.md for the
 layout and how to play. The roadmap is: Phase 0 bot-only prototype (done),
 Phase 1 vertical slice (hub, loadouts, abilities, motorbike), Phase 2 online
 PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
@@ -21,6 +22,23 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   getting on a vehicle uses a separate riding view (third-person by default),
   and getting off restores the on-foot view.
 - `Raid` has no camera, HUD, or input code. It must keep working headless.
+- The endless warzone. A `Raid` is one running world and it never ends: no
+  timer, no exits, no restart. It keeps itself alive (`_tick_bots`,
+  `_tick_caches`, `_tick_vehicles`, tuned by `WorldDef`). A player's stay is
+  a string of lives: `add_player` starts one and `player_finished` ends it
+  with outcome "died" (everything carried drops in a bag) or "left" (a
+  finished sign-out: everything carried goes home). After "died" the owner of
+  the stash (`Main` solo, `NetSession` online) calls `add_player` again in the
+  same raid. Loot reaches the stash mid-life only through a `Depot`
+  (`player_banked`). Never add a way to leave that skips `begin_sign_out`:
+  a disconnect goes through `remove_player`, which leaves the body standing.
+- Drop-in protection is `Actor.protected_left`, checked in `Combat.deal`.
+- How harsh death is belongs to the world, not to `Raid`. With
+  `WorldDef.keep_gear_on_death` a dead player drops only the backpack and the
+  equipped gear returns in the result's `kept`. A gentle world pays for that
+  with basic loot tables; rare gear stays in the full-loot PvP world.
+- Mastery pays for using gear, never for leaving alive, or signing out over
+  and over would farm it.
 - Blocking and parrying happen in `Weapon.modify_incoming`, which `Combat.deal`
   calls for every hit. Every melee attack keeps a visible windup so it can be parried.
 - Melee is directional. The stance travels in `ActorCommand.stance`, attacks
@@ -34,6 +52,16 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   pick surfaces, an atmosphere and bot skins (`set_meta("look", ...)`) from
   its generic kits. Decoration in a map uses its own RNG so it cannot shift
   the gameplay layout.
+- People are built from parts (`core/visual/human.gd`): an "appearance" names
+  a build, four parts and colours. It is cosmetic only and never trusted:
+  always pass one through `Look.clean_appearance` / `Look.set_appearance`,
+  which is safe on a headless server. Online it travels in the spawn data as
+  `data["look"]`; the server keeps what each signed-in player sent
+  (`NetSession.look_for_peer`). `Raid` and gameplay never read it.
+  Players may only wear `Human.STARTER` clothes plus outfits they own:
+  `Human.player_look(raw, owned)` enforces it on the profile, in the
+  customizer and on the server. Better outfits are bought or earned, never
+  added to the starter list. Bots use `Human.sanitize` and can wear anything.
 - Only CC0 or similarly permissive assets, each recorded in `assets/LICENSES.md`.
 - Load assets that need importing (models, textures, fonts) with `load()` at
   runtime, not `preload`: a preload fails to parse on a fresh checkout before
@@ -85,6 +113,15 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   the local `Profile` stash. The hub shows the server's account snapshot while
   in a lobby (`Hub.enter_lobby`). Stash rules live once, in `core/account/stash_rules.gd`,
   shared by `Profile` and the service.
+- The phone (`core/phone/phone.gd`) is the game's menu and only a view. Online,
+  presence, contacts, messages, invites and news live on the server in
+  `SocialService` (`core/social/social_service.gd`), keyed by the account id
+  the peer signed in with, never by anything the client claims. `NetSession`
+  turns phone requests into service calls and pushes each affected player a
+  fresh `social_state` snapshot. A feature that adds a new place a player can be
+  (base, social hub) reports it with `NetSession._set_presence(peer, where)` and
+  a name in `SocialService.PLACE_NAMES`. Settings live in
+  `core/settings/game_settings.gd` (its own save file); a server never reads them.
 - `Raid` never writes to `Profile` on a server. Results travel in the
   `player_finished` dictionary. Online the server settles them into the
   account; `Raid.apply_result` is only for the local solo profile.

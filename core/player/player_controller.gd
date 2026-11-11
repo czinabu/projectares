@@ -7,6 +7,12 @@ extends Node
 ## come from the character's eyes, so third-person never lets you shoot from
 ## behind cover.
 
+## The player pressed the sign-out key. Alive, that starts or cancels a
+## sign-out. Dead, it means going back to the hub.
+signal sign_out_requested
+## The player, dead, asked to drop back in.
+signal redeploy_requested
+
 enum ViewMode { FIRST, THIRD }
 ## How the melee side is picked: by flicking the mouse, or by the movement keys.
 enum StanceControl { MOUSE, MOVE }
@@ -24,6 +30,10 @@ var actor: Actor
 var camera: Camera3D
 var view_mode := ViewMode.FIRST
 var mouse_sensitivity := 0.0022
+var invert_y := false
+## Set while the phone is open: the character stands still and the mouse is
+## left alone, so you can tap and type.
+var input_blocked := false
 var third_person_distance := 3.8
 var third_person_aim_distance := 2.2
 ## Camera distance while riding a vehicle, which is bigger than a person.
@@ -83,10 +93,13 @@ func _exit_tree() -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if input_blocked:
+		return
 	var captured := Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
 	if event is InputEventMouseMotion and captured:
 		yaw -= event.relative.x * mouse_sensitivity
-		pitch = clampf(pitch - event.relative.y * mouse_sensitivity, -1.5, 1.5)
+		var vertical: float = -event.relative.y if invert_y else event.relative.y
+		pitch = clampf(pitch - vertical * mouse_sensitivity, -1.5, 1.5)
 		_flick += event.relative
 	elif event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if captured else Input.MOUSE_MODE_CAPTURED
@@ -102,6 +115,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		toggle_view()
 	elif event.is_action_pressed("melee_control"):
 		toggle_stance_control()
+	elif event.is_action_pressed("sign_out"):
+		sign_out_requested.emit()
+	elif event.is_action_pressed("redeploy") and is_instance_valid(actor) and actor.is_dead:
+		redeploy_requested.emit()
 
 
 func toggle_view() -> void:
@@ -156,6 +173,15 @@ func _physics_process(delta: float) -> void:
 		return
 	var cmd := actor.cmd
 	cmd.clear_one_shots()
+	if input_blocked:
+		# Hands on the phone: let go of everything, keep facing the same way.
+		cmd.move = Vector2.ZERO
+		cmd.sprint = false
+		cmd.jump = false
+		cmd.primary = false
+		cmd.secondary = false
+		cmd.switch_weapon = -1
+		return
 	var captured := Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
 	cmd.yaw = yaw
 	cmd.pitch = pitch

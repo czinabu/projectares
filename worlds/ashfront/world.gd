@@ -59,9 +59,8 @@ func _init() -> void:
 	id = "ashfront"
 	display_name = "Ashfront"
 	description = "Burnt-out industrial city. Always-on PvP, full loot, no safe zones."
-	raid_duration = 900.0
 	bot_count = 8
-	exit_hold_time = 4.0
+	depot_hold_time = 4.0
 
 
 func create_map() -> Node3D:
