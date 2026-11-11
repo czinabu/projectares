@@ -63,6 +63,8 @@ func _init() -> void:
 	display_name = "Frostline"
 	description = "Whiteout glacier station. Wardens and Ferals fight each other and you. No PvP, you keep your equipped gear when you die, and the loot is basic."
 	keep_gear_on_death = true
+	# Co-op: the raiders take and hold strongpoints together.
+	players_allied = true
 	# The quiet world: its mood never shifts.
 	war_scale = 0.0
 	bot_count = 9

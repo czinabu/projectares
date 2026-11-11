@@ -53,6 +53,14 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   `Look.atmosphere` a second, war mood has its sky blend towards it. A world
   scales the meter with `WorldDef.war_scale` (0 keeps it quiet). New stakes
   that follow the war (reinforcements, events, loot) read `Raid.war`.
+- Strongpoints (`core/war/strongpoint.gd`, `Raid.strongpoints`): a map only
+  marks where they are (Marker3D nodes in the group "strongpoint", see the
+  map contract in `WorldDef`); the `Raid` runs them. A side is a string key
+  from `Raid.side_of`: one per bot faction, one per player, or one for all
+  players where `WorldDef.players_allied`. Only the authority decides who
+  holds a site; clients get it from `NetSession`, including whether a site is
+  theirs (`Strongpoint.viewer_holds`), and never see another player's key.
+  Send bots somewhere with `BotBrain.post_to`, not a second mechanism.
 - Mastery pays for using gear, never for leaving alive, or signing out over
   and over would farm it.
 - Blocking and parrying happen in `Weapon.modify_incoming`, which `Combat.deal`

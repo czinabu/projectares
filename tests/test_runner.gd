@@ -7,6 +7,7 @@ const VehicleScript := preload("res://core/vehicle/vehicle.gd")
 const RaidRoster := preload("res://core/ui/raid_roster.gd")
 const NameplatesScript := preload("res://core/ui/nameplates.gd")
 const ScoreboardScript := preload("res://core/ui/scoreboard.gd")
+const Strongpoint := preload("res://core/war/strongpoint.gd")
 const WarDirector := preload("res://core/war/war_director.gd")
 const RenownLedger := preload("res://core/progression/renown_ledger.gd")
 const BaseLayout := preload("res://core/base/base_layout.gd")
@@ -58,6 +59,7 @@ func _run() -> void:
 	await _test_nameplates_and_scoreboard()
 	await _test_renown()
 	await _test_war()
+	await _test_strongpoints()
 	await _test_online()
 	await _test_plaza()
 	await _test_plaza_online()
@@ -1629,9 +1631,9 @@ func _wipe_dir(dir: String) -> void:
 		DirAccess.remove_absolute(dir)
 
 
-func _start_server(port: int, extra: Array[String]) -> int:
+func _start_server(port: int, extra: Array[String], world := "ashfront") -> int:
 	var args := PackedStringArray(["--headless", "--path", ProjectSettings.globalize_path("res://"),
-			"--", "--server", "--world", "ashfront", "--port", str(port), "--accounts", NET_ACCOUNTS])
+			"--", "--server", "--world", world, "--port", str(port), "--accounts", NET_ACCOUNTS])
 	# One world alone on the port, unless the test asks for the plaza too.
 	if "--plaza" not in extra:
 		args.append("--no-plaza")
@@ -2040,6 +2042,132 @@ func _test_war() -> void:
 	var half := Look.blend_moods(calm, battle, 0.5)
 	check(is_equal_approx(half.sun_energy, 1.5) and Look.blend_moods(calm, battle, 0.0).sun_energy == 2.0
 			and Look.blend_moods(calm, battle, 7.0).sun_energy == 1.0, "the mood blends with the meter and stops at the war mood")
+
+
+func _test_strongpoints() -> void:
+	print("Strongpoints")
+	# One site on its own.
+	var site := Strongpoint.new()
+	site.title = "Mill"
+	site.capture_time = 10.0
+	add_child(site)
+	check(site.covers(Vector3(5, 2, 5)) and not site.covers(Vector3(40, 0, 0)) and not site.covers(Vector3(0, 90, 0)),
+			"a site covers the ground around it, not the sky far above")
+	var red := {"red": {"count": 1, "name": "Red", "player": true}}
+	check(not site.tick(4.0, red) and site.taker == "red" and is_equal_approx(site.progress, 0.4), "standing in a site alone starts taking it")
+	check(site.status(false) == "Mill: unclaimed, Red taking it 40%", "its status says who is taking it")
+	var both := red.duplicate()
+	both["blue"] = {"count": 2, "name": "Blue", "player": false}
+	site.tick(50.0, both)
+	check(site.contested and is_equal_approx(site.progress, 0.4), "two sides inside freeze it")
+	site.tick(1.0, {})
+	check(not site.contested and is_equal_approx(site.progress, 0.2), "an abandoned capture drains away")
+	check(site.tick(8.0, red) and site.holder == "red" and site.holder_is_player and site.progress == 0.0, "finishing the capture takes the site")
+	check(site.status(true) == "Mill: yours" and site.status(false) == "Mill: held by Red", "its status says who holds it")
+	var crowd := {"blue": {"count": 3, "name": "Blue", "player": false}}
+	site.tick(4.0, crowd)
+	check(is_equal_approx(site.progress, 0.6), "a crowd takes a site faster")
+	site.tick(1.0, red)
+	check(site.taker == "blue" and site.progress < 0.6, "the holder standing in it pushes a capture back")
+	site.queue_free()
+
+	# In a running co-op world.
+	var raid := Raid.new()
+	add_child(raid)
+	raid.apply_to_profile = false
+	raid.start_server(Worlds.get_world("frostline"), 97)
+	check(raid.strongpoints.size() == 3 and raid.strongpoints[0].title == "Echo Post"
+			and raid.strongpoints.all(func(p: Strongpoint) -> bool: return p.holder == "faction:warden" and not p.holder_is_player),
+			"Frostline has three strongpoints, held by the Wardens to begin with")
+	for i in raid.bots.size():
+		var bot := raid.bots[i]
+		bot.get_node("Brain").set_physics_process(false)
+		bot.set_physics_process(false)
+		bot.global_position = Vector3(400 + i * 4, 0, 400)
+	var point := raid.strongpoints[0]
+	for p in raid.strongpoints:
+		p.capture_time = 0.3
+	var feed: Array[String] = []
+	raid.war_feed.connect(func(text: String) -> void: feed.append(text))
+	var a := raid.add_player([], {}, "Alpha", "acct-a")
+	var b := raid.add_player([], {}, "Bravo", "acct-b")
+	a.set_physics_process(false)
+	b.set_physics_process(false)
+	b.global_position = Vector3(-300, 0, -300)
+	var notices: Array[String] = []
+	a.notice.connect(func(text: String) -> void: notices.append(text))
+	a.global_position = point.global_position + Vector3(2, 0, 0)
+	check(raid.strongpoint_at(a) == point and Hud.sites_text(raid, a) == "Echo Post: held by the Wardens", "the HUD names the site you stand in")
+	await frames(40)
+	check(point.holder == "players" and point.holder_is_player and raid.holds(a, point) and raid.holds(b, point),
+			"in a co-op world a site one player takes belongs to them all")
+	check(feed.has("The raiders took Echo Post from the Wardens"), "taking a site from the bots is announced (%s)" % " / ".join(feed))
+	check(a.renown == 150 and b.renown == 0 and notices.has("Took Echo Post   +150 renown"), "the players who were there are paid renown")
+	check(Hud.sites_text(raid, a) == "Echo Post: yours" and Hud.sites_text(raid, b) == "Strongpoints held: 1 of 3",
+			"the HUD shows what you hold")
+	var warden: Actor = raid.bots.filter(func(bot: Actor) -> bool: return bot.faction == "warden")[0]
+	warden.global_position = point.global_position + Vector3(-3, 0, 0)
+	await frames(5)
+	check(point.contested and point.holder == "players" and "contested" in Hud.sites_text(raid, a), "an enemy walking in contests it")
+	a.global_position = Vector3(-300, 0, -280)
+	await frames(40)
+	check(point.holder == "faction:warden" and not raid.holds(a, point) and feed.has("The Wardens took Echo Post from the raiders"),
+			"bots left alone in a site take it back, and everyone hears")
+	warden.global_position = Vector3(380, 0, 400)
+	a.global_position = point.global_position
+	await frames(40)
+	check(raid.holds(a, point), "and it can be taken again")
+
+	# A site you hold is where you drop in.
+	var c := raid.add_player([], {}, "Charlie", "acct-c")
+	check(point.covers(c.global_position), "a player drops in at a strongpoint their side holds")
+	warden.global_position = point.global_position + Vector3(-3, 0, 0)
+	await frames(3)
+	var d := raid.add_player([], {}, "Delta", "acct-d")
+	check(not point.covers(d.global_position), "but not at one that is being fought over")
+	warden.global_position = Vector3(380, 0, 400)
+	await frames(3)
+
+	# The bots push back.
+	for bot in raid.bots:
+		(bot.get_node("Brain") as BotBrain).post_to(Vector3.ZERO, 10.0)
+	raid._assault_in = 0.0
+	await frames(2)
+	var sent := raid.bots.filter(func(bot: Actor) -> bool:
+		return (bot.get_node("Brain") as BotBrain)._home.distance_to(point.global_position) < 0.1)
+	check(feed.has("Echo Post is under attack") and sent.size() == Worlds.get_world("frostline").assault_size,
+			"every so often bots are sent to retake a site players hold (%d sent)" % sent.size())
+	await _end_raid(raid)
+
+	# Where players fight each other, a site is its taker's alone.
+	var pvp := Raid.new()
+	add_child(pvp)
+	pvp.apply_to_profile = false
+	pvp.start_server(Worlds.get_world("ashfront"), 98)
+	var e := pvp.add_player([], {}, "Echo", "acct-e")
+	var f := pvp.add_player([], {}, "Fox", "acct-f")
+	check(pvp.side_of(e)[0] == "acct-e" and pvp.side_of(e)[0] != pvp.side_of(f)[0] and pvp.side_of(e)[2],
+			"in a PvP world every player is their own side")
+	check(pvp.side_of(pvp.bots[0])[0] == "faction:" + pvp.bots[0].faction and not pvp.side_of(pvp.bots[0])[2],
+			"and each bot faction is one")
+	await _end_raid(pvp)
+
+	# Online: a client hears who holds each site.
+	_wipe_dir(NET_ACCOUNTS)
+	var port := 24831
+	var pid := _start_server(port, ["--bots", "0"], "frostline")
+	var gale := await _join("Gale", port)
+	check(gale != null, "a client joins a world with strongpoints")
+	if gale != null:
+		var told := func() -> bool:
+			return gale.raid.strongpoints.size() == 3 and gale.raid.strongpoints.all(
+					func(p: Strongpoint) -> bool: return p.holder_name == "the Wardens")
+		await _wait_until(told, 180)
+		check(told.call() and Hud.sites_text(gale.raid, gale.raid.player) == "Strongpoints held: 0 of 3",
+				"the server tells a client who holds each strongpoint")
+		await _leave(gale)
+	OS.kill(pid)
+	await frames(10)
 
 
 func _test_online() -> void:
