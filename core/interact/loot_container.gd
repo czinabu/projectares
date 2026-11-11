@@ -2,6 +2,9 @@ class_name LootContainer
 extends Interactable
 ## A world cache, or the bag a dead actor drops (`is_bag`).
 
+## The contents changed (someone looted it).
+signal changed
+
 var items: Array[String] = []
 var is_bag := false
 var label := "Cache"
@@ -51,10 +54,17 @@ func interact(actor: Actor) -> void:
 			Sfx.play("loot")
 	elif not items.is_empty():
 		actor.notice.emit("Backpack full")
+	changed.emit()
 	if items.is_empty() and is_bag:
 		queue_free()
 	else:
 		_refresh_color()
+
+
+## Replaces the contents, for a client showing what the server reports.
+func set_items(p_items: Array) -> void:
+	items.assign(p_items)
+	_refresh_color()
 
 
 ## Colored by the best item inside, so rare loot is visible from a distance.

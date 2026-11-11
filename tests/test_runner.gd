@@ -1432,22 +1432,22 @@ func _start_server(port: int, extra: Array[String]) -> int:
 
 
 ## A client in its own 3D world, so two clients in this process never collide.
-func _new_client(shown_name: String) -> NetSession:
+func _new_client(shown_name: String, extra_kit: Array[String] = []) -> NetSession:
 	var view := SubViewport.new()
 	view.own_world_3d = true
 	add_child(view)
 	var session := NetSession.new()
 	session.name = "Net"
 	session.player_name = shown_name
-	session.kit_provider = func(world: WorldDef) -> Array: return world.starter_loadout()
+	session.kit_provider = func(world: WorldDef) -> Array: return world.starter_loadout() + extra_kit
 	view.add_child(session)
 	return session
 
 
 ## Connects, retrying while the server process is still starting up.
-func _join(session_name: String, port: int) -> NetSession:
+func _join(session_name: String, port: int, extra_kit: Array[String] = []) -> NetSession:
 	for attempt in 20:
-		var session := _new_client(session_name)
+		var session := _new_client(session_name, extra_kit)
 		var state := {"failed": false}
 		session.failed.connect(func(_reason: String) -> void: state.failed = true)
 		session.join("127.0.0.1", port)
@@ -1626,6 +1626,34 @@ func _test_online() -> void:
 	await _end_raid(raid)
 	Profile.reset()
 
+	# Containers and vehicles are announced, so a server can replicate them.
+	raid = Raid.new()
+	add_child(raid)
+	var announced := {"containers": 0, "vehicles": 0, "removed": 0}
+	raid.container_spawned.connect(func(_c: LootContainer) -> void: announced.containers += 1)
+	raid.vehicle_spawned.connect(func(_v: Node3D) -> void: announced.vehicles += 1)
+	raid.vehicle_removed.connect(func(_v: Node3D) -> void: announced.removed += 1)
+	raid.start_server(Worlds.get_world("ashfront"), 71)
+	for bot in raid.bots:
+		bot.get_node("Brain").set_physics_process(false)
+	var map_vehicles := raid.vehicles.size()
+	check(announced.containers > 3 and announced.vehicles == map_vehicles, "a server raid announces its caches and vehicles")
+	var rider := raid.add_player(raid.world.starter_loadout() + (["bike_scrapper"] as Array[String]), {}, "Rider")
+	await frames(10)
+	check(raid.vehicles.size() == map_vehicles + 1 and raid.state_for(rider).deployed_vehicles == (["bike_scrapper"] as Array[String]),
+			"a player who brings a vehicle to a server raid finds it beside them")
+	var own_bike: Node3D = raid.vehicles[raid.vehicles.size() - 1]
+	check(own_bike.call("mount", rider), "they can ride it")
+	var outcome := [{}]
+	raid.player_finished.connect(func(_a: Actor, r: Dictionary) -> void: outcome[0] = r)
+	var bags_before: int = announced.containers
+	raid._on_actor_extracted(rider)
+	await frames(3)
+	check("bike_scrapper" in outcome[0].get("brought_home", []) and announced.removed == 1
+			and (not is_instance_valid(own_bike) or own_bike not in raid.vehicles), "extracting on a vehicle takes it home and out of the raid")
+	check(announced.containers == bags_before, "extracting leaves no loot bag behind")
+	await _end_raid(raid)
+
 	print("Online: a real server and two clients")
 	var port := 24811
 	var pid := _start_server(port, [])
@@ -1651,6 +1679,9 @@ func _test_online() -> void:
 		var seen := bravo.actor_for(alpha.my_actor_id)
 		check(seen != null and seen.display_name == "Alpha" and seen.weapons.size() == 2 and not seen.is_player,
 				"each client sees the other player, with their name and gear")
+		check(bravo.raid.players.size() == 2 and bravo.raid.active_players().size() == 2
+				and alpha.raid.bots.size() == world.bot_count,
+				"a client's raid lists the players, separate from the bots")
 		if seen != null:
 			var from := seen.global_position
 			alpha.raid.player.cmd.move = Vector2(0, 1)
@@ -1675,7 +1706,7 @@ func _test_online() -> void:
 	print("Online: fighting through the server")
 	port = 24812
 	pid = _start_server(port, ["--bots", "0", "--squad-spawn"])
-	alpha = await _join("Alpha", port)
+	alpha = await _join("Alpha", port, ["bike_scrapper"])
 	bravo = await _join("Bravo", port) if alpha != null else null
 	check(alpha != null and bravo != null, "two clients join a squad-spawn server")
 	if alpha != null and bravo != null:
@@ -1683,6 +1714,53 @@ func _test_online() -> void:
 		var me := alpha.raid.player
 		var target := alpha.actor_for(bravo.my_actor_id)
 		var victim := bravo.raid.player
+		var face := func(point: Vector3) -> void:
+			var aim := point - me.get_eye_position()
+			me.cmd.aim_dir = aim.normalized()
+			me.cmd.yaw = atan2(-aim.x, -aim.z)
+			me.cmd.pitch = asin(clampf(aim.normalized().y, -1.0, 1.0))
+		var press_use := func() -> void:
+			me.cmd.interact_pressed = true
+			await frames(1)
+			me.cmd.interact_pressed = false
+
+		# Loot caches and the bike Alpha brought exist on both clients.
+		await _wait_until(func() -> bool: return not alpha.vehicles().is_empty() and not bravo.vehicles().is_empty(), 120)
+		check(alpha.containers().size() > 3 and alpha.containers().size() == bravo.containers().size(),
+				"both clients see the server's loot caches (%d)" % alpha.containers().size())
+		check(alpha.vehicles().size() >= 1 and bravo.vehicles().size() == alpha.vehicles().size(),
+				"both clients see the vehicle a player brought")
+		var bike: Node3D = null
+		for v: Node3D in alpha.vehicles():
+			if bike == null or v.global_position.distance_to(me.global_position) \
+					< bike.global_position.distance_to(me.global_position):
+				bike = v
+		if bike != null:
+			var their_bike: Node3D = null
+			for v: Node3D in bravo.vehicles():
+				if v.global_position.distance_to(bike.global_position) < 1.5:
+					their_bike = v
+			face.call(bike.global_position + Vector3(0, 0.6, 0))
+			await frames(6)
+			await press_use.call()
+			await _wait_until(func() -> bool: return me.vehicle == bike, 90)
+			check(me.vehicle == bike and bike.get("rider") == me, "pressing use on the bike mounts it, by the server's say")
+			var bike_from := bike.global_position
+			me.cmd.move = Vector2(0, 1)
+			await frames(30)
+			me.cmd.move = Vector2.ZERO
+			await frames(10)
+			check(bike.global_position.distance_to(bike_from) > 0.5
+					and me.global_position.distance_to(bike.global_position) < 1.5,
+					"the server drives the bike and the rider goes with it")
+			var seen_rider := bravo.actor_for(alpha.my_actor_id)
+			check(their_bike != null and their_bike.get("rider") == seen_rider
+					and their_bike.global_position.distance_to(bike.global_position) < 3.0,
+					"the other client sees the same player riding the same bike")
+			await press_use.call()
+			await _wait_until(func() -> bool: return me.vehicle == null, 90)
+			check(me.vehicle == null and bike.get("rider") == null, "pressing use again gets off")
+			await frames(20)
 		check(alpha.raid.bots.is_empty() and target != null
 				and me.global_position.distance_to(target.global_position) < 12.0,
 				"squad spawn puts the players together")
@@ -1700,11 +1778,14 @@ func _test_online() -> void:
 			var aim := (target.global_position + Vector3(0, 1.1, 0)) - me.get_eye_position()
 			me.cmd.aim_dir = aim.normalized()
 			me.cmd.yaw = atan2(-aim.x, -aim.z)
+			# Close in, so nothing on the map sits between them.
+			me.cmd.move = Vector2(0, 1) if aim.length() > 4.0 else Vector2.ZERO
 			if i % 40 == 39:
 				me.cmd.reload_pressed = true
 			await frames(1)
 			me.cmd.reload_pressed = false
 		me.cmd.primary = false
+		me.cmd.move = Vector2.ZERO
 		check(hits[0] > 0, "the shooter is told about hits the server confirmed (%d)" % hits[0])
 		await _wait_until(func() -> bool: return not result[0].is_empty(), 240)
 		check(victim.health.health + victim.health.armor < before or victim.is_dead,
@@ -1715,6 +1796,44 @@ func _test_online() -> void:
 		check(victim.is_dead, "the dead player falls on their own screen")
 		check(notices.any(func(text: String) -> bool: return text.begins_with("Killed ")),
 				"the killer gets the kill notice from the server")
+		var scores := func() -> bool:
+			var mine := alpha.raid.state_for(me)
+			var theirs := bravo.raid.state_for(bravo.actor_for(alpha.my_actor_id))
+			return mine != null and mine.kills == 1 and theirs != null and theirs.kills == 1
+		await _wait_until(scores, 90)
+		check(scores.call() and alpha.raid.kills == 1, "every client is told each player's kill count")
+		# The dead player's bag appears for the killer, who walks over and loots it.
+		var found: Array[LootContainer] = []
+		var find_bag := func() -> bool:
+			for c: Variant in alpha.containers():
+				if is_instance_valid(c) and c.is_bag and found.is_empty():
+					found.append(c)
+			return not found.is_empty()
+		await _wait_until(find_bag, 120)
+		var bag: LootContainer = found[0] if not found.is_empty() else null
+		check(bag != null and not bag.items.is_empty(), "the dead player's bag appears on the killer's screen")
+		if bag != null:
+			var bag_id := bag.get_instance_id()
+			var carried := me.inventory.items.size()
+			var looted := func() -> bool: return me.inventory.items.size() > carried
+			for i in 600:
+				if looted.call() or not is_instance_valid(bag):
+					break
+				face.call(bag.global_position + Vector3(0, 0.3, 0))
+				var gap := Vector2(bag.global_position.x - me.global_position.x,
+						bag.global_position.z - me.global_position.z).length()
+				me.cmd.move = Vector2(0, 1) if gap > 1.6 else Vector2.ZERO
+				me.cmd.interact_pressed = gap <= 2.6 and i % 10 == 0
+				await frames(1)
+			me.cmd.move = Vector2.ZERO
+			me.cmd.interact_pressed = false
+			await _wait_until(looted, 60)
+			check(looted.call(), "looting the bag fills the backpack from the server (%d items)" % me.inventory.items.size())
+			check(notices.any(func(text: String) -> bool: return text.begins_with("Looted ")),
+					"the looter is told what they picked up")
+			var bag_gone := func() -> bool: return not is_instance_id_valid(bag_id)
+			await _wait_until(bag_gone, 90)
+			check(bag_gone.call(), "the emptied bag disappears on the client too")
 		await _wait_until(func() -> bool: return alpha.actor_for(bravo.my_actor_id) == null, 400)
 		check(alpha.actor_for(bravo.my_actor_id) == null, "a dead player is removed from the other client's raid")
 	await _leave(bravo)

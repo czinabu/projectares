@@ -180,7 +180,7 @@ func _build_online(box: VBoxContainer) -> void:
 	box.add_child(_text("ONLINE (EARLY TEST)", 20, Color(1.0, 0.55, 0.25)))
 	box.add_child(_text(
 		"Play the same raid with other people. Host starts a server on this computer and joins it.\n"
-		+ "Others on your network join with your computer's address. Loot and vehicles are not online yet.",
+		+ "Others on your network join with your computer's address.",
 		13, Color(0.65, 0.65, 0.65)))
 	var name_row := HBoxContainer.new()
 	var name_label := _text("Your name", 16, Color(0.85, 0.85, 0.85))

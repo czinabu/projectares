@@ -58,9 +58,9 @@ A server can also run on its own, with no window:
 godot --headless --path . -- --server --world ashfront --port 24565
 ```
 
-What works online so far: seeing and fighting other players and bots, with the
-server deciding every hit, death and extraction. Not online yet: loot caches,
-loot bags and vehicles.
+What works online so far: seeing and fighting other players and bots, looting
+caches and bags, and riding vehicles, with the server deciding every hit,
+death, pickup and extraction.
 
 ## What is in the prototype
 
