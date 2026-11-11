@@ -10,7 +10,7 @@ func _ready() -> void:
 	if args.size() > 0:
 		out_dir = args[0]
 	Profile.persist = false
-	if args.size() > 1:
+	if args.size() > 1 and not args[1].begins_with("--"):
 		await _world_shots(out_dir, args[1])
 		get_tree().quit()
 		return
@@ -23,8 +23,11 @@ func _ready() -> void:
 
 	var hub := Hub.new()
 	add_child(hub)
+	hub.set_online_status("Connecting to 192.168.1.20...")
+	hub.show_travel()
 	await _settle(10)
-	await _shot(out_dir.path_join("hub.png"))
+	await _shot(out_dir.path_join("travel.png"))
+	hub.open_station("wardrobe")
 	# The customizer, on a few looks.
 	var looks := [
 		{"build": "f", "head": "Adventurer", "body": "Casual", "legs": "Worker", "feet": "Worker", "skin": 3, "hair": 5, "top": 6, "bottom": 1},
@@ -230,11 +233,21 @@ func _base_shots(out_dir: String) -> void:
 		"base_rigs.png": [Vector3(6.0, 1.8, -1.0), Vector3(11, 1.2, -1.0)],
 		"base_garage.png": [Vector3(-1.0, 2.0, 3.2), Vector3(-2.5, 0.6, -1.5)],
 		"base_shelves.png": [Vector3(-6.5, 1.8, 4.6), Vector3(-7, 1.2, 9)],
+		"base_stations_left.png": [Vector3(-1.5, 2.2, 6.5), Vector3(-6.6, 1.0, 3.1)],
+		"base_stations_right.png": [Vector3(1.5, 2.2, 6.5), Vector3(6.6, 1.0, 3.1)],
+		"base_launch.png": [Vector3(0, 2.4, 7.8), Vector3(0, 0.6, 1.5)],
 	}
 	for file: String in views:
 		camera.look_at_from_position(views[file][0], views[file][1])
 		await _settle(4)
 		await _shot(out_dir.path_join(file))
+	# A station's screen over the room.
+	var hub := Hub.new()
+	add_child(hub)
+	hub.open_station("locker")
+	await _settle(6)
+	await _shot(out_dir.path_join("base_locker_screen.png"))
+	hub.queue_free()
 	base.queue_free()
 	await _settle(2)
 

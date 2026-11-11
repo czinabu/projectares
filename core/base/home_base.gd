@@ -18,6 +18,10 @@ extends Node3D
 signal equip_requested(slot: String, item_id: String)
 ## The player used the door.
 signal leave_requested
+## The player used a station (a key of `STATIONS`): the locker, the mastery
+## bench, the wardrobe, the records board, the trader, the launch pad or the
+## uplink, or the arena gate. Whoever owns the base opens what it offers.
+signal station_requested(station: String)
 ## The displays were rebuilt.
 signal gear_shown
 
@@ -34,10 +38,28 @@ var weapon_scale := 1.5
 var owner_name := ""
 ## True when visiting someone else's base: gear can be looked at, not equipped.
 var read_only := false
+## What the door says it does. Whoever owns the base sets it to where the door
+## leads from here (online, back to the plaza, home from a visit).
+var door_text := "Head out: play online"
+
+## Where each station stands and which way it faces (local +Z into the room),
+## with its title and prompt. The launch pad stands in the middle, the rest along the
+## open floor on either side of the garage.
+const STATIONS := {
+	"launch": {"prompt": "Deploy", "title": "Launch pad", "at": Vector3(0.0, 0.0, 2.6), "yaw": 0.0, "color": Color(1.0, 0.55, 0.2)},
+	"locker": {"prompt": "Pick your loadout", "title": "Locker", "at": Vector3(-6.6, 0.0, 0.9), "yaw": PI / 2.0, "color": Color(0.45, 0.75, 1.0)},
+	"wardrobe": {"prompt": "Change how you look", "title": "Wardrobe", "at": Vector3(-6.6, 0.0, 3.1), "yaw": PI / 2.0, "color": Color(0.85, 0.6, 1.0)},
+	"records": {"prompt": "Read your record and stash", "title": "Records", "at": Vector3(-6.6, 0.0, 5.3), "yaw": PI / 2.0, "color": Color(0.9, 0.9, 0.85)},
+	"mastery": {"prompt": "Pick mastery variants", "title": "Mastery bench", "at": Vector3(6.6, 0.0, 0.9), "yaw": -PI / 2.0, "color": Color(1.0, 0.8, 0.3)},
+	"trader": {"prompt": "Buy and sell", "title": "Trader", "at": Vector3(6.6, 0.0, 3.1), "yaw": -PI / 2.0, "color": Color(0.45, 1.0, 0.6)},
+	"arena": {"prompt": "Enter the arena (no gear at risk)", "title": "Arena gate", "at": Vector3(6.6, 0.0, 7.4), "yaw": -PI / 2.0, "color": Color(1.0, 0.35, 0.3)},
+	"uplink": {"prompt": "Play online", "title": "Uplink", "at": Vector3(6.6, 0.0, 5.3), "yaw": -PI / 2.0, "color": Color(0.4, 0.95, 1.0)},
+}
 
 var player: Actor
 var displays: Array[Display] = []
 var door: Door
+var stations: Array[Station] = []
 var stash: Array = []
 var loadout := {}
 
@@ -71,14 +93,33 @@ class Display:
 			base.equip_requested.emit(slot, "" if equipped else item_id)
 
 
-## The way back to the hub.
+## A console that opens one of the game's screens: what was the menu lives
+## here, in the room.
+class Station:
+	extends Interactable
+
+	var base: HomeBase
+	var id := ""
+
+	func get_prompt() -> String:
+		var title: String = HomeBase.STATIONS[id]["title"]
+		if base and base.read_only:
+			return "%s (not yours)" % title
+		return "[E] %s: %s" % [title, HomeBase.STATIONS[id]["prompt"]]
+
+	func interact(_actor: Actor) -> void:
+		if base and not base.read_only:
+			base.station_requested.emit(id)
+
+
+## The way out.
 class Door:
 	extends Interactable
 
 	var base: HomeBase
 
 	func get_prompt() -> String:
-		return "[E] Back to the Junction"
+		return "[E] %s" % (base.door_text if base else "Leave")
 
 	func interact(_actor: Actor) -> void:
 		if base:
@@ -90,6 +131,7 @@ func _ready() -> void:
 	_display_root.name = "Displays"
 	add_child(_display_root)
 	_build_door()
+	_build_stations()
 	_spawn_player()
 	_rebuild()
 
@@ -100,6 +142,14 @@ func show_gear(p_stash: Array, p_loadout: Dictionary) -> void:
 	loadout = p_loadout.duplicate()
 	if is_inside_tree():
 		_rebuild()
+
+
+## The station with this id, or null.
+func station(id: String) -> Station:
+	for found in stations:
+		if found.id == id:
+			return found
+	return null
 
 
 ## The display showing `item_id`, or null.
@@ -197,10 +247,50 @@ func _build_door() -> void:
 	var size := Vector3(2.2, 2.6, 0.3)
 	_add_collision(door, size, Vector3.ZERO)
 	door.add_child(_part(size, Vector3.ZERO, Color(0.9, 0.5, 0.2), true))
-	var sign_label := _label("THE JUNCTION", Color(1.0, 0.62, 0.22), 0.3)
+	var sign_label := _label("EXIT", Color(1.0, 0.62, 0.22), 0.3)
 	sign_label.position = Vector3(0, 1.7, 0.2)
 	door.add_child(sign_label)
 	add_child(door)
+
+
+func _build_stations() -> void:
+	for id: String in STATIONS:
+		var info: Dictionary = STATIONS[id]
+		var console := Station.new()
+		console.name = "Station_%s" % id
+		console.base = self
+		console.id = id
+		console.position = info["at"]
+		console.rotation.y = info["yaw"]
+		var color: Color = info["color"]
+		var dark := Color(0.17, 0.17, 0.19)
+		var title_at := Vector3(0, 2.2, 0)
+		if id == "launch":
+			# A lit ring on the floor round a drop console.
+			console.add_child(_part(Vector3(3.2, 0.04, 3.2), Vector3(0, 0.02, 0), dark))
+			for side: Vector3 in [Vector3(0, 0, 1.5), Vector3(0, 0, -1.5)]:
+				console.add_child(_part(Vector3(3.2, 0.05, 0.16), side + Vector3(0, 0.03, 0), color, true))
+			for side: Vector3 in [Vector3(1.5, 0, 0), Vector3(-1.5, 0, 0)]:
+				console.add_child(_part(Vector3(0.16, 0.05, 3.2), side + Vector3(0, 0.03, 0), color, true))
+			console.add_child(_part(Vector3(0.9, 1.1, 0.6), Vector3(0, 0.55, 0), dark))
+			var screen := _part(Vector3(0.8, 0.5, 0.06), Vector3(0, 1.2, 0.2), color, true)
+			screen.rotation.x = -0.5
+			console.add_child(screen)
+			_add_collision(console, Vector3(1.0, 1.5, 0.8), Vector3(0, 0.75, 0))
+			title_at = Vector3(0, 2.0, 0)
+		else:
+			# A cabinet with a lit screen and a stripe of the station's colour.
+			console.add_child(_part(Vector3(1.2, 1.6, 0.5), Vector3(0, 0.8, 0), dark))
+			console.add_child(_part(Vector3(0.95, 0.6, 0.04), Vector3(0, 1.25, 0.26), color, true))
+			console.add_child(_part(Vector3(1.22, 0.06, 0.52), Vector3(0, 0.3, 0), color, true))
+			_add_collision(console, Vector3(1.3, 1.7, 0.7), Vector3(0, 0.85, 0))
+		var title := _label(str(info["title"]).to_upper(), color, 0.22)
+		title.name = "Title"
+		title.position = title_at
+		title.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
+		console.add_child(title)
+		add_child(console)
+		stations.append(console)
 
 
 func _spawn_player() -> void:
