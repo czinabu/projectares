@@ -37,6 +37,8 @@ signal vehicle_removed(vehicle: Node3D)
 const MIN_BOT_SPAWN_DISTANCE := 40.0
 ## A vehicle this close to its parking spot counts as still parked there.
 const PARKED_DISTANCE := 6.0
+## A spawn point this close to open ground, above or below, is stood on it.
+const SPAWN_SNAP := 2.5
 const VehicleScript := preload("res://core/vehicle/vehicle.gd")
 const MasteryTracker := preload("res://core/progression/mastery_tracker.gd")
 const RenownLedger := preload("res://core/progression/renown_ledger.gd")
@@ -593,7 +595,7 @@ func add_player(p_kit: Array = [], p_mastery: Dictionary = {}, p_name := "Raider
 	# Spread out players who arrive at the same spawn point.
 	if mode == Mode.SERVER:
 		at += Vector3(rng.randf_range(-2.5, 2.5), 0, rng.randf_range(-2.5, 2.5))
-	actor.global_position = at
+	actor.global_position = _stand(at)
 	Loadout.equip(actor, state.kit)
 	actor.weapons_locked = world.safe_zone
 	state.actor = actor
@@ -765,7 +767,7 @@ func _spawn_bots() -> void:
 ## A new bot with a brain, at a spawn marker.
 func _add_bot(marker: Node3D, warlord := false) -> Actor:
 	var at := marker.global_position + Vector3(rng.randf_range(-1, 1), 0, rng.randf_range(-1, 1))
-	var bot := spawn_bot("Bot%d" % _bot_count, at, rng.randi(), warlord)
+	var bot := spawn_bot("Bot%d" % _bot_count, _stand(at), rng.randi(), warlord)
 	if warlord:
 		# What a warlord carries is worth the fight.
 		for id in world.roll_war_loot("bot", rng, 1.0) + world.roll_war_loot("cache", rng, 1.0):
@@ -780,6 +782,19 @@ func _add_bot(marker: Node3D, warlord := false) -> Actor:
 	_post_bot(bot)
 	actor_spawned.emit(bot)
 	return bot
+
+
+## Where someone spawning at `at` puts their feet. On a map with open ground
+## (one that has `ground_height`) a spot nudged away from its marker is moved
+## onto the ground, so nobody starts inside a slope. A spot well above the
+## ground, a roof say, is left alone.
+func _stand(at: Vector3) -> Vector3:
+	if map == null or not map.has_method("ground_height"):
+		return at
+	var ground: float = map.call("ground_height", at.x, at.z)
+	if absf(at.y - ground) > SPAWN_SNAP:
+		return at
+	return Vector3(at.x, ground + 0.15, at.z)
 
 
 ## The marker farthest from every player still in the world.

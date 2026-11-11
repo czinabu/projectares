@@ -16,6 +16,9 @@ extends RefCounted
 ##     "loot_source", default "vehicle"). The Raid parks the first
 ##     vehicle-tagged item from `roll_loot` there, facing the marker's yaw.
 ##   - optionally a `bake_navigation()` method for bot pathfinding
+##   - optionally a `ground_height(x, z)` method, on a map with open ground
+##     that is not level (see `core/world/terrain.gd`). The Raid stands
+##     players and bots on it when they spawn.
 ##   - optionally Marker3D nodes in group "strongpoint": sites to capture and
 ##     hold. Metas: "name" (String), "radius" (float, metres), and optionally
 ##     "holder" (a bot faction that holds it from the start) with

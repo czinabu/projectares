@@ -204,6 +204,21 @@ func _world_shots(out_dir: String, only := "") -> void:
 		camera.look_at_from_position(p * 0.45 + Vector3(0, 30, 0), Vector3(0, 2, 0))
 		await _settle(4)
 		await _shot(out_dir.path_join("%s_overview.png" % world.id))
+		# A map with strongpoints: one shot of each, from the side facing out.
+		var site_index := 0
+		for site in get_tree().get_nodes_in_group("strongpoint"):
+			if not raid.map.is_ancestor_of(site):
+				continue
+			var at: Vector3 = site.global_position
+			var out := Vector3(at.x, 0, at.z).normalized() if Vector3(at.x, 0, at.z).length() > 1.0 else Vector3(0.6, 0, 0.8)
+			var from := at + out.rotated(Vector3.UP, 0.5) * (float(site.get_meta("radius", 30.0)) + 34.0)
+			if raid.map.has_method("ground_height"):
+				from.y = raid.map.call("ground_height", from.x, from.z)
+			camera.far = 1500.0
+			camera.look_at_from_position(from + Vector3(0, 9, 0), at + Vector3(0, 5, 0))
+			await _settle(8)
+			await _shot(out_dir.path_join("%s_site_%d.png" % [world.id, site_index]))
+			site_index += 1
 		if world.safe_zone:
 			await _plaza_shots(out_dir, raid, camera, lineup)
 		raid.queue_free()

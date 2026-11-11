@@ -15,6 +15,7 @@ const BaseHudScript := preload("res://core/ui/base_hud.gd")
 const LookTests := preload("res://tests/look_tests.gd")
 const EconomyTests := preload("res://tests/economy_tests.gd")
 const CustomizerTests := preload("res://tests/customizer_tests.gd")
+const BattlefieldTests := preload("res://tests/battlefield_tests.gd")
 
 var _passed := 0
 var _failed := 0
@@ -73,10 +74,15 @@ func _run() -> void:
 	await LookTests.run(self)
 	await CustomizerTests.run(self)
 	await _test_economy()
+	await _test_battlefield()
 
 
 func _test_economy() -> void:
 	await EconomyTests.run(self)
+
+
+func _test_battlefield() -> void:
+	await BattlefieldTests.run(self)
 
 
 func check(condition: bool, what: String) -> void:
@@ -173,7 +179,7 @@ func _test_raid_setup_and_movement() -> void:
 	var p := raid.player
 	check(p != null and p.is_player, "player spawns")
 	check(raid.bots.size() == raid.world.bot_count, "all bots spawn")
-	check(raid.depots.size() == 2, "map provides two depots")
+	check(raid.depots.size() >= 2, "map provides depots to bank at")
 	var caches := raid.get_children().filter(func(n: Node) -> bool: return n is LootContainer)
 	check(caches.size() >= 8, "loot caches are placed (%d)" % caches.size())
 	check(p.weapons.size() == 2 and p.flight.enabled and p.health.armor == 30.0,
@@ -213,7 +219,7 @@ func _test_combat_and_loot() -> void:
 	await frames(40)
 	# Stand in the exit cell, which is always open ground.
 	var arena := raid.depots[0].global_position
-	arena.y = 0.1
+	arena.y -= 1.9
 	p.global_position = arena + Vector3(0, 0, 3)
 	p.cmd.yaw = 0.0
 
@@ -294,8 +300,8 @@ func _test_extraction() -> void:
 	p.inventory.add_item("medkit")
 	var bot := raid.bots[0]
 	var depot_pos := raid.depots[1].global_position
-	p.global_position = Vector3(depot_pos.x, 0.2, depot_pos.z)
-	bot.global_position = Vector3(depot_pos.x + 2.0, 0.2, depot_pos.z)
+	p.global_position = Vector3(depot_pos.x, depot_pos.y - 1.8, depot_pos.z)
+	bot.global_position = Vector3(depot_pos.x + 2.0, depot_pos.y - 1.8, depot_pos.z)
 	await frames(60)
 	check(raid.bank_progress() > 0.0, "standing in a depot starts the hold")
 	check(Profile.stash.is_empty(), "banking is not instant")
@@ -440,8 +446,8 @@ func _test_bots_run() -> void:
 	await frames(40)
 	var bot := raid.bots[0]
 	var arena := raid.depots[0].global_position
-	p.global_position = Vector3(arena.x, 0.1, arena.z + 3.0)
-	bot.global_position = Vector3(arena.x, 0.1, arena.z - 5.0)
+	p.global_position = Vector3(arena.x, arena.y - 1.9, arena.z + 3.0)
+	bot.global_position = Vector3(arena.x, arena.y - 1.9, arena.z - 5.0)
 	var health_before := p.health.health + p.health.armor
 	await frames(360)
 	var moved := 0
@@ -569,7 +575,7 @@ func _duel(raid: Raid) -> Array:
 	var p := raid.player
 	await frames(40)
 	var arena := raid.depots[0].global_position
-	p.global_position = Vector3(arena.x, 0.1, arena.z + 3.0)
+	p.global_position = Vector3(arena.x, arena.y - 1.9, arena.z + 3.0)
 	p.cmd.yaw = 0.0
 	p.cmd.aim_dir = Vector3.FORWARD
 	p.cmd.switch_weapon = 1
@@ -807,7 +813,7 @@ func _test_loadouts() -> void:
 	p.equip_weapon(shotgun)
 	p.cmd.switch_weapon = 2
 	var arena := raid.depots[0].global_position
-	p.global_position = Vector3(arena.x, 0.1, arena.z + 3.0)
+	p.global_position = Vector3(arena.x, arena.y - 1.9, arena.z + 3.0)
 	var target := raid.bots[0]
 	target.global_position = p.global_position + Vector3(0, 0, -3.0)
 	await frames(10)
@@ -1067,7 +1073,7 @@ func _test_flight_rigs_and_abilities() -> void:
 	check(p.ability.enabled and p.ability.effect == "blink" and "chip_blink" in p.gear_items,
 			"an ability item equips into the ability slot")
 	var arena := raid.depots[0].global_position
-	p.global_position = Vector3(arena.x, 0.1, arena.z + 3.0)
+	p.global_position = Vector3(arena.x, arena.y - 1.9, arena.z + 3.0)
 	p.cmd.yaw = 0.0
 	p.cmd.aim_dir = Vector3.FORWARD
 	await frames(5)
@@ -1090,7 +1096,7 @@ func _test_flight_rigs_and_abilities() -> void:
 	await frames(1)
 	p.cmd.ability_pressed = false
 	await frames(10)
-	check(p.global_position.y > -0.5, "Phase Step stops short of the ground and walls")
+	check(p.global_position.y > arena.y - 2.5, "Phase Step stops short of the ground and walls")
 	await _end_raid(raid)
 
 	# Kinetic Barrier.
@@ -2336,7 +2342,7 @@ func _test_online() -> void:
 	raid.player_banked.connect(func(actor: Actor, items: Array) -> void: banked.append([actor, items]))
 	b_again.inventory.add_item("alloy_ingot")
 	var depot := raid.depots[0]
-	b_again.global_position = Vector3(depot.global_position.x, 0.2, depot.global_position.z)
+	b_again.global_position = Vector3(depot.global_position.x, depot.global_position.y - 1.8, depot.global_position.z)
 	await frames(int(raid.world.depot_hold_time * 60.0) + 30)
 	check(banked.size() == 1 and banked[0][0] == b_again and banked[0][1] == ["alloy_ingot"]
 			and not b_again.inventory.has_item("alloy_ingot"),

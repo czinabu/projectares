@@ -53,6 +53,14 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   `Look.atmosphere` a second, war mood has its sky blend towards it. A world
   scales the meter with `WorldDef.war_scale` (0 keeps it quiet). New stakes
   that follow the war (reinforcements, events, loot) read `Raid.war`.
+- Open ground is a `Terrain` (`core/world/terrain.gd`): a heightfield with
+  collision and a mesh that knows nothing about any world. A map on one
+  offers `ground_height(x, z)` and the `Raid` stands spawning actors on it
+  (`Raid._stand`). A heightfield is a surface, not a solid: anything that
+  moves an actor by setting its position (a blink, a teleport) must put the
+  feet back on the ground, or the actor falls through. Ashfront's map
+  (`worlds/ashfront/map.gd`) works its ground and navigation mesh out once
+  per run and shares them between copies (`_shared`), so a new copy is cheap.
 - Strongpoints (`core/war/strongpoint.gd`, `Raid.strongpoints`): a map only
   marks where they are (Marker3D nodes in the group "strongpoint", see the
   map contract in `WorldDef`); the `Raid` runs them. A side is a string key
