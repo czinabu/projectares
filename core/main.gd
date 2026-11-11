@@ -17,6 +17,7 @@ const BaseHudScript := preload("res://core/ui/base_hud.gd")
 const PlazaViewScript := preload("res://core/social/plaza_view.gd")
 ## The plaza holds more people than a raid.
 const PLAZA_PLAYERS := 32
+const SHOP_PANEL := "res://core/economy/shop_panel.gd"
 
 var hub: Hub
 var raid: Raid
@@ -31,6 +32,8 @@ var phone: CanvasLayer
 var base: HomeBase
 var base_hud: CanvasLayer
 var plaza_view: CanvasLayer
+## The shop screen while trading at a plaza storefront, else null.
+var shop_view: ShopView
 ## Server: every session it runs (the plaza first, then the raid worlds).
 var sessions: Array[NetSession] = []
 ## Client: where this server's plaza is, once you have been in it. Leaving a
@@ -413,6 +416,9 @@ func _on_online_signed_in(account: Dictionary) -> void:
 
 
 func _on_online_account_changed(account: Dictionary) -> void:
+	if shop_view != null and is_instance_valid(shop_view):
+		shop_view.panel.set("account", account)
+		shop_view.panel.call("refresh")
 	if raid == null:
 		hub.update_account(account)
 		_refresh_base()
@@ -445,6 +451,8 @@ func use_portal(destination: String) -> void:
 		hub.visible = true
 		hub.set_online_status("Travelling to %s..." % world.display_name)
 		_begin_join(_plaza_address, port, 3)
+	elif destination.begins_with("shop:"):
+		open_shop(destination.trim_prefix("shop:"))
 	elif destination == "home":
 		open_home_base()
 		return
@@ -454,6 +462,49 @@ func use_portal(destination: String) -> void:
 		leave_server()
 	else:
 		plaza_view.show_notice("Opening soon.")
+
+
+## A storefront in the plaza: the shop screen for that one shop, trading with
+## the stash this server keeps for you. The shop screen belongs to the
+## economy and is loaded by path, so a game without one just says so.
+func open_shop(shop_id: String) -> void:
+	if net == null or raid == null or shop_view != null:
+		return
+	if not ResourceLoader.exists(SHOP_PANEL):
+		plaza_view.show_notice("Opening soon.")
+		return
+	var panel: Control = (load(SHOP_PANEL) as Script).new()
+	panel.set("shop_filter", shop_id)
+	panel.set("account", net.account)
+	panel.connect("buy_requested", func(shop: String, item_id: String) -> void:
+		if net:
+			net.buy(shop, item_id))
+	panel.connect("sell_requested", func(item_id: String, count: int) -> void:
+		if net:
+			net.sell(item_id, count))
+	shop_view = ShopView.new()
+	shop_view.name = "ShopView"
+	shop_view.panel = panel
+	shop_view.closed.connect(close_shop)
+	# Nothing changes here until the server answers; a refusal says why.
+	net.lobby_error.connect(func(reason: String) -> void:
+		if shop_view != null and is_instance_valid(shop_view) and shop_view.panel.has_method("show_message"):
+			shop_view.panel.call("show_message", reason))
+	raid.add_child(shop_view)
+	if controller != null and is_instance_valid(controller):
+		controller.input_blocked = true
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+
+
+func close_shop() -> void:
+	if shop_view == null:
+		return
+	if is_instance_valid(shop_view):
+		shop_view.queue_free()
+	shop_view = null
+	if controller != null and is_instance_valid(controller) and raid != null:
+		controller.input_blocked = false
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 
 ## The plaza's door to your home base. The base shows the stash this server
@@ -556,3 +607,50 @@ static func _arg(args: PackedStringArray, flag: String, fallback: String) -> Str
 	if index >= 0 and index + 1 < args.size():
 		return args[index + 1]
 	return fallback
+
+
+## The frame round the shop screen at a storefront: a dimmed plaza behind, the
+## panel in the middle, and a way out (the button or Esc).
+class ShopView:
+	extends CanvasLayer
+
+	signal closed
+
+	var panel: Control
+
+	func _ready() -> void:
+		layer = 5
+		var shade := ColorRect.new()
+		shade.color = Color(0, 0, 0, 0.55)
+		shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		add_child(shade)
+		var frame := PanelContainer.new()
+		frame.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
+		frame.custom_minimum_size = Vector2(760, 560)
+		frame.offset_left = -380
+		frame.offset_right = 380
+		frame.offset_top = -280
+		frame.offset_bottom = 280
+		add_child(frame)
+		var margin := MarginContainer.new()
+		for side: String in ["left", "right", "top", "bottom"]:
+			margin.add_theme_constant_override("margin_" + side, 18)
+		frame.add_child(margin)
+		var box := VBoxContainer.new()
+		box.add_theme_constant_override("separation", 10)
+		margin.add_child(box)
+		var scroll := ScrollContainer.new()
+		scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+		box.add_child(scroll)
+		panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		scroll.add_child(panel)
+		var leave := Button.new()
+		leave.text = "Step away  (Esc)"
+		leave.pressed.connect(func() -> void: closed.emit())
+		box.add_child(leave)
+
+	func _unhandled_input(event: InputEvent) -> void:
+		if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
+			get_viewport().set_input_as_handled()
+			closed.emit()

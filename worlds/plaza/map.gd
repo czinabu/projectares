@@ -1,6 +1,7 @@
 extends Node3D
 ## Greybox Concourse: a round, walled plaza around a beacon spire.
 ##
+##   corners  the market: a storefront for every shop
 ##   north  the gate row: one deploy gate per raid world
 ##   west   the quarters: the door to your home base
 ##   east   the clan hall: closed for now, with room to grow
@@ -17,10 +18,21 @@ const PODIUM_RING := 13.0
 const PODIUMS := 6
 const ARRIVAL := Vector3(0, 0, 30)
 const LAYOUT_SEED := 707
+## The shops come from the economy's shop list, read at runtime so the plaza
+## still builds in a game without one.
+const SHOP_DB := "res://core/economy/shop_db.gd"
+const MARKET_RING := 43.0
+## Where storefronts stand, as angles round the wall: the market quarters
+## between the gates and the side doors, then the south-west corner.
+const MARKET_SLOTS := [-PI * 0.25 - 0.19, -PI * 0.75 + 0.19, -PI * 0.25 + 0.19, -PI * 0.75 - 0.19,
+		PI * 0.75, PI * 0.75 + 0.36, PI * 0.75 - 0.36]
+const SHOP_COLORS := [Color(1.0, 0.45, 0.3), Color(0.4, 0.85, 0.55), Color(1.0, 0.8, 0.3), Color(0.45, 0.7, 1.0),
+		Color(0.9, 0.5, 0.95)]
 
 var nav_region: NavigationRegion3D
 var _art_rng := RandomNumberGenerator.new()
 var _gates: Array[Dictionary] = []
+var _stalls: Array[Dictionary] = []
 
 @onready var FLOOR := Look.surface("concrete", {"tint": Color(0.5, 0.5, 0.54), "grime": 0.25, "scale": 0.12,
 		"wetness": 0.35})
@@ -43,6 +55,7 @@ func _ready() -> void:
 	_build_quarters()
 	_build_clan_hall()
 	_build_arena_gate()
+	_build_market()
 	_build_arrival()
 	_build_show_floor()
 	_dress()
@@ -168,6 +181,41 @@ func _build_arrival() -> void:
 	_sign("EXIT", door + Vector3(0, 4.6, 2.45), PI, 0.9, Color(1.0, 0.45, 0.4))
 
 
+## The shops this game has: [{id, name, blurb}, ...], or none.
+static func shops() -> Array:
+	if not ResourceLoader.exists(SHOP_DB):
+		return []
+	var listed: Variant = (load(SHOP_DB) as Script).get_script_constant_map().get("SHOPS", [])
+	return listed if typeof(listed) == TYPE_ARRAY else []
+
+
+## A storefront for every shop: an open-fronted stall with a counter, its
+## name over the awning, and a pad at the counter to trade from.
+func _build_market() -> void:
+	var listed := shops()
+	for i in mini(listed.size(), MARKET_SLOTS.size()):
+		var entry: Dictionary = listed[i]
+		var angle: float = MARKET_SLOTS[i]
+		var at := _polar(MARKET_RING, angle)
+		var yaw := -angle - PI / 2.0
+		var facing := Basis(Vector3.UP, yaw)
+		var color: Color = SHOP_COLORS[i % SHOP_COLORS.size()]
+		# Back wall, side walls and roof, open toward the plaza.
+		_box(Vector3(9.0, 5.0, 0.6), at + facing * Vector3(0, 2.5, -2.4), WALL, yaw)
+		_box(Vector3(0.6, 5.0, 5.0), at + facing * Vector3(-4.5, 2.5, 0), WALL, yaw)
+		_box(Vector3(0.6, 5.0, 5.0), at + facing * Vector3(4.5, 2.5, 0), WALL, yaw)
+		_box(Vector3(10.0, 0.5, 7.0), at + facing * Vector3(0, 5.25, 0.8), DARK, yaw)
+		_box(Vector3(6.4, 1.1, 0.9), at + facing * Vector3(0, 0.55, 2.0), STEEL, yaw)
+		var portal := _add_portal("shop:%s" % entry.get("id", ""), "Trade at the %s" % entry.get("name", "shop"),
+				at + facing * Vector3(0, 0, 4.2), 2.4)
+		portal.add_to_group("shop_front")
+		portal.set_meta("shop_id", entry.get("id", ""))
+		_sign(str(entry.get("name", "")).to_upper(), at + facing * Vector3(0, 6.2, 4.35), yaw, 0.9, color)
+		_sign(entry.get("blurb", ""), at + facing * Vector3(0, 4.3, -2.05), yaw, 0.26, Color(0.9, 0.9, 0.9), 8.0)
+		_box(Vector3(10.0, 1.4, 0.3), at + facing * Vector3(0, 6.2, 4.15), DARK, yaw)
+		_stalls.append({"at": at, "yaw": yaw, "color": color})
+
+
 ## South-east: the gate to the arena, which is built as its own space.
 func _build_arena_gate() -> void:
 	var angle := PI / 4.0
@@ -216,6 +264,19 @@ func _dress() -> void:
 		var glow := Look.lamp(Color(1.0, 0.5, 0.2), 5.0, 14.0)
 		glow.position = gate["at"] + Vector3(0, 4.0, 0) + Basis(Vector3.UP, gate["yaw"]) * Vector3(0, 0, 1.5)
 		art.add_child(glow)
+	var wares := ["Lootbox.glb", "Backpack.glb", "PropaneTank.glb", "Computer.glb", "GasCan.glb"]
+	for i in _stalls.size():
+		var stall := _stalls[i]
+		var facing := Basis(Vector3.UP, stall["yaw"])
+		var light := Look.lamp(stall["color"], 4.0, 11.0)
+		light.position = stall["at"] + facing * Vector3(0, 4.2, 1.0)
+		art.add_child(light)
+		for side: float in [-2.2, 0.0, 2.2]:
+			var ware := Look.prop(wares[(i + int(side)) % wares.size()], 0.8, 0.3)
+			if ware:
+				ware.position = stall["at"] + facing * Vector3(side, 1.1, 2.0)
+				ware.rotation.y = _art_rng.randf() * TAU
+				art.add_child(ware)
 	var home := Look.lamp(Color(0.45, 0.8, 1.0), 4.0, 12.0)
 	home.position = Vector3(-GATE_RING + 2.5, 3.4, 0)
 	art.add_child(home)

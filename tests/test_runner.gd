@@ -2347,6 +2347,17 @@ func _test_plaza() -> void:
 	check("home" in destinations, "there is a door to the home base")
 	check("clans" in destinations, "there is a clan hall")
 	check(portals.all(func(n: Node) -> bool: return n.get_meta("label", "") != ""), "every portal says where it goes")
+	# Shops are physical places: a storefront for each one the game has.
+	var shops: Array = raid.map.shops()
+	var fronts := portals.filter(func(n: Node) -> bool: return n.is_in_group("shop_front"))
+	check(fronts.size() == shops.size() and shops.all(func(entry: Dictionary) -> bool:
+		return ("shop:" + str(entry.id)) in destinations), "every shop has a storefront (%d)" % fronts.size())
+	var apart := true
+	for one: Node3D in portals:
+		for other: Node3D in portals:
+			if one != other and one.global_position.distance_to(other.global_position) < 5.5:
+				apart = false
+	check(apart, "no two doorways overlap")
 	var reachable := portals.all(func(n: Node) -> bool:
 		return (n as Node3D).global_position.length() < 50.0 and absf((n as Node3D).global_position.y) < 0.5)
 	check(reachable, "every portal is on the plaza floor")
@@ -2474,6 +2485,27 @@ func _test_plaza_online() -> void:
 		main.leave_server()
 		await _wait_until(func() -> bool: return main.raid != null and main.raid.player != null, 600)
 		check(main.raid != null and main.raid.world.safe_zone, "leaving the lobby leads back to the plaza")
+		var shops: Array = main.raid.map.shops()
+		if not shops.is_empty():
+			var shop_id: String = shops[0].id
+			main.use_portal("shop:" + shop_id)
+			await frames(3)
+			check(main.shop_view != null and main.shop_view.panel.shop_filter == shop_id
+					and main.controller.input_blocked and main.raid != null,
+					"a storefront opens that shop's screen without leaving the plaza")
+			var panel: Control = main.shop_view.panel
+			var before: int = panel.credits()
+			var stock: Array = panel.find_children("*", "Button", true, false).filter(func(b: Node) -> bool:
+				return (b as Button).text.begins_with("Buy") and not (b as Button).disabled)
+			check(not stock.is_empty() and before > 0, "the stall shows stock and your credits on this server (%d)" % before)
+			if not stock.is_empty():
+				(stock[0] as Button).pressed.emit()
+				await _wait_until(func() -> bool:
+					return main.shop_view != null and main.shop_view.panel.credits() < before, 240)
+				check(main.shop_view.panel.credits() < before, "buying at the stall goes through the server")
+			main.close_shop()
+			await frames(2)
+			check(main.shop_view == null and not main.controller.input_blocked, "stepping away gives control back")
 		main.use_portal("home")
 		await _wait_until(func() -> bool: return main.base != null, 600)
 		check(main.base != null and main.raid == null and main.hub.in_lobby(),

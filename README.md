@@ -104,6 +104,8 @@ Walk into a glowing pad and press **E** to use it:
   your loadout and deploy. After a run, or when you leave the lobby, you are
   back in the Concourse.
 - **Quarters** (west): the door to your home base. Its door leads back here.
+- **Storefronts** (the corners): one for every shop. Step up to the counter
+  to buy and sell without leaving the plaza.
 - **Arena** and **Clan hall**: built, and closed until those features arrive.
 - **Exit** (south): leaves the server.
 
