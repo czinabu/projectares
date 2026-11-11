@@ -60,21 +60,34 @@ func _ready() -> void:
 	foe.cmd.move = Vector2.ZERO
 	foe.cmd.yaw = controller.yaw + PI
 	foe.cmd.aim_dir = -ahead.normalized()
-	for w in foe.weapons:
-		w.queue_free()
-	foe.weapons.clear()
-	var cleaver := MeleeWeapon.new()
-	cleaver.light_windup = 3.0
-	cleaver.light_stamina = 0.0
-	foe.equip_weapon(cleaver)
-	foe.active_weapon_index = 0
-	foe.cmd.stance = MeleeWeapon.Dir.RIGHT
-	await _settle(5)
-	foe.cmd.primary_pressed = true
-	await _settle(1)
-	foe.cmd.primary_pressed = false
-	await _settle(25)
-	await _shot(out_dir.path_join("enemy_windup.png"))
+	# Each side an enemy can wind up from, then its guard, to check the arm
+	# and the blade both show the side.
+	var poses := [[MeleeWeapon.Dir.RIGHT, "enemy_windup.png", false], [MeleeWeapon.Dir.LEFT, "enemy_windup_left.png", false],
+			[MeleeWeapon.Dir.OVERHEAD, "enemy_windup_overhead.png", false], [MeleeWeapon.Dir.LEFT, "enemy_guard_left.png", true]]
+	for pose: Array in poses:
+		for w in foe.weapons:
+			if w.visual:
+				w.visual.queue_free()
+			w.queue_free()
+		foe.weapons.clear()
+		var cleaver := MeleeWeapon.new()
+		# Long enough to still be cocked when the shot is taken on a slow renderer.
+		cleaver.light_windup = 60.0
+		cleaver.light_damage = 0.0
+		cleaver.light_stamina = 0.0
+		foe.equip_weapon(cleaver)
+		foe.active_weapon_index = 0
+		foe.cmd.stance = pose[0]
+		foe.cmd.secondary = pose[2]
+		await _settle(5)
+		# Held until a physics tick has certainly seen it.
+		for i in 6:
+			foe.cmd.primary_pressed = not pose[2] and not cleaver.is_winding_up()
+			await _settle(1)
+		foe.cmd.primary_pressed = false
+		await _settle(14)
+		await _shot(out_dir.path_join(pose[1]))
+	foe.cmd.secondary = false
 	foe.global_position += Vector3(0, -200, 0)
 	hud._on_hit_confirmed(raid.player, DamageInfo.make(1.0, raid.player, "melee"), false)
 	Sfx.play("parry")

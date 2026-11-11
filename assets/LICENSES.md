@@ -16,6 +16,8 @@ and add a row for each new source.
 | `assets/characters` `Human_Soldier` `Human_SciFi` `Human_PunkW` `Human_Worker` | Ultimate Modular Women (individual characters, renamed, glTF repacked as GLB) | Quaternius | CC0 1.0 | https://quaternius.com/packs/ultimatemodularwomen.html |
 | `assets/weapons` `AR_*` `SMG_*` `Sniper_*` `Pistol_1` | Sci-Fi Modular Gun Pack | Quaternius | CC0 1.0 | https://quaternius.com/packs/scifimodularguns.html |
 | `assets/weapons` `Shotgun_1` `Knife` `Axe` | Survival Pack | Quaternius | CC0 1.0 | https://quaternius.com/packs/survival.html |
+| `assets/weapons` `Sword` `Hammer` | Modular Weapons Pack (`Sword.glb`, and `Hammer_Double.glb` renamed) | Quaternius | CC0 1.0 | https://quaternius.com/packs/medievalweapons.html |
+| `assets/weapons` `Katana` | Animated Knight Pack | Quaternius | CC0 1.0 | https://quaternius.com/packs/knightcharacter.html |
 | `assets/props` (most files) | Cyberpunk Game Kit | Quaternius | CC0 1.0 | https://quaternius.com/packs/cyberpunkgamekit.html |
 | `assets/props` `Backpack` `GasCan` `PropaneTank` `Trashcan` `Tent` `Bonfire` | Survival Pack | Quaternius | CC0 1.0 | https://quaternius.com/packs/survival.html |
 | `assets/props` `Streetlight_*` `TrafficLight` `Sign_Stop` | Modular Streets Pack | Quaternius | CC0 1.0 | https://quaternius.com/packs/modularstreets.html |

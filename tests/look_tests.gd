@@ -72,6 +72,39 @@ static func run(t: Node) -> void:
 			skin._hold_weapon()
 			t.check(raid.player.hand.position.is_equal_approx(Vector3(5, 5, 5)), tag + "the model leaves the hand alone in first person")
 			raid.player.hand_override = false
+		# The weapon arm shows the side of a melee attack or guard.
+		var sword: MeleeWeapon = null
+		for held in raid.player.weapons:
+			if held is MeleeWeapon:
+				sword = held
+		t.check(skin._arm_ik != null, tag + "the player's model can pose its weapon arm")
+		if sword != null and skin._arm_ik != null:
+			t.check(skin.arm_reach(sword) == null, tag + "the animation keeps the arm when no attack or guard is up")
+			var reaches := {}
+			for side: int in [MeleeWeapon.Dir.LEFT, MeleeWeapon.Dir.RIGHT, MeleeWeapon.Dir.OVERHEAD]:
+				sword._windup_left = 1.0
+				sword.attack_dir = side
+				reaches[skin.arm_reach(sword)] = true
+			t.check(reaches.size() == 3 and not reaches.has(null), tag + "each attack side cocks the arm differently")
+			var left: Vector3 = skin.arm_windup[MeleeWeapon.Dir.LEFT]
+			var right: Vector3 = skin.arm_windup[MeleeWeapon.Dir.RIGHT]
+			t.check(left.x < right.x, tag + "a left windup holds the hand further to the actor's left")
+			t.check(skin.arm_windup[MeleeWeapon.Dir.OVERHEAD].y > maxf(left.y, right.y), tag + "an overhead windup raises the hand highest")
+			raid.player.hand_override = true
+			t.check(skin.arm_reach(sword) == null, tag + "the arm is left alone in first person")
+			raid.player.hand_override = false
+			sword._windup_left = 0.0
+			sword._blocking = true
+			t.check(skin.arm_reach(sword) != null, tag + "a guard raises the arm")
+			sword._blocking = false
+			var was_active := raid.player.active_weapon_index
+			raid.player.active_weapon_index = raid.player.weapons.find(sword)
+			sword.visual.position = Vector3(0.2, 0.1, 0.0)
+			skin._hold_weapon()
+			var grip_at: Vector3 = skeleton.global_transform * skeleton.get_bone_global_pose(skin._grip_bone).origin
+			t.check(sword.visual.global_position.distance_to(grip_at) < 0.02, tag + "the blade stays in the hand when its pose shifts it")
+			sword.visual.position = Vector3.ZERO
+			raid.player.active_weapon_index = was_active
 		var dressed := 0
 		var skins := {}
 		for bot in raid.bots:
@@ -109,6 +142,20 @@ static func run(t: Node) -> void:
 				picks[entry[1]] = true
 				t.check(ResourceLoader.exists(Look.WEAPONS + entry[1]), "a '%s' has a model" % tag)
 	t.check(picks.size() == 4, "each gun type has its own model")
+
+	# Melee models, also by tag, standing blade-up with the grip at the hand.
+	for entry: Array in Look.MELEE_MODELS + [Look.DEFAULT_MELEE]:
+		t.check(ResourceLoader.exists(Look.WEAPONS + entry[1]), "melee model %s exists" % entry[1])
+	var blade := MeleeWeapon.new()
+	var blade_model := Look.weapon_model(blade)
+	t.check(blade_model != null, "a blade gets a model")
+	if blade_model:
+		var blade_box := Look.model_bounds(blade_model)
+		t.check(blade_box.size.y > 3.0 * maxf(blade_box.size.x, blade_box.size.z), "the blade model stands along the blade")
+		t.check(blade_box.position.y < -0.05 and blade_box.end.y > 0.9, "the blade model is gripped near its handle")
+		t.check(blade_model.find_children("*", "CollisionObject3D", true, false).is_empty(), "the blade model has no collision")
+		blade_model.free()
+	blade.free()
 
 	t.check(FileAccess.file_exists("res://assets/LICENSES.md"), "asset licenses are recorded")
 	var licenses := FileAccess.get_file_as_string("res://assets/LICENSES.md")
