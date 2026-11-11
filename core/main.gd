@@ -21,6 +21,7 @@ const StashRules := preload("res://core/account/stash_rules.gd")
 const NameplatesScript := preload("res://core/ui/nameplates.gd")
 const ScoreboardScript := preload("res://core/ui/scoreboard.gd")
 const PhoneScript := preload("res://core/phone/phone.gd")
+const MirrorScript := preload("res://core/visual/mirror.gd")
 const GameSettings := preload("res://core/settings/game_settings.gd")
 const BaseHudScript := preload("res://core/ui/base_hud.gd")
 const ArenaHudScript := preload("res://core/arena/arena_hud.gd")
@@ -41,6 +42,9 @@ var scoreboard: CanvasLayer
 var net: NetSession
 ## The phone every player carries: the game's menu, in the hub and in a raid.
 var phone: CanvasLayer
+## The mirror standing in front of the player while the phone's Mirror app is
+## up, else null.
+var mirror: Node3D
 ## The home base while the player is walking around it, else null.
 var base: HomeBase
 var base_hud: CanvasLayer
@@ -99,6 +103,7 @@ func _ready() -> void:
 	hub.arena_requested.connect(open_arena)
 	hub.look_changed.connect(func(appearance: Dictionary) -> void:
 		Profile.set_appearance(appearance, hub.character.owned)
+		_wear_look()
 		if net != null:
 			net.send_look(Profile.appearance))
 
@@ -383,6 +388,8 @@ func _setup_phone() -> void:
 	phone.opened_changed.connect(_on_phone_opened)
 	phone.settings_changed.connect(_apply_settings)
 	phone.quit_requested.connect(func() -> void: get_tree().quit())
+	phone.set_wardrobe(hub.character)
+	phone.mirror_changed.connect(_on_mirror_changed)
 
 
 ## Hands on the phone: the character stops and the mouse is free. Putting it
@@ -391,6 +398,52 @@ func _on_phone_opened(open: bool) -> void:
 	if controller != null and is_instance_valid(controller):
 		controller.input_blocked = open
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if open else Input.MOUSE_MODE_CAPTURED
+
+
+# ---------------------------------------------------------------- mirror ----
+
+## The local player's character wherever they stand: a world, or the home base.
+func _my_actor() -> Actor:
+	if raid != null and is_instance_valid(raid) and raid.player != null and is_instance_valid(raid.player):
+		return raid.player
+	if base != null and is_instance_valid(base) and base.player != null and is_instance_valid(base.player):
+		return base.player
+	return null
+
+
+## The phone's Mirror app came up or went away. Up, a mirror stands in front
+## of the player, wherever they are; it goes when the app or the phone does.
+func _on_mirror_changed(up: bool) -> void:
+	_put_away_mirror()
+	var me := _my_actor()
+	if not up or me == null or me.is_dead or controller == null or not is_instance_valid(controller) \
+			or controller.actor != me:
+		phone.set_mirror_up(false)
+		return
+	# Level the gaze so the glass is in view. The camera mode stays as it is.
+	controller.pitch = clampf(controller.pitch, -0.15, 0.05)
+	mirror = MirrorScript.new()
+	mirror.name = "Mirror"
+	mirror.setup(me, controller.camera)
+	me.get_parent().add_child(mirror)
+	controller.body_layer = MirrorScript.BODY_LAYER
+	phone.set_mirror_up(true)
+
+
+func _put_away_mirror() -> void:
+	if mirror != null and is_instance_valid(mirror):
+		mirror.queue_free()
+	mirror = null
+	if controller != null and is_instance_valid(controller):
+		controller.body_layer = 0
+
+
+## Puts a new look on the player's character at once, wherever they are.
+## Online the server checks it and shows it to everyone (`NetSession.send_look`).
+func _wear_look() -> void:
+	var me := _my_actor()
+	if me != null and not me.is_dead:
+		Look.set_appearance(me, _my_look())
 
 
 ## Pushes the phone's settings into the raid view, if there is one.

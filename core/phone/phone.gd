@@ -1,7 +1,7 @@
 extends CanvasLayer
 ## The phone every player carries. It is the game's menu: open it with P in
 ## the hub or in a raid to reach other players, answer invites, read the
-## news and change settings.
+## news, try on clothes in front of a mirror and change settings.
 ##
 ## It is a view. Online it shows the `NetSession.social_state` the server
 ## sent and turns taps into requests (`send_message`, `send_invite`,
@@ -16,17 +16,21 @@ signal opened_changed(open: bool)
 ## A setting changed (see `GameSettings`). `Main` pushes it into the raid view.
 signal settings_changed
 signal quit_requested
+## The Mirror app was opened (true) or left (false). `Main` stands a mirror
+## in front of the player while it is up (`core/visual/mirror.gd`).
+signal mirror_changed(up: bool)
 
 const SocialService := preload("res://core/social/social_service.gd")
 const GameSettings := preload("res://core/settings/game_settings.gd")
 const UiTheme := preload("res://core/visual/ui_theme.gd")
+const CharacterPanel := preload("res://core/ui/character_panel.gd")
 
-const APPS := ["contacts", "messages", "invites", "news", "settings"]
+const APPS := ["contacts", "messages", "invites", "news", "mirror", "settings"]
 const APP_NAMES := {"contacts": "Contacts", "messages": "Messages", "invites": "Invites",
-		"news": "News", "settings": "Settings"}
+		"news": "News", "mirror": "Mirror", "settings": "Settings"}
 ## The shorter names on the bottom bar.
 const NAV_NAMES := {"contacts": "People", "messages": "Chat", "invites": "Invites",
-		"news": "News", "settings": "Settings"}
+		"news": "News", "mirror": "Mirror", "settings": "Settings"}
 
 var screen_size := Vector2(480, 760)
 ## Seconds a pop-up stays on screen.
@@ -42,6 +46,13 @@ var chat_with := ""
 var read_upto := {}
 ## News titles seen, so new ones get a badge.
 var news_seen := {}
+## The customizer's choices (the hub's `CharacterPanel`), which the Mirror
+## app scrolls through. Set with `set_wardrobe`.
+var wardrobe: CharacterPanel
+## True while a mirror stands in the world for the Mirror app.
+var mirror_up := false
+## The choice the Mirror app's keys move (an index of `wardrobe.pick_keys()`).
+var mirror_row := 0
 
 var _blocker: ColorRect
 var _device: PanelContainer
@@ -55,6 +66,7 @@ var _notice_label: Label
 var _notice_left := 0.0
 var _error: Label
 var _compose: LineEdit
+var _mirror_was_up := false
 
 
 func _ready() -> void:
@@ -82,6 +94,24 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif is_open and event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
 		close()
 		get_viewport().set_input_as_handled()
+	elif mirror_open() and event is InputEventKey and event.pressed and _mirror_key(event.keycode):
+		get_viewport().set_input_as_handled()
+
+
+## The Mirror app's keys: up and down (or W and S) pick a choice, left and
+## right (or A and D) scroll through it.
+func _mirror_key(key: Key) -> bool:
+	var rows := wardrobe.pick_keys().size() if wardrobe != null else 0
+	if rows == 0:
+		return false
+	match key:
+		KEY_UP, KEY_W: mirror_row = posmod(mirror_row - 1, rows)
+		KEY_DOWN, KEY_S: mirror_row = posmod(mirror_row + 1, rows)
+		KEY_LEFT, KEY_A: mirror_step(wardrobe.pick_keys()[mirror_row], -1)
+		KEY_RIGHT, KEY_D: mirror_step(wardrobe.pick_keys()[mirror_row], 1)
+		_: return false
+	refresh()
+	return true
 
 
 func _process(delta: float) -> void:
@@ -110,6 +140,53 @@ func set_session(session: NetSession) -> void:
 		net.social_error.connect(_on_social_error)
 		net.tree_exiting.connect(_on_session_gone)
 	refresh()
+
+
+## Connects the Mirror app to the customizer's choices.
+func set_wardrobe(panel: CharacterPanel) -> void:
+	if wardrobe != null and is_instance_valid(wardrobe) and wardrobe.changed.is_connected(_on_wardrobe_changed):
+		wardrobe.changed.disconnect(_on_wardrobe_changed)
+	wardrobe = panel
+	if wardrobe != null:
+		wardrobe.changed.connect(_on_wardrobe_changed)
+	refresh()
+
+
+func _on_wardrobe_changed(_appearance: Dictionary) -> void:
+	if mirror_open():
+		# Deferred: the change may come from a row that the redraw frees.
+		refresh.call_deferred()
+
+
+## True while the phone is out on the Mirror app.
+func mirror_open() -> bool:
+	return is_open and app == "mirror"
+
+
+## `Main` reports whether a mirror could stand in front of the player.
+func set_mirror_up(up: bool) -> void:
+	mirror_up = up
+	if mirror_open():
+		refresh()
+
+
+## Scrolls one choice of the look, from what the player owns.
+func mirror_step(key: String, steps: int) -> void:
+	if wardrobe != null:
+		wardrobe.step(key, steps)
+		var keys := wardrobe.pick_keys()
+		if key in keys:
+			mirror_row = keys.find(key)
+
+
+## Tells `Main` when the Mirror app comes up or goes away, and clears the
+## shade so the mirror can be seen.
+func _sync_mirror() -> void:
+	var up := mirror_open()
+	_blocker.color.a = 0.0 if up else 0.35
+	if up != _mirror_was_up:
+		_mirror_was_up = up
+		mirror_changed.emit(up)
 
 
 func _on_session_gone() -> void:
@@ -239,6 +316,7 @@ func _set_open(open_now: bool) -> void:
 		refresh()
 	if changed:
 		opened_changed.emit(open_now)
+	_sync_mirror()
 
 
 func open_app(p_app: String) -> void:
@@ -250,6 +328,7 @@ func open_app(p_app: String) -> void:
 		for entry: Dictionary in news():
 			news_seen[entry.title] = true
 	refresh()
+	_sync_mirror()
 
 
 func open_chat(other: String) -> void:
@@ -257,6 +336,7 @@ func open_chat(other: String) -> void:
 	chat_with = other
 	_mark_read(other)
 	refresh()
+	_sync_mirror()
 	if _compose:
 		_compose.grab_focus.call_deferred()
 
@@ -410,6 +490,7 @@ func refresh(redraw := true) -> void:
 		"messages": _draw_messages(keep_draft)
 		"invites": _draw_invites()
 		"news": _draw_news()
+		"mirror": _draw_mirror()
 		"settings": _draw_settings()
 	if had_focus and _compose != null:
 		_compose.grab_focus()
@@ -550,6 +631,86 @@ func _draw_news() -> void:
 		box.add_child(_label(str(entry.title), 19, UiTheme.ACCENT))
 		box.add_child(_label(str(entry.get("body", "")), 15, UiTheme.INK))
 		_body.add_child(card)
+
+
+## Each choice of the look as a row to scroll through: arrows, the mouse
+## wheel over the row, or the keys. Only starter clothes and outfits the
+## player owns are offered, so this is their wardrobe.
+func _draw_mirror() -> void:
+	if wardrobe == null:
+		_body.add_child(_label("Your wardrobe is not here.", 15, UiTheme.INK))
+		return
+	_body.add_child(_label("Look ahead: the mirror shows you. Scroll through what you own. Changes save as you go."
+			if mirror_up else "Out in the world a mirror stands in front of you. Changes still save as you go.",
+			14, Color(0.7, 0.7, 0.7)))
+	var keys := wardrobe.pick_keys()
+	mirror_row = clampi(mirror_row, 0, keys.size() - 1)
+	for i in keys.size():
+		var row := _mirror_row(keys[i], i == mirror_row)
+		_body.add_child(row)
+		if i == mirror_row:
+			_scroll.ensure_control_visible.call_deferred(row)
+	_body.add_child(_label("Up / down: choose   Left / right or the wheel: scroll", 13, Color(0.6, 0.6, 0.6)))
+	var shuffle := _button("Surprise me", func() -> void: wardrobe.randomize_look())
+	shuffle.focus_mode = Control.FOCUS_NONE
+	_body.add_child(shuffle)
+
+
+func _mirror_row(key: String, selected: bool) -> PanelContainer:
+	var card := PanelContainer.new()
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.12, 0.11, 0.1, 0.95) if selected else Color(0.08, 0.075, 0.07, 0.9)
+	style.border_color = UiTheme.ACCENT if selected else Color(0.2, 0.19, 0.17)
+	style.set_border_width_all(2)
+	style.set_corner_radius_all(8)
+	style.set_content_margin_all(6)
+	card.add_theme_stylebox_override("panel", style)
+	card.gui_input.connect(func(event: InputEvent) -> void:
+		var button := event as InputEventMouseButton
+		if button == null or not button.pressed:
+			return
+		if button.button_index not in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN, MOUSE_BUTTON_LEFT]:
+			return
+		# Taken before the redraw below frees this row.
+		card.accept_event()
+		match button.button_index:
+			MOUSE_BUTTON_WHEEL_UP: mirror_step(key, -1)
+			MOUSE_BUTTON_WHEEL_DOWN: mirror_step(key, 1)
+			MOUSE_BUTTON_LEFT: mirror_row = wardrobe.pick_keys().find(key)
+		refresh.call_deferred())
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	row.mouse_filter = Control.MOUSE_FILTER_PASS
+	card.add_child(row)
+	var back := _button("<", mirror_step.bind(key, -1))
+	back.focus_mode = Control.FOCUS_NONE
+	back.custom_minimum_size = Vector2(40, 40)
+	row.add_child(back)
+	var middle := VBoxContainer.new()
+	middle.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	middle.add_theme_constant_override("separation", 0)
+	middle.mouse_filter = Control.MOUSE_FILTER_PASS
+	row.add_child(middle)
+	var at: Array = wardrobe.pick_position(key)
+	var head := _label("%s   %d / %d" % [wardrobe.pick_title(key).to_upper(), at[0] + 1, at[1]], 12,
+			UiTheme.ACCENT if selected else Color(0.6, 0.6, 0.6))
+	head.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	middle.add_child(head)
+	var value := _label(wardrobe.pick_label(key), 19, UiTheme.INK)
+	value.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	middle.add_child(value)
+	var source := wardrobe.pick_source(key)
+	if source != "":
+		var from := _label(source, 12, Color(0.65, 0.6, 0.55))
+		from.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		middle.add_child(from)
+	for label: Label in [head, value]:
+		label.mouse_filter = Control.MOUSE_FILTER_PASS
+	var next := _button(">", mirror_step.bind(key, 1))
+	next.focus_mode = Control.FOCUS_NONE
+	next.custom_minimum_size = Vector2(40, 40)
+	row.add_child(next)
+	return card
 
 
 func _draw_settings() -> void:

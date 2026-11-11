@@ -69,6 +69,65 @@ func options_for(key: String) -> Array:
 	return out
 
 
+## Every choice, in the order the customizer and the phone's mirror list them.
+func pick_keys() -> Array[String]:
+	var keys: Array[String] = ["build"]
+	keys.append_array(Human.SLOTS)
+	for key: String in Human.COLOR_KEYS:
+		keys.append(key)
+	return keys
+
+
+## The name a choice is listed under.
+func pick_title(key: String) -> String:
+	if key == "build":
+		return "Build"
+	if key in Human.SLOTS:
+		return Human.SLOT_NAMES[key]
+	return Human.COLOR_KEYS[key][0]
+
+
+## Where the option worn now sits among those offered: [index, count].
+func pick_position(key: String) -> Array:
+	var options := options_for(key)
+	for i in options.size():
+		if options[i][0] == appearance[key]:
+			return [i, options.size()]
+	return [0, options.size()]
+
+
+## The label of the option worn now.
+func pick_label(key: String) -> String:
+	var options := options_for(key)
+	return String(options[pick_position(key)[0]][1]) if not options.is_empty() else ""
+
+
+## Moves one choice `steps` along what is offered, wrapping round, as the
+## mirror's arrows and scroll wheel do.
+func step(key: String, steps: int) -> void:
+	var options := options_for(key)
+	if options.is_empty() or steps == 0:
+		return
+	var at: int = pick_position(key)[0]
+	choose(key, options[posmod(at + steps, options.size())][0])
+
+
+## Where the part worn in a slot comes from: starter clothes, or the stash
+## item that unlocked it. "" for choices that are not clothing.
+func pick_source(key: String) -> String:
+	if key not in Human.SLOTS:
+		return ""
+	var build: String = appearance["build"]
+	var outfit: String = appearance[key]
+	if outfit in Human.STARTER[build]:
+		return "Starter clothes"
+	var wanted := Human.outfit_id(build, outfit)
+	for id: Variant in ItemDB.all_ids():
+		if ItemDB.has_tag(id, "cosmetic") and wanted in ItemDB.item_stats(id).get("outfits", []):
+			return "From your stash: %s" % ItemDB.item_name(id)
+	return "Owned"
+
+
 ## Changes one choice, if it is one the pickers offer. Switching build keeps the colours and resets the parts,
 ## since each build has its own outfits.
 func choose(key: String, value: Variant) -> void:
