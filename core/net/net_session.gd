@@ -67,7 +67,7 @@ signal world_invite_accepted(invite: Dictionary)
 signal base_visit_requested(owner_name: String, stash: Array, loadout: Dictionary)
 
 const DEFAULT_PORT := 24565
-const PROTOCOL := 5
+const PROTOCOL := 6
 const StashService := preload("res://core/account/stash_service.gd")
 const SocialService := preload("res://core/social/social_service.gd")
 ## Server physics ticks between state updates (2 = 30 a second).
