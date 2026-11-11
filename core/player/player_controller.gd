@@ -165,6 +165,7 @@ func _physics_process(delta: float) -> void:
 	cmd.reload_pressed = Input.is_action_just_pressed("reload")
 	cmd.interact_pressed = Input.is_action_just_pressed("interact")
 	cmd.heal_pressed = Input.is_action_just_pressed("heal")
+	cmd.ability_pressed = captured and Input.is_action_just_pressed("ability")
 	if Input.is_action_just_pressed("weapon_1"):
 		cmd.switch_weapon = 0
 	elif Input.is_action_just_pressed("weapon_2"):

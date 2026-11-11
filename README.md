@@ -16,7 +16,8 @@ core loop and lays the foundation for online play and more worlds.
 | Action | Key |
 | --- | --- |
 | Move / sprint | WASD / Shift |
-| Jump, hold to fly with the jetpack | Space |
+| Jump. In the air: hold to fly (jetpack), press to boost (thruster boots, glide wings), hold while falling to glide (glide wings) | Space |
+| Use your ability | G |
 | Dash | Q |
 | Fire, or blade combo | Left mouse |
 | Aim down sights, or block with the blade (tap just before a hit to parry) | Right mouse |
@@ -54,6 +55,10 @@ caches hold the best loot, and only the jetpack gets you there.
 - Loadouts picked in the hub from your stash: primary weapon, melee weapon,
   flight rig and armor frame. Equipped gear is at risk. Extract and it comes
   home, die and it drops. Empty slots use a free scrap kit.
+- Three kinds of flight rig: jetpacks for sustained lift, thruster boots for
+  quick kicks upward, and glide wings that launch once and then soar.
+- An ability slot. Phase Step blinks you forward, Kinetic Barrier cuts damage
+  for a few seconds, Shock Pulse staggers everyone near you. Each has a cooldown.
 - More gear to find: carbine, SMG, marksman rifle, shotgun, arc blade, breaker
   hammer, three armor frames, and a better jetpack.
 - Two exits, a raid timer, and full loot on death.

@@ -24,6 +24,7 @@ func _run() -> void:
 	await _test_combat_and_loot()
 	await _test_melee_defense()
 	await _test_directional_melee()
+	await _test_flight_rigs_and_abilities()
 	await _test_extraction()
 	await _test_loadouts()
 	await _test_death()
@@ -773,3 +774,179 @@ func _test_directional_melee() -> void:
 	check(guarded, "a melee bot guards between swings")
 	check(sides.size() >= 2, "a melee bot varies the side it attacks from")
 	await _end_raid(brute_raid)
+
+
+## A raid whose player carries exactly `kit`, standing in the open.
+func _kit_raid(p_seed: int, kit: Array[String]) -> Raid:
+	var raid := Raid.new()
+	add_child(raid)
+	raid.start(Worlds.get_world("ashfront"), p_seed, kit)
+	for bot in raid.bots:
+		bot.get_node("Brain").set_physics_process(false)
+	await frames(40)
+	return raid
+
+
+func _test_flight_rigs_and_abilities() -> void:
+	print("Flight rigs and abilities")
+	var press_jump := func(a: Actor) -> void:
+		a.cmd.jump_pressed = true
+		await frames(1)
+		a.cmd.jump_pressed = false
+
+	# Thruster boots: no sustained lift, a kick per press, limited by heat.
+	var raid := await _kit_raid(60, ["rifle_scrap", "blade_scrap", "boots_thruster", "plate_light"])
+	var p := raid.player
+	check(p.flight.display_name == "Thruster Boots" and p.flight.burst_velocity > 0.0
+			and is_zero_approx(p.flight.thrust_accel), "boots stats come from the item")
+	await press_jump.call(p)
+	await frames(20)
+	p.cmd.jump = true
+	await frames(10)
+	check(not p.flight.is_thrusting and p.velocity.y < 0.0, "boots give no lift from holding jump")
+	p.cmd.jump = false
+	var height := p.global_position.y
+	await press_jump.call(p)
+	check(p.velocity.y > 8.0 and p.flight.heat > 0.0, "pressing jump in the air kicks you upward and costs heat")
+	await frames(15)
+	check(p.global_position.y > height + 1.0, "the kick gains height")
+	for i in 6:
+		await press_jump.call(p)
+		await frames(4)
+	check(p.flight.overheated, "boosting over and over overheats the boots")
+	var vy := p.velocity.y
+	await press_jump.call(p)
+	check(p.velocity.y <= vy, "overheated boots do nothing")
+	await _end_raid(raid)
+
+	# Glide wings: launch, then fall slowly and travel far.
+	raid = await _kit_raid(61, ["rifle_scrap", "blade_scrap", "wings_glide", "plate_light"])
+	p = raid.player
+	p.global_position += Vector3(0, 30, 0)
+	p.velocity = Vector3.ZERO
+	await frames(30)
+	check(p.velocity.y < -5.0 and not p.flight.is_gliding, "wings do nothing until you hold jump")
+	p.cmd.jump = true
+	var start := p.global_position
+	await frames(60)
+	check(p.flight.is_gliding and p.velocity.y >= -p.flight.glide_fall_speed - 0.01,
+			"holding jump while falling glides at a gentle sink rate")
+	var travelled := Vector2(p.global_position.x - start.x, p.global_position.z - start.z).length()
+	check(travelled > 8.0, "gliding carries you forward (%.1f m in a second)" % travelled)
+	p.cmd.jump = false
+	await frames(5)
+	check(not p.flight.is_gliding, "letting go stops the glide")
+	await _end_raid(raid)
+
+	# The jetpack still works and does not burst or glide.
+	raid = await _kit_raid(62, ["rifle_scrap", "blade_scrap", "jetpack_mk1", "plate_light"])
+	p = raid.player
+	await press_jump.call(p)
+	await frames(10)
+	p.cmd.jump = true
+	await press_jump.call(p)
+	await frames(30)
+	check(p.flight.is_thrusting and not p.flight.is_gliding and not p.is_on_floor(),
+			"the jetpack still flies by holding jump")
+	p.cmd.jump = false
+	check(not p.ability.enabled and p.ability.status_text() == "", "no ability without an ability item")
+	p.cmd.ability_pressed = true
+	await frames(2)
+	p.cmd.ability_pressed = false
+	check(p.ability.cooldown_left <= 0.0, "pressing the ability key with none equipped does nothing")
+	await _end_raid(raid)
+
+	# Phase Step.
+	raid = await _kit_raid(63, ["rifle_scrap", "blade_scrap", "jetpack_mk1", "plate_light", "chip_blink"])
+	p = raid.player
+	check(p.ability.enabled and p.ability.effect == "blink" and "chip_blink" in p.gear_items,
+			"an ability item equips into the ability slot")
+	var arena := raid.exits[0].global_position
+	p.global_position = Vector3(arena.x, 0.1, arena.z + 3.0)
+	p.cmd.yaw = 0.0
+	p.cmd.aim_dir = Vector3.FORWARD
+	await frames(5)
+	var before_pos := p.global_position
+	p.cmd.ability_pressed = true
+	await frames(1)
+	p.cmd.ability_pressed = false
+	var moved := before_pos.distance_to(p.global_position)
+	check(moved > 2.0 and moved <= p.ability.blink_range + 0.5, "Phase Step moves you forward (%.1f m)" % moved)
+	check(p.ability.cooldown_left > 0.0 and not p.ability.is_ready(), "an ability goes on cooldown")
+	before_pos = p.global_position
+	p.cmd.ability_pressed = true
+	await frames(2)
+	p.cmd.ability_pressed = false
+	check(before_pos.distance_to(p.global_position) < 0.5, "an ability cannot be used while on cooldown")
+	p.ability.cooldown_left = 0.0
+	p.cmd.aim_dir = Vector3.DOWN
+	await frames(2)
+	p.cmd.ability_pressed = true
+	await frames(1)
+	p.cmd.ability_pressed = false
+	await frames(10)
+	check(p.global_position.y > -0.5, "Phase Step stops short of the ground and walls")
+	await _end_raid(raid)
+
+	# Kinetic Barrier.
+	raid = await _kit_raid(64, ["rifle_scrap", "blade_scrap", "jetpack_mk1", "plate_light", "chip_barrier"])
+	p = raid.player
+	var foe := raid.bots[0]
+	var total := func() -> float: return p.health.health + p.health.armor
+	var before: float = total.call()
+	Combat.deal(p, DamageInfo.make(20.0, foe, "bullet"))
+	check(is_equal_approx(before - total.call(), 20.0), "without the barrier a hit lands in full")
+	p.cmd.ability_pressed = true
+	await frames(1)
+	p.cmd.ability_pressed = false
+	before = total.call()
+	Combat.deal(p, DamageInfo.make(20.0, foe, "bullet"))
+	check(p.ability.is_active() and is_equal_approx(before - total.call(), 8.0), "the barrier cuts damage by 60%")
+	await frames(int(p.ability.duration * 60.0) + 10)
+	before = total.call()
+	Combat.deal(p, DamageInfo.make(20.0, foe, "bullet"))
+	check(not p.ability.is_active() and is_equal_approx(before - total.call(), 20.0), "the barrier runs out")
+	await _end_raid(raid)
+
+	# Shock Pulse.
+	raid = await _kit_raid(65, ["rifle_scrap", "blade_scrap", "jetpack_mk1", "plate_light", "chip_pulse"])
+	p = raid.player
+	var near := raid.bots[0]
+	var far := raid.bots[1]
+	near.global_position = p.global_position + Vector3(3, 0, 0)
+	far.global_position = p.global_position + Vector3(30, 0, 0)
+	await frames(3)
+	var near_before := near.health.health + near.health.armor
+	var far_before := far.health.health + far.health.armor
+	p.cmd.ability_pressed = true
+	await frames(1)
+	p.cmd.ability_pressed = false
+	check(near.health.health + near.health.armor < near_before and near.stagger_left > 0.0,
+			"Shock Pulse hurts and staggers someone close")
+	check(is_equal_approx(far.health.health + far.health.armor, far_before) and far.stagger_left <= 0.0,
+			"Shock Pulse does not reach someone far away")
+	await _end_raid(raid)
+
+	# Stash, hub and crates.
+	Profile.reset()
+	Profile.welcome_granted = true
+	Profile.add_to_stash(["chip_pulse", "wings_glide"])
+	check(Profile.equip("ability", "chip_pulse") and Profile.equip("rig", "wings_glide")
+			and not Profile.equip("ability", "wings_glide"), "abilities and rigs equip into their own slots")
+	var kit := Profile.checkout_loadout(Worlds.get_world("ashfront"))
+	check("chip_pulse" in kit and "wings_glide" in kit and "jetpack_mk1" not in kit,
+			"the kit carries the chosen ability and rig")
+	Profile.reset()
+	Profile.welcome_granted = true
+	kit = Profile.checkout_loadout(Worlds.get_world("ashfront"))
+	var has_ability := false
+	for id in kit:
+		if ItemDB.has_tag(id, "ability"):
+			has_ability = true
+	check(not has_ability, "an empty ability slot deploys with no ability")
+	Profile.grant_gear_crates()
+	var crate_size := Profile.stash.size()
+	Profile.grant_gear_crates()
+	check(crate_size > 0 and Profile.stash.size() == crate_size and "chip_blink" in Profile.stash,
+			"the flight and abilities crate is granted once")
+	Profile.reset()

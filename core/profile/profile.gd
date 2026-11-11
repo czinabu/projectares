@@ -8,6 +8,11 @@ extends Node
 const SAVE_PATH := "user://profile.json"
 ## Given once to every profile so there is gear to try loadouts with.
 const WELCOME_CRATE: Array[String] = ["rifle_carbine", "frame_trooper", "medkit", "medkit"]
+## Later one-time crates, by name, so existing profiles get new kinds of gear
+## to try as features land.
+const GEAR_CRATES := {
+	"flight_and_abilities": ["boots_thruster", "wings_glide", "chip_barrier", "chip_blink"],
+}
 
 ## Tests turn this off so they never touch a real save.
 var persist := true
@@ -15,6 +20,7 @@ var stash: Array[String] = []
 ## Slot name (see Loadout.SLOTS) -> item id. A missing slot uses the free scrap kit.
 var loadout := {}
 var welcome_granted := false
+var crates_granted: Array[String] = []
 ## How the melee side is picked: "mouse" (flick) or "move" (movement keys).
 var melee_control := "mouse"
 var raids_played := 0
@@ -25,9 +31,11 @@ var kills := 0
 func _ready() -> void:
 	load_profile()
 	grant_welcome_crate()
+	grant_gear_crates()
 
 
 func reset() -> void:
+	crates_granted.clear()
 	stash.clear()
 	loadout.clear()
 	welcome_granted = false
@@ -41,6 +49,14 @@ func grant_welcome_crate() -> void:
 		return
 	welcome_granted = true
 	add_to_stash(WELCOME_CRATE)
+
+
+## Grants every gear crate this profile has not had yet.
+func grant_gear_crates() -> void:
+	for crate: String in GEAR_CRATES:
+		if crate not in crates_granted:
+			crates_granted.append(crate)
+			add_to_stash(GEAR_CRATES[crate])
 
 
 ## Adds items to the stash. Starter kit items are free and never stashed.
@@ -134,6 +150,7 @@ func save() -> void:
 		"stash": stash,
 		"loadout": loadout,
 		"welcome_granted": welcome_granted,
+		"crates_granted": crates_granted,
 		"melee_control": melee_control,
 		"raids_played": raids_played,
 		"raids_extracted": raids_extracted,
@@ -159,6 +176,10 @@ func load_profile() -> void:
 			if typeof(slot) == TYPE_STRING and typeof(saved_loadout[slot]) == TYPE_STRING:
 				loadout[slot] = saved_loadout[slot]
 	welcome_granted = bool(data.get("welcome_granted", false))
+	crates_granted.clear()
+	for crate: Variant in data.get("crates_granted", []):
+		if typeof(crate) == TYPE_STRING:
+			crates_granted.append(crate)
 	melee_control = "move" if data.get("melee_control", "mouse") == "move" else "mouse"
 	raids_played = int(data.get("raids_played", 0))
 	raids_extracted = int(data.get("raids_extracted", 0))

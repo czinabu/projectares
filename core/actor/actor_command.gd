@@ -36,6 +36,8 @@ var stance := 0
 
 var interact_pressed := false
 var heal_pressed := false
+## Pressed this tick: use the equipped ability.
+var ability_pressed := false
 ## Index of the weapon to switch to, or -1 to keep the current one.
 var switch_weapon := -1
 
@@ -50,4 +52,5 @@ func clear_one_shots() -> void:
 	reload_pressed = false
 	interact_pressed = false
 	heal_pressed = false
+	ability_pressed = false
 	switch_weapon = -1
