@@ -2,14 +2,20 @@ extends Node
 ## Entry point. Switches between the hub and a raid, solo or online.
 ##
 ## Run with `-- --server [--world <id>] [--port <n>] [--bots <n>] [--squad-spawn]
-## [--accounts <folder>] [--no-rewind]` for a dedicated server: no hub, no window needed,
-## just a raid that players join. Player stashes are saved in the accounts
-## folder (`user://accounts` unless given).
+## [--accounts <folder>] [--no-rewind] [--arena-port <n>] [--no-arena]` for a
+## dedicated server: no hub, no window needed, just a raid that players join.
+## Player stashes are saved in the accounts folder (`user://accounts` unless
+## given). The same process also runs the arena on `--arena-port` (the raid
+## port plus `ARENA_PORT_OFFSET` unless given), sharing the same accounts.
 
 const JOIN_TIMEOUT := 12.0
+const StashRules := preload("res://core/account/stash_rules.gd")
 const NameplatesScript := preload("res://core/ui/nameplates.gd")
 const ScoreboardScript := preload("res://core/ui/scoreboard.gd")
 const BaseHudScript := preload("res://core/ui/base_hud.gd")
+const ArenaHudScript := preload("res://core/arena/arena_hud.gd")
+## The arena listens this many ports above the raid server.
+const ARENA_PORT_OFFSET := 10
 
 var hub: Hub
 var raid: Raid
@@ -25,6 +31,10 @@ var _server_pid := -1
 var _join_attempts := 0
 var _join_address := ""
 var _join_port := NetSession.DEFAULT_PORT
+## Online: the raid lobby's port, while visiting that server's arena.
+var _lobby_port := -1
+## Server: the arena session beside the raid.
+var arena_net: NetSession
 
 
 func _ready() -> void:
@@ -49,6 +59,7 @@ func _ready() -> void:
 			net.deploy())
 	hub.online_leave_requested.connect(leave_server)
 	hub.base_requested.connect(enter_base)
+	hub.arena_requested.connect(open_arena)
 
 
 func _notification(what: int) -> void:
@@ -122,6 +133,48 @@ func _refresh_base() -> void:
 		base.show_gear(hub.stash_items(), hub.current_loadout())
 
 
+# ----------------------------------------------------------------- arena ----
+
+## Opens the arena: the server's, while in its lobby, or a solo one against
+## bot gladiators. The plaza's arena gate calls this too.
+func open_arena() -> void:
+	if raid != null or base != null:
+		return
+	if net != null:
+		if not hub.in_lobby():
+			return
+		# Leave the lobby for the arena session on the same server.
+		_lobby_port = _join_port
+		net.queue_free()
+		net = null
+		hub.set_online_status("Entering the arena...")
+		_begin_join(_join_address, _lobby_port + ARENA_PORT_OFFSET, 3)
+		return
+	hub.visible = false
+	var arena := Arena.new()
+	arena.name = "Raid"
+	raid = arena
+	add_child(arena)
+	# Your own loadout, but nothing leaves the stash: no gear is at risk here.
+	var kit := StashRules.checkout(Profile.stash.duplicate(), Profile.loadout.duplicate(), Arena.ArenaVenue.new())
+	arena.start_solo(kit, Profile.mastery.active_picks())
+	_attach_player_view()
+
+
+func leave_arena() -> void:
+	if not raid is Arena:
+		return
+	var back_online := net != null and _lobby_port > 0
+	_leave_raid()
+	hub.visible = true
+	hub.refresh_gear()
+	if back_online:
+		_join_port = _lobby_port
+		_lobby_port = -1
+		hub.set_online_status("Back to the lobby...")
+		_begin_join(_join_address, _join_port, 3)
+
+
 # ------------------------------------------------------------------ solo ----
 
 func start_raid(world_id: String) -> void:
@@ -152,6 +205,12 @@ func _attach_player_view() -> void:
 	scoreboard.name = "Scoreboard"
 	scoreboard.setup(raid)
 	raid.add_child(scoreboard)
+	if raid is Arena:
+		var arena_hud := ArenaHudScript.new()
+		arena_hud.name = "ArenaHud"
+		arena_hud.setup(raid)
+		arena_hud.leave_requested.connect(leave_arena)
+		raid.add_child(arena_hud)
 
 
 func _on_raid_ended(result: Dictionary) -> void:
@@ -194,6 +253,22 @@ func _run_dedicated_server(args: PackedStringArray) -> void:
 		get_tree().quit(1)
 		return
 	print("Server: running %s on port %d" % [world_id, port])
+	if "--no-arena" in args:
+		return
+	# The arena shares the accounts, so wagers and the stash are one wallet.
+	var arena_port := int(_arg(args, "--arena-port", str(port + ARENA_PORT_OFFSET)))
+	arena_net = NetSession.new()
+	arena_net.name = "ArenaNet"
+	arena_net.stash = net.stash
+	arena_net.lag_compensation = net.lag_compensation
+	add_child(arena_net)
+	err = arena_net.host(Arena.ArenaVenue.ID, arena_port)
+	if err != OK:
+		push_warning("Server: no arena, could not listen on port %d (%s)" % [arena_port, error_string(err)])
+		arena_net.queue_free()
+		arena_net = null
+		return
+	print("Server: arena on port %d" % arena_port)
 
 
 ## Starts a server on this machine as a second process, then joins it.
@@ -270,6 +345,11 @@ func _try_join() -> void:
 ## Signed in: the hub becomes that server's lobby.
 func _on_online_signed_in(account: Dictionary) -> void:
 	_join_attempts = 0
+	if _lobby_port > 0:
+		# Signed in to the arena: walk straight into the stands.
+		hub.update_account(account)
+		net.deploy()
+		return
 	hub.set_online_status("")
 	hub.enter_lobby(account, Worlds.get_world(net.world_id))
 
@@ -302,6 +382,10 @@ func _on_online_failed(reason: String) -> void:
 		return
 	_stop_local_server()
 	hub.leave_lobby()
+	if _lobby_port > 0:
+		reason = "Could not enter the arena: %s" % reason
+		_join_port = _lobby_port
+		_lobby_port = -1
 	hub.set_online_status(reason)
 	# A base open on the server's stash falls back to the local one.
 	_refresh_base()
@@ -312,11 +396,16 @@ func _on_online_failed(reason: String) -> void:
 ## The connection dropped in the middle of a raid. The server treats that as
 ## a death, so the gear is gone.
 func _on_online_disconnected() -> void:
+	var in_arena := raid is Arena
 	_leave_raid()
 	_stop_local_server()
 	hub.leave_lobby()
 	hub.refresh({})
-	hub.set_online_status("Lost the connection to the server during the raid. What you carried is lost.")
+	if in_arena:
+		_lobby_port = -1
+		hub.set_online_status("Lost the connection to the arena. Your gear is safe.")
+	else:
+		hub.set_online_status("Lost the connection to the server during the raid. What you carried is lost.")
 	hub.visible = true
 
 
@@ -339,6 +428,7 @@ func leave_server() -> void:
 	if raid != null:
 		return
 	_join_attempts = 0
+	_lobby_port = -1
 	if net:
 		net.queue_free()
 		net = null

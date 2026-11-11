@@ -42,7 +42,8 @@ RUN useradd --create-home --shell /usr/sbin/nologin ares \
 COPY --from=build /src/build/server/ares_server.x86_64 /app/ares_server
 USER ares
 WORKDIR /home/ares
-EXPOSE 24565/udp
+# The raid, and the arena ten ports up.
+EXPOSE 24565/udp 24575/udp
 # Player stashes are saved here. Keep it on a volume so they survive updates.
 VOLUME /data
 # Everything after "--" goes to the game. Override CMD to change the world,

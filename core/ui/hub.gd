@@ -16,6 +16,8 @@ signal online_deploy_requested
 signal online_leave_requested
 ## Walk around your home base, where the stash is on show.
 signal base_requested
+## Go to the arena: the server's while in a lobby, else a solo one.
+signal arena_requested
 
 const MasteryPanel := preload("res://core/progression/mastery_panel.gd")
 const MasteryBook := preload("res://core/progression/mastery_book.gd")
@@ -112,6 +114,13 @@ func _ready() -> void:
 	base_button.custom_minimum_size = Vector2(0, 40)
 	base_button.pressed.connect(func() -> void: base_requested.emit())
 	box.add_child(base_button)
+
+	var arena_button := Button.new()
+	arena_button.text = "Enter the arena"
+	arena_button.tooltip_text = "Duels, tournaments and wagers in the Pit. Nobody loses gear in the arena."
+	arena_button.custom_minimum_size = Vector2(0, 40)
+	arena_button.pressed.connect(func() -> void: arena_requested.emit())
+	box.add_child(arena_button)
 
 	_solo_box = VBoxContainer.new()
 	_solo_box.add_theme_constant_override("separation", 10)

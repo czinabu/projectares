@@ -10,6 +10,12 @@ func _ready() -> void:
 		out_dir = args[0]
 	Profile.persist = false
 
+	# `-- <output_dir> --arena-only` shoots just the arena.
+	if "--arena-only" in args:
+		await _arena_shots(out_dir)
+		get_tree().quit()
+		return
+
 	var hub := Hub.new()
 	add_child(hub)
 	await _settle(10)
@@ -193,6 +199,36 @@ func _base_shots(out_dir: String) -> void:
 		await _shot(out_dir.path_join(file))
 	base.queue_free()
 	await _settle(2)
+
+
+## The arena from the stands, during an exhibition bout, with its overlay.
+func _arena_shots(out_dir: String) -> void:
+	var arena := Arena.new()
+	add_child(arena)
+	arena.call_time = 1.0
+	arena.countdown_time = 0.5
+	arena.exhibition_delay = 0.2
+	arena.start_solo(["rifle_carbine", "blade_scrap", "plate_light"])
+	var controller := PlayerController.new()
+	controller.setup(arena.player)
+	arena.add_child(controller)
+	var hud := Hud.new()
+	hud.setup(arena, controller)
+	arena.add_child(hud)
+	var overlay: CanvasLayer = preload("res://core/arena/arena_hud.gd").new()
+	overlay.setup(arena)
+	arena.add_child(overlay)
+	# Look down into the pit from where you stand.
+	var to_center := -arena.player.global_position
+	controller.yaw = atan2(-to_center.x, -to_center.z)
+	controller.pitch = -0.35
+	await _settle(60)
+	await _shot(out_dir.path_join("arena_calling.png"))
+	await _settle(200)
+	await _shot(out_dir.path_join("arena_fight.png"))
+	controller.view_mode = PlayerController.ViewMode.THIRD
+	await _settle(30)
+	await _shot(out_dir.path_join("arena_third_person.png"))
 
 
 func _settle(count: int) -> void:

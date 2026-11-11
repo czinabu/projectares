@@ -31,6 +31,9 @@ const SAVE_VERSION := 1
 const MIN_NAME := 3
 const MAX_NAME := 20
 const MIN_SECRET := 16
+## Credits a new account starts with, so arena wagers work from day one.
+## The shared currency system can take this over.
+const STARTING_CREDITS := 200
 
 ## Where account files live. One JSON file per account.
 var save_dir := "user://accounts"
@@ -58,6 +61,11 @@ class Account:
 	var raids_played := 0
 	var raids_extracted := 0
 	var kills := 0
+	## Money for arena wagers and duel stakes. Only ever changed through
+	## `StashService.change_credits`, so it can never go below zero.
+	var credits := STARTING_CREDITS
+	var arena_wins := 0
+	var arena_losses := 0
 
 	func is_deployed() -> bool:
 		return deployed_world != ""
@@ -78,6 +86,9 @@ class Account:
 			"raids_played": raids_played,
 			"raids_extracted": raids_extracted,
 			"kills": kills,
+			"credits": credits,
+			"arena_wins": arena_wins,
+			"arena_losses": arena_losses,
 		}
 
 	func load_dict(data: Dictionary) -> void:
@@ -110,6 +121,9 @@ class Account:
 		raids_played = maxi(0, int(data.get("raids_played", 0)))
 		raids_extracted = maxi(0, int(data.get("raids_extracted", 0)))
 		kills = maxi(0, int(data.get("kills", 0)))
+		credits = maxi(0, int(data.get("credits", STARTING_CREDITS)))
+		arena_wins = maxi(0, int(data.get("arena_wins", 0)))
+		arena_losses = maxi(0, int(data.get("arena_losses", 0)))
 
 
 # --- Identity ----------------------------------------------------------------
@@ -217,6 +231,9 @@ func snapshot(account_id: String) -> Dictionary:
 		"raids_played": account.raids_played,
 		"raids_extracted": account.raids_extracted,
 		"kills": account.kills,
+		"credits": account.credits,
+		"arena_wins": account.arena_wins,
+		"arena_losses": account.arena_losses,
 	}
 
 
@@ -260,10 +277,18 @@ func pick_mastery(account_id: String, track: String, variant_id: String) -> Dict
 ## Takes the account's loadout out of its stash for a raid in `world`.
 ## Returns {"ok", "kit", "picks"}: pass both straight to `Raid.add_player`.
 ## An account can only be deployed once at a time.
+##
+## A world with `gear_at_risk` off (the arena) gets the same kit, but nothing
+## leaves the stash and the account is not marked as deployed: there is
+## nothing to settle afterwards.
 func deploy(account_id: String, world: WorldDef) -> Dictionary:
 	var account := load_account(account_id)
 	if account == null:
 		return _fail("No such account.")
+	if not world.gear_at_risk:
+		var copy := account.stash.duplicate()
+		var kit := StashRules.checkout(copy, account.loadout.duplicate(), world)
+		return {"ok": true, "kit": kit, "picks": account.mastery.active_picks()}
 	if account.is_deployed():
 		return _fail("You are already in a raid.")
 	var taken: Array[String] = []
@@ -301,6 +326,38 @@ func settle(account_id: String, result: Dictionary) -> Dictionary:
 	StashRules.validate_loadout(account.stash, account.loadout)
 	_save(account)
 	return {"ok": true}
+
+
+# --- Credits -----------------------------------------------------------------
+
+## The account's credits, or 0 if there is no such account.
+func credits_of(account_id: String) -> int:
+	var account := load_account(account_id)
+	return account.credits if account != null else 0
+
+
+## Adds `delta` credits (negative to take). Refuses, changing nothing, if the
+## account would go below zero. Only server code calls this, with amounts it
+## worked out itself (arena payouts), never an amount a client sent as money.
+func change_credits(account_id: String, delta: int) -> bool:
+	var account := load_account(account_id)
+	if account == null or account.credits + delta < 0:
+		return false
+	account.credits += delta
+	_save(account)
+	return true
+
+
+## Records an arena fight on the account.
+func record_arena(account_id: String, won: bool) -> void:
+	var account := load_account(account_id)
+	if account == null:
+		return
+	if won:
+		account.arena_wins += 1
+	else:
+		account.arena_losses += 1
+	_save(account)
 
 
 ## Calls off a deploy that never became a real run: the gear goes back.

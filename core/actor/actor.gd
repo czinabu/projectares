@@ -356,6 +356,8 @@ func get_drop_items() -> Array[String]:
 
 
 func kill(kind: String, source: Node = null) -> void:
+	# Nothing keeps an actor alive through this, not even an arena's yield rule.
+	health.min_health = 0.0
 	var info := DamageInfo.new()
 	info.amount = 999999.0
 	info.kind = kind

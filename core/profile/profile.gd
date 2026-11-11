@@ -38,6 +38,11 @@ var online_secret := ""
 var raids_played := 0
 var raids_extracted := 0
 var kills := 0
+## Credits for arena wagers in solo play. Online, the server keeps its own.
+var credits := STARTING_CREDITS
+var arena_wins := 0
+var arena_losses := 0
+const STARTING_CREDITS := 200
 
 
 func _ready() -> void:
@@ -55,6 +60,26 @@ func reset() -> void:
 	raids_played = 0
 	raids_extracted = 0
 	kills = 0
+	credits = STARTING_CREDITS
+	arena_wins = 0
+	arena_losses = 0
+
+
+## Adds `delta` credits (negative to take). Refuses if it would go below zero.
+func change_credits(delta: int) -> bool:
+	if credits + delta < 0:
+		return false
+	credits += delta
+	save()
+	return true
+
+
+func record_arena(won: bool) -> void:
+	if won:
+		arena_wins += 1
+	else:
+		arena_losses += 1
+	save()
 
 
 func grant_welcome_crate() -> void:
@@ -154,6 +179,9 @@ func save() -> void:
 		"raids_played": raids_played,
 		"raids_extracted": raids_extracted,
 		"kills": kills,
+		"credits": credits,
+		"arena_wins": arena_wins,
+		"arena_losses": arena_losses,
 	}, "\t"))
 
 
@@ -187,4 +215,7 @@ func load_profile() -> void:
 	raids_played = int(data.get("raids_played", 0))
 	raids_extracted = int(data.get("raids_extracted", 0))
 	kills = int(data.get("kills", 0))
+	credits = maxi(0, int(data.get("credits", STARTING_CREDITS)))
+	arena_wins = maxi(0, int(data.get("arena_wins", 0)))
+	arena_losses = maxi(0, int(data.get("arena_losses", 0)))
 	validate_loadout()

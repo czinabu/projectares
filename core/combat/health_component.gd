@@ -13,6 +13,9 @@ var armor := 0.0
 ## Share of each hit that armor absorbs while it lasts.
 var armor_absorb := 0.6
 var is_dead := false
+## Health never drops below this. Zero means hits can kill. The arena sets it
+## while a fight is on, so a beaten fighter yields instead of dying.
+var min_health := 0.0
 
 
 ## Applies a hit and returns the health actually lost.
@@ -21,7 +24,7 @@ func apply_damage(info: DamageInfo) -> float:
 		return 0.0
 	var absorbed := minf(armor, info.amount * armor_absorb)
 	armor -= absorbed
-	var lost := minf(health, info.amount - absorbed)
+	var lost := minf(health - minf(min_health, health), info.amount - absorbed)
 	health -= lost
 	damaged.emit(info)
 	if health <= 0.0:

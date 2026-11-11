@@ -50,6 +50,7 @@ Get-Content $env:USERPROFILE\.ssh\id_ed25519.pub
    it two inbound rules:
    - **TCP, port 22** (so you can log in)
    - **UDP, port 24565** (so players can join)
+   - **UDP, port 24575** (the arena, which runs beside the raid)
 3. Open **Servers** and click **Add Server**:
    - **Location**: the one closest to you and your friends.
    - **Image**: Ubuntu 24.04.
@@ -142,6 +143,8 @@ To change the world, the bot count, or turn on squad spawns, edit the
 - `--world ashfront` or `--world frostline`
 - `--bots 4` to override the world's bot count
 - `--squad-spawn` to put all players at one spawn point
+- `--arena-port 24575` to move the arena (it defaults to the raid port plus
+  10), or `--no-arena` to run without one
 - `--port 24565` to change the port (then change the `ports:` line and the
   firewall rule to match, and join with `address:port`)
 

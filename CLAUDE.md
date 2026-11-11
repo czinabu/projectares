@@ -97,6 +97,18 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   or input code, and its displays are greybox shapes that `Look` dresses
   (any node with the meta `display_item`).
 
+- The arena (`core/arena/`) is a venue, not a raid world: `ArenaVenue` is a
+  `WorldDef` that is never in the registry, has `gear_at_risk` off, and
+  returns `Arena` (a `Raid` subclass) from `new_raid()`. Nobody loses gear
+  there: `StashService.deploy` hands out the kit without taking it, nothing is
+  settled, nothing drops, and fighters yield at `HealthComponent.min_health`
+  instead of dying. Only the two fighters of a running bout may hurt each
+  other (`Arena.may_hurt`). Results, wagers, stakes and tournament pots are
+  decided only by the authority's `Arena` and paid through `Arena.bank`;
+  a client only sends `Arena.ask` requests and shows the board the server
+  sends. Credits change only through `StashService.change_credits` online and
+  `Profile.change_credits` solo.
+
 ## Conventions
 
 - A helper used by a single script is an inner class of that script, not a new

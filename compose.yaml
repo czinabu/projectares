@@ -13,6 +13,8 @@ services:
     tty: true
     ports:
       - "24565:24565/udp"
+      # The arena runs beside the raid, ten ports up.
+      - "24575:24575/udp"
     # Player stashes live in this volume, so they survive updates and restarts.
     volumes:
       - ares-data:/data
