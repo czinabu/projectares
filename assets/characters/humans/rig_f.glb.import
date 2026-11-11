@@ -3,13 +3,13 @@
 importer="scene"
 importer_version=1
 type="PackedScene"
-uid="uid://dtv3ipiy5246d"
-path="res://.godot/imported/Human_Punk.glb-2d11603920b8cdacfeaff4435caa3931.scn"
+uid="uid://cs7grbog41hed"
+path="res://.godot/imported/rig_f.glb-7cfdbda80ac7b4615403f4cb95f9530a.scn"
 
 [deps]
 
-source_file="res://assets/characters/Human_Punk.glb"
-dest_files=["res://.godot/imported/Human_Punk.glb-2d11603920b8cdacfeaff4435caa3931.scn"]
+source_file="res://assets/characters/humans/rig_f.glb"
+dest_files=["res://.godot/imported/rig_f.glb-7cfdbda80ac7b4615403f4cb95f9530a.scn"]
 
 [params]
 

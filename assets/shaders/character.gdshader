@@ -10,10 +10,17 @@ uniform float brightness = 0.8;
 uniform float rough = 0.6;
 uniform float metal = 0.5;
 uniform vec3 emission_color : source_color = vec3(0.0);
+// A chosen colour for this surface (skin tone, hair, dyed cloth). With
+// `recolor_shading` the surface's own light and dark panels are kept.
+uniform vec3 recolor : source_color = vec3(1.0);
+uniform float recolor_amount = 0.0;
+uniform float recolor_shading = 0.0;
 uniform float flash = 0.0;
 
 void fragment() {
 	vec3 c = texture(base_tex, UV).rgb * base_color;
+	float own = dot(c, vec3(0.299, 0.587, 0.114));
+	c = mix(c, recolor * mix(1.0, 0.45 + 1.1 * own, recolor_shading), recolor_amount);
 	float l = dot(c, vec3(0.299, 0.587, 0.114));
 	c = mix(vec3(l), c, saturation) * tint * brightness;
 	// Darker in the creases the flat pack colors cannot show.
