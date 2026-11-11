@@ -22,6 +22,7 @@ const KEY_ACTIONS := {
 	"scoreboard": KEY_TAB,
 	"sign_out": KEY_L,
 	"redeploy": KEY_ENTER,
+	"phone": KEY_P,
 }
 
 const MOUSE_ACTIONS := {

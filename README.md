@@ -36,6 +36,7 @@ skies, animated models and effects (see "How it looks" below).
 | Scoreboard: who is fighting, who is down, kills | Hold Tab |
 | Sign out and go home with what you carry (10 seconds, out of a fight) | L |
 | After dying: drop back in, or return to the hub | Enter, or L |
+| Open your phone: players, messages, invites, news, settings | P |
 | Free the mouse | Esc |
 
 The jetpack runs on heat. Overheat it and you fall until it cools. Rooftop
@@ -64,6 +65,26 @@ The hub has an **Online** section.
 - To try it alone, run two copies of the game. In the Godot editor use
   Debug, Customize Run Instances, and enable two instances. Host in one window
   and join `127.0.0.1` in the other.
+
+### Your phone
+
+Every player carries a phone, and it is the game's menu. Press **P** (or the
+phone button in the hub) to open it, in the hub or in a raid. While it is out
+your character stands still and the mouse is free.
+
+- **People**: everyone signed in to the same server, and where they are (lobby
+  or raid). Message them, invite them to the raid or to your home base, save
+  them as a contact, or block them. Saved contacts can be messaged while
+  offline; they see it at their next sign-in on that server.
+- **Chat**: your conversations. New messages also pop up at the top of the screen.
+- **Invites**: accept or decline. A raid invite deploys you into that server's
+  raid from the lobby. Invites run out after two minutes.
+- **News**: game news, plus anything the server adds. A server operator drops a
+  `news.json` (a list of `{"date", "title", "body"}`) in the accounts folder.
+- **Settings**: mouse sensitivity, invert mouse, melee side control, field of
+  view, volume, fullscreen and nameplates. Saved in `user://settings.json`.
+
+Players, chat and invites need a server; news and settings work solo too.
 
 A server can also run on its own, with no window:
 
