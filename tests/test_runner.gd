@@ -45,6 +45,7 @@ func _run() -> void:
 	await _test_frostline()
 	await _test_mastery()
 	await _test_online()
+	await _test_stash_service()
 
 
 func check(condition: bool, what: String) -> void:
@@ -1612,3 +1613,104 @@ func _test_online() -> void:
 	await _leave(alpha)
 	OS.kill(pid)
 	check(Combat.authoritative, "leaving an online raid hands damage back to this game")
+
+
+# --- Server-owned stash --------------------------------------------------------
+
+const StashService := preload("res://core/account/stash_service.gd")
+
+
+func _test_stash_service() -> void:
+	print("Server stash service")
+	var world := Worlds.get_world("ashfront")
+	var profile_stash := Profile.stash.duplicate()
+	var dir := "user://test_accounts_%d" % Time.get_ticks_usec()
+	var service := StashService.new()
+	service.save_dir = dir
+	var secret := StashService.new_secret()
+	check(secret.length() >= StashService.MIN_SECRET and secret != StashService.new_secret(), "secrets are long and random")
+
+	check(not service.sign_in("x", secret).ok, "a too-short name is refused")
+	check(not service.sign_in("Vex", "short").ok, "a weak secret is refused")
+	var first := service.sign_in("Vex Runner", secret)
+	check(first.ok and first.created and first.account_id == "vex_runner", "the first sign-in creates the account")
+	var again := service.sign_in("vex runner", secret)
+	check(again.ok and not again.created and again.account_id == "vex_runner", "the same name and secret sign back in")
+	check(not service.sign_in("Vex Runner", StashService.new_secret()).ok, "someone else's secret cannot take the name")
+	var id: String = first.account_id
+
+	var snap := service.snapshot(id)
+	check(snap.ok and "rifle_carbine" in snap.stash and "bike_scrapper" in snap.stash, "a new account gets the welcome and gear crates")
+	check(not snap.has("secret_hash") and not snap.has("salt"), "a snapshot carries no secrets")
+	var crate_size: int = snap.stash.size()
+	service.sign_in("Vex Runner", secret)
+	check(service.snapshot(id).stash.size() == crate_size, "crates are granted only once")
+
+	check(not service.equip(id, "primary", "dmr_longshot").ok, "the server refuses gear the account does not own")
+	check(not service.equip(id, "melee", "rifle_carbine").ok, "the server refuses gear in the wrong slot")
+	check(service.equip(id, "primary", "rifle_carbine").ok and service.equip(id, "frame", "frame_trooper").ok,
+			"owned gear equips")
+	check(not service.pick_mastery(id, "rifle", "cut_down").ok, "a locked mastery variant cannot be picked")
+
+	var deploy := service.deploy(id, world)
+	check(deploy.ok and "rifle_carbine" in deploy.kit and "frame_trooper" in deploy.kit, "deploying hands back the kit")
+	check(deploy.kit.count("medkit") == 2, "deploying takes the healing items")
+	var after_deploy: Array = service.snapshot(id).stash
+	check("rifle_carbine" not in after_deploy and "medkit" not in after_deploy, "deployed gear leaves the server stash")
+	check(not service.deploy(id, world).ok, "an account cannot deploy twice at once")
+	check(not service.equip(id, "primary", "rifle_carbine").ok, "the loadout is locked during a raid")
+
+	# A server crash mid-raid: a fresh service loads the save and returns the gear.
+	var restarted := StashService.new()
+	restarted.save_dir = dir
+	var reloaded := restarted.snapshot(id)
+	check(reloaded.ok and not reloaded.deployed and "rifle_carbine" in reloaded.stash and reloaded.stash.count("medkit") == 2,
+			"an unsettled deploy is returned after a restart")
+	check(reloaded.loadout.get("primary", "") == "rifle_carbine", "the loadout survives a restart")
+	check(restarted.sign_in("Vex Runner", secret).ok and not restarted.sign_in("Vex Runner", StashService.new_secret()).ok,
+			"sign-in still checks the secret after a restart")
+
+	# Extract from a real raid and settle its result.
+	deploy = restarted.deploy(id, world)
+	var raid := Raid.new()
+	raid.apply_to_profile = false
+	add_child(raid)
+	raid.start(world, 61, deploy.kit, deploy.picks)
+	for bot in raid.bots:
+		bot.get_node("Brain").set_physics_process(false)
+	await frames(3)
+	var results: Array[Dictionary] = []
+	raid.ended.connect(func(r: Dictionary) -> void: results.append(r))
+	raid.player.inventory.add_item("scrap_metal")
+	var exit_pos := raid.exits[0].global_position
+	raid.player.global_position = Vector3(exit_pos.x, 0.2, exit_pos.z)
+	await frames(300)
+	check(results.size() == 1 and results[0].outcome == "extracted", "the server-stash raid extracts")
+	if results.size() == 1:
+		check(restarted.settle(id, results[0]).ok, "the result settles")
+	var home := restarted.snapshot(id)
+	check("rifle_carbine" in home.stash and "scrap_metal" in home.stash and home.raids_extracted == 1,
+			"extracting brings gear and loot into the server stash")
+	check(not home.deployed and not restarted.settle(id, results[0] if results.size() == 1 else {}).ok,
+			"a result cannot be settled twice")
+	check(Profile.stash == profile_stash, "the server stash never touches the local profile")
+	await _end_raid(raid)
+
+	# Dying loses the deployed gear.
+	deploy = restarted.deploy(id, world)
+	restarted.settle(id, {"outcome": "died", "brought_home": [], "kills": 2, "mastery_xp": {"rifle": 999999}})
+	home = restarted.snapshot(id)
+	check("rifle_carbine" not in home.stash and home.loadout.get("primary", "") == "", "dying loses the gear and empties the slot")
+	check(home.kills == 2 and restarted.pick_mastery(id, "rifle", "cut_down").ok, "mastery XP is kept after death")
+
+	# A join that never happened gives everything back.
+	var before: Array = restarted.snapshot(id).stash
+	restarted.deploy(id, world)
+	check(restarted.cancel_deploy(id).ok and restarted.snapshot(id).stash.size() == before.size(),
+			"cancelling a deploy returns the gear")
+	check(restarted.snapshot("nobody").ok == false and not restarted.deploy("nobody", world).ok,
+			"unknown accounts are refused")
+
+	for f in DirAccess.get_files_at(dir):
+		DirAccess.remove_absolute(dir.path_join(f))
+	DirAccess.remove_absolute(dir)

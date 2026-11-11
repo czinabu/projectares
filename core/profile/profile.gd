@@ -7,6 +7,8 @@ extends Node
 
 const SAVE_PATH := "user://profile.json"
 const MasteryBook := preload("res://core/progression/mastery_book.gd")
+## The same gear rules the server's StashService uses.
+const StashRules := preload("res://core/account/stash_rules.gd")
 ## Given once to every profile so there is gear to try loadouts with.
 const WELCOME_CRATE: Array[String] = ["rifle_carbine", "frame_trooper", "medkit", "medkit"]
 ## Later one-time crates, by name, so existing profiles get new kinds of gear
@@ -69,15 +71,13 @@ func grant_gear_crates() -> void:
 
 ## Adds items to the stash. Starter kit items are free and never stashed.
 func add_to_stash(ids: Array) -> void:
-	for id: String in ids:
-		if ItemDB.has_item(id) and not ItemDB.has_tag(id, "starter"):
-			stash.append(id)
+	StashRules.add_items(stash, ids)
 	save()
 
 
 ## Puts a stash item in a loadout slot. Returns false if it does not fit.
 func equip(slot: String, id: String) -> bool:
-	if not Loadout.SLOTS.has(slot) or id not in stash or not ItemDB.has_tag(id, Loadout.SLOTS[slot]):
+	if not StashRules.can_equip(stash, slot, id):
 		return false
 	loadout[slot] = id
 	save()
@@ -95,41 +95,14 @@ func equipped(slot: String) -> String:
 
 ## Drops loadout entries whose item is no longer in the stash (lost in a raid).
 func validate_loadout() -> void:
-	for slot: String in loadout.keys():
-		if loadout[slot] not in stash:
-			loadout.erase(slot)
+	StashRules.validate_loadout(stash, loadout)
 	save()
 
 
 ## Takes the loadout out of the stash for a raid and returns the full kit:
 ## chosen gear, the world's free scrap item for every empty slot, and healing.
 func checkout_loadout(world: WorldDef) -> Array[String]:
-	validate_loadout()
-	var starter := world.starter_loadout()
-	var kit: Array[String] = []
-	for slot: String in Loadout.SLOTS:
-		var id := equipped(slot)
-		if id != "":
-			stash.erase(id)
-			kit.append(id)
-			continue
-		for free_id in starter:
-			if ItemDB.has_tag(free_id, Loadout.SLOTS[slot]):
-				kit.append(free_id)
-				break
-	var heals := 0
-	for id in stash.duplicate():
-		if heals >= Loadout.MAX_HEAL_ITEMS:
-			break
-		if ItemDB.has_tag(id, "heal"):
-			stash.erase(id)
-			kit.append(id)
-			heals += 1
-	if heals == 0:
-		for free_id in starter:
-			if ItemDB.has_tag(free_id, "heal"):
-				kit.append(free_id)
-				break
+	var kit := StashRules.checkout(stash, loadout, world)
 	save()
 	return kit
 
