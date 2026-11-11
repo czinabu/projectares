@@ -454,7 +454,22 @@ func _test_main_flow() -> void:
 	var main: Node = load("res://scenes/main.tscn").instantiate()
 	add_child(main)
 	await frames(2)
-	check(main.hub.visible and main.raid == null, "game starts in the hub")
+	check(main.base != null and main.raid == null and not main.hub.visible and main.controller != null
+			and main.controller.camera.current, "the game opens in your home base, not on a menu")
+	check(main.base.station("launch") != null and main.base.door.get_prompt().contains("online"),
+			"the base has a launch pad, and its door leads online")
+	main.open_station("launch")
+	check(main.hub.visible and main.hub.station == "launch" and main.controller.input_blocked,
+			"the launch pad opens the deploy screen over the base")
+	var deploy_buttons: Array = main.hub.find_children("*", "Button", true, false).filter(func(b: Node) -> bool:
+		return (b as Button).text.begins_with("Deploy to") and (b as Button).is_visible_in_tree())
+	check(deploy_buttons.size() == Worlds.raid_worlds().size(), "it offers every world")
+	(deploy_buttons[0] as Button).pressed.emit()
+	await frames(5)
+	check(main.raid != null and main.base == null and not main.hub.visible, "deploying from the launch pad starts a raid")
+	main._leave_raid()
+	main.go_home()
+	await frames(2)
 	main.start_raid("ashfront")
 	await frames(5)
 	check(main.raid != null and not main.hub.visible, "deploying starts a raid")
@@ -532,14 +547,15 @@ func _test_main_flow() -> void:
 	main._on_sign_out_requested()
 	main.raid.state_for(reborn).sign_out_left = 0.1
 	await frames(90)
-	check(main.raid == null and main.hub.visible, "a finished sign-out returns to the hub")
+	check(main.raid == null and main.base != null and not main.hub.visible,
+			"a finished sign-out takes you home to your base")
 	main.start_raid("ashfront")
 	await frames(5)
 	main.raid.player.kill("test")
 	await frames(5)
 	main._on_sign_out_requested()
 	await frames(2)
-	check(main.raid == null and main.hub.visible, "L while down returns to the hub")
+	check(main.raid == null and main.base != null, "L while down takes you home")
 	main.queue_free()
 	await frames(2)
 
@@ -3002,8 +3018,12 @@ func _test_plaza_online() -> void:
 		main.use_portal("world:ashfront")
 		await _wait_until(func() -> bool:
 			return main.net != null and main.net.world_id == "ashfront" and not main.net.account.is_empty(), 600)
-		check(main.hub.in_lobby() and main.raid == null and main.hub.visible and main.net != null
-				and main.net.world_id == "ashfront", "using a gate takes you to that world's lobby")
+		await _wait_until(func() -> bool: return main.base != null, 120)
+		check(main.hub.in_lobby() and main.raid == null and main.base != null and not main.hub.visible
+				and main.net != null and main.net.world_id == "ashfront",
+				"using a gate takes you to that world's lobby: your base on this server's stash")
+		check(main.base != null and main.base.door.get_prompt().contains("Back to"),
+				"the lobby base's door leads back to the plaza")
 		main.leave_server()
 		await _wait_until(func() -> bool: return main.raid != null and main.raid.player != null, 600)
 		check(main.raid != null and main.raid.world.safe_zone, "leaving the lobby leads back to the plaza")
@@ -3032,14 +3052,14 @@ func _test_plaza_online() -> void:
 		await _wait_until(func() -> bool: return main.base != null, 600)
 		check(main.base != null and main.raid == null and main.hub.in_lobby(),
 				"the quarters door opens your home base on the server's stash")
-		main.leave_base()
+		main.base.leave_requested.emit()
 		await _wait_until(func() -> bool: return main.raid != null and main.raid.player != null, 600)
 		check(main.base == null and main.raid != null and main.raid.world.safe_zone,
 				"the base's door leads back to the plaza")
 		main.use_portal("leave")
 		await frames(5)
-		check(main.net == null and main.raid == null and main.hub.visible and not main.hub.in_lobby(),
-				"the exit leaves the server")
+		check(main.net == null and main.raid == null and main.base != null and not main.hub.in_lobby(),
+				"the exit leaves the server and takes you home")
 	main.queue_free()
 	OS.kill(pid)
 	await frames(30)
@@ -3557,15 +3577,12 @@ func _test_home_base() -> void:
 	var main: Node = load("res://scenes/main.tscn").instantiate()
 	add_child(main)
 	await frames(2)
-	main.hub.base_requested.emit()
 	await frames(20)
-	check(main.base != null and not main.hub.visible and main.raid == null, "the hub opens your home base")
+	check(main.base != null and not main.hub.visible and main.raid == null, "you start in your home base")
 	check(main.controller != null and main.controller.camera.current and main.base_hud != null,
 			"the base has a camera and an overlay")
 	check(main.base.displays.size() == 5 and main.base.display_for("rifle_carbine").equipped,
 			"it shows your stash and what you have equipped")
-	main.start_raid("ashfront")
-	check(main.raid == null, "you cannot deploy from inside the base")
 	# Real input: look at the DMR and press E.
 	var target: Node3D = main.base.display_for("dmr_longshot")
 	_face_display(main.base.player, target)
@@ -3583,10 +3600,43 @@ func _test_home_base() -> void:
 	main.base.equip_requested.emit("primary", "frame_bulwark")
 	check(Profile.equipped("vehicle") == "bike_scrapper" and Profile.equipped("primary") == "dmr_longshot",
 			"a parked bike can be picked, and gear cannot go in the wrong slot")
+	check(main.hub.equipped("primary") == "dmr_longshot", "the locker shows the loadout chosen in the base")
+	# Every station opens its screen over the room, and Esc steps away.
+	for id: String in HomeBase.STATIONS:
+		if id == "arena":
+			continue  # A way out, not a screen: the arena tests use it.
+		var console: HomeBase.Station = main.base.station(id)
+		_face_display(main.base.player, console)
+		main.controller.yaw = main.base.player.cmd.yaw
+		main.controller.pitch = main.base.player.cmd.pitch
+		await frames(2)
+		check(main.base.player.find_interactable() == console and console.get_prompt().begins_with("[E]"),
+				"the %s can be walked up to and used" % id)
+		console.interact(main.base.player)
+		await frames(2)
+		check(main.hub.visible and main.hub.station == id and main.controller.input_blocked
+				and not main.base_hud.visible, "the %s opens its screen over the base" % id)
+		var esc := InputEventKey.new()
+		esc.keycode = KEY_ESCAPE
+		esc.pressed = true
+		main.hub._unhandled_input(esc)
+		await frames(2)
+		check(not main.hub.visible and not main.controller.input_blocked and main.base_hud.visible,
+				"Esc steps away from the %s" % id)
+	main.open_station("wardrobe")
+	await frames(2)
+	check(main.hub.character.is_customizing(), "the wardrobe opens the customizer")
+	main.hub.character.hide_customizer()
+	await frames(2)
+	check(not main.hub.visible and not main.controller.input_blocked, "finishing in the customizer steps away")
+	main.open_station("mastery")
+	check(main.hub._sections["mastery"].visible and not main.hub._sections["loadout"].visible,
+			"a station shows only its own part of the old menu")
+	main.hub.close()
 	main.base.leave_requested.emit()
 	await frames(3)
-	check(main.base == null and main.hub.visible and main.controller == null, "the door leads back to the hub")
-	check(main.hub.equipped("primary") == "dmr_longshot", "the hub shows the loadout chosen in the base")
+	check(main.base != null and main.hub.station == "uplink", "the door of your own base opens the uplink to play online")
+	main.hub.close()
 	# A server's stash is shown while in its lobby, and the local one is left alone.
 	main.hub.update_account({"name": "Vex", "stash": ["blade_arc", "bike_raider"], "loadout": {"melee": "blade_arc"},
 			"mastery": {}, "raids_played": 0, "raids_extracted": 0, "kills": 0})
@@ -3611,6 +3661,11 @@ func _test_home_base() -> void:
 	main.base.displays[0].interact(main.base.player)
 	main.base.displays[1].interact(main.base.player)
 	check(Profile.equipped("melee") == "", "visiting never changes your own loadout")
+	main.base.station("locker").interact(main.base.player)
+	check(not main.hub.visible, "another player's stations cannot be used")
+	main.base.leave_requested.emit()
+	await frames(3)
+	check(main.base != null and not main.base.read_only, "the door of a base you visit takes you home")
 	main.leave_base()
 	await frames(3)
 	main.start_raid("ashfront")
@@ -3775,20 +3830,21 @@ func _test_arena() -> void:
 	check(Profile.stash == stash_before, "leaving the arena takes nothing from the stash")
 	Profile.reset()
 
-	# From the hub: the arena button opens it, with its own overlay.
+	# From your base: the arena gate opens it, with its own overlay.
 	var main: Node = load("res://scenes/main.tscn").instantiate()
 	add_child(main)
 	await frames(2)
-	main.hub.arena_requested.emit()
+	main.base.station("arena").interact(main.base.player)
 	await frames(5)
-	check(main.raid is Arena and not main.hub.visible and main.raid.get_node_or_null("ArenaHud") != null
-			and main.controller != null, "the hub's arena button opens the arena with its overlay")
+	check(main.raid is Arena and not main.hub.visible and main.base == null
+			and main.raid.get_node_or_null("ArenaHud") != null
+			and main.controller != null, "the base's arena gate opens the arena with its overlay")
 	var hud: CanvasLayer = main.raid.get_node("ArenaHud")
 	await frames(20)
 	check(hud.get("_panel").get_child_count() > 3, "the overlay lists what you can do")
 	hud.leave_requested.emit()
 	await frames(5)
-	check(main.raid == null and main.hub.visible, "leaving the arena goes back to the hub")
+	check(main.raid == null and main.base != null and not main.hub.visible, "leaving the arena takes you home")
 	# A gate inside a world (the plaza's) opens the arena from there.
 	main.start_raid(Worlds.all()[0].id)
 	await frames(5)

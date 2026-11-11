@@ -1,9 +1,16 @@
 extends Node
-## Entry point. Switches between the hub and a raid, solo or online.
+## Entry point. Switches between your home base, the plaza and a raid, solo
+## or online.
+##
+## The game opens in your home base, never on a menu screen. Its stations open
+## what the menu used to hold (`Hub`): loadout, mastery, wardrobe, records,
+## trader, the launch pad that deploys and the uplink that goes online.
+## Joining a server puts you in its plaza; a world's lobby on that server is
+## your home base again, showing the stash that server keeps for you.
 ##
 ## A stay in a world is a string of lives. Dying keeps you in the world: the
 ## HUD shows what it cost and Enter drops you back in with whatever your
-## loadout can still supply. You return to the hub by signing out (L).
+## loadout can still supply. You go home by signing out (L).
 ##
 ## Run with `-- --server [--world <id>] [--port <n>] [--bots <n>] [--squad-spawn]
 ## [--accounts <folder>] [--no-rewind] [--no-plaza]` for a dedicated server: no hub, no
@@ -53,8 +60,6 @@ var sessions: Array[NetSession] = []
 ## world's lobby or finishing a run leads back there. Port -1 means no plaza.
 var _plaza_address := ""
 var _plaza_port := -1
-## Client: on the way from the plaza to the home base, or in it.
-var _base_from_plaza := false
 var _server_pid := -1
 var _join_attempts := 0
 var _join_address := ""
@@ -73,7 +78,9 @@ func _ready() -> void:
 		_run_dedicated_server(args)
 		return
 	hub = Hub.new()
+	hub.name = "Hub"
 	add_child(hub)
+	hub.closed.connect(_on_station_closed)
 	hub.deploy_requested.connect(start_raid)
 	hub.host_requested.connect(host_and_join)
 	hub.join_requested.connect(join_online)
@@ -95,12 +102,14 @@ func _ready() -> void:
 			net.sell(item_id, count))
 	hub.online_leave_requested.connect(leave_server)
 	_setup_phone()
-	hub.base_requested.connect(enter_base)
-	hub.arena_requested.connect(open_arena)
 	hub.look_changed.connect(func(appearance: Dictionary) -> void:
 		Profile.set_appearance(appearance, hub.character.owned)
+		if base != null and not base.read_only:
+			Look.set_appearance(base.player, _my_look())
 		if net != null:
 			net.send_look(Profile.appearance))
+	# The game opens in the world: your home base.
+	go_home()
 
 
 func _notification(what: int) -> void:
@@ -110,22 +119,40 @@ func _notification(what: int) -> void:
 
 # ------------------------------------------------------------- home base ----
 
-## Leaves the hub screen for the home base, which shows the stash the hub
-## was showing: the local profile's, or the server's while in a lobby.
+## Takes you home: your own base, showing the stash the hub keeps on show
+## (the local profile's, or the server's while in a lobby). Already there, it
+## just shows the gear again. `result` is how the last life ended, if any.
+func go_home(result := {}) -> void:
+	if raid != null:
+		return
+	hub.close()
+	if base != null and base.read_only:
+		leave_base()
+	if base == null:
+		_open_base(hub.stash_items(), hub.current_loadout(), "")
+	else:
+		_refresh_base()
+	_update_door()
+	if not result.is_empty() and base_hud and hub.result_text() != "":
+		base_hud.show_notice(hub.result_text(), 8.0)
+
+
+## Opens your own base. Kept for callers that want the base by name.
 func enter_base() -> void:
-	_open_base(hub.stash_items(), hub.current_loadout(), "")
+	go_home()
 
 
 ## Opens someone else's base to look around. Nothing in it can be equipped.
 ## `stash` and `loadout` are that player's, as their server reports them.
 func visit_base(owner_name: String, stash: Array, loadout: Dictionary) -> void:
 	_open_base(stash, loadout, owner_name if owner_name != "" else "Raider")
+	_update_door()
 
 
 func _open_base(stash: Array, loadout: Dictionary, owner_name: String) -> void:
 	if base != null or raid != null:
 		return
-	hub.visible = false
+	hub.close()
 	base = HomeBase.new()
 	base.name = "HomeBase"
 	base.owner_name = owner_name
@@ -133,7 +160,8 @@ func _open_base(stash: Array, loadout: Dictionary, owner_name: String) -> void:
 	base.show_gear(stash, loadout)
 	add_child(base)
 	base.equip_requested.connect(_on_base_equip)
-	base.leave_requested.connect(leave_base)
+	base.leave_requested.connect(_on_base_door)
+	base.station_requested.connect(open_station)
 	Look.set_appearance(base.player, _my_look())
 	controller = PlayerController.new()
 	controller.setup(base.player)
@@ -145,19 +173,73 @@ func _open_base(stash: Array, loadout: Dictionary, owner_name: String) -> void:
 	_apply_settings()
 
 
+## Closes the base, whatever comes next.
 func leave_base() -> void:
 	if base == null:
 		return
+	hub.close()
 	base.queue_free()
 	base = null
 	base_hud = null
 	controller = null
-	hub.refresh_gear()
-	hub.visible = true
-	if _base_from_plaza:
-		# They came in through the plaza's door, so that is where they go back.
-		_base_from_plaza = false
+
+
+## Where the base's door leads from here.
+func _update_door() -> void:
+	if base == null:
+		return
+	if base.read_only:
+		base.door_text = "Back to your base"
+	elif hub.in_lobby():
+		base.door_text = hub.leave_text()
+	else:
+		base.door_text = "Head out: play online"
+
+
+## The door: home from a visit, out of a server's lobby, or online from your
+## own base (the uplink).
+func _on_base_door() -> void:
+	if base == null:
+		return
+	if base.read_only:
+		leave_base()
+		go_home()
+	elif hub.in_lobby():
 		leave_server()
+	else:
+		open_station("uplink")
+
+
+## A station in your base opens its screen over the room.
+func open_station(id: String) -> void:
+	if base == null or base.read_only:
+		return
+	if id == "arena":
+		# The arena gate is a way out, not a screen.
+		open_arena()
+		return
+	hub.open_station(id)
+	if base_hud:
+		base_hud.visible = false
+	if controller != null and is_instance_valid(controller):
+		controller.input_blocked = true
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+
+
+## Stepped away from a station: the room takes the mouse back.
+func _on_station_closed() -> void:
+	if base_hud:
+		base_hud.visible = true
+	if controller != null and is_instance_valid(controller) and not phone.is_open:
+		controller.input_blocked = false
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+
+## Between places (connecting, travelling): no world, just the travel screen.
+func _show_travel(text: String) -> void:
+	leave_base()
+	hub.set_online_status(text)
+	hub.show_travel()
 
 
 ## Gear used in the base changes the loadout the same way the hub's pickers
@@ -186,11 +268,12 @@ func _refresh_base() -> void:
 ## a world such as the plaza through its arena gate), or a solo one against
 ## bot gladiators.
 func open_arena() -> void:
-	if base != null or raid is Arena:
+	if raid is Arena or (base != null and base.read_only):
 		return
 	if net != null:
 		if raid == null and not hub.in_lobby():
 			return
+		leave_base()
 		# Leave the lobby (or the plaza or world you are in) for the arena
 		# session on the same server. Leaving the arena comes back here.
 		var arena_port: int = net.routes.get(Arena.ArenaVenue.ID, _join_port + ARENA_PORT_OFFSET)
@@ -200,12 +283,13 @@ func open_arena() -> void:
 		else:
 			net.queue_free()
 			net = null
-		hub.set_online_status("Entering the arena...")
+		_show_travel("Entering the arena...")
 		_begin_join(_join_address, arena_port, 3)
 		return
 	if raid != null:
 		_leave_raid()
-	hub.visible = false
+	leave_base()
+	hub.close()
 	var arena := Arena.new()
 	arena.name = "Raid"
 	raid = arena
@@ -221,22 +305,25 @@ func leave_arena() -> void:
 		return
 	var back_online := net != null and _lobby_port > 0
 	_leave_raid()
-	hub.visible = true
 	hub.refresh_gear()
 	if back_online:
 		_join_port = _lobby_port
 		_lobby_port = -1
-		hub.set_online_status("Leaving the arena...")
+		_show_travel("Leaving the arena...")
 		_begin_join(_join_address, _join_port, 3)
+		return
+	go_home()
 
 
 # ------------------------------------------------------------------ solo ----
 
 func start_raid(world_id: String) -> void:
 	var world := Worlds.get_world(world_id)
-	if world == null or raid != null or net != null or base != null:
+	if world == null or raid != null or net != null:
 		return
-	hub.visible = false
+	# The launch pad: out of the base and into the world.
+	leave_base()
+	hub.close()
 	raid = Raid.new()
 	raid.name = "Raid"
 	add_child(raid)
@@ -300,7 +387,7 @@ func _on_solo_finished(_actor: Actor, result: Dictionary) -> void:
 	if result.get("outcome", "") == "died":
 		_show_death(result)
 		return
-	# Leave a beat so the player sees what happened before the hub appears.
+	# Leave a beat so the player sees what happened before going home.
 	await get_tree().create_timer(1.0).timeout
 	_show_hub(result)
 
@@ -329,7 +416,7 @@ func _on_redeploy_requested() -> void:
 	_attach_player_view()
 
 
-## L: alive, start or cancel a sign-out. Down, go back to the hub.
+## L: alive, start or cancel a sign-out. Down, go home.
 func _on_sign_out_requested() -> void:
 	if raid == null or raid.player == null or not is_instance_valid(raid.player):
 		return
@@ -354,7 +441,7 @@ func _on_sign_out_requested() -> void:
 func _show_hub(result: Dictionary) -> void:
 	_leave_raid()
 	hub.refresh(result)
-	hub.visible = true
+	go_home(result)
 
 
 func _leave_raid() -> void:
@@ -379,7 +466,6 @@ func _setup_phone() -> void:
 	phone = PhoneScript.new()
 	phone.name = "Phone"
 	add_child(phone)
-	hub.phone_requested.connect(func() -> void: phone.open())
 	phone.opened_changed.connect(_on_phone_opened)
 	phone.settings_changed.connect(_apply_settings)
 	phone.quit_requested.connect(func() -> void: get_tree().quit())
@@ -389,8 +475,10 @@ func _setup_phone() -> void:
 ## away in a raid takes the mouse back.
 func _on_phone_opened(open: bool) -> void:
 	if controller != null and is_instance_valid(controller):
-		controller.input_blocked = open
-		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if open else Input.MOUSE_MODE_CAPTURED
+		# A station screen still open behind the phone keeps the mouse.
+		var screen_open := hub.station != "" or shop_view != null
+		controller.input_blocked = open or screen_open
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if open or screen_open else Input.MOUSE_MODE_CAPTURED
 
 
 ## Pushes the phone's settings into the raid view, if there is one.
@@ -421,7 +509,7 @@ func _on_base_visit_requested(owner_name: String, owner_stash: Array, owner_load
 	if raid != null:
 		phone.show_notice("Finish this run first, then visit %s's base." % owner_name)
 		return
-	# Already in a base (yours or someone else's): walk out and into theirs.
+	# In a base (yours or someone else's): walk out and into theirs.
 	leave_base()
 	phone.close()
 	visit_base(owner_name, owner_stash, owner_loadout)
@@ -605,11 +693,14 @@ func _on_online_signed_in(account: Dictionary) -> void:
 		hub.set_online_status("Entering %s..." % world.display_name)
 		net.deploy()
 		return
+	# A world's lobby is your home base, showing what this server keeps for
+	# you. Its launch pad deploys into this world; its door leads back.
 	hub.set_online_status("")
 	hub.enter_lobby(account, world)
 	hub.set_leave_text("Back to %s" % Worlds.social_world().display_name if _plaza_port >= 0 else "Leave the server")
-	if _base_from_plaza:
-		enter_base()
+	go_home()
+	if base_hud:
+		base_hud.show_notice("Connected to %s. The launch pad deploys you there." % world.display_name, 6.0)
 
 
 func _on_online_account_changed(account: Dictionary) -> void:
@@ -625,8 +716,9 @@ func _on_online_account_changed(account: Dictionary) -> void:
 
 
 func _on_online_joined(p_raid: Raid) -> void:
+	leave_base()
+	hub.close()
 	raid = p_raid
-	hub.visible = false
 	hub.set_online_status("")
 	_attach_player_view()
 	if raid.world.safe_zone:
@@ -648,8 +740,7 @@ func use_portal(destination: String) -> void:
 			plaza_view.show_notice("That world is not running on this server.")
 			return
 		_leave_raid()
-		hub.visible = true
-		hub.set_online_status("Travelling to %s..." % world.display_name)
+		_show_travel("Travelling to %s..." % world.display_name)
 		_begin_join(_plaza_address, port, 3)
 	elif destination.begins_with("shop:"):
 		open_shop(destination.trim_prefix("shop:"))
@@ -660,7 +751,6 @@ func use_portal(destination: String) -> void:
 		return
 	elif destination == "leave":
 		_leave_raid()
-		hub.visible = true
 		leave_server()
 	else:
 		plaza_view.show_notice("Opening soon.")
@@ -711,15 +801,14 @@ func close_shop() -> void:
 
 ## The plaza's door to your home base. The base shows the stash this server
 ## keeps for you, which a world's lobby has at hand, so the trip goes by way
-## of the first world's lobby; the base's own door leads back to the plaza.
+## of the first world's lobby (every lobby is your base); the base's own door
+## leads back to the plaza.
 func open_home_base() -> void:
 	if net == null or raid == null or net.routes.is_empty():
 		return
 	var port: int = net.routes.values()[0]
 	_leave_raid()
-	hub.visible = true
-	hub.set_online_status("Going home...")
-	_base_from_plaza = true
+	_show_travel("Going home...")
 	_begin_join(_plaza_address, port, 3)
 
 
@@ -738,15 +827,19 @@ func _on_online_failed(reason: String) -> void:
 		return
 	_stop_local_server()
 	_plaza_port = -1
-	_base_from_plaza = false
 	hub.leave_lobby()
 	if _lobby_port > 0:
 		reason = "Could not enter the arena: %s" % reason
 		_join_port = _lobby_port
 		_lobby_port = -1
 	hub.set_online_status(reason)
-	# A base open on the server's stash falls back to the local one.
-	_refresh_base()
+	# Back home on the local stash, with a word on what went wrong. A base
+	# open on the server's stash falls back to the local one.
+	if raid == null:
+		if hub.station != "uplink":
+			go_home()
+		_refresh_base()
+		_update_door()
 	if base_hud:
 		base_hud.show_notice(reason)
 
@@ -761,14 +854,16 @@ func _on_online_disconnected() -> void:
 	_plaza_port = -1
 	hub.leave_lobby()
 	hub.refresh({})
+	var reason := ("Lost the connection to the server." if was_safe
+			else "Lost the connection to the server. Your body stays in the world for a moment. "
+			+ "If it survives, what you carried goes back to your stash there.")
 	if in_arena:
 		_lobby_port = -1
-		hub.set_online_status("Lost the connection to the arena. Your gear is safe.")
-	else:
-		hub.set_online_status("Lost the connection to the server." if was_safe
-				else "Lost the connection to the server. Your body stays in the world for a moment. "
-				+ "If it survives, what you carried goes back to your stash there.")
-	hub.visible = true
+		reason = "Lost the connection to the arena. Your gear is safe."
+	hub.set_online_status(reason)
+	go_home()
+	if base_hud:
+		base_hud.show_notice(reason, 8.0)
 
 
 ## One online life ended. The server has already settled it into your account
@@ -790,21 +885,21 @@ func _return_to_lobby(result: Dictionary) -> void:
 	_leave_raid()
 	hub.update_account(account)
 	hub.refresh(result)
-	hub.visible = true
 	if was_safe:
 		# Signing out of the plaza itself leaves the server.
 		leave_server()
 		return
 	# Back to the plaza if the server has one, else to the lobby.
 	if _plaza_port >= 0:
-		hub.set_online_status("Returning to %s..." % Worlds.social_world().display_name)
+		_show_travel("Returning to %s..." % Worlds.social_world().display_name)
 		_begin_join(_plaza_address, _plaza_port, 3)
 		return
-	hub.set_online_status("Returning to the lobby...")
+	_show_travel("Returning to your base...")
 	_begin_join(_join_address, _join_port, 3)
 
 
-## Disconnects from the lobby and shows the solo hub again.
+## Disconnects from the lobby: back to the plaza if the server has one, else
+## home to your solo base.
 func leave_server() -> void:
 	if raid != null:
 		return
@@ -816,12 +911,13 @@ func leave_server() -> void:
 	hub.leave_lobby()
 	if _plaza_port >= 0 and _join_port != _plaza_port:
 		# Leaving a world's lobby leads back to the plaza, not off the server.
-		hub.set_online_status("Returning to %s..." % Worlds.social_world().display_name)
+		_show_travel("Returning to %s..." % Worlds.social_world().display_name)
 		_begin_join(_plaza_address, _plaza_port, 3)
 		return
 	_plaza_port = -1
 	_stop_local_server()
 	hub.set_online_status("")
+	go_home()
 
 
 func _stop_local_server() -> void:

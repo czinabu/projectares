@@ -9,6 +9,7 @@ var base: HomeBase
 var _prompt: Label
 var _detail: Label
 var _notice: Label
+var _hint: Label
 var _notice_left := 0.0
 
 
@@ -25,12 +26,8 @@ func _ready() -> void:
 	var title := _label(root, "%s'S BASE" % base.owner_name.to_upper() if visiting else "HOME BASE",
 			26, Color(1.0, 0.62, 0.22))
 	_place(title, 0.0, 0.0, Vector2(24, 16), Vector2(500, 34))
-	var hint := _label(root,
-			("You are visiting. Look around, but the gear stays where it is.\n" if visiting else
-			"Everything in your stash is on show here. Look at gear and press E to equip it.\n")
-			+ "WASD move   V camera   Esc free the mouse   The door behind you leads back.",
-			14, Color(0.75, 0.73, 0.7))
-	_place(hint, 0.0, 0.0, Vector2(24, 50), Vector2(700, 44))
+	_hint = _label(root, "", 14, Color(0.75, 0.73, 0.7))
+	_place(_hint, 0.0, 0.0, Vector2(24, 50), Vector2(900, 66))
 	var crosshair := _label(root, "+", 22, Color.WHITE)
 	_place(crosshair, 0.5, 0.5, Vector2(-7, -17), Vector2(14, 30))
 	_prompt = _label(root, "", 20, Color.WHITE)
@@ -42,14 +39,28 @@ func _ready() -> void:
 	_place(_detail, 0.5, 0.5, Vector2(-350, 72), Vector2(700, 60))
 	_notice = _label(root, "", 18, Color(1.0, 0.8, 0.4))
 	_notice.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_place(_notice, 0.5, 1.0, Vector2(-350, -90), Vector2(700, 30))
+	_notice.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
+	_notice.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_place(_notice, 0.5, 1.0, Vector2(-420, -150), Vector2(840, 110))
+
+
+## The help line under the title. The door's text can change while you are here.
+func hint_text() -> String:
+	if base == null:
+		return ""
+	if base.read_only:
+		return "You are visiting. Look around, but the gear stays where it is.\n" \
+				+ "WASD move   V camera   Esc free the mouse   The door behind you: %s." % base.door_text.to_lower()
+	return "Everything in your stash is on show. Look at gear and press E to equip it. The consoles do the rest:\n" \
+			+ "launch pad to deploy, locker, mastery bench, wardrobe, records, trader, uplink to play online.\n" \
+			+ "WASD move   V camera   P phone   Esc free the mouse   The door behind you: %s." % base.door_text.to_lower()
 
 
 ## Shows a short message, such as why a server refused a change.
-func show_notice(text: String) -> void:
+func show_notice(text: String, seconds := 4.0) -> void:
 	if _notice:
 		_notice.text = text
-		_notice_left = 4.0
+		_notice_left = seconds
 
 
 ## The two lines shown for what the player is looking at.
@@ -67,6 +78,7 @@ func describe(target: Interactable) -> Array[String]:
 func _process(delta: float) -> void:
 	if base == null or not is_instance_valid(base) or base.player == null:
 		return
+	_hint.text = hint_text()
 	var lines := describe(base.player.find_interactable())
 	_prompt.text = lines[0]
 	_detail.text = lines[1]
