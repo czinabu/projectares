@@ -85,6 +85,15 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   the local `Profile` stash. The hub shows the server's account snapshot while
   in a lobby (`Hub.enter_lobby`). Stash rules live once, in `core/account/stash_rules.gd`,
   shared by `Profile` and the service.
+- The phone (`core/phone/phone.gd`) is the game's menu and only a view. Online,
+  presence, contacts, messages, invites and news live on the server in
+  `SocialService` (`core/social/social_service.gd`), keyed by the account id
+  the peer signed in with, never by anything the client claims. `NetSession`
+  turns phone requests into service calls and pushes each affected player a
+  fresh `social_state` snapshot. A feature that adds a new place a player can be
+  (base, social hub) reports it with `NetSession._set_presence(peer, where)` and
+  a name in `SocialService.PLACE_NAMES`. Settings live in
+  `core/settings/game_settings.gd` (its own save file); a server never reads them.
 - `Raid` never writes to `Profile` on a server. Results travel in the
   `player_finished` dictionary. Online the server settles them into the
   account; `Raid.apply_result` is only for the local solo profile.

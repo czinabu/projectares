@@ -9,6 +9,8 @@ extends Node
 const JOIN_TIMEOUT := 12.0
 const NameplatesScript := preload("res://core/ui/nameplates.gd")
 const ScoreboardScript := preload("res://core/ui/scoreboard.gd")
+const PhoneScript := preload("res://core/phone/phone.gd")
+const GameSettings := preload("res://core/settings/game_settings.gd")
 
 var hub: Hub
 var raid: Raid
@@ -17,6 +19,8 @@ var hud: Hud
 var nameplates: CanvasLayer
 var scoreboard: CanvasLayer
 var net: NetSession
+## The phone every player carries: the game's menu, in the hub and in a raid.
+var phone: CanvasLayer
 var _server_pid := -1
 var _join_attempts := 0
 var _join_address := ""
@@ -44,6 +48,7 @@ func _ready() -> void:
 			hub.set_online_status("Deploying...")
 			net.deploy())
 	hub.online_leave_requested.connect(leave_server)
+	_setup_phone()
 
 
 func _notification(what: int) -> void:
@@ -81,6 +86,9 @@ func _attach_player_view() -> void:
 	scoreboard.name = "Scoreboard"
 	scoreboard.setup(raid)
 	raid.add_child(scoreboard)
+	_apply_settings()
+	if phone != null and phone.is_open:
+		phone.close()
 
 
 func _on_raid_ended(result: Dictionary) -> void:
@@ -99,6 +107,61 @@ func _leave_raid() -> void:
 	elif raid:
 		raid.queue_free()
 		raid = null
+
+
+# ----------------------------------------------------------------- phone ----
+
+func _setup_phone() -> void:
+	GameSettings.ensure_loaded()
+	phone = PhoneScript.new()
+	phone.name = "Phone"
+	add_child(phone)
+	hub.phone_requested.connect(func() -> void: phone.open())
+	phone.opened_changed.connect(_on_phone_opened)
+	phone.settings_changed.connect(_apply_settings)
+	phone.quit_requested.connect(func() -> void: get_tree().quit())
+
+
+## Hands on the phone: the character stops and the mouse is free. Putting it
+## away in a raid takes the mouse back.
+func _on_phone_opened(open: bool) -> void:
+	if controller != null and is_instance_valid(controller):
+		controller.input_blocked = open
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if open else Input.MOUSE_MODE_CAPTURED
+
+
+## Pushes the phone's settings into the raid view, if there is one.
+func _apply_settings() -> void:
+	if controller != null and is_instance_valid(controller):
+		controller.mouse_sensitivity = GameSettings.mouse_sensitivity
+		controller.invert_y = GameSettings.invert_y
+		controller.base_fov = GameSettings.field_of_view
+		controller.stance_control = PlayerController.StanceControl.MOVE if Profile.melee_control == "move" \
+				else PlayerController.StanceControl.MOUSE
+	if nameplates != null and is_instance_valid(nameplates):
+		nameplates.visible = GameSettings.show_nameplates
+
+
+## Accepted an invite to this server's raid: deploy from the lobby.
+func _on_world_invite_accepted(_invite: Dictionary) -> void:
+	if net == null or raid != null:
+		phone.show_notice("Finish this run first, then deploy from the lobby.")
+		return
+	phone.close()
+	hub.set_online_status("Deploying...")
+	net.deploy()
+
+
+## Accepted an invite to someone's home base.
+func _on_base_visit_requested(owner_name: String, owner_stash: Array, owner_loadout: Dictionary) -> void:
+	if raid != null:
+		phone.show_notice("Finish this run first, then visit %s's base." % owner_name)
+		return
+	if has_method("visit_base"):
+		phone.close()
+		call("visit_base", owner_name, owner_stash, owner_loadout)
+	else:
+		phone.show_notice("Home bases are not open yet. %s's base will be visitable soon." % owner_name)
 
 
 # ---------------------------------------------------------------- online ----
@@ -182,6 +245,9 @@ func _try_join() -> void:
 	net.failed.connect(_on_online_failed)
 	net.disconnected.connect(_on_online_disconnected)
 	net.run_finished.connect(_on_online_finished)
+	net.world_invite_accepted.connect(_on_world_invite_accepted)
+	net.base_visit_requested.connect(_on_base_visit_requested)
+	phone.set_session(net)
 	var err := net.join(_join_address, _join_port)
 	if err != OK:
 		_on_online_failed("Could not open a connection (%s)." % error_string(err))

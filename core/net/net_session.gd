@@ -53,10 +53,23 @@ signal failed(reason: String)
 signal disconnected
 ## Server: a fresh raid replaced a finished one.
 signal raid_restarted(raid: Raid)
+## Client: the phone's contacts, messages, invites and news changed (see
+## `SocialService.snapshot`).
+signal social_changed(social: Dictionary)
+## Client: the server turned down a phone request (message, invite, contact).
+signal social_error(reason: String)
+## Client: something happened on the phone worth a pop-up ("Bo accepted").
+signal social_notice(text: String)
+## Client: you accepted an invite to the raid on this server.
+signal world_invite_accepted(invite: Dictionary)
+## Client: you accepted an invite to someone's home base. The owner's stash
+## and loadout come from the server, so a base can be shown read-only.
+signal base_visit_requested(owner_name: String, stash: Array, loadout: Dictionary)
 
 const DEFAULT_PORT := 24565
-const PROTOCOL := 4
+const PROTOCOL := 5
 const StashService := preload("res://core/account/stash_service.gd")
+const SocialService := preload("res://core/social/social_service.gd")
 ## Server physics ticks between state updates (2 = 30 a second).
 const TICKS_PER_SNAPSHOT := 2
 ## Actors per state packet, to keep each one under the network's packet size.
@@ -91,6 +104,11 @@ var squad_spawn := false
 ## Server: owns every player's stash, loadout and mastery. Set its
 ## `save_dir` or `persist` before `host`.
 var stash := StashService.new()
+## Server: presence, contacts, messages, invites and news for the phone. Its
+## files live in a `social` folder inside the stash's `save_dir`.
+var social := SocialService.new()
+## Client: the phone's view as the server last sent it. Empty until signed in.
+var social_state := {}
 ## Client: the name to sign in with, and the secret that proves the account
 ## is yours (see `StashService.new_secret`).
 var player_name := "Raider"
@@ -189,6 +207,9 @@ func host(p_world_id: String, port := DEFAULT_PORT, max_players := 8) -> Error:
 		return err
 	is_server = true
 	world_id = p_world_id
+	social.persist = stash.persist
+	social.save_dir = stash.save_dir.path_join("social")
+	social.load_server_news(stash.save_dir.path_join("news.json"))
 	Combat.authoritative = true
 	_api.multiplayer_peer = peer
 	_api.peer_connected.connect(_on_peer_connected)
@@ -277,6 +298,7 @@ func _on_peer_connected(peer: int) -> void:
 
 func _on_peer_disconnected(peer: int) -> void:
 	_joined_peers.erase(peer)
+	_social_left(peer)
 	_peer_account.erase(peer)
 	_input_queue.erase(peer)
 	_queued_seq.erase(peer)
@@ -374,6 +396,7 @@ func _on_server_player_finished(actor: Actor, result: Dictionary) -> void:
 			_account.rpc_id(peer, stash.snapshot(account_id))
 	if online:
 		_run_finished.rpc_id(peer, result)
+		_social_moved(peer, "lobby")
 
 
 func _send_account(peer: int) -> void:
@@ -402,6 +425,7 @@ func _sign_in(p_name: String, p_secret: String) -> void:
 				_api.multiplayer_peer.disconnect_peer(other)
 	_peer_account[peer] = result.account_id
 	_send_account(peer)
+	_social_joined(peer)
 
 
 ## Lobby: put a stash item in a loadout slot, or "" to empty the slot.
@@ -478,6 +502,7 @@ func _request_join() -> void:
 		if peer in _api.get_peers():
 			_inventory.rpc_id(peer, actor.inventory.items))
 	_joined_peers.append(peer)
+	_social_moved(peer, "raid")
 	_welcome.rpc_id(peer, _ids[actor], raid.time_left)
 	for other: Actor in _ids:
 		if not other.is_dead:
@@ -617,6 +642,7 @@ func _restart_raid() -> void:
 	# Players in the old raid are sent home. Players waiting in the lobby stay.
 	for peer in _joined_peers:
 		if peer in _api.get_peers():
+			_social_left(peer)
 			_peer_account.erase(peer)
 			_api.multiplayer_peer.disconnect_peer(peer)
 	_joined_peers.clear()
@@ -1142,6 +1168,219 @@ func _client_late_tick() -> void:
 func _is_connected() -> bool:
 	return _api.multiplayer_peer != null \
 			and _api.multiplayer_peer.get_connection_status() == MultiplayerPeer.CONNECTION_CONNECTED
+
+
+# ---------------------------------------------------------------- social ----
+# The phone: who is online, messages, invites and news. The server keeps it all
+# in `social` (`core/social/social_service.gd`) and sends each player a fresh
+# snapshot whenever something they can see changes. A client only sends
+# requests; the server always knows who sent them from the peer's sign-in.
+
+## Server: a peer finished signing in.
+func _social_joined(peer: int) -> void:
+	var account_id: String = _peer_account[peer]
+	social.player_online(account_id, stash.snapshot(account_id).get("name", account_id), "lobby")
+	_broadcast_social()
+
+
+## Server: a signed-in peer is going away.
+func _social_left(peer: int) -> void:
+	var account_id: String = _peer_account.get(peer, "")
+	if account_id == "":
+		return
+	# Another connection for the same account may still be signed in.
+	for other: int in _peer_account:
+		if other != peer and _peer_account[other] == account_id:
+			return
+	social.player_offline(account_id)
+	_broadcast_social(peer)
+
+
+## Server: a player moved somewhere else ("lobby", "raid", or a place another
+## feature adds, see `SocialService.PLACE_NAMES`).
+func _social_moved(peer: int, where: String) -> void:
+	_set_presence(peer, where)
+
+
+func _set_presence(peer: int, where: String) -> void:
+	if not _peer_account.has(peer):
+		return
+	social.set_where(_peer_account[peer], where)
+	_broadcast_social()
+
+
+## Server: sends every signed-in player their phone snapshot. `skip` is a peer
+## that is on its way out.
+func _broadcast_social(skip := 0) -> void:
+	var peers := _api.get_peers()
+	for peer: int in _peer_account:
+		if peer != skip and peer in peers:
+			_send_social(peer)
+
+
+func _send_social(peer: int) -> void:
+	if _peer_account.has(peer) and peer in _api.get_peers():
+		_social.rpc_id(peer, social.snapshot(_peer_account[peer]))
+
+
+## Server: the peer signed in as `account_id`, or -1.
+func _peer_for_account(account_id: String) -> int:
+	for peer: int in _peer_account:
+		if _peer_account[peer] == account_id and peer in _api.get_peers():
+			return peer
+	return -1
+
+
+## The sender's account id, or "" when the sender has not signed in.
+func _social_sender() -> String:
+	if not is_server:
+		return ""
+	return _peer_account.get(_api.get_remote_sender_id(), "")
+
+
+func _social_result(peer: int, result: Dictionary, others: Array[String] = []) -> void:
+	if not result.ok:
+		_social_error.rpc_id(peer, result.error)
+	_send_social(peer)
+	for other in others:
+		var other_peer := _peer_for_account(other)
+		if other_peer > 0 and other_peer != peer:
+			_send_social(other_peer)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _request_message(to: String, text: String) -> void:
+	var from := _social_sender()
+	if from == "":
+		return
+	var peer := _api.get_remote_sender_id()
+	var result := social.send_message(from, to.left(64), text.left(SocialService.MAX_MESSAGE * 2))
+	var others: Array[String] = []
+	if result.ok:
+		others.append(to)
+	_social_result(peer, result, others)
+	if result.ok:
+		var to_peer := _peer_for_account(to)
+		if to_peer > 0:
+			_social_notice.rpc_id(to_peer, "%s: %s" % [result.message.from_name, result.message.text])
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _request_invite(to: String, kind: String) -> void:
+	var from := _social_sender()
+	if from == "":
+		return
+	var peer := _api.get_remote_sender_id()
+	var result := social.invite(from, to.left(64), kind.left(16), world_id)
+	var others: Array[String] = []
+	if result.ok:
+		others.append(to)
+	_social_result(peer, result, others)
+	if result.ok:
+		_social_notice.rpc_id(peer, "Invite sent to %s." % social.name_of(to))
+		var to_peer := _peer_for_account(to)
+		if to_peer > 0:
+			_social_notice.rpc_id(to_peer, _invite_text(result.invite))
+
+
+func _invite_text(invite: Dictionary) -> String:
+	if invite.kind == "base":
+		return "%s invites you to their home base." % invite.from_name
+	var world := Worlds.get_world(invite.get("world_id", ""))
+	return "%s invites you to %s." % [invite.from_name, world.display_name if world else "their raid"]
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _request_answer_invite(invite_id: int, accept: bool) -> void:
+	var account_id := _social_sender()
+	if account_id == "":
+		return
+	var peer := _api.get_remote_sender_id()
+	var result := social.answer_invite(account_id, invite_id, accept)
+	_social_result(peer, result)
+	if not result.ok:
+		return
+	var invite: Dictionary = result.invite
+	var from_peer := _peer_for_account(invite.from)
+	if from_peer > 0:
+		_social_notice.rpc_id(from_peer, "%s %s your invite." % [
+				social.name_of(account_id), "accepted" if accept else "declined"])
+	if not accept:
+		return
+	if invite.kind == "base":
+		# A base is a view of the owner's gear, so send just that.
+		var owner := stash.snapshot(invite.from)
+		_base_visit.rpc_id(peer, invite.from_name, owner.get("stash", []), owner.get("loadout", {}))
+	else:
+		_world_invite_accepted.rpc_id(peer, invite)
+
+
+## `action` is "add", "remove", "block" or "unblock".
+@rpc("any_peer", "call_remote", "reliable")
+func _request_contact(action: String, other: String) -> void:
+	var account_id := _social_sender()
+	if account_id == "":
+		return
+	var peer := _api.get_remote_sender_id()
+	other = other.left(64)
+	var result: Dictionary
+	match action:
+		"add": result = social.add_contact(account_id, other)
+		"remove": result = social.remove_contact(account_id, other)
+		"block": result = social.block(account_id, other)
+		"unblock": result = social.unblock(account_id, other)
+		_: return
+	_social_result(peer, result)
+
+
+@rpc("authority", "call_remote", "reliable")
+func _social(snapshot: Dictionary) -> void:
+	social_state = snapshot
+	social_changed.emit(snapshot)
+
+
+@rpc("authority", "call_remote", "reliable")
+func _social_error(reason: String) -> void:
+	social_error.emit(reason)
+
+
+@rpc("authority", "call_remote", "reliable")
+func _social_notice(text: String) -> void:
+	social_notice.emit(text)
+
+
+@rpc("authority", "call_remote", "reliable")
+func _world_invite_accepted(invite: Dictionary) -> void:
+	world_invite_accepted.emit(invite)
+
+
+@rpc("authority", "call_remote", "reliable")
+func _base_visit(owner_name: String, owner_stash: Array, owner_loadout: Dictionary) -> void:
+	base_visit_requested.emit(owner_name, owner_stash, owner_loadout)
+
+
+## Phone: message a player on this server, or a saved contact.
+func send_message(to: String, text: String) -> void:
+	if _is_connected() and not account.is_empty():
+		_request_message.rpc_id(1, to, text)
+
+
+## Phone: invite a player online here to this server's raid ("world") or to
+## your home base ("base").
+func send_invite(to: String, kind: String) -> void:
+	if _is_connected() and not account.is_empty():
+		_request_invite.rpc_id(1, to, kind)
+
+
+func answer_invite(invite_id: int, accept: bool) -> void:
+	if _is_connected() and not account.is_empty():
+		_request_answer_invite.rpc_id(1, invite_id, accept)
+
+
+## Phone: "add", "remove", "block" or "unblock" a contact.
+func change_contact(action: String, other: String) -> void:
+	if _is_connected() and not account.is_empty():
+		_request_contact.rpc_id(1, action, other)
 
 
 ## Containers and vehicles this session knows about. For tests and tools.
