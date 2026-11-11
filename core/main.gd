@@ -18,6 +18,7 @@ const ScoreboardScript := preload("res://core/ui/scoreboard.gd")
 const PhoneScript := preload("res://core/phone/phone.gd")
 const GameSettings := preload("res://core/settings/game_settings.gd")
 const BaseHudScript := preload("res://core/ui/base_hud.gd")
+const Economy := preload("res://core/economy/economy.gd")
 
 var hub: Hub
 var raid: Raid
@@ -61,11 +62,17 @@ func _ready() -> void:
 		if net and raid == null:
 			hub.set_online_status("Deploying...")
 			net.deploy())
+	hub.online_buy_requested.connect(func(shop_id: String, item_id: String) -> void:
+		if net:
+			net.buy(shop_id, item_id))
+	hub.online_sell_requested.connect(func(item_id: String, count: int) -> void:
+		if net:
+			net.sell(item_id, count))
 	hub.online_leave_requested.connect(leave_server)
 	_setup_phone()
 	hub.base_requested.connect(enter_base)
 	hub.look_changed.connect(func(appearance: Dictionary) -> void:
-		Profile.set_appearance(appearance)
+		Profile.set_appearance(appearance, hub.character.owned)
 		if net != null:
 			net.send_look(Profile.appearance))
 
@@ -101,7 +108,7 @@ func _open_base(stash: Array, loadout: Dictionary, owner_name: String) -> void:
 	add_child(base)
 	base.equip_requested.connect(_on_base_equip)
 	base.leave_requested.connect(leave_base)
-	Look.set_appearance(base.player, Profile.appearance)
+	Look.set_appearance(base.player, _my_look())
 	controller = PlayerController.new()
 	controller.setup(base.player)
 	base.add_child(controller)
@@ -159,6 +166,12 @@ func start_raid(world_id: String) -> void:
 	raid.player_finished.connect(_on_solo_finished)
 
 
+## The player's chosen look, limited to the clothing they own where they are:
+## the local stash solo, the server's stash in a lobby.
+func _my_look() -> Dictionary:
+	return Look.clean_appearance(Profile.appearance, Economy.unlocked_outfits(hub.stash_items()))
+
+
 ## Gives the local player's current actor a camera, controls and a HUD. Called
 ## again every time they drop back in, because each life is a new actor.
 func _attach_player_view() -> void:
@@ -169,7 +182,7 @@ func _attach_player_view() -> void:
 			old.queue_free()
 	if net == null:
 		# Solo: every new life wears the chosen look. Online the server sends it.
-		Look.set_appearance(raid.player, Profile.appearance)
+		Look.set_appearance(raid.player, _my_look())
 	controller = PlayerController.new()
 	controller.setup(raid.player)
 	controller.sign_out_requested.connect(func() -> void: _on_sign_out_requested.call_deferred())
@@ -436,6 +449,9 @@ func _on_online_account_changed(account: Dictionary) -> void:
 	if raid == null:
 		hub.update_account(account)
 		_refresh_base()
+		# Buying or selling clothing changes what the server lets you wear.
+		if net != null:
+			net.send_look(Profile.appearance)
 
 
 func _on_online_joined(p_raid: Raid) -> void:

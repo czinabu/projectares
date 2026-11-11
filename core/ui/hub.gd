@@ -13,6 +13,9 @@ signal join_requested(address: String)
 signal online_equip_requested(slot: String, item_id: String)
 signal online_pick_requested(track: String, variant_id: String)
 signal online_deploy_requested
+## In a server's lobby: buy from a hub shop, or sell stash items ("" sells all loot).
+signal online_buy_requested(shop_id: String, item_id: String)
+signal online_sell_requested(item_id: String, count: int)
 signal online_leave_requested
 ## Open the phone (contacts, messages, invites, news, settings).
 signal phone_requested
@@ -25,6 +28,8 @@ const MasteryPanel := preload("res://core/progression/mastery_panel.gd")
 const CharacterPanel := preload("res://core/ui/character_panel.gd")
 const MasteryBook := preload("res://core/progression/mastery_book.gd")
 const RenownLedger := preload("res://core/progression/renown_ledger.gd")
+const ShopPanel := preload("res://core/economy/shop_panel.gd")
+const Economy := preload("res://core/economy/economy.gd")
 
 ## Your account on the server you are connected to (see
 ## `StashService.snapshot`). Empty when not in a lobby: the hub then shows
@@ -37,6 +42,7 @@ var _loadout_box: VBoxContainer
 var _pickers := {}
 var _details := {}
 var _mastery: MasteryPanel
+var _shop: ShopPanel
 var character: CharacterPanel
 var _online_status: Label
 var _name_edit: LineEdit
@@ -126,6 +132,14 @@ func _ready() -> void:
 	base_button.pressed.connect(func() -> void: base_requested.emit())
 	box.add_child(base_button)
 
+	_shop = ShopPanel.new()
+	_shop.buy_requested.connect(func(shop_id: String, item_id: String) -> void:
+		online_buy_requested.emit(shop_id, item_id))
+	_shop.sell_requested.connect(func(item_id: String, count: int) -> void:
+		online_sell_requested.emit(item_id, count))
+	_shop.changed.connect(_refresh_gear)
+	box.add_child(_shop)
+
 	_solo_box = VBoxContainer.new()
 	_solo_box.add_theme_constant_override("separation", 10)
 	box.add_child(_solo_box)
@@ -182,6 +196,9 @@ func refresh(last_result: Dictionary) -> void:
 			_result.modulate = Color(1.0, 0.45, 0.4)
 		_:
 			_result.text = ""
+	var bounty := Economy.payout(last_result)
+	if bounty > 0:
+		_result.text += "\nKill bounty: +%d credits." % bounty
 	_mastery.show_result(last_result)
 	_refresh_gear()
 
@@ -206,6 +223,10 @@ func _refresh_gear() -> void:
 		ItemDB.summarize(stash_items()), ItemDB.total_value(stash_items()),
 		record.get("raids_played"), record.get("raids_extracted"), record.get("kills"),
 		renown_text(lifetime)]
+	_shop.refresh()
+	# Clothing in the stash unlocks its outfits in the customizer.
+	character.owned = Economy.unlocked_outfits(stash_items())
+	character.set_appearance(Profile.appearance)
 
 
 ## Rank and lifetime renown, as shown under the stash.
@@ -366,6 +387,7 @@ func update_account(p_account: Dictionary) -> void:
 	book.load_dict(account.get("mastery", {}))
 	_mastery.book = book
 	_mastery.loadout = account.get("loadout", {})
+	_shop.account = account
 	_show_sections()
 	_refresh_gear()
 
@@ -375,6 +397,7 @@ func leave_lobby() -> void:
 	account = {}
 	_mastery.book = null
 	_mastery.loadout = null
+	_shop.account = null
 	_show_sections()
 	_refresh_gear()
 
