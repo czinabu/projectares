@@ -17,7 +17,10 @@ const FOV_RANGE := Vector2(60.0, 110.0)
 static var persist := true
 static var mouse_sensitivity := 0.0022
 static var invert_y := false
+## Field of view in first person, and in third person. Each applies only while
+## that view is active. (The first-person one keeps the old saved key.)
 static var field_of_view := 80.0
+static var field_of_view_third := 80.0
 ## 0 to 1, applied to the master audio bus.
 static var master_volume := 0.8
 static var fullscreen := false
@@ -38,6 +41,7 @@ static func reset() -> void:
 	mouse_sensitivity = 0.0022
 	invert_y = false
 	field_of_view = 80.0
+	field_of_view_third = 80.0
 	master_volume = 0.8
 	fullscreen = false
 	show_nameplates = true
@@ -51,6 +55,8 @@ static func set_value(key: String, value: Variant) -> void:
 			invert_y = bool(value)
 		"field_of_view":
 			field_of_view = clampf(float(value), FOV_RANGE.x, FOV_RANGE.y)
+		"field_of_view_third":
+			field_of_view_third = clampf(float(value), FOV_RANGE.x, FOV_RANGE.y)
 		"master_volume":
 			master_volume = clampf(float(value), 0.0, 1.0)
 		"fullscreen":
@@ -65,6 +71,7 @@ static func set_value(key: String, value: Variant) -> void:
 
 static func to_dict() -> Dictionary:
 	return {"mouse_sensitivity": mouse_sensitivity, "invert_y": invert_y, "field_of_view": field_of_view,
+			"field_of_view_third": field_of_view_third,
 			"master_volume": master_volume, "fullscreen": fullscreen, "show_nameplates": show_nameplates}
 
 
