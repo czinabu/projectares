@@ -7,6 +7,7 @@ const VehicleScript := preload("res://core/vehicle/vehicle.gd")
 const RaidRoster := preload("res://core/ui/raid_roster.gd")
 const NameplatesScript := preload("res://core/ui/nameplates.gd")
 const ScoreboardScript := preload("res://core/ui/scoreboard.gd")
+const WarDirector := preload("res://core/war/war_director.gd")
 const RenownLedger := preload("res://core/progression/renown_ledger.gd")
 const BaseLayout := preload("res://core/base/base_layout.gd")
 const BaseHudScript := preload("res://core/ui/base_hud.gd")
@@ -56,12 +57,15 @@ func _run() -> void:
 	await _test_mastery()
 	await _test_nameplates_and_scoreboard()
 	await _test_renown()
+	await _test_war()
 	await _test_online()
 	await _test_plaza()
 	await _test_plaza_online()
 	await _test_stash_service()
 	await _test_phone()
 	await _test_home_base()
+	await _test_arena()
+	await _test_online_arena()
 	await LookTests.run(self)
 	await CustomizerTests.run(self)
 	await _test_economy()
@@ -1865,6 +1869,8 @@ func _test_renown() -> void:
 	add_child(raid)
 	raid.apply_to_profile = false
 	raid.start_server(Worlds.get_world("ashfront"), 91)
+	# Keep the war quiet here, so kills pay their plain value.
+	raid.war.scale = 0.0
 	for bot in raid.bots:
 		bot.get_node("Brain").set_physics_process(false)
 	var feed: Array[String] = []
@@ -1968,6 +1974,88 @@ func _test_renown() -> void:
 	Profile.persist = was_persist
 	check(Hub.renown_text(250) == "Rank Raider   Renown 250   (550 to Veteran)", "the hub shows your rank and what the next one takes")
 	await _end_raid(raid)
+
+
+func _test_war() -> void:
+	print("War intensity")
+	# The director on its own.
+	var war := WarDirector.new()
+	check(war.intensity == 0.0 and war.level_name() == "Quiet" and war.renown_bonus() == 1.0, "a new world is quiet")
+	war.report_kill(Vector3(10, 0, 0), false)
+	var after_bot := war.intensity
+	war.report_kill(Vector3(30, 0, 0), true)
+	check(after_bot > 0.0 and war.intensity - after_bot > after_bot, "kills heat the war up, a player's death most of all")
+	check(war.centre.x > 10.0 and war.centre.x < 30.0, "the centre of the fighting drifts towards the newest kill")
+	var before := war.intensity
+	war.tick(5.0)
+	check(war.intensity == before, "the heat holds for a while after the last kill")
+	war.tick(war.calm_delay)
+	war.tick(1.0)
+	check(war.intensity < before, "then it cools")
+	before = war.intensity
+	var clash: Array[Vector3] = [Vector3(0, 0, 50)]
+	war.tick(1.0, clash)
+	check(war.intensity > before, "hostile players close together heat it up")
+	for i in 400:
+		war.report_kill(Vector3.ZERO, true)
+	check(war.intensity == 1.0 and war.level_name() == "All-out war" and war.renown_bonus() == 1.5,
+			"the meter tops out at 1, where kills pay half as much renown again")
+	check(WarDirector.level_for(0.3) == "Skirmish" and WarDirector.level_for(0.6) == "Battle", "the meter has names for its stretches")
+	war.tick(10000.0)
+	war.tick(10000.0)
+	check(war.intensity == 0.0, "a world left alone goes quiet again")
+	var still := WarDirector.new()
+	still.scale = 0.0
+	still.report_kill(Vector3.ZERO, true)
+	still.tick(1.0, clash)
+	check(still.intensity == 0.0, "a world can keep its war meter still")
+
+	# In a running world.
+	var raid := Raid.new()
+	add_child(raid)
+	raid.apply_to_profile = false
+	raid.start_server(Worlds.get_world("ashfront"), 93)
+	for bot in raid.bots:
+		bot.get_node("Brain").set_physics_process(false)
+	var a := raid.add_player([], {}, "Alpha")
+	var b := raid.add_player([], {}, "Bravo")
+	a.global_position = Vector3(0, 300, 0)
+	b.global_position = Vector3(0, 300, 200)
+	a.set_physics_process(false)
+	b.set_physics_process(false)
+	await frames(30)
+	check(raid.war.intensity == 0.0, "players far apart are not a war, however many there are")
+	b.global_position = Vector3(0, 300, 20)
+	await frames(30)
+	var brewing := raid.war.intensity
+	check(brewing > 0.0 and raid.war.centre.distance_to(Vector3(0, 300, 10)) < 1.0, "two hostile players near each other are (%.3f)" % brewing)
+	check(is_equal_approx(raid.map.get_meta("war_intensity"), raid.war.intensity)
+			and raid.map.get_meta("war_centre") == raid.war.centre, "the map is told how hot the war is, for the sky")
+	b.global_position = Vector3(0, 300, 200)
+	raid.bots[0].kill("bullet", a)
+	await frames(2)
+	check(raid.war.intensity > brewing, "a player killing a bot adds to it")
+	var mid := raid.war.intensity
+	raid.bots[1].kill("bullet", raid.bots[2])
+	await frames(2)
+	check(raid.war.intensity <= mid, "bots killing each other do not")
+	raid.war.intensity = 1.0
+	await frames(2)
+	var paid := a.renown
+	raid.bots[3].kill("bullet", a)
+	check(a.renown - paid > roundi(10 * 1.1), "kills pay more renown in a hot war (%d)" % (a.renown - paid))
+	check(Hud.standing_text(a) != "" and WarDirector.level_for(raid.war.intensity) == "All-out war", "the HUD can name the war's level")
+	await _end_raid(raid)
+	check(Worlds.get_world("frostline").war_scale == 0.0 and Worlds.get_world("ashfront").war_scale > 0.0,
+			"Frostline stays quiet and Ashfront does not")
+
+	# The mood: a blend between the calm and the war atmosphere a map supplies.
+	var calm := Look.mood_values({"sun_energy": 2.0, "fog_color": Color(0.4, 0.4, 0.4)})
+	var battle := Look.mood_values({"sun_energy": 1.0}, calm)
+	check(battle.fog_color == calm.fog_color and battle.sun_energy == 1.0, "a war mood only says what changes")
+	var half := Look.blend_moods(calm, battle, 0.5)
+	check(is_equal_approx(half.sun_energy, 1.5) and Look.blend_moods(calm, battle, 0.0).sun_energy == 2.0
+			and Look.blend_moods(calm, battle, 7.0).sun_energy == 1.0, "the mood blends with the meter and stops at the war mood")
 
 
 func _test_online() -> void:
@@ -3505,6 +3593,8 @@ func _test_home_base() -> void:
 	check(main.hub.equipped("primary") == "dmr_longshot", "the locker shows the loadout chosen in the base")
 	# Every station opens its screen over the room, and Esc steps away.
 	for id: String in HomeBase.STATIONS:
+		if id == "arena":
+			continue  # A way out, not a screen: the arena tests use it.
 		var console: HomeBase.Station = main.base.station(id)
 		_face_display(main.base.player, console)
 		main.controller.yaw = main.base.player.cmd.yaw
@@ -3577,3 +3667,327 @@ func _test_home_base() -> void:
 	main.queue_free()
 	await frames(2)
 	Profile.reset()
+
+
+# --- Arena ---------------------------------------------------------------------
+
+## Credits in a dictionary, for arena tests that need several wallets.
+class FakeBank:
+	extends Arena.Bank
+
+	var money := {}
+	var wins := {}
+	var losses := {}
+
+	func credits(key: String) -> int:
+		return money.get(key, 0)
+
+	func change(key: String, delta: int) -> bool:
+		if credits(key) + delta < 0:
+			return false
+		money[key] = credits(key) + delta
+		return true
+
+	func record(key: String, won: bool) -> void:
+		var book := wins if won else losses
+		book[key] = int(book.get(key, 0)) + 1
+
+
+## A server arena with quick bouts and no exhibitions, and `names` in the stands.
+func _quick_arena(names: Array) -> Arena:
+	var arena := Arena.new()
+	add_child(arena)
+	arena.call_time = 0.3
+	arena.countdown_time = 0.1
+	arena.fight_time = 30.0
+	arena.result_time = 0.1
+	arena.exhibition_delay = -1.0
+	arena.tournament_signup_time = 0.2
+	var bank := FakeBank.new()
+	arena.bank = bank
+	arena.start_server(Arena.ArenaVenue.new(), 5)
+	for n: String in names:
+		var actor := arena.add_player(["blade_scrap", "plate_light", "medkit"], {}, n)
+		arena.set_key(actor, n)
+		bank.money[n] = 500
+	await frames(3)
+	return arena
+
+
+## Waits for the arena to reach `phase` (an Arena.Phase).
+func _arena_phase(arena: Arena, p: int, max_frames := 240) -> bool:
+	return await _wait_until(func() -> bool: return arena.phase == p, max_frames)
+
+
+## Plays the bout in the pit to the end: `side` lands hits until the other yields.
+func _win_bout(arena: Arena, side: int) -> void:
+	await _arena_phase(arena, Arena.Phase.FIGHT)
+	var bout := arena.bout
+	for i in 50:
+		if arena.phase != Arena.Phase.FIGHT:
+			break
+		Combat.deal(bout.fighters[1 - side], DamageInfo.make(40.0, bout.fighters[side], "blade"))
+		await frames(1)
+	await _arena_phase(arena, Arena.Phase.IDLE)
+
+
+func _test_arena() -> void:
+	print("Arena: wagers, duels and tournaments")
+	var bets := {"cara": [0, 100], "dax": [1, 50], "eve": [0, 50]}
+	var paid := Arena.wager_payouts(bets, 0, 0.1)
+	# 50 on the losing side, 5 to the house, 45 shared 2:1 by red's backers.
+	check(paid.get("cara", 0) == 130 and paid.get("eve", 0) == 65 and not paid.has("dax"),
+			"backers of the winner split the losing pool by stake, less the house cut")
+	paid = Arena.wager_payouts(bets, -1, 0.1)
+	check(paid.cara == 100 and paid.dax == 50 and paid.eve == 50, "a draw refunds every wager")
+	paid = Arena.wager_payouts({"cara": [0, 100]}, 1, 0.1)
+	check(paid.get("cara", 0) == 100, "with nobody on the other side, the wager comes back")
+
+	var venue := Arena.ArenaVenue.new()
+	check(venue.gear_at_risk == false and venue.new_raid() is Arena and Worlds.get_world(venue.id) == null,
+			"the arena is a gear-safe venue with its own rules, not a deploy target")
+	check(NetSession.world_for("arena") != null and NetSession.world_for("ashfront") != null,
+			"online sessions can run the arena or a world")
+	var hp := HealthComponent.new()
+	hp.min_health = 1.0
+	hp.apply_damage(DamageInfo.make(500.0, null, "blade"))
+	check(not hp.is_dead and is_equal_approx(hp.health, 1.0), "a floor on health turns a killing blow into a yield")
+	hp.free()
+
+	# Solo: you, the stands and bot gladiators.
+	Profile.reset()
+	var stash_before := Profile.stash.duplicate()
+	var arena := Arena.new()
+	add_child(arena)
+	arena.call_time = 0.3
+	arena.countdown_time = 0.1
+	arena.result_time = 0.1
+	arena.exhibition_delay = -1.0
+	arena.start_solo(["rifle_carbine", "blade_scrap", "plate_light", "medkit", "bike_scrapper"])
+	await frames(5)
+	var me := arena.player
+	check(me != null and not Arena.ArenaVenue.in_pit(me.global_position) and me.global_position.y > 2.0,
+			"you arrive in the stands")
+	check(me.weapons.size() == 2 and "medkit" not in me.gear_items and arena.vehicles.is_empty(),
+			"you bring your own weapons, but no healing or vehicles into the arena")
+	check(not Combat.deal(me, DamageInfo.make(30.0, null, "bullet")) and is_equal_approx(me.health.health, me.health.max_health),
+			"nobody can hurt the crowd")
+	me.global_position = Vector3(0, 0.5, 0)
+	await frames(2)
+	check(not Arena.ArenaVenue.in_pit(me.global_position), "spectators who drop into the pit are put back in the stands")
+	arena.ask("bet", {"side": 0, "amount": 10})
+	check(Profile.credits == StashService.Economy.STARTING_CREDITS, "bets are refused when no bout is being called")
+	arena.ask("practice")
+	check(arena.queue.size() == 1 or arena.bout != null, "you can ask for a practice bout")
+	await _arena_phase(arena, Arena.Phase.CALLING, 30)
+	var board := arena.view_board()
+	check(board.phase == "calling" and board.bout.names[0] == "You" and board.bout.names[1] != "",
+			"the bout is called with both fighters' names")
+	arena.ask("bet", {"side": 0, "amount": 10})
+	check(Profile.credits == StashService.Economy.STARTING_CREDITS and not arena.bout.bets.has("local"),
+			"fighters cannot bet on their own bout")
+	await _arena_phase(arena, Arena.Phase.FIGHT)
+	var bot: Actor = arena.bout.fighters[1]
+	check(Arena.ArenaVenue.in_pit(me.global_position) and bot != null and bot in arena.bots
+			and me.health.min_health > 0.0, "the fighters are in the pit and cannot die")
+	check(Combat.deal(bot, DamageInfo.make(5.0, me, "blade")) and not Combat.deal(me, DamageInfo.make(5.0, null, "fall")),
+			"only the two fighters can hurt each other")
+	Combat.deal(me, DamageInfo.make(5000.0, bot, "blade"))
+	check(not me.is_dead and me.health.health <= 1.01, "a beaten fighter yields instead of dying")
+	await _arena_phase(arena, Arena.Phase.IDLE)
+	await frames(3)
+	check(Profile.arena_losses == 1 and Profile.arena_wins == 0, "the bout goes on your arena record")
+	check(not Arena.ArenaVenue.in_pit(me.global_position) and is_equal_approx(me.health.health, me.health.max_health)
+			and me.health.min_health == 0.0, "both go back to the stands, patched up")
+	check(not is_instance_valid(bot) or bot.is_queued_for_deletion() or bot not in arena.bots,
+			"the bot gladiator leaves the arena after the bout")
+	check(me.weapons.size() == 2 and Profile.stash == stash_before, "nothing was lost and the stash is untouched")
+
+	# An exhibition between two bots, with a wager from the crowd.
+	arena.exhibition_delay = 0.1
+	await _arena_phase(arena, Arena.Phase.CALLING, 60)
+	check(arena.bout != null and arena.bout.kind == "exhibition", "with nothing queued, bot gladiators put on an exhibition")
+	arena.ask("bet", {"side": 1, "amount": 50})
+	check(Profile.credits == StashService.Economy.STARTING_CREDITS - 50 and arena.bout.pools[1] == 50,
+			"the crowd can bet while a bout is being called")
+	arena.ask("bet", {"side": 0, "amount": 50})
+	check(arena.bout.pools[0] == 0, "you cannot back both sides")
+	arena.exhibition_delay = -1.0
+	await _win_bout(arena, 0)
+	check(Profile.credits == StashService.Economy.STARTING_CREDITS, "a wager nobody took the other side of is refunded")
+	arena.queue_free()
+	await frames(3)
+	check(Profile.stash == stash_before, "leaving the arena takes nothing from the stash")
+	Profile.reset()
+
+	# From your base: the arena gate opens it, with its own overlay.
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await frames(2)
+	main.base.station("arena").interact(main.base.player)
+	await frames(5)
+	check(main.raid is Arena and not main.hub.visible and main.base == null
+			and main.raid.get_node_or_null("ArenaHud") != null
+			and main.controller != null, "the base's arena gate opens the arena with its overlay")
+	var hud: CanvasLayer = main.raid.get_node("ArenaHud")
+	await frames(20)
+	check(hud.get("_panel").get_child_count() > 3, "the overlay lists what you can do")
+	hud.leave_requested.emit()
+	await frames(5)
+	check(main.raid == null and main.base != null and not main.hub.visible, "leaving the arena takes you home")
+	# A gate inside a world (the plaza's) opens the arena from there.
+	main.start_raid(Worlds.all()[0].id)
+	await frames(5)
+	main.open_arena()
+	await frames(5)
+	check(main.raid is Arena and main.raid.player != null, "the arena can be opened from inside a world")
+	main.leave_arena()
+	await frames(3)
+	main.queue_free()
+	await frames(2)
+	Profile.reset()
+
+	# A server arena: a staked duel between players, with the crowd betting.
+	arena = await _quick_arena(["Ash", "Bex", "Cy", "Dov"])
+	var bank: FakeBank = arena.bank
+	var ash := arena.players[0].actor
+	var bex := arena.players[1].actor
+	var cy := arena.players[2].actor
+	var dov := arena.players[3].actor
+	check(not arena.request(ash, "challenge", {"to": String(bex.name), "stake": 9999}).ok,
+			"a stake above the limit is refused")
+	check(arena.request(ash, "challenge", {"to": String(bex.name), "stake": 50}).ok, "a player can challenge another")
+	var board_b := arena.board_for(bex)
+	check(board_b.challenges.size() == 1 and board_b.challenges[0].incoming and board_b.challenges[0].from == "Ash",
+			"the challenged player sees it on their board")
+	check(not arena.request(cy, "accept", {"from": String(ash.name)}).ok, "nobody else can accept it")
+	check(arena.request(bex, "accept", {"from": String(ash.name)}).ok and bank.money.Ash == 450 and bank.money.Bex == 450,
+			"accepting puts up both stakes")
+	await _arena_phase(arena, Arena.Phase.CALLING, 30)
+	check(arena.request(cy, "bet", {"side": 0, "amount": 100}).ok and arena.request(dov, "bet", {"side": 1, "amount": 50}).ok,
+			"the crowd bets on both sides")
+	check(not arena.request(ash, "bet", {"side": 0, "amount": 10}).ok, "a fighter cannot bet on their own duel")
+	check(not arena.request(cy, "bet", {"side": 0, "amount": 1}).ok, "bets below the minimum are refused")
+	await _arena_phase(arena, Arena.Phase.FIGHT)
+	check(not Combat.deal(cy, DamageInfo.make(10.0, ash, "blade")), "a fighter cannot hurt the crowd")
+	await _win_bout(arena, 0)
+	check(bank.money.Ash == 550 and bank.money.Bex == 450, "the winner takes both stakes")
+	check(bank.money.Cy == 545 and bank.money.Dov == 450, "the winner's backers are paid from the losing pool")
+	check(bank.wins.get("Ash", 0) == 1 and bank.losses.get("Bex", 0) == 1, "both fighters' records are kept")
+	check(not ash.is_dead and not bex.is_dead and ash.weapons.size() == 1 and bex.weapons.size() == 1,
+			"nobody died and nobody lost a weapon")
+
+	# Leaving mid-bout forfeits it.
+	arena.request(cy, "challenge", {"to": String(dov.name), "stake": 0})
+	arena.request(dov, "accept", {"from": String(cy.name)})
+	await _arena_phase(arena, Arena.Phase.FIGHT)
+	var summary := [{}]
+	arena.bout_finished.connect(func(r: Dictionary) -> void: summary[0] = r, CONNECT_ONE_SHOT)
+	arena.remove_player(dov)
+	await frames(2)
+	check(summary[0].get("winner", "") == "Cy", "a fighter who leaves forfeits the bout")
+	await _arena_phase(arena, Arena.Phase.IDLE)
+
+	# A tournament: three players and a bot gladiator in a four-slot bracket.
+	for who in [ash, bex, cy]:
+		check(arena.request(who, "join_tournament", {}).ok, "%s enters the tournament" % who.display_name)
+	check(bank.money.Ash == 525 and arena.tournament.pot == 75, "the entry fee goes into the pot")
+	check(not arena.request(ash, "join_tournament", {}).ok, "nobody enters twice")
+	var after_fees := bank.money.duplicate()
+	var champion := [""]
+	for i in 6:
+		if arena.tournament == null:
+			break
+		await _arena_phase(arena, Arena.Phase.FIGHT, 120)
+		if arena.bout == null:
+			break
+		# The player on the red side wins each bout, if there is one.
+		var side := 0 if arena.bout.sides[0] is Actor else 1
+		if arena.tournament != null and arena.tournament.round > 0:
+			champion[0] = arena.bout.names[side]
+		await _win_bout(arena, side)
+	await frames(5)
+	check(arena.tournament == null and arena.last_result.ends_with("is the champion"),
+			"the bracket plays out to a champion (%s)" % arena.last_result)
+	var champ_key: String = champion[0]
+	check(champ_key != "" and bank.money.get(champ_key, 0) == int(after_fees.get(champ_key, 0)) + 75,
+			"the champion takes the pot")
+
+	# Shutting the arena down mid-bout hands wagers and stakes back.
+	arena.request(ash, "challenge", {"to": String(bex.name), "stake": 20})
+	arena.request(bex, "accept", {"from": String(ash.name)})
+	await _arena_phase(arena, Arena.Phase.CALLING, 30)
+	arena.request(cy, "bet", {"side": 1, "amount": 30})
+	var before := [bank.money.Ash + 20, bank.money.Bex + 20, bank.money.Cy + 30]
+	arena.queue_free()
+	await frames(2)
+	check(bank.money.Ash == before[0] and bank.money.Bex == before[1] and bank.money.Cy == before[2],
+			"an arena that shuts down refunds open wagers and stakes")
+
+
+func _test_online_arena() -> void:
+	print("Arena: online")
+	var service := StashService.new()
+	service.persist = false
+	var made := service.sign_in("Wren", StashService.new_secret())
+	var stash_before: Array = service.snapshot(made.account_id).stash
+	check(service.credits_of("wren") == StashService.Economy.STARTING_CREDITS, "a new account starts with credits")
+	check(not service.change_credits("wren", -10000) and service.change_credits("wren", -50)
+			and service.credits_of("wren") == StashService.Economy.STARTING_CREDITS - 50, "credits never go below zero")
+	service.equip("wren", "primary", "rifle_carbine")
+	var deployed := service.deploy("wren", Arena.ArenaVenue.new())
+	check(deployed.ok and "rifle_carbine" in deployed.kit and service.snapshot("wren").stash == stash_before
+			and not service.is_deployed("wren"), "entering the arena hands out the loadout without taking it")
+
+	_wipe_dir(NET_ACCOUNTS)
+	var port := 24821
+	var pid := _start_server(port, ["--bots", "0"])
+	var arena_port := port + 10
+	var ash := await _join("Ashe", arena_port)
+	var bex := await _join("Brix", arena_port)
+	check(ash != null and bex != null and ash.raid is Arena and bex.raid is Arena,
+			"players join the server's arena on its own port")
+	if ash == null or bex == null:
+		OS.kill(pid)
+		await _leave(ash)
+		await _leave(bex)
+		return
+	check(not ash.account.get("deployed", true), "nothing left the stash to enter the arena")
+	var ash_arena: Arena = ash.raid
+	await _wait_until(func() -> bool: return ash_arena.board.get("players", []).size() == 1, 240)
+	check(ash_arena.board.get("you", {}).get("credits", 0) == StashService.Economy.STARTING_CREDITS
+			and ash_arena.board.players[0].name == "Brix", "each player gets the board, with their credits")
+	var notices: Array[String] = []
+	ash.raid.player.notice.connect(func(text: String) -> void: notices.append(text))
+	ash_arena.ask("bet", {"side": 0, "amount": 10})
+	await _wait_until(func() -> bool: return not notices.is_empty(), 120)
+	check(notices.size() == 1 and notices[0].begins_with("Bets are closed"), "the server refuses a bad request with a notice")
+	ash_arena.ask("challenge", {"to": ash_arena.board.players[0].node, "stake": 25})
+	var bex_arena: Arena = bex.raid
+	await _wait_until(func() -> bool: return not bex_arena.board.get("challenges", []).is_empty(), 240)
+	check(not bex_arena.board.get("challenges", []).is_empty(), "the challenge reaches the other player")
+	if not bex_arena.board.get("challenges", []).is_empty():
+		bex_arena.ask("accept", {"from": bex_arena.board.challenges[0].from_node})
+	await _wait_until(func() -> bool: return bex_arena.board.get("phase", "") == "calling", 240)
+	check(bex_arena.board.get("phase", "") == "calling" and bex_arena.board.bout.names == ["Ashe", "Brix"]
+			and bex_arena.board.bout.stake == 50, "the server calls the duel with both stakes in the purse")
+	check(int(bex_arena.board.get("you", {}).get("credits", 0)) == StashService.Economy.STARTING_CREDITS - 25,
+			"the stake is taken from the server's account")
+	OS.kill(pid)
+	await _leave(ash)
+	await _leave(bex)
+
+	# With the plaza: its routes point the arena gate at the arena's port.
+	port = 24841
+	pid = _start_server(port, ["--bots", "0", "--plaza"])
+	var visitor := await _sign_in("Vale", port)
+	check(visitor != null, "a client signs in to the plaza")
+	if visitor != null:
+		await _wait_until(func() -> bool: return visitor.routes.has("arena"), 240)
+		check(int(visitor.routes.get("arena", -1)) == port + 10, "the plaza's routes include the arena")
+		await _leave(visitor)
+		var fighter := await _join("Vale", port + 10)
+		check(fighter != null and fighter.raid is Arena, "the arena runs beside the plaza on the same server")
+		await _leave(fighter)
+	OS.kill(pid)
+	_wipe_dir(NET_ACCOUNTS)

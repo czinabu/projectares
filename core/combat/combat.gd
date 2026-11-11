@@ -45,9 +45,14 @@ static func deal(target: Object, info: DamageInfo) -> bool:
 ## slow connection hits what was on their screen, not what the server has
 ## moved on to. Empty offline, for bots, and with no delay to make up.
 static func positions_seen_by(attacker: Actor) -> Dictionary:
-	if attacker == null or not rewind.is_valid():
+	if attacker == null:
 		return {}
-	var seen: Variant = rewind.call(attacker)
+	# The attacker's own raid first: a server may run more than one.
+	var raid := Raid.of(attacker)
+	var source := raid.rewind if raid != null and raid.rewind.is_valid() else rewind
+	if not source.is_valid():
+		return {}
+	var seen: Variant = source.call(attacker)
 	return seen if seen is Dictionary else {}
 
 
@@ -72,7 +77,7 @@ static func trace(shooter: Actor, from: Vector3, to: Vector3) -> Dictionary:
 	var nearest := from.distance_to(to)
 	for node in shooter.get_tree().get_nodes_in_group("actors"):
 		var other := node as Actor
-		if other == null or other == shooter or other.is_dead:
+		if other == null or other == shooter or other.is_dead or not Raid.together(shooter, other):
 			continue
 		var at: Vector3 = seen.get(other, other.global_position)
 		var entry := capsule_entry(from, to, at)

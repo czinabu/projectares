@@ -20,7 +20,7 @@ signal equip_requested(slot: String, item_id: String)
 signal leave_requested
 ## The player used a station (a key of `STATIONS`): the locker, the mastery
 ## bench, the wardrobe, the records board, the trader, the launch pad or the
-## uplink. Whoever owns the base opens what it offers.
+## uplink, or the arena gate. Whoever owns the base opens what it offers.
 signal station_requested(station: String)
 ## The displays were rebuilt.
 signal gear_shown
@@ -52,6 +52,7 @@ const STATIONS := {
 	"records": {"prompt": "Read your record and stash", "title": "Records", "at": Vector3(-6.6, 0.0, 5.3), "yaw": PI / 2.0, "color": Color(0.9, 0.9, 0.85)},
 	"mastery": {"prompt": "Pick mastery variants", "title": "Mastery bench", "at": Vector3(6.6, 0.0, 0.9), "yaw": -PI / 2.0, "color": Color(1.0, 0.8, 0.3)},
 	"trader": {"prompt": "Buy and sell", "title": "Trader", "at": Vector3(6.6, 0.0, 3.1), "yaw": -PI / 2.0, "color": Color(0.45, 1.0, 0.6)},
+	"arena": {"prompt": "Enter the arena (no gear at risk)", "title": "Arena gate", "at": Vector3(6.6, 0.0, 7.4), "yaw": -PI / 2.0, "color": Color(1.0, 0.35, 0.3)},
 	"uplink": {"prompt": "Play online", "title": "Uplink", "at": Vector3(6.6, 0.0, 5.3), "yaw": -PI / 2.0, "color": Color(0.4, 0.95, 1.0)},
 }
 

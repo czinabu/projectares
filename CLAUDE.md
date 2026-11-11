@@ -45,6 +45,14 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   public part (rank, streak, bounty, exposed, marked) is copied onto the
   `Actor` for views to read, and news for everyone goes out on
   `Raid.war_feed`. Tune it with the ledger's vars.
+- The war director (`core/war/war_director.gd`, `Raid.war`) is the server's
+  read on the fighting: war intensity from 0 to 1 and where its centre is.
+  Only the server ticks it; clients get the values from `NetSession`. The
+  `Raid` passes them to the map as the metas `war_intensity` and
+  `war_centre`, and that is all `Look` knows: a map that hands
+  `Look.atmosphere` a second, war mood has its sky blend towards it. A world
+  scales the meter with `WorldDef.war_scale` (0 keeps it quiet). New stakes
+  that follow the war (reinforcements, events, loot) read `Raid.war`.
 - Mastery pays for using gear, never for leaving alive, or signing out over
   and over would farm it.
 - Blocking and parrying happen in `Weapon.modify_incoming`, which `Combat.deal`
@@ -176,6 +184,18 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   (`cosmetic`, with an `outfits` stat of customizer outfit ids) are ordinary
   stash items that fit no loadout slot, so they never go on a raid.
   `Economy.unlocked_outfits(stash)` lists the outfits a stash unlocks.
+
+- The arena (`core/arena/`) is a venue, not a raid world: `ArenaVenue` is a
+  `WorldDef` that is never in the registry, has `gear_at_risk` off, and
+  returns `Arena` (a `Raid` subclass) from `new_raid()`. Nobody loses gear
+  there: `StashService.deploy` hands out the kit without taking it, nothing is
+  settled, nothing drops, and fighters yield at `HealthComponent.min_health`
+  instead of dying. Only the two fighters of a running bout may hurt each
+  other (`Arena.may_hurt`). Results, wagers, stakes and tournament pots are
+  decided only by the authority's `Arena` and paid through `Arena.bank`;
+  a client only sends `Arena.ask` requests and shows the board the server
+  sends. Credits change only through `StashService.change_credits` online and
+  `Profile.change_credits` solo.
 
 ## Conventions
 

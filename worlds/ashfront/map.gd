@@ -69,6 +69,22 @@ func _build_environment() -> void:
 		"ambient_energy": 1.3,
 		"saturation": 0.85,
 		"contrast": 1.12,
+	}, {
+		# The same city in the middle of a battle: the smoke closes in, the sun
+		# goes to a dull red and the light drains away. It stops well short of
+		# black, so a fight stays readable.
+		"sky_tint": Color(0.55, 0.3, 0.24),
+		"sky_saturation": 0.4,
+		"sky_energy": 0.42,
+		"fog_color": Color(0.2, 0.13, 0.11),
+		"fog_density": 0.017,
+		"sun_color": Color(1.0, 0.6, 0.45),
+		"sun_energy": 1.05,
+		"ambient_color": Color(0.42, 0.36, 0.38),
+		"ambient_energy": 1.15,
+		"saturation": 0.72,
+		"contrast": 1.16,
+		"glow": 0.95,
 	})
 	Look.weather(self, "embers", CELL * GRID * 0.5)
 

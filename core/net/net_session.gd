@@ -74,10 +74,13 @@ signal world_invite_accepted(invite: Dictionary)
 signal base_visit_requested(owner_name: String, stash: Array, loadout: Dictionary)
 
 const DEFAULT_PORT := 24565
-const PROTOCOL := 9
+const PROTOCOL := 10
 const StashService := preload("res://core/account/stash_service.gd")
 const Economy := preload("res://core/economy/economy.gd")
 const SocialService := preload("res://core/social/social_service.gd")
+const ArenaVenue := preload("res://core/arena/arena_venue.gd")
+## Server physics ticks between arena board updates when nothing changed.
+const BOARD_RESEND_TICKS := 60
 ## Server physics ticks between state updates (2 = 30 a second).
 const TICKS_PER_SNAPSHOT := 2
 ## Actors per state packet, to keep each one under the network's packet size.
@@ -188,7 +191,10 @@ var _ride_fix := Vector3.ZERO # position error of your ride still to blend away 
 var _ride_turn := 0.0    # heading error of your ride still to blend away (client)
 var _ride_entry: Array = [] # the server's last answer about your ride, once compared (client)
 var _sent_kills := {}    # actor id -> kill count last sent (server)
+var _board_sent := {}    # peer id -> [board text, tick sent] (server, arena)
+var _board_dirty := false
 var _sent_standing := {} # actor id -> public renown standing last sent (server)
+var _sent_war := -1.0    # war intensity last sent (server)
 var _tick := 0
 var _died_at := {}       # peer id -> msec when their last life ended in a death (server)
 var _finished := false   # client: signed out, so the server closing the connection is expected
@@ -222,7 +228,7 @@ func _exit_tree() -> void:
 
 ## Starts a server running `p_world_id`. Returns OK or an error.
 func host(p_world_id: String, port := DEFAULT_PORT, max_players := 8) -> Error:
-	if Worlds.get_world(p_world_id) == null:
+	if world_for(p_world_id) == null:
 		return ERR_DOES_NOT_EXIST
 	var peer := ENetMultiplayerPeer.new()
 	var err := peer.create_server(port, max_players)
@@ -251,7 +257,8 @@ func close() -> void:
 
 func _start_server_raid() -> void:
 	_clear_tables()
-	raid = Raid.new()
+	var world := world_for(world_id)
+	raid = world.new_raid()
 	raid.name = "Raid"
 	if isolated:
 		if _space == null:
@@ -275,9 +282,19 @@ func _start_server_raid() -> void:
 	raid.vehicle_spawned.connect(_on_server_vehicle_spawned)
 	raid.vehicle_removed.connect(_on_server_vehicle_removed)
 	raid.squad_spawn = squad_spawn
-	var world := Worlds.get_world(world_id)
+	if lag_compensation:
+		raid.rewind = _seen_positions
 	if bot_count >= 0:
 		world.bot_count = bot_count
+	var arena := raid as Arena
+	if arena != null:
+		# The arena pays wagers from the accounts this server keeps.
+		arena.bank = Arena.StashBank.new(stash)
+		arena.board_changed.connect(func() -> void: _board_dirty = true)
+		arena.told.connect(func(actor: Actor, text: String) -> void:
+			var peer: int = _actor_peer.get(actor, 0)
+			if peer in _api.get_peers():
+				_notice.rpc_id(peer, text))
 	raid.start_server(world)
 
 
@@ -316,7 +333,9 @@ func _clear_tables() -> void:
 	_ride_entry = []
 	_sent_kills.clear()
 	_sent_standing.clear()
+	_sent_war = -1.0
 	_actor_account.clear()
+	_board_sent.clear()
 
 
 func _register(actor: Actor) -> int:
@@ -435,7 +454,9 @@ func _on_server_player_finished(actor: Actor, result: Dictionary) -> void:
 	var account_id: String = _actor_account.get(actor, "")
 	if account_id != "":
 		_actor_account.erase(actor)
-		stash.settle(account_id, result)
+		# Nothing to settle where no gear was at risk (the arena).
+		if raid.world.gear_at_risk:
+			stash.settle(account_id, result)
 		# Everyone signed in to the account hears, including a player back in
 		# the lobby whose old body just finished its sign-out.
 		for other: int in _peer_account:
@@ -621,6 +642,8 @@ func _request_join() -> void:
 	_joining_look = {}
 	if not safe:
 		_actor_account[actor] = account_id
+	if raid is Arena:
+		raid.set_key(actor, account_id)
 	_send_account(peer)
 	_peer_actor[peer] = actor
 	_actor_peer[actor] = peer
@@ -655,6 +678,43 @@ func _request_join() -> void:
 		_kills.rpc_id(peer, id, _sent_kills[id])
 	for id: int in _sent_standing:
 		_standing.rpc_id(peer, id, _sent_standing[id])
+	_war.rpc_id(peer, raid.war.intensity, raid.war.centre)
+
+
+## Arena: a player in it asks for something (challenge, accept, bet...).
+## The server's own `Arena.request` decides, for the sender's own actor.
+@rpc("any_peer", "call_remote", "reliable")
+func _arena_request(action: String, args: Dictionary) -> void:
+	var peer := _api.get_remote_sender_id()
+	var arena := raid as Arena
+	if not is_server or arena == null or not _peer_actor.has(peer) or action.length() > 32 or args.size() > 4:
+		return
+	var result := arena.request(_peer_actor[peer], action, args)
+	if not result.ok and peer in _api.get_peers():
+		_notice.rpc_id(peer, result.error)
+	_board_dirty = true
+
+
+## Sends each player in the arena their own view of the board, when it
+## changed and now and then anyway.
+func _send_boards() -> void:
+	var arena := raid as Arena
+	if arena == null:
+		return
+	var due := _board_dirty or _tick % 15 == 0
+	_board_dirty = false
+	if not due:
+		return
+	for peer: int in _peer_actor:
+		if peer not in _joined_peers:
+			continue
+		var b := arena.board_for(_peer_actor[peer])
+		var text := JSON.stringify(b)
+		var sent: Array = _board_sent.get(peer, ["", -BOARD_RESEND_TICKS])
+		if text == sent[0] and _tick - int(sent[1]) < BOARD_RESEND_TICKS:
+			continue
+		_board_sent[peer] = [text, _tick]
+		_arena_board.rpc_id(peer, b)
 
 
 func _on_server_hit_confirmed(target: Actor, info: DamageInfo, lethal: bool, peer: int) -> void:
@@ -779,6 +839,7 @@ func _server_late_tick(_delta: float) -> void:
 						rider_id, _applied_seq.get(rider_id, 0)])
 			for peer in _joined_peers:
 				_vehicle_state.rpc_id(peer, rides)
+	_send_boards()
 	for state in raid.players:
 		var id: int = _ids.get(state.actor, -1)
 		if id >= 0 and int(_sent_kills.get(id, 0)) != state.kills:
@@ -786,11 +847,18 @@ func _server_late_tick(_delta: float) -> void:
 			for peer in _joined_peers:
 				_kills.rpc_id(peer, id, state.kills)
 		var actor := state.actor
+		if not is_instance_valid(actor):
+			continue
 		var standing := [actor.renown, actor.rank, actor.streak, actor.bounty, actor.exposed, actor.marked]
 		if id >= 0 and _sent_standing.get(id, []) != standing:
 			_sent_standing[id] = standing
 			for peer in _joined_peers:
 				_standing.rpc_id(peer, id, standing)
+	# The meter moves slowly, so a few times a second is plenty.
+	if _tick % 20 == 0 and not is_equal_approx(_sent_war, raid.war.intensity):
+		_sent_war = raid.war.intensity
+		for peer in _joined_peers:
+			_war.rpc_id(peer, raid.war.intensity, raid.war.centre)
 
 
 # ---------------------------------------------------------------- client ----
@@ -824,7 +892,7 @@ func _hello(protocol: int, p_world_id: String) -> void:
 		failed.emit("The server runs a different version of the game.")
 		close()
 		return
-	var world := Worlds.get_world(p_world_id)
+	var world := world_for(p_world_id)
 	if world == null:
 		failed.emit("The server runs a world this game does not have: %s." % p_world_id)
 		close()
@@ -924,10 +992,13 @@ func _welcome(actor_id: int) -> void:
 	_clear_tables()
 	my_actor_id = actor_id
 	Combat.authoritative = false
-	raid = Raid.new()
+	var world := world_for(world_id)
+	raid = world.new_raid()
 	raid.name = "Raid"
 	add_child(raid)
-	raid.start_client(Worlds.get_world(world_id))
+	raid.start_client(world)
+	if raid is Arena:
+		raid.send_request = arena_request
 
 
 @rpc("authority", "call_remote", "reliable")
@@ -1205,6 +1276,14 @@ func _hurt(amount: float, kind: String) -> void:
 		me.health.damaged.emit(DamageInfo.make(amount, null, kind))
 
 
+## How hot the war is and where, for the sky and the HUD.
+@rpc("authority", "call_remote", "unreliable_ordered")
+func _war(intensity: float, centre: Vector3) -> void:
+	if raid != null:
+		raid.war.intensity = clampf(intensity, 0.0, 1.0)
+		raid.war.centre = centre
+
+
 ## A player's public renown: [renown, rank, streak, bounty, exposed, marked].
 @rpc("authority", "call_remote", "reliable")
 func _standing(id: int, standing: Array) -> void:
@@ -1232,6 +1311,33 @@ func _notice(text: String) -> void:
 		me.notice.emit(text)
 		if text.begins_with("Looted "):
 			Sfx.play("loot")
+
+
+## Arena: ask the server for something (see `Arena.request`). A refusal
+## comes back as a notice.
+func arena_request(action: String, args := {}) -> void:
+	if _is_connected() and my_actor_id >= 0:
+		_arena_request.rpc_id(1, action, args)
+
+
+@rpc("authority", "call_remote", "reliable")
+func _arena_board(p_board: Dictionary) -> void:
+	_after_lag(_receive_board.bind(p_board))
+
+
+func _receive_board(p_board: Dictionary) -> void:
+	var arena := raid as Arena
+	if arena == null:
+		return
+	var was: String = arena.board.get("phase", "")
+	arena.board = p_board
+	# A fighter's guns are refilled on the server as the bout starts; do the
+	# same to your own copy so the two agree.
+	var me: Actor = _actors.get(my_actor_id)
+	var bout: Dictionary = p_board.get("bout", {})
+	if me != null and p_board.get("phase", "") == "countdown" and was != "countdown" \
+			and String(me.name) in bout.get("nodes", []):
+		Arena.refresh_fighter(me)
 
 
 ## Your sign-out started, with this many seconds to go, or stopped (below zero).
@@ -1610,6 +1716,13 @@ func containers() -> Array:
 
 func vehicles() -> Array:
 	return _vehicles.values()
+
+
+## The world or venue with this id: a world from the registry, or the arena.
+static func world_for(id: String) -> WorldDef:
+	if id == ArenaVenue.ID:
+		return ArenaVenue.new()
+	return Worlds.get_world(id)
 
 
 ## The actor for a network id, or null. For tests and tools.

@@ -15,6 +15,12 @@ func _ready() -> void:
 		get_tree().quit()
 		return
 
+	# `-- <output_dir> --arena-only` shoots just the arena.
+	if "--arena-only" in args:
+		await _arena_shots(out_dir)
+		get_tree().quit()
+		return
+
 	var hub := Hub.new()
 	add_child(hub)
 	hub.set_online_status("Connecting to 192.168.1.20...")
@@ -39,6 +45,12 @@ func _ready() -> void:
 	await _base_shots(out_dir)
 	# `-- <output_dir> --base-only` stops after the home base.
 	if "--base-only" in args:
+		get_tree().quit()
+		return
+
+	# `-- <output_dir> --war-only` shows the sky at three war intensities.
+	if "--war-only" in args:
+		await _war_shots(out_dir)
 		get_tree().quit()
 		return
 
@@ -240,6 +252,36 @@ func _base_shots(out_dir: String) -> void:
 	await _settle(2)
 
 
+## The arena from the stands, during an exhibition bout, with its overlay.
+func _arena_shots(out_dir: String) -> void:
+	var arena := Arena.new()
+	add_child(arena)
+	arena.call_time = 1.0
+	arena.countdown_time = 0.5
+	arena.exhibition_delay = 0.2
+	arena.start_solo(["rifle_carbine", "blade_scrap", "plate_light"])
+	var controller := PlayerController.new()
+	controller.setup(arena.player)
+	arena.add_child(controller)
+	var hud := Hud.new()
+	hud.setup(arena, controller)
+	arena.add_child(hud)
+	var overlay: CanvasLayer = preload("res://core/arena/arena_hud.gd").new()
+	overlay.setup(arena)
+	arena.add_child(overlay)
+	# Look down into the pit from where you stand.
+	var to_center := -arena.player.global_position
+	controller.yaw = atan2(-to_center.x, -to_center.z)
+	controller.pitch = -0.35
+	await _settle(60)
+	await _shot(out_dir.path_join("arena_calling.png"))
+	await _settle(200)
+	await _shot(out_dir.path_join("arena_fight.png"))
+	controller.view_mode = PlayerController.ViewMode.THIRD
+	await _settle(30)
+	await _shot(out_dir.path_join("arena_third_person.png"))
+
+
 ## The plaza as a player sees it: the gates, and another player's gear card.
 func _plaza_shots(out_dir: String, raid: Raid, camera: Camera3D, lineup: Array[Actor]) -> void:
 	camera.look_at_from_position(Vector3(0, 5, -12), Vector3(0, 6, -40))
@@ -279,3 +321,27 @@ func _shot(path: String) -> void:
 	await RenderingServer.frame_post_draw
 	get_viewport().get_texture().get_image().save_png(path)
 	print("saved ", path)
+
+
+## The same view of Ashfront when quiet, in a battle and in all-out war.
+func _war_shots(out_dir: String) -> void:
+	var raid := Raid.new()
+	add_child(raid)
+	raid.start(Worlds.get_world("ashfront"), 42)
+	raid.war.cooling = 0.0
+	for bot in raid.bots:
+		bot.get_node("Brain").set_physics_process(false)
+	var controller := PlayerController.new()
+	controller.setup(raid.player)
+	raid.add_child(controller)
+	var hud := Hud.new()
+	hud.setup(raid, controller)
+	raid.add_child(hud)
+	var mood := raid.map.get_node("WarMood")
+	for step: Array in [[0.0, "war_quiet"], [0.55, "war_battle"], [1.0, "war_all_out"]]:
+		raid.war.intensity = step[0]
+		raid.war.centre = raid.player.global_position + raid.player.get_aim_dir() * 170.0
+		mood.follow = 100.0
+		await _settle(240 if step[0] > 0.0 else 60)
+		await _shot(out_dir.path_join(step[1] + ".png"))
+	raid.queue_free()

@@ -39,6 +39,9 @@ var bounty_per_kill := 50
 var marked_floor := 300
 var marked_bonus := 250
 
+## Multiplies what a kill itself pays. The `Raid` raises it as the war heats up.
+var pay_scale := 1.0
+
 ## Owner key -> Standing.
 var standings := {}
 
@@ -93,7 +96,7 @@ func bot_killed(killer: String) -> int:
 	if standing == null:
 		return 0
 	standing.streak += 1
-	return _gain(standing, roundi(bot_kill * _streak_factor(standing)))
+	return _gain(standing, roundi(bot_kill * _streak_factor(standing) * pay_scale))
 
 
 ## `victim` died. `killer` is the owner key of the player who did it, or ""
@@ -118,7 +121,7 @@ func player_died(victim: String, killer := "", scrap := false) -> Dictionary:
 	winner.streak += 1
 	winner.player_streak += 1
 	var base := player_kill * (scrap_kill_factor if scrap else 1.0)
-	var gain := roundi(base * _streak_factor(winner)) + int(out.lost) + price
+	var gain := roundi(base * _streak_factor(winner) * pay_scale) + int(out.lost) + price
 	if was_marked:
 		gain += marked_bonus
 	out.gain = _gain(winner, gain)
