@@ -3,13 +3,13 @@
 importer="scene"
 importer_version=1
 type="PackedScene"
-uid="uid://b8ip33vh0an8g"
-path="res://.godot/imported/Human_Worker.glb-feba8747e3c015307b58cbe1b36b7723.scn"
+uid="uid://c2fas5nadpa3t"
+path="res://.godot/imported/f_Casual.glb-bb4817b304d50bd589fac1ae748f4ca3.scn"
 
 [deps]
 
-source_file="res://assets/characters/Human_Worker.glb"
-dest_files=["res://.godot/imported/Human_Worker.glb-feba8747e3c015307b58cbe1b36b7723.scn"]
+source_file="res://assets/characters/humans/f_Casual.glb"
+dest_files=["res://.godot/imported/f_Casual.glb-bb4817b304d50bd589fac1ae748f4ca3.scn"]
 
 [params]
 

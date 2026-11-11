@@ -34,6 +34,12 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   pick surfaces, an atmosphere and bot skins (`set_meta("look", ...)`) from
   its generic kits. Decoration in a map uses its own RNG so it cannot shift
   the gameplay layout.
+- People are built from parts (`core/visual/human.gd`): an "appearance" names
+  a build, four parts and colours. It is cosmetic only and never trusted:
+  always pass one through `Look.clean_appearance` / `Look.set_appearance`,
+  which is safe on a headless server. Online it travels in the spawn data as
+  `data["look"]`; the server keeps what each signed-in player sent
+  (`NetSession.look_for_peer`). `Raid` and gameplay never read it.
 - Only CC0 or similarly permissive assets, each recorded in `assets/LICENSES.md`.
 - Load assets that need importing (models, textures, fonts) with `load()` at
   runtime, not `preload`: a preload fails to parse on a fresh checkout before

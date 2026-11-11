@@ -3,13 +3,13 @@
 importer="scene"
 importer_version=1
 type="PackedScene"
-uid="uid://kq7yvvu5ij0v"
-path="res://.godot/imported/Human_Hoodie.glb-e3457071636fc84a1a26cc6351d306dd.scn"
+uid="uid://ctc8at85dlv3e"
+path="res://.godot/imported/f_SciFi.glb-3fa4c2fa54e244c026b73c0bbe3ea877.scn"
 
 [deps]
 
-source_file="res://assets/characters/Human_Hoodie.glb"
-dest_files=["res://.godot/imported/Human_Hoodie.glb-e3457071636fc84a1a26cc6351d306dd.scn"]
+source_file="res://assets/characters/humans/f_SciFi.glb"
+dest_files=["res://.godot/imported/f_SciFi.glb-3fa4c2fa54e244c026b73c0bbe3ea877.scn"]
 
 [params]
 

@@ -10,6 +10,7 @@ const SAVE_PATH := "user://profile.json"
 const MasteryBook := preload("res://core/progression/mastery_book.gd")
 ## The same gear rules the server's StashService uses.
 const StashRules := preload("res://core/account/stash_rules.gd")
+const Human := preload("res://core/visual/human.gd")
 ## Given once to every profile so there is gear to try loadouts with.
 const WELCOME_CRATE: Array[String] = ["rifle_carbine", "frame_trooper", "medkit", "medkit"]
 ## Later one-time crates, by name, so existing profiles get new kinds of gear
@@ -35,6 +36,8 @@ var player_name := "Raider"
 var last_server := "127.0.0.1"
 ## Proves to a server that an online account is yours. Made on first use.
 var online_secret := ""
+## How your character looks (see `core/visual/human.gd`). Cosmetic only.
+var appearance := Human.sanitize({})
 var raids_played := 0
 var raids_extracted := 0
 var kills := 0
@@ -110,6 +113,11 @@ func checkout_loadout(world: WorldDef) -> Array[String]:
 	return kit
 
 
+func set_appearance(p_appearance: Variant) -> void:
+	appearance = Human.sanitize(p_appearance)
+	save()
+
+
 ## The secret this game signs in to servers with, created the first time.
 func get_online_secret() -> String:
 	if online_secret.length() < 16:
@@ -151,6 +159,7 @@ func save() -> void:
 		"player_name": player_name,
 		"last_server": last_server,
 		"online_secret": online_secret,
+		"appearance": appearance,
 		"raids_played": raids_played,
 		"raids_extracted": raids_extracted,
 		"kills": kills,
@@ -184,6 +193,7 @@ func load_profile() -> void:
 	player_name = str(data.get("player_name", "Raider")).left(20)
 	last_server = str(data.get("last_server", "127.0.0.1")).left(80)
 	online_secret = str(data.get("online_secret", "")).left(128)
+	appearance = Human.sanitize(data.get("appearance"))
 	raids_played = int(data.get("raids_played", 0))
 	raids_extracted = int(data.get("raids_extracted", 0))
 	kills = int(data.get("kills", 0))

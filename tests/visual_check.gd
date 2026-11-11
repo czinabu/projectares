@@ -14,6 +14,19 @@ func _ready() -> void:
 	add_child(hub)
 	await _settle(10)
 	await _shot(out_dir.path_join("hub.png"))
+	# The customizer, on a few looks.
+	var looks := [
+		{"build": "f", "head": "Punk", "body": "Soldier", "legs": "Worker", "feet": "SciFi", "skin": 3, "hair": 5, "top": 6, "bottom": 1},
+		{"build": "m", "head": "Adventurer", "body": "Swat", "legs": "Casual_2", "feet": "Farmer", "skin": 1, "hair": 2, "top": 3, "bottom": 0},
+		{"build": "m", "head": "Swat", "body": "Spacesuit", "legs": "Spacesuit", "feet": "Spacesuit", "skin": 5, "hair": 0, "top": 5, "bottom": 5},
+	]
+	for i in looks.size():
+		hub.character.set_appearance(looks[i])
+		hub.character.show_customizer()
+		hub.character._turn = 0.35
+		await _settle(8)
+		await _shot(out_dir.path_join("customizer_%d.png" % (i + 1)))
+	hub.character.hide_customizer()
 	hub.queue_free()
 	await _base_shots(out_dir)
 	# `-- <output_dir> --base-only` stops after the home base.

@@ -3,13 +3,13 @@
 importer="scene"
 importer_version=1
 type="PackedScene"
-uid="uid://ems8ehupgsn8"
-path="res://.godot/imported/Human_SciFi.glb-62c86f2678ee6734d5de80bcf475d347.scn"
+uid="uid://vrpg1yc4y7pl"
+path="res://.godot/imported/f_Punk.glb-5bf58b6bd694f3a1a6be6bb5edb41d86.scn"
 
 [deps]
 
-source_file="res://assets/characters/Human_SciFi.glb"
-dest_files=["res://.godot/imported/Human_SciFi.glb-62c86f2678ee6734d5de80bcf475d347.scn"]
+source_file="res://assets/characters/humans/f_Punk.glb"
+dest_files=["res://.godot/imported/f_Punk.glb-5bf58b6bd694f3a1a6be6bb5edb41d86.scn"]
 
 [params]
 

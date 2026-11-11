@@ -16,6 +16,8 @@ const SURFACE_SHADER := preload("res://assets/shaders/surface.gdshader")
 const SKY_SHADER := preload("res://assets/shaders/sky.gdshader")
 const GEAR_SHADER := preload("res://assets/shaders/gear.gdshader")
 const ActorSkin := preload("res://core/visual/actor_skin.gd")
+const Human := preload("res://core/visual/human.gd")
+const CHARACTER_SHADER := preload("res://assets/shaders/character.gdshader")
 const Vfx := preload("res://core/visual/vfx.gd")
 const UiTheme := preload("res://core/visual/ui_theme.gd")
 const VEHICLE_SCRIPT := "res://core/vehicle/vehicle.gd"
@@ -38,7 +40,10 @@ const SURFACES := {
 ## Character models. `height` is how tall the model stands in meters.
 ## `anims` maps what the actor is doing to an animation in the file.
 ## A skin lists one or more `scenes`; each actor wearing it gets one of them,
-## so a squad is not a row of clones. `saturation`, `brightness`, `metal` and
+## so a squad is not a row of clones. A skin of `people` is built from parts
+## instead (see `human.gd`): the actor's chosen appearance if it has one
+## (`set_appearance`), otherwise a random mix of the outfits listed, per
+## build. `saturation`, `brightness`, `metal` and
 ## `rough` are optional and tune the character shader: people keep their
 ## colors, machines are pulled toward worn metal.
 const HUMAN_ANIMS := {"idle": "Idle_Gun_Pointing", "walk": "Walk", "run": "Run", "death": "Death",
@@ -48,15 +53,15 @@ const HUMAN_OFF_ARM := ["UpperArm.L", "LowerArm.L", "Wrist.L"]
 const HUMAN_SPINE := ["Abdomen", "Torso", "Chest"]
 const SKINS := {
 	"raider": {
-		"scenes": ["Human_Swat.glb", "Human_Soldier.glb", "Human_SciFi.glb"],
-		"height": 1.8, "tint": Color(0.8, 0.82, 0.86), "hide": ["Pistol"], "grip_bone": "Middle1.R", "arm": HUMAN_ARM, "off_arm": HUMAN_OFF_ARM,
+		"people": {"m": ["Swat", "Spacesuit", "Adventurer"], "f": ["Soldier", "SciFi", "Adventurer"]},
+		"height": 1.8, "tint": Color(0.8, 0.82, 0.86), "grip_bone": "Middle1.R", "arm": HUMAN_ARM, "off_arm": HUMAN_OFF_ARM,
 		"spine": HUMAN_SPINE, "neck": "Neck",
 		"saturation": 0.75, "brightness": 0.85, "metal": 0.0, "rough": 0.85,
 		"anims": HUMAN_ANIMS,
 	},
 	"scavenger": {
-		"scenes": ["Human_Punk.glb", "Human_PunkW.glb", "Human_Hoodie.glb", "Human_Worker.glb"],
-		"height": 1.76, "tint": Color(0.86, 0.76, 0.68), "hide": ["Pistol"], "grip_bone": "Middle1.R", "arm": HUMAN_ARM, "off_arm": HUMAN_OFF_ARM,
+		"people": {"m": ["Punk", "Casual_Hoodie", "Casual_2", "Farmer", "Beach"], "f": ["Punk", "Worker", "Casual", "Medieval"]},
+		"height": 1.76, "tint": Color(0.86, 0.76, 0.68), "grip_bone": "Middle1.R", "arm": HUMAN_ARM, "off_arm": HUMAN_OFF_ARM,
 		"spine": HUMAN_SPINE, "neck": "Neck",
 		"saturation": 0.7, "brightness": 0.75, "metal": 0.0, "rough": 0.9,
 		"anims": HUMAN_ANIMS,
@@ -509,6 +514,98 @@ func _dress_actor(actor: Actor) -> void:
 	skin.look = self
 	skin.actor = actor
 	actor.add_child(skin)
+
+
+## Gives an actor a chosen appearance (see `human.gd`), now or before it is
+## dressed. Cosmetic only, and safe on a headless server, where it just
+## records the choice so it can be sent on to clients.
+func set_appearance(actor: Actor, appearance: Variant) -> void:
+	actor.set_meta("appearance", Human.sanitize(appearance))
+	var old := actor.get_node_or_null("Skin")
+	if not enabled or old == null:
+		return
+	old.name = "OldSkin"
+	old.queue_free()
+	_dress_actor(actor)
+
+
+## The model a skin wears, with its materials made: {"model": Node3D,
+## "materials": Array[ShaderMaterial]}, or {} when the art is missing.
+## `appearance` only matters for skins of people; `who` picks a steady random
+## look for anyone who has not chosen one.
+func character(skin_name: String, appearance: Dictionary = {}, who := "") -> Dictionary:
+	var def: Dictionary = SKINS.get(skin_name, SKINS[DEFAULT_SKIN])
+	var model: Node3D
+	var chosen := {}
+	if def.has("people"):
+		chosen = Human.sanitize(appearance) if not appearance.is_empty() else Human.for_name(who, def["people"])
+		model = Human.build(self, chosen)
+	else:
+		var scenes: Array = def["scenes"]
+		model = _instance(CHARACTERS + scenes[hash(who) % scenes.size()])
+	if model == null:
+		return {}
+	for hidden: String in def.get("hide", []):
+		var node := model.find_child(hidden, true, false) as Node3D
+		if node:
+			node.visible = false
+	var materials: Array[ShaderMaterial] = []
+	var tint: Color = def.get("tint", Color.WHITE)
+	for node in model.find_children("*", "MeshInstance3D", true, false):
+		var mesh_node := node as MeshInstance3D
+		for i in mesh_node.mesh.get_surface_count():
+			var source := mesh_node.get_active_material(i) as BaseMaterial3D
+			if source == null:
+				continue
+			var mat := ShaderMaterial.new()
+			mat.shader = CHARACTER_SHADER
+			if source.albedo_texture:
+				mat.set_shader_parameter("base_tex", source.albedo_texture)
+			mat.set_shader_parameter("base_color", source.albedo_color)
+			mat.set_shader_parameter("tint", tint)
+			for param: String in ["saturation", "brightness", "metal", "rough"]:
+				if def.has(param):
+					mat.set_shader_parameter(param, def[param])
+			if source.emission_enabled:
+				mat.set_shader_parameter("emission_color", source.emission * 2.5)
+			if not chosen.is_empty():
+				var pick := Human.color_for(chosen, mesh_node.get_meta("slot", ""), source.resource_name)
+				if pick.has("color"):
+					mat.set_shader_parameter("recolor", pick["color"])
+					mat.set_shader_parameter("recolor_amount", 1.0)
+					mat.set_shader_parameter("recolor_shading", 1.0 if pick["keep_shading"] else 0.0)
+			mesh_node.set_surface_override_material(i, mat)
+			materials.append(mat)
+	return {"model": model, "materials": materials}
+
+
+## Scales a character model to `height` meters and puts its feet at the
+## origin of `holder`, the node it sits under, going by where the skeleton's
+## bones are in the current pose. Mesh bounds are no use here: skinned meshes
+## report their unposed size.
+func stand_model(holder: Node3D, model: Node3D, height: float) -> void:
+	var skeleton := model.find_child("Skeleton3D", true, false) as Skeleton3D
+	if skeleton == null:
+		_fit(model, "skin:" + model.name, height, true)
+		return
+	var to_holder := holder.global_transform.affine_inverse() * skeleton.global_transform
+	var low := INF
+	var high := -INF
+	for i in skeleton.get_bone_count():
+		var y := (to_holder * skeleton.get_bone_global_pose(i).origin).y
+		low = minf(low, y)
+		high = maxf(high, y)
+	if high - low < 0.001:
+		return
+	# Bones stop at the ankle and the base of the head; allow for both ends.
+	var s := height / ((high - low) * 1.22)
+	model.scale *= s
+	model.position.y = -low * s + height * 0.06
+
+
+## A valid appearance from anything a save file or a client hands over.
+func clean_appearance(raw: Variant) -> Dictionary:
+	return Human.sanitize(raw)
 
 
 ## The model for a held weapon, or null to keep the greybox one.

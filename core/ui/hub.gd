@@ -16,8 +16,11 @@ signal online_deploy_requested
 signal online_leave_requested
 ## Walk around your home base, where the stash is on show.
 signal base_requested
+## The player changed how their character looks.
+signal look_changed(appearance: Dictionary)
 
 const MasteryPanel := preload("res://core/progression/mastery_panel.gd")
+const CharacterPanel := preload("res://core/ui/character_panel.gd")
 const MasteryBook := preload("res://core/progression/mastery_book.gd")
 
 ## Your account on the server you are connected to (see
@@ -31,6 +34,7 @@ var _loadout_box: VBoxContainer
 var _pickers := {}
 var _details := {}
 var _mastery: MasteryPanel
+var character: CharacterPanel
 var _online_status: Label
 var _name_edit: LineEdit
 var _address_edit: LineEdit
@@ -100,6 +104,11 @@ func _ready() -> void:
 	_mastery.pick_requested.connect(func(track: String, variant_id: String) -> void:
 		online_pick_requested.emit(track, variant_id))
 	box.add_child(_mastery)
+
+	character = CharacterPanel.new()
+	character.appearance = Profile.appearance
+	character.changed.connect(func(appearance: Dictionary) -> void: look_changed.emit(appearance))
+	box.add_child(character)
 
 	_stash_title = _text("STASH", 20, Color(1.0, 0.55, 0.25))
 	box.add_child(_stash_title)
