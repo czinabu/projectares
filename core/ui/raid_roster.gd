@@ -2,29 +2,36 @@ extends RefCounted
 ## Who is playing in a raid, for the scoreboard and nameplates. UI only: it
 ## reads the raid and its actors and never changes them.
 ##
-## On a solo or server raid the players come from `Raid.players`. A client's
-## raid has no player states, so there every actor that is not a bot is a
-## player. A player who vanishes while alive has extracted (a dropped player
-## is killed first), so the roster remembers everyone it has seen.
+## On a solo or server raid the players come from `Raid.players`. On a client
+## every actor that is not a bot is a player. A player comes back as a new actor every time they drop in, so
+## the roster keeps one row per name and adds their kills up across lives. A
+## player whose actor vanishes while alive has left the world.
 
-const IN_RAID := "In raid"
+const IN_RAID := "Fighting"
 const DOWN := "Down"
-const EXTRACTED := "Extracted"
+const LEFT := "Left"
 
 var raid: Raid
 ## The local player, or null on a server.
 var me: Actor
-## One per player seen: { id, name, status, kills, is_me }.
+## One per player seen: { name, status, kills, is_me, lives }. `lives` maps
+## each actor of theirs that was seen to the kills it made.
 var entries: Array[Dictionary] = []
-var _by_id := {}
-var _my_kills := 0
+var _by_name := {}
+var _watched := {}
 
 
 func _init(p_raid: Raid, p_me: Actor = null) -> void:
 	raid = p_raid
+	set_me(p_me)
+
+
+## Call again when the local player drops back in as a new actor.
+func set_me(p_me: Actor) -> void:
 	me = p_me
-	if me != null:
-		me.hit_confirmed.connect(_on_my_hit)
+	if me != null and not _watched.has(me.get_instance_id()):
+		_watched[me.get_instance_id()] = true
+		me.hit_confirmed.connect(_on_my_hit.bind(me.get_instance_id()))
 
 
 ## Players currently in the raid, alive or dead.
@@ -54,32 +61,41 @@ func bots_alive() -> int:
 
 
 func refresh() -> void:
-	var present := {}
+	var alive := {}
+	var down := {}
 	for actor in players_in(raid):
-		var id := actor.get_instance_id()
-		present[id] = true
-		var entry: Dictionary = _by_id.get(id, {})
+		var entry: Dictionary = _by_name.get(actor.display_name, {})
 		if entry.is_empty():
-			entry = {"id": id, "name": actor.display_name, "status": IN_RAID, "kills": 0,
-					"is_me": actor == me}
-			_by_id[id] = entry
+			entry = {"name": actor.display_name, "status": IN_RAID, "kills": 0, "is_me": false,
+					"lives": {}, "my_kills": {}}
+			_by_name[actor.display_name] = entry
 			entries.append(entry)
-		entry.name = actor.display_name
+		if actor == me:
+			entry.is_me = true
 		var state := raid.state_for(actor)
-		if actor.is_dead:
-			entry.status = DOWN
-		elif state != null and state.finished:
-			entry.status = EXTRACTED
-		else:
-			entry.status = IN_RAID
+		var id := actor.get_instance_id()
 		if state != null:
-			entry.kills = state.kills
+			entry.lives[id] = state.kills
 			entry.kills_known = true
-		elif entry.is_me:
-			entry.kills = _my_kills
+		elif not entry.lives.has(id):
+			entry.lives[id] = 0
+		if actor.is_dead:
+			down[entry.name] = true
+		elif state == null or not state.finished:
+			alive[entry.name] = true
 	for entry in entries:
-		if not present.has(entry.id) and entry.status == IN_RAID:
-			entry.status = EXTRACTED
+		if alive.has(entry.name):
+			entry.status = IN_RAID
+		elif down.has(entry.name):
+			entry.status = DOWN
+		elif entry.status == IN_RAID:
+			entry.status = LEFT
+		var total := 0
+		for id: int in entry.lives:
+			# Your own kills are also counted as you make them, for a client
+			# that has not heard the server's count yet.
+			total += maxi(entry.lives[id], entry.my_kills.get(id, 0))
+		entry.kills = total
 	entries.sort_custom(_before)
 
 
@@ -90,7 +106,7 @@ func kills_known(entry: Dictionary) -> bool:
 
 
 static func _before(a: Dictionary, b: Dictionary) -> bool:
-	var order := [IN_RAID, EXTRACTED, DOWN]
+	var order := [IN_RAID, LEFT, DOWN]
 	if a.status != b.status:
 		return order.find(a.status) < order.find(b.status)
 	if a.kills != b.kills:
@@ -98,6 +114,9 @@ static func _before(a: Dictionary, b: Dictionary) -> bool:
 	return String(a.name).naturalnocasecmp_to(b.name) < 0
 
 
-func _on_my_hit(_target: Actor, _info: DamageInfo, lethal: bool) -> void:
-	if lethal:
-		_my_kills += 1
+func _on_my_hit(_target: Actor, _info: DamageInfo, lethal: bool, life: int) -> void:
+	if not lethal or me == null:
+		return
+	var entry: Dictionary = _by_name.get(me.display_name, {})
+	if not entry.is_empty():
+		entry.my_kills[life] = entry.my_kills.get(life, 0) + 1

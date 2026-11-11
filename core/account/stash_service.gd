@@ -7,14 +7,16 @@ extends RefCounted
 ## Load with `const StashService := preload("res://core/account/stash_service.gd")`
 ## (no `class_name`, so it works before Godot rescans the project).
 ##
-## Lifecycle of one online run:
+## Lifecycle of one online life (a player's stay is a string of these):
 ##   1. `sign_in(name, secret)`        -> account id (creates the account the first time)
 ##   2. `equip` / `unequip` / `pick_mastery` while in the hub
 ##   3. `deploy(account_id, world)`    -> the kit and picks to pass to `Raid.add_player`
-##   4. one of:
-##      `settle(account_id, result)`   the raid's `player_finished` result: loot
-##                                     comes home, mastery XP and the record apply
-##      `cancel_deploy(account_id)`    the run never really started (join failed,
+##   4. `bank(account_id, items)`      any number of times: loot handed in at a depot
+##   5. one of:
+##      `settle(account_id, result)`   the raid's `player_finished` result: what was
+##                                     carried comes home if they left alive, and
+##                                     mastery XP and the record apply either way
+##      `cancel_deploy(account_id)`    the life never really started (join failed,
 ##                                     server shut down): the gear goes back
 ##
 ## A deploy that was never settled survives a server restart: `load_account`
@@ -265,7 +267,7 @@ func deploy(account_id: String, world: WorldDef) -> Dictionary:
 	if account == null:
 		return _fail("No such account.")
 	if account.is_deployed():
-		return _fail("You are already in a raid.")
+		return _fail("Your last body is still out there. Try again in a moment.")
 	var taken: Array[String] = []
 	var kit := StashRules.checkout(account.stash, account.loadout, world, taken)
 	account.deployed = taken
@@ -284,7 +286,20 @@ func showcase(account_id: String, world: WorldDef) -> Dictionary:
 	return {"ok": true, "kit": kit, "picks": account.mastery.active_picks()}
 
 
-## Applies a finished run (the `player_finished` result from a SERVER raid):
+## Puts loot a deployed player handed in at a depot into their stash.
+## `items` must come from the server's own raid, never from a client.
+func bank(account_id: String, items: Array) -> Dictionary:
+	var account := load_account(account_id)
+	if account == null:
+		return _fail("No such account.")
+	if not account.is_deployed():
+		return _fail("Not in a raid.")
+	StashRules.add_items(account.stash, items)
+	_save(account)
+	return {"ok": true}
+
+
+## Applies a finished life (the `player_finished` result from a SERVER raid):
 ## brought-home gear goes into the stash, the record and mastery XP update,
 ## and the deploy ends. What was deployed and not brought home is gone.
 ## The result must come from the server's own raid, never from a client.
@@ -298,7 +313,7 @@ func settle(account_id: String, result: Dictionary) -> Dictionary:
 	if typeof(home) == TYPE_ARRAY:
 		StashRules.add_items(account.stash, home)
 	account.raids_played += 1
-	if result.get("outcome", "") == "extracted":
+	if result.get("outcome", "") == "left":
 		account.raids_extracted += 1
 	account.kills += maxi(0, int(result.get("kills", 0)))
 	var gained: Variant = result.get("mastery_xp", {})

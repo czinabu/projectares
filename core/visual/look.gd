@@ -139,8 +139,8 @@ func _on_node_added(node: Node) -> void:
 		_dress_actor.call_deferred(node)
 	elif node is LootContainer:
 		_dress_cache.call_deferred(node)
-	elif node is ExtractionZone:
-		_dress_exit.call_deferred(node)
+	elif node is Depot:
+		_dress_depot.call_deferred(node)
 	elif node is CharacterBody3D and node.get_script() != null \
 			and node.get_script().resource_path == VEHICLE_SCRIPT:
 		_dress_vehicle.call_deferred(node)
@@ -703,7 +703,7 @@ func _dress_cache(cache: LootContainer) -> void:
 	marker.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
 
-func _dress_exit(zone: ExtractionZone) -> void:
+func _dress_depot(zone: Depot) -> void:
 	if not is_instance_valid(zone) or zone.has_node("Pad"):
 		return
 	# A landing pad under the zone and flares at its corners.

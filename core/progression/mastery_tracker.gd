@@ -14,8 +14,6 @@ var xp_per_kill := 40
 var xp_per_ability_use := 20
 ## XP per point of damage taken while wearing a frame.
 var xp_per_damage_taken := 0.4
-## Given to the track of every piece of gear you extract with.
-var xp_extract_bonus := 60
 
 var actor: Actor
 ## Track id -> XP earned this raid, as a float until it is reported.
@@ -72,12 +70,8 @@ func add(track: String, amount: float) -> void:
 		earned[track] = earned.get(track, 0.0) + amount
 
 
-## The XP to bank, by track, as whole numbers. Extracting adds a bonus to
-## every piece of gear you bring home. Dying keeps everything earned so far.
-func report(extracted: bool) -> Dictionary:
-	if extracted and actor:
-		for id in actor.gear_items:
-			add(MasteryDB.track_for_item(id), xp_extract_bonus)
+## The XP earned this life, by track, as whole numbers. Dying keeps all of it.
+func report() -> Dictionary:
 	var out := {}
 	for track: String in earned:
 		var whole := roundi(earned[track])

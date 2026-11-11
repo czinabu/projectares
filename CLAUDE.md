@@ -1,6 +1,7 @@
 # Project Ares: notes for AI sessions
 
-Full-loot PvPvE extraction game in Godot 4 (GDScript). See README.md for the
+Full-loot PvPvE war game in Godot 4 (GDScript). Each world is an endless
+warzone, not a timed raid (see the endless warzone rule below). See README.md for the
 layout and how to play. The roadmap is: Phase 0 bot-only prototype (done),
 Phase 1 vertical slice (hub, loadouts, abilities, motorbike), Phase 2 online
 PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
@@ -21,6 +22,23 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   getting on a vehicle uses a separate riding view (third-person by default),
   and getting off restores the on-foot view.
 - `Raid` has no camera, HUD, or input code. It must keep working headless.
+- The endless warzone. A `Raid` is one running world and it never ends: no
+  timer, no exits, no restart. It keeps itself alive (`_tick_bots`,
+  `_tick_caches`, `_tick_vehicles`, tuned by `WorldDef`). A player's stay is
+  a string of lives: `add_player` starts one and `player_finished` ends it
+  with outcome "died" (everything carried drops in a bag) or "left" (a
+  finished sign-out: everything carried goes home). After "died" the owner of
+  the stash (`Main` solo, `NetSession` online) calls `add_player` again in the
+  same raid. Loot reaches the stash mid-life only through a `Depot`
+  (`player_banked`). Never add a way to leave that skips `begin_sign_out`:
+  a disconnect goes through `remove_player`, which leaves the body standing.
+- Drop-in protection is `Actor.protected_left`, checked in `Combat.deal`.
+- How harsh death is belongs to the world, not to `Raid`. With
+  `WorldDef.keep_gear_on_death` a dead player drops only the backpack and the
+  equipped gear returns in the result's `kept`. A gentle world pays for that
+  with basic loot tables; rare gear stays in the full-loot PvP world.
+- Mastery pays for using gear, never for leaving alive, or signing out over
+  and over would farm it.
 - Blocking and parrying happen in `Weapon.modify_incoming`, which `Combat.deal`
   calls for every hit. Every melee attack keeps a visible windup so it can be parried.
 - Melee is directional. The stance travels in `ActorCommand.stance`, attacks

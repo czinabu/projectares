@@ -1,7 +1,7 @@
 class_name Hub
 extends Control
-## The between-raids screen: your stash, your loadout, the last raid's result,
-## and a deploy button for every world the registry found.
+## The screen outside the worlds: your stash, your loadout, how your last
+## life ended, and a deploy button for every world the registry found.
 
 signal deploy_requested(world_id: String)
 ## Start a server on this machine running `world_id`, then join it.
@@ -9,7 +9,7 @@ signal host_requested(world_id: String)
 ## Join the server at `address` ("host" or "host:port").
 signal join_requested(address: String)
 ## In a server's lobby: change the loadout or a mastery pick there, deploy
-## into its raid, or disconnect.
+## into its world, or disconnect.
 signal online_equip_requested(slot: String, item_id: String)
 signal online_pick_requested(track: String, variant_id: String)
 signal online_deploy_requested
@@ -73,14 +73,15 @@ func _ready() -> void:
 	center.add_child(box)
 
 	box.add_child(_text("PROJECT ARES", 40, Color(1.0, 0.55, 0.25)))
-	box.add_child(_text("The Junction: pick your gear, drop in, get out with the loot.", 16, Color(0.8, 0.8, 0.8)))
+	box.add_child(_text("The Junction: pick your gear, drop in, and make a name. The war does not stop.", 16, Color(0.8, 0.8, 0.8)))
 
 	_result = _text("", 18, Color.WHITE)
 	box.add_child(_result)
 
 	box.add_child(_text("LOADOUT", 20, Color(1.0, 0.55, 0.25)))
 	box.add_child(_text(
-		"Gear you equip leaves your stash when you deploy. Extract and it comes back. Die and it is gone.\n"
+		"Gear you equip leaves your stash when you deploy. Die and it is gone. Sign out alive (L) and it comes back.\n"
+		+ "Bank loot at a depot to send it here without leaving.\n"
 		+ "Empty slots use the free scrap kit, which costs nothing and can never be stashed.",
 		13, Color(0.65, 0.65, 0.65)))
 	_loadout_box = VBoxContainer.new()
@@ -164,18 +165,20 @@ func _ready() -> void:
 
 func refresh(last_result: Dictionary) -> void:
 	match last_result.get("outcome", ""):
-		"extracted":
+		"left":
 			var kept: Array = last_result.get("kept_gear", [])
 			var left: Array = last_result.get("lost", [])
-			_result.text = "Extracted with %s (worth %d). Kills: %d.%s%s" % [
+			_result.text = "Left alive with %s (worth %d). Kills: %d.%s%s" % [
 				ItemDB.summarize(last_result.loot), last_result.loot_value, last_result.kills,
 				"\nGear brought home: %s." % ItemDB.summarize(kept) if not kept.is_empty() else "",
 				"\nLeft behind: %s." % ItemDB.summarize(left) if not left.is_empty() else ""]
 			_result.modulate = Color(0.45, 1.0, 0.6)
 		"died":
-			var cause: String = last_result.get("cause", "")
-			var how := "The storm took you" if cause == "storm" else "You died"
-			_result.text = "%s and lost %s." % [how, ItemDB.summarize(last_result.lost)]
+			var by: String = last_result.get("killed_by", "")
+			var how := "%s killed you" % by if by != "" else "You died"
+			var saved: Array = last_result.get("kept_gear", [])
+			_result.text = "%s and you lost %s.%s" % [how, ItemDB.summarize(last_result.lost),
+				"\nYour equipped gear came home: %s." % ItemDB.summarize(saved) if not saved.is_empty() else ""]
 			_result.modulate = Color(1.0, 0.45, 0.4)
 		_:
 			_result.text = ""
@@ -198,7 +201,7 @@ func _refresh_gear() -> void:
 		Profile.validate_loadout()
 	_refresh_loadout()
 	var record: Variant = account if in_lobby() else Profile
-	_stash.text = "%s\nStash value %d   Raids %d   Extractions %d   Kills %d" % [
+	_stash.text = "%s\nStash value %d   Drops %d   Left alive %d   Kills %d" % [
 		ItemDB.summarize(stash_items()), ItemDB.total_value(stash_items()),
 		record.get("raids_played"), record.get("raids_extracted"), record.get("kills")]
 
@@ -259,7 +262,7 @@ func _text(text: String, font_size: int, color: Color) -> Label:
 func _build_online(box: VBoxContainer) -> void:
 	box.add_child(_text("ONLINE (EARLY TEST)", 20, Color(1.0, 0.55, 0.25)))
 	box.add_child(_text(
-		"Play the same raid with other people. Host starts a server on this computer and joins it.\n"
+		"Fight in the same world as other people. Host starts a server on this computer and joins it.\n"
 		+ "Others on your network join with your computer's address.",
 		13, Color(0.65, 0.65, 0.65)))
 	var name_row := HBoxContainer.new()
@@ -283,7 +286,7 @@ func _build_online(box: VBoxContainer) -> void:
 		_host_world.set_item_metadata(_host_world.item_count - 1, world.id)
 	host_row.add_child(_host_world)
 	var host := Button.new()
-	host.text = "Host a raid and join it"
+	host.text = "Host a world and join it"
 	host.custom_minimum_size = Vector2(330, 40)
 	host.pressed.connect(func() -> void:
 		Profile.save()
@@ -298,7 +301,7 @@ func _build_online(box: VBoxContainer) -> void:
 	_address_edit.custom_minimum_size = Vector2(170, 0)
 	join_row.add_child(_address_edit)
 	var join := Button.new()
-	join.text = "Join a raid at this address"
+	join.text = "Join a world at this address"
 	join.custom_minimum_size = Vector2(330, 40)
 	join.pressed.connect(func() -> void:
 		Profile.last_server = _address_edit.text.strip_edges()
