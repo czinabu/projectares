@@ -51,6 +51,11 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   `Combat.authoritative` is false there, so a client never deals damage, loots,
   or decides an outcome. Anything that changes a result must run on the server
   and reach clients through `NetSession`.
+- Online, the server owns each player's stash, loadout and mastery
+  (`core/account/stash_service.gd`). A client's kit or picks are never trusted;
+  the server gets them from `StashService.deploy` and applies results with
+  `StashService.settle`. Stash rules live once, in `core/account/stash_rules.gd`,
+  shared by `Profile` and the service.
 - `Raid` never writes to `Profile` on a server. Results travel in the
   `player_finished` dictionary and the player's own game applies them with
   `Raid.apply_result`.

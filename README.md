@@ -112,7 +112,8 @@ core/            Shared by every world. Never names a specific world.
   ai/            Bot brain
   player/        Local input and camera
   ui/            HUD and hub
-  profile/       Stash and stats that persist between raids
+  profile/       Stash and stats that persist between raids (local play)
+  account/       Server-owned stashes for online play, and the shared gear rules
   progression/   Mastery: tracks and variants, XP tracking in a raid, hub panel
   net/           Online play: the server and client ends of a raid
 worlds/
