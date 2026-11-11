@@ -17,6 +17,15 @@ extends RefCounted
 ##     vehicle-tagged item from `roll_loot` there, facing the marker's yaw.
 ##   - optionally a `bake_navigation()` method for bot pathfinding
 ##
+## Safe zones (`safe_zone = true`) are social spaces, not raids: nobody can be
+## hurt, weapons and abilities are locked, nothing respawns, and players show
+## up wearing their loadout without taking it out of the stash. Their map
+## needs only "spawn_player" markers, and may add:
+##   - Marker3D nodes in group "portal" with meta "destination" ("world:<id>",
+##     "home", or anything the game's flow understands), "label" (what the
+##     prompt says) and optionally "radius" (metres, default 3). A player
+##     standing in one is offered the trip; see `core/social/plaza_view.gd`.
+##
 ## Looks: a world may give a bot a model with `bot.set_meta("look", "<skin>")`
 ## in `equip_bot`. The skins are listed in `core/visual/look.gd`.
 
@@ -26,6 +35,8 @@ var description := ""
 ## How many bots the world keeps alive. A dead one is replaced after
 ## `bot_respawn_time` seconds, away from the players.
 var bot_count := 8
+## A social space with no combat and nothing at stake. See "Safe zones" above.
+var safe_zone := false
 var bot_respawn_time := 45.0
 ## Seconds an emptied cache takes to fill again.
 var cache_refill_time := 240.0
@@ -53,10 +64,21 @@ var keep_gear_on_death := false
 var war_scale := 1.0
 ## Seconds between dying and being allowed to drop in again.
 var redeploy_delay := 3.0
+## False for a venue where nobody loses gear (the arena). The server then
+## hands out the loadout without taking it out of the stash, and never settles
+## a result into the stash (see `StashService.deploy`).
+var gear_at_risk := true
 
 
 func create_map() -> Node3D:
 	return null
+
+
+## The node that runs this world: a plain `Raid` for every world. A venue with
+## its own rules (the arena) returns its own `Raid` subclass. Called on servers,
+## clients and solo alike, so the same class runs everywhere.
+func new_raid() -> Raid:
+	return Raid.new()
 
 
 ## Register items that only this world adds, with ItemDB.register. Called once

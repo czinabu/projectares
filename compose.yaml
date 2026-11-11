@@ -12,7 +12,10 @@ services:
     # A terminal makes the game print its log lines at once instead of in batches.
     tty: true
     ports:
-      - "24565:24565/udp"
+      # The plaza is on 24565 and each raid world on the ports after it.
+      - "24565-24569:24565-24569/udp"
+      # The arena runs ten ports above the plaza.
+      - "24575:24575/udp"
     # Player stashes live in this volume, so they survive updates and restarts.
     volumes:
       - ares-data:/data

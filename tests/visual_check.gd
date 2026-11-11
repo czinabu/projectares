@@ -2,6 +2,7 @@ extends Node
 ## Dev tool: runs a real raid with camera and HUD and saves screenshots, so the
 ## visuals can be checked without playing. Needs a display (or xvfb):
 ##   godot --path . res://tests/visual_check.tscn -- <output_dir>
+## Add a world id after the folder to shoot only that world.
 
 func _ready() -> void:
 	var out_dir := "user://"
@@ -9,6 +10,16 @@ func _ready() -> void:
 	if args.size() > 0:
 		out_dir = args[0]
 	Profile.persist = false
+	if args.size() > 1:
+		await _world_shots(out_dir, args[1])
+		get_tree().quit()
+		return
+
+	# `-- <output_dir> --arena-only` shoots just the arena.
+	if "--arena-only" in args:
+		await _arena_shots(out_dir)
+		get_tree().quit()
+		return
 
 	var hub := Hub.new()
 	add_child(hub)
@@ -147,8 +158,10 @@ func _ready() -> void:
 
 ## Every world from a few fixed angles, with some of its bots lined up in
 ## front of the player so their models can be checked.
-func _world_shots(out_dir: String) -> void:
+func _world_shots(out_dir: String, only := "") -> void:
 	for world in Worlds.all():
+		if only != "" and world.id != only:
+			continue
 		var raid := Raid.new()
 		add_child(raid)
 		raid.start(world, 42)
@@ -159,8 +172,18 @@ func _world_shots(out_dir: String) -> void:
 		var p := raid.player.global_position
 		var toward := -Vector3(p.x, 0, p.z).normalized()
 		var side := toward.cross(Vector3.UP)
-		for i in mini(4, raid.bots.size()):
-			var bot := raid.bots[i]
+		var lineup: Array[Actor] = []
+		lineup.assign(raid.bots.slice(0, 4))
+		if world.safe_zone:
+			# A safe zone has no bots: line up other players in their gear instead.
+			var kits := [["dmr_longshot", "frost_ice_axe", "wings_glide", "frame_bulwark"],
+					["smg_stinger", "blade_scrap", "jetpack_mk1", "frame_runner"],
+					["rifle_carbine", "blade_scrap", "jetpack_mk1", "frame_trooper"]]
+			for k in kits.size():
+				lineup.append(raid.add_player(kits[k].filter(func(id: String) -> bool: return ItemDB.has_item(id)),
+						{}, ["Vex", "Juno", "Ash"][k]))
+		for i in lineup.size():
+			var bot := lineup[i]
 			for child in bot.get_children():
 				if child is BotBrain:
 					child.set_physics_process(false)
@@ -178,6 +201,8 @@ func _world_shots(out_dir: String) -> void:
 		camera.look_at_from_position(p * 0.45 + Vector3(0, 30, 0), Vector3(0, 2, 0))
 		await _settle(4)
 		await _shot(out_dir.path_join("%s_overview.png" % world.id))
+		if world.safe_zone:
+			await _plaza_shots(out_dir, raid, camera, lineup)
 		raid.queue_free()
 		await _settle(2)
 
@@ -212,6 +237,66 @@ func _base_shots(out_dir: String) -> void:
 		await _shot(out_dir.path_join(file))
 	base.queue_free()
 	await _settle(2)
+
+
+## The arena from the stands, during an exhibition bout, with its overlay.
+func _arena_shots(out_dir: String) -> void:
+	var arena := Arena.new()
+	add_child(arena)
+	arena.call_time = 1.0
+	arena.countdown_time = 0.5
+	arena.exhibition_delay = 0.2
+	arena.start_solo(["rifle_carbine", "blade_scrap", "plate_light"])
+	var controller := PlayerController.new()
+	controller.setup(arena.player)
+	arena.add_child(controller)
+	var hud := Hud.new()
+	hud.setup(arena, controller)
+	arena.add_child(hud)
+	var overlay: CanvasLayer = preload("res://core/arena/arena_hud.gd").new()
+	overlay.setup(arena)
+	arena.add_child(overlay)
+	# Look down into the pit from where you stand.
+	var to_center := -arena.player.global_position
+	controller.yaw = atan2(-to_center.x, -to_center.z)
+	controller.pitch = -0.35
+	await _settle(60)
+	await _shot(out_dir.path_join("arena_calling.png"))
+	await _settle(200)
+	await _shot(out_dir.path_join("arena_fight.png"))
+	controller.view_mode = PlayerController.ViewMode.THIRD
+	await _settle(30)
+	await _shot(out_dir.path_join("arena_third_person.png"))
+
+
+## The plaza as a player sees it: the gates, and another player's gear card.
+func _plaza_shots(out_dir: String, raid: Raid, camera: Camera3D, lineup: Array[Actor]) -> void:
+	camera.look_at_from_position(Vector3(0, 5, -12), Vector3(0, 6, -40))
+	await _settle(4)
+	await _shot(out_dir.path_join("%s_gates.png" % raid.world.id))
+	camera.look_at_from_position(Vector3(8, 4, -8), Vector3(30, 3, -30))
+	await _settle(4)
+	await _shot(out_dir.path_join("%s_market.png" % raid.world.id))
+	var controller := PlayerController.new()
+	controller.setup(raid.player)
+	raid.add_child(controller)
+	var hud := Hud.new()
+	hud.setup(raid, controller)
+	raid.add_child(hud)
+	var view: CanvasLayer = load("res://core/social/plaza_view.gd").new()
+	view.setup(raid, {})
+	raid.add_child(view)
+	var to := lineup[1].global_position - raid.player.global_position
+	controller.yaw = atan2(-to.x, -to.z)
+	controller.pitch = -0.05
+	await _settle(30)
+	await _shot(out_dir.path_join("%s_inspect.png" % raid.world.id))
+	for portal in get_tree().get_nodes_in_group("portal"):
+		if portal.get_meta("destination", "") == "home":
+			raid.player.global_position = portal.global_position + Vector3(0, 0.2, 0)
+			controller.yaw = PI / 2.0
+	await _settle(30)
+	await _shot(out_dir.path_join("%s_portal.png" % raid.world.id))
 
 
 func _settle(count: int) -> void:

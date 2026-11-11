@@ -66,6 +66,9 @@ var frame_name := "No armor"
 var vehicle: Node3D = null
 
 var is_dead := false
+## Set in a safe zone: weapons can be drawn and shown but not used, and
+## abilities and healing do nothing.
+var weapons_locked := false
 var heal_time_left := 0.0
 var airborne_time := 0.0
 ## While staggered the actor cannot attack, block, dash or jump.
@@ -168,9 +171,10 @@ func _physics_process(delta: float) -> void:
 		_simulate_movement(delta)
 	_simulate_weapons(delta)
 	ability.tick(delta)
-	if cmd.ability_pressed and stagger_left <= 0.0:
+	if cmd.ability_pressed and stagger_left <= 0.0 and not weapons_locked:
 		ability.activate()
-	_simulate_heal(delta)
+	if not weapons_locked:
+		_simulate_heal(delta)
 	# On a client of an online raid, using things is the server's decision.
 	if cmd.interact_pressed and Combat.authoritative:
 		var target := find_interactable()
@@ -292,7 +296,7 @@ func _simulate_weapons(delta: float) -> void:
 		active_weapon_index = cmd.switch_weapon
 		_refresh_weapon_visuals()
 	var weapon := get_active_weapon()
-	if weapon and heal_time_left <= 0.0 and stagger_left <= 0.0:
+	if weapon and heal_time_left <= 0.0 and stagger_left <= 0.0 and not weapons_locked:
 		weapon.handle_input(cmd, delta)
 
 
@@ -369,6 +373,8 @@ func get_drop_items() -> Array[String]:
 
 
 func kill(kind: String, source: Node = null) -> void:
+	# Nothing keeps an actor alive through this, not even an arena's yield rule.
+	health.min_health = 0.0
 	var info := DamageInfo.new()
 	info.amount = 999999.0
 	info.kind = kind

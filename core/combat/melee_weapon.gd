@@ -340,6 +340,6 @@ func _other_actors() -> Array[Actor]:
 		return out
 	for node in actor.get_tree().get_nodes_in_group("actors"):
 		var other := node as Actor
-		if other and other != actor and not other.is_dead:
+		if other and other != actor and not other.is_dead and Raid.together(actor, other):
 			out.append(other)
 	return out
