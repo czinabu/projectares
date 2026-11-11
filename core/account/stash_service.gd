@@ -28,6 +28,7 @@ extends RefCounted
 const StashRules := preload("res://core/account/stash_rules.gd")
 const MasteryBook := preload("res://core/progression/mastery_book.gd")
 const ProfileScript := preload("res://core/profile/profile.gd")
+const Economy := preload("res://core/economy/economy.gd")
 
 const SAVE_VERSION := 1
 const MIN_NAME := 3
@@ -60,6 +61,8 @@ class Account:
 	var raids_played := 0
 	var raids_extracted := 0
 	var kills := 0
+	## Money for the hub shops. Only ever changed here, on the server.
+	var credits := Economy.STARTING_CREDITS
 
 	func is_deployed() -> bool:
 		return deployed_world != ""
@@ -80,6 +83,7 @@ class Account:
 			"raids_played": raids_played,
 			"raids_extracted": raids_extracted,
 			"kills": kills,
+			"credits": credits,
 		}
 
 	func load_dict(data: Dictionary) -> void:
@@ -112,6 +116,7 @@ class Account:
 		raids_played = maxi(0, int(data.get("raids_played", 0)))
 		raids_extracted = maxi(0, int(data.get("raids_extracted", 0)))
 		kills = maxi(0, int(data.get("kills", 0)))
+		credits = Economy.read_saved(data)
 
 
 # --- Identity ----------------------------------------------------------------
@@ -219,6 +224,7 @@ func snapshot(account_id: String) -> Dictionary:
 		"raids_played": account.raids_played,
 		"raids_extracted": account.raids_extracted,
 		"kills": account.kills,
+		"credits": account.credits,
 	}
 
 
@@ -255,6 +261,57 @@ func pick_mastery(account_id: String, track: String, variant_id: String) -> Dict
 		return _fail("Not unlocked yet.")
 	_save(account)
 	return {"ok": true}
+
+
+# --- Shops -------------------------------------------------------------------
+
+## Buys one item from a hub shop into the stash. The price and whether the
+## shop sells it are decided here, never by the client.
+func buy(account_id: String, shop_id: String, item_id: String) -> Dictionary:
+	var account := load_account(account_id)
+	if account == null:
+		return _fail("No such account.")
+	if account.is_deployed():
+		return _fail("You are in a raid.")
+	return _bank(account, Economy.buy(account.stash, account.credits, shop_id, item_id))
+
+
+## Sells up to `count` of a stash item. An empty `item_id` sells every trade
+## good (loot that is not gear) at once.
+func sell(account_id: String, item_id: String, count: int = 1) -> Dictionary:
+	var account := load_account(account_id)
+	if account == null:
+		return _fail("No such account.")
+	if account.is_deployed():
+		return _fail("You are in a raid.")
+	if item_id == "":
+		return _bank(account, Economy.sell_loot(account.stash, account.credits))
+	return _bank(account, Economy.sell(account.stash, account.loadout, account.credits, item_id, count))
+
+
+## The account's balance, or 0 if there is no such account.
+func credits_of(account_id: String) -> int:
+	var account := load_account(account_id)
+	return account.credits if account != null else 0
+
+
+## Adds `delta` credits (a cost when negative) for anything outside the
+## shops, such as a wager or a reward. Refuses, changing nothing, if it would
+## go below zero. Server code only: never pass on an amount a client chose.
+func change_credits(account_id: String, delta: int) -> bool:
+	var account := load_account(account_id)
+	if account == null or not Economy.can_change(account.credits, delta):
+		return false
+	account.credits = Economy.add(account.credits, delta)
+	_save(account)
+	return true
+
+
+func _bank(account: Account, result: Dictionary) -> Dictionary:
+	account.credits = result.credits
+	if result.ok:
+		_save(account)
+	return result
 
 
 # --- Raids -------------------------------------------------------------------
@@ -306,6 +363,7 @@ func settle(account_id: String, result: Dictionary) -> Dictionary:
 	if result.get("outcome", "") == "left":
 		account.raids_extracted += 1
 	account.kills += maxi(0, int(result.get("kills", 0)))
+	account.credits = Economy.add(account.credits, Economy.payout(result))
 	var gained: Variant = result.get("mastery_xp", {})
 	if typeof(gained) == TYPE_DICTIONARY:
 		for track: Variant in gained:
