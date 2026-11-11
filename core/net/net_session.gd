@@ -256,6 +256,8 @@ func _start_server_raid() -> void:
 	raid.vehicle_spawned.connect(_on_server_vehicle_spawned)
 	raid.vehicle_removed.connect(_on_server_vehicle_removed)
 	raid.squad_spawn = squad_spawn
+	if lag_compensation:
+		raid.rewind = _seen_positions
 	if bot_count >= 0:
 		world.bot_count = bot_count
 	var arena := raid as Arena

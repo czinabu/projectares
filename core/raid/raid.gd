@@ -76,6 +76,25 @@ var _bot_respawns: Array[float] = []
 var _parking: Array[Dictionary] = []
 ## Vehicle -> seconds since anyone rode it.
 var _idle := {}
+## Lag compensation for this raid, set by the `NetSession` running it: called
+## with an attacker, returns {Actor: Vector3} of where they saw everyone.
+## Per raid, because one server process can run several (a world and the arena).
+var rewind := Callable()
+
+
+## The raid a node belongs to, or null. Rules and scans use this so two raids
+## in one process (a plaza and a warzone on one server) never mix.
+static func of(node: Node) -> Raid:
+	while node != null:
+		if node is Raid:
+			return node
+		node = node.get_parent()
+	return null
+
+
+## True when both nodes are in the same raid (or neither is in one).
+static func together(a: Node, b: Node) -> bool:
+	return of(a) == of(b)
 
 
 ## Call after the Raid is in the scene tree. A fixed seed makes it repeatable.

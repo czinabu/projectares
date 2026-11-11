@@ -238,10 +238,12 @@ func _find_target() -> Actor:
 	var best_dist := sight_range
 	var eye := actor.get_eye_position()
 	var forward := Basis(Vector3.UP, actor.cmd.yaw) * Vector3.FORWARD
-	var world: WorldDef = Worlds.current
+	var world := Worlds.of(actor)
 	for node in get_tree().get_nodes_in_group("actors"):
 		var other := node as Actor
 		if other == null or other == actor or other.is_dead or other.faction == actor.faction:
+			continue
+		if not Raid.together(actor, other):
 			continue
 		if world and not world.can_damage(actor, other, null):
 			continue

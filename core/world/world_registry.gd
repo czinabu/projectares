@@ -39,5 +39,13 @@ func all() -> Array[WorldDef]:
 	return out
 
 
+## The world a node is in: the world of the raid that contains it. Several
+## raids can run in one process (a server with a plaza and a warzone), so
+## rules are looked up from the node, with `current` only as a fallback.
+func of(node: Node) -> WorldDef:
+	var raid := Raid.of(node)
+	return raid.world if raid != null and raid.world != null else current
+
+
 func get_world(id: String) -> WorldDef:
 	return _worlds.get(id)

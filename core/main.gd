@@ -154,21 +154,28 @@ func _refresh_base() -> void:
 
 # ----------------------------------------------------------------- arena ----
 
-## Opens the arena: the server's, while in its lobby, or a solo one against
-## bot gladiators. The plaza's arena gate calls this too.
+## Opens the arena: the server's while online (from its lobby, or from inside
+## a world such as the plaza through its arena gate), or a solo one against
+## bot gladiators.
 func open_arena() -> void:
-	if raid != null or base != null:
+	if base != null or raid is Arena:
 		return
 	if net != null:
-		if not hub.in_lobby():
+		if raid == null and not hub.in_lobby():
 			return
-		# Leave the lobby for the arena session on the same server.
+		# Leave the lobby (or the world you are in) for the arena session on
+		# the same server. Leaving the arena comes back to this port.
 		_lobby_port = _join_port
-		net.queue_free()
-		net = null
+		if raid != null:
+			_leave_raid()
+		else:
+			net.queue_free()
+			net = null
 		hub.set_online_status("Entering the arena...")
 		_begin_join(_join_address, _lobby_port + ARENA_PORT_OFFSET, 3)
 		return
+	if raid != null:
+		_leave_raid()
 	hub.visible = false
 	var arena := Arena.new()
 	arena.name = "Raid"
@@ -411,8 +418,15 @@ func _run_dedicated_server(args: PackedStringArray) -> void:
 	arena_net = NetSession.new()
 	arena_net.name = "ArenaNet"
 	arena_net.stash = net.stash
+	arena_net.social = net.social
 	arena_net.lag_compensation = net.lag_compensation
-	add_child(arena_net)
+	# Its own physics world, so the pit and the raid's map never overlap.
+	var arena_world := SubViewport.new()
+	arena_world.name = "ArenaWorld"
+	arena_world.own_world_3d = true
+	arena_world.disable_3d = false
+	add_child(arena_world)
+	arena_world.add_child(arena_net)
 	err = arena_net.host(Arena.ArenaVenue.ID, arena_port)
 	if err != OK:
 		push_warning("Server: no arena, could not listen on port %d (%s)" % [arena_port, error_string(err)])
