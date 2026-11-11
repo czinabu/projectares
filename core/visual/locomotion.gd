@@ -208,7 +208,7 @@ func choose(local_velocity: Vector3, armed: bool, current := "", current_sign :=
 	var speed := flat.length()
 	if speed < move_threshold or gaits.is_empty():
 		return {}
-	var walking := gaits.has("walk") and speed < gaits["walk"].length() * walk_ceiling
+	var walking: bool = gaits.has("walk") and speed < gaits["walk"].length() * walk_ceiling
 	var keys := WALK_KEYS if walking else RUN_KEYS
 	var candidates: Array[String] = []
 	for key: String in keys:
