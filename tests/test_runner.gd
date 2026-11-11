@@ -2479,8 +2479,11 @@ func _test_online() -> void:
 			me.cmd.interact_pressed = false
 			await _wait_until(looted, 60)
 			check(looted.call(), "looting the bag fills the backpack from the server (%d items)" % me.inventory.items.size())
-			check(notices.any(func(text: String) -> bool: return text.begins_with("Looted ")),
-					"the looter is told what they picked up")
+			# The notice is its own message and can land a moment after the backpack.
+			var told_loot := func() -> bool:
+				return notices.any(func(text: String) -> bool: return text.begins_with("Looted "))
+			await _wait_until(told_loot, 60)
+			check(told_loot.call(), "the looter is told what they picked up")
 			var bag_gone := func() -> bool: return not is_instance_id_valid(bag_id)
 			await _wait_until(bag_gone, 90)
 			check(bag_gone.call(), "the emptied bag disappears on the client too")
