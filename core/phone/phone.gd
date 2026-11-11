@@ -567,8 +567,10 @@ func _draw_settings() -> void:
 		settings_changed.emit())
 	_body.add_child(melee)
 	_body.add_child(_label("VIEW AND SOUND", 15, UiTheme.ACCENT))
-	_slider("Field of view", "field_of_view", GameSettings.FOV_RANGE, 1.0, GameSettings.field_of_view,
+	_slider("Field of view (first person)", "field_of_view", GameSettings.FOV_RANGE, 1.0, GameSettings.field_of_view,
 			func(v: float) -> String: return "%d" % roundi(v))
+	_slider("Field of view (third person)", "field_of_view_third", GameSettings.FOV_RANGE, 1.0,
+			GameSettings.field_of_view_third, func(v: float) -> String: return "%d" % roundi(v))
 	_slider("Volume", "master_volume", Vector2(0.0, 1.0), 0.05, GameSettings.master_volume,
 			func(v: float) -> String: return "%d%%" % roundi(v * 100.0))
 	_toggle("Fullscreen", "fullscreen", GameSettings.fullscreen)
