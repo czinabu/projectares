@@ -28,6 +28,7 @@ func scan() -> void:
 		if world == null or world.id == "":
 			push_warning("Worlds: %s is not a valid WorldDef" % path)
 			continue
+		world.register_items()
 		_worlds[world.id] = world
 
 
