@@ -40,6 +40,13 @@ const SHOP_PANEL := "res://core/economy/shop_panel.gd"
 const Economy := preload("res://core/economy/economy.gd")
 
 var hub: Hub
+## The 2D viewport the hub lives in. Its picture goes on the screen of the
+## station you are using (`_station_screen`), or fills the window while
+## travelling between places (`_travel`).
+var hub_screen: SubViewport
+## The live screen on the station in use, else null.
+var station_screen: WorldScreen
+var _travel: CanvasLayer
 var raid: Raid
 var controller: PlayerController
 var hud: Hud
@@ -77,9 +84,26 @@ func _ready() -> void:
 	if "--server" in args:
 		_run_dedicated_server(args)
 		return
+	hub_screen = SubViewport.new()
+	hub_screen.name = "HubScreen"
+	hub_screen.size = Vector2i(1280, 720)
+	hub_screen.disable_3d = true
+	hub_screen.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	add_child(hub_screen)
 	hub = Hub.new()
 	hub.name = "Hub"
-	add_child(hub)
+	hub_screen.add_child(hub)
+	_travel = CanvasLayer.new()
+	_travel.name = "Travel"
+	var picture := TextureRect.new()
+	picture.texture = hub_screen.get_texture()
+	picture.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	picture.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	picture.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	picture.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_travel.add_child(picture)
+	_travel.visible = false
+	add_child(_travel)
 	hub.closed.connect(_on_station_closed)
 	hub.deploy_requested.connect(start_raid)
 	hub.host_requested.connect(host_and_join)
@@ -110,6 +134,13 @@ func _ready() -> void:
 			net.send_look(Profile.appearance))
 	# The game opens in the world: your home base.
 	go_home()
+
+
+## Between places the hub's travel screen fills the window; anywhere else it
+## is only ever seen on a station's screen.
+func _process(_delta: float) -> void:
+	if _travel != null:
+		_travel.visible = hub.visible and hub.station == ""
 
 
 func _notification(what: int) -> void:
@@ -178,6 +209,7 @@ func leave_base() -> void:
 	if base == null:
 		return
 	hub.close()
+	_unmount_station_screen()
 	base.queue_free()
 	base = null
 	base_hud = null
@@ -218,7 +250,20 @@ func open_station(id: String) -> void:
 		# The arena gate is a way out, not a screen.
 		open_arena()
 		return
+	var console := base.station(id)
+	if console == null:
+		return
 	hub.open_station(id)
+	if not hub.visible:
+		return
+	# The screen comes up on the console itself and the view moves in to it.
+	_unmount_station_screen()
+	station_screen = WorldScreen.new()
+	station_screen.name = "LiveScreen"
+	station_screen.size = HomeBase.SCREEN_SIZE
+	station_screen.viewport = hub_screen
+	console.screen.add_child(station_screen)
+	station_screen.focus()
 	if base_hud:
 		base_hud.visible = false
 	if controller != null and is_instance_valid(controller):
@@ -226,8 +271,17 @@ func open_station(id: String) -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
 
+## Takes the live screen off its console and gives the view back.
+func _unmount_station_screen() -> void:
+	if station_screen != null and is_instance_valid(station_screen):
+		station_screen.unfocus()
+		station_screen.queue_free()
+	station_screen = null
+
+
 ## Stepped away from a station: the room takes the mouse back.
 func _on_station_closed() -> void:
+	_unmount_station_screen()
 	if base_hud:
 		base_hud.visible = true
 	if controller != null and is_instance_valid(controller) and not phone.is_open:

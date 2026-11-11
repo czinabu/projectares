@@ -241,13 +241,32 @@ func _base_shots(out_dir: String) -> void:
 		camera.look_at_from_position(views[file][0], views[file][1])
 		await _settle(4)
 		await _shot(out_dir.path_join(file))
-	# A station's screen over the room.
+	# A station's screen, live on the console: from across the room, then
+	# moved in to use it.
+	var screen_view := SubViewport.new()
+	screen_view.size = Vector2i(1280, 720)
+	screen_view.disable_3d = true
+	add_child(screen_view)
 	var hub := Hub.new()
-	add_child(hub)
-	hub.open_station("locker")
-	await _settle(6)
-	await _shot(out_dir.path_join("base_locker_screen.png"))
-	hub.queue_free()
+	screen_view.add_child(hub)
+	for id: String in ["locker", "trader", "launch"]:
+		hub.open_station(id)
+		var live := WorldScreen.new()
+		live.size = HomeBase.SCREEN_SIZE
+		live.viewport = screen_view
+		base.station(id).screen.add_child(live)
+		var face: Node3D = base.station(id).screen
+		camera.make_current()
+		camera.look_at_from_position(face.global_position + face.global_basis.z * 3.2 + Vector3(0, 0.3, 0), face.global_position)
+		await _settle(6)
+		await _shot(out_dir.path_join("base_%s_console.png" % id))
+		live.focus()
+		await _settle(30)
+		await _shot(out_dir.path_join("base_%s_screen.png" % id))
+		live.unfocus()
+		live.queue_free()
+		hub.close()
+	screen_view.queue_free()
 	base.queue_free()
 	await _settle(2)
 

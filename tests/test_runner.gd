@@ -3540,6 +3540,10 @@ func _test_home_base() -> void:
 	await frames(2)
 	var lines: Array[String] = hud.describe(shard)
 	check(lines[0] == "Lattice Shard" and "Relic" in lines[1], "the overlay names what you look at and its rarity")
+	check(hud.tag.visible and hud.tag.text == lines[1] and hud.tag.global_position.distance_to(shard.global_position) < 2.0,
+			"what it is shows on a tag over the gear itself, not on the screen")
+	check(base.get_node("Banner/Title").text == "HOME BASE" and "press E" in base.banner_text(),
+			"the base's name and how it works hang on a banner in the room")
 	for kind: String in BaseLayout.KINDS:
 		var bike_or_gear: Array = by_kind.get(kind, [])
 		if bike_or_gear.is_empty():
@@ -3615,14 +3619,43 @@ func _test_home_base() -> void:
 		console.interact(main.base.player)
 		await frames(2)
 		check(main.hub.visible and main.hub.station == id and main.controller.input_blocked
-				and not main.base_hud.visible, "the %s opens its screen over the base" % id)
+				and not main.base_hud.visible, "the %s opens its screen" % id)
+		check(main.station_screen != null and main.station_screen.get_parent() == console.screen
+				and main.station_screen.focused and main.get_viewport().get_camera_3d() != main.controller.camera
+				and not main._travel.visible, "the %s's screen comes up on the console and the view moves in to it" % id)
 		var esc := InputEventKey.new()
 		esc.keycode = KEY_ESCAPE
 		esc.pressed = true
 		main.hub._unhandled_input(esc)
 		await frames(2)
-		check(not main.hub.visible and not main.controller.input_blocked and main.base_hud.visible,
-				"Esc steps away from the %s" % id)
+		check(not main.hub.visible and not main.controller.input_blocked and main.base_hud.visible
+				and main.station_screen == null and main.get_viewport().get_camera_3d() == main.controller.camera,
+				"Esc steps away from the %s and gives the view back" % id)
+	# The screen is used by clicking on it in the world: a click where the
+	# records board's "Step away" button shows goes to that button.
+	main.open_station("records")
+	await get_tree().create_timer(0.6).timeout
+	var live: WorldScreen = main.station_screen
+	var cam := main.get_viewport().get_camera_3d()
+	var mid := cam.unproject_position(live.global_position)
+	check(live.screen_point(cam.project_ray_origin(mid), cam.project_ray_normal(mid)).distance_to(
+			Vector2(main.hub_screen.size) * 0.5) < 2.0, "the middle of the view is the middle of the screen")
+	var step_away: Button = main.hub._close_button
+	var spot := step_away.get_global_rect().get_center()
+	var on_glass := Vector3((spot.x / main.hub_screen.size.x - 0.5) * live.size.x,
+			(0.5 - spot.y / main.hub_screen.size.y) * live.size.y, 0.0)
+	var at := cam.unproject_position(live.global_transform * on_glass)
+	for pressed: bool in [true, false]:
+		var click := InputEventMouseButton.new()
+		click.button_index = MOUSE_BUTTON_LEFT
+		click.pressed = pressed
+		click.position = at
+		click.global_position = at
+		main.get_viewport().push_input(click)
+		await frames(1)
+	await frames(2)
+	check(not main.hub.visible and main.station_screen == null and not main.controller.input_blocked,
+			"clicking a button on the screen in the world presses it")
 	main.open_station("wardrobe")
 	await frames(2)
 	check(main.hub.character.is_customizing(), "the wardrobe opens the customizer")

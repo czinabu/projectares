@@ -46,7 +46,9 @@ caches hold the best loot, and only the jetpack gets you there.
 
 The game opens in your home base, not on a menu screen. Everything in your
 stash is on show, and the consoles in the room do what the old menu did.
-Walk up to one and press **E**; **Esc** steps away again.
+Walk up to one and press **E**: your view moves in to its screen and you
+click on the screen itself. **Esc** steps back. Look at a piece of gear and
+a tag over it says what it is and what it is worth.
 
 | Console | What it opens |
 | --- | --- |
