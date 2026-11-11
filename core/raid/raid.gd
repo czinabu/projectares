@@ -9,17 +9,22 @@ signal ended(result: Dictionary)
 
 ## Bots never start closer to the player than this, so a raid does not open with a fight.
 const MIN_BOT_SPAWN_DISTANCE := 40.0
+const VehicleScript := preload("res://core/vehicle/vehicle.gd")
 
 var world: WorldDef
 var map: Node3D
 var player: Actor
 var bots: Array[Actor] = []
 var exits: Array[ExtractionZone] = []
+var vehicles: Array[Node3D] = []
 var time_left := 0.0
 var kills := 0
 var is_over := false
 var rng := RandomNumberGenerator.new()
 var _kit: Array[String] = []
+## Vehicle items the player deployed with. Lost unless they extract riding one.
+var _deployed_vehicles: Array[String] = []
+var _extracted_vehicle := ""
 
 
 ## Call after the Raid is in the scene tree. A fixed seed makes it repeatable.
@@ -53,6 +58,7 @@ func start(p_world: WorldDef, p_seed: int = -1, p_kit: Array = []) -> void:
 
 	_spawn_player()
 	_spawn_bots()
+	_spawn_vehicles()
 
 
 func _physics_process(delta: float) -> void:
@@ -109,6 +115,33 @@ func _spawn_bots() -> void:
 		world.on_spawn(bot)
 
 
+## Parks the player's own vehicle beside them, then fills the map's vehicle
+## markers with abandoned ones anyone can take.
+func _spawn_vehicles() -> void:
+	for id in _kit:
+		if ItemDB.has_tag(id, "vehicle"):
+			_deployed_vehicles.append(id)
+			var side := Basis(Vector3.UP, player.cmd.yaw) * Vector3(2.5, 0.3, -1.0)
+			spawn_vehicle(id, player.global_position + side, player.cmd.yaw)
+	for marker in _map_nodes("spawn_vehicle"):
+		var source: String = marker.get_meta("loot_source", "vehicle")
+		for id in world.roll_loot(source, rng):
+			if ItemDB.has_tag(id, "vehicle"):
+				spawn_vehicle(id, marker.global_position + Vector3(0, 0.3, 0), marker.rotation.y)
+				break
+
+
+func spawn_vehicle(id: String, at: Vector3, heading: float) -> Node3D:
+	var vehicle := VehicleScript.new()
+	vehicle.name = "Vehicle%d" % vehicles.size()
+	vehicle.setup(id)
+	vehicle.rotation.y = heading
+	add_child(vehicle)
+	vehicle.global_position = at
+	vehicles.append(vehicle)
+	return vehicle
+
+
 func _spawn_container(items: Array, is_bag: bool, label: String, at: Vector3) -> LootContainer:
 	var container := LootContainer.new()
 	container.setup(items, is_bag, label)
@@ -136,8 +169,12 @@ func _on_actor_extracted(actor: Actor) -> void:
 	if actor != player or is_over:
 		return
 	world.on_extract(actor)
-	# Everything carried comes home: surviving gear and the backpack.
+	# Everything carried comes home: surviving gear and the backpack, and the
+	# vehicle they rode out on, whoever it belonged to.
 	Profile.add_to_stash(actor.get_drop_items())
+	if actor.vehicle != null:
+		_extracted_vehicle = actor.vehicle.get("item_id")
+		Profile.add_to_stash([_extracted_vehicle])
 	_finish("extracted", "")
 
 
@@ -148,15 +185,27 @@ func _finish(outcome: String, cause: String) -> void:
 	var loot: Array[String] = []
 	if outcome == "extracted":
 		loot.assign(player.inventory.items)
+	var kept: Array[String] = []
+	if outcome == "extracted":
+		kept.assign(player.gear_items.filter(func(id: String) -> bool:
+			return not ItemDB.has_tag(id, "starter")))
+		if _extracted_vehicle != "":
+			kept.append(_extracted_vehicle)
+	var lost: Array[String] = []
+	if outcome != "extracted":
+		lost.assign(player.get_drop_items())
+	# A vehicle you brought is lost unless you rode it (or another) back out.
+	var left_behind := _deployed_vehicles.duplicate()
+	left_behind.erase(_extracted_vehicle)
+	lost.append_array(left_behind)
 	var result := {
 		"outcome": outcome,
 		"cause": cause,
 		"world_id": world.id,
 		"loot": loot,
-		"kept_gear": player.gear_items.filter(func(id: String) -> bool:
-			return not ItemDB.has_tag(id, "starter")) if outcome == "extracted" else [],
+		"kept_gear": kept,
 		"loot_value": ItemDB.total_value(loot),
-		"lost": player.get_drop_items() if outcome != "extracted" else [],
+		"lost": lost,
 		"kills": kills,
 		"time_in_raid": world.raid_duration - time_left,
 	}

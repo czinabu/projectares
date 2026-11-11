@@ -9,6 +9,10 @@ const CELL := 14.0
 const GRID := 8
 const LAYOUT_SEED := 1337
 const HEIGHTS := [3.0, 3.0, 6.0, 10.0, 16.0]
+## Open lots that get a jump ramp and a parked bike instead of cover.
+const RAMP_LOTS := 3
+const RAMP_LENGTH := 8.0
+const RAMP_ANGLE_DEG := 15.0
 
 var nav_region: NavigationRegion3D
 var _rng := RandomNumberGenerator.new()
@@ -85,8 +89,10 @@ func _build_blocks() -> void:
 				open_cells.append(center)
 
 	# Deal the open cells out: player spawns, bot spawns, caches, then cover.
+	# A few cover lots become ramp lots with a bike parked by the ramp.
 	_shuffle(open_cells)
 	var index := 0
+	var ramps := 0
 	for center in open_cells:
 		var slot := index % 6
 		if index < 4:
@@ -96,6 +102,9 @@ func _build_blocks() -> void:
 		elif slot <= 4:
 			_add_marker("spawn_cache", center + Vector3(_rng.randf_range(-3, 3), 0, _rng.randf_range(-3, 3)))
 			_add_cover(center)
+		elif ramps < RAMP_LOTS:
+			_add_ramp_lot(center, ramps * PI * 0.5)
+			ramps += 1
 		else:
 			_add_cover(center)
 		index += 1
@@ -117,6 +126,36 @@ func _add_cover(center: Vector3) -> void:
 		var size := Vector3(_rng.randf_range(1.2, 3.0), _rng.randf_range(1.0, 1.6), _rng.randf_range(1.2, 3.0))
 		var offset := Vector3(_rng.randf_range(-4.5, 4.5), size.y * 0.5, _rng.randf_range(-4.5, 4.5))
 		_box(size, center + offset, Color(0.42, 0.3, 0.2))
+
+
+## A jump ramp facing `yaw`, with a bike marker parked off to one side.
+func _add_ramp_lot(center: Vector3, yaw: float) -> void:
+	var angle := deg_to_rad(RAMP_ANGLE_DEG)
+	var thickness := 0.4
+	var body := StaticBody3D.new()
+	body.collision_layer = Actor.LAYER_WORLD
+	body.collision_mask = 0
+	# Sit the low end flush with the ground; the high end lifts toward -Z.
+	body.position = center + Vector3(0, RAMP_LENGTH * 0.5 * sin(angle) - thickness * 0.5 * cos(angle), 0)
+	body.basis = Basis(Vector3.UP, yaw) * Basis(Vector3.RIGHT, angle)
+	var size := Vector3(4.0, thickness, RAMP_LENGTH)
+	var shape := BoxShape3D.new()
+	shape.size = size
+	var col := CollisionShape3D.new()
+	col.shape = shape
+	body.add_child(col)
+	var mesh := BoxMesh.new()
+	mesh.size = size
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(0.55, 0.4, 0.18)
+	mesh.material = mat
+	var mesh_node := MeshInstance3D.new()
+	mesh_node.mesh = mesh
+	body.add_child(mesh_node)
+	nav_region.add_child(body)
+	# Parked back from the low end and to the side, pointing up the ramp.
+	var marker := _add_marker("spawn_vehicle", center + Basis(Vector3.UP, yaw) * Vector3(3.5, 0, 5.0))
+	marker.rotation.y = yaw
 
 
 func _add_exit(center: Vector3) -> void:

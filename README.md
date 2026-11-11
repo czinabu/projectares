@@ -27,7 +27,8 @@ core loop and lays the foundation for online play and more worlds.
 | Switch to rifle / blade | 1 / 2, or mouse wheel |
 | Reload | R |
 | Use a medkit | H |
-| Loot | E |
+| Loot, or get on and off a bike | E |
+| Ride a bike: throttle, brake or reverse, steer, boost | W, S, A / D, Shift |
 | Switch camera: first-person or third-person | V |
 | Free the mouse | Esc |
 
@@ -64,6 +65,12 @@ few seconds and restart on its own. That is Godot learning about new scripts.
   for a few seconds, Shock Pulse staggers everyone near you. Each has a cooldown.
 - More gear to find: carbine, SMG, marksman rifle, shotgun, arc blade, breaker
   hammer, three armor frames, and a better jetpack.
+- Motorbikes, the first vehicle. Put one in the vehicle slot and it is parked
+  next to you when you deploy. Press E on any bike nobody is riding to take
+  it, including someone else's. Extract riding a bike and it goes to your
+  stash; die or leave it behind and it is gone. Abandoned bikes wait by jump
+  ramps around the city. Riding uses the third-person camera (V still
+  switches), and pressing E in mid-air bails out with the bike's speed.
 - Two exits, a raid timer, and full loot on death.
 
 ## How the code is organized
@@ -73,6 +80,7 @@ core/            Shared by every world. Never names a specific world.
   actor/         Actor (the character) and ActorCommand (one tick of intent)
   combat/        Health, damage, guns, melee
   flight/        Flight rigs
+  vehicle/       Rideable vehicles (the motorbike)
   items/         Item database, inventory, loadouts
   interact/      Loot containers
   raid/          Raid flow and extraction zones

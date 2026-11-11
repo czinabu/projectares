@@ -58,6 +58,9 @@ var active_weapon_index := 0
 ## Item ids of equipped gear (weapons, rig, armor). Dropped on death.
 var gear_items: Array[String] = []
 var frame_name := "No armor"
+## The vehicle this actor is riding, or null. While riding, the vehicle moves
+## the actor; weapons, healing and abilities still work.
+var vehicle: Node3D = null
 
 var is_dead := false
 var heal_time_left := 0.0
@@ -146,7 +149,8 @@ func _physics_process(delta: float) -> void:
 		hand.position = HAND_REST
 		hand.rotation = Vector3(cmd.pitch, 0.0, 0.0)
 	_simulate_timers(delta)
-	_simulate_movement(delta)
+	if vehicle == null:
+		_simulate_movement(delta)
 	_simulate_weapons(delta)
 	ability.tick(delta)
 	if cmd.ability_pressed and stagger_left <= 0.0:

@@ -12,6 +12,7 @@ const WELCOME_CRATE: Array[String] = ["rifle_carbine", "frame_trooper", "medkit"
 ## to try as features land.
 const GEAR_CRATES := {
 	"flight_and_abilities": ["boots_thruster", "wings_glide", "chip_barrier", "chip_blink"],
+	"first_vehicle": ["bike_scrapper"],
 }
 
 ## Tests turn this off so they never touch a real save.
