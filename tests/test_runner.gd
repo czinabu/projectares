@@ -22,6 +22,7 @@ func _run() -> void:
 	_test_flight_rig()
 	await _test_raid_setup_and_movement()
 	await _test_combat_and_loot()
+	await _test_melee_defense()
 	await _test_extraction()
 	await _test_death()
 	await _test_storm()
@@ -210,12 +211,16 @@ func _test_combat_and_loot() -> void:
 	p.cmd.primary_pressed = true
 	await frames(1)
 	p.cmd.primary_pressed = false
+	check(is_equal_approx(bot_b.health.health, before_melee), "a swing has a windup before it lands")
+	await frames(12)
 	check(bot_b.health.health < before_melee, "blade light attack hits")
-	for i in 3:
+	check(p.stamina < p.max_stamina, "attacking costs stamina")
+	for i in 4:
 		await frames(40)
 		p.cmd.primary_pressed = true
 		await frames(1)
 		p.cmd.primary_pressed = false
+	await frames(12)
 	check(bot_b.is_dead, "blade combo kills")
 
 	# Scavengers do not hurt each other; that is a world rule.
@@ -337,3 +342,156 @@ func _test_main_flow() -> void:
 	check(main.raid == null and main.hub.visible, "dying returns to the hub")
 	main.queue_free()
 	await frames(2)
+
+
+## Sets up the player with the blade out, facing a brute that stands in reach.
+func _duel(raid: Raid) -> Array:
+	var p := raid.player
+	await frames(40)
+	var arena := raid.exits[0].global_position
+	p.global_position = Vector3(arena.x, 0.1, arena.z + 3.0)
+	p.cmd.yaw = 0.0
+	p.cmd.aim_dir = Vector3.FORWARD
+	p.cmd.switch_weapon = 1
+	var foe := raid.bots[0]
+	foe.global_position = p.global_position + Vector3(0, 0, -2.0)
+	foe.cmd.yaw = PI
+	foe.cmd.aim_dir = Vector3.BACK
+	# Give the foe a blade regardless of what the world rolled for it.
+	for w in foe.weapons:
+		w.queue_free()
+	foe.weapons.clear()
+	var blade := MeleeWeapon.new()
+	blade.light_windup = 0.5
+	blade.light_stamina = 0.0
+	foe.equip_weapon(blade)
+	foe.active_weapon_index = 0
+	await frames(3)
+	p.cmd.switch_weapon = -1
+	return [p, foe, blade]
+
+
+func _foe_swing(foe: Actor) -> void:
+	foe.cmd.primary_pressed = true
+	await frames(1)
+	foe.cmd.primary_pressed = false
+
+
+func _test_melee_defense() -> void:
+	print("Block, parry and stamina")
+	var raid := await _new_raid(48, false)
+	var setup: Array = await _duel(raid)
+	var p: Actor = setup[0]
+	var foe: Actor = setup[1]
+	var total := func() -> float: return p.health.health + p.health.armor
+
+	# Unblocked hit.
+	var before: float = total.call()
+	await _foe_swing(foe)
+	await frames(40)
+	check(total.call() < before, "an unblocked swing hurts")
+
+	# Held block: guard raised long before the hit lands.
+	await frames(60)
+	before = total.call()
+	var stamina_before := p.stamina
+	p.cmd.secondary = true
+	await frames(30)
+	await _foe_swing(foe)
+	await frames(40)
+	check(is_equal_approx(total.call(), before), "a held block stops a melee hit")
+	check(p.stamina < stamina_before, "blocking costs stamina")
+	check(foe.stagger_left <= 0.0, "a plain block does not stagger the attacker")
+	p.cmd.secondary = false
+
+	# Parry: guard raised just before the hit lands (windup is 30 frames).
+	await frames(90)
+	before = total.call()
+	stamina_before = p.stamina
+	await _foe_swing(foe)
+	await frames(22)
+	p.cmd.secondary = true
+	await frames(12)
+	p.cmd.secondary = false
+	check(is_equal_approx(total.call(), before), "a parry takes no damage")
+	check(foe.stagger_left > 0.0, "a parry staggers the attacker")
+	check(p.riposte_left > 0.0, "a parry readies a riposte")
+	var foe_before := foe.health.health
+	p.cmd.primary_pressed = true
+	await frames(1)
+	p.cmd.primary_pressed = false
+	await frames(12)
+	var blade := p.get_active_weapon() as MeleeWeapon
+	check(is_equal_approx(foe_before - foe.health.health, blade.light_damage * blade.riposte_mult),
+			"the riposte hits harder")
+
+	# A staggered attacker cannot swing.
+	foe.stagger(1.0)
+	before = total.call()
+	await _foe_swing(foe)
+	await frames(40)
+	check(is_equal_approx(total.call(), before), "a staggered attacker cannot attack")
+
+	# Blocking from behind does nothing.
+	await frames(60)
+	before = total.call()
+	p.cmd.yaw = PI
+	p.cmd.aim_dir = Vector3.BACK
+	p.cmd.secondary = true
+	await frames(30)
+	await _foe_swing(foe)
+	await frames(40)
+	check(total.call() < before, "a block does not cover your back")
+	p.cmd.yaw = 0.0
+	p.cmd.aim_dir = Vector3.FORWARD
+
+	# Bullets: a held guard only stops part of one.
+	await frames(60)
+	before = total.call()
+	Combat.deal(p, DamageInfo.make(20.0, foe, "bullet"))
+	var blocked_loss: float = before - total.call()
+	check(blocked_loss > 0.0 and blocked_loss < 20.0, "a blade turns aside part of a bullet")
+
+	# Guard break: no stamina left to pay for the block.
+	p.stamina = 2.0
+	before = total.call()
+	Combat.deal(p, DamageInfo.make(30.0, foe, "melee"))
+	check(total.call() < before and p.stagger_left > 0.0, "an empty stamina bar means a guard break")
+	p.cmd.secondary = false
+
+	# Stamina comes back.
+	p.stagger_left = 0.0
+	await frames(180)
+	check(p.stamina > 40.0, "stamina regenerates")
+
+	# Hit confirmation reaches the attacker.
+	var hits := [0]
+	p.hit_confirmed.connect(func(_t: Actor, _i: DamageInfo, _l: bool) -> void: hits[0] += 1)
+	Combat.deal(foe, DamageInfo.make(5.0, p, "bullet"))
+	check(hits[0] == 1, "the attacker is told when a hit lands")
+	await _end_raid(raid)
+
+	# Recoil bloom.
+	var gun_raid := await _new_raid(49, false)
+	var shooter := gun_raid.player
+	await frames(40)
+	var gun := shooter.weapons[0] as Gun
+	var calm := gun.current_spread_deg()
+	shooter.cmd.primary = true
+	await frames(40)
+	check(gun.current_spread_deg() > calm, "sustained fire widens the spread")
+	shooter.cmd.primary = false
+	await frames(60)
+	check(is_equal_approx(gun.current_spread_deg(), calm), "the spread settles when you stop")
+	await _end_raid(gun_raid)
+
+	# A brute rushes and swings on its own.
+	var brute_raid := await _new_raid(50, true)
+	var duel: Array = await _duel(brute_raid)
+	var victim: Actor = duel[0]
+	var brute: Actor = duel[1]
+	brute.global_position = victim.global_position + Vector3(0, 0, -7.0)
+	var victim_before := victim.health.health + victim.health.armor
+	await frames(300)
+	check(victim.health.health + victim.health.armor < victim_before, "a melee bot closes in and hits")
+	await _end_raid(brute_raid)

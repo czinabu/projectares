@@ -27,6 +27,8 @@ var primary := false
 var primary_pressed := false
 var secondary := false
 var secondary_pressed := false
+## A weapon's special action (heavy attack for melee).
+var tertiary_pressed := false
 var reload_pressed := false
 
 var interact_pressed := false
@@ -41,6 +43,7 @@ func clear_one_shots() -> void:
 	dash = false
 	primary_pressed = false
 	secondary_pressed = false
+	tertiary_pressed = false
 	reload_pressed = false
 	interact_pressed = false
 	heal_pressed = false

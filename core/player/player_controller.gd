@@ -26,6 +26,8 @@ var yaw := 0.0
 var pitch := 0.0
 var _cam_dist := 0.0
 var _pending_switch := -1
+var _rng := RandomNumberGenerator.new()
+var _thrust_audio: AudioStreamPlayer
 
 
 func setup(p_actor: Actor) -> void:
@@ -41,6 +43,19 @@ func _ready() -> void:
 	add_child(camera)
 	camera.make_current()
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+	for weapon in actor.weapons:
+		var gun := weapon as Gun
+		if gun:
+			gun.fired.connect(_on_gun_fired.bind(gun))
+	actor.hit_confirmed.connect(_on_hit_confirmed)
+	actor.health.damaged.connect(_on_damaged)
+	var thrust_stream := Sfx.get_stream("thrust")
+	if thrust_stream:
+		_thrust_audio = AudioStreamPlayer.new()
+		_thrust_audio.stream = thrust_stream
+		_thrust_audio.volume_db = -10.0
+		add_child(_thrust_audio)
 
 
 func _exit_tree() -> void:
@@ -86,10 +101,13 @@ func _physics_process(_delta: float) -> void:
 	cmd.jump = Input.is_action_pressed("jump")
 	cmd.jump_pressed = Input.is_action_just_pressed("jump")
 	cmd.dash = Input.is_action_just_pressed("dash")
+	if cmd.dash and actor.stamina >= actor.dash_stamina:
+		Sfx.play("dash", null, -6.0)
 	cmd.primary = captured and Input.is_action_pressed("fire")
 	cmd.primary_pressed = captured and Input.is_action_just_pressed("fire")
 	cmd.secondary = captured and Input.is_action_pressed("alt_fire")
 	cmd.secondary_pressed = captured and Input.is_action_just_pressed("alt_fire")
+	cmd.tertiary_pressed = captured and Input.is_action_just_pressed("heavy")
 	cmd.reload_pressed = Input.is_action_just_pressed("reload")
 	cmd.interact_pressed = Input.is_action_just_pressed("interact")
 	cmd.heal_pressed = Input.is_action_just_pressed("heal")
@@ -127,6 +145,12 @@ func _process(delta: float) -> void:
 			desired = pivot + (hit.position - pivot) * 0.85
 	camera.global_transform = Transform3D(look, desired)
 	camera.fov = lerpf(camera.fov, ads_fov if aiming else base_fov, 1.0 - exp(-14.0 * delta))
+	if _thrust_audio:
+		var thrusting := actor.flight.is_thrusting and not actor.is_dead
+		if thrusting and not _thrust_audio.playing:
+			_thrust_audio.play()
+		elif not thrusting and _thrust_audio.playing:
+			_thrust_audio.stop()
 	var first_person := not actor.is_dead and pivot.distance_to(desired) <= 0.7
 	if actor.body_mesh:
 		actor.body_mesh.visible = not first_person
@@ -135,6 +159,27 @@ func _process(delta: float) -> void:
 	actor.hand_override = first_person
 	if first_person:
 		actor.hand.global_transform = camera.global_transform * Transform3D(Basis.IDENTITY, FIRST_PERSON_HAND)
+
+
+## Each shot kicks the view up and a little sideways. The player pulls down to
+## hold a spray on target.
+func _on_gun_fired(_from: Vector3, _to: Vector3, gun: Gun) -> void:
+	var scale := 0.6 if gun.is_aiming() else 1.0
+	pitch = clampf(pitch + deg_to_rad(gun.recoil_kick_deg) * scale, -1.5, 1.5)
+	yaw += deg_to_rad(_rng.randf_range(-gun.recoil_side_deg, gun.recoil_side_deg)) * scale
+
+
+func _on_hit_confirmed(_target: Actor, info: DamageInfo, lethal: bool) -> void:
+	if lethal:
+		Sfx.play("kill")
+	elif info.parried or info.blocked:
+		Sfx.play("block", null, -6.0)
+	else:
+		Sfx.play("hit")
+
+
+func _on_damaged(_info: DamageInfo) -> void:
+	Sfx.play("hurt")
 
 
 func is_third_person() -> bool:

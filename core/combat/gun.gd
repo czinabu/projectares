@@ -14,10 +14,18 @@ var reload_time := 1.7
 var max_range := 150.0
 var spread_deg := 1.2
 var ads_spread_mult := 0.3
+## Sustained fire widens the spread; it settles when you let go.
+var bloom_per_shot := 0.35
+var max_bloom := 2.6
+var bloom_recovery := 5.0
+## How far each shot kicks the shooter's view, in degrees.
+var recoil_kick_deg := 0.55
+var recoil_side_deg := 0.22
 
 var _cooldown := 0.0
 var _reload_left := 0.0
 var _aiming := false
+var _bloom := 0.0
 var _rng := RandomNumberGenerator.new()
 
 
@@ -35,6 +43,7 @@ func controls_hint() -> String:
 
 func tick(delta: float) -> void:
 	_cooldown = maxf(0.0, _cooldown - delta)
+	_bloom = maxf(0.0, _bloom - bloom_recovery * delta)
 	if visual:
 		# Recoil kick settles back to rest.
 		visual.position.z = move_toward(visual.position.z, 0.0, delta * 0.6)
@@ -75,6 +84,10 @@ func start_reload() -> void:
 		_reload_left = reload_time
 
 
+func current_spread_deg() -> float:
+	return (spread_deg + _bloom) * (ads_spread_mult if _aiming else 1.0)
+
+
 func status_text() -> String:
 	if is_reloading():
 		return "%s  reloading" % display_name
@@ -89,7 +102,8 @@ func _fire() -> void:
 		visual.rotation.x = 0.06
 	var from := actor.get_eye_position()
 	var dir := actor.get_aim_dir()
-	var spread := deg_to_rad(spread_deg) * (ads_spread_mult if _aiming else 1.0)
+	var spread := deg_to_rad(spread_deg + _bloom) * (ads_spread_mult if _aiming else 1.0)
+	_bloom = minf(max_bloom, _bloom + bloom_per_shot)
 	var jitter := Vector3(_rng.randf_range(-1, 1), _rng.randf_range(-1, 1), _rng.randf_range(-1, 1))
 	dir = (dir + jitter * tan(spread)).normalized()
 	var to := from + dir * max_range
@@ -101,4 +115,5 @@ func _fire() -> void:
 		to = hit.position
 		Combat.deal(hit.collider, DamageInfo.make(damage, actor, "bullet", to))
 	fired.emit(from, to)
+	Sfx.play("shot", null if actor.is_player else from)
 	Fx.tracer(actor.get_parent(), from + dir * 0.8 - Vector3(0, 0.15, 0), to)

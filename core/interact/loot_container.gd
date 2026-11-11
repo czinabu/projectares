@@ -47,6 +47,8 @@ func interact(actor: Actor) -> void:
 		taken.append(id)
 	if not taken.is_empty():
 		actor.notice.emit("Looted " + ItemDB.summarize(taken))
+		if actor.is_player:
+			Sfx.play("loot")
 	elif not items.is_empty():
 		actor.notice.emit("Backpack full")
 	if items.is_empty() and is_bag:

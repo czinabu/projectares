@@ -9,6 +9,8 @@ signal died(actor: Actor, info: DamageInfo)
 signal landed(impact_speed: float)
 ## Short messages for whoever is watching this actor (the HUD for the player).
 signal notice(text: String)
+## This actor's attack landed on `target`. Drives hit markers and sounds.
+signal hit_confirmed(target: Actor, info: DamageInfo, lethal: bool)
 
 const LAYER_WORLD := 1
 const LAYER_ACTORS := 2
@@ -38,6 +40,14 @@ var interact_range := 3.5
 var heal_duration := 3.0
 var heal_amount := 50.0
 
+# Stamina pays for melee, blocking and dashing.
+var max_stamina := 100.0
+var stamina := 100.0
+var stamina_regen := 28.0
+var stamina_regen_delay := 0.9
+var dash_stamina := 20.0
+var stagger_speed_mult := 0.35
+
 var cmd := ActorCommand.new()
 var health := HealthComponent.new()
 var inventory := Inventory.new()
@@ -50,6 +60,10 @@ var gear_items: Array[String] = []
 var is_dead := false
 var heal_time_left := 0.0
 var airborne_time := 0.0
+## While staggered the actor cannot attack, block, dash or jump.
+var stagger_left := 0.0
+## After a parry, the next melee hit inside this window hits harder.
+var riposte_left := 0.0
 var body_mesh: MeshInstance3D
 ## Holds the active weapon's model. A first-person camera may pose it itself.
 var hand := Node3D.new()
@@ -59,6 +73,9 @@ var _dash_left := 0.0
 var _dash_cd := 0.0
 var _dash_dir := Vector3.ZERO
 var _was_on_floor := true
+var _stamina_wait := 0.0
+var _flash_left := 0.0
+var _base_material: Material
 
 
 func _init() -> void:
@@ -122,6 +139,7 @@ func _physics_process(delta: float) -> void:
 	if not hand_override:
 		hand.position = HAND_REST
 		hand.rotation = Vector3(cmd.pitch, 0.0, 0.0)
+	_simulate_timers(delta)
 	_simulate_movement(delta)
 	_simulate_weapons(delta)
 	_simulate_heal(delta)
@@ -133,6 +151,45 @@ func _physics_process(delta: float) -> void:
 		kill("void")
 
 
+func _simulate_timers(delta: float) -> void:
+	stagger_left = maxf(0.0, stagger_left - delta)
+	riposte_left = maxf(0.0, riposte_left - delta)
+	_stamina_wait = maxf(0.0, _stamina_wait - delta)
+	if _stamina_wait <= 0.0:
+		stamina = minf(max_stamina, stamina + stamina_regen * delta)
+	if _flash_left > 0.0:
+		_flash_left -= delta
+		if _flash_left <= 0.0 and body_mesh:
+			body_mesh.material_override = _base_material
+
+
+## Takes stamina if there is enough. Returns false and takes nothing otherwise.
+func spend_stamina(amount: float) -> bool:
+	if amount <= 0.0:
+		return true
+	if stamina < amount:
+		return false
+	stamina -= amount
+	_stamina_wait = stamina_regen_delay
+	return true
+
+
+func pause_stamina_regen() -> void:
+	_stamina_wait = maxf(_stamina_wait, 0.2)
+
+
+func stagger(duration: float) -> void:
+	stagger_left = maxf(stagger_left, duration)
+	notice.emit("Staggered")
+
+
+## Gives the weapon in hand a chance to block or parry a hit.
+func modify_incoming(info: DamageInfo) -> void:
+	var weapon := get_active_weapon()
+	if weapon and not is_dead and stagger_left <= 0.0:
+		weapon.modify_incoming(info)
+
+
 func _simulate_movement(delta: float) -> void:
 	var on_floor := is_on_floor()
 	var yaw_basis := Basis(Vector3.UP, cmd.yaw)
@@ -141,6 +198,9 @@ func _simulate_movement(delta: float) -> void:
 		wish = wish.normalized()
 
 	var speed := sprint_speed if (cmd.sprint and cmd.move.y > 0.0) else walk_speed
+	var staggered := stagger_left > 0.0
+	if staggered:
+		speed *= stagger_speed_mult
 	var horizontal := Vector3(velocity.x, 0.0, velocity.z)
 	if on_floor:
 		horizontal = horizontal.move_toward(wish * speed, ground_accel * delta)
@@ -149,7 +209,7 @@ func _simulate_movement(delta: float) -> void:
 		horizontal = horizontal.move_toward(wish * speed, air_accel * delta)
 
 	_dash_cd = maxf(0.0, _dash_cd - delta)
-	if cmd.dash and _dash_cd <= 0.0:
+	if cmd.dash and _dash_cd <= 0.0 and not staggered and spend_stamina(dash_stamina):
 		_dash_dir = wish.normalized() if wish.length() > 0.1 else yaw_basis * Vector3.FORWARD
 		_dash_left = dash_time
 		_dash_cd = dash_cooldown
@@ -160,9 +220,9 @@ func _simulate_movement(delta: float) -> void:
 	velocity.x = horizontal.x
 	velocity.z = horizontal.z
 
-	if on_floor and cmd.jump_pressed:
+	if on_floor and cmd.jump_pressed and not staggered:
 		velocity.y = jump_velocity
-	var thrust := flight.tick(cmd.jump and not on_floor, delta)
+	var thrust := flight.tick(cmd.jump and not on_floor and not staggered, delta)
 	velocity.y += (thrust - gravity) * delta
 	if thrust > 0.0:
 		velocity.y = minf(velocity.y, flight.max_rise_speed)
@@ -189,7 +249,7 @@ func _simulate_weapons(delta: float) -> void:
 		active_weapon_index = cmd.switch_weapon
 		_refresh_weapon_visuals()
 	var weapon := get_active_weapon()
-	if weapon and heal_time_left <= 0.0:
+	if weapon and heal_time_left <= 0.0 and stagger_left <= 0.0:
 		weapon.handle_input(cmd, delta)
 
 
@@ -273,13 +333,29 @@ func kill(kind: String, source: Node = null) -> void:
 
 
 func _on_health_damaged(_info: DamageInfo) -> void:
+	_flash()
 	if heal_time_left > 0.0:
 		heal_time_left = 0.0
 		notice.emit("Heal interrupted")
 
 
+## A brief white flash so every hit is visible.
+func _flash() -> void:
+	if body_mesh == null or DisplayServer.get_name() == "headless":
+		return
+	if _flash_left <= 0.0:
+		_base_material = body_mesh.material_override
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.albedo_color = Color(1, 1, 1)
+	body_mesh.material_override = mat
+	_flash_left = 0.07
+
+
 func _on_health_died(info: DamageInfo) -> void:
 	is_dead = true
+	if _flash_left > 0.0 and body_mesh:
+		body_mesh.material_override = _base_material
 	collision_layer = 0
 	velocity = Vector3.ZERO
 	hand.visible = false

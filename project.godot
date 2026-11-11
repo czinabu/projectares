@@ -17,6 +17,7 @@ InputSetup="*res://core/input_setup.gd"
 ItemDB="*res://core/items/item_db.gd"
 Worlds="*res://core/world/world_registry.gd"
 Profile="*res://core/profile/profile.gd"
+Sfx="*res://core/fx/sfx.gd"
 
 [display]
 

@@ -1,15 +1,27 @@
 class_name MeleeWeapon
 extends Weapon
-## Blade-style melee: a three-hit light combo, a heavy lunge, and a dive slam
-## when you attack from the air. Parry and block come in Phase 1.
+## Blade-style melee.
+##
+## Attacks: a three-hit light combo, a heavy lunge, and a dive slam from the air.
+## Every attack has a windup you can see, which is what makes parrying possible.
+## Defense: hold block to stop hits from the front at a stamina cost. Raising the
+## guard just before a hit lands is a parry: no damage, the attacker is
+## staggered, and your next hit is a stronger riposte.
 
 signal swung(kind: String)
+signal blocked_hit(info: DamageInfo)
+signal parried_hit(info: DamageInfo)
+
+const REST_POSE := -0.45
+const GUARD_POSE := 0.25
+const SWING_TIME := 0.16
 
 var light_damage := 28.0
 var heavy_damage := 65.0
 var reach := 2.8
 var arc_deg := 110.0
-var light_interval := 0.38
+var light_windup := 0.1
+var light_recover := 0.28
 var combo_finisher_mult := 1.5
 var combo_window := 0.9
 var heavy_windup := 0.4
@@ -19,16 +31,31 @@ var slam_damage := 55.0
 var slam_radius := 4.5
 var slam_fall_speed := 32.0
 
+var light_stamina := 10.0
+var heavy_stamina := 28.0
+var slam_stamina := 20.0
+
+## Hits from within this arc in front of you can be blocked.
+var block_arc_deg := 130.0
+## A guard raised this recently counts as a parry.
+var parry_window := 0.22
+var block_stamina_per_damage := 0.6
+## A blade only turns aside part of a bullet.
+var bullet_block_fraction := 0.5
+var parry_stagger := 1.1
+var guard_break_stagger := 0.9
+var riposte_window := 1.6
+var riposte_mult := 1.5
+
 var combo_step := 0
 var _cooldown := 0.0
 var _combo_timer := 0.0
-var _heavy_left := 0.0
+var _windup_left := 0.0
+var _windup_kind := ""
+var _windup_damage := 0.0
 var _slamming := false
-
-
-const REST_POSE := -0.45
-const SWING_TIME := 0.16
-
+var _blocking := false
+var _block_time := 0.0
 var _swing_left := 0.0
 
 
@@ -42,60 +69,148 @@ func build_visual() -> Node3D:
 
 
 func controls_hint() -> String:
-	return "Left mouse combo   Right mouse heavy lunge, or dive slam in the air"
+	return "Left mouse combo   Right mouse block, tap just before a hit to parry   F heavy lunge, or dive slam in the air"
+
+
+func is_blocking() -> bool:
+	return _blocking
+
+
+func is_winding_up() -> bool:
+	return _windup_left > 0.0
 
 
 func tick(delta: float) -> void:
 	_cooldown = maxf(0.0, _cooldown - delta)
-	_animate(delta)
 	if _combo_timer > 0.0:
 		_combo_timer -= delta
 		if _combo_timer <= 0.0:
 			combo_step = 0
-	if _heavy_left > 0.0:
-		_heavy_left -= delta
-		if _heavy_left <= 0.0:
-			_strike(heavy_damage, "heavy")
+	if actor.stagger_left > 0.0:
+		# Being staggered cancels an attack in progress and drops the guard.
+		_windup_left = 0.0
+		_windup_kind = ""
+		_blocking = false
+	elif _windup_left > 0.0:
+		_windup_left -= delta
+		if _windup_left <= 0.0:
+			_strike(_windup_damage, _windup_kind)
+			_windup_kind = ""
+	_animate(delta)
 
 
-func handle_input(cmd: ActorCommand, _delta: float) -> void:
-	if _cooldown > 0.0 or _slamming:
+func handle_input(cmd: ActorCommand, delta: float) -> void:
+	var wants_block := cmd.secondary and not _slamming and _windup_left <= 0.0 and actor.stamina > 0.0
+	if wants_block and not _blocking:
+		_block_time = 0.0
+	_blocking = wants_block
+	if _blocking:
+		_block_time += delta
+		actor.pause_stamina_regen()
+		return
+	if _cooldown > 0.0 or _slamming or _windup_left > 0.0:
 		return
 	if cmd.primary_pressed:
 		_light_attack()
-	elif cmd.secondary_pressed:
+	elif cmd.tertiary_pressed:
 		if actor.is_on_floor():
 			_heavy_attack()
 		else:
 			_start_slam()
 
 
+func on_holster() -> void:
+	_blocking = false
+	_windup_left = 0.0
+	_windup_kind = ""
+
+
 func status_text() -> String:
+	if _blocking:
+		return "%s  guarding" % display_name
 	if _slamming:
 		return "%s  dive slam" % display_name
+	if actor.riposte_left > 0.0:
+		return "%s  riposte ready" % display_name
 	if combo_step > 0:
 		return "%s  combo %d" % [display_name, combo_step]
 	return display_name
 
 
+func modify_incoming(info: DamageInfo) -> void:
+	if not _blocking or info.kind not in ["bullet", "melee"]:
+		return
+	var source := info.source as Node3D
+	if source == null:
+		return
+	var forward := actor.get_aim_dir()
+	forward.y = 0.0
+	var to := source.global_position - actor.global_position
+	to.y = 0.0
+	if to.length() > 0.01 and forward.normalized().angle_to(to.normalized()) > deg_to_rad(block_arc_deg) * 0.5:
+		return
+
+	if _block_time <= parry_window:
+		info.amount = 0.0
+		info.parried = true
+		actor.riposte_left = riposte_window
+		actor.notice.emit("Parry!")
+		var attacker := source as Actor
+		if info.kind == "melee" and attacker:
+			attacker.stagger(parry_stagger)
+		parried_hit.emit(info)
+		Sfx.play("parry", null if actor.is_player else actor.global_position)
+		return
+
+	var stopped := info.amount if info.kind == "melee" else info.amount * bullet_block_fraction
+	if actor.spend_stamina(stopped * block_stamina_per_damage):
+		info.amount -= stopped
+		info.blocked = true
+		blocked_hit.emit(info)
+		Sfx.play("block", null if actor.is_player else actor.global_position)
+	else:
+		actor.stamina = 0.0
+		_blocking = false
+		actor.stagger(guard_break_stagger)
+		actor.notice.emit("Guard broken")
+
+
 func _light_attack() -> void:
+	if not actor.spend_stamina(light_stamina):
+		return
 	combo_step = combo_step % 3 + 1
-	_combo_timer = combo_window
+	_combo_timer = combo_window + light_windup
 	var finisher := combo_step == 3
-	_cooldown = light_interval * (1.6 if finisher else 1.0)
-	_strike(light_damage * (combo_finisher_mult if finisher else 1.0), "light")
+	_cooldown = light_windup + light_recover * (1.6 if finisher else 1.0)
+	_begin_windup("light", light_damage * (combo_finisher_mult if finisher else 1.0), light_windup)
 
 
 func _heavy_attack() -> void:
+	if not actor.spend_stamina(heavy_stamina):
+		return
 	combo_step = 0
-	_heavy_left = heavy_windup
 	_cooldown = heavy_windup + heavy_recover
+	_begin_windup("heavy", heavy_damage, heavy_windup)
 	var forward := actor.get_aim_dir()
 	forward.y = 0.0
 	actor.add_impulse(forward.normalized() * heavy_lunge)
 
 
+func _begin_windup(kind: String, amount: float, time: float) -> void:
+	if actor.riposte_left > 0.0:
+		amount *= riposte_mult
+		actor.riposte_left = 0.0
+	_windup_kind = kind
+	_windup_damage = amount
+	_windup_left = maxf(time, 0.001)
+	if visual:
+		# Alternate the slash angle through the combo so the hits read differently.
+		visual.rotation.z = [0.0, 0.7, -0.7, 0.0][combo_step] if kind == "light" else 0.0
+
+
 func _start_slam() -> void:
+	if not actor.spend_stamina(slam_stamina):
+		return
 	_slamming = true
 	_cooldown = 1.0
 	actor.velocity.y = -slam_fall_speed
@@ -106,34 +221,16 @@ func _start_slam() -> void:
 func _on_slam_landed(_impact_speed: float) -> void:
 	_slamming = false
 	swung.emit("slam")
+	Sfx.play("slam", null if actor.is_player else actor.global_position)
 	for other in _other_actors():
 		if other.global_position.distance_to(actor.global_position) <= slam_radius:
 			Combat.deal(other, DamageInfo.make(slam_damage, actor, "slam", other.global_position))
 
 
-## Greybox swing: the blade pulls back for a heavy, then sweeps forward on a strike.
-func _animate(delta: float) -> void:
-	if visual == null:
-		return
-	var pose := REST_POSE
-	if _slamming:
-		pose = 1.3
-	elif _heavy_left > 0.0:
-		pose = 1.0
-	elif _swing_left > 0.0:
-		_swing_left -= delta
-		pose = lerpf(0.6, -2.1, 1.0 - maxf(_swing_left, 0.0) / SWING_TIME)
-	else:
-		visual.rotation.z = lerp_angle(visual.rotation.z, 0.0, 1.0 - exp(-10.0 * delta))
-	visual.rotation.x = lerp_angle(visual.rotation.x, pose, 1.0 - exp(-40.0 * delta))
-
-
 func _strike(amount: float, kind: String) -> void:
 	swung.emit(kind)
 	_swing_left = SWING_TIME
-	if visual:
-		# Alternate the slash angle through the combo so the hits read differently.
-		visual.rotation.z = [0.0, 0.7, -0.7, 0.0][combo_step] if kind == "light" else 0.0
+	Sfx.play("swing", null if actor.is_player else actor.global_position)
 	var forward := actor.get_aim_dir()
 	forward.y = 0.0
 	forward = forward.normalized()
@@ -148,6 +245,31 @@ func _strike(amount: float, kind: String) -> void:
 		if dist > 0.8 and forward.angle_to(to.normalized()) > half_arc:
 			continue
 		Combat.deal(other, DamageInfo.make(amount, actor, "melee", other.global_position))
+
+
+## Greybox poses: raised for a windup, swept forward on a strike, held across
+## the body while guarding.
+func _animate(delta: float) -> void:
+	if visual == null:
+		return
+	var pose := REST_POSE
+	var roll := 0.0
+	var settle_roll := true
+	if _slamming:
+		pose = 1.3
+	elif _windup_left > 0.0:
+		pose = 1.0 if _windup_kind == "heavy" else 0.7
+		settle_roll = false
+	elif _swing_left > 0.0:
+		_swing_left -= delta
+		pose = lerpf(0.6, -2.1, 1.0 - maxf(_swing_left, 0.0) / SWING_TIME)
+		settle_roll = false
+	elif _blocking:
+		pose = GUARD_POSE
+		roll = 1.25
+	if settle_roll:
+		visual.rotation.z = lerp_angle(visual.rotation.z, roll, 1.0 - exp(-18.0 * delta))
+	visual.rotation.x = lerp_angle(visual.rotation.x, pose, 1.0 - exp(-40.0 * delta))
 
 
 func _other_actors() -> Array[Actor]:

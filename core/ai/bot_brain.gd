@@ -39,6 +39,7 @@ var _error := Vector3.ZERO
 var _error_left := 0.0
 var _strafe_sign := 1.0
 var _strafe_left := 0.0
+var _melee_wait := 0.0
 
 
 func _ready() -> void:
@@ -101,6 +102,11 @@ func _attack(cmd: ActorCommand, delta: float) -> void:
 	_look_along(cmd, aim_point - eye)
 	cmd.aim_dir = (aim_point - eye).normalized()
 
+	var blade := actor.get_active_weapon() as MeleeWeapon
+	if blade:
+		_attack_melee(cmd, blade, delta)
+		return
+
 	# Keep a comfortable distance: close in, back off, or strafe.
 	if dist > preferred_range * 1.4:
 		_move_toward(cmd, target.global_position, delta, false)
@@ -125,6 +131,19 @@ func _attack(cmd: ActorCommand, delta: float) -> void:
 		_pause_left -= delta
 		if _pause_left <= 0.0:
 			_burst_left = burst_time
+
+
+## Rush the target and swing when in reach. Swings have a visible windup, so a
+## well-timed parry turns the fight.
+func _attack_melee(cmd: ActorCommand, blade: MeleeWeapon, delta: float) -> void:
+	var dist := _flat_dist(target.global_position)
+	_melee_wait = maxf(0.0, _melee_wait - delta)
+	if dist > blade.reach * 0.7:
+		cmd.sprint = true
+		_move_toward(cmd, target.global_position, delta, false)
+	if dist <= blade.reach * 0.9 and _melee_wait <= 0.0 and _seen_time >= reaction_time:
+		cmd.primary_pressed = true
+		_melee_wait = _rng.randf_range(1.0, 1.7)
 
 
 func _patrol(cmd: ActorCommand, delta: float) -> void:
