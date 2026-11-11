@@ -1,6 +1,7 @@
 extends Node
 ## Autoload `Profile`: what the player keeps between raids. Shared by all worlds.
-## Saved locally for now; the online phase moves this to a backend.
+## This is the save for solo play. Online, the server keeps its own copy of
+## your stash (`core/account/stash_service.gd`) and this one is not used.
 ##
 ## Gear rules: the stash is safe. Whatever is in the loadout leaves the stash
 ## when you deploy, and only comes back if you extract.
@@ -32,6 +33,8 @@ var melee_control := "mouse"
 ## Shown to other players online, and the last server address joined.
 var player_name := "Raider"
 var last_server := "127.0.0.1"
+## Proves to a server that an online account is yours. Made on first use.
+var online_secret := ""
 var raids_played := 0
 var raids_extracted := 0
 var kills := 0
@@ -107,6 +110,14 @@ func checkout_loadout(world: WorldDef) -> Array[String]:
 	return kit
 
 
+## The secret this game signs in to servers with, created the first time.
+func get_online_secret() -> String:
+	if online_secret.length() < 16:
+		online_secret = Crypto.new().generate_random_bytes(24).hex_encode()
+		save()
+	return online_secret
+
+
 func record_raid(result: Dictionary) -> void:
 	raids_played += 1
 	if result.get("outcome", "") == "extracted":
@@ -139,6 +150,7 @@ func save() -> void:
 		"melee_control": melee_control,
 		"player_name": player_name,
 		"last_server": last_server,
+		"online_secret": online_secret,
 		"raids_played": raids_played,
 		"raids_extracted": raids_extracted,
 		"kills": kills,
@@ -171,6 +183,7 @@ func load_profile() -> void:
 	melee_control = "move" if data.get("melee_control", "mouse") == "move" else "mouse"
 	player_name = str(data.get("player_name", "Raider")).left(20)
 	last_server = str(data.get("last_server", "127.0.0.1")).left(80)
+	online_secret = str(data.get("online_secret", "")).left(128)
 	raids_played = int(data.get("raids_played", 0))
 	raids_extracted = int(data.get("raids_extracted", 0))
 	kills = int(data.get("kills", 0))

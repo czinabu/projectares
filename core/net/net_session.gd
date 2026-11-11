@@ -13,9 +13,23 @@ extends Node
 ## deaths then overwrite the local guess. Damage is never decided on a client
 ## (`Combat.authoritative` is false there).
 ##
+## Connecting puts a client in the lobby: it signs in with a name and a secret,
+## and the server answers with that account's stash and loadout from its
+## `StashService`. Loadout changes are requests the server checks. `deploy`
+## enters the raid with the kit the server took out of the stash, and the
+## server settles the result into the stash when the run ends. A client never
+## sends a kit.
+##
 ## Each session owns its own multiplayer API rooted at itself, so it works
 ## anywhere in the scene tree and several can live in one process.
 
+## Client: the server accepted your name. `account` is your stash, loadout,
+## mastery and record as the server holds them. You are now in the lobby.
+signal signed_in(account: Dictionary)
+## Client: the server sent a fresh copy of your account (after any change).
+signal account_changed(account: Dictionary)
+## Client: the server turned down a lobby request (equip, pick, deploy).
+signal lobby_error(reason: String)
 ## Client: the raid view exists and your actor is in it.
 signal joined(raid: Raid)
 ## Client: your run ended (died or extracted). The result is like a solo raid's.
@@ -28,8 +42,8 @@ signal disconnected
 signal raid_restarted(raid: Raid)
 
 const DEFAULT_PORT := 24565
-const PROTOCOL := 1
-const MAX_KIT_ITEMS := 16
+const PROTOCOL := 2
+const StashService := preload("res://core/account/stash_service.gd")
 ## Server physics ticks between state updates (2 = 30 a second).
 const TICKS_PER_SNAPSHOT := 2
 ## Actors per state packet, to keep each one under the network's packet size.
@@ -51,12 +65,19 @@ var world_id := ""
 var bot_count := -1
 var squad_spawn := false
 ## Client: called with the server's world, returns the kit to deploy with.
-var kit_provider := Callable()
+## Server: owns every player's stash, loadout and mastery. Set its
+## `save_dir` or `persist` before `host`.
+var stash := StashService.new()
+## Client: the name to sign in with, and the secret that proves the account
+## is yours (see `StashService.new_secret`).
 var player_name := "Raider"
-var mastery_picks := {}
+var secret := ""
+## Client: your account as the server last sent it. Empty until signed in.
+var account := {}
+## Client: the server answered and said no, so trying again will not help.
+var refused := false
 ## Client: the id of your own actor, and the kit you joined with.
 var my_actor_id := -1
-var my_kit: Array[String] = []
 
 var _api: SceneMultiplayer
 var _actors := {}        # id -> Actor
@@ -65,6 +86,8 @@ var _next_id := 1
 var _peer_actor := {}    # peer id -> Actor (server)
 var _actor_peer := {}    # Actor -> peer id (server)
 var _joined_peers: Array[int] = []
+var _peer_account := {}  # peer id -> account id (server)
+var _actor_account := {} # Actor -> account id, until the run is settled (server)
 var _pending_input := {} # peer id -> command array (server)
 var _one_shots := {}     # actor id -> accumulated one-shot flags (server)
 var _switches := {}      # actor id -> last weapon switch since the snapshot
@@ -94,6 +117,9 @@ func _enter_tree() -> void:
 
 
 func _exit_tree() -> void:
+	if is_server:
+		# A server that stops mid-raid hands everyone's gear back.
+		stash.cancel_all_deploys()
 	close()
 	if not is_server:
 		Combat.authoritative = true
@@ -163,6 +189,7 @@ func _clear_tables() -> void:
 	_vehicle_ids.clear()
 	_vehicle_targets.clear()
 	_sent_kills.clear()
+	_actor_account.clear()
 
 
 func _register(actor: Actor) -> int:
@@ -179,6 +206,7 @@ func _on_peer_connected(peer: int) -> void:
 
 func _on_peer_disconnected(peer: int) -> void:
 	_joined_peers.erase(peer)
+	_peer_account.erase(peer)
 	_pending_input.erase(peer)
 	var actor: Actor = _peer_actor.get(peer)
 	if actor != null and is_instance_valid(actor) and raid != null:
@@ -261,8 +289,69 @@ func _send_vehicle(peer: int, id: int) -> void:
 
 func _on_server_player_finished(actor: Actor, result: Dictionary) -> void:
 	var peer: int = _actor_peer.get(actor, 0)
-	if peer != 0 and peer in _api.get_peers():
+	var online := peer != 0 and peer in _api.get_peers()
+	# The stash only ever changes from the server's own result.
+	var account_id: String = _actor_account.get(actor, "")
+	if account_id != "":
+		_actor_account.erase(actor)
+		stash.settle(account_id, result)
+		if online:
+			_account.rpc_id(peer, stash.snapshot(account_id))
+	if online:
 		_run_finished.rpc_id(peer, result)
+
+
+func _send_account(peer: int) -> void:
+	_account.rpc_id(peer, stash.snapshot(_peer_account[peer]))
+
+
+## Lobby: a connected player says who they are.
+@rpc("any_peer", "call_remote", "reliable")
+func _sign_in(p_name: String, p_secret: String) -> void:
+	if not is_server:
+		return
+	var peer := _api.get_remote_sender_id()
+	if _peer_account.has(peer):
+		return
+	var result := stash.sign_in(p_name, p_secret)
+	if not result.ok:
+		_refused.rpc_id(peer, result.error)
+		return
+	# The newest sign-in wins. An older connection for the same account (a
+	# crashed game, or one that is still closing) is dropped, and if it was in
+	# the raid that run ends as a death before the new lobby sees the stash.
+	for other: int in _peer_account.keys():
+		if _peer_account[other] == result.account_id:
+			_on_peer_disconnected(other)
+			if other in _api.get_peers():
+				_api.multiplayer_peer.disconnect_peer(other)
+	_peer_account[peer] = result.account_id
+	_send_account(peer)
+
+
+## Lobby: put a stash item in a loadout slot, or "" to empty the slot.
+@rpc("any_peer", "call_remote", "reliable")
+func _request_equip(slot: String, item_id: String) -> void:
+	var peer := _api.get_remote_sender_id()
+	if not is_server or not _peer_account.has(peer):
+		return
+	var account_id: String = _peer_account[peer]
+	var result: Dictionary = stash.unequip(account_id, slot) if item_id == "" else stash.equip(account_id, slot, item_id)
+	if not result.ok:
+		_lobby_error.rpc_id(peer, result.error)
+	_send_account(peer)
+
+
+## Lobby: pick a mastery variant, or "" for stock.
+@rpc("any_peer", "call_remote", "reliable")
+func _request_pick(track: String, variant_id: String) -> void:
+	var peer := _api.get_remote_sender_id()
+	if not is_server or not _peer_account.has(peer):
+		return
+	var result: Dictionary = stash.pick_mastery(_peer_account[peer], track, variant_id)
+	if not result.ok:
+		_lobby_error.rpc_id(peer, result.error)
+	_send_account(peer)
 
 
 func _send_spawn(peer: int, actor: Actor) -> void:
@@ -276,23 +365,26 @@ func _send_spawn(peer: int, actor: Actor) -> void:
 			String(actor.name), actor.global_position, actor.cmd.yaw, data)
 
 
+## Lobby: deploy into the running raid with the account's loadout. The kit
+## and picks come from the server's stash, never from the client.
 @rpc("any_peer", "call_remote", "reliable")
-func _request_join(p_name: String, kit: Array, picks: Dictionary) -> void:
+func _request_join() -> void:
 	if not is_server or raid == null:
 		return
 	var peer := _api.get_remote_sender_id()
-	if _peer_actor.has(peer):
+	if _peer_actor.has(peer) or not _peer_account.has(peer):
 		return
-	var clean: Array[String] = []
-	for id: Variant in kit:
-		if typeof(id) == TYPE_STRING and ItemDB.has_item(id) and clean.size() < MAX_KIT_ITEMS:
-			clean.append(id)
-	var clean_picks := {}
-	for track: Variant in picks:
-		if typeof(track) == TYPE_STRING and typeof(picks[track]) == TYPE_STRING:
-			clean_picks[track] = picks[track]
-	var shown := p_name.strip_edges().left(20)
-	var actor := raid.add_player(clean, clean_picks, shown if shown != "" else "Raider")
+	if raid.is_over or _restart_in >= 0.0:
+		_lobby_error.rpc_id(peer, "That raid is ending. Try again in a moment.")
+		return
+	var account_id: String = _peer_account[peer]
+	var deployed: Dictionary = stash.deploy(account_id, raid.world)
+	if not deployed.ok:
+		_lobby_error.rpc_id(peer, deployed.error)
+		return
+	var actor := raid.add_player(deployed.kit, deployed.picks, stash.snapshot(account_id).name)
+	_actor_account[actor] = account_id
+	_send_account(peer)
 	_peer_actor[peer] = actor
 	_actor_peer[actor] = peer
 	_had_players = true
@@ -408,9 +500,15 @@ func _server_late_tick(delta: float) -> void:
 
 
 func _restart_raid() -> void:
-	for peer in _api.get_peers():
-		_api.multiplayer_peer.disconnect_peer(peer)
+	# Players in the old raid are sent home. Players waiting in the lobby stay.
+	for peer in _joined_peers:
+		if peer in _api.get_peers():
+			_peer_account.erase(peer)
+			_api.multiplayer_peer.disconnect_peer(peer)
 	_joined_peers.clear()
+	# Everyone should be settled by now. Anyone who is not gets their gear back.
+	for account_id: String in _actor_account.values():
+		stash.cancel_deploy(account_id)
 	raid.queue_free()
 	remove_child(raid)
 	_start_server_raid()
@@ -418,7 +516,8 @@ func _restart_raid() -> void:
 
 # ---------------------------------------------------------------- client ----
 
-## Connects to a server. `joined`, `failed` and `run_finished` report what happens.
+## Connects to a server and signs in. `signed_in` or `failed` follows; then
+## `deploy` enters the raid.
 func join(address: String, port := DEFAULT_PORT) -> Error:
 	var peer := ENetMultiplayerPeer.new()
 	var err := peer.create_client(address, port)
@@ -435,7 +534,7 @@ func _on_server_disconnected() -> void:
 	if _finished:
 		return
 	if my_actor_id < 0:
-		failed.emit("The server closed the connection.")
+		failed.emit("The server closed the connection." if account.is_empty() else "Lost the connection to the server.")
 	else:
 		disconnected.emit()
 
@@ -452,10 +551,46 @@ func _hello(protocol: int, p_world_id: String) -> void:
 		close()
 		return
 	world_id = p_world_id
-	my_kit.clear()
-	if kit_provider.is_valid():
-		my_kit.assign(kit_provider.call(world))
-	_request_join.rpc_id(1, player_name, my_kit, mastery_picks)
+	_sign_in.rpc_id(1, player_name, secret)
+
+
+@rpc("authority", "call_remote", "reliable")
+func _refused(reason: String) -> void:
+	refused = true
+	failed.emit(reason)
+	close()
+
+
+@rpc("authority", "call_remote", "reliable")
+func _account(snapshot: Dictionary) -> void:
+	var first := account.is_empty()
+	account = snapshot
+	if first:
+		signed_in.emit(account)
+	account_changed.emit(account)
+
+
+@rpc("authority", "call_remote", "reliable")
+func _lobby_error(reason: String) -> void:
+	lobby_error.emit(reason)
+
+
+## Lobby: ask the server to put a stash item in a slot ("" empties it).
+func equip(slot: String, item_id: String) -> void:
+	if _is_connected() and not account.is_empty():
+		_request_equip.rpc_id(1, slot, item_id)
+
+
+## Lobby: ask the server to pick a mastery variant ("" for stock).
+func pick_mastery(track: String, variant_id: String) -> void:
+	if _is_connected() and not account.is_empty():
+		_request_pick.rpc_id(1, track, variant_id)
+
+
+## Lobby: deploy into the server's raid. `joined` follows, or `lobby_error`.
+func deploy() -> void:
+	if _is_connected() and not account.is_empty() and my_actor_id < 0:
+		_request_join.rpc_id(1)
 
 
 @rpc("authority", "call_remote", "reliable")

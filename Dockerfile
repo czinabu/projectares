@@ -1,7 +1,7 @@
 # Dedicated server image for Project Ares.
 #
 # Build:  docker build -t ares-server .
-# Run:    docker run -d -t --init --name ares -p 24565:24565/udp ares-server
+# Run:    docker run -d -t --init --name ares -p 24565:24565/udp -v ares-data:/data ares-server
 #
 # The first build downloads Godot and its export templates (about 1.3 GB), so it
 # takes a few minutes. Later builds reuse that step and only re-export the game.
@@ -37,13 +37,16 @@ RUN godot --headless --path . --import \
 
 # ---- Stage 2: a small image that only runs the server -----------------------
 FROM debian:bookworm-slim
-RUN useradd --create-home --shell /usr/sbin/nologin ares
+RUN useradd --create-home --shell /usr/sbin/nologin ares \
+	&& mkdir -p /data/accounts && chown -R ares:ares /data
 COPY --from=build /src/build/server/ares_server.x86_64 /app/ares_server
 USER ares
 WORKDIR /home/ares
 EXPOSE 24565/udp
+# Player stashes are saved here. Keep it on a volume so they survive updates.
+VOLUME /data
 # Everything after "--" goes to the game. Override CMD to change the world,
 # port, bot count or squad spawns, for example:
-#   docker run ... ares-server --server --world frostline --bots 4
+#   docker run ... ares-server --server --world frostline --bots 4 --accounts /data/accounts
 ENTRYPOINT ["/app/ares_server", "--headless", "--"]
-CMD ["--server", "--world", "ashfront", "--port", "24565"]
+CMD ["--server", "--world", "ashfront", "--port", "24565", "--accounts", "/data/accounts"]

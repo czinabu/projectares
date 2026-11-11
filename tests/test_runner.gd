@@ -1424,40 +1424,72 @@ func _wait_until(condition: Callable, max_frames: int) -> bool:
 	return condition.call()
 
 
+const NET_ACCOUNTS := "user://test_accounts_net"
+var _net_secrets := {}
+
+
+func _wipe_dir(dir: String) -> void:
+	if DirAccess.dir_exists_absolute(dir):
+		for f in DirAccess.get_files_at(dir):
+			DirAccess.remove_absolute(dir.path_join(f))
+		DirAccess.remove_absolute(dir)
+
+
 func _start_server(port: int, extra: Array[String]) -> int:
 	var args := PackedStringArray(["--headless", "--path", ProjectSettings.globalize_path("res://"),
-			"--", "--server", "--world", "ashfront", "--port", str(port)])
+			"--", "--server", "--world", "ashfront", "--port", str(port), "--accounts", NET_ACCOUNTS])
 	args.append_array(PackedStringArray(extra))
 	return OS.create_process(OS.get_executable_path(), args)
 
 
 ## A client in its own 3D world, so two clients in this process never collide.
-func _new_client(shown_name: String, extra_kit: Array[String] = []) -> NetSession:
+## Each name keeps one secret for the whole test run, like a real player.
+func _new_client(shown_name: String, secret := "") -> NetSession:
 	var view := SubViewport.new()
 	view.own_world_3d = true
 	add_child(view)
 	var session := NetSession.new()
 	session.name = "Net"
 	session.player_name = shown_name
-	session.kit_provider = func(world: WorldDef) -> Array: return world.starter_loadout() + extra_kit
+	if not _net_secrets.has(shown_name):
+		_net_secrets[shown_name] = StashService.new_secret()
+	session.secret = secret if secret != "" else _net_secrets[shown_name]
 	view.add_child(session)
 	return session
 
 
-## Connects, retrying while the server process is still starting up.
-func _join(session_name: String, port: int, extra_kit: Array[String] = []) -> NetSession:
+## Connects and signs in, retrying while the server process is still starting
+## up. Returns the session in the lobby, or null.
+func _sign_in(session_name: String, port: int) -> NetSession:
 	for attempt in 20:
-		var session := _new_client(session_name, extra_kit)
+		var session := _new_client(session_name)
 		var state := {"failed": false}
 		session.failed.connect(func(_reason: String) -> void: state.failed = true)
 		session.join("127.0.0.1", port)
-		var settled := func() -> bool:
-			return state.failed or (session.raid != null and session.raid.player != null)
-		await _wait_until(settled, 240)
-		if session.raid != null and session.raid.player != null:
+		await _wait_until(func() -> bool: return state.failed or not session.account.is_empty(), 240)
+		if not session.account.is_empty():
 			return session
 		session.get_parent().queue_free()
 		await frames(30)
+	return null
+
+
+## Signs in, equips `gear` (slot -> item id) in the lobby, and deploys.
+func _join(session_name: String, port: int, gear := {}) -> NetSession:
+	var session := await _sign_in(session_name, port)
+	if session == null:
+		return null
+	for slot: String in gear:
+		session.equip(slot, gear[slot])
+	await _wait_until(func() -> bool:
+		return gear.keys().all(func(slot: String) -> bool:
+			return session.account.loadout.get(slot, "") == gear[slot]), 120)
+	session.deploy()
+	await _wait_until(func() -> bool: return session.raid != null and session.raid.player != null, 240)
+	if session.raid != null and session.raid.player != null:
+		return session
+	session.get_parent().queue_free()
+	await frames(2)
 	return null
 
 
@@ -1655,6 +1687,7 @@ func _test_online() -> void:
 	await _end_raid(raid)
 
 	print("Online: a real server and two clients")
+	_wipe_dir(NET_ACCOUNTS)
 	var port := 24811
 	var pid := _start_server(port, [])
 	check(pid > 0, "a dedicated server process starts")
@@ -1706,7 +1739,7 @@ func _test_online() -> void:
 	print("Online: fighting through the server")
 	port = 24812
 	pid = _start_server(port, ["--bots", "0", "--squad-spawn"])
-	alpha = await _join("Alpha", port, ["bike_scrapper"])
+	alpha = await _join("Alpha", port, {"vehicle": "bike_scrapper"})
 	bravo = await _join("Bravo", port) if alpha != null else null
 	check(alpha != null and bravo != null, "two clients join a squad-spawn server")
 	if alpha != null and bravo != null:
@@ -1839,7 +1872,104 @@ func _test_online() -> void:
 	await _leave(bravo)
 	await _leave(alpha)
 	OS.kill(pid)
+	await frames(30)
+	await _test_online_stash()
+	_wipe_dir(NET_ACCOUNTS)
 	check(Combat.authoritative, "leaving an online raid hands damage back to this game")
+
+
+func _test_online_stash() -> void:
+	print("Online: the server owns the stash")
+	var local_stash := Profile.stash.duplicate()
+	var port := 24813
+	var pid := _start_server(port, ["--bots", "0", "--squad-spawn"])
+	var cara := await _sign_in("Cara", port)
+	check(cara != null, "a client signs in and waits in the lobby")
+	if cara == null:
+		OS.kill(pid)
+		return
+	check(cara.raid == null and cara.my_actor_id < 0, "signing in does not enter the raid")
+	check("rifle_carbine" in cara.account.stash and cara.account.loadout.is_empty() and not cara.account.has("secret_hash"),
+			"the lobby shows the stash the server keeps, with a new account's crates")
+
+	# Someone else cannot take the name.
+	var thief := _new_client("Cara", StashService.new_secret())
+	var refusal := [""]
+	thief.failed.connect(func(reason: String) -> void: refusal[0] = reason)
+	thief.join("127.0.0.1", port)
+	await _wait_until(func() -> bool: return refusal[0] != "", 240)
+	check(refusal[0] != "" and thief.refused and thief.account.is_empty(), "the same name with another secret is refused (%s)" % refusal[0])
+	await _leave(thief)
+
+	# Loadout changes are requests. The server checks them against its stash.
+	var errors: Array[String] = []
+	cara.lobby_error.connect(func(reason: String) -> void: errors.append(reason))
+	cara.equip("primary", "dmr_longshot")
+	await _wait_until(func() -> bool: return not errors.is_empty(), 120)
+	check(errors.size() == 1 and cara.account.loadout.is_empty(), "the server refuses gear the account does not own")
+	cara.equip("primary", "rifle_carbine")
+	await _wait_until(func() -> bool: return cara.account.loadout.get("primary", "") == "rifle_carbine", 120)
+	check(cara.account.loadout.get("primary", "") == "rifle_carbine", "owned gear equips through the server")
+	cara.pick_mastery("rifle", "cut_down")
+	await _wait_until(func() -> bool: return errors.size() == 2, 120)
+	check(errors.size() == 2 and cara.account.mastery.get("picks", {}).is_empty(), "a locked mastery variant is refused")
+
+	cara.deploy()
+	await _wait_until(func() -> bool: return cara.raid != null and cara.raid.player != null, 240)
+	check(cara.raid != null and cara.raid.player != null, "deploying from the lobby enters the raid")
+	if cara.raid != null and cara.raid.player != null:
+		var state := cara.raid.state_for(cara.raid.player)
+		check(state != null and "rifle_carbine" in state.kit and state.kit.count("medkit") == 2,
+				"the kit is the one the server took from the stash")
+		await _wait_until(func() -> bool: return cara.account.deployed, 120)
+		check(cara.account.deployed and "rifle_carbine" not in cara.account.stash and "medkit" not in cara.account.stash,
+				"deployed gear has left the server stash")
+	# Dropping the connection mid-raid counts as a death: the gear is gone.
+	await _leave(cara)
+	await frames(30)
+	cara = await _sign_in("Cara", port)
+	check(cara != null, "the same name and secret sign back in")
+	if cara != null:
+		check(not cara.account.deployed and "rifle_carbine" not in cara.account.stash
+				and cara.account.loadout.get("primary", "") == "" and cara.account.raids_played == 1,
+				"the server settled the run: the carbine is lost and the slot is empty")
+		check("bike_scrapper" in cara.account.stash, "gear that stayed in the stash is safe")
+	await _leave(cara)
+	OS.kill(pid)
+	await frames(30)
+
+	# A new server process reads the same accounts from disk.
+	pid = _start_server(port + 1, ["--bots", "0"])
+	cara = await _sign_in("Cara", port + 1)
+	check(cara != null and cara.account.raids_played == 1 and "rifle_carbine" not in cara.account.stash,
+			"the stash survives a server restart")
+	await _leave(cara)
+	OS.kill(pid)
+	check(Profile.stash == local_stash, "online play never touches the local stash")
+
+	print("Online: the hub as a lobby")
+	var hub := Hub.new()
+	add_child(hub)
+	await frames(1)
+	var service := StashService.new()
+	service.persist = false
+	var id: String = service.sign_in("Lobby Tester", StashService.new_secret()).account_id
+	var asked: Array = []
+	hub.online_equip_requested.connect(func(slot: String, item_id: String) -> void: asked.append([slot, item_id]))
+	hub.enter_lobby(service.snapshot(id), Worlds.get_world("ashfront"))
+	check(hub.in_lobby() and hub.options_for("primary") == (["rifle_carbine"] as Array[String])
+			and hub.equipped("primary") == "", "in a lobby the hub lists the server's stash")
+	var loadout_before := Profile.loadout.duplicate()
+	hub._on_picked(1, "primary")
+	check(asked == [["primary", "rifle_carbine"]] and Profile.loadout == loadout_before,
+			"picking gear in a lobby asks the server and leaves the local profile alone")
+	service.equip(id, "primary", "rifle_carbine")
+	hub.update_account(service.snapshot(id))
+	check(hub.equipped("primary") == "rifle_carbine" and "rifle" in hub._mastery.loadout_tracks(),
+			"the hub shows the loadout the server confirmed")
+	hub.leave_lobby()
+	check(not hub.in_lobby() and hub.equipped("primary") == Profile.equipped("primary"), "leaving the lobby shows the solo stash again")
+	hub.queue_free()
 
 
 # --- Server-owned stash --------------------------------------------------------

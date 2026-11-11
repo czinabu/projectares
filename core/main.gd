@@ -1,8 +1,10 @@
 extends Node
 ## Entry point. Switches between the hub and a raid, solo or online.
 ##
-## Run with `-- --server [--world <id>] [--port <n>] [--bots <n>] [--squad-spawn]`
-## for a dedicated server: no hub, no window needed, just a raid that players join.
+## Run with `-- --server [--world <id>] [--port <n>] [--bots <n>] [--squad-spawn]
+## [--accounts <folder>]` for a dedicated server: no hub, no window needed,
+## just a raid that players join. Player stashes are saved in the accounts
+## folder (`user://accounts` unless given).
 
 const JOIN_TIMEOUT := 12.0
 const NameplatesScript := preload("res://core/ui/nameplates.gd")
@@ -19,7 +21,6 @@ var _server_pid := -1
 var _join_attempts := 0
 var _join_address := ""
 var _join_port := NetSession.DEFAULT_PORT
-var _online_kit: Array[String] = []
 
 
 func _ready() -> void:
@@ -32,6 +33,17 @@ func _ready() -> void:
 	hub.deploy_requested.connect(start_raid)
 	hub.host_requested.connect(host_and_join)
 	hub.join_requested.connect(join_online)
+	hub.online_equip_requested.connect(func(slot: String, item_id: String) -> void:
+		if net:
+			net.equip(slot, item_id))
+	hub.online_pick_requested.connect(func(track: String, variant_id: String) -> void:
+		if net:
+			net.pick_mastery(track, variant_id))
+	hub.online_deploy_requested.connect(func() -> void:
+		if net and raid == null:
+			hub.set_online_status("Deploying...")
+			net.deploy())
+	hub.online_leave_requested.connect(leave_server)
 
 
 func _notification(what: int) -> void:
@@ -43,7 +55,7 @@ func _notification(what: int) -> void:
 
 func start_raid(world_id: String) -> void:
 	var world := Worlds.get_world(world_id)
-	if world == null or raid != null:
+	if world == null or raid != null or net != null:
 		return
 	hub.visible = false
 	raid = Raid.new()
@@ -100,6 +112,9 @@ func _run_dedicated_server(args: PackedStringArray) -> void:
 	net.name = "Net"
 	net.bot_count = int(_arg(args, "--bots", "-1"))
 	net.squad_spawn = "--squad-spawn" in args
+	var accounts := _arg(args, "--accounts", "")
+	if accounts != "":
+		net.stash.save_dir = accounts
 	add_child(net)
 	var err := net.host(world_id, port)
 	if err != OK:
@@ -149,15 +164,14 @@ func _begin_join(host: String, port: int, attempts: int) -> void:
 
 func _try_join() -> void:
 	_join_attempts -= 1
-	_online_kit.clear()
 	net = NetSession.new()
 	net.name = "Net"
 	net.player_name = Profile.player_name
-	net.mastery_picks = Profile.mastery.active_picks()
-	net.kit_provider = func(world: WorldDef) -> Array:
-		_online_kit = Profile.checkout_loadout(world)
-		return _online_kit
+	net.secret = Profile.get_online_secret()
 	add_child(net)
+	net.signed_in.connect(_on_online_signed_in)
+	net.account_changed.connect(_on_online_account_changed)
+	net.lobby_error.connect(func(reason: String) -> void: hub.set_online_status(reason))
 	net.joined.connect(_on_online_joined)
 	net.failed.connect(_on_online_failed)
 	net.disconnected.connect(_on_online_disconnected)
@@ -169,8 +183,20 @@ func _try_join() -> void:
 	# A server that never answers should not leave the hub waiting forever.
 	var session := net
 	get_tree().create_timer(JOIN_TIMEOUT).timeout.connect(func() -> void:
-		if net == session and raid == null:
+		if net == session and net.account.is_empty():
 			_on_online_failed("The server did not answer."))
+
+
+## Signed in: the hub becomes that server's lobby.
+func _on_online_signed_in(account: Dictionary) -> void:
+	_join_attempts = 0
+	hub.set_online_status("")
+	hub.enter_lobby(account, Worlds.get_world(net.world_id))
+
+
+func _on_online_account_changed(account: Dictionary) -> void:
+	if raid == null:
+		hub.update_account(account)
 
 
 func _on_online_joined(p_raid: Raid) -> void:
@@ -180,9 +206,11 @@ func _on_online_joined(p_raid: Raid) -> void:
 	_attach_player_view()
 
 
+## Could not connect or sign in, or the connection dropped in the lobby.
 func _on_online_failed(reason: String) -> void:
-	_return_online_kit()
 	if net:
+		if net.refused:
+			_join_attempts = 0
 		net.queue_free()
 		net = null
 	if _join_attempts > 0:
@@ -192,33 +220,46 @@ func _on_online_failed(reason: String) -> void:
 			_try_join()
 		return
 	_stop_local_server()
+	hub.leave_lobby()
 	hub.set_online_status(reason)
 
 
+## The connection dropped in the middle of a raid. The server treats that as
+## a death, so the gear is gone.
 func _on_online_disconnected() -> void:
-	# The run never finished, so the gear you brought comes back.
-	_return_online_kit()
 	_leave_raid()
 	_stop_local_server()
+	hub.leave_lobby()
 	hub.refresh({})
-	hub.set_online_status("Lost the connection to the server. Your gear was returned.")
+	hub.set_online_status("Lost the connection to the server during the raid. What you carried is lost.")
 	hub.visible = true
 
 
+## The server has already settled the run into your account there. Nothing
+## is written to the local profile.
 func _on_online_finished(result: Dictionary) -> void:
-	_online_kit.clear()
-	Raid.apply_result(result)
+	var account := net.account
 	await get_tree().create_timer(1.5).timeout
 	_leave_raid()
-	_stop_local_server()
+	hub.update_account(account)
 	hub.refresh(result)
 	hub.visible = true
+	# Back to the lobby for the next raid.
+	hub.set_online_status("Returning to the lobby...")
+	_begin_join(_join_address, _join_port, 3)
 
 
-func _return_online_kit() -> void:
-	if not _online_kit.is_empty():
-		Profile.add_to_stash(_online_kit)
-		_online_kit.clear()
+## Disconnects from the lobby and shows the solo hub again.
+func leave_server() -> void:
+	if raid != null:
+		return
+	_join_attempts = 0
+	if net:
+		net.queue_free()
+		net = null
+	_stop_local_server()
+	hub.leave_lobby()
+	hub.set_online_status("")
 
 
 func _stop_local_server() -> void:

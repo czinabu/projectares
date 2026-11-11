@@ -3,6 +3,17 @@ extends VBoxContainer
 ## picker for its unlocked variants, and what the last raid earned.
 
 const MasteryDB := preload("res://core/progression/mastery_db.gd")
+const MasteryBook := preload("res://core/progression/mastery_book.gd")
+
+## Online: a variant was picked. The server decides, so nothing changes here
+## until the hub is given the updated account.
+signal pick_requested(track: String, variant_id: String)
+
+## The mastery shown. Null means the local profile's. Online the hub sets it
+## to a copy of the server's.
+var book: MasteryBook = null
+## Online: slot -> item id of the server's loadout. Null means the profile's.
+var loadout: Variant = null
 
 var _earned: Label
 var _rows: GridContainer
@@ -41,7 +52,7 @@ func loadout_tracks() -> Array[String]:
 		starter = Worlds.all()[0].starter_loadout()
 	var out: Array[String] = []
 	for slot: String in Loadout.SLOTS:
-		var id := Profile.equipped(slot)
+		var id: String = Profile.equipped(slot) if loadout == null else loadout.get(slot, "")
 		if id == "":
 			for free_id in starter:
 				if ItemDB.has_tag(free_id, Loadout.SLOTS[slot]):
@@ -60,8 +71,8 @@ func describe_earned(result: Dictionary) -> String:
 		return ""
 	var parts: Array[String] = []
 	for track: String in gained:
-		var now := Profile.mastery.level(track)
-		var before := MasteryDB.level_for_xp(Profile.mastery.xp_for(track) - int(gained[track]))
+		var now: int = _book().level(track)
+		var before := MasteryDB.level_for_xp(_book().xp_for(track) - int(gained[track]))
 		parts.append("%s +%d%s" % [MasteryDB.track_name(track), gained[track],
 				" (level %d!)" % now if now > before else ""])
 	return "Mastery earned: %s." % ", ".join(parts)
@@ -73,12 +84,12 @@ func show_result(result: Dictionary) -> void:
 
 
 func _track_row(track: String) -> Control:
-	var book = Profile.mastery
-	var level: int = book.level(track)
+	var shown := _book()
+	var level: int = shown.level(track)
 	var row := HBoxContainer.new()
 	var progress := "max"
 	if level < MasteryDB.max_level():
-		progress = "%d/%d" % [book.xp_for(track), MasteryDB.next_level_xp(level)]
+		progress = "%d/%d" % [shown.xp_for(track), MasteryDB.next_level_xp(level)]
 	var name_label := _label("%s  Lv %d" % [MasteryDB.track_name(track), level], 15, Color(0.85, 0.85, 0.85))
 	name_label.custom_minimum_size = Vector2(170, 0)
 	name_label.autowrap_mode = TextServer.AUTOWRAP_OFF
@@ -95,9 +106,9 @@ func _track_row(track: String) -> Control:
 	picker.add_item("Stock")
 	picker.set_item_metadata(0, "")
 	picker.set_item_tooltip(0, "No changes.")
-	var picked: String = book.picked(track)
+	var picked: String = shown.picked(track)
 	for v: Dictionary in MasteryDB.variants(track):
-		var unlocked: bool = book.is_unlocked(track, v.id)
+		var unlocked: bool = shown.is_unlocked(track, v.id)
 		picker.add_item(v.name if unlocked else "%s (Lv %d)" % [v.name, v.level])
 		var index := picker.item_count - 1
 		picker.set_item_metadata(index, v.id)
@@ -108,11 +119,18 @@ func _track_row(track: String) -> Control:
 	picker.tooltip_text = variant_text(track, picked)
 	picker.item_selected.connect(func(index: int) -> void:
 		var id: String = picker.get_item_metadata(index)
-		Profile.mastery.pick(track, id)
-		Profile.save()
+		if book != null:
+			pick_requested.emit(track, id)
+		else:
+			Profile.mastery.pick(track, id)
+			Profile.save()
 		picker.tooltip_text = variant_text(track, id))
 	row.add_child(picker)
 	return row
+
+
+func _book() -> MasteryBook:
+	return book if book != null else Profile.mastery
 
 
 func variant_text(track: String, variant_id: String) -> String:
