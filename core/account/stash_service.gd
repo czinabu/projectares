@@ -61,6 +61,8 @@ class Account:
 	var raids_played := 0
 	var raids_extracted := 0
 	var kills := 0
+	## Lifetime renown. Only ever grows.
+	var renown := 0
 	## Money for the hub shops. Only ever changed here, on the server.
 	var credits := Economy.STARTING_CREDITS
 
@@ -83,6 +85,7 @@ class Account:
 			"raids_played": raids_played,
 			"raids_extracted": raids_extracted,
 			"kills": kills,
+			"renown": renown,
 			"credits": credits,
 		}
 
@@ -116,6 +119,7 @@ class Account:
 		raids_played = maxi(0, int(data.get("raids_played", 0)))
 		raids_extracted = maxi(0, int(data.get("raids_extracted", 0)))
 		kills = maxi(0, int(data.get("kills", 0)))
+		renown = maxi(0, int(data.get("renown", 0)))
 		credits = Economy.read_saved(data)
 
 
@@ -224,6 +228,7 @@ func snapshot(account_id: String) -> Dictionary:
 		"raids_played": account.raids_played,
 		"raids_extracted": account.raids_extracted,
 		"kills": account.kills,
+		"renown": account.renown,
 		"credits": account.credits,
 	}
 
@@ -363,6 +368,7 @@ func settle(account_id: String, result: Dictionary) -> Dictionary:
 	if result.get("outcome", "") == "left":
 		account.raids_extracted += 1
 	account.kills += maxi(0, int(result.get("kills", 0)))
+	account.renown += maxi(0, int(result.get("renown", 0)))
 	account.credits = Economy.add(account.credits, Economy.payout(result))
 	var gained: Variant = result.get("mastery_xp", {})
 	if typeof(gained) == TYPE_DICTIONARY:

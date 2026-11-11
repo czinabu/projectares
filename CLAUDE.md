@@ -37,6 +37,14 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   `WorldDef.keep_gear_on_death` a dead player drops only the backpack and the
   equipped gear returns in the result's `kept`. A gentle world pays for that
   with basic loot tables; rare gear stays in the full-loot PvP world.
+- Renown (`core/progression/renown_ledger.gd`) is decided by the `Raid`'s
+  ledger and nowhere else. It is kept per owner key (`add_player`'s
+  `p_owner`: the account id online), never per name, so it carries across a
+  player's lives. Session renown is at stake on death; lifetime renown only
+  grows, sets the rank, and travels home in the result's `renown`. The
+  public part (rank, streak, bounty, exposed, marked) is copied onto the
+  `Actor` for views to read, and news for everyone goes out on
+  `Raid.war_feed`. Tune it with the ledger's vars.
 - Mastery pays for using gear, never for leaving alive, or signing out over
   and over would farm it.
 - Blocking and parrying happen in `Weapon.modify_incoming`, which `Combat.deal`

@@ -11,6 +11,8 @@ extends Node
 ## folder (`user://accounts` unless given).
 
 const JOIN_TIMEOUT := 12.0
+## The solo player's renown key in a raid, so it carries across their lives.
+const LOCAL_OWNER := "local"
 const NameplatesScript := preload("res://core/ui/nameplates.gd")
 const ScoreboardScript := preload("res://core/ui/scoreboard.gd")
 const PhoneScript := preload("res://core/phone/phone.gd")
@@ -158,7 +160,8 @@ func start_raid(world_id: String) -> void:
 	raid = Raid.new()
 	raid.name = "Raid"
 	add_child(raid)
-	raid.start(world, -1, Profile.checkout_loadout(world), Profile.mastery.active_picks())
+	raid.start(world, -1, Profile.checkout_loadout(world), Profile.mastery.active_picks(),
+			LOCAL_OWNER, Profile.renown)
 	_attach_player_view()
 	raid.player_finished.connect(_on_solo_finished)
 
@@ -235,7 +238,8 @@ func _on_redeploy_requested() -> void:
 		# `joined` follows and attaches the view to the new actor.
 		net.deploy()
 		return
-	raid.add_player(Profile.checkout_loadout(raid.world), Profile.mastery.active_picks(), "You")
+	raid.add_player(Profile.checkout_loadout(raid.world), Profile.mastery.active_picks(), "You",
+			LOCAL_OWNER, Profile.renown)
 	_attach_player_view()
 
 

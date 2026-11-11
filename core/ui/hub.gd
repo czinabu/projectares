@@ -27,6 +27,7 @@ signal look_changed(appearance: Dictionary)
 const MasteryPanel := preload("res://core/progression/mastery_panel.gd")
 const CharacterPanel := preload("res://core/ui/character_panel.gd")
 const MasteryBook := preload("res://core/progression/mastery_book.gd")
+const RenownLedger := preload("res://core/progression/renown_ledger.gd")
 const ShopPanel := preload("res://core/economy/shop_panel.gd")
 const Economy := preload("res://core/economy/economy.gd")
 
@@ -217,13 +218,25 @@ func _refresh_gear() -> void:
 		Profile.validate_loadout()
 	_refresh_loadout()
 	var record: Variant = account if in_lobby() else Profile
-	_stash.text = "%s\nStash value %d   Drops %d   Left alive %d   Kills %d" % [
+	var lifetime := int(record.get("renown")) if record.get("renown") != null else 0
+	_stash.text = "%s\nStash value %d   Drops %d   Left alive %d   Kills %d\n%s" % [
 		ItemDB.summarize(stash_items()), ItemDB.total_value(stash_items()),
-		record.get("raids_played"), record.get("raids_extracted"), record.get("kills")]
+		record.get("raids_played"), record.get("raids_extracted"), record.get("kills"),
+		renown_text(lifetime)]
 	_shop.refresh()
 	# Clothing in the stash unlocks its outfits in the customizer.
 	character.owned = Economy.unlocked_outfits(stash_items())
 	character.set_appearance(Profile.appearance)
+
+
+## Rank and lifetime renown, as shown under the stash.
+static func renown_text(lifetime: int) -> String:
+	var rank := RenownLedger.rank_name(RenownLedger.rank_for(lifetime))
+	var more := RenownLedger.to_next_rank(lifetime)
+	if more <= 0:
+		return "Rank %s   Renown %d" % [rank, lifetime]
+	return "Rank %s   Renown %d   (%d to %s)" % [rank, lifetime, more,
+			RenownLedger.rank_name(RenownLedger.rank_for(lifetime) + 1)]
 
 
 ## Item ids in the stash that fit a slot, best first, without duplicates.

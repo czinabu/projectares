@@ -75,6 +75,15 @@ var riposte_left := 0.0
 ## Seconds left of drop-in protection: nothing can hurt this actor. It ends
 ## early the moment they attack someone (see `Combat.deal`).
 var protected_left := 0.0
+## Public reputation. Written by the `Raid` that decides it (online, copied
+## from the server); read by nameplates and the HUD. See `RenownLedger`.
+var renown := 0
+var rank := 0
+var streak := 0
+var bounty := 0
+## Everyone can see where this actor is.
+var exposed := false
+var marked := false
 var body_mesh: MeshInstance3D
 ## Holds the active weapon's model. A first-person camera may pose it itself.
 var hand := Node3D.new()
