@@ -76,6 +76,11 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   pick surfaces, an atmosphere and bot skins (`set_meta("look", ...)`) from
   its generic kits. Decoration in a map uses its own RNG so it cannot shift
   the gameplay layout.
+- Legs follow the actor's velocity, never its input (`core/visual/locomotion.gd`):
+  walk and run clips are measured from their feet and played at actual speed
+  over clip speed, the clip nearest the direction of travel is picked, and the
+  lower body turns the rest of the way while the spine keeps the chest on the
+  aim. Remote players work the same way from their replicated velocity.
 - People are built from parts (`core/visual/human.gd`): an "appearance" names
   a build, four parts and colours. It is cosmetic only and never trusted:
   always pass one through `Look.clean_appearance` / `Look.set_appearance`,
