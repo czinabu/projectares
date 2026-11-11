@@ -19,6 +19,7 @@ const KEY_ACTIONS := {
 	"melee_control": KEY_B,
 	"weapon_1": KEY_1,
 	"weapon_2": KEY_2,
+	"scoreboard": KEY_TAB,
 }
 
 const MOUSE_ACTIONS := {
