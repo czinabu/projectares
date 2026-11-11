@@ -7,6 +7,7 @@ const VehicleScript := preload("res://core/vehicle/vehicle.gd")
 const RaidRoster := preload("res://core/ui/raid_roster.gd")
 const NameplatesScript := preload("res://core/ui/nameplates.gd")
 const ScoreboardScript := preload("res://core/ui/scoreboard.gd")
+const WarDirector := preload("res://core/war/war_director.gd")
 const RenownLedger := preload("res://core/progression/renown_ledger.gd")
 const BaseLayout := preload("res://core/base/base_layout.gd")
 const BaseHudScript := preload("res://core/ui/base_hud.gd")
@@ -56,6 +57,7 @@ func _run() -> void:
 	await _test_mastery()
 	await _test_nameplates_and_scoreboard()
 	await _test_renown()
+	await _test_war()
 	await _test_online()
 	await _test_stash_service()
 	await _test_phone()
@@ -1844,6 +1846,8 @@ func _test_renown() -> void:
 	add_child(raid)
 	raid.apply_to_profile = false
 	raid.start_server(Worlds.get_world("ashfront"), 91)
+	# Keep the war quiet here, so kills pay their plain value.
+	raid.war.scale = 0.0
 	for bot in raid.bots:
 		bot.get_node("Brain").set_physics_process(false)
 	var feed: Array[String] = []
@@ -1947,6 +1951,88 @@ func _test_renown() -> void:
 	Profile.persist = was_persist
 	check(Hub.renown_text(250) == "Rank Raider   Renown 250   (550 to Veteran)", "the hub shows your rank and what the next one takes")
 	await _end_raid(raid)
+
+
+func _test_war() -> void:
+	print("War intensity")
+	# The director on its own.
+	var war := WarDirector.new()
+	check(war.intensity == 0.0 and war.level_name() == "Quiet" and war.renown_bonus() == 1.0, "a new world is quiet")
+	war.report_kill(Vector3(10, 0, 0), false)
+	var after_bot := war.intensity
+	war.report_kill(Vector3(30, 0, 0), true)
+	check(after_bot > 0.0 and war.intensity - after_bot > after_bot, "kills heat the war up, a player's death most of all")
+	check(war.centre.x > 10.0 and war.centre.x < 30.0, "the centre of the fighting drifts towards the newest kill")
+	var before := war.intensity
+	war.tick(5.0)
+	check(war.intensity == before, "the heat holds for a while after the last kill")
+	war.tick(war.calm_delay)
+	war.tick(1.0)
+	check(war.intensity < before, "then it cools")
+	before = war.intensity
+	var clash: Array[Vector3] = [Vector3(0, 0, 50)]
+	war.tick(1.0, clash)
+	check(war.intensity > before, "hostile players close together heat it up")
+	for i in 400:
+		war.report_kill(Vector3.ZERO, true)
+	check(war.intensity == 1.0 and war.level_name() == "All-out war" and war.renown_bonus() == 1.5,
+			"the meter tops out at 1, where kills pay half as much renown again")
+	check(WarDirector.level_for(0.3) == "Skirmish" and WarDirector.level_for(0.6) == "Battle", "the meter has names for its stretches")
+	war.tick(10000.0)
+	war.tick(10000.0)
+	check(war.intensity == 0.0, "a world left alone goes quiet again")
+	var still := WarDirector.new()
+	still.scale = 0.0
+	still.report_kill(Vector3.ZERO, true)
+	still.tick(1.0, clash)
+	check(still.intensity == 0.0, "a world can keep its war meter still")
+
+	# In a running world.
+	var raid := Raid.new()
+	add_child(raid)
+	raid.apply_to_profile = false
+	raid.start_server(Worlds.get_world("ashfront"), 93)
+	for bot in raid.bots:
+		bot.get_node("Brain").set_physics_process(false)
+	var a := raid.add_player([], {}, "Alpha")
+	var b := raid.add_player([], {}, "Bravo")
+	a.global_position = Vector3(0, 300, 0)
+	b.global_position = Vector3(0, 300, 200)
+	a.set_physics_process(false)
+	b.set_physics_process(false)
+	await frames(30)
+	check(raid.war.intensity == 0.0, "players far apart are not a war, however many there are")
+	b.global_position = Vector3(0, 300, 20)
+	await frames(30)
+	var brewing := raid.war.intensity
+	check(brewing > 0.0 and raid.war.centre.distance_to(Vector3(0, 300, 10)) < 1.0, "two hostile players near each other are (%.3f)" % brewing)
+	check(is_equal_approx(raid.map.get_meta("war_intensity"), raid.war.intensity)
+			and raid.map.get_meta("war_centre") == raid.war.centre, "the map is told how hot the war is, for the sky")
+	b.global_position = Vector3(0, 300, 200)
+	raid.bots[0].kill("bullet", a)
+	await frames(2)
+	check(raid.war.intensity > brewing, "a player killing a bot adds to it")
+	var mid := raid.war.intensity
+	raid.bots[1].kill("bullet", raid.bots[2])
+	await frames(2)
+	check(raid.war.intensity <= mid, "bots killing each other do not")
+	raid.war.intensity = 1.0
+	await frames(2)
+	var paid := a.renown
+	raid.bots[3].kill("bullet", a)
+	check(a.renown - paid > roundi(10 * 1.1), "kills pay more renown in a hot war (%d)" % (a.renown - paid))
+	check(Hud.standing_text(a) != "" and WarDirector.level_for(raid.war.intensity) == "All-out war", "the HUD can name the war's level")
+	await _end_raid(raid)
+	check(Worlds.get_world("frostline").war_scale == 0.0 and Worlds.get_world("ashfront").war_scale > 0.0,
+			"Frostline stays quiet and Ashfront does not")
+
+	# The mood: a blend between the calm and the war atmosphere a map supplies.
+	var calm := Look.mood_values({"sun_energy": 2.0, "fog_color": Color(0.4, 0.4, 0.4)})
+	var battle := Look.mood_values({"sun_energy": 1.0}, calm)
+	check(battle.fog_color == calm.fog_color and battle.sun_energy == 1.0, "a war mood only says what changes")
+	var half := Look.blend_moods(calm, battle, 0.5)
+	check(is_equal_approx(half.sun_energy, 1.5) and Look.blend_moods(calm, battle, 0.0).sun_energy == 2.0
+			and Look.blend_moods(calm, battle, 7.0).sun_energy == 1.0, "the mood blends with the meter and stops at the war mood")
 
 
 func _test_online() -> void:

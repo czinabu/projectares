@@ -48,6 +48,9 @@ var spawn_protection := 4.0
 ## a gentler world: the gear they had equipped goes back to their stash and
 ## only the backpack drops.
 var keep_gear_on_death := false
+## How strongly fighting raises this world's war intensity (see
+## `core/war/war_director.gd`). 0 keeps the world quiet whatever happens.
+var war_scale := 1.0
 ## Seconds between dying and being allowed to drop in again.
 var redeploy_delay := 3.0
 
