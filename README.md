@@ -35,6 +35,9 @@ core loop and lays the foundation for online play and more worlds.
 The jetpack runs on heat. Overheat it and you fall until it cools. Rooftop
 caches hold the best loot, and only the jetpack gets you there.
 
+After you pull new code, the first launch may show "Updating the project" for a
+few seconds and restart on its own. That is Godot learning about new scripts.
+
 ## What is in the prototype
 
 - First-person and third-person camera that you switch with V. It never changes
@@ -88,6 +91,7 @@ core/            Shared by every world. Never names a specific world.
   profile/       Stash and stats that persist between raids
 worlds/
   ashfront/      The first world: rules, loot tables, and its map
+  frostline/     A second, smaller world that proves the plug-in contract
 tests/           Headless test suite and a screenshot tool
 ```
 
@@ -102,12 +106,25 @@ Three rules keep the foundation solid:
 
 ## Add a world
 
-1. Copy `worlds/ashfront` to `worlds/<your_world>`.
+1. Copy `worlds/frostline` (the smaller example) to `worlds/<your_world>`.
 2. In `world.gd`, change the id, name, loot tables and rules.
-3. Build a map that provides the markers listed at the top of
+3. Items that only exist in your world go in `register_items()`. Prefix their
+   ids with the world id. Once stashed they work in every world.
+4. Build a map that provides the markers listed at the top of
    `core/world/world_def.gd`.
 
-The hub finds it automatically and adds a deploy button.
+The hub finds it automatically and adds a deploy button, and the
+"Every world plugs in" tests run a raid in it. No core code changes.
+
+### Frostline
+
+A dead listening station on a glacier shelf, in whiteout fog. The layout is
+round: a relay mast in the middle (its top cache is the richest on the map and
+only flight reaches it), a ring of six outposts, and two rings of ice ridges for
+cover. Two enemy factions share the ice and fight each other as well as you:
+Wardens (slow, armored, long-range rifles) and Feral stalkers (fast, fragile,
+melee). The raid is shorter (10 minutes) and exits take longer to hold. It adds
+three items of its own: Cryo Cell, Signal Core and the Ice Axe.
 
 ## Run the tests
 

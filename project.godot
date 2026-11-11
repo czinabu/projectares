@@ -13,6 +13,7 @@ config/features=PackedStringArray("4.7", "Forward Plus")
 
 [autoload]
 
+Boot="*res://core/boot.gd"
 InputSetup="*res://core/input_setup.gd"
 ItemDB="*res://core/items/item_db.gd"
 Worlds="*res://core/world/world_registry.gd"

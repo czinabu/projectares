@@ -45,8 +45,11 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
 ## Conventions
 
 - A helper used by a single script is an inner class of that script, not a new
-  `class_name` file. A new global class only works after the editor rescans, and
-  a missed rescan once broke the whole HUD for Caleb after a pull.
+  `class_name` file.
+- New `class_name` scripts only resolve after Godot rescans the project. The
+  `Boot` autoload (`core/boot.gd`) detects a stale class list, runs the import
+  step and restarts once. Keep `Boot` first in the autoload list and free of
+  any project class.
 - Typed GDScript, tabs, `class_name` for anything reused. Tuning values are
   plain `var`s at the top of the class.
 - Greybox visuals are built in code for now. Hand-built `.tscn` scenes are
