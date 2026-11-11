@@ -7,6 +7,7 @@ const VehicleScript := preload("res://core/vehicle/vehicle.gd")
 const RaidRoster := preload("res://core/ui/raid_roster.gd")
 const NameplatesScript := preload("res://core/ui/nameplates.gd")
 const ScoreboardScript := preload("res://core/ui/scoreboard.gd")
+const RenownLedger := preload("res://core/progression/renown_ledger.gd")
 const BaseLayout := preload("res://core/base/base_layout.gd")
 const BaseHudScript := preload("res://core/ui/base_hud.gd")
 const LookTests := preload("res://tests/look_tests.gd")
@@ -53,6 +54,7 @@ func _run() -> void:
 	await _test_frostline()
 	await _test_mastery()
 	await _test_nameplates_and_scoreboard()
+	await _test_renown()
 	await _test_online()
 	await _test_stash_service()
 	await _test_phone()
@@ -1735,7 +1737,7 @@ func _test_nameplates_and_scoreboard() -> void:
 	check(not board.visible, "the scoreboard is closed until asked for")
 	board.show_board(true)
 	var rows: Array = board.rows()
-	check(board.visible and rows.size() == 3 and rows[0] == ["Alpha (you)", RaidRoster.IN_RAID, "3"],
+	check(board.visible and rows.size() == 3 and rows[0].slice(0, 3) == ["Alpha (you)", RaidRoster.IN_RAID, "3"],
 			"the scoreboard shows each player's name, status and kills")
 	board.show_board(false)
 	check(not board.visible, "the scoreboard closes again")
@@ -1765,8 +1767,8 @@ func _test_nameplates_and_scoreboard() -> void:
 		var plate: Control = shown[d.get_instance_id()]
 		var label: Label = plate.get_child(0)
 		var middle := camera.get_viewport().get_visible_rect().size * 0.5
-		check(label.text == "Delta" and plate.position.x < middle.x and plate.position.x + plate.size.x > middle.x,
-				"the nameplate carries the name and sits over the player")
+		check(label.text == "Delta  Recruit" and plate.position.x < middle.x and plate.position.x + plate.size.x > middle.x,
+				"the nameplate carries the name and rank and sits over the player")
 	place.call(Vector3(0, -0.5, -10), Vector3.BACK)
 	check(plates.plates().is_empty(), "no nameplate for a player behind you")
 	place.call(Vector3(0, -0.5, -(plates.max_distance + 5.0)), Vector3.FORWARD)
@@ -1786,6 +1788,158 @@ func _test_nameplates_and_scoreboard() -> void:
 	d.kill("bullet")
 	place.call(Vector3(0, -0.5, -10), Vector3.FORWARD)
 	check(plates.plates().is_empty(), "the nameplate goes when the player goes down")
+	await _end_raid(raid)
+
+
+func _test_renown() -> void:
+	print("Renown and bounties")
+	# The ledger on its own: plain arithmetic.
+	var book := RenownLedger.new()
+	book.enter("ana", "Ana", 190)
+	book.enter("ben", "Ben")
+	check(book.bot_killed("ana") == 10 and book.bot_killed("ana") == 11,
+			"a bot kill pays renown, and each kill in a streak pays a little more")
+	var ana := book.get_standing("ana")
+	check(ana.renown == 21 and ana.lifetime == 211 and RenownLedger.rank_for(ana.lifetime) == 1
+			and RenownLedger.rank_name(1) == "Raider", "lifetime renown raises your rank")
+	check(RenownLedger.to_next_rank(211) == 589 and RenownLedger.to_next_rank(999999) == 0,
+			"the next rank says how far away it is")
+	book.get_standing("ben").renown = 400
+	check(book.marked() == "ben", "the living player with the most renown is the Marked")
+	var paid := book.player_died("ben", "ana")
+	check(paid.lost == 40 and paid.stolen == 40 and paid.marked and book.get_standing("ben").renown == 360,
+			"dying costs a tenth of your session renown")
+	check(paid.gain == 120 + 40 + book.marked_bonus and ana.renown == 21 + paid.gain,
+			"the killer gets the kill, the stolen share and the bonus for the Marked")
+	check(book.marked() == "ana", "a dead player is not the Marked")
+	book.enter("ben", "Ben")
+	check(book.get_standing("ben").renown == 360, "session renown carries into the next life")
+	var before := ana.renown
+	check(book.player_died("ben", "ana", true).gain == roundi(10 * 1.3) + 36,
+			"killing someone in the scrap kit pays almost nothing for the kill")
+	check(book.bounty_of("ana") == 0, "two player kills are not a bounty yet")
+	book.enter("ben", "Ben")
+	book.player_died("ben", "ana", true)
+	check(book.bounty_of("ana") == 150 and not book.is_exposed("ana"), "three player kills in one life put a price on you")
+	for i in 2:
+		book.enter("ben", "Ben")
+		book.player_died("ben", "ana", true)
+	check(book.bounty_of("ana") == 250 and book.is_exposed("ana"), "five show you to everyone")
+	book.enter("cy", "Cy")
+	var claim := book.player_died("ana", "cy")
+	check(claim.bounty == 250 and claim.gain >= 250 + 100 and book.bounty_of("ana") == 0
+			and ana.player_streak == 0, "the killer collects the bounty and the streak ends")
+	check(ana.lifetime > before + 190, "death never takes lifetime renown")
+	book.leave("ana")
+	check(book.get_standing("ana") == null, "leaving the world ends the session")
+
+	# In a running world.
+	var raid := Raid.new()
+	add_child(raid)
+	raid.apply_to_profile = false
+	raid.start_server(Worlds.get_world("ashfront"), 91)
+	for bot in raid.bots:
+		bot.get_node("Brain").set_physics_process(false)
+	var feed: Array[String] = []
+	raid.war_feed.connect(func(text: String) -> void: feed.append(text))
+	var results := {}
+	raid.player_finished.connect(func(actor: Actor, result: Dictionary) -> void:
+		results[actor.display_name] = result)
+	var kit: Array[String] = ["rifle_carbine", "frame_trooper"]
+	var hunter := raid.add_player(kit, {}, "Hunter", "acct-hunter", 900)
+	var prey := raid.add_player(kit, {}, "Prey", "acct-prey", 0)
+	await frames(3)
+	check(hunter.rank == 2 and prey.rank == 0 and hunter.renown == 0, "a player arrives with their rank and no session renown")
+	var notices: Array[String] = []
+	hunter.notice.connect(func(text: String) -> void: notices.append(text))
+	raid.bots[0].kill("bullet", hunter)
+	check(hunter.renown == 10 and hunter.streak == 1 and notices.size() == 1
+			and notices[0].begins_with("Killed ") and notices[0].ends_with("+10 renown"),
+			"killing a bot pays renown and says so")
+	check(feed.is_empty(), "bot kills stay out of the world feed")
+	raid.renown.get_standing("acct-prey").renown = 500
+	prey.kill("bullet", hunter)
+	await frames(2)
+	check(results.has("Prey") and results.Prey.renown_lost == 50 and results.Prey.renown_now == 450,
+			"a death reports the renown it cost")
+	check(hunter.renown == 10 + 110 + 50 + raid.renown.marked_bonus,
+			"the killer is paid for the kill, the share and the Marked (%d)" % hunter.renown)
+	check(feed.has("Hunter [Veteran] killed Prey [Recruit], the Marked"), "a player kill is announced with ranks (%s)" % " / ".join(feed))
+	check(hunter.marked and feed.has("Hunter is now the Marked"), "the new Marked is announced")
+	check("Renown lost: 50" in Hud.death_text(results.Prey, 0.0), "the death screen shows the renown lost")
+	for i in 2:
+		prey = raid.add_player(kit, {}, "Prey", "acct-prey", 0)
+		await frames(1)
+		prey.kill("bullet", hunter)
+		await frames(1)
+	check(hunter.bounty == 150 and feed.has("Hunter has a bounty of 150"), "three player kills announce a bounty")
+	check(Hud.standing_text(hunter).begins_with("Veteran   Renown ") and "BOUNTY 150" in Hud.standing_text(hunter)
+			and "THE MARKED" in Hud.standing_text(hunter), "the HUD shows your rank, renown and bounty")
+	check(NameplatesScript.plate_text(hunter) == "Hunter  Veteran  MARKED  Bounty 150", "a nameplate shows rank, the Marked and the bounty")
+	var roster := RaidRoster.new(raid, prey)
+	roster.refresh()
+	var row: Dictionary = roster.entries.filter(func(e: Dictionary) -> bool: return e.name == "Hunter")[0]
+	check(ScoreboardScript.renown_cell(row) == "Veteran  %d  MARKED  Bounty 150" % hunter.renown, "the scoreboard lists renown and bounties")
+	for i in 2:
+		prey = raid.add_player(kit, {}, "Prey", "acct-prey", 0)
+		await frames(1)
+		prey.kill("bullet", hunter)
+		await frames(1)
+	check(hunter.exposed and feed.any(func(text: String) -> bool: return text.begins_with("Hunter is exposed")),
+			"five player kills expose you to everyone")
+
+	# A hunted player's plate shows through a wall and at any distance.
+	var far := raid.add_player(kit, {}, "Far", "acct-far", 0)
+	var camera := Camera3D.new()
+	raid.add_child(camera)
+	camera.make_current()
+	var plates := NameplatesScript.new()
+	plates.setup(raid, far)
+	raid.add_child(plates)
+	hunter.global_position = Vector3(0, 300, -200)
+	far.global_position = Vector3(0, 300, 0)
+	camera.global_position = Vector3(0, 301.6, 0)
+	camera.look_at(Vector3(0, 301.6, -200))
+	await frames(2)
+	plates.update_plates()
+	check(plates.plates().has(hunter.get_instance_id()), "an exposed player's nameplate shows from across the map")
+	hunter.exposed = false
+	hunter.marked = false
+	plates.update_plates()
+	check(not plates.plates().has(hunter.get_instance_id()), "an ordinary player's does not")
+	plates.queue_free()
+	camera.queue_free()
+
+	# The bounty is paid out, and renown reaches the account.
+	var earned_before := hunter.renown
+	var avenger := raid.add_player(kit, {}, "Avenger", "acct-avenger", 0)
+	await frames(1)
+	hunter.kill("bullet", avenger)
+	await frames(2)
+	check(avenger.renown >= 250 + 100 and feed.any(func(text: String) -> bool:
+			return text.begins_with("Avenger [") and text.ends_with("and claimed a bounty of 250")),
+			"killing a hunted player pays their bounty")
+	check(results.Hunter.renown >= 0 and results.Hunter.renown_lost == int(floor(earned_before * 0.1)),
+			"the hunted player's last life reports its renown")
+	var avenger_renown := avenger.renown
+	raid.clock += 1000.0
+	raid.begin_sign_out(avenger)
+	for i in 800:
+		if results.has("Avenger"):
+			break
+		await frames(1)
+	check(results.has("Avenger") and results.Avenger.outcome == "left" and results.Avenger.renown == avenger_renown
+			and raid.renown.get_standing("acct-avenger") == null,
+			"signing out keeps the renown you earned and ends the session")
+	var was_persist := Profile.persist
+	Profile.persist = false
+	var had := Profile.renown
+	Profile.record_raid({"outcome": "died", "renown": 75})
+	check(Profile.renown == had + 75, "lifetime renown is saved with the profile")
+	Profile.renown = had
+	Profile.raids_played -= 1
+	Profile.persist = was_persist
+	check(Hub.renown_text(250) == "Rank Raider   Renown 250   (550 to Veteran)", "the hub shows your rank and what the next one takes")
 	await _end_raid(raid)
 
 
@@ -2025,6 +2179,8 @@ func _test_online() -> void:
 		var result := [{}]
 		bravo.run_finished.connect(func(r: Dictionary) -> void: result[0] = r)
 		var before := victim.health.health + victim.health.armor
+		var war_feed: Array[String] = []
+		bravo.raid.war_feed.connect(func(text: String) -> void: war_feed.append(text))
 		me.cmd.primary = true
 		for i in 600:
 			if target == null or not is_instance_valid(target) or target.is_dead or not result[0].is_empty():
@@ -2056,6 +2212,13 @@ func _test_online() -> void:
 			return mine != null and mine.kills == 1 and theirs != null and theirs.kills == 1
 		await _wait_until(scores, 90)
 		check(scores.call() and alpha.raid.kills == 1, "every client is told each player's kill count")
+		var famous := func() -> bool:
+			var seen := bravo.actor_for(alpha.my_actor_id)
+			return me.renown > 0 and seen != null and seen.renown == me.renown and seen.streak == 1
+		await _wait_until(famous, 90)
+		check(famous.call(), "the server tells every client the killer's renown (%d)" % me.renown)
+		check(war_feed.any(func(text: String) -> bool: return " killed " in text),
+				"the kill is announced to everyone in the world (%s)" % " / ".join(war_feed))
 		# The dead player's bag appears for the killer, who walks over and loots it.
 		var found: Array[LootContainer] = []
 		var find_bag := func() -> bool:

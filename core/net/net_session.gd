@@ -72,7 +72,7 @@ signal world_invite_accepted(invite: Dictionary)
 signal base_visit_requested(owner_name: String, stash: Array, loadout: Dictionary)
 
 const DEFAULT_PORT := 24565
-const PROTOCOL := 7
+const PROTOCOL := 8
 const StashService := preload("res://core/account/stash_service.gd")
 const SocialService := preload("res://core/social/social_service.gd")
 ## Server physics ticks between state updates (2 = 30 a second).
@@ -177,6 +177,7 @@ var _ride_fix := Vector3.ZERO # position error of your ride still to blend away 
 var _ride_turn := 0.0    # heading error of your ride still to blend away (client)
 var _ride_entry: Array = [] # the server's last answer about your ride, once compared (client)
 var _sent_kills := {}    # actor id -> kill count last sent (server)
+var _sent_standing := {} # actor id -> public renown standing last sent (server)
 var _tick := 0
 var _died_at := {}       # peer id -> msec when their last life ended in a death (server)
 var _finished := false   # client: signed out, so the server closing the connection is expected
@@ -245,6 +246,9 @@ func _start_server_raid() -> void:
 	raid.actor_removed.connect(_on_server_actor_removed)
 	raid.player_finished.connect(_on_server_player_finished)
 	raid.player_banked.connect(_on_server_player_banked)
+	raid.war_feed.connect(func(text: String) -> void:
+		for peer in _joined_peers:
+			_war_feed.rpc_id(peer, text))
 	raid.sign_out_changed.connect(_on_server_sign_out_changed)
 	raid.container_spawned.connect(_on_server_container_spawned)
 	raid.vehicle_spawned.connect(_on_server_vehicle_spawned)
@@ -290,6 +294,7 @@ func _clear_tables() -> void:
 	_ride_turn = 0.0
 	_ride_entry = []
 	_sent_kills.clear()
+	_sent_standing.clear()
 	_actor_account.clear()
 
 
@@ -347,6 +352,7 @@ func _on_server_actor_removed(actor: Actor) -> void:
 	_switches.erase(id)
 	_dead_kind.erase(id)
 	_sent_kills.erase(id)
+	_sent_standing.erase(id)
 	var peer: int = _actor_peer.get(actor, 0)
 	_actor_peer.erase(actor)
 	if peer != 0 and _peer_actor.get(peer) == actor:
@@ -557,7 +563,9 @@ func _request_join() -> void:
 	var returning := peer in _joined_peers
 	_joined_peers.erase(peer)
 	_joining_look = look_for_peer(peer)
-	var actor := raid.add_player(deployed.kit, deployed.picks, stash.snapshot(account_id).name)
+	var who: Dictionary = stash.snapshot(account_id)
+	# Renown is kept under the account, never under a name the client chose.
+	var actor := raid.add_player(deployed.kit, deployed.picks, who.name, account_id, int(who.get("renown", 0)))
 	_joining_look = {}
 	_actor_account[actor] = account_id
 	_send_account(peer)
@@ -592,6 +600,8 @@ func _request_join() -> void:
 		_send_vehicle(peer, id)
 	for id: int in _sent_kills:
 		_kills.rpc_id(peer, id, _sent_kills[id])
+	for id: int in _sent_standing:
+		_standing.rpc_id(peer, id, _sent_standing[id])
 
 
 func _on_server_hit_confirmed(target: Actor, info: DamageInfo, lethal: bool, peer: int) -> void:
@@ -722,6 +732,12 @@ func _server_late_tick(_delta: float) -> void:
 			_sent_kills[id] = state.kills
 			for peer in _joined_peers:
 				_kills.rpc_id(peer, id, state.kills)
+		var actor := state.actor
+		var standing := [actor.renown, actor.rank, actor.streak, actor.bounty, actor.exposed, actor.marked]
+		if id >= 0 and _sent_standing.get(id, []) != standing:
+			_sent_standing[id] = standing
+			for peer in _joined_peers:
+				_standing.rpc_id(peer, id, standing)
 
 
 # ---------------------------------------------------------------- client ----
@@ -1112,6 +1128,26 @@ func _hurt(amount: float, kind: String) -> void:
 	var me: Actor = _actors.get(my_actor_id)
 	if me != null and not me.is_dead:
 		me.health.damaged.emit(DamageInfo.make(amount, null, kind))
+
+
+## A player's public renown: [renown, rank, streak, bounty, exposed, marked].
+@rpc("authority", "call_remote", "reliable")
+func _standing(id: int, standing: Array) -> void:
+	var actor: Actor = _actors.get(id)
+	if actor == null or not is_instance_valid(actor) or standing.size() < 6:
+		return
+	actor.renown = int(standing[0])
+	actor.rank = int(standing[1])
+	actor.streak = int(standing[2])
+	actor.bounty = int(standing[3])
+	actor.exposed = bool(standing[4])
+	actor.marked = bool(standing[5])
+
+
+@rpc("authority", "call_remote", "reliable")
+func _war_feed(text: String) -> void:
+	if raid != null:
+		raid.war_feed.emit(text)
 
 
 @rpc("authority", "call_remote", "reliable")

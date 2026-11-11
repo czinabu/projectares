@@ -60,6 +60,8 @@ class Account:
 	var raids_played := 0
 	var raids_extracted := 0
 	var kills := 0
+	## Lifetime renown. Only ever grows.
+	var renown := 0
 
 	func is_deployed() -> bool:
 		return deployed_world != ""
@@ -80,6 +82,7 @@ class Account:
 			"raids_played": raids_played,
 			"raids_extracted": raids_extracted,
 			"kills": kills,
+			"renown": renown,
 		}
 
 	func load_dict(data: Dictionary) -> void:
@@ -112,6 +115,7 @@ class Account:
 		raids_played = maxi(0, int(data.get("raids_played", 0)))
 		raids_extracted = maxi(0, int(data.get("raids_extracted", 0)))
 		kills = maxi(0, int(data.get("kills", 0)))
+		renown = maxi(0, int(data.get("renown", 0)))
 
 
 # --- Identity ----------------------------------------------------------------
@@ -219,6 +223,7 @@ func snapshot(account_id: String) -> Dictionary:
 		"raids_played": account.raids_played,
 		"raids_extracted": account.raids_extracted,
 		"kills": account.kills,
+		"renown": account.renown,
 	}
 
 
@@ -306,6 +311,7 @@ func settle(account_id: String, result: Dictionary) -> Dictionary:
 	if result.get("outcome", "") == "left":
 		account.raids_extracted += 1
 	account.kills += maxi(0, int(result.get("kills", 0)))
+	account.renown += maxi(0, int(result.get("renown", 0)))
 	var gained: Variant = result.get("mastery_xp", {})
 	if typeof(gained) == TYPE_DICTIONARY:
 		for track: Variant in gained:

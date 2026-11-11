@@ -2,6 +2,8 @@ class_name Hud
 extends CanvasLayer
 ## In-raid HUD, built in code so there is no scene file to keep in sync yet.
 
+const RenownLedger := preload("res://core/progression/renown_ledger.gd")
+
 var raid: Raid
 var controller: PlayerController
 
@@ -22,6 +24,7 @@ var _view: Label
 var _feed: Label
 var _hold_bar: ProgressBar
 var _death: Label
+var _standing: Label
 var _messages: Array[Dictionary] = []
 ## The local player's last life, shown while they are down (see `show_death`).
 var _death_result := {}
@@ -61,6 +64,10 @@ func _ready() -> void:
 	_timer = _label(root, "", 26)
 	_timer.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_place(_timer, 0.5, 0.0, Vector2(-200, 14), Vector2(400, 36))
+
+	_standing = _label(root, "", 15)
+	_standing.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_place(_standing, 0.5, 0.0, Vector2(-300, 48), Vector2(600, 22))
 
 	_view = _label(root, "", 13)
 	_view.modulate.a = 0.6
@@ -106,6 +113,7 @@ func _ready() -> void:
 	_place(_backpack, 1.0, 1.0, Vector2(-520, -60), Vector2(500, 24))
 
 	raid.player.notice.connect(_on_notice)
+	raid.war_feed.connect(_on_war_feed)
 	raid.player.hit_confirmed.connect(_on_hit_confirmed)
 	raid.player.health.damaged.connect(_on_player_damaged)
 	var names: Array[String] = []
@@ -120,6 +128,7 @@ func _process(delta: float) -> void:
 		return
 	var p := raid.player
 	_timer.text = raid.world.display_name
+	_standing.text = standing_text(p)
 	_redeploy_wait = maxf(0.0, _redeploy_wait - delta)
 	_death.visible = p.is_dead and not _death_result.is_empty()
 	if _death.visible:
@@ -250,6 +259,8 @@ static func death_text(result: Dictionary, wait: float) -> String:
 	var lost: Array = result.get("lost", [])
 	var lines: Array[String] = ["Killed by %s" % by if by != "" else "You died"]
 	lines.append("Lost: %s" % ItemDB.summarize(lost) if not lost.is_empty() else "Nothing lost")
+	if int(result.get("renown_lost", 0)) > 0:
+		lines.append("Renown lost: %d" % int(result.renown_lost))
 	var kept: Array = result.get("kept_gear", [])
 	if not kept.is_empty():
 		lines.append("Kept: %s" % ItemDB.summarize(kept))
@@ -262,6 +273,28 @@ static func death_text(result: Dictionary, wait: float) -> String:
 	else:
 		lines.append("Enter: drop back in      L: return to the hub")
 	return "\n".join(lines)
+
+
+## The local player's standing: rank, session renown, streak, and whether
+## they are being hunted.
+static func standing_text(p: Actor) -> String:
+	var text := "%s   Renown %d" % [RenownLedger.rank_name(p.rank), p.renown]
+	if p.streak > 1:
+		text += "   Streak %d" % p.streak
+	if p.bounty > 0:
+		text += "   BOUNTY %d" % p.bounty
+	if p.exposed:
+		text += "   EXPOSED"
+	if p.marked:
+		text += "   THE MARKED"
+	return text
+
+
+## News for everyone in the world stays up a little longer than a notice.
+func _on_war_feed(text: String) -> void:
+	_messages.append({"text": text, "time": 7.0})
+	if _messages.size() > 6:
+		_messages.pop_front()
 
 
 ## Puts a line in the message feed.

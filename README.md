@@ -112,6 +112,13 @@ you have.
 
 - First-person and third-person camera that you switch with V. It never changes
   on its own. Weapons are visible in your hand in both views.
+- Renown. Kills raise it, a streak makes each kill pay more, and dying hands
+  a tenth of it to your killer. Your lifetime total never drops and sets your
+  rank, which others see on your nameplate. Three player kills in one life put
+  a bounty on you, five show you to everyone through walls, and the player
+  with the most renown is the Marked, the richest kill in the world. Killing
+  someone in the free scrap kit pays almost nothing. Player kills, bounties
+  and the Marked are announced to everyone.
 - Hitscan rifle with reloads and aim down sights.
 - Rifle recoil that kicks your view and widens the spread under sustained fire.
 - Blade with a three-hit combo, a heavy lunge, and a dive slam from the air.
