@@ -464,6 +464,12 @@ func _test_main_flow() -> void:
 	var controller: PlayerController = main.controller
 	check(controller.view_mode == PlayerController.ViewMode.FIRST and not controller.is_third_person(),
 			"camera starts in first-person")
+	controller.base_fov = 70.0
+	controller.base_fov_third = 100.0
+	check(is_equal_approx(controller.wanted_base_fov(), 70.0), "first person uses its own field of view")
+	controller.toggle_view()
+	check(is_equal_approx(controller.wanted_base_fov(), 100.0), "third person uses its own field of view")
+	controller.toggle_view()
 	# Melee and flight must not move the camera on their own.
 	var p: Actor = main.raid.player
 	await frames(40)
@@ -3289,6 +3295,10 @@ func _test_phone_view() -> void:
 	phone.open_app("settings")
 	phone.change_setting("field_of_view", 95.0)
 	check(is_equal_approx(GameSettings.field_of_view, 95.0) and "settings" in events, "settings change from the phone")
+	phone.change_setting("field_of_view_third", 105.0)
+	check(is_equal_approx(GameSettings.field_of_view_third, 105.0) and is_equal_approx(GameSettings.field_of_view, 95.0),
+			"first and third person keep their own field of view")
+	check(GameSettings.to_dict().has("field_of_view_third"), "the third-person field of view is saved")
 	phone.close()
 	check(not phone.is_open and events[events.size() - 1] == false, "the phone closes")
 
