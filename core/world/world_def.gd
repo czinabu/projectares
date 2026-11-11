@@ -16,6 +16,12 @@ extends RefCounted
 ##     "loot_source", default "vehicle"). The Raid parks the first
 ##     vehicle-tagged item from `roll_loot` there, facing the marker's yaw.
 ##   - optionally a `bake_navigation()` method for bot pathfinding
+##   - optionally a `ground_height(x, z)` method, on a map with open ground
+##     that is not level (see `core/world/terrain.gd`). The Raid stands
+##     players and bots on it when they spawn.
+##   - optionally Marker3D nodes in group "strongpoint" with meta "name"
+##     (String) and "radius" (metres): landmarks worth fighting over, each
+##     with a depot inside it.
 ##
 ## Safe zones (`safe_zone = true`) are social spaces, not raids: nobody can be
 ## hurt, weapons and abilities are locked, nothing respawns, and players show
