@@ -1,0 +1,12 @@
+# Godot 4
+.godot/
+*.translation
+export_presets.cfg
+# Builds
+build/
+*.pck
+*.exe
+*.x86_64
+# OS
+.DS_Store
+Thumbs.db
