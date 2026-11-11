@@ -30,6 +30,7 @@ core loop and lays the foundation for online play and more worlds.
 | Loot, or get on and off a bike | E |
 | Ride a bike: throttle, brake or reverse, steer, boost | W, S, A / D, Shift |
 | Switch camera: first-person or third-person | V |
+| Scoreboard: who is still in, who got out, kills | Hold Tab |
 | Free the mouse | Esc |
 
 The jetpack runs on heat. Overheat it and you fall until it cools. Rooftop

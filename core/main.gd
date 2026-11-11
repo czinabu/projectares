@@ -5,11 +5,15 @@ extends Node
 ## for a dedicated server: no hub, no window needed, just a raid that players join.
 
 const JOIN_TIMEOUT := 12.0
+const NameplatesScript := preload("res://core/ui/nameplates.gd")
+const ScoreboardScript := preload("res://core/ui/scoreboard.gd")
 
 var hub: Hub
 var raid: Raid
 var controller: PlayerController
 var hud: Hud
+var nameplates: CanvasLayer
+var scoreboard: CanvasLayer
 var net: NetSession
 var _server_pid := -1
 var _join_attempts := 0
@@ -57,6 +61,14 @@ func _attach_player_view() -> void:
 	hud = Hud.new()
 	hud.setup(raid, controller)
 	raid.add_child(hud)
+	nameplates = NameplatesScript.new()
+	nameplates.name = "Nameplates"
+	nameplates.setup(raid)
+	raid.add_child(nameplates)
+	scoreboard = ScoreboardScript.new()
+	scoreboard.name = "Scoreboard"
+	scoreboard.setup(raid)
+	raid.add_child(scoreboard)
 
 
 func _on_raid_ended(result: Dictionary) -> void:

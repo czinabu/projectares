@@ -4,6 +4,9 @@ extends Node
 ## Exits with code 0 when everything passes, 1 otherwise.
 
 const VehicleScript := preload("res://core/vehicle/vehicle.gd")
+const RaidRoster := preload("res://core/ui/raid_roster.gd")
+const NameplatesScript := preload("res://core/ui/nameplates.gd")
+const ScoreboardScript := preload("res://core/ui/scoreboard.gd")
 
 var _passed := 0
 var _failed := 0
@@ -44,6 +47,7 @@ func _run() -> void:
 	await _test_every_world()
 	await _test_frostline()
 	await _test_mastery()
+	await _test_nameplates_and_scoreboard()
 	await _test_online()
 	await _test_stash_service()
 
@@ -342,6 +346,8 @@ func _test_main_flow() -> void:
 	await frames(5)
 	check(main.raid != null and not main.hub.visible, "deploying starts a raid")
 	check(main.controller.camera.current and main.hud != null, "raid has a camera and HUD")
+	check(main.nameplates != null and main.scoreboard != null and not main.scoreboard.visible,
+			"raid has nameplates and a scoreboard, closed until Tab is held")
 	var controller: PlayerController = main.controller
 	check(controller.view_mode == PlayerController.ViewMode.FIRST and not controller.is_third_person(),
 			"camera starts in first-person")
@@ -1459,6 +1465,100 @@ func _leave(session: NetSession) -> void:
 	await frames(2)
 
 
+func _test_nameplates_and_scoreboard() -> void:
+	print("Nameplates and scoreboard")
+	check(InputMap.has_action("scoreboard") and InputMap.action_get_events("scoreboard").any(
+			func(e: InputEvent) -> bool: return e is InputEventKey and e.physical_keycode == KEY_TAB),
+			"Tab is bound to the scoreboard")
+	var raid := Raid.new()
+	add_child(raid)
+	raid.start_server(Worlds.get_world("ashfront"), 71)
+	for bot in raid.bots:
+		bot.get_node("Brain").set_physics_process(false)
+	var a := raid.add_player([], {}, "Alpha")
+	var b := raid.add_player([], {}, "Bravo")
+	var c := raid.add_player([], {}, "Charlie")
+	await frames(5)
+	var roster := RaidRoster.new(raid, a)
+	roster.refresh()
+	var board := ScoreboardScript.new()
+	board.setup(raid, a)
+	raid.add_child(board)
+	await frames(1)
+	check(roster.entries.size() == 3 and roster.entries.all(
+			func(e: Dictionary) -> bool: return e.status == RaidRoster.IN_RAID),
+			"the roster lists every player as in the raid")
+	check(roster.bots_alive() == raid.bots.size(), "the roster counts the bots still standing")
+	b.kill("bullet", a)
+	raid._on_actor_extracted(c)
+	await frames(3)
+	roster.refresh()
+	var by_name := {}
+	for e in roster.entries:
+		by_name[e.name] = e
+	check(by_name.Alpha.kills == 1 and by_name.Alpha.is_me and by_name.Alpha.status == RaidRoster.IN_RAID,
+			"your kills are counted on the scoreboard")
+	check(by_name.Bravo.status == RaidRoster.DOWN, "a player who died shows as down")
+	check(by_name.Charlie.status == RaidRoster.EXTRACTED, "a player who left alive shows as extracted")
+	check(roster.entries[0].name == "Alpha", "players still in the raid are listed first")
+
+	check(not board.visible, "the scoreboard is closed until asked for")
+	board.show_board(true)
+	var rows: Array = board.rows()
+	check(board.visible and rows.size() == 3 and rows[0] == ["Alpha (you)", RaidRoster.IN_RAID, "1"],
+			"the scoreboard shows each player's name, status and kills")
+	board.show_board(false)
+	check(not board.visible, "the scoreboard closes again")
+
+	# Nameplates, high above the map so only the test's own wall can block the view.
+	var d := raid.add_player([], {}, "Delta")
+	var camera := Camera3D.new()
+	raid.add_child(camera)
+	camera.make_current()
+	var plates := NameplatesScript.new()
+	plates.setup(raid, a)
+	raid.add_child(plates)
+	var sky := a.global_position + Vector3(0, 120, 0)
+	var place := func(d_offset: Vector3, facing: Vector3) -> void:
+		a.global_position = sky
+		d.global_position = sky + d_offset
+		b.global_position = sky + Vector3(0, 0, -5)
+		camera.global_position = sky + Vector3(0, 1.6, 0)
+		camera.look_at(camera.global_position + facing)
+		plates.update_plates()
+	place.call(Vector3(0, -0.5, -10), Vector3.FORWARD)
+	var shown: Dictionary = plates.plates()
+	check(shown.has(d.get_instance_id()) and not shown.has(a.get_instance_id()),
+			"another player in view gets a nameplate, you do not")
+	check(not shown.has(b.get_instance_id()), "a player who is down has no nameplate")
+	if shown.has(d.get_instance_id()):
+		var plate: Control = shown[d.get_instance_id()]
+		var label: Label = plate.get_child(0)
+		var middle := camera.get_viewport().get_visible_rect().size * 0.5
+		check(label.text == "Delta" and plate.position.x < middle.x and plate.position.x + plate.size.x > middle.x,
+				"the nameplate carries the name and sits over the player")
+	place.call(Vector3(0, -0.5, -10), Vector3.BACK)
+	check(plates.plates().is_empty(), "no nameplate for a player behind you")
+	place.call(Vector3(0, -0.5, -(plates.max_distance + 5.0)), Vector3.FORWARD)
+	check(plates.plates().is_empty(), "no nameplate past the nameplate range")
+	var wall := StaticBody3D.new()
+	var shape := CollisionShape3D.new()
+	shape.shape = BoxShape3D.new()
+	shape.shape.size = Vector3(6, 6, 0.5)
+	wall.add_child(shape)
+	raid.add_child(wall)
+	wall.global_position = sky + Vector3(0, 1, -5)
+	await frames(1)
+	place.call(Vector3(0, -0.5, -10), Vector3.FORWARD)
+	check(plates.plates().is_empty(), "no nameplate through a wall")
+	wall.queue_free()
+	await frames(1)
+	d.kill("bullet")
+	place.call(Vector3(0, -0.5, -10), Vector3.FORWARD)
+	check(plates.plates().is_empty(), "the nameplate goes when the player goes down")
+	await _end_raid(raid)
+
+
 func _test_online() -> void:
 	print("Online: commands and raids with several players")
 	var cmd := ActorCommand.new()
@@ -1559,6 +1659,12 @@ func _test_online() -> void:
 			check(moved > 3.0, "one player's movement reaches the other through the server (%.1f m)" % moved)
 			var apart := seen.global_position.distance_to(alpha.raid.player.global_position)
 			check(apart < 2.0, "both clients agree where that player is (%.2f m apart)" % apart)
+		var roster := RaidRoster.new(bravo.raid, bravo.raid.player)
+		roster.refresh()
+		var names := roster.entries.map(func(e: Dictionary) -> String: return e.name)
+		check(roster.entries.size() == 2 and "Alpha" in names and "Bravo" in names
+				and roster.entries.all(func(e: Dictionary) -> bool: return e.status == RaidRoster.IN_RAID),
+				"a client's scoreboard lists both players and none of the bots")
 	await _leave(bravo)
 	await _leave(alpha)
 	OS.kill(pid)
