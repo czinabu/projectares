@@ -92,6 +92,28 @@ A server can also run on its own, with no window:
 godot --headless --path . -- --server --world ashfront --port 24565
 ```
 
+That runs the plaza on port 24565 and Ashfront on 24566. Leave out `--world`
+to run every raid world, or add `--no-plaza` for one world alone on the port.
+
+### The Concourse
+
+Joining a server puts you in its plaza, the Concourse: a walled safe zone
+shared by everyone on that server. Weapons are locked and nobody can be hurt.
+You appear wearing your equipped loadout, and it never leaves your stash, so
+nothing is at risk there. Look at another player to see what they are wearing.
+A bike in your loadout is parked beside you to ride around.
+
+Walk into a glowing pad and press **E** to use it:
+
+- **World gates** (north): each leads to that world's lobby, where you set
+  your loadout and deploy. After a run, or when you leave the lobby, you are
+  back in the Concourse.
+- **Quarters** (west): the door to your home base. Its door leads back here.
+- **Storefronts** (the corners): one for every shop. Step up to the counter
+  to buy and sell without leaving the plaza.
+- **Arena** and **Clan hall**: built, and closed until those features arrive.
+- **Exit** (south): leaves the server.
+
 Add `--accounts <folder>` to choose where the server saves player stashes.
 
 To feel what a bad connection is like without leaving your desk, start the
@@ -213,6 +235,7 @@ core/            Shared by every world. Never names a specific world.
   progression/   Mastery: tracks and variants, XP tracking in a raid, hub panel
   net/           Online play: the server and client ends of a raid
 worlds/
+  plaza/         The Concourse: the social safe zone (a world with safe_zone set)
   ashfront/      The first world: rules, loot tables, and its map
   frostline/     A second, smaller world that proves the plug-in contract
 assets/          Models, textures, sky, font and shaders, with LICENSES.md

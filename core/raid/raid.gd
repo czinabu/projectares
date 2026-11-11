@@ -84,6 +84,21 @@ var _parking: Array[Dictionary] = []
 var _idle := {}
 
 
+## The raid a node belongs to, or null. Rules and scans use this so two raids
+## in one process (a plaza and a warzone on one server) never mix.
+static func of(node: Node) -> Raid:
+	while node != null:
+		if node is Raid:
+			return node
+		node = node.get_parent()
+	return null
+
+
+## True when both nodes are in the same raid (or neither is in one).
+static func together(a: Node, b: Node) -> bool:
+	return of(a) == of(b)
+
+
 ## Call after the Raid is in the scene tree. A fixed seed makes it repeatable.
 ## `p_kit` is the gear the player deploys with; empty means the free scrap kit.
 ## `p_mastery` maps mastery track -> picked variant id (see MasteryBook.active_picks).
@@ -155,9 +170,27 @@ func _physics_process(delta: float) -> void:
 	_tick_sign_outs(delta)
 	if mode == Mode.CLIENT:
 		return
+	if world.safe_zone:
+		_keep_everyone_safe()
+		return
 	_tick_caches(delta)
 	_tick_bots(delta)
 	_tick_vehicles(delta)
+
+
+## Safe zones have no deaths. Anyone who gets hurt anyway (a fall off the
+## map) is put back at a spawn point, whole.
+func _keep_everyone_safe() -> void:
+	for state in players:
+		var actor := state.actor
+		if not is_instance_valid(actor) or actor.is_dead:
+			continue
+		if actor.global_position.y < -15.0:
+			var spawns := _map_nodes("spawn_player")
+			actor.velocity = Vector3.ZERO
+			actor.global_position = spawns[rng.randi() % spawns.size()].global_position if not spawns.is_empty() \
+					else Vector3(0, 2, 0)
+		actor.health.health = actor.health.max_health
 
 
 ## An emptied cache fills up again after a while.
@@ -270,6 +303,7 @@ func add_player(p_kit: Array = [], p_mastery: Dictionary = {}, p_name := "Raider
 		at += Vector3(rng.randf_range(-2.5, 2.5), 0, rng.randf_range(-2.5, 2.5))
 	actor.global_position = at
 	Loadout.equip(actor, state.kit)
+	actor.weapons_locked = world.safe_zone
 	state.actor = actor
 	state.owner = p_owner if p_owner != "" else "#%d" % actor.get_instance_id()
 	if mode != Mode.CLIENT:
@@ -296,7 +330,7 @@ func add_player(p_kit: Array = [], p_mastery: Dictionary = {}, p_name := "Raider
 		if ItemDB.has_tag(id, "vehicle"):
 			state.deployed_vehicles.append(id)
 			var side := Basis(Vector3.UP, actor.cmd.yaw) * Vector3(2.5, 0.3, -1.0)
-			spawn_vehicle(id, actor.global_position + side, actor.cmd.yaw)
+			state.parked.append(spawn_vehicle(id, actor.global_position + side, actor.cmd.yaw))
 	return actor
 
 
@@ -325,6 +359,17 @@ func _safest_spawn(spawns: Array[Node3D]) -> int:
 func remove_player(actor: Actor) -> void:
 	var state := state_for(actor)
 	if state == null:
+		return
+	if world.safe_zone:
+		# Nothing was at stake: they and the vehicle they showed off just go.
+		for vehicle in state.parked:
+			if is_instance_valid(vehicle):
+				if vehicle.get("rider") != null:
+					vehicle.call("dismount")
+				vehicles.erase(vehicle)
+				vehicle_removed.emit(vehicle)
+				vehicle.queue_free()
+		_remove_actor(actor)
 		return
 	if not state.finished and not actor.is_dead:
 		begin_sign_out(actor, true)
@@ -771,6 +816,8 @@ class PlayerState:
 	var kills := 0
 	## Vehicle items the player deployed with. Lost unless they leave riding one.
 	var deployed_vehicles: Array[String] = []
+	## The vehicles parked beside them when they arrived.
+	var parked: Array[Node3D] = []
 	## The vehicle they were riding when they left.
 	var rode_home := ""
 	## What they banked at depots this life. Already in the stash.

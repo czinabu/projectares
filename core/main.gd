@@ -6,9 +6,11 @@ extends Node
 ## loadout can still supply. You return to the hub by signing out (L).
 ##
 ## Run with `-- --server [--world <id>] [--port <n>] [--bots <n>] [--squad-spawn]
-## [--accounts <folder>] [--no-rewind]` for a dedicated server: no hub, no window needed,
-## just a raid that players join. Player stashes are saved in the accounts
-## folder (`user://accounts` unless given).
+## [--accounts <folder>] [--no-rewind] [--no-plaza]` for a dedicated server: no hub, no
+## window needed. It runs the plaza (the social safe zone) on the port, and
+## each raid world on the ports after it; `--world` runs just that one world,
+## and `--no-plaza` runs it alone on the port. Player stashes are saved in the
+## accounts folder (`user://accounts` unless given) and shared by all of them.
 
 const JOIN_TIMEOUT := 12.0
 ## The solo player's renown key in a raid, so it carries across their lives.
@@ -18,6 +20,10 @@ const ScoreboardScript := preload("res://core/ui/scoreboard.gd")
 const PhoneScript := preload("res://core/phone/phone.gd")
 const GameSettings := preload("res://core/settings/game_settings.gd")
 const BaseHudScript := preload("res://core/ui/base_hud.gd")
+const PlazaViewScript := preload("res://core/social/plaza_view.gd")
+## The plaza holds more people than a raid.
+const PLAZA_PLAYERS := 32
+const SHOP_PANEL := "res://core/economy/shop_panel.gd"
 const Economy := preload("res://core/economy/economy.gd")
 
 var hub: Hub
@@ -32,6 +38,17 @@ var phone: CanvasLayer
 ## The home base while the player is walking around it, else null.
 var base: HomeBase
 var base_hud: CanvasLayer
+var plaza_view: CanvasLayer
+## The shop screen while trading at a plaza storefront, else null.
+var shop_view: ShopView
+## Server: every session it runs (the plaza first, then the raid worlds).
+var sessions: Array[NetSession] = []
+## Client: where this server's plaza is, once you have been in it. Leaving a
+## world's lobby or finishing a run leads back there. Port -1 means no plaza.
+var _plaza_address := ""
+var _plaza_port := -1
+## Client: on the way from the plaza to the home base, or in it.
+var _base_from_plaza := false
 var _server_pid := -1
 var _join_attempts := 0
 var _join_address := ""
@@ -128,6 +145,10 @@ func leave_base() -> void:
 	controller = null
 	hub.refresh_gear()
 	hub.visible = true
+	if _base_from_plaza:
+		# They came in through the plaza's door, so that is where they go back.
+		_base_from_plaza = false
+		leave_server()
 
 
 ## Gear used in the base changes the loadout the same way the hub's pickers
@@ -340,25 +361,68 @@ func _on_base_visit_requested(owner_name: String, owner_stash: Array, owner_load
 # ---------------------------------------------------------------- online ----
 
 func _run_dedicated_server(args: PackedStringArray) -> void:
-	var world_id := _arg(args, "--world", "")
-	if Worlds.get_world(world_id) == null:
-		world_id = Worlds.all()[0].id
 	var port := int(_arg(args, "--port", str(NetSession.DEFAULT_PORT)))
-	net = NetSession.new()
-	net.name = "Net"
-	net.bot_count = int(_arg(args, "--bots", "-1"))
-	net.squad_spawn = "--squad-spawn" in args
-	net.lag_compensation = "--no-rewind" not in args
-	var accounts := _arg(args, "--accounts", "")
-	if accounts != "":
-		net.stash.save_dir = accounts
-	add_child(net)
-	var err := net.host(world_id, port)
+	var err := start_server(_arg(args, "--world", ""), port, "--no-plaza" not in args,
+			int(_arg(args, "--bots", "-1")), "--squad-spawn" in args, _arg(args, "--accounts", ""),
+			"--no-rewind" not in args)
 	if err != OK:
-		push_error("Server: could not listen on port %d (%s)" % [port, error_string(err)])
+		push_error("Server: could not listen from port %d (%s)" % [port, error_string(err)])
 		get_tree().quit(1)
-		return
-	print("Server: running %s on port %d" % [world_id, port])
+
+
+## Starts every session of a server. With a plaza it listens on `port`, and
+## the raid worlds follow on the next ports; without one, a single world runs
+## on `port`. `world_id` "" runs every raid world (the first one only when
+## there is no plaza to reach the others from). All sessions share one stash
+## service, so an account is the same wherever it shows up.
+func start_server(world_id: String, port: int, with_plaza := true, bots := -1, squad := false,
+		accounts := "", rewind := true) -> Error:
+	var plaza := Worlds.social_world() if with_plaza else null
+	var worlds: Array[WorldDef] = []
+	if Worlds.get_world(world_id) != null and not Worlds.get_world(world_id).safe_zone:
+		worlds.append(Worlds.get_world(world_id))
+	elif plaza != null:
+		worlds = Worlds.raid_worlds()
+	else:
+		worlds.append(Worlds.raid_worlds()[0])
+	var routes := {}
+	var next_port := port + 1 if plaza != null else port
+	for world in worlds:
+		var session := NetSession.new()
+		session.name = "Net" if sessions.is_empty() else "Net_%s" % world.id
+		session.bot_count = bots
+		session.squad_spawn = squad
+		session.lag_compensation = rewind
+		session.isolated = plaza != null or worlds.size() > 1
+		if sessions.is_empty():
+			if accounts != "":
+				session.stash.save_dir = accounts
+		else:
+			session.stash = sessions[0].stash
+			session.social = sessions[0].social
+		add_child(session)
+		var err := session.host(world.id, next_port)
+		if err != OK:
+			return err
+		print("Server: running %s on port %d" % [world.id, next_port])
+		routes[world.id] = next_port
+		sessions.append(session)
+		next_port += 1
+	net = sessions[0]
+	if plaza != null:
+		var session := NetSession.new()
+		session.name = "Net_%s" % plaza.id
+		session.isolated = true
+		session.stash = net.stash
+		session.social = net.social
+		session.routes = routes
+		add_child(session)
+		var err := session.host(plaza.id, port, PLAZA_PLAYERS)
+		if err != OK:
+			return err
+		print("Server: running %s on port %d" % [plaza.id, port])
+		sessions.push_front(session)
+	return OK
 
 
 ## Starts a server on this machine as a second process, then joins it.
@@ -441,11 +505,25 @@ func _try_join() -> void:
 ## Signed in: the hub becomes that server's lobby.
 func _on_online_signed_in(account: Dictionary) -> void:
 	_join_attempts = 0
+	var world := Worlds.get_world(net.world_id)
+	if world.safe_zone:
+		# The server's front door is its plaza: walk straight in.
+		_plaza_address = _join_address
+		_plaza_port = _join_port
+		hub.set_online_status("Entering %s..." % world.display_name)
+		net.deploy()
+		return
 	hub.set_online_status("")
-	hub.enter_lobby(account, Worlds.get_world(net.world_id))
+	hub.enter_lobby(account, world)
+	hub.set_leave_text("Back to %s" % Worlds.social_world().display_name if _plaza_port >= 0 else "Leave the server")
+	if _base_from_plaza:
+		enter_base()
 
 
 func _on_online_account_changed(account: Dictionary) -> void:
+	if shop_view != null and is_instance_valid(shop_view):
+		shop_view.panel.set("account", account)
+		shop_view.panel.call("refresh")
 	if raid == null:
 		hub.update_account(account)
 		_refresh_base()
@@ -459,6 +537,96 @@ func _on_online_joined(p_raid: Raid) -> void:
 	hub.visible = false
 	hub.set_online_status("")
 	_attach_player_view()
+	if raid.world.safe_zone:
+		plaza_view = PlazaViewScript.new()
+		plaza_view.name = "PlazaView"
+		plaza_view.setup(raid, net.routes)
+		raid.add_child(plaza_view)
+		plaza_view.portal_used.connect(use_portal)
+
+
+## A player in the plaza stepped into a portal and asked to go.
+func use_portal(destination: String) -> void:
+	if net == null or raid == null or not raid.world.safe_zone:
+		return
+	if destination.begins_with("world:"):
+		var world := Worlds.get_world(destination.trim_prefix("world:"))
+		var port: int = net.routes.get(destination.trim_prefix("world:"), -1)
+		if world == null or port < 0:
+			plaza_view.show_notice("That world is not running on this server.")
+			return
+		_leave_raid()
+		hub.visible = true
+		hub.set_online_status("Travelling to %s..." % world.display_name)
+		_begin_join(_plaza_address, port, 3)
+	elif destination.begins_with("shop:"):
+		open_shop(destination.trim_prefix("shop:"))
+	elif destination == "home":
+		open_home_base()
+		return
+	elif destination == "leave":
+		_leave_raid()
+		hub.visible = true
+		leave_server()
+	else:
+		plaza_view.show_notice("Opening soon.")
+
+
+## A storefront in the plaza: the shop screen for that one shop, trading with
+## the stash this server keeps for you. The shop screen belongs to the
+## economy and is loaded by path, so a game without one just says so.
+func open_shop(shop_id: String) -> void:
+	if net == null or raid == null or shop_view != null:
+		return
+	if not ResourceLoader.exists(SHOP_PANEL):
+		plaza_view.show_notice("Opening soon.")
+		return
+	var panel: Control = (load(SHOP_PANEL) as Script).new()
+	panel.set("shop_filter", shop_id)
+	panel.set("account", net.account)
+	panel.connect("buy_requested", func(shop: String, item_id: String) -> void:
+		if net:
+			net.buy(shop, item_id))
+	panel.connect("sell_requested", func(item_id: String, count: int) -> void:
+		if net:
+			net.sell(item_id, count))
+	shop_view = ShopView.new()
+	shop_view.name = "ShopView"
+	shop_view.panel = panel
+	shop_view.closed.connect(close_shop)
+	# Nothing changes here until the server answers; a refusal says why.
+	net.lobby_error.connect(func(reason: String) -> void:
+		if shop_view != null and is_instance_valid(shop_view) and shop_view.panel.has_method("show_message"):
+			shop_view.panel.call("show_message", reason))
+	raid.add_child(shop_view)
+	if controller != null and is_instance_valid(controller):
+		controller.input_blocked = true
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+
+
+func close_shop() -> void:
+	if shop_view == null:
+		return
+	if is_instance_valid(shop_view):
+		shop_view.queue_free()
+	shop_view = null
+	if controller != null and is_instance_valid(controller) and raid != null:
+		controller.input_blocked = false
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+
+## The plaza's door to your home base. The base shows the stash this server
+## keeps for you, which a world's lobby has at hand, so the trip goes by way
+## of the first world's lobby; the base's own door leads back to the plaza.
+func open_home_base() -> void:
+	if net == null or raid == null or net.routes.is_empty():
+		return
+	var port: int = net.routes.values()[0]
+	_leave_raid()
+	hub.visible = true
+	hub.set_online_status("Going home...")
+	_base_from_plaza = true
+	_begin_join(_plaza_address, port, 3)
 
 
 ## Could not connect or sign in, or the connection dropped in the lobby.
@@ -475,6 +643,8 @@ func _on_online_failed(reason: String) -> void:
 			_try_join()
 		return
 	_stop_local_server()
+	_plaza_port = -1
+	_base_from_plaza = false
 	hub.leave_lobby()
 	hub.set_online_status(reason)
 	# A base open on the server's stash falls back to the local one.
@@ -486,11 +656,14 @@ func _on_online_failed(reason: String) -> void:
 ## The connection dropped while in the world. Your body stays there for a
 ## short while. If nobody kills it, what you carried goes back to your stash.
 func _on_online_disconnected() -> void:
+	var was_safe := raid != null and raid.world.safe_zone
 	_leave_raid()
 	_stop_local_server()
+	_plaza_port = -1
 	hub.leave_lobby()
 	hub.refresh({})
-	hub.set_online_status("Lost the connection to the server. Your body stays in the world for a moment. "
+	hub.set_online_status("Lost the connection to the server." if was_safe
+			else "Lost the connection to the server. Your body stays in the world for a moment. "
 			+ "If it survives, what you carried goes back to your stash there.")
 	hub.visible = true
 
@@ -510,10 +683,20 @@ func _return_to_lobby(result: Dictionary) -> void:
 	if net == null:
 		return
 	var account := net.account
+	var was_safe := raid != null and raid.world.safe_zone
 	_leave_raid()
 	hub.update_account(account)
 	hub.refresh(result)
 	hub.visible = true
+	if was_safe:
+		# Signing out of the plaza itself leaves the server.
+		leave_server()
+		return
+	# Back to the plaza if the server has one, else to the lobby.
+	if _plaza_port >= 0:
+		hub.set_online_status("Returning to %s..." % Worlds.social_world().display_name)
+		_begin_join(_plaza_address, _plaza_port, 3)
+		return
 	hub.set_online_status("Returning to the lobby...")
 	_begin_join(_join_address, _join_port, 3)
 
@@ -526,8 +709,14 @@ func leave_server() -> void:
 	if net:
 		net.queue_free()
 		net = null
-	_stop_local_server()
 	hub.leave_lobby()
+	if _plaza_port >= 0 and _join_port != _plaza_port:
+		# Leaving a world's lobby leads back to the plaza, not off the server.
+		hub.set_online_status("Returning to %s..." % Worlds.social_world().display_name)
+		_begin_join(_plaza_address, _plaza_port, 3)
+		return
+	_plaza_port = -1
+	_stop_local_server()
 	hub.set_online_status("")
 
 
@@ -542,3 +731,50 @@ static func _arg(args: PackedStringArray, flag: String, fallback: String) -> Str
 	if index >= 0 and index + 1 < args.size():
 		return args[index + 1]
 	return fallback
+
+
+## The frame round the shop screen at a storefront: a dimmed plaza behind, the
+## panel in the middle, and a way out (the button or Esc).
+class ShopView:
+	extends CanvasLayer
+
+	signal closed
+
+	var panel: Control
+
+	func _ready() -> void:
+		layer = 5
+		var shade := ColorRect.new()
+		shade.color = Color(0, 0, 0, 0.55)
+		shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		add_child(shade)
+		var frame := PanelContainer.new()
+		frame.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
+		frame.custom_minimum_size = Vector2(760, 560)
+		frame.offset_left = -380
+		frame.offset_right = 380
+		frame.offset_top = -280
+		frame.offset_bottom = 280
+		add_child(frame)
+		var margin := MarginContainer.new()
+		for side: String in ["left", "right", "top", "bottom"]:
+			margin.add_theme_constant_override("margin_" + side, 18)
+		frame.add_child(margin)
+		var box := VBoxContainer.new()
+		box.add_theme_constant_override("separation", 10)
+		margin.add_child(box)
+		var scroll := ScrollContainer.new()
+		scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+		box.add_child(scroll)
+		panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		scroll.add_child(panel)
+		var leave := Button.new()
+		leave.text = "Step away  (Esc)"
+		leave.pressed.connect(func() -> void: closed.emit())
+		box.add_child(leave)
+
+	func _unhandled_input(event: InputEvent) -> void:
+		if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
+			get_viewport().set_input_as_handled()
+			closed.emit()

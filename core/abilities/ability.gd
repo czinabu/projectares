@@ -108,7 +108,7 @@ func _pulse() -> void:
 	var seen := Combat.positions_seen_by(actor)
 	for node in actor.get_tree().get_nodes_in_group("actors"):
 		var other := node as Actor
-		if other == null or other == actor or other.is_dead:
+		if other == null or other == actor or other.is_dead or not Raid.together(actor, other):
 			continue
 		var at: Vector3 = seen.get(other, other.global_position)
 		if at.distance_to(actor.global_position) > pulse_radius:

@@ -130,6 +130,19 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   (base, social hub) reports it with `NetSession._set_presence(peer, where)` and
   a name in `SocialService.PLACE_NAMES`. Settings live in
   `core/settings/game_settings.gd` (its own save file); a server never reads them.
+- Safe zones: a world with `WorldDef.safe_zone` (the plaza, `worlds/plaza`)
+  is a social space run by the same `Raid` and `NetSession`. `Combat.deal`
+  refuses every hit there, `Actor.weapons_locked` stops attacks, abilities
+  and healing, and `NetSession` shows the loadout with `StashService.showcase`
+  instead of `deploy`, so nothing leaves the stash and nothing is settled.
+  Doorways are "portal" markers (see `WorldDef`); `core/social/plaza_view.gd`
+  offers them and `main.gd use_portal` decides where each destination leads.
+  Use `Worlds.raid_worlds()` for anything you deploy into.
+- A server runs several `NetSession`s in one process (plaza on the port, raid
+  worlds after it, `main.gd start_server`), each raid in its own 3D world
+  (`NetSession.isolated`) and all sharing one `StashService`. Never use
+  `Worlds.current` for rules: ask `Worlds.of(node)` or `Raid.of(node)`, and
+  filter any scan of the "actors" group with `Raid.together`.
 - `Raid` never writes to `Profile` on a server. Results travel in the
   `player_finished` dictionary. Online the server settles them into the
   account; `Raid.apply_result` is only for the local solo profile.
