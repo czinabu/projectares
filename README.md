@@ -182,6 +182,11 @@ you have.
   drop in next. Bots hold them to begin with and push to take them back.
   Frostline has three, shared by all players. Ashfront gets its own with the
   new battlefield map.
+- World events. Every few minutes, and more often as the war heats up, either
+  a supply pod lands with a better haul than any cache, or a warlord marches
+  in with an escort. He has three times the health, carries good loot, and
+  pays 300 renown. Everyone is told where on the war feed. Caches that refill
+  during a war also hold rarer loot.
 - Hitscan rifle with reloads and aim down sights.
 - Rifle recoil that kicks your view and widens the spread under sustained fire.
 - Blade with a three-hit combo, a heavy lunge, and a dive slam from the air.
