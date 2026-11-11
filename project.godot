@@ -16,6 +16,7 @@ config/features=PackedStringArray("4.7", "Forward Plus")
 Boot="*res://core/boot.gd"
 InputSetup="*res://core/input_setup.gd"
 ItemDB="*res://core/items/item_db.gd"
+Look="*res://core/visual/look.gd"
 Worlds="*res://core/world/world_registry.gd"
 Profile="*res://core/profile/profile.gd"
 Sfx="*res://core/fx/sfx.gd"

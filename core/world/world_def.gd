@@ -16,6 +16,9 @@ extends RefCounted
 ##     "loot_source", default "vehicle"). The Raid parks the first
 ##     vehicle-tagged item from `roll_loot` there, facing the marker's yaw.
 ##   - optionally a `bake_navigation()` method for bot pathfinding
+##
+## Looks: a world may give a bot a model with `bot.set_meta("look", "<skin>")`
+## in `equip_bot`. The skins are listed in `core/visual/look.gd`.
 
 var id := ""
 var display_name := "Unnamed world"

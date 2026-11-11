@@ -28,6 +28,12 @@ func _ready() -> void:
 
 	await _settle(90)
 	await _shot(out_dir.path_join("first_person.png"))
+	# Mid-burst, to catch the muzzle flash and impact sparks.
+	Input.action_press("fire")
+	await _settle(9)
+	await _shot(out_dir.path_join("first_person_firing.png"))
+	Input.action_release("fire")
+	await _settle(20)
 	Input.action_press("weapon_2")
 	await _settle(30)
 	Input.action_release("weapon_2")
@@ -76,7 +82,47 @@ func _ready() -> void:
 	controller.toggle_view()
 	await _settle(60)
 	await _shot(out_dir.path_join("third_person.png"))
+	raid.queue_free()
+	await _settle(2)
+	await _world_shots(out_dir)
 	get_tree().quit()
+
+
+## Every world from a few fixed angles, with some of its bots lined up in
+## front of the player so their models can be checked.
+func _world_shots(out_dir: String) -> void:
+	for world in Worlds.all():
+		var raid := Raid.new()
+		add_child(raid)
+		raid.start(world, 42)
+		var camera := Camera3D.new()
+		camera.fov = 75.0
+		raid.add_child(camera)
+		camera.make_current()
+		var p := raid.player.global_position
+		var toward := -Vector3(p.x, 0, p.z).normalized()
+		var side := toward.cross(Vector3.UP)
+		for i in mini(4, raid.bots.size()):
+			var bot := raid.bots[i]
+			for child in bot.get_children():
+				if child is BotBrain:
+					child.set_physics_process(false)
+			bot.global_position = p + toward * 5.0 + side * (i * 2.0 - 3.0) + Vector3(0, 0.2, 0)
+			bot.cmd.move = Vector2.ZERO
+			bot.cmd.primary = false
+			bot.cmd.yaw = atan2(toward.x, toward.z)
+		await _settle(60)
+		camera.look_at_from_position(p - toward * 3.0 + Vector3(0, 2.2, 0), p + toward * 6.0 + Vector3(0, 1.0, 0))
+		await _settle(4)
+		await _shot(out_dir.path_join("%s_characters.png" % world.id))
+		camera.look_at_from_position(p + Vector3(0, 1.7, 0) - toward, Vector3(0, 7, 0))
+		await _settle(4)
+		await _shot(out_dir.path_join("%s_street.png" % world.id))
+		camera.look_at_from_position(p * 0.45 + Vector3(0, 30, 0), Vector3(0, 2, 0))
+		await _settle(4)
+		await _shot(out_dir.path_join("%s_overview.png" % world.id))
+		raid.queue_free()
+		await _settle(2)
 
 
 func _settle(count: int) -> void:

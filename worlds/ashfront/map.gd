@@ -16,6 +16,17 @@ const RAMP_ANGLE_DEG := 15.0
 
 var nav_region: NavigationRegion3D
 var _rng := RandomNumberGenerator.new()
+## Dressing has its own generator so art never shifts the gameplay layout.
+var _art_rng := RandomNumberGenerator.new()
+var _buildings: Array[Dictionary] = []
+var _cover_spots: Array[Vector3] = []
+var _open_lots: Array[Vector3] = []
+
+@onready var GROUND := Look.surface("asphalt", {"tint": Color(0.62, 0.56, 0.52), "blend": "ground",
+		"blend_amount": 0.5, "wetness": 0.6, "grime": 0.0, "saturation": 0.35})
+@onready var WALL := Look.surface("concrete", {"tint": Color(0.45, 0.4, 0.38), "grime": 0.8, "scale": 0.12})
+@onready var COVER_METAL := Look.surface("metal", {"tint": Color(0.7, 0.42, 0.28), "scale": 0.45})
+@onready var COVER_CONCRETE := Look.surface("concrete", {"tint": Color(0.8, 0.74, 0.68), "grime": 0.9, "scale": 0.5})
 
 
 func _ready() -> void:
@@ -26,6 +37,8 @@ func _ready() -> void:
 	add_child(nav_region)
 	_build_ground()
 	_build_blocks()
+	_art_rng.seed = LAYOUT_SEED
+	_dress()
 
 
 func bake_navigation() -> void:
@@ -40,33 +53,32 @@ func bake_navigation() -> void:
 
 
 func _build_environment() -> void:
-	var env := Environment.new()
-	env.background_mode = Environment.BG_COLOR
-	env.background_color = Color(0.32, 0.1, 0.07)
-	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.ambient_light_color = Color(0.75, 0.55, 0.5)
-	env.ambient_light_energy = 0.6
-	env.fog_enabled = true
-	env.fog_light_color = Color(0.45, 0.16, 0.1)
-	env.fog_density = 0.008
-	var world_env := WorldEnvironment.new()
-	world_env.environment = env
-	add_child(world_env)
-
-	var sun := DirectionalLight3D.new()
-	sun.rotation_degrees = Vector3(-48, 35, 0)
-	sun.light_color = Color(1.0, 0.8, 0.65)
-	sun.light_energy = 1.2
-	sun.shadow_enabled = true
-	add_child(sun)
+	# A burnt city under smoke: low orange sun, heavy haze, embers in the air.
+	Look.atmosphere(self, {
+		"sky_tint": Color(0.82, 0.6, 0.48),
+		"sky_saturation": 0.3,
+		"sky_energy": 0.75,
+		"sky_rotation": 0.2,
+		"fog_color": Color(0.33, 0.24, 0.19),
+		"fog_density": 0.011,
+		"sun_scatter": 0.35,
+		"sun_color": Color(1.0, 0.74, 0.52),
+		"sun_energy": 1.9,
+		"sun_angles": Vector3(-36, 38, 0),
+		"ambient_color": Color(0.42, 0.43, 0.5),
+		"ambient_energy": 1.3,
+		"saturation": 0.85,
+		"contrast": 1.12,
+	})
+	Look.weather(self, "embers", CELL * GRID * 0.5)
 
 
 func _build_ground() -> void:
 	var half := CELL * GRID * 0.5
 	var span := half * 2.0 + 8.0
-	_box(Vector3(span, 1.0, span), Vector3(0, -0.5, 0), Color(0.23, 0.2, 0.19))
+	_box(Vector3(span, 1.0, span), Vector3(0, -0.5, 0), GROUND)
 	# Perimeter walls. Flying over them drops you into the void.
-	var wall_color := Color(0.14, 0.12, 0.12)
+	var wall_color := WALL
 	var edge := half + 3.5
 	_box(Vector3(span, 14.0, 1.0), Vector3(0, 7, -edge), wall_color)
 	_box(Vector3(span, 14.0, 1.0), Vector3(0, 7, edge), wall_color)
@@ -97,6 +109,7 @@ func _build_blocks() -> void:
 		var slot := index % 6
 		if index < 4:
 			_add_marker("spawn_player", center)
+			_open_lots.append(center)
 		elif slot <= 2:
 			_add_marker("spawn_bot", center)
 		elif slot <= 4:
@@ -115,7 +128,12 @@ func _add_building(center: Vector3) -> void:
 	var d := _rng.randf_range(5.0, 9.0)
 	var h: float = HEIGHTS[_rng.randi() % HEIGHTS.size()]
 	var shade := _rng.randf_range(0.26, 0.4)
-	_box(Vector3(w, h, d), center + Vector3(0, h * 0.5, 0), Color(shade, shade * 0.92, shade * 0.88))
+	var size := Vector3(w, h, d)
+	var tint := Color(shade, shade * 0.92, shade * 0.88) * 2.4
+	var kind := "brick" if h <= 6.0 and shade > 0.33 else "concrete"
+	var body := _box(size, center + Vector3(0, h * 0.5, 0), Look.surface(kind, {"tint": tint, "grime": 0.7}))
+	Look.make_building(body.get_child(1), size, shade * 100.0)
+	_buildings.append({"center": center, "size": size})
 	if h >= 6.0 and _rng.randf() < 0.65:
 		var marker := _add_marker("spawn_cache", center + Vector3(0, h, 0))
 		marker.set_meta("loot_source", "rooftop")
@@ -125,7 +143,8 @@ func _add_cover(center: Vector3) -> void:
 	for i in _rng.randi_range(1, 3):
 		var size := Vector3(_rng.randf_range(1.2, 3.0), _rng.randf_range(1.0, 1.6), _rng.randf_range(1.2, 3.0))
 		var offset := Vector3(_rng.randf_range(-4.5, 4.5), size.y * 0.5, _rng.randf_range(-4.5, 4.5))
-		_box(size, center + offset, Color(0.42, 0.3, 0.2))
+		_box(size, center + offset, COVER_METAL if i % 2 == 0 else COVER_CONCRETE)
+		_cover_spots.append(center + Vector3(offset.x, 0, offset.z) + Vector3(size.x * 0.5 + 0.5, 0, 0))
 
 
 ## A jump ramp facing `yaw`, with a bike marker parked off to one side.
@@ -146,9 +165,7 @@ func _add_ramp_lot(center: Vector3, yaw: float) -> void:
 	body.add_child(col)
 	var mesh := BoxMesh.new()
 	mesh.size = size
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = Color(0.55, 0.4, 0.18)
-	mesh.material = mat
+	mesh.material = Look.surface("metal", {"tint": Color(0.75, 0.55, 0.3), "scale": 0.5})
 	var mesh_node := MeshInstance3D.new()
 	mesh_node.mesh = mesh
 	body.add_child(mesh_node)
@@ -173,7 +190,7 @@ func _add_marker(group: String, at: Vector3) -> Marker3D:
 	return marker
 
 
-func _box(size: Vector3, at: Vector3, color: Color) -> StaticBody3D:
+func _box(size: Vector3, at: Vector3, material: Material) -> StaticBody3D:
 	var body := StaticBody3D.new()
 	body.collision_layer = Actor.LAYER_WORLD
 	body.collision_mask = 0
@@ -185,14 +202,119 @@ func _box(size: Vector3, at: Vector3, color: Color) -> StaticBody3D:
 	body.add_child(col)
 	var mesh := BoxMesh.new()
 	mesh.size = size
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = color
-	mesh.material = mat
+	mesh.material = material
 	var mesh_node := MeshInstance3D.new()
 	mesh_node.mesh = mesh
 	body.add_child(mesh_node)
 	nav_region.add_child(body)
 	return body
+
+
+
+## Everything below is decoration: no collision, nothing the game depends on.
+func _dress() -> void:
+	if not Look.enabled:
+		return
+	var art := Node3D.new()
+	art.name = "Dressing"
+	add_child(art)
+	_dress_rooftops(art)
+	_dress_streets(art)
+	_dress_skyline(art)
+
+
+func _dress_rooftops(art: Node3D) -> void:
+	for b in _buildings:
+		var size: Vector3 = b["size"]
+		var top: Vector3 = b["center"] + Vector3(0, size.y, 0)
+		for i in _art_rng.randi_range(1, 3):
+			var file: String = ["AC.glb", "AC_Side.glb", "AC_Stacked.glb", "Antenna_1.glb", "Antenna_2.glb", "Tank.glb"][_art_rng.randi() % 6]
+			var p := Look.prop(file, 3.2 if file == "Antenna_1.glb" else 1.5)
+			p.position = top + Vector3(_art_rng.randf_range(-0.35, 0.35) * size.x, 0, _art_rng.randf_range(-0.35, 0.35) * size.z)
+			p.rotation.y = _art_rng.randi() % 4 * PI / 2.0
+			art.add_child(p)
+		# A parapet so roofs do not end in a knife edge.
+		var rim := MeshInstance3D.new()
+		var mesh := BoxMesh.new()
+		mesh.size = Vector3(size.x + 0.3, 0.35, size.z + 0.3)
+		mesh.material = WALL
+		rim.mesh = mesh
+		rim.position = top + Vector3(0, -0.1, 0)
+		art.add_child(rim)
+
+
+func _dress_streets(art: Node3D) -> void:
+	var litter := ["GasCan.glb", "PropaneTank.glb", "Trashcan.glb", "Backpack.glb", "Computer.glb", "TV_1.glb"]
+	for spot in _cover_spots:
+		if _art_rng.randf() < 0.5:
+			continue
+		var file: String = litter[_art_rng.randi() % litter.size()]
+		var p := Look.prop(file, _art_rng.randf_range(0.5, 0.9), 0.9)
+		p.position = spot
+		p.rotation.y = _art_rng.randf() * TAU
+		art.add_child(p)
+	# Barrel fires in a few lots: warm pools of light in the haze.
+	var fires := 0
+	for spot in _cover_spots:
+		if fires >= 6 or _art_rng.randf() < 0.8:
+			continue
+		fires += 1
+		var fire := Look.prop("Bonfire.glb", 1.1, 0.3)
+		fire.position = spot + Vector3(0, 0, 1.2)
+		art.add_child(fire)
+		var glow := Look.lamp(Color(1.0, 0.5, 0.18), 5.0, 11.0)
+		glow.position.y = 0.7
+		fire.add_child(glow)
+	# Dead street lamps along the grid lines, a few still working.
+	var half := CELL * GRID * 0.5
+	var lit := 0
+	for gx in range(1, GRID, 2):
+		for gz in range(1, GRID, 2):
+			var at := Vector3(-half + CELL * gx, 0, -half + CELL * gz)
+			if _blocked(at):
+				continue
+			var post := Look.prop("Light_Street_1.glb", 6.0, 0.8)
+			post.position = at
+			post.rotation.y = _art_rng.randi() % 4 * PI / 2.0
+			post.rotation.z = _art_rng.randf_range(-0.06, 0.06)
+			art.add_child(post)
+			if lit < 5 and _art_rng.randf() < 0.45:
+				lit += 1
+				var bulb := Look.lamp(Color(1.0, 0.8, 0.55), 4.0, 13.0)
+				bulb.position.y = 5.4
+				post.add_child(bulb)
+
+
+## True if a building footprint covers `at`.
+func _blocked(at: Vector3) -> bool:
+	for b in _buildings:
+		var size: Vector3 = b["size"]
+		var d: Vector3 = at - b["center"]
+		if absf(d.x) < size.x * 0.5 + 0.6 and absf(d.z) < size.z * 0.5 + 0.6:
+			return true
+	return false
+
+
+## Ruined towers beyond the walls, fading into the smoke.
+func _dress_skyline(art: Node3D) -> void:
+	var half := CELL * GRID * 0.5
+	var tower := Look.surface("concrete", {"tint": Color(0.5, 0.44, 0.4), "grime": 0.9, "scale": 0.1, "lit_windows": 0.03})
+	for i in 46:
+		var angle := TAU * i / 46.0 + _art_rng.randf_range(-0.05, 0.05)
+		var dist := half + _art_rng.randf_range(16.0, 70.0)
+		var size := Vector3(_art_rng.randf_range(9, 20), _art_rng.randf_range(18, 70), _art_rng.randf_range(9, 20))
+		var node := MeshInstance3D.new()
+		var mesh := BoxMesh.new()
+		mesh.size = size
+		mesh.material = tower
+		node.mesh = mesh
+		# Square to the grid, pushed out past the wall.
+		var dir := Vector3(cos(angle), 0, sin(angle))
+		var reach := dist / maxf(absf(dir.x), absf(dir.z))
+		node.position = dir * reach + Vector3(0, size.y * 0.5 - 1.0, 0)
+		node.rotation.z = _art_rng.randf_range(-0.03, 0.03)
+		art.add_child(node)
+		Look.make_building(node, size, float(i) * 3.1)
 
 
 func _shuffle(list: Array[Vector3]) -> void:

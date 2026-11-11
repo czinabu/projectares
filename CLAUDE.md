@@ -27,6 +27,17 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   set `DamageInfo.direction`, and `MeleeWeapon.guard_covers` decides whether a
   guard stops a hit. Windup and guard poses must show their side.
 - Sound and visual effects (`Sfx`, `Fx`) must stay no-ops on a headless server.
+- Art lives in the `Look` autoload (`core/visual/`), not in gameplay scripts.
+  Gameplay scripts keep building plain greybox shapes; `Look` dresses them
+  when they enter the tree and does nothing when headless. It never adds
+  collision or changes the simulation, and it never names a world: worlds
+  pick surfaces, an atmosphere and bot skins (`set_meta("look", ...)`) from
+  its generic kits. Decoration in a map uses its own RNG so it cannot shift
+  the gameplay layout.
+- Only CC0 or similarly permissive assets, each recorded in `assets/LICENSES.md`.
+- Load assets that need importing (models, textures, fonts) with `load()` at
+  runtime, not `preload`: a preload fails to parse on a fresh checkout before
+  Godot has imported the file.
 - Items are ids defined in `ItemDB` with tags. Use tags, not id checks, to
   decide what an item does.
 - Gear behavior comes from the item's `stats` in `ItemDB`, applied by
@@ -70,8 +81,8 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   any project class.
 - Typed GDScript, tabs, `class_name` for anything reused. Tuning values are
   plain `var`s at the top of the class.
-- Greybox visuals are built in code for now. Hand-built `.tscn` scenes are
-  fine once real art arrives; keep the map contract.
+- Gameplay shapes are built in code and dressed by `Look`. Hand-built `.tscn`
+  scenes are fine later; keep the map contract.
 - Every gameplay feature gets checks in `tests/test_runner.gd`.
 
 ## Verify before committing
