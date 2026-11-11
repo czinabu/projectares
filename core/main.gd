@@ -62,6 +62,10 @@ func _ready() -> void:
 	hub.online_leave_requested.connect(leave_server)
 	_setup_phone()
 	hub.base_requested.connect(enter_base)
+	hub.look_changed.connect(func(appearance: Dictionary) -> void:
+		Profile.set_appearance(appearance)
+		if net != null:
+			net.send_look(Profile.appearance))
 
 
 func _notification(what: int) -> void:
@@ -95,6 +99,7 @@ func _open_base(stash: Array, loadout: Dictionary, owner_name: String) -> void:
 	add_child(base)
 	base.equip_requested.connect(_on_base_equip)
 	base.leave_requested.connect(leave_base)
+	Look.set_appearance(base.player, Profile.appearance)
 	controller = PlayerController.new()
 	controller.setup(base.player)
 	base.add_child(controller)
@@ -159,6 +164,9 @@ func _attach_player_view() -> void:
 		if old != null and is_instance_valid(old):
 			old.get_parent().remove_child(old)
 			old.queue_free()
+	if net == null:
+		# Solo: every new life wears the chosen look. Online the server sends it.
+		Look.set_appearance(raid.player, Profile.appearance)
 	controller = PlayerController.new()
 	controller.setup(raid.player)
 	controller.sign_out_requested.connect(func() -> void: _on_sign_out_requested.call_deferred())
@@ -380,6 +388,7 @@ func _try_join() -> void:
 	net.name = "Net"
 	net.player_name = Profile.player_name
 	net.secret = Profile.get_online_secret()
+	net.look = Profile.appearance
 	# `-- --lag 120 --loss 10` fakes a bad connection: milliseconds of delay
 	# each way, and the percent of input packets lost.
 	var args := OS.get_cmdline_user_args()
