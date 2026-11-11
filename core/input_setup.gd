@@ -13,6 +13,7 @@ const KEY_ACTIONS := {
 	"interact": KEY_E,
 	"reload": KEY_R,
 	"heal": KEY_H,
+	"heavy": KEY_F,
 	"toggle_view": KEY_V,
 	"weapon_1": KEY_1,
 	"weapon_2": KEY_2,

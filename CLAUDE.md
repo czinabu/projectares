@@ -19,6 +19,9 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
 - The camera never changes view on its own. First/third-person switches only
   when the player presses the toggle (playtest feedback).
 - `Raid` has no camera, HUD, or input code. It must keep working headless.
+- Blocking and parrying happen in `Weapon.modify_incoming`, which `Combat.deal`
+  calls for every hit. Every melee attack keeps a visible windup so it can be parried.
+- Sound and visual effects (`Sfx`, `Fx`) must stay no-ops on a headless server.
 - Items are ids defined in `ItemDB` with tags. Use tags, not id checks, to
   decide what an item does.
 

@@ -9,6 +9,9 @@ var source: Node = null
 ## "bullet", "melee", "slam", "storm", "void", ...
 var kind := "bullet"
 var position := Vector3.ZERO
+## Set by the target's guard: part of the hit was blocked, or all of it parried.
+var blocked := false
+var parried := false
 
 
 static func make(p_amount: float, p_source: Node, p_kind: String, p_position := Vector3.ZERO) -> DamageInfo:

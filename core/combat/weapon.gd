@@ -23,6 +23,12 @@ func on_holster() -> void:
 	pass
 
 
+## Lets the weapon in hand block or parry a hit before it lands.
+## Change `info.amount` and set `info.blocked` or `info.parried`.
+func modify_incoming(_info: DamageInfo) -> void:
+	pass
+
+
 ## Builds the greybox model shown in the actor's hand, or null for none.
 func build_visual() -> Node3D:
 	return null

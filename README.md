@@ -18,8 +18,9 @@ core loop and lays the foundation for online play and more worlds.
 | Move / sprint | WASD / Shift |
 | Jump, hold to fly with the jetpack | Space |
 | Dash | Q |
-| Fire, or light attack | Left mouse |
-| Aim down sights, or heavy attack (dive slam in the air) | Right mouse |
+| Fire, or blade combo | Left mouse |
+| Aim down sights, or block with the blade (tap just before a hit to parry) | Right mouse |
+| Heavy lunge with the blade (dive slam in the air) | F |
 | Switch to rifle / blade | 1 / 2, or mouse wheel |
 | Reload | R |
 | Use a medkit | H |
@@ -35,10 +36,15 @@ caches hold the best loot, and only the jetpack gets you there.
 - First-person and third-person camera that you switch with V. It never changes
   on its own. Weapons are visible in your hand in both views.
 - Hitscan rifle with reloads and aim down sights.
+- Rifle recoil that kicks your view and widens the spread under sustained fire.
 - Blade with a three-hit combo, a heavy lunge, and a dive slam from the air.
+- Block and parry with the blade. A parry staggers the attacker and powers up
+  your next hit. Attacks, blocking and dashing cost stamina.
+- Hit markers, damage flashes, and placeholder sounds generated in code.
 - Health with a degrading armor layer, medkits, and a dash.
 - Jetpack flight limited by heat.
-- Scavenger bots that patrol, chase and shoot, and drop loot bags.
+- Scavenger bots that patrol, chase and shoot, plus melee brutes that rush you.
+  All of them drop loot bags.
 - Loot caches with five rarity tiers, a backpack, and a stash that persists.
 - Two exits, a raid timer, and full loot on death.
 

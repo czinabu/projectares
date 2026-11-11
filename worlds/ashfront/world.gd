@@ -23,6 +23,9 @@ const ROOFTOP_TABLE := [
 	{"id": "lattice_shard", "weight": 5.0},
 ]
 
+## Share of scavengers that are melee brutes.
+const BRUTE_CHANCE := 0.3
+
 const BOT_TABLE := [
 	{"id": "scrap_metal", "weight": 45.0},
 	{"id": "circuit_board", "weight": 25.0},
@@ -87,6 +90,11 @@ func equip_bot(bot: Actor, rng: RandomNumberGenerator) -> void:
 	bot.sprint_speed = 7.0
 	bot.health.max_health = 80.0
 	bot.health.health = 80.0
+	for id in roll_loot("bot", rng):
+		bot.inventory.add_item(id)
+	if rng.randf() < BRUTE_CHANCE:
+		_make_brute(bot)
+		return
 	# Their rifles are worn out: weaker, less accurate, and break when they die.
 	var gun := Gun.new()
 	gun.display_name = "Worn Rifle"
@@ -95,5 +103,25 @@ func equip_bot(bot: Actor, rng: RandomNumberGenerator) -> void:
 	gun.fire_interval = 0.16
 	gun.reserve_ammo = 600
 	bot.equip_weapon(gun)
-	for id in roll_loot("bot", rng):
-		bot.inventory.add_item(id)
+
+
+## A brute charges with a blade. Its swings are slow and telegraphed, which
+## makes it the enemy to practice parrying on.
+func _make_brute(bot: Actor) -> void:
+	bot.display_name = "Scav Brute"
+	bot.body_color = Color(0.5, 0.1, 0.12)
+	if bot.body_mesh:
+		var mat := StandardMaterial3D.new()
+		mat.albedo_color = bot.body_color
+		bot.body_mesh.material_override = mat
+	bot.walk_speed = 5.0
+	bot.sprint_speed = 8.2
+	bot.health.max_health = 120.0
+	bot.health.health = 120.0
+	var blade := MeleeWeapon.new()
+	blade.display_name = "Rusted Cleaver"
+	blade.light_damage = 22.0
+	blade.light_windup = 0.5
+	blade.light_stamina = 0.0
+	blade.reach = 2.6
+	bot.equip_weapon(blade)
