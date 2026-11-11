@@ -21,11 +21,17 @@ var third_person_distance := 3.8
 var third_person_aim_distance := 2.2
 var base_fov := 80.0
 var ads_fov := 55.0
+## How far the mouse has to move, in pixels, to count as a stance flick.
+var flick_threshold := 45.0
+## How quickly old mouse movement stops counting toward a flick.
+var flick_decay := 9.0
+var stance := 0
 
 var yaw := 0.0
 var pitch := 0.0
 var _cam_dist := 0.0
 var _pending_switch := -1
+var _flick := Vector2.ZERO
 var _rng := RandomNumberGenerator.new()
 var _thrust_audio: AudioStreamPlayer
 
@@ -67,6 +73,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion and captured:
 		yaw -= event.relative.x * mouse_sensitivity
 		pitch = clampf(pitch - event.relative.y * mouse_sensitivity, -1.5, 1.5)
+		_flick += event.relative
 	elif event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if captured else Input.MOUSE_MODE_CAPTURED
 	elif event is InputEventMouseButton and event.pressed and not captured:
@@ -86,9 +93,24 @@ func toggle_view() -> void:
 	actor.notice.emit("Camera: %s" % VIEW_NAMES[view_mode])
 
 
-func _physics_process(_delta: float) -> void:
+## Turns recent mouse movement into a melee stance: a flick left or right
+## picks that side, a flick up picks overhead. Anything else keeps `current`.
+static func stance_from_flick(flick: Vector2, current: int, threshold: float) -> int:
+	if flick.length() < threshold:
+		return current
+	if absf(flick.x) >= absf(flick.y):
+		return MeleeWeapon.Dir.LEFT if flick.x < 0.0 else MeleeWeapon.Dir.RIGHT
+	if flick.y < 0.0:
+		return MeleeWeapon.Dir.OVERHEAD
+	return current
+
+
+func _physics_process(delta: float) -> void:
 	if actor == null or not is_instance_valid(actor) or actor.is_dead:
 		return
+	stance = stance_from_flick(_flick, stance, flick_threshold)
+	_flick *= exp(-flick_decay * delta)
+	actor.cmd.stance = stance
 	var cmd := actor.cmd
 	cmd.clear_one_shots()
 	var captured := Input.mouse_mode == Input.MOUSE_MODE_CAPTURED

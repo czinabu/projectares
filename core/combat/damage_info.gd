@@ -10,6 +10,9 @@ var source: Node = null
 var kind := "bullet"
 var position := Vector3.ZERO
 ## Set by the target's guard: part of the hit was blocked, or all of it parried.
+## For melee: the `MeleeWeapon.Dir` the swing comes from, as the attacker sees
+## it. Below zero means the hit has no direction.
+var direction := -1
 var blocked := false
 var parried := false
 

@@ -7,14 +7,27 @@ extends Weapon
 ## Defense: hold block to stop hits from the front at a stamina cost. Raising the
 ## guard just before a hit lands is a parry: no damage, the attacker is
 ## staggered, and your next hit is a stronger riposte.
+##
+## Everything is directional. The actor's command carries a stance (overhead,
+## left or right). An attack takes the stance it was started in, and a guard
+## takes the stance it was raised in. A guard only stops a melee hit that comes
+## at the side it covers, so you read the enemy's windup and they read yours.
 
 signal swung(kind: String)
 signal blocked_hit(info: DamageInfo)
 signal parried_hit(info: DamageInfo)
 
+enum Dir { OVERHEAD, LEFT, RIGHT }
+
+const DIR_NAMES := ["overhead", "left", "right"]
 const REST_POSE := -0.45
 const GUARD_POSE := 0.25
 const SWING_TIME := 0.16
+const WINDUP_ROLL := 1.1
+## Where the blade is held, relative to the hand, for each guard.
+const GUARD_OFFSET_OVERHEAD := Vector3(-0.25, 0.3, 0.0)
+const GUARD_OFFSET_LEFT := Vector3(-0.5, 0.05, 0.0)
+const GUARD_OFFSET_RIGHT := Vector3(0.12, 0.05, 0.0)
 
 var light_damage := 28.0
 var heavy_damage := 65.0
@@ -47,6 +60,13 @@ var guard_break_stagger := 0.9
 var riposte_window := 1.6
 var riposte_mult := 1.5
 
+## The stance the actor is asking for right now.
+var stance := Dir.OVERHEAD
+## The side the current or last attack comes from, as the attacker sees it.
+var attack_dir := Dir.OVERHEAD
+## The side the guard covers, as the defender sees it. Set when it is raised.
+var guard_dir := Dir.OVERHEAD
+
 var combo_step := 0
 var _cooldown := 0.0
 var _combo_timer := 0.0
@@ -68,8 +88,23 @@ func build_visual() -> Node3D:
 	return root
 
 
+## A swing from the attacker's left arrives on the defender's right.
+static func mirror(dir: int) -> int:
+	if dir == Dir.LEFT:
+		return Dir.RIGHT
+	if dir == Dir.RIGHT:
+		return Dir.LEFT
+	return dir
+
+
+## True when a guard facing `p_guard_dir` covers a hit thrown from `p_attack_dir`.
+## Hits with no direction (below zero) can be stopped by any guard.
+static func guard_covers(p_guard_dir: int, p_attack_dir: int) -> bool:
+	return p_attack_dir < 0 or p_guard_dir == mirror(p_attack_dir)
+
+
 func controls_hint() -> String:
-	return "Left mouse combo   Right mouse block, tap just before a hit to parry   F heavy lunge, or dive slam in the air"
+	return "Flick the mouse left, right or up to pick a side   Left mouse attacks from that side   Right mouse guards that side, tap just before a hit to parry   F heavy lunge, or dive slam in the air"
 
 
 func is_blocking() -> bool:
@@ -100,9 +135,11 @@ func tick(delta: float) -> void:
 
 
 func handle_input(cmd: ActorCommand, delta: float) -> void:
+	stance = clampi(cmd.stance, 0, Dir.size() - 1) as Dir
 	var wants_block := cmd.secondary and not _slamming and _windup_left <= 0.0 and actor.stamina > 0.0
 	if wants_block and not _blocking:
 		_block_time = 0.0
+		guard_dir = stance
 	_blocking = wants_block
 	if _blocking:
 		_block_time += delta
@@ -127,14 +164,14 @@ func on_holster() -> void:
 
 func status_text() -> String:
 	if _blocking:
-		return "%s  guarding" % display_name
+		return "%s  guarding %s" % [display_name, DIR_NAMES[guard_dir]]
 	if _slamming:
 		return "%s  dive slam" % display_name
 	if actor.riposte_left > 0.0:
 		return "%s  riposte ready" % display_name
 	if combo_step > 0:
-		return "%s  combo %d" % [display_name, combo_step]
-	return display_name
+		return "%s  %s  combo %d" % [display_name, DIR_NAMES[stance], combo_step]
+	return "%s  %s" % [display_name, DIR_NAMES[stance]]
 
 
 func modify_incoming(info: DamageInfo) -> void:
@@ -148,6 +185,9 @@ func modify_incoming(info: DamageInfo) -> void:
 	var to := source.global_position - actor.global_position
 	to.y = 0.0
 	if to.length() > 0.01 and forward.normalized().angle_to(to.normalized()) > deg_to_rad(block_arc_deg) * 0.5:
+		return
+	if info.kind == "melee" and not guard_covers(guard_dir, info.direction):
+		actor.notice.emit("Wrong side")
 		return
 
 	if _block_time <= parry_window:
@@ -203,9 +243,7 @@ func _begin_windup(kind: String, amount: float, time: float) -> void:
 	_windup_kind = kind
 	_windup_damage = amount
 	_windup_left = maxf(time, 0.001)
-	if visual:
-		# Alternate the slash angle through the combo so the hits read differently.
-		visual.rotation.z = [0.0, 0.7, -0.7, 0.0][combo_step] if kind == "light" else 0.0
+	attack_dir = stance
 
 
 func _start_slam() -> void:
@@ -244,32 +282,52 @@ func _strike(amount: float, kind: String) -> void:
 			continue
 		if dist > 0.8 and forward.angle_to(to.normalized()) > half_arc:
 			continue
-		Combat.deal(other, DamageInfo.make(amount, actor, "melee", other.global_position))
+		var info := DamageInfo.make(amount, actor, "melee", other.global_position)
+		info.direction = attack_dir
+		Combat.deal(other, info)
 
 
-## Greybox poses: raised for a windup, swept forward on a strike, held across
-## the body while guarding.
+## Greybox poses. The blade is cocked to the attack's side for a windup, swept
+## through on a strike, and held on the guarded side while blocking, so both
+## fighters can read the direction.
 func _animate(delta: float) -> void:
 	if visual == null:
 		return
 	var pose := REST_POSE
 	var roll := 0.0
-	var settle_roll := true
+	var offset := Vector3.ZERO
 	if _slamming:
 		pose = 1.3
 	elif _windup_left > 0.0:
 		pose = 1.0 if _windup_kind == "heavy" else 0.7
-		settle_roll = false
+		roll = _side(attack_dir) * WINDUP_ROLL
+		if attack_dir == Dir.OVERHEAD:
+			pose += 0.35
+			offset.y = 0.12
 	elif _swing_left > 0.0:
 		_swing_left -= delta
 		pose = lerpf(0.6, -2.1, 1.0 - maxf(_swing_left, 0.0) / SWING_TIME)
-		settle_roll = false
+		roll = _side(attack_dir) * WINDUP_ROLL
 	elif _blocking:
 		pose = GUARD_POSE
-		roll = 1.25
-	if settle_roll:
-		visual.rotation.z = lerp_angle(visual.rotation.z, roll, 1.0 - exp(-18.0 * delta))
+		if guard_dir == Dir.OVERHEAD:
+			roll = 1.4
+			offset = GUARD_OFFSET_OVERHEAD
+		else:
+			roll = _side(guard_dir) * 0.2
+			offset = GUARD_OFFSET_LEFT if guard_dir == Dir.LEFT else GUARD_OFFSET_RIGHT
+	visual.rotation.z = lerp_angle(visual.rotation.z, roll, 1.0 - exp(-24.0 * delta))
 	visual.rotation.x = lerp_angle(visual.rotation.x, pose, 1.0 - exp(-40.0 * delta))
+	visual.position = visual.position.lerp(offset, 1.0 - exp(-24.0 * delta))
+
+
+## +1 for the actor's left, -1 for the right, 0 for overhead.
+static func _side(dir: int) -> float:
+	if dir == Dir.LEFT:
+		return 1.0
+	if dir == Dir.RIGHT:
+		return -1.0
+	return 0.0
 
 
 func _other_actors() -> Array[Actor]:
