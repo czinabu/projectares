@@ -55,7 +55,7 @@ signal disconnected
 signal raid_restarted(raid: Raid)
 
 const DEFAULT_PORT := 24565
-const PROTOCOL := 4
+const PROTOCOL := 6
 const StashService := preload("res://core/account/stash_service.gd")
 ## Server physics ticks between state updates (2 = 30 a second).
 const TICKS_PER_SNAPSHOT := 2
@@ -429,6 +429,30 @@ func _request_pick(track: String, variant_id: String) -> void:
 	_send_account(peer)
 
 
+## Lobby: buy one item from a hub shop. The server sets the price.
+@rpc("any_peer", "call_remote", "reliable")
+func _request_buy(shop_id: String, item_id: String) -> void:
+	var peer := _api.get_remote_sender_id()
+	if not is_server or not _peer_account.has(peer):
+		return
+	var result: Dictionary = stash.buy(_peer_account[peer], shop_id, item_id)
+	if not result.ok:
+		_lobby_error.rpc_id(peer, result.error)
+	_send_account(peer)
+
+
+## Lobby: sell stash items for credits. An empty `item_id` sells all loot.
+@rpc("any_peer", "call_remote", "reliable")
+func _request_sell(item_id: String, count: int) -> void:
+	var peer := _api.get_remote_sender_id()
+	if not is_server or not _peer_account.has(peer):
+		return
+	var result: Dictionary = stash.sell(_peer_account[peer], item_id, count)
+	if not result.ok:
+		_lobby_error.rpc_id(peer, result.error)
+	_send_account(peer)
+
+
 func _send_spawn(peer: int, actor: Actor) -> void:
 	var state := raid.state_for(actor)
 	var data := {}
@@ -699,6 +723,18 @@ func equip(slot: String, item_id: String) -> void:
 func pick_mastery(track: String, variant_id: String) -> void:
 	if _is_connected() and not account.is_empty():
 		_request_pick.rpc_id(1, track, variant_id)
+
+
+## Lobby: ask the server to buy one item from a hub shop.
+func buy(shop_id: String, item_id: String) -> void:
+	if _is_connected() and not account.is_empty():
+		_request_buy.rpc_id(1, shop_id, item_id)
+
+
+## Lobby: ask the server to sell stash items ("" sells all loot).
+func sell(item_id: String, count: int = 1) -> void:
+	if _is_connected() and not account.is_empty():
+		_request_sell.rpc_id(1, item_id, count)
 
 
 ## Lobby: deploy into the server's raid. `joined` follows, or `lobby_error`.

@@ -47,6 +47,12 @@ func _ready() -> void:
 		if net and raid == null:
 			hub.set_online_status("Deploying...")
 			net.deploy())
+	hub.online_buy_requested.connect(func(shop_id: String, item_id: String) -> void:
+		if net:
+			net.buy(shop_id, item_id))
+	hub.online_sell_requested.connect(func(item_id: String, count: int) -> void:
+		if net:
+			net.sell(item_id, count))
 	hub.online_leave_requested.connect(leave_server)
 	hub.base_requested.connect(enter_base)
 

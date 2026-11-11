@@ -10,6 +10,8 @@ const SAVE_PATH := "user://profile.json"
 const MasteryBook := preload("res://core/progression/mastery_book.gd")
 ## The same gear rules the server's StashService uses.
 const StashRules := preload("res://core/account/stash_rules.gd")
+## The same money rules the server's StashService uses.
+const Economy := preload("res://core/economy/economy.gd")
 ## Given once to every profile so there is gear to try loadouts with.
 const WELCOME_CRATE: Array[String] = ["rifle_carbine", "frame_trooper", "medkit", "medkit"]
 ## Later one-time crates, by name, so existing profiles get new kinds of gear
@@ -38,6 +40,8 @@ var online_secret := ""
 var raids_played := 0
 var raids_extracted := 0
 var kills := 0
+## Money for the hub shops. Safe between raids: only gear is ever at risk.
+var credits := Economy.STARTING_CREDITS
 
 
 func _ready() -> void:
@@ -55,6 +59,7 @@ func reset() -> void:
 	raids_played = 0
 	raids_extracted = 0
 	kills = 0
+	credits = Economy.STARTING_CREDITS
 
 
 func grant_welcome_crate() -> void:
@@ -110,6 +115,38 @@ func checkout_loadout(world: WorldDef) -> Array[String]:
 	return kit
 
 
+## Buys one item from a hub shop into the stash. Returns {"ok"} or {"ok": false, "error"}.
+func buy(shop_id: String, item_id: String) -> Dictionary:
+	return _bank(Economy.buy(stash, credits, shop_id, item_id))
+
+
+## Sells up to `count` of a stash item to the shops.
+func sell(item_id: String, count: int = 1) -> Dictionary:
+	return _bank(Economy.sell(stash, loadout, credits, item_id, count))
+
+
+## Sells every trade good (loot that is not gear) in the stash.
+func sell_loot() -> Dictionary:
+	return _bank(Economy.sell_loot(stash, credits))
+
+
+## Adds `delta` credits (a cost when negative) for anything outside the
+## shops, such as a wager. Refuses, changing nothing, if it would go below zero.
+func change_credits(delta: int) -> bool:
+	if not Economy.can_change(credits, delta):
+		return false
+	credits = Economy.add(credits, delta)
+	save()
+	return true
+
+
+func _bank(result: Dictionary) -> Dictionary:
+	credits = result.credits
+	if result.ok:
+		save()
+	return result
+
+
 ## The secret this game signs in to servers with, created the first time.
 func get_online_secret() -> String:
 	if online_secret.length() < 16:
@@ -123,6 +160,7 @@ func record_raid(result: Dictionary) -> void:
 	if result.get("outcome", "") == "extracted":
 		raids_extracted += 1
 	kills += result.get("kills", 0)
+	credits = Economy.add(credits, Economy.payout(result))
 	var gained: Dictionary = result.get("mastery_xp", {})
 	for track: String in gained:
 		mastery.add_xp(track, int(gained[track]))
@@ -154,6 +192,7 @@ func save() -> void:
 		"raids_played": raids_played,
 		"raids_extracted": raids_extracted,
 		"kills": kills,
+		"credits": credits,
 	}, "\t"))
 
 
@@ -187,4 +226,5 @@ func load_profile() -> void:
 	raids_played = int(data.get("raids_played", 0))
 	raids_extracted = int(data.get("raids_extracted", 0))
 	kills = int(data.get("kills", 0))
+	credits = Economy.read_saved(data)
 	validate_loadout()
