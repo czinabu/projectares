@@ -59,6 +59,19 @@ static func run(t: Node) -> void:
 				tag + "the player wears an animated model")
 		t.check(raid.player.body_mesh != null and raid.player.body_mesh.mesh == null,
 				tag + "the greybox capsule is no longer drawn")
+		var skeleton := skin.find_child("Skeleton3D", true, false) as Skeleton3D
+		t.check(skin._grip_bone >= 0 and skeleton != null, tag + "the player's model has a hand to hold a weapon")
+		if skin._grip_bone >= 0 and skeleton != null:
+			skin._hold_weapon()
+			var palm: Vector3 = skeleton.global_transform * skeleton.get_bone_global_pose(skin._grip_bone).origin
+			t.check(raid.player.hand.global_position.distance_to(palm) < 0.2, tag + "the weapon sits in the model's hand")
+			t.check(raid.player.hand.global_position.distance_to(raid.player.to_global(Actor.HAND_REST)) > 0.05,
+					tag + "the weapon is no longer left floating at the greybox hand spot")
+			raid.player.hand_override = true
+			raid.player.hand.position = Vector3(5, 5, 5)
+			skin._hold_weapon()
+			t.check(raid.player.hand.position.is_equal_approx(Vector3(5, 5, 5)), tag + "the model leaves the hand alone in first person")
+			raid.player.hand_override = false
 		var dressed := 0
 		var skins := {}
 		for bot in raid.bots:

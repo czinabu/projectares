@@ -42,17 +42,17 @@ const SURFACES := {
 ## `rough` are optional and tune the character shader: people keep their
 ## colors, machines are pulled toward worn metal.
 const HUMAN_ANIMS := {"idle": "Idle_Gun_Pointing", "walk": "Walk", "run": "Run", "death": "Death",
-	"idle_melee": "Idle_Sword", "attack": "Sword_Slash"}
+	"idle_melee": "Idle_Sword", "attack": "Sword_Slash", "move_gun": "Run_Shoot"}
 const SKINS := {
 	"raider": {
 		"scenes": ["Human_Swat.glb", "Human_Soldier.glb", "Human_SciFi.glb"],
-		"height": 1.8, "tint": Color(0.8, 0.82, 0.86), "hide": ["Pistol"],
+		"height": 1.8, "tint": Color(0.8, 0.82, 0.86), "hide": ["Pistol"], "grip_bone": "Middle1.R",
 		"saturation": 0.75, "brightness": 0.85, "metal": 0.0, "rough": 0.85,
 		"anims": HUMAN_ANIMS,
 	},
 	"scavenger": {
 		"scenes": ["Human_Punk.glb", "Human_PunkW.glb", "Human_Hoodie.glb", "Human_Worker.glb"],
-		"height": 1.76, "tint": Color(0.86, 0.76, 0.68), "hide": ["Pistol"],
+		"height": 1.76, "tint": Color(0.86, 0.76, 0.68), "hide": ["Pistol"], "grip_bone": "Middle1.R",
 		"saturation": 0.7, "brightness": 0.75, "metal": 0.0, "rough": 0.9,
 		"anims": HUMAN_ANIMS,
 	},
