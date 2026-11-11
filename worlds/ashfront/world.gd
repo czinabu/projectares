@@ -12,6 +12,11 @@ const CACHE_TABLE := [
 	{"id": "alloy_ingot", "weight": 7.0},
 	{"id": "targeting_chip", "weight": 4.0},
 	{"id": "reactor_core", "weight": 1.0},
+	{"id": "rifle_carbine", "weight": 3.0},
+	{"id": "smg_stinger", "weight": 3.0},
+	{"id": "hammer_breaker", "weight": 2.5},
+	{"id": "frame_runner", "weight": 2.5},
+	{"id": "frame_trooper", "weight": 2.5},
 ]
 
 ## Rooftops need the jetpack to reach, so they pay better.
@@ -21,6 +26,11 @@ const ROOFTOP_TABLE := [
 	{"id": "targeting_chip", "weight": 22.0},
 	{"id": "reactor_core", "weight": 15.0},
 	{"id": "lattice_shard", "weight": 5.0},
+	{"id": "dmr_longshot", "weight": 9.0},
+	{"id": "shotgun_breacher", "weight": 9.0},
+	{"id": "blade_arc", "weight": 9.0},
+	{"id": "frame_bulwark", "weight": 8.0},
+	{"id": "jetpack_mk2", "weight": 7.0},
 ]
 
 ## Share of scavengers that are melee brutes.
@@ -48,7 +58,7 @@ func create_map() -> Node3D:
 
 
 func starter_loadout() -> Array[String]:
-	return ["rifle_scrap", "blade_scrap", "jetpack_mk1", "plate_light", "medkit"]
+	return ["rifle_scrap", "blade_scrap", "jetpack_mk1", "plate_light", "field_dressing"]
 
 
 func roll_loot(source: String, rng: RandomNumberGenerator) -> Array[String]:

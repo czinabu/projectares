@@ -19,11 +19,14 @@ var time_left := 0.0
 var kills := 0
 var is_over := false
 var rng := RandomNumberGenerator.new()
+var _kit: Array[String] = []
 
 
 ## Call after the Raid is in the scene tree. A fixed seed makes it repeatable.
-func start(p_world: WorldDef, p_seed: int = -1) -> void:
+## `p_kit` is the gear the player deploys with; empty means the free scrap kit.
+func start(p_world: WorldDef, p_seed: int = -1, p_kit: Array = []) -> void:
 	world = p_world
+	_kit.assign(p_kit if not p_kit.is_empty() else world.starter_loadout())
 	Worlds.current = world
 	if p_seed >= 0:
 		rng.seed = p_seed
@@ -77,7 +80,7 @@ func _spawn_player() -> void:
 	player.display_name = "You"
 	add_child(player)
 	player.global_position = at
-	Loadout.equip(player, world.starter_loadout())
+	Loadout.equip(player, _kit)
 	player.died.connect(_on_actor_died)
 	world.on_spawn(player)
 
@@ -133,7 +136,8 @@ func _on_actor_extracted(actor: Actor) -> void:
 	if actor != player or is_over:
 		return
 	world.on_extract(actor)
-	Profile.add_to_stash(actor.inventory.items)
+	# Everything carried comes home: surviving gear and the backpack.
+	Profile.add_to_stash(actor.get_drop_items())
 	_finish("extracted", "")
 
 
@@ -149,6 +153,8 @@ func _finish(outcome: String, cause: String) -> void:
 		"cause": cause,
 		"world_id": world.id,
 		"loot": loot,
+		"kept_gear": player.gear_items.filter(func(id: String) -> bool:
+			return not ItemDB.has_tag(id, "starter")) if outcome == "extracted" else [],
 		"loot_value": ItemDB.total_value(loot),
 		"lost": player.get_drop_items() if outcome != "extracted" else [],
 		"kills": kills,

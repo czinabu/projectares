@@ -21,7 +21,7 @@ func start_raid(world_id: String) -> void:
 	raid = Raid.new()
 	raid.name = "Raid"
 	add_child(raid)
-	raid.start(world)
+	raid.start(world, -1, Profile.checkout_loadout(world))
 	controller = PlayerController.new()
 	controller.setup(raid.player)
 	raid.add_child(controller)
