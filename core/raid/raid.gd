@@ -23,6 +23,8 @@ signal player_banked(actor: Actor, items: Array)
 signal sign_out_changed(actor: Actor, seconds_left: float)
 ## A line for everyone in the world: a player kill, a new bounty, the Marked.
 signal war_feed(text: String)
+## A strongpoint changed hands.
+signal strongpoint_taken(point: Strongpoint)
 signal actor_spawned(actor: Actor)
 signal actor_removed(actor: Actor)
 signal container_spawned(container: LootContainer)
@@ -37,6 +39,7 @@ const VehicleScript := preload("res://core/vehicle/vehicle.gd")
 const MasteryTracker := preload("res://core/progression/mastery_tracker.gd")
 const RenownLedger := preload("res://core/progression/renown_ledger.gd")
 const WarDirector := preload("res://core/war/war_director.gd")
+const Strongpoint := preload("res://core/war/strongpoint.gd")
 
 ## How this raid runs.
 ##   SOLO   - one local player, everything simulated here.
@@ -71,6 +74,9 @@ var _marked_owner := ""
 ## server. The map hears them through its "war_intensity" and "war_centre"
 ## metas, which is all `Look` needs to shift the sky.
 var war := WarDirector.new()
+## The sites worth holding, one per "strongpoint" marker on the map.
+var strongpoints: Array[Strongpoint] = []
+var _assault_in := 0.0
 ## When false, the raid reports results but leaves the stash alone, so a server
 ## never writes to a profile that is not the player's.
 var apply_to_profile := true
@@ -167,6 +173,18 @@ func _setup(p_world: WorldDef, p_seed: int) -> void:
 			if mode != Mode.CLIENT:
 				depot.actor_banked.connect(_on_actor_banked)
 			depots.append(depot)
+	for marker in _map_nodes("strongpoint"):
+		var point := Strongpoint.new()
+		point.index = strongpoints.size()
+		point.name = "Strongpoint%d" % point.index
+		point.title = marker.get_meta("name", "Strongpoint %d" % (point.index + 1))
+		point.radius = float(marker.get_meta("radius", point.radius))
+		marker.add_child(point)
+		var faction: String = marker.get_meta("holder", "")
+		if faction != "":
+			point.hold("faction:" + faction, marker.get_meta("holder_name", faction.capitalize()), false)
+		strongpoints.append(point)
+	_assault_in = world.assault_interval
 
 
 func _spawn_caches() -> void:
@@ -190,6 +208,7 @@ func _physics_process(delta: float) -> void:
 	if world.safe_zone:
 		_keep_everyone_safe()
 		return
+	_tick_strongpoints(delta)
 	_tick_caches(delta)
 	_tick_bots(delta)
 	_tick_vehicles(delta)
@@ -226,6 +245,137 @@ func _tick_war(delta: float) -> void:
 				clashes.append((a.global_position + b.global_position) * 0.5)
 	war.tick(delta, clashes)
 	renown.pay_scale = war.renown_bonus()
+
+
+## The side an actor fights for, as [key, name to show, is a player side].
+## Bots are a side per faction. Players are each their own side unless the
+## world makes them allies.
+func side_of(actor: Actor) -> Array:
+	var state := state_for(actor)
+	if state == null:
+		return ["faction:" + actor.faction, "the %ss" % actor.display_name, false]
+	return [_player_side(state.owner), "the raiders" if world.players_allied else actor.display_name, true]
+
+
+## The side key of the player with this owner key.
+func _player_side(key: String) -> String:
+	return "players" if world.players_allied else key
+
+
+## Whether `actor`'s side holds `point`. On a client this is the server's word
+## about the local player.
+func holds(actor: Actor, point: Strongpoint) -> bool:
+	if mode == Mode.CLIENT:
+		return point.viewer_holds
+	return actor != null and is_instance_valid(actor) and point.holder != "" \
+			and point.holder == side_of(actor)[0]
+
+
+## The strongpoint an actor is standing in, or null.
+func strongpoint_at(actor: Actor) -> Strongpoint:
+	for point in strongpoints:
+		if point.covers(actor.global_position):
+			return point
+	return null
+
+
+## Runs the strongpoints: who is inside each, who takes it, what that pays.
+func _tick_strongpoints(delta: float) -> void:
+	if strongpoints.is_empty():
+		return
+	var living: Array[Actor] = []
+	for bot in bots:
+		if is_instance_valid(bot) and not bot.is_dead:
+			living.append(bot)
+	living.append_array(active_players().filter(func(a: Actor) -> bool:
+		return is_instance_valid(a) and not a.is_dead))
+	for point in strongpoints:
+		var present := {}
+		var inside: Array[Actor] = []
+		for actor in living:
+			if not point.covers(actor.global_position):
+				continue
+			inside.append(actor)
+			var side := side_of(actor)
+			if not present.has(side[0]):
+				present[side[0]] = {"count": 0, "name": side[1], "player": side[2]}
+			present[side[0]].count += 1
+		var was_contested := point.contested
+		var loser := point.holder_name
+		var lost_by_player := point.holder_is_player
+		if point.tick(delta, present):
+			_on_strongpoint_taken(point, inside, loser, lost_by_player)
+		elif point.contested != was_contested:
+			point.refresh_look()
+		# Players fighting over a site are part of the war.
+		if point.contested and present.values().any(func(who: Dictionary) -> bool: return who.player):
+			war.report_clash(point.global_position, delta)
+	_tick_assaults(delta)
+
+
+func _on_strongpoint_taken(point: Strongpoint, inside: Array[Actor], loser: String, lost_by_player: bool) -> void:
+	# Bots trading a site among themselves is not news.
+	if point.holder_is_player or lost_by_player:
+		var line := "%s took %s" % [point.holder_name, point.title]
+		if loser != "":
+			line += " from %s" % loser
+		war_feed.emit(line.left(1).to_upper() + line.substr(1))
+		war.report_capture(point.global_position)
+	if point.holder_is_player:
+		for actor in inside:
+			var state := state_for(actor)
+			if state == null:
+				continue
+			var paid := renown.award(state.owner, renown.strongpoint_taken)
+			actor.notice.emit("Took %s   +%d renown" % [point.title, paid])
+		_publish_standing()
+	strongpoint_taken.emit(point)
+
+
+## Every so often the bots push on a site that players hold: the nearest few
+## are sent to retake it.
+func _tick_assaults(delta: float) -> void:
+	if world.assault_size <= 0:
+		return
+	_assault_in -= delta
+	if _assault_in > 0.0:
+		return
+	_assault_in = world.assault_interval
+	var targets := strongpoints.filter(func(p: Strongpoint) -> bool: return p.holder_is_player)
+	if targets.is_empty():
+		return
+	var point: Strongpoint = targets[rng.randi() % targets.size()]
+	var nearest: Array[Actor] = []
+	for bot in bots:
+		if is_instance_valid(bot) and not bot.is_dead and bot.has_node("Brain"):
+			nearest.append(bot)
+	nearest.sort_custom(func(a: Actor, b: Actor) -> bool:
+		return a.global_position.distance_squared_to(point.global_position) \
+				< b.global_position.distance_squared_to(point.global_position))
+	for bot in nearest.slice(0, world.assault_size):
+		(bot.get_node("Brain") as BotBrain).post_to(point.global_position, point.radius)
+	war_feed.emit("%s is under attack" % point.title)
+
+
+## Gives a new bot a site to stand on: one its faction holds, if it spawned
+## close to it. Everyone else patrols where they spawned, as before.
+func _post_bot(bot: Actor) -> void:
+	var brain := bot.get_node_or_null("Brain") as BotBrain
+	if brain == null:
+		return
+	for point in strongpoints:
+		if point.holder == "faction:" + bot.faction \
+				and bot.global_position.distance_to(point.global_position) <= point.radius * 3.0:
+			brain.post_to(point.global_position, point.radius)
+			return
+
+
+## Where a player who holds a strongpoint drops in: at one of theirs that
+## nobody is fighting over. Returns null when they hold none.
+func _forward_drop(side: String) -> Strongpoint:
+	var mine := strongpoints.filter(func(p: Strongpoint) -> bool:
+		return p.holder == side and not p.contested and p.taker == "")
+	return mine[rng.randi() % mine.size()] if not mine.is_empty() else null
 
 
 func _tick_caches(delta: float) -> void:
@@ -326,6 +476,13 @@ func add_player(p_kit: Array = [], p_mastery: Dictionary = {}, p_name := "Raider
 			_squad_marker = marker
 		marker = _squad_marker
 	var at: Vector3 = spawns[marker].global_position if not spawns.is_empty() else Vector3.ZERO
+	# A strongpoint you hold is a forward drop point.
+	var forward: Strongpoint = null
+	if arriving and p_owner != "":
+		forward = _forward_drop(_player_side(p_owner))
+	if forward != null:
+		var angle := rng.randf_range(0.0, TAU)
+		at = forward.global_position + Vector3(cos(angle), 0.0, sin(angle)) * forward.radius * 0.4
 	var actor := Actor.new()
 	actor.name = "Player" if _player_count == 0 else "Player%d" % _player_count
 	_player_count += 1
@@ -515,6 +672,7 @@ func _add_bot(marker: Node3D) -> Actor:
 	bot.add_child(brain)
 	bot.died.connect(_on_actor_died)
 	world.on_spawn(bot)
+	_post_bot(bot)
 	actor_spawned.emit(bot)
 	return bot
 

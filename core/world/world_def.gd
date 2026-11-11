@@ -16,6 +16,10 @@ extends RefCounted
 ##     "loot_source", default "vehicle"). The Raid parks the first
 ##     vehicle-tagged item from `roll_loot` there, facing the marker's yaw.
 ##   - optionally a `bake_navigation()` method for bot pathfinding
+##   - optionally Marker3D nodes in group "strongpoint": sites to capture and
+##     hold. Metas: "name" (String), "radius" (float, metres), and optionally
+##     "holder" (a bot faction that holds it from the start) with
+##     "holder_name" (what to call them). Put a depot near each one.
 ##
 ## Safe zones (`safe_zone = true`) are social spaces, not raids: nobody can be
 ## hurt, weapons and abilities are locked, nothing respawns, and players show
@@ -62,6 +66,13 @@ var spawn_protection := 4.0
 ## a gentler world: the gear they had equipped goes back to their stash and
 ## only the backpack drops.
 var keep_gear_on_death := false
+## True when every player here is on one side (a co-op world). Strongpoints
+## then belong to the players together, not to whoever took them.
+var players_allied := false
+## Seconds between bot pushes on a strongpoint that players hold, and how
+## many bots go. 0 bots turns the pushes off.
+var assault_interval := 120.0
+var assault_size := 3
 ## How strongly fighting raises this world's war intensity (see
 ## `core/war/war_director.gd`). 0 keeps the world quiet whatever happens.
 var war_scale := 1.0

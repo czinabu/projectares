@@ -74,7 +74,7 @@ signal world_invite_accepted(invite: Dictionary)
 signal base_visit_requested(owner_name: String, stash: Array, loadout: Dictionary)
 
 const DEFAULT_PORT := 24565
-const PROTOCOL := 10
+const PROTOCOL := 11
 const StashService := preload("res://core/account/stash_service.gd")
 const Economy := preload("res://core/economy/economy.gd")
 const SocialService := preload("res://core/social/social_service.gd")
@@ -195,6 +195,7 @@ var _board_sent := {}    # peer id -> [board text, tick sent] (server, arena)
 var _board_dirty := false
 var _sent_standing := {} # actor id -> public renown standing last sent (server)
 var _sent_war := -1.0    # war intensity last sent (server)
+var _sent_points := {}   # peer id -> strongpoint states last sent to them (server)
 var _tick := 0
 var _died_at := {}       # peer id -> msec when their last life ended in a death (server)
 var _finished := false   # client: signed out, so the server closing the connection is expected
@@ -334,6 +335,7 @@ func _clear_tables() -> void:
 	_sent_kills.clear()
 	_sent_standing.clear()
 	_sent_war = -1.0
+	_sent_points.clear()
 	_actor_account.clear()
 	_board_sent.clear()
 
@@ -679,6 +681,7 @@ func _request_join() -> void:
 	for id: int in _sent_standing:
 		_standing.rpc_id(peer, id, _sent_standing[id])
 	_war.rpc_id(peer, raid.war.intensity, raid.war.centre)
+	_sent_points.erase(peer)
 
 
 ## Arena: a player in it asks for something (challenge, accept, bet...).
@@ -859,6 +862,18 @@ func _server_late_tick(_delta: float) -> void:
 		_sent_war = raid.war.intensity
 		for peer in _joined_peers:
 			_war.rpc_id(peer, raid.war.intensity, raid.war.centre)
+	# Strongpoints: each player hears who holds what, and which are theirs.
+	if _tick % 10 == 0 and not raid.strongpoints.is_empty():
+		for peer in _joined_peers:
+			var viewer: Actor = _peer_actor.get(peer)
+			var states := []
+			for point in raid.strongpoints:
+				states.append([point.holder_name, point.holder_is_player, point.taker_name,
+						floori(point.progress * 100.0), point.contested,
+						viewer != null and is_instance_valid(viewer) and raid.holds(viewer, point)])
+			if _sent_points.get(peer, []) != states:
+				_sent_points[peer] = states
+				_strongpoints.rpc_id(peer, states)
 
 
 # ---------------------------------------------------------------- client ----
@@ -1274,6 +1289,28 @@ func _hurt(amount: float, kind: String) -> void:
 	var me: Actor = _actors.get(my_actor_id)
 	if me != null and not me.is_dead:
 		me.health.damaged.emit(DamageInfo.make(amount, null, kind))
+
+
+## Every strongpoint, in map order: [holder name, holder is a player,
+## taker name, progress percent, contested, yours].
+@rpc("authority", "call_remote", "reliable")
+func _strongpoints(states: Array) -> void:
+	if raid == null:
+		return
+	for i in mini(states.size(), raid.strongpoints.size()):
+		var state: Array = states[i]
+		if state.size() < 6:
+			continue
+		var point := raid.strongpoints[i]
+		point.holder_name = str(state[0])
+		point.holder = "held" if point.holder_name != "" else ""
+		point.holder_is_player = bool(state[1])
+		point.taker_name = str(state[2])
+		point.taker = "taking" if point.taker_name != "" else ""
+		point.progress = clampf(float(state[3]) / 100.0, 0.0, 1.0)
+		point.contested = bool(state[4])
+		point.viewer_holds = bool(state[5])
+		point.refresh_look()
 
 
 ## How hot the war is and where, for the sky and the HUD.

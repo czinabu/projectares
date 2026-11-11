@@ -14,6 +14,8 @@ const LEVELS := [[0.0, "Quiet"], [0.2, "Skirmish"], [0.5, "Battle"], [0.8, "All-
 ## How much a kill adds. Fights between players count for the most.
 var bot_kill_heat := 0.03
 var player_kill_heat := 0.14
+## How much a strongpoint changing hands adds.
+var capture_heat := 0.1
 ## Hostile players this close to each other are a fight brewing. Each such
 ## pair adds this much every second. Headcount alone adds nothing.
 var clash_distance := 45.0
@@ -38,6 +40,16 @@ var _has_centre := false
 ## A kill happened at `at`.
 func report_kill(at: Vector3, victim_is_player: bool) -> void:
 	_heat(player_kill_heat if victim_is_player else bot_kill_heat, at)
+
+
+## A strongpoint changed hands at `at`.
+func report_capture(at: Vector3) -> void:
+	_heat(capture_heat, at)
+
+
+## Hostile sides are fighting over a place, for `delta` seconds.
+func report_clash(at: Vector3, delta: float) -> void:
+	_heat(clash_heat * delta, at, delta)
 
 
 ## Advances the meter. `clashes` holds the midpoint of every pair of hostile

@@ -3,6 +3,8 @@ extends RefCounted
 ## test runner. The suite runs headless, where `Look` is off by default, so
 ## these switch it on for their own raid and off again afterwards.
 
+const Locomotion := preload("res://core/visual/locomotion.gd")
+
 
 static func run(t: Node) -> void:
 	t.check(not Look.enabled, "the art layer is off on a headless server")
@@ -125,6 +127,7 @@ static func run(t: Node) -> void:
 			t.check(sword.visual.global_position.distance_to(grip_at) < 0.02, tag + "the blade stays in the hand when its pose shifts it")
 			sword.visual.position = Vector3.ZERO
 			raid.player.active_weapon_index = was_active
+		_check_legs(t, tag, raid.player, skin, skeleton)
 		var dressed := 0
 		var skins := {}
 		for bot in raid.bots:
@@ -186,3 +189,95 @@ static func run(t: Node) -> void:
 		t.check(licenses.contains("assets/" + dir), "licenses cover assets/%s" % dir)
 	Look.enabled = false
 	Look._materials.clear()
+
+
+## The legs follow how the actor really moves: strides match speed, and the
+## clip and the lower body follow the direction of travel.
+static func _check_legs(t: Node, tag: String, player: Actor, skin: Node, skeleton: Skeleton3D) -> void:
+	var loco: Node = skin.locomotion
+	t.check(loco != null and loco.gaits.has("run") and loco.gaits.has("walk"),
+			tag + "the model knows how fast its walk and run carry it")
+	if loco == null or not loco.gaits.has("run") or not loco.gaits.has("walk"):
+		return
+	var run: Vector3 = loco.gaits["run"]
+	t.check(run.z < 0.0 and absf(run.x) < 0.2 * run.length(), tag + "the run clip is measured carrying the body forward")
+	t.check(run.length() > 1.5 and run.length() < 6.0, tag + "a run is measured at a person's speed (%.2f m/s)" % run.length())
+	t.check(loco.gaits["walk"].length() < run.length() * 0.7, tag + "a walk is measured slower than a run")
+	var sides := ["run_left", "run_right", "run_back"].all(func(k: String) -> bool: return loco.gaits.has(k))
+	t.check(sides, tag + "the model has clips for running left, right and backward")
+	if sides:
+		t.check(loco.gaits["run_left"].x < 0.0 and loco.gaits["run_right"].x > 0.0 and loco.gaits["run_back"].z > 0.0,
+				tag + "each side clip is measured going its own way")
+
+	# No foot sliding: playback speed times the clip's own speed is the actor's.
+	var steady := run.length() * 1.5
+	var pick: Dictionary = loco.choose(Vector3(0.0, 0.0, -steady), false)
+	t.check(pick.get("key") == "run" and absf(pick["speed"] * run.length() - steady) < 0.01,
+			tag + "the run plays at the speed the actor moves")
+	var faster: Dictionary = loco.choose(Vector3(0.0, 0.0, -steady * 1.3), false)
+	t.check(faster.get("speed", 0.0) > pick.get("speed", 0.0), tag + "a faster actor takes quicker strides")
+	var slow: Dictionary = loco.choose(Vector3(0.0, 0.0, -loco.gaits["walk"].length()), false)
+	t.check(slow.get("key") == "walk" and absf(slow["speed"] - 1.0) < 0.01, tag + "a slow actor walks at the walk's own pace")
+	t.check(loco.choose(Vector3(0.0, 0.0, -0.1), false).is_empty(), tag + "a still actor stands")
+
+	# Direction: the clip going the right way, and no lower-body turn when it fits.
+	var going := {"run_left": Vector3(-5, 0, 0), "run_right": Vector3(5, 0, 0), "run_back": Vector3(0, 0, 5)}
+	for key: String in going:
+		var way: Dictionary = loco.choose(going[key], false)
+		t.check(way.get("key") == key and way["speed"] > 0.0 and absf(way["twist"]) < 0.1,
+				tag + "moving that way plays %s" % key)
+	var diagonal: Dictionary = loco.choose(Vector3(-4, 0, -4), false)
+	var turned_left: bool = diagonal.get("twist", 0.0) > 0.0 if diagonal.get("key") == "run" else diagonal.get("twist", 0.0) < 0.0
+	t.check(diagonal.get("key") in ["run", "run_left"] and absf(absf(diagonal["twist"]) - PI / 4.0) < 0.1 and turned_left,
+			tag + "running diagonally turns the legs the rest of the way")
+	t.check(loco.choose(Vector3(0, 0, -5), true).get("key") == "move_gun", tag + "running forward with a gun keeps it raised")
+	t.check(loco.choose(Vector3(-5, 0, 0), true).get("key") == "run_left", tag + "strafing with a gun uses the strafe clip")
+	var hold: Dictionary = loco.choose(Vector3(-5, 0, 0.3), false, "run_left", 1.0)
+	t.check(hold.get("key") == "run_left", tag + "the clip playing now is kept near a border")
+
+	# A model with only a forward run plays it backwards to backpedal.
+	var plain := Locomotion.new()
+	plain.gaits = {"run": Vector3(0, 0, -3)}
+	var back: Dictionary = plain.choose(Vector3(0, 0, 4), false)
+	t.check(back.get("key") == "run" and back["speed"] < 0.0 and absf(back["twist"]) < 0.01,
+			"a model with no backward clip runs its forward one in reverse")
+	var side: Dictionary = plain.choose(Vector3(-4, 0, 0), false)
+	t.check(side.get("twist", 0.0) > 0.5, "a model with no side clip turns its legs toward the side it goes")
+	plain.free()
+
+	# End to end, from velocity alone, as a remote player's arrives from the server.
+	var was_weapon := player.active_weapon_index
+	var was_velocity := player.velocity
+	player.active_weapon_index = 0
+	player.velocity = player.global_basis * Vector3(-5, 0, 0)
+	skin._process(1.0)
+	skin._process(1.0)
+	t.check(skin._current == "run_left", tag + "a strafing actor's model runs sideways")
+	t.check(loco.overlay == (player.get_active_weapon() is Gun),
+			tag + "the gun stays raised over the strafing legs")
+	player.velocity = player.global_basis * Vector3(-4, 0, -4)
+	skin._process(1.0)
+	skin._process(1.0)
+	t.check(absf(loco.twist_target) > 0.5 and absf(loco.twist) > 0.3, tag + "a model running diagonally turns its legs")
+	player.velocity = was_velocity
+	player.active_weapon_index = was_weapon
+
+	# The legs turn while the chest keeps facing the aim.
+	if skeleton and not loco._spine.is_empty():
+		var chest: int = loco._spine[loco._spine.size() - 1]
+		var foot := skeleton.find_bone("Foot.L")
+		var chest_before := skeleton.get_bone_global_pose(chest).basis.orthonormalized()
+		var foot_before := skeleton.get_bone_global_pose(foot).origin
+		var saved := {}
+		for bone: int in loco._roots + loco._spine:
+			saved[bone] = skeleton.get_bone_pose(bone)
+		loco.twist = 0.6
+		loco._turn_lower()
+		var chest_after := skeleton.get_bone_global_pose(chest).basis.orthonormalized()
+		var chest_moved := (chest_before.inverse() * chest_after).get_rotation_quaternion().get_angle()
+		t.check(chest_moved < 0.02, tag + "the chest keeps facing the aim while the legs turn")
+		t.check(skeleton.get_bone_global_pose(foot).origin.distance_to(foot_before) > 0.01 * skeleton.global_basis.inverse().get_scale().x,
+				tag + "the feet turn toward the way the actor goes")
+		loco.twist = 0.0
+		for bone: int in saved:
+			skeleton.set_bone_pose(bone, saved[bone])
