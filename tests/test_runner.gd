@@ -23,6 +23,7 @@ func _run() -> void:
 	await _test_raid_setup_and_movement()
 	await _test_combat_and_loot()
 	await _test_melee_defense()
+	await _test_directional_melee()
 	await _test_extraction()
 	await _test_loadouts()
 	await _test_death()
@@ -622,3 +623,134 @@ func _test_loadouts() -> void:
 	hub.queue_free()
 	Profile.reset()
 	Profile.welcome_granted = true
+
+
+func _test_directional_melee() -> void:
+	print("Directional melee")
+	var over := MeleeWeapon.Dir.OVERHEAD
+	var left := MeleeWeapon.Dir.LEFT
+	var right := MeleeWeapon.Dir.RIGHT
+	check(MeleeWeapon.mirror(left) == right and MeleeWeapon.mirror(right) == left
+			and MeleeWeapon.mirror(over) == over, "left and right mirror, overhead does not")
+	check(MeleeWeapon.guard_covers(right, left) and not MeleeWeapon.guard_covers(left, left)
+			and MeleeWeapon.guard_covers(left, -1), "a guard covers the side the swing arrives on")
+
+	# Mouse flicks pick the stance.
+	check(PlayerController.stance_from_flick(Vector2(-80, 10), over, 45.0) == left
+			and PlayerController.stance_from_flick(Vector2(80, -10), over, 45.0) == right
+			and PlayerController.stance_from_flick(Vector2(5, -80), left, 45.0) == over,
+			"flicking the mouse left, right or up picks that side")
+	check(PlayerController.stance_from_flick(Vector2(10, 5), left, 45.0) == left
+			and PlayerController.stance_from_flick(Vector2(0, 90), right, 45.0) == right,
+			"small or downward mouse movement keeps the stance")
+
+	var raid := await _new_raid(51, false)
+	var setup: Array = await _duel(raid)
+	var p: Actor = setup[0]
+	var foe: Actor = setup[1]
+	var foe_blade: MeleeWeapon = setup[2]
+	var blade := p.get_active_weapon() as MeleeWeapon
+	var total := func() -> float: return p.health.health + p.health.armor
+
+	# The foe swings from its left, which arrives on the player's right.
+	foe.cmd.stance = left
+	p.cmd.stance = left
+	p.cmd.secondary = true
+	await frames(30)
+	var before: float = total.call()
+	await _foe_swing(foe)
+	await frames(10)
+	check(foe_blade.is_winding_up() and foe_blade.attack_dir == left, "a swing takes the stance it started in")
+	check(Hud.incoming_side(p) == right, "the HUD warns which side to guard")
+	await frames(30)
+	check(total.call() < before, "a guard on the wrong side stops nothing")
+	check(Hud.incoming_side(p) == -1, "the warning clears after the swing")
+
+	# Changing stance while the guard is up does not move it.
+	p.cmd.stance = right
+	await frames(30)
+	check(blade.guard_dir == left, "a guard keeps the side it was raised on")
+	p.cmd.secondary = false
+	await frames(60)
+
+	# Guard the correct side.
+	p.cmd.secondary = true
+	await frames(30)
+	check(blade.guard_dir == right, "raising the guard again takes the new stance")
+	before = total.call()
+	await _foe_swing(foe)
+	await frames(40)
+	check(is_equal_approx(total.call(), before), "a guard on the correct side blocks the hit")
+	p.cmd.secondary = false
+
+	# A parry needs the correct side too.
+	await frames(90)
+	p.cmd.stance = over
+	before = total.call()
+	await _foe_swing(foe)
+	await frames(22)
+	p.cmd.secondary = true
+	await frames(12)
+	p.cmd.secondary = false
+	check(total.call() < before and foe.stagger_left <= 0.0, "a parry on the wrong side fails")
+	await frames(90)
+	p.cmd.stance = right
+	p.stagger_left = 0.0
+	before = total.call()
+	await _foe_swing(foe)
+	await frames(22)
+	p.cmd.secondary = true
+	await frames(12)
+	p.cmd.secondary = false
+	check(is_equal_approx(total.call(), before) and foe.stagger_left > 0.0, "a parry on the correct side lands")
+
+	# The player's attacks carry their direction, and the foe can guard them.
+	await frames(120)
+	foe.stagger_left = 0.0
+	p.riposte_left = 0.0
+	p.cmd.stance = right
+	foe.cmd.stance = left
+	foe.cmd.secondary = true
+	await frames(30)
+	var foe_before := foe.health.health + foe.health.armor
+	p.cmd.primary_pressed = true
+	await frames(1)
+	p.cmd.primary_pressed = false
+	await frames(20)
+	check(is_equal_approx(foe.health.health + foe.health.armor, foe_before), "an enemy guarding the right side blocks you")
+	await frames(40)
+	p.cmd.stance = over
+	p.cmd.primary_pressed = true
+	await frames(1)
+	p.cmd.primary_pressed = false
+	await frames(20)
+	check(foe.health.health + foe.health.armor < foe_before, "attacking a side the enemy is not guarding gets through")
+	foe.cmd.secondary = false
+
+	# Bullets ignore direction: any guard turns part of one aside.
+	p.cmd.stance = left
+	p.cmd.secondary = true
+	await frames(30)
+	before = total.call()
+	Combat.deal(p, DamageInfo.make(20.0, foe, "bullet"))
+	var loss: float = before - total.call()
+	check(loss > 0.0 and loss < 20.0, "any guard turns aside part of a bullet")
+	p.cmd.secondary = false
+	await _end_raid(raid)
+
+	# A guarding brute picks a side and holds it between swings.
+	var brute_raid := await _new_raid(52, true)
+	var duel: Array = await _duel(brute_raid)
+	var brute: Actor = duel[1]
+	var brute_blade: MeleeWeapon = duel[2]
+	var guarded := false
+	var sides := {}
+	for i in 600:
+		await frames(1)
+		if brute_blade.is_blocking():
+			guarded = true
+		if brute_blade.is_winding_up():
+			sides[brute_blade.attack_dir] = true
+	check(guarded, "a melee bot guards between swings")
+	check(sides.size() >= 2, "a melee bot varies the side it attacks from")
+	await _end_raid(brute_raid)

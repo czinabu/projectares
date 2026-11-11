@@ -12,6 +12,7 @@ var _armor_bar: ProgressBar
 var _stamina_bar: ProgressBar
 var _hit_marker: HitMarker
 var _hurt_flash: ColorRect
+var _stance: StanceIndicator
 var _heat_bar: ProgressBar
 var _heat_label: Label
 var _weapon: Label
@@ -44,6 +45,11 @@ func _ready() -> void:
 	_hit_marker.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(_hit_marker)
 	_place(_hit_marker, 0.5, 0.5, Vector2(-20, -20), Vector2(40, 40))
+
+	_stance = StanceIndicator.new()
+	_stance.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(_stance)
+	_place(_stance, 0.5, 0.5, Vector2(-70, -70), Vector2(140, 140))
 
 	var crosshair := _label(root, "+", 22)
 	_place(crosshair, 0.5, 0.5, Vector2(-7, -17), Vector2(14, 30))
@@ -121,6 +127,10 @@ func _process(delta: float) -> void:
 	_heat_label.modulate = Color(1, 0.35, 0.25) if p.flight.overheated else Color.WHITE
 
 	var weapon := p.get_active_weapon()
+	var blade := weapon as MeleeWeapon
+	_stance.stance = blade.stance if blade else -1
+	_stance.guarding = blade != null and blade.is_blocking()
+	_stance.threat = incoming_side(p)
 	# Every carried weapon is listed with its key, the one in hand marked.
 	var slots: Array[String] = []
 	for i in p.weapons.size():
@@ -153,6 +163,34 @@ func _process(delta: float) -> void:
 	for m in _messages:
 		lines.append(m.text)
 	_feed.text = "\n".join(lines)
+
+
+## The side a nearby enemy swing is coming at the player, as the player sees
+## it (the side to guard), or -1 when nothing is winding up in front of them.
+static func incoming_side(p: Actor) -> int:
+	if p.is_dead or not p.is_inside_tree():
+		return -1
+	var forward := p.get_aim_dir()
+	forward.y = 0.0
+	var best := -1
+	var best_dist := INF
+	for node in p.get_tree().get_nodes_in_group("actors"):
+		var other := node as Actor
+		if other == null or other == p or other.is_dead:
+			continue
+		var blade := other.get_active_weapon() as MeleeWeapon
+		if blade == null or not blade.is_winding_up():
+			continue
+		var to := other.global_position - p.global_position
+		to.y = 0.0
+		var dist := to.length()
+		if dist > blade.reach * 2.5 or dist >= best_dist:
+			continue
+		if dist > 0.5 and forward.length() > 0.01 and forward.normalized().dot(to.normalized()) < 0.2:
+			continue
+		best = MeleeWeapon.mirror(blade.attack_dir)
+		best_dist = dist
+	return best
 
 
 func _on_hit_confirmed(_target: Actor, info: DamageInfo, lethal: bool) -> void:

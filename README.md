@@ -20,6 +20,7 @@ core loop and lays the foundation for online play and more worlds.
 | Dash | Q |
 | Fire, or blade combo | Left mouse |
 | Aim down sights, or block with the blade (tap just before a hit to parry) | Right mouse |
+| Pick a melee side: left, right or overhead | Flick the mouse that way |
 | Heavy lunge with the blade (dive slam in the air) | F |
 | Switch to rifle / blade | 1 / 2, or mouse wheel |
 | Reload | R |
@@ -38,6 +39,9 @@ caches hold the best loot, and only the jetpack gets you there.
 - Hitscan rifle with reloads and aim down sights.
 - Rifle recoil that kicks your view and widens the spread under sustained fire.
 - Blade with a three-hit combo, a heavy lunge, and a dive slam from the air.
+- Directional melee. Flick the mouse left, right or up to pick a side. Attacks
+  come from that side and a guard only covers the side it was raised on. Read
+  the enemy's windup, or the yellow mark by the crosshair, and guard that side.
 - Block and parry with the blade. A parry staggers the attacker and powers up
   your next hit. Attacks, blocking and dashing cost stamina.
 - Hit markers, damage flashes, and placeholder sounds generated in code.

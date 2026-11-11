@@ -36,6 +36,40 @@ func _ready() -> void:
 	await _settle(20)
 	await _shot(out_dir.path_join("first_person_guard.png"))
 	Input.action_release("alt_fire")
+	await _settle(10)
+	controller.stance = MeleeWeapon.Dir.LEFT
+	await _settle(2)
+	Input.action_press("alt_fire")
+	await _settle(20)
+	await _shot(out_dir.path_join("first_person_guard_left.png"))
+	Input.action_release("alt_fire")
+	# An enemy winding up a swing from its right, which arrives on your left.
+	var foe := raid.bots[0]
+	for child in foe.get_children():
+		if child is BotBrain:
+			child.set_physics_process(false)
+	var ahead := raid.player.get_aim_dir()
+	ahead.y = 0.0
+	foe.global_position = raid.player.global_position + ahead.normalized() * 2.4
+	foe.cmd.move = Vector2.ZERO
+	foe.cmd.yaw = controller.yaw + PI
+	foe.cmd.aim_dir = -ahead.normalized()
+	for w in foe.weapons:
+		w.queue_free()
+	foe.weapons.clear()
+	var cleaver := MeleeWeapon.new()
+	cleaver.light_windup = 3.0
+	cleaver.light_stamina = 0.0
+	foe.equip_weapon(cleaver)
+	foe.active_weapon_index = 0
+	foe.cmd.stance = MeleeWeapon.Dir.RIGHT
+	await _settle(5)
+	foe.cmd.primary_pressed = true
+	await _settle(1)
+	foe.cmd.primary_pressed = false
+	await _settle(25)
+	await _shot(out_dir.path_join("enemy_windup.png"))
+	foe.global_position += Vector3(0, -200, 0)
 	hud._on_hit_confirmed(raid.player, DamageInfo.make(1.0, raid.player, "melee"), false)
 	Sfx.play("parry")
 	await _settle(2)

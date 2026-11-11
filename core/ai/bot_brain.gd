@@ -17,6 +17,9 @@ var burst_time := 0.6
 var burst_pause := 0.7
 var patrol_radius := 22.0
 var give_up_time := 7.0
+## Chance that a melee bot reads the side of an incoming swing in time.
+var guard_skill := 0.4
+var guard_reaction := 0.22
 
 var state := State.PATROL
 var actor: Actor
@@ -40,6 +43,11 @@ var _error_left := 0.0
 var _strafe_sign := 1.0
 var _strafe_left := 0.0
 var _melee_wait := 0.0
+var _guard_delay := 0.0
+var _guard_dir := 0
+var _read_left := 0.0
+var _read_dir := 0
+var _threat_seen := false
 
 
 func _ready() -> void:
@@ -61,6 +69,7 @@ func _physics_process(delta: float) -> void:
 	var cmd := actor.cmd
 	cmd.clear_one_shots()
 	cmd.primary = false
+	cmd.secondary = false
 	cmd.sprint = false
 	cmd.move = Vector2.ZERO
 	cmd.aim_dir = Vector3.ZERO
@@ -133,17 +142,42 @@ func _attack(cmd: ActorCommand, delta: float) -> void:
 			_burst_left = burst_time
 
 
-## Rush the target and swing when in reach. Swings have a visible windup, so a
-## well-timed parry turns the fight.
+## Rush the target and swing from a random side when in reach. Between swings
+## the bot guards one side on a guess, and sometimes reads an incoming swing
+## and moves its guard to meet it. Swings have a visible windup, so a
+## well-timed parry on the right side turns the fight.
 func _attack_melee(cmd: ActorCommand, blade: MeleeWeapon, delta: float) -> void:
 	var dist := _flat_dist(target.global_position)
 	_melee_wait = maxf(0.0, _melee_wait - delta)
+	_guard_delay = maxf(0.0, _guard_delay - delta)
 	if dist > blade.reach * 0.7:
 		cmd.sprint = true
 		_move_toward(cmd, target.global_position, delta, false)
-	if dist <= blade.reach * 0.9 and _melee_wait <= 0.0 and _seen_time >= reaction_time:
+
+	var foe_blade := target.get_active_weapon() as MeleeWeapon
+	var threatened := foe_blade != null and foe_blade.is_winding_up() and dist <= foe_blade.reach * 1.5
+	if threatened and not _threat_seen and _rng.randf() < guard_skill:
+		_read_left = guard_reaction
+		_read_dir = MeleeWeapon.mirror(foe_blade.attack_dir)
+	_threat_seen = threatened
+	if _read_left > 0.0:
+		_read_left -= delta
+		if _read_left <= 0.0 and _guard_dir != _read_dir:
+			# Drop the guard for a tick so it comes back up on the right side.
+			_guard_dir = _read_dir
+			return
+
+	if dist <= blade.reach * 0.9 and _melee_wait <= 0.0 and _seen_time >= reaction_time and not threatened:
+		cmd.stance = _rng.randi_range(0, MeleeWeapon.Dir.size() - 1)
 		cmd.primary_pressed = true
 		_melee_wait = _rng.randf_range(1.0, 1.7)
+		_guard_delay = 0.75
+		_guard_dir = _rng.randi_range(0, MeleeWeapon.Dir.size() - 1)
+		return
+	if dist <= blade.reach * 1.6 and _guard_delay <= 0.0 and _seen_time >= reaction_time \
+			and not blade.is_winding_up():
+		cmd.stance = _guard_dir
+		cmd.secondary = true
 
 
 func _patrol(cmd: ActorCommand, delta: float) -> void:
