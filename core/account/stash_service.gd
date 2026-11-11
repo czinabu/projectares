@@ -274,6 +274,16 @@ func deploy(account_id: String, world: WorldDef) -> Dictionary:
 	return {"ok": true, "kit": kit, "picks": account.mastery.active_picks()}
 
 
+## The kit an account would deploy with, without taking anything out of the
+## stash. For safe zones, where gear is worn to be seen and nothing is at risk.
+func showcase(account_id: String, world: WorldDef) -> Dictionary:
+	var account := load_account(account_id)
+	if account == null:
+		return _fail("No such account.")
+	var kit := StashRules.checkout(account.stash.duplicate(), account.loadout.duplicate(), world)
+	return {"ok": true, "kit": kit, "picks": account.mastery.active_picks()}
+
+
 ## Applies a finished run (the `player_finished` result from a SERVER raid):
 ## brought-home gear goes into the stash, the record and mastery XP update,
 ## and the deploy ends. What was deployed and not brought home is gone.

@@ -17,6 +17,15 @@ extends RefCounted
 ##     vehicle-tagged item from `roll_loot` there, facing the marker's yaw.
 ##   - optionally a `bake_navigation()` method for bot pathfinding
 ##
+## Safe zones (`safe_zone = true`) are social spaces, not raids: nobody can be
+## hurt, weapons and abilities are locked, there is no storm, and players show
+## up wearing their loadout without taking it out of the stash. Their map
+## needs only "spawn_player" markers, and may add:
+##   - Marker3D nodes in group "portal" with meta "destination" ("world:<id>",
+##     "home", or anything the game's flow understands), "label" (what the
+##     prompt says) and optionally "radius" (metres, default 3). A player
+##     standing in one is offered the trip; see `core/social/plaza_view.gd`.
+##
 ## Looks: a world may give a bot a model with `bot.set_meta("look", "<skin>")`
 ## in `equip_bot`. The skins are listed in `core/visual/look.gd`.
 
@@ -27,6 +36,8 @@ var description := ""
 var raid_duration := 900.0
 var bot_count := 8
 var exit_hold_time := 4.0
+## A social space with no combat and nothing at stake. See "Safe zones" above.
+var safe_zone := false
 
 
 func create_map() -> Node3D:

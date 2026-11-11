@@ -53,6 +53,8 @@ func _run() -> void:
 	await _test_mastery()
 	await _test_nameplates_and_scoreboard()
 	await _test_online()
+	await _test_plaza()
+	await _test_plaza_online()
 	await _test_stash_service()
 	await _test_phone()
 	await _test_home_base()
@@ -1189,15 +1191,15 @@ func _test_vehicle_raids() -> void:
 ## Every world folder must honour the map contract and run a raid headless.
 func _test_every_world() -> void:
 	print("Every world plugs in")
-	check(Worlds.all().size() >= 2, "registry finds more than one world (%d)" % Worlds.all().size())
+	check(Worlds.raid_worlds().size() >= 2, "registry finds more than one world (%d)" % Worlds.raid_worlds().size())
 	var hub := Hub.new()
 	add_child(hub)
 	await frames(1)
 	var buttons := hub.find_children("*", "Button", true, false).filter(func(b: Node) -> bool:
 		return (b as Button).text.begins_with("Deploy to"))
-	check(buttons.size() == Worlds.all().size(), "the hub has a deploy button for every world")
+	check(buttons.size() == Worlds.raid_worlds().size(), "the hub has a deploy button for every world")
 	hub.queue_free()
-	for world in Worlds.all():
+	for world in Worlds.raid_worlds():
 		var kit := world.starter_loadout()
 		check(not kit.is_empty() and kit.all(func(id: String) -> bool: return ItemDB.has_item(id)),
 				"%s: starter loadout is valid items" % world.id)
@@ -1445,6 +1447,9 @@ func _wipe_dir(dir: String) -> void:
 func _start_server(port: int, extra: Array[String]) -> int:
 	var args := PackedStringArray(["--headless", "--path", ProjectSettings.globalize_path("res://"),
 			"--", "--server", "--world", "ashfront", "--port", str(port), "--accounts", NET_ACCOUNTS])
+	# One world alone on the port, unless the test asks for the plaza too.
+	if "--plaza" not in extra:
+		args.append("--no-plaza")
 	args.append_array(PackedStringArray(extra))
 	return OS.create_process(OS.get_executable_path(), args)
 
@@ -2283,6 +2288,199 @@ func _test_online_stash() -> void:
 # --- Server-owned stash --------------------------------------------------------
 
 const StashService := preload("res://core/account/stash_service.gd")
+
+
+func _test_plaza() -> void:
+	print("Plaza safe zone")
+	var plaza := Worlds.social_world()
+	check(plaza != null and plaza.safe_zone, "the registry finds a safe-zone world")
+	if plaza == null:
+		return
+	check(not Worlds.raid_worlds().has(plaza) and Worlds.raid_worlds().size() == Worlds.all().size() - 1,
+			"safe zones are not listed as worlds to deploy into")
+	var raid := Raid.new()
+	add_child(raid)
+	raid.mode = Raid.Mode.SERVER
+	raid.start_server(plaza, 5)
+	var kit: Array[String] = ["rifle_scrap", "blade_scrap", "jetpack_mk1", "plate_light", "field_dressing"]
+	var a := raid.add_player(kit, {}, "Ada")
+	var b := raid.add_player(kit, {}, "Bo")
+	await frames(20)
+	check(raid.bots.is_empty(), "no bots in the plaza")
+	check(raid.get_children().filter(func(n: Node) -> bool: return n is LootContainer).is_empty(), "no loot in the plaza")
+	check(a.is_on_floor() and b.is_on_floor(), "players stand on the plaza floor")
+	check(a.gear_items.size() >= 3 and a.weapons.size() == 2, "players wear their loadout (%d pieces)" % a.gear_items.size())
+	check(a.weapons_locked and b.weapons_locked, "weapons are locked in a safe zone")
+
+	# Shooting and swinging do nothing.
+	b.global_position = a.global_position + Basis(Vector3.UP, a.cmd.yaw) * Vector3(0, 0, -4)
+	await frames(2)
+	var gun := a.weapons[0] as Gun
+	var ammo: int = gun.ammo_in_mag
+	a.cmd.primary = true
+	a.cmd.primary_pressed = true
+	await frames(30)
+	a.cmd.primary = false
+	a.cmd.primary_pressed = false
+	check(gun.ammo_in_mag == ammo, "a held trigger fires nothing")
+	check(b.health.health == b.health.max_health, "nobody is hurt")
+	a.cmd.switch_weapon = 1
+	await frames(2)
+	a.cmd.switch_weapon = -1
+	check(a.active_weapon_index == 1, "weapons can still be drawn to show them")
+	var hit := Combat.deal(b, DamageInfo.make(50.0, a, "bullet", b.global_position))
+	check(not hit and b.health.health == b.health.max_health, "Combat refuses every hit in a safe zone")
+	var time_before := raid.time_left
+	await frames(30)
+	check(raid.time_left == time_before and not raid.is_over, "there is no storm timer")
+
+	# A fall off the map puts you back, unharmed.
+	b.global_position = Vector3(0, -40, 0)
+	await frames(3)
+	check(not b.is_dead and b.global_position.y > -1.0, "falling out puts you back at the arrival pad")
+
+	# Portals: one per raid world, plus home and the clan hall.
+	var portals := raid.map.get_children().filter(func(n: Node) -> bool: return n.is_in_group("portal"))
+	var destinations := portals.map(func(n: Node) -> String: return n.get_meta("destination", ""))
+	var all_worlds := Worlds.raid_worlds().all(func(w: WorldDef) -> bool: return ("world:" + w.id) in destinations)
+	check(all_worlds, "there is a deploy gate for every raid world")
+	check("home" in destinations, "there is a door to the home base")
+	check("clans" in destinations, "there is a clan hall")
+	check(portals.all(func(n: Node) -> bool: return n.get_meta("label", "") != ""), "every portal says where it goes")
+	var reachable := portals.all(func(n: Node) -> bool:
+		return (n as Node3D).global_position.length() < 50.0 and absf((n as Node3D).global_position.y) < 0.5)
+	check(reachable, "every portal is on the plaza floor")
+
+	# Leaving takes you and nothing else: no body, no bag.
+	raid.remove_player(b)
+	await frames(3)
+	check(not is_instance_valid(b) or b.is_queued_for_deletion(), "a player who leaves is simply gone")
+	check(raid.get_children().filter(func(n: Node) -> bool: return n is LootContainer).is_empty(), "leaving drops no bag")
+	check(raid.players.size() == 1, "the others stay")
+
+	# A warzone in the same process keeps its own rules.
+	var war := Raid.new()
+	add_child(war)
+	war.start(Worlds.get_world("ashfront"), 3)
+	for bot in war.bots:
+		bot.get_node("Brain").set_physics_process(false)
+	await frames(3)
+	check(Worlds.of(a) == plaza and Worlds.of(war.player).id == "ashfront", "each actor answers to its own world")
+	var foe := war.bots[0]
+	check(Combat.deal(foe, DamageInfo.make(5.0, war.player, "bullet", foe.global_position)), "the warzone still deals damage")
+	check(not Combat.deal(a, DamageInfo.make(5.0, war.player, "bullet", a.global_position)),
+			"a warzone hit cannot reach into the plaza")
+	check(not Combat.deal(foe, DamageInfo.make(5.0, a, "bullet", foe.global_position)),
+			"a plaza player cannot hurt anyone in the warzone")
+	await _end_raid(war)
+	await _end_raid(raid)
+
+
+func _test_plaza_online() -> void:
+	print("Plaza online: a shared safe zone beside the warzone")
+	const PlazaView := preload("res://core/social/plaza_view.gd")
+	var port := 24861
+	_wipe_dir(NET_ACCOUNTS)
+	var pid := _start_server(port, ["--plaza", "--bots", "0"])
+	var ada := await _join("Pia", port, {"primary": "rifle_carbine"})
+	check(ada != null, "a client walks into the server's plaza")
+	if ada == null:
+		OS.kill(pid)
+		return
+	check(ada.world_id == "plaza" and ada.raid.world.safe_zone, "the server's front door is the plaza")
+	check(ada.routes.get("ashfront", -1) == port + 1, "the plaza says where the warzone runs")
+	var me := ada.raid.player
+	check("rifle_carbine" in me.gear_items and me.weapons_locked, "you wear your loadout, with weapons locked")
+	await frames(30)
+	check(not ada.account.deployed and "rifle_carbine" in ada.account.stash,
+			"wearing gear in the plaza takes nothing out of the stash")
+
+	var bo := await _join("Pax", port, {"primary": "smg_stinger"} if "smg_stinger" in ada.account.stash else {})
+	check(bo != null, "a second player joins the plaza")
+	if bo != null:
+		await _wait_until(func() -> bool: return RaidRoster.players_in(ada.raid).size() == 2, 240)
+		var seen: Array[Actor] = RaidRoster.players_in(ada.raid).filter(func(a: Actor) -> bool: return a != me)
+		check(seen.size() == 1 and seen[0].display_name == "Pax", "players see each other by name")
+		if seen.size() == 1:
+			var bo_seen := seen[0]
+			var card := PlazaView.gear_lines(bo_seen)
+			var bo_gear: Array = bo.raid.player.gear_items
+			check(not card.is_empty() and card.all(func(line: Dictionary) -> bool: return line.id in bo_gear),
+					"you can read what another player is wearing (%d pieces)" % card.size())
+			# Bo walks; Ada sees it.
+			var from := bo_seen.global_position
+			bo.raid.player.cmd.move = Vector2(0, 1)
+			await frames(60)
+			bo.raid.player.cmd.move = Vector2.ZERO
+			check(bo_seen.global_position.distance_to(from) > 2.0, "movement is shared (%.1f m)" % bo_seen.global_position.distance_to(from))
+			# Ada aims at Bo and holds the trigger. Nothing happens.
+			var aim := (bo_seen.global_position + Vector3(0, 1.1, 0) - me.get_eye_position()).normalized()
+			me.cmd.yaw = atan2(-aim.x, -aim.z)
+			me.cmd.aim_dir = aim
+			me.cmd.primary = true
+			me.cmd.primary_pressed = true
+			await frames(60)
+			me.cmd.primary = false
+			var bo_me := bo.raid.player
+			check(bo_me.health.health == bo_me.health.max_health and not bo_me.is_dead, "nobody can be shot in the plaza")
+			var looking := PlazaView.inspect_target(ada.raid, me, me.get_eye_position(), aim, 60.0, 9.0)
+			check(looking == bo_seen, "looking at a player picks them for the gear card")
+
+	# Through the gate: the same account, now in the warzone's lobby.
+	var war_port: int = ada.routes.get("ashfront", -1)
+	await _leave(ada)
+	if bo != null:
+		await _wait_until(func() -> bool: return RaidRoster.players_in(bo.raid).size() == 1, 240)
+		check(RaidRoster.players_in(bo.raid).size() == 1, "a player who leaves is gone from the plaza")
+		check(bo.containers().is_empty(), "and leaves no bag behind")
+	var ada_war := await _sign_in("Pia", war_port)
+	check(ada_war != null and ada_war.world_id == "ashfront", "the gate leads to the warzone on the next port")
+	if ada_war != null:
+		check(ada_war.account.loadout.get("primary", "") == "rifle_carbine" and "rifle_carbine" in ada_war.account.stash,
+				"the account is the same one: loadout and stash carry over")
+		ada_war.deploy()
+		await _wait_until(func() -> bool: return ada_war.raid != null and ada_war.raid.player != null, 240)
+		await _wait_until(func() -> bool: return ada_war.account.deployed, 120)
+		check(ada_war.raid != null and not ada_war.raid.world.safe_zone and ada_war.account.deployed
+				and not ada_war.raid.player.weapons_locked, "deploying there is a real raid with gear at stake")
+		await _leave(ada_war)
+	await _leave(bo)
+
+	# The whole trip through the game's own flow.
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await frames(2)
+	Profile.player_name = "Quill"
+	main.join_online("127.0.0.1:%d" % port)
+	await _wait_until(func() -> bool: return main.raid != null and main.raid.player != null, 600)
+	check(main.raid != null and main.raid.world.safe_zone and main.plaza_view != null and not main.hub.visible,
+			"joining a server puts you in its plaza")
+	if main.raid != null:
+		var gate: Node3D = null
+		for node in get_tree().get_nodes_in_group("portal"):
+			if main.raid.map.is_ancestor_of(node) and node.get_meta("destination", "") == "world:ashfront":
+				gate = node
+		check(gate != null and PlazaView.portal_at(main.raid, gate.global_position) == gate
+				and PlazaView.portal_at(main.raid, Vector3(0, 0, 20)) == null, "standing in a gate offers the trip")
+		check(gate != null and PlazaView.prompt_for(gate, main.net.routes).begins_with("[E]")
+				and PlazaView.prompt_for(gate, {}).contains("closed"), "a gate to a world the server lacks is closed")
+		main.use_portal("clans")
+		check(main.raid != null, "the clan hall is not open yet")
+		main.use_portal("world:ashfront")
+		await _wait_until(func() -> bool:
+			return main.net != null and main.net.world_id == "ashfront" and not main.net.account.is_empty(), 600)
+		check(main.hub.in_lobby() and main.raid == null and main.hub.visible and main.net != null
+				and main.net.world_id == "ashfront", "using a gate takes you to that world's lobby")
+		main.leave_server()
+		await _wait_until(func() -> bool: return main.raid != null and main.raid.player != null, 600)
+		check(main.raid != null and main.raid.world.safe_zone, "leaving the lobby leads back to the plaza")
+		main.use_portal("leave")
+		await frames(5)
+		check(main.net == null and main.raid == null and main.hub.visible and not main.hub.in_lobby(),
+				"the exit leaves the server")
+	main.queue_free()
+	OS.kill(pid)
+	await frames(30)
 
 
 func _test_stash_service() -> void:

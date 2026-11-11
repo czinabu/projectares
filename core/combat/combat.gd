@@ -17,8 +17,12 @@ static func deal(target: Object, info: DamageInfo) -> bool:
 	var actor := target as Actor
 	if actor == null or actor.is_dead or not authoritative:
 		return false
-	var world: WorldDef = Worlds.current
-	if world and not world.can_damage(info.source, actor, info):
+	# Rules come from the raid the target stands in, and a hit never crosses
+	# from one raid into another.
+	var world := Worlds.of(actor)
+	if world and (world.safe_zone or not world.can_damage(info.source, actor, info)):
+		return false
+	if info.source is Node and Raid.of(info.source) != null and not Raid.together(info.source, actor):
 		return false
 	actor.modify_incoming(info)
 	if info.amount > 0.0:

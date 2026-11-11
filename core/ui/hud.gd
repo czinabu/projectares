@@ -113,6 +113,9 @@ func _process(delta: float) -> void:
 	var secs := int(maxf(raid.time_left, 0.0))
 	_timer.text = "%s   %02d:%02d" % [raid.world.display_name, secs / 60, secs % 60]
 	_timer.modulate = Color(1, 0.4, 0.3) if secs < 120 else Color.WHITE
+	if raid.world.safe_zone:
+		_timer.text = raid.world.display_name
+		_timer.modulate = Color.WHITE
 
 	_vitals.text = "Health %d   Armor %d (%s)   Stamina %d" % [
 		ceili(p.health.health), ceili(p.health.armor), p.frame_name, floori(p.stamina)]

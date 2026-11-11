@@ -46,7 +46,7 @@ static func run(t: Node) -> void:
 	t.check(crate.find_children("*", "CollisionObject3D", true, false).is_empty(), "props have no collision")
 	crate.free()
 
-	for world in Worlds.all():
+	for world in Worlds.raid_worlds():
 		var raid := Raid.new()
 		t.add_child(raid)
 		raid.start(world, 11)

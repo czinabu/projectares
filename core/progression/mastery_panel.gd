@@ -48,8 +48,8 @@ func refresh() -> void:
 ## item that fills the slot when it is empty.
 func loadout_tracks() -> Array[String]:
 	var starter: Array[String] = []
-	if not Worlds.all().is_empty():
-		starter = Worlds.all()[0].starter_loadout()
+	if not Worlds.raid_worlds().is_empty():
+		starter = Worlds.raid_worlds()[0].starter_loadout()
 	var out: Array[String] = []
 	for slot: String in Loadout.SLOTS:
 		var id: String = Profile.equipped(slot) if loadout == null else loadout.get(slot, "")

@@ -51,6 +51,8 @@ signal run_finished(result: Dictionary)
 signal failed(reason: String)
 ## Client: the connection dropped after joining.
 signal disconnected
+## Client: the server said which port each of its worlds runs on.
+signal routes_changed(routes: Dictionary)
 ## Server: a fresh raid replaced a finished one.
 signal raid_restarted(raid: Raid)
 ## Client: the phone's contacts, messages, invites and news changed (see
@@ -100,6 +102,14 @@ var world_id := ""
 ## the world's own) and whether players spawn together.
 var bot_count := -1
 var squad_spawn := false
+## Server, set before `host`: the raid gets a 3D world of its own, so several
+## sessions (a plaza and a warzone) can run in one process without their maps
+## colliding.
+var isolated := false
+## Where to find the other worlds on this server: world id -> port. A server
+## hosting a safe zone fills this in before `host`, and clients receive it
+## when they sign in, so a plaza gate knows where to send you.
+var routes := {}
 ## Client: called with the server's world, returns the kit to deploy with.
 ## Server: owns every player's stash, loadout and mastery. Set its
 ## `save_dir` or `persist` before `host`.
@@ -171,6 +181,7 @@ var _tick := 0
 var _had_players := false
 var _restart_in := -1.0
 var _finished := false
+var _space: SubViewport  # the raid's own 3D world when `isolated` (server)
 
 
 func _enter_tree() -> void:
@@ -230,7 +241,16 @@ func _start_server_raid() -> void:
 	_clear_tables()
 	raid = Raid.new()
 	raid.name = "Raid"
-	add_child(raid)
+	if isolated:
+		if _space == null:
+			_space = SubViewport.new()
+			_space.name = "Space"
+			_space.own_world_3d = true
+			_space.render_target_update_mode = SubViewport.UPDATE_DISABLED
+			add_child(_space)
+		_space.add_child(raid)
+	else:
+		add_child(raid)
 	raid.actor_spawned.connect(_on_server_actor_spawned)
 	raid.actor_removed.connect(_on_server_actor_removed)
 	raid.player_finished.connect(_on_server_player_finished)
@@ -424,6 +444,8 @@ func _sign_in(p_name: String, p_secret: String) -> void:
 			if other in _api.get_peers():
 				_api.multiplayer_peer.disconnect_peer(other)
 	_peer_account[peer] = result.account_id
+	if not routes.is_empty():
+		_routes.rpc_id(peer, routes)
 	_send_account(peer)
 	_social_joined(peer)
 
@@ -477,12 +499,16 @@ func _request_join() -> void:
 		_lobby_error.rpc_id(peer, "That raid is ending. Try again in a moment.")
 		return
 	var account_id: String = _peer_account[peer]
-	var deployed: Dictionary = stash.deploy(account_id, raid.world)
+	# In a safe zone the loadout is worn, not risked: it never leaves the
+	# stash, and there is no run to settle afterwards.
+	var safe := raid.world.safe_zone
+	var deployed: Dictionary = stash.showcase(account_id, raid.world) if safe else stash.deploy(account_id, raid.world)
 	if not deployed.ok:
 		_lobby_error.rpc_id(peer, deployed.error)
 		return
 	var actor := raid.add_player(deployed.kit, deployed.picks, stash.snapshot(account_id).name)
-	_actor_account[actor] = account_id
+	if not safe:
+		_actor_account[actor] = account_id
 	_send_account(peer)
 	_peer_actor[peer] = actor
 	_actor_peer[actor] = peer
@@ -502,7 +528,7 @@ func _request_join() -> void:
 		if peer in _api.get_peers():
 			_inventory.rpc_id(peer, actor.inventory.items))
 	_joined_peers.append(peer)
-	_social_moved(peer, "raid")
+	_social_moved(peer, "hub" if safe else "raid")
 	_welcome.rpc_id(peer, _ids[actor], raid.time_left)
 	for other: Actor in _ids:
 		if not other.is_dead:
@@ -630,7 +656,7 @@ func _server_late_tick(delta: float) -> void:
 			for peer in _joined_peers:
 				_kills.rpc_id(peer, id, state.kills)
 	# A raid that ran out of time, or that everyone has left, makes way for a new one.
-	if _restart_in < 0.0 and (raid.is_over or (_had_players and raid.players.is_empty())):
+	if _restart_in < 0.0 and not raid.world.safe_zone and (raid.is_over or (_had_players and raid.players.is_empty())):
 		_restart_in = 5.0 if raid.is_over else 1.0
 	if _restart_in >= 0.0:
 		_restart_in -= delta
@@ -650,7 +676,7 @@ func _restart_raid() -> void:
 	for account_id: String in _actor_account.values():
 		stash.cancel_deploy(account_id)
 	raid.queue_free()
-	remove_child(raid)
+	raid.get_parent().remove_child(raid)
 	_start_server_raid()
 
 
@@ -711,6 +737,15 @@ func _account(snapshot: Dictionary) -> void:
 
 
 @rpc("authority", "call_remote", "reliable")
+func _routes(p_routes: Dictionary) -> void:
+	routes.clear()
+	for id: Variant in p_routes:
+		if typeof(id) == TYPE_STRING and typeof(p_routes[id]) == TYPE_INT:
+			routes[id] = p_routes[id]
+	routes_changed.emit(routes)
+
+
+@rpc("authority", "call_remote", "reliable")
 func _lobby_error(reason: String) -> void:
 	lobby_error.emit(reason)
 
@@ -759,6 +794,7 @@ func _spawn(id: int, kind: String, shown_name: String, node_name: String, at: Ve
 		raid.add_child(actor)
 		actor.global_position = at
 		Loadout.equip(actor, data.get("kit", []))
+		actor.weapons_locked = raid.world.safe_zone
 		Raid.MasteryTracker.apply_variants(actor, data.get("picks", {}))
 		raid.world.on_spawn(actor)
 		# Listed as a player, so the HUD and scoreboard can tell them from bots.
