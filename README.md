@@ -141,6 +141,12 @@ you have.
   with the most renown is the Marked, the richest kill in the world. Killing
   someone in the free scrap kit pays almost nothing. Player kills, bounties
   and the Marked are announced to everyone.
+- War intensity. Ashfront keeps a meter of how much fighting is going on.
+  Kills and hostile players closing on each other raise it, and it cools when
+  things calm down; a full server that is not fighting stays quiet. As it
+  climbs the sky darkens from a hazy afternoon to a dull red dusk, a column
+  of smoke stands over the heaviest fighting, and kills pay up to half as
+  much renown again. Frostline stays quiet.
 - Hitscan rifle with reloads and aim down sights.
 - Rifle recoil that kicks your view and widens the spread under sustained fire.
 - Blade with a three-hit combo, a heavy lunge, and a dive slam from the air.

@@ -36,6 +36,7 @@ const PARKED_DISTANCE := 6.0
 const VehicleScript := preload("res://core/vehicle/vehicle.gd")
 const MasteryTracker := preload("res://core/progression/mastery_tracker.gd")
 const RenownLedger := preload("res://core/progression/renown_ledger.gd")
+const WarDirector := preload("res://core/war/war_director.gd")
 
 ## How this raid runs.
 ##   SOLO   - one local player, everything simulated here.
@@ -66,6 +67,10 @@ var mastery: MasteryTracker
 ## Every player's renown in this world. It outlives their lives here.
 var renown := RenownLedger.new()
 var _marked_owner := ""
+## How hot the war is here, and where. On a client the values come from the
+## server. The map hears them through its "war_intensity" and "war_centre"
+## metas, which is all `Look` needs to shift the sky.
+var war := WarDirector.new()
 ## When false, the raid reports results but leaves the stash alone, so a server
 ## never writes to a profile that is not the player's.
 var apply_to_profile := true
@@ -144,8 +149,12 @@ func _setup(p_world: WorldDef, p_seed: int) -> void:
 	else:
 		rng.randomize()
 
+	# A safe zone is never at war.
+	war.scale = 0.0 if world.safe_zone else world.war_scale
 	map = world.create_map()
 	map.name = "Map"
+	map.set_meta("war_intensity", 0.0)
+	map.set_meta("war_centre", Vector3.ZERO)
 	add_child(map)
 	if mode != Mode.CLIENT and map.has_method("bake_navigation"):
 		map.call("bake_navigation")
@@ -172,6 +181,10 @@ func _physics_process(delta: float) -> void:
 		return
 	clock += delta
 	_tick_sign_outs(delta)
+	if mode != Mode.CLIENT:
+		_tick_war(delta)
+	map.set_meta("war_intensity", war.intensity)
+	map.set_meta("war_centre", war.centre)
 	if mode == Mode.CLIENT:
 		return
 	if world.safe_zone:
@@ -198,6 +211,23 @@ func _keep_everyone_safe() -> void:
 
 
 ## An emptied cache fills up again after a while.
+## Feeds the war director: hostile players close to each other heat the
+## world up, and a hotter world pays more renown.
+func _tick_war(delta: float) -> void:
+	var living: Array[Actor] = active_players()
+	var clashes: Array[Vector3] = []
+	var probe := DamageInfo.new()
+	for i in living.size():
+		for j in range(i + 1, living.size()):
+			var a := living[i]
+			var b := living[j]
+			if a.global_position.distance_to(b.global_position) <= war.clash_distance \
+					and world.can_damage(a, b, probe):
+				clashes.append((a.global_position + b.global_position) * 0.5)
+	war.tick(delta, clashes)
+	renown.pay_scale = war.renown_bonus()
+
+
 func _tick_caches(delta: float) -> void:
 	for cache in _caches:
 		var container: LootContainer = cache.container
@@ -588,6 +618,9 @@ func _on_actor_died(actor: Actor, info: DamageInfo) -> void:
 	var gained := 0
 	if mode != Mode.CLIENT:
 		gained = _settle_renown(state, killer, actor, by)
+		# Only kills that players are part of count as the war.
+		if state != null or killer != null:
+			war.report_kill(actor.global_position, state != null)
 	if killer != null:
 		killer.kills += 1
 		if killer.actor == player:
@@ -621,7 +654,7 @@ func _settle_renown(victim: PlayerState, killer: PlayerState, actor: Actor, by: 
 	victim.renown_lost = paid.lost
 	gained = paid.gain
 	if killer == null:
-		war_feed.emit("%s was killed by %s" % [actor.display_name, by] if by != ""
+		war_feed.emit("%s fell to %s" % [actor.display_name, by] if by != ""
 				else "%s died" % actor.display_name)
 		return gained
 	var line := "%s killed %s" % [_feed_name(killer.actor), _feed_name(actor)]

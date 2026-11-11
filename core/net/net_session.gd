@@ -74,7 +74,7 @@ signal world_invite_accepted(invite: Dictionary)
 signal base_visit_requested(owner_name: String, stash: Array, loadout: Dictionary)
 
 const DEFAULT_PORT := 24565
-const PROTOCOL := 9
+const PROTOCOL := 10
 const StashService := preload("res://core/account/stash_service.gd")
 const Economy := preload("res://core/economy/economy.gd")
 const SocialService := preload("res://core/social/social_service.gd")
@@ -194,6 +194,7 @@ var _sent_kills := {}    # actor id -> kill count last sent (server)
 var _board_sent := {}    # peer id -> [board text, tick sent] (server, arena)
 var _board_dirty := false
 var _sent_standing := {} # actor id -> public renown standing last sent (server)
+var _sent_war := -1.0    # war intensity last sent (server)
 var _tick := 0
 var _died_at := {}       # peer id -> msec when their last life ended in a death (server)
 var _finished := false   # client: signed out, so the server closing the connection is expected
@@ -332,6 +333,7 @@ func _clear_tables() -> void:
 	_ride_entry = []
 	_sent_kills.clear()
 	_sent_standing.clear()
+	_sent_war = -1.0
 	_actor_account.clear()
 	_board_sent.clear()
 
@@ -676,6 +678,7 @@ func _request_join() -> void:
 		_kills.rpc_id(peer, id, _sent_kills[id])
 	for id: int in _sent_standing:
 		_standing.rpc_id(peer, id, _sent_standing[id])
+	_war.rpc_id(peer, raid.war.intensity, raid.war.centre)
 
 
 ## Arena: a player in it asks for something (challenge, accept, bet...).
@@ -844,11 +847,18 @@ func _server_late_tick(_delta: float) -> void:
 			for peer in _joined_peers:
 				_kills.rpc_id(peer, id, state.kills)
 		var actor := state.actor
+		if not is_instance_valid(actor):
+			continue
 		var standing := [actor.renown, actor.rank, actor.streak, actor.bounty, actor.exposed, actor.marked]
 		if id >= 0 and _sent_standing.get(id, []) != standing:
 			_sent_standing[id] = standing
 			for peer in _joined_peers:
 				_standing.rpc_id(peer, id, standing)
+	# The meter moves slowly, so a few times a second is plenty.
+	if _tick % 20 == 0 and not is_equal_approx(_sent_war, raid.war.intensity):
+		_sent_war = raid.war.intensity
+		for peer in _joined_peers:
+			_war.rpc_id(peer, raid.war.intensity, raid.war.centre)
 
 
 # ---------------------------------------------------------------- client ----
@@ -1264,6 +1274,14 @@ func _hurt(amount: float, kind: String) -> void:
 	var me: Actor = _actors.get(my_actor_id)
 	if me != null and not me.is_dead:
 		me.health.damaged.emit(DamageInfo.make(amount, null, kind))
+
+
+## How hot the war is and where, for the sky and the HUD.
+@rpc("authority", "call_remote", "unreliable_ordered")
+func _war(intensity: float, centre: Vector3) -> void:
+	if raid != null:
+		raid.war.intensity = clampf(intensity, 0.0, 1.0)
+		raid.war.centre = centre
 
 
 ## A player's public renown: [renown, rank, streak, bounty, exposed, marked].

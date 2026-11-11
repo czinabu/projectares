@@ -127,7 +127,8 @@ func _process(delta: float) -> void:
 	if raid == null or raid.player == null or not is_instance_valid(raid.player):
 		return
 	var p := raid.player
-	_timer.text = raid.world.display_name
+	_timer.text = raid.world.display_name if raid.war.intensity < 0.2 \
+			else "%s   %s" % [raid.world.display_name, raid.war.level_name()]
 	_standing.text = standing_text(p)
 	_redeploy_wait = maxf(0.0, _redeploy_wait - delta)
 	_death.visible = p.is_dead and not _death_result.is_empty()

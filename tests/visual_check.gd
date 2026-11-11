@@ -45,6 +45,12 @@ func _ready() -> void:
 		get_tree().quit()
 		return
 
+	# `-- <output_dir> --war-only` shows the sky at three war intensities.
+	if "--war-only" in args:
+		await _war_shots(out_dir)
+		get_tree().quit()
+		return
+
 	var raid := Raid.new()
 	add_child(raid)
 	raid.start(Worlds.get_world("ashfront"), 42)
@@ -302,3 +308,27 @@ func _shot(path: String) -> void:
 	await RenderingServer.frame_post_draw
 	get_viewport().get_texture().get_image().save_png(path)
 	print("saved ", path)
+
+
+## The same view of Ashfront when quiet, in a battle and in all-out war.
+func _war_shots(out_dir: String) -> void:
+	var raid := Raid.new()
+	add_child(raid)
+	raid.start(Worlds.get_world("ashfront"), 42)
+	raid.war.cooling = 0.0
+	for bot in raid.bots:
+		bot.get_node("Brain").set_physics_process(false)
+	var controller := PlayerController.new()
+	controller.setup(raid.player)
+	raid.add_child(controller)
+	var hud := Hud.new()
+	hud.setup(raid, controller)
+	raid.add_child(hud)
+	var mood := raid.map.get_node("WarMood")
+	for step: Array in [[0.0, "war_quiet"], [0.55, "war_battle"], [1.0, "war_all_out"]]:
+		raid.war.intensity = step[0]
+		raid.war.centre = raid.player.global_position + raid.player.get_aim_dir() * 170.0
+		mood.follow = 100.0
+		await _settle(240 if step[0] > 0.0 else 60)
+		await _shot(out_dir.path_join(step[1] + ".png"))
+	raid.queue_free()

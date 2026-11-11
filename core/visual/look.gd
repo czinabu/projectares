@@ -224,8 +224,13 @@ func _noise_texture() -> NoiseTexture2D:
 ##   sky (hdr file name), sky_tint, sky_energy, sky_saturation, sky_rotation,
 ##   fog_color, fog_density, sun_color, sun_energy, sun_angles (degrees),
 ##   ambient_color, ambient_energy, exposure, saturation, contrast, glow.
+## `war` holds the same keys for the same place in the middle of a battle.
+## When it is given, the mood blends from `p` towards it as the map's
+## "war_intensity" meta climbs from 0 to 1, and a column of smoke stands over
+## its "war_centre" meta. Whoever runs the world sets those metas; nothing
+## here knows who.
 ## On a headless server this only adds a plain sun, which nothing sees.
-func atmosphere(parent: Node3D, p := {}) -> void:
+func atmosphere(parent: Node3D, p := {}, war := {}) -> void:
 	var sun := DirectionalLight3D.new()
 	sun.name = "Sun"
 	sun.rotation_degrees = p.get("sun_angles", Vector3(-45, 30, 0))
@@ -239,15 +244,10 @@ func atmosphere(parent: Node3D, p := {}) -> void:
 	if not enabled:
 		return
 
-	var fog_color: Color = p.get("fog_color", Color(0.5, 0.5, 0.5))
 	var sky_mat := ShaderMaterial.new()
 	sky_mat.shader = SKY_SHADER
 	sky_mat.set_shader_parameter("panorama", load("res://assets/sky/" + p.get("sky", "kloppenheim_06_puresky_2k.hdr")))
-	sky_mat.set_shader_parameter("tint", p.get("sky_tint", Color.WHITE))
-	sky_mat.set_shader_parameter("energy", p.get("sky_energy", 1.0))
-	sky_mat.set_shader_parameter("saturation", p.get("sky_saturation", 1.0))
 	sky_mat.set_shader_parameter("rotation", p.get("sky_rotation", 0.0))
-	sky_mat.set_shader_parameter("haze_color", fog_color)
 	sky_mat.set_shader_parameter("haze_height", p.get("haze_height", 0.22))
 	var sky := Sky.new()
 	sky.sky_material = sky_mat
@@ -257,16 +257,11 @@ func atmosphere(parent: Node3D, p := {}) -> void:
 	env.background_mode = Environment.BG_SKY
 	env.sky = sky
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.ambient_light_color = p.get("ambient_color", fog_color.lerp(Color.WHITE, 0.4))
 	env.ambient_light_sky_contribution = 0.5
-	env.ambient_light_energy = p.get("ambient_energy", 1.0)
 	env.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
 	env.tonemap_mode = Environment.TONE_MAPPER_ACES
-	env.tonemap_exposure = p.get("exposure", 1.0)
 	env.tonemap_white = 6.0
 	env.fog_enabled = true
-	env.fog_light_color = fog_color
-	env.fog_density = p.get("fog_density", 0.01)
 	env.fog_sky_affect = 0.0
 	env.fog_aerial_perspective = 0.0
 	env.fog_sun_scatter = p.get("sun_scatter", 0.15)
@@ -277,17 +272,173 @@ func atmosphere(parent: Node3D, p := {}) -> void:
 	env.ssao_intensity = 2.6
 	env.ssao_power = 1.6
 	env.glow_enabled = true
-	env.glow_intensity = p.get("glow", 0.7)
 	env.glow_bloom = 0.08
 	env.glow_hdr_threshold = 1.1
 	env.glow_blend_mode = Environment.GLOW_BLEND_MODE_SOFTLIGHT
 	env.adjustment_enabled = true
-	env.adjustment_saturation = p.get("saturation", 0.9)
-	env.adjustment_contrast = p.get("contrast", 1.08)
 	var world_env := WorldEnvironment.new()
 	world_env.name = "Atmosphere"
 	world_env.environment = env
 	parent.add_child(world_env)
+	var calm := mood_values(p)
+	apply_mood(calm, env, sky_mat, sun)
+	if war.is_empty():
+		return
+	var mood := WarMood.new()
+	mood.name = "WarMood"
+	mood.calm = calm
+	mood.war = mood_values(war, calm)
+	mood.env = env
+	mood.sky_mat = sky_mat
+	mood.sun = sun
+	mood.column = _war_column()
+	parent.add_child(mood)
+	mood.add_child(mood.column)
+
+
+## The part of an atmosphere that can shift while a world runs, with every
+## key filled in. Keys missing from `p` come from `fallback`, or from the
+## defaults when there is none.
+func mood_values(p: Dictionary, fallback := {}) -> Dictionary:
+	var fog: Color = p.get("fog_color", fallback.get("fog_color", Color(0.5, 0.5, 0.5)))
+	var base := {
+		"sky_tint": Color.WHITE, "sky_energy": 1.0, "sky_saturation": 1.0,
+		"fog_color": fog, "fog_density": 0.01,
+		"sun_color": Color.WHITE, "sun_energy": 1.0,
+		"ambient_color": fog.lerp(Color.WHITE, 0.4), "ambient_energy": 1.0,
+		"exposure": 1.0, "saturation": 0.9, "contrast": 1.08, "glow": 0.7,
+	}
+	var out := {}
+	for key: String in base:
+		out[key] = p.get(key, fallback.get(key, base[key]))
+	return out
+
+
+## A mood part of the way from `a` to `b`.
+func blend_moods(a: Dictionary, b: Dictionary, t: float) -> Dictionary:
+	var out := {}
+	for key: String in a:
+		out[key] = lerp(a[key], b.get(key, a[key]), clampf(t, 0.0, 1.0))
+	return out
+
+
+func apply_mood(m: Dictionary, env: Environment, sky_mat: ShaderMaterial, sun: DirectionalLight3D) -> void:
+	sky_mat.set_shader_parameter("tint", m.sky_tint)
+	sky_mat.set_shader_parameter("energy", m.sky_energy)
+	sky_mat.set_shader_parameter("saturation", m.sky_saturation)
+	sky_mat.set_shader_parameter("haze_color", m.fog_color)
+	env.fog_light_color = m.fog_color
+	env.fog_density = m.fog_density
+	env.ambient_light_color = m.ambient_color
+	env.ambient_light_energy = m.ambient_energy
+	env.tonemap_exposure = m.exposure
+	env.glow_intensity = m.glow
+	env.adjustment_saturation = m.saturation
+	env.adjustment_contrast = m.contrast
+	sun.light_color = m.sun_color
+	sun.light_energy = m.sun_energy
+
+
+## Smoke, ash and red light standing over the heaviest fighting.
+func _war_column() -> Node3D:
+	var column := Node3D.new()
+	column.name = "WarColumn"
+	var smoke := GPUParticles3D.new()
+	smoke.name = "Smoke"
+	smoke.amount = 260
+	smoke.lifetime = 22.0
+	var mat := ParticleProcessMaterial.new()
+	mat.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
+	mat.emission_sphere_radius = 14.0
+	mat.direction = Vector3(0.15, 1, 0.05)
+	mat.spread = 12.0
+	mat.gravity = Vector3(0.5, 0.0, 0.2)
+	mat.initial_velocity_min = 5.0
+	mat.initial_velocity_max = 8.0
+	mat.scale_min = 0.6
+	mat.scale_max = 1.5
+	mat.turbulence_enabled = true
+	mat.turbulence_noise_scale = 3.0
+	mat.turbulence_influence_min = 0.02
+	mat.turbulence_influence_max = 0.08
+	var grow := Curve.new()
+	grow.add_point(Vector2(0.0, 0.35))
+	grow.add_point(Vector2(1.0, 1.0))
+	var grow_tex := CurveTexture.new()
+	grow_tex.curve = grow
+	mat.scale_curve = grow_tex
+	var fade := Gradient.new()
+	fade.set_color(0, Color(0.5, 0.16, 0.07, 0.0))
+	fade.add_point(0.08, Color(0.2, 0.09, 0.06, 0.55))
+	fade.add_point(0.5, Color(0.07, 0.06, 0.06, 0.5))
+	fade.set_color(fade.get_point_count() - 1, Color(0.05, 0.05, 0.05, 0.0))
+	var fade_tex := GradientTexture1D.new()
+	fade_tex.gradient = fade
+	mat.color_ramp = fade_tex
+	var quad := QuadMesh.new()
+	quad.size = Vector2(46, 46)
+	var draw := StandardMaterial3D.new()
+	draw.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	draw.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	draw.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	draw.vertex_color_use_as_albedo = true
+	draw.albedo_texture = _soft_dot()
+	draw.disable_fog = true
+	quad.material = draw
+	smoke.process_material = mat
+	smoke.draw_pass_1 = quad
+	smoke.visibility_aabb = AABB(Vector3(-90, -10, -90), Vector3(180, 260, 180))
+	smoke.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	smoke.emitting = false
+	column.add_child(smoke)
+	var glow := OmniLight3D.new()
+	glow.name = "Glow"
+	glow.light_color = Color(1.0, 0.25, 0.1)
+	glow.omni_range = 70.0
+	glow.light_energy = 0.0
+	glow.position.y = 14.0
+	column.add_child(glow)
+	return column
+
+
+## Shifts a map's mood with the war. Reads the metas "war_intensity" and
+## "war_centre" from the node it was added to, and eases towards them so the
+## sky never snaps. View only.
+class WarMood:
+	extends Node
+
+	## How fast the mood follows the meter, per second.
+	var follow := 0.12
+	## The column of smoke shows above this intensity.
+	var column_from := 0.3
+	var calm := {}
+	var war := {}
+	var env: Environment
+	var sky_mat: ShaderMaterial
+	var sun: DirectionalLight3D
+	var column: Node3D
+	## The intensity shown right now.
+	var shown := 0.0
+
+	func _process(delta: float) -> void:
+		var parent := get_parent()
+		var target := clampf(float(parent.get_meta("war_intensity", 0.0)), 0.0, 1.0)
+		shown = move_toward(shown, target, follow * delta)
+		show_intensity(shown, parent.get_meta("war_centre", Vector3.ZERO))
+
+	## Sets the mood for an intensity at once. `_process` calls this with the eased value.
+	func show_intensity(value: float, centre: Vector3) -> void:
+		shown = value
+		Look.apply_mood(Look.blend_moods(calm, war, value), env, sky_mat, sun)
+		var smoke: GPUParticles3D = column.get_node("Smoke")
+		var glow: OmniLight3D = column.get_node("Glow")
+		var strength := clampf((value - column_from) / maxf(1.0 - column_from, 0.001), 0.0, 1.0)
+		smoke.emitting = strength > 0.0
+		smoke.amount_ratio = maxf(strength, 0.05)
+		glow.light_energy = strength * 6.0
+		if strength > 0.0:
+			column.global_position = column.global_position.lerp(centre, 0.02) \
+					if column.global_position.distance_to(centre) < 120.0 else centre
 
 
 ## Drifting particles that fill the air over the whole map: "embers", "snow"
