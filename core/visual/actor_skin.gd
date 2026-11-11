@@ -5,10 +5,8 @@ extends Node3D
 ## and plays the effects for shots and hits.
 
 const Vfx := preload("res://core/visual/vfx.gd")
+const WeaponArm := preload("res://core/visual/weapon_arm.gd")
 const CHARACTER_SHADER := preload("res://assets/shaders/character.gdshader")
-
-## From the grip bone to where the weapon's handle sits, in the hand's space.
-var grip_offset := Vector3(0.0, 0.0, 0.0)
 
 var look: Node
 var actor: Actor
@@ -21,30 +19,8 @@ var _flash_left := 0.0
 var _materials: Array[ShaderMaterial] = []
 var _thrust: Node3D
 var _attack_left := 0.0
-var _skeleton: Skeleton3D
-var _grip_bone := -1
-var _arm_ik: TwoBoneIK3D
-var _arm_target := Node3D.new()
-var _arm_pole := Node3D.new()
-var _arm_weight := 0.0
-var _arm_reach := Vector3.ZERO
-
-## Where the weapon hand goes for each melee side, as an offset from the
-## resting hand: x to the actor's right, y up, z back.
-var arm_windup := {
-	MeleeWeapon.Dir.RIGHT: Vector3(0.0, 0.3, 0.25),
-	MeleeWeapon.Dir.LEFT: Vector3(-0.5, 0.3, 0.1),
-	MeleeWeapon.Dir.OVERHEAD: Vector3(-0.15, 0.5, 0.2),
-}
-var arm_follow := {
-	MeleeWeapon.Dir.RIGHT: Vector3(-0.5, -0.2, -0.2),
-	MeleeWeapon.Dir.LEFT: Vector3(0.15, -0.2, -0.2),
-	MeleeWeapon.Dir.OVERHEAD: Vector3(-0.15, -0.35, -0.25),
-}
-var arm_guard := Vector3(0.0, 0.08, -0.08)
-## Where the elbow points, in the actor's space.
-var arm_elbow := Vector3(0.8, 0.8, 0.3)
-
+## Makes the model hold its weapon, or null for skins without the bones.
+var arm: Node
 
 func _ready() -> void:
 	var skin_name: String = actor.get_meta("look", look.DEFAULT_SKIN)
@@ -93,12 +69,15 @@ func _ready() -> void:
 		_play("idle")
 		_player.advance(0.0)
 	_stand(model, def["height"])
-	_skeleton = model.find_child("Skeleton3D", true, false) as Skeleton3D
-	if _skeleton and def.has("grip_bone"):
-		_grip_bone = _skeleton.find_bone(def["grip_bone"])
-		# After the pose is applied, so the weapon never trails the hand.
-		_skeleton.skeleton_updated.connect(_hold_weapon)
-		_build_arm(def.get("arm", []))
+	var skeleton := model.find_child("Skeleton3D", true, false) as Skeleton3D
+	if skeleton and def.has("grip_bone"):
+		arm = WeaponArm.new()
+		arm.name = "WeaponArm"
+		arm.actor = actor
+		arm.skeleton = skeleton
+		arm.look = look
+		add_child(arm)
+		arm.setup(def, _player.get_animation(_anims["idle_melee"]) if _player and _anims.has("idle_melee") else null)
 
 	# The greybox capsule stays as the actor's body node, but draws nothing.
 	if actor.body_mesh:
@@ -142,7 +121,6 @@ func _process(delta: float) -> void:
 	_update_thrust()
 	var weapon := actor.get_active_weapon()
 	var melee := weapon as MeleeWeapon
-	_aim_arm(melee, delta)
 	if actor.is_dead:
 		_play("death")
 		return
@@ -168,76 +146,6 @@ func _process(delta: float) -> void:
 		_play("idle_melee")
 	else:
 		_play("idle")
-
-
-## Puts the actor's hand node, which carries the weapon, on the model's hand.
-## The controller owns the hand in first person, so this leaves it alone then.
-## The actor resets the hand every physics tick and nothing in the simulation
-## reads it, so this only changes what is drawn.
-func _hold_weapon() -> void:
-	if _grip_bone < 0 or actor.hand_override or actor.is_dead:
-		return
-	var grip: Vector3 = _skeleton.global_transform * _skeleton.get_bone_global_pose(_grip_bone).origin
-	var held := grip_offset
-	# A blade's guard and windup poses shift it off the hand node. The arm
-	# reaches for that spot instead, so take the shift back out here.
-	var melee := actor.get_active_weapon() as MeleeWeapon
-	if melee and melee.visual:
-		held -= melee.visual.position
-	actor.hand.global_position = grip + actor.hand.global_basis * held
-
-
-## A two-bone reach on the weapon arm, blended in over the animation while a
-## melee attack or guard is up, so the arm shows the side as well as the blade.
-func _build_arm(bones: Array) -> void:
-	if bones.size() != 3:
-		return
-	for bone: String in bones:
-		if _skeleton.find_bone(bone) < 0:
-			return
-	add_child(_arm_target)
-	add_child(_arm_pole)
-	_arm_ik = TwoBoneIK3D.new()
-	_arm_ik.name = "ArmReach"
-	_arm_ik.setting_count = 1
-	_arm_ik.set_root_bone_name(0, bones[0])
-	_arm_ik.set_middle_bone_name(0, bones[1])
-	_arm_ik.set_end_bone_name(0, bones[2])
-	_arm_ik.influence = 0.0
-	_skeleton.add_child(_arm_ik)
-	_arm_ik.set_target_node(0, _arm_ik.get_path_to(_arm_target))
-	_arm_ik.set_pole_node(0, _arm_ik.get_path_to(_arm_pole))
-
-
-## The hand offset the current melee state asks for, or null when the
-## animation should have the arm.
-func arm_reach(melee: MeleeWeapon) -> Variant:
-	if melee == null or actor.is_dead or actor.hand_override:
-		return null
-	if melee._slamming:
-		return arm_windup[MeleeWeapon.Dir.OVERHEAD]
-	if melee.is_winding_up():
-		return arm_windup[melee.attack_dir]
-	if melee._swing_left > 0.0:
-		var done := 1.0 - clampf(melee._swing_left / MeleeWeapon.SWING_TIME, 0.0, 1.0)
-		return (arm_windup[melee.attack_dir] as Vector3).lerp(arm_follow[melee.attack_dir], done)
-	if melee.is_blocking():
-		return arm_guard
-	return null
-
-
-func _aim_arm(melee: MeleeWeapon, delta: float) -> void:
-	if _arm_ik == null:
-		return
-	var reach: Variant = arm_reach(melee)
-	_arm_weight = move_toward(_arm_weight, 0.0 if reach == null else 1.0, delta * 9.0)
-	_arm_ik.influence = _arm_weight
-	if reach != null:
-		var wanted: Vector3 = reach + melee.visual.position
-		_arm_reach = wanted if _arm_weight < 0.15 else _arm_reach.lerp(wanted, 1.0 - exp(-28.0 * delta))
-	var aim := Basis(Vector3.RIGHT, actor.cmd.pitch)
-	_arm_target.global_position = actor.global_transform * (Actor.HAND_REST + aim * _arm_reach)
-	_arm_pole.global_position = actor.global_transform * arm_elbow
 
 
 ## True when a weapon was swapped in without the count changing.
