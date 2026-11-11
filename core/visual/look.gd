@@ -40,6 +40,9 @@ const SURFACES := {
 
 ## Character models. `height` is how tall the model stands in meters.
 ## `anims` maps what the actor is doing to an animation in the file.
+## Walk and run clips are measured from their feet (`feet`, default
+## Foot.L and Foot.R) so they play at the speed the actor moves; `run_back`,
+## `run_left` and `run_right` are optional (see `locomotion.gd`).
 ## A skin lists one or more `scenes`; each actor wearing it gets one of them,
 ## so a squad is not a row of clones. A skin of `people` is built from parts
 ## instead (see `human.gd`): the actor's chosen appearance if it has one
@@ -48,7 +51,8 @@ const SURFACES := {
 ## `rough` are optional and tune the character shader: people keep their
 ## colors, machines are pulled toward worn metal.
 const HUMAN_ANIMS := {"idle": "Idle_Gun_Pointing", "walk": "Walk", "run": "Run", "death": "Death",
-	"idle_melee": "Idle_Sword", "attack": "Sword_Slash", "move_gun": "Run_Shoot"}
+	"idle_melee": "Idle_Sword", "attack": "Sword_Slash", "move_gun": "Run_Shoot",
+	"run_back": "Run_Back", "run_left": "Run_Left", "run_right": "Run_Right"}
 const HUMAN_ARM := ["UpperArm.R", "LowerArm.R", "Wrist.R"]
 const HUMAN_OFF_ARM := ["UpperArm.L", "LowerArm.L", "Wrist.L"]
 const HUMAN_FEET := ["Foot.L", "Foot.R"]

@@ -25,6 +25,7 @@ var _feed: Label
 var _hold_bar: ProgressBar
 var _death: Label
 var _standing: Label
+var _sites: Label
 var _messages: Array[Dictionary] = []
 ## The local player's last life, shown while they are down (see `show_death`).
 var _death_result := {}
@@ -68,6 +69,9 @@ func _ready() -> void:
 	_standing = _label(root, "", 15)
 	_standing.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_place(_standing, 0.5, 0.0, Vector2(-300, 48), Vector2(600, 22))
+	_sites = _label(root, "", 15)
+	_sites.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_place(_sites, 0.5, 0.0, Vector2(-300, 70), Vector2(600, 22))
 
 	_view = _label(root, "", 13)
 	_view.modulate.a = 0.6
@@ -130,6 +134,7 @@ func _process(delta: float) -> void:
 	_timer.text = raid.world.display_name if raid.war.intensity < 0.2 \
 			else "%s   %s" % [raid.world.display_name, raid.war.level_name()]
 	_standing.text = standing_text(p)
+	_sites.text = sites_text(raid, p)
 	_redeploy_wait = maxf(0.0, _redeploy_wait - delta)
 	_death.visible = p.is_dead and not _death_result.is_empty()
 	if _death.visible:
@@ -289,6 +294,21 @@ static func standing_text(p: Actor) -> String:
 	if p.marked:
 		text += "   THE MARKED"
 	return text
+
+
+## Strongpoints: the one the player is standing in, in full, or else how
+## many of the world's they hold.
+static func sites_text(p_raid: Raid, p: Actor) -> String:
+	if p_raid.strongpoints.is_empty():
+		return ""
+	var here := p_raid.strongpoint_at(p) if not p.is_dead else null
+	if here != null:
+		return here.status(p_raid.holds(p, here))
+	var mine := 0
+	for point in p_raid.strongpoints:
+		if p_raid.holds(p, point):
+			mine += 1
+	return "Strongpoints held: %d of %d" % [mine, p_raid.strongpoints.size()]
 
 
 ## News for everyone in the world stays up a little longer than a notice.

@@ -16,6 +16,10 @@ extends RefCounted
 ##     "loot_source", default "vehicle"). The Raid parks the first
 ##     vehicle-tagged item from `roll_loot` there, facing the marker's yaw.
 ##   - optionally a `bake_navigation()` method for bot pathfinding
+##   - optionally Marker3D nodes in group "strongpoint": sites to capture and
+##     hold. Metas: "name" (String), "radius" (float, metres), and optionally
+##     "holder" (a bot faction that holds it from the start) with
+##     "holder_name" (what to call them). Put a depot near each one.
 ##
 ## Safe zones (`safe_zone = true`) are social spaces, not raids: nobody can be
 ## hurt, weapons and abilities are locked, nothing respawns, and players show
@@ -59,9 +63,25 @@ var spawn_protection := 4.0
 ## a gentler world: the gear they had equipped goes back to their stash and
 ## only the backpack drops.
 var keep_gear_on_death := false
+## True when every player here is on one side (a co-op world). Strongpoints
+## then belong to the players together, not to whoever took them.
+var players_allied := false
+## Seconds between bot pushes on a strongpoint that players hold, and how
+## many bots go. 0 bots turns the pushes off.
+var assault_interval := 120.0
+var assault_size := 3
 ## How strongly fighting raises this world's war intensity (see
 ## `core/war/war_director.gd`). 0 keeps the world quiet whatever happens.
 var war_scale := 1.0
+## World events: every so often the war throws something worth fighting over
+## into the world, a supply pod or a warlord with an escort. This is the
+## seconds between them while the world is quiet; an all-out war halves it.
+## 0 turns events off.
+var event_interval := 420.0
+## Seconds an event stays before it is cleared away.
+var event_lifetime := 300.0
+## How many bots march with a warlord.
+var warlord_escort := 2
 ## Seconds between dying and being allowed to drop in again.
 var redeploy_delay := 3.0
 ## False for a venue where nobody loses gear (the arena). The server then
@@ -98,6 +118,25 @@ func roll_loot(_source: String, _rng: RandomNumberGenerator) -> Array[String]:
 	return []
 
 
+## Loot for a source while war intensity is `intensity` (0 to 1). A hotter
+## war pays better: the roll is repeated and the rarest haul wins. A world
+## with tables of its own for wartime can override this.
+func roll_war_loot(source: String, rng: RandomNumberGenerator, intensity: float) -> Array[String]:
+	var best := roll_loot(source, rng)
+	for i in roundi(clampf(intensity, 0.0, 1.0) * 2.0):
+		var again := roll_loot(source, rng)
+		if _haul_rarity(again) > _haul_rarity(best):
+			best = again
+	return best
+
+
+func _haul_rarity(ids: Array[String]) -> int:
+	var total := 0
+	for id in ids:
+		total += ItemDB.item_rarity(id)
+	return total
+
+
 ## PvP rules live here. Called for every hit before damage is applied.
 func can_damage(attacker: Node, target: Node, _info: DamageInfo) -> bool:
 	return attacker != target
@@ -106,6 +145,14 @@ func can_damage(attacker: Node, target: Node, _info: DamageInfo) -> bool:
 ## Set up a bot's faction, gear and stats.
 func equip_bot(_bot: Actor, _rng: RandomNumberGenerator) -> void:
 	pass
+
+
+## Turns a freshly equipped bot into a warlord, the boss of a world event.
+## Runs on clients too, so keep it free of randomness.
+func make_warlord(bot: Actor) -> void:
+	bot.display_name = "Warlord"
+	bot.health.max_health *= 3.0
+	bot.health.health = bot.health.max_health
 
 
 func on_spawn(_actor: Actor) -> void:
