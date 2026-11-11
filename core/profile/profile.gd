@@ -15,6 +15,8 @@ var stash: Array[String] = []
 ## Slot name (see Loadout.SLOTS) -> item id. A missing slot uses the free scrap kit.
 var loadout := {}
 var welcome_granted := false
+## How the melee side is picked: "mouse" (flick) or "move" (movement keys).
+var melee_control := "mouse"
 var raids_played := 0
 var raids_extracted := 0
 var kills := 0
@@ -132,6 +134,7 @@ func save() -> void:
 		"stash": stash,
 		"loadout": loadout,
 		"welcome_granted": welcome_granted,
+		"melee_control": melee_control,
 		"raids_played": raids_played,
 		"raids_extracted": raids_extracted,
 		"kills": kills,
@@ -156,6 +159,7 @@ func load_profile() -> void:
 			if typeof(slot) == TYPE_STRING and typeof(saved_loadout[slot]) == TYPE_STRING:
 				loadout[slot] = saved_loadout[slot]
 	welcome_granted = bool(data.get("welcome_granted", false))
+	melee_control = "move" if data.get("melee_control", "mouse") == "move" else "mouse"
 	raids_played = int(data.get("raids_played", 0))
 	raids_extracted = int(data.get("raids_extracted", 0))
 	kills = int(data.get("kills", 0))

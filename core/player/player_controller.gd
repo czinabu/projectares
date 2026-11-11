@@ -8,8 +8,15 @@ extends Node
 ## behind cover.
 
 enum ViewMode { FIRST, THIRD }
+## How the melee side is picked: by flicking the mouse, or by the movement keys.
+enum StanceControl { MOUSE, MOVE }
 
 const VIEW_NAMES := ["First-person", "Third-person"]
+const STANCE_CONTROL_NAMES := ["mouse flick", "movement keys"]
+const STANCE_CONTROL_HINTS := [
+	"flick the mouse left, right or up",
+	"hold A, D or W as you attack or guard",
+]
 ## Where the held weapon sits relative to the camera in first-person.
 const FIRST_PERSON_HAND := Vector3(0.32, -0.3, -0.75)
 
@@ -26,6 +33,7 @@ var flick_threshold := 45.0
 ## How quickly old mouse movement stops counting toward a flick.
 var flick_decay := 9.0
 var stance := 0
+var stance_control := StanceControl.MOUSE
 
 var yaw := 0.0
 var pitch := 0.0
@@ -38,6 +46,7 @@ var _thrust_audio: AudioStreamPlayer
 
 func setup(p_actor: Actor) -> void:
 	actor = p_actor
+	stance_control = StanceControl.MOVE if Profile.melee_control == "move" else StanceControl.MOUSE
 	yaw = actor.cmd.yaw
 
 
@@ -86,6 +95,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			_pending_switch = posmod(actor.active_weapon_index + step, count)
 	elif event.is_action_pressed("toggle_view"):
 		toggle_view()
+	elif event.is_action_pressed("melee_control"):
+		toggle_stance_control()
 
 
 func toggle_view() -> void:
@@ -105,12 +116,27 @@ static func stance_from_flick(flick: Vector2, current: int, threshold: float) ->
 	return current
 
 
+## Turns the movement keys into a melee stance: strafing left or right picks
+## that side, moving forward picks overhead. Standing still or backing up
+## keeps `current`.
+static func stance_from_move(move: Vector2, current: int) -> int:
+	if absf(move.x) > 0.5 and absf(move.x) >= absf(move.y):
+		return MeleeWeapon.Dir.LEFT if move.x < 0.0 else MeleeWeapon.Dir.RIGHT
+	if move.y > 0.5:
+		return MeleeWeapon.Dir.OVERHEAD
+	return current
+
+
+func toggle_stance_control() -> void:
+	stance_control = StanceControl.MOVE if stance_control == StanceControl.MOUSE else StanceControl.MOUSE
+	Profile.melee_control = "move" if stance_control == StanceControl.MOVE else "mouse"
+	Profile.save()
+	actor.notice.emit("Melee side: %s" % STANCE_CONTROL_NAMES[stance_control])
+
+
 func _physics_process(delta: float) -> void:
 	if actor == null or not is_instance_valid(actor) or actor.is_dead:
 		return
-	stance = stance_from_flick(_flick, stance, flick_threshold)
-	_flick *= exp(-flick_decay * delta)
-	actor.cmd.stance = stance
 	var cmd := actor.cmd
 	cmd.clear_one_shots()
 	var captured := Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
@@ -119,6 +145,12 @@ func _physics_process(delta: float) -> void:
 	cmd.move = Vector2(
 		Input.get_axis("move_left", "move_right"),
 		Input.get_axis("move_back", "move_forward"))
+	if stance_control == StanceControl.MOVE:
+		stance = stance_from_move(cmd.move, stance)
+	else:
+		stance = stance_from_flick(_flick, stance, flick_threshold)
+	_flick *= exp(-flick_decay * delta)
+	cmd.stance = stance
 	cmd.sprint = Input.is_action_pressed("sprint")
 	cmd.jump = Input.is_action_pressed("jump")
 	cmd.jump_pressed = Input.is_action_just_pressed("jump")

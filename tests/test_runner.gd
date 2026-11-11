@@ -337,6 +337,17 @@ func _test_main_flow() -> void:
 			"real input reaches the actor (blade out, airborne)")
 	check(not controller.is_third_person(), "camera stays put when using the blade or flying")
 	check(p.hand_override, "first-person holds the weapon in front of the camera")
+	# Melee side from the movement keys, once the player switches to them.
+	Input.action_press("move_left")
+	await frames(5)
+	check(p.cmd.stance == MeleeWeapon.Dir.OVERHEAD, "movement keys do not change the melee side by default")
+	controller.toggle_stance_control()
+	await frames(5)
+	check(p.cmd.stance == MeleeWeapon.Dir.LEFT and Profile.melee_control == "move",
+			"after switching, strafing picks the melee side and the choice is remembered")
+	Input.action_release("move_left")
+	controller.toggle_stance_control()
+	check(Profile.melee_control == "mouse", "switching again goes back to the mouse flick")
 	controller.toggle_view()
 	await frames(40)
 	check(controller.is_third_person(), "the toggle switches to third-person")
@@ -643,6 +654,14 @@ func _test_directional_melee() -> void:
 	check(PlayerController.stance_from_flick(Vector2(10, 5), left, 45.0) == left
 			and PlayerController.stance_from_flick(Vector2(0, 90), right, 45.0) == right,
 			"small or downward mouse movement keeps the stance")
+
+	check(PlayerController.stance_from_move(Vector2(-1, 0), over) == left
+			and PlayerController.stance_from_move(Vector2(1, 0.3), over) == right
+			and PlayerController.stance_from_move(Vector2(0, 1), left) == over,
+			"strafing left or right or moving forward picks that side")
+	check(PlayerController.stance_from_move(Vector2.ZERO, left) == left
+			and PlayerController.stance_from_move(Vector2(0, -1), right) == right,
+			"standing still or backing up keeps the stance")
 
 	var raid := await _new_raid(51, false)
 	var setup: Array = await _duel(raid)
