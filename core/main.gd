@@ -1,6 +1,10 @@
 extends Node
 ## Entry point. Switches between the hub and a raid, solo or online.
 ##
+## A stay in a world is a string of lives. Dying keeps you in the world: the
+## HUD shows what it cost and Enter drops you back in with whatever your
+## loadout can still supply. You return to the hub by signing out (L).
+##
 ## Run with `-- --server [--world <id>] [--port <n>] [--bots <n>] [--squad-spawn]
 ## [--accounts <folder>] [--no-rewind]` for a dedicated server: no hub, no window needed,
 ## just a raid that players join. Player stashes are saved in the accounts
@@ -30,6 +34,10 @@ var _server_pid := -1
 var _join_attempts := 0
 var _join_address := ""
 var _join_port := NetSession.DEFAULT_PORT
+## The local player's last life, while they are down.
+var _death_result := {}
+## Time.get_ticks_msec() from which a dead player may drop back in.
+var _redeploy_at := 0
 
 
 func _ready() -> void:
@@ -151,9 +159,8 @@ func start_raid(world_id: String) -> void:
 	raid.name = "Raid"
 	add_child(raid)
 	raid.start(world, -1, Profile.checkout_loadout(world), Profile.mastery.active_picks())
-	Look.set_appearance(raid.player, _my_look())
 	_attach_player_view()
-	raid.ended.connect(_on_raid_ended)
+	raid.player_finished.connect(_on_solo_finished)
 
 
 ## The player's chosen look, limited to the clothing they own where they are:
@@ -162,13 +169,30 @@ func _my_look() -> Dictionary:
 	return Look.clean_appearance(Profile.appearance, Economy.unlocked_outfits(hub.stash_items()))
 
 
+## Gives the local player's current actor a camera, controls and a HUD. Called
+## again every time they drop back in, because each life is a new actor.
 func _attach_player_view() -> void:
+	_death_result = {}
+	for old: Node in [controller, hud]:
+		if old != null and is_instance_valid(old):
+			old.get_parent().remove_child(old)
+			old.queue_free()
+	if net == null:
+		# Solo: every new life wears the chosen look. Online the server sends it.
+		Look.set_appearance(raid.player, _my_look())
 	controller = PlayerController.new()
 	controller.setup(raid.player)
+	controller.sign_out_requested.connect(func() -> void: _on_sign_out_requested.call_deferred())
+	controller.redeploy_requested.connect(func() -> void: _on_redeploy_requested.call_deferred())
 	raid.add_child(controller)
 	hud = Hud.new()
 	hud.setup(raid, controller)
 	raid.add_child(hud)
+	if nameplates != null and is_instance_valid(nameplates):
+		# The same world, a new life: they only need to know who you are now.
+		nameplates.viewer = raid.player
+		scoreboard.roster.set_me(raid.player)
+		return
 	nameplates = NameplatesScript.new()
 	nameplates.name = "Nameplates"
 	nameplates.setup(raid)
@@ -182,15 +206,70 @@ func _attach_player_view() -> void:
 		phone.close()
 
 
-func _on_raid_ended(result: Dictionary) -> void:
+## One solo life ended. A death keeps you in the world; leaving goes home.
+func _on_solo_finished(_actor: Actor, result: Dictionary) -> void:
+	if result.get("outcome", "") == "died":
+		_show_death(result)
+		return
 	# Leave a beat so the player sees what happened before the hub appears.
-	await get_tree().create_timer(1.5).timeout
+	await get_tree().create_timer(1.0).timeout
+	_show_hub(result)
+
+
+func _show_death(result: Dictionary) -> void:
+	_death_result = result
+	_redeploy_at = Time.get_ticks_msec() + int(raid.world.redeploy_delay * 1000.0)
+	if hud != null and is_instance_valid(hud):
+		hud.show_death(result, raid.world.redeploy_delay)
+
+
+func _is_down() -> bool:
+	return raid != null and not _death_result.is_empty()
+
+
+## Enter, while down: drop back into the same world.
+func _on_redeploy_requested() -> void:
+	if not _is_down() or Time.get_ticks_msec() < _redeploy_at:
+		return
+	if net:
+		# `joined` follows and attaches the view to the new actor.
+		net.deploy()
+		return
+	raid.add_player(Profile.checkout_loadout(raid.world), Profile.mastery.active_picks(), "You")
+	_attach_player_view()
+
+
+## L: alive, start or cancel a sign-out. Down, go back to the hub.
+func _on_sign_out_requested() -> void:
+	if raid == null or raid.player == null or not is_instance_valid(raid.player):
+		return
+	if _is_down():
+		if net:
+			_return_to_lobby(_death_result)
+		else:
+			_show_hub(_death_result)
+		return
+	var signing_out := raid.sign_out_progress(raid.player) >= 0.0
+	if net:
+		net.sign_out(not signing_out)
+	elif signing_out:
+		raid.cancel_sign_out(raid.player)
+	else:
+		raid.begin_sign_out(raid.player)
+
+
+func _show_hub(result: Dictionary) -> void:
 	_leave_raid()
 	hub.refresh(result)
 	hub.visible = true
 
 
 func _leave_raid() -> void:
+	_death_result = {}
+	controller = null
+	hud = null
+	nameplates = null
+	scoreboard = null
 	if net:
 		net.queue_free()
 		net = null
@@ -334,7 +413,9 @@ func _try_join() -> void:
 	net.lobby_error.connect(func(reason: String) -> void:
 		hub.set_online_status(reason)
 		if base_hud:
-			base_hud.show_notice(reason))
+			base_hud.show_notice(reason)
+		if raid != null and hud != null and is_instance_valid(hud):
+			hud.notify(reason))
 	net.joined.connect(_on_online_joined)
 	net.failed.connect(_on_online_failed)
 	net.disconnected.connect(_on_online_disconnected)
@@ -398,27 +479,37 @@ func _on_online_failed(reason: String) -> void:
 		base_hud.show_notice(reason)
 
 
-## The connection dropped in the middle of a raid. The server treats that as
-## a death, so the gear is gone.
+## The connection dropped while in the world. Your body stays there for a
+## short while. If nobody kills it, what you carried goes back to your stash.
 func _on_online_disconnected() -> void:
 	_leave_raid()
 	_stop_local_server()
 	hub.leave_lobby()
 	hub.refresh({})
-	hub.set_online_status("Lost the connection to the server during the raid. What you carried is lost.")
+	hub.set_online_status("Lost the connection to the server. Your body stays in the world for a moment. "
+			+ "If it survives, what you carried goes back to your stash there.")
 	hub.visible = true
 
 
-## The server has already settled the run into your account there. Nothing
-## is written to the local profile.
+## One online life ended. The server has already settled it into your account
+## there, and nothing is written to the local profile. A death keeps you in
+## the world; a finished sign-out goes back to the lobby.
 func _on_online_finished(result: Dictionary) -> void:
+	if result.get("outcome", "") == "died":
+		_show_death(result)
+		return
+	await get_tree().create_timer(1.0).timeout
+	_return_to_lobby(result)
+
+
+func _return_to_lobby(result: Dictionary) -> void:
+	if net == null:
+		return
 	var account := net.account
-	await get_tree().create_timer(1.5).timeout
 	_leave_raid()
 	hub.update_account(account)
 	hub.refresh(result)
 	hub.visible = true
-	# Back to the lobby for the next raid.
 	hub.set_online_status("Returning to the lobby...")
 	_begin_join(_join_address, _join_port, 3)
 
