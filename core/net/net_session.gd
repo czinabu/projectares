@@ -40,7 +40,8 @@ const SNAP_DISTANCE := 5.0
 ## of you is always slightly in the past.
 const OWN_TOLERANCE := 1.5
 ## Notices the server passes on to a player. Others are produced locally.
-const FORWARDED_NOTICES := ["Parry!", "Wrong side", "Guard broken", "Staggered", "Killed "]
+const FORWARDED_NOTICES := ["Parry!", "Wrong side", "Guard broken", "Staggered", "Killed ", "Looted ",
+		"Backpack full", "Someone is riding it"]
 
 var is_server := false
 var raid: Raid
@@ -69,6 +70,12 @@ var _one_shots := {}     # actor id -> accumulated one-shot flags (server)
 var _switches := {}      # actor id -> last weapon switch since the snapshot
 var _dead_kind := {}     # actor id -> damage kind that killed them
 var _latest := {}        # actor id -> newest state entry (client)
+var _containers := {}    # container id -> LootContainer
+var _container_ids := {} # LootContainer -> id
+var _vehicles := {}      # vehicle id -> vehicle node
+var _vehicle_ids := {}   # vehicle node -> id
+var _vehicle_targets := {} # vehicle id -> newest state entry (client)
+var _sent_kills := {}    # actor id -> kill count last sent (server)
 var _tick := 0
 var _had_players := false
 var _restart_in := -1.0
@@ -126,6 +133,9 @@ func _start_server_raid() -> void:
 	raid.actor_spawned.connect(_on_server_actor_spawned)
 	raid.actor_removed.connect(_on_server_actor_removed)
 	raid.player_finished.connect(_on_server_player_finished)
+	raid.container_spawned.connect(_on_server_container_spawned)
+	raid.vehicle_spawned.connect(_on_server_vehicle_spawned)
+	raid.vehicle_removed.connect(_on_server_vehicle_removed)
 	raid.squad_spawn = squad_spawn
 	var world := Worlds.get_world(world_id)
 	if bot_count >= 0:
@@ -147,6 +157,12 @@ func _clear_tables() -> void:
 	_switches.clear()
 	_dead_kind.clear()
 	_latest.clear()
+	_containers.clear()
+	_container_ids.clear()
+	_vehicles.clear()
+	_vehicle_ids.clear()
+	_vehicle_targets.clear()
+	_sent_kills.clear()
 
 
 func _register(actor: Actor) -> int:
@@ -188,10 +204,59 @@ func _on_server_actor_removed(actor: Actor) -> void:
 	_one_shots.erase(id)
 	_switches.erase(id)
 	_dead_kind.erase(id)
+	_sent_kills.erase(id)
 	var peer: int = _actor_peer.get(actor, 0)
 	_actor_peer.erase(actor)
 	if peer != 0 and _peer_actor.get(peer) == actor:
 		_peer_actor.erase(peer)
+
+
+func _on_server_container_spawned(container: LootContainer) -> void:
+	var id := _next_id
+	_next_id += 1
+	_containers[id] = container
+	_container_ids[container] = id
+	container.changed.connect(func() -> void:
+		for peer in _joined_peers:
+			_container_items.rpc_id(peer, id, container.items))
+	container.tree_exited.connect(func() -> void:
+		if not _containers.has(id):
+			return
+		_containers.erase(id)
+		_container_ids.erase(container)
+		for peer in _joined_peers:
+			_container_gone.rpc_id(peer, id))
+	for peer in _joined_peers:
+		_send_container(peer, id)
+
+
+func _send_container(peer: int, id: int) -> void:
+	var container: LootContainer = _containers[id]
+	_container.rpc_id(peer, id, container.items, container.is_bag, container.label, container.global_position)
+
+
+func _on_server_vehicle_spawned(vehicle: Node3D) -> void:
+	var id := _next_id
+	_next_id += 1
+	_vehicles[id] = vehicle
+	_vehicle_ids[vehicle] = id
+	for peer in _joined_peers:
+		_send_vehicle(peer, id)
+
+
+func _on_server_vehicle_removed(vehicle: Node3D) -> void:
+	if not _vehicle_ids.has(vehicle):
+		return
+	var id: int = _vehicle_ids[vehicle]
+	_vehicle_ids.erase(vehicle)
+	_vehicles.erase(id)
+	for peer in _joined_peers:
+		_vehicle_gone.rpc_id(peer, id)
+
+
+func _send_vehicle(peer: int, id: int) -> void:
+	var vehicle: Node3D = _vehicles[id]
+	_vehicle.rpc_id(peer, id, vehicle.get("item_id"), vehicle.global_position, vehicle.get("heading"))
 
 
 func _on_server_player_finished(actor: Actor, result: Dictionary) -> void:
@@ -242,11 +307,20 @@ func _request_join(p_name: String, kit: Array, picks: Dictionary) -> void:
 			if text.begins_with(prefix):
 				_notice.rpc_id(peer, text)
 				return)
+	actor.inventory.changed.connect(func() -> void:
+		if peer in _api.get_peers():
+			_inventory.rpc_id(peer, actor.inventory.items))
 	_joined_peers.append(peer)
 	_welcome.rpc_id(peer, _ids[actor], raid.time_left)
 	for other: Actor in _ids:
 		if not other.is_dead:
 			_send_spawn(peer, other)
+	for id: int in _containers:
+		_send_container(peer, id)
+	for id: int in _vehicles:
+		_send_vehicle(peer, id)
+	for id: int in _sent_kills:
+		_kills.rpc_id(peer, id, _sent_kills[id])
 
 
 func _on_server_hit_confirmed(target: Actor, info: DamageInfo, lethal: bool, peer: int) -> void:
@@ -309,6 +383,21 @@ func _server_late_tick(delta: float) -> void:
 			var chunk := entries.slice(start, start + ACTORS_PER_PACKET)
 			for peer in _joined_peers:
 				_state.rpc_id(peer, raid.time_left, chunk)
+		if not _vehicles.is_empty():
+			var rides: Array = []
+			for id: int in _vehicles:
+				var vehicle: Node3D = _vehicles[id]
+				var rider: Actor = vehicle.get("rider")
+				rides.append([id, vehicle.global_position, vehicle.get("heading"), vehicle.get("speed"),
+						_ids.get(rider, -1) if rider != null else -1])
+			for peer in _joined_peers:
+				_vehicle_state.rpc_id(peer, rides)
+	for state in raid.players:
+		var id: int = _ids.get(state.actor, -1)
+		if id >= 0 and int(_sent_kills.get(id, 0)) != state.kills:
+			_sent_kills[id] = state.kills
+			for peer in _joined_peers:
+				_kills.rpc_id(peer, id, state.kills)
 	# A raid that ran out of time, or that everyone has left, makes way for a new one.
 	if _restart_in < 0.0 and (raid.is_over or (_had_players and raid.players.is_empty())):
 		_restart_in = 5.0 if raid.is_over else 1.0
@@ -321,6 +410,7 @@ func _server_late_tick(delta: float) -> void:
 func _restart_raid() -> void:
 	for peer in _api.get_peers():
 		_api.multiplayer_peer.disconnect_peer(peer)
+	_joined_peers.clear()
 	raid.queue_free()
 	remove_child(raid)
 	_start_server_raid()
@@ -396,6 +486,12 @@ func _spawn(id: int, kind: String, shown_name: String, node_name: String, at: Ve
 		Loadout.equip(actor, data.get("kit", []))
 		Raid.MasteryTracker.apply_variants(actor, data.get("picks", {}))
 		raid.world.on_spawn(actor)
+		# Listed as a player, so the HUD and scoreboard can tell them from bots.
+		var state := Raid.PlayerState.new()
+		state.actor = actor
+		state.kit.assign(data.get("kit", []))
+		state.picks = data.get("picks", {})
+		raid.players.append(state)
 	else:
 		actor = raid.spawn_bot(node_name, at, data.get("seed", 0))
 		raid.world.on_spawn(actor)
@@ -417,8 +513,23 @@ func _despawn(id: int) -> void:
 	_ids.erase(actor)
 	if raid != null:
 		raid.bots.erase(actor)
+		var state := raid.state_for(actor)
+		if state != null and id != my_actor_id:
+			raid.players.erase(state)
 	if id != my_actor_id:
 		actor.queue_free()
+
+
+@rpc("authority", "call_remote", "reliable")
+func _kills(id: int, count: int) -> void:
+	var actor: Actor = _actors.get(id)
+	if raid == null or actor == null or not is_instance_valid(actor):
+		return
+	var state := raid.state_for(actor)
+	if state != null:
+		state.kills = count
+	if id == my_actor_id:
+		raid.kills = count
 
 
 @rpc("authority", "call_remote", "unreliable_ordered")
@@ -437,6 +548,96 @@ func _state(time_left: float, entries: Array) -> void:
 			if int(cmd[ActorCommand.SWITCH_INDEX]) < 0:
 				cmd[ActorCommand.SWITCH_INDEX] = earlier[ActorCommand.SWITCH_INDEX]
 		_latest[id] = entry
+
+
+@rpc("authority", "call_remote", "reliable")
+func _container(id: int, items: Array, is_bag: bool, label: String, at: Vector3) -> void:
+	if raid == null or _containers.has(id):
+		return
+	_containers[id] = raid.spawn_container(items, is_bag, label, at)
+
+
+@rpc("authority", "call_remote", "reliable")
+func _container_items(id: int, items: Array) -> void:
+	var container: LootContainer = _containers.get(id)
+	if container != null and is_instance_valid(container):
+		container.set_items(items)
+
+
+@rpc("authority", "call_remote", "reliable")
+func _container_gone(id: int) -> void:
+	var container: LootContainer = _containers.get(id)
+	_containers.erase(id)
+	if container != null and is_instance_valid(container):
+		container.queue_free()
+
+
+@rpc("authority", "call_remote", "reliable")
+func _inventory(items: Array) -> void:
+	var me: Actor = _actors.get(my_actor_id)
+	if me != null and is_instance_valid(me):
+		me.inventory.items.assign(items)
+		me.inventory.changed.emit()
+
+
+@rpc("authority", "call_remote", "reliable")
+func _vehicle(id: int, item_id: String, at: Vector3, heading: float) -> void:
+	if raid == null or _vehicles.has(id) or not ItemDB.has_item(item_id):
+		return
+	var vehicle := raid.spawn_vehicle(item_id, at, heading)
+	# The server drives it. Here it only follows the reported position.
+	vehicle.set_physics_process(false)
+	_vehicles[id] = vehicle
+
+
+@rpc("authority", "call_remote", "reliable")
+func _vehicle_gone(id: int) -> void:
+	var vehicle: Node3D = _vehicles.get(id)
+	_vehicles.erase(id)
+	_vehicle_targets.erase(id)
+	if vehicle == null or not is_instance_valid(vehicle):
+		return
+	vehicle.call("dismount")
+	if raid != null:
+		raid.vehicles.erase(vehicle)
+	vehicle.queue_free()
+
+
+@rpc("authority", "call_remote", "unreliable_ordered")
+func _vehicle_state(entries: Array) -> void:
+	for entry: Array in entries:
+		_vehicle_targets[entry[0]] = entry
+
+
+## Moves each vehicle toward where the server says it is, and keeps its rider
+## the same as the server's.
+func _client_move_vehicles() -> void:
+	for id: int in _vehicles:
+		var vehicle: Node3D = _vehicles[id]
+		if not is_instance_valid(vehicle) or not _vehicle_targets.has(id):
+			continue
+		var entry: Array = _vehicle_targets[id]
+		var at: Vector3 = entry[1]
+		if vehicle.global_position.distance_to(at) > SNAP_DISTANCE:
+			vehicle.global_position = at
+		else:
+			vehicle.global_position = vehicle.global_position.lerp(at, 0.35)
+		var heading := lerp_angle(vehicle.get("heading"), entry[2], 0.35)
+		vehicle.set("heading", heading)
+		vehicle.rotation = Vector3(0.0, heading, 0.0)
+		vehicle.set("speed", entry[3])
+		var rider: Actor = _actors.get(entry[4]) if int(entry[4]) >= 0 else null
+		if rider != null and not is_instance_valid(rider):
+			rider = null
+		var current: Actor = vehicle.get("rider")
+		if current != rider:
+			if current != null:
+				vehicle.call("dismount")
+			if rider != null:
+				if rider.vehicle != null:
+					rider.vehicle.call("dismount")
+				vehicle.call("mount", rider)
+		vehicle.call("_place_rider")
 
 
 @rpc("authority", "call_remote", "reliable")
@@ -464,6 +665,8 @@ func _notice(text: String) -> void:
 	var me: Actor = _actors.get(my_actor_id)
 	if me != null:
 		me.notice.emit(text)
+		if text.begins_with("Looted "):
+			Sfx.play("loot")
 
 
 @rpc("authority", "call_remote", "reliable")
@@ -487,6 +690,7 @@ func _client_early_tick() -> void:
 		var entry: Array = _latest[id]
 		_latest.erase(id)
 		_apply_state(actor, entry, mine)
+	_client_move_vehicles()
 
 
 func _apply_state(actor: Actor, entry: Array, mine: bool) -> void:
@@ -505,6 +709,12 @@ func _apply_state(actor: Actor, entry: Array, mine: bool) -> void:
 	if absf(actor.stagger_left - stagger) > 0.15:
 		actor.stagger_left = stagger
 	var error := actor.global_position.distance_to(at)
+	if actor.vehicle != null:
+		# A rider goes where their vehicle goes.
+		if not mine:
+			actor.cmd.apply_array(entry[3])
+			actor.cmd.interact_pressed = false
+		return
 	if mine:
 		if error > SNAP_DISTANCE:
 			actor.global_position = at
@@ -531,6 +741,15 @@ func _client_late_tick() -> void:
 func _is_connected() -> bool:
 	return _api.multiplayer_peer != null \
 			and _api.multiplayer_peer.get_connection_status() == MultiplayerPeer.CONNECTION_CONNECTED
+
+
+## Containers and vehicles this session knows about. For tests and tools.
+func containers() -> Array:
+	return _containers.values()
+
+
+func vehicles() -> Array:
+	return _vehicles.values()
 
 
 ## The actor for a network id, or null. For tests and tools.

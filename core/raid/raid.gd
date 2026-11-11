@@ -11,6 +11,9 @@ signal ended(result: Dictionary)
 signal player_finished(actor: Actor, result: Dictionary)
 signal actor_spawned(actor: Actor)
 signal actor_removed(actor: Actor)
+signal container_spawned(container: LootContainer)
+signal vehicle_spawned(vehicle: Node3D)
+signal vehicle_removed(vehicle: Node3D)
 
 ## Bots never start closer to the player than this, so a raid does not open with a fight.
 const MIN_BOT_SPAWN_DISTANCE := 40.0
@@ -60,7 +63,7 @@ func start(p_world: WorldDef, p_seed: int = -1, p_kit: Array = [], p_mastery: Di
 	_spawn_caches()
 	add_player(p_kit, p_mastery, "You")
 	_spawn_bots()
-	_spawn_vehicles()
+	_spawn_map_vehicles()
 
 
 ## Starts the raid as the authority for an online game. Players are added with
@@ -71,6 +74,7 @@ func start_server(p_world: WorldDef, p_seed: int = -1) -> void:
 	_setup(p_world, p_seed)
 	_spawn_caches()
 	_spawn_bots()
+	_spawn_map_vehicles()
 
 
 ## Starts the raid as a view of a server's raid: the map only. Actors are added
@@ -108,7 +112,7 @@ func _setup(p_world: WorldDef, p_seed: int) -> void:
 func _spawn_caches() -> void:
 	for marker in _map_nodes("spawn_cache"):
 		var source: String = marker.get_meta("loot_source", "cache")
-		_spawn_container(world.roll_loot(source, rng), false, "cache", marker.global_position)
+		spawn_container(world.roll_loot(source, rng), false, "cache", marker.global_position)
 
 
 func _physics_process(delta: float) -> void:
@@ -171,6 +175,12 @@ func add_player(p_kit: Array = [], p_mastery: Dictionary = {}, p_name := "Raider
 	actor.died.connect(_on_actor_died)
 	world.on_spawn(actor)
 	actor_spawned.emit(actor)
+	# Their own vehicle, if they brought one, is parked beside them.
+	for id in state.kit:
+		if ItemDB.has_tag(id, "vehicle"):
+			state.deployed_vehicles.append(id)
+			var side := Basis(Vector3.UP, actor.cmd.yaw) * Vector3(2.5, 0.3, -1.0)
+			spawn_vehicle(id, actor.global_position + side, actor.cmd.yaw)
 	return actor
 
 
@@ -258,15 +268,8 @@ func spawn_bot(bot_name: String, at: Vector3, equip_seed: int) -> Actor:
 	return bot
 
 
-## Parks the player's own vehicle beside them, then fills the map's vehicle
-## markers with abandoned ones anyone can take.
-func _spawn_vehicles() -> void:
-	var state := state_for(player)
-	for id in state.kit:
-		if ItemDB.has_tag(id, "vehicle"):
-			state.deployed_vehicles.append(id)
-			var side := Basis(Vector3.UP, player.cmd.yaw) * Vector3(2.5, 0.3, -1.0)
-			spawn_vehicle(id, player.global_position + side, player.cmd.yaw)
+## Fills the map's vehicle markers with abandoned vehicles anyone can take.
+func _spawn_map_vehicles() -> void:
 	for marker in _map_nodes("spawn_vehicle"):
 		var source: String = marker.get_meta("loot_source", "vehicle")
 		for id in world.roll_loot(source, rng):
@@ -283,14 +286,16 @@ func spawn_vehicle(id: String, at: Vector3, heading: float) -> Node3D:
 	add_child(vehicle)
 	vehicle.global_position = at
 	vehicles.append(vehicle)
+	vehicle_spawned.emit(vehicle)
 	return vehicle
 
 
-func _spawn_container(items: Array, is_bag: bool, label: String, at: Vector3) -> LootContainer:
+func spawn_container(items: Array, is_bag: bool, label: String, at: Vector3) -> LootContainer:
 	var container := LootContainer.new()
 	container.setup(items, is_bag, label)
 	add_child(container)
 	container.global_position = at
+	container_spawned.emit(container)
 	return container
 
 
@@ -298,7 +303,7 @@ func _on_actor_died(actor: Actor, info: DamageInfo) -> void:
 	world.on_death(actor, info)
 	var drops := actor.get_drop_items()
 	if not drops.is_empty():
-		_spawn_container(drops, true, "%s's bag" % actor.display_name, actor.global_position)
+		spawn_container(drops, true, "%s's bag" % actor.display_name, actor.global_position)
 	var killer := state_for(info.source as Actor) if info.source is Actor else null
 	if killer != null and killer.actor != actor:
 		killer.kills += 1
@@ -334,10 +339,17 @@ func _on_actor_extracted(actor: Actor) -> void:
 	world.on_extract(actor)
 	# Everything carried comes home: surviving gear and the backpack, and the
 	# vehicle they rode out on, whoever it belonged to.
-	if actor.vehicle != null:
-		state.extracted_vehicle = actor.vehicle.get("item_id")
+	var ridden := actor.vehicle
+	if ridden != null:
+		state.extracted_vehicle = ridden.get("item_id")
 	_finish_player(state, "extracted", "")
 	if mode == Mode.SERVER:
+		# They are gone from the raid, and so is the vehicle they rode out on.
+		if ridden != null:
+			ridden.call("dismount")
+			vehicles.erase(ridden)
+			vehicle_removed.emit(ridden)
+			ridden.queue_free()
 		_remove_actor(actor)
 
 

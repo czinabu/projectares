@@ -156,7 +156,8 @@ func _physics_process(delta: float) -> void:
 	if cmd.ability_pressed and stagger_left <= 0.0:
 		ability.activate()
 	_simulate_heal(delta)
-	if cmd.interact_pressed:
+	# On a client of an online raid, using things is the server's decision.
+	if cmd.interact_pressed and Combat.authoritative:
 		var target := find_interactable()
 		if target:
 			target.interact(self)
