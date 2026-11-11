@@ -58,7 +58,8 @@ func _ready() -> void:
 	_timer.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_place(_timer, 0.5, 0.0, Vector2(-200, 14), Vector2(400, 36))
 
-	_view = _label(root, "", 14)
+	_view = _label(root, "", 13)
+	_view.modulate.a = 0.6
 	_place(_view, 0.0, 0.0, Vector2(18, 14), Vector2(900, 80))
 
 	_feed = _label(root, "", 16)

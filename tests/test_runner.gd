@@ -7,6 +7,7 @@ const VehicleScript := preload("res://core/vehicle/vehicle.gd")
 const RaidRoster := preload("res://core/ui/raid_roster.gd")
 const NameplatesScript := preload("res://core/ui/nameplates.gd")
 const ScoreboardScript := preload("res://core/ui/scoreboard.gd")
+const LookTests := preload("res://tests/look_tests.gd")
 
 var _passed := 0
 var _failed := 0
@@ -50,6 +51,7 @@ func _run() -> void:
 	await _test_nameplates_and_scoreboard()
 	await _test_online()
 	await _test_stash_service()
+	await LookTests.run(self)
 
 
 func check(condition: bool, what: String) -> void:
