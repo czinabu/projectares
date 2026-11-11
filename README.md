@@ -169,6 +169,12 @@ you have.
   climbs the sky darkens from a hazy afternoon to a dull red dusk, a column
   of smoke stands over the heaviest fighting, and kills pay up to half as
   much renown again. Frostline stays quiet.
+- Strongpoints. Sites marked by a tall beacon that you take by standing in
+  them alone for 20 seconds; more of you is faster, and an enemy inside
+  freezes it. Taking one pays renown, and a site your side holds is where you
+  drop in next. Bots hold them to begin with and push to take them back.
+  Frostline has three, shared by all players. Ashfront gets its own with the
+  new battlefield map.
 - Hitscan rifle with reloads and aim down sights.
 - Rifle recoil that kicks your view and widens the spread under sustained fire.
 - Blade with a three-hit combo, a heavy lunge, and a dive slam from the air.

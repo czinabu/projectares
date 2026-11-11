@@ -63,6 +63,15 @@ func _ready() -> void:
 	actor.health.damaged.connect(_on_damaged)
 
 
+## Sends the bot to hold a place: it walks there and patrols around it from
+## then on. Fights along the way still come first.
+func post_to(point: Vector3, radius: float) -> void:
+	_home = point
+	patrol_radius = minf(patrol_radius, maxf(radius * 0.8, 4.0))
+	_has_dest = false
+	_wait_left = 0.0
+
+
 func _physics_process(delta: float) -> void:
 	if actor.is_dead:
 		return

@@ -42,6 +42,9 @@ var marked_bonus := 250
 ## Multiplies what a kill itself pays. The `Raid` raises it as the war heats up.
 var pay_scale := 1.0
 
+## Renown for each player who is there when their side takes a strongpoint.
+var strongpoint_taken := 150
+
 ## Owner key -> Standing.
 var standings := {}
 
@@ -129,6 +132,15 @@ func player_died(victim: String, killer := "", scrap := false) -> Dictionary:
 	out.bounty = price
 	out.marked = was_marked
 	return out
+
+
+## Renown for something other than a kill, such as taking a strongpoint.
+## Returns what was paid.
+func award(owner: String, amount: int) -> int:
+	var standing: Standing = standings.get(owner)
+	if standing == null or not standing.alive or amount <= 0:
+		return 0
+	return _gain(standing, roundi(amount * pay_scale))
 
 
 ## The price on `owner`'s head, or 0.
