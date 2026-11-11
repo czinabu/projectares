@@ -23,7 +23,8 @@ var _attack_left := 0.0
 func _ready() -> void:
 	var skin_name: String = actor.get_meta("look", look.DEFAULT_SKIN)
 	var def: Dictionary = look.SKINS.get(skin_name, look.SKINS[look.DEFAULT_SKIN])
-	var path: String = look.CHARACTERS + def["scene"]
+	var scenes: Array = def["scenes"]
+	var path: String = look.CHARACTERS + scenes[hash(String(actor.name)) % scenes.size()]
 	var model: Node3D = look._instance(path)
 	if model == null:
 		return
@@ -47,6 +48,9 @@ func _ready() -> void:
 				mat.set_shader_parameter("base_tex", source.albedo_texture)
 			mat.set_shader_parameter("base_color", source.albedo_color)
 			mat.set_shader_parameter("tint", tint)
+			for param: String in ["saturation", "brightness", "metal", "rough"]:
+				if def.has(param):
+					mat.set_shader_parameter(param, def[param])
 			if source.emission_enabled:
 				mat.set_shader_parameter("emission_color", source.emission * 2.5)
 			mesh_node.set_surface_override_material(i, mat)

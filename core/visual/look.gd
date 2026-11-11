@@ -37,27 +37,35 @@ const SURFACES := {
 
 ## Character models. `height` is how tall the model stands in meters.
 ## `anims` maps what the actor is doing to an animation in the file.
+## A skin lists one or more `scenes`; each actor wearing it gets one of them,
+## so a squad is not a row of clones. `saturation`, `brightness`, `metal` and
+## `rough` are optional and tune the character shader: people keep their
+## colors, machines are pulled toward worn metal.
+const HUMAN_ANIMS := {"idle": "Idle_Gun_Pointing", "walk": "Walk", "run": "Run", "death": "Death",
+	"idle_melee": "Idle_Sword", "attack": "Sword_Slash"}
 const SKINS := {
 	"raider": {
-		"scene": "Character.glb", "height": 1.85, "tint": Color(0.5, 0.52, 0.55), "hide": ["Sword"],
-		"anims": {"idle": "Idle_Gun_Pointing", "walk": "Walk", "run": "Run", "death": "Death",
-			"idle_melee": "Idle_Sword", "attack": "Sword_Slash"},
+		"scenes": ["Human_Swat.glb", "Human_Soldier.glb", "Human_SciFi.glb"],
+		"height": 1.8, "tint": Color(0.8, 0.82, 0.86), "hide": ["Pistol"],
+		"saturation": 0.75, "brightness": 0.85, "metal": 0.0, "rough": 0.85,
+		"anims": HUMAN_ANIMS,
 	},
 	"scavenger": {
-		"scene": "Character.glb", "height": 1.8, "tint": Color(0.62, 0.36, 0.26), "hide": ["Sword"],
-		"anims": {"idle": "Idle_Gun_Pointing", "walk": "Walk", "run": "Run", "death": "Death",
-			"idle_melee": "Idle_Sword", "attack": "Sword_Slash"},
+		"scenes": ["Human_Punk.glb", "Human_PunkW.glb", "Human_Hoodie.glb", "Human_Worker.glb"],
+		"height": 1.76, "tint": Color(0.86, 0.76, 0.68), "hide": ["Pistol"],
+		"saturation": 0.7, "brightness": 0.75, "metal": 0.0, "rough": 0.9,
+		"anims": HUMAN_ANIMS,
 	},
 	"heavy": {
-		"scene": "George.glb", "height": 2.35, "tint": Color(0.55, 0.42, 0.38),
+		"scenes": ["George.glb"], "height": 2.35, "tint": Color(0.55, 0.42, 0.38),
 		"anims": {"idle": "Idle", "walk": "Walk", "run": "Run", "death": "Death", "attack": "SwordSlash"},
 	},
 	"sentinel": {
-		"scene": "Stan.glb", "height": 2.2, "tint": Color(0.62, 0.68, 0.74),
+		"scenes": ["Stan.glb"], "height": 2.2, "tint": Color(0.62, 0.68, 0.74),
 		"anims": {"idle": "Idle", "walk": "Walk", "run": "Run", "death": "Death", "attack": "Punch"},
 	},
 	"stalker": {
-		"scene": "Enemy_2Legs_Gun.glb", "height": 1.7, "tint": Color(0.3, 0.32, 0.38),
+		"scenes": ["Enemy_2Legs_Gun.glb"], "height": 1.7, "tint": Color(0.3, 0.32, 0.38),
 		"anims": {"idle": "Idle", "walk": "Walk", "run": "Run", "death": "Death", "attack": "Attack"},
 	},
 }
