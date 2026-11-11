@@ -1,0 +1,222 @@
+class_name BotBrain
+extends Node3D
+## Drives a bot Actor by writing its ActorCommand, exactly like a player does.
+## Patrols, chases what it sees or what shot it, and fights with its weapon.
+
+enum State { PATROL, CHASE, ATTACK }
+
+var seed_value := 0
+var sight_range := 38.0
+var close_sense_range := 9.0
+var fov_deg := 140.0
+var attack_range := 28.0
+var preferred_range := 14.0
+var reaction_time := 0.7
+var aim_error := 0.05
+var burst_time := 0.6
+var burst_pause := 0.7
+var patrol_radius := 22.0
+var give_up_time := 7.0
+
+var state := State.PATROL
+var actor: Actor
+var target: Actor
+
+var _nav: NavigationAgent3D
+var _rng := RandomNumberGenerator.new()
+var _home := Vector3.ZERO
+var _dest := Vector3.ZERO
+var _has_dest := false
+var _last_seen := Vector3.ZERO
+var _lost_time := 0.0
+var _think_left := 0.0
+var _repath_left := 0.0
+var _wait_left := 0.0
+var _seen_time := 0.0
+var _burst_left := 0.0
+var _pause_left := 0.0
+var _error := Vector3.ZERO
+var _error_left := 0.0
+var _strafe_sign := 1.0
+var _strafe_left := 0.0
+
+
+func _ready() -> void:
+	actor = get_parent() as Actor
+	process_physics_priority = -5
+	_rng.seed = seed_value
+	_nav = NavigationAgent3D.new()
+	_nav.path_desired_distance = 1.0
+	_nav.target_desired_distance = 1.5
+	add_child(_nav)
+	_home = actor.global_position
+	actor.cmd.yaw = _rng.randf_range(-PI, PI)
+	actor.health.damaged.connect(_on_damaged)
+
+
+func _physics_process(delta: float) -> void:
+	if actor.is_dead:
+		return
+	var cmd := actor.cmd
+	cmd.clear_one_shots()
+	cmd.primary = false
+	cmd.sprint = false
+	cmd.move = Vector2.ZERO
+	cmd.aim_dir = Vector3.ZERO
+
+	_think_left -= delta
+	if _think_left <= 0.0:
+		_think_left = 0.2
+		target = _find_target()
+
+	if target and is_instance_valid(target) and not target.is_dead:
+		_last_seen = target.global_position
+		_lost_time = 0.0
+		_seen_time += delta
+		state = State.ATTACK
+		_attack(cmd, delta)
+	elif state != State.PATROL:
+		_seen_time = 0.0
+		_lost_time += delta
+		state = State.CHASE
+		if _lost_time > give_up_time or _flat_dist(_last_seen) < 2.0:
+			state = State.PATROL
+			_has_dest = false
+		else:
+			cmd.sprint = true
+			_move_toward(cmd, _last_seen, delta, true)
+	else:
+		_patrol(cmd, delta)
+
+
+func _attack(cmd: ActorCommand, delta: float) -> void:
+	_error_left -= delta
+	if _error_left <= 0.0:
+		_error_left = 0.35
+		_error = Vector3(_rng.randf_range(-1, 1), _rng.randf_range(-1, 1), _rng.randf_range(-1, 1))
+	var eye := actor.get_eye_position()
+	var chest := target.global_position + Vector3(0, 1.1, 0)
+	var dist := eye.distance_to(chest)
+	var aim_point := chest + _error * dist * aim_error
+	_look_along(cmd, aim_point - eye)
+	cmd.aim_dir = (aim_point - eye).normalized()
+
+	# Keep a comfortable distance: close in, back off, or strafe.
+	if dist > preferred_range * 1.4:
+		_move_toward(cmd, target.global_position, delta, false)
+	elif dist < preferred_range * 0.5:
+		cmd.move = Vector2(0, -1)
+	else:
+		_strafe_left -= delta
+		if _strafe_left <= 0.0:
+			_strafe_left = _rng.randf_range(0.8, 2.0)
+			_strafe_sign = -_strafe_sign
+		cmd.move = Vector2(_strafe_sign, 0)
+
+	if _seen_time < reaction_time or dist > attack_range:
+		return
+	if _burst_left > 0.0:
+		_burst_left -= delta
+		cmd.primary = true
+		cmd.primary_pressed = true
+		if _burst_left <= 0.0:
+			_pause_left = burst_pause * _rng.randf_range(0.7, 1.4)
+	else:
+		_pause_left -= delta
+		if _pause_left <= 0.0:
+			_burst_left = burst_time
+
+
+func _patrol(cmd: ActorCommand, delta: float) -> void:
+	if _wait_left > 0.0:
+		_wait_left -= delta
+		return
+	if not _has_dest:
+		var angle := _rng.randf_range(0, TAU)
+		_dest = _home + Vector3(cos(angle), 0, sin(angle)) * _rng.randf_range(5.0, patrol_radius)
+		_has_dest = true
+		_repath_left = 0.0
+	if _flat_dist(_dest) < 2.0:
+		_has_dest = false
+		_wait_left = _rng.randf_range(1.0, 3.5)
+		return
+	_move_toward(cmd, _dest, delta, true)
+	# Give up on a point we cannot reach.
+	if actor.get_real_velocity().length() < 0.3:
+		_wait_left = 0.0
+		if _rng.randf() < delta * 0.7:
+			_has_dest = false
+
+
+## Walks toward a point using the navmesh when one is ready, else in a straight line.
+func _move_toward(cmd: ActorCommand, dest: Vector3, delta: float, face_travel: bool) -> void:
+	_repath_left -= delta
+	if _repath_left <= 0.0:
+		_repath_left = 0.4
+		_nav.target_position = dest
+	var dir := dest - actor.global_position
+	var map_rid := _nav.get_navigation_map()
+	if NavigationServer3D.map_get_iteration_id(map_rid) > 0:
+		var next := _nav.get_next_path_position()
+		var step := next - actor.global_position
+		step.y = 0.0
+		if step.length() > 0.2:
+			dir = step
+	dir.y = 0.0
+	if dir.length() < 0.05:
+		return
+	dir = dir.normalized()
+	if face_travel:
+		_look_along(cmd, dir)
+	var local := Basis(Vector3.UP, cmd.yaw).inverse() * dir
+	cmd.move = Vector2(local.x, -local.z)
+
+
+func _look_along(cmd: ActorCommand, dir: Vector3) -> void:
+	if dir.length() < 0.001:
+		return
+	dir = dir.normalized()
+	cmd.yaw = atan2(-dir.x, -dir.z)
+	cmd.pitch = asin(clampf(dir.y, -1.0, 1.0))
+
+
+func _find_target() -> Actor:
+	var best: Actor = null
+	var best_dist := sight_range
+	var eye := actor.get_eye_position()
+	var forward := Basis(Vector3.UP, actor.cmd.yaw) * Vector3.FORWARD
+	var world: WorldDef = Worlds.current
+	for node in get_tree().get_nodes_in_group("actors"):
+		var other := node as Actor
+		if other == null or other == actor or other.is_dead or other.faction == actor.faction:
+			continue
+		if world and not world.can_damage(actor, other, null):
+			continue
+		var chest := other.global_position + Vector3(0, 1.1, 0)
+		var dist := eye.distance_to(chest)
+		if dist >= best_dist:
+			continue
+		var in_view := forward.angle_to((chest - eye).normalized()) < deg_to_rad(fov_deg) * 0.5
+		if not in_view and dist > close_sense_range and other != target:
+			continue
+		var query := PhysicsRayQueryParameters3D.create(eye, chest, Actor.LAYER_WORLD)
+		if not get_world_3d().direct_space_state.intersect_ray(query).is_empty():
+			continue
+		best = other
+		best_dist = dist
+	return best
+
+
+func _flat_dist(point: Vector3) -> float:
+	var d := point - actor.global_position
+	d.y = 0.0
+	return d.length()
+
+
+## Getting shot tells the bot where to look, even if it never saw the shooter.
+func _on_damaged(info: DamageInfo) -> void:
+	var source := info.source as Actor
+	if source and source != actor and state == State.PATROL:
+		_last_seen = source.global_position
+		_lost_time = 0.0
+		state = State.CHASE

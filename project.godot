@@ -1,0 +1,35 @@
+; Engine configuration file.
+; It's best edited using the editor UI and not directly,
+; since the parameters that go here are not all obvious.
+
+config_version=5
+
+[application]
+
+config/name="Project Ares"
+config/description="Full-loot PvPvE extraction game with plug-in worlds."
+run/main_scene="res://scenes/main.tscn"
+config/features=PackedStringArray("4.4", "Forward Plus")
+
+[autoload]
+
+InputSetup="*res://core/input_setup.gd"
+ItemDB="*res://core/items/item_db.gd"
+Worlds="*res://core/world/world_registry.gd"
+Profile="*res://core/profile/profile.gd"
+
+[display]
+
+window/size/viewport_width=1600
+window/size/viewport_height=900
+
+[layer_names]
+
+3d_physics/layer_1="world"
+3d_physics/layer_2="actors"
+3d_physics/layer_3="interactables"
+
+[physics]
+
+3d/physics_engine="Jolt Physics"
+common/physics_ticks_per_second=60
