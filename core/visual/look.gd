@@ -128,7 +128,9 @@ func backdrop() -> Texture2D:
 func _on_node_added(node: Node) -> void:
 	if not enabled:
 		return
-	if node is Actor:
+	if node.has_meta("display_item"):
+		_dress_display.call_deferred(node)
+	elif node is Actor:
 		_dress_actor.call_deferred(node)
 	elif node is LootContainer:
 		_dress_cache.call_deferred(node)
@@ -388,6 +390,26 @@ func prop(file: String, size: float, wear := 0.6) -> Node3D:
 	return holder
 
 
+## Lighting for a closed room: a flat ambient fill and a dark backdrop, so an
+## interior is readable without a sun. Does nothing on a headless server.
+func interior(parent: Node3D, ambient: Color, energy: float) -> void:
+	if not enabled:
+		return
+	var env := Environment.new()
+	env.background_mode = Environment.BG_COLOR
+	env.background_color = Color(0.02, 0.02, 0.025)
+	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	env.ambient_light_color = ambient
+	env.ambient_light_energy = energy
+	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
+	env.glow_enabled = true
+	env.ssao_enabled = true
+	var world_env := WorldEnvironment.new()
+	world_env.name = "Interior"
+	world_env.environment = env
+	parent.add_child(world_env)
+
+
 ## A small light with no shadow, for lamps and fires.
 func lamp(color: Color, energy: float, reach: float) -> OmniLight3D:
 	var light := OmniLight3D.new()
@@ -611,6 +633,44 @@ func _dress_exit(zone: ExtractionZone) -> void:
 		mat.emission_energy_multiplier = 1.6
 		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 		mesh_node.material_override = mat
+
+
+## Something on show (a home base display): a node with the meta
+## "display_item" (an item id) and a "Model" child holding its greybox shape.
+## Weapons get their real model, laid out the way the greybox one was;
+## vehicles get the worn paint they have in a raid.
+func _dress_display(display: Node3D) -> void:
+	if not is_instance_valid(display):
+		return
+	var model := display.get_node_or_null("Model") as Node3D
+	if model == null or model.has_meta("dressed"):
+		return
+	var id: String = display.get_meta("display_item")
+	var weapon: Weapon = null
+	if ItemDB.has_tag(id, "firearm"):
+		weapon = Gun.new()
+	elif ItemDB.has_tag(id, "melee"):
+		weapon = MeleeWeapon.new()
+	if weapon == null:
+		# `_dress_vehicle` marks the model itself, and leaves other shapes alone.
+		if ItemDB.has_tag(id, "vehicle"):
+			_dress_vehicle(display)
+		return
+	model.set_meta("dressed", true)
+	weapon.item_id = id
+	var real := weapon_model(weapon)
+	weapon.free()
+	var grey := model.get_child(0) as Node3D if model.get_child_count() > 0 else null
+	if real == null or grey == null:
+		return
+	# The real model sits where the hand would hold it, inside the greybox
+	# shape's own turn and scale.
+	var holder := Node3D.new()
+	holder.transform = grey.transform
+	holder.add_child(real)
+	model.remove_child(grey)
+	grey.queue_free()
+	model.add_child(holder)
 
 
 func _dress_vehicle(vehicle: Node3D) -> void:

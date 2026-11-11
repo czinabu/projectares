@@ -81,6 +81,14 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
 - `Raid` never writes to `Profile` on a server. Results travel in the
   `player_finished` dictionary. Online the server settles them into the
   account; `Raid.apply_result` is only for the local solo profile.
+- The home base (`core/base/`) is a view of a stash, never a second store.
+  `HomeBase.show_gear(stash, loadout)` rebuilds the room from plain data, so
+  it shows the local `Profile` solo and the server's account snapshot in a
+  lobby. `core/base/base_layout.gd` decides what goes where from item tags.
+  Using a display only emits `equip_requested`; `main.gd` applies it through
+  `Profile` or `NetSession.equip`. Like `Raid`, `HomeBase` has no camera, HUD
+  or input code, and its displays are greybox shapes that `Look` dresses
+  (any node with the meta `display_item`).
 
 ## Conventions
 

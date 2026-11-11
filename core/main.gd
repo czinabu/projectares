@@ -9,6 +9,7 @@ extends Node
 const JOIN_TIMEOUT := 12.0
 const NameplatesScript := preload("res://core/ui/nameplates.gd")
 const ScoreboardScript := preload("res://core/ui/scoreboard.gd")
+const BaseHudScript := preload("res://core/ui/base_hud.gd")
 
 var hub: Hub
 var raid: Raid
@@ -17,6 +18,9 @@ var hud: Hud
 var nameplates: CanvasLayer
 var scoreboard: CanvasLayer
 var net: NetSession
+## The home base while the player is walking around it, else null.
+var base: HomeBase
+var base_hud: CanvasLayer
 var _server_pid := -1
 var _join_attempts := 0
 var _join_address := ""
@@ -44,6 +48,7 @@ func _ready() -> void:
 			hub.set_online_status("Deploying...")
 			net.deploy())
 	hub.online_leave_requested.connect(leave_server)
+	hub.base_requested.connect(enter_base)
 
 
 func _notification(what: int) -> void:
@@ -51,11 +56,77 @@ func _notification(what: int) -> void:
 		_stop_local_server()
 
 
+# ------------------------------------------------------------- home base ----
+
+## Leaves the hub screen for the home base, which shows the stash the hub
+## was showing: the local profile's, or the server's while in a lobby.
+func enter_base() -> void:
+	_open_base(hub.stash_items(), hub.current_loadout(), "")
+
+
+## Opens someone else's base to look around. Nothing in it can be equipped.
+## `stash` and `loadout` are that player's, as their server reports them.
+func visit_base(owner_name: String, stash: Array, loadout: Dictionary) -> void:
+	_open_base(stash, loadout, owner_name if owner_name != "" else "Raider")
+
+
+func _open_base(stash: Array, loadout: Dictionary, owner_name: String) -> void:
+	if base != null or raid != null:
+		return
+	hub.visible = false
+	base = HomeBase.new()
+	base.name = "HomeBase"
+	base.owner_name = owner_name
+	base.read_only = owner_name != ""
+	base.show_gear(stash, loadout)
+	add_child(base)
+	base.equip_requested.connect(_on_base_equip)
+	base.leave_requested.connect(leave_base)
+	controller = PlayerController.new()
+	controller.setup(base.player)
+	base.add_child(controller)
+	base_hud = BaseHudScript.new()
+	base_hud.name = "BaseHud"
+	base_hud.setup(base)
+	base.add_child(base_hud)
+
+
+func leave_base() -> void:
+	if base == null:
+		return
+	base.queue_free()
+	base = null
+	base_hud = null
+	controller = null
+	hub.refresh_gear()
+	hub.visible = true
+
+
+## Gear used in the base changes the loadout the same way the hub's pickers
+## do: straight into the profile solo, as a request to the server online.
+func _on_base_equip(slot: String, item_id: String) -> void:
+	if hub.in_lobby():
+		if net:
+			net.equip(slot, item_id)
+		return
+	if item_id == "":
+		Profile.unequip(slot)
+	else:
+		Profile.equip(slot, item_id)
+	_refresh_base()
+
+
+## Shows the base whatever the hub would show now.
+func _refresh_base() -> void:
+	if base and not base.read_only:
+		base.show_gear(hub.stash_items(), hub.current_loadout())
+
+
 # ------------------------------------------------------------------ solo ----
 
 func start_raid(world_id: String) -> void:
 	var world := Worlds.get_world(world_id)
-	if world == null or raid != null or net != null:
+	if world == null or raid != null or net != null or base != null:
 		return
 	hub.visible = false
 	raid = Raid.new()
@@ -176,7 +247,10 @@ func _try_join() -> void:
 	add_child(net)
 	net.signed_in.connect(_on_online_signed_in)
 	net.account_changed.connect(_on_online_account_changed)
-	net.lobby_error.connect(func(reason: String) -> void: hub.set_online_status(reason))
+	net.lobby_error.connect(func(reason: String) -> void:
+		hub.set_online_status(reason)
+		if base_hud:
+			base_hud.show_notice(reason))
 	net.joined.connect(_on_online_joined)
 	net.failed.connect(_on_online_failed)
 	net.disconnected.connect(_on_online_disconnected)
@@ -202,6 +276,7 @@ func _on_online_signed_in(account: Dictionary) -> void:
 func _on_online_account_changed(account: Dictionary) -> void:
 	if raid == null:
 		hub.update_account(account)
+		_refresh_base()
 
 
 func _on_online_joined(p_raid: Raid) -> void:
@@ -227,6 +302,10 @@ func _on_online_failed(reason: String) -> void:
 	_stop_local_server()
 	hub.leave_lobby()
 	hub.set_online_status(reason)
+	# A base open on the server's stash falls back to the local one.
+	_refresh_base()
+	if base_hud:
+		base_hud.show_notice(reason)
 
 
 ## The connection dropped in the middle of a raid. The server treats that as
