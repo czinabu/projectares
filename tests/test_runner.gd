@@ -1874,8 +1874,96 @@ func _test_online() -> void:
 	OS.kill(pid)
 	await frames(30)
 	await _test_online_stash()
+	await _test_online_movement()
 	_wipe_dir(NET_ACCOUNTS)
 	check(Combat.authoritative, "leaving an online raid hands damage back to this game")
+
+
+func _test_online_movement() -> void:
+	print("Online: smooth movement on a bad connection")
+	var port := 24816
+	var pid := _start_server(port, ["--bots", "0", "--squad-spawn"])
+	var dana := await _join("Dana", port)
+	var eli := await _join("Eli", port) if dana != null else null
+	check(dana != null and eli != null, "two clients join for the movement checks")
+	if dana == null or eli == null:
+		await _leave(eli)
+		await _leave(dana)
+		OS.kill(pid)
+		return
+	await _wait_until(func() -> bool: return eli.actor_for(dana.my_actor_id) != null, 180)
+	var me := dana.raid.player
+	var seen := eli.actor_for(dana.my_actor_id)
+	await frames(30)
+
+	# 120 ms each way: the server's answers describe where you were a quarter
+	# of a second ago.
+	dana.simulated_lag = 0.12
+	await frames(40)
+	dana.max_correction = 0.0
+	var from := me.global_position
+	var worst_step := 0.0
+	var last := from
+	me.cmd.move = Vector2(0, 1)
+	me.cmd.sprint = true
+	for i in 150:
+		await frames(1)
+		# A pull backwards shows up as a tick that moves you less than nothing.
+		var step := (me.global_position - last).dot((me.global_position - from).normalized()) if i > 20 else 0.0
+		worst_step = minf(worst_step, step)
+		last = me.global_position
+	var ran := from.distance_to(me.global_position)
+	me.cmd.move = Vector2.ZERO
+	me.cmd.sprint = false
+	check(ran > 6.0, "a lagging player still runs at full speed (%.1f m)" % ran)
+	check(dana.max_correction < 0.4, "running on a slow connection needs no real correction (worst %.2f m)" % dana.max_correction)
+	check(worst_step > -0.02, "the player is never pulled backwards while running (%.3f m)" % worst_step)
+	await frames(90)
+	var apart := seen.global_position.distance_to(me.global_position) if is_instance_valid(seen) else 99.0
+	check(apart < 0.5, "after stopping, the other player sees them where they are (%.2f m apart)" % apart)
+
+	# One in five input packets lost: a single-tick press must still arrive.
+	dana.simulated_lag = 0.04
+	dana.simulated_loss = 0.2
+	await frames(60)
+	dana.max_correction = 0.0
+	var ground := me.global_position.y
+	var top := 0.0
+	var seen_jumps := 0
+	for jump in 5:
+		me.cmd.jump_pressed = true
+		await frames(1)
+		me.cmd.jump_pressed = false
+		var seen_top := 0.0
+		for i in 80:
+			await frames(1)
+			top = maxf(top, me.global_position.y - ground)
+			seen_top = maxf(seen_top, seen.global_position.y - ground)
+		if seen_top > 0.6:
+			seen_jumps += 1
+	check(top > 0.6, "the player jumps on their own screen at once (%.2f m)" % top)
+	check(seen_jumps == 5, "every jump reaches the server despite lost packets (%d of 5 seen by the other player)" % seen_jumps)
+	dana.simulated_loss = 0.0
+
+	# Other players glide between updates instead of stepping.
+	me.cmd.move = Vector2(1, 0)
+	await frames(30)
+	var biggest := 0.0
+	var smallest := 99.0
+	var prev := seen.global_position
+	for i in 60:
+		await frames(1)
+		var moved := seen.global_position.distance_to(prev)
+		prev = seen.global_position
+		biggest = maxf(biggest, moved)
+		smallest = minf(smallest, moved)
+	me.cmd.move = Vector2.ZERO
+	check(smallest > 0.0 and biggest < smallest * 2.5 + 0.02,
+			"another player's movement is even from tick to tick (%.3f to %.3f m)" % [smallest, biggest])
+	await _leave(eli)
+	await _leave(dana)
+	OS.kill(pid)
+	await frames(30)
 
 
 func _test_online_stash() -> void:

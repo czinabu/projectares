@@ -62,6 +62,13 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   `Combat.authoritative` is false there, so a client never deals damage, loots,
   or decides an outcome. Anything that changes a result must run on the server
   and reach clients through `NetSession`.
+- Online movement: a client numbers every input and sends the last few in
+  each packet; the server plays them in order, one per tick, and each state
+  entry carries the input number it had reached. The client corrects its own
+  actor by comparing the server's position with its remembered prediction for
+  that input (`NetSession._history`), never with its current position, and
+  blends every correction over several ticks. Keep `Actor` movement
+  deterministic from its `ActorCommand` so prediction keeps matching.
 - Online, the server owns each player's stash, loadout and mastery
   (`core/account/stash_service.gd`). A client's kit or picks are never trusted;
   the server gets them from `StashService.deploy` and applies results with

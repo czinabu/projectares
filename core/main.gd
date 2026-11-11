@@ -168,6 +168,11 @@ func _try_join() -> void:
 	net.name = "Net"
 	net.player_name = Profile.player_name
 	net.secret = Profile.get_online_secret()
+	# `-- --lag 120 --loss 10` fakes a bad connection: milliseconds of delay
+	# each way, and the percent of input packets lost.
+	var args := OS.get_cmdline_user_args()
+	net.simulated_lag = float(_arg(args, "--lag", "0")) / 1000.0
+	net.simulated_loss = float(_arg(args, "--loss", "0")) / 100.0
 	add_child(net)
 	net.signed_in.connect(_on_online_signed_in)
 	net.account_changed.connect(_on_online_account_changed)
