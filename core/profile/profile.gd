@@ -6,6 +6,7 @@ extends Node
 ## when you deploy, and only comes back if you extract.
 
 const SAVE_PATH := "user://profile.json"
+const MasteryBook := preload("res://core/progression/mastery_book.gd")
 ## Given once to every profile so there is gear to try loadouts with.
 const WELCOME_CRATE: Array[String] = ["rifle_carbine", "frame_trooper", "medkit", "medkit"]
 ## Later one-time crates, by name, so existing profiles get new kinds of gear
@@ -22,6 +23,8 @@ var stash: Array[String] = []
 var loadout := {}
 var welcome_granted := false
 var crates_granted: Array[String] = []
+## Weapon, ability and frame mastery. Never lost on death.
+var mastery := MasteryBook.new()
 ## How the melee side is picked: "mouse" (flick) or "move" (movement keys).
 var melee_control := "mouse"
 var raids_played := 0
@@ -37,6 +40,7 @@ func _ready() -> void:
 
 func reset() -> void:
 	crates_granted.clear()
+	mastery.clear()
 	stash.clear()
 	loadout.clear()
 	welcome_granted = false
@@ -132,6 +136,9 @@ func record_raid(result: Dictionary) -> void:
 	if result.get("outcome", "") == "extracted":
 		raids_extracted += 1
 	kills += result.get("kills", 0)
+	var gained: Dictionary = result.get("mastery_xp", {})
+	for track: String in gained:
+		mastery.add_xp(track, int(gained[track]))
 	validate_loadout()
 
 
@@ -152,6 +159,7 @@ func save() -> void:
 		"loadout": loadout,
 		"welcome_granted": welcome_granted,
 		"crates_granted": crates_granted,
+		"mastery": mastery.to_dict(),
 		"melee_control": melee_control,
 		"raids_played": raids_played,
 		"raids_extracted": raids_extracted,
@@ -181,6 +189,7 @@ func load_profile() -> void:
 	for crate: Variant in data.get("crates_granted", []):
 		if typeof(crate) == TYPE_STRING:
 			crates_granted.append(crate)
+	mastery.load_dict(data.get("mastery", {}))
 	melee_control = "move" if data.get("melee_control", "mouse") == "move" else "mouse"
 	raids_played = int(data.get("raids_played", 0))
 	raids_extracted = int(data.get("raids_extracted", 0))

@@ -5,11 +5,14 @@ extends Control
 
 signal deploy_requested(world_id: String)
 
+const MasteryPanel := preload("res://core/progression/mastery_panel.gd")
+
 var _result: Label
 var _stash: Label
 var _loadout_box: VBoxContainer
 var _pickers := {}
 var _details := {}
+var _mastery: MasteryPanel
 
 
 func _ready() -> void:
@@ -58,6 +61,9 @@ func _ready() -> void:
 		_pickers[slot] = picker
 		_details[slot] = detail
 
+	_mastery = MasteryPanel.new()
+	box.add_child(_mastery)
+
 	box.add_child(_text("STASH", 20, Color(1.0, 0.55, 0.25)))
 	_stash = _text("", 15, Color(0.85, 0.85, 0.85))
 	box.add_child(_stash)
@@ -96,6 +102,7 @@ func refresh(last_result: Dictionary) -> void:
 			_result.modulate = Color(1.0, 0.45, 0.4)
 		_:
 			_result.text = ""
+	_mastery.show_result(last_result)
 	Profile.validate_loadout()
 	_refresh_loadout()
 	_stash.text = "%s\nStash value %d   Raids %d   Extractions %d   Kills %d" % [
@@ -130,6 +137,7 @@ func _refresh_loadout() -> void:
 		picker.select(selected)
 		var detail: Label = _details[slot]
 		detail.text = ItemDB.item_description(equipped) if equipped != "" else "Nothing at risk."
+	_mastery.refresh()
 
 
 func _on_picked(index: int, slot: String) -> void:

@@ -71,6 +71,9 @@ few seconds and restart on its own. That is Godot learning about new scripts.
   stash; die or leave it behind and it is gone. Abandoned bikes wait by jump
   ramps around the city. Riding uses the third-person camera (V still
   switches), and pressing E in mid-air bails out with the bike's speed.
+- Mastery for every weapon type, ability and armor frame. Using gear earns XP
+  for its type, levels unlock variants that trade one strength for another
+  (never raw power), and you pick them in the hub. Mastery is kept when you die.
 - Two exits, a raid timer, and full loot on death.
 
 ## How the code is organized
@@ -89,6 +92,7 @@ core/            Shared by every world. Never names a specific world.
   player/        Local input and camera
   ui/            HUD and hub
   profile/       Stash and stats that persist between raids
+  progression/   Mastery: tracks and variants, XP tracking in a raid, hub panel
 worlds/
   ashfront/      The first world: rules, loot tables, and its map
   frostline/     A second, smaller world that proves the plug-in contract

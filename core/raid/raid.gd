@@ -10,6 +10,7 @@ signal ended(result: Dictionary)
 ## Bots never start closer to the player than this, so a raid does not open with a fight.
 const MIN_BOT_SPAWN_DISTANCE := 40.0
 const VehicleScript := preload("res://core/vehicle/vehicle.gd")
+const MasteryTracker := preload("res://core/progression/mastery_tracker.gd")
 
 var world: WorldDef
 var map: Node3D
@@ -25,12 +26,17 @@ var _kit: Array[String] = []
 ## Vehicle items the player deployed with. Lost unless they extract riding one.
 var _deployed_vehicles: Array[String] = []
 var _extracted_vehicle := ""
+## Mastery variants the player deployed with, and the XP they earn.
+var mastery: MasteryTracker
+var _mastery_picks := {}
 
 
 ## Call after the Raid is in the scene tree. A fixed seed makes it repeatable.
 ## `p_kit` is the gear the player deploys with; empty means the free scrap kit.
-func start(p_world: WorldDef, p_seed: int = -1, p_kit: Array = []) -> void:
+## `p_mastery` maps mastery track -> picked variant id (see MasteryBook.active_picks).
+func start(p_world: WorldDef, p_seed: int = -1, p_kit: Array = [], p_mastery: Dictionary = {}) -> void:
 	world = p_world
+	_mastery_picks = p_mastery
 	_kit.assign(p_kit if not p_kit.is_empty() else world.starter_loadout())
 	Worlds.current = world
 	if p_seed >= 0:
@@ -87,6 +93,10 @@ func _spawn_player() -> void:
 	add_child(player)
 	player.global_position = at
 	Loadout.equip(player, _kit)
+	mastery = MasteryTracker.new()
+	mastery.name = "Mastery"
+	add_child(mastery)
+	mastery.setup(player, _mastery_picks)
 	player.died.connect(_on_actor_died)
 	world.on_spawn(player)
 
@@ -207,6 +217,7 @@ func _finish(outcome: String, cause: String) -> void:
 		"loot_value": ItemDB.total_value(loot),
 		"lost": lost,
 		"kills": kills,
+		"mastery_xp": mastery.report(outcome == "extracted"),
 		"time_in_raid": world.raid_duration - time_left,
 	}
 	Profile.record_raid(result)

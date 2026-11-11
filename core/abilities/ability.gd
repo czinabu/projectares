@@ -20,6 +20,8 @@ var effect := ""
 var cooldown := 10.0
 ## Blink: how far the step carries.
 var blink_range := 9.0
+## Blink: seconds of barrier-strength protection on arrival (a mastery variant).
+var blink_shield := 0.0
 ## Barrier: how long it lasts and the share of damage it removes.
 var duration := 4.0
 var damage_reduction := 0.6
@@ -52,6 +54,7 @@ func activate() -> bool:
 	match effect:
 		"blink":
 			_blink()
+			active_left = blink_shield
 		"barrier":
 			active_left = duration
 		"pulse":
@@ -68,7 +71,7 @@ func activate() -> bool:
 
 ## Called for every hit on the actor, after the weapon's guard.
 func modify_incoming(info: DamageInfo) -> void:
-	if effect == "barrier" and is_active() and info.kind in ["bullet", "melee", "slam", "pulse"]:
+	if effect in ["barrier", "blink"] and is_active() and info.kind in ["bullet", "melee", "slam", "pulse"]:
 		info.amount *= 1.0 - damage_reduction
 
 

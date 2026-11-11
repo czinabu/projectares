@@ -38,6 +38,10 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   `Raid` (never carried). `core/vehicle/vehicle.gd` reads its rider's
   `ActorCommand` and moves the rider; `Actor` skips its own movement while
   `Actor.vehicle` is set. The script has no `class_name`; preload it.
+- Mastery (`core/progression/`) is keyed by gear type tags ("rifle", "blink",
+  "frame_heavy"), never by item id. Variants are sidegrades: every one trades a
+  strength for a weakness, and death never takes mastery away. Variant picks go
+  into `Raid.start` alongside the kit; `Raid` never reads them from `Profile`.
 - `starter`-tagged items are the free scrap kit. They never enter the stash.
 - `Raid` never touches `Profile` to build a kit. The kit is passed into
   `Raid.start`, so a server can supply it later.
