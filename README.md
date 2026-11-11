@@ -212,6 +212,27 @@ you have.
 - A new player starts with 500 credits. Online, the server keeps your balance
   next to your stash and decides every price; your game only asks.
 
+## The arena
+
+**Enter the arena** in the hub (or the arena gate in the plaza) takes you to
+the Pit, a colosseum where you watch from the stands. Press Esc to free the
+mouse and use the arena panel:
+
+- **Bet** on the bout being called. Backers of the winner split the losing
+  side's pool by stake, less a 10% house cut. Draws refund every wager.
+- **Challenge** another player to a duel, with an optional stake that both of
+  you put up and the winner takes. Or **practice** against a bot gladiator.
+- **Start or join a tournament.** It costs an entry fee, fills empty slots with
+  bot gladiators, and the champion takes the pot.
+
+Nobody loses gear in the arena. You fight with your own loadout (no healing
+items or vehicles), a beaten fighter yields at 1 health instead of dying, and
+nothing is dropped. Only the two fighters in a bout can hurt each other. When
+nothing is queued, bot gladiators put on exhibition bouts for the crowd.
+
+Online, the dedicated server runs the arena on the server port plus 10 (24575 by default, next to the plaza and raid worlds), sharing
+the same accounts. The server decides every result and pays every wager.
+
 ## How the code is organized
 
 ```
@@ -224,6 +245,7 @@ core/            Shared by every world. Never names a specific world.
   interact/      Loot containers
   raid/          The running world (Raid) and depots
   world/         The world contract (WorldDef) and the world registry
+  arena/         The arena venue, its bouts and wagers, and its overlay
   ai/            Bot brain
   player/        Local input and camera
   ui/            HUD and hub

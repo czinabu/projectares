@@ -11,15 +11,21 @@ extends Node
 ## each raid world on the ports after it; `--world` runs just that one world,
 ## and `--no-plaza` runs it alone on the port. Player stashes are saved in the
 ## accounts folder (`user://accounts` unless given) and shared by all of them.
+## The arena runs too, on `--arena-port` (the port plus `ARENA_PORT_OFFSET`
+## unless given); `--no-arena` leaves it out.
 
 const JOIN_TIMEOUT := 12.0
 ## The solo player's renown key in a raid, so it carries across their lives.
 const LOCAL_OWNER := "local"
+const StashRules := preload("res://core/account/stash_rules.gd")
 const NameplatesScript := preload("res://core/ui/nameplates.gd")
 const ScoreboardScript := preload("res://core/ui/scoreboard.gd")
 const PhoneScript := preload("res://core/phone/phone.gd")
 const GameSettings := preload("res://core/settings/game_settings.gd")
 const BaseHudScript := preload("res://core/ui/base_hud.gd")
+const ArenaHudScript := preload("res://core/arena/arena_hud.gd")
+## The arena listens this many ports above the raid server.
+const ARENA_PORT_OFFSET := 10
 const PlazaViewScript := preload("res://core/social/plaza_view.gd")
 ## The plaza holds more people than a raid.
 const PLAZA_PLAYERS := 32
@@ -53,6 +59,8 @@ var _server_pid := -1
 var _join_attempts := 0
 var _join_address := ""
 var _join_port := NetSession.DEFAULT_PORT
+## Online: the raid lobby's port, while visiting that server's arena.
+var _lobby_port := -1
 ## The local player's last life, while they are down.
 var _death_result := {}
 ## Time.get_ticks_msec() from which a dead player may drop back in.
@@ -88,6 +96,7 @@ func _ready() -> void:
 	hub.online_leave_requested.connect(leave_server)
 	_setup_phone()
 	hub.base_requested.connect(enter_base)
+	hub.arena_requested.connect(open_arena)
 	hub.look_changed.connect(func(appearance: Dictionary) -> void:
 		Profile.set_appearance(appearance, hub.character.owned)
 		if net != null:
@@ -171,6 +180,56 @@ func _refresh_base() -> void:
 		base.show_gear(hub.stash_items(), hub.current_loadout())
 
 
+# ----------------------------------------------------------------- arena ----
+
+## Opens the arena: the server's while online (from its lobby, or from inside
+## a world such as the plaza through its arena gate), or a solo one against
+## bot gladiators.
+func open_arena() -> void:
+	if base != null or raid is Arena:
+		return
+	if net != null:
+		if raid == null and not hub.in_lobby():
+			return
+		# Leave the lobby (or the plaza or world you are in) for the arena
+		# session on the same server. Leaving the arena comes back here.
+		var arena_port: int = net.routes.get(Arena.ArenaVenue.ID, _join_port + ARENA_PORT_OFFSET)
+		_lobby_port = _join_port
+		if raid != null:
+			_leave_raid()
+		else:
+			net.queue_free()
+			net = null
+		hub.set_online_status("Entering the arena...")
+		_begin_join(_join_address, arena_port, 3)
+		return
+	if raid != null:
+		_leave_raid()
+	hub.visible = false
+	var arena := Arena.new()
+	arena.name = "Raid"
+	raid = arena
+	add_child(arena)
+	# Your own loadout, but nothing leaves the stash: no gear is at risk here.
+	var kit := StashRules.checkout(Profile.stash.duplicate(), Profile.loadout.duplicate(), Arena.ArenaVenue.new())
+	arena.start_solo(kit, Profile.mastery.active_picks())
+	_attach_player_view()
+
+
+func leave_arena() -> void:
+	if not raid is Arena:
+		return
+	var back_online := net != null and _lobby_port > 0
+	_leave_raid()
+	hub.visible = true
+	hub.refresh_gear()
+	if back_online:
+		_join_port = _lobby_port
+		_lobby_port = -1
+		hub.set_online_status("Leaving the arena...")
+		_begin_join(_join_address, _join_port, 3)
+
+
 # ------------------------------------------------------------------ solo ----
 
 func start_raid(world_id: String) -> void:
@@ -228,6 +287,12 @@ func _attach_player_view() -> void:
 	_apply_settings()
 	if phone != null and phone.is_open:
 		phone.close()
+	if raid is Arena:
+		var arena_hud := ArenaHudScript.new()
+		arena_hud.name = "ArenaHud"
+		arena_hud.setup(raid)
+		arena_hud.leave_requested.connect(leave_arena)
+		raid.add_child(arena_hud)
 
 
 ## One solo life ended. A death keeps you in the world; leaving goes home.
@@ -267,6 +332,9 @@ func _on_redeploy_requested() -> void:
 ## L: alive, start or cancel a sign-out. Down, go back to the hub.
 func _on_sign_out_requested() -> void:
 	if raid == null or raid.player == null or not is_instance_valid(raid.player):
+		return
+	if raid is Arena:
+		leave_arena()
 		return
 	if _is_down():
 		if net:
@@ -364,7 +432,8 @@ func _run_dedicated_server(args: PackedStringArray) -> void:
 	var port := int(_arg(args, "--port", str(NetSession.DEFAULT_PORT)))
 	var err := start_server(_arg(args, "--world", ""), port, "--no-plaza" not in args,
 			int(_arg(args, "--bots", "-1")), "--squad-spawn" in args, _arg(args, "--accounts", ""),
-			"--no-rewind" not in args)
+			"--no-rewind" not in args,
+			-1 if "--no-arena" in args else int(_arg(args, "--arena-port", str(port + ARENA_PORT_OFFSET))))
 	if err != OK:
 		push_error("Server: could not listen from port %d (%s)" % [port, error_string(err)])
 		get_tree().quit(1)
@@ -374,9 +443,10 @@ func _run_dedicated_server(args: PackedStringArray) -> void:
 ## the raid worlds follow on the next ports; without one, a single world runs
 ## on `port`. `world_id` "" runs every raid world (the first one only when
 ## there is no plaza to reach the others from). All sessions share one stash
-## service, so an account is the same wherever it shows up.
+## service, so an account is the same wherever it shows up. The arena runs on
+## `arena_port` (below zero: no arena), listed in the plaza's routes.
 func start_server(world_id: String, port: int, with_plaza := true, bots := -1, squad := false,
-		accounts := "", rewind := true) -> Error:
+		accounts := "", rewind := true, arena_port := -1) -> Error:
 	var plaza := Worlds.social_world() if with_plaza else null
 	var worlds: Array[WorldDef] = []
 	if Worlds.get_world(world_id) != null and not Worlds.get_world(world_id).safe_zone:
@@ -409,6 +479,22 @@ func start_server(world_id: String, port: int, with_plaza := true, bots := -1, s
 		sessions.append(session)
 		next_port += 1
 	net = sessions[0]
+	if arena_port >= 0:
+		var arena := NetSession.new()
+		arena.name = "Net_%s" % Arena.ArenaVenue.ID
+		arena.isolated = true
+		arena.stash = net.stash
+		arena.social = net.social
+		arena.lag_compensation = rewind
+		add_child(arena)
+		if arena.host(Arena.ArenaVenue.ID, arena_port) == OK:
+			print("Server: running the arena on port %d" % arena_port)
+			routes[Arena.ArenaVenue.ID] = arena_port
+			sessions.append(arena)
+		else:
+			# The raid worlds matter more than the arena: carry on without it.
+			push_warning("Server: no arena, port %d is taken" % arena_port)
+			arena.queue_free()
 	if plaza != null:
 		var session := NetSession.new()
 		session.name = "Net_%s" % plaza.id
@@ -505,6 +591,11 @@ func _try_join() -> void:
 ## Signed in: the hub becomes that server's lobby.
 func _on_online_signed_in(account: Dictionary) -> void:
 	_join_attempts = 0
+	if _lobby_port > 0:
+		# Signed in to the arena: walk straight into the stands.
+		hub.update_account(account)
+		net.deploy()
+		return
 	var world := Worlds.get_world(net.world_id)
 	if world.safe_zone:
 		# The server's front door is its plaza: walk straight in.
@@ -561,6 +652,8 @@ func use_portal(destination: String) -> void:
 		_begin_join(_plaza_address, port, 3)
 	elif destination.begins_with("shop:"):
 		open_shop(destination.trim_prefix("shop:"))
+	elif destination == Arena.ArenaVenue.ID:
+		open_arena()
 	elif destination == "home":
 		open_home_base()
 		return
@@ -646,6 +739,10 @@ func _on_online_failed(reason: String) -> void:
 	_plaza_port = -1
 	_base_from_plaza = false
 	hub.leave_lobby()
+	if _lobby_port > 0:
+		reason = "Could not enter the arena: %s" % reason
+		_join_port = _lobby_port
+		_lobby_port = -1
 	hub.set_online_status(reason)
 	# A base open on the server's stash falls back to the local one.
 	_refresh_base()
@@ -656,15 +753,20 @@ func _on_online_failed(reason: String) -> void:
 ## The connection dropped while in the world. Your body stays there for a
 ## short while. If nobody kills it, what you carried goes back to your stash.
 func _on_online_disconnected() -> void:
+	var in_arena := raid is Arena
 	var was_safe := raid != null and raid.world.safe_zone
 	_leave_raid()
 	_stop_local_server()
 	_plaza_port = -1
 	hub.leave_lobby()
 	hub.refresh({})
-	hub.set_online_status("Lost the connection to the server." if was_safe
-			else "Lost the connection to the server. Your body stays in the world for a moment. "
-			+ "If it survives, what you carried goes back to your stash there.")
+	if in_arena:
+		_lobby_port = -1
+		hub.set_online_status("Lost the connection to the arena. Your gear is safe.")
+	else:
+		hub.set_online_status("Lost the connection to the server." if was_safe
+				else "Lost the connection to the server. Your body stays in the world for a moment. "
+				+ "If it survives, what you carried goes back to your stash there.")
 	hub.visible = true
 
 
@@ -706,6 +808,7 @@ func leave_server() -> void:
 	if raid != null:
 		return
 	_join_attempts = 0
+	_lobby_port = -1
 	if net:
 		net.queue_free()
 		net = null

@@ -49,6 +49,8 @@ var raids_extracted := 0
 var kills := 0
 ## Money for the hub shops. Safe between raids: only gear is ever at risk.
 var credits := Economy.STARTING_CREDITS
+var arena_wins := 0
+var arena_losses := 0
 
 
 func _ready() -> void:
@@ -68,6 +70,16 @@ func reset() -> void:
 	kills = 0
 	renown = 0
 	credits = Economy.STARTING_CREDITS
+	arena_wins = 0
+	arena_losses = 0
+
+
+func record_arena(won: bool) -> void:
+	if won:
+		arena_wins += 1
+	else:
+		arena_losses += 1
+	save()
 
 
 func grant_welcome_crate() -> void:
@@ -217,6 +229,8 @@ func save() -> void:
 		"kills": kills,
 		"renown": renown,
 		"credits": credits,
+		"arena_wins": arena_wins,
+		"arena_losses": arena_losses,
 	}, "\t"))
 
 
@@ -255,4 +269,6 @@ func load_profile() -> void:
 	kills = int(data.get("kills", 0))
 	renown = maxi(0, int(data.get("renown", 0)))
 	credits = Economy.read_saved(data)
+	arena_wins = maxi(0, int(data.get("arena_wins", 0)))
+	arena_losses = maxi(0, int(data.get("arena_losses", 0)))
 	validate_loadout()

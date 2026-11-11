@@ -82,6 +82,10 @@ var _bot_respawns: Array[float] = []
 var _parking: Array[Dictionary] = []
 ## Vehicle -> seconds since anyone rode it.
 var _idle := {}
+## Lag compensation for this raid, set by the `NetSession` running it: called
+## with an attacker, returns {Actor: Vector3} of where they saw everyone.
+## Per raid, because one server process can run several (a world and the arena).
+var rewind := Callable()
 
 
 ## The raid a node belongs to, or null. Rules and scans use this so two raids

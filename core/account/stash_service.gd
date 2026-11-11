@@ -65,6 +65,8 @@ class Account:
 	var renown := 0
 	## Money for the hub shops. Only ever changed here, on the server.
 	var credits := Economy.STARTING_CREDITS
+	var arena_wins := 0
+	var arena_losses := 0
 
 	func is_deployed() -> bool:
 		return deployed_world != ""
@@ -87,6 +89,8 @@ class Account:
 			"kills": kills,
 			"renown": renown,
 			"credits": credits,
+			"arena_wins": arena_wins,
+			"arena_losses": arena_losses,
 		}
 
 	func load_dict(data: Dictionary) -> void:
@@ -121,6 +125,8 @@ class Account:
 		kills = maxi(0, int(data.get("kills", 0)))
 		renown = maxi(0, int(data.get("renown", 0)))
 		credits = Economy.read_saved(data)
+		arena_wins = maxi(0, int(data.get("arena_wins", 0)))
+		arena_losses = maxi(0, int(data.get("arena_losses", 0)))
 
 
 # --- Identity ----------------------------------------------------------------
@@ -230,6 +236,8 @@ func snapshot(account_id: String) -> Dictionary:
 		"kills": account.kills,
 		"renown": account.renown,
 		"credits": account.credits,
+		"arena_wins": account.arena_wins,
+		"arena_losses": account.arena_losses,
 	}
 
 
@@ -324,10 +332,18 @@ func _bank(account: Account, result: Dictionary) -> Dictionary:
 ## Takes the account's loadout out of its stash for a raid in `world`.
 ## Returns {"ok", "kit", "picks"}: pass both straight to `Raid.add_player`.
 ## An account can only be deployed once at a time.
+##
+## A world with `gear_at_risk` off (the arena) gets the same kit, but nothing
+## leaves the stash and the account is not marked as deployed: there is
+## nothing to settle afterwards.
 func deploy(account_id: String, world: WorldDef) -> Dictionary:
 	var account := load_account(account_id)
 	if account == null:
 		return _fail("No such account.")
+	if not world.gear_at_risk:
+		var copy := account.stash.duplicate()
+		var kit := StashRules.checkout(copy, account.loadout.duplicate(), world)
+		return {"ok": true, "kit": kit, "picks": account.mastery.active_picks()}
 	if account.is_deployed():
 		return _fail("Your last body is still out there. Try again in a moment.")
 	var taken: Array[String] = []
@@ -390,6 +406,20 @@ func settle(account_id: String, result: Dictionary) -> Dictionary:
 	StashRules.validate_loadout(account.stash, account.loadout)
 	_save(account)
 	return {"ok": true}
+
+
+# --- Arena ---------------------------------------------------------------------
+
+## Records an arena fight on the account.
+func record_arena(account_id: String, won: bool) -> void:
+	var account := load_account(account_id)
+	if account == null:
+		return
+	if won:
+		account.arena_wins += 1
+	else:
+		account.arena_losses += 1
+	_save(account)
 
 
 ## Calls off a deploy that never became a real run: the gear goes back.

@@ -14,6 +14,8 @@ services:
     ports:
       # The plaza is on 24565 and each raid world on the ports after it.
       - "24565-24569:24565-24569/udp"
+      # The arena runs ten ports above the plaza.
+      - "24575:24575/udp"
     # Player stashes live in this volume, so they survive updates and restarts.
     volumes:
       - ares-data:/data

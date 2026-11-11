@@ -61,10 +61,21 @@ var spawn_protection := 4.0
 var keep_gear_on_death := false
 ## Seconds between dying and being allowed to drop in again.
 var redeploy_delay := 3.0
+## False for a venue where nobody loses gear (the arena). The server then
+## hands out the loadout without taking it out of the stash, and never settles
+## a result into the stash (see `StashService.deploy`).
+var gear_at_risk := true
 
 
 func create_map() -> Node3D:
 	return null
+
+
+## The node that runs this world: a plain `Raid` for every world. A venue with
+## its own rules (the arena) returns its own `Raid` subclass. Called on servers,
+## clients and solo alike, so the same class runs everywhere.
+func new_raid() -> Raid:
+	return Raid.new()
 
 
 ## Register items that only this world adds, with ItemDB.register. Called once
