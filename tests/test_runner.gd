@@ -52,6 +52,7 @@ func _run() -> void:
 	await _test_death()
 	await _test_storm()
 	await _test_bots_run()
+	await _test_start_screen()
 	await _test_main_flow()
 	await _test_every_world()
 	await _test_frostline()
@@ -4132,3 +4133,21 @@ func _test_online_arena() -> void:
 		await _leave(fighter)
 	OS.kill(pid)
 	_wipe_dir(NET_ACCOUNTS)
+
+
+func _test_start_screen() -> void:
+	print("-- start screen")
+	check(ProjectSettings.get_setting("application/run/main_scene") == "res://scenes/start.tscn",
+			"the game launches on the start screen")
+	var screen := StartScreen.new()
+	add_child(screen)
+	await frames(2)
+	check(screen.start_button != null and screen.start_button.text == "Start game", "it offers Start game")
+	check(screen.title_text == "PROJECT ARES", "it shows the game title")
+	var count := [0]
+	screen.start_pressed.connect(func() -> void: count[0] += 1)
+	screen.start_button.pressed.emit()
+	screen.start_button.pressed.emit()
+	check(count[0] == 1, "pressing Start fires once, however often it is pressed")
+	screen.queue_free()
+	await frames(1)
