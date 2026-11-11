@@ -108,7 +108,15 @@ Type `exit` to leave the server.
 ## 7. Join it
 
 In the game hub, under **Online**, type the server's address into **Join a raid
-at this address** and join. Your friends do the same.
+at this address** and join. Your friends do the same. Each of you lands in the
+server's lobby, picks a loadout from the stash the server keeps for you, and
+presses **Deploy online**.
+
+The server saves every player's stash. A player is known by their name plus a
+private key their game creates the first time, so each of you needs a
+different name, and nobody else can use yours. The stashes are kept in a
+Docker volume called `ares-data`, so updating or restarting the server does
+not lose them.
 
 Everyone must run the same version of the game as the server. If someone sees
 "The server runs a different version of the game", they need to update.
@@ -123,6 +131,8 @@ Log in with `ssh root@<address>` and `cd projectares` first.
 | See the log | `docker compose logs -f` |
 | Restart the server | `docker compose restart` |
 | Stop the server | `docker compose down` |
+| Back up everyone's stash | `docker compose cp ares:/data/accounts ./accounts-backup` |
+| Wipe every stash and start over | `docker compose down -v` |
 | Start it again | `docker compose up -d` |
 
 To change the world, the bot count, or turn on squad spawns, edit the

@@ -8,8 +8,20 @@ signal deploy_requested(world_id: String)
 signal host_requested(world_id: String)
 ## Join the server at `address` ("host" or "host:port").
 signal join_requested(address: String)
+## In a server's lobby: change the loadout or a mastery pick there, deploy
+## into its raid, or disconnect.
+signal online_equip_requested(slot: String, item_id: String)
+signal online_pick_requested(track: String, variant_id: String)
+signal online_deploy_requested
+signal online_leave_requested
 
 const MasteryPanel := preload("res://core/progression/mastery_panel.gd")
+const MasteryBook := preload("res://core/progression/mastery_book.gd")
+
+## Your account on the server you are connected to (see
+## `StashService.snapshot`). Empty when not in a lobby: the hub then shows
+## the local profile.
+var account := {}
 
 var _result: Label
 var _stash: Label
@@ -21,6 +33,12 @@ var _online_status: Label
 var _name_edit: LineEdit
 var _address_edit: LineEdit
 var _host_world: OptionButton
+var _stash_title: Label
+var _solo_box: VBoxContainer
+var _connect_box: VBoxContainer
+var _lobby_box: VBoxContainer
+var _lobby_title: Label
+var _lobby_deploy: Button
 
 
 func _ready() -> void:
@@ -77,12 +95,21 @@ func _ready() -> void:
 		_details[slot] = detail
 
 	_mastery = MasteryPanel.new()
+	_mastery.pick_requested.connect(func(track: String, variant_id: String) -> void:
+		online_pick_requested.emit(track, variant_id))
 	box.add_child(_mastery)
 
-	box.add_child(_text("STASH", 20, Color(1.0, 0.55, 0.25)))
+	_stash_title = _text("STASH", 20, Color(1.0, 0.55, 0.25))
+	box.add_child(_stash_title)
 	_stash = _text("", 15, Color(0.85, 0.85, 0.85))
 	box.add_child(_stash)
 
+	_solo_box = VBoxContainer.new()
+	_solo_box.add_theme_constant_override("separation", 10)
+	box.add_child(_solo_box)
+	_build_lobby(box)
+	var page := box
+	box = _solo_box
 	for world in Worlds.all():
 		var button := Button.new()
 		button.text = "Deploy to %s" % world.display_name
@@ -93,7 +120,13 @@ func _ready() -> void:
 		box.add_child(button)
 		box.add_child(_text(world.description, 14, Color(0.65, 0.65, 0.65)))
 
-	_build_online(box)
+	box = page
+	_connect_box = VBoxContainer.new()
+	_connect_box.add_theme_constant_override("separation", 10)
+	box.add_child(_connect_box)
+	_build_online(_connect_box)
+	_online_status = _text("", 14, Color(1.0, 0.8, 0.4))
+	box.add_child(_online_status)
 
 	var quit := Button.new()
 	quit.text = "Quit"
@@ -120,17 +153,23 @@ func refresh(last_result: Dictionary) -> void:
 		_:
 			_result.text = ""
 	_mastery.show_result(last_result)
-	Profile.validate_loadout()
+	_refresh_gear()
+
+
+func _refresh_gear() -> void:
+	if not in_lobby():
+		Profile.validate_loadout()
 	_refresh_loadout()
+	var record: Variant = account if in_lobby() else Profile
 	_stash.text = "%s\nStash value %d   Raids %d   Extractions %d   Kills %d" % [
-		ItemDB.summarize(Profile.stash), Profile.stash_value(),
-		Profile.raids_played, Profile.raids_extracted, Profile.kills]
+		ItemDB.summarize(stash_items()), ItemDB.total_value(stash_items()),
+		record.get("raids_played"), record.get("raids_extracted"), record.get("kills")]
 
 
 ## Item ids in the stash that fit a slot, best first, without duplicates.
 func options_for(slot: String) -> Array[String]:
 	var out: Array[String] = []
-	for id in Profile.stash:
+	for id: String in stash_items():
 		if ItemDB.has_tag(id, Loadout.SLOTS[slot]) and id not in out:
 			out.append(id)
 	out.sort_custom(func(a: String, b: String) -> bool: return ItemDB.item_value(a) > ItemDB.item_value(b))
@@ -143,22 +182,26 @@ func _refresh_loadout() -> void:
 		picker.clear()
 		picker.add_item("None" if slot in Loadout.OPTIONAL_SLOTS else "Scrap kit (free)")
 		picker.set_item_metadata(0, "")
-		var equipped := Profile.equipped(slot)
+		var worn := equipped(slot)
 		var selected := 0
 		for id in options_for(slot):
-			picker.add_item("%s  [%s]  x%d" % [ItemDB.item_name(id), ItemDB.rarity_name(id), Profile.stash.count(id)])
+			picker.add_item("%s  [%s]  x%d" % [ItemDB.item_name(id), ItemDB.rarity_name(id), stash_items().count(id)])
 			var index := picker.item_count - 1
 			picker.set_item_metadata(index, id)
-			if id == equipped:
+			if id == worn:
 				selected = index
 		picker.select(selected)
 		var detail: Label = _details[slot]
-		detail.text = ItemDB.item_description(equipped) if equipped != "" else "Nothing at risk."
+		detail.text = ItemDB.item_description(worn) if worn != "" else "Nothing at risk."
 	_mastery.refresh()
 
 
 func _on_picked(index: int, slot: String) -> void:
 	var id: String = _pickers[slot].get_item_metadata(index)
+	if in_lobby():
+		# The server decides. The hub redraws when the account comes back.
+		online_equip_requested.emit(slot, id)
+		return
 	if id == "":
 		Profile.unequip(slot)
 	else:
@@ -226,8 +269,77 @@ func _build_online(box: VBoxContainer) -> void:
 		join_requested.emit(Profile.last_server))
 	join_row.add_child(join)
 	box.add_child(join_row)
-	_online_status = _text("", 14, Color(1.0, 0.8, 0.4))
-	box.add_child(_online_status)
+
+
+## The lobby section, shown instead of the solo and connect sections while
+## connected to a server.
+func _build_lobby(box: VBoxContainer) -> void:
+	_lobby_box = VBoxContainer.new()
+	_lobby_box.add_theme_constant_override("separation", 10)
+	_lobby_box.visible = false
+	box.add_child(_lobby_box)
+	_lobby_title = _text("", 20, Color(1.0, 0.55, 0.25))
+	_lobby_box.add_child(_lobby_title)
+	_lobby_box.add_child(_text(
+		"The loadout and stash above are the ones this server keeps for you. "
+		+ "They are separate from your solo stash.", 13, Color(0.65, 0.65, 0.65)))
+	_lobby_deploy = Button.new()
+	_lobby_deploy.custom_minimum_size = Vector2(0, 52)
+	_lobby_deploy.add_theme_font_size_override("font_size", 22)
+	_lobby_deploy.pressed.connect(func() -> void: online_deploy_requested.emit())
+	_lobby_box.add_child(_lobby_deploy)
+	var leave := Button.new()
+	leave.text = "Leave the server"
+	leave.pressed.connect(func() -> void: online_leave_requested.emit())
+	_lobby_box.add_child(leave)
+
+
+func in_lobby() -> bool:
+	return not account.is_empty()
+
+
+## Switches the hub to the account a server keeps for you. `world` is the
+## world that server runs.
+func enter_lobby(p_account: Dictionary, world: WorldDef) -> void:
+	_lobby_title.text = "CONNECTED AS %s" % str(p_account.get("name", "")).to_upper()
+	_lobby_deploy.text = "Deploy online to %s" % world.display_name
+	_lobby_deploy.tooltip_text = world.description
+	update_account(p_account)
+
+
+## Shows a fresh copy of the server's account.
+func update_account(p_account: Dictionary) -> void:
+	account = p_account
+	var book := MasteryBook.new()
+	book.load_dict(account.get("mastery", {}))
+	_mastery.book = book
+	_mastery.loadout = account.get("loadout", {})
+	_show_sections()
+	_refresh_gear()
+
+
+## Back to the local profile.
+func leave_lobby() -> void:
+	account = {}
+	_mastery.book = null
+	_mastery.loadout = null
+	_show_sections()
+	_refresh_gear()
+
+
+func _show_sections() -> void:
+	_lobby_box.visible = in_lobby()
+	_solo_box.visible = not in_lobby()
+	_connect_box.visible = not in_lobby()
+	_stash_title.text = "STASH ON THIS SERVER" if in_lobby() else "STASH"
+
+
+func stash_items() -> Array:
+	return account.get("stash", []) if in_lobby() else Profile.stash
+
+
+func equipped(slot: String) -> String:
+	return account.get("loadout", {}).get(slot, "") if in_lobby() else Profile.equipped(slot)
 
 
 func set_online_status(text: String) -> void:

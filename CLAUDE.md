@@ -65,11 +65,15 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
 - Online, the server owns each player's stash, loadout and mastery
   (`core/account/stash_service.gd`). A client's kit or picks are never trusted;
   the server gets them from `StashService.deploy` and applies results with
-  `StashService.settle`. Stash rules live once, in `core/account/stash_rules.gd`,
+  `StashService.settle`. `NetSession` does both. A client only signs in
+  (name plus `Profile.online_secret`) and sends requests (equip, pick, deploy)
+  from the lobby; it never sends a kit, and online play never reads or writes
+  the local `Profile` stash. The hub shows the server's account snapshot while
+  in a lobby (`Hub.enter_lobby`). Stash rules live once, in `core/account/stash_rules.gd`,
   shared by `Profile` and the service.
 - `Raid` never writes to `Profile` on a server. Results travel in the
-  `player_finished` dictionary and the player's own game applies them with
-  `Raid.apply_result`.
+  `player_finished` dictionary. Online the server settles them into the
+  account; `Raid.apply_result` is only for the local solo profile.
 
 ## Conventions
 

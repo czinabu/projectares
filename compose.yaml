@@ -13,5 +13,11 @@ services:
     tty: true
     ports:
       - "24565:24565/udp"
+    # Player stashes live in this volume, so they survive updates and restarts.
+    volumes:
+      - ares-data:/data
     # Change the world or add "--bots", "4" or "--squad-spawn" here.
-    command: ["--server", "--world", "ashfront", "--port", "24565"]
+    command: ["--server", "--world", "ashfront", "--port", "24565", "--accounts", "/data/accounts"]
+
+volumes:
+  ares-data:

@@ -45,9 +45,17 @@ few seconds and restart on its own. That is Godot learning about new scripts.
 
 The hub has an **Online** section.
 
-- **Host a raid and join it** starts a server on your computer and puts you in it.
+- **Host a raid and join it** starts a server on your computer and connects you to it.
 - **Join a raid at this address** connects to someone else's server. On the same
   network, that is the host's local address, for example `192.168.1.20`.
+- Connecting puts you in that server's lobby. The hub now shows the stash and
+  loadout **the server keeps for you**, which is separate from your solo stash.
+  Pick your gear and press **Deploy online**. After a raid you come back to the
+  lobby.
+- The server knows you by your name plus a private key your game creates the
+  first time. Everyone on a server needs a different name. A new name starts
+  with the same starter crates as a solo profile.
+- Losing your connection in the middle of a raid counts as a death.
 - To try it alone, run two copies of the game. In the Godot editor use
   Debug, Customize Run Instances, and enable two instances. Host in one window
   and join `127.0.0.1` in the other.
@@ -58,9 +66,12 @@ A server can also run on its own, with no window:
 godot --headless --path . -- --server --world ashfront --port 24565
 ```
 
+Add `--accounts <folder>` to choose where the server saves player stashes.
+
 What works online so far: seeing and fighting other players and bots, looting
 caches and bags, and riding vehicles, with the server deciding every hit,
-death, pickup and extraction.
+death, pickup and extraction. The server also owns your online stash: your
+game never tells it what gear you have.
 
 ## What is in the prototype
 
