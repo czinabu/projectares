@@ -74,6 +74,7 @@ func refresh() -> void:
 			entry.status = IN_RAID
 		if state != null:
 			entry.kills = state.kills
+			entry.kills_known = true
 		elif entry.is_me:
 			entry.kills = _my_kills
 	for entry in entries:
@@ -82,10 +83,10 @@ func refresh() -> void:
 	entries.sort_custom(_before)
 
 
-## Kills are only known for players with a state here (solo, server) and for
-## yourself, counted from your own confirmed kills.
+## Kills are known for players with a state here. Online, the server sends
+## every player's count. Your own are also counted from your confirmed kills.
 func kills_known(entry: Dictionary) -> bool:
-	return entry.is_me or raid.mode != Raid.Mode.CLIENT
+	return entry.is_me or raid.mode != Raid.Mode.CLIENT or entry.get("kills_known", false)
 
 
 static func _before(a: Dictionary, b: Dictionary) -> bool:
