@@ -183,6 +183,27 @@ you have.
   losing your connection online leaves your body standing in the world for
   the same time (30 seconds if you were in a fight), so nobody escapes a
   fight by closing the game.
+- Credits and shops. The hub has five shops: the Armory (weapons), Outfitter
+  (armor, flight rigs, medkits), Garage (bikes), Furnisher (furniture and
+  decorations for your home base) and Tailor (clothing). See "Credits and
+  shops" below.
+
+## Credits and shops
+
+- **Loot is the money.** You earn credits mostly by selling the loot you get
+  home, by banking it at a depot or signing out with it, so nothing is earned
+  until it survives. Loot sells for its full value.
+- **Kills pay a small bounty**: 20 credits each for a life you sign out of
+  alive, a quarter of that for a life that ends in death. It is small on purpose, so running in with the free
+  scrap kit never beats risking real gear.
+- **Credits are safe, gear is not.** Your balance is never lost on death. But
+  credits only become power as gear, and bought gear drops like any other.
+- **Shops sell base-level gear only** (Common and Uncommon). Rare gear and
+  better can only be found.
+- **Selling gear back pays 40%** of its value, so trading with a shop can
+  never make money.
+- A new player starts with 500 credits. Online, the server keeps your balance
+  next to your stash and decides every price; your game only asks.
 
 ## How the code is organized
 
@@ -203,6 +224,7 @@ core/            Shared by every world. Never names a specific world.
   profile/       Stash and stats that persist between raids (local play)
   base/          The home base: a room that puts the stash on show
   account/       Server-owned stashes for online play, and the shared gear rules
+  economy/       Credits: the money rules, the shop list, and the shop screen
   progression/   Mastery: tracks and variants, XP tracking in a raid, hub panel
   net/           Online play: the server and client ends of a raid
 worlds/

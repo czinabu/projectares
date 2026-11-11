@@ -33,10 +33,10 @@ func _ready() -> void:
 			{"heal": 30.0}, "Heals 30.")
 
 	# Firearms
-	register("rifle_carbine", "Ashfront Carbine", Rarity.UNCOMMON, 450, ["weapon", "firearm", "rifle"],
+	register("rifle_carbine", "Ashfront Carbine", Rarity.UNCOMMON, 450, ["weapon", "firearm", "rifle", "vendor"],
 			{"damage": 24.0, "fire_interval": 0.1, "spread_deg": 0.9, "reserve_ammo": 150},
 			"Reliable automatic. Harder hitting and tighter than the scrap rifle.")
-	register("smg_stinger", "Stinger SMG", Rarity.UNCOMMON, 420, ["weapon", "firearm", "smg"],
+	register("smg_stinger", "Stinger SMG", Rarity.UNCOMMON, 420, ["weapon", "firearm", "smg", "vendor"],
 			{"damage": 14.0, "fire_interval": 0.065, "mag_size": 40, "ammo_in_mag": 40,
 			"reserve_ammo": 200, "spread_deg": 1.9, "recoil_kick_deg": 0.3, "max_range": 80.0},
 			"Very fast fire and light recoil. Best up close.")
@@ -55,17 +55,17 @@ func _ready() -> void:
 	register("blade_arc", "Arc Blade", Rarity.RARE, 800, ["weapon", "melee", "blade"],
 			{"light_damage": 34.0, "heavy_damage": 72.0, "light_recover": 0.22, "parry_window": 0.26},
 			"Faster swings and a more forgiving parry.")
-	register("hammer_breaker", "Breaker Hammer", Rarity.UNCOMMON, 500, ["weapon", "melee", "hammer"],
+	register("hammer_breaker", "Breaker Hammer", Rarity.UNCOMMON, 500, ["weapon", "melee", "hammer", "vendor"],
 			{"light_damage": 42.0, "heavy_damage": 95.0, "light_windup": 0.22, "light_recover": 0.45,
 			"heavy_windup": 0.55, "light_stamina": 16.0, "heavy_stamina": 36.0, "reach": 3.1,
 			"slam_damage": 85.0, "slam_radius": 5.5},
 			"Slow and brutal. Its dive slam hits a wide area.")
 
 	# Armor frames
-	register("frame_runner", "Runner Frame", Rarity.UNCOMMON, 400, ["armor", "frame_light"],
+	register("frame_runner", "Runner Frame", Rarity.UNCOMMON, 400, ["armor", "frame_light", "vendor"],
 			{"armor": 45.0, "speed_mult": 1.12, "heat_mult": 0.8},
 			"Light: 45 armor, 12% faster, jetpack runs cooler.")
-	register("frame_trooper", "Trooper Frame", Rarity.UNCOMMON, 450, ["armor", "frame_medium"],
+	register("frame_trooper", "Trooper Frame", Rarity.UNCOMMON, 450, ["armor", "frame_medium", "vendor"],
 			{"armor": 85.0},
 			"Medium: 85 armor, no penalties.")
 	register("frame_bulwark", "Bulwark Frame", Rarity.RARE, 900, ["armor", "frame_heavy"],
@@ -76,7 +76,7 @@ func _ready() -> void:
 	register("jetpack_mk2", "Mk2 Jetpack", Rarity.RARE, 950, ["flight_rig"],
 			{"thrust_accel": 42.0, "max_rise_speed": 11.0, "heat_per_sec": 25.0},
 			"Stronger thrust and a third more air time.")
-	register("boots_thruster", "Thruster Boots", Rarity.UNCOMMON, 600, ["flight_rig"],
+	register("boots_thruster", "Thruster Boots", Rarity.UNCOMMON, 600, ["flight_rig", "vendor"],
 			{"thrust_accel": 0.0, "burst_velocity": 10.5, "burst_heat": 30.0, "cool_per_sec": 34.0,
 			"cool_delay": 0.3},
 			"No sustained flight. Press jump in the air for a hard kick upward, three in a row.")
@@ -99,7 +99,7 @@ func _ready() -> void:
 
 	# Vehicles. Not carried: the Raid parks one next to you when you deploy, and
 	# whoever signs out riding it takes it home. Stats tune Vehicle.
-	register("bike_scrapper", "Scrapper Bike", Rarity.UNCOMMON, 600, ["vehicle"],
+	register("bike_scrapper", "Scrapper Bike", Rarity.UNCOMMON, 600, ["vehicle", "vendor"],
 			{"max_speed": 22.0, "boost_speed": 29.0, "body_color": Color(0.6, 0.45, 0.3)},
 			"Rattly motorbike. Fast, loud, and no cover for the rider.")
 	register("bike_raider", "Raider Bike", Rarity.RARE, 1400, ["vehicle"],
@@ -108,7 +108,7 @@ func _ready() -> void:
 			"Tuned motorbike. Quicker off the line and much faster flat out.")
 
 	# Consumables
-	register("medkit", "Medkit", Rarity.COMMON, 60, ["consumable", "heal"], {"heal": 50.0}, "Heals 50.")
+	register("medkit", "Medkit", Rarity.COMMON, 60, ["consumable", "heal", "vendor"], {"heal": 50.0}, "Heals 50.")
 
 	# Loot
 	register("scrap_metal", "Scrap Metal", Rarity.COMMON, 25, ["material"])
@@ -118,6 +118,66 @@ func _ready() -> void:
 	register("targeting_chip", "Targeting Chip", Rarity.RARE, 320, ["augment"])
 	register("reactor_core", "Reactor Core", Rarity.EPIC, 900, ["material"])
 	register("lattice_shard", "Lattice Shard", Rarity.RELIC, 2500, ["relic"])
+
+	# Furniture and decorations for a home base. Bought from the Furnisher,
+	# kept in the stash, never taken on a raid. "footprint" is the size in
+	# meters and "color" the base color, for whatever displays them.
+	_furniture("furn_table", "Mess Table", 120, Vector3(1.6, 0.8, 0.9), Color(0.42, 0.36, 0.3),
+			"A steel table that has seen a lot of card games.")
+	_furniture("furn_bunk", "Steel Bunk", 150, Vector3(2.0, 0.6, 0.9), Color(0.35, 0.38, 0.42),
+			"Somewhere to sleep between drops.")
+	_furniture("furn_locker", "Gear Locker", 200, Vector3(0.9, 1.9, 0.5), Color(0.3, 0.4, 0.35),
+			"Dented, lockable, yours.")
+	_furniture("furn_couch", "Salvaged Couch", 250, Vector3(2.0, 0.8, 0.9), Color(0.5, 0.25, 0.2),
+			"Pulled from a wreck and surprisingly comfortable.")
+	_furniture("furn_workbench", "Workbench", 300, Vector3(1.8, 0.9, 0.8), Color(0.45, 0.4, 0.3),
+			"A place to strip, clean and admire your gear.")
+	_furniture("furn_armor_stand", "Armor Stand", 300, Vector3(0.7, 1.8, 0.7), Color(0.4, 0.4, 0.45),
+			"Shows off a frame at full height.")
+	_furniture("furn_weapon_rack", "Weapon Rack", 350, Vector3(1.8, 1.6, 0.4), Color(0.3, 0.3, 0.33),
+			"Wall rack for the weapons you are proudest of.")
+	_furniture("furn_trophy_case", "Trophy Case", 500, Vector3(1.4, 1.9, 0.5), Color(0.55, 0.45, 0.25),
+			"Glass-fronted case for the rarest things you have brought home.", Rarity.UNCOMMON)
+	_furniture("decor_lamp", "Work Lamp", 60, Vector3(0.3, 1.5, 0.3), Color(1.0, 0.85, 0.55),
+			"Warm light on a tripod.", Rarity.COMMON, true)
+	_furniture("decor_plant", "Potted Fern", 70, Vector3(0.5, 0.9, 0.5), Color(0.25, 0.55, 0.3),
+			"Something green that is not trying to kill you.", Rarity.COMMON, true)
+	_furniture("decor_rug", "Woven Rug", 80, Vector3(2.4, 0.03, 1.6), Color(0.55, 0.3, 0.25),
+			"Takes the chill off a concrete floor.", Rarity.COMMON, true)
+	_furniture("decor_banner", "War Banner", 100, Vector3(1.0, 1.8, 0.05), Color(0.7, 0.2, 0.15),
+			"Hang your colors.", Rarity.COMMON, true)
+	_furniture("decor_neon", "Neon Sign", 180, Vector3(1.2, 0.5, 0.1), Color(0.2, 0.9, 1.0),
+			"Buzzes a little. Glows a lot.", Rarity.UNCOMMON, true)
+
+	# Clothing. Cosmetic only: an outfit item in the stash unlocks the
+	# character customizer outfits listed in its "outfits" stat (the ids the
+	# customizer uses, one per body build that has the outfit). It fits no
+	# loadout slot, so it never goes on a raid and is never lost.
+	_outfit("outfit_scout", "Scout Outfit", 150, ["m_Adventurer"], "Hard-wearing field clothes.")
+	_outfit("outfit_punk", "Punk Outfit", 200, ["m_Punk", "f_Punk"], "Loud, torn and proud of it.")
+	_outfit("outfit_sellsword", "Sellsword Outfit", 300, ["f_Medieval"], "Old-world leathers for hired blades.",
+			Rarity.UNCOMMON)
+	_outfit("outfit_envoy", "Envoy Outfit", 350, ["f_Formal"], "Formal wear that says you are not here to shoot.",
+			Rarity.UNCOMMON)
+	_outfit("outfit_suit", "Suit", 350, ["m_Suit", "f_Suit"], "For when the deal matters more than the fight.",
+			Rarity.UNCOMMON)
+	_outfit("outfit_trooper", "Trooper Outfit", 400, ["m_Swat", "f_Soldier"], "Fatigues and webbing. Looks the part.",
+			Rarity.UNCOMMON)
+
+
+## Registers a clothing item that unlocks the customizer outfits `outfits`.
+func _outfit(id: String, display_name: String, value: int, outfits: Array, description: String,
+		rarity: Rarity = Rarity.COMMON) -> void:
+	register(id, display_name, rarity, value, ["cosmetic", "vendor"], {"outfits": outfits}, description)
+
+
+## Registers a home base piece. Small pieces are also tagged "decor".
+func _furniture(id: String, display_name: String, value: int, footprint: Vector3, color: Color,
+		description: String, rarity: Rarity = Rarity.COMMON, decor := false) -> void:
+	var tags := ["furniture", "vendor"]
+	if decor:
+		tags.append("decor")
+	register(id, display_name, rarity, value, tags, {"footprint": footprint, "color": color}, description)
 
 
 ## Tags also pick the mastery track an item trains: "rifle", "blink", "frame_heavy"
@@ -138,6 +198,11 @@ func register(id: String, display_name: String, rarity: Rarity, value: int, tags
 
 func has_item(id: String) -> bool:
 	return _items.has(id)
+
+
+## Every registered item id, in the order they were registered.
+func all_ids() -> Array:
+	return _items.keys()
 
 
 func get_item(id: String) -> Dictionary:
