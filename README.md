@@ -9,7 +9,7 @@ core loop and lays the foundation for online play and more worlds.
 
 ## Play it
 
-1. Install [Godot 4.4 or newer](https://godotengine.org/download) (standard build).
+1. Install [Godot 4.7 or newer](https://godotengine.org/download) (standard build).
 2. Open `project.godot` in Godot.
 3. Press **F5**.
 

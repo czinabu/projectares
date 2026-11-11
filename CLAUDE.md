@@ -35,6 +35,8 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
 
 ## Verify before committing
 
+The project targets Godot 4.7 (what Caleb runs, and what CI uses).
+
 ```
 godot --headless --path . --import
 godot --headless --path . res://tests/test_runner.tscn   # must exit 0
