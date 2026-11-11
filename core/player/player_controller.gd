@@ -26,6 +26,11 @@ var view_mode := ViewMode.FIRST
 var mouse_sensitivity := 0.0022
 var third_person_distance := 3.8
 var third_person_aim_distance := 2.2
+## Camera distance while riding a vehicle, which is bigger than a person.
+var ride_distance := 5.2
+## The view used while riding. It starts in third-person and V switches it,
+## separately from the on-foot view, which comes back when you get off.
+var ride_view := ViewMode.THIRD
 var base_fov := 80.0
 var ads_fov := 55.0
 ## How far the mouse has to move, in pixels, to count as a stance flick.
@@ -100,8 +105,20 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func toggle_view() -> void:
-	view_mode = ViewMode.THIRD if view_mode == ViewMode.FIRST else ViewMode.FIRST
-	actor.notice.emit("Camera: %s" % VIEW_NAMES[view_mode])
+	if is_riding():
+		ride_view = ViewMode.THIRD if ride_view == ViewMode.FIRST else ViewMode.FIRST
+	else:
+		view_mode = ViewMode.THIRD if view_mode == ViewMode.FIRST else ViewMode.FIRST
+	actor.notice.emit("Camera: %s" % VIEW_NAMES[active_view()])
+
+
+func is_riding() -> bool:
+	return actor != null and actor.vehicle != null
+
+
+## The view in use right now: the riding view on a vehicle, otherwise view_mode.
+func active_view() -> int:
+	return ride_view if is_riding() else view_mode
 
 
 ## Turns recent mouse movement into a melee stance: a flick left or right
@@ -183,14 +200,15 @@ func _process(delta: float) -> void:
 	var aiming := weapon != null and weapon.is_aiming()
 	var target_dist := 0.0
 	if _wants_third_person():
-		target_dist = third_person_aim_distance if aiming else third_person_distance
+		var far := ride_distance if is_riding() else third_person_distance
+		target_dist = third_person_aim_distance if aiming else far
 	_cam_dist = lerpf(_cam_dist, target_dist, 1.0 - exp(-12.0 * delta))
 	if absf(_cam_dist - target_dist) < 0.01:
 		_cam_dist = target_dist
 
 	var look := Basis.from_euler(Vector3(pitch, yaw, 0.0))
 	var pivot := actor.get_eye_position()
-	var t := _cam_dist / third_person_distance
+	var t := minf(_cam_dist / third_person_distance, 1.0)
 	var desired := pivot + look * Vector3(0.6 * t, 0.3 * t, _cam_dist)
 	if _cam_dist > 0.05:
 		# Pull the camera in when a wall is in the way.
@@ -242,7 +260,7 @@ func is_third_person() -> bool:
 
 
 func _wants_third_person() -> bool:
-	return actor.is_dead or view_mode == ViewMode.THIRD
+	return actor.is_dead or active_view() == ViewMode.THIRD
 
 
 ## Where the crosshair points, converted to a direction from the actor's eyes.

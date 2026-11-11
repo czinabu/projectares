@@ -17,7 +17,9 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   directly for gameplay damage, or world PvP rules are bypassed.
 - Shots and melee originate from the actor (eyes, body), never from the camera.
 - The camera never changes view on its own. First/third-person switches only
-  when the player presses the toggle (playtest feedback).
+  when the player presses the toggle (playtest feedback). The one exception:
+  getting on a vehicle uses a separate riding view (third-person by default),
+  and getting off restores the on-foot view.
 - `Raid` has no camera, HUD, or input code. It must keep working headless.
 - Blocking and parrying happen in `Weapon.modify_incoming`, which `Combat.deal`
   calls for every hit. Every melee attack keeps a visible windup so it can be parried.
@@ -32,6 +34,10 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
 - Flight rigs and abilities are data too. `FlightRig` and `Ability` are single
   classes whose item stats pick the behavior. Abilities fire from
   `ActorCommand.ability_pressed`.
+- Vehicles are items tagged `vehicle`, tuned by their stats, and spawned by
+  `Raid` (never carried). `core/vehicle/vehicle.gd` reads its rider's
+  `ActorCommand` and moves the rider; `Actor` skips its own movement while
+  `Actor.vehicle` is set. The script has no `class_name`; preload it.
 - `starter`-tagged items are the free scrap kit. They never enter the stash.
 - `Raid` never touches `Profile` to build a kit. The kit is passed into
   `Raid.start`, so a server can supply it later.

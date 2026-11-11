@@ -145,7 +145,7 @@ func _process(delta: float) -> void:
 		p.inventory.count_with_tag("heal")]
 
 	_view.text = "Camera: %s   press V to switch\nWASD move   Shift sprint   %s   Q dash   H heal   E loot%s\n1 / 2 or mouse wheel: switch weapon   %s" % [
-		PlayerController.VIEW_NAMES[controller.view_mode],
+		PlayerController.VIEW_NAMES[controller.active_view()],
 		p.flight.controls_hint(),
 		"   G ability" if p.ability.enabled else "",
 		weapon.controls_hint() if weapon else ""]
@@ -153,6 +153,10 @@ func _process(delta: float) -> void:
 		_view.text += "\nMelee side: %s, %s   press B to switch" % [
 			PlayerController.STANCE_CONTROL_NAMES[controller.stance_control],
 			PlayerController.STANCE_CONTROL_HINTS[controller.stance_control]]
+	if p.vehicle != null:
+		var kmh := absf(float(p.vehicle.get("speed"))) * 3.6
+		_view.text += "\nRiding %s   %d km/h   W throttle   S brake   A / D steer   Shift boost   E get off" % [
+			p.vehicle.get("display_name"), roundi(kmh)]
 
 	var progress := raid.extract_progress()
 	_extract_bar.visible = progress > 0.0
@@ -162,7 +166,8 @@ func _process(delta: float) -> void:
 	elif p.heal_time_left > 0.0:
 		_prompt.text = "Healing %.1f" % p.heal_time_left
 	else:
-		var target := p.find_interactable()
+		# On a vehicle, E gets you off, so nothing else is offered.
+		var target := p.find_interactable() if p.vehicle == null else null
 		_prompt.text = target.get_prompt() if target else ""
 
 	for m in _messages:

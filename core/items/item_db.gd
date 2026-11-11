@@ -97,6 +97,16 @@ func _ready() -> void:
 			"pulse_stagger": 1.3},
 			"A shockwave that hurts and staggers everyone near you.")
 
+	# Vehicles. Not carried: the Raid parks one next to you when you deploy, and
+	# whoever extracts riding it takes it home. Stats tune Vehicle.
+	register("bike_scrapper", "Scrapper Bike", Rarity.UNCOMMON, 600, ["vehicle"],
+			{"max_speed": 22.0, "boost_speed": 29.0, "body_color": Color(0.6, 0.45, 0.3)},
+			"Rattly motorbike. Fast, loud, and no cover for the rider.")
+	register("bike_raider", "Raider Bike", Rarity.RARE, 1400, ["vehicle"],
+			{"max_speed": 27.0, "boost_speed": 37.0, "accel": 18.0, "turn_rate": 2.6,
+			"body_color": Color(0.85, 0.2, 0.15)},
+			"Tuned motorbike. Quicker off the line and much faster flat out.")
+
 	# Consumables
 	register("medkit", "Medkit", Rarity.COMMON, 60, ["consumable", "heal"], {"heal": 50.0}, "Heals 50.")
 

@@ -12,6 +12,9 @@ extends RefCounted
 ##   - Marker3D nodes in group "spawn_bot"
 ##   - Marker3D nodes in group "spawn_cache" (optional meta "loot_source")
 ##   - ExtractionZone nodes in group "exit"
+##   - optionally Marker3D nodes in group "spawn_vehicle" (optional meta
+##     "loot_source", default "vehicle"). The Raid parks the first
+##     vehicle-tagged item from `roll_loot` there, facing the marker's yaw.
 ##   - optionally a `bake_navigation()` method for bot pathfinding
 
 var id := ""

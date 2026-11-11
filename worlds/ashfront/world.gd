@@ -38,6 +38,12 @@ const ROOFTOP_TABLE := [
 	{"id": "chip_pulse", "weight": 7.0},
 ]
 
+## Abandoned bikes parked around the city. Anyone can ride one out.
+const VEHICLE_TABLE := [
+	{"id": "bike_scrapper", "weight": 75.0},
+	{"id": "bike_raider", "weight": 25.0},
+]
+
 ## Share of scavengers that are melee brutes.
 const BRUTE_CHANCE := 0.3
 
@@ -76,6 +82,9 @@ func roll_loot(source: String, rng: RandomNumberGenerator) -> Array[String]:
 		"bot":
 			table = BOT_TABLE
 			count = rng.randi_range(1, 3)
+		"vehicle":
+			table = VEHICLE_TABLE
+			count = 1
 	var out: Array[String] = []
 	for i in count:
 		out.append(ItemDB.roll(table, rng))

@@ -83,9 +83,11 @@ func refresh(last_result: Dictionary) -> void:
 	match last_result.get("outcome", ""):
 		"extracted":
 			var kept: Array = last_result.get("kept_gear", [])
-			_result.text = "Extracted with %s (worth %d). Kills: %d.%s" % [
+			var left: Array = last_result.get("lost", [])
+			_result.text = "Extracted with %s (worth %d). Kills: %d.%s%s" % [
 				ItemDB.summarize(last_result.loot), last_result.loot_value, last_result.kills,
-				"\nGear brought home: %s." % ItemDB.summarize(kept) if not kept.is_empty() else ""]
+				"\nGear brought home: %s." % ItemDB.summarize(kept) if not kept.is_empty() else "",
+				"\nLeft behind: %s." % ItemDB.summarize(left) if not left.is_empty() else ""]
 			_result.modulate = Color(0.45, 1.0, 0.6)
 		"died":
 			var cause: String = last_result.get("cause", "")

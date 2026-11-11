@@ -3,6 +3,8 @@ extends Node
 ##   godot --headless --path . res://tests/test_runner.tscn
 ## Exits with code 0 when everything passes, 1 otherwise.
 
+const VehicleScript := preload("res://core/vehicle/vehicle.gd")
+
 var _passed := 0
 var _failed := 0
 
@@ -25,6 +27,8 @@ func _run() -> void:
 	await _test_melee_defense()
 	await _test_directional_melee()
 	await _test_flight_rigs_and_abilities()
+	await _test_vehicle_driving()
+	await _test_vehicle_raids()
 	await _test_extraction()
 	await _test_loadouts()
 	await _test_death()
@@ -349,6 +353,20 @@ func _test_main_flow() -> void:
 	Input.action_release("move_left")
 	controller.toggle_stance_control()
 	check(Profile.melee_control == "mouse", "switching again goes back to the mouse flick")
+	# Riding pulls the camera back without touching the on-foot choice.
+	var bike = main.raid.spawn_vehicle("bike_scrapper", p.global_position + Vector3(3, 0.3, 0), 0.0)
+	await frames(5)
+	check(bike.mount(p), "the player gets on a bike")
+	await frames(40)
+	check(controller.is_third_person() and controller.view_mode == PlayerController.ViewMode.FIRST,
+			"riding uses third-person and keeps the on-foot view choice")
+	controller.toggle_view()
+	await frames(40)
+	check(not controller.is_third_person(), "V still switches the view while riding")
+	controller.toggle_view()
+	bike.dismount()
+	await frames(40)
+	check(not controller.is_third_person(), "getting off returns to the on-foot view")
 	controller.toggle_view()
 	await frames(40)
 	check(controller.is_third_person(), "the toggle switches to third-person")
@@ -950,3 +968,191 @@ func _test_flight_rigs_and_abilities() -> void:
 	check(crate_size > 0 and Profile.stash.size() == crate_size and "chip_blink" in Profile.stash,
 			"the flight and abilities crate is granted once")
 	Profile.reset()
+
+
+## A flat test ground with a jump ramp, away from any raid map.
+func _vehicle_arena() -> Node3D:
+	var arena := Node3D.new()
+	arena.name = "VehicleArena"
+	add_child(arena)
+	arena.position = Vector3(0, 0, 2000)
+	var ground := StaticBody3D.new()
+	ground.collision_layer = Actor.LAYER_WORLD
+	var ground_shape := BoxShape3D.new()
+	ground_shape.size = Vector3(400, 1, 400)
+	var ground_col := CollisionShape3D.new()
+	ground_col.shape = ground_shape
+	ground.add_child(ground_col)
+	ground.position.y = -0.5
+	arena.add_child(ground)
+	# The same ramp the map builds: 8 m long at 15 degrees, rising toward -Z.
+	var angle := deg_to_rad(15.0)
+	var ramp := StaticBody3D.new()
+	ramp.collision_layer = Actor.LAYER_WORLD
+	var ramp_shape := BoxShape3D.new()
+	ramp_shape.size = Vector3(4, 0.4, 8)
+	var ramp_col := CollisionShape3D.new()
+	ramp_col.shape = ramp_shape
+	ramp.add_child(ramp_col)
+	ramp.position = Vector3(60, 4.0 * sin(angle) - 0.2 * cos(angle), -40)
+	ramp.basis = Basis(Vector3.RIGHT, angle)
+	arena.add_child(ramp)
+	return arena
+
+
+func _test_vehicle_driving() -> void:
+	print("Vehicles: driving")
+	var arena := _vehicle_arena()
+	var bike = VehicleScript.new()
+	bike.setup("bike_scrapper")
+	arena.add_child(bike)
+	bike.position = Vector3(0, 0.3, 0)
+	var rider := Actor.new()
+	arena.add_child(rider)
+	rider.position = Vector3(3, 0.1, 0)
+	await frames(20)
+	check(bike.is_on_floor() and is_equal_approx(bike.max_speed, 22.0), "a bike settles and takes its item stats")
+	var seat: Interactable = bike.get_node("Seat")
+	check(seat.get_prompt().contains("Ride"), "a parked bike offers a ride")
+	# The rider stands 3 m to the bike's +X side; yaw PI/2 faces -X.
+	rider.cmd.yaw = PI / 2.0
+	rider.cmd.pitch = -0.4
+	check(rider.find_interactable() == seat, "looking at a bike targets its seat")
+	rider.cmd.yaw = 0.0
+	rider.cmd.pitch = 0.0
+	seat.interact(rider)
+	check(rider.vehicle == bike and bike.rider == rider, "interacting gets you on")
+
+	var start: Vector3 = bike.global_position
+	rider.cmd.move = Vector2(0, 1)
+	await frames(120)
+	var dist: float = bike.global_position.distance_to(start)
+	check(dist > rider.sprint_speed * 2.0, "the bike outruns sprinting (%.1f m in 2 s)" % dist)
+	check(bike.global_position.z < start.z - 10.0, "throttle drives the way the bike points")
+	check(rider.global_position.distance_to(bike.global_position) < 1.0, "the rider stays on the seat")
+	rider.cmd.sprint = true
+	await frames(90)
+	check(bike.speed > bike.max_speed + 1.0, "sprint boosts past normal top speed (%.1f)" % bike.speed)
+	rider.cmd.sprint = false
+	rider.cmd.move = Vector2(-1, 1)
+	var heading_before: float = bike.heading
+	await frames(30)
+	check(bike.heading > heading_before + 0.3, "A steers left")
+	rider.cmd.move = Vector2(0, -1)
+	await frames(60)
+	check(bike.speed < 1.0, "S brakes the bike to a stop")
+	rider.cmd.move = Vector2.ZERO
+	await frames(30)
+
+	rider.cmd.interact_pressed = true
+	await frames(1)
+	rider.cmd.interact_pressed = false
+	check(rider.vehicle == null and bike.rider == null, "E gets you off")
+	var off: float = rider.global_position.distance_to(bike.global_position)
+	check(off > 0.8 and off < 2.5, "you step off beside the bike")
+	var walk_from := rider.global_position
+	rider.cmd.move = Vector2(0, 1)
+	await frames(30)
+	rider.cmd.move = Vector2.ZERO
+	check(rider.global_position.distance_to(walk_from) > 1.0, "back on foot, you walk again")
+
+	# Anyone can take a parked bike, but not one that is being ridden.
+	var thief := Actor.new()
+	arena.add_child(thief)
+	thief.position = bike.position + Vector3(-2, 0, 0)
+	await frames(5)
+	seat.interact(thief)
+	check(thief.vehicle == bike, "someone else can take a parked bike")
+	seat.interact(rider)
+	check(rider.vehicle == null and bike.rider == thief, "a ridden bike cannot be taken")
+	thief.kill("test")
+	await frames(2)
+	check(bike.rider == null and thief.vehicle == null, "the rider's death leaves the bike behind")
+
+	# Ramp jump, and bailing out mid-air keeps the momentum.
+	bike.position = Vector3(60, 0.3, 0)
+	bike.heading = 0.0
+	bike.speed = 0.0
+	bike.velocity = Vector3.ZERO
+	await frames(5)
+	seat.interact(rider)
+	rider.cmd.move = Vector2(0, 1)
+	rider.cmd.sprint = true
+	var top := 0.0
+	var air := 0.0
+	var bailed := false
+	var bail_speed := 0.0
+	for i in 240:
+		await frames(1)
+		top = maxf(top, bike.position.y)
+		air = maxf(air, bike.airborne_time)
+		if not bailed and bike.airborne_time > 0.2:
+			rider.cmd.interact_pressed = true
+			bailed = true
+		elif bailed and bail_speed == 0.0:
+			rider.cmd.interact_pressed = false
+			bail_speed = rider.velocity.length()
+			check(rider.vehicle == null and not rider.is_on_floor(), "you can bail out mid-air")
+	check(air > 0.4 and top > 2.5, "a ramp launches the bike (%.2f s in the air, %.1f m up)" % [air, top])
+	check(bail_speed > 10.0, "bailing out keeps the bike's momentum (%.1f m/s)" % bail_speed)
+	arena.queue_free()
+	await frames(2)
+
+
+func _test_vehicle_raids() -> void:
+	print("Vehicles: raids")
+	var world := Worlds.get_world("ashfront")
+	Profile.reset()
+	Profile.welcome_granted = true
+	Profile.add_to_stash(["bike_raider"])
+	check(Profile.equip("vehicle", "bike_raider"), "a bike goes in the vehicle slot")
+	var kit := Profile.checkout_loadout(world)
+	check("bike_raider" in kit and "bike_raider" not in Profile.stash, "deploying takes the bike out of the stash")
+
+	var raid := Raid.new()
+	add_child(raid)
+	raid.start(world, 61, kit)
+	for bot in raid.bots:
+		bot.get_node("Brain").set_physics_process(false)
+	await frames(10)
+	var p := raid.player
+	var own: Array = raid.vehicles.filter(func(v: Node3D) -> bool:
+		return v.get("item_id") == "bike_raider" and v.global_position.distance_to(p.global_position) < 5.0)
+	check(own.size() == 1, "your bike is parked next to you")
+	check("bike_raider" not in p.gear_items and not p.inventory.has_item("bike_raider"),
+			"a bike is not carried and does not drop in your bag")
+	check(raid.vehicles.size() >= 3, "the map parks abandoned bikes too (%d)" % (raid.vehicles.size() - 1))
+	var ramps := raid.map.get_children().filter(func(n: Node) -> bool: return n.is_in_group("spawn_vehicle"))
+	check(ramps.size() == raid.vehicles.size() - 1, "every vehicle marker gets a bike")
+
+	var results: Array[Dictionary] = []
+	raid.ended.connect(func(r: Dictionary) -> void: results.append(r))
+	var bike = own[0]
+	check(bike.mount(p), "you can ride your own bike")
+	var exit_pos := raid.exits[1].global_position
+	bike.global_position = Vector3(exit_pos.x, 0.4, exit_pos.z)
+	bike.velocity = Vector3.ZERO
+	bike.speed = 0.0
+	await frames(300)
+	check(results.size() == 1 and results[0].outcome == "extracted", "riding into an exit extracts")
+	check("bike_raider" in Profile.stash and "bike_raider" in results[0].get("kept_gear", []),
+			"riding out takes the bike home")
+	await _end_raid(raid)
+
+	# Deploy with it again and die: the bike stays in the raid for anyone to take.
+	check(Profile.equip("vehicle", "bike_raider"), "the bike can be equipped again")
+	kit = Profile.checkout_loadout(world)
+	var raid2 := Raid.new()
+	add_child(raid2)
+	raid2.start(world, 62, kit)
+	for bot in raid2.bots:
+		bot.get_node("Brain").set_physics_process(false)
+	await frames(5)
+	var results2: Array[Dictionary] = []
+	raid2.ended.connect(func(r: Dictionary) -> void: results2.append(r))
+	raid2.player.kill("test")
+	await frames(2)
+	check(results2.size() == 1 and "bike_raider" in results2[0].lost and "bike_raider" not in Profile.stash,
+			"dying loses the bike you brought")
+	check(Profile.equipped("vehicle") == "", "a lost bike leaves the vehicle slot")
+	await _end_raid(raid2)

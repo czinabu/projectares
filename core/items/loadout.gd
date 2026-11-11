@@ -10,6 +10,7 @@ const SLOTS := {
 	"rig": "flight_rig",
 	"frame": "armor",
 	"ability": "ability",
+	"vehicle": "vehicle",
 }
 const SLOT_NAMES := {
 	"primary": "Primary weapon",
@@ -17,9 +18,10 @@ const SLOT_NAMES := {
 	"rig": "Flight rig",
 	"frame": "Armor frame",
 	"ability": "Ability",
+	"vehicle": "Vehicle",
 }
 ## Slots with no free scrap item. Left empty, you deploy without one.
-const OPTIONAL_SLOTS := ["ability"]
+const OPTIONAL_SLOTS := ["ability", "vehicle"]
 ## How many healing items are taken from the stash on deploy.
 const MAX_HEAL_ITEMS := 2
 
@@ -52,6 +54,9 @@ static func equip(actor: Actor, item_ids: Array) -> void:
 			actor.gear_items.append(id)
 		elif ItemDB.has_tag(id, "armor"):
 			frames.append(id)
+		elif ItemDB.has_tag(id, "vehicle"):
+			# A vehicle is not carried. The Raid parks it next to its owner.
+			pass
 		else:
 			actor.inventory.add_item(id)
 	# Frames go last because they scale what the other gear set up.
