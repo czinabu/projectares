@@ -5,10 +5,8 @@ extends Node3D
 ## and plays the effects for shots and hits.
 
 const Vfx := preload("res://core/visual/vfx.gd")
+const WeaponArm := preload("res://core/visual/weapon_arm.gd")
 const CHARACTER_SHADER := preload("res://assets/shaders/character.gdshader")
-
-## From the grip bone to where the weapon's handle sits, in the hand's space.
-var grip_offset := Vector3(0.0, 0.0, 0.0)
 
 var look: Node
 var actor: Actor
@@ -21,9 +19,8 @@ var _flash_left := 0.0
 var _materials: Array[ShaderMaterial] = []
 var _thrust: Node3D
 var _attack_left := 0.0
-var _skeleton: Skeleton3D
-var _grip_bone := -1
-
+## Makes the model hold its weapon, or null for skins without the bones.
+var arm: Node
 
 func _ready() -> void:
 	var skin_name: String = actor.get_meta("look", look.DEFAULT_SKIN)
@@ -72,11 +69,15 @@ func _ready() -> void:
 		_play("idle")
 		_player.advance(0.0)
 	_stand(model, def["height"])
-	_skeleton = model.find_child("Skeleton3D", true, false) as Skeleton3D
-	if _skeleton and def.has("grip_bone"):
-		_grip_bone = _skeleton.find_bone(def["grip_bone"])
-		# After the pose is applied, so the weapon never trails the hand.
-		_skeleton.skeleton_updated.connect(_hold_weapon)
+	var skeleton := model.find_child("Skeleton3D", true, false) as Skeleton3D
+	if skeleton and def.has("grip_bone"):
+		arm = WeaponArm.new()
+		arm.name = "WeaponArm"
+		arm.actor = actor
+		arm.skeleton = skeleton
+		arm.look = look
+		add_child(arm)
+		arm.setup(def, _player.get_animation(_anims["idle_melee"]) if _player and _anims.has("idle_melee") else null)
 
 	# The greybox capsule stays as the actor's body node, but draws nothing.
 	if actor.body_mesh:
@@ -111,18 +112,18 @@ func _process(delta: float) -> void:
 		return
 	if actor.body_mesh:
 		visible = actor.body_mesh.visible
-	if actor.weapons.size() != _weapons_seen:
+	if actor.weapons.size() != _weapons_seen or _has_bare_weapon():
 		_dress_weapons()
 	if _flash_left > 0.0:
 		_flash_left -= delta
 		if _flash_left <= 0.0:
 			_set_flash(0.0)
 	_update_thrust()
+	var weapon := actor.get_active_weapon()
+	var melee := weapon as MeleeWeapon
 	if actor.is_dead:
 		_play("death")
 		return
-	var weapon := actor.get_active_weapon()
-	var melee := weapon as MeleeWeapon
 	if melee and melee.is_winding_up() and _attack_left <= 0.0:
 		_attack_left = 0.6
 		_current = ""
@@ -147,15 +148,12 @@ func _process(delta: float) -> void:
 		_play("idle")
 
 
-## Puts the actor's hand node, which carries the weapon, on the model's hand.
-## The controller owns the hand in first person, so this leaves it alone then.
-## The actor resets the hand every physics tick and nothing in the simulation
-## reads it, so this only changes what is drawn.
-func _hold_weapon() -> void:
-	if _grip_bone < 0 or actor.hand_override or actor.is_dead:
-		return
-	var grip: Vector3 = _skeleton.global_transform * _skeleton.get_bone_global_pose(_grip_bone).origin
-	actor.hand.global_position = grip + actor.hand.global_basis * grip_offset
+## True when a weapon was swapped in without the count changing.
+func _has_bare_weapon() -> bool:
+	for weapon in actor.weapons:
+		if weapon.visual and not weapon.visual.has_meta("dressed"):
+			return true
+	return false
 
 
 ## Swaps greybox gun parts for a model and wires up shot effects. Runs again
@@ -166,17 +164,17 @@ func _dress_weapons() -> void:
 		if weapon.visual == null or weapon.visual.has_meta("dressed"):
 			continue
 		weapon.visual.set_meta("dressed", true)
+		var model: Node3D = look.weapon_model(weapon)
+		if model:
+			for child in weapon.visual.get_children():
+				if child is MeshInstance3D:
+					child.visible = false
+			weapon.visual.add_child(model)
+		elif weapon is MeleeWeapon:
+			look.restyle_melee(weapon.visual)
 		var gun := weapon as Gun
 		if gun:
-			var model: Node3D = look.weapon_model(gun)
-			if model:
-				for child in weapon.visual.get_children():
-					if child is MeshInstance3D:
-						child.visible = false
-				weapon.visual.add_child(model)
 			gun.fired.connect(_on_fired.bind(gun))
-		else:
-			look.restyle_melee(weapon.visual)
 
 
 func _on_fired(from: Vector3, to: Vector3, gun: Gun) -> void:

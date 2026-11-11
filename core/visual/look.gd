@@ -43,16 +43,21 @@ const SURFACES := {
 ## colors, machines are pulled toward worn metal.
 const HUMAN_ANIMS := {"idle": "Idle_Gun_Pointing", "walk": "Walk", "run": "Run", "death": "Death",
 	"idle_melee": "Idle_Sword", "attack": "Sword_Slash", "move_gun": "Run_Shoot"}
+const HUMAN_ARM := ["UpperArm.R", "LowerArm.R", "Wrist.R"]
+const HUMAN_OFF_ARM := ["UpperArm.L", "LowerArm.L", "Wrist.L"]
+const HUMAN_SPINE := ["Abdomen", "Torso", "Chest"]
 const SKINS := {
 	"raider": {
 		"scenes": ["Human_Swat.glb", "Human_Soldier.glb", "Human_SciFi.glb"],
-		"height": 1.8, "tint": Color(0.8, 0.82, 0.86), "hide": ["Pistol"], "grip_bone": "Middle1.R",
+		"height": 1.8, "tint": Color(0.8, 0.82, 0.86), "hide": ["Pistol"], "grip_bone": "Middle1.R", "arm": HUMAN_ARM, "off_arm": HUMAN_OFF_ARM,
+		"spine": HUMAN_SPINE, "neck": "Neck",
 		"saturation": 0.75, "brightness": 0.85, "metal": 0.0, "rough": 0.85,
 		"anims": HUMAN_ANIMS,
 	},
 	"scavenger": {
 		"scenes": ["Human_Punk.glb", "Human_PunkW.glb", "Human_Hoodie.glb", "Human_Worker.glb"],
-		"height": 1.76, "tint": Color(0.86, 0.76, 0.68), "hide": ["Pistol"], "grip_bone": "Middle1.R",
+		"height": 1.76, "tint": Color(0.86, 0.76, 0.68), "hide": ["Pistol"], "grip_bone": "Middle1.R", "arm": HUMAN_ARM, "off_arm": HUMAN_OFF_ARM,
+		"spine": HUMAN_SPINE, "neck": "Neck",
 		"saturation": 0.7, "brightness": 0.75, "metal": 0.0, "rough": 0.9,
 		"anims": HUMAN_ANIMS,
 	},
@@ -80,6 +85,14 @@ const GUN_MODELS := [
 	["rifle", "AR_2.glb"],
 ]
 const DEFAULT_GUN := "AR_3.glb"
+## Melee models picked by item tag, first match wins: file, length in meters,
+## how far up from the pommel the hand grips it, and whether it takes both hands.
+const MELEE_MODELS := [
+	["hammer", "Hammer.glb", 1.15, 0.3, true],
+	["starter", "Sword.glb", 1.15, 0.13, false],
+	["blade", "Katana.glb", 1.2, 0.14, false],
+]
+const DEFAULT_MELEE := ["", "Sword.glb", 1.15, 0.13, false]
 const GUN_LENGTH := 0.72
 
 ## False on a headless server: nothing is dressed and no art is loaded.
@@ -478,6 +491,8 @@ func _dress_actor(actor: Actor) -> void:
 
 ## The model for a held weapon, or null to keep the greybox one.
 func weapon_model(weapon: Weapon) -> Node3D:
+	if weapon is MeleeWeapon:
+		return _melee_model(weapon)
 	if not weapon is Gun:
 		return null
 	var file := DEFAULT_GUN
@@ -499,7 +514,35 @@ func weapon_model(weapon: Weapon) -> Node3D:
 	return holder
 
 
-## Greybox melee parts keep their shape and get metal and a hot edge.
+## Melee models stand along +Y with the handle down, the way the greybox
+## blade is built, so the weapon's own windup, swing and guard poses carry over.
+func _melee_model(weapon: Weapon) -> Node3D:
+	var pick := _melee_pick(weapon)
+	var model := _instance(WEAPONS + pick[1])
+	if model == null:
+		return null
+	var holder := Node3D.new()
+	holder.name = "Model"
+	holder.add_child(model)
+	_fit(model, WEAPONS + pick[1], pick[2], true)
+	_weather_model(model, 0.75 if weapon.item_id == "" or ItemDB.has_tag(weapon.item_id, "starter") else 0.35, 0.85)
+	holder.position.y = -pick[3]
+	return holder
+
+
+func _melee_pick(weapon: Weapon) -> Array:
+	for entry: Array in MELEE_MODELS:
+		if weapon.item_id != "" and ItemDB.has_tag(weapon.item_id, entry[0]):
+			return entry
+	return DEFAULT_MELEE
+
+
+## True when the weapon is held with both hands.
+func is_two_handed(weapon: Weapon) -> bool:
+	return weapon is MeleeWeapon and _melee_pick(weapon)[4]
+
+
+## Fallback when a melee model is missing: greybox parts keep their shape and get metal and a hot edge.
 func restyle_melee(visual: Node3D) -> void:
 	for node in visual.find_children("*", "MeshInstance3D", true, false):
 		var mesh_node := node as MeshInstance3D

@@ -60,21 +60,54 @@ func _ready() -> void:
 	foe.cmd.move = Vector2.ZERO
 	foe.cmd.yaw = controller.yaw + PI
 	foe.cmd.aim_dir = -ahead.normalized()
-	for w in foe.weapons:
-		w.queue_free()
-	foe.weapons.clear()
-	var cleaver := MeleeWeapon.new()
-	cleaver.light_windup = 3.0
-	cleaver.light_stamina = 0.0
-	foe.equip_weapon(cleaver)
-	foe.active_weapon_index = 0
-	foe.cmd.stance = MeleeWeapon.Dir.RIGHT
-	await _settle(5)
-	foe.cmd.primary_pressed = true
-	await _settle(1)
-	foe.cmd.primary_pressed = false
-	await _settle(25)
-	await _shot(out_dir.path_join("enemy_windup.png"))
+	# Each side an enemy can wind up from, a swing part way and at its end,
+	# a guard, and a two-handed weapon, to check the arm, the grip and the
+	# blade all show the side.
+	var poses := [
+		{"dir": MeleeWeapon.Dir.RIGHT, "file": "enemy_windup.png"},
+		{"dir": MeleeWeapon.Dir.LEFT, "file": "enemy_windup_left.png"},
+		{"dir": MeleeWeapon.Dir.OVERHEAD, "file": "enemy_windup_overhead.png"},
+		{"dir": MeleeWeapon.Dir.RIGHT, "file": "enemy_swing_mid.png", "swing": 0.5},
+		{"dir": MeleeWeapon.Dir.RIGHT, "file": "enemy_swing_end.png", "swing": 1.0},
+		{"dir": MeleeWeapon.Dir.LEFT, "file": "enemy_guard_left.png", "guard": true},
+		{"dir": MeleeWeapon.Dir.RIGHT, "file": "enemy_hammer_windup.png", "item": "hammer_breaker"},
+		{"dir": MeleeWeapon.Dir.OVERHEAD, "file": "enemy_idle_blade.png", "idle": true},
+		{"dir": MeleeWeapon.Dir.OVERHEAD, "file": "enemy_idle_hammer.png", "idle": true, "item": "hammer_breaker"},
+	]
+	for pose: Dictionary in poses:
+		for w in foe.weapons:
+			if w.visual:
+				w.visual.queue_free()
+			w.queue_free()
+		foe.weapons.clear()
+		var cleaver := MeleeWeapon.new()
+		# Long enough to still be cocked when the shot is taken on a slow renderer.
+		cleaver.light_windup = 60.0
+		cleaver.light_damage = 0.0
+		cleaver.light_stamina = 0.0
+		cleaver.item_id = pose.get("item", "")
+		foe.equip_weapon(cleaver)
+		foe.active_weapon_index = 0
+		foe.cmd.stance = pose["dir"]
+		foe.cmd.secondary = pose.get("guard", false)
+		await _settle(5)
+		# Held until a physics tick has certainly seen it.
+		for i in 6:
+			foe.cmd.primary_pressed = not pose.has("guard") and not pose.has("idle") and not cleaver.is_winding_up()
+			await _settle(1)
+		foe.cmd.primary_pressed = false
+		await _settle(14)
+		if pose.has("swing"):
+			# A swing lasts a few frames, so freeze the enemy part way through it.
+			foe.set_physics_process(false)
+			cleaver._windup_left = 0.0
+			for i in 14:
+				cleaver._swing_left = MeleeWeapon.SWING_TIME * (1.0 - pose["swing"]) + 0.017
+				cleaver._animate(0.016)
+				await _settle(1)
+		await _shot(out_dir.path_join(pose["file"]))
+		foe.set_physics_process(true)
+	foe.cmd.secondary = false
 	foe.global_position += Vector3(0, -200, 0)
 	hud._on_hit_confirmed(raid.player, DamageInfo.make(1.0, raid.player, "melee"), false)
 	Sfx.play("parry")
