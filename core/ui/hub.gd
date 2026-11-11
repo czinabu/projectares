@@ -14,6 +14,8 @@ signal online_equip_requested(slot: String, item_id: String)
 signal online_pick_requested(track: String, variant_id: String)
 signal online_deploy_requested
 signal online_leave_requested
+## Open the phone (contacts, messages, invites, news, settings).
+signal phone_requested
 ## Walk around your home base, where the stash is on show.
 signal base_requested
 ## The player changed how their character looks.
@@ -145,6 +147,12 @@ func _ready() -> void:
 	_build_online(_connect_box)
 	_online_status = _text("", 14, Color(1.0, 0.8, 0.4))
 	box.add_child(_online_status)
+
+	var phone := Button.new()
+	phone.text = "Open your phone (P): players, invites, news, settings"
+	phone.custom_minimum_size = Vector2(0, 44)
+	phone.pressed.connect(func() -> void: phone_requested.emit())
+	box.add_child(phone)
 
 	var quit := Button.new()
 	quit.text = "Quit"
