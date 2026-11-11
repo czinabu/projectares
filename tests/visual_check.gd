@@ -28,7 +28,11 @@ func _ready() -> void:
 
 	await _settle(90)
 	await _shot(out_dir.path_join("first_person.png"))
-	controller.view_mode = PlayerController.ViewMode.THIRD
+	Input.action_press("weapon_2")
+	await _settle(30)
+	Input.action_release("weapon_2")
+	await _shot(out_dir.path_join("first_person_blade.png"))
+	controller.toggle_view()
 	await _settle(60)
 	await _shot(out_dir.path_join("third_person.png"))
 	get_tree().quit()

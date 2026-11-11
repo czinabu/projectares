@@ -13,6 +13,8 @@ signal notice(text: String)
 const LAYER_WORLD := 1
 const LAYER_ACTORS := 2
 const LAYER_INTERACT := 4
+## Where the hand sits on the body when a controller is not posing it.
+const HAND_REST := Vector3(0.38, 1.25, -0.35)
 
 var faction := "raider"
 var display_name := "Raider"
@@ -49,6 +51,9 @@ var is_dead := false
 var heal_time_left := 0.0
 var airborne_time := 0.0
 var body_mesh: MeshInstance3D
+## Holds the active weapon's model. A first-person camera may pose it itself.
+var hand := Node3D.new()
+var hand_override := false
 
 var _dash_left := 0.0
 var _dash_cd := 0.0
@@ -63,6 +68,9 @@ func _init() -> void:
 	add_child(health)
 	add_child(inventory)
 	add_child(flight)
+	hand.name = "Hand"
+	hand.position = HAND_REST
+	add_child(hand)
 
 
 func _ready() -> void:
@@ -111,6 +119,9 @@ func _physics_process(delta: float) -> void:
 	if is_dead:
 		return
 	rotation.y = cmd.yaw
+	if not hand_override:
+		hand.position = HAND_REST
+		hand.rotation = Vector3(cmd.pitch, 0.0, 0.0)
 	_simulate_movement(delta)
 	_simulate_weapons(delta)
 	_simulate_heal(delta)
@@ -176,6 +187,7 @@ func _simulate_weapons(delta: float) -> void:
 		if old:
 			old.on_holster()
 		active_weapon_index = cmd.switch_weapon
+		_refresh_weapon_visuals()
 	var weapon := get_active_weapon()
 	if weapon and heal_time_left <= 0.0:
 		weapon.handle_input(cmd, delta)
@@ -214,6 +226,16 @@ func equip_weapon(weapon: Weapon) -> void:
 	weapon.actor = self
 	weapons.append(weapon)
 	add_child(weapon)
+	weapon.visual = weapon.build_visual()
+	if weapon.visual:
+		hand.add_child(weapon.visual)
+	_refresh_weapon_visuals()
+
+
+func _refresh_weapon_visuals() -> void:
+	for i in weapons.size():
+		if weapons[i].visual:
+			weapons[i].visual.visible = i == active_weapon_index
 
 
 func add_impulse(impulse: Vector3) -> void:
@@ -260,6 +282,7 @@ func _on_health_died(info: DamageInfo) -> void:
 	is_dead = true
 	collision_layer = 0
 	velocity = Vector3.ZERO
+	hand.visible = false
 	if body_mesh:
 		body_mesh.rotation.x = -PI / 2.0
 		body_mesh.position.y = 0.4

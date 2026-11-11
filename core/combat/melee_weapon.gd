@@ -26,12 +26,28 @@ var _heavy_left := 0.0
 var _slamming := false
 
 
-func prefers_third_person() -> bool:
-	return true
+const REST_POSE := -0.45
+const SWING_TIME := 0.16
+
+var _swing_left := 0.0
+
+
+func build_visual() -> Node3D:
+	var root := Node3D.new()
+	root.add_child(Weapon.make_part(Vector3(0.05, 0.22, 0.05), Vector3(0, 0.0, 0), Color(0.15, 0.15, 0.15)))
+	root.add_child(Weapon.make_part(Vector3(0.2, 0.04, 0.06), Vector3(0, 0.12, 0), Color(0.3, 0.3, 0.3)))
+	root.add_child(Weapon.make_part(Vector3(0.06, 0.95, 0.015), Vector3(0, 0.62, 0), Color(0.45, 0.9, 1.0), true))
+	root.rotation.x = REST_POSE
+	return root
+
+
+func controls_hint() -> String:
+	return "Left mouse combo   Right mouse heavy lunge, or dive slam in the air"
 
 
 func tick(delta: float) -> void:
 	_cooldown = maxf(0.0, _cooldown - delta)
+	_animate(delta)
 	if _combo_timer > 0.0:
 		_combo_timer -= delta
 		if _combo_timer <= 0.0:
@@ -95,8 +111,29 @@ func _on_slam_landed(_impact_speed: float) -> void:
 			Combat.deal(other, DamageInfo.make(slam_damage, actor, "slam", other.global_position))
 
 
+## Greybox swing: the blade pulls back for a heavy, then sweeps forward on a strike.
+func _animate(delta: float) -> void:
+	if visual == null:
+		return
+	var pose := REST_POSE
+	if _slamming:
+		pose = 1.3
+	elif _heavy_left > 0.0:
+		pose = 1.0
+	elif _swing_left > 0.0:
+		_swing_left -= delta
+		pose = lerpf(0.6, -2.1, 1.0 - maxf(_swing_left, 0.0) / SWING_TIME)
+	else:
+		visual.rotation.z = lerp_angle(visual.rotation.z, 0.0, 1.0 - exp(-10.0 * delta))
+	visual.rotation.x = lerp_angle(visual.rotation.x, pose, 1.0 - exp(-40.0 * delta))
+
+
 func _strike(amount: float, kind: String) -> void:
 	swung.emit(kind)
+	_swing_left = SWING_TIME
+	if visual:
+		# Alternate the slash angle through the combo so the hits read differently.
+		visual.rotation.z = [0.0, 0.7, -0.7, 0.0][combo_step] if kind == "light" else 0.0
 	var forward := actor.get_aim_dir()
 	forward.y = 0.0
 	forward = forward.normalized()

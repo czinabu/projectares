@@ -39,7 +39,7 @@ func _ready() -> void:
 	_place(_timer, 0.5, 0.0, Vector2(-200, 14), Vector2(400, 36))
 
 	_view = _label(root, "", 14)
-	_place(_view, 0.0, 0.0, Vector2(18, 14), Vector2(700, 60))
+	_place(_view, 0.0, 0.0, Vector2(18, 14), Vector2(900, 80))
 
 	_feed = _label(root, "", 16)
 	_feed.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
@@ -67,12 +67,18 @@ func _ready() -> void:
 
 	_weapon = _label(root, "", 20)
 	_weapon.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	_place(_weapon, 1.0, 1.0, Vector2(-520, -92), Vector2(500, 28))
+	_weapon.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
+	_place(_weapon, 1.0, 1.0, Vector2(-520, -192), Vector2(500, 126))
 	_backpack = _label(root, "", 16)
 	_backpack.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	_place(_backpack, 1.0, 1.0, Vector2(-520, -60), Vector2(500, 24))
 
 	raid.player.notice.connect(_on_notice)
+	var names: Array[String] = []
+	for i in raid.player.weapons.size():
+		names.append("[%d] %s" % [i + 1, raid.player.weapons[i].display_name])
+	if not names.is_empty():
+		_on_notice("You carry: " + "   ".join(names))
 
 
 func _process(delta: float) -> void:
@@ -94,13 +100,19 @@ func _process(delta: float) -> void:
 	_heat_label.modulate = Color(1, 0.35, 0.25) if p.flight.overheated else Color.WHITE
 
 	var weapon := p.get_active_weapon()
-	_weapon.text = weapon.status_text() if weapon else "Unarmed"
+	# Every carried weapon is listed with its key, the one in hand marked.
+	var slots: Array[String] = []
+	for i in p.weapons.size():
+		var w := p.weapons[i]
+		slots.append("%s [%d] %s" % [">" if w == weapon else " ", i + 1, w.status_text()])
+	_weapon.text = "\n".join(slots) if not slots.is_empty() else "Unarmed"
 	_backpack.text = "Backpack %d/%d   worth %d   Medkits %d" % [
 		p.inventory.items.size(), p.inventory.capacity, p.inventory.total_value(),
 		p.inventory.items.count("medkit")]
 
-	_view.text = "Camera: %s  [V]\nWASD move  Shift sprint  Space jump, hold to fly  Q dash  1/2 weapons  R reload  H heal  E loot" \
-			% PlayerController.VIEW_NAMES[controller.view_mode]
+	_view.text = "Camera: %s   press V to switch\nWASD move   Shift sprint   Space jump, hold to fly   Q dash   H heal   E loot\n1 / 2 or mouse wheel: switch weapon   %s" % [
+		PlayerController.VIEW_NAMES[controller.view_mode],
+		weapon.controls_hint() if weapon else ""]
 
 	var progress := raid.extract_progress()
 	_extract_bar.visible = progress > 0.0
