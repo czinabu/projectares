@@ -38,6 +38,27 @@ caches hold the best loot, and only the jetpack gets you there.
 After you pull new code, the first launch may show "Updating the project" for a
 few seconds and restart on its own. That is Godot learning about new scripts.
 
+## Play online (early test)
+
+The hub has an **Online** section.
+
+- **Host a raid and join it** starts a server on your computer and puts you in it.
+- **Join a raid at this address** connects to someone else's server. On the same
+  network, that is the host's local address, for example `192.168.1.20`.
+- To try it alone, run two copies of the game. In the Godot editor use
+  Debug, Customize Run Instances, and enable two instances. Host in one window
+  and join `127.0.0.1` in the other.
+
+A server can also run on its own, with no window:
+
+```
+godot --headless --path . -- --server --world ashfront --port 24565
+```
+
+What works online so far: seeing and fighting other players and bots, with the
+server deciding every hit, death and extraction. Not online yet: loot caches,
+loot bags and vehicles.
+
 ## What is in the prototype
 
 - First-person and third-person camera that you switch with V. It never changes
@@ -93,6 +114,7 @@ core/            Shared by every world. Never names a specific world.
   ui/            HUD and hub
   profile/       Stash and stats that persist between raids
   progression/   Mastery: tracks and variants, XP tracking in a raid, hub panel
+  net/           Online play: the server and client ends of a raid
 worlds/
   ashfront/      The first world: rules, loot tables, and its map
   frostline/     A second, smaller world that proves the plug-in contract

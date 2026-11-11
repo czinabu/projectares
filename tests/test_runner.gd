@@ -18,6 +18,12 @@ func _ready() -> void:
 
 
 func _run() -> void:
+	# `-- --only online` runs a single group while working on it.
+	var args := OS.get_cmdline_user_args()
+	var only := args[args.find("--only") + 1] if "--only" in args and args.find("--only") + 1 < args.size() else ""
+	if only != "":
+		await call("_test_" + only)
+		return
 	_test_registry()
 	_test_health()
 	_test_inventory_and_items()
@@ -38,6 +44,7 @@ func _run() -> void:
 	await _test_every_world()
 	await _test_frostline()
 	await _test_mastery()
+	await _test_online()
 
 
 func check(condition: bool, what: String) -> void:
@@ -1396,3 +1403,212 @@ func _test_mastery() -> void:
 	check(panel._rows.get_child_count() == 3, "one row per loadout track")
 	panel.queue_free()
 	Profile.reset()
+
+
+# --- Online ------------------------------------------------------------------
+
+func _wait_until(condition: Callable, max_frames: int) -> bool:
+	for i in max_frames:
+		if condition.call():
+			return true
+		await frames(1)
+	return condition.call()
+
+
+func _start_server(port: int, extra: Array[String]) -> int:
+	var args := PackedStringArray(["--headless", "--path", ProjectSettings.globalize_path("res://"),
+			"--", "--server", "--world", "ashfront", "--port", str(port)])
+	args.append_array(PackedStringArray(extra))
+	return OS.create_process(OS.get_executable_path(), args)
+
+
+## A client in its own 3D world, so two clients in this process never collide.
+func _new_client(shown_name: String) -> NetSession:
+	var view := SubViewport.new()
+	view.own_world_3d = true
+	add_child(view)
+	var session := NetSession.new()
+	session.name = "Net"
+	session.player_name = shown_name
+	session.kit_provider = func(world: WorldDef) -> Array: return world.starter_loadout()
+	view.add_child(session)
+	return session
+
+
+## Connects, retrying while the server process is still starting up.
+func _join(session_name: String, port: int) -> NetSession:
+	for attempt in 20:
+		var session := _new_client(session_name)
+		var state := {"failed": false}
+		session.failed.connect(func(_reason: String) -> void: state.failed = true)
+		session.join("127.0.0.1", port)
+		var settled := func() -> bool:
+			return state.failed or (session.raid != null and session.raid.player != null)
+		await _wait_until(settled, 240)
+		if session.raid != null and session.raid.player != null:
+			return session
+		session.get_parent().queue_free()
+		await frames(30)
+	return null
+
+
+func _leave(session: NetSession) -> void:
+	if session != null and is_instance_valid(session):
+		session.get_parent().queue_free()
+	await frames(2)
+
+
+func _test_online() -> void:
+	print("Online: commands and raids with several players")
+	var cmd := ActorCommand.new()
+	cmd.move = Vector2(0.5, -1.0)
+	cmd.yaw = 1.25
+	cmd.pitch = -0.4
+	cmd.aim_dir = Vector3(0, 0, -1)
+	cmd.sprint = true
+	cmd.primary = true
+	cmd.dash = true
+	cmd.ability_pressed = true
+	cmd.stance = 2
+	cmd.switch_weapon = 1
+	var copy := ActorCommand.new()
+	copy.apply_array(cmd.to_array())
+	check(copy.move.is_equal_approx(cmd.move.limit_length(1.0)) and is_equal_approx(copy.yaw, 1.25)
+			and copy.sprint and copy.primary and copy.dash and copy.ability_pressed
+			and not copy.jump and not copy.heal_pressed and copy.stance == 2 and copy.switch_weapon == 1,
+			"a command survives the trip through its network form")
+	copy.apply_array([99.0, 99.0, "x", 50.0, NAN, 0.0, 0.0, 0, 7, 99])
+	check(copy.move.length() <= 1.001 and is_zero_approx(copy.yaw) and copy.pitch <= 1.5
+			and copy.aim_dir == Vector3.ZERO and copy.stance == 2 and copy.switch_weapon <= 8,
+			"a command from the network is clamped to legal values")
+	copy.apply_array([1.0])
+	check(copy.stance == 2, "a malformed command is ignored")
+	check(cmd.flags() & ActorCommand.ONE_SHOT_MASK != 0 and cmd.flags() & ActorCommand.HELD_MASK != 0
+			and ActorCommand.ONE_SHOT_MASK & ActorCommand.HELD_MASK == 0, "held keys and presses are told apart")
+
+	# A server raid with two players, no network involved.
+	Profile.reset()
+	Profile.welcome_granted = true
+	var raid := Raid.new()
+	add_child(raid)
+	raid.start_server(Worlds.get_world("ashfront"), 70)
+	for bot in raid.bots:
+		bot.get_node("Brain").set_physics_process(false)
+	check(raid.player == null and raid.players.is_empty() and raid.bots.size() == raid.world.bot_count,
+			"a server raid starts with bots and no players")
+	var a := raid.add_player([], {}, "Alpha")
+	var b := raid.add_player(["rifle_carbine", "blade_scrap", "jetpack_mk1", "plate_light"], {}, "Bravo")
+	await frames(20)
+	check(raid.players.size() == 2 and a.weapons.size() == 2 and b.weapons[0].display_name == "Ashfront Carbine"
+			and not a.is_player, "players join a server raid with their own kits")
+	var finished := []
+	raid.player_finished.connect(func(actor: Actor, result: Dictionary) -> void: finished.append([actor, result]))
+	var ended := [false]
+	raid.ended.connect(func(_r: Dictionary) -> void: ended[0] = true)
+	b.kill("bullet", a)
+	await frames(5)
+	check(finished.size() == 1 and finished[0][0] == b and finished[0][1].outcome == "died"
+			and "rifle_carbine" in finished[0][1].lost, "a player who dies gets their own result")
+	check(raid.state_for(a).kills == 1 and not raid.is_over and not ended[0] and not a.is_dead,
+			"the raid carries on for the others, and the kill is credited")
+	check(Profile.stash.is_empty() and Profile.raids_played == 0, "a server raid never touches a profile")
+	a.inventory.add_item("scrap_metal")
+	raid._on_actor_extracted(a)
+	await frames(2)
+	check(finished.size() == 2 and finished[1][1].outcome == "extracted"
+			and "scrap_metal" in finished[1][1].brought_home, "an extracting player gets a result listing what comes home")
+	Raid.apply_result(finished[1][1])
+	check("scrap_metal" in Profile.stash and Profile.raids_extracted == 1, "the result can be applied to the player's own profile")
+	raid.remove_player(b)
+	await _end_raid(raid)
+	Profile.reset()
+
+	print("Online: a real server and two clients")
+	var port := 24811
+	var pid := _start_server(port, [])
+	check(pid > 0, "a dedicated server process starts")
+	var alpha := await _join("Alpha", port)
+	check(alpha != null, "a client connects and joins the raid")
+	if alpha == null:
+		OS.kill(pid)
+		return
+	var world := Worlds.get_world("ashfront")
+	check(alpha.raid.mode == Raid.Mode.CLIENT and alpha.raid.player.weapons.size() == 2
+			and alpha.raid.player.is_player and not Combat.authoritative,
+			"the client has its own actor and leaves damage to the server")
+	await _wait_until(func() -> bool: return alpha.raid.bots.size() == world.bot_count, 180)
+	check(alpha.raid.bots.size() == world.bot_count, "the client sees the server's bots")
+	check(alpha.raid.time_left > 0.0 and alpha.raid.time_left < world.raid_duration, "the raid clock comes from the server")
+	var bravo := await _join("Bravo", port)
+	check(bravo != null, "a second client joins the same raid")
+	if bravo != null:
+		var see_each_other := func() -> bool:
+			return bravo.actor_for(alpha.my_actor_id) != null and alpha.actor_for(bravo.my_actor_id) != null
+		await _wait_until(see_each_other, 180)
+		var seen := bravo.actor_for(alpha.my_actor_id)
+		check(seen != null and seen.display_name == "Alpha" and seen.weapons.size() == 2 and not seen.is_player,
+				"each client sees the other player, with their name and gear")
+		if seen != null:
+			var from := seen.global_position
+			alpha.raid.player.cmd.move = Vector2(0, 1)
+			await frames(90)
+			alpha.raid.player.cmd.move = Vector2.ZERO
+			await frames(30)
+			var moved := from.distance_to(seen.global_position)
+			check(moved > 3.0, "one player's movement reaches the other through the server (%.1f m)" % moved)
+			var apart := seen.global_position.distance_to(alpha.raid.player.global_position)
+			check(apart < 2.0, "both clients agree where that player is (%.2f m apart)" % apart)
+	await _leave(bravo)
+	await _leave(alpha)
+	OS.kill(pid)
+	await frames(30)
+
+	print("Online: fighting through the server")
+	port = 24812
+	pid = _start_server(port, ["--bots", "0", "--squad-spawn"])
+	alpha = await _join("Alpha", port)
+	bravo = await _join("Bravo", port) if alpha != null else null
+	check(alpha != null and bravo != null, "two clients join a squad-spawn server")
+	if alpha != null and bravo != null:
+		await _wait_until(func() -> bool: return alpha.actor_for(bravo.my_actor_id) != null, 180)
+		var me := alpha.raid.player
+		var target := alpha.actor_for(bravo.my_actor_id)
+		var victim := bravo.raid.player
+		check(alpha.raid.bots.is_empty() and target != null
+				and me.global_position.distance_to(target.global_position) < 12.0,
+				"squad spawn puts the players together")
+		var hits := [0]
+		var notices: Array[String] = []
+		me.hit_confirmed.connect(func(_t: Actor, _i: DamageInfo, _l: bool) -> void: hits[0] += 1)
+		me.notice.connect(func(text: String) -> void: notices.append(text))
+		var result := [{}]
+		bravo.run_finished.connect(func(r: Dictionary) -> void: result[0] = r)
+		var before := victim.health.health + victim.health.armor
+		me.cmd.primary = true
+		for i in 600:
+			if target == null or not is_instance_valid(target) or target.is_dead or not result[0].is_empty():
+				break
+			var aim := (target.global_position + Vector3(0, 1.1, 0)) - me.get_eye_position()
+			me.cmd.aim_dir = aim.normalized()
+			me.cmd.yaw = atan2(-aim.x, -aim.z)
+			if i % 40 == 39:
+				me.cmd.reload_pressed = true
+			await frames(1)
+			me.cmd.reload_pressed = false
+		me.cmd.primary = false
+		check(hits[0] > 0, "the shooter is told about hits the server confirmed (%d)" % hits[0])
+		await _wait_until(func() -> bool: return not result[0].is_empty(), 240)
+		check(victim.health.health + victim.health.armor < before or victim.is_dead,
+				"the victim's health drops on their own screen")
+		check(result[0].get("outcome", "") == "died" and not result[0].get("lost", []).is_empty(),
+				"the server tells a player their run is over and what they lost")
+		await _wait_until(func() -> bool: return victim.is_dead, 60)
+		check(victim.is_dead, "the dead player falls on their own screen")
+		check(notices.any(func(text: String) -> bool: return text.begins_with("Killed ")),
+				"the killer gets the kill notice from the server")
+		await _wait_until(func() -> bool: return alpha.actor_for(bravo.my_actor_id) == null, 400)
+		check(alpha.actor_for(bravo.my_actor_id) == null, "a dead player is removed from the other client's raid")
+	await _leave(bravo)
+	await _leave(alpha)
+	OS.kill(pid)
+	check(Combat.authoritative, "leaving an online raid hands damage back to this game")

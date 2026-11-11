@@ -27,6 +27,9 @@ var crates_granted: Array[String] = []
 var mastery := MasteryBook.new()
 ## How the melee side is picked: "mouse" (flick) or "move" (movement keys).
 var melee_control := "mouse"
+## Shown to other players online, and the last server address joined.
+var player_name := "Raider"
+var last_server := "127.0.0.1"
 var raids_played := 0
 var raids_extracted := 0
 var kills := 0
@@ -161,6 +164,8 @@ func save() -> void:
 		"crates_granted": crates_granted,
 		"mastery": mastery.to_dict(),
 		"melee_control": melee_control,
+		"player_name": player_name,
+		"last_server": last_server,
 		"raids_played": raids_played,
 		"raids_extracted": raids_extracted,
 		"kills": kills,
@@ -191,6 +196,8 @@ func load_profile() -> void:
 			crates_granted.append(crate)
 	mastery.load_dict(data.get("mastery", {}))
 	melee_control = "move" if data.get("melee_control", "mouse") == "move" else "mouse"
+	player_name = str(data.get("player_name", "Raider")).left(20)
+	last_server = str(data.get("last_server", "127.0.0.1")).left(80)
 	raids_played = int(data.get("raids_played", 0))
 	raids_extracted = int(data.get("raids_extracted", 0))
 	kills = int(data.get("kills", 0))

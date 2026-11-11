@@ -46,6 +46,15 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
 - `Raid` never touches `Profile` to build a kit. The kit is passed into
   `Raid.start`, so a server can supply it later.
 
+- Online play: the server is the authority (`Raid.Mode.SERVER`, `NetSession`).
+  Clients simulate actors from commands for responsiveness, but
+  `Combat.authoritative` is false there, so a client never deals damage, loots,
+  or decides an outcome. Anything that changes a result must run on the server
+  and reach clients through `NetSession`.
+- `Raid` never writes to `Profile` on a server. Results travel in the
+  `player_finished` dictionary and the player's own game applies them with
+  `Raid.apply_result`.
+
 ## Conventions
 
 - A helper used by a single script is an inner class of that script, not a new
@@ -67,6 +76,7 @@ The project targets Godot 4.7 (what Caleb runs, and what CI uses).
 ```
 godot --headless --path . --import
 godot --headless --path . res://tests/test_runner.tscn   # must exit 0
+godot --headless --path . res://tests/test_runner.tscn -- --only online   # one group
 ```
 
 To see it rendered (needs a display or xvfb):

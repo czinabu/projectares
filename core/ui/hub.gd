@@ -4,6 +4,10 @@ extends Control
 ## and a deploy button for every world the registry found.
 
 signal deploy_requested(world_id: String)
+## Start a server on this machine running `world_id`, then join it.
+signal host_requested(world_id: String)
+## Join the server at `address` ("host" or "host:port").
+signal join_requested(address: String)
 
 const MasteryPanel := preload("res://core/progression/mastery_panel.gd")
 
@@ -13,6 +17,10 @@ var _loadout_box: VBoxContainer
 var _pickers := {}
 var _details := {}
 var _mastery: MasteryPanel
+var _online_status: Label
+var _name_edit: LineEdit
+var _address_edit: LineEdit
+var _host_world: OptionButton
 
 
 func _ready() -> void:
@@ -83,6 +91,8 @@ func _ready() -> void:
 		button.pressed.connect(func() -> void: deploy_requested.emit(world.id))
 		box.add_child(button)
 		box.add_child(_text(world.description, 14, Color(0.65, 0.65, 0.65)))
+
+	_build_online(box)
 
 	var quit := Button.new()
 	quit.text = "Quit"
@@ -162,3 +172,63 @@ func _text(text: String, font_size: int, color: Color) -> Label:
 	label.add_theme_font_size_override("font_size", font_size)
 	label.add_theme_color_override("font_color", color)
 	return label
+
+
+## The online section: your name, hosting a raid on this machine, joining one.
+func _build_online(box: VBoxContainer) -> void:
+	box.add_child(_text("ONLINE (EARLY TEST)", 20, Color(1.0, 0.55, 0.25)))
+	box.add_child(_text(
+		"Play the same raid with other people. Host starts a server on this computer and joins it.\n"
+		+ "Others on your network join with your computer's address. Loot and vehicles are not online yet.",
+		13, Color(0.65, 0.65, 0.65)))
+	var name_row := HBoxContainer.new()
+	var name_label := _text("Your name", 16, Color(0.85, 0.85, 0.85))
+	name_label.custom_minimum_size = Vector2(170, 0)
+	name_label.autowrap_mode = TextServer.AUTOWRAP_OFF
+	name_row.add_child(name_label)
+	_name_edit = LineEdit.new()
+	_name_edit.text = Profile.player_name
+	_name_edit.max_length = 20
+	_name_edit.custom_minimum_size = Vector2(330, 0)
+	_name_edit.text_changed.connect(func(text: String) -> void: Profile.player_name = text)
+	name_row.add_child(_name_edit)
+	box.add_child(name_row)
+
+	var host_row := HBoxContainer.new()
+	_host_world = OptionButton.new()
+	_host_world.custom_minimum_size = Vector2(170, 0)
+	for world in Worlds.all():
+		_host_world.add_item(world.display_name)
+		_host_world.set_item_metadata(_host_world.item_count - 1, world.id)
+	host_row.add_child(_host_world)
+	var host := Button.new()
+	host.text = "Host a raid and join it"
+	host.custom_minimum_size = Vector2(330, 40)
+	host.pressed.connect(func() -> void:
+		Profile.save()
+		host_requested.emit(_host_world.get_item_metadata(_host_world.selected)))
+	host_row.add_child(host)
+	box.add_child(host_row)
+
+	var join_row := HBoxContainer.new()
+	_address_edit = LineEdit.new()
+	_address_edit.text = Profile.last_server
+	_address_edit.placeholder_text = "Server address"
+	_address_edit.custom_minimum_size = Vector2(170, 0)
+	join_row.add_child(_address_edit)
+	var join := Button.new()
+	join.text = "Join a raid at this address"
+	join.custom_minimum_size = Vector2(330, 40)
+	join.pressed.connect(func() -> void:
+		Profile.last_server = _address_edit.text.strip_edges()
+		Profile.save()
+		join_requested.emit(Profile.last_server))
+	join_row.add_child(join)
+	box.add_child(join_row)
+	_online_status = _text("", 14, Color(1.0, 0.8, 0.4))
+	box.add_child(_online_status)
+
+
+func set_online_status(text: String) -> void:
+	if _online_status:
+		_online_status.text = text
