@@ -6,6 +6,17 @@ extends Node3D
 
 const Vfx := preload("res://core/visual/vfx.gd")
 const WeaponArm := preload("res://core/visual/weapon_arm.gd")
+const RigModel := preload("res://core/visual/rig_model.gd")
+
+## How far behind the back bone a back-worn rig sits, and how far the boots
+## sit above and behind the ankle bone, in meters.
+var back_gap := 0.11
+var back_drop := -0.02
+var boot_offset := Vector3(0, 0.0, 0.0)
+## How fast wings spread and fold, in full swings per second.
+var wing_speed := 3.5
+## How long nozzles burn after an air jump, in seconds.
+var burst_burn := 0.3
 
 var look: Node
 var actor: Actor
@@ -17,7 +28,16 @@ var _weapons_seen := 0
 var _wired := {}
 var _flash_left := 0.0
 var _materials: Array[ShaderMaterial] = []
-var _thrust: Node3D
+var _skeleton: Skeleton3D
+var _def := {}
+## The flight rig being worn: its item id, the nodes holding its parts, its
+## back part (or null), and a flame per nozzle.
+var _rig_id := ""
+var _rig_holders: Array[Node3D] = []
+var _rig_back: Node3D
+var _flames: Array[Node3D] = []
+var _burst_left := 0.0
+var _spread := 0.0
 var _attack_left := 0.0
 ## Makes the model hold its weapon, or null for skins without the bones.
 var arm: Node
@@ -45,7 +65,9 @@ func _ready() -> void:
 		_play("idle")
 		_player.advance(0.0)
 	look.stand_model(self, model, def["height"])
+	_def = def
 	var skeleton := model.find_child("Skeleton3D", true, false) as Skeleton3D
+	_skeleton = skeleton
 	if skeleton and def.has("grip_bone"):
 		arm = WeaponArm.new()
 		arm.name = "WeaponArm"
@@ -63,6 +85,7 @@ func _ready() -> void:
 				child.visible = false
 	actor.health.damaged.connect(_on_damaged)
 	actor.hit_confirmed.connect(_on_hit_confirmed)
+	actor.flight.burst_fired.connect(_on_burst)
 
 
 func _find_animation(wanted: String) -> String:
@@ -94,7 +117,7 @@ func _process(delta: float) -> void:
 		_flash_left -= delta
 		if _flash_left <= 0.0:
 			_set_flash(0.0)
-	_update_thrust()
+	_update_rig(delta)
 	var weapon := actor.get_active_weapon()
 	var melee := weapon as MeleeWeapon
 	if actor.is_dead:
@@ -189,11 +212,90 @@ func _set_flash(amount: float) -> void:
 		mat.set_shader_parameter("flash", amount)
 
 
-func _update_thrust() -> void:
-	var on := actor.flight.is_thrusting and not actor.is_dead
-	if on and _thrust == null:
-		_thrust = Vfx.thruster()
-		_thrust.position = Vector3(0, 1.0, -0.28)
-		add_child(_thrust)
-	if _thrust:
-		_thrust.visible = on
+## Keeps the worn flight rig in step with the actor: puts on the model of
+## whatever rig is equipped, burns the nozzles while it thrusts or just after
+## an air jump, and spreads the wings while gliding.
+func _update_rig(delta: float) -> void:
+	var id := actor.flight.item_id if actor.flight.enabled else ""
+	if id != _rig_id:
+		_wear_rig(id)
+	if _rig_holders.is_empty():
+		return
+	_burst_left = maxf(0.0, _burst_left - delta)
+	var burning := not actor.is_dead and (actor.flight.is_thrusting or _burst_left > 0.0)
+	for flame in _flames:
+		flame.visible = burning
+	if _rig_back and _rig_back.has_node("WingL"):
+		var want := 1.0 if actor.flight.is_gliding and not actor.is_dead else 0.0
+		var was := _spread
+		_spread = move_toward(_spread, want, wing_speed * delta)
+		if _spread != was:
+			RigModel.set_wing_spread(_rig_back, _spread)
+
+
+func _on_burst() -> void:
+	_burst_left = burst_burn
+
+
+## Swaps the rig model for the one `id` needs ("" takes it off).
+func _wear_rig(id: String) -> void:
+	_rig_id = id
+	for holder in _rig_holders:
+		holder.queue_free()
+	_rig_holders.clear()
+	_flames.clear()
+	_rig_back = null
+	_spread = 0.0
+	if id == "":
+		return
+	var back := RigModel.build_back(id)
+	if back:
+		_rig_back = back
+		_wear_part(back, _def.get("back_bone", ""), Vector3(0, back_drop, back_gap), Vector3(0, _def.get("height", 1.8) * 0.74, back_gap + 0.06))
+	var feet: Array = _def.get("feet", [])
+	for i in 2:
+		var side := -1.0 if i == 0 else 1.0
+		var boot := RigModel.build_boot(id, side)
+		if boot == null:
+			continue
+		var bone: String = feet[i] if feet.size() == 2 else ""
+		_wear_part(boot, bone, boot_offset, Vector3(side * 0.12, 0.1, 0.0))
+	var lit := false
+	for holder in _rig_holders:
+		for nozzle in RigModel.nozzles(holder):
+			var size: Vector2 = nozzle.get_meta("flame", Vector2(0.05, 0.5))
+			var flame := Vfx.nozzle_flame(size.x, size.y, not lit)
+			lit = true
+			flame.visible = false
+			nozzle.add_child(flame)
+			_flames.append(flame)
+
+
+## Hangs a rig part on a bone so it moves with the body. Parts are built in
+## meters for a wearer facing the actor's way; this undoes the model's scale
+## and turn so they come out that way. `offset` is from the bone, in the
+## actor's frame. Skins without the bone get the part at `fallback` (actor
+## frame), fixed to the body.
+func _wear_part(part: Node3D, bone_name: String, offset: Vector3, fallback: Vector3) -> void:
+	look._weather_model(part, 0.5, 0.6)
+	var bone := _skeleton.find_bone(bone_name) if _skeleton and bone_name != "" else -1
+	var holder := Node3D.new()
+	holder.name = "Rig" + part.name
+	holder.add_child(part)
+	var to_actor := actor.global_transform.affine_inverse()
+	if bone < 0:
+		add_child(holder)
+		holder.transform = global_transform.affine_inverse() * actor.global_transform * Transform3D(Basis.IDENTITY, fallback)
+		_rig_holders.append(holder)
+		return
+	var attach := BoneAttachment3D.new()
+	attach.name = "Rig" + part.name
+	attach.bone_name = bone_name
+	_skeleton.add_child(attach)
+	attach.add_child(holder)
+	holder.name = "Part"
+	# Where the bone sits at rest, as the actor sees it, and where the part goes.
+	var bone_at := to_actor * _skeleton.global_transform * _skeleton.get_bone_global_rest(bone)
+	var want := Transform3D(Basis.IDENTITY, bone_at.origin + offset)
+	holder.transform = bone_at.affine_inverse() * want
+	_rig_holders.append(attach)

@@ -12,6 +12,7 @@ const RenownLedger := preload("res://core/progression/renown_ledger.gd")
 const BaseLayout := preload("res://core/base/base_layout.gd")
 const BaseHudScript := preload("res://core/ui/base_hud.gd")
 const LookTests := preload("res://tests/look_tests.gd")
+const RigLookTests := preload("res://tests/rig_look_tests.gd")
 const EconomyTests := preload("res://tests/economy_tests.gd")
 const CustomizerTests := preload("res://tests/customizer_tests.gd")
 
@@ -67,8 +68,14 @@ func _run() -> void:
 	await _test_arena()
 	await _test_online_arena()
 	await LookTests.run(self)
+	await _test_rig_models()
 	await CustomizerTests.run(self)
 	await _test_economy()
+
+
+func _test_rig_models() -> void:
+	print("Flight rig models")
+	await RigLookTests.run(self)
 
 
 func _test_economy() -> void:
@@ -160,6 +167,16 @@ func _test_flight_rig() -> void:
 	for i in 100:
 		rig.tick(false, 0.1)
 	check(not rig.overheated and rig.heat == 0.0, "the rig cools down and recovers")
+	var bursts := [0]
+	rig.burst_fired.connect(func() -> void: bursts[0] += 1)
+	rig.try_burst()
+	check(bursts[0] == 0, "a rig without a burst signals nothing")
+	rig.burst_velocity = 10.0
+	rig.burst_heat = 60.0
+	rig.try_burst()
+	rig.try_burst()
+	rig.try_burst()
+	check(bursts[0] == 2, "each air jump that goes off is signalled, and an overheated one is not")
 	rig.free()
 
 
