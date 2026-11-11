@@ -15,6 +15,9 @@ signal hit_confirmed(target: Actor, info: DamageInfo, lethal: bool)
 const LAYER_WORLD := 1
 const LAYER_ACTORS := 2
 const LAYER_INTERACT := 4
+## The body's capsule. `Combat.trace` tests rewound bodies against the same shape.
+const BODY_RADIUS := 0.4
+const BODY_HEIGHT := 1.8
 ## Where the hand sits on the body when a controller is not posing it.
 const HAND_REST := Vector3(0.38, 1.25, -0.35)
 
@@ -111,11 +114,11 @@ func _ready() -> void:
 
 func _build_body() -> void:
 	var shape := CapsuleShape3D.new()
-	shape.radius = 0.4
-	shape.height = 1.8
+	shape.radius = BODY_RADIUS
+	shape.height = BODY_HEIGHT
 	var col := CollisionShape3D.new()
 	col.shape = shape
-	col.position.y = 0.9
+	col.position.y = BODY_HEIGHT * 0.5
 	add_child(col)
 
 	var mesh := CapsuleMesh.new()

@@ -39,6 +39,7 @@ func _run() -> void:
 	await _test_flight_rigs_and_abilities()
 	await _test_vehicle_driving()
 	await _test_vehicle_raids()
+	await _test_lag_compensation()
 	await _test_extraction()
 	await _test_loadouts()
 	await _test_death()
@@ -1875,6 +1876,8 @@ func _test_online() -> void:
 	await frames(30)
 	await _test_online_stash()
 	await _test_online_movement()
+	await _test_online_lag_compensation()
+	await _test_online_riding()
 	_wipe_dir(NET_ACCOUNTS)
 	check(Combat.authoritative, "leaving an online raid hands damage back to this game")
 
@@ -1964,6 +1967,217 @@ func _test_online_movement() -> void:
 	await _leave(dana)
 	OS.kill(pid)
 	await frames(30)
+
+
+## The yaw that turns an actor to look along `dir`.
+static func _yaw_toward(dir: Vector3) -> float:
+	return atan2(-dir.x, -dir.z)
+
+
+func _test_online_lag_compensation() -> void:
+	print("Online: a lagging shooter hits what is on their screen")
+	var with_rewind := await _lagged_shots(24817, [])
+	var without := await _lagged_shots(24818, ["--no-rewind"])
+	check(with_rewind.size() == 2 and without.size() == 2, "two duels on a slow connection ran")
+	if with_rewind.size() != 2 or without.size() != 2:
+		return
+	check(with_rewind[0] >= 4,
+			"aiming straight at a running player on a 100 ms connection hits (%d of %d)" % with_rewind)
+	check(without[0] <= 1,
+			"without rewinding the same shots miss, so the hits come from lag compensation (%d of %d)" % without)
+
+
+## Dana, on a 100 ms connection, aims exactly where she sees Eli while he
+## strafes past, and fires single shots. Returns [hits, shots], or [] if the
+## players could not join.
+func _lagged_shots(port: int, extra: Array[String]) -> Array:
+	var args: Array[String] = ["--bots", "0", "--squad-spawn"]
+	args.append_array(extra)
+	var pid := _start_server(port, args)
+	var dana := await _join("Dana", port)
+	var eli := await _join("Eli", port) if dana != null else null
+	if dana != null and eli != null:
+		await _wait_until(func() -> bool: return dana.actor_for(eli.my_actor_id) != null, 180)
+	var seen := dana.actor_for(eli.my_actor_id) if dana != null and eli != null else null
+	if seen == null:
+		await _leave(eli)
+		await _leave(dana)
+		OS.kill(pid)
+		await frames(30)
+		return []
+	var me := dana.raid.player
+	var runner := eli.raid.player
+	var hits := [0]
+	me.hit_confirmed.connect(func(target: Actor, _info: DamageInfo, _lethal: bool) -> void:
+		if target == seen:
+			hits[0] += 1)
+	dana.simulated_lag = 0.1
+	await frames(40)
+	# Eli backs away from Dana for some room, then strafes across her view.
+	var away := runner.global_position - me.global_position
+	away.y = 0.0
+	runner.cmd.yaw = _yaw_toward(-away.normalized() if away.length() > 0.1 else Vector3.FORWARD)
+	runner.cmd.move = Vector2(0, -1)
+	await frames(30)
+	runner.cmd.move = Vector2(1, 0)
+	me.cmd.secondary = true
+	var shots := 0
+	for i in 80:
+		if is_instance_valid(seen) and not seen.is_dead:
+			var dir := (seen.global_position + Vector3(0, 1.1, 0) - me.get_eye_position()).normalized()
+			me.cmd.aim_dir = dir
+			me.cmd.yaw = _yaw_toward(dir)
+			me.cmd.pitch = asin(dir.y)
+			me.cmd.primary = i >= 20 and i % 12 == 8 and shots < 5
+			if me.cmd.primary:
+				shots += 1
+		await frames(1)
+	me.cmd.primary = false
+	me.cmd.secondary = false
+	runner.cmd.move = Vector2.ZERO
+	await frames(40)
+	await _leave(eli)
+	await _leave(dana)
+	OS.kill(pid)
+	await frames(30)
+	return [hits[0], shots]
+
+
+func _test_online_riding() -> void:
+	print("Online: riding responds at once on a slow connection")
+	var port := 24819
+	var pid := _start_server(port, ["--bots", "0", "--squad-spawn"])
+	var faye := await _join("Faye", port, {"vehicle": "bike_scrapper"})
+	var gus := await _join("Gus", port) if faye != null else null
+	check(faye != null and gus != null, "two clients join for the riding checks")
+	var bike: Node3D = null
+	if faye != null and gus != null:
+		await _wait_until(func() -> bool: return not faye.vehicles().is_empty(), 120)
+		for v: Node3D in faye.vehicles():
+			if bike == null or v.global_position.distance_to(faye.raid.player.global_position) \
+					< bike.global_position.distance_to(faye.raid.player.global_position):
+				bike = v
+	if bike == null:
+		check(false, "the rider's bike is there")
+		await _leave(gus)
+		await _leave(faye)
+		OS.kill(pid)
+		await frames(30)
+		return
+	var me := faye.raid.player
+	var aim := bike.global_position + Vector3(0, 0.6, 0) - me.get_eye_position()
+	me.cmd.aim_dir = aim.normalized()
+	me.cmd.yaw = _yaw_toward(aim)
+	me.cmd.pitch = asin(clampf(aim.normalized().y, -1.0, 1.0))
+	await frames(6)
+	me.cmd.interact_pressed = true
+	await frames(1)
+	me.cmd.interact_pressed = false
+	await _wait_until(func() -> bool: return me.vehicle == bike, 90)
+	check(me.vehicle == bike, "the rider gets on")
+	faye.simulated_lag = 0.12
+	await frames(40)
+	faye.max_correction = 0.0
+	var from := bike.global_position
+	me.cmd.move = Vector2(0, 1)
+	# The server only hears about it after 120 ms, about 7 ticks.
+	await frames(6)
+	check(bike.global_position.distance_to(from) > 0.06,
+			"on a 120 ms connection the bike pulls away the moment the throttle opens (%.2f m)" % bike.global_position.distance_to(from))
+	var heading: float = bike.get("heading")
+	me.cmd.move = Vector2(0.7, 1)
+	await frames(40)
+	check(absf(angle_difference(heading, bike.get("heading"))) > 0.3, "steering turns the bike at once")
+	me.cmd.move = Vector2(-0.5, 1)
+	await frames(40)
+	me.cmd.move = Vector2(0, -1)
+	await _wait_until(func() -> bool: return float(bike.get("speed")) <= 0.5, 120)
+	me.cmd.move = Vector2.ZERO
+	check(faye.max_correction < 0.5, "the server agrees with the predicted ride (worst %.2f m)" % faye.max_correction)
+	await frames(60)
+	var their_bike: Node3D = null
+	for v: Node3D in gus.vehicles():
+		if their_bike == null or v.global_position.distance_to(bike.global_position) \
+				< their_bike.global_position.distance_to(bike.global_position):
+			their_bike = v
+	var apart := their_bike.global_position.distance_to(bike.global_position) if their_bike != null else 99.0
+	check(apart < 0.5, "after stopping, the other player sees the bike where the rider has it (%.2f m apart)" % apart)
+	check(me.vehicle == bike and me.global_position.distance_to(bike.global_position) < 1.5,
+			"the rider stays on the predicted bike")
+	await _leave(gus)
+	await _leave(faye)
+	OS.kill(pid)
+	await frames(30)
+
+
+func _test_lag_compensation() -> void:
+	print("Lag compensation: hits are tested where the attacker saw the target")
+	var arena := _vehicle_arena()
+	var shooter := Actor.new()
+	arena.add_child(shooter)
+	shooter.global_position = arena.global_position
+	var target := Actor.new()
+	arena.add_child(target)
+	target.global_position = arena.global_position + Vector3(0, 0, -8)
+	Loadout.equip(shooter, ["rifle_scrap"])
+	await frames(5)
+	var eye := shooter.get_eye_position()
+	var chest := Vector3(0, 1.1, 0)
+	var now: Vector3 = target.global_position
+	var then: Vector3 = now + Vector3(3, 0, 0)
+	var hit := Combat.trace(shooter, eye, eye + (now + chest - eye) * 3.0)
+	check(hit.get("collider") == target, "with nothing to make up, a shot hits where the target is")
+	check(Combat.positions_seen_by(shooter).is_empty(), "offline nothing is rewound")
+
+	# What a lagging shooter saw: the target three metres to the side.
+	Combat.rewind = func(attacker: Actor) -> Dictionary:
+		return {target: then} if attacker == shooter else {}
+	hit = Combat.trace(shooter, eye, eye + (now + chest - eye) * 3.0)
+	check(hit.get("collider") != target, "a rewound target is not hit where it has moved on to")
+	hit = Combat.trace(shooter, eye, eye + (then + chest - eye) * 3.0)
+	check(hit.get("collider") == target and hit.position.distance_to(then + chest) < 0.5,
+			"a rewound target is hit where the shooter saw it")
+	hit = Combat.trace(target, target.get_eye_position(), shooter.global_position + chest)
+	check(hit.get("collider") == shooter, "anyone without a rewind shoots at the present")
+	hit = Combat.trace(shooter, eye, eye + Vector3(0, 0, -1) * 20.0 + Vector3(0, 10, 0))
+	check(hit.is_empty() or hit.get("collider") is not Actor, "a shot over everyone's head hits nobody")
+
+	# Walls still stop the shot.
+	var wall := StaticBody3D.new()
+	wall.collision_layer = Actor.LAYER_WORLD
+	var wall_shape := BoxShape3D.new()
+	wall_shape.size = Vector3(2, 4, 0.4)
+	var wall_col := CollisionShape3D.new()
+	wall_col.shape = wall_shape
+	wall.add_child(wall_col)
+	arena.add_child(wall)
+	wall.global_position = arena.global_position.lerp(then, 0.5) + Vector3(0, 1, 0)
+	await frames(2)
+	hit = Combat.trace(shooter, eye, eye + (then + chest - eye) * 3.0)
+	check(hit.get("collider") == wall, "a wall in front of where the target was still stops the shot")
+	wall.queue_free()
+	await frames(2)
+
+	# The gun uses it.
+	var before := target.health.health + target.health.armor
+	var dir := (then + chest - eye).normalized()
+	shooter.cmd.aim_dir = dir
+	shooter.cmd.yaw = _yaw_toward(dir)
+	shooter.cmd.primary = true
+	await frames(1)
+	shooter.cmd.primary = false
+	check(target.health.health + target.health.armor < before, "a rifle shot at where the target was seen lands")
+
+	# Every attacker has their own view of the others.
+	var seen_close := now + Vector3(0, 0, 6.5)
+	Combat.rewind = func(attacker: Actor) -> Dictionary:
+		return {target: seen_close} if attacker == shooter else {}
+	check(Combat.positions_seen_by(shooter).get(target) == seen_close and Combat.positions_seen_by(target).is_empty(),
+			"each attacker gets their own view of the others")
+	Combat.rewind = Callable()
+	check(Combat.positions_seen_by(shooter).is_empty(), "clearing the rewind goes back to the present")
+	arena.queue_free()
+	await frames(2)
 
 
 func _test_online_stash() -> void:

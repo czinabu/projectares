@@ -111,9 +111,7 @@ func _fire() -> void:
 		var jitter := Vector3(_rng.randf_range(-1, 1), _rng.randf_range(-1, 1), _rng.randf_range(-1, 1))
 		var dir := (aim + jitter * tan(spread)).normalized()
 		to = from + dir * max_range
-		var query := PhysicsRayQueryParameters3D.create(from, to, Actor.LAYER_WORLD | Actor.LAYER_ACTORS)
-		query.exclude = [actor.get_rid()]
-		var hit := actor.get_world_3d().direct_space_state.intersect_ray(query)
+		var hit := Combat.trace(actor, from, to)
 		if not hit.is_empty():
 			to = hit.position
 			Combat.deal(hit.collider, DamageInfo.make(damage, actor, "bullet", to))

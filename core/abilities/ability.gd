@@ -105,12 +105,14 @@ func _blink() -> void:
 func _pulse() -> void:
 	if not actor.is_inside_tree():
 		return
+	var seen := Combat.positions_seen_by(actor)
 	for node in actor.get_tree().get_nodes_in_group("actors"):
 		var other := node as Actor
 		if other == null or other == actor or other.is_dead:
 			continue
-		if other.global_position.distance_to(actor.global_position) > pulse_radius:
+		var at: Vector3 = seen.get(other, other.global_position)
+		if at.distance_to(actor.global_position) > pulse_radius:
 			continue
-		var info := DamageInfo.make(pulse_damage, actor, "pulse", other.global_position)
+		var info := DamageInfo.make(pulse_damage, actor, "pulse", at)
 		if Combat.deal(other, info) and not other.is_dead:
 			other.stagger(pulse_stagger)

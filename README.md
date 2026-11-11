@@ -71,7 +71,10 @@ Add `--accounts <folder>` to choose where the server saves player stashes.
 To feel what a bad connection is like without leaving your desk, start the
 game (not the server) with `-- --lag 120 --loss 10`. That adds 120 ms of delay
 each way and drops 10 percent of your input packets. Your own movement should
-still feel immediate.
+still feel immediate, and so should riding a bike. Shots are lag compensated:
+aim straight at what you see and the server checks the hit against where the
+target was on your screen. Start a server with `--no-rewind` to feel the
+difference.
 
 What works online so far: seeing and fighting other players and bots, looting
 caches and bags, and riding vehicles, with the server deciding every hit,
