@@ -46,6 +46,11 @@ caches hold the best loot, and only the jetpack gets you there.
 - Scavenger bots that patrol, chase and shoot, plus melee brutes that rush you.
   All of them drop loot bags.
 - Loot caches with five rarity tiers, a backpack, and a stash that persists.
+- Loadouts picked in the hub from your stash: primary weapon, melee weapon,
+  flight rig and armor frame. Equipped gear is at risk. Extract and it comes
+  home, die and it drops. Empty slots use a free scrap kit.
+- More gear to find: carbine, SMG, marksman rifle, shotgun, arc blade, breaker
+  hammer, three armor frames, and a better jetpack.
 - Two exits, a raid timer, and full loot on death.
 
 ## How the code is organized

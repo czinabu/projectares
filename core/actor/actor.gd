@@ -56,6 +56,7 @@ var weapons: Array[Weapon] = []
 var active_weapon_index := 0
 ## Item ids of equipped gear (weapons, rig, armor). Dropped on death.
 var gear_items: Array[String] = []
+var frame_name := "No armor"
 
 var is_dead := false
 var heal_time_left := 0.0
@@ -75,6 +76,7 @@ var _dash_dir := Vector3.ZERO
 var _was_on_floor := true
 var _stamina_wait := 0.0
 var _flash_left := 0.0
+var _healing_with := ""
 var _base_material: Material
 
 
@@ -254,15 +256,16 @@ func _simulate_weapons(delta: float) -> void:
 
 
 func _simulate_heal(delta: float) -> void:
-	if cmd.heal_pressed and heal_time_left <= 0.0 and inventory.has_item("medkit") \
-			and health.health < health.max_health:
-		heal_time_left = heal_duration
-		notice.emit("Using medkit...")
+	if cmd.heal_pressed and heal_time_left <= 0.0 and health.health < health.max_health:
+		var item := inventory.first_with_tag("heal")
+		if item != "":
+			_healing_with = item
+			heal_time_left = heal_duration
+			notice.emit("Using %s..." % ItemDB.item_name(item))
 	if heal_time_left > 0.0:
 		heal_time_left -= delta
-		if heal_time_left <= 0.0:
-			inventory.remove_item("medkit")
-			health.heal(heal_amount)
+		if heal_time_left <= 0.0 and inventory.remove_item(_healing_with):
+			health.heal(ItemDB.item_stats(_healing_with).get("heal", heal_amount))
 			notice.emit("Healed")
 
 

@@ -6,6 +6,8 @@ extends Weapon
 signal fired(from: Vector3, to: Vector3)
 
 var damage := 20.0
+## Projectiles per shot. Each one deals `damage` and gets its own spread.
+var pellets := 1
 var fire_interval := 0.11
 var mag_size := 30
 var ammo_in_mag := 30
@@ -101,19 +103,20 @@ func _fire() -> void:
 		visual.position.z = 0.05
 		visual.rotation.x = 0.06
 	var from := actor.get_eye_position()
-	var dir := actor.get_aim_dir()
+	var aim := actor.get_aim_dir()
 	var spread := deg_to_rad(spread_deg + _bloom) * (ads_spread_mult if _aiming else 1.0)
 	_bloom = minf(max_bloom, _bloom + bloom_per_shot)
-	var jitter := Vector3(_rng.randf_range(-1, 1), _rng.randf_range(-1, 1), _rng.randf_range(-1, 1))
-	dir = (dir + jitter * tan(spread)).normalized()
-	var to := from + dir * max_range
-
-	var query := PhysicsRayQueryParameters3D.create(from, to, Actor.LAYER_WORLD | Actor.LAYER_ACTORS)
-	query.exclude = [actor.get_rid()]
-	var hit := actor.get_world_3d().direct_space_state.intersect_ray(query)
-	if not hit.is_empty():
-		to = hit.position
-		Combat.deal(hit.collider, DamageInfo.make(damage, actor, "bullet", to))
+	var to := from + aim * max_range
+	for i in pellets:
+		var jitter := Vector3(_rng.randf_range(-1, 1), _rng.randf_range(-1, 1), _rng.randf_range(-1, 1))
+		var dir := (aim + jitter * tan(spread)).normalized()
+		to = from + dir * max_range
+		var query := PhysicsRayQueryParameters3D.create(from, to, Actor.LAYER_WORLD | Actor.LAYER_ACTORS)
+		query.exclude = [actor.get_rid()]
+		var hit := actor.get_world_3d().direct_space_state.intersect_ray(query)
+		if not hit.is_empty():
+			to = hit.position
+			Combat.deal(hit.collider, DamageInfo.make(damage, actor, "bullet", to))
+		Fx.tracer(actor.get_parent(), from + dir * 0.8 - Vector3(0, 0.15, 0), to)
 	fired.emit(from, to)
 	Sfx.play("shot", null if actor.is_player else from)
-	Fx.tracer(actor.get_parent(), from + dir * 0.8 - Vector3(0, 0.15, 0), to)

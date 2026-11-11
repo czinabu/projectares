@@ -107,8 +107,8 @@ func _process(delta: float) -> void:
 	_timer.text = "%s   %02d:%02d" % [raid.world.display_name, secs / 60, secs % 60]
 	_timer.modulate = Color(1, 0.4, 0.3) if secs < 120 else Color.WHITE
 
-	_vitals.text = "Health %d   Armor %d   Stamina %d" % [
-		ceili(p.health.health), ceili(p.health.armor), floori(p.stamina)]
+	_vitals.text = "Health %d   Armor %d (%s)   Stamina %d" % [
+		ceili(p.health.health), ceili(p.health.armor), p.frame_name, floori(p.stamina)]
 	_stamina_bar.value = p.stamina / p.max_stamina * 100.0
 	_hurt_flash.color.a = maxf(0.0, _hurt_flash.color.a - delta * 0.9)
 	_health_bar.value = p.health.health / p.health.max_health * 100.0
@@ -127,9 +127,9 @@ func _process(delta: float) -> void:
 		var w := p.weapons[i]
 		slots.append("%s [%d] %s" % [">" if w == weapon else " ", i + 1, w.status_text()])
 	_weapon.text = "\n".join(slots) if not slots.is_empty() else "Unarmed"
-	_backpack.text = "Backpack %d/%d   worth %d   Medkits %d" % [
+	_backpack.text = "Backpack %d/%d   worth %d   Heals %d" % [
 		p.inventory.items.size(), p.inventory.capacity, p.inventory.total_value(),
-		p.inventory.items.count("medkit")]
+		p.inventory.count_with_tag("heal")]
 
 	_view.text = "Camera: %s   press V to switch\nWASD move   Shift sprint   Space jump, hold to fly   Q dash   H heal   E loot\n1 / 2 or mouse wheel: switch weapon   %s" % [
 		PlayerController.VIEW_NAMES[controller.view_mode],
