@@ -31,6 +31,8 @@ func _run() -> void:
 	await _test_storm()
 	await _test_bots_run()
 	await _test_main_flow()
+	await _test_every_world()
+	await _test_frostline()
 
 
 func check(condition: bool, what: String) -> void:
@@ -950,3 +952,89 @@ func _test_flight_rigs_and_abilities() -> void:
 	check(crate_size > 0 and Profile.stash.size() == crate_size and "chip_blink" in Profile.stash,
 			"the flight and abilities crate is granted once")
 	Profile.reset()
+
+
+## Every world folder must honour the map contract and run a raid headless.
+func _test_every_world() -> void:
+	print("Every world plugs in")
+	check(Worlds.all().size() >= 2, "registry finds more than one world (%d)" % Worlds.all().size())
+	var hub := Hub.new()
+	add_child(hub)
+	await frames(1)
+	var buttons := hub.find_children("*", "Button", true, false).filter(func(b: Node) -> bool:
+		return (b as Button).text.begins_with("Deploy to"))
+	check(buttons.size() == Worlds.all().size(), "the hub has a deploy button for every world")
+	hub.queue_free()
+	for world in Worlds.all():
+		var kit := world.starter_loadout()
+		check(not kit.is_empty() and kit.all(func(id: String) -> bool: return ItemDB.has_item(id)),
+				"%s: starter loadout is valid items" % world.id)
+		var raid := Raid.new()
+		add_child(raid)
+		raid.start(world, 99)
+		await frames(3)
+		check(raid.player != null and not raid.player.is_dead, "%s: player spawns" % world.id)
+		check(raid.bots.size() == world.bot_count, "%s: all bots spawn" % world.id)
+		check(not raid.exits.is_empty(), "%s: map provides exits" % world.id)
+		var caches := raid.get_children().filter(func(n: Node) -> bool: return n is LootContainer)
+		check(caches.size() >= 4, "%s: loot caches are placed (%d)" % [world.id, caches.size()])
+		var all_valid := true
+		for cache: LootContainer in caches:
+			for id in cache.items:
+				if not ItemDB.has_item(id):
+					all_valid = false
+		for bot in raid.bots:
+			for id in bot.get_drop_items():
+				if not ItemDB.has_item(id):
+					all_valid = false
+		check(all_valid, "%s: every cache and bot carries real items" % world.id)
+		for bot in raid.bots:
+			check(bot.weapons.size() > 0 and bot.faction != raid.player.faction,
+					"%s: %s is armed and hostile" % [world.id, bot.display_name])
+			break
+		await frames(120)
+		check(not raid.is_over or raid.player.is_dead, "%s: a raid runs with bots thinking" % world.id)
+		await _end_raid(raid)
+
+
+func _test_frostline() -> void:
+	print("Frostline")
+	var world := Worlds.get_world("frostline")
+	check(world != null, "frostline is discovered from its folder")
+	if world == null:
+		return
+	check(ItemDB.has_item("frost_signal_core") and ItemDB.has_tag("frost_ice_axe", "melee"),
+			"a world registers its own items")
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 3
+	var relay := world.roll_loot("relay", rng)
+	check(relay.size() >= 3, "the relay mast cache rolls rich loot")
+	var raid := Raid.new()
+	add_child(raid)
+	raid.start(world, 7)
+	for bot in raid.bots:
+		bot.get_node("Brain").set_physics_process(false)
+	await frames(3)
+	var factions := {}
+	for bot in raid.bots:
+		factions[bot.faction] = factions.get(bot.faction, []) + [bot]
+	check(factions.has("warden") and factions.has("feral"), "both enemy factions spawn")
+	var relay_caches := raid.get_children().filter(func(n: Node) -> bool:
+		return n is LootContainer and n.global_position.y > 20.0)
+	check(relay_caches.size() == 1, "a cache sits on top of the relay mast")
+	if factions.has("warden") and factions.has("feral"):
+		var warden: Actor = factions.warden[0]
+		var feral: Actor = factions.feral[0]
+		check(Combat.deal(feral, DamageInfo.make(5.0, warden, "bullet")), "wardens and ferals hurt each other")
+		check(Combat.deal(raid.player, DamageInfo.make(5.0, feral, "melee")), "ferals hurt the player")
+		if factions.warden.size() >= 2:
+			check(not Combat.deal(factions.warden[1], DamageInfo.make(5.0, warden, "bullet")),
+					"a faction does not hurt itself")
+	# The ice axe is real gear: it equips as a melee weapon with its stats.
+	var axe_holder := Actor.new()
+	add_child(axe_holder)
+	Loadout.equip(axe_holder, ["frost_ice_axe"])
+	var axe := axe_holder.weapons[0] as MeleeWeapon if not axe_holder.weapons.is_empty() else null
+	check(axe != null and is_equal_approx(axe.heavy_lunge, 12.0), "the ice axe equips with its own stats")
+	axe_holder.queue_free()
+	await _end_raid(raid)

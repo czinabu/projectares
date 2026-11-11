@@ -27,6 +27,13 @@ func create_map() -> Node3D:
 	return null
 
 
+## Register items that only this world adds, with ItemDB.register. Called once
+## when the registry finds the world. Ids are global, so prefix them with the
+## world id to avoid clashes. Items stay usable in every world once stashed.
+func register_items() -> void:
+	pass
+
+
 ## Item ids every raider gets for free when they deploy with nothing.
 func starter_loadout() -> Array[String]:
 	return []
