@@ -20,11 +20,11 @@ core loop and lays the foundation for online play and more worlds.
 | Dash | Q |
 | Fire, or light attack | Left mouse |
 | Aim down sights, or heavy attack (dive slam in the air) | Right mouse |
-| Switch to rifle / blade | 1 / 2 |
+| Switch to rifle / blade | 1 / 2, or mouse wheel |
 | Reload | R |
 | Use a medkit | H |
 | Loot | E |
-| Camera: auto, first-person, third-person | V |
+| Switch camera: first-person or third-person | V |
 | Free the mouse | Esc |
 
 The jetpack runs on heat. Overheat it and you fall until it cools. Rooftop
@@ -32,8 +32,8 @@ caches hold the best loot, and only the jetpack gets you there.
 
 ## What is in the prototype
 
-- First-person and third-person camera. Auto mode uses first-person with guns
-  and third-person for melee and flight. Aiming always snaps to first-person.
+- First-person and third-person camera that you switch with V. It never changes
+  on its own. Weapons are visible in your hand in both views.
 - Hitscan rifle with reloads and aim down sights.
 - Blade with a three-hit combo, a heavy lunge, and a dive slam from the air.
 - Health with a degrading armor layer, medkits, and a dash.

@@ -204,6 +204,8 @@ func _test_combat_and_loot() -> void:
 	await frames(2)
 	p.cmd.switch_weapon = -1
 	check(p.get_active_weapon() is MeleeWeapon, "weapon switching works")
+	check(p.weapons[1].visual != null and p.weapons[1].visual.visible
+			and not p.weapons[0].visual.visible, "only the weapon in hand is shown")
 	var before_melee := bot_b.health.health
 	p.cmd.primary_pressed = true
 	await frames(1)
@@ -312,6 +314,24 @@ func _test_main_flow() -> void:
 	await frames(5)
 	check(main.raid != null and not main.hub.visible, "deploying starts a raid")
 	check(main.controller.camera.current and main.hud != null, "raid has a camera and HUD")
+	var controller: PlayerController = main.controller
+	check(controller.view_mode == PlayerController.ViewMode.FIRST and not controller.is_third_person(),
+			"camera starts in first-person")
+	# Melee and flight must not move the camera on their own.
+	var p: Actor = main.raid.player
+	await frames(40)
+	Input.action_press("weapon_2")
+	Input.action_press("jump")
+	await frames(40)
+	Input.action_release("weapon_2")
+	Input.action_release("jump")
+	check(p.get_active_weapon() is MeleeWeapon and not p.is_on_floor(),
+			"real input reaches the actor (blade out, airborne)")
+	check(not controller.is_third_person(), "camera stays put when using the blade or flying")
+	check(p.hand_override, "first-person holds the weapon in front of the camera")
+	controller.toggle_view()
+	await frames(40)
+	check(controller.is_third_person(), "the toggle switches to third-person")
 	main.raid.player.kill("test")
 	await frames(150)
 	check(main.raid == null and main.hub.visible, "dying returns to the hub")

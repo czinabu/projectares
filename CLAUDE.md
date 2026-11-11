@@ -16,6 +16,8 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
 - All damage goes through `Combat.deal`. Never call `HealthComponent.apply_damage`
   directly for gameplay damage, or world PvP rules are bypassed.
 - Shots and melee originate from the actor (eyes, body), never from the camera.
+- The camera never changes view on its own. First/third-person switches only
+  when the player presses the toggle (playtest feedback).
 - `Raid` has no camera, HUD, or input code. It must keep working headless.
 - Items are ids defined in `ItemDB` with tags. Use tags, not id checks, to
   decide what an item does.

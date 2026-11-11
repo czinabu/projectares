@@ -21,8 +21,24 @@ var _aiming := false
 var _rng := RandomNumberGenerator.new()
 
 
+func build_visual() -> Node3D:
+	var root := Node3D.new()
+	root.add_child(Weapon.make_part(Vector3(0.07, 0.1, 0.62), Vector3(0, 0, -0.2), Color(0.16, 0.16, 0.18)))
+	root.add_child(Weapon.make_part(Vector3(0.06, 0.16, 0.08), Vector3(0, -0.12, 0.0), Color(0.3, 0.22, 0.16)))
+	root.add_child(Weapon.make_part(Vector3(0.05, 0.14, 0.1), Vector3(0, -0.1, -0.22), Color(0.1, 0.1, 0.1)))
+	return root
+
+
+func controls_hint() -> String:
+	return "Left mouse fire   Right mouse aim   R reload"
+
+
 func tick(delta: float) -> void:
 	_cooldown = maxf(0.0, _cooldown - delta)
+	if visual:
+		# Recoil kick settles back to rest.
+		visual.position.z = move_toward(visual.position.z, 0.0, delta * 0.6)
+		visual.rotation.x = move_toward(visual.rotation.x, 0.0, delta * 1.5)
 	if _reload_left > 0.0:
 		_reload_left -= delta
 		if _reload_left <= 0.0:
@@ -68,6 +84,9 @@ func status_text() -> String:
 func _fire() -> void:
 	ammo_in_mag -= 1
 	_cooldown = fire_interval
+	if visual:
+		visual.position.z = 0.05
+		visual.rotation.x = 0.06
 	var from := actor.get_eye_position()
 	var dir := actor.get_aim_dir()
 	var spread := deg_to_rad(spread_deg) * (ads_spread_mult if _aiming else 1.0)
