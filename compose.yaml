@@ -1,0 +1,17 @@
+# Runs the dedicated server and restarts it if it crashes or the machine reboots.
+#   Start or update:  docker compose up -d --build
+#   Watch the log:    docker compose logs -f
+#   Stop:             docker compose down
+# See docs/hosting.md.
+services:
+  ares:
+    build: .
+    image: ares-server
+    restart: unless-stopped
+    init: true
+    # A terminal makes the game print its log lines at once instead of in batches.
+    tty: true
+    ports:
+      - "24565:24565/udp"
+    # Change the world or add "--bots", "4" or "--squad-spawn" here.
+    command: ["--server", "--world", "ashfront", "--port", "24565"]

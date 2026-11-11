@@ -163,3 +163,9 @@ godot --headless --path . res://tests/test_runner.tscn
 
 The suite plays real raids without a window: movement, flight, shooting, melee,
 looting, extraction, death, the storm timer, and bot behavior.
+
+## Host a server online
+
+To run a dedicated server on a cheap cloud machine so friends can join, follow
+[docs/hosting.md](docs/hosting.md). It uses the `Dockerfile` and `compose.yaml`
+in this folder and the **Linux Server** export preset.
