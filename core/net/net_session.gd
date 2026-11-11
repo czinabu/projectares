@@ -10,8 +10,14 @@ extends Node
 ## from commands: your own from your input, so it responds at once, and
 ## everyone else's from the commands the server relays, so their swings, shots
 ## and flight play out between updates. The server's positions, health and
-## deaths then overwrite the local guess. Damage is never decided on a client
+## deaths then correct the local guess. Damage is never decided on a client
 ## (`Combat.authoritative` is false there).
+##
+## Every input a client sends is numbered and the server plays them in order,
+## one per tick. Its answer says which input it had reached, so the client
+## compares the server's position with its own prediction for that same
+## input and blends away only the real difference. Your own movement stays
+## smooth however slow the connection is.
 ##
 ## Connecting puts a client in the lobby: it signs in with a name and a secret,
 ## and the server answers with that account's stash and loadout from its
@@ -42,7 +48,7 @@ signal disconnected
 signal raid_restarted(raid: Raid)
 
 const DEFAULT_PORT := 24565
-const PROTOCOL := 2
+const PROTOCOL := 3
 const StashService := preload("res://core/account/stash_service.gd")
 ## Server physics ticks between state updates (2 = 30 a second).
 const TICKS_PER_SNAPSHOT := 2
@@ -50,9 +56,16 @@ const TICKS_PER_SNAPSHOT := 2
 const ACTORS_PER_PACKET := 5
 ## Position errors beyond this are fixed at once instead of blended.
 const SNAP_DISTANCE := 5.0
-## Your own actor is left alone inside this error, because the server's view
-## of you is always slightly in the past.
-const OWN_TOLERANCE := 1.5
+## Each input packet repeats this many recent ticks, so a lost packet does not
+## lose a key press.
+const INPUT_REDUNDANCY := 4
+## The server holds at most this many unplayed inputs per player. More means
+## the player's packets arrived in a burst, and the oldest are folded together.
+const MAX_QUEUED_INPUTS := 6
+## How many ticks of your own predicted positions a client remembers.
+const HISTORY_TICKS := 180
+## The share of a position error that is corrected each tick.
+const CORRECTION_RATE := 0.2
 ## Notices the server passes on to a player. Others are produced locally.
 const FORWARDED_NOTICES := ["Parry!", "Wrong side", "Guard broken", "Staggered", "Killed ", "Looted ",
 		"Backpack full", "Someone is riding it"]
@@ -78,6 +91,13 @@ var account := {}
 var refused := false
 ## Client: the id of your own actor, and the kit you joined with.
 var my_actor_id := -1
+## Client, for testing how the game feels on a bad connection: seconds of delay
+## added in each direction, and the share of input packets thrown away (0 to 1).
+var simulated_lag := 0.0
+var simulated_loss := 0.0
+## Client: the largest gap seen between where the server put you and where
+## this game had predicted you would be at that same moment.
+var max_correction := 0.0
 
 var _api: SceneMultiplayer
 var _actors := {}        # id -> Actor
@@ -88,7 +108,15 @@ var _actor_peer := {}    # Actor -> peer id (server)
 var _joined_peers: Array[int] = []
 var _peer_account := {}  # peer id -> account id (server)
 var _actor_account := {} # Actor -> account id, until the run is settled (server)
-var _pending_input := {} # peer id -> command array (server)
+var _input_queue := {}   # peer id -> [[seq, command array], ...] not yet played (server)
+var _queued_seq := {}    # peer id -> newest input number received (server)
+var _applied_seq := {}   # actor id -> input number the actor last simulated (server)
+var _seq := 0            # number of the input sent this tick (client)
+var _history := {}       # input number -> own predicted position after it (client)
+var _recent_inputs: Array = [] # the last few [seq, command array] sent (client)
+var _corrections := {}   # actor id -> position error still to blend away (client)
+var _delayed_out: Array = [] # [due msec, inputs] held back by simulated_lag
+var _delayed_in: Array = []  # [due msec, time_left, entries] held back by simulated_lag
 var _one_shots := {}     # actor id -> accumulated one-shot flags (server)
 var _switches := {}      # actor id -> last weapon switch since the snapshot
 var _dead_kind := {}     # actor id -> damage kind that killed them
@@ -178,7 +206,15 @@ func _clear_tables() -> void:
 	_peer_actor.clear()
 	_actor_peer.clear()
 	_joined_peers.clear()
-	_pending_input.clear()
+	_input_queue.clear()
+	_queued_seq.clear()
+	_applied_seq.clear()
+	_seq = 0
+	_history.clear()
+	_recent_inputs.clear()
+	_corrections.clear()
+	_delayed_out.clear()
+	_delayed_in.clear()
 	_one_shots.clear()
 	_switches.clear()
 	_dead_kind.clear()
@@ -207,7 +243,8 @@ func _on_peer_connected(peer: int) -> void:
 func _on_peer_disconnected(peer: int) -> void:
 	_joined_peers.erase(peer)
 	_peer_account.erase(peer)
-	_pending_input.erase(peer)
+	_input_queue.erase(peer)
+	_queued_seq.erase(peer)
 	var actor: Actor = _peer_actor.get(peer)
 	if actor != null and is_instance_valid(actor) and raid != null:
 		raid.remove_player(actor)
@@ -421,20 +458,31 @@ func _on_server_hit_confirmed(target: Actor, info: DamageInfo, lethal: bool, pee
 
 
 @rpc("any_peer", "call_remote", "unreliable_ordered")
-func _send_input(data: Array) -> void:
-	if not is_server or data.size() != ActorCommand.ARRAY_SIZE:
+func _send_input(inputs: Array) -> void:
+	if not is_server or inputs.size() > INPUT_REDUNDANCY:
 		return
 	var peer := _api.get_remote_sender_id()
 	if not _peer_actor.has(peer):
 		return
-	# Several inputs can arrive between ticks: keep every press.
-	if _pending_input.has(peer):
-		var earlier: Array = _pending_input[peer]
-		data[ActorCommand.FLAGS_INDEX] = int(data[ActorCommand.FLAGS_INDEX]) \
-				| (int(earlier[ActorCommand.FLAGS_INDEX]) & ActorCommand.ONE_SHOT_MASK)
-		if int(data[ActorCommand.SWITCH_INDEX]) < 0:
-			data[ActorCommand.SWITCH_INDEX] = earlier[ActorCommand.SWITCH_INDEX]
-	_pending_input[peer] = data
+	# Each packet repeats recent ticks. Queue only the ones not seen before,
+	# in order, so every tick the player simulated is played here exactly once.
+	var queue: Array = _input_queue.get_or_add(peer, [])
+	for input: Variant in inputs:
+		if typeof(input) != TYPE_ARRAY or input.size() != 2 or typeof(input[0]) != TYPE_INT \
+				or typeof(input[1]) != TYPE_ARRAY or input[1].size() != ActorCommand.ARRAY_SIZE:
+			return
+		if input[0] > int(_queued_seq.get(peer, 0)):
+			_queued_seq[peer] = input[0]
+			queue.append(input)
+	# A burst after a stall: fold the oldest inputs together to catch up,
+	# keeping every press.
+	while queue.size() > MAX_QUEUED_INPUTS:
+		var dropped: Array = queue.pop_front()[1]
+		var next: Array = queue[0][1]
+		next[ActorCommand.FLAGS_INDEX] = int(next[ActorCommand.FLAGS_INDEX]) \
+				| (int(dropped[ActorCommand.FLAGS_INDEX]) & ActorCommand.ONE_SHOT_MASK)
+		if int(next[ActorCommand.SWITCH_INDEX]) < 0:
+			next[ActorCommand.SWITCH_INDEX] = dropped[ActorCommand.SWITCH_INDEX]
 
 
 func _server_early_tick() -> void:
@@ -444,10 +492,13 @@ func _server_early_tick() -> void:
 		var actor: Actor = _peer_actor[peer]
 		if not is_instance_valid(actor) or actor.is_dead:
 			continue
+		# With nothing new to play, held keys carry on and presses do not repeat.
 		actor.cmd.clear_one_shots()
-		if _pending_input.has(peer):
-			actor.cmd.apply_array(_pending_input[peer])
-			_pending_input.erase(peer)
+		var queue: Array = _input_queue.get(peer, [])
+		if not queue.is_empty():
+			var input: Array = queue.pop_front()
+			actor.cmd.apply_array(input[1])
+			_applied_seq[_ids[actor]] = input[0]
 
 
 func _server_late_tick(delta: float) -> void:
@@ -468,7 +519,7 @@ func _server_late_tick(delta: float) -> void:
 					| int(_one_shots.get(id, 0))
 			cmd[ActorCommand.SWITCH_INDEX] = _switches.get(id, -1)
 			entries.append([id, actor.global_position, actor.velocity, cmd, actor.health.health,
-					actor.health.armor, actor.stagger_left, _dead_kind.get(id, "")])
+					actor.health.armor, actor.stagger_left, _dead_kind.get(id, ""), _applied_seq.get(id, 0)])
 		_one_shots.clear()
 		_switches.clear()
 		for start in range(0, entries.size(), ACTORS_PER_PACKET):
@@ -669,6 +720,13 @@ func _kills(id: int, count: int) -> void:
 
 @rpc("authority", "call_remote", "unreliable_ordered")
 func _state(time_left: float, entries: Array) -> void:
+	if simulated_lag > 0.0:
+		_delayed_in.append([Time.get_ticks_msec() + simulated_lag * 1000.0, time_left, entries])
+	else:
+		_receive_state(time_left, entries)
+
+
+func _receive_state(time_left: float, entries: Array) -> void:
 	if raid == null:
 		return
 	raid.time_left = time_left
@@ -811,6 +869,9 @@ func _run_finished(result: Dictionary) -> void:
 
 
 func _client_early_tick() -> void:
+	while not _delayed_in.is_empty() and _delayed_in[0][0] <= Time.get_ticks_msec():
+		var held: Array = _delayed_in.pop_front()
+		_receive_state(held[1], held[2])
 	if raid == null:
 		return
 	for id: int in _actors:
@@ -825,7 +886,30 @@ func _client_early_tick() -> void:
 		var entry: Array = _latest[id]
 		_latest.erase(id)
 		_apply_state(actor, entry, mine)
+	_blend_corrections()
 	_client_move_vehicles()
+
+
+## Moves each actor a share of the way toward where the server says it
+## should be, every tick, so fixes glide in.
+func _blend_corrections() -> void:
+	for id: int in _corrections.keys():
+		var actor: Actor = _actors.get(id)
+		if actor == null or not is_instance_valid(actor) or actor.is_dead or actor.vehicle != null:
+			_corrections.erase(id)
+			continue
+		var left: Vector3 = _corrections[id]
+		var step := left * CORRECTION_RATE if left.length() > 0.02 else left
+		actor.global_position += step
+		if id == my_actor_id:
+			# Remembered positions move too, so the next comparison only sees
+			# what is still wrong.
+			for seq: int in _history:
+				_history[seq] += step
+		if step == left:
+			_corrections.erase(id)
+		else:
+			_corrections[id] = left - step
 
 
 func _apply_state(actor: Actor, entry: Array, mine: bool) -> void:
@@ -843,7 +927,7 @@ func _apply_state(actor: Actor, entry: Array, mine: bool) -> void:
 	var stagger: float = entry[6]
 	if absf(actor.stagger_left - stagger) > 0.15:
 		actor.stagger_left = stagger
-	var error := actor.global_position.distance_to(at)
+	var id: int = entry[0]
 	if actor.vehicle != null:
 		# A rider goes where their vehicle goes.
 		if not mine:
@@ -851,26 +935,61 @@ func _apply_state(actor: Actor, entry: Array, mine: bool) -> void:
 			actor.cmd.interact_pressed = false
 		return
 	if mine:
-		if error > SNAP_DISTANCE:
-			actor.global_position = at
+		# The server's position is from the past: it belongs to an input sent a
+		# moment ago. Compare it with where this game predicted you would be
+		# after that same input, not with where you are now. Running in a
+		# straight line then needs no correction however slow the connection.
+		var seq: int = entry[8]
+		if not _history.has(seq):
+			if actor.global_position.distance_to(at) > SNAP_DISTANCE:
+				actor.global_position = at
+				actor.velocity = entry[2]
+			return
+		var miss: Vector3 = at - _history[seq]
+		max_correction = maxf(max_correction, miss.length())
+		if miss.length() > SNAP_DISTANCE:
+			actor.global_position += miss
 			actor.velocity = entry[2]
-		elif error > OWN_TOLERANCE:
-			actor.global_position = actor.global_position.lerp(at, 0.15)
+			_history.clear()
+			_corrections.erase(id)
+		elif miss.length() > 0.01:
+			_corrections[id] = miss
+		else:
+			_corrections.erase(id)
 		return
 	actor.cmd.apply_array(entry[3])
 	# Looting is decided by the server, never replayed here.
 	actor.cmd.interact_pressed = false
-	if error > SNAP_DISTANCE:
+	var gap := at - actor.global_position
+	if gap.length() > SNAP_DISTANCE:
 		actor.global_position = at
+		_corrections.erase(id)
 	else:
-		actor.global_position = actor.global_position.lerp(at, 0.35)
+		_corrections[id] = gap
 	actor.velocity = entry[2]
 
 
 func _client_late_tick() -> void:
 	var me: Actor = _actors.get(my_actor_id)
-	if me != null and is_instance_valid(me) and not me.is_dead and _is_connected():
-		_send_input.rpc_id(1, me.cmd.to_array())
+	if me == null or not is_instance_valid(me) or me.is_dead or not _is_connected():
+		return
+	# Number this tick's input and remember where it left you, to compare with
+	# the server's answer later.
+	_seq += 1
+	if me.vehicle != null:
+		# A rider goes where the server's vehicle goes. Nothing to compare.
+		_history.clear()
+	else:
+		_history[_seq] = me.global_position
+		_history.erase(_seq - HISTORY_TICKS)
+	_recent_inputs.append([_seq, me.cmd.to_array()])
+	if _recent_inputs.size() > INPUT_REDUNDANCY:
+		_recent_inputs.pop_front()
+	var now := Time.get_ticks_msec()
+	if simulated_loss <= 0.0 or randf() >= simulated_loss:
+		_delayed_out.append([now + simulated_lag * 1000.0, _recent_inputs.duplicate()])
+	while not _delayed_out.is_empty() and _delayed_out[0][0] <= now:
+		_send_input.rpc_id(1, _delayed_out.pop_front()[1])
 
 
 func _is_connected() -> bool:

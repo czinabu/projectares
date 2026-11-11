@@ -68,6 +68,11 @@ godot --headless --path . -- --server --world ashfront --port 24565
 
 Add `--accounts <folder>` to choose where the server saves player stashes.
 
+To feel what a bad connection is like without leaving your desk, start the
+game (not the server) with `-- --lag 120 --loss 10`. That adds 120 ms of delay
+each way and drops 10 percent of your input packets. Your own movement should
+still feel immediate.
+
 What works online so far: seeing and fighting other players and bots, looting
 caches and bags, and riding vehicles, with the server deciding every hit,
 death, pickup and extraction. The server also owns your online stash: your
