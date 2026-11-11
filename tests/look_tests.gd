@@ -29,7 +29,17 @@ static func run(t: Node) -> void:
 		t.check(ResourceLoader.exists(dir + "Color.jpg") and ResourceLoader.exists(dir + "NormalGL.jpg")
 				and ResourceLoader.exists(dir + "Roughness.jpg"), "surface '%s' has its textures" % kind)
 	for skin: String in Look.SKINS:
-		t.check(ResourceLoader.exists(Look.CHARACTERS + Look.SKINS[skin]["scene"]), "skin '%s' has its model" % skin)
+		for scene: String in Look.SKINS[skin]["scenes"]:
+			t.check(ResourceLoader.exists(Look.CHARACTERS + scene), "skin '%s' has its model %s" % [skin, scene])
+	for skin: String in ["raider", "scavenger"]:
+		for scene: String in Look.SKINS[skin]["scenes"]:
+			var human: Node3D = Look._instance(Look.CHARACTERS + scene)
+			var human_anims := human.find_child("AnimationPlayer", true, false) as AnimationPlayer
+			var has_all := human_anims != null
+			for key: String in Look.HUMAN_ANIMS:
+				has_all = has_all and human_anims.has_animation(Look.HUMAN_ANIMS[key])
+			t.check(has_all, "human model %s has every animation the skin plays" % scene)
+			human.free()
 	var crate := Look.prop("Lootbox.glb", 1.2)
 	var crate_size := Look.model_bounds(crate).size
 	t.check(absf(maxf(crate_size.x, maxf(crate_size.y, crate_size.z)) - 1.2) < 0.05, "a prop is scaled to the size asked for")
@@ -49,6 +59,19 @@ static func run(t: Node) -> void:
 				tag + "the player wears an animated model")
 		t.check(raid.player.body_mesh != null and raid.player.body_mesh.mesh == null,
 				tag + "the greybox capsule is no longer drawn")
+		var skeleton := skin.find_child("Skeleton3D", true, false) as Skeleton3D
+		t.check(skin._grip_bone >= 0 and skeleton != null, tag + "the player's model has a hand to hold a weapon")
+		if skin._grip_bone >= 0 and skeleton != null:
+			skin._hold_weapon()
+			var palm: Vector3 = skeleton.global_transform * skeleton.get_bone_global_pose(skin._grip_bone).origin
+			t.check(raid.player.hand.global_position.distance_to(palm) < 0.2, tag + "the weapon sits in the model's hand")
+			t.check(raid.player.hand.global_position.distance_to(raid.player.to_global(Actor.HAND_REST)) > 0.05,
+					tag + "the weapon is no longer left floating at the greybox hand spot")
+			raid.player.hand_override = true
+			raid.player.hand.position = Vector3(5, 5, 5)
+			skin._hold_weapon()
+			t.check(raid.player.hand.position.is_equal_approx(Vector3(5, 5, 5)), tag + "the model leaves the hand alone in first person")
+			raid.player.hand_override = false
 		var dressed := 0
 		var skins := {}
 		for bot in raid.bots:

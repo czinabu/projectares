@@ -7,6 +7,9 @@ extends Node3D
 const Vfx := preload("res://core/visual/vfx.gd")
 const CHARACTER_SHADER := preload("res://assets/shaders/character.gdshader")
 
+## From the grip bone to where the weapon's handle sits, in the hand's space.
+var grip_offset := Vector3(0.0, 0.0, 0.0)
+
 var look: Node
 var actor: Actor
 
@@ -18,12 +21,15 @@ var _flash_left := 0.0
 var _materials: Array[ShaderMaterial] = []
 var _thrust: Node3D
 var _attack_left := 0.0
+var _skeleton: Skeleton3D
+var _grip_bone := -1
 
 
 func _ready() -> void:
 	var skin_name: String = actor.get_meta("look", look.DEFAULT_SKIN)
 	var def: Dictionary = look.SKINS.get(skin_name, look.SKINS[look.DEFAULT_SKIN])
-	var path: String = look.CHARACTERS + def["scene"]
+	var scenes: Array = def["scenes"]
+	var path: String = look.CHARACTERS + scenes[hash(String(actor.name)) % scenes.size()]
 	var model: Node3D = look._instance(path)
 	if model == null:
 		return
@@ -47,6 +53,9 @@ func _ready() -> void:
 				mat.set_shader_parameter("base_tex", source.albedo_texture)
 			mat.set_shader_parameter("base_color", source.albedo_color)
 			mat.set_shader_parameter("tint", tint)
+			for param: String in ["saturation", "brightness", "metal", "rough"]:
+				if def.has(param):
+					mat.set_shader_parameter(param, def[param])
 			if source.emission_enabled:
 				mat.set_shader_parameter("emission_color", source.emission * 2.5)
 			mesh_node.set_surface_override_material(i, mat)
@@ -63,6 +72,11 @@ func _ready() -> void:
 		_play("idle")
 		_player.advance(0.0)
 	_stand(model, def["height"])
+	_skeleton = model.find_child("Skeleton3D", true, false) as Skeleton3D
+	if _skeleton and def.has("grip_bone"):
+		_grip_bone = _skeleton.find_bone(def["grip_bone"])
+		# After the pose is applied, so the weapon never trails the hand.
+		_skeleton.skeleton_updated.connect(_hold_weapon)
 
 	# The greybox capsule stays as the actor's body node, but draws nothing.
 	if actor.body_mesh:
@@ -117,8 +131,12 @@ func _process(delta: float) -> void:
 	if _attack_left > 0.0:
 		return
 	var flat := Vector2(actor.velocity.x, actor.velocity.z).length()
+	# With a gun out the arm stays up, so the gun keeps pointing where it shoots.
+	var armed := weapon != null and melee == null and _anims.has("move_gun")
 	if actor.vehicle != null:
 		_play("idle")
+	elif flat > 0.4 and armed:
+		_play("move_gun", clampf(flat / 7.0, 0.45, 1.6))
 	elif flat > actor.walk_speed + 0.5:
 		_play("run", clampf(flat / 7.0, 0.8, 1.6))
 	elif flat > 0.4:
@@ -127,6 +145,17 @@ func _process(delta: float) -> void:
 		_play("idle_melee")
 	else:
 		_play("idle")
+
+
+## Puts the actor's hand node, which carries the weapon, on the model's hand.
+## The controller owns the hand in first person, so this leaves it alone then.
+## The actor resets the hand every physics tick and nothing in the simulation
+## reads it, so this only changes what is drawn.
+func _hold_weapon() -> void:
+	if _grip_bone < 0 or actor.hand_override or actor.is_dead:
+		return
+	var grip: Vector3 = _skeleton.global_transform * _skeleton.get_bone_global_pose(_grip_bone).origin
+	actor.hand.global_position = grip + actor.hand.global_basis * grip_offset
 
 
 ## Swaps greybox gun parts for a model and wires up shot effects. Runs again
