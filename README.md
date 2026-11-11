@@ -34,6 +34,9 @@ core loop and lays the foundation for online play and more worlds.
 The jetpack runs on heat. Overheat it and you fall until it cools. Rooftop
 caches hold the best loot, and only the jetpack gets you there.
 
+After you pull new code, the first launch may show "Updating the project" for a
+few seconds and restart on its own. That is Godot learning about new scripts.
+
 ## What is in the prototype
 
 - First-person and third-person camera that you switch with V. It never changes

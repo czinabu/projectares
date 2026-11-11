@@ -64,6 +64,10 @@ func _end_raid(raid: Raid) -> void:
 
 
 func _test_registry() -> void:
+	var declared: Array[String] = Boot.declared_classes("res://")
+	check("Actor" in declared and "Ability" in declared and "MeleeWeapon" in declared,
+			"the boot check finds the project's script classes")
+	check(Boot.find_missing_classes().is_empty(), "every script class is registered with Godot")
 	print("World registry")
 	var world := Worlds.get_world("ashfront")
 	check(world != null, "ashfront is discovered from its folder")
