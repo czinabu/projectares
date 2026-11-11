@@ -39,6 +39,7 @@ func _init() -> void:
 	display_name = "The Pit"
 	description = "Duels, tournaments and wagers. Nobody loses gear in the arena."
 	bot_count = 0
+	event_interval = 0.0
 	gear_at_risk = false
 	# Nobody can be hurt outside a bout anyway, and fighters start together.
 	spawn_protection = 0.0

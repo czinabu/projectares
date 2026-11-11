@@ -25,6 +25,8 @@ signal sign_out_changed(actor: Actor, seconds_left: float)
 signal war_feed(text: String)
 ## A strongpoint changed hands.
 signal strongpoint_taken(point: Strongpoint)
+## A world event began or ended. `event` is `Raid.event` ({} when it ended).
+signal event_changed(event: Dictionary)
 signal actor_spawned(actor: Actor)
 signal actor_removed(actor: Actor)
 signal container_spawned(container: LootContainer)
@@ -77,6 +79,14 @@ var war := WarDirector.new()
 ## The sites worth holding, one per "strongpoint" marker on the map.
 var strongpoints: Array[Strongpoint] = []
 var _assault_in := 0.0
+## The world event going on, or {}: { kind ("supply_pod" or "warlord"),
+## title, at, ends (on `clock`) }. One at a time.
+var event := {}
+## The warlords alive in the world, so clients can build the same bot.
+var warlords := {}
+var _event_in := 0.0
+var _event_bots: Array[Actor] = []
+var _event_pod: LootContainer
 ## When false, the raid reports results but leaves the stash alone, so a server
 ## never writes to a profile that is not the player's.
 var apply_to_profile := true
@@ -185,6 +195,7 @@ func _setup(p_world: WorldDef, p_seed: int) -> void:
 			point.hold("faction:" + faction, marker.get_meta("holder_name", faction.capitalize()), false)
 		strongpoints.append(point)
 	_assault_in = world.assault_interval
+	_event_in = world.event_interval
 
 
 func _spawn_caches() -> void:
@@ -209,6 +220,7 @@ func _physics_process(delta: float) -> void:
 		_keep_everyone_safe()
 		return
 	_tick_strongpoints(delta)
+	_tick_events(delta)
 	_tick_caches(delta)
 	_tick_bots(delta)
 	_tick_vehicles(delta)
@@ -378,6 +390,94 @@ func _forward_drop(side: String) -> Strongpoint:
 	return mine[rng.randi() % mine.size()] if not mine.is_empty() else null
 
 
+## World events: one at a time, more often the hotter the war.
+func _tick_events(delta: float) -> void:
+	if world.event_interval <= 0.0:
+		return
+	if not event.is_empty():
+		if clock >= float(event.ends) or _event_over():
+			end_event(clock >= float(event.ends))
+		return
+	_event_in -= delta * (1.0 + war.intensity)
+	if _event_in <= 0.0:
+		start_event("warlord" if rng.randf() < 0.5 else "supply_pod")
+
+
+## Starts a world event now. Returns false when one is running or the map
+## has nowhere to put it.
+func start_event(kind: String) -> bool:
+	var spawns := _map_nodes("spawn_bot")
+	if not event.is_empty() or spawns.is_empty():
+		return false
+	_event_in = world.event_interval
+	var at: Vector3
+	if kind == "warlord":
+		var marker := spawns[_farthest_from_players(spawns)]
+		at = marker.global_position
+		for i in 1 + maxi(world.warlord_escort, 0):
+			var bot := _add_bot(marker, i == 0)
+			_event_bots.append(bot)
+		# They march on a site the players hold, if there is one.
+		var targets := strongpoints.filter(func(p: Strongpoint) -> bool: return p.holder_is_player)
+		if not targets.is_empty():
+			var point: Strongpoint = targets[rng.randi() % targets.size()]
+			for bot in _event_bots:
+				(bot.get_node("Brain") as BotBrain).post_to(point.global_position, point.radius)
+		event = {"kind": kind, "title": "Warlord"}
+		war_feed.emit("A warlord has arrived %s" % _whereabouts(at))
+	else:
+		at = spawns[rng.randi() % spawns.size()].global_position
+		# Always a good haul, and a better one in a hot war.
+		var items := world.roll_war_loot("cache", rng, maxf(war.intensity, 0.5))
+		items.append_array(world.roll_war_loot("cache", rng, 1.0))
+		_event_pod = spawn_container(items, false, "Supply pod", at)
+		event = {"kind": "supply_pod", "title": "Supply pod"}
+		war_feed.emit("A supply pod came down %s" % _whereabouts(at))
+	event["at"] = at
+	event["ends"] = clock + world.event_lifetime
+	event_changed.emit(event)
+	return true
+
+
+## Ends the running event and clears away what is left of it.
+func end_event(timed_out := false) -> void:
+	if event.is_empty():
+		return
+	if timed_out:
+		war_feed.emit("The warlord has moved on" if event.kind == "warlord" else "The supply pod is gone")
+	for bot in _event_bots:
+		if is_instance_valid(bot) and not bot.is_dead:
+			_remove_actor(bot)
+	_event_bots.clear()
+	if is_instance_valid(_event_pod):
+		_event_pod.queue_free()
+	_event_pod = null
+	event = {}
+	event_changed.emit(event)
+
+
+## Whether the event has been dealt with: the pod emptied, or the warlord dead.
+func _event_over() -> bool:
+	if event.kind == "warlord":
+		return warlords.is_empty()
+	return not is_instance_valid(_event_pod) or _event_pod.items.is_empty()
+
+
+## Words for where something is: by a strongpoint, or a compass direction.
+func _whereabouts(at: Vector3) -> String:
+	var nearest: Strongpoint = null
+	for point in strongpoints:
+		if nearest == null or point.global_position.distance_to(at) < nearest.global_position.distance_to(at):
+			nearest = point
+	if nearest != null and nearest.global_position.distance_to(at) <= nearest.radius * 4.0:
+		return "near %s" % nearest.title
+	var flat := Vector2(at.x, at.z)
+	if flat.length() < 25.0:
+		return "in the middle of the map"
+	var names := ["east", "south-east", "south", "south-west", "west", "north-west", "north", "north-east"]
+	return "to the %s" % names[posmod(roundi(flat.angle() / (PI / 4.0)), 8)]
+
+
 func _tick_caches(delta: float) -> void:
 	for cache in _caches:
 		var container: LootContainer = cache.container
@@ -389,7 +489,8 @@ func _tick_caches(delta: float) -> void:
 		cache.refill_in -= delta
 		if cache.refill_in <= 0.0:
 			cache.refill_in = -1.0
-			container.set_items(world.roll_loot(cache.source, rng))
+			# A cache that refills in the middle of a war holds better things.
+			container.set_items(world.roll_war_loot(cache.source, rng, war.intensity))
 			container.changed.emit()
 
 
@@ -662,9 +763,13 @@ func _spawn_bots() -> void:
 
 
 ## A new bot with a brain, at a spawn marker.
-func _add_bot(marker: Node3D) -> Actor:
+func _add_bot(marker: Node3D, warlord := false) -> Actor:
 	var at := marker.global_position + Vector3(rng.randf_range(-1, 1), 0, rng.randf_range(-1, 1))
-	var bot := spawn_bot("Bot%d" % _bot_count, at, rng.randi())
+	var bot := spawn_bot("Bot%d" % _bot_count, at, rng.randi(), warlord)
+	if warlord:
+		# What a warlord carries is worth the fight.
+		for id in world.roll_war_loot("bot", rng, 1.0) + world.roll_war_loot("cache", rng, 1.0):
+			bot.inventory.add_item(id)
 	_bot_count += 1
 	var brain := BotBrain.new()
 	brain.name = "Brain"
@@ -694,7 +799,7 @@ func _farthest_from_players(markers: Array[Node3D]) -> int:
 
 ## Creates a bot equipped from `equip_seed`, with no brain. A client calls this
 ## with the server's seed to get the same bot.
-func spawn_bot(bot_name: String, at: Vector3, equip_seed: int) -> Actor:
+func spawn_bot(bot_name: String, at: Vector3, equip_seed: int, warlord := false) -> Actor:
 	var bot := Actor.new()
 	bot.name = bot_name
 	add_child(bot)
@@ -702,6 +807,9 @@ func spawn_bot(bot_name: String, at: Vector3, equip_seed: int) -> Actor:
 	var equip_rng := RandomNumberGenerator.new()
 	equip_rng.seed = equip_seed
 	world.equip_bot(bot, equip_rng)
+	if warlord:
+		world.make_warlord(bot)
+		warlords[bot] = true
 	bot_seeds[bot] = equip_seed
 	bots.append(bot)
 	return bot
@@ -793,7 +901,9 @@ func _on_actor_died(actor: Actor, info: DamageInfo) -> void:
 			return
 	else:
 		bots.erase(actor)
-		if mode != Mode.CLIENT:
+		warlords.erase(actor)
+		# A world event's bots are extra: nobody takes their place.
+		if mode != Mode.CLIENT and not _event_bots.has(actor):
 			_bot_respawns.append(world.bot_respawn_time)
 	get_tree().create_timer(4.0).timeout.connect(_remove_actor.bind(actor))
 
@@ -805,7 +915,12 @@ func _settle_renown(victim: PlayerState, killer: PlayerState, actor: Actor, by: 
 	if victim == null:
 		if killer != null:
 			gained = renown.bot_killed(killer.owner)
+			if warlords.has(actor):
+				gained += renown.award(killer.owner, renown.warlord_kill)
+				war_feed.emit("%s killed the warlord" % _feed_name(killer.actor))
 			_publish_standing()
+		elif warlords.has(actor):
+			war_feed.emit("The warlord is dead")
 		return gained
 	var paid := renown.player_died(victim.owner, killer.owner if killer != null else "",
 			_wears_scrap(actor))
@@ -878,6 +993,7 @@ func _remove_actor(actor: Actor) -> void:
 			state.mastery.queue_free()
 	bots.erase(actor)
 	bot_seeds.erase(actor)
+	warlords.erase(actor)
 	actor_removed.emit(actor)
 	actor.queue_free()
 
