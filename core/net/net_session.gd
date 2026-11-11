@@ -17,7 +17,14 @@ extends Node
 ## one per tick. Its answer says which input it had reached, so the client
 ## compares the server's position with its own prediction for that same
 ## input and blends away only the real difference. Your own movement stays
-## smooth however slow the connection is.
+## smooth however slow the connection is. A vehicle you ride is predicted
+## and corrected the same way, so it steers the moment you do.
+##
+## Shots are lag compensated. Each input also says which server tick the
+## client's view of everyone else had reached, and the server keeps a short
+## history of where every actor was. When a player attacks, the server tests
+## the hit against where the targets were on that player's screen
+## (`Combat.rewind`), so nobody has to lead their shots by their ping.
 ##
 ## Connecting puts a client in the lobby: it signs in with a name and a secret,
 ## and the server answers with that account's stash and loadout from its
@@ -48,7 +55,7 @@ signal disconnected
 signal raid_restarted(raid: Raid)
 
 const DEFAULT_PORT := 24565
-const PROTOCOL := 3
+const PROTOCOL := 4
 const StashService := preload("res://core/account/stash_service.gd")
 ## Server physics ticks between state updates (2 = 30 a second).
 const TICKS_PER_SNAPSHOT := 2
@@ -62,6 +69,9 @@ const INPUT_REDUNDANCY := 4
 ## The server holds at most this many unplayed inputs per player. More means
 ## the player's packets arrived in a burst, and the oldest are folded together.
 const MAX_QUEUED_INPUTS := 6
+## The furthest back the server rewinds a target for an attacker's ping
+## (30 = half a second). A slower connection has to lead by the rest.
+const MAX_REWIND_TICKS := 30
 ## How many ticks of your own predicted positions a client remembers.
 const HISTORY_TICKS := 180
 ## The share of a position error that is corrected each tick.
@@ -98,6 +108,9 @@ var simulated_loss := 0.0
 ## Client: the largest gap seen between where the server put you and where
 ## this game had predicted you would be at that same moment.
 var max_correction := 0.0
+## Server: test hits against where the attacker saw their targets. Off only
+## to compare with how it plays without (`--no-rewind`).
+var lag_compensation := true
 
 var _api: SceneMultiplayer
 var _actors := {}        # id -> Actor
@@ -111,12 +124,17 @@ var _actor_account := {} # Actor -> account id, until the run is settled (server
 var _input_queue := {}   # peer id -> [[seq, command array], ...] not yet played (server)
 var _queued_seq := {}    # peer id -> newest input number received (server)
 var _applied_seq := {}   # actor id -> input number the actor last simulated (server)
+var _seen_tick := {}     # Actor -> server tick the player was looking at (server)
+var _past := {}          # server tick -> {Actor: position} after that tick (server)
 var _seq := 0            # number of the input sent this tick (client)
 var _history := {}       # input number -> own predicted position after it (client)
-var _recent_inputs: Array = [] # the last few [seq, command array] sent (client)
+var _recent_inputs: Array = [] # the last few [seq, command array, view tick] sent (client)
+var _newest_tick := 0    # server tick of the newest state received (client)
+var _fresh_state := false # a newer state arrived since the last tick (client)
+var _view_tick := 0      # server tick the actors on screen show (client)
 var _corrections := {}   # actor id -> position error still to blend away (client)
 var _delayed_out: Array = [] # [due msec, inputs] held back by simulated_lag
-var _delayed_in: Array = []  # [due msec, time_left, entries] held back by simulated_lag
+var _delayed_in: Array = []  # [due msec, Callable] updates held back by simulated_lag
 var _one_shots := {}     # actor id -> accumulated one-shot flags (server)
 var _switches := {}      # actor id -> last weapon switch since the snapshot
 var _dead_kind := {}     # actor id -> damage kind that killed them
@@ -126,6 +144,10 @@ var _container_ids := {} # LootContainer -> id
 var _vehicles := {}      # vehicle id -> vehicle node
 var _vehicle_ids := {}   # vehicle node -> id
 var _vehicle_targets := {} # vehicle id -> newest state entry (client)
+var _ride_history := {}  # input number -> [position, heading, speed] of the ride after it (client)
+var _ride_fix := Vector3.ZERO # position error of your ride still to blend away (client)
+var _ride_turn := 0.0    # heading error of your ride still to blend away (client)
+var _ride_entry: Array = [] # the server's last answer about your ride, once compared (client)
 var _sent_kills := {}    # actor id -> kill count last sent (server)
 var _tick := 0
 var _had_players := false
@@ -151,6 +173,8 @@ func _exit_tree() -> void:
 	close()
 	if not is_server:
 		Combat.authoritative = true
+	elif Combat.rewind == _seen_positions:
+		Combat.rewind = Callable()
 
 
 # ---------------------------------------------------------------- server ----
@@ -169,6 +193,8 @@ func host(p_world_id: String, port := DEFAULT_PORT, max_players := 8) -> Error:
 	_api.multiplayer_peer = peer
 	_api.peer_connected.connect(_on_peer_connected)
 	_api.peer_disconnected.connect(_on_peer_disconnected)
+	if lag_compensation:
+		Combat.rewind = _seen_positions
 	_start_server_raid()
 	return OK
 
@@ -209,6 +235,11 @@ func _clear_tables() -> void:
 	_input_queue.clear()
 	_queued_seq.clear()
 	_applied_seq.clear()
+	_seen_tick.clear()
+	_past.clear()
+	_newest_tick = 0
+	_fresh_state = false
+	_view_tick = 0
 	_seq = 0
 	_history.clear()
 	_recent_inputs.clear()
@@ -224,6 +255,10 @@ func _clear_tables() -> void:
 	_vehicles.clear()
 	_vehicle_ids.clear()
 	_vehicle_targets.clear()
+	_ride_history.clear()
+	_ride_fix = Vector3.ZERO
+	_ride_turn = 0.0
+	_ride_entry = []
 	_sent_kills.clear()
 	_actor_account.clear()
 
@@ -266,6 +301,9 @@ func _on_server_actor_removed(actor: Actor) -> void:
 		_despawn.rpc_id(peer, id)
 	_ids.erase(actor)
 	_actors.erase(id)
+	_seen_tick.erase(actor)
+	for tick: int in _past:
+		_past[tick].erase(actor)
 	_one_shots.erase(id)
 	_switches.erase(id)
 	_dead_kind.erase(id)
@@ -468,8 +506,9 @@ func _send_input(inputs: Array) -> void:
 	# in order, so every tick the player simulated is played here exactly once.
 	var queue: Array = _input_queue.get_or_add(peer, [])
 	for input: Variant in inputs:
-		if typeof(input) != TYPE_ARRAY or input.size() != 2 or typeof(input[0]) != TYPE_INT \
-				or typeof(input[1]) != TYPE_ARRAY or input[1].size() != ActorCommand.ARRAY_SIZE:
+		if typeof(input) != TYPE_ARRAY or input.size() != 3 or typeof(input[0]) != TYPE_INT \
+				or typeof(input[1]) != TYPE_ARRAY or input[1].size() != ActorCommand.ARRAY_SIZE \
+				or typeof(input[2]) != TYPE_INT:
 			return
 		if input[0] > int(_queued_seq.get(peer, 0)):
 			_queued_seq[peer] = input[0]
@@ -499,6 +538,22 @@ func _server_early_tick() -> void:
 			var input: Array = queue.pop_front()
 			actor.cmd.apply_array(input[1])
 			_applied_seq[_ids[actor]] = input[0]
+			# Never later than now: a client cannot see the future.
+			_seen_tick[actor] = mini(input[2], _tick)
+		elif _seen_tick.has(actor):
+			# A held trigger keeps firing at what the player is watching move on.
+			_seen_tick[actor] = mini(int(_seen_tick[actor]) + 1, _tick)
+
+
+## `Combat.rewind` on a server: where everyone else was on `attacker`'s screen
+## when their current input was made.
+func _seen_positions(attacker: Actor) -> Dictionary:
+	if not _seen_tick.has(attacker):
+		return {}
+	var tick := maxi(int(_seen_tick[attacker]), _tick - MAX_REWIND_TICKS)
+	if tick >= _tick:
+		return {}
+	return _past.get(tick, {})
 
 
 func _server_late_tick(delta: float) -> void:
@@ -510,6 +565,13 @@ func _server_late_tick(delta: float) -> void:
 		if actor.cmd.switch_weapon >= 0:
 			_switches[id] = actor.cmd.switch_weapon
 	_tick += 1
+	if lag_compensation:
+		var now := {}
+		for actor: Actor in _ids:
+			if not actor.is_dead:
+				now[actor] = actor.global_position
+		_past[_tick] = now
+		_past.erase(_tick - MAX_REWIND_TICKS - 1)
 	if _tick % TICKS_PER_SNAPSHOT == 0 and not _joined_peers.is_empty():
 		var entries: Array = []
 		for id: int in _actors:
@@ -525,14 +587,15 @@ func _server_late_tick(delta: float) -> void:
 		for start in range(0, entries.size(), ACTORS_PER_PACKET):
 			var chunk := entries.slice(start, start + ACTORS_PER_PACKET)
 			for peer in _joined_peers:
-				_state.rpc_id(peer, raid.time_left, chunk)
+				_state.rpc_id(peer, _tick, raid.time_left, chunk)
 		if not _vehicles.is_empty():
 			var rides: Array = []
 			for id: int in _vehicles:
 				var vehicle: Node3D = _vehicles[id]
 				var rider: Actor = vehicle.get("rider")
+				var rider_id: int = _ids.get(rider, -1) if rider != null else -1
 				rides.append([id, vehicle.global_position, vehicle.get("heading"), vehicle.get("speed"),
-						_ids.get(rider, -1) if rider != null else -1])
+						rider_id, _applied_seq.get(rider_id, 0)])
 			for peer in _joined_peers:
 				_vehicle_state.rpc_id(peer, rides)
 	for state in raid.players:
@@ -719,17 +782,25 @@ func _kills(id: int, count: int) -> void:
 
 
 @rpc("authority", "call_remote", "unreliable_ordered")
-func _state(time_left: float, entries: Array) -> void:
+func _state(tick: int, time_left: float, entries: Array) -> void:
+	_after_lag(_receive_state.bind(tick, time_left, entries))
+
+
+## Runs `update` now, or after the simulated lag.
+func _after_lag(update: Callable) -> void:
 	if simulated_lag > 0.0:
-		_delayed_in.append([Time.get_ticks_msec() + simulated_lag * 1000.0, time_left, entries])
+		_delayed_in.append([Time.get_ticks_msec() + simulated_lag * 1000.0, update])
 	else:
-		_receive_state(time_left, entries)
+		update.call()
 
 
-func _receive_state(time_left: float, entries: Array) -> void:
+func _receive_state(tick: int, time_left: float, entries: Array) -> void:
 	if raid == null:
 		return
 	raid.time_left = time_left
+	if tick > _newest_tick:
+		_newest_tick = tick
+		_fresh_state = true
 	for entry: Array in entries:
 		var id: int = entry[0]
 		# Presses from an update we have not applied yet must not be lost.
@@ -798,18 +869,33 @@ func _vehicle_gone(id: int) -> void:
 
 @rpc("authority", "call_remote", "unreliable_ordered")
 func _vehicle_state(entries: Array) -> void:
-	for entry: Array in entries:
-		_vehicle_targets[entry[0]] = entry
+	_after_lag(func() -> void:
+		for entry: Array in entries:
+			_vehicle_targets[entry[0]] = entry)
 
 
 ## Moves each vehicle toward where the server says it is, and keeps its rider
-## the same as the server's.
+## the same as the server's. The one you ride drives itself from your input
+## here, and is only corrected (`_correct_ride`).
 func _client_move_vehicles() -> void:
 	for id: int in _vehicles:
 		var vehicle: Node3D = _vehicles[id]
-		if not is_instance_valid(vehicle) or not _vehicle_targets.has(id):
+		if not is_instance_valid(vehicle):
+			continue
+		var me: Actor = _actors.get(my_actor_id)
+		var mine: bool = me != null and vehicle.get("rider") == me
+		vehicle.set_physics_process(mine)
+		if mine:
+			_blend_ride(vehicle)
+		if not _vehicle_targets.has(id):
 			continue
 		var entry: Array = _vehicle_targets[id]
+		if mine and int(entry[4]) == my_actor_id:
+			# Each answer is compared once. The ride drives itself in between.
+			if not is_same(entry, _ride_entry):
+				_ride_entry = entry
+				_correct_ride(vehicle, entry)
+			continue
 		var at: Vector3 = entry[1]
 		if vehicle.global_position.distance_to(at) > SNAP_DISTANCE:
 			vehicle.global_position = at
@@ -830,7 +916,60 @@ func _client_move_vehicles() -> void:
 				if rider.vehicle != null:
 					rider.vehicle.call("dismount")
 				vehicle.call("mount", rider)
+			_ride_history.clear()
+			_ride_fix = Vector3.ZERO
+			_ride_turn = 0.0
 		vehicle.call("_place_rider")
+
+
+## Compares the server's position for your ride with where this game predicted
+## it after the same input, like `_apply_state` does for your own actor.
+func _correct_ride(vehicle: Node3D, entry: Array) -> void:
+	var seq: int = entry[5]
+	if not _ride_history.has(seq):
+		# Just got on: nothing predicted to compare with yet.
+		if vehicle.global_position.distance_to(entry[1]) > SNAP_DISTANCE:
+			_snap_ride(vehicle, entry)
+		return
+	var then: Array = _ride_history[seq]
+	var miss: Vector3 = entry[1] - then[0]
+	max_correction = maxf(max_correction, miss.length())
+	if miss.length() > SNAP_DISTANCE:
+		_snap_ride(vehicle, entry)
+		return
+	_ride_fix = miss
+	_ride_turn = angle_difference(then[1], entry[2])
+	# Speed carries straight into the future, so it is fixed at once, and in
+	# the remembered rides too so the next answer only sees what is still wrong.
+	var speed_miss := float(entry[3]) - float(then[2])
+	vehicle.set("speed", float(vehicle.get("speed")) + speed_miss)
+	for later: int in _ride_history:
+		_ride_history[later][2] += speed_miss
+
+
+func _snap_ride(vehicle: Node3D, entry: Array) -> void:
+	vehicle.global_position = entry[1]
+	vehicle.set("heading", entry[2])
+	vehicle.rotation = Vector3(0.0, entry[2], 0.0)
+	vehicle.set("speed", entry[3])
+	_ride_history.clear()
+	_ride_fix = Vector3.ZERO
+	_ride_turn = 0.0
+
+
+func _blend_ride(vehicle: Node3D) -> void:
+	if _ride_fix == Vector3.ZERO and _ride_turn == 0.0:
+		return
+	var step := _ride_fix * CORRECTION_RATE if _ride_fix.length() > 0.02 else _ride_fix
+	var turn := _ride_turn * CORRECTION_RATE if absf(_ride_turn) > 0.002 else _ride_turn
+	vehicle.global_position += step
+	vehicle.set("heading", float(vehicle.get("heading")) + turn)
+	vehicle.rotation = Vector3(0.0, vehicle.get("heading"), 0.0)
+	for seq: int in _ride_history:
+		_ride_history[seq][0] += step
+		_ride_history[seq][1] += turn
+	_ride_fix -= step
+	_ride_turn -= turn
 
 
 @rpc("authority", "call_remote", "reliable")
@@ -870,10 +1009,14 @@ func _run_finished(result: Dictionary) -> void:
 
 func _client_early_tick() -> void:
 	while not _delayed_in.is_empty() and _delayed_in[0][0] <= Time.get_ticks_msec():
-		var held: Array = _delayed_in.pop_front()
-		_receive_state(held[1], held[2])
+		_delayed_in.pop_front()[1].call()
 	if raid == null:
 		return
+	# Everyone else is shown as the newest state left them, moved on by local
+	# simulation, so the screen shows the server's tick from that state plus
+	# the ticks since. Attacks made now are judged against that tick.
+	_view_tick = _newest_tick + 1 if _fresh_state else _view_tick + 1
+	_fresh_state = false
 	for id: int in _actors:
 		var actor: Actor = _actors[id]
 		if not is_instance_valid(actor):
@@ -977,12 +1120,16 @@ func _client_late_tick() -> void:
 	# the server's answer later.
 	_seq += 1
 	if me.vehicle != null:
-		# A rider goes where the server's vehicle goes. Nothing to compare.
+		# A rider goes where their vehicle goes; the ride is what is compared.
 		_history.clear()
+		_ride_history[_seq] = [me.vehicle.global_position, float(me.vehicle.get("heading")),
+				float(me.vehicle.get("speed"))]
+		_ride_history.erase(_seq - HISTORY_TICKS)
 	else:
+		_ride_history.clear()
 		_history[_seq] = me.global_position
 		_history.erase(_seq - HISTORY_TICKS)
-	_recent_inputs.append([_seq, me.cmd.to_array()])
+	_recent_inputs.append([_seq, me.cmd.to_array(), _view_tick])
 	if _recent_inputs.size() > INPUT_REDUNDANCY:
 		_recent_inputs.pop_front()
 	var now := Time.get_ticks_msec()

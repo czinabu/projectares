@@ -260,9 +260,11 @@ func _on_slam_landed(_impact_speed: float) -> void:
 	_slamming = false
 	swung.emit("slam")
 	Sfx.play("slam", null if actor.is_player else actor.global_position)
+	var seen := Combat.positions_seen_by(actor)
 	for other in _other_actors():
-		if other.global_position.distance_to(actor.global_position) <= slam_radius:
-			Combat.deal(other, DamageInfo.make(slam_damage, actor, "slam", other.global_position))
+		var at: Vector3 = seen.get(other, other.global_position)
+		if at.distance_to(actor.global_position) <= slam_radius:
+			Combat.deal(other, DamageInfo.make(slam_damage, actor, "slam", at))
 
 
 func _strike(amount: float, kind: String) -> void:
@@ -273,8 +275,10 @@ func _strike(amount: float, kind: String) -> void:
 	forward.y = 0.0
 	forward = forward.normalized()
 	var half_arc := deg_to_rad(arc_deg) * 0.5
+	var seen := Combat.positions_seen_by(actor)
 	for other in _other_actors():
-		var to := other.global_position - actor.global_position
+		var at: Vector3 = seen.get(other, other.global_position)
+		var to := at - actor.global_position
 		var vertical := absf(to.y)
 		to.y = 0.0
 		var dist := to.length()
@@ -282,7 +286,7 @@ func _strike(amount: float, kind: String) -> void:
 			continue
 		if dist > 0.8 and forward.angle_to(to.normalized()) > half_arc:
 			continue
-		var info := DamageInfo.make(amount, actor, "melee", other.global_position)
+		var info := DamageInfo.make(amount, actor, "melee", at)
 		info.direction = attack_dir
 		Combat.deal(other, info)
 

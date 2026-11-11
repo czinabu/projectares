@@ -69,6 +69,13 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   that input (`NetSession._history`), never with its current position, and
   blends every correction over several ticks. Keep `Actor` movement
   deterministic from its `ActorCommand` so prediction keeps matching.
+- Lag compensation: each input also carries the server tick the client's view
+  had reached, and the server keeps half a second of past positions. Attacks
+  judge targets at `Combat.positions_seen_by(attacker)` (shots via
+  `Combat.trace`), never by reading other actors' `global_position` directly,
+  so a lagging player hits what was on their screen. A vehicle the local
+  player rides is predicted and corrected against `NetSession._ride_history`
+  like the player's own actor.
 - Online, the server owns each player's stash, loadout and mastery
   (`core/account/stash_service.gd`). A client's kit or picks are never trusted;
   the server gets them from `StashService.deploy` and applies results with

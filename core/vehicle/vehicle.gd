@@ -205,11 +205,13 @@ func _physics_process(delta: float) -> void:
 		dismount()
 	if rider != null:
 		var cmd := rider.cmd
-		if cmd.interact_pressed:
+		if cmd.interact_pressed and Combat.authoritative:
 			# The press is spent on getting off, not on looting.
 			cmd.interact_pressed = false
 			dismount()
 		else:
+			# Online, a client predicting its own ride leaves getting off to
+			# the server, and the press still has to reach it.
 			throttle = clampf(cmd.move.y, -1.0, 1.0)
 			steer = clampf(cmd.move.x, -1.0, 1.0)
 			boosting = cmd.sprint

@@ -2,7 +2,7 @@ extends Node
 ## Entry point. Switches between the hub and a raid, solo or online.
 ##
 ## Run with `-- --server [--world <id>] [--port <n>] [--bots <n>] [--squad-spawn]
-## [--accounts <folder>]` for a dedicated server: no hub, no window needed,
+## [--accounts <folder>] [--no-rewind]` for a dedicated server: no hub, no window needed,
 ## just a raid that players join. Player stashes are saved in the accounts
 ## folder (`user://accounts` unless given).
 
@@ -112,6 +112,7 @@ func _run_dedicated_server(args: PackedStringArray) -> void:
 	net.name = "Net"
 	net.bot_count = int(_arg(args, "--bots", "-1"))
 	net.squad_spawn = "--squad-spawn" in args
+	net.lag_compensation = "--no-rewind" not in args
 	var accounts := _arg(args, "--accounts", "")
 	if accounts != "":
 		net.stash.save_dir = accounts
