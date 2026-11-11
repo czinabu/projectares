@@ -7,6 +7,8 @@ const VehicleScript := preload("res://core/vehicle/vehicle.gd")
 const RaidRoster := preload("res://core/ui/raid_roster.gd")
 const NameplatesScript := preload("res://core/ui/nameplates.gd")
 const ScoreboardScript := preload("res://core/ui/scoreboard.gd")
+const BaseLayout := preload("res://core/base/base_layout.gd")
+const BaseHudScript := preload("res://core/ui/base_hud.gd")
 const LookTests := preload("res://tests/look_tests.gd")
 
 var _passed := 0
@@ -53,6 +55,7 @@ func _run() -> void:
 	await _test_online()
 	await _test_stash_service()
 	await _test_phone()
+	await _test_home_base()
 	await LookTests.run(self)
 
 
@@ -2633,3 +2636,220 @@ func _test_online_phone() -> void:
 	OS.kill(pid)
 	await frames(30)
 	_wipe_dir(NET_ACCOUNTS)
+
+
+## Stands the actor in front of a home base display, looking at it.
+func _face_display(actor: Actor, display: Node3D) -> void:
+	var out: Vector3 = display.global_transform.basis.z
+	actor.global_position = Vector3(display.global_position.x, 0.1, display.global_position.z) + out * 2.0
+	actor.velocity = Vector3.ZERO
+	var eye := actor.global_position + Vector3(0, actor.eye_height, 0)
+	# Aim at the middle of the display's hit box.
+	var col: CollisionShape3D = null
+	for child in display.get_children():
+		if child is CollisionShape3D:
+			col = child
+	var dir := (col.global_position - eye).normalized()
+	actor.cmd.yaw = atan2(-dir.x, -dir.z)
+	actor.cmd.pitch = asin(dir.y)
+	actor.cmd.aim_dir = dir
+
+
+func _use(actor: Actor) -> void:
+	actor.cmd.interact_pressed = true
+	await frames(1)
+	actor.cmd.interact_pressed = false
+	await frames(1)
+
+
+func _test_home_base() -> void:
+	print("Home base layout")
+	check(BaseLayout.kind_for("dmr_longshot") == "gun_rack" and BaseLayout.kind_for("hammer_breaker") == "blade_wall"
+			and BaseLayout.kind_for("frame_bulwark") == "armor_stand" and BaseLayout.kind_for("wings_glide") == "rig_stand"
+			and BaseLayout.kind_for("chip_blink") == "chip_case" and BaseLayout.kind_for("bike_raider") == "bay"
+			and BaseLayout.kind_for("medkit") == "supplies" and BaseLayout.kind_for("lattice_shard") == "trophy",
+			"tags decide where an item is shown")
+	check(BaseLayout.slot_for("rifle_carbine") == "primary" and BaseLayout.slot_for("bike_scrapper") == "vehicle"
+			and BaseLayout.slot_for("scrap_metal") == "", "gear knows its loadout slot, loot has none")
+	var stash: Array[String] = ["rifle_carbine", "dmr_longshot", "rifle_carbine", "blade_arc", "frame_trooper",
+			"bike_scrapper", "bike_scrapper", "bike_raider", "medkit", "medkit", "medkit", "scrap_metal",
+			"lattice_shard", "chip_blink", "jetpack_mk2", "no_such_item"]
+	var plan := BaseLayout.plan(stash, {"primary": "rifle_carbine", "vehicle": "bike_scrapper"})
+	var by_kind := {}
+	for entry in plan:
+		if not by_kind.has(entry["kind"]):
+			by_kind[entry["kind"]] = []
+		by_kind[entry["kind"]].append(entry)
+	var guns: Array = by_kind.get("gun_rack", [])
+	check(guns.size() == 2 and guns[0]["id"] == "dmr_longshot" and guns[0]["index"] == 0
+			and guns[1]["id"] == "rifle_carbine", "the most valuable gun gets the first spot")
+	check(guns[1]["count"] == 2 and guns[1]["equipped"] and not guns[0]["equipped"],
+			"copies share a spot with a count, and the equipped gun is marked")
+	var bays: Array = by_kind.get("bay", [])
+	check(bays.size() == 3 and bays[0]["id"] == "bike_raider", "every bike you own is parked")
+	check(bays.filter(func(e: Dictionary) -> bool: return e["equipped"]).size() == 1,
+			"only one of two identical bikes is marked as equipped")
+	check(by_kind.get("trophy", []).size() == 2 and by_kind["trophy"][0]["id"] == "lattice_shard"
+			and by_kind.get("supplies", []).size() == 1 and by_kind["supplies"][0]["count"] == 3,
+			"loot goes on the trophy shelf and medkits with the supplies")
+	check(plan.filter(func(e: Dictionary) -> bool: return e["id"] == "no_such_item").is_empty(),
+			"unknown items are never shown")
+	check(BaseLayout.plan([], {}).is_empty() and BaseLayout.stored_away(stash).is_empty(),
+			"an empty stash is an empty base, and nothing is stored away while it fits")
+	var many: Array[String] = []
+	for i in 6:
+		many.append("bike_scrapper")
+	check(BaseLayout.plan(many, {}).size() == 4 and BaseLayout.stored_away(many) == {"bay": 2},
+			"a full garage keeps the rest in storage")
+
+	print("Home base room")
+	var base := HomeBase.new()
+	base.show_gear(stash, {"primary": "rifle_carbine"})
+	add_child(base)
+	await frames(30)
+	check(base.displays.size() == plan.size(), "the room builds one display per planned spot")
+	check(base.player != null and base.player.is_on_floor() and base.player.weapons.is_empty(),
+			"you stand in the base unarmed")
+	var start := base.player.global_position
+	base.player.cmd.move = Vector2(0, 1)
+	await frames(30)
+	base.player.cmd.move = Vector2.ZERO
+	check(base.player.global_position.distance_to(start) > 1.5, "you can walk around it")
+	var spots := {}
+	var apart := true
+	for display in base.displays:
+		var key := "%s/%d" % [display.kind, display.index]
+		apart = apart and not spots.has(key) and absf(display.global_position.x) < base.room_size.x * 0.5 \
+				and absf(display.global_position.z) < base.room_size.z * 0.5
+		spots[key] = true
+	check(apart, "every display has its own spot inside the room")
+	var asked := []
+	base.equip_requested.connect(func(slot: String, id: String) -> void: asked.append([slot, id]))
+	var dmr := base.display_for("dmr_longshot")
+	_face_display(base.player, dmr)
+	await frames(2)
+	check(base.player.find_interactable() == dmr and dmr.get_prompt() == "[E] Equip Longshot DMR",
+			"looking at a gun on the rack offers to equip it")
+	await _use(base.player)
+	check(asked == [["primary", "dmr_longshot"]], "using it asks for that gun in the primary slot")
+	var carbine := base.display_for("rifle_carbine")
+	check(carbine.equipped and carbine.has_node("EquippedMark") and not dmr.has_node("EquippedMark"),
+			"equipped gear is marked on its display")
+	_face_display(base.player, carbine)
+	await frames(2)
+	await _use(base.player)
+	check(asked.size() == 2 and asked[1] == ["primary", ""], "using equipped gear asks to take it off")
+	var shard := base.display_for("lattice_shard")
+	_face_display(base.player, shard)
+	await frames(2)
+	await _use(base.player)
+	check(base.player.find_interactable() == shard and shard.get_prompt() == "Lattice Shard" and asked.size() == 2,
+			"loot is only for looking at")
+	var hud = BaseHudScript.new()
+	hud.setup(base)
+	base.add_child(hud)
+	await frames(2)
+	var lines: Array[String] = hud.describe(shard)
+	check(lines[0] == "Lattice Shard" and "Relic" in lines[1], "the overlay names what you look at and its rarity")
+	for kind: String in BaseLayout.KINDS:
+		var bike_or_gear: Array = by_kind.get(kind, [])
+		if bike_or_gear.is_empty():
+			continue
+		var shown := base.display_for(bike_or_gear[0]["id"])
+		_face_display(base.player, shown)
+		await frames(2)
+		check(base.player.find_interactable() == shown, "a %s display can be walked up to and looked at" % kind)
+	base.show_gear(["blade_arc"], {})
+	await frames(2)
+	check(base.displays.size() == 1 and base.display_for("dmr_longshot") == null,
+			"gear that leaves the stash leaves the base")
+	var left := [0]
+	base.leave_requested.connect(func() -> void: left[0] += 1)
+	_face_display(base.player, base.door)
+	await frames(2)
+	await _use(base.player)
+	check(left[0] == 1, "the door asks to go back to the hub")
+	base.read_only = true
+	base.show_gear(["dmr_longshot"], {"primary": "dmr_longshot"})
+	await frames(2)
+	_face_display(base.player, base.displays[0])
+	await frames(2)
+	await _use(base.player)
+	check(asked.size() == 2 and base.displays[0].get_prompt() == "Longshot DMR (equipped)",
+			"a base you are visiting cannot be changed")
+	base.queue_free()
+	await frames(2)
+
+	print("Home base from the hub")
+	Profile.reset()
+	Profile.welcome_granted = true
+	Profile.add_to_stash(["rifle_carbine", "dmr_longshot", "frame_bulwark", "bike_scrapper", "alloy_ingot"])
+	Profile.equip("primary", "rifle_carbine")
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await frames(2)
+	main.hub.base_requested.emit()
+	await frames(20)
+	check(main.base != null and not main.hub.visible and main.raid == null, "the hub opens your home base")
+	check(main.controller != null and main.controller.camera.current and main.base_hud != null,
+			"the base has a camera and an overlay")
+	check(main.base.displays.size() == 5 and main.base.display_for("rifle_carbine").equipped,
+			"it shows your stash and what you have equipped")
+	main.start_raid("ashfront")
+	check(main.raid == null, "you cannot deploy from inside the base")
+	# Real input: look at the DMR and press E.
+	var target: Node3D = main.base.display_for("dmr_longshot")
+	_face_display(main.base.player, target)
+	main.controller.yaw = main.base.player.cmd.yaw
+	main.controller.pitch = main.base.player.cmd.pitch
+	await frames(3)
+	Input.action_press("interact")
+	await frames(3)
+	Input.action_release("interact")
+	await frames(2)
+	check(Profile.equipped("primary") == "dmr_longshot", "pressing E on a rack changes your loadout")
+	check(main.base.display_for("dmr_longshot").equipped and not main.base.display_for("rifle_carbine").equipped,
+			"the displays show the change")
+	main.base.equip_requested.emit("vehicle", "bike_scrapper")
+	main.base.equip_requested.emit("primary", "frame_bulwark")
+	check(Profile.equipped("vehicle") == "bike_scrapper" and Profile.equipped("primary") == "dmr_longshot",
+			"a parked bike can be picked, and gear cannot go in the wrong slot")
+	main.base.leave_requested.emit()
+	await frames(3)
+	check(main.base == null and main.hub.visible and main.controller == null, "the door leads back to the hub")
+	check(main.hub.equipped("primary") == "dmr_longshot", "the hub shows the loadout chosen in the base")
+	# A server's stash is shown while in its lobby, and the local one is left alone.
+	main.hub.update_account({"name": "Vex", "stash": ["blade_arc", "bike_raider"], "loadout": {"melee": "blade_arc"},
+			"mastery": {}, "raids_played": 0, "raids_extracted": 0, "kills": 0})
+	main.enter_base()
+	await frames(5)
+	check(main.base.displays.size() == 2 and main.base.display_for("blade_arc").equipped,
+			"in a lobby the base shows the stash that server keeps")
+	main.base.equip_requested.emit("vehicle", "bike_raider")
+	check(Profile.equipped("vehicle") == "bike_scrapper", "online changes go to the server, not the local profile")
+	main._on_online_account_changed({"name": "Vex", "stash": ["blade_arc", "bike_raider"],
+			"loadout": {"melee": "blade_arc", "vehicle": "bike_raider"}, "mastery": {},
+			"raids_played": 0, "raids_extracted": 0, "kills": 0})
+	await frames(2)
+	check(main.base.display_for("bike_raider").equipped, "the base updates when the server answers")
+	main.leave_base()
+	main.hub.leave_lobby()
+	await frames(3)
+	main.visit_base("Kestrel", ["lattice_shard", "hammer_breaker"], {"melee": "hammer_breaker"})
+	await frames(5)
+	check(main.base != null and main.base.read_only and main.base.owner_name == "Kestrel"
+			and main.base.displays.size() == 2, "someone else's base can be visited")
+	main.base.displays[0].interact(main.base.player)
+	main.base.displays[1].interact(main.base.player)
+	check(Profile.equipped("melee") == "", "visiting never changes your own loadout")
+	main.leave_base()
+	await frames(3)
+	main.start_raid("ashfront")
+	await frames(5)
+	check(main.raid != null and main.raid.player.weapons[0].item_id == "dmr_longshot",
+			"gear picked in the base is what you deploy with")
+	main.raid.player.kill("test")
+	await frames(150)
+	main.queue_free()
+	await frames(2)
+	Profile.reset()

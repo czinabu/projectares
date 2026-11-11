@@ -15,6 +15,11 @@ func _ready() -> void:
 	await _settle(10)
 	await _shot(out_dir.path_join("hub.png"))
 	hub.queue_free()
+	await _base_shots(out_dir)
+	# `-- <output_dir> --base-only` stops after the home base.
+	if "--base-only" in args:
+		get_tree().quit()
+		return
 
 	var raid := Raid.new()
 	add_child(raid)
@@ -156,6 +161,38 @@ func _world_shots(out_dir: String) -> void:
 		await _shot(out_dir.path_join("%s_overview.png" % world.id))
 		raid.queue_free()
 		await _settle(2)
+
+
+## The home base with one of everything on show, from a few fixed angles.
+func _base_shots(out_dir: String) -> void:
+	var base := HomeBase.new()
+	base.show_gear(["rifle_carbine", "smg_stinger", "dmr_longshot", "shotgun_breacher", "blade_arc",
+			"hammer_breaker", "frame_runner", "frame_trooper", "frame_bulwark", "jetpack_mk2", "boots_thruster",
+			"wings_glide", "chip_blink", "chip_barrier", "chip_pulse", "bike_scrapper", "bike_raider", "medkit",
+			"medkit", "scrap_metal", "scrap_metal", "scrap_metal", "alloy_ingot", "reactor_core", "lattice_shard"],
+			{"primary": "dmr_longshot", "frame": "frame_bulwark", "vehicle": "bike_raider"})
+	add_child(base)
+	var camera := Camera3D.new()
+	camera.fov = 75.0
+	base.add_child(camera)
+	camera.make_current()
+	base.player.global_position = Vector3(3, 0.1, 2)
+	await _settle(40)
+	var views := {
+		"base_overview.png": [Vector3(0, 3.2, 8.2), Vector3(0, 1.2, -4)],
+		"base_weapons.png": [Vector3(-3, 1.9, -4.2), Vector3(-4.5, 1.5, -9)],
+		"base_blades.png": [Vector3(6, 1.9, -5.2), Vector3(6, 1.5, -9)],
+		"base_armor.png": [Vector3(-6.0, 1.8, -1.5), Vector3(-11, 1.2, -2.5)],
+		"base_rigs.png": [Vector3(6.0, 1.8, -1.0), Vector3(11, 1.2, -1.0)],
+		"base_garage.png": [Vector3(-1.0, 2.0, 3.2), Vector3(-2.5, 0.6, -1.5)],
+		"base_shelves.png": [Vector3(-6.5, 1.8, 4.6), Vector3(-7, 1.2, 9)],
+	}
+	for file: String in views:
+		camera.look_at_from_position(views[file][0], views[file][1])
+		await _settle(4)
+		await _shot(out_dir.path_join(file))
+	base.queue_free()
+	await _settle(2)
 
 
 func _settle(count: int) -> void:

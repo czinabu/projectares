@@ -120,6 +120,10 @@ game never tells it what gear you have.
 - Scavenger bots that patrol, chase and shoot, plus melee brutes that rush you.
   All of them drop loot bags.
 - Loot caches with five rarity tiers, a backpack, and a stash that persists.
+- A home base you walk around in, reached from the hub. Everything in your
+  stash is on show: guns on a rack, blades on the wall, armor on stands,
+  flight rigs, ability chips, bikes parked in the garage, loot on shelves.
+  Look at a piece of gear and press E to equip it for your next run.
 - Loadouts picked in the hub from your stash: primary weapon, melee weapon,
   flight rig and armor frame. Equipped gear is at risk. Extract and it comes
   home, die and it drops. Empty slots use a free scrap kit.
@@ -157,6 +161,7 @@ core/            Shared by every world. Never names a specific world.
   ui/            HUD and hub
   visual/        The art layer (`Look`): surfaces, atmosphere, models, effects, UI theme
   profile/       Stash and stats that persist between raids (local play)
+  base/          The home base: a room that puts the stash on show
   account/       Server-owned stashes for online play, and the shared gear rules
   progression/   Mastery: tracks and variants, XP tracking in a raid, hub panel
   net/           Online play: the server and client ends of a raid
