@@ -2474,6 +2474,14 @@ func _test_plaza_online() -> void:
 		main.leave_server()
 		await _wait_until(func() -> bool: return main.raid != null and main.raid.player != null, 600)
 		check(main.raid != null and main.raid.world.safe_zone, "leaving the lobby leads back to the plaza")
+		main.use_portal("home")
+		await _wait_until(func() -> bool: return main.base != null, 600)
+		check(main.base != null and main.raid == null and main.hub.in_lobby(),
+				"the quarters door opens your home base on the server's stash")
+		main.leave_base()
+		await _wait_until(func() -> bool: return main.raid != null and main.raid.player != null, 600)
+		check(main.base == null and main.raid != null and main.raid.world.safe_zone,
+				"the base's door leads back to the plaza")
 		main.use_portal("leave")
 		await frames(5)
 		check(main.net == null and main.raid == null and main.hub.visible and not main.hub.in_lobby(),

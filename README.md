@@ -103,7 +103,7 @@ Walk into a glowing pad and press **E** to use it:
 - **World gates** (north): each leads to that world's lobby, where you set
   your loadout and deploy. After a run, or when you leave the lobby, you are
   back in the Concourse.
-- **Quarters** (west): the door to your home base.
+- **Quarters** (west): the door to your home base. Its door leads back here.
 - **Arena** and **Clan hall**: built, and closed until those features arrive.
 - **Exit** (south): leaves the server.
 
