@@ -10,6 +10,7 @@ const ScoreboardScript := preload("res://core/ui/scoreboard.gd")
 const BaseLayout := preload("res://core/base/base_layout.gd")
 const BaseHudScript := preload("res://core/ui/base_hud.gd")
 const LookTests := preload("res://tests/look_tests.gd")
+const EconomyTests := preload("res://tests/economy_tests.gd")
 const CustomizerTests := preload("res://tests/customizer_tests.gd")
 
 var _passed := 0
@@ -61,6 +62,11 @@ func _run() -> void:
 	await _test_online_arena()
 	await LookTests.run(self)
 	await CustomizerTests.run(self)
+	await _test_economy()
+
+
+func _test_economy() -> void:
+	await EconomyTests.run(self)
 
 
 func check(condition: bool, what: String) -> void:
@@ -3231,7 +3237,7 @@ func _test_arena() -> void:
 	await frames(2)
 	check(not Arena.ArenaVenue.in_pit(me.global_position), "spectators who drop into the pit are put back in the stands")
 	arena.ask("bet", {"side": 0, "amount": 10})
-	check(Profile.credits == Profile.STARTING_CREDITS, "bets are refused when no bout is being called")
+	check(Profile.credits == StashService.Economy.STARTING_CREDITS, "bets are refused when no bout is being called")
 	arena.ask("practice")
 	check(arena.queue.size() == 1 or arena.bout != null, "you can ask for a practice bout")
 	await _arena_phase(arena, Arena.Phase.CALLING, 30)
@@ -3239,7 +3245,7 @@ func _test_arena() -> void:
 	check(board.phase == "calling" and board.bout.names[0] == "You" and board.bout.names[1] != "",
 			"the bout is called with both fighters' names")
 	arena.ask("bet", {"side": 0, "amount": 10})
-	check(Profile.credits == Profile.STARTING_CREDITS and not arena.bout.bets.has("local"),
+	check(Profile.credits == StashService.Economy.STARTING_CREDITS and not arena.bout.bets.has("local"),
 			"fighters cannot bet on their own bout")
 	await _arena_phase(arena, Arena.Phase.FIGHT)
 	var bot: Actor = arena.bout.fighters[1]
@@ -3263,13 +3269,13 @@ func _test_arena() -> void:
 	await _arena_phase(arena, Arena.Phase.CALLING, 60)
 	check(arena.bout != null and arena.bout.kind == "exhibition", "with nothing queued, bot gladiators put on an exhibition")
 	arena.ask("bet", {"side": 1, "amount": 50})
-	check(Profile.credits == Profile.STARTING_CREDITS - 50 and arena.bout.pools[1] == 50,
+	check(Profile.credits == StashService.Economy.STARTING_CREDITS - 50 and arena.bout.pools[1] == 50,
 			"the crowd can bet while a bout is being called")
 	arena.ask("bet", {"side": 0, "amount": 50})
 	check(arena.bout.pools[0] == 0, "you cannot back both sides")
 	arena.exhibition_delay = -1.0
 	await _win_bout(arena, 0)
-	check(Profile.credits == Profile.STARTING_CREDITS, "a wager nobody took the other side of is refunded")
+	check(Profile.credits == StashService.Economy.STARTING_CREDITS, "a wager nobody took the other side of is refunded")
 	arena.queue_free()
 	await frames(3)
 	check(Profile.stash == stash_before, "leaving the arena takes nothing from the stash")
@@ -3385,9 +3391,9 @@ func _test_online_arena() -> void:
 	service.persist = false
 	var made := service.sign_in("Wren", StashService.new_secret())
 	var stash_before: Array = service.snapshot(made.account_id).stash
-	check(service.credits_of("wren") == StashService.STARTING_CREDITS, "a new account starts with credits")
+	check(service.credits_of("wren") == StashService.Economy.STARTING_CREDITS, "a new account starts with credits")
 	check(not service.change_credits("wren", -10000) and service.change_credits("wren", -50)
-			and service.credits_of("wren") == StashService.STARTING_CREDITS - 50, "credits never go below zero")
+			and service.credits_of("wren") == StashService.Economy.STARTING_CREDITS - 50, "credits never go below zero")
 	service.equip("wren", "primary", "rifle_carbine")
 	var deployed := service.deploy("wren", Arena.ArenaVenue.new())
 	check(deployed.ok and "rifle_carbine" in deployed.kit and service.snapshot("wren").stash == stash_before
@@ -3409,7 +3415,7 @@ func _test_online_arena() -> void:
 	check(not ash.account.get("deployed", true), "nothing left the stash to enter the arena")
 	var ash_arena: Arena = ash.raid
 	await _wait_until(func() -> bool: return ash_arena.board.get("players", []).size() == 1, 240)
-	check(ash_arena.board.get("you", {}).get("credits", 0) == StashService.STARTING_CREDITS
+	check(ash_arena.board.get("you", {}).get("credits", 0) == StashService.Economy.STARTING_CREDITS
 			and ash_arena.board.players[0].name == "Brix", "each player gets the board, with their credits")
 	var notices: Array[String] = []
 	ash.raid.player.notice.connect(func(text: String) -> void: notices.append(text))
@@ -3425,7 +3431,7 @@ func _test_online_arena() -> void:
 	await _wait_until(func() -> bool: return bex_arena.board.get("phase", "") == "calling", 240)
 	check(bex_arena.board.get("phase", "") == "calling" and bex_arena.board.bout.names == ["Ashe", "Brix"]
 			and bex_arena.board.bout.stake == 50, "the server calls the duel with both stakes in the purse")
-	check(int(bex_arena.board.get("you", {}).get("credits", 0)) == StashService.STARTING_CREDITS - 25,
+	check(int(bex_arena.board.get("you", {}).get("credits", 0)) == StashService.Economy.STARTING_CREDITS - 25,
 			"the stake is taken from the server's account")
 	OS.kill(pid)
 	await _leave(ash)

@@ -133,6 +133,20 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   `Profile` or `NetSession.equip`. Like `Raid`, `HomeBase` has no camera, HUD
   or input code, and its displays are greybox shapes that `Look` dresses
   (any node with the meta `display_item`).
+- Money (`core/economy/`): the rules live once, in `economy.gd` (static, like
+  `StashRules`), shared by `Profile` and `StashService`. Online, `credits`
+  lives on the server's account and only changes there: through
+  `StashService.buy` / `sell`, the payout in `settle`, or `change_credits`
+  for other server systems. A client never sends a price or an amount.
+  Shops are tag-driven: an item is stocked if it has the `vendor` tag and one
+  of the shop's tags (`shop_db.gd`), and `Economy.is_shop_item` refuses
+  anything above Uncommon, so rare gear stays loot-only. Keep every sell
+  price below its buy price, and keep run payouts small next to loot: credits
+  must come from getting loot home, so full loot stays the stake.
+- Furniture (`furniture`, small pieces also `decor`) and clothing
+  (`cosmetic`, with an `outfits` stat of customizer outfit ids) are ordinary
+  stash items that fit no loadout slot, so they never go on a raid.
+  `Economy.unlocked_outfits(stash)` lists the outfits a stash unlocks.
 
 - The arena (`core/arena/`) is a venue, not a raid world: `ArenaVenue` is a
   `WorldDef` that is never in the registry, has `gear_at_risk` off, and
