@@ -4,8 +4,10 @@ A full-loot PvPvE extraction game with plug-in worlds, built in Godot 4.
 Drop into a world with gear you are willing to lose, fight and loot, and reach
 an exit before the storm closes. Die and everything you carried stays behind.
 
-This is the **Phase 0 prototype**: a greybox raid against bots that proves the
-core loop and lays the foundation for online play and more worlds.
+This is the **Phase 0 prototype**: a raid against bots that proves the core
+loop and lays the foundation for online play and more worlds. Gameplay shapes
+are still simple boxes; a first art pass dresses them with real surfaces,
+skies, animated models and effects (see "How it looks" below).
 
 ## Play it
 
@@ -113,6 +115,7 @@ core/            Shared by every world. Never names a specific world.
   ai/            Bot brain
   player/        Local input and camera
   ui/            HUD and hub
+  visual/        The art layer (`Look`): surfaces, atmosphere, models, effects, UI theme
   profile/       Stash and stats that persist between raids (local play)
   account/       Server-owned stashes for online play, and the shared gear rules
   progression/   Mastery: tracks and variants, XP tracking in a raid, hub panel
@@ -120,6 +123,7 @@ core/            Shared by every world. Never names a specific world.
 worlds/
   ashfront/      The first world: rules, loot tables, and its map
   frostline/     A second, smaller world that proves the plug-in contract
+assets/          Models, textures, sky, font and shaders, with LICENSES.md
 tests/           Headless test suite and a screenshot tool
 ```
 
@@ -132,6 +136,25 @@ Three rules keep the foundation solid:
 3. **All damage goes through `Combat.deal`**, which asks the world whether the
    hit is allowed. PvP rules live in the world, not in weapons.
 
+## How it looks
+
+The look is gritty sci-fi: worn concrete and rusted metal, a photographed sky,
+haze, and weathered machines. All of it lives in one layer, the `Look`
+autoload in `core/visual/`, so gameplay code stays plain:
+
+- Maps build boxes and ask `Look.surface("concrete", {...})` for a material.
+  Surfaces are world-space, so a box of any size tiles correctly. Options add
+  windows, grime, puddles and snow.
+- `Look.atmosphere(map, {...})` sets the sky, sun, fog and color grade, and
+  `Look.weather` fills the air with embers, snow or ash.
+- `Look` watches the scene tree and dresses what the game spawns: actors get
+  animated models, guns get models picked by item tag, caches become crates.
+  A world picks a bot's model with `bot.set_meta("look", "<skin>")`.
+- On a headless server `Look` does nothing, so the simulation never depends
+  on art.
+
+Every asset is CC0 or OFL. Sources and licenses are in `assets/LICENSES.md`.
+
 ## Add a world
 
 1. Copy `worlds/frostline` (the smaller example) to `worlds/<your_world>`.
@@ -139,7 +162,8 @@ Three rules keep the foundation solid:
 3. Items that only exist in your world go in `register_items()`. Prefix their
    ids with the world id. Once stashed they work in every world.
 4. Build a map that provides the markers listed at the top of
-   `core/world/world_def.gd`.
+   `core/world/world_def.gd`. Give it a mood with `Look.atmosphere` and
+   surfaces from `Look.surface`.
 
 The hub finds it automatically and adds a deploy button, and the
 "Every world plugs in" tests run a raid in it. No core code changes.

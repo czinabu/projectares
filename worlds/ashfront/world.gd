@@ -105,6 +105,7 @@ func can_damage(attacker: Node, target: Node, _info: DamageInfo) -> bool:
 func equip_bot(bot: Actor, rng: RandomNumberGenerator) -> void:
 	bot.faction = "scav"
 	bot.display_name = "Scavenger"
+	bot.set_meta("look", "scavenger")
 	bot.body_color = Color(0.85, 0.3, 0.2)
 	if bot.body_mesh:
 		var mat := StandardMaterial3D.new()
@@ -133,6 +134,7 @@ func equip_bot(bot: Actor, rng: RandomNumberGenerator) -> void:
 ## makes it the enemy to practice parrying on.
 func _make_brute(bot: Actor) -> void:
 	bot.display_name = "Scav Brute"
+	bot.set_meta("look", "heavy")
 	bot.body_color = Color(0.5, 0.1, 0.12)
 	if bot.body_mesh:
 		var mat := StandardMaterial3D.new()

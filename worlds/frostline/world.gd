@@ -132,6 +132,7 @@ func equip_bot(bot: Actor, rng: RandomNumberGenerator) -> void:
 func _make_warden(bot: Actor, rng: RandomNumberGenerator) -> void:
 	bot.faction = "warden"
 	bot.display_name = "Warden"
+	bot.set_meta("look", "sentinel")
 	_paint(bot, Color(0.55, 0.8, 0.95))
 	bot.walk_speed = 3.6
 	bot.sprint_speed = 5.2
@@ -154,6 +155,7 @@ func _make_warden(bot: Actor, rng: RandomNumberGenerator) -> void:
 func _make_feral(bot: Actor, rng: RandomNumberGenerator) -> void:
 	bot.faction = "feral"
 	bot.display_name = "Feral Stalker"
+	bot.set_meta("look", "stalker")
 	_paint(bot, Color(0.18, 0.2, 0.26))
 	bot.walk_speed = 6.0
 	bot.sprint_speed = 9.0
