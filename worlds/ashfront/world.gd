@@ -17,6 +17,8 @@ const CACHE_TABLE := [
 	{"id": "hammer_breaker", "weight": 2.5},
 	{"id": "frame_runner", "weight": 2.5},
 	{"id": "frame_trooper", "weight": 2.5},
+	{"id": "boots_thruster", "weight": 2.5},
+	{"id": "chip_barrier", "weight": 2.5},
 ]
 
 ## Rooftops need the jetpack to reach, so they pay better.
@@ -31,6 +33,9 @@ const ROOFTOP_TABLE := [
 	{"id": "blade_arc", "weight": 9.0},
 	{"id": "frame_bulwark", "weight": 8.0},
 	{"id": "jetpack_mk2", "weight": 7.0},
+	{"id": "wings_glide", "weight": 7.0},
+	{"id": "chip_blink", "weight": 7.0},
+	{"id": "chip_pulse", "weight": 7.0},
 ]
 
 ## Share of scavengers that are melee brutes.

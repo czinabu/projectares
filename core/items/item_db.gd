@@ -76,6 +76,26 @@ func _ready() -> void:
 	register("jetpack_mk2", "Mk2 Jetpack", Rarity.RARE, 950, ["flight_rig"],
 			{"thrust_accel": 42.0, "max_rise_speed": 11.0, "heat_per_sec": 25.0},
 			"Stronger thrust and a third more air time.")
+	register("boots_thruster", "Thruster Boots", Rarity.UNCOMMON, 600, ["flight_rig"],
+			{"thrust_accel": 0.0, "burst_velocity": 10.5, "burst_heat": 30.0, "cool_per_sec": 34.0,
+			"cool_delay": 0.3},
+			"No sustained flight. Press jump in the air for a hard kick upward, three in a row.")
+	register("wings_glide", "Glide Wings", Rarity.RARE, 1100, ["flight_rig"],
+			{"thrust_accel": 0.0, "burst_velocity": 13.0, "burst_heat": 55.0, "cool_per_sec": 20.0,
+			"glide_fall_speed": 1.8, "glide_speed": 16.0},
+			"One strong launch, then hold jump to glide fast and far. Crosses the map from a rooftop.")
+
+	# Abilities
+	register("chip_blink", "Phase Step", Rarity.RARE, 900, ["ability"],
+			{"effect": "blink", "cooldown": 8.0, "blink_range": 9.0},
+			"Step nine meters in the direction you aim. Stops short of walls.")
+	register("chip_barrier", "Kinetic Barrier", Rarity.UNCOMMON, 650, ["ability"],
+			{"effect": "barrier", "cooldown": 20.0, "duration": 4.0, "damage_reduction": 0.6},
+			"For four seconds you take 60% less damage from bullets and blades.")
+	register("chip_pulse", "Shock Pulse", Rarity.RARE, 850, ["ability"],
+			{"effect": "pulse", "cooldown": 16.0, "pulse_radius": 6.5, "pulse_damage": 18.0,
+			"pulse_stagger": 1.3},
+			"A shockwave that hurts and staggers everyone near you.")
 
 	# Consumables
 	register("medkit", "Medkit", Rarity.COMMON, 60, ["consumable", "heal"], {"heal": 50.0}, "Heals 50.")

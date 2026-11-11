@@ -24,6 +24,7 @@ func _ready() -> void:
 	_streams["hit"] = _tones([1500.0], 0.05, 60.0, 0.35)
 	_streams["kill"] = _tones([900.0, 1350.0], 0.16, 18.0, 0.4)
 	_streams["parry"] = _tones([1800.0, 2700.0, 3650.0], 0.35, 11.0, 0.45)
+	_streams["ability"] = _tones([520.0, 1040.0, 1560.0], 0.3, 9.0, 0.4)
 	_streams["loot"] = _tones([660.0, 990.0], 0.14, 20.0, 0.3)
 	_streams["thrust"] = _thrust_loop(0.6)
 

@@ -52,6 +52,7 @@ var cmd := ActorCommand.new()
 var health := HealthComponent.new()
 var inventory := Inventory.new()
 var flight := FlightRig.new()
+var ability := Ability.new()
 var weapons: Array[Weapon] = []
 var active_weapon_index := 0
 ## Item ids of equipped gear (weapons, rig, armor). Dropped on death.
@@ -87,6 +88,9 @@ func _init() -> void:
 	add_child(health)
 	add_child(inventory)
 	add_child(flight)
+	ability.name = "Ability"
+	ability.actor = self
+	add_child(ability)
 	hand.name = "Hand"
 	hand.position = HAND_REST
 	add_child(hand)
@@ -144,6 +148,9 @@ func _physics_process(delta: float) -> void:
 	_simulate_timers(delta)
 	_simulate_movement(delta)
 	_simulate_weapons(delta)
+	ability.tick(delta)
+	if cmd.ability_pressed and stagger_left <= 0.0:
+		ability.activate()
 	_simulate_heal(delta)
 	if cmd.interact_pressed:
 		var target := find_interactable()
@@ -190,6 +197,7 @@ func modify_incoming(info: DamageInfo) -> void:
 	var weapon := get_active_weapon()
 	if weapon and not is_dead and stagger_left <= 0.0:
 		weapon.modify_incoming(info)
+	ability.modify_incoming(info)
 
 
 func _simulate_movement(delta: float) -> void:
@@ -204,8 +212,14 @@ func _simulate_movement(delta: float) -> void:
 	if staggered:
 		speed *= stagger_speed_mult
 	var horizontal := Vector3(velocity.x, 0.0, velocity.z)
+	# Gliding: holding jump while falling with wings carries you forward.
+	flight.is_gliding = flight.can_glide() and cmd.jump and not on_floor and velocity.y < 0.0 \
+			and not staggered
 	if on_floor:
 		horizontal = horizontal.move_toward(wish * speed, ground_accel * delta)
+	elif flight.is_gliding:
+		var heading := wish.normalized() if wish.length() > 0.1 else yaw_basis * Vector3.FORWARD
+		horizontal = horizontal.move_toward(heading * flight.glide_speed, flight.glide_accel * delta)
 	elif wish.length() > 0.01:
 		# In the air you can steer but you keep your momentum if you let go.
 		horizontal = horizontal.move_toward(wish * speed, air_accel * delta)
@@ -224,10 +238,16 @@ func _simulate_movement(delta: float) -> void:
 
 	if on_floor and cmd.jump_pressed and not staggered:
 		velocity.y = jump_velocity
+	elif cmd.jump_pressed and not staggered:
+		var burst := flight.try_burst()
+		if burst > 0.0:
+			velocity.y = maxf(velocity.y, burst)
 	var thrust := flight.tick(cmd.jump and not on_floor and not staggered, delta)
 	velocity.y += (thrust - gravity) * delta
 	if thrust > 0.0:
 		velocity.y = minf(velocity.y, flight.max_rise_speed)
+	if flight.is_gliding:
+		velocity.y = maxf(velocity.y, -flight.glide_fall_speed)
 	velocity.y = maxf(velocity.y, -max_fall_speed)
 
 	var fall_speed := -velocity.y

@@ -29,6 +29,9 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   decide what an item does.
 - Gear behavior comes from the item's `stats` in `ItemDB`, applied by
   `Loadout.equip`. Add a new gun or frame as data, not as a new class.
+- Flight rigs and abilities are data too. `FlightRig` and `Ability` are single
+  classes whose item stats pick the behavior. Abilities fire from
+  `ActorCommand.ability_pressed`.
 - `starter`-tagged items are the free scrap kit. They never enter the stash.
 - `Raid` never touches `Profile` to build a kit. The kit is passed into
   `Raid.start`, so a server can supply it later.

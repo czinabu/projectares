@@ -9,13 +9,17 @@ const SLOTS := {
 	"melee": "melee",
 	"rig": "flight_rig",
 	"frame": "armor",
+	"ability": "ability",
 }
 const SLOT_NAMES := {
 	"primary": "Primary weapon",
 	"melee": "Melee weapon",
 	"rig": "Flight rig",
 	"frame": "Armor frame",
+	"ability": "Ability",
 }
+## Slots with no free scrap item. Left empty, you deploy without one.
+const OPTIONAL_SLOTS := ["ability"]
 ## How many healing items are taken from the stash on deploy.
 const MAX_HEAL_ITEMS := 2
 
@@ -40,6 +44,12 @@ static func equip(actor: Actor, item_ids: Array) -> void:
 			actor.flight.display_name = ItemDB.item_name(id)
 			_apply_stats(actor.flight, stats)
 			actor.gear_items.append(id)
+		elif ItemDB.has_tag(id, "ability"):
+			actor.ability.enabled = true
+			actor.ability.item_id = id
+			actor.ability.display_name = ItemDB.item_name(id)
+			_apply_stats(actor.ability, stats)
+			actor.gear_items.append(id)
 		elif ItemDB.has_tag(id, "armor"):
 			frames.append(id)
 		else:
@@ -52,6 +62,7 @@ static func equip(actor: Actor, item_ids: Array) -> void:
 		actor.walk_speed *= speed
 		actor.sprint_speed *= speed
 		actor.flight.heat_per_sec *= stats.get("heat_mult", 1.0)
+		actor.flight.burst_heat *= stats.get("heat_mult", 1.0)
 		actor.frame_name = ItemDB.item_name(id)
 		actor.gear_items.append(id)
 

@@ -115,7 +115,7 @@ func _refresh_loadout() -> void:
 	for slot: String in Loadout.SLOTS:
 		var picker: OptionButton = _pickers[slot]
 		picker.clear()
-		picker.add_item("Scrap kit (free)")
+		picker.add_item("None" if slot in Loadout.OPTIONAL_SLOTS else "Scrap kit (free)")
 		picker.set_item_metadata(0, "")
 		var equipped := Profile.equipped(slot)
 		var selected := 0

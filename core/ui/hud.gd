@@ -123,7 +123,8 @@ func _process(delta: float) -> void:
 	_heat_bar.visible = p.flight.enabled
 	_heat_label.visible = p.flight.enabled
 	_heat_bar.value = p.flight.heat_fraction() * 100.0
-	_heat_label.text = "OVERHEATED" if p.flight.overheated else "%s heat" % p.flight.display_name
+	_heat_label.text = "OVERHEATED" if p.flight.overheated else "%s heat%s" % [
+		p.flight.display_name, "   gliding" if p.flight.is_gliding else ""]
 	_heat_label.modulate = Color(1, 0.35, 0.25) if p.flight.overheated else Color.WHITE
 
 	var weapon := p.get_active_weapon()
@@ -136,13 +137,17 @@ func _process(delta: float) -> void:
 	for i in p.weapons.size():
 		var w := p.weapons[i]
 		slots.append("%s [%d] %s" % [">" if w == weapon else " ", i + 1, w.status_text()])
+	if p.ability.enabled:
+		slots.append("  [G] %s" % p.ability.status_text())
 	_weapon.text = "\n".join(slots) if not slots.is_empty() else "Unarmed"
 	_backpack.text = "Backpack %d/%d   worth %d   Heals %d" % [
 		p.inventory.items.size(), p.inventory.capacity, p.inventory.total_value(),
 		p.inventory.count_with_tag("heal")]
 
-	_view.text = "Camera: %s   press V to switch\nWASD move   Shift sprint   Space jump, hold to fly   Q dash   H heal   E loot\n1 / 2 or mouse wheel: switch weapon   %s" % [
+	_view.text = "Camera: %s   press V to switch\nWASD move   Shift sprint   %s   Q dash   H heal   E loot%s\n1 / 2 or mouse wheel: switch weapon   %s" % [
 		PlayerController.VIEW_NAMES[controller.view_mode],
+		p.flight.controls_hint(),
+		"   G ability" if p.ability.enabled else "",
 		weapon.controls_hint() if weapon else ""]
 	if blade:
 		_view.text += "\nMelee side: %s, %s   press B to switch" % [
