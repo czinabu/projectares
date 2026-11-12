@@ -750,7 +750,9 @@ func add_player(p_kit: Array = [], p_mastery: Dictionary = {}, p_name := "Raider
 		if ItemDB.has_tag(id, "vehicle"):
 			state.deployed_vehicles.append(id)
 			var side := Basis(Vector3.UP, actor.cmd.yaw) * Vector3(2.5, 0.3, -1.0)
-			state.parked.append(spawn_vehicle(id, actor.global_position + side, actor.cmd.yaw))
+			# On a slope the ground beside them is not at their feet.
+			var beside := _stand(actor.global_position + side) + Vector3(0, 0.15, 0)
+			state.parked.append(spawn_vehicle(id, beside, actor.cmd.yaw))
 	return actor
 
 

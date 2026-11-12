@@ -2493,7 +2493,11 @@ func _test_online() -> void:
 				"a client's raid lists the players, separate from the bots")
 		if seen != null:
 			var from := seen.global_position
-			alpha.raid.player.cmd.move = Vector2(0, 1)
+			# Walk where there is room, so nothing knocks the two screens apart.
+			var walker := alpha.raid.player
+			walker.cmd.yaw = _yaw_toward(_clear_run(walker, walker.global_position, Vector3.FORWARD, 14.0))
+			await frames(10)
+			walker.cmd.move = Vector2(0, 1)
 			await frames(90)
 			alpha.raid.player.cmd.move = Vector2.ZERO
 			await frames(30)
@@ -2674,6 +2678,9 @@ func _test_online() -> void:
 				"the other client sees them return, and they still see the world")
 		if back.call():
 			var from := bravo.raid.player.global_position
+			# Walk where there is room: a drop point has a wall and a bike by it.
+			bravo.raid.player.cmd.yaw = _yaw_toward(_clear_run(bravo.raid.player, from, Vector3.FORWARD, 10.0))
+			await frames(10)
 			bravo.raid.player.cmd.move = Vector2(0, 1)
 			await frames(60)
 			bravo.raid.player.cmd.move = Vector2.ZERO
@@ -2730,6 +2737,10 @@ func _test_online_movement() -> void:
 	var from := me.global_position
 	var worst_step := 0.0
 	var last := from
+	# Run where there is room: the other player and the drop point's wall
+	# stand somewhere around.
+	me.cmd.yaw = _yaw_toward(_clear_run(me, from, Vector3.FORWARD, 22.0))
+	await frames(20)
 	me.cmd.move = Vector2(0, 1)
 	me.cmd.sprint = true
 	for i in 150:
@@ -2797,6 +2808,51 @@ static func _yaw_toward(dir: Vector3) -> float:
 	return atan2(-dir.x, -dir.z)
 
 
+## Whether `actor` could run `reach` metres along `dir` (flat, unit length)
+## from `from` without meeting a wall, a wreck, a bike or another actor. It
+## follows the ground, so a slope does not count as a wall.
+func _run_is_clear(actor: Actor, from: Vector3, dir: Vector3, reach: float) -> bool:
+	var space := actor.get_world_3d().direct_space_state
+	var skip: Array[RID] = []
+	for other in get_tree().get_nodes_in_group("actors"):
+		if other is Actor and Raid.together(other, actor):
+			skip.append((other as Actor).get_rid())
+			var to: Vector3 = (other as Actor).global_position - from
+			to.y = 0.0
+			var along := to.dot(dir)
+			if other != actor and along > 0.0 and along < reach + 1.0 and (to - dir * along).length() < 1.6:
+				return false
+	var last := Vector3.ZERO
+	for i in int(reach) + 1:
+		var above := from + dir * float(i) + Vector3(0, 4.0, 0)
+		var down := PhysicsRayQueryParameters3D.create(above, above + Vector3(0, -12.0, 0))
+		down.exclude = skip
+		var floor_hit := space.intersect_ray(down)
+		if floor_hit.is_empty():
+			return false
+		var chest: Vector3 = floor_hit.position + Vector3(0, 0.9, 0)
+		if i > 0:
+			if absf(chest.y - last.y) > 0.7:
+				return false
+			var ray := PhysicsRayQueryParameters3D.create(last, chest)
+			ray.exclude = skip
+			if not space.intersect_ray(ray).is_empty():
+				return false
+		last = chest
+	return true
+
+
+## A flat direction `actor` can run `reach` metres in from `from`: `prefer`
+## if that is clear, otherwise the nearest clear one to it.
+func _clear_run(actor: Actor, from: Vector3, prefer: Vector3, reach: float) -> Vector3:
+	for i in 16:
+		var turn := TAU / 16.0 * float((i + 1) / 2) * (1.0 if i % 2 == 1 else -1.0)
+		var dir := prefer.rotated(Vector3.UP, turn)
+		if _run_is_clear(actor, from, dir, reach):
+			return dir
+	return prefer
+
+
 func _test_online_lag_compensation() -> void:
 	print("Online: a lagging shooter hits what is on their screen")
 	var with_rewind := await _lagged_shots(24817, [])
@@ -2843,7 +2899,11 @@ func _lagged_shots(port: int, extra: Array[String]) -> Array:
 	runner.cmd.yaw = _yaw_toward(-away.normalized() if away.length() > 0.1 else Vector3.FORWARD)
 	runner.cmd.move = Vector2(0, -1)
 	await frames(30)
-	runner.cmd.move = Vector2(1, 0)
+	# He strafes to whichever side has room, so nothing stops him mid-run.
+	var right := Vector3.RIGHT.rotated(Vector3.UP, runner.cmd.yaw)
+	var room_right := _run_is_clear(runner, runner.global_position, right, 12.0)
+	var room_left := _run_is_clear(runner, runner.global_position, -right, 12.0)
+	runner.cmd.move = Vector2(1, 0) if room_right or not room_left else Vector2(-1, 0)
 	me.cmd.secondary = true
 	var shots := 0
 	for i in 80:
@@ -2889,6 +2949,16 @@ func _test_online_riding() -> void:
 		await frames(30)
 		return
 	var me := faye.raid.player
+	# The other player steps out of the bike's way.
+	var walker := gus.raid.player
+	var aside := walker.global_position - bike.global_position
+	aside.y = 0.0
+	aside = _clear_run(walker, walker.global_position,
+			aside.normalized() if aside.length() > 0.1 else Vector3.BACK, 8.0)
+	walker.cmd.yaw = _yaw_toward(aside)
+	walker.cmd.move = Vector2(0, 1)
+	await frames(100)
+	walker.cmd.move = Vector2.ZERO
 	var aim := bike.global_position + Vector3(0, 0.6, 0) - me.get_eye_position()
 	me.cmd.aim_dir = aim.normalized()
 	me.cmd.yaw = _yaw_toward(aim)
