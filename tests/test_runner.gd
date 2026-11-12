@@ -3826,28 +3826,36 @@ func _test_vehicle_toys() -> void:
 ## room, and waits for the bike to stand unpacked close by.
 func _throw_own_bike(session: NetSession) -> void:
 	var me := session.raid.player
-	var near := func() -> bool:
-		return session.vehicles().any(func(v: Node3D) -> bool:
-			return is_instance_valid(v) and v.global_position.distance_to(me.global_position) < 25.0 and float(v.get("unpack_left")) <= 0.0)
+	var before: Array = session.vehicles().duplicate()
+	var thrown := func() -> Node3D:
+		for v: Node3D in session.vehicles():
+			if is_instance_valid(v) and v not in before and float(v.get("unpack_left")) <= 0.0 \
+					and v.global_position.distance_to(me.global_position) < 25.0:
+				return v
+		return null
 	await _wait_until(func() -> bool: return not session.raid.stowed_for(me).is_empty(), 180)
+	# Throw the bike along open ground and walk to that one. The map's own
+	# bikes may stand behind a wall, and a walk that gets stuck wanders off and
+	# fails every check after it.
 	for turn in 4:
-		if near.call() or session.raid.stowed_for(me).is_empty():
+		if thrown.call() != null or session.raid.stowed_for(me).is_empty():
 			break
-		me.cmd.yaw = turn * PI * 0.5
+		var toward := Vector3.FORWARD.rotated(Vector3.UP, turn * PI * 0.5)
+		me.cmd.yaw = _yaw_toward(_clear_run(me, me.global_position, toward, 12.0))
 		me.cmd.pitch = -0.2
 		me.cmd.aim_dir = Vector3.ZERO
 		await frames(10)
 		session.throw_toy(session.raid.stowed_for(me)[0])
-		await _wait_until(near, 240)
-	await _wait_until(near, 240)
-	# Walk up to the nearest bike, close enough to get on.
-	var bike: Node3D = null
-	for v: Node3D in session.vehicles():
-		if is_instance_valid(v) and (bike == null or v.global_position.distance_to(me.global_position)
-				< bike.global_position.distance_to(me.global_position)):
-			bike = v
+		await _wait_until(func() -> bool: return thrown.call() != null, 240)
+	var bike: Node3D = thrown.call()
+	if bike == null:
+		for v: Node3D in session.vehicles():
+			if is_instance_valid(v) and (bike == null or v.global_position.distance_to(me.global_position)
+					< bike.global_position.distance_to(me.global_position)):
+				bike = v
 	if bike == null:
 		return
+	# Walk up to it, close enough to get on.
 	for i in 400:
 		var gap := bike.global_position - me.global_position
 		gap.y = 0.0
