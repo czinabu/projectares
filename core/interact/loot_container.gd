@@ -44,10 +44,10 @@ func get_prompt() -> String:
 	# A bag is cleared away once it is emptied, so one that is still here
 	# holds something, if only scrip.
 	if items.is_empty() and is_bag:
-		return "[E] Loot %s" % label
+		return "[F] Loot %s" % label
 	if items.is_empty():
 		return "%s (empty)" % label
-	return "[E] Loot %s (%d)" % [label, items.size()]
+	return "[F] Loot %s (%d)" % [label, items.size()]
 
 
 func interact(actor: Actor) -> void:

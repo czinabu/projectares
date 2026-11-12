@@ -88,8 +88,8 @@ class Display:
 		if slot == "" or (base and base.read_only):
 			return shown + (" (equipped)" if equipped else "")
 		if equipped:
-			return "[E] Take off %s (equipped)" % shown
-		return "[E] Equip %s" % shown
+			return "[F] Take off %s (equipped)" % shown
+		return "[F] Equip %s" % shown
 
 	func interact(_actor: Actor) -> void:
 		if slot != "" and base and not base.read_only:
@@ -111,7 +111,7 @@ class Station:
 		var title: String = HomeBase.STATIONS[id]["title"]
 		if base and base.read_only:
 			return "%s (not yours)" % title
-		return "[E] %s: %s" % [title, HomeBase.STATIONS[id]["prompt"]]
+		return "[F] %s: %s" % [title, HomeBase.STATIONS[id]["prompt"]]
 
 	func interact(_actor: Actor) -> void:
 		if base and not base.read_only:
@@ -125,7 +125,7 @@ class Door:
 	var base: HomeBase
 
 	func get_prompt() -> String:
-		return "[E] %s" % (base.door_text if base else "Leave")
+		return "[F] %s" % (base.door_text if base else "Leave")
 
 	func interact(_actor: Actor) -> void:
 		if base:
@@ -339,8 +339,8 @@ func _build_banner() -> void:
 func banner_text() -> String:
 	if read_only:
 		return "You are visiting. Look around: the gear stays where it is."
-	return "Everything in your stash is on show. Look at gear and press E to equip it.\n" \
-			+ "Walk up to a console and press E to use its screen. Esc steps back."
+	return "Everything in your stash is on show. Look at gear and press F to equip it.\n" \
+			+ "Walk up to a console and press F to use its screen. Esc steps back."
 
 
 func _spawn_player() -> void:

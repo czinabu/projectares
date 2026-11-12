@@ -32,7 +32,7 @@ func _ready() -> void:
 			"recoil_kick_deg": 0.7, "max_range": 90.0},
 			"Reliable semi-auto sidearm. Accurate, and quick to reload.")
 	register("jetpack_mk1", "Mk1 Jetpack", Rarity.COMMON, 0, ["flight_rig", "starter"], {},
-			"Basic jetpack. Overheats quickly.")
+			"Basic jetpack. Tap jump in the air to hover and fly anywhere. Overheats quickly.")
 	register("plate_light", "Scrap Plate", Rarity.COMMON, 0, ["armor", "frame_light", "starter"],
 			{"armor": 30.0}, "30 armor.")
 	register("field_dressing", "Field Dressing", Rarity.COMMON, 0, ["consumable", "heal", "starter"],
@@ -95,15 +95,15 @@ func _ready() -> void:
 	# Flight rigs
 	register("jetpack_mk2", "Mk2 Jetpack", Rarity.RARE, 950, ["flight_rig"],
 			{"thrust_accel": 42.0, "max_rise_speed": 11.0, "heat_per_sec": 25.0},
-			"Stronger thrust and a third more air time.")
+			"Free flight: hover, strafe, climb and boost head first. Stronger thrust and a third more air time.")
 	register("boots_thruster", "Thruster Boots", Rarity.UNCOMMON, 600, ["flight_rig", "vendor"],
 			{"thrust_accel": 0.0, "burst_velocity": 10.5, "burst_heat": 30.0, "cool_per_sec": 34.0,
-			"cool_delay": 0.3},
-			"No sustained flight. Press jump in the air for a hard kick upward, three in a row.")
+			"cool_delay": 0.3, "burst_push": 9.0},
+			"No sustained flight. Press jump in the air for a hard kick up and the way you steer, three in a row. Cools fastest.")
 	register("wings_glide", "Glide Wings", Rarity.RARE, 1100, ["flight_rig"],
 			{"thrust_accel": 0.0, "burst_velocity": 13.0, "burst_heat": 55.0, "cool_per_sec": 20.0,
 			"glide_fall_speed": 1.8, "glide_speed": 16.0},
-			"One strong launch, then hold jump to glide fast and far. Crosses the map from a rooftop.")
+			"One strong launch, then hold jump to glide. Fastest and furthest of any rig: dive for speed, pull up to climb on it. Cannot hover.")
 
 	# Abilities
 	register("chip_blink", "Phase Step", Rarity.RARE, 900, ["ability", "blink"],

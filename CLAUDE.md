@@ -171,6 +171,17 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
 - Flight rigs and abilities are data too. `FlightRig` and `Ability` are single
   classes whose item stats pick the behavior. Abilities fire from
   `ActorCommand.ability_pressed`.
+- Flight is simulated in `Actor` from the command, like a dash, so it
+  predicts and replicates: jets lit by a tap in the air
+  (`FlightRig.is_hovering`, flown by `Actor._simulate_hover`; the server
+  repeats it in each state as `ActorCommand.STATE_HOVERING`), a boost along
+  the look direction, and a glide whose speed is energy
+  (`Actor._glide_velocity`). Keep the three rigs different: jetpack free but
+  heat-bound, boots quick kicks, wings fastest and furthest but no hover.
+  The body's attitude in the air (flat, banked, leaning, rolled by
+  `ActorCommand.roll`) is the skin's job (`ActorSkin._update_glide`), read
+  from velocity and the command only, so remote players match. Check it by
+  eye: `visual_check.tscn -- <dir> --flight-only`.
 - Helmets are items tagged `helmet` in the `helmet` loadout slot, and data
   like abilities: `Visor` (`core/abilities/visor.gd`, `Actor.visor`) is one
   class whose `mode` stat picks what the visor does ("" plain, "zoom"

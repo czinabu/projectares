@@ -3,7 +3,7 @@ extends Node3D
 ## A screen that stands in the world: a flat panel that shows a 2D viewport
 ## (a console's display, a shop terminal, a board) and takes the mouse and
 ## keyboard while you use it. This is how menus are done without leaving the
-## world: walk up, press E, the view moves in to face the screen, and you
+## world: walk up, press F, the view moves in to face the screen, and you
 ## click on the screen itself.
 ##
 ## The screen faces its local +Z and is centred on its origin, `size` metres

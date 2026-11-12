@@ -133,7 +133,7 @@ func _process(delta: float) -> void:
 	elif p.heal_time_left > 0.0:
 		_prompt.text = "Healing %.1f" % p.heal_time_left
 	else:
-		# On a vehicle, E gets you off, so nothing else is offered.
+		# On a vehicle, F gets you off, so nothing else is offered.
 		var target := p.find_interactable() if p.vehicle == null else null
 		_prompt.text = target.get_prompt() if target else ""
 

@@ -21,6 +21,12 @@ func _ready() -> void:
 		get_tree().quit()
 		return
 
+	# `-- <output_dir> --flight-only` shoots the attitudes in the air.
+	if "--flight-only" in args:
+		await _flight_shots(out_dir)
+		get_tree().quit()
+		return
+
 	# `-- <output_dir> --gait-only` shoots the legs: run, sprint, strafe, slide.
 	if "--gait-only" in args:
 		await _gait_shots(out_dir)
@@ -205,6 +211,65 @@ func _ready() -> void:
 	await _settle(2)
 	await _world_shots(out_dir)
 	get_tree().quit()
+
+
+## The body in the air: a jetpack hovering, boosting level and in a climb and
+## rolled over, and wings level, banked into a turn each way and in a dive.
+## Each from behind and from the side.
+func _flight_shots(out_dir: String) -> void:
+	# [name, rig, hovering, boosting, gliding, speed, climb, turn rate, look pitch, roll key]
+	var poses := [
+		["jet_hover_strafe", "jetpack_mk2", true, false, false, 10.0, 0.0, 0.0, 0.0, 0, Vector3(1, 0, 0)],
+		["jet_boost", "jetpack_mk2", true, true, false, 22.0, 0.0, 0.0, 0.0, 0, Vector3.FORWARD],
+		["jet_boost_climb", "jetpack_mk2", true, true, false, 16.0, 14.0, 0.0, 0.7, 0, Vector3.FORWARD],
+		["jet_boost_roll", "jetpack_mk2", true, true, false, 22.0, 0.0, 0.0, 0.0, 1, Vector3.FORWARD],
+		["wings_level", "wings_glide", false, false, true, 16.0, -1.8, 0.0, 0.0, 0, Vector3.FORWARD],
+		["wings_turn_left", "wings_glide", false, false, true, 16.0, -1.8, 1.4, 0.0, 0, Vector3.FORWARD],
+		["wings_turn_right", "wings_glide", false, false, true, 16.0, -1.8, -1.4, 0.0, 0, Vector3.FORWARD],
+		["wings_dive", "wings_glide", false, false, true, 24.0, -10.0, 0.0, -0.9, 0, Vector3.FORWARD],
+		["wings_climb", "wings_glide", false, false, true, 18.0, 9.0, 0.0, 0.9, 0, Vector3.FORWARD],
+	]
+	for pose: Array in poses:
+		var raid := Raid.new()
+		add_child(raid)
+		raid.start(Worlds.get_world("ashfront"), 42, ["rifle_carbine", "blade_scrap", pose[1], "frame_trooper"])
+		for bot in raid.bots:
+			bot.get_node("Brain").set_physics_process(false)
+			bot.global_position += Vector3(0, -200, 0)
+		var camera := Camera3D.new()
+		camera.fov = 50.0
+		raid.add_child(camera)
+		camera.make_current()
+		var p := raid.player
+		await _settle(30)
+		p.set_physics_process(false)
+		p.global_position += Vector3(0, 6, 0)
+		p.flight.is_hovering = pose[2]
+		p.flight.is_boosting = pose[3]
+		p.flight.is_thrusting = pose[2]
+		p.flight.is_gliding = pose[4]
+		p.cmd.pitch = pose[8]
+		var at := p.global_position
+		var back := p.global_transform.basis.z
+		var side := p.global_transform.basis.x
+		var heading: Vector3 = p.global_transform.basis * (pose[10] as Vector3)
+		var views := {
+			"back": at + back * 3.4 + Vector3(0, 1.6, 0),
+			"side": at + side * 3.4 + Vector3(0, 1.2, 0),
+		}
+		for view: String in views:
+			camera.look_at_from_position(views[view], at + Vector3(0, 1.0, 0))
+			# Fly the turn in place for a second so the bank settles.
+			for i in 70:
+				heading = heading.rotated(Vector3.UP, float(pose[7]) / 60.0)
+				if absf(float(pose[7])) > 0.0 and i == 0:
+					heading = p.global_transform.basis * (pose[10] as Vector3)
+				p.velocity = heading * float(pose[5]) + Vector3(0, float(pose[6]), 0)
+				p.cmd.roll = int(pose[9]) if i > 55 else 0
+				await get_tree().process_frame
+			await _shot(out_dir.path_join("flight_%s_%s.png" % [pose[0], view]))
+		raid.queue_free()
+		await _settle(3)
 
 
 ## Each flight rig on a player, at rest and firing (thrusting, an air jump's
