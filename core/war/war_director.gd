@@ -18,8 +18,13 @@ var player_kill_heat := 0.14
 var capture_heat := 0.1
 ## Hostile players this close to each other are a fight brewing. Each such
 ## pair adds this much every second. Headcount alone adds nothing.
-var clash_distance := 45.0
+var clash_distance := 80.0
 var clash_heat := 0.012
+## Bots killing each other keep a war simmering: each such kill adds this
+## much, but never lifts the meter past the ceiling. Only players take a
+## world from a skirmish to a battle.
+var battle_heat := 0.008
+var battle_ceiling := 0.3
 ## Seconds after the last kill or clash before the meter starts to fall,
 ## and how fast it then falls per second.
 var calm_delay := 12.0
@@ -40,6 +45,11 @@ var _has_centre := false
 ## A kill happened at `at`.
 func report_kill(at: Vector3, victim_is_player: bool) -> void:
 	_heat(player_kill_heat if victim_is_player else bot_kill_heat, at)
+
+
+## One bot killed another at `at`.
+func report_battle(at: Vector3) -> void:
+	_heat(minf(battle_heat, (battle_ceiling - intensity) / maxf(scale, 0.001)), at)
 
 
 ## A strongpoint changed hands at `at`.

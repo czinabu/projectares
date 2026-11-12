@@ -10,6 +10,7 @@ const SLOTS := {
 	"sidearm": "sidearm",
 	"rig": "flight_rig",
 	"frame": "armor",
+	"helmet": "helmet",
 	"ability": "ability",
 	"vehicle": "vehicle",
 }
@@ -19,6 +20,7 @@ const SLOT_NAMES := {
 	"sidearm": "Sidearm",
 	"rig": "Flight rig",
 	"frame": "Armor frame",
+	"helmet": "Helmet",
 	"ability": "Ability",
 	"vehicle": "Vehicle",
 }
@@ -62,6 +64,12 @@ static func equip(actor: Actor, item_ids: Array) -> void:
 			actor.ability.item_id = id
 			actor.ability.display_name = ItemDB.item_name(id)
 			_apply_stats(actor.ability, stats)
+			actor.gear_items.append(id)
+		elif ItemDB.has_tag(id, "helmet"):
+			actor.visor.enabled = true
+			actor.visor.item_id = id
+			actor.visor.display_name = ItemDB.item_name(id)
+			_apply_stats(actor.visor, stats)
 			actor.gear_items.append(id)
 		elif ItemDB.has_tag(id, "armor"):
 			frames.append(id)
