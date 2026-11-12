@@ -1142,7 +1142,8 @@ func _tick_toys(delta: float) -> void:
 
 func _land_toy(toy: Dictionary, on_ground: bool) -> void:
 	var state: PlayerState = toy.state
-	var actor := state.actor
+	# The thrower may be gone by now. The toy lands all the same.
+	var actor: Actor = state.actor if is_instance_valid(state.actor) else null
 	var id: String = toy.id
 	var at: Vector3 = toy.at
 	if on_ground and has_room_to_unpack(at, toy.heading):
@@ -1151,7 +1152,7 @@ func _land_toy(toy: Dictionary, on_ground: bool) -> void:
 		toy_landed.emit(actor, id, at, true)
 		return
 	# No room: the toy snaps back to the wrist, and can be thrown again at once.
-	if not state.finished and is_instance_valid(actor) and not actor.is_dead:
+	if not state.finished and actor != null and not actor.is_dead:
 		state.stowed.append(id)
 		state.toy_ready_at = clock
 		actor.notice.emit("No room there. %s is back on your watch" % ItemDB.item_name(id))

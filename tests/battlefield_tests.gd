@@ -137,30 +137,30 @@ static func run(t: Node) -> void:
 	# for ever.
 	var kit: Array = raid.world.starter_loadout()
 	kit.append("bike_scrapper")
-	var riders: Array[Actor] = []
-	for i in 8:
-		riders.append(raid.add_player(kit, {}, "Rider"))
-	await t.frames(20)
-	var before := raid.vehicles.size()
-	for i in riders.size():
-		riders[i].cmd.yaw = i * 0.8
-		riders[i].cmd.pitch = -0.1
-		riders[i].cmd.aim_dir = Vector3.ZERO
-		raid.throw_toy(riders[i], "bike_scrapper")
-	for i in 400:
-		if raid.toys.is_empty():
-			break
-		await t.frames(1)
-	var own_bikes: Array = raid.vehicles.slice(before)
+	var own_bikes: Array[Node3D] = []
 	var above_ground := true
-	for v: Node3D in own_bikes:
-		above_ground = above_ground and v.global_position.y > under.call(v)
+	var back_on_watch := 0
+	for i in 8:
+		var rider := raid.add_player(kit, {}, "Rider")
+		var bikes_before := raid.vehicles.size()
+		rider.cmd.yaw = i * 0.8
+		rider.cmd.pitch = -0.1
+		rider.cmd.aim_dir = Vector3.ZERO
+		raid.throw_toy(rider, "bike_scrapper")
+		for step in 300:
+			if raid.toys.is_empty():
+				break
+			await t.frames(1)
+		for v: Node3D in raid.vehicles.slice(bikes_before):
+			own_bikes.append(v)
+			above_ground = above_ground and v.global_position.y > under.call(v)
+		if is_instance_valid(rider) and not raid.stowed_for(rider).is_empty():
+			back_on_watch += 1
 	await t.frames(90)
 	var resting := 0
 	for v: Node3D in own_bikes:
 		if is_instance_valid(v) and absf(v.global_position.y - under.call(v)) < 1.0:
 			resting += 1
-	var back_on_watch := riders.filter(func(r: Actor) -> bool: return not raid.stowed_for(r).is_empty()).size()
 	t.check(own_bikes.size() >= 4 and own_bikes.size() + back_on_watch == 8 and above_ground and resting == own_bikes.size(),
 			"a thrown bike unpacks on the ground, or goes back on the watch (%d of %d on the ground)" % [resting, own_bikes.size()])
 
