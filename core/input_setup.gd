@@ -35,7 +35,6 @@ const KEY_ACTIONS := {
 const MOUSE_ACTIONS := {
 	"fire": MOUSE_BUTTON_LEFT,
 	"alt_fire": MOUSE_BUTTON_RIGHT,
-	"heavy": MOUSE_BUTTON_MIDDLE,
 	# The thumb buttons roll too, for hands that stay on the move keys.
 	"roll_left": MOUSE_BUTTON_XBUTTON1,
 	"roll_right": MOUSE_BUTTON_XBUTTON2,

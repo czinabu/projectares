@@ -119,6 +119,23 @@ func _ready() -> void:
 			"heavy_windup": 0.55, "light_stamina": 16.0, "heavy_stamina": 36.0, "reach": 3.1,
 			"slam_damage": 85.0, "slam_radius": 5.5},
 			"Slow and brutal. Its dive slam hits a wide area.")
+	register("knife_gutter", "Gutter Knife", Rarity.COMMON, 250, ["weapon", "melee", "knife", "vendor"],
+			{"light_damage": 17.0, "heavy_damage": 40.0, "reach": 2.1, "arc_deg": 90.0,
+			"light_windup": 0.08, "light_recover": 0.15, "heavy_windup": 0.25, "heavy_recover": 0.35,
+			"heavy_lunge": 12.0, "light_stamina": 6.0, "heavy_stamina": 18.0, "parry_window": 0.16,
+			"slam_damage": 35.0, "slam_radius": 3.0, "backstab_mult": 2.2, "backstab_arc_deg": 180.0},
+			"Very quick, short and light. Cuts from behind do more than double, so get round their guard.")
+	register("axe_splitter", "Splitter Axe", Rarity.UNCOMMON, 550, ["weapon", "melee", "axe", "vendor"],
+			{"light_damage": 33.0, "heavy_damage": 85.0, "reach": 2.6, "light_windup": 0.16,
+			"light_recover": 0.34, "heavy_windup": 0.48, "light_stamina": 13.0, "heavy_stamina": 32.0,
+			"guard_crush": 2.5},
+			"Chops through guards. Blocking it costs two and a half times the stamina, so a few hits break a guard.")
+	register("spear_lancer", "Lancer Spear", Rarity.RARE, 900, ["weapon", "melee", "spear"],
+			{"light_damage": 27.0, "heavy_damage": 62.0, "reach": 4.1, "arc_deg": 40.0,
+			"vertical_reach": 3.8, "close_range": 1.5, "close_mult": 0.5, "light_windup": 0.14,
+			"light_recover": 0.3, "heavy_windup": 0.42, "heavy_lunge": 6.0, "heavy_stagger": 0.6,
+			"slam_damage": 40.0, "slam_radius": 3.5},
+			"The longest reach of any blade, and it pokes fliers overhead. Narrow thrusts, half damage up close, and a heavy thrust staggers.")
 
 	# Armor frames
 	register("frame_runner", "Runner Frame", Rarity.UNCOMMON, 400, ["armor", "frame_light", "vendor"],
