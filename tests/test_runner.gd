@@ -15,6 +15,7 @@ const BaseHudScript := preload("res://core/ui/base_hud.gd")
 const LookTests := preload("res://tests/look_tests.gd")
 const RigLookTests := preload("res://tests/rig_look_tests.gd")
 const EconomyTests := preload("res://tests/economy_tests.gd")
+const MeleeArsenalTests := preload("res://tests/melee_arsenal_tests.gd")
 const CustomizerTests := preload("res://tests/customizer_tests.gd")
 const BattlefieldTests := preload("res://tests/battlefield_tests.gd")
 const VisorTests := preload("res://tests/visor_tests.gd")
@@ -48,6 +49,7 @@ func _run() -> void:
 	await _test_combat_and_loot()
 	await _test_melee_defense()
 	await _test_directional_melee()
+	await _test_melee_arsenal()
 	await _test_flight_rigs_and_abilities()
 	await _test_vehicle_driving()
 	await _test_vehicle_raids()
@@ -95,6 +97,10 @@ func _test_rig_models() -> void:
 
 func _test_customizer() -> void:
 	await CustomizerTests.run(self)
+
+
+func _test_melee_arsenal() -> void:
+	await MeleeArsenalTests.run(self)
 
 
 func _test_economy() -> void:
@@ -1813,7 +1819,7 @@ func _test_mastery() -> void:
 	# stats and changes at least two of them (a sidegrade, not an upgrade).
 	var item_for := {}
 	for id in ["rifle_scrap", "rifle_carbine", "smg_stinger", "dmr_longshot", "shotgun_breacher",
-			"blade_scrap", "blade_arc", "hammer_breaker", "chip_blink", "chip_barrier", "chip_pulse",
+			"blade_scrap", "blade_arc", "hammer_breaker", "knife_gutter", "axe_splitter", "spear_lancer", "chip_blink", "chip_barrier", "chip_pulse",
 			"plate_light", "frame_runner", "frame_trooper", "frame_bulwark"]:
 		item_for[MasteryDB.track_for_item(id)] = id
 	check(not item_for.has("") and item_for.size() == MasteryDB.TRACKS.size(),

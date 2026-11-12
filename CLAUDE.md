@@ -122,6 +122,19 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   and over would farm it.
 - Blocking and parrying happen in `Weapon.modify_incoming`, which `Combat.deal`
   calls for every hit. Every melee attack keeps a visible windup so it can be parried.
+- Melee types differ only by item stats on the one `MeleeWeapon` class:
+  `backstab_mult` (knife), `guard_crush` (axe, carried on
+  `DamageInfo.guard_mult`), `vertical_reach`, `close_range`/`close_mult` and
+  `heavy_stagger` (spear). Their defaults change nothing. Add a melee type as
+  data plus a `Look.MELEE_MODELS` entry, not as a new class. Every melee
+  model is dressed as tech by `Look._tech_melee` (`assets/shaders/melee.gdshader`):
+  bare metal becomes alloy with an energy edge in the weapon's rarity color,
+  wood and wraps black polymer with glowing seams.
+- Melee attacks share one button (Caleb's call): a tap of `ActorCommand.primary`
+  is a light attack, released before `MeleeWeapon.hold_time`; holding past it
+  starts the heavy (a dive slam in the air) with its full visible windup. A bare
+  `primary_pressed` with no hold is a light (how bots swing), and
+  `tertiary_pressed` still asks for a heavy outright, but no key binds it.
 - Melee is directional. The stance travels in `ActorCommand.stance`, attacks
   set `DamageInfo.direction`, and `MeleeWeapon.guard_covers` decides whether a
   guard stops a hit. Windup and guard poses must show their side.

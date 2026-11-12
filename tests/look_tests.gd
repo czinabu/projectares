@@ -169,7 +169,8 @@ static func run(t: Node) -> void:
 
 	# Melee models, also by tag, standing blade-up with the grip at the hand.
 	for entry: Array in Look.MELEE_MODELS + [Look.DEFAULT_MELEE]:
-		t.check(ResourceLoader.exists(Look.WEAPONS + entry[1]), "melee model %s exists" % entry[1])
+		if entry[1] != "":
+			t.check(ResourceLoader.exists(Look.WEAPONS + entry[1]), "melee model %s exists" % entry[1])
 	var blade := MeleeWeapon.new()
 	var blade_model := Look.weapon_model(blade)
 	t.check(blade_model != null, "a blade gets a model")
@@ -182,6 +183,43 @@ static func run(t: Node) -> void:
 	t.check(not Look.is_two_handed(blade), "a plain blade is one-handed")
 	blade.item_id = "hammer_breaker"
 	t.check(Look.is_two_handed(blade), "a hammer takes both hands")
+	# No pack has a spear, so Look builds one: long, standing along +Y, held
+	# well up the shaft.
+	blade.item_id = "spear_lancer"
+	var spear := Look.weapon_model(blade)
+	t.check(spear != null, "a spear gets a model built in code")
+	if spear:
+		var box := Look.model_bounds(spear)
+		t.check(box.size.y > 1.9 and box.size.y > 10.0 * maxf(box.size.x, box.size.z),
+				"the spear model is long and stands along the shaft")
+		t.check(box.position.y < -0.5 and box.end.y > 1.2, "the spear is gripped part way up the shaft")
+		spear.free()
+	# Every melee weapon is dressed as tech: alloy edges glowing in the
+	# weapon's rarity color, and polymer grips.
+	var styled := true
+	var glows := {}
+	for id: String in ["blade_scrap", "blade_arc", "hammer_breaker", "knife_gutter", "axe_splitter", "spear_lancer"]:
+		blade.item_id = id
+		var model := Look.weapon_model(blade)
+		var parts := {}
+		for node in model.find_children("*", "MeshInstance3D", true, false):
+			var mesh_node := node as MeshInstance3D
+			for i in mesh_node.mesh.get_surface_count():
+				var mat := mesh_node.get_surface_override_material(i) as ShaderMaterial
+				styled = styled and mat != null and mat.shader == Look.MELEE_SHADER \
+						and mat.get_shader_parameter("energy_color") == Look.energy_color(id)
+				if mat:
+					parts[mat.get_shader_parameter("part")] = true
+		styled = styled and parts.has(1.0) and parts.has(0.0)
+		glows[Look.energy_color(id)] = true
+		model.free()
+	t.check(styled, "melee weapons are alloy and polymer with an energy edge in their rarity color")
+	t.check(glows.size() == 3 and Look.energy_strength("spear_lancer") > Look.energy_strength("knife_gutter"),
+			"each rarity glows its own color, and rarer weapons glow brighter")
+	t.check(Look.tech_part(Color(0.6, 0.6, 0.62)) == 1.0 and Look.tech_part(Color(0.37, 0.29, 0.2)) == 0.0
+			and Look.edge_axis(AABB(Vector3.ZERO, Vector3(0.3, 2.0, 0.05))) == 0
+			and Look.edge_axis(AABB(Vector3.ZERO, Vector3(0.4, 0.4, 0.4))) == -1,
+			"bare metal is the edge, wood the grip, and only flat parts get a cutting edge")
 	blade.free()
 
 	t.check(FileAccess.file_exists("res://assets/LICENSES.md"), "asset licenses are recorded")
