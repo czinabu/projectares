@@ -20,6 +20,13 @@ uniform float wear = 0.4;
 // a few per meter), and how fast the glow pulses.
 uniform float seam_scale = 6.0;
 uniform float pulse_speed = 2.2;
+// The mesh's own object-space bounds, so the energy edge can run along the
+// outer edges of a flat blade whatever the angle it is seen from.
+// `edge_axis` is 0 when the blade is wide along X, 2 along Z, and -1 for a
+// part that is not flat (a hammer head), which gets no cutting edge.
+uniform vec3 box_min = vec3(-1.0);
+uniform vec3 box_max = vec3(1.0);
+uniform int edge_axis = -1;
 
 varying vec3 opos;
 varying vec3 onrm;
@@ -51,8 +58,20 @@ void fragment() {
 	// view, which traces its edges and outline whatever the model.
 	float rim = pow(1.0 - clamp(abs(dot(NORMAL, VIEW)), 0.0, 1.0), 2.0);
 	float pulse = 0.8 + 0.2 * sin(TIME * pulse_speed + opos.y * seam_scale * 0.5);
-	// A faint charge across the whole edge part, bright at the edges.
-	vec3 glow = energy_color * (0.12 + rim * 4.0) * edge_part * pulse;
+	// The cutting edge: the outer tenth of the part's width, either side.
+	float cutting = 0.0;
+	if (edge_axis >= 0) {
+		int a = edge_axis;
+		float half_w = max((box_max[a] - box_min[a]) * 0.5, 1e-4);
+		float across = abs(opos[a] - (box_max[a] + box_min[a]) * 0.5) / half_w;
+		cutting = smoothstep(0.8, 0.97, across);
+		// A curved blade's edge is not at the ends of its box, so also light
+		// any face that turns away from the flat of the blade.
+		int t = 2 - a;
+		cutting = max(cutting, smoothstep(0.75, 0.95, 1.0 - abs(normalize(onrm)[t])) * 0.8);
+	}
+	// A faint charge across the whole edge part, bright along the edges.
+	vec3 glow = energy_color * (0.12 + rim * 2.5 + cutting * 2.2) * edge_part * pulse;
 	// Seams: thin bright bands around grips and fittings.
 	float band = abs(fract(opos.y * seam_scale) - 0.5);
 	float seam = smoothstep(0.43, 0.48, band) * (1.0 - edge_part);

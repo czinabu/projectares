@@ -896,7 +896,7 @@ func energy_color(item_id: String) -> Color:
 
 ## Rarer weapons burn brighter.
 func energy_strength(item_id: String) -> float:
-	return 1.0 + 0.4 * (ItemDB.item_rarity(item_id) if item_id != "" else 0)
+	return 1.0 + 0.2 * (ItemDB.item_rarity(item_id) if item_id != "" else 0)
 
 
 ## Restyles a melee model as tech (see assets/shaders/melee.gdshader): light
@@ -920,7 +920,8 @@ func _tech_melee(root: Node3D, glow: Color, strength: float, wear: float) -> voi
 			var source := mesh_node.get_active_material(i) as BaseMaterial3D
 			if source == null:
 				continue
-			mesh_node.set_surface_override_material(i, _tech_material(source, glow, strength, wear, meters))
+			mesh_node.set_surface_override_material(i,
+					_tech_material(source, glow, strength, wear, meters, mesh_node.mesh.get_aabb()))
 
 
 ## Which part of a melee model a pack color is: 1 for bare light metal (an
@@ -934,8 +935,19 @@ static func tech_part(color: Color) -> float:
 	return 1.0 if light > 0.45 else 0.5
 
 
-func _tech_material(source: BaseMaterial3D, glow: Color, strength: float, wear: float, meters: float) -> ShaderMaterial:
-	var key := "tech/%d/%s/%.2f/%.2f/%.4f" % [source.get_instance_id(), glow.to_html(), strength, wear, meters]
+## Which axis a flat blade is wide along (0 for X, 2 for Z), or -1 when the
+## part is not flat enough to have a cutting edge.
+static func edge_axis(box: AABB) -> int:
+	var wide := maxf(box.size.x, box.size.z)
+	var thin := minf(box.size.x, box.size.z)
+	if wide <= 0.0 or thin > wide * 0.5:
+		return -1
+	return 0 if box.size.x >= box.size.z else 2
+
+
+func _tech_material(source: BaseMaterial3D, glow: Color, strength: float, wear: float, meters: float,
+		box: AABB) -> ShaderMaterial:
+	var key := "tech/%d/%s/%.2f/%.2f/%.4f/%s" % [source.get_instance_id(), glow.to_html(), strength, wear, meters, box]
 	if _gear_materials.has(key):
 		return _gear_materials[key]
 	var mat := ShaderMaterial.new()
@@ -945,6 +957,9 @@ func _tech_material(source: BaseMaterial3D, glow: Color, strength: float, wear: 
 	mat.set_shader_parameter("base_color", source.albedo_color)
 	mat.set_shader_parameter("energy_color", glow)
 	mat.set_shader_parameter("energy", strength)
+	mat.set_shader_parameter("box_min", box.position)
+	mat.set_shader_parameter("box_max", box.end)
+	mat.set_shader_parameter("edge_axis", edge_axis(box))
 	mat.set_shader_parameter("seam_scale", 6.0 * meters)
 	mat.set_shader_parameter("part", tech_part(source.albedo_color))
 	var dir := TEXTURES + "Metal063/"
