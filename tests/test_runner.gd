@@ -3109,6 +3109,8 @@ func _test_online() -> void:
 		var me := alpha.raid.player
 		var target := alpha.actor_for(bravo.my_actor_id)
 		var victim := bravo.raid.player
+		# Measured before Alpha walks off to the bike and rides it.
+		var spawn_gap := me.global_position.distance_to(target.global_position) if target != null else INF
 		var face := func(point: Vector3) -> void:
 			var aim := point - me.get_eye_position()
 			me.cmd.aim_dir = aim.normalized()
@@ -3157,9 +3159,8 @@ func _test_online() -> void:
 			await _wait_until(func() -> bool: return me.vehicle == null, 90)
 			check(me.vehicle == null and bike.get("rider") == null, "pressing use again gets off")
 			await frames(20)
-		check(alpha.raid.bots.is_empty() and target != null
-				and me.global_position.distance_to(target.global_position) < 12.0,
-				"squad spawn puts the players together")
+		check(alpha.raid.bots.is_empty() and target != null and spawn_gap < 12.0,
+				"squad spawn puts the players together (%.1f m apart)" % spawn_gap)
 		var hits := [0]
 		var notices: Array[String] = []
 		me.hit_confirmed.connect(func(_t: Actor, _i: DamageInfo, _l: bool) -> void: hits[0] += 1)
