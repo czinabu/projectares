@@ -338,6 +338,7 @@ func _dress_weapons() -> void:
 				if child is MeshInstance3D:
 					child.visible = false
 			weapon.visual.add_child(model)
+			look.mount_attachments(weapon.visual)
 		elif weapon is MeleeWeapon:
 			look.restyle_melee(weapon.visual)
 
@@ -533,7 +534,8 @@ func _on_fired(from: Vector3, to: Vector3, gun: Gun) -> void:
 	var muzzle := from + (to - from).normalized() * 0.9
 	if gun.visual and gun.visual.is_inside_tree():
 		muzzle = gun.visual.global_transform * Vector3(0, -0.04, -0.5)
-	Vfx.muzzle_flash(parent, muzzle, (to - from).normalized())
+	if not gun.quiet:
+		Vfx.muzzle_flash(parent, muzzle, (to - from).normalized())
 	if from.distance_to(to) < gun.max_range - 0.5:
 		Vfx.impact(parent, to, (from - to).normalized())
 

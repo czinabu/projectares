@@ -71,6 +71,45 @@ func _ready() -> void:
 			"bloom_per_shot": 1.2, "recoil_kick_deg": 2.6, "max_range": 110.0},
 			"Slow, heavy revolver. Headshots hit twice as hard.")
 
+	# Attachments for primaries. Each fits one slot on the gun (its second tag:
+	# optic, muzzle, grip or magazine) and fits every primary. `Gun.fit` reads
+	# the stats: "mult" scales the gun's own tuning values, "zoom" is how far an
+	# optic magnifies while aiming, "quiet" hides the shot, and "model" picks the
+	# shape built on the gun. Every one trades something away.
+	_attachment("optic_reflex", "Reflex Sight", Rarity.UNCOMMON, 260, "optic", true,
+			{"model": "reflex", "zoom": 1.35, "mult": {"ads_spread_mult": 0.8}},
+			"Red dot in a small window. A little zoom, and steadier when aimed.")
+	_attachment("optic_scope", "4x Ranger Scope", Rarity.RARE, 700, "optic", false,
+			{"model": "scope", "zoom": 2.6, "mult": {"ads_spread_mult": 0.55, "spread_deg": 1.15}},
+			"Four times zoom and very steady when aimed. Looser from the hip.")
+	_attachment("optic_longscope", "8x Longscope", Rarity.EPIC, 1400, "optic", false,
+			{"model": "longscope", "zoom": 4.6, "mult": {"ads_spread_mult": 0.4, "spread_deg": 1.3}},
+			"Eight times zoom for picking off targets across the map. Clumsy up close.")
+	_attachment("muzzle_compensator", "Compensator", Rarity.UNCOMMON, 240, "muzzle", true,
+			{"model": "compensator", "mult": {"recoil_kick_deg": 0.7, "recoil_side_deg": 0.75, "spread_deg": 1.08}},
+			"Vents gas upward: much less kick, slightly wider spread.")
+	_attachment("muzzle_booster", "Muzzle Booster", Rarity.UNCOMMON, 300, "muzzle", true,
+			{"model": "booster", "mult": {"fire_interval": 0.88, "recoil_kick_deg": 1.15, "bloom_per_shot": 1.15}},
+			"Cycles the action faster. Kicks harder for it.")
+	_attachment("muzzle_suppressor", "Suppressor", Rarity.RARE, 650, "muzzle", false,
+			{"model": "suppressor", "quiet": true, "mult": {"damage": 0.92, "max_range": 0.9}},
+			"No tracers, no flash and a much quieter shot. Costs a little damage and range.")
+	_attachment("grip_vertical", "Vertical Grip", Rarity.UNCOMMON, 220, "grip", true,
+			{"model": "vertical_grip", "mult": {"recoil_kick_deg": 0.8, "max_bloom": 0.8, "reload_time": 1.06}},
+			"Holds a spray down. Slightly slower reloads.")
+	_attachment("grip_angled", "Angled Grip", Rarity.UNCOMMON, 220, "grip", true,
+			{"model": "angled_grip", "mult": {"bloom_recovery": 1.5, "spread_deg": 0.9, "recoil_kick_deg": 1.05}},
+			"Tighter shots and spread that settles fast. A touch more kick.")
+	_attachment("mag_extended", "Extended Mag", Rarity.UNCOMMON, 280, "magazine", true,
+			{"model": "extended_mag", "mult": {"mag_size": 1.5, "reload_time": 1.15}},
+			"Half again as many rounds. Slower to reload.")
+	_attachment("mag_quick", "Quick Mag", Rarity.UNCOMMON, 260, "magazine", true,
+			{"model": "quick_mag", "mult": {"reload_time": 0.65, "mag_size": 0.85}},
+			"Pull tabs and a flared well: reloads a third faster, holds a few less.")
+	_attachment("mag_drum", "Drum Mag", Rarity.RARE, 750, "magazine", false,
+			{"model": "drum", "mult": {"mag_size": 2.2, "reload_time": 1.45, "spread_deg": 1.1}},
+			"More than twice the rounds. Heavy: slow reloads and a wider spread.")
+
 	# Melee
 	register("blade_arc", "Arc Blade", Rarity.RARE, 800, ["weapon", "melee", "blade"],
 			{"light_damage": 34.0, "heavy_damage": 72.0, "light_recover": 0.22, "parry_window": 0.26},
@@ -201,6 +240,15 @@ func _ready() -> void:
 			Rarity.UNCOMMON)
 	_outfit("outfit_trooper", "Trooper Outfit", 400, ["m_Swat", "f_Soldier"], "Fatigues and webbing. Looks the part.",
 			Rarity.UNCOMMON)
+
+
+## Registers a weapon attachment for `slot` (also its tag: see `Loadout.SLOTS`).
+func _attachment(id: String, display_name: String, rarity: Rarity, value: int, slot: String, vendor: bool,
+		stats: Dictionary, description: String) -> void:
+	var tags := ["attachment", slot]
+	if vendor:
+		tags.append("vendor")
+	register(id, display_name, rarity, value, tags, stats, description)
 
 
 ## Registers a clothing item that unlocks the customizer outfits `outfits`.

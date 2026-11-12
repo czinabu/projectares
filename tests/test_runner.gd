@@ -19,6 +19,7 @@ const CustomizerTests := preload("res://tests/customizer_tests.gd")
 const BattlefieldTests := preload("res://tests/battlefield_tests.gd")
 const VisorTests := preload("res://tests/visor_tests.gd")
 const SidearmTests := preload("res://tests/sidearm_tests.gd")
+const AttachmentTests := preload("res://tests/attachment_tests.gd")
 
 var _passed := 0
 var _failed := 0
@@ -83,6 +84,7 @@ func _run() -> void:
 	await _test_battlefield()
 	await _test_visors()
 	await _test_sidearms()
+	await _test_attachments()
 
 
 func _test_rig_models() -> void:
@@ -100,6 +102,10 @@ func _test_economy() -> void:
 
 func _test_sidearms() -> void:
 	await SidearmTests.run(self)
+
+
+func _test_attachments() -> void:
+	await AttachmentTests.run(self)
 
 
 func _test_battlefield() -> void:
