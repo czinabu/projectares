@@ -20,9 +20,9 @@ skies, animated models and effects (see "How it looks" below).
 | --- | --- |
 | Move / sprint | WASD / Shift |
 | Jump. In the air: hold to climb, tap to light the jets and hover (jetpack); press to kick the way you steer, hold to skim low, dash key dashes (thruster boots); press to launch, hold while falling to glide (glide wings) | Space |
-| Jetpack hovering: cruise with the move keys, Space climbs, C coasts down to cool, Shift + W boosts head first wherever you look (Mk2) | |
+| Jetpack hovering: cruise with the move keys, Space climbs, C coasts down to cool, Shift + W boosts head first (Mk2). The keys fly every rig; the mouse only looks and aims | |
 | Glide wings gliding: Space again pulses up, Q / E snaps a barrel roll | |
-| Gliding: steer or turn the view to bank round, look down to dive for speed, look up to climb on it | |
+| Gliding: A / D bank round, W dives for speed, S pulls up to climb on it (the view is free to look and aim) | |
 | Roll the body left / right while gliding or boosting | Q / E (or the mouse thumb buttons) |
 | Use your ability | G |
 | Use your helmet's visor (zoom or scan) | T |

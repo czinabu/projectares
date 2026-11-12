@@ -283,7 +283,10 @@ without Caleb, and update the gap list when a PR closes a row.
   aim steady while low, but have no high ground. Flown its
   own way a rig stays up for minutes, against type it overheats in seconds.
   Shooting from the air spreads wider (`Actor.air_aim`) except in a rig's
-  steady state.
+  steady state. The keys fly every rig and the mouse only looks and aims
+  (Caleb's call): wings bank on the strafe keys and dive or pull up on
+  forward and back (`Actor.glide_trim`), and a boost runs along the view's
+  heading, climbing only on jump and descend, never on the view's pitch.
   The body's attitude in the air (flat, banked, leaning, rolled by
   `ActorCommand.roll`) is the skin's job (`ActorSkin._update_glide`), read
   from velocity and the command only, so remote players match. Off the
