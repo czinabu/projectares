@@ -55,18 +55,22 @@ const HUMAN_ANIMS := {"idle": "Idle_Gun_Pointing", "walk": "Walk", "run": "Run",
 const HUMAN_ARM := ["UpperArm.R", "LowerArm.R", "Wrist.R"]
 const HUMAN_OFF_ARM := ["UpperArm.L", "LowerArm.L", "Wrist.L"]
 const HUMAN_SPINE := ["Abdomen", "Torso", "Chest"]
+## Thigh, shin and foot of the leg that reaches forward in a slide, and of the
+## one that folds under.
+const HUMAN_LEAD_LEG := ["UpperLeg.L", "LowerLeg.L", "Foot.L"]
+const HUMAN_TRAIL_LEG := ["UpperLeg.R", "LowerLeg.R", "Foot.R"]
 const SKINS := {
 	"raider": {
 		"people": {"m": ["Swat", "Spacesuit", "Adventurer"], "f": ["Soldier", "SciFi", "Adventurer"]},
 		"height": 1.8, "tint": Color(0.8, 0.82, 0.86), "grip_bone": "Middle1.R", "arm": HUMAN_ARM, "off_arm": HUMAN_OFF_ARM,
-		"spine": HUMAN_SPINE, "neck": "Neck",
+		"spine": HUMAN_SPINE, "neck": "Neck", "lead_leg": HUMAN_LEAD_LEG, "trail_leg": HUMAN_TRAIL_LEG,
 		"saturation": 0.75, "brightness": 0.85, "metal": 0.0, "rough": 0.85,
 		"anims": HUMAN_ANIMS,
 	},
 	"scavenger": {
 		"people": {"m": ["Punk", "Casual_Hoodie", "Casual_2", "Farmer", "Beach"], "f": ["Punk", "Worker", "Casual", "Medieval"]},
 		"height": 1.76, "tint": Color(0.86, 0.76, 0.68), "grip_bone": "Middle1.R", "arm": HUMAN_ARM, "off_arm": HUMAN_OFF_ARM,
-		"spine": HUMAN_SPINE, "neck": "Neck",
+		"spine": HUMAN_SPINE, "neck": "Neck", "lead_leg": HUMAN_LEAD_LEG, "trail_leg": HUMAN_TRAIL_LEG,
 		"saturation": 0.7, "brightness": 0.75, "metal": 0.0, "rough": 0.9,
 		"anims": HUMAN_ANIMS,
 	},

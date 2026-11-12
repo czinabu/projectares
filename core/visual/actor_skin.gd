@@ -99,6 +99,8 @@ func _play(key: String, speed := 1.0) -> void:
 	if _current in GAITS and key in GAITS and _player.current_animation_length > 0.0:
 		phase = _player.current_animation_position / _player.current_animation_length
 	_current = key
+	if locomotion:
+		locomotion.current_anim = _anims[key]
 	_player.play(_anims[key], 0.2 if phase >= 0.0 else 0.15)
 	if phase >= 0.0:
 		_player.seek(phase * _player.current_animation_length)
@@ -122,6 +124,7 @@ func _process(delta: float) -> void:
 		return
 	locomotion.update(delta)
 	locomotion.twist_target = 0.0
+	locomotion.stride_target = 1.0
 	locomotion.overlay = false
 	if actor.is_dead:
 		_play("death")
@@ -141,9 +144,14 @@ func _process(delta: float) -> void:
 			locomotion.choose(locomotion.velocity, armed, _current, _current_sign)
 	if actor.vehicle != null:
 		_play("idle")
+	elif actor.is_sliding():
+		# The slide pose bends whatever plays under it; the arms keep their hold.
+		_play("idle_melee" if melee and _anims.has("idle_melee") else "idle")
+		locomotion.twist_target = clampf(Locomotion.heading(locomotion.velocity), -locomotion.max_twist, locomotion.max_twist)
 	elif not gait.is_empty():
 		_play(gait["key"], gait["speed"])
 		locomotion.twist_target = gait["twist"]
+		locomotion.stride_target = gait["stride"]
 		locomotion.overlay = armed and gait["key"] != "move_gun"
 		if _player and _player.current_animation_length > 0.0:
 			locomotion.overlay_phase = _player.current_animation_position / _player.current_animation_length
