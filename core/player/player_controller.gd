@@ -363,12 +363,13 @@ func _on_damaged(_info: DamageInfo) -> void:
 	Sfx.play("hurt")
 
 
-## The zoom level the visor key moves to from `level`: up through the
-## helmet's levels and back to off. A helmet without binoculars stays at 0.
+## The visor level the visor key moves to from `level`: up through the
+## helmet's levels (zoom strengths, thermal on) and back to off. A helmet
+## with none stays at 0.
 static func next_visor_level(visor: Visor, level: int) -> int:
-	if visor == null or not visor.enabled or visor.mode != "zoom":
+	if visor == null or visor.levels() <= 0:
 		return 0
-	return (level + 1) % (visor.zoom_levels.size() + 1)
+	return (level + 1) % (visor.levels() + 1)
 
 
 ## The field of view that makes things look `factor` times closer than at `fov`.

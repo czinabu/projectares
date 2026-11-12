@@ -199,13 +199,19 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
 - Helmets are items tagged `helmet` in the `helmet` loadout slot, and data
   like abilities: `Visor` (`core/abilities/visor.gd`, `Actor.visor`) is one
   class whose `mode` stat picks what the visor does ("" plain, "zoom"
-  binoculars, "scan" pulse). It is driven by `ActorCommand.visor_pressed`
-  (a press: scan) and `ActorCommand.visor_level` (held: the zoom level).
+  binoculars, "scan" pulse, "threat" tactical, "thermal"). It is driven by
+  `ActorCommand.visor_pressed` (a press: scan, Threat Sense) and
+  `ActorCommand.visor_level` (held: the zoom level, thermal on).
   What a visor reveals is decided by the authority only and never goes to
   everyone: `NetSession` sends a scan's snapshots to the scanner, the ping to
-  each player caught, and a tag to the tagger's side. Reveals must stay fair:
-  a scan is a snapshot, never live tracking, and every reveal is felt by its
-  target (the ping, the lens glint). The picture is `VisorHud`
+  each player caught, a tag to the tagger's side, and a tactical visor's
+  hit direction and Threat Sense list to its wearer. Reveals must stay fair:
+  a scan is a snapshot, never live tracking, Threat Sense only shows people
+  aiming at the wearer, thermal never sees through walls, and every reveal
+  is felt by its target (the ping, the "Sensed" notice, the lens glint, the
+  ember of a thermal visor). How warm someone looks on thermal is
+  `Visor.heat_of`: `Actor.heat_signature` (frames set it with a
+  `heat_signature` stat) plus flight rig heat. The picture is `VisorHud`
   (`core/ui/visor_hud.gd`), a view: its glass is drawn in first person only
   and only while a helmet is worn (Caleb agreed a visor counts as in-world,
   since you look through it); what a visor shows out in the world (snapshots,

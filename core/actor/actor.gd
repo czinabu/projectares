@@ -78,6 +78,9 @@ var active_weapon_index := 0
 ## Item ids of equipped gear (weapons, rig, armor). Dropped on death.
 var gear_items: Array[String] = []
 var frame_name := "No armor"
+## How warm this actor looks through a thermal visor next to a bare body (1).
+## Armor frames change it (see `Visor.heat_of`).
+var heat_signature := 1.0
 ## The vehicle this actor is riding, or null. While riding, the vehicle moves
 ## the actor; weapons, healing and abilities still work.
 var vehicle: Node3D = null

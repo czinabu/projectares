@@ -15,6 +15,8 @@ static func run(t: Node) -> void:
 	await _zoom(t)
 	await _scan(t)
 	await _glass(t)
+	await _threat(t)
+	await _thermal(t)
 
 
 static func _kit(helmet: String) -> Array[String]:
@@ -356,4 +358,232 @@ static func _glass(t: Node) -> void:
 	raid.add_child(hud)
 	await t.frames(5)
 	t.check(not hud.visor.glass_shown(), "with no helmet there is no visor: the view stays bare")
+	await t._end_raid(raid)
+
+
+static func _threat(t: Node) -> void:
+	print("Visors: Warden")
+	t.check("helm_warden" in Economy.stock("outfitter") and "helm_warden_mk2" not in Economy.stock("outfitter")
+			and "helm_ember" in Economy.stock("outfitter") and "helm_ember_mk2" not in Economy.stock("outfitter"),
+			"the Outfitter sells the Mk1 Warden and Ember, never the Mk2s")
+	var raid: Raid = await t._kit_raid(350, _kit("helm_warden"))
+	var p := raid.player
+	var v := p.visor
+	t.check(v.mode == "threat" and is_equal_approx(v.threat_range, 60.0) and is_equal_approx(v.cooldown, 30.0)
+			and v.levels() == 0, "Warden stats come from the item")
+	for i in raid.bots.size():
+		raid.bots[i].global_position = p.global_position + Vector3(300.0 + i * 5.0, 2.0, 300.0)
+	var aimer: Actor = raid.bots[0]
+	var idler: Actor = raid.bots[1]
+	var distant: Actor = raid.bots[2]
+	aimer.global_position = p.global_position + Vector3(20, 0.2, 0)
+	idler.global_position = p.global_position + Vector3(0, 0.2, 20)
+	distant.global_position = p.global_position + Vector3(-90, 0.2, 0)
+	await t.frames(3)
+	var chest := p.global_position + Vector3(0, Actor.BODY_HEIGHT * 0.5, 0)
+	aimer.cmd.aim_dir = (chest - aimer.get_eye_position()).normalized()
+	idler.cmd.aim_dir = Vector3(0, 0, 1)
+	distant.cmd.aim_dir = (chest - distant.get_eye_position()).normalized()
+	t.check(v.is_aimed_at_by(aimer) and not v.is_aimed_at_by(idler) and not v.is_aimed_at_by(distant),
+			"aiming at you means pointing at you from within reach")
+	var notices: Array[String] = []
+	aimer.notice.connect(func(text: String) -> void: notices.append(text))
+	await t.frames(5)
+	t.check(v.threats.is_empty(), "nobody is outlined until Threat Sense is used")
+	p.cmd.visor_pressed = true
+	await t.frames(1)
+	p.cmd.visor_pressed = false
+	await t.frames(15)
+	t.check(v.is_sensing() and v.threats == ([aimer] as Array[Actor]),
+			"Threat Sense outlines who is aiming at you, and only them")
+	t.check(notices.count("Sensed") == 1, "someone it shows is told, once")
+	# Looking away drops you off it; looking back puts you on again.
+	aimer.cmd.aim_dir = Vector3(0, 0, -1)
+	await t.frames(15)
+	t.check(v.threats.is_empty(), "stop aiming and the outline goes")
+	idler.cmd.aim_dir = (chest - idler.get_eye_position()).normalized()
+	await t.frames(15)
+	t.check(v.threats == ([idler] as Array[Actor]), "start aiming and it appears")
+	p.cmd.visor_pressed = true
+	await t.frames(1)
+	p.cmd.visor_pressed = false
+	t.check(v.active_left < v.threat_time - 0.5, "it cannot be restarted while it recharges")
+	await t.frames(int(v.threat_time * 60.0))
+	t.check(not v.is_sensing() and v.threats.is_empty() and v.cooldown_left > 0.0,
+			"Threat Sense ends after five seconds and everyone drops off it")
+
+	# Where a hit came from.
+	var origins: Array = []
+	v.threatened.connect(func(origin: Vector3) -> void: origins.append(origin))
+	p.protected_left = 0.0
+	var hitter: Actor = null
+	for bot in raid.bots:
+		if is_instance_valid(bot) and not bot.is_dead:
+			hitter = bot
+			break
+	Combat.deal(p, DamageInfo.make(5.0, hitter, "bullet", p.global_position))
+	t.check(origins.size() == 1 and origins[0].distance_to(hitter.global_position) < 0.1,
+			"a hit tells a Warden where it came from")
+	Combat.deal(p, DamageInfo.make(5.0, null, "storm", p.global_position))
+	t.check(origins.size() == 1, "damage with nobody behind it points nowhere")
+	Combat.authoritative = false
+	v.cooldown_left = 0.0
+	var started := v.sense_threats()
+	v._threat_wait = 0.0
+	await t.frames(10)
+	Combat.authoritative = true
+	t.check(started and v.threats.is_empty(), "on a client Threat Sense waits for the server's word")
+	v.show_threats([hitter, "junk", null])
+	t.check(v.threats == ([hitter] as Array[Actor]), "the server's list is shown, junk is dropped")
+	await t._end_raid(raid)
+
+	# A plain visor learns nothing from being hit.
+	raid = await t._kit_raid(351, _kit("helm_seeker"))
+	origins = []
+	raid.player.visor.threatened.connect(func(origin: Vector3) -> void: origins.append(origin))
+	raid.player.protected_left = 0.0
+	Combat.deal(raid.player, DamageInfo.make(5.0, raid.bots[0], "bullet", raid.player.global_position))
+	t.check(origins.is_empty(), "only a tactical visor shows where a hit came from")
+	await t._end_raid(raid)
+
+	# The glass: target readout, loot peek and outlines.
+	t.check(VisorHud.loot_text([]) == "" and VisorHud.loot_text(["scrap_metal"]) == ItemDB.item_name("scrap_metal")
+			and VisorHud.loot_text(["scrap_metal", "reactor_core", "medkit"]) == ItemDB.item_name("reactor_core") + " +2",
+			"a container's tag names its best item and counts the rest")
+	raid = await t._kit_raid(352, _kit("helm_warden_mk2"))
+	p = raid.player
+	t.check(p.visor.threat_range > 60.0 and p.visor.cooldown < 30.0 and p.visor.read_range > 30.0,
+			"the Mk2 Warden reaches further and recharges sooner")
+	var controller := PlayerController.new()
+	controller.setup(p)
+	raid.add_child(controller)
+	var hud := Hud.new()
+	hud.setup(raid, controller)
+	raid.add_child(hud)
+	await t.frames(5)
+	var bot: Actor = raid.bots[0]
+	var ahead := Basis(Vector3.UP, controller.yaw) * Vector3(0, 0, -12)
+	bot.global_position = p.global_position + ahead + Vector3(0, 0.2, 0)
+	bot.velocity = Vector3.ZERO
+	await t.frames(3)
+	var to_bot := bot.global_position + Vector3(0, 1.0, 0) - p.get_eye_position()
+	controller.yaw = atan2(-to_bot.x, -to_bot.z)
+	controller.pitch = asin(to_bot.normalized().y)
+	await t.frames(12)
+	t.check(hud.visor.read_target == bot, "a tactical visor reads whoever is under the crosshair")
+	bot.global_position = p.global_position + ahead * 6.0 + Vector3(0, 0.2, 0)
+	await t.frames(3)
+	to_bot = bot.global_position + Vector3(0, 1.0, 0) - p.get_eye_position()
+	controller.yaw = atan2(-to_bot.x, -to_bot.z)
+	controller.pitch = asin(to_bot.normalized().y)
+	await t.frames(12)
+	t.check(hud.visor.read_target == null, "but not someone beyond its reach")
+	p.visor.show_threats([bot])
+	await t.frames(3)
+	t.check(hud.visor._threat_marks.has(bot), "someone Threat Sense shows is outlined in the world")
+	p.visor.show_threats([])
+	await t.frames(3)
+	t.check(hud.visor._threat_marks.is_empty(), "and the outline goes when they drop off it")
+	p.visor.threatened.emit(bot.global_position)
+	await t.frames(1)
+	t.check(hud.visor.hit_marks.size() == 1, "a hit leaves a mark on the glass")
+	await t._end_raid(raid)
+
+
+static func _thermal(t: Node) -> void:
+	print("Visors: Ember")
+	var raid: Raid = await t._kit_raid(360, _kit("helm_ember"))
+	var p := raid.player
+	var v := p.visor
+	t.check(v.mode == "thermal" and is_equal_approx(v.battery, 12.0) and v.levels() == 1
+			and PlayerController.next_visor_level(v, 0) == 1 and PlayerController.next_visor_level(v, 1) == 0,
+			"Ember stats come from the item, and its key switches thermal on and off")
+	await t.frames(2)
+	t.check(not v.thermal_on and is_equal_approx(v.charge_fraction(), 1.0), "it starts off with a full battery")
+	p.cmd.visor_level = 1
+	await t.frames(60)
+	t.check(v.thermal_on and absf(v.charge - (v.battery - 1.0)) < 0.1, "thermal drains the battery while it is on")
+	p.cmd.visor_level = 0
+	await t.frames(2)
+	var low := v.charge
+	await t.frames(60)
+	t.check(not v.thermal_on and v.charge > low + 0.5, "switched off, the battery refills")
+	# Run it flat: it cuts out and stays out until the key is let go.
+	p.cmd.visor_level = 1
+	v.charge = 0.3
+	await t.frames(30)
+	t.check(not v.thermal_on and v.charge < 1.0, "a flat battery switches thermal off")
+	await t.frames(int(v.battery_refill * 60.0 * 0.5))
+	t.check(not v.thermal_on, "it does not flicker back on while the key is still held")
+	p.cmd.visor_level = 0
+	await t.frames(2)
+	v.charge = v.battery * 0.1
+	p.cmd.visor_level = 1
+	await t.frames(3)
+	t.check(not v.thermal_on, "it needs a quarter charge to start")
+	v.charge = v.battery * 0.5
+	await t.frames(3)
+	t.check(v.thermal_on, "with enough charge it starts again")
+	p.stagger(0.5)
+	await t.frames(2)
+	t.check(not v.thermal_on, "a stagger knocks thermal off")
+	p.cmd.visor_level = 0
+	await t.frames(40)
+
+	# Heat: jetpacks shine, heavy frames run hot, light frames run cool.
+	var bot: Actor = raid.bots[0]
+	var base := Visor.heat_of(bot)
+	bot.flight.enabled = true
+	bot.flight.heat = bot.flight.max_heat
+	t.check(Visor.heat_of(bot) > base * 1.8, "a hot jetpack makes its wearer shine on thermal")
+	await t._end_raid(raid)
+	raid = await t._kit_raid(361, ["rifle_scrap", "blade_scrap", "jetpack_mk1", "frame_bulwark"] as Array[String])
+	var heavy := Visor.heat_of(raid.player)
+	await t._end_raid(raid)
+	raid = await t._kit_raid(362, ["rifle_scrap", "blade_scrap", "jetpack_mk1", "frame_runner"] as Array[String])
+	var light := Visor.heat_of(raid.player)
+	await t._end_raid(raid)
+	raid = await t._kit_raid(363, ["rifle_scrap", "blade_scrap", "jetpack_mk1", "plate_light"] as Array[String])
+	var plain := Visor.heat_of(raid.player)
+	await t._end_raid(raid)
+	t.check(heavy > plain and plain > light, "a heavy frame is bright on thermal and a light one is dim")
+
+	# The picture.
+	raid = await t._kit_raid(364, _kit("helm_ember_mk2"))
+	p = raid.player
+	t.check(p.visor.battery > 12.0 and p.visor.battery_refill < 18.0, "the Mk2 Ember holds more charge")
+	var controller := PlayerController.new()
+	controller.setup(p)
+	raid.add_child(controller)
+	var hud := Hud.new()
+	hud.setup(raid, controller)
+	raid.add_child(hud)
+	await t.frames(5)
+	var glass := hud.visor
+	t.check(not glass.thermal_shown and glass._heat.is_empty(), "with thermal off the view is as it always is")
+	controller._visor_level = 1
+	await t.frames(6)
+	t.check(p.visor.thermal_on and glass.thermal_shown and glass._thermal.visible
+			and glass._heat.size() == raid.bots.size(), "thermal shows the heat picture and every warm body")
+	var cold: Actor = raid.bots[0]
+	cold.kill("bullet")
+	await t.frames(4)
+	t.check(not glass._heat.has(cold), "the dead go cold")
+	controller.view_mode = PlayerController.ViewMode.THIRD
+	await t.frames(40)
+	t.check(not glass.thermal_shown and glass._heat.is_empty(), "in third person there is no heat picture")
+	controller.view_mode = PlayerController.ViewMode.FIRST
+	controller._visor_level = 0
+	await t.frames(40)
+	# Someone else's thermal visor shows as an ember up close.
+	var other: Actor = raid.bots[1]
+	other.visor.enabled = true
+	other.visor.mode = "thermal"
+	other.cmd.visor_level = 1
+	other.global_position = p.global_position + Vector3(0, 0.2, -8)
+	await t.frames(5)
+	t.check(other.visor.thermal_on and glass._embers.has(other), "a thermal visor in use glows when seen up close")
+	other.global_position = p.global_position + Vector3(0, 0.2, -60)
+	await t.frames(5)
+	t.check(not glass._embers.has(other), "and cannot be seen from far away")
 	await t._end_raid(raid)

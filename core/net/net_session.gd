@@ -104,7 +104,7 @@ const CORRECTION_RATE := 0.2
 ## Notices the server passes on to a player. Others are produced locally.
 const FORWARDED_NOTICES := ["Parry!", "Wrong side", "Guard broken", "Staggered", "Killed ", "Looted ",
 		"Backpack full", "Someone is riding it", "Banked ", "Signing out", "Sign-out cancelled",
-		"You cannot sign out", "Scanned"]
+		"You cannot sign out", "Scanned", "Sensed"]
 
 var is_server := false
 var raid: Raid
@@ -697,6 +697,17 @@ func _request_join(drop := "") -> void:
 		if peer in _api.get_peers():
 			_visor_felt.rpc_id(peer, origin))
 	actor.visor.tagged.connect(_on_server_tagged.bind(actor))
+	actor.visor.threatened.connect(func(origin: Vector3) -> void:
+		if peer in _api.get_peers():
+			_visor_threatened.rpc_id(peer, origin))
+	actor.visor.threats_changed.connect(func(found: Array) -> void:
+		if peer not in _api.get_peers():
+			return
+		var ids: Array[int] = []
+		for other: Actor in found:
+			if _ids.has(other):
+				ids.append(_ids[other])
+		_visor_threats.rpc_id(peer, ids))
 	_joined_peers.append(peer)
 	_social_moved(peer, "hub" if safe else "raid")
 	_welcome.rpc_id(peer, _ids[actor])
@@ -1401,6 +1412,27 @@ func _visor_felt(origin: Vector3) -> void:
 	var me: Actor = _actors.get(my_actor_id)
 	if me != null and is_instance_valid(me):
 		me.visor.felt_scan.emit(origin)
+
+
+## Your tactical visor: a hit on you came from `origin`.
+@rpc("authority", "call_remote", "reliable")
+func _visor_threatened(origin: Vector3) -> void:
+	var me: Actor = _actors.get(my_actor_id)
+	if me != null and is_instance_valid(me):
+		me.visor.threatened.emit(origin)
+
+
+## Your Threat Sense: who is aiming at you right now.
+@rpc("authority", "call_remote", "reliable")
+func _visor_threats(ids: Array) -> void:
+	var me: Actor = _actors.get(my_actor_id)
+	if me == null or not is_instance_valid(me):
+		return
+	var found: Array = []
+	for id: Variant in ids:
+		if typeof(id) == TYPE_INT and _actors.has(id):
+			found.append(_actors[id])
+	me.visor.show_threats(found)
 
 
 ## Someone on your side tagged a target.

@@ -41,6 +41,8 @@ const ROOFTOP_TABLE := [
 	{"id": "muzzle_booster", "weight": 3.0},
 	{"id": "helm_spotter", "weight": 5.0},
 	{"id": "helm_seeker", "weight": 5.0},
+	{"id": "helm_warden", "weight": 5.0},
+	{"id": "helm_ember", "weight": 5.0},
 ]
 
 ## The top of the relay mast: the best and most exposed loot on the map, and
