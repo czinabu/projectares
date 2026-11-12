@@ -1180,6 +1180,19 @@ func _ride_shots(out_dir: String) -> void:
 			sheet.blit_rect(cut, Rect2i(0, 0, 320, 360), Vector2i(c * 320, row * 360))
 	sheet.save_png(out_dir.path_join("ride.png"))
 	print("saved ride.png")
+	# Close in on the hands and feet, hands free, from the left and above-front.
+	player.active_weapon_index = -1
+	player._refresh_weapon_visuals()
+	bike.set_physics_process(true)
+	await _settle(40)
+	var close := [[-bike.global_basis.x * 2.4 + Vector3(0, 0.2, 0), "ride_close_side.png"],
+		[(-bike.global_basis.z * 1.6 + bike.global_basis.x * 0.9 + Vector3(0, 1.0, 0)), "ride_close_front.png"]]
+	for shot in close:
+		var focus := bike.global_position + bike.global_basis * Vector3(0, 1.0, -0.1)
+		cam.global_position = focus + shot[0]
+		cam.look_at(focus)
+		await _settle(2)
+		await _shot(out_dir.path_join(shot[1]))
 	cam.queue_free()
 	bike.set_physics_process(true)
 	player.set_physics_process(true)
@@ -1194,3 +1207,4 @@ func _ride_shots(out_dir: String) -> void:
 	await _settle(40)
 	await _shot(out_dir.path_join("ride_first.png"))
 	raid.queue_free()
+

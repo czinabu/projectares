@@ -546,13 +546,24 @@ func _ride_pose() -> void:
 			var pose := skeleton.get_bone_global_pose(bone)
 			pose.origin += shift
 			skeleton.set_bone_global_pose(bone, pose)
+	# The lean is the whole back's, from the hips to the neck, whatever slouch
+	# the clip had: the back is turned to lie at `rider_lean` from upright.
 	var lean: float = _ride_on.get("rider_lean")
-	if not _spine.is_empty():
-		var bend := Basis(right, -lean * w / _spine.size())
-		for bone in _spine:
-			var pose := skeleton.get_bone_global_pose(bone)
-			pose.basis = bend * pose.basis
-			skeleton.set_bone_global_pose(bone, pose)
+	if not _spine.is_empty() and _neck >= 0:
+		var want := Basis(right, -lean) * up
+		var start := skeleton.get_bone_global_pose(_neck).origin - skeleton.get_bone_global_pose(_spine[0]).origin
+		var goal := start.normalized().slerp(want, w) if start.length_squared() > 0.000001 else want
+		# Each bone turns about its own joint, so the chord from the bottom of
+		# the back to the neck lags: a few passes settle it on the lean.
+		for i in 3:
+			var back := skeleton.get_bone_global_pose(_neck).origin - skeleton.get_bone_global_pose(_spine[0]).origin
+			if back.length_squared() < 0.000001:
+				break
+			var share := Quaternion.IDENTITY.slerp(Quaternion(back.normalized(), goal), 1.0 / _spine.size())
+			for bone in _spine:
+				var pose := skeleton.get_bone_global_pose(bone)
+				pose.basis = Basis(share) * pose.basis
+				skeleton.set_bone_global_pose(bone, pose)
 
 	var pegs: Array = _ride_on.get("peg_points")
 	for leg in [_lead, _trail]:

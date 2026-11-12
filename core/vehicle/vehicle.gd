@@ -46,10 +46,10 @@ var seat_offset := Vector3(0.0, 0.05, 0.28)
 ## z back), for the skin's riding pose only: the top of the seat under the
 ## hips, the handlebar grips and the foot pegs, left then right.
 var seat_point := Vector3(0.0, 0.98, 0.28)
-var grip_points: Array[Vector3] = [Vector3(-0.3, 1.06, -0.42), Vector3(0.3, 1.06, -0.42)]
+var grip_points: Array[Vector3] = [Vector3(-0.22, 1.2, -0.3), Vector3(0.22, 1.2, -0.3)]
 var peg_points: Array[Vector3] = [Vector3(-0.21, 0.44, 0.04), Vector3(0.21, 0.44, 0.04)]
 ## How far the rider leans forward from the hips, in radians.
-var rider_lean := 0.55
+var rider_lean := 0.8
 ## Where the rider lands when getting off, relative to the vehicle.
 var exit_offset := Vector3(1.4, 0.1, 0.0)
 var body_color := Color(0.85, 0.45, 0.15)
@@ -169,9 +169,9 @@ func build_visual() -> Node3D:
 		root.add_child(_part(Vector3(0.05, 0.75, 0.05), Vector3(side * 0.1, 0.71, -0.62), steel, 0.35))  # fork leg
 		root.add_child(_part(Vector3(0.02, 0.05, 0.5), Vector3(side * 0.185, 0.84, -0.14), null, 0.08, glow))  # side strip
 		root.add_child(_part(Vector3(0.16, 0.04, 0.06), Vector3(side * 0.2, 0.42, 0.04), steel))  # foot peg
-		root.add_child(_part(Vector3(0.12, 0.05, 0.05), Vector3(side * 0.31, 1.06, -0.42), dark)) # grip
-	root.add_child(_part(Vector3(0.52, 0.04, 0.04), Vector3(0, 1.06, -0.44), steel))             # handlebar
-	root.add_child(_part(Vector3(0.06, 0.12, 0.06), Vector3(0, 1.0, -0.48), steel))              # bar stem
+		root.add_child(_part(Vector3(0.12, 0.05, 0.05), Vector3(side * 0.24, 1.2, -0.3), dark))   # grip
+	root.add_child(_part(Vector3(0.4, 0.04, 0.04), Vector3(0, 1.2, -0.3), steel))                # handlebar
+	root.add_child(_part(Vector3(0.06, 0.06, 0.26), Vector3(0, 1.13, -0.39), steel, -0.66))      # bar riser
 	var lamp_mat := _mat(Color(1.0, 0.9, 0.6))
 	lamp_mat.emission_enabled = true
 	lamp_mat.emission = Color(1.0, 0.85, 0.5)
