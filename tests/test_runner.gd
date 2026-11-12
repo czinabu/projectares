@@ -3395,12 +3395,16 @@ func _test_vehicle_toys() -> void:
 	controller.pack_requested.connect(func() -> void: packs[0] += 1)
 	controller.wrist_raised = true
 	_aim_at(p, third.global_position + Vector3(0, 0.6, 0))
+	controller.yaw = p.cmd.yaw
+	controller.pitch = p.cmd.pitch
 	await frames(2)
 	check(controller.pack_target() == third and controller.click_watch() and packs[0] == 1 and controller.held_toy == "",
 			"with the watch up, clicking on a bike asks to pack it")
 	hud._process(0.016)
 	check(hud.wrist.text().contains("click: pack Raider Bike"), "and the watch says so")
 	_aim_at(p, p.global_position + Vector3(0, 1.6, 10))
+	controller.yaw = p.cmd.yaw
+	controller.pitch = p.cmd.pitch
 	await frames(2)
 	controller.wrist_raised = false
 	check(controller.pack_target() == null and not controller.click_watch(), "with the watch down a click is an ordinary shot")
