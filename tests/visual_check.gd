@@ -186,8 +186,15 @@ func _rig_shots(out_dir: String) -> void:
 		raid.add_child(camera)
 		camera.make_current()
 		var p := raid.player
+		# The HUD lights a jetpack's screen bay with its heat; hidden, so
+		# nothing else of it shows.
+		var hud := Hud.new()
+		hud.setup(raid, null)
+		hud.visible = false
+		raid.add_child(hud)
 		await _settle(30)
 		p.set_physics_process(false)
+		p.flight.heat = p.flight.max_heat * 0.55
 		var at := p.global_position
 		var back := p.global_transform.basis.z
 		var side := p.global_transform.basis.x
