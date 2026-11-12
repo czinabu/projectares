@@ -371,9 +371,12 @@ without Caleb, and update the gap list when a PR closes a row.
   `Combat.authoritative` is false there, so a client never deals damage, loots,
   or decides an outcome. Anything that changes a result must run on the server
   and reach clients through `NetSession`.
-- Online movement: a client numbers every input and sends the last few in
-  each packet; the server plays them in order, one per tick, and each state
-  entry carries the input number it had reached. The client corrects its own
+- Online movement: a client numbers every input and each packet repeats
+  every input the server has not answered for yet (up to
+  `NetSession.MAX_INPUTS_PER_PACKET`), so a press survives a run of lost
+  packets; the server plays them in order, one per tick, and each state
+  entry carries the input number it had reached, which is also the answer
+  that stops the resending. The client corrects its own
   actor by comparing the server's position with its remembered prediction for
   that input (`NetSession._history`), never with its current position, and
   blends every correction over several ticks. Keep `Actor` movement

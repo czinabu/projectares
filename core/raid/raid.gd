@@ -624,6 +624,10 @@ func _tick_bots(delta: float) -> void:
 ## How many bots the world wants alive right now: its own count, and more
 ## the hotter the war is.
 func bot_target() -> int:
+	# A world with no army of its own (a server run with `--bots 0`) has
+	# nobody to send, however hot the war gets.
+	if world.bot_count <= 0:
+		return 0
 	return world.bot_count + roundi(maxi(world.war_reinforcements, 0) * war.intensity)
 
 

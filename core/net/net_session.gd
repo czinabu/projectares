@@ -105,9 +105,11 @@ const THIN_NEAR_RANGE := 70.0
 const THIN_FAR_RANGE := 160.0
 ## Position errors beyond this are fixed at once instead of blended.
 const SNAP_DISTANCE := 5.0
-## Each input packet repeats this many recent ticks, so a lost packet does not
-## lose a key press.
-const INPUT_REDUNDANCY := 4
+## Each input packet repeats every tick the server has not yet answered for,
+## up to this many (a quarter of a second), so a key press survives a run of
+## lost packets and not only a single one. On a good connection that is the
+## three or four ticks still in flight.
+const MAX_INPUTS_PER_PACKET := 16
 ## The server holds at most this many unplayed inputs per player. More means
 ## the player's packets arrived in a burst, and the oldest are folded together.
 const MAX_QUEUED_INPUTS := 6
@@ -201,7 +203,8 @@ var _seen_tick := {}     # Actor -> server tick the player was looking at (serve
 var _past := {}          # server tick -> {Actor: position} after that tick (server)
 var _seq := 0            # number of the input sent this tick (client)
 var _history := {}       # input number -> own predicted position after it (client)
-var _recent_inputs: Array = [] # the last few [seq, command array, view tick] sent (client)
+var _recent_inputs: Array = [] # [seq, command array, view tick] sent and not yet answered for (client)
+var _acked_seq := 0      # newest input number the server says it has played (client)
 var _newest_tick := 0    # server tick of the newest state received (client)
 var _fresh_state := false # a newer state arrived since the last tick (client)
 var _view_tick := 0      # server tick the actors on screen show (client)
@@ -371,6 +374,7 @@ func _clear_tables() -> void:
 	_fresh_state = false
 	_view_tick = 0
 	_seq = 0
+	_acked_seq = 0
 	_history.clear()
 	_recent_inputs.clear()
 	_corrections.clear()
@@ -924,7 +928,7 @@ func _request_sign_out(start: bool) -> void:
 
 @rpc("any_peer", "call_remote", "unreliable_ordered")
 func _send_input(inputs: Array) -> void:
-	if not is_server or inputs.size() > INPUT_REDUNDANCY:
+	if not is_server or inputs.size() > MAX_INPUTS_PER_PACKET:
 		return
 	var peer := _api.get_remote_sender_id()
 	if not _peer_actor.has(peer):
@@ -1437,6 +1441,9 @@ func _receive_state(tick: int, entries: Array) -> void:
 	for entry: Array in entries:
 		var id: int = entry[0]
 		entries_received[id] = int(entries_received.get(id, 0)) + 1
+		# The server has played your inputs up to here: stop resending those.
+		if id == my_actor_id:
+			_acked_seq = maxi(_acked_seq, int(entry[8]))
 		# Presses from an update we have not applied yet must not be lost.
 		if _latest.has(id):
 			var cmd: Array = entry[3]
@@ -1964,8 +1971,12 @@ func _client_late_tick() -> void:
 		_ride_history.clear()
 		_history[_seq] = me.global_position
 		_history.erase(_seq - HISTORY_TICKS)
+	# Every packet carries the inputs the server has not answered for, so one
+	# that arrives makes up for all the packets lost before it.
+	while not _recent_inputs.is_empty() and int(_recent_inputs[0][0]) <= _acked_seq:
+		_recent_inputs.pop_front()
 	_recent_inputs.append([_seq, me.cmd.to_array(), _view_tick])
-	if _recent_inputs.size() > INPUT_REDUNDANCY:
+	if _recent_inputs.size() > MAX_INPUTS_PER_PACKET:
 		_recent_inputs.pop_front()
 	var now := Time.get_ticks_msec()
 	if simulated_loss <= 0.0 or randf() >= simulated_loss:
