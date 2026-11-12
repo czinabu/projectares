@@ -88,6 +88,16 @@ var hover_lean := 0.45
 ## The roll keys twist the body round its own length, in radians a second.
 var twist_speed := 7.0
 
+## Riding, the head turns at most this far (radians) toward the aim; the
+## body stays facing along the vehicle.
+var ride_head_turn := 1.1
+## Where the wrist sits behind the resting hand spot when a rider holds a gun
+## out, in the actor's frame along the aim.
+var ride_gun_wrist := Vector3(0.0, -0.02, 0.1)
+## Riding, a weapon slung on the back rides this much higher up the back, so
+## its lower end clears the seat and the bike's tail.
+var ride_sling_lift := 0.28
+
 ## Holstered weapons are worn on the body instead of vanishing: a gun is
 ## slung across the back, muzzle up over the right shoulder, and over the
 ## outside of a back rig (a jetpack or wings) when one is worn. A two-handed
@@ -109,6 +119,9 @@ var holster_offset := Vector3(0.21, -0.02, 0.0)
 ## it. Seconds for each move. Only the view waits; the actor switched the
 ## moment it was told, and first person stays instant.
 var reach_time := 0.22
+## How long a blade takes to slide out of its hilt when drawn, or back in
+## when put away (`Look.set_extend`).
+var fold_time := 0.18
 var between_time := 0.14
 var return_time := 0.2
 
@@ -179,6 +192,8 @@ var _stowed_models := {}
 ## switching (putting `_in_hand` away first), the active weapon that plan is
 ## for, and how far into it the hand is.
 var _in_hand: Weapon
+## Melee weapon -> how far its held model is out (1) or folded away (0).
+var _extend := {}
 var _plan: Array[Weapon] = []
 var _plan_for: Weapon
 var _plan_t := 0.0
@@ -303,6 +318,7 @@ func _process(delta: float) -> void:
 	var melee := weapon as MeleeWeapon
 	if locomotion == null:
 		return
+	_update_ride()
 	locomotion.update(delta)
 	locomotion.twist_target = 0.0
 	locomotion.stride_target = 1.0
@@ -326,7 +342,11 @@ func _process(delta: float) -> void:
 			locomotion.choose(locomotion.velocity, armed, _current, _current_sign)
 	var airborne := is_airborne()
 	_update_air(delta, airborne)
-	if actor.vehicle != null or _glide > 0.0:
+	if actor.vehicle != null:
+		# Seated by the locomotion's riding pose over the clip of an empty,
+		# armed or blade-holding stand, which still decides the weapon arm.
+		_play("idle_melee" if melee and _anims.has("idle_melee") else stand_key(weapon))
+	elif _glide > 0.0:
 		_play("idle")
 	elif airborne:
 		# No ground under the feet: never a run cycle. A stand plays under
@@ -392,7 +412,7 @@ func _update_air(delta: float, airborne: bool) -> void:
 	if locomotion:
 		# Down fast, up slow: sin over the squat's life, peaking early.
 		var life := 1.0 - _land_left
-		locomotion.squat = _land_depth * sin(PI * pow(life, 0.55)) if _land_left > 0.0 and not actor.is_sliding() else 0.0
+		locomotion.squat = _land_depth * sin(PI * pow(life, 0.55)) if _land_left > 0.0 and not actor.is_sliding() and actor.vehicle == null else 0.0
 	if not airborne:
 		return
 	var follow := 1.0 - exp(-attitude_follow * delta)
@@ -462,11 +482,22 @@ func _update_stowed() -> void:
 				_stowed[weapon].queue_free()
 			_stowed.erase(weapon)
 			_stowed_models.erase(weapon)
+			_extend.erase(weapon)
 	for weapon in actor.weapons:
 		# Every weapon gets its worn copy, the one in hand too, so a draw
 		# can start from it.
 		if weapon.visual != null and not actor.is_dead and not _stowed.has(weapon):
 			_stowed[weapon] = _stow(weapon)
+	# Riding, what is slung on the back moves up it, clear of the seat.
+	var lift := ride_sling_lift * (smoothstep(0.0, 1.0, locomotion.ride_weight) if locomotion else 0.0)
+	for weapon: Variant in _stowed:
+		var root: Node3D = _stowed[weapon]
+		if root == null or not root.get_meta("slung", false):
+			continue
+		var holder := root.get_node_or_null("Part") as Node3D
+		if holder != null and holder.has_meta("rest"):
+			var rest: Transform3D = holder.get_meta("rest")
+			holder.transform = Transform3D(rest.basis, rest.origin + (holder.get_meta("up") as Vector3) * lift)
 
 
 ## Plays a weapon switch: the hand reaches to each holster in `_plan` in turn,
@@ -511,6 +542,25 @@ func _update_switch(delta: float) -> void:
 		var worn: Node3D = _stowed.get(weapon)
 		if worn:
 			worn.visible = weapon != _in_hand and weapon.visual != null and not actor.is_dead
+	_update_fold(delta)
+
+
+## A blade slides out of its hilt once it is in hand and back in as the hand
+## takes it to put it away, so it is worn folded (see `_stow`). A weapon
+## already in hand when first seen starts out.
+func _update_fold(delta: float) -> void:
+	for weapon in actor.weapons:
+		if not weapon is MeleeWeapon or weapon.visual == null:
+			continue
+		var held: Node3D = weapon.visual.get_node_or_null("Model")
+		if held == null:
+			continue
+		var target := 1.0 if weapon == _in_hand and (_plan.is_empty() or weapon == _plan_for) else 0.0
+		var now: float = _extend.get(weapon, -1.0)
+		var next := target if now < 0.0 else move_toward(now, target, delta / fold_time)
+		if next != now:
+			look.set_extend(held, next)
+			_extend[weapon] = next
 
 
 ## Where the plan has got to at `_plan_t`: which weapon the hand is with,
@@ -624,14 +674,17 @@ func _stow(weapon: Weapon) -> Node3D:
 	var model: Node3D = look.weapon_model(weapon)
 	if model == null:
 		return null
+	# Worn folded away, so a blade does not stick out from the hip.
+	look.set_extend(model, 0.0)
 	var place := stow_place(weapon)
 	var pivot := Node3D.new()
 	pivot.add_child(model)
 	if place["centre"]:
-		model.position -= look.model_bounds(model).get_center()
+		model.position -= look.folded_bounds(model).get_center()
 	pivot.basis = place["basis"]
 	var fallback: Vector3 = Vector3(0.0, _def.get("height", 1.8) * 0.7, 0.0) + place["at"]
 	var root := _hang(pivot, "Stowed" + str(actor.weapons.find(weapon)), place["bone"], place["at"], fallback)
+	root.set_meta("slung", place["centre"])
 	_stowed_models[weapon] = model
 	return root
 
@@ -748,6 +801,44 @@ func _update_glide(delta: float) -> void:
 	var turn := tip * Basis(Vector3.UP, _face - _bank + _twist)
 	var pivot := Vector3(0, glide_pivot, 0)
 	transform = Transform3D(turn * Basis(Vector3.UP, PI), pivot - turn * pivot)
+	var seated: Variant = ride_frame()
+	if seated != null and locomotion != null and locomotion.ride_weight > 0.0:
+		transform = transform.interpolate_with(seated, smoothstep(0.0, 1.0, locomotion.ride_weight))
+
+
+## Tells the legs' riding pose what is being ridden and what the hands may do:
+## the left hand always takes its grip, the right one only while nothing is
+## in it (holster with Z to ride with both hands). The head turns to the aim.
+func _update_ride() -> void:
+	var vehicle: Node3D = actor.vehicle if not actor.is_dead else null
+	locomotion.ride = vehicle
+	if arm:
+		arm.ride_grip = locomotion.grip_hold()
+	if vehicle == null:
+		return
+	var free := _in_hand == null and _plan.is_empty()
+	locomotion.ride_hands = Vector2(1.0, 1.0 if free else 0.0)
+	# A gun in hand is held out toward the aim, where it would be on foot.
+	var gun := _in_hand as Gun
+	locomotion.ride_gun_wrist = null
+	if gun != null and _plan.is_empty() and not actor.hand_override:
+		var aim := Basis(Vector3.RIGHT, actor.cmd.pitch)
+		locomotion.ride_gun_wrist = actor.global_transform * (Actor.HAND_REST + aim * ride_gun_wrist)
+	locomotion.ride_turn = clampf(wrapf(actor.global_rotation.y - vehicle.global_rotation.y, -PI, PI), -ride_head_turn, ride_head_turn)
+
+
+## Where the model goes while riding, in the actor's frame: facing along the
+## vehicle rather than the aim, and tipped with the bike's lean and pitch
+## about its wheels. Null on foot. The vehicle carries the actor at its
+## `seat_offset`, so that is where the model's feet start from.
+func ride_frame() -> Variant:
+	var vehicle: Node3D = locomotion.get("_ride_on") if locomotion else null
+	if vehicle == null or not is_instance_valid(vehicle) or not vehicle.is_inside_tree():
+		return null
+	var model := vehicle.get_node_or_null("Model") as Node3D
+	var frame: Transform3D = model.global_transform if model else vehicle.global_transform
+	var offset: Vector3 = vehicle.get("seat_offset")
+	return actor.global_transform.affine_inverse() * frame * Transform3D(Basis(Vector3.UP, PI), offset)
 
 
 func _setup_glide_pose(skeleton: Skeleton3D, def: Dictionary) -> void:
@@ -953,4 +1044,7 @@ func _hang(part: Node3D, holder_name: String, bone_name: String, offset: Vector3
 	var bone_at := to_actor * _skeleton.global_transform * _skeleton.get_bone_global_rest(bone)
 	var want := Transform3D(Basis.IDENTITY, bone_at.origin + offset)
 	holder.transform = bone_at.affine_inverse() * want
+	# What moving the part up the body (actor frame) is, in the holder's parent.
+	holder.set_meta("rest", holder.transform)
+	holder.set_meta("up", bone_at.basis.inverse() * Vector3.UP)
 	return attach

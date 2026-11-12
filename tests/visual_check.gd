@@ -63,9 +63,17 @@ func _ready() -> void:
 		get_tree().quit()
 		return
 
-	# `-- <output_dir> --holster-only` shoots holstered weapons on the body.
+	# `-- <output_dir> --holster-only [melee item id]` shoots holstered
+	# weapons on the body, with that melee weapon in place of the kit's.
 	if "--holster-only" in args:
-		await _holster_shots(out_dir)
+		var at := args.find("--holster-only")
+		await _holster_shots(out_dir, args[at + 1] if at + 1 < args.size() else "")
+		get_tree().quit()
+		return
+
+	# `-- <output_dir> --ride-only` shoots the rider seated on a bike.
+	if "--ride-only" in args:
+		await _ride_shots(out_dir)
 		get_tree().quit()
 		return
 
@@ -78,6 +86,12 @@ func _ready() -> void:
 	# `-- <output_dir> --sidearms-only` shoots each sidearm model side on.
 	if "--sidearms-only" in args:
 		await _sidearm_shots(out_dir)
+		get_tree().quit()
+		return
+
+	# `-- <output_dir> --power-only` shoots the power weapons and their effects.
+	if "--power-only" in args:
+		await _power_shots(out_dir)
 		get_tree().quit()
 		return
 
@@ -1056,10 +1070,98 @@ func _sidearm_shots(out_dir: String) -> void:
 	stage.queue_free()
 
 
+## The four power weapons side on (power_weapons.png), then one in use in a
+## raid: a Rail Lance beam, a plasma burst and an arc burst (power_fire.png).
+func _power_shots(out_dir: String) -> void:
+	var stage := Node3D.new()
+	add_child(stage)
+	var env := WorldEnvironment.new()
+	env.environment = Environment.new()
+	env.environment.background_mode = Environment.BG_COLOR
+	env.environment.background_color = Color(0.13, 0.14, 0.16)
+	env.environment.ambient_light_color = Color(0.6, 0.6, 0.65)
+	env.environment.ambient_light_energy = 0.6
+	env.environment.glow_enabled = true
+	stage.add_child(env)
+	var sun := DirectionalLight3D.new()
+	sun.rotation = Vector3(-0.8, 0.6, 0.0)
+	stage.add_child(sun)
+	var cam := Camera3D.new()
+	stage.add_child(cam)
+	cam.current = true
+	cam.fov = 30.0
+	var ids := ["power_rail_lance", "power_helion", "power_arc_mortar", "power_storm_cannon"]
+	var sheet := Image.create(2 * 480, ids.size() * 320, false, Image.FORMAT_RGBA8)
+	for row in ids.size():
+		var gun := Gun.new()
+		Loadout._setup_weapon(gun, ids[row], ItemDB.item_stats(ids[row]))
+		var model: Node3D = Look.weapon_model(gun)
+		gun.free()
+		if model == null:
+			continue
+		stage.add_child(model)
+		var box: AABB = Look.model_bounds(model)
+		var centre := box.get_center()
+		for c in 2:
+			var side := Vector3(1, 0.15, 0) if c == 0 else Vector3(1, 0.4, -0.9)
+			cam.global_position = centre + side.normalized() * 2.9
+			cam.look_at(centre)
+			await _settle(2)
+			await RenderingServer.frame_post_draw
+			var frame := get_viewport().get_texture().get_image()
+			var w := frame.get_width()
+			var h := frame.get_height()
+			var cut := frame.get_region(Rect2i(w / 2 - 240 * h / 720, h / 2 - 160 * h / 720, 480 * h / 720, 320 * h / 720))
+			cut.resize(480, 320)
+			cut.convert(Image.FORMAT_RGBA8)
+			sheet.blit_rect(cut, Rect2i(0, 0, 480, 320), Vector2i(c * 480, row * 320))
+		model.queue_free()
+	sheet.save_png(out_dir.path_join("power_weapons.png"))
+	print("saved power_weapons.png")
+	stage.queue_free()
+
+	var raid := Raid.new()
+	add_child(raid)
+	raid.start(Worlds.get_world("ashfront"), 42)
+	for bot in raid.bots:
+		bot.queue_free()
+	var player := raid.player
+	await _settle(30)
+	player.velocity = Vector3.ZERO
+	var rack := raid.spawn_container(["power_rail_lance"], false, LootContainer.RACK_LABEL,
+			player.global_position + Vector3(2.0, 0, -2.0))
+	rack.interact(player)
+	await _settle(10)
+	var lance := player.get_active_weapon() as Gun
+	var shot_cam := Camera3D.new()
+	raid.add_child(shot_cam)
+	shot_cam.current = true
+	shot_cam.fov = 60.0
+	shot_cam.global_position = player.global_position + Vector3(3.2, 2.4, 3.5)
+	shot_cam.look_at(player.global_position + Vector3(0, 1.2, -8))
+	player.cmd.aim_dir = Vector3(0, 0.02, -1).normalized()
+	player.cmd.yaw = 0.0
+	player.cmd.primary = true
+	for i in 70:
+		await get_tree().physics_frame
+		if lance.ammo_in_mag < lance.mag_size:
+			break
+	player.cmd.primary = false
+	var ahead := player.global_position + Vector3(0, 0, -14)
+	Fx.burst(raid, player.global_position + Vector3(-4, 1.5, -7), 3.0, Color(1.0, 0.45, 0.15))
+	Fx.burst(raid, player.global_position + Vector3(5, 1.5, -6), 3.0, Color(0.7, 0.45, 1.0))
+	rack.set_items(["power_storm_cannon"])
+	await _settle(4)
+	await RenderingServer.frame_post_draw
+	get_viewport().get_texture().get_image().save_png(out_dir.path_join("power_fire.png"))
+	print("saved power_fire.png")
+	raid.queue_free()
+
+
 ## A contact sheet of where holstered weapons are worn: one row each for the
 ## blade in hand (gun slung on the back) and the gun in hand (blade on the hip),
 ## with the jetpack on and off, seen from four sides.
-func _holster_shots(out_dir: String) -> void:
+func _holster_shots(out_dir: String, melee_id := "") -> void:
 	var raid := Raid.new()
 	add_child(raid)
 	raid.start(Worlds.get_world("ashfront"), 42)
@@ -1068,6 +1170,16 @@ func _holster_shots(out_dir: String) -> void:
 	var player := raid.player
 	player.set_physics_process(false)
 	player.velocity = Vector3.ZERO
+	if ItemDB.has_tag(melee_id, "melee"):
+		for w in player.weapons.duplicate():
+			if w is MeleeWeapon:
+				player.weapons.erase(w)
+				if w.visual:
+					w.visual.queue_free()
+				w.queue_free()
+		var swap := MeleeWeapon.new()
+		Loadout._setup_weapon(swap, melee_id, ItemDB.item_stats(melee_id))
+		player.equip_weapon(swap)
 	await _settle(10)
 	var skin: Node = player.get_node("Skin")
 	var cam := Camera3D.new()
@@ -1146,3 +1258,102 @@ func _holster_shots(out_dir: String) -> void:
 	print("saved holster_switch.png")
 	player.flight.enabled = rig_on
 	raid.queue_free()
+
+
+## The rider on a bike: rows of hands-free with weapons slung, a gun drawn, a
+## blade drawn, and leaning into a right turn; each from the side, the front
+## quarter, behind and above-behind. Then the riding view in first person.
+func _ride_shots(out_dir: String) -> void:
+	var raid := Raid.new()
+	add_child(raid)
+	raid.start(Worlds.get_world("ashfront"), 42)
+	for bot in raid.bots:
+		bot.queue_free()
+	raid.bots.clear()
+	var player := raid.player
+	await _settle(10)
+	# A flat deck well above the map, so nothing stands in the shots.
+	var at := player.global_position + Vector3(0, 40, 0)
+	var deck := StaticBody3D.new()
+	var deck_shape := CollisionShape3D.new()
+	deck_shape.shape = BoxShape3D.new()
+	deck_shape.shape.size = Vector3(40, 1, 40)
+	deck.add_child(deck_shape)
+	var deck_mesh := MeshInstance3D.new()
+	deck_mesh.mesh = BoxMesh.new()
+	deck_mesh.mesh.size = Vector3(40, 1, 40)
+	deck.add_child(deck_mesh)
+	raid.add_child(deck)
+	deck.global_position = at - Vector3(0, 0.5, 0)
+	var bike: Node3D = raid.spawn_vehicle("bike_raider", at + Vector3(0, 0.3, 0), 0.6)
+	await _settle(20)
+	bike.mount(player)
+	player.set_physics_process(false)
+	player.rotation.y = 0.6
+	var skin: Node = player.get_node("Skin")
+	var gun := -1
+	var blade := -1
+	for i in player.weapons.size():
+		if player.weapons[i] is MeleeWeapon:
+			blade = i
+		elif player.weapons[i] is Gun and gun < 0:
+			gun = i
+	var cam := Camera3D.new()
+	raid.add_child(cam)
+	cam.current = true
+	cam.fov = 40.0
+	# [weapon, lean]
+	var rows := [[-1, 0.0], [gun, 0.0], [blade, 0.0], [-1, 0.3]]
+	var sheet := Image.create(4 * 320, rows.size() * 360, false, Image.FORMAT_RGBA8)
+	for row in rows.size():
+		player.active_weapon_index = rows[row][0]
+		player._refresh_weapon_visuals()
+		bike.set_physics_process(rows[row][1] == 0.0)
+		bike.lean = rows[row][1]
+		bike.get_node("Model").rotation = Vector3(0.0, 0.0, -bike.lean)
+		await _settle(60)
+		var b: Basis = bike.global_basis
+		var sides: Array[Vector3] = [b.x, (b.x - b.z).normalized(), b.z, (b.z * 0.8 + Vector3.UP * 0.7).normalized()]
+		for c in sides.size():
+			var look_at := bike.global_position + Vector3(0, 0.85, 0)
+			cam.global_position = look_at + (sides[c] + Vector3.UP * 0.15).normalized() * 6.5
+			cam.look_at(look_at)
+			await _settle(1)
+			await RenderingServer.frame_post_draw
+			var frame := get_viewport().get_texture().get_image()
+			var w := frame.get_width()
+			var h := frame.get_height()
+			var cut := frame.get_region(Rect2i(w / 2 - 160 * h / 720, h / 2 - 180 * h / 720, 320 * h / 720, 360 * h / 720))
+			cut.resize(320, 360)
+			cut.convert(Image.FORMAT_RGBA8)
+			sheet.blit_rect(cut, Rect2i(0, 0, 320, 360), Vector2i(c * 320, row * 360))
+	sheet.save_png(out_dir.path_join("ride.png"))
+	print("saved ride.png")
+	# Close in on the hands and feet, hands free, from the left and above-front.
+	player.active_weapon_index = -1
+	player._refresh_weapon_visuals()
+	bike.set_physics_process(true)
+	await _settle(40)
+	var close := [[-bike.global_basis.x * 2.4 + Vector3(0, 0.2, 0), "ride_close_side.png"],
+		[(-bike.global_basis.z * 1.6 + bike.global_basis.x * 0.9 + Vector3(0, 1.0, 0)), "ride_close_front.png"]]
+	for shot in close:
+		var focus := bike.global_position + bike.global_basis * Vector3(0, 1.0, -0.1)
+		cam.global_position = focus + shot[0]
+		cam.look_at(focus)
+		await _settle(2)
+		await _shot(out_dir.path_join(shot[1]))
+	cam.queue_free()
+	bike.set_physics_process(true)
+	player.set_physics_process(true)
+	player.active_weapon_index = -1
+	var controller := PlayerController.new()
+	controller.setup(player)
+	raid.add_child(controller)
+	controller.ride_view = PlayerController.ViewMode.THIRD
+	await _settle(40)
+	await _shot(out_dir.path_join("ride_third.png"))
+	controller.ride_view = PlayerController.ViewMode.FIRST
+	await _settle(40)
+	await _shot(out_dir.path_join("ride_first.png"))
+	raid.queue_free()
+

@@ -21,6 +21,7 @@ const BattlefieldTests := preload("res://tests/battlefield_tests.gd")
 const VisorTests := preload("res://tests/visor_tests.gd")
 const SidearmTests := preload("res://tests/sidearm_tests.gd")
 const AttachmentTests := preload("res://tests/attachment_tests.gd")
+const PowerWeaponTests := preload("res://tests/power_weapon_tests.gd")
 
 var _passed := 0
 var _failed := 0
@@ -29,9 +30,180 @@ var _failed := 0
 func _ready() -> void:
 	Profile.persist = false
 	Profile.reset()
-	await _run()
+	# Accounts a previous run left behind hold that run's secrets and would
+	# refuse this run's sign-ins, so every run starts with none.
+	_wipe_dir(NET_ACCOUNTS)
+	var args := OS.get_cmdline_user_args()
+	if "--list" in args:
+		_list_groups()
+		get_tree().quit(0)
+		return
+	if "--tier" in args or "--shard" in args or "--groups" in args:
+		await _run_selected(args)
+	else:
+		await _run()
 	print("\n%d passed, %d failed" % [_passed, _failed])
 	get_tree().quit(1 if _failed > 0 else 0)
+
+
+# --- Picking groups for CI -------------------------------------------------
+# CI splits the suite in two tiers:
+#   offline  groups that never start a server. They only count physics frames,
+#            so CI runs them with `--fixed-fps 60`, which drops the real-time
+#            wait and finishes in about a minute.
+#   net      groups that start a server process and talk to it over ENet. They
+#            need real time, so they run without `--fixed-fps`, split in shards.
+# The groups are read from `_run()` itself and a group is `net` when it (or any
+# helper it calls) starts a server or makes a NetSession, so a new group needs
+# no change here.
+#   -- --list                  print every group and its tier
+#   -- --tier offline|net      run one tier
+#   -- --shard 2/3             run the 2nd of 3 balanced slices (with or without --tier)
+#   -- --groups a,b            run the named groups (names as --list prints them)
+#   -- --times-out path.json   write how long each group took
+
+const NET_MARKERS: Array[String] = ["_start_server(", "NetSession"]
+const GROUP_TIMES := "res://tests/group_times.json"
+
+var _source_cache := ""
+
+
+func _arg(args: PackedStringArray, flag: String) -> String:
+	var at := args.find(flag)
+	return args[at + 1] if at >= 0 and at + 1 < args.size() else ""
+
+
+func _source() -> String:
+	if _source_cache == "":
+		_source_cache = (get_script() as Script).source_code
+		if _source_cache == "":
+			_source_cache = FileAccess.get_file_as_string("res://tests/test_runner.gd")
+	return _source_cache
+
+
+## The text of `func fn_name(...)` up to the next top-level func.
+func _func_body(src: String, fn_name: String) -> String:
+	var start := src.find("\nfunc " + fn_name + "(")
+	if start < 0:
+		return ""
+	var stop := src.find("\nfunc ", start + 1)
+	return src.substr(start, (stop if stop >= 0 else src.length()) - start)
+
+
+## Every group `_run()` calls, in order: `_test_x` methods and `Module.run(self)` files.
+func _groups() -> Array[String]:
+	var out: Array[String] = []
+	var re := RegEx.create_from_string("^\\t(?:await )?(\\w+)(?:\\.run\\(self\\)|\\(\\))\\s*$")
+	for line in _func_body(_source(), "_run").split("\n"):
+		var m := re.search(line)
+		if m != null:
+			out.append(m.get_string(1))
+	return out
+
+
+func _group_label(group: String) -> String:
+	return group.trim_prefix("_test_")
+
+
+func _module_source(const_name: String) -> String:
+	var mod: Variant = (get_script() as Script).get_script_constant_map().get(const_name)
+	return (mod as Script).source_code if mod is Script else ""
+
+
+func _is_net(group: String) -> bool:
+	var src := _source()
+	var call_re := RegEx.create_from_string("\\b(_[a-z]\\w*)\\(")
+	var module_re := RegEx.create_from_string("\\b([A-Z]\\w*)\\.run\\(")
+	var seen := {}
+	var todo: Array[String] = [group]
+	while not todo.is_empty():
+		var fn: String = todo.pop_back()
+		if seen.has(fn):
+			continue
+		seen[fn] = true
+		var body := _module_source(fn) if fn[0] == fn[0].to_upper() and fn[0] != "_" else _func_body(src, fn)
+		for marker in NET_MARKERS:
+			if marker in body:
+				return true
+		for m in call_re.search_all(body):
+			todo.append(m.get_string(1))
+		for m in module_re.search_all(body):
+			todo.append(m.get_string(1))
+	return false
+
+
+func _list_groups() -> void:
+	for group in _groups():
+		print("%-6s %s" % ["net" if _is_net(group) else "offline", _group_label(group)])
+
+
+## Splits groups into `count` slices of about equal run time, using the last
+## measured times (unknown groups count as an average one).
+func _shard(groups: Array[String], index: int, count: int) -> Array[String]:
+	var times: Dictionary = {}
+	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(GROUP_TIMES)) \
+			if FileAccess.file_exists(GROUP_TIMES) else null
+	if parsed is Dictionary:
+		times = parsed
+	var known: Array = times.values()
+	var fallback: float = 5.0 if known.is_empty() else known.reduce(func(a: float, b: float) -> float: return a + b, 0.0) / known.size()
+	var weight := func(g: String) -> float: return float(times.get(_group_label(g), fallback))
+	var ordered := groups.duplicate()
+	ordered.sort_custom(func(a: String, b: String) -> bool:
+		return weight.call(a) > weight.call(b) or (weight.call(a) == weight.call(b) and a < b))
+	var loads: Array[float] = []
+	loads.resize(count)
+	loads.fill(0.0)
+	var mine: Array[String] = []
+	for g in ordered:
+		var lightest := loads.find(loads.min())
+		loads[lightest] += weight.call(g)
+		if lightest == index:
+			mine.append(g)
+	# Keep `_run()` order inside the slice.
+	return groups.filter(func(g: String) -> bool: return g in mine)
+
+
+func _run_selected(args: PackedStringArray) -> void:
+	var groups := _groups()
+	var tier := _arg(args, "--tier")
+	if tier != "":
+		if tier not in ["offline", "net"]:
+			check(false, "--tier must be offline or net, got '%s'" % tier)
+			return
+		groups = groups.filter(func(g: String) -> bool: return _is_net(g) == (tier == "net"))
+	var names := _arg(args, "--groups")
+	if names != "":
+		var wanted := names.split(",", false)
+		for name in wanted:
+			check(groups.any(func(g: String) -> bool: return _group_label(g) == name), "group '%s' exists" % name)
+		groups = groups.filter(func(g: String) -> bool: return _group_label(g) in wanted)
+	var shard := _arg(args, "--shard")
+	if shard != "":
+		var parts := shard.split("/")
+		var index := int(parts[0]) - 1
+		var count := int(parts[1]) if parts.size() == 2 else 0
+		if count < 1 or index < 0 or index >= count:
+			check(false, "--shard must look like 2/3, got '%s'" % shard)
+			return
+		groups = _shard(groups, index, count)
+	print("Running %d groups: %s" % [groups.size(), ", ".join(groups.map(_group_label))])
+	var took := {}
+	for group in groups:
+		var failed_before := _failed
+		var started := Time.get_ticks_msec()
+		if group.begins_with("_test_"):
+			await call(group)
+		else:
+			await (get_script() as Script).get_script_constant_map()[group].run(self)
+		var seconds := (Time.get_ticks_msec() - started) / 1000.0
+		took[_group_label(group)] = snappedf(seconds, 0.1)
+		print("== %s: %.1fs%s" % [_group_label(group), seconds, "" if _failed == failed_before else ", FAILED"])
+	var out := _arg(args, "--times-out")
+	if out != "":
+		var f := FileAccess.open(out, FileAccess.WRITE)
+		if f != null:
+			f.store_string(JSON.stringify(took, "\t", true))
 
 
 func _run() -> void:
@@ -76,6 +248,10 @@ func _run() -> void:
 	await _test_clans()
 	await _test_scrip()
 	await _test_online()
+	await _test_online_stash()
+	await _test_online_movement()
+	await _test_online_lag_compensation()
+	await _test_online_riding()
 	await _test_plaza()
 	await _test_plaza_online()
 	await _test_stash_service()
@@ -83,7 +259,7 @@ func _run() -> void:
 	await _test_home_base()
 	await _test_arena()
 	await _test_online_arena()
-	await LookTests.run(self)
+	await _test_look()
 	await _test_rig_models()
 	await _test_customizer()
 	await _test_economy()
@@ -91,6 +267,11 @@ func _run() -> void:
 	await _test_visors()
 	await _test_sidearms()
 	await _test_attachments()
+	await _test_power_weapons()
+
+
+func _test_look() -> void:
+	await LookTests.run(self)
 
 
 func _test_rig_models() -> void:
@@ -124,6 +305,10 @@ func _test_battlefield() -> void:
 
 func _test_visors() -> void:
 	await VisorTests.run(self)
+
+
+func _test_power_weapons() -> void:
+	await PowerWeaponTests.run(self)
 
 
 func check(condition: bool, what: String) -> void:
@@ -1525,6 +1710,17 @@ func _test_vehicle_driving() -> void:
 	rider.cmd.pitch = 0.0
 	seat.interact(rider)
 	check(rider.vehicle == bike and bike.rider == rider, "interacting gets you on")
+	# Seated, not standing on the bike: the eyes (and the head a shot finds)
+	# are about where a seated rider's are, and the pose's anchors line up.
+	await frames(2)
+	var eye_up: float = rider.get_eye_position().y - bike.global_position.y
+	check(eye_up > 1.3 and eye_up < 1.8, "a rider sits low on the bike (eyes %.2f m up)" % eye_up)
+	var seat_at: Vector3 = bike.seat_point
+	check(bike.grip_points.size() == 2 and bike.peg_points.size() == 2, "a bike has two grips and two pegs")
+	check(bike.grip_points[0].x < 0.0 and bike.grip_points[1].x > 0.0 and bike.peg_points[0].x < 0.0 \
+			and bike.peg_points[1].x > 0.0, "grips and pegs are listed left then right")
+	check(bike.grip_points[0].z < seat_at.z and bike.grip_points[0].y > seat_at.y and bike.peg_points[0].y < seat_at.y,
+			"grips are ahead of and above the seat, pegs below it")
 
 	var start: Vector3 = bike.global_position
 	rider.cmd.move = Vector2(0, 1)
@@ -1541,6 +1737,8 @@ func _test_vehicle_driving() -> void:
 	var heading_before: float = bike.heading
 	await frames(30)
 	check(bike.heading > heading_before + 0.3, "A steers left")
+	var model: Node3D = bike.get_node("Model")
+	check(bike.lean < -0.05 and model.rotation.z > 0.05, "the bike leans into a left turn (%.2f)" % bike.lean)
 	rider.cmd.move = Vector2(0, -1)
 	await frames(60)
 	check(bike.speed < 1.0, "S brakes the bike to a stop")
@@ -2930,6 +3128,8 @@ func _test_online() -> void:
 		var me := alpha.raid.player
 		var target := alpha.actor_for(bravo.my_actor_id)
 		var victim := bravo.raid.player
+		# Measured before Alpha walks off to the bike and rides it.
+		var spawn_gap := me.global_position.distance_to(target.global_position) if target != null else INF
 		var face := func(point: Vector3) -> void:
 			var aim := point - me.get_eye_position()
 			me.cmd.aim_dir = aim.normalized()
@@ -2978,9 +3178,8 @@ func _test_online() -> void:
 			await _wait_until(func() -> bool: return me.vehicle == null, 90)
 			check(me.vehicle == null and bike.get("rider") == null, "pressing use again gets off")
 			await frames(20)
-		check(alpha.raid.bots.is_empty() and target != null
-				and me.global_position.distance_to(target.global_position) < 12.0,
-				"squad spawn puts the players together")
+		check(alpha.raid.bots.is_empty() and target != null and spawn_gap < 12.0,
+				"squad spawn puts the players together (%.1f m apart)" % spawn_gap)
 		var hits := [0]
 		var notices: Array[String] = []
 		me.hit_confirmed.connect(func(_t: Actor, _i: DamageInfo, _l: bool) -> void: hits[0] += 1)
@@ -3108,10 +3307,6 @@ func _test_online() -> void:
 	await _leave(alpha)
 	OS.kill(pid)
 	await frames(30)
-	await _test_online_stash()
-	await _test_online_movement()
-	await _test_online_lag_compensation()
-	await _test_online_riding()
 	_wipe_dir(NET_ACCOUNTS)
 	check(Combat.authoritative, "leaving an online raid hands damage back to this game")
 
@@ -3651,28 +3846,36 @@ func _test_vehicle_toys() -> void:
 ## room, and waits for the bike to stand unpacked close by.
 func _throw_own_bike(session: NetSession) -> void:
 	var me := session.raid.player
-	var near := func() -> bool:
-		return session.vehicles().any(func(v: Node3D) -> bool:
-			return is_instance_valid(v) and v.global_position.distance_to(me.global_position) < 25.0 and float(v.get("unpack_left")) <= 0.0)
+	var before: Array = session.vehicles().duplicate()
+	var thrown := func() -> Node3D:
+		for v: Node3D in session.vehicles():
+			if is_instance_valid(v) and v not in before and float(v.get("unpack_left")) <= 0.0 \
+					and v.global_position.distance_to(me.global_position) < 25.0:
+				return v
+		return null
 	await _wait_until(func() -> bool: return not session.raid.stowed_for(me).is_empty(), 180)
+	# Throw the bike along open ground and walk to that one. The map's own
+	# bikes may stand behind a wall, and a walk that gets stuck wanders off and
+	# fails every check after it.
 	for turn in 4:
-		if near.call() or session.raid.stowed_for(me).is_empty():
+		if thrown.call() != null or session.raid.stowed_for(me).is_empty():
 			break
-		me.cmd.yaw = turn * PI * 0.5
+		var toward := Vector3.FORWARD.rotated(Vector3.UP, turn * PI * 0.5)
+		me.cmd.yaw = _yaw_toward(_clear_run(me, me.global_position, toward, 12.0))
 		me.cmd.pitch = -0.2
 		me.cmd.aim_dir = Vector3.ZERO
 		await frames(10)
 		session.throw_toy(session.raid.stowed_for(me)[0])
-		await _wait_until(near, 240)
-	await _wait_until(near, 240)
-	# Walk up to the nearest bike, close enough to get on.
-	var bike: Node3D = null
-	for v: Node3D in session.vehicles():
-		if is_instance_valid(v) and (bike == null or v.global_position.distance_to(me.global_position)
-				< bike.global_position.distance_to(me.global_position)):
-			bike = v
+		await _wait_until(func() -> bool: return thrown.call() != null, 240)
+	var bike: Node3D = thrown.call()
+	if bike == null:
+		for v: Node3D in session.vehicles():
+			if is_instance_valid(v) and (bike == null or v.global_position.distance_to(me.global_position)
+					< bike.global_position.distance_to(me.global_position)):
+				bike = v
 	if bike == null:
 		return
+	# Walk up to it, close enough to get on.
 	for i in 400:
 		var gap := bike.global_position - me.global_position
 		gap.y = 0.0

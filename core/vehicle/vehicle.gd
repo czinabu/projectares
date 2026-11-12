@@ -38,8 +38,18 @@ var turn_rate := 2.3
 var full_turn_speed := 6.0
 var gravity := 20.0
 var max_fall_speed := 50.0
-## Where the rider sits, relative to the vehicle.
-var seat_offset := Vector3(0.0, 0.35, 0.15)
+## Where the rider's feet are carried, relative to the vehicle. Low and over
+## the seat, so a seated rider's head (and eyes, and headshot zone) is about
+## where it shows.
+var seat_offset := Vector3(0.0, 0.05, 0.28)
+## Where a seated rider meets the bike, in the vehicle's frame (x right, y up,
+## z back), for the skin's riding pose only: the top of the seat under the
+## hips, the handlebar grips and the foot pegs, left then right.
+var seat_point := Vector3(0.0, 0.98, 0.28)
+var grip_points: Array[Vector3] = [Vector3(-0.22, 1.2, -0.3), Vector3(0.22, 1.2, -0.3)]
+var peg_points: Array[Vector3] = [Vector3(-0.21, 0.44, 0.04), Vector3(0.21, 0.44, 0.04)]
+## How far the rider leans forward from the hips, in radians.
+var rider_lean := 0.8
 ## Where the rider lands when getting off, relative to the vehicle.
 var exit_offset := Vector3(1.4, 0.1, 0.0)
 var body_color := Color(0.85, 0.45, 0.15)
@@ -60,7 +70,8 @@ var unpack_time := 0.6
 var unpack_left := 0.0
 
 var _model: Node3D
-var _lean := 0.0
+## How far the bike leans into a turn, in radians (positive leans right).
+var lean := 0.0
 var _seat: Seat
 
 
@@ -113,33 +124,72 @@ func _build_body() -> void:
 	add_child(_model)
 
 
-## Greybox motorbike. Override for other vehicle types.
+## Greybox sci-fi motorbike: a low spine frame, a raked fairing over the tank,
+## glowing hub rings and side strips, foot pegs and grips where the rider's
+## pose puts hands and feet (`grip_points`, `peg_points`). Override for other
+## vehicle types.
 func build_visual() -> Node3D:
 	var root := Node3D.new()
 	root.name = "Model"
-	var frame_mat := _mat(body_color)
+	var paint := _mat(body_color)
 	var dark := _mat(Color(0.08, 0.08, 0.09))
 	var steel := _mat(Color(0.55, 0.55, 0.58))
-	for z in [-0.75, 0.75]:
-		var wheel := CylinderMesh.new()
-		wheel.top_radius = 0.36
-		wheel.bottom_radius = 0.36
-		wheel.height = 0.18
-		wheel.material = dark
-		var node := MeshInstance3D.new()
-		node.mesh = wheel
-		node.rotation.z = PI / 2.0
-		node.position = Vector3(0, 0.36, z)
-		root.add_child(node)
-	root.add_child(_part(Vector3(0.3, 0.32, 1.25), Vector3(0, 0.72, 0.05), frame_mat))  # tank and body
-	root.add_child(_part(Vector3(0.34, 0.12, 0.6), Vector3(0, 0.92, 0.3), dark))        # seat
-	root.add_child(_part(Vector3(0.08, 0.6, 0.08), Vector3(0, 0.8, -0.72), steel))       # fork
-	root.add_child(_part(Vector3(0.8, 0.06, 0.06), Vector3(0, 1.12, -0.6), steel))       # handlebar
+	# The glow is a material override, so `Look` leaves it as it is and does
+	# not hang a headlight beam on every strip.
+	var glow := _mat(body_color.lightened(0.35))
+	glow.emission_enabled = true
+	glow.emission = body_color.lightened(0.2)
+	glow.emission_energy_multiplier = 1.5
+	for z: float in [-0.75, 0.75]:
+		var tyre := _wheel(0.36, 0.2, dark)
+		tyre.position = Vector3(0, 0.36, z)
+		root.add_child(tyre)
+		var ring_mesh := TorusMesh.new()
+		ring_mesh.inner_radius = 0.2
+		ring_mesh.outer_radius = 0.235
+		for face: float in [-1.0, 1.0]:
+			var ring := MeshInstance3D.new()
+			ring.mesh = ring_mesh
+			ring.material_override = glow
+			ring.rotation.z = PI / 2.0
+			ring.position = tyre.position + Vector3(face * 0.1, 0, 0)
+			root.add_child(ring)
+		var hub := _wheel(0.1, 0.26, steel)
+		hub.position = tyre.position
+		root.add_child(hub)
+	root.add_child(_part(Vector3(0.16, 0.12, 1.3), Vector3(0, 0.5, 0.0), dark, -0.12))           # spine frame
+	root.add_child(_part(Vector3(0.3, 0.3, 0.42), Vector3(0, 0.5, -0.06), dark))                 # power cell
+	root.add_child(_part(Vector3(0.36, 0.26, 0.56), Vector3(0, 0.82, -0.12), paint, 0.08))       # tank
+	root.add_child(_part(Vector3(0.42, 0.42, 0.26), Vector3(0, 0.86, -0.5), paint, 0.5))         # fairing
+	root.add_child(_part(Vector3(0.28, 0.06, 0.2), Vector3(0, 1.1, -0.52), _mat(Color(0.2, 0.25, 0.3)), 0.9))  # screen
+	root.add_child(_part(Vector3(0.3, 0.1, 0.5), Vector3(0, 0.93, 0.3), dark))                   # seat
+	root.add_child(_part(Vector3(0.24, 0.12, 0.42), Vector3(0, 0.98, 0.68), paint, -0.25))       # tail
+	root.add_child(_part(Vector3(0.12, 0.08, 0.7), Vector3(0, 0.55, 0.45), steel, 0.35))         # swing arm
+	for side: float in [-1.0, 1.0]:
+		root.add_child(_part(Vector3(0.05, 0.75, 0.05), Vector3(side * 0.1, 0.71, -0.62), steel, 0.35))  # fork leg
+		root.add_child(_part(Vector3(0.02, 0.05, 0.5), Vector3(side * 0.185, 0.84, -0.14), null, 0.08, glow))  # side strip
+		root.add_child(_part(Vector3(0.16, 0.04, 0.06), Vector3(side * 0.2, 0.42, 0.04), steel))  # foot peg
+		root.add_child(_part(Vector3(0.12, 0.05, 0.05), Vector3(side * 0.24, 1.2, -0.3), dark))   # grip
+	root.add_child(_part(Vector3(0.4, 0.04, 0.04), Vector3(0, 1.2, -0.3), steel))                # handlebar
+	root.add_child(_part(Vector3(0.06, 0.06, 0.26), Vector3(0, 1.13, -0.39), steel, -0.66))      # bar riser
 	var lamp_mat := _mat(Color(1.0, 0.9, 0.6))
 	lamp_mat.emission_enabled = true
 	lamp_mat.emission = Color(1.0, 0.85, 0.5)
-	root.add_child(_part(Vector3(0.2, 0.14, 0.08), Vector3(0, 0.98, -0.82), lamp_mat))  # headlight
+	root.add_child(_part(Vector3(0.18, 0.08, 0.06), Vector3(0, 0.88, -0.7), lamp_mat))  # headlight
 	return root
+
+
+func _wheel(radius: float, width: float, mat: Material) -> MeshInstance3D:
+	var mesh := CylinderMesh.new()
+	mesh.top_radius = radius
+	mesh.bottom_radius = radius
+	mesh.height = width
+	mesh.radial_segments = 24
+	mesh.material = mat
+	var node := MeshInstance3D.new()
+	node.mesh = mesh
+	node.rotation.z = PI / 2.0
+	return node
 
 
 ## The vehicle `p_item_id` as a toy: its greybox model, toy-sized, under a
@@ -178,13 +228,17 @@ func _show_unpack() -> void:
 	_model.scale = Vector3.ONE * (size if unpack_left > 0.0 else 1.0)
 
 
-func _part(size: Vector3, at: Vector3, mat: Material) -> MeshInstance3D:
+## A box part, tipped `pitch` radians nose up about its middle. `override`
+## is drawn instead of the mesh's own material (see the glow in `build_visual`).
+func _part(size: Vector3, at: Vector3, mat: Material, pitch := 0.0, override: Material = null) -> MeshInstance3D:
 	var box := BoxMesh.new()
 	box.size = size
 	box.material = mat
 	var node := MeshInstance3D.new()
 	node.mesh = box
 	node.position = at
+	node.rotation.x = pitch
+	node.material_override = override
 	return node
 
 
@@ -264,7 +318,17 @@ func _physics_process(delta: float) -> void:
 	if on_floor:
 		_drive(throttle, steer, boosting, delta)
 	velocity.y = maxf(velocity.y - gravity * delta, -max_fall_speed)
+	# The seated rider's body overlaps the bike. The collision exception keeps
+	# it out of the slide, but not out of every query the move makes (the
+	# floor snap found it under Jolt), so the rider leaves the actors layer
+	# for the move alone. Shots and everything else still see the rider.
+	var carried := rider != null and is_instance_valid(rider)
+	var rider_layer := rider.collision_layer if carried else 0
+	if carried:
+		rider.collision_layer = 0
 	move_and_slide()
+	if carried:
+		rider.collision_layer = rider_layer
 
 	var forward := Basis(Vector3.UP, heading) * Vector3.FORWARD
 	var horizontal := Vector3(velocity.x, 0.0, velocity.z)
@@ -317,11 +381,12 @@ func _update_visual(steer: float, delta: float) -> void:
 	if _model == null:
 		return
 	var target_lean := steer * clampf(absf(speed) / max_speed, 0.0, 1.0) * 0.35
-	_lean = lerpf(_lean, target_lean, 1.0 - exp(-8.0 * delta))
+	lean = lerpf(lean, target_lean, 1.0 - exp(-8.0 * delta))
 	var pitch := 0.0
 	if not is_on_floor():
 		pitch = clampf(velocity.y * 0.03, -0.4, 0.4)
-	_model.rotation = Vector3(pitch, 0.0, _lean)
+	# A positive lean rolls the right side down.
+	_model.rotation = Vector3(pitch, 0.0, -lean)
 
 
 ## The interact target for a vehicle. It rides along on the vehicle and only

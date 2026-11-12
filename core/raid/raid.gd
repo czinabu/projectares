@@ -55,6 +55,7 @@ const RenownLedger := preload("res://core/progression/renown_ledger.gd")
 const Economy := preload("res://core/economy/economy.gd")
 const WarDirector := preload("res://core/war/war_director.gd")
 const Strongpoint := preload("res://core/war/strongpoint.gd")
+const PowerArmory := preload("res://core/war/power_armory.gd")
 
 ## How this raid runs.
 ##   SOLO   - one local player, everything simulated here.
@@ -109,6 +110,9 @@ var _marked_owner := ""
 var war := WarDirector.new()
 ## The sites worth holding, one per "strongpoint" marker on the map.
 var strongpoints: Array[Strongpoint] = []
+## Where power weapons turn up (racks at strongpoints, pods, caches). Runs on
+## the authority only.
+var armory := PowerArmory.new()
 var _assault_in := 0.0
 ## War intensity from which a player may choose to land beside the fighting.
 var hot_drop_from := 0.2
@@ -181,6 +185,7 @@ func start(p_world: WorldDef, p_seed: int = -1, p_kit: Array = [], p_mastery: Di
 	mode = Mode.SOLO
 	_setup(p_world, p_seed)
 	_spawn_caches()
+	armory.setup(self)
 	add_player(p_kit, p_mastery, "You", p_owner, p_renown)
 	_spawn_bots()
 	_spawn_map_vehicles()
@@ -193,6 +198,7 @@ func start_server(p_world: WorldDef, p_seed: int = -1) -> void:
 	apply_to_profile = false
 	_setup(p_world, p_seed)
 	_spawn_caches()
+	armory.setup(self)
 	_spawn_bots()
 	_spawn_map_vehicles()
 
@@ -271,6 +277,7 @@ func _physics_process(delta: float) -> void:
 	_tick_strongpoints(delta)
 	_tick_events(delta)
 	_tick_caches(delta)
+	armory.tick(delta)
 	_tick_bots(delta)
 	_tick_detail(delta)
 	_tick_vehicles(delta)
@@ -528,6 +535,7 @@ func start_event(kind: String) -> bool:
 		var items := world.roll_war_loot("cache", rng, maxf(war.intensity, 0.5))
 		items.append_array(world.roll_war_loot("cache", rng, 1.0))
 		_event_pod = spawn_container(items, false, "Supply pod", at)
+		armory.on_supply_pod(at)
 		event = {"kind": "supply_pod", "title": "Supply pod"}
 		war_feed.emit("A supply pod came down %s" % _whereabouts(at))
 	event["at"] = at
@@ -589,6 +597,7 @@ func _tick_caches(delta: float) -> void:
 			# A cache that refills in the middle of a war holds better things.
 			container.set_items(world.roll_war_loot(cache.source, rng, war.intensity))
 			container.changed.emit()
+			armory.on_cache_refilled(container.global_position)
 
 
 ## Every dead bot is replaced, so the world never runs out of enemies.
@@ -1297,6 +1306,8 @@ func _on_actor_died(actor: Actor, info: DamageInfo) -> void:
 	if state_for(actor) != null and world.keep_gear_on_death:
 		# A gentler world: a player's equipped gear goes home, not in the bag.
 		drops.assign(actor.inventory.items)
+	# Power weapons never go in a bag: they are left on a rack, shots and all.
+	armory.on_death(actor, drops)
 	var dead := state_for(actor)
 	var carried := dead.scrip if dead != null and mode != Mode.CLIENT else 0
 	if not drops.is_empty() or carried > 0:
@@ -1554,6 +1565,10 @@ func _finish_player(state: PlayerState, outcome: String, cause: String, killed_b
 	else:
 		lost.append_array(found)
 	lost.append_array(left_behind)
+	# Power weapons are raid-only: they never come home and are never counted
+	# as lost. The gun left on a rack for one is what was risked.
+	for list: Array[String] in [kept, brought_home, lost]:
+		list.assign(list.filter(func(id: String) -> bool: return not ItemDB.has_tag(id, "power")))
 	var result := {
 		"outcome": outcome,
 		"cause": cause,

@@ -11,6 +11,8 @@ signal landed(impact_speed: float)
 signal notice(text: String)
 ## This actor's attack landed on `target`. Drives hit markers and sounds.
 signal hit_confirmed(target: Actor, info: DamageInfo, lethal: bool)
+## The power weapon slot changed mid-raid (`Loadout.set_power`); "" is empty.
+signal power_changed(item_id: String, mag: int, reserve: int)
 
 const LAYER_WORLD := 1
 const LAYER_ACTORS := 2
@@ -310,6 +312,9 @@ func _simulate_movement(delta: float) -> void:
 	# Looking through binoculars: no running, and a slow walk.
 	if visor.is_zoomed():
 		speed = walk_speed * visor.move_mult()
+	var held := get_active_weapon()
+	if held:
+		speed *= held.move_speed_mult()
 	var staggered := stagger_left > 0.0
 	if staggered:
 		speed *= stagger_speed_mult
@@ -498,13 +503,18 @@ func _simulate_weapons(delta: float) -> void:
 		# Run dry with the trigger held: draw the sidearm instead of reloading.
 		# That pull only draws it; the next shot comes from the sidearm.
 		var gun := weapon as Gun
-		if gun and not gun.is_sidearm and cmd.primary and gun.is_empty():
+		if gun and not gun.is_sidearm and not gun.is_power() and cmd.primary and gun.is_empty():
 			var sidearm := loaded_sidearm_index()
 			if sidearm >= 0:
 				_draw_weapon(sidearm)
 				notice.emit("Sidearm")
 				return
 		weapon.handle_input(cmd, delta)
+		# A power weapon with nothing left is thrown away. The authority
+		# decides; a client hears it through `power_changed`.
+		if gun and gun.is_power() and gun.is_spent() and Combat.authoritative:
+			notice.emit("%s spent" % gun.display_name)
+			Loadout.set_power(self, "")
 
 
 ## Index of a sidearm with rounds in its magazine, or -1.
@@ -602,6 +612,58 @@ func equip_weapon(weapon: Weapon) -> void:
 	weapon.visual = weapon.build_visual()
 	if weapon.visual:
 		hand.add_child(weapon.visual)
+	_refresh_weapon_visuals()
+
+
+## Puts `weapon` where the weapon at `index` was, freeing the old one. Used
+## when a power weapon is swapped in or out mid-raid. Weapon indices keep
+## their meaning, so switching weapons still picks the same slots.
+func replace_weapon(index: int, weapon: Weapon) -> void:
+	if index < 0 or index >= weapons.size():
+		equip_weapon(weapon)
+		return
+	var old := weapons[index]
+	if index == active_weapon_index:
+		old.on_holster()
+	if old.visual and is_instance_valid(old.visual):
+		old.visual.queue_free()
+	old.queue_free()
+	weapon.actor = self
+	weapons[index] = weapon
+	add_child(weapon)
+	weapon.visual = weapon.build_visual()
+	if weapon.visual:
+		hand.add_child(weapon.visual)
+	_refresh_weapon_visuals()
+
+
+## Takes out the weapon at `index` (the power slot uses this when a power
+## weapon is picked up).
+func draw_weapon(index: int) -> void:
+	if index != active_weapon_index:
+		_draw_weapon(index)
+
+
+## Takes the weapon at `index` away for good (a spent power weapon). The
+## active and last-drawn indices are kept pointing at the same weapons; if
+## the weapon was in hand, the first weapon is drawn instead.
+func remove_weapon(index: int) -> void:
+	if index < 0 or index >= weapons.size():
+		return
+	var old := weapons[index]
+	if index == active_weapon_index:
+		old.on_holster()
+		active_weapon_index = 0 if weapons.size() > 1 else -1
+	elif active_weapon_index > index:
+		active_weapon_index -= 1
+	if last_drawn == index:
+		last_drawn = 0
+	elif last_drawn > index:
+		last_drawn -= 1
+	weapons.remove_at(index)
+	if old.visual and is_instance_valid(old.visual):
+		old.visual.queue_free()
+	old.queue_free()
 	_refresh_weapon_visuals()
 
 

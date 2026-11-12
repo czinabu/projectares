@@ -137,6 +137,54 @@ static func attachment_slot(id: String) -> String:
 	return ""
 
 
+## Index in `actor.weapons` of the power weapon (an item tagged "power"),
+## or -1 if the actor carries none. It is a fourth weapon next to the
+## primary, sidearm and melee weapon, and only ever comes from a power rack.
+static func power_index(actor: Actor) -> int:
+	for i in actor.weapons.size():
+		var gun := actor.weapons[i] as Gun
+		if gun and gun.is_power():
+			return i
+	return -1
+
+
+## Puts power weapon `id` in the actor's power slot mid-raid and in hand, or
+## with "" takes the power weapon away. `mag` and `reserve` restore one that
+## was put down part used (below 0 means full). Returns what was given up,
+## as {"id", "mag", "reserve", "spent"}, with "id" empty if the slot was
+## empty. Emits `Actor.power_changed` so `NetSession` can tell clients.
+static func set_power(actor: Actor, id: String, mag := -1, reserve := -1) -> Dictionary:
+	var given := {"id": "", "mag": -1, "reserve": -1, "spent": false}
+	if id != "" and not ItemDB.has_tag(id, "power"):
+		return given
+	var index := power_index(actor)
+	if index >= 0:
+		var old := actor.weapons[index] as Gun
+		given = {"id": old.item_id, "mag": old.ammo_in_mag, "reserve": old.reserve_ammo, "spent": old.is_spent()}
+		actor.gear_items.erase(old.item_id)
+	if id == "":
+		if index >= 0:
+			actor.remove_weapon(index)
+		actor.power_changed.emit("", -1, -1)
+		return given
+	var gun := Gun.new()
+	_setup_weapon(gun, id, ItemDB.item_stats(id))
+	if mag >= 0:
+		gun.ammo_in_mag = mini(mag, gun.mag_size)
+	if reserve >= 0:
+		gun.reserve_ammo = reserve
+	if index >= 0:
+		actor.replace_weapon(index, gun)
+	else:
+		actor.equip_weapon(gun)
+		index = actor.weapons.size() - 1
+	actor.gear_items.append(id)
+	# What you just picked up is what you hold.
+	actor.draw_weapon(index)
+	actor.power_changed.emit(id, gun.ammo_in_mag, gun.reserve_ammo)
+	return given
+
+
 static func _setup_weapon(weapon: Weapon, id: String, stats: Dictionary) -> void:
 	weapon.item_id = id
 	weapon.display_name = ItemDB.item_name(id)

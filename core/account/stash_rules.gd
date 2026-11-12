@@ -9,12 +9,13 @@ extends RefCounted
 ## The rules: the stash is safe. Whatever is in the loadout leaves the stash
 ## when you deploy, and only comes back if you leave the world alive. Loot
 ## banked at a depot is added while you are out. Starter (scrap) items
-## are free and never stored.
+## are free and never stored, and power weapons are raid-only.
 
 
 ## True if an item may be stored in a stash at all.
 static func storable(id: Variant) -> bool:
-	return typeof(id) == TYPE_STRING and ItemDB.has_item(id) and not ItemDB.has_tag(id, "starter")
+	return typeof(id) == TYPE_STRING and ItemDB.has_item(id) and not ItemDB.has_tag(id, "starter") \
+			and not ItemDB.has_tag(id, "power")
 
 
 ## Adds the storable items in `ids` to `stash`. Returns how many were added.
