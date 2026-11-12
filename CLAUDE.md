@@ -83,6 +83,18 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   so keep that hook free of randomness). Event bots are extra and are never
   respawned. Loot that should follow the war comes from
   `WorldDef.roll_war_loot(source, rng, intensity)`, not `roll_loot`.
+- Bot armies. A "spawn_bot" marker may name a faction (meta "faction");
+  the `Raid` sets it on the bot before `WorldDef.equip_bot`, and `NetSession`
+  sends it so a client builds the same soldier. Where
+  `WorldDef.bots_contest_sites` is on, `Raid._tick_orders` gives each faction
+  its orders through `BotBrain.post_to`: a garrison on every site it holds,
+  everyone else against the nearest site it does not. Reinforcements follow
+  the war: `Raid.bot_target()` is `bot_count` plus a share of
+  `WorldDef.war_reinforcements` by `war.intensity`, new bots join the faction
+  with the fewest alive, and extra bots are not replaced once it cools. Bots
+  killing bots only simmer the meter (`WarDirector.report_battle`, capped at
+  `battle_ceiling`); only players take it higher. World-event bots
+  (`Raid._event_bots`) are outside all of this.
 - Mastery pays for using gear, never for leaving alive, or signing out over
   and over would farm it.
 - Blocking and parrying happen in `Weapon.modify_incoming`, which `Combat.deal`
@@ -118,6 +130,16 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   or aiming and briefly after.
   Check leg changes by eye: `visual_check.tscn -- <dir> --gait-only`, and
   the stand with `--idle-only`.
+  Holstered weapons are worn, not hidden (`ActorSkin.stow_place`): a primary
+  gun or two-handed weapon slung across the back, outside a worn back rig, a
+  sidearm muzzle down on the right hip, and a one-handed blade on the left
+  hip. These are view-only copies; the weapon's own node stays on the hand.
+  A switch is shown as the hand putting one away and drawing the next
+  (`ActorSkin._update_switch`, reaching through `WeaponArm.override_point`),
+  but only the view waits: the actor switches at once. The holster key (Z)
+  sends `switch_weapon = ActorCommand.HOLSTER` and draws `Actor.last_drawn`
+  again; it is an index, never a toggle, so it replicates safely. Check with
+  `--holster-only`.
 - People are built from parts (`core/visual/human.gd`): an "appearance" names
   a build, four parts and colours. It is cosmetic only and never trusted:
   always pass one through `Look.clean_appearance` / `Look.set_appearance`,
@@ -142,9 +164,34 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   decide what an item does.
 - Gear behavior comes from the item's `stats` in `ItemDB`, applied by
   `Loadout.equip`. Add a new gun or frame as data, not as a new class.
+- A loadout carries one primary, one melee weapon and one sidearm, in that
+  weapon order (keys 1, 2, 3). Sidearms are firearms also tagged "sidearm";
+  `Loadout.fits(slot, id)` decides what goes in a slot (a sidearm never fits
+  the primary slot), and `Weapon.is_sidearm` marks one once equipped. Running
+  the primary dry with the trigger held draws a loaded sidearm instead of
+  reloading (`Actor._simulate_weapons`). Headshots come from
+  `Combat.is_headshot` on a `Combat.trace` hit; a gun's `headshot_mult` scales them.
 - Flight rigs and abilities are data too. `FlightRig` and `Ability` are single
   classes whose item stats pick the behavior. Abilities fire from
   `ActorCommand.ability_pressed`.
+- Helmets are items tagged `helmet` in the `helmet` loadout slot, and data
+  like abilities: `Visor` (`core/abilities/visor.gd`, `Actor.visor`) is one
+  class whose `mode` stat picks what the visor does ("" plain, "zoom"
+  binoculars, "scan" pulse). It is driven by `ActorCommand.visor_pressed`
+  (a press: scan) and `ActorCommand.visor_level` (held: the zoom level).
+  What a visor reveals is decided by the authority only and never goes to
+  everyone: `NetSession` sends a scan's snapshots to the scanner, the ping to
+  each player caught, and a tag to the tagger's side. Reveals must stay fair:
+  a scan is a snapshot, never live tracking, and every reveal is felt by its
+  target (the ping, the lens glint). The picture is `VisorHud`
+  (`core/ui/visor_hud.gd`), a view: its glass is drawn in first person only
+  and only while a helmet is worn (Caleb agreed a visor counts as in-world,
+  since you look through it); what a visor shows out in the world (snapshots,
+  tag markers, pulse rings, glints) is there in either view. Apart from the
+  thin health arc, do not repeat the wrist on the glass (ammo, the map,
+  standing): the wrist shows you, the visor shows what is around you. Mk2
+  helmets are loot only. Check the glass by eye with
+  `visual_check.tscn -- <dir> --visors-only`.
 - Vehicles are items tagged `vehicle`, tuned by their stats, and spawned by
   `Raid` (never carried). `core/vehicle/vehicle.gd` reads its rider's
   `ActorCommand` and moves the rider; `Actor` skips its own movement while
@@ -234,6 +281,13 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   add full-screen panels or overlays; information about a thing goes on or
   next to the thing (a `Label3D` tag, a sign) or into the phone. The HUD is
   for the crosshair, prompts, hit feedback and brief notices.
+- The watch and the phone split the job (Caleb's rule). The holographic
+  watch (`Hud.Wrist`, raised with X) is for gameplay: vitals, pack, ammo,
+  heat, standing and strongpoints, landing choices, and future in-raid
+  actions such as calling something in. The phone is for settings, talking
+  to friends and players, and information (news, the war feed). A new
+  in-raid action goes on the watch; a new social or info feature is a
+  phone app.
 - Money (`core/economy/`): the rules live once, in `economy.gd` (static, like
   `StashRules`), shared by `Profile` and `StashService`. Online, `credits`
   lives on the server's account and only changes there: through
@@ -244,6 +298,12 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   anything above Uncommon, so rare gear stays loot-only. Keep every sell
   price below its buy price, and keep run payouts small next to loot: credits
   must come from getting loot home, so full loot stays the stake.
+- Scrip is what a life pays, and it is at stake. The `Raid` pays it
+  (`_pay_scrip`, amounts in `Economy`) into `PlayerState.scrip`, copied to
+  `Actor.scrip` for views. A death moves it into the bag
+  (`LootContainer.scrip`); a depot moves it to `scrip_banked`. It reaches an
+  account only through the result (`scrip`, `scrip_banked`) and
+  `Economy.payout`, never directly, and nothing is paid for kills alone.
 - Furniture (`furniture`, small pieces also `decor`) and clothing
   (`cosmetic`, with an `outfits` stat of customizer outfit ids) are ordinary
   stash items that fit no loadout slot, so they never go on a raid.

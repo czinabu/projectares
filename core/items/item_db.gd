@@ -25,6 +25,12 @@ func _ready() -> void:
 			"Worn automatic rifle.")
 	register("blade_scrap", "Scrap Blade", Rarity.COMMON, 0, ["weapon", "melee", "blade", "starter"], {},
 			"A sharpened strip of plating.")
+	register("pistol_service", "Service Pistol", Rarity.COMMON, 0,
+			["weapon", "firearm", "sidearm", "pistol", "starter"],
+			{"semi_auto": true, "damage": 22.0, "fire_interval": 0.16, "mag_size": 12, "ammo_in_mag": 12,
+			"reserve_ammo": 60, "reload_time": 1.1, "spread_deg": 0.6, "bloom_per_shot": 0.5,
+			"recoil_kick_deg": 0.7, "max_range": 90.0},
+			"Reliable semi-auto sidearm. Accurate, and quick to reload.")
 	register("jetpack_mk1", "Mk1 Jetpack", Rarity.COMMON, 0, ["flight_rig", "starter"], {},
 			"Basic jetpack. Overheats quickly.")
 	register("plate_light", "Scrap Plate", Rarity.COMMON, 0, ["armor", "frame_light", "starter"],
@@ -50,6 +56,20 @@ func _ready() -> void:
 			"reserve_ammo": 36, "spread_deg": 4.5, "recoil_kick_deg": 2.4, "reload_time": 2.4,
 			"max_range": 40.0},
 			"Eight pellets a shot. Devastating in reach of a blade.")
+
+	# Sidearms: worn on the hip and drawn when the primary runs dry.
+	register("pistol_machine", "Hornet Machine Pistol", Rarity.UNCOMMON, 380,
+			["weapon", "firearm", "sidearm", "machine_pistol", "vendor"],
+			{"damage": 9.0, "fire_interval": 0.055, "mag_size": 20, "ammo_in_mag": 20, "reserve_ammo": 100,
+			"reload_time": 1.4, "spread_deg": 2.6, "bloom_per_shot": 0.45, "max_bloom": 4.0,
+			"recoil_kick_deg": 0.35, "max_range": 45.0},
+			"Full-auto spray. Deadly up close, useless at range.")
+	register("pistol_hand_cannon", "Warden Hand Cannon", Rarity.RARE, 750,
+			["weapon", "firearm", "sidearm", "hand_cannon"],
+			{"semi_auto": true, "damage": 48.0, "headshot_mult": 2.0, "fire_interval": 0.55, "mag_size": 6,
+			"ammo_in_mag": 6, "reserve_ammo": 30, "reload_time": 2.2, "spread_deg": 0.4,
+			"bloom_per_shot": 1.2, "recoil_kick_deg": 2.6, "max_range": 110.0},
+			"Slow, heavy revolver. Headshots hit twice as hard.")
 
 	# Melee
 	register("blade_arc", "Arc Blade", Rarity.RARE, 800, ["weapon", "melee", "blade"],
@@ -113,6 +133,24 @@ func _ready() -> void:
 			{"effect": "pulse", "cooldown": 16.0, "pulse_radius": 6.5, "pulse_damage": 18.0,
 			"pulse_stagger": 1.3},
 			"A shockwave that hurts and staggers everyone near you.")
+
+	# Helmets. The visor is the wearer's display in first person, and `mode`
+	# picks what it can do (see `Visor`). Mk2 helmets are loot only.
+	register("visor_scav", "Scav Visor", Rarity.COMMON, 0, ["helmet", "visor_plain", "starter"],
+			{"mode": "", "glass_color": Color(0.8, 0.75, 0.6)},
+			"A cracked visor. Shows how hurt you are and nothing else.")
+	register("helm_spotter", "Spotter Helmet", Rarity.UNCOMMON, 500, ["helmet", "optic", "vendor"],
+			{"mode": "zoom", "zoom_levels": [4.0, 8.0], "glass_color": Color(1.0, 0.75, 0.3)},
+			"Binoculars at 4x and 8x with a range finder. Fire while zoomed to tag a target. The lens glints.")
+	register("helm_spotter_mk2", "Spotter Helmet Mk2", Rarity.RARE, 1100, ["helmet", "optic"],
+			{"mode": "zoom", "zoom_levels": [4.0, 10.0], "tag_time": 7.0, "glass_color": Color(1.0, 0.75, 0.3)},
+			"Binoculars at 4x and 10x. Tags last two seconds longer.")
+	register("helm_seeker", "Seeker Helmet", Rarity.UNCOMMON, 550, ["helmet", "scanner", "vendor"],
+			{"mode": "scan", "cooldown": 25.0, "scan_radius": 40.0, "glass_color": Color(0.4, 1.0, 0.8)},
+			"A scan pulse shows where everyone within 40 meters stood. They hear it and know where it came from.")
+	register("helm_seeker_mk2", "Seeker Helmet Mk2", Rarity.RARE, 1200, ["helmet", "scanner"],
+			{"mode": "scan", "cooldown": 21.0, "scan_radius": 48.0, "glass_color": Color(0.4, 1.0, 0.8)},
+			"A wider scan pulse, 48 meters, that is ready again sooner.")
 
 	# Vehicles. Not carried: the Raid parks one next to you when you deploy, and
 	# whoever signs out riding it takes it home. Stats tune Vehicle.

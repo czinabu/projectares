@@ -128,6 +128,7 @@ static func run(t: Node) -> void:
 			sword.visual.position = Vector3.ZERO
 			raid.player.active_weapon_index = was_active
 		_check_legs(t, tag, raid.player, skin, skeleton)
+		_check_holster(t, tag, raid.player, skin)
 		var dressed := 0
 		var skins := {}
 		for bot in raid.bots:
@@ -201,6 +202,96 @@ static func run(t: Node) -> void:
 		t.check(licenses.contains("assets/" + dir), "licenses cover assets/%s" % dir)
 	Look.enabled = false
 	Look._materials.clear()
+
+
+## A holstered weapon is worn on the body, not hidden: a gun slung across
+## the back (outside a worn jetpack), a one-handed blade on the hip.
+static func _check_holster(t: Node, tag: String, player: Actor, skin: Node) -> void:
+	var gun_at := -1
+	var blade_at := -1
+	var sidearm_at := -1
+	for i in player.weapons.size():
+		if skin.is_sidearm(player.weapons[i]):
+			sidearm_at = i
+		elif player.weapons[i] is Gun:
+			gun_at = i
+		elif player.weapons[i] is MeleeWeapon:
+			blade_at = i
+	if gun_at < 0 or blade_at < 0 or skin._skeleton == null:
+		return
+	var settle := func() -> void:
+		for i in 60:
+			skin._process(1.0 / 60.0)
+	var gun: Weapon = player.weapons[gun_at]
+	var blade: Weapon = player.weapons[blade_at]
+	var was_weapon := player.active_weapon_index
+	var was_flight := player.flight.enabled
+	var to_actor := player.global_transform.affine_inverse()
+	var centre := func(node: Node3D) -> Vector3:
+		var box: AABB = Look.model_bounds(node)
+		return to_actor * node.get_parent().global_transform * box.get_center()
+	for rig: bool in [false, true]:
+		player.flight.enabled = rig and player.flight.item_id != ""
+		var label := " (jetpack on)" if player.flight.enabled else ""
+		player.active_weapon_index = blade_at
+		settle.call()
+		var slung: Node3D = skin._stowed.get(gun)
+		t.check(slung != null and slung.visible, tag + "a holstered gun is worn, not hidden" + label)
+		if slung == null:
+			continue
+		var at: Vector3 = centre.call(slung)
+		var skeleton: Skeleton3D = skin._skeleton
+		var chest := to_actor * skeleton.global_transform * skeleton.get_bone_global_pose(skeleton.find_bone("Chest")).origin
+		t.check(at.z > chest.z + 0.12 and at.y > 0.9 and at.y < 1.6 and absf(at.x) < 0.3,
+				tag + "a holstered gun is slung across the back%s (%.2f m behind the chest bone)" % [label, at.z - chest.z])
+		if skin._rig_back:
+			var pack: Vector3 = to_actor * skin._rig_back.global_transform * Look.model_bounds(skin._rig_back).end
+			t.check(at.z > pack.z - 0.05, tag + "a holstered gun hangs outside the jetpack, not inside it")
+		player.active_weapon_index = gun_at
+		settle.call()
+		t.check(not slung.visible, tag + "the gun in hand is not also on the back" + label)
+		var sheathed: Node3D = skin._stowed.get(blade)
+		t.check(sheathed != null and sheathed.visible, tag + "a holstered blade is worn" + label)
+		if sheathed:
+			var hilt := to_actor * (sheathed.get_child(0) as Node3D).global_position
+			t.check(hilt.x < -0.1 and hilt.y > 0.7 and hilt.y < 1.2, tag + "a holstered blade hangs at the left hip (at %s)" % hilt)
+	if sidearm_at >= 0:
+		player.active_weapon_index = gun_at
+		settle.call()
+		var holstered: Node3D = skin._stowed.get(player.weapons[sidearm_at])
+		var grip := to_actor * (holstered.get_child(0) as Node3D).global_position if holstered else Vector3.ZERO
+		t.check(holstered != null and holstered.visible and grip.x > 0.1 and grip.y > 0.6 and grip.y < 1.2,
+				tag + "a holstered sidearm sits on the right hip (at %s)" % grip)
+
+	# Switching is shown: the hand reaches back, the gun goes onto the back as
+	# it gets there, and the blade comes out of its sheath after.
+	if skin.arm:
+		player.active_weapon_index = gun_at
+		settle.call()
+		player.active_weapon_index = blade_at
+		var gun_visual: Node3D = player.weapons[gun_at].visual
+		var blade_visual: Node3D = player.weapons[blade_at].visual
+		skin._process(0.05)
+		t.check(gun_visual.visible and not blade_visual.visible and skin.arm.override_weight > 0.05,
+				tag + "switching starts by reaching for the gun's holster with the gun still in hand")
+		var reached: Vector3 = skin.arm.override_point
+		t.check(reached.z > 0.0, tag + "putting a gun away reaches behind the back (%s)" % reached)
+		skin._process(skin.reach_time)
+		t.check(not gun_visual.visible and (skin._stowed[player.weapons[gun_at]] as Node3D).visible,
+				tag + "the gun is on the back once the hand has put it there")
+		skin._process(skin.between_time)
+		t.check(blade_visual.visible, tag + "the blade is drawn after the gun is put away")
+		t.check(skin.arm.override_point.x < 0.0, tag + "drawing the blade reaches to the left hip")
+		skin._process(skin.return_time + 0.05)
+		t.check(skin.arm.override_weight == 0.0 and blade_visual.visible and skin._in_hand == player.weapons[blade_at],
+				tag + "the hand comes back with the blade and lets go of the holster")
+		player.active_weapon_index = -1
+		settle.call()
+		t.check(not blade_visual.visible and (skin._stowed[player.weapons[blade_at]] as Node3D).visible,
+				tag + "holstering the weapon in hand leaves both hands empty")
+	player.flight.enabled = was_flight
+	player.active_weapon_index = was_weapon
+	settle.call()
 
 
 ## The legs follow how the actor really moves: strides match speed, and the

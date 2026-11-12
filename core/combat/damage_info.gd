@@ -16,6 +16,8 @@ var direction := -1
 ## A guard that stops this hit pays this many times the usual stamina.
 var guard_mult := 1.0
 var blocked := false
+## The hit landed on the target's head.
+var headshot := false
 var parried := false
 
 

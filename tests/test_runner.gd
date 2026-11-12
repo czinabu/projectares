@@ -18,6 +18,8 @@ const EconomyTests := preload("res://tests/economy_tests.gd")
 const MeleeArsenalTests := preload("res://tests/melee_arsenal_tests.gd")
 const CustomizerTests := preload("res://tests/customizer_tests.gd")
 const BattlefieldTests := preload("res://tests/battlefield_tests.gd")
+const VisorTests := preload("res://tests/visor_tests.gd")
+const SidearmTests := preload("res://tests/sidearm_tests.gd")
 
 var _passed := 0
 var _failed := 0
@@ -67,6 +69,7 @@ func _run() -> void:
 	await _test_strongpoints()
 	await _test_events()
 	await _test_drops()
+	await _test_scrip()
 	await _test_online()
 	await _test_plaza()
 	await _test_plaza_online()
@@ -80,6 +83,8 @@ func _run() -> void:
 	await _test_customizer()
 	await _test_economy()
 	await _test_battlefield()
+	await _test_visors()
+	await _test_sidearms()
 
 
 func _test_rig_models() -> void:
@@ -99,8 +104,16 @@ func _test_economy() -> void:
 	await EconomyTests.run(self)
 
 
+func _test_sidearms() -> void:
+	await SidearmTests.run(self)
+
+
 func _test_battlefield() -> void:
 	await BattlefieldTests.run(self)
+
+
+func _test_visors() -> void:
+	await VisorTests.run(self)
 
 
 func check(condition: bool, what: String) -> void:
@@ -210,7 +223,7 @@ func _test_raid_setup_and_movement() -> void:
 	check(raid.depots.size() >= 2, "map provides depots to bank at")
 	var caches := raid.get_children().filter(func(n: Node) -> bool: return n is LootContainer)
 	check(caches.size() >= 8, "loot caches are placed (%d)" % caches.size())
-	check(p.weapons.size() == 2 and p.flight.enabled and p.health.armor == 30.0,
+	check(p.weapons.size() == 3 and p.flight.enabled and p.health.armor == 30.0,
 			"starter loadout is equipped")
 
 	await frames(40)
@@ -351,6 +364,20 @@ func _test_combat_and_loot() -> void:
 	check(p.get_active_weapon() is MeleeWeapon, "weapon switching works")
 	check(p.weapons[1].visual != null and p.weapons[1].visual.visible
 			and not p.weapons[0].visual.visible, "only the weapon in hand is shown")
+	# The holster key puts the weapon away and draws it again. It travels as
+	# an index, not a toggle, so a repeated packet changes nothing.
+	p.cmd.switch_weapon = ActorCommand.HOLSTER
+	await frames(2)
+	p.cmd.switch_weapon = -1
+	check(p.get_active_weapon() == null and p.last_drawn == 1 and not p.weapons[1].visual.visible,
+			"the holster key puts the weapon in hand away")
+	p.cmd.switch_weapon = ActorCommand.HOLSTER
+	await frames(2)
+	check(p.get_active_weapon() == null, "holstering with nothing in hand does nothing")
+	p.cmd.switch_weapon = p.last_drawn
+	await frames(2)
+	p.cmd.switch_weapon = -1
+	check(p.get_active_weapon() == p.weapons[1], "drawing again takes out the weapon that was put away")
 	var before_melee := bot_b.health.health
 	p.cmd.primary_pressed = true
 	await frames(1)
@@ -620,13 +647,37 @@ func _test_main_flow() -> void:
 	controller.toggle_view()
 	await frames(40)
 	check(controller.is_third_person(), "the toggle switches to third-person")
-	# The HUD lives on your gear: a wrist display and a counter on the gun.
+	# The HUD lives on your gear: a holographic watch and a counter on the gun.
 	var wrist: Hud.Wrist = main.hud.wrist
-	check(wrist.get_parent() == p and wrist.visible and wrist.text().contains(main.raid.world.display_name)
-			and wrist.text().contains("Pack "), "in third person the wrist display rides on your arm")
+	var holo := wrist.get_node("Hologram") as Node3D
+	var arm := wrist.get_node("Forearm") as Node3D
+	check(not controller.wrist_raised and not holo.visible, "the watch's hologram is down until you raise it")
+	var x_key := InputEventAction.new()
+	x_key.action = "check_wrist"
+	x_key.pressed = true
+	controller._unhandled_input(x_key)
+	await frames(30)
+	check(controller.wrist_raised and wrist.is_open() and holo.visible and wrist.get_parent() == p
+			and wrist.text().contains(main.raid.world.display_name) and wrist.text().contains("Pack "),
+			"X raises the watch, and in third person its hologram opens over your wrist")
+	var cam_to_holo := holo.global_position - controller.camera.global_position
+	var depth := cam_to_holo.dot(-controller.camera.global_basis.z)
+	check(depth > 0.0 and depth < wrist.projection_distance + 0.05,
+			"the third-person hologram hangs in front of the camera, close enough to read")
 	controller.toggle_view()
 	await frames(40)
-	check(wrist.get_parent() == controller.camera, "in first person it is raised into view on your wrist")
+	check(wrist.get_parent() == controller.camera and arm.visible and holo.visible,
+			"in first person your forearm comes up into view with the hologram over it")
+	var narrow := holo.scale.x
+	controller.camera.fov = 110.0
+	wrist.mount(p, controller, true)
+	check(holo.scale.x > narrow * 1.3, "a wider view grows the hologram, so it reads the same")
+	controller.camera.fov = controller.base_fov
+	check(Hud.Wrist.face_tint(0.1).r > 0.9 and Hud.Wrist.face_tint(1.0).b > 0.9,
+			"the watch face glows red when you are low and cyan when you are well")
+	controller._unhandled_input(x_key)
+	await frames(30)
+	check(not controller.wrist_raised and not holo.visible and not arm.visible, "X again puts it away")
 	var gun: Gun = null
 	for w in p.weapons:
 		if w is Gun:
@@ -667,8 +718,8 @@ func _test_main_flow() -> void:
 	corpse.kill("test")
 	await frames(10)
 	check(main.raid != null and not main.hub.visible, "dying keeps you in the world")
-	check(wrist.text().contains("You died") or wrist.text().contains("Killed by"),
-			"what the death cost is read off the wrist")
+	check((wrist.text().contains("You died") or wrist.text().contains("Killed by")) and wrist.raised,
+			"going down raises the watch, and what the death cost is read off it")
 	main._on_redeploy_requested()
 	check(main.raid.player == corpse, "you cannot drop back in at once")
 	main._redeploy_at = 0
@@ -941,7 +992,7 @@ func _test_loadouts() -> void:
 	var shotgun := Gun.new()
 	Loadout._setup_weapon(shotgun, "shotgun_breacher", ItemDB.item_stats("shotgun_breacher"))
 	p.equip_weapon(shotgun)
-	p.cmd.switch_weapon = 2
+	p.cmd.switch_weapon = p.weapons.size() - 1
 	var arena := raid.depots[0].global_position
 	p.global_position = Vector3(arena.x, arena.y - 1.9, arena.z + 3.0)
 	var target := raid.bots[0]
@@ -2184,7 +2235,11 @@ func _test_war() -> void:
 	var mid := raid.war.intensity
 	raid.bots[1].kill("bullet", raid.bots[2])
 	await frames(2)
-	check(raid.war.intensity <= mid, "bots killing each other do not")
+	check(raid.war.intensity > mid and raid.war.intensity - mid < 0.02, "bots killing each other only keep it simmering")
+	raid.war.intensity = raid.war.battle_ceiling
+	raid.bots[1].kill("bullet", raid.bots[2])
+	await frames(2)
+	check(raid.war.intensity <= raid.war.battle_ceiling, "and never take it past a skirmish on their own")
 	raid.war.intensity = 1.0
 	await frames(2)
 	var paid := a.renown
@@ -2467,6 +2522,63 @@ func _test_drops() -> void:
 	await frames(2)
 
 
+func _test_scrip() -> void:
+	print("Carried scrip")
+	var raid := Raid.new()
+	add_child(raid)
+	raid.apply_to_profile = false
+	raid.start_server(Worlds.get_world("frostline"), 31)
+	for bot in raid.bots:
+		bot.get_node("Brain").set_physics_process(false)
+		bot.set_physics_process(false)
+		bot.global_position = Vector3(500, 0, 500)
+	var results := {}
+	raid.player_finished.connect(func(actor: Actor, result: Dictionary) -> void: results[actor.display_name] = result)
+	var a := raid.add_player([], {}, "Alpha", "acct-a")
+	var b := raid.add_player([], {}, "Bravo", "acct-b")
+	a.set_physics_process(false)
+	b.set_physics_process(false)
+	a.global_position = Vector3(-200, 0, -200)
+	b.global_position = Vector3(-200, 0, -230)
+	Combat.deal(raid.bots[0], DamageInfo.make(9999.0, a, "bullet"))
+	Combat.deal(raid.bots[0], DamageInfo.make(9999.0, a, "bullet"))
+	await frames(2)
+	check(a.scrip == 2 * StashService.Economy.KILL_BOUNTY and "Scrip 40" in Hud.standing_text(a) and b.scrip == 0,
+			"kills pay scrip that you carry (%d)" % a.scrip)
+
+	# Banking makes it safe.
+	var depot := raid.depots[0]
+	depot.actor_banked.emit(a)
+	check(a.scrip == 0 and raid.state_for(a).scrip_banked == 40, "a depot banks the scrip you carry")
+	Combat.deal(raid.bots[0], DamageInfo.make(9999.0, a, "bullet"))
+	await frames(2)
+	check(a.scrip == 20, "more kills pay more")
+
+	# Dying drops what was not banked.
+	a.protected_left = 0.0
+	Combat.deal(a, DamageInfo.make(9999.0, raid.bots[1], "bullet"))
+	await frames(2)
+	var bag: LootContainer = null
+	for node in raid.get_children():
+		if node is LootContainer and node.is_bag and node.scrip > 0:
+			bag = node
+	check(bag != null and bag.scrip == 20 and "20 scrip" in bag.get_prompt(), "what you carried drops with your bag (%s)" % (bag.get_prompt() if bag else "no bag"))
+	check(results.has("Alpha") and results.Alpha.scrip == 0 and results.Alpha.scrip_banked == 40 and results.Alpha.scrip_lost == 20
+			and StashService.Economy.payout(results.Alpha) == 40 and "Scrip dropped: 20" in Hud.death_text(results.Alpha, 0.0),
+			"the dead keep only what they banked")
+	if bag != null:
+		bag.interact(b)
+		await frames(2)
+		check(b.scrip == 20, "whoever loots the bag takes the scrip (%d)" % b.scrip)
+
+	# Leaving alive carries it home.
+	raid._leave(raid.state_for(b))
+	check(results.has("Bravo") and results.Bravo.scrip == 20 and StashService.Economy.payout(results.Bravo) == 20,
+			"signing out carries your scrip home")
+	raid.queue_free()
+	await frames(2)
+
+
 func _test_online() -> void:
 	print("Online: commands and raids with several players")
 	var cmd := ActorCommand.new()
@@ -2490,6 +2602,10 @@ func _test_online() -> void:
 	check(copy.move.length() <= 1.001 and is_zero_approx(copy.yaw) and copy.pitch <= 1.5
 			and copy.aim_dir == Vector3.ZERO and copy.stance == 2 and copy.switch_weapon <= 8,
 			"a command from the network is clamped to legal values")
+	cmd.switch_weapon = ActorCommand.HOLSTER
+	copy.apply_array(cmd.to_array())
+	check(copy.switch_weapon == ActorCommand.HOLSTER, "putting the weapon away survives the network form")
+	cmd.switch_weapon = 1
 	copy.apply_array([1.0])
 	check(copy.stance == 2, "a malformed command is ignored")
 	check(cmd.flags() & ActorCommand.ONE_SHOT_MASK != 0 and cmd.flags() & ActorCommand.HELD_MASK != 0
@@ -2508,7 +2624,7 @@ func _test_online() -> void:
 	var a := raid.add_player([], {}, "Alpha")
 	var b := raid.add_player(["rifle_carbine", "blade_scrap", "jetpack_mk1", "plate_light"], {}, "Bravo")
 	await frames(20)
-	check(raid.players.size() == 2 and a.weapons.size() == 2 and b.weapons[0].display_name == "Ashfront Carbine"
+	check(raid.players.size() == 2 and a.weapons.size() == 3 and b.weapons[0].display_name == "Ashfront Carbine"
 			and not a.is_player, "players join a server raid with their own kits")
 	var finished := []
 	raid.player_finished.connect(func(actor: Actor, result: Dictionary) -> void: finished.append([actor, result]))
@@ -2597,7 +2713,7 @@ func _test_online() -> void:
 		OS.kill(pid)
 		return
 	var world := Worlds.get_world("ashfront")
-	check(alpha.raid.mode == Raid.Mode.CLIENT and alpha.raid.player.weapons.size() == 2
+	check(alpha.raid.mode == Raid.Mode.CLIENT and alpha.raid.player.weapons.size() == 3
 			and alpha.raid.player.is_player and not Combat.authoritative,
 			"the client has its own actor and leaves damage to the server")
 	await _wait_until(func() -> bool: return alpha.raid.bots.size() == world.bot_count, 180)
@@ -2609,14 +2725,18 @@ func _test_online() -> void:
 			return bravo.actor_for(alpha.my_actor_id) != null and alpha.actor_for(bravo.my_actor_id) != null
 		await _wait_until(see_each_other, 180)
 		var seen := bravo.actor_for(alpha.my_actor_id)
-		check(seen != null and seen.display_name == "Alpha" and seen.weapons.size() == 2 and not seen.is_player,
+		check(seen != null and seen.display_name == "Alpha" and seen.weapons.size() == 3 and not seen.is_player,
 				"each client sees the other player, with their name and gear")
 		check(bravo.raid.players.size() == 2 and bravo.raid.active_players().size() == 2
 				and alpha.raid.bots.size() == world.bot_count,
 				"a client's raid lists the players, separate from the bots")
 		if seen != null:
 			var from := seen.global_position
-			alpha.raid.player.cmd.move = Vector2(0, 1)
+			# Walk where there is room, so nothing knocks the two screens apart.
+			var walker := alpha.raid.player
+			walker.cmd.yaw = _yaw_toward(_clear_run(walker, walker.global_position, Vector3.FORWARD, 14.0))
+			await frames(10)
+			walker.cmd.move = Vector2(0, 1)
 			await frames(90)
 			alpha.raid.player.cmd.move = Vector2.ZERO
 			await frames(30)
@@ -2797,6 +2917,9 @@ func _test_online() -> void:
 				"the other client sees them return, and they still see the world")
 		if back.call():
 			var from := bravo.raid.player.global_position
+			# Walk where there is room: a drop point has a wall and a bike by it.
+			bravo.raid.player.cmd.yaw = _yaw_toward(_clear_run(bravo.raid.player, from, Vector3.FORWARD, 10.0))
+			await frames(10)
 			bravo.raid.player.cmd.move = Vector2(0, 1)
 			await frames(60)
 			bravo.raid.player.cmd.move = Vector2.ZERO
@@ -2853,6 +2976,10 @@ func _test_online_movement() -> void:
 	var from := me.global_position
 	var worst_step := 0.0
 	var last := from
+	# Run where there is room: the other player and the drop point's wall
+	# stand somewhere around.
+	me.cmd.yaw = _yaw_toward(_clear_run(me, from, Vector3.FORWARD, 22.0))
+	await frames(20)
 	me.cmd.move = Vector2(0, 1)
 	me.cmd.sprint = true
 	for i in 150:
@@ -2920,6 +3047,51 @@ static func _yaw_toward(dir: Vector3) -> float:
 	return atan2(-dir.x, -dir.z)
 
 
+## Whether `actor` could run `reach` metres along `dir` (flat, unit length)
+## from `from` without meeting a wall, a wreck, a bike or another actor. It
+## follows the ground, so a slope does not count as a wall.
+func _run_is_clear(actor: Actor, from: Vector3, dir: Vector3, reach: float) -> bool:
+	var space := actor.get_world_3d().direct_space_state
+	var skip: Array[RID] = []
+	for other in get_tree().get_nodes_in_group("actors"):
+		if other is Actor and Raid.together(other, actor):
+			skip.append((other as Actor).get_rid())
+			var to: Vector3 = (other as Actor).global_position - from
+			to.y = 0.0
+			var along := to.dot(dir)
+			if other != actor and along > 0.0 and along < reach + 1.0 and (to - dir * along).length() < 1.6:
+				return false
+	var last := Vector3.ZERO
+	for i in int(reach) + 1:
+		var above := from + dir * float(i) + Vector3(0, 4.0, 0)
+		var down := PhysicsRayQueryParameters3D.create(above, above + Vector3(0, -12.0, 0))
+		down.exclude = skip
+		var floor_hit := space.intersect_ray(down)
+		if floor_hit.is_empty():
+			return false
+		var chest: Vector3 = floor_hit.position + Vector3(0, 0.9, 0)
+		if i > 0:
+			if absf(chest.y - last.y) > 0.7:
+				return false
+			var ray := PhysicsRayQueryParameters3D.create(last, chest)
+			ray.exclude = skip
+			if not space.intersect_ray(ray).is_empty():
+				return false
+		last = chest
+	return true
+
+
+## A flat direction `actor` can run `reach` metres in from `from`: `prefer`
+## if that is clear, otherwise the nearest clear one to it.
+func _clear_run(actor: Actor, from: Vector3, prefer: Vector3, reach: float) -> Vector3:
+	for i in 16:
+		var turn := TAU / 16.0 * float((i + 1) / 2) * (1.0 if i % 2 == 1 else -1.0)
+		var dir := prefer.rotated(Vector3.UP, turn)
+		if _run_is_clear(actor, from, dir, reach):
+			return dir
+	return prefer
+
+
 func _test_online_lag_compensation() -> void:
 	print("Online: a lagging shooter hits what is on their screen")
 	var with_rewind := await _lagged_shots(24817, [])
@@ -2966,7 +3138,11 @@ func _lagged_shots(port: int, extra: Array[String]) -> Array:
 	runner.cmd.yaw = _yaw_toward(-away.normalized() if away.length() > 0.1 else Vector3.FORWARD)
 	runner.cmd.move = Vector2(0, -1)
 	await frames(30)
-	runner.cmd.move = Vector2(1, 0)
+	# He strafes to whichever side has room, so nothing stops him mid-run.
+	var right := Vector3.RIGHT.rotated(Vector3.UP, runner.cmd.yaw)
+	var room_right := _run_is_clear(runner, runner.global_position, right, 12.0)
+	var room_left := _run_is_clear(runner, runner.global_position, -right, 12.0)
+	runner.cmd.move = Vector2(1, 0) if room_right or not room_left else Vector2(-1, 0)
 	me.cmd.secondary = true
 	var shots := 0
 	for i in 80:
@@ -3012,6 +3188,16 @@ func _test_online_riding() -> void:
 		await frames(30)
 		return
 	var me := faye.raid.player
+	# The other player steps out of the bike's way.
+	var walker := gus.raid.player
+	var aside := walker.global_position - bike.global_position
+	aside.y = 0.0
+	aside = _clear_run(walker, walker.global_position,
+			aside.normalized() if aside.length() > 0.1 else Vector3.BACK, 8.0)
+	walker.cmd.yaw = _yaw_toward(aside)
+	walker.cmd.move = Vector2(0, 1)
+	await frames(100)
+	walker.cmd.move = Vector2.ZERO
 	var aim := bike.global_position + Vector3(0, 0.6, 0) - me.get_eye_position()
 	me.cmd.aim_dir = aim.normalized()
 	me.cmd.yaw = _yaw_toward(aim)

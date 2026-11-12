@@ -74,7 +74,7 @@ signal world_invite_accepted(invite: Dictionary)
 signal base_visit_requested(owner_name: String, stash: Array, loadout: Dictionary)
 
 const DEFAULT_PORT := 24565
-const PROTOCOL := 14
+const PROTOCOL := 15
 const StashService := preload("res://core/account/stash_service.gd")
 const Economy := preload("res://core/economy/economy.gd")
 const Human := preload("res://core/visual/human.gd")
@@ -104,7 +104,7 @@ const CORRECTION_RATE := 0.2
 ## Notices the server passes on to a player. Others are produced locally.
 const FORWARDED_NOTICES := ["Parry!", "Wrong side", "Guard broken", "Staggered", "Killed ", "Looted ",
 		"Backpack full", "Someone is riding it", "Banked ", "Signing out", "Sign-out cancelled",
-		"You cannot sign out"]
+		"You cannot sign out", "Scanned"]
 
 var is_server := false
 var raid: Raid
@@ -631,7 +631,8 @@ func _send_spawn(peer: int, actor: Actor) -> void:
 		if actor.has_meta("appearance"):
 			data["look"] = actor.get_meta("appearance")
 	else:
-		data = {"seed": raid.bot_seeds.get(actor, 0), "warlord": raid.warlords.has(actor)}
+		data = {"seed": raid.bot_seeds.get(actor, 0), "warlord": raid.warlords.has(actor),
+				"faction": actor.faction}
 	_spawn.rpc_id(peer, _ids[actor], "player" if state != null else "bot", actor.display_name,
 			String(actor.name), actor.global_position, actor.cmd.yaw, data)
 
@@ -688,6 +689,14 @@ func _request_join(drop := "") -> void:
 	actor.inventory.changed.connect(func() -> void:
 		if peer in _api.get_peers():
 			_inventory.rpc_id(peer, actor.inventory.items))
+	# What a helmet reveals goes only to the players allowed to know it.
+	actor.visor.revealed.connect(func(found: Array) -> void:
+		if peer in _api.get_peers():
+			_visor_ghosts.rpc_id(peer, found))
+	actor.visor.felt_scan.connect(func(origin: Vector3) -> void:
+		if peer in _api.get_peers():
+			_visor_felt.rpc_id(peer, origin))
+	actor.visor.tagged.connect(_on_server_tagged.bind(actor))
 	_joined_peers.append(peer)
 	_social_moved(peer, "hub" if safe else "raid")
 	_welcome.rpc_id(peer, _ids[actor])
@@ -831,7 +840,7 @@ func _server_late_tick(_delta: float) -> void:
 	for id: int in _actors:
 		var actor: Actor = _actors[id]
 		_one_shots[id] = int(_one_shots.get(id, 0)) | (actor.cmd.flags() & ActorCommand.ONE_SHOT_MASK)
-		if actor.cmd.switch_weapon >= 0:
+		if actor.cmd.switch_weapon != -1:
 			_switches[id] = actor.cmd.switch_weapon
 	_tick += 1
 	if lag_compensation:
@@ -877,7 +886,8 @@ func _server_late_tick(_delta: float) -> void:
 		var actor := state.actor
 		if not is_instance_valid(actor):
 			continue
-		var standing := [actor.renown, actor.rank, actor.streak, actor.bounty, actor.exposed, actor.marked]
+		var standing := [actor.renown, actor.rank, actor.streak, actor.bounty, actor.exposed, actor.marked,
+				actor.scrip]
 		if id >= 0 and _sent_standing.get(id, []) != standing:
 			_sent_standing[id] = standing
 			for peer in _joined_peers:
@@ -1068,7 +1078,8 @@ func _spawn(id: int, kind: String, shown_name: String, node_name: String, at: Ve
 		state.picks = data.get("picks", {})
 		raid.players.append(state)
 	else:
-		actor = raid.spawn_bot(node_name, at, data.get("seed", 0), data.get("warlord", false))
+		actor = raid.spawn_bot(node_name, at, data.get("seed", 0), data.get("warlord", false),
+				data.get("faction", ""))
 		raid.world.on_spawn(actor)
 	actor.cmd.yaw = yaw
 	_actors[id] = actor
@@ -1347,7 +1358,8 @@ func _war(intensity: float, centre: Vector3) -> void:
 		raid.war.centre = centre
 
 
-## A player's public renown: [renown, rank, streak, bounty, exposed, marked].
+## A player's public standing: [renown, rank, streak, bounty, exposed, marked,
+## scrip carried].
 @rpc("authority", "call_remote", "reliable")
 func _standing(id: int, standing: Array) -> void:
 	var actor: Actor = _actors.get(id)
@@ -1359,6 +1371,45 @@ func _standing(id: int, standing: Array) -> void:
 	actor.bounty = int(standing[3])
 	actor.exposed = bool(standing[4])
 	actor.marked = bool(standing[5])
+	if standing.size() > 6:
+		actor.scrip = int(standing[6])
+
+
+## A player tagged someone: they and their side are told, nobody else.
+func _on_server_tagged(target: Actor, tagger: Actor) -> void:
+	if not _ids.has(target) or not _ids.has(tagger):
+		return
+	for peer in _joined_peers:
+		var viewer: Actor = _peer_actor.get(peer)
+		if viewer == null or not is_instance_valid(viewer):
+			continue
+		if viewer == tagger or Visor.allied(tagger, viewer):
+			_visor_tag.rpc_id(peer, _ids[tagger], _ids[target], float(tagger.visor.tags.get(target, 0.0)))
+
+
+## The answer to your scan: where everyone it caught was standing.
+@rpc("authority", "call_remote", "reliable")
+func _visor_ghosts(found: Array) -> void:
+	var me: Actor = _actors.get(my_actor_id)
+	if me != null and is_instance_valid(me):
+		me.visor.show_ghosts(found)
+
+
+## Someone's scan caught you, from `origin`.
+@rpc("authority", "call_remote", "reliable")
+func _visor_felt(origin: Vector3) -> void:
+	var me: Actor = _actors.get(my_actor_id)
+	if me != null and is_instance_valid(me):
+		me.visor.felt_scan.emit(origin)
+
+
+## Someone on your side tagged a target.
+@rpc("authority", "call_remote", "reliable")
+func _visor_tag(tagger_id: int, target_id: int, seconds: float) -> void:
+	var tagger: Actor = _actors.get(tagger_id)
+	var target: Actor = _actors.get(target_id)
+	if tagger != null and is_instance_valid(tagger) and target != null and is_instance_valid(target):
+		tagger.visor.add_tag(target, clampf(seconds, 0.0, 30.0))
 
 
 @rpc("authority", "call_remote", "reliable")
