@@ -436,6 +436,10 @@ func _on_server_actor_spawned(actor: Actor) -> void:
 		_joining_look = {}
 	var id := _register(actor)
 	actor.died.connect(func(_a: Actor, info: DamageInfo) -> void: _dead_kind[id] = info.kind)
+	# A power weapon taken off a rack, swapped or spent is shown to all.
+	actor.power_changed.connect(func(item_id: String, mag: int, reserve: int) -> void:
+		for peer in _joined_peers:
+			_power_changed.rpc_id(peer, id, item_id, mag, reserve))
 	for peer in _joined_peers:
 		_send_spawn(peer, actor)
 
@@ -751,6 +755,10 @@ func _send_spawn(peer: int, actor: Actor) -> void:
 	var data := {}
 	if state != null:
 		data = {"kit": state.kit, "picks": state.picks}
+		var power := Loadout.power_index(actor)
+		if power >= 0:
+			var gun := actor.weapons[power] as Gun
+			data["power"] = [gun.item_id, gun.ammo_in_mag, gun.reserve_ammo]
 		if actor.has_meta("appearance"):
 			data["look"] = actor.get_meta("appearance")
 		if actor.clan_tag != "":
@@ -1324,6 +1332,16 @@ func _welcome(actor_id: int) -> void:
 		raid.send_request = arena_request
 
 
+## Client: someone's power weapon slot changed (taken off a rack, swapped,
+## or spent). The server decided it; this only makes the copy here match.
+@rpc("authority", "call_remote", "reliable")
+func _power_changed(id: int, item_id: String, mag: int, reserve: int) -> void:
+	var actor: Actor = _actors.get(id)
+	if actor == null or not is_instance_valid(actor) or (item_id != "" and not ItemDB.has_tag(item_id, "power")):
+		return
+	Loadout.set_power(actor, item_id, mag, reserve)
+
+
 @rpc("authority", "call_remote", "reliable")
 func _spawn(id: int, kind: String, shown_name: String, node_name: String, at: Vector3, yaw: float,
 		data: Dictionary) -> void:
@@ -1344,6 +1362,9 @@ func _spawn(id: int, kind: String, shown_name: String, node_name: String, at: Ve
 		raid.add_child(actor)
 		actor.global_position = at
 		Loadout.equip(actor, data.get("kit", []))
+		var power: Variant = data.get("power")
+		if power is Array and power.size() == 3 and ItemDB.has_tag(str(power[0]), "power"):
+			Loadout.set_power(actor, power[0], int(power[1]), int(power[2]))
 		actor.weapons_locked = raid.world.safe_zone
 		Raid.MasteryTracker.apply_variants(actor, data.get("picks", {}))
 		raid.world.on_spawn(actor)

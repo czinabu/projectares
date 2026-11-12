@@ -21,6 +21,7 @@ const BattlefieldTests := preload("res://tests/battlefield_tests.gd")
 const VisorTests := preload("res://tests/visor_tests.gd")
 const SidearmTests := preload("res://tests/sidearm_tests.gd")
 const AttachmentTests := preload("res://tests/attachment_tests.gd")
+const PowerWeaponTests := preload("res://tests/power_weapon_tests.gd")
 
 var _passed := 0
 var _failed := 0
@@ -266,6 +267,7 @@ func _run() -> void:
 	await _test_visors()
 	await _test_sidearms()
 	await _test_attachments()
+	await _test_power_weapons()
 
 
 func _test_look() -> void:
@@ -303,6 +305,10 @@ func _test_battlefield() -> void:
 
 func _test_visors() -> void:
 	await VisorTests.run(self)
+
+
+func _test_power_weapons() -> void:
+	await PowerWeaponTests.run(self)
 
 
 func check(condition: bool, what: String) -> void:

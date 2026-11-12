@@ -81,6 +81,9 @@ func _init() -> void:
 	players_allied = true
 	# The quiet world: its mood never shifts.
 	war_scale = 0.0
+	# Power weapons belong to the war worlds. A world where you keep your
+	# gear on death would hand them out without the stakes.
+	power_weapon_rate = 0.0
 	bot_count = 9
 	depot_hold_time = 6.0
 

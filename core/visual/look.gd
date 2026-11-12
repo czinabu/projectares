@@ -817,12 +817,105 @@ func clean_appearance(raw: Variant, owned: Array = []) -> Dictionary:
 	return Human.player_look(raw, owned)
 
 
+## Power weapons are sci-fi through and through: dark armoured bodies
+## with glowing coils, cells and vents in the weapon's own colour
+## (`Gun.tracer_color`). Built from shapes, picked by tag, pointing along -Z.
+func _power_model(gun: Gun) -> Node3D:
+	var glow: Color = gun.tracer_color
+	var body := _power_mat(Color(0.24, 0.26, 0.31), 0.45, 0.45)
+	var trim := _power_mat(Color(0.5, 0.53, 0.58), 0.6, 0.35)
+	var lit := _power_mat(glow, 0.0, 0.4, glow, 1.4)
+	var holder := Node3D.new()
+	holder.name = "Model"
+	var tags: Array = ItemDB.get_item(gun.item_id).get("tags", [])
+	if "railgun" in tags:
+		# Two long rails with charge coils between them.
+		_power_box(holder, Vector3(0.09, 0.12, 0.5), Vector3(0, -0.02, 0.0), body)
+		for side in [-1.0, 1.0]:
+			_power_box(holder, Vector3(0.025, 0.05, 0.85), Vector3(0.045 * side, 0.02, -0.55), trim)
+		for i in 5:
+			_power_box(holder, Vector3(0.07, 0.07, 0.03), Vector3(0, 0.02, -0.2 - i * 0.15), lit)
+		_power_box(holder, Vector3(0.05, 0.14, 0.08), Vector3(0, -0.14, 0.08), body)
+		_power_box(holder, Vector3(0.1, 0.05, 0.12), Vector3(0, 0.1, -0.05), lit)
+	elif "launcher" in tags:
+		# A wide plasma tube on the shoulder, glowing at both ends.
+		_power_cyl(holder, 0.085, 0.85, Vector3(0, 0.02, -0.25), body)
+		_power_cyl(holder, 0.095, 0.08, Vector3(0, 0.02, -0.66), lit)
+		_power_cyl(holder, 0.095, 0.06, Vector3(0, 0.02, 0.17), trim)
+		_power_box(holder, Vector3(0.04, 0.03, 0.5), Vector3(0, 0.11, -0.25), lit)
+		_power_box(holder, Vector3(0.05, 0.14, 0.07), Vector3(0, -0.12, -0.05), body)
+		_power_box(holder, Vector3(0.12, 0.08, 0.12), Vector3(0.07, 0.05, -0.05), trim)
+	elif "grenade_launcher" in tags:
+		# Short barrel over a fat glowing drum of arc charges.
+		_power_box(holder, Vector3(0.08, 0.1, 0.45), Vector3(0, 0.0, -0.15), body)
+		_power_cyl(holder, 0.05, 0.35, Vector3(0, 0.05, -0.45), trim)
+		var drum := _power_cyl(holder, 0.1, 0.12, Vector3(0, -0.06, -0.12), lit)
+		drum.rotation = Vector3(0, 0, PI / 2.0)
+		_power_box(holder, Vector3(0.05, 0.14, 0.07), Vector3(0, -0.13, 0.08), body)
+		_power_box(holder, Vector3(0.09, 0.02, 0.3), Vector3(0, 0.07, -0.15), lit)
+	else:
+		# Rotary pulse cannon: a ring of barrels around a glowing core.
+		_power_box(holder, Vector3(0.16, 0.16, 0.36), Vector3(0, 0, 0.0), body)
+		for i in 6:
+			var a := TAU * i / 6.0
+			_power_cyl(holder, 0.022, 0.7, Vector3(cos(a) * 0.065, sin(a) * 0.065, -0.5), trim)
+		_power_cyl(holder, 0.03, 0.72, Vector3(0, 0, -0.5), lit)
+		_power_cyl(holder, 0.11, 0.05, Vector3(0, 0, -0.25), lit)
+		_power_box(holder, Vector3(0.18, 0.06, 0.2), Vector3(0, 0.12, 0.05), trim)
+		_power_box(holder, Vector3(0.05, 0.14, 0.07), Vector3(0, -0.14, 0.1), body)
+	return holder
+
+
+func _power_mat(color: Color, metal: float, rough: float, glow := Color.BLACK,
+		glow_energy := 0.0) -> StandardMaterial3D:
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = color
+	mat.metallic = metal
+	mat.roughness = rough
+	if glow_energy > 0.0:
+		mat.emission_enabled = true
+		mat.emission = glow
+		mat.emission_energy_multiplier = glow_energy
+	return mat
+
+
+func _power_box(parent: Node3D, size: Vector3, at: Vector3, mat: Material) -> MeshInstance3D:
+	var mesh := BoxMesh.new()
+	mesh.size = size
+	mesh.material = mat
+	var part := MeshInstance3D.new()
+	part.mesh = mesh
+	part.position = at
+	part.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	parent.add_child(part)
+	return part
+
+
+## A cylinder lying along -Z (the barrel direction).
+func _power_cyl(parent: Node3D, radius: float, length: float, at: Vector3, mat: Material) -> MeshInstance3D:
+	var mesh := CylinderMesh.new()
+	mesh.top_radius = radius
+	mesh.bottom_radius = radius
+	mesh.height = length
+	mesh.radial_segments = 12
+	mesh.material = mat
+	var part := MeshInstance3D.new()
+	part.mesh = mesh
+	part.position = at
+	part.rotation = Vector3(PI / 2.0, 0, 0)
+	part.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	parent.add_child(part)
+	return part
+
+
 ## The model for a held weapon, or null to keep the greybox one.
 func weapon_model(weapon: Weapon) -> Node3D:
 	if weapon is MeleeWeapon:
 		return _melee_model(weapon)
 	if not weapon is Gun:
 		return null
+	if weapon.item_id != "" and ItemDB.has_tag(weapon.item_id, "power"):
+		return _power_model(weapon as Gun)
 	var file := DEFAULT_GUN
 	var length := GUN_LENGTH
 	for entry: Array in GUN_MODELS:
@@ -1302,6 +1395,9 @@ func _dress_cache(cache: LootContainer) -> void:
 		return
 	var box := marker.mesh as BoxMesh
 	var size := box.size if box else Vector3(1, 0.8, 0.8)
+	if cache.is_rack():
+		_dress_power_rack(cache, marker, size)
+		return
 	var crate := prop("Backpack.glb" if cache.is_bag else "Lootbox.glb", maxf(size.x, size.z) * (0.9 if cache.is_bag else 1.15), 0.7)
 	crate.name = "Crate"
 	cache.add_child(crate)
@@ -1311,6 +1407,46 @@ func _dress_cache(cache: LootContainer) -> void:
 	band.size = Vector3(size.x * 1.08, 0.05, size.z * 1.08)
 	marker.mesh = band
 	marker.position.y = size.y * (0.2 if cache.is_bag else 0.55)
+	marker.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+
+
+## A power rack: an armoured weapon stand with glowing clamps and a thin
+## light column, so a power weapon can be spotted across the field. The
+## game's marker (coloured by what is inside) stays as the glowing cradle.
+func _dress_power_rack(rack: LootContainer, marker: MeshInstance3D, size: Vector3) -> void:
+	var frame := Node3D.new()
+	frame.name = "Crate"
+	rack.add_child(frame)
+	var steel := _power_mat(Color(0.24, 0.26, 0.31), 0.5, 0.45)
+	var cyan := Color(0.35, 0.95, 1.0)
+	var lit := _power_mat(cyan, 0.0, 0.4, cyan, 1.6)
+	_power_box(frame, Vector3(size.x * 1.2, 0.12, size.z * 1.0), Vector3(0, 0.06, 0), steel)
+	for side in [-1.0, 1.0]:
+		_power_box(frame, Vector3(0.1, 1.3, 0.1), Vector3(size.x * 0.5 * side, 0.7, 0), steel)
+		_power_box(frame, Vector3(0.14, 0.06, 0.3), Vector3(size.x * 0.5 * side, 1.05, 0), lit)
+	_power_box(frame, Vector3(size.x * 1.05, 0.06, 0.06), Vector3(0, 1.36, 0), lit)
+	var column := MeshInstance3D.new()
+	var beam := CylinderMesh.new()
+	beam.top_radius = 0.04
+	beam.bottom_radius = 0.04
+	beam.height = 9.0
+	var glow := StandardMaterial3D.new()
+	glow.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	glow.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	glow.albedo_color = Color(cyan.r, cyan.g, cyan.b, 0.35)
+	beam.material = glow
+	column.mesh = beam
+	column.position.y = 1.4 + beam.height * 0.5
+	column.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	frame.add_child(column)
+	var light := lamp(cyan, 1.5, 6.0)
+	light.position.y = 1.2
+	frame.add_child(light)
+	# The marker becomes the cradle the weapon rests in.
+	var cradle := BoxMesh.new()
+	cradle.size = Vector3(size.x * 0.9, 0.08, 0.22)
+	marker.mesh = cradle
+	marker.position.y = 0.9
 	marker.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
 

@@ -41,6 +41,12 @@ func is_aiming() -> bool:
 	return false
 
 
+## Walk speed multiplier while this weapon is in hand (a spun-up minigun
+## slows you). Read by `Actor` movement, so keep it deterministic.
+func move_speed_mult() -> float:
+	return 1.0
+
+
 ## How far the view magnifies while aiming (1 for none). Optics raise it.
 func aim_zoom() -> float:
 	return 1.0

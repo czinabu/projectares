@@ -233,6 +233,23 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   the camera looks through it, and zooms by `Weapon.aim_zoom()`. Scopes are
   real geometry you look down, never a screen overlay. Fitting happens at
   the home base's gunsmith bench (`BaseLayout` kind "gunsmith").
+- Power weapons are items tagged "power" (Rail Lance, Helion launcher, Arc
+  Mortar, Storm Cannon), still plain `Gun` data: stats such as
+  `charge_time`, `pierce`, `projectile` ("rocket"/"grenade", flown by
+  `Gun.Round`), `splash_radius`, `heat_seek_cone` and `spin_up` pick the
+  behavior, and `Gun.splash` sends every blast through `Combat.deal`. They
+  are found, never equipped: `PowerArmory` (`core/war/power_armory.gd`,
+  `Raid.armory`, authority only) puts them on power racks (a `LootContainer`
+  labelled `LootContainer.RACK_LABEL`) at strongpoints, beside supply pods
+  and sometimes beside a refilled cache, more often as `Raid.war` heats up,
+  scaled by `WorldDef.power_weapon_rate` (0 in Frostline and the arena).
+  Taking one fills a fourth weapon slot (key 4) through `Loadout.set_power`;
+  one already carried goes on the rack with its shots. A spent one is thrown
+  away, a dead player's is left on a rack, and `StashRules.storable` refuses
+  them, so they never reach a stash, a bag or a result. Online the swap
+  reaches clients as `Actor.power_changed` through `NetSession`. Their art is
+  `Look._power_model` and `_dress_power_rack`; check by eye with
+  `visual_check.tscn -- <dir> --power-only`.
 - Flight rigs and abilities are data too. `FlightRig` and `Ability` are single
   classes whose item stats pick the behavior. Abilities fire from
   `ActorCommand.ability_pressed`.
