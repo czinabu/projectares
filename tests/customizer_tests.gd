@@ -237,6 +237,9 @@ static func run(t: Node) -> void:
 			t.check(changed.get("body") == "Casual" and changed.get("skin") == 1,
 					"a look changed mid-world reaches the other player without redeploying")
 			t.check(changed.get("head", "") in Human.STARTER["f"], "the server still strips clothes the player does not own")
+			# Each client gets the change in its own packet, so the player's own copy can land a tick later.
+			await t._wait_until(func() -> bool:
+				return alpha.raid.player.get_meta("appearance", {}) == changed, 60)
 			t.check(alpha.raid.player.get_meta("appearance", {}) == changed, "the player's own game shows what the server passed")
 		await t._leave(bravo)
 	await t._leave(alpha)
