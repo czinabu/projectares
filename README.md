@@ -273,8 +273,9 @@ you have.
   stop: launch once, glide, pulse up to hold height, dive for the fastest
   speed in the game, turn tightest and barrel roll, cold and quiet, but only
   a sidearm fires while they are spread. Thruster boots skim low over streets
-  and roofs and stop dead: near a surface they cool, high up they burn out in
-  seconds. Jump kicks you up, the dash key dashes on heat, and the aim stays
+  and roofs and stop dead: near a surface they cool, high in the open they
+  never cool and burn out in seconds. Jump kicks you up, and three kicks top
+  a 15 m roof, which is a surface to cool on again. The dash key dashes on heat, and the aim stays
   steady while skimming low. Shooting from the
   air spreads wider, except from a hover or a low skim.
 - An ability slot. Phase Step blinks you forward, Kinetic Barrier cuts damage

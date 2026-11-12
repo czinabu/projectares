@@ -4,8 +4,9 @@ extends Node
 ## how it flies:
 ##   jetpack        - `thrust_accel`: hold jump in the air for sustained lift,
 ##                    tap jump in the air to hover and fly freely (see below).
-##   thruster boots - `burst_velocity`: press jump in the air for an instant kick,
-##                    and `skim_speed`: hold jump in the air to skim low.
+##   thruster boots - `burst_velocity`: press jump in the air for an instant kick
+##                    (a set of them tops a rooftop), and `skim_speed`: hold
+##                    jump in the air to skim low.
 ##   glide wings    - a burst to launch, then `glide_fall_speed` and
 ##                    `glide_speed`: hold jump to fall slowly and fly forward,
 ##                    and `pulse_velocity`: press jump while gliding to climb.
@@ -129,15 +130,17 @@ var burst_push := 0.0
 ## depends on the height over the ground or roof below: under `skim_low`
 ## meters the boots cool at `skim_cool` a second, up to `skim_high` they
 ## cost `skim_mid_heat`, and above it `skim_high_heat`. You stop dead when
-## you let go of the move keys (`skim_accel`).
+## you let go of the move keys (`skim_accel`). Boots only ever cool near a
+## surface (`aloft`): a set of kicks tops a rooftop, and the roof under your
+## feet is where they cool again.
 var skim_speed := 0.0
 var skim_accel := 40.0
 var skim_hold_accel := 30.0
-var skim_low := 4.0
-var skim_high := 10.0
+var skim_low := 6.0
+var skim_high := 12.0
 var skim_cool := 5.0
 var skim_mid_heat := 8.0
-var skim_high_heat := 30.0
+var skim_high_heat := 20.0
 ## How far down the boots look for a surface.
 var skim_probe := 30.0
 ## Boots: the dash key in the air dashes at `air_dash_speed` for
@@ -160,6 +163,9 @@ var is_coasting := false
 var is_skimming := false
 ## Boots: the height over the surface below while skimming, in meters.
 var skim_height := 0.0
+## Boots in the air at `skim_low` or more over the surface below: they do not
+## cool there (the `Actor` sets it every tick).
+var aloft := false
 ## The launch of a `launch_once` rig has been used this time in the air.
 var launched := false
 var _since_thrust := 0.0
@@ -181,7 +187,7 @@ func tick(wants_thrust: bool, delta: float, heat_mult := 1.0) -> float:
 	_since_thrust += delta
 	if is_gliding and glide_cool > 0.0:
 		heat = maxf(0.0, heat - glide_cool * delta)
-	elif _since_thrust >= cool_delay:
+	elif _since_thrust >= cool_delay and not aloft:
 		heat = maxf(0.0, heat - cool_per_sec * delta)
 	_recover()
 	return 0.0

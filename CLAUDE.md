@@ -280,7 +280,9 @@ without Caleb, and update the gap list when a PR closes a row.
   fastest dives, tightest turns and a barrel roll, silent and cold, but never
   stop and fire only a sidearm while spread; boots skim low (`FlightRig.skim`),
   cooling near a surface and burning out high up, kick up, dash on heat and
-  aim steady while low, but have no high ground. Flown its
+  aim steady while low. Their kicks top a rooftop (three reach a 15 m roof,
+  Caleb's call) and a roof under the feet is a surface they cool over, but
+  in open air they never cool (`FlightRig.aloft`), so they hold no open sky. Flown its
   own way a rig stays up for minutes, against type it overheats in seconds.
   Shooting from the air spreads wider (`Actor.air_aim`) except in a rig's
   steady state. The keys fly every rig and the mouse only looks and aims

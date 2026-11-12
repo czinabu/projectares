@@ -306,7 +306,14 @@ feature thread; changes go through Caleb. The core of it:
 | --- | --- | --- | --- | --- |
 | Jetpack "Skyhold" | High, 20 to 40 m | Cruise on jets, coast down to vent heat | Stops dead and hovers; steadiest gun platform; best for heavy armor and heavy weapons | Wide turns; loud, bright, heat-seeker bait |
 | Glide Wings "Longreach" | Middle, 8 to 30 m, in arcs | Gliding, diving for speed, wing pulses to climb | Fastest dives, tightest turns, silent and cold | Can never stop; sidearm only while the wings are out |
-| Thruster Boots "Skirmisher" | Low, under 8 m | Skimming near surfaces, where the boots cool | Instant air dashes, no aim penalty while skimming, works indoors | Climbing high burns heat fast; no high ground |
+| Thruster Boots "Skirmisher" | Low, within 6 m of a surface, rooftops included | Skimming near surfaces, where the boots cool | Instant air dashes, no aim penalty while skimming, works indoors; a set of kicks tops a 15 m roof | Only cool near a surface, so a climb is a visit: high in the open they burn out in seconds |
+
+The boots reach rooftops (Caleb's call after playtesting: "I should be able
+to reach the top of buildings, or at least make it up top for a bit before
+having to go lower to refuel"). Three kicks carry them onto a 15 m roof with
+heat to spare and a fourth is the ceiling, about 20 m. A roof under the feet
+is a surface like the street, so they cool up there; in open air above 6 m
+they never cool, so the open sky stays with the jetpack and the wings.
 
 In a squad the layers become roles: the jetpack holds the high angle, the
 wings flank and dive in, the boots push through streets and buildings.

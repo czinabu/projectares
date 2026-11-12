@@ -417,6 +417,9 @@ func _simulate_movement(delta: float) -> void:
 	elif flight.is_skimming:
 		_simulate_skim(delta)
 	else:
+		# Boots cool only near a surface: the street, or the roof they reached.
+		flight.aloft = flight.can_skim() and not on_floor \
+				and height_above_ground(flight.skim_probe) >= flight.skim_low
 		var thrust := flight.tick(cmd.jump and not on_floor and not staggered, delta)
 		velocity.y += (thrust - gravity) * delta
 		if thrust > 0.0:

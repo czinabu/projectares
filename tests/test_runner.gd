@@ -1450,11 +1450,17 @@ func _test_flight_rigs_and_abilities() -> void:
 	for i in 6:
 		await press_jump.call(p)
 		await frames(4)
-	check(p.flight.overheated, "kicking over and over overheats the boots")
-	check(not p.flight.is_hovering and not p.flight.is_skimming, "boots cannot hover, nor skim overheated")
+	check(p.flight.heat > p.flight.max_heat - p.flight.burst_heat,
+			"kicking over and over spends the boots' heat (%.0f)" % p.flight.heat)
 	var vy := p.velocity.y
 	await press_jump.call(p)
-	check(p.velocity.y <= vy, "overheated boots do nothing")
+	check(p.velocity.y <= vy, "boots out of heat do nothing")
+	p.flight.heat = p.flight.max_heat
+	p.flight.overheated = true
+	p.cmd.jump = true
+	await frames(2)
+	check(not p.flight.is_hovering and not p.flight.is_skimming, "boots cannot hover, nor skim overheated")
+	p.cmd.jump = false
 	for i in 400:
 		await get_tree().physics_frame
 		if p.is_on_floor():
@@ -1789,6 +1795,10 @@ func _check_boot_skim(p: Actor) -> void:
 	p.flight.heat = 0.0
 	p.flight.overheated = false
 	p.global_position = Vector3(0.0, p.global_position.y, 60.0)
+	for i in 200:
+		await get_tree().physics_frame
+		if p.is_on_floor():
+			break
 	await frames(10)
 	var ground := p.global_position.y
 	p.cmd.jump_pressed = true
@@ -1830,7 +1840,7 @@ func _check_boot_skim(p: Actor) -> void:
 	p.velocity = Vector3.ZERO
 	await frames(30)
 	check(p.flight.skim_band() == 2 and p.air_aim() == 1.0, "skimming high is the burning band and spoils the aim")
-	for i in 240:
+	for i in 400:
 		await get_tree().physics_frame
 		if p.flight.overheated:
 			break
@@ -1840,6 +1850,67 @@ func _check_boot_skim(p: Actor) -> void:
 		await get_tree().physics_frame
 		if p.is_on_floor():
 			break
+	# High in the open the boots never cool, even with the jets off.
+	p.global_position.y = ground + 25.0
+	p.velocity = Vector3.ZERO
+	await frames(2)
+	p.flight.heat = 50.0
+	p.flight.overheated = false
+	await frames(40)
+	check(is_equal_approx(p.flight.heat, 50.0), "boots do not cool high in the open (%.0f)" % p.flight.heat)
+	for i in 400:
+		await get_tree().physics_frame
+		if p.is_on_floor():
+			break
+	await frames(60)
+	check(p.flight.heat < 20.0, "back on the ground they cool fast (%.0f)" % p.flight.heat)
+	# A set of kicks tops a 15 m roof, and the roof is a surface to cool on.
+	var roof := StaticBody3D.new()
+	roof.collision_layer = Actor.LAYER_WORLD
+	var roof_shape := BoxShape3D.new()
+	roof_shape.size = Vector3(12, 1, 12)
+	var roof_col := CollisionShape3D.new()
+	roof_col.shape = roof_shape
+	roof.add_child(roof_col)
+	p.get_parent().add_child(roof)
+	roof.global_position = Vector3(p.global_position.x, ground + 14.5, p.global_position.z - 8.5)
+	p.flight.heat = 0.0
+	p.flight.overheated = false
+	p.cmd.yaw = 0.0
+	p.cmd.jump_pressed = true
+	p.cmd.jump = true
+	await frames(1)
+	p.cmd.jump_pressed = false
+	await frames(2)
+	var kicks := 0
+	for i in 600:
+		await get_tree().physics_frame
+		if p.global_position.y > ground + 15.5 or p.flight.overheated:
+			break
+		if p.velocity.y <= 0.0 and not p.cmd.jump_pressed:
+			p.cmd.jump_pressed = true
+			kicks += 1
+		else:
+			p.cmd.jump_pressed = false
+	p.cmd.jump_pressed = false
+	check(p.global_position.y > ground + 15.5 and kicks <= 3 and p.flight.heat < 90.0,
+			"%d kicks carry the boots over a 15 m roof with heat to spare (%.1f m, heat %.0f)"
+			% [kicks, p.global_position.y - ground, p.flight.heat])
+	p.cmd.move = Vector2(0, 1)
+	for i in 120:
+		await get_tree().physics_frame
+		if p.flight.skim_band() == 0:
+			break
+	p.cmd.move = Vector2.ZERO
+	var hot := p.flight.heat
+	await frames(60)
+	check(p.flight.is_skimming and p.flight.skim_band() == 0 and p.flight.heat < hot,
+			"skimming over the roof is skimming low: the boots cool up there (%.0f to %.0f)" % [hot, p.flight.heat])
+	p.cmd.jump = false
+	await frames(90)
+	check(p.is_on_floor() and p.global_position.y > ground + 14.0 and p.flight.heat < hot - 30.0,
+			"standing on the roof cools them fast (%.0f)" % p.flight.heat)
+	roof.queue_free()
 
 
 ## The wings' own moves. `p` is gliding high up with glide wings.
