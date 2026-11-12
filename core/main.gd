@@ -40,6 +40,8 @@ const ClanPanel := preload("res://core/social/clan_panel.gd")
 const PLAZA_PLAYERS := 32
 const SHOP_PANEL := "res://core/economy/shop_panel.gd"
 const Economy := preload("res://core/economy/economy.gd")
+## DEV MODE: temporary, see `core/dev/dev_mode.gd`.
+const DevMode := preload("res://core/dev/dev_mode.gd")
 
 var hub: Hub
 ## The 2D viewport the hub lives in. Its picture goes on the screen of the
@@ -163,6 +165,8 @@ func _notification(what: int) -> void:
 func go_home(result := {}) -> void:
 	if raid != null:
 		return
+	# DEV MODE: refill the dev stash after a run (or swap saves if it changed).
+	Profile.apply_dev_mode()
 	hub.close()
 	if base != null and base.read_only:
 		leave_base()
@@ -388,6 +392,9 @@ func start_raid(world_id: String) -> void:
 	raid = Raid.new()
 	raid.name = "Raid"
 	add_child(raid)
+	# DEV MODE
+	Profile.apply_dev_mode()
+	raid.dev_cheats = DevMode.raid_cheats()
 	raid.start(world, -1, Profile.checkout_loadout(world), Profile.mastery.active_picks(),
 			LOCAL_OWNER, Profile.renown)
 	_attach_player_view()
@@ -498,6 +505,7 @@ func _on_redeploy_requested(drop := "") -> void:
 		# `joined` follows and attaches the view to the new actor.
 		net.deploy(drop)
 		return
+	Profile.apply_dev_mode()  # DEV MODE
 	raid.add_player(Profile.checkout_loadout(raid.world), Profile.mastery.active_picks(), "You",
 			LOCAL_OWNER, Profile.renown, drop)
 	_attach_player_view()
@@ -576,6 +584,7 @@ func _setup_phone() -> void:
 	add_child(phone)
 	phone.opened_changed.connect(_on_phone_opened)
 	phone.settings_changed.connect(_apply_settings)
+	phone.dev_mode_changed.connect(_on_dev_mode_changed)  # DEV MODE
 	phone.quit_requested.connect(func() -> void: get_tree().quit())
 	phone.set_wardrobe(hub.character)
 	phone.mirror_changed.connect(_on_mirror_changed)
@@ -637,6 +646,19 @@ func _show_aim(on: bool) -> void:
 	for overlay: Node in [hud, base_hud]:
 		if overlay != null and is_instance_valid(overlay) and overlay.has_method("show_aim"):
 			overlay.show_aim(on)
+
+
+## DEV MODE: dev mode or one of its cheats was switched on the phone. The
+## stash swaps at once in the base; in a solo world the cheats change at once
+## and the stash follows on the next drop or the trip home.
+func _on_dev_mode_changed() -> void:
+	if raid != null:
+		if net == null:
+			raid.set_dev_cheats(DevMode.raid_cheats())
+		return
+	Profile.apply_dev_mode()
+	hub.refresh_gear()
+	_refresh_base()
 
 
 ## Puts a new look on the player's character at once, wherever they are.

@@ -118,6 +118,9 @@ var riposte_left := 0.0
 ## Seconds left of drop-in protection: nothing can hurt this actor. It ends
 ## early the moment they attack someone (see `Combat.deal`).
 var protected_left := 0.0
+## DEV MODE: god mode, set by a solo `Raid` running `dev_cheats`. Checked in
+## `Combat.deal`, like `protected_left`, so no hit gets through.
+var dev_invulnerable := false
 ## Public reputation. Written by the `Raid` that decides it (online, copied
 ## from the server); read by nameplates and the HUD. See `RenownLedger`.
 var renown := 0

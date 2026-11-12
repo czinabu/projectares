@@ -16,6 +16,8 @@ extends CanvasLayer
 signal opened_changed(open: bool)
 ## A setting changed (see `GameSettings`). `Main` pushes it into the raid view.
 signal settings_changed
+## DEV MODE: dev mode or one of its cheats was switched (`core/dev/dev_mode.gd`).
+signal dev_mode_changed
 signal quit_requested
 ## The Mirror app was opened (true) or left (false). `Main` stands a mirror
 ## in front of the player while it is up (`core/visual/mirror.gd`).
@@ -23,6 +25,7 @@ signal mirror_changed(up: bool)
 
 const SocialService := preload("res://core/social/social_service.gd")
 const GameSettings := preload("res://core/settings/game_settings.gd")
+const DevMode := preload("res://core/dev/dev_mode.gd")  # DEV MODE
 const UiTheme := preload("res://core/visual/ui_theme.gd")
 const CharacterPanel := preload("res://core/ui/character_panel.gd")
 
@@ -902,8 +905,50 @@ func _draw_settings() -> void:
 			func(v: float) -> String: return "%d%%" % roundi(v * 100.0))
 	_toggle("Fullscreen", "fullscreen", GameSettings.fullscreen)
 	_toggle("Names over other players", "show_nameplates", GameSettings.show_nameplates)
+	_draw_dev_mode()  # DEV MODE
 	_body.add_child(_label("GAME", 15, UiTheme.ACCENT))
 	_body.add_child(_button("Quit the game", func() -> void: quit_requested.emit()))
+
+
+## DEV MODE: the temporary switches for testing. Only in a debug or editor
+## run (`DevMode.available`), never in an exported game.
+func _draw_dev_mode() -> void:
+	if not DevMode.available():
+		return
+	DevMode.ensure_loaded()
+	_body.add_child(_label("DEV MODE (TESTING ONLY)", 15, UiTheme.ACCENT))
+	var main := CheckButton.new()
+	main.text = "Dev mode: everything unlocked"
+	main.button_pressed = DevMode.enabled
+	main.toggled.connect(set_dev_mode)
+	_body.add_child(main)
+	if not DevMode.enabled:
+		_body.add_child(_label("Solo only. Plays on a separate save, so your real stash is untouched.",
+				13, Color(0.75, 0.75, 0.75)))
+		return
+	for cheat: String in DevMode.CHEATS:
+		var box := CheckButton.new()
+		box.text = DevMode.CHEAT_NAMES[cheat]
+		box.button_pressed = DevMode.cheats.get(cheat, false)
+		box.toggled.connect(set_dev_cheat.bind(cheat))
+		_body.add_child(box)
+
+
+## DEV MODE: turns dev mode on or off.
+func set_dev_mode(on: bool) -> void:
+	DevMode.set_enabled(on)
+	dev_mode_changed.emit()
+	show_notice("Dev mode on: every item, max credits, cheats in solo worlds." if DevMode.enabled
+			else "Dev mode off: back on your real save.")
+	if app == "settings":
+		# Redrawn after the click is done: the switch that was clicked goes.
+		refresh.call_deferred(true)
+
+
+## DEV MODE: turns one cheat on or off.
+func set_dev_cheat(on: bool, cheat: String) -> void:
+	DevMode.set_cheat(cheat, on)
+	dev_mode_changed.emit()
 
 
 func _slider(text: String, key: String, range_: Vector2, step: float, value: float, shown: Callable) -> void:

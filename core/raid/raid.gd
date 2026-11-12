@@ -159,6 +159,10 @@ var _idle := {}
 ## with an attacker, returns {Actor: Vector3} of where they saw everyone.
 ## Per raid, because one server process can run several (a world and the arena).
 var rewind := Callable()
+## DEV MODE: cheats for this raid's players, from `DevMode.raid_cheats()`
+## ("god", "heat", "ammo", "cooldowns" -> true). Only a solo raid applies
+## them (`_apply_dev_cheats`); a server or client raid ignores them.
+var dev_cheats := {}
 
 
 ## The raid a node belongs to, or null. Rules and scans use this so two raids
@@ -271,6 +275,9 @@ func _physics_process(delta: float) -> void:
 	map.set_meta("war_centre", war.centre)
 	if mode == Mode.CLIENT:
 		return
+	# DEV MODE
+	if mode == Mode.SOLO and not dev_cheats.is_empty():
+		_apply_dev_cheats()
 	if world.safe_zone:
 		_keep_everyone_safe()
 		return
@@ -281,6 +288,37 @@ func _physics_process(delta: float) -> void:
 	_tick_bots(delta)
 	_tick_detail(delta)
 	_tick_vehicles(delta)
+
+
+## DEV MODE: changes the cheats mid-run. Turning god mode off takes effect
+## at once even with no cheats left to run.
+func set_dev_cheats(cheats: Dictionary) -> void:
+	dev_cheats = cheats.duplicate() if mode == Mode.SOLO else {}
+	for state in players:
+		if is_instance_valid(state.actor):
+			state.actor.dev_invulnerable = dev_cheats.get("god", false)
+
+
+## DEV MODE: keeps each player's cheats running. Solo only (see `dev_cheats`).
+func _apply_dev_cheats() -> void:
+	for state in players:
+		var actor := state.actor
+		if not is_instance_valid(actor) or actor.is_dead:
+			continue
+		actor.dev_invulnerable = dev_cheats.get("god", false)
+		if actor.dev_invulnerable:
+			actor.health.health = actor.health.max_health
+			actor.health.armor = actor.health.max_armor
+		if dev_cheats.get("heat", false):
+			actor.flight.heat = 0.0
+			actor.flight.overheated = false
+		if dev_cheats.get("ammo", false):
+			for weapon in actor.weapons:
+				var gun := weapon as Gun
+				if gun != null:
+					gun.ammo_in_mag = gun.mag_size
+		if dev_cheats.get("cooldowns", false):
+			actor.ability.cooldown_left = 0.0
 
 
 ## Safe zones have no deaths. Anyone who gets hurt anyway (a fall off the
