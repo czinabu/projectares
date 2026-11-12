@@ -15,6 +15,11 @@ signal redeploy_requested
 ## While down: a number key picked a place to land (0 for the first on offer).
 signal drop_requested(index: int)
 
+## The player threw the toy vehicle in their hand.
+signal toy_throw_requested(item_id: String)
+## The player asked to pack the vehicle they are looking at onto the watch.
+signal pack_requested
+
 enum ViewMode { FIRST, THIRD }
 ## How the melee side is picked: by flicking the mouse, or by the movement keys.
 enum StanceControl { MOUSE, MOVE }
@@ -26,6 +31,10 @@ const STANCE_CONTROL_HINTS := [
 	"hold A, D or W as you attack or guard",
 ]
 ## Where the held weapon sits relative to the camera in first-person.
+const VehicleScript := preload("res://core/vehicle/vehicle.gd")
+## Where a toy vehicle sits in the hand, and how much bigger than a thrown
+## toy it is drawn there so it reads in first person.
+const TOY_IN_HAND := Vector3(-0.05, 0.02, 0.1)
 const FIRST_PERSON_HAND := Vector3(0.32, -0.3, -0.75)
 
 var actor: Actor
@@ -58,8 +67,13 @@ var flick_decay := 9.0
 var stance := 0
 var stance_control := StanceControl.MOUSE
 
+## The toy vehicle in the hand (an item id off the watch), or "". While one
+## is held the weapon is put away: fire throws it, aim puts it back.
+var held_toy := ""
+
 var yaw := 0.0
 var pitch := 0.0
+var _toy_node: Node3D
 var _cam_dist := 0.0
 var _pending_switch := -1
 var _flick := Vector2.ZERO
@@ -123,6 +137,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		toggle_view()
 	elif event.is_action_pressed("melee_control"):
 		toggle_stance_control()
+	elif event.is_action_pressed("vehicle_toy"):
+		use_watch_key()
 	elif event.is_action_pressed("sign_out"):
 		sign_out_requested.emit()
 	elif event.is_action_pressed("redeploy") and is_instance_valid(actor) and actor.is_dead:
@@ -130,6 +146,77 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event is InputEventKey and event.pressed and not event.echo and is_instance_valid(actor) \
 			and actor.is_dead and event.keycode >= KEY_1 and event.keycode <= KEY_9:
 		drop_requested.emit(event.keycode - KEY_1)
+
+
+## The toy vehicles on the player's watch (item ids), as the world last said.
+func watch_toys() -> Array[String]:
+	var raid := Raid.of(actor) if actor != null and is_instance_valid(actor) else null
+	return raid.stowed_for(actor) if raid != null else ([] as Array[String])
+
+
+## The toy after `current` on a watch holding `toys`: the first one from an
+## empty hand, and back to an empty hand ("") after the last.
+static func next_toy(toys: Array[String], current: String) -> String:
+	var at := toys.find(current)
+	if current != "" and at < 0:
+		return ""
+	return toys[at + 1] if at + 1 < toys.size() else ""
+
+
+## Takes the toy `item_id` off the watch into the hand ("" puts it back).
+func hold_toy(item_id: String) -> void:
+	if item_id != "" and (item_id not in watch_toys() or actor.is_dead or is_riding()):
+		item_id = ""
+	if item_id == held_toy:
+		return
+	held_toy = item_id
+	if item_id != "":
+		actor.notice.emit("%s in hand. Fire to throw it, aim to put it back" % ItemDB.item_name(item_id))
+
+
+## The watch key: looking at a vehicle packs it onto the watch; otherwise it
+## takes the next toy into the hand, or puts the last one back.
+func use_watch_key() -> void:
+	if actor == null or not is_instance_valid(actor) or actor.is_dead:
+		return
+	var seat := actor.find_interactable() if not is_riding() and held_toy == "" else null
+	if seat != null and seat.get("vehicle") != null:
+		pack_requested.emit()
+		return
+	var toys := watch_toys()
+	if toys.is_empty() and held_toy == "":
+		actor.notice.emit("No vehicles on your watch")
+		return
+	hold_toy(next_toy(toys, held_toy))
+
+
+## Throws the toy in the hand. The world decides whether it leaves the hand.
+func throw_held_toy() -> void:
+	if held_toy == "":
+		return
+	var id := held_toy
+	held_toy = ""
+	toy_throw_requested.emit(id)
+
+
+## Keeps the toy model in the hand in step with `held_toy`.
+func _show_held_toy() -> void:
+	var shown: String = _toy_node.get_meta("display_item", "") if _toy_node != null else ""
+	if shown == held_toy:
+		return
+	if _toy_node != null:
+		_toy_node.queue_free()
+		_toy_node = null
+	if held_toy != "":
+		_toy_node = VehicleScript.toy_model(held_toy)
+		_toy_node.position = TOY_IN_HAND
+		_toy_node.rotation = Vector3(0.0, -0.6, 0.0)
+		actor.hand.add_child(_toy_node)
+		for weapon in actor.weapons:
+			if weapon.visual:
+				weapon.visual.visible = false
+	else:
+		actor._refresh_weapon_visuals()
 
 
 func toggle_view() -> void:
@@ -217,6 +304,8 @@ func _physics_process(delta: float) -> void:
 	cmd.secondary = captured and Input.is_action_pressed("alt_fire")
 	cmd.secondary_pressed = captured and Input.is_action_just_pressed("alt_fire")
 	cmd.tertiary_pressed = captured and Input.is_action_just_pressed("heavy")
+	if held_toy != "":
+		_use_toy_hand(cmd)
 	cmd.reload_pressed = Input.is_action_just_pressed("reload")
 	cmd.interact_pressed = Input.is_action_just_pressed("interact")
 	cmd.heal_pressed = Input.is_action_just_pressed("heal")
@@ -231,9 +320,29 @@ func _physics_process(delta: float) -> void:
 	cmd.aim_dir = _compute_aim_dir()
 
 
+## With a toy in the hand the weapon is away: fire throws, aim puts it back.
+func _use_toy_hand(cmd: ActorCommand) -> void:
+	if is_riding() or held_toy not in watch_toys():
+		held_toy = ""
+	elif cmd.primary_pressed:
+		throw_held_toy()
+	elif cmd.secondary_pressed:
+		held_toy = ""
+	cmd.primary = false
+	cmd.primary_pressed = false
+	cmd.secondary = false
+	cmd.secondary_pressed = false
+	cmd.tertiary_pressed = false
+	cmd.switch_weapon = -1
+	_pending_switch = -1
+
+
 func _process(delta: float) -> void:
 	if actor == null or not is_instance_valid(actor):
 		return
+	if actor.is_dead:
+		held_toy = ""
+	_show_held_toy()
 	var weapon := actor.get_active_weapon()
 	var aiming := weapon != null and weapon.is_aiming()
 	var target_dist := 0.0

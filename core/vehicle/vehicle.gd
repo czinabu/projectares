@@ -51,6 +51,14 @@ var heading := 0.0
 var speed := 0.0
 var airborne_time := 0.0
 
+## A vehicle carried on the watch is a toy this many times smaller.
+const TOY_SCALE := 0.12
+## Seconds a thrown toy takes to grow into the vehicle (the look only: the
+## full-size body is there from the moment it lands).
+var unpack_time := 0.6
+## Seconds left of growing from a toy; above zero while it unpacks.
+var unpack_left := 0.0
+
 var _model: Node3D
 var _lean := 0.0
 var _seat: Seat
@@ -134,6 +142,42 @@ func build_visual() -> Node3D:
 	return root
 
 
+## The vehicle `p_item_id` as a toy: its greybox model, toy-sized, under a
+## node that `Look` dresses like a vehicle on show. No collision, no script.
+static func toy_model(p_item_id: String) -> Node3D:
+	var source = new()
+	source.setup(p_item_id)
+	var model: Node3D = source.build_visual()
+	source.free()
+	var toy := Node3D.new()
+	toy.name = "Toy"
+	toy.set_meta("display_item", p_item_id)
+	toy.add_child(model)
+	toy.scale = Vector3.ONE * TOY_SCALE
+	return toy
+
+
+## Starts the vehicle off toy-sized and lets it grow to full size.
+func unpack() -> void:
+	unpack_left = unpack_time
+	_show_unpack()
+
+
+func _process(delta: float) -> void:
+	if unpack_left > 0.0:
+		unpack_left = maxf(0.0, unpack_left - delta)
+		_show_unpack()
+
+
+func _show_unpack() -> void:
+	if _model == null:
+		return
+	var grown := 1.0 - unpack_left / maxf(unpack_time, 0.01)
+	# Overshoots a little near the end, so it lands with a pop.
+	var size := lerpf(TOY_SCALE, 1.0, ease(grown, 0.4)) + sin(grown * PI) * 0.08
+	_model.scale = Vector3.ONE * (size if unpack_left > 0.0 else 1.0)
+
+
 func _part(size: Vector3, at: Vector3, mat: Material) -> MeshInstance3D:
 	var box := BoxMesh.new()
 	box.size = size
@@ -158,7 +202,7 @@ func get_prompt() -> String:
 
 ## Puts an actor on the seat. Returns false if it is taken or they cannot ride.
 func mount(actor: Actor) -> bool:
-	if rider != null or actor == null or actor.is_dead or actor.vehicle != null:
+	if rider != null or actor == null or actor.is_dead or actor.vehicle != null or unpack_left > 0.0:
 		return false
 	rider = actor
 	actor.vehicle = self

@@ -415,6 +415,8 @@ func _attach_player_view() -> void:
 	controller.sign_out_requested.connect(func() -> void: _on_sign_out_requested.call_deferred())
 	controller.redeploy_requested.connect(func() -> void: _on_redeploy_requested.call_deferred())
 	controller.drop_requested.connect(func(index: int) -> void: _on_drop_requested.call_deferred(index))
+	controller.toy_throw_requested.connect(_on_toy_throw_requested)
+	controller.pack_requested.connect(_on_pack_requested)
 	raid.add_child(controller)
 	hud = Hud.new()
 	hud.setup(raid, controller)
@@ -498,6 +500,26 @@ func _on_redeploy_requested(drop := "") -> void:
 	raid.add_player(Profile.checkout_loadout(raid.world), Profile.mastery.active_picks(), "You",
 			LOCAL_OWNER, Profile.renown, drop)
 	_attach_player_view()
+
+
+## The player threw the toy vehicle in their hand. The world decides the rest.
+func _on_toy_throw_requested(item_id: String) -> void:
+	if raid == null or raid.player == null or not is_instance_valid(raid.player):
+		return
+	if net:
+		net.throw_toy(item_id)
+	else:
+		raid.throw_toy(raid.player, item_id)
+
+
+## The player asked to pack the vehicle they are looking at onto their watch.
+func _on_pack_requested() -> void:
+	if raid == null or raid.player == null or not is_instance_valid(raid.player):
+		return
+	if net:
+		net.pack_vehicle()
+	else:
+		raid.pack_vehicle(raid.player)
 
 
 ## L: alive, start or cancel a sign-out. Down, go home.

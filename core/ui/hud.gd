@@ -158,6 +158,10 @@ static func wrist_text(p_raid: Raid, p: Actor, death: Dictionary, wait: float, l
 		lines.append("[G] %s" % p.ability.status_text())
 	if p.vehicle != null:
 		lines.append("%s   %d km/h" % [p.vehicle.get("display_name"), roundi(absf(float(p.vehicle.get("speed"))) * 3.6)])
+	var toys := p_raid.stowed_for(p)
+	if not toys.is_empty():
+		var wait := p_raid.toy_wait(p)
+		lines.append("[T] Watch: %s%s" % [ItemDB.summarize(toys), "   %d s" % ceili(wait) if wait > 0.0 else ""])
 	lines.append("Pack %d/%d   worth %d   heals %d" % [p.inventory.items.size(), p.inventory.capacity,
 			p.inventory.total_value(), p.inventory.count_with_tag("heal")])
 	if p.flight.enabled and p.flight.overheated:
