@@ -71,6 +71,37 @@ func _ready() -> void:
 			"bloom_per_shot": 1.2, "recoil_kick_deg": 2.6, "max_range": 110.0},
 			"Slow, heavy revolver. Headshots hit twice as hard.")
 
+	# Power weapons: found, never bought or brought. They lie on racks in
+	# the world (`PowerArmory`) and go in their own slot (key 4) when taken.
+	# A few shots each; one that runs dry is thrown away. Tagged "power" so
+	# they never reach a stash or a bag.
+	register("power_rail_lance", "Rail Lance", Rarity.EPIC, 0, ["weapon", "firearm", "power", "railgun"],
+			{"damage": 120.0, "charge_time": 0.85, "fire_interval": 0.6, "mag_size": 4, "ammo_in_mag": 4,
+			"reserve_ammo": 0, "spread_deg": 0.0, "bloom_per_shot": 0.0, "pierce": 3, "wall_pierce": 2,
+			"max_range": 300.0, "recoil_kick_deg": 4.0, "beam_time": 1.4, "damage_kind": "rail",
+			"tracer_color": Color(0.35, 0.95, 1.0), "shot_sound": "rail"},
+			"Mag-rail. Hold to charge: the slug goes through three bodies and two walls, and its beam hangs in the air and gives you away. 4 shots.")
+	register("power_helion", "Helion Plasma Launcher", Rarity.EPIC, 0, ["weapon", "firearm", "power", "launcher"],
+			{"projectile": "rocket", "projectile_speed": 34.0, "damage": 40.0, "splash_radius": 5.5,
+			"splash_damage": 110.0, "fire_interval": 1.0, "mag_size": 1, "ammo_in_mag": 1, "reserve_ammo": 3,
+			"reload_time": 1.8, "spread_deg": 0.3, "bloom_per_shot": 0.0, "recoil_kick_deg": 3.0,
+			"heat_seek_cone": 22.0, "damage_kind": "plasma", "tracer_color": Color(1.0, 0.45, 0.15),
+			"shot_sound": "plasma_shot"},
+			"Plasma rockets that burst over a wide area. Aimed near a thrusting jetpack, they lock onto its heat. 4 shots.")
+	register("power_arc_mortar", "Arc Mortar", Rarity.EPIC, 0, ["weapon", "firearm", "power", "grenade_launcher"],
+			{"projectile": "grenade", "projectile_speed": 18.0, "projectile_gravity": 1.0, "bounces": 3,
+			"fuse_time": 1.8, "damage": 30.0, "splash_radius": 5.0, "splash_damage": 85.0, "fire_interval": 0.55,
+			"mag_size": 6, "ammo_in_mag": 6, "reserve_ammo": 0, "spread_deg": 0.4, "bloom_per_shot": 0.0,
+			"recoil_kick_deg": 2.0, "damage_kind": "arc", "tracer_color": Color(0.7, 0.45, 1.0),
+			"shot_sound": "arc_shot"},
+			"Lobs bouncing arc charges over cover. They burst on a body or when the fuse runs out. 6 shots.")
+	register("power_storm_cannon", "Storm Cannon", Rarity.EPIC, 0, ["weapon", "firearm", "power", "minigun"],
+			{"spin_up": 0.9, "spin_move_mult": 0.55, "damage": 13.0, "fire_interval": 0.045, "mag_size": 180,
+			"ammo_in_mag": 180, "reserve_ammo": 0, "spread_deg": 2.2, "bloom_per_shot": 0.05, "max_bloom": 1.5,
+			"recoil_kick_deg": 0.15, "max_range": 110.0, "damage_kind": "plasma",
+			"tracer_color": Color(1.0, 0.3, 0.85), "shot_sound": "pulse"},
+			"Rotary pulse cannon. Slow to spin up, slows you right down, shreds anything in front of it. 180 shots.")
+
 	# Attachments for primaries. Each fits one slot on the gun (its second tag:
 	# optic, muzzle, grip or magazine) and fits every primary. `Gun.fit` reads
 	# the stats: "mult" scales the gun's own tuning values, "zoom" is how far an

@@ -1,0 +1,32 @@
+name: Set up Godot
+description: Restore or download Godot ($GODOT_VERSION), then import the project with a cached .godot folder.
+runs:
+  using: composite
+  steps:
+    - name: Cache Godot
+      id: godot-cache
+      uses: actions/cache@v4
+      with:
+        path: ~/godot
+        key: godot-${{ env.GODOT_VERSION }}-linux-x86_64
+    - name: Download Godot
+      if: steps.godot-cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        curl -sSL --retry 4 -o "$RUNNER_TEMP/godot.zip" "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+        mkdir -p ~/godot
+        unzip -q "$RUNNER_TEMP/godot.zip" -d ~/godot
+    - name: Point at Godot
+      shell: bash
+      run: echo "GODOT=$HOME/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64" >> "$GITHUB_ENV"
+    # The import cache is keyed on every imported source file. When one changed,
+    # the newest older cache is restored and Godot reimports only what changed.
+    - name: Cache imported assets
+      uses: actions/cache@v4
+      with:
+        path: .godot
+        key: godot-import-${{ env.GODOT_VERSION }}-${{ hashFiles('project.godot', '**/*.import', '**/*.glb', '**/*.png', '**/*.jpg', '**/*.ogg', '**/*.wav', '**/*.gdshader', '**/*.ttf') }}
+        restore-keys: godot-import-${{ env.GODOT_VERSION }}-
+    - name: Import project
+      shell: bash
+      run: '"$GODOT" --headless --path . --import'

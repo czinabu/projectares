@@ -1,24 +1,83 @@
 name: Tests
 
+# Two tiers (see "Picking groups for CI" in tests/test_runner.gd):
+#   offline  every group that never starts a server. Runs on every push with
+#            --fixed-fps, so it skips the real-time waits (about a minute).
+#   net      the online groups (a real server process plus clients). They need
+#            real time, so they run in 3 parallel shards, and only when a PR is
+#            about to merge: when it is ready for review, when it carries the
+#            `full-ci` label, on main, and when run by hand.
+# "Tests passed" is the one check to look at. On a draft PR without the label
+# it only covers the offline tier, and says so.
+
 on:
   push:
     branches: [main]
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, labeled]
+  workflow_dispatch:
+
+concurrency:
+  # A new push to a PR cancels the run it replaces. Adding some other label
+  # gets a group of its own, so it never cancels a real run.
+  group: >-
+    tests-${{ github.event.pull_request.number || github.ref }}${{
+    github.event.action == 'labeled' && github.event.label.name != 'full-ci'
+    && format('-label-{0}', github.run_id) || '' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  GODOT_VERSION: "4.7"
 
 jobs:
-  headless-tests:
+  offline:
+    name: Offline tests
+    # Some other label added: nothing changed, so nothing to run.
+    if: github.event.action != 'labeled' || github.event.label.name == 'full-ci'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    env:
-      GODOT_VERSION: "4.7"
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - name: Download Godot
+      - uses: ./.github/actions/setup-godot
+      - name: Run offline tests
+        run: '"$GODOT" --headless --fixed-fps 60 --path . res://tests/test_runner.tscn -- --tier offline'
+
+  net:
+    name: Online tests
+    if: >-
+      (github.event.action != 'labeled' || github.event.label.name == 'full-ci')
+      && (github.event_name != 'pull_request'
+      || !github.event.pull_request.draft
+      || contains(github.event.pull_request.labels.*.name, 'full-ci'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-godot
+      - name: Run online tests
+        run: '"$GODOT" --headless --path . res://tests/test_runner.tscn -- --tier net --shard ${{ matrix.shard }}/3'
+
+  passed:
+    name: Tests passed
+    if: ${{ !cancelled() && (github.event.action != 'labeled' || github.event.label.name == 'full-ci') }}
+    needs: [offline, net]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check results
+        env:
+          OFFLINE: ${{ needs.offline.result }}
+          NET: ${{ needs.net.result }}
         run: |
-          curl -sSL -o godot.zip "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
-          unzip -q godot.zip -d "$RUNNER_TEMP/godot"
-          echo "GODOT=$RUNNER_TEMP/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64" >> "$GITHUB_ENV"
-      - name: Import project
-        run: '"$GODOT" --headless --path . --import'
-      - name: Run tests
-        run: '"$GODOT" --headless --path . res://tests/test_runner.tscn'
+          echo "offline: $OFFLINE, online: $NET"
+          if [ "$OFFLINE" != "success" ]; then exit 1; fi
+          if [ "$NET" = "skipped" ]; then
+            echo "::notice title=Offline tier only::Online tests were not run on this draft. Add the full-ci label (or mark the PR ready) to run the full suite."
+            echo "### Offline tier passed. Online tests not run (draft without the full-ci label)." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if [ "$NET" != "success" ]; then exit 1; fi
+          echo "### Full suite passed on Godot $GODOT_VERSION" >> "$GITHUB_STEP_SUMMARY"
