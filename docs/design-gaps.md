@@ -88,6 +88,6 @@ rows marked **pre-playtest** come before the friends playtest.
 | Passenger seats | Missing | Bike rear seat, rover's four. After the playtest. |
 | Mounted firepower | Missing | Rover turret, mech cannons, jet missiles. After the playtest. |
 | Cargo space while riding | Missing | After the playtest. |
-| Mobile cover | Missing | The bike gives none today. |
+| Mobile cover | Missing | Rover and mech; the bike gives none by design. |
 | Per-vehicle watch recharge (heavier is slower) | Missing | One `Raid.toy_cooldown` for all vehicles today. |
-| Rover, mech and jet | Missing | Proposed roster, pending Caleb's confirmation. After the playtest. |
+| Rover, mech and jet | Missing | Agreed roster, each with a weakness and counter (DESIGN.md section 8). After the playtest. |

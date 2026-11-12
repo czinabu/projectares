@@ -279,7 +279,7 @@ Vehicles must earn their place next to sustained flight.
 - Roads, trails and jump ramps on the maps give bikes routes where they beat
   flying.
 
-### The roster (proposed, pending Caleb's confirmation)
+### The roster (agreed with Caleb)
 
 Four vehicles with clear roles. This replaces the older six-vehicle plan
 (hoverbike, skiff buggy, hover fighter, strider mech, gunship, siege tank):
@@ -293,25 +293,32 @@ covers the fighter and the gunship.
 | Compact mech / walker | 1 | Urban streets, boss arenas, bank spots | Heavy frontline tank: thick armor, twin cannons, short hydraulic jump-jets |
 | Fighter jet / starfighter | 1 to 2 (pilot and co-pilot) | High-altitude open skies | Fast cross-map travel, aerial dogfighting, heavy air-to-ground missile strikes |
 
-Balance notes that go with it:
+Every vehicle has a clear weakness and a counter (Caleb's call), so none of
+them simply wins:
+
+| Vehicle | Weakness | Counter |
+| --- | --- | --- |
+| Motorbike | No cover: the rider is fully exposed, and it is loud | Shoot the rider; a dive or a melee air-lunge knocks them off |
+| Rover | Big and slow to turn, needs open ground; the turret gunner's head shows | Heavy weapons, flanking fliers above its turret's arc, and its wheels can be disabled |
+| Mech | A rear power unit that takes extra damage, slow turning, and a long watch recharge | Get behind it: boots and wings outmanoeuvre it, and a heavy weapon in the back breaks it |
+| Jet | Fragile, cannot hover, and only in worlds with big open skies (a `WorldDef` setting); its missiles lock on with a warning the target feels | Flares (section 4) break locks, heavy weapons and a hovering jetpack can hit it on its strafing pass |
+
+More on each:
 
 - **Motorbike:** the starter. Ramp launches hand straight over to the
   flight rig.
 - **Rover:** the squad vehicle. Passengers who can shoot are the reason to
   ride together instead of flying.
-- **Mech:** a heavy tank parked on a bank spot could make it impossible to
-  contest. It gets a clear weak spot (for example the rear power unit) that
-  takes extra damage, and a long recharge on the watch.
-- **Jet:** the one that could ruin fights for people on foot. Only in worlds
-  with big open skies (a `WorldDef` setting), missiles lock on with a warning
-  the target feels (as visor reveals are felt today), and rigs get counterplay
-  such as flares (section 4) and heavy weapons that can hit it.
+- **Mech:** without a weak spot and a long recharge, a mech parked on a bank
+  spot would make it impossible to contest.
+- **Jet:** the one most likely to ruin fights for people on foot, which is
+  why it is limited to open skies and its strikes can always be seen coming.
 - **Watch recharge scales with weight.** Heavier vehicles take longer to
   recharge after one is thrown, so mechs and jets stay rare. Today one
   `toy_cooldown` covers every vehicle; it becomes a stat per vehicle.
 - Every vehicle stays a `vehicle` item tuned by its stats, with a toy on the
-  watch, and must stay clearly faster than flight cruise on its own terrain
-  (the jet in the air, the rest on the ground).
+  watch. The bike, rover and jet must stay clearly faster than flight cruise
+  on their own terrain; the mech trades speed for armor and firepower.
 
 ## 9. Economy and progression
 
@@ -337,7 +344,7 @@ Unchanged from the current game (see README "Credits and shops"):
 3. **After the playtest:** the melee air-lunge, the gadget list and the first
    new gadgets, vehicle utility on the bike (passenger, cargo), loadout
    swapping in the PvE world, then the rest of the vehicle roster (rover,
-   mech, jet) once Caleb confirms it.
+   mech, jet).
 4. **The PvE world:** quests, dungeons and bosses.
 5. **More worlds** as plug-ins.
 
@@ -349,8 +356,6 @@ Caleb's calls, still open:
 - Should bots fly?
 - The airborne sign-out: 25 seconds and a beacon column, or must you land?
 - Which gadgets to build first from the list in section 4.
-- The vehicle roster in section 8 (motorbike, rover, mech, jet), and its
-  balance notes.
 - Can a heavy weapon from the armory wall be taken into the PvP world, or
   only ones found there in the same outing? (This doc assumes yes, one per
   outing.)
