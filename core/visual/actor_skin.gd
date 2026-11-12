@@ -127,6 +127,10 @@ var _glide_neck := -1
 ## 0 on the ground, 1 in the air pose; and within it, 0 leaping .. 1 falling
 ## and 0 ballistic .. 1 hanging from the jets.
 var _air := 0.0
+## Seconds the weapon stays out in flat flight after shooting or aiming, and
+## how far the arms have come off the sides to hold it (0 sides, 1 holding).
+var _flight_draw_left := 0.0
+var _flight_hold := 0.0
 var _air_fall := 0.0
 var _air_hang := 0.0
 ## 0 arms trailing wide (wings), 1 arms in at the sides (boost).
@@ -266,6 +270,8 @@ func _process(delta: float) -> void:
 		_flash_left -= delta
 		if _flash_left <= 0.0:
 			_set_flash(0.0)
+	_flight_draw_left = aim_hold if actor.cmd.primary or actor.cmd.secondary else maxf(_flight_draw_left - delta, 0.0)
+	_flight_hold = move_toward(_flight_hold, 1.0 if _flight_draw_left > 0.0 else 0.0, glide_blend * delta)
 	_update_rig(delta)
 	_update_glide(delta)
 	_update_stowed()
@@ -321,6 +327,17 @@ func _process(delta: float) -> void:
 	else:
 		_play(stand_key(weapon))
 		locomotion.stand_legs = _current == "idle_gun"
+
+
+## True while the body lies flat in flight (gliding or boosting) and is not
+## shooting or aiming: the weapon in hand is shown worn. View only; in first
+## person the weapon stays in front of the camera.
+func flies_stowed() -> bool:
+	if actor.is_dead or actor.vehicle != null or actor.hand_override:
+		return false
+	if not (actor.flight.is_gliding or actor.flight.is_boosting):
+		return false
+	return _flight_draw_left <= 0.0
 
 
 ## True once the actor has been off the ground long enough to show it.
@@ -415,6 +432,10 @@ func _update_stowed() -> void:
 ## its place: the one in hand on the hand, the rest where they are worn.
 func _update_switch(delta: float) -> void:
 	var active := actor.get_active_weapon()
+	# Flying flat with the arms at the sides, the weapon is worn, not left
+	# hanging in the air where the hands were. Shooting or aiming draws it.
+	if flies_stowed():
+		active = null
 	if _in_hand != null and (not is_instance_valid(_in_hand) or not _in_hand in actor.weapons):
 		_in_hand = null
 	_moving = null
@@ -731,8 +752,10 @@ func _pose_glide() -> void:
 			continue
 		var arm_dir := glide_arm.lerp(boost_arm, smoothstep(0.0, 1.0, _boost))
 		var wanted := to_skeleton * Vector3(arm_dir.x * limb[3], arm_dir.y, arm_dir.z)
-		_aim_bone(limb[0], limb[1], wanted, w)
-		_aim_bone(limb[1], limb[2], wanted, w)
+		# Shooting or aiming, the arms keep their hold on the weapon.
+		var arm_w := w * (1.0 - smoothstep(0.0, 1.0, _flight_hold))
+		_aim_bone(limb[0], limb[1], wanted, arm_w)
+		_aim_bone(limb[1], limb[2], wanted, arm_w)
 	for limb: Array in _glide_legs:
 		if not limb.is_empty():
 			_pose_leg(limb, to_skeleton * Vector3(glide_leg.x * limb[3], glide_leg.y, glide_leg.z), right, w)

@@ -158,6 +158,15 @@ static func run(t: Node) -> void:
 				if skeleton.find_bone("Hips") >= 0 else Vector3.ZERO
 		t.check(wrist_at.z > head_at.z + 0.4 and absf(wrist_at.z - hips_at.z) < 0.35 and absf(wrist_at.x) < 0.6,
 				"boosting, the arms lie back along the sides, not out ahead")
+	var held := p.get_active_weapon()
+	if held and held.visual:
+		t.check(skin.flies_stowed() and not held.visual.visible, "boosting, the weapon is worn instead of hanging where the hands were")
+		p.cmd.secondary = true
+		await t.get_tree().create_timer(0.8).timeout
+		t.check(held.visual.visible and skin._flight_hold > 0.9, "aiming in a boost draws it again")
+		p.cmd.secondary = false
+		await t.get_tree().create_timer(2.6).timeout
+		t.check(not held.visual.visible, "and it goes back when you stop")
 	var belly := p.global_basis.inverse() * (skin as Node3D).global_basis.z
 	p.cmd.roll = 1
 	await t.get_tree().create_timer(0.25).timeout
