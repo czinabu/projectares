@@ -6,6 +6,17 @@ layout and how to play. The roadmap is: Phase 0 bot-only prototype (done),
 Phase 1 vertical slice (hub, loadouts, abilities, motorbike), Phase 2 online
 PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
 
+## The design doc
+
+`docs/DESIGN.md` is the game design every thread builds against: the places,
+the watch, the loadout, flight, heavy weapons, banking and sign-out, and
+vehicles. `docs/design-gaps.md` lists what is built and what is missing.
+Before building a feature, read its section. Where a rule below describes
+today's code and the design doc describes a different target (for example
+heavy weapons on the watch instead of racks), build toward the doc and
+rewrite the rule here in the same PR. Do not settle the doc's open decisions
+without Caleb, and update the gap list when a PR closes a row.
+
 ## Rules that must not be broken
 
 - `core/` never references a specific world. Anything world-specific goes
@@ -177,7 +188,9 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   Check leg changes by eye: `visual_check.tscn -- <dir> --gait-only`, and
   the stand with `--idle-only`.
   Holstered weapons are worn, not hidden (`ActorSkin.stow_place`): a primary
-  gun or two-handed weapon slung across the back, outside a worn back rig, a
+  gun or two-handed weapon slung across the back, outside a worn back rig
+  (down the side of a rig with a screen on its back, so a jetpack's heat
+  gauge stays in view), a
   sidearm muzzle down on the right hip, and a one-handed blade on the left
   hip. These are view-only copies; the weapon's own node stays on the hand.
   A switch is shown as the hand putting one away and drawing the next
@@ -258,8 +271,19 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   (`FlightRig.is_hovering`, flown by `Actor._simulate_hover`; the server
   repeats it in each state as `ActorCommand.STATE_HOVERING`), a boost along
   the look direction, and a glide whose speed is energy
-  (`Actor._glide_velocity`). Keep the three rigs different: jetpack free but
-  heat-bound, boots quick kicks, wings fastest and furthest but no hover.
+  (`Actor._glide_velocity`). Every rig cruises at the same
+  `FlightRig.CRUISE_SPEED` so a squad on mixed rigs keeps together (Caleb's
+  call), and each stays up its own way and has its own edge: the jetpack
+  flies high in swoops (cruise, then coast down with the jets idle to cool),
+  stops dead and hovers to shoot steady, and carries heavy armor, but turns
+  wide and is loud and hot; wings glide and pulse to hold height, with the
+  fastest dives, tightest turns and a barrel roll, silent and cold, but never
+  stop and fire only a sidearm while spread; boots skim low (`FlightRig.skim`),
+  cooling near a surface and burning out high up, kick up, dash on heat and
+  aim steady while low, but have no high ground. Flown its
+  own way a rig stays up for minutes, against type it overheats in seconds.
+  Shooting from the air spreads wider (`Actor.air_aim`) except in a rig's
+  steady state.
   The body's attitude in the air (flat, banked, leaning, rolled by
   `ActorCommand.roll`) is the skin's job (`ActorSkin._update_glide`), read
   from velocity and the command only, so remote players match. Off the
@@ -293,7 +317,11 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   projected light, never a frame, a tint or a mask over the view (playtest
   feedback: the first visors were in the way): it rests dim, trails the
   head, wakes on trouble (`VisorHud.alert`) and closes on what is aimed at
-  (`VisorHud.lock`). Apart from the
+  (`VisorHud.lock`). In third person the glass is gone but the ring and
+  the lock brackets stay (`VisorHud.reticle_shown`), and the helmet wears
+  its health strip and system light on the back of the head
+  (`ActorSkin._update_vitals`, `helmet_light`), where a pack or a slung gun
+  never covers them. Apart from the
   thin health arc, do not repeat the wrist on the glass (ammo, the map,
   standing): the wrist shows you, the visor shows what is around you. Mk2
   helmets are loot only. Check the glass by eye with

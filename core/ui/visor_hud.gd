@@ -209,12 +209,20 @@ func _process(delta: float) -> void:
 ## Moves the display's own motion along: the sweep in, the trail behind
 ## the view, the alert level, the lock and the binocular scale.
 func _animate(p: Actor, delta: float) -> void:
-	if p == null or not glass_shown():
+	if p == null or not (glass_shown() or reticle_shown()):
 		boot = 0.0
 		sway = Vector2.ZERO
 		lock = 0.0
 		zoom_shown = 0.0
 		_look_known = false
+		return
+	if not glass_shown():
+		# Third person keeps only the ring and the lock: no glass to boot or trail.
+		boot = 0.0
+		sway = Vector2.ZERO
+		_look_known = false
+		var held := aim_target != null and is_instance_valid(aim_target) and not aim_target.is_dead
+		lock = move_toward(lock, 1.0 if held else 0.0, lock_rate * delta)
 		return
 	boot = minf(1.0, boot + delta / maxf(boot_time, 0.01))
 	var look := Vector2(p.cmd.yaw, p.cmd.pitch)
@@ -494,6 +502,9 @@ func _see_through(color: Color) -> StandardMaterial3D:
 # comes on, sit dim while nothing is happening and brighten when something is.
 
 func _draw() -> void:
+	if reticle_shown():
+		_draw_third_person()
+		return
 	if not glass_shown() or boot <= 0.0:
 		return
 	var p := _player()
@@ -541,16 +552,33 @@ func _draw() -> void:
 	_draw_slivers(p, centre, hit_marks, hit_mark_time, Color(1.0, 0.6, 0.1), 0.34)
 
 
+## In third person the glass is out of view, so only the turning ring at the
+## crosshair and the brackets on whoever is under it stay, with no text: the
+## wider view already shows what is around you. The helmet's health and system
+## readouts are worn on the back of the head instead (`ActorSkin`).
+func reticle_shown() -> bool:
+	var p := _player()
+	return p != null and not p.is_dead and p.visor.enabled and p.visor.mode != "" \
+			and controller != null and controller.is_third_person()
+
+
+func _draw_third_person() -> void:
+	var p := _player()
+	var ink := p.visor.glass_color
+	_draw_reticle(ink, size * 0.5)
+	_draw_lock(p, ink, "")
+
+
 ## The visor's colour at `alpha`, dimmed while the display is still coming
 ## on and while nothing needs the wearer's eye.
 func _lit(ink: Color, alpha: float, ambient := true) -> Color:
-	var level := boot * (lerpf(idle_dim, 1.0, alert) if ambient else 1.0)
+	var level := (1.0 if reticle_shown() else boot) * (lerpf(idle_dim, 1.0, alert) if ambient else 1.0)
 	return Color(ink.r, ink.g, ink.b, clampf(alpha * level, 0.0, 1.0))
 
 
 ## How much of something to show while the display sweeps in.
 func _swept() -> float:
-	return ease(boot, 0.4)
+	return 1.0 if reticle_shown() else ease(boot, 0.4)
 
 
 ## Small capitals, the way every readout is lettered. They type themselves in.
