@@ -44,8 +44,24 @@ var glide_leg := Vector3(0.06, -1.0, -0.06)
 ## the feet point, in radians.
 var glide_look := 1.0
 var glide_toes := 1.0
-## A jetpack boost flies the same way with the arms out ahead, like a diver's.
-var boost_arm := Vector3(0.16, 1.0, -0.12)
+## Off the ground the legs stop running. `air_grace` seconds after leaving
+## it (so steps and kerbs do not flicker) they go to an air pose, blended in
+## at `air_blend` full changes a second. Each pose is a thigh and a shin
+## direction per leg in the actor's frame (x right, y up, z back), the lead
+## leg first. Leaping: lead knee up, the other leg trailing. Falling: both
+## knees a little up and apart, ready to land. Hanging (jets lit or
+## thrusting): legs loose under the body, trailing a little.
+var air_grace := 0.12
+var air_blend := 6.0
+var air_toes := 0.45
+var leap_legs := [Vector3(0.05, -1.0, -0.75), Vector3(0.0, -1.0, 0.7), Vector3(0.05, -1.0, 0.3), Vector3(0.0, -1.0, 0.55)]
+var fall_legs := [Vector3(0.22, -1.0, -0.45), Vector3(0.0, -1.0, 0.5), Vector3(0.2, -1.0, -0.15), Vector3(0.0, -1.0, 0.6)]
+var hang_legs := [Vector3(0.07, -1.0, -0.18), Vector3(0.0, -1.0, 0.4), Vector3(0.07, -1.0, 0.08), Vector3(0.0, -1.0, 0.5)]
+## Vertical speed at which a jump counts as fully rising or fully falling.
+var air_rise_speed := 4.0
+## A jetpack boost flies the same way with the arms held down along the
+## sides, a little off the body (Caleb's call: never reaching out ahead).
+var boost_arm := Vector3(0.3, -1.0, 0.08)
 ## How fast the body follows a change of attitude, and the most it banks into
 ## a turn, in radians. The bank is the real one for the turn: tan = v * w / g.
 var attitude_follow := 8.0
@@ -108,7 +124,12 @@ var _glide := 0.0
 var _glide_arms: Array = []
 var _glide_legs: Array = []
 var _glide_neck := -1
-## 0 arms trailing (wings), 1 arms ahead (boost).
+## 0 on the ground, 1 in the air pose; and within it, 0 leaping .. 1 falling
+## and 0 ballistic .. 1 hanging from the jets.
+var _air := 0.0
+var _air_fall := 0.0
+var _air_hang := 0.0
+## 0 arms trailing wide (wings), 1 arms in at the sides (boost).
 var _boost := 0.0
 ## Which way the body tips (the actor's space, level) times how far, radians.
 var _tilt := Vector3.ZERO
@@ -275,8 +296,15 @@ func _process(delta: float) -> void:
 	# each state from the server, moves its legs the same as a local one.
 	var gait: Dictionary = {} if actor.vehicle != null or _glide > 0.0 else \
 			locomotion.choose(locomotion.velocity, armed, _current, _current_sign)
+	var airborne := is_airborne()
+	_update_air(delta, airborne)
 	if actor.vehicle != null or _glide > 0.0:
 		_play("idle")
+	elif airborne:
+		# No ground under the feet: never a run cycle. A stand plays under
+		# the air pose, so the arms keep their hold on the weapon.
+		_play("idle_melee" if melee and _anims.has("idle_melee") else stand_key(weapon))
+		locomotion.stand_legs = _current == "idle_gun"
 	elif actor.is_sliding():
 		# The slide pose bends whatever plays under it; the arms keep their hold.
 		_play("idle_melee" if melee and _anims.has("idle_melee") else "idle")
@@ -293,6 +321,24 @@ func _process(delta: float) -> void:
 	else:
 		_play(stand_key(weapon))
 		locomotion.stand_legs = _current == "idle_gun"
+
+
+## True once the actor has been off the ground long enough to show it.
+## Read from the actor's own timer, which a client keeps for remote players
+## too (it simulates them from their commands).
+func is_airborne() -> bool:
+	return not actor.is_dead and actor.vehicle == null and actor.airborne_time > air_grace
+
+
+## Eases the air pose in and out and between its three shapes.
+func _update_air(delta: float, airborne: bool) -> void:
+	_air = move_toward(_air, 1.0 if airborne else 0.0, air_blend * delta)
+	if not airborne:
+		return
+	var follow := 1.0 - exp(-attitude_follow * delta)
+	var jets := actor.flight.is_hovering or actor.flight.is_thrusting
+	_air_hang = lerpf(_air_hang, 1.0 if jets else 0.0, follow)
+	_air_fall = lerpf(_air_fall, clampf(0.5 - actor.velocity.y / (2.0 * air_rise_speed), 0.0, 1.0), follow)
 
 
 ## The clip for standing still out of a fight: hands empty, a gun held low,
@@ -669,7 +715,10 @@ func _bone_chain(skeleton: Skeleton3D, names: Array, side: float) -> Array:
 ## Straightens the limbs into the flying pose, blended by how far into it
 ## the body is. Runs after the animation, the legs and the weapon arm.
 func _pose_glide() -> void:
-	if _glide <= 0.0 or _skeleton == null:
+	if _skeleton == null:
+		return
+	_pose_air()
+	if _glide <= 0.0:
 		return
 	var w := smoothstep(0.0, 1.0, _glide)
 
@@ -693,10 +742,34 @@ func _pose_glide() -> void:
 		_skeleton.set_bone_global_pose(_glide_neck, pose)
 
 
-## Straightens a leg along `dir`. The human rig's foot is an IK handle under
-## the root, not a child of the shin, so it is carried to the end of the
-## straightened shin by hand, turned with it and pointed.
-func _pose_leg(limb: Array, dir: Vector3, right: Vector3, w: float) -> void:
+## Bends the legs into the air pose. The flat flying pose, applied after,
+## takes over as the body lies out.
+func _pose_air() -> void:
+	var w := smoothstep(0.0, 1.0, _air) * (1.0 - smoothstep(0.0, 1.0, _glide))
+	if w <= 0.0:
+		return
+	var to_skeleton := _skeleton.basis.orthonormalized().inverse() * _model_basis_inverse() * Basis(Vector3.UP, PI)
+	var right := (to_skeleton * Vector3.RIGHT).normalized()
+	for i in _glide_legs.size():
+		var limb: Array = _glide_legs[i]
+		if limb.is_empty():
+			continue
+		var at := mini(i, 1) * 2
+		var thigh: Vector3 = (leap_legs[at] as Vector3).lerp(fall_legs[at], _air_fall).lerp(hang_legs[at], _air_hang)
+		var shin: Vector3 = (leap_legs[at + 1] as Vector3).lerp(fall_legs[at + 1], _air_fall).lerp(hang_legs[at + 1], _air_hang)
+		_pose_leg(limb, to_skeleton * Vector3(thigh.x * limb[3], thigh.y, thigh.z), right, w,
+				to_skeleton * Vector3(shin.x * limb[3], shin.y, shin.z), air_toes)
+
+
+## Lays a leg along `dir`, or bends it: the thigh along `dir` and the shin
+## along `shin_dir` when one is given. The human rig's foot is an IK handle
+## under the root, not a child of the shin, so it is carried to the end of
+## the shin by hand, turned with it and pointed by `toes` radians.
+func _pose_leg(limb: Array, dir: Vector3, right: Vector3, w: float, shin_dir := Vector3.ZERO, toes := -1.0) -> void:
+	if shin_dir == Vector3.ZERO:
+		shin_dir = dir
+	if toes < 0.0:
+		toes = glide_toes
 	var shin := _skeleton.get_bone_global_pose(limb[1])
 	var foot := _skeleton.get_bone_global_pose(limb[2])
 	var reach := foot.origin - shin.origin
@@ -707,13 +780,13 @@ func _pose_leg(limb: Array, dir: Vector3, right: Vector3, w: float) -> void:
 	var now := shin.basis * along
 	if now.length_squared() < 0.000001:
 		return
-	var turn := Quaternion.IDENTITY.slerp(Quaternion(now.normalized(), dir.normalized()), w)
+	var turn := Quaternion.IDENTITY.slerp(Quaternion(now.normalized(), shin_dir.normalized()), w)
 	shin.basis = Basis(turn) * shin.basis
 	_skeleton.set_bone_global_pose(limb[1], shin)
 	# Turn the foot as the shin turned in all, then point the toes.
 	var whole := Quaternion(reach.normalized(), (Basis(turn) * now).normalized())
 	foot.origin = shin.origin + Basis(turn) * now
-	foot.basis = Basis(right, glide_toes * w) * Basis(whole) * foot.basis
+	foot.basis = Basis(right, toes * w) * Basis(whole) * foot.basis
 	_skeleton.set_bone_global_pose(limb[2], foot)
 
 

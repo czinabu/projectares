@@ -230,6 +230,9 @@ func _flight_shots(out_dir: String) -> void:
 		["jet_boost", "jetpack_mk2", true, true, false, 22.0, 0.0, 0.0, 0.0, 0, Vector3.FORWARD],
 		["jet_boost_climb", "jetpack_mk2", true, true, false, 16.0, 14.0, 0.0, 0.7, 0, Vector3.FORWARD],
 		["jet_boost_roll", "jetpack_mk2", true, true, false, 22.0, 0.0, 0.0, 0.0, 1, Vector3.FORWARD],
+		["air_leap", "jetpack_mk2", false, false, false, 7.0, 6.0, 0.0, 0.0, 0, Vector3.FORWARD],
+		["air_fall", "jetpack_mk2", false, false, false, 7.0, -12.0, 0.0, 0.0, 0, Vector3.FORWARD],
+		["jet_hover_forward", "jetpack_mk2", true, false, false, 10.0, 0.0, 0.0, 0.0, 0, Vector3.FORWARD],
 		["wings_level", "wings_glide", false, false, true, 16.0, -1.8, 0.0, 0.0, 0, Vector3.FORWARD],
 		["wings_turn_left", "wings_glide", false, false, true, 16.0, -1.8, 1.4, 0.0, 0, Vector3.FORWARD],
 		["wings_turn_right", "wings_glide", false, false, true, 16.0, -1.8, -1.4, 0.0, 0, Vector3.FORWARD],
@@ -251,6 +254,7 @@ func _flight_shots(out_dir: String) -> void:
 		await _settle(30)
 		p.set_physics_process(false)
 		p.global_position += Vector3(0, 6, 0)
+		p.airborne_time = 1.0
 		p.flight.is_hovering = pose[2]
 		p.flight.is_boosting = pose[3]
 		p.flight.is_thrusting = pose[2]

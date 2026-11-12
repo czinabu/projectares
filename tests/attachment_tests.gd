@@ -172,7 +172,7 @@ static func _bench(t: Node) -> void:
 	var grip := base.display_for("grip_angled")
 	t.check(scope != null and scope.kind == "gunsmith" and scope.equipped and scope.slot == "optic",
 			"a fitted scope hangs on the bench, marked equipped")
-	t.check(grip != null and grip.count == 2 and not grip.equipped and grip.get_prompt().begins_with("[E] Equip"),
+	t.check(grip != null and grip.count == 2 and not grip.equipped and grip.get_prompt().begins_with("[F] Equip"),
 			"a spare grip on the bench offers to fit")
 	var asked := []
 	base.equip_requested.connect(func(slot: String, id: String) -> void: asked.append([slot, id]))

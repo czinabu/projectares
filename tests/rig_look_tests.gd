@@ -106,8 +106,37 @@ static func run(t: Node) -> void:
 		await t.get_tree().create_timer(0.5).timeout
 		t.check(not boot_flames.any(func(f: Node3D) -> bool: return f.visible), "the heel thrusters only burn for a moment")
 
-	# A jetpack boost lays the body out head first with the arms ahead; a
-	# hover leans the way it drifts; the roll keys turn it over.
+	# Off the ground the legs never run: a stand plays under an air pose
+	# with the knees bent, and the run comes back on landing.
+	p.velocity = -p.global_basis.z * 7.0
+	await t.get_tree().create_timer(0.5).timeout
+	t.check(String(skin._current) in skin.GAITS, "on the ground, moving plays a run or walk")
+	var foot_bone: int = skin._glide_legs[0][2] if not skin._glide_legs.is_empty() and not skin._glide_legs[0].is_empty() else -1
+	var foot_height := func() -> float:
+		skin._pose_glide()
+		return p.to_local(skeleton.to_global(skeleton.get_bone_global_pose(foot_bone).origin)).y
+	p.airborne_time = 1.0
+	p.velocity = -p.global_basis.z * 7.0 + Vector3(0, 5, 0)
+	await t.get_tree().create_timer(0.5).timeout
+	t.check(skin.is_airborne() and not (String(skin._current) in skin.GAITS), "in the air, moving never plays the run")
+	if foot_bone >= 0:
+		var leaping: float = foot_height.call()
+		t.check(leaping > 0.12, "a jump lifts the lead knee (foot %.2f m up)" % leaping)
+		p.flight.is_hovering = true
+		p.velocity = -p.global_basis.z * 7.0
+		await t.get_tree().create_timer(0.6).timeout
+		var hanging: float = foot_height.call()
+		t.check(not (String(skin._current) in skin.GAITS) and hanging < leaping,
+				"hovering, the legs hang loose instead of running (foot %.2f m up)" % hanging)
+		p.flight.is_hovering = false
+	p.airborne_time = 0.0
+	await t.get_tree().create_timer(0.5).timeout
+	t.check(String(skin._current) in skin.GAITS and skin._air < 0.01, "landing brings the run back")
+	p.velocity = Vector3.ZERO
+	p.airborne_time = 1.0
+
+	# A jetpack boost lays the body out head first with the arms down at the
+	# sides; a hover leans the way it drifts; the roll keys turn it over.
 	_equip(p, "jetpack_mk2")
 	await t.frames(2)
 	p.flight.is_hovering = true
@@ -125,7 +154,10 @@ static func run(t: Node) -> void:
 		skin._pose_glide()
 		var wrist_at := p.to_local(skeleton.to_global(skeleton.get_bone_global_pose(skeleton.find_bone("Wrist.R")).origin))
 		var head_at := p.to_local(skeleton.to_global(skeleton.get_bone_global_pose(skeleton.find_bone("Head")).origin))
-		t.check(wrist_at.z < head_at.z, "boosting, the arms reach out ahead of the head")
+		var hips_at := p.to_local(skeleton.to_global(skeleton.get_bone_global_pose(skeleton.find_bone("Hips")).origin)) \
+				if skeleton.find_bone("Hips") >= 0 else Vector3.ZERO
+		t.check(wrist_at.z > head_at.z + 0.4 and absf(wrist_at.z - hips_at.z) < 0.35 and absf(wrist_at.x) < 0.6,
+				"boosting, the arms lie back along the sides, not out ahead")
 	var belly := p.global_basis.inverse() * (skin as Node3D).global_basis.z
 	p.cmd.roll = 1
 	await t.get_tree().create_timer(0.25).timeout
