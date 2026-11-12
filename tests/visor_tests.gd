@@ -2,6 +2,8 @@ extends RefCounted
 ## Checks for helmets and their visors. Kept in its own file and called from
 ## the test runner (`-- --only visors` runs just these).
 
+const SkinScript := preload("res://core/visual/actor_skin.gd")
+
 const StashRules := preload("res://core/account/stash_rules.gd")
 const BaseLayout := preload("res://core/base/base_layout.gd")
 const Economy := preload("res://core/economy/economy.gd")
@@ -352,6 +354,25 @@ static func _glass(t: Node) -> void:
 	await t.frames(40)
 	t.check(not glass.glass_shown(), "in third person the visor's readouts are gone")
 	t.check(glass.boot == 0.0, "and the display is off, so it starts up again next time")
+	t.check(glass.reticle_shown(), "but the ring at the crosshair stays in third person")
+	mark.global_position = p.get_eye_position() + p.get_aim_dir() * 12.0 - Vector3(0, 1.0, 0)
+	await t.frames(4)
+	mark.global_position = p.get_eye_position() + p.get_aim_dir() * 12.0 - Vector3(0, 1.0, 0)
+	await t.frames(2)
+	step.call(40)
+	t.check(glass.aim_target == mark and glass.lock > 0.9, "and so do the brackets on whoever is under it")
+	mark.global_position = p.global_position + Vector3(8, 0.2, 0)
+	await t.frames(4)
+	# The helmet's light, worn on the back of the head for third person.
+	var v := p.visor
+	t.check(SkinScript.helmet_light(v) == "ready", "a charged Seeker's light shows ready")
+	v.cooldown_left = 5.0
+	t.check(SkinScript.helmet_light(v) == "charging", "a recharging one shows it")
+	v.cooldown_left = 0.0
+	var plain := Visor.new()
+	plain.enabled = true
+	t.check(SkinScript.helmet_light(plain) == "", "a plain visor has no light")
+	plain.free()
 	# What the visor shows in the world is there in either view.
 	var bot: Actor = raid.bots[0]
 	bot.global_position = p.global_position + Vector3(8, 0.2, 0)

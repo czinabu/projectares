@@ -177,7 +177,9 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   Check leg changes by eye: `visual_check.tscn -- <dir> --gait-only`, and
   the stand with `--idle-only`.
   Holstered weapons are worn, not hidden (`ActorSkin.stow_place`): a primary
-  gun or two-handed weapon slung across the back, outside a worn back rig, a
+  gun or two-handed weapon slung across the back, outside a worn back rig
+  (down the side of a rig with a screen on its back, so a jetpack's heat
+  gauge stays in view), a
   sidearm muzzle down on the right hip, and a one-handed blade on the left
   hip. These are view-only copies; the weapon's own node stays on the hand.
   A switch is shown as the hand putting one away and drawing the next
@@ -293,7 +295,11 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   projected light, never a frame, a tint or a mask over the view (playtest
   feedback: the first visors were in the way): it rests dim, trails the
   head, wakes on trouble (`VisorHud.alert`) and closes on what is aimed at
-  (`VisorHud.lock`). Apart from the
+  (`VisorHud.lock`). In third person the glass is gone but the ring and
+  the lock brackets stay (`VisorHud.reticle_shown`), and the helmet wears
+  its health strip and system light on the back of the head
+  (`ActorSkin._update_vitals`, `helmet_light`), where a pack or a slung gun
+  never covers them. Apart from the
   thin health arc, do not repeat the wrist on the glass (ammo, the map,
   standing): the wrist shows you, the visor shows what is around you. Mk2
   helmets are loot only. Check the glass by eye with

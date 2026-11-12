@@ -109,6 +109,17 @@ var sling_height := -0.2
 ## middle of a slung weapon sits out from the back or the rig's outer face.
 var back_surface := 0.13
 var sling_clearance := 0.04
+## Over a rig with a screen on its back (a jetpack's heat gauge), a slung
+## weapon rides down the side of the rig instead, so it never hides the
+## screen: this far out past the rig's edge, leaning this much.
+var side_sling_gap := 0.035
+## A worn helmet carries its readouts on the back of the head, for third
+## person and for anyone behind you: a health strip that drains and turns red,
+## and a light for the helmet's own system. Placed over the "Head" bone.
+var vitals_offset := Vector3(0.0, 0.05, 0.145)
+var vitals_width := 0.13
+var vitals_low := 0.35
+var side_sling_tilt := deg_to_rad(9.0)
 var hip_offset := Vector3(-0.2, 0.08, 0.02)
 ## How far a sheathed blade tips from pointing straight up, toward the back.
 var sheath_angle := deg_to_rad(138.0)
@@ -143,6 +154,7 @@ var _def := {}
 var _rig_id := ""
 var _rig_holders: Array[Node3D] = []
 var _rig_back: Node3D
+var _vitals: Node3D
 var _flames: Array[Node3D] = []
 var _burst_left := 0.0
 var _spread := 0.0
@@ -313,6 +325,7 @@ func _process(delta: float) -> void:
 	_update_glide(delta)
 	_update_stowed()
 	_update_switch(delta)
+	_update_vitals()
 	_aim_left = maxf(_aim_left - delta, 0.0)
 	var weapon := actor.get_active_weapon()
 	var melee := weapon as MeleeWeapon
@@ -652,6 +665,17 @@ func stow_place(weapon: Weapon) -> Dictionary:
 		# Muzzle down, grip to the rear, its side to the world.
 		return {"bone": _def.get("hip_bone", ""), "at": holster_offset, "basis": Basis(Vector3.RIGHT, -PI / 2.0),
 			"centre": false}
+	var side := 1.0 if weapon is Gun else -1.0
+	if _rig_back and _rig_back.find_child("HeatDisplay", true, false) != null:
+		# Down the side of the rig (gun right, long blade left), clear of its screen.
+		var box: AABB = look.model_bounds(_rig_back)
+		var beside := Vector3(side * (maxf(absf(box.position.x), absf(box.end.x)) + side_sling_gap),
+				sling_height + 0.12, back_gap + box.end.z - 0.03)
+		if weapon is MeleeWeapon:
+			return {"bone": back_bone, "at": beside, "basis": Basis(Vector3.BACK, side_sling_tilt), "centre": true}
+		return {"bone": back_bone, "at": beside,
+			"basis": Basis(Vector3.BACK, -side_sling_tilt) * Basis(Vector3.RIGHT, PI / 2.0) * Basis(Vector3.BACK, PI / 2.0),
+			"centre": true}
 	if weapon is MeleeWeapon:
 		# Head up over the left shoulder, crossing a slung gun.
 		return {"bone": back_bone, "at": out + Vector3(0, 0, sling_clearance), "basis": Basis(Vector3.BACK, sling_tilt),
@@ -661,6 +685,89 @@ func stow_place(weapon: Weapon) -> Dictionary:
 	return {"bone": back_bone, "at": out,
 		"basis": Basis(Vector3.BACK, -sling_tilt) * Basis(Vector3.RIGHT, PI / 2.0) * Basis(Vector3.BACK, PI / 2.0),
 		"centre": true}
+
+
+## What the light on a helmet's back says: "" (a plain visor has none),
+## "running" (zoomed, scanning, sensing, thermal on), "ready" or "charging".
+static func helmet_light(v: Visor) -> String:
+	if not v.enabled or v.mode == "":
+		return ""
+	if v.is_zoomed() or v.is_sensing() or v.thermal_on:
+		return "running"
+	match v.mode:
+		"scan", "threat":
+			return "ready" if v.cooldown_left <= 0.0 else "charging"
+		"thermal":
+			return "ready" if v.charge_fraction() >= 0.25 else "charging"
+	return "ready"
+
+
+func _update_vitals() -> void:
+	var worn := actor.visor.enabled and not actor.is_dead
+	if not worn:
+		if _vitals:
+			_vitals.visible = false
+		return
+	if _vitals == null or not is_instance_valid(_vitals):
+		_build_vitals()
+	_vitals.visible = true
+	var share := clampf(actor.health.health / maxf(actor.health.max_health, 1.0), 0.0, 1.0)
+	var ink := actor.visor.glass_color
+	var low := share < vitals_low
+	var color := Color(1.0, 0.25, 0.15) if low else ink
+	var fill := _vitals.find_child("Fill", true, false) as MeshInstance3D
+	fill.scale.x = maxf(0.001, share)
+	fill.position.x = -vitals_width * 0.5 + vitals_width * share * 0.5
+	var beat := 0.55 + 0.45 * sin(Time.get_ticks_msec() * 0.009) if low else 1.0
+	_glow(fill, color, 1.8 * beat)
+	var light := _vitals.find_child("Light", true, false) as MeshInstance3D
+	var state := helmet_light(actor.visor)
+	light.visible = state != ""
+	match state:
+		"running":
+			_glow(light, ink, 1.5 + 1.2 * sin(Time.get_ticks_msec() * 0.012))
+		"ready":
+			_glow(light, ink, 2.2)
+		"charging":
+			_glow(light, ink.darkened(0.6), 0.3)
+
+
+func _build_vitals() -> void:
+	var root := Node3D.new()
+	var back := _quad(Vector2(vitals_width + 0.012, 0.026), Color(0.02, 0.025, 0.03), 0.0)
+	root.add_child(back)
+	var fill := _quad(Vector2(vitals_width, 0.016), Color.WHITE, 1.8)
+	fill.name = "Fill"
+	fill.position.z = 0.001
+	root.add_child(fill)
+	var light := _quad(Vector2(0.028, 0.028), Color.WHITE, 2.0)
+	light.name = "Light"
+	light.position = Vector3(vitals_width * 0.5 + 0.024, 0.0, 0.001)
+	root.add_child(light)
+	var bone: String = "Head" if _skeleton and _skeleton.find_bone("Head") >= 0 else _def.get("neck", "")
+	_vitals = _hang(root, "Vitals", bone, vitals_offset,
+			Vector3(0.0, _def.get("height", 1.8) * 0.93, 0.0) + vitals_offset)
+
+
+static func _quad(size: Vector2, color: Color, energy: float) -> MeshInstance3D:
+	var quad := MeshInstance3D.new()
+	var mesh := QuadMesh.new()
+	mesh.size = size
+	quad.mesh = mesh
+	quad.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	quad.material_override = mat
+	_glow(quad, color, energy)
+	return quad
+
+
+static func _glow(quad: MeshInstance3D, color: Color, energy: float) -> void:
+	var mat := quad.material_override as StandardMaterial3D
+	mat.albedo_color = color
+	mat.emission_enabled = energy > 0.0
+	mat.emission = color
+	mat.emission_energy_multiplier = energy
 
 
 ## A small gun worn in a hip holster rather than slung (`Weapon.is_sidearm`).
