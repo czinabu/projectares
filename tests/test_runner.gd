@@ -5131,6 +5131,20 @@ func _test_dev_mode() -> void:
 	for path in [real_path, dev_path]:
 		DirAccess.remove_absolute(path)
 
+	# Online: a server hosted in dev mode tops up the host's account only.
+	var service := StashService.new()
+	service.persist = false
+	service.dev_accounts.append(StashService.id_for_name("Dev Host"))
+	var host_id: String = service.sign_in("Dev Host", StashService.new_secret()).account_id
+	var friend_id: String = service.sign_in("Dev Friend", StashService.new_secret()).account_id
+	var host_view := service.snapshot(host_id)
+	check("helm_ember_mk2" in host_view.stash and host_view.credits == DevEconomy.MAX_CREDITS,
+			"a dev server gives the host's account everything and max credits")
+	check("helm_ember_mk2" not in service.snapshot(friend_id).stash, "other players on it get nothing extra")
+	var host_account = service.load_account(host_id)
+	host_account.stash.erase("wings_glide")
+	check("wings_glide" in service.snapshot(host_id).stash, "gear the host lost comes back on the server too")
+
 	# Cheats in a solo raid.
 	DevMode.enabled = true
 	check(DevMode.raid_cheats().size() == DevMode.CHEATS.size(), "dev mode on hands a raid its cheats")

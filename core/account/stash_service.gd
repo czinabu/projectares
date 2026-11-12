@@ -29,6 +29,7 @@ const StashRules := preload("res://core/account/stash_rules.gd")
 const MasteryBook := preload("res://core/progression/mastery_book.gd")
 const ProfileScript := preload("res://core/profile/profile.gd")
 const Economy := preload("res://core/economy/economy.gd")
+const DevMode := preload("res://core/dev/dev_mode.gd")  # DEV MODE
 
 const SAVE_VERSION := 1
 const MIN_NAME := 3
@@ -42,6 +43,11 @@ var persist := true
 
 ## Account id -> Account. Loaded lazily from disk.
 var _accounts := {}
+## DEV MODE: account ids kept topped up with the dev stash (every piece of
+## gear, max credits) on this server. Only a server started from the editor
+## with `--dev-host` sets it, and that server keeps its accounts in a
+## separate folder, so real online accounts are never touched.
+var dev_accounts: Array[String] = []
 
 
 ## One player's server-side record. Plain data plus its save format.
@@ -164,6 +170,7 @@ func sign_in(shown_name: String, secret: String) -> Dictionary:
 		if _hash(account.salt, secret) != account.secret_hash:
 			return _fail("That name belongs to someone else.")
 		grant_gear_crates(account)
+		_dev_top_up(account)  # DEV MODE
 		return {"ok": true, "account_id": id, "created": false}
 	account = Account.new()
 	account.id = id
@@ -173,6 +180,7 @@ func sign_in(shown_name: String, secret: String) -> Dictionary:
 	StashRules.add_items(account.stash, ProfileScript.WELCOME_CRATE)
 	_accounts[id] = account
 	grant_gear_crates(account)
+	_dev_top_up(account)  # DEV MODE
 	return {"ok": true, "account_id": id, "created": true}
 
 
@@ -222,6 +230,7 @@ func snapshot(account_id: String) -> Dictionary:
 	var account := load_account(account_id)
 	if account == null:
 		return _fail("No such account.")
+	_dev_top_up(account)  # DEV MODE: gear lost in a run comes back
 	return {
 		"ok": true,
 		"account_id": account.id,
@@ -340,6 +349,7 @@ func deploy(account_id: String, world: WorldDef) -> Dictionary:
 	var account := load_account(account_id)
 	if account == null:
 		return _fail("No such account.")
+	_dev_top_up(account)  # DEV MODE
 	if not world.gear_at_risk:
 		var copy := account.stash.duplicate()
 		var kit := StashRules.checkout(copy, account.loadout.duplicate(), world)
@@ -454,6 +464,18 @@ func _return_deployed(account: Account) -> void:
 	account.deployed_world = ""
 	StashRules.validate_loadout(account.stash, account.loadout)
 	_save(account)
+
+
+## DEV MODE: tops a dev account up (see `dev_accounts`). Does nothing to any
+## other account.
+func _dev_top_up(account: Account) -> void:
+	if account.id not in dev_accounts or account.is_deployed():
+		return
+	var had := account.stash.size()
+	var had_credits := account.credits
+	account.credits = DevMode.top_up(account.stash)
+	if account.stash.size() != had or account.credits != had_credits:
+		_save(account)
 
 
 func _path_for(id: String) -> String:
