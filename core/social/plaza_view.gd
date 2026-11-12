@@ -1,6 +1,7 @@
 extends CanvasLayer
-## The screen layer for a safe zone: who is here, what the player you are
-## looking at is wearing, and the portal you are standing in. UI only. It
+## What a safe zone shows you: the prompt for the portal you are standing in
+## on screen, and what the player you are looking at is wearing on a tag over
+## their head (`tag`). The map's own signs say where you are. UI only. It
 ## reads the raid and never changes it; using a portal is reported with
 ## `portal_used` and the game's flow (`core/main.gd`) decides what happens.
 ##
@@ -19,10 +20,9 @@ var raid: Raid
 ## Where each world runs on this server (world id -> port). A gate to a world
 ## that is missing here is shown as closed.
 var routes := {}
-var _banner: Label
+## The gear of the player you look at, floating over them.
+var tag: Label3D
 var _prompt: Label
-var _card: PanelContainer
-var _card_text: RichTextLabel
 var _notice: Label
 var _notice_left := 0.0
 
@@ -38,31 +38,27 @@ func _ready() -> void:
 	root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(root)
-	_banner = _label(root, 15, Color(0.6, 0.95, 0.75))
-	_place(_banner, 0.5, 0.0, Vector2(-300, 50), Vector2(600, 22))
 	_prompt = _label(root, 22, Color(1.0, 0.8, 0.45))
 	_place(_prompt, 0.5, 0.5, Vector2(-400, 110), Vector2(800, 32))
 	_notice = _label(root, 18, Color(1.0, 1.0, 1.0))
 	_place(_notice, 0.5, 0.5, Vector2(-400, 150), Vector2(800, 28))
-	_card = PanelContainer.new()
-	_card.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_card.visible = false
-	root.add_child(_card)
-	_place(_card, 1.0, 0.5, Vector2(-360, -150), Vector2(330, 300))
-	_card_text = RichTextLabel.new()
-	_card_text.bbcode_enabled = true
-	_card_text.fit_content = true
-	_card_text.scroll_active = false
-	_card_text.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_card.add_child(_card_text)
+	tag = Label3D.new()
+	tag.name = "GearTag"
+	tag.font_size = 40
+	tag.pixel_size = 0.004
+	tag.outline_size = 10
+	tag.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	tag.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
+	tag.no_depth_test = true
+	tag.top_level = true
+	tag.visible = false
+	add_child(tag)
 
 
 func _process(delta: float) -> void:
 	if raid == null or not is_instance_valid(raid) or raid.player == null or not is_instance_valid(raid.player):
 		return
 	var me := raid.player
-	var count := RaidRoster.players_in(raid).size()
-	_banner.text = "SAFE ZONE   weapons locked   %d %s here" % [count, "player" if count == 1 else "players"]
 	_notice_left = maxf(0.0, _notice_left - delta)
 	_notice.visible = _notice_left > 0.0
 
@@ -76,9 +72,10 @@ func _process(delta: float) -> void:
 			show_notice("That world is not running on this server.")
 
 	var target := inspect_target(raid, me, me.get_eye_position(), me.get_aim_dir(), inspect_range, inspect_cone_deg)
-	_card.visible = target != null
+	tag.visible = target != null
 	if target != null:
-		_card_text.text = gear_card(target)
+		tag.text = gear_tag(target)
+		tag.global_position = target.global_position + Vector3(0, 2.35, 0)
 
 
 ## A line shown for a few seconds under the prompt.
@@ -157,18 +154,17 @@ static func gear_lines(actor: Actor) -> Array[Dictionary]:
 	return out
 
 
-static func gear_card(actor: Actor) -> String:
+## The tag's text: who it is, their gear best first, and what it is worth.
+static func gear_tag(actor: Actor) -> String:
 	var lines := gear_lines(actor)
-	var text := "[font_size=22][b]%s[/b][/font_size]\n" % actor.display_name
+	var text := actor.display_name.to_upper()
 	var worth := 0
 	for line in lines:
 		worth += int(line.value)
-		text += "[color=#%s]%s[/color]  [color=#888888]%s[/color]\n" % [
-				ItemDB.RARITY_COLORS[line.rarity].to_html(false), line.name, line.rarity_name]
+		text += "\n%s  (%s)" % [line.name, line.rarity_name]
 	if lines.is_empty():
-		text += "[color=#888888]Nothing equipped[/color]\n"
-	text += "\n[color=#bbbbbb]Kit worth %d[/color]" % worth
-	return text
+		text += "\nNothing equipped"
+	return text + "\nKit worth %d" % worth
 
 
 func _label(root: Control, font_size: int, color: Color) -> Label:
