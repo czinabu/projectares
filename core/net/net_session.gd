@@ -74,7 +74,7 @@ signal world_invite_accepted(invite: Dictionary)
 signal base_visit_requested(owner_name: String, stash: Array, loadout: Dictionary)
 
 const DEFAULT_PORT := 24565
-const PROTOCOL := 13
+const PROTOCOL := 14
 const StashService := preload("res://core/account/stash_service.gd")
 const Economy := preload("res://core/economy/economy.gd")
 const Human := preload("res://core/visual/human.gd")
@@ -640,7 +640,7 @@ func _send_spawn(peer: int, actor: Actor) -> void:
 ## or again after a death. The kit and picks come from the server's stash,
 ## never from the client.
 @rpc("any_peer", "call_remote", "reliable")
-func _request_join() -> void:
+func _request_join(drop := "") -> void:
 	if not is_server or raid == null:
 		return
 	var peer := _api.get_remote_sender_id()
@@ -664,7 +664,8 @@ func _request_join() -> void:
 	_joining_look = look_for_peer(peer)
 	var who: Dictionary = stash.snapshot(account_id)
 	# Renown is kept under the account, never under a name the client chose.
-	var actor := raid.add_player(deployed.kit, deployed.picks, who.name, account_id, int(who.get("renown", 0)))
+	var actor := raid.add_player(deployed.kit, deployed.picks, who.name, account_id, int(who.get("renown", 0)),
+			drop.left(16))
 	_joining_look = {}
 	if not safe:
 		_actor_account[actor] = account_id
@@ -997,10 +998,11 @@ func sell(item_id: String, count: int = 1) -> void:
 
 
 ## Drop into the server's world: from the lobby, or again after a death.
-## `joined` follows, or `lobby_error`.
-func deploy() -> void:
+## `joined` follows, or `lobby_error`. `drop` is where to land, an id from
+## `Raid.drop_choices`; the server decides whether it is still on offer.
+func deploy(drop := "") -> void:
 	if _is_connected() and not account.is_empty() and (my_actor_id < 0 or _can_redeploy):
-		_request_join.rpc_id(1)
+		_request_join.rpc_id(1, drop)
 
 
 ## In the world: ask the server to start your sign-out, or to call it off.

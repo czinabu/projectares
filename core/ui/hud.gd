@@ -140,7 +140,9 @@ func _process(delta: float) -> void:
 	_redeploy_wait = maxf(0.0, _redeploy_wait - delta)
 	_death.visible = p.is_dead and not _death_result.is_empty()
 	if _death.visible:
-		_death.text = death_text(_death_result, _redeploy_wait)
+		var state := raid.state_for(p)
+		_death.text = death_text(_death_result, _redeploy_wait,
+				raid.drop_choices(state.owner if state != null and raid.mode != Raid.Mode.CLIENT else ""))
 
 	_vitals.text = "Health %d   Armor %d (%s)   Stamina %d" % [
 		ceili(p.health.health), ceili(p.health.armor), p.frame_name, floori(p.stamina)]
@@ -262,7 +264,8 @@ func show_death(result: Dictionary, wait: float) -> void:
 
 
 ## The words on the death screen.
-static func death_text(result: Dictionary, wait: float) -> String:
+## `drops` is where they may land next (`Raid.drop_choices`).
+static func death_text(result: Dictionary, wait: float, drops: Array = []) -> String:
 	var by: String = result.get("killed_by", "")
 	var lost: Array = result.get("lost", [])
 	var lines: Array[String] = ["Killed by %s" % by if by != "" else "You died"]
@@ -279,6 +282,11 @@ static func death_text(result: Dictionary, wait: float) -> String:
 	if wait > 0.0:
 		lines.append("Drop back in in %d..." % ceili(wait))
 	else:
+		# One place to land is no choice: Enter is enough.
+		if drops.size() > 1:
+			for i in drops.size():
+				lines.append("%d: %s, %s" % [i + 1, drops[i].title, drops[i].note])
+			lines.append("")
 		lines.append("Enter: drop back in      L: return to the hub")
 	return "\n".join(lines)
 
