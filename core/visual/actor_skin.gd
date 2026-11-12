@@ -478,9 +478,9 @@ func stow_place(weapon: Weapon) -> Dictionary:
 		"centre": true}
 
 
-## A small gun worn in a hip holster rather than slung: tagged `sidearm`.
+## A small gun worn in a hip holster rather than slung (`Weapon.is_sidearm`).
 static func is_sidearm(weapon: Weapon) -> bool:
-	return weapon is Gun and weapon.item_id != "" and ItemDB.has_tag(weapon.item_id, "sidearm")
+	return weapon is Gun and (weapon.is_sidearm or (weapon.item_id != "" and ItemDB.has_tag(weapon.item_id, "sidearm")))
 
 
 ## Builds the worn copy of a holstered weapon. Purely a view: the weapon's own

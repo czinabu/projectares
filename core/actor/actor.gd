@@ -18,6 +18,8 @@ const LAYER_INTERACT := 4
 ## The body's capsule. `Combat.trace` tests rewound bodies against the same shape.
 const BODY_RADIUS := 0.4
 const BODY_HEIGHT := 1.8
+## How far down from the top of the body a hit counts as a headshot.
+const HEAD_SIZE := 0.3
 ## Where the hand sits on the body when a controller is not posing it.
 const HAND_REST := Vector3(0.38, 1.25, -0.35)
 
@@ -343,15 +345,38 @@ func _simulate_weapons(delta: float) -> void:
 		switch_to = -1 if active_weapon_index >= 0 else -2
 	if cmd.switch_weapon != -1 and switch_to >= -1 and switch_to < weapons.size() \
 			and switch_to != active_weapon_index:
-		var old := get_active_weapon()
-		if old:
-			old.on_holster()
-			last_drawn = active_weapon_index
-		active_weapon_index = switch_to
-		_refresh_weapon_visuals()
+		_draw_weapon(switch_to)
 	var weapon := get_active_weapon()
 	if weapon and heal_time_left <= 0.0 and stagger_left <= 0.0 and not weapons_locked:
+		# Run dry with the trigger held: draw the sidearm instead of reloading.
+		# That pull only draws it; the next shot comes from the sidearm.
+		var gun := weapon as Gun
+		if gun and not gun.is_sidearm and cmd.primary and gun.is_empty():
+			var sidearm := loaded_sidearm_index()
+			if sidearm >= 0:
+				_draw_weapon(sidearm)
+				notice.emit("Sidearm")
+				return
 		weapon.handle_input(cmd, delta)
+
+
+## Index of a sidearm with rounds in its magazine, or -1.
+func loaded_sidearm_index() -> int:
+	for i in weapons.size():
+		var gun := weapons[i] as Gun
+		if gun and gun.is_sidearm and gun.ammo_in_mag > 0:
+			return i
+	return -1
+
+
+## Takes out the weapon at `index`, or puts the one in hand away with -1.
+func _draw_weapon(index: int) -> void:
+	var old := get_active_weapon()
+	if old:
+		old.on_holster()
+		last_drawn = active_weapon_index
+	active_weapon_index = index
+	_refresh_weapon_visuals()
 
 
 func _simulate_heal(delta: float) -> void:

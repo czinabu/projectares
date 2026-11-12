@@ -230,6 +230,8 @@ func _physics_process(delta: float) -> void:
 		cmd.switch_weapon = 0
 	elif Input.is_action_just_pressed("weapon_2"):
 		cmd.switch_weapon = 1
+	elif Input.is_action_just_pressed("weapon_3"):
+		cmd.switch_weapon = 2
 	elif Input.is_action_just_pressed("holster"):
 		# Put the weapon away, or draw the one last put away. Sent as an
 		# index, not a toggle, so a repeated or late packet lands the same.

@@ -40,6 +40,15 @@ static func deal(target: Object, info: DamageInfo) -> bool:
 	return true
 
 
+## True when a hit from `trace` landed on an actor's head: within
+## `Actor.HEAD_SIZE` of the top of the body, where the shooter saw it.
+static func is_headshot(hit: Dictionary) -> bool:
+	if hit.is_empty() or not hit.collider is Actor:
+		return false
+	var feet: Vector3 = hit.get("feet", (hit.collider as Actor).global_position)
+	return hit.position.y >= feet.y + Actor.BODY_HEIGHT - Actor.HEAD_SIZE
+
+
 ## Where `attacker` saw the other actors, as {Actor: Vector3}. Attacks look up
 ## a target with `seen.get(target, target.global_position)`, so a player on a
 ## slow connection hits what was on their screen, not what the server has
@@ -57,7 +66,7 @@ static func positions_seen_by(attacker: Actor) -> Dictionary:
 
 
 ## Traces a shot from `from` to `to` by `shooter`. Returns {"position", "collider"}
-## for the first thing hit, or an empty Dictionary for a miss. Actors are hit
+## (and "feet", where a hit actor stood) for the first thing hit, or an empty Dictionary for a miss. Actors are hit
 ## where the shooter saw them (`positions_seen_by`).
 static func trace(shooter: Actor, from: Vector3, to: Vector3) -> Dictionary:
 	var space := shooter.get_world_3d().direct_space_state
@@ -66,7 +75,12 @@ static func trace(shooter: Actor, from: Vector3, to: Vector3) -> Dictionary:
 		var query := PhysicsRayQueryParameters3D.create(from, to, Actor.LAYER_WORLD | Actor.LAYER_ACTORS)
 		query.exclude = [shooter.get_rid()]
 		var hit := space.intersect_ray(query)
-		return {} if hit.is_empty() else {"position": hit.position, "collider": hit.collider}
+		if hit.is_empty():
+			return {}
+		var out := {"position": hit.position, "collider": hit.collider}
+		if hit.collider is Actor:
+			out["feet"] = (hit.collider as Actor).global_position
+		return out
 	# Rewound bodies cannot be moved inside the physics engine for one query,
 	# so walls come from the engine and bodies are tested as their capsules.
 	var result := {}
@@ -86,7 +100,7 @@ static func trace(shooter: Actor, from: Vector3, to: Vector3) -> Dictionary:
 		var dist := from.distance_to(entry[0])
 		if dist < nearest:
 			nearest = dist
-			result = {"position": entry[0], "collider": other}
+			result = {"position": entry[0], "collider": other, "feet": at}
 	return result
 
 

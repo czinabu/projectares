@@ -17,6 +17,7 @@ const RigLookTests := preload("res://tests/rig_look_tests.gd")
 const EconomyTests := preload("res://tests/economy_tests.gd")
 const CustomizerTests := preload("res://tests/customizer_tests.gd")
 const BattlefieldTests := preload("res://tests/battlefield_tests.gd")
+const SidearmTests := preload("res://tests/sidearm_tests.gd")
 
 var _passed := 0
 var _failed := 0
@@ -78,6 +79,7 @@ func _run() -> void:
 	await _test_customizer()
 	await _test_economy()
 	await _test_battlefield()
+	await _test_sidearms()
 
 
 func _test_rig_models() -> void:
@@ -91,6 +93,10 @@ func _test_customizer() -> void:
 
 func _test_economy() -> void:
 	await EconomyTests.run(self)
+
+
+func _test_sidearms() -> void:
+	await SidearmTests.run(self)
 
 
 func _test_battlefield() -> void:
@@ -204,7 +210,7 @@ func _test_raid_setup_and_movement() -> void:
 	check(raid.depots.size() >= 2, "map provides depots to bank at")
 	var caches := raid.get_children().filter(func(n: Node) -> bool: return n is LootContainer)
 	check(caches.size() >= 8, "loot caches are placed (%d)" % caches.size())
-	check(p.weapons.size() == 2 and p.flight.enabled and p.health.armor == 30.0,
+	check(p.weapons.size() == 3 and p.flight.enabled and p.health.armor == 30.0,
 			"starter loadout is equipped")
 
 	await frames(40)
@@ -973,7 +979,7 @@ func _test_loadouts() -> void:
 	var shotgun := Gun.new()
 	Loadout._setup_weapon(shotgun, "shotgun_breacher", ItemDB.item_stats("shotgun_breacher"))
 	p.equip_weapon(shotgun)
-	p.cmd.switch_weapon = 2
+	p.cmd.switch_weapon = p.weapons.size() - 1
 	var arena := raid.depots[0].global_position
 	p.global_position = Vector3(arena.x, arena.y - 1.9, arena.z + 3.0)
 	var target := raid.bots[0]
@@ -2544,7 +2550,7 @@ func _test_online() -> void:
 	var a := raid.add_player([], {}, "Alpha")
 	var b := raid.add_player(["rifle_carbine", "blade_scrap", "jetpack_mk1", "plate_light"], {}, "Bravo")
 	await frames(20)
-	check(raid.players.size() == 2 and a.weapons.size() == 2 and b.weapons[0].display_name == "Ashfront Carbine"
+	check(raid.players.size() == 2 and a.weapons.size() == 3 and b.weapons[0].display_name == "Ashfront Carbine"
 			and not a.is_player, "players join a server raid with their own kits")
 	var finished := []
 	raid.player_finished.connect(func(actor: Actor, result: Dictionary) -> void: finished.append([actor, result]))
@@ -2633,7 +2639,7 @@ func _test_online() -> void:
 		OS.kill(pid)
 		return
 	var world := Worlds.get_world("ashfront")
-	check(alpha.raid.mode == Raid.Mode.CLIENT and alpha.raid.player.weapons.size() == 2
+	check(alpha.raid.mode == Raid.Mode.CLIENT and alpha.raid.player.weapons.size() == 3
 			and alpha.raid.player.is_player and not Combat.authoritative,
 			"the client has its own actor and leaves damage to the server")
 	await _wait_until(func() -> bool: return alpha.raid.bots.size() == world.bot_count, 180)
@@ -2645,7 +2651,7 @@ func _test_online() -> void:
 			return bravo.actor_for(alpha.my_actor_id) != null and alpha.actor_for(bravo.my_actor_id) != null
 		await _wait_until(see_each_other, 180)
 		var seen := bravo.actor_for(alpha.my_actor_id)
-		check(seen != null and seen.display_name == "Alpha" and seen.weapons.size() == 2 and not seen.is_player,
+		check(seen != null and seen.display_name == "Alpha" and seen.weapons.size() == 3 and not seen.is_player,
 				"each client sees the other player, with their name and gear")
 		check(bravo.raid.players.size() == 2 and bravo.raid.active_players().size() == 2
 				and alpha.raid.bots.size() == world.bot_count,

@@ -113,10 +113,16 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   or aiming and briefly after.
   Check leg changes by eye: `visual_check.tscn -- <dir> --gait-only`, and
   the stand with `--idle-only`.
-  Holstered weapons are worn, not hidden (`ActorSkin.stow_place`): a gun or
-  two-handed weapon slung across the back, outside a worn back rig, and a
-  one-handed blade on the left hip. These are view-only copies; the weapon's
-  own node stays on the hand. Check with `--holster-only`.
+  Holstered weapons are worn, not hidden (`ActorSkin.stow_place`): a primary
+  gun or two-handed weapon slung across the back, outside a worn back rig, a
+  sidearm muzzle down on the right hip, and a one-handed blade on the left
+  hip. These are view-only copies; the weapon's own node stays on the hand.
+  A switch is shown as the hand putting one away and drawing the next
+  (`ActorSkin._update_switch`, reaching through `WeaponArm.override_point`),
+  but only the view waits: the actor switches at once. The holster key (Z)
+  sends `switch_weapon = ActorCommand.HOLSTER` and draws `Actor.last_drawn`
+  again; it is an index, never a toggle, so it replicates safely. Check with
+  `--holster-only`.
 - People are built from parts (`core/visual/human.gd`): an "appearance" names
   a build, four parts and colours. It is cosmetic only and never trusted:
   always pass one through `Look.clean_appearance` / `Look.set_appearance`,
@@ -141,6 +147,13 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   decide what an item does.
 - Gear behavior comes from the item's `stats` in `ItemDB`, applied by
   `Loadout.equip`. Add a new gun or frame as data, not as a new class.
+- A loadout carries one primary, one melee weapon and one sidearm, in that
+  weapon order (keys 1, 2, 3). Sidearms are firearms also tagged "sidearm";
+  `Loadout.fits(slot, id)` decides what goes in a slot (a sidearm never fits
+  the primary slot), and `Weapon.is_sidearm` marks one once equipped. Running
+  the primary dry with the trigger held draws a loaded sidearm instead of
+  reloading (`Actor._simulate_weapons`). Headshots come from
+  `Combat.is_headshot` on a `Combat.trace` hit; a gun's `headshot_mult` scales them.
 - Flight rigs and abilities are data too. `FlightRig` and `Ability` are single
   classes whose item stats pick the behavior. Abilities fire from
   `ActorCommand.ability_pressed`.
