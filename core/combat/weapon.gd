@@ -5,6 +5,8 @@ extends Node
 var actor: Actor
 var item_id := ""
 var display_name := "Weapon"
+## Worn on the hip and drawn when the primary runs dry (the "sidearm" tag).
+var is_sidearm := false
 ## The held model, created by `build_visual` and parented to the actor's hand.
 var visual: Node3D
 

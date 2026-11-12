@@ -66,7 +66,7 @@ func create_map() -> Node3D:
 
 ## The free scrap kit from the core item list, for empty loadout slots.
 func starter_loadout() -> Array[String]:
-	return ["rifle_scrap", "blade_scrap", "jetpack_mk1", "plate_light"]
+	return ["rifle_scrap", "blade_scrap", "jetpack_mk1", "plate_light", "visor_scav"]
 
 
 ## Only the two fighters in a running bout can hurt each other. `info` is

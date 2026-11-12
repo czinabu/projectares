@@ -70,7 +70,7 @@ const SKINS := {
 		"people": {"m": ["Swat", "Spacesuit", "Adventurer"], "f": ["Soldier", "SciFi", "Adventurer"]},
 		"height": 1.8, "tint": Color(0.8, 0.82, 0.86), "grip_bone": "Middle1.R", "arm": HUMAN_ARM, "off_arm": HUMAN_OFF_ARM,
 		"spine": HUMAN_SPINE, "neck": "Neck", "lead_leg": HUMAN_LEAD_LEG, "trail_leg": HUMAN_TRAIL_LEG,
-		"back_bone": "Chest", "feet": HUMAN_FEET,
+		"back_bone": "Chest", "hip_bone": "Hips", "feet": HUMAN_FEET,
 		"saturation": 0.75, "brightness": 0.85, "metal": 0.0, "rough": 0.85,
 		"anims": HUMAN_ANIMS,
 	},
@@ -78,7 +78,7 @@ const SKINS := {
 		"people": {"m": ["Punk", "Casual_Hoodie", "Casual_2", "Farmer", "Beach"], "f": ["Punk", "Worker", "Casual", "Medieval"]},
 		"height": 1.76, "tint": Color(0.86, 0.76, 0.68), "grip_bone": "Middle1.R", "arm": HUMAN_ARM, "off_arm": HUMAN_OFF_ARM,
 		"spine": HUMAN_SPINE, "neck": "Neck", "lead_leg": HUMAN_LEAD_LEG, "trail_leg": HUMAN_TRAIL_LEG,
-		"back_bone": "Chest", "feet": HUMAN_FEET,
+		"back_bone": "Chest", "hip_bone": "Hips", "feet": HUMAN_FEET,
 		"saturation": 0.7, "brightness": 0.75, "metal": 0.0, "rough": 0.9,
 		"anims": HUMAN_ANIMS,
 	},
@@ -97,8 +97,12 @@ const SKINS := {
 }
 const DEFAULT_SKIN := "raider"
 
-## Gun models picked by item tag, first match wins. Tags, never ids.
+## Gun models picked by item tag, first match wins. Tags, never ids. An
+## optional third value is the length in meters (default `GUN_LENGTH`).
 const GUN_MODELS := [
+	["hand_cannon", "Pistol_1.glb", 0.32],
+	["machine_pistol", "SMG_2.glb", 0.34],
+	["sidearm", "Pistol_1.glb", 0.24],
 	["smg", "SMG_1.glb"],
 	["marksman", "Sniper_2.glb"],
 	["shotgun", "Shotgun_1.glb"],
@@ -106,6 +110,14 @@ const GUN_MODELS := [
 	["rifle", "AR_2.glb"],
 ]
 const DEFAULT_GUN := "AR_3.glb"
+## Energy colour for a gun's glowing parts, picked by item tag, first match
+## wins. The warm (wood and leather) parts of the pack's models become glowing
+## cells and coils in this colour, and a glowing emitter ring sits on the muzzle.
+const GUN_GLOW := [
+	["hand_cannon", Color(0.8, 0.35, 1.0)],
+	["machine_pistol", Color(1.0, 0.55, 0.15)],
+	["sidearm", Color(0.3, 0.85, 1.0)],
+]
 ## Melee models picked by item tag, first match wins: file, length in meters,
 ## how far up from the pommel the hand grips it, and whether it takes both hands.
 const MELEE_MODELS := [
@@ -780,9 +792,9 @@ func clean_appearance(raw: Variant, owned: Array = []) -> Dictionary:
 ## (`Gun.tracer_color`). Built from shapes, picked by tag, pointing along -Z.
 func _power_model(gun: Gun) -> Node3D:
 	var glow: Color = gun.tracer_color
-	var body := _power_mat(Color(0.13, 0.14, 0.17), 0.85, 0.35)
-	var trim := _power_mat(Color(0.32, 0.34, 0.38), 0.9, 0.3)
-	var lit := _power_mat(glow, 0.0, 0.4, glow, 3.0)
+	var body := _power_mat(Color(0.24, 0.26, 0.31), 0.45, 0.45)
+	var trim := _power_mat(Color(0.5, 0.53, 0.58), 0.6, 0.35)
+	var lit := _power_mat(glow, 0.0, 0.4, glow, 1.4)
 	var holder := Node3D.new()
 	holder.name = "Model"
 	var tags: Array = ItemDB.get_item(gun.item_id).get("tags", [])
@@ -875,9 +887,11 @@ func weapon_model(weapon: Weapon) -> Node3D:
 	if weapon.item_id != "" and ItemDB.has_tag(weapon.item_id, "power"):
 		return _power_model(weapon as Gun)
 	var file := DEFAULT_GUN
+	var length := GUN_LENGTH
 	for entry: Array in GUN_MODELS:
 		if weapon.item_id != "" and ItemDB.has_tag(weapon.item_id, entry[0]):
 			file = entry[1]
+			length = entry[2] if entry.size() > 2 else GUN_LENGTH
 			break
 	var model := _instance(WEAPONS + file)
 	if model == null:
@@ -885,12 +899,59 @@ func weapon_model(weapon: Weapon) -> Node3D:
 	var holder := Node3D.new()
 	holder.name = "Model"
 	holder.add_child(model)
-	_fit(model, WEAPONS + file, GUN_LENGTH, false)
+	_fit(model, WEAPONS + file, length, false)
+	for entry: Array in GUN_GLOW:
+		if weapon.item_id != "" and ItemDB.has_tag(weapon.item_id, entry[0]):
+			_energize(model, holder, entry[1])
+			break
 	_weather_model(model, 0.8 if weapon.item_id == "" else 0.5, 0.75)
 	# The packs point guns along +X. Hands hold them pointing along -Z.
 	holder.rotation.y = PI / 2.0
 	holder.position = Vector3(0, -0.1, -0.08)
 	return holder
+
+
+## Gives a gun model a sci-fi energy look in `glow`: warm parts become glowing
+## cells, the dark body gets a cool gunmetal sheen, and an emitter ring sits on
+## the muzzle. `holder` is the model's parent; guns point along +X in it.
+func _energize(model: Node3D, holder: Node3D, glow: Color) -> void:
+	for node in model.find_children("*", "MeshInstance3D", true, false):
+		var mesh_node := node as MeshInstance3D
+		if mesh_node.mesh == null:
+			continue
+		for i in mesh_node.mesh.get_surface_count():
+			var source := mesh_node.get_active_material(i) as BaseMaterial3D
+			if source == null:
+				continue
+			var c := source.albedo_color
+			var mat := source.duplicate() as BaseMaterial3D
+			if c.r - c.b > 0.08 and c.r > 0.15:
+				mat.albedo_color = glow.darkened(0.3)
+				mat.emission_enabled = true
+				mat.emission = glow
+				mat.emission_energy_multiplier = 2.2
+			else:
+				mat.albedo_color = c.lerp(Color(0.32, 0.36, 0.42), 0.35)
+			mesh_node.set_surface_override_material(i, mat)
+	var box := model_bounds(model)
+	var ring := MeshInstance3D.new()
+	var tube := CylinderMesh.new()
+	var radius := box.size.y * 0.07
+	tube.top_radius = radius
+	tube.bottom_radius = radius
+	tube.height = box.size.x * 0.035
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = glow
+	mat.emission_enabled = true
+	mat.emission = glow
+	mat.emission_energy_multiplier = 1.6
+	tube.material = mat
+	ring.mesh = tube
+	ring.name = "Emitter"
+	ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	ring.rotation.z = PI / 2.0
+	ring.position = Vector3(box.end.x, box.position.y + box.size.y * 0.78, box.get_center().z)
+	holder.add_child(ring)
 
 
 ## Melee models stand along +Y with the handle down, the way the greybox
@@ -951,6 +1012,9 @@ func _dress_cache(cache: LootContainer) -> void:
 		return
 	var box := marker.mesh as BoxMesh
 	var size := box.size if box else Vector3(1, 0.8, 0.8)
+	if cache.is_rack():
+		_dress_power_rack(cache, marker, size)
+		return
 	var crate := prop("Backpack.glb" if cache.is_bag else "Lootbox.glb", maxf(size.x, size.z) * (0.9 if cache.is_bag else 1.15), 0.7)
 	crate.name = "Crate"
 	cache.add_child(crate)
@@ -960,6 +1024,46 @@ func _dress_cache(cache: LootContainer) -> void:
 	band.size = Vector3(size.x * 1.08, 0.05, size.z * 1.08)
 	marker.mesh = band
 	marker.position.y = size.y * (0.2 if cache.is_bag else 0.55)
+	marker.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+
+
+## A power rack: an armoured weapon stand with glowing clamps and a thin
+## light column, so a power weapon can be spotted across the field. The
+## game's marker (coloured by what is inside) stays as the glowing cradle.
+func _dress_power_rack(rack: LootContainer, marker: MeshInstance3D, size: Vector3) -> void:
+	var frame := Node3D.new()
+	frame.name = "Crate"
+	rack.add_child(frame)
+	var steel := _power_mat(Color(0.24, 0.26, 0.31), 0.5, 0.45)
+	var cyan := Color(0.35, 0.95, 1.0)
+	var lit := _power_mat(cyan, 0.0, 0.4, cyan, 1.6)
+	_power_box(frame, Vector3(size.x * 1.2, 0.12, size.z * 1.0), Vector3(0, 0.06, 0), steel)
+	for side in [-1.0, 1.0]:
+		_power_box(frame, Vector3(0.1, 1.3, 0.1), Vector3(size.x * 0.5 * side, 0.7, 0), steel)
+		_power_box(frame, Vector3(0.14, 0.06, 0.3), Vector3(size.x * 0.5 * side, 1.05, 0), lit)
+	_power_box(frame, Vector3(size.x * 1.05, 0.06, 0.06), Vector3(0, 1.36, 0), lit)
+	var column := MeshInstance3D.new()
+	var beam := CylinderMesh.new()
+	beam.top_radius = 0.04
+	beam.bottom_radius = 0.04
+	beam.height = 9.0
+	var glow := StandardMaterial3D.new()
+	glow.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	glow.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	glow.albedo_color = Color(cyan.r, cyan.g, cyan.b, 0.35)
+	beam.material = glow
+	column.mesh = beam
+	column.position.y = 1.4 + beam.height * 0.5
+	column.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	frame.add_child(column)
+	var light := lamp(cyan, 1.5, 6.0)
+	light.position.y = 1.2
+	frame.add_child(light)
+	# The marker becomes the cradle the weapon rests in.
+	var cradle := BoxMesh.new()
+	cradle.size = Vector3(size.x * 0.9, 0.08, 0.22)
+	marker.mesh = cradle
+	marker.position.y = 0.9
 	marker.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
 

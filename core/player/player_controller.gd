@@ -65,6 +65,8 @@ var yaw := 0.0
 var pitch := 0.0
 var _cam_dist := 0.0
 var _pending_switch := -1
+## The zoom level asked of a helmet with binoculars. The visor key steps it.
+var _visor_level := 0
 var _flick := Vector2.ZERO
 var _rng := RandomNumberGenerator.new()
 var _thrust_audio: AudioStreamPlayer
@@ -108,9 +110,11 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	var captured := Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
 	if event is InputEventMouseMotion and captured:
-		yaw -= event.relative.x * mouse_sensitivity
+		# Through binoculars the same hand movement turns you less.
+		var sensitivity := mouse_sensitivity / _zoom()
+		yaw -= event.relative.x * sensitivity
 		var vertical: float = -event.relative.y if invert_y else event.relative.y
-		pitch = clampf(pitch - vertical * mouse_sensitivity, -1.5, 1.5)
+		pitch = clampf(pitch - vertical * sensitivity, -1.5, 1.5)
 		_flick += event.relative
 	elif event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if captured else Input.MOUSE_MODE_CAPTURED
@@ -197,6 +201,8 @@ func _physics_process(delta: float) -> void:
 		cmd.primary = false
 		cmd.secondary = false
 		cmd.switch_weapon = -1
+		_visor_level = 0
+		cmd.visor_level = 0
 		return
 	var captured := Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
 	cmd.yaw = yaw
@@ -226,10 +232,23 @@ func _physics_process(delta: float) -> void:
 	cmd.interact_pressed = Input.is_action_just_pressed("interact")
 	cmd.heal_pressed = Input.is_action_just_pressed("heal")
 	cmd.ability_pressed = captured and Input.is_action_just_pressed("ability")
+	cmd.visor_pressed = captured and Input.is_action_just_pressed("visor")
+	if cmd.visor_pressed:
+		_visor_level = next_visor_level(actor.visor, _visor_level)
+	cmd.visor_level = _visor_level
 	if Input.is_action_just_pressed("weapon_1"):
 		cmd.switch_weapon = 0
 	elif Input.is_action_just_pressed("weapon_2"):
 		cmd.switch_weapon = 1
+	elif Input.is_action_just_pressed("weapon_3"):
+		cmd.switch_weapon = 2
+	elif Input.is_action_just_pressed("holster"):
+		# Put the weapon away, or draw the one last put away. Sent as an
+		# index, not a toggle, so a repeated or late packet lands the same.
+		if actor.get_active_weapon():
+			cmd.switch_weapon = ActorCommand.HOLSTER
+		elif not actor.weapons.is_empty():
+			cmd.switch_weapon = clampi(actor.last_drawn, 0, actor.weapons.size() - 1)
 	elif _pending_switch >= 0:
 		cmd.switch_weapon = _pending_switch
 	_pending_switch = -1
@@ -260,7 +279,10 @@ func _process(delta: float) -> void:
 		if not hit.is_empty():
 			desired = pivot + (hit.position - pivot) * 0.85
 	camera.global_transform = Transform3D(look, desired)
-	camera.fov = lerpf(camera.fov, ads_fov if aiming else wanted_base_fov(), 1.0 - exp(-14.0 * delta))
+	var fov := ads_fov if aiming else wanted_base_fov()
+	if _zoom() > 1.0:
+		fov = zoomed_fov(wanted_base_fov(), _zoom())
+	camera.fov = lerpf(camera.fov, fov, 1.0 - exp(-14.0 * delta))
 	if _thrust_audio:
 		var thrusting := actor.flight.is_thrusting and not actor.is_dead
 		if thrusting and not _thrust_audio.playing:
@@ -300,6 +322,26 @@ func _on_hit_confirmed(_target: Actor, info: DamageInfo, lethal: bool) -> void:
 
 func _on_damaged(_info: DamageInfo) -> void:
 	Sfx.play("hurt")
+
+
+## The zoom level the visor key moves to from `level`: up through the
+## helmet's levels and back to off. A helmet without binoculars stays at 0.
+static func next_visor_level(visor: Visor, level: int) -> int:
+	if visor == null or not visor.enabled or visor.mode != "zoom":
+		return 0
+	return (level + 1) % (visor.zoom_levels.size() + 1)
+
+
+## The field of view that makes things look `factor` times closer than at `fov`.
+static func zoomed_fov(fov: float, factor: float) -> float:
+	return rad_to_deg(2.0 * atan(tan(deg_to_rad(fov) * 0.5) / maxf(factor, 1.0)))
+
+
+## How much the helmet's binoculars magnify right now: 1 when they are down.
+func _zoom() -> float:
+	if actor == null or not is_instance_valid(actor):
+		return 1.0
+	return actor.visor.zoom_factor()
 
 
 ## The resting field of view for the view in use.

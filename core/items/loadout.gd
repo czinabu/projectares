@@ -7,16 +7,20 @@ extends RefCounted
 const SLOTS := {
 	"primary": "firearm",
 	"melee": "melee",
+	"sidearm": "sidearm",
 	"rig": "flight_rig",
 	"frame": "armor",
+	"helmet": "helmet",
 	"ability": "ability",
 	"vehicle": "vehicle",
 }
 const SLOT_NAMES := {
 	"primary": "Primary weapon",
 	"melee": "Melee weapon",
+	"sidearm": "Sidearm",
 	"rig": "Flight rig",
 	"frame": "Armor frame",
+	"helmet": "Helmet",
 	"ability": "Ability",
 	"vehicle": "Vehicle",
 }
@@ -26,12 +30,21 @@ const OPTIONAL_SLOTS := ["ability", "vehicle"]
 const MAX_HEAL_ITEMS := 2
 
 
+## True if item `id` can go in loadout slot `slot`. A sidearm is a firearm
+## too, but only the sidearm slot takes it.
+static func fits(slot: String, id: String) -> bool:
+	if not SLOTS.has(slot) or not ItemDB.has_tag(id, SLOTS[slot]):
+		return false
+	return slot != "primary" or not ItemDB.has_tag(id, "sidearm")
+
+
 static func equip(actor: Actor, item_ids: Array) -> void:
 	var frames: Array[String] = []
 	for id: String in item_ids:
 		var stats := ItemDB.item_stats(id)
 		if ItemDB.has_tag(id, "firearm"):
 			var gun := Gun.new()
+			gun.is_sidearm = ItemDB.has_tag(id, "sidearm")
 			_setup_weapon(gun, id, stats)
 			actor.equip_weapon(gun)
 			actor.gear_items.append(id)
@@ -51,6 +64,12 @@ static func equip(actor: Actor, item_ids: Array) -> void:
 			actor.ability.item_id = id
 			actor.ability.display_name = ItemDB.item_name(id)
 			_apply_stats(actor.ability, stats)
+			actor.gear_items.append(id)
+		elif ItemDB.has_tag(id, "helmet"):
+			actor.visor.enabled = true
+			actor.visor.item_id = id
+			actor.visor.display_name = ItemDB.item_name(id)
+			_apply_stats(actor.visor, stats)
 			actor.gear_items.append(id)
 		elif ItemDB.has_tag(id, "armor"):
 			frames.append(id)
@@ -72,31 +91,36 @@ static func equip(actor: Actor, item_ids: Array) -> void:
 		actor.gear_items.append(id)
 
 
-## Index in `actor.weapons` of the primary gun (a firearm that is not a
-## sidearm), or -1 if there is none.
-static func primary_index(actor: Actor) -> int:
+## Index in `actor.weapons` of the power weapon (an item tagged "power"),
+## or -1 if the actor carries none. It is a fourth weapon next to the
+## primary, sidearm and melee weapon, and only ever comes from a power rack.
+static func power_index(actor: Actor) -> int:
 	for i in actor.weapons.size():
 		var gun := actor.weapons[i] as Gun
-		if gun and not ItemDB.has_tag(gun.item_id, "sidearm"):
+		if gun and gun.is_power():
 			return i
 	return -1
 
 
-## Swaps firearm `id` into the primary slot mid-raid and puts it in hand.
-## `mag` and `reserve` restore a gun that was put down part used (below 0
-## means full). Returns what was given up, as {"id", "mag", "reserve",
-## "power", "spent"}, with "id" empty if there was no primary. Emits
-## `Actor.primary_swapped` so `NetSession` can tell clients.
-static func swap_primary(actor: Actor, id: String, mag := -1, reserve := -1) -> Dictionary:
-	var given := {"id": "", "mag": -1, "reserve": -1, "power": false, "spent": false}
-	if not ItemDB.has_tag(id, "firearm"):
+## Puts power weapon `id` in the actor's power slot mid-raid and in hand, or
+## with "" takes the power weapon away. `mag` and `reserve` restore one that
+## was put down part used (below 0 means full). Returns what was given up,
+## as {"id", "mag", "reserve", "spent"}, with "id" empty if the slot was
+## empty. Emits `Actor.power_changed` so `NetSession` can tell clients.
+static func set_power(actor: Actor, id: String, mag := -1, reserve := -1) -> Dictionary:
+	var given := {"id": "", "mag": -1, "reserve": -1, "spent": false}
+	if id != "" and not ItemDB.has_tag(id, "power"):
 		return given
-	var index := primary_index(actor)
+	var index := power_index(actor)
 	if index >= 0:
 		var old := actor.weapons[index] as Gun
-		given = {"id": old.item_id, "mag": old.ammo_in_mag, "reserve": old.reserve_ammo,
-				"power": old.is_power(), "spent": old.is_power() and old.is_spent()}
+		given = {"id": old.item_id, "mag": old.ammo_in_mag, "reserve": old.reserve_ammo, "spent": old.is_spent()}
 		actor.gear_items.erase(old.item_id)
+	if id == "":
+		if index >= 0:
+			actor.remove_weapon(index)
+		actor.power_changed.emit("", -1, -1)
+		return given
 	var gun := Gun.new()
 	_setup_weapon(gun, id, ItemDB.item_stats(id))
 	if mag >= 0:
@@ -110,12 +134,8 @@ static func swap_primary(actor: Actor, id: String, mag := -1, reserve := -1) -> 
 		index = actor.weapons.size() - 1
 	actor.gear_items.append(id)
 	# What you just picked up is what you hold.
-	var held := actor.get_active_weapon()
-	if held and held != gun:
-		held.on_holster()
-	actor.active_weapon_index = index
-	actor.show_active_weapon()
-	actor.primary_swapped.emit(id, gun.ammo_in_mag, gun.reserve_ammo)
+	actor.draw_weapon(index)
+	actor.power_changed.emit(id, gun.ammo_in_mag, gun.reserve_ammo)
 	return given
 
 

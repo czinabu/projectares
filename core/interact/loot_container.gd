@@ -3,12 +3,14 @@ extends Interactable
 ## A world cache, or the bag a dead actor drops (`is_bag`).
 ##
 ## A container labelled `RACK_LABEL` is a power rack (`PowerArmory`): using
-## it swaps guns into your hands instead of filling your pack.
+## it puts its power weapon in your power slot instead of your pack.
 
 const RACK_LABEL := "Power rack"
 
 ## The contents changed (someone looted it).
 signal changed
+## An actor picked up the scrip that was in here. The `Raid` credits it.
+signal scrip_taken(actor: Actor, amount: int)
 
 var items: Array[String] = []
 var is_bag := false
@@ -16,6 +18,8 @@ var label := "Cache"
 ## Server only: rounds left in guns put down on a rack, as
 ## {item id: [[mag, reserve], ...]}, last put down first.
 var ammo := {}
+## Scrip lying in here with the items: what a dead player was carrying.
+var scrip := 0
 
 var _mesh: MeshInstance3D
 
@@ -55,6 +59,10 @@ func get_prompt() -> String:
 		var prompt := _rack_prompt(raid.player if raid != null else null)
 		if prompt != "":
 			return prompt
+	# A bag is cleared away once it is emptied, so one that is still here
+	# holds something, if only scrip.
+	if items.is_empty() and is_bag:
+		return "[E] Loot %s" % label
 	if items.is_empty():
 		return "%s (empty)" % label
 	return "[E] Loot %s (%d)" % [label, items.size()]
@@ -63,6 +71,10 @@ func get_prompt() -> String:
 func interact(actor: Actor) -> void:
 	if is_rack() and _rack_swap(actor):
 		return
+	if scrip > 0:
+		var got := scrip
+		scrip = 0
+		scrip_taken.emit(actor, got)
 	var taken: Array[String] = []
 	while not items.is_empty() and not actor.inventory.is_full():
 		var id: String = items.pop_front()
@@ -81,39 +93,29 @@ func interact(actor: Actor) -> void:
 		_refresh_color()
 
 
-## What a rack would hand `actor`: its first power weapon, or, when you are
-## holding a power weapon, a gun to swap back to. "" for nothing to swap.
-func rack_offer(actor: Actor) -> String:
+## The power weapon a rack would hand you, or "" if it holds none.
+func rack_offer() -> String:
 	for id in items:
 		if ItemDB.has_tag(id, "power"):
-			return id
-	var index := Loadout.primary_index(actor) if actor != null else -1
-	if index < 0 or not (actor.weapons[index] as Gun).is_power():
-		return ""
-	for id in items:
-		if ItemDB.has_tag(id, "firearm") and not ItemDB.has_tag(id, "sidearm"):
 			return id
 	return ""
 
 
 func _rack_prompt(actor: Actor) -> String:
-	var offer := rack_offer(actor)
+	var offer := rack_offer()
 	if offer == "":
 		return ""
-	var index := Loadout.primary_index(actor) if actor != null else -1
+	var index := Loadout.power_index(actor) if actor != null else -1
 	if index < 0:
 		return "[E] Take %s" % ItemDB.item_name(offer)
-	var held := actor.weapons[index] as Gun
-	if held.is_power() and held.is_spent():
-		return "[E] Take %s, drop the spent %s" % [ItemDB.item_name(offer), held.display_name]
-	return "[E] Take %s, leave your %s" % [ItemDB.item_name(offer), held.display_name]
+	return "[E] Take %s, leave your %s" % [ItemDB.item_name(offer), actor.weapons[index].display_name]
 
 
-## Swaps the rack's offer into the actor's hands. The gun given up goes on
-## the rack with the rounds it had, unless it is a spent power weapon, which
-## is junk. Returns false if the rack had nothing to swap.
+## Puts the rack's power weapon in the actor's power slot (key 4) and in
+## hand. A power weapon they already carried goes on the rack with the
+## shots it had. Returns false if the rack had nothing to hand over.
 func _rack_swap(actor: Actor) -> bool:
-	var offer := rack_offer(actor)
+	var offer := rack_offer()
 	if offer == "":
 		return false
 	items.erase(offer)
@@ -123,7 +125,7 @@ func _rack_swap(actor: Actor) -> bool:
 		rounds = stack.pop_back()
 		if stack.is_empty():
 			ammo.erase(offer)
-	var given := Loadout.swap_primary(actor, offer, rounds[0], rounds[1])
+	var given := Loadout.set_power(actor, offer, rounds[0], rounds[1])
 	if given.id != "" and not given.spent:
 		items.append(given.id)
 		if not ammo.has(given.id):

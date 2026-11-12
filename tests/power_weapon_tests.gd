@@ -1,6 +1,6 @@
 extends RefCounted
 ## Checks for power weapons: the four sci-fi guns, power racks and the
-## swap into the primary slot, where they turn up, and that they never reach
+## the power slot (key 4), where they turn up, and that they never reach
 ## a stash. Kept in its own file and called from the test runner.
 
 const PowerArmory := preload("res://core/war/power_armory.gd")
@@ -45,25 +45,29 @@ static func run(t: Node) -> void:
 	p.protected_left = 0.0
 	await t.frames(10)
 
-	print("Power weapons: racks and swapping")
-	var rifle := (p.weapons[Loadout.primary_index(p)] as Gun).item_id
+	print("Power weapons: racks and the power slot")
 	var rack := raid.spawn_container(["power_rail_lance"], false, LootContainer.RACK_LABEL, floor_at + Vector3(0, 0, -2))
 	await t.frames(2)
 	raid.player = p
-	t.check(rack.is_rack() and rack.get_prompt().contains("Rail Lance") and rack.get_prompt().contains("leave"),
-			"a rack offers its power weapon for the gun in your hands: %s" % rack.get_prompt())
+	t.check(rack.is_rack() and rack.get_prompt() == "[E] Take Rail Lance",
+			"a rack offers its power weapon: %s" % rack.get_prompt())
 	var weapon_count := p.weapons.size()
-	var swaps := []
-	p.primary_swapped.connect(func(id: String, mag: int, reserve: int) -> void: swaps.append([id, mag, reserve]))
+	var pack_before := p.inventory.items.duplicate()
+	var kit_guns := p.weapons.duplicate()
+	var changes := []
+	p.power_changed.connect(func(id: String, mag: int, reserve: int) -> void: changes.append([id, mag, reserve]))
 	rack.interact(p)
 	await t.frames(2)
 	var held := p.get_active_weapon() as Gun
-	t.check(held != null and held.item_id == "power_rail_lance" and p.weapons.size() == weapon_count,
-			"taking it swaps it into the primary slot and puts it in hand")
-	t.check(rack.items == ([rifle] as Array[String]) and "power_rail_lance" in p.gear_items
-			and not rifle in p.gear_items and p.inventory.items.is_empty(),
-			"your own gun is left on the rack, not in your pack")
-	t.check(swaps.size() == 1 and swaps[0][0] == "power_rail_lance", "the swap is announced for the network")
+	t.check(held != null and held.item_id == "power_rail_lance" and p.weapons.size() == weapon_count + 1
+			and Loadout.power_index(p) == p.active_weapon_index,
+			"taking it fills the power slot and puts it in hand")
+	var kept_kit := true
+	for w in kit_guns:
+		kept_kit = kept_kit and w in p.weapons
+	t.check(kept_kit and rack.items.is_empty() and "power_rail_lance" in p.gear_items and p.inventory.items == pack_before,
+			"your own weapons stay with you, and nothing goes in the pack")
+	t.check(changes.size() == 1 and changes[0][0] == "power_rail_lance", "the change is announced for the network")
 	t.check(held.controls_hint().contains("charge") and held.status_text().contains("4 shots"),
 			"the rail lance tells you to charge it and counts its shots")
 
@@ -113,24 +117,25 @@ static func run(t: Node) -> void:
 	held.ammo_in_mag = 0
 	held.reserve_ammo = 0
 	t.check(held.is_spent() and held.status_text().contains("spent"), "an empty power weapon says it is spent")
-	t.check(rack.get_prompt().contains(ItemDB.item_name(rifle)) and rack.get_prompt().contains("drop the spent"),
-			"the rack offers your gun back for the spent one: %s" % rack.get_prompt())
-	rack.interact(p)
 	await t.frames(2)
-	t.check((p.get_active_weapon() as Gun).item_id == rifle and rack.items.is_empty(),
-			"you get your gun back and the spent power weapon is junk")
+	t.check(Loadout.power_index(p) < 0 and p.weapons.size() == weapon_count and p.get_active_weapon() != null
+			and not "power_rail_lance" in p.gear_items and changes.back()[0] == "",
+			"a spent power weapon is thrown away and you hold one of your own again")
 
 	print("Power weapons: Helion and heat lock")
 	for bot in [a, b, c]:
 		bot.global_position = floor_at + Vector3(60, 0, 60)
-	a.health.health = a.health.max_health
-	b.health.health = b.health.max_health
+	# Fresh targets: the slug may have killed the first ones.
+	a = raid.bots[3]
+	b = raid.bots[4]
+	c = raid.bots[5]
+	for bot in [a, b, c]:
+		bot.health.set_armor(0.0)
 	rack.set_items(["power_helion"])
 	rack.interact(p)
 	await t.frames(2)
 	var helion := p.get_active_weapon() as Gun
-	t.check(helion.item_id == "power_helion" and rack.items == ([rifle] as Array[String]),
-			"you can swap again at the same rack")
+	t.check(helion.item_id == "power_helion" and rack.items.is_empty(), "a restocked rack hands out another")
 	a.global_position = floor_at + Vector3(3, 0, -20)
 	b.global_position = floor_at + Vector3(-8, 0, -24)
 	await t.frames(3)
@@ -160,10 +165,20 @@ static func run(t: Node) -> void:
 
 	print("Power weapons: Arc Mortar")
 	rack.set_items(["power_arc_mortar"])
+	t.check(rack.get_prompt() == "[E] Take Arc Mortar, leave your Helion Plasma Launcher",
+			"holding one, the rack offers a trade: %s" % rack.get_prompt())
 	rack.interact(p)
 	await t.frames(2)
 	var mortar := p.get_active_weapon() as Gun
-	a.health.health = a.health.max_health
+	t.check(mortar.item_id == "power_arc_mortar" and p.weapons.size() == weapon_count + 1
+			and rack.items == (["power_helion"] as Array[String])
+			and rack.ammo.get("power_helion", [[9, 9]])[0] == [0, 3],
+			"you carry one at a time: the launcher goes on the rack with the shots it had left")
+	for bot in raid.bots:
+		if not bot.is_dead and not bot in [a, b, c]:
+			a = bot
+			break
+	a.health.set_armor(0.0)
 	a.global_position = floor_at + Vector3(0, 0, -12)
 	# Behind a low wall: the charge has to be lobbed over it.
 	var cover := StaticBody3D.new()
@@ -176,7 +191,7 @@ static func run(t: Node) -> void:
 	raid.add_child(cover)
 	cover.global_position = floor_at + Vector3(0, 1.1, -8)
 	await t.frames(3)
-	p.cmd.aim_dir = Vector3(0, 0.55, -1).normalized()
+	p.cmd.aim_dir = Vector3(0, 0.866, -0.5).normalized()
 	p.cmd.primary = true
 	await t.frames(2)
 	p.cmd.primary = false
@@ -187,6 +202,7 @@ static func run(t: Node) -> void:
 
 	print("Power weapons: Storm Cannon")
 	rack.set_items(["power_storm_cannon"])
+	rack.ammo.clear()
 	rack.interact(p)
 	await t.frames(2)
 	var cannon := p.get_active_weapon() as Gun
@@ -254,16 +270,18 @@ static func run(t: Node) -> void:
 	p.kill("bullet")
 	await t.frames(3)
 	var bags := raid.get_children().filter(func(n: Node) -> bool:
-		return n is LootContainer and (n as LootContainer).is_bag and not (n as LootContainer).is_rack()
-				and (n as Node3D).global_position.distance_to(death_spot) < 3.0)
+		return (n is LootContainer and (n as LootContainer).is_bag and not (n as LootContainer).is_rack()
+				and (n as Node3D).global_position.distance_to(death_spot) < 3.0))
 	var in_bags := false
 	for bag: LootContainer in bags:
 		in_bags = in_bags or "power_storm_cannon" in bag.items
 	var dropped := raid.get_children().filter(func(n: Node) -> bool:
-		return n is LootContainer and (n as LootContainer).is_rack() and "power_storm_cannon" in (n as LootContainer).items)
-	t.check(not in_bags and raid.get_children().filter(func(n: Node) -> bool:
-		return n is LootContainer and (n as LootContainer).is_rack()).size() == racks_before + 1
-			and dropped.size() == 1, "a dead player's power weapon is left on a rack, not in the bag")
+		return (n is LootContainer and (n as LootContainer).is_rack()
+				and (n as Node3D).global_position.distance_to(death_spot) < 1.5))
+	var racks_after := raid.get_children().filter(func(n: Node) -> bool:
+		return n is LootContainer and (n as LootContainer).is_rack()).size()
+	t.check(not in_bags and racks_after == racks_before + 1 and dropped.size() == 1,
+			"a dead player's power weapon is left on a rack, not in the bag")
 	if dropped.size() == 1:
 		t.check((dropped[0] as LootContainer).ammo.get("power_storm_cannon", [[0, 0]])[0][0] == 40,
 				"with the shots it had left")

@@ -4,9 +4,10 @@ extends RefCounted
 ## labelled `LootContainer.RACK_LABEL`, so they reach clients like any
 ## cache.
 ##
-## Power weapons are items tagged "power": a few shots, no reloads from the
-## stash, never stored. Taking one off a rack swaps it into your primary
-## slot and leaves your own gun on the rack, so you choose. They turn up:
+## Power weapons are items tagged "power": a few shots, never stored. Taking
+## one off a rack puts it in the power slot (key 4) next to your own guns;
+## if you already carry one, it goes on the rack in exchange, so you carry
+## one at a time. One that runs dry is thrown away. They turn up:
 ##   - on a rack at every strongpoint, restocked on a timer the war speeds up,
 ##   - on a rack beside every supply pod,
 ##   - now and then on a rack beside a cache that refills, likelier in a hot war,

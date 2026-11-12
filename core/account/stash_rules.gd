@@ -30,7 +30,7 @@ static func add_items(stash: Array[String], ids: Array) -> int:
 
 ## True if the stash item `id` can go in loadout slot `slot`.
 static func can_equip(stash: Array[String], slot: String, id: String) -> bool:
-	return Loadout.SLOTS.has(slot) and id in stash and ItemDB.has_tag(id, Loadout.SLOTS[slot])
+	return id in stash and Loadout.fits(slot, id)
 
 
 ## Drops loadout entries that are not a valid slot, or whose item is no longer
@@ -62,7 +62,7 @@ static func checkout(stash: Array[String], loadout: Dictionary, world: WorldDef,
 			taken.append(id)
 			continue
 		for free_id in starter:
-			if ItemDB.has_tag(free_id, Loadout.SLOTS[slot]):
+			if Loadout.fits(slot, free_id):
 				kit.append(free_id)
 				break
 	var heals := 0

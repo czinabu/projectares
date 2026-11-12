@@ -97,12 +97,12 @@ static func _rules(t: Node) -> void:
 			"a balance stays between zero and the cap")
 
 	print("Economy: what a run pays")
-	t.check(Economy.payout({"outcome": "extracted", "kills": 3}) == 60, "kills pay a bounty when you get home")
-	t.check(Economy.payout({"outcome": "left", "kills": 3}) == 60, "leaving the world alive pays the full bounty")
-	t.check(Economy.payout({"outcome": "died", "kills": 3}) == 15, "dying keeps only a quarter of the bounty")
-	t.check(Economy.payout({"outcome": "extracted", "kills": 0}) == 0 and Economy.payout({}) == 0
-			and Economy.payout({"outcome": "extracted", "kills": -5}) == 0, "no kills, no bounty")
-	t.check(Economy.payout({"outcome": "extracted", "kills": 5}) < Economy.buy_price(Economy.stock("armory")[0]),
+	t.check(Economy.payout({"outcome": "left", "scrip": 60}) == 60, "scrip carried out alive becomes credits")
+	t.check(Economy.payout({"outcome": "left", "scrip": 60, "scrip_banked": 40}) == 100, "banked scrip pays as well")
+	t.check(Economy.payout({"outcome": "died", "scrip": 60, "scrip_banked": 40}) == 40, "dying pays only what was banked")
+	t.check(Economy.payout({"outcome": "left", "kills": 9}) == 0 and Economy.payout({}) == 0
+			and Economy.payout({"outcome": "left", "scrip": -5, "scrip_banked": -5}) == 0, "no scrip, no pay")
+	t.check(5 * Economy.KILL_BOUNTY < Economy.buy_price(Economy.stock("armory")[0]),
 			"five kills with a free kit do not pay for the cheapest weapon")
 	t.check(Economy.read_saved({}) == Economy.STARTING_CREDITS and Economy.read_saved({"credits": -40}) == 0
 			and Economy.read_saved({"credits": "lots"}) == Economy.STARTING_CREDITS and Economy.read_saved({"credits": 75.0}) == 75,
@@ -124,8 +124,8 @@ static func _solo_profile(t: Node) -> void:
 			"selling loot pays into the profile")
 	t.check(Profile.sell("rifle_carbine").ok and Profile.credits == 540 and Profile.equipped("primary") == "",
 			"selling equipped gear empties its slot")
-	Profile.record_raid({"outcome": "extracted", "kills": 2})
-	t.check(Profile.credits == 580, "a finished raid pays its kill bounty")
+	Profile.record_raid({"outcome": "left", "kills": 2, "scrip": 40})
+	t.check(Profile.credits == 580, "a finished life pays the scrip brought home")
 	t.check(Profile.change_credits(-500) and Profile.credits == 80 and not Profile.change_credits(-81) and Profile.credits == 80
 			and Profile.change_credits(20) and Profile.credits == 100, "other systems can charge and pay credits, never below zero")
 	Profile.stash.assign(saved[0])
@@ -180,13 +180,13 @@ static func _service(t: Node) -> void:
 	restarted.deploy(id, world)
 	t.check(not restarted.buy(id, "armory", "smg_stinger").ok and not restarted.sell(id, "furn_bunk").ok,
 			"the shops are closed to an account that is out in a raid")
-	restarted.settle(id, {"outcome": "died", "brought_home": [], "kills": 4})
+	restarted.settle(id, {"outcome": "died", "brought_home": [], "kills": 4, "scrip": 500, "scrip_banked": 20})
 	var dead := restarted.snapshot(id)
 	t.check(dead.credits == 610 and "rifle_carbine" not in dead.stash,
-			"dying loses the gear, keeps the bank, and pays a quarter bounty")
+			"dying loses the gear, keeps the bank, and pays only the scrip that was banked")
 	restarted.deploy(id, world)
-	restarted.settle(id, {"outcome": "extracted", "brought_home": ["power_cell", "scrap_metal", "dmr_longshot"], "kills": 1})
-	t.check(restarted.snapshot(id).credits == 630, "extracting pays the full bounty")
+	restarted.settle(id, {"outcome": "extracted", "brought_home": ["power_cell", "scrap_metal", "dmr_longshot"], "kills": 1, "scrip": 20})
+	t.check(restarted.snapshot(id).credits == 630, "getting home pays the scrip carried")
 	t.check(restarted.sell(id, "").ok and restarted.snapshot(id).credits == 765
 			and "dmr_longshot" in restarted.snapshot(id).stash, "selling all loot keeps found gear")
 	t.check(not restarted.sell(id, "").ok, "there is no loot left to sell")
@@ -269,8 +269,8 @@ static func _hub(t: Node) -> void:
 	t.check(shop.credits() == 80 and "smg_stinger" in hub.options_for("primary"), "the hub shows what the server confirmed")
 	hub.leave_lobby()
 	t.check(shop.credits() == Profile.credits, "leaving the lobby shows the solo balance again")
-	hub.refresh({"outcome": "extracted", "loot": [], "loot_value": 0, "kills": 2})
-	t.check("+40 credits" in hub._result.text, "the result line shows the kill bounty")
+	hub.refresh({"outcome": "extracted", "loot": [], "loot_value": 0, "kills": 2, "scrip": 40})
+	t.check("+40 credits" in hub._result.text, "the result line shows the scrip brought home")
 	hub.queue_free()
 	await t.frames(2)
 	Profile.stash.assign(saved[0])

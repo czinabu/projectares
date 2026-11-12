@@ -11,8 +11,8 @@ signal landed(impact_speed: float)
 signal notice(text: String)
 ## This actor's attack landed on `target`. Drives hit markers and sounds.
 signal hit_confirmed(target: Actor, info: DamageInfo, lethal: bool)
-## A different gun went into the primary slot mid-raid (`Loadout.swap_primary`).
-signal primary_swapped(item_id: String, mag: int, reserve: int)
+## The power weapon slot changed mid-raid (`Loadout.set_power`); "" is empty.
+signal power_changed(item_id: String, mag: int, reserve: int)
 
 const LAYER_WORLD := 1
 const LAYER_ACTORS := 2
@@ -20,6 +20,8 @@ const LAYER_INTERACT := 4
 ## The body's capsule. `Combat.trace` tests rewound bodies against the same shape.
 const BODY_RADIUS := 0.4
 const BODY_HEIGHT := 1.8
+## How far down from the top of the body a hit counts as a headshot.
+const HEAD_SIZE := 0.3
 ## Where the hand sits on the body when a controller is not posing it.
 const HAND_REST := Vector3(0.38, 1.25, -0.35)
 
@@ -71,6 +73,8 @@ var health := HealthComponent.new()
 var inventory := Inventory.new()
 var flight := FlightRig.new()
 var ability := Ability.new()
+## The helmet. Always there; `Visor.enabled` says whether one is worn.
+var visor := Visor.new()
 var weapons: Array[Weapon] = []
 var active_weapon_index := 0
 ## Item ids of equipped gear (weapons, rig, armor). Dropped on death.
@@ -100,6 +104,9 @@ var protected_left := 0.0
 ## Public reputation. Written by the `Raid` that decides it (online, copied
 ## from the server); read by nameplates and the HUD. See `RenownLedger`.
 var renown := 0
+## Scrip carried: pay that is lost with the body until it is banked. Written
+## by the `Raid`, like renown.
+var scrip := 0
 var rank := 0
 var streak := 0
 var bounty := 0
@@ -110,6 +117,8 @@ var body_mesh: MeshInstance3D
 ## Holds the active weapon's model. A first-person camera may pose it itself.
 var hand := Node3D.new()
 var hand_override := false
+## The weapon last put away with the holster key, drawn again by it.
+var last_drawn := 0
 
 var _dash_left := 0.0
 var _dash_cd := 0.0
@@ -134,6 +143,9 @@ func _init() -> void:
 	ability.name = "Ability"
 	ability.actor = self
 	add_child(ability)
+	visor.name = "Visor"
+	visor.actor = self
+	add_child(visor)
 	hand.name = "Hand"
 	hand.position = HAND_REST
 	add_child(hand)
@@ -195,6 +207,7 @@ func _physics_process(delta: float) -> void:
 	ability.tick(delta)
 	if cmd.ability_pressed and stagger_left <= 0.0 and not weapons_locked:
 		ability.activate()
+	visor.tick(cmd, delta)
 	if not weapons_locked:
 		_simulate_heal(delta)
 	# On a client of an online raid, using things is the server's decision.
@@ -255,6 +268,9 @@ func _simulate_movement(delta: float) -> void:
 		wish = wish.normalized()
 
 	var speed := sprint_speed if (cmd.sprint and cmd.move.y > 0.0) else walk_speed
+	# Looking through binoculars: no running, and a slow walk.
+	if visor.is_zoomed():
+		speed = walk_speed * visor.move_mult()
 	var held := get_active_weapon()
 	if held:
 		speed *= held.move_speed_mult()
@@ -341,16 +357,49 @@ func is_sliding() -> bool:
 func _simulate_weapons(delta: float) -> void:
 	for w in weapons:
 		w.tick(delta)
-	if cmd.switch_weapon >= 0 and cmd.switch_weapon < weapons.size() \
-			and cmd.switch_weapon != active_weapon_index:
-		var old := get_active_weapon()
-		if old:
-			old.on_holster()
-		active_weapon_index = cmd.switch_weapon
-		_refresh_weapon_visuals()
+	var switch_to := cmd.switch_weapon
+	if switch_to == ActorCommand.HOLSTER:
+		switch_to = -1 if active_weapon_index >= 0 else -2
+	if cmd.switch_weapon != -1 and switch_to >= -1 and switch_to < weapons.size() \
+			and switch_to != active_weapon_index:
+		_draw_weapon(switch_to)
 	var weapon := get_active_weapon()
-	if weapon and heal_time_left <= 0.0 and stagger_left <= 0.0 and not weapons_locked:
+	if weapon and heal_time_left <= 0.0 and stagger_left <= 0.0 and not weapons_locked \
+			and not visor.is_zoomed():
+		# Run dry with the trigger held: draw the sidearm instead of reloading.
+		# That pull only draws it; the next shot comes from the sidearm.
+		var gun := weapon as Gun
+		if gun and not gun.is_sidearm and not gun.is_power() and cmd.primary and gun.is_empty():
+			var sidearm := loaded_sidearm_index()
+			if sidearm >= 0:
+				_draw_weapon(sidearm)
+				notice.emit("Sidearm")
+				return
 		weapon.handle_input(cmd, delta)
+		# A power weapon with nothing left is thrown away. The authority
+		# decides; a client hears it through `power_changed`.
+		if gun and gun.is_power() and gun.is_spent() and Combat.authoritative:
+			notice.emit("%s spent" % gun.display_name)
+			Loadout.set_power(self, "")
+
+
+## Index of a sidearm with rounds in its magazine, or -1.
+func loaded_sidearm_index() -> int:
+	for i in weapons.size():
+		var gun := weapons[i] as Gun
+		if gun and gun.is_sidearm and gun.ammo_in_mag > 0:
+			return i
+	return -1
+
+
+## Takes out the weapon at `index`, or puts the one in hand away with -1.
+func _draw_weapon(index: int) -> void:
+	var old := get_active_weapon()
+	if old:
+		old.on_holster()
+		last_drawn = active_weapon_index
+	active_weapon_index = index
+	_refresh_weapon_visuals()
 
 
 func _simulate_heal(delta: float) -> void:
@@ -415,9 +464,33 @@ func replace_weapon(index: int, weapon: Weapon) -> void:
 	_refresh_weapon_visuals()
 
 
-## Shows the active weapon and hides the rest, after changing
-## `active_weapon_index` from outside.
-func show_active_weapon() -> void:
+## Takes out the weapon at `index` (the power slot uses this when a power
+## weapon is picked up).
+func draw_weapon(index: int) -> void:
+	if index != active_weapon_index:
+		_draw_weapon(index)
+
+
+## Takes the weapon at `index` away for good (a spent power weapon). The
+## active and last-drawn indices are kept pointing at the same weapons; if
+## the weapon was in hand, the first weapon is drawn instead.
+func remove_weapon(index: int) -> void:
+	if index < 0 or index >= weapons.size():
+		return
+	var old := weapons[index]
+	if index == active_weapon_index:
+		old.on_holster()
+		active_weapon_index = 0 if weapons.size() > 1 else -1
+	elif active_weapon_index > index:
+		active_weapon_index -= 1
+	if last_drawn == index:
+		last_drawn = 0
+	elif last_drawn > index:
+		last_drawn -= 1
+	weapons.remove_at(index)
+	if old.visual and is_instance_valid(old.visual):
+		old.visual.queue_free()
+	old.queue_free()
 	_refresh_weapon_visuals()
 
 
