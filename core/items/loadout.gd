@@ -47,6 +47,10 @@ const MAX_HEAL_ITEMS := 2
 static func fits(slot: String, id: String) -> bool:
 	if not SLOTS.has(slot) or not ItemDB.has_tag(id, SLOTS[slot]):
 		return false
+	# Attachment slots take attachments only: a Spotter helmet is tagged
+	# "optic" too, but it is a helmet.
+	if slot in ATTACHMENT_SLOTS and not ItemDB.has_tag(id, "attachment"):
+		return false
 	return slot != "primary" or not ItemDB.has_tag(id, "sidearm")
 
 

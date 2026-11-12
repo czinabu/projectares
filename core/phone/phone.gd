@@ -923,7 +923,7 @@ func _draw_dev_mode() -> void:
 	main.toggled.connect(set_dev_mode)
 	_body.add_child(main)
 	if not DevMode.enabled:
-		_body.add_child(_label("Solo only. Plays on a separate save, so your real stash is untouched.",
+		_body.add_child(_label("Works solo and on a server you host from here. Plays on separate saves, so your real stash is untouched.",
 				13, Color(0.75, 0.75, 0.75)))
 		return
 	for cheat: String in DevMode.CHEATS:

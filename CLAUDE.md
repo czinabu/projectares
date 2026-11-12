@@ -434,10 +434,14 @@ without Caleb, and update the gap list when a PR closes a row.
 - Dev mode is TEMPORARY (Caleb's call, to come out once the game is further
   along): `core/dev/dev_mode.gd`, switched in the phone's Settings app and
   only in a debug or editor run (`DevMode.available`), never in an exported
-  game. Solo only: it puts `Profile` on a separate save
+  game. Solo, it puts `Profile` on a separate save
   (`Profile.DEV_SAVE_PATH`) kept topped up with all gear and max credits, and
   hands a solo `Raid` its cheats (`Raid.dev_cheats`: god mode, endless heat
-  and ammo, no cooldowns); a server or client raid ignores them. Every line
+  and ammo, no cooldowns); a server or client raid ignores them. Online, only
+  a server hosted from the editor in dev mode (`main.gd host_and_join`
+  passes `--dev-host <name>`) tops that one account up
+  (`StashService.dev_accounts`), and such a server keeps its accounts in
+  `Main.DEV_ACCOUNTS`, apart from real ones. No cheats online. Every line
   it touches is marked "DEV MODE". Never build a feature on it; to remove it,
   delete `core/dev/` and every "DEV MODE" line or block, plus
   `_test_dev_mode` in the tests.
