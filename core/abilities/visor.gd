@@ -10,6 +10,13 @@ extends Node
 ##            another side inside it is shown to the wearer where they stood
 ##            at that moment (a snapshot, never live tracking), and each of
 ##            them is told they were scanned and from where.
+##   "threat" - a tactical visor. It tells its wearer where a hit came from,
+##            and `visor_pressed` starts Threat Sense: for a few seconds
+##            everyone on another side who is aiming at the wearer from
+##            nearby is outlined, and each of them is told they were sensed.
+##   "thermal" - `visor_level` 1 switches the visor to thermal on a battery
+##            that drains while on and refills while off. Seeing heat is the
+##            view's job (`VisorHud`); how warm someone looks is `heat_of`.
 ##
 ## What a visor reveals is decided by the authority only. Online the server
 ## works it out and `NetSession` tells just the players allowed to know; a
@@ -25,6 +32,10 @@ signal revealed(ghosts: Array)
 signal tagged(target: Actor)
 ## Someone else's scan caught this actor. `origin` is where it came from.
 signal felt_scan(origin: Vector3)
+## A tactical visor's wearer was hit from `origin`.
+signal threatened(origin: Vector3)
+## Who Threat Sense shows changed: `threats` now holds them.
+signal threats_changed(threats: Array)
 
 var actor: Actor
 var item_id := ""
@@ -53,13 +64,40 @@ var cooldown := 25.0
 var scan_radius := 40.0
 var ghost_time := 3.0
 
+## Threat: how long Threat Sense runs, how far it reaches, how squarely
+## someone must be aiming at the wearer (degrees off), and how often it looks.
+var threat_time := 5.0
+var threat_range := 60.0
+var threat_cone_deg := 10.0
+var threat_interval := 0.2
+## Threat: how far the visor reads a target's health and a container's loot.
+var read_range := 30.0
+var loot_range := 5.0
+
+## Thermal: seconds of charge, seconds to refill from empty, and the share
+## of charge needed before it switches on again after running flat.
+var battery := 12.0
+var battery_refill := 18.0
+var battery_restart := 0.25
+
 var cooldown_left := 0.0
+## Seconds of Threat Sense left.
+var active_left := 0.0
+## Who Threat Sense shows right now.
+var threats: Array[Actor] = []
+## Thermal: seconds of charge left, and whether the visor is in thermal.
+var charge := -1.0
+var thermal_on := false
 ## The zoom level in use: 0 is off, 1 the first of `zoom_levels`.
 var zoom_level := 0
 ## The last scan's snapshots, each {"at": Vector3, "yaw": float, "left": float}.
 var ghosts: Array[Dictionary] = []
 ## Tagged actors and the seconds each tag has left.
 var tags := {}
+
+var _threat_wait := 0.0
+var _sensed: Array[Actor] = []
+var _ran_flat := false
 
 
 ## Runs one tick from the actor's command.
@@ -72,8 +110,12 @@ func tick(cmd: ActorCommand, delta: float) -> void:
 		tags[target] -= delta
 		if tags[target] <= 0.0 or not is_instance_valid(target) or target.is_dead:
 			tags.erase(target)
+	if charge < 0.0:
+		charge = battery
 	if not enabled or actor == null or actor.is_dead:
 		zoom_level = 0
+		thermal_on = false
+		_end_threat_sense()
 		return
 	var usable := actor.stagger_left <= 0.0 and not actor.weapons_locked
 	match mode:
@@ -85,6 +127,24 @@ func tick(cmd: ActorCommand, delta: float) -> void:
 		"scan":
 			if cmd.visor_pressed and usable:
 				scan()
+		"threat":
+			if cmd.visor_pressed and usable:
+				sense_threats()
+			_tick_threat_sense(delta)
+		"thermal":
+			_tick_thermal(cmd.visor_level > 0 and usable, delta)
+
+
+## How many settings `ActorCommand.visor_level` has above off for this helmet.
+func levels() -> int:
+	if not enabled:
+		return 0
+	match mode:
+		"zoom":
+			return zoom_levels.size()
+		"thermal":
+			return 1
+	return 0
 
 
 func is_zoomed() -> bool:
@@ -146,6 +206,113 @@ func add_tag(target: Actor, seconds: float) -> void:
 	tagged.emit(target)
 
 
+## Starts Threat Sense if the visor is ready. Returns true if it started.
+func sense_threats() -> bool:
+	if not enabled or mode != "threat" or cooldown_left > 0.0 or actor == null or actor.is_dead:
+		return false
+	cooldown_left = cooldown
+	active_left = threat_time
+	_threat_wait = 0.0
+	Sfx.play("ability", null if actor.is_player else actor.global_position, -4.0)
+	return true
+
+
+func is_sensing() -> bool:
+	return active_left > 0.0
+
+
+## Shows who Threat Sense found. Online this is the server's word.
+func show_threats(found: Array) -> void:
+	threats.clear()
+	for entry: Variant in found:
+		if typeof(entry) != TYPE_OBJECT or not is_instance_valid(entry) or not entry is Actor:
+			continue
+		var other: Actor = entry
+		if not other.is_dead:
+			threats.append(other)
+	threats_changed.emit(threats)
+
+
+## True when `other` is aiming at this visor's wearer from within reach.
+func is_aimed_at_by(other: Actor) -> bool:
+	var to_me := actor.global_position + Vector3(0.0, Actor.BODY_HEIGHT * 0.5, 0.0) - other.get_eye_position()
+	if to_me.length() > threat_range or to_me.length() < 0.01:
+		return false
+	return other.get_aim_dir().angle_to(to_me) <= deg_to_rad(threat_cone_deg)
+
+
+## The wearer was hit by something at `origin`. A tactical visor shows where.
+func note_hit_from(origin: Vector3) -> void:
+	if enabled and mode == "threat" and actor != null and not actor.is_dead:
+		threatened.emit(origin)
+
+
+## How warm `other` looks through a thermal visor, about 0.4 to 2: a body's
+## own warmth, scaled by what it wears, plus whatever its flight rig has
+## built up. A hot jetpack shines.
+static func heat_of(other: Actor) -> float:
+	var rig := other.flight.heat_fraction() if other.flight.enabled else 0.0
+	return clampf(other.heat_signature * (0.75 + 0.9 * rig), 0.4, 2.0)
+
+
+func charge_fraction() -> float:
+	return clampf(charge / maxf(battery, 0.01), 0.0, 1.0)
+
+
+func _tick_threat_sense(delta: float) -> void:
+	if active_left <= 0.0:
+		return
+	active_left = maxf(0.0, active_left - delta)
+	if active_left <= 0.0:
+		_end_threat_sense()
+		return
+	_threat_wait -= delta
+	if _threat_wait > 0.0 or not Combat.authoritative or not actor.is_inside_tree():
+		return
+	_threat_wait = threat_interval
+	var found: Array[Actor] = []
+	for node in actor.get_tree().get_nodes_in_group("actors"):
+		var other := node as Actor
+		if other == null or other == actor or other.is_dead or not Raid.together(actor, other):
+			continue
+		if allied(actor, other) or not is_aimed_at_by(other):
+			continue
+		found.append(other)
+		# Every reveal is felt: the first time it shows someone, they are told.
+		if other not in _sensed:
+			_sensed.append(other)
+			other.notice.emit("Sensed")
+	if found != threats:
+		show_threats(found)
+
+
+func _end_threat_sense() -> void:
+	active_left = 0.0
+	_sensed.clear()
+	if not threats.is_empty() and (Combat.authoritative or actor == null):
+		show_threats([])
+	elif not threats.is_empty():
+		# A client's list is the server's, but it never outlives the ability.
+		threats.clear()
+		threats_changed.emit(threats)
+
+
+func _tick_thermal(wanted: bool, delta: float) -> void:
+	if thermal_on:
+		charge = maxf(0.0, charge - delta)
+		if charge <= 0.0 or not wanted:
+			thermal_on = false
+	else:
+		charge = minf(battery, charge + battery / maxf(battery_refill, 0.01) * delta)
+		if wanted and charge >= battery * battery_restart and not _ran_flat:
+			thermal_on = true
+	# Run flat and it stays off until the key is let go, so it cannot flicker.
+	if charge <= 0.0:
+		_ran_flat = true
+	elif not wanted:
+		_ran_flat = false
+
+
 ## True when `a` and `b` fight on the same side (see `Raid.side_of`). Outside
 ## a raid nobody is allied.
 static func allied(a: Actor, b: Actor) -> bool:
@@ -164,6 +331,13 @@ func status_text() -> String:
 		"scan":
 			return "%s  %.0f" % [display_name, ceilf(cooldown_left)] if cooldown_left > 0.0 \
 					else "%s  ready" % display_name
+		"threat":
+			if is_sensing():
+				return "%s  sensing %.0f" % [display_name, ceilf(active_left)]
+			return "%s  %.0f" % [display_name, ceilf(cooldown_left)] if cooldown_left > 0.0 \
+					else "%s  ready" % display_name
+		"thermal":
+			return "%s  %s %d%%" % [display_name, "on" if thermal_on else "off", roundi(charge_fraction() * 100.0)]
 	return display_name
 
 

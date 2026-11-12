@@ -6,12 +6,16 @@ extends Control
 ## helmet is worn: you are looking through the visor, so its readouts are on
 ## it. Every helmet has the rim and a health arc; the rest depends on the
 ## visor's `mode` (see `Visor`): a compass, range finder and binocular
-## reticle for "zoom", a recharge ring for "scan". With no helmet, or in
-## third person, nothing is drawn.
+## reticle for "zoom", a recharge ring for "scan"; for "threat" the health of
+## whoever is under the crosshair, what nearby loot holds, the way to the
+## nearest depot and where a hit came from; for "thermal" a heat picture of
+## the whole view and its battery. With no helmet, or in third person,
+## nothing is drawn.
 ##
 ## The world. Things a visor puts out there, seen in either view: the frozen
 ## snapshots of a scan, markers over tagged targets, the ring of a scan pulse
-## (anyone's), and the glint off a lens that is looking your way.
+## (anyone's), the outlines of Threat Sense, the glint off a lens that is
+## looking your way, and the ember of a thermal visor seen up close.
 ##
 ## A view only: it reads `Visor` state and never decides what is revealed.
 
@@ -24,6 +28,10 @@ var glint_facing := 0.94
 ## Seconds between range finder readings.
 var range_interval := 0.1
 var range_max := 600.0
+## How long the mark for a hit stays on a tactical visor.
+var hit_mark_time := 1.6
+## How close a thermal visor's ember can be seen from.
+var ember_range := 18.0
 
 var raid: Raid
 var controller: PlayerController
@@ -31,11 +39,21 @@ var controller: PlayerController
 var range_reading := -1.0
 ## Scans that caught the wearer: {"origin": Vector3, "left": float}.
 var felt: Array[Dictionary] = []
+## Hits a tactical visor is pointing out: {"origin": Vector3, "left": float}.
+var hit_marks: Array[Dictionary] = []
+## Who a tactical visor is reading under the crosshair, or null.
+var read_target: Actor
+## True while the view is the thermal picture.
+var thermal_shown := false
 
 var _world: Node3D
 var _ghosts: Array[MeshInstance3D] = []
 var _tag_marks := {}
 var _glints := {}
+var _embers := {}
+var _threat_marks := {}
+var _heat := {}
+var _thermal: ColorRect
 var _rings: Array[Dictionary] = []
 var _heard := {}
 var _range_wait := 0.0
@@ -53,8 +71,20 @@ func _ready() -> void:
 	_world = Node3D.new()
 	_world.name = "VisorWorld"
 	raid.add_child.call_deferred(_world)
+	_thermal = ColorRect.new()
+	_thermal.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_thermal.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_thermal.show_behind_parent = true
+	_thermal.visible = false
+	var shader := Shader.new()
+	shader.code = THERMAL_SHADER
+	var material := ShaderMaterial.new()
+	material.shader = shader
+	_thermal.material = material
+	add_child(_thermal)
 	if raid.player != null:
 		raid.player.visor.felt_scan.connect(_on_felt_scan)
+		raid.player.visor.threatened.connect(_on_threatened)
 
 
 func _exit_tree() -> void:
@@ -69,6 +99,27 @@ func glass_shown() -> bool:
 	if p == null or p.is_dead or not p.visor.enabled:
 		return false
 	return controller == null or not controller.is_third_person()
+
+
+## The thermal picture: the view's brightness run through a heat ramp, cold
+## blue to hot white. The world is dimmed so it stays cold; warm bodies are
+## drawn bright (see `_sync_heat`) and so come out hot.
+const THERMAL_SHADER := """
+shader_type canvas_item;
+uniform sampler2D screen : hint_screen_texture, filter_linear;
+
+void fragment() {
+	vec3 seen = texture(screen, SCREEN_UV).rgb;
+	float heat = dot(seen, vec3(0.299, 0.587, 0.114));
+	// Bodies are drawn far brighter than anything the world has.
+	float warm = smoothstep(0.82, 1.0, heat);
+	float cold = clamp(heat * 0.6, 0.0, 0.5);
+	vec3 ramp = mix(vec3(0.01, 0.02, 0.09), vec3(0.16, 0.2, 0.42), cold * 2.0);
+	vec3 hot = mix(vec3(1.0, 0.45, 0.05), vec3(1.0, 0.98, 0.85), smoothstep(0.9, 1.0, heat));
+	float line = 0.94 + 0.06 * sin(FRAGCOORD.y * 2.4);
+	COLOR = vec4(mix(ramp, hot, warm) * line, 1.0);
+}
+"""
 
 
 ## Compass bearing in degrees for a yaw: 0 north (-Z), 90 east (+X).
@@ -101,12 +152,18 @@ func _process(delta: float) -> void:
 	for mark in felt:
 		mark.left -= delta
 	felt = felt.filter(func(m: Dictionary) -> bool: return m.left > 0.0)
+	for mark in hit_marks:
+		mark.left -= delta
+	hit_marks = hit_marks.filter(func(m: Dictionary) -> bool: return m.left > 0.0)
+	thermal_shown = p != null and glass_shown() and p.visor.thermal_on
+	_thermal.visible = thermal_shown
 	if p == null or _world == null or not _world.is_inside_tree():
 		queue_redraw()
 		return
 	_read_range(p, delta)
 	_sync_ghosts(p)
 	_sync_actors(p)
+	_sync_heat(p)
 	_tick_rings(delta)
 	queue_redraw()
 
@@ -116,10 +173,15 @@ func _on_felt_scan(origin: Vector3) -> void:
 	Sfx.play("ability", null, -9.0)
 
 
-## The range finder: how far the wearer's eyes see along their aim.
+func _on_threatened(origin: Vector3) -> void:
+	hit_marks.append({"origin": origin, "left": hit_mark_time})
+
+
+## What the wearer's eyes see along their aim: how far it is (the range
+## finder) and, for a tactical visor, who it is.
 func _read_range(p: Actor, delta: float) -> void:
 	_range_wait -= delta
-	if _range_wait > 0.0 or p.visor.mode != "zoom" or not p.is_inside_tree():
+	if _range_wait > 0.0 or p.visor.mode not in ["zoom", "threat"] or not p.is_inside_tree():
 		return
 	_range_wait = range_interval
 	var from := p.get_eye_position()
@@ -128,6 +190,9 @@ func _read_range(p: Actor, delta: float) -> void:
 	query.exclude = [p.get_rid()]
 	var hit := p.get_world_3d().direct_space_state.intersect_ray(query)
 	range_reading = -1.0 if hit.is_empty() else from.distance_to(hit.position)
+	var seen := hit.get("collider") as Actor
+	read_target = seen if seen != null and not seen.is_dead and p.visor.mode == "threat" \
+			and range_reading <= p.visor.read_range else null
 
 
 # --- The world -----------------------------------------------------------------
@@ -177,8 +242,26 @@ func _sync_actors(p: Actor) -> void:
 			var to_me := camera.global_position - eye
 			if to_me.length() > 1.0 and other.get_aim_dir().dot(to_me.normalized()) >= glint_facing:
 				glinting[other] = eye + to_me.normalized() * 0.4
+	var embers := {}
+	if camera != null:
+		for node in get_tree().get_nodes_in_group("actors"):
+			var other := node as Actor
+			if other != null and other != p and not other.is_dead and other.visor.thermal_on \
+					and Raid.together(other, p) \
+					and camera.global_position.distance_to(other.global_position) <= ember_range:
+				embers[other] = true
+	var sensed := {}
+	for other in p.visor.threats:
+		if is_instance_valid(other) and not other.is_dead:
+			sensed[other] = true
 	_sync_marks(_tag_marks, tagged, _new_tag_mark)
 	_sync_marks(_glints, glinting, _new_glint)
+	_sync_marks(_embers, embers, _new_ember)
+	_sync_marks(_threat_marks, sensed, _new_threat_mark)
+	for other: Actor in _embers:
+		_embers[other].global_position = other.get_eye_position() + other.get_aim_dir() * 0.3
+	for other: Actor in _threat_marks:
+		_threat_marks[other].global_position = other.global_position + Vector3(0.0, Actor.BODY_HEIGHT * 0.5, 0.0)
 	for target: Actor in _tag_marks:
 		_tag_marks[target].global_position = target.global_position + Vector3(0.0, 2.5, 0.0)
 	for other: Actor in _glints:
@@ -222,6 +305,61 @@ func _new_glint() -> Node3D:
 	var mat := StandardMaterial3D.new()
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	mat.albedo_color = Color(1.0, 1.0, 0.92)
+	mesh.material = mat
+	var node := MeshInstance3D.new()
+	node.mesh = mesh
+	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	return node
+
+
+## The dull red point of a thermal visor that is switched on.
+func _new_ember() -> Node3D:
+	var node := _new_glint() as MeshInstance3D
+	var mat: StandardMaterial3D = node.mesh.material
+	mat.albedo_color = Color(1.0, 0.2, 0.08)
+	return node
+
+
+## The outline Threat Sense puts on someone aiming at the wearer.
+func _new_threat_mark() -> Node3D:
+	var mesh := CapsuleMesh.new()
+	mesh.radius = Actor.BODY_RADIUS
+	mesh.height = Actor.BODY_HEIGHT
+	mesh.material = _see_through(Color(1.0, 0.2, 0.12, 0.5))
+	var node := MeshInstance3D.new()
+	node.mesh = mesh
+	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	return node
+
+
+## Thermal: every living body in view gets a bright shell the heat picture
+## turns hot. It is hidden by walls like the body it covers, and fog does
+## not touch it. The hotter the body, the brighter the shell.
+func _sync_heat(p: Actor) -> void:
+	var warm := {}
+	if thermal_shown:
+		for node in get_tree().get_nodes_in_group("actors"):
+			var other := node as Actor
+			if other != null and other != p and not other.is_dead and Raid.together(other, p):
+				warm[other] = true
+	_sync_marks(_heat, warm, _new_heat_shell)
+	for other: Actor in _heat:
+		var shell: MeshInstance3D = _heat[other]
+		shell.global_position = other.global_position + Vector3(0.0, Actor.BODY_HEIGHT * 0.5, 0.0)
+		var mat: StandardMaterial3D = shell.mesh.material
+		mat.albedo_color.a = clampf(0.35 + 0.45 * Visor.heat_of(other), 0.0, 1.0)
+
+
+func _new_heat_shell() -> Node3D:
+	var mesh := CapsuleMesh.new()
+	mesh.radius = Actor.BODY_RADIUS * 0.95
+	mesh.height = Actor.BODY_HEIGHT
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.disable_fog = true
+	mat.albedo_color = Color(4.0, 4.0, 4.0, 1.0)
+	mat.render_priority = 10
 	mesh.material = mat
 	var node := MeshInstance3D.new()
 	node.mesh = mesh
@@ -292,8 +430,23 @@ func _draw() -> void:
 			_draw_compass(p, ink)
 			_draw_range(ink, centre)
 		"scan":
-			_draw_scan_ring(v, ink)
-	_draw_felt(p, centre)
+			_draw_ring(ink, 1.0 - clampf(v.cooldown_left / maxf(v.cooldown, 0.01), 0.0, 1.0),
+					"SCAN" if v.cooldown_left <= 0.0 else "%d" % ceili(v.cooldown_left), v.cooldown_left <= 0.0)
+		"threat":
+			_draw_target(ink, centre)
+			_draw_loot(p, ink)
+			_draw_depot(p, ink)
+			if v.is_sensing():
+				_draw_ring(Color(1.0, 0.3, 0.2), v.active_left / maxf(v.threat_time, 0.01),
+						"SENSING %d" % v.threats.size(), true)
+			else:
+				_draw_ring(ink, 1.0 - clampf(v.cooldown_left / maxf(v.cooldown, 0.01), 0.0, 1.0),
+						"SENSE" if v.cooldown_left <= 0.0 else "%d" % ceili(v.cooldown_left), v.cooldown_left <= 0.0)
+		"thermal":
+			_draw_ring(ink, v.charge_fraction(), "THERMAL" if v.thermal_on else "CELL %d%%" %
+					roundi(v.charge_fraction() * 100.0), v.thermal_on)
+	_draw_slivers(p, centre, felt, felt_time, Color(1.0, 0.2, 0.12), 0.4)
+	_draw_slivers(p, centre, hit_marks, hit_mark_time, Color(1.0, 0.6, 0.1), 0.34)
 
 
 ## The edge of the glass: dark corners where the helmet's shell cuts in, and
@@ -395,25 +548,96 @@ func _draw_binoculars(v: Visor, ink: Color, centre: Vector2) -> void:
 			"%dx" % roundi(v.zoom_factor()), HORIZONTAL_ALIGNMENT_LEFT, 80.0, 18, color)
 
 
-## The scanner's ring, low on the right: it fills as the scan recharges.
-func _draw_scan_ring(v: Visor, ink: Color) -> void:
+## A ring low on the right of the glass: how full it is shows a recharge, a
+## battery or time left, with a word under it. `lit` makes it pulse.
+func _draw_ring(ink: Color, share: float, text: String, lit: bool) -> void:
 	var at := Vector2(size.x * 0.8, size.y * 0.78)
 	var radius := size.y * 0.045
-	var ready := v.cooldown_left <= 0.0
-	var share := 1.0 - clampf(v.cooldown_left / maxf(v.cooldown, 0.01), 0.0, 1.0)
 	draw_arc(at, radius, 0.0, TAU, 48, Color(ink.r, ink.g, ink.b, 0.18), 4.0, true)
-	var alpha := 0.7 + 0.3 * sin(_time * 5.0) if ready else 0.75
-	draw_arc(at, radius, -PI * 0.5, -PI * 0.5 + TAU * share, 48, Color(ink.r, ink.g, ink.b, alpha), 4.0, true)
-	if ready:
+	var alpha := 0.7 + 0.3 * sin(_time * 5.0) if lit else 0.75
+	if share > 0.0:
+		draw_arc(at, radius, -PI * 0.5, -PI * 0.5 + TAU * clampf(share, 0.0, 1.0), 48,
+				Color(ink.r, ink.g, ink.b, alpha), 4.0, true)
+	if lit:
 		draw_arc(at, radius * 0.45, 0.0, TAU, 24, Color(ink.r, ink.g, ink.b, 0.5), 1.5, true)
-	var text := "SCAN" if ready else "%d" % ceili(v.cooldown_left)
-	draw_string(ThemeDB.fallback_font, at + Vector2(-50.0, radius + 22.0), text, HORIZONTAL_ALIGNMENT_CENTER,
-			100.0, 14, Color(ink.r, ink.g, ink.b, 0.9))
+	draw_string(ThemeDB.fallback_font, at + Vector2(-70.0, radius + 22.0), text, HORIZONTAL_ALIGNMENT_CENTER,
+			140.0, 14, Color(ink.r, ink.g, ink.b, 0.9))
 
 
-## A red sliver on the side of the glass a scan came from.
-func _draw_felt(p: Actor, centre: Vector2) -> void:
-	for mark in felt:
+## Slivers on the side of the glass something came from: a scan that caught
+## the wearer, or a hit on a tactical visor.
+func _draw_slivers(p: Actor, centre: Vector2, marks: Array[Dictionary], life: float, color: Color,
+		radius_share: float) -> void:
+	for mark in marks:
 		var angle := angle_to(mark.origin, p.global_position, p.cmd.yaw) - PI * 0.5
-		var alpha := clampf(mark.left / felt_time, 0.0, 1.0)
-		draw_arc(centre, size.y * 0.4, angle - 0.2, angle + 0.2, 24, Color(1.0, 0.2, 0.12, alpha), 7.0, true)
+		var alpha := clampf(mark.left / life, 0.0, 1.0)
+		draw_arc(centre, size.y * radius_share, angle - 0.2, angle + 0.2, 24,
+				Color(color.r, color.g, color.b, alpha), 7.0, true)
+
+
+## Tactical: the health and armor of whoever is under the crosshair.
+func _draw_target(ink: Color, centre: Vector2) -> void:
+	if read_target == null or not is_instance_valid(read_target) or read_target.is_dead:
+		return
+	var at := centre + Vector2(34.0, -34.0)
+	var width := 120.0
+	var health := read_target.health
+	draw_string(ThemeDB.fallback_font, at + Vector2(0.0, -6.0), read_target.display_name,
+			HORIZONTAL_ALIGNMENT_LEFT, 220.0, 14, Color(ink.r, ink.g, ink.b, 0.95))
+	draw_rect(Rect2(at, Vector2(width, 5.0)), Color(0.0, 0.0, 0.0, 0.45))
+	draw_rect(Rect2(at, Vector2(width * clampf(health.health / maxf(health.max_health, 1.0), 0.0, 1.0), 5.0)),
+			Color(0.9, 0.25, 0.2, 0.95))
+	if health.max_armor > 0.0:
+		draw_rect(Rect2(at + Vector2(0.0, 8.0), Vector2(width, 4.0)), Color(0.0, 0.0, 0.0, 0.45))
+		draw_rect(Rect2(at + Vector2(0.0, 8.0), Vector2(width * clampf(health.armor / health.max_armor, 0.0, 1.0),
+				4.0)), Color(0.4, 0.65, 1.0, 0.95))
+	draw_line(centre + Vector2(10.0, -10.0), at + Vector2(0.0, 12.0), Color(ink.r, ink.g, ink.b, 0.5), 1.0)
+
+
+## What a tactical visor says about a container: its best item, and how
+## many more there are. Empty for an empty one.
+static func loot_text(items: Array) -> String:
+	if items.is_empty():
+		return ""
+	var best: String = items[0]
+	for id: String in items:
+		if ItemDB.item_value(id) > ItemDB.item_value(best):
+			best = id
+	return ItemDB.item_name(best) if items.size() == 1 else "%s +%d" % [ItemDB.item_name(best), items.size() - 1]
+
+
+## Tactical: a tag over every container close by, naming what is inside.
+func _draw_loot(p: Actor, ink: Color) -> void:
+	var camera := get_viewport().get_camera_3d()
+	if camera == null:
+		return
+	for node in get_tree().get_nodes_in_group("loot_containers"):
+		var container := node as LootContainer
+		if container == null or not Raid.together(container, p):
+			continue
+		var spot := container.global_position + Vector3(0.0, 1.1, 0.0)
+		if spot.distance_to(p.global_position) > p.visor.loot_range or camera.is_position_behind(spot):
+			continue
+		var text := loot_text(container.items)
+		if text == "":
+			continue
+		var at := camera.unproject_position(spot)
+		draw_line(at + Vector2(-50.0, 6.0), at + Vector2(50.0, 6.0), Color(ink.r, ink.g, ink.b, 0.5), 1.0)
+		draw_string(ThemeDB.fallback_font, at + Vector2(-150.0, 0.0), text, HORIZONTAL_ALIGNMENT_CENTER, 300.0, 14,
+				Color(ink.r, ink.g, ink.b, 0.95))
+
+
+## Tactical: how far the nearest depot is, and which way, along the top.
+func _draw_depot(p: Actor, ink: Color) -> void:
+	var nearest: Node3D = null
+	for depot in raid.depots:
+		if is_instance_valid(depot) and (nearest == null or depot.global_position.distance_to(p.global_position)
+				< nearest.global_position.distance_to(p.global_position)):
+			nearest = depot
+	if nearest == null:
+		return
+	var away := nearest.global_position.distance_to(p.global_position)
+	var turn := angle_to(nearest.global_position, p.global_position, p.cmd.yaw)
+	var side := "ahead" if absf(turn) < 0.35 else ("behind" if absf(turn) > 2.6 else ("right" if turn > 0.0 else "left"))
+	draw_string(ThemeDB.fallback_font, Vector2(size.x * 0.5 - 150.0, size.y * 0.075), "DEPOT %d m  %s" %
+			[roundi(away), side], HORIZONTAL_ALIGNMENT_CENTER, 300.0, 15, Color(ink.r, ink.g, ink.b, 0.85))

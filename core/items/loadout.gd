@@ -13,6 +13,12 @@ const SLOTS := {
 	"helmet": "helmet",
 	"ability": "ability",
 	"vehicle": "vehicle",
+	# Attachments for the primary. Each slot's tag is also the attachment's
+	# second tag in ItemDB.
+	"optic": "optic",
+	"muzzle": "muzzle",
+	"grip": "grip",
+	"magazine": "magazine",
 }
 const SLOT_NAMES := {
 	"primary": "Primary weapon",
@@ -23,9 +29,15 @@ const SLOT_NAMES := {
 	"helmet": "Helmet",
 	"ability": "Ability",
 	"vehicle": "Vehicle",
+	"optic": "Optic",
+	"muzzle": "Muzzle",
+	"grip": "Grip",
+	"magazine": "Magazine",
 }
+## Slots that hold an attachment for the primary weapon.
+const ATTACHMENT_SLOTS := ["optic", "muzzle", "grip", "magazine"]
 ## Slots with no free scrap item. Left empty, you deploy without one.
-const OPTIONAL_SLOTS := ["ability", "vehicle"]
+const OPTIONAL_SLOTS := ["ability", "vehicle", "optic", "muzzle", "grip", "magazine"]
 ## How many healing items are taken from the stash on deploy.
 const MAX_HEAL_ITEMS := 2
 
@@ -40,12 +52,29 @@ static func fits(slot: String, id: String) -> bool:
 
 static func equip(actor: Actor, item_ids: Array) -> void:
 	var frames: Array[String] = []
+	# Attachments go on the primary, so they are gathered first: the gun's
+	# model is built with them on when it is equipped.
+	var fittings: Array[String] = []
+	for id: String in item_ids:
+		if ItemDB.has_tag(id, "attachment") and fittings.all(func(other: String) -> bool:
+				return attachment_slot(other) != attachment_slot(id)):
+			fittings.append(id)
+	var primary_done := false
 	for id: String in item_ids:
 		var stats := ItemDB.item_stats(id)
-		if ItemDB.has_tag(id, "firearm"):
+		if ItemDB.has_tag(id, "attachment"):
+			# Carried on the gun: lost with it, home with it.
+			if id in fittings:
+				actor.gear_items.append(id)
+			else:
+				actor.inventory.add_item(id)
+		elif ItemDB.has_tag(id, "firearm"):
 			var gun := Gun.new()
 			gun.is_sidearm = ItemDB.has_tag(id, "sidearm")
 			_setup_weapon(gun, id, stats)
+			if not primary_done and is_primary(id):
+				primary_done = true
+				gun.fit(fittings)
 			actor.equip_weapon(gun)
 			actor.gear_items.append(id)
 		elif ItemDB.has_tag(id, "melee"):
@@ -87,8 +116,25 @@ static func equip(actor: Actor, item_ids: Array) -> void:
 		actor.sprint_speed *= speed
 		actor.flight.heat_per_sec *= stats.get("heat_mult", 1.0)
 		actor.flight.burst_heat *= stats.get("heat_mult", 1.0)
+		actor.heat_signature *= stats.get("heat_signature", 1.0)
 		actor.frame_name = ItemDB.item_name(id)
 		actor.gear_items.append(id)
+
+
+## True for a primary that takes attachments: a firearm in the primary slot
+## (not a sidearm), and not a power weapon, which comes as it is.
+static func is_primary(id: String) -> bool:
+	return fits("primary", id) and not ItemDB.has_tag(id, "power")
+
+
+## The attachment slot an item fits, or "" if it is not an attachment.
+static func attachment_slot(id: String) -> String:
+	if not ItemDB.has_tag(id, "attachment"):
+		return ""
+	for slot: String in ATTACHMENT_SLOTS:
+		if ItemDB.has_tag(id, SLOTS[slot]):
+			return slot
+	return ""
 
 
 ## Index in `actor.weapons` of the power weapon (an item tagged "power"),

@@ -49,7 +49,7 @@ static func run(t: Node) -> void:
 	var rack := raid.spawn_container(["power_rail_lance"], false, LootContainer.RACK_LABEL, floor_at + Vector3(0, 0, -2))
 	await t.frames(2)
 	raid.player = p
-	t.check(rack.is_rack() and rack.get_prompt() == "[E] Take Rail Lance",
+	t.check(rack.is_rack() and rack.get_prompt() == "[F] Take Rail Lance",
 			"a rack offers its power weapon: %s" % rack.get_prompt())
 	var weapon_count := p.weapons.size()
 	var pack_before := p.inventory.items.duplicate()
@@ -167,7 +167,7 @@ static func run(t: Node) -> void:
 
 	print("Power weapons: Arc Mortar")
 	rack.set_items(["power_arc_mortar"])
-	t.check(rack.get_prompt() == "[E] Take Arc Mortar, leave your Helion Plasma Launcher",
+	t.check(rack.get_prompt() == "[F] Take Arc Mortar, leave your Helion Plasma Launcher",
 			"holding one, the rack offers a trade: %s" % rack.get_prompt())
 	rack.interact(p)
 	await t.frames(2)

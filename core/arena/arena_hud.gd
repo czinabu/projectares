@@ -3,7 +3,7 @@ extends CanvasLayer
 ## (the venue's "arena_board" faces) shows who is fighting with their health
 ## and the wager pools. A bookmaker's booth in the stands ("arena_booth") is
 ## where you bet, challenge, practice, enter tournaments and leave: stand at
-## one and press E, and its screen comes up with the view moved in to it.
+## one and press F, and its screen comes up with the view moved in to it.
 ## Only the booth's prompt is drawn over the screen.
 ##
 ## It only reads the board (`Arena.view_board`) and sends requests through
@@ -225,14 +225,14 @@ func _process(delta: float) -> void:
 		_rebuild(b)
 
 
-## The prompt for a booth you are standing at, and E to use it.
+## The prompt for a booth you are standing at, and F to use it.
 func _offer_booth() -> void:
 	var me := arena.player
 	if booth_open or me == null or not is_instance_valid(me):
 		_prompt.text = ""
 		return
 	var booth := booth_at(arena, me.global_position)
-	_prompt.text = "[E]  %s" % booth.get_meta("label", "Bookmaker") if booth else ""
+	_prompt.text = "[F]  %s" % booth.get_meta("label", "Bookmaker") if booth else ""
 	if booth != null and Input.is_action_just_pressed("interact"):
 		open_booth(booth)
 

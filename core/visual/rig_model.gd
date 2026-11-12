@@ -71,7 +71,9 @@ static func build_boot(id: String, side: float) -> Node3D:
 
 ## Poses a wing pack: 0 retracted into the pack, 1 spread to glide. On the
 ## way out each wing slides out of its slot, then its tip lifts.
-static func set_wing_spread(back: Node3D, amount: float) -> void:
+## `roll` (-1..1, positive banking right) twists the two wings opposite ways
+## like ailerons, and `trim` (-1 flare .. 1 dive) pitches both together.
+static func set_wing_spread(back: Node3D, amount: float, roll := 0.0, trim := 0.0) -> void:
 	if back == null:
 		return
 	var t := clampf(amount, 0.0, 1.0)
@@ -83,7 +85,12 @@ static func set_wing_spread(back: Node3D, amount: float) -> void:
 		var spread: Quaternion = hinge.get_meta("spread")
 		var span: float = lerpf(hinge.get_meta("stowed_span"), 1.0, smoothstep(0.0, 0.6, t))
 		var turn := smoothstep(0.4, 1.0, t)
-		hinge.basis = Basis(stowed.slerp(spread, turn)) * Basis.from_scale(Vector3(span, 1.0, 1.0))
+		var side := -1.0 if wing_name == "WingL" else 1.0
+		var twist := (side * roll * 0.35 - trim * 0.22) * turn
+		# Swept further back in a dive, spread wide in a flare.
+		var sweep := Basis(Vector3.UP, -side * maxf(trim, -0.4) * 0.3 * turn)
+		hinge.basis = Basis(stowed.slerp(spread, turn)) * sweep * Basis(Vector3.RIGHT, twist) \
+				* Basis.from_scale(Vector3(span, 1.0, 1.0))
 		hinge.visible = t > 0.02
 	back.set_meta("spread", t)
 

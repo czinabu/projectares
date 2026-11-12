@@ -21,6 +21,12 @@ func _ready() -> void:
 		get_tree().quit()
 		return
 
+	# `-- <output_dir> --flight-only` shoots the attitudes in the air.
+	if "--flight-only" in args:
+		await _flight_shots(out_dir)
+		get_tree().quit()
+		return
+
 	# `-- <output_dir> --gait-only` shoots the legs: run, sprint, strafe, slide.
 	if "--gait-only" in args:
 		await _gait_shots(out_dir)
@@ -30,6 +36,13 @@ func _ready() -> void:
 	# `-- <output_dir> --idle-only` shoots the player standing still.
 	if "--idle-only" in args:
 		await _idle_shots(out_dir)
+		get_tree().quit()
+		return
+
+	# `-- <output_dir> --attachments-only` shoots the gunsmith bench with each
+	# primary kitted out, and the view down a scope and a reflex sight.
+	if "--attachments-only" in args:
+		await _attachment_shots(out_dir)
 		get_tree().quit()
 		return
 
@@ -211,6 +224,65 @@ func _ready() -> void:
 	await _settle(2)
 	await _world_shots(out_dir)
 	get_tree().quit()
+
+
+## The body in the air: a jetpack hovering, boosting level and in a climb and
+## rolled over, and wings level, banked into a turn each way and in a dive.
+## Each from behind and from the side.
+func _flight_shots(out_dir: String) -> void:
+	# [name, rig, hovering, boosting, gliding, speed, climb, turn rate, look pitch, roll key]
+	var poses := [
+		["jet_hover_strafe", "jetpack_mk2", true, false, false, 10.0, 0.0, 0.0, 0.0, 0, Vector3(1, 0, 0)],
+		["jet_boost", "jetpack_mk2", true, true, false, 22.0, 0.0, 0.0, 0.0, 0, Vector3.FORWARD],
+		["jet_boost_climb", "jetpack_mk2", true, true, false, 16.0, 14.0, 0.0, 0.7, 0, Vector3.FORWARD],
+		["jet_boost_roll", "jetpack_mk2", true, true, false, 22.0, 0.0, 0.0, 0.0, 1, Vector3.FORWARD],
+		["wings_level", "wings_glide", false, false, true, 16.0, -1.8, 0.0, 0.0, 0, Vector3.FORWARD],
+		["wings_turn_left", "wings_glide", false, false, true, 16.0, -1.8, 1.4, 0.0, 0, Vector3.FORWARD],
+		["wings_turn_right", "wings_glide", false, false, true, 16.0, -1.8, -1.4, 0.0, 0, Vector3.FORWARD],
+		["wings_dive", "wings_glide", false, false, true, 24.0, -10.0, 0.0, -0.9, 0, Vector3.FORWARD],
+		["wings_climb", "wings_glide", false, false, true, 18.0, 9.0, 0.0, 0.9, 0, Vector3.FORWARD],
+	]
+	for pose: Array in poses:
+		var raid := Raid.new()
+		add_child(raid)
+		raid.start(Worlds.get_world("ashfront"), 42, ["rifle_carbine", "blade_scrap", pose[1], "frame_trooper"])
+		for bot in raid.bots:
+			bot.get_node("Brain").set_physics_process(false)
+			bot.global_position += Vector3(0, -200, 0)
+		var camera := Camera3D.new()
+		camera.fov = 50.0
+		raid.add_child(camera)
+		camera.make_current()
+		var p := raid.player
+		await _settle(30)
+		p.set_physics_process(false)
+		p.global_position += Vector3(0, 6, 0)
+		p.flight.is_hovering = pose[2]
+		p.flight.is_boosting = pose[3]
+		p.flight.is_thrusting = pose[2]
+		p.flight.is_gliding = pose[4]
+		p.cmd.pitch = pose[8]
+		var at := p.global_position
+		var back := p.global_transform.basis.z
+		var side := p.global_transform.basis.x
+		var heading: Vector3 = p.global_transform.basis * (pose[10] as Vector3)
+		var views := {
+			"back": at + back * 3.4 + Vector3(0, 1.6, 0),
+			"side": at + side * 3.4 + Vector3(0, 1.2, 0),
+		}
+		for view: String in views:
+			camera.look_at_from_position(views[view], at + Vector3(0, 1.0, 0))
+			# Fly the turn in place for a second so the bank settles.
+			for i in 70:
+				heading = heading.rotated(Vector3.UP, float(pose[7]) / 60.0)
+				if absf(float(pose[7])) > 0.0 and i == 0:
+					heading = p.global_transform.basis * (pose[10] as Vector3)
+				p.velocity = heading * float(pose[5]) + Vector3(0, float(pose[6]), 0)
+				p.cmd.roll = int(pose[9]) if i > 55 else 0
+				await get_tree().process_frame
+			await _shot(out_dir.path_join("flight_%s_%s.png" % [pose[0], view]))
+		raid.queue_free()
+		await _settle(3)
 
 
 ## Each flight rig on a player, at rest and firing (thrusting, an air jump's
@@ -499,16 +571,81 @@ func _plaza_shots(out_dir: String, raid: Raid, camera: Camera3D, lineup: Array[A
 	live.unfocus()
 
 
+func _attachment_shots(out_dir: String) -> void:
+	await _aim_shots(out_dir)
+	if "--aim-only" in OS.get_cmdline_user_args():
+		return
+	var kits := {
+		"rifle_scrap": ["optic_reflex", "muzzle_compensator", "grip_vertical", "mag_extended"],
+		"rifle_carbine": ["optic_scope", "muzzle_suppressor", "grip_angled", "mag_drum"],
+		"smg_stinger": ["optic_reflex", "muzzle_booster", "grip_vertical", "mag_quick"],
+		"dmr_longshot": ["optic_longscope", "muzzle_suppressor", "grip_angled", "mag_extended"],
+		"shotgun_breacher": ["optic_reflex", "muzzle_compensator", "grip_vertical", "mag_drum"],
+	}
+	var every: Array = []
+	for id: String in ItemDB.all_ids():
+		if ItemDB.has_tag(id, "attachment"):
+			every.append(id)
+	for primary: String in kits:
+		var loadout := {"primary": primary}
+		for id: String in kits[primary]:
+			loadout[Loadout.attachment_slot(id)] = id
+		var base := HomeBase.new()
+		var stash: Array = every.duplicate()
+		stash.append(primary)
+		base.show_gear(stash, loadout)
+		add_child(base)
+		var camera := Camera3D.new()
+		camera.fov = 50.0
+		base.add_child(camera)
+		camera.make_current()
+		base.player.global_position = Vector3(0, 0.1, 6)
+		await _settle(20)
+		var bench := HomeBase.BENCH_AT
+		if primary == "rifle_scrap":
+			camera.look_at_from_position(bench + Vector3(3.2, 1.9, 0.6), bench + Vector3(0, 1.4, 0))
+			await _settle(4)
+			await _shot(out_dir.path_join("bench_overview.png"))
+		camera.look_at_from_position(bench + Vector3(1.0, 1.45, 0.25), bench + Vector3(0, 1.2, 0.0))
+		await _settle(4)
+		await _shot(out_dir.path_join("bench_%s.png" % primary))
+		base.queue_free()
+		await _settle(2)
+## Aiming down each optic in first person, in a raid, and with iron sights.
+func _aim_shots(out_dir: String) -> void:
+	for kit: Array in [["rifle_carbine", "optic_scope", "muzzle_suppressor"], ["smg_stinger", "optic_reflex"],
+			["dmr_longshot", "optic_longscope"], ["rifle_carbine"]]:
+		var raid := Raid.new()
+		add_child(raid)
+		raid.start(Worlds.get_world("ashfront"), 42, kit)
+		for bot in raid.bots:
+			bot.queue_free()
+		var controller := PlayerController.new()
+		controller.setup(raid.player)
+		raid.add_child(controller)
+		controller.set_physics_process(false)
+		raid.player.cmd.yaw = controller.yaw
+		await _settle(20)
+		var name: String = kit[1] if kit.size() > 1 else "iron_sights"
+		for aiming: bool in [false, true]:
+			raid.player.cmd.secondary = aiming
+			await _settle(40)
+			await _shot(out_dir.path_join("aim_%s_%s.png" % [name, "on" if aiming else "off"]))
+		raid.queue_free()
+		await _settle(2)
+
+
 func _settle(count: int) -> void:
 	for i in count:
 		await get_tree().process_frame
 
 
 ## Each helmet's visor through its wearer's eyes: the Scav Visor, the
-## Spotter resting and zoomed, the Seeker ready and just after a scan.
+## Spotter resting and zoomed, the Seeker ready and just after a scan, the
+## Warden with Threat Sense running, and the Ember in thermal.
 func _visor_shots(out_dir: String) -> void:
 	var scrap: Array[String] = ["rifle_scrap", "blade_scrap", "jetpack_mk1", "plate_light"]
-	for helmet: String in ["visor_scav", "helm_spotter", "helm_seeker"]:
+	for helmet: String in ["visor_scav", "helm_spotter", "helm_seeker", "helm_warden", "helm_ember"]:
 		var raid := Raid.new()
 		add_child(raid)
 		var kit := scrap.duplicate()
@@ -542,6 +679,28 @@ func _visor_shots(out_dir: String) -> void:
 			p.visor.add_tag(raid.bots[1], 5.0)
 			await _settle(6)
 			await _shot(out_dir.path_join("visor_helm_spotter_tag.png"))
+		elif helmet == "helm_warden":
+			var near: Actor = raid.bots[0]
+			var to_near: Vector3 = near.global_position + Vector3(0, 1.1, 0) - p.get_eye_position()
+			controller.yaw = atan2(-to_near.x, -to_near.z)
+			controller.pitch = asin(to_near.normalized().y)
+			var cache := LootContainer.new()
+			cache.setup(["reactor_core", "scrap_metal", "medkit"], false, "Cache")
+			raid.add_child(cache)
+			cache.global_position = p.global_position + Basis(Vector3.UP, controller.yaw) * Vector3(-1.6, 0, -3.2)
+			for aimer: Actor in [raid.bots[1], raid.bots[2]]:
+				aimer.cmd.aim_dir = (p.global_position + Vector3(0, 0.9, 0) - aimer.get_eye_position()).normalized()
+			p.visor.sense_threats()
+			await _settle(12)
+			p.visor.threatened.emit(p.global_position + look * Vector3(-20, 0, 6))
+			await _settle(2)
+			await _shot(out_dir.path_join("visor_helm_warden_sense.png"))
+		elif helmet == "helm_ember":
+			raid.bots[1].flight.enabled = true
+			raid.bots[1].flight.heat = raid.bots[1].flight.max_heat
+			controller._visor_level = 1
+			await _settle(20)
+			await _shot(out_dir.path_join("visor_helm_ember_thermal.png"))
 		elif helmet == "helm_seeker":
 			p.visor.scan()
 			await _settle(12)
