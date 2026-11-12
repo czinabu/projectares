@@ -21,7 +21,7 @@ skies, animated models and effects (see "How it looks" below).
 | Move / sprint | WASD / Shift |
 | Jump. In the air: hold to fly (jetpack), press to boost (thruster boots, glide wings), hold while falling to glide (glide wings) | Space |
 | Use your ability | G |
-| Use your helmet's visor (zoom or scan) | Z |
+| Use your helmet's visor (zoom or scan) | T |
 | Dash | Q |
 | Slide (while sprinting) | C |
 | Fire, or blade combo | Left mouse |

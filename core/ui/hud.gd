@@ -169,7 +169,7 @@ static func wrist_text(p_raid: Raid, p: Actor, death: Dictionary, wait: float, l
 	if p.ability.enabled:
 		lines.append("[G] %s" % p.ability.status_text())
 	if p.visor.enabled and p.visor.mode != "":
-		lines.append("[Z] %s" % p.visor.status_text())
+		lines.append("[T] %s" % p.visor.status_text())
 	if p.vehicle != null:
 		lines.append("%s   %d km/h" % [p.vehicle.get("display_name"), roundi(absf(float(p.vehicle.get("speed"))) * 3.6)])
 	lines.append("Pack %d/%d   worth %d   heals %d" % [p.inventory.items.size(), p.inventory.capacity,
