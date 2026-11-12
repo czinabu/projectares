@@ -312,6 +312,62 @@ static func _check_legs(t: Node, tag: String, player: Actor, skin: Node, skeleto
 			skeleton.set_bone_pose_rotation(bone, saved_slide[bone][1])
 	player.slide_left = 0.0
 	player.crouch = 0.0
+
+	# Standing still: a relaxed stand, not a gun pointed at nothing.
+	player.velocity = Vector3.ZERO
+	loco.velocity = Vector3.ZERO
+	player.active_weapon_index = -1
+	skin._aim_left = 0.0
+	skin._process(1.0)
+	t.check(skin._current == "idle", tag + "an actor standing empty-handed plays the plain idle")
+	if skin._anims.has("aim_gun"):
+		t.check(skin._anims["idle"] != skin._anims["aim_gun"], tag + "the empty-handed idle is not the gun-pointing pose")
+	var gun_index := -1
+	for i in player.weapons.size():
+		if player.weapons[i] is Gun:
+			gun_index = i
+	if gun_index >= 0 and skin._anims.has("idle_gun"):
+		player.active_weapon_index = gun_index
+		skin._process(1.0)
+		skin._process(1.0)
+		t.check(skin._current == "idle_gun", tag + "an actor standing with a gun holds it low")
+		t.check(loco.stand_legs and loco.stand_legs_weight > 0.99, tag + "with the gun held low the legs take the relaxed stand")
+		if skeleton and loco._lead.size() == 3 and not loco._stand_tracks.is_empty():
+			var to_actor_stand := player.global_transform.affine_inverse() * skeleton.global_transform
+			var feet_apart := func() -> float:
+				var a := to_actor_stand * skeleton.get_bone_global_pose(loco._lead[2]).origin
+				var b := to_actor_stand * skeleton.get_bone_global_pose(loco._trail[2]).origin
+				return absf(a.z - b.z)
+			var saved_stand := {}
+			for bone in skeleton.get_bone_count():
+				saved_stand[bone] = [skeleton.get_bone_pose_position(bone), skeleton.get_bone_pose_rotation(bone)]
+			var anim: Animation = skin._player.get_animation(skin._anims["aim_gun"])
+			for track in anim.get_track_count():
+				var bone := skeleton.find_bone(String(anim.track_get_path(track)).get_slice(":", 1))
+				if bone < 0:
+					continue
+				if anim.track_get_type(track) == Animation.TYPE_ROTATION_3D:
+					skeleton.set_bone_pose_rotation(bone, anim.rotation_track_interpolate(track, 0.0))
+				elif anim.track_get_type(track) == Animation.TYPE_POSITION_3D:
+					skeleton.set_bone_pose_position(bone, anim.position_track_interpolate(track, 0.0))
+			var staggered: float = feet_apart.call()
+			loco._stand_legs()
+			var planted: float = feet_apart.call()
+			t.check(planted < staggered - 0.05 and planted < 0.15,
+					tag + "the relaxed stand puts the feet side by side (%.2f m apart front to back, was %.2f)" % [planted, staggered])
+			for bone: int in saved_stand:
+				skeleton.set_bone_pose_position(bone, saved_stand[bone][0])
+				skeleton.set_bone_pose_rotation(bone, saved_stand[bone][1])
+		if skin._anims.has("aim_gun"):
+			player.cmd.primary = true
+			skin._process(0.1)
+			t.check(skin._current == "aim_gun" and not loco.stand_legs, tag + "firing from a stand raises the gun")
+			player.cmd.primary = false
+			skin._process(0.1)
+			t.check(skin._current == "aim_gun", tag + "the gun stays up for a moment after the last shot")
+			skin._process(skin.aim_hold)
+			skin._process(0.1)
+			t.check(skin._current == "idle_gun", tag + "the gun lowers again once the shooting stops")
 	player.velocity = was_velocity
 	player.active_weapon_index = was_weapon
 

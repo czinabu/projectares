@@ -108,7 +108,11 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   faster: that is the sprint. A slide (`Actor.slide_left`, `Actor.crouch`)
   is simulated from `ActorCommand.slide` like a dash, so it predicts and
   replicates; the skin bends the model into a slide pose from `crouch`.
-  Check leg changes by eye: `visual_check.tscn -- <dir> --gait-only`.
+  Standing still is a relaxed stand (`idle`); a gun is held low (`idle_gun`)
+  over the relaxed stand's legs and raised (`aim_gun`) only while shooting
+  or aiming and briefly after.
+  Check leg changes by eye: `visual_check.tscn -- <dir> --gait-only`, and
+  the stand with `--idle-only`.
 - People are built from parts (`core/visual/human.gd`): an "appearance" names
   a build, four parts and colours. It is cosmetic only and never trusted:
   always pass one through `Look.clean_appearance` / `Look.set_appearance`,

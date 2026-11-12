@@ -10,6 +10,16 @@ const RigModel := preload("res://core/visual/rig_model.gd")
 const Locomotion := preload("res://core/visual/locomotion.gd")
 ## Clips that loop and are cut between in step, keeping the stride's phase.
 const GAITS: Array[String] = ["walk", "run", "run_back", "run_left", "run_right", "move_gun"]
+## Standing clips. Cuts into and out of them blend for longer, so stopping
+## settles into the stand instead of snapping.
+const STANDS: Array[String] = ["idle", "idle_gun", "aim_gun", "idle_melee"]
+
+## How long a standing gun stays raised after the last shot, in seconds.
+var aim_hold := 1.5
+## Blend times, in seconds: between two gaits, into or out of a stand, else.
+var gait_blend := 0.2
+var stand_blend := 0.35
+var cut_blend := 0.15
 
 ## How far behind the back bone a back-worn rig sits, and how far the boots
 ## sit above and behind the ankle bone, in meters.
@@ -63,6 +73,7 @@ var _glide_arms: Array = []
 var _glide_legs: Array = []
 var _glide_neck := -1
 var _attack_left := 0.0
+var _aim_left := 0.0
 ## Makes the model hold its weapon, or null for skins without the bones.
 var arm: Node
 ## Matches the legs to the actor's speed and direction.
@@ -143,10 +154,14 @@ func _play(key: String, speed := 1.0) -> void:
 	var phase := -1.0
 	if _current in GAITS and key in GAITS and _player.current_animation_length > 0.0:
 		phase = _player.current_animation_position / _player.current_animation_length
+	var previous := _current
 	_current = key
 	if locomotion:
 		locomotion.current_anim = _anims[key]
-	_player.play(_anims[key], 0.2 if phase >= 0.0 else 0.15)
+	var blend := gait_blend if phase >= 0.0 else cut_blend
+	if key in STANDS or previous in STANDS:
+		blend = stand_blend
+	_player.play(_anims[key], blend)
 	if phase >= 0.0:
 		_player.seek(phase * _player.current_animation_length)
 
@@ -164,6 +179,7 @@ func _process(delta: float) -> void:
 			_set_flash(0.0)
 	_update_rig(delta)
 	_update_glide(delta)
+	_aim_left = maxf(_aim_left - delta, 0.0)
 	var weapon := actor.get_active_weapon()
 	var melee := weapon as MeleeWeapon
 	if locomotion == null:
@@ -172,6 +188,7 @@ func _process(delta: float) -> void:
 	locomotion.twist_target = 0.0
 	locomotion.stride_target = 1.0
 	locomotion.overlay = false
+	locomotion.stand_legs = false
 	if actor.is_dead:
 		_play("death")
 		return
@@ -204,7 +221,21 @@ func _process(delta: float) -> void:
 	elif melee and _anims.has("idle_melee"):
 		_play("idle_melee")
 	else:
-		_play("idle")
+		_play(stand_key(weapon))
+		locomotion.stand_legs = _current == "idle_gun"
+
+
+## The clip for standing still out of a fight: hands empty, a gun held low,
+## or a gun raised while the actor shoots or aims and for `aim_hold` after.
+## Skins without the gun clips fall back to plain `idle`.
+func stand_key(weapon: Weapon) -> String:
+	if weapon == null or weapon is MeleeWeapon or weapon.visual == null:
+		return "idle"
+	if actor.cmd.primary or actor.cmd.secondary:
+		_aim_left = aim_hold
+	if _aim_left > 0.0 and _anims.has("aim_gun"):
+		return "aim_gun"
+	return "idle_gun" if _anims.has("idle_gun") else "idle"
 
 
 ## True when a weapon was swapped in without the count changing.
@@ -242,6 +273,7 @@ func _dress_weapons() -> void:
 
 
 func _on_fired(from: Vector3, to: Vector3, gun: Gun) -> void:
+	_aim_left = aim_hold
 	var parent := actor.get_parent()
 	if parent == null:
 		return
