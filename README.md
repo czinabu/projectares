@@ -243,7 +243,9 @@ you have.
   pays 300 renown. Everyone is told where on the war feed. Caches that refill
   during a war also hold rarer loot.
 - Hitscan rifle with reloads and aim down sights.
-- Rifle recoil that kicks your view and widens the spread under sustained fire.
+- Recoil that kicks your view and widens the spread under sustained fire. The
+  kick settles back when you pause, so paced shots return to your aim point;
+  what you pull down against stays where you put it.
 - Blade with a three-hit combo, a heavy lunge, and a dive slam from the air.
 - Directional melee. Flick the mouse left, right or up to pick a side. Attacks
   come from that side and a guard only covers the side it was raised on. Read

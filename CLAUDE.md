@@ -297,6 +297,19 @@ without Caleb, and update the gap list when a PR closes a row.
   knees by how hard it was (`Locomotion.squat`). All of it is view only. A boost keeps the arms down at the sides, never
   reaching ahead (Caleb's call). Check it by eye:
   `visual_check.tscn -- <dir> --flight-only` (or `--takeoff-only`).
+- Feel is measured, not guessed: `godot --headless --fixed-fps 60 --path .
+  res://tests/feel_bench.tscn` flies every rig through set moves and prints
+  how long each takes to answer and the hardest jolt (velocity change in one
+  tick, as m/s²). Movement eases: nothing but a jump, burst, pulse or dash
+  may change an actor's velocity by more than its own accelerations in one
+  tick (wings catch a fall at `FlightRig.glide_catch_accel` and roll into a
+  bank at `glide_bank_rate`; never clamp a velocity straight to its target).
+  What only the player sees is the controller's job and view only: recoil
+  reaching the view over a few frames and settling back
+  (`PlayerController._update_recoil`), the view widening with speed
+  (`speed_fov`) and dipping on a landing (`land_dip`). A semi-auto keeps a
+  pull made just before it is ready (`Gun.press_buffer`); that is simulated,
+  so it is in `Gun`, from the command.
 - Helmets are items tagged `helmet` in the `helmet` loadout slot, and data
   like abilities: `Visor` (`core/abilities/visor.gd`, `Actor.visor`) is one
   class whose `mode` stat picks what the visor does ("" plain, "zoom"
@@ -372,11 +385,18 @@ without Caleb, and update the gap list when a PR closes a row.
   or decides an outcome. Anything that changes a result must run on the server
   and reach clients through `NetSession`.
 - Online movement: a client numbers every input and each packet repeats
-  every input the server has not answered for yet (up to
-  `NetSession.MAX_INPUTS_PER_PACKET`), so a press survives a run of lost
-  packets; the server plays them in order, one per tick, and each state
-  entry carries the input number it had reached, which is also the answer
-  that stops the resending. The client corrects its own
+  every input the server has not received yet (up to
+  `NetSession.MAX_INPUTS_PER_PACKET`, packed small by `pack_inputs` so a
+  full packet fits in one datagram), so a press survives a run of lost
+  packets. The server plays them in order, one per tick, as soon as it has
+  them (`NetSession.InputBuffer`): nothing is held back to smooth a bad
+  connection, because a held input is input delay. A tick with nothing to
+  play is a guess (the held keys carry on) that counts as the next input,
+  and the real one is skipped when it arrives late, keeping its presses;
+  inputs that stay spare are trimmed. Each state entry carries the input
+  number the actor had been simulated up to (guesses included), and a
+  player's own entry also carries the newest input received, which is the
+  answer that stops the resending. The client corrects its own
   actor by comparing the server's position with its remembered prediction for
   that input (`NetSession._history`), never with its current position, and
   blends every correction over several ticks. Keep `Actor` movement
@@ -514,6 +534,7 @@ godot --headless --path . res://tests/test_runner.tscn -- --only online   # one 
 godot --headless --fixed-fps 60 --path . res://tests/test_runner.tscn -- --tier offline   # fast, ~1 min
 godot --headless --path . res://tests/test_runner.tscn -- --tier net --shard 1/3   # a third of the online groups
 godot --headless --path . res://tests/battle_bench.tscn -- --bots 150 --players 32   # server cost of a big battle
+godot --headless --fixed-fps 60 --path . res://tests/feel_bench.tscn   # how each rig answers, in numbers
 ```
 
 CI (`.github/workflows/tests.yml`) runs the suite in two tiers. The offline

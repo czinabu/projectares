@@ -22,6 +22,7 @@ const VisorTests := preload("res://tests/visor_tests.gd")
 const SidearmTests := preload("res://tests/sidearm_tests.gd")
 const AttachmentTests := preload("res://tests/attachment_tests.gd")
 const PowerWeaponTests := preload("res://tests/power_weapon_tests.gd")
+const FeelTests := preload("res://tests/feel_tests.gd")
 
 var _passed := 0
 var _failed := 0
@@ -268,6 +269,11 @@ func _run() -> void:
 	await _test_sidearms()
 	await _test_attachments()
 	await _test_power_weapons()
+	await _test_feel()
+
+
+func _test_feel() -> void:
+	await FeelTests.run(self)
 
 
 func _test_look() -> void:
@@ -1920,9 +1926,13 @@ func _check_glide_flying(p: Actor) -> void:
 	check(swung > 0.1 and swung < 0.5, "a strafe key banks the wings round in an arc (%.2f rad)" % swung)
 	check(before.signed_angle_to(during, Vector3.UP) < 0.0, "and the right key turns right")
 	p.cmd.move = Vector2.ZERO
+	# The bank rolls level over a moment, then the glide flies straight.
+	await frames(10)
+	var levelled := Vector3(p.velocity.x, 0, p.velocity.z).normalized()
+	check(during.angle_to(levelled) < 0.25, "letting go rolls the wings level (%.2f rad more)" % during.angle_to(levelled))
 	await frames(30)
 	var after := Vector3(p.velocity.x, 0, p.velocity.z).normalized()
-	check(during.dot(after) > 0.999, "letting go flies straight on")
+	check(levelled.dot(after) > 0.999, "and then flies straight on")
 	p.cmd.move = Vector2(0, 1)
 	await frames(150)
 	var dived := Vector2(p.velocity.x, p.velocity.z).length()
@@ -3571,6 +3581,26 @@ func _test_online() -> void:
 	check(Combat.authoritative, "leaving an online raid hands damage back to this game")
 
 
+## How many ticks a jump pressed by `me` takes to show on the copy of them
+## another client sees (`seen`), averaged over `presses` jumps.
+func _press_delay(me: Actor, seen: Actor, presses: int) -> float:
+	var total := 0
+	for press in presses:
+		var ground := seen.global_position.y
+		me.cmd.jump_pressed = true
+		await frames(1)
+		me.cmd.jump_pressed = false
+		var took := 0
+		while took < 60 and seen.global_position.y < ground + 0.05:
+			await frames(1)
+			took += 1
+		total += took
+		await _wait_until(func() -> bool: return me.is_on_floor() and seen.is_on_floor(), 120)
+		# Not on a beat: presses land anywhere between two state updates.
+		await frames(13 + press)
+	return float(total) / presses
+
+
 func _test_online_movement() -> void:
 	print("Online: smooth movement on a bad connection")
 	var port := 24816
@@ -3618,8 +3648,12 @@ func _test_online_movement() -> void:
 	var apart := seen.global_position.distance_to(me.global_position) if is_instance_valid(seen) else 99.0
 	check(apart < 0.5, "after stopping, the other player sees them where they are (%.2f m apart)" % apart)
 
-	# One in five input packets lost: a single-tick press must still arrive.
+	# How long a press takes to show on the other player's screen, on a clean
+	# connection, to compare with a lossy one below.
 	dana.simulated_lag = 0.04
+	await frames(60)
+	var clean_delay := await _press_delay(me, seen, 6)
+	# One in five input packets lost: a single-tick press must still arrive.
 	dana.simulated_loss = 0.2
 	await frames(60)
 	dana.max_correction = 0.0
@@ -3639,6 +3673,12 @@ func _test_online_movement() -> void:
 			seen_jumps += 1
 	check(top > 0.6, "the player jumps on their own screen at once (%.2f m)" % top)
 	check(seen_jumps == 5, "every jump reaches the server despite lost packets (%d of 5 seen by the other player)" % seen_jumps)
+	# Steady loss must not leave the server playing inputs late: by now the
+	# old input queue sat at its limit, five ticks (about 80 ms) behind.
+	var lossy_delay := await _press_delay(me, seen, 6)
+	check(lossy_delay < clean_delay + 2.5 and lossy_delay < 8.5,
+			"steady packet loss adds no lasting input delay (a press shows after %.1f ticks, %.1f on a clean connection)"
+			% [lossy_delay, clean_delay])
 	dana.simulated_loss = 0.0
 
 	# A bad moment: every packet for a sixth of a second is lost, with a press

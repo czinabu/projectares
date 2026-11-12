@@ -102,6 +102,12 @@ var glide_stall := 0.6
 var glide_climb_cost := 14.0
 var glide_recover := 6.0
 var glide_lift_accel := 60.0
+## How hard the wings catch a fall or a dive back to the glide's own sink, in
+## m/s². It is never instant: a snap in one tick reads as a hitch.
+var glide_catch_accel := 45.0
+## How fast the bank rolls in and out on the strafe keys, per second: full
+## bank after 1 / `glide_bank_rate` seconds. A tap only nudges the heading.
+var glide_bank_rate := 8.0
 ## Below the stall speed a glide sinks this fast (0: just the glide sink).
 var stall_sink := 0.0
 ## Wings: a press of a roll key while gliding snaps a sidestep this fast for
