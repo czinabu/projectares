@@ -104,7 +104,7 @@ const CORRECTION_RATE := 0.2
 ## Notices the server passes on to a player. Others are produced locally.
 const FORWARDED_NOTICES := ["Parry!", "Wrong side", "Guard broken", "Staggered", "Killed ", "Looted ",
 		"Backpack full", "Someone is riding it", "Banked ", "Signing out", "Sign-out cancelled",
-		"You cannot sign out"]
+		"You cannot sign out", "Scanned"]
 
 var is_server := false
 var raid: Raid
@@ -688,6 +688,14 @@ func _request_join(drop := "") -> void:
 	actor.inventory.changed.connect(func() -> void:
 		if peer in _api.get_peers():
 			_inventory.rpc_id(peer, actor.inventory.items))
+	# What a helmet reveals goes only to the players allowed to know it.
+	actor.visor.revealed.connect(func(found: Array) -> void:
+		if peer in _api.get_peers():
+			_visor_ghosts.rpc_id(peer, found))
+	actor.visor.felt_scan.connect(func(origin: Vector3) -> void:
+		if peer in _api.get_peers():
+			_visor_felt.rpc_id(peer, origin))
+	actor.visor.tagged.connect(_on_server_tagged.bind(actor))
 	_joined_peers.append(peer)
 	_social_moved(peer, "hub" if safe else "raid")
 	_welcome.rpc_id(peer, _ids[actor])
@@ -1359,6 +1367,43 @@ func _standing(id: int, standing: Array) -> void:
 	actor.bounty = int(standing[3])
 	actor.exposed = bool(standing[4])
 	actor.marked = bool(standing[5])
+
+
+## A player tagged someone: they and their side are told, nobody else.
+func _on_server_tagged(target: Actor, tagger: Actor) -> void:
+	if not _ids.has(target) or not _ids.has(tagger):
+		return
+	for peer in _joined_peers:
+		var viewer: Actor = _peer_actor.get(peer)
+		if viewer == null or not is_instance_valid(viewer):
+			continue
+		if viewer == tagger or Visor.allied(tagger, viewer):
+			_visor_tag.rpc_id(peer, _ids[tagger], _ids[target], float(tagger.visor.tags.get(target, 0.0)))
+
+
+## The answer to your scan: where everyone it caught was standing.
+@rpc("authority", "call_remote", "reliable")
+func _visor_ghosts(found: Array) -> void:
+	var me: Actor = _actors.get(my_actor_id)
+	if me != null and is_instance_valid(me):
+		me.visor.show_ghosts(found)
+
+
+## Someone's scan caught you, from `origin`.
+@rpc("authority", "call_remote", "reliable")
+func _visor_felt(origin: Vector3) -> void:
+	var me: Actor = _actors.get(my_actor_id)
+	if me != null and is_instance_valid(me):
+		me.visor.felt_scan.emit(origin)
+
+
+## Someone on your side tagged a target.
+@rpc("authority", "call_remote", "reliable")
+func _visor_tag(tagger_id: int, target_id: int, seconds: float) -> void:
+	var tagger: Actor = _actors.get(tagger_id)
+	var target: Actor = _actors.get(target_id)
+	if tagger != null and is_instance_valid(tagger) and target != null and is_instance_valid(target):
+		tagger.visor.add_tag(target, clampf(seconds, 0.0, 30.0))
 
 
 @rpc("authority", "call_remote", "reliable")
