@@ -43,7 +43,7 @@ const GAME_NEWS: Array[Dictionary] = [
 	{"date": "2026-11-10", "title": "The server keeps your stash",
 		"body": "Online, every server keeps its own stash and loadout for you. Your solo stash stays safe at home."},
 	{"date": "2026-11-09", "title": "Motorbikes",
-		"body": "Put a bike in your vehicle slot and it waits beside you when you deploy. Sign out riding it to keep it."},
+		"body": "Put a bike in your vehicle slot and it rides on your watch as a toy. Raise the watch (X), pick it, and throw it down to unpack it. Sign out with it on your watch, or riding it, to keep it."},
 ]
 
 ## Where per-account social files live.

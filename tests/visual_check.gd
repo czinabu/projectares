@@ -46,6 +46,13 @@ func _ready() -> void:
 		get_tree().quit()
 		return
 
+	# `-- <output_dir> --toys-only` shows the toy vehicles: on the watch, in
+	# the hand, in the air, unpacking and unpacked.
+	if "--toys-only" in args:
+		await _toy_shots(out_dir)
+		get_tree().quit()
+		return
+
 	# `-- <output_dir> --attachments-only` shoots the gunsmith bench with each
 	# primary kitted out, and the view down a scope and a reflex sight.
 	if "--attachments-only" in args:
@@ -225,6 +232,56 @@ func _ready() -> void:
 	await _settle(2)
 	await _world_shots(out_dir)
 	get_tree().quit()
+
+
+func _toy_shots(out_dir: String) -> void:
+	var raid := Raid.new()
+	add_child(raid)
+	var world := Worlds.get_world("ashfront")
+	raid.start(world, 42, world.starter_loadout() + (["bike_scrapper"] as Array[String]))
+	for bot in raid.bots:
+		bot.get_node("Brain").set_physics_process(false)
+	raid.state_for(raid.player).stowed.append("bike_raider")
+	var controller := PlayerController.new()
+	controller.setup(raid.player)
+	raid.add_child(controller)
+	var hud := Hud.new()
+	hud.setup(raid, controller)
+	raid.add_child(hud)
+	await _settle(90)
+	controller.wrist_raised = true
+	await _settle(40)
+	await _shot(out_dir.path_join("toys_watch_first.png"))
+	controller.watch_index = 1
+	await _settle(20)
+	await _shot(out_dir.path_join("toys_watch_picked_second.png"))
+	controller.watch_index = 0
+	controller.take_picked_toy()
+	await _settle(30)
+	await _shot(out_dir.path_join("toys_in_hand.png"))
+	controller.pitch = -0.1
+	await _settle(5)
+	controller.throw_held_toy()
+	raid.throw_toy(raid.player, "bike_scrapper")
+	await _settle(3)
+	await _shot(out_dir.path_join("toys_in_air.png"))
+	for i in 200:
+		if raid.toys.is_empty():
+			break
+		await _settle(1)
+	await _settle(1)
+	await _shot(out_dir.path_join("toys_unpacking.png"))
+	await _settle(60)
+	await _shot(out_dir.path_join("toys_unpacked.png"))
+	controller.toggle_view()
+	controller.wrist_raised = true
+	await _settle(60)
+	await _shot(out_dir.path_join("toys_watch_third.png"))
+	controller.take_picked_toy()
+	await _settle(30)
+	await _shot(out_dir.path_join("toys_in_hand_third.png"))
+	raid.queue_free()
+	await _settle(2)
 
 
 ## The body in the air: a jetpack hovering, boosting level and in a climb and

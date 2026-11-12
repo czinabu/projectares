@@ -119,7 +119,8 @@ const CORRECTION_RATE := 0.2
 ## Notices the server passes on to a player. Others are produced locally.
 const FORWARDED_NOTICES := ["Parry!", "Wrong side", "Guard broken", "Staggered", "Killed ", "Looted ",
 		"Backpack full", "Someone is riding it", "Banked ", "Signing out", "Sign-out cancelled",
-		"You cannot sign out", "Scanned", "Sensed"]
+		"You cannot sign out", "No room there", "Watch recharging", "Your watch is full",
+		"Look at a vehicle", "Packed ", "Get off first", "Not while signing out", "Vehicles stay on the watch", "Scanned", "Sensed"]
 
 var is_server := false
 var raid: Raid
@@ -325,6 +326,10 @@ func _start_server_raid() -> void:
 	raid.container_spawned.connect(_on_server_container_spawned)
 	raid.vehicle_spawned.connect(_on_server_vehicle_spawned)
 	raid.vehicle_removed.connect(_on_server_vehicle_removed)
+	raid.watch_changed.connect(_send_watch)
+	raid.toy_thrown.connect(func(_actor: Actor, item_id: String, from: Vector3, toy_velocity: Vector3) -> void:
+		for peer in _joined_peers:
+			_toy.rpc_id(peer, item_id, from, toy_velocity))
 	raid.squad_spawn = squad_spawn
 	if lag_compensation:
 		raid.rewind = _seen_positions
@@ -494,7 +499,15 @@ func _on_server_vehicle_removed(vehicle: Node3D) -> void:
 
 func _send_vehicle(peer: int, id: int) -> void:
 	var vehicle: Node3D = _vehicles[id]
-	_vehicle.rpc_id(peer, id, vehicle.get("item_id"), vehicle.global_position, vehicle.get("heading"))
+	_vehicle.rpc_id(peer, id, vehicle.get("item_id"), vehicle.global_position, vehicle.get("heading"),
+			float(vehicle.get("unpack_left")) > 0.0)
+
+
+## Tells a player what is on their watch and how long until the next throw.
+func _send_watch(actor: Actor) -> void:
+	var peer: int = _actor_peer.get(actor, 0)
+	if peer != 0 and peer in _joined_peers and raid != null:
+		_watch.rpc_id(peer, raid.stowed_for(actor), raid.toy_wait(actor))
 
 
 func _on_server_player_finished(actor: Actor, result: Dictionary) -> void:
@@ -762,6 +775,7 @@ func _request_join(drop := "") -> void:
 	_welcome.rpc_id(peer, _ids[actor])
 	if returning:
 		_send_spawn(peer, actor)
+		_send_watch(actor)
 		return
 	for other: Actor in _ids:
 		if not other.is_dead:
@@ -775,6 +789,7 @@ func _request_join(drop := "") -> void:
 	for id: int in _sent_standing:
 		_standing.rpc_id(peer, id, _sent_standing[id])
 	_war.rpc_id(peer, raid.war.intensity, raid.war.centre)
+	_send_watch(actor)
 	_sent_points.erase(peer)
 
 
@@ -1145,12 +1160,39 @@ func sell(item_id: String, count: int = 1) -> void:
 		_request_sell.rpc_id(1, item_id, count)
 
 
+## In the world: throw a toy vehicle off the watch, or pack up the vehicle
+## being looked at. The server reads the aim from the actor it simulates.
+@rpc("any_peer", "call_remote", "reliable")
+func _request_toy(item_id: String) -> void:
+	if not is_server or raid == null:
+		return
+	var actor: Actor = _peer_actor.get(_api.get_remote_sender_id())
+	if actor == null or not is_instance_valid(actor):
+		return
+	if item_id == "":
+		raid.pack_vehicle(actor)
+	else:
+		raid.throw_toy(actor, item_id)
+
+
 ## Drop into the server's world: from the lobby, or again after a death.
 ## `joined` follows, or `lobby_error`. `drop` is where to land, an id from
 ## `Raid.drop_choices`; the server decides whether it is still on offer.
 func deploy(drop := "") -> void:
 	if _is_connected() and not account.is_empty() and (my_actor_id < 0 or _can_redeploy):
 		_request_join.rpc_id(1, drop)
+
+
+## In the world: ask the server to throw a toy vehicle off your watch.
+func throw_toy(item_id: String) -> void:
+	if _is_connected() and my_actor_id >= 0 and not _can_redeploy and item_id != "":
+		_request_toy.rpc_id(1, item_id)
+
+
+## In the world: ask the server to pack the vehicle you are looking at.
+func pack_vehicle() -> void:
+	if _is_connected() and my_actor_id >= 0 and not _can_redeploy:
+		_request_toy.rpc_id(1, "")
 
 
 ## In the world: ask the server to start your sign-out, or to call it off.
@@ -1320,10 +1362,10 @@ func _inventory(items: Array) -> void:
 
 
 @rpc("authority", "call_remote", "reliable")
-func _vehicle(id: int, item_id: String, at: Vector3, heading: float) -> void:
+func _vehicle(id: int, item_id: String, at: Vector3, heading: float, unpacking: bool) -> void:
 	if raid == null or _vehicles.has(id) or not ItemDB.has_item(item_id):
 		return
-	var vehicle := raid.spawn_vehicle(item_id, at, heading)
+	var vehicle := raid.spawn_vehicle(item_id, at, heading, unpacking)
 	# The server drives it. Here it only follows the reported position.
 	vehicle.set_physics_process(false)
 	_vehicles[id] = vehicle
@@ -1612,6 +1654,29 @@ func _receive_board(p_board: Dictionary) -> void:
 	if me != null and p_board.get("phase", "") == "countdown" and was != "countdown" \
 			and String(me.name) in bout.get("nodes", []):
 		Arena.refresh_fighter(me)
+
+
+## What is on your watch, and how long until you can throw again.
+@rpc("authority", "call_remote", "reliable")
+func _watch(stowed: Array, wait: float) -> void:
+	var me: Actor = _actors.get(my_actor_id)
+	var state := raid.state_for(me) if raid != null and me != null else null
+	if state == null:
+		return
+	state.stowed.clear()
+	for id: Variant in stowed:
+		if typeof(id) == TYPE_STRING and ItemDB.has_tag(id, "vehicle"):
+			state.stowed.append(id)
+	state.toy_ready_at = raid.clock + maxf(wait, 0.0)
+	raid.watch_changed.emit(me)
+
+
+## Someone threw a toy vehicle: draw it flying. The vehicle itself follows
+## from the server when it lands.
+@rpc("authority", "call_remote", "reliable")
+func _toy(item_id: String, from: Vector3, toy_velocity: Vector3) -> void:
+	if raid != null and ItemDB.has_tag(item_id, "vehicle") and from.is_finite() and toy_velocity.is_finite():
+		raid.fly_toy(item_id, from, toy_velocity)
 
 
 ## Your sign-out started, with this many seconds to go, or stopped (below zero).
