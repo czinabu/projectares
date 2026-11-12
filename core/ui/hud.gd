@@ -368,6 +368,8 @@ static func death_text(result: Dictionary, wait: float, drops: Array = []) -> St
 	lines.append("Lost: %s" % ItemDB.summarize(lost) if not lost.is_empty() else "Nothing lost")
 	if int(result.get("renown_lost", 0)) > 0:
 		lines.append("Renown lost: %d" % int(result.renown_lost))
+	if int(result.get("scrip_lost", 0)) > 0:
+		lines.append("Scrip dropped: %d" % int(result.scrip_lost))
 	var kept: Array = result.get("kept_gear", [])
 	if not kept.is_empty():
 		lines.append("Kept: %s" % ItemDB.summarize(kept))
@@ -391,6 +393,8 @@ static func death_text(result: Dictionary, wait: float, drops: Array = []) -> St
 ## they are being hunted.
 static func standing_text(p: Actor) -> String:
 	var text := "%s   Renown %d" % [RenownLedger.rank_name(p.rank), p.renown]
+	if p.scrip > 0:
+		text += "   Scrip %d" % p.scrip
 	if p.streak > 1:
 		text += "   Streak %d" % p.streak
 	if p.bounty > 0:

@@ -83,6 +83,18 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   so keep that hook free of randomness). Event bots are extra and are never
   respawned. Loot that should follow the war comes from
   `WorldDef.roll_war_loot(source, rng, intensity)`, not `roll_loot`.
+- Bot armies. A "spawn_bot" marker may name a faction (meta "faction");
+  the `Raid` sets it on the bot before `WorldDef.equip_bot`, and `NetSession`
+  sends it so a client builds the same soldier. Where
+  `WorldDef.bots_contest_sites` is on, `Raid._tick_orders` gives each faction
+  its orders through `BotBrain.post_to`: a garrison on every site it holds,
+  everyone else against the nearest site it does not. Reinforcements follow
+  the war: `Raid.bot_target()` is `bot_count` plus a share of
+  `WorldDef.war_reinforcements` by `war.intensity`, new bots join the faction
+  with the fewest alive, and extra bots are not replaced once it cools. Bots
+  killing bots only simmer the meter (`WarDirector.report_battle`, capped at
+  `battle_ceiling`); only players take it higher. World-event bots
+  (`Raid._event_bots`) are outside all of this.
 - Mastery pays for using gear, never for leaving alive, or signing out over
   and over would farm it.
 - Blocking and parrying happen in `Weapon.modify_incoming`, which `Combat.deal`
@@ -113,6 +125,16 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   or aiming and briefly after.
   Check leg changes by eye: `visual_check.tscn -- <dir> --gait-only`, and
   the stand with `--idle-only`.
+  Holstered weapons are worn, not hidden (`ActorSkin.stow_place`): a primary
+  gun or two-handed weapon slung across the back, outside a worn back rig, a
+  sidearm muzzle down on the right hip, and a one-handed blade on the left
+  hip. These are view-only copies; the weapon's own node stays on the hand.
+  A switch is shown as the hand putting one away and drawing the next
+  (`ActorSkin._update_switch`, reaching through `WeaponArm.override_point`),
+  but only the view waits: the actor switches at once. The holster key (Z)
+  sends `switch_weapon = ActorCommand.HOLSTER` and draws `Actor.last_drawn`
+  again; it is an index, never a toggle, so it replicates safely. Check with
+  `--holster-only`.
 - People are built from parts (`core/visual/human.gd`): an "appearance" names
   a build, four parts and colours. It is cosmetic only and never trusted:
   always pass one through `Look.clean_appearance` / `Look.set_appearance`,
@@ -277,6 +299,12 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   anything above Uncommon, so rare gear stays loot-only. Keep every sell
   price below its buy price, and keep run payouts small next to loot: credits
   must come from getting loot home, so full loot stays the stake.
+- Scrip is what a life pays, and it is at stake. The `Raid` pays it
+  (`_pay_scrip`, amounts in `Economy`) into `PlayerState.scrip`, copied to
+  `Actor.scrip` for views. A death moves it into the bag
+  (`LootContainer.scrip`); a depot moves it to `scrip_banked`. It reaches an
+  account only through the result (`scrip`, `scrip_banked`) and
+  `Economy.payout`, never directly, and nothing is paid for kills alone.
 - Furniture (`furniture`, small pieces also `decor`) and clothing
   (`cosmetic`, with an `outfits` stat of customizer outfit ids) are ordinary
   stash items that fit no loadout slot, so they never go on a raid.
