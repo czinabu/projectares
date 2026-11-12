@@ -197,7 +197,7 @@ func _mat(color: Color) -> StandardMaterial3D:
 func get_prompt() -> String:
 	if rider:
 		return "%s (ridden)" % display_name
-	return "[E] Ride %s" % display_name
+	return "[F] Ride %s" % display_name
 
 
 ## Puts an actor on the seat. Returns false if it is taken or they cannot ride.
@@ -211,7 +211,7 @@ func mount(actor: Actor) -> bool:
 	if not actor.died.is_connected(_on_rider_died):
 		actor.died.connect(_on_rider_died)
 	_place_rider()
-	actor.notice.emit("Riding %s. E to get off" % display_name)
+	actor.notice.emit("Riding %s. F to get off" % display_name)
 	mounted.emit(actor)
 	return true
 

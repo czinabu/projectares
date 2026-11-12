@@ -60,6 +60,8 @@ signal failed(reason: String)
 signal disconnected
 ## Client: the server said which port each of its worlds runs on.
 signal routes_changed(routes: Dictionary)
+## Client: the server's news of its other worlds changed (`world_status`).
+signal world_status_changed(status: Dictionary)
 ## Client: the phone's contacts, messages, invites and news changed (see
 ## `SocialService.snapshot`).
 signal social_changed(social: Dictionary)
@@ -74,7 +76,7 @@ signal world_invite_accepted(invite: Dictionary)
 signal base_visit_requested(owner_name: String, stash: Array, loadout: Dictionary)
 
 const DEFAULT_PORT := 24565
-const PROTOCOL := 15
+const PROTOCOL := 16
 const StashService := preload("res://core/account/stash_service.gd")
 const Economy := preload("res://core/economy/economy.gd")
 const Human := preload("res://core/visual/human.gd")
@@ -86,6 +88,19 @@ const BOARD_RESEND_TICKS := 60
 const TICKS_PER_SNAPSHOT := 2
 ## Actors per state packet, to keep each one under the network's packet size.
 const ACTORS_PER_PACKET := 5
+## Interest: a player hears about what is near them in every state update,
+## and about the rest of a big field less often. Actors within NEAR_RANGE
+## metres are sent every update, within MID_RANGE every DETAIL_EVERY[1]
+## updates, and further off every DETAIL_EVERY[2]. Between updates a client
+## keeps simulating an actor from the last command it heard.
+const NEAR_RANGE := 90.0
+const MID_RANGE := 220.0
+const DETAIL_EVERY: Array[int] = [1, 4, 12]
+## A client simulates actors far from its own player in longer steps
+## (`Actor.thin`): every tick within this range, every second tick within
+## THIN_FAR_RANGE, every fourth beyond.
+const THIN_NEAR_RANGE := 70.0
+const THIN_FAR_RANGE := 160.0
 ## Position errors beyond this are fixed at once instead of blended.
 const SNAP_DISTANCE := 5.0
 ## Each input packet repeats this many recent ticks, so a lost packet does not
@@ -105,7 +120,7 @@ const CORRECTION_RATE := 0.2
 const FORWARDED_NOTICES := ["Parry!", "Wrong side", "Guard broken", "Staggered", "Killed ", "Looted ",
 		"Backpack full", "Someone is riding it", "Banked ", "Signing out", "Sign-out cancelled",
 		"You cannot sign out", "No room there", "Watch recharging", "Your watch is full",
-		"Look at a vehicle", "Packed ", "Get off first", "Not while signing out", "Vehicles stay on the watch", "Scanned"]
+		"Look at a vehicle", "Packed ", "Get off first", "Not while signing out", "Vehicles stay on the watch", "Scanned", "Sensed"]
 
 var is_server := false
 var raid: Raid
@@ -122,6 +137,12 @@ var isolated := false
 ## hosting a safe zone fills this in before `host`, and clients receive it
 ## when they sign in, so a plaza gate knows where to send you.
 var routes := {}
+## How the other worlds on this server are doing: world id -> `Raid.status()`.
+## The safe zone's session gathers it and sends it to everyone standing
+## there, so a doorway can say what is on the other side.
+var world_status := {}
+## Server: how many ticks between looks at the other worlds.
+var status_every := 60
 ## Client: called with the server's world, returns the kit to deploy with.
 ## Server: owns every player's stash, loadout and mastery. Set its
 ## `save_dir` or `persist` before `host`.
@@ -179,8 +200,13 @@ var _view_tick := 0      # server tick the actors on screen show (client)
 var _corrections := {}   # actor id -> position error still to blend away (client)
 var _delayed_out: Array = [] # [due msec, inputs] held back by simulated_lag
 var _delayed_in: Array = []  # [due msec, Callable] updates held back by simulated_lag
-var _one_shots := {}     # actor id -> accumulated one-shot flags (server)
-var _switches := {}      # actor id -> last weapon switch since the snapshot
+var _one_shots: Array[Dictionary] = [{}, {}, {}] # per detail tier: actor id -> one-shot flags since that tier's last update (server)
+var _switches: Array[Dictionary] = [{}, {}, {}]  # per detail tier: actor id -> last weapon switch since then (server)
+var _view_at := {}       # peer id -> where their player is, or last was (server)
+## How many state entries have gone out (server) or come in (client), and on
+## a client how many for each actor id. For checks and tuning.
+var entries_sent := 0
+var entries_received := {}
 var _dead_kind := {}     # actor id -> damage kind that killed them
 var _latest := {}        # actor id -> newest state entry (client)
 var _containers := {}    # container id -> LootContainer
@@ -199,6 +225,9 @@ var _sent_standing := {} # actor id -> public renown standing last sent (server)
 var _sent_war := -1.0    # war intensity last sent (server)
 var _sent_points := {}   # peer id -> strongpoint states last sent to them (server)
 var _tick := 0
+var _sent_status := {}   # world status last sent (server)
+## Every session hosting in this process, so a safe zone can ask the others.
+static var _hosting: Array[NetSession] = []
 var _died_at := {}       # peer id -> msec when their last life ended in a death (server)
 var _finished := false   # client: signed out, so the server closing the connection is expected
 var _can_redeploy := false # client: dead and still connected
@@ -220,6 +249,7 @@ func _exit_tree() -> void:
 	if is_server:
 		# A server that stops mid-raid hands everyone's gear back.
 		stash.cancel_all_deploys()
+	_hosting.erase(self)
 	close()
 	if not is_server:
 		Combat.authoritative = true
@@ -249,7 +279,19 @@ func host(p_world_id: String, port := DEFAULT_PORT, max_players := 8) -> Error:
 	if lag_compensation:
 		Combat.rewind = _seen_positions
 	_start_server_raid()
+	_hosting.append(self)
 	return OK
+
+
+## Server: `Raid.status()` of every world in `routes` that runs in this process.
+func _gather_status() -> Dictionary:
+	var out := {}
+	for session in _hosting:
+		if session == self or not is_instance_valid(session) or session.raid == null:
+			continue
+		if routes.has(session.world_id):
+			out[session.world_id] = session.raid.status()
+	return out
 
 
 func close() -> void:
@@ -325,8 +367,12 @@ func _clear_tables() -> void:
 	_corrections.clear()
 	_delayed_out.clear()
 	_delayed_in.clear()
-	_one_shots.clear()
-	_switches.clear()
+	for tier in DETAIL_EVERY.size():
+		_one_shots[tier].clear()
+		_switches[tier].clear()
+	_view_at.clear()
+	entries_sent = 0
+	entries_received.clear()
 	_dead_kind.clear()
 	_latest.clear()
 	_containers.clear()
@@ -396,8 +442,9 @@ func _on_server_actor_removed(actor: Actor) -> void:
 	_seen_tick.erase(actor)
 	for tick: int in _past:
 		_past[tick].erase(actor)
-	_one_shots.erase(id)
-	_switches.erase(id)
+	for tier in DETAIL_EVERY.size():
+		_one_shots[tier].erase(id)
+		_switches[tier].erase(id)
 	_dead_kind.erase(id)
 	_sent_kills.erase(id)
 	_sent_standing.erase(id)
@@ -535,6 +582,8 @@ func _sign_in(p_name: String, p_secret: String) -> void:
 	_peer_account[peer] = result.account_id
 	if not routes.is_empty():
 		_routes.rpc_id(peer, routes)
+		_sent_status = _gather_status()
+		_world_status.rpc_id(peer, _sent_status)
 	_send_account(peer)
 	_social_joined(peer)
 
@@ -710,6 +759,17 @@ func _request_join(drop := "") -> void:
 		if peer in _api.get_peers():
 			_visor_felt.rpc_id(peer, origin))
 	actor.visor.tagged.connect(_on_server_tagged.bind(actor))
+	actor.visor.threatened.connect(func(origin: Vector3) -> void:
+		if peer in _api.get_peers():
+			_visor_threatened.rpc_id(peer, origin))
+	actor.visor.threats_changed.connect(func(found: Array) -> void:
+		if peer not in _api.get_peers():
+			return
+		var ids: Array[int] = []
+		for other: Actor in found:
+			if _ids.has(other):
+				ids.append(_ids[other])
+		_visor_threats.rpc_id(peer, ids))
 	_joined_peers.append(peer)
 	_social_moved(peer, "hub" if safe else "raid")
 	_welcome.rpc_id(peer, _ids[actor])
@@ -854,9 +914,12 @@ func _server_late_tick(_delta: float) -> void:
 		return
 	for id: int in _actors:
 		var actor: Actor = _actors[id]
-		_one_shots[id] = int(_one_shots.get(id, 0)) | (actor.cmd.flags() & ActorCommand.ONE_SHOT_MASK)
-		if actor.cmd.switch_weapon != -1:
-			_switches[id] = actor.cmd.switch_weapon
+		var pressed := actor.cmd.flags() & ActorCommand.ONE_SHOT_MASK
+		for tier in DETAIL_EVERY.size():
+			if pressed != 0:
+				_one_shots[tier][id] = int(_one_shots[tier].get(id, 0)) | pressed
+			if actor.cmd.switch_weapon != -1:
+				_switches[tier][id] = actor.cmd.switch_weapon
 	_tick += 1
 	if lag_compensation:
 		var now := {}
@@ -866,21 +929,7 @@ func _server_late_tick(_delta: float) -> void:
 		_past[_tick] = now
 		_past.erase(_tick - MAX_REWIND_TICKS - 1)
 	if _tick % TICKS_PER_SNAPSHOT == 0 and not _joined_peers.is_empty():
-		var entries: Array = []
-		for id: int in _actors:
-			var actor: Actor = _actors[id]
-			var cmd := actor.cmd.to_array()
-			cmd[ActorCommand.FLAGS_INDEX] = (int(cmd[ActorCommand.FLAGS_INDEX]) & ActorCommand.HELD_MASK) \
-					| int(_one_shots.get(id, 0))
-			cmd[ActorCommand.SWITCH_INDEX] = _switches.get(id, -1)
-			entries.append([id, actor.global_position, actor.velocity, cmd, actor.health.health,
-					actor.health.armor, actor.stagger_left, _dead_kind.get(id, ""), _applied_seq.get(id, 0)])
-		_one_shots.clear()
-		_switches.clear()
-		for start in range(0, entries.size(), ACTORS_PER_PACKET):
-			var chunk := entries.slice(start, start + ACTORS_PER_PACKET)
-			for peer in _joined_peers:
-				_state.rpc_id(peer, _tick, chunk)
+		_send_states()
 		if not _vehicles.is_empty():
 			var rides: Array = []
 			for id: int in _vehicles:
@@ -907,6 +956,13 @@ func _server_late_tick(_delta: float) -> void:
 			_sent_standing[id] = standing
 			for peer in _joined_peers:
 				_standing.rpc_id(peer, id, standing)
+	# A safe zone tells its visitors how the worlds behind its doors are doing.
+	if _tick % status_every == 0 and not routes.is_empty() and not _peer_account.is_empty():
+		var status := _gather_status()
+		if status != _sent_status:
+			_sent_status = status
+			for peer: int in _peer_account:
+				_world_status.rpc_id(peer, status)
 	# The meter moves slowly, so a few times a second is plenty.
 	if _tick % 20 == 0 and not is_equal_approx(_sent_war, raid.war.intensity):
 		_sent_war = raid.war.intensity
@@ -924,6 +980,73 @@ func _server_late_tick(_delta: float) -> void:
 			if _sent_points.get(peer, []) != states:
 				_sent_points[peer] = states
 				_strongpoints.rpc_id(peer, states)
+
+
+## How closely a viewer at `eye` follows an actor at `at`: 0 near (every
+## update), 1 in between, 2 far off.
+static func detail_tier(eye: Vector3, at: Vector3) -> int:
+	var apart := eye.distance_squared_to(at)
+	if apart <= NEAR_RANGE * NEAR_RANGE:
+		return 0
+	return 1 if apart <= MID_RANGE * MID_RANGE else 2
+
+
+## Whether actor `id` goes out to viewers of `tier` in update number `update`.
+## Ids take turns, so the far-off actors do not all go out in one burst.
+static func detail_due(update: int, id: int, tier: int) -> bool:
+	return (update + id) % DETAIL_EVERY[tier] == 0
+
+
+## Sends every player the state of the actors they are due to hear about:
+## their own and those near them now, the rest in turn (see NEAR_RANGE).
+func _send_states() -> void:
+	var update := _tick / TICKS_PER_SNAPSHOT
+	var ids: Array = _actors.keys()
+	var places := {}
+	for id: int in ids:
+		places[id] = (_actors[id] as Actor).global_position
+	var built: Array[Dictionary] = [{}, {}, {}]
+	for peer in _joined_peers:
+		var viewer: Actor = _peer_actor.get(peer)
+		if viewer != null and is_instance_valid(viewer):
+			_view_at[peer] = viewer.global_position
+		var own: int = _ids.get(viewer, -1) if viewer != null else -1
+		var eye: Vector3 = _view_at.get(peer, Vector3.ZERO)
+		var chunk: Array = []
+		for id: int in ids:
+			var tier := 0 if id == own else detail_tier(eye, places[id])
+			if not detail_due(update, id, tier):
+				continue
+			if not built[tier].has(id):
+				built[tier][id] = _state_entry(id, tier)
+			chunk.append(built[tier][id])
+			if chunk.size() == ACTORS_PER_PACKET:
+				_state.rpc_id(peer, _tick, chunk)
+				entries_sent += chunk.size()
+				chunk = []
+		if not chunk.is_empty():
+			_state.rpc_id(peer, _tick, chunk)
+			entries_sent += chunk.size()
+	# Presses are kept for each tier until that tier has had its turn.
+	_one_shots[0].clear()
+	_switches[0].clear()
+	for tier in range(1, DETAIL_EVERY.size()):
+		for id: int in ids:
+			if detail_due(update, id, tier):
+				_one_shots[tier].erase(id)
+				_switches[tier].erase(id)
+
+
+## One actor's state as it goes out to viewers of `tier`, with the presses
+## made since that tier last heard.
+func _state_entry(id: int, tier: int) -> Array:
+	var actor: Actor = _actors[id]
+	var cmd := actor.cmd.to_array()
+	cmd[ActorCommand.FLAGS_INDEX] = (int(cmd[ActorCommand.FLAGS_INDEX]) & ActorCommand.HELD_MASK) \
+			| int(_one_shots[tier].get(id, 0)) | (ActorCommand.STATE_HOVERING if actor.flight.is_hovering else 0)
+	cmd[ActorCommand.SWITCH_INDEX] = _switches[tier].get(id, -1)
+	return [id, actor.global_position, actor.velocity, cmd, actor.health.health,
+			actor.health.armor, actor.stagger_left, _dead_kind.get(id, ""), _applied_seq.get(id, 0)]
 
 
 # ---------------------------------------------------------------- client ----
@@ -991,6 +1114,21 @@ func _routes(p_routes: Dictionary) -> void:
 		if typeof(id) == TYPE_STRING and typeof(p_routes[id]) == TYPE_INT:
 			routes[id] = p_routes[id]
 	routes_changed.emit(routes)
+
+
+@rpc("authority", "call_remote", "reliable")
+func _world_status(p_status: Dictionary) -> void:
+	world_status.clear()
+	for id: Variant in p_status:
+		var entry: Variant = p_status[id]
+		if typeof(id) != TYPE_STRING or typeof(entry) != TYPE_DICTIONARY:
+			continue
+		world_status[id] = {"players": maxi(0, int(entry.get("players", 0))),
+				"war": clampf(float(entry.get("war", 0.0)), 0.0, 1.0),
+				"level": str(entry.get("level", "")).left(24),
+				"bounty": maxi(0, int(entry.get("bounty", 0))),
+				"event": str(entry.get("event", "")).left(40)}
+	world_status_changed.emit(world_status)
 
 
 @rpc("authority", "call_remote", "reliable")
@@ -1181,6 +1319,7 @@ func _receive_state(tick: int, entries: Array) -> void:
 		_fresh_state = true
 	for entry: Array in entries:
 		var id: int = entry[0]
+		entries_received[id] = int(entries_received.get(id, 0)) + 1
 		# Presses from an update we have not applied yet must not be lost.
 		if _latest.has(id):
 			var cmd: Array = entry[3]
@@ -1445,6 +1584,27 @@ func _visor_felt(origin: Vector3) -> void:
 		me.visor.felt_scan.emit(origin)
 
 
+## Your tactical visor: a hit on you came from `origin`.
+@rpc("authority", "call_remote", "reliable")
+func _visor_threatened(origin: Vector3) -> void:
+	var me: Actor = _actors.get(my_actor_id)
+	if me != null and is_instance_valid(me):
+		me.visor.threatened.emit(origin)
+
+
+## Your Threat Sense: who is aiming at you right now.
+@rpc("authority", "call_remote", "reliable")
+func _visor_threats(ids: Array) -> void:
+	var me: Actor = _actors.get(my_actor_id)
+	if me == null or not is_instance_valid(me):
+		return
+	var found: Array = []
+	for id: Variant in ids:
+		if typeof(id) == TYPE_INT and _actors.has(id):
+			found.append(_actors[id])
+	me.visor.show_threats(found)
+
+
 ## Someone on your side tagged a target.
 @rpc("authority", "call_remote", "reliable")
 func _visor_tag(tagger_id: int, target_id: int, seconds: float) -> void:
@@ -1554,7 +1714,11 @@ func _client_early_tick() -> void:
 			continue
 		var mine := id == my_actor_id
 		if not mine:
-			actor.cmd.clear_one_shots()
+			if _view_tick % 15 == id % 15:
+				_thin(actor, id)
+			# A press stays until the actor has had a step to act on it.
+			if actor.stepped():
+				actor.cmd.clear_one_shots()
 		if not _latest.has(id):
 			continue
 		var entry: Array = _latest[id]
@@ -1562,6 +1726,19 @@ func _client_early_tick() -> void:
 		_apply_state(actor, entry, mine)
 	_blend_corrections()
 	_client_move_vehicles()
+
+
+## Far from your own player an actor is simulated in longer steps.
+func _thin(actor: Actor, id: int) -> void:
+	var me: Actor = _actors.get(my_actor_id)
+	if me == null or not is_instance_valid(me):
+		actor.thin(1)
+		return
+	var apart := me.global_position.distance_squared_to(actor.global_position)
+	if apart <= THIN_NEAR_RANGE * THIN_NEAR_RANGE:
+		actor.thin(1)
+	else:
+		actor.thin(2 if apart <= THIN_FAR_RANGE * THIN_FAR_RANGE else 4, id)
 
 
 ## Moves each actor a share of the way toward where the server says it
@@ -1618,12 +1795,15 @@ func _apply_state(actor: Actor, entry: Array, mine: bool) -> void:
 			if actor.global_position.distance_to(at) > SNAP_DISTANCE:
 				actor.global_position = at
 				actor.velocity = entry[2]
+				actor.flight.is_hovering = _hovering_in(entry[3])
 			return
 		var miss: Vector3 = at - _history[seq]
 		max_correction = maxf(max_correction, miss.length())
 		if miss.length() > SNAP_DISTANCE:
 			actor.global_position += miss
 			actor.velocity = entry[2]
+			# Far enough out that the two sides may disagree on the jets.
+			actor.flight.is_hovering = _hovering_in(entry[3])
 			_history.clear()
 			_corrections.erase(id)
 		elif miss.length() > 0.01:
@@ -1632,6 +1812,7 @@ func _apply_state(actor: Actor, entry: Array, mine: bool) -> void:
 			_corrections.erase(id)
 		return
 	actor.cmd.apply_array(entry[3])
+	actor.flight.is_hovering = _hovering_in(entry[3])
 	# Looting is decided by the server, never replayed here.
 	actor.cmd.interact_pressed = false
 	var gap := at - actor.global_position
@@ -1641,6 +1822,12 @@ func _apply_state(actor: Actor, entry: Array, mine: bool) -> void:
 	else:
 		_corrections[id] = gap
 	actor.velocity = entry[2]
+
+
+## Whether a state's command says the server has that actor's jets lit.
+static func _hovering_in(cmd: Variant) -> bool:
+	return typeof(cmd) == TYPE_ARRAY and cmd.size() == ActorCommand.ARRAY_SIZE \
+			and int(ActorCommand._number(cmd[ActorCommand.FLAGS_INDEX])) & ActorCommand.STATE_HOVERING != 0
 
 
 func _client_late_tick() -> void:

@@ -23,6 +23,7 @@ func setup(p_items: Array, p_is_bag: bool, p_label: String) -> void:
 
 
 func _ready() -> void:
+	add_to_group("loot_containers")
 	var size := Vector3(0.7, 0.5, 0.7) if is_bag else Vector3(1.1, 0.8, 0.8)
 	var shape := BoxShape3D.new()
 	shape.size = size
@@ -44,10 +45,10 @@ func get_prompt() -> String:
 	# A bag is cleared away once it is emptied, so one that is still here
 	# holds something, if only scrip.
 	if items.is_empty() and is_bag:
-		return "[E] Loot %s" % label
+		return "[F] Loot %s" % label
 	if items.is_empty():
 		return "%s (empty)" % label
-	return "[E] Loot %s (%d)" % [label, items.size()]
+	return "[F] Loot %s (%d)" % [label, items.size()]
 
 
 func interact(actor: Actor) -> void:

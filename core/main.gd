@@ -725,7 +725,7 @@ func start_server(world_id: String, port: int, with_plaza := true, bots := -1, s
 			session.stash = sessions[0].stash
 			session.social = sessions[0].social
 		add_child(session)
-		var err := session.host(world.id, next_port)
+		var err := session.host(world.id, next_port, world.max_players)
 		if err != OK:
 			return err
 		print("Server: running %s on port %d" % [world.id, next_port])
@@ -889,8 +889,9 @@ func _on_online_joined(p_raid: Raid) -> void:
 	if raid.world.safe_zone:
 		plaza_view = PlazaViewScript.new()
 		plaza_view.name = "PlazaView"
-		plaza_view.setup(raid, net.routes)
+		plaza_view.setup(raid, net.routes, net.world_status)
 		raid.add_child(plaza_view)
+		net.world_status_changed.connect(plaza_view.refresh_heat.unbind(1))
 		plaza_view.portal_used.connect(use_portal)
 
 

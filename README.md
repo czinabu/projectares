@@ -19,20 +19,23 @@ skies, animated models and effects (see "How it looks" below).
 | Action | Key |
 | --- | --- |
 | Move / sprint | WASD / Shift |
-| Jump. In the air: hold to fly (jetpack), press to boost (thruster boots, glide wings), hold while falling to glide (glide wings) | Space |
+| Jump. In the air: hold to climb, tap to light the jets and hover (jetpack); press to kick the way you steer (thruster boots); press to launch, hold while falling to glide (glide wings) | Space |
+| Jetpack hovering: fly with the move keys, Space climbs, C sinks, Shift + W boosts head first wherever you look | |
+| Gliding: steer or turn the view to bank round, look down to dive for speed, look up to climb on it | |
+| Roll the body left / right while gliding or boosting | Q / E (or the mouse thumb buttons) |
 | Use your ability | G |
 | Use your helmet's visor (zoom or scan) | T |
-| Dash | Q |
+| Dash | Left Alt |
 | Slide (while sprinting) | C |
 | Fire, or blade combo | Left mouse |
 | Aim down sights, or block with the blade (tap just before a hit to parry) | Right mouse |
 | Pick a melee side: left, right or overhead | Flick the mouse that way, or hold A, D or W |
 | Switch how the melee side is picked (mouse flick or movement keys) | B |
-| Heavy lunge with the blade (dive slam in the air) | F |
-| Switch to primary / blade / sidearm | 1 / 2 / 3, or mouse wheel |
+| Heavy lunge with the blade (dive slam in the air) | Middle mouse |
+| Switch to primary / sidearm / melee / power weapon | 1 / 2 / 3 / 4, or mouse wheel |
 | Reload | R |
 | Use a medkit | H |
-| Loot, or get on and off a bike | E |
+| Loot, or get on and off a bike | F |
 | Ride a bike: throttle, brake or reverse, steer, boost | W, S, A / D, Shift |
 | Switch camera: first-person or third-person | V |
 | Scoreboard: who is fighting, who is down, kills | Hold Tab |
@@ -64,13 +67,17 @@ a tag over it says what it is and what it is worth.
 | Console | What it opens |
 | --- | --- |
 | Launch pad (middle of the room) | Deploy into any world |
-| Locker | Your loadout, slot by slot (or press E on gear on show) |
+| Locker | Your loadout, slot by slot (or press F on gear on show) |
 | Mastery bench | Mastery levels and variant picks |
 | Wardrobe | The character customizer |
 | Records | Your stash, kills, rank, and how your last life went |
 | Trader | The shops: buy and sell |
 | Uplink | Your name, host a server, or join one |
 | Arena gate | Straight into the arena (see "The arena" below) |
+
+The gunsmith bench (back left, by the gun rack) holds your attachments on its
+pegboard and your primary in its vise. Look at an attachment and press **E**
+to fit it; a tablet beside the vise lists what the fitted kit changes.
 
 The door behind you leads online (it opens the uplink). Signing out of a
 world, or dying and pressing L, brings you back here.
@@ -150,10 +157,12 @@ Walk into a glowing pad and press **E** to use it:
 
 - **World gates** (north): each leads to that world's lobby, where you set
   your loadout and deploy. After a run, or when you leave the lobby, you are
-  back in the Concourse.
+  back in the Concourse. A sign over each gate says how that world is doing
+  right now: its war level, how many players are in it, the biggest bounty
+  on anyone's head and any event running. It reddens as the war heats up.
 - **Quarters** (west): the door to your home base. Its door leads back here.
 - **Storefronts** (the corners): one for every shop. Step up to the counter
-  and press E to use its terminal: buy and sell on the screen without leaving
+  and press F to use its terminal: buy and sell on the screen without leaving
   the plaza.
 - **Arena** and **Clan hall**: built, and closed until those features arrive.
 - **Exit** (south): leaves the server.
@@ -198,7 +207,12 @@ you have.
   site it does not, so they meet in the middle and fight each other as well
   as you. Their fighting keeps the war simmering on its own, and the hotter
   the war gets the more reinforcements both sides bring in from their camps
-  at the rim, up to nearly twice the usual number.
+  at the rim, up to twice the usual number: 60 soldiers on a quiet field,
+  120 at the height of a war.
+- Big battles. An Ashfront server takes 32 players. Soldiers nobody is near
+  are simulated in longer steps, and each player is sent every update only
+  about what is around them, with the far side of the field a few times a
+  second, so a full war fits in a server tick and in a home connection.
 - War intensity. Ashfront keeps a meter of how much fighting is going on.
   Kills and hostile players closing on each other raise it, and it cools when
   things calm down; a full server that is not fighting stays quiet. As it
@@ -240,20 +254,38 @@ you have.
 - A home base you walk around in, where the game opens. Everything in your
   stash is on show: guns on a rack, blades on the wall, armor on stands,
   flight rigs, ability chips, bikes parked in the garage, loot on shelves.
-  Look at a piece of gear and press E to equip it for your next run.
+  Look at a piece of gear and press F to equip it for your next run.
 - Loadouts picked in your base from your stash: primary weapon, melee weapon,
   flight rig and armor frame. Equipped gear is at risk. Sign out alive and it
   comes home, die and it drops. Empty slots use a free scrap kit.
-- Three kinds of flight rig: jetpacks for sustained lift, thruster boots for
-  quick kicks upward, and glide wings that launch once and then soar.
+- Three kinds of flight rig, each with its own strength. Jetpacks fly
+  anywhere: hover, strafe, climb, sink and boost head first, as long as the
+  heat lasts, and you can shoot from a hover. Thruster boots are the quick
+  ones: hard kicks up and the way you steer, cooling fastest. Glide wings
+  cannot hover but are the fastest and go furthest, on no heat at all: they
+  bank into turns, dive for speed and climb again on that speed.
 - An ability slot. Phase Step blinks you forward, Kinetic Barrier cuts damage
   for a few seconds, Shock Pulse staggers everyone near you. Each has a cooldown.
+- Attachments for your primary, in four slots: optic, muzzle, grip and
+  magazine. Each one shows on the gun and trades one stat for another: a holo
+  reflex sight or 4x and 8x scopes (you look down the scope itself when you
+  aim in first person, no overlay), a compensator, booster or suppressor,
+  vertical or angled grips, and extended, quick or drum mags. Fit them at the
+  gunsmith bench in your base. They ride with the gun, so they are lost with
+  it. Basic ones are sold at the Armory; scopes, the suppressor and the drum
+  mag are loot only.
 - A helmet slot. The visor is your display in first person, and what it
   shows depends on the helmet: the Spotter has binoculars (4x and 8x), a
   compass and a range finder, and fire while zoomed tags a target for your
   side; the Seeker sends a scan pulse that shows where everyone nearby stood.
-  Both give you away: a zoomed lens glints, and a scan is seen, heard and
-  felt by everyone it catches. With no helmet the view is bare.
+  The Warden shows where a hit came from, the health of whoever you aim
+  at, what nearby loot holds and the way to the nearest depot, and its
+  Threat Sense outlines anyone aiming at you for five seconds. The Ember
+  switches to thermal sight on a battery: warm bodies stand out through
+  smoke and storm, never through walls, and a hot jetpack shines.
+  All of them give you away: a zoomed lens glints, a scan is seen, heard and
+  felt by everyone it catches, Threat Sense tells whoever it shows, and a
+  thermal visor glows up close. With no helmet the view is bare.
 - More gear to find: carbine, SMG, marksman rifle, shotgun, arc blade, breaker
   hammer, three armor frames, and a better jetpack.
 - Motorbikes, the first vehicle. Put one in the vehicle slot and it rides on
@@ -284,7 +316,7 @@ you have.
   losing your connection online leaves your body standing in the world for
   the same time (30 seconds if you were in a fight), so nobody escapes a
   fight by closing the game.
-- Credits and shops. The trader in your base has five shops: the Armory (weapons), Outfitter
+- Credits and shops. The trader in your base has five shops: the Armory (weapons and attachments), Outfitter
   (armor, flight rigs, medkits), Garage (bikes), Furnisher (furniture and
   decorations for your home base) and Tailor (clothing). See "Credits and
   shops" below.

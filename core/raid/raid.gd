@@ -48,6 +48,7 @@ const PARKED_DISTANCE := 6.0
 const SPAWN_SNAP := 2.5
 ## Seconds between rounds of orders to the bot factions.
 const ORDERS_EVERY := 8.0
+const DETAIL_EVERY := 0.25
 const VehicleScript := preload("res://core/vehicle/vehicle.gd")
 const MasteryTracker := preload("res://core/progression/mastery_tracker.gd")
 const RenownLedger := preload("res://core/progression/renown_ledger.gd")
@@ -124,6 +125,12 @@ var _event_pod: LootContainer
 var apply_to_profile := true
 ## Server: every player starts at the same spawn point, as one squad.
 var squad_spawn := false
+## Bots within this many metres of a player are simulated every tick, bots
+## within `half_detail_range` every second tick, and the rest every
+## `far_detail_step` ticks.
+var full_detail_range := 70.0
+var half_detail_range := 160.0
+var far_detail_step := 4
 var _squad_marker := -1
 var _player_count := 0
 var _bot_count := 0
@@ -133,6 +140,7 @@ var _caches: Array[Dictionary] = []
 var _bot_respawns: Array[float] = []
 var _reinforce_in := 0.0
 var _orders_in := 0.0
+var _detail_in := 0.0
 ## Bot -> the strongpoint its faction last sent it to.
 var _orders := {}
 ## Bot -> `clock` until which something else (an assault) has the say over it.
@@ -262,6 +270,7 @@ func _physics_process(delta: float) -> void:
 	_tick_events(delta)
 	_tick_caches(delta)
 	_tick_bots(delta)
+	_tick_detail(delta)
 	_tick_vehicles(delta)
 
 
@@ -586,6 +595,31 @@ func _tick_bots(delta: float) -> void:
 ## the hotter the war is.
 func bot_target() -> int:
 	return world.bot_count + roundi(maxi(world.war_reinforcements, 0) * war.intensity)
+
+
+## Bots that no player is near are simulated less often, in longer steps
+## (`Actor.thin`), so a big war costs the server little where nobody watches.
+## The fight a player is in always runs every tick.
+func _tick_detail(delta: float) -> void:
+	_detail_in -= delta
+	if _detail_in > 0.0:
+		return
+	_detail_in = DETAIL_EVERY
+	var watchers: Array[Vector3] = []
+	for state in players:
+		if is_instance_valid(state.actor) and not state.actor.is_dead:
+			watchers.append(state.actor.global_position)
+	for i in bots.size():
+		var bot := bots[i]
+		var nearest := INF
+		for at in watchers:
+			nearest = minf(nearest, at.distance_squared_to(bot.global_position))
+		if nearest <= full_detail_range * full_detail_range:
+			bot.thin(1)
+		elif nearest <= half_detail_range * half_detail_range:
+			bot.thin(2, i)
+		else:
+			bot.thin(far_detail_step, i)
 
 
 ## The bots alive that belong to the world itself, not to an event.
@@ -932,6 +966,19 @@ func state_for(actor: Actor) -> PlayerState:
 
 
 ## Players still in the raid.
+## What this world looks like from outside, for a doorway or a travel screen:
+## how many are fighting, how hot the war is, the biggest bounty and the
+## event running. Nothing here says who or where anyone is.
+func status() -> Dictionary:
+	var bounty := 0
+	var fighting := active_players()
+	for actor in fighting:
+		if is_instance_valid(actor):
+			bounty = maxi(bounty, actor.bounty)
+	return {"players": fighting.size(), "war": snappedf(war.intensity, 0.05), "level": war.level_name(),
+			"bounty": bounty, "event": str(event.get("title", ""))}
+
+
 func active_players() -> Array[Actor]:
 	var out: Array[Actor] = []
 	for state in players:

@@ -71,11 +71,18 @@ static func run(t: Node) -> void:
 		t.check(flames.size() == 2 and not flames.any(func(f: Node3D) -> bool: return f.visible), "the nozzles are cold at rest")
 		p.flight.is_thrusting = true
 		await t.frames(2)
+		# The flames are set when a frame is drawn, and on a busy machine two
+		# physics ticks can pass inside one. The signal comes before the frame's
+		# own work, so the second one is the first that is sure to follow it.
+		await t.get_tree().process_frame
+		await t.get_tree().process_frame
 		t.check(flames.all(func(f: Node3D) -> bool: return f.visible), "both nozzles burn while thrusting")
 		var down := (flames[0] as Node3D).global_basis.y.normalized()
 		t.check(down.y > 0.8, "the flames point down")
 		p.flight.is_thrusting = false
 		await t.frames(2)
+		await t.get_tree().process_frame
+		await t.get_tree().process_frame
 		t.check(not flames.any(func(f: Node3D) -> bool: return f.visible), "the nozzles go out when thrust stops")
 
 	# A new rig swaps the model.
@@ -106,6 +113,41 @@ static func run(t: Node) -> void:
 		await t.get_tree().create_timer(0.5).timeout
 		t.check(not boot_flames.any(func(f: Node3D) -> bool: return f.visible), "the heel thrusters only burn for a moment")
 
+	# A jetpack boost lays the body out head first with the arms ahead; a
+	# hover leans the way it drifts; the roll keys turn it over.
+	_equip(p, "jetpack_mk2")
+	await t.frames(2)
+	p.flight.is_hovering = true
+	p.velocity = p.global_basis.x * 10.0
+	await t.get_tree().create_timer(0.6).timeout
+	var hover_axis := p.global_basis.inverse() * (skin as Node3D).global_basis.y
+	t.check(hover_axis.x > 0.2 and hover_axis.y > 0.8, "a hovering body leans the way it drifts")
+	p.flight.is_boosting = true
+	p.velocity = -p.global_basis.z * 22.0
+	await t.get_tree().create_timer(0.7).timeout
+	var boost_axis := p.global_basis.inverse() * (skin as Node3D).global_basis.y
+	t.check(boost_axis.z < -0.95, "a boost lays the body out flat, head first")
+	if skeleton and skeleton.find_bone("Wrist.R") >= 0 and skeleton.find_bone("Head") >= 0:
+		# Modifier poses only last for the skeleton's update: run it by hand.
+		skin._pose_glide()
+		var wrist_at := p.to_local(skeleton.to_global(skeleton.get_bone_global_pose(skeleton.find_bone("Wrist.R")).origin))
+		var head_at := p.to_local(skeleton.to_global(skeleton.get_bone_global_pose(skeleton.find_bone("Head")).origin))
+		t.check(wrist_at.z < head_at.z, "boosting, the arms reach out ahead of the head")
+	var belly := p.global_basis.inverse() * (skin as Node3D).global_basis.z
+	p.cmd.roll = 1
+	await t.get_tree().create_timer(0.25).timeout
+	var rolled := p.global_basis.inverse() * (skin as Node3D).global_basis.z
+	t.check(belly.angle_to(rolled) > 1.0, "the roll keys turn the body over in flight")
+	p.cmd.roll = 0
+	await t.get_tree().create_timer(0.6).timeout
+	rolled = p.global_basis.inverse() * (skin as Node3D).global_basis.z
+	t.check(belly.angle_to(rolled) < 0.1, "letting go rights the body again")
+	p.flight.is_hovering = false
+	p.flight.is_boosting = false
+	p.velocity = Vector3.ZERO
+	await t.get_tree().create_timer(0.6).timeout
+	t.check((skin as Node3D).transform.basis.y.y > 0.99, "the body stands up again after a boost")
+
 	_equip(p, "wings_glide")
 	await t.frames(2)
 	var pack_node := skin.find_child("WingPack", true, false) as Node3D
@@ -123,6 +165,29 @@ static func run(t: Node) -> void:
 		t.check(up.z < -0.9 and up.y < 0.4, "gliding lays the body out flat, head first")
 		t.check(absf(spread_at.y - p.to_local(pack_node.global_position).y) < 0.25,
 				"with the body flat, the wings spread level with it")
+		# Fly a steady turn to the right: the body faces the way it flies
+		# and banks into the turn, right wing down.
+		var port_tip := pack_node.get_node("WingL/Panel/TipLight") as Node3D
+		var flying := -p.global_basis.z
+		for i in 60:
+			flying = flying.rotated(Vector3.UP, -1.4 / 60.0)
+			p.velocity = flying * 16.0 + Vector3(0, -1.8, 0)
+			await t.get_tree().process_frame
+		var bank_gap := port_tip.global_position.y - wing_tip.global_position.y
+		t.check(bank_gap > 0.6, "wings bank into a right turn, right wing down (%.2f m)" % bank_gap)
+		var nose_dir := (skin as Node3D).global_basis.y
+		t.check(Vector3(nose_dir.x, 0, nose_dir.z).normalized().dot(flying) > 0.9, "the gliding body faces the way it flies")
+		for i in 90:
+			flying = flying.rotated(Vector3.UP, 1.4 / 60.0)
+			p.velocity = flying * 16.0 + Vector3(0, -1.8, 0)
+			await t.get_tree().process_frame
+		bank_gap = port_tip.global_position.y - wing_tip.global_position.y
+		t.check(bank_gap < -0.6, "and into a left turn, left wing down (%.2f m)" % bank_gap)
+		p.velocity = flying * 24.0 + Vector3(0, -10.0, 0)
+		await t.get_tree().create_timer(0.6).timeout
+		t.check((skin as Node3D).global_basis.y.y < -0.2, "a dive points the nose down")
+		t.check(absf(port_tip.global_position.y - wing_tip.global_position.y) < 0.2, "flying straight levels the wings")
+		p.velocity = Vector3.ZERO
 		p.flight.is_gliding = false
 		await t.get_tree().create_timer(0.5).timeout
 		t.check(absf(p.to_local(wing_tip.global_position).x) < 0.2, "the wings retract after gliding")

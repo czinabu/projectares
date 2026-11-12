@@ -22,8 +22,17 @@ const CACHE_TABLE := [
 	{"id": "frame_trooper", "weight": 2.5},
 	{"id": "boots_thruster", "weight": 2.5},
 	{"id": "chip_barrier", "weight": 2.5},
+	{"id": "optic_reflex", "weight": 2.5},
+	{"id": "muzzle_compensator", "weight": 2.0},
+	{"id": "grip_vertical", "weight": 2.0},
+	{"id": "grip_angled", "weight": 2.0},
+	{"id": "mag_extended", "weight": 2.0},
+	{"id": "mag_quick", "weight": 1.5},
+	{"id": "muzzle_booster", "weight": 1.5},
 	{"id": "helm_spotter", "weight": 2.0},
 	{"id": "helm_seeker", "weight": 2.0},
+	{"id": "helm_warden", "weight": 2.0},
+	{"id": "helm_ember", "weight": 2.0},
 ]
 
 ## Rooftops need the jetpack to reach, so they pay better.
@@ -42,8 +51,14 @@ const ROOFTOP_TABLE := [
 	{"id": "wings_glide", "weight": 7.0},
 	{"id": "chip_blink", "weight": 7.0},
 	{"id": "chip_pulse", "weight": 7.0},
+	{"id": "optic_scope", "weight": 7.0},
+	{"id": "muzzle_suppressor", "weight": 6.0},
+	{"id": "mag_drum", "weight": 6.0},
+	{"id": "optic_longscope", "weight": 2.5},
 	{"id": "helm_spotter_mk2", "weight": 6.0},
 	{"id": "helm_seeker_mk2", "weight": 6.0},
+	{"id": "helm_warden_mk2", "weight": 6.0},
+	{"id": "helm_ember_mk2", "weight": 6.0},
 ]
 
 ## Abandoned bikes parked around the field. Anyone can ride one out.
@@ -81,10 +96,11 @@ func _init() -> void:
 	display_name = "Ashfront"
 	description = "Open battlefield where two armies fight over the wrecks. Always-on PvP, full loot, no safe zones."
 	# A garrison of four at each of the five landmarks, and patrols between them.
-	# Eighteen to an army: two garrisons of four, patrols, and a camp at the rim.
-	bot_count = 36
+	# Thirty to an army: two garrisons of four, patrols, and a camp at the rim.
+	bot_count = 60
 	# A hot war draws in up to this many more.
-	war_reinforcements = 28
+	war_reinforcements = 60
+	max_players = 32
 	bots_contest_sites = true
 	depot_hold_time = 4.0
 

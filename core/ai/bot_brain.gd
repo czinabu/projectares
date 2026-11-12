@@ -19,6 +19,8 @@ var patrol_radius := 22.0
 var give_up_time := 7.0
 ## Further than this beyond its patrol, a bot runs back to its post.
 var march_distance := 12.0
+## How far the place a bot is heading for must move before it plans a new path.
+var repath_distance := 1.5
 ## Chance that a melee bot reads the side of an incoming swing in time.
 var guard_skill := 0.4
 var guard_reaction := 0.22
@@ -36,6 +38,8 @@ var _last_seen := Vector3.ZERO
 var _lost_time := 0.0
 var _think_left := 0.0
 var _repath_left := 0.0
+var _path_to := Vector3.ZERO
+var _has_path := false
 var _wait_left := 0.0
 var _seen_time := 0.0
 var _burst_left := 0.0
@@ -62,6 +66,8 @@ func _ready() -> void:
 	add_child(_nav)
 	_home = actor.global_position
 	actor.cmd.yaw = _rng.randf_range(-PI, PI)
+	# Not every bot thinks on the same tick.
+	_think_left = _rng.randf() * 0.2
 	actor.health.damaged.connect(_on_damaged)
 
 
@@ -82,6 +88,10 @@ func home() -> Vector3:
 func _physics_process(delta: float) -> void:
 	if actor.is_dead:
 		return
+	# A bot nobody is near thinks only on the ticks its body moves.
+	if not actor.ticks_now():
+		return
+	delta *= actor.tick_every
 	var cmd := actor.cmd
 	cmd.clear_one_shots()
 	cmd.primary = false
@@ -221,11 +231,20 @@ func _patrol(cmd: ActorCommand, delta: float) -> void:
 
 ## Walks toward a point using the navmesh when one is ready, else in a straight line.
 func _move_toward(cmd: ActorCommand, dest: Vector3, delta: float, face_travel: bool) -> void:
+	# A new path is the dearest thing a bot does, so it asks for one only when
+	# the place it is going has really moved (further for a far-off place), or
+	# when the path it has ran out short of it: a search only reaches so far,
+	# and a long march arrives in legs.
 	_repath_left -= delta
-	if _repath_left <= 0.0:
-		_repath_left = 0.4
-		_nav.target_position = dest
 	var dir := dest - actor.global_position
+	if _repath_left <= 0.0:
+		var moved := dest.distance_to(_path_to)
+		var short := _nav.is_navigation_finished() and _flat_dist(dest) > 3.0
+		if not _has_path or short or moved > maxf(repath_distance, dir.length() * 0.15):
+			_has_path = true
+			_path_to = dest
+			_nav.target_position = dest
+			_repath_left = 0.4
 	var map_rid := _nav.get_navigation_map()
 	if NavigationServer3D.map_get_iteration_id(map_rid) > 0:
 		var next := _nav.get_next_path_position()
@@ -261,13 +280,14 @@ func _find_target() -> Actor:
 		var other := node as Actor
 		if other == null or other == actor or other.is_dead or other.faction == actor.faction:
 			continue
-		if not Raid.together(actor, other):
-			continue
-		if world and not world.can_damage(actor, other, null):
-			continue
+		# Distance first: it is the cheapest way to rule most of a big field out.
 		var chest := other.global_position + Vector3(0, 1.1, 0)
 		var dist := eye.distance_to(chest)
 		if dist >= best_dist:
+			continue
+		if not Raid.together(actor, other):
+			continue
+		if world and not world.can_damage(actor, other, null):
 			continue
 		var in_view := forward.angle_to((chest - eye).normalized()) < deg_to_rad(fov_deg) * 0.5
 		if not in_view and dist > close_sense_range and other != target:

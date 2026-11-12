@@ -19,6 +19,7 @@ const CustomizerTests := preload("res://tests/customizer_tests.gd")
 const BattlefieldTests := preload("res://tests/battlefield_tests.gd")
 const VisorTests := preload("res://tests/visor_tests.gd")
 const SidearmTests := preload("res://tests/sidearm_tests.gd")
+const AttachmentTests := preload("res://tests/attachment_tests.gd")
 
 var _passed := 0
 var _failed := 0
@@ -69,6 +70,7 @@ func _run() -> void:
 	await _test_strongpoints()
 	await _test_events()
 	await _test_drops()
+	await _test_world_heat()
 	await _test_scrip()
 	await _test_online()
 	await _test_plaza()
@@ -85,6 +87,7 @@ func _run() -> void:
 	await _test_battlefield()
 	await _test_visors()
 	await _test_sidearms()
+	await _test_attachments()
 
 
 func _test_rig_models() -> void:
@@ -102,6 +105,10 @@ func _test_economy() -> void:
 
 func _test_sidearms() -> void:
 	await SidearmTests.run(self)
+
+
+func _test_attachments() -> void:
+	await AttachmentTests.run(self)
 
 
 func _test_battlefield() -> void:
@@ -606,10 +613,10 @@ func _test_main_flow() -> void:
 	# Melee and flight must not move the camera on their own.
 	var p: Actor = main.raid.player
 	await frames(40)
-	Input.action_press("weapon_2")
+	Input.action_press("weapon_3")
 	Input.action_press("jump")
 	await frames(40)
-	Input.action_release("weapon_2")
+	Input.action_release("weapon_3")
 	Input.action_release("jump")
 	check(p.get_active_weapon() is MeleeWeapon and not p.is_on_floor(),
 			"real input reaches the actor (blade out, airborne)")
@@ -760,6 +767,8 @@ func _duel(raid: Raid) -> Array:
 	foe.global_position = p.global_position + Vector3(0, 0, -2.0)
 	foe.cmd.yaw = PI
 	foe.cmd.aim_dir = Vector3.BACK
+	# It was a far-off bot a moment ago; the test drives it tick by tick.
+	foe.thin(1)
 	# Give the foe a blade regardless of what the world rolled for it.
 	for w in foe.weapons:
 		w.queue_free()
@@ -1198,10 +1207,16 @@ func _test_flight_rigs_and_abilities() -> void:
 	check(p.velocity.y > 8.0 and p.flight.heat > 0.0, "pressing jump in the air kicks you upward and costs heat")
 	await frames(15)
 	check(p.global_position.y > height + 1.0, "the kick gains height")
+	p.cmd.move = Vector2(1, 0)
+	var side_before := (p.global_basis.inverse() * p.velocity).x
+	await press_jump.call(p)
+	check((p.global_basis.inverse() * p.velocity).x > side_before + 5.0, "boots kick you the way you steer")
+	p.cmd.move = Vector2.ZERO
 	for i in 6:
 		await press_jump.call(p)
 		await frames(4)
 	check(p.flight.overheated, "boosting over and over overheats the boots")
+	check(not p.flight.is_hovering, "boots cannot hover")
 	var vy := p.velocity.y
 	await press_jump.call(p)
 	check(p.velocity.y <= vy, "overheated boots do nothing")
@@ -1224,6 +1239,7 @@ func _test_flight_rigs_and_abilities() -> void:
 	p.cmd.jump = false
 	await frames(5)
 	check(not p.flight.is_gliding, "letting go stops the glide")
+	await _check_glide_flying(p)
 	await _end_raid(raid)
 
 	# The jetpack still works and does not burst or glide.
@@ -1237,6 +1253,7 @@ func _test_flight_rigs_and_abilities() -> void:
 	check(p.flight.is_thrusting and not p.flight.is_gliding and not p.is_on_floor(),
 			"the jetpack still flies by holding jump")
 	p.cmd.jump = false
+	await _check_free_flight(p)
 	check(not p.ability.enabled and p.ability.status_text() == "", "no ability without an ability item")
 	p.cmd.ability_pressed = true
 	await frames(2)
@@ -1370,6 +1387,115 @@ func _vehicle_arena() -> Node3D:
 	return arena
 
 
+## Jetpack free flight. `p` is in the air with a jetpack, jump let go.
+func _check_free_flight(p: Actor) -> void:
+	var heat_rate := p.flight.heat_per_sec
+	p.flight.heat_per_sec = 4.0
+	p.flight.heat = 0.0
+	p.global_position.y += 25.0
+	p.velocity = Vector3.ZERO
+	p.cmd.jump_pressed = true
+	await frames(1)
+	p.cmd.jump_pressed = false
+	check(p.flight.is_hovering, "tapping jump in the air lights the jets")
+	await frames(40)
+	var held := p.global_position.y
+	await frames(40)
+	check(absf(p.global_position.y - held) < 0.2 and absf(p.velocity.y) < 0.1, "the jetpack hovers with nothing held")
+	p.cmd.move = Vector2(1, 0)
+	await frames(40)
+	var side := (p.global_basis.inverse() * p.velocity).x
+	check(side > p.flight.fly_speed - 0.5 and absf(p.global_position.y - held) < 0.2, "hovering strafes level (%.1f m/s)" % side)
+	p.cmd.move = Vector2.ZERO
+	await frames(40)
+	check(Vector2(p.velocity.x, p.velocity.z).length() < 0.5, "letting go of the keys stops you in the air")
+	p.cmd.descend = true
+	await frames(30)
+	check(p.velocity.y < -p.flight.descend_speed + 0.5, "the descend key sinks")
+	p.cmd.descend = false
+	p.cmd.jump = true
+	await frames(40)
+	check(p.velocity.y > p.flight.max_rise_speed - 0.5, "holding jump climbs")
+	p.cmd.jump = false
+	var hover_heat := p.flight.heat
+	await frames(30)
+	hover_heat = p.flight.heat - hover_heat
+	# Head first, wherever you look: up at 45 degrees here.
+	p.cmd.pitch = PI / 4.0
+	p.cmd.sprint = true
+	p.cmd.move = Vector2(0, 1)
+	var boost_heat := p.flight.heat
+	await frames(30)
+	boost_heat = p.flight.heat - boost_heat
+	await frames(60)
+	var along := p.velocity.dot(Basis.from_euler(Vector3(p.cmd.pitch, p.cmd.yaw, 0.0)) * Vector3.FORWARD)
+	check(p.flight.is_boosting and along > p.flight.boost_speed - 1.0 and p.velocity.y > 10.0,
+			"sprinting forward boosts head first along the way you look (%.1f m/s)" % along)
+	check(boost_heat > hover_heat * 2.0, "boosting runs hotter than hovering")
+	p.cmd.sprint = false
+	p.cmd.move = Vector2.ZERO
+	p.cmd.pitch = 0.0
+	await frames(5)
+	check(p.flight.is_hovering and not p.flight.is_boosting, "letting go of the boost drops back to a hover")
+	p.flight.heat_per_sec = 4000.0
+	await frames(60)
+	check(p.flight.overheated and not p.flight.is_hovering and p.velocity.y < 0.0, "overheating puts the jets out and you fall")
+	p.flight.heat_per_sec = heat_rate
+	for i in 400:
+		await get_tree().physics_frame
+		if p.is_on_floor():
+			break
+	p.flight.heat = 0.0
+	p.flight.overheated = false
+	p.cmd.jump_pressed = true
+	await frames(1)
+	p.cmd.jump_pressed = false
+	p.cmd.jump = true
+	await frames(1)
+	check(not p.flight.is_hovering, "a jump off the ground does not light the jets")
+	p.cmd.jump = false
+	var copy := ActorCommand.new()
+	p.cmd.descend = true
+	p.cmd.roll = -1
+	copy.apply_array(p.cmd.to_array())
+	check(copy.descend and copy.roll == -1, "descend and roll travel in the network command")
+	p.cmd.descend = false
+	p.cmd.roll = 0
+
+
+## Wings fly like wings. `p` is high up with glide wings, jump let go.
+func _check_glide_flying(p: Actor) -> void:
+	p.global_position.y += 40.0
+	p.velocity = Vector3(0, -1, 0)
+	p.cmd.jump = true
+	await frames(120)
+	var cruise := Vector2(p.velocity.x, p.velocity.z).length()
+	check(absf(cruise - p.flight.glide_speed) < 0.5, "a level glide settles at glide speed (%.1f)" % cruise)
+	# Turn the view a quarter round at once: the glide comes round in an arc.
+	var before := Vector3(p.velocity.x, 0, p.velocity.z).normalized()
+	p.cmd.yaw -= PI / 2.0
+	await frames(10)
+	var during := Vector3(p.velocity.x, 0, p.velocity.z).normalized()
+	var swung := before.angle_to(during)
+	check(swung > 0.1 and swung < 0.5, "wings turn in an arc instead of snapping round (%.2f rad)" % swung)
+	await frames(80)
+	var after := Vector3(p.velocity.x, 0, p.velocity.z).normalized()
+	check(after.dot(Basis(Vector3.UP, p.cmd.yaw) * Vector3.FORWARD) > 0.99, "and end up flying where you face")
+	p.cmd.pitch = -0.9
+	await frames(150)
+	var dived := Vector2(p.velocity.x, p.velocity.z).length()
+	check(dived > cruise * 1.4 and p.velocity.y < -8.0, "looking down dives for speed (%.1f m/s)" % dived)
+	p.cmd.pitch = 0.9
+	var low := p.global_position.y
+	await frames(60)
+	check(p.flight.is_gliding and p.global_position.y > low + 4.0, "pulling up climbs on that speed (%.1f m)" % (p.global_position.y - low))
+	await frames(240)
+	var slow := Vector2(p.velocity.x, p.velocity.z).length()
+	check(slow < cruise * 0.8 and p.velocity.y < 0.0, "the climb runs out as the speed does")
+	p.cmd.pitch = 0.0
+	p.cmd.jump = false
+
+
 func _test_vehicle_driving() -> void:
 	print("Vehicles: driving")
 	var arena := _vehicle_arena()
@@ -1417,7 +1543,7 @@ func _test_vehicle_driving() -> void:
 	rider.cmd.interact_pressed = true
 	await frames(1)
 	rider.cmd.interact_pressed = false
-	check(rider.vehicle == null and bike.rider == null, "E gets you off")
+	check(rider.vehicle == null and bike.rider == null, "F gets you off")
 	var off: float = rider.global_position.distance_to(bike.global_position)
 	check(off > 0.8 and off < 2.5, "you step off beside the bike")
 	var walk_from := rider.global_position
@@ -2717,6 +2843,34 @@ func _test_online() -> void:
 			"the client has its own actor and leaves damage to the server")
 	await _wait_until(func() -> bool: return alpha.raid.bots.size() == world.bot_count, 180)
 	check(alpha.raid.bots.size() == world.bot_count, "the client sees the server's bots")
+	# Interest: the client hears about itself and what is near in every
+	# update, and about the far side of the field a fraction as often.
+	await frames(30)
+	alpha.entries_received.clear()
+	# Counted in the server's updates, not in time: a server sharing a busy
+	# machine sends fewer a second, and the shares are what matter.
+	await _wait_until(func() -> bool: return int(alpha.entries_received.get(alpha.my_actor_id, 0)) >= 60, 900)
+	var own_updates := int(alpha.entries_received.get(alpha.my_actor_id, 0))
+	var heard := 0
+	var seldom := 0
+	var far_bots := 0
+	var thinned := 0
+	for bot in alpha.raid.bots:
+		var updates := int(alpha.entries_received.get(alpha._ids.get(bot, -1), 0))
+		heard += updates
+		if bot.global_position.distance_to(alpha.raid.player.global_position) > NetSession.MID_RANGE + 10.0:
+			far_bots += 1
+			if updates >= 2 and updates <= own_updates / 4:
+				seldom += 1
+			if bot.tick_every > 1:
+				thinned += 1
+	check(own_updates >= 60, "a client hears about its own player in every update (%d updates)" % own_updates)
+	check(far_bots >= 10 and seldom == far_bots,
+			"and about bots across the field only now and then (%d of %d far bots)" % [seldom, far_bots])
+	check(heard < world.bot_count * own_updates / 2,
+			"so a big field costs a fraction of the traffic (%d bot updates, %d if all were sent)"
+			% [heard, world.bot_count * own_updates])
+	check(thinned == far_bots, "the client also simulates far bots in longer steps (%d of %d)" % [thinned, far_bots])
 	var bravo := await _join("Bravo", port)
 	check(bravo != null, "a second client joins the same raid")
 	if bravo != null:
@@ -2741,6 +2895,10 @@ func _test_online() -> void:
 			await frames(30)
 			var moved := from.distance_to(seen.global_position)
 			check(moved > 3.0, "one player's movement reaches the other through the server (%.1f m)" % moved)
+			# The server may still be playing the last inputs on a busy machine.
+			var agree := func() -> bool:
+				return seen.global_position.distance_to(alpha.raid.player.global_position) < 2.0
+			await _wait_until(agree, 120)
 			var apart := seen.global_position.distance_to(alpha.raid.player.global_position)
 			check(apart < 2.0, "both clients agree where that player is (%.2f m apart)" % apart)
 		var roster := RaidRoster.new(bravo.raid, bravo.raid.player)
@@ -3020,6 +3178,36 @@ func _test_online_movement() -> void:
 	check(top > 0.6, "the player jumps on their own screen at once (%.2f m)" % top)
 	check(seen_jumps == 5, "every jump reaches the server despite lost packets (%d of 5 seen by the other player)" % seen_jumps)
 	dana.simulated_loss = 0.0
+
+	# Free flight is predicted like running: jump, tap again to light the
+	# jets, fly sideways, and the server agrees all the way.
+	if me.flight.can_hover():
+		await frames(60)
+		me.cmd.jump_pressed = true
+		await frames(1)
+		me.cmd.jump_pressed = false
+		await frames(12)
+		me.cmd.jump_pressed = true
+		await frames(1)
+		me.cmd.jump_pressed = false
+		dana.max_correction = 0.0
+		me.cmd.jump = true
+		await frames(30)
+		me.cmd.jump = false
+		me.cmd.move = Vector2(1, 0)
+		await frames(60)
+		me.cmd.move = Vector2.ZERO
+		await frames(40)
+		var up := me.global_position.y - ground
+		check(me.flight.is_hovering and up > 2.0, "a lagging player hovers on their own screen (%.1f m up)" % up)
+		check(dana.max_correction < 0.4, "free flight on a slow connection needs no real correction (worst %.2f m)" % dana.max_correction)
+		check(is_instance_valid(seen) and seen.flight.is_hovering and seen.global_position.distance_to(me.global_position) < 0.6,
+				"the other player sees them hovering in the same place")
+		me.cmd.descend = true
+		await _wait_until(func() -> bool: return me.is_on_floor(), 300)
+		me.cmd.descend = false
+		await frames(30)
+		check(not me.flight.is_hovering and not seen.flight.is_hovering, "landing puts the jets out on both screens")
 
 	# Other players glide between updates instead of stepping.
 	me.cmd.move = Vector2(1, 0)
@@ -3818,6 +4006,45 @@ func _test_plaza() -> void:
 	await _end_raid(raid)
 
 
+func _test_world_heat() -> void:
+	print("World heat: what a doorway says about the world behind it")
+	const PlazaView := preload("res://core/social/plaza_view.gd")
+	var raid := Raid.new()
+	add_child(raid)
+	raid.apply_to_profile = false
+	raid.start_server(Worlds.get_world("frostline"), 0)
+	var empty := raid.status()
+	check(empty.players == 0 and empty.level == "Quiet" and empty.bounty == 0 and empty.event == "",
+			"an empty world reports itself quiet")
+	var a := raid.add_player([], {}, "Ada", "acct_a")
+	raid.add_player([], {}, "Bo", "acct_b")
+	a.bounty = 150
+	raid.war.intensity = 0.62
+	raid.start_event("warlord")
+	var busy := raid.status()
+	check(busy.players == 2 and busy.level == "Battle" and busy.bounty == 150 and busy.event != "",
+			"a busy one reports players, war level, top bounty and event: %s" % PlazaView.heat_text(busy))
+	check(not str(busy).contains("Ada") and not busy.has("centre"), "and never who or where anyone is")
+	check(PlazaView.heat_text({}) == "" and PlazaView.heat_text(empty) == "QUIET   0 players",
+			"the sign is blank until the server speaks, and short when nothing is on")
+	check(PlazaView.heat_text(busy).contains("2 players") and PlazaView.heat_text(busy).contains("Top bounty 150")
+			and PlazaView.heat_text({"players": 1, "level": "Skirmish"}) == "SKIRMISH   1 player",
+			"it lists players and the top bounty")
+	check(PlazaView.heat_color(1.0).g < PlazaView.heat_color(0.0).g, "the sign reddens as the war heats up")
+	raid.queue_free()
+	await frames(2)
+
+	# A client cleans what it is told.
+	var net := NetSession.new()
+	add_child(net)
+	net._world_status({"ashfront": {"players": -4, "war": 9.0, "level": "x".repeat(200), "bounty": "12"}, 7: {}, "bad": 3})
+	var got: Dictionary = net.world_status.get("ashfront", {})
+	check(net.world_status.size() == 1 and got.players == 0 and got.war == 1.0 and got.level.length() <= 24
+			and got.bounty == 12, "a client cleans the status it is sent")
+	net.queue_free()
+	await frames(1)
+
+
 func _test_plaza_online() -> void:
 	print("Plaza online: a shared safe zone beside the warzone")
 	const PlazaView := preload("res://core/social/plaza_view.gd")
@@ -3831,6 +4058,10 @@ func _test_plaza_online() -> void:
 		return
 	check(ada.world_id == "plaza" and ada.raid.world.safe_zone, "the server's front door is the plaza")
 	check(ada.routes.get("ashfront", -1) == port + 1, "the plaza says where the warzone runs")
+	await _wait_until(func() -> bool: return ada.world_status.has("ashfront"), 240)
+	var quiet: Dictionary = ada.world_status.get("ashfront", {})
+	check(quiet.get("players", -1) == 0 and quiet.get("level", "") == "Quiet" and not ada.world_status.has("plaza"),
+			"the plaza hears how the warzone is doing: %s" % PlazaView.heat_text(quiet))
 	var me := ada.raid.player
 	check("rifle_carbine" in me.gear_items and me.weapons_locked, "you wear your loadout, with weapons locked")
 	await frames(30)
@@ -3887,6 +4118,10 @@ func _test_plaza_online() -> void:
 		await _wait_until(func() -> bool: return ada_war.account.deployed, 120)
 		check(ada_war.raid != null and not ada_war.raid.world.safe_zone and ada_war.account.deployed
 				and not ada_war.raid.player.weapons_locked, "deploying there is a real raid with gear at stake")
+		if bo != null:
+			await _wait_until(func() -> bool: return bo.world_status.get("ashfront", {}).get("players", 0) == 1, 600)
+			check(bo.world_status.get("ashfront", {}).get("players", 0) == 1,
+					"someone still in the plaza sees the warzone fill up")
 		await _leave(ada_war)
 	await _leave(bo)
 
@@ -3906,8 +4141,13 @@ func _test_plaza_online() -> void:
 				gate = node
 		check(gate != null and PlazaView.portal_at(main.raid, gate.global_position) == gate
 				and PlazaView.portal_at(main.raid, Vector3(0, 0, 20)) == null, "standing in a gate offers the trip")
-		check(gate != null and PlazaView.prompt_for(gate, main.net.routes).begins_with("[E]")
+		check(gate != null and PlazaView.prompt_for(gate, main.net.routes).begins_with("[F]")
 				and PlazaView.prompt_for(gate, {}).contains("closed"), "a gate to a world the server lacks is closed")
+		var heat: Label3D = main.plaza_view.heat_signs.get("ashfront")
+		await _wait_until(func() -> bool: return heat != null and heat.visible, 240)
+		check(heat != null and heat.visible and heat.text.begins_with("QUIET") and gate != null
+				and heat.global_position.y > gate.global_position.y + 3.0,
+				"the sign over the gate says how that world is doing")
 		main.use_portal("clans")
 		check(main.raid != null, "the clan hall is not open yet")
 		main.use_portal("world:ashfront")
@@ -4423,7 +4663,7 @@ func _test_home_base() -> void:
 	var dmr := base.display_for("dmr_longshot")
 	_face_display(base.player, dmr)
 	await frames(2)
-	check(base.player.find_interactable() == dmr and dmr.get_prompt() == "[E] Equip Longshot DMR",
+	check(base.player.find_interactable() == dmr and dmr.get_prompt() == "[F] Equip Longshot DMR",
 			"looking at a gun on the rack offers to equip it")
 	await _use(base.player)
 	check(asked == [["primary", "dmr_longshot"]], "using it asks for that gun in the primary slot")
@@ -4448,7 +4688,7 @@ func _test_home_base() -> void:
 	check(lines[0] == "Lattice Shard" and "Relic" in lines[1], "the overlay names what you look at and its rarity")
 	check(hud.tag.visible and hud.tag.text == lines[1] and hud.tag.global_position.distance_to(shard.global_position) < 2.0,
 			"what it is shows on a tag over the gear itself, not on the screen")
-	check(base.get_node("Banner/Title").text == "HOME BASE" and "press E" in base.banner_text(),
+	check(base.get_node("Banner/Title").text == "HOME BASE" and "press F" in base.banner_text(),
 			"the base's name and how it works hang on a banner in the room")
 	for kind: String in BaseLayout.KINDS:
 		var bike_or_gear: Array = by_kind.get(kind, [])
@@ -4493,7 +4733,7 @@ func _test_home_base() -> void:
 			"the base has a camera and an overlay")
 	check(main.base.displays.size() == 5 and main.base.display_for("rifle_carbine").equipped,
 			"it shows your stash and what you have equipped")
-	# Real input: look at the DMR and press E.
+	# Real input: look at the DMR and press F.
 	var target: Node3D = main.base.display_for("dmr_longshot")
 	_face_display(main.base.player, target)
 	main.controller.yaw = main.base.player.cmd.yaw
@@ -4520,7 +4760,7 @@ func _test_home_base() -> void:
 		main.controller.yaw = main.base.player.cmd.yaw
 		main.controller.pitch = main.base.player.cmd.pitch
 		await frames(2)
-		check(main.base.player.find_interactable() == console and console.get_prompt().begins_with("[E]"),
+		check(main.base.player.find_interactable() == console and console.get_prompt().begins_with("[F]"),
 				"the %s can be walked up to and used" % id)
 		console.interact(main.base.player)
 		await frames(2)

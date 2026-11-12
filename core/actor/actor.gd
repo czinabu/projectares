@@ -66,6 +66,11 @@ var slide_stamina := 10.0
 var slide_eye_drop := 0.75
 var crouch_rate := 8.0
 
+## How often the actor is simulated: every tick (1), or every nth tick with
+## the time made up in one longer step. The authority thins out bots that no
+## player is near (`Raid._tick_detail`); a player's own actor is never thinned.
+var tick_every := 1
+
 var cmd := ActorCommand.new()
 var health := HealthComponent.new()
 var inventory := Inventory.new()
@@ -78,6 +83,9 @@ var active_weapon_index := 0
 ## Item ids of equipped gear (weapons, rig, armor). Dropped on death.
 var gear_items: Array[String] = []
 var frame_name := "No armor"
+## How warm this actor looks through a thermal visor next to a bare body (1).
+## Armor frames change it (see `Visor.heat_of`).
+var heat_signature := 1.0
 ## The vehicle this actor is riding, or null. While riding, the vehicle moves
 ## the actor; weapons, healing and abilities still work.
 var vehicle: Node3D = null
@@ -118,6 +126,7 @@ var hand_override := false
 ## The weapon last put away with the holster key, drawn again by it.
 var last_drawn := 0
 
+var _ticks_waited := 0
 var _dash_left := 0.0
 var _dash_cd := 0.0
 var _dash_dir := Vector3.ZERO
@@ -191,9 +200,36 @@ func _build_body() -> void:
 	body_mesh.add_child(visor)
 
 
+## Thins the actor out to one step every `every` ticks. `phase` spreads
+## thinned actors over different ticks.
+func thin(every: int, phase := 0) -> void:
+	every = maxi(every, 1)
+	if every == tick_every:
+		return
+	tick_every = every
+	_ticks_waited = phase % every
+
+
+## Whether the actor is simulated this tick. Whatever drives it (a bot's
+## brain) asks before the actor's own step, and skips the same ticks.
+func ticks_now() -> bool:
+	return _ticks_waited + 1 >= tick_every
+
+
+## Whether the actor took a step in the tick just gone.
+func stepped() -> bool:
+	return _ticks_waited == 0
+
+
 func _physics_process(delta: float) -> void:
 	if is_dead:
 		return
+	if tick_every > 1:
+		if not ticks_now():
+			_ticks_waited += 1
+			return
+		_ticks_waited = 0
+		delta *= tick_every
 	rotation.y = cmd.yaw
 	if not hand_override:
 		hand.position = HAND_REST
@@ -274,13 +310,17 @@ func _simulate_movement(delta: float) -> void:
 		speed *= stagger_speed_mult
 	var horizontal := Vector3(velocity.x, 0.0, velocity.z)
 	# Gliding: holding jump while falling with wings carries you forward.
-	flight.is_gliding = flight.can_glide() and cmd.jump and not on_floor and velocity.y < 0.0 \
-			and not staggered
+	# Once gliding you stay gliding while you climb on your speed.
+	flight.is_gliding = flight.can_glide() and cmd.jump and not on_floor and not staggered \
+			and (velocity.y < 0.0 or flight.is_gliding)
 	if on_floor:
 		horizontal = horizontal.move_toward(wish * speed, ground_accel * delta)
 	elif flight.is_gliding:
-		var heading := wish.normalized() if wish.length() > 0.1 else yaw_basis * Vector3.FORWARD
-		horizontal = horizontal.move_toward(heading * flight.glide_speed, flight.glide_accel * delta)
+		horizontal = _glide_velocity(horizontal, wish, yaw_basis, delta)
+	elif flight.is_hovering and cmd.sprint and cmd.move.y > 0.0:
+		pass  # Boosting: `_simulate_hover` flies the whole velocity.
+	elif flight.is_hovering:
+		horizontal = horizontal.move_toward(wish * flight.fly_speed, flight.fly_accel * delta)
 	elif wish.length() > 0.01:
 		# In the air you can steer but you keep your momentum if you let go.
 		horizontal = horizontal.move_toward(wish * speed, air_accel * delta)
@@ -305,22 +345,111 @@ func _simulate_movement(delta: float) -> void:
 		var burst := flight.try_burst()
 		if burst > 0.0:
 			velocity.y = maxf(velocity.y, burst)
-	var thrust := flight.tick(cmd.jump and not on_floor and not staggered, delta)
-	velocity.y += (thrust - gravity) * delta
-	if thrust > 0.0:
-		velocity.y = minf(velocity.y, flight.max_rise_speed)
-	if flight.is_gliding:
-		velocity.y = maxf(velocity.y, -flight.glide_fall_speed)
+			if flight.burst_push > 0.0 and wish.length() > 0.1:
+				# Boots kick you the way you steer, not only up.
+				var push := wish.normalized() * flight.burst_push
+				var along := Vector3(velocity.x, 0.0, velocity.z).dot(wish.normalized())
+				push *= clampf(1.0 - along / (flight.burst_push * 2.0), 0.0, 1.0)
+				velocity.x += push.x
+				velocity.z += push.z
+		# A tap in the air lights a jetpack's jets and keeps them lit.
+		if flight.can_hover() and not flight.overheated:
+			flight.is_hovering = true
+	if on_floor or staggered or not flight.can_hover() or flight.overheated:
+		flight.is_hovering = false
+	flight.is_boosting = flight.is_hovering and cmd.sprint and cmd.move.y > 0.0
+	if flight.is_hovering:
+		_simulate_hover(delta)
+	else:
+		var thrust := flight.tick(cmd.jump and not on_floor and not staggered, delta)
+		velocity.y += (thrust - gravity) * delta
+		if thrust > 0.0:
+			velocity.y = minf(velocity.y, flight.max_rise_speed)
+		if flight.is_gliding:
+			velocity.y = maxf(velocity.y, -_glide_sink())
+			# Pulling up with speed in hand climbs on it.
+			var pull := -glide_trim()
+			var air_speed := Vector2(velocity.x, velocity.z).length()
+			var spare := air_speed - flight.glide_speed * flight.glide_stall
+			if pull > 0.0 and spare > 0.1:
+				# The lift fades out as the speed comes down to the stall.
+				var lift := air_speed * sin(pull * 0.7) * clampf(spare / (flight.glide_speed * 0.15), 0.0, 1.0)
+				velocity.y = maxf(velocity.y, minf(lift, velocity.y + flight.glide_lift_accel * delta))
 	velocity.y = maxf(velocity.y, -max_fall_speed)
 
 	var fall_speed := -velocity.y
-	move_and_slide()
+	if tick_every > 1:
+		# One longer step: the engine moves a body by one tick of velocity.
+		velocity *= tick_every
+		move_and_slide()
+		velocity /= tick_every
+	else:
+		move_and_slide()
 
 	var now_on_floor := is_on_floor()
 	airborne_time = 0.0 if now_on_floor else airborne_time + delta
 	if now_on_floor and not _was_on_floor:
 		landed.emit(maxf(fall_speed, 0.0))
 	_was_on_floor = now_on_floor
+
+
+## Jets lit: the rig carries your weight. Jump climbs, descend sinks, and a
+## boost flies you head first along the way you look.
+func _simulate_hover(delta: float) -> void:
+	var climb := (1.0 if cmd.jump else 0.0) - (1.0 if cmd.descend else 0.0)
+	if flight.is_boosting:
+		var want := Basis.from_euler(Vector3(cmd.pitch, cmd.yaw, 0.0)) * Vector3.FORWARD * flight.boost_speed
+		want += Basis(Vector3.UP, cmd.yaw) * Vector3(cmd.move.x * flight.fly_speed * 0.5, 0.0, 0.0)
+		want.y += climb * flight.descend_speed
+		velocity = velocity.move_toward(want, flight.boost_accel * delta)
+		flight.tick(true, delta, flight.boost_heat_mult)
+		return
+	var rise := flight.max_rise_speed if climb > 0.0 else climb * flight.descend_speed
+	velocity.y = move_toward(velocity.y, rise, flight.hover_accel * delta)
+	flight.tick(true, delta, 1.0 if climb > 0.0 else flight.hover_heat_mult)
+
+
+## How far the glide is tipped by where you look: 1 a full dive, -1 a full flare.
+func glide_trim() -> float:
+	return clampf(-cmd.pitch / 0.9, -1.0, 1.0)
+
+
+## Wings fly where they point: the heading turns toward where you steer (the
+## move keys, or the way you face) rather than sliding there, and a dive is
+## faster than a flare.
+func _glide_velocity(horizontal: Vector3, wish: Vector3, yaw_basis: Basis, delta: float) -> Vector3:
+	var want := wish.normalized() if wish.length() > 0.1 else yaw_basis * Vector3.FORWARD
+	var heading := horizontal.normalized() if horizontal.length() > 1.0 else want
+	var angle := heading.signed_angle_to(want, Vector3.UP)
+	var step := flight.glide_turn_rate * delta
+	heading = heading.rotated(Vector3.UP, clampf(angle, -step, step))
+	var trim := glide_trim()
+	var air_speed := horizontal.length()
+	var cruise := flight.glide_speed
+	if air_speed < cruise * flight.glide_stall:
+		# The launch: the wings bite and carry you off.
+		air_speed = move_toward(air_speed, cruise * flight.glide_stall, flight.glide_accel * delta)
+	elif trim > 0.0:
+		var top := cruise * (1.0 + flight.glide_dive_gain * trim)
+		air_speed = move_toward(air_speed, top, (flight.glide_dive_accel * trim if air_speed < top else flight.glide_drag) * delta)
+		if air_speed < cruise:
+			air_speed = move_toward(air_speed, cruise, flight.glide_recover * delta)
+	else:
+		if velocity.y > 0.0:
+			# Height is paid for in speed.
+			air_speed -= flight.glide_climb_cost * velocity.y / maxf(air_speed, 1.0) * delta
+		var hold := cruise * lerpf(1.0, flight.glide_stall, -trim)
+		air_speed = move_toward(air_speed, hold, (flight.glide_recover if air_speed < hold else flight.glide_drag) * delta)
+		air_speed = maxf(air_speed, cruise * flight.glide_stall)
+	return heading * air_speed
+
+
+## The fastest a glide sinks right now.
+func _glide_sink() -> float:
+	var trim := glide_trim()
+	if trim > 0.0:
+		return lerpf(flight.glide_fall_speed, flight.glide_dive_fall, trim)
+	return flight.glide_fall_speed
 
 
 ## Starts, carries on, or ends a slide, and returns the ground velocity.
@@ -414,6 +543,45 @@ func get_aim_dir() -> Vector3:
 	if cmd.aim_dir.length_squared() > 0.0001:
 		return cmd.aim_dir.normalized()
 	return Basis.from_euler(Vector3(cmd.pitch, cmd.yaw, 0.0)) * Vector3.FORWARD
+
+
+## Weapon indices in key order: primary (1), sidearm (2), melee (3), then any
+## power or special weapon (4). The number keys and the mouse wheel both use
+## this, so the order never depends on how the loadout was equipped.
+func slot_order() -> Array[int]:
+	var order: Array[int] = []
+	for rank in 4:
+		for i in weapons.size():
+			if _slot_rank(weapons[i]) == rank:
+				order.append(i)
+	return order
+
+
+## The weapon index on number key `key` (1 to 4), or -1 if that slot is empty.
+func weapon_for_key(key: int) -> int:
+	var order := slot_order()
+	return order[key - 1] if key >= 1 and key <= order.size() else -1
+
+
+## The next (step 1) or previous (step -1) weapon index in key order, wrapping.
+func cycle_weapon_index(step: int) -> int:
+	var order := slot_order()
+	if order.size() < 2:
+		return active_weapon_index
+	# Holstered: step from the weapon last drawn.
+	var at := order.find(active_weapon_index if get_active_weapon() else last_drawn)
+	return order[posmod(maxi(at, 0) + step, order.size())]
+
+
+static func _slot_rank(w: Weapon) -> int:
+	# Power weapons are guns too, but they have their own key (4).
+	if w.item_id != "" and ItemDB.has_tag(w.item_id, "power"):
+		return 3
+	if w is Gun:
+		return 1 if w.is_sidearm else 0
+	if w is MeleeWeapon:
+		return 2
+	return 3
 
 
 func get_active_weapon() -> Weapon:

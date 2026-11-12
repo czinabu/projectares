@@ -47,6 +47,8 @@ var description := ""
 ## How many bots the world keeps alive. A dead one is replaced after
 ## `bot_respawn_time` seconds, away from the players.
 var bot_count := 8
+## How many players a server lets into one copy of the world at once.
+var max_players := 8
 ## A social space with no combat and nothing at stake. See "Safe zones" above.
 var safe_zone := false
 var bot_respawn_time := 45.0
