@@ -14,6 +14,10 @@ rows marked **pre-playtest** come before the friends playtest.
 | Main hub as a safe social space | Built | The Concourse: safe zone, gates, shops, clan hall, arena gate, look tags. |
 | Hub vehicles limited to harmless fun | Partly | Bikes can be ridden in the plaza and nobody can be hurt. Not checked: whether parked bikes pack themselves away so the hub stays clear. |
 | Watch skins shown off in the hub | Missing | No watch skin items yet. |
+| Expand the main hub | Missing | Prerequisite for the hub activities below. Needs a tall, open skyline for ring courses and a ground bike track, a screens area to gather and watch, and space for the RC arena. |
+| Hub spectating screens and bounty board | Partly | Heat signs over the world gates already show war level, players, top bounty and events (`world_status`). Missing: a most-wanted board, arena results, live arena video (later). First hub activity. |
+| Hub ring races and time trials, with per-rig and bike leaderboards | Missing | Second hub activity, after the hub is expanded. |
+| Hub toy RC arena | Missing | Later; a separate little game. |
 | Home base with armory wall, garage, trophies | Built | `core/base`: gun rack, blade wall, garage, trophy shelf, consoles. |
 | Heavy weapons stacked on the armory wall | Missing | Power weapons cannot be stored (`StashRules.storable` refuses the `power` tag). **Pre-playtest**, with the heavy chamber. |
 | PvE world: quests, dungeons, bosses | Missing, deferred | Until after the friends playtest. Frostline stands in (no PvP, gentle death, basic loot). |

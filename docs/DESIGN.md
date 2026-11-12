@@ -60,6 +60,26 @@ new planet is a new folder under `worlds/`.
   block anyone, and parked vehicles pack themselves away after a short time.
 - Loadouts can be changed freely here (it is out of the fight).
 
+**Hub activities**, all in-world, in this order:
+
+1. **Spectating screens and a bounty board.** Screens around the hub show
+   what is happening in the worlds: a "most wanted" board of the top
+   bounties and the Marked, war levels, arena results. Start with stats
+   (the plaza's heat signs already get `world_status`); live video of arena
+   bouts comes later.
+2. **Ring races and time trials.** Courses of rings through the hub's
+   skyline, one per rig plus a bike course. A cheap, small version of the
+   racing mode (section 9) and a place for new players to practise each rig.
+   Leaderboards per rig and for bikes on a screen at the start gate.
+3. **Toy RC arena** (later). Fight or race with toy vehicles from the watch.
+   It is really a separate little game with its own controls and balance, so
+   it waits.
+
+**Expanding the hub comes first.** The Concourse is a walled courtyard and
+has no room for these. It needs a skyline tall and open enough for ring
+courses (and a bike track at ground level), a screens area where people
+gather to watch, and a space set aside for the RC arena.
+
 ### Home base
 
 - The stash on show: guns on the armory wall, blades, armor stands, rigs,
@@ -454,12 +474,14 @@ Unchanged from the current game (see README "Credits and shops"):
    proposal), the heavy weapon chamber and banking, the sign-out rework, and
    bike tuning against the new cruise speed.
 2. **Friends playtest** on a hosted server (`docs/hosting.md`).
-3. **After the playtest:** the supply meteor event, the melee air-lunge, the gadget list and the first
+3. **After the playtest:** expanding the hub, then its spectating screens
+   and bounty board and ring courses, the supply meteor event, the melee air-lunge, the gadget list and the first
    new gadgets, vehicle utility on the bike (passenger, cargo), loadout
    swapping in the PvE world, then the rest of the vehicle roster (rover,
    mech, jet), and the racing mode (section 9).
    Artifacts arrive with arena tournaments and PvE dungeons, and the Sky
-   Leviathan with the jet and the PvE world.
+   Leviathan with the jet and the PvE world. The hub's toy RC arena comes
+   last.
 4. **The PvE world:** quests, dungeons and bosses.
 5. **More worlds** as plug-ins.
 
