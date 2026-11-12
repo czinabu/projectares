@@ -157,7 +157,9 @@ Walk into a glowing pad and press **E** to use it:
 
 - **World gates** (north): each leads to that world's lobby, where you set
   your loadout and deploy. After a run, or when you leave the lobby, you are
-  back in the Concourse.
+  back in the Concourse. A sign over each gate says how that world is doing
+  right now: its war level, how many players are in it, the biggest bounty
+  on anyone's head and any event running. It reddens as the war heats up.
 - **Quarters** (west): the door to your home base. Its door leads back here.
 - **Storefronts** (the corners): one for every shop. Step up to the counter
   and press F to use its terminal: buy and sell on the screen without leaving

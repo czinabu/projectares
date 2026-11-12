@@ -75,6 +75,13 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   drop if the choice is no longer on offer. Online the client only sends the
   id with `NetSession.deploy(drop)`; a client lists its choices from what the
   server already told it (`Strongpoint.viewer_holds`, war intensity).
+- World heat: `Raid.status()` is what a world shows of itself from outside
+  (players, war level, top bounty, the event running) and never says who or
+  where anyone is. The safe zone's `NetSession` gathers it from the other
+  sessions in the process and sends it to everyone standing there
+  (`NetSession.world_status`); `PlazaView` writes it on a sign over each
+  world doorway (`heat_signs`). Anything else that advertises a world reads
+  `world_status`, not a second channel.
 - World events (`Raid.event`, `start_event`, `end_event`): one at a time, on
   a timer the war speeds up, tuned by `WorldDef.event_interval`,
   `event_lifetime` and `warlord_escort`. A supply pod is an ordinary

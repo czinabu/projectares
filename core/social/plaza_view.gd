@@ -1,7 +1,8 @@
 extends CanvasLayer
 ## What a safe zone shows you: the prompt for the portal you are standing in
 ## on screen, and what the player you are looking at is wearing on a tag over
-## their head (`tag`). The map's own signs say where you are. UI only. It
+## their head (`tag`). Over each doorway to a world hangs a sign with how that
+## world is doing right now (`heat_signs`). The map's own signs say where you are. UI only. It
 ## reads the raid and never changes it; using a portal is reported with
 ## `portal_used` and the game's flow (`core/main.gd`) decides what happens.
 ##
@@ -20,6 +21,13 @@ var raid: Raid
 ## Where each world runs on this server (world id -> port). A gate to a world
 ## that is missing here is shown as closed.
 var routes := {}
+## How each world on this server is doing (world id -> `Raid.status()`), as
+## the server last told it. Shared with `NetSession.world_status`.
+var world_status := {}
+## The sign over each world doorway: world id -> Label3D.
+var heat_signs := {}
+## How high over the doorway its sign hangs.
+var heat_sign_height := 6.9
 ## The gear of the player you look at, floating over them.
 var tag: Label3D
 var _prompt: Label
@@ -27,9 +35,10 @@ var _notice: Label
 var _notice_left := 0.0
 
 
-func setup(p_raid: Raid, p_routes := {}) -> void:
+func setup(p_raid: Raid, p_routes := {}, p_status := {}) -> void:
 	raid = p_raid
 	routes = p_routes
+	world_status = p_status
 
 
 func _ready() -> void:
@@ -53,6 +62,57 @@ func _ready() -> void:
 	tag.top_level = true
 	tag.visible = false
 	add_child(tag)
+	refresh_heat()
+
+
+## Writes each world's news on the sign over its doorway. Call it when
+## `world_status` changes.
+func refresh_heat() -> void:
+	if raid == null or not is_instance_valid(raid) or raid.map == null or not is_inside_tree():
+		return
+	for node in raid.get_tree().get_nodes_in_group("portal"):
+		var portal := node as Node3D
+		if portal == null or not raid.map.is_ancestor_of(portal):
+			continue
+		var destination: String = portal.get_meta("destination", "")
+		if not destination.begins_with("world:"):
+			continue
+		var id := destination.trim_prefix("world:")
+		var sign: Label3D = heat_signs.get(id)
+		if sign == null:
+			sign = Label3D.new()
+			sign.name = "Heat_%s" % id
+			sign.font_size = 56
+			sign.pixel_size = 0.006
+			sign.outline_size = 12
+			sign.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+			sign.top_level = true
+			add_child(sign)
+			heat_signs[id] = sign
+		sign.global_position = portal.global_position + Vector3(0, heat_sign_height, 0)
+		var status: Dictionary = world_status.get(id, {})
+		sign.text = heat_text(status)
+		sign.modulate = heat_color(float(status.get("war", 0.0)))
+		sign.visible = sign.text != ""
+
+
+## One line on how a world is doing, or "" when nothing is known.
+static func heat_text(status: Dictionary) -> String:
+	if status.is_empty():
+		return ""
+	var players := int(status.get("players", 0))
+	var parts: Array[String] = [str(status.get("level", "Quiet")).to_upper(),
+			"1 player" if players == 1 else "%d players" % players]
+	if int(status.get("bounty", 0)) > 0:
+		parts.append("Top bounty %d" % int(status.bounty))
+	if str(status.get("event", "")) != "":
+		parts.append(str(status.event))
+	return "   ".join(parts)
+
+
+## Pale when a world is quiet, towards red as its war heats up.
+static func heat_color(war: float) -> Color:
+	return Color(0.8, 0.9, 1.0).lerp(Color(1.0, 0.3, 0.2), clampf(war, 0.0, 1.0))
 
 
 func _process(delta: float) -> void:
