@@ -73,6 +73,7 @@ func _run() -> void:
 	await _test_events()
 	await _test_drops()
 	await _test_world_heat()
+	await _test_clans()
 	await _test_scrip()
 	await _test_online()
 	await _test_plaza()
@@ -82,7 +83,7 @@ func _run() -> void:
 	await _test_home_base()
 	await _test_arena()
 	await _test_online_arena()
-	await LookTests.run(self)
+	await _test_look()
 	await _test_rig_models()
 	await _test_customizer()
 	await _test_economy()
@@ -90,6 +91,10 @@ func _run() -> void:
 	await _test_visors()
 	await _test_sidearms()
 	await _test_attachments()
+
+
+func _test_look() -> void:
+	await LookTests.run(self)
 
 
 func _test_rig_models() -> void:
@@ -4012,6 +4017,90 @@ func _test_plaza() -> void:
 	await _end_raid(raid)
 
 
+func _test_clans() -> void:
+	print("Clans: players who stand together")
+	const ClanPanel := preload("res://core/social/clan_panel.gd")
+	var clans := ClanService.new()
+	clans.persist = false
+	var names := func(id: String) -> String: return id.capitalize()
+	check(not clans.create("ada", "x", "WLF").ok and not clans.create("ada", "Wolves", "!").ok
+			and not clans.create("", "Wolves", "WLF").ok, "a clan needs a real name, a tag and a founder")
+	var made := clans.create("ada", "  The   Wolves ", "w-lf!")
+	check(made.ok and clans.name_of(made.clan) == "The Wolves" and clans.tag_of(made.clan) == "WLF",
+			"founding a clan cleans its name and tag")
+	check(not clans.create("bo", "the wolves", "XX").ok and not clans.create("bo", "Others", "wlf").ok,
+			"names and tags are not shared")
+	check(not clans.create("ada", "Second", "SEC").ok and not clans.join("ada", made.clan).ok,
+			"an account is in one clan at most")
+	check(clans.join("bo", made.clan).ok and clans.clan_of("bo") == made.clan and not clans.join("cy", "nope").ok,
+			"others join it by id")
+	clans.max_members = 2
+	check(not clans.join("cy", made.clan).ok, "a full clan takes nobody")
+	clans.max_members = 24
+	var seen: Dictionary = clans.snapshot("bo", names)
+	check(seen.clan.name == "The Wolves" and seen.clan.members == ["Ada", "Bo"] and seen.clan.leader == "Ada"
+			and not seen.clan.is_leader and seen.clans.size() == 1 and seen.clans[0].members == 2
+			and not str(seen).contains("ada"), "a member sees the roster by name, never by account")
+	check(ClanPanel.lines(seen)[0] == "[WLF] The Wolves" and ClanPanel.lines(seen)[1] == "Ada  (leader)"
+			and ClanPanel.lines(clans.snapshot("cy", names)) == ["[WLF] The Wolves  2 members"]
+			and ClanPanel.lines({})[0].begins_with("No clans"), "the hall's screen lists it")
+	check(clans.leave("ada").ok and clans.snapshot("bo", names).clan.is_leader and clans.clan_of("ada") == "",
+			"when the leader goes the next member leads")
+	check(clans.leave("bo").ok and clans.snapshot("bo", names).clans.is_empty() and not clans.leave("bo").ok,
+			"a clan with nobody left is gone")
+
+	# Saved and read back.
+	var dir := "user://test_clans"
+	_wipe_dir(dir)
+	var saved := ClanService.new()
+	saved.open(dir, true)
+	var kept: String = saved.create("ada", "Keepers", "KEEP").clan
+	saved.join("bo", kept)
+	var again := ClanService.new()
+	again.open(dir, true)
+	check(again.clan_of("bo") == kept and again.members_of(kept) == ["ada", "bo"] and again.tag_of(kept) == "KEEP"
+			and not again.create("cy", "Keepers", "K2").ok, "clans are saved with the accounts")
+	_wipe_dir(dir)
+
+	# In a warzone clanmates are one side.
+	var raid := Raid.new()
+	add_child(raid)
+	raid.apply_to_profile = false
+	raid.start_server(Worlds.get_world("ashfront"), 3)
+	for bot in raid.bots:
+		bot.get_node("Brain").set_physics_process(false)
+		bot.set_physics_process(false)
+	raid.set_team("acct-a", "c1", "Wolves")
+	raid.set_team("acct-b", "c1", "Wolves")
+	var a := raid.add_player([], {}, "Ada", "acct-a")
+	var b := raid.add_player([], {}, "Bo", "acct-b")
+	var c := raid.add_player([], {}, "Cy", "acct-c")
+	for actor: Actor in [a, b, c]:
+		actor.set_physics_process(false)
+		actor.protected_left = 0.0
+	a.clan = "c1"
+	b.clan = "c1"
+	check(raid.side_of(a)[0] == raid.side_of(b)[0] and raid.side_of(a)[1] == "Wolves"
+			and raid.side_of(c)[0] != raid.side_of(a)[0] and Visor.allied(a, b) and not Visor.allied(a, c),
+			"clanmates are one side, and a stranger is not")
+	if not raid.strongpoints.is_empty():
+		var point := raid.strongpoints[0]
+		point.hold(raid.side_of(a)[0], "Wolves", true)
+		check(raid.holds(b, point) and not raid.holds(c, point), "ground one clanmate takes is held by the clan")
+		check("point:%d" % point.index in raid.drop_choices("acct-b").map(func(d: Dictionary) -> String: return d.id)
+				and "point:%d" % point.index not in raid.drop_choices("acct-c").map(func(d: Dictionary) -> String: return d.id),
+				"and a clanmate can drop in on it")
+	var before := b.health.health
+	check(not Combat.deal(b, DamageInfo.make(20.0, a, "bullet")) and b.health.health == before,
+			"clanmates cannot hurt each other")
+	check(Combat.deal(c, DamageInfo.make(20.0, a, "bullet")) and Combat.deal(a, DamageInfo.make(5.0, c, "bullet")),
+			"everyone else is fair game")
+	raid.set_team("acct-b", "")
+	check(raid._player_side("acct-b") == "acct-b", "leaving the team puts a player back on their own")
+	raid.queue_free()
+	await frames(2)
+
+
 func _test_world_heat() -> void:
 	print("World heat: what a doorway says about the world behind it")
 	const PlazaView := preload("res://core/social/plaza_view.gd")
@@ -4107,6 +4196,28 @@ func _test_plaza_online() -> void:
 			check(PlazaView.gear_tag(bo_seen).begins_with(bo_seen.display_name.to_upper()) and "Kit worth" in PlazaView.gear_tag(bo_seen),
 					"their gear is written on a tag over their head")
 
+	# The clan hall: Pia founds a clan, Pax joins it, and both wear its tag.
+	ada.clan_ask("create", "Night Shift", "ns")
+	await _wait_until(func() -> bool: return not ada.clan_state.get("clan", {}).is_empty(), 240)
+	check(ada.clan_state.get("clan", {}).get("tag", "") == "NS" and ada.clan_state.clan.is_leader,
+			"founding a clan at the hall makes you its leader")
+	await _wait_until(func() -> bool: return me.clan_tag == "NS", 240)
+	check(me.clan_tag == "NS" and me.clan == "", "you wear the tag at once, and the plaza stays a safe zone")
+	if bo != null:
+		await _wait_until(func() -> bool: return bo.clan_state.get("clans", []).size() == 1, 240)
+		check(bo.clan_state.get("clans", []).size() == 1 and bo.clan_state.clan.is_empty(),
+				"everyone in the plaza sees the new clan listed")
+		bo.clan_ask("join", str(ada.clan_state.clan.id))
+		await _wait_until(func() -> bool: return ada.clan_state.clan.get("members", []).size() == 2, 240)
+		check(ada.clan_state.clan.get("members", []) == ["Pia", "Pax"], "a second player joins it: %s" % [ada.clan_state.clan.get("members", [])])
+		var pax_seen: Array[Actor] = RaidRoster.players_in(ada.raid).filter(func(a: Actor) -> bool: return a != me)
+		await _wait_until(func() -> bool: return pax_seen.size() == 1 and pax_seen[0].clan_tag == "NS", 240)
+		check(pax_seen.size() == 1 and PlazaView.gear_tag(pax_seen[0]).begins_with("[NS] PAX"),
+				"and the tag is on the card over their head")
+		ada.clan_ask("create", "Second", "SEC")
+		await frames(30)
+		check(ada.clan_state.clan.get("tag", "") == "NS", "you cannot found a second clan while in one")
+
 	# Through the gate: the same account, now in the warzone's lobby.
 	var war_port: int = ada.routes.get("ashfront", -1)
 	await _leave(ada)
@@ -4124,6 +4235,11 @@ func _test_plaza_online() -> void:
 		await _wait_until(func() -> bool: return ada_war.account.deployed, 120)
 		check(ada_war.raid != null and not ada_war.raid.world.safe_zone and ada_war.account.deployed
 				and not ada_war.raid.player.weapons_locked, "deploying there is a real raid with gear at stake")
+		check(ada_war.clan_state.get("clan", {}).get("tag", "") == "NS" and ada_war.raid.player.clan_tag == "NS"
+				and ada_war.raid.player.clan != "", "the clan follows you into the warzone, where it is your side")
+		ada_war.clan_ask("leave")
+		await frames(30)
+		check(ada_war.clan_state.get("clan", {}).get("tag", "") == "NS", "nobody changes sides in the field")
 		if bo != null:
 			await _wait_until(func() -> bool: return bo.world_status.get("ashfront", {}).get("players", 0) == 1, 600)
 			check(bo.world_status.get("ashfront", {}).get("players", 0) == 1,
@@ -4155,7 +4271,11 @@ func _test_plaza_online() -> void:
 				and heat.global_position.y > gate.global_position.y + 3.0,
 				"the sign over the gate says how that world is doing")
 		main.use_portal("clans")
-		check(main.raid != null, "the clan hall is not open yet")
+		await frames(3)
+		check(main.shop_view != null and main.shop_screen != null and main.shop_view.panel.has_signal("asked"),
+				"the clan hall door opens its terminal")
+		main.close_shop()
+		await frames(2)
 		main.use_portal("world:ashfront")
 		await _wait_until(func() -> bool:
 			return main.net != null and main.net.world_id == "ashfront" and not main.net.account.is_empty(), 600)

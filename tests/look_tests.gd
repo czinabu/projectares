@@ -220,6 +220,50 @@ static func run(t: Node) -> void:
 			and Look.edge_axis(AABB(Vector3.ZERO, Vector3(0.3, 2.0, 0.05))) == 0
 			and Look.edge_axis(AABB(Vector3.ZERO, Vector3(0.4, 0.4, 0.4))) == -1,
 			"bare metal is the edge, wood the grip, and only flat parts get a cutting edge")
+	# Swords and knives fold their blade into the hilt when holstered, the
+	# spear telescopes; the hammer and axe keep their shape.
+	var folding := {}
+	var swaps := true
+	for id: String in ["blade_scrap", "blade_arc", "hammer_breaker", "knife_gutter", "axe_splitter", "spear_lancer"]:
+		blade.item_id = id
+		var model := Look.weapon_model(blade)
+		var held := _fold_mats(model)
+		if not held.is_empty():
+			folding[id] = true
+		Look.set_extend(model, 0.0)
+		var folded := _fold_mats(model)
+		Look.set_extend(model, 0.5)
+		var half := _fold_mats(model)
+		Look.set_extend(model, 1.0)
+		for i in held.size():
+			swaps = swaps and held[i].get_shader_parameter("extend") == 1.0 \
+					and folded[i].get_shader_parameter("extend") == 0.0 \
+					and half[i].get_shader_parameter("extend") == 0.5 and half[i] != held[i]
+		swaps = swaps and _fold_mats(model) == held
+		model.free()
+	t.check(folding.keys() == ["blade_scrap", "blade_arc", "knife_gutter", "spear_lancer"],
+			"blades and the spear fold away when holstered, the hammer and axe do not")
+	t.check(swaps, "a model folds away, comes part way out and is fully out again")
+	blade.item_id = ""
+	var sword := Look.weapon_model(blade)
+	var fixed := 0
+	for node in sword.find_children("*", "MeshInstance3D", true, false):
+		var mesh_node := node as MeshInstance3D
+		for i in mesh_node.mesh.get_surface_count():
+			var mat := mesh_node.get_surface_override_material(i) as ShaderMaterial
+			if mat.get_shader_parameter("fold_slide") == null:
+				fixed += 1
+	t.check(fixed > 0, "a sword's grip and guard stay put while its blade folds")
+	var sword_box := Look.model_bounds(sword)
+	var sword_folded := Look.folded_bounds(sword)
+	t.check(sword_folded.size.y < sword_box.size.y * 0.45, "a folded sword is little more than its hilt (%.2f of %.2f m)"
+			% [sword_folded.size.y, sword_box.size.y])
+	sword.free()
+	blade.item_id = "spear_lancer"
+	var pole := Look.weapon_model(blade)
+	t.check(Look.folded_bounds(pole).size.y < 1.1, "a folded spear is short enough to sling (%.2f m)"
+			% Look.folded_bounds(pole).size.y)
+	pole.free()
 	blade.free()
 
 	t.check(FileAccess.file_exists("res://assets/LICENSES.md"), "asset licenses are recorded")
@@ -308,13 +352,23 @@ static func _check_holster(t: Node, tag: String, player: Actor, skin: Node) -> v
 		skin._process(skin.between_time)
 		t.check(blade_visual.visible, tag + "the blade is drawn after the gun is put away")
 		t.check(skin.arm.override_point.x < 0.0, tag + "drawing the blade reaches to the left hip")
+		var folds: bool = Look._melee_pick(blade)[5] != ""
+		if folds:
+			t.check(skin._extend.get(blade, 1.0) < 1.0, tag + "a drawn blade is still sliding out of its hilt")
 		skin._process(skin.return_time + 0.05)
 		t.check(skin.arm.override_weight == 0.0 and blade_visual.visible and skin._in_hand == player.weapons[blade_at],
 				tag + "the hand comes back with the blade and lets go of the holster")
+		if folds:
+			t.check(skin._extend.get(blade, 0.0) == 1.0, tag + "the blade is fully out once it is in hand")
 		player.active_weapon_index = -1
 		settle.call()
 		t.check(not blade_visual.visible and (skin._stowed[player.weapons[blade_at]] as Node3D).visible,
 				tag + "holstering the weapon in hand leaves both hands empty")
+		if folds:
+			var worn_mats := _fold_mats(skin._stowed_models[blade])
+			t.check(skin._extend.get(blade, 1.0) == 0.0 and not worn_mats.is_empty()
+					and worn_mats.all(func(m: ShaderMaterial) -> bool: return m.get_shader_parameter("extend") == 0.0),
+					tag + "a holstered blade is folded into its hilt")
 	player.flight.enabled = was_flight
 	player.active_weapon_index = was_weapon
 	settle.call()
@@ -519,3 +573,15 @@ static func _check_legs(t: Node, tag: String, player: Actor, skin: Node, skeleto
 		loco.twist = 0.0
 		for bone: int in saved:
 			skeleton.set_bone_pose(bone, saved[bone])
+
+
+## The materials of a melee model's surfaces that fold away, in order.
+static func _fold_mats(model: Node3D) -> Array[ShaderMaterial]:
+	var out: Array[ShaderMaterial] = []
+	for node in model.find_children("*", "MeshInstance3D", true, false):
+		var mesh_node := node as MeshInstance3D
+		for i in mesh_node.mesh.get_surface_count():
+			var mat := mesh_node.get_surface_override_material(i) as ShaderMaterial
+			if mat and mat.get_shader_parameter("fold_slide") != null and mat.get_shader_parameter("fold_slide") > 0.0:
+				out.append(mat)
+	return out
