@@ -44,7 +44,7 @@ rows marked **pre-playtest** come before the friends playtest.
 | Flight rig | Partly | Three rigs exist, but not the agreed identities (next section). |
 | Gadget slot | Partly | The `ability` slot exists with Phase Step, Kinetic Barrier and Shock Pulse. The gadget list (DESIGN.md section 4) needs Caleb's pick before more are built. |
 | Goggles: helmet-slot visor with no protection, lighter, more fragile glass | Missing | Shows the customizer's face and hair. Needs the weight system for its trade. |
-| Weight tiers (light, medium, heavy) from headgear, frame and heavy weapon | Missing | Changes acceleration, turning, flight heat and a little ground speed, never cruise speed. Shown on the watch and the base locker. Partly there already: armor frames carry `speed_mult` and `heat_mult` stats, which the tiers would replace. |
+| Weight tiers (light, medium, heavy) from headgear, frame and heavy weapon | Partly | Changes acceleration, turning, flight heat and a little ground speed, never cruise speed. Shown on the watch and the base locker. Partly there already: armor frames carry `speed_mult` and `heat_mult` stats, which the tiers would replace. |
 
 ## Flight (see the aerial rig proposal)
 
