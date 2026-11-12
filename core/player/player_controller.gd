@@ -234,6 +234,9 @@ func throw_held_toy() -> void:
 ## Keeps the toy model in the hand in step with `held_toy`.
 func _show_held_toy() -> void:
 	var shown: String = _toy_node.get_meta("display_item", "") if _toy_node != null else ""
+	if _toy_node != null:
+		# Close to the eye in first person it is drawn smaller.
+		_toy_node.scale = Vector3.ONE * VehicleScript.TOY_SCALE * (1.0 if is_third_person() else TOY_HAND_SIZE)
 	if shown == held_toy:
 		return
 	if _toy_node != null:
@@ -243,7 +246,6 @@ func _show_held_toy() -> void:
 		_toy_node = VehicleScript.toy_model(held_toy)
 		_toy_node.position = TOY_IN_HAND
 		_toy_node.rotation = Vector3(0.0, -1.2, 0.0)
-		_toy_node.scale *= TOY_HAND_SIZE
 		actor.hand.add_child(_toy_node)
 		for weapon in actor.weapons:
 			if weapon.visual:

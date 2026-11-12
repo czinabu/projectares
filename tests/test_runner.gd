@@ -3284,8 +3284,7 @@ func _throw_own_bike(session: NetSession) -> void:
 	var me := session.raid.player
 	var near := func() -> bool:
 		return session.vehicles().any(func(v: Node3D) -> bool:
-			return is_instance_valid(v) and v.global_position.distance_to(me.global_position) < 25.0
-					and float(v.get("unpack_left")) <= 0.0)
+			return is_instance_valid(v) and v.global_position.distance_to(me.global_position) < 25.0 and float(v.get("unpack_left")) <= 0.0)
 	await _wait_until(func() -> bool: return not session.raid.stowed_for(me).is_empty(), 180)
 	for turn in 4:
 		if near.call() or session.raid.stowed_for(me).is_empty():
