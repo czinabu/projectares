@@ -242,8 +242,14 @@ you have.
   shows depends on the helmet: the Spotter has binoculars (4x and 8x), a
   compass and a range finder, and fire while zoomed tags a target for your
   side; the Seeker sends a scan pulse that shows where everyone nearby stood.
-  Both give you away: a zoomed lens glints, and a scan is seen, heard and
-  felt by everyone it catches. With no helmet the view is bare.
+  The Warden shows where a hit came from, the health of whoever you aim
+  at, what nearby loot holds and the way to the nearest depot, and its
+  Threat Sense outlines anyone aiming at you for five seconds. The Ember
+  switches to thermal sight on a battery: warm bodies stand out through
+  smoke and storm, never through walls, and a hot jetpack shines.
+  All of them give you away: a zoomed lens glints, a scan is seen, heard and
+  felt by everyone it catches, Threat Sense tells whoever it shows, and a
+  thermal visor glows up close. With no helmet the view is bare.
 - More gear to find: carbine, SMG, marksman rifle, shotgun, arc blade, breaker
   hammer, three armor frames, and a better jetpack.
 - Motorbikes, the first vehicle. Put one in the vehicle slot and it is parked

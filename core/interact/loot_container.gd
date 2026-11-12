@@ -19,6 +19,7 @@ func setup(p_items: Array, p_is_bag: bool, p_label: String) -> void:
 
 
 func _ready() -> void:
+	add_to_group("loot_containers")
 	var size := Vector3(0.7, 0.5, 0.7) if is_bag else Vector3(1.1, 0.8, 0.8)
 	var shape := BoxShape3D.new()
 	shape.size = size

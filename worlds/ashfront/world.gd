@@ -22,6 +22,8 @@ const CACHE_TABLE := [
 	{"id": "chip_barrier", "weight": 2.5},
 	{"id": "helm_spotter", "weight": 2.0},
 	{"id": "helm_seeker", "weight": 2.0},
+	{"id": "helm_warden", "weight": 2.0},
+	{"id": "helm_ember", "weight": 2.0},
 ]
 
 ## Rooftops need the jetpack to reach, so they pay better.
@@ -42,6 +44,8 @@ const ROOFTOP_TABLE := [
 	{"id": "chip_pulse", "weight": 7.0},
 	{"id": "helm_spotter_mk2", "weight": 6.0},
 	{"id": "helm_seeker_mk2", "weight": 6.0},
+	{"id": "helm_warden_mk2", "weight": 6.0},
+	{"id": "helm_ember_mk2", "weight": 6.0},
 ]
 
 ## Abandoned bikes parked around the field. Anyone can ride one out.

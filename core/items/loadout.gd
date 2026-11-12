@@ -87,6 +87,7 @@ static func equip(actor: Actor, item_ids: Array) -> void:
 		actor.sprint_speed *= speed
 		actor.flight.heat_per_sec *= stats.get("heat_mult", 1.0)
 		actor.flight.burst_heat *= stats.get("heat_mult", 1.0)
+		actor.heat_signature *= stats.get("heat_signature", 1.0)
 		actor.frame_name = ItemDB.item_name(id)
 		actor.gear_items.append(id)
 

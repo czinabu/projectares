@@ -493,10 +493,11 @@ func _settle(count: int) -> void:
 
 
 ## Each helmet's visor through its wearer's eyes: the Scav Visor, the
-## Spotter resting and zoomed, the Seeker ready and just after a scan.
+## Spotter resting and zoomed, the Seeker ready and just after a scan, the
+## Warden with Threat Sense running, and the Ember in thermal.
 func _visor_shots(out_dir: String) -> void:
 	var scrap: Array[String] = ["rifle_scrap", "blade_scrap", "jetpack_mk1", "plate_light"]
-	for helmet: String in ["visor_scav", "helm_spotter", "helm_seeker"]:
+	for helmet: String in ["visor_scav", "helm_spotter", "helm_seeker", "helm_warden", "helm_ember"]:
 		var raid := Raid.new()
 		add_child(raid)
 		var kit := scrap.duplicate()
@@ -530,6 +531,28 @@ func _visor_shots(out_dir: String) -> void:
 			p.visor.add_tag(raid.bots[1], 5.0)
 			await _settle(6)
 			await _shot(out_dir.path_join("visor_helm_spotter_tag.png"))
+		elif helmet == "helm_warden":
+			var near: Actor = raid.bots[0]
+			var to_near: Vector3 = near.global_position + Vector3(0, 1.1, 0) - p.get_eye_position()
+			controller.yaw = atan2(-to_near.x, -to_near.z)
+			controller.pitch = asin(to_near.normalized().y)
+			var cache := LootContainer.new()
+			cache.setup(["reactor_core", "scrap_metal", "medkit"], false, "Cache")
+			raid.add_child(cache)
+			cache.global_position = p.global_position + Basis(Vector3.UP, controller.yaw) * Vector3(-1.6, 0, -3.2)
+			for aimer: Actor in [raid.bots[1], raid.bots[2]]:
+				aimer.cmd.aim_dir = (p.global_position + Vector3(0, 0.9, 0) - aimer.get_eye_position()).normalized()
+			p.visor.sense_threats()
+			await _settle(12)
+			p.visor.threatened.emit(p.global_position + look * Vector3(-20, 0, 6))
+			await _settle(2)
+			await _shot(out_dir.path_join("visor_helm_warden_sense.png"))
+		elif helmet == "helm_ember":
+			raid.bots[1].flight.enabled = true
+			raid.bots[1].flight.heat = raid.bots[1].flight.max_heat
+			controller._visor_level = 1
+			await _settle(20)
+			await _shot(out_dir.path_join("visor_helm_ember_thermal.png"))
 		elif helmet == "helm_seeker":
 			p.visor.scan()
 			await _settle(12)

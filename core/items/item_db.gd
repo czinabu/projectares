@@ -83,14 +83,14 @@ func _ready() -> void:
 
 	# Armor frames
 	register("frame_runner", "Runner Frame", Rarity.UNCOMMON, 400, ["armor", "frame_light", "vendor"],
-			{"armor": 45.0, "speed_mult": 1.12, "heat_mult": 0.8},
-			"Light: 45 armor, 12% faster, jetpack runs cooler.")
+			{"armor": 45.0, "speed_mult": 1.12, "heat_mult": 0.8, "heat_signature": 0.7},
+			"Light: 45 armor, 12% faster, jetpack runs cooler. Dim on thermal.")
 	register("frame_trooper", "Trooper Frame", Rarity.UNCOMMON, 450, ["armor", "frame_medium", "vendor"],
 			{"armor": 85.0},
 			"Medium: 85 armor, no penalties.")
 	register("frame_bulwark", "Bulwark Frame", Rarity.RARE, 900, ["armor", "frame_heavy"],
-			{"armor": 140.0, "speed_mult": 0.86, "heat_mult": 1.25},
-			"Heavy: 140 armor, 14% slower, jetpack runs hotter.")
+			{"armor": 140.0, "speed_mult": 0.86, "heat_mult": 1.25, "heat_signature": 1.3},
+			"Heavy: 140 armor, 14% slower, jetpack runs hotter. Bright on thermal.")
 
 	# Flight rigs
 	register("jetpack_mk2", "Mk2 Jetpack", Rarity.RARE, 950, ["flight_rig"],
@@ -134,6 +134,22 @@ func _ready() -> void:
 	register("helm_seeker_mk2", "Seeker Helmet Mk2", Rarity.RARE, 1200, ["helmet", "scanner"],
 			{"mode": "scan", "cooldown": 21.0, "scan_radius": 48.0, "glass_color": Color(0.4, 1.0, 0.8)},
 			"A wider scan pulse, 48 meters, that is ready again sooner.")
+
+	register("helm_warden", "Warden Helmet", Rarity.UNCOMMON, 600, ["helmet", "tactical", "vendor"],
+			{"mode": "threat", "cooldown": 30.0, "threat_range": 60.0, "glass_color": Color(0.55, 0.8, 1.0)},
+			"Shows where a hit came from, the health of who you aim at, and what is in nearby loot. "
+			+ "Threat Sense outlines anyone aiming at you for five seconds.")
+	register("helm_warden_mk2", "Warden Helmet Mk2", Rarity.RARE, 1300, ["helmet", "tactical"],
+			{"mode": "threat", "cooldown": 26.0, "threat_range": 75.0, "read_range": 40.0,
+			"glass_color": Color(0.55, 0.8, 1.0)},
+			"Threat Sense reaches 75 meters and is ready sooner. Reads targets out to 40 meters.")
+	register("helm_ember", "Ember Helmet", Rarity.UNCOMMON, 580, ["helmet", "thermal", "vendor"],
+			{"mode": "thermal", "battery": 12.0, "glass_color": Color(1.0, 0.45, 0.25)},
+			"Thermal sight on a twelve second battery. Warm bodies stand out through smoke and storm, "
+			+ "never through walls. A hot jetpack shines.")
+	register("helm_ember_mk2", "Ember Helmet Mk2", Rarity.RARE, 1250, ["helmet", "thermal"],
+			{"mode": "thermal", "battery": 16.0, "battery_refill": 16.0, "glass_color": Color(1.0, 0.45, 0.25)},
+			"Thermal sight with a sixteen second battery that refills faster.")
 
 	# Vehicles. Not carried: the Raid parks one next to you when you deploy, and
 	# whoever signs out riding it takes it home. Stats tune Vehicle.
