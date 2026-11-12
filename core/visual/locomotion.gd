@@ -11,6 +11,11 @@ extends Node
 ## lower body turns by whatever angle is left over, while the spine turns
 ## back so the chest and arms keep facing the aim.
 ##
+## Faster than a relaxed run, the stride lengthens instead of the legs only
+## spinning quicker: the leg swing is stretched about its average pose and the
+## body leans in, which is the sprint. A slide (`Actor.crouch`) bends the model
+## into a slide pose over whatever clip is playing.
+##
 ## Everything is read from the actor's velocity, which is the same on every
 ## machine: the server's own, a predicted local player, or a remote player
 ## whose velocity arrives with each state. Nothing here feeds back into the
@@ -49,6 +54,24 @@ var overlay_rate := 8.0
 ## How quickly the velocity the legs follow catches up with the actor's. Online
 ## states land a few times a second; this hides the steps between them.
 var velocity_follow := 14.0
+## Above this playback speed a run lengthens its stride rather than spin the
+## legs faster, up to `max_stride` times the clip's own stride.
+var relaxed_cadence := 1.6
+var max_stride := 1.7
+## How much of the extra stride also lifts the feet higher.
+var stride_lift := 0.6
+## How far the body leans into the longest stride, in radians.
+var sprint_lean := 0.25
+var stride_rate := 3.0
+## The slide pose: how far the hips drop (m) and the body leans back (radians),
+## and where each leg points, in the actor's space along the slide (x right,
+## y up, z back). The lead leg reaches out in front; the trailing one folds under.
+var slide_drop := 0.5
+var slide_lean := 0.18
+var slide_lead_thigh := Vector3(0.05, -0.45, -0.9)
+var slide_lead_shin := Vector3(0.0, -0.3, -0.95)
+var slide_trail_thigh := Vector3(-0.1, -0.85, -0.5)
+var slide_trail_shin := Vector3(0.0, -0.4, 0.9)
 
 ## Clip key -> how the clip moves the body at playback speed 1, in the
 ## actor's space (x right, z back), m/s.
@@ -59,16 +82,32 @@ var velocity := Vector3.ZERO
 ## positive toward the actor's left.
 var twist := 0.0
 var twist_target := 0.0
-## Upper body from the gun-holding run, for running any other way with a gun.
+## Arms and head from the gun-holding run, for running any other way with a gun.
 var overlay := false
 var overlay_phase := 0.0
 var overlay_weight := 0.0
+## How much longer the stride is than the clip's own, now and wanted.
+var stride := 1.0
+var stride_target := 1.0
+## The clip playing now (its name in the model), whose average pose the
+## stride is stretched about.
+var current_anim := ""
 
 var _roots: Array[int] = []
 var _spine: Array[int] = []
 var _overlay_anim: Animation
 ## Bone -> rotation track in `_overlay_anim`.
 var _overlay_tracks := {}
+## Leg bones whose swing is stretched, and the feet moved with them.
+var _legs: Array[int] = []
+var _feet: Array[int] = []
+## Clip name -> {bone: its average rotation (legs) or position (feet)}.
+var _means := {}
+## For the slide: [thigh, shin, foot] for the lead and trailing leg, and where
+## each foot sits on its shin in the rest pose.
+var _lead: Array[int] = []
+var _trail: Array[int] = []
+var _foot_on_shin := {}
 
 
 ## `def` is the skin's entry in `Look.SKINS`, `anims` maps keys to the clips
@@ -93,13 +132,27 @@ func setup(def: Dictionary, player: AnimationPlayer, anims: Dictionary) -> void:
 	for bone_name: String in def.get("spine", []):
 		if skeleton.find_bone(bone_name) >= 0:
 			_spine.append(skeleton.find_bone(bone_name))
+	_lead = _bones(def.get("lead_leg", []))
+	_trail = _bones(def.get("trail_leg", []))
+	for leg in [_lead, _trail]:
+		if leg.size() == 3:
+			_legs.append_array(leg.slice(0, 2))
+			_feet.append(leg[2])
+			_foot_on_shin[leg[2]] = skeleton.get_bone_global_rest(leg[1]).affine_inverse() \
+					* skeleton.get_bone_global_rest(leg[2])
+	if player:
+		for key: String in gaits:
+			if anims.has(key) and not _means.has(anims[key]):
+				_means[anims[key]] = _average_pose(player.get_animation(anims[key]))
 	if player and anims.has("move_gun") and not _spine.is_empty():
 		_overlay_anim = player.get_animation(anims["move_gun"])
 		for track in _overlay_anim.get_track_count():
 			if _overlay_anim.track_get_type(track) != Animation.TYPE_ROTATION_3D:
 				continue
 			var bone := skeleton.find_bone(String(_overlay_anim.track_get_path(track)).get_slice(":", 1))
-			if bone >= 0 and (bone == _spine[0] or _is_under(bone, _spine[0])):
+			# Only the shoulders, arms and head: the spine stays the strafe
+			# clip's own, which keeps the chest facing forward over the hips.
+			if bone >= 0 and _is_under(bone, _spine[_spine.size() - 1]):
 				_overlay_tracks[bone] = track
 
 	# The arm's hooks are added after these, so it reaches from where the
@@ -108,10 +161,56 @@ func setup(def: Dictionary, player: AnimationPlayer, anims: Dictionary) -> void:
 	upper.name = "GunUpperBody"
 	upper.run = _overlay_upper
 	skeleton.add_child(upper)
+	var stretch := WeaponArm.Hook.new()
+	stretch.name = "SprintStride"
+	stretch.run = _stretch_stride
+	skeleton.add_child(stretch)
 	var legs := WeaponArm.Hook.new()
 	legs.name = "LegsToTravel"
 	legs.run = _turn_lower
 	skeleton.add_child(legs)
+	var slide := WeaponArm.Hook.new()
+	slide.name = "SlidePose"
+	slide.run = _slide_pose
+	skeleton.add_child(slide)
+
+
+func _bones(names: Array) -> Array[int]:
+	var out: Array[int] = []
+	for bone_name: String in names:
+		if skeleton.find_bone(bone_name) < 0:
+			return []
+		out.append(skeleton.find_bone(bone_name))
+	return out
+
+
+## The average rotation of each leg bone and position of each foot over a clip.
+func _average_pose(anim: Animation) -> Dictionary:
+	var out := {}
+	if anim == null or anim.length <= 0.0:
+		return out
+	var tracks := _tracks_by_bone(anim)
+	var steps := 32
+	for bone in _legs + _feet:
+		var own: Dictionary = tracks.get(bone, {})
+		if bone in _legs and own.has(Animation.TYPE_ROTATION_3D):
+			var sum := Vector4.ZERO
+			var first := Quaternion.IDENTITY
+			for i in steps:
+				var q: Quaternion = anim.rotation_track_interpolate(own[Animation.TYPE_ROTATION_3D], anim.length * i / steps)
+				if i == 0:
+					first = q
+				elif q.dot(first) < 0.0:
+					q = -q
+				sum += Vector4(q.x, q.y, q.z, q.w)
+			sum = sum.normalized()
+			out[bone] = Quaternion(sum.x, sum.y, sum.z, sum.w)
+		elif bone in _feet and own.has(Animation.TYPE_POSITION_3D):
+			var at := Vector3.ZERO
+			for i in steps:
+				at += anim.position_track_interpolate(own[Animation.TYPE_POSITION_3D], anim.length * i / steps)
+			out[bone] = at / steps
+	return out
 
 
 ## How a clip moves the body at playback speed 1, in the actor's space, read
@@ -237,8 +336,10 @@ func choose(local_velocity: Vector3, armed: bool, current := "", current_sign :=
 				best_cost = cost
 				best = {"key": key, "sign": sign, "off": off}
 	var native: float = gaits[best["key"]].length()
-	var playback := clampf(speed / native, min_playback, max_playback)
-	return {"key": best["key"], "speed": playback * best["sign"],
+	# A run lengthens its stride past a relaxed cadence; a walk never does.
+	var reach := 1.0 if walking or _means.is_empty() else clampf(speed / (native * relaxed_cadence), 1.0, max_stride)
+	var playback := clampf(speed / (native * reach), min_playback, max_playback)
+	return {"key": best["key"], "speed": playback * best["sign"], "stride": reach,
 		"twist": clampf(best["off"], -max_twist, max_twist)}
 
 
@@ -258,6 +359,104 @@ func update(delta: float) -> void:
 	twist = move_toward(twist, twist_target, twist_rate * delta * maxf(absf(twist_target - twist), 0.15))
 	overlay_weight = move_toward(overlay_weight, 1.0 if overlay and not _overlay_tracks.is_empty() else 0.0,
 			overlay_rate * delta)
+	stride = move_toward(stride, stride_target, stride_rate * delta)
+
+
+## Lengthens the stride: each leg bone swings further from its average pose
+## in the clip, and each foot travels further from its average spot, so a
+## planted foot slides back `stride` times as fast. The body leans in.
+func _stretch_stride() -> void:
+	if stride <= 1.001 or not _means.has(current_anim):
+		return
+	var means: Dictionary = _means[current_anim]
+	var to_skeleton := skeleton.global_basis.orthonormalized().inverse() * actor.global_basis.orthonormalized()
+	var up := (to_skeleton * Vector3.UP).normalized()
+	for bone in _feet:
+		if not means.has(bone):
+			continue
+		var parent := skeleton.get_bone_parent(bone)
+		var local_up := up if parent < 0 else (skeleton.get_bone_global_pose(parent).basis.inverse() * up).normalized()
+		var mean: Vector3 = means[bone]
+		var off := skeleton.get_bone_pose_position(bone) - mean
+		var lift := local_up * local_up.dot(off)
+		skeleton.set_bone_pose_position(bone, mean + (off - lift) * stride + lift * (1.0 + (stride - 1.0) * stride_lift))
+	# The legs reach for where the feet have gone.
+	for leg in [_lead, _trail]:
+		if leg.size() == 3:
+			_reach(leg, skeleton.get_bone_global_pose(leg[2]).origin)
+	if not _spine.is_empty():
+		var lean := sprint_lean * clampf((stride - 1.0) / maxf(max_stride - 1.0, 0.01), 0.0, 1.0)
+		var right := (to_skeleton * Basis(Vector3.UP, twist) * Vector3.RIGHT).normalized()
+		var pose := skeleton.get_bone_global_pose(_spine[0])
+		pose.basis = Basis(right, -lean) * pose.basis
+		skeleton.set_bone_global_pose(_spine[0], pose)
+
+
+## Bends the model into a slide as the actor crouches: the hips drop and lean
+## back, the lead leg reaches forward along the slide, the trailing leg folds
+## under, and each foot is put back on the end of its shin.
+func _slide_pose() -> void:
+	var weight := actor.crouch if actor else 0.0
+	if weight <= 0.001:
+		return
+	var to_skeleton := skeleton.global_basis.orthonormalized().inverse() * actor.global_basis.orthonormalized()
+	var along := to_skeleton * Basis(Vector3.UP, twist)
+	var up := (along * Vector3.UP).normalized()
+	var right := (along * Vector3.RIGHT).normalized()
+	var meter := 1.0 / skeleton.global_basis.get_scale().y
+	var pivot := skeleton.global_transform.affine_inverse() * actor.global_position
+	var drop := Transform3D(Basis.IDENTITY, pivot - up * slide_drop * meter * weight) \
+			* Transform3D(Basis(right, slide_lean * weight), Vector3.ZERO) * Transform3D(Basis.IDENTITY, -pivot)
+	for bone in _roots:
+		skeleton.set_bone_global_pose(bone, drop * skeleton.get_bone_global_pose(bone))
+	for pair in [[_lead, slide_lead_thigh, slide_lead_shin], [_trail, slide_trail_thigh, slide_trail_shin]]:
+		var leg: Array[int] = pair[0]
+		if leg.size() != 3:
+			continue
+		_point_bone(leg[0], (along * pair[1]).normalized(), weight, skeleton.get_bone_rest(leg[1]).origin.normalized())
+		_point_bone(leg[1], (along * pair[2]).normalized(), weight, (_foot_on_shin[leg[2]].origin as Vector3).normalized())
+		var foot := skeleton.get_bone_global_pose(leg[2])
+		var on_shin: Transform3D = skeleton.get_bone_global_pose(leg[1]) * _foot_on_shin[leg[2]]
+		skeleton.set_bone_global_pose(leg[2], foot.interpolate_with(on_shin, weight))
+
+
+## Bends a [thigh, shin, foot] leg so the ankle lands on `target` (skeleton
+## space), keeping the knee bent the way it is now. The foot keeps its turn.
+func _reach(leg: Array[int], target: Vector3) -> void:
+	var foot := skeleton.get_bone_global_pose(leg[2])
+	var hip := skeleton.get_bone_global_pose(leg[0]).origin
+	var knee_now := skeleton.get_bone_global_pose(leg[1]).origin
+	var thigh_axis := skeleton.get_bone_rest(leg[1]).origin
+	var shin_axis: Vector3 = _foot_on_shin[leg[2]].origin
+	var scale := skeleton.get_bone_global_pose(leg[0]).basis.get_scale().y
+	var a := thigh_axis.length() * scale
+	var b := shin_axis.length() * scale
+	var to := target - hip
+	var d := clampf(to.length(), absf(a - b) + 0.001, a + b - 0.001)
+	var dir := to.normalized()
+	var bend := knee_now - hip
+	var pole := (bend - dir * dir.dot(bend))
+	if pole.length() < 0.0001:
+		return
+	pole = pole.normalized()
+	var cos_hip := clampf((a * a + d * d - b * b) / (2.0 * a * d), -1.0, 1.0)
+	var knee := hip + dir * cos_hip * a + pole * sqrt(1.0 - cos_hip * cos_hip) * a
+	_point_bone(leg[0], (knee - hip).normalized(), 1.0, thigh_axis.normalized())
+	_point_bone(leg[1], (hip + dir * d - knee).normalized(), 1.0, shin_axis.normalized())
+	foot.origin = (skeleton.get_bone_global_pose(leg[1]) * _foot_on_shin[leg[2]]).origin
+	skeleton.set_bone_global_pose(leg[2], foot)
+
+
+## Turns a bone so the direction `axis` (in its own space; +Y, as glTF bones
+## point, by default) points along `dir`.
+func _point_bone(bone: int, dir: Vector3, weight: float, axis := Vector3.UP) -> void:
+	var pose := skeleton.get_bone_global_pose(bone)
+	var now := (pose.basis * axis).normalized()
+	if now.dot(dir) > 0.9999:
+		return
+	var turn := Quaternion.IDENTITY.slerp(Quaternion(now, dir), weight)
+	pose.basis = Basis(turn) * pose.basis
+	skeleton.set_bone_global_pose(bone, pose)
 
 
 ## Holds the gun up while the legs run some other way: the spine and arms

@@ -200,6 +200,7 @@ func _physics_process(delta: float) -> void:
 	cmd.jump = Input.is_action_pressed("jump")
 	cmd.jump_pressed = Input.is_action_just_pressed("jump")
 	cmd.dash = Input.is_action_just_pressed("dash")
+	cmd.slide = Input.is_action_just_pressed("slide")
 	if cmd.dash and actor.stamina >= actor.dash_stamina:
 		Sfx.play("dash", null, -6.0)
 	cmd.primary = captured and Input.is_action_pressed("fire")
