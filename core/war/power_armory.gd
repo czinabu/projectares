@@ -145,7 +145,7 @@ func _has_power(rack: LootContainer) -> bool:
 func _spawn_rack(items: Array, at: Vector3, temporary: bool) -> LootContainer:
 	var rack := raid.spawn_container(items, temporary, LootContainer.RACK_LABEL, raid._stand(at))
 	if temporary and raid.is_inside_tree():
-		raid.get_tree().create_timer(raid.world.bag_lifetime, false, true).timeout.connect(func() -> void:
-			if is_instance_valid(rack):
-				rack.queue_free())
+		# Bound to the rack itself, so a rack emptied and freed first just
+		# drops the connection.
+		raid.get_tree().create_timer(raid.world.bag_lifetime, false, true).timeout.connect(rack.queue_free)
 	return rack
