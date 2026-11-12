@@ -2680,6 +2680,7 @@ func _test_online() -> void:
 			me.cmd.interact_pressed = false
 
 		# Loot caches and the bike Alpha brought exist on both clients.
+		await _throw_own_bike(alpha)
 		await _wait_until(func() -> bool: return not alpha.vehicles().is_empty() and not bravo.vehicles().is_empty(), 120)
 		check(alpha.containers().size() > 3 and alpha.containers().size() == bravo.containers().size(),
 				"both clients see the server's loot caches (%d)" % alpha.containers().size())
@@ -3022,6 +3023,7 @@ func _test_online_riding() -> void:
 	check(faye != null and gus != null, "two clients join for the riding checks")
 	var bike: Node3D = null
 	if faye != null and gus != null:
+		await _throw_own_bike(faye)
 		await _wait_until(func() -> bool: return not faye.vehicles().is_empty(), 120)
 		for v: Node3D in faye.vehicles():
 			if bike == null or v.global_position.distance_to(faye.raid.player.global_position) \
@@ -3209,6 +3211,30 @@ func _test_vehicle_toys() -> void:
 	var asked: Array[String] = []
 	controller.toy_throw_requested.connect(func(id: String) -> void: asked.append(id))
 	_aim_at(p, p.global_position + Vector3(0, 1.6, 10))
+	# The watch: raised, it shows the toys; the wheel picks, fire takes one.
+	var hud := Hud.new()
+	hud.setup(raid, controller)
+	raid.add_child(hud)
+	controller.wrist_raised = true
+	check(controller.is_browsing_toys(), "raising the watch with toys on it lets you pick one")
+	var weapon_before := p.active_weapon_index
+	controller.scroll(1)
+	check(controller.watch_index == 1 and controller._pending_switch < 0 and p.active_weapon_index == weapon_before,
+			"with the watch up the wheel turns through the toys, not the weapons")
+	await get_tree().process_frame
+	await get_tree().process_frame
+	check(hud.wrist.toys_shown() == raid.stowed_for(p) and hud.wrist.get_node("Hologram/Toys").get_child_count() == 2,
+			"the watch stands each toy over its hologram")
+	var shown := hud.wrist.get_node("Hologram/Toys")
+	check(shown.get_child(1).scale.x > shown.get_child(0).scale.x and hud.wrist.text().contains("Raider Bike")
+			and hud.wrist.text().contains("click: take"), "the picked toy stands out and the watch names it")
+	check(Hud.Wrist.toy_tint(true, true) != Hud.Wrist.toy_tint(true, false), "the toys dim while the watch recharges")
+	controller.take_picked_toy()
+	check(controller.held_toy == "bike_raider" and not controller.wrist_raised and not controller.is_browsing_toys(),
+			"fire takes the picked toy into the hand and lowers the wrist")
+	controller.hold_toy("")
+	hud.queue_free()
+	controller.watch_index = 0
 	controller.use_watch_key()
 	check(controller.held_toy == "bike_scrapper", "the watch key takes the first toy into the hand")
 	await get_tree().process_frame
@@ -3252,8 +3278,30 @@ func _test_vehicle_toys() -> void:
 	await _end_raid(raid2)
 
 
+## Has an online client throw the bike on its watch, turning until it finds
+## room, and waits for the bike to stand unpacked close by.
+func _throw_own_bike(session: NetSession) -> void:
+	var me := session.raid.player
+	var near := func() -> bool:
+		return session.vehicles().any(func(v: Node3D) -> bool:
+			return is_instance_valid(v) and v.global_position.distance_to(me.global_position) < 25.0
+					and float(v.get("unpack_left")) <= 0.0)
+	await _wait_until(func() -> bool: return not session.raid.stowed_for(me).is_empty(), 180)
+	for turn in 4:
+		if near.call() or session.raid.stowed_for(me).is_empty():
+			break
+		me.cmd.yaw = turn * PI * 0.5
+		me.cmd.pitch = -0.2
+		me.cmd.aim_dir = Vector3.ZERO
+		await frames(10)
+		session.throw_toy(session.raid.stowed_for(me)[0])
+		await _wait_until(near, 240)
+	await _wait_until(near, 240)
+
+
 func _test_vehicle_toys_online() -> void:
 	print("Online: throwing a toy vehicle")
+	_wipe_dir(NET_ACCOUNTS)
 	var port := 24871
 	var pid := _start_server(port, ["--bots", "0", "--squad-spawn"])
 	var ivy := await _join("Ivy", port, {"vehicle": "bike_scrapper"})

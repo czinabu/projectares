@@ -136,13 +136,18 @@ func _process(delta: float) -> void:
 
 	wrist.raised = p.is_dead or (controller != null and controller.wrist_raised)
 	wrist.mount(p, controller, visible, delta)
-	wrist.show_text(wrist_text(raid, p, _death_result if p.is_dead else {}, _redeploy_wait, log_lines),
+	var picked := controller.watch_index if controller != null else 0
+	wrist.show_text(wrist_text(raid, p, _death_result if p.is_dead else {}, _redeploy_wait, log_lines, picked),
 			wrist_bars(p), leaving if leaving >= 0.0 else banking)
+	wrist.show_toys(raid.stowed_for(p) if not p.is_dead else ([] as Array[String]), picked,
+			raid.toy_wait(p) <= 0.0, delta)
 
 
 ## What the wrist display says, line by line. `death` is the last life's
 ## result while down (else empty), and `log_lines` the recent notices.
-static func wrist_text(p_raid: Raid, p: Actor, death: Dictionary, wait: float, log_lines: Array[String]) -> String:
+## `picked_toy` is which toy vehicle on the watch is picked out.
+static func wrist_text(p_raid: Raid, p: Actor, death: Dictionary, wait: float, log_lines: Array[String],
+		picked_toy := 0) -> String:
 	if not death.is_empty():
 		return death_text(death, wait, drop_choices(p_raid, p))
 	var lines: Array[String] = []
@@ -162,8 +167,9 @@ static func wrist_text(p_raid: Raid, p: Actor, death: Dictionary, wait: float, l
 		lines.append("%s   %d km/h" % [p.vehicle.get("display_name"), roundi(absf(float(p.vehicle.get("speed"))) * 3.6)])
 	var toys := p_raid.stowed_for(p)
 	if not toys.is_empty():
-		var wait := p_raid.toy_wait(p)
-		lines.append("[T] Watch: %s%s" % [ItemDB.summarize(toys), "   %d s" % ceili(wait) if wait > 0.0 else ""])
+		var recharge := p_raid.toy_wait(p)
+		lines.append("%s   %s" % [ItemDB.item_name(toys[clampi(picked_toy, 0, toys.size() - 1)]),
+				"ready in %d s" % ceili(recharge) if recharge > 0.0 else "wheel: next   click: take"])
 	lines.append("Pack %d/%d   worth %d   heals %d" % [p.inventory.items.size(), p.inventory.capacity,
 			p.inventory.total_value(), p.inventory.count_with_tag("heal")])
 	if p.flight.enabled and p.flight.overheated:
@@ -550,6 +556,8 @@ func show_aim(on: bool) -> void:
 class Wrist:
 	extends Node3D
 
+	const VehicleScript := preload("res://core/vehicle/vehicle.gd")
+
 	const BAR_COLORS := [Color(0.85, 0.25, 0.25), Color(0.35, 0.6, 1.0), Color(0.95, 0.85, 0.3), Color(1.0, 0.6, 0.15)]
 	const HOLO_TINT := Color(0.7, 1.0, 1.0, 0.9)
 	## The bone the watch is worn on in third person.
@@ -583,7 +591,16 @@ class Wrist:
 	## The colour the watch face glows now (see `face_tint`).
 	var face_color := Color.WHITE
 
+	## Toy vehicles over the hologram: how far above its top edge they stand,
+	## how far apart, and how big next to a thrown toy.
+	var toy_lift := 0.03
+	var toy_spacing := 0.085
+	var toy_size := 0.28
+
 	var viewport: SubViewport
+	var _toys: Node3D
+	var _toy_ids: Array[String] = []
+	var _spin := 0.0
 	var _text: Label
 	var _bars: Array[ProgressBar] = []
 	var _hold: ProgressBar
@@ -794,6 +811,58 @@ class Wrist:
 			_arm.scale = Vector3.ONE * k
 			_holo.transform = Transform3D(Basis.IDENTITY.scaled(Vector3(k, k * maxf(open, 0.001), k)),
 					first_person_at * spread + Vector3(0, -arm_lowered_drop * (1.0 - t), 0))
+
+	## Stands the toy vehicles on the watch in a row over the hologram, as
+	## small holograms of their own. The picked one is bigger and turns;
+	## `ready` is false while the watch recharges, which dims them all.
+	func show_toys(ids: Array[String], picked: int, ready: bool, delta := 0.0) -> void:
+		if _toys == null:
+			_toys = Node3D.new()
+			_toys.name = "Toys"
+			_holo.add_child(_toys)
+		if ids != _toy_ids:
+			_toy_ids = ids.duplicate()
+			for old in _toys.get_children():
+				_toys.remove_child(old)
+				old.queue_free()
+			for id in ids:
+				var toy: Node3D = VehicleScript.toy_model(id)
+				# A hologram of the toy, not the toy: `Look` leaves it alone.
+				toy.remove_meta("display_item")
+				for mesh in toy.find_children("*", "MeshInstance3D", true, false):
+					(mesh as MeshInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+				_toys.add_child(toy)
+		_toys.position = Vector3(0.0, face_size.y * 0.5 + toy_lift, 0.0)
+		picked = clampi(picked, 0, maxi(ids.size() - 1, 0))
+		_spin = fmod(_spin + delta * 1.6, TAU)
+		for i in _toys.get_child_count():
+			var toy := _toys.get_child(i) as Node3D
+			var chosen := i == picked
+			toy.position = Vector3((i - (ids.size() - 1) * 0.5) * toy_spacing, 0.0, 0.0)
+			toy.scale = Vector3.ONE * VehicleScript.TOY_SCALE * toy_size * (1.5 if chosen else 1.0)
+			toy.rotation = Vector3(0.0, _spin if chosen else 0.9, 0.0)
+			var tint := toy_tint(chosen, ready)
+			for mesh in toy.find_children("*", "MeshInstance3D", true, false):
+				var mat := (mesh as MeshInstance3D).material_override as StandardMaterial3D
+				if mat == null:
+					mat = StandardMaterial3D.new()
+					mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+					mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+					mat.no_depth_test = true
+					mat.render_priority = 4
+					(mesh as MeshInstance3D).material_override = mat
+				mat.albedo_color = tint
+
+	## A toy hologram's colour: bright when picked, faint while recharging.
+	static func toy_tint(chosen: bool, ready: bool) -> Color:
+		var tint := Color(0.75, 1.0, 1.0, 0.95) if chosen else Color(0.3, 0.85, 1.0, 0.45)
+		if not ready:
+			tint = Color(1.0, 0.6, 0.25, tint.a * 0.6)
+		return tint
+
+	## The ids of the toys standing over the hologram, left to right.
+	func toys_shown() -> Array[String]:
+		return _toy_ids
 
 	## True once the hologram is fully open.
 	func is_open() -> bool:

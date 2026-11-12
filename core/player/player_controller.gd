@@ -32,9 +32,10 @@ const STANCE_CONTROL_HINTS := [
 ]
 ## Where the held weapon sits relative to the camera in first-person.
 const VehicleScript := preload("res://core/vehicle/vehicle.gd")
-## Where a toy vehicle sits in the hand, and how much bigger than a thrown
-## toy it is drawn there so it reads in first person.
-const TOY_IN_HAND := Vector3(-0.05, 0.02, 0.1)
+## Where a toy vehicle sits in the hand, and how big it is drawn there next
+## to a thrown toy (it is close to the eye in first person).
+const TOY_IN_HAND := Vector3(-0.08, 0.0, 0.1)
+const TOY_HAND_SIZE := 0.55
 const FIRST_PERSON_HAND := Vector3(0.32, -0.3, -0.75)
 
 var actor: Actor
@@ -76,6 +77,8 @@ var held_toy := ""
 
 var yaw := 0.0
 var pitch := 0.0
+## Which toy on the raised watch is picked out, counting from 0.
+var watch_index := 0
 var _toy_node: Node3D
 var _cam_dist := 0.0
 var _pending_switch := -1
@@ -132,10 +135,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	elif event is InputEventMouseButton and event.pressed \
 			and event.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN]:
-		var count := actor.weapons.size()
-		if count > 1:
-			var step := 1 if event.button_index == MOUSE_BUTTON_WHEEL_DOWN else -1
-			_pending_switch = posmod(actor.active_weapon_index + step, count)
+		scroll(1 if event.button_index == MOUSE_BUTTON_WHEEL_DOWN else -1)
 	elif event.is_action_pressed("toggle_view"):
 		toggle_view()
 	elif event.is_action_pressed("check_wrist"):
@@ -166,6 +166,33 @@ static func next_toy(toys: Array[String], current: String) -> String:
 	if current != "" and at < 0:
 		return ""
 	return toys[at + 1] if at + 1 < toys.size() else ""
+
+
+## True while the watch is up with toy vehicles on it to pick from: the wheel
+## turns through them and fire takes the picked one into the hand.
+func is_browsing_toys() -> bool:
+	return wrist_raised and held_toy == "" and actor != null and is_instance_valid(actor) \
+			and not actor.is_dead and not is_riding() and not watch_toys().is_empty()
+
+
+## The mouse wheel: the next weapon, or with the watch up, the next toy on it.
+func scroll(step: int) -> void:
+	var count := actor.weapons.size()
+	if is_browsing_toys():
+		watch_index = posmod(watch_index + step, watch_toys().size())
+	elif count > 1:
+		_pending_switch = posmod(actor.active_weapon_index + step, count)
+
+
+## Takes the picked toy off the raised watch, and lowers the wrist to throw.
+func take_picked_toy() -> void:
+	var toys := watch_toys()
+	if toys.is_empty():
+		return
+	watch_index = clampi(watch_index, 0, toys.size() - 1)
+	hold_toy(toys[watch_index])
+	if held_toy != "":
+		wrist_raised = false
 
 
 ## Takes the toy `item_id` off the watch into the hand ("" puts it back).
@@ -215,7 +242,8 @@ func _show_held_toy() -> void:
 	if held_toy != "":
 		_toy_node = VehicleScript.toy_model(held_toy)
 		_toy_node.position = TOY_IN_HAND
-		_toy_node.rotation = Vector3(0.0, -0.6, 0.0)
+		_toy_node.rotation = Vector3(0.0, -1.2, 0.0)
+		_toy_node.scale *= TOY_HAND_SIZE
 		actor.hand.add_child(_toy_node)
 		for weapon in actor.weapons:
 			if weapon.visual:
@@ -311,6 +339,11 @@ func _physics_process(delta: float) -> void:
 	cmd.tertiary_pressed = captured and Input.is_action_just_pressed("heavy")
 	if held_toy != "":
 		_use_toy_hand(cmd)
+	elif is_browsing_toys():
+		if cmd.primary_pressed:
+			take_picked_toy()
+		cmd.primary = false
+		cmd.primary_pressed = false
 	cmd.reload_pressed = Input.is_action_just_pressed("reload")
 	cmd.interact_pressed = Input.is_action_just_pressed("interact")
 	cmd.heal_pressed = Input.is_action_just_pressed("heal")
