@@ -45,6 +45,21 @@ var glide_leg := Vector3(0.06, -1.0, -0.06)
 var glide_look := 1.0
 var glide_toes := 1.0
 
+## Holstered weapons are worn on the body instead of vanishing: a gun is
+## slung across the back, muzzle up over the right shoulder, and over the
+## outside of a back rig (a jetpack or wings) when one is worn. A two-handed
+## melee weapon crosses the back the other way; a one-handed blade hangs from
+## the left hip. Distances in meters, in the actor's frame (x right, y up, z back).
+var sling_tilt := deg_to_rad(35.0)
+var sling_height := -0.2
+## Where the back is behind the back bone with nothing worn, and how far the
+## middle of a slung weapon sits out from the back or the rig's outer face.
+var back_surface := 0.13
+var sling_clearance := 0.04
+var hip_offset := Vector3(-0.2, 0.08, 0.02)
+## How far a sheathed blade tips from pointing straight up, toward the back.
+var sheath_angle := deg_to_rad(138.0)
+
 var look: Node
 var actor: Actor
 
@@ -74,6 +89,10 @@ var _glide_legs: Array = []
 var _glide_neck := -1
 var _attack_left := 0.0
 var _aim_left := 0.0
+## Weapon -> the copy of it worn while holstered (null if it has no model),
+## and the rig they were placed for.
+var _stowed := {}
+var _stowed_rig := ""
 ## Makes the model hold its weapon, or null for skins without the bones.
 var arm: Node
 ## Matches the legs to the actor's speed and direction.
@@ -179,6 +198,7 @@ func _process(delta: float) -> void:
 			_set_flash(0.0)
 	_update_rig(delta)
 	_update_glide(delta)
+	_update_stowed()
 	_aim_left = maxf(_aim_left - delta, 0.0)
 	var weapon := actor.get_active_weapon()
 	var melee := weapon as MeleeWeapon
@@ -270,6 +290,76 @@ func _dress_weapons() -> void:
 			weapon.visual.add_child(model)
 		elif weapon is MeleeWeapon:
 			look.restyle_melee(weapon.visual)
+
+
+## Shows every holstered weapon where it is worn, and hides the one in hand.
+func _update_stowed() -> void:
+	if _skeleton == null:
+		return
+	if _stowed_rig != _rig_id:
+		_stowed_rig = _rig_id
+		_clear_stowed()
+	for weapon: Variant in _stowed.keys():
+		if not is_instance_valid(weapon) or not weapon in actor.weapons:
+			if _stowed[weapon]:
+				_stowed[weapon].queue_free()
+			_stowed.erase(weapon)
+	var active := actor.get_active_weapon()
+	for weapon in actor.weapons:
+		var worn := weapon != active and weapon.visual != null and not actor.is_dead
+		if worn and not _stowed.has(weapon):
+			_stowed[weapon] = _stow(weapon)
+		if _stowed.get(weapon):
+			_stowed[weapon].visible = worn
+
+
+func _clear_stowed() -> void:
+	for weapon: Variant in _stowed:
+		if _stowed[weapon]:
+			_stowed[weapon].queue_free()
+	_stowed.clear()
+
+
+## Where a holstered weapon is worn: {"bone", "at" (from the bone, actor
+## frame), "basis" (turns the model from how it is held), "centre" (true to
+## hang it by its middle rather than its grip)}.
+func stow_place(weapon: Weapon) -> Dictionary:
+	var back_bone: String = _def.get("back_bone", "")
+	var out := Vector3(0.0, sling_height, back_surface + sling_clearance)
+	if _rig_back:
+		var box: AABB = look.model_bounds(_rig_back)
+		out.z = back_gap + box.end.z + sling_clearance
+	if weapon is MeleeWeapon and not look.is_two_handed(weapon):
+		# Blades stand along +Y with the grip at the origin: tip it down and
+		# back from the hip, grip up by the belt.
+		return {"bone": _def.get("hip_bone", ""), "at": hip_offset, "basis": Basis(Vector3.RIGHT, sheath_angle),
+			"centre": false}
+	if weapon is MeleeWeapon:
+		# Head up over the left shoulder, crossing a slung gun.
+		return {"bone": back_bone, "at": out + Vector3(0, 0, sling_clearance), "basis": Basis(Vector3.BACK, sling_tilt),
+			"centre": true}
+	# Guns point along -Z in the hand, top up: roll it onto its side so its
+	# profile shows, stand it muzzle up, then lean it over the right shoulder.
+	return {"bone": back_bone, "at": out,
+		"basis": Basis(Vector3.BACK, -sling_tilt) * Basis(Vector3.RIGHT, PI / 2.0) * Basis(Vector3.BACK, PI / 2.0),
+		"centre": true}
+
+
+## Builds the worn copy of a holstered weapon. Purely a view: the weapon's own
+## node stays on the actor's hand, hidden.
+func _stow(weapon: Weapon) -> Node3D:
+	var model: Node3D = look.weapon_model(weapon)
+	if model == null:
+		return null
+	var place := stow_place(weapon)
+	var pivot := Node3D.new()
+	pivot.add_child(model)
+	if place["centre"]:
+		model.position -= look.model_bounds(model).get_center()
+	pivot.basis = place["basis"]
+	var fallback: Vector3 = Vector3(0.0, _def.get("height", 1.8) * 0.7, 0.0) + place["at"]
+	var root := _hang(pivot, "Stowed" + str(actor.weapons.find(weapon)), place["bone"], place["at"], fallback)
+	return root
 
 
 func _on_fired(from: Vector3, to: Vector3, gun: Gun) -> void:
@@ -474,25 +564,29 @@ func _wear_rig(id: String) -> void:
 			_flames.append(flame)
 
 
-## Hangs a rig part on a bone so it moves with the body. Parts are built in
-## meters for a wearer facing the actor's way; this undoes the model's scale
-## and turn so they come out that way. `offset` is from the bone, in the
-## actor's frame. Skins without the bone get the part at `fallback` (actor
-## frame), fixed to the body.
+## Hangs a rig part on a bone so it moves with the body (see `_hang`).
 func _wear_part(part: Node3D, bone_name: String, offset: Vector3, fallback: Vector3) -> void:
 	look._weather_model(part, 0.5, 0.6)
+	_rig_holders.append(_hang(part, "Rig" + part.name, bone_name, offset, fallback))
+
+
+## Hangs a part on a bone so it moves with the body, and returns the node to
+## free to take it off. Parts are built in meters for a wearer facing the
+## actor's way; this undoes the model's scale and turn so they come out that
+## way. `offset` is from the bone, in the actor's frame. Skins without the
+## bone get the part at `fallback` (actor frame), fixed to the body.
+func _hang(part: Node3D, holder_name: String, bone_name: String, offset: Vector3, fallback: Vector3) -> Node3D:
 	var bone := _skeleton.find_bone(bone_name) if _skeleton and bone_name != "" else -1
 	var holder := Node3D.new()
-	holder.name = "Rig" + part.name
+	holder.name = holder_name
 	holder.add_child(part)
 	var to_actor := actor.global_transform.affine_inverse()
 	if bone < 0:
 		add_child(holder)
 		holder.transform = global_transform.affine_inverse() * actor.global_transform * Transform3D(Basis.IDENTITY, fallback)
-		_rig_holders.append(holder)
-		return
+		return holder
 	var attach := BoneAttachment3D.new()
-	attach.name = "Rig" + part.name
+	attach.name = holder_name
 	attach.bone_name = bone_name
 	_skeleton.add_child(attach)
 	attach.add_child(holder)
@@ -501,4 +595,4 @@ func _wear_part(part: Node3D, bone_name: String, offset: Vector3, fallback: Vect
 	var bone_at := to_actor * _skeleton.global_transform * _skeleton.get_bone_global_rest(bone)
 	var want := Transform3D(Basis.IDENTITY, bone_at.origin + offset)
 	holder.transform = bone_at.affine_inverse() * want
-	_rig_holders.append(attach)
+	return attach

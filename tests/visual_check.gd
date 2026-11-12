@@ -33,6 +33,12 @@ func _ready() -> void:
 		get_tree().quit()
 		return
 
+	# `-- <output_dir> --holster-only` shoots holstered weapons on the body.
+	if "--holster-only" in args:
+		await _holster_shots(out_dir)
+		get_tree().quit()
+		return
+
 	# `-- <output_dir> --arena-only` shoots just the arena.
 	if "--arena-only" in args:
 		await _arena_shots(out_dir)
@@ -598,4 +604,60 @@ func _idle_shots(out_dir: String) -> void:
 		sheet.save_png(out_dir.path_join("idle_%s.png" % view))
 		print("saved idle_%s.png" % view)
 	player.cmd.primary = false
+	raid.queue_free()
+
+
+## A contact sheet of where holstered weapons are worn: one row each for the
+## blade in hand (gun slung on the back) and the gun in hand (blade on the hip),
+## with the jetpack on and off, seen from four sides.
+func _holster_shots(out_dir: String) -> void:
+	var raid := Raid.new()
+	add_child(raid)
+	raid.start(Worlds.get_world("ashfront"), 42)
+	for bot in raid.bots:
+		bot.queue_free()
+	var player := raid.player
+	player.set_physics_process(false)
+	player.velocity = Vector3.ZERO
+	await _settle(10)
+	var skin: Node = player.get_node("Skin")
+	var cam := Camera3D.new()
+	raid.add_child(cam)
+	cam.current = true
+	cam.fov = 40.0
+	var gun := -1
+	var blade := -1
+	for i in player.weapons.size():
+		if player.weapons[i] is Gun:
+			gun = i
+		elif player.weapons[i] is MeleeWeapon:
+			blade = i
+	var rig_on := player.flight.enabled
+	var rows := [[blade, rig_on], [gun, rig_on], [blade, false], [gun, false]]
+	var sheet := Image.create(4 * 320, rows.size() * 360, false, Image.FORMAT_RGBA8)
+	for row in rows.size():
+		player.active_weapon_index = rows[row][0]
+		player._refresh_weapon_visuals()
+		player.flight.enabled = rows[row][1]
+		for k in 30:
+			skin._process(1.0 / 60.0)
+			await get_tree().process_frame
+		var sides: Array[Vector3] = [player.global_basis.z, player.global_basis.x, -player.global_basis.x,
+				(player.global_basis.z - player.global_basis.x).normalized()]
+		for c in sides.size():
+			var at := player.global_position + Vector3(0, 1.0, 0)
+			cam.global_position = at + sides[c] * 4.0
+			cam.look_at(at)
+			await _settle(1)
+			await RenderingServer.frame_post_draw
+			var frame := get_viewport().get_texture().get_image()
+			var w := frame.get_width()
+			var h := frame.get_height()
+			var cut := frame.get_region(Rect2i(w / 2 - 160 * h / 720, h / 2 - 180 * h / 720, 320 * h / 720, 360 * h / 720))
+			cut.resize(320, 360)
+			cut.convert(Image.FORMAT_RGBA8)
+			sheet.blit_rect(cut, Rect2i(0, 0, 320, 360), Vector2i(c * 320, row * 360))
+	sheet.save_png(out_dir.path_join("holster.png"))
+	print("saved holster.png")
+	player.flight.enabled = rig_on
 	raid.queue_free()
