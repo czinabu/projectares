@@ -20,6 +20,7 @@ const CACHE_TABLE := [
 	{"id": "rifle_carbine", "weight": 3.0},
 	{"id": "frame_runner", "weight": 3.0},
 	{"id": "boots_thruster", "weight": 2.5},
+	{"id": "knife_gutter", "weight": 2.5},
 ]
 
 ## Outpost roofs need a flight rig to reach.
@@ -28,6 +29,7 @@ const ROOFTOP_TABLE := [
 	{"id": "power_cell", "weight": 22.0},
 	{"id": "alloy_ingot", "weight": 12.0},
 	{"id": "hammer_breaker", "weight": 9.0},
+	{"id": "axe_splitter", "weight": 7.0},
 	{"id": "frame_trooper", "weight": 8.0},
 	{"id": "chip_barrier", "weight": 6.0},
 	{"id": "boots_thruster", "weight": 5.0},
@@ -76,7 +78,7 @@ func register_items() -> void:
 			"Station coolant cartridge. Still frosted over.")
 	ItemDB.register("frost_signal_core", "Signal Core", ItemDB.Rarity.EPIC, 1200, ["material"], {},
 			"The heart of the relay mast. Hums when you hold it.")
-	ItemDB.register("frost_ice_axe", "Ice Axe", ItemDB.Rarity.RARE, 750, ["weapon", "melee"],
+	ItemDB.register("frost_ice_axe", "Ice Axe", ItemDB.Rarity.RARE, 750, ["weapon", "melee", "axe"],
 			{"light_damage": 30.0, "heavy_damage": 80.0, "heavy_lunge": 12.0, "slam_damage": 70.0,
 			"reach": 2.9},
 			"Long heavy lunge and a hard dive slam. Built for closing distance on open ice.")

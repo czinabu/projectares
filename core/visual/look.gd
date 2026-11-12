@@ -108,8 +108,12 @@ const GUN_MODELS := [
 const DEFAULT_GUN := "AR_3.glb"
 ## Melee models picked by item tag, first match wins: file, length in meters,
 ## how far up from the pommel the hand grips it, and whether it takes both hands.
+## No file means the model is built in code (see `_spear_model`).
 const MELEE_MODELS := [
 	["hammer", "Hammer.glb", 1.15, 0.3, true],
+	["knife", "Knife.glb", 0.5, 0.1, false],
+	["axe", "Axe.glb", 0.85, 0.12, false],
+	["spear", "", 2.1, 0.75, true],
 	["starter", "Sword.glb", 1.15, 0.13, false],
 	["blade", "Katana.glb", 1.2, 0.14, false],
 ]
@@ -804,6 +808,8 @@ func weapon_model(weapon: Weapon) -> Node3D:
 ## blade is built, so the weapon's own windup, swing and guard poses carry over.
 func _melee_model(weapon: Weapon) -> Node3D:
 	var pick := _melee_pick(weapon)
+	if pick[1] == "":
+		return _spear_model(pick[2], pick[3])
 	var model := _instance(WEAPONS + pick[1])
 	if model == null:
 		return null
@@ -814,6 +820,65 @@ func _melee_model(weapon: Weapon) -> Node3D:
 	_weather_model(model, 0.75 if weapon.item_id == "" or ItemDB.has_tag(weapon.item_id, "starter") else 0.35, 0.85)
 	holder.position.y = -pick[3]
 	return holder
+
+
+## No pack has a spear, so it is built here: a wrapped shaft, a steel collar
+## and a long leaf head, standing along +Y like the pack models.
+func _spear_model(length: float, grip: float) -> Node3D:
+	var holder := Node3D.new()
+	holder.name = "Model"
+	var model := Node3D.new()
+	model.name = "Spear"
+	holder.add_child(model)
+	var wood := StandardMaterial3D.new()
+	wood.albedo_color = Color(0.32, 0.24, 0.17)
+	wood.roughness = 0.85
+	var steel := StandardMaterial3D.new()
+	steel.albedo_color = Color(0.62, 0.63, 0.66)
+	steel.metallic = 0.9
+	steel.roughness = 0.35
+	var wrap := StandardMaterial3D.new()
+	wrap.albedo_color = Color(0.12, 0.11, 0.1)
+	wrap.roughness = 0.95
+	var head_len := 0.34
+	var shaft_len := length - head_len
+	_spear_part(model, _cylinder(0.018, shaft_len), Vector3(0, shaft_len * 0.5, 0), wood)
+	_spear_part(model, _cylinder(0.024, 0.3), Vector3(0, grip, 0), wrap)
+	_spear_part(model, _cylinder(0.022, 0.06), Vector3(0, 0.03, 0), steel)
+	_spear_part(model, _cylinder(0.026, 0.07), Vector3(0, shaft_len - 0.02, 0), steel)
+	# The head: a flattened double cone, widest a third of the way up.
+	var lower := CylinderMesh.new()
+	lower.top_radius = 0.055
+	lower.bottom_radius = 0.02
+	lower.height = head_len * 0.3
+	_spear_part(model, lower, Vector3(0, shaft_len + head_len * 0.15, 0), steel, Vector3(1, 1, 0.3))
+	var upper := CylinderMesh.new()
+	upper.top_radius = 0.0
+	upper.bottom_radius = 0.055
+	upper.height = head_len * 0.7
+	_spear_part(model, upper, Vector3(0, shaft_len + head_len * 0.65, 0), steel, Vector3(1, 1, 0.3))
+	_weather_model(model, 0.4, 0.8)
+	holder.position.y = -grip
+	return holder
+
+
+func _cylinder(radius: float, height: float) -> CylinderMesh:
+	var mesh := CylinderMesh.new()
+	mesh.top_radius = radius
+	mesh.bottom_radius = radius
+	mesh.height = height
+	mesh.radial_segments = 10
+	mesh.rings = 1
+	return mesh
+
+
+func _spear_part(model: Node3D, mesh: PrimitiveMesh, at: Vector3, mat: Material, scale := Vector3.ONE) -> void:
+	var part := MeshInstance3D.new()
+	mesh.material = mat
+	part.mesh = mesh
+	part.position = at
+	part.scale = scale
+	model.add_child(part)
 
 
 func _melee_pick(weapon: Weapon) -> Array:

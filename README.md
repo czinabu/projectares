@@ -237,6 +237,11 @@ you have.
   for a few seconds, Shock Pulse staggers everyone near you. Each has a cooldown.
 - More gear to find: carbine, SMG, marksman rifle, shotgun, arc blade, breaker
   hammer, three armor frames, and a better jetpack.
+- Six melee weapons, each with its own job. The Gutter Knife is quick and short
+  and cuts from behind for more than double. The Splitter Axe drains a guard
+  so fast that three chops break it. The Lancer Spear (rooftop loot) has the
+  longest reach, pokes fliers overhead, and staggers with a heavy thrust, but
+  hits half as hard up close.
 - Motorbikes, the first vehicle. Put one in the vehicle slot and it is parked
   next to you when you deploy. Press E on any bike nobody is riding to take
   it, including someone else's. Sign out riding a bike and it goes to your

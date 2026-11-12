@@ -87,6 +87,11 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   and over would farm it.
 - Blocking and parrying happen in `Weapon.modify_incoming`, which `Combat.deal`
   calls for every hit. Every melee attack keeps a visible windup so it can be parried.
+- Melee types differ only by item stats on the one `MeleeWeapon` class:
+  `backstab_mult` (knife), `guard_crush` (axe, carried on
+  `DamageInfo.guard_mult`), `vertical_reach`, `close_range`/`close_mult` and
+  `heavy_stagger` (spear). Their defaults change nothing. Add a melee type as
+  data plus a `Look.MELEE_MODELS` entry, not as a new class.
 - Melee is directional. The stance travels in `ActorCommand.stance`, attacks
   set `DamageInfo.direction`, and `MeleeWeapon.guard_covers` decides whether a
   guard stops a hit. Windup and guard poses must show their side.

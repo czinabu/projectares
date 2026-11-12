@@ -168,7 +168,8 @@ static func run(t: Node) -> void:
 
 	# Melee models, also by tag, standing blade-up with the grip at the hand.
 	for entry: Array in Look.MELEE_MODELS + [Look.DEFAULT_MELEE]:
-		t.check(ResourceLoader.exists(Look.WEAPONS + entry[1]), "melee model %s exists" % entry[1])
+		if entry[1] != "":
+			t.check(ResourceLoader.exists(Look.WEAPONS + entry[1]), "melee model %s exists" % entry[1])
 	var blade := MeleeWeapon.new()
 	var blade_model := Look.weapon_model(blade)
 	t.check(blade_model != null, "a blade gets a model")
@@ -181,6 +182,17 @@ static func run(t: Node) -> void:
 	t.check(not Look.is_two_handed(blade), "a plain blade is one-handed")
 	blade.item_id = "hammer_breaker"
 	t.check(Look.is_two_handed(blade), "a hammer takes both hands")
+	# No pack has a spear, so Look builds one: long, standing along +Y, held
+	# well up the shaft.
+	blade.item_id = "spear_lancer"
+	var spear := Look.weapon_model(blade)
+	t.check(spear != null, "a spear gets a model built in code")
+	if spear:
+		var box := Look.model_bounds(spear)
+		t.check(box.size.y > 1.9 and box.size.y > 10.0 * maxf(box.size.x, box.size.z),
+				"the spear model is long and stands along the shaft")
+		t.check(box.position.y < -0.5 and box.end.y > 1.2, "the spear is gripped part way up the shaft")
+		spear.free()
 	blade.free()
 
 	t.check(FileAccess.file_exists("res://assets/LICENSES.md"), "asset licenses are recorded")

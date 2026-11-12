@@ -60,6 +60,23 @@ var guard_break_stagger := 0.9
 var riposte_window := 1.6
 var riposte_mult := 1.5
 
+## What sets one melee type apart. The defaults change nothing, so a weapon
+## only gets the traits its item stats ask for.
+## Hits on someone facing away, from outside their front `backstab_arc_deg`,
+## are multiplied by this. A guard never covers the back anyway.
+var backstab_mult := 1.0
+var backstab_arc_deg := 180.0
+## A guard that stops this weapon's hit pays this many times the usual stamina,
+## so heavy chopping breaks guards.
+var guard_crush := 1.0
+## How far above or below you a swing still connects. Long reach pokes fliers.
+var vertical_reach := 2.5
+## Targets closer than this are inside the point and take `close_mult` damage.
+var close_range := 0.0
+var close_mult := 1.0
+## A heavy hit that lands unblocked staggers the target for this long.
+var heavy_stagger := 0.0
+
 ## The stance the actor is asking for right now.
 var stance := Dir.OVERHEAD
 ## The side the current or last attack comes from, as the attacker sees it.
@@ -203,7 +220,7 @@ func modify_incoming(info: DamageInfo) -> void:
 		return
 
 	var stopped := info.amount if info.kind == "melee" else info.amount * bullet_block_fraction
-	if actor.spend_stamina(stopped * block_stamina_per_damage):
+	if actor.spend_stamina(stopped * block_stamina_per_damage * info.guard_mult):
 		info.amount -= stopped
 		info.blocked = true
 		blocked_hit.emit(info)
@@ -282,13 +299,33 @@ func _strike(amount: float, kind: String) -> void:
 		var vertical := absf(to.y)
 		to.y = 0.0
 		var dist := to.length()
-		if dist > reach or vertical > 2.5:
+		if dist > reach or vertical > vertical_reach:
 			continue
 		if dist > 0.8 and forward.angle_to(to.normalized()) > half_arc:
 			continue
-		var info := DamageInfo.make(amount, actor, "melee", at)
+		var hit := amount
+		if dist < close_range:
+			hit *= close_mult
+		if backstab_mult != 1.0 and is_behind(other, actor.global_position, backstab_arc_deg):
+			hit *= backstab_mult
+		var info := DamageInfo.make(hit, actor, "melee", at)
 		info.direction = attack_dir
-		Combat.deal(other, info)
+		info.guard_mult = guard_crush
+		if Combat.deal(other, info) and kind == "heavy" and heavy_stagger > 0.0 \
+				and not info.blocked and not info.parried and not other.is_dead:
+			other.stagger(heavy_stagger)
+
+
+## True when `from` is outside the front `front_arc_deg` of `target`, the way
+## it faces.
+static func is_behind(target: Actor, from: Vector3, front_arc_deg: float) -> bool:
+	var facing := target.get_aim_dir()
+	facing.y = 0.0
+	var to := from - target.global_position
+	to.y = 0.0
+	if facing.length() < 0.01 or to.length() < 0.01:
+		return false
+	return facing.normalized().angle_to(to.normalized()) > deg_to_rad(front_arc_deg) * 0.5
 
 
 ## Greybox poses. The blade is cocked to the attack's side for a windup, swept
