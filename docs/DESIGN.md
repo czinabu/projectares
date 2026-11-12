@@ -12,7 +12,7 @@ How to use it:
   feature here changes one of those rules (for example power weapons becoming
   storable), update the rule in `CLAUDE.md` in the same PR that builds it.
 - When Caleb makes a design call, record it here in the same PR.
-- Section 12 lists the decisions still open. Do not settle them silently.
+- Section 13 lists the decisions still open. Do not settle them silently.
 
 Sources: Caleb's design conversation (November 2026), the review of it in
 the project chat, and the aerial rig proposal "Aerial gadgets: identities and
@@ -320,7 +320,27 @@ More on each:
   watch. The bike, rover and jet must stay clearly faster than flight cruise
   on their own terrain; the mech trades speed for armor and firepower.
 
-## 9. Economy and progression
+## 9. Racing (a later mode)
+
+A racing mode, built after the friends playtest. It uses what the game
+already has (bikes, rigs, toy vehicles) and stays our own: no monsters,
+cars, layouts or tricks taken from any film's race. Hazards and secret
+shortcuts are invented for our tracks.
+
+- **Mixed races.** Ride a bike through a course and bail off into flight
+  mid-course where it pays off (a ramp, a gap, a shortcut over the roofs),
+  then throw the bike back down from your watch to keep riding.
+- **Sky races.** Rig-only races through rings in the air, where each rig's
+  identity matters: jetpack lines, wing dives, boots skimming low.
+- **Hazards and secrets.** Our own: things like collapsing wrecks, storm
+  gusts, turret lines or closing gates, with hidden routes for those who
+  find them.
+- Entered from an in-world place (a gate in the hub or a starting line), not
+  a menu, like the arena. Nobody loses gear racing.
+- Weakness-and-counter applies here too: no rig or vehicle should win every
+  course.
+
+## 10. Economy and progression
 
 Unchanged from the current game (see README "Credits and shops"):
 
@@ -329,13 +349,13 @@ Unchanged from the current game (see README "Credits and shops"):
 - Mastery for every gear type, sidegrade variants, never lost on death.
 - Renown, ranks, bounties and the Marked in the PvP world.
 
-## 10. Social
+## 11. Social
 
 - The phone: people, chat, invites, news, mirror, settings.
 - Clans: one side in a warzone, a tag by the name.
 - Squads of three are the design target for flight pacing.
 
-## 11. Roadmap
+## 12. Roadmap
 
 1. **Before the friends playtest:** the aerial rig rework (two PRs, per the
    proposal), the heavy weapon chamber and banking, the sign-out rework, and
@@ -344,11 +364,11 @@ Unchanged from the current game (see README "Credits and shops"):
 3. **After the playtest:** the melee air-lunge, the gadget list and the first
    new gadgets, vehicle utility on the bike (passenger, cargo), loadout
    swapping in the PvE world, then the rest of the vehicle roster (rover,
-   mech, jet).
+   mech, jet), and the racing mode (section 9).
 4. **The PvE world:** quests, dungeons and bosses.
 5. **More worlds** as plug-ins.
 
-## 12. Open decisions
+## 13. Open decisions
 
 Caleb's calls, still open:
 

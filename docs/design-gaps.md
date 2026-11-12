@@ -4,7 +4,7 @@ Checked against `main` on 2026-11-12. Update a row in the same PR that
 closes it. "Built" means it is in the code today; "Partly" says what is
 missing; "Missing" is not started.
 
-Order of work follows the roadmap in [DESIGN.md](DESIGN.md#11-roadmap):
+Order of work follows the roadmap in [DESIGN.md](DESIGN.md#12-roadmap):
 rows marked **pre-playtest** come before the friends playtest.
 
 ## Places
@@ -64,7 +64,7 @@ rows marked **pre-playtest** come before the friends playtest.
 | Scanned into the watch chamber instead of swapped at a rack | Missing | **Pre-playtest.** |
 | Summon without dropping the primary; auto-return when spent | Partly | Key 4 switches to it and the primary is kept. Check that a spent one returns the previous weapon by itself. |
 | Banked by depot or sign-out to the armory wall | Missing | Needs `StashRules.storable` to accept `power`, and the `CLAUDE.md` power weapon rule rewritten. **Pre-playtest.** |
-| Deploy with one from the wall (one per outing) | Missing | **Pre-playtest.** Open decision in DESIGN.md section 12. |
+| Deploy with one from the wall (one per outing) | Missing | **Pre-playtest.** Open decision in DESIGN.md section 13. |
 | Dropped with your bag on death | Partly | Today a dead player's power weapon is left on a rack. |
 
 ## Banking and leaving
@@ -91,3 +91,9 @@ rows marked **pre-playtest** come before the friends playtest.
 | Mobile cover | Missing | Rover and mech; the bike gives none by design. |
 | Per-vehicle watch recharge (heavier is slower) | Missing | One `Raid.toy_cooldown` for all vehicles today. |
 | Rover, mech and jet | Missing | Agreed roster, each with a weakness and counter (DESIGN.md section 8). After the playtest. |
+
+## Racing
+
+| Item | State | Notes |
+| --- | --- | --- |
+| Racing mode: mixed bike-and-flight races, sky ring races, our own hazards and secrets | Missing | A later mode, after the friends playtest (DESIGN.md section 9). |
