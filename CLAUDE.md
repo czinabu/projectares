@@ -265,7 +265,9 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   stops dead and hovers to shoot steady, and carries heavy armor, but turns
   wide and is loud and hot; wings glide and pulse to hold height, with the
   fastest dives, tightest turns and a barrel roll, silent and cold, but never
-  stop and fire only a sidearm while spread; boots are quick kicks. Flown its
+  stop and fire only a sidearm while spread; boots skim low (`FlightRig.skim`),
+  cooling near a surface and burning out high up, kick up, dash on heat and
+  aim steady while low, but have no high ground. Flown its
   own way a rig stays up for minutes, against type it overheats in seconds.
   Shooting from the air spreads wider (`Actor.air_aim`) except in a rig's
   steady state.

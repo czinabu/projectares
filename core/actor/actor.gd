@@ -141,6 +141,7 @@ var _ticks_waited := 0
 var _dash_left := 0.0
 var _dash_cd := 0.0
 var _dash_dir := Vector3.ZERO
+var _dash_speed_now := 0.0
 var _slide_cd := 0.0
 ## Wings: the barrel roll's sidestep (velocity added this tick, taken off
 ## again before the glide steers next tick), its time left and cooldown.
@@ -339,8 +340,12 @@ func _simulate_movement(delta: float) -> void:
 	# Once gliding you stay gliding while you climb on your speed.
 	flight.is_gliding = flight.can_glide() and cmd.jump and not on_floor and not staggered \
 			and (velocity.y < 0.0 or flight.is_gliding)
+	flight.is_skimming = flight.can_skim() and cmd.jump and not on_floor and not staggered \
+			and not flight.overheated
 	if on_floor:
 		horizontal = horizontal.move_toward(wish * speed, ground_accel * delta)
+	elif flight.is_skimming:
+		horizontal = horizontal.move_toward(wish * flight.skim_speed, flight.skim_accel * delta)
 	elif flight.is_gliding:
 		horizontal = _glide_velocity(horizontal, wish, yaw_basis, delta)
 	elif flight.is_hovering and flight.boost_speed > 0.0 and cmd.sprint and cmd.move.y > 0.0:
@@ -352,13 +357,20 @@ func _simulate_movement(delta: float) -> void:
 		horizontal = horizontal.move_toward(wish * speed, air_accel * delta)
 
 	_dash_cd = maxf(0.0, _dash_cd - delta)
-	if cmd.dash and _dash_cd <= 0.0 and not staggered and spend_stamina(dash_stamina):
+	if cmd.dash and not on_floor and not staggered and _dash_left <= 0.0 and flight.air_dash_speed > 0.0:
+		# Boots dash in the air on heat, not stamina.
+		if flight.try_air_dash():
+			_dash_dir = wish.normalized() if wish.length() > 0.1 else yaw_basis * Vector3.FORWARD
+			_dash_left = flight.air_dash_time
+			_dash_speed_now = flight.air_dash_speed
+	elif cmd.dash and _dash_cd <= 0.0 and not staggered and spend_stamina(dash_stamina):
 		_dash_dir = wish.normalized() if wish.length() > 0.1 else yaw_basis * Vector3.FORWARD
 		_dash_left = dash_time
 		_dash_cd = dash_cooldown
+		_dash_speed_now = dash_speed
 	if _dash_left > 0.0:
 		_dash_left -= delta
-		horizontal = _dash_dir * dash_speed
+		horizontal = _dash_dir * _dash_speed_now
 		slide_left = 0.0
 	horizontal = _simulate_slide(horizontal, on_floor, staggered, delta)
 
@@ -393,6 +405,8 @@ func _simulate_movement(delta: float) -> void:
 	flight.is_coasting = false
 	if flight.is_hovering:
 		_simulate_hover(delta)
+	elif flight.is_skimming:
+		_simulate_skim(delta)
 	else:
 		var thrust := flight.tick(cmd.jump and not on_floor and not staggered, delta)
 		velocity.y += (thrust - gravity) * delta
@@ -449,6 +463,27 @@ func _simulate_hover(delta: float) -> void:
 	flight.tick(true, delta, 1.0 if climb > 0.0 else (flight.cruise_heat_mult if cruising else flight.hover_heat_mult))
 
 
+## Boots skimming: a kick rises as usual, then the boots hold your height
+## (descend sinks), and the heat follows the height over what is below.
+func _simulate_skim(delta: float) -> void:
+	if velocity.y > 0.0 and not cmd.descend:
+		velocity.y -= gravity * delta
+	else:
+		velocity.y = move_toward(velocity.y, -flight.descend_speed if cmd.descend else 0.0,
+				flight.skim_hold_accel * delta)
+	flight.skim(delta, height_above_ground(flight.skim_probe))
+
+
+## How high the feet are over the world below, up to `reach` meters.
+func height_above_ground(reach: float) -> float:
+	if not is_inside_tree():
+		return reach
+	var from := global_position + Vector3(0.0, 0.1, 0.0)
+	var query := PhysicsRayQueryParameters3D.create(from, from + Vector3(0.0, -reach - 0.1, 0.0), LAYER_WORLD)
+	var hit := get_world_3d().direct_space_state.intersect_ray(query)
+	return reach if hit.is_empty() else maxf(0.0, global_position.y - (hit["position"] as Vector3).y)
+
+
 ## Jets lit: the move keys cruise you about. Slow, you go where you steer;
 ## at speed the heading only turns at `FlightRig.cruise_turn_rate`, and
 ## letting go of the keys (or pulling the other way) brakes to a stop.
@@ -495,11 +530,14 @@ func _slide_landing() -> void:
 
 
 ## How much the air spoils aim, 0 to 1: none on the ground, riding, with
-## jets lit and holding still or cruising (not boosting), and full otherwise.
+## jets lit and holding still or cruising (not boosting), skimming low on
+## boots, and full otherwise.
 func air_aim() -> float:
 	if vehicle != null or airborne_time < 0.15:
 		return 0.0
 	if flight.is_hovering and not flight.is_boosting:
+		return 0.0
+	if flight.is_skimming and flight.skim_band() == 0:
 		return 0.0
 	return 1.0
 

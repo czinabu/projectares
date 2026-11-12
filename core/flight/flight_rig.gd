@@ -4,7 +4,8 @@ extends Node
 ## how it flies:
 ##   jetpack        - `thrust_accel`: hold jump in the air for sustained lift,
 ##                    tap jump in the air to hover and fly freely (see below).
-##   thruster boots - `burst_velocity`: press jump in the air for an instant kick.
+##   thruster boots - `burst_velocity`: press jump in the air for an instant kick,
+##                    and `skim_speed`: hold jump in the air to skim low.
 ##   glide wings    - a burst to launch, then `glide_fall_speed` and
 ##                    `glide_speed`: hold jump to fall slowly and fly forward,
 ##                    and `pulse_velocity`: press jump while gliding to climb.
@@ -116,6 +117,27 @@ var glide_stow_time := 0.35
 var slide_landing_speed := 0.0
 ## Sideways speed an air jump adds along the move keys (thruster boots).
 var burst_push := 0.0
+## Boots: holding jump in the air skims at this speed (0: no skim), holding
+## your height (a kick still carries you up first; descend sinks). The heat
+## depends on the height over the ground or roof below: under `skim_low`
+## meters the boots cool at `skim_cool` a second, up to `skim_high` they
+## cost `skim_mid_heat`, and above it `skim_high_heat`. You stop dead when
+## you let go of the move keys (`skim_accel`).
+var skim_speed := 0.0
+var skim_accel := 40.0
+var skim_hold_accel := 30.0
+var skim_low := 4.0
+var skim_high := 10.0
+var skim_cool := 5.0
+var skim_mid_heat := 8.0
+var skim_high_heat := 30.0
+## How far down the boots look for a surface.
+var skim_probe := 30.0
+## Boots: the dash key in the air dashes at `air_dash_speed` for
+## `air_dash_time` for `air_dash_heat`, instead of spending stamina.
+var air_dash_speed := 0.0
+var air_dash_time := 0.3
+var air_dash_heat := 0.0
 
 var heat := 0.0
 var overheated := false
@@ -127,6 +149,10 @@ var is_hovering := false
 var is_boosting := false
 ## Jets idle, sinking and cooling (see `coast_cool`).
 var is_coasting := false
+## Boots skimming (holding jump in the air).
+var is_skimming := false
+## Boots: the height over the surface below while skimming, in meters.
+var skim_height := 0.0
 ## The launch of a `launch_once` rig has been used this time in the air.
 var launched := false
 var _since_thrust := 0.0
@@ -159,6 +185,42 @@ func coast(delta: float) -> void:
 	is_thrusting = false
 	heat = maxf(0.0, heat - coast_cool * delta)
 	_recover()
+
+
+## Boots skimming at `height` over the surface below: cools low down,
+## heats up higher (see `skim_speed`).
+func skim(delta: float, height: float) -> void:
+	is_thrusting = false
+	skim_height = height
+	if height < skim_low:
+		heat = maxf(0.0, heat - skim_cool * delta)
+		_recover()
+		return
+	_since_thrust = 0.0
+	heat += (skim_mid_heat if height < skim_high else skim_high_heat) * delta
+	if heat >= max_heat:
+		heat = max_heat
+		overheated = true
+		is_skimming = false
+
+
+## Which band a skim is in: 0 cool (low), 1 warm, 2 burning.
+func skim_band() -> int:
+	return 0 if skim_height < skim_low else (1 if skim_height < skim_high else 2)
+
+
+func can_skim() -> bool:
+	return enabled and skim_speed > 0.0
+
+
+## A boot dash in the air. True if it goes off (and takes its heat).
+func try_air_dash() -> bool:
+	if not enabled or overheated or air_dash_speed <= 0.0:
+		return false
+	if not _spend(air_dash_heat):
+		return false
+	burst_fired.emit()
+	return true
 
 
 func _recover() -> void:
@@ -219,6 +281,8 @@ func controls_hint() -> String:
 				% (", Shift+W boosts" if boost_speed > 0.0 else ""))
 	if burst_velocity > 0.0:
 		parts.append("press again in the air to boost" + (" the way you move" if burst_push > 0.0 else ""))
+	if can_skim():
+		parts.append("hold in the air to skim low (stay near a surface to cool, C sinks, Ctrl dashes)")
 	if can_glide():
 		parts.append("hold while falling to glide (steer to bank, look down to dive, up to climb, %sQ/E %s)"
 				% ["press again to pulse up, " if pulse_velocity > 0.0 else "",

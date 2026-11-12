@@ -416,7 +416,7 @@ func _update_air(delta: float, airborne: bool) -> void:
 	if not airborne:
 		return
 	var follow := 1.0 - exp(-attitude_follow * delta)
-	var jets := actor.flight.is_hovering or actor.flight.is_thrusting
+	var jets := actor.flight.is_hovering or actor.flight.is_thrusting or actor.flight.is_skimming
 	_air_hang = lerpf(_air_hang, 1.0 if jets else 0.0, follow)
 	_air_fall = lerpf(_air_fall, clampf(0.5 - actor.velocity.y / (2.0 * air_rise_speed), 0.0, 1.0), follow)
 
@@ -732,7 +732,7 @@ func _update_rig(delta: float) -> void:
 	if _rig_holders.is_empty():
 		return
 	_burst_left = maxf(0.0, _burst_left - delta)
-	var burning := not actor.is_dead and (actor.flight.is_thrusting or _burst_left > 0.0)
+	var burning := not actor.is_dead and (actor.flight.is_thrusting or actor.flight.is_skimming or _burst_left > 0.0)
 	for flame in _flames:
 		flame.visible = burning
 	if _rig_back and _rig_back.has_node("WingL"):

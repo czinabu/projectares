@@ -19,7 +19,7 @@ skies, animated models and effects (see "How it looks" below).
 | Action | Key |
 | --- | --- |
 | Move / sprint | WASD / Shift |
-| Jump. In the air: hold to climb, tap to light the jets and hover (jetpack); press to kick the way you steer (thruster boots); press to launch, hold while falling to glide (glide wings) | Space |
+| Jump. In the air: hold to climb, tap to light the jets and hover (jetpack); press to kick the way you steer, hold to skim low, dash key dashes (thruster boots); press to launch, hold while falling to glide (glide wings) | Space |
 | Jetpack hovering: cruise with the move keys, Space climbs, C coasts down to cool, Shift + W boosts head first wherever you look (Mk2) | |
 | Glide wings gliding: Space again pulses up, Q / E snaps a barrel roll | |
 | Gliding: steer or turn the view to bank round, look down to dive for speed, look up to climb on it | |
@@ -270,9 +270,11 @@ you have.
   hotter; they turn wide and their heat draws seekers. Glide wings never
   stop: launch once, glide, pulse up to hold height, dive for the fastest
   speed in the game, turn tightest and barrel roll, cold and quiet, but only
-  a sidearm fires while they are spread. Thruster boots are the quick ones:
-  hard kicks up and the way you steer, cooling fastest. Shooting from the
-  air spreads wider, except from a hover.
+  a sidearm fires while they are spread. Thruster boots skim low over streets
+  and roofs and stop dead: near a surface they cool, high up they burn out in
+  seconds. Jump kicks you up, the dash key dashes on heat, and the aim stays
+  steady while skimming low. Shooting from the
+  air spreads wider, except from a hover or a low skim.
 - An ability slot. Phase Step blinks you forward, Kinetic Barrier cuts damage
   for a few seconds, Shock Pulse staggers everyone near you. Each has a cooldown.
 - Attachments for your primary, in four slots: optic, muzzle, grip and

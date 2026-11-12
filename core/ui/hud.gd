@@ -207,7 +207,8 @@ static func wrist_text(p_raid: Raid, p: Actor, death: Dictionary, wait: float, l
 ## The flight rig's line on the watch: overheating, then what the rig needs
 ## you to know in the air. A jetpack warns when a heat seeker could lock on
 ## (`Gun.heat_target`'s rule); wings show airspeed against the stall and
-## whether a pulse is ready.
+## whether a pulse is ready; boots show the height band (cool, warm,
+## burning) and how many dashes the heat leaves.
 static func rig_text(p: Actor) -> String:
 	var rig := p.flight
 	if not rig.enabled:
@@ -221,6 +222,10 @@ static func rig_text(p: Actor) -> String:
 		if rig.pulse_velocity > 0.0:
 			pulse = "   pulse ready" if rig.heat + rig.pulse_heat <= rig.max_heat else "   pulse cooling"
 		return "Air %d m/s%s%s" % [roundi(air), "  STALL" if air < stall - 0.5 else "", pulse]
+	if rig.can_skim() and (rig.is_skimming or p.airborne_time > 0.3):
+		var dashes := floori((rig.max_heat * (1.0 + FlightRig.BURST_SLACK) - rig.heat) / maxf(rig.air_dash_heat, 1.0))
+		var band: String = ["low, cooling", "warm", "BURNING"][rig.skim_band()] if rig.is_skimming else "falling"
+		return "Skim %s   dashes %d" % [band, clampi(dashes, 0, 3)]
 	if rig.can_hover() and rig.is_hovering:
 		var state := "coasting" if rig.is_coasting else ("boost" if rig.is_boosting else "jets lit")
 		var lockable := rig.is_thrusting or rig.heat >= rig.max_heat * 0.3

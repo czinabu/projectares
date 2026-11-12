@@ -1418,17 +1418,14 @@ func _test_flight_rigs_and_abilities() -> void:
 		await frames(1)
 		a.cmd.jump_pressed = false
 
-	# Thruster boots: no sustained lift, a kick per press, limited by heat.
+	# Thruster boots: kicks up, skim low and cool, burn out high, dash on heat.
 	var raid := await _kit_raid(60, ["rifle_scrap", "blade_scrap", "boots_thruster", "plate_light"])
 	var p := raid.player
 	check(p.flight.display_name == "Thruster Boots" and p.flight.burst_velocity > 0.0
-			and is_zero_approx(p.flight.thrust_accel), "boots stats come from the item")
+			and is_zero_approx(p.flight.thrust_accel) and p.flight.can_skim(), "boots stats come from the item")
+	check(is_equal_approx(p.flight.skim_speed, FlightRig.CRUISE_SPEED), "boots skim at the shared cruise speed")
 	await press_jump.call(p)
-	await frames(20)
-	p.cmd.jump = true
 	await frames(10)
-	check(not p.flight.is_thrusting and p.velocity.y < 0.0, "boots give no lift from holding jump")
-	p.cmd.jump = false
 	var height := p.global_position.y
 	await press_jump.call(p)
 	check(p.velocity.y > 8.0 and p.flight.heat > 0.0, "pressing jump in the air kicks you upward and costs heat")
@@ -1442,11 +1439,16 @@ func _test_flight_rigs_and_abilities() -> void:
 	for i in 6:
 		await press_jump.call(p)
 		await frames(4)
-	check(p.flight.overheated, "boosting over and over overheats the boots")
-	check(not p.flight.is_hovering, "boots cannot hover")
+	check(p.flight.overheated, "kicking over and over overheats the boots")
+	check(not p.flight.is_hovering and not p.flight.is_skimming, "boots cannot hover, nor skim overheated")
 	var vy := p.velocity.y
 	await press_jump.call(p)
 	check(p.velocity.y <= vy, "overheated boots do nothing")
+	for i in 400:
+		await get_tree().physics_frame
+		if p.is_on_floor():
+			break
+	await _check_boot_skim(p)
 	await _end_raid(raid)
 
 	# Glide wings: launch, then fall slowly and travel far.
@@ -1764,6 +1766,64 @@ func _check_jetpack_cruise(p: Actor) -> void:
 		check(gun.current_spread_deg() < wild - 1.0, "a gun spreads wider in the air than from a hover")
 	p.cmd.sprint = false
 	p.cmd.move = Vector2.ZERO
+
+
+## Boots skimming. `p` stands on open ground with thruster boots.
+func _check_boot_skim(p: Actor) -> void:
+	p.flight.heat = 0.0
+	p.flight.overheated = false
+	p.global_position = Vector3(0.0, p.global_position.y, 60.0)
+	await frames(10)
+	var ground := p.global_position.y
+	p.cmd.jump_pressed = true
+	p.cmd.jump = true
+	await frames(1)
+	p.cmd.jump_pressed = false
+	await frames(60)
+	check(p.flight.is_skimming and not p.is_on_floor() and absf(p.velocity.y) < 0.5,
+			"holding jump off a jump skims, holding the height")
+	check(p.flight.skim_band() == 0 and p.air_aim() == 0.0, "skimming low aims steady")
+	p.flight.heat = 40.0
+	await frames(60)
+	check(p.flight.heat < 40.0 and p.flight.is_skimming, "skimming near a surface cools the boots (%.0f)" % p.flight.heat)
+	p.cmd.yaw = 0.0
+	p.cmd.move = Vector2(0, 1)
+	await frames(40)
+	var speed := Vector2(p.velocity.x, p.velocity.z).length()
+	check(absf(speed - FlightRig.CRUISE_SPEED) < 0.5, "boots skim at %.1f m/s" % speed)
+	p.cmd.move = Vector2.ZERO
+	await frames(30)
+	check(Vector2(p.velocity.x, p.velocity.z).length() < 0.5, "and stop dead")
+	check(Hud.rig_text(p).begins_with("Skim "), "the watch shows the skim band (%s)" % Hud.rig_text(p))
+	# A dash on heat, not stamina.
+	var stamina := p.stamina
+	var heat := p.flight.heat
+	p.cmd.move = Vector2(1, 0)
+	p.cmd.dash = true
+	await frames(1)
+	p.cmd.dash = false
+	await frames(2)
+	var side := (p.global_basis.inverse() * p.velocity).x
+	check(side > p.flight.air_dash_speed - 1.0 and p.flight.heat > heat + 15.0 and is_equal_approx(p.stamina, stamina),
+			"a boot dash in the air goes off on heat (%.1f m/s)" % side)
+	p.cmd.move = Vector2.ZERO
+	await frames(30)
+	# High up the boots burn out fast.
+	p.flight.heat = 0.0
+	p.global_position.y = ground + 20.0
+	p.velocity = Vector3.ZERO
+	await frames(30)
+	check(p.flight.skim_band() == 2 and p.air_aim() == 1.0, "skimming high is the burning band and spoils the aim")
+	for i in 240:
+		await get_tree().physics_frame
+		if p.flight.overheated:
+			break
+	check(p.flight.overheated and not p.flight.is_skimming, "boots overheat within seconds high up")
+	p.cmd.jump = false
+	for i in 400:
+		await get_tree().physics_frame
+		if p.is_on_floor():
+			break
 
 
 ## The wings' own moves. `p` is gliding high up with glide wings.
