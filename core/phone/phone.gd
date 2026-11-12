@@ -52,19 +52,23 @@ const CONTROLS := [
 	["FLYING: JETPACK", [
 		["Climb (in the air)", "Hold {jump}"],
 		["Light the jets and hover", "Tap {jump} in the air"],
-		["Fly while hovering", "{move_forward} {move_left} {move_back} {move_right}"],
-		["Sink while hovering", "{slide}"],
-		["Boost head first where you look", "{sprint} + {move_forward}"],
+		["Cruise while hovering", "{move_forward} {move_left} {move_back} {move_right}"],
+		["Coast down with the jets idle to cool", "Hold {slide}"],
+		["Boost head first where you look (Mk2)", "{sprint} + {move_forward}"],
 	]],
 	["FLYING: THRUSTER BOOTS", [
 		["Kick up and the way you steer", "{jump} in the air"],
+		["Skim low (cools near a surface)", "Hold {jump} in the air"],
+		["Dash on heat", "{dash} in the air"],
 	]],
 	["FLYING: GLIDE WINGS", [
 		["Launch", "{jump} in the air"],
 		["Glide (while falling)", "Hold {jump}"],
+		["Pulse up while gliding", "{jump} again"],
 		["Bank round", "Steer, or turn the view"],
 		["Dive for speed, climb on it", "Look down, look up"],
-		["Roll the body (gliding or boosting)", "{roll_left} / {roll_right}"],
+		["Barrel roll while gliding", "{roll_left} / {roll_right}"],
+		["Roll the body while boosting", "{roll_left} / {roll_right}"],
 	]],
 	["WEAPONS", [
 		["Fire", "{fire}"],
