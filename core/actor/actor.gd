@@ -445,6 +445,9 @@ func cycle_weapon_index(step: int) -> int:
 
 
 static func _slot_rank(w: Weapon) -> int:
+	# Power weapons are guns too, but they have their own key (4).
+	if w.item_id != "" and ItemDB.has_tag(w.item_id, "power"):
+		return 3
 	if w is Gun:
 		return 1 if w.is_sidearm else 0
 	if w is MeleeWeapon:
