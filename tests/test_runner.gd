@@ -17,6 +17,8 @@ const RigLookTests := preload("res://tests/rig_look_tests.gd")
 const EconomyTests := preload("res://tests/economy_tests.gd")
 const CustomizerTests := preload("res://tests/customizer_tests.gd")
 const BattlefieldTests := preload("res://tests/battlefield_tests.gd")
+const VisorTests := preload("res://tests/visor_tests.gd")
+const SidearmTests := preload("res://tests/sidearm_tests.gd")
 
 var _passed := 0
 var _failed := 0
@@ -78,6 +80,8 @@ func _run() -> void:
 	await _test_customizer()
 	await _test_economy()
 	await _test_battlefield()
+	await _test_visors()
+	await _test_sidearms()
 
 
 func _test_rig_models() -> void:
@@ -93,8 +97,16 @@ func _test_economy() -> void:
 	await EconomyTests.run(self)
 
 
+func _test_sidearms() -> void:
+	await SidearmTests.run(self)
+
+
 func _test_battlefield() -> void:
 	await BattlefieldTests.run(self)
+
+
+func _test_visors() -> void:
+	await VisorTests.run(self)
 
 
 func check(condition: bool, what: String) -> void:
@@ -204,7 +216,7 @@ func _test_raid_setup_and_movement() -> void:
 	check(raid.depots.size() >= 2, "map provides depots to bank at")
 	var caches := raid.get_children().filter(func(n: Node) -> bool: return n is LootContainer)
 	check(caches.size() >= 8, "loot caches are placed (%d)" % caches.size())
-	check(p.weapons.size() == 2 and p.flight.enabled and p.health.armor == 30.0,
+	check(p.weapons.size() == 3 and p.flight.enabled and p.health.armor == 30.0,
 			"starter loadout is equipped")
 
 	await frames(40)
@@ -959,7 +971,7 @@ func _test_loadouts() -> void:
 	var shotgun := Gun.new()
 	Loadout._setup_weapon(shotgun, "shotgun_breacher", ItemDB.item_stats("shotgun_breacher"))
 	p.equip_weapon(shotgun)
-	p.cmd.switch_weapon = 2
+	p.cmd.switch_weapon = p.weapons.size() - 1
 	var arena := raid.depots[0].global_position
 	p.global_position = Vector3(arena.x, arena.y - 1.9, arena.z + 3.0)
 	var target := raid.bots[0]
@@ -1421,10 +1433,6 @@ func _check_free_flight(p: Actor) -> void:
 	p.cmd.roll = -1
 	copy.apply_array(p.cmd.to_array())
 	check(copy.descend and copy.roll == -1, "descend and roll travel in the network command")
-	check(PlayerController.roll_from_keys(true, true, false, false, false) == -1
-			and PlayerController.roll_from_keys(true, false, true, false, false) == 1
-			and PlayerController.roll_from_keys(false, true, true, true, false) == 0,
-			"the dash and interact keys roll only while flying flat")
 	p.cmd.descend = false
 	p.cmd.roll = 0
 
@@ -1509,7 +1517,7 @@ func _test_vehicle_driving() -> void:
 	rider.cmd.interact_pressed = true
 	await frames(1)
 	rider.cmd.interact_pressed = false
-	check(rider.vehicle == null and bike.rider == null, "E gets you off")
+	check(rider.vehicle == null and bike.rider == null, "F gets you off")
 	var off: float = rider.global_position.distance_to(bike.global_position)
 	check(off > 0.8 and off < 2.5, "you step off beside the bike")
 	var walk_from := rider.global_position
@@ -2647,7 +2655,7 @@ func _test_online() -> void:
 	var a := raid.add_player([], {}, "Alpha")
 	var b := raid.add_player(["rifle_carbine", "blade_scrap", "jetpack_mk1", "plate_light"], {}, "Bravo")
 	await frames(20)
-	check(raid.players.size() == 2 and a.weapons.size() == 2 and b.weapons[0].display_name == "Ashfront Carbine"
+	check(raid.players.size() == 2 and a.weapons.size() == 3 and b.weapons[0].display_name == "Ashfront Carbine"
 			and not a.is_player, "players join a server raid with their own kits")
 	var finished := []
 	raid.player_finished.connect(func(actor: Actor, result: Dictionary) -> void: finished.append([actor, result]))
@@ -2736,7 +2744,7 @@ func _test_online() -> void:
 		OS.kill(pid)
 		return
 	var world := Worlds.get_world("ashfront")
-	check(alpha.raid.mode == Raid.Mode.CLIENT and alpha.raid.player.weapons.size() == 2
+	check(alpha.raid.mode == Raid.Mode.CLIENT and alpha.raid.player.weapons.size() == 3
 			and alpha.raid.player.is_player and not Combat.authoritative,
 			"the client has its own actor and leaves damage to the server")
 	await _wait_until(func() -> bool: return alpha.raid.bots.size() == world.bot_count, 180)
@@ -2748,7 +2756,7 @@ func _test_online() -> void:
 			return bravo.actor_for(alpha.my_actor_id) != null and alpha.actor_for(bravo.my_actor_id) != null
 		await _wait_until(see_each_other, 180)
 		var seen := bravo.actor_for(alpha.my_actor_id)
-		check(seen != null and seen.display_name == "Alpha" and seen.weapons.size() == 2 and not seen.is_player,
+		check(seen != null and seen.display_name == "Alpha" and seen.weapons.size() == 3 and not seen.is_player,
 				"each client sees the other player, with their name and gear")
 		check(bravo.raid.players.size() == 2 and bravo.raid.active_players().size() == 2
 				and alpha.raid.bots.size() == world.bot_count,
@@ -3588,7 +3596,7 @@ func _test_plaza_online() -> void:
 				gate = node
 		check(gate != null and PlazaView.portal_at(main.raid, gate.global_position) == gate
 				and PlazaView.portal_at(main.raid, Vector3(0, 0, 20)) == null, "standing in a gate offers the trip")
-		check(gate != null and PlazaView.prompt_for(gate, main.net.routes).begins_with("[E]")
+		check(gate != null and PlazaView.prompt_for(gate, main.net.routes).begins_with("[F]")
 				and PlazaView.prompt_for(gate, {}).contains("closed"), "a gate to a world the server lacks is closed")
 		main.use_portal("clans")
 		check(main.raid != null, "the clan hall is not open yet")
@@ -4105,7 +4113,7 @@ func _test_home_base() -> void:
 	var dmr := base.display_for("dmr_longshot")
 	_face_display(base.player, dmr)
 	await frames(2)
-	check(base.player.find_interactable() == dmr and dmr.get_prompt() == "[E] Equip Longshot DMR",
+	check(base.player.find_interactable() == dmr and dmr.get_prompt() == "[F] Equip Longshot DMR",
 			"looking at a gun on the rack offers to equip it")
 	await _use(base.player)
 	check(asked == [["primary", "dmr_longshot"]], "using it asks for that gun in the primary slot")
@@ -4130,7 +4138,7 @@ func _test_home_base() -> void:
 	check(lines[0] == "Lattice Shard" and "Relic" in lines[1], "the overlay names what you look at and its rarity")
 	check(hud.tag.visible and hud.tag.text == lines[1] and hud.tag.global_position.distance_to(shard.global_position) < 2.0,
 			"what it is shows on a tag over the gear itself, not on the screen")
-	check(base.get_node("Banner/Title").text == "HOME BASE" and "press E" in base.banner_text(),
+	check(base.get_node("Banner/Title").text == "HOME BASE" and "press F" in base.banner_text(),
 			"the base's name and how it works hang on a banner in the room")
 	for kind: String in BaseLayout.KINDS:
 		var bike_or_gear: Array = by_kind.get(kind, [])
@@ -4175,7 +4183,7 @@ func _test_home_base() -> void:
 			"the base has a camera and an overlay")
 	check(main.base.displays.size() == 5 and main.base.display_for("rifle_carbine").equipped,
 			"it shows your stash and what you have equipped")
-	# Real input: look at the DMR and press E.
+	# Real input: look at the DMR and press F.
 	var target: Node3D = main.base.display_for("dmr_longshot")
 	_face_display(main.base.player, target)
 	main.controller.yaw = main.base.player.cmd.yaw
@@ -4202,7 +4210,7 @@ func _test_home_base() -> void:
 		main.controller.yaw = main.base.player.cmd.yaw
 		main.controller.pitch = main.base.player.cmd.pitch
 		await frames(2)
-		check(main.base.player.find_interactable() == console and console.get_prompt().begins_with("[E]"),
+		check(main.base.player.find_interactable() == console and console.get_prompt().begins_with("[F]"),
 				"the %s can be walked up to and used" % id)
 		console.interact(main.base.player)
 		await frames(2)

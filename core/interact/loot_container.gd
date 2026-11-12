@@ -39,7 +39,7 @@ func _ready() -> void:
 func get_prompt() -> String:
 	if items.is_empty():
 		return "%s (empty)" % label
-	return "[E] Loot %s (%d)" % [label, items.size()]
+	return "[F] Loot %s (%d)" % [label, items.size()]
 
 
 func interact(actor: Actor) -> void:

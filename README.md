@@ -22,19 +22,20 @@ skies, animated models and effects (see "How it looks" below).
 | Jump. In the air: hold to climb, tap to light the jets and hover (jetpack); press to kick the way you steer (thruster boots); press to launch, hold while falling to glide (glide wings) | Space |
 | Jetpack hovering: fly with the move keys, Space climbs, C sinks, Shift + W boosts head first wherever you look | |
 | Gliding: steer or turn the view to bank round, look down to dive for speed, look up to climb on it | |
-| Roll the body left / right while gliding or boosting (they dash and interact the rest of the time) | Q / E (or the mouse thumb buttons) |
+| Roll the body left / right while gliding or boosting | Q / E (or the mouse thumb buttons) |
 | Use your ability | G |
-| Dash | Q |
+| Use your helmet's visor (zoom or scan) | T |
+| Dash | Left Alt |
 | Slide (while sprinting) | C |
 | Fire, or blade combo | Left mouse |
 | Aim down sights, or block with the blade (tap just before a hit to parry) | Right mouse |
 | Pick a melee side: left, right or overhead | Flick the mouse that way, or hold A, D or W |
 | Switch how the melee side is picked (mouse flick or movement keys) | B |
-| Heavy lunge with the blade (dive slam in the air) | F |
-| Switch to rifle / blade | 1 / 2, or mouse wheel |
+| Heavy lunge with the blade (dive slam in the air) | Middle mouse |
+| Switch to primary / blade / sidearm | 1 / 2 / 3, or mouse wheel |
 | Reload | R |
 | Use a medkit | H |
-| Loot, or get on and off a bike | E |
+| Loot, or get on and off a bike | F |
 | Ride a bike: throttle, brake or reverse, steer, boost | W, S, A / D, Shift |
 | Switch camera: first-person or third-person | V |
 | Scoreboard: who is fighting, who is down, kills | Hold Tab |
@@ -66,7 +67,7 @@ a tag over it says what it is and what it is worth.
 | Console | What it opens |
 | --- | --- |
 | Launch pad (middle of the room) | Deploy into any world |
-| Locker | Your loadout, slot by slot (or press E on gear on show) |
+| Locker | Your loadout, slot by slot (or press F on gear on show) |
 | Mastery bench | Mastery levels and variant picks |
 | Wardrobe | The character customizer |
 | Records | Your stash, kills, rank, and how your last life went |
@@ -155,7 +156,7 @@ Walk into a glowing pad and press **E** to use it:
   back in the Concourse.
 - **Quarters** (west): the door to your home base. Its door leads back here.
 - **Storefronts** (the corners): one for every shop. Step up to the counter
-  and press E to use its terminal: buy and sell on the screen without leaving
+  and press F to use its terminal: buy and sell on the screen without leaving
   the plaza.
 - **Arena** and **Clan hall**: built, and closed until those features arrive.
 - **Exit** (south): leaves the server.
@@ -232,7 +233,7 @@ you have.
 - A home base you walk around in, where the game opens. Everything in your
   stash is on show: guns on a rack, blades on the wall, armor on stands,
   flight rigs, ability chips, bikes parked in the garage, loot on shelves.
-  Look at a piece of gear and press E to equip it for your next run.
+  Look at a piece of gear and press F to equip it for your next run.
 - Loadouts picked in your base from your stash: primary weapon, melee weapon,
   flight rig and armor frame. Equipped gear is at risk. Sign out alive and it
   comes home, die and it drops. Empty slots use a free scrap kit.
@@ -244,6 +245,12 @@ you have.
   bank into turns, dive for speed and climb again on that speed.
 - An ability slot. Phase Step blinks you forward, Kinetic Barrier cuts damage
   for a few seconds, Shock Pulse staggers everyone near you. Each has a cooldown.
+- A helmet slot. The visor is your display in first person, and what it
+  shows depends on the helmet: the Spotter has binoculars (4x and 8x), a
+  compass and a range finder, and fire while zoomed tags a target for your
+  side; the Seeker sends a scan pulse that shows where everyone nearby stood.
+  Both give you away: a zoomed lens glints, and a scan is seen, heard and
+  felt by everyone it catches. With no helmet the view is bare.
 - More gear to find: carbine, SMG, marksman rifle, shotgun, arc blade, breaker
   hammer, three armor frames, and a better jetpack.
 - Motorbikes, the first vehicle. Put one in the vehicle slot and it is parked

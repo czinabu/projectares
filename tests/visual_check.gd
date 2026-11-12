@@ -39,6 +39,18 @@ func _ready() -> void:
 		get_tree().quit()
 		return
 
+	# `-- <output_dir> --visors-only` shoots each helmet's visor in first person.
+	if "--visors-only" in args:
+		await _visor_shots(out_dir)
+		get_tree().quit()
+		return
+
+	# `-- <output_dir> --sidearms-only` shoots each sidearm model side on.
+	if "--sidearms-only" in args:
+		await _sidearm_shots(out_dir)
+		get_tree().quit()
+		return
+
 	# `-- <output_dir> --arena-only` shoots just the arena.
 	if "--arena-only" in args:
 		await _arena_shots(out_dir)
@@ -545,6 +557,55 @@ func _settle(count: int) -> void:
 		await get_tree().process_frame
 
 
+## Each helmet's visor through its wearer's eyes: the Scav Visor, the
+## Spotter resting and zoomed, the Seeker ready and just after a scan.
+func _visor_shots(out_dir: String) -> void:
+	var scrap: Array[String] = ["rifle_scrap", "blade_scrap", "jetpack_mk1", "plate_light"]
+	for helmet: String in ["visor_scav", "helm_spotter", "helm_seeker"]:
+		var raid := Raid.new()
+		add_child(raid)
+		var kit := scrap.duplicate()
+		kit.append(helmet)
+		raid.start(Worlds.get_world("ashfront"), 42, kit)
+		for bot in raid.bots:
+			bot.get_node("Brain").set_physics_process(false)
+		var p := raid.player
+		var controller := PlayerController.new()
+		controller.setup(p)
+		raid.add_child(controller)
+		var hud := Hud.new()
+		hud.setup(raid, controller)
+		raid.add_child(hud)
+		await _settle(30)
+		var look := Basis.from_euler(Vector3(0.0, controller.yaw, 0.0))
+		var places := [Vector3(3, 0.3, -14), Vector3(-5, 0.3, -24), Vector3(9, 0.3, -30)]
+		for i in places.size():
+			raid.bots[i].global_position = p.global_position + look * places[i]
+			raid.bots[i].cmd.yaw = controller.yaw + PI
+		p.health.health = 28.0 if helmet == "visor_scav" else p.health.max_health
+		await _settle(20)
+		await _shot(out_dir.path_join("visor_%s.png" % helmet))
+		if helmet == "helm_spotter":
+			var to_bot: Vector3 = raid.bots[1].global_position + Vector3(0, 1.1, 0) - p.get_eye_position()
+			controller.yaw = atan2(-to_bot.x, -to_bot.z)
+			controller.pitch = asin(to_bot.normalized().y)
+			controller._visor_level = 1
+			await _settle(40)
+			await _shot(out_dir.path_join("visor_helm_spotter_zoom.png"))
+			p.visor.add_tag(raid.bots[1], 5.0)
+			await _settle(6)
+			await _shot(out_dir.path_join("visor_helm_spotter_tag.png"))
+		elif helmet == "helm_seeker":
+			p.visor.scan()
+			await _settle(12)
+			await _shot(out_dir.path_join("visor_helm_seeker_scan.png"))
+			p.visor.felt_scan.emit(p.global_position + look * Vector3(20, 0, 5))
+			await _settle(30)
+			await _shot(out_dir.path_join("visor_helm_seeker_after.png"))
+		raid.queue_free()
+		await _settle(3)
+
+
 func _shot(path: String) -> void:
 	await RenderingServer.frame_post_draw
 	get_viewport().get_texture().get_image().save_png(path)
@@ -642,7 +703,7 @@ func _idle_shots(out_dir: String) -> void:
 	var skin: Node = player.get_node("Skin")
 	var gun := -1
 	for i in player.weapons.size():
-		if player.weapons[i] is Gun:
+		if player.weapons[i] is Gun and not player.weapons[i].is_sidearm:
 			gun = i
 	var cam := Camera3D.new()
 	raid.add_child(cam)
@@ -683,3 +744,54 @@ func _idle_shots(out_dir: String) -> void:
 		print("saved idle_%s.png" % view)
 	player.cmd.primary = false
 	raid.queue_free()
+
+
+## A contact sheet of each sidearm's model, side on and from three quarters.
+func _sidearm_shots(out_dir: String) -> void:
+	var stage := Node3D.new()
+	add_child(stage)
+	var env := WorldEnvironment.new()
+	env.environment = Environment.new()
+	env.environment.background_mode = Environment.BG_COLOR
+	env.environment.background_color = Color(0.13, 0.14, 0.16)
+	env.environment.ambient_light_color = Color(0.6, 0.6, 0.65)
+	env.environment.ambient_light_energy = 0.6
+	env.environment.glow_enabled = true
+	stage.add_child(env)
+	var sun := DirectionalLight3D.new()
+	sun.rotation = Vector3(-0.8, 0.6, 0.0)
+	stage.add_child(sun)
+	var cam := Camera3D.new()
+	stage.add_child(cam)
+	cam.current = true
+	cam.fov = 30.0
+	var ids := ["pistol_service", "pistol_machine", "pistol_hand_cannon"]
+	var sheet := Image.create(2 * 480, ids.size() * 320, false, Image.FORMAT_RGBA8)
+	for row in ids.size():
+		var gun := Gun.new()
+		gun.item_id = ids[row]
+		gun.is_sidearm = true
+		var model: Node3D = Look.weapon_model(gun)
+		gun.free()
+		if model == null:
+			continue
+		stage.add_child(model)
+		var box: AABB = Look.model_bounds(model)
+		var centre := box.get_center()
+		for c in 2:
+			var side := Vector3(1, 0.15, 0) if c == 0 else Vector3(1, 0.4, -0.9)
+			cam.global_position = centre + side.normalized() * 1.1
+			cam.look_at(centre)
+			await _settle(2)
+			await RenderingServer.frame_post_draw
+			var frame := get_viewport().get_texture().get_image()
+			var w := frame.get_width()
+			var h := frame.get_height()
+			var cut := frame.get_region(Rect2i(w / 2 - 240 * h / 720, h / 2 - 160 * h / 720, 480 * h / 720, 320 * h / 720))
+			cut.resize(480, 320)
+			cut.convert(Image.FORMAT_RGBA8)
+			sheet.blit_rect(cut, Rect2i(0, 0, 480, 320), Vector2i(c * 480, row * 320))
+		model.queue_free()
+	sheet.save_png(out_dir.path_join("sidearms.png"))
+	print("saved sidearms.png")
+	stage.queue_free()

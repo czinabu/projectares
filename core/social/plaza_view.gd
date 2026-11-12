@@ -116,7 +116,7 @@ static func prompt_for(portal: Node3D, p_routes: Dictionary) -> String:
 	var label: String = portal.get_meta("label", "Go")
 	if not is_open(portal.get_meta("destination", ""), p_routes):
 		return "%s  (closed: not running on this server)" % label
-	return "[E]  %s" % label
+	return "[F]  %s" % label
 
 
 ## The other player closest to where `viewer` is looking, within range and
