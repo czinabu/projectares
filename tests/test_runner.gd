@@ -1663,7 +1663,8 @@ func _check_free_flight(p: Actor) -> void:
 	p.cmd.sprint = false
 	var boost_was := p.flight.boost_speed
 	p.flight.boost_speed = 22.0
-	# Head first, wherever you look: up at 45 degrees here.
+	# Head first along the view's heading. Looking up 45 degrees only aims:
+	# the boost stays level until jump climbs.
 	p.cmd.pitch = PI / 4.0
 	p.cmd.sprint = true
 	p.cmd.move = Vector2(0, 1)
@@ -1671,9 +1672,13 @@ func _check_free_flight(p: Actor) -> void:
 	await frames(30)
 	boost_heat = p.flight.heat - boost_heat
 	await frames(60)
-	var along := p.velocity.dot(Basis.from_euler(Vector3(p.cmd.pitch, p.cmd.yaw, 0.0)) * Vector3.FORWARD)
-	check(p.flight.is_boosting and along > p.flight.boost_speed - 1.0 and p.velocity.y > 10.0,
-			"sprinting forward boosts head first along the way you look (%.1f m/s)" % along)
+	var along := p.velocity.dot(Basis(Vector3.UP, p.cmd.yaw) * Vector3.FORWARD)
+	check(p.flight.is_boosting and along > p.flight.boost_speed - 1.0 and absf(p.velocity.y) < 1.0,
+			"sprinting forward boosts head first along the view's heading, level whatever the pitch (%.1f m/s)" % along)
+	p.cmd.jump = true
+	await frames(30)
+	check(p.flight.is_boosting and p.velocity.y > 5.0, "holding jump climbs during a boost")
+	p.cmd.jump = false
 	check(boost_heat > hover_heat * 2.0, "boosting runs hotter than hovering")
 	p.cmd.sprint = false
 	p.cmd.move = Vector2.ZERO
@@ -1898,27 +1903,38 @@ func _check_glide_flying(p: Actor) -> void:
 	await frames(120)
 	var cruise := Vector2(p.velocity.x, p.velocity.z).length()
 	check(absf(cruise - p.flight.glide_speed) < 0.5, "a level glide settles at glide speed (%.1f)" % cruise)
-	# Turn the view a quarter round at once: the glide comes round in an arc.
+	# Turning the view only looks: the glide flies straight on.
 	var before := Vector3(p.velocity.x, 0, p.velocity.z).normalized()
 	p.cmd.yaw -= PI / 2.0
+	p.cmd.pitch = -0.9
+	await frames(30)
+	var looked := Vector3(p.velocity.x, 0, p.velocity.z).normalized()
+	check(before.dot(looked) > 0.999 and Vector2(p.velocity.x, p.velocity.z).length() < cruise + 0.5,
+			"looking around while gliding neither turns nor dives the wings")
+	p.cmd.pitch = 0.0
+	# Holding a strafe key banks the glide round in an arc.
+	p.cmd.move = Vector2(1, 0)
 	await frames(10)
 	var during := Vector3(p.velocity.x, 0, p.velocity.z).normalized()
 	var swung := before.angle_to(during)
-	check(swung > 0.1 and swung < 0.5, "wings turn in an arc instead of snapping round (%.2f rad)" % swung)
-	await frames(80)
+	check(swung > 0.1 and swung < 0.5, "a strafe key banks the wings round in an arc (%.2f rad)" % swung)
+	check(before.signed_angle_to(during, Vector3.UP) < 0.0, "and the right key turns right")
+	p.cmd.move = Vector2.ZERO
+	await frames(30)
 	var after := Vector3(p.velocity.x, 0, p.velocity.z).normalized()
-	check(after.dot(Basis(Vector3.UP, p.cmd.yaw) * Vector3.FORWARD) > 0.99, "and end up flying where you face")
-	p.cmd.pitch = -0.9
+	check(during.dot(after) > 0.999, "letting go flies straight on")
+	p.cmd.move = Vector2(0, 1)
 	await frames(150)
 	var dived := Vector2(p.velocity.x, p.velocity.z).length()
-	check(dived > cruise * 1.4 and p.velocity.y < -8.0, "looking down dives for speed (%.1f m/s)" % dived)
-	p.cmd.pitch = 0.9
+	check(dived > cruise * 1.4 and p.velocity.y < -8.0, "forward dives for speed (%.1f m/s)" % dived)
+	p.cmd.move = Vector2(0, -1)
 	var low := p.global_position.y
 	await frames(60)
-	check(p.flight.is_gliding and p.global_position.y > low + 4.0, "pulling up climbs on that speed (%.1f m)" % (p.global_position.y - low))
+	check(p.flight.is_gliding and p.global_position.y > low + 4.0, "back pulls up and climbs on that speed (%.1f m)" % (p.global_position.y - low))
 	await frames(240)
 	var slow := Vector2(p.velocity.x, p.velocity.z).length()
 	check(slow < cruise * 0.8 and p.velocity.y < 0.0, "the climb runs out as the speed does")
+	p.cmd.move = Vector2.ZERO
 	p.cmd.pitch = 0.0
 	p.cmd.jump = false
 

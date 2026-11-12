@@ -63,7 +63,8 @@ var glide_accel := 22.0
 ## `fly_speed`, jump climbs and the descend key (held slide) coasts: the jets
 ## idle, you sink at `descend_speed` keeping your speed, and the rig cools at
 ## `coast_cool` a second. Sprinting forward is a boost: you fly head first at
-## `boost_speed` wherever you look, up and down included (0: no boost).
+## `boost_speed` along the view's heading, climbing or sinking only on jump
+## and descend (0: no boost). The keys fly every rig; the mouse only looks.
 ## Holding still costs `hover_heat_mult` of the full heat rate, cruising
 ## `cruise_heat_mult`, climbing all of it and boosting `boost_heat_mult`.
 ## At cruise speed the heading turns at most `cruise_turn_rate` rad/s: a
