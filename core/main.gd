@@ -418,6 +418,9 @@ func _attach_player_view() -> void:
 	raid.add_child(controller)
 	hud = Hud.new()
 	hud.setup(raid, controller)
+	# War news buzzes the phone instead of scrolling over the screen.
+	if phone != null:
+		hud.notice_sink = phone.show_notice
 	raid.add_child(hud)
 	if nameplates != null and is_instance_valid(nameplates):
 		# The same world, a new life: they only need to know who you are now.
