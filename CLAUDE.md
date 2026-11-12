@@ -266,7 +266,11 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   (`core/ui/visor_hud.gd`), a view: its glass is drawn in first person only
   and only while a helmet is worn (Caleb agreed a visor counts as in-world,
   since you look through it); what a visor shows out in the world (snapshots,
-  tag markers, pulse rings, glints) is there in either view. Apart from the
+  tag markers, pulse rings, glints) is there in either view. The glass is thin
+  projected light, never a frame, a tint or a mask over the view (playtest
+  feedback: the first visors were in the way): it rests dim, trails the
+  head, wakes on trouble (`VisorHud.alert`) and closes on what is aimed at
+  (`VisorHud.lock`). Apart from the
   thin health arc, do not repeat the wrist on the glass (ammo, the map,
   standing): the wrist shows you, the visor shows what is around you. Mk2
   helmets are loot only. Check the glass by eye with
