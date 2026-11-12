@@ -65,6 +65,30 @@ const TRACKS := {
 			"desc": "The dive slam covers more ground but hits softer.",
 			"mods": {"slam_radius": ["mul", 1.3], "slam_damage": ["mul", 0.85]}},
 	]},
+	"knife": {"name": "Knife", "kind": "weapon", "variants": [
+		{"id": "assassin_grip", "name": "Assassin Grip", "level": 2,
+			"desc": "Cuts from behind hit much harder, cuts from the front softer.",
+			"mods": {"backstab_mult": ["mul", 1.25], "light_damage": ["mul", 0.85]}},
+		{"id": "fighting_knife", "name": "Fighting Knife", "level": 4,
+			"desc": "A longer blade with more reach, slower to recover.",
+			"mods": {"reach": ["mul", 1.15], "light_recover": ["mul", 1.2]}},
+	]},
+	"axe": {"name": "Axe", "kind": "weapon", "variants": [
+		{"id": "bearded_head", "name": "Bearded Head", "level": 2,
+			"desc": "Breaks guards even faster, with a slower windup.",
+			"mods": {"guard_crush": ["mul", 1.3], "light_windup": ["mul", 1.2]}},
+		{"id": "long_haft", "name": "Long Haft", "level": 4,
+			"desc": "More reach and heavier chops, slower heavy swings.",
+			"mods": {"reach": ["mul", 1.15], "heavy_windup": ["mul", 1.2]}},
+	]},
+	"spear": {"name": "Spear", "kind": "weapon", "variants": [
+		{"id": "leaf_blade", "name": "Leaf Blade", "level": 2,
+			"desc": "A wider head that catches more, on a shorter shaft.",
+			"mods": {"arc_deg": ["mul", 1.5], "reach": ["mul", 0.88]}},
+		{"id": "pike_shaft", "name": "Pike Shaft", "level": 4,
+			"desc": "Even more reach, and a wider weak spot up close.",
+			"mods": {"reach": ["mul", 1.15], "close_range": ["mul", 1.4]}},
+	]},
 	# Abilities
 	"blink": {"name": "Phase Step", "kind": "ability", "variants": [
 		{"id": "short_hop", "name": "Short Hop", "level": 2,

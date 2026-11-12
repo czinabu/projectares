@@ -15,6 +15,7 @@ extends Node
 const SURFACE_SHADER := preload("res://assets/shaders/surface.gdshader")
 const SKY_SHADER := preload("res://assets/shaders/sky.gdshader")
 const GEAR_SHADER := preload("res://assets/shaders/gear.gdshader")
+const MELEE_SHADER := preload("res://assets/shaders/melee.gdshader")
 const ActorSkin := preload("res://core/visual/actor_skin.gd")
 const Human := preload("res://core/visual/human.gd")
 const CHARACTER_SHADER := preload("res://assets/shaders/character.gdshader")
@@ -137,8 +138,12 @@ const GUN_GLOW := [
 ]
 ## Melee models picked by item tag, first match wins: file, length in meters,
 ## how far up from the pommel the hand grips it, and whether it takes both hands.
+## No file means the model is built in code (see `_spear_model`).
 const MELEE_MODELS := [
 	["hammer", "Hammer.glb", 1.15, 0.3, true],
+	["knife", "Knife.glb", 0.5, 0.1, false],
+	["axe", "Axe.glb", 0.85, 0.12, false],
+	["spear", "", 2.1, 0.75, true],
 	["starter", "Sword.glb", 1.15, 0.13, false],
 	["blade", "Katana.glb", 1.2, 0.14, false],
 ]
@@ -963,6 +968,8 @@ func _energize(model: Node3D, holder: Node3D, glow: Color) -> void:
 ## blade is built, so the weapon's own windup, swing and guard poses carry over.
 func _melee_model(weapon: Weapon) -> Node3D:
 	var pick := _melee_pick(weapon)
+	if pick[1] == "":
+		return _spear_model(pick[2], pick[3], energy_color(weapon.item_id), energy_strength(weapon.item_id))
 	var model := _instance(WEAPONS + pick[1])
 	if model == null:
 		return null
@@ -970,9 +977,153 @@ func _melee_model(weapon: Weapon) -> Node3D:
 	holder.name = "Model"
 	holder.add_child(model)
 	_fit(model, WEAPONS + pick[1], pick[2], true)
-	_weather_model(model, 0.75 if weapon.item_id == "" or ItemDB.has_tag(weapon.item_id, "starter") else 0.35, 0.85)
+	_tech_melee(holder, energy_color(weapon.item_id), energy_strength(weapon.item_id),
+			0.7 if weapon.item_id == "" or ItemDB.has_tag(weapon.item_id, "starter") else 0.3)
 	holder.position.y = -pick[3]
 	return holder
+
+
+## The glow a melee weapon's energy edge takes: its rarity color, with plain
+## Common gear in the cyan of the scrap kit.
+func energy_color(item_id: String) -> Color:
+	var rarity := ItemDB.item_rarity(item_id) if item_id != "" else ItemDB.Rarity.COMMON
+	if rarity == ItemDB.Rarity.COMMON:
+		return Color(0.3, 0.85, 1.0)
+	return ItemDB.RARITY_COLORS[rarity]
+
+
+## Rarer weapons burn brighter.
+func energy_strength(item_id: String) -> float:
+	return 1.0 + 0.2 * (ItemDB.item_rarity(item_id) if item_id != "" else 0)
+
+
+## Restyles a melee model as tech (see assets/shaders/melee.gdshader): light
+## parts become alloy with an energy edge in `glow` (`strength` times as
+## bright), dark parts black polymer with glowing seams. `root` is the holder,
+## so seams are spaced in meters.
+func _tech_melee(root: Node3D, glow: Color, strength: float, wear: float) -> void:
+	for node in root.find_children("*", "MeshInstance3D", true, false):
+		var mesh_node := node as MeshInstance3D
+		if mesh_node.mesh == null:
+			continue
+		# How many meters one object-space unit of this mesh is in the holder.
+		var xform := mesh_node.transform
+		var up := mesh_node.get_parent()
+		while up != null and up != root:
+			if up is Node3D:
+				xform = (up as Node3D).transform * xform
+			up = up.get_parent()
+		var meters := xform.basis.get_scale().y
+		for i in mesh_node.mesh.get_surface_count():
+			var source := mesh_node.get_active_material(i) as BaseMaterial3D
+			if source == null:
+				continue
+			mesh_node.set_surface_override_material(i,
+					_tech_material(source, glow, strength, wear, meters, mesh_node.mesh.get_aabb()))
+
+
+## Which part of a melee model a pack color is: 1 for bare light metal (an
+## edge or head), 0.5 for mid grey metal (a guard or fitting), 0 for anything
+## colored or dark (wood, leather, wraps).
+static func tech_part(color: Color) -> float:
+	var saturation := maxf(color.r, maxf(color.g, color.b)) - minf(color.r, minf(color.g, color.b))
+	var light := color.r * 0.299 + color.g * 0.587 + color.b * 0.114
+	if saturation > 0.12 or light < 0.3:
+		return 0.0
+	return 1.0 if light > 0.45 else 0.5
+
+
+## Which axis a flat blade is wide along (0 for X, 2 for Z), or -1 when the
+## part is not flat enough to have a cutting edge.
+static func edge_axis(box: AABB) -> int:
+	var wide := maxf(box.size.x, box.size.z)
+	var thin := minf(box.size.x, box.size.z)
+	if wide <= 0.0 or thin > wide * 0.5:
+		return -1
+	return 0 if box.size.x >= box.size.z else 2
+
+
+func _tech_material(source: BaseMaterial3D, glow: Color, strength: float, wear: float, meters: float,
+		box: AABB) -> ShaderMaterial:
+	var key := "tech/%d/%s/%.2f/%.2f/%.4f/%s" % [source.get_instance_id(), glow.to_html(), strength, wear, meters, box]
+	if _gear_materials.has(key):
+		return _gear_materials[key]
+	var mat := ShaderMaterial.new()
+	mat.shader = MELEE_SHADER
+	if source.albedo_texture:
+		mat.set_shader_parameter("base_tex", source.albedo_texture)
+	mat.set_shader_parameter("base_color", source.albedo_color)
+	mat.set_shader_parameter("energy_color", glow)
+	mat.set_shader_parameter("energy", strength)
+	mat.set_shader_parameter("box_min", box.position)
+	mat.set_shader_parameter("box_max", box.end)
+	mat.set_shader_parameter("edge_axis", edge_axis(box))
+	mat.set_shader_parameter("seam_scale", 6.0 * meters)
+	mat.set_shader_parameter("part", tech_part(source.albedo_color))
+	var dir := TEXTURES + "Metal063/"
+	mat.set_shader_parameter("grime_albedo", load(dir + "Color.jpg"))
+	mat.set_shader_parameter("grime_rough", load(dir + "Roughness.jpg"))
+	mat.set_shader_parameter("wear", wear)
+	_gear_materials[key] = mat
+	return mat
+
+
+## No pack has a spear, so it is built here: a dark shaft, alloy collars
+## and a long leaf head, standing along +Y like the pack models.
+func _spear_model(length: float, grip: float, glow: Color, strength: float) -> Node3D:
+	var holder := Node3D.new()
+	holder.name = "Model"
+	var model := Node3D.new()
+	model.name = "Spear"
+	holder.add_child(model)
+	var shaft := StandardMaterial3D.new()
+	shaft.albedo_color = Color(0.2, 0.2, 0.22)
+	var steel := StandardMaterial3D.new()
+	steel.albedo_color = Color(0.62, 0.63, 0.66)
+	steel.metallic = 0.9
+	steel.roughness = 0.35
+	var wrap := StandardMaterial3D.new()
+	wrap.albedo_color = Color(0.12, 0.11, 0.1)
+	wrap.roughness = 0.95
+	var head_len := 0.34
+	var shaft_len := length - head_len
+	_spear_part(model, _cylinder(0.018, shaft_len), Vector3(0, shaft_len * 0.5, 0), shaft)
+	_spear_part(model, _cylinder(0.024, 0.3), Vector3(0, grip, 0), wrap)
+	_spear_part(model, _cylinder(0.022, 0.06), Vector3(0, 0.03, 0), steel)
+	_spear_part(model, _cylinder(0.026, 0.07), Vector3(0, shaft_len - 0.02, 0), steel)
+	# The head: a flattened double cone, widest a third of the way up.
+	var lower := CylinderMesh.new()
+	lower.top_radius = 0.055
+	lower.bottom_radius = 0.02
+	lower.height = head_len * 0.3
+	_spear_part(model, lower, Vector3(0, shaft_len + head_len * 0.15, 0), steel, Vector3(1, 1, 0.3))
+	var upper := CylinderMesh.new()
+	upper.top_radius = 0.0
+	upper.bottom_radius = 0.055
+	upper.height = head_len * 0.7
+	_spear_part(model, upper, Vector3(0, shaft_len + head_len * 0.65, 0), steel, Vector3(1, 1, 0.3))
+	_tech_melee(holder, glow, strength, 0.3)
+	holder.position.y = -grip
+	return holder
+
+
+func _cylinder(radius: float, height: float) -> CylinderMesh:
+	var mesh := CylinderMesh.new()
+	mesh.top_radius = radius
+	mesh.bottom_radius = radius
+	mesh.height = height
+	mesh.radial_segments = 10
+	mesh.rings = 1
+	return mesh
+
+
+func _spear_part(model: Node3D, mesh: PrimitiveMesh, at: Vector3, mat: Material, scale := Vector3.ONE) -> void:
+	var part := MeshInstance3D.new()
+	mesh.material = mat
+	part.mesh = mesh
+	part.position = at
+	part.scale = scale
+	model.add_child(part)
 
 
 func _melee_pick(weapon: Weapon) -> Array:
