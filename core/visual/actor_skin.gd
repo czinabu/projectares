@@ -57,6 +57,30 @@ var hover_lean := 0.45
 ## The roll keys twist the body round its own length, in radians a second.
 var twist_speed := 7.0
 
+## Holstered weapons are worn on the body instead of vanishing: a gun is
+## slung across the back, muzzle up over the right shoulder, and over the
+## outside of a back rig (a jetpack or wings) when one is worn. A two-handed
+## melee weapon crosses the back the other way; a one-handed blade hangs from
+## the left hip. Distances in meters, in the actor's frame (x right, y up, z back).
+var sling_tilt := deg_to_rad(35.0)
+var sling_height := -0.2
+## Where the back is behind the back bone with nothing worn, and how far the
+## middle of a slung weapon sits out from the back or the rig's outer face.
+var back_surface := 0.13
+var sling_clearance := 0.04
+var hip_offset := Vector3(-0.2, 0.08, 0.02)
+## How far a sheathed blade tips from pointing straight up, toward the back.
+var sheath_angle := deg_to_rad(138.0)
+## A sidearm rides muzzle down in a holster on the right hip.
+var holster_offset := Vector3(0.21, -0.02, 0.0)
+## Switching weapons is shown, not instant: the hand reaches to the holster
+## and puts the old weapon away, moves on to the next one's holster and draws
+## it. Seconds for each move. Only the view waits; the actor switched the
+## moment it was told, and first person stays instant.
+var reach_time := 0.22
+var between_time := 0.14
+var return_time := 0.2
+
 var look: Node
 var actor: Actor
 
@@ -98,6 +122,24 @@ var _last_heading := 0.0
 var _has_heading := false
 var _attack_left := 0.0
 var _aim_left := 0.0
+## Weapon -> the copy of it worn while holstered (null if it has no model),
+## and the rig they were placed for.
+var _stowed := {}
+var _stowed_rig := ""
+## Weapon -> the model node inside its worn copy, which lines up with the
+## "Model" node under the weapon's own visual.
+var _stowed_models := {}
+## The weapon shown in the hand, the weapons the hand visits in turn while
+## switching (putting `_in_hand` away first), the active weapon that plan is
+## for, and how far into it the hand is.
+var _in_hand: Weapon
+var _plan: Array[Weapon] = []
+var _plan_for: Weapon
+var _plan_t := 0.0
+## The weapon moving between hand and holster now, and how far it has gone
+## from the hand (0) to the holster (1).
+var _moving: Weapon
+var _moving_weight := 0.0
 ## Makes the model hold its weapon, or null for skins without the bones.
 var arm: Node
 ## Matches the legs to the actor's speed and direction.
@@ -144,6 +186,8 @@ func _ready() -> void:
 		arm.look = look
 		add_child(arm)
 		arm.setup(def, _player.get_animation(_anims["idle_melee"]) if _player and _anims.has("idle_melee") else null)
+		# After the arm has put the hand on the model's hand.
+		skeleton.skeleton_updated.connect(_carry_moving)
 	if skeleton:
 		_setup_glide_pose(skeleton, def)
 
@@ -203,6 +247,8 @@ func _process(delta: float) -> void:
 			_set_flash(0.0)
 	_update_rig(delta)
 	_update_glide(delta)
+	_update_stowed()
+	_update_switch(delta)
 	_aim_left = maxf(_aim_left - delta, 0.0)
 	var weapon := actor.get_active_weapon()
 	var melee := weapon as MeleeWeapon
@@ -294,6 +340,189 @@ func _dress_weapons() -> void:
 			weapon.visual.add_child(model)
 		elif weapon is MeleeWeapon:
 			look.restyle_melee(weapon.visual)
+
+
+## Shows every holstered weapon where it is worn, and hides the one in hand.
+func _update_stowed() -> void:
+	if _skeleton == null:
+		return
+	if _stowed_rig != _rig_id:
+		_stowed_rig = _rig_id
+		_clear_stowed()
+	for weapon: Variant in _stowed.keys():
+		if not is_instance_valid(weapon) or not weapon in actor.weapons:
+			if _stowed[weapon]:
+				_stowed[weapon].queue_free()
+			_stowed.erase(weapon)
+			_stowed_models.erase(weapon)
+	for weapon in actor.weapons:
+		# Every weapon gets its worn copy, the one in hand too, so a draw
+		# can start from it.
+		if weapon.visual != null and not actor.is_dead and not _stowed.has(weapon):
+			_stowed[weapon] = _stow(weapon)
+
+
+## Plays a weapon switch: the hand reaches to each holster in `_plan` in turn,
+## a weapon put away goes onto the body as the hand arrives, and one drawn
+## leaves the body and comes back with the hand. Then shows each weapon in
+## its place: the one in hand on the hand, the rest where they are worn.
+func _update_switch(delta: float) -> void:
+	var active := actor.get_active_weapon()
+	if _in_hand != null and (not is_instance_valid(_in_hand) or not _in_hand in actor.weapons):
+		_in_hand = null
+	_moving = null
+	_moving_weight = 0.0
+	var instant := arm == null or actor.hand_override or actor.is_dead or _skeleton == null
+	if instant or (_plan.is_empty() and _in_hand == active):
+		_in_hand = active
+		_plan_for = active
+		_plan.clear()
+	elif _plan_for != active or _plan.is_empty():
+		# A new switch, or a change of mind halfway: go from what is in hand.
+		_plan.clear()
+		for weapon in [_in_hand, active]:
+			if weapon != null and _stowed_models.get(weapon) != null and not weapon in _plan:
+				_plan.append(weapon)
+		_plan_for = active
+		_plan_t = 0.0
+		if _plan.is_empty():
+			_in_hand = active
+	if not _plan.is_empty():
+		_plan_t += delta
+		_play_plan()
+	if arm:
+		arm.override_weight = _moving_weight if _moving else 0.0
+		if _moving:
+			arm.override_point = _hand_at_holster(_moving)
+	for weapon in actor.weapons:
+		if weapon.visual:
+			weapon.visual.visible = weapon == _in_hand
+		var worn: Node3D = _stowed.get(weapon)
+		if worn:
+			worn.visible = weapon != _in_hand and weapon.visual != null and not actor.is_dead
+
+
+## Where the plan has got to at `_plan_t`: which weapon the hand is with,
+## how far toward its holster, and what has changed hands on the way.
+func _play_plan() -> void:
+	var arrive: Array[float] = []
+	for i in _plan.size():
+		arrive.append(reach_time + between_time * i)
+	var last := arrive[arrive.size() - 1]
+	for i in _plan.size():
+		if _plan_t >= arrive[i]:
+			var weapon := _plan[i]
+			# Arriving at a holster: put the weapon away, or take it out.
+			if weapon == _in_hand and weapon != _plan_for:
+				_in_hand = null
+			elif weapon == _plan_for:
+				_in_hand = weapon
+	if _plan_t >= last + return_time:
+		_plan.clear()
+		_in_hand = _plan_for
+		return
+	if _plan_t < arrive[0]:
+		_moving = _plan[0]
+		_moving_weight = smoothstep(0.0, reach_time, _plan_t)
+	elif _plan_t < last:
+		var i := int((_plan_t - reach_time) / between_time)
+		var u := (_plan_t - arrive[i]) / between_time
+		# Between two holsters the hand carries nothing it has not put away.
+		_moving = _plan[i + 1] if u > 0.5 else _plan[i]
+		_moving_weight = 1.0
+	else:
+		_moving = _plan[_plan.size() - 1]
+		_moving_weight = 1.0 - smoothstep(last, last + return_time, _plan_t)
+
+
+## Where the weapon hand goes to take a weapon from its holster: the spot its
+## hand point has in the worn copy, in the actor's frame.
+func _hand_at_holster(weapon: Weapon) -> Vector3:
+	var model: Node3D = _stowed_models.get(weapon)
+	var held: Node3D = weapon.visual.get_node_or_null("Model") if weapon.visual else null
+	if model == null or held == null or not model.is_inside_tree():
+		return Actor.HAND_REST
+	var hand: Transform3D = model.global_transform * held.transform.affine_inverse()
+	return actor.global_transform.affine_inverse() * hand.origin
+
+
+## After the hand is placed each frame: the weapon moving between hand and
+## holster is turned and carried from how it is held toward how it is worn,
+## so it lands exactly in place when the hand gets there.
+func _carry_moving() -> void:
+	for weapon in actor.weapons:
+		var held: Node3D = weapon.visual.get_node_or_null("Model") if weapon.visual else null
+		if held == null:
+			continue
+		if not held.has_meta("held_at"):
+			held.set_meta("held_at", held.transform)
+		var base: Transform3D = held.get_meta("held_at")
+		var worn: Node3D = _stowed_models.get(weapon)
+		if weapon != _moving or worn == null or _moving_weight <= 0.0 or not worn.is_inside_tree():
+			held.transform = base
+			continue
+		var from := weapon.visual.global_transform * base
+		held.global_transform = from.interpolate_with(worn.global_transform, _moving_weight)
+
+
+func _clear_stowed() -> void:
+	for weapon: Variant in _stowed:
+		if _stowed[weapon]:
+			_stowed[weapon].queue_free()
+	_stowed.clear()
+	_stowed_models.clear()
+
+
+## Where a holstered weapon is worn: {"bone", "at" (from the bone, actor
+## frame), "basis" (turns the model from how it is held), "centre" (true to
+## hang it by its middle rather than its grip)}.
+func stow_place(weapon: Weapon) -> Dictionary:
+	var back_bone: String = _def.get("back_bone", "")
+	var out := Vector3(0.0, sling_height, back_surface + sling_clearance)
+	if _rig_back:
+		var box: AABB = look.model_bounds(_rig_back)
+		out.z = back_gap + box.end.z + sling_clearance
+	if weapon is MeleeWeapon and not look.is_two_handed(weapon):
+		# Blades stand along +Y with the grip at the origin: tip it down and
+		# back from the hip, grip up by the belt.
+		return {"bone": _def.get("hip_bone", ""), "at": hip_offset, "basis": Basis(Vector3.RIGHT, sheath_angle),
+			"centre": false}
+	if is_sidearm(weapon):
+		# Muzzle down, grip to the rear, its side to the world.
+		return {"bone": _def.get("hip_bone", ""), "at": holster_offset, "basis": Basis(Vector3.RIGHT, -PI / 2.0),
+			"centre": false}
+	if weapon is MeleeWeapon:
+		# Head up over the left shoulder, crossing a slung gun.
+		return {"bone": back_bone, "at": out + Vector3(0, 0, sling_clearance), "basis": Basis(Vector3.BACK, sling_tilt),
+			"centre": true}
+	# Guns point along -Z in the hand, top up: roll it onto its side so its
+	# profile shows, stand it muzzle up, then lean it over the right shoulder.
+	return {"bone": back_bone, "at": out,
+		"basis": Basis(Vector3.BACK, -sling_tilt) * Basis(Vector3.RIGHT, PI / 2.0) * Basis(Vector3.BACK, PI / 2.0),
+		"centre": true}
+
+
+## A small gun worn in a hip holster rather than slung (`Weapon.is_sidearm`).
+static func is_sidearm(weapon: Weapon) -> bool:
+	return weapon is Gun and (weapon.is_sidearm or (weapon.item_id != "" and ItemDB.has_tag(weapon.item_id, "sidearm")))
+
+
+## Builds the worn copy of a holstered weapon. Purely a view: the weapon's own
+## node stays on the actor's hand, hidden.
+func _stow(weapon: Weapon) -> Node3D:
+	var model: Node3D = look.weapon_model(weapon)
+	if model == null:
+		return null
+	var place := stow_place(weapon)
+	var pivot := Node3D.new()
+	pivot.add_child(model)
+	if place["centre"]:
+		model.position -= look.model_bounds(model).get_center()
+	pivot.basis = place["basis"]
+	var fallback: Vector3 = Vector3(0.0, _def.get("height", 1.8) * 0.7, 0.0) + place["at"]
+	var root := _hang(pivot, "Stowed" + str(actor.weapons.find(weapon)), place["bone"], place["at"], fallback)
+	_stowed_models[weapon] = model
+	return root
 
 
 func _on_fired(from: Vector3, to: Vector3, gun: Gun) -> void:
@@ -546,25 +775,29 @@ func _wear_rig(id: String) -> void:
 			_flames.append(flame)
 
 
-## Hangs a rig part on a bone so it moves with the body. Parts are built in
-## meters for a wearer facing the actor's way; this undoes the model's scale
-## and turn so they come out that way. `offset` is from the bone, in the
-## actor's frame. Skins without the bone get the part at `fallback` (actor
-## frame), fixed to the body.
+## Hangs a rig part on a bone so it moves with the body (see `_hang`).
 func _wear_part(part: Node3D, bone_name: String, offset: Vector3, fallback: Vector3) -> void:
 	look._weather_model(part, 0.5, 0.6)
+	_rig_holders.append(_hang(part, "Rig" + part.name, bone_name, offset, fallback))
+
+
+## Hangs a part on a bone so it moves with the body, and returns the node to
+## free to take it off. Parts are built in meters for a wearer facing the
+## actor's way; this undoes the model's scale and turn so they come out that
+## way. `offset` is from the bone, in the actor's frame. Skins without the
+## bone get the part at `fallback` (actor frame), fixed to the body.
+func _hang(part: Node3D, holder_name: String, bone_name: String, offset: Vector3, fallback: Vector3) -> Node3D:
 	var bone := _skeleton.find_bone(bone_name) if _skeleton and bone_name != "" else -1
 	var holder := Node3D.new()
-	holder.name = "Rig" + part.name
+	holder.name = holder_name
 	holder.add_child(part)
 	var to_actor := actor.global_transform.affine_inverse()
 	if bone < 0:
 		add_child(holder)
 		holder.transform = global_transform.affine_inverse() * actor.global_transform * Transform3D(Basis.IDENTITY, fallback)
-		_rig_holders.append(holder)
-		return
+		return holder
 	var attach := BoneAttachment3D.new()
-	attach.name = "Rig" + part.name
+	attach.name = holder_name
 	attach.bone_name = bone_name
 	_skeleton.add_child(attach)
 	attach.add_child(holder)
@@ -573,4 +806,4 @@ func _wear_part(part: Node3D, bone_name: String, offset: Vector3, fallback: Vect
 	var bone_at := to_actor * _skeleton.global_transform * _skeleton.get_bone_global_rest(bone)
 	var want := Transform3D(Basis.IDENTITY, bone_at.origin + offset)
 	holder.transform = bone_at.affine_inverse() * want
-	_rig_holders.append(attach)
+	return attach

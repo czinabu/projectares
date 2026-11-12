@@ -74,7 +74,7 @@ signal world_invite_accepted(invite: Dictionary)
 signal base_visit_requested(owner_name: String, stash: Array, loadout: Dictionary)
 
 const DEFAULT_PORT := 24565
-const PROTOCOL := 14
+const PROTOCOL := 15
 const StashService := preload("res://core/account/stash_service.gd")
 const Economy := preload("res://core/economy/economy.gd")
 const Human := preload("res://core/visual/human.gd")
@@ -631,7 +631,8 @@ func _send_spawn(peer: int, actor: Actor) -> void:
 		if actor.has_meta("appearance"):
 			data["look"] = actor.get_meta("appearance")
 	else:
-		data = {"seed": raid.bot_seeds.get(actor, 0), "warlord": raid.warlords.has(actor)}
+		data = {"seed": raid.bot_seeds.get(actor, 0), "warlord": raid.warlords.has(actor),
+				"faction": actor.faction}
 	_spawn.rpc_id(peer, _ids[actor], "player" if state != null else "bot", actor.display_name,
 			String(actor.name), actor.global_position, actor.cmd.yaw, data)
 
@@ -839,7 +840,7 @@ func _server_late_tick(_delta: float) -> void:
 	for id: int in _actors:
 		var actor: Actor = _actors[id]
 		_one_shots[id] = int(_one_shots.get(id, 0)) | (actor.cmd.flags() & ActorCommand.ONE_SHOT_MASK)
-		if actor.cmd.switch_weapon >= 0:
+		if actor.cmd.switch_weapon != -1:
 			_switches[id] = actor.cmd.switch_weapon
 	_tick += 1
 	if lag_compensation:
@@ -885,7 +886,8 @@ func _server_late_tick(_delta: float) -> void:
 		var actor := state.actor
 		if not is_instance_valid(actor):
 			continue
-		var standing := [actor.renown, actor.rank, actor.streak, actor.bounty, actor.exposed, actor.marked]
+		var standing := [actor.renown, actor.rank, actor.streak, actor.bounty, actor.exposed, actor.marked,
+				actor.scrip]
 		if id >= 0 and _sent_standing.get(id, []) != standing:
 			_sent_standing[id] = standing
 			for peer in _joined_peers:
@@ -1076,7 +1078,8 @@ func _spawn(id: int, kind: String, shown_name: String, node_name: String, at: Ve
 		state.picks = data.get("picks", {})
 		raid.players.append(state)
 	else:
-		actor = raid.spawn_bot(node_name, at, data.get("seed", 0), data.get("warlord", false))
+		actor = raid.spawn_bot(node_name, at, data.get("seed", 0), data.get("warlord", false),
+				data.get("faction", ""))
 		raid.world.on_spawn(actor)
 	actor.cmd.yaw = yaw
 	_actors[id] = actor
@@ -1355,7 +1358,8 @@ func _war(intensity: float, centre: Vector3) -> void:
 		raid.war.centre = centre
 
 
-## A player's public renown: [renown, rank, streak, bounty, exposed, marked].
+## A player's public standing: [renown, rank, streak, bounty, exposed, marked,
+## scrip carried].
 @rpc("authority", "call_remote", "reliable")
 func _standing(id: int, standing: Array) -> void:
 	var actor: Actor = _actors.get(id)
@@ -1367,6 +1371,8 @@ func _standing(id: int, standing: Array) -> void:
 	actor.bounty = int(standing[3])
 	actor.exposed = bool(standing[4])
 	actor.marked = bool(standing[5])
+	if standing.size() > 6:
+		actor.scrip = int(standing[6])
 
 
 ## A player tagged someone: they and their side are told, nobody else.
