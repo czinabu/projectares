@@ -620,13 +620,37 @@ func _test_main_flow() -> void:
 	controller.toggle_view()
 	await frames(40)
 	check(controller.is_third_person(), "the toggle switches to third-person")
-	# The HUD lives on your gear: a wrist display and a counter on the gun.
+	# The HUD lives on your gear: a holographic watch and a counter on the gun.
 	var wrist: Hud.Wrist = main.hud.wrist
-	check(wrist.get_parent() == p and wrist.visible and wrist.text().contains(main.raid.world.display_name)
-			and wrist.text().contains("Pack "), "in third person the wrist display rides on your arm")
+	var holo := wrist.get_node("Hologram") as Node3D
+	var arm := wrist.get_node("Forearm") as Node3D
+	check(not controller.wrist_raised and not holo.visible, "the watch's hologram is down until you raise it")
+	var x_key := InputEventAction.new()
+	x_key.action = "check_wrist"
+	x_key.pressed = true
+	controller._unhandled_input(x_key)
+	await frames(30)
+	check(controller.wrist_raised and wrist.is_open() and holo.visible and wrist.get_parent() == p
+			and wrist.text().contains(main.raid.world.display_name) and wrist.text().contains("Pack "),
+			"X raises the watch, and in third person its hologram opens over your wrist")
+	var cam_to_holo := holo.global_position - controller.camera.global_position
+	var depth := cam_to_holo.dot(-controller.camera.global_basis.z)
+	check(depth > 0.0 and depth < wrist.projection_distance + 0.05,
+			"the third-person hologram hangs in front of the camera, close enough to read")
 	controller.toggle_view()
 	await frames(40)
-	check(wrist.get_parent() == controller.camera, "in first person it is raised into view on your wrist")
+	check(wrist.get_parent() == controller.camera and arm.visible and holo.visible,
+			"in first person your forearm comes up into view with the hologram over it")
+	var narrow := holo.scale.x
+	controller.camera.fov = 110.0
+	wrist.mount(p, controller, true)
+	check(holo.scale.x > narrow * 1.3, "a wider view grows the hologram, so it reads the same")
+	controller.camera.fov = controller.base_fov
+	check(Hud.Wrist.face_tint(0.1).r > 0.9 and Hud.Wrist.face_tint(1.0).b > 0.9,
+			"the watch face glows red when you are low and cyan when you are well")
+	controller._unhandled_input(x_key)
+	await frames(30)
+	check(not controller.wrist_raised and not holo.visible and not arm.visible, "X again puts it away")
 	var gun: Gun = null
 	for w in p.weapons:
 		if w is Gun:
@@ -667,8 +691,8 @@ func _test_main_flow() -> void:
 	corpse.kill("test")
 	await frames(10)
 	check(main.raid != null and not main.hub.visible, "dying keeps you in the world")
-	check(wrist.text().contains("You died") or wrist.text().contains("Killed by"),
-			"what the death cost is read off the wrist")
+	check((wrist.text().contains("You died") or wrist.text().contains("Killed by")) and wrist.raised,
+			"going down raises the watch, and what the death cost is read off it")
 	main._on_redeploy_requested()
 	check(main.raid.player == corpse, "you cannot drop back in at once")
 	main._redeploy_at = 0

@@ -16,7 +16,7 @@ const KEY_ACTIONS := {
 	"heal": KEY_H,
 	"heavy": KEY_F,
 	"ability": KEY_G,
-	"visor": KEY_X,
+	"visor": KEY_Z,
 	"toggle_view": KEY_V,
 	"melee_control": KEY_B,
 	"weapon_1": KEY_1,
@@ -25,6 +25,7 @@ const KEY_ACTIONS := {
 	"sign_out": KEY_L,
 	"redeploy": KEY_ENTER,
 	"phone": KEY_P,
+	"check_wrist": KEY_X,
 }
 
 const MOUSE_ACTIONS := {

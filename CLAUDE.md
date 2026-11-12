@@ -247,6 +247,13 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   add full-screen panels or overlays; information about a thing goes on or
   next to the thing (a `Label3D` tag, a sign) or into the phone. The HUD is
   for the crosshair, prompts, hit feedback and brief notices.
+- The watch and the phone split the job (Caleb's rule). The holographic
+  watch (`Hud.Wrist`, raised with X) is for gameplay: vitals, pack, ammo,
+  heat, standing and strongpoints, landing choices, and future in-raid
+  actions such as calling something in. The phone is for settings, talking
+  to friends and players, and information (news, the war feed). A new
+  in-raid action goes on the watch; a new social or info feature is a
+  phone app.
 - Money (`core/economy/`): the rules live once, in `economy.gd` (static, like
   `StashRules`), shared by `Profile` and `StashService`. Online, `credits`
   lives on the server's account and only changes there: through

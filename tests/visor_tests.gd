@@ -309,7 +309,7 @@ static func _glass(t: Node) -> void:
 	await t.frames(5)
 	var glass := hud.visor
 	t.check(glass != null and glass.glass_shown(), "wearing a helmet in first person, the visor is on")
-	t.check("[X] Seeker Helmet" in Hud.wrist_text(raid, p, {}, 0.0, [] as Array[String]),
+	t.check("[Z] Seeker Helmet" in Hud.wrist_text(raid, p, {}, 0.0, [] as Array[String]),
 			"the wrist names the visor key and what it does")
 	controller.view_mode = PlayerController.ViewMode.THIRD
 	await t.frames(40)
