@@ -392,8 +392,7 @@ func _update_glide(delta: float) -> void:
 	_bank = lerpf(_bank, bank, 1.0 - exp(-bank_follow * delta))
 	# The roll keys: held, the body keeps turning; let go, it rights itself
 	# the short way round.
-	var in_air := alive and (flat or actor.flight.is_hovering)
-	if in_air and actor.cmd.roll != 0:
+	if flat and actor.cmd.roll != 0:
 		_twist += actor.cmd.roll * twist_speed * delta
 	else:
 		_twist = wrapf(_twist, -PI, PI)
