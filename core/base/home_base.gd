@@ -556,7 +556,7 @@ func _build_bench() -> void:
 	title.name = "Title"
 	title.position = Vector3(0, 2.75, -0.42)
 	bench.add_child(title)
-	var how := _label("Look at an attachment and press E to fit it to your primary", Color(0.85, 0.83, 0.8), 0.08)
+	var how := _label("Look at an attachment and press F to fit it to your primary", Color(0.85, 0.83, 0.8), 0.08)
 	how.name = "HowTo"
 	how.position = Vector3(0, 2.6, -0.38)
 	bench.add_child(how)

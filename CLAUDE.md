@@ -262,8 +262,14 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   heat-bound, boots quick kicks, wings fastest and furthest but no hover.
   The body's attitude in the air (flat, banked, leaning, rolled by
   `ActorCommand.roll`) is the skin's job (`ActorSkin._update_glide`), read
-  from velocity and the command only, so remote players match. Check it by
-  eye: `visual_check.tscn -- <dir> --flight-only`.
+  from velocity and the command only, so remote players match. Off the
+  ground (`ActorSkin.is_airborne`, from `Actor.airborne_time`) the legs
+  never play a gait: a stand plays under an air pose (leap, fall, or
+  hanging from lit jets). Leaving the ground starts with a short push-off
+  and a running jump leans into it; a touchdown (`Actor.landed`) bends the
+  knees by how hard it was (`Locomotion.squat`). All of it is view only. A boost keeps the arms down at the sides, never
+  reaching ahead (Caleb's call). Check it by eye:
+  `visual_check.tscn -- <dir> --flight-only` (or `--takeoff-only`).
 - Helmets are items tagged `helmet` in the `helmet` loadout slot, and data
   like abilities: `Visor` (`core/abilities/visor.gd`, `Actor.visor`) is one
   class whose `mode` stat picks what the visor does ("" plain, "zoom"
