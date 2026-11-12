@@ -132,25 +132,37 @@ static func run(t: Node) -> void:
 	await t.frames(60)
 	t.check(p.global_position.x < edge and not p.is_dead, "flying at the rim does not get you out of the world")
 
-	# A bike brought along is parked on the ground beside its rider, also on
-	# a slope: under the surface it would fall for ever.
+	# A bike brought along is a toy on the watch. Thrown on the open ground,
+	# also on a slope, it unpacks on the surface: under it, it would fall
+	# for ever.
 	var kit: Array = raid.world.starter_loadout()
 	kit.append("bike_scrapper")
-	var own_bikes: Array[Node3D] = []
-	var above_ground := true
+	var riders: Array[Actor] = []
 	for i in 8:
-		var before := raid.vehicles.size()
-		raid.add_player(kit, {}, "Rider")
-		for v: Node3D in raid.vehicles.slice(before):
-			own_bikes.append(v)
-			above_ground = above_ground and v.global_position.y > under.call(v)
+		riders.append(raid.add_player(kit, {}, "Rider"))
+	await t.frames(20)
+	var before := raid.vehicles.size()
+	for i in riders.size():
+		riders[i].cmd.yaw = i * 0.8
+		riders[i].cmd.pitch = -0.1
+		riders[i].cmd.aim_dir = Vector3.ZERO
+		raid.throw_toy(riders[i], "bike_scrapper")
+	for i in 400:
+		if raid.toys.is_empty():
+			break
+		await t.frames(1)
+	var own_bikes: Array = raid.vehicles.slice(before)
+	var above_ground := true
+	for v: Node3D in own_bikes:
+		above_ground = above_ground and v.global_position.y > under.call(v)
 	await t.frames(90)
 	var resting := 0
-	for v in own_bikes:
+	for v: Node3D in own_bikes:
 		if is_instance_valid(v) and absf(v.global_position.y - under.call(v)) < 1.0:
 			resting += 1
-	t.check(own_bikes.size() == 8 and above_ground and resting == own_bikes.size(),
-			"a bike you bring is parked on the ground beside you (%d of %d)" % [resting, own_bikes.size()])
+	var back_on_watch := riders.filter(func(r: Actor) -> bool: return not raid.stowed_for(r).is_empty()).size()
+	t.check(own_bikes.size() >= 4 and own_bikes.size() + back_on_watch == 8 and above_ground and resting == own_bikes.size(),
+			"a thrown bike unpacks on the ground, or goes back on the watch (%d of %d on the ground)" % [resting, own_bikes.size()])
 
 	await _armies(t)
 

@@ -3470,6 +3470,26 @@ func _throw_own_bike(session: NetSession) -> void:
 		session.throw_toy(session.raid.stowed_for(me)[0])
 		await _wait_until(near, 240)
 	await _wait_until(near, 240)
+	# Walk up to the nearest bike, close enough to get on.
+	var bike: Node3D = null
+	for v: Node3D in session.vehicles():
+		if is_instance_valid(v) and (bike == null or v.global_position.distance_to(me.global_position)
+				< bike.global_position.distance_to(me.global_position)):
+			bike = v
+	if bike == null:
+		return
+	for i in 400:
+		var gap := bike.global_position - me.global_position
+		gap.y = 0.0
+		if gap.length() < 2.2:
+			break
+		me.cmd.yaw = _yaw_toward(gap)
+		me.cmd.pitch = 0.0
+		me.cmd.aim_dir = Vector3.ZERO
+		me.cmd.move = Vector2(0, 1)
+		await frames(1)
+	me.cmd.move = Vector2.ZERO
+	await frames(20)
 
 
 func _test_vehicle_toys_online() -> void:
@@ -3492,11 +3512,22 @@ func _test_vehicle_toys_online() -> void:
 		ivy.throw_toy("bike_raider")
 		await frames(30)
 		check(ivy.vehicles().size() == before and ivy.raid.stowed_for(me).size() == 1, "the server refuses a toy the player does not have")
-		me.cmd.pitch = -0.2
-		me.cmd.aim_dir = Vector3.ZERO
-		ivy.throw_toy("bike_scrapper")
-		await _wait_until(func() -> bool: return not jon.raid.toys.is_empty(), 120)
-		check(not jon.raid.toys.is_empty(), "the other player sees the toy fly")
+		# Thrown where there is room: the other player may be standing in the way.
+		var seen_flying := false
+		for turn in 4:
+			if ivy.vehicles().size() > before or ivy.raid.stowed_for(me).is_empty():
+				break
+			me.cmd.yaw = turn * PI * 0.5
+			me.cmd.pitch = -0.2
+			me.cmd.aim_dir = Vector3.ZERO
+			await frames(10)
+			ivy.throw_toy("bike_scrapper")
+			await _wait_until(func() -> bool: return not jon.raid.toys.is_empty(), 120)
+			seen_flying = seen_flying or not jon.raid.toys.is_empty()
+			await _wait_until(func() -> bool:
+				return ivy.vehicles().size() > before or (jon.raid.toys.is_empty() and not ivy.raid.stowed_for(me).is_empty()), 300)
+			await frames(20)
+		check(seen_flying, "the other player sees the toy fly")
 		await _wait_until(func() -> bool: return ivy.vehicles().size() > before and jon.vehicles().size() > before_there, 300)
 		check(ivy.vehicles().size() == before + 1 and jon.vehicles().size() == before_there + 1,
 				"it unpacks on the server and both clients get the bike")
