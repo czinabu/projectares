@@ -70,9 +70,10 @@ static func run(t: Node) -> void:
 		var flames := jet.find_children("Flame", "Node3D", true, false)
 		t.check(flames.size() == 2 and not flames.any(func(f: Node3D) -> bool: return f.visible), "the nozzles are cold at rest")
 		p.flight.is_thrusting = true
-		# The skin updates in _process, and physics frames can bunch up inside
-		# one; a process_frame await resumes just before _process, so wait two.
 		await t.frames(2)
+		# The flames are set when a frame is drawn, and on a busy machine two
+		# physics ticks can pass inside one. The signal comes before the frame's
+		# own work, so the second one is the first that is sure to follow it.
 		await t.get_tree().process_frame
 		await t.get_tree().process_frame
 		t.check(flames.all(func(f: Node3D) -> bool: return f.visible), "both nozzles burn while thrusting")
