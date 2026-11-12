@@ -9,8 +9,8 @@ extends RefCounted
 const SHOPS := [
 	{"id": "armory", "name": "Armory", "tags": ["weapon", "attachment"],
 		"blurb": "Dependable guns, blades and attachments. Nothing fancy: the good stuff is out there."},
-	{"id": "outfitter", "name": "Outfitter", "tags": ["armor", "flight_rig", "consumable"],
-		"blurb": "Armor frames, flight rigs and medical supplies."},
+	{"id": "outfitter", "name": "Outfitter", "tags": ["armor", "helmet", "flight_rig", "consumable"],
+		"blurb": "Armor frames, helmets, flight rigs and medical supplies."},
 	{"id": "garage", "name": "Garage", "tags": ["vehicle"],
 		"blurb": "Something to ride in on. Bring it back in one piece."},
 	{"id": "furnisher", "name": "Furnisher", "tags": ["furniture"],

@@ -127,6 +127,13 @@ static func _kit(t: Node) -> void:
 	t.check(primary != null and primary.ammo_in_mag == primary.mag_size and primary.mag_size > 50,
 			"the drum mag deploys full (%d)" % (primary.mag_size if primary else 0))
 	t.check(sidearm != null and sidearm.attachments.is_empty(), "the sidearm gets no attachments")
+	# A power weapon comes as it is.
+	if not ItemDB.has_item("test_power_gun"):
+		ItemDB.register("test_power_gun", "Test Power Gun", ItemDB.Rarity.EPIC, 0,
+				["weapon", "firearm", "power"], {"damage": 40.0})
+	t.check(not Loadout.is_primary("test_power_gun"),
+			"a power weapon takes no attachments")
+	ItemDB._items.erase("test_power_gun")
 	t.check("optic_reflex" in p.get_drop_items() and "mag_drum" in p.get_drop_items(),
 			"attachments are carried gear: they drop with you")
 	raid.queue_free()

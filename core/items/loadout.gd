@@ -10,6 +10,7 @@ const SLOTS := {
 	"sidearm": "sidearm",
 	"rig": "flight_rig",
 	"frame": "armor",
+	"helmet": "helmet",
 	"ability": "ability",
 	"vehicle": "vehicle",
 	# Attachments for the primary. Each slot's tag is also the attachment's
@@ -25,6 +26,7 @@ const SLOT_NAMES := {
 	"sidearm": "Sidearm",
 	"rig": "Flight rig",
 	"frame": "Armor frame",
+	"helmet": "Helmet",
 	"ability": "Ability",
 	"vehicle": "Vehicle",
 	"optic": "Optic",
@@ -92,6 +94,12 @@ static func equip(actor: Actor, item_ids: Array) -> void:
 			actor.ability.display_name = ItemDB.item_name(id)
 			_apply_stats(actor.ability, stats)
 			actor.gear_items.append(id)
+		elif ItemDB.has_tag(id, "helmet"):
+			actor.visor.enabled = true
+			actor.visor.item_id = id
+			actor.visor.display_name = ItemDB.item_name(id)
+			_apply_stats(actor.visor, stats)
+			actor.gear_items.append(id)
 		elif ItemDB.has_tag(id, "armor"):
 			frames.append(id)
 		elif ItemDB.has_tag(id, "vehicle"):
@@ -112,9 +120,10 @@ static func equip(actor: Actor, item_ids: Array) -> void:
 		actor.gear_items.append(id)
 
 
-## True for a firearm that goes in the primary slot (not a sidearm).
+## True for a primary that takes attachments: a firearm in the primary slot
+## (not a sidearm), and not a power weapon, which comes as it is.
 static func is_primary(id: String) -> bool:
-	return fits("primary", id)
+	return fits("primary", id) and not ItemDB.has_tag(id, "power")
 
 
 ## The attachment slot an item fits, or "" if it is not an attachment.

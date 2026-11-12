@@ -70,7 +70,7 @@ const SKINS := {
 		"people": {"m": ["Swat", "Spacesuit", "Adventurer"], "f": ["Soldier", "SciFi", "Adventurer"]},
 		"height": 1.8, "tint": Color(0.8, 0.82, 0.86), "grip_bone": "Middle1.R", "arm": HUMAN_ARM, "off_arm": HUMAN_OFF_ARM,
 		"spine": HUMAN_SPINE, "neck": "Neck", "lead_leg": HUMAN_LEAD_LEG, "trail_leg": HUMAN_TRAIL_LEG,
-		"back_bone": "Chest", "feet": HUMAN_FEET,
+		"back_bone": "Chest", "hip_bone": "Hips", "feet": HUMAN_FEET,
 		"saturation": 0.75, "brightness": 0.85, "metal": 0.0, "rough": 0.85,
 		"anims": HUMAN_ANIMS,
 	},
@@ -78,7 +78,7 @@ const SKINS := {
 		"people": {"m": ["Punk", "Casual_Hoodie", "Casual_2", "Farmer", "Beach"], "f": ["Punk", "Worker", "Casual", "Medieval"]},
 		"height": 1.76, "tint": Color(0.86, 0.76, 0.68), "grip_bone": "Middle1.R", "arm": HUMAN_ARM, "off_arm": HUMAN_OFF_ARM,
 		"spine": HUMAN_SPINE, "neck": "Neck", "lead_leg": HUMAN_LEAD_LEG, "trail_leg": HUMAN_TRAIL_LEG,
-		"back_bone": "Chest", "feet": HUMAN_FEET,
+		"back_bone": "Chest", "hip_bone": "Hips", "feet": HUMAN_FEET,
 		"saturation": 0.7, "brightness": 0.75, "metal": 0.0, "rough": 0.9,
 		"anims": HUMAN_ANIMS,
 	},
@@ -122,6 +122,19 @@ const GUN_MOUNTS := {
 	"Shotgun_1.glb": {"optic": 0.3, "grip": [0.62, 0.4], "magazine": [0.36, 0.45]},
 	"AR_3.glb": {"optic": 0.5, "grip": [0.8, 0.5], "magazine": [0.55, 0.45]},
 }
+## Energy colour for a gun's glowing parts, picked by item tag, first match
+## wins. The warm (wood and leather) parts of the pack's models become glowing
+## cells and coils in this colour, and a glowing emitter ring sits on the muzzle.
+const GUN_GLOW := [
+	["hand_cannon", Color(0.8, 0.35, 1.0)],
+	["machine_pistol", Color(1.0, 0.55, 0.15)],
+	["sidearm", Color(0.3, 0.85, 1.0)],
+	# Primaries, matching the cyan lit details on their attachments.
+	["smg", Color(1.0, 0.55, 0.15)],
+	["marksman", Color(0.8, 0.35, 1.0)],
+	["shotgun", Color(1.0, 0.3, 0.25)],
+	["rifle", Color(0.25, 0.9, 1.0)],
+]
 ## Melee models picked by item tag, first match wins: file, length in meters,
 ## how far up from the pommel the hand grips it, and whether it takes both hands.
 const MELEE_MODELS := [
@@ -813,32 +826,16 @@ func weapon_model(weapon: Weapon) -> Node3D:
 	holder.name = "Model"
 	holder.add_child(model)
 	_fit(model, WEAPONS + file, length, false)
+	for entry: Array in GUN_GLOW:
+		if weapon.item_id != "" and ItemDB.has_tag(weapon.item_id, entry[0]):
+			_energize(model, holder, entry[1])
+			break
 	_weather_model(model, 0.8 if weapon.item_id == "" else 0.5, 0.75)
 	# The packs point guns along +X. Hands hold them pointing along -Z.
 	holder.rotation.y = PI / 2.0
 	holder.position = Vector3(0, -0.1, -0.08)
 	holder.set_meta("gun_file", file)
-	if not weapon.is_sidearm:
-		_energy_trim(holder, model)
 	return holder
-
-
-## Sci-fi trim for a gun model: lit energy lines down both sides of the
-## receiver and a lit cell window near the grip. `model` points along +X
-## inside `holder`.
-func _energy_trim(holder: Node3D, model: Node3D) -> void:
-	var box := model_bounds(model)
-	var color := Color(0.25, 0.9, 1.0)
-	var length := box.size.x
-	var trim := Node3D.new()
-	trim.name = "EnergyTrim"
-	for side: float in [-1.0, 1.0]:
-		var z := box.get_center().z + side * (box.size.z * 0.5 + 0.0015)
-		trim.add_child(Weapon.make_part(Vector3(length * 0.42, 0.006, 0.002),
-				Vector3(box.position.x + length * 0.55, box.position.y + box.size.y * 0.72, z), color, true))
-		trim.add_child(Weapon.make_part(Vector3(length * 0.08, 0.018, 0.002),
-				Vector3(box.position.x + length * 0.3, box.position.y + box.size.y * 0.6, z), color, true))
-	holder.add_child(trim)
 
 
 ## Moves a gun's attachments (the "Attachments" child of `visual`, see
@@ -909,7 +906,7 @@ func _measure_mounts(model: Node3D, along: Dictionary) -> Dictionary:
 			front_low = minf(front_low, p.y)
 			front_high = maxf(front_high, p.y)
 	var out := {
-		"optic": Vector3(mid_x, maxf(top if top > -INF else high.y, ahead - 0.012), optic_z),
+		"optic": Vector3(mid_x, maxf(top if top > -INF else high.y, ahead + 0.004), optic_z),
 		"rail": top if top > -INF else high.y,
 		"muzzle": Vector3(mid_x, (front_low + front_high) * 0.5 if front_high > -INF else low.y + height * 0.7, low.z),
 	}
@@ -917,6 +914,49 @@ func _measure_mounts(model: Node3D, along: Dictionary) -> Dictionary:
 		var spot: Array = along.get(slot, [0.6, 0.4])
 		out[slot] = Vector3(mid_x, low.y + float(spot[1]) * height, high.z - float(spot[0]) * length)
 	return out
+
+
+## Gives a gun model a sci-fi energy look in `glow`: warm parts become glowing
+## cells, the dark body gets a cool gunmetal sheen, and an emitter ring sits on
+## the muzzle. `holder` is the model's parent; guns point along +X in it.
+func _energize(model: Node3D, holder: Node3D, glow: Color) -> void:
+	for node in model.find_children("*", "MeshInstance3D", true, false):
+		var mesh_node := node as MeshInstance3D
+		if mesh_node.mesh == null:
+			continue
+		for i in mesh_node.mesh.get_surface_count():
+			var source := mesh_node.get_active_material(i) as BaseMaterial3D
+			if source == null:
+				continue
+			var c := source.albedo_color
+			var mat := source.duplicate() as BaseMaterial3D
+			if c.r - c.b > 0.08 and c.r > 0.15:
+				mat.albedo_color = glow.darkened(0.3)
+				mat.emission_enabled = true
+				mat.emission = glow
+				mat.emission_energy_multiplier = 2.2
+			else:
+				mat.albedo_color = c.lerp(Color(0.32, 0.36, 0.42), 0.35)
+			mesh_node.set_surface_override_material(i, mat)
+	var box := model_bounds(model)
+	var ring := MeshInstance3D.new()
+	var tube := CylinderMesh.new()
+	var radius := box.size.y * 0.07
+	tube.top_radius = radius
+	tube.bottom_radius = radius
+	tube.height = box.size.x * 0.035
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = glow
+	mat.emission_enabled = true
+	mat.emission = glow
+	mat.emission_energy_multiplier = 1.6
+	tube.material = mat
+	ring.mesh = tube
+	ring.name = "Emitter"
+	ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	ring.rotation.z = PI / 2.0
+	ring.position = Vector3(box.end.x, box.position.y + box.size.y * 0.78, box.get_center().z)
+	holder.add_child(ring)
 
 
 ## Melee models stand along +Y with the handle down, the way the greybox

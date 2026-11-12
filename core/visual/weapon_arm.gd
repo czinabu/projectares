@@ -67,6 +67,10 @@ var wrist_limit := 1.3
 var off_hand_at := -0.16
 
 var grip_bone := -1
+## Set by the skin while drawing or putting a weapon away: a point in the
+## actor's frame the weapon hand reaches for, and how far it gives in to it.
+var override_point := Vector3.ZERO
+var override_weight := 0.0
 var reach_ik: TwoBoneIK3D
 var off_ik: TwoBoneIK3D
 
@@ -273,6 +277,11 @@ func _process(delta: float) -> void:
 	reach_ik.influence = _weight
 	var aim := Basis(Vector3.RIGHT, actor.cmd.pitch)
 	_target.global_position = actor.global_transform * (Actor.HAND_REST + aim * _reach)
+	if override_weight > 0.001 and not actor.hand_override:
+		# Reaching for a holster takes the hand over from any hold or guard.
+		var holster := actor.global_transform * override_point
+		_target.global_position = holster if _weight <= 0.0 else _target.global_position.lerp(holster, override_weight)
+		reach_ik.influence = maxf(_weight, override_weight)
 	_pole.global_position = actor.global_transform * elbow
 	if off_ik:
 		off_ik.influence = _off_weight

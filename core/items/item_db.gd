@@ -156,6 +156,24 @@ func _ready() -> void:
 			"pulse_stagger": 1.3},
 			"A shockwave that hurts and staggers everyone near you.")
 
+	# Helmets. The visor is the wearer's display in first person, and `mode`
+	# picks what it can do (see `Visor`). Mk2 helmets are loot only.
+	register("visor_scav", "Scav Visor", Rarity.COMMON, 0, ["helmet", "visor_plain", "starter"],
+			{"mode": "", "glass_color": Color(0.8, 0.75, 0.6)},
+			"A cracked visor. Shows how hurt you are and nothing else.")
+	register("helm_spotter", "Spotter Helmet", Rarity.UNCOMMON, 500, ["helmet", "optic", "vendor"],
+			{"mode": "zoom", "zoom_levels": [4.0, 8.0], "glass_color": Color(1.0, 0.75, 0.3)},
+			"Binoculars at 4x and 8x with a range finder. Fire while zoomed to tag a target. The lens glints.")
+	register("helm_spotter_mk2", "Spotter Helmet Mk2", Rarity.RARE, 1100, ["helmet", "optic"],
+			{"mode": "zoom", "zoom_levels": [4.0, 10.0], "tag_time": 7.0, "glass_color": Color(1.0, 0.75, 0.3)},
+			"Binoculars at 4x and 10x. Tags last two seconds longer.")
+	register("helm_seeker", "Seeker Helmet", Rarity.UNCOMMON, 550, ["helmet", "scanner", "vendor"],
+			{"mode": "scan", "cooldown": 25.0, "scan_radius": 40.0, "glass_color": Color(0.4, 1.0, 0.8)},
+			"A scan pulse shows where everyone within 40 meters stood. They hear it and know where it came from.")
+	register("helm_seeker_mk2", "Seeker Helmet Mk2", Rarity.RARE, 1200, ["helmet", "scanner"],
+			{"mode": "scan", "cooldown": 21.0, "scan_radius": 48.0, "glass_color": Color(0.4, 1.0, 0.8)},
+			"A wider scan pulse, 48 meters, that is ready again sooner.")
+
 	# Vehicles. Not carried: the Raid parks one next to you when you deploy, and
 	# whoever signs out riding it takes it home. Stats tune Vehicle.
 	register("bike_scrapper", "Scrapper Bike", Rarity.UNCOMMON, 600, ["vehicle", "vendor"],
