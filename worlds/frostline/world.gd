@@ -17,11 +17,11 @@ const CACHE_TABLE := [
 	{"id": "medkit", "weight": 12.0},
 	{"id": "power_cell", "weight": 10.0},
 	{"id": "smg_stinger", "weight": 3.0},
+	{"id": "knife_gutter", "weight": 2.5},
 	{"id": "pistol_machine", "weight": 2.5},
 	{"id": "rifle_carbine", "weight": 3.0},
 	{"id": "frame_runner", "weight": 3.0},
 	{"id": "boots_thruster", "weight": 2.5},
-	{"id": "knife_gutter", "weight": 2.5},
 ]
 
 ## Outpost roofs need a flight rig to reach.

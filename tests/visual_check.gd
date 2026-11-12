@@ -21,16 +21,16 @@ func _ready() -> void:
 		get_tree().quit()
 		return
 
+	# `-- <output_dir> --gait-only` shoots the legs: run, sprint, strafe, slide.
+	if "--gait-only" in args:
+		await _gait_shots(out_dir)
+		get_tree().quit()
+		return
+
 	# `-- <output_dir> --melee-only` shoots every melee weapon in hand.
 	if "--melee-only" in args:
 		var at := args.find("--melee-only")
 		await _melee_shots(out_dir, args[at + 1] if at + 1 < args.size() else "")
-		get_tree().quit()
-		return
-
-	# `-- <output_dir> --gait-only` shoots the legs: run, sprint, strafe, slide.
-	if "--gait-only" in args:
-		await _gait_shots(out_dir)
 		get_tree().quit()
 		return
 

@@ -28,7 +28,7 @@ skies, animated models and effects (see "How it looks" below).
 | Aim down sights, or block with the blade (tap just before a hit to parry) | Right mouse |
 | Pick a melee side: left, right or overhead | Flick the mouse that way, or hold A, D or W |
 | Switch how the melee side is picked (mouse flick or movement keys) | B |
-| Heavy attack with a melee weapon (dive slam in the air) | Middle mouse |
+| Heavy lunge with the blade (dive slam in the air) | F |
 | Switch to primary / blade / sidearm | 1 / 2 / 3, or mouse wheel |
 | Reload | R |
 | Use a medkit | H |
@@ -254,13 +254,13 @@ you have.
   side; the Seeker sends a scan pulse that shows where everyone nearby stood.
   Both give you away: a zoomed lens glints, and a scan is seen, heard and
   felt by everyone it catches. With no helmet the view is bare.
-- More gear to find: carbine, SMG, marksman rifle, shotgun, arc blade, breaker
-  hammer, three armor frames, and a better jetpack.
 - Six melee weapons, each with its own job. The Gutter Knife is quick and short
   and cuts from behind for more than double. The Splitter Axe drains a guard
   so fast that three chops break it. The Lancer Spear (rooftop loot) has the
   longest reach, pokes fliers overhead, and staggers with a heavy thrust, but
   hits half as hard up close.
+- More gear to find: carbine, SMG, marksman rifle, shotgun, arc blade, breaker
+  hammer, three armor frames, and a better jetpack.
 - Motorbikes, the first vehicle. Put one in the vehicle slot and it is parked
   next to you when you deploy. Press E on any bike nobody is riding to take
   it, including someone else's. Sign out riding a bike and it goes to your

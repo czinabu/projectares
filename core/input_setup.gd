@@ -14,6 +14,7 @@ const KEY_ACTIONS := {
 	"interact": KEY_E,
 	"reload": KEY_R,
 	"heal": KEY_H,
+	"heavy": KEY_F,
 	"ability": KEY_G,
 	"visor": KEY_T,
 	"toggle_view": KEY_V,
@@ -32,7 +33,6 @@ const KEY_ACTIONS := {
 const MOUSE_ACTIONS := {
 	"fire": MOUSE_BUTTON_LEFT,
 	"alt_fire": MOUSE_BUTTON_RIGHT,
-	"heavy": MOUSE_BUTTON_MIDDLE,
 }
 
 
