@@ -12,6 +12,8 @@ extends Node
 signal sign_out_requested
 ## The player, dead, asked to drop back in.
 signal redeploy_requested
+## While down: a number key picked a place to land (0 for the first on offer).
+signal drop_requested(index: int)
 
 enum ViewMode { FIRST, THIRD }
 ## How the melee side is picked: by flicking the mouse, or by the movement keys.
@@ -125,6 +127,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		sign_out_requested.emit()
 	elif event.is_action_pressed("redeploy") and is_instance_valid(actor) and actor.is_dead:
 		redeploy_requested.emit()
+	elif event is InputEventKey and event.pressed and not event.echo and is_instance_valid(actor) \
+			and actor.is_dead and event.keycode >= KEY_1 and event.keycode <= KEY_9:
+		drop_requested.emit(event.keycode - KEY_1)
 
 
 func toggle_view() -> void:

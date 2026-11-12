@@ -69,6 +69,12 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   holds a site; clients get it from `NetSession`, including whether a site is
   theirs (`Strongpoint.viewer_holds`), and never see another player's key.
   Send bots somewhere with `BotBrain.post_to`, not a second mechanism.
+- Where a player lands is the `Raid`'s call. `Raid.drop_choices(owner)` lists
+  what is on offer (quiet, a held strongpoint, beside the fighting) and the
+  chosen id goes into `add_player`'s `p_drop`, which falls back to a quiet
+  drop if the choice is no longer on offer. Online the client only sends the
+  id with `NetSession.deploy(drop)`; a client lists its choices from what the
+  server already told it (`Strongpoint.viewer_holds`, war intensity).
 - World events (`Raid.event`, `start_event`, `end_event`): one at a time, on
   a timer the war speeds up, tuned by `WorldDef.event_interval`,
   `event_lifetime` and `warlord_escort`. A supply pod is an ordinary

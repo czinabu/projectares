@@ -191,6 +191,10 @@ you have.
   drop in next. Bots hold them to begin with and push to take them back.
   Frostline has three, shared by all players. Ashfront gets its own with the
   new battlefield map.
+- Choosing where you land. When you are down, the death screen lists where
+  you can drop back in and a number key picks one: a quiet drop away from
+  everyone, a strongpoint your side holds, or, once a battle is on, right
+  beside the heaviest fighting. Enter still lets the world pick for you.
 - World events. Every few minutes, and more often as the war heats up, either
   a supply pod lands with a better haul than any cache, or a warlord marches
   in with an escort. He has three times the health, carries good loot, and
