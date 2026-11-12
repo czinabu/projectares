@@ -2054,7 +2054,11 @@ func _test_war() -> void:
 	var mid := raid.war.intensity
 	raid.bots[1].kill("bullet", raid.bots[2])
 	await frames(2)
-	check(raid.war.intensity <= mid, "bots killing each other do not")
+	check(raid.war.intensity > mid and raid.war.intensity - mid < 0.02, "bots killing each other only keep it simmering")
+	raid.war.intensity = raid.war.battle_ceiling
+	raid.bots[1].kill("bullet", raid.bots[2])
+	await frames(2)
+	check(raid.war.intensity <= raid.war.battle_ceiling, "and never take it past a skirmish on their own")
 	raid.war.intensity = 1.0
 	await frames(2)
 	var paid := a.renown

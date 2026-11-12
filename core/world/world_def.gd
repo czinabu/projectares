@@ -9,7 +9,9 @@ extends RefCounted
 ##
 ## Map contract: `create_map()` returns a Node3D that, once in the tree, has
 ##   - Marker3D nodes in group "spawn_player"
-##   - Marker3D nodes in group "spawn_bot"
+##   - Marker3D nodes in group "spawn_bot" (optional meta "faction": the
+##     Raid sets it as the bot's faction before `equip_bot`, and sends new
+##     bots where their faction is shortest of them)
 ##   - Marker3D nodes in group "spawn_cache" (optional meta "loot_source")
 ##   - Depot nodes in group "depot": where players bank what they carry
 ##   - optionally Marker3D nodes in group "spawn_vehicle" (optional meta
@@ -73,6 +75,16 @@ var players_allied := false
 ## many bots go. 0 bots turns the pushes off.
 var assault_interval := 120.0
 var assault_size := 3
+## Bots the world adds on top of `bot_count` as the war heats up: this many
+## more at full war intensity, and a share of them below it. They arrive one
+## every `reinforcement_time` seconds and are not replaced once it cools.
+var war_reinforcements := 0
+var reinforcement_time := 5.0
+## True where the bot factions fight each other over the strongpoints: each
+## keeps `garrison_size` bots on every site it holds and sends the rest
+## against the nearest site it does not.
+var bots_contest_sites := false
+var garrison_size := 4
 ## How strongly fighting raises this world's war intensity (see
 ## `core/war/war_director.gd`). 0 keeps the world quiet whatever happens.
 var war_scale := 1.0

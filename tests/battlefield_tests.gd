@@ -132,6 +132,8 @@ static func run(t: Node) -> void:
 	await t.frames(60)
 	t.check(p.global_position.x < edge and not p.is_dead, "flying at the rim does not get you out of the world")
 
+	await _armies(t)
+
 	# Built once, shared after: a second copy of the map is ready at once.
 	var before := Time.get_ticks_msec()
 	var again := Raid.new()
@@ -142,5 +144,111 @@ static func run(t: Node) -> void:
 	t.check(twin.heights == field.heights and again.map.nav_region.navigation_mesh == map.nav_region.navigation_mesh,
 			"a second copy of the map reuses the ground and the navigation mesh (%d ms)" % took)
 	again.queue_free()
+	raid.queue_free()
+	await t.frames(2)
+
+
+## The two armies: who they are, what they hold, how they are reinforced and
+## where they are sent.
+static func _armies(t: Node) -> void:
+	print("Battlefield: armies")
+	var world := Worlds.get_world("ashfront")
+	var raid := Raid.new()
+	t.add_child(raid)
+	raid.start_server(world, 81)
+	for bot in raid.bots:
+		bot.get_node("Brain").set_physics_process(false)
+	var legion := raid.bots.filter(func(b: Actor) -> bool: return b.faction == "legion")
+	var tide := raid.bots.filter(func(b: Actor) -> bool: return b.faction == "tide")
+	t.check(legion.size() == tide.size() and legion.size() + tide.size() == raid.bots.size() and legion.size() >= 12,
+			"the field starts with two armies of equal size (%d and %d)" % [legion.size(), tide.size()])
+	t.check(not world.can_damage(legion[0], legion[1], null) and world.can_damage(legion[0], tide[0], null)
+			and world.can_damage(tide[0], legion[0], null), "soldiers fight the other army, never their own")
+	var held := {}
+	for point in raid.strongpoints:
+		held[point.holder] = int(held.get(point.holder, 0)) + 1
+	t.check(held.get("faction:legion", 0) == 2 and held.get("faction:tide", 0) == 2 and held.get("", 0) == 1,
+			"each army starts with two strongpoints and one is nobody's")
+	var west := 0.0
+	for bot: Actor in legion:
+		west += bot.global_position.x / legion.size()
+	var east := 0.0
+	for bot: Actor in tide:
+		east += bot.global_position.x / tide.size()
+	t.check(west < -80.0 and east > 80.0, "the armies start on opposite sides of the field")
+
+	# A bot rebuilt from what the server sends a client is the same soldier.
+	var original: Actor = tide[0]
+	var copy := raid.spawn_bot("Copy", original.global_position + Vector3(0, 40, 0), raid.bot_seeds[original],
+			false, original.faction)
+	t.check(copy.faction == original.faction and copy.display_name == original.display_name
+			and copy.health.max_health == original.health.max_health, "a client builds the same soldier from its seed and army")
+	raid.bots.erase(copy)
+	copy.queue_free()
+
+	# Orders: garrisons stay on what their army holds, the rest march on the
+	# nearest site it does not.
+	raid._orders_in = 0.0
+	raid._tick_orders(0.1)
+	var middle: Raid.Strongpoint = null
+	for point in raid.strongpoints:
+		if point.holder == "":
+			middle = point
+	var marching := {"legion": 0, "tide": 0}
+	var guarding := {"legion": 0, "tide": 0}
+	for bot in raid.bots:
+		var post: Vector3 = (bot.get_node("Brain") as BotBrain).home()
+		if post.distance_to(middle.global_position) < 1.0:
+			marching[bot.faction] += 1
+		else:
+			for point in raid.strongpoints:
+				if point.holder == "faction:" + bot.faction and post.distance_to(point.global_position) < 1.0:
+					guarding[bot.faction] += 1
+	t.check(guarding.legion == 2 * world.garrison_size and guarding.tide == 2 * world.garrison_size,
+			"each army keeps a garrison on the sites it holds")
+	t.check(marching.legion == legion.size() - guarding.legion and marching.tide == tide.size() - guarding.tide
+			and marching.legion > 0, "and sends everyone else against the site between them (%d and %d)"
+			% [marching.legion, marching.tide])
+
+	# Reinforcements follow the war.
+	t.check(raid.bot_target() == world.bot_count, "a quiet world keeps its usual number of bots")
+	raid.war.intensity = 1.0
+	t.check(raid.bot_target() == world.bot_count + world.war_reinforcements, "a world at war wants more")
+	var before := raid.bots.size()
+	for i in 4:
+		raid.war.intensity = 1.0
+		raid._reinforce_in = 0.0
+		raid._tick_bots(0.1)
+		raid._tick_bots(0.1)
+	for bot in raid.bots:
+		if bot.has_node("Brain"):
+			bot.get_node("Brain").set_physics_process(false)
+	var after_legion := raid.bots.filter(func(b: Actor) -> bool: return b.faction == "legion").size()
+	t.check(raid.bots.size() == before + 4 and after_legion == legion.size() + 2,
+			"reinforcements arrive one at a time, shared between the armies (%d to %d)" % [before, raid.bots.size()])
+	raid.war.intensity = 0.0
+	raid.war.scale = 0.0
+	raid.bots[0].kill("bullet", null)
+	await t.frames(2)
+	t.check(raid._bot_respawns.is_empty(), "once it cools, the extra bots are not replaced")
+	while raid.bots.size() >= world.bot_count:
+		raid.bots[0].kill("bullet", null)
+	await t.frames(2)
+	t.check(raid._bot_respawns.size() == 1, "but the world never drops below its usual number")
+
+	# Nobody arrives inside a site their army has lost.
+	var lost: Raid.Strongpoint = null
+	for point in raid.strongpoints:
+		if point.holder == "faction:legion":
+			lost = point
+			break
+	lost.hold("faction:tide", "the Tide", false)
+	for bot in raid.bots.duplicate():
+		if bot.faction == "legion":
+			raid.bots.erase(bot)
+	var safe := true
+	for marker in raid._reinforcement_spawns():
+		safe = safe and marker.get_meta("faction", "") == "legion" and not lost.covers(marker.global_position)
+	t.check(safe, "reinforcements join the weaker army, away from the sites it has lost")
 	raid.queue_free()
 	await t.frames(2)

@@ -17,6 +17,8 @@ var burst_time := 0.6
 var burst_pause := 0.7
 var patrol_radius := 22.0
 var give_up_time := 7.0
+## Further than this beyond its patrol, a bot runs back to its post.
+var march_distance := 12.0
 ## Chance that a melee bot reads the side of an incoming swing in time.
 var guard_skill := 0.4
 var guard_reaction := 0.22
@@ -70,6 +72,11 @@ func post_to(point: Vector3, radius: float) -> void:
 	patrol_radius = minf(patrol_radius, maxf(radius * 0.8, 4.0))
 	_has_dest = false
 	_wait_left = 0.0
+
+
+## Where the bot is posted.
+func home() -> Vector3:
+	return _home
 
 
 func _physics_process(delta: float) -> void:
@@ -202,6 +209,8 @@ func _patrol(cmd: ActorCommand, delta: float) -> void:
 		_has_dest = false
 		_wait_left = _rng.randf_range(1.0, 3.5)
 		return
+	# A long way from the post: this is a march, not a patrol.
+	cmd.sprint = _flat_dist(_home) > patrol_radius + march_distance
 	_move_toward(cmd, _dest, delta, true)
 	# Give up on a point we cannot reach.
 	if actor.get_real_velocity().length() < 0.3:

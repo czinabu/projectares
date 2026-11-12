@@ -39,6 +39,8 @@ const MIN_BOT_SPAWN_DISTANCE := 40.0
 const PARKED_DISTANCE := 6.0
 ## A spawn point this close to open ground, above or below, is stood on it.
 const SPAWN_SNAP := 2.5
+## Seconds between rounds of orders to the bot factions.
+const ORDERS_EVERY := 8.0
 const VehicleScript := preload("res://core/vehicle/vehicle.gd")
 const MasteryTracker := preload("res://core/progression/mastery_tracker.gd")
 const RenownLedger := preload("res://core/progression/renown_ledger.gd")
@@ -101,6 +103,12 @@ var _bot_count := 0
 var _caches: Array[Dictionary] = []
 ## Seconds until each dead bot is replaced.
 var _bot_respawns: Array[float] = []
+var _reinforce_in := 0.0
+var _orders_in := 0.0
+## Bot -> the strongpoint its faction last sent it to.
+var _orders := {}
+## Bot -> `clock` until which something else (an assault) has the say over it.
+var _busy_until := {}
 ## One per vehicle marker: { marker, source, vehicle, empty_for }.
 var _parking: Array[Dictionary] = []
 ## Vehicle -> seconds since anyone rode it.
@@ -368,6 +376,9 @@ func _tick_assaults(delta: float) -> void:
 				< b.global_position.distance_squared_to(point.global_position))
 	for bot in nearest.slice(0, world.assault_size):
 		(bot.get_node("Brain") as BotBrain).post_to(point.global_position, point.radius)
+		# Theirs until the next assault: the army's own orders leave them be.
+		_orders.erase(bot)
+		_busy_until[bot] = clock + world.assault_interval
 	war_feed.emit("%s is under attack" % point.title)
 
 
@@ -503,9 +514,124 @@ func _tick_bots(delta: float) -> void:
 		if _bot_respawns[i] > 0.0:
 			continue
 		_bot_respawns.remove_at(i)
-		var spawns := _map_nodes("spawn_bot")
+		var spawns := _reinforcement_spawns()
 		if not spawns.is_empty():
-			_add_bot(spawns[_farthest_from_players(spawns)])
+			# Out of the players' sight, or anywhere if nobody is here to see.
+			_add_bot(spawns[_farthest_from_players(spawns) if not active_players().is_empty()
+					else rng.randi() % spawns.size()])
+	# A hotter war draws in more bots, one at a time.
+	_reinforce_in -= delta
+	if _reinforce_in <= 0.0:
+		_reinforce_in = world.reinforcement_time
+		if _standing_bots() + _bot_respawns.size() < bot_target():
+			_bot_respawns.append(0.0)
+	_tick_orders(delta)
+
+
+## How many bots the world wants alive right now: its own count, and more
+## the hotter the war is.
+func bot_target() -> int:
+	return world.bot_count + roundi(maxi(world.war_reinforcements, 0) * war.intensity)
+
+
+## The bots alive that belong to the world itself, not to an event.
+func _standing_bots() -> int:
+	var count := 0
+	for bot in bots:
+		if not _event_bots.has(bot):
+			count += 1
+	return count
+
+
+## Where the next bot may arrive. On a map whose bot spawns name factions it
+## joins the faction with the fewest alive, and never appears inside a site
+## its faction has lost.
+func _reinforcement_spawns() -> Array[Node3D]:
+	var spawns := _map_nodes("spawn_bot")
+	var alive := {}
+	for marker in spawns:
+		if marker.has_meta("faction"):
+			alive[marker.get_meta("faction")] = 0
+	if alive.is_empty():
+		return spawns
+	for bot in bots:
+		if alive.has(bot.faction) and not _event_bots.has(bot):
+			alive[bot.faction] += 1
+	var weakest := ""
+	for faction: String in alive:
+		if weakest == "" or alive[faction] < alive[weakest]:
+			weakest = faction
+	var open := spawns.filter(func(marker: Node3D) -> bool:
+		if marker.get_meta("faction", "") != weakest:
+			return false
+		for point in strongpoints:
+			if point.covers(marker.global_position) and point.holder != "faction:" + weakest:
+				return false
+		return true)
+	return open if not open.is_empty() else spawns
+
+
+## The bot factions' war over the strongpoints (`WorldDef.bots_contest_sites`).
+## Every few seconds each faction is given its orders: a garrison for every
+## site it holds, nearest bots first, and everyone else against the site
+## nearest to its own that it does not hold. Massed, so the armies meet.
+func _tick_orders(delta: float) -> void:
+	if not world.bots_contest_sites or strongpoints.is_empty():
+		return
+	_orders_in -= delta
+	if _orders_in > 0.0:
+		return
+	_orders_in = ORDERS_EVERY
+	var armies := {}
+	for bot in bots:
+		if is_instance_valid(bot) and not bot.is_dead and bot.has_node("Brain") and not _event_bots.has(bot) \
+				and float(_busy_until.get(bot, 0.0)) <= clock:
+			if not armies.has(bot.faction):
+				armies[bot.faction] = []
+			armies[bot.faction].append(bot)
+	for bot: Actor in _orders.keys():
+		if not is_instance_valid(bot) or bot.is_dead:
+			_orders.erase(bot)
+	for faction: String in armies:
+		var spare: Array = armies[faction]
+		var held := strongpoints.filter(func(p: Strongpoint) -> bool: return p.holder == "faction:" + faction)
+		for point: Strongpoint in held:
+			spare.sort_custom(func(a: Actor, b: Actor) -> bool:
+				return a.global_position.distance_squared_to(point.global_position) \
+						< b.global_position.distance_squared_to(point.global_position))
+			for i in mini(world.garrison_size, spare.size()):
+				_order(spare.pop_front(), point)
+		var target := _army_target(faction, held, spare)
+		if target != null:
+			for bot: Actor in spare:
+				_order(bot, target)
+
+
+## The site a faction goes for next: of those it does not hold, the one
+## nearest to the ground it already has (or to its bots, if it has none).
+func _army_target(faction: String, held: Array, army: Array) -> Strongpoint:
+	var from := Vector3.ZERO
+	var anchors: Array = held if not held.is_empty() else army
+	if anchors.is_empty():
+		return null
+	for node: Node3D in anchors:
+		from += node.global_position
+	from /= anchors.size()
+	var best: Strongpoint = null
+	for point in strongpoints:
+		if point.holder == "faction:" + faction:
+			continue
+		if best == null or point.global_position.distance_squared_to(from) \
+				< best.global_position.distance_squared_to(from):
+			best = point
+	return best
+
+
+func _order(bot: Actor, point: Strongpoint) -> void:
+	if _orders.get(bot) == point:
+		return
+	_orders[bot] = point
+	(bot.get_node("Brain") as BotBrain).post_to(point.global_position, point.radius)
 
 
 ## Vehicles nobody rides are cleared away, and empty parking spots get a new one.
@@ -767,7 +893,7 @@ func _spawn_bots() -> void:
 ## A new bot with a brain, at a spawn marker.
 func _add_bot(marker: Node3D, warlord := false) -> Actor:
 	var at := marker.global_position + Vector3(rng.randf_range(-1, 1), 0, rng.randf_range(-1, 1))
-	var bot := spawn_bot("Bot%d" % _bot_count, _stand(at), rng.randi(), warlord)
+	var bot := spawn_bot("Bot%d" % _bot_count, _stand(at), rng.randi(), warlord, marker.get_meta("faction", ""))
 	if warlord:
 		# What a warlord carries is worth the fight.
 		for id in world.roll_war_loot("bot", rng, 1.0) + world.roll_war_loot("cache", rng, 1.0):
@@ -814,9 +940,11 @@ func _farthest_from_players(markers: Array[Node3D]) -> int:
 
 ## Creates a bot equipped from `equip_seed`, with no brain. A client calls this
 ## with the server's seed to get the same bot.
-func spawn_bot(bot_name: String, at: Vector3, equip_seed: int, warlord := false) -> Actor:
+func spawn_bot(bot_name: String, at: Vector3, equip_seed: int, warlord := false, faction := "") -> Actor:
 	var bot := Actor.new()
 	bot.name = bot_name
+	if faction != "":
+		bot.faction = faction
 	add_child(bot)
 	bot.global_position = at
 	var equip_rng := RandomNumberGenerator.new()
@@ -917,9 +1045,14 @@ func _on_actor_died(actor: Actor, info: DamageInfo) -> void:
 	else:
 		bots.erase(actor)
 		warlords.erase(actor)
-		# A world event's bots are extra: nobody takes their place.
+		# A world event's bots are extra: nobody takes their place. Neither
+		# are reinforcements replaced once the war has cooled.
 		if mode != Mode.CLIENT and not _event_bots.has(actor):
-			_bot_respawns.append(world.bot_respawn_time)
+			if _standing_bots() + _bot_respawns.size() < bot_target():
+				_bot_respawns.append(world.bot_respawn_time)
+			# Bots killing bots keep the war simmering.
+			if state_for(info.source as Actor) == null and info.source is Actor:
+				war.report_battle(actor.global_position)
 	get_tree().create_timer(4.0).timeout.connect(_remove_actor.bind(actor))
 
 
@@ -1009,6 +1142,8 @@ func _remove_actor(actor: Actor) -> void:
 	bots.erase(actor)
 	bot_seeds.erase(actor)
 	warlords.erase(actor)
+	_orders.erase(actor)
+	_busy_until.erase(actor)
 	actor_removed.emit(actor)
 	actor.queue_free()
 
