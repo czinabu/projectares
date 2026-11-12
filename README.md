@@ -164,7 +164,12 @@ Walk into a glowing pad and press **E** to use it:
 - **Storefronts** (the corners): one for every shop. Step up to the counter
   and press F to use its terminal: buy and sell on the screen without leaving
   the plaza.
-- **Arena** and **Clan hall**: built, and closed until those features arrive.
+- **Clan hall** (east): the terminal by the door founds a clan (a name and
+  a short tag), joins one or leaves yours. Clanmates wear the tag by their
+  name. In a warzone a clan is one side: you cannot hurt each other, you
+  hold strongpoints together, and you can drop in on ground your clan holds.
+  You cannot change clans while your gear is in the field.
+- **Arena** (south-east): the gate to the arena.
 - **Exit** (south): leaves the server.
 
 Add `--accounts <folder>` to choose where the server saves player stashes.
