@@ -53,6 +53,8 @@ func _run() -> void:
 	await _test_flight_rigs_and_abilities()
 	await _test_vehicle_driving()
 	await _test_vehicle_raids()
+	await _test_vehicle_toys()
+	await _test_vehicle_toys_online()
 	await _test_lag_compensation()
 	await _test_extraction()
 	await _test_loadouts()
@@ -1617,14 +1619,15 @@ func _test_vehicle_raids() -> void:
 		bot.get_node("Brain").set_physics_process(false)
 	await frames(10)
 	var p := raid.player
-	var own: Array = raid.vehicles.filter(func(v: Node3D) -> bool:
-		return v.get("item_id") == "bike_raider" and v.global_position.distance_to(p.global_position) < 5.0)
-	check(own.size() == 1, "your bike is parked next to you")
+	check(raid.stowed_for(p) == (["bike_raider"] as Array[String]), "your bike rides on your watch as a toy")
+	var map_bikes := raid.vehicles.size()
+	var own: Array = [raid.spawn_vehicle("bike_raider", p.global_position + Vector3(2.5, 0.3, 0), 0.0)]
+	raid.state_for(p).stowed.clear()
 	check("bike_raider" not in p.gear_items and not p.inventory.has_item("bike_raider"),
 			"a bike is not carried and does not drop in your bag")
 	check(raid.vehicles.size() >= 3, "the map parks abandoned bikes too (%d)" % (raid.vehicles.size() - 1))
 	var ramps := raid.map.get_children().filter(func(n: Node) -> bool: return n.is_in_group("spawn_vehicle"))
-	check(ramps.size() == raid.vehicles.size() - 1, "every vehicle marker gets a bike")
+	check(ramps.size() == map_bikes and map_bikes == raid.vehicles.size() - 1, "every vehicle marker gets a bike")
 
 	var results: Array[Dictionary] = []
 	raid.player_finished.connect(func(_a: Actor, r: Dictionary) -> void: results.append(r))
@@ -2815,9 +2818,11 @@ func _test_online() -> void:
 	check(announced.containers > 3 and announced.vehicles == map_vehicles, "a server raid announces its caches and vehicles")
 	var rider := raid.add_player(raid.world.starter_loadout() + (["bike_scrapper"] as Array[String]), {}, "Rider")
 	await frames(10)
-	check(raid.vehicles.size() == map_vehicles + 1 and raid.state_for(rider).deployed_vehicles == (["bike_scrapper"] as Array[String]),
-			"a player who brings a vehicle to a server raid finds it beside them")
-	var own_bike: Node3D = raid.vehicles[raid.vehicles.size() - 1]
+	check(raid.vehicles.size() == map_vehicles and raid.state_for(rider).deployed_vehicles == (["bike_scrapper"] as Array[String])
+			and raid.stowed_for(rider) == (["bike_scrapper"] as Array[String]),
+			"a player who brings a vehicle to a server raid has it on their watch")
+	raid.state_for(rider).stowed.clear()
+	var own_bike: Node3D = raid.spawn_vehicle("bike_scrapper", rider.global_position + Vector3(2.5, 0.3, 0), 0.0)
 	check(own_bike.call("mount", rider), "they can ride it")
 	var outcome := [{}]
 	raid.player_finished.connect(func(_a: Actor, r: Dictionary) -> void: outcome[0] = r)
@@ -2936,6 +2941,7 @@ func _test_online() -> void:
 			me.cmd.interact_pressed = false
 
 		# Loot caches and the bike Alpha brought exist on both clients.
+		await _throw_own_bike(alpha)
 		await _wait_until(func() -> bool: return not alpha.vehicles().is_empty() and not bravo.vehicles().is_empty(), 120)
 		check(alpha.containers().size() > 3 and alpha.containers().size() == bravo.containers().size(),
 				"both clients see the server's loot caches (%d)" % alpha.containers().size())
@@ -3364,6 +3370,7 @@ func _test_online_riding() -> void:
 	check(faye != null and gus != null, "two clients join for the riding checks")
 	var bike: Node3D = null
 	if faye != null and gus != null:
+		await _throw_own_bike(faye)
 		await _wait_until(func() -> bool: return not faye.vehicles().is_empty(), 120)
 		for v: Node3D in faye.vehicles():
 			if bike == null or v.global_position.distance_to(faye.raid.player.global_position) \
@@ -3428,6 +3435,306 @@ func _test_online_riding() -> void:
 			"the rider stays on the predicted bike")
 	await _leave(gus)
 	await _leave(faye)
+	OS.kill(pid)
+	await frames(30)
+
+
+## Aims an actor at a point, the way a controller would.
+func _aim_at(actor: Actor, point: Vector3) -> void:
+	var aim := (point - actor.get_eye_position()).normalized()
+	actor.cmd.aim_dir = aim
+	actor.cmd.yaw = atan2(-aim.x, -aim.z)
+	actor.cmd.pitch = asin(clampf(aim.y, -1.0, 1.0))
+
+
+func _test_vehicle_toys() -> void:
+	print("Vehicles: toys on the watch")
+	var toy: Node3D = VehicleScript.toy_model("bike_scrapper")
+	check(toy.get_node_or_null("Model") != null and is_equal_approx(toy.scale.x, VehicleScript.TOY_SCALE)
+			and toy.find_children("*", "CollisionShape3D", true, false).is_empty(),
+			"a toy is the vehicle's own model, toy-sized, with no collision")
+	toy.free()
+	var world := Worlds.get_world("ashfront")
+	var raid := Raid.new()
+	add_child(raid)
+	raid.start(world, 71, world.starter_loadout() + (["bike_scrapper"] as Array[String]))
+	for bot in raid.bots:
+		bot.get_node("Brain").set_physics_process(false)
+		bot.global_position += Vector3(0, 0, 3000)
+	await frames(10)
+	var p := raid.player
+	var state := raid.state_for(p)
+	var before := raid.vehicles.size()
+	check(raid.stowed_for(p) == (["bike_scrapper"] as Array[String]), "a brought bike starts as a toy on the watch")
+	# Stand on a wide open floor, well away from the map.
+	var floor_body := StaticBody3D.new()
+	floor_body.collision_layer = Actor.LAYER_WORLD
+	var floor_shape := BoxShape3D.new()
+	floor_shape.size = Vector3(80, 1, 80)
+	var floor_col := CollisionShape3D.new()
+	floor_col.shape = floor_shape
+	floor_body.add_child(floor_col)
+	raid.add_child(floor_body)
+	floor_body.global_position = Vector3(0, 199.5, 2500)
+	var wall := StaticBody3D.new()
+	wall.collision_layer = Actor.LAYER_WORLD
+	var wall_shape := BoxShape3D.new()
+	wall_shape.size = Vector3(6, 6, 1)
+	var wall_col := CollisionShape3D.new()
+	wall_col.shape = wall_shape
+	wall.add_child(wall_col)
+	raid.add_child(wall)
+	wall.global_position = Vector3(30, 203, 2500)
+	p.global_position = Vector3(0, 200.05, 2500)
+	p.velocity = Vector3.ZERO
+	await frames(5)
+
+	var events := {"thrown": 0, "landed": [], "watch": 0}
+	raid.toy_thrown.connect(func(_a: Actor, _id: String, _from: Vector3, _v: Vector3) -> void: events.thrown += 1)
+	raid.toy_landed.connect(func(_a: Actor, _id: String, _at: Vector3, ok: bool) -> void: events.landed.append(ok))
+	raid.watch_changed.connect(func(_a: Actor) -> void: events.watch += 1)
+	check(raid.throw_toy(p, "bike_raider") != "" and events.thrown == 0, "a toy that is not on your watch cannot be thrown")
+	_aim_at(p, p.global_position + Vector3(0, 1.6, -10))
+	check(raid.throw_toy(p, "bike_scrapper") == "" and events.thrown == 1 and raid.toys.size() == 1
+			and raid.stowed_for(p).is_empty(), "throwing takes the toy off the watch and into the air")
+	check(raid.vehicles.size() == before, "nothing unpacks while the toy is in the air")
+	await _wait_until(func() -> bool: return not events.landed.is_empty(), 240)
+	var bike: Node3D = raid.vehicles[raid.vehicles.size() - 1] if raid.vehicles.size() > before else null
+	check(events.landed == [true] and bike != null and bike.get("item_id") == "bike_scrapper",
+			"the toy unpacks into the bike where it lands")
+	if bike != null:
+		var away := Vector3(bike.global_position.x - p.global_position.x, 0, bike.global_position.z - p.global_position.z)
+		check(away.z < -4.0 and away.length() < 25.0 and absf(away.x) < 2.0,
+				"it lands ahead of the thrower, where they aimed (%.1f m)" % away.length())
+		check(float(bike.get("unpack_left")) > 0.0 and not bike.call("mount", p), "it grows from toy size, and cannot be ridden until it has")
+		await frames(60)
+		check(float(bike.get("unpack_left")) == 0.0 and bike.get_node("Model").scale.is_equal_approx(Vector3.ONE)
+				and bike.is_on_floor(), "then it stands full size on the ground")
+		check(raid.toy_wait(p) > 0.0, "the watch needs a moment before the next throw")
+
+		# Packing it up again.
+		p.global_position = bike.global_position + Vector3(2.0, 0.1, 0)
+		_aim_at(p, bike.global_position + Vector3(0, 0.6, 0))
+		await frames(2)
+		check(raid.pack_vehicle(p) == "" and raid.stowed_for(p) == (["bike_scrapper"] as Array[String])
+				and raid.vehicles.size() == before, "looking at your bike and packing it puts the toy back on the watch")
+		await frames(2)
+		check(raid.throw_toy(p, "bike_scrapper") != "" and raid.stowed_for(p).size() == 1, "you cannot throw again until the watch recharges")
+		state.toy_ready_at = raid.clock
+
+	# No room: thrown at the foot of a wall, it comes back.
+	p.global_position = Vector3(27.5, 200.05, 2502.2)
+	await frames(3)
+	_aim_at(p, Vector3(29.4, 200.0, 2501.3))
+	events.landed.clear()
+	check(raid.throw_toy(p, "bike_scrapper") == "", "the toy can be thrown at a wall")
+	await _wait_until(func() -> bool: return not events.landed.is_empty(), 240)
+	check(events.landed == [false] and raid.vehicles.size() == before and raid.stowed_for(p).size() == 1
+			and raid.toy_wait(p) == 0.0, "with no room to unpack, the toy jumps back onto the watch")
+	check(not raid.has_room_to_unpack(p.global_position, 0.0) and raid.has_room_to_unpack(Vector3(-20, 200.0, 2500), 0.0),
+			"room means clear of walls, people and other vehicles")
+
+	# Limits.
+	p.global_position = Vector3(0, 200.05, 2500)
+	var spare: Node3D = raid.spawn_vehicle("bike_raider", Vector3(3, 200.3, 2500), 0.0)
+	await frames(10)
+	check(spare.call("mount", p) and raid.throw_toy(p, "bike_scrapper") != "", "you cannot throw from the saddle")
+	spare.call("dismount")
+	raid.begin_sign_out(p)
+	check(raid.throw_toy(p, "bike_scrapper") != "", "you cannot throw while signing out")
+	raid.cancel_sign_out(p)
+	world.vehicle_toys = false
+	check(raid.throw_toy(p, "bike_scrapper") != "", "a world can keep vehicles on the watch")
+	world.vehicle_toys = true
+	_aim_at(p, spare.global_position + Vector3(0, 0.6, 0))
+	await frames(2)
+	check(raid.pack_vehicle(p) == "" and raid.stowed_for(p).size() == 2, "a bike found in the field packs onto the watch too")
+	var third: Node3D = raid.spawn_vehicle("bike_raider", Vector3(3, 200.3, 2500), 0.0)
+	await frames(10)
+	_aim_at(p, third.global_position + Vector3(0, 0.6, 0))
+	await frames(2)
+	check(raid.pack_vehicle(p) != "" and third in raid.vehicles, "the watch holds only so many (%d)" % raid.watch_capacity)
+	check(events.watch >= 4, "the watch reports every change")
+
+	# The controller: the watch key takes a toy in hand, fire throws it.
+	var controller := PlayerController.new()
+	controller.setup(p)
+	raid.add_child(controller)
+	var asked: Array[String] = []
+	controller.toy_throw_requested.connect(func(id: String) -> void: asked.append(id))
+	_aim_at(p, p.global_position + Vector3(0, 1.6, 10))
+	# The watch: raised, it shows the toys; the wheel picks, fire takes one.
+	var hud := Hud.new()
+	hud.setup(raid, controller)
+	raid.add_child(hud)
+	controller.wrist_raised = true
+	check(controller.is_browsing_toys(), "raising the watch with toys on it lets you pick one")
+	var weapon_before := p.active_weapon_index
+	controller.scroll(1)
+	check(controller.watch_index == 1 and controller._pending_switch < 0 and p.active_weapon_index == weapon_before,
+			"with the watch up the wheel turns through the toys, not the weapons")
+	await get_tree().process_frame
+	await get_tree().process_frame
+	check(hud.wrist.toys_shown() == raid.stowed_for(p) and hud.wrist.get_node("Hologram/Toys").get_child_count() == 2,
+			"the watch stands each toy over its hologram")
+	var shown := hud.wrist.get_node("Hologram/Toys")
+	check(shown.get_child(1).scale.x > shown.get_child(0).scale.x and hud.wrist.text().contains("Raider Bike")
+			and hud.wrist.text().contains("click: take"), "the picked toy stands out and the watch names it")
+	check(Hud.Wrist.toy_tint(true, true) != Hud.Wrist.toy_tint(true, false), "the toys dim while the watch recharges")
+	controller.take_picked_toy()
+	check(controller.held_toy == "bike_raider" and not controller.wrist_raised and not controller.is_browsing_toys(),
+			"fire takes the picked toy into the hand and lowers the wrist")
+	controller.hold_toy("")
+	# Looking at a bike with the watch up, the click packs it instead.
+	var packs := [0]
+	controller.pack_requested.connect(func() -> void: packs[0] += 1)
+	controller.wrist_raised = true
+	_aim_at(p, third.global_position + Vector3(0, 0.6, 0))
+	controller.yaw = p.cmd.yaw
+	controller.pitch = p.cmd.pitch
+	await frames(2)
+	check(controller.pack_target() == third and controller.click_watch() and packs[0] == 1 and controller.held_toy == "",
+			"with the watch up, clicking on a bike asks to pack it")
+	hud._process(0.016)
+	check(hud.wrist.text().contains("click: pack Raider Bike"), "and the watch says so")
+	_aim_at(p, p.global_position + Vector3(0, 1.6, 10))
+	controller.yaw = p.cmd.yaw
+	controller.pitch = p.cmd.pitch
+	await frames(2)
+	controller.wrist_raised = false
+	check(controller.pack_target() == null and not controller.click_watch(), "with the watch down a click is an ordinary shot")
+	hud.queue_free()
+	controller.hold_toy("bike_scrapper")
+	check(controller.held_toy == "bike_scrapper", "a toy off the watch goes into the hand")
+	await get_tree().process_frame
+	await get_tree().process_frame
+	check(p.hand.get_node_or_null("Toy") != null and p.weapons.all(func(w: Weapon) -> bool:
+			return w.visual == null or not w.visual.visible), "the toy sits in the hand in place of the weapon")
+	p.cmd.primary_pressed = true
+	controller._use_toy_hand(p.cmd)
+	check(asked == (["bike_scrapper"] as Array[String]) and controller.held_toy == "" and not p.cmd.primary_pressed,
+			"fire throws the toy instead of shooting")
+	controller.hold_toy("bike_scrapper")
+	p.cmd.secondary_pressed = true
+	controller._use_toy_hand(p.cmd)
+	check(controller.held_toy == "" and asked.size() == 1, "aim puts the toy back on the watch")
+	await get_tree().process_frame
+	await get_tree().process_frame
+	check(p.hand.get_node_or_null("Toy") == null and p.get_active_weapon().visual.visible, "and the weapon comes back to the hand")
+	controller.queue_free()
+
+	# Leaving with toys on the watch takes them home; dying loses them.
+	var results: Array[Dictionary] = []
+	raid.player_finished.connect(func(_a: Actor, r: Dictionary) -> void: results.append(r))
+	raid._leave(state)
+	await frames(2)
+	check(results.size() == 1 and "bike_scrapper" in results[0].brought_home and "bike_raider" in results[0].brought_home
+			and "bike_scrapper" not in results[0].lost, "signing out takes the toys on your watch home")
+	await _end_raid(raid)
+
+	var raid2 := Raid.new()
+	add_child(raid2)
+	raid2.start(world, 72, world.starter_loadout() + (["bike_scrapper"] as Array[String]))
+	for bot in raid2.bots:
+		bot.get_node("Brain").set_physics_process(false)
+	await frames(5)
+	var results2: Array[Dictionary] = []
+	raid2.player_finished.connect(func(_a: Actor, r: Dictionary) -> void: results2.append(r))
+	raid2.player.kill("test")
+	await frames(2)
+	check(results2.size() == 1 and "bike_scrapper" in results2[0].lost and "bike_scrapper" not in results2[0].get("brought_home", []),
+			"dying loses the toy on your watch")
+	await _end_raid(raid2)
+
+
+## Has an online client throw the bike on its watch, turning until it finds
+## room, and waits for the bike to stand unpacked close by.
+func _throw_own_bike(session: NetSession) -> void:
+	var me := session.raid.player
+	var near := func() -> bool:
+		return session.vehicles().any(func(v: Node3D) -> bool:
+			return is_instance_valid(v) and v.global_position.distance_to(me.global_position) < 25.0 and float(v.get("unpack_left")) <= 0.0)
+	await _wait_until(func() -> bool: return not session.raid.stowed_for(me).is_empty(), 180)
+	for turn in 4:
+		if near.call() or session.raid.stowed_for(me).is_empty():
+			break
+		me.cmd.yaw = turn * PI * 0.5
+		me.cmd.pitch = -0.2
+		me.cmd.aim_dir = Vector3.ZERO
+		await frames(10)
+		session.throw_toy(session.raid.stowed_for(me)[0])
+		await _wait_until(near, 240)
+	await _wait_until(near, 240)
+	# Walk up to the nearest bike, close enough to get on.
+	var bike: Node3D = null
+	for v: Node3D in session.vehicles():
+		if is_instance_valid(v) and (bike == null or v.global_position.distance_to(me.global_position)
+				< bike.global_position.distance_to(me.global_position)):
+			bike = v
+	if bike == null:
+		return
+	for i in 400:
+		var gap := bike.global_position - me.global_position
+		gap.y = 0.0
+		if gap.length() < 2.2:
+			break
+		me.cmd.yaw = _yaw_toward(gap)
+		me.cmd.pitch = 0.0
+		me.cmd.aim_dir = Vector3.ZERO
+		me.cmd.move = Vector2(0, 1)
+		await frames(1)
+	me.cmd.move = Vector2.ZERO
+	await frames(20)
+
+
+func _test_vehicle_toys_online() -> void:
+	print("Online: throwing a toy vehicle")
+	_wipe_dir(NET_ACCOUNTS)
+	var port := 24871
+	var pid := _start_server(port, ["--bots", "0", "--squad-spawn"])
+	var ivy := await _join("Ivy", port, {"vehicle": "bike_scrapper"})
+	var jon := await _join("Jon", port) if ivy != null else null
+	check(ivy != null and jon != null, "two clients join for the toy checks")
+	if ivy != null and jon != null:
+		var me := ivy.raid.player
+		await _wait_until(func() -> bool: return not ivy.raid.stowed_for(me).is_empty(), 180)
+		check(ivy.raid.stowed_for(me) == (["bike_scrapper"] as Array[String]) and jon.raid.stowed_for(jon.raid.player).is_empty(),
+				"the server tells each player what is on their own watch")
+		await _wait_until(func() -> bool: return not ivy.vehicles().is_empty(), 120)
+		var before := ivy.vehicles().size()
+		var before_there := jon.vehicles().size()
+		check(ivy.raid.throw_toy(me, "bike_scrapper") != "" and ivy.raid.toys.is_empty(), "a client cannot unpack a vehicle on its own")
+		ivy.throw_toy("bike_raider")
+		await frames(30)
+		check(ivy.vehicles().size() == before and ivy.raid.stowed_for(me).size() == 1, "the server refuses a toy the player does not have")
+		# Thrown where there is room: the other player may be standing in the way.
+		var seen_flying := false
+		for turn in 4:
+			if ivy.vehicles().size() > before or ivy.raid.stowed_for(me).is_empty():
+				break
+			me.cmd.yaw = turn * PI * 0.5
+			me.cmd.pitch = -0.2
+			me.cmd.aim_dir = Vector3.ZERO
+			await frames(10)
+			ivy.throw_toy("bike_scrapper")
+			await _wait_until(func() -> bool: return not jon.raid.toys.is_empty(), 120)
+			seen_flying = seen_flying or not jon.raid.toys.is_empty()
+			await _wait_until(func() -> bool:
+				return ivy.vehicles().size() > before or (jon.raid.toys.is_empty() and not ivy.raid.stowed_for(me).is_empty()), 300)
+			await frames(20)
+		check(seen_flying, "the other player sees the toy fly")
+		await _wait_until(func() -> bool: return ivy.vehicles().size() > before and jon.vehicles().size() > before_there, 300)
+		check(ivy.vehicles().size() == before + 1 and jon.vehicles().size() == before_there + 1,
+				"it unpacks on the server and both clients get the bike")
+		check(ivy.raid.stowed_for(me).is_empty() and ivy.raid.toy_wait(me) > 0.0, "the thrower's watch empties and starts recharging")
+		var bike: Node3D = null
+		for v: Node3D in ivy.vehicles():
+			if v.get("item_id") == "bike_scrapper" and (bike == null or v.global_position.distance_to(me.global_position)
+					< bike.global_position.distance_to(me.global_position)):
+				bike = v
+		check(bike != null and bike.global_position.distance_to(me.global_position) < 30.0, "the bike is where the toy landed, near the thrower")
+	await _leave(ivy)
+	await _leave(jon)
 	OS.kill(pid)
 	await frames(30)
 
