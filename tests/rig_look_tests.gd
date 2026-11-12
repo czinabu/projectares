@@ -70,12 +70,18 @@ static func run(t: Node) -> void:
 		var flames := jet.find_children("Flame", "Node3D", true, false)
 		t.check(flames.size() == 2 and not flames.any(func(f: Node3D) -> bool: return f.visible), "the nozzles are cold at rest")
 		p.flight.is_thrusting = true
+		# The skin updates in _process, and physics frames can bunch up inside
+		# one; a process_frame await resumes just before _process, so wait two.
 		await t.frames(2)
+		await t.get_tree().process_frame
+		await t.get_tree().process_frame
 		t.check(flames.all(func(f: Node3D) -> bool: return f.visible), "both nozzles burn while thrusting")
 		var down := (flames[0] as Node3D).global_basis.y.normalized()
 		t.check(down.y > 0.8, "the flames point down")
 		p.flight.is_thrusting = false
 		await t.frames(2)
+		await t.get_tree().process_frame
+		await t.get_tree().process_frame
 		t.check(not flames.any(func(f: Node3D) -> bool: return f.visible), "the nozzles go out when thrust stops")
 
 	# A new rig swaps the model.
