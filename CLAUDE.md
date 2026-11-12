@@ -247,6 +247,17 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   `Raid` (never carried). `core/vehicle/vehicle.gd` reads its rider's
   `ActorCommand` and moves the rider; `Actor` skips its own movement while
   `Actor.vehicle` is set. The script has no `class_name`; preload it.
+  A rider sits, never stands: the vehicle carries the actor low at
+  `seat_offset` (so the eyes and head hitbox are a seated rider's), and the
+  skin seats the model from the vehicle's `seat_point`, `grip_points` and
+  `peg_points` (`Locomotion._ride_pose`): hips on the seat, leaning forward,
+  feet on the pegs, hands on the grips, the whole body tipped with the
+  bike's lean (`ActorSkin.ride_frame`). The left hand keeps its grip; the
+  right takes its grip only with nothing in it, holds a gun out toward the
+  aim, and leaves a blade to its usual hold, so melee windups still show.
+  Back-slung weapons ride higher up the back (`ride_sling_lift`). A new
+  vehicle type sets those anchor points for its model. Check by eye:
+  `visual_check.tscn -- <dir> --ride-only`.
 - Mastery (`core/progression/`) is keyed by gear type tags ("rifle", "blink",
   "frame_heavy"), never by item id. Variants are sidegrades: every one trades a
   strength for a weakness, and death never takes mastery away. Variant picks go

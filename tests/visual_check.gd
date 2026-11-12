@@ -52,6 +52,12 @@ func _ready() -> void:
 		get_tree().quit()
 		return
 
+	# `-- <output_dir> --ride-only` shoots the rider seated on a bike.
+	if "--ride-only" in args:
+		await _ride_shots(out_dir)
+		get_tree().quit()
+		return
+
 	# `-- <output_dir> --visors-only` shoots each helmet's visor in first person.
 	if "--visors-only" in args:
 		await _visor_shots(out_dir)
@@ -986,4 +992,89 @@ func _holster_shots(out_dir: String) -> void:
 	strip.save_png(out_dir.path_join("holster_switch.png"))
 	print("saved holster_switch.png")
 	player.flight.enabled = rig_on
+	raid.queue_free()
+
+
+## The rider on a bike: rows of hands-free with weapons slung, a gun drawn, a
+## blade drawn, and leaning into a right turn; each from the side, the front
+## quarter, behind and above-behind. Then the riding view in first person.
+func _ride_shots(out_dir: String) -> void:
+	var raid := Raid.new()
+	add_child(raid)
+	raid.start(Worlds.get_world("ashfront"), 42)
+	for bot in raid.bots:
+		bot.queue_free()
+	raid.bots.clear()
+	var player := raid.player
+	await _settle(10)
+	# A flat deck well above the map, so nothing stands in the shots.
+	var at := player.global_position + Vector3(0, 40, 0)
+	var deck := StaticBody3D.new()
+	var deck_shape := CollisionShape3D.new()
+	deck_shape.shape = BoxShape3D.new()
+	deck_shape.shape.size = Vector3(40, 1, 40)
+	deck.add_child(deck_shape)
+	var deck_mesh := MeshInstance3D.new()
+	deck_mesh.mesh = BoxMesh.new()
+	deck_mesh.mesh.size = Vector3(40, 1, 40)
+	deck.add_child(deck_mesh)
+	raid.add_child(deck)
+	deck.global_position = at - Vector3(0, 0.5, 0)
+	var bike: Node3D = raid.spawn_vehicle("bike_raider", at + Vector3(0, 0.3, 0), 0.6)
+	await _settle(20)
+	bike.mount(player)
+	player.set_physics_process(false)
+	player.rotation.y = 0.6
+	var skin: Node = player.get_node("Skin")
+	var gun := -1
+	var blade := -1
+	for i in player.weapons.size():
+		if player.weapons[i] is MeleeWeapon:
+			blade = i
+		elif player.weapons[i] is Gun and gun < 0:
+			gun = i
+	var cam := Camera3D.new()
+	raid.add_child(cam)
+	cam.current = true
+	cam.fov = 40.0
+	# [weapon, lean]
+	var rows := [[-1, 0.0], [gun, 0.0], [blade, 0.0], [-1, 0.3]]
+	var sheet := Image.create(4 * 320, rows.size() * 360, false, Image.FORMAT_RGBA8)
+	for row in rows.size():
+		player.active_weapon_index = rows[row][0]
+		player._refresh_weapon_visuals()
+		bike.set_physics_process(rows[row][1] == 0.0)
+		bike.lean = rows[row][1]
+		bike.get_node("Model").rotation = Vector3(0.0, 0.0, -bike.lean)
+		await _settle(60)
+		var b: Basis = bike.global_basis
+		var sides: Array[Vector3] = [b.x, (b.x - b.z).normalized(), b.z, (b.z * 0.8 + Vector3.UP * 0.7).normalized()]
+		for c in sides.size():
+			var look_at := bike.global_position + Vector3(0, 0.85, 0)
+			cam.global_position = look_at + (sides[c] + Vector3.UP * 0.15).normalized() * 6.5
+			cam.look_at(look_at)
+			await _settle(1)
+			await RenderingServer.frame_post_draw
+			var frame := get_viewport().get_texture().get_image()
+			var w := frame.get_width()
+			var h := frame.get_height()
+			var cut := frame.get_region(Rect2i(w / 2 - 160 * h / 720, h / 2 - 180 * h / 720, 320 * h / 720, 360 * h / 720))
+			cut.resize(320, 360)
+			cut.convert(Image.FORMAT_RGBA8)
+			sheet.blit_rect(cut, Rect2i(0, 0, 320, 360), Vector2i(c * 320, row * 360))
+	sheet.save_png(out_dir.path_join("ride.png"))
+	print("saved ride.png")
+	cam.queue_free()
+	bike.set_physics_process(true)
+	player.set_physics_process(true)
+	player.active_weapon_index = -1
+	var controller := PlayerController.new()
+	controller.setup(player)
+	raid.add_child(controller)
+	controller.ride_view = PlayerController.ViewMode.THIRD
+	await _settle(40)
+	await _shot(out_dir.path_join("ride_third.png"))
+	controller.ride_view = PlayerController.ViewMode.FIRST
+	await _settle(40)
+	await _shot(out_dir.path_join("ride_first.png"))
 	raid.queue_free()

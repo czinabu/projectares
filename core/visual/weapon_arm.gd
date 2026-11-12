@@ -71,6 +71,9 @@ var grip_bone := -1
 ## actor's frame the weapon hand reaches for, and how far it gives in to it.
 var override_point := Vector3.ZERO
 var override_weight := 0.0
+## Set by the skin while riding: how closed each hand (left, right) is round
+## a handlebar grip.
+var ride_grip := Vector2.ZERO
 var reach_ik: TwoBoneIK3D
 var off_ik: TwoBoneIK3D
 
@@ -336,8 +339,8 @@ func _place_weapon() -> void:
 
 ## Last of all, close the fingers round the handle.
 func _close_grip() -> void:
-	_curl(_fist, _grip_weight)
-	_curl(_off_fist, _off_weight)
+	_curl(_fist, maxf(_grip_weight, ride_grip.y))
+	_curl(_off_fist, maxf(_off_weight, ride_grip.x))
 
 
 func _curl(fist: Dictionary, weight: float) -> void:

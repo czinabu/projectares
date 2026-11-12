@@ -77,6 +77,21 @@ var slide_lead_shin := Vector3(0.0, -0.3, -0.95)
 var slide_trail_thigh := Vector3(-0.1, -0.85, -0.5)
 var slide_trail_shin := Vector3(0.0, -0.4, 0.9)
 
+## Riding a vehicle the body sits on it: hips on the seat, leaning forward,
+## hands on the grips and feet on the pegs (the vehicle's `seat_point`,
+## `grip_points` and `peg_points`). How high the hip bone sits above the
+## seat, where the ankle and wrist sit from a peg and a grip (vehicle frame,
+## x out to that side, y up, z back), which way knees and elbows point, how
+## far the head tips up to look ahead (share of the lean), and how fast the
+## pose comes and goes (per second).
+var ride_hip_height := 0.1
+var ride_ankle := Vector3(0.0, 0.09, 0.07)
+var ride_wrist := Vector3(0.02, 0.02, 0.07)
+var ride_knee := Vector3(0.35, 0.5, -1.0)
+var ride_elbow := Vector3(1.0, -0.5, 0.6)
+var ride_look_up := 0.75
+var ride_rate := 5.0
+
 ## How quickly the relaxed-stand legs blend in and out (per second).
 var stand_legs_rate := 4.0
 
@@ -96,6 +111,21 @@ var overlay_weight := 0.0
 ## How much longer the stride is than the clip's own, now and wanted.
 var stride := 1.0
 var stride_target := 1.0
+## The vehicle being ridden (null on foot), set by the skin each frame, and
+## how far into the riding pose the body is. `ride_hands` is how much each
+## hand (left, right) wants its grip; `ride_turn` turns the head, radians
+## toward the left, so the rider looks where they aim.
+var ride: Node3D
+var ride_weight := 0.0
+var ride_hands := Vector2.ONE
+var ride_turn := 0.0
+## Where the right wrist goes when it is off its grip holding a gun (skeleton
+## space is worked out here; this is global), or null to leave the clip's arm.
+var ride_gun_wrist: Variant = null
+## The vehicle the pose is for, kept while the pose fades out after getting
+## off, and how much each hand is on its grip now.
+var _ride_on: Node3D
+var _hands := Vector2.ZERO
 ## The clip playing now (its name in the model), whose average pose the
 ## stride is stretched about.
 var current_anim := ""
@@ -118,6 +148,10 @@ var _means := {}
 var _lead: Array[int] = []
 var _trail: Array[int] = []
 var _foot_on_shin := {}
+## Upper arm, forearm and wrist, left then right, for the riding pose; the neck.
+var _arms: Array = []
+var _neck := -1
+var _hip_name := ""
 ## The relaxed stand, and its tracks for the bones below the spine:
 ## [bone, track, type].
 var _stand_anim: Animation
@@ -155,6 +189,11 @@ func setup(def: Dictionary, player: AnimationPlayer, anims: Dictionary) -> void:
 			_feet.append(leg[2])
 			_foot_on_shin[leg[2]] = skeleton.get_bone_global_rest(leg[1]).affine_inverse() \
 					* skeleton.get_bone_global_rest(leg[2])
+	for chain_key: String in ["off_arm", "arm"]:
+		var chain := _bones(def.get(chain_key, []))
+		_arms.append(chain if chain.size() == 3 else ([] as Array[int]))
+	_neck = skeleton.find_bone(def.get("neck", ""))
+	_hip_name = def.get("hip_bone", "")
 	if player:
 		for key: String in gaits:
 			if anims.has(key) and not _means.has(anims[key]):
@@ -203,6 +242,10 @@ func setup(def: Dictionary, player: AnimationPlayer, anims: Dictionary) -> void:
 	slide.name = "SlidePose"
 	slide.run = _slide_pose
 	skeleton.add_child(slide)
+	var seated := WeaponArm.Hook.new()
+	seated.name = "RidePose"
+	seated.run = _ride_pose
+	skeleton.add_child(seated)
 
 
 func _bones(names: Array) -> Array[int]:
@@ -394,6 +437,15 @@ func update(delta: float) -> void:
 			stand_legs_rate * delta)
 	if _stand_anim and _stand_anim.length > 0.0:
 		_stand_time = fposmod(_stand_time + delta, _stand_anim.length)
+	if ride != null and is_instance_valid(ride):
+		_ride_on = ride
+	if _ride_on != null and not is_instance_valid(_ride_on):
+		_ride_on = null
+	var riding := ride != null and _ride_on != null
+	ride_weight = move_toward(ride_weight, 1.0 if riding else 0.0, ride_rate * delta)
+	_hands = _hands.move_toward(ride_hands if riding else Vector2.ZERO, ride_rate * delta)
+	if ride_weight <= 0.0:
+		_ride_on = null
 
 
 ## Puts the hips and legs in the relaxed stand, under whatever the upper body
@@ -467,6 +519,114 @@ func _slide_pose() -> void:
 		var foot := skeleton.get_bone_global_pose(leg[2])
 		var on_shin: Transform3D = skeleton.get_bone_global_pose(leg[1]) * _foot_on_shin[leg[2]]
 		skeleton.set_bone_global_pose(leg[2], foot.interpolate_with(on_shin, weight))
+
+
+## Sits the body on the vehicle being ridden: the hips go onto the seat, the
+## spine leans forward, the feet reach the pegs and the hands the grips, and
+## the head comes up to look ahead. The skin has already turned the whole
+## model to face along the vehicle and lean with it. Runs after the slide and
+## before the weapon arm, so a held weapon still gets its hold and swings.
+func _ride_pose() -> void:
+	if ride_weight <= 0.0 or _ride_on == null or not is_instance_valid(_ride_on) or not _ride_on.is_inside_tree():
+		return
+	var w := smoothstep(0.0, 1.0, ride_weight)
+	var model := _ride_on.get_node_or_null("Model") as Node3D
+	var frame: Transform3D = model.global_transform if model else _ride_on.global_transform
+	# From the vehicle's frame to the skeleton's (scale and all).
+	var to_skeleton := skeleton.global_transform.affine_inverse() * frame
+	var right := (to_skeleton.basis * Vector3.RIGHT).normalized()
+	var up := (to_skeleton.basis * Vector3.UP).normalized()
+
+	var hips := skeleton.find_bone(_hip_name)
+	if hips >= 0:
+		var seat: Vector3 = _ride_on.get("seat_point")
+		var want := to_skeleton * (seat + Vector3(0.0, ride_hip_height, 0.0))
+		var shift := (want - skeleton.get_bone_global_pose(hips).origin) * w
+		for bone in _roots:
+			var pose := skeleton.get_bone_global_pose(bone)
+			pose.origin += shift
+			skeleton.set_bone_global_pose(bone, pose)
+	var lean: float = _ride_on.get("rider_lean")
+	if not _spine.is_empty():
+		var bend := Basis(right, -lean * w / _spine.size())
+		for bone in _spine:
+			var pose := skeleton.get_bone_global_pose(bone)
+			pose.basis = bend * pose.basis
+			skeleton.set_bone_global_pose(bone, pose)
+
+	var pegs: Array = _ride_on.get("peg_points")
+	for leg in [_lead, _trail]:
+		if leg.size() != 3 or pegs.size() != 2:
+			continue
+		var side := _side_of(leg[0])
+		var peg: Vector3 = pegs[0 if side < 0.0 else 1]
+		var ankle := to_skeleton * (peg + Vector3(ride_ankle.x * side, ride_ankle.y, ride_ankle.z))
+		var knee := to_skeleton.basis * Vector3(ride_knee.x * side, ride_knee.y, ride_knee.z)
+		_bend(leg, _foot_on_shin[leg[2]].origin, ankle, knee, w)
+		var foot := skeleton.get_bone_global_pose(leg[2])
+		var on_shin: Transform3D = skeleton.get_bone_global_pose(leg[1]) * _foot_on_shin[leg[2]]
+		skeleton.set_bone_global_pose(leg[2], foot.interpolate_with(on_shin, w))
+
+	var grips: Array = _ride_on.get("grip_points")
+	for i in _arms.size():
+		var arm: Array[int] = _arms[i]
+		var hand := _hands.x if i == 0 else _hands.y
+		var hold := w * hand
+		var gun_hand := i == 1 and ride_gun_wrist != null
+		if gun_hand:
+			# A gun held out one-handed toward the aim, the other hand on the bar.
+			hold = w
+		if arm.size() != 3 or grips.size() != 2 or hold <= 0.001:
+			continue
+		var side := _side_of(arm[0])
+		var grip: Vector3 = grips[0 if side < 0.0 else 1]
+		var wrist := to_skeleton * (grip + Vector3(ride_wrist.x * side, ride_wrist.y, ride_wrist.z))
+		if gun_hand:
+			var aim: Vector3 = skeleton.global_transform.affine_inverse() * (ride_gun_wrist as Vector3)
+			wrist = aim.lerp(wrist, hand)
+		var elbow := to_skeleton.basis * Vector3(ride_elbow.x * side, ride_elbow.y, ride_elbow.z)
+		_bend(arm, skeleton.get_bone_rest(arm[2]).origin, wrist, elbow, hold)
+
+	if _neck >= 0:
+		var pose := skeleton.get_bone_global_pose(_neck)
+		pose.basis = Basis(up, ride_turn * w) * Basis(right, lean * ride_look_up * w) * pose.basis
+		skeleton.set_bone_global_pose(_neck, pose)
+
+
+## How far each hand (left, right) is round its grip now.
+func grip_hold() -> Vector2:
+	return _hands * smoothstep(0.0, 1.0, ride_weight)
+
+
+## -1 for a bone on the left of the body (".L"), 1 otherwise.
+func _side_of(bone: int) -> float:
+	return -1.0 if skeleton.get_bone_name(bone).ends_with(".L") else 1.0
+
+
+## Bends a [root, middle, end] limb so the end reaches `target` (skeleton
+## space), the middle joint bowing toward `pole`. `end_at` is where the end
+## sits in the middle bone's space, so this works for the human rig's feet,
+## which are not children of the shin. Leaves the end bone itself alone.
+func _bend(limb: Array[int], end_at: Vector3, target: Vector3, pole: Vector3, weight: float) -> void:
+	var root := skeleton.get_bone_global_pose(limb[0]).origin
+	var middle := skeleton.get_bone_global_pose(limb[1])
+	var scale := middle.basis.get_scale().y
+	var a := (middle.origin - root).length()
+	var b := end_at.length() * scale
+	var to := target - root
+	if a < 0.0001 or b < 0.0001 or to.length() < 0.0001:
+		return
+	var d := clampf(to.length(), absf(a - b) + 0.001, a + b - 0.001)
+	var dir := to.normalized()
+	var bow := pole - dir * dir.dot(pole)
+	if bow.length() < 0.0001:
+		return
+	bow = bow.normalized()
+	var cos_root := clampf((a * a + d * d - b * b) / (2.0 * a * d), -1.0, 1.0)
+	var joint := root + dir * cos_root * a + bow * sqrt(1.0 - cos_root * cos_root) * a
+	_point_bone(limb[0], (joint - root).normalized(), weight, skeleton.get_bone_rest(limb[1]).origin.normalized())
+	var joint_now := skeleton.get_bone_global_pose(limb[1]).origin
+	_point_bone(limb[1], (root + dir * d - joint_now).normalized(), weight, end_at.normalized())
 
 
 ## Bends a [thigh, shin, foot] leg so the ankle lands on `target` (skeleton
