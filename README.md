@@ -38,17 +38,19 @@ skies, animated models and effects (see "How it looks" below).
 | Sign out and go home with what you carry (10 seconds, out of a fight) | L |
 | After dying: drop back in, or go home | Enter, or L |
 | Open your phone: players, messages, invites, news, mirror, settings | P |
+| Raise or lower the holographic watch on your wrist | X |
 | Free the mouse | Esc |
 
 The jetpack runs on heat. Overheat it and you fall until it cools. Rooftop
 caches hold the best loot, and only the jetpack gets you there.
 
 Almost nothing is drawn over the screen in a raid: the crosshair, hit marks
-and what E will do. Everything else is on your gear. Your left wrist carries
-a small display with health, armor, stamina, jetpack heat, your pack, your
-standing and strongpoints (raised into view in first person, projected off
-your shoulder in third). Each gun counts its own rounds, the jetpack shows
-its heat on a screen in its back plate, and war news arrives on your phone.
+and what E will do. Everything else is on your gear. You wear a holographic
+watch on your left wrist: press **X** to raise it and it throws up health,
+armor, stamina, jetpack heat, your pack, your standing and strongpoints
+(it comes up by itself when you go down). Each gun counts its own rounds,
+the jetpack shows its heat on a screen in its back plate, and war news
+arrives on your phone.
 
 ## Your home base is the menu
 

@@ -25,6 +25,7 @@ const KEY_ACTIONS := {
 	"sign_out": KEY_L,
 	"redeploy": KEY_ENTER,
 	"phone": KEY_P,
+	"check_wrist": KEY_X,
 }
 
 const MOUSE_ACTIONS := {
