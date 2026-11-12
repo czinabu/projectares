@@ -314,26 +314,39 @@ static func _glass(t: Node) -> void:
 	t.check("[T] Seeker Helmet" in Hud.wrist_text(raid, p, {}, 0.0, [] as Array[String]),
 			"the wrist names the visor key and what it does")
 	# The glass is alive: it boots, trails the view, wakes on trouble and locks.
+	# Stepped by hand so the checks do not depend on how fast frames run.
+	var step := func(count: int) -> void:
+		for i in count:
+			glass._process(1.0 / 60.0)
+	glass.boot = 0.0
+	step.call(5)
 	t.check(glass.boot > 0.0 and glass.boot < 1.0, "the display is still starting up a moment after it comes on")
-	await t.frames(90)
+	step.call(90)
 	t.check(is_equal_approx(glass.boot, 1.0), "and is fully up within a second or so")
+	glass.alert = 0.0
+	step.call(2)
 	t.check(glass.alert < 0.05 and glass.sway.length() < 0.5, "with nothing going on it rests dim and still")
 	controller.yaw += 0.4
-	await t.frames(2)
+	await t.frames(3)
+	step.call(2)
 	t.check(glass.sway.length() > 2.0 and glass.sway.length() <= glass.sway_max + 0.01,
 			"turning the head leaves the display trailing behind, within a limit")
-	await t.frames(90)
+	step.call(90)
 	t.check(glass.sway.length() < 0.5, "and it settles back once the head is still")
 	p.health.damaged.emit(DamageInfo.new())
 	t.check(is_equal_approx(glass.alert, 1.0), "taking a hit wakes the display")
-	await t.frames(120)
+	step.call(120)
 	t.check(glass.alert < 0.05, "and it dims again when things calm down")
 	var mark: Actor = raid.bots[0]
 	mark.global_position = p.get_eye_position() + p.get_aim_dir() * 12.0 - Vector3(0, 1.0, 0)
-	await t.frames(30)
+	await t.frames(4)
+	mark.global_position = p.get_eye_position() + p.get_aim_dir() * 12.0 - Vector3(0, 1.0, 0)
+	await t.frames(2)
+	step.call(40)
 	t.check(glass.aim_target == mark and glass.lock > 0.9, "the reticle locks onto whoever is under it")
 	mark.global_position = p.global_position + Vector3(8, 0.2, 0)
-	await t.frames(30)
+	await t.frames(4)
+	step.call(40)
 	t.check(glass.aim_target == null and glass.lock < 0.1, "and lets go when they leave it")
 	controller.view_mode = PlayerController.ViewMode.THIRD
 	await t.frames(40)
