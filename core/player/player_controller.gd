@@ -34,6 +34,10 @@ var invert_y := false
 ## Set while the phone is open: the character stands still and the mouse is
 ## left alone, so you can tap and type.
 var input_blocked := false
+## Set while a mirror stands in front of you (1-20, 0 for none). In first
+## person your body stays drawn on this render layer, which this camera leaves
+## out, so the mirror's camera can still show it.
+var body_layer := 0
 var third_person_distance := 3.8
 var third_person_aim_distance := 2.2
 ## Camera distance while riding a vehicle, which is bigger than a person.
@@ -200,6 +204,7 @@ func _physics_process(delta: float) -> void:
 	cmd.jump = Input.is_action_pressed("jump")
 	cmd.jump_pressed = Input.is_action_just_pressed("jump")
 	cmd.dash = Input.is_action_just_pressed("dash")
+	cmd.slide = Input.is_action_just_pressed("slide")
 	if cmd.dash and actor.stamina >= actor.dash_stamina:
 		Sfx.play("dash", null, -6.0)
 	cmd.primary = captured and Input.is_action_pressed("fire")
@@ -253,10 +258,14 @@ func _process(delta: float) -> void:
 		elif not thrusting and _thrust_audio.playing:
 			_thrust_audio.stop()
 	var first_person := not actor.is_dead and pivot.distance_to(desired) <= 0.7
+	var for_mirror := first_person and body_layer > 0
 	if actor.body_mesh:
-		actor.body_mesh.visible = not first_person
+		actor.body_mesh.visible = not first_person or for_mirror
+	camera.cull_mask = 0xFFFFF & ~(1 << (body_layer - 1)) if for_mirror else 0xFFFFF
 	# In first-person the weapon is held in front of the camera; otherwise it
-	# rests on the body, where the Actor poses it.
+	# rests on the body, where the Actor poses it. In front of a mirror the
+	# hands are on the phone, so it rests on the body there too.
+	first_person = first_person and not for_mirror
 	actor.hand_override = first_person
 	if first_person:
 		actor.hand.global_transform = camera.global_transform * Transform3D(Basis.IDENTITY, FIRST_PERSON_HAND)

@@ -74,9 +74,10 @@ signal world_invite_accepted(invite: Dictionary)
 signal base_visit_requested(owner_name: String, stash: Array, loadout: Dictionary)
 
 const DEFAULT_PORT := 24565
-const PROTOCOL := 11
+const PROTOCOL := 13
 const StashService := preload("res://core/account/stash_service.gd")
 const Economy := preload("res://core/economy/economy.gd")
+const Human := preload("res://core/visual/human.gd")
 const SocialService := preload("res://core/social/social_service.gd")
 const ArenaVenue := preload("res://core/arena/arena_venue.gd")
 ## Server physics ticks between arena board updates when nothing changed.
@@ -584,7 +585,29 @@ func _request_look(p_look: Dictionary) -> void:
 		return
 	# Only clothing the account owns: the stash decides, not the client.
 	var owned := Economy.unlocked_outfits(stash.snapshot(_peer_account[peer]).get("stash", []))
-	_peer_look[peer] = Look.clean_appearance(p_look, owned)
+	var cleaned := Look.clean_appearance(p_look, owned)
+	_peer_look[peer] = cleaned
+	# Already in this world (changed in front of the phone's mirror): everyone
+	# here sees it now, the player included, so their game shows what passed.
+	var actor: Actor = _peer_actor.get(peer)
+	if actor == null or not is_instance_valid(actor) or not _ids.has(actor) \
+			or actor.get_meta("appearance", {}) == cleaned:
+		return
+	Look.set_appearance(actor, cleaned)
+	for other in _joined_peers:
+		if other in _api.get_peers():
+			_look_changed.rpc_id(other, _ids[actor], cleaned)
+
+
+## Client: someone in this world changed how they look. The server checked it.
+@rpc("authority", "call_remote", "reliable")
+func _look_changed(id: int, p_look: Dictionary) -> void:
+	var actor: Actor = _actors.get(id)
+	if actor == null or not is_instance_valid(actor):
+		return
+	var cleaned := Human.sanitize(p_look)
+	if actor.get_meta("appearance", {}) != cleaned:
+		Look.set_appearance(actor, cleaned)
 
 
 ## Server: the look a signed-in player chose, or {} if they sent none.
@@ -592,7 +615,8 @@ func look_for_peer(peer: int) -> Dictionary:
 	return _peer_look.get(peer, {})
 
 
-## Client: tells the server how this player looks. Takes effect on the next deploy.
+## Client: tells the server how this player looks. It is used from the next
+## deploy, and if the player is already in a world everyone there sees it now.
 func send_look(p_look: Dictionary) -> void:
 	look = p_look
 	if not is_server and not account.is_empty():
@@ -607,7 +631,7 @@ func _send_spawn(peer: int, actor: Actor) -> void:
 		if actor.has_meta("appearance"):
 			data["look"] = actor.get_meta("appearance")
 	else:
-		data = {"seed": raid.bot_seeds.get(actor, 0)}
+		data = {"seed": raid.bot_seeds.get(actor, 0), "warlord": raid.warlords.has(actor)}
 	_spawn.rpc_id(peer, _ids[actor], "player" if state != null else "bot", actor.display_name,
 			String(actor.name), actor.global_position, actor.cmd.yaw, data)
 
@@ -1042,7 +1066,7 @@ func _spawn(id: int, kind: String, shown_name: String, node_name: String, at: Ve
 		state.picks = data.get("picks", {})
 		raid.players.append(state)
 	else:
-		actor = raid.spawn_bot(node_name, at, data.get("seed", 0))
+		actor = raid.spawn_bot(node_name, at, data.get("seed", 0), data.get("warlord", false))
 		raid.world.on_spawn(actor)
 	actor.cmd.yaw = yaw
 	_actors[id] = actor

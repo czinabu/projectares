@@ -22,6 +22,7 @@ skies, animated models and effects (see "How it looks" below).
 | Jump. In the air: hold to fly (jetpack), press to boost (thruster boots, glide wings), hold while falling to glide (glide wings) | Space |
 | Use your ability | G |
 | Dash | Q |
+| Slide (while sprinting) | C |
 | Fire, or blade combo | Left mouse |
 | Aim down sights, or block with the blade (tap just before a hit to parry) | Right mouse |
 | Pick a melee side: left, right or overhead | Flick the mouse that way, or hold A, D or W |
@@ -36,7 +37,7 @@ skies, animated models and effects (see "How it looks" below).
 | Scoreboard: who is fighting, who is down, kills | Hold Tab |
 | Sign out and go home with what you carry (10 seconds, out of a fight) | L |
 | After dying: drop back in, or go home | Enter, or L |
-| Open your phone: players, messages, invites, news, settings | P |
+| Open your phone: players, messages, invites, news, mirror, settings | P |
 | Free the mouse | Esc |
 
 The jetpack runs on heat. Overheat it and you fall until it cools. Rooftop
@@ -105,10 +106,18 @@ your character stands still and the mouse is free.
   raid from the lobby. Invites run out after two minutes.
 - **News**: game news, plus anything the server adds. A server operator drops a
   `news.json` (a list of `{"date", "title", "body"}`) in the accounts folder.
+- **Mirror**: change how you look, wherever you are. A tall mirror rises in
+  front of you and the phone lists your build, each part (head, torso, legs,
+  shoes) and each colour. Scroll through them with the arrows, the mouse wheel
+  over a row, or the keys (up and down pick a row, left and right scroll it).
+  Only starter clothes and outfits you own are offered: buy more at the
+  Tailor. Changes save as you go, and online everyone around you sees the new
+  look at once. It works in first person too: the mirror shows your body even
+  though your own camera does not.
 - **Settings**: mouse sensitivity, invert mouse, melee side control, field of
   view, volume, fullscreen and nameplates. Saved in `user://settings.json`.
 
-Players, chat and invites need a server; news and settings work solo too.
+Players, chat and invites need a server; news, the mirror and settings work solo too.
 
 A server can also run on its own, with no window:
 
@@ -166,6 +175,13 @@ you have.
   with the most renown is the Marked, the richest kill in the world. Killing
   someone in the free scrap kit pays almost nothing. Player kills, bounties
   and the Marked are announced to everyone.
+- Ashfront is one open battlefield about 600 metres across: scorched ground
+  cut by craters and trench lines, strewn with the wrecks of war machines,
+  some the size of tower blocks. Five landmarks stand on it (the Foundry in
+  the middle, Signal Hill, Rustfall, the Breach and Carrier Grave), each with
+  a depot, a garrison and loot, and the best loot sits on roofs and wrecks
+  that only a flight rig reaches. You drop in at the rim, where a bike is
+  never far, and ride or fly inward.
 - War intensity. Ashfront keeps a meter of how much fighting is going on.
   Kills and hostile players closing on each other raise it, and it cools when
   things calm down; a full server that is not fighting stays quiet. As it
@@ -178,6 +194,11 @@ you have.
   drop in next. Bots hold them to begin with and push to take them back.
   Frostline has three, shared by all players. Ashfront gets its own with the
   new battlefield map.
+- World events. Every few minutes, and more often as the war heats up, either
+  a supply pod lands with a better haul than any cache, or a warlord marches
+  in with an escort. He has three times the health, carries good loot, and
+  pays 300 renown. Everyone is told where on the war feed. Caches that refill
+  during a war also hold rarer loot.
 - Hitscan rifle with reloads and aim down sights.
 - Rifle recoil that kicks your view and widens the spread under sustained fire.
 - Blade with a three-hit combo, a heavy lunge, and a dive slam from the air.
@@ -208,8 +229,8 @@ you have.
 - Motorbikes, the first vehicle. Put one in the vehicle slot and it is parked
   next to you when you deploy. Press E on any bike nobody is riding to take
   it, including someone else's. Sign out riding a bike and it goes to your
-  stash; die or leave it behind and it is gone. Abandoned bikes wait by jump
-  ramps around the city. Riding uses the third-person camera (V still
+  stash; die or leave it behind and it is gone. Abandoned bikes wait at the rim,
+  the landmarks and the jump ramps of the battlefield. Riding uses the third-person camera (V still
   switches), and pressing E in mid-air bails out with the bike's speed.
 - Mastery for every weapon type, ability and armor frame. Using gear earns XP
   for its type, levels unlock variants that trade one strength for another

@@ -14,6 +14,8 @@ var tag: Label3D
 var _prompt: Label
 var _notice: Label
 var _notice_left := 0.0
+## The aiming cross in the middle of the screen.
+var crosshair: Label
 
 
 func setup(p_base: HomeBase) -> void:
@@ -25,7 +27,7 @@ func _ready() -> void:
 	root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(root)
-	var crosshair := _label(root, "+", 22, Color.WHITE)
+	crosshair = _label(root, "+", 22, Color.WHITE)
 	_place(crosshair, 0.5, 0.5, Vector2(-7, -17), Vector2(14, 30))
 	_prompt = _label(root, "", 20, Color.WHITE)
 	_prompt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -123,3 +125,10 @@ func _place(node: Control, ax: float, ay: float, offset: Vector2, p_size: Vector
 	node.offset_top = offset.y
 	node.offset_right = offset.x + p_size.x
 	node.offset_bottom = offset.y + p_size.y
+
+
+## Shows or hides the cross in the middle of the screen, which would sit on
+## your face in the phone's mirror.
+func show_aim(on: bool) -> void:
+	if crosshair:
+		crosshair.visible = on

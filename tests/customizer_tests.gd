@@ -5,6 +5,8 @@ extends RefCounted
 
 const Human := preload("res://core/visual/human.gd")
 const CharacterPanel := preload("res://core/ui/character_panel.gd")
+const PhoneScript := preload("res://core/phone/phone.gd")
+const MirrorScript := preload("res://core/visual/mirror.gd")
 
 
 static func run(t: Node) -> void:
@@ -129,17 +131,38 @@ static func run(t: Node) -> void:
 	panel.owned = [Human.outfit_id("m", "King")]
 	t.check(panel.options_for("body").any(func(option: Array) -> bool: return option[0] == "King"),
 			"an owned outfit shows up in the pickers")
+	# What the phone's mirror scrolls through.
+	t.check(panel.pick_keys() == ["build", "head", "body", "legs", "feet", "skin", "hair", "top", "bottom"],
+			"the mirror lists the build, each part and each colour")
+	var first_head: String = panel.options_for("head")[0][0]
+	panel.choose("head", first_head)
+	panel.step("head", -1)
+	t.check(panel.appearance["head"] == panel.options_for("head")[-1][0] and panel.pick_position("head")[0]
+			== panel.options_for("head").size() - 1, "scrolling back from the first option wraps round to the last")
+	panel.step("head", 1)
+	t.check(panel.appearance["head"] == first_head and panel.pick_label("head") == Human.OUTFITS["m"][first_head],
+			"scrolling on wraps back to the first")
+	panel.owned = [Human.outfit_id("m", "Punk")]
+	panel.choose("body", "Punk")
+	t.check(panel.appearance["body"] == "Punk" and panel.pick_source("body") == "From your stash: Punk Outfit",
+			"an owned outfit says which stash item it came from")
+	t.check(panel.pick_source("head") == "Starter clothes" and panel.pick_source("skin") == "",
+			"starter clothes say so, and colours have no source")
+	panel.choose("body", Human.STARTER["m"][0])
 	panel.owned = []
 	panel.show_customizer()
 	await t.frames(3)
 	t.check(panel.is_customizing() and panel._pickers.size() == 9 and panel._model != null,
 			"the customizer opens with a picker for each choice and a preview model")
+	var heard_before := heard.size()
 	panel.randomize_look()
-	t.check(heard.size() == 3 and Human.player_look(heard[2]) == heard[2], "randomize picks a look from starter clothes")
+	t.check(heard.size() == heard_before + 1 and Human.player_look(heard[-1]) == heard[-1], "randomize picks a look from starter clothes")
 	panel.hide_customizer()
 	t.check(not panel.is_customizing(), "done closes the customizer")
 	hub.queue_free()
 	await t.frames(2)
+
+	await _run_mirror(t)
 
 	# In a raid, the player wears the chosen look and can be given a new one.
 	var raid := Raid.new()
@@ -205,6 +228,16 @@ static func run(t: Node) -> void:
 			t.check(alpha.raid.player.get_meta("appearance", {}) == seen_look, "the player's own game shows the same look")
 			var other: Actor = alpha.actor_for(bravo.my_actor_id)
 			t.check(other != null and not other.has_meta("appearance"), "a player who chose nothing is left to the default")
+			# Changed in front of the mirror, mid-world: everyone sees it at once.
+			alpha.send_look({"build": "f", "head": "Witch", "body": "Casual", "legs": "Worker", "feet": "Worker",
+					"skin": 1})
+			await t._wait_until(func() -> bool:
+				return seen != null and is_instance_valid(seen) and seen.get_meta("appearance", {}).get("body") == "Casual", 120)
+			var changed: Dictionary = seen.get_meta("appearance", {}) if is_instance_valid(seen) else {}
+			t.check(changed.get("body") == "Casual" and changed.get("skin") == 1,
+					"a look changed mid-world reaches the other player without redeploying")
+			t.check(changed.get("head", "") in Human.STARTER["f"], "the server still strips clothes the player does not own")
+			t.check(alpha.raid.player.get_meta("appearance", {}) == changed, "the player's own game shows what the server passed")
 		await t._leave(bravo)
 	await t._leave(alpha)
 	OS.kill(pid)
@@ -212,3 +245,132 @@ static func run(t: Node) -> void:
 
 	Profile.appearance = before
 	Profile.persist = was_persist
+
+
+## The phone's Mirror app: a mirror stands in front of you, wherever you are,
+## and you scroll through the clothes and colours you own.
+static func _run_mirror(t: Node) -> void:
+	print("Character customizer: the phone's mirror")
+	var hub := Hub.new()
+	t.add_child(hub)
+	var phone: CanvasLayer = PhoneScript.new()
+	t.add_child(phone)
+	await t.frames(2)
+	phone.set_wardrobe(hub.character)
+	var ups: Array = []
+	phone.mirror_changed.connect(func(up: bool) -> void: ups.append(up))
+	phone.open("mirror")
+	await t.frames(1)
+	t.check(phone.mirror_open() and ups == [true] and phone._blocker.color.a == 0.0,
+			"the Mirror app asks for a mirror and leaves the view clear")
+	var rows: Array = phone._body.get_children().filter(func(child: Node) -> bool: return child is PanelContainer)
+	t.check(rows.size() == 9, "the app has a row for the build, each part and each colour")
+	var looks: Array = []
+	hub.look_changed.connect(func(appearance: Dictionary) -> void: looks.append(appearance))
+	var key := KEY_DOWN
+	var down := InputEventKey.new()
+	down.keycode = key
+	down.pressed = true
+	phone._unhandled_input(down)
+	t.check(phone.mirror_row == 1 and looks.is_empty(), "down moves to the next choice without changing anything")
+	var right := InputEventKey.new()
+	right.keycode = KEY_D
+	right.pressed = true
+	var head_before: String = hub.character.appearance["head"]
+	phone._unhandled_input(right)
+	await t.frames(1)
+	t.check(looks.size() == 1 and looks[0]["head"] != head_before and looks[0]["head"] in Human.wearable(looks[0]["build"]),
+			"right scrolls the chosen part to the next outfit the player owns, and tells the game")
+	phone.mirror_step("hair", 1)
+	await t.frames(1)
+	t.check(looks.size() == 2 and phone.mirror_row == 6, "a row's arrows scroll it and select it")
+	phone.open_app("news")
+	t.check(ups == [true, false] and phone._blocker.color.a > 0.0, "leaving the app puts the mirror away")
+	phone.open_app("mirror")
+	phone.close()
+	t.check(ups == [true, false, true, false], "putting the phone away puts the mirror away")
+	phone.queue_free()
+	hub.queue_free()
+	await t.frames(2)
+
+	# In the game: the mirror stands in front of the player in a world.
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	t.add_child(main)
+	await t.frames(2)
+	main.start_raid("ashfront")
+	await t.frames(5)
+	var me: Actor = main.raid.player
+	var controller: PlayerController = main.controller
+	main.phone.open("mirror")
+	await t.frames(3)
+	for i in 2:
+		await t.get_tree().process_frame
+	var mirror: Node3D = main.mirror
+	t.check(mirror != null and mirror.get_parent() == main.raid and main.phone.mirror_up,
+			"opening the Mirror app stands a mirror in the world")
+	if mirror != null:
+		var ahead := -controller.camera.global_basis.z
+		ahead.y = 0.0
+		var to_mirror := mirror.global_position - me.global_position
+		t.check(to_mirror.normalized().dot(ahead.normalized()) > 0.95 and to_mirror.length() > 1.0
+				and to_mirror.length() <= mirror.distance + mirror.side_offset and absf(to_mirror.y) < 0.2,
+				"it stands on the floor in front of the player")
+		var probe := PhysicsRayQueryParameters3D.create(mirror.global_position + Vector3.UP,
+				mirror.global_position + Vector3.DOWN, Actor.LAYER_WORLD)
+		var ground := me.get_world_3d().direct_space_state.intersect_ray(probe)
+		t.check(not ground.is_empty() and absf(ground.position.y - mirror.global_position.y) < 0.02,
+				"its feet are on the ground, not floating or sunk")
+		t.check(mirror.global_basis.z.dot(-to_mirror.normalized()) > 0.95, "its glass faces the player")
+		t.check(mirror.find_children("*", "CollisionObject3D", true, false).is_empty(), "the mirror has no collision")
+		t.check(controller.body_layer == MirrorScript.BODY_LAYER and me.body_mesh.visible and not me.hand_override,
+				"in first person the body stays drawn for the mirror, with the gear back on the body")
+		t.check(controller.camera.cull_mask & (1 << (MirrorScript.BODY_LAYER - 1)) == 0,
+				"but the player's own camera leaves it out")
+		t.check(not main.hud.crosshair.visible, "the crosshair is hidden so it does not sit on your face in the mirror")
+	var before: Dictionary = me.get_meta("appearance", {}).duplicate()
+	main.phone.mirror_step("body", 1)
+	await t.frames(2)
+	t.check(me.get_meta("appearance", {}).get("body") != before.get("body") and Profile.appearance == me.get_meta("appearance"),
+			"scrolling in the mirror dresses the player at once and saves the look")
+	main.phone.close()
+	await t.frames(3)
+	for i in 2:
+		await t.get_tree().process_frame
+	t.check(main.mirror == null and main.raid.find_children("Mirror", "", true, false).is_empty()
+			and controller.body_layer == 0 and not me.body_mesh.visible
+			and controller.camera.cull_mask == 0xFFFFF and main.hud.crosshair.visible,
+			"putting the phone away takes the mirror away and brings the crosshair back")
+
+	# Rendered: a reflection camera through the glass, and the body on its layer.
+	var was_enabled: bool = Look.enabled
+	Look.enabled = true
+	main.phone.open("mirror")
+	await t.frames(4)
+	for i in 2:
+		await t.get_tree().process_frame
+	mirror = main.mirror
+	var reflection: Camera3D = mirror.find_child("Reflection", true, false).get_child(0) if mirror != null else null
+	t.check(reflection != null and reflection.projection == Camera3D.PROJECTION_FRUSTUM
+			and reflection.cull_mask & (1 << (MirrorScript.MIRROR_LAYER - 1)) == 0,
+			"the mirror renders a reflection that leaves the mirror itself out")
+	if reflection != null:
+		var glass: Node3D = mirror.get_node("Glass")
+		var eye := controller.camera.global_position
+		var normal := mirror.global_basis.z
+		var gap := (eye - glass.global_position).dot(normal)
+		t.check(reflection.global_position.distance_to(eye - 2.0 * gap * normal) < 0.05,
+				"the reflection looks from the player's eye mirrored through the glass")
+	var skin := me.get_node_or_null("Skin")
+	var stamped := skin != null and skin.find_children("*", "VisualInstance3D", true, false).all(
+			func(node: VisualInstance3D) -> bool: return node.layers == 1 << (MirrorScript.BODY_LAYER - 1))
+	t.check(stamped, "the player's model is drawn on the mirror's body layer")
+	main.phone.close()
+	await t.frames(3)
+	for i in 2:
+		await t.get_tree().process_frame
+	skin = me.get_node_or_null("Skin")
+	t.check(skin != null and skin.find_children("*", "VisualInstance3D", true, false).all(
+			func(node: VisualInstance3D) -> bool: return node.layers == 1), "and back on the normal layer afterwards")
+	Look.enabled = was_enabled
+	main.queue_free()
+	await t.frames(3)

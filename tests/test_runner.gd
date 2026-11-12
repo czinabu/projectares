@@ -15,6 +15,7 @@ const BaseHudScript := preload("res://core/ui/base_hud.gd")
 const LookTests := preload("res://tests/look_tests.gd")
 const EconomyTests := preload("res://tests/economy_tests.gd")
 const CustomizerTests := preload("res://tests/customizer_tests.gd")
+const BattlefieldTests := preload("res://tests/battlefield_tests.gd")
 
 var _passed := 0
 var _failed := 0
@@ -52,6 +53,7 @@ func _run() -> void:
 	await _test_death()
 	await _test_storm()
 	await _test_bots_run()
+	await _test_start_screen()
 	await _test_main_flow()
 	await _test_every_world()
 	await _test_frostline()
@@ -60,6 +62,7 @@ func _run() -> void:
 	await _test_renown()
 	await _test_war()
 	await _test_strongpoints()
+	await _test_events()
 	await _test_online()
 	await _test_plaza()
 	await _test_plaza_online()
@@ -69,12 +72,21 @@ func _run() -> void:
 	await _test_arena()
 	await _test_online_arena()
 	await LookTests.run(self)
-	await CustomizerTests.run(self)
+	await _test_customizer()
 	await _test_economy()
+	await _test_battlefield()
+
+
+func _test_customizer() -> void:
+	await CustomizerTests.run(self)
 
 
 func _test_economy() -> void:
 	await EconomyTests.run(self)
+
+
+func _test_battlefield() -> void:
+	await BattlefieldTests.run(self)
 
 
 func check(condition: bool, what: String) -> void:
@@ -171,7 +183,7 @@ func _test_raid_setup_and_movement() -> void:
 	var p := raid.player
 	check(p != null and p.is_player, "player spawns")
 	check(raid.bots.size() == raid.world.bot_count, "all bots spawn")
-	check(raid.depots.size() == 2, "map provides two depots")
+	check(raid.depots.size() >= 2, "map provides depots to bank at")
 	var caches := raid.get_children().filter(func(n: Node) -> bool: return n is LootContainer)
 	check(caches.size() >= 8, "loot caches are placed (%d)" % caches.size())
 	check(p.weapons.size() == 2 and p.flight.enabled and p.health.armor == 30.0,
@@ -201,7 +213,64 @@ func _test_raid_setup_and_movement() -> void:
 		if p.is_on_floor():
 			break
 	check(p.is_on_floor(), "player comes back down")
+	await _check_slide(p)
 	await _end_raid(raid)
+
+
+## Sliding: only from a fast run on the ground, skids from a burst down to a
+## crawl, drops the eyes, and a jump ends it. Checked on the movement step
+## itself, then once through the physics loop.
+func _check_slide(p: Actor) -> void:
+	var fast := Vector3(0, 0, -p.sprint_speed)
+	var dt := 1.0 / 60.0
+	p.stamina = p.max_stamina
+	p.cmd.slide = true
+	p._simulate_slide(Vector3(0, 0, -3.0), true, false, dt)
+	check(not p.is_sliding(), "a slide needs a running start")
+	p._simulate_slide(fast, false, false, dt)
+	check(not p.is_sliding(), "a slide can't start in the air")
+	var stand_eyes := p.get_eye_position().y
+	var going := p._simulate_slide(fast, true, false, dt)
+	check(p.is_sliding() and going.length() >= p.slide_speed - 0.5 and p.stamina < p.max_stamina,
+			"sliding from a sprint bursts forward and costs stamina")
+	p.cmd.slide = false
+	var speeds: Array[float] = [going.length()]
+	for i in 30:
+		going = p._simulate_slide(going, true, false, dt)
+		speeds.append(going.length())
+	check(speeds[-1] < speeds[0] and speeds[-1] >= p.slide_end_speed, "a slide skids down toward a crawl")
+	check(going.normalized().is_equal_approx(fast.normalized()), "a slide keeps its line")
+	check(p.get_eye_position().y < stand_eyes - 0.3, "sliding drops the eyes")
+	p.cmd.slide = true
+	p.cmd.jump_pressed = true
+	p._simulate_slide(going, true, false, dt)
+	check(not p.is_sliding(), "jumping ends a slide")
+	p.cmd.jump_pressed = false
+	p._simulate_slide(fast, true, false, dt)
+	check(not p.is_sliding(), "a slide can't be chained straight into another")
+	p.cmd.slide = false
+	for i in 120:
+		p._simulate_slide(Vector3.ZERO, true, false, dt)
+	check(is_zero_approx(p.crouch) and is_equal_approx(p.get_eye_position().y, stand_eyes), "the actor stands back up")
+
+	# Through the physics loop, as the server and every client run it.
+	p.velocity = p.global_basis * Vector3(0, 0, -p.sprint_speed)
+	p.cmd.move = Vector2.ZERO
+	p.cmd.slide = true
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	p.cmd.slide = false
+	check(p.is_sliding(), "pressing slide while running slides")
+	var cmd := ActorCommand.new()
+	cmd.slide = true
+	var copy := ActorCommand.new()
+	copy.apply_array(cmd.to_array())
+	check(copy.slide and cmd.flags() & ActorCommand.ONE_SHOT_MASK & ActorCommand.FLAG_SLIDE != 0,
+			"a slide press travels with the command, as a one-shot")
+	copy.clear_one_shots()
+	check(not copy.slide, "a slide press lasts one tick")
+	for i in 90:
+		await get_tree().physics_frame
 
 
 func _test_combat_and_loot() -> void:
@@ -211,7 +280,7 @@ func _test_combat_and_loot() -> void:
 	await frames(40)
 	# Stand in the exit cell, which is always open ground.
 	var arena := raid.depots[0].global_position
-	arena.y = 0.1
+	arena.y -= 1.9
 	p.global_position = arena + Vector3(0, 0, 3)
 	p.cmd.yaw = 0.0
 
@@ -292,8 +361,8 @@ func _test_extraction() -> void:
 	p.inventory.add_item("medkit")
 	var bot := raid.bots[0]
 	var depot_pos := raid.depots[1].global_position
-	p.global_position = Vector3(depot_pos.x, 0.2, depot_pos.z)
-	bot.global_position = Vector3(depot_pos.x + 2.0, 0.2, depot_pos.z)
+	p.global_position = Vector3(depot_pos.x, depot_pos.y - 1.8, depot_pos.z)
+	bot.global_position = Vector3(depot_pos.x + 2.0, depot_pos.y - 1.8, depot_pos.z)
 	await frames(60)
 	check(raid.bank_progress() > 0.0, "standing in a depot starts the hold")
 	check(Profile.stash.is_empty(), "banking is not instant")
@@ -438,8 +507,8 @@ func _test_bots_run() -> void:
 	await frames(40)
 	var bot := raid.bots[0]
 	var arena := raid.depots[0].global_position
-	p.global_position = Vector3(arena.x, 0.1, arena.z + 3.0)
-	bot.global_position = Vector3(arena.x, 0.1, arena.z - 5.0)
+	p.global_position = Vector3(arena.x, arena.y - 1.9, arena.z + 3.0)
+	bot.global_position = Vector3(arena.x, arena.y - 1.9, arena.z - 5.0)
 	var health_before := p.health.health + p.health.armor
 	await frames(360)
 	var moved := 0
@@ -567,7 +636,7 @@ func _duel(raid: Raid) -> Array:
 	var p := raid.player
 	await frames(40)
 	var arena := raid.depots[0].global_position
-	p.global_position = Vector3(arena.x, 0.1, arena.z + 3.0)
+	p.global_position = Vector3(arena.x, arena.y - 1.9, arena.z + 3.0)
 	p.cmd.yaw = 0.0
 	p.cmd.aim_dir = Vector3.FORWARD
 	p.cmd.switch_weapon = 1
@@ -805,7 +874,7 @@ func _test_loadouts() -> void:
 	p.equip_weapon(shotgun)
 	p.cmd.switch_weapon = 2
 	var arena := raid.depots[0].global_position
-	p.global_position = Vector3(arena.x, 0.1, arena.z + 3.0)
+	p.global_position = Vector3(arena.x, arena.y - 1.9, arena.z + 3.0)
 	var target := raid.bots[0]
 	target.global_position = p.global_position + Vector3(0, 0, -3.0)
 	await frames(10)
@@ -1065,7 +1134,7 @@ func _test_flight_rigs_and_abilities() -> void:
 	check(p.ability.enabled and p.ability.effect == "blink" and "chip_blink" in p.gear_items,
 			"an ability item equips into the ability slot")
 	var arena := raid.depots[0].global_position
-	p.global_position = Vector3(arena.x, 0.1, arena.z + 3.0)
+	p.global_position = Vector3(arena.x, arena.y - 1.9, arena.z + 3.0)
 	p.cmd.yaw = 0.0
 	p.cmd.aim_dir = Vector3.FORWARD
 	await frames(5)
@@ -1088,7 +1157,7 @@ func _test_flight_rigs_and_abilities() -> void:
 	await frames(1)
 	p.cmd.ability_pressed = false
 	await frames(10)
-	check(p.global_position.y > -0.5, "Phase Step stops short of the ground and walls")
+	check(p.global_position.y > arena.y - 2.5, "Phase Step stops short of the ground and walls")
 	await _end_raid(raid)
 
 	# Kinetic Barrier.
@@ -2192,6 +2261,89 @@ func _test_strongpoints() -> void:
 	await frames(10)
 
 
+func _test_events() -> void:
+	print("World events")
+	var world := Worlds.get_world("ashfront")
+	var rng := RandomNumberGenerator.new()
+	var rarity := func(ids: Array) -> int:
+		var total := 0
+		for id: String in ids:
+			total += ItemDB.item_rarity(id)
+		return total
+	var quiet := 0
+	var hot := 0
+	for i in 200:
+		rng.seed = i
+		quiet += rarity.call(world.roll_war_loot("cache", rng, 0.0))
+		rng.seed = i
+		hot += rarity.call(world.roll_war_loot("cache", rng, 1.0))
+	check(hot > quiet, "caches hold rarer loot in an all-out war (%d against %d)" % [hot, quiet])
+	rng.seed = 5
+	var plain := world.roll_loot("cache", rng)
+	rng.seed = 5
+	check(world.roll_war_loot("cache", rng, 0.0) == plain, "a quiet world's loot is unchanged")
+
+	var raid := Raid.new()
+	add_child(raid)
+	raid.apply_to_profile = false
+	raid.start_server(world, 41)
+	for bot in raid.bots:
+		bot.get_node("Brain").set_physics_process(false)
+		bot.set_physics_process(false)
+	var feed: Array[String] = []
+	raid.war_feed.connect(func(text: String) -> void: feed.append(text))
+	var a := raid.add_player([], {}, "Alpha", "acct-a")
+	a.set_physics_process(false)
+	var before := raid.bots.size()
+	check(raid.event.is_empty(), "a world starts with no event running")
+
+	# A supply pod.
+	check(raid.start_event("supply_pod") and raid.event.kind == "supply_pod", "a supply pod can come down")
+	var pod: LootContainer = raid._event_pod
+	check(pod != null and pod.items.size() >= 4 and feed.size() == 1 and feed[0].begins_with("A supply pod came down "),
+			"it holds a good haul and everyone hears where it is (%s)" % " / ".join(feed))
+	check(not raid.start_event("warlord"), "only one event runs at a time")
+	pod.set_items([])
+	await frames(3)
+	check(raid.event.is_empty(), "the event ends once the pod is emptied")
+	await frames(2)
+
+	# A warlord and his escort.
+	feed.clear()
+	check(raid.start_event("warlord") and raid.bots.size() == before + 1 + world.warlord_escort, "a warlord arrives with an escort")
+	var lord: Actor = raid.warlords.keys()[0]
+	for bot in raid._event_bots:
+		bot.get_node("Brain").set_physics_process(false)
+		bot.set_physics_process(false)
+	check(lord.display_name == "Warlord" and lord.health.max_health >= 240.0 and feed[0].begins_with("A warlord has arrived "),
+			"the warlord is far tougher than his men (%s, %.0f health)" % [lord.display_name, lord.health.max_health])
+	var carried := lord.inventory.items.size()
+	check(carried >= 3, "the warlord carries loot worth the fight (%d items)" % carried)
+	var respawns := raid._bot_respawns.size()
+	Combat.deal(lord, DamageInfo.make(9999.0, a, "bullet"))
+	await frames(3)
+	check(feed.any(func(t: String) -> bool: return t.begins_with("Alpha") and t.ends_with("killed the warlord")),
+			"killing the warlord pays renown and is announced (%d, %s)" % [a.renown, " / ".join(feed)])
+	check(a.renown >= 310, "the warlord's renown comes on top of the kill (%d)" % a.renown)
+	check(raid.event.is_empty() and raid._bot_respawns.size() == respawns, "the event ends with him, and nobody takes his place")
+
+	# An event nobody deals with is cleared away.
+	raid.start_event("warlord")
+	raid.event.ends = raid.clock
+	await frames(3)
+	check(raid.event.is_empty() and raid.warlords.is_empty() and feed.has("The warlord has moved on"),
+			"an event nobody answers ends on its own")
+	await frames(2)
+	check(raid.bots.size() <= before + world.warlord_escort, "and its bots leave with it")
+
+	# The timer.
+	raid._event_in = 0.05
+	await frames(6)
+	check(not raid.event.is_empty(), "events come round on their own")
+	raid.queue_free()
+	await frames(2)
+
+
 func _test_online() -> void:
 	print("Online: commands and raids with several players")
 	var cmd := ActorCommand.new()
@@ -2251,7 +2403,7 @@ func _test_online() -> void:
 	raid.player_banked.connect(func(actor: Actor, items: Array) -> void: banked.append([actor, items]))
 	b_again.inventory.add_item("alloy_ingot")
 	var depot := raid.depots[0]
-	b_again.global_position = Vector3(depot.global_position.x, 0.2, depot.global_position.z)
+	b_again.global_position = Vector3(depot.global_position.x, depot.global_position.y - 1.8, depot.global_position.z)
 	await frames(int(raid.world.depot_hold_time * 60.0) + 30)
 	check(banked.size() == 1 and banked[0][0] == b_again and banked[0][1] == ["alloy_ingot"]
 			and not b_again.inventory.has_item("alloy_ingot"),
@@ -4201,3 +4353,21 @@ func _test_online_arena() -> void:
 		await _leave(fighter)
 	OS.kill(pid)
 	_wipe_dir(NET_ACCOUNTS)
+
+
+func _test_start_screen() -> void:
+	print("-- start screen")
+	check(ProjectSettings.get_setting("application/run/main_scene") == "res://scenes/start.tscn",
+			"the game launches on the start screen")
+	var screen := StartScreen.new()
+	add_child(screen)
+	await frames(2)
+	check(screen.start_button != null and screen.start_button.text == "Start game", "it offers Start game")
+	check(screen.title_text == "PROJECT ARES", "it shows the game title")
+	var count := [0]
+	screen.start_pressed.connect(func() -> void: count[0] += 1)
+	screen.start_button.pressed.emit()
+	screen.start_button.pressed.emit()
+	check(count[0] == 1, "pressing Start fires once, however often it is pressed")
+	screen.queue_free()
+	await frames(1)

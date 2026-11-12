@@ -44,6 +44,8 @@ var pay_scale := 1.0
 
 ## Renown for each player who is there when their side takes a strongpoint.
 var strongpoint_taken := 150
+## Renown for killing a warlord.
+var warlord_kill := 300
 
 ## Owner key -> Standing.
 var standings := {}

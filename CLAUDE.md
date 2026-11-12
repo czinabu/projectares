@@ -53,6 +53,14 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   `Look.atmosphere` a second, war mood has its sky blend towards it. A world
   scales the meter with `WorldDef.war_scale` (0 keeps it quiet). New stakes
   that follow the war (reinforcements, events, loot) read `Raid.war`.
+- Open ground is a `Terrain` (`core/world/terrain.gd`): a heightfield with
+  collision and a mesh that knows nothing about any world. A map on one
+  offers `ground_height(x, z)` and the `Raid` stands spawning actors on it
+  (`Raid._stand`). A heightfield is a surface, not a solid: anything that
+  moves an actor by setting its position (a blink, a teleport) must put the
+  feet back on the ground, or the actor falls through. Ashfront's map
+  (`worlds/ashfront/map.gd`) works its ground and navigation mesh out once
+  per run and shares them between copies (`_shared`), so a new copy is cheap.
 - Strongpoints (`core/war/strongpoint.gd`, `Raid.strongpoints`): a map only
   marks where they are (Marker3D nodes in the group "strongpoint", see the
   map contract in `WorldDef`); the `Raid` runs them. A side is a string key
@@ -61,6 +69,14 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   holds a site; clients get it from `NetSession`, including whether a site is
   theirs (`Strongpoint.viewer_holds`), and never see another player's key.
   Send bots somewhere with `BotBrain.post_to`, not a second mechanism.
+- World events (`Raid.event`, `start_event`, `end_event`): one at a time, on
+  a timer the war speeds up, tuned by `WorldDef.event_interval`,
+  `event_lifetime` and `warlord_escort`. A supply pod is an ordinary
+  `LootContainer`; a warlord is an ordinary bot passed through
+  `WorldDef.make_warlord` (clients build the same one from `Raid.warlords`,
+  so keep that hook free of randomness). Event bots are extra and are never
+  respawned. Loot that should follow the war comes from
+  `WorldDef.roll_war_loot(source, rng, intensity)`, not `roll_loot`.
 - Mastery pays for using gear, never for leaving alive, or signing out over
   and over would farm it.
 - Blocking and parrying happen in `Weapon.modify_incoming`, which `Combat.deal`
@@ -81,12 +97,24 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   over clip speed, the clip nearest the direction of travel is picked, and the
   lower body turns the rest of the way while the spine keeps the chest on the
   aim. Remote players work the same way from their replicated velocity.
+  Past a relaxed cadence a run lengthens its stride (feet stretched about
+  their average spot, legs solved to reach them) rather than only spinning
+  faster: that is the sprint. A slide (`Actor.slide_left`, `Actor.crouch`)
+  is simulated from `ActorCommand.slide` like a dash, so it predicts and
+  replicates; the skin bends the model into a slide pose from `crouch`.
+  Check leg changes by eye: `visual_check.tscn -- <dir> --gait-only`.
 - People are built from parts (`core/visual/human.gd`): an "appearance" names
   a build, four parts and colours. It is cosmetic only and never trusted:
   always pass one through `Look.clean_appearance` / `Look.set_appearance`,
   which is safe on a headless server. Online it travels in the spawn data as
   `data["look"]`; the server keeps what each signed-in player sent
   (`NetSession.look_for_peer`). `Raid` and gameplay never read it.
+  A look changed while in a world (the phone's Mirror app) is checked by the
+  server in `_request_look` and passed to everyone there with `_look_changed`.
+  The mirror itself (`core/visual/mirror.gd`) is a client-side view: no
+  collision, and nothing in `Raid` reads it. In first person the body is drawn on
+  `Mirror.BODY_LAYER`, which their own camera leaves out
+  (`PlayerController.body_layer`), so only the mirror shows it.
   Players may only wear `Human.STARTER` clothes plus outfits they own:
   `Human.player_look(raw, owned)` enforces it on the profile, in the
   customizer and on the server. Better outfits are bought or earned, never
