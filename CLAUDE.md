@@ -283,7 +283,10 @@ without Caleb, and update the gap list when a PR closes a row.
   aim steady while low, but have no high ground. Flown its
   own way a rig stays up for minutes, against type it overheats in seconds.
   Shooting from the air spreads wider (`Actor.air_aim`) except in a rig's
-  steady state.
+  steady state. The keys fly every rig and the mouse only looks and aims
+  (Caleb's call): wings bank on the strafe keys and dive or pull up on
+  forward and back (`Actor.glide_trim`), and a boost runs along the view's
+  heading, climbing only on jump and descend, never on the view's pitch.
   The body's attitude in the air (flat, banked, leaning, rolled by
   `ActorCommand.roll`) is the skin's job (`ActorSkin._update_glide`), read
   from velocity and the command only, so remote players match. Off the
@@ -401,7 +404,10 @@ without Caleb, and update the gap list when a PR closes a row.
   turns phone requests into service calls and pushes each affected player a
   fresh `social_state` snapshot. A feature that adds a new place a player can be
   (base, social hub) reports it with `NetSession._set_presence(peer, where)` and
-  a name in `SocialService.PLACE_NAMES`. Settings live in
+  a name in `SocialService.PLACE_NAMES`. The phone's Controls app lists
+  every key from `Phone.CONTROLS`, whose `{action}` names are filled in from
+  the live `InputMap`; a new input action needs a row there (a test fails
+  otherwise), and a changed control needs its row's wording updated. Settings live in
   `core/settings/game_settings.gd` (its own save file); a server never reads them.
 - Safe zones: a world with `WorldDef.safe_zone` (the plaza, `worlds/plaza`)
   is a social space run by the same `Raid` and `NetSession`. `Combat.deal`

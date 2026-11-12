@@ -1663,7 +1663,8 @@ func _check_free_flight(p: Actor) -> void:
 	p.cmd.sprint = false
 	var boost_was := p.flight.boost_speed
 	p.flight.boost_speed = 22.0
-	# Head first, wherever you look: up at 45 degrees here.
+	# Head first along the view's heading. Looking up 45 degrees only aims:
+	# the boost stays level until jump climbs.
 	p.cmd.pitch = PI / 4.0
 	p.cmd.sprint = true
 	p.cmd.move = Vector2(0, 1)
@@ -1671,9 +1672,13 @@ func _check_free_flight(p: Actor) -> void:
 	await frames(30)
 	boost_heat = p.flight.heat - boost_heat
 	await frames(60)
-	var along := p.velocity.dot(Basis.from_euler(Vector3(p.cmd.pitch, p.cmd.yaw, 0.0)) * Vector3.FORWARD)
-	check(p.flight.is_boosting and along > p.flight.boost_speed - 1.0 and p.velocity.y > 10.0,
-			"sprinting forward boosts head first along the way you look (%.1f m/s)" % along)
+	var along := p.velocity.dot(Basis(Vector3.UP, p.cmd.yaw) * Vector3.FORWARD)
+	check(p.flight.is_boosting and along > p.flight.boost_speed - 1.0 and absf(p.velocity.y) < 1.0,
+			"sprinting forward boosts head first along the view's heading, level whatever the pitch (%.1f m/s)" % along)
+	p.cmd.jump = true
+	await frames(30)
+	check(p.flight.is_boosting and p.velocity.y > 5.0, "holding jump climbs during a boost")
+	p.cmd.jump = false
 	check(boost_heat > hover_heat * 2.0, "boosting runs hotter than hovering")
 	p.cmd.sprint = false
 	p.cmd.move = Vector2.ZERO
@@ -1898,27 +1903,38 @@ func _check_glide_flying(p: Actor) -> void:
 	await frames(120)
 	var cruise := Vector2(p.velocity.x, p.velocity.z).length()
 	check(absf(cruise - p.flight.glide_speed) < 0.5, "a level glide settles at glide speed (%.1f)" % cruise)
-	# Turn the view a quarter round at once: the glide comes round in an arc.
+	# Turning the view only looks: the glide flies straight on.
 	var before := Vector3(p.velocity.x, 0, p.velocity.z).normalized()
 	p.cmd.yaw -= PI / 2.0
+	p.cmd.pitch = -0.9
+	await frames(30)
+	var looked := Vector3(p.velocity.x, 0, p.velocity.z).normalized()
+	check(before.dot(looked) > 0.999 and Vector2(p.velocity.x, p.velocity.z).length() < cruise + 0.5,
+			"looking around while gliding neither turns nor dives the wings")
+	p.cmd.pitch = 0.0
+	# Holding a strafe key banks the glide round in an arc.
+	p.cmd.move = Vector2(1, 0)
 	await frames(10)
 	var during := Vector3(p.velocity.x, 0, p.velocity.z).normalized()
 	var swung := before.angle_to(during)
-	check(swung > 0.1 and swung < 0.5, "wings turn in an arc instead of snapping round (%.2f rad)" % swung)
-	await frames(80)
+	check(swung > 0.1 and swung < 0.5, "a strafe key banks the wings round in an arc (%.2f rad)" % swung)
+	check(before.signed_angle_to(during, Vector3.UP) < 0.0, "and the right key turns right")
+	p.cmd.move = Vector2.ZERO
+	await frames(30)
 	var after := Vector3(p.velocity.x, 0, p.velocity.z).normalized()
-	check(after.dot(Basis(Vector3.UP, p.cmd.yaw) * Vector3.FORWARD) > 0.99, "and end up flying where you face")
-	p.cmd.pitch = -0.9
+	check(during.dot(after) > 0.999, "letting go flies straight on")
+	p.cmd.move = Vector2(0, 1)
 	await frames(150)
 	var dived := Vector2(p.velocity.x, p.velocity.z).length()
-	check(dived > cruise * 1.4 and p.velocity.y < -8.0, "looking down dives for speed (%.1f m/s)" % dived)
-	p.cmd.pitch = 0.9
+	check(dived > cruise * 1.4 and p.velocity.y < -8.0, "forward dives for speed (%.1f m/s)" % dived)
+	p.cmd.move = Vector2(0, -1)
 	var low := p.global_position.y
 	await frames(60)
-	check(p.flight.is_gliding and p.global_position.y > low + 4.0, "pulling up climbs on that speed (%.1f m)" % (p.global_position.y - low))
+	check(p.flight.is_gliding and p.global_position.y > low + 4.0, "back pulls up and climbs on that speed (%.1f m)" % (p.global_position.y - low))
 	await frames(240)
 	var slow := Vector2(p.velocity.x, p.velocity.z).length()
 	check(slow < cruise * 0.8 and p.velocity.y < 0.0, "the climb runs out as the speed does")
+	p.cmd.move = Vector2.ZERO
 	p.cmd.pitch = 0.0
 	p.cmd.jump = false
 
@@ -5058,6 +5074,54 @@ func _test_game_settings() -> void:
 	GameSettings.apply()
 
 
+## The Controls app lists every key from the input map as it is right now.
+func _test_phone_controls(phone: CanvasLayer) -> void:
+	var listed := {}
+	var unknown: Array[String] = []
+	for section: Array in PhoneScript.CONTROLS:
+		for row: Array in section[1]:
+			var spec: String = row[1]
+			var at := spec.find("{")
+			while at >= 0:
+				var end := spec.find("}", at)
+				var action := spec.substr(at + 1, end - at - 1)
+				listed[action] = true
+				if not InputMap.has_action(action):
+					unknown.append(action)
+				at = spec.find("{", end)
+	check(unknown.is_empty(), "the Controls app names only real input actions (%s)" % ", ".join(unknown))
+	var missing: Array[String] = []
+	var setup: GDScript = preload("res://core/input_setup.gd")
+	for action: String in setup.KEY_ACTIONS.keys() + setup.MOUSE_ACTIONS.keys():
+		if not listed.has(action) and action not in missing:
+			missing.append(action)
+	check(missing.is_empty(), "every keybind is listed in the phone's Controls app (missing: %s)" % ", ".join(missing))
+	check(PhoneScript.key_name("interact") == "F" and PhoneScript.key_name("fire") == "Left mouse",
+			"keys are named the way a player reads them")
+	check(PhoneScript.key_name("roll_left") == "Q or Mouse back", "an action bound twice shows both")
+	check(PhoneScript.controls_text("Hold {jump}") == "Hold Space", "a key spec reads from the input map")
+	phone.open_app("controls")
+	check(phone.app == "controls" and phone._title.text == "Controls" and phone._body.get_child_count() > 20,
+			"the phone has a Controls app")
+	# Rebinding shows straight away, since the list reads the input map.
+	var old_events := InputMap.action_get_events("interact")
+	InputMap.action_erase_events("interact")
+	var rebound := InputEventKey.new()
+	rebound.physical_keycode = KEY_K
+	InputMap.action_add_event("interact", rebound)
+	check(PhoneScript.controls_text("{interact}") == "K", "a rebound key shows in the Controls app")
+	InputMap.action_erase_events("interact")
+	for event: InputEvent in old_events:
+		InputMap.action_add_event("interact", event)
+	check(PhoneScript.key_name("interact") == "F", "the binding is put back")
+	phone.open_app("settings")
+	var link := false
+	for child in phone._body.get_children():
+		if child is Button and (child as Button).text.contains("every key"):
+			link = true
+	check(link, "settings link to the Controls app")
+
+
 func _test_phone_view() -> void:
 	print("Phone: the menu itself")
 	var phone: CanvasLayer = PhoneScript.new()
@@ -5075,6 +5139,7 @@ func _test_phone_view() -> void:
 			"news can be read offline")
 	phone.open_app("contacts")
 	check(phone._body.get_child_count() == 1, "offline, contacts explain how to reach players")
+	await _test_phone_controls(phone)
 	GameSettings.persist = false
 	phone.open_app("settings")
 	phone.change_setting("field_of_view", 95.0)

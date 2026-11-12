@@ -442,14 +442,16 @@ func _simulate_movement(delta: float) -> void:
 
 
 ## Jets lit: the rig carries your weight. Jump climbs, descend sinks, and a
-## boost flies you head first along the way you look.
+## boost flies you head first along the view's heading, level unless jump or
+## descend is held. The mouse's pitch never steers.
 func _simulate_hover(delta: float) -> void:
 	var climb := (1.0 if cmd.jump else 0.0) - (1.0 if cmd.descend else 0.0)
 	flight.is_coasting = climb < 0.0 and not flight.is_boosting
 	if flight.is_boosting:
-		var want := Basis.from_euler(Vector3(cmd.pitch, cmd.yaw, 0.0)) * Vector3.FORWARD * flight.boost_speed
-		want += Basis(Vector3.UP, cmd.yaw) * Vector3(cmd.move.x * flight.fly_speed * 0.5, 0.0, 0.0)
-		want.y += climb * flight.descend_speed
+		# Along the view's heading, level: jump and descend climb and sink.
+		# The mouse's pitch only aims (Caleb's call: keys fly).
+		var want := Basis(Vector3.UP, cmd.yaw) * Vector3(cmd.move.x * flight.fly_speed * 0.5, 0.0, -flight.boost_speed)
+		want.y += flight.max_rise_speed if climb > 0.0 else climb * flight.descend_speed
 		velocity = velocity.move_toward(want, flight.boost_accel * delta)
 		flight.tick(true, delta, flight.boost_heat_mult)
 		return
@@ -547,20 +549,20 @@ func wings_block(weapon: Weapon) -> bool:
 	return _wing_stow > 0.0 and weapon is Gun and not (weapon as Gun).is_sidearm
 
 
-## How far the glide is tipped by where you look: 1 a full dive, -1 a full flare.
+## How far the glide is tipped, from the forward and back keys: 1 a full
+## dive (forward), -1 a full flare (back).
 func glide_trim() -> float:
-	return clampf(-cmd.pitch / 0.9, -1.0, 1.0)
+	return clampf(cmd.move.y, -1.0, 1.0)
 
 
-## Wings fly where they point: the heading turns toward where you steer (the
-## move keys, or the way you face) rather than sliding there, and a dive is
-## faster than a flare.
-func _glide_velocity(horizontal: Vector3, wish: Vector3, yaw_basis: Basis, delta: float) -> Vector3:
-	var want := wish.normalized() if wish.length() > 0.1 else yaw_basis * Vector3.FORWARD
-	var heading := horizontal.normalized() if horizontal.length() > 1.0 else want
-	var angle := heading.signed_angle_to(want, Vector3.UP)
-	var step := flight.glide_turn_rate * delta
-	heading = heading.rotated(Vector3.UP, clampf(angle, -step, step))
+## Wings are flown on the keys, never the mouse (Caleb's call: the mouse only
+## looks and aims): the strafe keys bank the heading round at up to
+## `FlightRig.glide_turn_rate`, forward dives and back pulls up
+## (`glide_trim`). With no keys the glide flies straight on, wherever you
+## look. A glide that has no heading yet (the launch) sets off the way you face.
+func _glide_velocity(horizontal: Vector3, _wish: Vector3, yaw_basis: Basis, delta: float) -> Vector3:
+	var heading := horizontal.normalized() if horizontal.length() > 1.0 else yaw_basis * Vector3.FORWARD
+	heading = heading.rotated(Vector3.UP, -clampf(cmd.move.x, -1.0, 1.0) * flight.glide_turn_rate * delta)
 	var trim := glide_trim()
 	var air_speed := horizontal.length()
 	var cruise := flight.glide_speed
