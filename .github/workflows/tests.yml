@@ -43,7 +43,7 @@ jobs:
         run: '"$GODOT" --headless --fixed-fps 60 --path . res://tests/test_runner.tscn -- --tier offline'
 
   net:
-    name: Online tests (${{ matrix.shard }}/3)
+    name: Online tests
     if: >-
       (github.event.action != 'labeled' || github.event.label.name == 'full-ci')
       && (github.event_name != 'pull_request'
@@ -63,7 +63,7 @@ jobs:
 
   passed:
     name: Tests passed
-    if: always() && (github.event.action != 'labeled' || github.event.label.name == 'full-ci')
+    if: ${{ !cancelled() && (github.event.action != 'labeled' || github.event.label.name == 'full-ci') }}
     needs: [offline, net]
     runs-on: ubuntu-latest
     steps:
