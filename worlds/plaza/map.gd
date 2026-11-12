@@ -171,9 +171,18 @@ func _build_clan_hall() -> void:
 	for z: float in [-9.0, 9.0]:
 		_box(Vector3(1.6, 1.2, 1.6), at + Vector3(-3.0, 0.6, z), DARK, 0.0)
 		_add_marker("clan_banner", at + Vector3(-3.0, 1.2, z))
-	_add_portal("clans", "Clan hall", at + Vector3(-3.2, 0, 0), 2.8)
+	var portal := _add_portal("clans", "Use the clan hall terminal", at + Vector3(-3.2, 0, 0), 2.8)
+	# The hall's terminal beside the door, its screen facing the plaza.
+	var facing := Basis(Vector3.UP, -PI / 2.0)
+	var screen := Node3D.new()
+	screen.name = "Screen"
+	screen.position = Vector3(2.1, 1.75, 0)
+	screen.basis = facing * Basis(Vector3.RIGHT, -0.08)
+	portal.add_child(screen)
+	_part(screen, Vector3(1.7, 1.0, 0.06), Vector3(0, 0, -0.04), DARK_GLASS)
+	_part(screen, Vector3(1.6, 0.9, 0.01), Vector3.ZERO, Color(0.85, 0.6, 1.0).darkened(0.75), true)
 	_sign("CLAN HALL", at + Vector3(-1.05, 8.2, 0), -PI / 2.0, 1.0, Color(0.85, 0.6, 1.0))
-	_sign("Opening soon", at + Vector3(-1.05, 7.3, 0), -PI / 2.0, 0.36, Color(0.9, 0.9, 0.9))
+	_sign("Found a clan, or join one", at + Vector3(-1.05, 7.3, 0), -PI / 2.0, 0.36, Color(0.9, 0.9, 0.9))
 
 
 ## South: a ring of arrival points, so a crowd does not stack on one spot.

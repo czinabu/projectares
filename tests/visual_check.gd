@@ -60,9 +60,11 @@ func _ready() -> void:
 		get_tree().quit()
 		return
 
-	# `-- <output_dir> --holster-only` shoots holstered weapons on the body.
+	# `-- <output_dir> --holster-only [melee item id]` shoots holstered
+	# weapons on the body, with that melee weapon in place of the kit's.
 	if "--holster-only" in args:
-		await _holster_shots(out_dir)
+		var at := args.find("--holster-only")
+		await _holster_shots(out_dir, args[at + 1] if at + 1 < args.size() else "")
 		get_tree().quit()
 		return
 
@@ -1110,7 +1112,7 @@ func _power_shots(out_dir: String) -> void:
 ## A contact sheet of where holstered weapons are worn: one row each for the
 ## blade in hand (gun slung on the back) and the gun in hand (blade on the hip),
 ## with the jetpack on and off, seen from four sides.
-func _holster_shots(out_dir: String) -> void:
+func _holster_shots(out_dir: String, melee_id := "") -> void:
 	var raid := Raid.new()
 	add_child(raid)
 	raid.start(Worlds.get_world("ashfront"), 42)
@@ -1119,6 +1121,16 @@ func _holster_shots(out_dir: String) -> void:
 	var player := raid.player
 	player.set_physics_process(false)
 	player.velocity = Vector3.ZERO
+	if ItemDB.has_tag(melee_id, "melee"):
+		for w in player.weapons.duplicate():
+			if w is MeleeWeapon:
+				player.weapons.erase(w)
+				if w.visual:
+					w.visual.queue_free()
+				w.queue_free()
+		var swap := MeleeWeapon.new()
+		Loadout._setup_weapon(swap, melee_id, ItemDB.item_stats(melee_id))
+		player.equip_weapon(swap)
 	await _settle(10)
 	var skin: Node = player.get_node("Skin")
 	var cam := Camera3D.new()

@@ -137,17 +137,19 @@ const GUN_GLOW := [
 	["rifle", Color(0.25, 0.9, 1.0)],
 ]
 ## Melee models picked by item tag, first match wins: file, length in meters,
-## how far up from the pommel the hand grips it, and whether it takes both hands.
-## No file means the model is built in code (see `_spear_model`).
+## how far up from the pommel the hand grips it, whether it takes both hands,
+## and how it folds away when holstered (see `set_extend`): "blade" draws the
+## blade into the hilt, "telescope" slides the shaft into itself, "" keeps
+## its shape. No file means the model is built in code (see `_spear_model`).
 const MELEE_MODELS := [
-	["hammer", "Hammer.glb", 1.15, 0.3, true],
-	["knife", "Knife.glb", 0.5, 0.1, false],
-	["axe", "Axe.glb", 0.85, 0.12, false],
-	["spear", "", 2.1, 0.75, true],
-	["starter", "Sword.glb", 1.15, 0.13, false],
-	["blade", "Katana.glb", 1.2, 0.14, false],
+	["hammer", "Hammer.glb", 1.15, 0.3, true, ""],
+	["knife", "Knife.glb", 0.5, 0.1, false, "blade"],
+	["axe", "Axe.glb", 0.85, 0.12, false, ""],
+	["spear", "", 2.1, 0.75, true, "telescope"],
+	["starter", "Sword.glb", 1.15, 0.13, false, "blade"],
+	["blade", "Katana.glb", 1.2, 0.14, false, "blade"],
 ]
-const DEFAULT_MELEE := ["", "Sword.glb", 1.15, 0.13, false]
+const DEFAULT_MELEE := ["", "Sword.glb", 1.15, 0.13, false, "blade"]
 const GUN_LENGTH := 0.72
 
 ## False on a headless server: nothing is dressed and no art is loaded.
@@ -156,6 +158,10 @@ var enabled := DisplayServer.get_name() != "headless"
 var _materials := {}
 var _noise: NoiseTexture2D
 var _gear_materials := {}
+## Mesh surface and placement -> how far up the model it runs (`_surface_span`).
+var _spans := {}
+## A foldable melee material's id -> its folded copy (see `set_extend`).
+var _folded := {}
 var _prop_sizes := {}
 ## Gun model file -> attachment slot -> mount point (see `mount_attachments`).
 var _gun_mounts := {}
@@ -1071,7 +1077,8 @@ func _melee_model(weapon: Weapon) -> Node3D:
 	holder.add_child(model)
 	_fit(model, WEAPONS + pick[1], pick[2], true)
 	_tech_melee(holder, energy_color(weapon.item_id), energy_strength(weapon.item_id),
-			0.7 if weapon.item_id == "" or ItemDB.has_tag(weapon.item_id, "starter") else 0.3)
+			0.7 if weapon.item_id == "" or ItemDB.has_tag(weapon.item_id, "starter") else 0.3,
+			{"mode": pick[5]})
 	holder.position.y = -pick[3]
 	return holder
 
@@ -1093,26 +1100,138 @@ func energy_strength(item_id: String) -> float:
 ## Restyles a melee model as tech (see assets/shaders/melee.gdshader): light
 ## parts become alloy with an energy edge in `glow` (`strength` times as
 ## bright), dark parts black polymer with glowing seams. `root` is the holder,
-## so seams are spaced in meters.
-func _tech_melee(root: Node3D, glow: Color, strength: float, wear: float) -> void:
+## so seams are spaced in meters. `fold` says how the model folds away when
+## holstered: {"mode": "blade"} finds the blade (the parts that start highest
+## up the model) and draws it into the hilt; {"hilt", "slide", "keep"} in
+## meters up the model slides `slide` meters above `hilt` down to `keep` of
+## its length, and carries everything above along with it.
+func _tech_melee(root: Node3D, glow: Color, strength: float, wear: float, fold := {}) -> void:
+	var surfaces: Array[Dictionary] = []
 	for node in root.find_children("*", "MeshInstance3D", true, false):
 		var mesh_node := node as MeshInstance3D
 		if mesh_node.mesh == null:
 			continue
-		# How many meters one object-space unit of this mesh is in the holder.
 		var xform := mesh_node.transform
 		var up := mesh_node.get_parent()
 		while up != null and up != root:
 			if up is Node3D:
 				xform = (up as Node3D).transform * xform
 			up = up.get_parent()
-		var meters := xform.basis.get_scale().y
 		for i in mesh_node.mesh.get_surface_count():
 			var source := mesh_node.get_active_material(i) as BaseMaterial3D
 			if source == null:
 				continue
-			mesh_node.set_surface_override_material(i,
-					_tech_material(source, glow, strength, wear, meters, mesh_node.mesh.get_aabb()))
+			var span := _surface_span(mesh_node.mesh, i, xform)
+			surfaces.append({"node": mesh_node, "index": i, "source": source, "xform": xform,
+				"low": span.x, "high": span.y})
+	# Where the model folds, in meters up the model, and which parts move.
+	var hilt := INF
+	var slide := 0.0
+	var keep := 1.0
+	var mode: String = fold.get("mode", "")
+	if mode == "blade" and not surfaces.is_empty():
+		var top: Dictionary = surfaces[0]
+		for s in surfaces:
+			if s["high"] > top["high"]:
+				top = s
+		var length: float = top["high"]
+		var start: float = top["low"]
+		hilt = start
+		for s in surfaces:
+			if s["low"] >= start - 0.1 * length:
+				hilt = minf(hilt, s["low"])
+		slide = length
+		keep = 0.0
+	elif fold.has("hilt"):
+		hilt = fold["hilt"]
+		slide = fold["slide"]
+		keep = fold["keep"]
+	for s in surfaces:
+		var mesh_node: MeshInstance3D = s["node"]
+		var xform: Transform3D = s["xform"]
+		var retract := {}
+		# A blade folds only the parts that start at the hilt, so a guard
+		# or pommel cast in one piece with the hilt keeps its shape.
+		if hilt < INF and (mode != "blade" or s["low"] >= hilt - 0.001):
+			var inv := xform.affine_inverse()
+			var axis := inv.basis * Vector3.UP
+			retract = {"origin": inv * Vector3(0, hilt, 0), "axis": axis.normalized(),
+				"slide": slide * axis.length(), "keep": keep}
+		mesh_node.set_surface_override_material(s["index"],
+				_tech_material(s["source"], glow, strength, wear, xform.basis.get_scale().y,
+					mesh_node.mesh.get_aabb(), retract))
+	if hilt < INF:
+		root.set_meta("fold", {"hilt": hilt, "slide": slide, "keep": keep})
+
+
+## How high up a melee model a point `y` meters from its pommel sits once
+## folded away (`fold` as `_tech_melee` stores it on the holder).
+static func fold_height(y: float, fold: Dictionary) -> float:
+	var d: float = y - fold["hilt"]
+	if d <= 0.0:
+		return y
+	var slide: float = fold["slide"]
+	var keep: float = fold["keep"]
+	return fold["hilt"] + (d * keep if d < slide else d - slide * (1.0 - keep))
+
+
+## `model_bounds` of a melee model as it is worn, folded away.
+static func folded_bounds(model: Node3D) -> AABB:
+	var box := model_bounds(model)
+	if not model.has_meta("fold"):
+		return box
+	var top := fold_height(box.end.y - model.position.y, model.get_meta("fold")) + model.position.y
+	box.size.y = maxf(top - box.position.y, 0.0)
+	return box
+
+
+## How far up the model (its +Y, in the holder) one surface of a mesh runs.
+func _surface_span(mesh: Mesh, surface: int, xform: Transform3D) -> Vector2:
+	var key := "%d/%d/%s" % [mesh.get_instance_id(), surface, xform]
+	if _spans.has(key):
+		return _spans[key]
+	var span := Vector2(INF, -INF)
+	var verts: PackedVector3Array = mesh.surface_get_arrays(surface)[Mesh.ARRAY_VERTEX]
+	for v in verts:
+		var y := (xform * v).y
+		span = Vector2(minf(span.x, y), maxf(span.y, y))
+	_spans[key] = span
+	return span
+
+
+## Folds a melee model away (`extend` 0, how it is worn holstered) or out
+## (1, how it is held), or anywhere between while it is drawn or put away.
+## Only models built by `weapon_model` fold; anything else is left alone.
+## Fully out or folded share materials between every copy; in between, the
+## model gets its own until it settles.
+func set_extend(model: Node3D, extend: float) -> void:
+	if model == null:
+		return
+	extend = clampf(extend, 0.0, 1.0)
+	for node in model.find_children("*", "MeshInstance3D", true, false):
+		var mesh_node := node as MeshInstance3D
+		if mesh_node.mesh == null:
+			continue
+		for i in mesh_node.mesh.get_surface_count():
+			var mat := mesh_node.get_surface_override_material(i) as ShaderMaterial
+			if mat == null:
+				continue
+			var full: ShaderMaterial = mat.get_meta("tech_full") if mat.has_meta("tech_full") \
+					else (mat if mat.has_meta("tech_fold") else null)
+			if full == null:
+				continue
+			var folded: ShaderMaterial = _folded[full.get_instance_id()]
+			var pick: ShaderMaterial
+			if extend >= 1.0:
+				pick = full
+			elif extend <= 0.0:
+				pick = folded
+			else:
+				pick = mat if mat != full and mat != folded else full.duplicate() as ShaderMaterial
+				pick.set_meta("tech_full", full)
+				pick.set_shader_parameter("extend", extend)
+			if pick != mat:
+				mesh_node.set_surface_override_material(i, pick)
 
 
 ## Which part of a melee model a pack color is: 1 for bare light metal (an
@@ -1137,8 +1256,9 @@ static func edge_axis(box: AABB) -> int:
 
 
 func _tech_material(source: BaseMaterial3D, glow: Color, strength: float, wear: float, meters: float,
-		box: AABB) -> ShaderMaterial:
-	var key := "tech/%d/%s/%.2f/%.2f/%.4f/%s" % [source.get_instance_id(), glow.to_html(), strength, wear, meters, box]
+		box: AABB, retract := {}) -> ShaderMaterial:
+	var key := "tech/%d/%s/%.2f/%.2f/%.4f/%s/%s" % [source.get_instance_id(), glow.to_html(), strength, wear, meters,
+		box, retract]
 	if _gear_materials.has(key):
 		return _gear_materials[key]
 	var mat := ShaderMaterial.new()
@@ -1157,6 +1277,18 @@ func _tech_material(source: BaseMaterial3D, glow: Color, strength: float, wear: 
 	mat.set_shader_parameter("grime_albedo", load(dir + "Color.jpg"))
 	mat.set_shader_parameter("grime_rough", load(dir + "Roughness.jpg"))
 	mat.set_shader_parameter("wear", wear)
+	if not retract.is_empty():
+		mat.set_shader_parameter("fold_origin", retract["origin"])
+		mat.set_shader_parameter("fold_axis", retract["axis"])
+		mat.set_shader_parameter("fold_slide", retract["slide"])
+		mat.set_shader_parameter("fold_keep", retract["keep"])
+		mat.set_shader_parameter("extend", 1.0)
+		# The copy worn holstered, folded away; `set_extend` swaps between them.
+		mat.set_meta("tech_fold", true)
+		var folded := mat.duplicate() as ShaderMaterial
+		folded.set_shader_parameter("extend", 0.0)
+		folded.set_meta("tech_full", mat)
+		_folded[mat.get_instance_id()] = folded
 	_gear_materials[key] = mat
 	return mat
 
@@ -1195,7 +1327,9 @@ func _spear_model(length: float, grip: float, glow: Color, strength: float) -> N
 	upper.bottom_radius = 0.055
 	upper.height = head_len * 0.7
 	_spear_part(model, upper, Vector3(0, shaft_len + head_len * 0.65, 0), steel, Vector3(1, 1, 0.3))
-	_tech_melee(holder, glow, strength, 0.3)
+	# Holstered, the shaft above the butt collar slides into itself and
+	# carries the head down with it.
+	_tech_melee(holder, glow, strength, 0.3, {"hilt": 0.2, "slide": shaft_len - 0.3, "keep": 0.2})
 	holder.position.y = -grip
 	return holder
 

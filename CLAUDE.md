@@ -75,6 +75,17 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   drop if the choice is no longer on offer. Online the client only sends the
   id with `NetSession.deploy(drop)`; a client lists its choices from what the
   server already told it (`Strongpoint.viewer_holds`, war intensity).
+- Clans (`core/social/clan_service.gd`, `NetSession.clans`): the server keeps
+  who is in which clan, keyed by account id, in one service shared by every
+  session like the `StashService`. A client only asks (`NetSession.clan_ask`)
+  and shows `clan_state`; the clan hall's terminal in the plaza is the view
+  (`core/social/clan_panel.gd`). The `Raid` never asks about clans: before
+  `add_player`, `NetSession` calls `Raid.set_team(owner, team, title)`, and
+  a team is simply a shared side key, so strongpoints, drops and visor tags
+  follow with no second mechanism. `Actor.clan` (set by the authority only
+  where gear is at stake) stops friendly fire in `Combat.deal`;
+  `Actor.clan_tag` is for views and is worn everywhere. Nobody changes clan
+  while deployed.
 - World heat: `Raid.status()` is what a world shows of itself from outside
   (players, war level, top bounty, the event running) and never says who or
   where anyone is. The safe zone's `NetSession` gathers it from the other
@@ -129,7 +140,11 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   data plus a `Look.MELEE_MODELS` entry, not as a new class. Every melee
   model is dressed as tech by `Look._tech_melee` (`assets/shaders/melee.gdshader`):
   bare metal becomes alloy with an energy edge in the weapon's rarity color,
-  wood and wraps black polymer with glowing seams.
+  wood and wraps black polymer with glowing seams. A holstered blade is worn
+  folded away (the last field of its `MELEE_MODELS` entry: "blade" draws the
+  blade into the hilt, "telescope" slides a spear shaft into itself) and
+  slides out once drawn (`Look.set_extend`, timed by `ActorSkin._update_fold`).
+  Folding is done in the shader's vertex step, so it is view-only.
 - Melee attacks share one button (Caleb's call): a tap of `ActorCommand.primary`
   is a light attack, released before `MeleeWeapon.hold_time`; holding past it
   starts the heavy (a dive slam in the air) with its full visible windup. A bare

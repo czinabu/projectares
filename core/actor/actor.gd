@@ -27,6 +27,11 @@ const HAND_REST := Vector3(0.38, 1.25, -0.35)
 
 var faction := "raider"
 var display_name := "Raider"
+## The clan this actor fights for (its id), or "". Clanmates cannot hurt each
+## other (`Combat.deal`). Set by the authority; never trusted from a client.
+var clan := ""
+## The clan's short tag, for views to show beside the name.
+var clan_tag := ""
 var is_player := false
 var body_color := Color(0.25, 0.6, 1.0)
 

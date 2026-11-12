@@ -218,6 +218,8 @@ static func gear_lines(actor: Actor) -> Array[Dictionary]:
 static func gear_tag(actor: Actor) -> String:
 	var lines := gear_lines(actor)
 	var text := actor.display_name.to_upper()
+	if actor.clan_tag != "":
+		text = "[%s] %s" % [actor.clan_tag, text]
 	var worth := 0
 	for line in lines:
 		worth += int(line.value)
