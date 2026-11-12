@@ -398,7 +398,10 @@ without Caleb, and update the gap list when a PR closes a row.
   turns phone requests into service calls and pushes each affected player a
   fresh `social_state` snapshot. A feature that adds a new place a player can be
   (base, social hub) reports it with `NetSession._set_presence(peer, where)` and
-  a name in `SocialService.PLACE_NAMES`. Settings live in
+  a name in `SocialService.PLACE_NAMES`. The phone's Controls app lists
+  every key from `Phone.CONTROLS`, whose `{action}` names are filled in from
+  the live `InputMap`; a new input action needs a row there (a test fails
+  otherwise), and a changed control needs its row's wording updated. Settings live in
   `core/settings/game_settings.gd` (its own save file); a server never reads them.
 - Safe zones: a world with `WorldDef.safe_zone` (the plaza, `worlds/plaza`)
   is a social space run by the same `Raid` and `NetSession`. `Combat.deal`

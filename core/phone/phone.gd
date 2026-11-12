@@ -1,7 +1,8 @@
 extends CanvasLayer
 ## The phone every player carries. It is the game's menu: open it with P in
 ## the hub or in a raid to reach other players, answer invites, read the
-## news, try on clothes in front of a mirror and change settings.
+## news, try on clothes in front of a mirror, look up the controls and change
+## settings.
 ##
 ## It is a view. Online it shows the `NetSession.social_state` the server
 ## sent and turns taps into requests (`send_message`, `send_invite`,
@@ -25,12 +26,95 @@ const GameSettings := preload("res://core/settings/game_settings.gd")
 const UiTheme := preload("res://core/visual/ui_theme.gd")
 const CharacterPanel := preload("res://core/ui/character_panel.gd")
 
-const APPS := ["contacts", "messages", "invites", "news", "mirror", "settings"]
+const APPS := ["contacts", "messages", "invites", "news", "mirror", "controls", "settings"]
 const APP_NAMES := {"contacts": "Contacts", "messages": "Messages", "invites": "Invites",
-		"news": "News", "mirror": "Mirror", "settings": "Settings"}
+		"news": "News", "mirror": "Mirror", "controls": "Controls", "settings": "Settings"}
 ## The shorter names on the bottom bar.
 const NAV_NAMES := {"contacts": "People", "messages": "Chat", "invites": "Invites",
-		"news": "News", "mirror": "Mirror", "settings": "Settings"}
+		"news": "News", "mirror": "Mirror", "controls": "Keys", "settings": "Settings"}
+
+## The Controls app: what every key does, in sections. Each row is
+## [what it does, the keys]. `{action}` in the keys is replaced by whatever is
+## bound to that input action right now (`key_name`), so the list follows the
+## input map, rebinding included. Anything else is shown as written (the
+## mouse, Esc, keys the code reads directly). Every action in `InputSetup`
+## must appear here at least once; a test checks it.
+const CONTROLS := [
+	["ON FOOT", [
+		["Move", "{move_forward} {move_left} {move_back} {move_right}"],
+		["Look around", "Mouse"],
+		["Sprint", "Hold {sprint}"],
+		["Jump", "{jump}"],
+		["Dash", "{dash}"],
+		["Slide (while sprinting)", "{slide}"],
+		["First or third person", "{toggle_view}"],
+	]],
+	["FLYING: JETPACK", [
+		["Climb (in the air)", "Hold {jump}"],
+		["Light the jets and hover", "Tap {jump} in the air"],
+		["Cruise while hovering", "{move_forward} {move_left} {move_back} {move_right}"],
+		["Coast down with the jets idle to cool", "Hold {slide}"],
+		["Boost head first where you look (Mk2)", "{sprint} + {move_forward}"],
+	]],
+	["FLYING: THRUSTER BOOTS", [
+		["Kick up and the way you steer", "{jump} in the air"],
+		["Skim low (cools near a surface)", "Hold {jump} in the air"],
+		["Dash on heat", "{dash} in the air"],
+	]],
+	["FLYING: GLIDE WINGS", [
+		["Launch", "{jump} in the air"],
+		["Glide (while falling)", "Hold {jump}"],
+		["Pulse up while gliding", "{jump} again"],
+		["Bank round", "Steer, or turn the view"],
+		["Dive for speed, climb on it", "Look down, look up"],
+		["Barrel roll while gliding", "{roll_left} / {roll_right}"],
+		["Roll the body while boosting", "{roll_left} / {roll_right}"],
+	]],
+	["WEAPONS", [
+		["Fire", "{fire}"],
+		["Aim down sights", "Hold {alt_fire}"],
+		["Reload", "{reload}"],
+		["Primary / sidearm / melee / power weapon", "{weapon_1} {weapon_2} {weapon_3} {weapon_4}, or the wheel"],
+		["Put away, or draw again", "{holster}"],
+		["Use a medkit", "{heal}"],
+		["Use your ability", "{ability}"],
+		["Use your helmet's visor (zoom, scan, thermal)", "{visor}, again to step or turn off"],
+	]],
+	["MELEE", [
+		["Light attack (combo)", "Tap {fire}"],
+		["Heavy attack (a dive slam in the air)", "Hold {fire}"],
+		["Block", "Hold {alt_fire}"],
+		["Parry", "{alt_fire} just before a hit"],
+		["Pick a side: left, right or overhead", "Flick the mouse, or hold {move_left} {move_right} {move_forward}"],
+		["Switch how the side is picked", "{melee_control}"],
+	]],
+	["WATCH", [
+		["Raise or lower the watch", "{check_wrist}"],
+		["Pick a toy vehicle (watch up)", "Mouse wheel"],
+		["Take the toy in your hand (watch up)", "{fire}"],
+		["Throw the toy, or put it back", "{fire}, or {alt_fire}"],
+		["Pack the bike you look at (watch up)", "{fire}"],
+	]],
+	["VEHICLES", [
+		["Get on or off", "{interact}"],
+		["Throttle / brake or reverse", "{move_forward} / {move_back}"],
+		["Steer", "{move_left} / {move_right}"],
+		["Boost", "{sprint}"],
+	]],
+	["IN THE WORLD", [
+		["Loot, use a console or a doorway", "{interact}"],
+		["Scoreboard", "Hold {scoreboard}"],
+		["Sign out and go home (10 s, out of a fight)", "{sign_out}"],
+		["After dying: drop back in", "{redeploy}"],
+		["After dying: pick where to land", "1 to 9"],
+		["After dying: go home", "{sign_out}"],
+	]],
+	["PHONE AND MOUSE", [
+		["Open or close the phone", "{phone}"],
+		["Free the mouse, step back from a console", "Esc"],
+		["Mirror app: choose, then scroll", "Arrows or W A S D"],
+	]],
+]
 
 var screen_size := Vector2(480, 760)
 ## Seconds a pop-up stays on screen.
@@ -491,6 +575,7 @@ func refresh(redraw := true) -> void:
 		"invites": _draw_invites()
 		"news": _draw_news()
 		"mirror": _draw_mirror()
+		"controls": _draw_controls()
 		"settings": _draw_settings()
 	if had_focus and _compose != null:
 		_compose.grab_focus()
@@ -719,8 +804,83 @@ func _mirror_row(key: String, selected: bool) -> PanelContainer:
 	return card
 
 
+## Every control, read from the input map as it is now.
+func _draw_controls() -> void:
+	_body.add_child(_label("What every key does right now.", 14, Color(0.7, 0.7, 0.7)))
+	for section: Array in CONTROLS:
+		_body.add_child(_label(section[0], 15, UiTheme.ACCENT))
+		for row: Array in section[1]:
+			var line := HBoxContainer.new()
+			line.add_theme_constant_override("separation", 10)
+			var what := _label(row[0], 14, UiTheme.INK)
+			what.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			what.size_flags_stretch_ratio = 1.3
+			line.add_child(what)
+			var keys := _label(controls_text(row[1]), 14, Color(1.0, 0.85, 0.65))
+			keys.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			keys.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+			line.add_child(keys)
+			# Clear of the scroll bar.
+			var pad := Control.new()
+			pad.custom_minimum_size = Vector2(4, 0)
+			line.add_child(pad)
+			_body.add_child(line)
+
+
+## A `CONTROLS` key spec with each `{action}` replaced by its bound keys.
+static func controls_text(spec: String) -> String:
+	var out := spec
+	var at := out.find("{")
+	while at >= 0:
+		var end := out.find("}", at)
+		if end < 0:
+			break
+		var shown := key_name(out.substr(at + 1, end - at - 1))
+		out = out.left(at) + shown + out.substr(end + 1)
+		at = out.find("{", at + shown.length())
+	return out
+
+
+## The keys and buttons bound to an input action, as a player reads them
+## ("F", "Left mouse or Mouse back"). "?" when nothing is bound.
+static func key_name(action: String) -> String:
+	if not InputMap.has_action(action):
+		return "?"
+	var names: Array[String] = []
+	for event: InputEvent in InputMap.action_get_events(action):
+		var shown := _event_name(event)
+		if shown != "" and shown not in names:
+			names.append(shown)
+	return " or ".join(names) if not names.is_empty() else "?"
+
+
+static func _event_name(event: InputEvent) -> String:
+	if event is InputEventMouseButton:
+		match (event as InputEventMouseButton).button_index:
+			MOUSE_BUTTON_LEFT: return "Left mouse"
+			MOUSE_BUTTON_RIGHT: return "Right mouse"
+			MOUSE_BUTTON_MIDDLE: return "Middle mouse"
+			MOUSE_BUTTON_XBUTTON1: return "Mouse back"
+			MOUSE_BUTTON_XBUTTON2: return "Mouse forward"
+			MOUSE_BUTTON_WHEEL_UP: return "Wheel up"
+			MOUSE_BUTTON_WHEEL_DOWN: return "Wheel down"
+		return "Mouse %d" % (event as InputEventMouseButton).button_index
+	if event is InputEventKey:
+		var key := event as InputEventKey
+		var code := key.physical_keycode
+		if code != KEY_NONE:
+			# The key in that spot on this keyboard's layout (Z on AZERTY for W).
+			if DisplayServer.get_name() != "headless":
+				code = DisplayServer.keyboard_get_keycode_from_physical(code)
+		else:
+			code = key.keycode
+		return OS.get_keycode_string(code)
+	return ""
+
+
 func _draw_settings() -> void:
 	_body.add_child(_label("CONTROLS", 15, UiTheme.ACCENT))
+	_body.add_child(_button("See what every key does", open_app.bind("controls")))
 	_slider("Mouse sensitivity", "mouse_sensitivity", GameSettings.SENSITIVITY_RANGE, 0.0001,
 			GameSettings.mouse_sensitivity, func(v: float) -> String: return "%.1f" % (v * 1000.0))
 	_toggle("Invert mouse up and down", "invert_y", GameSettings.invert_y)

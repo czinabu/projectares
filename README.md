@@ -41,7 +41,7 @@ skies, animated models and effects (see "How it looks" below).
 | Scoreboard: who is fighting, who is down, kills | Hold Tab |
 | Sign out and go home with what you carry (10 seconds, out of a fight) | L |
 | After dying: drop back in, or go home | Enter, or L |
-| Open your phone: players, messages, invites, news, mirror, settings | P |
+| Open your phone: players, messages, invites, news, mirror, every control (Keys), settings | P |
 | Raise or lower the holographic watch on your wrist | X |
 | Free the mouse | Esc |
 
