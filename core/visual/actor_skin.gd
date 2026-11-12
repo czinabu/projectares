@@ -88,6 +88,9 @@ var holster_offset := Vector3(0.21, -0.02, 0.0)
 ## it. Seconds for each move. Only the view waits; the actor switched the
 ## moment it was told, and first person stays instant.
 var reach_time := 0.22
+## How long a blade takes to slide out of its hilt when drawn, or back in
+## when put away (`Look.set_extend`).
+var fold_time := 0.18
 var between_time := 0.14
 var return_time := 0.2
 
@@ -143,6 +146,8 @@ var _stowed_models := {}
 ## switching (putting `_in_hand` away first), the active weapon that plan is
 ## for, and how far into it the hand is.
 var _in_hand: Weapon
+## Melee weapon -> how far its held model is out (1) or folded away (0).
+var _extend := {}
 var _plan: Array[Weapon] = []
 var _plan_for: Weapon
 var _plan_t := 0.0
@@ -371,6 +376,7 @@ func _update_stowed() -> void:
 				_stowed[weapon].queue_free()
 			_stowed.erase(weapon)
 			_stowed_models.erase(weapon)
+			_extend.erase(weapon)
 	for weapon in actor.weapons:
 		# Every weapon gets its worn copy, the one in hand too, so a draw
 		# can start from it.
@@ -426,6 +432,25 @@ func _update_switch(delta: float) -> void:
 		var worn: Node3D = _stowed.get(weapon)
 		if worn:
 			worn.visible = weapon != _in_hand and weapon.visual != null and not actor.is_dead
+	_update_fold(delta)
+
+
+## A blade slides out of its hilt once it is in hand and back in as the hand
+## takes it to put it away, so it is worn folded (see `_stow`). A weapon
+## already in hand when first seen starts out.
+func _update_fold(delta: float) -> void:
+	for weapon in actor.weapons:
+		if not weapon is MeleeWeapon or weapon.visual == null:
+			continue
+		var held: Node3D = weapon.visual.get_node_or_null("Model")
+		if held == null:
+			continue
+		var target := 1.0 if weapon == _in_hand and (_plan.is_empty() or weapon == _plan_for) else 0.0
+		var now: float = _extend.get(weapon, -1.0)
+		var next := target if now < 0.0 else move_toward(now, target, delta / fold_time)
+		if next != now:
+			look.set_extend(held, next)
+			_extend[weapon] = next
 
 
 ## Where the plan has got to at `_plan_t`: which weapon the hand is with,
@@ -539,11 +564,13 @@ func _stow(weapon: Weapon) -> Node3D:
 	var model: Node3D = look.weapon_model(weapon)
 	if model == null:
 		return null
+	# Worn folded away, so a blade does not stick out from the hip.
+	look.set_extend(model, 0.0)
 	var place := stow_place(weapon)
 	var pivot := Node3D.new()
 	pivot.add_child(model)
 	if place["centre"]:
-		model.position -= look.model_bounds(model).get_center()
+		model.position -= look.folded_bounds(model).get_center()
 	pivot.basis = place["basis"]
 	var fallback: Vector3 = Vector3(0.0, _def.get("height", 1.8) * 0.7, 0.0) + place["at"]
 	var root := _hang(pivot, "Stowed" + str(actor.weapons.find(weapon)), place["bone"], place["at"], fallback)

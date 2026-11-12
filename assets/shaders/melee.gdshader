@@ -28,10 +28,28 @@ uniform vec3 box_min = vec3(-1.0);
 uniform vec3 box_max = vec3(1.0);
 uniform int edge_axis = -1;
 
+// Folding away (Look.set_extend): at `extend` 0 the part of the mesh more
+// than nothing along `fold_axis` past `fold_origin` (object space) slides in:
+// the first `fold_slide` of it shrinks to `fold_keep` of its length and the
+// rest moves down with it. A blade folds all of itself into the hilt.
+uniform float extend = 1.0;
+uniform vec3 fold_origin = vec3(0.0);
+uniform vec3 fold_axis = vec3(0.0, 1.0, 0.0);
+uniform float fold_slide = 0.0;
+uniform float fold_keep = 1.0;
+
 varying vec3 opos;
 varying vec3 onrm;
 
 void vertex() {
+	if (fold_slide > 0.0 && extend < 1.0) {
+		float d = dot(VERTEX - fold_origin, fold_axis);
+		if (d > 0.0) {
+			float k = mix(fold_keep, 1.0, extend);
+			float folded = d < fold_slide ? d * k : d - fold_slide * (1.0 - k);
+			VERTEX += fold_axis * (folded - d);
+		}
+	}
 	opos = VERTEX;
 	onrm = NORMAL;
 }

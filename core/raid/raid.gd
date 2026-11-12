@@ -115,6 +115,8 @@ var hot_drop_from := 0.2
 ## The world event going on, or {}: { kind ("supply_pod" or "warlord"),
 ## title, at, ends (on `clock`) }. One at a time.
 var event := {}
+## Players who stand together: owner key -> [side key, side name]. See `set_team`.
+var teams := {}
 ## The warlords alive in the world, so clients can build the same bot.
 var warlords := {}
 var _event_in := 0.0
@@ -314,12 +316,31 @@ func side_of(actor: Actor) -> Array:
 	var state := state_for(actor)
 	if state == null:
 		return ["faction:" + actor.faction, "the %ss" % actor.display_name, false]
-	return [_player_side(state.owner), "the raiders" if world.players_allied else actor.display_name, true]
+	if world.players_allied:
+		return ["players", "the raiders", true]
+	if teams.has(state.owner):
+		return [teams[state.owner][0], teams[state.owner][1], true]
+	return [state.owner, actor.display_name, true]
 
 
 ## The side key of the player with this owner key.
 func _player_side(key: String) -> String:
-	return "players" if world.players_allied else key
+	if world.players_allied:
+		return "players"
+	return teams[key][0] if teams.has(key) else key
+
+
+## Puts the player with this owner key on a team (a clan): everyone given the
+## same `team` is one side for strongpoints and drops, named `title`. An
+## empty `team` puts them back on their own. Whoever owns the accounts calls
+## this before `add_player`; the `Raid` never asks who is in which clan.
+func set_team(owner: String, team: String, title := "") -> void:
+	if owner == "":
+		return
+	if team == "":
+		teams.erase(owner)
+	else:
+		teams[owner] = ["team:" + team, title if title != "" else team]
 
 
 ## Whether `actor`'s side holds `point`. On a client this is the server's word
