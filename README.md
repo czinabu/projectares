@@ -252,8 +252,10 @@ you have.
 ## The arena
 
 The **arena gate** console in your home base (or the arena gate in the plaza) takes you to
-the Pit, a colosseum where you watch from the stands. Press Esc to free the
-mouse and use the arena panel:
+the Pit, a colosseum where you watch from the stands. The big board over the
+pit shows the bout, both fighters' health and the wager pools. To take part,
+walk up to one of the bookmakers' booths in the stands and press **E** (Esc
+steps back). Its screen is where you:
 
 - **Bet** on the bout being called. Backers of the winner split the losing
   side's pool by stake, less a 10% house cut. Draws refund every wager.

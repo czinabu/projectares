@@ -291,9 +291,29 @@ func _arena_shots(out_dir: String) -> void:
 	# Look down into the pit from where you stand.
 	var to_center := -arena.player.global_position
 	controller.yaw = atan2(-to_center.x, -to_center.z)
-	controller.pitch = -0.35
+	controller.pitch = 0.1
 	await _settle(60)
 	await _shot(out_dir.path_join("arena_calling.png"))
+	# A bookmaker's booth in the stands, from its spot and then in use.
+	var booth: Node3D = get_tree().get_nodes_in_group("arena_booth")[0]
+	var stood := arena.player.global_position
+	arena.player.global_position = booth.global_position + Vector3(0, 0.1, 0)
+	var to_booth: Vector3 = (booth.get_node("Screen") as Node3D).global_position - booth.global_position
+	controller.yaw = atan2(-to_booth.x, -to_booth.z)
+	controller.pitch = 0.0
+	await _settle(30)
+	await _shot(out_dir.path_join("arena_booth.png"))
+	overlay.open_booth(booth)
+	hud.visible = false
+	arena.player.hand.visible = false
+	await _settle(40)
+	await _shot(out_dir.path_join("arena_booth_screen.png"))
+	overlay.close_booth()
+	hud.visible = true
+	arena.player.hand.visible = true
+	arena.player.global_position = stood
+	controller.yaw = atan2(-to_center.x, -to_center.z)
+	controller.pitch = -0.35
 	await _settle(200)
 	await _shot(out_dir.path_join("arena_fight.png"))
 	controller.view_mode = PlayerController.ViewMode.THIRD

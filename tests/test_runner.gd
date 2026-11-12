@@ -4015,10 +4015,33 @@ func _test_arena() -> void:
 	await frames(5)
 	check(main.raid is Arena and not main.hub.visible and main.base == null
 			and main.raid.get_node_or_null("ArenaHud") != null
-			and main.controller != null, "the base's arena gate opens the arena with its overlay")
+			and main.controller != null, "the base's arena gate opens the arena")
 	var hud: CanvasLayer = main.raid.get_node("ArenaHud")
 	await frames(20)
-	check(hud.get("_panel").get_child_count() > 3, "the overlay lists what you can do")
+	var faces := get_tree().get_nodes_in_group("arena_board").filter(func(face: Node) -> bool:
+		return main.raid.map.is_ancestor_of(face))
+	check(faces.size() == 4 and faces.all(func(face: Node) -> bool:
+			return face.get_children().any(func(c: Node) -> bool: return c is WorldScreen)),
+			"the bout is shown on the big board over the pit, on every side")
+	var booths := get_tree().get_nodes_in_group("arena_booth").filter(func(b: Node) -> bool:
+		return main.raid.map.is_ancestor_of(b))
+	check(booths.size() == Arena.ArenaVenue.BOOTHS, "the stands have bookmakers' booths")
+	var booth: Node3D = booths[0]
+	check(hud.booth_at(main.raid, booth.global_position + Vector3(0.3, 0.1, 0)) == booth
+			and hud.booth_at(main.raid, Vector3.ZERO) == null, "a booth is used by standing at it")
+	hud.open_booth(booth)
+	await frames(3)
+	check(hud.booth_open and hud.booth_screen.get_parent() == booth.get_node("Screen")
+			and main.controller.input_blocked and main.get_viewport().get_camera_3d() != main.controller.camera
+			and not main.hud.visible, "the booth's screen comes up with the view moved in to it")
+	check(hud.get("_panel").get_child_count() > 3, "the booth lists what you can do")
+	var esc := InputEventKey.new()
+	esc.keycode = KEY_ESCAPE
+	esc.pressed = true
+	hud.booth_view.push_input(esc, true)
+	await frames(3)
+	check(not hud.booth_open and not main.controller.input_blocked and main.hud.visible
+			and main.get_viewport().get_camera_3d() == main.controller.camera, "Esc steps away from the booth")
 	hud.leave_requested.emit()
 	await frames(5)
 	check(main.raid == null and main.base != null and not main.hub.visible, "leaving the arena takes you home")

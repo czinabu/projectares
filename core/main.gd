@@ -436,7 +436,17 @@ func _attach_player_view() -> void:
 		arena_hud.name = "ArenaHud"
 		arena_hud.setup(raid)
 		arena_hud.leave_requested.connect(leave_arena)
+		arena_hud.booth_changed.connect(_on_booth_changed)
 		raid.add_child(arena_hud)
+
+
+## Took up or put down a bookmaker's booth in the arena: like a station, the
+## character stops, the mouse is free and the HUD steps aside.
+func _on_booth_changed(open: bool) -> void:
+	_show_overlays(not open)
+	if controller != null and is_instance_valid(controller):
+		controller.input_blocked = open or phone.is_open
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if open or phone.is_open else Input.MOUSE_MODE_CAPTURED
 
 
 ## One solo life ended. A death keeps you in the world; leaving goes home.
@@ -534,7 +544,8 @@ func _setup_phone() -> void:
 func _on_phone_opened(open: bool) -> void:
 	if controller != null and is_instance_valid(controller):
 		# A station screen still open behind the phone keeps the mouse.
-		var screen_open := hub.station != "" or shop_view != null
+		var arena_hud := raid.get_node_or_null("ArenaHud") if raid != null else null
+		var screen_open: bool = hub.station != "" or shop_view != null or (arena_hud != null and arena_hud.booth_open)
 		controller.input_blocked = open or screen_open
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if open or screen_open else Input.MOUSE_MODE_CAPTURED
 
@@ -868,12 +879,17 @@ func open_shop(shop_id: String) -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
 
-## The HUD, nameplates and plaza prompts step aside while a screen in the
-## world is in use, so nothing is drawn over it.
+## The HUD, nameplates, plaza prompts and the weapon in your hand step aside
+## while a screen in the world is in use, so nothing is drawn over it.
 func _show_overlays(on: bool) -> void:
 	for layer: CanvasLayer in [hud, nameplates, plaza_view]:
 		if layer != null and is_instance_valid(layer):
 			layer.visible = on and (layer != nameplates or GameSettings.show_nameplates)
+	# The weapon in your hand stays with your own camera; keep it out of the
+	# screen's way.
+	if controller != null and is_instance_valid(controller) and controller.actor != null \
+			and is_instance_valid(controller.actor):
+		controller.actor.hand.visible = on and not controller.actor.is_dead
 
 
 func close_shop() -> void:

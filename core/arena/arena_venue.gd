@@ -8,7 +8,11 @@ extends WorldDef
 ## `Arena` (core/arena/arena.gd), which this venue creates as its raid.
 ##
 ## Map contract, beyond WorldDef's: Marker3D nodes in group "arena_gate" with
-## meta "side" (0 = red, 1 = blue) where fighters enter the pit.
+## meta "side" (0 = red, 1 = blue) where fighters enter the pit; Node3D faces
+## in group "arena_board" (`BOARD_SIZE`, facing +Z) where the big board shows
+## the bout; and Marker3D nodes in group "arena_booth" where a spectator
+## stands to use a bookmaker's booth, each with a child "Screen" (a
+## `WorldScreen` face, 1.6 by 0.9 metres, facing +Z).
 ##
 ## Load with `const ArenaVenue := preload("res://core/arena/arena_venue.gd")`.
 
@@ -25,6 +29,12 @@ const TIER_RISE := 0.9
 const OUTER_RADIUS := WALL_RADIUS + 0.6 + STAND_TIERS * TIER_DEPTH
 const SEGMENTS := 28
 const GATE_DISTANCE := 12.5
+## Each face of the big board over the pit, in metres, and how high it hangs.
+const BOARD_SIZE := Vector2(8.0, 4.5)
+const BOARD_HEIGHT := 12.5
+## Bookmakers' booths in the stands: how many, and how close to one you stand to use it.
+const BOOTHS := 4
+const BOOTH_REACH := 1.8
 
 ## Gladiator names for bots, picked by seed so a client builds the same one.
 const GLADIATOR_NAMES := ["Varro", "Priscus", "Spiculus", "Flamma", "Crixus", "Tetraites", "Carpophorus",
@@ -111,14 +121,78 @@ class Pit:
 		_ring(OUTER_RADIUS + 0.5, 1.0, 0.0, WALL_HEIGHT + STAND_TIERS * TIER_RISE + 4.0, _stone)
 		_gates()
 		_spectator_spots()
+		_board()
+		_booths()
 		var title := Label3D.new()
 		title.text = "THE PIT"
 		title.font_size = 128
 		title.pixel_size = 0.02
 		title.modulate = Color(1.0, 0.62, 0.22)
 		title.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-		title.position = Vector3(0, 7.5, 0)
+		title.position = Vector3(0, BOARD_HEIGHT + BOARD_SIZE.y * 0.5 + 1.4, 0)
 		add_child(title)
+
+	## The big board hanging over the middle of the pit: a dark block with a
+	## screen face on every side, so the whole crowd can read the bout.
+	func _board() -> void:
+		var half := BOARD_SIZE.x * 0.5
+		var block := MeshInstance3D.new()
+		var mesh := BoxMesh.new()
+		mesh.size = Vector3(BOARD_SIZE.x + 0.3, BOARD_SIZE.y + 0.3, BOARD_SIZE.x + 0.3)
+		var mat := StandardMaterial3D.new()
+		mat.albedo_color = Color(0.12, 0.11, 0.1)
+		mesh.material = mat
+		block.mesh = mesh
+		block.position = Vector3(0, BOARD_HEIGHT, 0)
+		add_child(block)
+		for i in 4:
+			var angle := TAU * i / 4.0
+			var face := Node3D.new()
+			face.name = "Board%d" % i
+			face.position = Vector3(sin(angle) * (half + 0.16), BOARD_HEIGHT, cos(angle) * (half + 0.16))
+			face.rotation.y = angle
+			face.add_to_group("arena_board")
+			add_child(face)
+
+	## Bookmakers' booths on the lowest tier, between the spectator spots:
+	## a kiosk facing the pit, its screen at head height, and a spot in
+	## front of it to stand on.
+	func _booths() -> void:
+		var floor_y := WALL_HEIGHT - 0.6
+		for i in BOOTHS:
+			var angle := TAU * i / BOOTHS + PI / BOOTHS
+			var out := Vector3(sin(angle), 0, cos(angle))
+			_box(Vector3(1.9, 2.4, 0.6), out * (WALL_RADIUS + 2.9) + Vector3(0, floor_y + 1.2, 0), angle, _dark)
+			var marker := Marker3D.new()
+			marker.name = "Booth%d" % i
+			marker.position = out * (WALL_RADIUS + 1.5) + Vector3(0, floor_y, 0)
+			marker.rotation.y = angle
+			marker.set_meta("label", "Bookmaker: bet, duel, tournaments, or leave")
+			marker.add_to_group("arena_booth")
+			add_child(marker)
+			# The screen faces the pit (the marker's -Z), in front of the kiosk.
+			var screen := Node3D.new()
+			screen.name = "Screen"
+			screen.position = Vector3(0, 1.6, 1.08)
+			screen.rotation.y = PI
+			marker.add_child(screen)
+			var glow := MeshInstance3D.new()
+			var quad := QuadMesh.new()
+			quad.size = Vector2(1.6, 0.9)
+			var lit := StandardMaterial3D.new()
+			lit.albedo_color = Color(0.16, 0.1, 0.04)
+			lit.emission_enabled = true
+			lit.emission = Color(1.0, 0.62, 0.22) * 0.12
+			quad.material = lit
+			glow.mesh = quad
+			screen.add_child(glow)
+			var sign_label := Label3D.new()
+			sign_label.text = "BOOKMAKER"
+			sign_label.font_size = 64
+			sign_label.pixel_size = 0.0028
+			sign_label.modulate = Color(1.0, 0.62, 0.22)
+			sign_label.position = Vector3(0, 0.66, 0)
+			screen.add_child(sign_label)
 
 	## A ring of boxes around the center: `radius` to its middle, `depth` thick.
 	func _ring(radius: float, depth: float, bottom: float, top: float, material: Material) -> void:

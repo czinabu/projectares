@@ -1,7 +1,10 @@
 extends CanvasLayer
-## The arena overlay: who is fighting with their health, the wager pools,
-## the queue and tournament, and buttons to bet, challenge, practice and
-## enter tournaments. Press Esc to free the mouse and click.
+## What the arena shows you, in the arena itself. The big board over the pit
+## (the venue's "arena_board" faces) shows who is fighting with their health
+## and the wager pools. A bookmaker's booth in the stands ("arena_booth") is
+## where you bet, challenge, practice, enter tournaments and leave: stand at
+## one and press E, and its screen comes up with the view moved in to it.
+## Only the booth's prompt is drawn over the screen.
 ##
 ## It only reads the board (`Arena.view_board`) and sends requests through
 ## `Arena.ask`, so it works the same solo and online. Nothing here decides
@@ -11,22 +14,46 @@ extends CanvasLayer
 
 ## The player pressed "Leave the arena".
 signal leave_requested
+## A booth's screen was taken up (true) or put down (false). `Main` stops the
+## character and frees the mouse meanwhile.
+signal booth_changed(open: bool)
 
 const RED := Color(0.95, 0.35, 0.3)
 const BLUE := Color(0.4, 0.6, 1.0)
 const GOLD := Color(1.0, 0.62, 0.22)
 const BET_AMOUNTS := [10, 50, 100]
 const STAKES := [0, 50, 200]
+const ArenaVenue := preload("res://core/arena/arena_venue.gd")
 
 var arena: Arena
+## The 2D picture on the big board, and the one on a booth's screen.
+var board_view: SubViewport
+var booth_view: SubViewport
+## The booth screen in use, else null.
+var booth_screen: WorldScreen
+var booth_open := false
 
 var _banner: Label
 var _bars: Array[ProgressBar] = []
 var _pools: Label
 var _panel: VBoxContainer
+var _prompt: Label
 var _shown := ""
 var _refresh_left := 0.0
 var _stake_index := 0
+var _board_mounted := false
+
+
+## A booth's screen: Esc puts it down.
+class BoothScreen:
+	extends Control
+
+	signal escaped
+
+	func _unhandled_input(event: InputEvent) -> void:
+		if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
+			get_viewport().set_input_as_handled()
+			escaped.emit()
 
 
 func setup(p_arena: Arena) -> void:
@@ -35,41 +62,154 @@ func setup(p_arena: Arena) -> void:
 
 func _ready() -> void:
 	layer = 5
+	# Over the screen: only the booth's prompt.
 	var root := Control.new()
 	root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(root)
+	_prompt = _label(root, "", 22, GOLD)
+	_prompt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_place(_prompt, 0.5, 0.5, Vector2(-400, 110), Vector2(800, 32))
 
-	_banner = _label(root, "", 22, GOLD)
+	# The big board.
+	board_view = _screen_viewport("BoardView")
+	var board := _glass(board_view)
+	var lines := VBoxContainer.new()
+	lines.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	lines.alignment = BoxContainer.ALIGNMENT_CENTER
+	lines.add_theme_constant_override("separation", 24)
+	board.add_child(lines)
+	_banner = _label(lines, "", 104, GOLD)
 	_banner.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_place(_banner, 0.5, 0.0, Vector2(-400, 52), Vector2(800, 64))
+	var bars := HBoxContainer.new()
+	bars.alignment = BoxContainer.ALIGNMENT_CENTER
+	bars.add_theme_constant_override("separation", 60)
+	lines.add_child(bars)
 	for side in 2:
 		var bar := ProgressBar.new()
 		bar.show_percentage = false
+		bar.custom_minimum_size = Vector2(540, 70)
 		var fill := StyleBoxFlat.new()
 		fill.bg_color = RED if side == 0 else BLUE
 		bar.add_theme_stylebox_override("fill", fill)
-		bar.visible = false
-		root.add_child(bar)
-		_place(bar, 0.5, 0.0, Vector2(-330 if side == 0 else 30, 120), Vector2(300, 14))
+		bar.modulate.a = 0.0
+		bars.add_child(bar)
 		_bars.append(bar)
-	_pools = _label(root, "", 15, Color(0.85, 0.85, 0.85))
+	_pools = _label(lines, "", 54, Color(0.85, 0.85, 0.85))
 	_pools.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_place(_pools, 0.5, 0.0, Vector2(-400, 138), Vector2(800, 24))
 
-	var back := PanelContainer.new()
-	root.add_child(back)
-	_place(back, 1.0, 0.0, Vector2(-340, 230), Vector2(320, 0))
+	# A bookmaker's booth.
+	# Smaller than the board's picture, so its text reads large on the screen.
+	booth_view = _screen_viewport("BoothView", Vector2i(960, 540))
+	var booth := BoothScreen.new()
+	booth.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	booth.escaped.connect(close_booth)
+	booth_view.add_child(booth)
+	_glass(booth)
+	var margin := MarginContainer.new()
+	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	for side: String in ["left", "right"]:
+		margin.add_theme_constant_override("margin_" + side, 150)
+	for side: String in ["top", "bottom"]:
+		margin.add_theme_constant_override("margin_" + side, 24)
+	booth.add_child(margin)
+	var scroll := ScrollContainer.new()
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	margin.add_child(scroll)
 	_panel = VBoxContainer.new()
-	_panel.add_theme_constant_override("separation", 4)
-	back.add_child(_panel)
+	_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_panel.add_theme_constant_override("separation", 6)
+	scroll.add_child(_panel)
+
+
+func _screen_viewport(view_name: String, pixels := Vector2i(1280, 720)) -> SubViewport:
+	var view := SubViewport.new()
+	view.name = view_name
+	view.size = pixels
+	view.disable_3d = true
+	add_child(view)
+	return view
+
+
+## A screen's dark glass, filling `parent`.
+func _glass(parent: Node) -> Control:
+	var glass := ColorRect.new()
+	glass.color = Color(0.025, 0.03, 0.035)
+	glass.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	glass.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	parent.add_child(glass)
+	return glass
+
+
+## Puts the board's picture on every face of the big board.
+func _mount_board() -> void:
+	if _board_mounted or arena.map == null:
+		return
+	_board_mounted = true
+	for face in get_tree().get_nodes_in_group("arena_board"):
+		if not arena.map.is_ancestor_of(face):
+			continue
+		var screen := WorldScreen.new()
+		screen.size = ArenaVenue.BOARD_SIZE
+		screen.viewport = board_view
+		screen.glow = 1.0
+		face.add_child(screen)
+
+
+## The booth `at` is close enough to use, or null.
+static func booth_at(p_arena: Raid, at: Vector3) -> Node3D:
+	if p_arena == null or p_arena.map == null:
+		return null
+	var best: Node3D = null
+	var best_distance := ArenaVenue.BOOTH_REACH
+	for node in p_arena.get_tree().get_nodes_in_group("arena_booth"):
+		var booth := node as Node3D
+		if booth == null or not p_arena.map.is_ancestor_of(booth):
+			continue
+		var gap := booth.global_position - at
+		if absf(gap.y) > 1.5:
+			continue
+		gap.y = 0.0
+		if gap.length() <= best_distance:
+			best = booth
+			best_distance = gap.length()
+	return best
+
+
+## Takes up a booth's screen: the view moves in to it and the mouse works it.
+func open_booth(booth: Node3D) -> void:
+	var mount := booth.get_node_or_null("Screen") as Node3D if booth else null
+	if booth_open or mount == null:
+		return
+	booth_screen = WorldScreen.new()
+	booth_screen.name = "LiveScreen"
+	booth_screen.viewport = booth_view
+	mount.add_child(booth_screen)
+	booth_screen.focus()
+	booth_open = true
+	_prompt.text = ""
+	booth_changed.emit(true)
+
+
+## Puts the booth's screen down and gives the view back.
+func close_booth() -> void:
+	if not booth_open:
+		return
+	booth_open = false
+	if booth_screen != null and is_instance_valid(booth_screen):
+		booth_screen.unfocus()
+		booth_screen.queue_free()
+	booth_screen = null
+	booth_changed.emit(false)
 
 
 func _process(delta: float) -> void:
 	if arena == null or not is_instance_valid(arena):
 		return
+	_mount_board()
 	var b := arena.view_board()
 	_show_bout(b)
+	_offer_booth()
 	_refresh_left -= delta
 	if _refresh_left > 0.0:
 		return
@@ -85,6 +225,18 @@ func _process(delta: float) -> void:
 		_rebuild(b)
 
 
+## The prompt for a booth you are standing at, and E to use it.
+func _offer_booth() -> void:
+	var me := arena.player
+	if booth_open or me == null or not is_instance_valid(me):
+		_prompt.text = ""
+		return
+	var booth := booth_at(arena, me.global_position)
+	_prompt.text = "[E]  %s" % booth.get_meta("label", "Bookmaker") if booth else ""
+	if booth != null and Input.is_action_just_pressed("interact"):
+		open_booth(booth)
+
+
 func _show_bout(b: Dictionary) -> void:
 	var bout: Dictionary = b.get("bout", {})
 	var phase: String = b.get("phase", "idle")
@@ -94,7 +246,7 @@ func _show_bout(b: Dictionary) -> void:
 				else "Waiting for the next bout")
 		_pools.text = ""
 		for bar in _bars:
-			bar.visible = false
+			bar.modulate.a = 0.0
 		return
 	var names: Array = bout.get("names", ["", ""])
 	var title := "%s  vs  %s" % [names[0], names[1]]
@@ -118,7 +270,7 @@ func _show_bout(b: Dictionary) -> void:
 	var nodes: Array = bout.get("nodes", ["", ""])
 	for side in 2:
 		var fighter := arena.get_node_or_null(NodePath(str(nodes[side]))) as Actor if str(nodes[side]) != "" else null
-		_bars[side].visible = fighter != null
+		_bars[side].modulate.a = 1.0 if fighter != null else 0.0
 		if fighter != null:
 			_bars[side].max_value = fighter.health.max_health
 			_bars[side].value = fighter.health.health
@@ -128,9 +280,9 @@ func _rebuild(b: Dictionary) -> void:
 	for child in _panel.get_children():
 		child.queue_free()
 	var you: Dictionary = b.get("you", {})
-	_label(_panel, "ARENA", 18, GOLD)
-	_label(_panel, "Credits: %d   (Esc frees the mouse)" % int(you.get("credits", 0)), 14, Color.WHITE)
-	_label(_panel, "Nobody loses gear here. Beaten fighters yield.", 12, Color(0.65, 0.65, 0.65))
+	_label(_panel, "BOOKMAKER", 26, GOLD)
+	_label(_panel, "Credits: %d" % int(you.get("credits", 0)), 18, Color.WHITE)
+	_label(_panel, "Nobody loses gear here. Beaten fighters yield.", 15, Color(0.65, 0.65, 0.65))
 
 	var bout: Dictionary = b.get("bout", {})
 	if b.get("phase", "") == "calling" and not bout.is_empty() and not you.get("fighting", false):
@@ -203,6 +355,7 @@ func _rebuild(b: Dictionary) -> void:
 			_label(_panel, line, 12, Color(0.8, 0.8, 0.8))
 
 	_button(_panel, "Leave the arena", func() -> void: leave_requested.emit())
+	_button(_panel, "Step away  (Esc)", close_booth)
 
 
 func _button(parent: Control, text: String, action: Callable) -> Button:
