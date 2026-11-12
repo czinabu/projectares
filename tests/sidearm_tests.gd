@@ -48,10 +48,20 @@ static func _kit(t: Node) -> void:
 	t.check(p.weapons.size() == 3 and p.weapons[0] is Gun and not p.weapons[0].is_sidearm
 			and p.weapons[1] is MeleeWeapon and p.weapons[2] is Gun and p.weapons[2].is_sidearm,
 			"the free kit is a primary, a blade and a sidearm (%d weapons)" % p.weapons.size())
-	p.cmd.switch_weapon = 2
+	t.check(p.weapon_for_key(1) == 0 and p.weapon_for_key(2) == 2 and p.weapon_for_key(3) == 1
+			and p.weapon_for_key(4) == -1,
+			"keys: 1 primary, 2 sidearm, 3 melee, 4 empty")
+	p.cmd.switch_weapon = p.weapon_for_key(2)
 	await t.frames(2)
 	t.check(p.active_weapon_index == 2 and p.weapons[2].visual.visible and not p.weapons[0].visual.visible,
-			"key 3 draws the sidearm")
+			"key 2 draws the sidearm")
+	var seen: Array[int] = []
+	for i in 4:
+		p.active_weapon_index = p.cycle_weapon_index(1)
+		seen.append(p.active_weapon_index)
+	t.check(seen == [1, 0, 2, 1], "the wheel cycles sidearm, melee, primary in key order and wraps (%s)" % [seen])
+	p.active_weapon_index = p.cycle_weapon_index(-1)
+	t.check(p.active_weapon_index == 2, "wheel back from melee lands on the sidearm")
 	raid.queue_free()
 	await t.frames(2)
 

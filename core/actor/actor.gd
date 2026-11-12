@@ -426,6 +426,45 @@ func get_aim_dir() -> Vector3:
 	return Basis.from_euler(Vector3(cmd.pitch, cmd.yaw, 0.0)) * Vector3.FORWARD
 
 
+## Weapon indices in key order: primary (1), sidearm (2), melee (3), then any
+## power or special weapon (4). The number keys and the mouse wheel both use
+## this, so the order never depends on how the loadout was equipped.
+func slot_order() -> Array[int]:
+	var order: Array[int] = []
+	for rank in 4:
+		for i in weapons.size():
+			if _slot_rank(weapons[i]) == rank:
+				order.append(i)
+	return order
+
+
+## The weapon index on number key `key` (1 to 4), or -1 if that slot is empty.
+func weapon_for_key(key: int) -> int:
+	var order := slot_order()
+	return order[key - 1] if key >= 1 and key <= order.size() else -1
+
+
+## The next (step 1) or previous (step -1) weapon index in key order, wrapping.
+func cycle_weapon_index(step: int) -> int:
+	var order := slot_order()
+	if order.size() < 2:
+		return active_weapon_index
+	# Holstered: step from the weapon last drawn.
+	var at := order.find(active_weapon_index if get_active_weapon() else last_drawn)
+	return order[posmod(maxi(at, 0) + step, order.size())]
+
+
+static func _slot_rank(w: Weapon) -> int:
+	# Power weapons are guns too, but they have their own key (4).
+	if w.item_id != "" and ItemDB.has_tag(w.item_id, "power"):
+		return 3
+	if w is Gun:
+		return 1 if w.is_sidearm else 0
+	if w is MeleeWeapon:
+		return 2
+	return 3
+
+
 func get_active_weapon() -> Weapon:
 	if active_weapon_index >= 0 and active_weapon_index < weapons.size():
 		return weapons[active_weapon_index]

@@ -610,10 +610,10 @@ func _test_main_flow() -> void:
 	# Melee and flight must not move the camera on their own.
 	var p: Actor = main.raid.player
 	await frames(40)
-	Input.action_press("weapon_2")
+	Input.action_press("weapon_3")
 	Input.action_press("jump")
 	await frames(40)
-	Input.action_release("weapon_2")
+	Input.action_release("weapon_3")
 	Input.action_release("jump")
 	check(p.get_active_weapon() is MeleeWeapon and not p.is_on_floor(),
 			"real input reaches the actor (blade out, airborne)")
