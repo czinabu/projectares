@@ -55,7 +55,7 @@ func loadout_tracks() -> Array[String]:
 		var id: String = Profile.equipped(slot) if loadout == null else loadout.get(slot, "")
 		if id == "":
 			for free_id in starter:
-				if ItemDB.has_tag(free_id, Loadout.SLOTS[slot]):
+				if Loadout.fits(slot, free_id):
 					id = free_id
 					break
 		var track := MasteryDB.track_for_item(id)

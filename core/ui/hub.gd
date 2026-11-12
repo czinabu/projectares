@@ -348,7 +348,7 @@ static func renown_text(lifetime: int) -> String:
 func options_for(slot: String) -> Array[String]:
 	var out: Array[String] = []
 	for id: String in stash_items():
-		if ItemDB.has_tag(id, Loadout.SLOTS[slot]) and id not in out:
+		if Loadout.fits(slot, id) and id not in out:
 			out.append(id)
 	out.sort_custom(func(a: String, b: String) -> bool: return ItemDB.item_value(a) > ItemDB.item_value(b))
 	return out

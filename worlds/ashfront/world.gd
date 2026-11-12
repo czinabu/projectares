@@ -14,6 +14,7 @@ const CACHE_TABLE := [
 	{"id": "reactor_core", "weight": 1.0},
 	{"id": "rifle_carbine", "weight": 3.0},
 	{"id": "smg_stinger", "weight": 3.0},
+	{"id": "pistol_machine", "weight": 2.5},
 	{"id": "hammer_breaker", "weight": 2.5},
 	{"id": "frame_runner", "weight": 2.5},
 	{"id": "frame_trooper", "weight": 2.5},
@@ -29,6 +30,7 @@ const ROOFTOP_TABLE := [
 	{"id": "reactor_core", "weight": 15.0},
 	{"id": "lattice_shard", "weight": 5.0},
 	{"id": "dmr_longshot", "weight": 9.0},
+	{"id": "pistol_hand_cannon", "weight": 7.0},
 	{"id": "shotgun_breacher", "weight": 9.0},
 	{"id": "blade_arc", "weight": 9.0},
 	{"id": "frame_bulwark", "weight": 8.0},
@@ -69,7 +71,7 @@ func create_map() -> Node3D:
 
 
 func starter_loadout() -> Array[String]:
-	return ["rifle_scrap", "blade_scrap", "jetpack_mk1", "plate_light", "field_dressing"]
+	return ["rifle_scrap", "blade_scrap", "pistol_service", "jetpack_mk1", "plate_light", "field_dressing"]
 
 
 func roll_loot(source: String, rng: RandomNumberGenerator) -> Array[String]:

@@ -230,6 +230,8 @@ func _physics_process(delta: float) -> void:
 		cmd.switch_weapon = 0
 	elif Input.is_action_just_pressed("weapon_2"):
 		cmd.switch_weapon = 1
+	elif Input.is_action_just_pressed("weapon_3"):
+		cmd.switch_weapon = 2
 	elif _pending_switch >= 0:
 		cmd.switch_weapon = _pending_switch
 	_pending_switch = -1
