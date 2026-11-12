@@ -68,6 +68,8 @@ static func run(t: Node) -> void:
 	t.check(kept_kit and rack.items.is_empty() and "power_rail_lance" in p.gear_items and p.inventory.items == pack_before,
 			"your own weapons stay with you, and nothing goes in the pack")
 	t.check(changes.size() == 1 and changes[0][0] == "power_rail_lance", "the change is announced for the network")
+	t.check(p.weapon_for_key(4) == Loadout.power_index(p) and p.weapon_for_key(1) != Loadout.power_index(p),
+			"the power weapon sits on key 4, and key 1 is still your primary")
 	t.check(held.controls_hint().contains("charge") and held.status_text().contains("4 shots"),
 			"the rail lance tells you to charge it and counts its shots")
 
