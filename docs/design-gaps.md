@@ -57,7 +57,7 @@ rows marked **pre-playtest** come before the friends playtest.
 | Air aim penalty, waived in each rig's steady state | Missing | No airborne spread in `Gun`. PR 1. |
 | Overheat cuts the rig out until heat is back to 35 | Built | `recover_heat` 35. |
 
-## Heavy weapons
+## Heavy weapons and artifacts
 
 | Item | State | Notes |
 | --- | --- | --- |
@@ -68,6 +68,8 @@ rows marked **pre-playtest** come before the friends playtest.
 | Banked by depot or sign-out to the armory wall | Missing | Needs `StashRules.storable` to accept `power`, and the `CLAUDE.md` power weapon rule rewritten. **Pre-playtest.** |
 | Deploy with one from the wall (one per outing) | Missing | **Pre-playtest.** Open decision in DESIGN.md section 13. |
 | Dropped with your bag on death | Partly | Today a dead player's power weapon is left on a rack. |
+| Artifacts: one per outing, earned in PvE dungeons and arena tournaments, dropped on death in PvP, banked at bank spots | Missing | Eleven designed (DESIGN.md section 6). Need the PvE world or arena rewards to earn them. |
+| Gravity Well gadget | Missing | A normal gadget, not an artifact. |
 
 ## Banking and leaving
 

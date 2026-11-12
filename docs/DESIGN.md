@@ -106,6 +106,7 @@ Raised with X; it comes up by itself when you go down.
 | Rig readout | One extra readout per flight rig (section 5). |
 | Vehicle carousel | The permanent garage: swipe through your vehicles, take one as a toy in your hand, throw it to unpack the full-size vehicle. Packs vehicles back up. |
 | Heavy weapon chamber | Holds one heavy weapon (section 6). |
+| Artifact | Holds and uses your one artifact for the outing (section 6). |
 | Landing choices | Where to drop back in after dying. |
 | Sign-out | Starting a sign-out and its countdown (section 7). |
 
@@ -197,6 +198,7 @@ picked to pair with a rig or to answer one:
 | Harpoon tether | Hooks a flier and drags them down for a few seconds | Ground fighters, anti-air |
 | Sonar spike | Planted; pings movement around it once | Any, holding ground |
 | Field patch | Slow heal over time for you and a squadmate nearby | Any, squads |
+| Gravity Well | A thrown field that drags fliers and vehicles inside it down and slows them | Anti-air and anti-vehicle; the counter to jetpacks, bikes and the jet |
 
 Every gadget is data on the one `Ability` class, with a cooldown, a visible
 effect and a counter.
@@ -231,7 +233,7 @@ wings flank and dive in, the boots push through streets and buildings.
 Rig readouts go on the watch and on the rig itself (heat screen, wingtip
 lights, boot pips), never on a screen overlay.
 
-## 6. Heavy weapons
+## 6. Heavy weapons and artifacts
 
 Heavy weapons (in code, "power" weapons: Rail Lance, Helion launcher, Arc
 Mortar, Storm Cannon; the railgun, rocket launcher, grenade launcher and
@@ -271,6 +273,37 @@ world**.
 - Glide wings: high-speed strafing runs. Wings out means sidearm only, so a
   heavy is fired by folding the wings, or from a dive's end.
 - Thruster boots: dash-peek around cover.
+
+### Artifacts
+
+Artifacts are rare, powerful one-off items: the long chase for players. All
+of them are our own designs. To keep them from making veterans unbeatable
+they follow the heavy weapon's rules:
+
+- **One artifact per outing**, carried on the watch.
+- **Earned, not bought:** from PvE dungeons and bosses and from arena
+  tournaments (so they arrive with those modes).
+- **Dropped on death in the PvP world**, with your bag, for whoever takes it.
+- **Banked at bank spots** or by signing out, to the home base.
+- Every artifact's effect is visible or felt by the people it touches, like
+  visor reveals, and has a counter.
+
+| Artifact | What it does | Limit and counter |
+| --- | --- | --- |
+| Tether Anchor | Plant a beacon; later snap back to it once | One snap. Good for escapes and holding a bank spot; the beacon can be seen and destroyed |
+| Overclock Core | For 10 s your rig makes no heat | Then it locks up and you glide down, helpless in the air |
+| Mirror Plate | A wrist shield that sends the next missile or railgun shot back at the shooter | One shot; the plate glows while armed, so a shooter can wait it out |
+| Static Bloom | A pulse that shuts off every rig nearby for 3 s, yours included | Everyone drops, you too |
+| Ghost Uplink | Bank your loot from anywhere, once | Puts a marker on you for everyone while it uploads |
+| Squad Link | Your squad shares one heat pool for 15 s, so one can burn hard while others cool | Squad only; when it ends, the pool splits as it stands |
+| Echo Recorder | Replays the last 10 s of nearby enemy movement as ghost trails | A replay, never live tracking (the visor rule) |
+| Scrap Forge | Turns a downed vehicle into a toy you can throw once | One throw; the vehicle must be wrecked first |
+| Holo-Decoys | Throws copies of you that run and fly off | Shots pass through them; they also draw missile lock-ons |
+| Time Rewind | Snaps you back to where you were and how healthy you were a few seconds ago | One use per outing; leaves a visible rewind trail so the shooter knows |
+| Phase Cloak | Near-invisibility for a few seconds, with any rig | A sign-out cannot run while cloaked (the timer pauses), so it never hides the beacon; firing breaks it |
+
+Gravity Well, first proposed as an artifact, is a normal gadget (section 4):
+it is too useful against fliers to be rare.
 
 ## 7. Banking and leaving
 
@@ -401,6 +434,7 @@ Unchanged from the current game (see README "Credits and shops"):
    new gadgets, vehicle utility on the bike (passenger, cargo), loadout
    swapping in the PvE world, then the rest of the vehicle roster (rover,
    mech, jet), and the racing mode (section 9).
+   Artifacts arrive with arena tournaments and PvE dungeons.
 4. **The PvE world:** quests, dungeons and bosses.
 5. **More worlds** as plug-ins.
 
