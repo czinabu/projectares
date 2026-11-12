@@ -107,32 +107,39 @@ static func impact(parent: Node, at: Vector3, normal: Vector3, bright := true) -
 	timer.timeout.connect(dust.queue_free)
 
 
-## A flame and a glow for a flight rig. The caller shows and hides it.
-static func thruster() -> Node3D:
+## A flame for one flight rig nozzle, starting at the node and pointing down
+## (-Y): a hot core inside a wider blue cone. `light` adds a glow on the
+## ground; one per rig is plenty. The caller shows and hides it.
+static func nozzle_flame(radius: float, length: float, light := true) -> Node3D:
 	var root := Node3D.new()
-	var cone := CylinderMesh.new()
-	cone.top_radius = 0.09
-	cone.bottom_radius = 0.0
-	cone.height = 0.7
-	var mat := StandardMaterial3D.new()
-	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
-	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	mat.albedo_color = Color(1.6, 2.2, 3.5, 0.8)
-	cone.material = mat
-	for x: float in [-0.14, 0.14]:
+	root.name = "Flame"
+	for layer: Array in [[1.0, 1.0, Color(1.2, 1.8, 3.4, 0.55)], [0.5, 0.6, Color(3.0, 2.6, 2.0, 0.9)]]:
+		var cone := CylinderMesh.new()
+		cone.top_radius = radius * float(layer[0])
+		cone.bottom_radius = 0.0
+		cone.height = length * float(layer[1])
+		cone.radial_segments = 12
+		cone.rings = 1
+		var mat := StandardMaterial3D.new()
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+		mat.albedo_color = layer[2]
+		cone.material = mat
 		var flame := MeshInstance3D.new()
 		flame.mesh = cone
-		flame.position = Vector3(x, -0.35, 0)
+		flame.position = Vector3(0, -cone.height * 0.5, 0)
 		flame.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		root.add_child(flame)
-	var light := OmniLight3D.new()
-	light.light_color = Color(0.5, 0.7, 1.0)
-	light.light_energy = 2.0
-	light.omni_range = 5.0
-	light.shadow_enabled = false
-	light.position.y = -0.4
-	root.add_child(light)
+	if light:
+		var glow := OmniLight3D.new()
+		glow.light_color = Color(0.5, 0.7, 1.0)
+		glow.light_energy = 2.0
+		glow.omni_range = 5.0
+		glow.shadow_enabled = false
+		glow.position.y = -length * 0.5
+		root.add_child(glow)
 	return root
 
 

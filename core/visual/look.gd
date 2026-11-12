@@ -19,6 +19,7 @@ const ActorSkin := preload("res://core/visual/actor_skin.gd")
 const Human := preload("res://core/visual/human.gd")
 const CHARACTER_SHADER := preload("res://assets/shaders/character.gdshader")
 const Vfx := preload("res://core/visual/vfx.gd")
+const RigModel := preload("res://core/visual/rig_model.gd")
 const UiTheme := preload("res://core/visual/ui_theme.gd")
 const VEHICLE_SCRIPT := "res://core/vehicle/vehicle.gd"
 
@@ -54,6 +55,7 @@ const HUMAN_ANIMS := {"idle": "Idle_Gun_Pointing", "walk": "Walk", "run": "Run",
 	"run_back": "Run_Back", "run_left": "Run_Left", "run_right": "Run_Right"}
 const HUMAN_ARM := ["UpperArm.R", "LowerArm.R", "Wrist.R"]
 const HUMAN_OFF_ARM := ["UpperArm.L", "LowerArm.L", "Wrist.L"]
+const HUMAN_FEET := ["Foot.L", "Foot.R"]
 const HUMAN_SPINE := ["Abdomen", "Torso", "Chest"]
 ## Thigh, shin and foot of the leg that reaches forward in a slide, and of the
 ## one that folds under.
@@ -64,6 +66,7 @@ const SKINS := {
 		"people": {"m": ["Swat", "Spacesuit", "Adventurer"], "f": ["Soldier", "SciFi", "Adventurer"]},
 		"height": 1.8, "tint": Color(0.8, 0.82, 0.86), "grip_bone": "Middle1.R", "arm": HUMAN_ARM, "off_arm": HUMAN_OFF_ARM,
 		"spine": HUMAN_SPINE, "neck": "Neck", "lead_leg": HUMAN_LEAD_LEG, "trail_leg": HUMAN_TRAIL_LEG,
+		"back_bone": "Chest", "feet": HUMAN_FEET,
 		"saturation": 0.75, "brightness": 0.85, "metal": 0.0, "rough": 0.85,
 		"anims": HUMAN_ANIMS,
 	},
@@ -71,6 +74,7 @@ const SKINS := {
 		"people": {"m": ["Punk", "Casual_Hoodie", "Casual_2", "Farmer", "Beach"], "f": ["Punk", "Worker", "Casual", "Medieval"]},
 		"height": 1.76, "tint": Color(0.86, 0.76, 0.68), "grip_bone": "Middle1.R", "arm": HUMAN_ARM, "off_arm": HUMAN_OFF_ARM,
 		"spine": HUMAN_SPINE, "neck": "Neck", "lead_leg": HUMAN_LEAD_LEG, "trail_leg": HUMAN_TRAIL_LEG,
+		"back_bone": "Chest", "feet": HUMAN_FEET,
 		"saturation": 0.7, "brightness": 0.75, "metal": 0.0, "rough": 0.9,
 		"anims": HUMAN_ANIMS,
 	},
@@ -911,6 +915,8 @@ func _dress_display(display: Node3D) -> void:
 		# `_dress_vehicle` marks the model itself, and leaves other shapes alone.
 		if ItemDB.has_tag(id, "vehicle"):
 			_dress_vehicle(display)
+		elif ItemDB.has_tag(id, "flight_rig"):
+			_dress_rig_stand(model, id)
 		return
 	model.set_meta("dressed", true)
 	weapon.item_id = id
@@ -927,6 +933,44 @@ func _dress_display(display: Node3D) -> void:
 	model.remove_child(grey)
 	grey.queue_free()
 	model.add_child(holder)
+
+
+## A flight rig on show: its real model on a faceless mannequin, which stands
+## with its back to the room so a back-worn rig faces you. Boots stand on
+## the base.
+func _dress_rig_stand(model: Node3D, id: String) -> void:
+	model.set_meta("dressed", true)
+	for child in model.get_children():
+		model.remove_child(child)
+		child.queue_free()
+	var dummy := StandardMaterial3D.new()
+	dummy.albedo_color = Color(0.22, 0.22, 0.24)
+	var stand := Node3D.new()
+	stand.name = "Mannequin"
+	for piece: Array in [[Vector3(0.7, 0.08, 0.7), Vector3(0, 0.04, 0)], [Vector3(0.1, 0.9, 0.1), Vector3(0, 0.5, 0)],
+			[Vector3(0.42, 0.6, 0.24), Vector3(0, 1.25, 0)], [Vector3(0.24, 0.26, 0.24), Vector3(0, 1.72, 0)]]:
+		var box := BoxMesh.new()
+		box.size = piece[0]
+		box.material = dummy
+		var part := MeshInstance3D.new()
+		part.mesh = box
+		part.position = piece[1]
+		stand.add_child(part)
+	model.add_child(stand)
+	var back := RigModel.build_back(id)
+	if back:
+		back.position = Vector3(0, 1.36, 0.12)
+		if back.has_node("WingL"):
+			RigModel.set_wing_spread(back, 0.55)
+		_weather_model(back, 0.5, 0.6)
+		model.add_child(back)
+	for side: float in [-1.0, 1.0]:
+		var boot := RigModel.build_boot(id, side)
+		if boot:
+			# Set down on the base either side of the pole, heel to the room.
+			boot.position = Vector3(side * 0.16, 0.15, 0.05)
+			_weather_model(boot, 0.5, 0.6)
+			model.add_child(boot)
 
 
 func _dress_vehicle(vehicle: Node3D) -> void:

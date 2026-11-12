@@ -15,6 +15,12 @@ func _ready() -> void:
 		get_tree().quit()
 		return
 
+	# `-- <output_dir> --rigs-only` shoots each flight rig being worn.
+	if "--rigs-only" in args:
+		await _rig_shots(out_dir)
+		get_tree().quit()
+		return
+
 	# `-- <output_dir> --gait-only` shoots the legs: run, sprint, strafe, slide.
 	if "--gait-only" in args:
 		await _gait_shots(out_dir)
@@ -163,6 +169,46 @@ func _ready() -> void:
 	await _settle(2)
 	await _world_shots(out_dir)
 	get_tree().quit()
+
+
+## Each flight rig on a player, at rest and firing (thrusting, an air jump's
+## burn, or gliding), from behind, the side and the front.
+func _rig_shots(out_dir: String) -> void:
+	for id: String in ["jetpack_mk1", "jetpack_mk2", "boots_thruster", "wings_glide"]:
+		var raid := Raid.new()
+		add_child(raid)
+		raid.start(Worlds.get_world("ashfront"), 42, ["rifle_carbine", "blade_scrap", id, "frame_trooper"])
+		for bot in raid.bots:
+			bot.get_node("Brain").set_physics_process(false)
+			bot.global_position += Vector3(0, -200, 0)
+		var camera := Camera3D.new()
+		camera.fov = 50.0
+		raid.add_child(camera)
+		camera.make_current()
+		var p := raid.player
+		await _settle(30)
+		p.set_physics_process(false)
+		var at := p.global_position
+		var back := p.global_transform.basis.z
+		var side := p.global_transform.basis.x
+		var skin := p.get_node("Skin")
+		var views := {
+			"back": at + back * 2.6 + side * 0.6 + Vector3(0, 1.7, 0),
+			"side": at + side * 2.6 + back * 0.9 + Vector3(0, 1.3, 0),
+			"front": at - back * 2.6 + side * 0.9 + Vector3(0, 1.5, 0),
+			"above": at + back * 1.6 + side * 0.4 + Vector3(0, 3.2, 0),
+		}
+		for active: bool in [false, true]:
+			p.flight.is_thrusting = active and p.flight.thrust_accel > 0.0
+			p.flight.is_gliding = active and p.flight.can_glide()
+			for view: String in views:
+				if active and p.flight.burst_velocity > 0.0 and not p.flight.can_glide():
+					skin._burst_left = 10.0
+				camera.look_at_from_position(views[view], at + Vector3(0, 0.95 if view != "front" else 1.0, 0))
+				await _settle(30 if active and view == "back" else 6)
+				await _shot(out_dir.path_join("rig_%s_%s%s.png" % [id, view, "_on" if active else ""]))
+		raid.queue_free()
+		await _settle(3)
 
 
 ## Every world from a few fixed angles, with some of its bots lined up in
