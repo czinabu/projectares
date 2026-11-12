@@ -50,6 +50,19 @@ var stamina_regen := 28.0
 var stamina_regen_delay := 0.9
 var dash_stamina := 20.0
 var stagger_speed_mult := 0.35
+## Sliding: pressing slide while running fast drops you low and skids you
+## along the ground, from `slide_speed` (or your speed, if faster) down to
+## `slide_end_speed` over `slide_time`. Jumping ends it and keeps the speed.
+var slide_speed := 11.0
+var slide_end_speed := 4.0
+var slide_time := 0.8
+## The least ground speed a slide can start from.
+var slide_min_speed := 7.0
+var slide_cooldown := 0.6
+var slide_stamina := 10.0
+## How far the eyes drop while sliding, and how fast they get there (per second).
+var slide_eye_drop := 0.75
+var crouch_rate := 8.0
 
 var cmd := ActorCommand.new()
 var health := HealthComponent.new()
@@ -73,6 +86,10 @@ var heal_time_left := 0.0
 var airborne_time := 0.0
 ## While staggered the actor cannot attack, block, dash or jump.
 var stagger_left := 0.0
+## Seconds left of the current slide; above zero while sliding.
+var slide_left := 0.0
+## How low the actor is crouched, 0 standing to 1 down in a slide.
+var crouch := 0.0
 ## After a parry, the next melee hit inside this window hits harder.
 var riposte_left := 0.0
 ## Seconds left of drop-in protection: nothing can hurt this actor. It ends
@@ -95,6 +112,9 @@ var hand_override := false
 var _dash_left := 0.0
 var _dash_cd := 0.0
 var _dash_dir := Vector3.ZERO
+var _slide_cd := 0.0
+var _slide_dir := Vector3.ZERO
+var _slide_from := 0.0
 var _was_on_floor := true
 var _stamina_wait := 0.0
 var _flash_left := 0.0
@@ -257,6 +277,8 @@ func _simulate_movement(delta: float) -> void:
 	if _dash_left > 0.0:
 		_dash_left -= delta
 		horizontal = _dash_dir * dash_speed
+		slide_left = 0.0
+	horizontal = _simulate_slide(horizontal, on_floor, staggered, delta)
 
 	velocity.x = horizontal.x
 	velocity.z = horizontal.z
@@ -283,6 +305,32 @@ func _simulate_movement(delta: float) -> void:
 	if now_on_floor and not _was_on_floor:
 		landed.emit(maxf(fall_speed, 0.0))
 	_was_on_floor = now_on_floor
+
+
+## Starts, carries on, or ends a slide, and returns the ground velocity.
+func _simulate_slide(horizontal: Vector3, on_floor: bool, staggered: bool, delta: float) -> Vector3:
+	_slide_cd = maxf(0.0, _slide_cd - delta)
+	if cmd.slide and on_floor and slide_left <= 0.0 and _slide_cd <= 0.0 and _dash_left <= 0.0 \
+			and not staggered and horizontal.length() >= slide_min_speed and spend_stamina(slide_stamina):
+		_slide_dir = horizontal.normalized()
+		_slide_from = maxf(horizontal.length(), slide_speed)
+		slide_left = slide_time
+		_slide_cd = slide_time + slide_cooldown
+	if slide_left > 0.0:
+		# Jumping, falling off an edge or being staggered ends it; the
+		# speed carries on into whatever comes next.
+		if cmd.jump_pressed or not on_floor or staggered:
+			slide_left = 0.0
+		else:
+			slide_left = maxf(0.0, slide_left - delta)
+			var done := 1.0 - slide_left / slide_time
+			horizontal = _slide_dir * lerpf(_slide_from, slide_end_speed, done)
+	crouch = move_toward(crouch, 1.0 if slide_left > 0.0 else 0.0, crouch_rate * delta)
+	return horizontal
+
+
+func is_sliding() -> bool:
+	return slide_left > 0.0
 
 
 func _simulate_weapons(delta: float) -> void:
@@ -315,7 +363,7 @@ func _simulate_heal(delta: float) -> void:
 
 
 func get_eye_position() -> Vector3:
-	return global_position + Vector3(0.0, eye_height, 0.0)
+	return global_position + Vector3(0.0, eye_height - slide_eye_drop * crouch, 0.0)
 
 
 func get_aim_dir() -> Vector3:

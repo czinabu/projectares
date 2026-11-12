@@ -22,6 +22,7 @@ skies, animated models and effects (see "How it looks" below).
 | Jump. In the air: hold to fly (jetpack), press to boost (thruster boots, glide wings), hold while falling to glide (glide wings) | Space |
 | Use your ability | G |
 | Dash | Q |
+| Slide (while sprinting) | C |
 | Fire, or blade combo | Left mouse |
 | Aim down sights, or block with the blade (tap just before a hit to parry) | Right mouse |
 | Pick a melee side: left, right or overhead | Flick the mouse that way, or hold A, D or W |

@@ -210,12 +210,18 @@ static func _check_legs(t: Node, tag: String, player: Actor, skin: Node, skeleto
 				tag + "each side clip is measured going its own way")
 
 	# No foot sliding: playback speed times the clip's own speed is the actor's.
-	var steady := run.length() * 1.5
+	# No foot sliding at any speed: playback times stride times the clip's
+	# own speed is the actor's speed.
+	var steady := run.length() * 1.2
 	var pick: Dictionary = loco.choose(Vector3(0.0, 0.0, -steady), false)
-	t.check(pick.get("key") == "run" and absf(pick["speed"] * run.length() - steady) < 0.01,
-			tag + "the run plays at the speed the actor moves")
-	var faster: Dictionary = loco.choose(Vector3(0.0, 0.0, -steady * 1.3), false)
-	t.check(faster.get("speed", 0.0) > pick.get("speed", 0.0), tag + "a faster actor takes quicker strides")
+	t.check(pick.get("key") == "run" and is_equal_approx(pick["stride"], 1.0)
+			and absf(pick["speed"] * run.length() - steady) < 0.01, tag + "a relaxed run plays at the speed the actor moves")
+	var sprint: Dictionary = loco.choose(Vector3(0.0, 0.0, -player.sprint_speed), false)
+	t.check(sprint.get("stride", 1.0) > 1.2 and absf(sprint["speed"] * sprint["stride"] * run.length() - player.sprint_speed) < 0.01,
+			tag + "a sprint lengthens the stride instead of only spinning the legs, and the feet stay planted")
+	t.check(sprint.get("speed", 0.0) > pick.get("speed", 0.0), tag + "a sprint still takes quicker strides than a jog")
+	t.check(loco.choose(Vector3(0.0, 0.0, -loco.gaits["walk"].length()), false).get("stride") == 1.0,
+			tag + "a walk keeps its own stride")
 	var slow: Dictionary = loco.choose(Vector3(0.0, 0.0, -loco.gaits["walk"].length()), false)
 	t.check(slow.get("key") == "walk" and absf(slow["speed"] - 1.0) < 0.01, tag + "a slow actor walks at the walk's own pace")
 	t.check(loco.choose(Vector3(0.0, 0.0, -0.1), false).is_empty(), tag + "a still actor stands")
@@ -259,6 +265,53 @@ static func _check_legs(t: Node, tag: String, player: Actor, skin: Node, skeleto
 	skin._process(1.0)
 	skin._process(1.0)
 	t.check(absf(loco.twist_target) > 0.5 and absf(loco.twist) > 0.3, tag + "a model running diagonally turns its legs")
+	# A sprint stretches the legs about their average pose: the feet reach
+	# further apart than the clip alone puts them.
+	player.velocity = player.global_basis * Vector3(0, 0, -player.sprint_speed)
+	skin._process(1.0)
+	skin._process(1.0)
+	t.check(loco.stride > 1.2 and loco._means.has(loco.current_anim), tag + "a sprinting model lengthens its stride")
+	if skeleton and loco._lead.size() == 3:
+		var lead_foot: int = loco._lead[2]
+		var trail_foot: int = loco._trail[2]
+		var spread := func() -> float:
+			return skeleton.get_bone_global_pose(lead_foot).origin.distance_to(skeleton.get_bone_global_pose(trail_foot).origin)
+		var saved_feet := {}
+		for bone: int in loco._legs + loco._feet:
+			saved_feet[bone] = [skeleton.get_bone_pose_position(bone), skeleton.get_bone_pose_rotation(bone)]
+		var before: float = spread.call()
+		loco._stretch_stride()
+		t.check(spread.call() > before - 0.001, tag + "a stretched stride puts the feet further apart")
+		var shin_end: Vector3 = (skeleton.get_bone_global_pose(loco._lead[1]) * loco._foot_on_shin[lead_foot]).origin
+		t.check(shin_end.distance_to(skeleton.get_bone_global_pose(lead_foot).origin) < 0.01,
+				tag + "the legs reach the stretched feet, so no foot comes off its shin")
+		for bone: int in saved_feet:
+			skeleton.set_bone_pose_position(bone, saved_feet[bone][0])
+			skeleton.set_bone_pose_rotation(bone, saved_feet[bone][1])
+
+	# A slide bends the model: hips down, lead leg out in front.
+	player.slide_left = 0.5
+	player.crouch = 1.0
+	player.velocity = player.global_basis * Vector3(0, 0, -player.slide_speed)
+	skin._process(1.0)
+	t.check(skin._current in ["idle", "idle_melee"], tag + "a sliding model stops running its legs")
+	if skeleton and loco._lead.size() == 3:
+		var saved_slide := {}
+		for bone in skeleton.get_bone_count():
+			saved_slide[bone] = [skeleton.get_bone_pose_position(bone), skeleton.get_bone_pose_rotation(bone)]
+		var to_actor := player.global_transform.affine_inverse() * skeleton.global_transform
+		var hips_before := (to_actor * skeleton.get_bone_global_pose(loco._lead[0]).origin).y
+		loco._slide_pose()
+		var hips_after := (to_actor * skeleton.get_bone_global_pose(loco._lead[0]).origin).y
+		var lead_at := to_actor * skeleton.get_bone_global_pose(loco._lead[2]).origin
+		var trail_at := to_actor * skeleton.get_bone_global_pose(loco._trail[2]).origin
+		t.check(hips_after < hips_before - 0.3, tag + "a sliding model drops its hips")
+		t.check(lead_at.z < trail_at.z - 0.3, tag + "a sliding model reaches its lead leg out in front")
+		for bone: int in saved_slide:
+			skeleton.set_bone_pose_position(bone, saved_slide[bone][0])
+			skeleton.set_bone_pose_rotation(bone, saved_slide[bone][1])
+	player.slide_left = 0.0
+	player.crouch = 0.0
 	player.velocity = was_velocity
 	player.active_weapon_index = was_weapon
 

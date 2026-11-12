@@ -109,6 +109,12 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   over clip speed, the clip nearest the direction of travel is picked, and the
   lower body turns the rest of the way while the spine keeps the chest on the
   aim. Remote players work the same way from their replicated velocity.
+  Past a relaxed cadence a run lengthens its stride (feet stretched about
+  their average spot, legs solved to reach them) rather than only spinning
+  faster: that is the sprint. A slide (`Actor.slide_left`, `Actor.crouch`)
+  is simulated from `ActorCommand.slide` like a dash, so it predicts and
+  replicates; the skin bends the model into a slide pose from `crouch`.
+  Check leg changes by eye: `visual_check.tscn -- <dir> --gait-only`.
 - People are built from parts (`core/visual/human.gd`): an "appearance" names
   a build, four parts and colours. It is cosmetic only and never trusted:
   always pass one through `Look.clean_appearance` / `Look.set_appearance`,
