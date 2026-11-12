@@ -341,6 +341,10 @@ static func _armies(t: Node) -> void:
 	t.check(raid.bot_target() == world.bot_count, "a quiet world keeps its usual number of bots")
 	raid.war.intensity = 1.0
 	t.check(raid.bot_target() == world.bot_count + world.war_reinforcements, "a world at war wants more")
+	var usual := world.bot_count
+	world.bot_count = 0
+	t.check(raid.bot_target() == 0, "a world run without bots gets no reinforcements either")
+	world.bot_count = usual
 	var before := raid.bots.size()
 	for i in 4:
 		raid.war.intensity = 1.0

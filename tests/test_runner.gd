@@ -3360,6 +3360,9 @@ func _test_online() -> void:
 	check(alpha != null and bravo != null, "two clients join a squad-spawn server")
 	if alpha != null and bravo != null:
 		await _wait_until(func() -> bool: return alpha.actor_for(bravo.my_actor_id) != null, 180)
+		# Alpha walks back from the bike to Bravo and then to the bag, and the
+		# drop point's wall can stand between: it finds the way round.
+		await _lay_navigation(alpha)
 		var me := alpha.raid.player
 		var target := alpha.actor_for(bravo.my_actor_id)
 		var victim := bravo.raid.player
@@ -3406,9 +3409,14 @@ func _test_online() -> void:
 					and me.global_position.distance_to(bike.global_position) < 1.5,
 					"the server drives the bike and the rider goes with it")
 			var seen_rider := bravo.actor_for(alpha.my_actor_id)
-			check(their_bike != null and their_bike.get("rider") == seen_rider
-					and their_bike.global_position.distance_to(bike.global_position) < 3.0,
-					"the other client sees the same player riding the same bike")
+			# The bike is still rolling to a stop, and the other client's view
+			# of it trails by a few ticks: up to 2.9 m at this speed. Let it
+			# come to rest before comparing.
+			var same_ride := func() -> bool:
+				return their_bike != null and their_bike.get("rider") == seen_rider \
+						and their_bike.global_position.distance_to(bike.global_position) < 1.5
+			await _wait_until(same_ride, 120)
+			check(same_ride.call(), "the other client sees the same player riding the same bike")
 			await press_use.call()
 			await _wait_until(func() -> bool: return me.vehicle == null, 90)
 			check(me.vehicle == null and bike.get("rider") == null, "pressing use again gets off")
@@ -3431,8 +3439,9 @@ func _test_online() -> void:
 			var aim := (target.global_position + Vector3(0, 1.1, 0)) - me.get_eye_position()
 			me.cmd.aim_dir = aim.normalized()
 			me.cmd.yaw = atan2(-aim.x, -aim.z)
-			# Close in, so nothing on the map sits between them.
-			me.cmd.move = Vector2(0, 1) if aim.length() > 4.0 else Vector2.ZERO
+			# Close in, round the drop point's wall if it is in the way, so
+			# nothing on the map sits between them.
+			me.cmd.move = _move_toward(me, target.global_position) if aim.length() > 4.0 else Vector2.ZERO
 			if i % 40 == 39:
 				me.cmd.reload_pressed = true
 			await frames(1)
@@ -3482,7 +3491,7 @@ func _test_online() -> void:
 				face.call(bag.global_position + Vector3(0, 0.3, 0))
 				var gap := Vector2(bag.global_position.x - me.global_position.x,
 						bag.global_position.z - me.global_position.z).length()
-				me.cmd.move = Vector2(0, 1) if gap > 1.6 else Vector2.ZERO
+				me.cmd.move = _move_toward(me, bag.global_position) if gap > 1.6 else Vector2.ZERO
 				me.cmd.interact_pressed = gap <= 2.6 and i % 10 == 0
 				await frames(1)
 			me.cmd.move = Vector2.ZERO
@@ -3616,6 +3625,22 @@ func _test_online_movement() -> void:
 	check(seen_jumps == 5, "every jump reaches the server despite lost packets (%d of 5 seen by the other player)" % seen_jumps)
 	dana.simulated_loss = 0.0
 
+	# A bad moment: every packet for a sixth of a second is lost, with a press
+	# in the middle of it. The first packet through still carries the press.
+	await frames(60)
+	dana.simulated_loss = 1.0
+	await frames(4)
+	me.cmd.jump_pressed = true
+	await frames(1)
+	me.cmd.jump_pressed = false
+	await frames(5)
+	dana.simulated_loss = 0.0
+	var burst_top := 0.0
+	for i in 80:
+		await frames(1)
+		burst_top = maxf(burst_top, seen.global_position.y - ground)
+	check(burst_top > 0.6, "a press made while every packet is being lost still reaches the server (%.2f m)" % burst_top)
+
 	# Free flight is predicted like running: jump, tap again to light the
 	# jets, fly sideways, and the server agrees all the way.
 	if me.flight.can_hover():
@@ -3670,6 +3695,39 @@ func _test_online_movement() -> void:
 ## The yaw that turns an actor to look along `dir`.
 static func _yaw_toward(dir: Vector3) -> float:
 	return atan2(-dir.x, -dir.z)
+
+
+## Gives a client's world a navigation mesh, so `_move_toward` can find the
+## way round walls in it. Only the server's world has one otherwise (bots are
+## the server's). The first one in a run takes a moment to work out, so call
+## this while nothing is being timed.
+func _lay_navigation(session: NetSession) -> void:
+	if session.raid.map.has_method("bake_navigation"):
+		session.raid.map.call("bake_navigation")
+	var nav_map := session.raid.get_world_3d().navigation_map
+	await _wait_until(func() -> bool:
+		return not NavigationServer3D.map_get_path(nav_map, session.raid.player.global_position,
+				session.raid.player.global_position + Vector3(3, 0, 0), true).is_empty(), 300)
+
+
+## The move input that walks `actor` toward `point` whichever way it is
+## facing, round walls the way a bot goes (along the map's navigation mesh,
+## see `_lay_navigation`). A walk straight at something stops dead at the
+## first wall between. Without a mesh it is a straight walk.
+func _move_toward(actor: Actor, point: Vector3) -> Vector2:
+	var from := actor.global_position
+	var next := point
+	var nav_map := actor.get_world_3d().navigation_map
+	if NavigationServer3D.map_get_iteration_id(nav_map) > 0:
+		for corner in NavigationServer3D.map_get_path(nav_map, from, point, true):
+			if Vector2(corner.x - from.x, corner.z - from.z).length() > 0.6:
+				next = corner
+				break
+	var dir := Vector3(next.x - from.x, 0.0, next.z - from.z)
+	if dir.length() < 0.01:
+		return Vector2.ZERO
+	dir = Basis(Vector3.UP, actor.cmd.yaw).inverse() * dir.normalized()
+	return Vector2(dir.x, -dir.z)
 
 
 ## Whether `actor` could run `reach` metres along `dir` (flat, unit length)
