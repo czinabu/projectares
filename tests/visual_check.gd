@@ -15,6 +15,12 @@ func _ready() -> void:
 		get_tree().quit()
 		return
 
+	# `-- <output_dir> --rigs-only` shoots each flight rig being worn.
+	if "--rigs-only" in args:
+		await _rig_shots(out_dir)
+		get_tree().quit()
+		return
+
 	# `-- <output_dir> --gait-only` shoots the legs: run, sprint, strafe, slide.
 	if "--gait-only" in args:
 		await _gait_shots(out_dir)
@@ -171,6 +177,46 @@ func _ready() -> void:
 	get_tree().quit()
 
 
+## Each flight rig on a player, at rest and firing (thrusting, an air jump's
+## burn, or gliding), from behind, the side and the front.
+func _rig_shots(out_dir: String) -> void:
+	for id: String in ["jetpack_mk1", "jetpack_mk2", "boots_thruster", "wings_glide"]:
+		var raid := Raid.new()
+		add_child(raid)
+		raid.start(Worlds.get_world("ashfront"), 42, ["rifle_carbine", "blade_scrap", id, "frame_trooper"])
+		for bot in raid.bots:
+			bot.get_node("Brain").set_physics_process(false)
+			bot.global_position += Vector3(0, -200, 0)
+		var camera := Camera3D.new()
+		camera.fov = 50.0
+		raid.add_child(camera)
+		camera.make_current()
+		var p := raid.player
+		await _settle(30)
+		p.set_physics_process(false)
+		var at := p.global_position
+		var back := p.global_transform.basis.z
+		var side := p.global_transform.basis.x
+		var skin := p.get_node("Skin")
+		var views := {
+			"back": at + back * 2.6 + side * 0.6 + Vector3(0, 1.7, 0),
+			"side": at + side * 2.6 + back * 0.9 + Vector3(0, 1.3, 0),
+			"front": at - back * 2.6 + side * 0.9 + Vector3(0, 1.5, 0),
+			"above": at + back * 1.6 + side * 0.4 + Vector3(0, 3.2, 0),
+		}
+		for active: bool in [false, true]:
+			p.flight.is_thrusting = active and p.flight.thrust_accel > 0.0
+			p.flight.is_gliding = active and p.flight.can_glide()
+			for view: String in views:
+				if active and p.flight.burst_velocity > 0.0 and not p.flight.can_glide():
+					skin._burst_left = 10.0
+				camera.look_at_from_position(views[view], at + Vector3(0, 0.95 if view != "front" else 1.0, 0))
+				await _settle(30 if active and view == "back" else 6)
+				await _shot(out_dir.path_join("rig_%s_%s%s.png" % [id, view, "_on" if active else ""]))
+		raid.queue_free()
+		await _settle(3)
+
+
 ## Every world from a few fixed angles, with some of its bots lined up in
 ## front of the player so their models can be checked.
 func _world_shots(out_dir: String, only := "") -> void:
@@ -268,13 +314,32 @@ func _base_shots(out_dir: String) -> void:
 		camera.look_at_from_position(views[file][0], views[file][1])
 		await _settle(4)
 		await _shot(out_dir.path_join(file))
-	# A station's screen over the room.
+	# A station's screen, live on the console: from across the room, then
+	# moved in to use it.
+	var screen_view := SubViewport.new()
+	screen_view.size = Vector2i(1280, 720)
+	screen_view.disable_3d = true
+	add_child(screen_view)
 	var hub := Hub.new()
-	add_child(hub)
-	hub.open_station("locker")
-	await _settle(6)
-	await _shot(out_dir.path_join("base_locker_screen.png"))
-	hub.queue_free()
+	screen_view.add_child(hub)
+	for id: String in ["locker", "trader", "launch"]:
+		hub.open_station(id)
+		var live := WorldScreen.new()
+		live.size = HomeBase.SCREEN_SIZE
+		live.viewport = screen_view
+		base.station(id).screen.add_child(live)
+		var face: Node3D = base.station(id).screen
+		camera.make_current()
+		camera.look_at_from_position(face.global_position + face.global_basis.z * 3.2 + Vector3(0, 0.3, 0), face.global_position)
+		await _settle(6)
+		await _shot(out_dir.path_join("base_%s_console.png" % id))
+		live.focus()
+		await _settle(30)
+		await _shot(out_dir.path_join("base_%s_screen.png" % id))
+		live.unfocus()
+		live.queue_free()
+		hub.close()
+	screen_view.queue_free()
 	base.queue_free()
 	await _settle(2)
 
@@ -299,9 +364,29 @@ func _arena_shots(out_dir: String) -> void:
 	# Look down into the pit from where you stand.
 	var to_center := -arena.player.global_position
 	controller.yaw = atan2(-to_center.x, -to_center.z)
-	controller.pitch = -0.35
+	controller.pitch = 0.1
 	await _settle(60)
 	await _shot(out_dir.path_join("arena_calling.png"))
+	# A bookmaker's booth in the stands, from its spot and then in use.
+	var booth: Node3D = get_tree().get_nodes_in_group("arena_booth")[0]
+	var stood := arena.player.global_position
+	arena.player.global_position = booth.global_position + Vector3(0, 0.1, 0)
+	var to_booth: Vector3 = (booth.get_node("Screen") as Node3D).global_position - booth.global_position
+	controller.yaw = atan2(-to_booth.x, -to_booth.z)
+	controller.pitch = 0.0
+	await _settle(30)
+	await _shot(out_dir.path_join("arena_booth.png"))
+	overlay.open_booth(booth)
+	hud.visible = false
+	arena.player.hand.visible = false
+	await _settle(40)
+	await _shot(out_dir.path_join("arena_booth_screen.png"))
+	overlay.close_booth()
+	hud.visible = true
+	arena.player.hand.visible = true
+	arena.player.global_position = stood
+	controller.yaw = atan2(-to_center.x, -to_center.z)
+	controller.pitch = -0.35
 	await _settle(200)
 	await _shot(out_dir.path_join("arena_fight.png"))
 	controller.view_mode = PlayerController.ViewMode.THIRD
@@ -326,17 +411,49 @@ func _plaza_shots(out_dir: String, raid: Raid, camera: Camera3D, lineup: Array[A
 	var view: CanvasLayer = load("res://core/social/plaza_view.gd").new()
 	view.setup(raid, {})
 	raid.add_child(view)
-	var to := lineup[1].global_position - raid.player.global_position
-	controller.yaw = atan2(-to.x, -to.z)
-	controller.pitch = -0.05
-	await _settle(30)
-	await _shot(out_dir.path_join("%s_inspect.png" % raid.world.id))
+	# The line-up may have been cleared away by now; shoot whoever is left.
+	var subject: Actor = null
+	for other in lineup:
+		if is_instance_valid(other):
+			subject = other
+	if subject:
+		var to := subject.global_position - raid.player.global_position
+		controller.yaw = atan2(-to.x, -to.z)
+		controller.pitch = -0.05
+		await _settle(30)
+		await _shot(out_dir.path_join("%s_inspect.png" % raid.world.id))
 	for portal in get_tree().get_nodes_in_group("portal"):
 		if portal.get_meta("destination", "") == "home":
 			raid.player.global_position = portal.global_position + Vector3(0, 0.2, 0)
 			controller.yaw = PI / 2.0
 	await _settle(30)
 	await _shot(out_dir.path_join("%s_portal.png" % raid.world.id))
+	# A storefront's terminal, from its pad and then in use.
+	var stall: Node3D = get_tree().get_nodes_in_group("shop_front")[0]
+	var mount: Node3D = stall.get_node("Screen")
+	raid.player.global_position = stall.global_position + Vector3(0, 0.2, 0)
+	var to_screen := mount.global_position - raid.player.global_position
+	controller.yaw = atan2(-to_screen.x, -to_screen.z)
+	controller.pitch = -0.1
+	await _settle(30)
+	await _shot(out_dir.path_join("%s_stall.png" % raid.world.id))
+	var screen_view := SubViewport.new()
+	screen_view.size = Vector2i(1280, 720)
+	screen_view.disable_3d = true
+	var shop: Control = (load("res://core/main.gd") as GDScript).ShopView.new()
+	shop.panel = load("res://core/economy/shop_panel.gd").new()
+	shop.panel.set("shop_filter", stall.get_meta("shop_id", ""))
+	screen_view.add_child(shop)
+	raid.add_child(screen_view)
+	var live := WorldScreen.new()
+	live.viewport = screen_view
+	mount.add_child(live)
+	live.focus()
+	hud.visible = false
+	view.visible = false
+	await _settle(40)
+	await _shot(out_dir.path_join("%s_stall_screen.png" % raid.world.id))
+	live.unfocus()
 
 
 func _settle(count: int) -> void:

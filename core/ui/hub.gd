@@ -2,7 +2,8 @@ class_name Hub
 extends Control
 ## The screens behind the stations of your home base, and the travel screen
 ## between places. The game never opens on this: it opens in your home base,
-## and each station there (`STATIONS`) shows one part of it over the room:
+## and each station there (`STATIONS`) shows one part of it on its own screen
+## in the room (`Main` puts this in a viewport shown on a `WorldScreen`):
 ## the locker your loadout, the mastery bench your variants, the wardrobe the
 ## customizer, the records board your stash and last life, the trader the
 ## shops, the launch pad a deploy button for every world, and the uplink the
@@ -84,14 +85,14 @@ var _close_button: Button
 
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	# Travel: a full-screen backdrop. At a station: the base dimmed behind.
+	# Travel: a full-screen backdrop. At a station: the screen's dark glass.
 	_backdrop = TextureRect.new()
 	_backdrop.texture = Look.backdrop()
 	_backdrop.stretch_mode = TextureRect.STRETCH_SCALE
 	_backdrop.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(_backdrop)
 	_shade = ColorRect.new()
-	_shade.color = Color(0.02, 0.02, 0.03, 0.72)
+	_shade.color = Color(0.025, 0.03, 0.035)
 	_shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(_shade)
 
@@ -219,8 +220,8 @@ func _section(box: VBoxContainer, id: String) -> VBoxContainer:
 	return section
 
 
-## Opens what a station in the home base offers (a key of `STATIONS`), over
-## the base. Esc or the button steps away again.
+## Opens what a station in the home base offers (a key of `STATIONS`) on
+## this screen. Esc or the button steps away again.
 func open_station(id: String) -> void:
 	if not STATIONS.has(id):
 		return

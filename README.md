@@ -47,7 +47,9 @@ caches hold the best loot, and only the jetpack gets you there.
 
 The game opens in your home base, not on a menu screen. Everything in your
 stash is on show, and the consoles in the room do what the old menu did.
-Walk up to one and press **E**; **Esc** steps away again.
+Walk up to one and press **E**: your view moves in to its screen and you
+click on the screen itself. **Esc** steps back. Look at a piece of gear and
+a tag over it says what it is and what it is worth.
 
 | Console | What it opens |
 | --- | --- |
@@ -131,7 +133,7 @@ to run every raid world, or add `--no-plaza` for one world alone on the port.
 Joining a server puts you in its plaza, the Concourse: a walled safe zone
 shared by everyone on that server. Weapons are locked and nobody can be hurt.
 You appear wearing your equipped loadout, and it never leaves your stash, so
-nothing is at risk there. Look at another player to see what they are wearing.
+nothing is at risk there. Look at another player and a tag over their head lists what they are wearing.
 A bike in your loadout is parked beside you to ride around.
 
 Walk into a glowing pad and press **E** to use it:
@@ -141,7 +143,8 @@ Walk into a glowing pad and press **E** to use it:
   back in the Concourse.
 - **Quarters** (west): the door to your home base. Its door leads back here.
 - **Storefronts** (the corners): one for every shop. Step up to the counter
-  to buy and sell without leaving the plaza.
+  and press E to use its terminal: buy and sell on the screen without leaving
+  the plaza.
 - **Arena** and **Clan hall**: built, and closed until those features arrive.
 - **Exit** (south): leaves the server.
 
@@ -270,8 +273,10 @@ you have.
 ## The arena
 
 The **arena gate** console in your home base (or the arena gate in the plaza) takes you to
-the Pit, a colosseum where you watch from the stands. Press Esc to free the
-mouse and use the arena panel:
+the Pit, a colosseum where you watch from the stands. The big board over the
+pit shows the bout, both fighters' health and the wager pools. To take part,
+walk up to one of the bookmakers' booths in the stands and press **E** (Esc
+steps back). Its screen is where you:
 
 - **Bet** on the bout being called. Backers of the winner split the losing
   side's pool by stake, less a 10% house cut. Draws refund every wager.
