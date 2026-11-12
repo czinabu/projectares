@@ -102,6 +102,22 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   killing bots only simmer the meter (`WarDirector.report_battle`, capped at
   `battle_ceiling`); only players take it higher. World-event bots
   (`Raid._event_bots`) are outside all of this.
+- Big battles must stay affordable; measure with
+  `godot --headless --path . res://tests/battle_bench.tscn -- --bots 150 --players 32`
+  (processor time a tick, against the 16.7 ms budget). Three things keep
+  them so. Bots nobody is near are thinned: `Raid._tick_detail` calls
+  `Actor.thin`, and the actor and its brain then take one longer step every
+  few ticks, so anything that drives an actor tick by tick must ask
+  `Actor.ticks_now()` first, and a press set from outside can be missed
+  unless the actor is at `thin(1)`. A bot asks for a new path only when its
+  goal has moved or its path ran out (`BotBrain._move_toward`); never set
+  `NavigationAgent3D.target_position` on a timer. Interest: `NetSession`
+  sends a player every state update only for actors within `NEAR_RANGE`,
+  the rest in turn (`detail_tier`, `detail_due`), and keeps presses per tier
+  so a far viewer still gets them; a client thins far actors the same way.
+  A new per-tick cost that grows with the number of actors (a scan of the
+  "actors" group, something sent to every peer) needs the same treatment.
+  A world sets how many players it takes with `WorldDef.max_players`.
 - Mastery pays for using gear, never for leaving alive, or signing out over
   and over would farm it.
 - Blocking and parrying happen in `Weapon.modify_incoming`, which `Combat.deal`
@@ -378,6 +394,7 @@ The project targets Godot 4.7 (what Caleb runs, and what CI uses).
 godot --headless --path . --import
 godot --headless --path . res://tests/test_runner.tscn   # must exit 0
 godot --headless --path . res://tests/test_runner.tscn -- --only online   # one group
+godot --headless --path . res://tests/battle_bench.tscn -- --bots 150 --players 32   # server cost of a big battle
 ```
 
 To see it rendered (needs a display or xvfb):

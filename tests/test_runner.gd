@@ -765,6 +765,8 @@ func _duel(raid: Raid) -> Array:
 	foe.global_position = p.global_position + Vector3(0, 0, -2.0)
 	foe.cmd.yaw = PI
 	foe.cmd.aim_dir = Vector3.BACK
+	# It was a far-off bot a moment ago; the test drives it tick by tick.
+	foe.thin(1)
 	# Give the foe a blade regardless of what the world rolled for it.
 	for w in foe.weapons:
 		w.queue_free()
@@ -2836,6 +2838,34 @@ func _test_online() -> void:
 			"the client has its own actor and leaves damage to the server")
 	await _wait_until(func() -> bool: return alpha.raid.bots.size() == world.bot_count, 180)
 	check(alpha.raid.bots.size() == world.bot_count, "the client sees the server's bots")
+	# Interest: the client hears about itself and what is near in every
+	# update, and about the far side of the field a fraction as often.
+	await frames(30)
+	alpha.entries_received.clear()
+	# Counted in the server's updates, not in time: a server sharing a busy
+	# machine sends fewer a second, and the shares are what matter.
+	await _wait_until(func() -> bool: return int(alpha.entries_received.get(alpha.my_actor_id, 0)) >= 60, 900)
+	var own_updates := int(alpha.entries_received.get(alpha.my_actor_id, 0))
+	var heard := 0
+	var seldom := 0
+	var far_bots := 0
+	var thinned := 0
+	for bot in alpha.raid.bots:
+		var updates := int(alpha.entries_received.get(alpha._ids.get(bot, -1), 0))
+		heard += updates
+		if bot.global_position.distance_to(alpha.raid.player.global_position) > NetSession.MID_RANGE + 10.0:
+			far_bots += 1
+			if updates >= 2 and updates <= own_updates / 4:
+				seldom += 1
+			if bot.tick_every > 1:
+				thinned += 1
+	check(own_updates >= 60, "a client hears about its own player in every update (%d updates)" % own_updates)
+	check(far_bots >= 10 and seldom == far_bots,
+			"and about bots across the field only now and then (%d of %d far bots)" % [seldom, far_bots])
+	check(heard < world.bot_count * own_updates / 2,
+			"so a big field costs a fraction of the traffic (%d bot updates, %d if all were sent)"
+			% [heard, world.bot_count * own_updates])
+	check(thinned == far_bots, "the client also simulates far bots in longer steps (%d of %d)" % [thinned, far_bots])
 	var bravo := await _join("Bravo", port)
 	check(bravo != null, "a second client joins the same raid")
 	if bravo != null:
@@ -2860,6 +2890,10 @@ func _test_online() -> void:
 			await frames(30)
 			var moved := from.distance_to(seen.global_position)
 			check(moved > 3.0, "one player's movement reaches the other through the server (%.1f m)" % moved)
+			# The server may still be playing the last inputs on a busy machine.
+			var agree := func() -> bool:
+				return seen.global_position.distance_to(alpha.raid.player.global_position) < 2.0
+			await _wait_until(agree, 120)
 			var apart := seen.global_position.distance_to(alpha.raid.player.global_position)
 			check(apart < 2.0, "both clients agree where that player is (%.2f m apart)" % apart)
 		var roster := RaidRoster.new(bravo.raid, bravo.raid.player)
