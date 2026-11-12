@@ -318,7 +318,17 @@ func _physics_process(delta: float) -> void:
 	if on_floor:
 		_drive(throttle, steer, boosting, delta)
 	velocity.y = maxf(velocity.y - gravity * delta, -max_fall_speed)
+	# The seated rider's body overlaps the bike. The collision exception keeps
+	# it out of the slide, but not out of every query the move makes (the
+	# floor snap found it under Jolt), so the rider leaves the actors layer
+	# for the move alone. Shots and everything else still see the rider.
+	var carried := rider != null and is_instance_valid(rider)
+	var rider_layer := rider.collision_layer if carried else 0
+	if carried:
+		rider.collision_layer = 0
 	move_and_slide()
+	if carried:
+		rider.collision_layer = rider_layer
 
 	var forward := Basis(Vector3.UP, heading) * Vector3.FORWARD
 	var horizontal := Vector3(velocity.x, 0.0, velocity.z)
