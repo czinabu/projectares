@@ -43,6 +43,13 @@ skies, animated models and effects (see "How it looks" below).
 The jetpack runs on heat. Overheat it and you fall until it cools. Rooftop
 caches hold the best loot, and only the jetpack gets you there.
 
+Almost nothing is drawn over the screen in a raid: the crosshair, hit marks
+and what E will do. Everything else is on your gear. Your left wrist carries
+a small display with health, armor, stamina, jetpack heat, your pack, your
+standing and strongpoints (raised into view in first person, projected off
+your shoulder in third). Each gun counts its own rounds, the jetpack shows
+its heat on a screen in its back plate, and war news arrives on your phone.
+
 ## Your home base is the menu
 
 The game opens in your home base, not on a menu screen. Everything in your
