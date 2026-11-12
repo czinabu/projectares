@@ -115,6 +115,9 @@ func _process(delta: float) -> void:
 	_stance.guarding = blade != null and blade.is_blocking()
 	_stance.threat = incoming_side(p)
 	_update_ammo_counters(p)
+	if crosshair:
+		# Looking down an optic, its own reticle marks the middle.
+		crosshair.modulate.a = 0.0 if controller != null and is_instance_valid(controller) and controller.sighted else 1.0
 	_update_heat_display(p)
 
 	var banking := raid.bank_progress()
@@ -133,7 +136,7 @@ func _process(delta: float) -> void:
 	elif p.heal_time_left > 0.0:
 		_prompt.text = "Healing %.1f" % p.heal_time_left
 	else:
-		# On a vehicle, E gets you off, so nothing else is offered.
+		# On a vehicle, F gets you off, so nothing else is offered.
 		var target := p.find_interactable() if p.vehicle == null else null
 		_prompt.text = target.get_prompt() if target else ""
 

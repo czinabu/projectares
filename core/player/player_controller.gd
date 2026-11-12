@@ -54,6 +54,13 @@ var wrist_raised := false
 ## The field of view while the camera is behind the character.
 var base_fov_third := 80.0
 var ads_fov := 55.0
+## Extra distance between the eye and an optic's own eye point (its "Sight"
+## marker) when looking through it in first person, in meters.
+var eye_relief := 0.0
+## True while looking through an optic in first person: the HUD hides its
+## crosshair, since the optic's own reticle is in the middle of the view.
+var sighted := false
+var _sight_blend := 0.0
 ## How far the mouse has to move, in pixels, to count as a stance flick.
 var flick_threshold := 45.0
 ## How quickly old mouse movement stops counting toward a flick.
@@ -110,11 +117,12 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	var captured := Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
 	if event is InputEventMouseMotion and captured:
-		# Through binoculars the same hand movement turns you less.
-		var sensitivity := mouse_sensitivity / _zoom()
-		yaw -= event.relative.x * sensitivity
+		# Zoomed in (a scope or binoculars), the mouse turns the view less, so
+		# a target moves across the screen at the same speed as without it.
+		var turn := mouse_sensitivity * _zoom_scale()
+		yaw -= event.relative.x * turn
 		var vertical: float = -event.relative.y if invert_y else event.relative.y
-		pitch = clampf(pitch - vertical * sensitivity, -1.5, 1.5)
+		pitch = clampf(pitch - vertical * turn, -1.5, 1.5)
 		_flick += event.relative
 	elif event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if captured else Input.MOUSE_MODE_CAPTURED
@@ -122,10 +130,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	elif event is InputEventMouseButton and event.pressed \
 			and event.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN]:
-		var count := actor.weapons.size()
-		if count > 1:
-			var step := 1 if event.button_index == MOUSE_BUTTON_WHEEL_DOWN else -1
-			_pending_switch = posmod(actor.active_weapon_index + step, count)
+		var step := 1 if event.button_index == MOUSE_BUTTON_WHEEL_DOWN else -1
+		_pending_switch = actor.cycle_weapon_index(step)
 	elif event.is_action_pressed("toggle_view"):
 		toggle_view()
 	elif event.is_action_pressed("check_wrist"):
@@ -198,6 +204,8 @@ func _physics_process(delta: float) -> void:
 		cmd.move = Vector2.ZERO
 		cmd.sprint = false
 		cmd.jump = false
+		cmd.descend = false
+		cmd.roll = 0
 		cmd.primary = false
 		cmd.secondary = false
 		cmd.switch_weapon = -1
@@ -221,6 +229,8 @@ func _physics_process(delta: float) -> void:
 	cmd.jump_pressed = Input.is_action_just_pressed("jump")
 	cmd.dash = Input.is_action_just_pressed("dash")
 	cmd.slide = Input.is_action_just_pressed("slide")
+	cmd.descend = Input.is_action_pressed("slide")
+	cmd.roll = int(Input.is_action_pressed("roll_right")) - int(Input.is_action_pressed("roll_left"))
 	if cmd.dash and actor.stamina >= actor.dash_stamina:
 		Sfx.play("dash", null, -6.0)
 	cmd.primary = captured and Input.is_action_pressed("fire")
@@ -236,12 +246,12 @@ func _physics_process(delta: float) -> void:
 	if cmd.visor_pressed:
 		_visor_level = next_visor_level(actor.visor, _visor_level)
 	cmd.visor_level = _visor_level
-	if Input.is_action_just_pressed("weapon_1"):
-		cmd.switch_weapon = 0
-	elif Input.is_action_just_pressed("weapon_2"):
-		cmd.switch_weapon = 1
-	elif Input.is_action_just_pressed("weapon_3"):
-		cmd.switch_weapon = 2
+	var key_slot := -1
+	for n in range(1, 5):
+		if Input.is_action_just_pressed("weapon_%d" % n):
+			key_slot = actor.weapon_for_key(n)
+	if key_slot >= 0:
+		cmd.switch_weapon = key_slot
 	elif Input.is_action_just_pressed("holster"):
 		# Put the weapon away, or draw the one last put away. Sent as an
 		# index, not a toggle, so a repeated or late packet lands the same.
@@ -279,7 +289,7 @@ func _process(delta: float) -> void:
 		if not hit.is_empty():
 			desired = pivot + (hit.position - pivot) * 0.85
 	camera.global_transform = Transform3D(look, desired)
-	var fov := ads_fov if aiming else wanted_base_fov()
+	var fov := aim_fov(weapon) if aiming else wanted_base_fov()
 	if _zoom() > 1.0:
 		fov = zoomed_fov(wanted_base_fov(), _zoom())
 	camera.fov = lerpf(camera.fov, fov, 1.0 - exp(-14.0 * delta))
@@ -299,8 +309,37 @@ func _process(delta: float) -> void:
 	# hands are on the phone, so it rests on the body there too.
 	first_person = first_person and not for_mirror
 	actor.hand_override = first_person
+	var sight := _sight_of(weapon) if first_person else null
+	_sight_blend = move_toward(_sight_blend, 1.0 if aiming and sight != null else 0.0, delta * 7.0)
+	sighted = _sight_blend > 0.9
 	if first_person:
-		actor.hand.global_transform = camera.global_transform * Transform3D(Basis.IDENTITY, FIRST_PERSON_HAND)
+		var hand_at := FIRST_PERSON_HAND
+		if sight != null and _sight_blend > 0.0:
+			# Raise the gun so its optic's eye point is at the eye: the view
+			# then looks straight down the sight.
+			var in_hand := actor.hand.global_transform.affine_inverse() * sight.global_transform.origin
+			var lined_up := Vector3(0, 0, -eye_relief) - in_hand
+			hand_at = FIRST_PERSON_HAND.lerp(lined_up, _sight_blend)
+		actor.hand.global_transform = camera.global_transform * Transform3D(Basis.IDENTITY, hand_at)
+
+
+## The field of view while aiming `weapon`: optics zoom further in.
+func aim_fov(weapon: Weapon) -> float:
+	return ads_fov / maxf(1.0, weapon.aim_zoom() if weapon else 1.0)
+
+
+## The sight line marker of the optic on `weapon`, or null for plain sights.
+func _sight_of(weapon: Weapon) -> Node3D:
+	if weapon == null or weapon.visual == null:
+		return null
+	return weapon.visual.get_node_or_null("Attachments/optic/Sight") as Node3D
+
+
+## How much the mouse turns the view right now, relative to the resting view.
+func _zoom_scale() -> float:
+	if camera == null:
+		return 1.0
+	return clampf(tan(deg_to_rad(camera.fov) * 0.5) / tan(deg_to_rad(wanted_base_fov()) * 0.5), 0.1, 1.0)
 
 
 ## Each shot kicks the view up and a little sideways. The player pulls down to
@@ -324,12 +363,13 @@ func _on_damaged(_info: DamageInfo) -> void:
 	Sfx.play("hurt")
 
 
-## The zoom level the visor key moves to from `level`: up through the
-## helmet's levels and back to off. A helmet without binoculars stays at 0.
+## The visor level the visor key moves to from `level`: up through the
+## helmet's levels (zoom strengths, thermal on) and back to off. A helmet
+## with none stays at 0.
 static func next_visor_level(visor: Visor, level: int) -> int:
-	if visor == null or not visor.enabled or visor.mode != "zoom":
+	if visor == null or visor.levels() <= 0:
 		return 0
-	return (level + 1) % (visor.zoom_levels.size() + 1)
+	return (level + 1) % (visor.levels() + 1)
 
 
 ## The field of view that makes things look `factor` times closer than at `fov`.

@@ -32,7 +32,7 @@ func _ready() -> void:
 			"recoil_kick_deg": 0.7, "max_range": 90.0},
 			"Reliable semi-auto sidearm. Accurate, and quick to reload.")
 	register("jetpack_mk1", "Mk1 Jetpack", Rarity.COMMON, 0, ["flight_rig", "starter"], {},
-			"Basic jetpack. Overheats quickly.")
+			"Basic jetpack. Tap jump in the air to hover and fly anywhere. Overheats quickly.")
 	register("plate_light", "Scrap Plate", Rarity.COMMON, 0, ["armor", "frame_light", "starter"],
 			{"armor": 30.0}, "30 armor.")
 	register("field_dressing", "Field Dressing", Rarity.COMMON, 0, ["consumable", "heal", "starter"],
@@ -71,6 +71,45 @@ func _ready() -> void:
 			"bloom_per_shot": 1.2, "recoil_kick_deg": 2.6, "max_range": 110.0},
 			"Slow, heavy revolver. Headshots hit twice as hard.")
 
+	# Attachments for primaries. Each fits one slot on the gun (its second tag:
+	# optic, muzzle, grip or magazine) and fits every primary. `Gun.fit` reads
+	# the stats: "mult" scales the gun's own tuning values, "zoom" is how far an
+	# optic magnifies while aiming, "quiet" hides the shot, and "model" picks the
+	# shape built on the gun. Every one trades something away.
+	_attachment("optic_reflex", "Reflex Sight", Rarity.UNCOMMON, 260, "optic", true,
+			{"model": "reflex", "zoom": 1.35, "mult": {"ads_spread_mult": 0.8}},
+			"Red dot in a small window. A little zoom, and steadier when aimed.")
+	_attachment("optic_scope", "4x Ranger Scope", Rarity.RARE, 700, "optic", false,
+			{"model": "scope", "zoom": 2.6, "mult": {"ads_spread_mult": 0.55, "spread_deg": 1.15}},
+			"Four times zoom and very steady when aimed. Looser from the hip.")
+	_attachment("optic_longscope", "8x Longscope", Rarity.EPIC, 1400, "optic", false,
+			{"model": "longscope", "zoom": 4.6, "mult": {"ads_spread_mult": 0.4, "spread_deg": 1.3}},
+			"Eight times zoom for picking off targets across the map. Clumsy up close.")
+	_attachment("muzzle_compensator", "Compensator", Rarity.UNCOMMON, 240, "muzzle", true,
+			{"model": "compensator", "mult": {"recoil_kick_deg": 0.7, "recoil_side_deg": 0.75, "spread_deg": 1.08}},
+			"Vents gas upward: much less kick, slightly wider spread.")
+	_attachment("muzzle_booster", "Muzzle Booster", Rarity.UNCOMMON, 300, "muzzle", true,
+			{"model": "booster", "mult": {"fire_interval": 0.88, "recoil_kick_deg": 1.15, "bloom_per_shot": 1.15}},
+			"Cycles the action faster. Kicks harder for it.")
+	_attachment("muzzle_suppressor", "Suppressor", Rarity.RARE, 650, "muzzle", false,
+			{"model": "suppressor", "quiet": true, "mult": {"damage": 0.92, "max_range": 0.9}},
+			"No tracers, no flash and a much quieter shot. Costs a little damage and range.")
+	_attachment("grip_vertical", "Vertical Grip", Rarity.UNCOMMON, 220, "grip", true,
+			{"model": "vertical_grip", "mult": {"recoil_kick_deg": 0.8, "max_bloom": 0.8, "reload_time": 1.06}},
+			"Holds a spray down. Slightly slower reloads.")
+	_attachment("grip_angled", "Angled Grip", Rarity.UNCOMMON, 220, "grip", true,
+			{"model": "angled_grip", "mult": {"bloom_recovery": 1.5, "spread_deg": 0.9, "recoil_kick_deg": 1.05}},
+			"Tighter shots and spread that settles fast. A touch more kick.")
+	_attachment("mag_extended", "Extended Mag", Rarity.UNCOMMON, 280, "magazine", true,
+			{"model": "extended_mag", "mult": {"mag_size": 1.5, "reload_time": 1.15}},
+			"Half again as many rounds. Slower to reload.")
+	_attachment("mag_quick", "Quick Mag", Rarity.UNCOMMON, 260, "magazine", true,
+			{"model": "quick_mag", "mult": {"reload_time": 0.65, "mag_size": 0.85}},
+			"Pull tabs and a flared well: reloads a third faster, holds a few less.")
+	_attachment("mag_drum", "Drum Mag", Rarity.RARE, 750, "magazine", false,
+			{"model": "drum", "mult": {"mag_size": 2.2, "reload_time": 1.45, "spread_deg": 1.1}},
+			"More than twice the rounds. Heavy: slow reloads and a wider spread.")
+
 	# Melee
 	register("blade_arc", "Arc Blade", Rarity.RARE, 800, ["weapon", "melee", "blade"],
 			{"light_damage": 34.0, "heavy_damage": 72.0, "light_recover": 0.22, "parry_window": 0.26},
@@ -83,27 +122,27 @@ func _ready() -> void:
 
 	# Armor frames
 	register("frame_runner", "Runner Frame", Rarity.UNCOMMON, 400, ["armor", "frame_light", "vendor"],
-			{"armor": 45.0, "speed_mult": 1.12, "heat_mult": 0.8},
-			"Light: 45 armor, 12% faster, jetpack runs cooler.")
+			{"armor": 45.0, "speed_mult": 1.12, "heat_mult": 0.8, "heat_signature": 0.7},
+			"Light: 45 armor, 12% faster, jetpack runs cooler. Dim on thermal.")
 	register("frame_trooper", "Trooper Frame", Rarity.UNCOMMON, 450, ["armor", "frame_medium", "vendor"],
 			{"armor": 85.0},
 			"Medium: 85 armor, no penalties.")
 	register("frame_bulwark", "Bulwark Frame", Rarity.RARE, 900, ["armor", "frame_heavy"],
-			{"armor": 140.0, "speed_mult": 0.86, "heat_mult": 1.25},
-			"Heavy: 140 armor, 14% slower, jetpack runs hotter.")
+			{"armor": 140.0, "speed_mult": 0.86, "heat_mult": 1.25, "heat_signature": 1.3},
+			"Heavy: 140 armor, 14% slower, jetpack runs hotter. Bright on thermal.")
 
 	# Flight rigs
 	register("jetpack_mk2", "Mk2 Jetpack", Rarity.RARE, 950, ["flight_rig"],
 			{"thrust_accel": 42.0, "max_rise_speed": 11.0, "heat_per_sec": 25.0},
-			"Stronger thrust and a third more air time.")
+			"Free flight: hover, strafe, climb and boost head first. Stronger thrust and a third more air time.")
 	register("boots_thruster", "Thruster Boots", Rarity.UNCOMMON, 600, ["flight_rig", "vendor"],
 			{"thrust_accel": 0.0, "burst_velocity": 10.5, "burst_heat": 30.0, "cool_per_sec": 34.0,
-			"cool_delay": 0.3},
-			"No sustained flight. Press jump in the air for a hard kick upward, three in a row.")
+			"cool_delay": 0.3, "burst_push": 9.0},
+			"No sustained flight. Press jump in the air for a hard kick up and the way you steer, three in a row. Cools fastest.")
 	register("wings_glide", "Glide Wings", Rarity.RARE, 1100, ["flight_rig"],
 			{"thrust_accel": 0.0, "burst_velocity": 13.0, "burst_heat": 55.0, "cool_per_sec": 20.0,
 			"glide_fall_speed": 1.8, "glide_speed": 16.0},
-			"One strong launch, then hold jump to glide fast and far. Crosses the map from a rooftop.")
+			"One strong launch, then hold jump to glide. Fastest and furthest of any rig: dive for speed, pull up to climb on it. Cannot hover.")
 
 	# Abilities
 	register("chip_blink", "Phase Step", Rarity.RARE, 900, ["ability", "blink"],
@@ -134,6 +173,22 @@ func _ready() -> void:
 	register("helm_seeker_mk2", "Seeker Helmet Mk2", Rarity.RARE, 1200, ["helmet", "scanner"],
 			{"mode": "scan", "cooldown": 21.0, "scan_radius": 48.0, "glass_color": Color(0.4, 1.0, 0.8)},
 			"A wider scan pulse, 48 meters, that is ready again sooner.")
+
+	register("helm_warden", "Warden Helmet", Rarity.UNCOMMON, 600, ["helmet", "tactical", "vendor"],
+			{"mode": "threat", "cooldown": 30.0, "threat_range": 60.0, "glass_color": Color(0.55, 0.8, 1.0)},
+			"Shows where a hit came from, the health of who you aim at, and what is in nearby loot. "
+			+ "Threat Sense outlines anyone aiming at you for five seconds.")
+	register("helm_warden_mk2", "Warden Helmet Mk2", Rarity.RARE, 1300, ["helmet", "tactical"],
+			{"mode": "threat", "cooldown": 26.0, "threat_range": 75.0, "read_range": 40.0,
+			"glass_color": Color(0.55, 0.8, 1.0)},
+			"Threat Sense reaches 75 meters and is ready sooner. Reads targets out to 40 meters.")
+	register("helm_ember", "Ember Helmet", Rarity.UNCOMMON, 580, ["helmet", "thermal", "vendor"],
+			{"mode": "thermal", "battery": 12.0, "glass_color": Color(1.0, 0.45, 0.25)},
+			"Thermal sight on a twelve second battery. Warm bodies stand out through smoke and storm, "
+			+ "never through walls. A hot jetpack shines.")
+	register("helm_ember_mk2", "Ember Helmet Mk2", Rarity.RARE, 1250, ["helmet", "thermal"],
+			{"mode": "thermal", "battery": 16.0, "battery_refill": 16.0, "glass_color": Color(1.0, 0.45, 0.25)},
+			"Thermal sight with a sixteen second battery that refills faster.")
 
 	# Vehicles. Not carried: the Raid parks one next to you when you deploy, and
 	# whoever signs out riding it takes it home. Stats tune Vehicle.
@@ -201,6 +256,15 @@ func _ready() -> void:
 			Rarity.UNCOMMON)
 	_outfit("outfit_trooper", "Trooper Outfit", 400, ["m_Swat", "f_Soldier"], "Fatigues and webbing. Looks the part.",
 			Rarity.UNCOMMON)
+
+
+## Registers a weapon attachment for `slot` (also its tag: see `Loadout.SLOTS`).
+func _attachment(id: String, display_name: String, rarity: Rarity, value: int, slot: String, vendor: bool,
+		stats: Dictionary, description: String) -> void:
+	var tags := ["attachment", slot]
+	if vendor:
+		tags.append("vendor")
+	register(id, display_name, rarity, value, tags, stats, description)
 
 
 ## Registers a clothing item that unlocks the customizer outfits `outfits`.

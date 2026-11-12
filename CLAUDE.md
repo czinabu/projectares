@@ -75,6 +75,13 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   drop if the choice is no longer on offer. Online the client only sends the
   id with `NetSession.deploy(drop)`; a client lists its choices from what the
   server already told it (`Strongpoint.viewer_holds`, war intensity).
+- World heat: `Raid.status()` is what a world shows of itself from outside
+  (players, war level, top bounty, the event running) and never says who or
+  where anyone is. The safe zone's `NetSession` gathers it from the other
+  sessions in the process and sends it to everyone standing there
+  (`NetSession.world_status`); `PlazaView` writes it on a sign over each
+  world doorway (`heat_signs`). Anything else that advertises a world reads
+  `world_status`, not a second channel.
 - World events (`Raid.event`, `start_event`, `end_event`): one at a time, on
   a timer the war speeds up, tuned by `WorldDef.event_interval`,
   `event_lifetime` and `warlord_escort`. A supply pod is an ordinary
@@ -175,26 +182,59 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   decide what an item does.
 - Gear behavior comes from the item's `stats` in `ItemDB`, applied by
   `Loadout.equip`. Add a new gun or frame as data, not as a new class.
-- A loadout carries one primary, one melee weapon and one sidearm, in that
-  weapon order (keys 1, 2, 3). Sidearms are firearms also tagged "sidearm";
+- A loadout carries one primary, one melee weapon and one sidearm. Keys are by
+  type, not equip order: 1 primary, 2 sidearm, 3 melee, 4 power or special
+  weapon (`Actor.slot_order`, `weapon_for_key`); the mouse wheel cycles the
+  same order. Sidearms are firearms also tagged "sidearm";
   `Loadout.fits(slot, id)` decides what goes in a slot (a sidearm never fits
   the primary slot), and `Weapon.is_sidearm` marks one once equipped. Running
   the primary dry with the trigger held draws a loaded sidearm instead of
   reloading (`Actor._simulate_weapons`). Headshots come from
   `Combat.is_headshot` on a `Combat.trace` hit; a gun's `headshot_mult` scales them.
+- Attachments are items tagged "attachment" plus their slot tag ("optic",
+  "muzzle", "grip", "magazine"), each an optional loadout slot
+  (`Loadout.ATTACHMENT_SLOTS`). They fit every primary and never a sidearm
+  or a power weapon (tag "power", see `Loadout.is_primary`).
+  `Loadout.equip` fits them with `Gun.fit` before the gun is equipped: their
+  stats are data ("mult" scales the gun's tuning vars, "zoom" sets
+  `Gun.ads_zoom`, "quiet" suppresses, "model" picks the shape). They go in
+  `gear_items`, so they drop and come home with the gun. `Gun.build_attachment`
+  builds each shape with its origin at the mount; `Look.mount_attachments`
+  moves them onto the real model (`Look.GUN_MOUNTS`). An optic's "Sight"
+  marker is the eye point: in first person the controller moves the hand so
+  the camera looks through it, and zooms by `Weapon.aim_zoom()`. Scopes are
+  real geometry you look down, never a screen overlay. Fitting happens at
+  the home base's gunsmith bench (`BaseLayout` kind "gunsmith").
 - Flight rigs and abilities are data too. `FlightRig` and `Ability` are single
   classes whose item stats pick the behavior. Abilities fire from
   `ActorCommand.ability_pressed`.
+- Flight is simulated in `Actor` from the command, like a dash, so it
+  predicts and replicates: jets lit by a tap in the air
+  (`FlightRig.is_hovering`, flown by `Actor._simulate_hover`; the server
+  repeats it in each state as `ActorCommand.STATE_HOVERING`), a boost along
+  the look direction, and a glide whose speed is energy
+  (`Actor._glide_velocity`). Keep the three rigs different: jetpack free but
+  heat-bound, boots quick kicks, wings fastest and furthest but no hover.
+  The body's attitude in the air (flat, banked, leaning, rolled by
+  `ActorCommand.roll`) is the skin's job (`ActorSkin._update_glide`), read
+  from velocity and the command only, so remote players match. Check it by
+  eye: `visual_check.tscn -- <dir> --flight-only`.
 - Helmets are items tagged `helmet` in the `helmet` loadout slot, and data
   like abilities: `Visor` (`core/abilities/visor.gd`, `Actor.visor`) is one
   class whose `mode` stat picks what the visor does ("" plain, "zoom"
-  binoculars, "scan" pulse). It is driven by `ActorCommand.visor_pressed`
-  (a press: scan) and `ActorCommand.visor_level` (held: the zoom level).
+  binoculars, "scan" pulse, "threat" tactical, "thermal"). It is driven by
+  `ActorCommand.visor_pressed` (a press: scan, Threat Sense) and
+  `ActorCommand.visor_level` (held: the zoom level, thermal on).
   What a visor reveals is decided by the authority only and never goes to
   everyone: `NetSession` sends a scan's snapshots to the scanner, the ping to
-  each player caught, and a tag to the tagger's side. Reveals must stay fair:
-  a scan is a snapshot, never live tracking, and every reveal is felt by its
-  target (the ping, the lens glint). The picture is `VisorHud`
+  each player caught, a tag to the tagger's side, and a tactical visor's
+  hit direction and Threat Sense list to its wearer. Reveals must stay fair:
+  a scan is a snapshot, never live tracking, Threat Sense only shows people
+  aiming at the wearer, thermal never sees through walls, and every reveal
+  is felt by its target (the ping, the "Sensed" notice, the lens glint, the
+  ember of a thermal visor). How warm someone looks on thermal is
+  `Visor.heat_of`: `Actor.heat_signature` (frames set it with a
+  `heat_signature` stat) plus flight rig heat. The picture is `VisorHud`
   (`core/ui/visor_hud.gd`), a view: its glass is drawn in first person only
   and only while a helmet is worn (Caleb agreed a visor counts as in-world,
   since you look through it); what a visor shows out in the world (snapshots,

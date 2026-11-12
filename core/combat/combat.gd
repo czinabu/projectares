@@ -37,6 +37,8 @@ static func deal(target: Object, info: DamageInfo) -> bool:
 	var attacker := info.source as Actor
 	if attacker and is_instance_valid(attacker):
 		attacker.hit_confirmed.emit(actor, info, actor.is_dead)
+		if attacker != actor:
+			actor.visor.note_hit_from(attacker.global_position)
 	return true
 
 

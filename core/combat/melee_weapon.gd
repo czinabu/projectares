@@ -104,7 +104,7 @@ static func guard_covers(p_guard_dir: int, p_attack_dir: int) -> bool:
 
 
 func controls_hint() -> String:
-	return "Left mouse attacks from your side   Right mouse guards that side, tap just before a hit to parry   F heavy lunge, or dive slam in the air"
+	return "Left mouse attacks from your side   Right mouse guards that side, tap just before a hit to parry   Middle mouse heavy lunge, or dive slam in the air"
 
 
 func is_blocking() -> bool:
