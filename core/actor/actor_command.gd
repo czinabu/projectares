@@ -40,6 +40,10 @@ var interact_pressed := false
 var heal_pressed := false
 ## Pressed this tick: use the equipped ability.
 var ability_pressed := false
+## Pressed this tick: use the helmet's visor (a scan pulse).
+var visor_pressed := false
+## Held: the zoom level asked of a helmet with binoculars, 0 for off.
+var visor_level := 0
 ## Index of the weapon to switch to, or -1 to keep the current one.
 var switch_weapon := -1
 
@@ -56,6 +60,7 @@ func clear_one_shots() -> void:
 	interact_pressed = false
 	heal_pressed = false
 	ability_pressed = false
+	visor_pressed = false
 	switch_weapon = -1
 
 
@@ -81,11 +86,15 @@ const FLAG_INTERACT_PRESSED := 1024
 const FLAG_HEAL_PRESSED := 2048
 const FLAG_ABILITY_PRESSED := 4096
 const FLAG_SLIDE := 8192
+const FLAG_VISOR_PRESSED := 16384
+## The visor's zoom level, two bits wide.
+const VISOR_LEVEL_SHIFT := 15
+const VISOR_LEVEL_MASK := 3 << VISOR_LEVEL_SHIFT
 ## Flags that describe a held key, and flags that last a single tick.
-const HELD_MASK := FLAG_SPRINT | FLAG_JUMP | FLAG_PRIMARY | FLAG_SECONDARY
+const HELD_MASK := FLAG_SPRINT | FLAG_JUMP | FLAG_PRIMARY | FLAG_SECONDARY | VISOR_LEVEL_MASK
 const ONE_SHOT_MASK := FLAG_JUMP_PRESSED | FLAG_DASH | FLAG_PRIMARY_PRESSED | FLAG_SECONDARY_PRESSED \
 		| FLAG_TERTIARY_PRESSED | FLAG_RELOAD_PRESSED | FLAG_INTERACT_PRESSED | FLAG_HEAL_PRESSED \
-		| FLAG_ABILITY_PRESSED | FLAG_SLIDE
+		| FLAG_ABILITY_PRESSED | FLAG_SLIDE | FLAG_VISOR_PRESSED
 
 
 ## Every button, held or pressed, packed into one integer.
@@ -105,6 +114,8 @@ func flags() -> int:
 	if heal_pressed: out |= FLAG_HEAL_PRESSED
 	if ability_pressed: out |= FLAG_ABILITY_PRESSED
 	if slide: out |= FLAG_SLIDE
+	if visor_pressed: out |= FLAG_VISOR_PRESSED
+	out |= clampi(visor_level, 0, 3) << VISOR_LEVEL_SHIFT
 	return out
 
 
@@ -137,6 +148,8 @@ func apply_array(data: Array) -> void:
 	heal_pressed = bits & FLAG_HEAL_PRESSED != 0
 	ability_pressed = bits & FLAG_ABILITY_PRESSED != 0
 	slide = bits & FLAG_SLIDE != 0
+	visor_pressed = bits & FLAG_VISOR_PRESSED != 0
+	visor_level = (bits & VISOR_LEVEL_MASK) >> VISOR_LEVEL_SHIFT
 	stance = clampi(int(_number(data[STANCE_INDEX])), 0, 2)
 	switch_weapon = clampi(int(_number(data[SWITCH_INDEX])), -1, 8)
 

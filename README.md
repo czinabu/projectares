@@ -21,6 +21,7 @@ skies, animated models and effects (see "How it looks" below).
 | Move / sprint | WASD / Shift |
 | Jump. In the air: hold to fly (jetpack), press to boost (thruster boots, glide wings), hold while falling to glide (glide wings) | Space |
 | Use your ability | G |
+| Use your helmet's visor (zoom or scan) | T |
 | Dash | Q |
 | Slide (while sprinting) | C |
 | Fire, or blade combo | Left mouse |
@@ -237,6 +238,12 @@ you have.
   quick kicks upward, and glide wings that launch once and then soar.
 - An ability slot. Phase Step blinks you forward, Kinetic Barrier cuts damage
   for a few seconds, Shock Pulse staggers everyone near you. Each has a cooldown.
+- A helmet slot. The visor is your display in first person, and what it
+  shows depends on the helmet: the Spotter has binoculars (4x and 8x), a
+  compass and a range finder, and fire while zoomed tags a target for your
+  side; the Seeker sends a scan pulse that shows where everyone nearby stood.
+  Both give you away: a zoomed lens glints, and a scan is seen, heard and
+  felt by everyone it catches. With no helmet the view is bare.
 - More gear to find: carbine, SMG, marksman rifle, shotgun, arc blade, breaker
   hammer, three armor frames, and a better jetpack.
 - Motorbikes, the first vehicle. Put one in the vehicle slot and it is parked

@@ -32,6 +32,8 @@ const ROOFTOP_TABLE := [
 	{"id": "frame_trooper", "weight": 8.0},
 	{"id": "chip_barrier", "weight": 6.0},
 	{"id": "boots_thruster", "weight": 5.0},
+	{"id": "helm_spotter", "weight": 5.0},
+	{"id": "helm_seeker", "weight": 5.0},
 ]
 
 ## The top of the relay mast: the best and most exposed loot on the map, and
@@ -88,7 +90,8 @@ func create_map() -> Node3D:
 
 
 func starter_loadout() -> Array[String]:
-	return ["rifle_scrap", "blade_scrap", "pistol_service", "jetpack_mk1", "plate_light", "field_dressing"]
+	return ["rifle_scrap", "blade_scrap", "pistol_service", "jetpack_mk1", "plate_light", "visor_scav",
+			"field_dressing"]
 
 
 func roll_loot(source: String, rng: RandomNumberGenerator) -> Array[String]:

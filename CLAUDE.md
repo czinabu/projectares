@@ -147,6 +147,24 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
 - Flight rigs and abilities are data too. `FlightRig` and `Ability` are single
   classes whose item stats pick the behavior. Abilities fire from
   `ActorCommand.ability_pressed`.
+- Helmets are items tagged `helmet` in the `helmet` loadout slot, and data
+  like abilities: `Visor` (`core/abilities/visor.gd`, `Actor.visor`) is one
+  class whose `mode` stat picks what the visor does ("" plain, "zoom"
+  binoculars, "scan" pulse). It is driven by `ActorCommand.visor_pressed`
+  (a press: scan) and `ActorCommand.visor_level` (held: the zoom level).
+  What a visor reveals is decided by the authority only and never goes to
+  everyone: `NetSession` sends a scan's snapshots to the scanner, the ping to
+  each player caught, and a tag to the tagger's side. Reveals must stay fair:
+  a scan is a snapshot, never live tracking, and every reveal is felt by its
+  target (the ping, the lens glint). The picture is `VisorHud`
+  (`core/ui/visor_hud.gd`), a view: its glass is drawn in first person only
+  and only while a helmet is worn (Caleb agreed a visor counts as in-world,
+  since you look through it); what a visor shows out in the world (snapshots,
+  tag markers, pulse rings, glints) is there in either view. Apart from the
+  thin health arc, do not repeat the wrist on the glass (ammo, the map,
+  standing): the wrist shows you, the visor shows what is around you. Mk2
+  helmets are loot only. Check the glass by eye with
+  `visual_check.tscn -- <dir> --visors-only`.
 - Vehicles are items tagged `vehicle`, tuned by their stats, and spawned by
   `Raid` (never carried). `core/vehicle/vehicle.gd` reads its rider's
   `ActorCommand` and moves the rider; `Actor` skips its own movement while
