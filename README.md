@@ -20,7 +20,8 @@ skies, animated models and effects (see "How it looks" below).
 | --- | --- |
 | Move / sprint | WASD / Shift |
 | Jump. In the air: hold to climb, tap to light the jets and hover (jetpack); press to kick the way you steer (thruster boots); press to launch, hold while falling to glide (glide wings) | Space |
-| Jetpack hovering: fly with the move keys, Space climbs, C sinks, Shift + W boosts head first wherever you look | |
+| Jetpack hovering: cruise with the move keys, Space climbs, C coasts down to cool, Shift + W boosts head first wherever you look (Mk2) | |
+| Glide wings gliding: Space again pulses up, Q / E snaps a barrel roll | |
 | Gliding: steer or turn the view to bank round, look down to dive for speed, look up to climb on it | |
 | Roll the body left / right while gliding or boosting | Q / E (or the mouse thumb buttons) |
 | Use your ability | G |
@@ -262,12 +263,16 @@ you have.
 - Loadouts picked in your base from your stash: primary weapon, melee weapon,
   flight rig and armor frame. Equipped gear is at risk. Sign out alive and it
   comes home, die and it drops. Empty slots use a free scrap kit.
-- Three kinds of flight rig, each with its own strength. Jetpacks fly
-  anywhere: hover, strafe, climb, sink and boost head first, as long as the
-  heat lasts, and you can shoot from a hover. Thruster boots are the quick
-  ones: hard kicks up and the way you steer, cooling fastest. Glide wings
-  cannot hover but are the fastest and go furthest, on no heat at all: they
-  bank into turns, dive for speed and climb again on that speed.
+- Three kinds of flight rig, all cruising at the same speed so a squad on
+  mixed rigs keeps together, each staying up its own way. Jetpacks fly high:
+  cruise straight over everything, coast down with the jets idle to cool,
+  stop dead and hover to shoot steady, and carry heavy armor without running
+  hotter; they turn wide and their heat draws seekers. Glide wings never
+  stop: launch once, glide, pulse up to hold height, dive for the fastest
+  speed in the game, turn tightest and barrel roll, cold and quiet, but only
+  a sidearm fires while they are spread. Thruster boots are the quick ones:
+  hard kicks up and the way you steer, cooling fastest. Shooting from the
+  air spreads wider, except from a hover.
 - An ability slot. Phase Step blinks you forward, Kinetic Barrier cuts damage
   for a few seconds, Shock Pulse staggers everyone near you. Each has a cooldown.
 - Attachments for your primary, in four slots: optic, muzzle, grip and

@@ -31,8 +31,8 @@ func _ready() -> void:
 			"reserve_ammo": 60, "reload_time": 1.1, "spread_deg": 0.6, "bloom_per_shot": 0.5,
 			"recoil_kick_deg": 0.7, "max_range": 90.0},
 			"Reliable semi-auto sidearm. Accurate, and quick to reload.")
-	register("jetpack_mk1", "Mk1 Jetpack", Rarity.COMMON, 0, ["flight_rig", "starter"], {},
-			"Basic jetpack. Tap jump in the air to hover and fly anywhere. Overheats quickly.")
+	register("jetpack_mk1", "Mk1 Jetpack", Rarity.COMMON, 0, ["flight_rig", "starter"], {"heavy_lift": true},
+			"Basic jetpack. Tap jump in the air to hover and cruise anywhere, coast down to cool. Runs hotter than the Mk2 and has no boost.")
 	register("plate_light", "Scrap Plate", Rarity.COMMON, 0, ["armor", "frame_light", "starter"],
 			{"armor": 30.0}, "30 armor.")
 	register("field_dressing", "Field Dressing", Rarity.COMMON, 0, ["consumable", "heal", "starter"],
@@ -177,20 +177,23 @@ func _ready() -> void:
 			"Medium: 85 armor, no penalties.")
 	register("frame_bulwark", "Bulwark Frame", Rarity.RARE, 900, ["armor", "frame_heavy"],
 			{"armor": 140.0, "speed_mult": 0.86, "heat_mult": 1.25, "heat_signature": 1.3},
-			"Heavy: 140 armor, 14% slower, jetpack runs hotter. Bright on thermal.")
+			"Heavy: 140 armor, 14% slower, wings and boots run hotter (jetpacks carry it). Bright on thermal.")
 
 	# Flight rigs
-	register("jetpack_mk2", "Mk2 Jetpack", Rarity.RARE, 950, ["flight_rig"],
-			{"thrust_accel": 42.0, "max_rise_speed": 11.0, "heat_per_sec": 25.0},
-			"Free flight: hover, strafe, climb and boost head first. Stronger thrust and a third more air time.")
+	register("jetpack_mk2", "Mk2 Jetpack", Rarity.RARE, 1000, ["flight_rig"],
+			{"thrust_accel": 42.0, "max_rise_speed": 11.0, "heat_per_sec": 25.0, "boost_speed": 22.0,
+			"heavy_lift": true},
+			"The high ground. Cruise straight over everything, stop dead and hover to shoot steady, coast down to cool. Carries heavy armor without running hotter. Wide turns, loud and hot: heat seekers love it.")
 	register("boots_thruster", "Thruster Boots", Rarity.UNCOMMON, 600, ["flight_rig", "vendor"],
-			{"thrust_accel": 0.0, "burst_velocity": 10.5, "burst_heat": 30.0, "cool_per_sec": 34.0,
+			{"thrust_accel": 0.0, "burst_velocity": 10.5, "burst_heat": 34.0, "cool_per_sec": 34.0,
 			"cool_delay": 0.3, "burst_push": 9.0},
 			"No sustained flight. Press jump in the air for a hard kick up and the way you steer, three in a row. Cools fastest.")
-	register("wings_glide", "Glide Wings", Rarity.RARE, 1100, ["flight_rig"],
-			{"thrust_accel": 0.0, "burst_velocity": 13.0, "burst_heat": 55.0, "cool_per_sec": 20.0,
-			"glide_fall_speed": 1.8, "glide_speed": 16.0},
-			"One strong launch, then hold jump to glide. Fastest and furthest of any rig: dive for speed, pull up to climb on it. Cannot hover.")
+	register("wings_glide", "Glide Wings", Rarity.RARE, 1000, ["flight_rig"],
+			{"thrust_accel": 0.0, "burst_velocity": 14.0, "burst_heat": 40.0, "launch_once": true,
+			"cool_per_sec": 20.0, "pulse_velocity": 11.0, "pulse_heat": 30.0, "glide_cool": 12.0,
+			"glide_fall_speed": 1.2, "glide_speed": 15.0, "glide_dive_gain": 0.74, "glide_turn_rate": 2.4,
+			"stall_sink": 6.0, "roll_dodge_speed": 12.0, "glide_sidearm_only": true, "slide_landing_speed": 18.0},
+			"One launch, then hold jump to glide and press it again to pulse up. Fastest dives, tightest turns, silent and cold between pulses. Never stops: slow down and you stall. Sidearm only while the wings are out.")
 
 	# Abilities
 	register("chip_blink", "Phase Step", Rarity.RARE, 900, ["ability", "blink"],

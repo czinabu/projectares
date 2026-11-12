@@ -437,7 +437,12 @@ func start_reload() -> void:
 
 
 func current_spread_deg() -> float:
-	return (spread_deg + _bloom) * (ads_spread_mult if _aiming else 1.0)
+	return (spread_deg + _bloom + _air_spread()) * (ads_spread_mult if _aiming else 1.0)
+
+
+## Extra spread from shooting in the air (`Actor.air_aim`).
+func _air_spread() -> float:
+	return actor.air_spread_deg * actor.air_aim() if actor else 0.0
 
 
 func status_text() -> String:
@@ -463,8 +468,9 @@ func _fire() -> void:
 		visual.rotation.x = 0.06
 	var from := actor.get_eye_position()
 	var aim := actor.get_aim_dir()
-	var spread := deg_to_rad(spread_deg + _bloom) * (ads_spread_mult if _aiming else 1.0)
-	_bloom = minf(max_bloom, _bloom + bloom_per_shot)
+	var spread := deg_to_rad(spread_deg + _bloom + _air_spread()) * (ads_spread_mult if _aiming else 1.0)
+	var air_bloom := lerpf(1.0, actor.air_bloom_mult, actor.air_aim())
+	_bloom = minf(max_bloom * air_bloom, _bloom + bloom_per_shot * air_bloom)
 	var to := from + aim * max_range
 	for i in pellets:
 		var jitter := Vector3(_rng.randf_range(-1, 1), _rng.randf_range(-1, 1), _rng.randf_range(-1, 1))

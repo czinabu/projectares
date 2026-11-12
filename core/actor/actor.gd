@@ -44,6 +44,10 @@ var ground_accel := 60.0
 var air_accel := 14.0
 var max_fall_speed := 50.0
 var dash_speed := 18.0
+## Shooting from the air: guns spread this many degrees wider and bloom by
+## this much more per shot, except in a rig's steady state (see `air_aim`).
+var air_spread_deg := 1.5
+var air_bloom_mult := 1.5
 var dash_time := 0.18
 var dash_cooldown := 2.0
 
@@ -138,6 +142,15 @@ var _dash_left := 0.0
 var _dash_cd := 0.0
 var _dash_dir := Vector3.ZERO
 var _slide_cd := 0.0
+## Wings: the barrel roll's sidestep (velocity added this tick, taken off
+## again before the glide steers next tick), its time left and cooldown.
+var _roll_vel := Vector3.ZERO
+var _roll_left := 0.0
+var _roll_cd := 0.0
+var _last_roll := 0
+var _roll_side := 0.0
+## Wings: seconds until a main gun can fire again after the wings fold.
+var _wing_stow := 0.0
 var _slide_dir := Vector3.ZERO
 var _slide_from := 0.0
 var _was_on_floor := true
@@ -318,7 +331,10 @@ func _simulate_movement(delta: float) -> void:
 	var staggered := stagger_left > 0.0
 	if staggered:
 		speed *= stagger_speed_mult
-	var horizontal := Vector3(velocity.x, 0.0, velocity.z)
+	var horizontal := Vector3(velocity.x, 0.0, velocity.z) - _roll_vel
+	_roll_vel = Vector3.ZERO
+	if on_floor:
+		flight.launched = false
 	# Gliding: holding jump while falling with wings carries you forward.
 	# Once gliding you stay gliding while you climb on your speed.
 	flight.is_gliding = flight.can_glide() and cmd.jump and not on_floor and not staggered \
@@ -327,10 +343,10 @@ func _simulate_movement(delta: float) -> void:
 		horizontal = horizontal.move_toward(wish * speed, ground_accel * delta)
 	elif flight.is_gliding:
 		horizontal = _glide_velocity(horizontal, wish, yaw_basis, delta)
-	elif flight.is_hovering and cmd.sprint and cmd.move.y > 0.0:
+	elif flight.is_hovering and flight.boost_speed > 0.0 and cmd.sprint and cmd.move.y > 0.0:
 		pass  # Boosting: `_simulate_hover` flies the whole velocity.
 	elif flight.is_hovering:
-		horizontal = horizontal.move_toward(wish * flight.fly_speed, flight.fly_accel * delta)
+		horizontal = _cruise_velocity(horizontal, wish, delta)
 	elif wish.length() > 0.01:
 		# In the air you can steer but you keep your momentum if you let go.
 		horizontal = horizontal.move_toward(wish * speed, air_accel * delta)
@@ -346,11 +362,17 @@ func _simulate_movement(delta: float) -> void:
 		slide_left = 0.0
 	horizontal = _simulate_slide(horizontal, on_floor, staggered, delta)
 
+	horizontal += _roll_dodge(yaw_basis, delta)
 	velocity.x = horizontal.x
 	velocity.z = horizontal.z
 
 	if on_floor and cmd.jump_pressed and not staggered:
 		velocity.y = jump_velocity
+	elif cmd.jump_pressed and not staggered and flight.is_gliding and flight.pulse_velocity > 0.0:
+		# A wing pulse: up, keeping the airspeed.
+		var pulse := flight.try_pulse()
+		if pulse > 0.0:
+			velocity.y = maxf(velocity.y, pulse)
 	elif cmd.jump_pressed and not staggered:
 		var burst := flight.try_burst()
 		if burst > 0.0:
@@ -367,7 +389,8 @@ func _simulate_movement(delta: float) -> void:
 			flight.is_hovering = true
 	if on_floor or staggered or not flight.can_hover() or flight.overheated:
 		flight.is_hovering = false
-	flight.is_boosting = flight.is_hovering and cmd.sprint and cmd.move.y > 0.0
+	flight.is_boosting = flight.is_hovering and flight.boost_speed > 0.0 and cmd.sprint and cmd.move.y > 0.0
+	flight.is_coasting = false
 	if flight.is_hovering:
 		_simulate_hover(delta)
 	else:
@@ -399,6 +422,7 @@ func _simulate_movement(delta: float) -> void:
 	var now_on_floor := is_on_floor()
 	airborne_time = 0.0 if now_on_floor else airborne_time + delta
 	if now_on_floor and not _was_on_floor:
+		_slide_landing()
 		landed.emit(maxf(fall_speed, 0.0))
 	_was_on_floor = now_on_floor
 
@@ -407,6 +431,7 @@ func _simulate_movement(delta: float) -> void:
 ## boost flies you head first along the way you look.
 func _simulate_hover(delta: float) -> void:
 	var climb := (1.0 if cmd.jump else 0.0) - (1.0 if cmd.descend else 0.0)
+	flight.is_coasting = climb < 0.0 and not flight.is_boosting
 	if flight.is_boosting:
 		var want := Basis.from_euler(Vector3(cmd.pitch, cmd.yaw, 0.0)) * Vector3.FORWARD * flight.boost_speed
 		want += Basis(Vector3.UP, cmd.yaw) * Vector3(cmd.move.x * flight.fly_speed * 0.5, 0.0, 0.0)
@@ -416,7 +441,72 @@ func _simulate_hover(delta: float) -> void:
 		return
 	var rise := flight.max_rise_speed if climb > 0.0 else climb * flight.descend_speed
 	velocity.y = move_toward(velocity.y, rise, flight.hover_accel * delta)
-	flight.tick(true, delta, 1.0 if climb > 0.0 else flight.hover_heat_mult)
+	if flight.is_coasting:
+		# Jets idle: sink, keep the speed, and cool off.
+		flight.coast(delta)
+		return
+	var cruising := Vector2(velocity.x, velocity.z).length() > flight.fly_speed * 0.5
+	flight.tick(true, delta, 1.0 if climb > 0.0 else (flight.cruise_heat_mult if cruising else flight.hover_heat_mult))
+
+
+## Jets lit: the move keys cruise you about. Slow, you go where you steer;
+## at speed the heading only turns at `FlightRig.cruise_turn_rate`, and
+## letting go of the keys (or pulling the other way) brakes to a stop.
+func _cruise_velocity(horizontal: Vector3, wish: Vector3, delta: float) -> Vector3:
+	var speed := horizontal.length()
+	if wish.length() < 0.1 or speed < flight.fly_speed * 0.6:
+		return horizontal.move_toward(wish * flight.fly_speed, flight.fly_accel * delta)
+	var heading := horizontal / speed
+	var angle := heading.signed_angle_to(wish.normalized(), Vector3.UP)
+	if absf(angle) > 2.0:
+		return horizontal.move_toward(Vector3.ZERO, flight.fly_accel * delta)
+	var step := flight.cruise_turn_rate * delta
+	heading = heading.rotated(Vector3.UP, clampf(angle, -step, step))
+	return heading * move_toward(speed, wish.length() * flight.fly_speed, flight.fly_accel * delta)
+
+
+## Wings: a roll key pressed while gliding snaps a sidestep that way. Returns
+## the sideways velocity to add this tick.
+func _roll_dodge(yaw_basis: Basis, delta: float) -> Vector3:
+	_roll_cd = maxf(0.0, _roll_cd - delta)
+	var pressed := cmd.roll != 0 and _last_roll != cmd.roll
+	_last_roll = cmd.roll
+	if pressed and flight.is_gliding and flight.roll_dodge_speed > 0.0 and _roll_cd <= 0.0:
+		_roll_left = flight.roll_dodge_time
+		_roll_cd = flight.roll_cooldown
+		_roll_side = float(cmd.roll)
+	if _roll_left <= 0.0 or not flight.is_gliding:
+		_roll_left = 0.0
+		return Vector3.ZERO
+	_roll_left -= delta
+	_roll_vel = yaw_basis * Vector3(_roll_side * flight.roll_dodge_speed, 0.0, 0.0)
+	return _roll_vel
+
+
+## Wings: touching down fast turns into a slide that keeps the speed.
+func _slide_landing() -> void:
+	var speed := Vector2(velocity.x, velocity.z).length()
+	if flight.slide_landing_speed <= 0.0 or speed < flight.slide_landing_speed or slide_left > 0.0:
+		return
+	_slide_dir = Vector3(velocity.x, 0.0, velocity.z) / speed
+	_slide_from = speed
+	slide_left = slide_time
+	_slide_cd = slide_time + slide_cooldown
+
+
+## How much the air spoils aim, 0 to 1: none on the ground, riding, with
+## jets lit and holding still or cruising (not boosting), and full otherwise.
+func air_aim() -> float:
+	if vehicle != null or airborne_time < 0.15:
+		return 0.0
+	if flight.is_hovering and not flight.is_boosting:
+		return 0.0
+	return 1.0
+
+
+## Wings spread (or just folded) stop a main gun from firing.
+func wings_block(weapon: Weapon) -> bool:
+	return _wing_stow > 0.0 and weapon is Gun and not (weapon as Gun).is_sidearm
 
 
 ## How far the glide is tipped by where you look: 1 a full dive, -1 a full flare.
@@ -456,6 +546,8 @@ func _glide_velocity(horizontal: Vector3, wish: Vector3, yaw_basis: Basis, delta
 
 ## The fastest a glide sinks right now.
 func _glide_sink() -> float:
+	if flight.stall_sink > 0.0 and Vector2(velocity.x, velocity.z).length() < flight.glide_speed * flight.glide_stall - 0.5:
+		return flight.stall_sink
 	var trim := glide_trim()
 	if trim > 0.0:
 		return lerpf(flight.glide_fall_speed, flight.glide_dive_fall, trim)
@@ -491,6 +583,10 @@ func is_sliding() -> bool:
 func _simulate_weapons(delta: float) -> void:
 	for w in weapons:
 		w.tick(delta)
+	if flight.glide_sidearm_only and flight.is_gliding:
+		_wing_stow = flight.glide_stow_time
+	else:
+		_wing_stow = maxf(0.0, _wing_stow - delta)
 	var switch_to := cmd.switch_weapon
 	if switch_to == ActorCommand.HOLSTER:
 		switch_to = -1 if active_weapon_index >= 0 else -2
@@ -509,7 +605,8 @@ func _simulate_weapons(delta: float) -> void:
 				_draw_weapon(sidearm)
 				notice.emit("Sidearm")
 				return
-		weapon.handle_input(cmd, delta)
+		if not wings_block(weapon):
+			weapon.handle_input(cmd, delta)
 		# A power weapon with nothing left is thrown away. The authority
 		# decides; a client hears it through `power_changed`.
 		if gun and gun.is_power() and gun.is_spent() and Combat.authoritative:

@@ -196,11 +196,36 @@ static func wrist_text(p_raid: Raid, p: Actor, death: Dictionary, wait: float, l
 				"ready in %d s" % ceili(recharge) if recharge > 0.0 else "wheel: next   click: take"])
 	lines.append("Pack %d/%d   worth %d   heals %d" % [p.inventory.items.size(), p.inventory.capacity,
 			p.inventory.total_value(), p.inventory.count_with_tag("heal")])
-	if p.flight.enabled and p.flight.overheated:
-		lines.append("JETPACK OVERHEATED")
+	var rig := rig_text(p)
+	if rig != "":
+		lines.append(rig)
 	for line in log_lines.slice(maxi(0, log_lines.size() - 2)):
 		lines.append(line)
 	return "\n".join(lines)
+
+
+## The flight rig's line on the watch: overheating, then what the rig needs
+## you to know in the air. A jetpack warns when a heat seeker could lock on
+## (`Gun.heat_target`'s rule); wings show airspeed against the stall and
+## whether a pulse is ready.
+static func rig_text(p: Actor) -> String:
+	var rig := p.flight
+	if not rig.enabled:
+		return ""
+	if rig.overheated:
+		return "%s OVERHEATED" % rig.display_name.to_upper()
+	if rig.can_glide() and (rig.is_gliding or p.airborne_time > 0.3):
+		var air := Vector2(p.velocity.x, p.velocity.z).length()
+		var stall := rig.glide_speed * rig.glide_stall
+		var pulse := ""
+		if rig.pulse_velocity > 0.0:
+			pulse = "   pulse ready" if rig.heat + rig.pulse_heat <= rig.max_heat else "   pulse cooling"
+		return "Air %d m/s%s%s" % [roundi(air), "  STALL" if air < stall - 0.5 else "", pulse]
+	if rig.can_hover() and rig.is_hovering:
+		var state := "coasting" if rig.is_coasting else ("boost" if rig.is_boosting else "jets lit")
+		var lockable := rig.is_thrusting or rig.heat >= rig.max_heat * 0.3
+		return "%s  %s%s" % [rig.display_name, state, "   LOCKABLE" if lockable else ""]
+	return ""
 
 
 ## The wrist's bars: health, armor and stamina from 0 to 1, and jetpack heat
