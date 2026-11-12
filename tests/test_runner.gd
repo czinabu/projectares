@@ -83,7 +83,7 @@ func _run() -> void:
 	await _test_home_base()
 	await _test_arena()
 	await _test_online_arena()
-	await LookTests.run(self)
+	await _test_look()
 	await _test_rig_models()
 	await _test_customizer()
 	await _test_economy()
@@ -91,6 +91,10 @@ func _run() -> void:
 	await _test_visors()
 	await _test_sidearms()
 	await _test_attachments()
+
+
+func _test_look() -> void:
+	await LookTests.run(self)
 
 
 func _test_rig_models() -> void:
