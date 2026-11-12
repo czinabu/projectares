@@ -109,7 +109,9 @@ func _process(delta: float) -> void:
 	var banking := raid.bank_progress()
 	var leaving := raid.sign_out_progress(p)
 	if p.is_dead:
-		_prompt.text = "Enter: drop back in      L: go home" if _redeploy_wait <= 0.0 \
+		var places := drop_choices(raid, p).size()
+		var landing := "1-%d: pick where to land      " % places if places > 1 else ""
+		_prompt.text = landing + "Enter: drop back in      L: go home" if _redeploy_wait <= 0.0 \
 				else "Dropping back in in %d..." % ceili(_redeploy_wait)
 		if _death_result.is_empty():
 			_prompt.text = ""
@@ -140,7 +142,7 @@ func _process(delta: float) -> void:
 ## result while down (else empty), and `log_lines` the recent notices.
 static func wrist_text(p_raid: Raid, p: Actor, death: Dictionary, wait: float, log_lines: Array[String]) -> String:
 	if not death.is_empty():
-		return death_text(death, wait)
+		return death_text(death, wait, drop_choices(p_raid, p))
 	var lines: Array[String] = []
 	var where := p_raid.world.display_name
 	if p_raid.war.intensity >= 0.2:
@@ -337,7 +339,15 @@ func show_death(result: Dictionary, wait: float) -> void:
 
 
 ## The words on the death screen.
-static func death_text(result: Dictionary, wait: float) -> String:
+## Where the player may land next (`Raid.drop_choices`). Only the authority
+## knows a player's owner key; a client is offered the world's own places.
+static func drop_choices(p_raid: Raid, p: Actor) -> Array:
+	var state := p_raid.state_for(p)
+	return p_raid.drop_choices(state.owner if state != null and p_raid.mode != Raid.Mode.CLIENT else "")
+
+
+## `drops` is where they may land next (`Raid.drop_choices`).
+static func death_text(result: Dictionary, wait: float, drops: Array = []) -> String:
 	var by: String = result.get("killed_by", "")
 	var lost: Array = result.get("lost", [])
 	var lines: Array[String] = ["Killed by %s" % by if by != "" else "You died"]
@@ -354,6 +364,11 @@ static func death_text(result: Dictionary, wait: float) -> String:
 	if wait > 0.0:
 		lines.append("Drop back in in %d..." % ceili(wait))
 	else:
+		# One place to land is no choice: Enter is enough.
+		if drops.size() > 1:
+			for i in drops.size():
+				lines.append("%d: %s, %s" % [i + 1, drops[i].title, drops[i].note])
+			lines.append("")
 		lines.append("Enter: drop back in      L: return to the hub")
 	return "\n".join(lines)
 

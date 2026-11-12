@@ -81,6 +81,8 @@ var war := WarDirector.new()
 ## The sites worth holding, one per "strongpoint" marker on the map.
 var strongpoints: Array[Strongpoint] = []
 var _assault_in := 0.0
+## War intensity from which a player may choose to land beside the fighting.
+var hot_drop_from := 0.2
 ## The world event going on, or {}: { kind ("supply_pod" or "warlord"),
 ## title, at, ends (on `clock`) }. One at a time.
 var event := {}
@@ -392,6 +394,30 @@ func _forward_drop(side: String) -> Strongpoint:
 	return mine[rng.randi() % mine.size()] if not mine.is_empty() else null
 
 
+## Where the player with this owner key may ask to land, as { id, title,
+## note }. The id goes back into `add_player`. A client asks with no key: it
+## knows which sites are its own from the server.
+func drop_choices(owner := "") -> Array[Dictionary]:
+	var side := _player_side(owner) if owner != "" else ""
+	var out: Array[Dictionary] = [{"id": "safe", "title": "Quiet drop", "note": "away from the fighting"}]
+	if war.intensity >= hot_drop_from:
+		out.append({"id": "hot", "title": "Into the fight", "note": "beside the heaviest fighting"})
+	for point in strongpoints:
+		var mine := point.viewer_holds if mode == Mode.CLIENT else (side != "" and point.holder == side)
+		if mine and not point.contested and point.taker == "":
+			out.append({"id": "point:%d" % point.index, "title": point.title, "note": "a strongpoint you hold"})
+	return out
+
+
+## The spawn marker nearest a place.
+func _nearest_spawn(spawns: Array[Node3D], to: Vector3) -> int:
+	var best := 0
+	for i in spawns.size():
+		if spawns[i].global_position.distance_squared_to(to) < spawns[best].global_position.distance_squared_to(to):
+			best = i
+	return best
+
+
 ## World events: one at a time, more often the hotter the war.
 func _tick_events(delta: float) -> void:
 	if world.event_interval <= 0.0:
@@ -559,7 +585,7 @@ func _can_bank(actor: Actor) -> bool:
 ## from their earlier lives here; without it every life is a stranger's.
 ## `p_renown` is their lifetime renown, which sets the rank others see.
 func add_player(p_kit: Array = [], p_mastery: Dictionary = {}, p_name := "Raider",
-		p_owner := "", p_renown := 0) -> Actor:
+		p_owner := "", p_renown := 0, p_drop := "") -> Actor:
 	var state := PlayerState.new()
 	state.kit.assign(p_kit if not p_kit.is_empty() else world.starter_loadout())
 	state.picks = p_mastery
@@ -579,10 +605,19 @@ func add_player(p_kit: Array = [], p_mastery: Dictionary = {}, p_name := "Raider
 			_squad_marker = marker
 		marker = _squad_marker
 	var at: Vector3 = spawns[marker].global_position if not spawns.is_empty() else Vector3.ZERO
-	# A strongpoint you hold is a forward drop point.
+	# Where they asked to land (see `drop_choices`). With no choice, or one
+	# that is no longer on offer, a strongpoint they hold is a forward drop
+	# point and otherwise they land away from the fighting.
 	var forward: Strongpoint = null
 	if arriving and p_owner != "":
-		forward = _forward_drop(_player_side(p_owner))
+		var side := _player_side(p_owner)
+		var offered := drop_choices(p_owner).map(func(c: Dictionary) -> String: return c.id)
+		if p_drop == "hot" and "hot" in offered and not spawns.is_empty() and not squad_spawn:
+			at = spawns[_nearest_spawn(spawns, war.centre)].global_position
+		elif p_drop.begins_with("point:") and p_drop in offered:
+			forward = strongpoints[int(p_drop.trim_prefix("point:"))]
+		elif p_drop != "safe":
+			forward = _forward_drop(side)
 	if forward != null:
 		var angle := rng.randf_range(0.0, TAU)
 		at = forward.global_position + Vector3(cos(angle), 0.0, sin(angle)) * forward.radius * 0.4

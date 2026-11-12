@@ -414,6 +414,7 @@ func _attach_player_view() -> void:
 	controller.setup(raid.player)
 	controller.sign_out_requested.connect(func() -> void: _on_sign_out_requested.call_deferred())
 	controller.redeploy_requested.connect(func() -> void: _on_redeploy_requested.call_deferred())
+	controller.drop_requested.connect(func(index: int) -> void: _on_drop_requested.call_deferred(index))
 	raid.add_child(controller)
 	hud = Hud.new()
 	hud.setup(raid, controller)
@@ -476,16 +477,26 @@ func _is_down() -> bool:
 	return raid != null and not _death_result.is_empty()
 
 
-## Enter, while down: drop back into the same world.
-func _on_redeploy_requested() -> void:
+## A number key, while down: drop back in at the place with that number.
+func _on_drop_requested(index: int) -> void:
+	if not _is_down():
+		return
+	var choices := raid.drop_choices("" if net else LOCAL_OWNER)
+	if index < choices.size():
+		_on_redeploy_requested(choices[index].id)
+
+
+## Enter, while down: drop back into the same world. `drop` is where to land
+## (an id from `Raid.drop_choices`); left empty, the world picks.
+func _on_redeploy_requested(drop := "") -> void:
 	if not _is_down() or Time.get_ticks_msec() < _redeploy_at:
 		return
 	if net:
 		# `joined` follows and attaches the view to the new actor.
-		net.deploy()
+		net.deploy(drop)
 		return
 	raid.add_player(Profile.checkout_loadout(raid.world), Profile.mastery.active_picks(), "You",
-			LOCAL_OWNER, Profile.renown)
+			LOCAL_OWNER, Profile.renown, drop)
 	_attach_player_view()
 
 

@@ -16,6 +16,10 @@ extends Node
 ## body leans in, which is the sprint. A slide (`Actor.crouch`) bends the model
 ## into a slide pose over whatever clip is playing.
 ##
+## Standing still with a gun held low, the legs and hips take their pose from
+## a relaxed stand (`stand_legs`) instead of the gun clip's own wide stance,
+## so the feet stay planted side by side while the arms keep the gun.
+##
 ## Everything is read from the actor's velocity, which is the same on every
 ## machine: the server's own, a predicted local player, or a remote player
 ## whose velocity arrives with each state. Nothing here feeds back into the
@@ -73,6 +77,9 @@ var slide_lead_shin := Vector3(0.0, -0.3, -0.95)
 var slide_trail_thigh := Vector3(-0.1, -0.85, -0.5)
 var slide_trail_shin := Vector3(0.0, -0.4, 0.9)
 
+## How quickly the relaxed-stand legs blend in and out (per second).
+var stand_legs_rate := 4.0
+
 ## Clip key -> how the clip moves the body at playback speed 1, in the
 ## actor's space (x right, z back), m/s.
 var gaits := {}
@@ -92,6 +99,9 @@ var stride_target := 1.0
 ## The clip playing now (its name in the model), whose average pose the
 ## stride is stretched about.
 var current_anim := ""
+## Whether the legs should take the relaxed stand now, and how far they have.
+var stand_legs := false
+var stand_legs_weight := 0.0
 
 var _roots: Array[int] = []
 var _spine: Array[int] = []
@@ -108,6 +118,11 @@ var _means := {}
 var _lead: Array[int] = []
 var _trail: Array[int] = []
 var _foot_on_shin := {}
+## The relaxed stand, and its tracks for the bones below the spine:
+## [bone, track, type].
+var _stand_anim: Animation
+var _stand_tracks: Array = []
+var _stand_time := 0.0
 
 
 ## `def` is the skin's entry in `Look.SKINS`, `anims` maps keys to the clips
@@ -155,6 +170,21 @@ func setup(def: Dictionary, player: AnimationPlayer, anims: Dictionary) -> void:
 			if bone >= 0 and _is_under(bone, _spine[_spine.size() - 1]):
 				_overlay_tracks[bone] = track
 
+	if player and anims.has("stand_legs") and not _spine.is_empty():
+		_stand_anim = player.get_animation(anims["stand_legs"])
+		for track in _stand_anim.get_track_count():
+			var type := _stand_anim.track_get_type(track)
+			if type not in [Animation.TYPE_POSITION_3D, Animation.TYPE_ROTATION_3D]:
+				continue
+			var bone := skeleton.find_bone(String(_stand_anim.track_get_path(track)).get_slice(":", 1))
+			if bone >= 0 and bone != _spine[0] and not _is_under(bone, _spine[0]):
+				_stand_tracks.append([bone, track, type])
+
+	# First, so everything after works from the planted legs.
+	var stand := WeaponArm.Hook.new()
+	stand.name = "StandLegs"
+	stand.run = _stand_legs
+	skeleton.add_child(stand)
 	# The arm's hooks are added after these, so it reaches from where the
 	# turned body has put the shoulders.
 	var upper := WeaponArm.Hook.new()
@@ -360,6 +390,25 @@ func update(delta: float) -> void:
 	overlay_weight = move_toward(overlay_weight, 1.0 if overlay and not _overlay_tracks.is_empty() else 0.0,
 			overlay_rate * delta)
 	stride = move_toward(stride, stride_target, stride_rate * delta)
+	stand_legs_weight = move_toward(stand_legs_weight, 1.0 if stand_legs and not _stand_tracks.is_empty() else 0.0,
+			stand_legs_rate * delta)
+	if _stand_anim and _stand_anim.length > 0.0:
+		_stand_time = fposmod(_stand_time + delta, _stand_anim.length)
+
+
+## Puts the hips and legs in the relaxed stand, under whatever the upper body
+## is doing.
+func _stand_legs() -> void:
+	if stand_legs_weight <= 0.0 or _stand_anim == null:
+		return
+	for entry: Array in _stand_tracks:
+		var bone: int = entry[0]
+		if entry[2] == Animation.TYPE_ROTATION_3D:
+			var q := _stand_anim.rotation_track_interpolate(entry[1], _stand_time)
+			skeleton.set_bone_pose_rotation(bone, skeleton.get_bone_pose_rotation(bone).slerp(q, stand_legs_weight))
+		else:
+			var at := _stand_anim.position_track_interpolate(entry[1], _stand_time)
+			skeleton.set_bone_pose_position(bone, skeleton.get_bone_pose_position(bone).lerp(at, stand_legs_weight))
 
 
 ## Lengthens the stride: each leg bone swings further from its average pose
