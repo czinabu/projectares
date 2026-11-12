@@ -60,6 +60,8 @@ signal failed(reason: String)
 signal disconnected
 ## Client: the server said which port each of its worlds runs on.
 signal routes_changed(routes: Dictionary)
+## Client: the server's news of its other worlds changed (`world_status`).
+signal world_status_changed(status: Dictionary)
 ## Client: the phone's contacts, messages, invites and news changed (see
 ## `SocialService.snapshot`).
 signal social_changed(social: Dictionary)
@@ -74,7 +76,7 @@ signal world_invite_accepted(invite: Dictionary)
 signal base_visit_requested(owner_name: String, stash: Array, loadout: Dictionary)
 
 const DEFAULT_PORT := 24565
-const PROTOCOL := 15
+const PROTOCOL := 16
 const StashService := preload("res://core/account/stash_service.gd")
 const Economy := preload("res://core/economy/economy.gd")
 const Human := preload("res://core/visual/human.gd")
@@ -121,6 +123,12 @@ var isolated := false
 ## hosting a safe zone fills this in before `host`, and clients receive it
 ## when they sign in, so a plaza gate knows where to send you.
 var routes := {}
+## How the other worlds on this server are doing: world id -> `Raid.status()`.
+## The safe zone's session gathers it and sends it to everyone standing
+## there, so a doorway can say what is on the other side.
+var world_status := {}
+## Server: how many ticks between looks at the other worlds.
+var status_every := 60
 ## Client: called with the server's world, returns the kit to deploy with.
 ## Server: owns every player's stash, loadout and mastery. Set its
 ## `save_dir` or `persist` before `host`.
@@ -198,6 +206,9 @@ var _sent_standing := {} # actor id -> public renown standing last sent (server)
 var _sent_war := -1.0    # war intensity last sent (server)
 var _sent_points := {}   # peer id -> strongpoint states last sent to them (server)
 var _tick := 0
+var _sent_status := {}   # world status last sent (server)
+## Every session hosting in this process, so a safe zone can ask the others.
+static var _hosting: Array[NetSession] = []
 var _died_at := {}       # peer id -> msec when their last life ended in a death (server)
 var _finished := false   # client: signed out, so the server closing the connection is expected
 var _can_redeploy := false # client: dead and still connected
@@ -219,6 +230,7 @@ func _exit_tree() -> void:
 	if is_server:
 		# A server that stops mid-raid hands everyone's gear back.
 		stash.cancel_all_deploys()
+	_hosting.erase(self)
 	close()
 	if not is_server:
 		Combat.authoritative = true
@@ -248,7 +260,19 @@ func host(p_world_id: String, port := DEFAULT_PORT, max_players := 8) -> Error:
 	if lag_compensation:
 		Combat.rewind = _seen_positions
 	_start_server_raid()
+	_hosting.append(self)
 	return OK
+
+
+## Server: `Raid.status()` of every world in `routes` that runs in this process.
+func _gather_status() -> Dictionary:
+	var out := {}
+	for session in _hosting:
+		if session == self or not is_instance_valid(session) or session.raid == null:
+			continue
+		if routes.has(session.world_id):
+			out[session.world_id] = session.raid.status()
+	return out
 
 
 func close() -> void:
@@ -522,6 +546,8 @@ func _sign_in(p_name: String, p_secret: String) -> void:
 	_peer_account[peer] = result.account_id
 	if not routes.is_empty():
 		_routes.rpc_id(peer, routes)
+		_sent_status = _gather_status()
+		_world_status.rpc_id(peer, _sent_status)
 	_send_account(peer)
 	_social_joined(peer)
 
@@ -892,6 +918,13 @@ func _server_late_tick(_delta: float) -> void:
 			_sent_standing[id] = standing
 			for peer in _joined_peers:
 				_standing.rpc_id(peer, id, standing)
+	# A safe zone tells its visitors how the worlds behind its doors are doing.
+	if _tick % status_every == 0 and not routes.is_empty() and not _peer_account.is_empty():
+		var status := _gather_status()
+		if status != _sent_status:
+			_sent_status = status
+			for peer: int in _peer_account:
+				_world_status.rpc_id(peer, status)
 	# The meter moves slowly, so a few times a second is plenty.
 	if _tick % 20 == 0 and not is_equal_approx(_sent_war, raid.war.intensity):
 		_sent_war = raid.war.intensity
@@ -976,6 +1009,21 @@ func _routes(p_routes: Dictionary) -> void:
 		if typeof(id) == TYPE_STRING and typeof(p_routes[id]) == TYPE_INT:
 			routes[id] = p_routes[id]
 	routes_changed.emit(routes)
+
+
+@rpc("authority", "call_remote", "reliable")
+func _world_status(p_status: Dictionary) -> void:
+	world_status.clear()
+	for id: Variant in p_status:
+		var entry: Variant = p_status[id]
+		if typeof(id) != TYPE_STRING or typeof(entry) != TYPE_DICTIONARY:
+			continue
+		world_status[id] = {"players": maxi(0, int(entry.get("players", 0))),
+				"war": clampf(float(entry.get("war", 0.0)), 0.0, 1.0),
+				"level": str(entry.get("level", "")).left(24),
+				"bounty": maxi(0, int(entry.get("bounty", 0))),
+				"event": str(entry.get("event", "")).left(40)}
+	world_status_changed.emit(world_status)
 
 
 @rpc("authority", "call_remote", "reliable")

@@ -67,6 +67,7 @@ func _run() -> void:
 	await _test_strongpoints()
 	await _test_events()
 	await _test_drops()
+	await _test_world_heat()
 	await _test_scrip()
 	await _test_online()
 	await _test_plaza()
@@ -3511,6 +3512,45 @@ func _test_plaza() -> void:
 	await _end_raid(raid)
 
 
+func _test_world_heat() -> void:
+	print("World heat: what a doorway says about the world behind it")
+	const PlazaView := preload("res://core/social/plaza_view.gd")
+	var raid := Raid.new()
+	add_child(raid)
+	raid.apply_to_profile = false
+	raid.start_server(Worlds.get_world("frostline"), 0)
+	var empty := raid.status()
+	check(empty.players == 0 and empty.level == "Quiet" and empty.bounty == 0 and empty.event == "",
+			"an empty world reports itself quiet")
+	var a := raid.add_player([], {}, "Ada", "acct_a")
+	raid.add_player([], {}, "Bo", "acct_b")
+	a.bounty = 150
+	raid.war.intensity = 0.62
+	raid.start_event("warlord")
+	var busy := raid.status()
+	check(busy.players == 2 and busy.level == "Battle" and busy.bounty == 150 and busy.event != "",
+			"a busy one reports players, war level, top bounty and event: %s" % PlazaView.heat_text(busy))
+	check(not str(busy).contains("Ada") and not busy.has("centre"), "and never who or where anyone is")
+	check(PlazaView.heat_text({}) == "" and PlazaView.heat_text(empty) == "QUIET   0 players",
+			"the sign is blank until the server speaks, and short when nothing is on")
+	check(PlazaView.heat_text(busy).contains("2 players") and PlazaView.heat_text(busy).contains("Top bounty 150")
+			and PlazaView.heat_text({"players": 1, "level": "Skirmish"}) == "SKIRMISH   1 player",
+			"it lists players and the top bounty")
+	check(PlazaView.heat_color(1.0).g < PlazaView.heat_color(0.0).g, "the sign reddens as the war heats up")
+	raid.queue_free()
+	await frames(2)
+
+	# A client cleans what it is told.
+	var net := NetSession.new()
+	add_child(net)
+	net._world_status({"ashfront": {"players": -4, "war": 9.0, "level": "x".repeat(200), "bounty": "12"}, 7: {}, "bad": 3})
+	var got: Dictionary = net.world_status.get("ashfront", {})
+	check(net.world_status.size() == 1 and got.players == 0 and got.war == 1.0 and got.level.length() <= 24
+			and got.bounty == 12, "a client cleans the status it is sent")
+	net.queue_free()
+	await frames(1)
+
+
 func _test_plaza_online() -> void:
 	print("Plaza online: a shared safe zone beside the warzone")
 	const PlazaView := preload("res://core/social/plaza_view.gd")
@@ -3524,6 +3564,10 @@ func _test_plaza_online() -> void:
 		return
 	check(ada.world_id == "plaza" and ada.raid.world.safe_zone, "the server's front door is the plaza")
 	check(ada.routes.get("ashfront", -1) == port + 1, "the plaza says where the warzone runs")
+	await _wait_until(func() -> bool: return ada.world_status.has("ashfront"), 240)
+	var quiet: Dictionary = ada.world_status.get("ashfront", {})
+	check(quiet.get("players", -1) == 0 and quiet.get("level", "") == "Quiet" and not ada.world_status.has("plaza"),
+			"the plaza hears how the warzone is doing: %s" % PlazaView.heat_text(quiet))
 	var me := ada.raid.player
 	check("rifle_carbine" in me.gear_items and me.weapons_locked, "you wear your loadout, with weapons locked")
 	await frames(30)
@@ -3580,6 +3624,10 @@ func _test_plaza_online() -> void:
 		await _wait_until(func() -> bool: return ada_war.account.deployed, 120)
 		check(ada_war.raid != null and not ada_war.raid.world.safe_zone and ada_war.account.deployed
 				and not ada_war.raid.player.weapons_locked, "deploying there is a real raid with gear at stake")
+		if bo != null:
+			await _wait_until(func() -> bool: return bo.world_status.get("ashfront", {}).get("players", 0) == 1, 600)
+			check(bo.world_status.get("ashfront", {}).get("players", 0) == 1,
+					"someone still in the plaza sees the warzone fill up")
 		await _leave(ada_war)
 	await _leave(bo)
 
@@ -3601,6 +3649,11 @@ func _test_plaza_online() -> void:
 				and PlazaView.portal_at(main.raid, Vector3(0, 0, 20)) == null, "standing in a gate offers the trip")
 		check(gate != null and PlazaView.prompt_for(gate, main.net.routes).begins_with("[E]")
 				and PlazaView.prompt_for(gate, {}).contains("closed"), "a gate to a world the server lacks is closed")
+		var heat: Label3D = main.plaza_view.heat_signs.get("ashfront")
+		await _wait_until(func() -> bool: return heat != null and heat.visible, 240)
+		check(heat != null and heat.visible and heat.text.begins_with("QUIET") and gate != null
+				and heat.global_position.y > gate.global_position.y + 3.0,
+				"the sign over the gate says how that world is doing")
 		main.use_portal("clans")
 		check(main.raid != null, "the clan hall is not open yet")
 		main.use_portal("world:ashfront")

@@ -908,6 +908,19 @@ func state_for(actor: Actor) -> PlayerState:
 
 
 ## Players still in the raid.
+## What this world looks like from outside, for a doorway or a travel screen:
+## how many are fighting, how hot the war is, the biggest bounty and the
+## event running. Nothing here says who or where anyone is.
+func status() -> Dictionary:
+	var bounty := 0
+	var fighting := active_players()
+	for actor in fighting:
+		if is_instance_valid(actor):
+			bounty = maxi(bounty, actor.bounty)
+	return {"players": fighting.size(), "war": snappedf(war.intensity, 0.05), "level": war.level_name(),
+			"bounty": bounty, "event": str(event.get("title", ""))}
+
+
 func active_players() -> Array[Actor]:
 	var out: Array[Actor] = []
 	for state in players:
