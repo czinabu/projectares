@@ -163,6 +163,13 @@ you have.
   with the most renown is the Marked, the richest kill in the world. Killing
   someone in the free scrap kit pays almost nothing. Player kills, bounties
   and the Marked are announced to everyone.
+- Ashfront is one open battlefield about 600 metres across: scorched ground
+  cut by craters and trench lines, strewn with the wrecks of war machines,
+  some the size of tower blocks. Five landmarks stand on it (the Foundry in
+  the middle, Signal Hill, Rustfall, the Breach and Carrier Grave), each with
+  a depot, a garrison and loot, and the best loot sits on roofs and wrecks
+  that only a flight rig reaches. You drop in at the rim, where a bike is
+  never far, and ride or fly inward.
 - War intensity. Ashfront keeps a meter of how much fighting is going on.
   Kills and hostile players closing on each other raise it, and it cools when
   things calm down; a full server that is not fighting stays quiet. As it
@@ -210,8 +217,8 @@ you have.
 - Motorbikes, the first vehicle. Put one in the vehicle slot and it is parked
   next to you when you deploy. Press E on any bike nobody is riding to take
   it, including someone else's. Sign out riding a bike and it goes to your
-  stash; die or leave it behind and it is gone. Abandoned bikes wait by jump
-  ramps around the city. Riding uses the third-person camera (V still
+  stash; die or leave it behind and it is gone. Abandoned bikes wait at the rim,
+  the landmarks and the jump ramps of the battlefield. Riding uses the third-person camera (V still
   switches), and pressing E in mid-air bails out with the bike's speed.
 - Mastery for every weapon type, ability and armor frame. Using gear earns XP
   for its type, levels unlock variants that trade one strength for another

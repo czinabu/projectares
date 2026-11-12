@@ -97,7 +97,16 @@ func _blink() -> void:
 		var hit := actor.get_world_3d().direct_space_state.intersect_ray(query)
 		if not hit.is_empty():
 			distance = maxf(0.0, from.distance_to(hit.position) - 0.8)
-	actor.global_position += dir * distance
+	var to := actor.global_position + dir * distance
+	if actor.is_inside_tree():
+		# The step is measured from the eyes, so on a slope or aiming down the
+		# feet can end up under the ground. Stand them back on it.
+		var head := to + Vector3(0, from.y - actor.global_position.y, 0)
+		var down := PhysicsRayQueryParameters3D.create(head, to, Actor.LAYER_WORLD)
+		var floor_hit := actor.get_world_3d().direct_space_state.intersect_ray(down)
+		if not floor_hit.is_empty():
+			to.y = floor_hit.position.y + 0.05
+	actor.global_position = to
 	# Arrive without the fall speed you left with.
 	actor.velocity.y = maxf(actor.velocity.y, 0.0)
 
