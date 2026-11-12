@@ -173,6 +173,26 @@ Raised with X; it comes up by itself when you go down.
 
 Watch skins are cosmetics, shown off in the hub.
 
+### Raising the watch with your own arm
+
+Raising the watch is a real movement of your character, not a panel that
+appears. Your left arm comes up, the forearm turns so the face points at
+your eyes, and the hologram opens off the watch on your actual wrist.
+
+- **Third person.** The character's left arm lifts the wrist in front of the
+  chest (the rig's left-arm IK, the one two-handed blades already use), and
+  the watch stays strapped to the real wrist bone. The hologram opens from
+  that wrist instead of floating towards the camera. A two-handed hold lets
+  go with the left hand while the watch is up.
+- **First person.** Your own left arm, in your outfit and skin tone, comes
+  up into the bottom of the view in the same pose, replacing today's grey
+  box forearm. The body is not drawn in first person, so this is a copy of
+  just the character's left arm.
+- Other players see your arm come up too, so a raised watch is a tell that
+  you are looking at it.
+- The pose is view only: it never changes aim, movement or anything the
+  server decides.
+
 ### Loadout swapping rules
 
 | Where | Swapping |

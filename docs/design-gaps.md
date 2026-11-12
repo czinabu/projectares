@@ -42,6 +42,7 @@ rows marked **pre-playtest** come before the friends playtest.
 | Per-rig readouts (stall line, height band, dash pips) | Missing | Comes with the aerial rig rework. **Pre-playtest.** |
 | Sign-out from the watch, with its countdown | Partly | Sign-out exists on L; not on the watch. |
 | Loadout swapping from the watch in the PvE world | Missing, deferred | With the PvE world. Today loadouts change only in a lobby or base. |
+| Raising the watch with the character's own left arm, first and third person | Missing | Today third person only straps the watch to `Wrist.L` (the arm stays put and the hologram floats to the camera) and first person shows a grey box forearm. Left-arm IK already exists in `WeaponArm` (`off_ik`). |
 
 ## Loadout
 
