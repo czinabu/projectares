@@ -6,6 +6,17 @@ layout and how to play. The roadmap is: Phase 0 bot-only prototype (done),
 Phase 1 vertical slice (hub, loadouts, abilities, motorbike), Phase 2 online
 PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
 
+## The design doc
+
+`docs/DESIGN.md` is the game design every thread builds against: the places,
+the watch, the loadout, flight, heavy weapons, banking and sign-out, and
+vehicles. `docs/design-gaps.md` lists what is built and what is missing.
+Before building a feature, read its section. Where a rule below describes
+today's code and the design doc describes a different target (for example
+heavy weapons on the watch instead of racks), build toward the doc and
+rewrite the rule here in the same PR. Do not settle the doc's open decisions
+without Caleb, and update the gap list when a PR closes a row.
+
 ## Rules that must not be broken
 
 - `core/` never references a specific world. Anything world-specific goes
