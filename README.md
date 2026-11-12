@@ -27,11 +27,10 @@ skies, animated models and effects (see "How it looks" below).
 | Use your helmet's visor (zoom or scan) | T |
 | Dash | Left Alt |
 | Slide (while sprinting) | C |
-| Fire, or blade combo | Left mouse |
+| Fire, or melee: tap for the combo, hold for a heavy (dive slam in the air) | Left mouse |
 | Aim down sights, or block with the blade (tap just before a hit to parry) | Right mouse |
 | Pick a melee side: left, right or overhead | Flick the mouse that way, or hold A, D or W |
 | Switch how the melee side is picked (mouse flick or movement keys) | B |
-| Heavy lunge with the blade (dive slam in the air) | Middle mouse |
 | Switch to primary / sidearm / melee / power weapon | 1 / 2 / 3 / 4, or mouse wheel |
 | Reload | R |
 | Use a medkit | H |
@@ -151,7 +150,7 @@ Joining a server puts you in its plaza, the Concourse: a walled safe zone
 shared by everyone on that server. Weapons are locked and nobody can be hurt.
 You appear wearing your equipped loadout, and it never leaves your stash, so
 nothing is at risk there. Look at another player and a tag over their head lists what they are wearing.
-A bike in your loadout is parked beside you to ride around.
+A bike in your loadout rides on your watch as a toy: throw it down to ride around.
 
 Walk into a glowing pad and press **E** to use it:
 
@@ -286,10 +285,21 @@ you have.
   All of them give you away: a zoomed lens glints, a scan is seen, heard and
   felt by everyone it catches, Threat Sense tells whoever it shows, and a
   thermal visor glows up close. With no helmet the view is bare.
+- Six melee weapons, each with its own job. The Gutter Knife is quick and short
+  and cuts from behind for more than double. The Splitter Axe drains a guard
+  so fast that three chops break it. The Lancer Spear (rooftop loot) has the
+  longest reach, pokes fliers overhead, and staggers with a heavy thrust, but
+  hits half as hard up close.
 - More gear to find: carbine, SMG, marksman rifle, shotgun, arc blade, breaker
   hammer, three armor frames, and a better jetpack.
-- Motorbikes, the first vehicle. Put one in the vehicle slot and it is parked
-  next to you when you deploy. Press E on any bike nobody is riding to take
+- Motorbikes, the first vehicle. Put one in the vehicle slot and it rides on
+  your watch as a toy. Raise the watch (X), turn the wheel to pick a toy and
+  click to take it in your hand, then click again to throw it: it grows into
+  the full-size bike where it lands (right click puts it back). It needs clear
+  ground, or it jumps back to your watch, and the watch recharges for a few
+  seconds between throws. To pack a bike back onto the watch (it holds two), look at
+  one nobody is riding, raise the watch and click. Toys on your watch go home when you sign
+  out. Press E on any bike nobody is riding to take
   it, including someone else's. Sign out riding a bike and it goes to your
   stash; die or leave it behind and it is gone. Abandoned bikes wait at the rim,
   the landmarks and the jump ramps of the battlefield. Riding uses the third-person camera (V still
