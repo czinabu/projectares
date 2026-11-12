@@ -113,6 +113,16 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   or aiming and briefly after.
   Check leg changes by eye: `visual_check.tscn -- <dir> --gait-only`, and
   the stand with `--idle-only`.
+  Holstered weapons are worn, not hidden (`ActorSkin.stow_place`): a primary
+  gun or two-handed weapon slung across the back, outside a worn back rig, a
+  sidearm muzzle down on the right hip, and a one-handed blade on the left
+  hip. These are view-only copies; the weapon's own node stays on the hand.
+  A switch is shown as the hand putting one away and drawing the next
+  (`ActorSkin._update_switch`, reaching through `WeaponArm.override_point`),
+  but only the view waits: the actor switches at once. The holster key (Z)
+  sends `switch_weapon = ActorCommand.HOLSTER` and draws `Actor.last_drawn`
+  again; it is an index, never a toggle, so it replicates safely. Check with
+  `--holster-only`.
 - People are built from parts (`core/visual/human.gd`): an "appearance" names
   a build, four parts and colours. It is cosmetic only and never trusted:
   always pass one through `Look.clean_appearance` / `Look.set_appearance`,

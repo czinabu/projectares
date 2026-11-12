@@ -44,8 +44,11 @@ var ability_pressed := false
 var visor_pressed := false
 ## Held: the zoom level asked of a helmet with binoculars, 0 for off.
 var visor_level := 0
-## Index of the weapon to switch to, or -1 to keep the current one.
+## Index of the weapon to switch to, -1 to keep the current one, or
+## `HOLSTER` to put the weapon in hand away.
 var switch_weapon := -1
+
+const HOLSTER := -2
 
 
 ## Clears everything that should only last a single tick.
@@ -151,7 +154,7 @@ func apply_array(data: Array) -> void:
 	visor_pressed = bits & FLAG_VISOR_PRESSED != 0
 	visor_level = (bits & VISOR_LEVEL_MASK) >> VISOR_LEVEL_SHIFT
 	stance = clampi(int(_number(data[STANCE_INDEX])), 0, 2)
-	switch_weapon = clampi(int(_number(data[SWITCH_INDEX])), -1, 8)
+	switch_weapon = clampi(int(_number(data[SWITCH_INDEX])), HOLSTER, 8)
 
 
 static func _number(value: Variant) -> float:
