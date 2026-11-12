@@ -405,7 +405,37 @@ func _test_flight_rig() -> void:
 	rig.try_burst()
 	rig.try_burst()
 	rig.try_burst()
-	check(bursts[0] == 2, "each air jump that goes off is signalled, and an overheated one is not")
+	check(bursts[0] == 1 and not rig.overheated, "a burst that would go far past the heat limit is refused, not fired")
+	rig.heat = 0.0
+	rig.burst_heat = 34.0
+	var kicks := 0
+	for i in 5:
+		if rig.try_burst() > 0.0:
+			kicks += 1
+	check(kicks == 3 and rig.overheated, "the last burst of a set may tip the rig over and overheat it (%d)" % kicks)
+	rig.heat = 0.0
+	rig.overheated = false
+	rig.launch_once = true
+	rig.launched = false
+	check(rig.try_burst() > 0.0 and rig.try_burst() == 0.0, "a launch-once rig launches once per takeoff")
+	rig.heat = 90.0
+	rig.is_hovering = true
+	rig.coast(1.0)
+	check(is_equal_approx(rig.heat, 90.0 - rig.coast_cool) and not rig.is_thrusting, "coasting idles the jets and cools fast")
+	rig.heat = 50.0
+	rig.is_gliding = true
+	rig.glide_cool = 12.0
+	rig.tick(false, 0.1)
+	check(is_equal_approx(rig.heat, 50.0 - 1.2), "gliding cools at the glide rate with no delay")
+	rig.is_gliding = false
+	rig.pulse_velocity = 11.0
+	rig.pulse_heat = 30.0
+	rig.heat = 0.0
+	var pulses := 0
+	for i in 5:
+		if rig.try_pulse() > 0.0:
+			pulses += 1
+	check(pulses == 3, "pulses are limited by heat (%d in a row)" % pulses)
 	rig.free()
 
 
@@ -1139,8 +1169,13 @@ func _test_loadouts() -> void:
 	check(hammer.display_name == "Breaker Hammer" and is_equal_approx(hammer.heavy_damage, 95.0), "melee stats come from the item")
 	check(is_equal_approx(p.health.armor, 140.0), "the frame sets armor")
 	var base := Actor.new()
-	check(p.walk_speed < base.walk_speed and p.flight.heat_per_sec > FlightRig.new().heat_per_sec,
-			"a heavy frame is slower and runs the jetpack hotter")
+	check(p.walk_speed < base.walk_speed and is_equal_approx(p.flight.heat_per_sec, FlightRig.new().heat_per_sec),
+			"a heavy frame is slower, and a jetpack carries it without running hotter")
+	var wings := Actor.new()
+	Loadout.equip(wings, ["wings_glide", "frame_bulwark"])
+	check(wings.flight.burst_heat > ItemDB.item_stats("wings_glide")["burst_heat"],
+			"a heavy frame runs other rigs hotter")
+	wings.free()
 	base.free()
 	var results: Array[Dictionary] = []
 	raid.player_finished.connect(func(_a: Actor, r: Dictionary) -> void: results.append(r))
@@ -1383,17 +1418,14 @@ func _test_flight_rigs_and_abilities() -> void:
 		await frames(1)
 		a.cmd.jump_pressed = false
 
-	# Thruster boots: no sustained lift, a kick per press, limited by heat.
+	# Thruster boots: kicks up, skim low and cool, burn out high, dash on heat.
 	var raid := await _kit_raid(60, ["rifle_scrap", "blade_scrap", "boots_thruster", "plate_light"])
 	var p := raid.player
 	check(p.flight.display_name == "Thruster Boots" and p.flight.burst_velocity > 0.0
-			and is_zero_approx(p.flight.thrust_accel), "boots stats come from the item")
+			and is_zero_approx(p.flight.thrust_accel) and p.flight.can_skim(), "boots stats come from the item")
+	check(is_equal_approx(p.flight.skim_speed, FlightRig.CRUISE_SPEED), "boots skim at the shared cruise speed")
 	await press_jump.call(p)
-	await frames(20)
-	p.cmd.jump = true
 	await frames(10)
-	check(not p.flight.is_thrusting and p.velocity.y < 0.0, "boots give no lift from holding jump")
-	p.cmd.jump = false
 	var height := p.global_position.y
 	await press_jump.call(p)
 	check(p.velocity.y > 8.0 and p.flight.heat > 0.0, "pressing jump in the air kicks you upward and costs heat")
@@ -1407,11 +1439,16 @@ func _test_flight_rigs_and_abilities() -> void:
 	for i in 6:
 		await press_jump.call(p)
 		await frames(4)
-	check(p.flight.overheated, "boosting over and over overheats the boots")
-	check(not p.flight.is_hovering, "boots cannot hover")
+	check(p.flight.overheated, "kicking over and over overheats the boots")
+	check(not p.flight.is_hovering and not p.flight.is_skimming, "boots cannot hover, nor skim overheated")
 	var vy := p.velocity.y
 	await press_jump.call(p)
 	check(p.velocity.y <= vy, "overheated boots do nothing")
+	for i in 400:
+		await get_tree().physics_frame
+		if p.is_on_floor():
+			break
+	await _check_boot_skim(p)
 	await _end_raid(raid)
 
 	# Glide wings: launch, then fall slowly and travel far.
@@ -1432,6 +1469,12 @@ func _test_flight_rigs_and_abilities() -> void:
 	await frames(5)
 	check(not p.flight.is_gliding, "letting go stops the glide")
 	await _check_glide_flying(p)
+	await _check_wing_moves(p)
+	await _end_raid(raid)
+
+	# The Mk2 jetpack: cruise, wide turns, coasting, a steady hover to shoot from.
+	raid = await _kit_raid(65, ["rifle_scrap", "blade_scrap", "jetpack_mk2", "frame_bulwark"])
+	await _check_jetpack_cruise(raid.player)
 	await _end_raid(raid)
 
 	# The jetpack still works and does not burst or glide.
@@ -1612,6 +1655,14 @@ func _check_free_flight(p: Actor) -> void:
 	var hover_heat := p.flight.heat
 	await frames(30)
 	hover_heat = p.flight.heat - hover_heat
+	p.cmd.sprint = true
+	p.cmd.move = Vector2(0, 1)
+	await frames(2)
+	check(p.flight.boost_speed > 0.0 or not p.flight.is_boosting, "a jetpack without a boost does not boost")
+	p.cmd.move = Vector2.ZERO
+	p.cmd.sprint = false
+	var boost_was := p.flight.boost_speed
+	p.flight.boost_speed = 22.0
 	# Head first, wherever you look: up at 45 degrees here.
 	p.cmd.pitch = PI / 4.0
 	p.cmd.sprint = true
@@ -1629,6 +1680,7 @@ func _check_free_flight(p: Actor) -> void:
 	p.cmd.pitch = 0.0
 	await frames(5)
 	check(p.flight.is_hovering and not p.flight.is_boosting, "letting go of the boost drops back to a hover")
+	p.flight.boost_speed = boost_was
 	p.flight.heat_per_sec = 4000.0
 	await frames(60)
 	check(p.flight.overheated and not p.flight.is_hovering and p.velocity.y < 0.0, "overheating puts the jets out and you fall")
@@ -1653,6 +1705,189 @@ func _check_free_flight(p: Actor) -> void:
 	check(copy.descend and copy.roll == -1, "descend and roll travel in the network command")
 	p.cmd.descend = false
 	p.cmd.roll = 0
+
+
+## The Mk2 jetpack. `p` stands on the ground in heavy armor.
+func _check_jetpack_cruise(p: Actor) -> void:
+	var mk2 := ItemDB.item_stats("jetpack_mk2")
+	check(p.flight.heavy_lift and is_equal_approx(p.flight.heat_per_sec, mk2["heat_per_sec"]),
+			"a jetpack carries heavy armor without running hotter")
+	check(is_equal_approx(p.flight.fly_speed, FlightRig.CRUISE_SPEED), "the jetpack cruises at the shared speed")
+	p.global_position.y += 150.0
+	p.velocity = Vector3.ZERO
+	p.flight.heat = 0.0
+	await frames(2)
+	p.cmd.jump_pressed = true
+	await frames(1)
+	p.cmd.jump_pressed = false
+	await frames(30)
+	var still := p.flight.heat
+	await frames(60)
+	still = p.flight.heat - still
+	check(p.flight.is_hovering and p.air_aim() == 0.0, "a lit jetpack holding still shoots like it stands on the ground")
+	p.cmd.yaw = 0.0
+	p.cmd.move = Vector2(0, 1)
+	await frames(60)
+	var cruise := p.flight.heat
+	await frames(60)
+	cruise = p.flight.heat - cruise
+	var speed := Vector2(p.velocity.x, p.velocity.z).length()
+	check(absf(speed - FlightRig.CRUISE_SPEED) < 0.5, "jets cruise at %.1f m/s" % speed)
+	check(cruise < still, "cruising costs less heat than holding a hover (%.2f against %.2f)" % [cruise, still])
+	# Steer hard right at speed: the heading comes round slowly.
+	var before := Vector3(p.velocity.x, 0, p.velocity.z).normalized()
+	p.cmd.move = Vector2(1, 0)
+	await frames(30)
+	var turned := before.angle_to(Vector3(p.velocity.x, 0, p.velocity.z).normalized())
+	check(turned < p.flight.cruise_turn_rate * 0.5 + 0.1 and Vector2(p.velocity.x, p.velocity.z).length() > 10.0,
+			"a jetpack at cruise makes wide turns (%.2f rad in half a second)" % turned)
+	p.cmd.move = Vector2.ZERO
+	await frames(60)
+	check(Vector2(p.velocity.x, p.velocity.z).length() < 0.5, "and stops dead when you let go")
+	p.flight.heat = 60.0
+	p.cmd.descend = true
+	await frames(30)
+	check(p.flight.is_coasting and not p.flight.is_thrusting and p.flight.heat < 60.0 - p.flight.coast_cool * 0.4,
+			"coasting idles the jets and cools them (%.0f heat)" % p.flight.heat)
+	check(p.velocity.y < -p.flight.descend_speed + 0.5, "and sinks")
+	check(Hud.rig_text(p).contains("coasting") and Hud.rig_text(p).contains("LOCKABLE"),
+			"the watch says the jets are coasting and still hot enough to lock onto")
+	p.cmd.descend = false
+	p.cmd.sprint = true
+	p.cmd.move = Vector2(0, 1)
+	await frames(10)
+	check(p.flight.is_boosting and p.air_aim() == 1.0, "boosting spoils the aim")
+	var gun := p.get_active_weapon() as Gun
+	if gun:
+		var wild := gun.current_spread_deg()
+		p.cmd.sprint = false
+		p.cmd.move = Vector2.ZERO
+		await frames(5)
+		check(gun.current_spread_deg() < wild - 1.0, "a gun spreads wider in the air than from a hover")
+	p.cmd.sprint = false
+	p.cmd.move = Vector2.ZERO
+
+
+## Boots skimming. `p` stands on open ground with thruster boots.
+func _check_boot_skim(p: Actor) -> void:
+	p.flight.heat = 0.0
+	p.flight.overheated = false
+	p.global_position = Vector3(0.0, p.global_position.y, 60.0)
+	await frames(10)
+	var ground := p.global_position.y
+	p.cmd.jump_pressed = true
+	p.cmd.jump = true
+	await frames(1)
+	p.cmd.jump_pressed = false
+	await frames(60)
+	check(p.flight.is_skimming and not p.is_on_floor() and absf(p.velocity.y) < 0.5,
+			"holding jump off a jump skims, holding the height")
+	check(p.flight.skim_band() == 0 and p.air_aim() == 0.0, "skimming low aims steady")
+	p.flight.heat = 40.0
+	await frames(60)
+	check(p.flight.heat < 40.0 and p.flight.is_skimming, "skimming near a surface cools the boots (%.0f)" % p.flight.heat)
+	p.cmd.yaw = 0.0
+	p.cmd.move = Vector2(0, 1)
+	await frames(40)
+	var speed := Vector2(p.velocity.x, p.velocity.z).length()
+	check(absf(speed - FlightRig.CRUISE_SPEED) < 0.5, "boots skim at %.1f m/s" % speed)
+	p.cmd.move = Vector2.ZERO
+	await frames(30)
+	check(Vector2(p.velocity.x, p.velocity.z).length() < 0.5, "and stop dead")
+	check(Hud.rig_text(p).begins_with("Skim "), "the watch shows the skim band (%s)" % Hud.rig_text(p))
+	# A dash on heat, not stamina.
+	var stamina := p.stamina
+	var heat := p.flight.heat
+	p.cmd.move = Vector2(1, 0)
+	p.cmd.dash = true
+	await frames(1)
+	p.cmd.dash = false
+	await frames(2)
+	var side := (p.global_basis.inverse() * p.velocity).x
+	check(side > p.flight.air_dash_speed - 1.0 and p.flight.heat > heat + 15.0 and is_equal_approx(p.stamina, stamina),
+			"a boot dash in the air goes off on heat (%.1f m/s)" % side)
+	p.cmd.move = Vector2.ZERO
+	await frames(30)
+	# High up the boots burn out fast.
+	p.flight.heat = 0.0
+	p.global_position.y = ground + 20.0
+	p.velocity = Vector3.ZERO
+	await frames(30)
+	check(p.flight.skim_band() == 2 and p.air_aim() == 1.0, "skimming high is the burning band and spoils the aim")
+	for i in 240:
+		await get_tree().physics_frame
+		if p.flight.overheated:
+			break
+	check(p.flight.overheated and not p.flight.is_skimming, "boots overheat within seconds high up")
+	p.cmd.jump = false
+	for i in 400:
+		await get_tree().physics_frame
+		if p.is_on_floor():
+			break
+
+
+## The wings' own moves. `p` is gliding high up with glide wings.
+func _check_wing_moves(p: Actor) -> void:
+	# A fast touchdown turns into a slide; a slow one does not.
+	p.velocity = Vector3(0, -2, -10)
+	p._slide_landing()
+	check(not p.is_sliding(), "wings touching down slowly just land")
+	p.velocity = Vector3(0, -2, -22)
+	p._slide_landing()
+	check(p.is_sliding() and p._slide_from >= 21.9, "wings touching down fast slide on, keeping the speed")
+	p.slide_left = 0.0
+	# High over the middle of the map, flying across it.
+	p.global_position = Vector3(0.0, 160.0, 90.0)
+	p.velocity = Vector3(0, -1, -15)
+	p.cmd.yaw = 0.0
+	p.cmd.pitch = 0.0
+	p.cmd.jump = true
+	p.flight.heat = 0.0
+	p.flight.overheated = false
+	await frames(30)
+	check(p.flight.is_gliding, "gliding")
+	check(Hud.rig_text(p).begins_with("Air ") and Hud.rig_text(p).contains("pulse ready"),
+			"the watch shows airspeed and whether a pulse is ready")
+	# A pulse every 2.5 s holds a level flight.
+	var start_y := p.global_position.y
+	for i in 4:
+		p.cmd.jump_pressed = true
+		await frames(1)
+		p.cmd.jump_pressed = false
+		await frames(149)
+	var drift := p.global_position.y - start_y
+	check(p.flight.is_gliding and absf(drift) < 4.0 and not p.flight.overheated,
+			"a wing pulse every 2.5 s holds height (%.1f m in 10 s)" % drift)
+	var hot := 0
+	for i in 6:
+		p.cmd.jump_pressed = true
+		await frames(1)
+		p.cmd.jump_pressed = false
+		await frames(20)
+		hot += 1
+	check(p.flight.overheated or p.flight.heat > 80.0, "pulsing too fast overheats the wings")
+	p.flight.heat = 0.0
+	p.flight.overheated = false
+	# The main gun is stowed while the wings are out.
+	check(p.wings_block(p.weapons[0]) and p.air_aim() == 1.0, "only a sidearm fires with the wings spread")
+	# A barrel roll snaps sideways.
+	await frames(130)
+	var side_before := (Basis(Vector3.UP, p.cmd.yaw).inverse() * p.velocity).x
+	p.cmd.roll = 1
+	await frames(6)
+	var side := (Basis(Vector3.UP, p.cmd.yaw).inverse() * p.velocity).x
+	check(side > side_before + 8.0, "a roll key snaps a sidestep (%.1f m/s sideways)" % side)
+	p.cmd.roll = 0
+	await frames(30)
+	var heading := Vector3(p.velocity.x, 0, p.velocity.z).normalized()
+	check(heading.dot(Vector3.FORWARD) > 0.95, "and the glide carries on the same way after it")
+	# Stalling: slow below the stall speed and the wings sink fast.
+	p.velocity = Vector3(0, 0, -3)
+	await frames(2)
+	check(p._glide_sink() >= p.flight.stall_sink - 0.01, "a stalled glide sinks fast")
+	p.cmd.jump = false
+	await frames(30)
+	check(not p.wings_block(p.weapons[0]), "folding the wings brings the main gun back")
 
 
 ## Wings fly like wings. `p` is high up with glide wings, jump let go.

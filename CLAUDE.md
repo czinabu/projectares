@@ -258,8 +258,19 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   (`FlightRig.is_hovering`, flown by `Actor._simulate_hover`; the server
   repeats it in each state as `ActorCommand.STATE_HOVERING`), a boost along
   the look direction, and a glide whose speed is energy
-  (`Actor._glide_velocity`). Keep the three rigs different: jetpack free but
-  heat-bound, boots quick kicks, wings fastest and furthest but no hover.
+  (`Actor._glide_velocity`). Every rig cruises at the same
+  `FlightRig.CRUISE_SPEED` so a squad on mixed rigs keeps together (Caleb's
+  call), and each stays up its own way and has its own edge: the jetpack
+  flies high in swoops (cruise, then coast down with the jets idle to cool),
+  stops dead and hovers to shoot steady, and carries heavy armor, but turns
+  wide and is loud and hot; wings glide and pulse to hold height, with the
+  fastest dives, tightest turns and a barrel roll, silent and cold, but never
+  stop and fire only a sidearm while spread; boots skim low (`FlightRig.skim`),
+  cooling near a surface and burning out high up, kick up, dash on heat and
+  aim steady while low, but have no high ground. Flown its
+  own way a rig stays up for minutes, against type it overheats in seconds.
+  Shooting from the air spreads wider (`Actor.air_aim`) except in a rig's
+  steady state.
   The body's attitude in the air (flat, banked, leaning, rolled by
   `ActorCommand.roll`) is the skin's job (`ActorSkin._update_glide`), read
   from velocity and the command only, so remote players match. Off the

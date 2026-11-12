@@ -114,8 +114,13 @@ static func equip(actor: Actor, item_ids: Array) -> void:
 		var speed: float = stats.get("speed_mult", 1.0)
 		actor.walk_speed *= speed
 		actor.sprint_speed *= speed
-		actor.flight.heat_per_sec *= stats.get("heat_mult", 1.0)
-		actor.flight.burst_heat *= stats.get("heat_mult", 1.0)
+		var heat_mult: float = stats.get("heat_mult", 1.0)
+		if actor.flight.heavy_lift:
+			# A jetpack carries heavy armor without running hotter.
+			heat_mult = minf(heat_mult, 1.0)
+		actor.flight.heat_per_sec *= heat_mult
+		actor.flight.burst_heat *= heat_mult
+		actor.flight.pulse_heat *= heat_mult
 		actor.heat_signature *= stats.get("heat_signature", 1.0)
 		actor.frame_name = ItemDB.item_name(id)
 		actor.gear_items.append(id)
