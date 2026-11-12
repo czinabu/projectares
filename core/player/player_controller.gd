@@ -82,6 +82,8 @@ var watch_index := 0
 var _toy_node: Node3D
 var _cam_dist := 0.0
 var _pending_switch := -1
+## The zoom level asked of a helmet with binoculars. The visor key steps it.
+var _visor_level := 0
 var _flick := Vector2.ZERO
 var _rng := RandomNumberGenerator.new()
 var _thrust_audio: AudioStreamPlayer
@@ -125,9 +127,11 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	var captured := Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
 	if event is InputEventMouseMotion and captured:
-		yaw -= event.relative.x * mouse_sensitivity
+		# Through binoculars the same hand movement turns you less.
+		var sensitivity := mouse_sensitivity / _zoom()
+		yaw -= event.relative.x * sensitivity
 		var vertical: float = -event.relative.y if invert_y else event.relative.y
-		pitch = clampf(pitch - vertical * mouse_sensitivity, -1.5, 1.5)
+		pitch = clampf(pitch - vertical * sensitivity, -1.5, 1.5)
 		_flick += event.relative
 	elif event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if captured else Input.MOUSE_MODE_CAPTURED
@@ -142,8 +146,6 @@ func _unhandled_input(event: InputEvent) -> void:
 		wrist_raised = not wrist_raised
 	elif event.is_action_pressed("melee_control"):
 		toggle_stance_control()
-	elif event.is_action_pressed("vehicle_toy"):
-		use_watch_key()
 	elif event.is_action_pressed("sign_out"):
 		sign_out_requested.emit()
 	elif event.is_action_pressed("redeploy") and is_instance_valid(actor) and actor.is_dead:
@@ -159,13 +161,15 @@ func watch_toys() -> Array[String]:
 	return raid.stowed_for(actor) if raid != null else ([] as Array[String])
 
 
-## The toy after `current` on a watch holding `toys`: the first one from an
-## empty hand, and back to an empty hand ("") after the last.
-static func next_toy(toys: Array[String], current: String) -> String:
-	var at := toys.find(current)
-	if current != "" and at < 0:
-		return ""
-	return toys[at + 1] if at + 1 < toys.size() else ""
+## The vehicle the raised watch would pack: the one being looked at, within
+## reach, with nobody on it. Null with the watch down or a toy in the hand.
+func pack_target() -> Node3D:
+	if not wrist_raised or held_toy != "" or actor == null or not is_instance_valid(actor) \
+			or actor.is_dead or is_riding():
+		return null
+	var seat := actor.find_interactable()
+	var found: Variant = seat.get("vehicle") if seat != null else null
+	return found if found is Node3D and found.get("rider") == null else null
 
 
 ## True while the watch is up with toy vehicles on it to pick from: the wheel
@@ -173,6 +177,19 @@ static func next_toy(toys: Array[String], current: String) -> String:
 func is_browsing_toys() -> bool:
 	return wrist_raised and held_toy == "" and actor != null and is_instance_valid(actor) \
 			and not actor.is_dead and not is_riding() and not watch_toys().is_empty()
+
+
+## Fire with the watch up: packs the vehicle being looked at onto the watch,
+## or else takes the picked toy into the hand. False if the watch had no use
+## for the click, and it is an ordinary shot.
+func click_watch() -> bool:
+	if pack_target() != null:
+		pack_requested.emit()
+		return true
+	if is_browsing_toys():
+		take_picked_toy()
+		return true
+	return false
 
 
 ## The mouse wheel: the next weapon, or with the watch up, the next toy on it.
@@ -204,22 +221,6 @@ func hold_toy(item_id: String) -> void:
 	held_toy = item_id
 	if item_id != "":
 		actor.notice.emit("%s in hand. Fire to throw it, aim to put it back" % ItemDB.item_name(item_id))
-
-
-## The watch key: looking at a vehicle packs it onto the watch; otherwise it
-## takes the next toy into the hand, or puts the last one back.
-func use_watch_key() -> void:
-	if actor == null or not is_instance_valid(actor) or actor.is_dead:
-		return
-	var seat := actor.find_interactable() if not is_riding() and held_toy == "" else null
-	if seat != null and seat.get("vehicle") != null:
-		pack_requested.emit()
-		return
-	var toys := watch_toys()
-	if toys.is_empty() and held_toy == "":
-		actor.notice.emit("No vehicles on your watch")
-		return
-	hold_toy(next_toy(toys, held_toy))
 
 
 ## Throws the toy in the hand. The world decides whether it leaves the hand.
@@ -314,6 +315,8 @@ func _physics_process(delta: float) -> void:
 		cmd.primary = false
 		cmd.secondary = false
 		cmd.switch_weapon = -1
+		_visor_level = 0
+		cmd.visor_level = 0
 		return
 	var captured := Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
 	cmd.yaw = yaw
@@ -341,19 +344,33 @@ func _physics_process(delta: float) -> void:
 	cmd.tertiary_pressed = captured and Input.is_action_just_pressed("heavy")
 	if held_toy != "":
 		_use_toy_hand(cmd)
-	elif is_browsing_toys():
+	elif is_browsing_toys() or pack_target() != null:
+		# With the watch up and something for it to do, fire works the watch.
 		if cmd.primary_pressed:
-			take_picked_toy()
+			click_watch()
 		cmd.primary = false
 		cmd.primary_pressed = false
 	cmd.reload_pressed = Input.is_action_just_pressed("reload")
 	cmd.interact_pressed = Input.is_action_just_pressed("interact")
 	cmd.heal_pressed = Input.is_action_just_pressed("heal")
 	cmd.ability_pressed = captured and Input.is_action_just_pressed("ability")
+	cmd.visor_pressed = captured and Input.is_action_just_pressed("visor")
+	if cmd.visor_pressed:
+		_visor_level = next_visor_level(actor.visor, _visor_level)
+	cmd.visor_level = _visor_level
 	if Input.is_action_just_pressed("weapon_1"):
 		cmd.switch_weapon = 0
 	elif Input.is_action_just_pressed("weapon_2"):
 		cmd.switch_weapon = 1
+	elif Input.is_action_just_pressed("weapon_3"):
+		cmd.switch_weapon = 2
+	elif Input.is_action_just_pressed("holster"):
+		# Put the weapon away, or draw the one last put away. Sent as an
+		# index, not a toggle, so a repeated or late packet lands the same.
+		if actor.get_active_weapon():
+			cmd.switch_weapon = ActorCommand.HOLSTER
+		elif not actor.weapons.is_empty():
+			cmd.switch_weapon = clampi(actor.last_drawn, 0, actor.weapons.size() - 1)
 	elif _pending_switch >= 0:
 		cmd.switch_weapon = _pending_switch
 	_pending_switch = -1
@@ -404,7 +421,10 @@ func _process(delta: float) -> void:
 		if not hit.is_empty():
 			desired = pivot + (hit.position - pivot) * 0.85
 	camera.global_transform = Transform3D(look, desired)
-	camera.fov = lerpf(camera.fov, ads_fov if aiming else wanted_base_fov(), 1.0 - exp(-14.0 * delta))
+	var fov := ads_fov if aiming else wanted_base_fov()
+	if _zoom() > 1.0:
+		fov = zoomed_fov(wanted_base_fov(), _zoom())
+	camera.fov = lerpf(camera.fov, fov, 1.0 - exp(-14.0 * delta))
 	if _thrust_audio:
 		var thrusting := actor.flight.is_thrusting and not actor.is_dead
 		if thrusting and not _thrust_audio.playing:
@@ -444,6 +464,26 @@ func _on_hit_confirmed(_target: Actor, info: DamageInfo, lethal: bool) -> void:
 
 func _on_damaged(_info: DamageInfo) -> void:
 	Sfx.play("hurt")
+
+
+## The zoom level the visor key moves to from `level`: up through the
+## helmet's levels and back to off. A helmet without binoculars stays at 0.
+static func next_visor_level(visor: Visor, level: int) -> int:
+	if visor == null or not visor.enabled or visor.mode != "zoom":
+		return 0
+	return (level + 1) % (visor.zoom_levels.size() + 1)
+
+
+## The field of view that makes things look `factor` times closer than at `fov`.
+static func zoomed_fov(fov: float, factor: float) -> float:
+	return rad_to_deg(2.0 * atan(tan(deg_to_rad(fov) * 0.5) / maxf(factor, 1.0)))
+
+
+## How much the helmet's binoculars magnify right now: 1 when they are down.
+func _zoom() -> float:
+	if actor == null or not is_instance_valid(actor):
+		return 1.0
+	return actor.visor.zoom_factor()
 
 
 ## The resting field of view for the view in use.

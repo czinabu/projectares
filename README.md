@@ -21,6 +21,7 @@ skies, animated models and effects (see "How it looks" below).
 | Move / sprint | WASD / Shift |
 | Jump. In the air: hold to fly (jetpack), press to boost (thruster boots, glide wings), hold while falling to glide (glide wings) | Space |
 | Use your ability | G |
+| Use your helmet's visor (zoom or scan) | T |
 | Dash | Q |
 | Slide (while sprinting) | C |
 | Fire, or blade combo | Left mouse |
@@ -28,7 +29,7 @@ skies, animated models and effects (see "How it looks" below).
 | Pick a melee side: left, right or overhead | Flick the mouse that way, or hold A, D or W |
 | Switch how the melee side is picked (mouse flick or movement keys) | B |
 | Heavy lunge with the blade (dive slam in the air) | F |
-| Switch to rifle / blade | 1 / 2, or mouse wheel |
+| Switch to primary / blade / sidearm | 1 / 2 / 3, or mouse wheel |
 | Reload | R |
 | Use a medkit | H |
 | Loot, or get on and off a bike | E |
@@ -39,7 +40,6 @@ skies, animated models and effects (see "How it looks" below).
 | After dying: drop back in, or go home | Enter, or L |
 | Open your phone: players, messages, invites, news, mirror, settings | P |
 | Raise or lower the holographic watch on your wrist | X |
-| Pack the vehicle you are looking at onto the watch, or take the next toy vehicle in hand | T |
 | Free the mouse | Esc |
 
 The jetpack runs on heat. Overheat it and you fall until it cools. Rooftop
@@ -192,6 +192,13 @@ you have.
   a depot, a garrison and loot, and the best loot sits on roofs and wrecks
   that only a flight rig reaches. You drop in at the rim, where a bike is
   never far, and ride or fly inward.
+- Two armies. The Legion holds the west of Ashfront and the Tide the east,
+  two landmarks each, with the Foundry between them. Each keeps a garrison
+  on what it holds and sends the rest of its soldiers against the nearest
+  site it does not, so they meet in the middle and fight each other as well
+  as you. Their fighting keeps the war simmering on its own, and the hotter
+  the war gets the more reinforcements both sides bring in from their camps
+  at the rim, up to nearly twice the usual number.
 - War intensity. Ashfront keeps a meter of how much fighting is going on.
   Kills and hostile players closing on each other raise it, and it cools when
   things calm down; a full server that is not fighting stays quiet. As it
@@ -208,6 +215,9 @@ you have.
   you can drop back in and a number key picks one: a quiet drop away from
   everyone, a strongpoint your side holds, or, once a battle is on, right
   beside the heaviest fighting. Enter still lets the world pick for you.
+- Scrip. Kills, warlords and strongpoints pay scrip that you carry. It turns
+  into credits one for one, but only when you bank it at a depot or sign out
+  alive. Die with it and it lies in your bag for whoever gets there first.
 - World events. Every few minutes, and more often as the war heats up, either
   a supply pod lands with a better haul than any cache, or a warlord marches
   in with an escort. He has three times the health, carries good loot, and
@@ -238,6 +248,12 @@ you have.
   quick kicks upward, and glide wings that launch once and then soar.
 - An ability slot. Phase Step blinks you forward, Kinetic Barrier cuts damage
   for a few seconds, Shock Pulse staggers everyone near you. Each has a cooldown.
+- A helmet slot. The visor is your display in first person, and what it
+  shows depends on the helmet: the Spotter has binoculars (4x and 8x), a
+  compass and a range finder, and fire while zoomed tags a target for your
+  side; the Seeker sends a scan pulse that shows where everyone nearby stood.
+  Both give you away: a zoomed lens glints, and a scan is seen, heard and
+  felt by everyone it catches. With no helmet the view is bare.
 - More gear to find: carbine, SMG, marksman rifle, shotgun, arc blade, breaker
   hammer, three armor frames, and a better jetpack.
 - Motorbikes, the first vehicle. Put one in the vehicle slot and it rides on
@@ -245,9 +261,8 @@ you have.
   click to take it in your hand, then click again to throw it: it grows into
   the full-size bike where it lands (right click puts it back). It needs clear
   ground, or it jumps back to your watch, and the watch recharges for a few
-  seconds between throws. Look at any bike nobody is riding and press T to
-  pack it back onto the watch (it holds two); T also takes the next toy in
-  hand without raising the watch. Toys on your watch go home when you sign
+  seconds between throws. To pack a bike back onto the watch (it holds two), look at
+  one nobody is riding, raise the watch and click. Toys on your watch go home when you sign
   out. Press E on any bike nobody is riding to take
   it, including someone else's. Sign out riding a bike and it goes to your
   stash; die or leave it behind and it is gone. Abandoned bikes wait at the rim,

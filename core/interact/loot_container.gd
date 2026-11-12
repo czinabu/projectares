@@ -4,10 +4,14 @@ extends Interactable
 
 ## The contents changed (someone looted it).
 signal changed
+## An actor picked up the scrip that was in here. The `Raid` credits it.
+signal scrip_taken(actor: Actor, amount: int)
 
 var items: Array[String] = []
 var is_bag := false
 var label := "Cache"
+## Scrip lying in here with the items: what a dead player was carrying.
+var scrip := 0
 
 var _mesh: MeshInstance3D
 
@@ -37,12 +41,20 @@ func _ready() -> void:
 
 
 func get_prompt() -> String:
+	# A bag is cleared away once it is emptied, so one that is still here
+	# holds something, if only scrip.
+	if items.is_empty() and is_bag:
+		return "[E] Loot %s" % label
 	if items.is_empty():
 		return "%s (empty)" % label
 	return "[E] Loot %s (%d)" % [label, items.size()]
 
 
 func interact(actor: Actor) -> void:
+	if scrip > 0:
+		var got := scrip
+		scrip = 0
+		scrip_taken.emit(actor, got)
 	var taken: Array[String] = []
 	while not items.is_empty() and not actor.inventory.is_full():
 		var id: String = items.pop_front()

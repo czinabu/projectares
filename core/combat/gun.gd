@@ -6,6 +6,10 @@ extends Weapon
 signal fired(from: Vector3, to: Vector3)
 
 var damage := 20.0
+## Fires once per trigger pull instead of while the trigger is held.
+var semi_auto := false
+## Damage multiplier for a shot that lands on an actor's head.
+var headshot_mult := 1.0
 ## Projectiles per shot. Each one deals `damage` and gets its own spread.
 var pellets := 1
 var fire_interval := 0.11
@@ -33,6 +37,10 @@ var _rng := RandomNumberGenerator.new()
 
 func build_visual() -> Node3D:
 	var root := Node3D.new()
+	if is_sidearm:
+		root.add_child(Weapon.make_part(Vector3(0.05, 0.08, 0.24), Vector3(0, 0, -0.06), Color(0.16, 0.16, 0.18)))
+		root.add_child(Weapon.make_part(Vector3(0.045, 0.13, 0.06), Vector3(0, -0.09, 0.03), Color(0.1, 0.1, 0.1)))
+		return root
 	root.add_child(Weapon.make_part(Vector3(0.07, 0.1, 0.62), Vector3(0, 0, -0.2), Color(0.16, 0.16, 0.18)))
 	root.add_child(Weapon.make_part(Vector3(0.06, 0.16, 0.08), Vector3(0, -0.12, 0.0), Color(0.3, 0.22, 0.16)))
 	root.add_child(Weapon.make_part(Vector3(0.05, 0.14, 0.1), Vector3(0, -0.1, -0.22), Color(0.1, 0.1, 0.1)))
@@ -62,7 +70,8 @@ func handle_input(cmd: ActorCommand, _delta: float) -> void:
 	_aiming = cmd.secondary and _reload_left <= 0.0
 	if cmd.reload_pressed:
 		start_reload()
-	if cmd.primary and _cooldown <= 0.0 and _reload_left <= 0.0:
+	var trigger := cmd.primary_pressed if semi_auto else cmd.primary
+	if trigger and _cooldown <= 0.0 and _reload_left <= 0.0:
 		if ammo_in_mag > 0:
 			_fire()
 		else:
@@ -75,6 +84,10 @@ func on_holster() -> void:
 
 func is_aiming() -> bool:
 	return _aiming
+
+
+func is_empty() -> bool:
+	return ammo_in_mag <= 0 and _reload_left <= 0.0
 
 
 func is_reloading() -> bool:
@@ -114,7 +127,11 @@ func _fire() -> void:
 		var hit := Combat.trace(actor, from, to)
 		if not hit.is_empty():
 			to = hit.position
-			Combat.deal(hit.collider, DamageInfo.make(damage, actor, "bullet", to))
+			var info := DamageInfo.make(damage, actor, "bullet", to)
+			if Combat.is_headshot(hit):
+				info.headshot = true
+				info.amount *= headshot_mult
+			Combat.deal(hit.collider, info)
 		Fx.tracer(actor.get_parent(), from + dir * 0.8 - Vector3(0, 0.15, 0), to)
 	fired.emit(from, to)
 	Sfx.play("shot", null if actor.is_player else from)

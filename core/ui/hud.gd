@@ -4,6 +4,8 @@ extends CanvasLayer
 ## markers, the melee side marks, the red flash when you are hurt, and the
 ## prompt for what you are looking at. Everything else is on your gear in
 ## the world:
+##   - the helmet's visor (`visor`, a `VisorHud`): what the glass you look
+##     through shows, in first person only, and only what that helmet shows;
 ##   - the holographic watch on your left wrist (`wrist`), brought up with
 ##     the `check_wrist` key (X) and on its own while you are down:
 ##     health, armor, stamina, jetpack heat, what you carry, your standing,
@@ -29,6 +31,9 @@ var controller: PlayerController
 var notice_sink: Callable
 ## The wrist display.
 var wrist: Wrist
+## What the helmet draws on its glass in first person, and what its visor
+## shows out in the world (scan snapshots, tags).
+var visor: VisorHud
 
 var _hit_marker: HitMarker
 var _hurt_flash: ColorRect
@@ -58,6 +63,11 @@ func _ready() -> void:
 	_hurt_flash.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_hurt_flash.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(_hurt_flash)
+
+	visor = VisorHud.new()
+	visor.name = "Visor"
+	visor.setup(raid, controller)
+	root.add_child(visor)
 
 	_hit_marker = HitMarker.new()
 	_hit_marker.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -137,7 +147,13 @@ func _process(delta: float) -> void:
 	wrist.raised = p.is_dead or (controller != null and controller.wrist_raised)
 	wrist.mount(p, controller, visible, delta)
 	var picked := controller.watch_index if controller != null else 0
-	wrist.show_text(wrist_text(raid, p, _death_result if p.is_dead else {}, _redeploy_wait, log_lines, picked),
+	var to_pack: Node3D = controller.pack_target() if controller != null else null
+	var pack_name: String = to_pack.get("display_name") if to_pack != null else ""
+	if to_pack != null:
+		_prompt.text = "Click: pack %s onto your watch" % pack_name
+	elif _prompt.text.contains("Ride ") and not p.is_dead:
+		_prompt.text += "      Watch up, then click: pack it"
+	wrist.show_text(wrist_text(raid, p, _death_result if p.is_dead else {}, _redeploy_wait, log_lines, picked, pack_name),
 			wrist_bars(p), leaving if leaving >= 0.0 else banking)
 	wrist.show_toys(raid.stowed_for(p) if not p.is_dead else ([] as Array[String]), picked,
 			raid.toy_wait(p) <= 0.0, delta)
@@ -145,9 +161,10 @@ func _process(delta: float) -> void:
 
 ## What the wrist display says, line by line. `death` is the last life's
 ## result while down (else empty), and `log_lines` the recent notices.
-## `picked_toy` is which toy vehicle on the watch is picked out.
+## `picked_toy` is which toy vehicle on the watch is picked out, and
+## `pack_name` the vehicle a click would pack onto it, if any.
 static func wrist_text(p_raid: Raid, p: Actor, death: Dictionary, wait: float, log_lines: Array[String],
-		picked_toy := 0) -> String:
+		picked_toy := 0, pack_name := "") -> String:
 	if not death.is_empty():
 		return death_text(death, wait, drop_choices(p_raid, p))
 	var lines: Array[String] = []
@@ -163,10 +180,14 @@ static func wrist_text(p_raid: Raid, p: Actor, death: Dictionary, wait: float, l
 	lines.append(weapon.status_text() if weapon else "Unarmed")
 	if p.ability.enabled:
 		lines.append("[G] %s" % p.ability.status_text())
+	if p.visor.enabled and p.visor.mode != "":
+		lines.append("[T] %s" % p.visor.status_text())
 	if p.vehicle != null:
 		lines.append("%s   %d km/h" % [p.vehicle.get("display_name"), roundi(absf(float(p.vehicle.get("speed"))) * 3.6)])
 	var toys := p_raid.stowed_for(p)
-	if not toys.is_empty():
+	if pack_name != "":
+		lines.append("click: pack %s" % pack_name)
+	elif not toys.is_empty():
 		var recharge := p_raid.toy_wait(p)
 		lines.append("%s   %s" % [ItemDB.item_name(toys[clampi(picked_toy, 0, toys.size() - 1)]),
 				"ready in %d s" % ceili(recharge) if recharge > 0.0 else "wheel: next   click: take"])
@@ -366,6 +387,8 @@ static func death_text(result: Dictionary, wait: float, drops: Array = []) -> St
 	lines.append("Lost: %s" % ItemDB.summarize(lost) if not lost.is_empty() else "Nothing lost")
 	if int(result.get("renown_lost", 0)) > 0:
 		lines.append("Renown lost: %d" % int(result.renown_lost))
+	if int(result.get("scrip_lost", 0)) > 0:
+		lines.append("Scrip dropped: %d" % int(result.scrip_lost))
 	var kept: Array = result.get("kept_gear", [])
 	if not kept.is_empty():
 		lines.append("Kept: %s" % ItemDB.summarize(kept))
@@ -389,6 +412,8 @@ static func death_text(result: Dictionary, wait: float, drops: Array = []) -> St
 ## they are being hunted.
 static func standing_text(p: Actor) -> String:
 	var text := "%s   Renown %d" % [RenownLedger.rank_name(p.rank), p.renown]
+	if p.scrip > 0:
+		text += "   Scrip %d" % p.scrip
 	if p.streak > 1:
 		text += "   Streak %d" % p.streak
 	if p.bounty > 0:

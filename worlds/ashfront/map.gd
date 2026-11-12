@@ -3,8 +3,10 @@ extends Node3D
 ##
 ## Rolling scorched ground, cratered by shelling and cut by trench lines, with
 ## five landmarks spread over it: a ruined foundry in the middle and four
-## sites around it. Each landmark is a strongpoint with a depot, loot and a
-## garrison. Between them lie the wrecks of war machines, which are the cover.
+## sites around it. Each landmark is a strongpoint with a depot and loot. Two
+## armies start with two sites each, garrisoned, and muster their
+## reinforcements on opposite sides of the rim; the foundry between them is
+## nobody's. Between them lie the wrecks of war machines, which are the cover.
 ## Players drop in around the rim and ride or fly inward.
 ##
 ## The layout uses a fixed seed, so the map is the same every time while loot
@@ -37,12 +39,19 @@ const RAMP_SPOTS := [Vector2(-52, -40), Vector2(58, -44), Vector2(-56, 44), Vect
 ## The landmarks: name, where, how wide, and how far the site is lifted above
 ## the ground around it.
 const SITES := [
-	{"name": "The Foundry", "at": Vector2(0, 0), "radius": 40.0, "lift": 0.0, "kind": "foundry"},
-	{"name": "Signal Hill", "at": Vector2(-150, -118), "radius": 28.0, "lift": 11.0, "kind": "hill"},
-	{"name": "Rustfall", "at": Vector2(158, -106), "radius": 32.0, "lift": 0.0, "kind": "graveyard"},
-	{"name": "The Breach", "at": Vector2(-142, 136), "radius": 32.0, "lift": 0.0, "kind": "breach"},
-	{"name": "Carrier Grave", "at": Vector2(134, 132), "radius": 34.0, "lift": 0.0, "kind": "carrier"},
+	{"name": "The Foundry", "at": Vector2(0, 0), "radius": 40.0, "lift": 0.0, "kind": "foundry", "army": ""},
+	{"name": "Signal Hill", "at": Vector2(-150, -118), "radius": 28.0, "lift": 11.0, "kind": "hill", "army": "legion"},
+	{"name": "Rustfall", "at": Vector2(158, -106), "radius": 32.0, "lift": 0.0, "kind": "graveyard", "army": "tide"},
+	{"name": "The Breach", "at": Vector2(-142, 136), "radius": 32.0, "lift": 0.0, "kind": "breach", "army": "legion"},
+	{"name": "Carrier Grave", "at": Vector2(134, 132), "radius": 34.0, "lift": 0.0, "kind": "carrier", "army": "tide"},
 ]
+## The armies: what a site they hold shows as its holder, and where on the
+## rim their reinforcements muster. The Legion has the west, the Tide the east.
+const ARMIES := {
+	"legion": {"holder_name": "the Legion", "muster": Vector2(-212, 4)},
+	"tide": {"holder_name": "the Tide", "muster": Vector2(212, -4)},
+}
+const MUSTER_SPOTS := 6
 
 ## Kept from the first map built in this run: { heights, collision, navmesh }.
 static var _shared := {}
@@ -174,6 +183,9 @@ func _plan() -> void:
 	for i in PLAYER_SPAWNS:
 		var at := Vector2.from_angle(TAU * (i + 0.5) / PLAYER_SPAWNS) * SPAWN_RING
 		_pads.append({"at": at, "radius": 9.0, "height": _rolling(at.x, at.y)})
+	for army: String in ARMIES:
+		var muster: Vector2 = ARMIES[army]["muster"]
+		_pads.append({"at": muster, "radius": 13.0, "height": _rolling(muster.x, muster.y)})
 	for at: Vector2 in RAMP_SPOTS:
 		_pads.append({"at": at, "radius": 10.0, "height": _rolling(at.x, at.y)})
 	_trenches = [
@@ -337,9 +349,14 @@ func _build_sites() -> void:
 		# The depot sits on the side facing the middle of the map, or north at the middle.
 		var inward := -at.normalized() if at.length() > 1.0 else Vector2(0, -1)
 		_add_depot(_open(at + inward * (radius - 10.0), 6.0))
-		# A garrison, and a bike for whoever takes the place.
-		for i in 4:
-			_add_marker("spawn_bot", _open(at + Vector2.from_angle(TAU * i / 4.0 + 0.6) * radius * 0.45))
+		# The army that starts here, its garrison, and a bike for whoever takes the place.
+		var army: String = site["army"]
+		if army != "":
+			marker.set_meta("holder", army)
+			marker.set_meta("holder_name", ARMIES[army]["holder_name"])
+			for i in 4:
+				var post := _add_marker("spawn_bot", _open(at + Vector2.from_angle(TAU * i / 4.0 + 0.6) * radius * 0.45))
+				post.set_meta("faction", army)
 		var bike := _add_marker("spawn_vehicle", _open(at - inward.orthogonal() * (radius - 6.0), 2.0))
 		bike.rotation.y = atan2(-inward.x, -inward.y)
 
@@ -447,8 +464,25 @@ func _build_field() -> void:
 		_add_cover(_ground(at))
 		if i % 3 == 0:
 			_add_marker("spawn_cache", _open(at + Vector2(_rng.randf_range(-3, 3), _rng.randf_range(-3, 3))))
+	# Patrols start on their own army's half of the field.
 	for i in FIELD_PATROLS:
-		_add_marker("spawn_bot", _open(_free_spot(5.0)))
+		var army := "legion" if i % 2 == 0 else "tide"
+		var at := _free_spot(5.0)
+		for attempt in 30:
+			if (at.x < 0.0) == (army == "legion") and absf(at.x) > 30.0:
+				break
+			_pads.pop_back()
+			at = _free_spot(5.0)
+		_add_marker("spawn_bot", _open(at)).set_meta("faction", army)
+	# Where each army's reinforcements arrive: a camp at the rim.
+	for army: String in ARMIES:
+		var muster: Vector2 = ARMIES[army]["muster"]
+		var inward := -muster.normalized()
+		for i in MUSTER_SPOTS:
+			var spot := muster + inward.orthogonal() * (i % 3 - 1) * 5.0 + inward * (i / 3) * 5.0
+			_add_marker("spawn_bot", _open(spot)).set_meta("faction", army)
+		_add_wall(_ground(muster + inward * 13.0), Vector3(9.0, 1.4, 1.0), -inward.angle() + PI * 0.5)
+		_add_cover(_ground(muster - inward * 7.0))
 	for i in RAMP_SPOTS.size():
 		_add_ramp_lot(_ground(RAMP_SPOTS[i]), i * PI * 0.5)
 

@@ -16,15 +16,17 @@ const KEY_ACTIONS := {
 	"heal": KEY_H,
 	"heavy": KEY_F,
 	"ability": KEY_G,
+	"visor": KEY_T,
 	"toggle_view": KEY_V,
 	"melee_control": KEY_B,
 	"weapon_1": KEY_1,
 	"weapon_2": KEY_2,
+	"weapon_3": KEY_3,
+	"holster": KEY_Z,
 	"scoreboard": KEY_TAB,
 	"sign_out": KEY_L,
 	"redeploy": KEY_ENTER,
 	"phone": KEY_P,
-	"vehicle_toy": KEY_T,
 	"check_wrist": KEY_X,
 }
 
