@@ -67,6 +67,7 @@ func _run() -> void:
 	await _test_strongpoints()
 	await _test_events()
 	await _test_drops()
+	await _test_scrip()
 	await _test_online()
 	await _test_plaza()
 	await _test_plaza_online()
@@ -2511,6 +2512,63 @@ func _test_drops() -> void:
 	check(not "1:" in Hud.death_text(result, 0.0, [{"id": "safe", "title": "Quiet drop", "note": ""}])
 			and not "1:" in Hud.death_text(result, 2.0, raid.drop_choices("acct-a")),
 			"it stays out of the way with one choice, or while you wait")
+	raid.queue_free()
+	await frames(2)
+
+
+func _test_scrip() -> void:
+	print("Carried scrip")
+	var raid := Raid.new()
+	add_child(raid)
+	raid.apply_to_profile = false
+	raid.start_server(Worlds.get_world("frostline"), 31)
+	for bot in raid.bots:
+		bot.get_node("Brain").set_physics_process(false)
+		bot.set_physics_process(false)
+		bot.global_position = Vector3(500, 0, 500)
+	var results := {}
+	raid.player_finished.connect(func(actor: Actor, result: Dictionary) -> void: results[actor.display_name] = result)
+	var a := raid.add_player([], {}, "Alpha", "acct-a")
+	var b := raid.add_player([], {}, "Bravo", "acct-b")
+	a.set_physics_process(false)
+	b.set_physics_process(false)
+	a.global_position = Vector3(-200, 0, -200)
+	b.global_position = Vector3(-200, 0, -230)
+	Combat.deal(raid.bots[0], DamageInfo.make(9999.0, a, "bullet"))
+	Combat.deal(raid.bots[0], DamageInfo.make(9999.0, a, "bullet"))
+	await frames(2)
+	check(a.scrip == 2 * StashService.Economy.KILL_BOUNTY and "Scrip 40" in Hud.standing_text(a) and b.scrip == 0,
+			"kills pay scrip that you carry (%d)" % a.scrip)
+
+	# Banking makes it safe.
+	var depot := raid.depots[0]
+	depot.actor_banked.emit(a)
+	check(a.scrip == 0 and raid.state_for(a).scrip_banked == 40, "a depot banks the scrip you carry")
+	Combat.deal(raid.bots[0], DamageInfo.make(9999.0, a, "bullet"))
+	await frames(2)
+	check(a.scrip == 20, "more kills pay more")
+
+	# Dying drops what was not banked.
+	a.protected_left = 0.0
+	Combat.deal(a, DamageInfo.make(9999.0, raid.bots[1], "bullet"))
+	await frames(2)
+	var bag: LootContainer = null
+	for node in raid.get_children():
+		if node is LootContainer and node.is_bag and node.scrip > 0:
+			bag = node
+	check(bag != null and bag.scrip == 20 and "20 scrip" in bag.get_prompt(), "what you carried drops with your bag (%s)" % (bag.get_prompt() if bag else "no bag"))
+	check(results.has("Alpha") and results.Alpha.scrip == 0 and results.Alpha.scrip_banked == 40 and results.Alpha.scrip_lost == 20
+			and StashService.Economy.payout(results.Alpha) == 40 and "Scrip dropped: 20" in Hud.death_text(results.Alpha, 0.0),
+			"the dead keep only what they banked")
+	if bag != null:
+		bag.interact(b)
+		await frames(2)
+		check(b.scrip == 20, "whoever loots the bag takes the scrip (%d)" % b.scrip)
+
+	# Leaving alive carries it home.
+	raid._leave(raid.state_for(b))
+	check(results.has("Bravo") and results.Bravo.scrip == 20 and StashService.Economy.payout(results.Bravo) == 20,
+			"signing out carries your scrip home")
 	raid.queue_free()
 	await frames(2)
 

@@ -44,6 +44,7 @@ const ORDERS_EVERY := 8.0
 const VehicleScript := preload("res://core/vehicle/vehicle.gd")
 const MasteryTracker := preload("res://core/progression/mastery_tracker.gd")
 const RenownLedger := preload("res://core/progression/renown_ledger.gd")
+const Economy := preload("res://core/economy/economy.gd")
 const WarDirector := preload("res://core/war/war_director.gd")
 const Strongpoint := preload("res://core/war/strongpoint.gd")
 
@@ -351,6 +352,7 @@ func _on_strongpoint_taken(point: Strongpoint, inside: Array[Actor], loser: Stri
 			if state == null:
 				continue
 			var paid := renown.award(state.owner, renown.strongpoint_taken)
+			_pay_scrip(state, Economy.STRONGPOINT_SCRIP)
 			actor.notice.emit("Took %s   +%d renown" % [point.title, paid])
 		_publish_standing()
 	strongpoint_taken.emit(point)
@@ -1049,8 +1051,18 @@ func _on_actor_died(actor: Actor, info: DamageInfo) -> void:
 	if state_for(actor) != null and world.keep_gear_on_death:
 		# A gentler world: a player's equipped gear goes home, not in the bag.
 		drops.assign(actor.inventory.items)
-	if not drops.is_empty():
-		var bag := spawn_container(drops, true, "%s's bag" % actor.display_name, actor.global_position)
+	var dead := state_for(actor)
+	var carried := dead.scrip if dead != null and mode != Mode.CLIENT else 0
+	if not drops.is_empty() or carried > 0:
+		var bag := spawn_container(drops, true, "%s's bag" % actor.display_name if carried <= 0
+				else "%s's bag, %d scrip" % [actor.display_name, carried], actor.global_position)
+		if carried > 0:
+			# What they carried lies with the bag for whoever gets there first.
+			bag.scrip = carried
+			bag.scrip_taken.connect(_on_scrip_taken)
+			dead.scrip_lost = carried
+			dead.scrip = 0
+			actor.scrip = 0
 		# Bags do not pile up forever in a world that never ends.
 		if mode != Mode.CLIENT:
 			get_tree().create_timer(world.bag_lifetime, false, true).timeout.connect(func() -> void:
@@ -1064,6 +1076,13 @@ func _on_actor_died(actor: Actor, info: DamageInfo) -> void:
 	var gained := 0
 	if mode != Mode.CLIENT:
 		gained = _settle_renown(state, killer, actor, by)
+		if killer != null:
+			var pay := Economy.KILL_BOUNTY
+			if warlords.has(actor):
+				pay += Economy.WARLORD_SCRIP
+			elif state != null and not _wears_scrap(actor):
+				pay = Economy.PLAYER_KILL_SCRIP
+			_pay_scrip(killer, pay)
 		# Only kills that players are part of count as the war.
 		if state != null or killer != null:
 			war.report_kill(actor.global_position, state != null)
@@ -1190,6 +1209,14 @@ func _on_actor_banked(actor: Actor) -> void:
 	if state == null or state.finished or actor.is_dead:
 		return
 	var items := Depot.bankable(actor)
+	if items.is_empty() and state.scrip <= 0:
+		return
+	if state.scrip > 0:
+		# Banked scrip is safe: it is paid out when this life ends, however it ends.
+		actor.notice.emit("Banked %d scrip" % state.scrip)
+		state.scrip_banked += state.scrip
+		state.scrip = 0
+		actor.scrip = 0
 	if items.is_empty():
 		return
 	for id in items:
@@ -1199,6 +1226,24 @@ func _on_actor_banked(actor: Actor) -> void:
 	if apply_to_profile:
 		Profile.add_to_stash(items)
 	player_banked.emit(actor, items)
+
+
+## Scrip a living player earned. It is carried, so it is at stake.
+func _pay_scrip(state: PlayerState, amount: int) -> void:
+	if mode == Mode.CLIENT or world.safe_zone or not world.gear_at_risk or amount <= 0 \
+			or not is_instance_valid(state.actor) or state.finished:
+		return
+	state.scrip += amount
+	state.actor.scrip = state.scrip
+
+
+## Someone picked the scrip out of a dead player's bag.
+func _on_scrip_taken(actor: Actor, amount: int) -> void:
+	var state := state_for(actor)
+	if state == null:
+		return
+	_pay_scrip(state, amount)
+	actor.notice.emit("Took %d scrip" % amount)
 
 
 ## A sign-out finished: the player leaves alive and everything they carry
@@ -1264,6 +1309,11 @@ func _finish_player(state: PlayerState, outcome: String, cause: String, killed_b
 		"banked": state.banked.duplicate(),
 		"banked_value": ItemDB.total_value(state.banked),
 		"kills": state.kills,
+		# Scrip: carried home (nothing if they died), banked on the way, and
+		# dropped with the body.
+		"scrip": state.scrip if left else 0,
+		"scrip_banked": state.scrip_banked,
+		"scrip_lost": state.scrip_lost,
 		"mastery_xp": state.mastery.report(),
 	}
 	var standing := renown.get_standing(state.owner)
@@ -1307,6 +1357,10 @@ class PlayerState:
 	## Whose life this is. Renown is kept under this key across lives.
 	var owner := ""
 	var renown_lost := 0
+	## Scrip carried (lost with the body), banked this life, and dropped on death.
+	var scrip := 0
+	var scrip_banked := 0
+	var scrip_lost := 0
 	var kit: Array[String] = []
 	var mastery: MasteryTracker
 	## Mastery variants the player deployed with (track -> variant id).

@@ -64,7 +64,7 @@ func _physics_process(delta: float) -> void:
 	for body in get_overlapping_bodies():
 		var actor := body as Actor
 		if actor == null or actor.is_dead or not can_bank.is_valid() or not can_bank.call(actor) \
-				or bankable(actor).is_empty():
+				or (bankable(actor).is_empty() and actor.scrip <= 0):
 			continue
 		inside[actor] = true
 		_progress[actor] = _progress.get(actor, 0.0) + delta
