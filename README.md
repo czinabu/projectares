@@ -198,6 +198,9 @@ you have.
   you can drop back in and a number key picks one: a quiet drop away from
   everyone, a strongpoint your side holds, or, once a battle is on, right
   beside the heaviest fighting. Enter still lets the world pick for you.
+- Scrip. Kills, warlords and strongpoints pay scrip that you carry. It turns
+  into credits one for one, but only when you bank it at a depot or sign out
+  alive. Die with it and it lies in your bag for whoever gets there first.
 - World events. Every few minutes, and more often as the war heats up, either
   a supply pod lands with a better haul than any cache, or a warlord marches
   in with an escort. He has three times the health, carries good loot, and

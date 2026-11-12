@@ -98,6 +98,9 @@ var protected_left := 0.0
 ## Public reputation. Written by the `Raid` that decides it (online, copied
 ## from the server); read by nameplates and the HUD. See `RenownLedger`.
 var renown := 0
+## Scrip carried: pay that is lost with the body until it is banked. Written
+## by the `Raid`, like renown.
+var scrip := 0
 var rank := 0
 var streak := 0
 var bounty := 0

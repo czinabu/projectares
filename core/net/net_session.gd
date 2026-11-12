@@ -74,7 +74,7 @@ signal world_invite_accepted(invite: Dictionary)
 signal base_visit_requested(owner_name: String, stash: Array, loadout: Dictionary)
 
 const DEFAULT_PORT := 24565
-const PROTOCOL := 14
+const PROTOCOL := 15
 const StashService := preload("res://core/account/stash_service.gd")
 const Economy := preload("res://core/economy/economy.gd")
 const Human := preload("res://core/visual/human.gd")
@@ -877,7 +877,8 @@ func _server_late_tick(_delta: float) -> void:
 		var actor := state.actor
 		if not is_instance_valid(actor):
 			continue
-		var standing := [actor.renown, actor.rank, actor.streak, actor.bounty, actor.exposed, actor.marked]
+		var standing := [actor.renown, actor.rank, actor.streak, actor.bounty, actor.exposed, actor.marked,
+				actor.scrip]
 		if id >= 0 and _sent_standing.get(id, []) != standing:
 			_sent_standing[id] = standing
 			for peer in _joined_peers:
@@ -1347,7 +1348,8 @@ func _war(intensity: float, centre: Vector3) -> void:
 		raid.war.centre = centre
 
 
-## A player's public renown: [renown, rank, streak, bounty, exposed, marked].
+## A player's public standing: [renown, rank, streak, bounty, exposed, marked,
+## scrip carried].
 @rpc("authority", "call_remote", "reliable")
 func _standing(id: int, standing: Array) -> void:
 	var actor: Actor = _actors.get(id)
@@ -1359,6 +1361,8 @@ func _standing(id: int, standing: Array) -> void:
 	actor.bounty = int(standing[3])
 	actor.exposed = bool(standing[4])
 	actor.marked = bool(standing[5])
+	if standing.size() > 6:
+		actor.scrip = int(standing[6])
 
 
 @rpc("authority", "call_remote", "reliable")

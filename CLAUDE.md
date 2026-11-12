@@ -239,6 +239,12 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   anything above Uncommon, so rare gear stays loot-only. Keep every sell
   price below its buy price, and keep run payouts small next to loot: credits
   must come from getting loot home, so full loot stays the stake.
+- Scrip is what a life pays, and it is at stake. The `Raid` pays it
+  (`_pay_scrip`, amounts in `Economy`) into `PlayerState.scrip`, copied to
+  `Actor.scrip` for views. A death moves it into the bag
+  (`LootContainer.scrip`); a depot moves it to `scrip_banked`. It reaches an
+  account only through the result (`scrip`, `scrip_banked`) and
+  `Economy.payout`, never directly, and nothing is paid for kills alone.
 - Furniture (`furniture`, small pieces also `decor`) and clothing
   (`cosmetic`, with an `outfits` stat of customizer outfit ids) are ordinary
   stash items that fit no loadout slot, so they never go on a raid.

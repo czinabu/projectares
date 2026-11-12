@@ -33,10 +33,13 @@ const VENDOR_TAG := "vendor"
 const TRADE_TAGS := ["material", "augment", "relic"]
 ## Everything else (gear, furniture) sells back for this share of its value.
 const SELL_BACK_RATE := 0.4
-## Credits per kill when you make it home (you extracted, or left the world alive).
+## Scrip is pay you carry in a world. It turns into credits one for one, but
+## only once it is banked at a depot or carried out alive; a death drops what
+## is carried into the bag. These are what earns it.
 const KILL_BOUNTY := 20
-## The share of the kill bounty still paid if you died.
-const DEATH_BOUNTY_SHARE := 0.25
+const PLAYER_KILL_SCRIP := 60
+const WARLORD_SCRIP := 150
+const STRONGPOINT_SCRIP := 50
 ## The most of one item sold in a single request.
 const MAX_SELL_COUNT := 99
 
@@ -161,9 +164,10 @@ static func unlocked_outfits(stash: Array) -> Array[String]:
 ## is a raid's `player_finished` dictionary and must come from the authority
 ## (the server online), never from a client.
 static func payout(result: Dictionary) -> int:
-	var kills := clampi(int(result.get("kills", 0)), 0, 10_000)
-	var share := DEATH_BOUNTY_SHARE if result.get("outcome", "") == "died" else 1.0
-	return int(floor(kills * KILL_BOUNTY * share))
+	var home := maxi(int(result.get("scrip_banked", 0)), 0)
+	if result.get("outcome", "") != "died":
+		home += maxi(int(result.get("scrip", 0)), 0)
+	return mini(home, MAX_CREDITS)
 
 
 ## True if `credits` can take `delta` (a cost when negative) without going
