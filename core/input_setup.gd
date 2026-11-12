@@ -16,6 +16,7 @@ const KEY_ACTIONS := {
 	"heal": KEY_H,
 	"heavy": KEY_F,
 	"ability": KEY_G,
+	"visor": KEY_X,
 	"toggle_view": KEY_V,
 	"melee_control": KEY_B,
 	"weapon_1": KEY_1,

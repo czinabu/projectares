@@ -69,6 +69,8 @@ var health := HealthComponent.new()
 var inventory := Inventory.new()
 var flight := FlightRig.new()
 var ability := Ability.new()
+## The helmet. Always there; `Visor.enabled` says whether one is worn.
+var visor := Visor.new()
 var weapons: Array[Weapon] = []
 var active_weapon_index := 0
 ## Item ids of equipped gear (weapons, rig, armor). Dropped on death.
@@ -132,6 +134,9 @@ func _init() -> void:
 	ability.name = "Ability"
 	ability.actor = self
 	add_child(ability)
+	visor.name = "Visor"
+	visor.actor = self
+	add_child(visor)
 	hand.name = "Hand"
 	hand.position = HAND_REST
 	add_child(hand)
@@ -193,6 +198,7 @@ func _physics_process(delta: float) -> void:
 	ability.tick(delta)
 	if cmd.ability_pressed and stagger_left <= 0.0 and not weapons_locked:
 		ability.activate()
+	visor.tick(cmd, delta)
 	if not weapons_locked:
 		_simulate_heal(delta)
 	# On a client of an online raid, using things is the server's decision.
@@ -253,6 +259,9 @@ func _simulate_movement(delta: float) -> void:
 		wish = wish.normalized()
 
 	var speed := sprint_speed if (cmd.sprint and cmd.move.y > 0.0) else walk_speed
+	# Looking through binoculars: no running, and a slow walk.
+	if visor.is_zoomed():
+		speed = walk_speed * visor.move_mult()
 	var staggered := stagger_left > 0.0
 	if staggered:
 		speed *= stagger_speed_mult
@@ -344,7 +353,8 @@ func _simulate_weapons(delta: float) -> void:
 		active_weapon_index = cmd.switch_weapon
 		_refresh_weapon_visuals()
 	var weapon := get_active_weapon()
-	if weapon and heal_time_left <= 0.0 and stagger_left <= 0.0 and not weapons_locked:
+	if weapon and heal_time_left <= 0.0 and stagger_left <= 0.0 and not weapons_locked \
+			and not visor.is_zoomed():
 		weapon.handle_input(cmd, delta)
 
 

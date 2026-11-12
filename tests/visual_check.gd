@@ -33,6 +33,12 @@ func _ready() -> void:
 		get_tree().quit()
 		return
 
+	# `-- <output_dir> --visors-only` shoots each helmet's visor in first person.
+	if "--visors-only" in args:
+		await _visor_shots(out_dir)
+		get_tree().quit()
+		return
+
 	# `-- <output_dir> --arena-only` shoots just the arena.
 	if "--arena-only" in args:
 		await _arena_shots(out_dir)
@@ -466,6 +472,55 @@ func _plaza_shots(out_dir: String, raid: Raid, camera: Camera3D, lineup: Array[A
 func _settle(count: int) -> void:
 	for i in count:
 		await get_tree().process_frame
+
+
+## Each helmet's visor through its wearer's eyes: the Scav Visor, the
+## Spotter resting and zoomed, the Seeker ready and just after a scan.
+func _visor_shots(out_dir: String) -> void:
+	var scrap: Array[String] = ["rifle_scrap", "blade_scrap", "jetpack_mk1", "plate_light"]
+	for helmet: String in ["visor_scav", "helm_spotter", "helm_seeker"]:
+		var raid := Raid.new()
+		add_child(raid)
+		var kit := scrap.duplicate()
+		kit.append(helmet)
+		raid.start(Worlds.get_world("ashfront"), 42, kit)
+		for bot in raid.bots:
+			bot.get_node("Brain").set_physics_process(false)
+		var p := raid.player
+		var controller := PlayerController.new()
+		controller.setup(p)
+		raid.add_child(controller)
+		var hud := Hud.new()
+		hud.setup(raid, controller)
+		raid.add_child(hud)
+		await _settle(30)
+		var look := Basis.from_euler(Vector3(0.0, controller.yaw, 0.0))
+		var places := [Vector3(3, 0.3, -14), Vector3(-5, 0.3, -24), Vector3(9, 0.3, -30)]
+		for i in places.size():
+			raid.bots[i].global_position = p.global_position + look * places[i]
+			raid.bots[i].cmd.yaw = controller.yaw + PI
+		p.health.health = 28.0 if helmet == "visor_scav" else p.health.max_health
+		await _settle(20)
+		await _shot(out_dir.path_join("visor_%s.png" % helmet))
+		if helmet == "helm_spotter":
+			var to_bot: Vector3 = raid.bots[1].global_position + Vector3(0, 1.1, 0) - p.get_eye_position()
+			controller.yaw = atan2(-to_bot.x, -to_bot.z)
+			controller.pitch = asin(to_bot.normalized().y)
+			controller._visor_level = 1
+			await _settle(40)
+			await _shot(out_dir.path_join("visor_helm_spotter_zoom.png"))
+			p.visor.add_tag(raid.bots[1], 5.0)
+			await _settle(6)
+			await _shot(out_dir.path_join("visor_helm_spotter_tag.png"))
+		elif helmet == "helm_seeker":
+			p.visor.scan()
+			await _settle(12)
+			await _shot(out_dir.path_join("visor_helm_seeker_scan.png"))
+			p.visor.felt_scan.emit(p.global_position + look * Vector3(20, 0, 5))
+			await _settle(30)
+			await _shot(out_dir.path_join("visor_helm_seeker_after.png"))
+		raid.queue_free()
+		await _settle(3)
 
 
 func _shot(path: String) -> void:

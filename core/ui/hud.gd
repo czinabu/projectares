@@ -4,6 +4,8 @@ extends CanvasLayer
 ## markers, the melee side marks, the red flash when you are hurt, and the
 ## prompt for what you are looking at. Everything else is on your gear in
 ## the world:
+##   - the helmet's visor (`visor`, a `VisorHud`): what the glass you look
+##     through shows, in first person only, and only what that helmet shows;
 ##   - the wrist display (`wrist`, a small screen on your left forearm, raised
 ##     into view in first person, projected over the arm in third person):
 ##     health, armor, stamina, jetpack heat, what you carry, your standing,
@@ -29,6 +31,9 @@ var controller: PlayerController
 var notice_sink: Callable
 ## The wrist display.
 var wrist: Wrist
+## What the helmet draws on its glass in first person, and what its visor
+## shows out in the world (scan snapshots, tags).
+var visor: VisorHud
 
 var _hit_marker: HitMarker
 var _hurt_flash: ColorRect
@@ -58,6 +63,11 @@ func _ready() -> void:
 	_hurt_flash.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_hurt_flash.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(_hurt_flash)
+
+	visor = VisorHud.new()
+	visor.name = "Visor"
+	visor.setup(raid, controller)
+	root.add_child(visor)
 
 	_hit_marker = HitMarker.new()
 	_hit_marker.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -156,6 +166,8 @@ static func wrist_text(p_raid: Raid, p: Actor, death: Dictionary, wait: float, l
 	lines.append(weapon.status_text() if weapon else "Unarmed")
 	if p.ability.enabled:
 		lines.append("[G] %s" % p.ability.status_text())
+	if p.visor.enabled and p.visor.mode != "":
+		lines.append("[X] %s" % p.visor.status_text())
 	if p.vehicle != null:
 		lines.append("%s   %d km/h" % [p.vehicle.get("display_name"), roundi(absf(float(p.vehicle.get("speed"))) * 3.6)])
 	lines.append("Pack %d/%d   worth %d   heals %d" % [p.inventory.items.size(), p.inventory.capacity,
