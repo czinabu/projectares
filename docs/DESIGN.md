@@ -90,6 +90,23 @@ gather to watch, and a space set aside for the RC arena.
   bench, wardrobe, records, trader, uplink, arena gate.
 - Loadouts can be changed freely here.
 
+**Upgrades** turn the base from a display room into a headquarters, in this
+order:
+
+1. **Firing range and flight tunnel** (first). A private test room attached
+   to the base, with moving aerial target drones, where you try gear before
+   risking it in PvP: every rig, your guns, and the heavy weapons on your
+   armory wall with endless ammo. Nothing is spent or lost in it, and it
+   gives no mastery XP (mastery pays for real use).
+2. **Squad teleporter pad.** Your squadmates (up to three) visit your base
+   together, look over your armory wall and garage, and launch together from
+   your launch pad into the PvE world, the PvP world or the arena. Needs
+   online base visits where everyone is in the same base at once.
+3. **Trophies and blueprint pedestals** (later). Beating PvE bosses and
+   winning arena brackets earns miniature statues and holographic boss
+   trophies to place around the base. They come with those bosses and
+   brackets.
+
 ### PvE world
 
 - Open-world exploration with quests, dungeons and boss fights, where players
@@ -455,9 +472,30 @@ shortcuts are invented for our tracks.
 
 ## 10. Economy and progression
 
-Unchanged from the current game (see README "Credits and shops"):
+Two currencies tie the modes together.
 
-- Loot is the money; credits come from getting loot home.
+**Scrip, earned everywhere.** The everyday money, used in the hub for
+cosmetic skins, thruster trail colours, watch faces and basic gear. We keep
+the name scrip rather than switching to credits. Today the game has both:
+scrip you carry (at stake until banked) and a safe credits balance it turns
+into. They become one currency called scrip: what you carry in the field is
+at stake, and what you have banked is safe.
+
+**Blueprints and tech cores, earned through risk.** Found in PvE dungeons,
+won in the arena, and taken out of the PvP world through bank spots or a
+sign-out (the supply meteor carries vehicle blueprints).
+
+- They unlock new vehicles (such as the mech and the jet) and craft
+  high-tier gadgets.
+- Unlocks, not raw power: a blueprint opens up a new option, never a
+  stronger version of one you have, so new players are never hopelessly
+  behind.
+- In the PvP world they drop on death until banked, like the rest of what
+  you carry, so the risk is real.
+
+The rest stays as it is (see README "Credits and shops"):
+
+- Loot is the money; scrip comes mainly from getting loot home.
 - Shops sell only base-level gear; rare gear is found.
 - Mastery for every gear type, sidegrade variants, never lost on death.
 - Renown, ranks, bounties and the Marked in the PvP world.
@@ -474,14 +512,17 @@ Unchanged from the current game (see README "Credits and shops"):
    proposal), the heavy weapon chamber and banking, the sign-out rework, and
    bike tuning against the new cruise speed.
 2. **Friends playtest** on a hosted server (`docs/hosting.md`).
-3. **After the playtest:** expanding the hub, then its spectating screens
+3. **After the playtest:** the base's firing range and flight tunnel,
+   expanding the hub, then its spectating screens
    and bounty board and ring courses, the supply meteor event, the melee air-lunge, the gadget list and the first
    new gadgets, vehicle utility on the bike (passenger, cargo), loadout
    swapping in the PvE world, then the rest of the vehicle roster (rover,
    mech, jet), and the racing mode (section 9).
    Artifacts arrive with arena tournaments and PvE dungeons, and the Sky
    Leviathan with the jet and the PvE world. The hub's toy RC arena comes
-   last.
+   last. The squad teleporter pad follows online base visits together;
+   trophies follow PvE bosses and arena brackets; blueprints and tech cores
+   arrive with the meteor, the PvE world and the arena.
 4. **The PvE world:** quests, dungeons and bosses.
 5. **More worlds** as plug-ins.
 

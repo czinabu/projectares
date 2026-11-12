@@ -20,6 +20,9 @@ rows marked **pre-playtest** come before the friends playtest.
 | Hub toy RC arena | Missing | Later; a separate little game. |
 | Home base with armory wall, garage, trophies | Built | `core/base`: gun rack, blade wall, garage, trophy shelf, consoles. |
 | Heavy weapons stacked on the armory wall | Missing | Power weapons cannot be stored (`StashRules.storable` refuses the `power` tag). **Pre-playtest**, with the heavy chamber. |
+| Base firing range and flight tunnel (target drones, endless heavy-weapon ammo, nothing lost) | Missing | First base upgrade, after the playtest. |
+| Squad teleporter pad: squadmates in your base together, launching together | Partly | A phone invite already lets a friend visit your base, but alone and read-only (`base_visit_requested`). Needs shared online base visits first. |
+| Trophies and blueprint pedestals from PvE bosses and arena brackets | Partly | A trophy shelf and a Trophy Case furniture item exist; earned trophies need PvE bosses and arena brackets. Later. |
 | PvE world: quests, dungeons, bosses | Missing, deferred | Until after the friends playtest. Frostline stands in (no PvP, gentle death, basic loot). |
 | PvP world | Built | Ashfront: armies, strongpoints, war intensity, events, renown, full loot. |
 | Heavy weapons only in the PvP world | Built | `power_weapon_rate` is 0 in Frostline and the arena. |
@@ -108,3 +111,11 @@ rows marked **pre-playtest** come before the friends playtest.
 | Item | State | Notes |
 | --- | --- | --- |
 | Racing mode: mixed bike-and-flight races, sky ring races, our own hazards and secrets | Missing | A later mode, after the friends playtest (DESIGN.md section 9). |
+
+## Economy
+
+| Item | State | Notes |
+| --- | --- | --- |
+| One everyday currency named scrip | Partly | Today scrip (carried, at stake) turns into a separate credits balance. Merge the names so the banked balance is scrip too. |
+| Hub cosmetics for scrip: skins, thruster trail colours, watch faces | Partly | The Tailor sells clothing; trail colours and watch faces are missing. |
+| Blueprints and tech cores, earned through risk, dropped on PvP death until banked | Missing | Unlock vehicles (mech, jet) and craft high-tier gadgets; unlocks, never raw power. Arrive with the meteor, PvE dungeons and arena rewards. |
