@@ -25,6 +25,11 @@ const HAND_REST := Vector3(0.38, 1.25, -0.35)
 
 var faction := "raider"
 var display_name := "Raider"
+## The clan this actor fights for (its id), or "". Clanmates cannot hurt each
+## other (`Combat.deal`). Set by the authority; never trusted from a client.
+var clan := ""
+## The clan's short tag, for views to show beside the name.
+var clan_tag := ""
 var is_player := false
 var body_color := Color(0.25, 0.6, 1.0)
 
@@ -65,6 +70,11 @@ var slide_stamina := 10.0
 ## How far the eyes drop while sliding, and how fast they get there (per second).
 var slide_eye_drop := 0.75
 var crouch_rate := 8.0
+
+## How often the actor is simulated: every tick (1), or every nth tick with
+## the time made up in one longer step. The authority thins out bots that no
+## player is near (`Raid._tick_detail`); a player's own actor is never thinned.
+var tick_every := 1
 
 var cmd := ActorCommand.new()
 var health := HealthComponent.new()
@@ -121,6 +131,7 @@ var hand_override := false
 ## The weapon last put away with the holster key, drawn again by it.
 var last_drawn := 0
 
+var _ticks_waited := 0
 var _dash_left := 0.0
 var _dash_cd := 0.0
 var _dash_dir := Vector3.ZERO
@@ -194,9 +205,36 @@ func _build_body() -> void:
 	body_mesh.add_child(visor)
 
 
+## Thins the actor out to one step every `every` ticks. `phase` spreads
+## thinned actors over different ticks.
+func thin(every: int, phase := 0) -> void:
+	every = maxi(every, 1)
+	if every == tick_every:
+		return
+	tick_every = every
+	_ticks_waited = phase % every
+
+
+## Whether the actor is simulated this tick. Whatever drives it (a bot's
+## brain) asks before the actor's own step, and skips the same ticks.
+func ticks_now() -> bool:
+	return _ticks_waited + 1 >= tick_every
+
+
+## Whether the actor took a step in the tick just gone.
+func stepped() -> bool:
+	return _ticks_waited == 0
+
+
 func _physics_process(delta: float) -> void:
 	if is_dead:
 		return
+	if tick_every > 1:
+		if not ticks_now():
+			_ticks_waited += 1
+			return
+		_ticks_waited = 0
+		delta *= tick_every
 	rotation.y = cmd.yaw
 	if not hand_override:
 		hand.position = HAND_REST
@@ -345,7 +383,13 @@ func _simulate_movement(delta: float) -> void:
 	velocity.y = maxf(velocity.y, -max_fall_speed)
 
 	var fall_speed := -velocity.y
-	move_and_slide()
+	if tick_every > 1:
+		# One longer step: the engine moves a body by one tick of velocity.
+		velocity *= tick_every
+		move_and_slide()
+		velocity /= tick_every
+	else:
+		move_and_slide()
 
 	var now_on_floor := is_on_floor()
 	airborne_time = 0.0 if now_on_floor else airborne_time + delta

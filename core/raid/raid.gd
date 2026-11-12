@@ -32,6 +32,13 @@ signal actor_removed(actor: Actor)
 signal container_spawned(container: LootContainer)
 signal vehicle_spawned(vehicle: Node3D)
 signal vehicle_removed(vehicle: Node3D)
+## A player threw a toy vehicle off their watch. It flies from `from`.
+signal toy_thrown(actor: Actor, item_id: String, from: Vector3, toy_velocity: Vector3)
+## A thrown toy came to rest. `unpacked` is false if there was no room and it
+## went back on the watch.
+signal toy_landed(actor: Actor, item_id: String, at: Vector3, unpacked: bool)
+## What a player's watch holds, or when they can throw again, changed.
+signal watch_changed(actor: Actor)
 
 ## Bots never start closer to the player than this, so a raid does not open with a fight.
 const MIN_BOT_SPAWN_DISTANCE := 40.0
@@ -41,6 +48,7 @@ const PARKED_DISTANCE := 6.0
 const SPAWN_SNAP := 2.5
 ## Seconds between rounds of orders to the bot factions.
 const ORDERS_EVERY := 8.0
+const DETAIL_EVERY := 0.25
 const VehicleScript := preload("res://core/vehicle/vehicle.gd")
 const MasteryTracker := preload("res://core/progression/mastery_tracker.gd")
 const RenownLedger := preload("res://core/progression/renown_ledger.gd")
@@ -65,6 +73,24 @@ var players: Array[PlayerState] = []
 var bots: Array[Actor] = []
 var depots: Array[Depot] = []
 var vehicles: Array[Node3D] = []
+# Toy vehicles. A vehicle a player owns rides on their watch as a toy
+# (`PlayerState.stowed`); thrown, it flies in an arc and unpacks where it lands.
+## How hard a toy is thrown, in m/s, and how much the throw is tipped upwards.
+var toy_speed := 12.0
+var toy_lift := 0.3
+var toy_gravity := 20.0
+## A toy that has not come to rest after this long goes back on the watch.
+var toy_max_flight := 5.0
+## How much speed a toy keeps when it bounces off a wall.
+var toy_bounce := 0.35
+## Seconds between one throw and the next.
+var toy_cooldown := 8.0
+## How many vehicles a watch holds.
+var watch_capacity := 2
+## The clear box a vehicle needs to unpack: width, height, length.
+var unpack_room := Vector3(1.3, 1.2, 2.6)
+## Toys in the air: { state, id, at, velocity, age, heading, node }.
+var toys: Array[Dictionary] = []
 ## Seconds this world has been running.
 var clock := 0.0
 ## The local player's kills across every life of this stay.
@@ -89,6 +115,8 @@ var hot_drop_from := 0.2
 ## The world event going on, or {}: { kind ("supply_pod" or "warlord"),
 ## title, at, ends (on `clock`) }. One at a time.
 var event := {}
+## Players who stand together: owner key -> [side key, side name]. See `set_team`.
+var teams := {}
 ## The warlords alive in the world, so clients can build the same bot.
 var warlords := {}
 var _event_in := 0.0
@@ -99,6 +127,12 @@ var _event_pod: LootContainer
 var apply_to_profile := true
 ## Server: every player starts at the same spawn point, as one squad.
 var squad_spawn := false
+## Bots within this many metres of a player are simulated every tick, bots
+## within `half_detail_range` every second tick, and the rest every
+## `far_detail_step` ticks.
+var full_detail_range := 70.0
+var half_detail_range := 160.0
+var far_detail_step := 4
 var _squad_marker := -1
 var _player_count := 0
 var _bot_count := 0
@@ -108,6 +142,7 @@ var _caches: Array[Dictionary] = []
 var _bot_respawns: Array[float] = []
 var _reinforce_in := 0.0
 var _orders_in := 0.0
+var _detail_in := 0.0
 ## Bot -> the strongpoint its faction last sent it to.
 var _orders := {}
 ## Bot -> `clock` until which something else (an assault) has the say over it.
@@ -223,6 +258,7 @@ func _physics_process(delta: float) -> void:
 		return
 	clock += delta
 	_tick_sign_outs(delta)
+	_tick_toys(delta)
 	if mode != Mode.CLIENT:
 		_tick_war(delta)
 	map.set_meta("war_intensity", war.intensity)
@@ -236,6 +272,7 @@ func _physics_process(delta: float) -> void:
 	_tick_events(delta)
 	_tick_caches(delta)
 	_tick_bots(delta)
+	_tick_detail(delta)
 	_tick_vehicles(delta)
 
 
@@ -279,12 +316,31 @@ func side_of(actor: Actor) -> Array:
 	var state := state_for(actor)
 	if state == null:
 		return ["faction:" + actor.faction, "the %ss" % actor.display_name, false]
-	return [_player_side(state.owner), "the raiders" if world.players_allied else actor.display_name, true]
+	if world.players_allied:
+		return ["players", "the raiders", true]
+	if teams.has(state.owner):
+		return [teams[state.owner][0], teams[state.owner][1], true]
+	return [state.owner, actor.display_name, true]
 
 
 ## The side key of the player with this owner key.
 func _player_side(key: String) -> String:
-	return "players" if world.players_allied else key
+	if world.players_allied:
+		return "players"
+	return teams[key][0] if teams.has(key) else key
+
+
+## Puts the player with this owner key on a team (a clan): everyone given the
+## same `team` is one side for strongpoints and drops, named `title`. An
+## empty `team` puts them back on their own. Whoever owns the accounts calls
+## this before `add_player`; the `Raid` never asks who is in which clan.
+func set_team(owner: String, team: String, title := "") -> void:
+	if owner == "":
+		return
+	if team == "":
+		teams.erase(owner)
+	else:
+		teams[owner] = ["team:" + team, title if title != "" else team]
 
 
 ## Whether `actor`'s side holds `point`. On a client this is the server's word
@@ -562,6 +618,31 @@ func bot_target() -> int:
 	return world.bot_count + roundi(maxi(world.war_reinforcements, 0) * war.intensity)
 
 
+## Bots that no player is near are simulated less often, in longer steps
+## (`Actor.thin`), so a big war costs the server little where nobody watches.
+## The fight a player is in always runs every tick.
+func _tick_detail(delta: float) -> void:
+	_detail_in -= delta
+	if _detail_in > 0.0:
+		return
+	_detail_in = DETAIL_EVERY
+	var watchers: Array[Vector3] = []
+	for state in players:
+		if is_instance_valid(state.actor) and not state.actor.is_dead:
+			watchers.append(state.actor.global_position)
+	for i in bots.size():
+		var bot := bots[i]
+		var nearest := INF
+		for at in watchers:
+			nearest = minf(nearest, at.distance_squared_to(bot.global_position))
+		if nearest <= full_detail_range * full_detail_range:
+			bot.thin(1)
+		elif nearest <= half_detail_range * half_detail_range:
+			bot.thin(2, i)
+		else:
+			bot.thin(far_detail_step, i)
+
+
 ## The bots alive that belong to the world itself, not to an event.
 func _standing_bots() -> int:
 	var count := 0
@@ -782,14 +863,12 @@ func add_player(p_kit: Array = [], p_mastery: Dictionary = {}, p_name := "Raider
 	world.on_spawn(actor)
 	_publish_standing()
 	actor_spawned.emit(actor)
-	# Their own vehicle, if they brought one, is parked beside them.
+	# Their own vehicle, if they brought one, rides on their watch as a toy.
 	for id in state.kit:
 		if ItemDB.has_tag(id, "vehicle"):
 			state.deployed_vehicles.append(id)
-			var side := Basis(Vector3.UP, actor.cmd.yaw) * Vector3(2.5, 0.3, -1.0)
-			# On a slope the ground beside them is not at their feet.
-			var beside := _stand(actor.global_position + side) + Vector3(0, 0.15, 0)
-			state.parked.append(spawn_vehicle(id, beside, actor.cmd.yaw))
+			state.stowed.append(id)
+	watch_changed.emit(actor)
 	return actor
 
 
@@ -1025,16 +1104,170 @@ func _park_vehicle(marker: Node3D, source: String) -> Node3D:
 	return null
 
 
-func spawn_vehicle(id: String, at: Vector3, heading: float) -> Node3D:
+## `unpacking` is for a thrown toy: the vehicle grows from toy size.
+func spawn_vehicle(id: String, at: Vector3, heading: float, unpacking := false) -> Node3D:
 	var vehicle := VehicleScript.new()
 	vehicle.name = "Vehicle%d" % vehicles.size()
 	vehicle.setup(id)
 	vehicle.rotation.y = heading
 	add_child(vehicle)
 	vehicle.global_position = at
+	if unpacking:
+		vehicle.unpack()
 	vehicles.append(vehicle)
 	vehicle_spawned.emit(vehicle)
 	return vehicle
+
+
+## The toy vehicles on a player's watch, as item ids.
+func stowed_for(actor: Actor) -> Array[String]:
+	var state := state_for(actor)
+	return state.stowed if state != null else ([] as Array[String])
+
+
+## Seconds until a player can throw a toy again, or 0.
+func toy_wait(actor: Actor) -> float:
+	var state := state_for(actor)
+	return maxf(0.0, state.toy_ready_at - clock) if state != null else 0.0
+
+
+## Throws the toy `item_id` off a player's watch, from their hand along their
+## aim. It unpacks into the vehicle where it lands (see `_tick_toys`).
+## Returns "" if it left the hand, or why it did not (also sent as a notice).
+func throw_toy(actor: Actor, item_id: String) -> String:
+	var state := state_for(actor)
+	if mode == Mode.CLIENT or state == null or state.finished or actor.is_dead:
+		return "not now"
+	var why := ""
+	if item_id not in state.stowed:
+		why = "That is not on your watch"
+	elif not world.vehicle_toys:
+		why = "Vehicles stay on the watch here"
+	elif actor.vehicle != null:
+		why = "Get off first"
+	elif state.sign_out_left >= 0.0:
+		why = "Not while signing out"
+	elif toy_wait(actor) > 0.0:
+		why = "Watch recharging: %d s" % ceili(toy_wait(actor))
+	if why != "":
+		actor.notice.emit(why)
+		return why
+	state.stowed.erase(item_id)
+	state.toy_ready_at = clock + toy_cooldown
+	var aim := actor.get_aim_dir()
+	var from := actor.get_eye_position() + aim * 0.6 - Vector3(0.0, 0.25, 0.0)
+	var toy_velocity := (aim + Vector3.UP * toy_lift).normalized() * toy_speed \
+			+ Vector3(actor.velocity.x, 0.0, actor.velocity.z)
+	fly_toy(item_id, from, toy_velocity, actor.cmd.yaw, state)
+	toy_thrown.emit(actor, item_id, from, toy_velocity)
+	watch_changed.emit(actor)
+	return ""
+
+
+## Puts a toy in the air. With no `state` it is only for show (a client
+## drawing a throw the server told it about) and lands without unpacking.
+func fly_toy(item_id: String, from: Vector3, toy_velocity: Vector3, heading := 0.0,
+		state: PlayerState = null) -> void:
+	var node := VehicleScript.toy_model(item_id)
+	add_child(node)
+	node.global_position = from
+	toys.append({"state": state, "id": item_id, "at": from, "velocity": toy_velocity, "age": 0.0,
+			"heading": heading, "node": node})
+
+
+## Flies every thrown toy along its arc. It bounces off walls, and where it
+## comes down on ground a vehicle could stand on, it unpacks.
+func _tick_toys(delta: float) -> void:
+	if toys.is_empty():
+		return
+	var space := get_world_3d().direct_space_state
+	for toy in toys.duplicate():
+		toy.age += delta
+		var toy_velocity: Vector3 = toy.velocity
+		toy_velocity.y -= toy_gravity * delta
+		var at: Vector3 = toy.at
+		var next := at + toy_velocity * delta
+		var hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(at, next, Actor.LAYER_WORLD))
+		var landed := false
+		if not hit.is_empty():
+			var normal: Vector3 = hit.normal
+			next = hit.position + normal * 0.05
+			if normal.y > 0.7:
+				landed = true
+			else:
+				toy_velocity = toy_velocity.bounce(normal) * toy_bounce
+		toy.at = next
+		toy.velocity = toy_velocity
+		var node: Node3D = toy.node
+		node.global_position = next
+		node.rotation += Vector3(7.0, 3.0, 0.0) * delta
+		if landed or toy.age >= toy_max_flight or next.y < -30.0:
+			toys.erase(toy)
+			node.queue_free()
+			if toy.state != null:
+				_land_toy(toy, landed)
+
+
+func _land_toy(toy: Dictionary, on_ground: bool) -> void:
+	var state: PlayerState = toy.state
+	# The thrower may be gone by now. The toy lands all the same.
+	var actor: Actor = state.actor if is_instance_valid(state.actor) else null
+	var id: String = toy.id
+	var at: Vector3 = toy.at
+	if on_ground and has_room_to_unpack(at, toy.heading):
+		var vehicle := spawn_vehicle(id, at + Vector3(0.0, 0.25, 0.0), toy.heading, true)
+		state.parked.append(vehicle)
+		toy_landed.emit(actor, id, at, true)
+		return
+	# No room: the toy snaps back to the wrist, and can be thrown again at once.
+	if not state.finished and actor != null and not actor.is_dead:
+		state.stowed.append(id)
+		state.toy_ready_at = clock
+		actor.notice.emit("No room there. %s is back on your watch" % ItemDB.item_name(id))
+		watch_changed.emit(actor)
+	toy_landed.emit(actor, id, at, false)
+
+
+## True if a vehicle facing `heading` fits on the ground at `at` without
+## touching the map, a person or another vehicle.
+func has_room_to_unpack(at: Vector3, heading: float) -> bool:
+	var box := BoxShape3D.new()
+	box.size = unpack_room
+	var query := PhysicsShapeQueryParameters3D.new()
+	query.shape = box
+	# Lifted clear of the ground it stands on, so a slope does not count.
+	query.transform = Transform3D(Basis(Vector3.UP, heading), at + Vector3(0.0, unpack_room.y * 0.5 + 0.45, 0.0))
+	query.collision_mask = Actor.LAYER_WORLD | Actor.LAYER_ACTORS | VehicleScript.LAYER_VEHICLES
+	return get_world_3d().direct_space_state.intersect_shape(query, 1).is_empty()
+
+
+## Packs the vehicle a player is looking at (within reach, nobody on it) back
+## into a toy on their watch. Any vehicle will do: one found in the field
+## goes home with them like anything else they carry.
+## Returns "" if it was packed, or why not (also sent as a notice).
+func pack_vehicle(actor: Actor) -> String:
+	var state := state_for(actor)
+	if mode == Mode.CLIENT or state == null or state.finished or actor.is_dead:
+		return "not now"
+	var seat := actor.find_interactable() if actor.vehicle == null else null
+	var vehicle: Node3D = seat.get("vehicle") if seat != null and seat.get("vehicle") is Node3D else null
+	var why := ""
+	if vehicle == null or vehicle not in vehicles:
+		why = "Look at a vehicle to pack it"
+	elif vehicle.get("rider") != null or float(vehicle.get("unpack_left")) > 0.0:
+		why = "Someone is riding it"
+	elif state.stowed.size() >= watch_capacity:
+		why = "Your watch is full"
+	if why != "":
+		actor.notice.emit(why)
+		return why
+	var id: String = vehicle.get("item_id")
+	state.parked.erase(vehicle)
+	remove_vehicle(vehicle)
+	state.stowed.append(id)
+	actor.notice.emit("Packed %s onto your watch" % ItemDB.item_name(id))
+	watch_changed.emit(actor)
+	return ""
 
 
 ## Takes a vehicle out of the world, putting its rider on their feet.
@@ -1298,6 +1531,9 @@ func _finish_player(state: PlayerState, outcome: String, cause: String, killed_b
 		if state.rode_home != "":
 			kept.append(state.rode_home)
 			brought_home.append(state.rode_home)
+		# The toys on their watch are carried, so they go home too.
+		kept.append_array(state.stowed)
+		brought_home.append_array(state.stowed)
 	elif world.keep_gear_on_death:
 		lost.assign(actor.inventory.items)
 		kept.assign(actor.gear_items.filter(func(id: String) -> bool:
@@ -1305,9 +1541,18 @@ func _finish_player(state: PlayerState, outcome: String, cause: String, killed_b
 		brought_home.assign(kept)
 	else:
 		lost.assign(actor.get_drop_items())
-	# A vehicle you brought is lost unless you rode it (or another) back out.
+	# A vehicle you brought is lost unless you left with it on your watch or
+	# rode it (or another) back out. Dying loses the watch's toys as well.
 	var left_behind := state.deployed_vehicles.duplicate()
 	left_behind.erase(state.rode_home)
+	var found := state.stowed.duplicate()
+	for id in state.deployed_vehicles:
+		found.erase(id)
+	if left:
+		for id in state.stowed:
+			left_behind.erase(id)
+	else:
+		lost.append_array(found)
 	lost.append_array(left_behind)
 	var result := {
 		"outcome": outcome,
@@ -1381,7 +1626,12 @@ class PlayerState:
 	var kills := 0
 	## Vehicle items the player deployed with. Lost unless they leave riding one.
 	var deployed_vehicles: Array[String] = []
-	## The vehicles parked beside them when they arrived.
+	## The toy vehicles on their watch: ones they brought and have not thrown,
+	## and ones they packed up in the field.
+	var stowed: Array[String] = []
+	## `Raid.clock` when they can throw a toy again.
+	var toy_ready_at := -INF
+	## The vehicles they unpacked from toys.
 	var parked: Array[Node3D] = []
 	## The vehicle they were riding when they left.
 	var rode_home := ""

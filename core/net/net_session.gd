@@ -59,6 +59,8 @@ signal failed(reason: String)
 ## Client: the connection dropped after joining.
 signal disconnected
 ## Client: the server said which port each of its worlds runs on.
+## Client: your clan, or the list of clans, changed (`clan_state`).
+signal clan_changed(state: Dictionary)
 signal routes_changed(routes: Dictionary)
 ## Client: the server's news of its other worlds changed (`world_status`).
 signal world_status_changed(status: Dictionary)
@@ -76,7 +78,7 @@ signal world_invite_accepted(invite: Dictionary)
 signal base_visit_requested(owner_name: String, stash: Array, loadout: Dictionary)
 
 const DEFAULT_PORT := 24565
-const PROTOCOL := 16
+const PROTOCOL := 17
 const StashService := preload("res://core/account/stash_service.gd")
 const Economy := preload("res://core/economy/economy.gd")
 const Human := preload("res://core/visual/human.gd")
@@ -88,6 +90,19 @@ const BOARD_RESEND_TICKS := 60
 const TICKS_PER_SNAPSHOT := 2
 ## Actors per state packet, to keep each one under the network's packet size.
 const ACTORS_PER_PACKET := 5
+## Interest: a player hears about what is near them in every state update,
+## and about the rest of a big field less often. Actors within NEAR_RANGE
+## metres are sent every update, within MID_RANGE every DETAIL_EVERY[1]
+## updates, and further off every DETAIL_EVERY[2]. Between updates a client
+## keeps simulating an actor from the last command it heard.
+const NEAR_RANGE := 90.0
+const MID_RANGE := 220.0
+const DETAIL_EVERY: Array[int] = [1, 4, 12]
+## A client simulates actors far from its own player in longer steps
+## (`Actor.thin`): every tick within this range, every second tick within
+## THIN_FAR_RANGE, every fourth beyond.
+const THIN_NEAR_RANGE := 70.0
+const THIN_FAR_RANGE := 160.0
 ## Position errors beyond this are fixed at once instead of blended.
 const SNAP_DISTANCE := 5.0
 ## Each input packet repeats this many recent ticks, so a lost packet does not
@@ -106,7 +121,8 @@ const CORRECTION_RATE := 0.2
 ## Notices the server passes on to a player. Others are produced locally.
 const FORWARDED_NOTICES := ["Parry!", "Wrong side", "Guard broken", "Staggered", "Killed ", "Looted ",
 		"Backpack full", "Someone is riding it", "Banked ", "Signing out", "Sign-out cancelled",
-		"You cannot sign out", "Scanned", "Sensed"]
+		"You cannot sign out", "No room there", "Watch recharging", "Your watch is full",
+		"Look at a vehicle", "Packed ", "Get off first", "Not while signing out", "Vehicles stay on the watch", "Scanned", "Sensed"]
 
 var is_server := false
 var raid: Raid
@@ -136,6 +152,12 @@ var stash := StashService.new()
 ## Server: presence, contacts, messages, invites and news for the phone. Its
 ## files live in a `social` folder inside the stash's `save_dir`.
 var social := SocialService.new()
+## Server: who is in which clan. Shared between the sessions of one server,
+## and saved beside the accounts.
+var clans := ClanService.new()
+## Client: what the server last said about clans: {"clan": yours or {},
+## "clans": every clan there is}. See `ClanService.snapshot`.
+var clan_state := {}
 ## Client: the phone's view as the server last sent it. Empty until signed in.
 var social_state := {}
 ## Client: the name to sign in with, and the secret that proves the account
@@ -186,8 +208,13 @@ var _view_tick := 0      # server tick the actors on screen show (client)
 var _corrections := {}   # actor id -> position error still to blend away (client)
 var _delayed_out: Array = [] # [due msec, inputs] held back by simulated_lag
 var _delayed_in: Array = []  # [due msec, Callable] updates held back by simulated_lag
-var _one_shots := {}     # actor id -> accumulated one-shot flags (server)
-var _switches := {}      # actor id -> last weapon switch since the snapshot
+var _one_shots: Array[Dictionary] = [{}, {}, {}] # per detail tier: actor id -> one-shot flags since that tier's last update (server)
+var _switches: Array[Dictionary] = [{}, {}, {}]  # per detail tier: actor id -> last weapon switch since then (server)
+var _view_at := {}       # peer id -> where their player is, or last was (server)
+## How many state entries have gone out (server) or come in (client), and on
+## a client how many for each actor id. For checks and tuning.
+var entries_sent := 0
+var entries_received := {}
 var _dead_kind := {}     # actor id -> damage kind that killed them
 var _latest := {}        # actor id -> newest state entry (client)
 var _containers := {}    # container id -> LootContainer
@@ -250,6 +277,7 @@ func host(p_world_id: String, port := DEFAULT_PORT, max_players := 8) -> Error:
 		return err
 	is_server = true
 	world_id = p_world_id
+	clans.open(stash.save_dir, stash.persist)
 	social.persist = stash.persist
 	social.save_dir = stash.save_dir.path_join("social")
 	social.load_server_news(stash.save_dir.path_join("news.json"))
@@ -307,6 +335,10 @@ func _start_server_raid() -> void:
 	raid.container_spawned.connect(_on_server_container_spawned)
 	raid.vehicle_spawned.connect(_on_server_vehicle_spawned)
 	raid.vehicle_removed.connect(_on_server_vehicle_removed)
+	raid.watch_changed.connect(_send_watch)
+	raid.toy_thrown.connect(func(_actor: Actor, item_id: String, from: Vector3, toy_velocity: Vector3) -> void:
+		for peer in _joined_peers:
+			_toy.rpc_id(peer, item_id, from, toy_velocity))
 	raid.squad_spawn = squad_spawn
 	if lag_compensation:
 		raid.rewind = _seen_positions
@@ -344,8 +376,12 @@ func _clear_tables() -> void:
 	_corrections.clear()
 	_delayed_out.clear()
 	_delayed_in.clear()
-	_one_shots.clear()
-	_switches.clear()
+	for tier in DETAIL_EVERY.size():
+		_one_shots[tier].clear()
+		_switches[tier].clear()
+	_view_at.clear()
+	entries_sent = 0
+	entries_received.clear()
 	_dead_kind.clear()
 	_latest.clear()
 	_containers.clear()
@@ -415,8 +451,9 @@ func _on_server_actor_removed(actor: Actor) -> void:
 	_seen_tick.erase(actor)
 	for tick: int in _past:
 		_past[tick].erase(actor)
-	_one_shots.erase(id)
-	_switches.erase(id)
+	for tier in DETAIL_EVERY.size():
+		_one_shots[tier].erase(id)
+		_switches[tier].erase(id)
 	_dead_kind.erase(id)
 	_sent_kills.erase(id)
 	_sent_standing.erase(id)
@@ -471,7 +508,15 @@ func _on_server_vehicle_removed(vehicle: Node3D) -> void:
 
 func _send_vehicle(peer: int, id: int) -> void:
 	var vehicle: Node3D = _vehicles[id]
-	_vehicle.rpc_id(peer, id, vehicle.get("item_id"), vehicle.global_position, vehicle.get("heading"))
+	_vehicle.rpc_id(peer, id, vehicle.get("item_id"), vehicle.global_position, vehicle.get("heading"),
+			float(vehicle.get("unpack_left")) > 0.0)
+
+
+## Tells a player what is on their watch and how long until the next throw.
+func _send_watch(actor: Actor) -> void:
+	var peer: int = _actor_peer.get(actor, 0)
+	if peer != 0 and peer in _joined_peers and raid != null:
+		_watch.rpc_id(peer, raid.stowed_for(actor), raid.toy_wait(actor))
 
 
 func _on_server_player_finished(actor: Actor, result: Dictionary) -> void:
@@ -549,7 +594,59 @@ func _sign_in(p_name: String, p_secret: String) -> void:
 		_sent_status = _gather_status()
 		_world_status.rpc_id(peer, _sent_status)
 	_send_account(peer)
+	_send_clans(peer)
 	_social_joined(peer)
+
+
+func _send_clans(peer: int) -> void:
+	_clan.rpc_id(peer, clans.snapshot(_peer_account[peer], func(account_id: String) -> String:
+		return str(stash.snapshot(account_id).get("name", "?"))))
+
+
+## The clan hall: found a clan ("create", name, tag), join one ("join", clan
+## id) or leave yours ("leave"). Refused while your body is in a world where
+## gear is at stake, so nobody changes sides in the middle of a fight.
+@rpc("any_peer", "call_remote", "reliable")
+func _request_clan(action: String, a := "", b := "") -> void:
+	var peer := _api.get_remote_sender_id()
+	if not is_server or not _peer_account.has(peer):
+		return
+	var account_id: String = _peer_account[peer]
+	var result: Dictionary
+	if stash.snapshot(account_id).get("deployed", false):
+		result = {"ok": false, "error": "Not while you are in the field."}
+	elif action == "create":
+		result = clans.create(account_id, a.left(64), b.left(16))
+	elif action == "join":
+		result = clans.join(account_id, a.left(16))
+	elif action == "leave":
+		result = clans.leave(account_id)
+	else:
+		return
+	if not result.ok:
+		_lobby_error.rpc_id(peer, result.error)
+		return
+	# Everyone signed in here sees the new list, and the tag over their head
+	# changes for everyone standing with them.
+	for other: int in _peer_account:
+		_send_clans(other)
+	var actor: Actor = _peer_actor.get(peer)
+	if actor != null and is_instance_valid(actor):
+		_wear_clan(actor, account_id)
+		for other in _joined_peers:
+			_clan_tag.rpc_id(other, _ids[actor], actor.clan, actor.clan_tag)
+
+
+## Server: marks an actor with its account's clan. Only where gear is at
+## stake do clanmates become one side; anywhere else the tag is just worn.
+func _wear_clan(actor: Actor, account_id: String) -> void:
+	var clan_id := clans.clan_of(account_id)
+	actor.clan_tag = clans.tag_of(clan_id)
+	actor.clan = clan_id if _clans_fight_together() else ""
+
+
+func _clans_fight_together() -> bool:
+	return raid != null and raid.world.gear_at_risk and not raid.world.safe_zone
 
 
 ## Lobby: put a stash item in a loadout slot, or "" to empty the slot.
@@ -656,6 +753,8 @@ func _send_spawn(peer: int, actor: Actor) -> void:
 		data = {"kit": state.kit, "picks": state.picks}
 		if actor.has_meta("appearance"):
 			data["look"] = actor.get_meta("appearance")
+		if actor.clan_tag != "":
+			data["clan"] = [actor.clan, actor.clan_tag]
 	else:
 		data = {"seed": raid.bot_seeds.get(actor, 0), "warlord": raid.warlords.has(actor),
 				"faction": actor.faction}
@@ -690,10 +789,13 @@ func _request_join(drop := "") -> void:
 	_joined_peers.erase(peer)
 	_joining_look = look_for_peer(peer)
 	var who: Dictionary = stash.snapshot(account_id)
+	var clan_id := clans.clan_of(account_id)
+	raid.set_team(account_id, clan_id if _clans_fight_together() else "", clans.name_of(clan_id))
 	# Renown is kept under the account, never under a name the client chose.
 	var actor := raid.add_player(deployed.kit, deployed.picks, who.name, account_id, int(who.get("renown", 0)),
 			drop.left(16))
 	_joining_look = {}
+	_wear_clan(actor, account_id)
 	if not safe:
 		_actor_account[actor] = account_id
 	if raid is Arena:
@@ -739,6 +841,7 @@ func _request_join(drop := "") -> void:
 	_welcome.rpc_id(peer, _ids[actor])
 	if returning:
 		_send_spawn(peer, actor)
+		_send_watch(actor)
 		return
 	for other: Actor in _ids:
 		if not other.is_dead:
@@ -752,6 +855,7 @@ func _request_join(drop := "") -> void:
 	for id: int in _sent_standing:
 		_standing.rpc_id(peer, id, _sent_standing[id])
 	_war.rpc_id(peer, raid.war.intensity, raid.war.centre)
+	_send_watch(actor)
 	_sent_points.erase(peer)
 
 
@@ -876,9 +980,12 @@ func _server_late_tick(_delta: float) -> void:
 		return
 	for id: int in _actors:
 		var actor: Actor = _actors[id]
-		_one_shots[id] = int(_one_shots.get(id, 0)) | (actor.cmd.flags() & ActorCommand.ONE_SHOT_MASK)
-		if actor.cmd.switch_weapon != -1:
-			_switches[id] = actor.cmd.switch_weapon
+		var pressed := actor.cmd.flags() & ActorCommand.ONE_SHOT_MASK
+		for tier in DETAIL_EVERY.size():
+			if pressed != 0:
+				_one_shots[tier][id] = int(_one_shots[tier].get(id, 0)) | pressed
+			if actor.cmd.switch_weapon != -1:
+				_switches[tier][id] = actor.cmd.switch_weapon
 	_tick += 1
 	if lag_compensation:
 		var now := {}
@@ -888,21 +995,7 @@ func _server_late_tick(_delta: float) -> void:
 		_past[_tick] = now
 		_past.erase(_tick - MAX_REWIND_TICKS - 1)
 	if _tick % TICKS_PER_SNAPSHOT == 0 and not _joined_peers.is_empty():
-		var entries: Array = []
-		for id: int in _actors:
-			var actor: Actor = _actors[id]
-			var cmd := actor.cmd.to_array()
-			cmd[ActorCommand.FLAGS_INDEX] = (int(cmd[ActorCommand.FLAGS_INDEX]) & ActorCommand.HELD_MASK) \
-					| int(_one_shots.get(id, 0)) | (ActorCommand.STATE_HOVERING if actor.flight.is_hovering else 0)
-			cmd[ActorCommand.SWITCH_INDEX] = _switches.get(id, -1)
-			entries.append([id, actor.global_position, actor.velocity, cmd, actor.health.health,
-					actor.health.armor, actor.stagger_left, _dead_kind.get(id, ""), _applied_seq.get(id, 0)])
-		_one_shots.clear()
-		_switches.clear()
-		for start in range(0, entries.size(), ACTORS_PER_PACKET):
-			var chunk := entries.slice(start, start + ACTORS_PER_PACKET)
-			for peer in _joined_peers:
-				_state.rpc_id(peer, _tick, chunk)
+		_send_states()
 		if not _vehicles.is_empty():
 			var rides: Array = []
 			for id: int in _vehicles:
@@ -953,6 +1046,73 @@ func _server_late_tick(_delta: float) -> void:
 			if _sent_points.get(peer, []) != states:
 				_sent_points[peer] = states
 				_strongpoints.rpc_id(peer, states)
+
+
+## How closely a viewer at `eye` follows an actor at `at`: 0 near (every
+## update), 1 in between, 2 far off.
+static func detail_tier(eye: Vector3, at: Vector3) -> int:
+	var apart := eye.distance_squared_to(at)
+	if apart <= NEAR_RANGE * NEAR_RANGE:
+		return 0
+	return 1 if apart <= MID_RANGE * MID_RANGE else 2
+
+
+## Whether actor `id` goes out to viewers of `tier` in update number `update`.
+## Ids take turns, so the far-off actors do not all go out in one burst.
+static func detail_due(update: int, id: int, tier: int) -> bool:
+	return (update + id) % DETAIL_EVERY[tier] == 0
+
+
+## Sends every player the state of the actors they are due to hear about:
+## their own and those near them now, the rest in turn (see NEAR_RANGE).
+func _send_states() -> void:
+	var update := _tick / TICKS_PER_SNAPSHOT
+	var ids: Array = _actors.keys()
+	var places := {}
+	for id: int in ids:
+		places[id] = (_actors[id] as Actor).global_position
+	var built: Array[Dictionary] = [{}, {}, {}]
+	for peer in _joined_peers:
+		var viewer: Actor = _peer_actor.get(peer)
+		if viewer != null and is_instance_valid(viewer):
+			_view_at[peer] = viewer.global_position
+		var own: int = _ids.get(viewer, -1) if viewer != null else -1
+		var eye: Vector3 = _view_at.get(peer, Vector3.ZERO)
+		var chunk: Array = []
+		for id: int in ids:
+			var tier := 0 if id == own else detail_tier(eye, places[id])
+			if not detail_due(update, id, tier):
+				continue
+			if not built[tier].has(id):
+				built[tier][id] = _state_entry(id, tier)
+			chunk.append(built[tier][id])
+			if chunk.size() == ACTORS_PER_PACKET:
+				_state.rpc_id(peer, _tick, chunk)
+				entries_sent += chunk.size()
+				chunk = []
+		if not chunk.is_empty():
+			_state.rpc_id(peer, _tick, chunk)
+			entries_sent += chunk.size()
+	# Presses are kept for each tier until that tier has had its turn.
+	_one_shots[0].clear()
+	_switches[0].clear()
+	for tier in range(1, DETAIL_EVERY.size()):
+		for id: int in ids:
+			if detail_due(update, id, tier):
+				_one_shots[tier].erase(id)
+				_switches[tier].erase(id)
+
+
+## One actor's state as it goes out to viewers of `tier`, with the presses
+## made since that tier last heard.
+func _state_entry(id: int, tier: int) -> Array:
+	var actor: Actor = _actors[id]
+	var cmd := actor.cmd.to_array()
+	cmd[ActorCommand.FLAGS_INDEX] = (int(cmd[ActorCommand.FLAGS_INDEX]) & ActorCommand.HELD_MASK) \
+			| int(_one_shots[tier].get(id, 0)) | (ActorCommand.STATE_HOVERING if actor.flight.is_hovering else 0)
+	cmd[ActorCommand.SWITCH_INDEX] = _switches[tier].get(id, -1)
+	return [id, actor.global_position, actor.velocity, cmd, actor.health.health,
+			actor.health.armor, actor.stagger_left, _dead_kind.get(id, ""), _applied_seq.get(id, 0)]
 
 
 # ---------------------------------------------------------------- client ----
@@ -1038,6 +1198,32 @@ func _world_status(p_status: Dictionary) -> void:
 
 
 @rpc("authority", "call_remote", "reliable")
+func _clan(state: Dictionary) -> void:
+	var mine: Variant = state.get("clan")
+	var listed: Variant = state.get("clans")
+	clan_state = {"clan": mine if typeof(mine) == TYPE_DICTIONARY else {},
+			"clans": listed if typeof(listed) == TYPE_ARRAY else []}
+	clan_changed.emit(clan_state)
+
+
+## A player you can see joined or left a clan.
+@rpc("authority", "call_remote", "reliable")
+func _clan_tag(id: int, clan_id: String, tag: String) -> void:
+	var actor: Actor = _actors.get(id)
+	if actor != null and is_instance_valid(actor):
+		actor.clan = clan_id.left(16)
+		actor.clan_tag = ClanService.clean_tag(tag)
+
+
+## The clan hall: ask to found a clan ("create", name, tag), join one
+## ("join", clan id) or leave yours ("leave"). The answer comes back as a new
+## `clan_state`, or as a `lobby_error`.
+func clan_ask(action: String, a := "", b := "") -> void:
+	if _is_connected() and not account.is_empty():
+		_request_clan.rpc_id(1, action, a, b)
+
+
+@rpc("authority", "call_remote", "reliable")
 func _lobby_error(reason: String) -> void:
 	lobby_error.emit(reason)
 
@@ -1066,12 +1252,39 @@ func sell(item_id: String, count: int = 1) -> void:
 		_request_sell.rpc_id(1, item_id, count)
 
 
+## In the world: throw a toy vehicle off the watch, or pack up the vehicle
+## being looked at. The server reads the aim from the actor it simulates.
+@rpc("any_peer", "call_remote", "reliable")
+func _request_toy(item_id: String) -> void:
+	if not is_server or raid == null:
+		return
+	var actor: Actor = _peer_actor.get(_api.get_remote_sender_id())
+	if actor == null or not is_instance_valid(actor):
+		return
+	if item_id == "":
+		raid.pack_vehicle(actor)
+	else:
+		raid.throw_toy(actor, item_id)
+
+
 ## Drop into the server's world: from the lobby, or again after a death.
 ## `joined` follows, or `lobby_error`. `drop` is where to land, an id from
 ## `Raid.drop_choices`; the server decides whether it is still on offer.
 func deploy(drop := "") -> void:
 	if _is_connected() and not account.is_empty() and (my_actor_id < 0 or _can_redeploy):
 		_request_join.rpc_id(1, drop)
+
+
+## In the world: ask the server to throw a toy vehicle off your watch.
+func throw_toy(item_id: String) -> void:
+	if _is_connected() and my_actor_id >= 0 and not _can_redeploy and item_id != "":
+		_request_toy.rpc_id(1, item_id)
+
+
+## In the world: ask the server to pack the vehicle you are looking at.
+func pack_vehicle() -> void:
+	if _is_connected() and my_actor_id >= 0 and not _can_redeploy:
+		_request_toy.rpc_id(1, "")
 
 
 ## In the world: ask the server to start your sign-out, or to call it off.
@@ -1124,6 +1337,10 @@ func _spawn(id: int, kind: String, shown_name: String, node_name: String, at: Ve
 		actor.is_player = id == my_actor_id
 		if data.has("look"):
 			Look.set_appearance(actor, data["look"])
+		var worn: Variant = data.get("clan")
+		if typeof(worn) == TYPE_ARRAY and worn.size() == 2:
+			actor.clan = str(worn[0]).left(16)
+			actor.clan_tag = ClanService.clean_tag(str(worn[1]))
 		raid.add_child(actor)
 		actor.global_position = at
 		Loadout.equip(actor, data.get("kit", []))
@@ -1198,6 +1415,7 @@ func _receive_state(tick: int, entries: Array) -> void:
 		_fresh_state = true
 	for entry: Array in entries:
 		var id: int = entry[0]
+		entries_received[id] = int(entries_received.get(id, 0)) + 1
 		# Presses from an update we have not applied yet must not be lost.
 		if _latest.has(id):
 			var cmd: Array = entry[3]
@@ -1240,10 +1458,10 @@ func _inventory(items: Array) -> void:
 
 
 @rpc("authority", "call_remote", "reliable")
-func _vehicle(id: int, item_id: String, at: Vector3, heading: float) -> void:
+func _vehicle(id: int, item_id: String, at: Vector3, heading: float, unpacking: bool) -> void:
 	if raid == null or _vehicles.has(id) or not ItemDB.has_item(item_id):
 		return
-	var vehicle := raid.spawn_vehicle(item_id, at, heading)
+	var vehicle := raid.spawn_vehicle(item_id, at, heading, unpacking)
 	# The server drives it. Here it only follows the reported position.
 	vehicle.set_physics_process(false)
 	_vehicles[id] = vehicle
@@ -1534,6 +1752,29 @@ func _receive_board(p_board: Dictionary) -> void:
 		Arena.refresh_fighter(me)
 
 
+## What is on your watch, and how long until you can throw again.
+@rpc("authority", "call_remote", "reliable")
+func _watch(stowed: Array, wait: float) -> void:
+	var me: Actor = _actors.get(my_actor_id)
+	var state := raid.state_for(me) if raid != null and me != null else null
+	if state == null:
+		return
+	state.stowed.clear()
+	for id: Variant in stowed:
+		if typeof(id) == TYPE_STRING and ItemDB.has_tag(id, "vehicle"):
+			state.stowed.append(id)
+	state.toy_ready_at = raid.clock + maxf(wait, 0.0)
+	raid.watch_changed.emit(me)
+
+
+## Someone threw a toy vehicle: draw it flying. The vehicle itself follows
+## from the server when it lands.
+@rpc("authority", "call_remote", "reliable")
+func _toy(item_id: String, from: Vector3, toy_velocity: Vector3) -> void:
+	if raid != null and ItemDB.has_tag(item_id, "vehicle") and from.is_finite() and toy_velocity.is_finite():
+		raid.fly_toy(item_id, from, toy_velocity)
+
+
 ## Your sign-out started, with this many seconds to go, or stopped (below zero).
 @rpc("authority", "call_remote", "reliable")
 func _sign_out(seconds_left: float) -> void:
@@ -1569,7 +1810,11 @@ func _client_early_tick() -> void:
 			continue
 		var mine := id == my_actor_id
 		if not mine:
-			actor.cmd.clear_one_shots()
+			if _view_tick % 15 == id % 15:
+				_thin(actor, id)
+			# A press stays until the actor has had a step to act on it.
+			if actor.stepped():
+				actor.cmd.clear_one_shots()
 		if not _latest.has(id):
 			continue
 		var entry: Array = _latest[id]
@@ -1577,6 +1822,19 @@ func _client_early_tick() -> void:
 		_apply_state(actor, entry, mine)
 	_blend_corrections()
 	_client_move_vehicles()
+
+
+## Far from your own player an actor is simulated in longer steps.
+func _thin(actor: Actor, id: int) -> void:
+	var me: Actor = _actors.get(my_actor_id)
+	if me == null or not is_instance_valid(me):
+		actor.thin(1)
+		return
+	var apart := me.global_position.distance_squared_to(actor.global_position)
+	if apart <= THIN_NEAR_RANGE * THIN_NEAR_RANGE:
+		actor.thin(1)
+	else:
+		actor.thin(2 if apart <= THIN_FAR_RANGE * THIN_FAR_RANGE else 4, id)
 
 
 ## Moves each actor a share of the way toward where the server says it

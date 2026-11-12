@@ -3,6 +3,9 @@ extends Weapon
 ## Blade-style melee.
 ##
 ## Attacks: a three-hit light combo, a heavy lunge, and a dive slam from the air.
+## All on one button: a tap is a light attack, and holding past `hold_time`
+## charges into the heavy (or the dive slam in the air). The tap strikes on
+## release; the heavy shows its full windup once the charge turns into it.
 ## Every attack has a windup you can see, which is what makes parrying possible.
 ## Defense: hold block to stop hits from the front at a stamina cost. Raising the
 ## guard just before a hit lands is a parry: no damage, the attacker is
@@ -28,6 +31,9 @@ const WINDUP_ROLL := 1.1
 const GUARD_OFFSET_OVERHEAD := Vector3(-0.25, 0.3, 0.0)
 const GUARD_OFFSET_LEFT := Vector3(-0.5, 0.05, 0.0)
 const GUARD_OFFSET_RIGHT := Vector3(0.12, 0.05, 0.0)
+
+## Hold the attack button this long and it becomes a heavy instead of a light.
+var hold_time := 0.25
 
 var light_damage := 28.0
 var heavy_damage := 65.0
@@ -60,6 +66,23 @@ var guard_break_stagger := 0.9
 var riposte_window := 1.6
 var riposte_mult := 1.5
 
+## What sets one melee type apart. The defaults change nothing, so a weapon
+## only gets the traits its item stats ask for.
+## Hits on someone facing away, from outside their front `backstab_arc_deg`,
+## are multiplied by this. A guard never covers the back anyway.
+var backstab_mult := 1.0
+var backstab_arc_deg := 180.0
+## A guard that stops this weapon's hit pays this many times the usual stamina,
+## so heavy chopping breaks guards.
+var guard_crush := 1.0
+## How far above or below you a swing still connects. Long reach pokes fliers.
+var vertical_reach := 2.5
+## Targets closer than this are inside the point and take `close_mult` damage.
+var close_range := 0.0
+var close_mult := 1.0
+## A heavy hit that lands unblocked staggers the target for this long.
+var heavy_stagger := 0.0
+
 ## The stance the actor is asking for right now.
 var stance := Dir.OVERHEAD
 ## The side the current or last attack comes from, as the attacker sees it.
@@ -77,6 +100,8 @@ var _slamming := false
 var _blocking := false
 var _block_time := 0.0
 var _swing_left := 0.0
+## Seconds the attack button has been held, or below zero when not charging.
+var _charge := -1.0
 
 
 func build_visual() -> Node3D:
@@ -104,7 +129,7 @@ static func guard_covers(p_guard_dir: int, p_attack_dir: int) -> bool:
 
 
 func controls_hint() -> String:
-	return "Left mouse attacks from your side   Right mouse guards that side, tap just before a hit to parry   Middle mouse heavy lunge, or dive slam in the air"
+	return "Tap left mouse to attack from your side, hold it for a heavy (a dive slam in the air)   Right mouse guards that side, tap just before a hit to parry"
 
 
 func is_blocking() -> bool:
@@ -142,21 +167,47 @@ func handle_input(cmd: ActorCommand, delta: float) -> void:
 		guard_dir = stance
 	_blocking = wants_block
 	if _blocking:
+		_charge = -1.0
 		_block_time += delta
 		actor.pause_stamina_regen()
 		return
 	if _cooldown > 0.0 or _slamming or _windup_left > 0.0:
+		_charge = -1.0
+		return
+	if cmd.tertiary_pressed:
+		# A heavy asked for outright (bots, or a bound key).
+		_charge = -1.0
+		_heavy_or_slam()
 		return
 	if cmd.primary_pressed:
+		_charge = 0.0
+	if _charge < 0.0:
+		return
+	if not cmd.primary:
+		# Let go before the charge turned: a tap, so a light attack.
+		_charge = -1.0
 		_light_attack()
-	elif cmd.tertiary_pressed:
-		if actor.is_on_floor():
-			_heavy_attack()
-		else:
-			_start_slam()
+		return
+	_charge += delta
+	if _charge >= hold_time:
+		_charge = -1.0
+		_heavy_or_slam()
+
+
+## True while the attack button is held but has not yet become a heavy.
+func is_charging() -> bool:
+	return _charge >= 0.0
+
+
+func _heavy_or_slam() -> void:
+	if actor.is_on_floor():
+		_heavy_attack()
+	else:
+		_start_slam()
 
 
 func on_holster() -> void:
+	_charge = -1.0
 	_blocking = false
 	_windup_left = 0.0
 	_windup_kind = ""
@@ -203,7 +254,7 @@ func modify_incoming(info: DamageInfo) -> void:
 		return
 
 	var stopped := info.amount if info.kind == "melee" else info.amount * bullet_block_fraction
-	if actor.spend_stamina(stopped * block_stamina_per_damage):
+	if actor.spend_stamina(stopped * block_stamina_per_damage * info.guard_mult):
 		info.amount -= stopped
 		info.blocked = true
 		blocked_hit.emit(info)
@@ -282,13 +333,33 @@ func _strike(amount: float, kind: String) -> void:
 		var vertical := absf(to.y)
 		to.y = 0.0
 		var dist := to.length()
-		if dist > reach or vertical > 2.5:
+		if dist > reach or vertical > vertical_reach:
 			continue
 		if dist > 0.8 and forward.angle_to(to.normalized()) > half_arc:
 			continue
-		var info := DamageInfo.make(amount, actor, "melee", at)
+		var hit := amount
+		if dist < close_range:
+			hit *= close_mult
+		if backstab_mult != 1.0 and is_behind(other, actor.global_position, backstab_arc_deg):
+			hit *= backstab_mult
+		var info := DamageInfo.make(hit, actor, "melee", at)
 		info.direction = attack_dir
-		Combat.deal(other, info)
+		info.guard_mult = guard_crush
+		if Combat.deal(other, info) and kind == "heavy" and heavy_stagger > 0.0 \
+				and not info.blocked and not info.parried and not other.is_dead:
+			other.stagger(heavy_stagger)
+
+
+## True when `from` is outside the front `front_arc_deg` of `target`, the way
+## it faces.
+static func is_behind(target: Actor, from: Vector3, front_arc_deg: float) -> bool:
+	var facing := target.get_aim_dir()
+	facing.y = 0.0
+	var to := from - target.global_position
+	to.y = 0.0
+	if facing.length() < 0.01 or to.length() < 0.01:
+		return false
+	return facing.normalized().angle_to(to.normalized()) > deg_to_rad(front_arc_deg) * 0.5
 
 
 ## Greybox poses. The blade is cocked to the attack's side for a windup, swept
@@ -302,6 +373,11 @@ func _animate(delta: float) -> void:
 	var offset := Vector3.ZERO
 	if _slamming:
 		pose = 1.3
+	elif _charge >= 0.0:
+		# Drawing back while the button is held, toward the heavy's windup.
+		var t := clampf(_charge / maxf(hold_time, 0.01), 0.0, 1.0)
+		pose = lerpf(REST_POSE, 0.6, t)
+		roll = _side(stance) * WINDUP_ROLL * t
 	elif _windup_left > 0.0:
 		pose = 1.0 if _windup_kind == "heavy" else 0.7
 		roll = _side(attack_dir) * WINDUP_ROLL

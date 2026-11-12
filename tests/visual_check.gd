@@ -33,9 +33,23 @@ func _ready() -> void:
 		get_tree().quit()
 		return
 
+	# `-- <output_dir> --melee-only` shoots every melee weapon in hand.
+	if "--melee-only" in args:
+		var at := args.find("--melee-only")
+		await _melee_shots(out_dir, args[at + 1] if at + 1 < args.size() else "")
+		get_tree().quit()
+		return
+
 	# `-- <output_dir> --idle-only` shoots the player standing still.
 	if "--idle-only" in args:
 		await _idle_shots(out_dir)
+		get_tree().quit()
+		return
+
+	# `-- <output_dir> --toys-only` shows the toy vehicles: on the watch, in
+	# the hand, in the air, unpacking and unpacked.
+	if "--toys-only" in args:
+		await _toy_shots(out_dir)
 		get_tree().quit()
 		return
 
@@ -218,6 +232,56 @@ func _ready() -> void:
 	await _settle(2)
 	await _world_shots(out_dir)
 	get_tree().quit()
+
+
+func _toy_shots(out_dir: String) -> void:
+	var raid := Raid.new()
+	add_child(raid)
+	var world := Worlds.get_world("ashfront")
+	raid.start(world, 42, world.starter_loadout() + (["bike_scrapper"] as Array[String]))
+	for bot in raid.bots:
+		bot.get_node("Brain").set_physics_process(false)
+	raid.state_for(raid.player).stowed.append("bike_raider")
+	var controller := PlayerController.new()
+	controller.setup(raid.player)
+	raid.add_child(controller)
+	var hud := Hud.new()
+	hud.setup(raid, controller)
+	raid.add_child(hud)
+	await _settle(90)
+	controller.wrist_raised = true
+	await _settle(40)
+	await _shot(out_dir.path_join("toys_watch_first.png"))
+	controller.watch_index = 1
+	await _settle(20)
+	await _shot(out_dir.path_join("toys_watch_picked_second.png"))
+	controller.watch_index = 0
+	controller.take_picked_toy()
+	await _settle(30)
+	await _shot(out_dir.path_join("toys_in_hand.png"))
+	controller.pitch = -0.1
+	await _settle(5)
+	controller.throw_held_toy()
+	raid.throw_toy(raid.player, "bike_scrapper")
+	await _settle(3)
+	await _shot(out_dir.path_join("toys_in_air.png"))
+	for i in 200:
+		if raid.toys.is_empty():
+			break
+		await _settle(1)
+	await _settle(1)
+	await _shot(out_dir.path_join("toys_unpacking.png"))
+	await _settle(60)
+	await _shot(out_dir.path_join("toys_unpacked.png"))
+	controller.toggle_view()
+	controller.wrist_raised = true
+	await _settle(60)
+	await _shot(out_dir.path_join("toys_watch_third.png"))
+	controller.take_picked_toy()
+	await _settle(30)
+	await _shot(out_dir.path_join("toys_in_hand_third.png"))
+	raid.queue_free()
+	await _settle(2)
 
 
 ## The body in the air: a jetpack hovering, boosting level and in a climb and
@@ -738,6 +802,58 @@ func _war_shots(out_dir: String) -> void:
 		await _settle(240 if step[0] > 0.0 else 60)
 		await _shot(out_dir.path_join(step[1] + ".png"))
 	raid.queue_free()
+
+
+## One row per melee weapon: held at rest, cocked for an overhead swing, and
+## guarding, from the side. A tag after the flag shoots only that kind, close up.
+func _melee_shots(out_dir: String, only := "") -> void:
+	var ids: Array[String] = []
+	var near := 0.45 if only != "" else 1.0
+	for id: String in ItemDB.all_ids():
+		if ItemDB.has_tag(id, "melee") and (only == "" or ItemDB.has_tag(id, only)):
+			ids.append(id)
+	var poses := ["rest", "windup", "guard"]
+	var sheet := Image.create(poses.size() * 360, ids.size() * 360, false, Image.FORMAT_RGBA8)
+	for row in ids.size():
+		var raid := Raid.new()
+		add_child(raid)
+		raid.start(Worlds.get_world("ashfront"), 42, ["rifle_scrap", ids[row], "jetpack_mk1", "plate_light"])
+		for bot in raid.bots:
+			bot.queue_free()
+		var player := raid.player
+		await _settle(10)
+		player.cmd.switch_weapon = 1
+		await _settle(5)
+		player.cmd.switch_weapon = -1
+		var blade := player.get_active_weapon() as MeleeWeapon
+		blade.light_windup = 5.0
+		var cam := Camera3D.new()
+		raid.add_child(cam)
+		cam.current = true
+		cam.fov = 40.0
+		for col in poses.size():
+			player.cmd.primary_pressed = poses[col] == "windup"
+			player.cmd.secondary = poses[col] == "guard"
+			await _settle(2)
+			player.cmd.primary_pressed = false
+			await _settle(30)
+			var at := player.global_position
+			cam.global_position = at + (player.global_basis.x * 3.6 - player.global_basis.z * 1.2) * near + Vector3(0, 1.2, 0)
+			cam.look_at(at + Vector3(0, 1.1 + (1.0 - near) * 0.3, 0))
+			await RenderingServer.frame_post_draw
+			var frame := get_viewport().get_texture().get_image()
+			var h := frame.get_height()
+			var w := frame.get_width()
+			var cut := frame.get_region(Rect2i(w / 2 - h / 2, 0, h, h))
+			cut.resize(360, 360)
+			cut.convert(Image.FORMAT_RGBA8)
+			sheet.blit_rect(cut, Rect2i(0, 0, 360, 360), Vector2i(col * 360, row * 360))
+		player.cmd.secondary = false
+		print("shot %s" % ids[row])
+		raid.queue_free()
+		await _settle(2)
+	sheet.save_png(out_dir.path_join("melee.png"))
+	print("saved melee.png")
 
 
 ## Contact sheets of the player's legs, side on and from the front, holding

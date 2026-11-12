@@ -13,6 +13,8 @@ var position := Vector3.ZERO
 ## For melee: the `MeleeWeapon.Dir` the swing comes from, as the attacker sees
 ## it. Below zero means the hit has no direction.
 var direction := -1
+## A guard that stops this hit pays this many times the usual stamina.
+var guard_mult := 1.0
 var blocked := false
 ## The hit landed on the target's head.
 var headshot := false

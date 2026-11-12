@@ -75,6 +75,17 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   drop if the choice is no longer on offer. Online the client only sends the
   id with `NetSession.deploy(drop)`; a client lists its choices from what the
   server already told it (`Strongpoint.viewer_holds`, war intensity).
+- Clans (`core/social/clan_service.gd`, `NetSession.clans`): the server keeps
+  who is in which clan, keyed by account id, in one service shared by every
+  session like the `StashService`. A client only asks (`NetSession.clan_ask`)
+  and shows `clan_state`; the clan hall's terminal in the plaza is the view
+  (`core/social/clan_panel.gd`). The `Raid` never asks about clans: before
+  `add_player`, `NetSession` calls `Raid.set_team(owner, team, title)`, and
+  a team is simply a shared side key, so strongpoints, drops and visor tags
+  follow with no second mechanism. `Actor.clan` (set by the authority only
+  where gear is at stake) stops friendly fire in `Combat.deal`;
+  `Actor.clan_tag` is for views and is worn everywhere. Nobody changes clan
+  while deployed.
 - World heat: `Raid.status()` is what a world shows of itself from outside
   (players, war level, top bounty, the event running) and never says who or
   where anyone is. The safe zone's `NetSession` gathers it from the other
@@ -102,10 +113,39 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   killing bots only simmer the meter (`WarDirector.report_battle`, capped at
   `battle_ceiling`); only players take it higher. World-event bots
   (`Raid._event_bots`) are outside all of this.
+- Big battles must stay affordable; measure with
+  `godot --headless --path . res://tests/battle_bench.tscn -- --bots 150 --players 32`
+  (processor time a tick, against the 16.7 ms budget). Three things keep
+  them so. Bots nobody is near are thinned: `Raid._tick_detail` calls
+  `Actor.thin`, and the actor and its brain then take one longer step every
+  few ticks, so anything that drives an actor tick by tick must ask
+  `Actor.ticks_now()` first, and a press set from outside can be missed
+  unless the actor is at `thin(1)`. A bot asks for a new path only when its
+  goal has moved or its path ran out (`BotBrain._move_toward`); never set
+  `NavigationAgent3D.target_position` on a timer. Interest: `NetSession`
+  sends a player every state update only for actors within `NEAR_RANGE`,
+  the rest in turn (`detail_tier`, `detail_due`), and keeps presses per tier
+  so a far viewer still gets them; a client thins far actors the same way.
+  A new per-tick cost that grows with the number of actors (a scan of the
+  "actors" group, something sent to every peer) needs the same treatment.
+  A world sets how many players it takes with `WorldDef.max_players`.
 - Mastery pays for using gear, never for leaving alive, or signing out over
   and over would farm it.
 - Blocking and parrying happen in `Weapon.modify_incoming`, which `Combat.deal`
   calls for every hit. Every melee attack keeps a visible windup so it can be parried.
+- Melee types differ only by item stats on the one `MeleeWeapon` class:
+  `backstab_mult` (knife), `guard_crush` (axe, carried on
+  `DamageInfo.guard_mult`), `vertical_reach`, `close_range`/`close_mult` and
+  `heavy_stagger` (spear). Their defaults change nothing. Add a melee type as
+  data plus a `Look.MELEE_MODELS` entry, not as a new class. Every melee
+  model is dressed as tech by `Look._tech_melee` (`assets/shaders/melee.gdshader`):
+  bare metal becomes alloy with an energy edge in the weapon's rarity color,
+  wood and wraps black polymer with glowing seams.
+- Melee attacks share one button (Caleb's call): a tap of `ActorCommand.primary`
+  is a light attack, released before `MeleeWeapon.hold_time`; holding past it
+  starts the heavy (a dive slam in the air) with its full visible windup. A bare
+  `primary_pressed` with no hold is a light (how bots swing), and
+  `tertiary_pressed` still asks for a heavy outright, but no key binds it.
 - Melee is directional. The stance travels in `ActorCommand.stance`, attacks
   set `DamageInfo.direction`, and `MeleeWeapon.guard_covers` decides whether a
   guard stops a hit. Windup and guard poses must show their side.
@@ -235,6 +275,20 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   `Raid` (never carried). `core/vehicle/vehicle.gd` reads its rider's
   `ActorCommand` and moves the rider; `Actor` skips its own movement while
   `Actor.vehicle` is set. The script has no `class_name`; preload it.
+- Toy vehicles: a vehicle a player owns in a world rides on their watch as
+  a toy (`Raid.PlayerState.stowed`, read with `Raid.stowed_for`), never in
+  the inventory. `Raid.throw_toy` throws one from the actor along their aim;
+  the `Raid` flies it (`_tick_toys`) and unpacks it into the vehicle where it
+  lands, if `has_room_to_unpack`, else it goes back on the watch.
+  `Raid.pack_vehicle` packs the vehicle being looked at back onto the watch
+  (a click with the watch raised: it has no key of its own).
+  Limits are the `Raid`'s vars (`toy_cooldown`, `watch_capacity`) and
+  `WorldDef.vehicle_toys`. Only the authority throws, lands and packs: a
+  client sends `NetSession.throw_toy` / `pack_vehicle`, the server reads the
+  aim from the actor it simulates, and clients get `_watch` (their own watch)
+  and `_toy` (a toy to draw in flight). The toy in the hand and the picker on
+  the watch (`PlayerController.held_toy`, `Hud.Wrist.show_toys`) are views.
+  A new vehicle is a new `vehicle` item; its toy is `toy_model(id)`.
 - Mastery (`core/progression/`) is keyed by gear type tags ("rifle", "blink",
   "frame_heavy"), never by item id. Variants are sidegrades: every one trades a
   strength for a weakness, and death never takes mastery away. Variant picks go
@@ -382,6 +436,7 @@ The project targets Godot 4.7 (what Caleb runs, and what CI uses).
 godot --headless --path . --import
 godot --headless --path . res://tests/test_runner.tscn   # must exit 0
 godot --headless --path . res://tests/test_runner.tscn -- --only online   # one group
+godot --headless --path . res://tests/battle_bench.tscn -- --bots 150 --players 32   # server cost of a big battle
 ```
 
 To see it rendered (needs a display or xvfb):

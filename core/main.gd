@@ -35,6 +35,7 @@ const ArenaHudScript := preload("res://core/arena/arena_hud.gd")
 ## The arena listens this many ports above the raid server.
 const ARENA_PORT_OFFSET := 10
 const PlazaViewScript := preload("res://core/social/plaza_view.gd")
+const ClanPanel := preload("res://core/social/clan_panel.gd")
 ## The plaza holds more people than a raid.
 const PLAZA_PLAYERS := 32
 const SHOP_PANEL := "res://core/economy/shop_panel.gd"
@@ -415,6 +416,8 @@ func _attach_player_view() -> void:
 	controller.sign_out_requested.connect(func() -> void: _on_sign_out_requested.call_deferred())
 	controller.redeploy_requested.connect(func() -> void: _on_redeploy_requested.call_deferred())
 	controller.drop_requested.connect(func(index: int) -> void: _on_drop_requested.call_deferred(index))
+	controller.toy_throw_requested.connect(_on_toy_throw_requested)
+	controller.pack_requested.connect(_on_pack_requested)
 	raid.add_child(controller)
 	hud = Hud.new()
 	hud.setup(raid, controller)
@@ -498,6 +501,26 @@ func _on_redeploy_requested(drop := "") -> void:
 	raid.add_player(Profile.checkout_loadout(raid.world), Profile.mastery.active_picks(), "You",
 			LOCAL_OWNER, Profile.renown, drop)
 	_attach_player_view()
+
+
+## The player threw the toy vehicle in their hand. The world decides the rest.
+func _on_toy_throw_requested(item_id: String) -> void:
+	if raid == null or raid.player == null or not is_instance_valid(raid.player):
+		return
+	if net:
+		net.throw_toy(item_id)
+	else:
+		raid.throw_toy(raid.player, item_id)
+
+
+## The player asked to pack the vehicle they are looking at onto their watch.
+func _on_pack_requested() -> void:
+	if raid == null or raid.player == null or not is_instance_valid(raid.player):
+		return
+	if net:
+		net.pack_vehicle()
+	else:
+		raid.pack_vehicle(raid.player)
 
 
 ## L: alive, start or cancel a sign-out. Down, go home.
@@ -702,8 +725,9 @@ func start_server(world_id: String, port: int, with_plaza := true, bots := -1, s
 		else:
 			session.stash = sessions[0].stash
 			session.social = sessions[0].social
+			session.clans = sessions[0].clans
 		add_child(session)
-		var err := session.host(world.id, next_port)
+		var err := session.host(world.id, next_port, world.max_players)
 		if err != OK:
 			return err
 		print("Server: running %s on port %d" % [world.id, next_port])
@@ -717,6 +741,7 @@ func start_server(world_id: String, port: int, with_plaza := true, bots := -1, s
 		arena.isolated = true
 		arena.stash = net.stash
 		arena.social = net.social
+		arena.clans = net.clans
 		arena.lag_compensation = rewind
 		add_child(arena)
 		if arena.host(Arena.ArenaVenue.ID, arena_port) == OK:
@@ -733,6 +758,7 @@ func start_server(world_id: String, port: int, with_plaza := true, bots := -1, s
 		session.isolated = true
 		session.stash = net.stash
 		session.social = net.social
+		session.clans = net.clans
 		session.routes = routes
 		add_child(session)
 		var err := session.host(plaza.id, port, PLAZA_PLAYERS)
@@ -896,8 +922,33 @@ func use_portal(destination: String) -> void:
 	elif destination == "leave":
 		_leave_raid()
 		leave_server()
+	elif destination == "clans":
+		open_clans()
 	else:
 		plaza_view.show_notice("Opening soon.")
+
+
+## The clan hall's terminal: found, join or leave a clan. The server decides;
+## the screen shows what it sends back.
+func open_clans() -> void:
+	if net == null or raid == null or shop_view != null:
+		return
+	var panel: Control = ClanPanel.new()
+	panel.state = net.clan_state
+	panel.asked.connect(func(action: String, a: String, b: String) -> void:
+		if net:
+			panel.show_message("")
+			net.clan_ask(action, a, b))
+	var session := net
+	var on_change := func(state: Dictionary) -> void:
+		if is_instance_valid(panel):
+			panel.state = state
+			panel.refresh()
+	session.clan_changed.connect(on_change)
+	panel.tree_exited.connect(func() -> void:
+		if is_instance_valid(session) and session.clan_changed.is_connected(on_change):
+			session.clan_changed.disconnect(on_change))
+	_open_terminal(panel)
 
 
 ## A storefront in the plaza: the shop screen for that one shop, trading with
@@ -918,6 +969,12 @@ func open_shop(shop_id: String) -> void:
 	panel.connect("sell_requested", func(item_id: String, count: int) -> void:
 		if net:
 			net.sell(item_id, count))
+	_open_terminal(panel)
+
+
+## Brings a panel up on the terminal of the doorway you stand in (its
+## "Screen" node), or on a screen held up in front of you where there is none.
+func _open_terminal(panel: Control) -> void:
 	shop_view = ShopView.new()
 	shop_view.name = "ShopView"
 	shop_view.panel = panel

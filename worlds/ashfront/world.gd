@@ -18,6 +18,8 @@ const CACHE_TABLE := [
 	{"id": "smg_stinger", "weight": 3.0},
 	{"id": "pistol_machine", "weight": 2.5},
 	{"id": "hammer_breaker", "weight": 2.5},
+	{"id": "knife_gutter", "weight": 3.0},
+	{"id": "axe_splitter", "weight": 2.5},
 	{"id": "frame_runner", "weight": 2.5},
 	{"id": "frame_trooper", "weight": 2.5},
 	{"id": "boots_thruster", "weight": 2.5},
@@ -46,6 +48,7 @@ const ROOFTOP_TABLE := [
 	{"id": "pistol_hand_cannon", "weight": 7.0},
 	{"id": "shotgun_breacher", "weight": 9.0},
 	{"id": "blade_arc", "weight": 9.0},
+	{"id": "spear_lancer", "weight": 8.0},
 	{"id": "frame_bulwark", "weight": 8.0},
 	{"id": "jetpack_mk2", "weight": 7.0},
 	{"id": "wings_glide", "weight": 7.0},
@@ -96,10 +99,11 @@ func _init() -> void:
 	display_name = "Ashfront"
 	description = "Open battlefield where two armies fight over the wrecks. Always-on PvP, full loot, no safe zones."
 	# A garrison of four at each of the five landmarks, and patrols between them.
-	# Eighteen to an army: two garrisons of four, patrols, and a camp at the rim.
-	bot_count = 36
+	# Thirty to an army: two garrisons of four, patrols, and a camp at the rim.
+	bot_count = 60
 	# A hot war draws in up to this many more.
-	war_reinforcements = 28
+	war_reinforcements = 60
+	max_players = 32
 	bots_contest_sites = true
 	depot_hold_time = 4.0
 

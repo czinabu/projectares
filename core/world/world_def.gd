@@ -47,6 +47,8 @@ var description := ""
 ## How many bots the world keeps alive. A dead one is replaced after
 ## `bot_respawn_time` seconds, away from the players.
 var bot_count := 8
+## How many players a server lets into one copy of the world at once.
+var max_players := 8
 ## A social space with no combat and nothing at stake. See "Safe zones" above.
 var safe_zone := false
 var bot_respawn_time := 45.0
@@ -55,6 +57,9 @@ var cache_refill_time := 240.0
 ## Seconds before a vehicle that left its parking spot is replaced there, and
 ## before a vehicle nobody rides is cleared away.
 var vehicle_respawn_time := 300.0
+## Whether players may throw the toy vehicles on their watch here (see
+## `Raid.throw_toy`). Off, a brought vehicle stays on the watch.
+var vehicle_toys := true
 ## Seconds a dead actor's bag lies around before it is cleared away.
 var bag_lifetime := 300.0
 ## Seconds to stand in a depot to bank what you carry.
