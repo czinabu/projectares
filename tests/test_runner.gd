@@ -1145,10 +1145,16 @@ func _test_flight_rigs_and_abilities() -> void:
 	check(p.velocity.y > 8.0 and p.flight.heat > 0.0, "pressing jump in the air kicks you upward and costs heat")
 	await frames(15)
 	check(p.global_position.y > height + 1.0, "the kick gains height")
+	p.cmd.move = Vector2(1, 0)
+	var side_before := (p.global_basis.inverse() * p.velocity).x
+	await press_jump.call(p)
+	check((p.global_basis.inverse() * p.velocity).x > side_before + 5.0, "boots kick you the way you steer")
+	p.cmd.move = Vector2.ZERO
 	for i in 6:
 		await press_jump.call(p)
 		await frames(4)
 	check(p.flight.overheated, "boosting over and over overheats the boots")
+	check(not p.flight.is_hovering, "boots cannot hover")
 	var vy := p.velocity.y
 	await press_jump.call(p)
 	check(p.velocity.y <= vy, "overheated boots do nothing")
@@ -1171,6 +1177,7 @@ func _test_flight_rigs_and_abilities() -> void:
 	p.cmd.jump = false
 	await frames(5)
 	check(not p.flight.is_gliding, "letting go stops the glide")
+	await _check_glide_flying(p)
 	await _end_raid(raid)
 
 	# The jetpack still works and does not burst or glide.
@@ -1184,6 +1191,7 @@ func _test_flight_rigs_and_abilities() -> void:
 	check(p.flight.is_thrusting and not p.flight.is_gliding and not p.is_on_floor(),
 			"the jetpack still flies by holding jump")
 	p.cmd.jump = false
+	await _check_free_flight(p)
 	check(not p.ability.enabled and p.ability.status_text() == "", "no ability without an ability item")
 	p.cmd.ability_pressed = true
 	await frames(2)
@@ -1315,6 +1323,115 @@ func _vehicle_arena() -> Node3D:
 	ramp.basis = Basis(Vector3.RIGHT, angle)
 	arena.add_child(ramp)
 	return arena
+
+
+## Jetpack free flight. `p` is in the air with a jetpack, jump let go.
+func _check_free_flight(p: Actor) -> void:
+	var heat_rate := p.flight.heat_per_sec
+	p.flight.heat_per_sec = 4.0
+	p.flight.heat = 0.0
+	p.global_position.y += 25.0
+	p.velocity = Vector3.ZERO
+	p.cmd.jump_pressed = true
+	await frames(1)
+	p.cmd.jump_pressed = false
+	check(p.flight.is_hovering, "tapping jump in the air lights the jets")
+	await frames(40)
+	var held := p.global_position.y
+	await frames(40)
+	check(absf(p.global_position.y - held) < 0.2 and absf(p.velocity.y) < 0.1, "the jetpack hovers with nothing held")
+	p.cmd.move = Vector2(1, 0)
+	await frames(40)
+	var side := (p.global_basis.inverse() * p.velocity).x
+	check(side > p.flight.fly_speed - 0.5 and absf(p.global_position.y - held) < 0.2, "hovering strafes level (%.1f m/s)" % side)
+	p.cmd.move = Vector2.ZERO
+	await frames(40)
+	check(Vector2(p.velocity.x, p.velocity.z).length() < 0.5, "letting go of the keys stops you in the air")
+	p.cmd.descend = true
+	await frames(30)
+	check(p.velocity.y < -p.flight.descend_speed + 0.5, "the descend key sinks")
+	p.cmd.descend = false
+	p.cmd.jump = true
+	await frames(40)
+	check(p.velocity.y > p.flight.max_rise_speed - 0.5, "holding jump climbs")
+	p.cmd.jump = false
+	var hover_heat := p.flight.heat
+	await frames(30)
+	hover_heat = p.flight.heat - hover_heat
+	# Head first, wherever you look: up at 45 degrees here.
+	p.cmd.pitch = PI / 4.0
+	p.cmd.sprint = true
+	p.cmd.move = Vector2(0, 1)
+	var boost_heat := p.flight.heat
+	await frames(30)
+	boost_heat = p.flight.heat - boost_heat
+	await frames(60)
+	var along := p.velocity.dot(Basis.from_euler(Vector3(p.cmd.pitch, p.cmd.yaw, 0.0)) * Vector3.FORWARD)
+	check(p.flight.is_boosting and along > p.flight.boost_speed - 1.0 and p.velocity.y > 10.0,
+			"sprinting forward boosts head first along the way you look (%.1f m/s)" % along)
+	check(boost_heat > hover_heat * 2.0, "boosting runs hotter than hovering")
+	p.cmd.sprint = false
+	p.cmd.move = Vector2.ZERO
+	p.cmd.pitch = 0.0
+	await frames(5)
+	check(p.flight.is_hovering and not p.flight.is_boosting, "letting go of the boost drops back to a hover")
+	p.flight.heat_per_sec = 4000.0
+	await frames(60)
+	check(p.flight.overheated and not p.flight.is_hovering and p.velocity.y < 0.0, "overheating puts the jets out and you fall")
+	p.flight.heat_per_sec = heat_rate
+	for i in 400:
+		await get_tree().physics_frame
+		if p.is_on_floor():
+			break
+	p.flight.heat = 0.0
+	p.flight.overheated = false
+	p.cmd.jump_pressed = true
+	await frames(1)
+	p.cmd.jump_pressed = false
+	p.cmd.jump = true
+	await frames(1)
+	check(not p.flight.is_hovering, "a jump off the ground does not light the jets")
+	p.cmd.jump = false
+	var copy := ActorCommand.new()
+	p.cmd.descend = true
+	p.cmd.roll = -1
+	copy.apply_array(p.cmd.to_array())
+	check(copy.descend and copy.roll == -1, "descend and roll travel in the network command")
+	p.cmd.descend = false
+	p.cmd.roll = 0
+
+
+## Wings fly like wings. `p` is high up with glide wings, jump let go.
+func _check_glide_flying(p: Actor) -> void:
+	p.global_position.y += 40.0
+	p.velocity = Vector3(0, -1, 0)
+	p.cmd.jump = true
+	await frames(120)
+	var cruise := Vector2(p.velocity.x, p.velocity.z).length()
+	check(absf(cruise - p.flight.glide_speed) < 0.5, "a level glide settles at glide speed (%.1f)" % cruise)
+	# Turn the view a quarter round at once: the glide comes round in an arc.
+	var before := Vector3(p.velocity.x, 0, p.velocity.z).normalized()
+	p.cmd.yaw -= PI / 2.0
+	await frames(10)
+	var during := Vector3(p.velocity.x, 0, p.velocity.z).normalized()
+	var swung := before.angle_to(during)
+	check(swung > 0.1 and swung < 0.5, "wings turn in an arc instead of snapping round (%.2f rad)" % swung)
+	await frames(80)
+	var after := Vector3(p.velocity.x, 0, p.velocity.z).normalized()
+	check(after.dot(Basis(Vector3.UP, p.cmd.yaw) * Vector3.FORWARD) > 0.99, "and end up flying where you face")
+	p.cmd.pitch = -0.9
+	await frames(150)
+	var dived := Vector2(p.velocity.x, p.velocity.z).length()
+	check(dived > cruise * 1.4 and p.velocity.y < -8.0, "looking down dives for speed (%.1f m/s)" % dived)
+	p.cmd.pitch = 0.9
+	var low := p.global_position.y
+	await frames(60)
+	check(p.flight.is_gliding and p.global_position.y > low + 4.0, "pulling up climbs on that speed (%.1f m)" % (p.global_position.y - low))
+	await frames(240)
+	var slow := Vector2(p.velocity.x, p.velocity.z).length()
+	check(slow < cruise * 0.8 and p.velocity.y < 0.0, "the climb runs out as the speed does")
+	p.cmd.pitch = 0.0
+	p.cmd.jump = false
 
 
 func _test_vehicle_driving() -> void:
@@ -2887,6 +3004,36 @@ func _test_online_movement() -> void:
 	check(top > 0.6, "the player jumps on their own screen at once (%.2f m)" % top)
 	check(seen_jumps == 5, "every jump reaches the server despite lost packets (%d of 5 seen by the other player)" % seen_jumps)
 	dana.simulated_loss = 0.0
+
+	# Free flight is predicted like running: jump, tap again to light the
+	# jets, fly sideways, and the server agrees all the way.
+	if me.flight.can_hover():
+		await frames(60)
+		me.cmd.jump_pressed = true
+		await frames(1)
+		me.cmd.jump_pressed = false
+		await frames(12)
+		me.cmd.jump_pressed = true
+		await frames(1)
+		me.cmd.jump_pressed = false
+		dana.max_correction = 0.0
+		me.cmd.jump = true
+		await frames(30)
+		me.cmd.jump = false
+		me.cmd.move = Vector2(1, 0)
+		await frames(60)
+		me.cmd.move = Vector2.ZERO
+		await frames(40)
+		var up := me.global_position.y - ground
+		check(me.flight.is_hovering and up > 2.0, "a lagging player hovers on their own screen (%.1f m up)" % up)
+		check(dana.max_correction < 0.4, "free flight on a slow connection needs no real correction (worst %.2f m)" % dana.max_correction)
+		check(is_instance_valid(seen) and seen.flight.is_hovering and seen.global_position.distance_to(me.global_position) < 0.6,
+				"the other player sees them hovering in the same place")
+		me.cmd.descend = true
+		await _wait_until(func() -> bool: return me.is_on_floor(), 300)
+		me.cmd.descend = false
+		await frames(30)
+		check(not me.flight.is_hovering and not seen.flight.is_hovering, "landing puts the jets out on both screens")
 
 	# Other players glide between updates instead of stepping.
 	me.cmd.move = Vector2(1, 0)

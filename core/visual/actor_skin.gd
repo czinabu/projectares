@@ -44,6 +44,18 @@ var glide_leg := Vector3(0.06, -1.0, -0.06)
 ## the feet point, in radians.
 var glide_look := 1.0
 var glide_toes := 1.0
+## A jetpack boost flies the same way with the arms out ahead, like a diver's.
+var boost_arm := Vector3(0.16, 1.0, -0.12)
+## How fast the body follows a change of attitude, and the most it banks into
+## a turn, in radians. The bank is the real one for the turn: tan = v * w / g.
+var attitude_follow := 8.0
+var max_bank := 1.1
+var bank_follow := 5.0
+## Hovering on a jetpack, the body leans the way it flies: radians at full
+## fly speed, and how far the legs trail.
+var hover_lean := 0.45
+## The roll keys twist the body round its own length, in radians a second.
+var twist_speed := 7.0
 
 var look: Node
 var actor: Actor
@@ -72,6 +84,18 @@ var _glide := 0.0
 var _glide_arms: Array = []
 var _glide_legs: Array = []
 var _glide_neck := -1
+## 0 arms trailing (wings), 1 arms ahead (boost).
+var _boost := 0.0
+## Which way the body tips (the actor's space, level) times how far, radians.
+var _tilt := Vector3.ZERO
+## Roll about the body's length: banking into a turn (positive in a left
+## turn), and from the roll keys (positive to the right).
+var _bank := 0.0
+var _twist := 0.0
+## How far the model is turned to face the way it flies, radians.
+var _face := 0.0
+var _last_heading := 0.0
+var _has_heading := false
 var _attack_left := 0.0
 var _aim_left := 0.0
 ## Makes the model hold its weapon, or null for skins without the bones.
@@ -321,18 +345,66 @@ func _update_rig(delta: float) -> void:
 		var want := 1.0 if actor.flight.is_gliding and not actor.is_dead else 0.0
 		var was := _spread
 		_spread = move_toward(_spread, want, wing_speed * delta)
-		if _spread != was:
-			RigModel.set_wing_spread(_rig_back, _spread)
+		if _spread != was or _spread > 0.0:
+			RigModel.set_wing_spread(_rig_back, _spread, clampf(-_bank / max_bank, -1.0, 1.0), actor.glide_trim())
 
 
-## Tips the whole model forward about the actor's middle while gliding. The
-## arms and legs are posed by `_pose_glide`, last in the skeleton's order.
+## Sets the whole model's attitude in the air, about the actor's middle.
+## Gliding or boosting it lies flat along the way it flies (nose down in a
+## dive, up in a climb), turned to face that way and banked into the turn.
+## Hovering it leans the way it drifts. The roll keys twist it round. All of
+## it is read from velocity and the command, so remote players match.
+## The arms and legs are posed by `_pose_glide`, last in the skeleton's order.
 func _update_glide(delta: float) -> void:
-	var want := 1.0 if actor.flight.is_gliding and not actor.is_dead and actor.vehicle == null else 0.0
-	_glide = move_toward(_glide, want, glide_blend * delta)
-	var tip := Basis(Vector3.RIGHT, -glide_pitch * smoothstep(0.0, 1.0, _glide))
+	var alive := not actor.is_dead and actor.vehicle == null
+	var flat := alive and (actor.flight.is_gliding or actor.flight.is_boosting)
+	_glide = move_toward(_glide, 1.0 if flat else 0.0, glide_blend * delta)
+	_boost = move_toward(_boost, 1.0 if alive and actor.flight.is_boosting else 0.0, glide_blend * delta)
+
+	var local := actor.global_basis.inverse() * actor.velocity
+	var level := Vector3(local.x, 0.0, local.z)
+	var speed := level.length()
+	var dir := level / speed if speed > 0.5 else Vector3.FORWARD
+	var tilt := Vector3.ZERO
+	var face := 0.0
+	var bank := 0.0
+	if flat:
+		var path := atan2(actor.velocity.y, maxf(speed, 0.5)) if actor.velocity.length() > 1.0 else 0.0
+		var lie := glide_pitch if actor.flight.is_gliding else PI / 2.0
+		if speed <= 0.5:
+			dir = Vector3.FORWARD
+		tilt = dir * clampf(lie - path, 0.0, PI * 0.95)
+		face = Locomotion.heading(dir)
+		# Bank for the turn being flown: how fast the heading is swinging.
+		var heading := atan2(-actor.velocity.x, -actor.velocity.z)
+		if _has_heading and speed > 2.0 and delta > 0.0:
+			var rate := wrapf(heading - _last_heading, -PI, PI) / delta
+			bank = clampf(atan(speed * rate / 9.8), -max_bank, max_bank)
+		_last_heading = heading
+		_has_heading = speed > 2.0
+	else:
+		_has_heading = false
+		if alive and actor.flight.is_hovering:
+			tilt = dir * hover_lean * clampf(speed / maxf(actor.flight.fly_speed, 0.1), 0.0, 1.0)
+	var follow := 1.0 - exp(-attitude_follow * delta)
+	_tilt = _tilt.lerp(tilt, follow)
+	_face = lerp_angle(_face, face, follow)
+	_bank = lerpf(_bank, bank, 1.0 - exp(-bank_follow * delta))
+	# The roll keys: held, the body keeps turning; let go, it rights itself
+	# the short way round.
+	var in_air := alive and (flat or actor.flight.is_hovering)
+	if in_air and actor.cmd.roll != 0:
+		_twist += actor.cmd.roll * twist_speed * delta
+	else:
+		_twist = wrapf(_twist, -PI, PI)
+		_twist = move_toward(_twist, 0.0, twist_speed * delta)
+
+	var angle := _tilt.length()
+	var tip := Basis(Vector3.UP.cross(_tilt / angle).normalized(), angle) if angle > 0.001 else Basis.IDENTITY
+	# A positive bank or twist rolls to the right: right side down.
+	var turn := tip * Basis(Vector3.UP, _face - _bank + _twist)
 	var pivot := Vector3(0, glide_pivot, 0)
-	transform = Transform3D(tip * Basis(Vector3.UP, PI), pivot - tip * pivot)
+	transform = Transform3D(turn * Basis(Vector3.UP, PI), pivot - turn * pivot)
 
 
 func _setup_glide_pose(skeleton: Skeleton3D, def: Dictionary) -> void:
@@ -378,7 +450,8 @@ func _pose_glide() -> void:
 	for limb: Array in _glide_arms:
 		if limb.is_empty():
 			continue
-		var wanted := to_skeleton * Vector3(glide_arm.x * limb[3], glide_arm.y, glide_arm.z)
+		var arm_dir := glide_arm.lerp(boost_arm, smoothstep(0.0, 1.0, _boost))
+		var wanted := to_skeleton * Vector3(arm_dir.x * limb[3], arm_dir.y, arm_dir.z)
 		_aim_bone(limb[0], limb[1], wanted, w)
 		_aim_bone(limb[1], limb[2], wanted, w)
 	for limb: Array in _glide_legs:

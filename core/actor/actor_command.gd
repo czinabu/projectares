@@ -23,6 +23,11 @@ var jump_pressed := false
 var dash := false
 ## Pressed this tick: drop into a slide (only from a run, see `Actor`).
 var slide := false
+## Held: sink while hovering with a jetpack (the slide key).
+var descend := false
+## Held: roll the body left or right in flight. -1 left, 1 right, 0 none.
+## Cosmetic: the skin twists the body round; the simulation ignores it.
+var roll := 0
 
 ## Primary and secondary weapon actions (fire / aim, light / heavy attack).
 var primary := false
@@ -81,8 +86,15 @@ const FLAG_INTERACT_PRESSED := 1024
 const FLAG_HEAL_PRESSED := 2048
 const FLAG_ABILITY_PRESSED := 4096
 const FLAG_SLIDE := 8192
+const FLAG_DESCEND := 16384
+const FLAG_ROLL_LEFT := 32768
+const FLAG_ROLL_RIGHT := 65536
+## Not an input: the server sets this bit in the commands it sends back with
+## each state, to say the actor's jets are lit (`FlightRig.is_hovering`).
+const STATE_HOVERING := 131072
 ## Flags that describe a held key, and flags that last a single tick.
-const HELD_MASK := FLAG_SPRINT | FLAG_JUMP | FLAG_PRIMARY | FLAG_SECONDARY
+const HELD_MASK := FLAG_SPRINT | FLAG_JUMP | FLAG_PRIMARY | FLAG_SECONDARY | FLAG_DESCEND \
+		| FLAG_ROLL_LEFT | FLAG_ROLL_RIGHT
 const ONE_SHOT_MASK := FLAG_JUMP_PRESSED | FLAG_DASH | FLAG_PRIMARY_PRESSED | FLAG_SECONDARY_PRESSED \
 		| FLAG_TERTIARY_PRESSED | FLAG_RELOAD_PRESSED | FLAG_INTERACT_PRESSED | FLAG_HEAL_PRESSED \
 		| FLAG_ABILITY_PRESSED | FLAG_SLIDE
@@ -105,6 +117,9 @@ func flags() -> int:
 	if heal_pressed: out |= FLAG_HEAL_PRESSED
 	if ability_pressed: out |= FLAG_ABILITY_PRESSED
 	if slide: out |= FLAG_SLIDE
+	if descend: out |= FLAG_DESCEND
+	if roll < 0: out |= FLAG_ROLL_LEFT
+	if roll > 0: out |= FLAG_ROLL_RIGHT
 	return out
 
 
@@ -137,6 +152,8 @@ func apply_array(data: Array) -> void:
 	heal_pressed = bits & FLAG_HEAL_PRESSED != 0
 	ability_pressed = bits & FLAG_ABILITY_PRESSED != 0
 	slide = bits & FLAG_SLIDE != 0
+	descend = bits & FLAG_DESCEND != 0
+	roll = (1 if bits & FLAG_ROLL_RIGHT != 0 else 0) - (1 if bits & FLAG_ROLL_LEFT != 0 else 0)
 	stance = clampi(int(_number(data[STANCE_INDEX])), 0, 2)
 	switch_weapon = clampi(int(_number(data[SWITCH_INDEX])), -1, 8)
 

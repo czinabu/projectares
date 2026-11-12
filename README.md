@@ -19,7 +19,10 @@ skies, animated models and effects (see "How it looks" below).
 | Action | Key |
 | --- | --- |
 | Move / sprint | WASD / Shift |
-| Jump. In the air: hold to fly (jetpack), press to boost (thruster boots, glide wings), hold while falling to glide (glide wings) | Space |
+| Jump. In the air: hold to climb, tap to light the jets and hover (jetpack); press to kick the way you steer (thruster boots); press to launch, hold while falling to glide (glide wings) | Space |
+| Jetpack hovering: fly with the move keys, Space climbs, C sinks, Shift + W boosts head first wherever you look | |
+| Gliding: steer or turn the view to bank round, look down to dive for speed, look up to climb on it | |
+| Roll the body left / right in flight | Z / X |
 | Use your ability | G |
 | Dash | Q |
 | Slide (while sprinting) | C |
@@ -231,8 +234,12 @@ you have.
 - Loadouts picked in your base from your stash: primary weapon, melee weapon,
   flight rig and armor frame. Equipped gear is at risk. Sign out alive and it
   comes home, die and it drops. Empty slots use a free scrap kit.
-- Three kinds of flight rig: jetpacks for sustained lift, thruster boots for
-  quick kicks upward, and glide wings that launch once and then soar.
+- Three kinds of flight rig, each with its own strength. Jetpacks fly
+  anywhere: hover, strafe, climb, sink and boost head first, as long as the
+  heat lasts, and you can shoot from a hover. Thruster boots are the quick
+  ones: hard kicks up and the way you steer, cooling fastest. Glide wings
+  cannot hover but are the fastest and go furthest, on no heat at all: they
+  bank into turns, dive for speed and climb again on that speed.
 - An ability slot. Phase Step blinks you forward, Kinetic Barrier cuts damage
   for a few seconds, Shock Pulse staggers everyone near you. Each has a cooldown.
 - More gear to find: carbine, SMG, marksman rifle, shotgun, arc blade, breaker

@@ -189,6 +189,8 @@ func _physics_process(delta: float) -> void:
 		cmd.move = Vector2.ZERO
 		cmd.sprint = false
 		cmd.jump = false
+		cmd.descend = false
+		cmd.roll = 0
 		cmd.primary = false
 		cmd.secondary = false
 		cmd.switch_weapon = -1
@@ -210,6 +212,8 @@ func _physics_process(delta: float) -> void:
 	cmd.jump_pressed = Input.is_action_just_pressed("jump")
 	cmd.dash = Input.is_action_just_pressed("dash")
 	cmd.slide = Input.is_action_just_pressed("slide")
+	cmd.descend = Input.is_action_pressed("slide")
+	cmd.roll = int(Input.is_action_pressed("roll_right")) - int(Input.is_action_pressed("roll_left"))
 	if cmd.dash and actor.stamina >= actor.dash_stamina:
 		Sfx.play("dash", null, -6.0)
 	cmd.primary = captured and Input.is_action_pressed("fire")

@@ -847,7 +847,7 @@ func _server_late_tick(_delta: float) -> void:
 			var actor: Actor = _actors[id]
 			var cmd := actor.cmd.to_array()
 			cmd[ActorCommand.FLAGS_INDEX] = (int(cmd[ActorCommand.FLAGS_INDEX]) & ActorCommand.HELD_MASK) \
-					| int(_one_shots.get(id, 0))
+					| int(_one_shots.get(id, 0)) | (ActorCommand.STATE_HOVERING if actor.flight.is_hovering else 0)
 			cmd[ActorCommand.SWITCH_INDEX] = _switches.get(id, -1)
 			entries.append([id, actor.global_position, actor.velocity, cmd, actor.health.health,
 					actor.health.armor, actor.stagger_left, _dead_kind.get(id, ""), _applied_seq.get(id, 0)])
@@ -1502,12 +1502,15 @@ func _apply_state(actor: Actor, entry: Array, mine: bool) -> void:
 			if actor.global_position.distance_to(at) > SNAP_DISTANCE:
 				actor.global_position = at
 				actor.velocity = entry[2]
+				actor.flight.is_hovering = _hovering_in(entry[3])
 			return
 		var miss: Vector3 = at - _history[seq]
 		max_correction = maxf(max_correction, miss.length())
 		if miss.length() > SNAP_DISTANCE:
 			actor.global_position += miss
 			actor.velocity = entry[2]
+			# Far enough out that the two sides may disagree on the jets.
+			actor.flight.is_hovering = _hovering_in(entry[3])
 			_history.clear()
 			_corrections.erase(id)
 		elif miss.length() > 0.01:
@@ -1516,6 +1519,7 @@ func _apply_state(actor: Actor, entry: Array, mine: bool) -> void:
 			_corrections.erase(id)
 		return
 	actor.cmd.apply_array(entry[3])
+	actor.flight.is_hovering = _hovering_in(entry[3])
 	# Looting is decided by the server, never replayed here.
 	actor.cmd.interact_pressed = false
 	var gap := at - actor.global_position
@@ -1525,6 +1529,12 @@ func _apply_state(actor: Actor, entry: Array, mine: bool) -> void:
 	else:
 		_corrections[id] = gap
 	actor.velocity = entry[2]
+
+
+## Whether a state's command says the server has that actor's jets lit.
+static func _hovering_in(cmd: Variant) -> bool:
+	return typeof(cmd) == TYPE_ARRAY and cmd.size() == ActorCommand.ARRAY_SIZE \
+			and int(ActorCommand._number(cmd[ActorCommand.FLAGS_INDEX])) & ActorCommand.STATE_HOVERING != 0
 
 
 func _client_late_tick() -> void:
