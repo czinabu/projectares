@@ -72,6 +72,53 @@ static func equip(actor: Actor, item_ids: Array) -> void:
 		actor.gear_items.append(id)
 
 
+## Index in `actor.weapons` of the primary gun (a firearm that is not a
+## sidearm), or -1 if there is none.
+static func primary_index(actor: Actor) -> int:
+	for i in actor.weapons.size():
+		var gun := actor.weapons[i] as Gun
+		if gun and not ItemDB.has_tag(gun.item_id, "sidearm"):
+			return i
+	return -1
+
+
+## Swaps firearm `id` into the primary slot mid-raid and puts it in hand.
+## `mag` and `reserve` restore a gun that was put down part used (below 0
+## means full). Returns what was given up, as {"id", "mag", "reserve",
+## "power", "spent"}, with "id" empty if there was no primary. Emits
+## `Actor.primary_swapped` so `NetSession` can tell clients.
+static func swap_primary(actor: Actor, id: String, mag := -1, reserve := -1) -> Dictionary:
+	var given := {"id": "", "mag": -1, "reserve": -1, "power": false, "spent": false}
+	if not ItemDB.has_tag(id, "firearm"):
+		return given
+	var index := primary_index(actor)
+	if index >= 0:
+		var old := actor.weapons[index] as Gun
+		given = {"id": old.item_id, "mag": old.ammo_in_mag, "reserve": old.reserve_ammo,
+				"power": old.is_power(), "spent": old.is_power() and old.is_spent()}
+		actor.gear_items.erase(old.item_id)
+	var gun := Gun.new()
+	_setup_weapon(gun, id, ItemDB.item_stats(id))
+	if mag >= 0:
+		gun.ammo_in_mag = mini(mag, gun.mag_size)
+	if reserve >= 0:
+		gun.reserve_ammo = reserve
+	if index >= 0:
+		actor.replace_weapon(index, gun)
+	else:
+		actor.equip_weapon(gun)
+		index = actor.weapons.size() - 1
+	actor.gear_items.append(id)
+	# What you just picked up is what you hold.
+	var held := actor.get_active_weapon()
+	if held and held != gun:
+		held.on_holster()
+	actor.active_weapon_index = index
+	actor.show_active_weapon()
+	actor.primary_swapped.emit(id, gun.ammo_in_mag, gun.reserve_ammo)
+	return given
+
+
 static func _setup_weapon(weapon: Weapon, id: String, stats: Dictionary) -> void:
 	weapon.item_id = id
 	weapon.display_name = ItemDB.item_name(id)

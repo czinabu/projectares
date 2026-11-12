@@ -79,6 +79,11 @@ var assault_size := 3
 ## How strongly fighting raises this world's war intensity (see
 ## `core/war/war_director.gd`). 0 keeps the world quiet whatever happens.
 var war_scale := 1.0
+## Power weapons (items tagged "power", see `core/war/power_armory.gd`):
+## racks at strongpoints, beside supply pods and now and then beside a
+## refilled cache, more often the hotter the war. A multiplier on how often
+## they turn up; 0 keeps them out of this world.
+var power_weapon_rate := 1.0
 ## World events: every so often the war throws something worth fighting over
 ## into the world, a supply pod or a warlord with an escort. This is the
 ## seconds between them while the world is quiet; an all-out war halves it.

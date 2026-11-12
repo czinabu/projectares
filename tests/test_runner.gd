@@ -17,6 +17,7 @@ const RigLookTests := preload("res://tests/rig_look_tests.gd")
 const EconomyTests := preload("res://tests/economy_tests.gd")
 const CustomizerTests := preload("res://tests/customizer_tests.gd")
 const BattlefieldTests := preload("res://tests/battlefield_tests.gd")
+const PowerWeaponTests := preload("res://tests/power_weapon_tests.gd")
 
 var _passed := 0
 var _failed := 0
@@ -78,6 +79,7 @@ func _run() -> void:
 	await _test_customizer()
 	await _test_economy()
 	await _test_battlefield()
+	await _test_power_weapons()
 
 
 func _test_rig_models() -> void:
@@ -95,6 +97,10 @@ func _test_economy() -> void:
 
 func _test_battlefield() -> void:
 	await BattlefieldTests.run(self)
+
+
+func _test_power_weapons() -> void:
+	await PowerWeaponTests.run(self)
 
 
 func check(condition: bool, what: String) -> void:

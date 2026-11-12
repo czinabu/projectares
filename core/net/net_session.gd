@@ -376,6 +376,10 @@ func _on_server_actor_spawned(actor: Actor) -> void:
 		_joining_look = {}
 	var id := _register(actor)
 	actor.died.connect(func(_a: Actor, info: DamageInfo) -> void: _dead_kind[id] = info.kind)
+	# A power weapon taken off a rack (or a gun taken back) is shown to all.
+	actor.primary_swapped.connect(func(item_id: String, mag: int, reserve: int) -> void:
+		for peer in _joined_peers:
+			_primary_swapped.rpc_id(peer, id, item_id, mag, reserve))
 	for peer in _joined_peers:
 		_send_spawn(peer, actor)
 
@@ -628,6 +632,10 @@ func _send_spawn(peer: int, actor: Actor) -> void:
 	var data := {}
 	if state != null:
 		data = {"kit": state.kit, "picks": state.picks}
+		var primary := Loadout.primary_index(actor)
+		if primary >= 0 and not (actor.weapons[primary] as Gun).item_id in state.kit:
+			var gun := actor.weapons[primary] as Gun
+			data["primary"] = [gun.item_id, gun.ammo_in_mag, gun.reserve_ammo]
 		if actor.has_meta("appearance"):
 			data["look"] = actor.get_meta("appearance")
 	else:
@@ -1042,6 +1050,16 @@ func _welcome(actor_id: int) -> void:
 		raid.send_request = arena_request
 
 
+## Client: someone swapped a gun into their primary slot at a power rack.
+## The server decided it; this only makes the copy here match.
+@rpc("authority", "call_remote", "reliable")
+func _primary_swapped(id: int, item_id: String, mag: int, reserve: int) -> void:
+	var actor: Actor = _actors.get(id)
+	if actor == null or not is_instance_valid(actor) or not ItemDB.has_tag(item_id, "firearm"):
+		return
+	Loadout.swap_primary(actor, item_id, mag, reserve)
+
+
 @rpc("authority", "call_remote", "reliable")
 func _spawn(id: int, kind: String, shown_name: String, node_name: String, at: Vector3, yaw: float,
 		data: Dictionary) -> void:
@@ -1058,6 +1076,9 @@ func _spawn(id: int, kind: String, shown_name: String, node_name: String, at: Ve
 		raid.add_child(actor)
 		actor.global_position = at
 		Loadout.equip(actor, data.get("kit", []))
+		var primary: Variant = data.get("primary")
+		if primary is Array and primary.size() == 3 and ItemDB.has_tag(str(primary[0]), "firearm"):
+			Loadout.swap_primary(actor, primary[0], int(primary[1]), int(primary[2]))
 		actor.weapons_locked = raid.world.safe_zone
 		Raid.MasteryTracker.apply_variants(actor, data.get("picks", {}))
 		raid.world.on_spawn(actor)

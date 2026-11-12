@@ -11,6 +11,8 @@ signal landed(impact_speed: float)
 signal notice(text: String)
 ## This actor's attack landed on `target`. Drives hit markers and sounds.
 signal hit_confirmed(target: Actor, info: DamageInfo, lethal: bool)
+## A different gun went into the primary slot mid-raid (`Loadout.swap_primary`).
+signal primary_swapped(item_id: String, mag: int, reserve: int)
 
 const LAYER_WORLD := 1
 const LAYER_ACTORS := 2
@@ -253,6 +255,9 @@ func _simulate_movement(delta: float) -> void:
 		wish = wish.normalized()
 
 	var speed := sprint_speed if (cmd.sprint and cmd.move.y > 0.0) else walk_speed
+	var held := get_active_weapon()
+	if held:
+		speed *= held.move_speed_mult()
 	var staggered := stagger_left > 0.0
 	if staggered:
 		speed *= stagger_speed_mult
@@ -385,6 +390,34 @@ func equip_weapon(weapon: Weapon) -> void:
 	weapon.visual = weapon.build_visual()
 	if weapon.visual:
 		hand.add_child(weapon.visual)
+	_refresh_weapon_visuals()
+
+
+## Puts `weapon` where the weapon at `index` was, freeing the old one. Used
+## when a power weapon is swapped in or out mid-raid. Weapon indices keep
+## their meaning, so switching weapons still picks the same slots.
+func replace_weapon(index: int, weapon: Weapon) -> void:
+	if index < 0 or index >= weapons.size():
+		equip_weapon(weapon)
+		return
+	var old := weapons[index]
+	if index == active_weapon_index:
+		old.on_holster()
+	if old.visual and is_instance_valid(old.visual):
+		old.visual.queue_free()
+	old.queue_free()
+	weapon.actor = self
+	weapons[index] = weapon
+	add_child(weapon)
+	weapon.visual = weapon.build_visual()
+	if weapon.visual:
+		hand.add_child(weapon.visual)
+	_refresh_weapon_visuals()
+
+
+## Shows the active weapon and hides the rest, after changing
+## `active_weapon_index` from outside.
+func show_active_weapon() -> void:
 	_refresh_weapon_visuals()
 
 

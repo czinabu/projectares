@@ -27,6 +27,12 @@ func _ready() -> void:
 	_streams["ability"] = _tones([520.0, 1040.0, 1560.0], 0.3, 9.0, 0.4)
 	_streams["loot"] = _tones([660.0, 990.0], 0.14, 20.0, 0.3)
 	_streams["thrust"] = _thrust_loop(0.6)
+	# Power weapons: sci-fi placeholders, picked by each gun's `shot_sound`.
+	_streams["rail"] = _tones([140.0, 2300.0, 3450.0], 0.6, 6.0, 0.55)
+	_streams["plasma_shot"] = _tones([220.0, 330.0, 95.0], 0.35, 8.0, 0.5)
+	_streams["arc_shot"] = _tones([480.0, 960.0, 1210.0], 0.22, 14.0, 0.4)
+	_streams["pulse"] = _tones([620.0, 1240.0], 0.07, 45.0, 0.3)
+	_streams["plasma_burst"] = _noise_burst(0.7, 6.0, 0.95, 42.0)
 
 
 ## Plays a sound. With a position it is 3D and fades with distance; without

@@ -775,12 +775,105 @@ func clean_appearance(raw: Variant, owned: Array = []) -> Dictionary:
 	return Human.player_look(raw, owned)
 
 
+## Power weapons are sci-fi through and through: dark armoured bodies
+## with glowing coils, cells and vents in the weapon's own colour
+## (`Gun.tracer_color`). Built from shapes, picked by tag, pointing along -Z.
+func _power_model(gun: Gun) -> Node3D:
+	var glow: Color = gun.tracer_color
+	var body := _power_mat(Color(0.13, 0.14, 0.17), 0.85, 0.35)
+	var trim := _power_mat(Color(0.32, 0.34, 0.38), 0.9, 0.3)
+	var lit := _power_mat(glow, 0.0, 0.4, glow, 3.0)
+	var holder := Node3D.new()
+	holder.name = "Model"
+	var tags: Array = ItemDB.get_item(gun.item_id).get("tags", [])
+	if "railgun" in tags:
+		# Two long rails with charge coils between them.
+		_power_box(holder, Vector3(0.09, 0.12, 0.5), Vector3(0, -0.02, 0.0), body)
+		for side in [-1.0, 1.0]:
+			_power_box(holder, Vector3(0.025, 0.05, 0.85), Vector3(0.045 * side, 0.02, -0.55), trim)
+		for i in 5:
+			_power_box(holder, Vector3(0.07, 0.07, 0.03), Vector3(0, 0.02, -0.2 - i * 0.15), lit)
+		_power_box(holder, Vector3(0.05, 0.14, 0.08), Vector3(0, -0.14, 0.08), body)
+		_power_box(holder, Vector3(0.1, 0.05, 0.12), Vector3(0, 0.1, -0.05), lit)
+	elif "launcher" in tags:
+		# A wide plasma tube on the shoulder, glowing at both ends.
+		_power_cyl(holder, 0.085, 0.85, Vector3(0, 0.02, -0.25), body)
+		_power_cyl(holder, 0.095, 0.08, Vector3(0, 0.02, -0.66), lit)
+		_power_cyl(holder, 0.095, 0.06, Vector3(0, 0.02, 0.17), trim)
+		_power_box(holder, Vector3(0.04, 0.03, 0.5), Vector3(0, 0.11, -0.25), lit)
+		_power_box(holder, Vector3(0.05, 0.14, 0.07), Vector3(0, -0.12, -0.05), body)
+		_power_box(holder, Vector3(0.12, 0.08, 0.12), Vector3(0.07, 0.05, -0.05), trim)
+	elif "grenade_launcher" in tags:
+		# Short barrel over a fat glowing drum of arc charges.
+		_power_box(holder, Vector3(0.08, 0.1, 0.45), Vector3(0, 0.0, -0.15), body)
+		_power_cyl(holder, 0.05, 0.35, Vector3(0, 0.05, -0.45), trim)
+		var drum := _power_cyl(holder, 0.1, 0.12, Vector3(0, -0.06, -0.12), lit)
+		drum.rotation = Vector3(0, 0, PI / 2.0)
+		_power_box(holder, Vector3(0.05, 0.14, 0.07), Vector3(0, -0.13, 0.08), body)
+		_power_box(holder, Vector3(0.09, 0.02, 0.3), Vector3(0, 0.07, -0.15), lit)
+	else:
+		# Rotary pulse cannon: a ring of barrels around a glowing core.
+		_power_box(holder, Vector3(0.16, 0.16, 0.36), Vector3(0, 0, 0.0), body)
+		for i in 6:
+			var a := TAU * i / 6.0
+			_power_cyl(holder, 0.022, 0.7, Vector3(cos(a) * 0.065, sin(a) * 0.065, -0.5), trim)
+		_power_cyl(holder, 0.03, 0.72, Vector3(0, 0, -0.5), lit)
+		_power_cyl(holder, 0.11, 0.05, Vector3(0, 0, -0.25), lit)
+		_power_box(holder, Vector3(0.18, 0.06, 0.2), Vector3(0, 0.12, 0.05), trim)
+		_power_box(holder, Vector3(0.05, 0.14, 0.07), Vector3(0, -0.14, 0.1), body)
+	return holder
+
+
+func _power_mat(color: Color, metal: float, rough: float, glow := Color.BLACK,
+		glow_energy := 0.0) -> StandardMaterial3D:
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = color
+	mat.metallic = metal
+	mat.roughness = rough
+	if glow_energy > 0.0:
+		mat.emission_enabled = true
+		mat.emission = glow
+		mat.emission_energy_multiplier = glow_energy
+	return mat
+
+
+func _power_box(parent: Node3D, size: Vector3, at: Vector3, mat: Material) -> MeshInstance3D:
+	var mesh := BoxMesh.new()
+	mesh.size = size
+	mesh.material = mat
+	var part := MeshInstance3D.new()
+	part.mesh = mesh
+	part.position = at
+	part.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	parent.add_child(part)
+	return part
+
+
+## A cylinder lying along -Z (the barrel direction).
+func _power_cyl(parent: Node3D, radius: float, length: float, at: Vector3, mat: Material) -> MeshInstance3D:
+	var mesh := CylinderMesh.new()
+	mesh.top_radius = radius
+	mesh.bottom_radius = radius
+	mesh.height = length
+	mesh.radial_segments = 12
+	mesh.material = mat
+	var part := MeshInstance3D.new()
+	part.mesh = mesh
+	part.position = at
+	part.rotation = Vector3(PI / 2.0, 0, 0)
+	part.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	parent.add_child(part)
+	return part
+
+
 ## The model for a held weapon, or null to keep the greybox one.
 func weapon_model(weapon: Weapon) -> Node3D:
 	if weapon is MeleeWeapon:
 		return _melee_model(weapon)
 	if not weapon is Gun:
 		return null
+	if weapon.item_id != "" and ItemDB.has_tag(weapon.item_id, "power"):
+		return _power_model(weapon as Gun)
 	var file := DEFAULT_GUN
 	for entry: Array in GUN_MODELS:
 		if weapon.item_id != "" and ItemDB.has_tag(weapon.item_id, entry[0]):
