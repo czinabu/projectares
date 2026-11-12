@@ -84,6 +84,11 @@ func _ready() -> void:
 
 	await _settle(90)
 	await _shot(out_dir.path_join("first_person.png"))
+	controller.wrist_raised = true
+	await _settle(30)
+	await _shot(out_dir.path_join("first_person_watch.png"))
+	controller.wrist_raised = false
+	await _settle(30)
 	# Mid-burst, to catch the muzzle flash and impact sparks.
 	Input.action_press("fire")
 	await _settle(9)
@@ -171,6 +176,13 @@ func _ready() -> void:
 	controller.toggle_view()
 	await _settle(60)
 	await _shot(out_dir.path_join("third_person.png"))
+	controller.wrist_raised = true
+	await _settle(30)
+	await _shot(out_dir.path_join("third_person_watch.png"))
+	controller.camera.fov = 110.0
+	controller.base_fov_third = 110.0
+	await _settle(30)
+	await _shot(out_dir.path_join("third_person_watch_wide.png"))
 	raid.queue_free()
 	await _settle(2)
 	await _world_shots(out_dir)
