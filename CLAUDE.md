@@ -144,6 +144,19 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   the primary dry with the trigger held draws a loaded sidearm instead of
   reloading (`Actor._simulate_weapons`). Headshots come from
   `Combat.is_headshot` on a `Combat.trace` hit; a gun's `headshot_mult` scales them.
+- Attachments are items tagged "attachment" plus their slot tag ("optic",
+  "muzzle", "grip", "magazine"), each an optional loadout slot
+  (`Loadout.ATTACHMENT_SLOTS`). They fit every primary and never a sidearm.
+  `Loadout.equip` fits them with `Gun.fit` before the gun is equipped: their
+  stats are data ("mult" scales the gun's tuning vars, "zoom" sets
+  `Gun.ads_zoom`, "quiet" suppresses, "model" picks the shape). They go in
+  `gear_items`, so they drop and come home with the gun. `Gun.build_attachment`
+  builds each shape with its origin at the mount; `Look.mount_attachments`
+  moves them onto the real model (`Look.GUN_MOUNTS`). An optic's "Sight"
+  marker is the eye point: in first person the controller moves the hand so
+  the camera looks through it, and zooms by `Weapon.aim_zoom()`. Scopes are
+  real geometry you look down, never a screen overlay. Fitting happens at
+  the home base's gunsmith bench (`BaseLayout` kind "gunsmith").
 - Flight rigs and abilities are data too. `FlightRig` and `Ability` are single
   classes whose item stats pick the behavior. Abilities fire from
   `ActorCommand.ability_pressed`.

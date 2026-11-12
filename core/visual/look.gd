@@ -110,6 +110,18 @@ const GUN_MODELS := [
 	["rifle", "AR_2.glb"],
 ]
 const DEFAULT_GUN := "AR_3.glb"
+## Where attachments sit on each gun model. The optic sits on top of the gun
+## and the muzzle device on the end of the barrel, both found from the mesh;
+## this gives how far along the gun the optic goes (0 at the stock, 1 at the
+## muzzle), and the grip and magazine mounts as [along, up from the bottom].
+const GUN_MOUNTS := {
+	"AR_5.glb": {"optic": 0.55, "grip": [0.82, 0.32], "magazine": [0.36, 0.3]},
+	"AR_2.glb": {"optic": 0.5, "grip": [0.82, 0.62], "magazine": [0.6, 0.5]},
+	"SMG_1.glb": {"optic": 0.62, "grip": [0.66, 0.62], "magazine": [0.84, 0.55]},
+	"Sniper_2.glb": {"optic": 0.5, "grip": [0.72, 0.4], "magazine": [0.45, 0.32]},
+	"Shotgun_1.glb": {"optic": 0.3, "grip": [0.62, 0.4], "magazine": [0.36, 0.45]},
+	"AR_3.glb": {"optic": 0.5, "grip": [0.8, 0.5], "magazine": [0.55, 0.45]},
+}
 ## Melee models picked by item tag, first match wins: file, length in meters,
 ## how far up from the pommel the hand grips it, and whether it takes both hands.
 const MELEE_MODELS := [
@@ -127,6 +139,8 @@ var _materials := {}
 var _noise: NoiseTexture2D
 var _gear_materials := {}
 var _prop_sizes := {}
+## Gun model file -> attachment slot -> mount point (see `mount_attachments`).
+var _gun_mounts := {}
 
 
 func _ready() -> void:
@@ -803,7 +817,106 @@ func weapon_model(weapon: Weapon) -> Node3D:
 	# The packs point guns along +X. Hands hold them pointing along -Z.
 	holder.rotation.y = PI / 2.0
 	holder.position = Vector3(0, -0.1, -0.08)
+	holder.set_meta("gun_file", file)
+	if not weapon.is_sidearm:
+		_energy_trim(holder, model)
 	return holder
+
+
+## Sci-fi trim for a gun model: lit energy lines down both sides of the
+## receiver and a lit cell window near the grip. `model` points along +X
+## inside `holder`.
+func _energy_trim(holder: Node3D, model: Node3D) -> void:
+	var box := model_bounds(model)
+	var color := Color(0.25, 0.9, 1.0)
+	var length := box.size.x
+	var trim := Node3D.new()
+	trim.name = "EnergyTrim"
+	for side: float in [-1.0, 1.0]:
+		var z := box.get_center().z + side * (box.size.z * 0.5 + 0.0015)
+		trim.add_child(Weapon.make_part(Vector3(length * 0.42, 0.006, 0.002),
+				Vector3(box.position.x + length * 0.55, box.position.y + box.size.y * 0.72, z), color, true))
+		trim.add_child(Weapon.make_part(Vector3(length * 0.08, 0.018, 0.002),
+				Vector3(box.position.x + length * 0.3, box.position.y + box.size.y * 0.6, z), color, true))
+	holder.add_child(trim)
+
+
+## Moves a gun's attachments (the "Attachments" child of `visual`, see
+## `Gun.build_attachment`) from the greybox mounts onto its real model (the
+## "Model" child that `weapon_model` built). Safe to call more than once.
+func mount_attachments(visual: Node3D) -> void:
+	var fitted := visual.get_node_or_null("Attachments") as Node3D
+	var model := visual.get_node_or_null("Model") as Node3D
+	if fitted == null or model == null or not model.has_meta("gun_file"):
+		return
+	var file: String = model.get_meta("gun_file")
+	if not _gun_mounts.has(file):
+		_gun_mounts[file] = _measure_mounts(model, GUN_MOUNTS.get(file, GUN_MOUNTS[DEFAULT_GUN]))
+	var mounts: Dictionary = _gun_mounts[file]
+	for part in fitted.get_children():
+		if part is Node3D and mounts.has(part.name):
+			(part as Node3D).position = mounts[part.name]
+			part.set_meta("mounted", true)
+	# An optic raised to see over the front sight stands on a riser.
+	var optic := fitted.get_node_or_null("optic") as Node3D
+	if optic and mounts.has("rail") and not optic.has_node("Riser"):
+		var rise: float = optic.position.y - float(mounts["rail"])
+		if rise > 0.003:
+			var riser := Weapon.make_part(Vector3(0.026, rise, 0.07), Vector3(0, -rise * 0.5, 0), Color(0.1, 0.11, 0.13))
+			riser.name = "Riser"
+			optic.add_child(riser)
+
+
+## Finds the attachment mounts on a gun model, in the space of its parent.
+func _measure_mounts(model: Node3D, along: Dictionary) -> Dictionary:
+	var points := PackedVector3Array()
+	for node in model.find_children("*", "MeshInstance3D", true, false):
+		var mesh_node := node as MeshInstance3D
+		if mesh_node.mesh == null:
+			continue
+		var xform := mesh_node.transform
+		var up := mesh_node.get_parent()
+		while up != null and up != model.get_parent():
+			if up is Node3D:
+				xform = (up as Node3D).transform * xform
+			up = up.get_parent()
+		for v in mesh_node.mesh.get_faces():
+			points.append(xform * v)
+	if points.is_empty():
+		return {}
+	var low := points[0]
+	var high := points[0]
+	for p in points:
+		low = low.min(p)
+		high = high.max(p)
+	var length := high.z - low.z
+	var height := high.y - low.y
+	var mid_x := (low.x + high.x) * 0.5
+	# The optic sits on whatever is highest around its spot.
+	var optic_z := high.z - float(along.get("optic", 0.5)) * length
+	var top := -INF
+	# Sights further forward (a front post) must not block the optic's view.
+	var ahead := -INF
+	# The muzzle device goes on the middle of whatever is at the very front.
+	var front_low := INF
+	var front_high := -INF
+	for p in points:
+		if absf(p.z - optic_z) < length * 0.08:
+			top = maxf(top, p.y)
+		elif p.z < optic_z:
+			ahead = maxf(ahead, p.y)
+		if p.z < low.z + length * 0.03:
+			front_low = minf(front_low, p.y)
+			front_high = maxf(front_high, p.y)
+	var out := {
+		"optic": Vector3(mid_x, maxf(top if top > -INF else high.y, ahead - 0.012), optic_z),
+		"rail": top if top > -INF else high.y,
+		"muzzle": Vector3(mid_x, (front_low + front_high) * 0.5 if front_high > -INF else low.y + height * 0.7, low.z),
+	}
+	for slot: String in ["grip", "magazine"]:
+		var spot: Array = along.get(slot, [0.6, 0.4])
+		out[slot] = Vector3(mid_x, low.y + float(spot[1]) * height, high.z - float(spot[0]) * length)
+	return out
 
 
 ## Melee models stand along +Y with the handle down, the way the greybox
@@ -940,6 +1053,12 @@ func _dress_display(display: Node3D) -> void:
 	var holder := Node3D.new()
 	holder.transform = grey.transform
 	holder.add_child(real)
+	# Attachments fitted to a gun on show move across onto the real model.
+	var fitted := grey.get_node_or_null("Attachments")
+	if fitted:
+		grey.remove_child(fitted)
+		holder.add_child(fitted)
+		mount_attachments(holder)
 	model.remove_child(grey)
 	grey.queue_free()
 	model.add_child(holder)

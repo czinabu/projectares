@@ -69,6 +69,10 @@ a tag over it says what it is and what it is worth.
 | Uplink | Your name, host a server, or join one |
 | Arena gate | Straight into the arena (see "The arena" below) |
 
+The gunsmith bench (back left, by the gun rack) holds your attachments on its
+pegboard and your primary in its vise. Look at an attachment and press **E**
+to fit it; a tablet beside the vise lists what the fitted kit changes.
+
 The door behind you leads online (it opens the uplink). Signing out of a
 world, or dying and pressing L, brings you back here.
 
@@ -235,6 +239,14 @@ you have.
   quick kicks upward, and glide wings that launch once and then soar.
 - An ability slot. Phase Step blinks you forward, Kinetic Barrier cuts damage
   for a few seconds, Shock Pulse staggers everyone near you. Each has a cooldown.
+- Attachments for your primary, in four slots: optic, muzzle, grip and
+  magazine. Each one shows on the gun and trades one stat for another: a holo
+  reflex sight or 4x and 8x scopes (you look down the scope itself when you
+  aim in first person, no overlay), a compensator, booster or suppressor,
+  vertical or angled grips, and extended, quick or drum mags. Fit them at the
+  gunsmith bench in your base. They ride with the gun, so they are lost with
+  it. Basic ones are sold at the Armory; scopes, the suppressor and the drum
+  mag are loot only.
 - More gear to find: carbine, SMG, marksman rifle, shotgun, arc blade, breaker
   hammer, three armor frames, and a better jetpack.
 - Motorbikes, the first vehicle. Put one in the vehicle slot and it is parked
@@ -259,7 +271,7 @@ you have.
   losing your connection online leaves your body standing in the world for
   the same time (30 seconds if you were in a fight), so nobody escapes a
   fight by closing the game.
-- Credits and shops. The trader in your base has five shops: the Armory (weapons), Outfitter
+- Credits and shops. The trader in your base has five shops: the Armory (weapons and attachments), Outfitter
   (armor, flight rigs, medkits), Garage (bikes), Furnisher (furniture and
   decorations for your home base) and Tailor (clothing). See "Credits and
   shops" below.
