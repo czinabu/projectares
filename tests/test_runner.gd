@@ -213,7 +213,64 @@ func _test_raid_setup_and_movement() -> void:
 		if p.is_on_floor():
 			break
 	check(p.is_on_floor(), "player comes back down")
+	await _check_slide(p)
 	await _end_raid(raid)
+
+
+## Sliding: only from a fast run on the ground, skids from a burst down to a
+## crawl, drops the eyes, and a jump ends it. Checked on the movement step
+## itself, then once through the physics loop.
+func _check_slide(p: Actor) -> void:
+	var fast := Vector3(0, 0, -p.sprint_speed)
+	var dt := 1.0 / 60.0
+	p.stamina = p.max_stamina
+	p.cmd.slide = true
+	p._simulate_slide(Vector3(0, 0, -3.0), true, false, dt)
+	check(not p.is_sliding(), "a slide needs a running start")
+	p._simulate_slide(fast, false, false, dt)
+	check(not p.is_sliding(), "a slide can't start in the air")
+	var stand_eyes := p.get_eye_position().y
+	var going := p._simulate_slide(fast, true, false, dt)
+	check(p.is_sliding() and going.length() >= p.slide_speed - 0.5 and p.stamina < p.max_stamina,
+			"sliding from a sprint bursts forward and costs stamina")
+	p.cmd.slide = false
+	var speeds: Array[float] = [going.length()]
+	for i in 30:
+		going = p._simulate_slide(going, true, false, dt)
+		speeds.append(going.length())
+	check(speeds[-1] < speeds[0] and speeds[-1] >= p.slide_end_speed, "a slide skids down toward a crawl")
+	check(going.normalized().is_equal_approx(fast.normalized()), "a slide keeps its line")
+	check(p.get_eye_position().y < stand_eyes - 0.3, "sliding drops the eyes")
+	p.cmd.slide = true
+	p.cmd.jump_pressed = true
+	p._simulate_slide(going, true, false, dt)
+	check(not p.is_sliding(), "jumping ends a slide")
+	p.cmd.jump_pressed = false
+	p._simulate_slide(fast, true, false, dt)
+	check(not p.is_sliding(), "a slide can't be chained straight into another")
+	p.cmd.slide = false
+	for i in 120:
+		p._simulate_slide(Vector3.ZERO, true, false, dt)
+	check(is_zero_approx(p.crouch) and is_equal_approx(p.get_eye_position().y, stand_eyes), "the actor stands back up")
+
+	# Through the physics loop, as the server and every client run it.
+	p.velocity = p.global_basis * Vector3(0, 0, -p.sprint_speed)
+	p.cmd.move = Vector2.ZERO
+	p.cmd.slide = true
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	p.cmd.slide = false
+	check(p.is_sliding(), "pressing slide while running slides")
+	var cmd := ActorCommand.new()
+	cmd.slide = true
+	var copy := ActorCommand.new()
+	copy.apply_array(cmd.to_array())
+	check(copy.slide and cmd.flags() & ActorCommand.ONE_SHOT_MASK & ActorCommand.FLAG_SLIDE != 0,
+			"a slide press travels with the command, as a one-shot")
+	copy.clear_one_shots()
+	check(not copy.slide, "a slide press lasts one tick")
+	for i in 90:
+		await get_tree().physics_frame
 
 
 func _test_combat_and_loot() -> void:

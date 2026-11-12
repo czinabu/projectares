@@ -21,6 +21,8 @@ var jump := false
 ## Pressed this tick: jump off the ground.
 var jump_pressed := false
 var dash := false
+## Pressed this tick: drop into a slide (only from a run, see `Actor`).
+var slide := false
 
 ## Primary and secondary weapon actions (fire / aim, light / heavy attack).
 var primary := false
@@ -46,6 +48,7 @@ var switch_weapon := -1
 func clear_one_shots() -> void:
 	jump_pressed = false
 	dash = false
+	slide = false
 	primary_pressed = false
 	secondary_pressed = false
 	tertiary_pressed = false
@@ -77,11 +80,12 @@ const FLAG_RELOAD_PRESSED := 512
 const FLAG_INTERACT_PRESSED := 1024
 const FLAG_HEAL_PRESSED := 2048
 const FLAG_ABILITY_PRESSED := 4096
+const FLAG_SLIDE := 8192
 ## Flags that describe a held key, and flags that last a single tick.
 const HELD_MASK := FLAG_SPRINT | FLAG_JUMP | FLAG_PRIMARY | FLAG_SECONDARY
 const ONE_SHOT_MASK := FLAG_JUMP_PRESSED | FLAG_DASH | FLAG_PRIMARY_PRESSED | FLAG_SECONDARY_PRESSED \
 		| FLAG_TERTIARY_PRESSED | FLAG_RELOAD_PRESSED | FLAG_INTERACT_PRESSED | FLAG_HEAL_PRESSED \
-		| FLAG_ABILITY_PRESSED
+		| FLAG_ABILITY_PRESSED | FLAG_SLIDE
 
 
 ## Every button, held or pressed, packed into one integer.
@@ -100,6 +104,7 @@ func flags() -> int:
 	if interact_pressed: out |= FLAG_INTERACT_PRESSED
 	if heal_pressed: out |= FLAG_HEAL_PRESSED
 	if ability_pressed: out |= FLAG_ABILITY_PRESSED
+	if slide: out |= FLAG_SLIDE
 	return out
 
 
@@ -131,6 +136,7 @@ func apply_array(data: Array) -> void:
 	interact_pressed = bits & FLAG_INTERACT_PRESSED != 0
 	heal_pressed = bits & FLAG_HEAL_PRESSED != 0
 	ability_pressed = bits & FLAG_ABILITY_PRESSED != 0
+	slide = bits & FLAG_SLIDE != 0
 	stance = clampi(int(_number(data[STANCE_INDEX])), 0, 2)
 	switch_weapon = clampi(int(_number(data[SWITCH_INDEX])), -1, 8)
 

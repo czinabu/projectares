@@ -173,7 +173,7 @@ func _process(delta: float) -> void:
 		p.inventory.items.size(), p.inventory.capacity, p.inventory.total_value(),
 		p.inventory.count_with_tag("heal")]
 
-	_view.text = "Camera: %s   press V to switch\nWASD move   Shift sprint   %s   Q dash   H heal   E loot%s   L sign out\n1 / 2 or mouse wheel: switch weapon   %s" % [
+	_view.text = "Camera: %s   press V to switch\nWASD move   Shift sprint   C slide   %s   Q dash   H heal   E loot%s   L sign out\n1 / 2 or mouse wheel: switch weapon   %s" % [
 		PlayerController.VIEW_NAMES[controller.active_view()],
 		p.flight.controls_hint(),
 		"   G ability" if p.ability.enabled else "",
