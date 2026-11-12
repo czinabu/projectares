@@ -14,7 +14,17 @@ static func run(t: Node) -> void:
 			"the height between samples is blended")
 	t.check(is_equal_approx(ground.height_at(500.0, 0.0), 5.0), "past the edge it answers for the edge")
 	t.check(ground.slope_at(0.0, 0.0) > 0.4 and ground.slope_at(0.0, 0.0) < 0.6, "a slope can be measured")
+	ground.tile_cells = 4
 	ground.build(StandardMaterial3D.new())
+	var triangles := 0
+	var edges_meet := true
+	for tile in ground.tiles:
+		triangles += tile.mesh.surface_get_arrays(0)[Mesh.ARRAY_INDEX].size() / 3
+		for v: Vector3 in tile.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]:
+			edges_meet = edges_meet and is_equal_approx(v.y, ground.height_at(v.x, v.z))
+	t.check(ground.tiles.size() == 9 and triangles == 10 * 10 * 2,
+			"the ground is drawn in tiles that cover every cell once (%d tiles, %d triangles)" % [ground.tiles.size(), triangles])
+	t.check(edges_meet, "every tile follows the same heights, so the tiles meet without a seam")
 	t.add_child(ground)
 	ground.position = Vector3(0, 0, 3000)
 	var walker := Actor.new()
@@ -87,6 +97,36 @@ static func run(t: Node) -> void:
 		if absf(bot.global_position.y - under.call(bot)) < 1.0:
 			standing += 1
 	t.check(standing == raid.bots.size(), "every bot stands on the ground (%d of %d)" % [standing, raid.bots.size()])
+
+	# Parked bikes rest instead of moving every tick, and wake when moved.
+	var parked_bikes: Array = raid.vehicles.filter(func(v: Node3D) -> bool: return v.get("rider") == null)
+	var bikes_at_rest: Array = parked_bikes.filter(func(v: Node3D) -> bool: return v.get("_rest_at") == v.global_position)
+	t.check(not parked_bikes.is_empty() and bikes_at_rest.size() == parked_bikes.size(),
+			"parked bikes come to rest (%d of %d)" % [bikes_at_rest.size(), parked_bikes.size()])
+	if not parked_bikes.is_empty():
+		var lifted: Node3D = parked_bikes[0]
+		var rest_y: float = lifted.global_position.y
+		lifted.global_position += Vector3(0.0, 3.0, 0.0)
+		await t.frames(60)
+		t.check(absf(lifted.global_position.y - rest_y) < 0.3, "a resting bike lifted off the ground falls back down")
+
+	# Small props stop being drawn far away; the ground and big wrecks never do.
+	Look._limit_draw_distance(map)
+	var limited_count := 0
+	var small_left_props := 0
+	for node in map.find_children("*", "MeshInstance3D", true, false):
+		var mesh := node as MeshInstance3D
+		if mesh.mesh == null:
+			continue
+		var size := (mesh.global_transform * mesh.get_aabb()).size
+		var prop_size := maxf(size.x, maxf(size.y, size.z))
+		if mesh.visibility_range_end > 0.0:
+			limited_count += 1
+		elif prop_size < 2.0:
+			small_left_props += 1
+	var ground_kept := field.tiles.all(func(tile: MeshInstance3D) -> bool: return tile.visibility_range_end == 0.0)
+	t.check(limited_count > 50 and small_left_props == 0 and ground_kept,
+			"small props fade out with distance, the ground stays (%d limited)" % limited_count)
 
 	# The field can be crossed on foot: the navigation mesh joins a drop point
 	# on one side to a strongpoint on the other.

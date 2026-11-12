@@ -59,6 +59,9 @@ var rider: Actor
 var heading := 0.0
 ## Signed speed along the heading. Negative while reversing.
 var speed := 0.0
+## Where and which way the bike stood after its last move (see `_physics_process`).
+var _rest_at := Vector3.INF
+var _rest_heading := 0.0
 var airborne_time := 0.0
 
 ## A vehicle carried on the watch is a toy this many times smaller.
@@ -314,6 +317,13 @@ func _physics_process(delta: float) -> void:
 			steer = clampf(cmd.move.x, -1.0, 1.0)
 			boosting = cmd.sprint
 
+	# A parked bike nobody rides, standing where its last move left it, has
+	# no move to make. A map has a dozen standing about, and the move is the
+	# dearest part of a tick. Anything that moves, turns or pushes it wakes it.
+	if rider == null and is_on_floor() and speed == 0.0 and velocity.is_zero_approx() \
+			and global_position == _rest_at and heading == _rest_heading:
+		_update_visual(0.0, delta)
+		return
 	var on_floor := is_on_floor()
 	if on_floor:
 		_drive(throttle, steer, boosting, delta)
@@ -344,6 +354,12 @@ func _physics_process(delta: float) -> void:
 	else:
 		airborne_time += delta
 	rotation = Vector3(0.0, heading, 0.0)
+	if is_on_floor() and Vector2(velocity.x, velocity.z).length() < 0.01 and absf(speed) < 0.01:
+		# At rest: settle exactly, so the next tick can tell nothing changed.
+		speed = 0.0
+		velocity = Vector3.ZERO
+	_rest_at = global_position
+	_rest_heading = heading
 	_place_rider()
 	_update_visual(steer, delta)
 

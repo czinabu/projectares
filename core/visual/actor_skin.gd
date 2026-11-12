@@ -135,6 +135,14 @@ var reach_time := 0.22
 var fold_time := 0.18
 var between_time := 0.14
 var return_time := 0.2
+## Far from the camera a body is posed less often: past each of these
+## distances (metres, scaled by the camera's zoom so a scope brings detail
+## back) its animation, legs and arm take one longer step every
+## `detail_steps` frames instead of one each frame. View only.
+var detail_ranges: Array[float] = [35.0, 80.0, 160.0]
+var detail_steps: Array[int] = [1, 2, 3, 5]
+## The field of view the ranges are for. A narrower view counts as closer.
+var detail_fov := 80.0
 
 var look: Node
 var actor: Actor
@@ -217,6 +225,16 @@ var _moving_weight := 0.0
 var arm: Node
 ## Matches the legs to the actor's speed and direction.
 var locomotion: Node
+## Frames between poses now (see `detail_ranges`), frames since the last one
+## and the time they add up to.
+var _detail_every := 1
+var _detail_wait := 0
+var _detail_delta := 0.0
+## Weapon meshes whose shadows are off while the body is far (`_gear_shadows`).
+var _unshadowed: Array[GeometryInstance3D] = []
+## How the animation and skeleton ran on their own, to go back to.
+var _own_modes: Array[int] = [AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_IDLE,
+		Skeleton3D.MODIFIER_CALLBACK_MODE_PROCESS_IDLE]
 
 func _ready() -> void:
 	var skin_name: String = actor.get_meta("look", look.DEFAULT_SKIN)
@@ -311,6 +329,92 @@ func _play(key: String, speed := 1.0) -> void:
 func _process(delta: float) -> void:
 	if actor == null or not is_instance_valid(actor):
 		return
+	_detail_delta += delta
+	_detail_wait += 1
+	if _detail_wait < _detail_every:
+		# The actor puts its hand back every tick; keep the weapon on the
+		# model's hand as it was last posed.
+		if arm != null and _skeleton != null:
+			arm.hold_weapon()
+		return
+	var step := _detail_delta
+	_detail_delta = 0.0
+	_detail_wait = 0
+	_set_detail(detail_step())
+	_update(step)
+	if _detail_every > 1:
+		if _player:
+			_player.advance(step)
+		if _skeleton:
+			_skeleton.advance(step)
+
+
+## How many frames apart this body is posed, from how far it is from the
+## camera and how far the camera is zoomed in. Every frame without a camera.
+func detail_step() -> int:
+	if not is_inside_tree():
+		return 1
+	var camera := get_viewport().get_camera_3d()
+	if camera == null or camera.projection != Camera3D.PROJECTION_PERSPECTIVE:
+		return 1
+	var seen := camera.global_position.distance_to(global_position) \
+			* tan(deg_to_rad(camera.fov) * 0.5) / tan(deg_to_rad(detail_fov) * 0.5)
+	for i in detail_ranges.size():
+		if seen < detail_ranges[i]:
+			return detail_steps[mini(i, detail_steps.size() - 1)]
+	return detail_steps[-1]
+
+
+## Posed every frame, the model's animation and skeleton run on their own as
+## usual; posed less often, `_process` steps them by hand.
+func _set_detail(every: int) -> void:
+	every = maxi(every, 1)
+	if (every > 1) == (_detail_every > 1):
+		_detail_every = every
+		return
+	_detail_every = every
+	if _player:
+		if every > 1:
+			_own_modes[0] = _player.callback_mode_process
+		_player.callback_mode_process = AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_MANUAL if every > 1 \
+				else _own_modes[0]
+	if _skeleton:
+		if every > 1:
+			_own_modes[1] = _skeleton.modifier_callback_mode_process
+		_skeleton.modifier_callback_mode_process = Skeleton3D.MODIFIER_CALLBACK_MODE_PROCESS_MANUAL if every > 1 \
+				else _own_modes[1]
+	if every > 1:
+		# Spread the bodies out, so they do not all take their step together.
+		_detail_wait = int(get_instance_id() % every)
+	_gear_shadows(every == 1)
+
+
+## Weapons cast shadows only on a body posed every frame (close by): further
+## out a gun's shadow is a few pixels, but it costs a draw in every shadow
+## split. Only what cast a shadow before is switched back on.
+func _gear_shadows(on: bool) -> void:
+	if on:
+		for node in _unshadowed:
+			if is_instance_valid(node):
+				node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+		_unshadowed.clear()
+		return
+	var holders: Array[Node] = []
+	for weapon in actor.weapons:
+		if weapon.visual:
+			holders.append(weapon.visual)
+	for worn: Variant in _stowed.values():
+		if worn != null and is_instance_valid(worn):
+			holders.append(worn)
+	for holder in holders:
+		for node in holder.find_children("*", "GeometryInstance3D", true, false):
+			var geometry := node as GeometryInstance3D
+			if geometry.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_ON:
+				geometry.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+				_unshadowed.append(geometry)
+
+
+func _update(delta: float) -> void:
 	if actor.body_mesh:
 		visible = actor.body_mesh.visible
 	if actor.weapons.size() != _weapons_seen or _has_bare_weapon():
@@ -480,6 +584,8 @@ func _dress_weapons() -> void:
 			look.mount_attachments(weapon.visual)
 		elif weapon is MeleeWeapon:
 			look.restyle_melee(weapon.visual)
+	if _detail_every > 1:
+		_gear_shadows(false)
 
 
 ## Shows every holstered weapon where it is worn, and hides the one in hand.

@@ -200,8 +200,14 @@ func _process(delta: float) -> void:
 		return
 	_read_range(p, delta)
 	_sync_ghosts(p)
-	_sync_actors(p)
-	_sync_heat(p)
+	# One pass over everyone in the wearer's world, shared by what follows.
+	var around: Array[Actor] = []
+	for node in get_tree().get_nodes_in_group("actors"):
+		var other := node as Actor
+		if other != null and Raid.together(other, p):
+			around.append(other)
+	_sync_actors(p, around)
+	_sync_heat(p, around)
 	_tick_rings(delta)
 	queue_redraw()
 
@@ -306,20 +312,18 @@ func _sync_ghosts(p: Actor) -> void:
 
 
 ## Everything that follows another actor: pulse rings, tag marks and glints.
-func _sync_actors(p: Actor) -> void:
+func _sync_actors(p: Actor, around: Array[Actor]) -> void:
 	var camera := get_viewport().get_camera_3d()
 	var tagged := {}
 	var glinting := {}
-	for node in get_tree().get_nodes_in_group("actors"):
-		var other := node as Actor
-		if other == null or not Raid.together(other, p):
-			continue
+	for other in around:
 		if not _heard.has(other):
 			_heard[other] = true
 			other.visor.pulsed.connect(_on_pulsed.bind(other.visor.scan_radius, other.visor.glass_color))
 			other.tree_exiting.connect(func() -> void: _heard.erase(other))
 		# Tags held by the wearer's side. Online the server only sends those.
-		if other == p or not Combat.authoritative or Visor.allied(p, other):
+		# Most visors hold no tags: ask that before the dearer question of sides.
+		if not other.visor.tags.is_empty() and (other == p or not Combat.authoritative or Visor.allied(p, other)):
 			for target: Variant in other.visor.tags:
 				if is_instance_valid(target):
 					tagged[target] = true
@@ -330,10 +334,8 @@ func _sync_actors(p: Actor) -> void:
 				glinting[other] = eye + to_me.normalized() * 0.4
 	var embers := {}
 	if camera != null:
-		for node in get_tree().get_nodes_in_group("actors"):
-			var other := node as Actor
-			if other != null and other != p and not other.is_dead and other.visor.thermal_on \
-					and Raid.together(other, p) \
+		for other in around:
+			if other != p and not other.is_dead and other.visor.thermal_on \
 					and camera.global_position.distance_to(other.global_position) <= ember_range:
 				embers[other] = true
 	var sensed := {}
@@ -421,12 +423,11 @@ func _new_threat_mark() -> Node3D:
 ## Thermal: every living body in view gets a bright shell the heat picture
 ## turns hot. It is hidden by walls like the body it covers, and fog does
 ## not touch it. The hotter the body, the brighter the shell.
-func _sync_heat(p: Actor) -> void:
+func _sync_heat(p: Actor, around: Array[Actor]) -> void:
 	var warm := {}
 	if thermal_shown:
-		for node in get_tree().get_nodes_in_group("actors"):
-			var other := node as Actor
-			if other != null and other != p and not other.is_dead and Raid.together(other, p):
+		for other in around:
+			if other != p and not other.is_dead:
 				warm[other] = true
 	_sync_marks(_heat, warm, _new_heat_shell)
 	for other: Actor in _heat:
