@@ -831,7 +831,7 @@ func _server_late_tick(_delta: float) -> void:
 	for id: int in _actors:
 		var actor: Actor = _actors[id]
 		_one_shots[id] = int(_one_shots.get(id, 0)) | (actor.cmd.flags() & ActorCommand.ONE_SHOT_MASK)
-		if actor.cmd.switch_weapon >= 0:
+		if actor.cmd.switch_weapon != -1:
 			_switches[id] = actor.cmd.switch_weapon
 	_tick += 1
 	if lag_compensation:

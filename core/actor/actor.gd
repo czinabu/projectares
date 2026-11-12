@@ -108,6 +108,8 @@ var body_mesh: MeshInstance3D
 ## Holds the active weapon's model. A first-person camera may pose it itself.
 var hand := Node3D.new()
 var hand_override := false
+## The weapon last put away with the holster key, drawn again by it.
+var last_drawn := 0
 
 var _dash_left := 0.0
 var _dash_cd := 0.0
@@ -336,12 +338,16 @@ func is_sliding() -> bool:
 func _simulate_weapons(delta: float) -> void:
 	for w in weapons:
 		w.tick(delta)
-	if cmd.switch_weapon >= 0 and cmd.switch_weapon < weapons.size() \
-			and cmd.switch_weapon != active_weapon_index:
+	var switch_to := cmd.switch_weapon
+	if switch_to == ActorCommand.HOLSTER:
+		switch_to = -1 if active_weapon_index >= 0 else -2
+	if cmd.switch_weapon != -1 and switch_to >= -1 and switch_to < weapons.size() \
+			and switch_to != active_weapon_index:
 		var old := get_active_weapon()
 		if old:
 			old.on_holster()
-		active_weapon_index = cmd.switch_weapon
+			last_drawn = active_weapon_index
+		active_weapon_index = switch_to
 		_refresh_weapon_visuals()
 	var weapon := get_active_weapon()
 	if weapon and heal_time_left <= 0.0 and stagger_left <= 0.0 and not weapons_locked:

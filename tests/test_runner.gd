@@ -345,6 +345,20 @@ func _test_combat_and_loot() -> void:
 	check(p.get_active_weapon() is MeleeWeapon, "weapon switching works")
 	check(p.weapons[1].visual != null and p.weapons[1].visual.visible
 			and not p.weapons[0].visual.visible, "only the weapon in hand is shown")
+	# The holster key puts the weapon away and draws it again. It travels as
+	# an index, not a toggle, so a repeated packet changes nothing.
+	p.cmd.switch_weapon = ActorCommand.HOLSTER
+	await frames(2)
+	p.cmd.switch_weapon = -1
+	check(p.get_active_weapon() == null and p.last_drawn == 1 and not p.weapons[1].visual.visible,
+			"the holster key puts the weapon in hand away")
+	p.cmd.switch_weapon = ActorCommand.HOLSTER
+	await frames(2)
+	check(p.get_active_weapon() == null, "holstering with nothing in hand does nothing")
+	p.cmd.switch_weapon = p.last_drawn
+	await frames(2)
+	p.cmd.switch_weapon = -1
+	check(p.get_active_weapon() == p.weapons[1], "drawing again takes out the weapon that was put away")
 	var before_melee := bot_b.health.health
 	p.cmd.primary_pressed = true
 	await frames(1)
@@ -2439,6 +2453,10 @@ func _test_online() -> void:
 	check(copy.move.length() <= 1.001 and is_zero_approx(copy.yaw) and copy.pitch <= 1.5
 			and copy.aim_dir == Vector3.ZERO and copy.stance == 2 and copy.switch_weapon <= 8,
 			"a command from the network is clamped to legal values")
+	cmd.switch_weapon = ActorCommand.HOLSTER
+	copy.apply_array(cmd.to_array())
+	check(copy.switch_weapon == ActorCommand.HOLSTER, "putting the weapon away survives the network form")
+	cmd.switch_weapon = 1
 	copy.apply_array([1.0])
 	check(copy.stance == 2, "a malformed command is ignored")
 	check(cmd.flags() & ActorCommand.ONE_SHOT_MASK != 0 and cmd.flags() & ActorCommand.HELD_MASK != 0

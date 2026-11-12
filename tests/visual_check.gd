@@ -627,19 +627,22 @@ func _holster_shots(out_dir: String) -> void:
 	cam.fov = 40.0
 	var gun := -1
 	var blade := -1
+	var sidearm := -1
 	for i in player.weapons.size():
-		if player.weapons[i] is Gun:
+		if skin.is_sidearm(player.weapons[i]):
+			sidearm = i
+		elif player.weapons[i] is Gun:
 			gun = i
 		elif player.weapons[i] is MeleeWeapon:
 			blade = i
 	var rig_on := player.flight.enabled
-	var rows := [[blade, rig_on], [gun, rig_on], [blade, false], [gun, false]]
+	var rows := [[blade, rig_on], [gun, rig_on], [blade, false], [gun, false], [-1, rig_on]]
 	var sheet := Image.create(4 * 320, rows.size() * 360, false, Image.FORMAT_RGBA8)
 	for row in rows.size():
 		player.active_weapon_index = rows[row][0]
 		player._refresh_weapon_visuals()
 		player.flight.enabled = rows[row][1]
-		for k in 30:
+		for k in 60:
 			skin._process(1.0 / 60.0)
 			await get_tree().process_frame
 		var sides: Array[Vector3] = [player.global_basis.z, player.global_basis.x, -player.global_basis.x,
@@ -659,5 +662,38 @@ func _holster_shots(out_dir: String) -> void:
 			sheet.blit_rect(cut, Rect2i(0, 0, 320, 360), Vector2i(c * 320, row * 360))
 	sheet.save_png(out_dir.path_join("holster.png"))
 	print("saved holster.png")
+	# A switch, frame by frame from behind and to the right: gun to blade,
+	# blade to sidearm (if carried), then holstered.
+	var steps := [blade, sidearm if sidearm >= 0 else gun, -1]
+	player.active_weapon_index = gun
+	player.flight.enabled = rig_on
+	for k in 60:
+		skin._process(1.0 / 60.0)
+		await get_tree().process_frame
+	# Driven by hand at a steady 60 fps: a slow render would otherwise skip
+	# the whole switch between two frames.
+	skin.set_process(false)
+	var strip := Image.create(10 * 320, steps.size() * 360, false, Image.FORMAT_RGBA8)
+	for row in steps.size():
+		player.active_weapon_index = steps[row]
+		player._refresh_weapon_visuals()
+		for c in 10:
+			for k in 4:
+				skin._process(1.0 / 60.0)
+				await get_tree().process_frame
+			var at := player.global_position + Vector3(0, 1.1, 0)
+			cam.global_position = at + (player.global_basis.z * 0.8 + player.global_basis.x).normalized() * 3.2
+			cam.look_at(at)
+			await RenderingServer.frame_post_draw
+			var frame := get_viewport().get_texture().get_image()
+			var w := frame.get_width()
+			var h := frame.get_height()
+			var cut := frame.get_region(Rect2i(w / 2 - 160 * h / 720, h / 2 - 180 * h / 720, 320 * h / 720, 360 * h / 720))
+			cut.resize(320, 360)
+			cut.convert(Image.FORMAT_RGBA8)
+			strip.blit_rect(cut, Rect2i(0, 0, 320, 360), Vector2i(c * 320, row * 360))
+	skin.set_process(true)
+	strip.save_png(out_dir.path_join("holster_switch.png"))
+	print("saved holster_switch.png")
 	player.flight.enabled = rig_on
 	raid.queue_free()
