@@ -48,6 +48,9 @@ var ride_distance := 5.2
 ## separately from the on-foot view, which comes back when you get off.
 var ride_view := ViewMode.THIRD
 var base_fov := 80.0
+## True while the player has the watch on their wrist raised to read it
+## (the `check_wrist` key toggles it). Only the HUD reads it.
+var wrist_raised := false
 ## The field of view while the camera is behind the character.
 var base_fov_third := 80.0
 var ads_fov := 55.0
@@ -121,6 +124,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			_pending_switch = posmod(actor.active_weapon_index + step, count)
 	elif event.is_action_pressed("toggle_view"):
 		toggle_view()
+	elif event.is_action_pressed("check_wrist"):
+		wrist_raised = not wrist_raised
 	elif event.is_action_pressed("melee_control"):
 		toggle_stance_control()
 	elif event.is_action_pressed("sign_out"):

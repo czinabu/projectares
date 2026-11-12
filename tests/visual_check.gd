@@ -90,6 +90,11 @@ func _ready() -> void:
 
 	await _settle(90)
 	await _shot(out_dir.path_join("first_person.png"))
+	controller.wrist_raised = true
+	await _settle(30)
+	await _shot(out_dir.path_join("first_person_watch.png"))
+	controller.wrist_raised = false
+	await _settle(30)
 	# Mid-burst, to catch the muzzle flash and impact sparks.
 	Input.action_press("fire")
 	await _settle(9)
@@ -177,6 +182,13 @@ func _ready() -> void:
 	controller.toggle_view()
 	await _settle(60)
 	await _shot(out_dir.path_join("third_person.png"))
+	controller.wrist_raised = true
+	await _settle(30)
+	await _shot(out_dir.path_join("third_person_watch.png"))
+	controller.camera.fov = 110.0
+	controller.base_fov_third = 110.0
+	await _settle(30)
+	await _shot(out_dir.path_join("third_person_watch_wide.png"))
 	raid.queue_free()
 	await _settle(2)
 	await _world_shots(out_dir)
@@ -198,8 +210,15 @@ func _rig_shots(out_dir: String) -> void:
 		raid.add_child(camera)
 		camera.make_current()
 		var p := raid.player
+		# The HUD lights a jetpack's screen bay with its heat; hidden, so
+		# nothing else of it shows.
+		var hud := Hud.new()
+		hud.setup(raid, null)
+		hud.visible = false
+		raid.add_child(hud)
 		await _settle(30)
 		p.set_physics_process(false)
+		p.flight.heat = p.flight.max_heat * 0.55
 		var at := p.global_position
 		var back := p.global_transform.basis.z
 		var side := p.global_transform.basis.x
