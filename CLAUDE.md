@@ -83,6 +83,18 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   so keep that hook free of randomness). Event bots are extra and are never
   respawned. Loot that should follow the war comes from
   `WorldDef.roll_war_loot(source, rng, intensity)`, not `roll_loot`.
+- Bot armies. A "spawn_bot" marker may name a faction (meta "faction");
+  the `Raid` sets it on the bot before `WorldDef.equip_bot`, and `NetSession`
+  sends it so a client builds the same soldier. Where
+  `WorldDef.bots_contest_sites` is on, `Raid._tick_orders` gives each faction
+  its orders through `BotBrain.post_to`: a garrison on every site it holds,
+  everyone else against the nearest site it does not. Reinforcements follow
+  the war: `Raid.bot_target()` is `bot_count` plus a share of
+  `WorldDef.war_reinforcements` by `war.intensity`, new bots join the faction
+  with the fewest alive, and extra bots are not replaced once it cools. Bots
+  killing bots only simmer the meter (`WarDirector.report_battle`, capped at
+  `battle_ceiling`); only players take it higher. World-event bots
+  (`Raid._event_bots`) are outside all of this.
 - Mastery pays for using gear, never for leaving alive, or signing out over
   and over would farm it.
 - Blocking and parrying happen in `Weapon.modify_incoming`, which `Combat.deal`

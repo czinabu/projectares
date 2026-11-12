@@ -631,7 +631,8 @@ func _send_spawn(peer: int, actor: Actor) -> void:
 		if actor.has_meta("appearance"):
 			data["look"] = actor.get_meta("appearance")
 	else:
-		data = {"seed": raid.bot_seeds.get(actor, 0), "warlord": raid.warlords.has(actor)}
+		data = {"seed": raid.bot_seeds.get(actor, 0), "warlord": raid.warlords.has(actor),
+				"faction": actor.faction}
 	_spawn.rpc_id(peer, _ids[actor], "player" if state != null else "bot", actor.display_name,
 			String(actor.name), actor.global_position, actor.cmd.yaw, data)
 
@@ -1076,7 +1077,8 @@ func _spawn(id: int, kind: String, shown_name: String, node_name: String, at: Ve
 		state.picks = data.get("picks", {})
 		raid.players.append(state)
 	else:
-		actor = raid.spawn_bot(node_name, at, data.get("seed", 0), data.get("warlord", false))
+		actor = raid.spawn_bot(node_name, at, data.get("seed", 0), data.get("warlord", false),
+				data.get("faction", ""))
 		raid.world.on_spawn(actor)
 	actor.cmd.yaw = yaw
 	_actors[id] = actor
