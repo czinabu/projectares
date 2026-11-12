@@ -62,6 +62,7 @@ static func run(t: Node) -> void:
 			and (jet.get_parent().get_parent() as BoneAttachment3D).bone_name == "Chest",
 			"the jetpack is strapped to the chest bone, so it moves with the body")
 	if jet:
+		t.check((skin as Node3D).transform.basis.y.y > 0.99, "a jetpack flies upright")
 		var at := p.to_local(jet.global_position)
 		t.check(at.z > 0.0 and at.y > 1.0 and at.y < 1.6 and absf(at.x) < 0.1, "the jetpack sits on the player's back")
 		t.check(jet.global_basis.get_scale().is_equal_approx(Vector3.ONE * jet.global_basis.get_scale().x)
@@ -118,9 +119,14 @@ static func run(t: Node) -> void:
 		await t.get_tree().create_timer(0.5).timeout
 		var spread_at := p.to_local(wing_tip.global_position)
 		t.check(absf(spread_at.x) > 1.0 and wing_tip.is_visible_in_tree(), "the wings slide out while gliding")
+		var up := (skin as Node3D).transform.basis.y
+		t.check(up.z < -0.9 and up.y < 0.4, "gliding lays the body out flat, head first")
+		t.check(absf(spread_at.y - p.to_local(pack_node.global_position).y) < 0.25,
+				"with the body flat, the wings spread level with it")
 		p.flight.is_gliding = false
 		await t.get_tree().create_timer(0.5).timeout
 		t.check(absf(p.to_local(wing_tip.global_position).x) < 0.2, "the wings retract after gliding")
+		t.check((skin as Node3D).transform.basis.y.y > 0.99, "the body stands up again after gliding")
 
 	# A rig on a home base stand is the same model on a mannequin.
 	var base := HomeBase.new()

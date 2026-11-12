@@ -20,6 +20,20 @@ var boot_offset := Vector3(0, 0.0, 0.0)
 var wing_speed := 3.5
 ## How long nozzles burn after an air jump, in seconds.
 var burst_burn := 0.3
+## Gliding, the body lies out flat, head first: how far it tips forward
+## (radians), the height it tips about, and how fast it goes in and out of
+## the pose (full changes per second). Arms trail back along the sides,
+## a little out and up like a diver's, and the legs stay straight together.
+## Directions are in the actor's frame before the tip: x right, y up, z back.
+var glide_pitch := 1.4
+var glide_pivot := 1.0
+var glide_blend := 3.0
+var glide_arm := Vector3(0.45, -1.0, 0.25)
+var glide_leg := Vector3(0.06, -1.0, -0.06)
+## How far the head tips back to look ahead while flying flat, and how far
+## the feet point, in radians.
+var glide_look := 1.0
+var glide_toes := 1.0
 
 var look: Node
 var actor: Actor
@@ -42,6 +56,12 @@ var _rig_back: Node3D
 var _flames: Array[Node3D] = []
 var _burst_left := 0.0
 var _spread := 0.0
+## 0 standing, 1 flying flat.
+var _glide := 0.0
+## Bones the glide pose moves: [from, to] pairs to aim, per side.
+var _glide_arms: Array = []
+var _glide_legs: Array = []
+var _glide_neck := -1
 var _attack_left := 0.0
 ## Makes the model hold its weapon, or null for skins without the bones.
 var arm: Node
@@ -89,6 +109,8 @@ func _ready() -> void:
 		arm.look = look
 		add_child(arm)
 		arm.setup(def, _player.get_animation(_anims["idle_melee"]) if _player and _anims.has("idle_melee") else null)
+	if skeleton:
+		_setup_glide_pose(skeleton, def)
 
 	# The greybox capsule stays as the actor's body node, but draws nothing.
 	if actor.body_mesh:
@@ -139,6 +161,7 @@ func _process(delta: float) -> void:
 		if _flash_left <= 0.0:
 			_set_flash(0.0)
 	_update_rig(delta)
+	_update_glide(delta)
 	var weapon := actor.get_active_weapon()
 	var melee := weapon as MeleeWeapon
 	if locomotion == null:
@@ -160,9 +183,9 @@ func _process(delta: float) -> void:
 	var armed := weapon != null and melee == null and _anims.has("move_gun")
 	# Read from velocity alone, so a remote player, whose velocity comes with
 	# each state from the server, moves its legs the same as a local one.
-	var gait: Dictionary = {} if actor.vehicle != null else \
+	var gait: Dictionary = {} if actor.vehicle != null or _glide > 0.0 else \
 			locomotion.choose(locomotion.velocity, armed, _current, _current_sign)
-	if actor.vehicle != null:
+	if actor.vehicle != null or _glide > 0.0:
 		_play("idle")
 	elif not gait.is_empty():
 		_play(gait["key"], gait["speed"])
@@ -260,6 +283,117 @@ func _update_rig(delta: float) -> void:
 		_spread = move_toward(_spread, want, wing_speed * delta)
 		if _spread != was:
 			RigModel.set_wing_spread(_rig_back, _spread)
+
+
+## Tips the whole model forward about the actor's middle while gliding. The
+## arms and legs are posed by `_pose_glide`, last in the skeleton's order.
+func _update_glide(delta: float) -> void:
+	var want := 1.0 if actor.flight.is_gliding and not actor.is_dead and actor.vehicle == null else 0.0
+	_glide = move_toward(_glide, want, glide_blend * delta)
+	var tip := Basis(Vector3.RIGHT, -glide_pitch * smoothstep(0.0, 1.0, _glide))
+	var pivot := Vector3(0, glide_pivot, 0)
+	transform = Transform3D(tip * Basis(Vector3.UP, PI), pivot - tip * pivot)
+
+
+func _setup_glide_pose(skeleton: Skeleton3D, def: Dictionary) -> void:
+	var arm_bones := {"L": ["UpperArm.L", "LowerArm.L", "Wrist.L"], "R": ["UpperArm.R", "LowerArm.R", "Wrist.R"]}
+	for side: String in ["L", "R"]:
+		var chain: Array = def.get("off_arm" if side == "L" else "arm", arm_bones[side])
+		_glide_arms.append(_bone_chain(skeleton, chain, -1.0 if side == "L" else 1.0))
+	var feet: Array = def.get("feet", [])
+	for i in feet.size():
+		var foot := String(feet[i])
+		var suffix := foot.get_slice(".", 1)
+		_glide_legs.append(_bone_chain(skeleton, ["UpperLeg." + suffix, "LowerLeg." + suffix, foot], -1.0 if i == 0 else 1.0))
+	_glide_neck = skeleton.find_bone(def.get("neck", ""))
+	var hook := WeaponArm.Hook.new()
+	hook.name = "GlidePose"
+	hook.run = _pose_glide
+	skeleton.add_child(hook)
+
+
+## [bones..., side] for a limb, or [] if the skeleton lacks any of them.
+func _bone_chain(skeleton: Skeleton3D, names: Array, side: float) -> Array:
+	var out := []
+	for bone_name: String in names:
+		var bone := skeleton.find_bone(bone_name)
+		if bone < 0:
+			return []
+		out.append(bone)
+	out.append(side)
+	return out
+
+
+## Straightens the limbs into the flying pose, blended by how far into it
+## the body is. Runs after the animation, the legs and the weapon arm.
+func _pose_glide() -> void:
+	if _glide <= 0.0 or _skeleton == null:
+		return
+	var w := smoothstep(0.0, 1.0, _glide)
+
+	# From the body's own frame (before the tip) to the skeleton's.
+	# The skin faces the model's way, turned half round from the actor.
+	var to_skeleton := _skeleton.basis.orthonormalized().inverse() * _model_basis_inverse() * Basis(Vector3.UP, PI)
+	var right := (to_skeleton * Vector3.RIGHT).normalized()
+	for limb: Array in _glide_arms:
+		if limb.is_empty():
+			continue
+		var wanted := to_skeleton * Vector3(glide_arm.x * limb[3], glide_arm.y, glide_arm.z)
+		_aim_bone(limb[0], limb[1], wanted, w)
+		_aim_bone(limb[1], limb[2], wanted, w)
+	for limb: Array in _glide_legs:
+		if not limb.is_empty():
+			_pose_leg(limb, to_skeleton * Vector3(glide_leg.x * limb[3], glide_leg.y, glide_leg.z), right, w)
+	if _glide_neck >= 0:
+		var pose := _skeleton.get_bone_global_pose(_glide_neck)
+		pose.basis = Basis((to_skeleton * Vector3.RIGHT).normalized(), glide_look * w) * pose.basis
+		_skeleton.set_bone_global_pose(_glide_neck, pose)
+
+
+## Straightens a leg along `dir`. The human rig's foot is an IK handle under
+## the root, not a child of the shin, so it is carried to the end of the
+## straightened shin by hand, turned with it and pointed.
+func _pose_leg(limb: Array, dir: Vector3, right: Vector3, w: float) -> void:
+	var shin := _skeleton.get_bone_global_pose(limb[1])
+	var foot := _skeleton.get_bone_global_pose(limb[2])
+	var reach := foot.origin - shin.origin
+	# The shin's line to the foot, held in the shin's own frame.
+	var along := shin.basis.inverse() * reach
+	_aim_bone(limb[0], limb[1], dir, w)
+	shin = _skeleton.get_bone_global_pose(limb[1])
+	var now := shin.basis * along
+	if now.length_squared() < 0.000001:
+		return
+	var turn := Quaternion.IDENTITY.slerp(Quaternion(now.normalized(), dir.normalized()), w)
+	shin.basis = Basis(turn) * shin.basis
+	_skeleton.set_bone_global_pose(limb[1], shin)
+	# Turn the foot as the shin turned in all, then point the toes.
+	var whole := Quaternion(reach.normalized(), (Basis(turn) * now).normalized())
+	foot.origin = shin.origin + Basis(turn) * now
+	foot.basis = Basis(right, glide_toes * w) * Basis(whole) * foot.basis
+	_skeleton.set_bone_global_pose(limb[2], foot)
+
+
+## From this skin's space to the skeleton's parent, turns only.
+func _model_basis_inverse() -> Basis:
+	var up := _skeleton.get_parent()
+	var basis := Basis.IDENTITY
+	while up != null and up != self:
+		if up is Node3D:
+			basis = (up as Node3D).basis.orthonormalized() * basis
+		up = up.get_parent()
+	return basis.inverse()
+
+
+## Turns `bone` (in the skeleton's space) so its child lies along `dir`.
+func _aim_bone(bone: int, child: int, dir: Vector3, weight: float) -> void:
+	var pose := _skeleton.get_bone_global_pose(bone)
+	var now := _skeleton.get_bone_global_pose(child).origin - pose.origin
+	if now.length_squared() < 0.000001:
+		return
+	var turn := Quaternion(now.normalized(), dir.normalized())
+	pose.basis = Basis(Quaternion.IDENTITY.slerp(turn, weight)) * pose.basis
+	_skeleton.set_bone_global_pose(bone, pose)
 
 
 func _on_burst() -> void:

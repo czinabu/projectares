@@ -4,10 +4,11 @@ extends RefCounted
 ## weathers them when the art layer is on.
 ##
 ## The item's stats pick the shape, as they pick how it flies (`FlightRig`):
-##   jetpack - a back pack with twin tanks and a nozzle under each.
+##   jetpack - an armored back pack: a faceted core with a screen bay, and a
+##             cowled thruster pod either side with a nozzle under each.
 ##   boots   - a cuff and a heel thruster on each foot.
 ##   wings   - a slim back pack with two wings that retract into it, and
-##             slide out of slots in its sides and swing flat to glide.
+##             slide out of slots in its sides to glide.
 ##
 ## Every model is built for a wearer facing -Z, the Actor's forward, so the
 ## back is +Z. Back models put their origin on the spine at chest height;
@@ -69,7 +70,7 @@ static func build_boot(id: String, side: float) -> Node3D:
 
 
 ## Poses a wing pack: 0 retracted into the pack, 1 spread to glide. On the
-## way out each wing slides out of its slot on edge, then swings flat.
+## way out each wing slides out of its slot, then its tip lifts.
 static func set_wing_spread(back: Node3D, amount: float) -> void:
 	if back == null:
 		return
@@ -102,63 +103,76 @@ static func nozzles(model: Node3D) -> Array[Marker3D]:
 func _jetpack(id: String) -> Node3D:
 	var root := Node3D.new()
 	root.name = "Jetpack"
-	# Stronger packs are bigger, painted and finned.
+	# Stronger packs are bigger, darker and carry stabilizer fins.
 	var heavy: bool = ItemDB.item_rarity(id) >= ItemDB.Rarity.RARE
-	var paint := Color(0.5, 0.2, 0.12) if heavy else Color(0.36, 0.38, 0.3)
-	var accent: Color = ItemDB.RARITY_COLORS[ItemDB.item_rarity(id)] if heavy else EMBER
-	var r := 0.085 if heavy else 0.072
-	var tank_h := 0.44 if heavy else 0.4
-	var tank_x := 0.115
-	var tank_z := 0.035 + r + 0.01
+	var armor := Color(0.27, 0.29, 0.33) if heavy else Color(0.33, 0.35, 0.31)
+	var trim := Color(0.12, 0.12, 0.13)
+	var glow := Color(0.35, 0.8, 1.0) if heavy else Color(0.4, 1.0, 0.75)
+	var pod_r := 0.058 if heavy else 0.05
+	var pod_h := 0.36 if heavy else 0.32
+	var pod_x := 0.175 if heavy else 0.165
+	var pod_z := 0.075
 
 	_harness(root, 0.3, 0.44)
-	# The core between the tanks. Its back face is left bare for a heat readout.
-	var core_z := 0.07
-	var core_d := 0.1
-	root.add_child(_box(Vector3(0.1, 0.36, core_d), Vector3(0, -0.04, core_z), _mat(DARK)))
+	# The armored core: a faceted shell with a raised plate on its back.
+	var shell := _slab(PackedVector2Array([Vector2(-0.12, 0.21), Vector2(0.12, 0.21), Vector2(0.155, 0.15),
+			Vector2(0.155, -0.17), Vector2(0.09, -0.25), Vector2(-0.09, -0.25), Vector2(-0.155, -0.17),
+			Vector2(-0.155, 0.15)]), 0.09, _mat(trim))
+	shell.position = Vector3(0, -0.03, 0.08)
+	root.add_child(shell)
+	var plate := _slab(PackedVector2Array([Vector2(-0.1, 0.19), Vector2(0.1, 0.19), Vector2(0.135, 0.13),
+			Vector2(0.135, -0.15), Vector2(0.075, -0.22), Vector2(-0.075, -0.22), Vector2(-0.135, -0.15),
+			Vector2(-0.135, 0.13)]), 0.02, _mat(armor))
+	plate.position = Vector3(0, -0.03, 0.135)
+	root.add_child(plate)
+	# A recessed screen bay in the plate, kept clear for a heat readout.
+	var bay_at := Vector3(0, -0.02, 0.146)
+	root.add_child(_box(Vector3(0.15, 0.17, 0.006), bay_at, _mat(trim)))
 	var display := Marker3D.new()
 	display.name = "HeatDisplay"
-	display.position = Vector3(0, 0.0, core_z + core_d * 0.5 + 0.002)
-	display.set_meta("size", Vector2(0.09, 0.2))
+	display.position = bay_at + Vector3(0, 0, 0.004)
+	display.set_meta("size", Vector2(0.13, 0.15))
 	root.add_child(display)
-	# Intake slats above the readout spot.
-	for i in 3:
-		root.add_child(_box(Vector3(0.11, 0.012, 0.02), Vector3(0, 0.15 - i * 0.022, core_z + core_d * 0.5), _mat(STEEL)))
+	# Vents across the top and a lit seam under the bay.
+	for i in 4:
+		root.add_child(_box(Vector3(0.012, 0.03, 0.03), Vector3(-0.045 + i * 0.03, 0.15, 0.142), _mat(trim)))
+	root.add_child(_box(Vector3(0.11, 0.008, 0.008), Vector3(0, -0.13, 0.147), _mat(glow, 2.0)))
+	# A short sensor mast on one shoulder.
+	root.add_child(_box(Vector3(0.018, 0.12, 0.018), Vector3(-0.1, 0.24, 0.1), _mat(trim)))
+	root.add_child(_box(Vector3(0.012, 0.012, 0.012), Vector3(-0.1, 0.305, 0.1), _mat(glow, 2.5)))
 
-	for x: float in [-tank_x, tank_x]:
-		var tank := _cylinder(r, r, tank_h, Vector3(x, -0.03, tank_z), _mat(paint))
-		root.add_child(tank)
-		var cap := SphereMesh.new()
-		cap.radius = r
-		cap.height = r * 1.2
-		cap.material = _mat(paint)
-		var dome := MeshInstance3D.new()
-		dome.mesh = cap
-		dome.position = Vector3(x, -0.03 + tank_h * 0.5, tank_z)
-		root.add_child(dome)
-		# Bands, a valve on top and a lit stripe.
-		for y: float in [tank_h * 0.32, -tank_h * 0.28]:
-			root.add_child(_cylinder(r + 0.008, r + 0.008, 0.022, Vector3(x, -0.03 + y, tank_z), _mat(DARK)))
-		root.add_child(_cylinder(0.014, 0.014, 0.06, Vector3(x, -0.03 + tank_h * 0.5 + r * 0.5, tank_z), _mat(STEEL)))
-		root.add_child(_box(Vector3(0.01, tank_h * 0.4, 0.012), Vector3(x + signf(x) * (r - 0.002), 0.02, tank_z), _mat(accent, 1.2)))
-		# The nozzle: a bell with a glowing throat.
-		var bottom := -0.03 - tank_h * 0.5
-		root.add_child(_cylinder(r * 0.55, r * 0.65, 0.05, Vector3(x, bottom - 0.02, tank_z), _mat(DARK)))
-		root.add_child(_cylinder(r * 0.5, r * 0.85, 0.09, Vector3(x, bottom - 0.085, tank_z), _mat(STEEL)))
-		root.add_child(_cylinder(r * 0.6, r * 0.6, 0.006, Vector3(x, bottom - 0.128, tank_z), _mat(EMBER, 0.8)))
+	for side: float in [-1.0, 1.0]:
+		var x := side * pod_x
+		# The thruster pod, faceted, with a lit strip down its outside.
+		root.add_child(_cylinder(pod_r, pod_r, pod_h, Vector3(x, -0.04, pod_z), _mat(armor), Vector3.ZERO, 8))
+		root.add_child(_cylinder(pod_r * 0.8, pod_r, 0.04, Vector3(x, -0.04 + pod_h * 0.5 + 0.02, pod_z), _mat(trim), Vector3.ZERO, 8))
+		for y: float in [pod_h * 0.3, -pod_h * 0.3]:
+			root.add_child(_cylinder(pod_r + 0.006, pod_r + 0.006, 0.018, Vector3(x, -0.04 + y, pod_z), _mat(trim), Vector3.ZERO, 8))
+		root.add_child(_box(Vector3(0.008, pod_h * 0.35, 0.01), Vector3(x + side * (pod_r + 0.002), -0.04, pod_z), _mat(glow, 2.0)))
+		# An armor cowl over the pod's outer face.
+		var cowl := _slab(PackedVector2Array([Vector2(-0.05, 0.16), Vector2(0.03, 0.18), Vector2(0.06, 0.1),
+				Vector2(0.06, -0.12), Vector2(0.0, -0.18), Vector2(-0.05, -0.14)]), 0.014, _mat(armor))
+		cowl.basis = Basis(Vector3(0, 0, 1), Vector3(0, 1, 0), Vector3(-1, 0, 0))
+		cowl.position = Vector3(x + side * (pod_r + 0.012), -0.02, pod_z)
+		root.add_child(cowl)
+		# The nozzle: a faceted bell with a glowing throat.
+		var bottom := -0.04 - pod_h * 0.5
+		root.add_child(_cylinder(pod_r * 0.7, pod_r * 0.8, 0.03, Vector3(x, bottom - 0.015, pod_z), _mat(trim), Vector3.ZERO, 8))
+		root.add_child(_cylinder(pod_r * 0.62, pod_r * 0.95, 0.07, Vector3(x, bottom - 0.065, pod_z), _mat(STEEL), Vector3.ZERO, 8))
+		root.add_child(_cylinder(pod_r * 0.7, pod_r * 0.7, 0.006, Vector3(x, bottom - 0.098, pod_z), _mat(glow, 1.5), Vector3.ZERO, 8))
 		var nozzle := Marker3D.new()
-		nozzle.name = "Nozzle" + ("L" if x < 0.0 else "R")
-		nozzle.position = Vector3(x, bottom - 0.13, tank_z)
-		nozzle.set_meta("flame", Vector2(r * 0.85, 0.7 if heavy else 0.55))
+		nozzle.name = "Nozzle" + ("L" if side < 0.0 else "R")
+		nozzle.position = Vector3(x, bottom - 0.1, pod_z)
+		nozzle.set_meta("flame", Vector2(pod_r * 0.85, 0.7 if heavy else 0.55))
 		root.add_child(nozzle)
 		if heavy:
-			# A swept fin on the outside of each tank.
-			var side := signf(x)
-			var fin := _slab(PackedVector2Array([Vector2(0, 0.12), Vector2(0.09, -0.06), Vector2(0.09, -0.2), Vector2(0, -0.14)]),
-					0.014, _mat(paint))
-			fin.position = Vector3(x + side * r, -0.06, tank_z)
+			# A swept stabilizer off each cowl.
+			var fin := _slab(PackedVector2Array([Vector2(0, 0.06), Vector2(0.1, -0.04), Vector2(0.11, -0.12), Vector2(0, -0.08)]),
+					0.012, _mat(armor))
 			fin.basis = Basis(Vector3(side, 0, 0), Vector3(0, 1, 0), Vector3(0, 0, side))
+			fin.position = Vector3(x + side * (pod_r + 0.02), -0.1, pod_z + 0.02)
 			root.add_child(fin)
+			root.add_child(_box(Vector3(0.006, 0.05, 0.006), Vector3(x + side * (pod_r + 0.11), -0.18, pod_z + 0.03), _mat(glow, 2.0)))
 	return root
 
 
@@ -201,10 +215,12 @@ func _wing_pack(id: String) -> Node3D:
 		var hinge := Node3D.new()
 		hinge.name = "WingL" if side < 0.0 else "WingR"
 		hinge.position = Vector3(side * 0.03, -0.06, 0.075)
-		# Spread: flat, out to the side, a little dihedral. Stowed: on edge,
-		# leading edge up, inside the shell.
-		var spread := Quaternion(Vector3(0, 0, 1), side * 0.1)
+		# The wings lie in the plane of the back, leading edge toward the head,
+		# so they are level when the wearer flies flat (see `ActorSkin`).
+		# Stowed: inside the shell. Spread: slid out, tips swept a little up
+		# off the back.
 		var stowed := Quaternion(Vector3(1, 0, 0), PI / 2.0)
+		var spread := Quaternion(Vector3(0, 1, 0), -side * 0.12) * stowed
 		hinge.set_meta("spread", spread)
 		hinge.set_meta("stowed", stowed)
 		hinge.set_meta("stowed_span", wing_stowed_span)
@@ -306,12 +322,12 @@ func _box(size: Vector3, at: Vector3, mat: Material) -> MeshInstance3D:
 
 
 ## A cylinder standing on Y, turned by `rot` (Euler).
-func _cylinder(top: float, bottom: float, height: float, at: Vector3, mat: Material, rot := Vector3.ZERO) -> MeshInstance3D:
+func _cylinder(top: float, bottom: float, height: float, at: Vector3, mat: Material, rot := Vector3.ZERO, sides := 16) -> MeshInstance3D:
 	var mesh := CylinderMesh.new()
 	mesh.top_radius = top
 	mesh.bottom_radius = bottom
 	mesh.height = height
-	mesh.radial_segments = 16
+	mesh.radial_segments = sides
 	mesh.rings = 1
 	mesh.material = mat
 	var part := MeshInstance3D.new()
@@ -328,13 +344,13 @@ func _slab(outline: PackedVector2Array, thickness: float, mat: Material) -> Mesh
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var half := thickness * 0.5
 	var tris := Geometry2D.triangulate_polygon(outline)
-	# Make the outline counter-clockwise so the faces point the right way.
+	# Every face is wound both ways, so the plate shows whichever way a
+	# caller turns or mirrors it; the extra copies sit inside and are never seen.
 	var ccw := not Geometry2D.is_polygon_clockwise(outline)
 	for face: float in [1.0, -1.0]:
 		st.set_normal(Vector3(0, 0, face))
 		for i in range(0, tris.size(), 3):
-			var order := [0, 1, 2] if (face > 0.0) == ccw else [0, 2, 1]
-			for k: int in order:
+			for k: int in [0, 1, 2, 0, 2, 1]:
 				var p := outline[tris[i + k]]
 				st.add_vertex(Vector3(p.x, p.y, half * face))
 	var n := outline.size()
@@ -348,12 +364,8 @@ func _slab(outline: PackedVector2Array, thickness: float, mat: Material) -> Mesh
 		var a1 := Vector3(a.x, a.y, half)
 		var b0 := Vector3(b.x, b.y, -half)
 		var b1 := Vector3(b.x, b.y, half)
-		if ccw:
-			for v: Vector3 in [a0, b0, b1, a0, b1, a1]:
-				st.add_vertex(v)
-		else:
-			for v: Vector3 in [a0, b1, b0, a0, a1, b1]:
-				st.add_vertex(v)
+		for v: Vector3 in [a0, b1, b0, a0, a1, b1, a0, b0, b1, a0, b1, a1]:
+			st.add_vertex(v)
 	var mesh := st.commit()
 	mesh.surface_set_material(0, mat)
 	var part := MeshInstance3D.new()
