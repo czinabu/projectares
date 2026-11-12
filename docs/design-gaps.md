@@ -85,7 +85,9 @@ rows marked **pre-playtest** come before the friends playtest.
 | Clearly faster than flight | Partly | On paper both bikes beat the 15 m/s cruise, but the jetpack boost (22) and the wing dive (26) match or beat the Scrapper. Tune after the rig rework, and check on real terrain. **Pre-playtest.** |
 | Throw a toy from mid-air onto the road below | Partly | Throwing works off the ground in code; not checked as a planned move (throw, fall, land on the bike). |
 | Eject upward off a speeding bike into flight | Partly | Getting off in mid-air keeps the bike's speed and the rig takes over; there is no upward eject. |
-| Passenger seats | Missing | After the playtest. |
-| Mounted firepower | Missing | After the playtest. |
+| Passenger seats | Missing | Bike rear seat, rover's four. After the playtest. |
+| Mounted firepower | Missing | Rover turret, mech cannons, jet missiles. After the playtest. |
 | Cargo space while riding | Missing | After the playtest. |
 | Mobile cover | Missing | The bike gives none today. |
+| Per-vehicle watch recharge (heavier is slower) | Missing | One `Raid.toy_cooldown` for all vehicles today. |
+| Rover, mech and jet | Missing | Proposed roster, pending Caleb's confirmation. After the playtest. |
