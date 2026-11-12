@@ -25,6 +25,12 @@ func _ready() -> void:
 			"Worn automatic rifle.")
 	register("blade_scrap", "Scrap Blade", Rarity.COMMON, 0, ["weapon", "melee", "blade", "starter"], {},
 			"A sharpened strip of plating.")
+	register("pistol_service", "Service Pistol", Rarity.COMMON, 0,
+			["weapon", "firearm", "sidearm", "pistol", "starter"],
+			{"semi_auto": true, "damage": 22.0, "fire_interval": 0.16, "mag_size": 12, "ammo_in_mag": 12,
+			"reserve_ammo": 60, "reload_time": 1.1, "spread_deg": 0.6, "bloom_per_shot": 0.5,
+			"recoil_kick_deg": 0.7, "max_range": 90.0},
+			"Reliable semi-auto sidearm. Accurate, and quick to reload.")
 	register("jetpack_mk1", "Mk1 Jetpack", Rarity.COMMON, 0, ["flight_rig", "starter"], {},
 			"Basic jetpack. Overheats quickly.")
 	register("plate_light", "Scrap Plate", Rarity.COMMON, 0, ["armor", "frame_light", "starter"],
@@ -50,6 +56,20 @@ func _ready() -> void:
 			"reserve_ammo": 36, "spread_deg": 4.5, "recoil_kick_deg": 2.4, "reload_time": 2.4,
 			"max_range": 40.0},
 			"Eight pellets a shot. Devastating in reach of a blade.")
+
+	# Sidearms: worn on the hip and drawn when the primary runs dry.
+	register("pistol_machine", "Hornet Machine Pistol", Rarity.UNCOMMON, 380,
+			["weapon", "firearm", "sidearm", "machine_pistol", "vendor"],
+			{"damage": 9.0, "fire_interval": 0.055, "mag_size": 20, "ammo_in_mag": 20, "reserve_ammo": 100,
+			"reload_time": 1.4, "spread_deg": 2.6, "bloom_per_shot": 0.45, "max_bloom": 4.0,
+			"recoil_kick_deg": 0.35, "max_range": 45.0},
+			"Full-auto spray. Deadly up close, useless at range.")
+	register("pistol_hand_cannon", "Warden Hand Cannon", Rarity.RARE, 750,
+			["weapon", "firearm", "sidearm", "hand_cannon"],
+			{"semi_auto": true, "damage": 48.0, "headshot_mult": 2.0, "fire_interval": 0.55, "mag_size": 6,
+			"ammo_in_mag": 6, "reserve_ammo": 30, "reload_time": 2.2, "spread_deg": 0.4,
+			"bloom_per_shot": 1.2, "recoil_kick_deg": 2.6, "max_range": 110.0},
+			"Slow, heavy revolver. Headshots hit twice as hard.")
 
 	# Melee
 	register("blade_arc", "Arc Blade", Rarity.RARE, 800, ["weapon", "melee", "blade"],

@@ -21,6 +21,7 @@ const KEY_ACTIONS := {
 	"melee_control": KEY_B,
 	"weapon_1": KEY_1,
 	"weapon_2": KEY_2,
+	"weapon_3": KEY_3,
 	"scoreboard": KEY_TAB,
 	"sign_out": KEY_L,
 	"redeploy": KEY_ENTER,

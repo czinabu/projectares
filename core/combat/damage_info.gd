@@ -14,6 +14,8 @@ var position := Vector3.ZERO
 ## it. Below zero means the hit has no direction.
 var direction := -1
 var blocked := false
+## The hit landed on the target's head.
+var headshot := false
 var parried := false
 
 

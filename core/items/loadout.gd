@@ -7,6 +7,7 @@ extends RefCounted
 const SLOTS := {
 	"primary": "firearm",
 	"melee": "melee",
+	"sidearm": "sidearm",
 	"rig": "flight_rig",
 	"frame": "armor",
 	"helmet": "helmet",
@@ -16,6 +17,7 @@ const SLOTS := {
 const SLOT_NAMES := {
 	"primary": "Primary weapon",
 	"melee": "Melee weapon",
+	"sidearm": "Sidearm",
 	"rig": "Flight rig",
 	"frame": "Armor frame",
 	"helmet": "Helmet",
@@ -28,12 +30,21 @@ const OPTIONAL_SLOTS := ["ability", "vehicle"]
 const MAX_HEAL_ITEMS := 2
 
 
+## True if item `id` can go in loadout slot `slot`. A sidearm is a firearm
+## too, but only the sidearm slot takes it.
+static func fits(slot: String, id: String) -> bool:
+	if not SLOTS.has(slot) or not ItemDB.has_tag(id, SLOTS[slot]):
+		return false
+	return slot != "primary" or not ItemDB.has_tag(id, "sidearm")
+
+
 static func equip(actor: Actor, item_ids: Array) -> void:
 	var frames: Array[String] = []
 	for id: String in item_ids:
 		var stats := ItemDB.item_stats(id)
 		if ItemDB.has_tag(id, "firearm"):
 			var gun := Gun.new()
+			gun.is_sidearm = ItemDB.has_tag(id, "sidearm")
 			_setup_weapon(gun, id, stats)
 			actor.equip_weapon(gun)
 			actor.gear_items.append(id)

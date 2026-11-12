@@ -137,6 +137,13 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   decide what an item does.
 - Gear behavior comes from the item's `stats` in `ItemDB`, applied by
   `Loadout.equip`. Add a new gun or frame as data, not as a new class.
+- A loadout carries one primary, one melee weapon and one sidearm, in that
+  weapon order (keys 1, 2, 3). Sidearms are firearms also tagged "sidearm";
+  `Loadout.fits(slot, id)` decides what goes in a slot (a sidearm never fits
+  the primary slot), and `Weapon.is_sidearm` marks one once equipped. Running
+  the primary dry with the trigger held draws a loaded sidearm instead of
+  reloading (`Actor._simulate_weapons`). Headshots come from
+  `Combat.is_headshot` on a `Combat.trace` hit; a gun's `headshot_mult` scales them.
 - Flight rigs and abilities are data too. `FlightRig` and `Ability` are single
   classes whose item stats pick the behavior. Abilities fire from
   `ActorCommand.ability_pressed`.
