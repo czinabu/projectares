@@ -30,6 +30,10 @@ var _failed := 0
 
 func _ready() -> void:
 	Profile.persist = false
+	# DEV MODE: tests never run on the dev save, whatever the machine has.
+	DevMode.persist = false
+	DevMode.enabled = false
+	Profile.save_path = Profile.SAVE_PATH
 	Profile.reset()
 	# Accounts a previous run left behind hold that run's secrets and would
 	# refuse this run's sign-ins, so every run starts with none.
@@ -257,6 +261,7 @@ func _run() -> void:
 	await _test_plaza_online()
 	await _test_stash_service()
 	await _test_phone()
+	await _test_dev_mode()
 	await _test_home_base()
 	await _test_arena()
 	await _test_online_arena()
@@ -4991,6 +4996,130 @@ func _test_stash_service() -> void:
 const SocialService := preload("res://core/social/social_service.gd")
 const GameSettings := preload("res://core/settings/game_settings.gd")
 const PhoneScript := preload("res://core/phone/phone.gd")
+const DevMode := preload("res://core/dev/dev_mode.gd")
+const DevEconomy := preload("res://core/economy/economy.gd")
+const DevStashRules := preload("res://core/account/stash_rules.gd")
+
+
+## DEV MODE: the temporary testing mode (`core/dev/dev_mode.gd`). Delete this
+## group along with it.
+func _test_dev_mode() -> void:
+	print("Dev mode (temporary)")
+	DevMode.persist = false
+	DevMode.enabled = false
+	check(DevMode.available(), "dev mode can be switched on in a debug run")
+	check(DevMode.raid_cheats().is_empty(), "with dev mode off a raid gets no cheats")
+
+	# The dev stash: every piece of gear, healing in bulk, max credits.
+	var stash: Array[String] = []
+	check(DevMode.top_up(stash) == DevEconomy.MAX_CREDITS, "dev mode holds as many credits as a stash can")
+	var every_fit := true
+	for id: String in ItemDB.all_ids():
+		if not DevStashRules.storable(id):
+			check(id not in stash, "%s (starter or power) never enters a dev stash" % id)
+			continue
+		for slot: String in Loadout.SLOTS:
+			if Loadout.fits(slot, id) and id not in stash:
+				every_fit = false
+	check(every_fit, "every rig, gun, blade, helmet, ability, attachment and vehicle is in the dev stash")
+	check(stash.count("medkit") == DevMode.CONSUMABLE_COPIES, "the dev stash has healing in bulk")
+	var full := stash.size()
+	DevMode.top_up(stash)
+	check(stash.size() == full, "topping up again adds nothing")
+	stash.erase("wings_glide")
+	DevMode.top_up(stash)
+	check("wings_glide" in stash and stash.size() == full, "gear lost in a run comes back on the next top-up")
+
+	# The dev save never touches the real one, and you stay you.
+	var real_path := "user://test_profile_real.json"
+	var dev_path := "user://test_profile_dev.json"
+	for path in [real_path, dev_path]:
+		if FileAccess.file_exists(path):
+			DirAccess.remove_absolute(path)
+	Profile.reset()
+	Profile.persist = true
+	Profile.save_path = real_path
+	Profile.player_name = "Tester"
+	Profile.add_to_stash(["rifle_carbine", "rifle_carbine", "rifle_carbine"])
+	var real_credits := Profile.credits
+	Profile.use_save(dev_path)
+	Profile.credits = DevMode.top_up(Profile.stash)
+	Profile.save()
+	check(Profile.save_path == dev_path and "helm_ember_mk2" in Profile.stash and Profile.player_name == "Tester",
+			"the dev save has everything and keeps who you are")
+	Profile.use_save(real_path)
+	check("helm_ember_mk2" not in Profile.stash and Profile.stash.count("rifle_carbine") >= 3
+			and Profile.credits == real_credits, "switching back finds the real stash untouched")
+	Profile.use_save(dev_path)
+	check("helm_ember_mk2" in Profile.stash and Profile.credits == DevEconomy.MAX_CREDITS,
+			"the dev save is kept between switches")
+	Profile.persist = false
+	Profile.save_path = Profile.SAVE_PATH
+	Profile.player_name = "Raider"
+	Profile.reset()
+	for path in [real_path, dev_path]:
+		DirAccess.remove_absolute(path)
+
+	# Cheats in a solo raid.
+	DevMode.enabled = true
+	check(DevMode.raid_cheats().size() == DevMode.CHEATS.size(), "dev mode on hands a raid its cheats")
+	DevMode.set_cheat("ammo", false)
+	check(not DevMode.raid_cheats().has("ammo"), "a cheat can be switched off on its own")
+	DevMode.set_cheat("ammo", true)
+	var raid := await _new_raid(77, false)
+	raid.set_dev_cheats(DevMode.raid_cheats())
+	await frames(2)
+	var me := raid.player
+	me.protected_left = 0.0
+	var bot: Actor = raid.bots[0] if not raid.bots.is_empty() else null
+	var hit := Combat.deal(me, DamageInfo.make(500.0, bot, "bullet"))
+	check(not hit and not me.is_dead and me.dev_invulnerable, "god mode: no hit gets through")
+	me.flight.heat = me.flight.max_heat
+	me.flight.overheated = true
+	me.ability.cooldown_left = 5.0
+	var gun: Gun = null
+	for weapon in me.weapons:
+		if weapon is Gun:
+			gun = weapon
+	if gun != null:
+		gun.ammo_in_mag = 0
+	await frames(2)
+	check(me.flight.heat == 0.0 and not me.flight.overheated, "endless flight heat")
+	check(me.ability.cooldown_left == 0.0, "no ability cooldowns")
+	check(gun != null and gun.ammo_in_mag == gun.mag_size, "endless ammo keeps the magazine full")
+	raid.set_dev_cheats({})
+	await frames(1)
+	me.protected_left = 0.0
+	check(not me.dev_invulnerable and Combat.deal(me, DamageInfo.make(5.0, bot, "bullet")),
+			"turning god mode off lets hits through again")
+	await _end_raid(raid)
+	var server := Raid.new()
+	server.mode = Raid.Mode.SERVER
+	server.set_dev_cheats({"god": true})
+	check(server.dev_cheats.is_empty(), "an online server raid never runs dev cheats")
+	server.free()
+
+	# The switch lives in the phone's settings.
+	DevMode.enabled = false
+	var phone: CanvasLayer = PhoneScript.new()
+	add_child(phone)
+	await frames(1)
+	var changes := [0]
+	phone.dev_mode_changed.connect(func() -> void: changes[0] += 1)
+	phone.toggle()
+	phone.open_app("settings")
+	var switch_shown := false
+	for child in phone._body.get_children():
+		if child is CheckButton and (child as CheckButton).text.begins_with("Dev mode"):
+			switch_shown = true
+	check(switch_shown, "the phone's settings have the dev mode switch")
+	phone.set_dev_mode(true)
+	check(DevMode.enabled and changes[0] == 1, "the phone turns dev mode on")
+	phone.set_dev_mode(false)
+	check(not DevMode.enabled and changes[0] == 2, "and off again")
+	phone.close()
+	phone.queue_free()
+	await frames(1)
 
 
 func _test_phone() -> void:
