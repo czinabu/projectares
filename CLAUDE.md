@@ -264,6 +264,20 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   `Raid` (never carried). `core/vehicle/vehicle.gd` reads its rider's
   `ActorCommand` and moves the rider; `Actor` skips its own movement while
   `Actor.vehicle` is set. The script has no `class_name`; preload it.
+- Toy vehicles: a vehicle a player owns in a world rides on their watch as
+  a toy (`Raid.PlayerState.stowed`, read with `Raid.stowed_for`), never in
+  the inventory. `Raid.throw_toy` throws one from the actor along their aim;
+  the `Raid` flies it (`_tick_toys`) and unpacks it into the vehicle where it
+  lands, if `has_room_to_unpack`, else it goes back on the watch.
+  `Raid.pack_vehicle` packs the vehicle being looked at back onto the watch
+  (a click with the watch raised: it has no key of its own).
+  Limits are the `Raid`'s vars (`toy_cooldown`, `watch_capacity`) and
+  `WorldDef.vehicle_toys`. Only the authority throws, lands and packs: a
+  client sends `NetSession.throw_toy` / `pack_vehicle`, the server reads the
+  aim from the actor it simulates, and clients get `_watch` (their own watch)
+  and `_toy` (a toy to draw in flight). The toy in the hand and the picker on
+  the watch (`PlayerController.held_toy`, `Hud.Wrist.show_toys`) are views.
+  A new vehicle is a new `vehicle` item; its toy is `toy_model(id)`.
 - Mastery (`core/progression/`) is keyed by gear type tags ("rifle", "blink",
   "frame_heavy"), never by item id. Variants are sidegrades: every one trades a
   strength for a weakness, and death never takes mastery away. Variant picks go
