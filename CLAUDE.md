@@ -121,6 +121,12 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   which is safe on a headless server. Online it travels in the spawn data as
   `data["look"]`; the server keeps what each signed-in player sent
   (`NetSession.look_for_peer`). `Raid` and gameplay never read it.
+  A look changed while in a world (the phone's Mirror app) is checked by the
+  server in `_request_look` and passed to everyone there with `_look_changed`.
+  The mirror itself (`core/visual/mirror.gd`) is a client-side view: no
+  collision, and nothing in `Raid` reads it. In first person the body is drawn on
+  `Mirror.BODY_LAYER`, which their own camera leaves out
+  (`PlayerController.body_layer`), so only the mirror shows it.
   Players may only wear `Human.STARTER` clothes plus outfits they own:
   `Human.player_look(raw, owned)` enforces it on the profile, in the
   customizer and on the server. Better outfits are bought or earned, never
@@ -213,10 +219,18 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   home base; online, joining a server puts you in its plaza, and a world's
   lobby is the home base again on the server's stash. `Hub` (`core/ui/hub.gd`)
   is never a main screen: it holds the screens that the base's stations
-  (`HomeBase.STATIONS`, sections in `Hub.STATIONS`) open over the room, and
-  the travel screen shown while connecting. A new menu feature gets a station
-  (or a phone app), not a button on a front screen. `main.gd go_home` is where
+  (`HomeBase.STATIONS`, sections in `Hub.STATIONS`) show, and the travel
+  screen shown while connecting. A new menu feature gets a station (or a
+  phone app), not a button on a front screen. `main.gd go_home` is where
   every "back to the menu" path ends.
+- Menus live in the world (Caleb's rule: as few flat menus as possible). A
+  screen you use goes on a `WorldScreen` (`core/ui/world_screen.gd`): a panel
+  in the room that shows a `SubViewport` and forwards the mouse and keys to
+  it, with the view moving in to face it while in use. `Main` keeps the hub
+  in `hub_screen` and mounts it on the used station's `Station.screen`. Do not
+  add full-screen panels or overlays; information about a thing goes on or
+  next to the thing (a `Label3D` tag, a sign) or into the phone. The HUD is
+  for the crosshair, prompts, hit feedback and brief notices.
 - Money (`core/economy/`): the rules live once, in `economy.gd` (static, like
   `StashRules`), shared by `Profile` and `StashService`. Online, `credits`
   lives on the server's account and only changes there: through

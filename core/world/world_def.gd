@@ -34,6 +34,9 @@ extends RefCounted
 ##     "home", or anything the game's flow understands), "label" (what the
 ##     prompt says) and optionally "radius" (metres, default 3). A player
 ##     standing in one is offered the trip; see `core/social/plaza_view.gd`.
+##     A portal that opens a screen (a shop) may have a child Node3D named
+##     "Screen": a terminal's face, centred on it and facing its +Z, 1.6 by
+##     0.9 metres. The screen is shown there (`WorldScreen`).
 ##
 ## Looks: a world may give a bot a model with `bot.set_meta("look", "<skin>")`
 ## in `equip_bot`. The skins are listed in `core/visual/look.gd`.

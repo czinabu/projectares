@@ -7,6 +7,9 @@ extends Node
 ##   glide wings    - a burst to launch, then `glide_fall_speed` and
 ##                    `glide_speed`: hold jump to fall slowly and fly forward.
 
+## An air jump went off. Cosmetic: the model fires its nozzles for a moment.
+signal burst_fired
+
 var item_id := ""
 var display_name := "No rig"
 ## False until a rig item is equipped.
@@ -64,6 +67,7 @@ func try_burst() -> float:
 	if heat >= max_heat:
 		heat = max_heat
 		overheated = true
+	burst_fired.emit()
 	return burst_velocity
 
 
