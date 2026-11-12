@@ -432,8 +432,24 @@ The project targets Godot 4.7 (what Caleb runs, and what CI uses).
 godot --headless --path . --import
 godot --headless --path . res://tests/test_runner.tscn   # must exit 0
 godot --headless --path . res://tests/test_runner.tscn -- --only online   # one group
+godot --headless --fixed-fps 60 --path . res://tests/test_runner.tscn -- --tier offline   # fast, ~1 min
+godot --headless --path . res://tests/test_runner.tscn -- --tier net --shard 1/3   # a third of the online groups
 godot --headless --path . res://tests/battle_bench.tscn -- --bots 150 --players 32   # server cost of a big battle
 ```
+
+CI (`.github/workflows/tests.yml`) runs the suite in two tiers. The offline
+tier (every group that never starts a server) runs on every push with
+`--fixed-fps 60`, which skips the real-time waits. The online tier (groups
+that start a server, found automatically, see "Picking groups for CI" in
+`tests/test_runner.gd`) needs real time and runs in 3 parallel shards, but
+only on main, on PRs that are ready for review, and on draft PRs with the
+`full-ci` label. So before marking a PR ready: merge the latest main, add the
+`full-ci` label, and wait for "Tests passed" to report the full suite (its
+summary says "Full suite passed"; on a draft without the label it says only
+the offline tier ran). A group that starts a server must still pass when run
+alone (`-- --groups name`), since shards split the groups up. After adding a
+slow group, refresh `tests/group_times.json` with `-- --tier net --times-out`
+so the shards stay balanced; a missing entry just counts as an average group.
 
 To see it rendered (needs a display or xvfb):
 

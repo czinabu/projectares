@@ -29,7 +29,18 @@ var _failed := 0
 func _ready() -> void:
 	Profile.persist = false
 	Profile.reset()
-	await _run()
+	# Accounts a previous run left behind hold that run's secrets and would
+	# refuse this run's sign-ins, so every run starts with none.
+	_wipe_dir(NET_ACCOUNTS)
+	var args := OS.get_cmdline_user_args()
+	if "--list" in args:
+		_list_groups()
+		get_tree().quit(0)
+		return
+	if "--tier" in args or "--shard" in args or "--groups" in args:
+		await _run_selected(args)
+	else:
+		await _run()
 	print("\n%d passed, %d failed" % [_passed, _failed])
 	get_tree().quit(1 if _failed > 0 else 0)
 
@@ -76,6 +87,10 @@ func _run() -> void:
 	await _test_clans()
 	await _test_scrip()
 	await _test_online()
+	await _test_online_stash()
+	await _test_online_movement()
+	await _test_online_lag_compensation()
+	await _test_online_riding()
 	await _test_plaza()
 	await _test_plaza_online()
 	await _test_stash_service()
@@ -91,6 +106,166 @@ func _run() -> void:
 	await _test_visors()
 	await _test_sidearms()
 	await _test_attachments()
+
+
+# --- Picking groups for CI -------------------------------------------------
+# CI splits the suite in two tiers:
+#   offline  groups that never start a server. They only count physics frames,
+#            so CI runs them with `--fixed-fps 60`, which drops the real-time
+#            wait and finishes in about a minute.
+#   net      groups that start a server process and talk to it over ENet. They
+#            need real time, so they run without `--fixed-fps`, split in shards.
+# The groups are read from `_run()` itself and a group is `net` when it (or any
+# helper it calls) starts a server or makes a NetSession, so a new group needs
+# no change here.
+#   -- --list                  print every group and its tier
+#   -- --tier offline|net      run one tier
+#   -- --shard 2/3             run the 2nd of 3 balanced slices (with or without --tier)
+#   -- --groups a,b            run the named groups (names as --list prints them)
+#   -- --times-out path.json   write how long each group took
+
+const NET_MARKERS: Array[String] = ["_start_server(", "NetSession"]
+const GROUP_TIMES := "res://tests/group_times.json"
+
+var _source_cache := ""
+
+
+func _arg(args: PackedStringArray, flag: String) -> String:
+	var at := args.find(flag)
+	return args[at + 1] if at >= 0 and at + 1 < args.size() else ""
+
+
+func _source() -> String:
+	if _source_cache == "":
+		_source_cache = (get_script() as Script).source_code
+		if _source_cache == "":
+			_source_cache = FileAccess.get_file_as_string("res://tests/test_runner.gd")
+	return _source_cache
+
+
+## The text of `func fn_name(...)` up to the next top-level func.
+func _func_body(src: String, fn_name: String) -> String:
+	var start := src.find("\nfunc " + fn_name + "(")
+	if start < 0:
+		return ""
+	var stop := src.find("\nfunc ", start + 1)
+	return src.substr(start, (stop if stop >= 0 else src.length()) - start)
+
+
+## Every group `_run()` calls, in order: `_test_x` methods and `Module.run(self)` files.
+func _groups() -> Array[String]:
+	var out: Array[String] = []
+	var re := RegEx.create_from_string("^\\t(?:await )?(\\w+)(?:\\.run\\(self\\)|\\(\\))\\s*$")
+	for line in _func_body(_source(), "_run").split("\n"):
+		var m := re.search(line)
+		if m != null:
+			out.append(m.get_string(1))
+	return out
+
+
+func _group_label(group: String) -> String:
+	return group.trim_prefix("_test_")
+
+
+func _module_source(const_name: String) -> String:
+	var mod: Variant = (get_script() as Script).get_script_constant_map().get(const_name)
+	return (mod as Script).source_code if mod is Script else ""
+
+
+func _is_net(group: String) -> bool:
+	var src := _source()
+	var call_re := RegEx.create_from_string("\\b(_[a-z]\\w*)\\(")
+	var module_re := RegEx.create_from_string("\\b([A-Z]\\w*)\\.run\\(")
+	var seen := {}
+	var todo: Array[String] = [group]
+	while not todo.is_empty():
+		var fn: String = todo.pop_back()
+		if seen.has(fn):
+			continue
+		seen[fn] = true
+		var body := _module_source(fn) if fn[0] == fn[0].to_upper() and fn[0] != "_" else _func_body(src, fn)
+		for marker in NET_MARKERS:
+			if marker in body:
+				return true
+		for m in call_re.search_all(body):
+			todo.append(m.get_string(1))
+		for m in module_re.search_all(body):
+			todo.append(m.get_string(1))
+	return false
+
+
+func _list_groups() -> void:
+	for group in _groups():
+		print("%-6s %s" % ["net" if _is_net(group) else "offline", _group_label(group)])
+
+
+## Splits groups into `count` slices of about equal run time, using the last
+## measured times (unknown groups count as an average one).
+func _shard(groups: Array[String], index: int, count: int) -> Array[String]:
+	var times: Dictionary = {}
+	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(GROUP_TIMES)) \
+			if FileAccess.file_exists(GROUP_TIMES) else null
+	if parsed is Dictionary:
+		times = parsed
+	var known: Array = times.values()
+	var fallback: float = 5.0 if known.is_empty() else known.reduce(func(a: float, b: float) -> float: return a + b, 0.0) / known.size()
+	var weight := func(g: String) -> float: return float(times.get(_group_label(g), fallback))
+	var ordered := groups.duplicate()
+	ordered.sort_custom(func(a: String, b: String) -> bool:
+		return weight.call(a) > weight.call(b) or (weight.call(a) == weight.call(b) and a < b))
+	var loads: Array[float] = []
+	loads.resize(count)
+	loads.fill(0.0)
+	var mine: Array[String] = []
+	for g in ordered:
+		var lightest := loads.find(loads.min())
+		loads[lightest] += weight.call(g)
+		if lightest == index:
+			mine.append(g)
+	# Keep `_run()` order inside the slice.
+	return groups.filter(func(g: String) -> bool: return g in mine)
+
+
+func _run_selected(args: PackedStringArray) -> void:
+	var groups := _groups()
+	var tier := _arg(args, "--tier")
+	if tier != "":
+		if tier not in ["offline", "net"]:
+			check(false, "--tier must be offline or net, got '%s'" % tier)
+			return
+		groups = groups.filter(func(g: String) -> bool: return _is_net(g) == (tier == "net"))
+	var names := _arg(args, "--groups")
+	if names != "":
+		var wanted := names.split(",", false)
+		for name in wanted:
+			check(groups.any(func(g: String) -> bool: return _group_label(g) == name), "group '%s' exists" % name)
+		groups = groups.filter(func(g: String) -> bool: return _group_label(g) in wanted)
+	var shard := _arg(args, "--shard")
+	if shard != "":
+		var parts := shard.split("/")
+		var index := int(parts[0]) - 1
+		var count := int(parts[1]) if parts.size() == 2 else 0
+		if count < 1 or index < 0 or index >= count:
+			check(false, "--shard must look like 2/3, got '%s'" % shard)
+			return
+		groups = _shard(groups, index, count)
+	print("Running %d groups: %s" % [groups.size(), ", ".join(groups.map(_group_label))])
+	var took := {}
+	for group in groups:
+		var failed_before := _failed
+		var started := Time.get_ticks_msec()
+		if group.begins_with("_test_"):
+			await call(group)
+		else:
+			await (get_script() as Script).get_script_constant_map()[group].run(self)
+		var seconds := (Time.get_ticks_msec() - started) / 1000.0
+		took[_group_label(group)] = snappedf(seconds, 0.1)
+		print("== %s: %.1fs%s" % [_group_label(group), seconds, "" if _failed == failed_before else ", FAILED"])
+	var out := _arg(args, "--times-out")
+	if out != "":
+		var f := FileAccess.open(out, FileAccess.WRITE)
+		if f != null:
+			f.store_string(JSON.stringify(took, "\t", true))
 
 
 func _test_rig_models() -> void:
@@ -3108,10 +3283,6 @@ func _test_online() -> void:
 	await _leave(alpha)
 	OS.kill(pid)
 	await frames(30)
-	await _test_online_stash()
-	await _test_online_movement()
-	await _test_online_lag_compensation()
-	await _test_online_riding()
 	_wipe_dir(NET_ACCOUNTS)
 	check(Combat.authoritative, "leaving an online raid hands damage back to this game")
 
