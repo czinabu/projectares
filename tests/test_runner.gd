@@ -4765,6 +4765,54 @@ func _test_game_settings() -> void:
 	GameSettings.apply()
 
 
+## The Controls app lists every key from the input map as it is right now.
+func _test_phone_controls(phone: CanvasLayer) -> void:
+	var listed := {}
+	var unknown: Array[String] = []
+	for section: Array in PhoneScript.CONTROLS:
+		for row: Array in section[1]:
+			var spec: String = row[1]
+			var at := spec.find("{")
+			while at >= 0:
+				var end := spec.find("}", at)
+				var action := spec.substr(at + 1, end - at - 1)
+				listed[action] = true
+				if not InputMap.has_action(action):
+					unknown.append(action)
+				at = spec.find("{", end)
+	check(unknown.is_empty(), "the Controls app names only real input actions (%s)" % ", ".join(unknown))
+	var missing: Array[String] = []
+	var setup: GDScript = preload("res://core/input_setup.gd")
+	for action: String in setup.KEY_ACTIONS.keys() + setup.MOUSE_ACTIONS.keys():
+		if not listed.has(action) and action not in missing:
+			missing.append(action)
+	check(missing.is_empty(), "every keybind is listed in the phone's Controls app (missing: %s)" % ", ".join(missing))
+	check(PhoneScript.key_name("interact") == "F" and PhoneScript.key_name("fire") == "Left mouse",
+			"keys are named the way a player reads them")
+	check(PhoneScript.key_name("roll_left") == "Q or Mouse back", "an action bound twice shows both")
+	check(PhoneScript.controls_text("Hold {jump}") == "Hold Space", "a key spec reads from the input map")
+	phone.open_app("controls")
+	check(phone.app == "controls" and phone._title.text == "Controls" and phone._body.get_child_count() > 20,
+			"the phone has a Controls app")
+	# Rebinding shows straight away, since the list reads the input map.
+	var old_events := InputMap.action_get_events("interact")
+	InputMap.action_erase_events("interact")
+	var rebound := InputEventKey.new()
+	rebound.physical_keycode = KEY_K
+	InputMap.action_add_event("interact", rebound)
+	check(PhoneScript.controls_text("{interact}") == "K", "a rebound key shows in the Controls app")
+	InputMap.action_erase_events("interact")
+	for event: InputEvent in old_events:
+		InputMap.action_add_event("interact", event)
+	check(PhoneScript.key_name("interact") == "F", "the binding is put back")
+	phone.open_app("settings")
+	var link := false
+	for child in phone._body.get_children():
+		if child is Button and (child as Button).text.contains("every key"):
+			link = true
+	check(link, "settings link to the Controls app")
+
+
 func _test_phone_view() -> void:
 	print("Phone: the menu itself")
 	var phone: CanvasLayer = PhoneScript.new()
@@ -4782,6 +4830,7 @@ func _test_phone_view() -> void:
 			"news can be read offline")
 	phone.open_app("contacts")
 	check(phone._body.get_child_count() == 1, "offline, contacts explain how to reach players")
+	await _test_phone_controls(phone)
 	GameSettings.persist = false
 	phone.open_app("settings")
 	phone.change_setting("field_of_view", 95.0)
