@@ -32,7 +32,7 @@ skies, animated models and effects (see "How it looks" below).
 | Pick a melee side: left, right or overhead | Flick the mouse that way, or hold A, D or W |
 | Switch how the melee side is picked (mouse flick or movement keys) | B |
 | Heavy lunge with the blade (dive slam in the air) | Middle mouse |
-| Switch to primary / blade / sidearm | 1 / 2 / 3, or mouse wheel |
+| Switch to primary / sidearm / melee / power weapon | 1 / 2 / 3 / 4, or mouse wheel |
 | Reload | R |
 | Use a medkit | H |
 | Loot, or get on and off a bike | F |
