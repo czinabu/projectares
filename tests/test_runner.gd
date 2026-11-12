@@ -74,7 +74,7 @@ func _run() -> void:
 	await _test_online_arena()
 	await LookTests.run(self)
 	await _test_rig_models()
-	await CustomizerTests.run(self)
+	await _test_customizer()
 	await _test_economy()
 	await _test_battlefield()
 
@@ -82,6 +82,10 @@ func _run() -> void:
 func _test_rig_models() -> void:
 	print("Flight rig models")
 	await RigLookTests.run(self)
+
+
+func _test_customizer() -> void:
+	await CustomizerTests.run(self)
 
 
 func _test_economy() -> void:

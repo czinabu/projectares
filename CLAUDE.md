@@ -109,6 +109,12 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   which is safe on a headless server. Online it travels in the spawn data as
   `data["look"]`; the server keeps what each signed-in player sent
   (`NetSession.look_for_peer`). `Raid` and gameplay never read it.
+  A look changed while in a world (the phone's Mirror app) is checked by the
+  server in `_request_look` and passed to everyone there with `_look_changed`.
+  The mirror itself (`core/visual/mirror.gd`) is a client-side view: no
+  collision, and nothing in `Raid` reads it. In first person the body is drawn on
+  `Mirror.BODY_LAYER`, which their own camera leaves out
+  (`PlayerController.body_layer`), so only the mirror shows it.
   Players may only wear `Human.STARTER` clothes plus outfits they own:
   `Human.player_look(raw, owned)` enforces it on the profile, in the
   customizer and on the server. Better outfits are bought or earned, never

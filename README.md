@@ -37,7 +37,7 @@ skies, animated models and effects (see "How it looks" below).
 | Scoreboard: who is fighting, who is down, kills | Hold Tab |
 | Sign out and go home with what you carry (10 seconds, out of a fight) | L |
 | After dying: drop back in, or go home | Enter, or L |
-| Open your phone: players, messages, invites, news, settings | P |
+| Open your phone: players, messages, invites, news, mirror, settings | P |
 | Free the mouse | Esc |
 
 The jetpack runs on heat. Overheat it and you fall until it cools. Rooftop
@@ -104,10 +104,18 @@ your character stands still and the mouse is free.
   raid from the lobby. Invites run out after two minutes.
 - **News**: game news, plus anything the server adds. A server operator drops a
   `news.json` (a list of `{"date", "title", "body"}`) in the accounts folder.
+- **Mirror**: change how you look, wherever you are. A tall mirror rises in
+  front of you and the phone lists your build, each part (head, torso, legs,
+  shoes) and each colour. Scroll through them with the arrows, the mouse wheel
+  over a row, or the keys (up and down pick a row, left and right scroll it).
+  Only starter clothes and outfits you own are offered: buy more at the
+  Tailor. Changes save as you go, and online everyone around you sees the new
+  look at once. It works in first person too: the mirror shows your body even
+  though your own camera does not.
 - **Settings**: mouse sensitivity, invert mouse, melee side control, field of
   view, volume, fullscreen and nameplates. Saved in `user://settings.json`.
 
-Players, chat and invites need a server; news and settings work solo too.
+Players, chat and invites need a server; news, the mirror and settings work solo too.
 
 A server can also run on its own, with no window:
 

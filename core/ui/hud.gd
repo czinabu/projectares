@@ -15,6 +15,8 @@ var _stamina_bar: ProgressBar
 var _hit_marker: HitMarker
 var _hurt_flash: ColorRect
 var _stance: StanceIndicator
+## The aiming cross in the middle of the screen.
+var crosshair: Label
 var _heat_bar: ProgressBar
 var _heat_label: Label
 var _weapon: Label
@@ -59,7 +61,7 @@ func _ready() -> void:
 	root.add_child(_stance)
 	_place(_stance, 0.5, 0.5, Vector2(-70, -70), Vector2(140, 140))
 
-	var crosshair := _label(root, "+", 22)
+	crosshair = _label(root, "+", 22)
 	_place(crosshair, 0.5, 0.5, Vector2(-7, -17), Vector2(14, 30))
 
 	_timer = _label(root, "", 26)
@@ -435,3 +437,12 @@ class StanceIndicator:
 				# Yellow on a dark outline, so it shows against red enemies and sky.
 				draw_line(at - along * 1.6, at + along * 1.6, Color(0, 0, 0, 0.85), 12.0)
 				draw_line(at - along * 1.5, at + along * 1.5, Color(1.0, 0.9, 0.15), 7.0)
+
+
+## Shows or hides the aiming marks in the middle of the screen, which would
+## sit on your face in the phone's mirror.
+func show_aim(on: bool) -> void:
+	if crosshair:
+		crosshair.visible = on
+	if _stance:
+		_stance.visible = on
