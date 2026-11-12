@@ -56,6 +56,9 @@ const STATIONS := {
 	"uplink": {"prompt": "Play online", "title": "Uplink", "at": Vector3(6.6, 0.0, 5.3), "yaw": -PI / 2.0, "color": Color(0.4, 0.95, 1.0)},
 }
 
+## The size of every station's screen, in metres (16:9).
+const SCREEN_SIZE := Vector2(1.6, 0.9)
+
 var player: Actor
 var displays: Array[Display] = []
 var door: Door
@@ -100,6 +103,9 @@ class Station:
 
 	var base: HomeBase
 	var id := ""
+	## Where the station's screen is: centred on it, facing out along its +Z,
+	## `HomeBase.SCREEN_SIZE` across. Whoever shows the screen mounts it here.
+	var screen: Node3D
 
 	func get_prompt() -> String:
 		var title: String = HomeBase.STATIONS[id]["title"]
@@ -132,6 +138,7 @@ func _ready() -> void:
 	add_child(_display_root)
 	_build_door()
 	_build_stations()
+	_build_banner()
 	_spawn_player()
 	_rebuild()
 
@@ -265,25 +272,41 @@ func _build_stations() -> void:
 		var color: Color = info["color"]
 		var dark := Color(0.17, 0.17, 0.19)
 		var title_at := Vector3(0, 2.2, 0)
+		var screen := Node3D.new()
+		screen.name = "Screen"
 		if id == "launch":
-			# A lit ring on the floor round a drop console.
+			# A lit ring on the floor round a drop console with a tilted screen.
 			console.add_child(_part(Vector3(3.2, 0.04, 3.2), Vector3(0, 0.02, 0), dark))
 			for side: Vector3 in [Vector3(0, 0, 1.5), Vector3(0, 0, -1.5)]:
 				console.add_child(_part(Vector3(3.2, 0.05, 0.16), side + Vector3(0, 0.03, 0), color, true))
 			for side: Vector3 in [Vector3(1.5, 0, 0), Vector3(-1.5, 0, 0)]:
 				console.add_child(_part(Vector3(0.16, 0.05, 3.2), side + Vector3(0, 0.03, 0), color, true))
-			console.add_child(_part(Vector3(0.9, 1.1, 0.6), Vector3(0, 0.55, 0), dark))
-			var screen := _part(Vector3(0.8, 0.5, 0.06), Vector3(0, 1.2, 0.2), color, true)
-			screen.rotation.x = -0.5
-			console.add_child(screen)
+			console.add_child(_part(Vector3(0.9, 1.0, 0.6), Vector3(0, 0.5, 0), dark))
+			screen.position = Vector3(0, 1.3, 0.1)
+			screen.rotation.x = -0.45
 			_add_collision(console, Vector3(1.0, 1.5, 0.8), Vector3(0, 0.75, 0))
-			title_at = Vector3(0, 2.0, 0)
+			title_at = Vector3(0, 2.15, 0)
 		else:
-			# A cabinet with a lit screen and a stripe of the station's colour.
-			console.add_child(_part(Vector3(1.2, 1.6, 0.5), Vector3(0, 0.8, 0), dark))
-			console.add_child(_part(Vector3(0.95, 0.6, 0.04), Vector3(0, 1.25, 0.26), color, true))
+			# A cabinet with a stripe of the station's colour and a monitor on top.
+			console.add_child(_part(Vector3(1.2, 1.0, 0.5), Vector3(0, 0.5, 0), dark))
 			console.add_child(_part(Vector3(1.22, 0.06, 0.52), Vector3(0, 0.3, 0), color, true))
+			console.add_child(_part(Vector3(0.12, 0.25, 0.12), Vector3(0, 1.1, 0), dark))
+			screen.position = Vector3(0, 1.62, 0.05)
+			screen.rotation.x = -0.08
 			_add_collision(console, Vector3(1.3, 1.7, 0.7), Vector3(0, 0.85, 0))
+			title_at = Vector3(0, 2.3, 0)
+		# The screen's bezel, and a glow in the station's colour while nobody
+		# is using it. The live screen is mounted in front of it.
+		screen.add_child(_part(Vector3(SCREEN_SIZE.x + 0.08, SCREEN_SIZE.y + 0.08, 0.06), Vector3(0, 0, -0.035), dark))
+		var idle := _part(Vector3(SCREEN_SIZE.x, SCREEN_SIZE.y, 0.01), Vector3.ZERO, color.darkened(0.78), true)
+		idle.name = "Idle"
+		screen.add_child(idle)
+		var hint := _label(str(info["prompt"]), color.lightened(0.2), 0.12)
+		hint.name = "IdleText"
+		hint.position = Vector3(0, 0, 0.012)
+		screen.add_child(hint)
+		console.add_child(screen)
+		console.screen = screen
 		var title := _label(str(info["title"]).to_upper(), color, 0.22)
 		title.name = "Title"
 		title.position = title_at
@@ -291,6 +314,33 @@ func _build_stations() -> void:
 		console.add_child(title)
 		add_child(console)
 		stations.append(console)
+
+
+## A banner high on the far wall, facing the way in: whose base this is and
+## how it works, written in the room instead of over the screen.
+func _build_banner() -> void:
+	var accent := Color(1.0, 0.62, 0.22)
+	var banner := Node3D.new()
+	banner.name = "Banner"
+	banner.position = Vector3(0.0, 4.75, -room_size.z * 0.5 + 0.06)
+	add_child(banner)
+	banner.add_child(_part(Vector3(10.5, 1.6, 0.05), Vector3(0, -0.15, -0.03), Color(0.12, 0.11, 0.1)))
+	var title := _label("%s'S BASE" % owner_name.to_upper() if read_only else "HOME BASE", accent, 0.6)
+	title.name = "Title"
+	title.position = Vector3(0.0, 0.3, 0.0)
+	banner.add_child(title)
+	var how := _label(banner_text(), Color(0.85, 0.83, 0.8), 0.21)
+	how.name = "HowTo"
+	how.position = Vector3(0.0, -0.4, 0.0)
+	banner.add_child(how)
+
+
+## The lines under the base's name on its banner.
+func banner_text() -> String:
+	if read_only:
+		return "You are visiting. Look around: the gear stays where it is."
+	return "Everything in your stash is on show. Look at gear and press E to equip it.\n" \
+			+ "Walk up to a console and press E to use its screen. Esc steps back."
 
 
 func _spawn_player() -> void:

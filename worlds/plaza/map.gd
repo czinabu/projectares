@@ -26,6 +26,8 @@ const MARKET_RING := 43.0
 ## between the gates and the side doors, then the south-west corner.
 const MARKET_SLOTS := [-PI * 0.25 - 0.19, -PI * 0.75 + 0.19, -PI * 0.25 + 0.19, -PI * 0.75 - 0.19,
 		PI * 0.75, PI * 0.75 + 0.36, PI * 0.75 - 0.36]
+## The casing of a terminal.
+const DARK_GLASS := Color(0.12, 0.12, 0.14)
 const SHOP_COLORS := [Color(1.0, 0.45, 0.3), Color(0.4, 0.85, 0.55), Color(1.0, 0.8, 0.3), Color(0.45, 0.7, 1.0),
 		Color(0.9, 0.5, 0.95)]
 
@@ -106,6 +108,11 @@ func _build_ground() -> void:
 func _build_spire() -> void:
 	_box(Vector3(9, 1.0, 9), Vector3(0, 0.5, 0), STEEL, PI / 4.0)
 	_box(Vector3(5, 3.0, 5), Vector3(0, 2.5, 0), DARK, 0.0)
+	# What this place is, on every face of the spire's base.
+	for i in 4:
+		var face := Basis(Vector3.UP, TAU * i / 4.0)
+		_sign("SAFE ZONE", face * Vector3(0, 3.0, 2.53), TAU * i / 4.0, 0.55, Color(0.6, 0.95, 0.75))
+		_sign("Weapons are locked here", face * Vector3(0, 2.35, 2.53), TAU * i / 4.0, 0.26, Color(0.9, 0.9, 0.9))
 	_box(Vector3(2.2, 26.0, 2.2), Vector3(0, 17.0, 0), STEEL, PI / 4.0)
 	_box(Vector3(6, 0.5, 6), Vector3(0, 30.25, 0), STEEL, 0.0)
 	# Podiums: step up, strike a pose, be inspected.
@@ -210,6 +217,15 @@ func _build_market() -> void:
 				at + facing * Vector3(0, 0, 4.2), 2.4)
 		portal.add_to_group("shop_front")
 		portal.set_meta("shop_id", entry.get("id", ""))
+		# The shop's terminal on the counter, its screen facing the plaza.
+		var screen := Node3D.new()
+		screen.name = "Screen"
+		screen.position = facing * Vector3(0, 1.82, 2.05 - 4.2)
+		screen.basis = facing * Basis(Vector3.RIGHT, -0.12)
+		portal.add_child(screen)
+		_part(screen, Vector3(1.7, 1.0, 0.06), Vector3(0, 0, -0.04), DARK_GLASS)
+		_part(screen, Vector3(1.6, 0.9, 0.01), Vector3.ZERO, Color(color, 1.0).darkened(0.75), true)
+		_part(screen, Vector3(0.14, 0.4, 0.14), Vector3(0, -0.62, -0.06), DARK_GLASS)
 		_sign(str(entry.get("name", "")).to_upper(), at + facing * Vector3(0, 6.2, 4.35), yaw, 0.9, color)
 		_sign(entry.get("blurb", ""), at + facing * Vector3(0, 4.3, -2.05), yaw, 0.26, Color(0.9, 0.9, 0.9), 8.0)
 		_box(Vector3(10.0, 1.4, 0.3), at + facing * Vector3(0, 6.2, 4.15), DARK, yaw)
@@ -271,7 +287,8 @@ func _dress() -> void:
 		var light := Look.lamp(stall["color"], 4.0, 11.0)
 		light.position = stall["at"] + facing * Vector3(0, 4.2, 1.0)
 		art.add_child(light)
-		for side: float in [-2.2, 0.0, 2.2]:
+		# Wares either side of the counter's terminal.
+		for side: float in [-2.2, 2.2]:
 			var ware := Look.prop(wares[(i + int(side)) % wares.size()], 0.8, 0.3)
 			if ware:
 				ware.position = stall["at"] + facing * Vector3(side, 1.1, 2.0)
@@ -358,6 +375,23 @@ func _sign(text: String, at: Vector3, yaw: float, size: float, color: Color, wid
 		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		label.width = width * 100.0
 	add_child(label)
+
+
+## A plain box with no collision under `parent` (a terminal's casing).
+func _part(parent: Node3D, size: Vector3, at: Vector3, color: Color, glow := false) -> void:
+	var mesh := BoxMesh.new()
+	mesh.size = size
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = color
+	if glow:
+		mat.emission_enabled = true
+		mat.emission = color
+		mat.emission_energy_multiplier = 1.2
+	mesh.material = mat
+	var node := MeshInstance3D.new()
+	node.mesh = mesh
+	node.position = at
+	parent.add_child(node)
 
 
 ## A thin decorative plate set into the floor. No collision.

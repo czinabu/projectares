@@ -41,6 +41,13 @@ const SHOP_PANEL := "res://core/economy/shop_panel.gd"
 const Economy := preload("res://core/economy/economy.gd")
 
 var hub: Hub
+## The 2D viewport the hub lives in. Its picture goes on the screen of the
+## station you are using (`_station_screen`), or fills the window while
+## travelling between places (`_travel`).
+var hub_screen: SubViewport
+## The live screen on the station in use, else null.
+var station_screen: WorldScreen
+var _travel: CanvasLayer
 var raid: Raid
 var controller: PlayerController
 var hud: Hud
@@ -58,6 +65,9 @@ var base_hud: CanvasLayer
 var plaza_view: CanvasLayer
 ## The shop screen while trading at a plaza storefront, else null.
 var shop_view: ShopView
+## The storefront terminal's live screen showing `shop_view`, else null.
+var shop_screen: WorldScreen
+var _shop_viewport: SubViewport
 ## Server: every session it runs (the plaza first, then the raid worlds).
 var sessions: Array[NetSession] = []
 ## Client: where this server's plaza is, once you have been in it. Leaving a
@@ -81,9 +91,26 @@ func _ready() -> void:
 	if "--server" in args:
 		_run_dedicated_server(args)
 		return
+	hub_screen = SubViewport.new()
+	hub_screen.name = "HubScreen"
+	hub_screen.size = Vector2i(1280, 720)
+	hub_screen.disable_3d = true
+	hub_screen.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	add_child(hub_screen)
 	hub = Hub.new()
 	hub.name = "Hub"
-	add_child(hub)
+	hub_screen.add_child(hub)
+	_travel = CanvasLayer.new()
+	_travel.name = "Travel"
+	var picture := TextureRect.new()
+	picture.texture = hub_screen.get_texture()
+	picture.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	picture.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	picture.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	picture.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_travel.add_child(picture)
+	_travel.visible = false
+	add_child(_travel)
 	hub.closed.connect(_on_station_closed)
 	hub.deploy_requested.connect(start_raid)
 	hub.host_requested.connect(host_and_join)
@@ -113,6 +140,13 @@ func _ready() -> void:
 			net.send_look(Profile.appearance))
 	# The game opens in the world: your home base.
 	go_home()
+
+
+## Between places the hub's travel screen fills the window; anywhere else it
+## is only ever seen on a station's screen.
+func _process(_delta: float) -> void:
+	if _travel != null:
+		_travel.visible = hub.visible and hub.station == ""
 
 
 func _notification(what: int) -> void:
@@ -181,6 +215,7 @@ func leave_base() -> void:
 	if base == null:
 		return
 	hub.close()
+	_unmount_station_screen()
 	base.queue_free()
 	base = null
 	base_hud = null
@@ -221,7 +256,20 @@ func open_station(id: String) -> void:
 		# The arena gate is a way out, not a screen.
 		open_arena()
 		return
+	var console := base.station(id)
+	if console == null:
+		return
 	hub.open_station(id)
+	if not hub.visible:
+		return
+	# The screen comes up on the console itself and the view moves in to it.
+	_unmount_station_screen()
+	station_screen = WorldScreen.new()
+	station_screen.name = "LiveScreen"
+	station_screen.size = HomeBase.SCREEN_SIZE
+	station_screen.viewport = hub_screen
+	console.screen.add_child(station_screen)
+	station_screen.focus()
 	if base_hud:
 		base_hud.visible = false
 	if controller != null and is_instance_valid(controller):
@@ -229,8 +277,17 @@ func open_station(id: String) -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
 
+## Takes the live screen off its console and gives the view back.
+func _unmount_station_screen() -> void:
+	if station_screen != null and is_instance_valid(station_screen):
+		station_screen.unfocus()
+		station_screen.queue_free()
+	station_screen = null
+
+
 ## Stepped away from a station: the room takes the mouse back.
 func _on_station_closed() -> void:
+	_unmount_station_screen()
 	if base_hud:
 		base_hud.visible = true
 	if controller != null and is_instance_valid(controller) and not phone.is_open:
@@ -383,7 +440,17 @@ func _attach_player_view() -> void:
 		arena_hud.name = "ArenaHud"
 		arena_hud.setup(raid)
 		arena_hud.leave_requested.connect(leave_arena)
+		arena_hud.booth_changed.connect(_on_booth_changed)
 		raid.add_child(arena_hud)
+
+
+## Took up or put down a bookmaker's booth in the arena: like a station, the
+## character stops, the mouse is free and the HUD steps aside.
+func _on_booth_changed(open: bool) -> void:
+	_show_overlays(not open)
+	if controller != null and is_instance_valid(controller):
+		controller.input_blocked = open or phone.is_open
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if open or phone.is_open else Input.MOUSE_MODE_CAPTURED
 
 
 ## One solo life ended. A death keeps you in the world; leaving goes home.
@@ -459,6 +526,7 @@ func _show_hub(result: Dictionary) -> void:
 
 
 func _leave_raid() -> void:
+	close_shop()
 	_death_result = {}
 	controller = null
 	hud = null
@@ -492,7 +560,8 @@ func _setup_phone() -> void:
 func _on_phone_opened(open: bool) -> void:
 	if controller != null and is_instance_valid(controller):
 		# A station screen still open behind the phone keeps the mouse.
-		var screen_open := hub.station != "" or shop_view != null
+		var arena_hud := raid.get_node_or_null("ArenaHud") if raid != null else null
+		var screen_open: bool = hub.station != "" or shop_view != null or (arena_hud != null and arena_hud.booth_open)
 		controller.input_blocked = open or screen_open
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if open or screen_open else Input.MOUSE_MODE_CAPTURED
 
@@ -849,22 +918,63 @@ func open_shop(shop_id: String) -> void:
 	shop_view.name = "ShopView"
 	shop_view.panel = panel
 	shop_view.closed.connect(close_shop)
+	# The shop comes up on the storefront's terminal, or on a screen held up
+	# in front of you where a storefront has none.
+	_shop_viewport = SubViewport.new()
+	_shop_viewport.name = "ShopScreen"
+	_shop_viewport.size = Vector2i(1280, 720)
+	_shop_viewport.disable_3d = true
+	_shop_viewport.add_child(shop_view)
+	raid.add_child(_shop_viewport)
+	shop_screen = WorldScreen.new()
+	shop_screen.name = "LiveScreen"
+	shop_screen.viewport = _shop_viewport
+	var stall := PlazaViewScript.portal_at(raid, raid.player.global_position) if raid.player else null
+	var mount := stall.get_node_or_null("Screen") as Node3D if stall else null
+	if mount:
+		mount.add_child(shop_screen)
+	else:
+		raid.add_child(shop_screen)
+		var me := raid.player
+		var ahead := Vector3(me.get_aim_dir().x, 0, me.get_aim_dir().z).normalized() if me else Vector3.FORWARD
+		var at := (me.get_eye_position() if me else Vector3.ZERO) + ahead * 1.4
+		shop_screen.global_transform = Transform3D(Basis.looking_at(ahead), at)
+	shop_screen.focus()
+	_show_overlays(false)
 	# Nothing changes here until the server answers; a refusal says why.
 	net.lobby_error.connect(func(reason: String) -> void:
 		if shop_view != null and is_instance_valid(shop_view) and shop_view.panel.has_method("show_message"):
 			shop_view.panel.call("show_message", reason))
-	raid.add_child(shop_view)
 	if controller != null and is_instance_valid(controller):
 		controller.input_blocked = true
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
 
+## The HUD, nameplates, plaza prompts and the weapon in your hand step aside
+## while a screen in the world is in use, so nothing is drawn over it.
+func _show_overlays(on: bool) -> void:
+	for layer: CanvasLayer in [hud, nameplates, plaza_view]:
+		if layer != null and is_instance_valid(layer):
+			layer.visible = on and (layer != nameplates or GameSettings.show_nameplates)
+	# The weapon in your hand stays with your own camera; keep it out of the
+	# screen's way.
+	if controller != null and is_instance_valid(controller) and controller.actor != null \
+			and is_instance_valid(controller.actor):
+		controller.actor.hand.visible = on and not controller.actor.is_dead
+
+
 func close_shop() -> void:
 	if shop_view == null:
 		return
-	if is_instance_valid(shop_view):
-		shop_view.queue_free()
+	if shop_screen != null and is_instance_valid(shop_screen):
+		shop_screen.unfocus()
+		shop_screen.queue_free()
+	shop_screen = null
+	if _shop_viewport != null and is_instance_valid(_shop_viewport):
+		_shop_viewport.queue_free()
+	_shop_viewport = null
 	shop_view = null
+	_show_overlays(true)
 	if controller != null and is_instance_valid(controller) and raid != null:
 		controller.input_blocked = false
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
@@ -1004,33 +1114,28 @@ static func _arg(args: PackedStringArray, flag: String, fallback: String) -> Str
 	return fallback
 
 
-## The frame round the shop screen at a storefront: a dimmed plaza behind, the
-## panel in the middle, and a way out (the button or Esc).
+## What a storefront's terminal shows: the shop panel on the screen's dark
+## glass, and a way out (the button or Esc).
 class ShopView:
-	extends CanvasLayer
+	extends Control
 
 	signal closed
 
 	var panel: Control
 
 	func _ready() -> void:
-		layer = 5
-		var shade := ColorRect.new()
-		shade.color = Color(0, 0, 0, 0.55)
-		shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-		add_child(shade)
-		var frame := PanelContainer.new()
-		frame.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
-		frame.custom_minimum_size = Vector2(760, 560)
-		frame.offset_left = -380
-		frame.offset_right = 380
-		frame.offset_top = -280
-		frame.offset_bottom = 280
-		add_child(frame)
+		set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		var glass := ColorRect.new()
+		glass.color = Color(0.025, 0.03, 0.035)
+		glass.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		add_child(glass)
 		var margin := MarginContainer.new()
-		for side: String in ["left", "right", "top", "bottom"]:
-			margin.add_theme_constant_override("margin_" + side, 18)
-		frame.add_child(margin)
+		margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		for side: String in ["left", "right"]:
+			margin.add_theme_constant_override("margin_" + side, 190)
+		for side: String in ["top", "bottom"]:
+			margin.add_theme_constant_override("margin_" + side, 40)
+		add_child(margin)
 		var box := VBoxContainer.new()
 		box.add_theme_constant_override("separation", 10)
 		margin.add_child(box)
@@ -1042,6 +1147,7 @@ class ShopView:
 		scroll.add_child(panel)
 		var leave := Button.new()
 		leave.text = "Step away  (Esc)"
+		leave.custom_minimum_size = Vector2(0, 44)
 		leave.pressed.connect(func() -> void: closed.emit())
 		box.add_child(leave)
 

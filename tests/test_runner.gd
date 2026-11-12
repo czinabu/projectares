@@ -13,6 +13,7 @@ const RenownLedger := preload("res://core/progression/renown_ledger.gd")
 const BaseLayout := preload("res://core/base/base_layout.gd")
 const BaseHudScript := preload("res://core/ui/base_hud.gd")
 const LookTests := preload("res://tests/look_tests.gd")
+const RigLookTests := preload("res://tests/rig_look_tests.gd")
 const EconomyTests := preload("res://tests/economy_tests.gd")
 const CustomizerTests := preload("res://tests/customizer_tests.gd")
 const BattlefieldTests := preload("res://tests/battlefield_tests.gd")
@@ -73,9 +74,15 @@ func _run() -> void:
 	await _test_arena()
 	await _test_online_arena()
 	await LookTests.run(self)
+	await _test_rig_models()
 	await _test_customizer()
 	await _test_economy()
 	await _test_battlefield()
+
+
+func _test_rig_models() -> void:
+	print("Flight rig models")
+	await RigLookTests.run(self)
 
 
 func _test_customizer() -> void:
@@ -175,6 +182,16 @@ func _test_flight_rig() -> void:
 	for i in 100:
 		rig.tick(false, 0.1)
 	check(not rig.overheated and rig.heat == 0.0, "the rig cools down and recovers")
+	var bursts := [0]
+	rig.burst_fired.connect(func() -> void: bursts[0] += 1)
+	rig.try_burst()
+	check(bursts[0] == 0, "a rig without a burst signals nothing")
+	rig.burst_velocity = 10.0
+	rig.burst_heat = 60.0
+	rig.try_burst()
+	rig.try_burst()
+	rig.try_burst()
+	check(bursts[0] == 2, "each air jump that goes off is signalled, and an overheated one is not")
 	rig.free()
 
 
@@ -3312,6 +3329,8 @@ func _test_plaza_online() -> void:
 			check(bo_me.health.health == bo_me.health.max_health and not bo_me.is_dead, "nobody can be shot in the plaza")
 			var looking := PlazaView.inspect_target(ada.raid, me, me.get_eye_position(), aim, 60.0, 9.0)
 			check(looking == bo_seen, "looking at a player picks them for the gear card")
+			check(PlazaView.gear_tag(bo_seen).begins_with(bo_seen.display_name.to_upper()) and "Kit worth" in PlazaView.gear_tag(bo_seen),
+					"their gear is written on a tag over their head")
 
 	# Through the gate: the same account, now in the warzone's lobby.
 	var war_port: int = ada.routes.get("ashfront", -1)
@@ -3368,11 +3387,20 @@ func _test_plaza_online() -> void:
 		var shops: Array = main.raid.map.shops()
 		if not shops.is_empty():
 			var shop_id: String = shops[0].id
+			var stall: Node3D = null
+			for front: Node in main.raid.get_tree().get_nodes_in_group("shop_front"):
+				if front.get_meta("shop_id", "") == shop_id and main.raid.map.is_ancestor_of(front):
+					stall = front
+			main.raid.player.global_position = stall.global_position + Vector3(0, 0.1, 0)
 			main.use_portal("shop:" + shop_id)
 			await frames(3)
 			check(main.shop_view != null and main.shop_view.panel.shop_filter == shop_id
 					and main.controller.input_blocked and main.raid != null,
 					"a storefront opens that shop's screen without leaving the plaza")
+			check(main.shop_screen != null and main.shop_screen.get_parent() == stall.get_node("Screen")
+					and main.shop_screen.focused and main.get_viewport().get_camera_3d() != main.controller.camera
+					and main.hud != null and not main.hud.visible and not main.plaza_view.visible,
+					"the shop comes up on the terminal on its counter and the view moves in to it")
 			var panel: Control = main.shop_view.panel
 			var before: int = panel.credits()
 			var stock: Array = panel.find_children("*", "Button", true, false).filter(func(b: Node) -> bool:
@@ -3385,7 +3413,9 @@ func _test_plaza_online() -> void:
 				check(main.shop_view.panel.credits() < before, "buying at the stall goes through the server")
 			main.close_shop()
 			await frames(2)
-			check(main.shop_view == null and not main.controller.input_blocked, "stepping away gives control back")
+			check(main.shop_view == null and main.shop_screen == null and not main.controller.input_blocked
+					and main.get_viewport().get_camera_3d() == main.controller.camera and main.hud.visible,
+					"stepping away gives control, the view and the HUD back")
 		main.use_portal("home")
 		await _wait_until(func() -> bool: return main.base != null, 600)
 		check(main.base != null and main.raid == null and main.hub.in_lobby(),
@@ -3878,6 +3908,10 @@ func _test_home_base() -> void:
 	await frames(2)
 	var lines: Array[String] = hud.describe(shard)
 	check(lines[0] == "Lattice Shard" and "Relic" in lines[1], "the overlay names what you look at and its rarity")
+	check(hud.tag.visible and hud.tag.text == lines[1] and hud.tag.global_position.distance_to(shard.global_position) < 2.0,
+			"what it is shows on a tag over the gear itself, not on the screen")
+	check(base.get_node("Banner/Title").text == "HOME BASE" and "press E" in base.banner_text(),
+			"the base's name and how it works hang on a banner in the room")
 	for kind: String in BaseLayout.KINDS:
 		var bike_or_gear: Array = by_kind.get(kind, [])
 		if bike_or_gear.is_empty():
@@ -3953,14 +3987,43 @@ func _test_home_base() -> void:
 		console.interact(main.base.player)
 		await frames(2)
 		check(main.hub.visible and main.hub.station == id and main.controller.input_blocked
-				and not main.base_hud.visible, "the %s opens its screen over the base" % id)
+				and not main.base_hud.visible, "the %s opens its screen" % id)
+		check(main.station_screen != null and main.station_screen.get_parent() == console.screen
+				and main.station_screen.focused and main.get_viewport().get_camera_3d() != main.controller.camera
+				and not main._travel.visible, "the %s's screen comes up on the console and the view moves in to it" % id)
 		var esc := InputEventKey.new()
 		esc.keycode = KEY_ESCAPE
 		esc.pressed = true
 		main.hub._unhandled_input(esc)
 		await frames(2)
-		check(not main.hub.visible and not main.controller.input_blocked and main.base_hud.visible,
-				"Esc steps away from the %s" % id)
+		check(not main.hub.visible and not main.controller.input_blocked and main.base_hud.visible
+				and main.station_screen == null and main.get_viewport().get_camera_3d() == main.controller.camera,
+				"Esc steps away from the %s and gives the view back" % id)
+	# The screen is used by clicking on it in the world: a click where the
+	# records board's "Step away" button shows goes to that button.
+	main.open_station("records")
+	await get_tree().create_timer(0.6).timeout
+	var live: WorldScreen = main.station_screen
+	var cam := main.get_viewport().get_camera_3d()
+	var mid := cam.unproject_position(live.global_position)
+	check(live.screen_point(cam.project_ray_origin(mid), cam.project_ray_normal(mid)).distance_to(
+			Vector2(main.hub_screen.size) * 0.5) < 2.0, "the middle of the view is the middle of the screen")
+	var step_away: Button = main.hub._close_button
+	var spot := step_away.get_global_rect().get_center()
+	var on_glass := Vector3((spot.x / main.hub_screen.size.x - 0.5) * live.size.x,
+			(0.5 - spot.y / main.hub_screen.size.y) * live.size.y, 0.0)
+	var at := cam.unproject_position(live.global_transform * on_glass)
+	for pressed: bool in [true, false]:
+		var click := InputEventMouseButton.new()
+		click.button_index = MOUSE_BUTTON_LEFT
+		click.pressed = pressed
+		click.position = at
+		click.global_position = at
+		main.get_viewport().push_input(click)
+		await frames(1)
+	await frames(2)
+	check(not main.hub.visible and main.station_screen == null and not main.controller.input_blocked,
+			"clicking a button on the screen in the world presses it")
 	main.open_station("wardrobe")
 	await frames(2)
 	check(main.hub.character.is_customizing(), "the wardrobe opens the customizer")
@@ -4176,10 +4239,33 @@ func _test_arena() -> void:
 	await frames(5)
 	check(main.raid is Arena and not main.hub.visible and main.base == null
 			and main.raid.get_node_or_null("ArenaHud") != null
-			and main.controller != null, "the base's arena gate opens the arena with its overlay")
+			and main.controller != null, "the base's arena gate opens the arena")
 	var hud: CanvasLayer = main.raid.get_node("ArenaHud")
 	await frames(20)
-	check(hud.get("_panel").get_child_count() > 3, "the overlay lists what you can do")
+	var faces := get_tree().get_nodes_in_group("arena_board").filter(func(face: Node) -> bool:
+		return main.raid.map.is_ancestor_of(face))
+	check(faces.size() == 4 and faces.all(func(face: Node) -> bool:
+			return face.get_children().any(func(c: Node) -> bool: return c is WorldScreen)),
+			"the bout is shown on the big board over the pit, on every side")
+	var booths := get_tree().get_nodes_in_group("arena_booth").filter(func(b: Node) -> bool:
+		return main.raid.map.is_ancestor_of(b))
+	check(booths.size() == Arena.ArenaVenue.BOOTHS, "the stands have bookmakers' booths")
+	var booth: Node3D = booths[0]
+	check(hud.booth_at(main.raid, booth.global_position + Vector3(0.3, 0.1, 0)) == booth
+			and hud.booth_at(main.raid, Vector3.ZERO) == null, "a booth is used by standing at it")
+	hud.open_booth(booth)
+	await frames(3)
+	check(hud.booth_open and hud.booth_screen.get_parent() == booth.get_node("Screen")
+			and main.controller.input_blocked and main.get_viewport().get_camera_3d() != main.controller.camera
+			and not main.hud.visible, "the booth's screen comes up with the view moved in to it")
+	check(hud.get("_panel").get_child_count() > 3, "the booth lists what you can do")
+	var esc := InputEventKey.new()
+	esc.keycode = KEY_ESCAPE
+	esc.pressed = true
+	hud.booth_view.push_input(esc, true)
+	await frames(3)
+	check(not hud.booth_open and not main.controller.input_blocked and main.hud.visible
+			and main.get_viewport().get_camera_3d() == main.controller.camera, "Esc steps away from the booth")
 	hud.leave_requested.emit()
 	await frames(5)
 	check(main.raid == null and main.base != null and not main.hub.visible, "leaving the arena takes you home")
