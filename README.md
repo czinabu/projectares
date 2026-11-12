@@ -24,11 +24,10 @@ skies, animated models and effects (see "How it looks" below).
 | Use your helmet's visor (zoom or scan) | T |
 | Dash | Q |
 | Slide (while sprinting) | C |
-| Fire, or blade combo | Left mouse |
+| Fire, or melee: tap for the combo, hold for a heavy (dive slam in the air) | Left mouse |
 | Aim down sights, or block with the blade (tap just before a hit to parry) | Right mouse |
 | Pick a melee side: left, right or overhead | Flick the mouse that way, or hold A, D or W |
 | Switch how the melee side is picked (mouse flick or movement keys) | B |
-| Heavy lunge with the blade (dive slam in the air) | F |
 | Switch to primary / sidearm / melee / power weapon | 1 / 2 / 3 / 4, or mouse wheel |
 | Reload | R |
 | Use a medkit | H |

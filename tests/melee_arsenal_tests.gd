@@ -112,6 +112,16 @@ static func _strike(t: Node, p: Actor, foe: Actor, blade: MeleeWeapon, dist: flo
 	return before - foe.health.health
 
 
+## Holds the attack button until it turns into a heavy, then lets go.
+static func _hold_attack(t: Node, p: Actor, blade: MeleeWeapon) -> void:
+	p.cmd.primary = true
+	p.cmd.primary_pressed = true
+	await t.frames(1)
+	p.cmd.primary_pressed = false
+	await t.frames(int(blade.hold_time * 60.0) + 2)
+	p.cmd.primary = false
+
+
 static func _in_raid(t: Node) -> void:
 	print("Melee arsenal: knife, axe and spear in a fight")
 	var raid: Raid = await t._new_raid(52, false)
@@ -186,9 +196,7 @@ static func _in_raid(t: Node) -> void:
 	foe.cmd.aim_dir = Vector3.BACK
 	await t.frames(70)
 	_reset(foe)
-	p.cmd.tertiary_pressed = true
-	await t.frames(1)
-	p.cmd.tertiary_pressed = false
+	await _hold_attack(t, p, spear)
 	await t.frames(int(spear.heavy_windup * 60.0) + 6)
 	t.check(foe.health.health < foe.health.max_health and foe.stagger_left > 0.0, "a heavy spear thrust staggers")
 	# A blocked thrust does not.
@@ -197,10 +205,40 @@ static func _in_raid(t: Node) -> void:
 	foe.global_position = p.global_position + Vector3(0, 0, -3.2)
 	foe.cmd.secondary = true
 	await t.frames(30)
-	p.cmd.tertiary_pressed = true
-	await t.frames(1)
-	p.cmd.tertiary_pressed = false
+	await _hold_attack(t, p, spear)
 	await t.frames(int(spear.heavy_windup * 60.0) + 6)
 	t.check(foe.stagger_left <= 0.0, "a blocked heavy thrust does not stagger")
 	foe.cmd.secondary = false
+
+	# One button: a tap is a light attack, a hold is a heavy.
+	var blade := await _arm(t, p, "")
+	await t.frames(60)
+	_reset(foe)
+	_place(p, foe, 2.0)
+	p.cmd.primary = true
+	p.cmd.primary_pressed = true
+	await t.frames(1)
+	p.cmd.primary_pressed = false
+	await t.frames(3)
+	t.check(blade.is_charging() and not blade.is_winding_up(), "a held attack button charges before it swings")
+	p.cmd.primary = false
+	await t.frames(int(blade.light_windup * 60.0) + 6)
+	t.check(is_equal_approx(foe.health.max_health - foe.health.health, blade.light_damage), "a tap is a light attack")
+	await t.frames(90)
+	_reset(foe)
+	_place(p, foe, 2.0)
+	await _hold_attack(t, p, blade)
+	t.check(blade.is_winding_up(), "holding past the charge time starts a heavy windup you can see")
+	await t.frames(int(blade.heavy_windup * 60.0) + 6)
+	t.check(is_equal_approx(foe.health.max_health - foe.health.health, blade.heavy_damage), "a hold is a heavy attack")
+	# A press with no hold (how bots swing) is a light attack.
+	await t.frames(90)
+	_reset(foe)
+	_place(p, foe, 2.0)
+	p.cmd.primary_pressed = true
+	await t.frames(1)
+	p.cmd.primary_pressed = false
+	await t.frames(int(blade.light_windup * 60.0) + 6)
+	t.check(is_equal_approx(foe.health.max_health - foe.health.health, blade.light_damage), "a bare press is a light attack")
+	t.check(not InputMap.has_action("heavy"), "no separate heavy-attack key is bound")
 	await t._end_raid(raid)

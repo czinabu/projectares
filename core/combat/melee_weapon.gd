@@ -3,6 +3,9 @@ extends Weapon
 ## Blade-style melee.
 ##
 ## Attacks: a three-hit light combo, a heavy lunge, and a dive slam from the air.
+## All on one button: a tap is a light attack, and holding past `hold_time`
+## charges into the heavy (or the dive slam in the air). The tap strikes on
+## release; the heavy shows its full windup once the charge turns into it.
 ## Every attack has a windup you can see, which is what makes parrying possible.
 ## Defense: hold block to stop hits from the front at a stamina cost. Raising the
 ## guard just before a hit lands is a parry: no damage, the attacker is
@@ -28,6 +31,9 @@ const WINDUP_ROLL := 1.1
 const GUARD_OFFSET_OVERHEAD := Vector3(-0.25, 0.3, 0.0)
 const GUARD_OFFSET_LEFT := Vector3(-0.5, 0.05, 0.0)
 const GUARD_OFFSET_RIGHT := Vector3(0.12, 0.05, 0.0)
+
+## Hold the attack button this long and it becomes a heavy instead of a light.
+var hold_time := 0.25
 
 var light_damage := 28.0
 var heavy_damage := 65.0
@@ -94,6 +100,8 @@ var _slamming := false
 var _blocking := false
 var _block_time := 0.0
 var _swing_left := 0.0
+## Seconds the attack button has been held, or below zero when not charging.
+var _charge := -1.0
 
 
 func build_visual() -> Node3D:
@@ -121,7 +129,7 @@ static func guard_covers(p_guard_dir: int, p_attack_dir: int) -> bool:
 
 
 func controls_hint() -> String:
-	return "Left mouse attacks from your side   Right mouse guards that side, tap just before a hit to parry   F heavy lunge, or dive slam in the air"
+	return "Tap left mouse to attack from your side, hold it for a heavy (a dive slam in the air)   Right mouse guards that side, tap just before a hit to parry"
 
 
 func is_blocking() -> bool:
@@ -159,21 +167,47 @@ func handle_input(cmd: ActorCommand, delta: float) -> void:
 		guard_dir = stance
 	_blocking = wants_block
 	if _blocking:
+		_charge = -1.0
 		_block_time += delta
 		actor.pause_stamina_regen()
 		return
 	if _cooldown > 0.0 or _slamming or _windup_left > 0.0:
+		_charge = -1.0
+		return
+	if cmd.tertiary_pressed:
+		# A heavy asked for outright (bots, or a bound key).
+		_charge = -1.0
+		_heavy_or_slam()
 		return
 	if cmd.primary_pressed:
+		_charge = 0.0
+	if _charge < 0.0:
+		return
+	if not cmd.primary:
+		# Let go before the charge turned: a tap, so a light attack.
+		_charge = -1.0
 		_light_attack()
-	elif cmd.tertiary_pressed:
-		if actor.is_on_floor():
-			_heavy_attack()
-		else:
-			_start_slam()
+		return
+	_charge += delta
+	if _charge >= hold_time:
+		_charge = -1.0
+		_heavy_or_slam()
+
+
+## True while the attack button is held but has not yet become a heavy.
+func is_charging() -> bool:
+	return _charge >= 0.0
+
+
+func _heavy_or_slam() -> void:
+	if actor.is_on_floor():
+		_heavy_attack()
+	else:
+		_start_slam()
 
 
 func on_holster() -> void:
+	_charge = -1.0
 	_blocking = false
 	_windup_left = 0.0
 	_windup_kind = ""
@@ -339,6 +373,11 @@ func _animate(delta: float) -> void:
 	var offset := Vector3.ZERO
 	if _slamming:
 		pose = 1.3
+	elif _charge >= 0.0:
+		# Drawing back while the button is held, toward the heavy's windup.
+		var t := clampf(_charge / maxf(hold_time, 0.01), 0.0, 1.0)
+		pose = lerpf(REST_POSE, 0.6, t)
+		roll = _side(stance) * WINDUP_ROLL * t
 	elif _windup_left > 0.0:
 		pose = 1.0 if _windup_kind == "heavy" else 0.7
 		roll = _side(attack_dir) * WINDUP_ROLL
