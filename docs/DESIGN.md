@@ -102,7 +102,7 @@ Raised with X; it comes up by itself when you go down.
 
 | Feature | What it does |
 | --- | --- |
-| Vitals and loadout | Health, armor, stamina, flight heat, ammo, pack, standing, strongpoints. |
+| Vitals and loadout | Health, armor, stamina, flight heat, ammo, pack, standing, strongpoints, and your weight tier (section 4). |
 | Rig readout | One extra readout per flight rig (section 5). |
 | Vehicle carousel | The permanent garage: swipe through your vehicles, take one as a toy in your hand, throw it to unpack the full-size vehicle. Packs vehicles back up. |
 | Heavy weapon chamber | Holds one heavy weapon (section 6). |
@@ -133,8 +133,44 @@ Every player brings a modular loadout. Five slots define the combat role:
 5. **Gadget** (the `ability` slot in code). A tactical tool that complements
    the rig (below).
 
-Alongside those five: an armor frame, a helmet (visor), a vehicle on the
-watch, and the heavy weapon chamber, which is filled in the field.
+Alongside those five: an armor frame, headgear (a helmet or goggles, each
+with a visor), a vehicle on the watch, and the heavy weapon chamber, which is
+filled in the field.
+
+### Goggles
+
+Goggles are the light alternative to a helmet in the same `helmet` slot, and
+they show the player's face and hair from the customizer.
+
+- **Same visor.** Every visor mode a helmet has (zoom, scan, threat, thermal)
+  comes in goggles too, with the same glass display in first person.
+- **No protection.** Goggles take nothing off a head hit.
+- **Their trade is weight.** Goggles count as light headgear, a helmet as
+  heavier, so goggles move a loadout toward the light tier (below).
+- **Fragile glass.** When visor glass can crack (a helmet follow-up),
+  goggles crack sooner than a helmet.
+
+### Weight
+
+A loadout has one of three weight tiers: **light, medium or heavy**. It is
+worked out from the headgear (goggles or helmet), the armor frame and a heavy
+weapon carried in the chamber or the hands. It changes how you move, never
+how fast you cruise, so a mixed squad still keeps pace (section 5).
+
+| Weight changes | Lighter | Heavier |
+| --- | --- | --- |
+| Acceleration and turning, on foot and in the air | Quicker, nimble | Slower, planted |
+| Flight heat | Less heat for the same flying | More heat, so heavy loadouts cool off more often |
+| Ground speed, sprint and slide | A little faster, a little longer | A little slower, a little shorter |
+| Top flight cruise speed | Unchanged | Unchanged |
+
+- The tier shows on the watch and on the base locker's screen, next to the
+  loadout it comes from.
+- The jetpack's existing allowance for heavy armor (it ignores the armor
+  heat penalty, per the aerial proposal) folds into this: the jetpack takes
+  less of the heavy tier's heat cost than the other rigs.
+- Weight is data: each headgear, frame and heavy weapon item has a weight
+  stat, and the tier thresholds are tuning values.
 
 ### Melee air-lunge
 
