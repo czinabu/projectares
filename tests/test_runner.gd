@@ -1710,6 +1710,17 @@ func _test_vehicle_driving() -> void:
 	rider.cmd.pitch = 0.0
 	seat.interact(rider)
 	check(rider.vehicle == bike and bike.rider == rider, "interacting gets you on")
+	# Seated, not standing on the bike: the eyes (and the head a shot finds)
+	# are about where a seated rider's are, and the pose's anchors line up.
+	await frames(2)
+	var eye_up: float = rider.get_eye_position().y - bike.global_position.y
+	check(eye_up > 1.3 and eye_up < 1.8, "a rider sits low on the bike (eyes %.2f m up)" % eye_up)
+	var seat_at: Vector3 = bike.seat_point
+	check(bike.grip_points.size() == 2 and bike.peg_points.size() == 2, "a bike has two grips and two pegs")
+	check(bike.grip_points[0].x < 0.0 and bike.grip_points[1].x > 0.0 and bike.peg_points[0].x < 0.0 \
+			and bike.peg_points[1].x > 0.0, "grips and pegs are listed left then right")
+	check(bike.grip_points[0].z < seat_at.z and bike.grip_points[0].y > seat_at.y and bike.peg_points[0].y < seat_at.y,
+			"grips are ahead of and above the seat, pegs below it")
 
 	var start: Vector3 = bike.global_position
 	rider.cmd.move = Vector2(0, 1)
@@ -1726,6 +1737,8 @@ func _test_vehicle_driving() -> void:
 	var heading_before: float = bike.heading
 	await frames(30)
 	check(bike.heading > heading_before + 0.3, "A steers left")
+	var model: Node3D = bike.get_node("Model")
+	check(bike.lean < -0.05 and model.rotation.z > 0.05, "the bike leans into a left turn (%.2f)" % bike.lean)
 	rider.cmd.move = Vector2(0, -1)
 	await frames(60)
 	check(bike.speed < 1.0, "S brakes the bike to a stop")
