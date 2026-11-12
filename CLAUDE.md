@@ -244,9 +244,11 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   from velocity and the command only, so remote players match. Off the
   ground (`ActorSkin.is_airborne`, from `Actor.airborne_time`) the legs
   never play a gait: a stand plays under an air pose (leap, fall, or
-  hanging from lit jets). A boost keeps the arms down at the sides, never
+  hanging from lit jets). Leaving the ground starts with a short push-off
+  and a running jump leans into it; a touchdown (`Actor.landed`) bends the
+  knees by how hard it was (`Locomotion.squat`). All of it is view only. A boost keeps the arms down at the sides, never
   reaching ahead (Caleb's call). Check it by eye:
-  `visual_check.tscn -- <dir> --flight-only`.
+  `visual_check.tscn -- <dir> --flight-only` (or `--takeoff-only`).
 - Helmets are items tagged `helmet` in the `helmet` loadout slot, and data
   like abilities: `Visor` (`core/abilities/visor.gd`, `Actor.visor`) is one
   class whose `mode` stat picks what the visor does ("" plain, "zoom"

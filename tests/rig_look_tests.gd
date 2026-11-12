@@ -139,6 +139,33 @@ static func run(t: Node) -> void:
 	p.airborne_time = 0.0
 	await t.get_tree().create_timer(0.5).timeout
 	t.check(String(skin._current) in skin.GAITS and skin._air < 0.01, "landing brings the run back")
+
+	# Takeoff and landing: a jump starts with a push off the ground, a
+	# running one leans into it, and the knees take the landing.
+	p.airborne_time = 1.0
+	p.velocity = -p.global_basis.z * 7.0 + Vector3(0, 5, 0)
+	await t.frames(3)
+	t.check(skin._air_push > 0.5, "leaving the ground starts with a push-off (%.2f)" % skin._air_push)
+	await t.get_tree().create_timer(0.4).timeout
+	t.check(skin._air_push < 0.01, "the push-off is over in a moment")
+	var running_lean: float = skin._tilt.length()
+	t.check(running_lean > 0.15, "a running takeoff leans into the jump (%.2f rad)" % running_lean)
+	p.airborne_time = 0.0
+	p.landed.emit(10.0)
+	await t.get_tree().create_timer(0.1).timeout
+	var squat: float = skin.locomotion.squat
+	t.check(squat > 0.2, "landing bends the knees (%.2f)" % squat)
+	await t.get_tree().create_timer(0.6).timeout
+	t.check(skin.locomotion.squat < 0.01, "and stands up again")
+	p.landed.emit(0.5)
+	await t.frames(2)
+	t.check(skin.locomotion.squat < 0.01, "stepping off a kerb does not squat")
+	p.velocity = Vector3(0, 5, 0)
+	p.airborne_time = 1.0
+	await t.get_tree().create_timer(0.4).timeout
+	t.check(skin._tilt.length() < 0.05, "a standing jump goes straight up (%.2f rad)" % skin._tilt.length())
+	p.airborne_time = 0.0
+	await t.frames(2)
 	p.velocity = Vector3.ZERO
 	p.airborne_time = 1.0
 

@@ -57,6 +57,21 @@ var air_toes := 0.45
 var leap_legs := [Vector3(0.05, -1.0, -0.75), Vector3(0.0, -1.0, 0.7), Vector3(0.05, -1.0, 0.3), Vector3(0.0, -1.0, 0.55)]
 var fall_legs := [Vector3(0.22, -1.0, -0.45), Vector3(0.0, -1.0, 0.5), Vector3(0.2, -1.0, -0.15), Vector3(0.0, -1.0, 0.6)]
 var hang_legs := [Vector3(0.07, -1.0, -0.18), Vector3(0.0, -1.0, 0.4), Vector3(0.07, -1.0, 0.08), Vector3(0.0, -1.0, 0.5)]
+## Taking off, the legs first push straight down off the ground, toes
+## pointed, for `takeoff_time` seconds before they tuck into the leap. A
+## running takeoff also leans into the jump, by up to `leap_lean` radians at
+## `leap_lean_speed` m/s, and rights itself as the fall begins.
+var push_legs := [Vector3(0.04, -1.0, 0.06), Vector3(0.0, -1.0, 0.12), Vector3(0.04, -1.0, 0.2), Vector3(0.0, -1.0, 0.3)]
+var push_toes := 0.9
+var takeoff_time := 0.22
+var leap_lean := 0.32
+var leap_lean_speed := 8.0
+## Landing, the knees take it: a squat that deepens with how hard you came
+## down (full at `land_full_speed` m/s, never less than `land_min` for a
+## touchdown worth showing), let out over `land_time` seconds.
+var land_full_speed := 14.0
+var land_min := 0.3
+var land_time := 0.4
 ## Vertical speed at which a jump counts as fully rising or fully falling.
 var air_rise_speed := 4.0
 ## A jetpack boost flies the same way with the arms held down along the
@@ -133,6 +148,12 @@ var _flight_draw_left := 0.0
 var _flight_hold := 0.0
 var _air_fall := 0.0
 var _air_hang := 0.0
+## 1 at the moment of takeoff, running down to 0 over `takeoff_time`.
+var _air_push := 0.0
+var _was_airborne := false
+## How deep the landing squat was, and how much of it is left (1..0).
+var _land_depth := 0.0
+var _land_left := 0.0
 ## 0 arms trailing wide (wings), 1 arms in at the sides (boost).
 var _boost := 0.0
 ## Which way the body tips (the actor's space, level) times how far, radians.
@@ -225,6 +246,7 @@ func _ready() -> void:
 	actor.health.damaged.connect(_on_damaged)
 	actor.hit_confirmed.connect(_on_hit_confirmed)
 	actor.flight.burst_fired.connect(_on_burst)
+	actor.landed.connect(_on_landed)
 
 
 func _find_animation(wanted: String) -> String:
@@ -347,9 +369,30 @@ func is_airborne() -> bool:
 	return not actor.is_dead and actor.vehicle == null and actor.airborne_time > air_grace
 
 
-## Eases the air pose in and out and between its three shapes.
+## A touchdown: starts the landing squat. Called for remote players too,
+## whose landing this game simulates from their commands.
+func _on_landed(impact_speed: float) -> void:
+	if impact_speed < 1.0 or actor.is_dead or actor.vehicle != null:
+		return
+	_land_depth = clampf(impact_speed / land_full_speed, land_min, 1.0)
+	_land_left = 1.0
+
+
+## Eases the air pose in and out and between its shapes, and plays out the
+## takeoff push and the landing squat.
 func _update_air(delta: float, airborne: bool) -> void:
 	_air = move_toward(_air, 1.0 if airborne else 0.0, air_blend * delta)
+	if airborne and not _was_airborne:
+		# Going up is a takeoff; walking off a ledge is not.
+		_air_push = 1.0 if actor.velocity.y > 1.0 else 0.0
+		_land_left = 0.0
+	_was_airborne = airborne
+	_air_push = move_toward(_air_push, 0.0, delta / takeoff_time)
+	_land_left = move_toward(_land_left, 0.0, delta / land_time)
+	if locomotion:
+		# Down fast, up slow: sin over the squat's life, peaking early.
+		var life := 1.0 - _land_left
+		locomotion.squat = _land_depth * sin(PI * pow(life, 0.55)) if _land_left > 0.0 and not actor.is_sliding() else 0.0
 	if not airborne:
 		return
 	var follow := 1.0 - exp(-attitude_follow * delta)
@@ -684,6 +727,9 @@ func _update_glide(delta: float) -> void:
 		_has_heading = false
 		if alive and actor.flight.is_hovering:
 			tilt = dir * hover_lean * clampf(speed / maxf(actor.flight.fly_speed, 0.1), 0.0, 1.0)
+		elif alive and _air > 0.0 and is_airborne():
+			# A running jump leans into it, and rights itself for the landing.
+			tilt = dir * leap_lean * clampf(speed / leap_lean_speed, 0.0, 1.0) * (1.0 - _air_fall)
 	var follow := 1.0 - exp(-attitude_follow * delta)
 	_tilt = _tilt.lerp(tilt, follow)
 	_face = lerp_angle(_face, face, follow)
@@ -778,10 +824,13 @@ func _pose_air() -> void:
 		if limb.is_empty():
 			continue
 		var at := mini(i, 1) * 2
-		var thigh: Vector3 = (leap_legs[at] as Vector3).lerp(fall_legs[at], _air_fall).lerp(hang_legs[at], _air_hang)
-		var shin: Vector3 = (leap_legs[at + 1] as Vector3).lerp(fall_legs[at + 1], _air_fall).lerp(hang_legs[at + 1], _air_hang)
+		var push := smoothstep(0.0, 1.0, _air_push)
+		var thigh: Vector3 = (leap_legs[at] as Vector3).lerp(fall_legs[at], _air_fall).lerp(hang_legs[at], _air_hang) \
+				.lerp(push_legs[at], push)
+		var shin: Vector3 = (leap_legs[at + 1] as Vector3).lerp(fall_legs[at + 1], _air_fall).lerp(hang_legs[at + 1], _air_hang) \
+				.lerp(push_legs[at + 1], push)
 		_pose_leg(limb, to_skeleton * Vector3(thigh.x * limb[3], thigh.y, thigh.z), right, w,
-				to_skeleton * Vector3(shin.x * limb[3], shin.y, shin.z), air_toes)
+				to_skeleton * Vector3(shin.x * limb[3], shin.y, shin.z), lerpf(air_toes, push_toes, push))
 
 
 ## Lays a leg along `dir`, or bends it: the thigh along `dir` and the shin

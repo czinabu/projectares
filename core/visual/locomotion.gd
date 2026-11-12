@@ -70,6 +70,11 @@ var stride_rate := 3.0
 ## The slide pose: how far the hips drop (m) and the body leans back (radians),
 ## and where each leg points, in the actor's space along the slide (x right,
 ## y up, z back). The lead leg reaches out in front; the trailing one folds under.
+## A landing squat (`squat`, 0..1, set by the skin): how far the hips drop
+## (m) and the body tips forward (radians) at a full one. The feet stay put.
+var squat_drop := 0.3
+var squat_lean := 0.22
+var squat := 0.0
 var slide_drop := 0.5
 var slide_lean := 0.18
 var slide_lead_thigh := Vector3(0.05, -0.45, -0.9)
@@ -203,6 +208,10 @@ func setup(def: Dictionary, player: AnimationPlayer, anims: Dictionary) -> void:
 	slide.name = "SlidePose"
 	slide.run = _slide_pose
 	skeleton.add_child(slide)
+	var land := WeaponArm.Hook.new()
+	land.name = "SquatPose"
+	land.run = _squat_pose
+	skeleton.add_child(land)
 
 
 func _bones(names: Array) -> Array[int]:
@@ -467,6 +476,29 @@ func _slide_pose() -> void:
 		var foot := skeleton.get_bone_global_pose(leg[2])
 		var on_shin: Transform3D = skeleton.get_bone_global_pose(leg[1]) * _foot_on_shin[leg[2]]
 		skeleton.set_bone_global_pose(leg[2], foot.interpolate_with(on_shin, weight))
+
+
+## Sinks the body onto bent knees, feet planted where they were: the hips
+## drop and tip forward and each leg is bent to still reach its foot.
+func _squat_pose() -> void:
+	var weight := clampf(squat, 0.0, 1.0)
+	if weight <= 0.001 or actor == null or _lead.size() != 3 or _trail.size() != 3:
+		return
+	var to_skeleton := skeleton.global_basis.orthonormalized().inverse() * actor.global_basis.orthonormalized()
+	var up := (to_skeleton * Vector3.UP).normalized()
+	var right := (to_skeleton * Vector3.RIGHT).normalized()
+	var meter := 1.0 / skeleton.global_basis.get_scale().y
+	var pivot := skeleton.global_transform.affine_inverse() * actor.global_position
+	var feet: Array[Transform3D] = [skeleton.get_bone_global_pose(_lead[2]), skeleton.get_bone_global_pose(_trail[2])]
+	var drop := Transform3D(Basis.IDENTITY, pivot - up * squat_drop * meter * weight) \
+			* Transform3D(Basis(right, -squat_lean * weight), Vector3.ZERO) * Transform3D(Basis.IDENTITY, -pivot)
+	for bone in _roots:
+		skeleton.set_bone_global_pose(bone, drop * skeleton.get_bone_global_pose(bone))
+	var legs := [_lead, _trail]
+	for i in 2:
+		var leg: Array[int] = legs[i]
+		_reach(leg, feet[i].origin)
+		skeleton.set_bone_global_pose(leg[2], feet[i])
 
 
 ## Bends a [thigh, shin, foot] leg so the ankle lands on `target` (skeleton

@@ -22,8 +22,11 @@ func _ready() -> void:
 		return
 
 	# `-- <output_dir> --flight-only` shoots the attitudes in the air.
-	if "--flight-only" in args:
-		await _flight_shots(out_dir)
+	# `--takeoff-only` shoots just the takeoff and the landing.
+	if "--flight-only" in args or "--takeoff-only" in args:
+		if "--flight-only" in args:
+			await _flight_shots(out_dir)
+		await _takeoff_shots(out_dir)
 		get_tree().quit()
 		return
 
@@ -345,6 +348,42 @@ func _flight_shots(out_dir: String) -> void:
 			await _shot(out_dir.path_join("flight_%s_%s.png" % [pose[0], view]))
 		raid.queue_free()
 		await _settle(3)
+
+
+## A running jump from the side: the push off the ground, the lean into
+## the leap, and the knees taking the landing.
+func _takeoff_shots(out_dir: String) -> void:
+	var raid := Raid.new()
+	add_child(raid)
+	raid.start(Worlds.get_world("ashfront"), 42, ["rifle_carbine", "blade_scrap", "jetpack_mk2", "frame_trooper"])
+	for bot in raid.bots:
+		bot.get_node("Brain").set_physics_process(false)
+		bot.global_position += Vector3(0, -200, 0)
+	var camera := Camera3D.new()
+	camera.fov = 50.0
+	raid.add_child(camera)
+	camera.make_current()
+	var p := raid.player
+	await _settle(30)
+	p.set_physics_process(false)
+	var at := p.global_position
+	camera.look_at_from_position(at + p.global_transform.basis.x * 3.4 + Vector3(0, 1.2, 0), at + Vector3(0, 1.0, 0))
+	var forward := -p.global_transform.basis.z
+	p.velocity = forward * 7.0
+	await get_tree().create_timer(0.6).timeout
+	p.airborne_time = 1.0
+	p.velocity = forward * 7.0 + Vector3(0, 6, 0)
+	await get_tree().create_timer(0.07).timeout
+	await _shot(out_dir.path_join("flight_takeoff_push.png"))
+	await get_tree().create_timer(0.4).timeout
+	await _shot(out_dir.path_join("flight_takeoff_leap.png"))
+	p.airborne_time = 0.0
+	p.velocity = Vector3.ZERO
+	p.landed.emit(7.0)
+	await get_tree().create_timer(0.1).timeout
+	await _shot(out_dir.path_join("flight_landing.png"))
+	raid.queue_free()
+	await _settle(3)
 
 
 ## Each flight rig on a player, at rest and firing (thrusting, an air jump's
