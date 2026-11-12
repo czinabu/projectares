@@ -129,7 +129,11 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   data plus a `Look.MELEE_MODELS` entry, not as a new class. Every melee
   model is dressed as tech by `Look._tech_melee` (`assets/shaders/melee.gdshader`):
   bare metal becomes alloy with an energy edge in the weapon's rarity color,
-  wood and wraps black polymer with glowing seams.
+  wood and wraps black polymer with glowing seams. A holstered blade is worn
+  folded away (the last field of its `MELEE_MODELS` entry: "blade" draws the
+  blade into the hilt, "telescope" slides a spear shaft into itself) and
+  slides out once drawn (`Look.set_extend`, timed by `ActorSkin._update_fold`).
+  Folding is done in the shader's vertex step, so it is view-only.
 - Melee attacks share one button (Caleb's call): a tap of `ActorCommand.primary`
   is a light attack, released before `MeleeWeapon.hold_time`; holding past it
   starts the heavy (a dive slam in the air) with its full visible windup. A bare
