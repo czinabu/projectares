@@ -7,6 +7,7 @@ const VehicleScript := preload("res://core/vehicle/vehicle.gd")
 const RaidRoster := preload("res://core/ui/raid_roster.gd")
 const NameplatesScript := preload("res://core/ui/nameplates.gd")
 const ScoreboardScript := preload("res://core/ui/scoreboard.gd")
+const Strongpoint := preload("res://core/war/strongpoint.gd")
 const WarDirector := preload("res://core/war/war_director.gd")
 const RenownLedger := preload("res://core/progression/renown_ledger.gd")
 const BaseLayout := preload("res://core/base/base_layout.gd")
@@ -14,6 +15,7 @@ const BaseHudScript := preload("res://core/ui/base_hud.gd")
 const LookTests := preload("res://tests/look_tests.gd")
 const EconomyTests := preload("res://tests/economy_tests.gd")
 const CustomizerTests := preload("res://tests/customizer_tests.gd")
+const BattlefieldTests := preload("res://tests/battlefield_tests.gd")
 
 var _passed := 0
 var _failed := 0
@@ -51,6 +53,7 @@ func _run() -> void:
 	await _test_death()
 	await _test_storm()
 	await _test_bots_run()
+	await _test_start_screen()
 	await _test_main_flow()
 	await _test_every_world()
 	await _test_frostline()
@@ -58,6 +61,8 @@ func _run() -> void:
 	await _test_nameplates_and_scoreboard()
 	await _test_renown()
 	await _test_war()
+	await _test_strongpoints()
+	await _test_events()
 	await _test_online()
 	await _test_plaza()
 	await _test_plaza_online()
@@ -69,6 +74,7 @@ func _run() -> void:
 	await LookTests.run(self)
 	await _test_customizer()
 	await _test_economy()
+	await _test_battlefield()
 
 
 func _test_customizer() -> void:
@@ -77,6 +83,10 @@ func _test_customizer() -> void:
 
 func _test_economy() -> void:
 	await EconomyTests.run(self)
+
+
+func _test_battlefield() -> void:
+	await BattlefieldTests.run(self)
 
 
 func check(condition: bool, what: String) -> void:
@@ -173,7 +183,7 @@ func _test_raid_setup_and_movement() -> void:
 	var p := raid.player
 	check(p != null and p.is_player, "player spawns")
 	check(raid.bots.size() == raid.world.bot_count, "all bots spawn")
-	check(raid.depots.size() == 2, "map provides two depots")
+	check(raid.depots.size() >= 2, "map provides depots to bank at")
 	var caches := raid.get_children().filter(func(n: Node) -> bool: return n is LootContainer)
 	check(caches.size() >= 8, "loot caches are placed (%d)" % caches.size())
 	check(p.weapons.size() == 2 and p.flight.enabled and p.health.armor == 30.0,
@@ -213,7 +223,7 @@ func _test_combat_and_loot() -> void:
 	await frames(40)
 	# Stand in the exit cell, which is always open ground.
 	var arena := raid.depots[0].global_position
-	arena.y = 0.1
+	arena.y -= 1.9
 	p.global_position = arena + Vector3(0, 0, 3)
 	p.cmd.yaw = 0.0
 
@@ -294,8 +304,8 @@ func _test_extraction() -> void:
 	p.inventory.add_item("medkit")
 	var bot := raid.bots[0]
 	var depot_pos := raid.depots[1].global_position
-	p.global_position = Vector3(depot_pos.x, 0.2, depot_pos.z)
-	bot.global_position = Vector3(depot_pos.x + 2.0, 0.2, depot_pos.z)
+	p.global_position = Vector3(depot_pos.x, depot_pos.y - 1.8, depot_pos.z)
+	bot.global_position = Vector3(depot_pos.x + 2.0, depot_pos.y - 1.8, depot_pos.z)
 	await frames(60)
 	check(raid.bank_progress() > 0.0, "standing in a depot starts the hold")
 	check(Profile.stash.is_empty(), "banking is not instant")
@@ -440,8 +450,8 @@ func _test_bots_run() -> void:
 	await frames(40)
 	var bot := raid.bots[0]
 	var arena := raid.depots[0].global_position
-	p.global_position = Vector3(arena.x, 0.1, arena.z + 3.0)
-	bot.global_position = Vector3(arena.x, 0.1, arena.z - 5.0)
+	p.global_position = Vector3(arena.x, arena.y - 1.9, arena.z + 3.0)
+	bot.global_position = Vector3(arena.x, arena.y - 1.9, arena.z - 5.0)
 	var health_before := p.health.health + p.health.armor
 	await frames(360)
 	var moved := 0
@@ -458,7 +468,22 @@ func _test_main_flow() -> void:
 	var main: Node = load("res://scenes/main.tscn").instantiate()
 	add_child(main)
 	await frames(2)
-	check(main.hub.visible and main.raid == null, "game starts in the hub")
+	check(main.base != null and main.raid == null and not main.hub.visible and main.controller != null
+			and main.controller.camera.current, "the game opens in your home base, not on a menu")
+	check(main.base.station("launch") != null and main.base.door.get_prompt().contains("online"),
+			"the base has a launch pad, and its door leads online")
+	main.open_station("launch")
+	check(main.hub.visible and main.hub.station == "launch" and main.controller.input_blocked,
+			"the launch pad opens the deploy screen over the base")
+	var deploy_buttons: Array = main.hub.find_children("*", "Button", true, false).filter(func(b: Node) -> bool:
+		return (b as Button).text.begins_with("Deploy to") and (b as Button).is_visible_in_tree())
+	check(deploy_buttons.size() == Worlds.raid_worlds().size(), "it offers every world")
+	(deploy_buttons[0] as Button).pressed.emit()
+	await frames(5)
+	check(main.raid != null and main.base == null and not main.hub.visible, "deploying from the launch pad starts a raid")
+	main._leave_raid()
+	main.go_home()
+	await frames(2)
 	main.start_raid("ashfront")
 	await frames(5)
 	check(main.raid != null and not main.hub.visible, "deploying starts a raid")
@@ -536,14 +561,15 @@ func _test_main_flow() -> void:
 	main._on_sign_out_requested()
 	main.raid.state_for(reborn).sign_out_left = 0.1
 	await frames(90)
-	check(main.raid == null and main.hub.visible, "a finished sign-out returns to the hub")
+	check(main.raid == null and main.base != null and not main.hub.visible,
+			"a finished sign-out takes you home to your base")
 	main.start_raid("ashfront")
 	await frames(5)
 	main.raid.player.kill("test")
 	await frames(5)
 	main._on_sign_out_requested()
 	await frames(2)
-	check(main.raid == null and main.hub.visible, "L while down returns to the hub")
+	check(main.raid == null and main.base != null, "L while down takes you home")
 	main.queue_free()
 	await frames(2)
 
@@ -553,7 +579,7 @@ func _duel(raid: Raid) -> Array:
 	var p := raid.player
 	await frames(40)
 	var arena := raid.depots[0].global_position
-	p.global_position = Vector3(arena.x, 0.1, arena.z + 3.0)
+	p.global_position = Vector3(arena.x, arena.y - 1.9, arena.z + 3.0)
 	p.cmd.yaw = 0.0
 	p.cmd.aim_dir = Vector3.FORWARD
 	p.cmd.switch_weapon = 1
@@ -791,7 +817,7 @@ func _test_loadouts() -> void:
 	p.equip_weapon(shotgun)
 	p.cmd.switch_weapon = 2
 	var arena := raid.depots[0].global_position
-	p.global_position = Vector3(arena.x, 0.1, arena.z + 3.0)
+	p.global_position = Vector3(arena.x, arena.y - 1.9, arena.z + 3.0)
 	var target := raid.bots[0]
 	target.global_position = p.global_position + Vector3(0, 0, -3.0)
 	await frames(10)
@@ -1051,7 +1077,7 @@ func _test_flight_rigs_and_abilities() -> void:
 	check(p.ability.enabled and p.ability.effect == "blink" and "chip_blink" in p.gear_items,
 			"an ability item equips into the ability slot")
 	var arena := raid.depots[0].global_position
-	p.global_position = Vector3(arena.x, 0.1, arena.z + 3.0)
+	p.global_position = Vector3(arena.x, arena.y - 1.9, arena.z + 3.0)
 	p.cmd.yaw = 0.0
 	p.cmd.aim_dir = Vector3.FORWARD
 	await frames(5)
@@ -1074,7 +1100,7 @@ func _test_flight_rigs_and_abilities() -> void:
 	await frames(1)
 	p.cmd.ability_pressed = false
 	await frames(10)
-	check(p.global_position.y > -0.5, "Phase Step stops short of the ground and walls")
+	check(p.global_position.y > arena.y - 2.5, "Phase Step stops short of the ground and walls")
 	await _end_raid(raid)
 
 	# Kinetic Barrier.
@@ -1639,9 +1665,9 @@ func _wipe_dir(dir: String) -> void:
 		DirAccess.remove_absolute(dir)
 
 
-func _start_server(port: int, extra: Array[String]) -> int:
+func _start_server(port: int, extra: Array[String], world := "ashfront") -> int:
 	var args := PackedStringArray(["--headless", "--path", ProjectSettings.globalize_path("res://"),
-			"--", "--server", "--world", "ashfront", "--port", str(port), "--accounts", NET_ACCOUNTS])
+			"--", "--server", "--world", world, "--port", str(port), "--accounts", NET_ACCOUNTS])
 	# One world alone on the port, unless the test asks for the plaza too.
 	if "--plaza" not in extra:
 		args.append("--no-plaza")
@@ -2052,6 +2078,215 @@ func _test_war() -> void:
 			and Look.blend_moods(calm, battle, 7.0).sun_energy == 1.0, "the mood blends with the meter and stops at the war mood")
 
 
+func _test_strongpoints() -> void:
+	print("Strongpoints")
+	# One site on its own.
+	var site := Strongpoint.new()
+	site.title = "Mill"
+	site.capture_time = 10.0
+	add_child(site)
+	check(site.covers(Vector3(5, 2, 5)) and not site.covers(Vector3(40, 0, 0)) and not site.covers(Vector3(0, 90, 0)),
+			"a site covers the ground around it, not the sky far above")
+	var red := {"red": {"count": 1, "name": "Red", "player": true}}
+	check(not site.tick(4.0, red) and site.taker == "red" and is_equal_approx(site.progress, 0.4), "standing in a site alone starts taking it")
+	check(site.status(false) == "Mill: unclaimed, Red taking it 40%", "its status says who is taking it")
+	var both := red.duplicate()
+	both["blue"] = {"count": 2, "name": "Blue", "player": false}
+	site.tick(50.0, both)
+	check(site.contested and is_equal_approx(site.progress, 0.4), "two sides inside freeze it")
+	site.tick(1.0, {})
+	check(not site.contested and is_equal_approx(site.progress, 0.2), "an abandoned capture drains away")
+	check(site.tick(8.0, red) and site.holder == "red" and site.holder_is_player and site.progress == 0.0, "finishing the capture takes the site")
+	check(site.status(true) == "Mill: yours" and site.status(false) == "Mill: held by Red", "its status says who holds it")
+	var crowd := {"blue": {"count": 3, "name": "Blue", "player": false}}
+	site.tick(4.0, crowd)
+	check(is_equal_approx(site.progress, 0.6), "a crowd takes a site faster")
+	site.tick(1.0, red)
+	check(site.taker == "blue" and site.progress < 0.6, "the holder standing in it pushes a capture back")
+	site.queue_free()
+
+	# In a running co-op world.
+	var raid := Raid.new()
+	add_child(raid)
+	raid.apply_to_profile = false
+	raid.start_server(Worlds.get_world("frostline"), 97)
+	check(raid.strongpoints.size() == 3 and raid.strongpoints[0].title == "Echo Post"
+			and raid.strongpoints.all(func(p: Strongpoint) -> bool: return p.holder == "faction:warden" and not p.holder_is_player),
+			"Frostline has three strongpoints, held by the Wardens to begin with")
+	for i in raid.bots.size():
+		var bot := raid.bots[i]
+		bot.get_node("Brain").set_physics_process(false)
+		bot.set_physics_process(false)
+		bot.global_position = Vector3(400 + i * 4, 0, 400)
+	var point := raid.strongpoints[0]
+	for p in raid.strongpoints:
+		p.capture_time = 0.3
+	var feed: Array[String] = []
+	raid.war_feed.connect(func(text: String) -> void: feed.append(text))
+	var a := raid.add_player([], {}, "Alpha", "acct-a")
+	var b := raid.add_player([], {}, "Bravo", "acct-b")
+	a.set_physics_process(false)
+	b.set_physics_process(false)
+	b.global_position = Vector3(-300, 0, -300)
+	var notices: Array[String] = []
+	a.notice.connect(func(text: String) -> void: notices.append(text))
+	a.global_position = point.global_position + Vector3(2, 0, 0)
+	check(raid.strongpoint_at(a) == point and Hud.sites_text(raid, a) == "Echo Post: held by the Wardens", "the HUD names the site you stand in")
+	await frames(40)
+	check(point.holder == "players" and point.holder_is_player and raid.holds(a, point) and raid.holds(b, point),
+			"in a co-op world a site one player takes belongs to them all")
+	check(feed.has("The raiders took Echo Post from the Wardens"), "taking a site from the bots is announced (%s)" % " / ".join(feed))
+	check(a.renown == 150 and b.renown == 0 and notices.has("Took Echo Post   +150 renown"), "the players who were there are paid renown")
+	check(Hud.sites_text(raid, a) == "Echo Post: yours" and Hud.sites_text(raid, b) == "Strongpoints held: 1 of 3",
+			"the HUD shows what you hold")
+	var warden: Actor = raid.bots.filter(func(bot: Actor) -> bool: return bot.faction == "warden")[0]
+	warden.global_position = point.global_position + Vector3(-3, 0, 0)
+	await frames(5)
+	check(point.contested and point.holder == "players" and "contested" in Hud.sites_text(raid, a), "an enemy walking in contests it")
+	a.global_position = Vector3(-300, 0, -280)
+	await frames(40)
+	check(point.holder == "faction:warden" and not raid.holds(a, point) and feed.has("The Wardens took Echo Post from the raiders"),
+			"bots left alone in a site take it back, and everyone hears")
+	warden.global_position = Vector3(380, 0, 400)
+	a.global_position = point.global_position
+	await frames(40)
+	check(raid.holds(a, point), "and it can be taken again")
+
+	# A site you hold is where you drop in.
+	var c := raid.add_player([], {}, "Charlie", "acct-c")
+	check(point.covers(c.global_position), "a player drops in at a strongpoint their side holds")
+	warden.global_position = point.global_position + Vector3(-3, 0, 0)
+	await frames(3)
+	var d := raid.add_player([], {}, "Delta", "acct-d")
+	check(not point.covers(d.global_position), "but not at one that is being fought over")
+	warden.global_position = Vector3(380, 0, 400)
+	await frames(3)
+
+	# The bots push back.
+	for bot in raid.bots:
+		(bot.get_node("Brain") as BotBrain).post_to(Vector3.ZERO, 10.0)
+	raid._assault_in = 0.0
+	await frames(2)
+	var sent := raid.bots.filter(func(bot: Actor) -> bool:
+		return (bot.get_node("Brain") as BotBrain)._home.distance_to(point.global_position) < 0.1)
+	check(feed.has("Echo Post is under attack") and sent.size() == Worlds.get_world("frostline").assault_size,
+			"every so often bots are sent to retake a site players hold (%d sent)" % sent.size())
+	await _end_raid(raid)
+
+	# Where players fight each other, a site is its taker's alone.
+	var pvp := Raid.new()
+	add_child(pvp)
+	pvp.apply_to_profile = false
+	pvp.start_server(Worlds.get_world("ashfront"), 98)
+	var e := pvp.add_player([], {}, "Echo", "acct-e")
+	var f := pvp.add_player([], {}, "Fox", "acct-f")
+	check(pvp.side_of(e)[0] == "acct-e" and pvp.side_of(e)[0] != pvp.side_of(f)[0] and pvp.side_of(e)[2],
+			"in a PvP world every player is their own side")
+	check(pvp.side_of(pvp.bots[0])[0] == "faction:" + pvp.bots[0].faction and not pvp.side_of(pvp.bots[0])[2],
+			"and each bot faction is one")
+	await _end_raid(pvp)
+
+	# Online: a client hears who holds each site.
+	_wipe_dir(NET_ACCOUNTS)
+	var port := 24831
+	var pid := _start_server(port, ["--bots", "0"], "frostline")
+	var gale := await _join("Gale", port)
+	check(gale != null, "a client joins a world with strongpoints")
+	if gale != null:
+		var told := func() -> bool:
+			return gale.raid.strongpoints.size() == 3 and gale.raid.strongpoints.all(
+					func(p: Strongpoint) -> bool: return p.holder_name == "the Wardens")
+		await _wait_until(told, 180)
+		check(told.call() and Hud.sites_text(gale.raid, gale.raid.player) == "Strongpoints held: 0 of 3",
+				"the server tells a client who holds each strongpoint")
+		await _leave(gale)
+	OS.kill(pid)
+	await frames(10)
+
+
+func _test_events() -> void:
+	print("World events")
+	var world := Worlds.get_world("ashfront")
+	var rng := RandomNumberGenerator.new()
+	var rarity := func(ids: Array) -> int:
+		var total := 0
+		for id: String in ids:
+			total += ItemDB.item_rarity(id)
+		return total
+	var quiet := 0
+	var hot := 0
+	for i in 200:
+		rng.seed = i
+		quiet += rarity.call(world.roll_war_loot("cache", rng, 0.0))
+		rng.seed = i
+		hot += rarity.call(world.roll_war_loot("cache", rng, 1.0))
+	check(hot > quiet, "caches hold rarer loot in an all-out war (%d against %d)" % [hot, quiet])
+	rng.seed = 5
+	var plain := world.roll_loot("cache", rng)
+	rng.seed = 5
+	check(world.roll_war_loot("cache", rng, 0.0) == plain, "a quiet world's loot is unchanged")
+
+	var raid := Raid.new()
+	add_child(raid)
+	raid.apply_to_profile = false
+	raid.start_server(world, 41)
+	for bot in raid.bots:
+		bot.get_node("Brain").set_physics_process(false)
+		bot.set_physics_process(false)
+	var feed: Array[String] = []
+	raid.war_feed.connect(func(text: String) -> void: feed.append(text))
+	var a := raid.add_player([], {}, "Alpha", "acct-a")
+	a.set_physics_process(false)
+	var before := raid.bots.size()
+	check(raid.event.is_empty(), "a world starts with no event running")
+
+	# A supply pod.
+	check(raid.start_event("supply_pod") and raid.event.kind == "supply_pod", "a supply pod can come down")
+	var pod: LootContainer = raid._event_pod
+	check(pod != null and pod.items.size() >= 4 and feed.size() == 1 and feed[0].begins_with("A supply pod came down "),
+			"it holds a good haul and everyone hears where it is (%s)" % " / ".join(feed))
+	check(not raid.start_event("warlord"), "only one event runs at a time")
+	pod.set_items([])
+	await frames(3)
+	check(raid.event.is_empty(), "the event ends once the pod is emptied")
+	await frames(2)
+
+	# A warlord and his escort.
+	feed.clear()
+	check(raid.start_event("warlord") and raid.bots.size() == before + 1 + world.warlord_escort, "a warlord arrives with an escort")
+	var lord: Actor = raid.warlords.keys()[0]
+	for bot in raid._event_bots:
+		bot.get_node("Brain").set_physics_process(false)
+		bot.set_physics_process(false)
+	check(lord.display_name == "Warlord" and lord.health.max_health >= 240.0 and feed[0].begins_with("A warlord has arrived "),
+			"the warlord is far tougher than his men (%s, %.0f health)" % [lord.display_name, lord.health.max_health])
+	var carried := lord.inventory.items.size()
+	check(carried >= 3, "the warlord carries loot worth the fight (%d items)" % carried)
+	var respawns := raid._bot_respawns.size()
+	Combat.deal(lord, DamageInfo.make(9999.0, a, "bullet"))
+	await frames(3)
+	check(feed.any(func(t: String) -> bool: return t.begins_with("Alpha") and t.ends_with("killed the warlord")),
+			"killing the warlord pays renown and is announced (%d, %s)" % [a.renown, " / ".join(feed)])
+	check(a.renown >= 310, "the warlord's renown comes on top of the kill (%d)" % a.renown)
+	check(raid.event.is_empty() and raid._bot_respawns.size() == respawns, "the event ends with him, and nobody takes his place")
+
+	# An event nobody deals with is cleared away.
+	raid.start_event("warlord")
+	raid.event.ends = raid.clock
+	await frames(3)
+	check(raid.event.is_empty() and raid.warlords.is_empty() and feed.has("The warlord has moved on"),
+			"an event nobody answers ends on its own")
+	await frames(2)
+	check(raid.bots.size() <= before + world.warlord_escort, "and its bots leave with it")
+
+	# The timer.
+	raid._event_in = 0.05
+	await frames(6)
+	check(not raid.event.is_empty(), "events come round on their own")
+	raid.queue_free()
+	await frames(2)
+
+
 func _test_online() -> void:
 	print("Online: commands and raids with several players")
 	var cmd := ActorCommand.new()
@@ -2111,7 +2346,7 @@ func _test_online() -> void:
 	raid.player_banked.connect(func(actor: Actor, items: Array) -> void: banked.append([actor, items]))
 	b_again.inventory.add_item("alloy_ingot")
 	var depot := raid.depots[0]
-	b_again.global_position = Vector3(depot.global_position.x, 0.2, depot.global_position.z)
+	b_again.global_position = Vector3(depot.global_position.x, depot.global_position.y - 1.8, depot.global_position.z)
 	await frames(int(raid.world.depot_hold_time * 60.0) + 30)
 	check(banked.size() == 1 and banked[0][0] == b_again and banked[0][1] == ["alloy_ingot"]
 			and not b_again.inventory.has_item("alloy_ingot"),
@@ -2355,8 +2590,11 @@ func _test_online() -> void:
 			me.cmd.interact_pressed = false
 			await _wait_until(looted, 60)
 			check(looted.call(), "looting the bag fills the backpack from the server (%d items)" % me.inventory.items.size())
-			check(notices.any(func(text: String) -> bool: return text.begins_with("Looted ")),
-					"the looter is told what they picked up")
+			# The notice is its own message and can land a moment after the backpack.
+			var told_loot := func() -> bool:
+				return notices.any(func(text: String) -> bool: return text.begins_with("Looted "))
+			await _wait_until(told_loot, 60)
+			check(told_loot.call(), "the looter is told what they picked up")
 			var bag_gone := func() -> bool: return not is_instance_id_valid(bag_id)
 			await _wait_until(bag_gone, 90)
 			check(bag_gone.call(), "the emptied bag disappears on the client too")
@@ -3006,8 +3244,12 @@ func _test_plaza_online() -> void:
 		main.use_portal("world:ashfront")
 		await _wait_until(func() -> bool:
 			return main.net != null and main.net.world_id == "ashfront" and not main.net.account.is_empty(), 600)
-		check(main.hub.in_lobby() and main.raid == null and main.hub.visible and main.net != null
-				and main.net.world_id == "ashfront", "using a gate takes you to that world's lobby")
+		await _wait_until(func() -> bool: return main.base != null, 120)
+		check(main.hub.in_lobby() and main.raid == null and main.base != null and not main.hub.visible
+				and main.net != null and main.net.world_id == "ashfront",
+				"using a gate takes you to that world's lobby: your base on this server's stash")
+		check(main.base != null and main.base.door.get_prompt().contains("Back to"),
+				"the lobby base's door leads back to the plaza")
 		main.leave_server()
 		await _wait_until(func() -> bool: return main.raid != null and main.raid.player != null, 600)
 		check(main.raid != null and main.raid.world.safe_zone, "leaving the lobby leads back to the plaza")
@@ -3036,14 +3278,14 @@ func _test_plaza_online() -> void:
 		await _wait_until(func() -> bool: return main.base != null, 600)
 		check(main.base != null and main.raid == null and main.hub.in_lobby(),
 				"the quarters door opens your home base on the server's stash")
-		main.leave_base()
+		main.base.leave_requested.emit()
 		await _wait_until(func() -> bool: return main.raid != null and main.raid.player != null, 600)
 		check(main.base == null and main.raid != null and main.raid.world.safe_zone,
 				"the base's door leads back to the plaza")
 		main.use_portal("leave")
 		await frames(5)
-		check(main.net == null and main.raid == null and main.hub.visible and not main.hub.in_lobby(),
-				"the exit leaves the server")
+		check(main.net == null and main.raid == null and main.base != null and not main.hub.in_lobby(),
+				"the exit leaves the server and takes you home")
 	main.queue_free()
 	OS.kill(pid)
 	await frames(30)
@@ -3561,15 +3803,12 @@ func _test_home_base() -> void:
 	var main: Node = load("res://scenes/main.tscn").instantiate()
 	add_child(main)
 	await frames(2)
-	main.hub.base_requested.emit()
 	await frames(20)
-	check(main.base != null and not main.hub.visible and main.raid == null, "the hub opens your home base")
+	check(main.base != null and not main.hub.visible and main.raid == null, "you start in your home base")
 	check(main.controller != null and main.controller.camera.current and main.base_hud != null,
 			"the base has a camera and an overlay")
 	check(main.base.displays.size() == 5 and main.base.display_for("rifle_carbine").equipped,
 			"it shows your stash and what you have equipped")
-	main.start_raid("ashfront")
-	check(main.raid == null, "you cannot deploy from inside the base")
 	# Real input: look at the DMR and press E.
 	var target: Node3D = main.base.display_for("dmr_longshot")
 	_face_display(main.base.player, target)
@@ -3587,10 +3826,43 @@ func _test_home_base() -> void:
 	main.base.equip_requested.emit("primary", "frame_bulwark")
 	check(Profile.equipped("vehicle") == "bike_scrapper" and Profile.equipped("primary") == "dmr_longshot",
 			"a parked bike can be picked, and gear cannot go in the wrong slot")
+	check(main.hub.equipped("primary") == "dmr_longshot", "the locker shows the loadout chosen in the base")
+	# Every station opens its screen over the room, and Esc steps away.
+	for id: String in HomeBase.STATIONS:
+		if id == "arena":
+			continue  # A way out, not a screen: the arena tests use it.
+		var console: HomeBase.Station = main.base.station(id)
+		_face_display(main.base.player, console)
+		main.controller.yaw = main.base.player.cmd.yaw
+		main.controller.pitch = main.base.player.cmd.pitch
+		await frames(2)
+		check(main.base.player.find_interactable() == console and console.get_prompt().begins_with("[E]"),
+				"the %s can be walked up to and used" % id)
+		console.interact(main.base.player)
+		await frames(2)
+		check(main.hub.visible and main.hub.station == id and main.controller.input_blocked
+				and not main.base_hud.visible, "the %s opens its screen over the base" % id)
+		var esc := InputEventKey.new()
+		esc.keycode = KEY_ESCAPE
+		esc.pressed = true
+		main.hub._unhandled_input(esc)
+		await frames(2)
+		check(not main.hub.visible and not main.controller.input_blocked and main.base_hud.visible,
+				"Esc steps away from the %s" % id)
+	main.open_station("wardrobe")
+	await frames(2)
+	check(main.hub.character.is_customizing(), "the wardrobe opens the customizer")
+	main.hub.character.hide_customizer()
+	await frames(2)
+	check(not main.hub.visible and not main.controller.input_blocked, "finishing in the customizer steps away")
+	main.open_station("mastery")
+	check(main.hub._sections["mastery"].visible and not main.hub._sections["loadout"].visible,
+			"a station shows only its own part of the old menu")
+	main.hub.close()
 	main.base.leave_requested.emit()
 	await frames(3)
-	check(main.base == null and main.hub.visible and main.controller == null, "the door leads back to the hub")
-	check(main.hub.equipped("primary") == "dmr_longshot", "the hub shows the loadout chosen in the base")
+	check(main.base != null and main.hub.station == "uplink", "the door of your own base opens the uplink to play online")
+	main.hub.close()
 	# A server's stash is shown while in its lobby, and the local one is left alone.
 	main.hub.update_account({"name": "Vex", "stash": ["blade_arc", "bike_raider"], "loadout": {"melee": "blade_arc"},
 			"mastery": {}, "raids_played": 0, "raids_extracted": 0, "kills": 0})
@@ -3615,6 +3887,11 @@ func _test_home_base() -> void:
 	main.base.displays[0].interact(main.base.player)
 	main.base.displays[1].interact(main.base.player)
 	check(Profile.equipped("melee") == "", "visiting never changes your own loadout")
+	main.base.station("locker").interact(main.base.player)
+	check(not main.hub.visible, "another player's stations cannot be used")
+	main.base.leave_requested.emit()
+	await frames(3)
+	check(main.base != null and not main.base.read_only, "the door of a base you visit takes you home")
 	main.leave_base()
 	await frames(3)
 	main.start_raid("ashfront")
@@ -3779,20 +4056,21 @@ func _test_arena() -> void:
 	check(Profile.stash == stash_before, "leaving the arena takes nothing from the stash")
 	Profile.reset()
 
-	# From the hub: the arena button opens it, with its own overlay.
+	# From your base: the arena gate opens it, with its own overlay.
 	var main: Node = load("res://scenes/main.tscn").instantiate()
 	add_child(main)
 	await frames(2)
-	main.hub.arena_requested.emit()
+	main.base.station("arena").interact(main.base.player)
 	await frames(5)
-	check(main.raid is Arena and not main.hub.visible and main.raid.get_node_or_null("ArenaHud") != null
-			and main.controller != null, "the hub's arena button opens the arena with its overlay")
+	check(main.raid is Arena and not main.hub.visible and main.base == null
+			and main.raid.get_node_or_null("ArenaHud") != null
+			and main.controller != null, "the base's arena gate opens the arena with its overlay")
 	var hud: CanvasLayer = main.raid.get_node("ArenaHud")
 	await frames(20)
 	check(hud.get("_panel").get_child_count() > 3, "the overlay lists what you can do")
 	hud.leave_requested.emit()
 	await frames(5)
-	check(main.raid == null and main.hub.visible, "leaving the arena goes back to the hub")
+	check(main.raid == null and main.base != null and not main.hub.visible, "leaving the arena takes you home")
 	# A gate inside a world (the plaza's) opens the arena from there.
 	main.start_raid(Worlds.all()[0].id)
 	await frames(5)
@@ -3949,3 +4227,21 @@ func _test_online_arena() -> void:
 		await _leave(fighter)
 	OS.kill(pid)
 	_wipe_dir(NET_ACCOUNTS)
+
+
+func _test_start_screen() -> void:
+	print("-- start screen")
+	check(ProjectSettings.get_setting("application/run/main_scene") == "res://scenes/start.tscn",
+			"the game launches on the start screen")
+	var screen := StartScreen.new()
+	add_child(screen)
+	await frames(2)
+	check(screen.start_button != null and screen.start_button.text == "Start game", "it offers Start game")
+	check(screen.title_text == "PROJECT ARES", "it shows the game title")
+	var count := [0]
+	screen.start_pressed.connect(func() -> void: count[0] += 1)
+	screen.start_button.pressed.emit()
+	screen.start_button.pressed.emit()
+	check(count[0] == 1, "pressing Start fires once, however often it is pressed")
+	screen.queue_free()
+	await frames(1)

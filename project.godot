@@ -8,7 +8,7 @@ config_version=5
 
 config/name="Project Ares"
 config/description="Full-loot PvPvE extraction game with plug-in worlds."
-run/main_scene="res://scenes/main.tscn"
+run/main_scene="res://scenes/start.tscn"
 config/features=PackedStringArray("4.7", "Forward Plus")
 
 [autoload]

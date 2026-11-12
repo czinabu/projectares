@@ -12,6 +12,8 @@ const OUTPOST_RING := 32.0
 const RIDGE_RINGS := [18.0, 44.0]
 const RIM := 50.0
 const LAYOUT_SEED := 4242
+## The outposts worth holding.
+const POSTS := ["Echo Post", "Drift Post", "Vigil Post"]
 
 var _art_rng := RandomNumberGenerator.new()
 var _huts: Array[Dictionary] = []
@@ -112,6 +114,13 @@ func _build_outposts() -> void:
 		Look.make_building(hut.get_child(1), Vector3(8, height, 6), float(i) * 7.0)
 		_huts.append({"center": center, "height": height, "yaw": -angle})
 		_add_marker("spawn_cache", _polar(OUTPOST_RING - 5.5, angle))
+		# Every other outpost is a strongpoint, held by the Wardens to begin with.
+		if i % 2 == 0:
+			var post := _add_marker("strongpoint", _polar(OUTPOST_RING - 5.5, angle))
+			post.set_meta("name", POSTS[i / 2])
+			post.set_meta("radius", 13.0)
+			post.set_meta("holder", "warden")
+			post.set_meta("holder_name", "the Wardens")
 		_add_marker("spawn_bot", _polar(OUTPOST_RING + 6.0, angle + 0.15))
 		if height >= 6.0:
 			_add_marker("spawn_cache", center + Vector3(0, height, 0)).set_meta("loot_source", "rooftop")

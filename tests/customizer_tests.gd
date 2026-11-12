@@ -313,8 +313,13 @@ static func _run_mirror(t: Node) -> void:
 		ahead.y = 0.0
 		var to_mirror := mirror.global_position - me.global_position
 		t.check(to_mirror.normalized().dot(ahead.normalized()) > 0.95 and to_mirror.length() > 1.0
-				and to_mirror.length() <= mirror.distance + mirror.side_offset and absf(to_mirror.y) < 0.01,
+				and to_mirror.length() <= mirror.distance + mirror.side_offset and absf(to_mirror.y) < 0.2,
 				"it stands on the floor in front of the player")
+		var probe := PhysicsRayQueryParameters3D.create(mirror.global_position + Vector3.UP,
+				mirror.global_position + Vector3.DOWN, Actor.LAYER_WORLD)
+		var ground := me.get_world_3d().direct_space_state.intersect_ray(probe)
+		t.check(not ground.is_empty() and absf(ground.position.y - mirror.global_position.y) < 0.02,
+				"its feet are on the ground, not floating or sunk")
 		t.check(mirror.global_basis.z.dot(-to_mirror.normalized()) > 0.95, "its glass faces the player")
 		t.check(mirror.find_children("*", "CollisionObject3D", true, false).is_empty(), "the mirror has no collision")
 		t.check(controller.body_layer == MirrorScript.BODY_LAYER and me.body_mesh.visible and not me.hand_override,

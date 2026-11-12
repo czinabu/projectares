@@ -10,7 +10,7 @@ func _ready() -> void:
 	if args.size() > 0:
 		out_dir = args[0]
 	Profile.persist = false
-	if args.size() > 1:
+	if args.size() > 1 and not args[1].begins_with("--"):
 		await _world_shots(out_dir, args[1])
 		get_tree().quit()
 		return
@@ -23,8 +23,11 @@ func _ready() -> void:
 
 	var hub := Hub.new()
 	add_child(hub)
+	hub.set_online_status("Connecting to 192.168.1.20...")
+	hub.show_travel()
 	await _settle(10)
-	await _shot(out_dir.path_join("hub.png"))
+	await _shot(out_dir.path_join("travel.png"))
+	hub.open_station("wardrobe")
 	# The customizer, on a few looks.
 	var looks := [
 		{"build": "f", "head": "Adventurer", "body": "Casual", "legs": "Worker", "feet": "Worker", "skin": 3, "hair": 5, "top": 6, "bottom": 1},
@@ -201,6 +204,21 @@ func _world_shots(out_dir: String, only := "") -> void:
 		camera.look_at_from_position(p * 0.45 + Vector3(0, 30, 0), Vector3(0, 2, 0))
 		await _settle(4)
 		await _shot(out_dir.path_join("%s_overview.png" % world.id))
+		# A map with strongpoints: one shot of each, from the side facing out.
+		var site_index := 0
+		for site in get_tree().get_nodes_in_group("strongpoint"):
+			if not raid.map.is_ancestor_of(site):
+				continue
+			var at: Vector3 = site.global_position
+			var out := Vector3(at.x, 0, at.z).normalized() if Vector3(at.x, 0, at.z).length() > 1.0 else Vector3(0.6, 0, 0.8)
+			var from := at + out.rotated(Vector3.UP, 0.5) * (float(site.get_meta("radius", 30.0)) + 34.0)
+			if raid.map.has_method("ground_height"):
+				from.y = raid.map.call("ground_height", from.x, from.z)
+			camera.far = 1500.0
+			camera.look_at_from_position(from + Vector3(0, 9, 0), at + Vector3(0, 5, 0))
+			await _settle(8)
+			await _shot(out_dir.path_join("%s_site_%d.png" % [world.id, site_index]))
+			site_index += 1
 		if world.safe_zone:
 			await _plaza_shots(out_dir, raid, camera, lineup)
 		raid.queue_free()
@@ -230,11 +248,21 @@ func _base_shots(out_dir: String) -> void:
 		"base_rigs.png": [Vector3(6.0, 1.8, -1.0), Vector3(11, 1.2, -1.0)],
 		"base_garage.png": [Vector3(-1.0, 2.0, 3.2), Vector3(-2.5, 0.6, -1.5)],
 		"base_shelves.png": [Vector3(-6.5, 1.8, 4.6), Vector3(-7, 1.2, 9)],
+		"base_stations_left.png": [Vector3(-1.5, 2.2, 6.5), Vector3(-6.6, 1.0, 3.1)],
+		"base_stations_right.png": [Vector3(1.5, 2.2, 6.5), Vector3(6.6, 1.0, 3.1)],
+		"base_launch.png": [Vector3(0, 2.4, 7.8), Vector3(0, 0.6, 1.5)],
 	}
 	for file: String in views:
 		camera.look_at_from_position(views[file][0], views[file][1])
 		await _settle(4)
 		await _shot(out_dir.path_join(file))
+	# A station's screen over the room.
+	var hub := Hub.new()
+	add_child(hub)
+	hub.open_station("locker")
+	await _settle(6)
+	await _shot(out_dir.path_join("base_locker_screen.png"))
+	hub.queue_free()
 	base.queue_free()
 	await _settle(2)
 

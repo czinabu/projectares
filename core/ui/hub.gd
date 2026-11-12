@@ -1,7 +1,15 @@
 class_name Hub
 extends Control
-## The screen outside the worlds: your stash, your loadout, how your last
-## life ended, and a deploy button for every world the registry found.
+## The screens behind the stations of your home base, and the travel screen
+## between places. The game never opens on this: it opens in your home base,
+## and each station there (`STATIONS`) shows one part of it over the room:
+## the locker your loadout, the mastery bench your variants, the wardrobe the
+## customizer, the records board your stash and last life, the trader the
+## shops, the launch pad a deploy button for every world, and the uplink the
+## online section.
+##
+## It also keeps what is on show: the local profile, or the account a server
+## keeps for you while you are in its lobby (`enter_lobby`).
 
 signal deploy_requested(world_id: String)
 ## Start a server on this machine running `world_id`, then join it.
@@ -17,12 +25,8 @@ signal online_deploy_requested
 signal online_buy_requested(shop_id: String, item_id: String)
 signal online_sell_requested(item_id: String, count: int)
 signal online_leave_requested
-## Open the phone (contacts, messages, invites, news, settings).
-signal phone_requested
-## Walk around your home base, where the stash is on show.
-signal base_requested
-## Go to the arena: the server's while in a lobby, else a solo one.
-signal arena_requested
+## A station screen was put away (Esc or the button).
+signal closed
 ## The player changed how their character looks.
 signal look_changed(appearance: Dictionary)
 
@@ -32,6 +36,18 @@ const MasteryBook := preload("res://core/progression/mastery_book.gd")
 const RenownLedger := preload("res://core/progression/renown_ledger.gd")
 const ShopPanel := preload("res://core/economy/shop_panel.gd")
 const Economy := preload("res://core/economy/economy.gd")
+
+## Which sections of this screen each home base station shows. The stations
+## themselves, with their titles, are `HomeBase.STATIONS`.
+const STATIONS := {
+	"launch": {"sections": ["deploy", "status"]},
+	"locker": {"sections": ["loadout"]},
+	"mastery": {"sections": ["mastery"]},
+	"wardrobe": {"sections": ["character"]},
+	"records": {"sections": ["records"]},
+	"trader": {"sections": ["shop"]},
+	"uplink": {"sections": ["online", "status"]},
+}
 
 ## Your account on the server you are connected to (see
 ## `StashService.snapshot`). Empty when not in a lobby: the hub then shows
@@ -57,17 +73,29 @@ var _lobby_box: VBoxContainer
 var _lobby_title: Label
 var _lobby_deploy: Button
 var _lobby_leave: Button
+## The station whose screen is open, or "".
+var station := ""
+var _sections := {}
+var _title: Label
+var _backdrop: TextureRect
+var _shade: ColorRect
+var _close_button: Button
 
 
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	var bg := TextureRect.new()
-	bg.texture = Look.backdrop()
-	bg.stretch_mode = TextureRect.STRETCH_SCALE
-	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	add_child(bg)
+	# Travel: a full-screen backdrop. At a station: the base dimmed behind.
+	_backdrop = TextureRect.new()
+	_backdrop.texture = Look.backdrop()
+	_backdrop.stretch_mode = TextureRect.STRETCH_SCALE
+	_backdrop.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	add_child(_backdrop)
+	_shade = ColorRect.new()
+	_shade.color = Color(0.02, 0.02, 0.03, 0.72)
+	_shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	add_child(_shade)
 
-	# Scrolls when the hub is taller than the window, centered otherwise.
+	# Scrolls when the screen is taller than the window, centered otherwise.
 	var scroll := ScrollContainer.new()
 	scroll.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
@@ -81,21 +109,27 @@ func _ready() -> void:
 	box.add_theme_constant_override("separation", 10)
 	center.add_child(box)
 
-	box.add_child(_text("PROJECT ARES", 40, Color(1.0, 0.55, 0.25)))
-	box.add_child(_text("The Junction: pick your gear, drop in, and make a name. The war does not stop.", 16, Color(0.8, 0.8, 0.8)))
+	_title = _text("PROJECT ARES", 40, Color(1.0, 0.55, 0.25))
+	box.add_child(_title)
 
+	var records := _section(box, "records")
 	_result = _text("", 18, Color.WHITE)
-	box.add_child(_result)
+	records.add_child(_result)
+	_stash_title = _text("STASH", 20, Color(1.0, 0.55, 0.25))
+	records.add_child(_stash_title)
+	_stash = _text("", 15, Color(0.85, 0.85, 0.85))
+	records.add_child(_stash)
 
-	box.add_child(_text("LOADOUT", 20, Color(1.0, 0.55, 0.25)))
-	box.add_child(_text(
+	var locker := _section(box, "loadout")
+	locker.add_child(_text("LOADOUT", 20, Color(1.0, 0.55, 0.25)))
+	locker.add_child(_text(
 		"Gear you equip leaves your stash when you deploy. Die and it is gone. Sign out alive (L) and it comes back.\n"
 		+ "Bank loot at a depot to send it here without leaving.\n"
 		+ "Empty slots use the free scrap kit, which costs nothing and can never be stashed.",
 		13, Color(0.65, 0.65, 0.65)))
 	_loadout_box = VBoxContainer.new()
 	_loadout_box.add_theme_constant_override("separation", 4)
-	box.add_child(_loadout_box)
+	locker.add_child(_loadout_box)
 	for slot: String in Loadout.SLOTS:
 		var row := HBoxContainer.new()
 		var name_label := _text(Loadout.SLOT_NAMES[slot], 16, Color(0.85, 0.85, 0.85))
@@ -116,31 +150,16 @@ func _ready() -> void:
 	_mastery = MasteryPanel.new()
 	_mastery.pick_requested.connect(func(track: String, variant_id: String) -> void:
 		online_pick_requested.emit(track, variant_id))
-	box.add_child(_mastery)
+	_section(box, "mastery").add_child(_mastery)
 
 	character = CharacterPanel.new()
 	character.appearance = Profile.appearance
 	character.changed.connect(func(appearance: Dictionary) -> void: look_changed.emit(appearance))
-	box.add_child(character)
-
-	_stash_title = _text("STASH", 20, Color(1.0, 0.55, 0.25))
-	box.add_child(_stash_title)
-	_stash = _text("", 15, Color(0.85, 0.85, 0.85))
-	box.add_child(_stash)
-
-	var base_button := Button.new()
-	base_button.text = "Enter your home base"
-	base_button.tooltip_text = "Walk around your stash: weapons on racks, armor on stands, bikes in the garage."
-	base_button.custom_minimum_size = Vector2(0, 40)
-	base_button.pressed.connect(func() -> void: base_requested.emit())
-	box.add_child(base_button)
-
-	var arena_button := Button.new()
-	arena_button.text = "Enter the arena"
-	arena_button.tooltip_text = "Duels, tournaments and wagers in the Pit. Nobody loses gear in the arena."
-	arena_button.custom_minimum_size = Vector2(0, 40)
-	arena_button.pressed.connect(func() -> void: arena_requested.emit())
-	box.add_child(arena_button)
+	# The wardrobe opens the customizer itself; finishing there steps away.
+	character.customizer_closed.connect(func() -> void:
+		if station == "wardrobe":
+			close())
+	_section(box, "character").add_child(character)
 
 	_shop = ShopPanel.new()
 	_shop.buy_requested.connect(func(shop_id: String, item_id: String) -> void:
@@ -148,14 +167,13 @@ func _ready() -> void:
 	_shop.sell_requested.connect(func(item_id: String, count: int) -> void:
 		online_sell_requested.emit(item_id, count))
 	_shop.changed.connect(_refresh_gear)
-	box.add_child(_shop)
+	_section(box, "shop").add_child(_shop)
 
+	var deploy := _section(box, "deploy")
 	_solo_box = VBoxContainer.new()
 	_solo_box.add_theme_constant_override("separation", 10)
-	box.add_child(_solo_box)
-	_build_lobby(box)
-	var page := box
-	box = _solo_box
+	deploy.add_child(_solo_box)
+	_solo_box.add_child(_text("DEPLOY", 20, Color(1.0, 0.55, 0.25)))
 	for world in Worlds.raid_worlds():
 		var button := Button.new()
 		button.text = "Deploy to %s" % world.display_name
@@ -163,28 +181,104 @@ func _ready() -> void:
 		button.custom_minimum_size = Vector2(0, 52)
 		button.add_theme_font_size_override("font_size", 22)
 		button.pressed.connect(func() -> void: deploy_requested.emit(world.id))
-		box.add_child(button)
-		box.add_child(_text(world.description, 14, Color(0.65, 0.65, 0.65)))
+		_solo_box.add_child(button)
+		_solo_box.add_child(_text(world.description, 14, Color(0.65, 0.65, 0.65)))
+	_build_lobby(deploy)
 
-	box = page
+	var online := _section(box, "online")
 	_connect_box = VBoxContainer.new()
 	_connect_box.add_theme_constant_override("separation", 10)
-	box.add_child(_connect_box)
+	online.add_child(_connect_box)
 	_build_online(_connect_box)
+	_lobby_leave = Button.new()
+	_lobby_leave.text = "Leave the server"
+	_lobby_leave.custom_minimum_size = Vector2(0, 44)
+	_lobby_leave.visible = false
+	_lobby_leave.pressed.connect(func() -> void: online_leave_requested.emit())
+	online.add_child(_lobby_leave)
+
 	_online_status = _text("", 14, Color(1.0, 0.8, 0.4))
-	box.add_child(_online_status)
+	_section(box, "status").add_child(_online_status)
 
-	var phone := Button.new()
-	phone.text = "Open your phone (P): players, invites, news, settings"
-	phone.custom_minimum_size = Vector2(0, 44)
-	phone.pressed.connect(func() -> void: phone_requested.emit())
-	box.add_child(phone)
-
-	var quit := Button.new()
-	quit.text = "Quit"
-	quit.pressed.connect(func() -> void: get_tree().quit())
-	box.add_child(quit)
+	_close_button = Button.new()
+	_close_button.text = "Step away  (Esc)"
+	_close_button.custom_minimum_size = Vector2(0, 44)
+	_close_button.pressed.connect(close)
+	box.add_child(_close_button)
 	refresh({})
+	close()
+
+
+## A titled part of the screen that a station shows on its own.
+func _section(box: VBoxContainer, id: String) -> VBoxContainer:
+	var section := VBoxContainer.new()
+	section.name = id.capitalize()
+	section.add_theme_constant_override("separation", 10)
+	box.add_child(section)
+	_sections[id] = section
+	return section
+
+
+## Opens what a station in the home base offers (a key of `STATIONS`), over
+## the base. Esc or the button steps away again.
+func open_station(id: String) -> void:
+	if not STATIONS.has(id):
+		return
+	station = id
+	_show_only(STATIONS[id]["sections"])
+	_title.text = str(HomeBase.STATIONS[id]["title"]).to_upper() if HomeBase.STATIONS.has(id) else id.to_upper()
+	_title.add_theme_font_size_override("font_size", 30)
+	_backdrop.visible = false
+	_shade.visible = true
+	_close_button.visible = true
+	visible = true
+	if id == "wardrobe":
+		character.show_customizer()
+
+
+## The screen between places (connecting, travelling): the backdrop and a
+## line on what is happening. Set the line with `set_online_status`.
+func show_travel() -> void:
+	station = ""
+	character.hide_customizer()
+	_show_only(["status"])
+	_title.text = "PROJECT ARES"
+	_title.add_theme_font_size_override("font_size", 40)
+	_backdrop.visible = true
+	_shade.visible = false
+	_close_button.visible = false
+	visible = true
+
+
+## Puts the screen away: back to the world.
+func close() -> void:
+	var was := station
+	station = ""
+	if character:
+		character.hide_customizer()
+	visible = false
+	if was != "":
+		closed.emit()
+
+
+func is_open() -> bool:
+	return visible
+
+
+func _show_only(ids: Array) -> void:
+	for id: String in _sections:
+		_sections[id].visible = id in ids
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	if station != "" and event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
+		get_viewport().set_input_as_handled()
+		close()
+
+
+## How the last life ended, in a line or two. "" when there is nothing to say.
+func result_text() -> String:
+	return _result.text if _result else ""
 
 
 func refresh(last_result: Dictionary) -> void:
@@ -354,8 +448,8 @@ func _build_online(box: VBoxContainer) -> void:
 	box.add_child(join_row)
 
 
-## The lobby section, shown instead of the solo and connect sections while
-## connected to a server.
+## The lobby part of the launch pad, shown instead of the solo deploy
+## buttons while connected to a server.
 func _build_lobby(box: VBoxContainer) -> void:
 	_lobby_box = VBoxContainer.new()
 	_lobby_box.add_theme_constant_override("separation", 10)
@@ -364,23 +458,23 @@ func _build_lobby(box: VBoxContainer) -> void:
 	_lobby_title = _text("", 20, Color(1.0, 0.55, 0.25))
 	_lobby_box.add_child(_lobby_title)
 	_lobby_box.add_child(_text(
-		"The loadout and stash above are the ones this server keeps for you. "
-		+ "They are separate from your solo stash.", 13, Color(0.65, 0.65, 0.65)))
+		"The gear in this base is the stash this server keeps for you. "
+		+ "It is separate from your solo stash.", 13, Color(0.65, 0.65, 0.65)))
 	_lobby_deploy = Button.new()
 	_lobby_deploy.custom_minimum_size = Vector2(0, 52)
 	_lobby_deploy.add_theme_font_size_override("font_size", 22)
 	_lobby_deploy.pressed.connect(func() -> void: online_deploy_requested.emit())
 	_lobby_box.add_child(_lobby_deploy)
-	_lobby_leave = Button.new()
-	_lobby_leave.text = "Leave the server"
-	_lobby_leave.pressed.connect(func() -> void: online_leave_requested.emit())
-	_lobby_box.add_child(_lobby_leave)
 
 
 ## What the lobby's leave button says: it leads back to the plaza when the
 ## server has one.
 func set_leave_text(text: String) -> void:
 	_lobby_leave.text = text
+
+
+func leave_text() -> String:
+	return _lobby_leave.text
 
 
 func in_lobby() -> bool:
@@ -422,6 +516,7 @@ func _show_sections() -> void:
 	_lobby_box.visible = in_lobby()
 	_solo_box.visible = not in_lobby()
 	_connect_box.visible = not in_lobby()
+	_lobby_leave.visible = in_lobby()
 	_stash_title.text = "STASH ON THIS SERVER" if in_lobby() else "STASH"
 
 

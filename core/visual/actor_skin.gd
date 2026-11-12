@@ -6,6 +6,9 @@ extends Node3D
 
 const Vfx := preload("res://core/visual/vfx.gd")
 const WeaponArm := preload("res://core/visual/weapon_arm.gd")
+const Locomotion := preload("res://core/visual/locomotion.gd")
+## Clips that loop and are cut between in step, keeping the stride's phase.
+const GAITS: Array[String] = ["walk", "run", "run_back", "run_left", "run_right", "move_gun"]
 
 var look: Node
 var actor: Actor
@@ -13,6 +16,7 @@ var actor: Actor
 var _player: AnimationPlayer
 var _anims := {}
 var _current := ""
+var _current_sign := 1.0
 var _weapons_seen := 0
 var _wired := {}
 var _flash_left := 0.0
@@ -21,6 +25,8 @@ var _thrust: Node3D
 var _attack_left := 0.0
 ## Makes the model hold its weapon, or null for skins without the bones.
 var arm: Node
+## Matches the legs to the actor's speed and direction.
+var locomotion: Node
 
 func _ready() -> void:
 	var skin_name: String = actor.get_meta("look", look.DEFAULT_SKIN)
@@ -46,6 +52,13 @@ func _ready() -> void:
 		_player.advance(0.0)
 	look.stand_model(self, model, def["height"])
 	var skeleton := model.find_child("Skeleton3D", true, false) as Skeleton3D
+	# Before the arm, so the arm's hooks run after the legs have turned.
+	locomotion = Locomotion.new()
+	locomotion.name = "Locomotion"
+	locomotion.actor = actor
+	locomotion.skeleton = skeleton
+	add_child(locomotion)
+	locomotion.setup(def, _player, _anims)
 	if skeleton and def.has("grip_bone"):
 		arm = WeaponArm.new()
 		arm.name = "WeaponArm"
@@ -73,14 +86,22 @@ func _find_animation(wanted: String) -> String:
 	return ""
 
 
+## Plays a clip at a speed, negative to play it backwards. Moving from one
+## walk or run clip to another keeps the point in the stride.
 func _play(key: String, speed := 1.0) -> void:
 	if _player == null or not _anims.has(key):
 		return
+	_player.speed_scale = speed
+	_current_sign = signf(speed) if speed != 0.0 else 1.0
 	if _current == key:
-		_player.speed_scale = speed
 		return
+	var phase := -1.0
+	if _current in GAITS and key in GAITS and _player.current_animation_length > 0.0:
+		phase = _player.current_animation_position / _player.current_animation_length
 	_current = key
-	_player.play(_anims[key], 0.15, speed)
+	_player.play(_anims[key], 0.2 if phase >= 0.0 else 0.15)
+	if phase >= 0.0:
+		_player.seek(phase * _player.current_animation_length)
 
 
 func _process(delta: float) -> void:
@@ -97,6 +118,11 @@ func _process(delta: float) -> void:
 	_update_thrust()
 	var weapon := actor.get_active_weapon()
 	var melee := weapon as MeleeWeapon
+	if locomotion == null:
+		return
+	locomotion.update(delta)
+	locomotion.twist_target = 0.0
+	locomotion.overlay = false
 	if actor.is_dead:
 		_play("death")
 		return
@@ -107,17 +133,20 @@ func _process(delta: float) -> void:
 	_attack_left -= delta
 	if _attack_left > 0.0:
 		return
-	var flat := Vector2(actor.velocity.x, actor.velocity.z).length()
 	# With a gun out the arm stays up, so the gun keeps pointing where it shoots.
 	var armed := weapon != null and melee == null and _anims.has("move_gun")
+	# Read from velocity alone, so a remote player, whose velocity comes with
+	# each state from the server, moves its legs the same as a local one.
+	var gait: Dictionary = {} if actor.vehicle != null else \
+			locomotion.choose(locomotion.velocity, armed, _current, _current_sign)
 	if actor.vehicle != null:
 		_play("idle")
-	elif flat > 0.4 and armed:
-		_play("move_gun", clampf(flat / 7.0, 0.45, 1.6))
-	elif flat > actor.walk_speed + 0.5:
-		_play("run", clampf(flat / 7.0, 0.8, 1.6))
-	elif flat > 0.4:
-		_play("walk", clampf(flat / 2.5, 0.7, 2.2))
+	elif not gait.is_empty():
+		_play(gait["key"], gait["speed"])
+		locomotion.twist_target = gait["twist"]
+		locomotion.overlay = armed and gait["key"] != "move_gun"
+		if _player and _player.current_animation_length > 0.0:
+			locomotion.overlay_phase = _player.current_animation_position / _player.current_animation_length
 	elif melee and _anims.has("idle_melee"):
 		_play("idle_melee")
 	else:

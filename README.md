@@ -35,27 +35,49 @@ skies, animated models and effects (see "How it looks" below).
 | Switch camera: first-person or third-person | V |
 | Scoreboard: who is fighting, who is down, kills | Hold Tab |
 | Sign out and go home with what you carry (10 seconds, out of a fight) | L |
-| After dying: drop back in, or return to the hub | Enter, or L |
+| After dying: drop back in, or go home | Enter, or L |
 | Open your phone: players, messages, invites, news, mirror, settings | P |
 | Free the mouse | Esc |
 
 The jetpack runs on heat. Overheat it and you fall until it cools. Rooftop
 caches hold the best loot, and only the jetpack gets you there.
 
+## Your home base is the menu
+
+The game opens in your home base, not on a menu screen. Everything in your
+stash is on show, and the consoles in the room do what the old menu did.
+Walk up to one and press **E**; **Esc** steps away again.
+
+| Console | What it opens |
+| --- | --- |
+| Launch pad (middle of the room) | Deploy into any world |
+| Locker | Your loadout, slot by slot (or press E on gear on show) |
+| Mastery bench | Mastery levels and variant picks |
+| Wardrobe | The character customizer |
+| Records | Your stash, kills, rank, and how your last life went |
+| Trader | The shops: buy and sell |
+| Uplink | Your name, host a server, or join one |
+| Arena gate | Straight into the arena (see "The arena" below) |
+
+The door behind you leads online (it opens the uplink). Signing out of a
+world, or dying and pressing L, brings you back here.
+
 After you pull new code, the first launch may show "Updating the project" for a
 few seconds and restart on its own. That is Godot learning about new scripts.
 
 ## Play online (early test)
 
-The hub has an **Online** section.
+The **Uplink** console in your home base (or its door) is where you go online.
 
 - **Host a world and join it** starts a server on your computer and connects you to it.
 - **Join a world at this address** connects to someone else's server. On the same
   network, that is the host's local address, for example `192.168.1.20`.
-- Connecting puts you in that server's lobby. The hub now shows the stash and
-  loadout **the server keeps for you**, which is separate from your solo stash.
-  Pick your gear and press **Deploy online**. Dying keeps you in the world:
-  press Enter to drop back in. Signing out (L) brings you back to the lobby.
+- Joining a server puts you in its plaza, the Concourse (see below). A world's
+  lobby is your home base again, but it shows the stash and loadout **the
+  server keeps for you**, which is separate from your solo stash. Pick your
+  gear there and use the launch pad to **Deploy online**. Dying keeps you in
+  the world: press Enter to drop back in. Signing out (L) brings you back to
+  the Concourse (or to the lobby base on a server without one).
 - The server knows you by your name plus a private key your game creates the
   first time. Everyone on a server needs a different name. A new name starts
   with the same starter crates as a solo profile.
@@ -68,8 +90,8 @@ The hub has an **Online** section.
 
 ### Your phone
 
-Every player carries a phone, and it is the game's menu. Press **P** (or the
-phone button in the hub) to open it, in the hub or in a raid. While it is out
+Every player carries a phone. Press **P** to open it anywhere: in your base,
+the plaza or a raid. While it is out
 your character stands still and the mouse is free.
 
 - **People**: everyone signed in to the same server, and where they are (lobby
@@ -149,12 +171,30 @@ you have.
   with the most renown is the Marked, the richest kill in the world. Killing
   someone in the free scrap kit pays almost nothing. Player kills, bounties
   and the Marked are announced to everyone.
+- Ashfront is one open battlefield about 600 metres across: scorched ground
+  cut by craters and trench lines, strewn with the wrecks of war machines,
+  some the size of tower blocks. Five landmarks stand on it (the Foundry in
+  the middle, Signal Hill, Rustfall, the Breach and Carrier Grave), each with
+  a depot, a garrison and loot, and the best loot sits on roofs and wrecks
+  that only a flight rig reaches. You drop in at the rim, where a bike is
+  never far, and ride or fly inward.
 - War intensity. Ashfront keeps a meter of how much fighting is going on.
   Kills and hostile players closing on each other raise it, and it cools when
   things calm down; a full server that is not fighting stays quiet. As it
   climbs the sky darkens from a hazy afternoon to a dull red dusk, a column
   of smoke stands over the heaviest fighting, and kills pay up to half as
   much renown again. Frostline stays quiet.
+- Strongpoints. Sites marked by a tall beacon that you take by standing in
+  them alone for 20 seconds; more of you is faster, and an enemy inside
+  freezes it. Taking one pays renown, and a site your side holds is where you
+  drop in next. Bots hold them to begin with and push to take them back.
+  Frostline has three, shared by all players. Ashfront gets its own with the
+  new battlefield map.
+- World events. Every few minutes, and more often as the war heats up, either
+  a supply pod lands with a better haul than any cache, or a warlord marches
+  in with an escort. He has three times the health, carries good loot, and
+  pays 300 renown. Everyone is told where on the war feed. Caches that refill
+  during a war also hold rarer loot.
 - Hitscan rifle with reloads and aim down sights.
 - Rifle recoil that kicks your view and widens the spread under sustained fire.
 - Blade with a three-hit combo, a heavy lunge, and a dive slam from the air.
@@ -169,11 +209,11 @@ you have.
 - Scavenger bots that patrol, chase and shoot, plus melee brutes that rush you.
   All of them drop loot bags.
 - Loot caches with five rarity tiers, a backpack, and a stash that persists.
-- A home base you walk around in, reached from the hub. Everything in your
+- A home base you walk around in, where the game opens. Everything in your
   stash is on show: guns on a rack, blades on the wall, armor on stands,
   flight rigs, ability chips, bikes parked in the garage, loot on shelves.
   Look at a piece of gear and press E to equip it for your next run.
-- Loadouts picked in the hub from your stash: primary weapon, melee weapon,
+- Loadouts picked in your base from your stash: primary weapon, melee weapon,
   flight rig and armor frame. Equipped gear is at risk. Sign out alive and it
   comes home, die and it drops. Empty slots use a free scrap kit.
 - Three kinds of flight rig: jetpacks for sustained lift, thruster boots for
@@ -185,12 +225,12 @@ you have.
 - Motorbikes, the first vehicle. Put one in the vehicle slot and it is parked
   next to you when you deploy. Press E on any bike nobody is riding to take
   it, including someone else's. Sign out riding a bike and it goes to your
-  stash; die or leave it behind and it is gone. Abandoned bikes wait by jump
-  ramps around the city. Riding uses the third-person camera (V still
+  stash; die or leave it behind and it is gone. Abandoned bikes wait at the rim,
+  the landmarks and the jump ramps of the battlefield. Riding uses the third-person camera (V still
   switches), and pressing E in mid-air bails out with the bike's speed.
 - Mastery for every weapon type, ability and armor frame. Using gear earns XP
   for its type, levels unlock variants that trade one strength for another
-  (never raw power), and you pick them in the hub. Mastery is kept when you die.
+  (never raw power), and you pick them at the mastery bench in your base. Mastery is kept when you die.
 - Worlds that never end. There is no timer and no exit. Dead bots are
   replaced, emptied caches refill, and bikes come back to their parking spots.
 - Depots, marked by green beacons. Stand in one for a few seconds to send
@@ -204,7 +244,7 @@ you have.
   losing your connection online leaves your body standing in the world for
   the same time (30 seconds if you were in a fight), so nobody escapes a
   fight by closing the game.
-- Credits and shops. The hub has five shops: the Armory (weapons), Outfitter
+- Credits and shops. The trader in your base has five shops: the Armory (weapons), Outfitter
   (armor, flight rigs, medkits), Garage (bikes), Furnisher (furniture and
   decorations for your home base) and Tailor (clothing). See "Credits and
   shops" below.
@@ -228,7 +268,7 @@ you have.
 
 ## The arena
 
-**Enter the arena** in the hub (or the arena gate in the plaza) takes you to
+The **arena gate** console in your home base (or the arena gate in the plaza) takes you to
 the Pit, a colosseum where you watch from the stands. Press Esc to free the
 mouse and use the arena panel:
 
@@ -262,7 +302,7 @@ core/            Shared by every world. Never names a specific world.
   arena/         The arena venue, its bouts and wagers, and its overlay
   ai/            Bot brain
   player/        Local input and camera
-  ui/            HUD and hub
+  ui/            HUD, and the station screens and travel screen (hub.gd)
   visual/        The art layer (`Look`): surfaces, atmosphere, models, effects, UI theme
   profile/       Stash and stats that persist between raids (local play)
   base/          The home base: a room that puts the stash on show
@@ -316,7 +356,7 @@ Every asset is CC0 or OFL. Sources and licenses are in `assets/LICENSES.md`.
    `core/world/world_def.gd`. Give it a mood with `Look.atmosphere` and
    surfaces from `Look.surface`.
 
-The hub finds it automatically and adds a deploy button, and the
+The launch pad finds it automatically and adds a deploy button, and the
 "Every world plugs in" tests run a raid in it. No core code changes.
 
 ### Frostline

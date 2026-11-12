@@ -88,10 +88,18 @@ func place() -> void:
 		if not hit.is_empty():
 			at = maxf(min_distance, from.distance_to(hit.position) - 0.4)
 	var feet := viewer.global_position if viewer.is_inside_tree() else viewer.position
-	# The glass faces the viewer: the mirror's +Z points back at them.
 	var left := Vector3.UP.cross(forward).normalized()
-	global_transform = Transform3D(Basis.looking_at(forward, Vector3.UP),
-			feet + forward * at + left * side_offset * at / distance)
+	var spot := feet + forward * at + left * side_offset * at / distance
+	if viewer.is_inside_tree():
+		# Stand on the ground where it is, which may sit higher or lower than
+		# the viewer's feet on a slope or a step.
+		var down := PhysicsRayQueryParameters3D.create(spot + Vector3.UP * 1.0, spot + Vector3.DOWN * 2.0,
+				Actor.LAYER_WORLD)
+		var ground := viewer.get_world_3d().direct_space_state.intersect_ray(down)
+		if not ground.is_empty():
+			spot.y = ground.position.y
+	# The glass faces the viewer: the mirror's +Z points back at them.
+	global_transform = Transform3D(Basis.looking_at(forward, Vector3.UP), spot)
 
 
 ## Where the middle of the glass is.

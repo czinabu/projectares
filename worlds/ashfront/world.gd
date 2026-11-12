@@ -1,6 +1,6 @@
 extends WorldDef
-## Ashfront: a burnt-out industrial city under a red storm sky.
-## Always-on PvP, full loot, no safe zones.
+## Ashfront: an open battlefield under a red storm sky, strewn with the wrecks
+## of war machines. Always-on PvP, full loot, no safe zones.
 
 const MapScript := preload("res://worlds/ashfront/map.gd")
 
@@ -38,7 +38,7 @@ const ROOFTOP_TABLE := [
 	{"id": "chip_pulse", "weight": 7.0},
 ]
 
-## Abandoned bikes parked around the city. Anyone can ride one out.
+## Abandoned bikes parked around the field. Anyone can ride one out.
 const VEHICLE_TABLE := [
 	{"id": "bike_scrapper", "weight": 75.0},
 	{"id": "bike_raider", "weight": 25.0},
@@ -58,8 +58,9 @@ const BOT_TABLE := [
 func _init() -> void:
 	id = "ashfront"
 	display_name = "Ashfront"
-	description = "Burnt-out industrial city. Always-on PvP, full loot, no safe zones."
-	bot_count = 8
+	description = "Open battlefield of wrecked war machines. Always-on PvP, full loot, no safe zones."
+	# A garrison of four at each of the five landmarks, and patrols between them.
+	bot_count = 28
 	depot_hold_time = 4.0
 
 
