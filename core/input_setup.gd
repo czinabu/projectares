@@ -25,6 +25,7 @@ const KEY_ACTIONS := {
 	"redeploy": KEY_ENTER,
 	"phone": KEY_P,
 	"vehicle_toy": KEY_T,
+	"check_wrist": KEY_X,
 }
 
 const MOUSE_ACTIONS := {
