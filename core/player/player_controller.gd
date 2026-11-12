@@ -58,6 +58,24 @@ var ride_distance := 5.2
 ## separately from the on-foot view, which comes back when you get off.
 var ride_view := ViewMode.THIRD
 var base_fov := 80.0
+## Speed widens the view a little, so a boost, a dive or a bike reads as
+## fast: up to `speed_fov` degrees more, from a sprint's speed up to
+## `speed_fov_at` m/s. Never while aiming or zoomed.
+var speed_fov := 9.0
+var speed_fov_at := 26.0
+## A landing dips the view by the speed you came down at (m per m/s, up to
+## `land_dip_max` m) and springs back.
+var land_dip := 0.016
+var land_dip_max := 0.25
+## Recoil. A shot's kick reaches the view over a few frames, not in one
+## (`recoil_snap`, per second). Once the trigger rests for
+## `recoil_settle_delay`, the view comes back down by `recoil_return` of the
+## kick you did not pull down against yourself (`recoil_settle`, per second),
+## so paced shots return to the aim point and a spray you fight stays put.
+var recoil_snap := 45.0
+var recoil_return := 1.0
+var recoil_settle_delay := 0.1
+var recoil_settle := 9.0
 ## True while the player has the watch on their wrist raised to read it
 ## (the `check_wrist` key toggles it). Only the HUD reads it.
 var wrist_raised := false
@@ -94,6 +112,15 @@ var _visor_level := 0
 var _flick := Vector2.ZERO
 var _rng := RandomNumberGenerator.new()
 var _thrust_audio: AudioStreamPlayer
+## Kick still on its way to the view (x pitch, y yaw, radians), the kick the
+## view is holding that has yet to settle back, and seconds since a shot.
+var _kick_coming := Vector2.ZERO
+var _kick_held := 0.0
+var _since_shot := 99.0
+## The landing dip: how far the view is pushed down, and its speed.
+var _dip := 0.0
+var _dip_speed := 0.0
+var _speed_fov_now := 0.0
 
 
 func setup(p_actor: Actor) -> void:
@@ -117,6 +144,7 @@ func _ready() -> void:
 			gun.fired.connect(_on_gun_fired.bind(gun))
 	actor.hit_confirmed.connect(_on_hit_confirmed)
 	actor.health.damaged.connect(_on_damaged)
+	actor.landed.connect(_on_landed)
 	var thrust_stream := Sfx.get_stream("thrust")
 	if thrust_stream:
 		_thrust_audio = AudioStreamPlayer.new()
@@ -140,6 +168,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		yaw -= event.relative.x * turn
 		var vertical: float = -event.relative.y if invert_y else event.relative.y
 		pitch = clampf(pitch - vertical * turn, -1.5, 1.5)
+		# Pulling down against a spray: that much kick is yours, not the
+		# gun's, and will not be given back.
+		_kick_held = maxf(0.0, _kick_held - maxf(vertical * turn, 0.0))
 		_flick += event.relative
 	elif event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if captured else Input.MOUSE_MODE_CAPTURED
@@ -420,8 +451,10 @@ func _process(delta: float) -> void:
 	if absf(_cam_dist - target_dist) < 0.01:
 		_cam_dist = target_dist
 
+	_update_recoil(delta)
+	_update_dip(delta)
 	var look := Basis.from_euler(Vector3(pitch, yaw, 0.0))
-	var pivot := actor.get_eye_position()
+	var pivot := actor.get_eye_position() - Vector3(0.0, _dip, 0.0)
 	var t := minf(_cam_dist / third_person_distance, 1.0)
 	var desired := pivot + look * Vector3(0.6 * t, 0.3 * t, _cam_dist)
 	if _cam_dist > 0.05:
@@ -431,7 +464,9 @@ func _process(delta: float) -> void:
 		if not hit.is_empty():
 			desired = pivot + (hit.position - pivot) * 0.85
 	camera.global_transform = Transform3D(look, desired)
-	var fov := aim_fov(weapon) if aiming else wanted_base_fov()
+	var speeding := 0.0 if aiming or _zoom() > 1.0 else speed_fov_for(_view_speed())
+	_speed_fov_now = lerpf(_speed_fov_now, speeding, 1.0 - exp(-4.0 * delta))
+	var fov := aim_fov(weapon) if aiming else wanted_base_fov() + _speed_fov_now
 	if _zoom() > 1.0:
 		fov = zoomed_fov(wanted_base_fov(), _zoom())
 	camera.fov = lerpf(camera.fov, fov, 1.0 - exp(-14.0 * delta))
@@ -485,11 +520,60 @@ func _zoom_scale() -> float:
 
 
 ## Each shot kicks the view up and a little sideways. The player pulls down to
-## hold a spray on target.
+## hold a spray on target. The kick arrives and settles in `_update_recoil`.
 func _on_gun_fired(_from: Vector3, _to: Vector3, gun: Gun) -> void:
 	var scale := 0.6 if gun.is_aiming() else 1.0
-	pitch = clampf(pitch + deg_to_rad(gun.recoil_kick_deg) * scale, -1.5, 1.5)
-	yaw += deg_to_rad(_rng.randf_range(-gun.recoil_side_deg, gun.recoil_side_deg)) * scale
+	_kick_coming.x += deg_to_rad(gun.recoil_kick_deg) * scale
+	_kick_coming.y += deg_to_rad(_rng.randf_range(-gun.recoil_side_deg, gun.recoil_side_deg)) * scale
+	_since_shot = 0.0
+
+
+## Moves the kick of recent shots into the view, and lets the view settle
+## back down once the trigger rests.
+func _update_recoil(delta: float) -> void:
+	_since_shot += delta
+	if _kick_coming.length() > 0.00001:
+		var step := _kick_coming * (1.0 - exp(-recoil_snap * delta))
+		_kick_coming -= step
+		var before := pitch
+		pitch = clampf(pitch + step.x, -1.5, 1.5)
+		yaw += step.y
+		_kick_held += (pitch - before) * recoil_return
+	else:
+		_kick_coming = Vector2.ZERO
+	if _since_shot >= recoil_settle_delay and _kick_held > 0.0:
+		var back := _kick_held * (1.0 - exp(-recoil_settle * delta)) if _kick_held > 0.0005 else _kick_held
+		_kick_held -= back
+		pitch = clampf(pitch - back, -1.5, 1.5)
+
+
+## The view dips on a landing and springs back.
+func _on_landed(impact_speed: float) -> void:
+	_dip_speed += minf(impact_speed * land_dip, land_dip_max) * 36.0
+
+
+func _update_dip(delta: float) -> void:
+	if is_zero_approx(_dip) and is_zero_approx(_dip_speed):
+		return
+	# A critically damped spring: down fast, back without a bounce.
+	_dip_speed += (-180.0 * _dip - 26.8 * _dip_speed) * delta
+	_dip += _dip_speed * delta
+	if absf(_dip) < 0.0005 and absf(_dip_speed) < 0.005:
+		_dip = 0.0
+		_dip_speed = 0.0
+
+
+## How fast the player is travelling, for the view: their ride's speed on a vehicle.
+func _view_speed() -> float:
+	if actor.vehicle != null:
+		return absf(float(actor.vehicle.get("speed")))
+	return actor.velocity.length()
+
+
+## Degrees the view widens at `speed` m/s: none up to a sprint, all of
+## `speed_fov` from `speed_fov_at`.
+func speed_fov_for(speed: float) -> float:
+	return speed_fov * smoothstep(actor.sprint_speed, speed_fov_at, speed)
 
 
 func _on_hit_confirmed(_target: Actor, info: DamageInfo, lethal: bool) -> void:

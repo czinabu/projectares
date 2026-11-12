@@ -150,6 +150,10 @@ var _roll_left := 0.0
 var _roll_cd := 0.0
 var _last_roll := 0
 var _roll_side := 0.0
+## Wings: how far the bank has rolled in, -1 to 1. It follows the strafe keys
+## at `FlightRig.glide_bank_rate`, so a tap nudges the heading and a hold
+## comes round at the full turn rate.
+var _bank := 0.0
 ## Wings: seconds until a main gun can fire again after the wings fold.
 var _wing_stow := 0.0
 var _slide_dir := Vector3.ZERO
@@ -342,6 +346,8 @@ func _simulate_movement(delta: float) -> void:
 			and (velocity.y < 0.0 or flight.is_gliding)
 	flight.is_skimming = flight.can_skim() and cmd.jump and not on_floor and not staggered \
 			and not flight.overheated
+	if not flight.is_gliding:
+		_bank = 0.0
 	if on_floor:
 		horizontal = horizontal.move_toward(wish * speed, ground_accel * delta)
 	elif flight.is_skimming:
@@ -413,7 +419,11 @@ func _simulate_movement(delta: float) -> void:
 		if thrust > 0.0:
 			velocity.y = minf(velocity.y, flight.max_rise_speed)
 		if flight.is_gliding:
-			velocity.y = maxf(velocity.y, -_glide_sink())
+			# The wings catch a fall or a dive over a moment, never in one
+			# tick: sinking faster than the glide allows eases back to it.
+			var sink := -_glide_sink()
+			var caught := velocity.y if velocity.y >= sink \
+					else minf(sink, velocity.y + (gravity + flight.glide_catch_accel) * delta)
 			# Pulling up with speed in hand climbs on it.
 			var pull := -glide_trim()
 			var air_speed := Vector2(velocity.x, velocity.z).length()
@@ -421,7 +431,8 @@ func _simulate_movement(delta: float) -> void:
 			if pull > 0.0 and spare > 0.1:
 				# The lift fades out as the speed comes down to the stall.
 				var lift := air_speed * sin(pull * 0.7) * clampf(spare / (flight.glide_speed * 0.15), 0.0, 1.0)
-				velocity.y = maxf(velocity.y, minf(lift, velocity.y + flight.glide_lift_accel * delta))
+				caught = maxf(caught, minf(lift, velocity.y + (gravity + flight.glide_lift_accel) * delta))
+			velocity.y = caught
 	velocity.y = maxf(velocity.y, -max_fall_speed)
 
 	var fall_speed := -velocity.y
@@ -562,7 +573,8 @@ func glide_trim() -> float:
 ## look. A glide that has no heading yet (the launch) sets off the way you face.
 func _glide_velocity(horizontal: Vector3, _wish: Vector3, yaw_basis: Basis, delta: float) -> Vector3:
 	var heading := horizontal.normalized() if horizontal.length() > 1.0 else yaw_basis * Vector3.FORWARD
-	heading = heading.rotated(Vector3.UP, -clampf(cmd.move.x, -1.0, 1.0) * flight.glide_turn_rate * delta)
+	_bank = move_toward(_bank, clampf(cmd.move.x, -1.0, 1.0), flight.glide_bank_rate * delta)
+	heading = heading.rotated(Vector3.UP, -_bank * flight.glide_turn_rate * delta)
 	var trim := glide_trim()
 	var air_speed := horizontal.length()
 	var cruise := flight.glide_speed

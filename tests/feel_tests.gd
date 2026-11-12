@@ -1,12 +1,214 @@
 extends RefCounted
 ## Checks for core feel: the server's input buffer (no input delay left behind
 ## by lost packets), smooth flight and responsive guns.
-## Run from the main test runner.
+## Run from the main test runner. None of it starts a server, so it runs in
+## the offline tier: the session script is named only by its path here.
+
+const Net := preload("res://core/net/net_session.gd")
 
 
 static func run(t: Node) -> void:
 	print("Feel: the server's input buffer")
 	_test_input_buffer(t)
+	print("Feel: flight")
+	await _test_wings(t)
+	print("Feel: guns and the view")
+	await _test_guns(t)
+	_test_view(t)
+
+
+## Flat ground far from everything else, to move an actor about on.
+static func _ground(t: Node, at: Vector3) -> Node3D:
+	var arena := Node3D.new()
+	t.add_child(arena)
+	arena.position = at
+	var ground := StaticBody3D.new()
+	ground.collision_layer = Actor.LAYER_WORLD
+	var shape := BoxShape3D.new()
+	shape.size = Vector3(600, 1, 600)
+	var col := CollisionShape3D.new()
+	col.shape = shape
+	ground.add_child(col)
+	ground.position.y = -0.5
+	arena.add_child(ground)
+	return arena
+
+
+static func _actor(arena: Node3D, kit: Array) -> Actor:
+	var actor := Actor.new()
+	arena.add_child(actor)
+	Loadout.equip(actor, kit)
+	actor.position = Vector3(0, 0.05, 0)
+	return actor
+
+
+## Runs `ticks` ticks and returns the hardest change of velocity in one of
+## them, as m/s².
+static func _jolt(t: Node, actor: Actor, ticks: int) -> float:
+	var worst := 0.0
+	var last := actor.velocity
+	for i in ticks:
+		await t.get_tree().physics_frame
+		worst = maxf(worst, (actor.velocity - last).length() * Engine.physics_ticks_per_second)
+		last = actor.velocity
+	return worst
+
+
+static func _test_wings(t: Node) -> void:
+	var arena := _ground(t, Vector3(0, 0, -6000))
+	var p := _actor(arena, ["pistol_service", "wings_glide"])
+	await t.frames(5)
+	p.global_position.y = 300.0
+	p.velocity = Vector3(0, -1, 0)
+	await t.frames(40)
+	# Opening the wings in a fall, diving, levelling out and pulling up: the
+	# wings ease into each, they never snap in one tick.
+	var fall := p.velocity.y
+	p.cmd.jump = true
+	var worst := await _jolt(t, p, 60)
+	t.check(p.flight.is_gliding and fall < -10.0 and p.velocity.y >= -p.flight.glide_fall_speed - 0.01,
+			"wings opened in a fall catch it and settle into the glide")
+	p.cmd.move = Vector2(0, 1)
+	worst = maxf(worst, await _jolt(t, p, 120))
+	var dive := p.velocity.y
+	p.cmd.move = Vector2.ZERO
+	await t.frames(1)
+	t.check(dive < -9.0 and p.velocity.y < dive * 0.8, "letting go of a dive eases out of it (%.1f then %.1f m/s down)" % [dive, p.velocity.y])
+	worst = maxf(worst, await _jolt(t, p, 30))
+	t.check(p.velocity.y >= -p.flight.glide_fall_speed - 0.01, "and is level again within half a second")
+	p.cmd.move = Vector2(0, 1)
+	await t.frames(120)
+	p.cmd.move = Vector2(0, -1)
+	worst = maxf(worst, await _jolt(t, p, 90))
+	p.cmd.move = Vector2.ZERO
+	t.check(worst < 90.0, "opening the wings, diving, levelling and pulling up never snap (hardest %.0f m/s² in a tick)" % worst)
+	# The bank rolls in: a tap nudges the heading, a hold comes right round.
+	await t.frames(120)
+	var before := Vector3(p.velocity.x, 0, p.velocity.z).normalized()
+	p.cmd.move = Vector2(1, 0)
+	await t.frames(3)
+	p.cmd.move = Vector2.ZERO
+	await t.frames(20)
+	var nudged := before.angle_to(Vector3(p.velocity.x, 0, p.velocity.z).normalized())
+	t.check(nudged > 0.005 and nudged < 0.08 and is_zero_approx(p._bank), "a tap of a strafe key nudges the wings' heading (%.3f rad)" % nudged)
+	before = Vector3(p.velocity.x, 0, p.velocity.z).normalized()
+	p.cmd.move = Vector2(1, 0)
+	await t.frames(30)
+	var swung := before.angle_to(Vector3(p.velocity.x, 0, p.velocity.z).normalized())
+	t.check(swung > p.flight.glide_turn_rate * 0.5 * 0.8, "and holding it turns at the full rate (%.2f rad in half a second)" % swung)
+	p.cmd.move = Vector2.ZERO
+	arena.queue_free()
+	await t.frames(2)
+
+
+static func _test_guns(t: Node) -> void:
+	var arena := _ground(t, Vector3(0, 0, -7000))
+	var p := _actor(arena, ["pistol_service"])
+	await t.frames(20)
+	var pistol := p.weapons[0] as Gun
+	var press := func() -> void:
+		p.cmd.primary_pressed = true
+		await t.frames(1)
+		p.cmd.primary_pressed = false
+	# A semi-auto fired a moment early still fires, as soon as it can.
+	await press.call()
+	t.check(pistol.ammo_in_mag == pistol.mag_size - 1, "a semi-auto fires on the pull")
+	await t.frames(int(pistol.fire_interval * 60.0) - 5)
+	await press.call()
+	t.check(pistol.ammo_in_mag == pistol.mag_size - 1, "a pull between shots does not fire early")
+	await t.frames(6)
+	t.check(pistol.ammo_in_mag == pistol.mag_size - 2, "but it is remembered, and fires the moment the gun is ready")
+	await t.frames(30)
+	t.check(pistol.ammo_in_mag == pistol.mag_size - 2, "one pull is one shot")
+	await press.call()
+	await press.call()
+	await t.frames(40)
+	t.check(pistol.ammo_in_mag == pistol.mag_size - 3, "a pull long before the gun is ready is forgotten")
+	# The same for a pull as a reload ends.
+	p.cmd.reload_pressed = true
+	await t.frames(1)
+	p.cmd.reload_pressed = false
+	await t.frames(int(pistol.reload_time * 60.0) - 4)
+	await press.call()
+	await t.frames(8)
+	t.check(pistol.ammo_in_mag == pistol.mag_size - 1, "a pull as a reload ends fires when it is done")
+	# Spread is a round cone as wide as the gun says, never a square.
+	var aim := Vector3(0.3, 0.2, -1.0).normalized()
+	var spread := deg_to_rad(4.5)
+	var widest := 0.0
+	var mean := Vector3.ZERO
+	for i in 400:
+		var dir := Gun.spread_dir(aim, spread, fmod(i * 0.618034, 1.0), (i % 20 + 1) / 20.0)
+		widest = maxf(widest, aim.angle_to(dir))
+		mean += dir
+	t.check(widest < spread * 1.01 and widest > spread * 0.98, "shots spread over a round cone exactly as wide as the gun's spread")
+	t.check(aim.angle_to(mean.normalized()) < 0.01 and is_equal_approx(aim.angle_to(Gun.spread_dir(aim, spread, 0.3, 0.0)), 0.0),
+			"centred on the aim")
+	t.check(Gun.spread_dir(Vector3.UP, spread, 0.25, 1.0).is_normalized(), "also when aiming straight up")
+	# A harder kicking gun jumps further in the hand, and less when aimed.
+	var smg := Gun.new()
+	Loadout._setup_weapon(smg, "smg_stinger", ItemDB.item_stats("smg_stinger"))
+	var cannon := Gun.new()
+	Loadout._setup_weapon(cannon, "pistol_hand_cannon", ItemDB.item_stats("pistol_hand_cannon"))
+	t.check(cannon.model_kick().x > smg.model_kick().x * 2.0 and cannon.model_kick().x <= Gun.MODEL_KICK.x * Gun.MODEL_KICK_MAX + 0.0001,
+			"a hand cannon jumps further in the hand than an SMG, within a limit")
+	var hip := cannon.model_kick()
+	cannon._aiming = true
+	t.check(cannon.model_kick().x < hip.x * 0.5, "and a gun jumps less while aimed, so a scope stays off the eye")
+	smg.free()
+	cannon.free()
+	arena.queue_free()
+	await t.frames(2)
+
+
+static func _test_view(t: Node) -> void:
+	var p := Actor.new()
+	var controller := PlayerController.new()
+	controller.actor = p
+	var gun := Gun.new()
+	gun.recoil_kick_deg = 2.0
+	gun.recoil_side_deg = 0.0
+	var kick := deg_to_rad(gun.recoil_kick_deg)
+	# A shot's kick reaches the view over a few frames, then settles back.
+	controller._on_gun_fired(Vector3.ZERO, Vector3.ZERO, gun)
+	t.check(is_zero_approx(controller.pitch), "a shot does not snap the view in one frame")
+	controller._update_recoil(1.0 / 60.0)
+	t.check(controller.pitch > kick * 0.3 and controller.pitch < kick * 0.8, "the kick arrives over a few frames")
+	for i in 4:
+		controller._update_recoil(1.0 / 60.0)
+	t.check(controller.pitch > kick * 0.9, "and is all there within a tenth of a second (%.0f%%)" % (controller.pitch / kick * 100.0))
+	for i in 60:
+		controller._update_recoil(1.0 / 60.0)
+	t.check(absf(controller.pitch) < kick * 0.02, "once the trigger rests the view settles back to where it was aimed")
+	# Kick the player pulled down against is theirs to keep.
+	controller.pitch = 0.0
+	controller._on_gun_fired(Vector3.ZERO, Vector3.ZERO, gun)
+	for i in 5:
+		controller._update_recoil(1.0 / 60.0)
+	controller.pitch -= controller._kick_held
+	controller._kick_held = 0.0
+	var held := controller.pitch
+	for i in 60:
+		controller._update_recoil(1.0 / 60.0)
+	t.check(is_equal_approx(controller.pitch, held), "kick you pulled down against is not given back")
+	# Speed widens the view, from a sprint up.
+	t.check(is_zero_approx(controller.speed_fov_for(p.sprint_speed)) and controller.speed_fov_for(FlightRig.CRUISE_SPEED) > 1.0
+			and controller.speed_fov_for(FlightRig.CRUISE_SPEED) < controller.speed_fov * 0.5
+			and is_equal_approx(controller.speed_fov_for(40.0), controller.speed_fov),
+			"speed widens the view: nothing at a sprint, a little at cruise, all of it in a dive or on a bike")
+	# A landing dips the view and it springs back.
+	controller._on_landed(12.0)
+	var deepest := 0.0
+	for i in 20:
+		controller._update_dip(1.0 / 60.0)
+		deepest = maxf(deepest, controller._dip)
+	t.check(deepest > 0.08 and deepest < controller.land_dip_max, "a hard landing dips the view (%.2f m)" % deepest)
+	for i in 60:
+		controller._update_dip(1.0 / 60.0)
+	t.check(is_zero_approx(controller._dip), "and it springs back to rest")
+	gun.free()
+	controller.free()
+	p.free()
 
 
 static func _input(number: int, flags := 0, switch := -1) -> Array:
@@ -19,7 +221,7 @@ static func _input(number: int, flags := 0, switch := -1) -> Array:
 ## Plays `ticks` ticks of a client sending one numbered input a tick over a
 ## connection that loses packets, each packet repeating every input the
 ## server has not had yet. Returns what the server made of it.
-static func _play_link(buffer: NetSession.InputBuffer, ticks: int, lost: Callable, press_every := 0) -> Dictionary:
+static func _play_link(buffer: Net.InputBuffer, ticks: int, lost: Callable, press_every := 0) -> Dictionary:
 	var unanswered: Array = []
 	var presses_sent := 0
 	var presses_played := 0
@@ -34,7 +236,7 @@ static func _play_link(buffer: NetSession.InputBuffer, ticks: int, lost: Callabl
 		if pressed:
 			presses_sent += 1
 		unanswered.append(_input(number, ActorCommand.FLAG_JUMP_PRESSED if pressed else 0))
-		if unanswered.size() > NetSession.MAX_INPUTS_PER_PACKET:
+		if unanswered.size() > Net.MAX_INPUTS_PER_PACKET:
 			unanswered.pop_front()
 		if not lost.call(tick):
 			buffer.receive(unanswered.duplicate(true))
@@ -53,7 +255,7 @@ static func _play_link(buffer: NetSession.InputBuffer, ticks: int, lost: Callabl
 
 static func _test_input_buffer(t: Node) -> void:
 	var never := func(_tick: int) -> bool: return false
-	var buffer := NetSession.InputBuffer.new()
+	var buffer := Net.InputBuffer.new()
 	var clean := _play_link(buffer, 300, never, 7)
 	t.check(clean.played == clean.sent and buffer.guessed == 0 and buffer.skipped == 0 and buffer.played == 300,
 			"on a clean connection every input is played once, in order, with no guessing")
@@ -63,7 +265,7 @@ static func _test_input_buffer(t: Node) -> void:
 	# limit here and stayed five or six inputs (about 80 ms) behind.
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 11
-	buffer = NetSession.InputBuffer.new()
+	buffer = Net.InputBuffer.new()
 	var lossy := _play_link(buffer, 600, func(_tick: int) -> bool: return rng.randf() < 0.2, 7)
 	t.check(lossy.behind < 0.5 and buffer.queue.size() <= 1,
 			"with one packet in five lost the server stays with the player's inputs (%.2f behind on average, %d waiting)"
@@ -73,7 +275,7 @@ static func _test_input_buffer(t: Node) -> void:
 
 	# A lost packet: the tick is guessed and counted, and the real input is
 	# skipped when it arrives with the next one, keeping its press.
-	buffer = NetSession.InputBuffer.new()
+	buffer = Net.InputBuffer.new()
 	buffer.receive([_input(1)])
 	buffer.next()
 	t.check(buffer.next().is_empty() and buffer.played == 2 and buffer.guessed == 1,
@@ -88,7 +290,7 @@ static func _test_input_buffer(t: Node) -> void:
 
 	# Late and still the newest: the player's inputs are running later than
 	# the server thought, so it is played after all.
-	buffer = NetSession.InputBuffer.new()
+	buffer = Net.InputBuffer.new()
 	buffer.receive([_input(1)])
 	buffer.next()
 	buffer.next()
@@ -100,12 +302,12 @@ static func _test_input_buffer(t: Node) -> void:
 	t.check(buffer.next()[0] == 3 and buffer.played == 3, "and the inputs after it carry on in order")
 
 	# A long silence is a stall, not a run of guesses.
-	buffer = NetSession.InputBuffer.new()
+	buffer = Net.InputBuffer.new()
 	buffer.receive([_input(1)])
 	for i in 100:
 		buffer.next()
-	t.check(buffer.played == 1 + NetSession.MAX_GUESSED_INPUTS,
-			"the server guesses only %d inputs ahead of what it has received" % NetSession.MAX_GUESSED_INPUTS)
+	t.check(buffer.played == 1 + Net.MAX_GUESSED_INPUTS,
+			"the server guesses only %d inputs ahead of what it has received" % Net.MAX_GUESSED_INPUTS)
 	var resumed: Array = []
 	for number in range(2, 14):
 		buffer.receive([_input(number)])
@@ -115,12 +317,12 @@ static func _test_input_buffer(t: Node) -> void:
 			"after a stall the newest keys are played at once and the count picks up (%s)" % str(resumed))
 
 	# A burst after a stall is folded down, and spare inputs do not stay.
-	buffer = NetSession.InputBuffer.new()
+	buffer = Net.InputBuffer.new()
 	var burst: Array = []
 	for number in range(1, 13):
 		burst.append(_input(number, ActorCommand.FLAG_RELOAD_PRESSED if number == 2 else 0))
 	buffer.receive(burst)
-	t.check(buffer.queue.size() == NetSession.MAX_QUEUED_INPUTS, "a burst is folded down to the queue limit")
+	t.check(buffer.queue.size() == Net.MAX_QUEUED_INPUTS, "a burst is folded down to the queue limit")
 	var first := buffer.next()
 	t.check(int(first[1][ActorCommand.FLAGS_INDEX]) & ActorCommand.FLAG_RELOAD_PRESSED != 0, "keeping the presses of what was folded")
 	var steady := _play_link(buffer, 120, never)
@@ -129,16 +331,16 @@ static func _test_input_buffer(t: Node) -> void:
 
 	# Inputs travel packed small: a full packet fits in one datagram.
 	var full: Array = []
-	for number in NetSession.MAX_INPUTS_PER_PACKET:
+	for number in Net.MAX_INPUTS_PER_PACKET:
 		full.append(_input(70000 + number, ActorCommand.FLAG_ROLL_RIGHT | ActorCommand.FLAG_JUMP, ActorCommand.HOLSTER))
 	full[3][1][0] = -0.5
 	full[3][1][2] = 123.25
 	full[3][1][ActorCommand.STANCE_INDEX] = 2
-	var packet := NetSession.pack_inputs(full)
+	var packet := Net.pack_inputs(full)
 	t.check(packet.size() < 1200, "a full input packet fits in one datagram (%d bytes)" % packet.size())
-	t.check(NetSession.unpack_inputs(packet) == full, "and unpacks to the same inputs")
+	t.check(Net.unpack_inputs(packet) == full, "and unpacks to the same inputs")
 	packet.resize(packet.size() - 1)
-	t.check(NetSession.unpack_inputs(packet).is_empty(), "a packet of the wrong size is refused")
+	t.check(Net.unpack_inputs(packet).is_empty(), "a packet of the wrong size is refused")
 
 	# A new life starts clean: nothing is guessed before its first input, and
 	# packets from the old life are ignored.

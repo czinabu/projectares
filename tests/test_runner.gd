@@ -1926,9 +1926,13 @@ func _check_glide_flying(p: Actor) -> void:
 	check(swung > 0.1 and swung < 0.5, "a strafe key banks the wings round in an arc (%.2f rad)" % swung)
 	check(before.signed_angle_to(during, Vector3.UP) < 0.0, "and the right key turns right")
 	p.cmd.move = Vector2.ZERO
+	# The bank rolls level over a moment, then the glide flies straight.
+	await frames(10)
+	var levelled := Vector3(p.velocity.x, 0, p.velocity.z).normalized()
+	check(during.angle_to(levelled) < 0.25, "letting go rolls the wings level (%.2f rad more)" % during.angle_to(levelled))
 	await frames(30)
 	var after := Vector3(p.velocity.x, 0, p.velocity.z).normalized()
-	check(during.dot(after) > 0.999, "letting go flies straight on")
+	check(levelled.dot(after) > 0.999, "and then flies straight on")
 	p.cmd.move = Vector2(0, 1)
 	await frames(150)
 	var dived := Vector2(p.velocity.x, p.velocity.z).length()
