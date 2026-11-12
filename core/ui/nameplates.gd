@@ -81,9 +81,14 @@ func _visibility(camera: Camera3D, actor: Actor, at: Vector3) -> float:
 	return seen
 
 
+## A name with its clan tag in front, when there is one.
+static func tagged_name(actor: Actor) -> String:
+	return "[%s] %s" % [actor.clan_tag, actor.display_name] if actor.clan_tag != "" else actor.display_name
+
+
 ## The words on a plate: name, rank, and what hunting them would pay.
 static func plate_text(actor: Actor) -> String:
-	var text := "%s  %s" % [actor.display_name, RenownLedger.rank_name(actor.rank)]
+	var text := "%s  %s" % [tagged_name(actor), RenownLedger.rank_name(actor.rank)]
 	if actor.marked:
 		text += "  MARKED"
 	if actor.bounty > 0:

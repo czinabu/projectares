@@ -24,6 +24,10 @@ static func deal(target: Object, info: DamageInfo) -> bool:
 		return false
 	if info.source is Node and Raid.of(info.source) != null and not Raid.together(info.source, actor):
 		return false
+	# Clanmates stand together: no friendly fire.
+	var mate := info.source as Actor
+	if mate and is_instance_valid(mate) and mate != actor and mate.clan != "" and mate.clan == actor.clan:
+		return false
 	# Attacking gives up your own drop-in protection, and nothing gets
 	# through someone else's.
 	var striker := info.source as Actor

@@ -59,6 +59,8 @@ signal failed(reason: String)
 ## Client: the connection dropped after joining.
 signal disconnected
 ## Client: the server said which port each of its worlds runs on.
+## Client: your clan, or the list of clans, changed (`clan_state`).
+signal clan_changed(state: Dictionary)
 signal routes_changed(routes: Dictionary)
 ## Client: the server's news of its other worlds changed (`world_status`).
 signal world_status_changed(status: Dictionary)
@@ -76,7 +78,7 @@ signal world_invite_accepted(invite: Dictionary)
 signal base_visit_requested(owner_name: String, stash: Array, loadout: Dictionary)
 
 const DEFAULT_PORT := 24565
-const PROTOCOL := 16
+const PROTOCOL := 17
 const StashService := preload("res://core/account/stash_service.gd")
 const Economy := preload("res://core/economy/economy.gd")
 const Human := preload("res://core/visual/human.gd")
@@ -150,6 +152,12 @@ var stash := StashService.new()
 ## Server: presence, contacts, messages, invites and news for the phone. Its
 ## files live in a `social` folder inside the stash's `save_dir`.
 var social := SocialService.new()
+## Server: who is in which clan. Shared between the sessions of one server,
+## and saved beside the accounts.
+var clans := ClanService.new()
+## Client: what the server last said about clans: {"clan": yours or {},
+## "clans": every clan there is}. See `ClanService.snapshot`.
+var clan_state := {}
 ## Client: the phone's view as the server last sent it. Empty until signed in.
 var social_state := {}
 ## Client: the name to sign in with, and the secret that proves the account
@@ -269,6 +277,7 @@ func host(p_world_id: String, port := DEFAULT_PORT, max_players := 8) -> Error:
 		return err
 	is_server = true
 	world_id = p_world_id
+	clans.open(stash.save_dir, stash.persist)
 	social.persist = stash.persist
 	social.save_dir = stash.save_dir.path_join("social")
 	social.load_server_news(stash.save_dir.path_join("news.json"))
@@ -585,7 +594,59 @@ func _sign_in(p_name: String, p_secret: String) -> void:
 		_sent_status = _gather_status()
 		_world_status.rpc_id(peer, _sent_status)
 	_send_account(peer)
+	_send_clans(peer)
 	_social_joined(peer)
+
+
+func _send_clans(peer: int) -> void:
+	_clan.rpc_id(peer, clans.snapshot(_peer_account[peer], func(account_id: String) -> String:
+		return str(stash.snapshot(account_id).get("name", "?"))))
+
+
+## The clan hall: found a clan ("create", name, tag), join one ("join", clan
+## id) or leave yours ("leave"). Refused while your body is in a world where
+## gear is at stake, so nobody changes sides in the middle of a fight.
+@rpc("any_peer", "call_remote", "reliable")
+func _request_clan(action: String, a := "", b := "") -> void:
+	var peer := _api.get_remote_sender_id()
+	if not is_server or not _peer_account.has(peer):
+		return
+	var account_id: String = _peer_account[peer]
+	var result: Dictionary
+	if stash.snapshot(account_id).get("deployed", false):
+		result = {"ok": false, "error": "Not while you are in the field."}
+	elif action == "create":
+		result = clans.create(account_id, a.left(64), b.left(16))
+	elif action == "join":
+		result = clans.join(account_id, a.left(16))
+	elif action == "leave":
+		result = clans.leave(account_id)
+	else:
+		return
+	if not result.ok:
+		_lobby_error.rpc_id(peer, result.error)
+		return
+	# Everyone signed in here sees the new list, and the tag over their head
+	# changes for everyone standing with them.
+	for other: int in _peer_account:
+		_send_clans(other)
+	var actor: Actor = _peer_actor.get(peer)
+	if actor != null and is_instance_valid(actor):
+		_wear_clan(actor, account_id)
+		for other in _joined_peers:
+			_clan_tag.rpc_id(other, _ids[actor], actor.clan, actor.clan_tag)
+
+
+## Server: marks an actor with its account's clan. Only where gear is at
+## stake do clanmates become one side; anywhere else the tag is just worn.
+func _wear_clan(actor: Actor, account_id: String) -> void:
+	var clan_id := clans.clan_of(account_id)
+	actor.clan_tag = clans.tag_of(clan_id)
+	actor.clan = clan_id if _clans_fight_together() else ""
+
+
+func _clans_fight_together() -> bool:
+	return raid != null and raid.world.gear_at_risk and not raid.world.safe_zone
 
 
 ## Lobby: put a stash item in a loadout slot, or "" to empty the slot.
@@ -692,6 +753,8 @@ func _send_spawn(peer: int, actor: Actor) -> void:
 		data = {"kit": state.kit, "picks": state.picks}
 		if actor.has_meta("appearance"):
 			data["look"] = actor.get_meta("appearance")
+		if actor.clan_tag != "":
+			data["clan"] = [actor.clan, actor.clan_tag]
 	else:
 		data = {"seed": raid.bot_seeds.get(actor, 0), "warlord": raid.warlords.has(actor),
 				"faction": actor.faction}
@@ -726,10 +789,13 @@ func _request_join(drop := "") -> void:
 	_joined_peers.erase(peer)
 	_joining_look = look_for_peer(peer)
 	var who: Dictionary = stash.snapshot(account_id)
+	var clan_id := clans.clan_of(account_id)
+	raid.set_team(account_id, clan_id if _clans_fight_together() else "", clans.name_of(clan_id))
 	# Renown is kept under the account, never under a name the client chose.
 	var actor := raid.add_player(deployed.kit, deployed.picks, who.name, account_id, int(who.get("renown", 0)),
 			drop.left(16))
 	_joining_look = {}
+	_wear_clan(actor, account_id)
 	if not safe:
 		_actor_account[actor] = account_id
 	if raid is Arena:
@@ -1132,6 +1198,32 @@ func _world_status(p_status: Dictionary) -> void:
 
 
 @rpc("authority", "call_remote", "reliable")
+func _clan(state: Dictionary) -> void:
+	var mine: Variant = state.get("clan")
+	var listed: Variant = state.get("clans")
+	clan_state = {"clan": mine if typeof(mine) == TYPE_DICTIONARY else {},
+			"clans": listed if typeof(listed) == TYPE_ARRAY else []}
+	clan_changed.emit(clan_state)
+
+
+## A player you can see joined or left a clan.
+@rpc("authority", "call_remote", "reliable")
+func _clan_tag(id: int, clan_id: String, tag: String) -> void:
+	var actor: Actor = _actors.get(id)
+	if actor != null and is_instance_valid(actor):
+		actor.clan = clan_id.left(16)
+		actor.clan_tag = ClanService.clean_tag(tag)
+
+
+## The clan hall: ask to found a clan ("create", name, tag), join one
+## ("join", clan id) or leave yours ("leave"). The answer comes back as a new
+## `clan_state`, or as a `lobby_error`.
+func clan_ask(action: String, a := "", b := "") -> void:
+	if _is_connected() and not account.is_empty():
+		_request_clan.rpc_id(1, action, a, b)
+
+
+@rpc("authority", "call_remote", "reliable")
 func _lobby_error(reason: String) -> void:
 	lobby_error.emit(reason)
 
@@ -1245,6 +1337,10 @@ func _spawn(id: int, kind: String, shown_name: String, node_name: String, at: Ve
 		actor.is_player = id == my_actor_id
 		if data.has("look"):
 			Look.set_appearance(actor, data["look"])
+		var worn: Variant = data.get("clan")
+		if typeof(worn) == TYPE_ARRAY and worn.size() == 2:
+			actor.clan = str(worn[0]).left(16)
+			actor.clan_tag = ClanService.clean_tag(str(worn[1]))
 		raid.add_child(actor)
 		actor.global_position = at
 		Loadout.equip(actor, data.get("kit", []))
