@@ -185,10 +185,10 @@ func _ready() -> void:
 			"heavy_lift": true},
 			"The high ground. Cruise straight over everything, stop dead and hover to shoot steady, coast down to cool. Carries heavy armor without running hotter. Wide turns, loud and hot: heat seekers love it.")
 	register("boots_thruster", "Thruster Boots", Rarity.UNCOMMON, 1000, ["flight_rig", "vendor"],
-			{"thrust_accel": 0.0, "burst_velocity": 10.5, "burst_heat": 34.0, "cool_per_sec": 34.0,
+			{"thrust_accel": 0.0, "burst_velocity": 14.5, "burst_heat": 22.0, "cool_per_sec": 34.0,
 			"cool_delay": 0.3, "burst_push": 11.0, "skim_speed": 15.0, "air_dash_speed": 20.0,
 			"air_dash_heat": 20.0},
-			"Hold jump in the air to skim low over streets and roofs, and stop dead. Near a surface the boots cool; high up they burn out in seconds. Kick up with jump, dash in the air on heat. Steady aim while skimming low.")
+			"Hold jump in the air to skim low over streets and roofs, and stop dead. Kick up with jump: a set of kicks tops a rooftop. The boots only cool near a surface, a roof included; high in the open they burn out in seconds. Dash in the air on heat. Steady aim while skimming low.")
 	register("wings_glide", "Glide Wings", Rarity.RARE, 1000, ["flight_rig"],
 			{"thrust_accel": 0.0, "burst_velocity": 14.0, "burst_heat": 40.0, "launch_once": true,
 			"cool_per_sec": 20.0, "pulse_velocity": 11.0, "pulse_heat": 30.0, "glide_cool": 12.0,

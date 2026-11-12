@@ -57,8 +57,8 @@ const CONTROLS := [
 		["Boost head first (Mk2)", "{sprint} + {move_forward}"],
 	]],
 	["FLYING: THRUSTER BOOTS", [
-		["Kick up and the way you steer", "{jump} in the air"],
-		["Skim low (cools near a surface)", "Hold {jump} in the air"],
+		["Kick up and the way you steer (three reach a roof)", "{jump} in the air"],
+		["Skim low (cools near a street or a roof)", "Hold {jump} in the air"],
 		["Dash on heat", "{dash} in the air"],
 	]],
 	["FLYING: GLIDE WINGS", [
