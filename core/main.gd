@@ -703,7 +703,7 @@ func start_server(world_id: String, port: int, with_plaza := true, bots := -1, s
 			session.stash = sessions[0].stash
 			session.social = sessions[0].social
 		add_child(session)
-		var err := session.host(world.id, next_port)
+		var err := session.host(world.id, next_port, world.max_players)
 		if err != OK:
 			return err
 		print("Server: running %s on port %d" % [world.id, next_port])

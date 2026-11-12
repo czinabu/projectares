@@ -198,7 +198,12 @@ you have.
   site it does not, so they meet in the middle and fight each other as well
   as you. Their fighting keeps the war simmering on its own, and the hotter
   the war gets the more reinforcements both sides bring in from their camps
-  at the rim, up to nearly twice the usual number.
+  at the rim, up to twice the usual number: 60 soldiers on a quiet field,
+  120 at the height of a war.
+- Big battles. An Ashfront server takes 32 players. Soldiers nobody is near
+  are simulated in longer steps, and each player is sent every update only
+  about what is around them, with the far side of the field a few times a
+  second, so a full war fits in a server tick and in a home connection.
 - War intensity. Ashfront keeps a meter of how much fighting is going on.
   Kills and hostile players closing on each other raise it, and it cools when
   things calm down; a full server that is not fighting stays quiet. As it

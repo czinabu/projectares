@@ -81,10 +81,11 @@ func _init() -> void:
 	display_name = "Ashfront"
 	description = "Open battlefield where two armies fight over the wrecks. Always-on PvP, full loot, no safe zones."
 	# A garrison of four at each of the five landmarks, and patrols between them.
-	# Eighteen to an army: two garrisons of four, patrols, and a camp at the rim.
-	bot_count = 36
+	# Thirty to an army: two garrisons of four, patrols, and a camp at the rim.
+	bot_count = 60
 	# A hot war draws in up to this many more.
-	war_reinforcements = 28
+	war_reinforcements = 60
+	max_players = 32
 	bots_contest_sites = true
 	depot_hold_time = 4.0
 
