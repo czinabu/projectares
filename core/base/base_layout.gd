@@ -21,6 +21,8 @@ const KINDS := {
 	"chip_case": {"tag": "ability", "spots": 6, "per_copy": false, "title": "Ability chips"},
 	"bay": {"tag": "vehicle", "spots": 4, "per_copy": true, "title": "Garage"},
 	"supplies": {"tag": "consumable", "spots": 6, "per_copy": false, "title": "Supplies"},
+	# Optics, muzzles, grips and magazines hang on the gunsmith bench's pegboard.
+	"gunsmith": {"tag": "attachment", "spots": 12, "per_copy": false, "title": "Gunsmith bench"},
 	# Anything else worth keeping: materials, relics, augments.
 	"trophy": {"tag": "", "spots": 8, "per_copy": false, "title": "Trophy shelf"},
 }

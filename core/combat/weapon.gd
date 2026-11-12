@@ -41,6 +41,11 @@ func is_aiming() -> bool:
 	return false
 
 
+## How far the view magnifies while aiming (1 for none). Optics raise it.
+func aim_zoom() -> float:
+	return 1.0
+
+
 ## One line telling the player how to use this weapon.
 func controls_hint() -> String:
 	return ""

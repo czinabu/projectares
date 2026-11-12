@@ -22,6 +22,9 @@ const CACHE_TABLE := [
 	{"id": "rifle_carbine", "weight": 3.0},
 	{"id": "frame_runner", "weight": 3.0},
 	{"id": "boots_thruster", "weight": 2.5},
+	{"id": "optic_reflex", "weight": 2.0},
+	{"id": "grip_vertical", "weight": 1.5},
+	{"id": "mag_extended", "weight": 1.5},
 ]
 
 ## Outpost roofs need a flight rig to reach.
@@ -34,8 +37,14 @@ const ROOFTOP_TABLE := [
 	{"id": "frame_trooper", "weight": 8.0},
 	{"id": "chip_barrier", "weight": 6.0},
 	{"id": "boots_thruster", "weight": 5.0},
+	{"id": "muzzle_compensator", "weight": 5.0},
+	{"id": "grip_angled", "weight": 4.0},
+	{"id": "mag_quick", "weight": 4.0},
+	{"id": "muzzle_booster", "weight": 3.0},
 	{"id": "helm_spotter", "weight": 5.0},
 	{"id": "helm_seeker", "weight": 5.0},
+	{"id": "helm_warden", "weight": 5.0},
+	{"id": "helm_ember", "weight": 5.0},
 ]
 
 ## The top of the relay mast: the best and most exposed loot on the map, and
