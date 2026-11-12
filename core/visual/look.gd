@@ -97,8 +97,12 @@ const SKINS := {
 }
 const DEFAULT_SKIN := "raider"
 
-## Gun models picked by item tag, first match wins. Tags, never ids.
+## Gun models picked by item tag, first match wins. Tags, never ids. An
+## optional third value is the length in meters (default `GUN_LENGTH`).
 const GUN_MODELS := [
+	["hand_cannon", "Pistol_1.glb", 0.32],
+	["machine_pistol", "SMG_2.glb", 0.34],
+	["sidearm", "Pistol_1.glb", 0.24],
 	["smg", "SMG_1.glb"],
 	["marksman", "Sniper_2.glb"],
 	["shotgun", "Shotgun_1.glb"],
@@ -782,9 +786,11 @@ func weapon_model(weapon: Weapon) -> Node3D:
 	if not weapon is Gun:
 		return null
 	var file := DEFAULT_GUN
+	var length := GUN_LENGTH
 	for entry: Array in GUN_MODELS:
 		if weapon.item_id != "" and ItemDB.has_tag(weapon.item_id, entry[0]):
 			file = entry[1]
+			length = entry[2] if entry.size() > 2 else GUN_LENGTH
 			break
 	var model := _instance(WEAPONS + file)
 	if model == null:
@@ -792,7 +798,7 @@ func weapon_model(weapon: Weapon) -> Node3D:
 	var holder := Node3D.new()
 	holder.name = "Model"
 	holder.add_child(model)
-	_fit(model, WEAPONS + file, GUN_LENGTH, false)
+	_fit(model, WEAPONS + file, length, false)
 	_weather_model(model, 0.8 if weapon.item_id == "" else 0.5, 0.75)
 	# The packs point guns along +X. Hands hold them pointing along -Z.
 	holder.rotation.y = PI / 2.0

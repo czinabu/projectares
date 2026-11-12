@@ -565,7 +565,7 @@ func _idle_shots(out_dir: String) -> void:
 	var skin: Node = player.get_node("Skin")
 	var gun := -1
 	for i in player.weapons.size():
-		if player.weapons[i] is Gun:
+		if player.weapons[i] is Gun and not player.weapons[i].is_sidearm:
 			gun = i
 	var cam := Camera3D.new()
 	raid.add_child(cam)
