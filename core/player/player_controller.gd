@@ -122,10 +122,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	elif event is InputEventMouseButton and event.pressed \
 			and event.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN]:
-		var count := actor.weapons.size()
-		if count > 1:
-			var step := 1 if event.button_index == MOUSE_BUTTON_WHEEL_DOWN else -1
-			_pending_switch = posmod(actor.active_weapon_index + step, count)
+		var step := 1 if event.button_index == MOUSE_BUTTON_WHEEL_DOWN else -1
+		_pending_switch = actor.cycle_weapon_index(step)
 	elif event.is_action_pressed("toggle_view"):
 		toggle_view()
 	elif event.is_action_pressed("check_wrist"):
@@ -236,12 +234,12 @@ func _physics_process(delta: float) -> void:
 	if cmd.visor_pressed:
 		_visor_level = next_visor_level(actor.visor, _visor_level)
 	cmd.visor_level = _visor_level
-	if Input.is_action_just_pressed("weapon_1"):
-		cmd.switch_weapon = 0
-	elif Input.is_action_just_pressed("weapon_2"):
-		cmd.switch_weapon = 1
-	elif Input.is_action_just_pressed("weapon_3"):
-		cmd.switch_weapon = 2
+	var key_slot := -1
+	for n in range(1, 5):
+		if Input.is_action_just_pressed("weapon_%d" % n):
+			key_slot = actor.weapon_for_key(n)
+	if key_slot >= 0:
+		cmd.switch_weapon = key_slot
 	elif Input.is_action_just_pressed("holster"):
 		# Put the weapon away, or draw the one last put away. Sent as an
 		# index, not a toggle, so a repeated or late packet lands the same.

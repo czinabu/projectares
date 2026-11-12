@@ -159,8 +159,10 @@ PvPvE on a dedicated server, Phase 3 full Ashfront, Phase 4 a second world.
   decide what an item does.
 - Gear behavior comes from the item's `stats` in `ItemDB`, applied by
   `Loadout.equip`. Add a new gun or frame as data, not as a new class.
-- A loadout carries one primary, one melee weapon and one sidearm, in that
-  weapon order (keys 1, 2, 3). Sidearms are firearms also tagged "sidearm";
+- A loadout carries one primary, one melee weapon and one sidearm. Keys are by
+  type, not equip order: 1 primary, 2 sidearm, 3 melee, 4 power or special
+  weapon (`Actor.slot_order`, `weapon_for_key`); the mouse wheel cycles the
+  same order. Sidearms are firearms also tagged "sidearm";
   `Loadout.fits(slot, id)` decides what goes in a slot (a sidearm never fits
   the primary slot), and `Weapon.is_sidearm` marks one once equipped. Running
   the primary dry with the trigger held draws a loaded sidearm instead of
