@@ -11,8 +11,6 @@ const KEY_ACTIONS := {
 	"sprint": KEY_SHIFT,
 	"dash": KEY_Q,
 	"slide": KEY_C,
-	"roll_left": KEY_COMMA,
-	"roll_right": KEY_PERIOD,
 	"interact": KEY_E,
 	"reload": KEY_R,
 	"heal": KEY_H,

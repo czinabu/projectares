@@ -177,6 +177,14 @@ static func stance_from_move(move: Vector2, current: int) -> int:
 	return current
 
 
+## Which way to roll: -1 left, 1 right. Only while flying flat; there the
+## dash key rolls left and the interact key right, as do the thumb buttons.
+static func roll_from_keys(flat: bool, dash_held: bool, interact_held: bool, left_held: bool, right_held: bool) -> int:
+	if not flat:
+		return 0
+	return int(interact_held or right_held) - int(dash_held or left_held)
+
+
 func toggle_stance_control() -> void:
 	stance_control = StanceControl.MOVE if stance_control == StanceControl.MOUSE else StanceControl.MOUSE
 	Profile.melee_control = "move" if stance_control == StanceControl.MOVE else "mouse"
@@ -218,7 +226,14 @@ func _physics_process(delta: float) -> void:
 	cmd.dash = Input.is_action_just_pressed("dash")
 	cmd.slide = Input.is_action_just_pressed("slide")
 	cmd.descend = Input.is_action_pressed("slide")
-	cmd.roll = int(Input.is_action_pressed("roll_right")) - int(Input.is_action_pressed("roll_left"))
+	# Flying flat (gliding or boosting), the dash and interact keys roll the
+	# body instead: there is nothing to dash off or reach for up there. The
+	# mouse thumb buttons roll too.
+	var flat := actor.flight.is_gliding or actor.flight.is_boosting
+	cmd.roll = roll_from_keys(flat, Input.is_action_pressed("dash"), Input.is_action_pressed("interact"),
+			Input.is_action_pressed("roll_left"), Input.is_action_pressed("roll_right"))
+	if flat:
+		cmd.dash = false
 	if cmd.dash and actor.stamina >= actor.dash_stamina:
 		Sfx.play("dash", null, -6.0)
 	cmd.primary = captured and Input.is_action_pressed("fire")
@@ -227,7 +242,7 @@ func _physics_process(delta: float) -> void:
 	cmd.secondary_pressed = captured and Input.is_action_just_pressed("alt_fire")
 	cmd.tertiary_pressed = captured and Input.is_action_just_pressed("heavy")
 	cmd.reload_pressed = Input.is_action_just_pressed("reload")
-	cmd.interact_pressed = Input.is_action_just_pressed("interact")
+	cmd.interact_pressed = Input.is_action_just_pressed("interact") and not flat
 	cmd.heal_pressed = Input.is_action_just_pressed("heal")
 	cmd.ability_pressed = captured and Input.is_action_just_pressed("ability")
 	if Input.is_action_just_pressed("weapon_1"):

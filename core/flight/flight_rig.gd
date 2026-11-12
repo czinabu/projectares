@@ -130,11 +130,11 @@ func controls_hint() -> String:
 		return "Space jump"
 	var parts: Array[String] = ["Space jump"]
 	if thrust_accel > 0.0:
-		parts.append("hold to climb, tap in the air to hover (C sinks, Shift+W boosts, , and . roll)")
+		parts.append("hold to climb, tap in the air to hover (C sinks, Shift+W boosts, Q/E roll)")
 	if burst_velocity > 0.0:
 		parts.append("press again in the air to boost" + (" the way you move" if burst_push > 0.0 else ""))
 	if can_glide():
-		parts.append("hold while falling to glide (steer to bank, look down to dive, up to climb, , and . roll)")
+		parts.append("hold while falling to glide (steer to bank, look down to dive, up to climb, Q/E roll)")
 	return ", ".join(parts)
 
 

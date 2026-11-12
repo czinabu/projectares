@@ -1421,6 +1421,10 @@ func _check_free_flight(p: Actor) -> void:
 	p.cmd.roll = -1
 	copy.apply_array(p.cmd.to_array())
 	check(copy.descend and copy.roll == -1, "descend and roll travel in the network command")
+	check(PlayerController.roll_from_keys(true, true, false, false, false) == -1
+			and PlayerController.roll_from_keys(true, false, true, false, false) == 1
+			and PlayerController.roll_from_keys(false, true, true, true, false) == 0,
+			"the dash and interact keys roll only while flying flat")
 	p.cmd.descend = false
 	p.cmd.roll = 0
 

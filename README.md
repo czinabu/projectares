@@ -22,7 +22,7 @@ skies, animated models and effects (see "How it looks" below).
 | Jump. In the air: hold to climb, tap to light the jets and hover (jetpack); press to kick the way you steer (thruster boots); press to launch, hold while falling to glide (glide wings) | Space |
 | Jetpack hovering: fly with the move keys, Space climbs, C sinks, Shift + W boosts head first wherever you look | |
 | Gliding: steer or turn the view to bank round, look down to dive for speed, look up to climb on it | |
-| Roll the body left / right while gliding or boosting | , and . (or the mouse thumb buttons) |
+| Roll the body left / right while gliding or boosting (they dash and interact the rest of the time) | Q / E (or the mouse thumb buttons) |
 | Use your ability | G |
 | Dash | Q |
 | Slide (while sprinting) | C |
