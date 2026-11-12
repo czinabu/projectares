@@ -88,6 +88,30 @@ new planet is a new folder under `worlds/`.
 - The only place heavy weapons are found.
 - Mid-map bank spots and sign-out create the extraction tension (section 7).
 
+### World events
+
+The warzone already runs one event at a time (supply pods and warlords,
+`Raid.event`). Two bigger events are planned, each built so every rig and
+vehicle has a job:
+
+**Supply meteor** (first, after the friends playtest)
+
+- A streak across the war sky, then an alert on the watch with the impact
+  zone.
+- The crater burns hot for 30 seconds: fliers arrive first but cannot land
+  yet, and bikes and rovers catch up.
+- Cracking the core is a 20 second channel that anyone can contest.
+- Inside: a heavy weapon, a chance at an artifact, and a vehicle blueprint
+  (unlocks a vehicle for the watch).
+
+**Sky Leviathan** (later; needs the jet and the PvE world's boss work)
+
+- An armoured airship that drifts across the map, with weak spots at three
+  heights: engine pods low (boots and bikes), the spine at mid height (wing
+  dives), and turrets on top (jetpacks and the jet).
+- When damaged it drops loot along its path, so ground players can follow
+  it.
+
 ### Gladiator arena
 
 - Tight, competitive duels and matches, with wagers and tournaments.
@@ -430,11 +454,12 @@ Unchanged from the current game (see README "Credits and shops"):
    proposal), the heavy weapon chamber and banking, the sign-out rework, and
    bike tuning against the new cruise speed.
 2. **Friends playtest** on a hosted server (`docs/hosting.md`).
-3. **After the playtest:** the melee air-lunge, the gadget list and the first
+3. **After the playtest:** the supply meteor event, the melee air-lunge, the gadget list and the first
    new gadgets, vehicle utility on the bike (passenger, cargo), loadout
    swapping in the PvE world, then the rest of the vehicle roster (rover,
    mech, jet), and the racing mode (section 9).
-   Artifacts arrive with arena tournaments and PvE dungeons.
+   Artifacts arrive with arena tournaments and PvE dungeons, and the Sky
+   Leviathan with the jet and the PvE world.
 4. **The PvE world:** quests, dungeons and bosses.
 5. **More worlds** as plug-ins.
 

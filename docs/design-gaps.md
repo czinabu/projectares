@@ -20,6 +20,9 @@ rows marked **pre-playtest** come before the friends playtest.
 | PvP world | Built | Ashfront: armies, strongpoints, war intensity, events, renown, full loot. |
 | Heavy weapons only in the PvP world | Built | `power_weapon_rate` is 0 in Frostline and the arena. |
 | Arena with loadouts locked in a bout | Built | The Pit: own loadout, no healing or vehicles, nobody loses gear. |
+| World events: supply pods and warlords | Built | `Raid.event`, one at a time, sped up by the war. |
+| Supply meteor event (hot crater, contested 20 s core channel, heavy weapon, artifact chance, vehicle blueprint) | Missing | First new event, after the friends playtest. Vehicle blueprints are new too. |
+| Sky Leviathan event (airship with weak spots at three heights, drops loot along its path) | Missing | Later: needs the jet and the PvE world's boss work. |
 
 ## Watch
 
