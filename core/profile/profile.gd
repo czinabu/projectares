@@ -16,6 +16,8 @@ const MasteryBook := preload("res://core/progression/mastery_book.gd")
 const StashRules := preload("res://core/account/stash_rules.gd")
 ## The same money rules the server's StashService uses.
 const Economy := preload("res://core/economy/economy.gd")
+## The same home base upgrade rules the server's StashService uses.
+const BaseUpgrades := preload("res://core/base/base_upgrades.gd")
 const Human := preload("res://core/visual/human.gd")
 ## Given once to every profile so there is gear to try loadouts with.
 const WELCOME_CRATE: Array[String] = ["rifle_carbine", "frame_trooper", "medkit", "medkit"]
@@ -42,6 +44,9 @@ var melee_control := "mouse"
 ## Shown to other players online, and the last server address joined.
 var player_name := "Raider"
 var last_server := "127.0.0.1"
+## Where your base's door leads: the address of the server you last joined
+## from the uplink, or "" for a server of your own, started on this computer.
+var home_server := ""
 ## Proves to a server that an online account is yours. Made on first use.
 var online_secret := ""
 ## How your character looks (see `core/visual/human.gd`). Cosmetic only.
@@ -57,6 +62,9 @@ var kills := 0
 var scrip := Economy.STARTING_SCRIP
 var arena_wins := 0
 var arena_losses := 0
+## The home base upgrades owned (ids from `BaseUpgrades`). Never lost. A save
+## from before upgrades existed has none: the starter bunker.
+var base_upgrades: Array[String] = []
 
 
 func _ready() -> void:
@@ -75,6 +83,7 @@ func apply_dev_mode() -> void:
 	use_save(DEV_SAVE_PATH if DevMode.active() else SAVE_PATH)
 	if save_path == DEV_SAVE_PATH:
 		scrip = DevMode.top_up(stash)
+		DevMode.top_up_base(base_upgrades)
 		save()
 
 
@@ -85,7 +94,8 @@ func use_save(path: String) -> void:
 	if path == save_path:
 		return
 	save()
-	var keep := {"player_name": player_name, "last_server": last_server, "online_secret": online_secret,
+	var keep := {"player_name": player_name, "last_server": last_server, "home_server": home_server,
+			"online_secret": online_secret,
 			"melee_control": melee_control, "appearance": appearance}
 	save_path = path
 	reset()
@@ -94,6 +104,7 @@ func use_save(path: String) -> void:
 	grant_gear_crates()
 	player_name = keep.player_name
 	last_server = keep.last_server
+	home_server = keep.home_server
 	online_secret = keep.online_secret
 	melee_control = keep.melee_control
 	appearance = keep.appearance
@@ -113,6 +124,7 @@ func reset() -> void:
 	scrip = Economy.STARTING_SCRIP
 	arena_wins = 0
 	arena_losses = 0
+	base_upgrades.clear()
 
 
 func record_arena(won: bool) -> void:
@@ -191,6 +203,12 @@ func sell_loot() -> Dictionary:
 	return _bank(Economy.sell_loot(stash, scrip))
 
 
+## Buys a home base upgrade (an id from `BaseUpgrades`): checks what it needs
+## and its price, and takes the scrip. Returns {"ok"} or {"ok": false, "error"}.
+func buy_upgrade(upgrade_id: String) -> Dictionary:
+	return _bank(BaseUpgrades.buy(base_upgrades, scrip, upgrade_id))
+
+
 ## Adds `delta` scrip (a cost when negative) for anything outside the
 ## shops, such as a wager. Refuses, changing nothing, if it would go below zero.
 func change_scrip(delta: int) -> bool:
@@ -263,6 +281,7 @@ func save() -> void:
 		"melee_control": melee_control,
 		"player_name": player_name,
 		"last_server": last_server,
+		"home_server": home_server,
 		"online_secret": online_secret,
 		"appearance": appearance,
 		"raids_played": raids_played,
@@ -272,6 +291,7 @@ func save() -> void:
 		"scrip": scrip,
 		"arena_wins": arena_wins,
 		"arena_losses": arena_losses,
+		"base_upgrades": base_upgrades,
 	}, "\t"))
 
 
@@ -301,6 +321,7 @@ func load_profile() -> void:
 	melee_control = "move" if data.get("melee_control", "mouse") == "move" else "mouse"
 	player_name = str(data.get("player_name", "Raider")).left(20)
 	last_server = str(data.get("last_server", "127.0.0.1")).left(80)
+	home_server = str(data.get("home_server", "")).left(80)
 	online_secret = str(data.get("online_secret", "")).left(128)
 	# Kept as chosen: clothing bought on a server is not in the local stash.
 	# What may actually be worn is checked wherever the look is used.
@@ -312,4 +333,5 @@ func load_profile() -> void:
 	scrip = Economy.read_saved(data)
 	arena_wins = maxi(0, int(data.get("arena_wins", 0)))
 	arena_losses = maxi(0, int(data.get("arena_losses", 0)))
+	base_upgrades = BaseUpgrades.clean(data.get("base_upgrades"))
 	validate_loadout()

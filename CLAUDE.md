@@ -601,13 +601,31 @@ without Caleb, and update the gap list when a PR closes a row.
   against its `RangeTarget`s, which stop shots like walls. Nothing on the
   range goes through `Combat.deal` or pays mastery, because nothing there is
   real damage; never add an Actor target that takes some.
+  The base grows with the account's upgrades (`core/base/base_upgrades.gd`,
+  static rules like `Economy`): a list of owned upgrade ids kept beside the
+  stash and scrip (`Profile.base_upgrades` solo, the account's online, sent
+  in the snapshot), never in the stash. `HomeBase.show_gear` takes it as its
+  third argument; none is the starter bunker. `BaseLayout.spots(kind,
+  upgrades)` is how many spots a display kind has, and `HomeBase` seals what
+  is not owned (`_build_gates`: the armory nook's wall, the garage shutter,
+  the range door) behind a `Bulkhead` with its price on it in the room.
+  Using one twice emits `upgrade_requested`; `main.gd` buys through
+  `Profile.buy_upgrade` or `NetSession.buy_upgrade`, and only the server
+  decides online (`StashService.buy_upgrade`). An upgrade never adds combat
+  power or storage. A new room or feature for the base goes behind an entry
+  in `BaseUpgrades.UPGRADES` ("ready": false until it is built) and is gated
+  in `_build_gates`, not built for everyone. Dev mode keeps the base full.
   Using a display only emits `equip_requested`; `main.gd` applies it through
   `Profile` or `NetSession.equip`. Like `Raid`, `HomeBase` has no camera, HUD
   or input code, and its displays are greybox shapes that `Look` dresses
   (any node with the meta `display_item`).
 - The game opens in the world, never on a menu screen. Solo it boots into the
   home base; online, joining a server puts you in its plaza, and a world's
-  lobby is the home base again on the server's stash. `Hub` (`core/ui/hub.gd`)
+  lobby is the home base again on the server's stash. The base's door goes
+  straight out to the plaza with no screen (`main.gd head_out`): it joins the
+  server it remembers (`Profile.home_server`, set by a join at the uplink) or
+  starts one here that runs every world, since worlds are chosen at the
+  plaza's gates, never before going online. `Hub` (`core/ui/hub.gd`)
   is never a main screen: it holds the screens that the base's stations
   (`HomeBase.STATIONS`, sections in `Hub.STATIONS`) show, and the travel
   screen shown while connecting. A new menu feature gets a station (or a

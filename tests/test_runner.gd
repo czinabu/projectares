@@ -11,6 +11,7 @@ const Strongpoint := preload("res://core/war/strongpoint.gd")
 const WarDirector := preload("res://core/war/war_director.gd")
 const RenownLedger := preload("res://core/progression/renown_ledger.gd")
 const BaseLayout := preload("res://core/base/base_layout.gd")
+const BaseUpgrades := preload("res://core/base/base_upgrades.gd")
 const BaseHudScript := preload("res://core/ui/base_hud.gd")
 const LookTests := preload("res://tests/look_tests.gd")
 const RigLookTests := preload("res://tests/rig_look_tests.gd")
@@ -22,6 +23,7 @@ const CustomizerTests := preload("res://tests/customizer_tests.gd")
 const BattlefieldTests := preload("res://tests/battlefield_tests.gd")
 const VisorTests := preload("res://tests/visor_tests.gd")
 const SidearmTests := preload("res://tests/sidearm_tests.gd")
+const BaseUpgradeTests := preload("res://tests/base_upgrade_tests.gd")
 const AttachmentTests := preload("res://tests/attachment_tests.gd")
 const PowerWeaponTests := preload("res://tests/power_weapon_tests.gd")
 const FeelTests := preload("res://tests/feel_tests.gd")
@@ -268,6 +270,7 @@ func _run() -> void:
 	await _test_phone()
 	await _test_dev_mode()
 	await _test_home_base()
+	await BaseUpgradeTests.run(self)
 	await _test_arena()
 	await _test_arena_floor()
 	await _test_online_arena()
@@ -833,8 +836,8 @@ func _test_main_flow() -> void:
 	await frames(2)
 	check(main.base != null and main.raid == null and not main.hub.visible and main.controller != null
 			and main.controller.camera.current, "the game opens in your home base, not on a menu")
-	check(main.base.station("launch") != null and main.base.door.get_prompt().contains("online"),
-			"the base has a launch pad, and its door leads online")
+	check(main.base.station("launch") != null and main.base.door.get_prompt().contains("Head out"),
+			"the base has a launch pad, and its door leads out to the plaza")
 	main.open_station("launch")
 	check(main.hub.visible and main.hub.station == "launch" and main.controller.input_blocked,
 			"the launch pad opens the deploy screen over the base")
@@ -3573,6 +3576,8 @@ func _test_online() -> void:
 			walker.cmd.move = Vector2(0, 1)
 			await frames(90)
 			alpha.raid.player.cmd.move = Vector2.ZERO
+			# On a busy machine the server can be a moment behind the walker.
+			await _wait_until(func() -> bool: return from.distance_to(seen.global_position) > 3.0, 240)
 			await frames(30)
 			var moved := from.distance_to(seen.global_position)
 			check(moved > 3.0, "one player's movement reaches the other through the server (%.1f m)" % moved)
@@ -4633,6 +4638,17 @@ func _test_online_stash() -> void:
 	cara.pick_mastery("rifle", "cut_down")
 	await _wait_until(func() -> bool: return errors.size() == 2, 120)
 	check(errors.size() == 2 and cara.account.mastery.get("picks", {}).is_empty(), "a locked mastery variant is refused")
+	# Home base upgrades are bought on the server too, at its price.
+	check(cara.account.get("base_upgrades", ["?"]) == [] and int(cara.account.scrip) == 500,
+			"a new account starts in the starter bunker")
+	cara.buy_upgrade("ops_consoles")
+	await _wait_until(func() -> bool: return cara.account.get("base_upgrades", []) == ["ops_consoles"], 120)
+	check(cara.account.get("base_upgrades", []) == ["ops_consoles"] and int(cara.account.scrip) == 0,
+			"the server sells a base upgrade and takes the scrip")
+	cara.buy_upgrade("gear_hall")
+	await _wait_until(func() -> bool: return errors.size() == 3, 120)
+	check(errors.size() == 3 and cara.account.get("base_upgrades", []).size() == 1,
+			"the server refuses an upgrade the account cannot pay for")
 
 	cara.deploy()
 	await _wait_until(func() -> bool: return cara.raid != null and cara.raid.player != null, 240)
@@ -5131,8 +5147,39 @@ func _test_plaza_online() -> void:
 		await frames(5)
 		check(main.net == null and main.raid == null and main.base != null and not main.hub.in_lobby(),
 				"the exit leaves the server and takes you home")
-	main.queue_free()
+		check(Profile.home_server == "127.0.0.1:%d" % port, "the door remembers the server you joined at the uplink")
+		# Straight out of the door: no screen, back in that server's plaza.
+		main.base.leave_requested.emit()
+		check(main.hub.station == "" and main.station_screen == null, "the door opens no screen")
+		await _wait_until(func() -> bool: return main.raid != null and main.raid.player != null, 600)
+		check(main.raid != null and main.raid.world.safe_zone and main.net != null and main._server_pid <= 0,
+				"the door of your own base leads straight to the plaza of the server it remembers")
+		main.use_portal("leave")
+		await frames(5)
 	OS.kill(pid)
+	await frames(30)
+	# The remembered server is gone: the door starts a server of your own,
+	# with every world behind the plaza's gates.
+	main.host_port = port + 20
+	main.host_args = PackedStringArray(["--accounts", NET_ACCOUNTS, "--bots", "0"])
+	if main.base != null:
+		main.base.leave_requested.emit()
+		await _wait_until(func() -> bool: return main.raid != null and main.raid.player != null, 3600)
+		check(main.raid != null and main.raid.world.safe_zone and main._server_pid > 0,
+				"with that server gone the door starts one of your own and walks you into its plaza")
+		var open_gates := 0
+		for world in Worlds.raid_worlds():
+			open_gates += 1 if main.net != null and main.net.routes.has(world.id) else 0
+		check(open_gates == Worlds.raid_worlds().size() and open_gates > 0,
+				"a server of your own runs every world, so the gates are where you choose (%d open)" % open_gates)
+		check(Profile.home_server == "127.0.0.1:%d" % port, "the door still remembers the server it could not reach")
+		if main.raid != null:
+			main.use_portal("leave")
+			await frames(5)
+		check(main._server_pid <= 0 and main.base != null, "leaving stops your own server and takes you home")
+	Profile.home_server = ""
+	main._stop_local_server()
+	main.queue_free()
 	await frames(30)
 
 
@@ -5872,14 +5919,14 @@ func _test_online_phone() -> void:
 
 	# A base invite carries the owner's gear for a read-only visit.
 	var visits: Array = []
-	ben.base_visit_requested.connect(func(owner: String, owner_stash: Array, _loadout: Dictionary) -> void:
-		visits.append([owner, owner_stash]))
+	ben.base_visit_requested.connect(func(owner: String, owner_stash: Array, _loadout: Dictionary, upgrades: Array) -> void:
+		visits.append([owner, owner_stash, upgrades]))
 	ana.send_invite("ben", "base")
 	await _wait_until(func() -> bool: return phone.invites().size() == 1, 240)
 	phone.answer_invite(int(phone.invites()[0].id), true)
 	await _wait_until(func() -> bool: return not visits.is_empty(), 240)
-	check(visits.size() == 1 and visits[0][0] == "Ana" and "rifle_carbine" in visits[0][1],
-			"accepting a base invite brings the owner's stash to show")
+	check(visits.size() == 1 and visits[0][0] == "Ana" and "rifle_carbine" in visits[0][1] and visits[0][2] == [],
+			"accepting a base invite brings the owner's stash and base upgrades to show")
 
 	# Presence follows the player into the raid.
 	ana.deploy()
@@ -5973,7 +6020,7 @@ func _test_armory(base: HomeBase) -> void:
 		var label := node as Label3D
 		if label.double_sided and label.billboard == BaseMaterial3D.BILLBOARD_DISABLED:
 			mirrored += 1
-		if label.text == "GUNSMITH BENCH":
+		if label.text == base.bench_name().to_upper():
 			bench_titles += 1
 	check(mirrored == 0, "no wall label can be read mirrored from behind (%d can)" % mirrored)
 	check(bench_titles == 1 and not base.has_node("Displays/Sign_bay") and not base.has_node("Displays/Sign_gunsmith"),
@@ -6130,7 +6177,9 @@ func _test_home_base() -> void:
 	var stash: Array[String] = ["rifle_carbine", "dmr_longshot", "rifle_carbine", "blade_arc", "frame_trooper",
 			"bike_scrapper", "bike_scrapper", "bike_raider", "medkit", "medkit", "medkit", "scrap_metal",
 			"lattice_shard", "chip_blink", "jetpack_mk2", "no_such_item"]
-	var plan := BaseLayout.plan(stash, {"primary": "rifle_carbine", "vehicle": "bike_scrapper"})
+	# The finished base: `_test_base_upgrades` covers the starter bunker.
+	var full := BaseUpgrades.full()
+	var plan := BaseLayout.plan(stash, {"primary": "rifle_carbine", "vehicle": "bike_scrapper"}, full)
 	var by_kind := {}
 	for entry in plan:
 		if not by_kind.has(entry["kind"]):
@@ -6150,17 +6199,17 @@ func _test_home_base() -> void:
 			"loot goes on the trophy shelf and medkits with the supplies")
 	check(plan.filter(func(e: Dictionary) -> bool: return e["id"] == "no_such_item").is_empty(),
 			"unknown items are never shown")
-	check(BaseLayout.plan([], {}).is_empty() and BaseLayout.stored_away(stash).is_empty(),
+	check(BaseLayout.plan([], {}, full).is_empty() and BaseLayout.stored_away(stash, full).is_empty(),
 			"an empty stash is an empty base, and nothing is stored away while it fits")
 	var many: Array[String] = []
 	for i in 6:
 		many.append("bike_scrapper")
-	check(BaseLayout.plan(many, {}).size() == 4 and BaseLayout.stored_away(many) == {"bay": 2},
+	check(BaseLayout.plan(many, {}, full).size() == 4 and BaseLayout.stored_away(many, full) == {"bay": 2},
 			"a full garage keeps the rest in storage")
 
 	print("Home base room")
 	var base := HomeBase.new()
-	base.show_gear(stash, {"primary": "rifle_carbine"})
+	base.show_gear(stash, {"primary": "rifle_carbine"}, full)
 	add_child(base)
 	await frames(30)
 	check(base.displays.size() == plan.size(), "the room builds one display per planned spot")
@@ -6266,6 +6315,7 @@ func _test_home_base() -> void:
 	Profile.welcome_granted = true
 	Profile.add_to_stash(["rifle_carbine", "dmr_longshot", "frame_bulwark", "bike_scrapper", "alloy_ingot"])
 	Profile.equip("primary", "rifle_carbine")
+	Profile.base_upgrades = BaseUpgrades.full()
 	var main: Node = load("res://scenes/main.tscn").instantiate()
 	add_child(main)
 	await frames(2)
@@ -6370,10 +6420,25 @@ func _test_home_base() -> void:
 	check(main.hub._sections["mastery"].visible and not main.hub._sections["loadout"].visible,
 			"a station shows only its own part of the old menu")
 	main.hub.close()
-	main.base.leave_requested.emit()
-	await frames(3)
-	check(main.base != null and main.hub.station == "uplink", "the door of your own base opens the uplink to play online")
+	check(main.base.door.get_prompt().contains(Worlds.social_world().display_name),
+			"the door of your own base says it leads out to the plaza")
+	main.open_station("uplink")
+	check(main.hub.station == "uplink" and main.hub._sections["online"].find_children("*", "OptionButton", true, false).is_empty(),
+			"the uplink no longer asks for a map: worlds are picked at the plaza's gates")
 	main.hub.close()
+	var door_path := "user://test_door_%d.json" % Time.get_ticks_usec()
+	var real_path := Profile.save_path
+	Profile.save_path = door_path
+	Profile.persist = true
+	Profile.home_server = "10.0.0.7:4000"
+	Profile.save()
+	Profile.home_server = ""
+	Profile.load_profile()
+	check(Profile.home_server == "10.0.0.7:4000", "the profile remembers the server your door leads to")
+	Profile.persist = false
+	Profile.save_path = real_path
+	Profile.home_server = ""
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(door_path))
 	# A server's stash is shown while in its lobby, and the local one is left alone.
 	main.hub.update_account({"name": "Vex", "stash": ["blade_arc", "bike_raider"], "loadout": {"melee": "blade_arc"},
 			"mastery": {}, "raids_played": 0, "raids_extracted": 0, "kills": 0})
@@ -6391,10 +6456,11 @@ func _test_home_base() -> void:
 	main.leave_base()
 	main.hub.leave_lobby()
 	await frames(3)
-	main.visit_base("Kestrel", ["lattice_shard", "hammer_breaker"], {"melee": "hammer_breaker"})
+	main.visit_base("Kestrel", ["lattice_shard", "hammer_breaker"], {"melee": "hammer_breaker"}, ["trophy_hall"])
 	await frames(5)
 	check(main.base != null and main.base.read_only and main.base.owner_name == "Kestrel"
-			and main.base.displays.size() == 2, "someone else's base can be visited")
+			and main.base.displays.size() == 2 and main.base.upgrades == ["trophy_hall"],
+			"someone else's base can be visited, with the upgrades they have")
 	main.base.displays[0].interact(main.base.player)
 	main.base.displays[1].interact(main.base.player)
 	check(Profile.equipped("melee") == "", "visiting never changes your own loadout")

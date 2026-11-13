@@ -13,8 +13,8 @@ extends Control
 ## keeps for you while you are in its lobby (`enter_lobby`).
 
 signal deploy_requested(world_id: String)
-## Start a server on this machine running `world_id`, then join it.
-signal host_requested(world_id: String)
+## Start a server on this machine, running every world, then join it.
+signal host_requested
 ## Join the server at `address` ("host" or "host:port").
 signal join_requested(address: String)
 ## In a server's lobby: change the loadout or a mastery pick there, deploy
@@ -66,7 +66,6 @@ var character: CharacterPanel
 var _online_status: Label
 var _name_edit: LineEdit
 var _address_edit: LineEdit
-var _host_world: OptionButton
 var _stash_title: Label
 var _solo_box: VBoxContainer
 var _connect_box: VBoxContainer
@@ -222,12 +221,23 @@ func _section(box: VBoxContainer, id: String) -> VBoxContainer:
 
 ## Opens what a station in the home base offers (a key of `STATIONS`) on
 ## this screen. Esc or the button steps away again.
-func open_station(id: String) -> void:
+## `also` names other stations whose sections this console shows as well (a
+## starter base's shared consoles, see `HomeBase.also_shows`).
+func open_station(id: String, also: Array = []) -> void:
 	if not STATIONS.has(id):
 		return
 	station = id
-	_show_only(STATIONS[id]["sections"])
-	_title.text = str(HomeBase.STATIONS[id]["title"]).to_upper() if HomeBase.STATIONS.has(id) else id.to_upper()
+	var sections: Array = STATIONS[id]["sections"].duplicate()
+	var names: Array[String] = [str(HomeBase.STATIONS[id]["title"]) if HomeBase.STATIONS.has(id) else id]
+	for other: Variant in also:
+		if not STATIONS.has(other):
+			continue
+		names.append(str(HomeBase.STATIONS[other]["title"]) if HomeBase.STATIONS.has(other) else str(other))
+		for section: String in STATIONS[other]["sections"]:
+			if section not in sections:
+				sections.append(section)
+	_show_only(sections)
+	_title.text = " AND ".join(names).to_upper()
 	_title.add_theme_font_size_override("font_size", 30)
 	_backdrop.visible = false
 	_shade.visible = true
@@ -400,8 +410,8 @@ func _text(text: String, font_size: int, color: Color) -> Label:
 func _build_online(box: VBoxContainer) -> void:
 	box.add_child(_text("ONLINE (EARLY TEST)", 20, Color(1.0, 0.55, 0.25)))
 	box.add_child(_text(
-		"Fight in the same world as other people. Host starts a server on this computer and joins it.\n"
-		+ "Others on your network join with your computer's address.",
+		"Your base's door leads to the server you used last, or to one of your own.\n"
+		+ "Join a friend here by their computer's address; the door remembers it.",
 		13, Color(0.65, 0.65, 0.65)))
 	var name_row := HBoxContainer.new()
 	var name_label := _text("Your name", 16, Color(0.85, 0.85, 0.85))
@@ -417,18 +427,17 @@ func _build_online(box: VBoxContainer) -> void:
 	box.add_child(name_row)
 
 	var host_row := HBoxContainer.new()
-	_host_world = OptionButton.new()
-	_host_world.custom_minimum_size = Vector2(170, 0)
-	for world in Worlds.raid_worlds():
-		_host_world.add_item(world.display_name)
-		_host_world.set_item_metadata(_host_world.item_count - 1, world.id)
-	host_row.add_child(_host_world)
+	var host_label := _text("Your own server", 16, Color(0.85, 0.85, 0.85))
+	host_label.custom_minimum_size = Vector2(170, 0)
+	host_label.autowrap_mode = TextServer.AUTOWRAP_OFF
+	host_row.add_child(host_label)
 	var host := Button.new()
-	host.text = "Host a world and join it"
+	host.text = "Host here and head out"
 	host.custom_minimum_size = Vector2(330, 40)
 	host.pressed.connect(func() -> void:
+		Profile.home_server = ""
 		Profile.save()
-		host_requested.emit(_host_world.get_item_metadata(_host_world.selected)))
+		host_requested.emit())
 	host_row.add_child(host)
 	box.add_child(host_row)
 
@@ -439,7 +448,7 @@ func _build_online(box: VBoxContainer) -> void:
 	_address_edit.custom_minimum_size = Vector2(170, 0)
 	join_row.add_child(_address_edit)
 	var join := Button.new()
-	join.text = "Join a world at this address"
+	join.text = "Join the server at this address"
 	join.custom_minimum_size = Vector2(330, 40)
 	join.pressed.connect(func() -> void:
 		Profile.last_server = _address_edit.text.strip_edges()
@@ -523,6 +532,16 @@ func _show_sections() -> void:
 
 func stash_items() -> Array:
 	return account.get("stash", []) if in_lobby() else Profile.stash
+
+
+## The home base upgrades on show: the server's account's, or the profile's.
+func base_upgrades() -> Array:
+	return account.get("base_upgrades", []) if in_lobby() else Profile.base_upgrades
+
+
+## The scrip on show: the server's account's, or the profile's.
+func scrip() -> int:
+	return int(account.get("scrip", 0)) if in_lobby() else Profile.scrip
 
 
 func equipped(slot: String) -> String:

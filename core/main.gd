@@ -22,6 +22,8 @@ extends Node
 ## unless given); `--no-arena` leaves it out.
 
 const JOIN_TIMEOUT := 12.0
+## A server started here runs every world, and needs a while before it listens.
+const HOST_JOIN_ATTEMPTS := 12
 ## The solo player's renown key in a raid, so it carries across their lives.
 const LOCAL_OWNER := "local"
 const StashRules := preload("res://core/account/stash_rules.gd")
@@ -40,6 +42,7 @@ const ClanPanel := preload("res://core/social/clan_panel.gd")
 const PLAZA_PLAYERS := 32
 const SHOP_PANEL := "res://core/economy/shop_panel.gd"
 const Economy := preload("res://core/economy/economy.gd")
+const BaseUpgrades := preload("res://core/base/base_upgrades.gd")
 ## DEV MODE: temporary, see `core/dev/dev_mode.gd`.
 const DevMode := preload("res://core/dev/dev_mode.gd")
 ## DEV MODE: where a dev server keeps its accounts, apart from real ones.
@@ -85,6 +88,16 @@ var _join_address := ""
 var _join_port := NetSession.DEFAULT_PORT
 ## Online: the raid lobby's port, while visiting that server's arena.
 var _lobby_port := -1
+## Heading out by the base's door to a remembered server: if it cannot be
+## reached, a server of your own is started instead.
+var _door_fallback := false
+## Where a server started from here listens, and anything more to start it
+## with (a test keeps its accounts apart this way).
+var host_port := NetSession.DEFAULT_PORT
+var host_args := PackedStringArray()
+## The address typed at the uplink, kept as the door's destination once the
+## server has let you in.
+var _remember_address := ""
 ## The local player's last life, while they are down.
 var _death_result := {}
 ## Time.get_ticks_msec() from which a dead player may drop back in.
@@ -118,7 +131,7 @@ func _ready() -> void:
 	add_child(_travel)
 	hub.closed.connect(_on_station_closed)
 	hub.deploy_requested.connect(start_raid)
-	hub.host_requested.connect(host_and_join)
+	hub.host_requested.connect(host_and_join.bind(""))
 	hub.join_requested.connect(join_online)
 	hub.online_equip_requested.connect(func(slot: String, item_id: String) -> void:
 		if net:
@@ -173,7 +186,7 @@ func go_home(result := {}) -> void:
 	if base != null and base.read_only:
 		leave_base()
 	if base == null:
-		_open_base(hub.stash_items(), hub.current_loadout(), "")
+		_open_base(hub.stash_items(), hub.current_loadout(), "", hub.base_upgrades())
 	else:
 		_refresh_base()
 	_update_door()
@@ -187,13 +200,14 @@ func enter_base() -> void:
 
 
 ## Opens someone else's base to look around. Nothing in it can be equipped.
-## `stash` and `loadout` are that player's, as their server reports them.
-func visit_base(owner_name: String, stash: Array, loadout: Dictionary) -> void:
-	_open_base(stash, loadout, owner_name if owner_name != "" else "Raider")
+## `stash`, `loadout` and `upgrades` (their base's upgrades, so you see the
+## base they have built) are that player's, as their server reports them.
+func visit_base(owner_name: String, stash: Array, loadout: Dictionary, upgrades: Array = []) -> void:
+	_open_base(stash, loadout, owner_name if owner_name != "" else "Raider", upgrades)
 	_update_door()
 
 
-func _open_base(stash: Array, loadout: Dictionary, owner_name: String) -> void:
+func _open_base(stash: Array, loadout: Dictionary, owner_name: String, upgrades: Array = []) -> void:
 	if base != null or raid != null:
 		return
 	hub.close()
@@ -201,9 +215,12 @@ func _open_base(stash: Array, loadout: Dictionary, owner_name: String) -> void:
 	base.name = "HomeBase"
 	base.owner_name = owner_name
 	base.read_only = owner_name != ""
-	base.show_gear(stash, loadout)
+	base.show_gear(stash, loadout, upgrades)
+	if not base.read_only:
+		base.set_scrip(hub.scrip())
 	add_child(base)
 	base.equip_requested.connect(_on_base_equip)
+	base.upgrade_requested.connect(_on_base_upgrade)
 	base.leave_requested.connect(_on_base_door)
 	base.station_requested.connect(open_station)
 	base.player_replaced.connect(func(_actor: Actor) -> void: _attach_base_view())
@@ -258,11 +275,11 @@ func _update_door() -> void:
 	elif hub.in_lobby():
 		base.door_text = hub.leave_text()
 	else:
-		base.door_text = "Head out: play online"
+		base.door_text = "Head out to %s" % _outside_name()
 
 
-## The door: home from a visit, out of a server's lobby, or online from your
-## own base (the uplink).
+## The door: home from a visit, out of a server's lobby, or out into the
+## plaza from your own base.
 func _on_base_door() -> void:
 	if base == null:
 		return
@@ -272,7 +289,27 @@ func _on_base_door() -> void:
 	elif hub.in_lobby():
 		leave_server()
 	else:
-		open_station("uplink")
+		head_out()
+
+
+## What is outside the base's door: the social world, by its own name.
+func _outside_name() -> String:
+	var plaza := Worlds.social_world()
+	return plaza.display_name if plaza != null else "the server"
+
+
+## Out of your own base by its door, with no screen in the way: to the server
+## the door remembers (`Profile.home_server`, set at the uplink), else to a
+## server of your own. Worlds are chosen out there, at its gates.
+func head_out() -> void:
+	if raid != null or net != null or base == null or base.read_only:
+		return
+	_show_travel("Heading out to %s..." % _outside_name())
+	if Profile.home_server != "":
+		_door_fallback = true
+		join_online(Profile.home_server, false)
+	else:
+		host_and_join()
 
 
 ## A station in your base opens its screen over the room.
@@ -286,7 +323,7 @@ func open_station(id: String) -> void:
 	var console := base.station(id)
 	if console == null:
 		return
-	hub.open_station(id)
+	hub.open_station(id, base.also_shows(id))
 	if not hub.visible:
 		return
 	# The screen comes up on the console itself and the view moves in to it.
@@ -315,6 +352,9 @@ func _unmount_station_screen() -> void:
 ## Stepped away from a station: the room takes the mouse back.
 func _on_station_closed() -> void:
 	_unmount_station_screen()
+	# The trader may have changed what you can afford.
+	if base != null and not base.read_only:
+		base.set_scrip(hub.scrip())
 	if base_hud:
 		base_hud.visible = true
 	if controller != null and is_instance_valid(controller) and not phone.is_open:
@@ -343,10 +383,26 @@ func _on_base_equip(slot: String, item_id: String) -> void:
 	_refresh_base()
 
 
+## An upgrade confirmed at its bulkhead in the base: bought from the profile
+## solo, asked of the server online (which answers with a fresh account).
+func _on_base_upgrade(upgrade_id: String) -> void:
+	if base == null or base.read_only:
+		return
+	if hub.in_lobby():
+		if net:
+			net.buy_upgrade(upgrade_id)
+		return
+	var result := Profile.buy_upgrade(upgrade_id)
+	if base_hud:
+		base_hud.show_notice("%s is yours." % BaseUpgrades.title(upgrade_id) if result.ok else str(result.get("error", "")))
+	_refresh_base()
+
+
 ## Shows the base whatever the hub would show now.
 func _refresh_base() -> void:
 	if base and not base.read_only:
-		base.show_gear(hub.stash_items(), hub.current_loadout())
+		base.set_scrip(hub.scrip())
+		base.show_gear(hub.stash_items(), hub.current_loadout(), hub.base_upgrades())
 
 
 # ----------------------------------------------------------------- arena ----
@@ -719,14 +775,15 @@ func _on_world_invite_accepted(_invite: Dictionary) -> void:
 
 
 ## Accepted an invite to someone's home base.
-func _on_base_visit_requested(owner_name: String, owner_stash: Array, owner_loadout: Dictionary) -> void:
+func _on_base_visit_requested(owner_name: String, owner_stash: Array, owner_loadout: Dictionary,
+		owner_upgrades: Array = []) -> void:
 	if raid != null:
 		phone.show_notice("Finish this run first, then visit %s's base." % owner_name)
 		return
 	# In a base (yours or someone else's): walk out and into theirs.
 	leave_base()
 	phone.close()
-	visit_base(owner_name, owner_stash, owner_loadout)
+	visit_base(owner_name, owner_stash, owner_loadout, owner_upgrades)
 
 
 # ---------------------------------------------------------------- online ----
@@ -826,12 +883,19 @@ func start_server(world_id: String, port: int, with_plaza := true, bots := -1, s
 
 
 ## Starts a server on this machine as a second process, then joins it.
-func host_and_join(world_id: String) -> void:
+## `world_id` "" runs every world behind the plaza's gates, which is what the
+## base's door and the uplink ask for; naming one runs only that world.
+func host_and_join(world_id := "") -> void:
 	if raid != null or net != null:
 		return
+	_door_fallback = false
+	_remember_address = ""
 	_stop_local_server()
 	var args := PackedStringArray(["--headless", "--path", ProjectSettings.globalize_path("res://"),
-			"--", "--server", "--world", world_id])
+			"--", "--server", "--port", str(host_port)])
+	args.append_array(host_args)
+	if world_id != "":
+		args.append_array(["--world", world_id])
 	if DevMode.active():  # DEV MODE: your account gets everything on your own server
 		args.append_array(["--dev-host", Profile.player_name])
 	_server_pid = OS.create_process(OS.get_executable_path(), args)
@@ -839,13 +903,16 @@ func host_and_join(world_id: String) -> void:
 		hub.set_online_status("Could not start a server on this computer.")
 		return
 	hub.set_online_status("Starting a server...")
-	_begin_join("127.0.0.1", NetSession.DEFAULT_PORT, 8)
+	_begin_join("127.0.0.1", host_port, HOST_JOIN_ATTEMPTS)
 
 
-## `address` is "host" or "host:port".
-func join_online(address: String) -> void:
+## `address` is "host" or "host:port". With `remember` the base's door leads
+## there from now on, once the server has let you in.
+func join_online(address: String, remember := true) -> void:
 	if raid != null or net != null:
 		return
+	_door_fallback = _door_fallback and not remember
+	_remember_address = address.strip_edges() if remember else ""
 	var host := address.strip_edges()
 	var port := NetSession.DEFAULT_PORT
 	if ":" in host:
@@ -898,15 +965,21 @@ func _try_join() -> void:
 		_on_online_failed("Could not open a connection (%s)." % error_string(err))
 		return
 	# A server that never answers should not leave the hub waiting forever.
-	var session := net
+	# By id: the session may be gone by then (a trip through a gate frees it).
+	var session := net.get_instance_id()
 	get_tree().create_timer(JOIN_TIMEOUT).timeout.connect(func() -> void:
-		if net == session and net.account.is_empty():
+		if net != null and net.get_instance_id() == session and net.account.is_empty():
 			_on_online_failed("The server did not answer."))
 
 
 ## Signed in: the hub becomes that server's lobby.
 func _on_online_signed_in(account: Dictionary) -> void:
 	_join_attempts = 0
+	_door_fallback = false
+	if _remember_address != "":
+		Profile.home_server = _remember_address
+		Profile.save()
+		_remember_address = ""
 	if _lobby_port > 0:
 		# Signed in to the arena: walk straight into the stands.
 		hub.update_account(account)
@@ -1125,6 +1198,15 @@ func _on_online_failed(reason: String) -> void:
 		if net == null and raid == null:
 			_try_join()
 		return
+	_remember_address = ""
+	if _door_fallback and _lobby_port < 0 and raid == null:
+		# The server the door remembers is not there: start your own instead.
+		# The address stays remembered for the next time you head out.
+		host_and_join()
+		if net != null:
+			hub.set_online_status("Could not reach %s. Starting a server of your own..." % Profile.home_server)
+			return
+	_door_fallback = false
 	_stop_local_server()
 	_plaza_port = -1
 	hub.leave_lobby()
