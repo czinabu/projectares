@@ -5448,6 +5448,24 @@ func _test_phone_controls(phone: CanvasLayer) -> void:
 		if child is Button and (child as Button).text.contains("every key"):
 			link = true
 	check(link, "settings link to the Controls app")
+	# Tab flips the camera; Esc opens the phone at Settings only when the
+	# mouse is captured by the world, and closes it again.
+	check(PhoneScript.key_name("toggle_view") == "Tab" and PhoneScript.key_name("scoreboard") == "Q",
+			"Tab switches the camera and Q holds the scoreboard")
+	phone.close()
+	var esc_key := InputEventKey.new()
+	esc_key.keycode = KEY_ESCAPE
+	esc_key.pressed = true
+	var old_mode := Input.mouse_mode
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	check(not phone.opens_on_escape(esc_key), "Esc leaves the phone shut where a screen has the mouse")
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	check(phone.opens_on_escape(esc_key), "Esc is the phone's when the world has the mouse")
+	phone._unhandled_input(esc_key)
+	check(phone.is_open and phone.app == "settings", "Esc in the world opens the phone at Settings")
+	phone._unhandled_input(esc_key)
+	check(not phone.is_open, "Esc again closes the phone")
+	Input.mouse_mode = old_mode
 
 
 func _test_phone_view() -> void:

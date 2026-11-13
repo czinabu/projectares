@@ -115,7 +115,7 @@ const CONTROLS := [
 	]],
 	["PHONE AND MOUSE", [
 		["Open or close the phone", "{phone}"],
-		["Free the mouse, step back from a console", "Esc"],
+		["Open the phone at Settings, or close it; step back from a console", "Esc"],
 		["Mirror app: choose, then scroll", "Arrows or W A S D"],
 	]],
 ]
@@ -182,8 +182,20 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif is_open and event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
 		close()
 		get_viewport().set_input_as_handled()
+	elif not is_open and opens_on_escape(event):
+		open("settings")
+		get_viewport().set_input_as_handled()
 	elif mirror_open() and event is InputEventKey and event.pressed and _mirror_key(event.keycode):
 		get_viewport().set_input_as_handled()
+
+
+## Esc in the world opens the phone at Settings. Only when nothing else has
+## the mouse: a station, booth or shop shows the mouse and takes Esc for
+## itself, so Esc there steps away as before.
+func opens_on_escape(event: InputEvent) -> bool:
+	return event is InputEventKey and event.pressed and not event.echo \
+			and event.keycode == KEY_ESCAPE \
+			and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
 
 
 ## The Mirror app's keys: up and down (or W and S) pick a choice, left and
