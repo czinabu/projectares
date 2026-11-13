@@ -205,8 +205,11 @@ without Caleb, and update the gap list when a PR closes a row.
   the stand with `--idle-only`.
   Holstered weapons are worn, not hidden (`ActorSkin.stow_place`): a primary
   gun or two-handed weapon slung across the back, outside a worn back rig
-  (down the side of a rig with a screen on its back, so a jetpack's heat
-  gauge stays in view), a
+  (on a jetpack or wing pack, clamped to the weapon rail down its side
+  instead, gun right and long blade left, leaning out in a slight V, so the
+  heat gauge on its back stays in view; a wing pack's rails stand behind
+  its wing slots: the rig model's "MountL/R" markers, and the
+  skin rests the weapon's near side on the clamps), a
   sidearm muzzle down on the right hip, and a one-handed blade on the left
   hip. These are view-only copies; the weapon's own node stays on the hand.
   A switch is shown as the hand putting one away and drawing the next
@@ -302,15 +305,27 @@ without Caleb, and update the gap list when a PR closes a row.
   own way a rig stays up for minutes, against type it overheats in seconds.
   Shooting from the air spreads wider (`Actor.air_aim`) except in a rig's
   steady state. The keys fly every rig and the mouse only looks and aims
-  (Caleb's call): wings bank on the strafe keys and dive or pull up on
-  forward and back (`Actor.glide_trim`); forward with no strafe key banks
-  the glide round onto the view's heading (`Actor.glide_steer`), so
-  "forward" is always the way you face, and with no keys the glide flies
-  straight on wherever you look. Gliding, Shift + S (wings pulled up) boosts
-  upward instead of back (Caleb's call). The glide's attitude is held in the
-  world while the view turns, so spinning the camera never drags the body
-  round (`ActorSkin._update_glide`). And a boost runs along the view's
-  heading, climbing only on jump and descend, never on the view's pitch.
+  (Caleb's call), with one exception: wings fly where you look, like a
+  bird's (Caleb's call, so you never fly sideways to your view). They bank
+  round onto the view's heading (`Actor.glide_steer`), the strafe keys roll
+  a harder turn, and forward and back dive or pull up (`Actor.glide_trim`),
+  never the view's pitch. Holding free look (V, `ActorCommand.free_look`,
+  Caleb's call) the wings fly straight on and the view looks and aims
+  anywhere; let go and they come round onto the view. In free look the
+  body twists round its length to face the view, so looking behind lays it
+  on its back, a backstroke, to shoot behind (`ActorSkin._look_roll`, view
+  only; check with `visual_check.tscn -- <dir> --flight-only`). A glide flies like a wing (`Actor._glide_velocity`):
+  speed is momentum, a turn costs speed, a bank sinks faster, pulling up in a
+  turn tightens it, and below the stall speed the wings stall
+  (`Actor.glide_stalled`: they barely turn and drop at `stall_sink` until the
+  nose drops and the speed comes back). Gliding, Shift is a wing boost
+  instead of a dash (`FlightRig.glide_boost`): it thrusts you the way you
+  face and the glide keeps that speed, and Shift + S boosts upward
+  (`glide_boost_climb`); wings never dash sideways. The glide's attitude is
+  held in the world while the view turns, so spinning the camera never
+  drags the body round (`ActorSkin._update_glide`). And a jetpack boost
+  runs along the view's heading, climbing only on jump and descend, never
+  on the view's pitch.
   Every rig air dashes on Shift + a move key (`ActorCommand.sprint_pressed`,
   `Actor._air_dash`, tuned by the rig's `air_dash_*` stats): the dash is
   added on top of the rig's own flight and taken back off, so a glide or a
@@ -391,7 +406,8 @@ without Caleb, and update the gap list when a PR closes a row.
   bike's lean (`ActorSkin.ride_frame`). The left hand keeps its grip; the
   right takes its grip only with nothing in it, holds a gun out toward the
   aim, and leaves a blade to its usual hold, so melee windups still show.
-  Back-slung weapons ride higher up the back (`ride_sling_lift`). A new
+  Back-slung weapons ride higher up the back (`ride_sling_lift`); weapons
+  clamped to a back rig's rails stay in their clamps. A new
   vehicle type sets those anchor points for its model. Check by eye:
   `visual_check.tscn -- <dir> --ride-only`.
 - Toy vehicles: a vehicle a player owns in a world rides on their watch as

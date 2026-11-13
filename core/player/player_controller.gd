@@ -392,6 +392,7 @@ func _physics_process(delta: float) -> void:
 		cmd.sprint = false
 		cmd.jump = false
 		cmd.descend = false
+		cmd.free_look = false
 		cmd.primary = false
 		cmd.secondary = false
 		cmd.switch_weapon = -1
@@ -417,6 +418,7 @@ func _physics_process(delta: float) -> void:
 	cmd.dash = Input.is_action_just_pressed("dash")
 	cmd.slide = Input.is_action_just_pressed("slide")
 	cmd.descend = Input.is_action_pressed("slide")
+	cmd.free_look = Input.is_action_pressed("free_look")
 	if cmd.dash and actor.stamina >= actor.dash_stamina:
 		Sfx.play("dash", null, -6.0)
 	elif cmd.sprint_pressed and not actor.is_on_floor() and actor.flight.enabled and not actor.flight.overheated:

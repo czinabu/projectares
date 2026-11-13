@@ -77,10 +77,17 @@ new planet is a new folder under `worlds/`.
    It is really a separate little game with its own controls and balance, so
    it waits.
 
-**Expanding the hub comes first.** The Concourse is a walled courtyard and
-has no room for these. It needs a skyline tall and open enough for ring
-courses (and a bike track at ground level), a screens area where people
-gather to watch, and a space set aside for the RC arena.
+**Expanding the hub comes first.** The Concourse was a walled courtyard with
+no room for these. It is now an open district on a high deck with no wall
+(Caleb's call: grand, open and sci-fi, not industrial): a lit beacon spire
+at the centre, a kiosk arcade round it, slim towers with landing decks and
+skybridges at 15 m so the boots can hop the skyline while the tower tops are
+for wings and jetpacks, a gate terrace with spare arches for new worlds, a
+bike loop round the edge, a big-screen amphitheatre to gather and watch, and
+a pad kept clear for the RC arena. Everything is within about 25 seconds'
+walk of the arrival pad. It looks sci-fi, not industrial: dark glass and
+metal with lit seams instead of brick and punched windows, a glass arcade
+canopy, holo signs over every kiosk and floating holo-ads.
 
 ### Home base
 
@@ -342,8 +349,12 @@ Flying controls (Caleb's call): the keys fly every rig and the mouse only
 looks and aims. Space climbs, kicks, launches or glides (by rig), C sinks or
 coasts. Shift + a move key is an air dash that way on every rig, for a little
 heat (Shift alone dashes forward); holding Shift + W on a jetpack keeps
-boosting. Gliding, Shift + S boosts upward instead of back (the wings are
-pulled up), and W turns the glide onto the way you face. Q and E fly nothing. Every rig dashes, so the dash is not an
+boosting. Wings are the exception to the mouse only looking: they fly
+where you look, like a bird, with momentum (hold V to free look while
+they fly straight on). Turns cost speed and pulling up
+hard in a turn stalls them. Gliding, Shift is a wing boost that thrusts you
+the way you face and keeps the speed, and Shift + S boosts upward; wings
+never dash sideways. Q and E fly nothing. Every rig dashes, so the dash is not an
 edge by itself: boots dash furthest (20 m/s for 0.3 s, 20 heat), jetpacks
 middling (16 m/s for 0.25 s, 15 heat), wings shortest but cheapest (12 m/s
 for 0.25 s, 10 heat, a barrel roll sideways). The stamina dash (Alt) is
