@@ -4019,10 +4019,17 @@ func _test_online() -> void:
 				and bravo.containers().size() == alpha.containers().size(),
 				"the other client sees them return, and they still see the world")
 		# The watch's summon, online: Alpha materializes a weapon looted from the bag.
+		# Prefer one unlike the weapon worn in its slot, so the swap is visible.
 		var looted_weapon := ""
 		for id in me.inventory.items:
-			if Loadout.summonable(id) and looted_weapon == "":
+			if not Loadout.summonable(id):
+				continue
+			var worn_at := Loadout.worn_index(me, Loadout.weapon_slot(id))
+			var differs: bool = worn_at < 0 or me.weapons[worn_at].item_id != id
+			if looted_weapon == "" or differs:
 				looted_weapon = id
+				if differs:
+					break
 		check(looted_weapon != "", "the bag held a weapon to summon (%s)" % looted_weapon)
 		if looted_weapon != "" and back.call():
 			var slot := Loadout.weapon_slot(looted_weapon)
@@ -4034,10 +4041,12 @@ func _test_online() -> void:
 			await frames(30)
 			check(me.weapons[Loadout.worn_index(me, slot)].item_id == worn_before and me.inventory.items.size() == pack_before,
 					"the server refuses a weapon that is not in the pack it keeps")
+			var swaps := [0]
+			me.weapon_swapped.connect(func(_id: String, _m: int, _r: int) -> void: swaps[0] += 1)
 			alpha.summon(looted_weapon)
 			var summoned := func() -> bool:
 				var at := Loadout.worn_index(me, slot)
-				return at >= 0 and me.weapons[at].item_id == looted_weapon and at == me.active_weapon_index \
+				return swaps[0] > 0 and at >= 0 and me.weapons[at].item_id == looted_weapon and at == me.active_weapon_index \
 						and (worn_before == looted_weapon or me.inventory.has_item(worn_before))
 			await _wait_until(summoned, 180)
 			check(summoned.call() and looted_weapon in me.gear_items and me.inventory.items.size() == pack_before,
