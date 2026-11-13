@@ -247,7 +247,14 @@ without Caleb, and update the gap list when a PR closes a row.
   "Sight" marker, else the model's "IronSight", else the top of the model)
   sits on the line out of the model's eyes, `ActionPose.relief_for` in front
   of them (a sidearm out at arm's length, a long gun shouldered), and the
-  off hand takes the "ForeGrip" (or cups a sidearm). Guns tagged in
+  off hand takes the "ForeGrip" (or cups a sidearm), sliding back along
+  the gun where the arm cannot reach. A sight out of the gun arm's reach
+  comes back toward the eye (`ActionPose.relief_now`, which first person
+  follows). Both wrists turn as the `aim_gun` clip holds the gun, turned
+  with the aim (`WeaponArm._turn_to_aim`), so neither twists round it, and
+  the shoulders take a stance (`ActionPose.ads_stance`: a long gun bladed,
+  a sidearm squared up). Bone poses are only final inside the skeleton's
+  `skeleton_updated`; a check of a posed bone reads it there. Guns tagged in
   `ads_hip_tags` (the minigun) stay at the hip. First person then only
   settles the camera on the sight line as it comes up; never move the gun
   to the camera. A view that follows the gun reads it where it was drawn
