@@ -404,7 +404,8 @@ without Caleb, and update the gap list when a PR closes a row.
   `_draw_heat`; squad markers and the landing warning are still to come,
   per DESIGN.md sections 3 and 5); do not put the map or standing there, they
   stay on the watch. Mk2
-  helmets are loot only. Check the glass by eye with
+  helmets are never sold or dropped: like rigs, they are crafted from
+  blueprints (DESIGN.md section 10), so no loot table may list them. Check the glass by eye with
   `visual_check.tscn -- <dir> --visors-only`.
 - Vehicles are items tagged `vehicle`, tuned by their stats, and spawned by
   `Raid` (never carried). `core/vehicle/vehicle.gd` reads its rider's
