@@ -201,7 +201,7 @@ func _setup(p_world: WorldDef, p_seed: int) -> void:
 	apply_to_profile = false
 	super(p_world, p_seed)
 	p_world.set("arena", self)
-	var gates: Array[Vector3] = [Vector3(-12, 0.1, 0), Vector3(12, 0.1, 0)]
+	var gates: Array[Vector3] = [ArenaVenue.entry_point(0), ArenaVenue.entry_point(1)]
 	for node in _map_nodes("arena_gate"):
 		gates[int(node.get_meta("side", 0)) % 2] = node.global_position
 	_gates = gates
@@ -443,6 +443,7 @@ func _physics_process(delta: float) -> void:
 		# Count down between the server's updates.
 		if board.has("phase_left"):
 			board.phase_left = maxf(float(board.phase_left) - delta, 0.0)
+		_drive_stage()
 		return
 	_tick_challenges(delta)
 	_tick_tournament(delta)
@@ -472,6 +473,7 @@ func _physics_process(delta: float) -> void:
 			if phase_left <= 0.0:
 				_clear_pit()
 	_keep_crowd_out()
+	_drive_stage()
 	if _dirty:
 		_dirty = false
 		board_changed.emit()
@@ -646,13 +648,44 @@ func _clear_pit() -> void:
 	_set_phase(Phase.IDLE, 0.0)
 
 
-## Keeps fighters inside the pit during a bout.
+## How far into the running fight it is, in seconds, or -1 outside a fight.
+## A client reads it from the board the server sent.
+func fight_elapsed() -> float:
+	if mode == Mode.CLIENT:
+		if board.get("phase", "") != "fight":
+			return -1.0
+		return fight_time - float(board.get("phase_left", fight_time))
+	return fight_time - phase_left if phase == Phase.FIGHT else -1.0
+
+
+## The phase by name, from the board on a client.
+func phase_name() -> String:
+	return String(board.get("phase", "idle")) if mode == Mode.CLIENT else PHASE_NAMES[phase]
+
+
+## Moves the venue's doors and rising barriers to match the bout. Every
+## machine works it out from the same phase and clock, so it needs no
+## messages of its own.
+func _drive_stage() -> void:
+	if map != null and map.has_method("set_stage"):
+		map.call("set_stage", phase_name(), fight_elapsed())
+
+
+## Keeps fighters inside the pit during a bout. While they wait, and while the
+## doors are open, their tunnel counts too; anyone left in a tunnel once the
+## doors close is put on the floor at their door.
 func _hold_in_pit() -> void:
+	var waiting := phase == Phase.COUNTDOWN
+	var tunnels := waiting or ArenaVenue.doors_open(phase_name(), fight_elapsed())
 	for side in 2:
 		var f: Actor = bout.fighters[side]
-		if f != null and is_instance_valid(f) and not f.is_dead and not ArenaVenue.in_pit(f.global_position):
-			f.global_position = _gates[side]
-			f.velocity = Vector3.ZERO
+		if f == null or not is_instance_valid(f) or f.is_dead:
+			continue
+		var at := f.global_position
+		if ArenaVenue.in_pit(at) or (tunnels and ArenaVenue.in_tunnel(at)):
+			continue
+		f.global_position = _gates[side] if waiting else ArenaVenue.entry_point(side)
+		f.velocity = Vector3.ZERO
 
 
 ## Nobody but the fighters goes into the pit, whatever they fly or jump with.
@@ -663,7 +696,7 @@ func _keep_crowd_out() -> void:
 			continue
 		if bout != null and phase >= Phase.COUNTDOWN and a in bout.fighters:
 			continue
-		if ArenaVenue.in_pit(a.global_position):
+		if ArenaVenue.in_bounds(a.global_position):
 			_to_stands(a)
 
 

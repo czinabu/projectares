@@ -746,6 +746,27 @@ func _arena_shots(out_dir: String) -> void:
 	controller.view_mode = PlayerController.ViewMode.THIRD
 	await _settle(30)
 	await _shot(out_dir.path_join("arena_third_person.png"))
+	# The floor's layout: from high over the stands, from the rim, from the
+	# middle of the floor, and from a fighter's tunnel.
+	var camera := Camera3D.new()
+	camera.fov = 70.0
+	arena.add_child(camera)
+	camera.make_current()
+	hud.visible = false
+	overlay.visible = false
+	for view: Array in [["arena_overview", Vector3(0, 48, 34), Vector3(0, 0, 0)],
+			["arena_rim", Vector3(-22, 9, 22), Vector3(4, 2, -4)],
+			["arena_floor", Vector3(0, 1.7, 17), Vector3(0, 3, 0)],
+			["arena_tunnel", Vector3(-Arena.ArenaVenue.GATE_DISTANCE - 2.0, 1.7, 0), Vector3(0, 2, 0)],
+			["arena_stands", Vector3(10, 6.5, 23), Vector3(-6, 2, -4)],
+			["arena_board", Vector3(4, 1.7, 9), Vector3(0, 18, 0)]]:
+		camera.look_at_from_position(view[1], view[2])
+		await _settle(10)
+		await _shot(out_dir.path_join("%s.png" % view[0]))
+		print("%s: %d draw calls, %d objects" % [view[0],
+				Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME),
+				Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME)])
+	camera.queue_free()
 
 
 ## The plaza as a player sees it: the gates, and another player's gear card.

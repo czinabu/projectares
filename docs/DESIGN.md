@@ -166,6 +166,19 @@ vehicle has a job:
 - You fight with your own loadout, locked once the bout starts. No healing
   items, no vehicles, no heavy weapons.
 - Nobody loses gear; a beaten fighter yields.
+- **The Pit** is a 40 m floor sunk below tiered stands, laid out for blades,
+  guns and flight alike and mirrored so neither side has an edge: a low dais
+  in the middle, four tall pillars with perches, a high platform per side, a
+  wall in front of each door, low barriers, and two pairs of rising barriers
+  that take turns coming up during a fight. An unseen ceiling at 16 m keeps
+  flight over the floor. Each fighter waits in a tunnel lit in their colour
+  under the stands, and the door sinks open as the fight starts. A ring of
+  screens over the middle shows the bout to every seat. Its look is its own
+  warm sci-fi night (Caleb's call): dark gunmetal, amber lit edges and red
+  against blue, next to the hub's cool twilight, with a holographic crowd in
+  the stands and a ring of stadium floodlight towers (Caleb's call) whose
+  white beams spread out over the floor to its edges, never meeting at one
+  point, so the fighters stand out.
 
 ## 3. The watch
 

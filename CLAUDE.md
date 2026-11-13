@@ -629,7 +629,11 @@ without Caleb, and update the gap list when a PR closes a row.
   decided only by the authority's `Arena` and paid through `Arena.bank`;
   a client only sends `Arena.ask` requests and shows the board the server
   sends. Credits change only through `StashService.change_credits` online and
-  `Profile.change_credits` solo.
+  `Profile.change_credits` solo. The Pit's moving parts (the tunnel doors and
+  the rising barriers) are worked out from the bout's phase and fight clock
+  alone (`ArenaVenue.doors_open`, `barrier_raise`), which the `Arena` hands
+  the map every tick (`set_stage`) on every machine, so they need no messages
+  of their own. Static venue boxes are merged into one mesh per material.
 
 ## Conventions
 
