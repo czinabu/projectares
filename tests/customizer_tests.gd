@@ -307,6 +307,8 @@ static func _run_mirror(t: Node) -> void:
 	await t.frames(3)
 	for i in 2:
 		await t.get_tree().process_frame
+	t.check(main.phone.holder == me and controller.actor == me,
+			"the game hands the phone to the player's own body, so the screen goes in its hand")
 	var mirror: Node3D = main.mirror
 	t.check(mirror != null and mirror.get_parent() == main.raid and main.phone.mirror_up,
 			"opening the Mirror app stands a mirror in the world")

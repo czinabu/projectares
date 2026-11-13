@@ -693,7 +693,7 @@ func _build_phone_prop() -> Node3D:
 	_dress_phone_screen()
 	var glow := OmniLight3D.new()
 	glow.light_color = UiTheme.ACCENT.lerp(Color.WHITE, 0.4)
-	glow.light_energy = 0.8
+	glow.light_energy = 0.3
 	glow.omni_range = 0.6
 	glow.position = -Handheld.grip_in_body() + Vector3(0.0, 0.0, 0.08)
 	glow.shadow_enabled = false

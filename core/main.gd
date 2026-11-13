@@ -245,9 +245,10 @@ func _attach_base_view() -> void:
 	Look.set_appearance(base.player, _my_look())
 	controller = PlayerController.new()
 	controller.phone_out = phone != null and phone.is_open
-	if phone != null:
-		phone.set_holder(controller.actor)
 	controller.setup(base.player)
+	if phone != null:
+		# The phone is held by this body's own hand, in every view.
+		phone.set_holder(controller.actor)
 	base.add_child(controller)
 	# The view is the player's choice: suiting up keeps it.
 	if view_third != controller.is_third_person():
@@ -498,9 +499,10 @@ func _attach_player_view() -> void:
 		Look.set_appearance(raid.player, _my_look())
 	controller = PlayerController.new()
 	controller.phone_out = phone != null and phone.is_open
-	if phone != null:
-		phone.set_holder(controller.actor)
 	controller.setup(raid.player)
+	if phone != null:
+		# The phone is held by this body's own hand, in every view.
+		phone.set_holder(controller.actor)
 	controller.sign_out_requested.connect(func() -> void: _on_sign_out_requested.call_deferred())
 	controller.redeploy_requested.connect(func() -> void: _on_redeploy_requested.call_deferred())
 	controller.drop_requested.connect(func(index: int) -> void: _on_drop_requested.call_deferred(index))
@@ -680,6 +682,8 @@ func _on_phone_opened(open: bool) -> void:
 		var screen_open: bool = hub.station != "" or shop_view != null or (arena_hud != null and arena_hud.booth_open)
 		controller.input_blocked = open or screen_open
 		controller.phone_out = open
+		if phone != null:
+			phone.set_holder(controller.actor)
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if open or screen_open else Input.MOUSE_MODE_CAPTURED
 
 
