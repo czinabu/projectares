@@ -16,6 +16,7 @@ const LookTests := preload("res://tests/look_tests.gd")
 const RigLookTests := preload("res://tests/rig_look_tests.gd")
 const EconomyTests := preload("res://tests/economy_tests.gd")
 const MeleeArsenalTests := preload("res://tests/melee_arsenal_tests.gd")
+const MeleeFeelTests := preload("res://tests/melee_feel_tests.gd")
 const CustomizerTests := preload("res://tests/customizer_tests.gd")
 const BattlefieldTests := preload("res://tests/battlefield_tests.gd")
 const VisorTests := preload("res://tests/visor_tests.gd")
@@ -227,6 +228,7 @@ func _run() -> void:
 	await _test_melee_defense()
 	await _test_directional_melee()
 	await _test_melee_arsenal()
+	await _test_melee_feel()
 	await _test_flight_rigs_and_abilities()
 	await _test_vehicle_driving()
 	await _test_vehicle_raids()
@@ -296,6 +298,10 @@ func _test_customizer() -> void:
 
 func _test_melee_arsenal() -> void:
 	await MeleeArsenalTests.run(self)
+
+
+func _test_melee_feel() -> void:
+	await MeleeFeelTests.run(self)
 
 
 func _test_economy() -> void:
@@ -1307,15 +1313,19 @@ func _test_directional_melee() -> void:
 	var blade := p.get_active_weapon() as MeleeWeapon
 	var total := func() -> float: return p.health.health + p.health.armor
 
-	# The foe swings from its left, which arrives on the player's right.
-	foe.cmd.stance = left
+	# The foe swings to its right, so it comes from its left and arrives on
+	# the player's right.
+	check(MeleeWeapon.swing_from(left) == right and MeleeWeapon.swing_from(right) == left
+			and MeleeWeapon.swing_from(over) == over, "a swing to one side starts on the other")
+	foe.cmd.stance = right
 	p.cmd.stance = left
 	p.cmd.secondary = true
 	await frames(30)
 	var before: float = total.call()
 	await _foe_swing(foe)
 	await frames(10)
-	check(foe_blade.is_winding_up() and foe_blade.attack_dir == left, "a swing takes the stance it started in")
+	check(foe_blade.is_winding_up() and foe_blade.attack_dir == left,
+			"a swing keeps the side it started from (a right swing comes from the left)")
 	check(Hud.incoming_side(p) == right, "the HUD warns which side to guard")
 	await frames(30)
 	check(total.call() < before, "a guard on the wrong side stops nothing")
@@ -1363,8 +1373,10 @@ func _test_directional_melee() -> void:
 	await frames(120)
 	foe.stagger_left = 0.0
 	p.riposte_left = 0.0
+	# A swing to the player's right comes from their left and arrives on the
+	# foe's right: guarding the same side as the swing's stance meets it.
 	p.cmd.stance = right
-	foe.cmd.stance = left
+	foe.cmd.stance = right
 	foe.cmd.secondary = true
 	await frames(30)
 	var foe_before := foe.health.health + foe.health.armor

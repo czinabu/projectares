@@ -51,7 +51,7 @@ rows marked **pre-playtest** come before the friends playtest.
 | Primary with attachments | Built | Four attachment slots, gunsmith bench. |
 | Sidearm | Built | Key 2, drawn automatically when the primary runs dry. |
 | Melee weapon | Built | Six types, directional, block and parry. |
-| Melee magnetic air-lunge | Missing | There is a ground heavy lunge and a dive slam onto targets below, but no lunge to an airborne enemy. After the playtest. |
+| Melee magnetic air-lunge | Built | A heavy in the air at an airborne foe within `air_lunge_range` and the aim cone homes on them through its windup; otherwise the dive slam. Ground heavies lunge to striking distance too. |
 | Flight rig | Partly | Three rigs exist, but not the agreed identities (next section). |
 | Gadget slot | Partly | The `ability` slot exists with Phase Step, Kinetic Barrier and Shock Pulse. The gadget list (DESIGN.md section 4) needs Caleb's pick before more are built. |
 | Goggles: helmet-slot visor with no protection, lighter, more fragile glass | Missing | Shows the customizer's face and hair. Needs the weight system for its trade. |

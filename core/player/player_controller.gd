@@ -120,6 +120,14 @@ var _since_shot := 99.0
 ## The landing dip: how far the view is pushed down, and its speed.
 var _dip := 0.0
 var _dip_speed := 0.0
+## A blade strike that connects jolts the view the way it swung, a parry
+## throws it back, and a cut taken flinches it. View only: it never moves the
+## aim (`pitch`, `yaw`), and springs back on its own.
+var melee_kick_deg := 1.4
+var parry_kick_deg := 3.0
+var flinch_deg := 1.2
+var _shake := Vector2.ZERO
+var _shake_speed := Vector2.ZERO
 var _speed_fov_now := 0.0
 
 
@@ -142,6 +150,9 @@ func _ready() -> void:
 		var gun := weapon as Gun
 		if gun:
 			gun.fired.connect(_on_gun_fired.bind(gun))
+		var blade := weapon as MeleeWeapon
+		if blade:
+			blade.contact.connect(_on_blade_contact.bind(blade))
 	actor.hit_confirmed.connect(_on_hit_confirmed)
 	actor.health.damaged.connect(_on_damaged)
 	actor.landed.connect(_on_landed)
@@ -453,7 +464,8 @@ func _process(delta: float) -> void:
 
 	_update_recoil(delta)
 	_update_dip(delta)
-	var look := Basis.from_euler(Vector3(pitch, yaw, 0.0))
+	_update_shake(delta)
+	var look := Basis.from_euler(Vector3(pitch + _shake.y, yaw + _shake.x, 0.0))
 	var pivot := actor.get_eye_position() - Vector3(0.0, _dip, 0.0)
 	var t := minf(_cam_dist / third_person_distance, 1.0)
 	var desired := pivot + look * Vector3(0.6 * t, 0.3 * t, _cam_dist)
@@ -576,17 +588,61 @@ func speed_fov_for(speed: float) -> float:
 	return speed_fov * smoothstep(actor.sprint_speed, speed_fov_at, speed)
 
 
+## The blade reached someone: answer now, before the server's word (which
+## still drives the hit marker). The sound and the jolt follow the local
+## guess of what their guard did.
+func _on_blade_contact(_target: Actor, outcome: String, _at: Vector3, blade: MeleeWeapon) -> void:
+	var side := MeleeWeapon._side(blade.attack_dir)
+	match outcome:
+		"parry":
+			Sfx.play("parry", null, -4.0)
+			kick_view(Vector2(0.0, deg_to_rad(parry_kick_deg)))
+		"block":
+			Sfx.play("block")
+			kick_view(Vector2(side * 0.5, 0.3) * deg_to_rad(melee_kick_deg))
+		_:
+			Sfx.play("hit")
+			# The view follows through: sideways for a side cut, down for overhead.
+			var down := 1.0 if blade.attack_dir == MeleeWeapon.Dir.OVERHEAD else 0.25
+			kick_view(Vector2(side, -down) * deg_to_rad(melee_kick_deg))
+
+
+## Jolts the view by `kick` (yaw, pitch in radians); it springs back.
+func kick_view(kick: Vector2) -> void:
+	_shake_speed += kick * 30.0
+
+
+func _update_shake(delta: float) -> void:
+	if _shake.is_zero_approx() and _shake_speed.is_zero_approx():
+		return
+	# A stiff, critically damped spring, like the landing dip.
+	_shake_speed += (-400.0 * _shake - 40.0 * _shake_speed) * delta
+	_shake += _shake_speed * delta
+	if _shake.length() < 0.00005 and _shake_speed.length() < 0.0005:
+		_shake = Vector2.ZERO
+		_shake_speed = Vector2.ZERO
+
+
+## How far the view is jolted right now, (yaw, pitch) in radians.
+func view_shake() -> Vector2:
+	return _shake
+
+
 func _on_hit_confirmed(_target: Actor, info: DamageInfo, lethal: bool) -> void:
 	if lethal:
 		Sfx.play("kill")
+	elif info.kind == "melee":
+		pass  # The blade's contact already answered.
 	elif info.parried or info.blocked:
 		Sfx.play("block", null, -6.0)
 	else:
 		Sfx.play("hit")
 
 
-func _on_damaged(_info: DamageInfo) -> void:
+func _on_damaged(info: DamageInfo) -> void:
 	Sfx.play("hurt")
+	if info.kind in ["melee", "slam"]:
+		kick_view(Vector2(_rng.randf_range(-0.5, 0.5), -1.0) * deg_to_rad(flinch_deg))
 
 
 ## The visor level the visor key moves to from `level`: up through the
