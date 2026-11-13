@@ -77,6 +77,17 @@ const LOW_BARRIER_SIZE := Vector3(4.4, 1.1, 0.5)
 ## nobody is shot as they come out.
 const GATE_WALLS := [[-10.0, 0.0, PI / 2.0], [10.0, 0.0, PI / 2.0]]
 const GATE_WALL_SIZE := Vector3(4.4, 2.2, 0.5)
+## Low cover near the wall, so nobody can circle the floor's edge in the open: [bearing].
+const RIM_COVER := [PI / 3.0, 2.0 * PI / 3.0, -PI / 3.0, -2.0 * PI / 3.0]
+const RIM_COVER_RADIUS := 16.5
+const RIM_COVER_SIZE := Vector3(3.2, 1.1, 0.6)
+## The dais in the middle: a sloped mound you walk up, with a low lip round its top.
+const DAIS_RADIUS := 2.4
+const DAIS_FOOT := 3.8
+const DAIS_HEIGHT := 0.9
+## Colours of the look: amber for the venue, red and blue for the sides.
+const AMBER := Color(1.0, 0.55, 0.18)
+const SIDE_COLORS := [Color(1.0, 0.22, 0.16), Color(0.22, 0.45, 1.0)]
 const RISING_BARRIERS := [[-12.0, 9.0, 0.0, 0], [12.0, -9.0, 0.0, 0], [0.0, -7.0, 0.0, 1], [0.0, 7.0, 0.0, 1]]
 const RISING_BARRIER_SIZE := Vector3(3.2, BARRIER_HEIGHT, 0.6)
 
@@ -200,17 +211,35 @@ class Pit:
 	var _bodies := {}
 	## The moving parts: [body, rest position, lowered offset, pair or -1 for a door].
 	var _movers: Array = []
+	## Glow materials by [colour, energy].
+	var _glows := {}
+	var _art_rng := RandomNumberGenerator.new()
 	## The venue script, for its rules (an inner class cannot call them bare).
 	var _venue: GDScript = load("res://core/arena/arena_venue.gd")
 
 	func _ready() -> void:
-		_floor_mat = Look.surface("metal", {"tint": Color(0.42, 0.42, 0.46), "grime": 0.3, "scale": 0.2})
-		_wall_mat = Look.surface("concrete", {"tint": Color(0.62, 0.6, 0.58), "grime": 0.3, "scale": 0.25})
-		_cover_mat = Look.surface("metal", {"tint": Color(0.7, 0.7, 0.74), "grime": 0.2, "scale": 0.25})
-		_stand_mat = Look.surface("concrete", {"tint": Color(0.5, 0.48, 0.47), "grime": 0.4, "scale": 0.25})
-		_stand_alt_mat = Look.surface("concrete", {"tint": Color(0.36, 0.35, 0.35), "grime": 0.5, "scale": 0.25})
-		Look.atmosphere(self, {"sun_angles": Vector3(-55, 40, 0), "sun_color": Color(1.0, 0.92, 0.8),
-				"sun_energy": 1.2, "fog_color": Color(0.62, 0.6, 0.6)})
+		# A warm sci-fi night (Caleb's call): dark gunmetal under amber lit
+		# edges, red against blue, next to the hub's cool twilight.
+		_floor_mat = Look.surface("metal", {"tint": Color(0.34, 0.32, 0.32), "grime": 0.25, "scale": 0.12})
+		_wall_mat = Look.surface("metal", {"tint": Color(0.3, 0.28, 0.28), "grime": 0.3, "scale": 0.2})
+		_cover_mat = Look.surface("metal", {"tint": Color(0.46, 0.43, 0.41), "grime": 0.2, "scale": 0.25})
+		_stand_mat = Look.surface("concrete", {"tint": Color(0.4, 0.36, 0.34), "grime": 0.4, "scale": 0.25})
+		_stand_alt_mat = Look.surface("concrete", {"tint": Color(0.3, 0.27, 0.26), "grime": 0.5, "scale": 0.25})
+		Look.atmosphere(self, {
+			"sky_tint": Color(0.75, 0.45, 0.6),
+			"sky_saturation": 0.7,
+			"sky_energy": 0.22,
+			"fog_color": Color(0.14, 0.08, 0.08),
+			"fog_density": 0.004,
+			"sun_color": Color(1.0, 0.7, 0.5),
+			"sun_energy": 0.25,
+			"sun_angles": Vector3(-35, 140, 0),
+			"ambient_color": Color(0.8, 0.6, 0.52),
+			"ambient_energy": 1.8,
+			"exposure": 1.3,
+			"saturation": 1.0,
+			"glow": 0.7,
+		})
 		nav_region = NavigationRegion3D.new()
 		nav_region.name = "Floor"
 		add_child(nav_region)
@@ -222,6 +251,7 @@ class Pit:
 		_spectator_spots()
 		_board()
 		_booths()
+		_dress()
 		_flush()
 		set_stage("idle", -1.0)
 
@@ -256,9 +286,8 @@ class Pit:
 	func _build_floor() -> void:
 		var size := OUTER_RADIUS * 2.0 + 6.0
 		_add(Vector3(size, 0.5, size), Vector3(0, -0.25, 0), 0.0, _floor_mat, nav_region)
-		# The center dais, in two low steps a fighter walks up.
-		_add_disc(3.2, 0.25, _cover_mat, nav_region)
-		_add_disc(2.2, 0.5, _cover_mat, nav_region)
+		# The center dais: a mound with sloped sides, worth holding.
+		_add_dais(nav_region)
 		# The pit wall, with a doorway on each tunnel.
 		var door_top := TUNNEL_HEIGHT
 		for i in SEGMENTS:
@@ -284,6 +313,9 @@ class Pit:
 			_add(Vector3(2.2, 0.3, length), ramp_mid, 0.0, _cover_mat, nav_region, Vector3(dir * slope, 0, 0))
 		for b in LOW_BARRIERS:
 			_add(LOW_BARRIER_SIZE, Vector3(b[0], LOW_BARRIER_SIZE.y * 0.5, b[1]), b[2], _cover_mat, nav_region)
+		for bearing: float in RIM_COVER:
+			var at := Vector3(cos(bearing), 0, sin(bearing)) * RIM_COVER_RADIUS + Vector3(0, RIM_COVER_SIZE.y * 0.5, 0)
+			_add(RIM_COVER_SIZE, at, -(bearing + PI / 2.0), _cover_mat, nav_region)
 		for b in GATE_WALLS:
 			_add(GATE_WALL_SIZE, Vector3(b[0], GATE_WALL_SIZE.y * 0.5, b[1]), b[2], _cover_mat, nav_region)
 		# Rising barriers move, so they are bodies of their own and not part
@@ -361,36 +393,34 @@ class Pit:
 
 	## The big board hanging over the middle of the pit: a ring of screens
 	## facing out and tipped down at the stands, so every seat can read it.
+	## Thin open panels with lit edges, so from the floor it reads as a frame
+	## of light rather than a lid.
 	func _board() -> void:
-		var radius := BOARD_SIZE.x * 0.5 / tan(PI / BOARD_FACES) + 0.1
-		var tilt := 0.22
-		var mat := StandardMaterial3D.new()
-		mat.albedo_color = Color(0.12, 0.11, 0.1)
 		for i in BOARD_FACES:
-			var angle := TAU * i / BOARD_FACES
-			var out := Vector3(sin(angle), 0, cos(angle))
-			var back := MeshInstance3D.new()
-			var mesh := BoxMesh.new()
-			mesh.size = Vector3(BOARD_SIZE.x + 0.2, BOARD_SIZE.y + 0.3, 0.3)
-			mesh.material = mat
-			back.mesh = mesh
-			back.position = out * (radius - 0.2) + Vector3(0, BOARD_HEIGHT, 0)
-			back.rotation = Vector3(tilt, angle, 0)
-			add_child(back)
+			var place := _board_face(i)
+			# A thin back behind the screen, joined into the venue's walls mesh.
+			_batch(_wall_mat).append_from(_box_mesh(Vector3(BOARD_SIZE.x + 0.1, BOARD_SIZE.y + 0.25, 0.08)), 0,
+					place * Transform3D(Basis.IDENTITY, Vector3(0, 0, -0.06)))
 			var face := Node3D.new()
 			face.name = "Board%d" % i
-			face.position = out * radius + Vector3(0, BOARD_HEIGHT, 0)
-			face.rotation = Vector3(tilt, angle, 0)
+			face.transform = place
 			face.add_to_group("arena_board")
 			add_child(face)
 		var title := Label3D.new()
 		title.text = "THE PIT"
 		title.font_size = 128
 		title.pixel_size = 0.024
-		title.modulate = Color(1.0, 0.62, 0.22)
+		title.modulate = AMBER
 		title.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 		title.position = Vector3(0, BOARD_HEIGHT + BOARD_SIZE.y * 0.5 + 1.6, 0)
 		add_child(title)
+
+	## Where face `i` of the board ring hangs, facing out and tipped down.
+	func _board_face(i: int) -> Transform3D:
+		var radius := BOARD_SIZE.x * 0.5 / tan(PI / BOARD_FACES) + 0.1
+		var angle := TAU * i / BOARD_FACES
+		var at := Vector3(sin(angle), 0, cos(angle)) * radius + Vector3(0, BOARD_HEIGHT, 0)
+		return Transform3D(Basis.from_euler(Vector3(0.22, angle, 0)), at)
 
 	## Bookmakers' booths on the lowest tier, between the spectator spots:
 	## a kiosk facing the pit, its screen at head height, and a spot in
@@ -474,22 +504,25 @@ class Pit:
 		mesh.size = size
 		_batch(material).append_from(mesh, 0, Transform3D(basis, at))
 
-	## A round step on the floor's center, `height` tall.
-	func _add_disc(radius: float, height: float, material: Material, parent: Node3D) -> void:
-		var shape := CylinderShape3D.new()
-		shape.radius = radius
-		shape.height = height
-		var col := CollisionShape3D.new()
-		col.shape = shape
-		col.position = Vector3(0, height * 0.5, 0)
-		_body_for(parent).add_child(col)
+	## The mound in the middle of the floor, its sides gentle enough to walk
+	## up, and a low lip round the top in pieces, with gaps to walk through.
+	func _add_dais(parent: Node3D) -> void:
 		var mesh := CylinderMesh.new()
-		mesh.top_radius = radius
-		mesh.bottom_radius = radius
-		mesh.height = height
-		mesh.radial_segments = 32
+		mesh.top_radius = DAIS_RADIUS
+		mesh.bottom_radius = DAIS_FOOT
+		mesh.height = DAIS_HEIGHT
+		mesh.radial_segments = 24
 		mesh.rings = 1
-		_batch(material).append_from(mesh, 0, Transform3D(Basis.IDENTITY, Vector3(0, height * 0.5, 0)))
+		var at := Transform3D(Basis.IDENTITY, Vector3(0, DAIS_HEIGHT * 0.5, 0))
+		var col := CollisionShape3D.new()
+		col.shape = mesh.create_convex_shape(true, false)
+		col.transform = at
+		_body_for(parent).add_child(col)
+		_batch(_cover_mat).append_from(mesh, 0, at)
+		for i in 6:
+			var angle := TAU * (i + 0.5) / 6.0
+			_add(Vector3(1.3, 0.4, 0.25), Vector3(sin(angle), 0, cos(angle)) * (DAIS_RADIUS - 0.15)
+					+ Vector3(0, DAIS_HEIGHT + 0.2, 0), angle, _cover_mat, parent)
 
 	## A box that moves (a door or a rising barrier): a body of its own,
 	## lowered `drop` metres to sink it.
@@ -542,5 +575,281 @@ class Pit:
 			mesh.surface_set_material(0, material)
 			var node := MeshInstance3D.new()
 			node.mesh = mesh
+			if _glows.values().has(material):
+				node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			add_child(node)
 		_batches.clear()
+
+	func _box_mesh(size: Vector3) -> BoxMesh:
+		var mesh := BoxMesh.new()
+		mesh.size = size
+		return mesh
+
+	# --- The look -------------------------------------------------------------
+	# Only on a machine that draws: lit edges, team colours, the holographic
+	# crowd, spotlights and banners. None of it collides or touches the rules,
+	# and its randomness has its own seed so it never moves the layout.
+
+	func _dress() -> void:
+		if not Look.enabled:
+			return
+		_art_rng.seed = 1771
+		_dress_floor()
+		_dress_wall_and_stands()
+		_dress_cover()
+		_dress_tunnels()
+		_dress_board()
+		_dress_lights()
+		_dress_crowd()
+
+	func _dress_floor() -> void:
+		_glow_ring(PIT_RADIUS - 0.4, 0.22, 0.02, 0.0, AMBER, 2.5, 96)
+		_glow_ring(DAIS_FOOT + 0.35, 0.12, 0.02, 0.0, AMBER, 2.0, 48)
+		_glow_ring(DAIS_RADIUS - 0.02, 0.06, 0.04, DAIS_HEIGHT, AMBER, 3.0, 32)
+		# Each side's half of the floor is marked in its colour, round its door.
+		for side in 2:
+			var gate_bearing := PI * 1.5 if side == 0 else PI * 0.5
+			_glow_ring(PIT_RADIUS - 1.6, 0.4, 0.02, 0.0, SIDE_COLORS[side], 2.5, 96, gate_bearing, deg_to_rad(38.0))
+			# A lane from the door toward the middle.
+			var dir := -1.0 if side == 0 else 1.0
+			for k in 5:
+				var x := dir * (PIT_RADIUS - 3.2 - k * 1.4)
+				_glow(Vector3(0.7, 0.02, 0.18), Transform3D(Basis.IDENTITY, Vector3(x, 0.011, 0)), SIDE_COLORS[side], 2.0)
+
+	func _dress_wall_and_stands() -> void:
+		# The pit wall's top edge, and the front edge of every tier above it.
+		_glow_ring(WALL_RADIUS - 0.32, 0.08, 0.12, WALL_HEIGHT - 0.06, AMBER, 4.0, 96)
+		_glow_ring(WALL_RADIUS - 0.32, 0.05, 0.06, 1.2, AMBER, 1.2, 96)
+		for tier in range(1, STAND_TIERS):
+			var inner := WALL_RADIUS + 0.3 + tier * TIER_DEPTH
+			var top := WALL_HEIGHT - 0.6 + tier * TIER_RISE
+			_glow_ring(inner - 0.04, 0.08, 0.08, top - 0.05, AMBER, 1.6, 96)
+		var rim_top := WALL_HEIGHT + STAND_TIERS * TIER_RISE + 4.0
+		_glow_ring(OUTER_RADIUS - 0.04, 0.1, 0.14, rim_top - 0.08, AMBER, 3.0, 96)
+		# Banners on the rim either side of each side's tunnel.
+		for side in 2:
+			var gate_bearing := PI * 1.5 if side == 0 else PI * 0.5
+			for off: float in [-0.2, 0.2]:
+				var bearing := gate_bearing + off
+				var out := Vector3(sin(bearing), 0, cos(bearing))
+				var banner := MeshInstance3D.new()
+				var quad := QuadMesh.new()
+				quad.size = Vector2(2.6, 4.6)
+				var mat := StandardMaterial3D.new()
+				var c: Color = SIDE_COLORS[side]
+				mat.albedo_color = c.darkened(0.5)
+				mat.emission_enabled = true
+				mat.emission = c
+				mat.emission_energy_multiplier = 0.9
+				quad.material = mat
+				banner.mesh = quad
+				banner.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+				banner.position = out * (OUTER_RADIUS - 0.05) + Vector3(0, rim_top - 3.0, 0)
+				banner.rotation.y = bearing + PI
+				add_child(banner)
+				# A bright stripe down the middle of each banner.
+				_glow(Vector3(0.18, 4.6, 0.02), Transform3D(Basis(Vector3.UP, bearing),
+						out * (OUTER_RADIUS - 0.08) + Vector3(0, rim_top - 3.0, 0)), AMBER, 2.5)
+
+	func _dress_cover() -> void:
+		for p in PILLARS:
+			_edges(Vector3(p[0], PILLAR_SIZE.y * 0.5, p[1]), PILLAR_SIZE, 0.0, AMBER, 2.5, true)
+			_edges(Vector3(p[0], PILLAR_SIZE.y + 0.15, p[1]), Vector3(2.8, 0.3, 2.8), 0.0, AMBER, 2.5, false)
+		for side in 2:
+			var p: Array = PLATFORMS[side]
+			_edges(Vector3(p[0], PLATFORM_SIZE.y * 0.5, p[1]), PLATFORM_SIZE, 0.0, SIDE_COLORS[side], 3.0, false)
+			var b: Array = GATE_WALLS[side]
+			_edges(Vector3(b[0], GATE_WALL_SIZE.y * 0.5, b[1]), GATE_WALL_SIZE, b[2], SIDE_COLORS[side], 3.0, false)
+		for b in LOW_BARRIERS:
+			_edges(Vector3(b[0], LOW_BARRIER_SIZE.y * 0.5, b[1]), LOW_BARRIER_SIZE, b[2], AMBER, 2.0, false)
+		for bearing: float in RIM_COVER:
+			var at := Vector3(cos(bearing), 0, sin(bearing)) * RIM_COVER_RADIUS + Vector3(0, RIM_COVER_SIZE.y * 0.5, 0)
+			_edges(at, RIM_COVER_SIZE, -(bearing + PI / 2.0), AMBER, 2.0, false)
+		# The rising barriers carry a hot warning edge on top, which still
+		# shows as a line in the floor while they are sunk.
+		var warn := _glow_mat(Color(1.0, 0.3, 0.1), 4.0)
+		for mover in _movers:
+			if int(mover[3]) < 0:
+				continue
+			var body: AnimatableBody3D = mover[0]
+			var strip := MeshInstance3D.new()
+			strip.mesh = _box_mesh(Vector3(RISING_BARRIER_SIZE.x + 0.02, 0.06, RISING_BARRIER_SIZE.z + 0.02))
+			strip.material_override = warn
+			strip.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			strip.position = Vector3(0, RISING_BARRIER_SIZE.y * 0.5 + 0.02, 0)
+			body.add_child(strip)
+
+	func _dress_tunnels() -> void:
+		for side in 2:
+			var dir := -1.0 if side == 0 else 1.0
+			var c: Color = SIDE_COLORS[side]
+			var inner := WALL_RADIUS + 0.3
+			var length := TUNNEL_END - inner
+			for wall_z: float in [-1.0, 1.0]:
+				_glow(Vector3(length, 0.08, 0.05), Transform3D(Basis.IDENTITY, Vector3(dir * (inner + length * 0.5),
+						TUNNEL_HEIGHT - 0.4, wall_z * TUNNEL_HALF_WIDTH)), c, 3.0)
+				# The doorway's frame on the pit side.
+				_glow(Vector3(0.1, TUNNEL_HEIGHT, 0.12), Transform3D(Basis.IDENTITY, Vector3(dir * (WALL_RADIUS - 0.32),
+						TUNNEL_HEIGHT * 0.5, wall_z * (TUNNEL_HALF_WIDTH + 0.25))), c, 4.0)
+			_glow(Vector3(0.1, 0.12, TUNNEL_HALF_WIDTH * 2.0 + 0.6), Transform3D(Basis.IDENTITY,
+					Vector3(dir * (WALL_RADIUS - 0.32), TUNNEL_HEIGHT + 0.06, 0)), c, 4.0)
+			var lamp := Look.lamp(c, 4.0, 10.0)
+			lamp.position = Vector3(dir * (inner + length * 0.5), TUNNEL_HEIGHT - 0.6, 0)
+			add_child(lamp)
+			# The door itself glows in the side's colour.
+			var door := get_node("Door%d" % side) as AnimatableBody3D
+			(door.get_child(1) as MeshInstance3D).material_override = _glow_mat(c.darkened(0.3), 0.5)
+
+	func _dress_board() -> void:
+		for i in BOARD_FACES:
+			var place := _board_face(i)
+			for y_sign: float in [-1.0, 1.0]:
+				_glow(Vector3(BOARD_SIZE.x + 0.1, 0.08, 0.1), place * Transform3D(Basis.IDENTITY,
+						Vector3(0, y_sign * (BOARD_SIZE.y * 0.5 + 0.12), 0.0)), AMBER, 4.0)
+
+	func _dress_lights() -> void:
+		# A warm glow under the board, and four spotlights on masts at the rim.
+		var centre := Look.lamp(AMBER, 3.0, 26.0)
+		centre.position = Vector3(0, 13.0, 0)
+		add_child(centre)
+		var rim_top := WALL_HEIGHT + STAND_TIERS * TIER_RISE + 4.0
+		var beam := StandardMaterial3D.new()
+		beam.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		beam.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		beam.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+		beam.cull_mode = BaseMaterial3D.CULL_DISABLED
+		beam.no_depth_test = false
+		beam.albedo_color = Color(1.0, 0.75, 0.5, 0.025)
+		for bearing_deg: float in [22.5, 157.5, 202.5, 337.5]:
+			var bearing := deg_to_rad(bearing_deg)
+			var out := Vector3(cos(bearing), 0, sin(bearing))
+			var foot := out * (OUTER_RADIUS + 0.5) + Vector3(0, rim_top, 0)
+			_batch(_wall_mat).append_from(_box_mesh(Vector3(0.5, 8.0, 0.5)), 0,
+					Transform3D(Basis.IDENTITY, foot + Vector3(0, 4.0, 0)))
+			var head := foot + Vector3(0, 8.4, 0) - out * 0.6
+			_batch(_wall_mat).append_from(_box_mesh(Vector3(1.4, 0.8, 1.4)), 0, Transform3D(Basis.IDENTITY, head))
+			var target := -out * 5.0
+			var spot := SpotLight3D.new()
+			spot.light_color = Color(1.0, 0.85, 0.65)
+			spot.light_energy = 14.0
+			spot.spot_range = 70.0
+			spot.spot_angle = 20.0
+			spot.spot_attenuation = 0.6
+			spot.shadow_enabled = false
+			add_child(spot)
+			spot.look_at_from_position(head - out * 0.8, target)
+			# A faint cone of light in the haze along the beam.
+			var length := head.distance_to(target) * 0.8
+			var cone := MeshInstance3D.new()
+			var mesh := CylinderMesh.new()
+			mesh.top_radius = 0.35
+			mesh.bottom_radius = tan(deg_to_rad(spot.spot_angle)) * length * 0.75
+			mesh.height = length
+			mesh.radial_segments = 32
+			mesh.rings = 1
+			mesh.cap_top = false
+			mesh.cap_bottom = false
+			mesh.material = beam
+			cone.mesh = mesh
+			cone.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			var down := (target - head).normalized()
+			var side_axis := down.cross(Vector3.UP).normalized()
+			var basis := Basis(side_axis, -down, side_axis.cross(-down)).orthonormalized()
+			cone.transform = Transform3D(basis, head + down * length * 0.5)
+			add_child(cone)
+
+	## The holographic crowd: glowing figures filling the stands, one draw for
+	## them all. Fans on each side lean toward that side's colour.
+	func _dress_crowd() -> void:
+		var shader := load("res://assets/shaders/holo_crowd.gdshader") as Shader
+		if shader == null:
+			return
+		var places: Array[Transform3D] = []
+		var tints: Array[Color] = []
+		for tier in STAND_TIERS:
+			var inner := WALL_RADIUS + 0.3 + tier * TIER_DEPTH
+			var top := WALL_HEIGHT - 0.6 + tier * TIER_RISE
+			var count := int(TAU * (inner + 1.5) / 0.85)
+			for i in count:
+				if _art_rng.randf() > 0.6:
+					continue
+				var bearing := TAU * (i + _art_rng.randf() * 0.4) / count
+				# Leave the bookmakers' booths clear on the lowest tier.
+				if tier == 0 and _near_booth(bearing):
+					continue
+				var radius := inner + 0.7 + _art_rng.randf() * (TIER_DEPTH - 1.2)
+				var height := _art_rng.randf_range(1.15, 1.4)
+				var at := Vector3(sin(bearing) * radius, top + height * 0.5, cos(bearing) * radius)
+				places.append(Transform3D(Basis.IDENTITY.scaled(Vector3(height * 0.55, height, 1.0)), at))
+				var side := 0 if at.x < 0.0 else 1
+				var tint := AMBER
+				if _art_rng.randf() < 0.5:
+					tint = AMBER.lerp(SIDE_COLORS[side], 0.75)
+				tints.append(tint)
+		var multimesh := MultiMesh.new()
+		multimesh.transform_format = MultiMesh.TRANSFORM_3D
+		multimesh.use_colors = true
+		multimesh.use_custom_data = true
+		var quad := QuadMesh.new()
+		quad.size = Vector2(1.0, 1.0)
+		var mat := ShaderMaterial.new()
+		mat.shader = shader
+		quad.material = mat
+		multimesh.mesh = quad
+		multimesh.instance_count = places.size()
+		for i in places.size():
+			multimesh.set_instance_transform(i, places[i])
+			multimesh.set_instance_color(i, tints[i])
+			multimesh.set_instance_custom_data(i, Color(_art_rng.randf(), _art_rng.randf_range(0.2, 1.0), 0, 0))
+		var crowd := MultiMeshInstance3D.new()
+		crowd.name = "Crowd"
+		crowd.multimesh = multimesh
+		crowd.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(crowd)
+
+	func _near_booth(bearing: float) -> bool:
+		for i in BOOTHS:
+			var angle := TAU * i / BOOTHS + PI / BOOTHS
+			if absf(wrapf(bearing - angle, -PI, PI)) < 0.12:
+				return true
+		return false
+
+	## A ring of glowing strips round the center: `radius` to its middle,
+	## `width` across, `height` tall, its bottom at `y`. With `span` above 0
+	## only the arc within `span` of `bearing` is drawn.
+	func _glow_ring(radius: float, width: float, height: float, y: float, color: Color, energy: float,
+			segments: int, bearing := 0.0, span := 0.0) -> void:
+		var piece := 2.0 * radius * tan(PI / segments) + 0.01
+		for i in segments:
+			var angle := TAU * i / segments
+			if span > 0.0 and absf(wrapf(angle - bearing, -PI, PI)) > span:
+				continue
+			var at := Vector3(sin(angle), 0, cos(angle)) * radius + Vector3(0, y + height * 0.5, 0)
+			_glow(Vector3(piece, height, width), Transform3D(Basis(Vector3.UP, angle), at), color, energy)
+
+	## Lit edges on a box: up its four corners when `corners`, and round its top.
+	func _edges(centre: Vector3, size: Vector3, yaw: float, color: Color, energy: float, corners: bool) -> void:
+		var turn := Basis(Vector3.UP, yaw)
+		var top := size.y * 0.5
+		for sx: float in [-1.0, 1.0]:
+			_glow(Vector3(0.06, 0.06, size.z + 0.06), Transform3D(turn, centre + turn * Vector3(sx * (size.x * 0.5 + 0.01), top, 0)), color, energy)
+			_glow(Vector3(size.x + 0.06, 0.06, 0.06), Transform3D(turn, centre + turn * Vector3(0, top, sx * (size.z * 0.5 + 0.01))), color, energy)
+			if corners:
+				for sz: float in [-1.0, 1.0]:
+					_glow(Vector3(0.06, size.y, 0.06), Transform3D(turn, centre + turn
+							* Vector3(sx * (size.x * 0.5 + 0.01), 0, sz * (size.z * 0.5 + 0.01))), color, energy)
+
+	## A glowing box with no collision, batched with the rest of its colour.
+	func _glow(size: Vector3, place: Transform3D, color: Color, energy: float) -> void:
+		_batch(_glow_mat(color, energy)).append_from(_box_mesh(size), 0, place)
+
+	func _glow_mat(color: Color, energy: float) -> StandardMaterial3D:
+		var key := [color, energy]
+		if not _glows.has(key):
+			var mat := StandardMaterial3D.new()
+			mat.albedo_color = color.darkened(0.4)
+			mat.emission_enabled = true
+			mat.emission = color
+			mat.emission_energy_multiplier = energy
+			_glows[key] = mat
+		return _glows[key]
