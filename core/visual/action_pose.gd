@@ -270,6 +270,31 @@ static func sight_local(gun: Gun) -> Vector3:
 	return Vector3(box.get_center().x, box.end.y, box.end.z - box.size.z * 0.25)
 
 
+## Where the gun hand holds `gun`, in the space of its visual: the origin
+## where the fist closes on the pistol grip, level with the trigger, and
+## the basis's y up along the grip (the "Grip" marker that `Look` finds on
+## the model, see `Look._measure_hold`). Null on a model without one.
+static func hold_local(gun: Gun) -> Variant:
+	if gun == null or gun.visual == null:
+		return null
+	var mark := gun.visual.get_node_or_null("Grip") as Node3D
+	if mark == null:
+		mark = gun.visual.get_node_or_null("Model/Grip") as Node3D
+	if mark == null:
+		return null
+	# Read through how the model sits in the hand, not where a draw or
+	# holster is carrying it this frame (`ActorSkin._carry_moving`).
+	var at := mark.transform
+	var up_node := mark.get_parent_node_3d()
+	while up_node != null and up_node != gun.visual:
+		at = (up_node.get_meta("held_at", up_node.transform) as Transform3D) * at
+		up_node = up_node.get_parent_node_3d()
+	var up := (at.basis * (mark.get_meta("up", Vector3.UP) as Vector3)).normalized()
+	var side := Vector3.RIGHT if absf(up.x) < 0.9 else Vector3.FORWARD
+	var back := side.cross(up).normalized()
+	return Transform3D(Basis(up.cross(back).normalized(), up, back), at.origin)
+
+
 ## Where the sight of `gun` is drawn, wherever the physics tick left the
 ## hand node: the hand as the skin last showed it, kept from the actor
 ## ("shown_local", set by `WeaponArm.hold_weapon`) and carried along to

@@ -116,7 +116,9 @@ static func run(t: Node) -> void:
 			raid.player.active_weapon_index = raid.player.weapons.find(sword)
 			sword.visual.position = Vector3(0.2, 0.1, 0.0)
 			skin.arm.hold_weapon()
-			var grip_at: Vector3 = skeleton.global_transform * skeleton.get_bone_global_pose(skin.arm.grip_bone).origin
+			# The handle runs through the middle of the closed fist.
+			var grip_at: Vector3 = skeleton.global_transform * (skeleton.get_bone_global_pose(skin.arm._wrist) * (skin.arm._ring_point as Vector3)) \
+					if skin.arm._ring_point != null else skeleton.global_transform * skeleton.get_bone_global_pose(skin.arm.grip_bone).origin
 			t.check(sword.visual.global_position.distance_to(grip_at) < 0.02, tag + "the blade stays in the hand when its pose shifts it")
 			sword.visual.position = Vector3.ZERO
 			raid.player.active_weapon_index = was_active

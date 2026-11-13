@@ -29,6 +29,7 @@ const PowerWeaponTests := preload("res://tests/power_weapon_tests.gd")
 const FeelTests := preload("res://tests/feel_tests.gd")
 const ViewMatchTests := preload("res://tests/view_match_tests.gd")
 const AdsTests := preload("res://tests/ads_tests.gd")
+const GripTests := preload("res://tests/grip_tests.gd")
 
 var _passed := 0
 var _failed := 0
@@ -287,6 +288,7 @@ func _run() -> void:
 	await _test_feel()
 	await _test_view_match()
 	await _test_ads()
+	await _test_grips()
 
 
 func _test_view_match() -> void:
@@ -295,6 +297,10 @@ func _test_view_match() -> void:
 
 func _test_ads() -> void:
 	await AdsTests.run(self)
+
+
+func _test_grips() -> void:
+	await GripTests.run(self)
 
 
 func _test_feel() -> void:
