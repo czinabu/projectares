@@ -237,7 +237,7 @@ func _limit_draw_distance(map: Node3D) -> void:
 
 ## A world-space PBR material. `opts` may set: tint (Color), scale (float),
 ## blend (surface kind to mix in), blend_amount, wetness, snow, snow_patchy,
-## grime, saturation,
+## grime, saturation, metal (overrides the kind's metalness),
 ## rough_mult, lit_windows (chance 0..1), window_glow (Color).
 func surface(kind: String, opts := {}) -> Material:
 	var key := kind + str(opts)
@@ -257,7 +257,7 @@ func surface(kind: String, opts := {}) -> Material:
 		sm.set_shader_parameter("noise_tex", _noise_texture())
 		sm.set_shader_parameter("tint", tint)
 		sm.set_shader_parameter("tex_scale", opts.get("scale", def["scale"]))
-		sm.set_shader_parameter("metal", def.get("metal", 0.0))
+		sm.set_shader_parameter("metal", opts.get("metal", def.get("metal", 0.0)))
 		sm.set_shader_parameter("rough_mult", opts.get("rough_mult", 1.0))
 		sm.set_shader_parameter("wetness", opts.get("wetness", 0.0))
 		sm.set_shader_parameter("snow", opts.get("snow", 0.0))

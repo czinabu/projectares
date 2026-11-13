@@ -618,6 +618,7 @@ func _hub_shots(out_dir: String) -> void:
 	var arrival: Vector3 = map.get("ARRIVAL") if map.get("ARRIVAL") != null else Vector3.ZERO
 	var views := [
 		["arrival", arrival + Vector3(0, 1.7, 0), Vector3(0, 12, 0)],
+		["plaza", Vector3(9, 1.7, 22), Vector3(-2, 2.5, -8)],
 		["arrival_high", arrival + Vector3(0, 6, 9), Vector3(0, 6, -20)],
 		["gates", Vector3(0, 2.5, -60), Vector3(0, 7, -100)],
 		["market", Vector3(-14, 1.7, -46), Vector3(-40, 4, -42)],
