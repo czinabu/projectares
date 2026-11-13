@@ -782,6 +782,11 @@ void fragment() {
 	var _spin := 0.0
 	var _holo: MeshInstance3D
 	var _glow: OmniLight3D
+	## The card's look over everything (first person) and in the world
+	## (third person, hidden behind whatever is in front of it).
+	var _holo_over: ShaderMaterial
+	var _holo_in_world: ShaderMaterial
+	var _third := false
 	## The light thrown up from the watch face to the card.
 	var _beam: MeshInstance3D
 	var _arm: Node3D
@@ -805,15 +810,23 @@ void fragment() {
 		var quad := QuadMesh.new()
 		quad.size = face_size
 		_holo.mesh = quad
-		var mat := ShaderMaterial.new()
-		var shader := Shader.new()
-		shader.code = HOLO_SHADER
-		mat.shader = shader
-		mat.set_shader_parameter("card", viewport.get_texture())
-		mat.set_shader_parameter("tint", HOLO_TINT)
-		# Drawn over everything, the wearer's own body included.
-		mat.render_priority = 10
-		_holo.material_override = mat
+		# Two copies of the card's look. First person draws it over
+		# everything, since it hangs just in front of the eyes. In third
+		# person it is depth tested: it hangs out beyond the character, so
+		# the head, helmet and body pass in front of it like real light.
+		for over in [true, false]:
+			var mat := ShaderMaterial.new()
+			var shader := Shader.new()
+			shader.code = HOLO_SHADER if over else HOLO_SHADER.replace("depth_test_disabled, ", "")
+			mat.shader = shader
+			mat.set_shader_parameter("card", viewport.get_texture())
+			mat.set_shader_parameter("tint", HOLO_TINT)
+			mat.render_priority = 10
+			if over:
+				_holo_over = mat
+			else:
+				_holo_in_world = mat
+		_holo.material_override = _holo_over
 		_holo.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		add_child(_holo)
 		_beam = MeshInstance3D.new()
@@ -987,6 +1000,8 @@ void fragment() {
 			_holo.transform = Transform3D(Basis.IDENTITY.scaled(Vector3(k, k * maxf(open, 0.001), k)),
 					first_person_at * spread + Vector3(0, -arm_lowered_drop * (1.0 - t), 0))
 			_glow.position = _holo.position + Vector3(0, -0.04, 0.02)
+		_third = third
+		_holo.material_override = _holo_in_world if third else _holo_over
 		(_holo.material_override as ShaderMaterial).set_shader_parameter("open", open)
 		_draw_beam(third, open)
 
@@ -1126,9 +1141,10 @@ void fragment() {
 					mat = StandardMaterial3D.new()
 					mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 					mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-					mat.no_depth_test = true
 					mat.render_priority = 11
 					(mesh as MeshInstance3D).material_override = mat
+				# Like the card: over everything in first person only.
+				mat.no_depth_test = not _third
 				mat.albedo_color = tint
 
 	## A toy hologram's colour: bright when picked, faint while recharging.

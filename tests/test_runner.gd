@@ -917,6 +917,8 @@ func _test_main_flow() -> void:
 	var card_on_screen := controller.camera.unproject_position(holo.global_position + controller.camera.global_basis.x * card_width * 0.5)
 	var head_on_screen := controller.camera.unproject_position(p.get_eye_position())
 	check(card_on_screen.x < head_on_screen.x, "and it keeps clear of the head and helmet on screen")
+	check(not (holo.material_override as ShaderMaterial).shader.code.contains("depth_test_disabled"),
+			"in third person the body passes in front of the card, like real light")
 	check(p.cmd.watch_up, "and the raised watch goes out with your inputs, so the arm glows for everyone")
 	var icons: Array = []
 	for slot in wrist.card.slots:
