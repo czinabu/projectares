@@ -32,11 +32,12 @@ const STANCE_CONTROL_HINTS := [
 ]
 ## Where the held weapon sits relative to the camera in first-person.
 const VehicleScript := preload("res://core/vehicle/vehicle.gd")
+const FirstPersonArms := preload("res://core/visual/first_person_arms.gd")
 ## Where a toy vehicle sits in the hand, and how big it is drawn there next
 ## to a thrown toy (it is close to the eye in first person).
 const TOY_IN_HAND := Vector3(-0.08, 0.0, 0.1)
 const TOY_HAND_SIZE := 0.55
-const FIRST_PERSON_HAND := Vector3(0.32, -0.3, -0.75)
+const FIRST_PERSON_HAND := Vector3(0.2, -0.2, -0.48)
 
 var actor: Actor
 var camera: Camera3D
@@ -65,8 +66,8 @@ var base_fov := 80.0
 ## it. A switch drops the hand toward the holster's side to
 ## `first_person_stow` (camera space, x taken from the holster) and tips it
 ## by `first_person_stow_tilt`, out of view.
-var first_person_reach := 0.85
-var first_person_turn := 0.5
+var first_person_reach := 0.6
+var first_person_turn := 0.4
 var first_person_stow := Vector3(0.0, -0.7, -0.4)
 var first_person_stow_tilt := Vector3(-1.1, 0.0, 0.0)
 ## Speed widens the view a little, so a boost, a dive or a bike reads as
@@ -132,6 +133,10 @@ var _since_shot := 99.0
 var _dip := 0.0
 var _dip_speed := 0.0
 var _speed_fov_now := 0.0
+## Your own arms in first person, and the look they were built for.
+var _arms: Node3D
+var _arms_look := {}
+var _arms_failed := false
 
 
 func setup(p_actor: Actor) -> void:
@@ -511,6 +516,40 @@ func _process(delta: float) -> void:
 			var lined_up := Vector3(0, 0, -eye_relief) - in_hand
 			hold = hold.interpolate_with(Transform3D(Basis.IDENTITY, lined_up), _sight_blend)
 		actor.hand.global_transform = camera.global_transform * hold
+		actor.hand.set_meta("shown", actor.hand.global_transform)
+	_update_arms(first_person)
+
+
+## Shows your own arms holding the weapon in first person (when the art
+## layer is on and the character has arms to copy).
+func _update_arms(first_person: bool) -> void:
+	if not Look.enabled or not actor.has_node("Skin"):
+		return
+	var wanted: Dictionary = {"skin": actor.get_meta("look", Look.DEFAULT_SKIN), "appearance": actor.get_meta("appearance", {})}
+	if _arms != null and wanted != _arms_look:
+		_arms.queue_free()
+		_arms = null
+		_arms_failed = false
+	if _arms == null and not _arms_failed:
+		_arms_look = wanted
+		_arms = FirstPersonArms.new()
+		_arms.name = "FirstPersonArms"
+		_arms.look = Look
+		_arms.actor = actor
+		_arms.camera = camera
+		camera.add_child(_arms)
+		if not _arms.build(wanted["skin"], wanted["appearance"]):
+			_arms.queue_free()
+			_arms = null
+			_arms_failed = true
+			return
+	if _arms != null:
+		_arms.update(first_person, ActionPose.of(actor).watch, held_toy != "")
+
+
+## True while your own arms are drawn in first person.
+func has_arms() -> bool:
+	return _arms != null and is_instance_valid(_arms)
 
 
 ## Where the weapon hand goes in first person, in the camera's space: the

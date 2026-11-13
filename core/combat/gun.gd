@@ -503,12 +503,31 @@ func _fire() -> void:
 			_launch(muzzle, dir)
 			continue
 		to = _trace_shot(from, dir)
+		# The shot is judged from the eyes; what is drawn leaves the barrel.
+		var drawn_from := muzzle_point(muzzle)
 		if beam_time > 0.0:
-			Fx.beam(actor.get_parent(), muzzle, to, tracer_color, beam_time)
+			Fx.beam(actor.get_parent(), drawn_from, to, tracer_color, beam_time)
 		elif not quiet:
-			Fx.tracer(actor.get_parent(), muzzle, to, tracer_color)
+			Fx.tracer(actor.get_parent(), drawn_from, to, tracer_color)
 	fired.emit(from, to)
 	Sfx.play(shot_sound, null if actor.is_player else from, -14.0 if quiet else 0.0)
+
+
+## Where a shot's flash and tracer start: the "Muzzle" marker the art layer
+## puts on the gun's model, as it is held in whichever view is drawn, or
+## `fallback` when there is none (headless, greybox). View only: the shot
+## itself always leaves the eyes, and nothing here changes the simulation.
+func muzzle_point(fallback: Vector3) -> Vector3:
+	var marker := visual.get_node_or_null("Muzzle") as Node3D if visual != null else null
+	if marker == null or not marker.is_inside_tree():
+		return fallback
+	var at := marker.global_position
+	# The actor parks its hand node every tick; the views move it to where
+	# the weapon is drawn and leave that here as the "shown" meta.
+	var hand := actor.hand if actor != null else null
+	if hand != null and hand.has_meta("shown"):
+		at = (hand.get_meta("shown") as Transform3D) * (hand.global_transform.affine_inverse() * at)
+	return at
 
 
 ## How far back (m) and up (radians) the held model jumps at a shot.

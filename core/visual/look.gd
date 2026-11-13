@@ -948,16 +948,20 @@ func weapon_model(weapon: Weapon) -> Node3D:
 func mount_attachments(visual: Node3D) -> void:
 	var fitted := visual.get_node_or_null("Attachments") as Node3D
 	var model := visual.get_node_or_null("Model") as Node3D
-	if fitted == null or model == null or not model.has_meta("gun_file"):
+	if model == null or not model.has_meta("gun_file"):
 		return
 	var file: String = model.get_meta("gun_file")
 	if not _gun_mounts.has(file):
 		_gun_mounts[file] = _measure_mounts(model, GUN_MOUNTS.get(file, GUN_MOUNTS[DEFAULT_GUN]))
 	var mounts: Dictionary = _gun_mounts[file]
-	for part in fitted.get_children():
-		if part is Node3D and mounts.has(part.name):
-			(part as Node3D).position = mounts[part.name]
-			part.set_meta("mounted", true)
+	if fitted != null:
+		for part in fitted.get_children():
+			if part is Node3D and mounts.has(part.name):
+				(part as Node3D).position = mounts[part.name]
+				part.set_meta("mounted", true)
+	_place_muzzle(visual, fitted, mounts)
+	if fitted == null:
+		return
 	# An optic raised to see over the front sight stands on a riser.
 	var optic := fitted.get_node_or_null("optic") as Node3D
 	if optic and mounts.has("rail") and not optic.has_node("Riser"):
@@ -966,6 +970,26 @@ func mount_attachments(visual: Node3D) -> void:
 			var riser := Weapon.make_part(Vector3(0.026, rise, 0.07), Vector3(0, -rise * 0.5, 0), Color(0.1, 0.11, 0.13))
 			riser.name = "Riser"
 			optic.add_child(riser)
+
+
+## Puts a "Muzzle" marker on the gun's visual where shots leave it: the front
+## of the barrel, or of a fitted muzzle device. Muzzle flashes and tracers
+## start there in both views (`Gun.muzzle_point`).
+func _place_muzzle(visual: Node3D, fitted: Node3D, mounts: Dictionary) -> void:
+	if not mounts.has("muzzle"):
+		return
+	var at: Vector3 = mounts["muzzle"]
+	var device := fitted.get_node_or_null("muzzle") as Node3D if fitted != null else null
+	if device != null:
+		var box := model_bounds(device)
+		if box.size != Vector3.ZERO:
+			at = fitted.transform * Vector3(box.get_center().x, box.get_center().y, box.position.z)
+	var marker := visual.get_node_or_null("Muzzle") as Marker3D
+	if marker == null:
+		marker = Marker3D.new()
+		marker.name = "Muzzle"
+		visual.add_child(marker)
+	marker.position = at
 
 
 ## Finds the attachment mounts on a gun model, in the space of its parent.

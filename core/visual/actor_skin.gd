@@ -261,6 +261,9 @@ func _ready() -> void:
 		arm.look = look
 		add_child(arm)
 		arm.setup(def, _player.get_animation(_anims["idle_melee"]) if _player and _anims.has("idle_melee") else null)
+		if _player:
+			arm.calibrate(_player.get_animation(_anims["aim_gun"]) if _anims.has("aim_gun") else null,
+					_player.get_animation(_anims["idle_melee"]) if _anims.has("idle_melee") else null)
 		# After the arm has put the hand on the model's hand.
 		skeleton.skeleton_updated.connect(_carry_moving)
 	if skeleton:
@@ -812,11 +815,15 @@ func _on_fired(from: Vector3, to: Vector3, gun: Gun) -> void:
 	var parent := actor.get_parent()
 	if parent == null:
 		return
-	var muzzle := from + (to - from).normalized() * 0.9
+	var fallback := from + (to - from).normalized() * 0.9
 	if gun.visual and gun.visual.is_inside_tree():
-		muzzle = gun.visual.global_transform * Vector3(0, -0.04, -0.5)
+		fallback = gun.visual.global_transform * Vector3(0, -0.04, -0.5)
+	# From the barrel as it is held in this view, along the barrel.
+	var muzzle := gun.muzzle_point(fallback)
+	var along := -gun.visual.global_basis.z.normalized() if gun.visual and gun.visual.is_inside_tree() \
+			else (to - from).normalized()
 	if not gun.quiet:
-		Vfx.muzzle_flash(parent, muzzle, (to - from).normalized())
+		Vfx.muzzle_flash(parent, muzzle, along)
 	if from.distance_to(to) < gun.max_range - 0.5:
 		Vfx.impact(parent, to, (from - to).normalized())
 

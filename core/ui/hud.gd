@@ -851,7 +851,9 @@ class Wrist:
 		if cam:
 			k = tan(deg_to_rad(cam.fov) * 0.5) / tan(deg_to_rad(reference_fov) * 0.5)
 		var spread := Vector3(k, k, 1.0)
-		_arm.visible = not third and raise_amount > 0.0
+		# Your own arm lifts the watch in first person when it is drawn
+		# (`PlayerController.has_arms`); the grey box forearm stands in otherwise.
+		_arm.visible = not third and raise_amount > 0.0 and not (controller != null and controller.has_arms())
 		if third:
 			transform = Transform3D.IDENTITY
 			if cam and is_inside_tree():

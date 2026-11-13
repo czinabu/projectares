@@ -53,6 +53,14 @@ var reach_ik: TwoBoneIK3D
 var off_ik: TwoBoneIK3D
 
 var _wrist := -1
+var _forearm := -1
+## The wrist's turn in the skeleton's space while a gun is raised to aim
+## (the `aim_gun` clip), and the forearm's while a blade is held ready
+## (`idle_melee`). Where the arm hangs differently, the weapon turns with it
+## by the difference, so a gun held low points down with the hand instead of
+## staying level with the aim. Null when the clips are missing.
+var _aim_wrist: Variant = null
+var _ready_forearm: Variant = null
 var _spine: Array[int] = []
 var _neck := -1
 ## Finger bone -> closed rotation, for each hand.
@@ -86,6 +94,7 @@ func setup(def: Dictionary, fist_animation: Animation) -> void:
 	if arm.size() != 3 or arm.any(func(bone: String) -> bool: return skeleton.find_bone(bone) < 0):
 		return
 	_wrist = skeleton.find_bone(arm[2])
+	_forearm = skeleton.find_bone(arm[1])
 	for bone: String in def.get("spine", []):
 		if skeleton.find_bone(bone) >= 0:
 			_spine.append(skeleton.find_bone(bone))
@@ -129,6 +138,43 @@ func _two_bone(ik_name: String, bones: Array, target: Node3D, pole: Node3D) -> T
 	ik.set_target_node(0, ik.get_path_to(target))
 	ik.set_pole_node(0, ik.get_path_to(pole))
 	return ik
+
+
+## Learns how the arm is turned when a weapon is held the way its model is
+## built to be held: a gun aimed (`aim`), a blade ready (`ready`).
+func calibrate(aim: Animation, ready: Animation) -> void:
+	if _wrist >= 0 and aim != null:
+		_aim_wrist = clip_basis(skeleton, aim, _wrist)
+	if _forearm >= 0 and ready != null:
+		_ready_forearm = clip_basis(skeleton, ready, _forearm)
+
+
+## A bone's turn in skeleton space at the start of `clip`, from its rotation
+## tracks (rest where a bone has none).
+static func clip_basis(skel: Skeleton3D, clip: Animation, bone: int) -> Basis:
+	var turns := {}
+	for track in clip.get_track_count():
+		if clip.track_get_type(track) != Animation.TYPE_ROTATION_3D:
+			continue
+		var found := skel.find_bone(String(clip.track_get_path(track)).get_slice(":", 1))
+		if found >= 0:
+			turns[found] = clip.rotation_track_interpolate(track, 0.0)
+	var out := Basis.IDENTITY
+	var up := bone
+	while up >= 0:
+		var local: Basis = Basis(turns[up]) if turns.has(up) else skel.get_bone_rest(up).basis.orthonormalized()
+		out = local * out
+		up = skel.get_bone_parent(up)
+	return out
+
+
+## The weapon hand's turn in the world when it follows `bone` from how the
+## bone sits in `calibrated` (where the weapon faces straight ahead).
+func _follow_turn(bone: int, calibrated: Basis) -> Basis:
+	var to_world := skeleton.global_basis.orthonormalized()
+	var now := skeleton.get_bone_global_pose(bone).basis.orthonormalized()
+	var ahead := actor.global_basis.orthonormalized()
+	return (to_world * now * calibrated.inverse() * to_world.inverse() * ahead).orthonormalized()
 
 
 ## Reads the closed-hand finger pose out of an animation, mirrors it for the
@@ -321,14 +367,25 @@ func hold_weapon() -> void:
 		return
 	var grip: Vector3 = skeleton.global_transform * skeleton.get_bone_global_pose(grip_bone).origin
 	var gun := actor.get_active_weapon() as Gun
-	if gun != null and pose != null and is_instance_valid(pose):
-		# The gun turns in the hand through a reload, as it does first person.
-		actor.hand.global_basis = actor.global_basis.orthonormalized() \
-				* Basis(Vector3.RIGHT, actor.cmd.pitch) * pose.gun_offset(false).basis
+	var melee := actor.get_active_weapon() as MeleeWeapon
+	var aimed := actor.global_basis.orthonormalized() * Basis(Vector3.RIGHT, actor.cmd.pitch)
+	var shared := pose != null and is_instance_valid(pose)
+	if gun != null and shared:
+		# Held low, the gun hangs with the hand; raised, it points where it
+		# shoots. It turns in the hand through a reload, as in first person.
+		var turn := aimed
+		if _aim_wrist != null and pose.low > 0.0:
+			turn = aimed.slerp(_follow_turn(_wrist, _aim_wrist), pose.low)
+		actor.hand.global_basis = turn * pose.gun_offset(false).basis
+	elif melee != null and shared and _ready_forearm != null:
+		# A blade at rest goes where the forearm takes it (a walk swings it,
+		# a run carries it); an attack or guard takes it back to the aim.
+		var hang := clampf(1.0 - pose.reach_weight, 0.0, 1.0)
+		actor.hand.global_basis = aimed.slerp(_follow_turn(_forearm, _ready_forearm), hang)
 	var held := grip_offset
 	# A blade's guard and windup poses shift it off the hand node. The arm
 	# reaches for that spot instead, so take the shift back out here.
-	var melee := actor.get_active_weapon() as MeleeWeapon
 	if melee and melee.visual:
 		held -= melee.visual.position
 	actor.hand.global_position = grip + actor.hand.global_basis * held
+	actor.hand.set_meta("shown", actor.hand.global_transform)

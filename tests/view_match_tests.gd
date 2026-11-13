@@ -164,7 +164,7 @@ static func _check_with_skin(t: Node) -> void:
 	gun.ammo_in_mag = 0
 	gun.start_reload()
 	gun._reload_left = gun.reload_time * 0.5
-	await t.frames(3)
+	await t.frames(40)
 	t.check(skin.arm._gun_weight > 0.99, "third person, the model's arm follows the reload")
 	var aim := p.global_basis.orthonormalized() * Basis(Vector3.RIGHT, p.cmd.pitch)
 	var wanted := aim * pose.gun_offset(false).basis
@@ -197,6 +197,37 @@ static func _check_with_skin(t: Node) -> void:
 	controller.set_physics_process(false)
 	t.check(controller.first_person_hold(pose).origin.y < PlayerController.FIRST_PERSON_HAND.y - 0.05,
 			"first person lowers the gun too")
+	# Held low, third person, the gun hangs with the hand rather than
+	# staying level with the aim.
+	await t.frames(2)
+	var muzzle_way := -p.hand.global_basis.z.normalized()
+	var ahead := -p.global_basis.z.normalized()
+	t.check(skin.arm._aim_wrist != null and muzzle_way.dot(ahead) < 0.95,
+			"third person, a gun held low points down with the hand (%.2f)" % muzzle_way.dot(ahead))
+	# Shots are drawn from the barrel where the model holds it.
+	var marker := gun.visual.get_node_or_null("Muzzle") as Node3D
+	t.check(marker != null, "the gun's model has a muzzle marker")
+	if marker != null:
+		p.hand.set_meta("shown", p.hand.global_transform * Transform3D(Basis.IDENTITY, Vector3(0, 1, 0)))
+		t.check(gun.muzzle_point(Vector3.ZERO).distance_to(marker.global_position + p.hand.global_basis * Vector3(0, 1, 0)) < 0.01,
+				"a shot's flash and tracer start at the muzzle as the gun is drawn, not where the hand was parked")
+		p.hand.remove_meta("shown")
+	# First person, your own arms hold the weapon.
+	p.hand_override = true
+	controller._update_arms(true)
+	var arms: Node3D = controller._arms
+	t.check(arms != null and controller.has_arms(), "first person builds a copy of your arms")
+	if arms != null:
+		arms.update(true, 0.0, false)
+		t.check(arms.visible and arms._ik.influence > 0.9 and arms._off_ik.influence > 0.9,
+				"with a gun in hand both arms reach for it")
+		var parts := {}
+		for mesh in arms.model.find_children("*", "MeshInstance3D", true, false):
+			parts[mesh.get_meta("slot", "")] = (mesh as MeshInstance3D).visible
+		t.check(parts.get("body", false) and not parts.get("head", true), "only the torso part with the arms is drawn")
+		arms.update(false, 0.0, false)
+		t.check(not arms.visible, "the arms go away out of first person")
+	p.hand_override = false
 	p.cmd.secondary = true
 	await t.get_tree().create_timer(0.5).timeout
 	t.check(pose.low < 0.1, "aiming raises it again (low %.2f, stand %s)" % [pose.low, skin._current])
