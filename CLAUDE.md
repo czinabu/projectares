@@ -880,8 +880,11 @@ without Caleb, and update the gap list when a PR closes a row.
   body (`ActorSkin._update_materialize`), then the watch rests
   (`Loadout.summon_cooldown`). The squad ping (`Raid.ping`, `pinged`) goes
   only to the pinger's side, like a visor tag. In third person the
-  card rises off the worn watch with a glow on the arm; it is never hung in
-  front of the camera. Vitals go on the card only where the visor cannot
+  card rises off the worn watch with a glow on the arm and is read like the
+  phone's holo (Caleb's feedback): it opens near the camera, beside the
+  character clear of the head and the crosshair, near solid and drawn over
+  the world (`Wrist._tp_spot`, `_tp_size`, `tp_backing`); the arm and its
+  pose stay the same, only where the light lands differs. Vitals go on the card only where the visor cannot
   show them (no helmet, or third person). The watch works in the home base
   too (`BaseHud.wrist`), its card saying what each icon holds for the next
   deploy (`Hud.base_watch_slots`), and there its Summon tab is the whole

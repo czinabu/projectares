@@ -983,16 +983,29 @@ func _test_main_flow() -> void:
 	check(controller.wrist_raised and wrist.is_open() and holo.visible and wrist.get_parent() == p
 			and wrist.text().contains(main.raid.world.display_name) and wrist.text().contains("Pack "),
 			"X raises the watch, and in third person its card opens over your wrist")
+	# Judged on a wide screen like a player's (headless, the window is a
+	# small square).
+	var window_was := get_tree().root.size
+	get_tree().root.size = Vector2i(1600, 900)
+	await frames(3)
 	var card_width := holo.global_basis.get_scale().x * wrist.face_size.x
-	var from_cam := controller.camera.global_position
-	check(from_cam.distance_to(holo.global_position) > from_cam.distance_to(p.get_eye_position()) + 0.3
-			and card_width < 2.0,
-			"the third-person card hangs out in front of the character, never behind them")
-	var card_on_screen := controller.camera.unproject_position(holo.global_position + controller.camera.global_basis.x * card_width * 0.5)
-	var head_on_screen := controller.camera.unproject_position(p.get_eye_position())
-	check(card_on_screen.x < head_on_screen.x, "and it keeps clear of the head and helmet on screen")
-	check(not (holo.material_override as ShaderMaterial).shader.code.contains("depth_test_disabled"),
-			"in third person the body passes in front of the card, like real light")
+	var cam := controller.camera
+	var card_left := cam.unproject_position(holo.global_position - cam.global_basis.x * card_width * 0.5)
+	var card_right := cam.unproject_position(holo.global_position + cam.global_basis.x * card_width * 0.5)
+	var screen := cam.get_viewport().get_visible_rect().size
+	check(cam.global_position.distance_to(holo.global_position) < cam.global_position.distance_to(p.get_eye_position())
+			and (card_right.x - card_left.x) > screen.x * 0.25 and card_left.x >= 0.0,
+			"the third-person card opens near the camera, big enough to read and whole on screen (%d px wide)"
+			% roundi(card_right.x - card_left.x))
+	var head_on_screen := cam.unproject_position(p.get_eye_position())
+	check(card_right.x < head_on_screen.x and card_right.x < screen.x * 0.5,
+			"and beside the character, clear of the head and the crosshair (card to %d, head at %d, of %d)"
+			% [roundi(card_right.x), roundi(head_on_screen.x), roundi(screen.x)])
+	get_tree().root.size = window_was
+	await frames(2)
+	var holo_mat := holo.material_override as ShaderMaterial
+	check(holo_mat.shader.code.contains("depth_test_disabled") and float(holo_mat.get_shader_parameter("backing")) > 0.5,
+			"in third person it is near solid and drawn over the world, like the phone's holo")
 	check(p.cmd.watch_up, "and the raised watch goes out with your inputs, so the arm glows for everyone")
 	var icons: Array = []
 	for slot in wrist.card.slots:
