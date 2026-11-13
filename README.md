@@ -104,7 +104,10 @@ click. A portal unfolds in front of you and stays open about 15 seconds:
 walk through it. Online, in the plaza, your clanmates can walk through a
 portal you open too, and you all land at the world's gate outpost. Portals
 only open in safe places (your base and the plaza), never in a fight:
-coming back still means signing out.
+coming back still means signing out. Inside a world's gate outpost the
+portal icon offers one portal, home: opening it signs you out, the ring
+unfolds over the countdown, and squadmates who step into it sign out and
+follow.
 
 In your own base you always wear your loadout: equip something and it is on
 you at once, and you come home still wearing it. A **mirror** hangs on the
@@ -412,7 +415,7 @@ you have.
 - **Loot is the money.** You earn scrip mostly by selling the loot you get
   home, by banking it at a depot or signing out with it, so nothing is earned
   until it survives. Loot sells for its full value.
-- **Kills pay a small bounty**: 20 scrip each, carried like all scrip, so it
+- **Kills pay a small bounty**: 10 scrip each, carried like all scrip, so it
   is only yours if you bank it or sign out alive. It is small on purpose, so
   running in with the free scrap kit never beats risking real gear.
 - **Banked scrip is safe, gear is not.** Your balance is never lost on death. But

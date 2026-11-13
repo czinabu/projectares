@@ -752,7 +752,13 @@ without Caleb, and update the gap list when a PR closes a row.
   the viewer's squad may use it; the squad key never leaves the server) and
   tells the walker (`portal_travel`). `main.gd go_through_portal` takes the
   trip, and arrival is `add_player`'s drop `Raid.PORTAL_DROP`: the same
-  "outpost" marker for a whole squad, else a quiet drop.
+  "outpost" marker for a whole squad, else a quiet drop. The one portal
+  inside a world is `Portal.HOME` at a gate outpost (Caleb's call):
+  `Portal.choices_for` offers it only while sheltered, and opening it is
+  `begin_sign_out` with a door. The ring unfolds over the gate countdown, a
+  squadmate stepping in starts their own sign-out (`_tick_portals`), and
+  everyone leaves through `_leave` as "left". It never emits
+  `portal_entered`, and no portal leads from one world into another.
 - Risk zones (DESIGN.md section 2): a world tiers its map with
   `WorldDef.zone_at` (0 outer, 1 middle, 2 core) and burns with
   `hazard_at`, which `Raid._tick_hazards` deals through `Combat.deal` once a

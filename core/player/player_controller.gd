@@ -306,12 +306,9 @@ func is_on_artifact() -> bool:
 ## (`Portal.destinations()`), or none where portals cannot open: anywhere but
 ## your base or a safe zone.
 func portal_choices() -> Array[String]:
-	if actor == null or not is_instance_valid(actor) or actor.is_dead:
+	if actor == null or not is_instance_valid(actor):
 		return []
-	var raid := Raid.of(actor)
-	if raid != null and (raid.world == null or not raid.world.safe_zone):
-		return []
-	return Portal.destinations()
+	return Portal.choices_for(Raid.of(actor), actor)
 
 
 ## The weapons on the raised watch's carousel (`Hud.weapon_entries`).

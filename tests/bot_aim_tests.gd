@@ -14,6 +14,19 @@ static func run(t: Node) -> void:
 	var foe: Actor = raid.bots[1]
 	var brain := shooter.get_node("Brain") as BotBrain
 	t.check(brain.skill >= 0.0 and brain.skill <= 1.0, "each bot rolls an aim skill between rookie and veteran")
+	t.check(brain.skill >= brain.skill_range.x and brain.skill <= brain.skill_range.y,
+			"a bot's skill comes from the range its world gives it")
+	# Balance pass: in Ashfront bots aim better the further in they arrive.
+	var ashfront := Worlds.get_world("ashfront")
+	var probe := Actor.new()
+	var ranges: Array[Vector2] = []
+	for zone in 3:
+		probe.set_meta("zone", zone)
+		ranges.append(ashfront.bot_skill_range(probe, false))
+	t.check(ranges[0].y < ranges[2].y and ranges[0].x < ranges[1].x and ranges[1].x < ranges[2].x,
+			"Ashfront bots aim better toward the core (%s)" % str(ranges))
+	t.check(ashfront.bot_skill_range(probe, true).x >= ranges[2].x, "a warlord aims like a veteran")
+	probe.free()
 	brain.skill = 1.0
 	shooter.global_position = Vector3(0, 0, 0)
 	shooter.velocity = Vector3.ZERO

@@ -325,8 +325,7 @@ static func watch_slots(p_raid: Raid, p: Actor, picked_toy := 0, pack_name := ""
 			[], -1.0, false, hunted))
 	# Mission: the squad portal, the contract, the squad ping, and sign-out
 	# and banking.
-	slots.append(portal_slot(Portal.destinations() if p_raid.world.safe_zone else ([] as Array[String]),
-			int(picks.get("portal", 0))))
+	slots.append(portal_slot(Portal.choices_for(p_raid, p), int(picks.get("portal", 0))))
 	slots.append(contract_slot(jobs, p.tally))
 	slots.append(_slot("ping", "", "Ping where you look", ["click"], -1.0, false, false))
 	if leaving >= 0.0:
@@ -438,7 +437,10 @@ static func base_watch_slots(base_name: String, loadout: Dictionary, held: Array
 ## A click opens it in front of you for your squad to walk through.
 static func portal_slot(choices: Array[String], picked := 0) -> Dictionary:
 	if choices.is_empty():
-		return _slot("portal", "", "Portals open in safe zones", [], -1.0, true, false)
+		return _slot("portal", "", "Portals open in safe zones and gate outposts", [], -1.0, true, false)
+	if choices == [Portal.HOME]:
+		# A gate outpost's portal: a sign-out with a door.
+		return _slot("portal", "", "Portal home · signs you out", ["click"], -1.0, false, false, 1, 0)
 	var at := clampi(picked, 0, choices.size() - 1)
 	return _slot("portal", "", "Portal to %s" % Portal.title_of(choices[at]), ["wheel", "click"], -1.0, false, false,
 			choices.size(), at)
