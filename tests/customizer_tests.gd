@@ -373,8 +373,10 @@ static func _run_mirror(t: Node) -> void:
 	for i in 2:
 		await t.get_tree().process_frame
 	skin = me.get_node_or_null("Skin")
+	var head_bit := 1 << (MirrorScript.HEAD_LAYER - 1)
 	t.check(skin != null and skin.find_children("*", "VisualInstance3D", true, false).all(
-			func(node: VisualInstance3D) -> bool: return node.layers == 1), "and back on the normal layer afterwards")
+			func(node: VisualInstance3D) -> bool: return node.layers == 1 or node.layers == head_bit),
+			"afterwards the body is on the normal layer, with only the head left out of your own view")
 	Look.enabled = was_enabled
 	main.queue_free()
 	await t.frames(3)
