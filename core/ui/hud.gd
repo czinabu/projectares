@@ -172,7 +172,7 @@ func _process(delta: float) -> void:
 		_prompt.text = "Click: pack %s onto your watch" % pack_name
 	elif _prompt.text.contains("Ride ") and not p.is_dead:
 		_prompt.text += "      Watch up, then click: pack it"
-	var picks := {"weapon": controller.weapon_pick, "artifact": controller.artifact_pick} \
+	var picks := {"weapon": controller.weapon_pick, "artifact": controller.artifact_pick, "portal": controller.portal_pick} \
 			if controller != null else {}
 	var slots := watch_slots(raid, p, picked, pack_name, leaving, banking, picks, contracts)
 	var focus := default_focus(slots)
@@ -323,7 +323,10 @@ static func watch_slots(p_raid: Raid, p: Actor, picked_toy := 0, pack_name := ""
 	var hunted := p.bounty > 0 or p.exposed or p.marked
 	slots.append(_slot("standing", str(p.renown) if p.renown > 0 else "", standing_text(p).replace("   ", " · "),
 			[], -1.0, false, hunted))
-	# Mission: the contract, the squad ping, and sign-out and banking.
+	# Mission: the squad portal, the contract, the squad ping, and sign-out
+	# and banking.
+	slots.append(portal_slot(Portal.destinations() if p_raid.world.safe_zone else ([] as Array[String]),
+			int(picks.get("portal", 0))))
 	slots.append(contract_slot(jobs, p.tally))
 	slots.append(_slot("ping", "", "Ping where you look", ["click"], -1.0, false, false))
 	if leaving >= 0.0:
@@ -398,9 +401,11 @@ static func base_vehicle_slot(toys: Array[String], picked := 0, packing := false
 
 ## The watch card at home (`HomeBase`), where there is no raid: the same
 ## icons, each saying what it holds for the next deploy. `loadout` is the
-## base's loadout (slot -> item id). Nothing on it can be used from here: the
-## base's stations do that.
-static func base_watch_slots(base_name: String, loadout: Dictionary, held: Array[Dictionary] = []) -> Array[Dictionary]:
+## base's loadout (slot -> item id). The squad portal (`portal_slot`, on
+## `portal_pick`) is the one icon used from here: it is how you leave for a
+## world. The rest is the base's stations' job.
+static func base_watch_slots(base_name: String, loadout: Dictionary, held: Array[Dictionary] = [],
+		portal_pick := 0) -> Array[Dictionary]:
 	var slots: Array[Dictionary] = []
 	var worn: Array[String] = []
 	for slot: String in ["primary", "sidearm", "melee"]:
@@ -421,10 +426,22 @@ static func base_watch_slots(base_name: String, loadout: Dictionary, held: Array
 		slots.append(_slot("artifact", "", "No artifact", [], -1.0, true, false))
 	slots.append(_slot("map", "", base_name, [], -1.0, false, false))
 	slots.append(_slot("standing", "", "At home", [], -1.0, true, false))
+	slots.append(portal_slot(Portal.destinations(), portal_pick))
 	slots.append(contract_slot(held, {}))
 	slots.append(_slot("ping", "", "No squad here", [], -1.0, true, false))
 	slots.append(_slot("leave", "", "Home", [], -1.0, true, false))
 	return slots
+
+
+## The squad portal icon: a carousel of where a portal can lead from here
+## (`choices`, none outside a safe space), the one `picked` out on its line.
+## A click opens it in front of you for your squad to walk through.
+static func portal_slot(choices: Array[String], picked := 0) -> Dictionary:
+	if choices.is_empty():
+		return _slot("portal", "", "Portals open in safe zones", [], -1.0, true, false)
+	var at := clampi(picked, 0, choices.size() - 1)
+	return _slot("portal", "", "Portal to %s" % Portal.title_of(choices[at]), ["wheel", "click"], -1.0, false, false,
+			choices.size(), at)
 
 
 ## The contract icon: how many jobs are held, and the one nearest done as its
@@ -1015,11 +1032,11 @@ class Wrist:
 	const TAB_SLOTS := {
 		"summon": ["weapon", "vehicle", "artifact"],
 		"status": ["map", "standing"],
-		"mission": ["contract", "ping", "leave"],
+		"mission": ["portal", "contract", "ping", "leave"],
 	}
 	## Every icon, left to right, tab after tab (see `Hud.watch_slots`). The
 	## wheel steps along this.
-	const SLOTS := ["weapon", "vehicle", "artifact", "map", "standing", "contract", "ping", "leave"]
+	const SLOTS := ["weapon", "vehicle", "artifact", "map", "standing", "portal", "contract", "ping", "leave"]
 	const HOLO_TINT := Color(0.75, 1.0, 1.0, 0.95)
 	const GLOW_COLOR := Color(0.35, 0.95, 1.0)
 	## The card as projected light: faint scanlines that crawl up it, a
@@ -1812,6 +1829,15 @@ void fragment() {
 							Vector2(-0.3, -0.6), Vector2(-0.3, -1)]), c, r, color, width * 0.7)
 					_lines(PackedVector2Array([Vector2(-0.4, 0.15), Vector2(-0.1, 0.5), Vector2(0.45, -0.25)]),
 							c, r, color, width)
+				"portal":
+					# An upright ring with a swirl inside it.
+					var ring := PackedVector2Array()
+					for i in 25:
+						var a := TAU * i / 24.0
+						ring.append(Vector2(cos(a) * 0.62, sin(a) * 0.95))
+					_lines(ring, c, r, color, width)
+					draw_arc(c, 0.3 * r, 0.0, PI * 1.4, 12, color, width * 0.7, true)
+					_lines(PackedVector2Array([Vector2(-0.9, 1.0), Vector2(0.9, 1.0)]), c, r, color, width * 0.7)
 				"leave":
 					_lines(PackedVector2Array([Vector2(-0.75, -0.1), Vector2(-0.75, 1), Vector2(0.75, 1),
 							Vector2(0.75, -0.1)]), c, r, color, width)
