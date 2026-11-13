@@ -359,9 +359,11 @@ without Caleb, and update the gap list when a PR closes a row.
   the lock brackets stay (`VisorHud.reticle_shown`), and the helmet wears
   its health strip and system light on the back of the head
   (`ActorSkin._update_vitals`, `helmet_light`), where a pack or a slung gun
-  never covers them. Apart from the
-  thin health arc, do not repeat the wrist on the glass (ammo, the map,
-  standing): the wrist shows you, the visor shows what is around you. Mk2
+  never covers them. The glass carries
+  only your always-in-view readings (the health arc, and in flight the heat
+  gauge, rig cue, squad markers and landing warning at its edges, per
+  DESIGN.md sections 3 and 5); do not put the map or standing there, they
+  stay on the watch. Mk2
   helmets are loot only. Check the glass by eye with
   `visual_check.tscn -- <dir> --visors-only`.
 - Vehicles are items tagged `vehicle`, tuned by their stats, and spawned by
@@ -505,13 +507,17 @@ without Caleb, and update the gap list when a PR closes a row.
   add full-screen panels or overlays; information about a thing goes on or
   next to the thing (a `Label3D` tag, a sign) or into the phone. The HUD is
   for the crosshair, prompts, hit feedback and brief notices.
-- The watch and the phone split the job (Caleb's rule). The holographic
-  watch (`Hud.Wrist`, raised with X) is for gameplay: vitals, pack, ammo,
-  heat, standing and strongpoints, landing choices, and future in-raid
-  actions such as calling something in. The phone is for settings, talking
-  to friends and players, and information (news, the war feed). A new
-  in-raid action goes on the watch; a new social or info feature is a
-  phone app.
+- The watch and the phone split the job (Caleb's rule, revised: the watch no
+  longer carries vitals, heat and ammo; see DESIGN.md section 3). Vitals,
+  flight heat and ammo are always in view on the visor and the gear (health
+  arc, gun display, pack screen), so no key is needed to see them. The
+  holographic watch (`Hud.Wrist`, raised with X) is for the things you choose
+  to do in action: vehicles, the heavy weapon, artifacts, sign-out, banking,
+  the map and pings, landing choices and the pack. The phone is for
+  settings, talking to friends and players, and information (news, the war
+  feed). A new in-raid action goes on the watch; a new social or info
+  feature is a phone app. Until the always-in-view readings are built (see
+  `docs/design-gaps.md`), the watch still shows them.
 - Money (`core/economy/`): the rules live once, in `economy.gd` (static, like
   `StashRules`), shared by `Profile` and `StashService`. Online, `credits`
   lives on the server's account and only changes there: through

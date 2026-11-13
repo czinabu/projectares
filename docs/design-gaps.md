@@ -35,11 +35,14 @@ rows marked **pre-playtest** come before the friends playtest.
 
 | Item | State | Notes |
 | --- | --- | --- |
-| Vitals, pack, ammo, heat, standing, strongpoints | Built | `Hud.Wrist`. |
+| Pack, standing, strongpoints on the watch | Built | `Hud.Wrist`. Standing and strongpoints move to the map and pings page. |
+| Vitals, heat and ammo always in view, off the watch | Partly | Helmet back strip and the visor's thin health arc exist. Missing: armor and stamina on the arc, the heat gauge at the visor edge, ammo on the gun's display. Today the watch still shows all three, and stays until these land. |
+| Map and pings page | Missing | Design: the watch holds the map and squad pings. |
+| Banking readout on the watch | Missing | Banking happens at depots; the watch should show what is banked. Comes with banking. |
 | Landing choices | Built | |
 | Vehicle carousel (toys) | Built | Pick, throw, unpack, pack back; holds two. |
 | Heavy weapon chamber | Missing | Today a power weapon fills key 4 from a rack. **Pre-playtest.** |
-| Per-rig readouts (stall line, height band, dash pips) | Missing | Comes with the aerial rig rework. **Pre-playtest.** |
+| Per-rig readouts (stall line, height band, dash pips) | Missing | Now part of the flight HUD (see Flight): at the visor edge and on the rig, not the watch. Comes with the aerial rig rework. **Pre-playtest.** |
 | Sign-out from the watch, with its countdown | Partly | Sign-out exists on L; not on the watch. |
 | Loadout swapping from the watch in the PvE world | Missing, deferred | With the PvE world. Today loadouts change only in a lobby or base. |
 | Raising the watch with the character's own left arm, first and third person | Missing | Today third person only straps the watch to `Wrist.L` (the arm stays put and the hologram floats to the camera) and first person shows a grey box forearm. Left-arm IK already exists in `WeaponArm` (`off_ik`). |
@@ -67,6 +70,8 @@ rows marked **pre-playtest** come before the friends playtest.
 | Boots as a skimming rig with height bands and air dashes | Missing | Today three quick kicks. PR 2. |
 | Air aim penalty, waived in each rig's steady state | Missing | No airborne spread in `Gun`. PR 1. |
 | Overheat cuts the rig out until heat is back to 35 | Built | `recover_heat` 35. |
+| Flight HUD, first person: heat gauge, rig cue, squad markers and landing warning at the visor edges | Missing | New in DESIGN.md section 5. Extends `VisorHud`; the squad markers use the clan or team side. **Pre-playtest**, with the rig rework. |
+| Flight HUD, third person: heat and cue on the pack screen, glowing vents, landing warning pulse | Missing | The pack already carries a screen (`ActorSkin.stow_place` keeps it clear); vents are new rig art. With the row above. |
 
 ## Heavy weapons and artifacts
 
