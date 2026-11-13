@@ -44,7 +44,7 @@ var persist := true
 ## Account id -> Account. Loaded lazily from disk.
 var _accounts := {}
 ## DEV MODE: account ids kept topped up with the dev stash (every piece of
-## gear, max credits) on this server. Only a server started from the editor
+## gear, max scrip) on this server. Only a server started from the editor
 ## with `--dev-host` sets it, and that server keeps its accounts in a
 ## separate folder, so real online accounts are never touched.
 var dev_accounts: Array[String] = []
@@ -70,7 +70,7 @@ class Account:
 	## Lifetime renown. Only ever grows.
 	var renown := 0
 	## Money for the hub shops. Only ever changed here, on the server.
-	var credits := Economy.STARTING_CREDITS
+	var scrip := Economy.STARTING_SCRIP
 	var arena_wins := 0
 	var arena_losses := 0
 
@@ -94,7 +94,7 @@ class Account:
 			"raids_extracted": raids_extracted,
 			"kills": kills,
 			"renown": renown,
-			"credits": credits,
+			"scrip": scrip,
 			"arena_wins": arena_wins,
 			"arena_losses": arena_losses,
 		}
@@ -130,7 +130,7 @@ class Account:
 		raids_extracted = maxi(0, int(data.get("raids_extracted", 0)))
 		kills = maxi(0, int(data.get("kills", 0)))
 		renown = maxi(0, int(data.get("renown", 0)))
-		credits = Economy.read_saved(data)
+		scrip = Economy.read_saved(data)
 		arena_wins = maxi(0, int(data.get("arena_wins", 0)))
 		arena_losses = maxi(0, int(data.get("arena_losses", 0)))
 
@@ -244,7 +244,7 @@ func snapshot(account_id: String) -> Dictionary:
 		"raids_extracted": account.raids_extracted,
 		"kills": account.kills,
 		"renown": account.renown,
-		"credits": account.credits,
+		"scrip": account.scrip,
 		"arena_wins": account.arena_wins,
 		"arena_losses": account.arena_losses,
 	}
@@ -295,7 +295,7 @@ func buy(account_id: String, shop_id: String, item_id: String) -> Dictionary:
 		return _fail("No such account.")
 	if account.is_deployed():
 		return _fail("You are in a raid.")
-	return _bank(account, Economy.buy(account.stash, account.credits, shop_id, item_id))
+	return _bank(account, Economy.buy(account.stash, account.scrip, shop_id, item_id))
 
 
 ## Sells up to `count` of a stash item. An empty `item_id` sells every trade
@@ -307,30 +307,30 @@ func sell(account_id: String, item_id: String, count: int = 1) -> Dictionary:
 	if account.is_deployed():
 		return _fail("You are in a raid.")
 	if item_id == "":
-		return _bank(account, Economy.sell_loot(account.stash, account.credits))
-	return _bank(account, Economy.sell(account.stash, account.loadout, account.credits, item_id, count))
+		return _bank(account, Economy.sell_loot(account.stash, account.scrip))
+	return _bank(account, Economy.sell(account.stash, account.loadout, account.scrip, item_id, count))
 
 
 ## The account's balance, or 0 if there is no such account.
-func credits_of(account_id: String) -> int:
+func scrip_of(account_id: String) -> int:
 	var account := load_account(account_id)
-	return account.credits if account != null else 0
+	return account.scrip if account != null else 0
 
 
-## Adds `delta` credits (a cost when negative) for anything outside the
+## Adds `delta` scrip (a cost when negative) for anything outside the
 ## shops, such as a wager or a reward. Refuses, changing nothing, if it would
 ## go below zero. Server code only: never pass on an amount a client chose.
-func change_credits(account_id: String, delta: int) -> bool:
+func change_scrip(account_id: String, delta: int) -> bool:
 	var account := load_account(account_id)
-	if account == null or not Economy.can_change(account.credits, delta):
+	if account == null or not Economy.can_change(account.scrip, delta):
 		return false
-	account.credits = Economy.add(account.credits, delta)
+	account.scrip = Economy.add(account.scrip, delta)
 	_save(account)
 	return true
 
 
 func _bank(account: Account, result: Dictionary) -> Dictionary:
-	account.credits = result.credits
+	account.scrip = result.scrip
 	if result.ok:
 		_save(account)
 	return result
@@ -405,7 +405,7 @@ func settle(account_id: String, result: Dictionary) -> Dictionary:
 		account.raids_extracted += 1
 	account.kills += maxi(0, int(result.get("kills", 0)))
 	account.renown += maxi(0, int(result.get("renown", 0)))
-	account.credits = Economy.add(account.credits, Economy.payout(result))
+	account.scrip = Economy.add(account.scrip, Economy.payout(result))
 	var gained: Variant = result.get("mastery_xp", {})
 	if typeof(gained) == TYPE_DICTIONARY:
 		for track: Variant in gained:
@@ -472,9 +472,9 @@ func _dev_top_up(account: Account) -> void:
 	if account.id not in dev_accounts or account.is_deployed():
 		return
 	var had := account.stash.size()
-	var had_credits := account.credits
-	account.credits = DevMode.top_up(account.stash)
-	if account.stash.size() != had or account.credits != had_credits:
+	var had_scrip := account.scrip
+	account.scrip = DevMode.top_up(account.stash)
+	if account.stash.size() != had or account.scrip != had_scrip:
 		_save(account)
 
 

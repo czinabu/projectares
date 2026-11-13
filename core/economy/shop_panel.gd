@@ -1,5 +1,5 @@
 extends VBoxContainer
-## The shop screen: your credits, a tab for every hub shop, and a tab for
+## The shop screen: your scrip, a tab for every hub shop, and a tab for
 ## selling. Self-contained, so the hub menu and any vendor stall can show it.
 ##
 ## Solo it trades with the local `Profile`. Online, set `account` to the
@@ -13,13 +13,13 @@ const ShopDB := preload("res://core/economy/shop_db.gd")
 
 const SELL_TAB := "sell"
 const TITLE_COLOR := Color(1.0, 0.55, 0.25)
-const CREDIT_COLOR := Color(1.0, 0.85, 0.4)
+const SCRIP_COLOR := Color(1.0, 0.85, 0.4)
 
 ## Online: the server decides, so nothing changes until `account` is updated.
 signal buy_requested(shop_id: String, item_id: String)
 ## An empty `item_id` asks to sell all loot.
 signal sell_requested(item_id: String, count: int)
-## Solo: the local profile's stash or credits changed.
+## Solo: the local profile's stash or scrip changed.
 signal changed
 
 ## Online: the server's account snapshot. Null means the local profile.
@@ -29,7 +29,7 @@ var shop_filter := ""
 ## The tab being shown: a shop id, or SELL_TAB.
 var current := ""
 
-var _credits: Label
+var _scrip: Label
 var _tabs: HBoxContainer
 var _blurb: Label
 var _rows: VBoxContainer
@@ -42,12 +42,12 @@ func _ready() -> void:
 	var title := _label("SHOPS", 20, TITLE_COLOR)
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	head.add_child(title)
-	_credits = _label("", 18, CREDIT_COLOR)
-	head.add_child(_credits)
+	_scrip = _label("", 18, SCRIP_COLOR)
+	head.add_child(_scrip)
 	add_child(head)
 	add_child(_label(
 		"Shops sell base-level gear only. Anything better has to be found out there. "
-		+ "Sell the loot you bring home to earn credits. Bought gear is lost like any other if you die with it.",
+		+ "Sell the loot you bring home to earn scrip. Bought gear is lost like any other if you die with it.",
 		13, Color(0.65, 0.65, 0.65), true))
 	_tabs = HBoxContainer.new()
 	_tabs.add_theme_constant_override("separation", 6)
@@ -63,8 +63,8 @@ func _ready() -> void:
 	refresh()
 
 
-func credits() -> int:
-	return int(account.get("credits", 0)) if account != null else Profile.credits
+func scrip() -> int:
+	return int(account.get("scrip", 0)) if account != null else Profile.scrip
 
 
 func stash_items() -> Array:
@@ -112,7 +112,7 @@ func sell(item_id: String, count: int = 1) -> void:
 		sell_requested.emit(item_id, count)
 		return
 	var result: Dictionary = Profile.sell_loot() if item_id == "" else Profile.sell(item_id, count)
-	_done(result, "Sold for %d credits." % result.get("earned", 0))
+	_done(result, "Sold for %d scrip." % result.get("earned", 0))
 
 
 func show_message(text: String) -> void:
@@ -126,7 +126,7 @@ func refresh() -> void:
 		return
 	if current not in tabs():
 		current = tabs()[0]
-	_credits.text = "%d credits" % credits()
+	_scrip.text = "%d scrip" % scrip()
 	for child in _tabs.get_children():
 		child.queue_free()
 	for tab in tabs():
@@ -152,7 +152,7 @@ func _fill_shop(shop_id: String) -> void:
 		var owned := stash_items().count(id)
 		var button := _row(id, "%s%s" % [ItemDB.item_description(id), "  (you own %d)" % owned if owned > 0 else ""],
 				"Buy  %d" % price)
-		button.disabled = credits() < price
+		button.disabled = scrip() < price
 		button.pressed.connect(buy.bind(shop_id, id))
 
 
