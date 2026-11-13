@@ -79,7 +79,11 @@ signal world_invite_accepted(invite: Dictionary)
 signal base_visit_requested(owner_name: String, stash: Array, loadout: Dictionary)
 
 const DEFAULT_PORT := 24565
-const PROTOCOL := 18
+const PROTOCOL := 19
+## Every packet is compressed, both ways. State updates are mostly repeated
+## numbers, and a big battle sends a player hundreds of them a second. Server
+## and client must agree, so a change here needs a new PROTOCOL.
+const COMPRESSION := ENetConnection.COMPRESS_RANGE_CODER
 const StashService := preload("res://core/account/stash_service.gd")
 const Economy := preload("res://core/economy/economy.gd")
 const Human := preload("res://core/visual/human.gd")
@@ -292,6 +296,7 @@ func host(p_world_id: String, port := DEFAULT_PORT, max_players := 8) -> Error:
 	var err := peer.create_server(port, max_players)
 	if err != OK:
 		return err
+	peer.host.compress(COMPRESSION)
 	is_server = true
 	world_id = p_world_id
 	clans.open(stash.save_dir, stash.persist)
@@ -1182,6 +1187,7 @@ func join(address: String, port := DEFAULT_PORT) -> Error:
 	var err := peer.create_client(address, port)
 	if err != OK:
 		return err
+	peer.host.compress(COMPRESSION)
 	is_server = false
 	_api.multiplayer_peer = peer
 	_api.connection_failed.connect(func() -> void: failed.emit("Could not reach the server."))
