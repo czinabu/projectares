@@ -12,6 +12,7 @@ var fov_deg := 140.0
 var attack_range := 28.0
 var preferred_range := 14.0
 var reaction_time := 0.7
+## Melee only: how far off the chest a swing is aimed, per metre.
 var aim_error := 0.05
 var burst_time := 0.6
 var burst_pause := 0.7
@@ -24,6 +25,31 @@ var repath_distance := 1.5
 ## Chance that a melee bot reads the side of an incoming swing in time.
 var guard_skill := 0.4
 var guard_reaction := 0.22
+
+## Gun aim. Bots aim like people, not like an aimbot: they turn onto a target
+## at a limited speed, trail it while it moves, and their aim wanders by an
+## angle that starts wide on first sight and settles while they hold it in
+## view. Moving, airborne and distant targets are harder to hit.
+## 0 is a rookie, 1 a veteran. Below 0, each bot rolls its own from its seed.
+var skill := -1.0
+## Turn speed onto the target, degrees a second (at skill 0.5).
+var turn_speed_deg := 200.0
+## Seconds the aim trails a moving target (at skill 0.5).
+var track_lag := 0.22
+## Settled aim wander, degrees (at skill 0.5).
+var aim_error_deg := 2.2
+## The wander on first sight is this many times the settled one...
+var settle_mult := 3.0
+## ...and settles over this long in view.
+var settle_time := 2.5
+## Extra wander when the target is in the air, and per metre past
+## `preferred_range`, degrees.
+var air_error_deg := 3.0
+var far_error_deg := 0.08
+## Extra wander while the bot itself is moving, degrees.
+var self_move_error_deg := 1.0
+## Fires only when its aim is within this of where it means to aim, degrees.
+var fire_cone_deg := 6.0
 
 var state := State.PATROL
 var actor: Actor
@@ -54,6 +80,14 @@ var _guard_dir := 0
 var _read_left := 0.0
 var _read_dir := 0
 var _threat_seen := false
+var _aim := Vector3.ZERO
+var _aim_target: Actor
+var _reaction := 0.0
+var _wander := Vector2.ZERO
+var _wander_goal := Vector2.ZERO
+var _wander_left := 0.0
+var _lag := 0.0
+var _on_target := false
 
 
 func _ready() -> void:
@@ -68,6 +102,8 @@ func _ready() -> void:
 	actor.cmd.yaw = _rng.randf_range(-PI, PI)
 	# Not every bot thinks on the same tick.
 	_think_left = _rng.randf() * 0.2
+	if skill < 0.0:
+		skill = _rng.randf_range(0.25, 0.75)
 	actor.health.damaged.connect(_on_damaged)
 	actor.heard.connect(_on_heard)
 
@@ -114,6 +150,7 @@ func _physics_process(delta: float) -> void:
 		_attack(cmd, delta)
 	elif state != State.PATROL:
 		_seen_time = 0.0
+		_aim_target = null
 		_lost_time += delta
 		state = State.CHASE
 		if _lost_time > give_up_time or _flat_dist(_last_seen) < 2.0:
@@ -134,14 +171,16 @@ func _attack(cmd: ActorCommand, delta: float) -> void:
 	var eye := actor.get_eye_position()
 	var chest := target.global_position + Vector3(0, 1.1, 0)
 	var dist := eye.distance_to(chest)
-	var aim_point := chest + _error * dist * aim_error
-	_look_along(cmd, aim_point - eye)
-	cmd.aim_dir = (aim_point - eye).normalized()
 
 	var blade := actor.get_active_weapon() as MeleeWeapon
 	if blade:
+		var aim_point := chest + _error * dist * aim_error
+		_look_along(cmd, aim_point - eye)
+		cmd.aim_dir = (aim_point - eye).normalized()
+		_aim = cmd.aim_dir
 		_attack_melee(cmd, blade, delta)
 		return
+	_aim_gun(cmd, eye, chest, dist, delta)
 
 	# Keep a comfortable distance: close in, back off, or strafe.
 	if dist > preferred_range * 1.4:
@@ -155,7 +194,7 @@ func _attack(cmd: ActorCommand, delta: float) -> void:
 			_strafe_sign = -_strafe_sign
 		cmd.move = Vector2(_strafe_sign, 0)
 
-	if _seen_time < reaction_time or dist > attack_range:
+	if _seen_time < _reaction or dist > attack_range or not _on_target:
 		return
 	if _burst_left > 0.0:
 		_burst_left -= delta
@@ -167,6 +206,50 @@ func _attack(cmd: ActorCommand, delta: float) -> void:
 		_pause_left -= delta
 		if _pause_left <= 0.0:
 			_burst_left = burst_time
+
+
+## Turns the bot's aim toward the target the way a person would (see the
+## aim tuning at the top) and sets `_on_target` when it is close enough to
+## shoot. A new target means a fresh reaction time and a wide first aim.
+func _aim_gun(cmd: ActorCommand, eye: Vector3, chest: Vector3, dist: float, delta: float) -> void:
+	var sharp := clampf(skill, 0.0, 1.0)
+	if target != _aim_target:
+		_aim_target = target
+		_seen_time = 0.0
+		_reaction = reaction_time * _rng.randf_range(0.8, 1.3) * (1.4 - 0.8 * sharp)
+		_wander_left = 0.0
+		# The first look lands off to one side.
+		_wander = Vector2.from_angle(_rng.randf() * TAU)
+		if _aim.length_squared() < 0.5:
+			_aim = Basis.from_euler(Vector3(cmd.pitch, cmd.yaw, 0.0)) * Vector3.FORWARD
+	# Where it means to aim: where the target was a moment ago, plus a
+	# wander that drifts rather than jumps.
+	_wander_left -= delta
+	if _wander_left <= 0.0:
+		_wander_left = _rng.randf_range(0.3, 0.6)
+		_wander_goal = Vector2(_rng.randf_range(-1, 1), _rng.randf_range(-1, 1)).limit_length(1.0)
+		_lag = track_lag * _rng.randf_range(0.4, 1.3) * (1.5 - sharp)
+	_wander = _wander.lerp(_wander_goal, clampf(delta * 5.0, 0.0, 1.0))
+	var settle := lerpf(settle_mult, 1.0, clampf(_seen_time / settle_time, 0.0, 1.0))
+	var error := aim_error_deg * (1.5 - sharp) * settle
+	if target.airborne_time > 0.15:
+		error += air_error_deg
+	error += far_error_deg * maxf(dist - preferred_range, 0.0)
+	if Vector2(actor.velocity.x, actor.velocity.z).length() > 1.0:
+		error += self_move_error_deg
+	var to := (chest - target.velocity * _lag - eye).normalized()
+	var side := to.cross(Vector3.UP).normalized()
+	var up := side.cross(to).normalized()
+	var off := deg_to_rad(error)
+	var want := (to + side * tan(_wander.x * off) + up * tan(_wander.y * off)).normalized()
+	# Turn at a limited speed: no snap.
+	var gap := _aim.angle_to(want)
+	var step := deg_to_rad(turn_speed_deg * (0.6 + 0.8 * sharp)) * delta
+	if gap > 0.0001:
+		_aim = _aim.slerp(want, minf(1.0, step / gap)).normalized()
+	_on_target = _aim.angle_to(want) < deg_to_rad(fire_cone_deg)
+	_look_along(cmd, _aim)
+	cmd.aim_dir = _aim
 
 
 ## Rush the target and swing from a random side when in reach. Between swings
