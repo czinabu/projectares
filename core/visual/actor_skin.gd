@@ -44,6 +44,14 @@ var glide_leg := Vector3(0.06, -1.0, -0.06)
 ## the feet point, in radians.
 var glide_look := 1.0
 var glide_toes := 1.0
+## Free look behind in a glide (a backstroke, see `_look_roll`): lying on
+## the back, the arms open out wide to the sides and a little up for
+## balance, the legs part a little, and the head comes up off the pack to
+## look back down the body past the feet (a negative look tips the chin in).
+## Same frame as `glide_arm`. Blended in as the body rolls over.
+var backstroke_arm := Vector3(0.95, -0.35, -0.3)
+var backstroke_leg := Vector3(0.08, -1.0, -0.08)
+var backstroke_look := -0.7
 ## Off the ground the legs stop running. `air_grace` seconds after leaving
 ## it (so steps and kerbs do not flicker) they go to an air pose, blended in
 ## at `air_blend` full changes a second. Each pose is a thigh and a shin
@@ -239,6 +247,13 @@ var _has_heading := false
 ## The actor's yaw last frame: while the body lies flat in flight its
 ## attitude is held in the world, not on the view (see `_update_glide`).
 var _last_yaw := 0.0
+## Free look in a glide: how far the body has rolled to face the view, about
+## its own length (PI: on its back, a backstroke, looking behind).
+var _look_roll := 0.0
+## Free look in a glide: the body starts to roll toward the view once it is
+## this far off the way it flies, and lies on its back by `look_roll_full`.
+var look_roll_start := 0.6
+var look_roll_full := 2.6
 var _attack_left := 0.0
 var _aim_left := 0.0
 ## Weapon -> the copy of it worn while holstered (null if it has no model),
@@ -992,6 +1007,14 @@ func _update_glide(delta: float) -> void:
 	_tilt = _tilt.lerp(tilt, follow)
 	_face = lerp_angle(wrapf(_face, -PI, PI), face, follow)
 	_bank = lerpf(_bank, bank, 1.0 - exp(-bank_follow * delta))
+	# Free look in a glide: the body twists round its own length to face the
+	# view, so looking behind lays it on its back (a backstroke) while the
+	# wings fly on, and a sidearm aims back past the feet.
+	var look_roll := 0.0
+	if flat and actor.flight.is_gliding and actor.cmd.free_look:
+		var off := wrapf(face, -PI, PI)
+		look_roll = -signf(off) * smoothstep(look_roll_start, look_roll_full, absf(off)) * PI
+	_look_roll = lerp_angle(_look_roll, look_roll, 1.0 - exp(-bank_follow * delta))
 	# A sideways air dash: one full roll over the dash; then the body rights
 	# itself the short way round.
 	if flat and actor.air_dash_left > 0.0 and absf(actor.air_dash_side) > 0.5:
@@ -1003,7 +1026,7 @@ func _update_glide(delta: float) -> void:
 	var angle := _tilt.length()
 	var tip := Basis(Vector3.UP.cross(_tilt / angle).normalized(), angle) if angle > 0.001 else Basis.IDENTITY
 	# A positive bank or twist rolls to the right: right side down.
-	var turn := tip * Basis(Vector3.UP, _face - _bank + _twist)
+	var turn := tip * Basis(Vector3.UP, _face - _bank + _twist + _look_roll)
 	_body_turn = turn
 	var pivot := Vector3(0, glide_pivot, 0)
 	transform = Transform3D(turn * Basis(Vector3.UP, PI), pivot - turn * pivot)
@@ -1090,10 +1113,12 @@ func _pose_glide() -> void:
 	# The skin faces the model's way, turned half round from the actor.
 	var to_skeleton := _skeleton.basis.orthonormalized().inverse() * _model_basis_inverse() * Basis(Vector3.UP, PI)
 	var right := (to_skeleton * Vector3.RIGHT).normalized()
+	# How far over onto the back free look has rolled the body.
+	var back := smoothstep(0.35, 0.9, absf(_look_roll) / PI)
 	for limb: Array in _glide_arms:
 		if limb.is_empty():
 			continue
-		var arm_dir := glide_arm.lerp(boost_arm, smoothstep(0.0, 1.0, _boost))
+		var arm_dir := glide_arm.lerp(boost_arm, smoothstep(0.0, 1.0, _boost)).lerp(backstroke_arm, back)
 		var wanted := to_skeleton * Vector3(arm_dir.x * limb[3], arm_dir.y, arm_dir.z)
 		# Shooting or aiming, the arms keep their hold on the weapon.
 		var arm_w := w * (1.0 - smoothstep(0.0, 1.0, _flight_hold))
@@ -1101,10 +1126,11 @@ func _pose_glide() -> void:
 		_aim_bone(limb[1], limb[2], wanted, arm_w)
 	for limb: Array in _glide_legs:
 		if not limb.is_empty():
-			_pose_leg(limb, to_skeleton * Vector3(glide_leg.x * limb[3], glide_leg.y, glide_leg.z), right, w)
+			var leg := glide_leg.lerp(backstroke_leg, back)
+			_pose_leg(limb, to_skeleton * Vector3(leg.x * limb[3], leg.y, leg.z), right, w)
 	if _glide_neck >= 0:
 		var pose := _skeleton.get_bone_global_pose(_glide_neck)
-		pose.basis = Basis((to_skeleton * Vector3.RIGHT).normalized(), glide_look * w) * pose.basis
+		pose.basis = Basis((to_skeleton * Vector3.RIGHT).normalized(), lerpf(glide_look, backstroke_look, back) * w) * pose.basis
 		_skeleton.set_bone_global_pose(_glide_neck, pose)
 
 

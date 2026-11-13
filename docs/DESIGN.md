@@ -347,15 +347,19 @@ faster cooling), so it flies further. What never changes:
 
 Measured from the street (`feel_bench.tscn`): the Mk1 jetpack reaches its
 ceiling in about 7 s, Mk2 13 s, Mk3 19 s; boots kick to about 25 m, 46 m and
-100 m; wings spiral up on pulses to 15 m in about 18 s (Mk1), 40 m in 21 s
-(Mk2) and 90 m in 26 s (Mk3), or launch off something high.
+100 m; wings climb on pulses and upward boosts to their ceilings in about
+8 s (Mk1), 36 s (Mk2) and 29 s (Mk3), or launch off something high.
 
 Flying controls (Caleb's call): the keys fly every rig and the mouse only
 looks and aims. Space climbs, kicks, launches or glides (by rig), C sinks or
 coasts. Shift + a move key is an air dash that way on every rig, for a little
 heat (Shift alone dashes forward); holding Shift + W on a jetpack keeps
-boosting. Gliding, Shift + S boosts upward instead of back (the wings are
-pulled up), and W turns the glide onto the way you face. Q and E fly nothing. Every rig dashes, so the dash is not an
+boosting. Wings are the exception to the mouse only looking: they fly
+where you look, like a bird, with momentum (hold V to free look while
+they fly straight on). Turns cost speed and pulling up
+hard in a turn stalls them. Gliding, Shift is a wing boost that thrusts you
+the way you face and keeps the speed, and Shift + S boosts upward; wings
+never dash sideways. Q and E fly nothing. Every rig dashes, so the dash is not an
 edge by itself: boots dash furthest (20 m/s for 0.3 s, 20 heat), jetpacks
 middling (16 m/s for 0.25 s, 15 heat), wings shortest but cheapest (12 m/s
 for 0.25 s, 10 heat, a barrel roll sideways). The stamina dash (Alt) is

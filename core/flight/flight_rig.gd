@@ -134,6 +134,17 @@ var glide_bank_rate := 8.0
 ## full bank while it is off by this many radians or more, easing to level
 ## as it comes round, so it settles on the view without swinging past.
 var glide_align_angle := 0.5
+## Flying like a wing (see `Actor._glide_velocity`): speed lost a second in
+## a full bank, how much more a pull tightens a banked turn, how much faster
+## a full bank sinks (1: twice as fast), how much of a pull's climb a full
+## bank turns into turning instead, and how well stalled wings still turn.
+var glide_turn_drag := 3.0
+var glide_pull_turn := 0.6
+var glide_bank_sink := 1.0
+var glide_bank_lift_loss := 0.7
+var stall_authority := 0.3
+## Stalled, the nose drops and the fall gives back this much speed a second.
+var stall_recover := 8.0
 ## Below the stall speed a glide sinks this fast (0: just the glide sink).
 var stall_sink := 0.0
 ## Wings: only a sidearm fires while they are spread, and a main gun only
@@ -175,6 +186,14 @@ var air_dash_speed := 16.0
 var air_dash_time := 0.25
 var air_dash_heat := 15.0
 var air_dash_cooldown := 0.7
+## Wings: Shift (or Shift + W) in a glide is a boost instead of a dash. It
+## thrusts you the way you face, adding `glide_boost` m/s of airspeed that
+## the glide keeps and bleeds off at `glide_drag`, and Shift + S climbs at
+## `glide_boost_climb` m/s, keeping the airspeed. Either costs
+## `glide_boost_heat` (0 boost: the ordinary dash).
+var glide_boost := 0.0
+var glide_boost_climb := 0.0
+var glide_boost_heat := 0.0
 
 var heat := 0.0
 var overheated := false
@@ -254,10 +273,12 @@ func can_skim() -> bool:
 
 
 ## A dash in the air. True if it goes off (and takes its heat).
-func try_air_dash() -> bool:
+## `cost` overrides the dash's heat (a wing boost); below zero it is
+## `air_dash_heat`.
+func try_air_dash(cost := -1.0) -> bool:
 	if not enabled or overheated or air_dash_speed <= 0.0:
 		return false
-	if not _spend(air_dash_heat):
+	if not _spend(air_dash_heat if cost < 0.0 else cost):
 		return false
 	burst_fired.emit()
 	return true
@@ -328,10 +349,10 @@ func controls_hint() -> String:
 	if can_skim():
 		parts.append("hold in the air to skim low (stay near a surface to cool, C sinks)")
 	if can_glide():
-		parts.append("hold while falling to glide (steer to bank, W dives, S climbs%s)"
+		parts.append("hold while falling to glide (look to steer, W dives, S climbs, Shift boosts%s)"
 				% (", press again to pulse up" if pulse_velocity > 0.0 else ""))
 	if air_dash_speed > 0.0:
-		parts.append("Shift + a move key dashes that way in the air%s" % (" (Shift + S climbs while gliding)" if can_glide() else ""))
+		parts.append("Shift + a move key dashes that way in the air%s" % (" (gliding, Shift boosts ahead and Shift + S climbs)" if can_glide() else ""))
 	return ", ".join(parts)
 
 

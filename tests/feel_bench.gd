@@ -259,9 +259,9 @@ func _climb(rig: String) -> void:
 
 ## Flies `a` from the ground as high as its rig will take it in `limit`
 ## seconds, its own way: a jetpack climbs and coasts to cool, boots kick at
-## the top of each kick, wings launch and pulse whenever the
-## heat allows. `step` runs ticks (`step.call(count, move)`, awaited). It
-## stops early once `stop` meters up.
+## the top of each kick, wings launch, then pulse or boost upward at the
+## top of each rise whenever the heat allows. `step` runs ticks
+## (`step.call(count, move)`, awaited). It stops early once `stop` meters up.
 ## Returns Vector2(highest altitude, seconds to reach it). Shared with the
 ## tests (`RigTierTests`).
 static func climb(a: Actor, limit: float, step: Callable, stop := INF) -> Vector2:
@@ -288,17 +288,24 @@ static func climb(a: Actor, limit: float, step: Callable, stop := INF) -> Vector
 			a.cmd.jump = not cooling
 			a.cmd.descend = cooling
 		elif f.can_glide():
-			# Launch, glide in a wide circle, pulse when the heat allows.
+			# Launch and glide straight on (a turn costs speed). At the top of
+			# each rise, pulse, or boost upward (Shift + S) when a pulse is not
+			# ready, whenever the heat allows.
 			a.cmd.jump = true
-			a.cmd.move = Vector2(0.3, 0)
+			a.cmd.move = Vector2.ZERO
+			a.cmd.sprint_pressed = false
 			var air := f.is_gliding or (f.launched and a.velocity.y < 0.0)
-			a.cmd.jump_pressed = (not f.launched or (air and a.velocity.y <= 0.0 \
-					and f.heat + f.pulse_heat <= f.max_heat)) and i % 2 == 0
+			var falling := air and a.velocity.y <= 0.0 and i % 2 == 0
+			if not f.launched or (falling and f.heat + f.pulse_heat <= f.max_heat):
+				a.cmd.jump_pressed = i % 2 == 0
+			elif falling and f.glide_boost_climb > 0.0 and f.heat + f.glide_boost_heat <= f.max_heat:
+				a.cmd.move = Vector2(0, -1)
+				a.cmd.sprint_pressed = true
 		elif f.can_skim():
 			# Kick again at the top of each kick. Holding a skim in between
 			# would burn heat up high.
 			a.cmd.jump_pressed = a.velocity.y <= 0.0 and not f.overheated and i % 2 == 0
-		await step.call(1, "climb" if not a.cmd.jump_pressed else "!kick")
+		await step.call(1, "!kick" if a.cmd.jump_pressed or a.cmd.sprint_pressed else "climb")
 		var height := a.global_position.y - a.ground_level() if not is_nan(a.ground_level()) else a.global_position.y
 		if height > top + 0.05:
 			top = height
@@ -308,5 +315,6 @@ static func climb(a: Actor, limit: float, step: Callable, stop := INF) -> Vector
 			break
 	a.cmd.jump = false
 	a.cmd.descend = false
+	a.cmd.sprint_pressed = false
 	a.cmd.move = Vector2.ZERO
 	return Vector2(top, top_at)
