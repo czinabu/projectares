@@ -157,7 +157,7 @@ func _build_gate(index: int) -> Node3D:
 	var w := gate_size.x
 	var h := gate_size.y
 	var bar := 0.12
-	var lit := _glow(color, 1.3)
+	var lit := _glow(color, 0.9)
 	var dark := _glow(Color(0.04, 0.05, 0.08), 0.0)
 	for side: float in [-1.0, 1.0]:
 		_bar(gate, Vector3(bar, h, bar), Vector3(side * w * 0.5, 0, 0), lit)
@@ -196,7 +196,7 @@ func _relabel(gate: Node3D) -> void:
 ## them: they give the lane its depth while nothing passes.
 func _build_rails() -> void:
 	var length := gate_spacing * gate_count
-	var rail := _glow(CYAN * 0.2, 0.0)
+	var rail := _glow(CYAN * 0.12, 0.0)
 	for x: float in [-1.0, 1.0]:
 		for y: float in [-1.0, 1.0]:
 			_bar(self, Vector3(0.05, 0.05, length), Vector3(x * (gate_size.x * 0.5 - 0.6), y * (gate_size.y * 0.5 - 0.6),

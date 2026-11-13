@@ -1,7 +1,7 @@
 class_name StartScreen
 extends Control
-## The first thing you see when the game launches: the title and Start, set
-## low and to the left over the lane between worlds (`TitleBackdrop`, built
+## The first thing you see when the game launches: the title and Start,
+## centred over the lane between worlds (`TitleBackdrop`, built
 ## by `core/start.gd`).
 ##
 ## `start_pressed` fires once, then `leave()` fades out while the lane jumps,
@@ -33,8 +33,8 @@ var leave_time := 0.8
 ## What the screen fades to on Start, after `leave_delay` seconds.
 var leave_color := Color.BLACK
 var leave_delay := 0.0
-## Left margin and bottom margin of the title block, in pixels.
-var margin := Vector2(96, 84)
+## Side and bottom margins of the corner text and the hint, in pixels.
+var margin := Vector2(96, 60)
 
 var start_button: Button
 var _curtain: ColorRect
@@ -106,43 +106,37 @@ func leave() -> void:
 
 func _build_title_block() -> void:
 	var box := VBoxContainer.new()
-	box.anchor_top = 1.0
-	box.anchor_bottom = 1.0
-	box.offset_left = margin.x
-	box.offset_right = margin.x + 900
-	box.offset_top = -margin.y - 260
-	box.offset_bottom = -margin.y
-	box.alignment = BoxContainer.ALIGNMENT_END
-	box.add_theme_constant_override("separation", 8)
+	box.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
+	box.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	box.grow_vertical = Control.GROW_DIRECTION_BOTH
+	box.alignment = BoxContainer.ALIGNMENT_CENTER
+	box.add_theme_constant_override("separation", 10)
 	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(box)
-	var title := _label(title_text, 84, INK, 10)
+	var title := _label(title_text, 96, INK, 12)
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	box.add_child(title)
 	_reveal.append(title)
 	# A short amber rule under the title: the one accent on the screen.
 	_rule = ColorRect.new()
 	_rule.color = UiTheme.ACCENT
 	_rule.custom_minimum_size = Vector2(72, 3)
-	_rule.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	_rule.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	_rule.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	box.add_child(_rule)
 	var tagline := _label(tagline_text, 24, QUIET, 1)
+	tagline.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	box.add_child(tagline)
 	_reveal.append(tagline)
 	var gap := Control.new()
-	gap.custom_minimum_size = Vector2(0, 30)
+	gap.custom_minimum_size = Vector2(0, 34)
 	box.add_child(gap)
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 16)
-	box.add_child(row)
-	_reveal.append(row)
-	# Start is a real button you can click, with the key that also starts
-	# the game in a keycap beside it.
 	start_button = Button.new()
 	start_button.text = "START"
 	start_button.focus_mode = Control.FOCUS_ALL
 	start_button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	start_button.custom_minimum_size = Vector2(220, 56)
+	start_button.custom_minimum_size = Vector2(240, 58)
+	start_button.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	var dim := UiTheme.ACCENT
 	start_button.add_theme_stylebox_override("normal", _frame(Color(0.02, 0.025, 0.05, 0.75), dim, 2))
 	start_button.add_theme_stylebox_override("focus", _frame(Color(0, 0, 0, 0), dim, 2))
@@ -159,21 +153,38 @@ func _build_title_block() -> void:
 	start_button.add_theme_color_override("font_hover_pressed_color", INK_DARK)
 	start_button.add_theme_color_override("font_disabled_color", INK_DARK)
 	start_button.pressed.connect(press_start)
-	row.add_child(start_button)
+	box.add_child(start_button)
+	_reveal.append(start_button)
+	# How to start, along the bottom: "PRESS [SPACE] OR CLICK START".
+	var hint := HBoxContainer.new()
+	hint.anchor_left = 0.0
+	hint.anchor_right = 1.0
+	hint.anchor_top = 1.0
+	hint.anchor_bottom = 1.0
+	hint.offset_top = -margin.y - 34
+	hint.offset_bottom = -margin.y
+	hint.alignment = BoxContainer.ALIGNMENT_CENTER
+	hint.add_theme_constant_override("separation", 12)
+	hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(hint)
+	_reveal.append(hint)
+	var press := _label("PRESS", 18, QUIET, 3)
+	press.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	hint.add_child(press)
 	var key := PanelContainer.new()
 	var cap := _frame(Color(0.02, 0.025, 0.05, 0.6), QUIET, 1)
 	cap.content_margin_left = 12
 	cap.content_margin_right = 12
-	cap.content_margin_top = 4
-	cap.content_margin_bottom = 4
+	cap.content_margin_top = 3
+	cap.content_margin_bottom = 3
 	key.add_theme_stylebox_override("panel", cap)
 	key.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	key.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	key.add_child(_label("SPACE", 18, INK, 3))
-	row.add_child(key)
-	var or_click := _label("or click", 20, QUIET, 1)
+	hint.add_child(key)
+	var or_click := _label("OR CLICK START", 18, QUIET, 3)
 	or_click.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	row.add_child(or_click)
+	hint.add_child(or_click)
 
 
 ## The title block comes in once the scene is up: the black lifts, then the
@@ -221,21 +232,22 @@ func _add_shade() -> void:
 	shade.stretch_mode = TextureRect.STRETCH_SCALE
 	shade.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(shade)
-	# And a soft pool of shadow behind the title block, so the streaks dim
-	# there. Radial, so it has no edge to spot.
+	# And a soft pool of shadow behind the title block in the middle, so the
+	# lane dims there. Radial, so it has no edge to spot.
 	var pool := Gradient.new()
 	pool.set_color(0, Color(0.01, 0.01, 0.03, 0.75))
 	pool.set_color(1, Color(0.01, 0.01, 0.03, 0.0))
 	var pool_texture := GradientTexture2D.new()
 	pool_texture.gradient = pool
 	pool_texture.fill = GradientTexture2D.FILL_RADIAL
-	pool_texture.fill_from = Vector2(0.15, 0.75)
-	pool_texture.fill_to = Vector2(0.95, 0.75)
+	pool_texture.fill_from = Vector2(0.5, 0.5)
+	pool_texture.fill_to = Vector2(1.0, 0.5)
 	var wash := TextureRect.new()
 	wash.texture = pool_texture
-	wash.anchor_right = 0.65
+	wash.anchor_left = 0.15
+	wash.anchor_right = 0.85
 	wash.anchor_top = 0.2
-	wash.anchor_bottom = 1.0
+	wash.anchor_bottom = 0.85
 	wash.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	wash.stretch_mode = TextureRect.STRETCH_SCALE
 	wash.mouse_filter = Control.MOUSE_FILTER_IGNORE
