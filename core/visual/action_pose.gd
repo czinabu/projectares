@@ -72,15 +72,15 @@ var phone_rate := 5.0
 ## through the eyes, the stock in the shoulder and the off hand on the fore
 ## end, the same body in both views. `ads_rate` is how fast it comes up and
 ## goes down (per second; `PlayerController` moves an optic's eye to the
-## camera at the same pace). `ads_relief` is how far in front of the eyes
-## the rear of the sight sits, by item tag, first match wins: a sidearm is
-## held out at arm's length, a long gun is shouldered close.
+## camera at the same pace). A sidearm is held out with its sight
+## `sidearm_relief` in front of the eyes. A long gun is shouldered: the eye
+## sits `stock_ahead` forward of the butt (a cheek on the stock), so its
+## plain sights come `relief_for` in front of it, at least `min_relief`.
+## An optic's eye point is its own relief.
 var ads_rate := 7.0
-var ads_relief := [
-	["sidearm", 0.26],
-	["power", 0.16],
-	["", 0.09],
-]
+var sidearm_relief := 0.26
+var stock_ahead := 0.17
+var min_relief := 0.06
 ## Guns with any of these tags are braced at the hip, never shouldered
 ## (a spinning cannon is too heavy to bring to the eye).
 var ads_hip_tags: Array[String] = ["minigun"]
@@ -202,10 +202,32 @@ func shoulders_never(gun: Gun) -> bool:
 func relief_for(gun: Gun) -> float:
 	if optic_sight(gun) != null:
 		return 0.0
-	for entry: Array in ads_relief:
-		if entry[0] == "" or ItemDB.has_tag(gun.item_id, entry[0]):
-			return entry[1]
-	return 0.0
+	if gun.is_sidearm or ItemDB.has_tag(gun.item_id, "sidearm"):
+		return sidearm_relief
+	var box := model_box(gun)
+	if box.size == Vector3.ZERO:
+		return min_relief
+	return maxf(box.end.z - stock_ahead - sight_local(gun).z, min_relief)
+
+
+## The bounds of the gun as drawn, in the space of its visual (worked out
+## once it has a model, and kept). Empty with nothing drawn.
+static func model_box(gun: Gun) -> AABB:
+	if gun.visual.has_meta("model_box"):
+		return gun.visual.get_meta("model_box")
+	var box := AABB()
+	var first := true
+	var to_visual := gun.visual.global_transform.affine_inverse()
+	for node in gun.visual.find_children("*", "MeshInstance3D", true, false):
+		var mesh := node as MeshInstance3D
+		if mesh.mesh == null or not mesh.visible:
+			continue
+		var part: AABB = (to_visual * mesh.global_transform) * mesh.get_aabb()
+		box = part if first else box.merge(part)
+		first = false
+	if not first and gun.visual.has_node("Model"):
+		gun.visual.set_meta("model_box", box)
+	return box
 
 
 ## The fitted optic's eye point, or null for plain sights.
@@ -225,23 +247,10 @@ static func sight_local(gun: Gun) -> Vector3:
 	var iron := gun.visual.get_node_or_null("IronSight") as Node3D
 	if iron != null:
 		return iron.position
-	if gun.visual.has_meta("sight_local"):
-		return gun.visual.get_meta("sight_local")
-	var box := AABB()
-	var first := true
-	var to_visual := gun.visual.global_transform.affine_inverse()
-	for node in gun.visual.find_children("*", "MeshInstance3D", true, false):
-		var mesh := node as MeshInstance3D
-		if mesh.mesh == null or not mesh.is_visible_in_tree():
-			continue
-		var part: AABB = (to_visual * mesh.global_transform) * mesh.get_aabb()
-		box = part if first else box.merge(part)
-		first = false
-	if first:
+	var box := model_box(gun)
+	if box.size == Vector3.ZERO:
 		return Vector3(0.0, 0.08, 0.0)
-	var at := Vector3(box.get_center().x, box.end.y, box.end.z - box.size.z * 0.25)
-	gun.visual.set_meta("sight_local", at)
-	return at
+	return Vector3(box.get_center().x, box.end.y, box.end.z - box.size.z * 0.25)
 
 
 ## Where the sight of `gun` is drawn, wherever the physics tick left the
