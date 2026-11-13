@@ -5,6 +5,7 @@ extends RefCounted
 ## ping, and the pop-ups. Kept in its own file and called from the test
 ## runner.
 
+const BaseUpgrades := preload("res://core/base/base_upgrades.gd")
 const KIT: Array[String] = ["rifle_scrap", "blade_scrap", "pistol_service", "jetpack_mk1", "plate_light"]
 
 
@@ -13,6 +14,8 @@ static func run(t: Node) -> void:
 	await _summon(t)
 	await _card(t)
 	await _ping_and_popups(t)
+	await _everywhere(t)
+	await _at_home(t)
 
 
 static func _rules(t: Node) -> void:
@@ -68,9 +71,6 @@ static func _summon(t: Node) -> void:
 	p.weapon_swapped.connect(func(id: String, _mag: int, _reserve: int) -> void: swaps.append(id))
 	t.check(raid.summon(p, "scrap_metal") != "" and raid.summon(p, "smg_stinger") != "" and swaps.is_empty(),
 			"loot that is no weapon, and a weapon you do not carry, cannot be summoned")
-	p.weapons_locked = true
-	t.check(raid.summon(p, "rifle_carbine") != "", "nothing is summoned where weapons are locked")
-	p.weapons_locked = false
 	var carried := p.inventory.items.size()
 	var worn := p.weapons.size()
 	t.check(raid.summon(p, "rifle_carbine") == "" and swaps == (["rifle_carbine"] as Array[String]) and changes[0] == 1,
@@ -289,3 +289,131 @@ static func _ping_and_popups(t: Node) -> void:
 	controller.queue_free()
 	hud.queue_free()
 	await t._end_raid(raid)
+
+
+## Caleb's call: every vehicle, the jet included, can be thrown and every
+## weapon summoned in every world, the plaza included.
+static func _everywhere(t: Node) -> void:
+	print("Watch: every vehicle and weapon in every world")
+	var vehicles: Array[String] = []
+	for id: String in ItemDB.all_ids():
+		if ItemDB.has_tag(id, "vehicle"):
+			vehicles.append(id)
+	for world: WorldDef in Worlds.all():
+		var raid := Raid.new()
+		t.add_child(raid)
+		raid.start(world, 91, world.starter_loadout() + vehicles)
+		for bot in raid.bots:
+			bot.get_node("Brain").set_physics_process(false)
+			bot.global_position += Vector3(0, 0, 3000)
+		await t.frames(10)
+		var p := raid.player
+		var state := raid.state_for(p)
+		p.protected_left = 0.0
+		var landed: Array[String] = []
+		var refused: Array[String] = []
+		var unpacked := [false]
+		raid.toy_landed.connect(func(_a: Actor, _id: String, _at: Vector3, ok: bool) -> void: unpacked[0] = ok)
+		for id in vehicles:
+			var ok := false
+			# Some spots are walled in; try round the thrower before giving up.
+			for turn in 8:
+				state.toy_ready_at = raid.clock
+				var ahead := Basis(Vector3.UP, TAU * turn / 8.0) * Vector3(0, 0, -9)
+				var aim := (p.global_position + ahead - p.get_eye_position()).normalized()
+				p.cmd.aim_dir = aim
+				p.cmd.yaw = atan2(-aim.x, -aim.z)
+				p.cmd.pitch = asin(clampf(aim.y, -1.0, 1.0))
+				var why := raid.throw_toy(p, id)
+				if why != "":
+					refused.append("%s: %s" % [id, why])
+					break
+				unpacked[0] = false
+				await t._wait_until(func() -> bool: return raid.toys.is_empty(), 300)
+				if unpacked[0]:
+					ok = true
+					break
+			if ok:
+				landed.append(id)
+				# Pack it again so the next one has room.
+				var vehicle: Node3D = raid.vehicles[raid.vehicles.size() - 1]
+				raid.remove_vehicle(vehicle)
+				state.parked.erase(vehicle)
+				state.stowed.append(id)
+		t.check(landed == vehicles, "every vehicle unpacks in %s (%s)%s" % [world.id, ", ".join(landed),
+				"" if refused.is_empty() else "; refused " + "; ".join(refused)])
+		# A weapon carried in the pack can be summoned here too.
+		p.inventory.add_item("rifle_carbine")
+		state.summon_ready_at = raid.clock
+		t.check(raid.summon(p, "rifle_carbine") == "" and Loadout.worn_index(p, "primary") >= 0
+				and p.weapons[Loadout.worn_index(p, "primary")].item_id == "rifle_carbine",
+				"a weapon in the pack is summoned in %s" % world.id)
+		raid.queue_free()
+		await t.frames(2)
+
+
+## At home the watch summons every vehicle and weapon the owner has: a
+## vehicle unpacks in the base to be ridden and packs back, a weapon is
+## equipped. Nothing is stored or lost.
+static func _at_home(t: Node) -> void:
+	print("Watch: summoning at home")
+	var vehicles: Array[String] = []
+	for id: String in ItemDB.all_ids():
+		if ItemDB.has_tag(id, "vehicle"):
+			vehicles.append(id)
+	var stash: Array[String] = ["rifle_carbine", "smg_stinger", "knife_gutter", "scrap_metal", "power_rail_lance"]
+	stash.append_array(vehicles)
+	stash.append(vehicles[0])
+	var base := HomeBase.new()
+	base.show_gear(stash, {"primary": "rifle_carbine", "vehicle": vehicles[0]}, BaseUpgrades.full())
+	t.add_child(base)
+	await t.frames(5)
+	var p := base.player
+	t.check(base.watch_vehicles() == vehicles, "every vehicle owned is on the watch at home, one of each: %s"
+			% ", ".join(base.watch_vehicles()))
+	t.check(base.watch_weapons() == (["smg_stinger", "knife_gutter"] as Array[String]),
+			"every weapon owned and not worn is on the carousel, and nothing else: %s" % ", ".join(base.watch_weapons()))
+	# Stand mid-room and aim across it.
+	p.global_position = base.to_global(Vector3(-2.0, 0.1, 0.0))
+	p.cmd.yaw = PI / 2.0
+	p.cmd.pitch = -0.3
+	p.cmd.aim_dir = Vector3.ZERO
+	await t.frames(5)
+	var unpacked: Array[String] = []
+	for id in vehicles:
+		if base.throw_toy(p, id) == "" and is_instance_valid(base.out_vehicles.get(id)):
+			unpacked.append(id)
+			await t.frames(50)
+			var vehicle: Node3D = base.out_vehicles[id]
+			if id == vehicles[0]:
+				t.check(not base.watch_vehicles().has(id) and float(vehicle.get("unpack_left")) == 0.0,
+						"a thrown vehicle unpacks in the base and is off the watch while it is out")
+				t.check(vehicle.call("mount", p) and p.vehicle == vehicle, "it can be ridden at home")
+				p.cmd.interact_pressed = true
+				await t.frames(3)
+				p.cmd.interact_pressed = false
+				t.check(p.vehicle == null, "and got off again, with no server")
+				p.global_position = base.to_global(Vector3(-2.0, 0.1, 0.0))
+				await t.frames(3)
+			# Pack it by looking at it.
+			var aim := (vehicle.global_position + Vector3(0, 0.6, 0) - p.get_eye_position()).normalized()
+			p.cmd.aim_dir = aim
+			p.cmd.yaw = atan2(-aim.x, -aim.z)
+			p.cmd.pitch = asin(clampf(aim.y, -1.0, 1.0))
+			await t.frames(2)
+			if base.pack_vehicle(p) != "":
+				vehicle.queue_free()
+				base.out_vehicles.erase(id)
+			await t.frames(2)
+			p.cmd.yaw = PI / 2.0
+			p.cmd.pitch = -0.3
+			p.cmd.aim_dir = Vector3.ZERO
+	t.check(unpacked == vehicles, "every vehicle unpacks at home (%s)" % ", ".join(unpacked))
+	t.check(base.out_vehicles.is_empty() and base.watch_vehicles() == vehicles, "and each packs back onto the watch")
+	var asked: Array = []
+	base.equip_requested.connect(func(slot: String, id: String) -> void: asked.append([slot, id]))
+	base.read_only = true
+	t.check(base.watch_vehicles().is_empty() and base.watch_weapons().is_empty() and base.throw_toy(p, vehicles[0]) != "",
+			"nothing is summoned in someone else's base")
+	base.queue_free()
+	await t.frames(2)

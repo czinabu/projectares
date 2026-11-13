@@ -1,7 +1,7 @@
 extends RefCounted
 ## Checks for power weapons: the four sci-fi guns, power racks and the
-## the power slot (key 4), where they turn up, and that they never reach
-## a stash. Kept in its own file and called from the test runner.
+## watch's heavy chamber they are scanned into and summoned from, where they
+## turn up, and that they never reach a stash. Kept in its own file and called from the test runner.
 
 const PowerArmory := preload("res://core/war/power_armory.gd")
 const StashRules := preload("res://core/account/stash_rules.gd")
@@ -49,27 +49,33 @@ static func run(t: Node) -> void:
 	var rack := raid.spawn_container(["power_rail_lance"], false, LootContainer.RACK_LABEL, floor_at + Vector3(0, 0, -2))
 	await t.frames(2)
 	raid.player = p
-	t.check(rack.is_rack() and rack.get_prompt() == "[F] Take Rail Lance",
+	t.check(rack.is_rack() and rack.get_prompt() == "[F] Scan Rail Lance into your watch",
 			"a rack offers its power weapon: %s" % rack.get_prompt())
 	var weapon_count := p.weapons.size()
 	var pack_before := p.inventory.items.duplicate()
 	var kit_guns := p.weapons.duplicate()
 	var changes := []
 	p.power_changed.connect(func(id: String, mag: int, reserve: int) -> void: changes.append([id, mag, reserve]))
+	var in_hand := p.get_active_weapon()
 	rack.interact(p)
 	await t.frames(2)
+	t.check(Loadout.power_index(p) >= 0 and p.weapons.size() == weapon_count + 1 and p.get_active_weapon() == in_hand,
+			"scanning it fills the watch's heavy chamber, and what you held stays in hand")
+	t.check(p.weapon_for_key(1) != Loadout.power_index(p) and not p.slot_order().has(Loadout.power_index(p))
+			and p.weapon_for_key(4) == -1 and not InputMap.has_action("weapon_4"),
+			"no key and no wheel turn draws it: only the watch")
+	var carousel: Array = Hud.weapon_entries(p).map(func(e: Dictionary) -> String: return e.id)
+	t.check(carousel.has("power_rail_lance"), "it is on the watch's weapon carousel: %s" % ", ".join(carousel))
+	await _summon_heavy(t, p)
 	var held := p.get_active_weapon() as Gun
-	t.check(held != null and held.item_id == "power_rail_lance" and p.weapons.size() == weapon_count + 1
-			and Loadout.power_index(p) == p.active_weapon_index,
-			"taking it fills the power slot and puts it in hand")
+	t.check(held != null and held.item_id == "power_rail_lance" and Loadout.power_index(p) == p.active_weapon_index,
+			"summoned from the watch, it is in hand")
 	var kept_kit := true
 	for w in kit_guns:
 		kept_kit = kept_kit and w in p.weapons
 	t.check(kept_kit and rack.items.is_empty() and "power_rail_lance" in p.gear_items and p.inventory.items == pack_before,
 			"your own weapons stay with you, and nothing goes in the pack")
 	t.check(changes.size() == 1 and changes[0][0] == "power_rail_lance", "the change is announced for the network")
-	t.check(p.weapon_for_key(4) == Loadout.power_index(p) and p.weapon_for_key(1) != Loadout.power_index(p),
-			"the power weapon sits on key 4, and key 1 is still your primary")
 	t.check(held.controls_hint().contains("charge") and held.status_text().contains("4 shots"),
 			"the rail lance tells you to charge it and counts its shots")
 
@@ -136,6 +142,7 @@ static func run(t: Node) -> void:
 	rack.set_items(["power_helion"])
 	rack.interact(p)
 	await t.frames(2)
+	await _summon_heavy(t, p)
 	var helion := p.get_active_weapon() as Gun
 	t.check(helion.item_id == "power_helion" and rack.items.is_empty(), "a restocked rack hands out another")
 	a.global_position = floor_at + Vector3(3, 0, -20)
@@ -167,10 +174,11 @@ static func run(t: Node) -> void:
 
 	print("Power weapons: Arc Mortar")
 	rack.set_items(["power_arc_mortar"])
-	t.check(rack.get_prompt() == "[F] Take Arc Mortar, leave your Helion Plasma Launcher",
+	t.check(rack.get_prompt() == "[F] Scan Arc Mortar into your watch, leave your Helion Plasma Launcher",
 			"holding one, the rack offers a trade: %s" % rack.get_prompt())
 	rack.interact(p)
 	await t.frames(2)
+	await _summon_heavy(t, p)
 	var mortar := p.get_active_weapon() as Gun
 	t.check(mortar.item_id == "power_arc_mortar" and p.weapons.size() == weapon_count + 1
 			and rack.items == (["power_helion"] as Array[String])
@@ -207,6 +215,7 @@ static func run(t: Node) -> void:
 	rack.ammo.clear()
 	rack.interact(p)
 	await t.frames(2)
+	await _summon_heavy(t, p)
 	var cannon := p.get_active_weapon() as Gun
 	var full := cannon.ammo_in_mag
 	p.cmd.aim_dir = Vector3.FORWARD
@@ -292,3 +301,15 @@ static func run(t: Node) -> void:
 
 	raid.queue_free()
 	await t.frames(2)
+
+
+## Draws the heavy chamber's weapon the way the watch does (a switch in the
+## command) and waits out its materialize time, which must be there.
+static func _summon_heavy(t: Node, p: Actor) -> void:
+	p.cmd.switch_weapon = Loadout.power_index(p)
+	await t.frames(2)
+	p.cmd.switch_weapon = -1
+	var heavy := p.get_active_weapon()
+	t.check(heavy != null and ItemDB.has_tag(heavy.item_id, "power") and p.materialize_left > 0.0,
+			"summoned, a heavy weapon materializes before it can fire (%.1f s)" % p.materialize_time)
+	await t._wait_until(func() -> bool: return p.materialize_left <= 0.0, 300)

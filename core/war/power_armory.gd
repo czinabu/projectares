@@ -5,7 +5,7 @@ extends RefCounted
 ## cache.
 ##
 ## Power weapons are items tagged "power": a few shots, never stored. Taking
-## one off a rack puts it in the power slot (key 4) next to your own guns;
+## one off a rack scans it into the watch's heavy chamber, summoned from there;
 ## if you already carry one, it goes on the rack in exchange, so you carry
 ## one at a time. One that runs dry is thrown away. They turn up:
 ##   - on a rack at every strongpoint, restocked on a timer the war speeds up,

@@ -143,7 +143,7 @@ const CORRECTION_RATE := 0.2
 const FORWARDED_NOTICES := ["Parry!", "Wrong side", "Guard broken", "Staggered", "Killed ", "Looted ",
 		"Backpack full", "Someone is riding it", "Banked ", "Signing out", "Sign-out cancelled",
 		"You cannot sign out", "No room there", "Watch recharging", "Your watch is full",
-		"Look at a vehicle", "Packed ", "Get off first", "Not while signing out", "Vehicles stay on the watch", "No open sky",
+		"Look at a vehicle", "Packed ", "Get off first", "Not while signing out", "Vehicles stay on the watch",
 		"Scanned", "Sensed"]
 
 var is_server := false
@@ -1524,7 +1524,7 @@ func _power_changed(id: int, item_id: String, mag: int, reserve: int) -> void:
 	var actor: Actor = _actors.get(id)
 	if actor == null or not is_instance_valid(actor) or (item_id != "" and not ItemDB.has_tag(item_id, "power")):
 		return
-	Loadout.set_power(actor, item_id, mag, reserve)
+	Loadout.set_power(actor, item_id, mag, reserve, false)
 
 
 ## Client: someone put on a helmet or took theirs off. The server decided it.
@@ -1576,7 +1576,7 @@ func _spawn(id: int, kind: String, shown_name: String, node_name: String, at: Ve
 		Loadout.equip(actor, data.get("kit", []))
 		var power: Variant = data.get("power")
 		if power is Array and power.size() == 3 and ItemDB.has_tag(str(power[0]), "power"):
-			Loadout.set_power(actor, power[0], int(power[1]), int(power[2]))
+			Loadout.set_power(actor, power[0], int(power[1]), int(power[2]), false)
 		actor.weapons_locked = raid.world.safe_zone
 		Raid.MasteryTracker.apply_variants(actor, data.get("picks", {}))
 		raid.world.on_spawn(actor)
