@@ -201,7 +201,7 @@ func _process(delta: float) -> void:
 
 ## The weapons on the watch's carousel, in the order the wheel turns through
 ## them: the ones worn (primary, sidearm, melee, heavy) and then the ones in
-## the pack, then any helmets in the pack (a click puts one on). Each is
+## the pack, then any helmets and armor in the pack (a click puts one on). Each is
 ## {"id", "index" (in `Actor.weapons`, or -1 in the pack)}.
 ## Only what is carried is ever here, never the stash.
 static func weapon_entries(p: Actor) -> Array[Dictionary]:
@@ -211,9 +211,10 @@ static func weapon_entries(p: Actor) -> Array[Dictionary]:
 	for id in p.inventory.items:
 		if Loadout.summonable(id):
 			entries.append({"id": id, "index": -1})
-	# Helmets carried go on the head with a click, swapping for the one worn.
+	# Helmets and armor frames carried are put on with a click, swapping for
+	# the one worn.
 	for id in p.inventory.items:
-		if ItemDB.has_tag(id, "helmet"):
+		if ItemDB.has_tag(id, "helmet") or ItemDB.has_tag(id, "armor"):
 			entries.append({"id": id, "index": -1})
 	return entries
 
@@ -1449,6 +1450,9 @@ void fragment() {
 			var stats := ItemDB.item_stats(id)
 			model = SkinScript.build_helmet(str(stats.get("mode", "")), stats.get("glass_color", Color.WHITE),
 					Vector3(0.27, 0.31, 0.31), Color(0.22, 0.23, 0.25))
+		elif ItemDB.has_tag(id, "armor"):
+			# A frame shows the plates it is worn as.
+			model = SkinScript.build_frame(SkinScript.frame_weight(id), SkinScript.FRAME_COLOR)
 		else:
 			var weapon: Weapon = MeleeWeapon.new() if ItemDB.has_tag(id, "melee") else Gun.new()
 			weapon.item_id = id

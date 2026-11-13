@@ -15,6 +15,7 @@ static func run(t: Node) -> void:
 	_rules(t)
 	await _plain(t)
 	await _wear(t)
+	await _frames(t)
 	await _zoom(t)
 	await _scan(t)
 	await _glass(t)
@@ -117,9 +118,9 @@ static func _wear(t: Node) -> void:
 			"both drop on death: the worn one as gear, the other as loot")
 	t.check("helm_seeker" in raid.state_for(p).kit and "helm_spotter" not in raid.state_for(p).kit,
 			"the kit others are told about follows, so a late joiner sees the helmet worn now")
-	t.check(raid.swap_helmet(p, "helm_spotter") == "" and p.visor.mode == "zoom" and p.inventory.has_item("helm_seeker"),
+	t.check(raid.swap_worn(p, "helm_spotter") == "" and p.visor.mode == "zoom" and p.inventory.has_item("helm_seeker"),
 			"and the old one can go back on the same way")
-	t.check(raid.swap_helmet(p, "helm_ember") != "" and p.visor.item_id == "helm_spotter",
+	t.check(raid.swap_worn(p, "helm_ember") != "" and p.visor.item_id == "helm_spotter",
 			"a helmet not in the pack cannot be put on")
 	t.check(changes == ["helm_seeker", "helm_spotter"], "each change is announced for the view and the network")
 	Loadout.wear_helmet(p, "")
@@ -143,6 +144,51 @@ static func _wear(t: Node) -> void:
 				and model.get_node_or_null(fittings[mode]) != null
 		model.free()
 	t.check(built, "every visor mode has a helmet model: a shell, its glass and its own fitting")
+
+
+static func _frames(t: Node) -> void:
+	print("Armor: frames worn and put on from the pack")
+	var kit: Array[String] = ["rifle_scrap", "blade_scrap", "jetpack_mk1", "frame_trooper", "frame_runner"]
+	var raid: Raid = await t._kit_raid(317, kit)
+	var p := raid.player
+	var walk := p.walk_speed
+	var signature := p.heat_signature
+	t.check(p.frame_id == "frame_trooper" and is_equal_approx(p.health.max_armor, 85.0)
+			and p.inventory.has_item("frame_runner") and "frame_runner" not in p.gear_items,
+			"one frame is worn; a second in a kit is only carried")
+	var changes: Array[String] = []
+	p.frame_changed.connect(func(id: String) -> void: changes.append(id))
+	var ids := Hud.weapon_entries(p).map(func(e: Dictionary) -> String: return e.id)
+	t.check("frame_runner" in ids, "a frame carried in the pack is on the watch's carousel")
+	p.health.armor = 40.0
+	t.check(raid.summon(p, "frame_runner") == "" and p.frame_id == "frame_runner"
+			and is_equal_approx(p.health.max_armor, 45.0) and is_equal_approx(p.health.armor, 45.0),
+			"a summon puts the frame on, whole")
+	t.check(is_equal_approx(p.walk_speed, walk * 1.12) and is_equal_approx(p.heat_signature, signature * 0.7),
+			"the old frame's scaling comes off and the new one's goes on")
+	t.check("frame_runner" in p.gear_items and "frame_trooper" not in p.gear_items
+			and p.inventory.has_item("frame_trooper") and is_equal_approx(float(p.stowed_armor.get("frame_trooper", -1.0)), 40.0),
+			"the frame taken off goes into the pack with the armor it had left")
+	t.check(raid.summon_wait(p) > 0.0 and raid.swap_worn(p, "frame_trooper") != "",
+			"after a frame the watch rests, so spare plates are no instant refill")
+	raid.state_for(p).summon_ready_at = raid.clock
+	t.check(raid.swap_worn(p, "frame_trooper") == "" and is_equal_approx(p.health.armor, 40.0)
+			and is_equal_approx(p.walk_speed, walk) and is_equal_approx(p.heat_signature, signature),
+			"put back on, it is as worn as it was, and the body is back as it was")
+	t.check(changes == ["frame_runner", "frame_trooper"], "each change is announced for the view and the network")
+	t.check("frame_trooper" in p.get_drop_items() and "frame_runner" in p.get_drop_items(),
+			"both drop on death: the worn one as gear, the other as loot")
+	await t._end_raid(raid)
+
+	var built := true
+	for weight: String in ["light", "medium", "heavy"]:
+		var model := SkinScript.build_frame(weight, Color.GRAY)
+		built = built and model.get_node_or_null("Chest") != null \
+				and (model.get_node_or_null("Belly") != null) == (weight != "light") \
+				and (model.get_node_or_null("Collar") != null) == (weight == "heavy")
+		model.free()
+	t.check(built and SkinScript.frame_weight("frame_bulwark") == "heavy"
+			and SkinScript.frame_weight("plate_light") == "light", "each frame weight has its own plates")
 
 
 static func _zoom(t: Node) -> void:

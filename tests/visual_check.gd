@@ -121,7 +121,7 @@ func _ready() -> void:
 		get_tree().quit()
 		return
 
-	# `-- <output_dir> --helmets-only` shoots each helmet worn, close up.
+	# `-- <output_dir> --helmets-only` shoots each helmet and armor frame worn.
 	if "--helmets-only" in args:
 		await _helmet_shots(out_dir)
 		get_tree().quit()
@@ -1322,17 +1322,20 @@ func _helmet_shots(out_dir: String) -> void:
 	lamp.light_energy = 1.5
 	cam.add_child(lamp)
 	lamp.position = Vector3(0.6, 0.4, 0)
+	# Each row: a helmet and an armor frame worn together.
 	var helmets := ["", "visor_scav", "helm_spotter", "helm_seeker", "helm_warden", "helm_ember"]
+	var frames := ["", "plate_light", "frame_runner", "frame_trooper", "frame_bulwark", "frame_trooper"]
 	var sheet := Image.create(3 * 320, helmets.size() * 320, false, Image.FORMAT_RGBA8)
 	for row in helmets.size():
 		Loadout.wear_helmet(player, helmets[row])
+		Loadout.wear_frame(player, frames[row])
 		for k in 10:
 			skin._process(1.0 / 60.0)
 			await get_tree().process_frame
 		var views := [-player.global_basis.z, player.global_basis.x, player.global_basis.z]
 		for i in views.size():
-			var head := player.global_position + Vector3(0, 1.62, 0)
-			cam.global_position = head + (views[i] as Vector3) * 2.2 + Vector3(0, 0.15, 0)
+			var head := player.global_position + Vector3(0, 1.45, 0)
+			cam.global_position = head + (views[i] as Vector3) * 3.0 + Vector3(0, 0.15, 0)
 			cam.look_at(head)
 			await RenderingServer.frame_post_draw
 			var frame := get_viewport().get_texture().get_image()
