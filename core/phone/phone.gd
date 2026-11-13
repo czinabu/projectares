@@ -71,8 +71,10 @@ const CONTROLS := [
 		["Launch", "{jump} in the air"],
 		["Glide (while falling)", "Hold {jump}"],
 		["Pulse up while gliding", "{jump} again"],
-		["Bank round", "{move_left} / {move_right}"],
-		["Dive for speed the way you face, pull up to climb on it", "{move_forward} / {move_back}"],
+		["Steer: the wings fly where you look", "Mouse"],
+		["Bank round harder", "{move_left} / {move_right}"],
+		["Dive for speed, pull up to climb on it", "{move_forward} / {move_back}"],
+		["Boost ahead the way you face", "{sprint}"],
 		["Boost upward (wings pulled up)", "{sprint} + {move_back}"],
 	]],
 	["WEAPONS", [
