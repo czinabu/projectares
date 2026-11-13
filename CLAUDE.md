@@ -231,28 +231,30 @@ without Caleb, and update the gap list when a PR closes a row.
   sends `switch_weapon = ActorCommand.HOLSTER` and draws `Actor.last_drawn`
   again; it is an index, never a toggle, so it replicates safely. Check with
   `--holster-only`.
-- First and third person show the same action the same way. Each actor has
-  one `ActionPose` (`core/visual/action_pose.gd`, a view-only child made by
-  `ActionPose.of`): the melee reach and shoulder turn, the reload motion,
-  the low ready, the weapon switch's progress toward a holster, the
+- First and third person differ only in where the camera is (Caleb's rule).
+  Both look at the one real body, posed by the same code and holding the
+  same weapon in the same hand: first person puts the camera at the eyes
+  and leaves out only the head (`ActorSkin.hide_head` moves it and what is
+  worn on it to `Mirror.HEAD_LAYER`, which that camera culls; shadows and
+  a mirror still see it). Never build a first-person-only copy of the arms,
+  a weapon or a prop, and never move anything in front of the camera for
+  first person. Aiming down an optic moves the camera to the sight, never
+  the gun to the eye. Each actor has one `ActionPose`
+  (`core/visual/action_pose.gd`, a view-only child made by `ActionPose.of`):
+  the melee reach and shoulder turn, the reload motion, the low ready, the
   drawing back of a held heavy and the easing back of a recovering blade,
-  the watch raise (from `ActorCommand.watch_up`) and the phone hold (`ActionPose.phone`, from
-  `ActorCommand.phone`, which `Locomotion` poses the body from). Third person `WeaponArm` and `ActorSkin` pose the model from
-  it; first person `PlayerController.first_person_hold` moves the weapon in
-  front of the camera by the same offsets on the same clock, so a switch,
-  a flight stow or a windup plays out in both views. A new hand or weapon
-  animation goes into `ActionPose` and both views read it; never animate
-  one view only. Weapons are held, not floated (Caleb's call): the hand
-  carries them. Third person a blade lies along the closed fist and a gun
-  held low turns with the wrist (`WeaponArm`); swings turn the arm about the
-  shoulder (`ActionPose.swing_reach`, `elbow_pole`). First person draws a
-  copy of the character's own arms (`core/visual/first_person_arms.gd`)
-  whose hands grip the weapon: the weapon hand on the grip, the off hand on
-  a gun's "ForeGrip" marker or a two-handed handle, and the left arm lifts
-  the watch. Shots are judged from the eyes but drawn from the gun's
-  "Muzzle" marker as it is shown (`Gun.muzzle_point`). Compare by eye with
-  `visual_check.tscn -- <dir> --views-only [rows]`, which also saves each
-  shot full size under `views/`.
+  the watch raise (from `ActorCommand.watch_up`) and the phone hold
+  (`ActionPose.phone`, from `ActorCommand.phone`, which `Locomotion` poses
+  the body from). `WeaponArm` and `ActorSkin` pose the model from it; a new
+  hand or weapon animation goes there. Weapons are held, not floated
+  (Caleb's call): the hand carries them. A blade lies along the closed fist
+  and a gun held low turns with the wrist (`WeaponArm`); swings turn the
+  arm about the shoulder (`ActionPose.swing_reach`, `elbow_pole`). Shots
+  are judged from the eyes but drawn from the gun's "Muzzle" marker as it
+  is shown (`Gun.muzzle_point`). Compare by eye with
+  `visual_check.tscn -- <dir> --views-only [rows]` (`VIEW_MELEE=<item id>`
+  picks the melee weapon), which also saves each shot full size under
+  `views/`.
 - People are built from parts (`core/visual/human.gd`): an "appearance" names
   a build, four parts and colours. It is cosmetic only and never trusted:
   always pass one through `Look.clean_appearance` / `Look.set_appearance`,
@@ -262,9 +264,8 @@ without Caleb, and update the gap list when a PR closes a row.
   A look changed while in a world (the phone's Mirror app) is checked by the
   server in `_request_look` and passed to everyone there with `_look_changed`.
   The mirror itself (`core/visual/mirror.gd`) is a client-side view: no
-  collision, and nothing in `Raid` reads it. In first person the body is drawn on
-  `Mirror.BODY_LAYER`, which their own camera leaves out
-  (`PlayerController.body_layer`), so only the mirror shows it.
+  collision, and nothing in `Raid` reads it. Its camera sees the head that
+  your own first-person camera leaves out (`Mirror.HEAD_LAYER`).
   Players may only wear `Human.STARTER` clothes plus outfits they own:
   `Human.player_look(raw, owned)` enforces it on the profile, in the
   customizer and on the server. Better outfits are bought or earned, never
@@ -296,8 +297,8 @@ without Caleb, and update the gap list when a PR closes a row.
   `gear_items`, so they drop and come home with the gun. `Gun.build_attachment`
   builds each shape with its origin at the mount; `Look.mount_attachments`
   moves them onto the real model (`Look.GUN_MOUNTS`). An optic's "Sight"
-  marker is the eye point: in first person the controller moves the hand so
-  the camera looks through it, and zooms by `Weapon.aim_zoom()`. Scopes are
+  marker is the eye point: in first person aiming moves the camera to it
+  (never the gun to the eye) so it looks through it, and zooms by `Weapon.aim_zoom()`. Scopes are
   real geometry you look down, never a screen overlay. Fitting happens at
   the home base's gunsmith bench (`BaseLayout` kind "gunsmith").
 - Power weapons are items tagged "power" (Rail Lance, Helion launcher, Arc

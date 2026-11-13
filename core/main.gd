@@ -682,7 +682,6 @@ func _on_mirror_changed(up: bool) -> void:
 	mirror.name = "Mirror"
 	mirror.setup(me, controller.camera)
 	me.get_parent().add_child(mirror)
-	controller.body_layer = MirrorScript.BODY_LAYER
 	phone.set_mirror_up(true)
 
 
@@ -690,8 +689,6 @@ func _put_away_mirror() -> void:
 	if mirror != null and is_instance_valid(mirror):
 		mirror.queue_free()
 	mirror = null
-	if controller != null and is_instance_valid(controller):
-		controller.body_layer = 0
 	_show_aim(true)
 
 

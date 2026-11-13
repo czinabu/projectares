@@ -9,21 +9,21 @@ extends Node3D
 ##
 ## The reflection is a second camera at the viewer's eye mirrored through
 ## the glass, with its view cut to the glass (an off-centre frustum), so the
-## image moves as you move. In first person the viewer's own body is moved to
-## `BODY_LAYER`: their camera leaves that layer out (`PlayerController.body_layer`)
-## while the mirror's camera still sees it.
+## image moves as you move. In first person the viewer's own head is on
+## `HEAD_LAYER`, which their camera leaves out and the mirror's camera sees.
 ##
 ## Load with `const MirrorScript := preload("res://core/visual/mirror.gd")`.
 
-## Render layer (1-20) the viewer's body and held gear are drawn on while the
-## mirror stands.
-const BODY_LAYER := 19
 ## Render layer of the mirror itself, which its own camera leaves out.
 const MIRROR_LAYER := 18
 ## Render layer of the phone held up to the viewer's eyes (`Phone`), which
 ## the mirror's camera leaves out: it is the viewer's close-up, not a thing in
 ## the room.
 const HELD_LAYER := 17
+## Render layer of your own head (and whatever is worn on it) while you look
+## out of it in first person: your camera leaves it out, everyone else's and
+## the mirror's see it (`ActorSkin.hide_head`).
+const HEAD_LAYER := 16
 const ALL_LAYERS := 0xFFFFF
 
 ## Size of the glass in metres.
@@ -50,7 +50,6 @@ var _viewport: SubViewport
 var _camera: Camera3D
 var _glass: MeshInstance3D
 var _rise := 0.0
-var _stamped: Array[VisualInstance3D] = []
 
 
 ## Call before adding it to the tree.
@@ -68,10 +67,6 @@ func _ready() -> void:
 		return
 	_build()
 	scale = Vector3(1.0, 0.02, 1.0)
-
-
-func _exit_tree() -> void:
-	release_body()
 
 
 ## Stands the mirror on the floor in front of the viewer, facing them, closer
@@ -236,7 +231,6 @@ func _part(size: Vector3, at: Vector3, mat: Material) -> MeshInstance3D:
 
 func _process(delta: float) -> void:
 	if viewer == null or not is_instance_valid(viewer) or not viewer.is_inside_tree():
-		release_body()
 		return
 	if _camera == null:
 		return
@@ -244,7 +238,6 @@ func _process(delta: float) -> void:
 		_rise = minf(_rise + delta, rise_seconds)
 		var t := _rise / rise_seconds
 		scale = Vector3(1.0, lerpf(0.02, 1.0, 1.0 - pow(1.0 - t, 3.0)), 1.0)
-	_stamp_body()
 	_aim_reflection()
 
 
@@ -265,25 +258,3 @@ func _aim_reflection() -> void:
 	_camera.global_transform = Transform3D(cam_basis, reflected)
 	var local := cam_basis.inverse() * (centre - reflected)
 	_camera.set_frustum(height * scale.y, Vector2(local.x, local.y), maxf(gap, 0.05), 300.0)
-
-
-## Moves the viewer's model and held gear to `BODY_LAYER`, every frame, since
-## a new look or weapon brings new parts.
-func _stamp_body() -> void:
-	var bit := 1 << (BODY_LAYER - 1)
-	for root: Node in [viewer.get_node_or_null("Skin"), viewer.hand]:
-		if root == null:
-			continue
-		for node: Node in root.find_children("*", "VisualInstance3D", true, false):
-			var visual := node as VisualInstance3D
-			if visual.layers != bit:
-				visual.layers = bit
-				_stamped.append(visual)
-
-
-## Puts the viewer's body back on the normal layer.
-func release_body() -> void:
-	for visual in _stamped:
-		if is_instance_valid(visual):
-			visual.layers = 1
-	_stamped.clear()

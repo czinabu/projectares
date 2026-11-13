@@ -137,9 +137,8 @@ var bounty := 0
 var exposed := false
 var marked := false
 var body_mesh: MeshInstance3D
-## Holds the active weapon's model. A first-person camera may pose it itself.
+## Holds the active weapon's model; the skin puts it in the model's hand.
 var hand := Node3D.new()
-var hand_override := false
 ## The weapon last put away with the holster key, drawn again by it.
 var last_drawn := 0
 
@@ -267,9 +266,8 @@ func _physics_process(delta: float) -> void:
 		_ticks_waited = 0
 		delta *= tick_every
 	rotation.y = cmd.yaw
-	if not hand_override:
-		hand.position = HAND_REST
-		hand.rotation = Vector3(cmd.pitch, 0.0, 0.0)
+	hand.position = HAND_REST
+	hand.rotation = Vector3(cmd.pitch, 0.0, 0.0)
 	_simulate_timers(delta)
 	if vehicle == null:
 		_simulate_movement(delta)

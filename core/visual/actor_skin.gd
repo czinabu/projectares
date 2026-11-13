@@ -4,6 +4,7 @@ extends Node3D
 ## and plays the matching animation, swaps greybox weapon parts for models,
 ## and plays the effects for shots and hits.
 
+const MirrorScript := preload("res://core/visual/mirror.gd")
 const Vfx := preload("res://core/visual/vfx.gd")
 const WeaponArm := preload("res://core/visual/weapon_arm.gd")
 const RigModel := preload("res://core/visual/rig_model.gd")
@@ -171,9 +172,7 @@ var holster_offset := Vector3(0.21, -0.02, 0.0)
 ## Switching weapons is shown, not instant: the hand reaches to the holster
 ## and puts the old weapon away, moves on to the next one's holster and draws
 ## it. Seconds for each move. Only the view waits; the actor switched the
-## moment it was told. First person plays the same plan through `ActionPose`:
-## the weapon drops toward the holster's side out of view and the next one
-## comes up, on the same clock.
+## moment it was told.
 var reach_time := 0.22
 ## How long a blade takes to slide out of its hilt when drawn, or back in
 ## when put away (`Look.set_extend`).
@@ -201,6 +200,11 @@ var _wired := {}
 var _flash_left := 0.0
 var _materials: Array[ShaderMaterial] = []
 var _skeleton: Skeleton3D
+var _head_bone := -2
+## The eyes, from the head bone (`eye_point`): metres up, and ahead along the
+## view.
+var eye_up := 0.08
+var eye_ahead := 0.12
 ## The raised watch's glow on the left wrist, and how far it is up (0..1).
 var _watch_glow: Node3D
 var _watch_up := 0.0
@@ -292,6 +296,10 @@ var _moving: Weapon
 var _moving_weight := 0.0
 ## Makes the model hold its weapon, or null for skins without the bones.
 var arm: Node
+## The head's parts while first person leaves them out (`hide_head`), and
+## the bones that count as the head (the neck and everything above it).
+var _head_hidden: Array[VisualInstance3D] = []
+var _head_bones := {}
 ## The phone in the hands while `phone_up`, built the first time.
 var _phone_prop: Node3D
 ## Matches the legs to the actor's speed and direction.
@@ -573,13 +581,70 @@ func _update(delta: float) -> void:
 
 ## True while the body lies flat in flight (gliding or boosting) and is not
 ## shooting or aiming: the weapon in hand is shown worn. View only; first
-## person puts it away too (see `ActionPose.switch_weight`).
+## person puts it away too, since both views show the same body.
 func flies_stowed() -> bool:
 	if actor.is_dead or actor.vehicle != null:
 		return false
 	if not (actor.flight.is_gliding or actor.flight.is_boosting):
 		return false
 	return _flight_draw_left <= 0.0
+
+
+## First person looks out from inside the head, so the head and whatever
+## is worn on it go on `Mirror.HEAD_LAYER`, which that camera leaves out
+## (everyone else's camera, the mirror's and the shadows still see it). The
+## rest of the body is drawn as it is in third person: the view is the only
+## difference (Caleb's rule). Called every frame by the controller.
+func hide_head(on: bool) -> void:
+	var bit := 1 << (MirrorScript.HEAD_LAYER - 1)
+	if not on:
+		for node in _head_hidden:
+			if is_instance_valid(node) and node.layers == bit:
+				node.layers = node.get_meta("layers_before", 1)
+		_head_hidden.clear()
+		return
+	if _skeleton == null:
+		return
+	if _head_bones.is_empty():
+		var neck := _skeleton.find_bone("Neck")
+		if neck < 0:
+			neck = _skeleton.find_bone("Head")
+		var stack: Array[int] = []
+		if neck >= 0:
+			stack.append(neck)
+		while not stack.is_empty():
+			var bone: int = stack.pop_back()
+			_head_bones[_skeleton.get_bone_name(bone)] = true
+			for child in _skeleton.get_bone_children(bone):
+				stack.append(child)
+	for node in _skeleton.get_children():
+		var parts: Array[Node] = []
+		if node is MeshInstance3D and node.get_meta("slot", "") == "head":
+			parts.append(node)
+		elif node is BoneAttachment3D and _head_bones.has((node as BoneAttachment3D).bone_name):
+			parts.append_array(node.find_children("*", "VisualInstance3D", true, false))
+		for part: Node in parts:
+			var visual := part as VisualInstance3D
+			if visual.layers != bit:
+				visual.set_meta("layers_before", visual.layers)
+				visual.layers = bit
+				if not _head_hidden.has(visual):
+					_head_hidden.append(visual)
+
+
+## Where the model's eyes are, for a first-person camera: in front of the
+## head bone along the view (`look`), so the camera looks out of the face
+## rather than from inside the skull or the collar, and moves with the head
+## as the body leans. Null without a head bone.
+func eye_point(look: Basis) -> Variant:
+	if _skeleton == null:
+		return null
+	if _head_bone == -2:
+		_head_bone = _skeleton.find_bone("Head")
+	if _head_bone < 0:
+		return null
+	var head: Vector3 = _skeleton.global_transform * _skeleton.get_bone_global_pose(_head_bone).origin
+	return head + Vector3.UP * eye_up + look * Vector3(0.0, 0.0, -eye_ahead)
 
 
 ## True while the actor holds their phone up (`ActorCommand.phone`, which
@@ -807,11 +872,7 @@ func _update_switch(delta: float) -> void:
 		arm.override_weight = _moving_weight if _moving else 0.0
 		if _moving:
 			arm.override_point = _hand_at_holster(_moving)
-	# The same switch, for first person.
 	var pose := ActionPose.of(actor)
-	pose.switch_weight = _moving_weight if _moving else 0.0
-	if _moving:
-		pose.switch_point = _hand_at_holster(_moving)
 	pose.low_wanted = _current == "idle_gun"
 	for weapon in actor.weapons:
 		if weapon.visual:
@@ -896,10 +957,7 @@ func _carry_moving() -> void:
 			held.set_meta("held_at", held.transform)
 		var base: Transform3D = held.get_meta("held_at")
 		var worn: Node3D = _stowed_models.get(weapon)
-		# First person the hand itself drops toward the holster, out of view;
-		# the weapon stays in it rather than flying back to the hidden body.
-		if weapon != _moving or worn == null or _moving_weight <= 0.0 or not worn.is_inside_tree() \
-				or actor.hand_override:
+		if weapon != _moving or worn == null or _moving_weight <= 0.0 or not worn.is_inside_tree():
 			held.transform = base
 			continue
 		var from := weapon.visual.global_transform * base
@@ -1311,7 +1369,7 @@ func _update_ride() -> void:
 	# A gun in hand is held out toward the aim, where it would be on foot.
 	var gun := _in_hand as Gun
 	locomotion.ride_gun_wrist = null
-	if gun != null and _plan.is_empty() and not actor.hand_override:
+	if gun != null and _plan.is_empty():
 		var aim := Basis(Vector3.RIGHT, actor.cmd.pitch)
 		locomotion.ride_gun_wrist = actor.global_transform * (Actor.HAND_REST + aim * ride_gun_wrist)
 	locomotion.ride_turn = clampf(wrapf(actor.global_rotation.y - vehicle.global_rotation.y, -PI, PI), -ride_head_turn, ride_head_turn)
