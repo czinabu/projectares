@@ -946,6 +946,9 @@ func _test_main_flow() -> void:
 	check(wrist.get_parent() == controller.camera and arm.visible and holo.visible,
 			"in first person your forearm comes up into view with the card over it")
 	check(holo.global_basis.get_scale().x * wrist.face_size.x < 0.2, "the card is card-sized, not a panel")
+	check(wrist.get_node("Beam").visible and (wrist.get_node("Beam") as MeshInstance3D).mesh.get_surface_count() > 0
+			and is_equal_approx(float((holo.material_override as ShaderMaterial).get_shader_parameter("open")), 1.0),
+			"light is thrown up from the watch face to the card, which is drawn as a hologram")
 	var narrow := holo.scale.x
 	controller.camera.fov = 110.0
 	wrist.mount(p, controller, true)

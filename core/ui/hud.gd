@@ -707,6 +707,29 @@ class Wrist:
 	const SLOTS := ["map", "pack", "vehicle", "heavy", "artifact", "leave"]
 	const HOLO_TINT := Color(0.75, 1.0, 1.0, 0.95)
 	const GLOW_COLOR := Color(0.35, 0.95, 1.0)
+	## The card as projected light: faint scanlines that crawl up it, a
+	## brighter band sweeping through now and then, a slight flicker, edges
+	## that thin out, and a shimmer across it while it is still opening.
+	const HOLO_SHADER := """
+shader_type spatial;
+render_mode unshaded, depth_test_disabled, cull_disabled, blend_mix, shadows_disabled;
+uniform sampler2D card : source_color, filter_linear;
+uniform vec4 tint : source_color = vec4(0.75, 1.0, 1.0, 0.95);
+uniform float open = 1.0;
+void fragment() {
+	vec2 uv = UV;
+	float settle = 1.0 - open;
+	uv.x += settle * 0.03 * sin(uv.y * 90.0 + TIME * 40.0);
+	vec4 c = texture(card, uv);
+	float lines = 0.86 + 0.14 * sin(uv.y * 420.0 - TIME * 8.0);
+	float sweep = smoothstep(0.08, 0.0, abs(fract(TIME * 0.3) * 1.4 - 0.2 - uv.y));
+	float flick = 0.93 + 0.07 * sin(TIME * 53.0) * sin(TIME * 7.3);
+	float edge = smoothstep(0.0, 0.012, uv.x) * smoothstep(0.0, 0.012, 1.0 - uv.x)
+			* smoothstep(0.0, 0.02, uv.y) * smoothstep(0.0, 0.02, 1.0 - uv.y);
+	ALBEDO = c.rgb * tint.rgb * (lines + sweep * 0.6) * flick * 1.2;
+	ALPHA = clamp(c.a * tint.a * lines * flick * edge + sweep * 0.08 * edge, 0.0, 1.0) * mix(1.0, 0.6, settle);
+}
+"""
 	## The bone the watch is worn on in third person.
 	const WRIST_BONE := "Wrist.L"
 	## The card's face in metres, and its picture in pixels.
@@ -756,6 +779,8 @@ class Wrist:
 	var _spin := 0.0
 	var _holo: MeshInstance3D
 	var _glow: OmniLight3D
+	## The light thrown up from the watch face to the card.
+	var _beam: MeshInstance3D
 	var _arm: Node3D
 	## The watch worn on the character's wrist bone, third person.
 	var _worn: Node3D
@@ -777,18 +802,31 @@ class Wrist:
 		var quad := QuadMesh.new()
 		quad.size = face_size
 		_holo.mesh = quad
-		var mat := StandardMaterial3D.new()
-		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		mat.albedo_texture = viewport.get_texture()
-		mat.albedo_color = HOLO_TINT
-		mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
-		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-		mat.no_depth_test = true
+		var mat := ShaderMaterial.new()
+		var shader := Shader.new()
+		shader.code = HOLO_SHADER
+		mat.shader = shader
+		mat.set_shader_parameter("card", viewport.get_texture())
+		mat.set_shader_parameter("tint", HOLO_TINT)
 		mat.render_priority = 3
-		mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 		_holo.material_override = mat
 		_holo.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		add_child(_holo)
+		_beam = MeshInstance3D.new()
+		_beam.name = "Beam"
+		_beam.top_level = true
+		_beam.mesh = ImmediateMesh.new()
+		_beam.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		var beam_mat := StandardMaterial3D.new()
+		beam_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		beam_mat.vertex_color_use_as_albedo = true
+		beam_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		beam_mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+		beam_mat.no_depth_test = true
+		beam_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+		beam_mat.render_priority = 2
+		_beam.material_override = beam_mat
+		add_child(_beam)
 		_glow = OmniLight3D.new()
 		_glow.name = "Glow"
 		_glow.light_color = GLOW_COLOR
@@ -937,6 +975,52 @@ class Wrist:
 			_holo.transform = Transform3D(Basis.IDENTITY.scaled(Vector3(k, k * maxf(open, 0.001), k)),
 					first_person_at * spread + Vector3(0, -arm_lowered_drop * (1.0 - t), 0))
 			_glow.position = _holo.position + Vector3(0, -0.04, 0.02)
+		(_holo.material_override as ShaderMaterial).set_shader_parameter("open", open)
+		_draw_beam(third, open)
+
+	## The watch face, where the light comes from: the forearm's watch in
+	## first person, the one worn on the wrist bone in third.
+	func _face_position(third: bool) -> Vector3:
+		var watch: Node = _arm.get_node_or_null("Watch") if not third else \
+				(_worn.get_child(0) if _worn != null and is_instance_valid(_worn) and _worn.get_child_count() > 0 else null)
+		var face := watch.get_node_or_null("Face") as Node3D if watch != null else null
+		if face != null and face.is_inside_tree():
+			return face.global_position
+		return _holo.global_position - _holo.global_basis.y.normalized() * 0.1
+
+	## Light thrown up from the watch face to the card's lower edge, bright
+	## at the face and thinning out towards the card, so the card reads as
+	## projected rather than floating.
+	func _draw_beam(third: bool, open: float) -> void:
+		var mesh := _beam.mesh as ImmediateMesh
+		mesh.clear_surfaces()
+		_beam.visible = _holo.visible and is_inside_tree()
+		if not _beam.visible:
+			return
+		_beam.global_transform = Transform3D.IDENTITY
+		var apex := _face_position(third)
+		var half := face_size * 0.5
+		var corners: Array[Vector3] = []
+		for c: Vector2 in [Vector2(-half.x, -half.y), Vector2(half.x, -half.y), Vector2(half.x, half.y), Vector2(-half.x, half.y)]:
+			corners.append(_holo.global_transform * Vector3(c.x, c.y, 0.0))
+		var bright := Color(GLOW_COLOR, 0.22 * open)
+		# A fan of light up to the card's lower edge, and two fine rays at
+		# its sides. Nothing crosses the card's face, so it stays readable.
+		mesh.surface_begin(Mesh.PRIMITIVE_TRIANGLES)
+		mesh.surface_set_color(bright)
+		mesh.surface_add_vertex(apex)
+		mesh.surface_set_color(Color(GLOW_COLOR, 0.04 * open))
+		mesh.surface_add_vertex(corners[0])
+		mesh.surface_set_color(Color(GLOW_COLOR, 0.04 * open))
+		mesh.surface_add_vertex(corners[1])
+		mesh.surface_end()
+		mesh.surface_begin(Mesh.PRIMITIVE_LINES)
+		for corner in [corners[0], corners[1]]:
+			mesh.surface_set_color(Color(GLOW_COLOR, 0.55 * open))
+			mesh.surface_add_vertex(apex)
+			mesh.surface_set_color(Color(GLOW_COLOR, 0.15 * open))
+			mesh.surface_add_vertex(corner)
+		mesh.surface_end()
 
 	## Fills the card: `slots` from `Hud.watch_slots`, `focus` the icon being
 	## looked at, `death` the death report while down (else ""), `health`
@@ -1092,7 +1176,7 @@ class Wrist:
 			var h := size.y
 			var font := ThemeDB.fallback_font
 			# A faint plate with lit corners: light, not a box.
-			draw_rect(Rect2(Vector2(4, 4), size - Vector2(8, 8)), Color(0.0, 0.16, 0.2, 0.45))
+			draw_rect(Rect2(Vector2(4, 4), size - Vector2(8, 8)), Color(0.0, 0.16, 0.2, 0.32))
 			for corner in [Vector2(6, 6), Vector2(w - 6, 6), Vector2(6, h - 6), Vector2(w - 6, h - 6)]:
 				var sx := 1.0 if corner.x < w * 0.5 else -1.0
 				var sy := 1.0 if corner.y < h * 0.5 else -1.0
