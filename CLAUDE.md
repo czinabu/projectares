@@ -161,9 +161,25 @@ without Caleb, and update the gap list when a PR closes a row.
   starts the heavy (a dive slam in the air) with its full visible windup. A bare
   `primary_pressed` with no hold is a light (how bots swing), and
   `tertiary_pressed` still asks for a heavy outright, but no key binds it.
+  A press made while the blade is busy is kept (`press_buffer`) and plays
+  once it is free, and the time a tap was held counts toward its windup (down
+  to `light_windup_floor`). A heavy lunges at the foe in front and stops at
+  striking distance (`heavy_lunge` is its speed through the windup); in the
+  air, at an airborne foe in the aim cone, it is the magnetic air-lunge
+  (`air_lunge_range`) instead of a slam. Lunges are held by
+  `MeleeWeapon._carry_lunge` from the command and the foe's position as the
+  attacker saw it (`Combat.positions_seen_by`), so they predict online.
+  A strike that reaches someone emits `MeleeWeapon.contact` on every machine
+  it is simulated on, with a local guess at the guard; the attacker's view
+  answers that (sound, `PlayerController.kick_view`, a hitstop of the blade's
+  pose) at once, and the server's `hit_confirmed` only drives the hit marker.
 - Melee is directional. The stance travels in `ActorCommand.stance`, attacks
   set `DamageInfo.direction`, and `MeleeWeapon.guard_covers` decides whether a
-  guard stops a hit. Windup and guard poses must show their side.
+  guard stops a hit. A swing goes toward its stance (Caleb's call): a left
+  swing starts on the right and ends on the left, so `attack_dir` (the side
+  it comes from) is `MeleeWeapon.swing_from(stance)`. A guard covers its
+  stance's side, so a left swing meets a left guard. Windup and guard poses
+  must show their side; `threat_dir()` is what a defender reads.
 - Sound and visual effects (`Sfx`, `Fx`) must stay no-ops on a headless server.
 - Art lives in the `Look` autoload (`core/visual/`), not in gameplay scripts.
   Gameplay scripts keep building plain greybox shapes; `Look` dresses them
