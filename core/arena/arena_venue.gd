@@ -85,6 +85,10 @@ const RIM_COVER_SIZE := Vector3(3.2, 1.1, 0.6)
 const DAIS_RADIUS := 2.4
 const DAIS_FOOT := 3.8
 const DAIS_HEIGHT := 0.9
+## Stadium floodlight towers round the rim: how many, and how tall a mast
+## stands on the rim wall.
+const FLOODLIGHTS := 12
+const FLOODLIGHT_HEIGHT := 12.0
 ## Colours of the look: amber for the venue, red and blue for the sides.
 const AMBER := Color(1.0, 0.55, 0.18)
 const SIDE_COLORS := [Color(1.0, 0.22, 0.16), Color(0.22, 0.45, 1.0)]
@@ -220,9 +224,9 @@ class Pit:
 	func _ready() -> void:
 		# A warm sci-fi night (Caleb's call): dark gunmetal under amber lit
 		# edges, red against blue, next to the hub's cool twilight.
-		_floor_mat = Look.surface("metal", {"tint": Color(0.34, 0.32, 0.32), "grime": 0.25, "scale": 0.12})
+		_floor_mat = Look.surface("concrete", {"tint": Color(0.27, 0.28, 0.32), "grime": 0.1, "scale": 0.3, "saturation": 0.4})
 		_wall_mat = Look.surface("metal", {"tint": Color(0.3, 0.28, 0.28), "grime": 0.3, "scale": 0.2})
-		_cover_mat = Look.surface("metal", {"tint": Color(0.46, 0.43, 0.41), "grime": 0.2, "scale": 0.25})
+		_cover_mat = Look.surface("concrete", {"tint": Color(0.33, 0.34, 0.38), "grime": 0.1, "scale": 0.4, "saturation": 0.4})
 		_stand_mat = Look.surface("concrete", {"tint": Color(0.4, 0.36, 0.34), "grime": 0.4, "scale": 0.25})
 		_stand_alt_mat = Look.surface("concrete", {"tint": Color(0.3, 0.27, 0.26), "grime": 0.5, "scale": 0.25})
 		Look.atmosphere(self, {
@@ -603,7 +607,7 @@ class Pit:
 		_dress_crowd()
 
 	func _dress_floor() -> void:
-		_glow_ring(PIT_RADIUS - 0.4, 0.22, 0.02, 0.0, AMBER, 2.5, 96)
+		_glow_ring(PIT_RADIUS - 0.4, 0.15, 0.02, 0.0, AMBER, 1.8, 96)
 		_glow_ring(DAIS_FOOT + 0.35, 0.12, 0.02, 0.0, AMBER, 2.0, 48)
 		_glow_ring(DAIS_RADIUS - 0.02, 0.06, 0.04, DAIS_HEIGHT, AMBER, 3.0, 32)
 		# Each side's half of the floor is marked in its colour, round its door.
@@ -618,18 +622,18 @@ class Pit:
 
 	func _dress_wall_and_stands() -> void:
 		# The pit wall's top edge, and the front edge of every tier above it.
-		_glow_ring(WALL_RADIUS - 0.32, 0.08, 0.12, WALL_HEIGHT - 0.06, AMBER, 4.0, 96)
+		_glow_ring(WALL_RADIUS - 0.32, 0.08, 0.1, WALL_HEIGHT - 0.06, AMBER, 3.0, 96)
 		_glow_ring(WALL_RADIUS - 0.32, 0.05, 0.06, 1.2, AMBER, 1.2, 96)
 		for tier in range(1, STAND_TIERS):
 			var inner := WALL_RADIUS + 0.3 + tier * TIER_DEPTH
 			var top := WALL_HEIGHT - 0.6 + tier * TIER_RISE
-			_glow_ring(inner - 0.04, 0.08, 0.08, top - 0.05, AMBER, 1.6, 96)
+			_glow_ring(inner - 0.04, 0.05, 0.05, top - 0.04, AMBER, 0.7, 96)
 		var rim_top := WALL_HEIGHT + STAND_TIERS * TIER_RISE + 4.0
-		_glow_ring(OUTER_RADIUS - 0.04, 0.1, 0.14, rim_top - 0.08, AMBER, 3.0, 96)
+		_glow_ring(OUTER_RADIUS - 0.04, 0.08, 0.1, rim_top - 0.08, AMBER, 1.6, 96)
 		# Banners on the rim either side of each side's tunnel.
 		for side in 2:
 			var gate_bearing := PI * 1.5 if side == 0 else PI * 0.5
-			for off: float in [-0.2, 0.2]:
+			for off: float in [-0.13, 0.13]:
 				var bearing := gate_bearing + off
 				var out := Vector3(sin(bearing), 0, cos(bearing))
 				var banner := MeshInstance3D.new()
@@ -707,56 +711,79 @@ class Pit:
 				_glow(Vector3(BOARD_SIZE.x + 0.1, 0.08, 0.1), place * Transform3D(Basis.IDENTITY,
 						Vector3(0, y_sign * (BOARD_SIZE.y * 0.5 + 0.12), 0.0)), AMBER, 4.0)
 
+	## Stadium floodlights: a ring of tall towers round the rim, each with a
+	## bank of lamps tipped at the floor, so the fighters stand out from the
+	## night. Every tower glows and throws a soft beam through the haze; only
+	## every other one carries a real light, to keep the cost down.
 	func _dress_lights() -> void:
-		# A warm glow under the board, and four spotlights on masts at the rim.
-		var centre := Look.lamp(AMBER, 3.0, 26.0)
+		var centre := Look.lamp(AMBER, 2.0, 24.0)
 		centre.position = Vector3(0, 13.0, 0)
 		add_child(centre)
 		var rim_top := WALL_HEIGHT + STAND_TIERS * TIER_RISE + 4.0
-		var beam := StandardMaterial3D.new()
-		beam.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		beam.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-		beam.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
-		beam.cull_mode = BaseMaterial3D.CULL_DISABLED
-		beam.no_depth_test = false
-		beam.albedo_color = Color(1.0, 0.75, 0.5, 0.025)
-		for bearing_deg: float in [22.5, 157.5, 202.5, 337.5]:
-			var bearing := deg_to_rad(bearing_deg)
+		var lens := _glow_mat(Color(1.0, 0.92, 0.78), 6.0)
+		var beams := SurfaceTool.new()
+		beams.begin(Mesh.PRIMITIVE_TRIANGLES)
+		for i in FLOODLIGHTS:
+			var bearing := TAU * (i + 0.5) / FLOODLIGHTS
 			var out := Vector3(cos(bearing), 0, sin(bearing))
-			var foot := out * (OUTER_RADIUS + 0.5) + Vector3(0, rim_top, 0)
-			_batch(_wall_mat).append_from(_box_mesh(Vector3(0.5, 8.0, 0.5)), 0,
-					Transform3D(Basis.IDENTITY, foot + Vector3(0, 4.0, 0)))
-			var head := foot + Vector3(0, 8.4, 0) - out * 0.6
-			_batch(_wall_mat).append_from(_box_mesh(Vector3(1.4, 0.8, 1.4)), 0, Transform3D(Basis.IDENTITY, head))
-			var target := -out * 5.0
-			var spot := SpotLight3D.new()
-			spot.light_color = Color(1.0, 0.85, 0.65)
-			spot.light_energy = 14.0
-			spot.spot_range = 70.0
-			spot.spot_angle = 20.0
-			spot.spot_attenuation = 0.6
-			spot.shadow_enabled = false
-			add_child(spot)
-			spot.look_at_from_position(head - out * 0.8, target)
-			# A faint cone of light in the haze along the beam.
-			var length := head.distance_to(target) * 0.8
-			var cone := MeshInstance3D.new()
-			var mesh := CylinderMesh.new()
-			mesh.top_radius = 0.35
-			mesh.bottom_radius = tan(deg_to_rad(spot.spot_angle)) * length * 0.75
-			mesh.height = length
-			mesh.radial_segments = 32
-			mesh.rings = 1
-			mesh.cap_top = false
-			mesh.cap_bottom = false
-			mesh.material = beam
-			cone.mesh = mesh
-			cone.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			var across := Vector3(-out.z, 0, out.x)
+			var foot := out * (OUTER_RADIUS + 0.6) + Vector3(0, rim_top, 0)
+			# The tower: a mast with two braces back to the rim.
+			_batch(_wall_mat).append_from(_box_mesh(Vector3(0.7, FLOODLIGHT_HEIGHT, 0.7)), 0,
+					Transform3D(Basis.IDENTITY, foot + Vector3(0, FLOODLIGHT_HEIGHT * 0.5, 0)))
+			for side: float in [-1.0, 1.0]:
+				var brace_from := foot + across * side * 2.2
+				var brace_to := foot + Vector3(0, FLOODLIGHT_HEIGHT * 0.55, 0)
+				_batch(_wall_mat).append_from(_box_mesh(Vector3(0.25, brace_from.distance_to(brace_to), 0.25)), 0,
+						_between(brace_from, brace_to))
+			# The lamp bank faces the middle, tipped down at the floor.
+			var head := foot + Vector3(0, FLOODLIGHT_HEIGHT + 1.4, 0) - out * 0.4
+			var target := -out * 6.0
+			var facing := Basis.looking_at(target - head, Vector3.UP)
+			_batch(_wall_mat).append_from(_box_mesh(Vector3(4.6, 2.8, 0.5)), 0, Transform3D(facing, head))
+			_glow(Vector3(4.8, 0.1, 0.55), Transform3D(facing, head + facing * Vector3(0, 1.45, 0)), AMBER, 2.5)
+			for row in 3:
+				for col in 5:
+					var lamp_at := head + facing * Vector3((col - 2) * 0.85, (row - 1) * 0.8, -0.3)
+					_batch(lens).append_from(_box_mesh(Vector3(0.62, 0.55, 0.12)), 0, Transform3D(facing, lamp_at))
+			# A soft shaft of light toward the floor.
+			var length := head.distance_to(target) * 0.9
+			var cone := CylinderMesh.new()
+			cone.top_radius = 1.6
+			cone.bottom_radius = 3.6
+			cone.height = length
+			cone.radial_segments = 24
+			cone.rings = 1
+			cone.cap_top = false
+			cone.cap_bottom = false
 			var down := (target - head).normalized()
-			var side_axis := down.cross(Vector3.UP).normalized()
-			var basis := Basis(side_axis, -down, side_axis.cross(-down)).orthonormalized()
-			cone.transform = Transform3D(basis, head + down * length * 0.5)
-			add_child(cone)
+			beams.append_from(cone, 0, _between(head + down * length, head))
+			if i % 2 == 0:
+				var spot := SpotLight3D.new()
+				spot.light_color = Color(1.0, 0.95, 0.88)
+				spot.light_energy = 9.0
+				spot.spot_range = 80.0
+				spot.spot_angle = 34.0
+				spot.spot_attenuation = 0.5
+				spot.shadow_enabled = false
+				add_child(spot)
+				spot.look_at_from_position(head - out * 0.5, target)
+		var beam_mesh := beams.commit()
+		var beam_mat := ShaderMaterial.new()
+		beam_mat.shader = load("res://assets/shaders/light_beam.gdshader") as Shader
+		beam_mesh.surface_set_material(0, beam_mat)
+		var beam_node := MeshInstance3D.new()
+		beam_node.name = "Beams"
+		beam_node.mesh = beam_mesh
+		beam_node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(beam_node)
+
+	## A transform that stands a Y-up mesh between `a` (bottom) and `b` (top).
+	func _between(a: Vector3, b: Vector3) -> Transform3D:
+		var up := (b - a).normalized()
+		var side := up.cross(Vector3.FORWARD if absf(up.z) < 0.9 else Vector3.RIGHT).normalized()
+		var basis := Basis(side, up, side.cross(up)).orthonormalized()
+		return Transform3D(basis, (a + b) * 0.5)
 
 	## The holographic crowd: glowing figures filling the stands, one draw for
 	## them all. Fans on each side lean toward that side's colour.
@@ -769,15 +796,16 @@ class Pit:
 		for tier in STAND_TIERS:
 			var inner := WALL_RADIUS + 0.3 + tier * TIER_DEPTH
 			var top := WALL_HEIGHT - 0.6 + tier * TIER_RISE
-			var count := int(TAU * (inner + 1.5) / 0.85)
+			var count := int(TAU * (inner + 2.2) / 0.75)
 			for i in count:
-				if _art_rng.randf() > 0.6:
+				if _art_rng.randf() > 0.7:
 					continue
 				var bearing := TAU * (i + _art_rng.randf() * 0.4) / count
 				# Leave the bookmakers' booths clear on the lowest tier.
 				if tier == 0 and _near_booth(bearing):
 					continue
-				var radius := inner + 0.7 + _art_rng.randf() * (TIER_DEPTH - 1.2)
+				# The back of the tier: the front stays clear for real spectators.
+				var radius := inner + 1.9 + _art_rng.randf() * (TIER_DEPTH - 2.3)
 				var height := _art_rng.randf_range(1.15, 1.4)
 				var at := Vector3(sin(bearing) * radius, top + height * 0.5, cos(bearing) * radius)
 				places.append(Transform3D(Basis.IDENTITY.scaled(Vector3(height * 0.55, height, 1.0)), at))
