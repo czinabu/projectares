@@ -66,7 +66,8 @@ new planet is a new folder under `worlds/`.
    what is happening in the worlds: a "most wanted" board of the top
    bounties and the Marked, war levels, arena results. Start with stats
    (the plaza's heat signs already get `world_status`); live video of arena
-   bouts comes later.
+   bouts comes later. The contract board, where you take contracts
+   (section 10), stands next to it.
 2. **Ring races and time trials.** Courses of rings through the hub's
    skyline, one per rig plus a bike course. A cheap, small version of the
    racing mode (section 9) and a place for new players to practise each rig.
@@ -86,8 +87,9 @@ gather to watch, and a space set aside for the RC arena.
   ability chips, bikes in the garage, loot on shelves, trophies.
 - **Heavy weapons banked from the PvP world hang on the armory wall** and can
   be stacked there (see section 6).
-- Consoles do what menus would: launch pad, locker, gunsmith bench, mastery
-  bench, wardrobe, records, trader, uplink, arena gate.
+- Consoles do what menus would: launch pad, locker, gunsmith bench (crafting
+  from blueprints, section 10), mastery bench, wardrobe, records, trader,
+  uplink, arena gate.
 - Loadouts can be changed freely here.
 
 **Upgrades** turn the base from a display room into a headquarters, in this
@@ -510,7 +512,25 @@ shortcuts are invented for our tracks.
 
 ## 10. Economy and progression
 
-Two currencies tie the modes together.
+### The core rule (Caleb's call)
+
+**Skill decides fights, grind decides options, and loot decides how much is
+at stake.** Nothing you grind should let you beat a better player, and
+nothing you lose should wipe out your progress. Three layers each reward
+something different:
+
+| Layer | Rewards | What it is | Lost on death? |
+| --- | --- | --- | --- |
+| Gear | Skill and nerve | Weapons, rigs, armor and their Mk tiers, found or crafted | Yes, in the PvP world |
+| Progress you keep | Time and variety | Mastery, blueprints, banked upgrade data | Never |
+| Status | Both | Cosmetics, watch skins, leaderboards, the most-wanted board | Never |
+
+**Tier gaps stay small.** A higher Mk is a real step up but never a big one,
+so a skilled player in Mk1 can still beat a Mk3. Rigs gain height and range
+(section 5), never speed: cruise is the same on every tier. What a weapon
+gains per Mk is TBD (section 13), and kept small either way.
+
+### Currency: scrip
 
 **Scrip, earned everywhere.** The everyday money, used in the hub for
 cosmetic skins, thruster trail colours, watch faces and basic gear. We keep
@@ -519,24 +539,133 @@ scrip you carry (at stake until banked) and a safe credits balance it turns
 into. They become one currency called scrip: what you carry in the field is
 at stake, and what you have banked is safe.
 
-**Blueprints and tech cores, earned through risk.** Found in PvE dungeons,
-won in the arena, and taken out of the PvP world through bank spots or a
-sign-out (the supply meteor carries vehicle blueprints).
-
-- They unlock new vehicles (such as the mech and the jet) and craft
-  high-tier gadgets.
-- Unlocks, not raw power: a blueprint opens up a new option, never a
-  stronger version of one you have, so new players are never hopelessly
-  behind.
-- In the PvP world they drop on death until banked, like the rest of what
-  you carry, so the risk is real.
-
-The rest stays as it is (see README "Credits and shops"):
-
 - Loot is the money; scrip comes mainly from getting loot home.
-- Shops sell only base-level gear; rare gear is found.
-- Mastery for every gear type, sidegrade variants, never lost on death.
-- Renown, ranks, bounties and the Marked in the PvP world.
+- Shops sell only base-level gear.
+
+### Loot: base level, better in PvP
+
+Most weapons and gear are found as loot, and **everything that drops is
+base level (Mk1)**. Where you look decides how good the find is, not its
+tier: the PvP world has the better weapons and the rarer drops, the PvE
+world has basic gear and materials. Stronger versions are crafted from
+blueprints (below), not found.
+
+### Blueprints and upgrade data
+
+> **This replaces the earlier rule** that a blueprint "opens up a new
+> option, never a stronger version of one you have." Blueprints now also
+> craft stronger Mk versions of gear you already use. New players are kept
+> in the game by small tier gaps, the free Mk1 and the safety nets below
+> instead.
+
+**Blueprints drop at Mk1, in the PvP world.** A weapon's or rig's blueprint
+is found in the warzone at its base level. Like everything you carry, it is
+at stake until you extract (bank it or sign out). Once home it is yours for
+good: a blueprint is knowledge, never lost on death.
+
+**Upgrade data steps a blueprint up**, Mk1 to Mk2 to Mk3. It drops from:
+
+- the hot zones (the most contested strongpoints and events),
+- elite enemies (warlords and other named bots),
+- other players, when you kill them,
+- contracts and bounties (below).
+
+You only keep upgrade data you extract with, which rewards PvP skill and
+nerve. Contracts give players who avoid PvP a slower, steadier path.
+
+**A mastery gate.** You can only upgrade a blueprint to Mk2 once you have
+some mastery in that gear type. Grinding a gun still feeds its upgrade
+without mastery handing the upgrade out. Whether Mk3 has a higher gate is
+TBD.
+
+**Crafting** happens at the gunsmith bench in your base: blueprint, plus
+upgrade data, plus materials or scrip (costs TBD). A crafted Mk2 or Mk3 is
+ordinary gear: it goes in the stash and is at stake in the PvP world like
+anything else. The blueprint stays, so you can craft it again.
+
+**Rig tiers (Caleb's call, moved to crafting).** The rig tiers in section 5
+(Mk1 to Mk3, each with a higher ceiling and cooler running, never faster)
+come from blueprints here. PR #95 builds them as Ashfront rooftop loot; under
+this model Mk1 rigs and Mk1 rig blueprints are the drops, and Mk2 and Mk3
+are crafted. Moving the drops to crafting is a later change, once crafting
+exists.
+
+**Vehicle blueprints** still unlock new vehicles, such as the mech and the
+jet (the supply meteor carries them). Tech cores craft high-tier gadgets.
+
+**Prestige gear from hard feats.** Some vehicles and rigs (or rig variants)
+only come from the hardest or longest jobs: a rare contract chain, a world
+boss, an arena bracket, a long achievement. They should be impressive to
+own and show off, but sit inside the same small tier gaps as everything
+else. The list is TBD.
+
+### Mastery: how you play the gear
+
+Mastery says "I know this gun." Using gear levels up its type (keyed by
+type, never by item id, as today), and levels unlock **attachments and
+mods**: optics, grips, magazines, muzzles, fire modes and the sidegrade
+variants that exist today. Every one trades a strength for a weakness,
+never raw power. You pick them at the mastery bench in your base.
+
+- Mastery pays for real use, never for extracting, and the firing range
+  gives none (section 2).
+- Never lost on death.
+- It does not hand out Mk tiers; it only gates them (above).
+
+Put simply: **mastery is how you play the gun, extraction is how strong it
+gets, and contracts are the safety valve.**
+
+### Contracts and bounties
+
+Two kinds of job, kept apart by name:
+
+**Contracts** are the main source of upgrade data and blueprints. You take
+them at a contract board in the hub, a wall you walk up to. Active
+contracts show on the watch, with a small tracker on the visor. You hold up
+to 3 at a time.
+
+| Kind | How many | Examples | Pays |
+| --- | --- | --- | --- |
+| Daily | 3 to pick from | Extract with 2 rig parts from Ashfront; win 3 fights in the air; finish a ring race | Scrip and a little upgrade data |
+| Weekly | 1 or 2 | Extract 10 times from Frostline; take a blueprint home | More upgrade data, sometimes a Mk1 blueprint |
+| High-risk (rare) | When offered | Carry a package out of the hot zone; hold a point for 3 minutes. You are marked on the map until you extract | The best upgrade data |
+
+- **Progress counts only when you extract**, so risk still matters.
+- **One reroll a day.**
+- Contracts **push variety**: different rigs, weapons, worlds and zones.
+  None should reward camping or farming new players.
+- Most are counters on events the game already tracks (kills, extractions,
+  pickups, race times), which keeps them cheap to build.
+- Later, high-risk contracts can grow into real missions.
+
+**Bounties** are about hunting players, and tie into the most-wanted board
+(section 2) and the renown and Marked rules already in the PvP world. When a
+player gets hot, a bounty goes up on them; whoever takes them down and
+extracts gets paid (scrip and upgrade data, amounts TBD).
+
+### Safety nets
+
+Losses should sting without making people quit:
+
+- **Mk1 is always free.** A base-level kit of every slot is always there,
+  so nobody is ever locked out of a raid.
+- **One insured item.** Each player can insure one item; if it is lost it
+  comes back. Details TBD (cost, cooldown, which items qualify).
+- **Salvage on loss.** Losing crafted gear pays back salvage toward
+  crafting it again (amount TBD), and the blueprint itself is never lost.
+
+### Status
+
+Status rewards both skill and grind, and being seen is what the hub is for:
+cosmetics, watch skins and thruster trails (bought with scrip or earned),
+race leaderboards, arena results, the most-wanted board, and prestige gear
+shown off in the hub.
+
+### Still at stake
+
+- In the PvP world, unbanked blueprints, upgrade data and gear drop on death
+  like the rest of what you carry.
+- Renown, ranks, bounties and the Marked in the PvP world stay as they are.
 
 ## 11. Social
 
@@ -560,7 +689,11 @@ The rest stays as it is (see README "Credits and shops"):
    Leviathan with the jet and the PvE world. The hub's toy RC arena comes
    last. The squad teleporter pad follows online base visits together;
    trophies follow PvE bosses and arena brackets; blueprints and tech cores
-   arrive with the meteor, the PvE world and the arena.
+   arrive with the meteor, the PvE world and the arena. The progression
+   model (section 10) lands in steps: contracts and bounties first (mostly
+   counters on events the game already tracks), then Mk1 blueprints and
+   upgrade data as drops, then crafting at the gunsmith bench, which is when
+   rig tiers move from loot to crafting.
 4. **The PvE world:** quests, dungeons and bosses.
 5. **More worlds** as plug-ins.
 
@@ -575,3 +708,14 @@ Caleb's calls, still open:
 - Can a heavy weapon from the armory wall be taken into the PvP world, or
   only ones found there in the same outing? (This doc assumes yes, one per
   outing.)
+- Progression numbers (section 10), all TBD:
+  - What a weapon gains per Mk, and how small the gap must stay. Rigs gain
+    height and range, never speed; should weapons gain any damage at all, or
+    only handling, range and magazine?
+  - How much upgrade data each step costs, and the materials or scrip on
+    top.
+  - The mastery level that gates Mk2, and whether Mk3 has a higher gate.
+  - Insurance: its cost, cooldown, and which items can be insured.
+  - How much salvage a lost crafted item pays back.
+  - Contract and bounty payouts, and how a bounty's size grows.
+  - Which prestige vehicles and rigs come from which feats.
