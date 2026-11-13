@@ -315,8 +315,9 @@ heat to spare and a fourth is the ceiling, about 20 m. A roof under the feet
 is a surface like the street, so they cool up there; in open air above 6 m
 they never cool, so the open sky stays with the jetpack and the wings.
 
-**Rig tiers (Caleb's call).** Every rig comes in tiers, Mk1 to Mk3. The base level does not let you fly
-over the whole city; a higher tier gives more height and distance. Each
+**Rig tiers (Caleb's call).** Every rig comes in tiers, Mk1 to Mk3. The
+base level does not let you fly over the whole city; a higher tier gives
+more height and distance. Each
 tier has a **ceiling**, measured from the world's ground (a roof under you
 does not count, so roof-hopping never stacks it): the jets stop climbing
 there, and a kick, pulse or launch tops out on it. A ceiling only limits
@@ -332,8 +333,9 @@ glides you there.
 Up a tier the rig also runs cooler (cheaper kicks, pulses and climbing,
 faster cooling), so it flies further. What never changes:
 
-- **The cruise speed.** Every tier cruises, dashes and boosts at the same
-  speed, so a mixed squad still keeps together.
+- **The cruise speed.** Every tier cruises and dashes at the same speed,
+  and none boosts faster than the Mk2 jetpack, so a mixed squad still keeps
+  together.
 - **The 100 heat bar and each rig's loop.** Boots still only cool near a
   surface, so a high climb is still a visit; wings still never stop; the
   jetpack is still loud and hot.
@@ -345,9 +347,6 @@ Measured from the street (`feel_bench.tscn`): the Mk1 jetpack reaches its
 ceiling in about 7 s, Mk2 13 s, Mk3 19 s; boots kick to about 25 m, 46 m and
 100 m; wings spiral up on pulses to 15 m in about 18 s (Mk1), 40 m in 21 s
 (Mk2) and 90 m in 26 s (Mk3), or launch off something high.
-
-Rig readouts go on the watch and on the rig itself (heat screen, wingtip
-lights, boot pips), never on a screen overlay.
 
 Flying controls (Caleb's call): the keys fly every rig and the mouse only
 looks and aims. Space climbs, kicks, launches or glides (by rig), C sinks or
@@ -362,6 +361,9 @@ unchanged.
 
 In a squad the layers become roles: the jetpack holds the high angle, the
 wings flank and dive in, the boots push through streets and buildings.
+
+Rig readouts go on the watch and on the rig itself (heat screen, wingtip
+lights, boot pips), never on a screen overlay.
 
 ## 6. Heavy weapons and artifacts
 
