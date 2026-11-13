@@ -19,6 +19,8 @@ void sky() {
 	float l = dot(c, vec3(0.299, 0.587, 0.114));
 	c = mix(vec3(l), c, saturation) * tint * energy;
 	float h = 1.0 - smoothstep(0.0, haze_height, EYEDIR.y);
-	c = mix(c, haze_color, h * h * 0.92 + step(EYEDIR.y, 0.0));
+	// Below the horizon is all haze (clamped: past 1 the mix would overshoot
+	// into strange colours wherever the view looks down past an edge).
+	c = mix(c, haze_color, min(h * h * 0.92 + step(EYEDIR.y, 0.0), 1.0));
 	COLOR = c;
 }

@@ -75,10 +75,16 @@ new planet is a new folder under `worlds/`.
    It is really a separate little game with its own controls and balance, so
    it waits.
 
-**Expanding the hub comes first.** The Concourse is a walled courtyard and
-has no room for these. It needs a skyline tall and open enough for ring
-courses (and a bike track at ground level), a screens area where people
-gather to watch, and a space set aside for the RC arena.
+**Expanding the hub comes first.** The Concourse was a walled courtyard with
+no room for these. It is now an open district on a high deck with no wall
+(Caleb's call: grand, open and sci-fi, not industrial): a lit beacon spire
+at the centre, a kiosk arcade round it, slim towers with landing decks and
+skybridges at 15 m so the boots can hop the skyline while the tower tops are
+for wings and jetpacks, a gate terrace with spare arches for new worlds, a
+bike loop round the edge, a big-screen amphitheatre to gather and watch, and
+a pad kept clear for the RC arena. Everything is within about 25 seconds'
+walk of the arrival pad. A sci-fi look pass (glass and metal with lit seams,
+holo signs, kiosk art) follows the greybox.
 
 ### Home base
 
