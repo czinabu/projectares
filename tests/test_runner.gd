@@ -4933,8 +4933,9 @@ func _test_online_stash() -> void:
 		OS.kill(pid)
 		return
 	check(cara.raid == null and cara.my_actor_id < 0, "signing in does not enter the raid")
-	check("rifle_carbine" in cara.account.stash and cara.account.loadout.is_empty() and not cara.account.has("secret_hash"),
-			"the lobby shows the stash the server keeps, with a new account's crates")
+	check("rifle_carbine" in cara.account.stash and cara.account.loadout == StashRules.starter_loadout()
+			and not cara.account.has("secret_hash"),
+			"the lobby shows the stash the server keeps, with a new account's crates, in the scrap kit")
 
 	# Someone else cannot take the name.
 	var thief := _new_client("Cara", StashService.new_secret())
@@ -4950,7 +4951,8 @@ func _test_online_stash() -> void:
 	cara.lobby_error.connect(func(reason: String) -> void: errors.append(reason))
 	cara.equip("primary", "dmr_longshot")
 	await _wait_until(func() -> bool: return not errors.is_empty(), 120)
-	check(errors.size() == 1 and cara.account.loadout.is_empty(), "the server refuses gear the account does not own")
+	check(errors.size() == 1 and cara.account.loadout.get("primary", "") == "rifle_scrap",
+			"the server refuses gear the account does not own")
 	cara.equip("primary", "rifle_carbine")
 	await _wait_until(func() -> bool: return cara.account.loadout.get("primary", "") == "rifle_carbine", 120)
 	check(cara.account.loadout.get("primary", "") == "rifle_carbine", "owned gear equips through the server")
@@ -5029,8 +5031,8 @@ func _test_online_stash() -> void:
 	var asked: Array = []
 	hub.online_equip_requested.connect(func(slot: String, item_id: String) -> void: asked.append([slot, item_id]))
 	hub.enter_lobby(service.snapshot(id), Worlds.get_world("ashfront"))
-	check(hub.in_lobby() and hub.options_for("primary") == (["rifle_carbine"] as Array[String])
-			and hub.equipped("primary") == "", "in a lobby the hub lists the server's stash")
+	check(hub.in_lobby() and hub.options_for("primary") == (["rifle_carbine", "rifle_scrap"] as Array[String])
+			and hub.equipped("primary") == "rifle_scrap", "in a lobby the hub lists the server's stash and the free scrap")
 	var loadout_before := Profile.loadout.duplicate()
 	hub._on_picked(1, "primary")
 	check(asked == [["primary", "rifle_carbine"]] and Profile.loadout == loadout_before,
