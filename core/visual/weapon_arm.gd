@@ -86,6 +86,16 @@ var _grip_weight := 0.0
 var _off_weight := 0.0
 var _gun_weight := 0.0
 var _watch := 0.0
+## How far a gun is up at the eye (`ActionPose.ads`), while it is shown.
+var _ads := 0.0
+## What the arm's reach left between the sight and its target last frame,
+## in the actor's frame, added to the next reach so the sight settles on
+## the eye line (the hand turns a little as the arm reaches).
+var _ads_fix := Vector3.ZERO
+## Where the off hand holds a long gun with no fore grip marker, and the
+## off elbow's pole while aiming down sights (actor frame).
+var ads_fore := Vector3(0.0, -0.07, -0.3)
+var ads_off_elbow := Vector3(-0.6, 0.6, -0.1)
 var _reach := Vector3.ZERO
 var _turn := Vector2.ZERO
 ## The actor's shared pose: what both views show the weapon hand doing.
@@ -286,6 +296,10 @@ func _process(delta: float) -> void:
 			and not actor.is_dead else 0.0
 	# The watch takes the left hand off any two-handed hold while it is up.
 	_watch = shared.watch if not actor.is_dead else 0.0
+	_ads = shared.ads if gun != null and gun.visual != null and gun.visual.visible \
+			and not actor.is_dead and override_weight <= 0.001 else 0.0
+	if _ads <= 0.0:
+		_ads_fix = Vector3.ZERO
 
 	reach_ik.influence = _weight
 	var aim := Basis(Vector3.RIGHT, actor.cmd.pitch)
@@ -298,8 +312,9 @@ func _process(delta: float) -> void:
 	# Cocked for a windup the elbow rides high; thrown through, it drops.
 	_pole.global_position = actor.global_transform * (elbow.lerp(shared.elbow_pole(), _weight) if holding else elbow)
 	if off_ik:
-		off_ik.influence = maxf(_off_weight * (1.0 - _watch), _watch)
-		_off_pole.global_position = actor.global_transform * off_elbow.lerp(watch_elbow, _watch)
+		off_ik.influence = maxf(maxf(_off_weight, _ads) * (1.0 - _watch), _watch)
+		var off_pole := off_elbow.lerp(ads_off_elbow, _ads) if _off_weight <= 0.0 else off_elbow
+		_off_pole.global_position = actor.global_transform * off_pole.lerp(watch_elbow, _watch)
 		if _watch > 0.0:
 			_off_target.global_position = watch_point()
 
@@ -342,14 +357,44 @@ func _face_watch() -> void:
 
 
 ## Before the arm reaches: during a reload, move the gun hand from where the
-## animation holds it by the shared reload offset.
+## animation holds it by the shared reload offset; aiming down sights, move
+## it so the gun's sight comes up onto the line of the eyes.
 func _reach_gun() -> void:
+	if _ads > 0.0 and _wrist >= 0 and _weight <= 0.001:
+		_reach_sight()
+		return
 	if _gun_weight <= 0.0 or _wrist < 0 or override_weight > 0.001 or _weight > 0.001:
 		return
 	var wrist := skeleton.global_transform * skeleton.get_bone_global_pose(_wrist).origin
 	var aim := actor.global_basis.orthonormalized() * Basis(Vector3.RIGHT, actor.cmd.pitch)
 	_target.global_position = wrist + aim * pose.gun_offset().origin
 	reach_ik.influence = 1.0
+
+
+## Aiming down sights: where the hand would put the sight this frame (from
+## the animation's grip and the way `hold_weapon` hangs the gun from it), and
+## the hand moved by the difference to `sight_target`, eased by `_ads`.
+func _reach_sight() -> void:
+	var gun := actor.get_active_weapon() as Gun
+	if gun == null or gun.visual == null or grip_bone < 0:
+		return
+	var aimed := actor.global_basis.orthonormalized() * Basis(Vector3.RIGHT, actor.cmd.pitch)
+	var wrist := skeleton.global_transform * skeleton.get_bone_global_pose(_wrist).origin
+	var grip := skeleton.global_transform * skeleton.get_bone_global_pose(grip_bone).origin
+	var sight_now := grip + aimed * (grip_offset + gun.visual.transform * ActionPose.sight_local(gun))
+	var fix := actor.global_basis.orthonormalized() * _ads_fix
+	_target.global_position = wrist + (sight_target(gun, aimed) - sight_now + fix) * _ads
+	reach_ik.influence = 1.0
+
+
+## Where the sight of `gun` goes when it is fully up: on the line out of
+## the model's eyes, `ActionPose.relief_for` in front of them.
+func sight_target(gun: Gun, aimed: Basis) -> Vector3:
+	var skin := get_parent()
+	var eye: Variant = skin.eye_point(aimed) if skin != null and skin.has_method("eye_point") else null
+	if eye == null:
+		eye = actor.get_eye_position()
+	return (eye as Vector3) + aimed * Vector3(0.0, 0.0, -_pose().relief_for(gun))
 
 
 ## Turns the spine toward the attack before the arms reach, so they reach
@@ -380,6 +425,8 @@ func _rotate_bone(bone: int, by: Basis) -> void:
 ## physics tick, so the weapon has to be placed here, before the off arm
 ## reaches for it.
 func _place_weapon() -> void:
+	if _ads > 0.0:
+		_steady_gun()
 	if _grip_weight <= 0.0:
 		return
 	var melee := actor.get_active_weapon() as MeleeWeapon
@@ -399,10 +446,32 @@ func _place_weapon() -> void:
 	_off_target.global_position = handle.lerp(watch_point(), _watch)
 
 
+## Aiming down sights the off hand comes onto the gun: the fore grip of a
+## long gun, cupped under the grip of a sidearm.
+func _steady_gun() -> void:
+	var gun := actor.get_active_weapon() as Gun
+	if gun == null or gun.visual == null or off_ik == null:
+		return
+	hold_weapon()
+	if _ads > 0.99:
+		var aimed := actor.global_basis.orthonormalized() * Basis(Vector3.RIGHT, actor.cmd.pitch)
+		var miss := sight_target(gun, aimed) - actor.hand.global_transform * (gun.visual.transform * ActionPose.sight_local(gun))
+		_ads_fix = (_ads_fix + actor.global_basis.orthonormalized().inverse() * miss * 0.5).limit_length(0.1)
+	var at: Vector3
+	var fore := gun.visual.get_node_or_null("ForeGrip") as Node3D
+	if gun.is_sidearm:
+		at = actor.hand.global_position + actor.hand.global_basis * _pose().ads_cup
+	elif fore != null:
+		at = fore.global_position
+	else:
+		at = gun.visual.global_transform * (ActionPose.sight_local(gun) + ads_fore)
+	_off_target.global_position = at.lerp(actor.global_transform * watch_at, _watch)
+
+
 ## Last of all, close the fingers round the handle.
 func _close_grip() -> void:
 	_curl(_fist, maxf(_grip_weight, ride_grip.y))
-	_curl(_off_fist, maxf(_off_weight, ride_grip.x))
+	_curl(_off_fist, maxf(maxf(_off_weight, _ads * (1.0 - _watch)), ride_grip.x))
 
 
 func _curl(fist: Dictionary, weight: float) -> void:
@@ -448,3 +517,6 @@ func hold_weapon() -> void:
 		held -= melee.visual.position
 	actor.hand.global_position = grip + actor.hand.global_basis * held
 	actor.hand.set_meta("shown", actor.hand.global_transform)
+	# The same, kept from the actor, for a view that follows it the next
+	# frame after the actor has moved on (`ActionPose.sight_shown`).
+	actor.hand.set_meta("shown_local", actor.global_transform.affine_inverse() * actor.hand.global_transform)

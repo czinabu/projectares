@@ -1004,7 +1004,8 @@ func mount_attachments(visual: Node3D) -> void:
 ## Puts a "Muzzle" marker on the gun's visual where shots leave it: the front
 ## of the barrel, or of a fitted muzzle device. Muzzle flashes and tracers
 ## start there in both views (`Gun.muzzle_point`). A "ForeGrip" marker shows
-## where the off hand holds it.
+## where the off hand holds it, and an "IronSight" marker where the eye looks
+## along it.
 func _place_muzzle(visual: Node3D, fitted: Node3D, mounts: Dictionary) -> void:
 	if not mounts.has("muzzle"):
 		return
@@ -1015,6 +1016,11 @@ func _place_muzzle(visual: Node3D, fitted: Node3D, mounts: Dictionary) -> void:
 		if box.size != Vector3.ZERO:
 			at = fitted.transform * Vector3(box.get_center().x, box.get_center().y, box.position.z)
 	_marker(visual, "Muzzle").position = at
+	# The rear of the plain sights, where an eye looks along the gun when
+	# aiming without an optic (`ActionPose.sight_local`): just over whatever
+	# stands highest along the top, a little behind the optic's spot.
+	if mounts.has("optic"):
+		_marker(visual, "IronSight").position = (mounts["optic"] as Vector3) + Vector3(0.0, 0.012, 0.06)
 	# Where the off hand holds the fore end, first person (the fore grip
 	# mount, or a fitted grip).
 	if mounts.has("grip"):

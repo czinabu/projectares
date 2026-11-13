@@ -99,10 +99,10 @@ var ads_fov := 55.0
 ## Extra distance between the eye and an optic's own eye point (its "Sight"
 ## marker) when looking through it in first person, in meters.
 var eye_relief := 0.0
-## True while looking through an optic in first person: the HUD hides its
-## crosshair, since the optic's own reticle is in the middle of the view.
+## True while looking down the sights in first person: the HUD hides its
+## crosshair, since the sight (an optic's reticle, or the plain sights) is
+## in the middle of the view.
 var sighted := false
-var _sight_blend := 0.0
 ## First person: how far the model's eyes are from the actor's eye point,
 ## eased so the view never jolts with a step.
 var _eye_offset := Vector3.ZERO
@@ -575,26 +575,23 @@ func _process(delta: float) -> void:
 	if skin != null and skin.has_method("hide_head"):
 		skin.hide_head(first_person)
 	ActionPose.of(actor).advance(delta)
-	# Aiming down an optic moves the eye to the sight, wherever the hands
-	# hold it; the gun is never moved to the eye.
-	var sight := _sight_of(weapon) if first_person and not phone_out else null
-	_sight_blend = move_toward(_sight_blend, 1.0 if aiming and sight != null else 0.0, delta * 7.0)
-	sighted = _sight_blend > 0.9
-	if sight != null and _sight_blend > 0.0:
-		var eye := Transform3D(look, sight.global_position + look * Vector3(0.0, 0.0, eye_relief))
-		camera.global_transform = camera.global_transform.interpolate_with(eye, ease(_sight_blend, -2.0))
+	# Aiming down sights the body brings the gun up to its eyes, the same in
+	# both views (`ActionPose.ads`). First person then settles the eye on the
+	# sight line as the gun comes up, so it looks straight down it; the gun
+	# is never moved to the camera. The sight is read where it is drawn
+	# (`ActionPose.sight_shown`), never where a physics tick left the hand.
+	var pose := ActionPose.of(actor)
+	var gun := weapon as Gun if first_person and not phone_out else null
+	var up := pose.ads if gun != null and gun.visual != null and gun.visual.visible else 0.0
+	sighted = up > 0.9
+	if up > 0.0:
+		var at := ActionPose.sight_shown(gun) + look * Vector3(0.0, 0.0, pose.relief_for(gun) + eye_relief)
+		camera.global_transform = camera.global_transform.interpolate_with(Transform3D(look, at), up)
 
 
 ## The field of view while aiming `weapon`: optics zoom further in.
 func aim_fov(weapon: Weapon) -> float:
 	return ads_fov / maxf(1.0, weapon.aim_zoom() if weapon else 1.0)
-
-
-## The sight line marker of the optic on `weapon`, or null for plain sights.
-func _sight_of(weapon: Weapon) -> Node3D:
-	if weapon == null or weapon.visual == null:
-		return null
-	return weapon.visual.get_node_or_null("Attachments/optic/Sight") as Node3D
 
 
 ## How much the mouse turns the view right now, relative to the resting view.
