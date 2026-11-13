@@ -1628,7 +1628,11 @@ func _ride_shots(out_dir: String) -> void:
 func _view_shots(out_dir: String, only := "") -> void:
 	var raid := Raid.new()
 	add_child(raid)
-	raid.start(Worlds.get_world("ashfront"), 42, ["rifle_carbine", OS.get_environment("VIEW_MELEE") if OS.has_environment("VIEW_MELEE") else "blade_scrap", "pistol_service", "jetpack_mk1", "plate_light"])
+	var kit := ["rifle_carbine", OS.get_environment("VIEW_MELEE") if OS.has_environment("VIEW_MELEE") else "blade_scrap", "pistol_service", "jetpack_mk1", "plate_light"]
+	# `VIEW_OPTIC=<item id>` fits an optic to the rifle, for the aim rows.
+	if OS.has_environment("VIEW_OPTIC"):
+		kit.append(OS.get_environment("VIEW_OPTIC"))
+	raid.start(Worlds.get_world("ashfront"), 42, kit)
 	for bot in raid.bots:
 		bot.get_node("Brain").set_physics_process(false)
 		bot.global_position += Vector3(0, -500, 0)
@@ -1662,7 +1666,7 @@ func _view_shots(out_dir: String, only := "") -> void:
 	var outside := Camera3D.new()
 	outside.fov = 40.0
 	raid.add_child(outside)
-	var rows := ["gun_ready", "gun_low", "pistol_low", "blade_idle", "reload", "switch", "windup_left", "windup_right", "windup_overhead",
+	var rows := ["gun_ready", "ads", "pistol_ads", "gun_low", "pistol_low", "blade_idle", "reload", "switch", "windup_left", "windup_right", "windup_overhead",
 			"swing", "guard", "watch"]
 	if only != "":
 		rows = rows.filter(func(r: String) -> bool: return r in only.split(","))
@@ -1671,7 +1675,10 @@ func _view_shots(out_dir: String, only := "") -> void:
 	for row in rows.size():
 		var kind: String = rows[row]
 		var melee := kind.begins_with("windup") or kind == "swing" or kind == "guard" or kind == "blade_idle"
-		p.active_weapon_index = blade_at if melee else (pistol_at if kind == "pistol_low" else gun_at)
+		p.active_weapon_index = blade_at if melee else (pistol_at if kind.begins_with("pistol") else gun_at)
+		for w in p.weapons:
+			if w is Gun:
+				w._aiming = false
 		blade._windup_left = 0.0
 		blade._swing_left = 0.0
 		blade._blocking = false
@@ -1688,6 +1695,9 @@ func _view_shots(out_dir: String, only := "") -> void:
 			match kind:
 				"gun_ready":
 					skin._aim_left = 1.0
+				"ads", "pistol_ads":
+					p.cmd.secondary = true
+					(p.get_active_weapon() as Gun)._aiming = true
 				"reload":
 					gun._reload_left = gun.reload_time * 0.5
 				"switch":

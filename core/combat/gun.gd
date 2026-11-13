@@ -406,6 +406,10 @@ func handle_input(cmd: ActorCommand, delta: float) -> void:
 			start_reload()
 
 
+func drop_aim() -> void:
+	_aiming = false
+
+
 func on_holster() -> void:
 	_aiming = false
 	_charge = 0.0

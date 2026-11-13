@@ -68,6 +68,25 @@ var raise_rate := 9.0
 var lower_rate := 2.5
 ## How fast the phone comes up and goes away (per second).
 var phone_rate := 5.0
+## Aiming down sights: the gun is brought up until its sight line runs
+## through the eyes, the stock in the shoulder and the off hand on the fore
+## end, the same body in both views. `ads_rate` is how fast it comes up and
+## goes down (per second; `PlayerController` moves an optic's eye to the
+## camera at the same pace). `ads_relief` is how far in front of the eyes
+## the rear of the sight sits, by item tag, first match wins: a sidearm is
+## held out at arm's length, a long gun is shouldered close.
+var ads_rate := 7.0
+var ads_relief := [
+	["sidearm", 0.26],
+	["power", 0.16],
+	["", 0.09],
+]
+## Guns with any of these tags are braced at the hip, never shouldered
+## (a spinning cannon is too heavy to bring to the eye).
+var ads_hip_tags: Array[String] = ["minigun"]
+## Where the off hand cups a sidearm's grip, from the gun hand, in the
+## aim frame.
+var ads_cup := Vector3(-0.035, -0.045, 0.02)
 
 var actor: Actor
 
@@ -93,6 +112,9 @@ var elbow_raise := 0.0
 ## How deep into its reload motion the gun is (0..1), and how low it is held.
 var reload := 0.0
 var low := 0.0
+## How far the gun is up at the eye (0 at the hold, 1 sighted), eased.
+var ads := 0.0
+var _ads_raise := 0.0
 
 var _follow_left := 0.0
 var _follow_dir := MeleeWeapon.Dir.OVERHEAD
@@ -153,6 +175,89 @@ func advance(delta: float) -> void:
 	reload = reload_depth(gun) if gun != null and not actor.is_dead else 0.0
 	var lowered := low_wanted and gun != null and not gun.is_aiming() and reload <= 0.0
 	low = move_toward(low, 1.0 if lowered else 0.0, delta * (lower_rate if lowered else raise_rate))
+	_ads_raise = move_toward(_ads_raise, 1.0 if ads_wanted(gun) else 0.0, delta * ads_rate)
+	ads = ease(_ads_raise, -2.0)
+
+
+## True while `gun` should be up at the eye: aimed, in hand, shown, not
+## mid-reload, on foot or riding, and not one that is braced at the hip.
+func ads_wanted(gun: Gun) -> bool:
+	if gun == null or actor.is_dead or not gun.is_aiming() or reload > 0.0:
+		return false
+	if gun.visual == null or not gun.visual.visible:
+		return false
+	return not shoulders_never(gun)
+
+
+## True for a gun that is aimed from the hip (`ads_hip_tags`).
+func shoulders_never(gun: Gun) -> bool:
+	for tag in ads_hip_tags:
+		if ItemDB.has_tag(gun.item_id, tag):
+			return true
+	return false
+
+
+## How far in front of the eyes the sight of `gun` sits when sighted.
+## An optic's "Sight" marker is already its eye point, so it needs none.
+func relief_for(gun: Gun) -> float:
+	if optic_sight(gun) != null:
+		return 0.0
+	for entry: Array in ads_relief:
+		if entry[0] == "" or ItemDB.has_tag(gun.item_id, entry[0]):
+			return entry[1]
+	return 0.0
+
+
+## The fitted optic's eye point, or null for plain sights.
+static func optic_sight(gun: Gun) -> Node3D:
+	if gun == null or gun.visual == null:
+		return null
+	return gun.visual.get_node_or_null("Attachments/optic/Sight") as Node3D
+
+
+## Where you look along `gun` from, in the space of its visual: an optic's
+## eye point, else the rear of the plain sights, the top of the model a
+## little way in from its back end (worked out once and kept).
+static func sight_local(gun: Gun) -> Vector3:
+	var optic := optic_sight(gun)
+	if optic != null:
+		return gun.visual.global_transform.affine_inverse() * optic.global_position
+	var iron := gun.visual.get_node_or_null("IronSight") as Node3D
+	if iron != null:
+		return iron.position
+	if gun.visual.has_meta("sight_local"):
+		return gun.visual.get_meta("sight_local")
+	var box := AABB()
+	var first := true
+	var to_visual := gun.visual.global_transform.affine_inverse()
+	for node in gun.visual.find_children("*", "MeshInstance3D", true, false):
+		var mesh := node as MeshInstance3D
+		if mesh.mesh == null or not mesh.is_visible_in_tree():
+			continue
+		var part: AABB = (to_visual * mesh.global_transform) * mesh.get_aabb()
+		box = part if first else box.merge(part)
+		first = false
+	if first:
+		return Vector3(0.0, 0.08, 0.0)
+	var at := Vector3(box.get_center().x, box.end.y, box.end.z - box.size.z * 0.25)
+	gun.visual.set_meta("sight_local", at)
+	return at
+
+
+## Where the sight of `gun` is drawn, wherever the physics tick left the
+## hand node: the hand as the skin last showed it, kept from the actor
+## ("shown_local", set by `WeaponArm.hold_weapon`) and carried along to
+## where the actor is now, the way the eyes are. A view that follows the
+## sight then never sees the tick's resting hand or a frame's lag behind the
+## body (both showed as a stutter while aiming).
+static func sight_shown(gun: Gun) -> Vector3:
+	var hand := gun.visual.get_parent() as Node3D
+	var at := gun.visual.global_transform * sight_local(gun)
+	if hand == null or not hand.has_meta("shown_local"):
+		return at
+	var holder := hand.get_parent() as Node3D
+	var shown: Transform3D = holder.global_transform * (hand.get_meta("shown_local") as Transform3D)
+	return shown * (hand.global_transform.affine_inverse() * at)
 
 
 ## The hand offset the current melee state asks for, or null when the

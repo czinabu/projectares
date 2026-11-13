@@ -41,6 +41,13 @@ func is_aiming() -> bool:
 	return false
 
 
+## Called on a tick the weapon takes no input (weapons locked, staggered,
+## healing, looking through a visor): it stops aiming, so an aim held across
+## the range's firing line, say, never sticks on or flickers.
+func drop_aim() -> void:
+	pass
+
+
 ## Walk speed multiplier while this weapon is in hand (a spun-up minigun
 ## slows you). Read by `Actor` movement, so keep it deterministic.
 func move_speed_mult() -> float:

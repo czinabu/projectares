@@ -238,11 +238,24 @@ without Caleb, and update the gap list when a PR closes a row.
   worn on it to `Mirror.HEAD_LAYER`, which that camera culls; shadows and
   a mirror still see it). Never build a first-person-only copy of the arms,
   a weapon or a prop, and never move anything in front of the camera for
-  first person. Aiming down an optic moves the camera to the sight, never
-  the gun to the eye. Each actor has one `ActionPose`
+  first person. Aiming down sights is a body animation, the same in both
+  views (`ActionPose.ads`, eased by `ads_rate`): `WeaponArm._reach_sight`
+  reaches the gun hand so the sight (`ActionPose.sight_local`: an optic's
+  "Sight" marker, else the model's "IronSight", else the top of the model)
+  sits on the line out of the model's eyes, `ActionPose.relief_for` in front
+  of them (a sidearm out at arm's length, a long gun shouldered), and the
+  off hand takes the "ForeGrip" (or cups a sidearm). Guns tagged in
+  `ads_hip_tags` (the minigun) stay at the hip. First person then only
+  settles the camera on the sight line as it comes up; never move the gun
+  to the camera. A view that follows the gun reads it where it was drawn
+  (`ActionPose.sight_shown`, the hand's "shown_local" meta), never the hand
+  node a physics tick parked (that was the range's ADS stutter). A weapon
+  that takes no input on a tick stops aiming (`Weapon.drop_aim`). Each
+  actor has one `ActionPose`
   (`core/visual/action_pose.gd`, a view-only child made by `ActionPose.of`):
   the melee reach and shoulder turn, the reload motion, the low ready, the
   drawing back of a held heavy and the easing back of a recovering blade,
+  the gun brought up to the eye,
   the watch raise (from `ActorCommand.watch_up`) and the phone hold
   (`ActionPose.phone`, from `ActorCommand.phone`, which `Locomotion` poses
   the body from). `WeaponArm` and `ActorSkin` pose the model from it; a new
@@ -297,8 +310,8 @@ without Caleb, and update the gap list when a PR closes a row.
   `gear_items`, so they drop and come home with the gun. `Gun.build_attachment`
   builds each shape with its origin at the mount; `Look.mount_attachments`
   moves them onto the real model (`Look.GUN_MOUNTS`). An optic's "Sight"
-  marker is the eye point: in first person aiming moves the camera to it
-  (never the gun to the eye) so it looks through it, and zooms by `Weapon.aim_zoom()`. Scopes are
+  marker is the eye point: aiming brings it up to the model's eyes in both
+  views, first person looks through it, and zooms by `Weapon.aim_zoom()`. Scopes are
   real geometry you look down, never a screen overlay. Fitting happens at
   the home base's gunsmith bench (`BaseLayout` kind "gunsmith").
 - Power weapons are items tagged "power" (Rail Lance, Helion launcher, Arc
