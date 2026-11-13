@@ -5965,6 +5965,27 @@ func _test_suit_up(base: HomeBase) -> void:
 	var pad: Vector3 = HomeBase.STATIONS["launch"]["at"]
 	check(base.inside(bay_at) and not base.in_armory(bay_at) and bay_at.distance_to(pad) < 5.0,
 			"the suit-up bay stands in the main room beside the launch pad")
+	# One deploy area along the front wall, beside the exit, so the middle of
+	# the room is clear; the shelves and the gear bays line the other walls.
+	var front := base.room_size.z * 0.5
+	var in_deploy := func(at: Vector3) -> bool:
+		return at.x >= HomeBase.DEPLOY_FROM_X and at.x <= HomeBase.DEPLOY_TO_X and at.z > front - HomeBase.DEPLOY_DEPTH
+	var teleporter := base.bulkhead("teleporter")
+	check(in_deploy.call(bay_at) and in_deploy.call(pad) and (teleporter == null or in_deploy.call(teleporter.position))
+			and base.has_node("DeploySign"), "the suit-up bay, launch pad and teleporter share one deploy area by the front wall")
+	var shelved := true
+	for kind: String in HomeBase.STORAGE_ROWS:
+		for i in int(BaseLayout.KINDS[kind]["spots"]):
+			var at := base.spot_transform(kind, i).origin
+			shelved = shelved and base.inside(at) and at.z > front - 1.0 and at.x < -1.5
+	check(shelved, "supplies, chips and trophies sit on the storage wall left of the door")
+	var stands_back := true
+	for kind: String in ["armor_stand", "rig_stand"]:
+		for i in int(BaseLayout.KINDS[kind]["spots"]):
+			stands_back = stands_back and base.spot_transform(kind, i).origin.z < -front + 1.5
+	check(stands_back, "armor and rig stands stand in the gear bays along the back wall")
+	check(base.door.get_child_count() > 4 and base.has_node("ScoreBoard/RangeBoard"),
+			"the exit is a framed door and the range's score is on a board in the room")
 	check(base.suit_bay != null and base.suit_bay.get_prompt() == "[F] Suit up: put your loadout on",
 			"its control post offers to suit you up")
 	var kit := base.suit_kit()

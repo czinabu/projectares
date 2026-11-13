@@ -586,11 +586,19 @@ without Caleb, and update the gap list when a PR closes a row.
   (`HomeBase.suit_up`) replaces the player with a new actor wearing
   `suit_kit()`, weapons locked, and emits `player_replaced` so `main.gd`
   hands it the controller; changing the loadout only changes what the
-  bay puts on next. Bikes park in the garage off the right wall
+  bay puts on next. The room has one job per wall: the deploy area
+  (suit-up bay, launch pad, the teleporter's place) along the front wall
+  right of the exit (`HomeBase.DEPLOY_FROM_X`), the storage wall's shelves
+  (supplies, chips, trophies, `STORAGE_ROWS`) left of it, and gear bays
+  for armor and rig stands along the back wall; the middle of the floor
+  stays clear. The shell is steel, never bare rock: plated floors, ribbed
+  wall panels and a ceiling grid (`HomeBase._floor`, `_wall`, `_ceiling`),
+  so a new space builds with those. Bikes park in the garage off the right wall
   (`HomeBase.in_garage`). Behind the back wall is the firing range
   (`HomeBase.in_range`): a suited player's weapons unlock only there and
   never run dry, and `HomeBase` scores shots from each gun's `fired` signal
-  against its `RangeTarget`s, which stop shots like walls. Nothing on the
+  against its `RangeTarget`s, which stop shots like walls; the score is
+  written on a board hung over the lane, never on the screen. Nothing on the
   range goes through `Combat.deal` or pays mastery, because nothing there is
   real damage; never add an Actor target that takes some.
   The base grows with the account's upgrades (`core/base/base_upgrades.gd`,
