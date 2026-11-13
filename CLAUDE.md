@@ -542,7 +542,7 @@ without Caleb, and update the gap list when a PR closes a row.
   along): `core/dev/dev_mode.gd`, switched in the phone's Settings app and
   only in a debug or editor run (`DevMode.available`), never in an exported
   game. Solo, it puts `Profile` on a separate save
-  (`Profile.DEV_SAVE_PATH`) kept topped up with all gear and max credits, and
+  (`Profile.DEV_SAVE_PATH`) kept topped up with all gear and max scrip, and
   hands a solo `Raid` its cheats (`Raid.dev_cheats`: god mode, endless heat
   and ammo, no cooldowns); a server or client raid ignores them. Online, only
   a server hosted from the editor in dev mode (`main.gd host_and_join`
@@ -624,14 +624,14 @@ without Caleb, and update the gap list when a PR closes a row.
   show them (no helmet, or third person). Check it by eye with
   `visual_check.tscn -- <dir> --watch-only`.
 - Money (`core/economy/`): the rules live once, in `economy.gd` (static, like
-  `StashRules`), shared by `Profile` and `StashService`. Online, `credits`
+  `StashRules`), shared by `Profile` and `StashService`. Online, `scrip`
   lives on the server's account and only changes there: through
-  `StashService.buy` / `sell`, the payout in `settle`, or `change_credits`
+  `StashService.buy` / `sell`, the payout in `settle`, or `change_scrip`
   for other server systems. A client never sends a price or an amount.
   Shops are tag-driven: an item is stocked if it has the `vendor` tag and one
   of the shop's tags (`shop_db.gd`), and `Economy.is_shop_item` refuses
   anything above Uncommon, so rare gear stays loot-only. Keep every sell
-  price below its buy price, and keep run payouts small next to loot: credits
+  price below its buy price, and keep run payouts small next to loot: scrip
   must come from getting loot home, so full loot stays the stake.
 - Scrip is what a life pays, and it is at stake. The `Raid` pays it
   (`_pay_scrip`, amounts in `Economy`) into `PlayerState.scrip`, copied to
@@ -653,8 +653,8 @@ without Caleb, and update the gap list when a PR closes a row.
   other (`Arena.may_hurt`). Results, wagers, stakes and tournament pots are
   decided only by the authority's `Arena` and paid through `Arena.bank`;
   a client only sends `Arena.ask` requests and shows the board the server
-  sends. Credits change only through `StashService.change_credits` online and
-  `Profile.change_credits` solo. The Pit's moving parts (the tunnel doors and
+  sends. Scrip changes only through `StashService.change_scrip` online and
+  `Profile.change_scrip` solo. The Pit's moving parts (the tunnel doors and
   the rising barriers) are worked out from the bout's phase and fight clock
   alone (`ArenaVenue.doors_open`, `barrier_raise`), which the `Arena` hands
   the map every tick (`set_stage`) on every machine, so they need no messages

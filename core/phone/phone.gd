@@ -1356,7 +1356,7 @@ func _draw_dev_mode() -> void:
 func set_dev_mode(on: bool) -> void:
 	DevMode.set_enabled(on)
 	dev_mode_changed.emit()
-	show_notice("Dev mode on: every item, max credits, cheats in solo worlds." if DevMode.enabled
+	show_notice("Dev mode on: every item, max scrip, cheats in solo worlds." if DevMode.enabled
 			else "Dev mode off: back on your real save.")
 	if app == "settings":
 		# Redrawn after the click is done: the switch that was clicked goes.
