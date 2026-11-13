@@ -123,7 +123,7 @@ var flick_threshold := 45.0
 ## How quickly old mouse movement stops counting toward a flick.
 var flick_decay := 9.0
 var stance := 0
-var stance_control := StanceControl.MOUSE
+var stance_control := StanceControl.MOVE
 
 ## The toy vehicle in the hand (an item id off the watch), or "". While one
 ## is held the weapon is put away: fire throws it, aim puts it back.
@@ -616,7 +616,7 @@ func _process(delta: float) -> void:
 	var up := pose.ads if gun != null and gun.visual != null and gun.visual.visible else 0.0
 	sighted = up > 0.9
 	if up > 0.0:
-		var at := ActionPose.sight_shown(gun) + look * Vector3(0.0, 0.0, pose.relief_for(gun) + eye_relief)
+		var at := ActionPose.sight_shown(gun) + look * Vector3(0.0, 0.0, (pose.relief_now if pose.relief_now >= 0.0 else pose.relief_for(gun)) + eye_relief)
 		camera.global_transform = camera.global_transform.interpolate_with(Transform3D(look, at), up)
 
 

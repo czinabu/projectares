@@ -83,10 +83,10 @@ const CONTROLS := [
 	]],
 	["FLYING: JETPACK", [
 		["Climb (in the air)", "Hold {jump}"],
-		["Light the jets and hover", "Tap {jump} in the air"],
+		["Hover (in the air)", "Hold {alt_fire}"],
 		["Cruise while hovering", "{move_forward} {move_left} {move_back} {move_right}"],
-		["Coast down with the jets idle to cool", "Hold {slide}"],
-		["Boost head first (Mk2)", "Hold {sprint} + {move_forward}"],
+		["Coast down with the jets idle to cool", "Hold {slide} while hovering"],
+		["Boost head first, prone (Mk2)", "{sprint} in the air, hold to keep going"],
 	]],
 	["FLYING: THRUSTER BOOTS", [
 		["Kick up and the way you steer (three reach a roof)", "{jump} in the air"],

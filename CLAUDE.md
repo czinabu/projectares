@@ -164,7 +164,20 @@ without Caleb, and update the gap list when a PR closes a row.
   `backstab_mult` (knife), `guard_crush` (axe, carried on
   `DamageInfo.guard_mult`), `vertical_reach`, `close_range`/`close_mult` and
   `heavy_stagger` (spear). Their defaults change nothing. Add a melee type as
-  data plus a `Look.MELEE_MODELS` entry, not as a new class. Every melee
+  data plus a `Look.MELEE_MODELS` entry, not as a new class. Every melee item
+  carries exactly one hold tag, "one_handed" or "two_handed"
+  (`MeleeWeapon.is_two_handed_id`): it sets the walk speed with it in hand,
+  makes a two-hander's heavies stagger and break armor, and is what
+  `Look.is_two_handed` (the one place views ask) answers for the grip.
+  Melee is made to answer guns (DESIGN.md "Melee against guns"): blades go
+  past armor (`DamageInfo.armor_pierce`), a heavy started sprinting is a
+  dash-strike (`dash_range`), a light while moving back at a foe behind is a
+  back strike, and a fresh guard deflects small-arms rounds for
+  `deflect_window`, rearming after `guard_rearm`; a gun's round carries its
+  `DamageInfo.weapon_id` and `undeflectable_tags` (marksman, power) go
+  through any guard. Noise is `Combat.noise`, which only guns call (a person's
+  shot, at most every `Gun.noise_every`): patrolling bots hear it through
+  `Actor.heard`. Never make a blade call it; melee kills are silent. Every melee
   model is dressed as tech by `Look._tech_melee` (`assets/shaders/melee.gdshader`):
   bare metal becomes alloy with an energy edge in the weapon's rarity color,
   wood and wraps black polymer with glowing seams. A holstered blade is worn
@@ -189,7 +202,9 @@ without Caleb, and update the gap list when a PR closes a row.
   it is simulated on, with a local guess at the guard; the attacker's view
   answers that (sound, `PlayerController.kick_view`, a hitstop of the blade's
   pose) at once, and the server's `hit_confirmed` only drives the hit marker.
-- Melee is directional. The stance travels in `ActorCommand.stance`, attacks
+- Melee is directional. The stance travels in `ActorCommand.stance` (picked
+  by default from the movement keys, Jedi Academy style, Caleb's call; B
+  switches to the mouse flick), attacks
   set `DamageInfo.direction`, and `MeleeWeapon.guard_covers` decides whether a
   guard stops a hit. A swing goes toward its stance (Caleb's call): a left
   swing starts on the right and ends on the left, so `attack_dir` (the side
@@ -251,7 +266,14 @@ without Caleb, and update the gap list when a PR closes a row.
   "Sight" marker, else the model's "IronSight", else the top of the model)
   sits on the line out of the model's eyes, `ActionPose.relief_for` in front
   of them (a sidearm out at arm's length, a long gun shouldered), and the
-  off hand takes the "ForeGrip" (or cups a sidearm). Guns tagged in
+  off hand takes the "ForeGrip" (or cups a sidearm), sliding back along
+  the gun where the arm cannot reach. A sight out of the gun arm's reach
+  comes back toward the eye (`ActionPose.relief_now`, which first person
+  follows). Both wrists turn as the `aim_gun` clip holds the gun, turned
+  with the aim (`WeaponArm._turn_to_aim`), so neither twists round it, and
+  the shoulders take a stance (`ActionPose.ads_stance`: a long gun bladed,
+  a sidearm squared up). Bone poses are only final inside the skeleton's
+  `skeleton_updated`; a check of a posed bone reads it there. Guns tagged in
   `ads_hip_tags` (the minigun) stay at the hip. First person then only
   settles the camera on the sight line as it comes up; never move the gun
   to the camera. A view that follows the gun reads it where it was drawn
@@ -360,10 +382,13 @@ without Caleb, and update the gap list when a PR closes a row.
   dungeons and arena tournaments exist, artifacts drop from world events
   (`WorldDef.roll_artifact`, `warlord_artifact_chance`, `pod_artifact_chance`).
 - Flight is simulated in `Actor` from the command, like a dash, so it
-  predicts and replicates: jets lit by a tap in the air
-  (`FlightRig.is_hovering`, flown by `Actor._simulate_hover`; the server
-  repeats it in each state as `ActorCommand.STATE_HOVERING`), a boost along
-  the look direction, and a glide whose speed is energy
+  predicts and replicates: jets lit only while aim is held in the air
+  (`Actor._wants_hover`, Caleb's call: never a hover that stays on by
+  itself; `FlightRig.is_hovering`, flown by `Actor._simulate_hover`; the
+  server repeats it in each state as `ActorCommand.STATE_HOVERING`), a
+  boost started by a sprint press in the air and held on sprint, no hover
+  needed (`Actor._wants_boost`), that speeds you up along the look
+  direction while the skin lays the body out prone as the speed builds, and a glide whose speed is energy
   (`Actor._glide_velocity`). Every rig cruises at the same
   `FlightRig.CRUISE_SPEED` so a squad on mixed rigs keeps together (Caleb's
   call), and each stays up its own way and has its own edge: the jetpack
@@ -496,7 +521,16 @@ without Caleb, and update the gap list when a PR closes a row.
   Back-slung weapons ride higher up the back (`ride_sling_lift`); weapons
   clamped to a back rig's rails stay in their clamps. A new
   vehicle type sets those anchor points for its model. Check by eye:
-  `visual_check.tscn -- <dir> --ride-only`.
+  `visual_check.tscn -- <dir> --ride-only` (`RIDE_VEHICLE=<item id>` for
+  another vehicle). Every vehicle is that one class, picked by data: the
+  `model` stat picks the greybox body ("bike", "rover", "mech", "jet"),
+  `body_size` its collision box, `pivot_turn` lets a walker turn on the
+  spot, `jump_speed` gives it a jump-jet hop, and the "aircraft" tag flies
+  it (`Vehicle._fly`: takes off past `takeoff_speed` with jump, never
+  hovers, drops below `stall_speed` or with nobody at the stick, climbs no
+  higher than `ceiling` over the world's ground). Jets are thrown only where
+  `WorldDef.open_skies`. A vehicle's `watch_recharge` and `footprint` stats
+  set the watch's wait after a throw and the room it needs to unpack.
 - Toy vehicles: a vehicle a player owns in a world rides on their watch as
   a toy (`Raid.PlayerState.stowed`, read with `Raid.stowed_for`), never in
   the inventory. `Raid.throw_toy` throws one from the actor along their aim;

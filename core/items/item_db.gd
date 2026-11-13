@@ -28,7 +28,7 @@ func _ready() -> void:
 	# can never be stashed, so it cannot be farmed.
 	register("rifle_scrap", "Scrap Rifle", Rarity.COMMON, 0, ["weapon", "firearm", "rifle", "starter"], {},
 			"Worn automatic rifle.")
-	register("blade_scrap", "Scrap Blade", Rarity.COMMON, 0, ["weapon", "melee", "blade", "starter"], {},
+	register("blade_scrap", "Scrap Blade", Rarity.COMMON, 0, ["weapon", "melee", "one_handed", "blade", "starter"], {},
 			"A sharpened strip of plating.")
 	register("pistol_service", "Service Pistol", Rarity.COMMON, 0,
 			["weapon", "firearm", "sidearm", "pistol", "starter"],
@@ -38,7 +38,7 @@ func _ready() -> void:
 			"Reliable semi-auto sidearm. Accurate, and quick to reload.")
 	register("jetpack_mk1", "Mk1 Jetpack", Rarity.COMMON, 0, ["flight_rig", "starter"],
 			{"heavy_lift": true, "tier": 1, "ceiling": RIG_CEILINGS[1]},
-			"Basic jetpack. Tap jump in the air to hover and cruise, coast down to cool. Lifts you to rooftop height and no higher. Runs hotter than the Mk2 and has no boost.")
+			"Basic jetpack. Hold aim in the air to hover and cruise, coast down to cool. Lifts you to rooftop height and no higher. Runs hotter than the Mk2 and has no boost.")
 	register("plate_light", "Scrap Plate", Rarity.COMMON, 0, ["armor", "frame_light", "starter"],
 			{"armor": 30.0}, "30 armor.")
 	register("field_dressing", "Field Dressing", Rarity.COMMON, 0, ["consumable", "heal", "starter"],
@@ -147,27 +147,30 @@ func _ready() -> void:
 			{"model": "drum", "mult": {"mag_size": 2.2, "reload_time": 1.45, "spread_deg": 1.1}},
 			"More than twice the rounds. Heavy: slow reloads and a wider spread.")
 
-	# Melee
-	register("blade_arc", "Arc Blade", Rarity.RARE, 800, ["weapon", "melee", "blade"],
+	# Melee. Every melee item is tagged "one_handed" or "two_handed": light
+	# one-handers move faster, two-handers slower but stagger and break armor
+	# (`MeleeWeapon`), and the hands hold it that way (`Look.is_two_handed`).
+	register("blade_arc", "Arc Blade", Rarity.RARE, 800, ["weapon", "melee", "one_handed", "blade"],
 			{"light_damage": 34.0, "heavy_damage": 72.0, "light_recover": 0.22, "parry_window": 0.26},
 			"Faster swings and a more forgiving parry.")
-	register("hammer_breaker", "Breaker Hammer", Rarity.UNCOMMON, 500, ["weapon", "melee", "hammer", "vendor"],
+	register("hammer_breaker", "Breaker Hammer", Rarity.UNCOMMON, 500, ["weapon", "melee", "two_handed", "hammer", "vendor"],
 			{"light_damage": 42.0, "heavy_damage": 95.0, "light_windup": 0.22, "light_recover": 0.45,
 			"heavy_windup": 0.55, "light_stamina": 16.0, "heavy_stamina": 36.0, "reach": 3.1,
 			"slam_damage": 85.0, "slam_radius": 5.5},
 			"Slow and brutal. Its dive slam hits a wide area.")
-	register("knife_gutter", "Gutter Knife", Rarity.COMMON, 250, ["weapon", "melee", "knife", "vendor"],
+	register("knife_gutter", "Gutter Knife", Rarity.COMMON, 250, ["weapon", "melee", "one_handed", "knife", "vendor"],
 			{"light_damage": 17.0, "heavy_damage": 40.0, "reach": 2.1, "arc_deg": 90.0,
 			"light_windup": 0.08, "light_recover": 0.15, "heavy_windup": 0.25, "heavy_recover": 0.35,
 			"heavy_lunge": 12.0, "light_stamina": 6.0, "heavy_stamina": 18.0, "parry_window": 0.16,
-			"slam_damage": 35.0, "slam_radius": 3.0, "backstab_mult": 2.2, "backstab_arc_deg": 180.0},
+			"slam_damage": 35.0, "slam_radius": 3.0, "backstab_mult": 2.2, "backstab_arc_deg": 180.0,
+			"move_mult": 1.15},
 			"Very quick, short and light. Cuts from behind do more than double, so get round their guard.")
-	register("axe_splitter", "Splitter Axe", Rarity.UNCOMMON, 550, ["weapon", "melee", "axe", "vendor"],
+	register("axe_splitter", "Splitter Axe", Rarity.UNCOMMON, 550, ["weapon", "melee", "one_handed", "axe", "vendor"],
 			{"light_damage": 33.0, "heavy_damage": 85.0, "reach": 2.6, "light_windup": 0.16,
 			"light_recover": 0.34, "heavy_windup": 0.48, "light_stamina": 13.0, "heavy_stamina": 32.0,
 			"guard_crush": 2.5},
 			"Chops through guards. Blocking it costs two and a half times the stamina, so a few hits break a guard.")
-	register("spear_lancer", "Lancer Spear", Rarity.RARE, 900, ["weapon", "melee", "spear"],
+	register("spear_lancer", "Lancer Spear", Rarity.RARE, 900, ["weapon", "melee", "two_handed", "spear"],
 			{"light_damage": 27.0, "heavy_damage": 62.0, "reach": 4.1, "arc_deg": 40.0,
 			"vertical_reach": 3.8, "close_range": 1.5, "close_mult": 0.5, "light_windup": 0.14,
 			"light_recover": 0.3, "heavy_windup": 0.42, "heavy_lunge": 6.0, "heavy_stagger": 0.6,
@@ -296,6 +299,42 @@ func _ready() -> void:
 			{"max_speed": 27.0, "boost_speed": 37.0, "accel": 18.0, "turn_rate": 2.6,
 			"body_color": Color(0.85, 0.2, 0.15)},
 			"Tuned motorbike. Quicker off the line and much faster flat out.")
+	# The rest of the agreed roster (DESIGN.md section 8), at a first,
+	# drivable level: no turret, passengers, armor or missiles yet.
+	# `watch_recharge` is the watch's wait after one is thrown (heavier is
+	# slower), `footprint` the clear ground it needs to unpack, and
+	# `bay_scale` how small it parks in the base's garage bay.
+	register("rover_warden", "Warden Rover", Rarity.RARE, 2400, ["vehicle", "rover"],
+			{"model": "rover", "max_speed": 23.0, "boost_speed": 28.0, "accel": 9.0, "turn_rate": 1.5,
+			"full_turn_speed": 8.0, "brake_decel": 24.0, "lean_amount": -0.06, "rider_lean": 0.2,
+			"body_size": Vector3(2.0, 1.4, 4.2), "seat_offset": Vector3(-0.4, -0.02, 0.25),
+			"seat_point": Vector3(-0.4, 0.95, 0.25),
+			"grip_points": [Vector3(-0.58, 1.27, -0.25), Vector3(-0.22, 1.27, -0.25)] as Array[Vector3],
+			"peg_points": [Vector3(-0.52, 0.86, -0.5), Vector3(-0.28, 0.86, -0.5)] as Array[Vector3],
+			"exit_offset": Vector3(-1.9, 0.1, 0.0), "body_color": Color(0.42, 0.48, 0.32),
+			"footprint": Vector3(2.3, 1.4, 4.4), "watch_recharge": 20.0, "bay_scale": 0.6},
+			"Armored four-wheeler. Slow to turn and needs open ground, but it shrugs off rough terrain.")
+	register("mech_bulwark", "Bulwark Mech", Rarity.EPIC, 4200, ["vehicle", "walker"],
+			{"model": "mech", "max_speed": 9.0, "boost_speed": 13.0, "accel": 8.0, "turn_rate": 1.2,
+			"pivot_turn": 1.0, "full_turn_speed": 3.0, "jump_speed": 9.0, "lean_amount": -0.03,
+			"rider_lean": 0.2, "body_size": Vector3(1.9, 3.3, 1.9), "seat_offset": Vector3(0.0, 1.37, 0.15),
+			"seat_point": Vector3(0.0, 2.3, 0.15),
+			"grip_points": [Vector3(-0.25, 2.5, -0.38), Vector3(0.25, 2.5, -0.38)] as Array[Vector3],
+			"peg_points": [Vector3(-0.16, 2.08, -0.5), Vector3(0.16, 2.08, -0.5)] as Array[Vector3],
+			"exit_offset": Vector3(1.8, 0.1, 0.0), "body_color": Color(0.55, 0.52, 0.45),
+			"footprint": Vector3(2.0, 3.0, 2.0), "watch_recharge": 45.0, "bay_scale": 0.6},
+			"Compact walker. Slow and heavy, turns on the spot and hops on jump-jets. Its power unit "
+			+ "sits exposed on its back.")
+	register("jet_kestrel", "Kestrel Jet", Rarity.EPIC, 4600, ["vehicle", "aircraft"],
+			{"model": "jet", "max_speed": 45.0, "boost_speed": 60.0, "accel": 10.0, "turn_rate": 1.3,
+			"full_turn_speed": 8.0, "takeoff_speed": 24.0, "stall_speed": 22.0, "climb_rate": 10.0,
+			"lean_amount": 0.0, "rider_lean": 0.1, "body_size": Vector3(1.3, 1.5, 6.4),
+			"seat_offset": Vector3(0.0, 0.37, -0.55), "seat_point": Vector3(0.0, 1.3, -0.55),
+			"grip_points": [Vector3(-0.22, 1.47, -1.05), Vector3(0.22, 1.47, -1.05)] as Array[Vector3],
+			"peg_points": [Vector3(-0.15, 0.9, -1.6), Vector3(0.15, 0.9, -1.6)] as Array[Vector3],
+			"exit_offset": Vector3(1.6, 0.1, -0.5), "body_color": Color(0.6, 0.65, 0.72),
+			"footprint": Vector3(5.0, 1.8, 6.6), "watch_recharge": 40.0, "bay_scale": 0.42},
+			"Starfighter. Fast across the map and fragile; it cannot hover, and only flies in worlds with open skies.")
 
 	# Consumables
 	register("medkit", "Medkit", Rarity.COMMON, 60, ["consumable", "heal", "vendor"], {"heal": 50.0}, "Heals 50.")

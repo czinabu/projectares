@@ -69,6 +69,7 @@ func _ready() -> void:
 	# Not every bot thinks on the same tick.
 	_think_left = _rng.randf() * 0.2
 	actor.health.damaged.connect(_on_damaged)
+	actor.heard.connect(_on_heard)
 
 
 ## Sends the bot to hold a place: it walks there and patrols around it from
@@ -316,3 +317,16 @@ func _on_damaged(info: DamageInfo) -> void:
 		_last_seen = source.global_position
 		_lost_time = 0.0
 		state = State.CHASE
+
+
+## Gunfire nearby (`Combat.noise`): a bot on patrol goes to look where it came
+## from. A blade makes no noise, so a melee kill leaves the rest on patrol.
+func _on_heard(at: Vector3, source: Actor) -> void:
+	if state != State.PATROL or source == null or source.faction == actor.faction:
+		return
+	var world := Worlds.of(actor)
+	if world and not world.can_damage(actor, source, null):
+		return
+	_last_seen = at
+	_lost_time = 0.0
+	state = State.CHASE

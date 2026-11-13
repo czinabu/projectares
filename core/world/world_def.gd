@@ -62,6 +62,9 @@ var vehicle_respawn_time := 300.0
 ## Whether players may throw the toy vehicles on their watch here (see
 ## `Raid.throw_toy`). Off, a brought vehicle stays on the watch.
 var vehicle_toys := true
+## Whether the sky here is big and open enough for jets (items tagged
+## "aircraft", DESIGN.md section 8). Off, a jet stays on the watch.
+var open_skies := false
 ## Seconds a dead actor's bag lies around before it is cleared away.
 var bag_lifetime := 300.0
 ## Seconds to stand in a depot to bank what you carry.

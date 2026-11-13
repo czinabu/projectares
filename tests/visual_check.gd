@@ -93,7 +93,8 @@ func _ready() -> void:
 		get_tree().quit()
 		return
 
-	# `-- <output_dir> --ride-only` shoots the rider seated on a bike.
+	# `-- <output_dir> --ride-only` shoots the rider seated on a bike
+	# (`RIDE_VEHICLE=<item id>` seats them on another vehicle).
 	if "--ride-only" in args:
 		await _ride_shots(out_dir)
 		get_tree().quit()
@@ -433,6 +434,7 @@ func _flight_shots(out_dir: String) -> void:
 	var poses := [
 		["jet_hover_strafe", "jetpack_mk2", true, false, false, 10.0, 0.0, 0.0, 0.0, 0, Vector3(1, 0, 0)],
 		["jet_boost", "jetpack_mk2", true, true, false, 22.0, 0.0, 0.0, 0.0, 0, Vector3.FORWARD],
+		["jet_boost_setoff", "jetpack_mk2", true, true, false, 6.0, 0.0, 0.0, 0.0, 0, Vector3.FORWARD],
 		["jet_boost_climb", "jetpack_mk2", true, true, false, 16.0, 14.0, 0.0, 0.7, 0, Vector3.FORWARD],
 		["jet_boost_roll", "jetpack_mk2", true, true, false, 22.0, 0.0, 0.0, 0.0, 1, Vector3.FORWARD],
 		["air_leap", "jetpack_mk2", false, false, false, 7.0, 6.0, 0.0, 0.0, 0, Vector3.FORWARD],
@@ -1617,7 +1619,15 @@ func _ride_shots(out_dir: String) -> void:
 	deck.add_child(deck_mesh)
 	raid.add_child(deck)
 	deck.global_position = at - Vector3(0, 0.5, 0)
-	var bike: Node3D = raid.spawn_vehicle("bike_raider", at + Vector3(0, 0.3, 0), 0.6)
+	var ride_id := OS.get_environment("RIDE_VEHICLE")
+	if ride_id == "" or not ItemDB.has_tag(ride_id, "vehicle"):
+		ride_id = "bike_raider"
+	var bike: Node3D = raid.spawn_vehicle(ride_id, at + Vector3(0, 0.3, 0), 0.6)
+	# Bigger vehicles are framed from further out and higher up.
+	var seat_y: float = bike.seat_point.y
+	var frame_out := maxf(1.0, seat_y / 0.98)
+	if bike.model != "bike":
+		frame_out = maxf(frame_out, bike.body_size.z / 2.6)
 	await _settle(20)
 	bike.mount(player)
 	player.set_physics_process(false)
@@ -1647,8 +1657,8 @@ func _ride_shots(out_dir: String) -> void:
 		var b: Basis = bike.global_basis
 		var sides: Array[Vector3] = [b.x, (b.x - b.z).normalized(), b.z, (b.z * 0.8 + Vector3.UP * 0.7).normalized()]
 		for c in sides.size():
-			var look_at := bike.global_position + Vector3(0, 0.85, 0)
-			cam.global_position = look_at + (sides[c] + Vector3.UP * 0.15).normalized() * 6.5
+			var look_at := bike.global_position + Vector3(0, seat_y - 0.13, 0)
+			cam.global_position = look_at + (sides[c] + Vector3.UP * 0.15).normalized() * 6.5 * frame_out
 			cam.look_at(look_at)
 			await _settle(1)
 			await RenderingServer.frame_post_draw
@@ -1666,10 +1676,10 @@ func _ride_shots(out_dir: String) -> void:
 	player._refresh_weapon_visuals()
 	bike.set_physics_process(true)
 	await _settle(40)
-	var close := [[-bike.global_basis.x * 2.4 + Vector3(0, 0.2, 0), "ride_close_side.png"],
-		[(-bike.global_basis.z * 1.6 + bike.global_basis.x * 0.9 + Vector3(0, 1.0, 0)), "ride_close_front.png"]]
+	var close := [[(-bike.global_basis.x * 2.4 + Vector3(0, 0.2, 0)) * frame_out, "ride_close_side.png"],
+		[(-bike.global_basis.z * 1.6 + bike.global_basis.x * 0.9 + Vector3(0, 1.0, 0)) * frame_out, "ride_close_front.png"]]
 	for shot in close:
-		var focus := bike.global_position + bike.global_basis * Vector3(0, 1.0, -0.1)
+		var focus: Vector3 = bike.global_position + bike.global_basis * (bike.seat_point + Vector3(0, 0.02, -0.38))
 		cam.global_position = focus + shot[0]
 		cam.look_at(focus)
 		await _settle(2)

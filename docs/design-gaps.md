@@ -55,6 +55,7 @@ rows marked **pre-playtest** come before the friends playtest.
 | Primary with attachments | Built | Four attachment slots, gunsmith bench. |
 | Sidearm | Built | Key 2, drawn automatically when the primary runs dry. |
 | Melee weapon | Built | Six types, directional, block and parry. |
+| Melee against guns: dash-strike, back strike, timed bullet deflect, armor-piercing blades, silent kills, one/two-handed classes | Built | `MeleeWeapon` (`dash_range`, `back_strike_mult`, `deflect_window`, `guard_rearm`, `armor_pierce`, the hold tags), `Combat.noise`. Still to come: interiors that favour blades, more gun ammo pressure, bots using the dash-strike. |
 | Melee magnetic air-lunge | Built | A heavy in the air at an airborne foe within `air_lunge_range` and the aim cone homes on them through its windup; otherwise the dive slam. Ground heavies lunge to striking distance too. |
 | Flight rig | Partly | Three rigs exist, but not the agreed identities (next section). |
 | Gadget slot | Partly | The `ability` slot exists with Phase Step, Kinetic Barrier and Shock Pulse. The gadget list (DESIGN.md section 4) needs Caleb's pick before more are built. |
@@ -112,8 +113,8 @@ rows marked **pre-playtest** come before the friends playtest.
 | Mounted firepower | Missing | Rover turret, mech cannons, jet missiles. After the playtest. |
 | Cargo space while riding | Missing | After the playtest. |
 | Mobile cover | Missing | Rover and mech; the bike gives none by design. |
-| Per-vehicle watch recharge (heavier is slower) | Missing | One `Raid.toy_cooldown` for all vehicles today. |
-| Rover, mech and jet | Missing | Agreed roster, each with a weakness and counter (DESIGN.md section 8). After the playtest. |
+| Per-vehicle watch recharge (heavier is slower) | Built | A `watch_recharge` stat (`Raid.toy_recharge`): bike 8 s, rover 20 s, jet 40 s, mech 45 s. |
+| Rover, mech and jet | Partly | Drivable first versions on the one `Vehicle` class: Warden Rover (23 m/s, slow to turn, driver's seat on the left), Bulwark Mech (9 m/s, turns on the spot, jump-jet hop) and Kestrel Jet (takes off past 24 m/s, cannot hover, 120 m ceiling, only where `WorldDef.open_skies`). Greybox models. Missing: their weapons, passengers, armor and weak spots, vehicle health, and how mech and jet are earned (blueprints); today the rover can be found parked in Ashfront and the mech and jet only come with dev mode. |
 
 ## Racing
 

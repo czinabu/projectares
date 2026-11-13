@@ -1593,6 +1593,8 @@ func _fill(display: Display) -> void:
 			var vehicle: Node3D = VehicleScript.new()
 			vehicle.setup(id)
 			var visual: Node3D = vehicle.build_visual()
+			# A bike fills the bay; bigger vehicles park as smaller models.
+			visual.scale = Vector3.ONE * float(vehicle.bay_scale)
 			vehicle.free()
 			visual.name = "Body"
 			model.add_child(visual)

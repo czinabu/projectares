@@ -19,6 +19,7 @@ const RigTierTests := preload("res://tests/rig_tier_tests.gd")
 const EconomyTests := preload("res://tests/economy_tests.gd")
 const MeleeArsenalTests := preload("res://tests/melee_arsenal_tests.gd")
 const MeleeFeelTests := preload("res://tests/melee_feel_tests.gd")
+const MeleeViabilityTests := preload("res://tests/melee_viability_tests.gd")
 const CustomizerTests := preload("res://tests/customizer_tests.gd")
 const BattlefieldTests := preload("res://tests/battlefield_tests.gd")
 const VisorTests := preload("res://tests/visor_tests.gd")
@@ -235,9 +236,11 @@ func _run() -> void:
 	await _test_directional_melee()
 	await _test_melee_arsenal()
 	await _test_melee_feel()
+	await _test_melee_viability()
 	await _test_flight_rigs_and_abilities()
 	await _test_rig_tiers()
 	await _test_vehicle_driving()
+	await _test_vehicle_roster()
 	await _test_vehicle_raids()
 	await _test_vehicle_toys()
 	await _test_vehicle_toys_online()
@@ -326,6 +329,10 @@ func _test_melee_arsenal() -> void:
 
 func _test_melee_feel() -> void:
 	await MeleeFeelTests.run(self)
+
+
+func _test_melee_viability() -> void:
+	await MeleeViabilityTests.run(self)
 
 
 func _test_economy() -> void:
@@ -895,17 +902,21 @@ func _test_main_flow() -> void:
 	check(p.get_active_weapon() is MeleeWeapon and not p.is_on_floor(),
 			"real input reaches the actor (blade out, airborne)")
 	check(not controller.is_third_person(), "camera stays put when using the blade or flying")
-	# Melee side from the movement keys, once the player switches to them.
+	# Melee side from the movement keys by default (Caleb: Jedi Academy
+	# style controls as the baseline), the mouse flick after switching.
 	Input.action_press("move_left")
 	await frames(5)
-	check(p.cmd.stance == MeleeWeapon.Dir.OVERHEAD, "movement keys do not change the melee side by default")
-	controller.toggle_stance_control()
-	await frames(5)
 	check(p.cmd.stance == MeleeWeapon.Dir.LEFT and Profile.melee_control == "move",
-			"after switching, strafing picks the melee side and the choice is remembered")
+			"by default strafing picks the melee side")
 	Input.action_release("move_left")
 	controller.toggle_stance_control()
-	check(Profile.melee_control == "mouse", "switching again goes back to the mouse flick")
+	Input.action_press("move_right")
+	await frames(5)
+	check(p.cmd.stance == MeleeWeapon.Dir.LEFT and Profile.melee_control == "mouse",
+			"after switching to the mouse flick, the movement keys leave the side alone, and the choice is remembered")
+	Input.action_release("move_right")
+	controller.toggle_stance_control()
+	check(Profile.melee_control == "move", "switching again goes back to the movement keys")
 	# Riding pulls the camera back without touching the on-foot choice.
 	var bike = main.raid.spawn_vehicle("bike_scrapper", p.global_position + Vector3(3, 0.3, 0), 0.0)
 	await frames(5)
@@ -1747,7 +1758,12 @@ func _check_free_flight(p: Actor) -> void:
 	p.cmd.jump_pressed = true
 	await frames(1)
 	p.cmd.jump_pressed = false
-	check(p.flight.is_hovering, "tapping jump in the air lights the jets")
+	check(not p.flight.is_hovering, "tapping jump in the air no longer lights the jets")
+	await frames(10)
+	check(not p.flight.is_hovering and p.velocity.y < -1.0, "with aim let go a jetpack does not hover: you fall")
+	p.cmd.secondary = true
+	await frames(1)
+	check(p.flight.is_hovering, "holding aim in the air lights the jets")
 	await frames(40)
 	var held := p.global_position.y
 	await frames(40)
@@ -1799,7 +1815,30 @@ func _check_free_flight(p: Actor) -> void:
 	p.cmd.move = Vector2.ZERO
 	p.cmd.pitch = 0.0
 	await frames(5)
-	check(p.flight.is_hovering and not p.flight.is_boosting, "letting go of the boost drops back to a hover")
+	check(p.flight.is_hovering and not p.flight.is_boosting, "letting go of the boost drops back to a hover while aim is held")
+	# Aim let go: the jets go out. A Shift press in the air boosts with no
+	# hover first, and the speed builds rather than snapping on.
+	p.cmd.secondary = false
+	await frames(30)
+	check(not p.flight.is_hovering and p.velocity.y < -1.0, "letting go of aim puts the jets out")
+	p.velocity = Vector3.ZERO
+	p.cmd.sprint = true
+	await frames(5)
+	check(not p.flight.is_boosting, "Shift held from before does not boost on its own")
+	p.cmd.sprint_pressed = true
+	await frames(1)
+	p.cmd.sprint_pressed = false
+	check(p.flight.is_boosting and p.flight.is_hovering, "a Shift press in the air boosts with aim let go")
+	var early := p.velocity.dot(Basis(Vector3.UP, p.cmd.yaw) * Vector3.FORWARD)
+	await frames(90)
+	along = p.velocity.dot(Basis(Vector3.UP, p.cmd.yaw) * Vector3.FORWARD)
+	check(p.flight.is_boosting and along > early + 3.0 and along > p.flight.boost_speed - 1.0 and absf(p.velocity.y) < 1.0,
+			"the boost accelerates you forward (%.1f then %.1f m/s)" % [early, along])
+	p.cmd.sprint = false
+	await frames(5)
+	check(not p.flight.is_hovering and not p.flight.is_boosting, "letting go of Shift without aim ends the flight")
+	p.cmd.secondary = true
+	p.velocity = Vector3.ZERO
 	p.flight.boost_speed = boost_was
 	# Shift + a move key dashes that way on heat, and the hover carries on.
 	await frames(30)
@@ -1837,6 +1876,7 @@ func _check_free_flight(p: Actor) -> void:
 	p.flight.heat_per_sec = 4000.0
 	await frames(60)
 	check(p.flight.overheated and not p.flight.is_hovering and p.velocity.y < 0.0, "overheating puts the jets out and you fall")
+	p.cmd.secondary = false
 	p.flight.heat_per_sec = heat_rate
 	for i in 400:
 		await get_tree().physics_frame
@@ -1851,6 +1891,21 @@ func _check_free_flight(p: Actor) -> void:
 	await frames(1)
 	check(not p.flight.is_hovering, "a jump off the ground does not light the jets")
 	p.cmd.jump = false
+	# A sprinting jump stays a jump: Shift held from the ground never boosts.
+	for i in 400:
+		await get_tree().physics_frame
+		if p.is_on_floor():
+			break
+	p.cmd.sprint = true
+	p.cmd.move = Vector2(0, 1)
+	await frames(10)
+	p.cmd.jump_pressed = true
+	await frames(1)
+	p.cmd.jump_pressed = false
+	await frames(5)
+	check(not p.is_on_floor() and not p.flight.is_boosting, "a sprinting jump does not boost")
+	p.cmd.sprint = false
+	p.cmd.move = Vector2.ZERO
 	var copy := ActorCommand.new()
 	p.cmd.descend = true
 	p.cmd.sprint_pressed = true
@@ -1870,9 +1925,7 @@ func _check_jetpack_cruise(p: Actor) -> void:
 	p.velocity = Vector3.ZERO
 	p.flight.heat = 0.0
 	await frames(2)
-	p.cmd.jump_pressed = true
-	await frames(1)
-	p.cmd.jump_pressed = false
+	p.cmd.secondary = true
 	await frames(30)
 	var still := p.flight.heat
 	await frames(60)
@@ -1916,9 +1969,11 @@ func _check_jetpack_cruise(p: Actor) -> void:
 		p.cmd.sprint = false
 		p.cmd.move = Vector2.ZERO
 		await frames(5)
-		check(gun.current_spread_deg() < wild - 1.0, "a gun spreads wider in the air than from a hover")
+		check(gun._air_spread() == 0.0 and gun.current_spread_deg() < wild - 0.01,
+				"a gun spreads wider in the air than from a hover")
 	p.cmd.sprint = false
 	p.cmd.move = Vector2.ZERO
+	p.cmd.secondary = false
 
 
 ## Boots skimming. `p` stands on open ground with thruster boots.
@@ -2284,6 +2339,157 @@ func _test_vehicle_driving() -> void:
 	check(bail_speed > 10.0, "bailing out keeps the bike's momentum (%.1f m/s)" % bail_speed)
 	arena.queue_free()
 	await frames(2)
+
+
+func _test_vehicle_roster() -> void:
+	print("Vehicles: rover, mech and jet")
+	var arena := _vehicle_arena()
+	var rider := Actor.new()
+	arena.add_child(rider)
+	rider.position = Vector3(-40, 0.1, 0)
+	await frames(5)
+	var bike_turn: float = ItemDB.item_stats("bike_scrapper").get("turn_rate", 2.3)
+	for id: String in ["rover_warden", "mech_bulwark", "jet_kestrel"]:
+		check(ItemDB.has_tag(id, "vehicle") and ItemDB.item_rarity(id) >= ItemDB.Rarity.RARE
+				and not ItemDB.has_tag(id, "vendor"), "%s is a vehicle item, never sold" % id)
+		var v = VehicleScript.new()
+		v.setup(id)
+		arena.add_child(v)
+		v.position = Vector3(0, 0.5, 0)
+		await frames(20)
+		var model: Node3D = v.get_node("Model")
+		check(v.is_on_floor() and model != null and model.get_child_count() > 10,
+				"%s stands on the ground with its own greybox body" % id)
+		var parked_dip := _lowest_point(model) - arena.global_position.y
+		check(absf(parked_dip) < 0.05, "%s rests on the ground, not in it (lowest point %.3f m)" % [id, parked_dip])
+		# The ground is the arena's floor, at the arena's height (and the ramp
+		# is far away): track the deepest the model goes from here on.
+		var dip := {"min": INF}
+		var watch_dip := func() -> void:
+			var off: Vector3 = v.global_position - arena.global_position
+			if is_instance_valid(model) and off.distance_to(Vector3(60, 0, -40)) > 15.0 \
+					and absf(off.x) < 190.0 and absf(off.z) < 190.0:
+				dip.min = minf(dip.min, _lowest_point(model) - arena.global_position.y)
+		get_tree().physics_frame.connect(watch_dip)
+		var seat_at: Vector3 = v.seat_point
+		check(v.grip_points.size() == 2 and v.peg_points.size() == 2
+				and v.grip_points[0].x < v.grip_points[1].x and v.peg_points[0].x < v.peg_points[1].x,
+				"%s lists two grips and two pegs, left then right" % id)
+		check(v.grip_points[0].z < seat_at.z and v.grip_points[0].y > seat_at.y and v.peg_points[0].y < seat_at.y,
+				"%s puts its grips ahead of and above the seat, its pegs below" % id)
+		check(v.mount(rider) and rider.vehicle == v, "%s can be ridden" % id)
+		await frames(2)
+		var eye_up: float = rider.get_eye_position().y - v.global_position.y
+		check(eye_up > seat_at.y + 0.3 and eye_up < seat_at.y + 1.0,
+				"%s seats its rider on the seat (eyes %.2f m up, seat %.2f)" % [id, eye_up, seat_at.y])
+		var toy: Node3D = VehicleScript.toy_model(id)
+		check(toy.get_node_or_null("Model") != null, "%s has a toy for the watch" % id)
+		toy.free()
+
+		var start: Vector3 = v.global_position
+		match id:
+			"rover_warden":
+				rider.cmd.move = Vector2(0, 1)
+				await frames(240)
+				check(v.speed > FlightRig.CRUISE_SPEED, "the rover outruns flight cruise on the ground (%.1f m/s)" % v.speed)
+				check(v.turn_rate < bike_turn and absf(v.lean) < 0.1, "the rover turns slower than a bike and does not lean in")
+			"mech_bulwark":
+				rider.cmd.move = Vector2(1, 0)
+				var heading_before: float = v.heading
+				await frames(30)
+				check(v.heading < heading_before - 0.3 and v.global_position.distance_to(start) < 0.5,
+						"the mech turns on the spot")
+				rider.cmd.move = Vector2(0, 1)
+				await frames(120)
+				check(v.speed > 5.0 and v.speed <= v.max_speed + 0.1, "the mech walks, slowly (%.1f m/s)" % v.speed)
+				var legs: Array = model.find_children("Leg?", "", false, false)
+				var apart := 0.0
+				for i in 30:
+					await frames(1)
+					if legs.size() == 2:
+						apart = maxf(apart, absf(legs[0].rotation.x - legs[1].rotation.x))
+				check(legs.size() == 2 and apart > 0.3, "its legs stride as it walks (%.2f apart)" % apart)
+				rider.cmd.jump_pressed = true
+				await frames(1)
+				rider.cmd.jump_pressed = false
+				var top: float = v.global_position.y
+				for i in 60:
+					await frames(1)
+					top = maxf(top, v.global_position.y)
+				check(top > start.y + 1.5, "jump-jets hop the mech up (%.1f m)" % (top - start.y))
+				check(v._jump_wait > 0.0, "and need a moment before the next hop")
+			"jet_kestrel":
+				rider.cmd.jump = true
+				rider.cmd.move = Vector2(0, 1)
+				await frames(30)
+				check(v.is_on_floor() and v.speed < v.takeoff_speed, "the jet rolls along the ground until it is fast enough")
+				await frames(300)
+				var climbed: float = v.global_position.y - start.y
+				check(climbed > 5.0, "past takeoff speed, jump lifts it into the air (%.1f m up)" % climbed)
+				rider.cmd.jump = false
+				rider.cmd.move = Vector2.ZERO
+				await frames(120)
+				check(not v.is_on_floor() and v.speed >= v.stall_speed - 0.1,
+						"off the throttle it keeps flying, it never hovers (%.1f m/s)" % v.speed)
+				check(rider.global_position.distance_to(v.global_position) < 2.0, "the pilot rides along")
+				rider.cmd.move = Vector2(-1, 0)
+				await frames(20)
+				check(v.lean < -0.2, "it banks into a turn (%.2f)" % v.lean)
+				rider.cmd.move = Vector2.ZERO
+				# Back over the middle of the floor, so it comes down on it.
+				v.global_position = arena.global_position + Vector3(0, 12, 0)
+				v.velocity = Vector3.ZERO
+				v.speed = v.stall_speed
+				await frames(2)
+				v.dismount()
+				var height: float = v.global_position.y
+				await frames(60)
+				check(v.global_position.y < height - 3.0, "with nobody at the stick it drops")
+				await _wait_until(func() -> bool: return v.is_on_floor(), 600)
+				await frames(30)
+				check(v.is_on_floor(), "and comes down on the ground")
+		get_tree().physics_frame.disconnect(watch_dip)
+		check(dip.min > -0.06, "%s never sinks into the ground driving, landing or hopping (deepest %.3f m)" % [id, dip.min])
+		rider.cmd.move = Vector2.ZERO
+		rider.cmd.jump = false
+		v.dismount()
+		v.queue_free()
+		await frames(2)
+		rider.global_position = arena.global_position + Vector3(-40, 0.2, 0)
+		rider.velocity = Vector3.ZERO
+		await frames(10)
+
+	# On the watch: heavier vehicles take longer to recharge, and jets only
+	# fly where the sky is open.
+	var world := Worlds.get_world("ashfront")
+	var raid := Raid.new()
+	add_child(raid)
+	raid.start(world, 73, world.starter_loadout() + (["jet_kestrel", "mech_bulwark"] as Array[String]))
+	await frames(5)
+	check(raid.toy_recharge("bike_scrapper") == raid.toy_cooldown
+			and raid.toy_recharge("rover_warden") > raid.toy_recharge("bike_scrapper")
+			and raid.toy_recharge("mech_bulwark") > raid.toy_recharge("rover_warden"),
+			"heavier vehicles take longer for the watch to recharge")
+	var p := raid.player
+	check(world.open_skies, "Ashfront's open sky takes a jet")
+	world.open_skies = false
+	check(raid.throw_toy(p, "jet_kestrel").begins_with("No open sky") and raid.stowed_for(p).has("jet_kestrel"),
+			"a world without open skies keeps the jet on the watch")
+	world.open_skies = true
+	check(not Worlds.get_world("plaza").open_skies, "the plaza has no sky for jets")
+	raid.queue_free()
+	arena.queue_free()
+	await frames(2)
+
+
+## The lowest point of every mesh under `node`, in world height.
+func _lowest_point(node: Node3D) -> float:
+	var low := INF
+	for mesh_node: MeshInstance3D in node.find_children("*", "MeshInstance3D", true, false):
+		var box := mesh_node.get_aabb()
+		for i in 8:
+			low = minf(low, (mesh_node.global_transform * box.get_endpoint(i)).y)
+	return low
 
 
 func _test_vehicle_raids() -> void:
@@ -3929,7 +4135,7 @@ func _test_online_movement() -> void:
 		burst_top = maxf(burst_top, seen.global_position.y - ground)
 	check(burst_top > 0.6, "a press made while every packet is being lost still reaches the server (%.2f m)" % burst_top)
 
-	# Free flight is predicted like running: jump, tap again to light the
+	# Free flight is predicted like running: jump, hold aim to light the
 	# jets, fly sideways, and the server agrees all the way.
 	if me.flight.can_hover():
 		await frames(60)
@@ -3937,9 +4143,7 @@ func _test_online_movement() -> void:
 		await frames(1)
 		me.cmd.jump_pressed = false
 		await frames(12)
-		me.cmd.jump_pressed = true
-		await frames(1)
-		me.cmd.jump_pressed = false
+		me.cmd.secondary = true
 		dana.max_correction = 0.0
 		me.cmd.jump = true
 		await frames(30)
@@ -3958,6 +4162,7 @@ func _test_online_movement() -> void:
 		me.cmd.descend = false
 		await frames(30)
 		check(not me.flight.is_hovering and not seen.flight.is_hovering, "landing puts the jets out on both screens")
+		me.cmd.secondary = false
 
 	# Other players glide between updates instead of stepping.
 	me.cmd.move = Vector2(1, 0)
