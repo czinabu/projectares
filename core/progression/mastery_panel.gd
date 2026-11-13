@@ -44,20 +44,13 @@ func refresh() -> void:
 		_rows.add_child(_track_row(track))
 
 
-## Mastery tracks for each loadout slot: the equipped item, or the free scrap
-## item that fills the slot when it is empty.
+## Mastery tracks for each loadout slot's equipped item. A bare slot has none.
 func loadout_tracks() -> Array[String]:
-	var starter: Array[String] = []
-	if not Worlds.raid_worlds().is_empty():
-		starter = Worlds.raid_worlds()[0].starter_loadout()
 	var out: Array[String] = []
 	for slot: String in Loadout.SLOTS:
 		var id: String = Profile.equipped(slot) if loadout == null else loadout.get(slot, "")
 		if id == "":
-			for free_id in starter:
-				if Loadout.fits(slot, free_id):
-					id = free_id
-					break
+			continue
 		var track := MasteryDB.track_for_item(id)
 		if track != "" and track not in out:
 			out.append(track)

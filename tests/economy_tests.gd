@@ -84,8 +84,8 @@ static func _rules(t: Node) -> void:
 	t.check(one.ok and one.scrip == 180 and stash.count("rifle_carbine") == 1 and loadout.get("primary") == "rifle_carbine",
 			"selling a spare keeps the one you have equipped")
 	var last := Economy.sell(stash, loadout, 0, "rifle_carbine", 5)
-	t.check(last.ok and last.sold == 1 and last.scrip == 180 and loadout.is_empty(),
-			"selling more than you own sells what is there, and the slot empties")
+	t.check(last.ok and last.sold == 1 and last.scrip == 180 and loadout == {"primary": "rifle_scrap"},
+			"selling more than you own sells what is there, and the free scrap gun takes its slot")
 	t.check(not Economy.sell(stash, loadout, 0, "rifle_carbine", 1).ok and not Economy.sell(stash, loadout, 0, "dmr_longshot", 1).ok,
 			"you cannot sell what you do not have")
 	t.check(Economy.loot_value(stash) == 160, "the stash's loot is valued at its sale price")
@@ -124,8 +124,8 @@ static func _solo_profile(t: Node) -> void:
 	Profile.add_to_stash(["alloy_ingot", "circuit_board"])
 	t.check(Profile.sell_loot().ok and Profile.scrip == 360 and "rifle_carbine" in Profile.stash,
 			"selling loot pays into the profile")
-	t.check(Profile.sell("rifle_carbine").ok and Profile.scrip == 540 and Profile.equipped("primary") == "",
-			"selling equipped gear empties its slot")
+	t.check(Profile.sell("rifle_carbine").ok and Profile.scrip == 540 and Profile.equipped("primary") == "rifle_scrap",
+			"selling equipped gear puts the free scrap piece in its slot")
 	Profile.record_raid({"outcome": "left", "kills": 2, "scrip": 40})
 	t.check(Profile.scrip == 580, "a finished life pays the scrip brought home")
 	t.check(Profile.change_scrip(-500) and Profile.scrip == 80 and not Profile.change_scrip(-81) and Profile.scrip == 80

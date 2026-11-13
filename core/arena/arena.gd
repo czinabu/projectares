@@ -223,8 +223,11 @@ func add_player(p_kit: Array = [], p_mastery: Dictionary = {}, p_name := "Raider
 		p_owner := "", p_renown := 0, p_drop := "") -> Actor:
 	var kit: Array[String] = []
 	for id: String in (p_kit if not p_kit.is_empty() else world.starter_loadout()):
-		if not ItemDB.has_tag(id, "heal") and not ItemDB.has_tag(id, "vehicle"):
+		if id == Loadout.BARE or (not ItemDB.has_tag(id, "heal") and not ItemDB.has_tag(id, "vehicle")):
 			kit.append(id)
+	if kit.is_empty() and not p_kit.is_empty():
+		# Only healing or a vehicle: in the pit that is nothing at all.
+		kit.append(Loadout.BARE)
 	var actor := super(kit, p_mastery, p_name, p_owner, p_renown, p_drop)
 	_dirty = true
 	return actor

@@ -49,7 +49,9 @@ static func _rules(t: Node) -> void:
 			"only a helmet fits the helmet slot, and it fits no other")
 	var world := Worlds.get_world("ashfront")
 	var free := StashRules.checkout([] as Array[String], {}, world)
-	t.check("visor_scav" in free, "with no helmet picked you deploy in the free Scav Visor")
+	t.check("visor_scav" not in free and StashRules.starter_loadout().get("helmet", "") == "visor_scav"
+			and "visor_scav" in StashRules.checkout([] as Array[String], {"helmet": "visor_scav"}, world),
+			"with no helmet picked you deploy bareheaded; the free Scav Visor is yours to wear and a new player starts in it")
 	var taken: Array[String] = []
 	var kit := StashRules.checkout(stash, {"helmet": "helm_seeker", "ability": "chip_blink"}, world, taken)
 	t.check("helm_seeker" in kit and "chip_blink" in kit and "visor_scav" not in kit and "helm_seeker" in taken,

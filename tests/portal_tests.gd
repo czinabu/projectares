@@ -14,6 +14,7 @@ static func run(t: Node) -> void:
 	await _in_plaza(t)
 	await _not_in_a_fight(t)
 	await _outpost_drop(t)
+	await _outpost_home(t)
 
 
 static func _rules(t: Node) -> void:
@@ -99,7 +100,7 @@ static func _not_in_a_fight(t: Node) -> void:
 	raid.start_server(Worlds.get_world("ashfront"), 6)
 	var ada := raid.add_player(KIT, {}, "Ada", "ada")
 	await t.frames(2)
-	t.check(not raid.may_open_portal(ada) and raid.open_portal(ada, "frostline") == "Portals open only in safe zones"
+	t.check(not raid.may_open_portal(ada) and raid.open_portal(ada, "frostline") == "Portals open only in safe zones and gate outposts"
 			and raid.portals.is_empty(), "no portal opens in a world: getting out still means signing out")
 	var slots := Hud.watch_slots(raid, ada)
 	t.check(slots[Hud.Wrist.SLOTS.find("portal")].empty, "and the watch's portal icon is shut there")
@@ -123,6 +124,58 @@ static func _outpost_drop(t: Node) -> void:
 	t.check(landed[0] != null and landed[0] == landed[1],
 			"through a portal you land at the world's gate outpost, beside your squad")
 	raid.queue_free()
+	await t.frames(2)
+
+
+static func _outpost_home(t: Node) -> void:
+	print("Portals: home from a gate outpost, as a sign-out")
+	Raid.zone_rules = true
+	var raid := Raid.new()
+	t.add_child(raid)
+	raid.start_server(Worlds.get_world("ashfront"), 8)
+	var squad: Array[Actor] = []
+	for key: String in ["bo", "cy"]:
+		raid.set_squad(key, "crew")
+		squad.append(raid.add_player(KIT, {}, key, key, 0, Raid.PORTAL_DROP))
+	var bo := squad[0]
+	var cy := squad[1]
+	var dy := raid.add_player(KIT, {}, "dy", "dy", 0, Raid.PORTAL_DROP)
+	await t.frames(3)
+	var outside := raid.add_player(KIT, {}, "ed", "ed")
+	await t.frames(2)
+	t.check(raid.state_for(bo).sheltered and Portal.choices_for(raid, bo) == [Portal.HOME],
+			"in a gate outpost the watch offers one portal: home")
+	t.check(Hud.watch_slots(raid, bo)[Hud.Wrist.SLOTS.find("portal")].detail == "Portal home · signs you out",
+			"and the icon says it signs you out")
+	t.check(raid.open_portal(bo, "frostline") != "", "no portal leads from an outpost to another world")
+	if raid.outpost_at(outside.global_position) == null:
+		t.check(Portal.choices_for(raid, outside).is_empty() and raid.open_portal(outside, Portal.HOME) != "",
+				"outside the outpost walls no portal opens")
+	var finished: Array = []
+	raid.player_finished.connect(func(a: Actor, result: Dictionary) -> void: finished.append([a, result.get("outcome", "")]))
+	t.check(raid.open_portal(bo, Portal.HOME) == "" and raid.state_for(bo).sign_out_left > 0.0,
+			"opening it starts the gate sign-out")
+	var portal: Portal = raid.portals[0] if not raid.portals.is_empty() else null
+	if portal == null:
+		raid.queue_free()
+		Raid.zone_rules = false
+		return
+	t.check(portal.destination == Portal.HOME and is_equal_approx(portal.unfold_time, raid.world.outpost_sign_out_time),
+			"the ring unfolds over the countdown")
+	await t.frames(int(raid.world.outpost_sign_out_time * 60.0) + 6)
+	t.check(finished.size() == 1 and finished[0][0] == bo and finished[0][1] == "left",
+			"when the countdown ends the opener goes home with their gear (%s)" % [finished])
+	dy.global_position = portal.global_position
+	await t.frames(3)
+	t.check(raid.state_for(dy).sign_out_left < 0.0, "someone outside the squad stepping in starts nothing")
+	cy.global_position = portal.global_position
+	await t.frames(3)
+	t.check(raid.state_for(cy).sign_out_left > 0.0, "a squadmate stepping in starts their own sign-out")
+	await t.frames(int(raid.world.outpost_sign_out_time * 60.0) + 6)
+	t.check(finished.size() == 2 and finished[1][0] == cy and finished[1][1] == "left",
+			"and follows home when it ends")
+	raid.queue_free()
+	Raid.zone_rules = false
 	await t.frames(2)
 
 

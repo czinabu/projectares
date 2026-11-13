@@ -204,9 +204,9 @@ static func _bench(t: Node) -> void:
 	await t._use(base.player)
 	t.check(used[0] == 1 and base.bench_open and base.bench_picking and base.bench_row == 0
 			and base.bench_choice == "rifle_carbine", "using the bench starts on your gun, ready to turn")
-	t.check(base.bench_choices("primary") == ["rifle_carbine", "smg_stinger", ""]
+	t.check(base.bench_choices("primary") == ["rifle_carbine", "smg_stinger", "rifle_scrap", ""]
 			and base.bench_choices("optic") == ["", "optic_scope", "optic_reflex"] and base.bench_choices("grip") == ["", "grip_angled"],
-			"the wheel turns through each gun once (then the free one) and each slot's owned attachments")
+			"the wheel turns through each gun once (then the free one, then none) and each slot's owned attachments")
 	base.bench_scroll(1)
 	await t.frames(1)
 	bench_gun = base.get_node_or_null("Displays/BenchGun")

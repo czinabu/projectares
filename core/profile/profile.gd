@@ -35,7 +35,7 @@ var persist := true
 ## The file this profile saves to: `SAVE_PATH`, or `DEV_SAVE_PATH` in dev mode.
 var save_path := SAVE_PATH
 var stash: Array[String] = []
-## Slot name (see Loadout.SLOTS) -> item id. A missing slot uses the free scrap kit.
+## Slot name (see Loadout.SLOTS) -> item id. A missing slot is bare.
 var loadout := {}
 var welcome_granted := false
 var crates_granted: Array[String] = []
@@ -72,6 +72,8 @@ var blueprints: Array[String] = []
 
 
 func _ready() -> void:
+	# A new player starts in the free scrap kit; a save replaces it.
+	loadout = StashRules.starter_loadout()
 	load_profile()
 	grant_welcome_crate()
 	grant_gear_crates()
@@ -120,7 +122,7 @@ func reset() -> void:
 	crates_granted.clear()
 	mastery.clear()
 	stash.clear()
-	loadout.clear()
+	loadout = StashRules.starter_loadout()
 	welcome_granted = false
 	raids_played = 0
 	raids_extracted = 0
@@ -189,7 +191,7 @@ func validate_loadout() -> void:
 
 
 ## Takes the loadout out of the stash for a raid and returns the full kit:
-## chosen gear, the world's free scrap item for every empty slot, and healing.
+## chosen gear and healing (see `StashRules.checkout`).
 func checkout_loadout(world: WorldDef) -> Array[String]:
 	var kit := StashRules.checkout(stash, loadout, world)
 	save()
@@ -306,6 +308,7 @@ func to_dict() -> Dictionary:
 		"version": 2,
 		"stash": stash,
 		"loadout": loadout,
+		StashRules.BARE_KEY: true,
 		"welcome_granted": welcome_granted,
 		"crates_granted": crates_granted,
 		"mastery": mastery.to_dict(),
@@ -349,6 +352,7 @@ func load_dict(data: Dictionary) -> void:
 		for slot: Variant in saved_loadout:
 			if typeof(slot) == TYPE_STRING and typeof(saved_loadout[slot]) == TYPE_STRING:
 				loadout[slot] = saved_loadout[slot]
+	StashRules.upgrade_loadout(data, loadout)
 	welcome_granted = bool(data.get("welcome_granted", false))
 	crates_granted.clear()
 	for crate: Variant in data.get("crates_granted", []):

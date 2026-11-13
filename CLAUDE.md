@@ -630,7 +630,17 @@ without Caleb, and update the gap list when a PR closes a row.
   "frame_heavy"), never by item id. Variants are sidegrades: every one trades a
   strength for a weakness, and death never takes mastery away. Variant picks go
   into `Raid.start` alongside the kit; `Raid` never reads them from `Profile`.
-- `starter`-tagged items are the free scrap kit. They never enter the stash.
+- `starter`-tagged items are the free scrap kit. They never enter the stash:
+  every player owns one of each piece that goes in a slot
+  (`StashRules.free_items`, `equippable`), equipped like any other gear and
+  shown in their own base. An empty loadout slot is bare (Caleb's call:
+  you can go fully bare, clothes aside): nothing fills it on a deploy, in
+  the base or in the arena, and a kit of nothing is `[Loadout.BARE]`,
+  because an empty kit still means the world's scrap kit to
+  `Raid.add_player`. Only lost gear falls back to its scrap piece
+  (`StashRules.validate_loadout`); a new player starts in the scrap kit
+  (`StashRules.starter_loadout`), and a save without `StashRules.BARE_KEY`
+  is from before this rule and gets its empty slots filled once.
 - `Raid` never touches `Profile` to build a kit. The kit is passed into
   `Raid.start`, so a server can supply it later.
 
@@ -750,7 +760,13 @@ without Caleb, and update the gap list when a PR closes a row.
   the viewer's squad may use it; the squad key never leaves the server) and
   tells the walker (`portal_travel`). `main.gd go_through_portal` takes the
   trip, and arrival is `add_player`'s drop `Raid.PORTAL_DROP`: the same
-  "outpost" marker for a whole squad, else a quiet drop.
+  "outpost" marker for a whole squad, else a quiet drop. The one portal
+  inside a world is `Portal.HOME` at a gate outpost (Caleb's call):
+  `Portal.choices_for` offers it only while sheltered, and opening it is
+  `begin_sign_out` with a door. The ring unfolds over the gate countdown, a
+  squadmate stepping in starts their own sign-out (`_tick_portals`), and
+  everyone leaves through `_leave` as "left". It never emits
+  `portal_entered`, and no portal leads from one world into another.
 - Risk zones (DESIGN.md section 2): a world tiers its map with
   `WorldDef.zone_at` (0 outer, 1 middle, 2 core) and burns with
   `hazard_at`, which `Raid._tick_hazards` deals through `Combat.deal` once a

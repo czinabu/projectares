@@ -342,9 +342,16 @@ the storage behind it.
 The watch opens portals to the other places: the way out of your base and
 the plaza, replacing the base's launch pad, arena gate and teleporter pad.
 
-- **Where:** only in safe spaces: your home base and the hub (and later the
-  gate outposts). So a portal is a deploy tool, never an escape hatch out of
-  a fight. Coming home still means signing out at an exit or a depot.
+- **Where:** only in safe spaces: your home base, the hub and a world's
+  gate outposts. So a portal is a deploy tool, never an escape hatch out of
+  a fight. Coming home still means signing out.
+- **At a gate outpost (Caleb's call):** the only portal leads home, and
+  opening it is the gate's sign-out with a door. It starts your sign-out
+  countdown (so a fight or a bounty still keeps you out of the outpost and
+  the portal), the ring unfolds over it, and when it ends you go home with
+  your gear like any sign-out. A squadmate who steps into the ring starts
+  their own countdown and follows. No portal leads from one world straight
+  into another.
 - **Opening one:** raise the watch, go to the portal icon on the Mission
   tab, wheel through the worlds and the arena, click. A portal unfolds in
   front of you and stays open about 15 seconds, then folds away.
@@ -367,7 +374,7 @@ the plaza, replacing the base's launch pad, arena gate and teleporter pad.
 | Map and pings | The map, standing, strongpoints, and pings to your squad (the ping marks where you look, for your side only). |
 | Contract tracker | Your active contracts, on the Mission tab (section 10). |
 | Landing choices | Where to drop back in after dying. |
-| Squad portal | Opens a portal to a world or the arena, in safe spaces only (above). |
+| Squad portal | Opens a portal to a world or the arena in safe spaces, or home from a gate outpost as a sign-out (above). |
 | Pack | What you carry, folded into the Summon tab: its fill, worth, heals and scrip, and later your weight tier (section 4). |
 
 Watch skins are cosmetics, shown off in the hub.
