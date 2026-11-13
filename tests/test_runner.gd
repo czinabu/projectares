@@ -938,29 +938,33 @@ func _test_main_flow() -> void:
 		icons.append(slot.id)
 	check(icons == Hud.Wrist.SLOTS, "the card is a row of icons: %s" % ", ".join(icons))
 	check(wrist.card.bars.size() >= 3, "in third person the card carries the vitals strip, since there is no glass")
-	# Looking across the card opens the icon under your eyes, and barely
-	# turns the view.
+	# The mouse wheel steps across the card; the mouse only looks.
 	var yaw_before := controller.yaw
-	var glance := InputEventMouseMotion.new()
-	glance.relative = Vector2(-2000.0, 0.0)
+	var weapon_before := p.active_weapon_index
+	var look := InputEventMouseMotion.new()
+	look.relative = Vector2(-200.0, 0.0)
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-	var captured := Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
-	if captured:
-		controller._unhandled_input(glance)
-	else:
-		controller.yaw -= controller.glance(glance.relative.x * controller.mouse_sensitivity)
-	await frames(2)
-	check(controller.watch_glance == -1.0 and wrist.focused_id() == "map" and wrist.text().begins_with(main.raid.world.display_name),
-			"glancing left along the card opens the map icon")
-	check(controller.yaw > yaw_before, "once the eyes reach the card's edge the head turns on")
+	if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+		controller._unhandled_input(look)
+		check(controller.yaw > yaw_before and not controller.watch_focus_moved,
+				"with the watch up the mouse turns the view and leaves the card alone")
 	controller.yaw = yaw_before
-	var small := controller.glance(controller.glance_span * 0.5)
-	check(is_zero_approx(small) and is_zero_approx(controller.watch_glance),
-			"a small glance moves only the eyes, not the view")
-	Input.action_press("fire")
-	check(is_equal_approx(controller.glance(0.05), 0.05) and is_zero_approx(controller.watch_glance),
-			"while firing, the mouse turns the view, not the eyes")
-	Input.action_release("fire")
+	for i in 20:
+		controller.scroll(-1)
+	await frames(2)
+	check(controller.watch_focus == 0 and wrist.focused_id() == "map" and wrist.text().begins_with(main.raid.world.display_name),
+			"scrolling up steps the card left to the map icon")
+	controller.scroll(-1)
+	check(controller.watch_focus == 0, "and it stops at the card's left end")
+	controller.scroll(1)
+	await frames(2)
+	check(wrist.focused_id() == "pack", "scrolling down steps right, one icon a notch")
+	for i in 20:
+		controller.scroll(1)
+	await frames(2)
+	check(wrist.focused_id() == "leave", "and stops at the right end on sign-out")
+	check(controller._pending_switch < 0 and p.active_weapon_index == weapon_before and is_equal_approx(controller.yaw, yaw_before),
+			"with the watch up the wheel never switches weapons or turns the view")
 	controller.toggle_view()
 	await frames(40)
 	check(wrist.get_parent() == controller.camera and arm.visible and holo.visible,
@@ -985,8 +989,6 @@ func _test_main_flow() -> void:
 			"signing out fills a ring on the sign-out icon, and the card opens on it")
 	check(Hud.watch_slots(main.raid, p)[Hud.Wrist.SLOTS.find("artifact")].empty,
 			"the artifact slot is an empty socket until artifacts exist")
-	check(Hud.Wrist.slot_at(Hud.Wrist.glance_of(4, 6), 6) == 4 and Hud.Wrist.slot_at(-1.0, 6) == 0
-			and Hud.Wrist.slot_at(1.0, 6) == 5, "the glance maps across the card's icons")
 	# One long frame must not throw the landing dip's spring (and the camera).
 	controller._dip_speed = 9.0
 	controller._update_dip(0.5)
@@ -4336,6 +4338,24 @@ func _test_vehicle_toys() -> void:
 	controller.scroll(1)
 	check(controller.watch_index == 1 and controller._pending_switch < 0 and p.active_weapon_index == weapon_before,
 			"with the watch up the wheel turns through the toys, not the weapons")
+	var vehicle_at := Hud.Wrist.SLOTS.find("vehicle")
+	controller.scroll(1)
+	check(controller.watch_focus == vehicle_at + 1 and not controller.is_picking_toys(),
+			"past the last toy the wheel steps on to the next icon, and fire no longer takes a toy")
+	controller.scroll(-1)
+	check(controller.watch_focus == vehicle_at and controller.watch_index == 1 and controller.is_picking_toys(),
+			"scrolling back onto the vehicles lands on the last toy")
+	controller.scroll(-1)
+	controller.scroll(-1)
+	check(controller.watch_focus == vehicle_at - 1, "and before the first toy it steps off to the left")
+	controller.scroll(1)
+	controller.scroll(1)
+	check(controller.watch_focus == vehicle_at and controller.watch_index == 1, "back on the second toy")
+	controller.wrist_raised = false
+	controller.scroll(1)
+	check(controller._pending_switch >= 0, "with the watch down the wheel switches weapons again")
+	controller._pending_switch = -1
+	controller.wrist_raised = true
 	await get_tree().process_frame
 	await get_tree().process_frame
 	check(hud.wrist.toys_shown() == raid.stowed_for(p) and hud.wrist.get_node("Hologram/Toys").get_child_count() == 2,

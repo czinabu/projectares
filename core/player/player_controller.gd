@@ -131,16 +131,14 @@ var yaw := 0.0
 var pitch := 0.0
 ## Which toy on the raised watch is picked out, counting from 0.
 var watch_index := 0
-## Where your eyes are on the raised watch's card, from -1 (its left edge)
-## to 1 (its right). The icon under them opens up (`Hud.Wrist`). With the
-## watch up, sideways mouse movement moves the eyes first and the head only
-## once they reach the card's edge, so a glance across the card barely turns
-## the view. The HUD sets it to the icon it would open on its own until the
-## mouse moves (`watch_glance_moved`). View only.
-var watch_glance := 0.0
-var watch_glance_moved := false
-## How far the mouse turns the view, in radians, to glance across the card.
-var glance_span := 0.12
+## The icon open on the raised watch's card (`Hud.Wrist.SLOTS`), counting
+## from 0. The mouse wheel moves it across the card, one icon a notch, and on
+## the vehicle icon it turns through the toys before moving on. The HUD sets
+## it to the icon it would open on its own until the wheel turns
+## (`watch_focus_moved`). The mouse only looks, so the view never drifts
+## while you read the card. View only.
+var watch_focus: int = Hud.Wrist.SLOTS.find("vehicle")
+var watch_focus_moved := false
 var _toy_node: Node3D
 var _cam_dist := 0.0
 var _pending_switch := -1
@@ -217,7 +215,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		# Zoomed in (a scope or binoculars), the mouse turns the view less, so
 		# a target moves across the screen at the same speed as without it.
 		var turn := mouse_sensitivity * _zoom_scale()
-		yaw -= glance(event.relative.x * turn)
+		yaw -= event.relative.x * turn
 		var vertical: float = -event.relative.y if invert_y else event.relative.y
 		pitch = clampf(pitch - vertical * turn, -1.5, 1.5)
 		# Pulling down against a spray: that much kick is yours, not the
@@ -233,7 +231,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		toggle_view()
 	elif event.is_action_pressed("check_wrist"):
 		wrist_raised = not wrist_raised
-		watch_glance_moved = false
+		watch_focus_moved = false
 	elif event.is_action_pressed("melee_control"):
 		toggle_stance_control()
 	elif event.is_action_pressed("sign_out"):
@@ -243,24 +241,6 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event is InputEventKey and event.pressed and not event.echo and is_instance_valid(actor) \
 			and actor.is_dead and event.keycode >= KEY_1 and event.keycode <= KEY_9:
 		drop_requested.emit(event.keycode - KEY_1)
-
-
-## Sideways turn `turn` (radians, rightward) with the watch up: the eyes take
-## it across the card first, and what is left over turns the view. Returns
-## the turn left for the view. With the watch down, or while aiming or
-## firing, it all turns the view.
-func glance(turn: float) -> float:
-	if not wrist_raised or actor == null or not is_instance_valid(actor) or actor.is_dead or glance_span <= 0.0:
-		return turn
-	# In a fight the view comes first: while aiming or firing, the eyes stay put.
-	var weapon := actor.get_active_weapon()
-	if (weapon != null and weapon.is_aiming()) or Input.is_action_pressed("fire"):
-		return turn
-	var wanted := watch_glance + turn / glance_span * 2.0
-	watch_glance = clampf(wanted, -1.0, 1.0)
-	if turn != 0.0:
-		watch_glance_moved = true
-	return (wanted - watch_glance) * glance_span * 0.5
 
 
 ## The toy vehicles on the player's watch (item ids), as the world last said.
@@ -280,11 +260,17 @@ func pack_target() -> Node3D:
 	return found if found is Node3D and found.get("rider") == null else null
 
 
-## True while the watch is up with toy vehicles on it to pick from: the wheel
-## turns through them and fire takes the picked one into the hand.
+## True while the watch is up with toy vehicles on it to pick from.
 func is_browsing_toys() -> bool:
 	return wrist_raised and held_toy == "" and actor != null and is_instance_valid(actor) \
 			and not actor.is_dead and not is_riding() and not watch_toys().is_empty()
+
+
+## True while the card is open on the vehicle icon with toys to pick from:
+## the wheel turns through them and fire takes the picked one into the hand.
+## Before the wheel turns the card opens on the vehicles on its own.
+func is_picking_toys() -> bool:
+	return is_browsing_toys() and (not watch_focus_moved or watch_focus == Hud.Wrist.SLOTS.find("vehicle"))
 
 
 ## Fire with the watch up: packs the vehicle being looked at onto the watch,
@@ -294,18 +280,48 @@ func click_watch() -> bool:
 	if pack_target() != null:
 		pack_requested.emit()
 		return true
-	if is_browsing_toys():
+	if is_picking_toys():
 		take_picked_toy()
 		return true
 	return false
 
 
-## The mouse wheel: the next weapon, or with the watch up, the next toy on it.
+## The mouse wheel: the next weapon, or with the watch up, the next icon on
+## its card (`step` 1 is down the wheel, to the right). With the watch up the
+## wheel never switches weapons.
 func scroll(step: int) -> void:
-	if is_browsing_toys():
-		watch_index = posmod(watch_index + step, watch_toys().size())
+	if is_watch_up():
+		step_watch(step)
 	else:
 		_pending_switch = actor.cycle_weapon_index(step)
+
+
+## True while the raised watch takes the wheel: up, and you are alive.
+func is_watch_up() -> bool:
+	return wrist_raised and actor != null and is_instance_valid(actor) and not actor.is_dead
+
+
+## Moves the watch card's open icon `step` along (`Hud.Wrist.SLOTS`). On the
+## vehicle icon with toys to pick, the wheel turns through them first, and
+## steps off the icon past the first or last toy. Stops at the card's ends.
+func step_watch(step: int) -> void:
+	if step == 0:
+		return
+	var count: int = Hud.Wrist.SLOTS.size()
+	var vehicle: int = Hud.Wrist.SLOTS.find("vehicle")
+	watch_focus = clampi(watch_focus, 0, count - 1)
+	watch_focus_moved = true
+	var toys := watch_toys().size() if is_browsing_toys() else 0
+	if watch_focus == vehicle and toys > 1:
+		var next := watch_index + signi(step)
+		if next >= 0 and next < toys:
+			watch_index = next
+			return
+	var was := watch_focus
+	watch_focus = clampi(watch_focus + signi(step), 0, count - 1)
+	# Coming onto the vehicles from the right starts on the last toy.
+	if watch_focus == vehicle and was != vehicle and toys > 0:
+		watch_index = 0 if step > 0 else toys - 1
 
 
 ## Takes the picked toy off the raised watch, and lowers the wrist to throw.
@@ -458,7 +474,7 @@ func _physics_process(delta: float) -> void:
 	cmd.secondary_pressed = captured and Input.is_action_just_pressed("alt_fire")
 	if held_toy != "":
 		_use_toy_hand(cmd)
-	elif is_browsing_toys() or pack_target() != null:
+	elif is_picking_toys() or pack_target() != null:
 		# With the watch up and something for it to do, fire works the watch.
 		if cmd.primary_pressed:
 			click_watch()

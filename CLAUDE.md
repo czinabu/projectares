@@ -589,10 +589,12 @@ without Caleb, and update the gap list when a PR closes a row.
   settings, talking to friends and players, and information (news, the war
   feed). A new in-raid action goes on the watch; a new social or info
   feature is a phone app. The watch is a card-sized hologram of icons, one
-  per thing it holds (`Hud.watch_slots`, `Hud.Wrist.SLOTS`): the icon you
-  look at opens with one short line, and controls are glyphs (wheel, click,
-  key cap), never words. Where you look is `PlayerController.watch_glance`
-  (sideways mouse moves the eyes across the card before the head). A new
+  per thing it holds (`Hud.watch_slots`, `Hud.Wrist.SLOTS`): the open icon
+  shows one short line, and controls are glyphs (wheel, click, key cap),
+  never words. The mouse wheel moves across the card
+  (`PlayerController.watch_focus`, `step_watch`; Caleb's call), turning
+  through the toys on the vehicle icon before stepping on, and the mouse
+  only looks. While the watch is up the wheel never switches weapons. A new
   watch feature is a new slot, not a new line of text. In third person the
   card rises off the worn watch with a glow on the arm; it is never hung in
   front of the camera. Vitals go on the card only where the visor cannot

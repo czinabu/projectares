@@ -163,10 +163,10 @@ func _process(delta: float) -> void:
 	var slots := watch_slots(raid, p, picked, pack_name, leaving, banking)
 	var focus := default_focus(slots)
 	if controller != null:
-		if controller.watch_glance_moved:
-			focus = Wrist.slot_at(controller.watch_glance, slots.size())
+		if controller.watch_focus_moved:
+			focus = clampi(controller.watch_focus, 0, slots.size() - 1)
 		else:
-			controller.watch_glance = Wrist.glance_of(focus, slots.size())
+			controller.watch_focus = focus
 	var death := death_text(_death_result, _redeploy_wait, drop_choices(raid, p)) \
 			if p.is_dead and not _death_result.is_empty() else ""
 	# Your vitals are on the visor's edges while you look through it; with
@@ -681,12 +681,13 @@ func show_aim(on: bool) -> void:
 ## `check_wrist` key, and on its own while you are down), it projects a
 ## small card of light just above the face, about the size of a playing
 ## card: a row of icons (`SLOTS`: the map, the pack, the vehicle, the heavy
-## weapon, the artifact, and sign-out/banking). The icon you look at opens
-## up: it grows and its one line shows under the row, with its controls as
-## glyphs (a mouse wheel, a click, a key cap), never written out. Where you
-## look is `PlayerController.watch_glance`: sideways mouse movement moves
-## the eyes across the card before it turns the head. While you are down the
-## card shows what the death cost and where you can land.
+## weapon, the artifact, and sign-out/banking). The open icon grows and its
+## one line shows under the row, with its controls as glyphs (a mouse wheel,
+## a click, a key cap), never written out. Which icon is open is
+## `PlayerController.watch_focus`: the mouse wheel steps across the card
+## (and through the toys on the vehicle icon), and the mouse only looks.
+## While you are down the card shows what the death cost and where you can
+## land.
 ## Your vitals are not on the card while the visor shows them (`VisorHud`);
 ## with no helmet, or in third person, the card carries them as a thin strip.
 ##   - First person, where your own body is not drawn: a forearm comes up
@@ -1091,19 +1092,6 @@ void fragment() {
 				mat.emission = face_color
 		var glow := face_color.lerp(GLOW_COLOR, 0.5)
 		_glow.light_color = glow
-
-	## The icon at glance `glance` (-1 the card's left edge, 1 its right) on
-	## a card of `count` icons.
-	static func slot_at(glance: float, count: int) -> int:
-		if count <= 1:
-			return 0
-		return clampi(roundi((clampf(glance, -1.0, 1.0) + 1.0) * 0.5 * (count - 1)), 0, count - 1)
-
-	## Where the eyes are when looking at icon `index`: the inverse of `slot_at`.
-	static func glance_of(index: int, count: int) -> float:
-		if count <= 1:
-			return 0.0
-		return float(index) / float(count - 1) * 2.0 - 1.0
 
 	## Stands the toy vehicles in a row over the card, as small holograms of
 	## their own. The picked one is bigger and turns; `ready` is false while

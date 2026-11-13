@@ -35,7 +35,7 @@ rows marked **pre-playtest** come before the friends playtest.
 
 | Item | State | Notes |
 | --- | --- | --- |
-| Watch card: icons for map, pack, vehicle, heavy weapon, artifact, sign-out/banking | Built | `Hud.Wrist` and `Hud.watch_slots`: a card-sized hologram over the wrist; the icon you look at opens (`PlayerController.watch_glance`). Standing and strongpoints are on the map icon until the map and pings page exists. |
+| Watch card: icons for map, pack, vehicle, heavy weapon, artifact, sign-out/banking | Built | `Hud.Wrist` and `Hud.watch_slots`: a card-sized hologram over the wrist; the mouse wheel steps across the icons (`PlayerController.watch_focus`) and the open one shows its line. Standing and strongpoints are on the map icon until the map and pings page exists. |
 | Vitals, heat and ammo always in view, off the watch | Built | First person with a helmet: health, armor and stamina arcs, heat gauge and the ability's state at the visor edges (`VisorHud._draw_vitals`, `_draw_heat`). Ammo is on the gun's counter. With no helmet, or in third person, the watch card carries the vitals as a thin strip. |
 | Map and pings page | Missing | Design: the watch holds the map and squad pings. |
 | Banking readout on the watch | Missing | Banking happens at depots; the watch should show what is banked. Comes with banking. |
