@@ -31,9 +31,18 @@ var arm_follow := {
 	MeleeWeapon.Dir.OVERHEAD: Vector3(-0.15, -0.35, -0.25),
 }
 var arm_guard := Vector3(0.0, 0.08, -0.08)
-## How far the swing bows out in front of the straight line between the
-## windup and the follow-through, so the hand travels an arc.
-var swing_bow := Vector3(0.0, 0.05, -0.35)
+## A swing turns the arm about the shoulder (`shoulder`, in the actor's
+## frame, like `Actor.HAND_REST`): the hand sweeps round from the windup to
+## the follow-through on an arc, and the arm straightens by `swing_extend`
+## (m, at most `arm_length` from the shoulder) through the middle of it.
+var shoulder := Vector3(0.2, 1.45, -0.05)
+var swing_extend := 0.18
+var arm_length := 0.62
+## Where the weapon elbow points (a pole, actor frame) with the arm cocked
+## for a windup and with it thrown through at the end of a swing. Both views
+## blend between them by `elbow_raise`.
+var elbow_cocked := Vector3(0.9, 1.6, 0.35)
+var elbow_thrown := Vector3(0.6, 0.5, 0.2)
 ## How long the follow-through is held after the swing lands, in seconds.
 var follow_hold := 0.2
 ## Shoulder turn (x, radians, positive toward the actor's left) and lean
@@ -81,6 +90,8 @@ var reach := Vector3.ZERO
 var reach_weight := 0.0
 ## The shoulder turn and lean that go with `reach`, smoothed.
 var turn := Vector2.ZERO
+## How cocked the weapon elbow is (1 wound up, 0 thrown through), smoothed.
+var elbow_raise := 0.0
 ## How deep into its reload motion the gun is (0..1), and how low it is held.
 var reload := 0.0
 var low := 0.0
@@ -132,6 +143,7 @@ func advance(delta: float) -> void:
 	if wanted != null:
 		reach = wanted if reach_weight < 0.15 else reach.lerp(wanted, follow)
 	turn = turn.lerp(body_turn(melee) if holding else Vector2.ZERO, follow)
+	elbow_raise = lerpf(elbow_raise, elbow_wanted(melee) if holding else 0.0, follow)
 
 	var gun := weapon as Gun
 	reload = reload_depth(gun) if gun != null and not actor.is_dead else 0.0
@@ -149,13 +161,7 @@ func arm_reach(melee: MeleeWeapon) -> Variant:
 	if melee.is_winding_up():
 		return arm_windup[melee.attack_dir]
 	if melee._swing_left > 0.0:
-		var from: Vector3 = arm_windup[melee.attack_dir]
-		var to: Vector3 = arm_follow[melee.attack_dir]
-		var done := swing_progress(melee)
-		# A curve through a point bowed out in front, so the hand sweeps
-		# round instead of cutting straight across.
-		var bow := (from + to) * 0.5 + swing_bow
-		return from.lerp(bow, done).lerp(bow.lerp(to, done), done)
+		return swing_reach(arm_windup[melee.attack_dir], arm_follow[melee.attack_dir], swing_progress(melee))
 	if _follow_left > 0.0:
 		return arm_follow[_follow_dir]
 	if melee.is_blocking():
@@ -178,6 +184,35 @@ func body_turn(melee: MeleeWeapon) -> Vector2:
 	if melee.is_blocking():
 		return Vector2(MeleeWeapon._side(melee.guard_dir) * turn_guard, 0.0)
 	return Vector2.ZERO
+
+
+## The hand offset `done` (0..1) of the way through a swing from `from` to
+## `to`: turned about the shoulder rather than cut straight across, with the
+## arm reaching out through the middle.
+func swing_reach(from: Vector3, to: Vector3, done: float) -> Vector3:
+	var a := Actor.HAND_REST + from - shoulder
+	var b := Actor.HAND_REST + to - shoulder
+	var way := a.normalized().slerp(b.normalized(), done)
+	var length := minf(lerpf(a.length(), b.length(), done) + swing_extend * sin(PI * done), arm_length)
+	return shoulder + way * length - Actor.HAND_REST
+
+
+## How cocked the elbow should be for the current melee state (0..1).
+func elbow_wanted(melee: MeleeWeapon) -> float:
+	if melee == null or actor.is_dead:
+		return 0.0
+	if melee._slamming or melee.is_winding_up():
+		return 1.0
+	if melee._swing_left > 0.0:
+		return 1.0 - swing_progress(melee)
+	if melee.is_blocking():
+		return 0.6
+	return 0.0
+
+
+## The weapon elbow's pole in the actor's frame, between cocked and thrown.
+func elbow_pole() -> Vector3:
+	return elbow_thrown.lerp(elbow_cocked, elbow_raise)
 
 
 static func swing_progress(melee: MeleeWeapon) -> float:

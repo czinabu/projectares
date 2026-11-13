@@ -37,7 +37,7 @@ const FirstPersonArms := preload("res://core/visual/first_person_arms.gd")
 ## to a thrown toy (it is close to the eye in first person).
 const TOY_IN_HAND := Vector3(-0.08, 0.0, 0.1)
 const TOY_HAND_SIZE := 0.55
-const FIRST_PERSON_HAND := Vector3(0.2, -0.2, -0.48)
+const FIRST_PERSON_HAND := Vector3(0.16, -0.19, -0.3)
 
 var actor: Actor
 var camera: Camera3D
@@ -69,8 +69,12 @@ var base_fov := 80.0
 ## it. A switch drops the hand toward the holster's side to
 ## `first_person_stow` (camera space, x taken from the holster) and tips it
 ## by `first_person_stow_tilt`, out of view.
-var first_person_reach := 0.6
-var first_person_turn := 0.4
+var first_person_reach := 0.45
+var first_person_turn := 0.35
+## The nearest the hand comes to the eye (m, straight ahead) and the furthest
+## it goes to either side, in first person.
+var first_person_near := 0.4
+var first_person_side := 0.3
 var first_person_stow := Vector3(0.0, -0.7, -0.4)
 var first_person_stow_tilt := Vector3(-1.1, 0.0, 0.0)
 ## Speed widens the view a little, so a boost, a dive or a bike reads as
@@ -580,6 +584,11 @@ func first_person_hold(pose: ActionPose) -> Transform3D:
 	var swing := Basis(Vector3.UP, pose.turn.x * first_person_turn) * Basis(Vector3.RIGHT, pose.turn.y * first_person_turn)
 	at = swing * at
 	basis = swing * basis
+	# However a pose moves it, the hand stays far enough out in front that
+	# the arm holding it does not fill the view.
+	if pose.reach_weight > 0.0:
+		at.z = lerpf(at.z, minf(at.z, -first_person_near), pose.reach_weight)
+		at.x = lerpf(at.x, clampf(at.x, -first_person_side, first_person_side), pose.reach_weight)
 	if pose.switch_weight > 0.0:
 		var side := clampf(pose.switch_point.x, -0.45, 0.45)
 		var stow := Vector3(side, first_person_stow.y, first_person_stow.z)

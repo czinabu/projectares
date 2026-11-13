@@ -974,7 +974,8 @@ func mount_attachments(visual: Node3D) -> void:
 
 ## Puts a "Muzzle" marker on the gun's visual where shots leave it: the front
 ## of the barrel, or of a fitted muzzle device. Muzzle flashes and tracers
-## start there in both views (`Gun.muzzle_point`).
+## start there in both views (`Gun.muzzle_point`). A "ForeGrip" marker shows
+## where the off hand holds it.
 func _place_muzzle(visual: Node3D, fitted: Node3D, mounts: Dictionary) -> void:
 	if not mounts.has("muzzle"):
 		return
@@ -984,12 +985,21 @@ func _place_muzzle(visual: Node3D, fitted: Node3D, mounts: Dictionary) -> void:
 		var box := model_bounds(device)
 		if box.size != Vector3.ZERO:
 			at = fitted.transform * Vector3(box.get_center().x, box.get_center().y, box.position.z)
-	var marker := visual.get_node_or_null("Muzzle") as Marker3D
+	_marker(visual, "Muzzle").position = at
+	# Where the off hand holds the fore end, first person (the fore grip
+	# mount, or a fitted grip).
+	if mounts.has("grip"):
+		var grip := fitted.get_node_or_null("grip") as Node3D if fitted != null else null
+		_marker(visual, "ForeGrip").position = grip.position if grip != null else mounts["grip"]
+
+
+func _marker(visual: Node3D, marker_name: String) -> Marker3D:
+	var marker := visual.get_node_or_null(marker_name) as Marker3D
 	if marker == null:
 		marker = Marker3D.new()
-		marker.name = "Muzzle"
+		marker.name = marker_name
 		visual.add_child(marker)
-	marker.position = at
+	return marker
 
 
 ## Finds the attachment mounts on a gun model, in the space of its parent.

@@ -43,10 +43,11 @@ func _ready() -> void:
 		get_tree().quit()
 		return
 
-	# `-- <output_dir> --views-only` shoots each action in first person, the
-	# third-person camera and from the front, side by side.
+	# `-- <output_dir> --views-only [row,row]` shoots each action in first
+	# person, the third-person camera and from the front, side by side.
 	if "--views-only" in args:
-		await _view_shots(out_dir)
+		var at := args.find("--views-only")
+		await _view_shots(out_dir, args[at + 1] if args.size() > at + 1 else "")
 		get_tree().quit()
 		return
 	# `-- <output_dir> --idle-only` shoots the player standing still.
@@ -1370,7 +1371,7 @@ func _ride_shots(out_dir: String) -> void:
 ## One action per row, held still: as you see it in first person, in the
 ## third-person camera, and from the front. Both views read the actor's one
 ## `ActionPose`, so each row should read the same way across.
-func _view_shots(out_dir: String) -> void:
+func _view_shots(out_dir: String, only := "") -> void:
 	var raid := Raid.new()
 	add_child(raid)
 	raid.start(Worlds.get_world("ashfront"), 42, ["rifle_carbine", "blade_scrap", "pistol_service", "jetpack_mk1", "plate_light"])
@@ -1406,6 +1407,8 @@ func _view_shots(out_dir: String) -> void:
 	raid.add_child(outside)
 	var rows := ["gun_ready", "gun_low", "reload", "switch", "windup_left", "windup_right", "windup_overhead",
 			"swing", "guard", "watch"]
+	if only != "":
+		rows = rows.filter(func(r: String) -> bool: return r in only.split(","))
 	var size := Vector2i(400, 300)
 	var sheet := Image.create(3 * size.x, rows.size() * size.y, false, Image.FORMAT_RGBA8)
 	for row in rows.size():
@@ -1458,6 +1461,9 @@ func _view_shots(out_dir: String) -> void:
 			hold.call()
 			await RenderingServer.frame_post_draw
 			var frame := get_viewport().get_texture().get_image()
+			# Each shot full size too, to judge up close.
+			DirAccess.make_dir_recursive_absolute(out_dir.path_join("views"))
+			frame.save_png(out_dir.path_join("views/%s_%s.png" % [kind, ["first", "third", "front"][col]]))
 			var w := frame.get_width()
 			var h := frame.get_height()
 			var cut_h := h

@@ -280,7 +280,8 @@ func _process(delta: float) -> void:
 		var holster := actor.global_transform * override_point
 		_target.global_position = holster if _weight <= 0.0 else _target.global_position.lerp(holster, override_weight)
 		reach_ik.influence = maxf(_weight, override_weight)
-	_pole.global_position = actor.global_transform * elbow
+	# Cocked for a windup the elbow rides high; thrown through, it drops.
+	_pole.global_position = actor.global_transform * (elbow.lerp(shared.elbow_pole(), _weight) if holding else elbow)
 	if off_ik:
 		off_ik.influence = maxf(_off_weight * (1.0 - _watch), _watch)
 		_off_pole.global_position = actor.global_transform * off_elbow.lerp(watch_elbow, _watch)
@@ -382,6 +383,14 @@ func hold_weapon() -> void:
 		# a run carries it); an attack or guard takes it back to the aim.
 		var hang := clampf(1.0 - pose.reach_weight, 0.0, 1.0)
 		actor.hand.global_basis = aimed.slerp(_follow_turn(_forearm, _ready_forearm), hang)
+	if melee != null and melee.visual != null and _grip_axis != Vector3.ZERO and _wrist >= 0 and _grip_weight > 0.0:
+		# The blade lies along the closed fist, wherever the wrist could
+		# actually turn: the hand carries it, it never turns past the hand.
+		var fist := (skeleton.global_basis.orthonormalized() * skeleton.get_bone_global_pose(_wrist).basis.orthonormalized()
+				* _grip_axis).normalized()
+		var blade := (actor.hand.global_basis.orthonormalized() * melee.visual.transform.basis.orthonormalized() * Vector3.UP).normalized()
+		var settle := Quaternion(blade, fist)
+		actor.hand.global_basis = Basis(Quaternion.IDENTITY.slerp(settle, _grip_weight)) * actor.hand.global_basis.orthonormalized()
 	var held := grip_offset
 	# A blade's guard and windup poses shift it off the hand node. The arm
 	# reaches for that spot instead, so take the shift back out here.

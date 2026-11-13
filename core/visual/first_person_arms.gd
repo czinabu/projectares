@@ -22,16 +22,25 @@ var camera: Camera3D
 
 ## Where the copy's head bone sits in the camera's space: just behind the
 ## eye, so the torso stays out of view and the shoulders are where yours are.
-var head_at := Vector3(0.0, -0.02, 0.1)
+var head_at := Vector3(0.0, -0.02, 0.06)
+## The shoulders are brought this far forward of the copy's chest (camera
+## space), as a gun's stock pulls them in to the cheek: the chest stays out
+## of view behind the eye and the arms come in from the edges of the view,
+## long enough to hold a rifle's fore end.
+var shoulder_shift := Vector3(0.0, 0.0, -0.2)
 ## Where the elbows point, in the camera's space.
 var elbow := Vector3(0.7, -0.9, 0.2)
 var off_elbow := Vector3(-0.7, -0.9, 0.2)
+var elbow_cocked := Vector3(0.8, 0.2, 0.3)
 ## Raising the watch: where the left wrist comes up to, in the camera's
 ## space, at the reference field of view.
 var watch_at := Vector3(-0.1, -0.2, -0.32)
 ## A sidearm is held with the off hand cupped under the grip: its clip offset
 ## from the weapon hand is shrunk by this much.
 var sidearm_support := 0.35
+## Where the off wrist sits from a gun's "ForeGrip" marker, in the gun's
+## space (x right, y up, z back), so the palm comes up under the fore end.
+var fore_wrist := Vector3(-0.03, -0.07, 0.06)
 ## How a blade is turned in the hand at rest (see `MeleeWeapon.REST_POSE`):
 ## the clip holds it that way, so poses are measured from it.
 var blade_rest := Basis(Vector3.RIGHT, MeleeWeapon.REST_POSE)
@@ -43,6 +52,7 @@ var _anims := {}
 var _clip := ""
 var _wrist := -1
 var _off_wrist := -1
+var _shoulders: Array[int] = []
 var _grip := -1
 var _ik: TwoBoneIK3D
 var _off_ik: TwoBoneIK3D
@@ -79,6 +89,8 @@ func build(skin_name: String, appearance: Dictionary) -> bool:
 	_wrist = skeleton.find_bone(arm[2])
 	_off_wrist = skeleton.find_bone(off_arm[2])
 	_grip = skeleton.find_bone(def.get("grip_bone", ""))
+	for bone: String in [arm[0], off_arm[0]]:
+		_shoulders.append(skeleton.find_bone(bone))
 	if _wrist < 0 or _off_wrist < 0 or _grip < 0:
 		return false
 	for node in model.find_children("*", "MeshInstance3D", true, false):
@@ -190,6 +202,11 @@ func update(shown: bool, watch: float, toy: bool) -> void:
 func _measure() -> void:
 	var cam := camera.global_transform
 	var to_world := skeleton.global_transform
+	var shift := to_world.basis.inverse() * (cam.basis * shoulder_shift)
+	for bone in _shoulders:
+		var at := skeleton.get_bone_global_pose(bone)
+		at.origin += shift
+		skeleton.set_bone_global_pose(bone, at)
 	var anchor := actor.hand.global_transform.orthonormalized()
 	var rest := cam.basis.orthonormalized()
 	var held := held_visual()
@@ -204,14 +221,21 @@ func _measure() -> void:
 	var new_wrist := anchor.origin - turn * (grip - wrist)
 	_target.global_position = new_wrist
 	_wrist_turn = turn * wrist_basis
-	_pole.global_position = cam * elbow
+	# The elbow rides high with the arm cocked for a windup, as third person.
+	var raise := ActionPose.of(actor).elbow_raise if actor.get_active_weapon() is MeleeWeapon else 0.0
+	_pole.global_position = cam * elbow.lerp(elbow_cocked, raise)
 
 	var off := to_world * skeleton.get_bone_global_pose(_off_wrist).origin
 	var off_basis := to_world.basis.orthonormalized() * skeleton.get_bone_global_pose(_off_wrist).basis.orthonormalized()
 	var weapon := actor.get_active_weapon()
 	var off_at := new_wrist + turn * (off - wrist)
+	var fore := held.get_node_or_null("ForeGrip") as Node3D if held != null else null
 	if weapon is Gun and (weapon as Gun).is_sidearm:
 		off_at = new_wrist + turn * ((off - wrist) * sidearm_support)
+	elif weapon is Gun and fore != null:
+		# The palm under the fore end: the wrist sits a hand's width below
+		# and behind it.
+		off_at = fore.global_position + anchor.basis * fore_wrist
 	elif weapon is MeleeWeapon and held != null:
 		off_at = held.global_transform * Vector3(0.0, -0.16, 0.0)
 	_off_turn = turn * off_basis

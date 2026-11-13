@@ -224,7 +224,17 @@ without Caleb, and update the gap list when a PR closes a row.
   front of the camera by the same offsets on the same clock, so a switch,
   a flight stow or a windup plays out in both views. A new hand or weapon
   animation goes into `ActionPose` and both views read it; never animate
-  one view only. Compare by eye with `visual_check.tscn -- <dir> --views-only`.
+  one view only. Weapons are held, not floated (Caleb's call): the hand
+  carries them. Third person a blade lies along the closed fist and a gun
+  held low turns with the wrist (`WeaponArm`); swings turn the arm about the
+  shoulder (`ActionPose.swing_reach`, `elbow_pole`). First person draws a
+  copy of the character's own arms (`core/visual/first_person_arms.gd`)
+  whose hands grip the weapon: the weapon hand on the grip, the off hand on
+  a gun's "ForeGrip" marker or a two-handed handle, and the left arm lifts
+  the watch. Shots are judged from the eyes but drawn from the gun's
+  "Muzzle" marker as it is shown (`Gun.muzzle_point`). Compare by eye with
+  `visual_check.tscn -- <dir> --views-only [rows]`, which also saves each
+  shot full size under `views/`.
 - People are built from parts (`core/visual/human.gd`): an "appearance" names
   a build, four parts and colours. It is cosmetic only and never trusted:
   always pass one through `Look.clean_appearance` / `Look.set_appearance`,
