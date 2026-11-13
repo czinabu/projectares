@@ -5691,7 +5691,7 @@ func _test_phone_view() -> void:
 	for child in phone._body.get_children():
 		if child is PanelContainer and child.find_children("*", "HSlider", true, false).size() > 0:
 			sliders += 1
-	check(phone.settings_tab == "view" and sliders == 3, "the View tab has the fields of view and the camera distance")
+	check(phone.settings_tab == "view" and sliders == 4, "the View tab has the fields of view, the camera distance and the first-person pullback")
 	phone.open_app("news")
 	check(not phone._tabs.visible, "other apps have no tabs")
 	phone.open_app("settings")
@@ -5708,6 +5708,11 @@ func _test_phone_view() -> void:
 	phone.change_setting("camera_distance", 99.0)
 	check(is_equal_approx(GameSettings.camera_distance, GameSettings.CAMERA_DISTANCE_RANGE.y), "within its range")
 	GameSettings.camera_distance = 2.0
+	check(GameSettings.eye_pullback > 0.0, "the first-person camera starts pulled back a little from the face")
+	phone.change_setting("eye_pullback", 99.0)
+	check(is_equal_approx(GameSettings.eye_pullback, GameSettings.EYE_PULLBACK_RANGE.y)
+			and GameSettings.to_dict().has("eye_pullback"), "it can be set from the phone, within its range")
+	GameSettings.eye_pullback = 0.15
 	phone.close()
 	check(not phone.is_open and events[events.size() - 1] == false, "the phone closes")
 

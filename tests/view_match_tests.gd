@@ -227,6 +227,12 @@ static func _check_with_skin(t: Node) -> void:
 	controller.view_mode = PlayerController.ViewMode.FIRST
 	await t.frames(3)
 	var head_bit := 1 << (preload("res://core/visual/mirror.gd").HEAD_LAYER - 1)
+	var eyes: Vector3 = skin.eye_point(controller.camera.global_basis)
+	var back := controller.camera.global_position - eyes
+	var level_ahead := -p.global_basis.z
+	level_ahead.y = 0.0
+	t.check(controller.eye_pullback > 0.1 and back.dot(level_ahead.normalized()) < -0.1,
+			"first person, the camera sits pulled back from the face by the setting")
 	var cam: Camera3D = controller.camera
 	t.check(cam != null and cam.cull_mask & head_bit == 0, "first person, the camera leaves out the head")
 	var drawn := {}
