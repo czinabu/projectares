@@ -4,6 +4,14 @@ extends CanvasLayer
 ## news, try on clothes in front of a mirror, look up the controls and change
 ## settings.
 ##
+## It is a real phone in the world, not a panel over the screen: the
+## character raises it (others see them looking at it, `ActorCommand.phone`),
+## it is held up in front of the view at a slight angle with the scene dimmed
+## behind it, and you click on its screen. The screen is a `SubViewport`
+## showing a home screen of app icons with badges and a status bar; an app
+## opens over it and the back arrow or the bar at the bottom goes home.
+## With no 3D camera (a headless test) the same screen shows flat.
+##
 ## It is a view. Online it shows the `NetSession.social_state` the server
 ## sent and turns taps into requests (`send_message`, `send_invite`,
 ## `answer_invite`, `change_contact`); it never decides anything itself.
@@ -29,12 +37,20 @@ const DevMode := preload("res://core/dev/dev_mode.gd")  # DEV MODE
 const UiTheme := preload("res://core/visual/ui_theme.gd")
 const CharacterPanel := preload("res://core/ui/character_panel.gd")
 
+const MirrorScript := preload("res://core/visual/mirror.gd")
+
 const APPS := ["contacts", "messages", "invites", "news", "mirror", "controls", "settings"]
 const APP_NAMES := {"contacts": "Contacts", "messages": "Messages", "invites": "Invites",
 		"news": "News", "mirror": "Mirror", "controls": "Controls", "settings": "Settings"}
-## The shorter names on the bottom bar.
+## The names under the home screen's icons.
 const NAV_NAMES := {"contacts": "People", "messages": "Chat", "invites": "Invites",
 		"news": "News", "mirror": "Mirror", "controls": "Keys", "settings": "Settings"}
+## Each app icon's colour.
+const APP_TINTS := {"contacts": Color(0.22, 0.68, 0.45), "messages": Color(0.24, 0.52, 0.95),
+		"invites": Color(0.95, 0.58, 0.2), "news": Color(0.88, 0.3, 0.3), "mirror": Color(0.58, 0.4, 0.9),
+		"controls": Color(0.18, 0.66, 0.72), "settings": Color(0.42, 0.44, 0.48)}
+## The home screen, which is not an app of its own.
+const HOME := "home"
 
 ## The Controls app: what every key does, in sections. Each row is
 ## [what it does, the keys]. `{action}` in the keys is replaced by whatever is
@@ -124,14 +140,38 @@ const CONTROLS := [
 	]],
 ]
 
-var screen_size := Vector2(480, 760)
+## The screen's pixels, bezel included (the phone is about 1:2).
+var screen_size := Vector2i(440, 900)
+## The phone's height in the world, metres. Held this size, it is a little
+## further from the eyes than a real one, which keeps it clear of the near
+## plane; it is drawn over the world anyway, so it never pokes into a wall.
+var device_height := 0.32
+var device_depth := 0.022
+var corner_radius := 0.026
+## How much of the view's height the phone fills when held up.
+var fill := 0.74
+## Where it is held, in the view (-1 to 1 across and up). Further right while
+## the Mirror app is up, so the mirror is in view.
+var hold_at := Vector2(0.4, 0.0)
+var hold_at_mirror := Vector2(0.62, 0.0)
+## Turned in toward the middle of the view, tipped away at the top, and
+## rolled, in radians.
+var hold_turn := 0.1
+var hold_tilt := 0.08
+var hold_roll := -0.035
+## Seconds to raise it or put it away.
+var raise_time := 0.22
+## How dark the scene goes behind the phone.
+var dim_alpha := 0.38
+## The soft light the screen throws around the phone.
+var glow_alpha := 0.4
 ## Seconds a pop-up stays on screen.
 var notice_seconds := 4.5
 
 ## The online session, or null when playing solo.
 var net: NetSession
 var is_open := false
-var app := "contacts"
+var app := HOME
 ## Tests set this: a headless run has no real mouse mode to capture.
 var mouse_in_world := false
 ## The contact whose conversation is open in Messages, or "".
@@ -148,13 +188,28 @@ var mirror_up := false
 ## The choice the Mirror app's keys move (an index of `wardrobe.pick_keys()`).
 var mirror_row := 0
 
-var _blocker: ColorRect
-var _device: PanelContainer
+## The screen's 2D viewport: everything on the phone draws here.
+var _screen: SubViewport
 var _status: Label
+var _who: Label
+var _bars: SignalBars
+var _clock: Label
+var _home_note: Label
+var _home: Control
+var _page: Control
 var _title: Label
 var _body: VBoxContainer
 var _scroll: ScrollContainer
-var _nav := {}
+var _icons := {}
+## In the world: the phone, its glow and the shade over the scene.
+var _device: MeshInstance3D
+var _glow: MeshInstance3D
+var _dim: MeshInstance3D
+var _dim_mat: StandardMaterial3D
+## Without a camera: the screen shown flat.
+var _flat: TextureRect
+## 0 put away, 1 held up.
+var _raise := 0.0
 var _notice_panel: PanelContainer
 var _notice_label: Label
 var _notice_left := 0.0
@@ -166,19 +221,42 @@ var _mirror_was_up := false
 func _ready() -> void:
 	layer = 50
 	GameSettings.ensure_loaded()
-	_blocker = ColorRect.new()
-	_blocker.color = Color(0, 0, 0, 0.35)
-	_blocker.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_blocker.mouse_filter = Control.MOUSE_FILTER_STOP
-	_blocker.gui_input.connect(func(event: InputEvent) -> void:
-		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
-			close())
-	add_child(_blocker)
+	_build_screen()
 	_build_device()
 	_build_notice()
 	for entry: Dictionary in SocialService.GAME_NEWS:
 		news_seen[entry.title] = false
 	_set_open(false)
+
+
+## While the phone is out it has the mouse: a click on its screen lands on the
+## screen, a click anywhere else puts it away. Keys go to the screen first,
+## so typing a message works; one it does not use falls through to
+## `_unhandled_input`.
+func _input(event: InputEvent) -> void:
+	if not is_open:
+		return
+	if event is InputEventMouse:
+		var mouse := event as InputEventMouse
+		var at := screen_point(mouse.position)
+		get_viewport().set_input_as_handled()
+		if at.x < 0.0:
+			var button := mouse as InputEventMouseButton
+			if button != null and button.pressed and button.button_index == MOUSE_BUTTON_LEFT:
+				close()
+			return
+		var button := mouse as InputEventMouseButton
+		if button != null and button.pressed and button.button_index == MOUSE_BUTTON_XBUTTON1:
+			go_back()
+			return
+		var moved := mouse.duplicate() as InputEventMouse
+		moved.position = at
+		moved.global_position = at
+		_screen.push_input(moved, true)
+	elif event is InputEventKey:
+		_screen.push_input(event.duplicate(), true)
+		if _screen.is_input_handled():
+			get_viewport().set_input_as_handled()
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -226,7 +304,9 @@ func _process(delta: float) -> void:
 		_notice_panel.modulate.a = clampf(_notice_left / 0.6, 0.0, 1.0)
 		_notice_panel.visible = _notice_left > 0.0
 	if is_open:
-		_status.text = _status_text()
+		_update_status()
+	_raise = move_toward(_raise, 1.0 if is_open else 0.0, delta / maxf(raise_time, 0.001))
+	_hold(get_viewport().get_camera_3d())
 
 
 # ----------------------------------------------------------------- state ----
@@ -289,7 +369,7 @@ func mirror_step(key: String, steps: int) -> void:
 ## shade so the mirror can be seen.
 func _sync_mirror() -> void:
 	var up := mirror_open()
-	_blocker.color.a = 0.0 if up else 0.35
+	_dim_mat.albedo_color.a = 0.0 if up else dim_alpha
 	if up != _mirror_was_up:
 		_mirror_was_up = up
 		mirror_changed.emit(up)
@@ -416,17 +496,41 @@ func close() -> void:
 func _set_open(open_now: bool) -> void:
 	var changed := open_now != is_open
 	is_open = open_now
-	_blocker.visible = open_now
-	_device.visible = open_now
+	_screen.render_target_update_mode = SubViewport.UPDATE_ALWAYS if open_now else SubViewport.UPDATE_WHEN_VISIBLE
 	if open_now:
 		refresh()
+	else:
+		# Whatever was hovered or typed in lets go.
+		var focused := _screen.gui_get_focus_owner()
+		if focused:
+			focused.release_focus()
+		_hold(get_viewport().get_camera_3d() if is_inside_tree() else null)
 	if changed:
 		opened_changed.emit(open_now)
 	_sync_mirror()
 
 
+## How dark the scene is behind the phone right now (none in front of a mirror).
+func dim_amount() -> float:
+	return _dim_mat.albedo_color.a if is_open else 0.0
+
+
+## The home screen, from any app.
+func go_home() -> void:
+	open_app(HOME)
+
+
+## One step back: from a conversation to the list of them, from an app to
+## the home screen.
+func go_back() -> void:
+	if app == "messages" and chat_with != "":
+		open_app("messages")
+	elif app != HOME:
+		go_home()
+
+
 func open_app(p_app: String) -> void:
-	if p_app not in APPS:
+	if p_app not in APPS and p_app != HOME:
 		return
 	app = p_app
 	chat_with = ""
@@ -478,68 +582,347 @@ func show_notice(text: String) -> void:
 
 # ---------------------------------------------------------------- layout ----
 
-func _build_device() -> void:
-	_device = PanelContainer.new()
+## The screen: a 2D viewport with the bezel, the status bar, the home
+## screen and the page an app draws on.
+func _build_screen() -> void:
+	_screen = SubViewport.new()
+	_screen.name = "Screen"
+	_screen.size = screen_size
+	_screen.disable_3d = true
+	_screen.transparent_bg = true
+	_screen.gui_embed_subwindows = true
+	_screen.render_target_update_mode = SubViewport.UPDATE_WHEN_VISIBLE
+	add_child(_screen)
+
+	var bezel := Panel.new()
+	bezel.name = "Bezel"
 	var frame := StyleBoxFlat.new()
-	frame.bg_color = Color(0.04, 0.04, 0.045, 0.98)
-	frame.border_color = Color(0.22, 0.2, 0.18)
-	frame.set_border_width_all(10)
-	frame.set_corner_radius_all(34)
-	frame.set_content_margin_all(18)
-	frame.shadow_color = Color(0, 0, 0, 0.6)
-	frame.shadow_size = 18
-	_device.add_theme_stylebox_override("panel", frame)
-	_device.custom_minimum_size = screen_size
-	_device.anchor_left = 1.0
-	_device.anchor_right = 1.0
-	_device.anchor_top = 0.5
-	_device.anchor_bottom = 0.5
-	_device.offset_left = -screen_size.x - 60.0
-	_device.offset_right = -60.0
-	_device.offset_top = -screen_size.y * 0.5
-	_device.offset_bottom = screen_size.y * 0.5
-	add_child(_device)
+	frame.bg_color = Color(0.02, 0.02, 0.025)
+	frame.border_color = Color(0.2, 0.19, 0.18)
+	frame.set_border_width_all(3)
+	frame.set_corner_radius_all(int(screen_size.x * corner_radius / (device_height * screen_size.x / screen_size.y)))
+	frame.anti_aliasing_size = 1.5
+	bezel.add_theme_stylebox_override("panel", frame)
+	bezel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_screen.add_child(bezel)
 
+	# The glass: a lit wallpaper inside the bezel, with everything clipped to
+	# its rounded corners.
+	var glass := Panel.new()
+	glass.name = "Glass"
+	var lit := StyleBoxFlat.new()
+	lit.bg_color = Color(0.055, 0.06, 0.075)
+	lit.set_corner_radius_all(maxi(frame.corner_radius_top_left - 12, 8))
+	lit.anti_aliasing_size = 1.5
+	glass.add_theme_stylebox_override("panel", lit)
+	glass.clip_children = CanvasItem.CLIP_CHILDREN_AND_DRAW
+	glass.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	for side: Side in [SIDE_LEFT, SIDE_TOP]:
+		glass.set_offset(side, 12.0)
+	for side: Side in [SIDE_RIGHT, SIDE_BOTTOM]:
+		glass.set_offset(side, -12.0)
+	bezel.add_child(glass)
+	var wallpaper := TextureRect.new()
+	var shade := GradientTexture2D.new()
+	shade.gradient = Gradient.new()
+	shade.gradient.set_color(0, Color(0.46, 0.26, 0.14))
+	shade.gradient.set_color(1, Color(0.1, 0.13, 0.26))
+	shade.fill_from = Vector2(0.2, 0.0)
+	shade.fill_to = Vector2(0.7, 1.0)
+	wallpaper.texture = shade
+	wallpaper.stretch_mode = TextureRect.STRETCH_SCALE
+	wallpaper.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	wallpaper.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	wallpaper.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	glass.add_child(wallpaper)
+
+	var margin := MarginContainer.new()
+	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	for side: String in ["left", "right"]:
+		margin.add_theme_constant_override("margin_" + side, 18)
+	margin.add_theme_constant_override("margin_top", 14)
+	margin.add_theme_constant_override("margin_bottom", 8)
+	glass.add_child(margin)
 	var column := VBoxContainer.new()
-	column.add_theme_constant_override("separation", 8)
-	_device.add_child(column)
+	column.add_theme_constant_override("separation", 6)
+	margin.add_child(column)
 
-	var top := HBoxContainer.new()
-	_status = _label("", 13, Color(0.7, 0.7, 0.7))
+	# Status bar: the time, the signal and who you are signed in as.
+	var bar := HBoxContainer.new()
+	bar.add_theme_constant_override("separation", 8)
+	# Clear of the rounded corners.
+	var inset := Control.new()
+	inset.custom_minimum_size = Vector2(26, 0)
+	bar.add_child(inset)
+	_status = _label("", 15, UiTheme.INK)
+	_status.autowrap_mode = TextServer.AUTOWRAP_OFF
 	_status.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	top.add_child(_status)
-	var close_button := Button.new()
-	close_button.text = "Close (P)"
-	close_button.pressed.connect(close)
-	top.add_child(close_button)
-	column.add_child(top)
+	bar.add_child(_status)
+	_bars = SignalBars.new()
+	_bars.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	bar.add_child(_bars)
+	_who = _label("", 15, Color(0.78, 0.78, 0.78))
+	_who.autowrap_mode = TextServer.AUTOWRAP_OFF
+	_who.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	_who.custom_minimum_size = Vector2(0, 0)
+	bar.add_child(_who)
+	bar.add_child(inset.duplicate())
+	column.add_child(bar)
 
-	_title = _label("", 26, UiTheme.ACCENT)
-	column.add_child(_title)
+	# The home screen: a clock and the app icons.
+	_home = VBoxContainer.new()
+	_home.name = "Home"
+	_home.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_home.add_theme_constant_override("separation", 0)
+	column.add_child(_home)
+	var top_gap := Control.new()
+	top_gap.custom_minimum_size = Vector2(0, 30)
+	_home.add_child(top_gap)
+	_clock = _label("", 72, UiTheme.INK)
+	_clock.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_home.add_child(_clock)
+	_home_note = _label("", 16, Color(0.8, 0.78, 0.74))
+	_home_note.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_home.add_child(_home_note)
+	var gap := Control.new()
+	gap.custom_minimum_size = Vector2(0, 46)
+	_home.add_child(gap)
+	var grid := GridContainer.new()
+	grid.columns = 4
+	grid.add_theme_constant_override("h_separation", 8)
+	grid.add_theme_constant_override("v_separation", 18)
+	grid.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	_home.add_child(grid)
+	for app_name: String in APPS:
+		var icon := AppIcon.new()
+		icon.app = app_name
+		icon.title = NAV_NAMES[app_name]
+		icon.tint = APP_TINTS[app_name]
+		icon.tapped.connect(open_app.bind(app_name))
+		grid.add_child(icon)
+		_icons[app_name] = icon
+
+	# An app's page: a back arrow and its name, then what it shows.
+	_page = VBoxContainer.new()
+	_page.name = "Page"
+	_page.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_page.add_theme_constant_override("separation", 6)
+	column.add_child(_page)
+	var head := HBoxContainer.new()
+	head.add_theme_constant_override("separation", 4)
+	var back := Button.new()
+	back.text = "<"
+	back.flat = true
+	back.focus_mode = Control.FOCUS_NONE
+	back.custom_minimum_size = Vector2(40, 40)
+	back.add_theme_font_size_override("font_size", 26)
+	back.add_theme_color_override("font_color", UiTheme.ACCENT)
+	back.pressed.connect(go_back)
+	head.add_child(back)
+	_title = _label("", 28, UiTheme.ACCENT)
+	_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	head.add_child(_title)
+	_page.add_child(head)
 	_error = _label("", 13, Color(1.0, 0.55, 0.45))
-	column.add_child(_error)
-
+	_page.add_child(_error)
 	_scroll = ScrollContainer.new()
 	_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	column.add_child(_scroll)
+	_page.add_child(_scroll)
 	_body = VBoxContainer.new()
 	_body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_body.add_theme_constant_override("separation", 8)
 	_scroll.add_child(_body)
 
-	var nav := HBoxContainer.new()
-	nav.add_theme_constant_override("separation", 4)
-	for app_name: String in APPS:
-		var button := Button.new()
-		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		button.add_theme_font_size_override("font_size", 14)
-		button.add_theme_constant_override("h_separation", 0)
-		button.toggle_mode = true
-		button.pressed.connect(open_app.bind(app_name))
-		nav.add_child(button)
-		_nav[app_name] = button
-	column.add_child(nav)
+	# The home bar: tap it to go home from anywhere.
+	var home_bar := HomeBar.new()
+	home_bar.tapped.connect(go_home)
+	column.add_child(home_bar)
+
+
+## The phone in the world: a rounded slab whose face shows the screen, a soft
+## glow behind it, and a shade over the scene. All of it is drawn over the
+## world (no depth test), in that order, on `MirrorScript.HELD_LAYER` so a
+## mirror never shows it.
+func _build_device() -> void:
+	var height := device_height
+	var width := height * float(screen_size.x) / float(screen_size.y)
+	var face := StandardMaterial3D.new()
+	face.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	face.albedo_texture = _screen.get_texture()
+	face.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
+	# Lit from within, so it reads in a dark street and the bloom catches it.
+	face.emission_enabled = true
+	face.emission_texture = _screen.get_texture()
+	face.emission_energy_multiplier = 0.6
+	var case := StandardMaterial3D.new()
+	case.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	case.albedo_color = Color(0.17, 0.165, 0.16)
+	# Flat-coloured and drawn over the world, so which side is in front does
+	# not matter.
+	case.cull_mode = BaseMaterial3D.CULL_DISABLED
+	var glow := StandardMaterial3D.new()
+	glow.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	glow.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	var halo := GradientTexture2D.new()
+	halo.fill = GradientTexture2D.FILL_RADIAL
+	halo.fill_from = Vector2(0.5, 0.5)
+	halo.fill_to = Vector2(1.0, 0.5)
+	halo.gradient = Gradient.new()
+	halo.gradient.offsets = PackedFloat32Array([0.0, 0.45, 1.0])
+	halo.gradient.colors = PackedColorArray([Color(1.0, 0.75, 0.5, glow_alpha),
+			Color(1.0, 0.75, 0.5, glow_alpha * 0.8), Color(1.0, 0.75, 0.5, 0.0)])
+	glow.albedo_texture = halo
+	_dim_mat = StandardMaterial3D.new()
+	_dim_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_dim_mat.albedo_color = Color(0.0, 0.0, 0.0, dim_alpha)
+	var order := 0
+	for mat: StandardMaterial3D in [_dim_mat, glow, case, face]:
+		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		mat.no_depth_test = true
+		mat.disable_receive_shadows = true
+		mat.render_priority = 100 + order
+		order += 1
+
+	_dim = _held_mesh("Dim", QuadMesh.new(), _dim_mat)
+	_glow = _held_mesh("Glow", QuadMesh.new(), glow)
+	(_glow.mesh as QuadMesh).size = Vector2(width, height) * 2.2
+	_device = _held_mesh("Device", rounded_slab(Vector2(width, height), device_depth, corner_radius), null)
+	_device.set_surface_override_material(0, face)
+	_device.set_surface_override_material(1, case)
+
+	_flat = TextureRect.new()
+	_flat.name = "Flat"
+	_flat.texture = _screen.get_texture()
+	_flat.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_flat.anchor_left = 1.0
+	_flat.anchor_right = 1.0
+	_flat.anchor_top = 0.5
+	_flat.anchor_bottom = 0.5
+	_flat.offset_left = -screen_size.x - 60.0
+	_flat.offset_right = -60.0
+	_flat.offset_top = -screen_size.y * 0.5
+	_flat.offset_bottom = screen_size.y * 0.5
+	_flat.visible = false
+	add_child(_flat)
+
+
+func _held_mesh(node_name: String, mesh: Mesh, mat: Material) -> MeshInstance3D:
+	var node := MeshInstance3D.new()
+	node.name = node_name
+	node.mesh = mesh
+	if mat:
+		node.material_override = mat
+	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	node.layers = 1 << (MirrorScript.HELD_LAYER - 1)
+	node.visible = false
+	add_child(node)
+	return node
+
+
+## Puts the phone where it is held in front of `camera`: raised into place as
+## it comes out, lowered as it goes away. With no camera the screen shows flat.
+func _hold(camera: Camera3D) -> void:
+	var showing := _raise > 0.0
+	var in_world := camera != null and is_instance_valid(camera) and camera.is_inside_tree()
+	_flat.visible = is_open and not in_world
+	for node: MeshInstance3D in [_device, _glow, _dim]:
+		node.visible = showing and in_world
+	if not showing or not in_world:
+		return
+	var aspect := 16.0 / 9.0
+	var rect := get_viewport().get_visible_rect().size
+	if rect.y > 0.0:
+		aspect = rect.x / rect.y
+	var half_v := tan(deg_to_rad(camera.fov) * 0.5)
+	var distance := device_height * 0.5 / (half_v * fill)
+	var spot := hold_at_mirror if mirror_open() else hold_at
+	var up := ease(_raise, -2.0)
+	var lift := (1.0 - up) * 1.7
+	var origin := Vector3(spot.x * half_v * aspect * distance, (spot.y - lift) * half_v * distance, -distance)
+	# Square to the view, which keeps the screen undistorted, then turned in a
+	# little, tipped back at the top and rolled a touch: more on the way up.
+	var basis := Basis(Vector3.UP, hold_turn * signf(spot.x)) \
+			* Basis(Vector3.RIGHT, -hold_tilt - (1.0 - up) * 0.7) * Basis(Vector3.BACK, hold_roll)
+	var view := camera.global_transform
+	_device.global_transform = view * Transform3D(basis, origin)
+	_glow.global_transform = view * Transform3D(basis, origin + basis.z * -0.02)
+	(_glow.material_override as StandardMaterial3D).albedo_color.a = up
+	var near := maxf(camera.near * 1.5, 0.02)
+	(_dim.mesh as QuadMesh).size = Vector2(half_v * aspect, half_v) * near * 2.4
+	_dim.global_transform = view * Transform3D(Basis.IDENTITY, Vector3(0.0, 0.0, -near))
+	_dim.transparency = 1.0 - up
+
+
+## Where a mouse position on the game's screen lands on the phone's screen,
+## in its pixels. (-1, -1) when it misses the phone.
+func screen_point(mouse: Vector2) -> Vector2:
+	var miss := Vector2(-1, -1)
+	if _flat.visible:
+		var local := mouse - _flat.get_global_rect().position
+		var scale := _flat.get_global_rect().size / Vector2(screen_size)
+		var at := local / scale
+		return at if Rect2(Vector2.ZERO, Vector2(screen_size)).has_point(at) else miss
+	var camera := get_viewport().get_camera_3d()
+	if camera == null or not _device.visible:
+		return miss
+	var to_local := _device.global_transform.affine_inverse()
+	var o := to_local * camera.project_ray_origin(mouse)
+	var d := to_local.basis * camera.project_ray_normal(mouse)
+	var front := device_depth * 0.5
+	if absf(d.z) < 0.00001:
+		return miss
+	var t := (front - o.z) / d.z
+	if t < 0.0:
+		return miss
+	var p := o + d * t
+	var size := Vector2(device_height * float(screen_size.x) / float(screen_size.y), device_height)
+	var u := p.x / size.x + 0.5
+	var v := 0.5 - p.y / size.y
+	if u < 0.0 or u > 1.0 or v < 0.0 or v > 1.0:
+		return miss
+	return Vector2(u * screen_size.x, v * screen_size.y)
+
+
+## A rounded slab `size` across and `depth` thick, its face toward +Z.
+## Surface 0 is the face, mapped 0 to 1 across it; surface 1 the edge and back.
+static func rounded_slab(size: Vector2, depth: float, radius: float, steps := 8) -> ArrayMesh:
+	var outline: Array[Vector2] = []
+	var half := size * 0.5
+	var r := minf(radius, minf(half.x, half.y))
+	var corners := [Vector2(half.x - r, half.y - r), Vector2(-half.x + r, half.y - r),
+			Vector2(-half.x + r, -half.y + r), Vector2(half.x - r, -half.y + r)]
+	for c in 4:
+		for i in steps + 1:
+			var angle := (c + float(i) / steps) * PI * 0.5
+			outline.append((corners[c] as Vector2) + Vector2(cos(angle), sin(angle)) * r)
+	var front := depth * 0.5
+	var mesh := ArrayMesh.new()
+	var face := SurfaceTool.new()
+	face.begin(Mesh.PRIMITIVE_TRIANGLES)
+	face.set_normal(Vector3.BACK)
+	for i in outline.size():
+		var a := outline[i]
+		var b := outline[(i + 1) % outline.size()]
+		for point: Vector2 in [Vector2.ZERO, b, a]:
+			face.set_uv(Vector2(point.x / size.x + 0.5, 0.5 - point.y / size.y))
+			face.add_vertex(Vector3(point.x, point.y, front))
+	face.commit(mesh)
+	var shell := SurfaceTool.new()
+	shell.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for i in outline.size():
+		var a := outline[i]
+		var b := outline[(i + 1) % outline.size()]
+		var out := Vector3(a.x + b.x, a.y + b.y, 0.0).normalized()
+		shell.set_normal(out)
+		for point: Vector3 in [Vector3(a.x, a.y, front), Vector3(b.x, b.y, front), Vector3(b.x, b.y, -front),
+				Vector3(a.x, a.y, front), Vector3(b.x, b.y, -front), Vector3(a.x, a.y, -front)]:
+			shell.add_vertex(point)
+		shell.set_normal(Vector3.FORWARD)
+		for point: Vector2 in [Vector2.ZERO, a, b]:
+			shell.add_vertex(Vector3(point.x, point.y, -front))
+	shell.commit(mesh)
+	return mesh
 
 
 func _build_notice() -> void:
@@ -566,6 +949,17 @@ func _status_text() -> String:
 	return "%s   Offline (solo)" % clock
 
 
+## The status bar's clock, signal and name, and the home screen's clock.
+func _update_status() -> void:
+	var time := Time.get_time_dict_from_system()
+	var clock := "%02d:%02d" % [time.hour, time.minute]
+	_status.text = clock
+	_bars.strength = 4 if online() else 0
+	_who.text = net.account.get("name", "") if online() else "Solo"
+	_clock.text = clock
+	_home_note.text = ("Online as %s" % net.account.get("name", "")) if online() else "Offline (solo)"
+
+
 ## Redraws the badges, and the open app unless `redraw` is false (so a
 ## pop-up does not reset a slider you are dragging).
 func refresh(redraw := true) -> void:
@@ -577,12 +971,14 @@ func refresh(redraw := true) -> void:
 			"messages": badge = unread_count()
 			"invites": badge = invites().size()
 			"news": badge = unseen_news()
-		_nav[app_name].text = NAV_NAMES[app_name] + (" %d" % badge if badge > 0 else "")
-		_nav[app_name].set_pressed_no_signal(app_name == app)
+		_icons[app_name].badge = badge
 	if not is_open or not redraw:
 		return
-	_status.text = _status_text()
-	_title.text = APP_NAMES[app]
+	_update_status()
+	var home := app == HOME
+	_home.visible = home
+	_page.visible = not home
+	_title.text = "" if home else APP_NAMES[app]
 	_error.text = ""
 	if app != "messages" or chat_with == "":
 		_compose = null
@@ -1039,3 +1435,192 @@ static func _local_time(unix: float) -> String:
 
 static func _preview(text: String) -> String:
 	return text if text.length() <= 48 else text.left(45) + "..."
+
+
+# ------------------------------------------------------------ home screen ----
+
+## An app on the home screen: a rounded tile in the app's colour with a
+## glyph drawn on it, the name below and a badge with the count of anything
+## new. Tap it to open the app.
+class AppIcon extends Control:
+	signal tapped
+	var app := ""
+	var title := ""
+	var tint := Color.GRAY
+	var badge := 0:
+		set(value):
+			if value != badge:
+				badge = value
+				queue_redraw()
+	var tile := 70.0
+	var _hover := false
+
+	func _init() -> void:
+		custom_minimum_size = Vector2(92, 104)
+		mouse_filter = Control.MOUSE_FILTER_STOP
+		mouse_entered.connect(_set_hover.bind(true))
+		mouse_exited.connect(_set_hover.bind(false))
+
+	func _set_hover(on: bool) -> void:
+		_hover = on
+		queue_redraw()
+
+	func _gui_input(event: InputEvent) -> void:
+		var button := event as InputEventMouseButton
+		if button != null and button.pressed and button.button_index == MOUSE_BUTTON_LEFT:
+			accept_event()
+			tapped.emit()
+
+	func _draw() -> void:
+		var box := Rect2(Vector2((size.x - tile) * 0.5, 4.0), Vector2(tile, tile))
+		var style := StyleBoxFlat.new()
+		style.bg_color = tint.lightened(0.12) if _hover else tint
+		style.set_corner_radius_all(18)
+		style.anti_aliasing_size = 1.2
+		style.shadow_color = Color(0, 0, 0, 0.35)
+		style.shadow_size = 6
+		style.shadow_offset = Vector2(0, 3)
+		draw_style_box(style, box)
+		# A lighter top half reads as a lit, slightly curved tile.
+		var sheen := StyleBoxFlat.new()
+		sheen.bg_color = Color(1, 1, 1, 0.12)
+		sheen.corner_radius_top_left = 18
+		sheen.corner_radius_top_right = 18
+		sheen.anti_aliasing_size = 1.2
+		draw_style_box(sheen, Rect2(box.position, Vector2(tile, tile * 0.5)))
+		_draw_glyph(box.get_center(), tile / 70.0)
+		var font := get_theme_default_font()
+		var width := font.get_string_size(title, HORIZONTAL_ALIGNMENT_LEFT, -1, 15).x
+		var at := Vector2((size.x - width) * 0.5, box.end.y + 20.0)
+		draw_string(font, at + Vector2(0, 1.5), title, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(0, 0, 0, 0.6))
+		draw_string(font, at, title, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, UiTheme.INK)
+		if badge > 0:
+			var shown := str(badge) if badge < 100 else "99+"
+			var text_w := font.get_string_size(shown, HORIZONTAL_ALIGNMENT_LEFT, -1, 14).x
+			var pill := Rect2(Vector2(box.end.x - 14.0, box.position.y - 6.0), Vector2(maxf(24.0, text_w + 12.0), 24.0))
+			var red := StyleBoxFlat.new()
+			red.bg_color = Color(0.92, 0.2, 0.18)
+			red.border_color = Color(0.02, 0.02, 0.025)
+			red.set_border_width_all(2)
+			red.set_corner_radius_all(12)
+			red.anti_aliasing_size = 1.2
+			draw_style_box(red, pill)
+			draw_string(font, Vector2(pill.get_center().x - text_w * 0.5, pill.position.y + 18.0), shown,
+					HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color.WHITE)
+
+	## Each app's picture, in white on the tile, `k` scaling it.
+	func _draw_glyph(c: Vector2, k: float) -> void:
+		var ink := Color(1, 1, 1, 0.95)
+		var deep := tint.darkened(0.25)
+		match app:
+			"contacts":
+				_person(c + Vector2(9, -2) * k, 0.8 * k, Color(1, 1, 1, 0.55))
+				_person(c + Vector2(-5, 2) * k, k, ink)
+			"messages":
+				var bubble := StyleBoxFlat.new()
+				bubble.bg_color = ink
+				bubble.set_corner_radius_all(int(12 * k))
+				bubble.anti_aliasing_size = 1.0
+				draw_style_box(bubble, Rect2(c + Vector2(-21, -16) * k, Vector2(42, 28) * k))
+				draw_colored_polygon(PackedVector2Array([c + Vector2(-12, 10) * k, c + Vector2(-2, 10) * k,
+						c + Vector2(-16, 20) * k]), ink)
+				for i in 3:
+					draw_circle(c + Vector2(-10 + i * 10, -2) * k, 3.2 * k, deep)
+			"invites":
+				var r := Rect2(c + Vector2(-22, -15) * k, Vector2(44, 30) * k)
+				draw_rect(r, ink)
+				draw_polyline(PackedVector2Array([r.position, c + Vector2(0, 3) * k, Vector2(r.end.x, r.position.y)]),
+						deep, 3.0 * k, true)
+			"news":
+				draw_rect(Rect2(c + Vector2(-17, -21) * k, Vector2(34, 42) * k), ink)
+				draw_rect(Rect2(c + Vector2(-12, -16) * k, Vector2(24, 9) * k), deep)
+				for i in 4:
+					var w := 24.0 if i % 2 == 0 else 17.0
+					draw_rect(Rect2(c + Vector2(-12, -2 + i * 5.5) * k, Vector2(w, 2.4) * k), deep)
+			"mirror":
+				var ring := PackedVector2Array()
+				for i in 33:
+					var angle := TAU * i / 32.0
+					ring.append(c + Vector2(cos(angle) * 15.0, sin(angle) * 21.0) * k)
+				draw_colored_polygon(ring, Color(1, 1, 1, 0.3))
+				draw_polyline(ring, ink, 3.5 * k, true)
+				draw_line(c + Vector2(-7, -4) * k, c + Vector2(3, -14) * k, ink, 3.0 * k, true)
+				draw_line(c + Vector2(-6, 6) * k, c + Vector2(8, -8) * k, Color(1, 1, 1, 0.6), 2.0 * k, true)
+			"controls":
+				var cap := StyleBoxFlat.new()
+				cap.bg_color = ink
+				cap.set_corner_radius_all(int(3 * k))
+				for row in 2:
+					for col in 4:
+						draw_style_box(cap, Rect2(c + Vector2(-22 + col * 11.5, -16 + row * 11.5) * k, Vector2(9, 9) * k))
+				draw_style_box(cap, Rect2(c + Vector2(-14, 7) * k, Vector2(28, 9) * k))
+			"settings":
+				var gear := PackedVector2Array()
+				var teeth := 8
+				for i in teeth * 4:
+					var angle := TAU * i / (teeth * 4.0)
+					var outer := (i % 4) < 2
+					gear.append(c + Vector2.from_angle(angle + PI / (teeth * 4.0)) * (21.0 if outer else 15.5) * k)
+				draw_colored_polygon(gear, ink)
+				draw_circle(c, 7.0 * k, deep)
+
+	func _person(at: Vector2, k: float, color: Color) -> void:
+		draw_circle(at + Vector2(0, -9) * k, 8.0 * k, color)
+		var shoulders := PackedVector2Array()
+		for i in 17:
+			var angle := PI + PI * i / 16.0
+			shoulders.append(at + Vector2(0, 19) * k + Vector2(cos(angle), sin(angle)) * Vector2(15, 17) * k)
+		draw_colored_polygon(shoulders, color)
+
+
+## The status bar's signal strength: four bars, lit by `strength`.
+class SignalBars extends Control:
+	var strength := 0:
+		set(value):
+			if value != strength:
+				strength = value
+				queue_redraw()
+
+	func _init() -> void:
+		custom_minimum_size = Vector2(22, 14)
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	func _draw() -> void:
+		for i in 4:
+			var h := 4.0 + i * 3.3
+			var lit := i < strength
+			draw_rect(Rect2(Vector2(i * 5.5, size.y - h), Vector2(3.5, h)),
+					UiTheme.INK if lit else Color(1, 1, 1, 0.22))
+		if strength == 0:
+			draw_line(Vector2(13, 1), Vector2(21, 9), Color(0.95, 0.4, 0.35), 2.0, true)
+			draw_line(Vector2(21, 1), Vector2(13, 9), Color(0.95, 0.4, 0.35), 2.0, true)
+
+
+## The bar along the bottom of the screen. Tap it to go home.
+class HomeBar extends Control:
+	signal tapped
+	var _hover := false
+
+	func _init() -> void:
+		custom_minimum_size = Vector2(0, 22)
+		mouse_filter = Control.MOUSE_FILTER_STOP
+		mouse_entered.connect(_set_hover.bind(true))
+		mouse_exited.connect(_set_hover.bind(false))
+
+	func _set_hover(on: bool) -> void:
+		_hover = on
+		queue_redraw()
+
+	func _gui_input(event: InputEvent) -> void:
+		var button := event as InputEventMouseButton
+		if button != null and button.pressed and button.button_index == MOUSE_BUTTON_LEFT:
+			accept_event()
+			tapped.emit()
+
+	func _draw() -> void:
+		var pill := StyleBoxFlat.new()
+		pill.bg_color = Color(1, 1, 1, 0.85 if _hover else 0.55)
+		pill.set_corner_radius_all(3)
+		pill.anti_aliasing_size = 1.0
+		var w := 130.0
+		draw_style_box(pill, Rect2(Vector2((size.x - w) * 0.5, size.y * 0.5 - 3.0), Vector2(w, 6.0)))

@@ -493,7 +493,14 @@ without Caleb, and update the gap list when a PR closes a row.
   a name in `SocialService.PLACE_NAMES`. The phone's Controls app lists
   every key from `Phone.CONTROLS`, whose `{action}` names are filled in from
   the live `InputMap`; a new input action needs a row there (a test fails
-  otherwise), and a changed control needs its row's wording updated. Settings live in
+  otherwise), and a changed control needs its row's wording updated. The phone
+  is held, not overlaid: its screen is a `SubViewport` on a rounded slab held
+  up in front of the camera (drawn over the world on `Mirror.HELD_LAYER`, the
+  scene dimmed behind it), with a home screen of app icons; a new app is an
+  entry in `Phone.APPS` with an icon glyph in `Phone.AppIcon`. Holding it is
+  `ActorCommand.phone`, a held flag, so everyone else sees the one-handed hold
+  (`Locomotion.phone_pose`, the one place to swap in a shared hand pose).
+  Settings live in
   `core/settings/game_settings.gd` (its own save file); a server never reads them.
 - Dev mode is TEMPORARY (Caleb's call, to come out once the game is further
   along): `core/dev/dev_mode.gd`, switched in the phone's Settings app and
