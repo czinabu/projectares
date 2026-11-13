@@ -573,14 +573,9 @@ func _on_landed(impact_speed: float) -> void:
 func _update_dip(delta: float) -> void:
 	if is_zero_approx(_dip) and is_zero_approx(_dip_speed):
 		return
-	# A critically damped spring: down fast, back without a bounce. Stepped
-	# in small slices: in one long frame (a hitch) a single step overshoots
-	# further each frame and throws the view off into the sky.
-	var steps := ceili(delta / (1.0 / 120.0))
-	var step := delta / maxf(steps, 1)
-	for i in steps:
-		_dip_speed += (-180.0 * _dip - 26.8 * _dip_speed) * step
-		_dip += _dip_speed * step
+	# A critically damped spring: down fast, back without a bounce.
+	_dip_speed += (-180.0 * _dip - 26.8 * _dip_speed) * delta
+	_dip += _dip_speed * delta
 	if absf(_dip) < 0.0005 and absf(_dip_speed) < 0.005:
 		_dip = 0.0
 		_dip_speed = 0.0
