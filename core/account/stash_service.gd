@@ -29,6 +29,7 @@ const StashRules := preload("res://core/account/stash_rules.gd")
 const MasteryBook := preload("res://core/progression/mastery_book.gd")
 const ProfileScript := preload("res://core/profile/profile.gd")
 const Economy := preload("res://core/economy/economy.gd")
+const BaseUpgrades := preload("res://core/base/base_upgrades.gd")
 const DevMode := preload("res://core/dev/dev_mode.gd")  # DEV MODE
 
 const SAVE_VERSION := 1
@@ -73,6 +74,8 @@ class Account:
 	var scrip := Economy.STARTING_SCRIP
 	var arena_wins := 0
 	var arena_losses := 0
+	## The home base upgrades owned (ids from `BaseUpgrades`). Never lost.
+	var base_upgrades: Array[String] = []
 
 	func is_deployed() -> bool:
 		return deployed_world != ""
@@ -97,6 +100,7 @@ class Account:
 			"scrip": scrip,
 			"arena_wins": arena_wins,
 			"arena_losses": arena_losses,
+			"base_upgrades": base_upgrades,
 		}
 
 	func load_dict(data: Dictionary) -> void:
@@ -133,6 +137,7 @@ class Account:
 		scrip = Economy.read_saved(data)
 		arena_wins = maxi(0, int(data.get("arena_wins", 0)))
 		arena_losses = maxi(0, int(data.get("arena_losses", 0)))
+		base_upgrades = BaseUpgrades.clean(data.get("base_upgrades"))
 
 
 # --- Identity ----------------------------------------------------------------
@@ -247,6 +252,7 @@ func snapshot(account_id: String) -> Dictionary:
 		"scrip": account.scrip,
 		"arena_wins": account.arena_wins,
 		"arena_losses": account.arena_losses,
+		"base_upgrades": account.base_upgrades.duplicate(),
 	}
 
 
@@ -309,6 +315,17 @@ func sell(account_id: String, item_id: String, count: int = 1) -> Dictionary:
 	if item_id == "":
 		return _bank(account, Economy.sell_loot(account.stash, account.scrip))
 	return _bank(account, Economy.sell(account.stash, account.loadout, account.scrip, item_id, count))
+
+
+## Buys a home base upgrade (an id from `BaseUpgrades`). What it needs and
+## what it costs are decided here, never by the client.
+func buy_upgrade(account_id: String, upgrade_id: String) -> Dictionary:
+	var account := load_account(account_id)
+	if account == null:
+		return _fail("No such account.")
+	if account.is_deployed():
+		return _fail("You are in a raid.")
+	return _bank(account, BaseUpgrades.buy(account.base_upgrades, account.scrip, upgrade_id))
 
 
 ## The account's balance, or 0 if there is no such account.
@@ -474,7 +491,7 @@ func _dev_top_up(account: Account) -> void:
 	var had := account.stash.size()
 	var had_scrip := account.scrip
 	account.scrip = DevMode.top_up(account.stash)
-	if account.stash.size() != had or account.scrip != had_scrip:
+	if DevMode.top_up_base(account.base_upgrades) or account.stash.size() != had or account.scrip != had_scrip:
 		_save(account)
 
 

@@ -16,6 +16,8 @@ const MasteryBook := preload("res://core/progression/mastery_book.gd")
 const StashRules := preload("res://core/account/stash_rules.gd")
 ## The same money rules the server's StashService uses.
 const Economy := preload("res://core/economy/economy.gd")
+## The same home base upgrade rules the server's StashService uses.
+const BaseUpgrades := preload("res://core/base/base_upgrades.gd")
 const Human := preload("res://core/visual/human.gd")
 ## Given once to every profile so there is gear to try loadouts with.
 const WELCOME_CRATE: Array[String] = ["rifle_carbine", "frame_trooper", "medkit", "medkit"]
@@ -60,6 +62,9 @@ var kills := 0
 var scrip := Economy.STARTING_SCRIP
 var arena_wins := 0
 var arena_losses := 0
+## The home base upgrades owned (ids from `BaseUpgrades`). Never lost. A save
+## from before upgrades existed has none: the starter bunker.
+var base_upgrades: Array[String] = []
 
 
 func _ready() -> void:
@@ -78,6 +83,7 @@ func apply_dev_mode() -> void:
 	use_save(DEV_SAVE_PATH if DevMode.active() else SAVE_PATH)
 	if save_path == DEV_SAVE_PATH:
 		scrip = DevMode.top_up(stash)
+		DevMode.top_up_base(base_upgrades)
 		save()
 
 
@@ -118,6 +124,7 @@ func reset() -> void:
 	scrip = Economy.STARTING_SCRIP
 	arena_wins = 0
 	arena_losses = 0
+	base_upgrades.clear()
 
 
 func record_arena(won: bool) -> void:
@@ -194,6 +201,12 @@ func sell(item_id: String, count: int = 1) -> Dictionary:
 ## Sells every trade good (loot that is not gear) in the stash.
 func sell_loot() -> Dictionary:
 	return _bank(Economy.sell_loot(stash, scrip))
+
+
+## Buys a home base upgrade (an id from `BaseUpgrades`): checks what it needs
+## and its price, and takes the scrip. Returns {"ok"} or {"ok": false, "error"}.
+func buy_upgrade(upgrade_id: String) -> Dictionary:
+	return _bank(BaseUpgrades.buy(base_upgrades, scrip, upgrade_id))
 
 
 ## Adds `delta` scrip (a cost when negative) for anything outside the
@@ -278,6 +291,7 @@ func save() -> void:
 		"scrip": scrip,
 		"arena_wins": arena_wins,
 		"arena_losses": arena_losses,
+		"base_upgrades": base_upgrades,
 	}, "\t"))
 
 
@@ -319,4 +333,5 @@ func load_profile() -> void:
 	scrip = Economy.read_saved(data)
 	arena_wins = maxi(0, int(data.get("arena_wins", 0)))
 	arena_losses = maxi(0, int(data.get("arena_losses", 0)))
+	base_upgrades = BaseUpgrades.clean(data.get("base_upgrades"))
 	validate_loadout()

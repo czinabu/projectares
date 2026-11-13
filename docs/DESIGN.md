@@ -107,8 +107,41 @@ canopy, holo signs over every kiosk and floating holo-ads.
 - A garage off the room for the bikes you own, and a firing range behind the
   back wall (the first of the upgrades below, built early as a greybox).
 
-**Upgrades** turn the base from a display room into a headquarters, in this
-order:
+**The base grows with you.** A new player starts in a starter bunker with
+everything it takes to play (deploy, change loadout, trade, mastery picks,
+fit attachments, go online) and little on show: a short weapon rack in an
+armory nook (4 long guns, 2 sidearms, 2 melee), one garage bay, one armor
+stand and one rig stand, a small pegboard and supplies shelf, and the mastery
+bench and records sharing the trader's and the wardrobe's consoles. Each
+upgrade is a one-off scrip purchase kept on the account (never in the stash,
+never lost), bought in the room at the sealed bulkhead it opens: look at it
+and press F twice. Upgrades never add combat power or storage, only room to
+show gear, convenience, places to practise and places to show off; gear
+that does not fit on show is still owned and equippable at the locker.
+Scrip is the only currency. Visiting a base shows the upgrades its owner
+has. Prices are placeholders until a playtest measures scrip per life.
+
+| Track | Upgrade | Scrip | Needs | Adds |
+| --- | --- | --- | --- | --- |
+| Armory | Armory alcove | 1,200 | | The full rack: 12 long guns, 8 sidearms, 6 melee; the bench moves inside |
+| Armory | Heavy weapon wall | 4,000 | Armory alcove | Banked heavy weapons (section 6). Not built yet |
+| Garage | Second bay | 600 | | 2 vehicles on show |
+| Garage | Full garage | 2,000 | Second bay | 4 bays and a lift that turns the first bike |
+| Gunsmith | Workshop bench | 3,000 | Armory alcove | A bigger pegboard (12 attachments) |
+| Gunsmith | Master bench | 8,000 | Workshop bench | Looks only |
+| Halls | Gear hall | 1,000 | | 6 armor stands, 4 rig stands, the chip case |
+| Halls | Trophy hall | 1,500 | | The trophy shelf and a full supplies shelf |
+| Halls | Lounge | 800 | | Room for furniture and decor. Not built yet |
+| Headquarters | Ops consoles | 500 | | The mastery bench and records get their own consoles |
+| Headquarters | Firing range | 2,500 | | The range below |
+| Headquarters | Squad teleporter pad | 5,000 | Ops consoles | Below. Not built yet |
+| Headquarters | Finish | 1,500 | Any 4 upgrades | Lit trim and light columns |
+
+Crafting tiers are not gated by the bench upgrades: any bench crafts Mk2 and
+Mk3 for a small scrip fee per craft (section 10).
+
+The bigger upgrades, which turn the base from a display room into a
+headquarters, in the order they are built:
 
 1. **Firing range and flight tunnel** (first). A private test room attached
    to the base, with moving aerial target drones, where you try gear before
@@ -689,8 +722,9 @@ some mastery in that gear type. Grinding a gun still feeds its upgrade
 without mastery handing the upgrade out. Whether Mk3 has a higher gate is
 TBD.
 
-**Crafting** happens at the gunsmith bench in your base: blueprint, plus
-upgrade data, plus materials or scrip (costs TBD). A crafted Mk2 or Mk3 is
+**Crafting** happens at the gunsmith bench in your base (any bench, whatever
+its base upgrade): blueprint, plus upgrade data, plus a small scrip fee per
+craft (amount TBD). A crafted Mk2 or Mk3 is
 ordinary gear: it goes in the stash and is at stake in the PvP world like
 anything else. The blueprint stays, so you can craft it again.
 

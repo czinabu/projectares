@@ -221,12 +221,23 @@ func _section(box: VBoxContainer, id: String) -> VBoxContainer:
 
 ## Opens what a station in the home base offers (a key of `STATIONS`) on
 ## this screen. Esc or the button steps away again.
-func open_station(id: String) -> void:
+## `also` names other stations whose sections this console shows as well (a
+## starter base's shared consoles, see `HomeBase.also_shows`).
+func open_station(id: String, also: Array = []) -> void:
 	if not STATIONS.has(id):
 		return
 	station = id
-	_show_only(STATIONS[id]["sections"])
-	_title.text = str(HomeBase.STATIONS[id]["title"]).to_upper() if HomeBase.STATIONS.has(id) else id.to_upper()
+	var sections: Array = STATIONS[id]["sections"].duplicate()
+	var names: Array[String] = [str(HomeBase.STATIONS[id]["title"]) if HomeBase.STATIONS.has(id) else id]
+	for other: Variant in also:
+		if not STATIONS.has(other):
+			continue
+		names.append(str(HomeBase.STATIONS[other]["title"]) if HomeBase.STATIONS.has(other) else str(other))
+		for section: String in STATIONS[other]["sections"]:
+			if section not in sections:
+				sections.append(section)
+	_show_only(sections)
+	_title.text = " AND ".join(names).to_upper()
 	_title.add_theme_font_size_override("font_size", 30)
 	_backdrop.visible = false
 	_shade.visible = true
@@ -521,6 +532,16 @@ func _show_sections() -> void:
 
 func stash_items() -> Array:
 	return account.get("stash", []) if in_lobby() else Profile.stash
+
+
+## The home base upgrades on show: the server's account's, or the profile's.
+func base_upgrades() -> Array:
+	return account.get("base_upgrades", []) if in_lobby() else Profile.base_upgrades
+
+
+## The scrip on show: the server's account's, or the profile's.
+func scrip() -> int:
+	return int(account.get("scrip", 0)) if in_lobby() else Profile.scrip
 
 
 func equipped(slot: String) -> String:

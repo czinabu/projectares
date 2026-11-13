@@ -42,6 +42,7 @@ const ClanPanel := preload("res://core/social/clan_panel.gd")
 const PLAZA_PLAYERS := 32
 const SHOP_PANEL := "res://core/economy/shop_panel.gd"
 const Economy := preload("res://core/economy/economy.gd")
+const BaseUpgrades := preload("res://core/base/base_upgrades.gd")
 ## DEV MODE: temporary, see `core/dev/dev_mode.gd`.
 const DevMode := preload("res://core/dev/dev_mode.gd")
 ## DEV MODE: where a dev server keeps its accounts, apart from real ones.
@@ -185,7 +186,7 @@ func go_home(result := {}) -> void:
 	if base != null and base.read_only:
 		leave_base()
 	if base == null:
-		_open_base(hub.stash_items(), hub.current_loadout(), "")
+		_open_base(hub.stash_items(), hub.current_loadout(), "", hub.base_upgrades())
 	else:
 		_refresh_base()
 	_update_door()
@@ -199,13 +200,14 @@ func enter_base() -> void:
 
 
 ## Opens someone else's base to look around. Nothing in it can be equipped.
-## `stash` and `loadout` are that player's, as their server reports them.
-func visit_base(owner_name: String, stash: Array, loadout: Dictionary) -> void:
-	_open_base(stash, loadout, owner_name if owner_name != "" else "Raider")
+## `stash`, `loadout` and `upgrades` (their base's upgrades, so you see the
+## base they have built) are that player's, as their server reports them.
+func visit_base(owner_name: String, stash: Array, loadout: Dictionary, upgrades: Array = []) -> void:
+	_open_base(stash, loadout, owner_name if owner_name != "" else "Raider", upgrades)
 	_update_door()
 
 
-func _open_base(stash: Array, loadout: Dictionary, owner_name: String) -> void:
+func _open_base(stash: Array, loadout: Dictionary, owner_name: String, upgrades: Array = []) -> void:
 	if base != null or raid != null:
 		return
 	hub.close()
@@ -213,9 +215,12 @@ func _open_base(stash: Array, loadout: Dictionary, owner_name: String) -> void:
 	base.name = "HomeBase"
 	base.owner_name = owner_name
 	base.read_only = owner_name != ""
-	base.show_gear(stash, loadout)
+	base.show_gear(stash, loadout, upgrades)
+	if not base.read_only:
+		base.set_scrip(hub.scrip())
 	add_child(base)
 	base.equip_requested.connect(_on_base_equip)
+	base.upgrade_requested.connect(_on_base_upgrade)
 	base.leave_requested.connect(_on_base_door)
 	base.station_requested.connect(open_station)
 	base.player_replaced.connect(func(_actor: Actor) -> void: _attach_base_view())
@@ -316,7 +321,7 @@ func open_station(id: String) -> void:
 	var console := base.station(id)
 	if console == null:
 		return
-	hub.open_station(id)
+	hub.open_station(id, base.also_shows(id))
 	if not hub.visible:
 		return
 	# The screen comes up on the console itself and the view moves in to it.
@@ -345,6 +350,9 @@ func _unmount_station_screen() -> void:
 ## Stepped away from a station: the room takes the mouse back.
 func _on_station_closed() -> void:
 	_unmount_station_screen()
+	# The trader may have changed what you can afford.
+	if base != null and not base.read_only:
+		base.set_scrip(hub.scrip())
 	if base_hud:
 		base_hud.visible = true
 	if controller != null and is_instance_valid(controller) and not phone.is_open:
@@ -373,10 +381,26 @@ func _on_base_equip(slot: String, item_id: String) -> void:
 	_refresh_base()
 
 
+## An upgrade confirmed at its bulkhead in the base: bought from the profile
+## solo, asked of the server online (which answers with a fresh account).
+func _on_base_upgrade(upgrade_id: String) -> void:
+	if base == null or base.read_only:
+		return
+	if hub.in_lobby():
+		if net:
+			net.buy_upgrade(upgrade_id)
+		return
+	var result := Profile.buy_upgrade(upgrade_id)
+	if base_hud:
+		base_hud.show_notice("%s is yours." % BaseUpgrades.title(upgrade_id) if result.ok else str(result.get("error", "")))
+	_refresh_base()
+
+
 ## Shows the base whatever the hub would show now.
 func _refresh_base() -> void:
 	if base and not base.read_only:
-		base.show_gear(hub.stash_items(), hub.current_loadout())
+		base.set_scrip(hub.scrip())
+		base.show_gear(hub.stash_items(), hub.current_loadout(), hub.base_upgrades())
 
 
 # ----------------------------------------------------------------- arena ----
@@ -747,14 +771,15 @@ func _on_world_invite_accepted(_invite: Dictionary) -> void:
 
 
 ## Accepted an invite to someone's home base.
-func _on_base_visit_requested(owner_name: String, owner_stash: Array, owner_loadout: Dictionary) -> void:
+func _on_base_visit_requested(owner_name: String, owner_stash: Array, owner_loadout: Dictionary,
+		owner_upgrades: Array = []) -> void:
 	if raid != null:
 		phone.show_notice("Finish this run first, then visit %s's base." % owner_name)
 		return
 	# In a base (yours or someone else's): walk out and into theirs.
 	leave_base()
 	phone.close()
-	visit_base(owner_name, owner_stash, owner_loadout)
+	visit_base(owner_name, owner_stash, owner_loadout, owner_upgrades)
 
 
 # ---------------------------------------------------------------- online ----
