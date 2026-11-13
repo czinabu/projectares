@@ -84,6 +84,9 @@ func _init() -> void:
 	# Power weapons belong to the war worlds. A world where you keep your
 	# gear on death would hand them out without the stakes.
 	power_weapon_rate = 0.0
+	# Artifacts too: rare gear stays in the full-loot war worlds for now.
+	warlord_artifact_chance = 0.0
+	pod_artifact_chance = 0.0
 	bot_count = 9
 	depot_hold_time = 6.0
 
@@ -95,7 +98,7 @@ func register_items() -> void:
 			"The heart of the relay mast. Hums when you hold it.")
 	ItemDB.register("frost_ice_axe", "Ice Axe", ItemDB.Rarity.RARE, 750, ["weapon", "melee", "one_handed", "axe"],
 			{"light_damage": 30.0, "heavy_damage": 80.0, "heavy_lunge": 12.0, "slam_damage": 70.0,
-			"reach": 2.9},
+			"reach": 2.9, "swing_style": "chop", "swing_scale": 0.9},
 			"Long heavy lunge and a hard dive slam. Built for closing distance on open ice.")
 
 

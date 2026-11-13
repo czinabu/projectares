@@ -17,6 +17,10 @@ const GAITS: Array[String] = ["walk", "run", "run_back", "run_left", "run_right"
 ## settles into the stand instead of snapping.
 const STANDS: Array[String] = ["idle", "idle_gun", "aim_gun", "idle_melee"]
 
+## Drawn cloaked now (see `_update_cloak`), and the shared shimmer material.
+var _cloaked := false
+static var _cloak_mat: Material
+
 ## How long a standing gun stays raised after the last shot, in seconds.
 var aim_hold := 1.5
 ## Blend times, in seconds: between two gaits, into or out of a stand, else.
@@ -525,6 +529,7 @@ func _update(delta: float) -> void:
 	_update_vitals()
 	_update_phone()
 	_update_watch_glow(delta)
+	_update_cloak()
 	_aim_left = maxf(_aim_left - delta, 0.0)
 	var weapon := actor.get_active_weapon()
 	if phone_up():
@@ -1065,6 +1070,74 @@ func _update_vitals() -> void:
 			_glow(light, ink, 2.2)
 		"charging":
 			_glow(light, ink.darkened(0.6), 0.3)
+
+
+## Under a Phase Cloak (`Artifact`) everything the actor wears or holds is
+## drawn as a faint shimmer at its edges instead of solid, casting no shadow.
+## It is the same body in every view, so first person sees its own arms and
+## gun go too. Each piece's own material and shadow come back afterwards.
+func _update_cloak() -> void:
+	var on := actor.is_cloaked() and not actor.is_dead
+	if not on and not _cloaked:
+		return
+	_cloaked = on
+	for node in actor.find_children("*", "GeometryInstance3D", true, false):
+		var geometry := node as GeometryInstance3D
+		var dressed := geometry.has_meta("cloak_saved")
+		if on and not dressed and not _own_display(geometry):
+			geometry.set_meta("cloak_saved", [geometry.material_override, geometry.cast_shadow, geometry.visible])
+			if geometry.material_override != null:
+				# A piece that runs its own material (a gauge, a counter, a
+				# glow) keeps it and is put out of sight instead.
+				geometry.visible = false
+			else:
+				geometry.material_override = cloak_material()
+				geometry.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		elif not on and dressed:
+			var saved: Array = geometry.get_meta("cloak_saved")
+			if saved[0] == null:
+				geometry.material_override = null
+				geometry.cast_shadow = saved[1]
+			else:
+				geometry.visible = saved[2]
+			geometry.remove_meta("cloak_saved")
+
+
+## True for what only the player reads, held to their own wrist: the
+## watch's card (`Hud.Wrist`). A cloak leaves it as it is.
+func _own_display(node: Node) -> bool:
+	while node != null and node != actor:
+		if node.name == "Wrist":
+			return true
+		node = node.get_parent()
+	return false
+
+
+## True while the body is drawn cloaked (for checks).
+func is_drawn_cloaked() -> bool:
+	return _cloaked
+
+
+## The shimmer a cloaked body is drawn with: nothing face on, a thin cold
+## glow where its edges turn away, so a sharp eye can still spot it.
+static func cloak_material() -> Material:
+	if _cloak_mat == null:
+		var shader := Shader.new()
+		shader.code = """shader_type spatial;
+render_mode unshaded, blend_add, depth_draw_never, shadows_disabled, cull_back;
+uniform vec3 rim : source_color = vec3(0.55, 0.75, 1.0);
+uniform float strength = 0.5;
+void fragment() {
+	float edge = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), 3.0);
+	float ripple = 0.7 + 0.3 * sin(TIME * 9.0 + FRAGCOORD.y * 0.08);
+	ALBEDO = rim * edge * strength * ripple;
+	ALPHA = edge * strength;
+}
+"""
+		var mat := ShaderMaterial.new()
+		mat.shader = shader
+		_cloak_mat = mat
+	return _cloak_mat
 
 
 ## A raised watch (`ActorCommand.watch_up`) glows on the left wrist, so

@@ -177,7 +177,19 @@ without Caleb, and update the gap list when a PR closes a row.
   `DamageInfo.weapon_id` and `undeflectable_tags` (marksman, power) go
   through any guard. Noise is `Combat.noise`, which only guns call (a person's
   shot, at most every `Gun.noise_every`): patrolling bots hear it through
-  `Actor.heard`. Never make a blade call it; melee kills are silent. Every melee
+  `Actor.heard`. Never make a blade call it; melee kills are silent.
+  Each weapon swings its own way, from item stats (view only):
+  `swing_style` "slash" (swords' arcs), "thrust" (straight out along the
+  aim: the spear), "chop" (down from over the shoulder: the axe, the
+  hammer), `heavy_style` for a heavy of its own (the knife's stab) and
+  `swing_scale` for its size. `ActionPose.windup_reach`/`follow_reach` and
+  `MeleeWeapon._animate` read `style_now()`. The shown swing starts
+  `SWING_LEAD` before the strike and speeds into it, half its arc at the
+  hit, then eases out (`MeleeWeapon.swing_arc`; both views read it); a
+  windup keeps coiling back (`windup_coil`); two-handers swing slower and
+  turn the body more. A new melee weapon picks a style; check it by eye with
+  `visual_check.tscn -- <dir> --swing-only` (run with `--fixed-fps 60`),
+  which films each move frame by frame. Every melee
   model is dressed as tech by `Look._tech_melee` (`assets/shaders/melee.gdshader`):
   bare metal becomes alloy with an energy edge in the weapon's rarity color,
   wood and wraps black polymer with glowing seams. A holstered blade is worn
@@ -380,6 +392,24 @@ without Caleb, and update the gap list when a PR closes a row.
 - Flight rigs and abilities are data too. `FlightRig` and `Ability` are single
   classes whose item stats pick the behavior. Abilities fire from
   `ActorCommand.ability_pressed`.
+- Artifacts (DESIGN.md section 6) are data too: items tagged "artifact" in
+  the optional `artifact` loadout slot, run by the one `Artifact` class
+  (`core/abilities/artifact.gd`, `Actor.artifact`) whose `effect` stat picks
+  what it does ("rewind", "cloak", "overclock", "bloom"), with `charges` per
+  outing (0 for no limit) and a `cooldown`. One per outing: `Loadout.equip`
+  attunes the first and a second is only carried as loot. It is used from
+  the watch (a click on the artifact icon, `PlayerController.is_on_artifact`)
+  through `ActorCommand.artifact_pressed`, so it is simulated from the
+  command on every machine like an ability. It is gear (`gear_items`), so it
+  drops in the bag and goes home like the rest. Every effect must be seen or
+  felt by the people it touches, and in the world, never on the screen: the
+  rewind trail and bloom ring are `Fx`, the cloak fades the whole body in
+  `ActorSkin._update_cloak` (the same body in both views). A cloak is read
+  with `Actor.is_cloaked()` by bots, nameplates and the sign-out countdown.
+  A jammed rig (`FlightRig.jam`, `working()`) and an overclocked one
+  (`heat_free`, `lock_up`) are rig states, not new rig types. Until PvE
+  dungeons and arena tournaments exist, artifacts drop from world events
+  (`WorldDef.roll_artifact`, `warlord_artifact_chance`, `pod_artifact_chance`).
 - Flight is simulated in `Actor` from the command, like a dash, so it
   predicts and replicates: jets lit only while aim is held in the air
   (`Actor._wants_hover`, Caleb's call: never a hover that stays on by
@@ -520,7 +550,16 @@ without Caleb, and update the gap list when a PR closes a row.
   Back-slung weapons ride higher up the back (`ride_sling_lift`); weapons
   clamped to a back rig's rails stay in their clamps. A new
   vehicle type sets those anchor points for its model. Check by eye:
-  `visual_check.tscn -- <dir> --ride-only`.
+  `visual_check.tscn -- <dir> --ride-only` (`RIDE_VEHICLE=<item id>` for
+  another vehicle). Every vehicle is that one class, picked by data: the
+  `model` stat picks the greybox body ("bike", "rover", "mech", "jet"),
+  `body_size` its collision box, `pivot_turn` lets a walker turn on the
+  spot, `jump_speed` gives it a jump-jet hop, and the "aircraft" tag flies
+  it (`Vehicle._fly`: takes off past `takeoff_speed` with jump, never
+  hovers, drops below `stall_speed` or with nobody at the stick, climbs no
+  higher than `ceiling` over the world's ground). Jets are thrown only where
+  `WorldDef.open_skies`. A vehicle's `watch_recharge` and `footprint` stats
+  set the watch's wait after a throw and the room it needs to unpack.
 - Toy vehicles: a vehicle a player owns in a world rides on their watch as
   a toy (`Raid.PlayerState.stowed`, read with `Raid.stowed_for`), never in
   the inventory. `Raid.throw_toy` throws one from the actor along their aim;

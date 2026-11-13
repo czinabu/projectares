@@ -88,7 +88,7 @@ rows marked **pre-playtest** come before the friends playtest.
 | Banked by depot or sign-out to the armory wall | Missing | Needs `StashRules.storable` to accept `power`, and the `CLAUDE.md` power weapon rule rewritten. **Pre-playtest.** |
 | Deploy with one from the wall (one per outing) | Missing | **Pre-playtest.** Open decision in DESIGN.md section 13. |
 | Dropped with your bag on death | Partly | Today a dead player's power weapon is left on a rack. |
-| Artifacts: one per outing, earned in PvE dungeons and arena tournaments, dropped on death in PvP, banked at bank spots | Missing | Eleven designed (DESIGN.md section 6). Need the PvE world or arena rewards to earn them. |
+| Artifacts: one per outing on the watch, dropped on death in PvP, banked with the pack, taken home on sign-out | Partly | MVP built (`Artifact`, `core/abilities/artifact.gd`): four of the eleven (Time Rewind, Phase Cloak, Overclock Core, Static Bloom), an optional `artifact` loadout slot, used by a click on the watch's artifact icon, shown in the base's artifact case. Until PvE dungeons and arena tournaments exist they drop from world events (`WorldDef.warlord_artifact_chance`, `pod_artifact_chance`; off in Frostline). Missing: the other seven, attuning one found mid-outing, their own art and sounds. |
 | Gravity Well gadget | Missing | A normal gadget, not an artifact. |
 
 ## Banking and leaving
@@ -113,8 +113,8 @@ rows marked **pre-playtest** come before the friends playtest.
 | Mounted firepower | Missing | Rover turret, mech cannons, jet missiles. After the playtest. |
 | Cargo space while riding | Missing | After the playtest. |
 | Mobile cover | Missing | Rover and mech; the bike gives none by design. |
-| Per-vehicle watch recharge (heavier is slower) | Missing | One `Raid.toy_cooldown` for all vehicles today. |
-| Rover, mech and jet | Missing | Agreed roster, each with a weakness and counter (DESIGN.md section 8). After the playtest. |
+| Per-vehicle watch recharge (heavier is slower) | Built | A `watch_recharge` stat (`Raid.toy_recharge`): bike 8 s, rover 20 s, jet 40 s, mech 45 s. |
+| Rover, mech and jet | Partly | Drivable first versions on the one `Vehicle` class: Warden Rover (23 m/s, slow to turn, driver's seat on the left), Bulwark Mech (9 m/s, turns on the spot, jump-jet hop) and Kestrel Jet (takes off past 24 m/s, cannot hover, 120 m ceiling, only where `WorldDef.open_skies`). Greybox models. Missing: their weapons, passengers, armor and weak spots, vehicle health, and how mech and jet are earned (blueprints); today the rover can be found parked in Ashfront and the mech and jet only come with dev mode. |
 
 ## Racing
 

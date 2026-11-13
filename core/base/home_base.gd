@@ -660,6 +660,9 @@ func spot_transform(kind: String, index: int) -> Transform3D:
 		"chip_case", "supplies", "trophy":
 			# A shelf each on the storage wall, left of the door.
 			return _spot(Vector3(STORAGE_FROM_X + 0.95 * i, STORAGE_ROWS[kind], wall_z - 0.4), PI)
+		"artifact_case":
+			# The chip shelf's far end, past its six spots.
+			return _spot(Vector3(STORAGE_FROM_X + 0.95 * (6 + i), STORAGE_ROWS["chip_case"], wall_z - 0.4), PI)
 		"bay":
 			# Side by side in the garage, parked nose-out toward the room.
 			return _spot(Vector3(wall_x + garage_size.x * 0.5, 0.0, -4.2 + 2.8 * i), -PI / 2.0)
@@ -1464,7 +1467,7 @@ func _build_signs() -> void:
 		var last := spot_transform(kind, room - 1)
 		var mid := first.origin.lerp(last.origin, 0.5)
 		var top := maxf(first.origin.y, last.origin.y)
-		if STORAGE_ROWS.has(kind):
+		if STORAGE_ROWS.has(kind) or kind == "artifact_case":
 			# On the lip of its shelf, under what is on it.
 			sign_label.pixel_size *= 0.7
 			sign_label.position = Vector3(mid.x, top - 0.43, mid.z) + first.basis.z * 0.27
@@ -1577,10 +1580,21 @@ func _fill(display: Display) -> void:
 			model.add_child(chip)
 			box = Vector3(0.7, 0.8, 0.6)
 			plate_at = Vector3(0, 0.42, 0)
+		"artifact_case":
+			# A dark plinth, the artifact a glowing core standing on its point.
+			model.add_child(_part(Vector3(0.5, 0.08, 0.5), Vector3(0, -0.3, 0), Color(0.12, 0.12, 0.14)))
+			var core := _part(Vector3(0.18, 0.18, 0.18), Vector3(0, -0.02, 0), color, true)
+			core.rotation = Vector3(PI / 4.0, 0.0, PI / 4.0)
+			core.name = "Core"
+			model.add_child(core)
+			box = Vector3(0.7, 0.8, 0.6)
+			plate_at = Vector3(0, 0.42, 0)
 		"bay":
 			var vehicle: Node3D = VehicleScript.new()
 			vehicle.setup(id)
 			var visual: Node3D = vehicle.build_visual()
+			# A bike fills the bay; bigger vehicles park as smaller models.
+			visual.scale = Vector3.ONE * float(vehicle.bay_scale)
 			vehicle.free()
 			visual.name = "Body"
 			model.add_child(visual)

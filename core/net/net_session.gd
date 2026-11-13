@@ -143,7 +143,8 @@ const CORRECTION_RATE := 0.2
 const FORWARDED_NOTICES := ["Parry!", "Wrong side", "Guard broken", "Staggered", "Killed ", "Looted ",
 		"Backpack full", "Someone is riding it", "Banked ", "Signing out", "Sign-out cancelled",
 		"You cannot sign out", "No room there", "Watch recharging", "Your watch is full",
-		"Look at a vehicle", "Packed ", "Get off first", "Not while signing out", "Vehicles stay on the watch", "Scanned", "Sensed"]
+		"Look at a vehicle", "Packed ", "Get off first", "Not while signing out", "Vehicles stay on the watch", "No open sky",
+		"Scanned", "Sensed"]
 
 var is_server := false
 var raid: Raid

@@ -45,6 +45,13 @@ func _ready() -> void:
 		get_tree().quit()
 		return
 
+	# `-- <output_dir> --swing-only` films melee attacks frame by frame, one
+	# row per move, so the motion (not one pose) can be judged.
+	if "--swing-only" in args:
+		await _swing_strips(out_dir)
+		get_tree().quit()
+		return
+
 	# `-- <output_dir> --views-only [row,row]` shoots each action in first
 	# person, the third-person camera and from the front, side by side.
 	if "--views-only" in args:
@@ -93,7 +100,8 @@ func _ready() -> void:
 		get_tree().quit()
 		return
 
-	# `-- <output_dir> --ride-only` shoots the rider seated on a bike.
+	# `-- <output_dir> --ride-only` shoots the rider seated on a bike
+	# (`RIDE_VEHICLE=<item id>` seats them on another vehicle).
 	if "--ride-only" in args:
 		await _ride_shots(out_dir)
 		get_tree().quit()
@@ -121,6 +129,14 @@ func _ready() -> void:
 	# `-- <output_dir> --power-only` shoots the power weapons and their effects.
 	if "--power-only" in args:
 		await _power_shots(out_dir)
+		get_tree().quit()
+		return
+
+	# `-- <output_dir> --artifacts-only` shows the artifacts at work: the
+	# watch's artifact icon, Phase Cloak in first and third person, the
+	# Time Rewind trail and the Static Bloom ring.
+	if "--artifacts-only" in args:
+		await _artifact_shots(out_dir)
 		get_tree().quit()
 		return
 
@@ -992,6 +1008,64 @@ func _aim_shots(out_dir: String) -> void:
 		await _settle(2)
 
 
+func _artifact_shots(out_dir: String) -> void:
+	for relic: String in ["artifact_cloak", "artifact_rewind", "artifact_bloom"]:
+		var raid := Raid.new()
+		add_child(raid)
+		var kit: Array[String] = ["rifle_scrap", "blade_scrap", "pistol_service", "jetpack_mk1", "plate_light", relic]
+		raid.start(Worlds.get_world("ashfront"), 42, kit)
+		for bot in raid.bots:
+			bot.get_node("Brain").set_physics_process(false)
+			bot.global_position += Vector3(0, 0, 400)
+		var p := raid.player
+		var controller := PlayerController.new()
+		controller.setup(p)
+		raid.add_child(controller)
+		var hud := Hud.new()
+		hud.setup(raid, controller)
+		raid.add_child(hud)
+		await _settle(60)
+		var tag := relic.trim_prefix("artifact_")
+		if relic == "artifact_cloak":
+			controller.wrist_raised = true
+			controller.watch_focus = Hud.Wrist.SLOTS.find("artifact")
+			controller.watch_focus_moved = true
+			await _settle(30)
+			await _shot(out_dir.path_join("artifact_watch.png"))
+			controller.wrist_raised = false
+			await _settle(20)
+			await _shot(out_dir.path_join("cloak_first_off.png"))
+			# Long enough to outlast a slow software render.
+			p.artifact.duration = 600.0
+			p.artifact.activate()
+			await _settle(30)
+			await _shot(out_dir.path_join("cloak_first_on.png"))
+			controller.toggle_view()
+			await _settle(30)
+			await _shot(out_dir.path_join("cloak_third_on.png"))
+			p.artifact.on_attack()
+			await _settle(30)
+			await _shot(out_dir.path_join("cloak_third_off.png"))
+		elif relic == "artifact_rewind":
+			controller.toggle_view()
+			await _settle(30)
+			var start := p.global_position
+			for i in 40:
+				p.global_position = start + Vector3(0.15 * i, 0, 0.1 * i)
+				await get_tree().physics_frame
+			p.artifact.activate()
+			await _settle(6)
+			await _shot(out_dir.path_join("rewind_trail.png"))
+		else:
+			controller.toggle_view()
+			await _settle(30)
+			p.artifact.activate()
+			await _settle(2)
+			await _shot(out_dir.path_join("bloom_ring.png"))
+		raid.queue_free()
+		await _settle(3)
+
+
 func _settle(count: int) -> void:
 	for i in count:
 		await get_tree().process_frame
@@ -1149,6 +1223,88 @@ func _melee_shots(out_dir: String, only := "") -> void:
 		await _settle(2)
 	sheet.save_png(out_dir.path_join("melee.png"))
 	print("saved melee.png")
+
+
+## Film strips of melee moves: one row per move, a frame every
+## `SWING_STEP` frames from the press, seen from a front three-quarter view.
+## Run with `--fixed-fps 60` so each frame is one tick.
+const SWING_STEP := 3
+const SWING_FRAMES := 12
+func _swing_strips(out_dir: String) -> void:
+	var moves := [
+		["blade_scrap", "light_right"], ["blade_scrap", "light_overhead"], ["blade_scrap", "heavy"],
+		["knife_gutter", "light_left"], ["knife_gutter", "heavy"], ["axe_splitter", "light_right"],
+		["axe_splitter", "light_overhead"], ["hammer_breaker", "light_right"], ["hammer_breaker", "heavy"],
+		["spear_lancer", "light_overhead"], ["spear_lancer", "heavy"], ["blade_scrap", "back"],
+		["blade_scrap", "deflect"],
+	]
+	var cell := 240
+	var sheet := Image.create(SWING_FRAMES * cell, moves.size() * cell, false, Image.FORMAT_RGBA8)
+	for row in moves.size():
+		var id: String = moves[row][0]
+		var move: String = moves[row][1]
+		var raid := Raid.new()
+		add_child(raid)
+		raid.start(Worlds.get_world("ashfront"), 42, ["rifle_scrap", id, "jetpack_mk1", "plate_light"])
+		for bot in raid.bots:
+			bot.queue_free()
+		var player := raid.player
+		await _settle(10)
+		player.cmd.switch_weapon = 1
+		await _settle(5)
+		player.cmd.switch_weapon = -1
+		await _settle(40)
+		var blade := player.get_active_weapon() as MeleeWeapon
+		blade.light_stamina = 0.0
+		blade.heavy_stamina = 0.0
+		var cam := Camera3D.new()
+		raid.add_child(cam)
+		cam.current = true
+		cam.fov = 40.0
+		var at := player.global_position
+		cam.global_position = at + player.global_basis.x * 1.6 - player.global_basis.z * 2.0 + Vector3(0, 1.5, 0)
+		cam.look_at(at + Vector3(0, 1.25, 0))
+		var stances := {"light_right": MeleeWeapon.Dir.RIGHT, "light_left": MeleeWeapon.Dir.LEFT}
+		player.cmd.stance = stances.get(move, MeleeWeapon.Dir.OVERHEAD)
+		await _settle(2)
+		match move:
+			"heavy":
+				player.cmd.tertiary_pressed = true
+			"back":
+				blade._light_attack(0.0)
+				blade._back_strike = true
+			"deflect":
+				player.cmd.secondary = true
+			_:
+				player.cmd.primary_pressed = true
+		for col in SWING_FRAMES:
+			if move == "combo" and col in [4, 8]:
+				player.cmd.primary_pressed = true
+				player.cmd.stance = MeleeWeapon.Dir.LEFT if col == 4 else MeleeWeapon.Dir.RIGHT
+			if move == "deflect" and col == 2:
+				var shot := DamageInfo.make(10.0, player, "bullet", at)
+				player.get_active_weapon().modify_incoming(shot)
+			# A press is read in the tick after it is set.
+			await get_tree().physics_frame
+			await get_tree().physics_frame
+			player.cmd.primary_pressed = false
+			player.cmd.tertiary_pressed = false
+			for k in SWING_STEP - 2:
+				await get_tree().process_frame
+			await RenderingServer.frame_post_draw
+			var frame := get_viewport().get_texture().get_image()
+			var h := frame.get_height()
+			var w := frame.get_width()
+			var cut := frame.get_region(Rect2i(w / 2 - h / 2, 0, h, h))
+			cut.resize(cell, cell)
+			cut.convert(Image.FORMAT_RGBA8)
+			sheet.blit_rect(cut, Rect2i(0, 0, cell, cell), Vector2i(col * cell, row * cell))
+		player.cmd.secondary = false
+		print("filmed %s %s" % [id, move])
+		raid.queue_free()
+		await _settle(2)
+	sheet.save_png(out_dir.path_join("swings.png"))
+	print("saved swings.png")
 
 
 ## Contact sheets of the player's legs, side on and from the front, holding
@@ -1631,7 +1787,15 @@ func _ride_shots(out_dir: String) -> void:
 	deck.add_child(deck_mesh)
 	raid.add_child(deck)
 	deck.global_position = at - Vector3(0, 0.5, 0)
-	var bike: Node3D = raid.spawn_vehicle("bike_raider", at + Vector3(0, 0.3, 0), 0.6)
+	var ride_id := OS.get_environment("RIDE_VEHICLE")
+	if ride_id == "" or not ItemDB.has_tag(ride_id, "vehicle"):
+		ride_id = "bike_raider"
+	var bike: Node3D = raid.spawn_vehicle(ride_id, at + Vector3(0, 0.3, 0), 0.6)
+	# Bigger vehicles are framed from further out and higher up.
+	var seat_y: float = bike.seat_point.y
+	var frame_out := maxf(1.0, seat_y / 0.98)
+	if bike.model != "bike":
+		frame_out = maxf(frame_out, bike.body_size.z / 2.6)
 	await _settle(20)
 	bike.mount(player)
 	player.set_physics_process(false)
@@ -1661,8 +1825,8 @@ func _ride_shots(out_dir: String) -> void:
 		var b: Basis = bike.global_basis
 		var sides: Array[Vector3] = [b.x, (b.x - b.z).normalized(), b.z, (b.z * 0.8 + Vector3.UP * 0.7).normalized()]
 		for c in sides.size():
-			var look_at := bike.global_position + Vector3(0, 0.85, 0)
-			cam.global_position = look_at + (sides[c] + Vector3.UP * 0.15).normalized() * 6.5
+			var look_at := bike.global_position + Vector3(0, seat_y - 0.13, 0)
+			cam.global_position = look_at + (sides[c] + Vector3.UP * 0.15).normalized() * 6.5 * frame_out
 			cam.look_at(look_at)
 			await _settle(1)
 			await RenderingServer.frame_post_draw
@@ -1680,10 +1844,10 @@ func _ride_shots(out_dir: String) -> void:
 	player._refresh_weapon_visuals()
 	bike.set_physics_process(true)
 	await _settle(40)
-	var close := [[-bike.global_basis.x * 2.4 + Vector3(0, 0.2, 0), "ride_close_side.png"],
-		[(-bike.global_basis.z * 1.6 + bike.global_basis.x * 0.9 + Vector3(0, 1.0, 0)), "ride_close_front.png"]]
+	var close := [[(-bike.global_basis.x * 2.4 + Vector3(0, 0.2, 0)) * frame_out, "ride_close_side.png"],
+		[(-bike.global_basis.z * 1.6 + bike.global_basis.x * 0.9 + Vector3(0, 1.0, 0)) * frame_out, "ride_close_front.png"]]
 	for shot in close:
-		var focus := bike.global_position + bike.global_basis * Vector3(0, 1.0, -0.1)
+		var focus: Vector3 = bike.global_position + bike.global_basis * (bike.seat_point + Vector3(0, 0.02, -0.38))
 		cam.global_position = focus + shot[0]
 		cam.look_at(focus)
 		await _settle(2)

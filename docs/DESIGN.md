@@ -382,6 +382,13 @@ combinations are the special moves.
 - **Hands on the weapon.** A one-hander sits in the weapon hand, a two-hander
   takes the off hand on the handle, identical in first and third person. The
   grip points come from each model (the aim-down-sights grip work).
+- **Each weapon moves its own way.** Swords slash in arcs, the spear
+  thrusts straight out, the axe and hammer chop down from over the
+  shoulder, and the knife makes tight slashes with a stab for its heavy.
+  Every swing speeds up into the hit and eases through its follow-through,
+  windups keep drawing back instead of freezing, two-handers swing slower
+  and turn the whole body, a dash-strike leans in, and a back strike turns
+  the blade back past the hip. Same motion in first and third person.
 - **Later:** tight interiors and corners in the worlds where guns are clumsy,
   and more ammo and reload pressure on guns. Melee bots using the dash-strike.
 
@@ -592,6 +599,41 @@ they follow the heavy weapon's rules:
 
 Gravity Well, first proposed as an artifact, is a normal gadget (section 4):
 it is too useful against fliers to be rare.
+
+**The first artifacts (built, MVP).** Four of the table are in the game,
+basic and unpolished, so the loop can be played before the rest:
+
+- **Time Rewind**: once an outing, back 4 s to where you were and how
+  healthy you were (never less healthy than now). It leaves a glowing trail
+  from where you were to where you landed, and a ghost where you land.
+- **Phase Cloak**: 6 s of near-invisibility, every 60 s. The whole body and
+  its gear fade, the same in first and third person; nameplates hide. Firing
+  or swinging breaks it, bots still notice you within 4 m, and a sign-out
+  countdown waits while it runs.
+- **Overclock Core**: 10 s of flying with no heat, every 90 s; then the rig
+  burns out and locks up overheated wherever you are.
+- **Static Bloom**: a ring that shuts off every flight rig within 14 m for
+  3 s, yours included. Everyone drops. Every 60 s.
+
+How they work for now:
+
+- **Equipping.** An optional `artifact` loadout slot, chosen at the locker
+  like the rest of the loadout. The base shows owned artifacts in a lit case
+  at the end of the chip shelf (the starter bunker has room for one).
+- **Using.** From the watch: raise it (X), wheel to the artifact icon and
+  click. The icon shows uses left or a countdown ring, and goes dim when
+  spent. There is no hotkey yet.
+- **One per outing.** Only the artifact you deploy with can be used. One
+  found in the world rides in your pack as loot until you get it home.
+- **Finding them.** Until PvE dungeons, bosses and arena tournaments exist,
+  world events stand in: a warlord carries one half the time and a supply
+  pod holds one now and then (`WorldDef` sets the chances per world). They
+  are off in Frostline for now, under the rule that rare gear stays in the
+  full-loot war worlds; the PvE source in this section is Caleb's call to
+  turn on when it exists.
+- **Losing and keeping them.** The equipped one is gear: it drops in your bag
+  on death in the PvP world and goes home on sign-out. One in the pack banks
+  at a depot like any loot. Never sold in shops.
 
 ## 7. Banking and leaving
 

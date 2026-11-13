@@ -13,6 +13,8 @@ const SLOTS := {
 	"helmet": "helmet",
 	"ability": "ability",
 	"vehicle": "vehicle",
+	# One artifact per outing, carried on the watch (DESIGN.md section 6).
+	"artifact": "artifact",
 	# Attachments for the primary. Each slot's tag is also the attachment's
 	# second tag in ItemDB.
 	"optic": "optic",
@@ -29,6 +31,7 @@ const SLOT_NAMES := {
 	"helmet": "Helmet",
 	"ability": "Ability",
 	"vehicle": "Vehicle",
+	"artifact": "Artifact",
 	"optic": "Optic",
 	"muzzle": "Muzzle",
 	"grip": "Grip",
@@ -37,7 +40,7 @@ const SLOT_NAMES := {
 ## Slots that hold an attachment for the primary weapon.
 const ATTACHMENT_SLOTS := ["optic", "muzzle", "grip", "magazine"]
 ## Slots with no free scrap item. Left empty, you deploy without one.
-const OPTIONAL_SLOTS := ["ability", "vehicle", "optic", "muzzle", "grip", "magazine"]
+const OPTIONAL_SLOTS := ["ability", "vehicle", "artifact", "optic", "muzzle", "grip", "magazine"]
 ## How many healing items are taken from the stash on deploy.
 const MAX_HEAL_ITEMS := 2
 
@@ -98,6 +101,14 @@ static func equip(actor: Actor, item_ids: Array) -> void:
 			actor.ability.display_name = ItemDB.item_name(id)
 			_apply_stats(actor.ability, stats)
 			actor.gear_items.append(id)
+		elif ItemDB.has_tag(id, "artifact"):
+			# One per outing: any other is only carried, as loot.
+			if actor.artifact.enabled:
+				actor.inventory.add_item(id)
+			else:
+				_apply_stats(actor.artifact, stats)
+				actor.artifact.attune(id)
+				actor.gear_items.append(id)
 		elif ItemDB.has_tag(id, "helmet"):
 			actor.visor.enabled = true
 			actor.visor.item_id = id

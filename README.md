@@ -44,6 +44,7 @@ skies, animated models and effects (see "How it looks" below).
 | Open your phone: players, messages, invites, news, mirror, every control (Keys), settings | P |
 | Raise or lower the holographic watch on your wrist | X |
 | Move across the watch's icons (watch up) | Mouse wheel |
+| Use your artifact (watch up, on the artifact icon) | Click |
 | Phone at Settings (also frees the mouse); Esc again closes it | Esc |
 
 The jetpack runs on heat. Overheat it and you fall until it cools. Rooftop

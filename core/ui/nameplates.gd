@@ -73,7 +73,7 @@ func update_plates() -> void:
 
 ## Whether a nameplate shows for `actor`: 0 hidden, up to 1 fully shown.
 func _visibility(camera: Camera3D, actor: Actor, at: Vector3) -> float:
-	if camera.is_position_behind(at):
+	if camera.is_position_behind(at) or actor.is_cloaked():
 		return 0.0
 	var seen := _sight(camera, actor, at)
 	if actor.exposed or actor.marked:

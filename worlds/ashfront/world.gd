@@ -66,10 +66,12 @@ const ROOFTOP_TABLE := [
 	{"id": "helm_ember", "weight": 4.0},
 ]
 
-## Abandoned bikes parked around the field. Anyone can ride one out.
+## Abandoned vehicles parked around the field. Anyone can ride one out. The
+## mech and the jet are not found lying about.
 const VEHICLE_TABLE := [
-	{"id": "bike_scrapper", "weight": 75.0},
-	{"id": "bike_raider", "weight": 25.0},
+	{"id": "bike_scrapper", "weight": 70.0},
+	{"id": "bike_raider", "weight": 22.0},
+	{"id": "rover_warden", "weight": 8.0},
 ]
 
 ## The two armies that fight over the field, and each other. Soldiers carry
@@ -108,6 +110,8 @@ func _init() -> void:
 	max_players = 32
 	bots_contest_sites = true
 	depot_hold_time = 4.0
+	# The open battlefield is big enough to fly a jet over.
+	open_skies = true
 
 
 func create_map() -> Node3D:

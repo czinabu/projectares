@@ -117,6 +117,8 @@ func _init() -> void:
 	bot_count = 0
 	event_interval = 0.0
 	power_weapon_rate = 0.0
+	warlord_artifact_chance = 0.0
+	pod_artifact_chance = 0.0
 	gear_at_risk = false
 	# Nobody can be hurt outside a bout anyway, and fighters start together.
 	spawn_protection = 0.0

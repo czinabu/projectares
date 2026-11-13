@@ -238,8 +238,8 @@ static func watch_slots(p_raid: Raid, p: Actor, picked_toy := 0, pack_name := ""
 				["key:4"], gun.charge_fraction() if gun.charge_fraction() > 0.0 else -1.0, false, gun.is_spent()))
 	else:
 		slots.append(_slot("heavy", "", "No heavy weapon", [], -1.0, true, false))
-	# The artifact slot (section 6 of the design doc; not built yet).
-	slots.append(_slot("artifact", "", "No artifact", [], -1.0, true, false))
+	# The artifact carried for this outing (section 6 of the design doc).
+	slots.append(artifact_slot(p.artifact))
 	# Sign-out and banking.
 	if leaving >= 0.0:
 		slots.append(_slot("leave", "", "Signing out", ["key:L"], leaving, false, true))
@@ -264,9 +264,32 @@ static func base_watch_slots(base_name: String, loadout: Dictionary) -> Array[Di
 	else:
 		slots.append(_slot("vehicle", "", "No vehicle", [], -1.0, true, false))
 	slots.append(_slot("heavy", "", "No heavy weapon", [], -1.0, true, false))
-	slots.append(_slot("artifact", "", "No artifact", [], -1.0, true, false))
+	var relic: String = loadout.get("artifact", "")
+	if relic != "" and ItemDB.has_item(relic):
+		slots.append(_slot("artifact", "", ItemDB.item_name(relic), [], -1.0, false, false))
+	else:
+		slots.append(_slot("artifact", "", "No artifact", [], -1.0, true, false))
 	slots.append(_slot("leave", "", "Home", [], -1.0, true, false))
 	return slots
+
+
+## The artifact icon: uses left (or a countdown), a ring while it runs or
+## recharges, and a click to use it when it is ready.
+static func artifact_slot(relic: Artifact) -> Dictionary:
+	if relic == null or not relic.enabled:
+		return _slot("artifact", "", "No artifact", [], -1.0, true, false)
+	var value := ""
+	var progress := -1.0
+	if relic.is_active():
+		value = str(ceili(relic.active_left))
+		progress = relic.active_left / maxf(relic.duration, 0.01)
+	elif relic.cooldown_left > 0.0:
+		value = str(ceili(relic.cooldown_left))
+		progress = 1.0 - relic.cooldown_left / maxf(relic.cooldown, 0.01)
+	elif relic.charges > 0:
+		value = str(relic.uses_left)
+	return _slot("artifact", value, relic.status_text(), ["click"] if relic.is_ready() else [], progress,
+			relic.is_spent(), relic.is_active())
 
 
 static func _slot(id: String, value: String, detail: String, hints: Array, progress: float, empty: bool,
