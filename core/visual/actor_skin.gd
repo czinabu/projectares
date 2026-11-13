@@ -141,17 +141,20 @@ var sling_height := -0.2
 ## middle of a slung weapon sits out from the back or the rig's outer face.
 var back_surface := 0.13
 var sling_clearance := 0.04
-## Over a rig with a screen on its back (a jetpack's heat gauge), a slung
-## weapon rides down the side of the rig instead, so it never hides the
-## screen: this far out past the rig's edge, leaning this much.
-var side_sling_gap := 0.035
+## Over a rig with weapon rails down its sides (a jetpack or wing pack,
+## whose back holds its heat gauge), a long weapon is clamped to the rail on its side instead,
+## so it never hides the screen: its middle this far up the rail from the
+## rail's middle, and this far out from the clamp faces.
+var mount_rise := 0.02
+var mount_clearance := 0.003
+## How far up and down from its middle the rail's clamps hold a weapon.
+var mount_band := 0.12
 ## A worn helmet carries its readouts on the back of the head, for third
 ## person and for anyone behind you: a health strip that drains and turns red,
 ## and a light for the helmet's own system. Placed over the "Head" bone.
 var vitals_offset := Vector3(0.0, 0.05, 0.145)
 var vitals_width := 0.13
 var vitals_low := 0.35
-var side_sling_tilt := deg_to_rad(9.0)
 var hip_offset := Vector3(-0.2, 0.08, 0.02)
 ## How far a sheathed blade tips from pointing straight up, toward the back.
 var sheath_angle := deg_to_rad(138.0)
@@ -712,25 +715,22 @@ func stow_place(weapon: Weapon) -> Dictionary:
 		return {"bone": _def.get("hip_bone", ""), "at": holster_offset, "basis": Basis(Vector3.RIGHT, -PI / 2.0),
 			"centre": false}
 	var side := 1.0 if weapon is Gun else -1.0
-	if _rig_back and _rig_back.find_child("HeatDisplay", true, false) != null:
-		# Down the side of the rig (gun right, long blade left), clear of its screen.
-		var box: AABB = look.model_bounds(_rig_back)
-		var beside := Vector3(side * (maxf(absf(box.position.x), absf(box.end.x)) + side_sling_gap),
-				sling_height + 0.12, back_gap + box.end.z - 0.03)
-		if weapon is MeleeWeapon:
-			return {"bone": back_bone, "at": beside, "basis": Basis(Vector3.BACK, side_sling_tilt), "centre": true}
-		return {"bone": back_bone, "at": beside,
-			"basis": Basis(Vector3.BACK, -side_sling_tilt) * Basis(Vector3.RIGHT, PI / 2.0) * Basis(Vector3.BACK, PI / 2.0),
-			"centre": true}
+	# Guns point along -Z in the hand, top up: roll it onto its side so its
+	# profile shows, and stand it muzzle up. Long blades already stand up.
+	var upright := Basis.IDENTITY if weapon is MeleeWeapon \
+			else Basis(Vector3.RIGHT, PI / 2.0) * Basis(Vector3.BACK, PI / 2.0)
+	var mount := _rig_back.get_node_or_null("MountR" if side > 0.0 else "MountL") as Marker3D if _rig_back else null
+	if mount:
+		# Clamped to the rail on the pack's side (gun right, long blade left),
+		# leaning out with it. `_stow` moves it out by its own half width.
+		return {"bone": back_bone, "at": Vector3(0, back_drop, back_gap) + mount.position + mount.basis.y * mount_rise,
+			"basis": mount.basis * upright, "centre": true, "out": mount.basis.x * side, "upright": upright, "side": side}
 	if weapon is MeleeWeapon:
 		# Head up over the left shoulder, crossing a slung gun.
 		return {"bone": back_bone, "at": out + Vector3(0, 0, sling_clearance), "basis": Basis(Vector3.BACK, sling_tilt),
 			"centre": true}
-	# Guns point along -Z in the hand, top up: roll it onto its side so its
-	# profile shows, stand it muzzle up, then lean it over the right shoulder.
-	return {"bone": back_bone, "at": out,
-		"basis": Basis(Vector3.BACK, -sling_tilt) * Basis(Vector3.RIGHT, PI / 2.0) * Basis(Vector3.BACK, PI / 2.0),
-		"centre": true}
+	# A gun leans over the right shoulder.
+	return {"bone": back_bone, "at": out, "basis": Basis(Vector3.BACK, -sling_tilt) * upright, "centre": true}
 
 
 ## What the light on a helmet's back says: "" (a plain visor has none),
@@ -835,11 +835,48 @@ func _stow(weapon: Weapon) -> Node3D:
 	if place["centre"]:
 		model.position -= look.folded_bounds(model).get_center()
 	pivot.basis = place["basis"]
-	var fallback: Vector3 = Vector3(0.0, _def.get("height", 1.8) * 0.7, 0.0) + place["at"]
-	var root := _hang(pivot, "Stowed" + str(actor.weapons.find(weapon)), place["bone"], place["at"], fallback)
-	root.set_meta("slung", place["centre"])
+	var at: Vector3 = place["at"]
+	if place.has("out"):
+		# Clamped: its near side rests on the clamp faces.
+		at += (place["out"] as Vector3) * (_near_side(model, place["upright"], place["side"]) + mount_clearance)
+	var fallback: Vector3 = Vector3(0.0, _def.get("height", 1.8) * 0.7, 0.0) + at
+	var root := _hang(pivot, "Stowed" + str(actor.weapons.find(weapon)), place["bone"], at, fallback)
+	# Riding lifts what is slung on the back clear of the seat; a weapon
+	# clamped to a rail stays in its clamps (it rides beside the seat).
+	root.set_meta("slung", place["centre"] and not place.has("out"))
 	_stowed_models[weapon] = model
 	return root
+
+
+## How far a centred, stood-up weapon reaches toward the pack (-X for a
+## weapon on the right, `side` 1; +X on the left) where the
+## rail's clamps hold it, so a spear head or a magazine further along does
+## not hold the part in the clamps off the rail. Measured from the meshes,
+## unfolded; falls back to half the folded width.
+func _near_side(model: Node3D, upright: Basis, side: float) -> float:
+	var stood: AABB = Transform3D(upright, Vector3.ZERO) * look.folded_bounds(model)
+	var band := mount_band
+	var near := -INF
+	for node in model.find_children("*", "MeshInstance3D", true, false):
+		var mesh_node := node as MeshInstance3D
+		if mesh_node.mesh == null:
+			continue
+		var xform := mesh_node.transform
+		var up := mesh_node.get_parent()
+		while up != null and up != model.get_parent():
+			if up is Node3D:
+				xform = (up as Node3D).transform * xform
+			up = up.get_parent()
+		xform = Transform3D(upright, Vector3.ZERO) * xform
+		for i in mesh_node.mesh.get_surface_count():
+			var verts: PackedVector3Array = mesh_node.mesh.surface_get_arrays(i)[Mesh.ARRAY_VERTEX]
+			for v in verts:
+				var p := xform * v
+				if absf(p.y + mount_rise) <= band:
+					near = maxf(near, -side * p.x)
+	if near == -INF:
+		return stood.size.x * 0.5
+	return near
 
 
 func _on_fired(from: Vector3, to: Vector3, gun: Gun) -> void:
