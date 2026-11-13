@@ -42,6 +42,8 @@ const SHOP_PANEL := "res://core/economy/shop_panel.gd"
 const Economy := preload("res://core/economy/economy.gd")
 ## DEV MODE: temporary, see `core/dev/dev_mode.gd`.
 const DevMode := preload("res://core/dev/dev_mode.gd")
+## DEV MODE: where a dev server keeps its accounts, apart from real ones.
+const DEV_ACCOUNTS := "user://accounts_dev"
 
 var hub: Hub
 ## The 2D viewport the hub lives in. Its picture goes on the screen of the
@@ -652,6 +654,8 @@ func _show_aim(on: bool) -> void:
 ## stash swaps at once in the base; in a solo world the cheats change at once
 ## and the stash follows on the next drop or the trip home.
 func _on_dev_mode_changed() -> void:
+	if net != null:
+		phone.show_notice("Online, dev mode comes with a server you host from here. Leave and host again to pick this up.")
 	if raid != null:
 		if net == null:
 			raid.set_dev_cheats(DevMode.raid_cheats())
@@ -708,13 +712,21 @@ func _on_base_visit_requested(owner_name: String, owner_stash: Array, owner_load
 
 func _run_dedicated_server(args: PackedStringArray) -> void:
 	var port := int(_arg(args, "--port", str(NetSession.DEFAULT_PORT)))
+	# DEV MODE: `--dev-host <name>` gives that player the dev stash, only on a
+	# server run from the editor, and keeps this server's accounts apart.
+	var dev_host := _arg(args, "--dev-host", "") if DevMode.available() else ""
+	var accounts := _arg(args, "--accounts", DEV_ACCOUNTS if dev_host != "" else "")
 	var err := start_server(_arg(args, "--world", ""), port, "--no-plaza" not in args,
-			int(_arg(args, "--bots", "-1")), "--squad-spawn" in args, _arg(args, "--accounts", ""),
+			int(_arg(args, "--bots", "-1")), "--squad-spawn" in args, accounts,
 			"--no-rewind" not in args,
 			-1 if "--no-arena" in args else int(_arg(args, "--arena-port", str(port + ARENA_PORT_OFFSET))))
 	if err != OK:
 		push_error("Server: could not listen from port %d (%s)" % [port, error_string(err)])
 		get_tree().quit(1)
+		return
+	if dev_host != "":  # DEV MODE
+		net.stash.dev_accounts.append(net.stash.id_for_name(dev_host))
+		print("Server: dev mode for %s (accounts in %s)" % [dev_host, accounts])
 
 
 ## Starts every session of a server. With a plaza it listens on `port`, and
@@ -799,6 +811,8 @@ func host_and_join(world_id: String) -> void:
 	_stop_local_server()
 	var args := PackedStringArray(["--headless", "--path", ProjectSettings.globalize_path("res://"),
 			"--", "--server", "--world", world_id])
+	if DevMode.active():  # DEV MODE: your account gets everything on your own server
+		args.append_array(["--dev-host", Profile.player_name])
 	_server_pid = OS.create_process(OS.get_executable_path(), args)
 	if _server_pid <= 0:
 		hub.set_online_status("Could not start a server on this computer.")
