@@ -258,8 +258,8 @@ you have.
   you can drop back in and a number key picks one: a quiet drop away from
   everyone, a strongpoint your side holds, or, once a battle is on, right
   beside the heaviest fighting. Enter still lets the world pick for you.
-- Scrip. Kills, warlords and strongpoints pay scrip that you carry. It turns
-  into credits one for one, but only when you bank it at a depot or sign out
+- Scrip. Kills, warlords and strongpoints pay scrip that you carry. It joins
+  your banked balance, which is safe, only when you bank it at a depot or sign out
   alive. Die with it and it lies in your bag for whoever gets there first.
 - World events. Every few minutes, and more often as the war heats up, either
   a supply pod lands with a better haul than any cache, or a warlord marches
@@ -361,26 +361,26 @@ you have.
   losing your connection online leaves your body standing in the world for
   the same time (30 seconds if you were in a fight), so nobody escapes a
   fight by closing the game.
-- Credits and shops. The trader in your base has five shops: the Armory (weapons and attachments), Outfitter
+- Scrip and shops. The trader in your base has five shops: the Armory (weapons and attachments), Outfitter
   (armor, flight rigs, medkits), Garage (bikes), Furnisher (furniture and
-  decorations for your home base) and Tailor (clothing). See "Credits and
+  decorations for your home base) and Tailor (clothing). See "Scrip and
   shops" below.
 
-## Credits and shops
+## Scrip and shops
 
-- **Loot is the money.** You earn credits mostly by selling the loot you get
+- **Loot is the money.** You earn scrip mostly by selling the loot you get
   home, by banking it at a depot or signing out with it, so nothing is earned
   until it survives. Loot sells for its full value.
-- **Kills pay a small bounty**: 20 credits each for a life you sign out of
-  alive, a quarter of that for a life that ends in death. It is small on purpose, so running in with the free
-  scrap kit never beats risking real gear.
-- **Credits are safe, gear is not.** Your balance is never lost on death. But
-  credits only become power as gear, and bought gear drops like any other.
+- **Kills pay a small bounty**: 20 scrip each, carried like all scrip, so it
+  is only yours if you bank it or sign out alive. It is small on purpose, so
+  running in with the free scrap kit never beats risking real gear.
+- **Banked scrip is safe, gear is not.** Your balance is never lost on death. But
+  scrip only becomes power as gear, and bought gear drops like any other.
 - **Shops sell base-level gear only** (Common and Uncommon). Rare gear and
   better can only be found.
 - **Selling gear back pays 40%** of its value, so trading with a shop can
   never make money.
-- A new player starts with 500 credits. Online, the server keeps your balance
+- A new player starts with 500 scrip. Online, the server keeps your balance
   next to your stash and decides every price; your game only asks.
 
 ## The arena
@@ -426,7 +426,7 @@ core/            Shared by every world. Never names a specific world.
   profile/       Stash and stats that persist between raids (local play)
   base/          The home base: a room that puts the stash on show
   account/       Server-owned stashes for online play, and the shared gear rules
-  economy/       Credits: the money rules, the shop list, and the shop screen
+  economy/       Scrip: the money rules, the shop list, and the shop screen
   progression/   Mastery: tracks and variants, XP tracking in a raid, hub panel
   net/           Online play: the server and client ends of a raid
 worlds/

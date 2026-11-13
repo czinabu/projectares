@@ -647,10 +647,8 @@ gains per Mk is TBD (section 13), and kept small either way.
 
 **Scrip, earned everywhere.** The everyday money, used in the hub for
 cosmetic skins, thruster trail colours, watch faces and basic gear. We keep
-the name scrip rather than switching to credits. Today the game has both:
-scrip you carry (at stake until banked) and a safe credits balance it turns
-into. They become one currency called scrip: what you carry in the field is
-at stake, and what you have banked is safe.
+the name scrip, not credits. There is one currency:
+what you carry in the field is at stake, and what you have banked is safe.
 
 - Loot is the money; scrip comes mainly from getting loot home.
 - Shops sell only base-level gear.

@@ -5111,15 +5111,15 @@ func _test_plaza_online() -> void:
 					and main.hud != null and not main.hud.visible and not main.plaza_view.visible,
 					"the shop comes up on the terminal on its counter and the view moves in to it")
 			var panel: Control = main.shop_view.panel
-			var before: int = panel.credits()
+			var before: int = panel.scrip()
 			var stock: Array = panel.find_children("*", "Button", true, false).filter(func(b: Node) -> bool:
 				return (b as Button).text.begins_with("Buy") and not (b as Button).disabled)
-			check(not stock.is_empty() and before > 0, "the stall shows stock and your credits on this server (%d)" % before)
+			check(not stock.is_empty() and before > 0, "the stall shows stock and your scrip on this server (%d)" % before)
 			if not stock.is_empty():
 				(stock[0] as Button).pressed.emit()
 				await _wait_until(func() -> bool:
-					return main.shop_view != null and main.shop_view.panel.credits() < before, 240)
-				check(main.shop_view.panel.credits() < before, "buying at the stall goes through the server")
+					return main.shop_view != null and main.shop_view.panel.scrip() < before, 240)
+				check(main.shop_view.panel.scrip() < before, "buying at the stall goes through the server")
 			main.close_shop()
 			await frames(2)
 			check(main.shop_view == null and main.shop_screen == null and not main.controller.input_blocked
@@ -5263,9 +5263,9 @@ func _test_dev_mode() -> void:
 	check(DevMode.available(), "dev mode can be switched on in a debug run")
 	check(DevMode.raid_cheats().is_empty(), "with dev mode off a raid gets no cheats")
 
-	# The dev stash: every piece of gear, healing in bulk, max credits.
+	# The dev stash: every piece of gear, healing in bulk, max scrip.
 	var stash: Array[String] = []
-	check(DevMode.top_up(stash) == DevEconomy.MAX_CREDITS, "dev mode holds as many credits as a stash can")
+	check(DevMode.top_up(stash) == DevEconomy.MAX_SCRIP, "dev mode holds as many scrip as a stash can")
 	var every_fit := true
 	for id: String in ItemDB.all_ids():
 		if not DevStashRules.storable(id):
@@ -5294,17 +5294,17 @@ func _test_dev_mode() -> void:
 	Profile.save_path = real_path
 	Profile.player_name = "Tester"
 	Profile.add_to_stash(["rifle_carbine", "rifle_carbine", "rifle_carbine"])
-	var real_credits := Profile.credits
+	var real_scrip := Profile.scrip
 	Profile.use_save(dev_path)
-	Profile.credits = DevMode.top_up(Profile.stash)
+	Profile.scrip = DevMode.top_up(Profile.stash)
 	Profile.save()
 	check(Profile.save_path == dev_path and "helm_ember_mk2" in Profile.stash and Profile.player_name == "Tester",
 			"the dev save has everything and keeps who you are")
 	Profile.use_save(real_path)
 	check("helm_ember_mk2" not in Profile.stash and Profile.stash.count("rifle_carbine") >= 3
-			and Profile.credits == real_credits, "switching back finds the real stash untouched")
+			and Profile.scrip == real_scrip, "switching back finds the real stash untouched")
 	Profile.use_save(dev_path)
-	check("helm_ember_mk2" in Profile.stash and Profile.credits == DevEconomy.MAX_CREDITS,
+	check("helm_ember_mk2" in Profile.stash and Profile.scrip == DevEconomy.MAX_SCRIP,
 			"the dev save is kept between switches")
 	Profile.persist = false
 	Profile.save_path = Profile.SAVE_PATH
@@ -5320,8 +5320,8 @@ func _test_dev_mode() -> void:
 	var host_id: String = service.sign_in("Dev Host", StashService.new_secret()).account_id
 	var friend_id: String = service.sign_in("Dev Friend", StashService.new_secret()).account_id
 	var host_view := service.snapshot(host_id)
-	check("helm_ember_mk2" in host_view.stash and host_view.credits == DevEconomy.MAX_CREDITS,
-			"a dev server gives the host's account everything and max credits")
+	check("helm_ember_mk2" in host_view.stash and host_view.scrip == DevEconomy.MAX_SCRIP,
+			"a dev server gives the host's account everything and max scrip")
 	check("helm_ember_mk2" not in service.snapshot(friend_id).stash, "other players on it get nothing extra")
 	var host_account = service.load_account(host_id)
 	host_account.stash.erase("wings_glide")
@@ -6315,7 +6315,7 @@ func _test_home_base() -> void:
 
 # --- Arena ---------------------------------------------------------------------
 
-## Credits in a dictionary, for arena tests that need several wallets.
+## Scrip in a dictionary, for arena tests that need several wallets.
 class FakeBank:
 	extends Arena.Bank
 
@@ -6323,13 +6323,13 @@ class FakeBank:
 	var wins := {}
 	var losses := {}
 
-	func credits(key: String) -> int:
+	func scrip(key: String) -> int:
 		return money.get(key, 0)
 
 	func change(key: String, delta: int) -> bool:
-		if credits(key) + delta < 0:
+		if scrip(key) + delta < 0:
 			return false
-		money[key] = credits(key) + delta
+		money[key] = scrip(key) + delta
 		return true
 
 	func record(key: String, won: bool) -> void:
@@ -6487,7 +6487,7 @@ func _test_arena() -> void:
 	await frames(2)
 	check(not Arena.ArenaVenue.in_pit(me.global_position), "spectators who drop into the pit are put back in the stands")
 	arena.ask("bet", {"side": 0, "amount": 10})
-	check(Profile.credits == StashService.Economy.STARTING_CREDITS, "bets are refused when no bout is being called")
+	check(Profile.scrip == StashService.Economy.STARTING_SCRIP, "bets are refused when no bout is being called")
 	arena.ask("practice")
 	check(arena.queue.size() == 1 or arena.bout != null, "you can ask for a practice bout")
 	await _arena_phase(arena, Arena.Phase.CALLING, 30)
@@ -6495,7 +6495,7 @@ func _test_arena() -> void:
 	check(board.phase == "calling" and board.bout.names[0] == "You" and board.bout.names[1] != "",
 			"the bout is called with both fighters' names")
 	arena.ask("bet", {"side": 0, "amount": 10})
-	check(Profile.credits == StashService.Economy.STARTING_CREDITS and not arena.bout.bets.has("local"),
+	check(Profile.scrip == StashService.Economy.STARTING_SCRIP and not arena.bout.bets.has("local"),
 			"fighters cannot bet on their own bout")
 	await _arena_phase(arena, Arena.Phase.FIGHT)
 	var bot: Actor = arena.bout.fighters[1]
@@ -6519,13 +6519,13 @@ func _test_arena() -> void:
 	await _arena_phase(arena, Arena.Phase.CALLING, 60)
 	check(arena.bout != null and arena.bout.kind == "exhibition", "with nothing queued, bot gladiators put on an exhibition")
 	arena.ask("bet", {"side": 1, "amount": 50})
-	check(Profile.credits == StashService.Economy.STARTING_CREDITS - 50 and arena.bout.pools[1] == 50,
+	check(Profile.scrip == StashService.Economy.STARTING_SCRIP - 50 and arena.bout.pools[1] == 50,
 			"the crowd can bet while a bout is being called")
 	arena.ask("bet", {"side": 0, "amount": 50})
 	check(arena.bout.pools[0] == 0, "you cannot back both sides")
 	arena.exhibition_delay = -1.0
 	await _win_bout(arena, 0)
-	check(Profile.credits == StashService.Economy.STARTING_CREDITS, "a wager nobody took the other side of is refunded")
+	check(Profile.scrip == StashService.Economy.STARTING_SCRIP, "a wager nobody took the other side of is refunded")
 	arena.queue_free()
 	await frames(3)
 	check(Profile.stash == stash_before, "leaving the arena takes nothing from the stash")
@@ -6665,9 +6665,9 @@ func _test_online_arena() -> void:
 	service.persist = false
 	var made := service.sign_in("Wren", StashService.new_secret())
 	var stash_before: Array = service.snapshot(made.account_id).stash
-	check(service.credits_of("wren") == StashService.Economy.STARTING_CREDITS, "a new account starts with credits")
-	check(not service.change_credits("wren", -10000) and service.change_credits("wren", -50)
-			and service.credits_of("wren") == StashService.Economy.STARTING_CREDITS - 50, "credits never go below zero")
+	check(service.scrip_of("wren") == StashService.Economy.STARTING_SCRIP, "a new account starts with scrip")
+	check(not service.change_scrip("wren", -10000) and service.change_scrip("wren", -50)
+			and service.scrip_of("wren") == StashService.Economy.STARTING_SCRIP - 50, "scrip never go below zero")
 	service.equip("wren", "primary", "rifle_carbine")
 	var deployed := service.deploy("wren", Arena.ArenaVenue.new())
 	check(deployed.ok and "rifle_carbine" in deployed.kit and service.snapshot("wren").stash == stash_before
@@ -6689,8 +6689,8 @@ func _test_online_arena() -> void:
 	check(not ash.account.get("deployed", true), "nothing left the stash to enter the arena")
 	var ash_arena: Arena = ash.raid
 	await _wait_until(func() -> bool: return ash_arena.board.get("players", []).size() == 1, 240)
-	check(ash_arena.board.get("you", {}).get("credits", 0) == StashService.Economy.STARTING_CREDITS
-			and ash_arena.board.players[0].name == "Brix", "each player gets the board, with their credits")
+	check(ash_arena.board.get("you", {}).get("scrip", 0) == StashService.Economy.STARTING_SCRIP
+			and ash_arena.board.players[0].name == "Brix", "each player gets the board, with their scrip")
 	var notices: Array[String] = []
 	ash.raid.player.notice.connect(func(text: String) -> void: notices.append(text))
 	ash_arena.ask("bet", {"side": 0, "amount": 10})
@@ -6705,7 +6705,7 @@ func _test_online_arena() -> void:
 	await _wait_until(func() -> bool: return bex_arena.board.get("phase", "") == "calling", 240)
 	check(bex_arena.board.get("phase", "") == "calling" and bex_arena.board.bout.names == ["Ashe", "Brix"]
 			and bex_arena.board.bout.stake == 50, "the server calls the duel with both stakes in the purse")
-	check(int(bex_arena.board.get("you", {}).get("credits", 0)) == StashService.Economy.STARTING_CREDITS - 25,
+	check(int(bex_arena.board.get("you", {}).get("scrip", 0)) == StashService.Economy.STARTING_SCRIP - 25,
 			"the stake is taken from the server's account")
 	OS.kill(pid)
 	await _leave(ash)
