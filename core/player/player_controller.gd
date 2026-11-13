@@ -219,9 +219,14 @@ func _unhandled_input(event: InputEvent) -> void:
 
 ## Sideways turn `turn` (radians, rightward) with the watch up: the eyes take
 ## it across the card first, and what is left over turns the view. Returns
-## the turn left for the view. With the watch down it all turns the view.
+## the turn left for the view. With the watch down, or while aiming or
+## firing, it all turns the view.
 func glance(turn: float) -> float:
 	if not wrist_raised or actor == null or not is_instance_valid(actor) or actor.is_dead or glance_span <= 0.0:
+		return turn
+	# In a fight the view comes first: while aiming or firing, the eyes stay put.
+	var weapon := actor.get_active_weapon()
+	if (weapon != null and weapon.is_aiming()) or Input.is_action_pressed("fire"):
 		return turn
 	var wanted := watch_glance + turn / glance_span * 2.0
 	watch_glance = clampf(wanted, -1.0, 1.0)

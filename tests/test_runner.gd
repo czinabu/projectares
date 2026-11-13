@@ -938,6 +938,10 @@ func _test_main_flow() -> void:
 	var small := controller.glance(controller.glance_span * 0.5)
 	check(is_zero_approx(small) and is_zero_approx(controller.watch_glance),
 			"a small glance moves only the eyes, not the view")
+	Input.action_press("fire")
+	check(is_equal_approx(controller.glance(0.05), 0.05) and is_zero_approx(controller.watch_glance),
+			"while firing, the mouse turns the view, not the eyes")
+	Input.action_release("fire")
 	controller.toggle_view()
 	await frames(40)
 	check(wrist.get_parent() == controller.camera and arm.visible and holo.visible,
