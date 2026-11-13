@@ -208,6 +208,7 @@ func _open_base(stash: Array, loadout: Dictionary, owner_name: String) -> void:
 	base.station_requested.connect(open_station)
 	Look.set_appearance(base.player, _my_look())
 	controller = PlayerController.new()
+	controller.phone_out = phone != null and phone.is_open
 	controller.setup(base.player)
 	base.add_child(controller)
 	base_hud = BaseHudScript.new()
@@ -421,6 +422,7 @@ func _attach_player_view() -> void:
 		# Solo: every new life wears the chosen look. Online the server sends it.
 		Look.set_appearance(raid.player, _my_look())
 	controller = PlayerController.new()
+	controller.phone_out = phone != null and phone.is_open
 	controller.setup(raid.player)
 	controller.sign_out_requested.connect(func() -> void: _on_sign_out_requested.call_deferred())
 	controller.redeploy_requested.connect(func() -> void: _on_redeploy_requested.call_deferred())
@@ -592,14 +594,15 @@ func _setup_phone() -> void:
 	phone.mirror_changed.connect(_on_mirror_changed)
 
 
-## Hands on the phone: the character stops and the mouse is free. Putting it
-## away in a raid takes the mouse back.
+## Hands on the phone: the character stops, raises it (everyone sees) and the
+## mouse is free. Putting it away in a raid takes the mouse back.
 func _on_phone_opened(open: bool) -> void:
 	if controller != null and is_instance_valid(controller):
 		# A station screen still open behind the phone keeps the mouse.
 		var arena_hud := raid.get_node_or_null("ArenaHud") if raid != null else null
 		var screen_open: bool = hub.station != "" or shop_view != null or (arena_hud != null and arena_hud.booth_open)
 		controller.input_blocked = open or screen_open
+		controller.phone_out = open
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if open or screen_open else Input.MOUSE_MODE_CAPTURED
 
 

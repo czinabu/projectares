@@ -20,6 +20,10 @@ extends Node3D
 const BODY_LAYER := 19
 ## Render layer of the mirror itself, which its own camera leaves out.
 const MIRROR_LAYER := 18
+## Render layer of the phone held up to the viewer's eyes (`Phone`), which
+## the mirror's camera leaves out: it is the viewer's close-up, not a thing in
+## the room.
+const HELD_LAYER := 17
 const ALL_LAYERS := 0xFFFFF
 
 ## Size of the glass in metres.
@@ -147,7 +151,7 @@ func _build() -> void:
 	add_child(_viewport)
 	_camera = Camera3D.new()
 	_camera.projection = Camera3D.PROJECTION_FRUSTUM
-	_camera.cull_mask = ALL_LAYERS & ~(1 << (MIRROR_LAYER - 1))
+	_camera.cull_mask = ALL_LAYERS & ~(1 << (MIRROR_LAYER - 1)) & ~(1 << (HELD_LAYER - 1))
 	_camera.top_level = true
 	_viewport.add_child(_camera)
 	_camera.current = true

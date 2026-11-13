@@ -46,6 +46,10 @@ var invert_y := false
 ## Set while the phone is open: the character stands still and the mouse is
 ## left alone, so you can tap and type.
 var input_blocked := false
+## Set while the phone is out (`Main`): the character holds it up, which
+## everyone else sees (`ActorCommand.phone`), and the weapon is put away in
+## the view until the phone is.
+var phone_out := false
 ## Set while a mirror stands in front of you (1-20, 0 for none). In first
 ## person your body stays drawn on this render layer, which this camera leaves
 ## out, so the mirror's camera can still show it.
@@ -386,6 +390,7 @@ func _physics_process(delta: float) -> void:
 		return
 	var cmd := actor.cmd
 	cmd.clear_one_shots()
+	cmd.phone = phone_out
 	if input_blocked:
 		# Hands on the phone: let go of everything, keep facing the same way.
 		cmd.move = Vector2.ZERO
@@ -529,7 +534,7 @@ func _process(delta: float) -> void:
 	# In first-person the weapon is held in front of the camera; otherwise it
 	# rests on the body, where the Actor poses it. In front of a mirror the
 	# hands are on the phone, so it rests on the body there too.
-	first_person = first_person and not for_mirror
+	first_person = first_person and not for_mirror and not phone_out
 	actor.hand_override = first_person
 	var sight := _sight_of(weapon) if first_person else null
 	_sight_blend = move_toward(_sight_blend, 1.0 if aiming and sight != null else 0.0, delta * 7.0)
