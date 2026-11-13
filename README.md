@@ -104,7 +104,10 @@ click. A portal unfolds in front of you and stays open about 15 seconds:
 walk through it. Online, in the plaza, your clanmates can walk through a
 portal you open too, and you all land at the world's gate outpost. Portals
 only open in safe places (your base and the plaza), never in a fight:
-coming back still means signing out.
+coming back still means signing out. Inside a world's gate outpost the
+portal icon offers one portal, home: opening it signs you out, the ring
+unfolds over the countdown, and squadmates who step into it sign out and
+follow.
 
 In your own base you always wear your loadout: equip something and it is on
 you at once, and you come home still wearing it. A **mirror** hangs on the
