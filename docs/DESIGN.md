@@ -473,7 +473,12 @@ ceiling in about 7 s, Mk2 13 s, Mk3 19 s; boots kick to about 25 m, 46 m and
 Flying controls (Caleb's call): the keys fly every rig and the mouse only
 looks and aims. Space climbs, kicks, launches or glides (by rig), C sinks or
 coasts. Shift + a move key is an air dash that way on every rig, for a little
-heat (Shift alone dashes forward); holding Shift + W on a jetpack keeps
+heat (Shift alone dashes forward). A jetpack hovers only while aim (right
+mouse) is held (Caleb's call: no hover that stays on by itself); let go and
+you fall, or climb on held Space. Pressing Shift in the air on a jetpack
+with a boost (Shift or Shift + W) boosts with no hover first: it speeds you
+up head first along the view's heading and the body lies out prone as the
+speed builds, the same body in first and third person; holding Shift keeps
 boosting. Wings are the exception to the mouse only looking: they fly
 where you look, like a bird, with momentum (hold V to free look while
 they fly straight on). Turns cost speed and pulling up

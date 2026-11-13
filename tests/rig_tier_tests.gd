@@ -217,14 +217,13 @@ static func _test_raid_ground(t: Node) -> void:
 	await t.frames(2)
 	t.check(p.flight.altitude_known and absf(p.flight.altitude - 40.0) < 2.0,
 			"the rig knows its height over the ground (%.1f m)" % p.flight.altitude)
-	p.cmd.jump_pressed = true
-	await t.frames(1)
-	p.cmd.jump_pressed = false
+	p.cmd.secondary = true
 	p.cmd.jump = true
 	await t.frames(30)
 	t.check(p.flight.is_hovering and p.velocity.y <= 0.05,
 			"above its ceiling a Mk1 jetpack holds you up but climbs no higher")
 	p.cmd.jump = false
+	p.cmd.secondary = false
 	raid.queue_free()
 	await t.frames(2)
 

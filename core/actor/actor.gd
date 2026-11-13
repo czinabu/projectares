@@ -373,9 +373,9 @@ func _simulate_movement(delta: float) -> void:
 		horizontal = horizontal.move_toward(wish * flight.skim_speed, flight.skim_accel * delta)
 	elif flight.is_gliding:
 		horizontal = _glide_velocity(horizontal, wish, yaw_basis, delta)
-	elif flight.is_hovering and flight.boost_speed > 0.0 and cmd.sprint and cmd.move.y > 0.0:
+	elif _wants_boost(on_floor, staggered):
 		pass  # Boosting: `_simulate_hover` flies the whole velocity.
-	elif flight.is_hovering:
+	elif _wants_hover(on_floor, staggered):
 		horizontal = _cruise_velocity(horizontal, wish, delta)
 	elif wish.length() > 0.01:
 		# In the air you can steer but you keep your momentum if you let go.
@@ -415,12 +415,10 @@ func _simulate_movement(delta: float) -> void:
 				push *= clampf(1.0 - along / (flight.burst_push * 2.0), 0.0, 1.0)
 				velocity.x += push.x
 				velocity.z += push.z
-		# A tap in the air lights a jetpack's jets and keeps them lit.
-		if flight.can_hover() and not flight.overheated:
-			flight.is_hovering = true
-	if on_floor or staggered or not flight.can_hover() or flight.overheated:
-		flight.is_hovering = false
-	flight.is_boosting = flight.is_hovering and flight.boost_speed > 0.0 and cmd.sprint and cmd.move.y > 0.0
+	# A jetpack's jets hold you up only while aim is held, and a boost lights
+	# them too (Caleb's call: no hover that stays on by itself).
+	flight.is_boosting = _wants_boost(on_floor, staggered)
+	flight.is_hovering = flight.is_boosting or _wants_hover(on_floor, staggered)
 	flight.is_coasting = false
 	if flight.is_hovering:
 		_simulate_hover(delta)
@@ -471,6 +469,29 @@ func _simulate_movement(delta: float) -> void:
 		_slide_landing()
 		landed.emit(maxf(fall_speed, 0.0))
 	_was_on_floor = now_on_floor
+
+
+## A jetpack hovers in the air only while aim (`ActorCommand.secondary`,
+## the right mouse button) is held: let go and you fall, or climb on held jump.
+func _wants_hover(on_floor: bool, staggered: bool) -> bool:
+	return cmd.secondary and not on_floor and not staggered \
+			and flight.can_hover() and not flight.overheated
+
+
+## A jetpack boosts in the air on sprint, forward or with no move key
+## (Shift with a strafe or back key is only the air dash): the jets light
+## and speed you up head first along the view's heading, and the skin lays
+## the body out prone as the speed builds (`ActorSkin._update_glide`). It
+## needs no hover first. A press in the air starts it (so a sprinting jump
+## off the ground stays a jump) and holding sprint keeps it going; with the
+## jets already lit (aim held, or a boost running) holding it is enough,
+## which is also how a remote player's boost follows the replicated jets.
+func _wants_boost(on_floor: bool, staggered: bool) -> bool:
+	if on_floor or staggered or flight.boost_speed <= 0.0 or not flight.can_hover() or flight.overheated:
+		return false
+	if not cmd.sprint or not (cmd.move.y > 0.0 or cmd.move.length() < 0.1):
+		return false
+	return cmd.sprint_pressed or flight.is_hovering
 
 
 ## Jets lit: the rig carries your weight. Jump climbs, descend sinks, and a
