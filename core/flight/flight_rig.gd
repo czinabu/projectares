@@ -25,11 +25,32 @@ signal burst_fired
 const CRUISE_SPEED := 15.0
 ## How far past `max_heat` a burst or pulse may land (it then overheats).
 const BURST_SLACK := 0.05
+## Below its ceiling a rig's climb eases off over this many meters, so the
+## climb comes to rest on the ceiling instead of hitting it.
+const CEILING_EASE := 4.0
+## A kick, pulse or launch that could lift you less than this (m/s) under the
+## ceiling is refused rather than spent.
+const MIN_LIFT := 3.0
 
 var item_id := ""
 var display_name := "No rig"
 ## False until a rig item is equipped.
 var enabled := false
+
+## The rig's tier (Mk1, Mk2, ...). Higher tiers lift higher and run cooler
+## but cruise at the same speed (`ItemDB.RIG_CEILINGS`).
+var tier := 1
+## The highest the rig can lift you, in meters over the world's ground (a
+## roof under you does not count, so roof-hopping never stacks it): jets
+## stop climbing there and a kick, pulse or launch tops out on it. It only
+## limits lift; dropping off something higher is fine, and the rig still
+## holds or glides you there. 0: no ceiling.
+var ceiling := 0.0
+## Set by the `Actor` every tick in the air: how high you are over the
+## world's ground, and whether the world says where that is
+## (`Actor.ground_level`). Where it does not, there is no ceiling.
+var altitude := 0.0
+var altitude_known := false
 
 ## The defaults are the free Mk1 jetpack; other rigs set what differs.
 var thrust_accel := 36.0
@@ -269,23 +290,27 @@ func _recover() -> void:
 
 
 ## An air jump. Returns the upward speed to set, or zero if the rig has no
-## burst or is overheated.
-func try_burst() -> float:
+## burst, is overheated or is too close under its ceiling (`cap`, from
+## `lift_cap`: the speed is cut so the jump tops out on the ceiling).
+func try_burst(cap := INF) -> float:
 	if not enabled or overheated or burst_velocity <= 0.0 or (launch_once and launched):
 		return 0.0
-	if not _spend(burst_heat):
+	if minf(cap, burst_velocity) < MIN_LIFT or not _spend(burst_heat):
 		return 0.0
 	launched = true
 	burst_fired.emit()
-	return burst_velocity
+	return minf(burst_velocity, cap)
 
 
-## A wing pulse while gliding. Returns the upward speed to set, or zero.
-func try_pulse() -> float:
-	if not enabled or overheated or pulse_velocity <= 0.0 or not _spend(pulse_heat):
+## A wing pulse while gliding. Returns the upward speed to set, or zero;
+## `cap` limits it under the ceiling like a burst.
+func try_pulse(cap := INF) -> float:
+	if not enabled or overheated or pulse_velocity <= 0.0 or minf(cap, pulse_velocity) < MIN_LIFT:
+		return 0.0
+	if not _spend(pulse_heat):
 		return 0.0
 	burst_fired.emit()
-	return pulse_velocity
+	return minf(pulse_velocity, cap)
 
 
 ## Takes `cost` heat if it fits under the limit, with a little slack
@@ -329,6 +354,27 @@ func controls_hint() -> String:
 	if air_dash_speed > 0.0:
 		parts.append("Shift + a move key dashes that way in the air%s" % (" (gliding, Shift boosts ahead and Shift + S climbs)" if can_glide() else ""))
 	return ", ".join(parts)
+
+
+## How much of a full climb the ceiling still allows, 0 to 1: 1 well under
+## it, easing to 0 over the last `CEILING_EASE` meters.
+func climb_room() -> float:
+	if ceiling <= 0.0 or not altitude_known:
+		return 1.0
+	return clampf((ceiling - altitude) / CEILING_EASE, 0.0, 1.0)
+
+
+## The most upward speed a kick, pulse or launch may give so that, under
+## `gravity`, it tops out on the ceiling (INF with no ceiling).
+func lift_cap(gravity: float) -> float:
+	if ceiling <= 0.0 or not altitude_known:
+		return INF
+	return sqrt(2.0 * gravity * maxf(0.0, ceiling - altitude))
+
+
+## True once the rig can lift you no higher.
+func at_ceiling() -> bool:
+	return climb_room() <= 0.0
 
 
 func heat_fraction() -> float:
