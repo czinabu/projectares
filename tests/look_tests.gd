@@ -353,7 +353,7 @@ static func _check_holster(t: Node, tag: String, player: Actor, skin: Node) -> v
 		skin._process(skin.between_time)
 		t.check(blade_visual.visible, tag + "the blade is drawn after the gun is put away")
 		t.check(skin.arm.override_point.x < 0.0, tag + "drawing the blade reaches to the left hip")
-		var folds: bool = Look._melee_pick(blade)[5] != ""
+		var folds: bool = Look._melee_pick(blade)[4] != ""
 		if folds:
 			t.check(skin._extend.get(blade, 1.0) < 1.0, tag + "a drawn blade is still sliding out of its hilt")
 		skin._process(skin.return_time + 0.05)

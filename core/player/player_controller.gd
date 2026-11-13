@@ -123,7 +123,7 @@ var flick_threshold := 45.0
 ## How quickly old mouse movement stops counting toward a flick.
 var flick_decay := 9.0
 var stance := 0
-var stance_control := StanceControl.MOUSE
+var stance_control := StanceControl.MOVE
 
 ## The toy vehicle in the hand (an item id off the watch), or "". While one
 ## is held the weapon is put away: fire throws it, aim puts it back.

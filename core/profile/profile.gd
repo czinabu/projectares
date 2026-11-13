@@ -40,7 +40,7 @@ var crates_granted: Array[String] = []
 ## Weapon, ability and frame mastery. Never lost on death.
 var mastery := MasteryBook.new()
 ## How the melee side is picked: "mouse" (flick) or "move" (movement keys).
-var melee_control := "mouse"
+var melee_control := "move"
 ## Shown to other players online, and the last server address joined.
 var player_name := "Raider"
 var last_server := "127.0.0.1"
@@ -318,7 +318,7 @@ func load_profile() -> void:
 		if typeof(crate) == TYPE_STRING:
 			crates_granted.append(crate)
 	mastery.load_dict(data.get("mastery", {}))
-	melee_control = "move" if data.get("melee_control", "mouse") == "move" else "mouse"
+	melee_control = "mouse" if data.get("melee_control", "move") == "mouse" else "move"
 	player_name = str(data.get("player_name", "Raider")).left(20)
 	last_server = str(data.get("last_server", "127.0.0.1")).left(80)
 	home_server = str(data.get("home_server", "")).left(80)

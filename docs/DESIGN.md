@@ -349,6 +349,42 @@ how fast you cruise, so a mixed squad still keeps pace (section 5).
   onto someone below).
 - Stats on `MeleeWeapon`, so each weapon can tune range and pull.
 
+### Melee against guns
+
+A world full of guns needs melee to be the best answer in some moments, not a
+backup (Caleb's call). Controls follow a Jedi Academy style baseline (Caleb's
+call, mechanics only): the movement keys pick the swing's side by default
+(strafe left or right for a side swing, forward for overhead; B switches to
+the mouse flick), a tap is a light, a hold is a heavy, and move-and-attack
+combinations are the special moves.
+
+- **Dash-strike.** A heavy started while sprinting closes up to about 9 m on
+  the foe in front within the heavy's windup, for extra stamina. It keeps the
+  full visible windup, so it can still be parried.
+- **Back strike.** Moving back with a foe right behind you, a light is a
+  reverse stab behind you for extra damage.
+- **Timed bullet deflect.** A guard raised just in time (about 0.3 s) deflects
+  every small-arms round from the front, each one costing stamina, so sustained
+  fire breaks it. A guard raised again straight after the last gets no
+  deflect (a short cooldown), so it is timed, not held up as a shield. After
+  the window a held guard only turns aside half of each round. Marksman
+  rounds, power weapons and blasts are never deflected or blocked (Caleb's
+  call: small arms only).
+- **Blades ignore armor.** Melee hits go straight past armor plates.
+- **Silent kills.** Gunfire is heard by patrolling bots within earshot (much
+  less with a suppressor), and they come to look. Blades make no noise, so a
+  melee kill does not bring the next patrol.
+- **One-handed and two-handed.** Every melee weapon is one or the other (an
+  item tag, which the hands' grip also reads). One-handers (swords, blades,
+  knives, axes) move faster than empty hands, the knife fastest. Two-handers
+  (the hammer, the spear) move slower, and their heavies stagger and tear
+  armor off, which the next gun shots benefit from.
+- **Hands on the weapon.** A one-hander sits in the weapon hand, a two-hander
+  takes the off hand on the handle, identical in first and third person. The
+  grip points come from each model (the aim-down-sights grip work).
+- **Later:** tight interiors and corners in the worlds where guns are clumsy,
+  and more ammo and reload pressure on guns. Melee bots using the dash-strike.
+
 ### Gadgets
 
 The slot exists with three chips (Phase Step, Kinetic Barrier, Shock Pulse).

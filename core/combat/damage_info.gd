@@ -15,6 +15,15 @@ var position := Vector3.ZERO
 var direction := -1
 ## A guard that stops this hit pays this many times the usual stamina.
 var guard_mult := 1.0
+## Share of this hit that goes straight past armor (0 to 1). Blades slip
+## between plates, so melee ignores armor (`MeleeWeapon.armor_pierce`).
+var armor_pierce := 0.0
+## Armor torn off by this hit, as a share of its amount, on top of what the
+## armor soaks: a two-handed weapon breaks plates for the guns that follow.
+var armor_break := 0.0
+## The item that fired or swung it, or "" (a gun sets it). A blade's guard
+## reads its tags to tell small arms from rounds it cannot stop.
+var weapon_id := ""
 var blocked := false
 ## The hit landed on the target's head.
 var headshot := false
