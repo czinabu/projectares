@@ -104,6 +104,8 @@ canopy, holo signs over every kiosk and floating holo-ads.
 - Loadouts can be changed freely here, and only here: the base is where you
   suit up. A suit-up bay beside the launch pad fits your loadout onto you in
   view before you deploy.
+- A garage off the room for the bikes you own, and a firing range behind the
+  back wall (the first of the upgrades below, built early as a greybox).
 
 **Upgrades** turn the base from a display room into a headquarters, in this
 order:

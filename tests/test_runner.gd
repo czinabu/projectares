@@ -5937,6 +5937,7 @@ func _test_suit_up(base: HomeBase) -> void:
 	check(base.suit_bay.get_prompt().begins_with("[F] Suit up again"), "a changed loadout asks you to suit up again")
 	base.show_gear(base.stash, kept)
 	await frames(2)
+	await _test_garage_and_range(base)
 	var visitor := HomeBase.new()
 	visitor.read_only = true
 	visitor.show_gear(["rifle_carbine"], {"primary": "rifle_carbine"})
@@ -5949,6 +5950,72 @@ func _test_suit_up(base: HomeBase) -> void:
 			"a visitor cannot use someone else's bay")
 	visitor.queue_free()
 	await frames(2)
+
+
+## Bikes park in the garage off the right wall; behind the back wall the
+## firing range frees a suited player's weapons and scores what they hit.
+func _test_garage_and_range(base: HomeBase) -> void:
+	print("Home base garage and firing range")
+	var parked := true
+	for i in int(BaseLayout.KINDS["bay"]["spots"]):
+		parked = parked and base.in_garage(base.spot_transform("bay", i).origin)
+	check(parked and base.has_node("GarageSign"), "every garage bay is in the garage off the room")
+	var clear := true
+	for id: String in HomeBase.STATIONS:
+		var at: Vector3 = HomeBase.STATIONS[id]["at"]
+		clear = clear and base.inside(at) and not base.in_garage(at) and not base.in_armory(at) and not base.in_range(at)
+	check(clear, "the consoles stand in the main room, clear of the garage, armory and range")
+	var all_on_range := true
+	for target in base.targets:
+		all_on_range = all_on_range and base.in_range(target.home)
+	check(base.targets.size() >= 6 and all_on_range, "the range has targets down its lane (%d)" % base.targets.size())
+	var kinds := {}
+	for target in base.targets:
+		kinds[target.kind] = true
+	check(kinds.has("plate") and kinds.has("slider") and kinds.has("drone"), "standing, sliding and flying targets")
+	var p := base.player
+	check(p.weapons_locked, "weapons stay locked in the main room")
+	# Walk through the door in the back wall.
+	p.global_position = base.to_global(Vector3(0, 0.1, -6.5))
+	p.velocity = Vector3.ZERO
+	p.cmd.yaw = 0.0
+	p.cmd.pitch = 0.0
+	p.cmd.move = Vector2(0, 1)
+	await frames(60)
+	p.cmd.move = Vector2.ZERO
+	await frames(2)
+	check(base.in_range(base.to_local(p.global_position)), "you can walk through the back wall into the range")
+	check(not p.weapons_locked, "past the line your weapons are free")
+	var gun := p.get_active_weapon() as Gun
+	check(gun != null and gun.reserve_ammo >= gun.mag_size * 4, "and never run dry")
+	# Shoot the nearest plate.
+	var plate: HomeBase.RangeTarget = base.targets[0]
+	var line_z := -base.room_size.z * 0.5 - base.firing_line
+	p.global_position = base.to_global(Vector3(plate.home.x, 0.1, line_z - 0.8))
+	p.velocity = Vector3.ZERO
+	await frames(2)
+	var eye := p.global_position + Vector3(0, p.eye_height, 0)
+	var dir := (plate.to_global(plate.centre) - eye).normalized()
+	p.cmd.yaw = atan2(-dir.x, -dir.z)
+	p.cmd.pitch = asin(dir.y)
+	p.cmd.aim_dir = dir
+	await frames(10)
+	var shots_before := base.range_shots
+	for i in 3:
+		p.cmd.primary_pressed = true
+		p.cmd.primary = true
+		await frames(1)
+		p.cmd.primary_pressed = false
+		p.cmd.primary = false
+		await frames(20)
+	check(base.range_shots > shots_before and base.range_hits > 0 and plate.hits > 0,
+			"shots on the range are counted and hits on a plate score (%d shots, %d hits)" % [base.range_shots, base.range_hits])
+	check("HITS" in base.range_board.text and base.range_last != "", "the board over the lane keeps score")
+	# Back into the room: locked again.
+	p.global_position = base.to_global(Vector3(0, 0.1, 2.0))
+	p.velocity = Vector3.ZERO
+	await frames(3)
+	check(p.weapons_locked, "weapons lock again back in the room")
 
 
 func _test_home_base() -> void:
