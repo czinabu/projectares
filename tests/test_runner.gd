@@ -19,6 +19,7 @@ const RigTierTests := preload("res://tests/rig_tier_tests.gd")
 const EconomyTests := preload("res://tests/economy_tests.gd")
 const MeleeArsenalTests := preload("res://tests/melee_arsenal_tests.gd")
 const MeleeFeelTests := preload("res://tests/melee_feel_tests.gd")
+const MeleeViabilityTests := preload("res://tests/melee_viability_tests.gd")
 const CustomizerTests := preload("res://tests/customizer_tests.gd")
 const BattlefieldTests := preload("res://tests/battlefield_tests.gd")
 const VisorTests := preload("res://tests/visor_tests.gd")
@@ -235,6 +236,7 @@ func _run() -> void:
 	await _test_directional_melee()
 	await _test_melee_arsenal()
 	await _test_melee_feel()
+	await _test_melee_viability()
 	await _test_flight_rigs_and_abilities()
 	await _test_rig_tiers()
 	await _test_vehicle_driving()
@@ -330,6 +332,10 @@ func _test_melee_arsenal() -> void:
 
 func _test_melee_feel() -> void:
 	await MeleeFeelTests.run(self)
+
+
+func _test_melee_viability() -> void:
+	await MeleeViabilityTests.run(self)
 
 
 func _test_economy() -> void:
@@ -895,17 +901,21 @@ func _test_main_flow() -> void:
 	check(p.get_active_weapon() is MeleeWeapon and not p.is_on_floor(),
 			"real input reaches the actor (blade out, airborne)")
 	check(not controller.is_third_person(), "camera stays put when using the blade or flying")
-	# Melee side from the movement keys, once the player switches to them.
+	# Melee side from the movement keys by default (Caleb: Jedi Academy
+	# style controls as the baseline), the mouse flick after switching.
 	Input.action_press("move_left")
 	await frames(5)
-	check(p.cmd.stance == MeleeWeapon.Dir.OVERHEAD, "movement keys do not change the melee side by default")
-	controller.toggle_stance_control()
-	await frames(5)
 	check(p.cmd.stance == MeleeWeapon.Dir.LEFT and Profile.melee_control == "move",
-			"after switching, strafing picks the melee side and the choice is remembered")
+			"by default strafing picks the melee side")
 	Input.action_release("move_left")
 	controller.toggle_stance_control()
-	check(Profile.melee_control == "mouse", "switching again goes back to the mouse flick")
+	Input.action_press("move_right")
+	await frames(5)
+	check(p.cmd.stance == MeleeWeapon.Dir.LEFT and Profile.melee_control == "mouse",
+			"after switching to the mouse flick, the movement keys leave the side alone, and the choice is remembered")
+	Input.action_release("move_right")
+	controller.toggle_stance_control()
+	check(Profile.melee_control == "move", "switching again goes back to the movement keys")
 	# Riding pulls the camera back without touching the on-foot choice.
 	var bike = main.raid.spawn_vehicle("bike_scrapper", p.global_position + Vector3(3, 0.3, 0), 0.0)
 	await frames(5)

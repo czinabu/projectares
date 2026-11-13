@@ -137,19 +137,18 @@ const GUN_GLOW := [
 	["rifle", Color(0.25, 0.9, 1.0)],
 ]
 ## Melee models picked by item tag, first match wins: file, length in meters,
-## how far up from the pommel the hand grips it, whether it takes both hands,
-## and how it folds away when holstered (see `set_extend`): "blade" draws the
+## how far up from the pommel the hand grips it, and how it folds away when holstered (see `set_extend`): "blade" draws the
 ## blade into the hilt, "telescope" slides the shaft into itself, "" keeps
 ## its shape. No file means the model is built in code (see `_spear_model`).
 const MELEE_MODELS := [
-	["hammer", "Hammer.glb", 1.15, 0.3, true, ""],
-	["knife", "Knife.glb", 0.5, 0.1, false, "blade"],
-	["axe", "Axe.glb", 0.85, 0.12, false, ""],
-	["spear", "", 2.1, 0.75, true, "telescope"],
-	["starter", "Sword.glb", 1.15, 0.13, false, "blade"],
-	["blade", "Katana.glb", 1.2, 0.14, false, "blade"],
+	["hammer", "Hammer.glb", 1.15, 0.3, ""],
+	["knife", "Knife.glb", 0.5, 0.1, "blade"],
+	["axe", "Axe.glb", 0.85, 0.12, ""],
+	["spear", "", 2.1, 0.75, "telescope"],
+	["starter", "Sword.glb", 1.15, 0.13, "blade"],
+	["blade", "Katana.glb", 1.2, 0.14, "blade"],
 ]
-const DEFAULT_MELEE := ["", "Sword.glb", 1.15, 0.13, false, "blade"]
+const DEFAULT_MELEE := ["", "Sword.glb", 1.15, 0.13, "blade"]
 const GUN_LENGTH := 0.72
 
 ## False on a headless server: nothing is dressed and no art is loaded.
@@ -1347,7 +1346,7 @@ func _melee_model(weapon: Weapon) -> Node3D:
 	_fit(model, WEAPONS + pick[1], pick[2], true)
 	_tech_melee(holder, energy_color(weapon.item_id), energy_strength(weapon.item_id),
 			0.7 if weapon.item_id == "" or ItemDB.has_tag(weapon.item_id, "starter") else 0.3,
-			{"mode": pick[5]})
+			{"mode": pick[4]})
 	holder.position.y = -pick[3]
 	_fit_hands(holder, "%s@%.2f" % [pick[1], pick[2]], is_two_handed(weapon))
 	return holder
@@ -1744,9 +1743,11 @@ func _melee_pick(weapon: Weapon) -> Array:
 	return DEFAULT_MELEE
 
 
-## True when the weapon is held with both hands.
+## True when the weapon is held with both hands: the item's "two_handed"
+## tag (`MeleeWeapon.is_two_handed_id`), the same flag gameplay reads.
+## The one place a view asks; the grip and the sling follow it.
 func is_two_handed(weapon: Weapon) -> bool:
-	return weapon is MeleeWeapon and _melee_pick(weapon)[4]
+	return weapon is MeleeWeapon and MeleeWeapon.is_two_handed_id(weapon.item_id)
 
 
 ## Fallback when a melee model is missing: greybox parts keep their shape and get metal and a hot edge.
