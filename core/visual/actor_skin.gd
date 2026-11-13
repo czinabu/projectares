@@ -1017,7 +1017,7 @@ func _update_watch_glow(delta: float) -> void:
 		var spark := MeshInstance3D.new()
 		spark.name = "Spark"
 		var quad := QuadMesh.new()
-		quad.size = Vector2(0.06, 0.035)
+		quad.size = Vector2(0.03, 0.02)
 		spark.mesh = quad
 		var mat := StandardMaterial3D.new()
 		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
@@ -1040,7 +1040,8 @@ func _update_watch_glow(delta: float) -> void:
 		_watch_glow = attach
 	_watch_glow.visible = true
 	var spark_node := _watch_glow.get_node("Spark") as MeshInstance3D
-	spark_node.position = _watch_glow.global_basis.inverse() * Vector3.UP * 0.08
+	# On the watch face, out of the back of the wrist (`Hud.Wrist.FACE_AXIS`).
+	spark_node.position = Hud.Wrist.FACE_AXIS * 0.02 / maxf(_skeleton.global_basis.get_scale().x, 0.001)
 	if actor.body_mesh:
 		spark_node.layers = actor.body_mesh.layers
 	(spark_node.material_override as StandardMaterial3D).albedo_color = Color(WATCH_GLOW, 0.85 * _watch_up)

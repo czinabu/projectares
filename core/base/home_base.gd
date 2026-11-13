@@ -1,8 +1,10 @@
 class_name HomeBase
 extends Node3D
 ## A player's home base: a room you walk around in, with everything in your
-## stash on show. Guns on a rack, blades on the wall, armor on stands, flight
-## rigs, ability chips, bikes parked in the garage, and shelves for supplies
+## stash on show. Every weapon hangs on one rack in the armory, an alcove off
+## the left of the room with the gunsmith bench in its middle and the locker
+## at its entrance. The main room holds armor and flight rigs along the back
+## wall, the garage, the launch pad, ability chips, and shelves for supplies
 ## and loot.
 ##
 ## The base is a view of a stash, never a second store. `show_gear` is given a
@@ -24,15 +26,35 @@ signal leave_requested
 signal station_requested(station: String)
 ## The displays were rebuilt.
 signal gear_shown
+## The player suited up: `player` is now a new actor wearing the loadout.
+## Whoever drives the player (a controller, a camera) takes it over.
+signal player_replaced(actor: Actor)
 
 const BaseLayout := preload("res://core/base/base_layout.gd")
 const VehicleScript := preload("res://core/vehicle/vehicle.gd")
 
 # Room tuning.
 var room_size := Vector3(24.0, 6.0, 18.0)
+## The armory alcove off the room's left wall (-X): how deep it goes (x), how
+## high (y) and how wide (z). It is centred on the wall.
+var armory_size := Vector3(7.0, 6.0, 10.0)
+## How wide the way into the armory is, through the room's left wall.
+var armory_opening := 8.0
+## The garage off the room's right wall (+X), laid out like the armory:
+## depth (x), height (y), width (z), and how wide its way in is.
+var garage_size := Vector3(8.0, 6.0, 12.0)
+var garage_opening := 10.0
+## The firing range behind the back wall (-Z): width (x), height (y) and
+## length (z), entered through a door `range_door` wide and high.
+var range_size := Vector3(8.0, 10.0, 30.0)
+var range_door := Vector2(1.6, 3.0)
+## How far past the back wall the firing line stands.
+var firing_line := 2.0
 var spawn_point := Vector3(0.0, 0.1, 5.5)
 ## Weapons hang a little larger than life so they read from across the room.
 var weapon_scale := 1.5
+## How big the gun in the gunsmith bench's vise is shown.
+var bench_scale := 1.6
 
 ## Whose base this is, shown on the HUD. "" for your own.
 var owner_name := ""
@@ -43,24 +65,38 @@ var read_only := false
 var door_text := "Head out: play online"
 
 ## Where each station stands and which way it faces (local +Z into the room),
-## with its title and prompt. The launch pad stands in the middle, the rest along the
-## open floor on either side of the garage.
+## with its title and prompt. The launch pad stands in the middle, the locker
+## beside the way into the armory, the wardrobe and records along the left
+## wall nearer the door, and the rest along the right wall either side of the
+## way into the garage.
 const STATIONS := {
 	"launch": {"prompt": "Deploy", "title": "Launch pad", "at": Vector3(0.0, 0.0, 2.6), "yaw": 0.0, "color": Color(1.0, 0.55, 0.2)},
-	"locker": {"prompt": "Pick your loadout", "title": "Locker", "at": Vector3(-6.6, 0.0, 0.9), "yaw": PI / 2.0, "color": Color(0.45, 0.75, 1.0)},
-	"wardrobe": {"prompt": "Change how you look", "title": "Wardrobe", "at": Vector3(-6.6, 0.0, 3.1), "yaw": PI / 2.0, "color": Color(0.85, 0.6, 1.0)},
-	"records": {"prompt": "Read your record and stash", "title": "Records", "at": Vector3(-6.6, 0.0, 5.3), "yaw": PI / 2.0, "color": Color(0.9, 0.9, 0.85)},
-	"mastery": {"prompt": "Pick mastery variants", "title": "Mastery bench", "at": Vector3(6.6, 0.0, 0.9), "yaw": -PI / 2.0, "color": Color(1.0, 0.8, 0.3)},
-	"trader": {"prompt": "Buy and sell", "title": "Trader", "at": Vector3(6.6, 0.0, 3.1), "yaw": -PI / 2.0, "color": Color(0.45, 1.0, 0.6)},
-	"arena": {"prompt": "Enter the arena (no gear at risk)", "title": "Arena gate", "at": Vector3(6.6, 0.0, 7.4), "yaw": -PI / 2.0, "color": Color(1.0, 0.35, 0.3)},
-	"uplink": {"prompt": "Play online", "title": "Uplink", "at": Vector3(6.6, 0.0, 5.3), "yaw": -PI / 2.0, "color": Color(0.4, 0.95, 1.0)},
+	"locker": {"prompt": "Pick your loadout", "title": "Locker", "at": Vector3(-11.1, 0.0, -5.4), "yaw": PI / 2.0, "color": Color(0.45, 0.75, 1.0)},
+	"wardrobe": {"prompt": "Change how you look", "title": "Wardrobe", "at": Vector3(-11.1, 0.0, 5.3), "yaw": PI / 2.0, "color": Color(0.85, 0.6, 1.0)},
+	"records": {"prompt": "Read your record and stash", "title": "Records", "at": Vector3(-11.1, 0.0, 7.2), "yaw": PI / 2.0, "color": Color(0.9, 0.9, 0.85)},
+	"mastery": {"prompt": "Pick mastery variants", "title": "Mastery bench", "at": Vector3(11.1, 0.0, 7.9), "yaw": -PI / 2.0, "color": Color(1.0, 0.8, 0.3)},
+	"trader": {"prompt": "Buy and sell", "title": "Trader", "at": Vector3(11.1, 0.0, 6.0), "yaw": -PI / 2.0, "color": Color(0.45, 1.0, 0.6)},
+	"arena": {"prompt": "Enter the arena (no gear at risk)", "title": "Arena gate", "at": Vector3(11.1, 0.0, -7.9), "yaw": -PI / 2.0, "color": Color(1.0, 0.35, 0.3)},
+	"uplink": {"prompt": "Play online", "title": "Uplink", "at": Vector3(11.1, 0.0, -6.0), "yaw": -PI / 2.0, "color": Color(0.4, 0.95, 1.0)},
 }
 
-## The gunsmith bench: where it stands and which way it faces (local +Z into
-## the room). Its pegboard holds the attachments in the stash and its vise the
-## primary you will deploy with, wearing what is fitted.
-const BENCH_AT := Vector3(-6.4, 0.0, -4.2)
-const BENCH_YAW := PI / 2.0
+## The gunsmith bench: where it stands and which way it faces (local +Z is
+## where you stand to use it). It stands in the middle of the armory, long
+## side along it, so from the way in you look past its end to the rack. Its
+## pegboard holds the attachments in the stash and its vise the primary you
+## will deploy with, wearing what is fitted.
+const BENCH_AT := Vector3(-15.6, 0.0, 0.4)
+const BENCH_YAW := 0.0
+
+## The suit-up bay: where you put your loadout on before you deploy. It
+## stands beside the launch pad, facing the way in (local +Z).
+const SUIT_AT := Vector3(-3.7, 0.0, 3.0)
+const SUIT_YAW := 0.0
+## How long the bay's arms take to fit the gear, there and back (view only).
+var suit_time := 0.9
+
+## Display kinds whose title is already on the room or the furniture.
+const SIGNED_ELSEWHERE := ["bay", "gunsmith"]
 
 ## The size of every station's screen, in metres (16:9).
 const SCREEN_SIZE := Vector2(1.6, 0.9)
@@ -69,6 +105,17 @@ var player: Actor
 var displays: Array[Display] = []
 var door: Door
 var stations: Array[Station] = []
+var suit_bay: SuitBay
+## True once the player has suited up in this visit, wearing `suited_kit`.
+var suited := false
+var suited_kit: Array[String] = []
+## The firing range's targets, its score and the board that shows it.
+var targets: Array[RangeTarget] = []
+var range_shots := 0
+var range_hits := 0
+var range_last := ""
+var range_board: Label3D
+var _range_time := 0.0
 var stash: Array = []
 var loadout := {}
 
@@ -124,6 +171,100 @@ class Station:
 			base.station_requested.emit(id)
 
 
+## The suit-up bay's control post. Using it puts the loadout on you.
+class SuitBay:
+	extends Interactable
+
+	var base: HomeBase
+
+	func get_prompt() -> String:
+		if base == null or base.read_only:
+			return "Suit-up bay (not yours)"
+		if base.suited and base.suited_kit == base.suit_kit():
+			return "[F] Suit-up bay: you are wearing your loadout"
+		if base.suited:
+			return "[F] Suit up again: your loadout changed"
+		return "[F] Suit up: put your loadout on"
+
+	func interact(_actor: Actor) -> void:
+		# Deferred: the actor using the post is the one the bay replaces, and
+		# it is still in the middle of its tick.
+		if base and not base.read_only:
+			base.suit_up.call_deferred()
+
+
+## Something to shoot at on the firing range: a plate on a post, one that
+## slides across the lane, or a drone circling overhead. It stops shots like a
+## wall; `HomeBase` scores the shots that end on it.
+class RangeTarget:
+	extends StaticBody3D
+
+	var kind := "plate"
+	var home := Vector3.ZERO
+	var phase := 0.0
+	var size := Vector3.ONE
+	var centre := Vector3.ZERO
+	var plate: MeshInstance3D
+	var hits := 0
+	var _flash := 0.0
+
+	func _init() -> void:
+		collision_layer = Actor.LAYER_WORLD
+		collision_mask = 0
+
+	## Where it should be `time` seconds into the visit.
+	func place(time: float) -> void:
+		match kind:
+			"slider":
+				position = home + Vector3(sin(time * 0.9) * 3.0, 0, 0)
+			"drone":
+				var turn := time * 0.6 + phase
+				position = home + Vector3(cos(turn) * 2.8, sin(time * 1.3 + phase) * 0.8, sin(turn) * 3.0)
+
+	## True if a shot that stopped at `point` (global) stopped on this.
+	func took(point: Vector3) -> bool:
+		var local := to_local(point) - centre
+		var half := size * 0.5 + Vector3.ONE * 0.12
+		return absf(local.x) <= half.x and absf(local.y) <= half.y and absf(local.z) <= half.z
+
+	func flash() -> void:
+		hits += 1
+		_flash = 0.15
+		if plate:
+			plate.scale = Vector3.ONE * 1.12
+
+	func cool(delta: float) -> void:
+		if _flash > 0.0:
+			_flash -= delta
+			if _flash <= 0.0 and plate:
+				plate.scale = Vector3.ONE
+
+
+## The gun in the gunsmith bench's vise. Using it puts the next gun from the
+## rack in the vise as your primary, so any gun can be fitted out here.
+class Vise:
+	extends Interactable
+
+	var base: HomeBase
+	var item_id := ""
+
+	func get_prompt() -> String:
+		var shown := ItemDB.item_name(item_id)
+		if base == null or base.read_only:
+			return shown
+		var next := base.next_bench_gun()
+		if next == base.loadout.get("primary", ""):
+			return "%s in the vise" % shown
+		var next_name := ItemDB.item_name(next if next != "" else HomeBase.starter_primary())
+		return "[F] Next gun in the vise: %s" % next_name
+
+	func interact(_actor: Actor) -> void:
+		if base and not base.read_only:
+			var next := base.next_bench_gun()
+			if next != base.loadout.get("primary", ""):
+				base.equip_requested.emit("primary", next)
+
+
 ## The way out.
 class Door:
 	extends Interactable
@@ -140,10 +281,14 @@ class Door:
 
 func _ready() -> void:
 	_build_room()
+	_build_armory()
+	_build_garage()
+	_build_range()
 	_display_root.name = "Displays"
 	add_child(_display_root)
 	_build_door()
 	_build_bench()
+	_build_suit_bay()
 	_build_stations()
 	_build_banner()
 	_spawn_player()
@@ -156,6 +301,100 @@ func show_gear(p_stash: Array, p_loadout: Dictionary) -> void:
 	loadout = p_loadout.duplicate()
 	if is_inside_tree():
 		_rebuild()
+
+
+## What the bay puts on you: each loadout slot's item, or the free starter
+## item that fits an empty slot, as a deploy would. Vehicles stay parked and
+## supplies stay on the shelf: only what is worn or carried in hand.
+func suit_kit() -> Array[String]:
+	var kit: Array[String] = []
+	for slot: String in Loadout.SLOTS:
+		var id: String = loadout.get(slot, "")
+		if id == "" and slot in Loadout.OPTIONAL_SLOTS:
+			continue
+		if id == "":
+			for free_id: String in ItemDB.all_ids():
+				if ItemDB.has_tag(free_id, "starter") and Loadout.fits(slot, free_id):
+					id = free_id
+					break
+		if id != "" and not ItemDB.has_tag(id, "vehicle"):
+			kit.append(id)
+	return kit
+
+
+## Puts the loadout on: the player steps into the bay as a new actor wearing
+## `suit_kit()`, its weapons holstered and locked (nobody fights at home),
+## while the bay's arms swing in and out. `player_replaced` says who it is.
+func suit_up() -> void:
+	if read_only or not is_inside_tree():
+		return
+	var old := player
+	var fresh := _new_player(SUIT_AT + Vector3(0, 0.1, 0))
+	# Facing out of the bay, toward the launch pad and the room.
+	fresh.cmd.yaw = SUIT_YAW + PI
+	if old and is_instance_valid(old):
+		if old.has_meta("appearance"):
+			fresh.set_meta("appearance", old.get_meta("appearance"))
+		# Freed at the end of the frame, still in the tree until then, so
+		# whatever is posing it this frame finishes cleanly.
+		old.name = "OldPlayer"
+		old.visible = false
+		old.queue_free()
+	add_child(fresh)
+	player = fresh
+	# Equipped once it stands in the room: the hand holds weapons in the world.
+	suited_kit = suit_kit()
+	Loadout.equip(fresh, suited_kit)
+	fresh.weapons_locked = true
+	for weapon in fresh.weapons:
+		var gun := weapon as Gun
+		if gun:
+			gun.fired.connect(_on_range_shot.bind(gun))
+	suited = true
+	_play_suit_arms()
+	player_replaced.emit(fresh)
+
+
+func _physics_process(delta: float) -> void:
+	_range_time += delta
+	for target in targets:
+		target.place(_range_time)
+		target.cool(delta)
+	if not suited or player == null or not is_instance_valid(player):
+		return
+	# Weapons are free only past the firing line, and never run dry there.
+	var on_range := in_range(to_local(player.global_position))
+	player.weapons_locked = not on_range
+	if on_range:
+		for weapon in player.weapons:
+			var gun := weapon as Gun
+			if gun and gun.reserve_ammo < gun.mag_size * 4:
+				gun.reserve_ammo = gun.mag_size * 4
+
+
+## A shot from the player's gun: scored if it was fired on the range.
+func _on_range_shot(from: Vector3, to: Vector3, gun: Gun) -> void:
+	if not in_range(to_local(from)):
+		return
+	range_shots += 1
+	for target in targets:
+		if target.took(to):
+			target.flash()
+			range_hits += 1
+			range_last = "%s at %d m" % [gun.display_name, int(round(from.distance_to(to)))]
+			break
+	_update_board()
+
+
+func _update_board() -> void:
+	if range_board == null:
+		return
+	var accuracy := int(round(100.0 * range_hits / range_shots)) if range_shots > 0 else 0
+	range_board.text = "SHOTS %d    HITS %d    ACCURACY %d%%" % [range_shots, range_hits, accuracy]
+	if range_last != "":
+		range_board.text += "\nLast hit: %s" % range_last
+	else:
+		range_board.text += "\nSuit up, step past the line and fire. Nothing here is lost."
 
 
 ## The station with this id, or null.
@@ -174,26 +413,69 @@ func display_for(item_id: String) -> Display:
 	return null
 
 
+## True if `point` (local to the base) is inside the room or one of the
+## spaces off it: the armory, the garage or the firing range.
+func inside(point: Vector3) -> bool:
+	var half := room_size * 0.5
+	if absf(point.x) < half.x and absf(point.z) < half.z:
+		return true
+	return in_armory(point) or in_garage(point) or in_range(point)
+
+
+## True if `point` (local to the base) is inside the garage.
+func in_garage(point: Vector3) -> bool:
+	var wall_x := room_size.x * 0.5
+	return point.x > wall_x and point.x < wall_x + garage_size.x and absf(point.z) < garage_size.z * 0.5
+
+
+## True if `point` (local to the base) is inside the firing range.
+func in_range(point: Vector3) -> bool:
+	var wall_z := room_size.z * 0.5
+	return point.z < -wall_z and point.z > -wall_z - range_size.z and absf(point.x) < range_size.x * 0.5
+
+
+## True if `point` (local to the base) is inside the armory alcove.
+func in_armory(point: Vector3) -> bool:
+	var wall_x := room_size.x * 0.5
+	return point.x < -wall_x and point.x > -wall_x - armory_size.x and absf(point.z) < armory_size.z * 0.5
+
+
 ## Where a spot is, and which way it faces: local +Z points into the room.
 func spot_transform(kind: String, index: int) -> Transform3D:
 	var wall_x := room_size.x * 0.5
 	var wall_z := room_size.z * 0.5
+	# The armory's back wall, and its side walls either side of the bench.
+	var back_x := -wall_x - armory_size.x
+	var side_z := armory_size.z * 0.5
 	var i := float(index)
 	match kind:
-		"gun_rack":
-			return _spot(Vector3(-10.5 + 1.5 * i, 1.5, -wall_z + 0.3), 0.0)
-		"blade_wall":
-			return _spot(Vector3(2.5 + 1.6 * i, 1.3, -wall_z + 0.3), 0.0)
+		"rack_guns":
+			# The armory's back wall: two rows of six, facing the way in.
+			var col := float(index % 6)
+			var row := float(index / 6)
+			return _spot(Vector3(back_x + 0.3, 2.55 - 1.15 * row, -3.75 + 1.5 * col), PI / 2.0)
+		"rack_sidearms":
+			# The armory's right-hand wall (going in): two rows of four.
+			var col := float(index % 4)
+			var row := float(index / 4)
+			return _spot(Vector3(back_x + 1.4 + 1.2 * col, 2.3 - 0.95 * row, -side_z + 0.3), 0.0)
+		"rack_melee":
+			# The armory's left-hand wall: one row, standing upright.
+			return _spot(Vector3(back_x + 0.6 + 1.05 * i, 1.3, side_z - 0.3), PI)
 		"armor_stand":
-			return _spot(Vector3(-wall_x + 1.2, 0.0, -5.0 + 2.2 * i), PI / 2.0)
+			# The back wall, left of the door to the range.
+			return _spot(Vector3(-10.5 + 1.8 * i, 0.0, -wall_z + 1.0), 0.0)
 		"rig_stand":
-			return _spot(Vector3(wall_x - 1.2, 0.0, -5.0 + 2.2 * i), -PI / 2.0)
+			# The back wall, right of the door to the range.
+			return _spot(Vector3(2.0 + 2.0 * i, 0.0, -wall_z + 1.0), 0.0)
 		"chip_case":
-			return _spot(Vector3(wall_x - 0.8, 1.1, 3.6 + 0.8 * i), -PI / 2.0)
+			# The front wall, in the right-hand corner.
+			return _spot(Vector3(8.1 + 0.7 * i, 1.1, wall_z - 0.45), PI)
 		"bay":
-			return _spot(Vector3(-4.5 + 3.0 * i, 0.0, -1.5), 0.0)
+			# Side by side in the garage, parked nose-out toward the room.
+			return _spot(Vector3(wall_x + garage_size.x * 0.5, 0.0, -4.2 + 2.8 * i), -PI / 2.0)
 		"supplies":
-			return _spot(Vector3(3.0 + 1.1 * i, 1.1, wall_z - 0.3), PI)
+			return _spot(Vector3(2.0 + 1.0 * i, 1.1, wall_z - 0.3), PI)
 		"gunsmith":
 			# Four across and three up on the pegboard behind the bench.
 			var col := float(index % 4)
@@ -218,10 +500,21 @@ func _build_room() -> void:
 	var z := room_size.z
 	_box(Vector3(x, 0.5, z), Vector3(0, -0.25, 0), floor_mat)
 	_box(Vector3(x, 0.5, z), Vector3(0, y + 0.25, 0), wall_mat)
-	_box(Vector3(x + 1.0, y, 0.5), Vector3(0, y * 0.5, -z * 0.5 - 0.25), wall_mat)
+	# The back wall has a door through to the firing range.
+	var door_w := range_door.x
+	var side_w := (x + 1.0 - door_w) * 0.5
+	for side: float in [-1.0, 1.0]:
+		_box(Vector3(side_w, y, 0.5), Vector3(side * (door_w + side_w) * 0.5, y * 0.5, -z * 0.5 - 0.25), wall_mat)
+	_box(Vector3(door_w, y - range_door.y, 0.5), Vector3(0, (y + range_door.y) * 0.5, -z * 0.5 - 0.25), wall_mat)
 	_box(Vector3(x + 1.0, y, 0.5), Vector3(0, y * 0.5, z * 0.5 + 0.25), wall_mat)
-	_box(Vector3(0.5, y, z), Vector3(-x * 0.5 - 0.25, y * 0.5, 0), wall_mat)
-	_box(Vector3(0.5, y, z), Vector3(x * 0.5 + 0.25, y * 0.5, 0), wall_mat)
+	# The left wall stops either side of the way into the armory.
+	var piece := (z - armory_opening) * 0.5
+	for side: float in [-1.0, 1.0]:
+		_box(Vector3(0.5, y, piece), Vector3(-x * 0.5 - 0.25, y * 0.5, side * (armory_opening * 0.5 + piece * 0.5)), wall_mat)
+	# The right wall stops either side of the way into the garage.
+	var right_piece := (z - garage_opening) * 0.5
+	for side: float in [-1.0, 1.0]:
+		_box(Vector3(0.5, y, right_piece), Vector3(x * 0.5 + 0.25, y * 0.5, side * (garage_opening * 0.5 + right_piece * 0.5)), wall_mat)
 	Look.interior(self, Color(0.62, 0.58, 0.54), 1.3)
 	if Look.enabled:
 		# Ceiling lamps for the floor, and a wash low on each wall for the gear.
@@ -235,6 +528,183 @@ func _build_room() -> void:
 			var wash := Look.lamp(Color(1.0, 0.92, 0.82), 3.0, 12.0)
 			wash.position = at
 			add_child(wash)
+
+
+## The armory: an alcove off the left wall with its own floor, walls and
+## lights, a sign over the way in and a lit sill across it. Its rack is the
+## displays of the `BaseLayout.ARMORY` kinds; the bench stands in its middle.
+func _build_armory() -> void:
+	var floor_mat := Look.surface("concrete", {"tint": Color(0.46, 0.45, 0.44), "grime": 0.5})
+	var wall_mat := Look.surface("concrete", {"tint": Color(0.5, 0.5, 0.5), "grime": 0.3, "scale": 0.3})
+	var wall_x := room_size.x * 0.5
+	var depth := armory_size.x
+	var y := armory_size.y
+	var width := armory_size.z
+	var mid_x := -wall_x - depth * 0.5
+	_box(Vector3(depth, 0.5, width), Vector3(mid_x, -0.25, 0), floor_mat)
+	_box(Vector3(depth, 0.5, width), Vector3(mid_x, y + 0.25, 0), wall_mat)
+	_box(Vector3(0.5, y, width + 1.0), Vector3(-wall_x - depth - 0.25, y * 0.5, 0), wall_mat)
+	for side: float in [-1.0, 1.0]:
+		_box(Vector3(depth, y, 0.5), Vector3(mid_x, y * 0.5, side * (width * 0.5 + 0.25)), wall_mat)
+	var accent := Color(1.0, 0.62, 0.22)
+	# A dark band behind the rack on each wall, so the weapons read as one rack.
+	var band := Color(0.13, 0.13, 0.14)
+	add_child(_part(Vector3(0.04, 2.6, width - 0.6), Vector3(-wall_x - depth + 0.02, 2.0, 0), band))
+	for side: float in [-1.0, 1.0]:
+		add_child(_part(Vector3(depth - 0.8, 2.4, 0.04), Vector3(mid_x - 0.1, 1.9, side * (width * 0.5 - 0.02)), band))
+	# A lit sill across the way in.
+	var sill := _part(Vector3(0.14, 0.04, armory_opening), Vector3(-wall_x, 0.02, 0), accent, true)
+	sill.name = "ArmorySill"
+	add_child(sill)
+	var title := _label("ARMORY", accent, 0.5)
+	title.name = "ArmorySign"
+	title.position = Vector3(-wall_x + 0.06, 4.6, 0)
+	title.rotation.y = PI / 2.0
+	add_child(title)
+	if Look.enabled:
+		for at: Vector3 in [Vector3(mid_x, 4.6, 0), Vector3(-wall_x - depth + 1.5, 3.2, 0),
+				Vector3(mid_x, 3.0, -width * 0.5 + 1.2), Vector3(mid_x, 3.0, width * 0.5 - 1.2)]:
+			var light := Look.lamp(Color(1.0, 0.9, 0.78), 3.0, 10.0)
+			light.position = at
+			add_child(light)
+
+
+## The garage: a bay off the right wall, like the armory, where every bike
+## you own is parked nose-out on its own painted bay.
+func _build_garage() -> void:
+	var floor_mat := Look.surface("concrete", {"tint": Color(0.4, 0.4, 0.41), "grime": 0.8})
+	var wall_mat := Look.surface("concrete", {"tint": Color(0.5, 0.5, 0.5), "grime": 0.4, "scale": 0.3})
+	var wall_x := room_size.x * 0.5
+	var depth := garage_size.x
+	var y := garage_size.y
+	var width := garage_size.z
+	var mid_x := wall_x + depth * 0.5
+	_box(Vector3(depth, 0.5, width), Vector3(mid_x, -0.25, 0), floor_mat)
+	_box(Vector3(depth, 0.5, width), Vector3(mid_x, y + 0.25, 0), wall_mat)
+	_box(Vector3(0.5, y, width + 1.0), Vector3(wall_x + depth + 0.25, y * 0.5, 0), wall_mat)
+	for side: float in [-1.0, 1.0]:
+		_box(Vector3(depth, y, 0.5), Vector3(mid_x, y * 0.5, side * (width * 0.5 + 0.25)), wall_mat)
+	var hazard := Color(0.85, 0.65, 0.15)
+	# A roll-up door frame across the way in, raised, and hazard stripes.
+	var steel := Color(0.28, 0.29, 0.31)
+	add_child(_part(Vector3(0.4, 0.5, garage_opening), Vector3(wall_x + 0.1, 4.6, 0), steel))
+	for side: float in [-1.0, 1.0]:
+		add_child(_part(Vector3(0.3, 4.4, 0.3), Vector3(wall_x + 0.1, 2.2, side * (garage_opening * 0.5 - 0.15)), hazard))
+	var sill := _part(Vector3(0.14, 0.04, garage_opening), Vector3(wall_x, 0.02, 0), hazard, true)
+	sill.name = "GarageSill"
+	add_child(sill)
+	var title := _label("GARAGE", Color(1.0, 0.62, 0.22), 0.5)
+	title.name = "GarageSign"
+	title.position = Vector3(wall_x - 0.06, 5.2, 0)
+	title.rotation.y = -PI / 2.0
+	add_child(title)
+	# A tool wall at the back.
+	add_child(_part(Vector3(0.04, 1.6, width - 1.0), Vector3(wall_x + depth - 0.02, 1.8, 0), Color(0.2, 0.2, 0.22)))
+	if Look.enabled:
+		for at: Vector3 in [Vector3(mid_x, 4.6, -3.0), Vector3(mid_x, 4.6, 3.0)]:
+			var light := Look.lamp(Color(1.0, 0.92, 0.8), 3.0, 10.0)
+			light.position = at
+			add_child(light)
+
+
+## The firing range: a long hall behind the back wall. Past the firing line
+## your weapons are free and never run dry, and targets stand, slide and fly
+## at set distances. A board over the lane keeps score. Nothing here is real:
+## no damage is dealt and no mastery is earned (only use in a world pays).
+func _build_range() -> void:
+	var floor_mat := Look.surface("concrete", {"tint": Color(0.44, 0.43, 0.42), "grime": 0.5})
+	var wall_mat := Look.surface("concrete", {"tint": Color(0.46, 0.46, 0.47), "grime": 0.3, "scale": 0.3})
+	var wall_z := room_size.z * 0.5
+	var width := range_size.x
+	var y := range_size.y
+	var length := range_size.z
+	var mid_z := -wall_z - length * 0.5
+	_box(Vector3(width, 0.5, length), Vector3(0, -0.25, mid_z), floor_mat)
+	_box(Vector3(width, 0.5, length), Vector3(0, y + 0.25, mid_z), wall_mat)
+	_box(Vector3(width + 1.0, y, 0.5), Vector3(0, y * 0.5, -wall_z - length - 0.25), wall_mat)
+	for side: float in [-1.0, 1.0]:
+		_box(Vector3(0.5, y, length), Vector3(side * (width * 0.5 + 0.25), y * 0.5, mid_z), wall_mat)
+	# Above the room's own ceiling the range's end of the back wall goes on up.
+	_box(Vector3(width, y - room_size.y, 0.5), Vector3(0, (y + room_size.y) * 0.5, -wall_z - 0.25), wall_mat)
+	var accent := Color(1.0, 0.62, 0.22)
+	var line_z := -wall_z - firing_line
+	# The firing line: a counter either side of a gap to walk through, and a
+	# stripe on the floor.
+	var counter := (width - 1.4) * 0.5
+	for side: float in [-1.0, 1.0]:
+		_box(Vector3(counter, 1.0, 0.5), Vector3(side * (0.7 + counter * 0.5), 0.5, line_z), floor_mat)
+	var stripe := _part(Vector3(width, 0.03, 0.12), Vector3(0, 0.02, line_z - 0.4), accent, true)
+	stripe.name = "FiringLine"
+	add_child(stripe)
+	# Distance marks down the lane, every 5 m.
+	for metres: int in range(5, int(length - firing_line), 5):
+		var mark := _part(Vector3(width, 0.02, 0.06), Vector3(0, 0.015, line_z - float(metres)), Color(0.75, 0.75, 0.72))
+		add_child(mark)
+		var number := _label("%d m" % metres, Color(0.85, 0.85, 0.8), 0.25)
+		number.position = Vector3(-width * 0.5 + 0.4, 0.05, line_z - float(metres))
+		number.rotation.x = -PI / 2.0
+		add_child(number)
+	var title := _label("FIRING RANGE", accent, 0.36)
+	title.name = "RangeSign"
+	title.position = Vector3(0, range_door.y + 0.5, -wall_z + 0.06)
+	add_child(title)
+	range_board = _label("", Color(0.9, 0.95, 1.0), 0.2)
+	range_board.name = "RangeBoard"
+	range_board.position = Vector3(0, 4.2, line_z - 3.0)
+	add_child(range_board)
+	_update_board()
+	_build_targets(line_z)
+	if Look.enabled:
+		for at_z: float in [line_z, line_z - 9.0, line_z - 18.0, line_z - 26.0]:
+			var light := Look.lamp(Color(1.0, 0.94, 0.85), 3.5, 14.0)
+			light.position = Vector3(0, y - 1.0, at_z)
+			add_child(light)
+
+
+## Standing plates at 10, 20 and 27 m, one sliding across the lane at 15 m,
+## and three drones circling high up for shooting from a rig.
+func _build_targets(line_z: float) -> void:
+	var specs := [
+		{"at": Vector3(-2.0, 0, line_z - 10.0), "kind": "plate"},
+		{"at": Vector3(2.0, 0, line_z - 20.0), "kind": "plate"},
+		{"at": Vector3(0.0, 0, line_z - 27.0), "kind": "plate"},
+		{"at": Vector3(0.0, 0, line_z - 15.0), "kind": "slider"},
+		{"at": Vector3(0.0, 6.0, line_z - 18.0), "kind": "drone", "phase": 0.0},
+		{"at": Vector3(0.0, 7.0, line_z - 22.0), "kind": "drone", "phase": TAU / 3.0},
+		{"at": Vector3(0.0, 5.0, line_z - 14.0), "kind": "drone", "phase": TAU * 2.0 / 3.0},
+	]
+	for spec: Dictionary in specs:
+		var target := RangeTarget.new()
+		target.kind = spec["kind"]
+		target.home = spec["at"]
+		target.phase = spec.get("phase", 0.0)
+		target.name = "Target_%s_%d" % [target.kind, targets.size()]
+		target.position = target.home
+		var face := Color(0.95, 0.9, 0.8)
+		var size := Vector3(0.8, 1.6, 0.1)
+		var centre := Vector3(0, 1.3, 0)
+		if target.kind == "drone":
+			size = Vector3(0.7, 0.3, 0.7)
+			centre = Vector3.ZERO
+			face = Color(0.4, 0.9, 1.0)
+		else:
+			target.add_child(_part(Vector3(0.08, 0.5, 0.08), Vector3(0, 0.25, 0), Color(0.3, 0.3, 0.32)))
+		target.size = size
+		target.centre = centre
+		target.plate = _part(size, centre, face, target.kind == "drone")
+		target.add_child(target.plate)
+		if target.kind != "drone":
+			# Rings on the plate, so a hit near the middle reads as one.
+			target.add_child(_part(Vector3(0.4, 0.4, 0.02), centre + Vector3(0, 0.2, 0.06), Color(0.8, 0.25, 0.2)))
+			target.add_child(_part(Vector3(0.14, 0.14, 0.03), centre + Vector3(0, 0.2, 0.07), Color(0.95, 0.9, 0.8)))
+		var shape := BoxShape3D.new()
+		shape.size = size
+		var col := CollisionShape3D.new()
+		col.shape = shape
+		col.position = centre
+		target.add_child(col)
+		add_child(target)
+		targets.append(target)
 
 
 func _box(size: Vector3, at: Vector3, material: Material) -> StaticBody3D:
@@ -357,12 +827,78 @@ func banner_text() -> String:
 
 
 func _spawn_player() -> void:
-	player = Actor.new()
-	player.name = "Player"
-	player.is_player = true
-	player.display_name = "You"
-	player.position = spawn_point
+	player = _new_player(spawn_point)
 	add_child(player)
+
+
+func _new_player(at: Vector3) -> Actor:
+	var actor := Actor.new()
+	actor.name = "Player"
+	actor.is_player = true
+	actor.display_name = "You"
+	actor.position = at
+	return actor
+
+
+## The suit-up bay beside the launch pad: a lit disc to stand on between two
+## frames whose arms swing in to fit the gear, and a control post to use.
+func _build_suit_bay() -> void:
+	var bay := Node3D.new()
+	bay.name = "SuitUpBay"
+	bay.position = SUIT_AT
+	bay.rotation.y = SUIT_YAW
+	add_child(bay)
+	var accent := Color(0.4, 0.9, 1.0)
+	var steel := Color(0.3, 0.31, 0.34)
+	var dark := Color(0.15, 0.15, 0.17)
+	bay.add_child(_part(Vector3(1.8, 0.06, 1.8), Vector3(0, 0.03, 0), dark))
+	bay.add_child(_part(Vector3(1.3, 0.07, 1.3), Vector3(0, 0.035, 0), accent.darkened(0.5), true))
+	for side: float in [-1.0, 1.0]:
+		var frame := Node3D.new()
+		frame.name = "Frame%s" % ("L" if side < 0 else "R")
+		frame.position = Vector3(side * 0.95, 0, -0.1)
+		bay.add_child(frame)
+		frame.add_child(_part(Vector3(0.16, 2.5, 0.3), Vector3(0, 1.25, 0), steel))
+		frame.add_child(_part(Vector3(0.04, 2.2, 0.04), Vector3(-side * 0.09, 1.2, 0.12), accent, true))
+		# Two arms, folded back against the frame until the bay works.
+		for height: float in [1.0, 1.55]:
+			var arm := Node3D.new()
+			arm.name = "Arm%d" % int(height * 100.0)
+			arm.position = Vector3(0, height, 0)
+			arm.set_meta("side", side)
+			arm.add_child(_part(Vector3(0.5, 0.1, 0.12), Vector3(-side * 0.25, 0, 0), steel))
+			arm.add_child(_part(Vector3(0.1, 0.16, 0.16), Vector3(-side * 0.5, 0, 0), accent, true))
+			arm.rotation.y = side * 1.3
+			frame.add_child(arm)
+	# A gantry over the top with the bay's name.
+	bay.add_child(_part(Vector3(2.06, 0.16, 0.3), Vector3(0, 2.55, -0.1), steel))
+	var title := _label("SUIT-UP BAY", accent, 0.22)
+	title.position = Vector3(0, 2.85, -0.1)
+	title.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
+	bay.add_child(title)
+	# The control post, front right, that you use.
+	suit_bay = SuitBay.new()
+	suit_bay.name = "Control"
+	suit_bay.base = self
+	suit_bay.position = Vector3(1.35, 0, 0.7)
+	suit_bay.add_child(_part(Vector3(0.24, 1.1, 0.24), Vector3(0, 0.55, 0), dark))
+	var panel := _part(Vector3(0.36, 0.26, 0.05), Vector3(0, 1.2, 0.05), accent, true)
+	panel.rotation.x = -0.5
+	suit_bay.add_child(panel)
+	_add_collision(suit_bay, Vector3(0.5, 1.4, 0.5), Vector3(0, 0.7, 0))
+	bay.add_child(suit_bay)
+
+
+## The bay's arms swing in to the body and fold back again. View only.
+func _play_suit_arms() -> void:
+	for arm: Node in find_child("SuitUpBay", false, false).find_children("Arm*", "Node3D", true, false):
+		if not arm.has_meta("side"):
+			continue
+		var side: float = arm.get_meta("side")
+		var tween := create_tween()
+		tween.tween_property(arm, "rotation:y", 0.0, suit_time * 0.4)
+		tween.tween_interval(suit_time * 0.2)
+		tween.tween_property(arm, "rotation:y", side * 1.3, suit_time * 0.4)
 
 
 # --- Displays ----------------------------------------------------------------
@@ -393,20 +929,52 @@ func _rebuild() -> void:
 	gear_shown.emit()
 
 
-## A title over each section, with how much did not fit on show.
+## A small rail label just over each section, with how much did not fit on
+## show. Rooms carry the big signs (one over each way in); a section that is
+## a room of its own (the garage) or has its own title (the bench) needs none.
+## Rail labels only show from nearby, so the room is not a cloud of text.
 func _build_signs() -> void:
 	var stored := BaseLayout.stored_away(stash)
 	for kind: String in BaseLayout.KINDS:
+		if kind in SIGNED_ELSEWHERE:
+			continue
 		var text: String = str(BaseLayout.KINDS[kind]["title"]).to_upper()
 		if stored.has(kind):
-			text += "\n+%d more in storage" % stored[kind]
-		var sign_label := _label(text, Color(1.0, 0.62, 0.22), 0.26)
+			text += "  (+%d in storage)" % stored[kind]
+		var sign_label := _label(text, Color(1.0, 0.62, 0.22), 0.16)
+		sign_label.name = "Sign_%s" % kind
 		var first := spot_transform(kind, 0)
 		var last := spot_transform(kind, int(BaseLayout.KINDS[kind]["spots"]) - 1)
 		var mid := first.origin.lerp(last.origin, 0.5)
-		sign_label.position = Vector3(mid.x, 3.4, mid.z) + first.basis.z * 0.05
+		var top := maxf(first.origin.y, last.origin.y)
+		# Stands stand on the floor; everything else hangs on a wall.
+		var height := 2.6 if top < 0.1 else top + 0.95
+		sign_label.position = Vector3(mid.x, height, mid.z) + first.basis.z * 0.05
 		sign_label.rotation.y = first.basis.get_euler().y
+		_near_only(sign_label, 14.0)
 		_display_root.add_child(sign_label)
+
+
+## A weapon's place on the armory rack: a lit panel behind it, so it stands
+## out from the wall, with a strip of its rarity colour along the bottom.
+func _build_mount(display: Display, size: Vector2, at: Vector3, color: Color) -> void:
+	var mount := Node3D.new()
+	mount.name = "Mount"
+	mount.position = at
+	mount.add_child(_part(Vector3(size.x, size.y, 0.03), Vector3(0, 0, -0.12), Color(0.3, 0.31, 0.33)))
+	var edge := _part(Vector3(size.x + 0.04, size.y + 0.04, 0.02), Vector3(0, 0, -0.135), Color(0.1, 0.1, 0.11))
+	mount.add_child(edge)
+	var strip := _part(Vector3(size.x * 0.9, 0.025, 0.02), Vector3(0, -size.y * 0.5 + 0.04, -0.1), color, true)
+	strip.name = "RarityStrip"
+	mount.add_child(strip)
+	display.add_child(mount)
+
+
+## Fades a label out past `reach` metres from the camera.
+func _near_only(label: Label3D, reach: float) -> void:
+	label.visibility_range_end = reach
+	label.visibility_range_end_margin = reach * 0.15
+	label.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
 
 
 ## Builds the greybox model, hit box and name plate for one display.
@@ -420,7 +988,7 @@ func _fill(display: Display) -> void:
 	var plate_at := Vector3(0, -0.55, 0.12)
 	var plate_size := 0.13
 	match display.kind:
-		"gun_rack":
+		"rack_guns", "rack_sidearms":
 			var gun := Gun.new()
 			gun.item_id = id
 			var visual := gun.build_visual()
@@ -430,10 +998,19 @@ func _fill(display: Display) -> void:
 			visual.scale = Vector3.ONE * weapon_scale
 			model.add_child(visual)
 			model.position.z = 0.15
-			for x: float in [-0.3, 0.3]:
+			var small := display.kind == "rack_sidearms"
+			for x: float in ([-0.15, 0.15] if small else [-0.3, 0.3]):
 				display.add_child(_part(Vector3(0.05, 0.05, 0.3), Vector3(x, -0.18, 0.05), Color(0.2, 0.2, 0.22)))
-			box = Vector3(1.3, 0.9, 0.6)
-		"blade_wall":
+			box = Vector3(0.8, 0.7, 0.6) if small else Vector3(1.3, 0.9, 0.6)
+			if small:
+				plate_at = Vector3(0, -0.45, 0.12)
+			_build_mount(display, Vector2(1.0, 0.62) if small else Vector2(1.4, 0.82), Vector3(0, 0, 0.0), color)
+			if display.equipped and display.kind == "rack_guns" and Loadout.is_primary(id):
+				# The primary you deploy with is on the bench, not on the wall:
+				# its pegs stand empty.
+				model.visible = false
+				model.set_meta("on_bench", true)
+		"rack_melee":
 			var blade := MeleeWeapon.new()
 			blade.item_id = id
 			var visual := blade.build_visual()
@@ -446,6 +1023,7 @@ func _fill(display: Display) -> void:
 			box = Vector3(1.0, 2.2, 0.6)
 			box_at = Vector3(0, 0.3, 0)
 			plate_at = Vector3(0, 1.6, 0.12)
+			_build_mount(display, Vector2(0.8, 2.3), Vector3(0, 0.3, 0.0), color)
 		"armor_stand":
 			_build_armor(model, id, color)
 			box = Vector3(1.2, 2.0, 1.0)
@@ -505,9 +1083,13 @@ func _fill(display: Display) -> void:
 	var text := ItemDB.item_name(id)
 	if display.count > 1:
 		text += "  x%d" % display.count
-	if display.equipped:
+	if model.has_meta("on_bench"):
+		text += "\nON THE BENCH"
+	elif display.equipped:
 		text += "\nEQUIPPED"
 	var plate := _label(text, color, plate_size)
+	# A name shows once you walk up to the item, not from across the room.
+	_near_only(plate, 5.0)
 	plate.name = "Plate"
 	plate.position = plate_at
 	display.add_child(plate)
@@ -556,7 +1138,7 @@ func _build_bench() -> void:
 	title.name = "Title"
 	title.position = Vector3(0, 2.75, -0.42)
 	bench.add_child(title)
-	var how := _label("Look at an attachment and press F to fit it to your primary", Color(0.85, 0.83, 0.8), 0.08)
+	var how := _label("F on the gun: next gun in the vise.  F on an attachment: fit it.", Color(0.85, 0.83, 0.8), 0.08)
 	how.name = "HowTo"
 	how.position = Vector3(0, 2.6, -0.38)
 	bench.add_child(how)
@@ -579,14 +1161,19 @@ func _build_bench_gun() -> void:
 	var gun := bench_gun(id, fitted)
 	var bare := bench_gun(id, [])
 	var visual := gun.build_visual()
-	var shown := Node3D.new()
+	var shown := Vise.new()
+	shown.base = self
+	shown.item_id = id
 	shown.name = "BenchGun"
-	shown.transform = _spot(BENCH_AT, BENCH_YAW) * _spot(Vector3(-0.15, 1.3, 0.1), 0.0)
+	shown.transform = _spot(BENCH_AT, BENCH_YAW) * _spot(Vector3(-0.15, 1.36, 0.1), 0.0)
 	var model := Node3D.new()
 	model.name = "Model"
 	visual.rotation.y = PI / 2.0
+	# Bigger than on the rack, so what is fitted shows from the bench.
+	visual.scale = Vector3.ONE * bench_scale
 	model.add_child(visual)
 	shown.add_child(model)
+	_add_collision(shown, Vector3(1.4, 0.5, 0.4), Vector3.ZERO)
 	# `Look` swaps in the real model and moves the attachments onto it.
 	shown.set_meta("display_item", id)
 	_display_root.add_child(shown)
@@ -602,6 +1189,27 @@ func _build_bench_gun() -> void:
 	_display_root.add_child(card)
 	gun.free()
 	bare.free()
+
+
+## Every gun that can go in the vise: the primaries in the stash, in stash
+## order, one of each.
+func bench_guns() -> Array[String]:
+	var out: Array[String] = []
+	for id: String in stash:
+		if Loadout.is_primary(id) and id not in out:
+			out.append(id)
+	return out
+
+
+## The gun the vise takes next: the one after the primary in `bench_guns`,
+## and after the last one "" (nothing equipped: the free scrap gun).
+func next_bench_gun() -> String:
+	var guns := bench_guns()
+	var current: String = loadout.get("primary", "")
+	var at := guns.find(current)
+	if at + 1 < guns.size():
+		return guns[at + 1]
+	return "" if current != "" or guns.is_empty() else guns[0]
 
 
 ## The attachments in the loadout, one per slot.
@@ -726,4 +1334,7 @@ func _label(text: String, color: Color, height: float) -> Label3D:
 	label.pixel_size = height / 64.0
 	label.outline_size = 12
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	# Writing on a wall is read from the front only, never mirrored from
+	# behind. Labels that turn to face you (billboards) are unaffected.
+	label.double_sided = false
 	return label

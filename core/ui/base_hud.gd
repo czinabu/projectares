@@ -1,12 +1,18 @@
 extends CanvasLayer
 ## What you see over your home base: a crosshair, the prompt for whatever you
-## are looking at, and the odd notice. Everything else is in the room: the
+## are looking at, the odd notice, and the holographic watch on your wrist
+## (`wrist`, raised with X as in a raid; its card says what each icon holds
+## for the next deploy, `Hud.base_watch_slots`). Everything else is in the room: the
 ## base's name and how it works hang on the banner, and the gear you look at
 ## gets a tag in the world saying what it is (`tag`).
 ##
 ## Load with `preload("res://core/ui/base_hud.gd")`.
 
 var base: HomeBase
+## Whose keys move the player; found under the base when not given.
+var controller: PlayerController
+## The watch, as in a raid (`Hud.Wrist`).
+var wrist: Hud.Wrist
 
 ## Rarity, worth and description of the gear you look at, floating over it.
 var tag: Label3D
@@ -18,8 +24,9 @@ var _notice_left := 0.0
 var crosshair: Label
 
 
-func setup(p_base: HomeBase) -> void:
+func setup(p_base: HomeBase, p_controller: PlayerController = null) -> void:
 	base = p_base
+	controller = p_controller
 
 
 func _ready() -> void:
@@ -52,6 +59,9 @@ func _ready() -> void:
 	_notice.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
 	_notice.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_place(_notice, 0.5, 1.0, Vector2(-420, -150), Vector2(840, 110))
+	wrist = Hud.Wrist.new()
+	wrist.name = "Wrist"
+	add_child(wrist)
 
 
 ## Shows a short message, such as why a server refused a change.
@@ -80,10 +90,34 @@ func _process(delta: float) -> void:
 	var lines := describe(target)
 	_prompt.text = lines[0]
 	_show_tag(target as HomeBase.Display, lines[1])
+	_update_wrist(delta)
 	if _notice_left > 0.0:
 		_notice_left -= delta
 		if _notice_left <= 0.0:
 			_notice.text = ""
+
+
+## Raises and fills the watch, as the raid's HUD does.
+func _update_wrist(delta: float) -> void:
+	if wrist == null or not is_instance_valid(wrist):
+		return
+	if controller == null or not is_instance_valid(controller):
+		controller = null
+		for child in base.get_children():
+			if child is PlayerController:
+				controller = child
+	var p := base.player
+	wrist.raised = controller != null and controller.wrist_raised
+	wrist.mount(p, controller, visible, delta)
+	var slots := Hud.base_watch_slots("Home base" if base.owner_name == "" else "%s's base" % base.owner_name, base.loadout)
+	var focus := Hud.default_focus(slots)
+	if controller != null:
+		if controller.watch_focus_moved:
+			focus = clampi(controller.watch_focus, 0, slots.size() - 1)
+		else:
+			controller.watch_focus = focus
+	wrist.show_card(slots, focus, "", p.health.health / maxf(p.health.max_health, 1.0), [] as Array[float])
+	wrist.show_toys([] as Array[String], 0, true, delta)
 
 
 ## Hangs the tag over the display you look at, or puts it away.
@@ -102,6 +136,9 @@ func _show_tag(display: HomeBase.Display, text: String) -> void:
 func _exit_tree() -> void:
 	if tag != null and is_instance_valid(tag):
 		tag.queue_free()
+	if wrist != null and is_instance_valid(wrist):
+		wrist.take_off()
+		wrist.queue_free()
 
 
 func _label(root: Control, text: String, font_size: int, color: Color) -> Label:

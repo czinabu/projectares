@@ -18,9 +18,9 @@ rows marked **pre-playtest** come before the friends playtest.
 | Hub spectating screens and bounty board | Partly | Heat signs over the world gates already show war level, players, top bounty and events (`world_status`). Missing: a most-wanted board, arena results, live arena video (later). First hub activity. |
 | Hub ring races and time trials, with per-rig and bike leaderboards | Missing | Second hub activity, after the hub is expanded. |
 | Hub toy RC arena | Missing | Later; a separate little game. |
-| Home base with armory wall, garage, trophies | Built | `core/base`: gun rack, blade wall, garage, trophy shelf, consoles. |
+| Home base with armory wall, garage, trophies | Built | `core/base`: one armory rack for every weapon (long guns, sidearms, melee) in an alcove with the gunsmith bench and locker, a suit-up bay, a garage off the room, trophy shelf, consoles. |
 | Heavy weapons stacked on the armory wall | Missing | Power weapons cannot be stored (`StashRules.storable` refuses the `power` tag). **Pre-playtest**, with the heavy chamber. |
-| Base firing range and flight tunnel (target drones, endless heavy-weapon ammo, nothing lost) | Missing | First base upgrade, after the playtest. |
+| Base firing range and flight tunnel (target drones, endless heavy-weapon ammo, nothing lost) | Partly | `HomeBase`: a 30 m range behind the back wall with standing, sliding and flying targets, a score board, endless ammo past the firing line, no damage and no mastery. Missing: heavy weapons (they never reach the base yet) and a proper flight tunnel. |
 | Squad teleporter pad: squadmates in your base together, launching together | Partly | A phone invite already lets a friend visit your base, but alone and read-only (`base_visit_requested`). Needs shared online base visits first. |
 | Trophies and blueprint pedestals from PvE bosses and arena brackets | Partly | A trophy shelf and a Trophy Case furniture item exist; earned trophies need PvE bosses and arena brackets. Later. |
 | PvE world: quests, dungeons, bosses | Missing, deferred | Until after the friends playtest. Frostline stands in (no PvP, gentle death, basic loot). |
@@ -45,7 +45,7 @@ rows marked **pre-playtest** come before the friends playtest.
 | Per-rig readouts (stall line, height band, dash pips) | Missing | Now part of the flight HUD (see Flight): at the visor edge and on the rig, not the watch. Comes with the aerial rig rework. **Pre-playtest.** |
 | Sign-out from the watch, with its countdown | Partly | Sign-out exists on L; not on the watch. |
 | Loadout swapping from the watch in the PvE world | Missing, deferred | With the PvE world. Today loadouts change only in a lobby or base. |
-| Raising the watch with the character's own left arm, first and third person | Partly | Third person the left arm now lifts the wrist in front of the chest (`WeaponArm.watch_at`, from `ActionPose.watch`, on the same timing as first person). Still missing: turning the wrist so the face points at the eyes, opening the hologram from the real wrist, other players seeing it (the raise is not replicated), and first person showing the character's own arm instead of the grey box forearm. |
+| Raising the watch with the character's own left arm, first and third person | Partly | Third person the left arm lifts the wrist across the chest (`WeaponArm.watch_at`, from `ActionPose.watch`, which `ActorCommand.watch_up` drives so others see it too) and the forearm rolls so the watch face, worn on the back of the wrist (`Hud.Wrist.FACE_AXIS`), looks at the eyes (`WeaponArm._face_watch`). The watch and its card work in the home base too (`BaseHud.wrist`, `Hud.base_watch_slots`). Still missing: first person showing that same pose (it still poses its own copy of the arm), and opening the hologram from the real wrist. |
 
 ## Loadout
 

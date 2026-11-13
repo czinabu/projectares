@@ -5880,9 +5880,196 @@ func _use(actor: Actor) -> void:
 	await frames(1)
 
 
+## Every weapon hangs on the one armory rack, in the alcove with the bench
+## and the locker at its way in; nothing else is shown there.
+func _test_armory(base: HomeBase) -> void:
+	print("Home base armory")
+	var weapons: Array[String] = []
+	for id: String in ItemDB.all_ids():
+		if ItemDB.has_tag(id, "weapon") and not ItemDB.has_tag(id, "starter"):
+			weapons.append(id)
+	var every_weapon := true
+	for id in weapons:
+		every_weapon = every_weapon and BaseLayout.is_armory(BaseLayout.kind_for(id))
+	check(not weapons.is_empty() and every_weapon, "every weapon belongs on the armory rack (%d weapons)" % weapons.size())
+	var spots := 0
+	var in_alcove := true
+	var others_out := true
+	for kind: String in BaseLayout.KINDS:
+		var last := int(BaseLayout.KINDS[kind]["spots"]) - 1
+		var ends := [base.spot_transform(kind, 0).origin, base.spot_transform(kind, last).origin]
+		if BaseLayout.is_armory(kind):
+			spots += last + 1
+			for at: Vector3 in ends:
+				in_alcove = in_alcove and base.in_armory(at)
+		elif kind != "gunsmith":
+			for at: Vector3 in ends:
+				others_out = others_out and not base.in_armory(at)
+	check(in_alcove and BaseLayout.ARMORY.size() == 3, "the rack's sections all hang inside the armory")
+	check(others_out, "armor, rigs, the garage and the shelves stay in the main room")
+	check(spots > 14, "the rack holds more weapons than the old gun rack and blade wall did (%d spots)" % spots)
+	await _test_suit_up(base)
+	check(base.in_armory(HomeBase.BENCH_AT) and base.in_armory(base.spot_transform("gunsmith", 11).origin),
+			"the gunsmith bench and its pegboard stand in the armory")
+	var locker: Vector3 = HomeBase.STATIONS["locker"]["at"]
+	check(not base.in_armory(locker) and absf(locker.x + base.room_size.x * 0.5) < 1.5
+			and absf(locker.z) < base.armory_opening * 0.5 + 2.0, "the locker stands beside the way into the armory")
+	check(base.has_node("ArmorySign") and base.has_node("ArmorySill"), "a sign over the way in names the armory")
+	# Signage: nothing mirrored from behind, names only up close, one title each.
+	var mirrored := 0
+	var bench_titles := 0
+	for node in base.find_children("*", "Label3D", true, false):
+		var label := node as Label3D
+		if label.double_sided and label.billboard == BaseMaterial3D.BILLBOARD_DISABLED:
+			mirrored += 1
+		if label.text == "GUNSMITH BENCH":
+			bench_titles += 1
+	check(mirrored == 0, "no wall label can be read mirrored from behind (%d can)" % mirrored)
+	check(bench_titles == 1 and not base.has_node("Displays/Sign_bay") and not base.has_node("Displays/Sign_gunsmith"),
+			"the bench and the garage carry one title each, not a second section sign")
+	var plates_near := true
+	for display in base.displays:
+		var plate := display.get_node("Plate") as Label3D
+		plates_near = plates_near and plate.visibility_range_end > 0.0 and plate.visibility_range_end <= 6.0
+	check(plates_near, "item names show only from close up")
+	# The way in is open: walk from the room to the rack.
+	var walker := base.player
+	var was := walker.global_position
+	walker.global_position = base.to_global(Vector3(-9.0, 0.1, -2.5))
+	walker.velocity = Vector3.ZERO
+	await frames(2)
+	walker.cmd.yaw = PI / 2.0
+	walker.cmd.move = Vector2(0, 1)
+	await frames(90)
+	walker.cmd.move = Vector2.ZERO
+	check(base.in_armory(base.to_local(walker.global_position)), "you can walk from the room into the armory")
+	walker.global_position = was
+	walker.velocity = Vector3.ZERO
+	await frames(2)
+
+
+## The suit-up bay puts the loadout on the player before they deploy.
+func _test_suit_up(base: HomeBase) -> void:
+	print("Home base suit-up bay")
+	var bay_at := HomeBase.SUIT_AT
+	var pad: Vector3 = HomeBase.STATIONS["launch"]["at"]
+	check(base.inside(bay_at) and not base.in_armory(bay_at) and bay_at.distance_to(pad) < 5.0,
+			"the suit-up bay stands in the main room beside the launch pad")
+	check(base.suit_bay != null and base.suit_bay.get_prompt() == "[F] Suit up: put your loadout on",
+			"its control post offers to suit you up")
+	var kit := base.suit_kit()
+	check(base.loadout.get("primary", "") in kit and kit.any(func(id: String) -> bool: return ItemDB.has_tag(id, "melee"))
+			and not kit.any(func(id: String) -> bool: return ItemDB.has_tag(id, "vehicle")),
+			"the kit is your loadout, starter gear filling empty slots, with vehicles left parked (%s)" % [kit])
+	var before := base.player
+	var replaced := []
+	base.player_replaced.connect(func(actor: Actor) -> void: replaced.append(actor), CONNECT_ONE_SHOT)
+	base.suit_bay.interact(before)
+	await frames(3)
+	var worn := base.player
+	check(replaced == [worn] and worn != before,
+			"suiting up makes the player a new actor and says so")
+	var carried: Array[String] = []
+	for weapon in worn.weapons:
+		carried.append(weapon.item_id)
+	check(base.loadout.get("primary", "") in carried and worn.gear_items.size() >= kit.size() - 1,
+			"you wear your loadout (%s)" % [carried])
+	check(worn.weapons_locked and worn.global_position.distance_to(base.to_global(bay_at)) < 1.0,
+			"you stand in the bay, weapons locked: nobody fights at home")
+	check(base.suit_bay.get_prompt().ends_with("wearing your loadout"), "the bay says you are suited up")
+	var kept := base.loadout.duplicate()
+	var changed := base.loadout.duplicate()
+	changed["primary"] = "dmr_longshot"
+	base.show_gear(base.stash, changed)
+	await frames(2)
+	check(base.suit_bay.get_prompt().begins_with("[F] Suit up again"), "a changed loadout asks you to suit up again")
+	base.show_gear(base.stash, kept)
+	await frames(2)
+	await _test_garage_and_range(base)
+	var visitor := HomeBase.new()
+	visitor.read_only = true
+	visitor.show_gear(["rifle_carbine"], {"primary": "rifle_carbine"})
+	add_child(visitor)
+	await frames(2)
+	var guest := visitor.player
+	visitor.suit_bay.interact(guest)
+	await frames(2)
+	check(visitor.player == guest and not visitor.suited and visitor.suit_bay.get_prompt().ends_with("(not yours)"),
+			"a visitor cannot use someone else's bay")
+	visitor.queue_free()
+	await frames(2)
+
+
+## Bikes park in the garage off the right wall; behind the back wall the
+## firing range frees a suited player's weapons and scores what they hit.
+func _test_garage_and_range(base: HomeBase) -> void:
+	print("Home base garage and firing range")
+	var parked := true
+	for i in int(BaseLayout.KINDS["bay"]["spots"]):
+		parked = parked and base.in_garage(base.spot_transform("bay", i).origin)
+	check(parked and base.has_node("GarageSign"), "every garage bay is in the garage off the room")
+	var clear := true
+	for id: String in HomeBase.STATIONS:
+		var at: Vector3 = HomeBase.STATIONS[id]["at"]
+		clear = clear and base.inside(at) and not base.in_garage(at) and not base.in_armory(at) and not base.in_range(at)
+	check(clear, "the consoles stand in the main room, clear of the garage, armory and range")
+	var all_on_range := true
+	for target in base.targets:
+		all_on_range = all_on_range and base.in_range(target.home)
+	check(base.targets.size() >= 6 and all_on_range, "the range has targets down its lane (%d)" % base.targets.size())
+	var kinds := {}
+	for target in base.targets:
+		kinds[target.kind] = true
+	check(kinds.has("plate") and kinds.has("slider") and kinds.has("drone"), "standing, sliding and flying targets")
+	var p := base.player
+	check(p.weapons_locked, "weapons stay locked in the main room")
+	# Walk through the door in the back wall.
+	p.global_position = base.to_global(Vector3(0, 0.1, -6.5))
+	p.velocity = Vector3.ZERO
+	p.cmd.yaw = 0.0
+	p.cmd.pitch = 0.0
+	p.cmd.move = Vector2(0, 1)
+	await frames(60)
+	p.cmd.move = Vector2.ZERO
+	await frames(2)
+	check(base.in_range(base.to_local(p.global_position)), "you can walk through the back wall into the range")
+	check(not p.weapons_locked, "past the line your weapons are free")
+	var gun := p.get_active_weapon() as Gun
+	check(gun != null and gun.reserve_ammo >= gun.mag_size * 4, "and never run dry")
+	# Shoot the nearest plate.
+	var plate: HomeBase.RangeTarget = base.targets[0]
+	var line_z := -base.room_size.z * 0.5 - base.firing_line
+	p.global_position = base.to_global(Vector3(plate.home.x, 0.1, line_z - 0.8))
+	p.velocity = Vector3.ZERO
+	await frames(2)
+	var eye := p.global_position + Vector3(0, p.eye_height, 0)
+	var dir := (plate.to_global(plate.centre) - eye).normalized()
+	p.cmd.yaw = atan2(-dir.x, -dir.z)
+	p.cmd.pitch = asin(dir.y)
+	p.cmd.aim_dir = dir
+	await frames(10)
+	var shots_before := base.range_shots
+	for i in 3:
+		p.cmd.primary_pressed = true
+		p.cmd.primary = true
+		await frames(1)
+		p.cmd.primary_pressed = false
+		p.cmd.primary = false
+		await frames(20)
+	check(base.range_shots > shots_before and base.range_hits > 0 and plate.hits > 0,
+			"shots on the range are counted and hits on a plate score (%d shots, %d hits)" % [base.range_shots, base.range_hits])
+	check("HITS" in base.range_board.text and base.range_last != "", "the board over the lane keeps score")
+	# Back into the room: locked again.
+	p.global_position = base.to_global(Vector3(0, 0.1, 2.0))
+	p.velocity = Vector3.ZERO
+	await frames(3)
+	check(p.weapons_locked, "weapons lock again back in the room")
+
+
 func _test_home_base() -> void:
 	print("Home base layout")
-	check(BaseLayout.kind_for("dmr_longshot") == "gun_rack" and BaseLayout.kind_for("hammer_breaker") == "blade_wall"
+	check(BaseLayout.kind_for("dmr_longshot") == "rack_guns" and BaseLayout.kind_for("hammer_breaker") == "rack_melee"
+			and BaseLayout.kind_for("pistol_machine") == "rack_sidearms" and BaseLayout.kind_for("power_rail_lance") == "rack_guns"
 			and BaseLayout.kind_for("frame_bulwark") == "armor_stand" and BaseLayout.kind_for("wings_glide") == "rig_stand"
 			and BaseLayout.kind_for("chip_blink") == "chip_case" and BaseLayout.kind_for("bike_raider") == "bay"
 			and BaseLayout.kind_for("medkit") == "supplies" and BaseLayout.kind_for("lattice_shard") == "trophy",
@@ -5898,7 +6085,7 @@ func _test_home_base() -> void:
 		if not by_kind.has(entry["kind"]):
 			by_kind[entry["kind"]] = []
 		by_kind[entry["kind"]].append(entry)
-	var guns: Array = by_kind.get("gun_rack", [])
+	var guns: Array = by_kind.get("rack_guns", [])
 	check(guns.size() == 2 and guns[0]["id"] == "dmr_longshot" and guns[0]["index"] == 0
 			and guns[1]["id"] == "rifle_carbine", "the most valuable gun gets the first spot")
 	check(guns[1]["count"] == 2 and guns[1]["equipped"] and not guns[0]["equipped"],
@@ -5937,10 +6124,10 @@ func _test_home_base() -> void:
 	var apart := true
 	for display in base.displays:
 		var key := "%s/%d" % [display.kind, display.index]
-		apart = apart and not spots.has(key) and absf(display.global_position.x) < base.room_size.x * 0.5 \
-				and absf(display.global_position.z) < base.room_size.z * 0.5
+		apart = apart and not spots.has(key) and base.inside(display.position)
 		spots[key] = true
 	check(apart, "every display has its own spot inside the room")
+	await _test_armory(base)
 	var asked := []
 	base.equip_requested.connect(func(slot: String, id: String) -> void: asked.append([slot, id]))
 	var dmr := base.display_for("dmr_longshot")
@@ -5971,6 +6158,27 @@ func _test_home_base() -> void:
 	check(lines[0] == "Lattice Shard" and "Relic" in lines[1], "the overlay names what you look at and its rarity")
 	check(hud.tag.visible and hud.tag.text == lines[1] and hud.tag.global_position.distance_to(shard.global_position) < 2.0,
 			"what it is shows on a tag over the gear itself, not on the screen")
+	# The watch works at home as in a raid (playtest: X half-raised the arm
+	# with no card): it rises with the key and its card has every icon.
+	check(hud.wrist != null and not hud.wrist.raised, "the base wears the watch, lowered")
+	var watch_keys := PlayerController.new()
+	watch_keys.setup(base.player)
+	base.add_child(watch_keys)
+	watch_keys.wrist_raised = true
+	await frames(30)
+	var watch_icons: Array = hud.wrist.card.slots.map(func(slot: Dictionary) -> String: return slot.id)
+	check(hud.wrist.raised and hud.wrist.raise_amount >= 1.0 and watch_icons == Hud.Wrist.SLOTS
+			and base.player.cmd.watch_up, "X raises the watch in the base and its card opens: %s" % ", ".join(watch_icons))
+	var home := Hud.base_watch_slots("Home base", {"vehicle": "bike_raider"})
+	var home_vehicle: Dictionary = home[Hud.Wrist.SLOTS.find("vehicle")]
+	check(home[0].detail == "Home base" and home_vehicle.detail == ItemDB.item_name("bike_raider")
+			and not home_vehicle.empty and Hud.base_watch_slots("Home base", {})[Hud.Wrist.SLOTS.find("vehicle")].empty,
+			"at home the card says where you are and which vehicle you deploy with")
+	watch_keys.wrist_raised = false
+	await frames(30)
+	check(hud.wrist.raise_amount <= 0.0 and not base.player.cmd.watch_up, "X lowers it again")
+	watch_keys.queue_free()
+	await frames(2)
 	check(base.get_node("Banner/Title").text == "HOME BASE" and "press F" in base.banner_text(),
 			"the base's name and how it works hang on a banner in the room")
 	for kind: String in BaseLayout.KINDS:
@@ -6033,6 +6241,22 @@ func _test_home_base() -> void:
 	main.base.equip_requested.emit("primary", "frame_bulwark")
 	check(Profile.equipped("vehicle") == "bike_scrapper" and Profile.equipped("primary") == "dmr_longshot",
 			"a parked bike can be picked, and gear cannot go in the wrong slot")
+	# Suiting up in the bay: real input on its control post.
+	var unsuited: Actor = main.base.player
+	_face_display(main.base.player, main.base.suit_bay)
+	main.controller.yaw = main.base.player.cmd.yaw
+	main.controller.pitch = main.base.player.cmd.pitch
+	await frames(3)
+	check(main.base.player.find_interactable() == main.base.suit_bay
+			and main.base.suit_bay.get_prompt().begins_with("[F] Suit up"), "the suit-up bay can be walked up to")
+	Input.action_press("interact")
+	await frames(3)
+	Input.action_release("interact")
+	await frames(3)
+	var suited: Actor = main.base.player
+	check(main.base.suited and suited != unsuited and suited.weapons.size() > 0, "using the bay suits you up")
+	check(main.controller.actor == suited and main.controller.camera.current,
+			"the controls and camera follow you into your suit")
 	check(main.hub.equipped("primary") == "dmr_longshot", "the locker shows the loadout chosen in the base")
 	# Every station opens its screen over the room, and Esc steps away.
 	for id: String in HomeBase.STATIONS:

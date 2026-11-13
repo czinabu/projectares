@@ -218,16 +218,33 @@ func _open_base(stash: Array, loadout: Dictionary, owner_name: String) -> void:
 	base.equip_requested.connect(_on_base_equip)
 	base.leave_requested.connect(_on_base_door)
 	base.station_requested.connect(open_station)
+	base.player_replaced.connect(func(_actor: Actor) -> void: _attach_base_view())
+	_attach_base_view()
+	base_hud = BaseHudScript.new()
+	base_hud.name = "BaseHud"
+	base_hud.setup(base, controller)
+	base.add_child(base_hud)
+	_apply_settings()
+
+
+## Gives the base's player a camera and controls. Called again when they
+## suit up, which makes them a new actor wearing their loadout.
+func _attach_base_view() -> void:
+	if base == null:
+		return
+	var view_third := false
+	if controller != null and is_instance_valid(controller):
+		view_third = controller.is_third_person()
+		controller.get_parent().remove_child(controller)
+		controller.queue_free()
 	Look.set_appearance(base.player, _my_look())
 	controller = PlayerController.new()
 	controller.phone_out = phone != null and phone.is_open
 	controller.setup(base.player)
 	base.add_child(controller)
-	base_hud = BaseHudScript.new()
-	base_hud.name = "BaseHud"
-	base_hud.setup(base)
-	base.add_child(base_hud)
-	_apply_settings()
+	# The view is the player's choice: suiting up keeps it.
+	if view_third != controller.is_third_person():
+		controller.toggle_view()
 
 
 ## Closes the base, whatever comes next.
