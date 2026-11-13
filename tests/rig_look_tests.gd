@@ -34,13 +34,13 @@ static func run(t: Node) -> void:
 	mk2.free()
 	# A rail down each side clamps the holstered long weapons, leaning out at
 	# the top so they stand in a V; nothing else on the pack sticks out past it.
-	for id: String in ["jetpack_mk1", "jetpack_mk2"]:
+	for id: String in ["jetpack_mk1", "jetpack_mk2", "wings_glide"]:
 		var jet_model := RigModel.build_back(id)
 		var mount_l := jet_model.get_node_or_null("MountL") as Marker3D
 		var mount_r := jet_model.get_node_or_null("MountR") as Marker3D
 		t.check(mount_l != null and mount_r != null, "%s has a weapon rail on each side" % id)
 		if mount_l and mount_r:
-			t.check(mount_r.position.x > 0.2 and mount_l.position.x < -0.2
+			t.check(mount_r.position.x > 0.15 and mount_l.position.x < -0.15
 					and absf(mount_r.position.x + mount_l.position.x) < 0.001, "%s's rails are on its sides" % id)
 			t.check(mount_r.basis.y.x > 0.05 and mount_l.basis.y.x < -0.05 and mount_r.basis.y.y > 0.98,
 					"%s's rails lean out at the top, a slight V" % id)
@@ -52,6 +52,23 @@ static func run(t: Node) -> void:
 					var rail_x := mount_r.position.x + (box.get_center().y - mount_r.position.y) * mount_r.basis.y.x
 					past = maxf(past, maxf(box.end.x, -box.position.x) - rail_x)
 			t.check(past < 0.06, "%s has nothing past its rails but the clamps (%.3f m)" % [id, past])
+		t.check(jet_model.get_node_or_null("HeatDisplay") != null, "%s has a heat screen on its back" % id)
+		if jet_model.has_node("WingR"):
+			# Spread, a wing passes in front of the rail, never through a
+			# weapon clamped there.
+			RigModel.set_wing_spread(jet_model, 1.0)
+			var wing_back := -INF
+			for node in jet_model.get_node("WingR").find_children("*", "MeshInstance3D", true, false):
+				var mesh_node := node as MeshInstance3D
+				var xform := _in_xform(jet_model, mesh_node)
+				for i in mesh_node.mesh.get_surface_count():
+					for v: Vector3 in mesh_node.mesh.surface_get_arrays(i)[Mesh.ARRAY_VERTEX]:
+						var at := xform * v
+						# As far out as a clamped weapon reaches.
+						if mount_r and at.x < mount_r.position.x + 0.35:
+							wing_back = maxf(wing_back, at.z)
+			t.check(mount_r != null and mount_r.position.z - wing_back > 0.04,
+					"the wing pack's rails stand behind the wings (%.3f m clear)" % (mount_r.position.z - wing_back if mount_r else 0.0))
 		jet_model.free()
 	t.check(RigModel.build_back("boots_thruster") == null and RigModel.build_boot("jetpack_mk1", 1.0) == null,
 			"boots go only on the feet, and a jetpack only on the back")
@@ -245,6 +262,7 @@ static func run(t: Node) -> void:
 	t.check(pack_node != null and skin.find_children("Boot*", "Node3D", true, false).filter(
 			func(n: Node) -> bool: return not n.is_queued_for_deletion()).is_empty(), "glide wings replace the boots")
 	if pack_node:
+		_check_clamped(t, p, skin, pack_node)
 		var wing_tip := pack_node.get_node("WingR/Panel/TipLight") as Node3D
 		var stowed_at := p.to_local(wing_tip.global_position)
 		t.check(absf(stowed_at.x) < 0.2 and not wing_tip.is_visible_in_tree(), "the wings stay retracted on the ground")
@@ -311,8 +329,8 @@ static func _equip(actor: Actor, id: String) -> void:
 	actor.flight.enabled = true
 
 
-## With a jetpack on and the weapons holstered, the gun is clamped to the
-## rail on the right: its near side on the clamps, leaning out with the rail,
+## With a jetpack or wing pack on and the weapons holstered, the gun is
+## clamped to the rail on the right: its near side on the clamps, leaning out with the rail,
 ## and clear of the heat screen on the pack's back.
 static func _check_clamped(t: Node, p: Actor, skin: Node, jet: Node3D) -> void:
 	var gun: Weapon = null
@@ -328,7 +346,7 @@ static func _check_clamped(t: Node, p: Actor, skin: Node, jet: Node3D) -> void:
 	var model: Node3D = skin._stowed_models.get(gun)
 	var mount := jet.get_node("MountR") as Marker3D
 	var screen := jet.get_node("HeatDisplay") as Marker3D
-	t.check(model != null and model.is_visible_in_tree(), "a holstered gun is worn with a jetpack on")
+	t.check(model != null and model.is_visible_in_tree(), "a holstered gun is worn with a %s on" % jet.name)
 	if model:
 		var to_jet := jet.global_transform.affine_inverse()
 		var near := INF
@@ -343,9 +361,9 @@ static func _check_clamped(t: Node, p: Actor, skin: Node, jet: Node3D) -> void:
 					if absf(at.y - mount.position.y) < 0.08:
 						# Distance out from the rail's clamp faces, along the rail's normal.
 						near = minf(near, (at - mount.position).dot(mount.basis.x))
-		t.check(near > -0.01 and near < 0.02, "a holstered gun rests on the jetpack's clamps, not off them (%.3f m)" % near)
+		t.check(near > -0.01 and near < 0.02, "a holstered gun rests on the %s's clamps, not off them (%.3f m)" % [jet.name, near])
 		t.check(inner > screen.position.x + screen.get_meta("size", Vector2.ZERO).x * 0.5,
-				"a holstered gun leaves the jetpack's heat screen in view")
+				"a holstered gun leaves the %s's heat screen in view" % jet.name)
 		var along: Vector3 = (to_jet.basis * (model.get_parent() as Node3D).global_basis * Vector3.FORWARD).normalized()
 		# Held, a gun points along -Z; worn, that is up the rail.
 		t.check(along.x > 0.05 and along.y > 0.95, "a clamped gun leans out at the top with its rail")

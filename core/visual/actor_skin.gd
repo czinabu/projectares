@@ -110,8 +110,8 @@ var sling_height := -0.2
 ## middle of a slung weapon sits out from the back or the rig's outer face.
 var back_surface := 0.13
 var sling_clearance := 0.04
-## Over a rig with weapon rails down its sides (a jetpack, whose back holds
-## its heat gauge), a long weapon is clamped to the rail on its side instead,
+## Over a rig with weapon rails down its sides (a jetpack or wing pack,
+## whose back holds its heat gauge), a long weapon is clamped to the rail on its side instead,
 ## so it never hides the screen: its middle this far up the rail from the
 ## rail's middle, and this far out from the clamp faces.
 var mount_rise := 0.02

@@ -16,10 +16,10 @@ extends RefCounted
 ##   "Nozzle*"     Marker3D, flame start, pointing down (-Y). Its meta
 ##                 "flame" is Vector2(radius, length) for the flame.
 ##   "WingL/R"     Node3D hinges; `set_wing_spread` slides them in and out.
-##   "HeatDisplay" Marker3D on a jetpack: a clear flat face, looking back (+Z),
+##   "HeatDisplay" Marker3D on a jetpack or wing pack: a clear flat face, looking back (+Z),
 ##                 kept free for an in-world heat readout. Its meta "size"
 ##                 (Vector2, meters) is the room there is.
-##   "MountL/R"    Marker3D on a jetpack: the outer face of the weapon rail on
+##   "MountL/R"    Marker3D on a jetpack or wing pack: the outer face of the weapon rail on
 ##                 each side, where a holstered long weapon is clamped. +Y
 ##                 runs up the rail (leaning out at the top, so the two
 ##                 weapons stand in a slight V) and +X points straight out
@@ -45,6 +45,9 @@ var mount_lean := deg_to_rad(6.0)
 var rail_length := 0.3
 ## How far a clamp's prongs reach out past the rail to grip a weapon.
 var clamp_reach := 0.05
+## How far behind the wing slots a wing pack's weapon rails stand: spread,
+## the wings sweep back a little, and a clamped weapon must stay behind them.
+var wing_rail_standoff := 0.11
 
 
 ## Which model an item gets: "jetpack", "boots", "wings", or "" if it is not a
@@ -196,11 +199,17 @@ func _jetpack(id: String) -> Node3D:
 	return root
 
 
-## A weapon rail on the outer face of a jetpack's pod cowl (`at`): a bar
+## A weapon rail on the outer face of a back rig's side (`at`; `standoff`
+## further back on brackets, where something slides out of that side): a bar
 ## that stands on the cowl at its foot and leans out at the top on a longer
 ## post, with a clamp near each end. Holstered long weapons are worn against
 ## the clamps ("MountL/R"), so they sit on the pack, not beside it.
-func _weapon_rail(root: Node3D, side: float, at: Vector3, glow: Color) -> void:
+func _weapon_rail(root: Node3D, side: float, at: Vector3, glow: Color, standoff := 0.0) -> void:
+	if standoff > 0.0:
+		# Brackets back from the pack's side to where the rail stands.
+		for y: float in [-rail_length * 0.38, rail_length * 0.38]:
+			root.add_child(_box(Vector3(0.02, 0.022, standoff + 0.01), Vector3(at.x - side * 0.008, at.y + y, at.z + standoff * 0.5), _mat(DARK)))
+		at.z += standoff
 	var lean := Basis(Vector3.BACK, -side * mount_lean)
 	var out := lean * Vector3(side, 0, 0)
 	var up := lean * Vector3.UP
@@ -265,8 +274,17 @@ func _wing_pack(id: String) -> Node3D:
 	root.add_child(_cylinder(0.04, 0.04, 0.28, Vector3(0, 0.16, 0.075), _mat(paint), Vector3(0, 0, PI / 2.0)))
 	for x: float in [-0.141, 0.141]:
 		root.add_child(_box(Vector3(0.006, 0.38, 0.03), Vector3(x, -0.06, 0.075), _mat(STRAP)))
-	root.add_child(_box(Vector3(0.04, 0.38, 0.03), Vector3(0, -0.06, 0.125), _mat(DARK)))
-	root.add_child(_box(Vector3(0.012, 0.3, 0.012), Vector3(0, -0.06, 0.142), _mat(accent, 1.2)))
+	# A screen bay up top, kept clear for the heat readout as on a jetpack,
+	# and the ridge below it.
+	var bay_at := Vector3(0, 0.03, 0.118)
+	root.add_child(_box(Vector3(0.15, 0.16, 0.006), bay_at, _mat(DARK)))
+	var display := Marker3D.new()
+	display.name = "HeatDisplay"
+	display.position = bay_at + Vector3(0, 0, 0.004)
+	display.set_meta("size", Vector2(0.13, 0.14))
+	root.add_child(display)
+	root.add_child(_box(Vector3(0.04, 0.2, 0.03), Vector3(0, -0.17, 0.125), _mat(DARK)))
+	root.add_child(_box(Vector3(0.012, 0.16, 0.012), Vector3(0, -0.17, 0.142), _mat(accent, 1.2)))
 	# One short launch nozzle at the bottom.
 	root.add_child(_cylinder(0.035, 0.05, 0.07, Vector3(0, -0.305, 0.075), _mat(STEEL)))
 	root.add_child(_cylinder(0.04, 0.04, 0.006, Vector3(0, -0.342, 0.075), _mat(EMBER, 0.8)))
@@ -291,6 +309,9 @@ func _wing_pack(id: String) -> Node3D:
 		hinge.set_meta("stowed_span", wing_stowed_span)
 		hinge.add_child(_wing(side, paint, accent))
 		root.add_child(hinge)
+		# The weapon rail stands off the back corner, behind the wing slot,
+		# so a clamped weapon never meets a wing sliding out.
+		_weapon_rail(root, side, Vector3(side * 0.14, -0.06, 0.075), accent, wing_rail_standoff)
 	set_wing_spread(root, 0.0)
 	return root
 
