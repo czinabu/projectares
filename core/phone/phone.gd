@@ -52,17 +52,20 @@ const CONTROLS := [
 		["Slide (while sprinting)", "{slide}"],
 		["First or third person", "{toggle_view}"],
 	]],
+	["FLYING: EVERY RIG", [
+		["Dash the way you steer, on heat (in the air)", "{sprint} + {move_forward} {move_left} {move_back} {move_right}"],
+		["Dash forward (in the air)", "Tap {sprint}"],
+	]],
 	["FLYING: JETPACK", [
 		["Climb (in the air)", "Hold {jump}"],
 		["Light the jets and hover", "Tap {jump} in the air"],
 		["Cruise while hovering", "{move_forward} {move_left} {move_back} {move_right}"],
 		["Coast down with the jets idle to cool", "Hold {slide}"],
-		["Boost head first (Mk2)", "{sprint} + {move_forward}"],
+		["Boost head first (Mk2)", "Hold {sprint} + {move_forward}"],
 	]],
 	["FLYING: THRUSTER BOOTS", [
 		["Kick up and the way you steer (three reach a roof)", "{jump} in the air"],
 		["Skim low (cools near a street or a roof)", "Hold {jump} in the air"],
-		["Dash on heat", "{dash} in the air"],
 	]],
 	["FLYING: GLIDE WINGS", [
 		["Launch", "{jump} in the air"],
@@ -70,8 +73,6 @@ const CONTROLS := [
 		["Pulse up while gliding", "{jump} again"],
 		["Bank round", "{move_left} / {move_right}"],
 		["Dive for speed, pull up to climb on it", "{move_forward} / {move_back}"],
-		["Barrel roll while gliding", "{roll_left} / {roll_right}"],
-		["Roll the body while boosting", "{roll_left} / {roll_right}"],
 	]],
 	["WEAPONS", [
 		["Fire", "{fire}"],

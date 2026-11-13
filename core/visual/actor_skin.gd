@@ -85,7 +85,8 @@ var bank_follow := 5.0
 ## Hovering on a jetpack, the body leans the way it flies: radians at full
 ## fly speed, and how far the legs trail.
 var hover_lean := 0.45
-## The roll keys twist the body round its own length, in radians a second.
+## A sideways air dash while flat rolls the body once round its own length;
+## after it, the body rights itself at this many radians a second.
 var twist_speed := 7.0
 
 ## Riding, the head turns at most this far (radians) toward the aim; the
@@ -184,7 +185,7 @@ var _boost := 0.0
 ## Which way the body tips (the actor's space, level) times how far, radians.
 var _tilt := Vector3.ZERO
 ## Roll about the body's length: banking into a turn (positive in a left
-## turn), and from the roll keys (positive to the right).
+## turn), and from a sideways air dash (positive to the right).
 var _bank := 0.0
 var _twist := 0.0
 ## How far the model is turned to face the way it flies, radians.
@@ -853,8 +854,9 @@ func _update_rig(delta: float) -> void:
 ## Sets the whole model's attitude in the air, about the actor's middle.
 ## Gliding or boosting it lies flat along the way it flies (nose down in a
 ## dive, up in a climb), turned to face that way and banked into the turn.
-## Hovering it leans the way it drifts. The roll keys twist it round. All of
-## it is read from velocity and the command, so remote players match.
+## Hovering it leans the way it drifts. A sideways air dash barrel rolls it.
+## All of it is read from velocity and the simulated actor, so remote
+## players match.
 ## The arms and legs are posed by `_pose_glide`, last in the skeleton's order.
 func _update_glide(delta: float) -> void:
 	var alive := not actor.is_dead and actor.vehicle == null
@@ -894,10 +896,10 @@ func _update_glide(delta: float) -> void:
 	_tilt = _tilt.lerp(tilt, follow)
 	_face = lerp_angle(_face, face, follow)
 	_bank = lerpf(_bank, bank, 1.0 - exp(-bank_follow * delta))
-	# The roll keys: held, the body keeps turning; let go, it rights itself
-	# the short way round.
-	if flat and actor.cmd.roll != 0:
-		_twist += actor.cmd.roll * twist_speed * delta
+	# A sideways air dash: one full roll over the dash; then the body rights
+	# itself the short way round.
+	if flat and actor.air_dash_left > 0.0 and absf(actor.air_dash_side) > 0.5:
+		_twist += signf(actor.air_dash_side) * TAU / maxf(actor.flight.air_dash_time, 0.05) * delta
 	else:
 		_twist = wrapf(_twist, -PI, PI)
 		_twist = move_toward(_twist, 0.0, twist_speed * delta)

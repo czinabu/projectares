@@ -63,7 +63,7 @@ rows marked **pre-playtest** come before the friends playtest.
 | --- | --- | --- |
 | One 15 m/s cruise for every rig | Missing | Jetpack hovers at 10 m/s and boosts at 22; wings glide at 16; boots have no sustained flight. **Pre-playtest**, PR 1 of the proposal. |
 | Jetpack cruise and coast loop | Missing | PR 1. |
-| Wings: pulse, stall, barrel roll, sidearm-only while spread, slide landing | Missing | PR 1. Q/E only tilts today. |
+| Wings: pulse, stall, barrel roll, sidearm-only while spread, slide landing | Missing | PR 1. The barrel roll is now a sideways air dash (Shift + A / D); Q/E are gone. |
 | Boots as a skimming rig with height bands and air dashes | Missing | Today three quick kicks. PR 2. |
 | Air aim penalty, waived in each rig's steady state | Missing | No airborne spread in `Gun`. PR 1. |
 | Overheat cuts the rig out until heat is back to 35 | Built | `recover_heat` 35. |

@@ -332,7 +332,7 @@ static func _test_input_buffer(t: Node) -> void:
 	# Inputs travel packed small: a full packet fits in one datagram.
 	var full: Array = []
 	for number in Net.MAX_INPUTS_PER_PACKET:
-		full.append(_input(70000 + number, ActorCommand.FLAG_ROLL_RIGHT | ActorCommand.FLAG_JUMP, ActorCommand.HOLSTER))
+		full.append(_input(70000 + number, ActorCommand.FLAG_SPRINT_PRESSED | ActorCommand.FLAG_JUMP, ActorCommand.HOLSTER))
 	full[3][1][0] = -0.5
 	full[3][1][2] = 123.25
 	full[3][1][ActorCommand.STANCE_INDEX] = 2

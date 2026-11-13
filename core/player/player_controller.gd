@@ -351,7 +351,6 @@ func _physics_process(delta: float) -> void:
 		cmd.sprint = false
 		cmd.jump = false
 		cmd.descend = false
-		cmd.roll = 0
 		cmd.primary = false
 		cmd.secondary = false
 		cmd.switch_weapon = -1
@@ -371,13 +370,15 @@ func _physics_process(delta: float) -> void:
 	_flick *= exp(-flick_decay * delta)
 	cmd.stance = stance
 	cmd.sprint = Input.is_action_pressed("sprint")
+	cmd.sprint_pressed = Input.is_action_just_pressed("sprint")
 	cmd.jump = Input.is_action_pressed("jump")
 	cmd.jump_pressed = Input.is_action_just_pressed("jump")
 	cmd.dash = Input.is_action_just_pressed("dash")
 	cmd.slide = Input.is_action_just_pressed("slide")
 	cmd.descend = Input.is_action_pressed("slide")
-	cmd.roll = int(Input.is_action_pressed("roll_right")) - int(Input.is_action_pressed("roll_left"))
 	if cmd.dash and actor.stamina >= actor.dash_stamina:
+		Sfx.play("dash", null, -6.0)
+	elif cmd.sprint_pressed and not actor.is_on_floor() and actor.flight.enabled and not actor.flight.overheated:
 		Sfx.play("dash", null, -6.0)
 	cmd.primary = captured and Input.is_action_pressed("fire")
 	cmd.primary_pressed = captured and Input.is_action_just_pressed("fire")
