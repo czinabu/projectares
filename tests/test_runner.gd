@@ -5849,9 +5849,60 @@ func _use(actor: Actor) -> void:
 	await frames(1)
 
 
+## Every weapon hangs on the one armory rack, in the alcove with the bench
+## and the locker at its way in; nothing else is shown there.
+func _test_armory(base: HomeBase) -> void:
+	print("Home base armory")
+	var weapons: Array[String] = []
+	for id: String in ItemDB.all_ids():
+		if ItemDB.has_tag(id, "weapon") and not ItemDB.has_tag(id, "starter"):
+			weapons.append(id)
+	var every_weapon := true
+	for id in weapons:
+		every_weapon = every_weapon and BaseLayout.is_armory(BaseLayout.kind_for(id))
+	check(not weapons.is_empty() and every_weapon, "every weapon belongs on the armory rack (%d weapons)" % weapons.size())
+	var spots := 0
+	var in_alcove := true
+	var others_out := true
+	for kind: String in BaseLayout.KINDS:
+		var last := int(BaseLayout.KINDS[kind]["spots"]) - 1
+		var ends := [base.spot_transform(kind, 0).origin, base.spot_transform(kind, last).origin]
+		if BaseLayout.is_armory(kind):
+			spots += last + 1
+			for at: Vector3 in ends:
+				in_alcove = in_alcove and base.in_armory(at)
+		elif kind != "gunsmith":
+			for at: Vector3 in ends:
+				others_out = others_out and not base.in_armory(at)
+	check(in_alcove and BaseLayout.ARMORY.size() == 3, "the rack's sections all hang inside the armory")
+	check(others_out, "armor, rigs, the garage and the shelves stay in the main room")
+	check(spots > 14, "the rack holds more weapons than the old gun rack and blade wall did (%d spots)" % spots)
+	check(base.in_armory(HomeBase.BENCH_AT) and base.in_armory(base.spot_transform("gunsmith", 11).origin),
+			"the gunsmith bench and its pegboard stand in the armory")
+	var locker: Vector3 = HomeBase.STATIONS["locker"]["at"]
+	check(not base.in_armory(locker) and absf(locker.x + base.room_size.x * 0.5) < 1.5
+			and absf(locker.z) < base.armory_opening * 0.5 + 2.0, "the locker stands beside the way into the armory")
+	check(base.has_node("ArmorySign") and base.has_node("ArmorySill"), "a sign over the way in names the armory")
+	# The way in is open: walk from the room to the rack.
+	var walker := base.player
+	var was := walker.global_position
+	walker.global_position = base.to_global(Vector3(-9.0, 0.1, -2.5))
+	walker.velocity = Vector3.ZERO
+	await frames(2)
+	walker.cmd.yaw = PI / 2.0
+	walker.cmd.move = Vector2(0, 1)
+	await frames(90)
+	walker.cmd.move = Vector2.ZERO
+	check(base.in_armory(base.to_local(walker.global_position)), "you can walk from the room into the armory")
+	walker.global_position = was
+	walker.velocity = Vector3.ZERO
+	await frames(2)
+
+
 func _test_home_base() -> void:
 	print("Home base layout")
-	check(BaseLayout.kind_for("dmr_longshot") == "gun_rack" and BaseLayout.kind_for("hammer_breaker") == "blade_wall"
+	check(BaseLayout.kind_for("dmr_longshot") == "rack_guns" and BaseLayout.kind_for("hammer_breaker") == "rack_melee"
+			and BaseLayout.kind_for("pistol_machine") == "rack_sidearms" and BaseLayout.kind_for("power_rail_lance") == "rack_guns"
 			and BaseLayout.kind_for("frame_bulwark") == "armor_stand" and BaseLayout.kind_for("wings_glide") == "rig_stand"
 			and BaseLayout.kind_for("chip_blink") == "chip_case" and BaseLayout.kind_for("bike_raider") == "bay"
 			and BaseLayout.kind_for("medkit") == "supplies" and BaseLayout.kind_for("lattice_shard") == "trophy",
@@ -5867,7 +5918,7 @@ func _test_home_base() -> void:
 		if not by_kind.has(entry["kind"]):
 			by_kind[entry["kind"]] = []
 		by_kind[entry["kind"]].append(entry)
-	var guns: Array = by_kind.get("gun_rack", [])
+	var guns: Array = by_kind.get("rack_guns", [])
 	check(guns.size() == 2 and guns[0]["id"] == "dmr_longshot" and guns[0]["index"] == 0
 			and guns[1]["id"] == "rifle_carbine", "the most valuable gun gets the first spot")
 	check(guns[1]["count"] == 2 and guns[1]["equipped"] and not guns[0]["equipped"],
@@ -5906,10 +5957,10 @@ func _test_home_base() -> void:
 	var apart := true
 	for display in base.displays:
 		var key := "%s/%d" % [display.kind, display.index]
-		apart = apart and not spots.has(key) and absf(display.global_position.x) < base.room_size.x * 0.5 \
-				and absf(display.global_position.z) < base.room_size.z * 0.5
+		apart = apart and not spots.has(key) and base.inside(display.position)
 		spots[key] = true
 	check(apart, "every display has its own spot inside the room")
+	await _test_armory(base)
 	var asked := []
 	base.equip_requested.connect(func(slot: String, id: String) -> void: asked.append([slot, id]))
 	var dmr := base.display_for("dmr_longshot")

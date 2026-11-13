@@ -18,7 +18,7 @@ rows marked **pre-playtest** come before the friends playtest.
 | Hub spectating screens and bounty board | Partly | Heat signs over the world gates already show war level, players, top bounty and events (`world_status`). Missing: a most-wanted board, arena results, live arena video (later). First hub activity. |
 | Hub ring races and time trials, with per-rig and bike leaderboards | Missing | Second hub activity, after the hub is expanded. |
 | Hub toy RC arena | Missing | Later; a separate little game. |
-| Home base with armory wall, garage, trophies | Built | `core/base`: gun rack, blade wall, garage, trophy shelf, consoles. |
+| Home base with armory wall, garage, trophies | Built | `core/base`: one armory rack for every weapon (long guns, sidearms, melee) in an alcove with the gunsmith bench and locker, garage, trophy shelf, consoles. |
 | Heavy weapons stacked on the armory wall | Missing | Power weapons cannot be stored (`StashRules.storable` refuses the `power` tag). **Pre-playtest**, with the heavy chamber. |
 | Base firing range and flight tunnel (target drones, endless heavy-weapon ammo, nothing lost) | Missing | First base upgrade, after the playtest. |
 | Squad teleporter pad: squadmates in your base together, launching together | Partly | A phone invite already lets a friend visit your base, but alone and read-only (`base_visit_requested`). Needs shared online base visits first. |

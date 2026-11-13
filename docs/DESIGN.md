@@ -92,8 +92,10 @@ canopy, holo signs over every kiosk and floating holo-ads.
 
 ### Home base
 
-- The stash on show: guns on the armory wall, blades, armor stands, rigs,
-  ability chips, bikes in the garage, loot on shelves, trophies.
+- The stash on show: every weapon (long guns, sidearms, melee) on one rack
+  in the armory, an alcove off the main room with the gunsmith bench in its
+  middle and the locker at its way in; armor stands, rigs, ability chips,
+  bikes in the garage, loot on shelves and trophies in the main room.
 - **Heavy weapons banked from the PvP world hang on the armory wall** and can
   be stacked there (see section 6).
 - Consoles do what menus would: launch pad, locker, gunsmith bench (crafting

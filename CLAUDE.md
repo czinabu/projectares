@@ -559,6 +559,11 @@ without Caleb, and update the gap list when a PR closes a row.
   `HomeBase.show_gear(stash, loadout)` rebuilds the room from plain data, so
   it shows the local `Profile` solo and the server's account snapshot in a
   lobby. `core/base/base_layout.gd` decides what goes where from item tags.
+  Every weapon goes on the one armory rack (`BaseLayout.ARMORY`, Caleb's
+  call): its sections hang on the walls of the armory alcove
+  (`HomeBase.in_armory`), with the gunsmith bench in the middle and the
+  locker at the way in. A new kind of weapon gets a rack section there, not
+  a display of its own elsewhere in the room.
   Using a display only emits `equip_requested`; `main.gd` applies it through
   `Profile` or `NetSession.equip`. Like `Raid`, `HomeBase` has no camera, HUD
   or input code, and its displays are greybox shapes that `Look` dresses

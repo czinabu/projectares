@@ -196,8 +196,7 @@ static func _bench(t: Node) -> void:
 	t.check(card != null and "Zoom" in card.text, "a card by the vise lists what the scope changes")
 	var spot := base.spot_transform("gunsmith", 0).origin
 	var last := base.spot_transform("gunsmith", 11).origin
-	var half := base.room_size * 0.5
-	t.check(absf(spot.x) < half.x and absf(spot.z) < half.z and absf(last.x) < half.x and last.y > 0.5,
+	t.check(base.inside(spot) and base.inside(last) and last.y > 0.5,
 			"the bench's pegboard is inside the room")
 	base.queue_free()
 	await t.frames(2)
