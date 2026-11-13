@@ -59,6 +59,11 @@ func _ready() -> void:
 	# `-- <output_dir> --watch-only` shows the watch card raised: in first
 	# person with no helmet (vitals on the card), with a helmet and a jetpack
 	# (vitals and heat on the visor), each icon looked at, and in third person.
+	# `--base-watch-only` shows just the home base's.
+	if "--base-watch-only" in args:
+		await _base_watch_shots(out_dir)
+		get_tree().quit()
+		return
 	if "--watch-only" in args:
 		await _watch_shots(out_dir)
 		get_tree().quit()
@@ -319,6 +324,44 @@ func _watch_shots(out_dir: String) -> void:
 		await _shot(out_dir.path_join("watch_third_%s.png" % tag))
 		raid.queue_free()
 		await _settle(3)
+	await _base_watch_shots(out_dir)
+
+
+## The watch raised in the home base, empty-handed (playtest: it half-raised
+## with no card there): first person, then third.
+func _base_watch_shots(out_dir: String) -> void:
+	var base := HomeBase.new()
+	base.show_gear(["bike_raider", "rifle_carbine"], {"vehicle": "bike_raider"})
+	add_child(base)
+	var controller := PlayerController.new()
+	controller.setup(base.player)
+	base.add_child(controller)
+	var base_hud: CanvasLayer = preload("res://core/ui/base_hud.gd").new()
+	base_hud.setup(base)
+	base.add_child(base_hud)
+	await _settle(60)
+	controller.wrist_raised = true
+	await _settle(30)
+	await _shot(out_dir.path_join("watch_base_first.png"))
+	controller.toggle_view()
+	await _settle(40)
+	await _shot(out_dir.path_join("watch_base_third.png"))
+	# The pose itself, close up: from the front and from the left. These
+	# cameras are not the player's, so the card stays turned to the player's.
+	var close := Camera3D.new()
+	close.fov = 50.0
+	base.add_child(close)
+	close.make_current()
+	var p := base.player
+	var face := p.find_child("WornWatch", true, false).get_child(0).get_node("Face") as Node3D
+	var eye_dir := (p.get_eye_position() - face.global_position).normalized()
+	print("watch face to eyes: %.0f degrees" % rad_to_deg(face.global_basis.y.normalized().angle_to(eye_dir)))
+	for view: Array in [["front", Vector3(-0.5, 1.45, -1.4)], ["left", Vector3(-1.5, 1.4, -0.3)]]:
+		close.look_at_from_position(p.global_transform * view[1], p.global_transform * Vector3(-0.1, 1.25, -0.2))
+		await _settle(4)
+		await _shot(out_dir.path_join("watch_base_pose_%s.png" % view[0]))
+	base.queue_free()
+	await _settle(3)
 
 
 func _toy_shots(out_dir: String) -> void:

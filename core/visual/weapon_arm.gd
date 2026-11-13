@@ -32,10 +32,15 @@ var grip_offset := Vector3.ZERO
 ## Where the elbows point, in the actor's space.
 var elbow := Vector3(0.8, 0.8, 0.3)
 var off_elbow := Vector3(-0.8, 0.8, 0.3)
-## Raising the watch (`ActionPose.watch`): where the left hand comes up to,
+## Raising the watch (`ActionPose.watch`): where the left wrist comes up to,
 ## in front of the chest, and where that elbow points, in the actor's frame.
-var watch_at := Vector3(-0.04, 1.3, -0.36)
-var watch_elbow := Vector3(-0.9, 0.7, 0.0)
+## The elbow stays out to the side and low, so the forearm lies across the
+## chest, as you hold a wrist up to read a watch.
+var watch_at := Vector3(-0.12, 1.34, -0.32)
+var watch_elbow := Vector3(-0.8, 0.5, 0.4)
+## With the watch up the forearm rolls so the back of the wrist, where the
+## watch face is (`Hud.Wrist.FACE_AXIS` in the wrist bone), looks at the
+## eyes, and the hand stays straight on from the forearm.
 ## The most the wrist bends to line the grip up with the blade, in radians.
 var wrist_limit := 1.3
 ## Where the off hand holds a two-handed weapon, along its handle from the grip.
@@ -54,6 +59,8 @@ var off_ik: TwoBoneIK3D
 
 var _wrist := -1
 var _forearm := -1
+var _off_wrist := -1
+var _off_forearm := -1
 ## The wrist's turn in the skeleton's space while a gun is raised to aim
 ## (the `aim_gun` clip), and the forearm's while a blade is held ready
 ## (`idle_melee`). Where the arm hangs differently, the weapon turns with it
@@ -119,6 +126,12 @@ func setup(def: Dictionary, fist_animation: Animation) -> void:
 	var off_arm: Array = def.get("off_arm", [])
 	if off_arm.size() == 3 and off_arm.all(func(bone: String) -> bool: return skeleton.find_bone(bone) >= 0):
 		off_ik = _two_bone("OffArmReach", off_arm, _off_target, _off_pole)
+		_off_forearm = skeleton.find_bone(off_arm[1])
+		_off_wrist = skeleton.find_bone(off_arm[2])
+		var face := Hook.new()
+		face.name = "WatchFace"
+		face.run = _face_watch
+		skeleton.add_child(face)
 	var grip := Hook.new()
 	grip.name = "Grip"
 	grip.run = _close_grip
@@ -287,6 +300,35 @@ func _process(delta: float) -> void:
 		_off_pole.global_position = actor.global_transform * off_elbow.lerp(watch_elbow, _watch)
 		if _watch > 0.0:
 			_off_target.global_position = actor.global_transform * watch_at
+
+
+## Once the off arm has reached for the watch: roll the forearm so the watch
+## face looks back at the eyes, and keep the hand straight on from it. The
+## pose is only shown; nothing reads it back.
+func _face_watch() -> void:
+	if _watch <= 0.0 or _off_forearm < 0 or _off_wrist < 0:
+		return
+	var to_skeleton := skeleton.global_transform.affine_inverse()
+	var eye := to_skeleton * actor.get_eye_position()
+	var fore := skeleton.get_bone_global_pose(_off_forearm)
+	var wrist := skeleton.get_bone_global_pose(_off_wrist)
+	var along := (wrist.origin - fore.origin).normalized()
+	if along == Vector3.ZERO:
+		return
+	# The hand as it sits straight on from the forearm (its rest turn).
+	var rest := skeleton.get_bone_rest(_off_wrist).basis.orthonormalized()
+	# The forearm rolls about its own length to turn the face to the eyes.
+	var face_now := (fore.basis.orthonormalized() * rest * Hud.Wrist.FACE_AXIS).normalized()
+	var to_eye := eye - wrist.origin
+	to_eye -= along * to_eye.dot(along)
+	face_now -= along * face_now.dot(along)
+	if to_eye.length() > 0.001 and face_now.length() > 0.001:
+		var roll := face_now.signed_angle_to(to_eye, along) * _watch
+		fore.basis = Basis(along, roll) * fore.basis
+		skeleton.set_bone_global_pose(_off_forearm, fore)
+	var straight := fore.basis.orthonormalized() * rest
+	var hand := wrist.basis.orthonormalized().slerp(straight, _watch)
+	skeleton.set_bone_global_pose(_off_wrist, Transform3D(hand, skeleton.get_bone_global_pose(_off_wrist).origin))
 
 
 ## Before the arm reaches: during a reload, move the gun hand from where the

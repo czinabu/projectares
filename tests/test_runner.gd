@@ -5940,6 +5940,27 @@ func _test_home_base() -> void:
 	check(lines[0] == "Lattice Shard" and "Relic" in lines[1], "the overlay names what you look at and its rarity")
 	check(hud.tag.visible and hud.tag.text == lines[1] and hud.tag.global_position.distance_to(shard.global_position) < 2.0,
 			"what it is shows on a tag over the gear itself, not on the screen")
+	# The watch works at home as in a raid (playtest: X half-raised the arm
+	# with no card): it rises with the key and its card has every icon.
+	check(hud.wrist != null and not hud.wrist.raised, "the base wears the watch, lowered")
+	var watch_keys := PlayerController.new()
+	watch_keys.setup(base.player)
+	base.add_child(watch_keys)
+	watch_keys.wrist_raised = true
+	await frames(30)
+	var watch_icons: Array = hud.wrist.card.slots.map(func(slot: Dictionary) -> String: return slot.id)
+	check(hud.wrist.raised and hud.wrist.raise_amount >= 1.0 and watch_icons == Hud.Wrist.SLOTS
+			and base.player.cmd.watch_up, "X raises the watch in the base and its card opens: %s" % ", ".join(watch_icons))
+	var home := Hud.base_watch_slots("Home base", {"vehicle": "bike_raider"})
+	var home_vehicle: Dictionary = home[Hud.Wrist.SLOTS.find("vehicle")]
+	check(home[0].detail == "Home base" and home_vehicle.detail == ItemDB.item_name("bike_raider")
+			and not home_vehicle.empty and Hud.base_watch_slots("Home base", {})[Hud.Wrist.SLOTS.find("vehicle")].empty,
+			"at home the card says where you are and which vehicle you deploy with")
+	watch_keys.wrist_raised = false
+	await frames(30)
+	check(hud.wrist.raise_amount <= 0.0 and not base.player.cmd.watch_up, "X lowers it again")
+	watch_keys.queue_free()
+	await frames(2)
 	check(base.get_node("Banner/Title").text == "HOME BASE" and "press F" in base.banner_text(),
 			"the base's name and how it works hang on a banner in the room")
 	for kind: String in BaseLayout.KINDS:
