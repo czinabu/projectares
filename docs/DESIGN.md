@@ -383,6 +383,13 @@ combinations are the special moves.
 - **Hands on the weapon.** A one-hander sits in the weapon hand, a two-hander
   takes the off hand on the handle, identical in first and third person. The
   grip points come from each model (the aim-down-sights grip work).
+- **Each weapon moves its own way.** Swords slash in arcs, the spear
+  thrusts straight out, the axe and hammer chop down from over the
+  shoulder, and the knife makes tight slashes with a stab for its heavy.
+  Every swing speeds up into the hit and eases through its follow-through,
+  windups keep drawing back instead of freezing, two-handers swing slower
+  and turn the whole body, a dash-strike leans in, and a back strike turns
+  the blade back past the hip. Same motion in first and third person.
 - **Later:** tight interiors and corners in the worlds where guns are clumsy,
   and more ammo and reload pressure on guns. Melee bots using the dash-strike.
 

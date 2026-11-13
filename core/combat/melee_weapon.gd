@@ -52,6 +52,15 @@ const DIR_NAMES := ["overhead", "left", "right"]
 const REST_POSE := -0.45
 const GUARD_POSE := 0.25
 const SWING_TIME := 0.16
+## The shown swing starts this long before the strike lands (at most
+## `SWING_LEAD_SHARE` of the windup), so the blade accelerates into the hit
+## and arrives as the damage does, then eases out through the follow-through
+## (`swing_arc`). View only: the strike still lands when the windup ends.
+const SWING_LEAD := 0.09
+const SWING_LEAD_SHARE := 0.6
+## A two-hander's swing leads and follows through this much slower, so it
+## shows its weight.
+const TWO_HAND_SWING := 1.35
 const WINDUP_ROLL := 1.1
 ## Where the blade ends its swing; recovery eases back from here to rest.
 const FOLLOW_THROUGH := -2.1
@@ -64,6 +73,11 @@ const SIDE_REACH := 0.28
 ## and the end.
 const SIDE_SWING_FROM := 0.5
 const SIDE_SWING_TO := -1.0
+## The blade's pitch for a thrust, drawn back and driven out (point
+## forward), and for a chop, raised behind the shoulder.
+const THRUST_COCKED := -1.35
+const THRUST_OUT := -1.6
+const CHOP_RAISED := 1.45
 ## How long a landed strike holds the swing still (view only).
 const HITSTOP := 0.06
 ## Where the blade is held, relative to the hand, for each guard.
@@ -169,6 +183,15 @@ var move_mult := 0.0
 var two_hand_stagger := 0.7
 var two_hand_armor_break := 0.5
 
+## How the attacks look, from the item's stats (view only): "slash" sweeps an
+## arc (swords), "thrust" stabs straight out along the aim (the spear),
+## "chop" comes down from over the shoulder (the axe, the hammer).
+## `heavy_style` gives the heavy its own, "" for the same. `swing_scale`
+## sizes the motion (a knife's are small and tight).
+var swing_style := "slash"
+var heavy_style := ""
+var swing_scale := 1.0
+
 ## The dash-strike: a heavy started while sprinting reaches a foe up to this
 ## far away (flat metres past striking distance), over the heavy's windup.
 var dash_range := 9.0
@@ -223,6 +246,15 @@ var _air_lunge := false
 var _lunge_foe: Actor = null
 ## The recovery after the last strike, for the pose (view only).
 var _recover_total := 0.0
+## The windup's full length, the shown swing's lead into the strike and its
+## follow-through time (view only, see `swing_arc`).
+var _windup_total := 0.0
+var _swing_lead := 0.0
+var _swing_time := SWING_TIME
+## The swing being shown is a back strike (the reverse stab).
+var _back_shown := false
+## The kind of the attack being shown ("light" or "heavy"), for its style.
+var _shown_kind := "light"
 var _hitstop_left := 0.0
 
 
@@ -708,6 +740,11 @@ func _begin_windup(kind: String, amount: float, time: float) -> void:
 	_windup_kind = kind
 	_windup_damage = amount
 	_windup_left = maxf(time, 0.001)
+	_windup_total = _windup_left
+	_shown_kind = kind
+	var weight := TWO_HAND_SWING if is_two_handed() else 1.0
+	_swing_lead = minf(SWING_LEAD * weight, _windup_left * SWING_LEAD_SHARE)
+	_back_shown = false
 	attack_dir = swing_from(stance) as Dir
 
 
@@ -734,7 +771,9 @@ func _on_slam_landed(_impact_speed: float) -> void:
 
 func _strike(amount: float, kind: String) -> void:
 	swung.emit(kind)
-	_swing_left = SWING_TIME
+	_swing_time = SWING_TIME * (TWO_HAND_SWING if is_two_handed() else 1.0)
+	_swing_left = _swing_time
+	_back_shown = _back_strike
 	_recover_total = _cooldown
 	Sfx.play("swing", null if actor.is_player else actor.global_position)
 	var forward := actor.get_aim_dir()
@@ -811,6 +850,45 @@ func guess_outcome(other: Actor) -> String:
 	return "parry" if blade.in_parry_window("melee") else "block"
 
 
+## How far through the shown swing the blade is, 0 to 1 along its arc, or -1
+## when no swing is showing. It starts `_swing_lead` before the strike and
+## speeds up into it (half the arc at the moment of the hit), then slows
+## through the follow-through. View only; both views read it.
+func swing_arc() -> float:
+	if _slamming:
+		return -1.0
+	if _windup_left > 0.0:
+		if _windup_left > _swing_lead or _swing_lead <= 0.0:
+			return -1.0
+		var into := 1.0 - _windup_left / _swing_lead
+		return 0.5 * into * into
+	if _swing_left > 0.0:
+		var after := 1.0 - _swing_left / maxf(_swing_time, 0.001)
+		return 0.5 + 0.5 * (1.0 - (1.0 - after) * (1.0 - after))
+	return -1.0
+
+
+## The style of the attack being shown or about to be: the heavy's own when
+## it has one, else `swing_style`.
+func style_now() -> String:
+	var heavy := _shown_kind == "heavy" or (_charge >= 0.0 and _charge >= hold_time * 0.5)
+	return heavy_style if heavy and heavy_style != "" else swing_style
+
+
+## How far into its windup the blade is drawn back (0 to 1, before the
+## swing's lead), for a windup that keeps coiling instead of holding still.
+func windup_coil() -> float:
+	var span := _windup_total - _swing_lead
+	if _windup_left <= 0.0 or span <= 0.0:
+		return 0.0
+	return clampf(1.0 - (_windup_left - _swing_lead) / span, 0.0, 1.0)
+
+
+## True while a back strike is winding up or being shown.
+func showing_back_strike() -> bool:
+	return (_back_strike and _windup_left > 0.0) or (_back_shown and _swing_left > 0.0)
+
+
 ## True when `from` is outside the front `front_arc_deg` of `target`, the way
 ## it faces.
 static func is_behind(target: Actor, from: Vector3, front_arc_deg: float) -> bool:
@@ -837,32 +915,61 @@ func _animate(delta: float) -> void:
 		# A landed strike holds the swing still for a moment.
 		_hitstop_left -= delta
 		return
+	var arc := swing_arc()
+	if _swing_left > 0.0 and _windup_left <= 0.0:
+		_swing_left -= delta
 	if _slamming:
 		pose = 1.3
-	elif _back_strike and _windup_left > 0.0:
-		# A reverse grip, the point turned back past the hip.
+	elif showing_back_strike():
+		# A reverse grip, the point turned back past the hip, thrust back.
 		pose = -2.6
+		offset.z = 0.12 * maxf(arc, 0.0)
 		follow = 40.0
-	elif _windup_left > 0.0:
-		# Cocked on the side the swing comes from.
-		pose = 1.0 if _windup_kind == "heavy" else 0.7
-		roll = _side(attack_dir) * WINDUP_ROLL
-		offset.x = -_side(attack_dir) * SIDE_REACH
-		if attack_dir == Dir.OVERHEAD:
-			pose += 0.35
-			offset.y = 0.12
-	elif _swing_left > 0.0:
-		# Swept across to the other side (a side swing), or chopped down.
-		_swing_left -= delta
-		var u := 1.0 - maxf(_swing_left, 0.0) / SWING_TIME
+	elif arc >= 0.0:
+		# Swept across to the other side (a side swing), or chopped down:
+		# faster into the hit, slower through the follow-through.
+		var u := arc
 		follow = 60.0
-		if attack_dir == Dir.OVERHEAD:
+		var style := style_now()
+		if style == "thrust":
+			# Point first, straight out.
+			pose = lerpf(THRUST_COCKED, THRUST_OUT, u)
+			offset.z = lerpf(0.08, -0.05, u)
+		elif style == "chop":
+			# Down from over the shoulder, a side chop on a diagonal.
+			var side := _side(attack_dir)
+			pose = lerpf(CHOP_RAISED - 0.3, FOLLOW_THROUGH, u)
+			roll = lerpf(side * 0.5, -side * 0.3, u) * WINDUP_ROLL
+			offset.x = lerpf(-side, side, u) * SIDE_REACH * 0.5
+		elif attack_dir == Dir.OVERHEAD:
 			pose = lerpf(0.6, FOLLOW_THROUGH, u)
 		else:
 			var side := _side(attack_dir)
 			pose = lerpf(SIDE_SWING_FROM, SIDE_SWING_TO, u)
 			roll = lerpf(side, -side, u) * WINDUP_ROLL
 			offset.x = lerpf(-side, side, u) * SIDE_REACH
+	elif _windup_left > 0.0:
+		# Cocked on the side the swing comes from, drawing further back as
+		# the windup goes on.
+		var coil := windup_coil()
+		var style := style_now()
+		if style == "thrust":
+			# Drawn back, point toward the foe.
+			pose = THRUST_COCKED
+			offset.z = 0.08 + 0.04 * coil
+		elif style == "chop":
+			# Raised high behind the shoulder.
+			pose = CHOP_RAISED + 0.15 * coil
+			roll = _side(attack_dir) * WINDUP_ROLL * 0.5
+			offset.x = -_side(attack_dir) * SIDE_REACH * 0.5
+			offset.y = 0.1
+		else:
+			pose = (1.0 if _windup_kind == "heavy" else 0.7) + 0.15 * coil
+			roll = _side(attack_dir) * WINDUP_ROLL * (1.0 + 0.1 * coil)
+			offset.x = -_side(attack_dir) * SIDE_REACH
+			if attack_dir == Dir.OVERHEAD:
+				pose += 0.35
+				offset.y = 0.12
 	elif _blocking:
 		pose = GUARD_POSE
 		if guard_dir == Dir.OVERHEAD:
@@ -881,7 +988,10 @@ func _animate(delta: float) -> void:
 		# Recovering: ease back from where the swing ended, so the wait
 		# before the next attack can be seen.
 		var t := smoothstep(0.0, 1.0, recover_progress())
-		if attack_dir == Dir.OVERHEAD:
+		var style := style_now()
+		if style == "thrust":
+			pose = lerpf(THRUST_OUT, REST_POSE, t)
+		elif style == "chop" or attack_dir == Dir.OVERHEAD:
 			pose = lerpf(FOLLOW_THROUGH * 0.75, REST_POSE, t)
 		else:
 			var side := _side(attack_dir)

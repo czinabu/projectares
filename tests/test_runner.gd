@@ -905,7 +905,11 @@ func _test_main_flow() -> void:
 			"real input reaches the actor (blade out, airborne)")
 	check(not controller.is_third_person(), "camera stays put when using the blade or flying")
 	# Melee side from the movement keys by default (Caleb: Jedi Academy
-	# style controls as the baseline), the mouse flick after switching.
+	# style controls as the baseline), the mouse flick after switching. A
+	# save from before the default changed may still say "mouse": start
+	# from the default either way.
+	if controller.stance_control != PlayerController.StanceControl.MOVE:
+		controller.toggle_stance_control()
 	Input.action_press("move_left")
 	await frames(5)
 	check(p.cmd.stance == MeleeWeapon.Dir.LEFT and Profile.melee_control == "move",

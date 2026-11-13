@@ -45,6 +45,13 @@ func _ready() -> void:
 		get_tree().quit()
 		return
 
+	# `-- <output_dir> --swing-only` films melee attacks frame by frame, one
+	# row per move, so the motion (not one pose) can be judged.
+	if "--swing-only" in args:
+		await _swing_strips(out_dir)
+		get_tree().quit()
+		return
+
 	# `-- <output_dir> --views-only [row,row]` shoots each action in first
 	# person, the third-person camera and from the front, side by side.
 	if "--views-only" in args:
@@ -1256,6 +1263,88 @@ func _melee_shots(out_dir: String, only := "") -> void:
 		await _settle(2)
 	sheet.save_png(out_dir.path_join("melee.png"))
 	print("saved melee.png")
+
+
+## Film strips of melee moves: one row per move, a frame every
+## `SWING_STEP` frames from the press, seen from a front three-quarter view.
+## Run with `--fixed-fps 60` so each frame is one tick.
+const SWING_STEP := 3
+const SWING_FRAMES := 12
+func _swing_strips(out_dir: String) -> void:
+	var moves := [
+		["blade_scrap", "light_right"], ["blade_scrap", "light_overhead"], ["blade_scrap", "heavy"],
+		["knife_gutter", "light_left"], ["knife_gutter", "heavy"], ["axe_splitter", "light_right"],
+		["axe_splitter", "light_overhead"], ["hammer_breaker", "light_right"], ["hammer_breaker", "heavy"],
+		["spear_lancer", "light_overhead"], ["spear_lancer", "heavy"], ["blade_scrap", "back"],
+		["blade_scrap", "deflect"],
+	]
+	var cell := 240
+	var sheet := Image.create(SWING_FRAMES * cell, moves.size() * cell, false, Image.FORMAT_RGBA8)
+	for row in moves.size():
+		var id: String = moves[row][0]
+		var move: String = moves[row][1]
+		var raid := Raid.new()
+		add_child(raid)
+		raid.start(Worlds.get_world("ashfront"), 42, ["rifle_scrap", id, "jetpack_mk1", "plate_light"])
+		for bot in raid.bots:
+			bot.queue_free()
+		var player := raid.player
+		await _settle(10)
+		player.cmd.switch_weapon = 1
+		await _settle(5)
+		player.cmd.switch_weapon = -1
+		await _settle(40)
+		var blade := player.get_active_weapon() as MeleeWeapon
+		blade.light_stamina = 0.0
+		blade.heavy_stamina = 0.0
+		var cam := Camera3D.new()
+		raid.add_child(cam)
+		cam.current = true
+		cam.fov = 40.0
+		var at := player.global_position
+		cam.global_position = at + player.global_basis.x * 1.6 - player.global_basis.z * 2.0 + Vector3(0, 1.5, 0)
+		cam.look_at(at + Vector3(0, 1.25, 0))
+		var stances := {"light_right": MeleeWeapon.Dir.RIGHT, "light_left": MeleeWeapon.Dir.LEFT}
+		player.cmd.stance = stances.get(move, MeleeWeapon.Dir.OVERHEAD)
+		await _settle(2)
+		match move:
+			"heavy":
+				player.cmd.tertiary_pressed = true
+			"back":
+				blade._light_attack(0.0)
+				blade._back_strike = true
+			"deflect":
+				player.cmd.secondary = true
+			_:
+				player.cmd.primary_pressed = true
+		for col in SWING_FRAMES:
+			if move == "combo" and col in [4, 8]:
+				player.cmd.primary_pressed = true
+				player.cmd.stance = MeleeWeapon.Dir.LEFT if col == 4 else MeleeWeapon.Dir.RIGHT
+			if move == "deflect" and col == 2:
+				var shot := DamageInfo.make(10.0, player, "bullet", at)
+				player.get_active_weapon().modify_incoming(shot)
+			# A press is read in the tick after it is set.
+			await get_tree().physics_frame
+			await get_tree().physics_frame
+			player.cmd.primary_pressed = false
+			player.cmd.tertiary_pressed = false
+			for k in SWING_STEP - 2:
+				await get_tree().process_frame
+			await RenderingServer.frame_post_draw
+			var frame := get_viewport().get_texture().get_image()
+			var h := frame.get_height()
+			var w := frame.get_width()
+			var cut := frame.get_region(Rect2i(w / 2 - h / 2, 0, h, h))
+			cut.resize(cell, cell)
+			cut.convert(Image.FORMAT_RGBA8)
+			sheet.blit_rect(cut, Rect2i(0, 0, cell, cell), Vector2i(col * cell, row * cell))
+		player.cmd.secondary = false
+		print("filmed %s %s" % [id, move])
+		raid.queue_free()
+		await _settle(2)
+	sheet.save_png(out_dir.path_join("swings.png"))
+	print("saved swings.png")
 
 
 ## Contact sheets of the player's legs, side on and from the front, holding
