@@ -77,6 +77,12 @@ func _ready() -> void:
 		await _watch_shots(out_dir)
 		get_tree().quit()
 		return
+	# `--portal-only` shows the watch's portal icon in the home base, then the
+	# squad portal it opens, in first and third person.
+	if "--portal-only" in args:
+		await _portal_shots(out_dir)
+		get_tree().quit()
+		return
 
 	# `-- <output_dir> --toys-only` shows the toy vehicles: on the watch, in
 	# the hand, in the air, unpacking and unpacked.
@@ -456,6 +462,39 @@ func _base_watch_shots(out_dir: String) -> void:
 	await _settle(3)
 
 
+func _portal_shots(out_dir: String) -> void:
+	var base := HomeBase.new()
+	base.show_gear(["rifle_carbine"], {"primary": "rifle_carbine"})
+	add_child(base)
+	var controller := PlayerController.new()
+	controller.setup(base.player)
+	controller.portal_requested.connect(func(to: String) -> void: base.open_portal(to))
+	base.add_child(controller)
+	var base_hud: CanvasLayer = preload("res://core/ui/base_hud.gd").new()
+	base_hud.setup(base)
+	base.add_child(base_hud)
+	# Face the open floor in front of the deploy area.
+	base.player.global_position = Vector3(2.0, 0.1, 3.0)
+	controller.yaw = PI * 0.6
+	await _settle(60)
+	controller.wrist_raised = true
+	controller.watch_focus = Hud.Wrist.SLOTS.find("portal")
+	controller.watch_focus_moved = true
+	controller.portal_pick = Portal.destinations().find("ashfront")
+	await _settle(30)
+	await _shot(out_dir.path_join("portal_watch_first.png"))
+	controller.click_watch()
+	await _settle(12)
+	await _shot(out_dir.path_join("portal_unfolding_first.png"))
+	await _settle(40)
+	await _shot(out_dir.path_join("portal_open_first.png"))
+	controller.toggle_view()
+	await _settle(40)
+	await _shot(out_dir.path_join("portal_open_third.png"))
+	base.queue_free()
+	await _settle(3)
+
+
 func _toy_shots(out_dir: String) -> void:
 	var raid := Raid.new()
 	add_child(raid)
@@ -808,7 +847,7 @@ func _base_shots(out_dir: String) -> void:
 		"base_stations_left.png": [Vector3(-3.5, 2.2, 4.0), Vector3(-11.0, 1.0, 1.0)],
 		"base_stations_right.png": [Vector3(4.0, 2.2, 1.0), Vector3(11.1, 1.0, 6.0)],
 		"base_back_wall.png": [Vector3(0.0, 2.6, 4.0), Vector3(0.0, 1.5, -9.0)],
-		"base_launch.png": [Vector3(4.0, 3.0, -1.0), Vector3(7.0, 1.0, 7.5)],
+		"base_deploy.png": [Vector3(4.0, 3.0, -1.0), Vector3(7.0, 1.0, 7.5)],
 		"base_door.png": [Vector3(-1.5, 2.0, 3.0), Vector3(-2.0, 1.4, 9.0)],
 		"base_range_board.png": [Vector3(0.0, 1.7, -10.6), Vector3(0.0, 4.0, -14.0)],
 	}
@@ -832,7 +871,7 @@ func _base_shots(out_dir: String) -> void:
 	add_child(screen_view)
 	var hub := Hub.new()
 	screen_view.add_child(hub)
-	for id: String in ["locker", "trader", "launch"]:
+	for id: String in ["locker", "trader", "uplink"]:
 		hub.open_station(id)
 		var live := WorldScreen.new()
 		live.size = HomeBase.SCREEN_SIZE

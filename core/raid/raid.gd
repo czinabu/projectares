@@ -42,6 +42,14 @@ signal watch_changed(actor: Actor)
 ## A player pinged a spot for their side (`ping`). On a client it is only
 ## ever heard for pings the server chose to tell this player about.
 signal pinged(actor: Actor, at: Vector3)
+## A squad portal opened (`open_portal`), on the authority.
+signal portal_opened(portal: Portal)
+## A player walked into an open portal their side may use, on the authority.
+## Whoever owns the player sends them to `destination` (a world id or the
+## arena's) with the drop `PORTAL_DROP`.
+signal portal_entered(actor: Actor, destination: String)
+## A squad portal was closed early or folded away, on the authority.
+signal portal_closed(portal: Portal)
 ## A player's contract counters for this life changed (`Actor.tally`).
 signal tally_changed(actor: Actor)
 
@@ -54,6 +62,10 @@ const SPAWN_SNAP := 2.5
 ## Seconds between rounds of orders to the bot factions.
 const ORDERS_EVERY := 8.0
 const DETAIL_EVERY := 0.25
+## The drop id (`add_player`'s `p_drop`) for arriving through a squad portal:
+## at the world's gate outpost (a map marker in the group "outpost", the
+## same one for a whole side, so a squad lands together), else a quiet drop.
+const PORTAL_DROP := "portal"
 const VehicleScript := preload("res://core/vehicle/vehicle.gd")
 const MasteryTracker := preload("res://core/progression/mastery_tracker.gd")
 const RenownLedger := preload("res://core/progression/renown_ledger.gd")
@@ -99,6 +111,12 @@ var watch_capacity := 2
 var ping_range := 300.0
 var ping_time := 8.0
 var ping_cooldown := 2.0
+## Squad portals open here (`open_portal`), and how long a player waits
+## between opening two.
+var portals: Array[Portal] = []
+var portal_cooldown := 5.0
+## Owner key -> squad key (`set_squad`).
+var squads := {}
 ## The clear box a vehicle needs to unpack: width, height, length. A vehicle
 ## with a `footprint` stat needs that instead.
 var unpack_room := Vector3(1.3, 1.2, 2.6)
@@ -206,12 +224,12 @@ static func together(a: Node, b: Node) -> bool:
 ## `p_mastery` maps mastery track -> picked variant id (see MasteryBook.active_picks).
 ## `p_owner` and `p_renown` are the player's renown key and lifetime renown (see `add_player`).
 func start(p_world: WorldDef, p_seed: int = -1, p_kit: Array = [], p_mastery: Dictionary = {},
-		p_owner := "", p_renown := 0) -> void:
+		p_owner := "", p_renown := 0, p_drop := "") -> void:
 	mode = Mode.SOLO
 	_setup(p_world, p_seed)
 	_spawn_caches()
 	armory.setup(self)
-	add_player(p_kit, p_mastery, "You", p_owner, p_renown)
+	add_player(p_kit, p_mastery, "You", p_owner, p_renown, p_drop)
 	_spawn_bots()
 	_spawn_bosses()
 	_spawn_map_vehicles()
@@ -293,6 +311,7 @@ func _physics_process(delta: float) -> void:
 	clock += delta
 	_tick_sign_outs(delta)
 	_tick_toys(delta)
+	_tick_portals(delta)
 	if mode != Mode.CLIENT:
 		_tick_war(delta)
 	map.set_meta("war_intensity", war.intensity)
@@ -903,7 +922,11 @@ func add_player(p_kit: Array = [], p_mastery: Dictionary = {}, p_name := "Raider
 	# that is no longer on offer, a strongpoint they hold is a forward drop
 	# point and otherwise they land away from the fighting.
 	var forward: Strongpoint = null
-	if arriving and p_owner != "":
+	if p_drop == PORTAL_DROP and not outposts.is_empty():
+		# One outpost per squad, so a squad through the same portal lands together.
+		var squad: String = squads.get(p_owner, _player_side(p_owner)) if p_owner != "" else ""
+		at = outposts[absi(hash(squad)) % outposts.size()].global_position
+	elif arriving and p_owner != "":
 		var side := _player_side(p_owner)
 		var offered := drop_choices(p_owner).map(func(c: Dictionary) -> String: return c.id)
 		if p_drop == "hot" and "hot" in offered and not spawns.is_empty() and not squad_spawn:
@@ -1541,6 +1564,113 @@ func ping(actor: Actor) -> String:
 	return ""
 
 
+## Puts the player with this owner key in a squad (a clan, online): who may
+## walk through a squad portal they open. "" puts them back on their own.
+## Unlike a team (`set_team`) it changes no side, so it holds in safe zones.
+## Whoever owns the accounts calls this; the `Raid` never asks about clans.
+func set_squad(owner: String, squad: String) -> void:
+	if owner == "":
+		return
+	if squad == "":
+		squads.erase(owner)
+	else:
+		squads[owner] = "squad:" + squad
+
+
+## The key a squad portal checks: the player's squad if they have one, else
+## their side (`side_of`), so allies in a world are a squad too.
+func squad_of(actor: Actor) -> String:
+	var state := state_for(actor)
+	if state != null and squads.has(state.owner):
+		return squads[state.owner]
+	return side_of(actor)[0]
+
+
+## Whether `actor` may open a squad portal where they are: only in a safe
+## zone, so a portal is a way out to a fight, never out of one.
+func may_open_portal(actor: Actor) -> bool:
+	return world != null and world.safe_zone and actor != null and is_instance_valid(actor) and not actor.is_dead
+
+
+## The watch's squad portal: opens a portal to `destination` (a
+## `Portal.destinations()` id) in front of `actor`, for their side to walk
+## through for `Portal.open_time`. Their last one folds away. Authority
+## only. Returns "" if it opened, or why not.
+func open_portal(actor: Actor, destination: String) -> String:
+	var state := state_for(actor)
+	if mode == Mode.CLIENT or state == null or state.finished:
+		return "not now"
+	if not may_open_portal(actor):
+		return "Portals open only in safe zones"
+	if destination not in Portal.destinations():
+		return "No portal goes there"
+	if clock < state.portal_ready_at:
+		return "Portal recharging"
+	state.portal_ready_at = clock + portal_cooldown
+	for old in portals.duplicate():
+		if old.opener == state.owner:
+			close_portal(old)
+	var portal := Portal.new()
+	portal.name = "Portal%d" % actor.get_instance_id()
+	portal.destination = destination
+	portal.side = squad_of(actor)
+	portal.opener = state.owner
+	portal.opener_name = actor.display_name
+	add_child(portal)
+	portal.global_transform = Portal.spot(get_world_3d().direct_space_state, actor.get_eye_position(),
+			actor.get_aim_dir(), actor.global_position.y, portal.distance, portal.wall_gap)
+	portals.append(portal)
+	portal_opened.emit(portal)
+	return ""
+
+
+## Shows a portal the server opened, on a client. `p_usable` is whether
+## the local player's side may walk through it.
+func show_portal(destination: String, at: Transform3D, p_usable: bool, p_age := 0.0, p_name := "") -> Portal:
+	var portal := Portal.new()
+	portal.destination = destination
+	portal.usable = p_usable
+	portal.age = p_age
+	portal.opener_name = p_name
+	add_child(portal)
+	portal.global_transform = at
+	portals.append(portal)
+	return portal
+
+
+func close_portal(portal: Portal) -> void:
+	portals.erase(portal)
+	if mode != Mode.CLIENT:
+		portal_closed.emit(portal)
+	if is_instance_valid(portal):
+		portal.queue_free()
+
+
+## Ages the open portals and folds away the ones whose time is up. On the
+## authority, anyone of the opener's side who walks into one is sent
+## through (`portal_entered`), once.
+func _tick_portals(delta: float) -> void:
+	for portal in portals.duplicate():
+		if not is_instance_valid(portal):
+			portals.erase(portal)
+			continue
+		portal.tick(delta)
+		if not portal.is_open():
+			close_portal(portal)
+			continue
+		if mode == Mode.CLIENT:
+			continue
+		for state in players:
+			var actor := state.actor
+			if state.finished or not is_instance_valid(actor) or actor.is_dead or actor in portal.sent:
+				continue
+			if portal.side != "" and squad_of(actor) != portal.side:
+				continue
+			if portal.contains(actor.global_position):
+				portal.sent.append(actor)
+				portal_entered.emit(actor, portal.destination)
+
+
 ## Seconds the watch waits after the vehicle `item_id` is thrown.
 func toy_recharge(item_id: String) -> float:
 	return float(ItemDB.item_stats(item_id).get("watch_recharge", toy_cooldown))
@@ -2101,6 +2231,7 @@ class PlayerState:
 	var summon_wait_total := 0.0
 	## `Raid.clock` when they can ping again.
 	var ping_ready_at := -INF
+	var portal_ready_at := -INF
 	## The vehicles they unpacked from toys.
 	var parked: Array[Node3D] = []
 	## The vehicle they were riding when they left.

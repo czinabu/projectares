@@ -22,8 +22,8 @@ static func run(t: Node) -> void:
 
 ## The catalog, and what may be bought when.
 static func _rules(t: Node) -> void:
-	t.check(BaseUpgrades.ids().size() == 13 and BaseUpgrades.total_price() == 31600,
-			"thirteen upgrades cost 31,600 scrip together")
+	t.check(BaseUpgrades.ids().size() == 12 and BaseUpgrades.total_price() == 26600,
+			"twelve upgrades cost 26,600 scrip together")
 	t.check(BaseUpgrades.clean(null).is_empty() and BaseUpgrades.clean("junk").is_empty()
 			and BaseUpgrades.clean(["finish", "no_such", "gear_hall", "gear_hall", 7]) == ["gear_hall", "finish"],
 			"a saved list keeps known upgrades only, once each, in catalog order")
@@ -108,7 +108,7 @@ static func _accounts(t: Node) -> void:
 	var paid: Dictionary = service.buy_upgrade(id, "ops_consoles")
 	t.check(paid.ok and service.scrip_of(id) == 0 and service.snapshot(id).base_upgrades == ["ops_consoles"],
 			"online, the server's account keeps the upgrades and pays for them")
-	t.check(not service.buy_upgrade(id, "gear_hall").ok and not service.buy_upgrade(id, "teleporter").ok
+	t.check(not service.buy_upgrade(id, "gear_hall").ok and not service.buy_upgrade(id, "heavy_wall").ok
 			and not service.buy_upgrade("nobody", "gear_hall").ok and service.snapshot(id).base_upgrades.size() == 1,
 			"the server refuses what the account cannot afford, what is not open and unknown accounts")
 	var account: Accounts.Account = service.load_account(id)
@@ -189,7 +189,7 @@ static func _bunker(t: Node) -> void:
 		shown.append(gate.id)
 	shown.sort()
 	var expected: Array[String] = ["armory_alcove", "bay_second", "bench_workshop", "finish", "firing_range",
-			"gear_hall", "lounge", "ops_consoles", "teleporter", "trophy_hall"]
+			"gear_hall", "lounge", "ops_consoles", "trophy_hall"]
 	t.check(shown == expected, "every upgrade still to buy is on show in the room (%s)" % [shown])
 	var priced := true
 	for gate in base.bulkheads:

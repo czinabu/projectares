@@ -21,6 +21,8 @@ signal toy_throw_requested(item_id: String)
 signal summon_requested(item_id: String)
 ## The player pinged where they are looking from the watch.
 signal ping_requested
+## The watch's portal icon was clicked: open a squad portal to `destination`.
+signal portal_requested(destination: String)
 ## The player asked to pack the vehicle they are looking at onto the watch.
 signal pack_requested
 
@@ -150,6 +152,9 @@ var watch_focus_moved := false
 ## carousel (`Hud.weapon_entries`, `Hud.artifact_entries`), counting from 0.
 var weapon_pick := 0
 var artifact_pick := 0
+## Which destination is picked out on the watch's portal icon
+## (`portal_choices`), counting from 0.
+var portal_pick := 0
 ## The artifact icon was clicked; sent as `artifact_pressed` next command.
 var _artifact_click := false
 var _toy_node: Node3D
@@ -297,6 +302,18 @@ func is_on_artifact() -> bool:
 	return is_watch_on("artifact") and actor.artifact.enabled and artifact_pick == 0
 
 
+## Where a squad portal from the watch can lead from here
+## (`Portal.destinations()`), or none where portals cannot open: anywhere but
+## your base or a safe zone.
+func portal_choices() -> Array[String]:
+	if actor == null or not is_instance_valid(actor) or actor.is_dead:
+		return []
+	var raid := Raid.of(actor)
+	if raid != null and (raid.world == null or not raid.world.safe_zone):
+		return []
+	return Portal.destinations()
+
+
 ## The weapons on the raised watch's carousel (`Hud.weapon_entries`).
 func watch_weapons() -> Array[Dictionary]:
 	if actor == null or not is_instance_valid(actor):
@@ -338,13 +355,18 @@ func click_watch() -> bool:
 	if is_watch_on("ping"):
 		ping_requested.emit()
 		return true
+	if is_watch_on("portal") and not portal_choices().is_empty():
+		var choices := portal_choices()
+		portal_requested.emit(choices[clampi(portal_pick, 0, choices.size() - 1)])
+		wrist_raised = false
+		return true
 	return false
 
 
 ## True while fire works the raised watch instead of the weapon.
 func watch_takes_fire() -> bool:
 	return is_picking_toys() or pack_target() != null or is_picking_weapons() or is_on_artifact() \
-			or is_watch_on("ping")
+			or is_watch_on("ping") or is_watch_on("portal")
 
 
 ## Draws the weapon picked on the carousel if it is worn, or asks the world
@@ -386,6 +408,8 @@ func watch_entries(id: String) -> int:
 			return watch_toys().size() if is_browsing_toys() else 0
 		"artifact":
 			return Hud.artifact_entries(actor).size()
+		"portal":
+			return portal_choices().size()
 	return 0
 
 
@@ -397,6 +421,8 @@ func _watch_pick(id: String) -> int:
 			return watch_index
 		"artifact":
 			return artifact_pick
+		"portal":
+			return portal_pick
 	return 0
 
 
@@ -408,6 +434,8 @@ func _set_watch_pick(id: String, pick: int) -> void:
 			watch_index = pick
 		"artifact":
 			artifact_pick = pick
+		"portal":
+			portal_pick = pick
 
 
 ## Moves the watch card's open icon `step` along (`Hud.Wrist.SLOTS`), tab

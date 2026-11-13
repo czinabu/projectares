@@ -47,8 +47,6 @@ const UPGRADES := {
 		"adds": "The mastery bench and records\nget consoles of their own"},
 	"firing_range": {"title": "Firing range", "track": "Headquarters", "price": 2500,
 		"adds": "Targets to shoot at with endless ammo.\nNothing there is lost"},
-	"teleporter": {"title": "Squad teleporter pad", "track": "Headquarters", "price": 5000, "needs": ["ops_consoles"],
-		"adds": "Squadmates visit and launch together", "ready": false},
 	"finish": {"title": "Finish", "track": "Headquarters", "price": 1500, "needs_count": 4,
 		"adds": "Wall panels, lighting and trim"},
 }
