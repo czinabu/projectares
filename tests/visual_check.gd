@@ -336,6 +336,9 @@ func _watch_shots(out_dir: String) -> void:
 			bot.get_node("Brain").set_physics_process(false)
 		raid.state_for(raid.player).stowed.append("bike_raider")
 		var p := raid.player
+		# Loot in the pack for the carousel: two weapons, an artifact, scrap.
+		for id: String in ["rifle_carbine", "knife_gutter", "artifact_cloak", "scrap_metal"]:
+			p.inventory.add_item(id)
 		p.health.health = p.health.max_health * 0.6
 		p.stamina = p.max_stamina * 0.4
 		p.flight.heat = p.flight.max_heat * 0.55
@@ -357,10 +360,48 @@ func _watch_shots(out_dir: String) -> void:
 				controller.watch_focus_moved = true
 				await _settle(4)
 				await _shot(out_dir.path_join("watch_look_%s.png" % Hud.Wrist.SLOTS[i]))
+			# The weapon carousel on a weapon in the pack.
+			controller.watch_focus = Hud.Wrist.SLOTS.find("weapon")
+			controller.weapon_pick = 3
+			await _settle(20)
+			await _shot(out_dir.path_join("watch_carousel_pack_weapon.png"))
 			controller.watch_focus_moved = false
 		controller.toggle_view()
 		await _settle(40)
 		await _shot(out_dir.path_join("watch_third_%s.png" % tag))
+		if helmet == "":
+			# Third person on the carousel, then the summon: the carbine
+			# digitizing into the hand, part way and done, in both views.
+			controller.watch_focus = Hud.Wrist.SLOTS.find("weapon")
+			controller.watch_focus_moved = true
+			controller.weapon_pick = 3
+			await _settle(20)
+			await _shot(out_dir.path_join("watch_carousel_third.png"))
+			controller.wrist_raised = false
+			await _settle(30)
+			raid.summon(p, "rifle_carbine")
+			# Held half way through materializing for the picture.
+			p.materialize_time = 30.0
+			p.materialize_left = 15.0
+			await _settle(10)
+			await _shot(out_dir.path_join("summon_third_half.png"))
+			p.materialize_left = 0.0
+			await _settle(30)
+			await _shot(out_dir.path_join("summon_third_done.png"))
+			controller.toggle_view()
+			raid.state_for(p).summon_ready_at = -INF
+			await _settle(40)
+			raid.summon(p, "rifle_scrap")
+			p.materialize_time = 30.0
+			p.materialize_left = 15.0
+			await _settle(10)
+			await _shot(out_dir.path_join("summon_first_half.png"))
+			p.materialize_left = 0.0
+			p.cmd.pitch = -0.25
+			await _settle(10)
+			raid.ping(p)
+			await _settle(20)
+			await _shot(out_dir.path_join("ping_first.png"))
 		raid.queue_free()
 		await _settle(3)
 	await _base_watch_shots(out_dir)

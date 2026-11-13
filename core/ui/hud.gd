@@ -11,9 +11,11 @@ extends CanvasLayer
 ##     right, and the ability's state, so they are always in view;
 ##   - the holographic watch on your left wrist (`wrist`), brought up with
 ##     the `check_wrist` key (X) and on its own while you are down: a small
-##     card of icons for the things you do (the map and your standing, the
-##     pack, vehicles, the heavy weapon, the artifact, sign-out and banking),
-##     each opening when you look at it, and what your death cost. With no
+##     card of icons in three tabs. Summon is the carousel of what you carry
+##     (weapons worn and in the pack, toy vehicles, artifacts) with the
+##     pack's fill and worth under it; Status is the map and your standing;
+##     Mission is the contract, the squad ping, and sign-out and banking.
+##     Down, it shows what your death cost and where you can land. With no
 ##     helmet, or in third person, it also carries the vitals as a thin strip;
 ##   - an ammo counter on every gun (`AMMO_COUNTER` on the gun's model);
 ##   - a heat gauge in the screen bay on the back of a jetpack
@@ -52,6 +54,8 @@ var _prompt: Label
 var _messages: Array[Dictionary] = []
 ## The local player's last life, shown while they are down (see `show_death`).
 var _death_result := {}
+## Squad pings standing in the world: { node, left }.
+var _pings: Array[Dictionary] = []
 var _redeploy_wait := 0.0
 
 
@@ -99,6 +103,8 @@ func _ready() -> void:
 	add_child(wrist)
 
 	raid.player.notice.connect(_on_notice)
+	if not raid.pinged.is_connected(_on_pinged):
+		raid.pinged.connect(_on_pinged)
 	raid.war_feed.connect(_on_war_feed)
 	raid.player.hit_confirmed.connect(_on_hit_confirmed)
 	raid.player.health.damaged.connect(_on_player_damaged)
@@ -164,7 +170,9 @@ func _process(delta: float) -> void:
 		_prompt.text = "Click: pack %s onto your watch" % pack_name
 	elif _prompt.text.contains("Ride ") and not p.is_dead:
 		_prompt.text += "      Watch up, then click: pack it"
-	var slots := watch_slots(raid, p, picked, pack_name, leaving, banking, contracts)
+	var picks := {"weapon": controller.weapon_pick, "artifact": controller.artifact_pick} \
+			if controller != null else {}
+	var slots := watch_slots(raid, p, picked, pack_name, leaving, banking, picks, contracts)
 	var focus := default_focus(slots)
 	if controller != null:
 		if controller.watch_focus_moved:
@@ -178,46 +186,89 @@ func _process(delta: float) -> void:
 	var on_glass := visor != null and visor.glass_shown()
 	wrist.show_card(slots, focus, death, p.health.health / maxf(p.health.max_health, 1.0),
 			wrist_bars(p) if not on_glass else ([] as Array[float]),
-			log_lines.slice(maxi(0, log_lines.size() - 1)))
+			log_lines.slice(maxi(0, log_lines.size() - 1)), {"summon": pack_text(p)},
+			flight_popup(p) if not on_glass else "")
 	wrist.show_toys(raid.stowed_for(p) if not p.is_dead else ([] as Array[String]), picked,
 			raid.toy_wait(p) <= 0.0, delta)
+	var carried: Array[String] = []
+	if not p.is_dead:
+		for entry in weapon_entries(p):
+			carried.append(entry.id)
+	wrist.show_weapons(carried, int(picks.get("weapon", 0)), raid.summon_wait(p) <= 0.0, delta)
+	_update_pings(delta)
 
 
-## The icons on the watch card, left to right, each a Dictionary:
-##   "id": which slot (`Wrist.SLOTS`), drawn as its icon;
+## The weapons on the watch's carousel, in the order the wheel turns through
+## them: the ones worn (primary, sidearm, melee, heavy) and then the ones in
+## the pack. Each is {"id", "index" (in `Actor.weapons`, or -1 in the pack)}.
+## Only what is carried is ever here, never the stash.
+static func weapon_entries(p: Actor) -> Array[Dictionary]:
+	var entries: Array[Dictionary] = []
+	for index in p.slot_order():
+		entries.append({"id": p.weapons[index].item_id, "index": index})
+	for id in p.inventory.items:
+		if Loadout.summonable(id):
+			entries.append({"id": id, "index": -1})
+	return entries
+
+
+## The artifacts on the watch's carousel (item ids): the one attuned for
+## this outing first, then any carried in the pack as loot.
+static func artifact_entries(p: Actor) -> Array[String]:
+	var entries: Array[String] = []
+	if p.artifact.enabled:
+		entries.append(p.artifact.item_id)
+	for id in p.inventory.items:
+		if ItemDB.has_tag(id, "artifact"):
+			entries.append(id)
+	return entries
+
+
+## The pack's line under the Summon tab: how full, what it is worth, heals
+## and scrip.
+static func pack_text(p: Actor) -> String:
+	var pack := "Pack %d/%d" % [p.inventory.items.size(), p.inventory.capacity]
+	if not p.inventory.items.is_empty():
+		pack += " · worth %d" % p.inventory.total_value()
+	var heals := p.inventory.count_with_tag("heal")
+	if heals > 0:
+		pack += " · %d heal%s" % [heals, "" if heals == 1 else "s"]
+	if p.scrip > 0:
+		pack += " · %d scrip" % p.scrip
+	return pack
+
+
+## The flight rig's cue as a pop-up on the card, only while flying and only
+## where the visor is not showing it.
+static func flight_popup(p: Actor) -> String:
+	if p.is_dead or not p.flight.enabled or p.airborne_time <= 0.3:
+		return ""
+	var cue := rig_text(p)
+	return cue if cue != "" else "%s · heat %d%%" % [p.flight.display_name, roundi(p.flight.heat_fraction() * 100.0)]
+
+
+## The icons on the watch card, left to right, tab after tab
+## (`Wrist.SLOTS`, `Wrist.TABS`), each a Dictionary:
+##   "id": which slot, drawn as its icon;
+##   "tab": the tab it is on;
 ##   "value": a short number or word on the icon ("" for none);
 ##   "detail": the one line shown when the icon is open (looked at);
 ##   "hints": controls drawn as glyphs beside it ("wheel", "click", or
 ##     "key:L" for a key cap), never written out;
 ##   "progress": a ring around the icon from 0 to 1, or below 0 for none;
 ##   "empty": nothing in it (drawn as a dim socket);
-##   "alert": something wants the eye (drawn warm and pulsing).
+##   "alert": something wants the eye (drawn warm and pulsing);
+##   "count", "index": on a carousel, how many things it holds and which
+##     one is picked out (0 and 0 for a plain icon).
 ## `picked_toy` is the toy picked out, `pack_name` the vehicle a click would
-## pack, `leaving` the sign-out progress (below 0 for none) and `banking`
-## the depot progress.
+## pack, `leaving` the sign-out progress (below 0 for none), `banking` the
+## depot progress, and `picks` the weapon and artifact picked out
+## ({"weapon": n, "artifact": n}).
 static func watch_slots(p_raid: Raid, p: Actor, picked_toy := 0, pack_name := "", leaving := -1.0,
-		banking := 0.0, jobs: Array[Dictionary] = []) -> Array[Dictionary]:
+		banking := 0.0, picks := {}, jobs: Array[Dictionary] = []) -> Array[Dictionary]:
 	var slots: Array[Dictionary] = []
-	# The map: where you are, your standing, the strongpoints.
-	var where := p_raid.world.display_name
-	if p_raid.war.intensity >= 0.2:
-		where += " · " + p_raid.war.level_name()
-	var parts: Array[String] = [where, standing_text(p).replace("   ", " · ")]
-	var held := sites_text(p_raid, p)
-	if held != "":
-		parts.append(held)
-	var hunted := p.bounty > 0 or p.exposed or p.marked
-	slots.append(_slot("map", str(p.renown) if p.renown > 0 else "", " · ".join(parts), [], -1.0, false, hunted))
-	# The pack: what it is worth, how full, heals and scrip.
-	var pack := "Pack %d/%d" % [p.inventory.items.size(), p.inventory.capacity]
-	var heals := p.inventory.count_with_tag("heal")
-	if heals > 0:
-		pack += " · %d heal%s" % [heals, "" if heals == 1 else "s"]
-	if p.scrip > 0:
-		pack += " · %d scrip" % p.scrip
-	slots.append(_slot("pack", str(p.inventory.total_value()), pack, [], -1.0,
-			p.inventory.items.is_empty() and p.scrip <= 0,
-			p.inventory.items.size() >= p.inventory.capacity))
+	# Summon: what you carry, materialized through the watch.
+	slots.append(weapon_slot(p_raid, p, int(picks.get("weapon", 0))))
 	# The vehicle: toys on the watch, or the one a click would pack.
 	var toys := p_raid.stowed_for(p)
 	var recharge := p_raid.toy_wait(p)
@@ -229,24 +280,37 @@ static func watch_slots(p_raid: Raid, p: Actor, picked_toy := 0, pack_name := ""
 	elif toys.is_empty():
 		slots.append(_slot("vehicle", "", "No vehicle", [], -1.0, true, false))
 	else:
-		var name := ItemDB.item_name(toys[clampi(picked_toy, 0, toys.size() - 1)])
+		var at := clampi(picked_toy, 0, toys.size() - 1)
+		var name := ItemDB.item_name(toys[at])
 		var wait := 1.0 - recharge / maxf(p_raid.toy_cooldown, 0.01) if recharge > 0.0 else -1.0
 		slots.append(_slot("vehicle", "%d" % toys.size(), name if recharge <= 0.0 else "%s · %d s" % [name, ceili(recharge)],
-				["wheel", "click"] if recharge <= 0.0 else [], wait, false, false))
-	# The heavy weapon chamber.
-	var power := Loadout.power_index(p)
-	if power >= 0:
-		var gun := p.weapons[power] as Gun
-		var shots := gun.ammo_in_mag + gun.reserve_ammo
-		slots.append(_slot("heavy", str(shots), gun.display_name if not gun.is_spent() else "%s · spent" % gun.display_name,
-				["key:4"], gun.charge_fraction() if gun.charge_fraction() > 0.0 else -1.0, false, gun.is_spent()))
+				["wheel", "click"] if recharge <= 0.0 else [], wait, false, false, toys.size(), at))
+	# The artifacts carried: the one attuned for this outing, and any found.
+	var relics := artifact_entries(p)
+	var relic_at := clampi(int(picks.get("artifact", 0)), 0, maxi(relics.size() - 1, 0))
+	if relic_at > 0 or (not relics.is_empty() and not p.artifact.enabled):
+		slots.append(_slot("artifact", "", "%s · in pack, not attuned" % ItemDB.item_name(relics[relic_at]),
+				["wheel"] if relics.size() > 1 else [], -1.0, false, false, relics.size(), relic_at))
 	else:
-		slots.append(_slot("heavy", "", "No heavy weapon", [], -1.0, true, false))
-	# The artifact carried for this outing (section 6 of the design doc).
-	slots.append(artifact_slot(p.artifact))
-	# The contracts held, with this life's progress on them.
+		var relic := artifact_slot(p.artifact)
+		relic["count"] = relics.size()
+		if relics.size() > 1:
+			relic["hints"] = ["wheel"] + relic["hints"]
+		slots.append(relic)
+	# Status: where you are and how you stand.
+	var where := p_raid.world.display_name
+	if p_raid.war.intensity >= 0.2:
+		where += " · " + p_raid.war.level_name()
+	var held := sites_text(p_raid, p)
+	if held != "":
+		where += " · " + held
+	slots.append(_slot("map", "", where, [], -1.0, false, false))
+	var hunted := p.bounty > 0 or p.exposed or p.marked
+	slots.append(_slot("standing", str(p.renown) if p.renown > 0 else "", standing_text(p).replace("   ", " · "),
+			[], -1.0, false, hunted))
+	# Mission: the contract, the squad ping, and sign-out and banking.
 	slots.append(contract_slot(jobs, p.tally))
-	# Sign-out and banking.
+	slots.append(_slot("ping", "", "Ping where you look", ["click"], -1.0, false, false))
 	if leaving >= 0.0:
 		slots.append(_slot("leave", "", "Signing out", ["key:L"], leaving, false, true))
 	elif banking > 0.0:
@@ -256,26 +320,63 @@ static func watch_slots(p_raid: Raid, p: Actor, picked_toy := 0, pack_name := ""
 	return slots
 
 
+## The weapon carousel's icon: the weapon picked out of what is carried.
+## One worn is drawn with a click (a heavy weapon shows its shots); one in
+## the pack is materialized into the hand in place of the one worn in its
+## slot, which takes `Loadout.summon_time` and then rests the watch.
+static func weapon_slot(p_raid: Raid, p: Actor, picked := 0) -> Dictionary:
+	var entries := weapon_entries(p)
+	if entries.is_empty():
+		return _slot("weapon", "", "No weapon", [], -1.0, true, false)
+	var at := clampi(picked, 0, entries.size() - 1)
+	var entry := entries[at]
+	var name := ItemDB.item_name(entry.id)
+	var hints: Array = ["wheel"] if entries.size() > 1 else []
+	var value := "%d/%d" % [at + 1, entries.size()]
+	if int(entry.index) >= 0:
+		var worn := p.weapons[entry.index]
+		var gun := worn as Gun
+		var detail := name
+		if gun and gun.is_power():
+			detail = "%s · %d" % [name, gun.ammo_in_mag + gun.reserve_ammo] if not gun.is_spent() else "%s · spent" % name
+		if int(entry.index) == p.active_weapon_index:
+			return _slot("weapon", value, "%s · in hand" % detail, hints, -1.0, false, false, entries.size(), at)
+		return _slot("weapon", value, detail, hints + ["click"], -1.0, false, false, entries.size(), at)
+	var wait := p_raid.summon_wait(p) if p_raid != null else 0.0
+	if wait > 0.0:
+		return _slot("weapon", value, "%s · %d s" % [name, ceili(wait)], hints, p_raid.summon_charge(p), false, false,
+				entries.size(), at)
+	return _slot("weapon", value, "%s · pack · %.1f s" % [name, Loadout.summon_time(entry.id)], hints + ["click"],
+			-1.0, false, false, entries.size(), at)
+
+
 ## The watch card at home (`HomeBase`), where there is no raid: the same
 ## icons, each saying what it holds for the next deploy. `loadout` is the
 ## base's loadout (slot -> item id). Nothing on it can be used from here: the
 ## base's stations do that.
 static func base_watch_slots(base_name: String, loadout: Dictionary, held: Array[Dictionary] = []) -> Array[Dictionary]:
 	var slots: Array[Dictionary] = []
-	slots.append(_slot("map", "", base_name, [], -1.0, false, false))
-	slots.append(_slot("pack", "", "Pack empty", [], -1.0, true, false))
+	var worn: Array[String] = []
+	for slot: String in ["primary", "sidearm", "melee"]:
+		var id: String = loadout.get(slot, "")
+		if id != "" and ItemDB.has_item(id):
+			worn.append(ItemDB.item_name(id))
+	slots.append(_slot("weapon", str(worn.size()) if not worn.is_empty() else "",
+			" · ".join(worn) if not worn.is_empty() else "No weapon", [], -1.0, worn.is_empty(), false))
 	var vehicle: String = loadout.get("vehicle", "")
 	if vehicle != "" and ItemDB.has_item(vehicle):
 		slots.append(_slot("vehicle", "1", ItemDB.item_name(vehicle), [], -1.0, false, false))
 	else:
 		slots.append(_slot("vehicle", "", "No vehicle", [], -1.0, true, false))
-	slots.append(_slot("heavy", "", "No heavy weapon", [], -1.0, true, false))
 	var relic: String = loadout.get("artifact", "")
 	if relic != "" and ItemDB.has_item(relic):
 		slots.append(_slot("artifact", "", ItemDB.item_name(relic), [], -1.0, false, false))
 	else:
 		slots.append(_slot("artifact", "", "No artifact", [], -1.0, true, false))
+	slots.append(_slot("map", "", base_name, [], -1.0, false, false))
+	slots.append(_slot("standing", "", "At home", [], -1.0, true, false))
 	slots.append(contract_slot(held, {}))
+	slots.append(_slot("ping", "", "No squad here", [], -1.0, true, false))
 	slots.append(_slot("leave", "", "Home", [], -1.0, true, false))
 	return slots
 
@@ -324,9 +425,9 @@ static func artifact_slot(relic: Artifact) -> Dictionary:
 
 
 static func _slot(id: String, value: String, detail: String, hints: Array, progress: float, empty: bool,
-		alert: bool) -> Dictionary:
-	return {"id": id, "value": value, "detail": detail, "hints": hints, "progress": progress,
-			"empty": empty, "alert": alert}
+		alert: bool, count := 0, index := 0) -> Dictionary:
+	return {"id": id, "tab": Wrist.tab_of(id), "value": value, "detail": detail, "hints": hints,
+			"progress": progress, "empty": empty, "alert": alert, "count": count, "index": index}
 
 
 ## The icon the card opens on before you look anywhere: what is happening
@@ -351,6 +452,7 @@ static func wrist_text(p_raid: Raid, p: Actor, death: Dictionary, wait: float, p
 	var lines: Array[String] = []
 	for slot in watch_slots(p_raid, p, picked_toy, pack_name):
 		lines.append(slot.detail)
+	lines.append(pack_text(p))
 	return "\n".join(lines)
 
 
@@ -637,6 +739,86 @@ func notify(text: String) -> void:
 	_on_notice(text)
 
 
+## Someone pinged a spot (`Raid.ping`). Yours and your side's stand in the
+## world as a column of light for `Raid.ping_time`; a client only ever
+## hears of those.
+func _on_pinged(pinger: Actor, at: Vector3) -> void:
+	var p := raid.player if raid != null else null
+	if p == null or not is_instance_valid(p) or not is_instance_valid(pinger):
+		return
+	if pinger != p and raid.mode != Raid.Mode.CLIENT and not Visor.allied(p, pinger):
+		return
+	var mark := ping_mark(pinger.display_name if pinger != p else "")
+	raid.add_child(mark)
+	mark.global_position = at
+	_pings.append({"node": mark, "left": raid.ping_time})
+	Sfx.play("dash", null, -14.0)
+
+
+## A ping's marker: a thin column of light with a ring at its foot and the
+## pinger's name over it.
+static func ping_mark(by := "") -> Node3D:
+	var mark := Node3D.new()
+	mark.name = "Ping"
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	mat.albedo_color = Color(0.35, 0.95, 1.0, 0.55)
+	mat.no_depth_test = true
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	var column := MeshInstance3D.new()
+	var shaft := CylinderMesh.new()
+	shaft.top_radius = 0.03
+	shaft.bottom_radius = 0.08
+	shaft.height = 6.0
+	shaft.material = mat
+	column.mesh = shaft
+	column.position = Vector3(0.0, 3.0, 0.0)
+	column.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	mark.add_child(column)
+	var ring := MeshInstance3D.new()
+	var torus := TorusMesh.new()
+	torus.inner_radius = 0.5
+	torus.outer_radius = 0.58
+	torus.material = mat
+	ring.mesh = torus
+	ring.position = Vector3(0.0, 0.1, 0.0)
+	ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	mark.add_child(ring)
+	if by != "":
+		var tag := Label3D.new()
+		tag.text = by
+		tag.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		tag.no_depth_test = true
+		tag.fixed_size = true
+		tag.pixel_size = 0.0012
+		tag.modulate = Color(0.6, 1.0, 1.0)
+		tag.position = Vector3(0.0, 6.3, 0.0)
+		mark.add_child(tag)
+	return mark
+
+
+## Fades and clears the pings standing in the world.
+func _update_pings(delta: float) -> void:
+	for ping in _pings.duplicate():
+		ping.left -= delta
+		var mark: Node3D = ping.node
+		if ping.left <= 0.0 or not is_instance_valid(mark):
+			_pings.erase(ping)
+			if is_instance_valid(mark):
+				mark.queue_free()
+			continue
+		# The ring breathes; the whole mark thins out over its last second.
+		mark.scale = Vector3.ONE * (1.0 + 0.08 * sin(ping.left * 6.0))
+		mark.visible = ping.left > 1.0 or fmod(ping.left, 0.2) > 0.08
+
+
+## The pings standing in the world now (for checks).
+func pings_shown() -> int:
+	return _pings.size()
+
+
 func _on_notice(text: String) -> void:
 	_log(text, 4.0)
 
@@ -753,14 +935,19 @@ func show_aim(on: bool) -> void:
 ## band and a small lit face, nothing in the view. Raised (`raised`, the
 ## `check_wrist` key, and on its own while you are down), it projects a
 ## small card of light just above the face, about the size of a playing
-## card: a row of icons (`SLOTS`: the map, the pack, the vehicle, the heavy
-## weapon, the artifact, and sign-out/banking). The open icon grows and its
-## one line shows under the row, with its controls as glyphs (a mouse wheel,
-## a click, a key cap), never written out. Which icon is open is
-## `PlayerController.watch_focus`: the mouse wheel steps across the card
-## (and through the toys on the vehicle icon), and the mouse only looks.
-## While you are down the card shows what the death cost and where you can
-## land.
+## card, in three tabs (`TABS`) named along its top. Summon is the carousel
+## of what you carry: weapons (worn and in the pack), toy vehicles and
+## artifacts, with the pack's fill and worth under it. Status is the map
+## and your standing. Mission is the contract, the squad ping, and sign-out
+## and banking. The open tab's icons stand in a row; the open icon grows and
+## its one line shows under the row, with its controls as glyphs (a mouse
+## wheel, a click, a key cap), never written out. Which icon is open is
+## `PlayerController.watch_focus`: the mouse wheel steps across the card,
+## tab after tab (and through the weapons, toys and artifacts on their
+## icons), and the mouse only looks. The things picked from stand over the
+## card as small holograms. Some things only pop up when they matter: what
+## the death cost and where you can land while you are down, the flight
+## rig's cue while flying, and a brief notice.
 ## Your vitals are not on the card while the visor shows them (`VisorHud`);
 ## with no helmet, or in third person, the card carries them as a thin strip.
 ##   - First person, where your own body is not drawn: a forearm comes up
@@ -777,8 +964,16 @@ class Wrist:
 
 	const VehicleScript := preload("res://core/vehicle/vehicle.gd")
 
-	## The card's icons, left to right (see `Hud.watch_slots`).
-	const SLOTS := ["map", "pack", "vehicle", "heavy", "artifact", "contract", "leave"]
+	## The card's tabs, left to right, and the icons on each.
+	const TABS := ["summon", "status", "mission"]
+	const TAB_SLOTS := {
+		"summon": ["weapon", "vehicle", "artifact"],
+		"status": ["map", "standing"],
+		"mission": ["contract", "ping", "leave"],
+	}
+	## Every icon, left to right, tab after tab (see `Hud.watch_slots`). The
+	## wheel steps along this.
+	const SLOTS := ["weapon", "vehicle", "artifact", "map", "standing", "contract", "ping", "leave"]
 	const HOLO_TINT := Color(0.75, 1.0, 1.0, 0.95)
 	const GLOW_COLOR := Color(0.35, 0.95, 1.0)
 	## The card as projected light: faint scanlines that crawl up it, a
@@ -850,11 +1045,17 @@ void fragment() {
 	var toy_lift := 0.016
 	var toy_spacing := 0.05
 	var toy_size := 0.16
+	## Weapons over the card: how far apart, and how long the picked one is
+	## drawn, in metres (the others are two thirds of it).
+	var weapon_spacing := 0.034
+	var weapon_length := 0.05
 
 	var viewport: SubViewport
 	var card: Card
 	var _toys: Node3D
 	var _toy_ids: Array[String] = []
+	var _weapons: Node3D
+	var _weapon_ids: Array[String] = []
 	var _spin := 0.0
 	var _holo: MeshInstance3D
 	var _glow: OmniLight3D
@@ -926,6 +1127,13 @@ void fragment() {
 		_glow.light_energy = 0.0
 		_glow.shadow_enabled = false
 		add_child(_glow)
+
+	## The tab an icon is on ("" if it is not on the card).
+	static func tab_of(id: String) -> String:
+		for tab: String in TABS:
+			if id in TAB_SLOTS[tab]:
+				return tab
+		return ""
 
 	## Takes the watch off the character (the HUD going away).
 	func take_off() -> void:
@@ -1118,10 +1326,15 @@ void fragment() {
 	## Fills the card: `slots` from `Hud.watch_slots`, `focus` the icon being
 	## looked at, `death` the death report while down (else ""), `health`
 	## your share of health (for the face's colour), `bars` the vitals strip
-	## (empty while the visor shows them), `notes` a last notice.
+	## (empty while the visor shows them), `notes` a last notice, `summaries`
+	## a line under a tab's name (tab -> text: the pack under Summon) and
+	## `popup` a line that is only there while it matters (the flight rig's
+	## cue while flying).
 	func show_card(slots: Array[Dictionary], focus: int, death: String, health: float, bars: Array[float],
-			notes: Array[String] = []) -> void:
+			notes: Array[String] = [], summaries := {}, popup := "") -> void:
 		card.slots = slots
+		card.summaries = summaries
+		card.popup = popup
 		card.focus = clampi(focus, 0, maxi(slots.size() - 1, 0))
 		card.death = death
 		card.bars = bars
@@ -1183,6 +1396,105 @@ void fragment() {
 				mat.no_depth_test = not _third
 				mat.albedo_color = tint
 
+	## Stands the carried weapons in a row over the card while it is on the
+	## weapon icon, as small holograms of their real models (`ids` in the
+	## carousel's order, `Hud.weapon_entries`). The picked one is bigger and
+	## turns; `ready` is false while the watch rests after a summon.
+	func show_weapons(ids: Array[String], picked: int, ready: bool, delta := 0.0) -> void:
+		if _weapons == null:
+			_weapons = Node3D.new()
+			_weapons.name = "Weapons"
+			_holo.add_child(_weapons)
+		if ids != _weapon_ids:
+			_weapon_ids = ids.duplicate()
+			for old in _weapons.get_children():
+				_weapons.remove_child(old)
+				old.queue_free()
+			for id in ids:
+				_weapons.add_child(_weapon_holo(id))
+		_weapons.position = Vector3(0.0, face_size.y * 0.5 + toy_lift + 0.012, 0.0)
+		_weapons.visible = card != null and card.focused_id() == "weapon" and card.death == ""
+		if not _weapons.visible:
+			return
+		picked = clampi(picked, 0, maxi(ids.size() - 1, 0))
+		for i in _weapons.get_child_count():
+			var holo := _weapons.get_child(i) as Node3D
+			var chosen := i == picked
+			# The row slides so the picked weapon is always over the middle.
+			holo.position = Vector3((i - picked) * weapon_spacing, 0.006 if chosen else 0.0, 0.0)
+			holo.visible = absi(i - picked) <= 3
+			var length: float = holo.get_meta("length", 1.0)
+			holo.scale = Vector3.ONE * weapon_length / maxf(length, 0.05) * (1.0 if chosen else 0.66)
+			holo.rotation = Vector3(0.0, _spin if chosen else 0.0, 0.0)
+			var tint := toy_tint(chosen, ready)
+			_tint(holo, Color(tint, tint.a * 0.8))
+
+	## A weapon's real model as a hologram, with how long it is in its
+	## "length" meta. Headless there is no model, and it is an empty node.
+	func _weapon_holo(id: String) -> Node3D:
+		var holo := Node3D.new()
+		holo.name = "Weapon"
+		holo.set_meta("item", id)
+		var weapon: Weapon = MeleeWeapon.new() if ItemDB.has_tag(id, "melee") else Gun.new()
+		weapon.item_id = id
+		var model := Look.weapon_model(weapon) if DisplayServer.get_name() != "headless" else null
+		weapon.free()
+		if model == null:
+			return holo
+		holo.add_child(model)
+		var box := AABB()
+		var first := true
+		for mesh in model.find_children("*", "MeshInstance3D", true, false):
+			var part := mesh as MeshInstance3D
+			part.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			var placed := _to_holo(part, holo) * part.get_aabb()
+			box = placed if first else box.merge(placed)
+			first = false
+		# Centred, so it turns about its middle, and laid along the row: a
+		# gun's barrel runs along Z and a blade stands along Y.
+		model.position -= box.get_center()
+		holo.remove_child(model)
+		var lay := Node3D.new()
+		lay.name = "Lay"
+		match box.get_longest_axis_index():
+			Vector3.AXIS_Y:
+				lay.rotation = Vector3(0.0, 0.0, -PI * 0.5)
+			Vector3.AXIS_Z:
+				lay.rotation = Vector3(0.0, PI * 0.5, 0.0)
+		lay.add_child(model)
+		holo.add_child(lay)
+		holo.set_meta("length", box.get_longest_axis_size())
+		return holo
+
+	## A node's transform up to (not including) `top`, before either is in
+	## the tree.
+	static func _to_holo(node: Node3D, top: Node3D) -> Transform3D:
+		var out := Transform3D.IDENTITY
+		var at: Node = node
+		while at != null and at != top:
+			if at is Node3D:
+				out = (at as Node3D).transform * out
+			at = at.get_parent()
+		return out
+
+	## Draws every mesh under `holo` as flat light in `tint`.
+	func _tint(holo: Node3D, tint: Color) -> void:
+		for mesh in holo.find_children("*", "MeshInstance3D", true, false):
+			var mat := (mesh as MeshInstance3D).material_override as StandardMaterial3D
+			if mat == null:
+				mat = StandardMaterial3D.new()
+				mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+				mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+				mat.render_priority = 11
+				(mesh as MeshInstance3D).material_override = mat
+			# Like the card: over everything in first person only.
+			mat.no_depth_test = not _third
+			mat.albedo_color = tint
+
+	## The ids of the weapons standing over the card, in the carousel's order.
+	func weapons_shown() -> Array[String]:
+		return _weapon_ids
+
 	## A toy hologram's colour: bright when picked, faint while recharging.
 	static func toy_tint(chosen: bool, ready: bool) -> Color:
 		var tint := Color(0.75, 1.0, 1.0, 0.95) if chosen else Color(0.3, 0.85, 1.0, 0.45)
@@ -1215,6 +1527,11 @@ void fragment() {
 		for i in card.slots.size():
 			if i != card.focus:
 				lines.append(card.slots[i].detail)
+		for tab: String in TABS:
+			if card.summaries.get(tab, "") != "":
+				lines.append(card.summaries[tab])
+		if card.popup != "":
+			lines.append(card.popup)
 		return "\n".join(lines)
 
 	## The id of the icon being looked at ("" with none).
@@ -1243,6 +1560,10 @@ void fragment() {
 		var death := ""
 		var bars: Array[float] = []
 		var note := ""
+		## A line under a tab's name: tab -> text.
+		var summaries := {}
+		## A line that is only there while it matters (the rig's cue in flight).
+		var popup := ""
 		var _time := 0.0
 
 		func _process(delta: float) -> void:
@@ -1251,6 +1572,10 @@ void fragment() {
 
 		func focused_id() -> String:
 			return slots[focus].id if focus < slots.size() else ""
+
+		## The tab the open icon is on.
+		func focused_tab() -> String:
+			return slots[focus].get("tab", "") if focus < slots.size() else ""
 
 		func _draw() -> void:
 			var w := size.x
@@ -1269,46 +1594,89 @@ void fragment() {
 					draw_string(font, Vector2(22, y), line, HORIZONTAL_ALIGNMENT_LEFT, w - 44, 20, Color(INK, 0.95))
 					y += 24.0
 				return
-			var top := 22.0
+			var top := 14.0
 			if not bars.is_empty():
 				top = _draw_bars(w)
-			var count := slots.size()
-			if count == 0:
+			if slots.is_empty():
 				return
-			var row_y := top + 72.0
-			var step := (w - 40.0) / count
-			for i in count:
+			var tab := focused_tab()
+			top = _draw_tabs(w, top, tab)
+			# The open tab's icons, in a row.
+			var shown: Array[int] = []
+			for i in slots.size():
+				if slots[i].get("tab", "") == tab:
+					shown.append(i)
+			var count := shown.size()
+			var row_y := top + 54.0
+			var step := minf((w - 40.0) / count, 170.0)
+			var left := (w - step * count) * 0.5
+			for n in count:
+				var i := shown[n]
 				var slot := slots[i]
-				var centre := Vector2(20.0 + step * (i + 0.5), row_y)
+				var centre := Vector2(left + step * (n + 0.5), row_y)
 				var looked := i == focus
 				var color := _color_of(slot, looked)
-				var radius := 34.0 if looked else 24.0
+				var radius := 30.0 if looked else 21.0
 				if looked:
-					draw_arc(centre, radius + 12.0, 0.0, TAU, 40, Color(color, 0.25), 1.5, true)
+					draw_arc(centre, radius + 11.0, 0.0, TAU, 40, Color(color, 0.25), 1.5, true)
 				var progress: float = slot.progress
 				if progress >= 0.0:
-					draw_arc(centre, radius + 12.0, -PI * 0.5, -PI * 0.5 + TAU * clampf(progress, 0.0, 1.0), 40,
+					draw_arc(centre, radius + 11.0, -PI * 0.5, -PI * 0.5 + TAU * clampf(progress, 0.0, 1.0), 40,
 							Color(WARM if slot.alert else INK, 0.95), 4.0, true)
 				_draw_icon(slot.id, centre, radius, color, 3.0 if looked else 2.0)
 				if slot.value != "":
-					draw_string(font, centre + Vector2(-step * 0.5, radius + 34.0), slot.value,
-							HORIZONTAL_ALIGNMENT_CENTER, step, 24 if looked else 20, color)
+					draw_string(font, centre + Vector2(-step * 0.5, radius + 30.0), slot.value,
+							HORIZONTAL_ALIGNMENT_CENTER, step, 20 if looked else 17, color)
+				# A carousel shows a pip for each thing it holds.
+				var held := int(slot.get("count", 0))
+				if looked and held > 1:
+					var pip := minf(12.0, (step - 20.0) / held)
+					for k in held:
+						var at := centre + Vector2((k - (held - 1) * 0.5) * pip, radius + 40.0)
+						draw_circle(at, 3.0 if k == int(slot.get("index", 0)) else 1.6,
+								Color(INK, 1.0 if k == int(slot.get("index", 0)) else 0.5))
 			# The open icon's one line, with its controls as glyphs after it.
 			var open := slots[focus]
-			var line_y := h - 46.0 if note == "" else h - 64.0
+			var line_y := h - 40.0 if note == "" else h - 56.0
 			var hints: Array = open.hints
 			var room := w - 40.0 - hints.size() * 34.0
-			var text_w := minf(font.get_string_size(open.detail, HORIZONTAL_ALIGNMENT_LEFT, -1, 30).x, room)
+			var text_w := minf(font.get_string_size(open.detail, HORIZONTAL_ALIGNMENT_LEFT, -1, 26).x, room)
 			var x := (w - text_w - hints.size() * 34.0) * 0.5
-			draw_string(font, Vector2(x, line_y), open.detail, HORIZONTAL_ALIGNMENT_LEFT, room, 30,
+			draw_string(font, Vector2(x, line_y), open.detail, HORIZONTAL_ALIGNMENT_LEFT, room, 26,
 					_color_of(open, true))
 			x += text_w + 14.0
 			for hint: String in hints:
 				_draw_hint(hint, Vector2(x + 10.0, line_y - 9.0), Color(INK, 0.9))
 				x += 34.0
 			if note != "":
-				draw_string(font, Vector2(22, h - 22.0), note, HORIZONTAL_ALIGNMENT_CENTER, w - 44, 17,
+				draw_string(font, Vector2(22, h - 20.0), note, HORIZONTAL_ALIGNMENT_CENTER, w - 44, 16,
 						Color(INK, 0.6))
+
+		## The tab names along the top, the open one lit and underlined, then
+		## the open tab's line (the pack under Summon) and the pop-up line
+		## when there is one. Returns where the icons can start.
+		func _draw_tabs(w: float, top: float, open_tab: String) -> float:
+			var font := ThemeDB.fallback_font
+			var each := (w - 40.0) / TABS.size()
+			var y := top + 18.0
+			for i in TABS.size():
+				var lit: bool = TABS[i] == open_tab
+				var color := Color(INK, 1.0 if lit else 0.6)
+				draw_string(font, Vector2(20.0 + each * i, y), String(TABS[i]).to_upper(),
+						HORIZONTAL_ALIGNMENT_CENTER, each, 20 if lit else 17, color)
+				if lit:
+					draw_line(Vector2(20.0 + each * i + each * 0.25, y + 6.0),
+							Vector2(20.0 + each * (i + 1) - each * 0.25, y + 6.0), color, 2.0)
+			y += 12.0
+			var line: String = summaries.get(open_tab, "")
+			if line != "":
+				y += 18.0
+				draw_string(font, Vector2(20, y), line, HORIZONTAL_ALIGNMENT_CENTER, w - 40, 17, Color(INK, 0.85))
+			if popup != "":
+				y += 18.0
+				draw_string(font, Vector2(20, y), popup, HORIZONTAL_ALIGNMENT_CENTER, w - 40, 17,
+						Color(WARM, 0.95))
+			return y
 
 		## The vitals strip along the top, when the visor is not showing them:
 		## health, armor and stamina, and heat with a flight rig. Returns where
@@ -1342,11 +1710,19 @@ void fragment() {
 					_lines(pts, c, r, color, width)
 					_lines(PackedVector2Array([Vector2(-0.33, -1), Vector2(-0.33, 0.7)]), c, r, color, width * 0.6)
 					_lines(PackedVector2Array([Vector2(0.33, -0.7), Vector2(0.33, 1)]), c, r, color, width * 0.6)
-				"pack":
-					_lines(PackedVector2Array([Vector2(-0.7, -0.45), Vector2(0.7, -0.45), Vector2(0.75, 1),
-							Vector2(-0.75, 1), Vector2(-0.7, -0.45)]), c, r, color, width)
-					_lines(PackedVector2Array([Vector2(-0.7, 0.05), Vector2(0.7, 0.05)]), c, r, color, width * 0.6)
-					draw_arc(c + Vector2(0, -0.45) * r, 0.35 * r, PI, TAU, 12, color, width, true)
+				"standing":
+					# A rank chevron over a bar.
+					_lines(PackedVector2Array([Vector2(-0.8, 0.0), Vector2(0, -0.8), Vector2(0.8, 0.0)]),
+							c, r, color, width)
+					_lines(PackedVector2Array([Vector2(-0.8, 0.5), Vector2(0, -0.3), Vector2(0.8, 0.5)]),
+							c, r, color, width)
+					_lines(PackedVector2Array([Vector2(-0.8, 0.95), Vector2(0.8, 0.95)]), c, r, color, width * 0.7)
+				"ping":
+					# A point with rings going out.
+					draw_circle(c, 0.16 * r, color)
+					draw_arc(c, 0.5 * r, 0.0, TAU, 20, color, width * 0.8, true)
+					draw_arc(c, 0.92 * r, -PI * 0.3, PI * 0.3, 12, color, width * 0.7, true)
+					draw_arc(c, 0.92 * r, PI * 0.7, PI * 1.3, 12, color, width * 0.7, true)
 				"vehicle":
 					draw_arc(c + Vector2(-0.6, 0.45) * r, 0.38 * r, 0.0, TAU, 16, color, width, true)
 					draw_arc(c + Vector2(0.6, 0.45) * r, 0.38 * r, 0.0, TAU, 16, color, width, true)
@@ -1355,13 +1731,15 @@ void fragment() {
 					_lines(PackedVector2Array([Vector2(-0.1, -0.15), Vector2(0.4, -0.65), Vector2(0.7, -0.65)]),
 							c, r, color, width)
 					_lines(PackedVector2Array([Vector2(-0.6, -0.25), Vector2(0.05, -0.25)]), c, r, color, width)
-				"heavy":
-					_lines(PackedVector2Array([Vector2(-0.95, -0.22), Vector2(0.55, -0.22), Vector2(1.0, 0.0),
-							Vector2(0.55, 0.22), Vector2(-0.95, 0.22), Vector2(-0.95, -0.22)]), c, r, color, width)
-					_lines(PackedVector2Array([Vector2(-0.95, -0.22), Vector2(-1.0, -0.6), Vector2(-0.6, -0.22)]),
-							c, r, color, width * 0.7)
-					_lines(PackedVector2Array([Vector2(-0.95, 0.22), Vector2(-1.0, 0.6), Vector2(-0.6, 0.22)]),
-							c, r, color, width * 0.7)
+				"weapon":
+					# A rifle in outline: receiver and barrel, stock, grip, magazine.
+					_lines(PackedVector2Array([Vector2(-0.45, -0.3), Vector2(1.0, -0.3), Vector2(1.0, -0.12),
+							Vector2(0.35, -0.12), Vector2(0.35, 0.05), Vector2(-0.45, 0.05), Vector2(-0.45, -0.3)]),
+							c, r, color, width)
+					_lines(PackedVector2Array([Vector2(-0.45, -0.3), Vector2(-1.0, -0.2), Vector2(-1.0, 0.3),
+							Vector2(-0.45, 0.05)]), c, r, color, width * 0.8)
+					_lines(PackedVector2Array([Vector2(-0.2, 0.05), Vector2(-0.35, 0.6)]), c, r, color, width)
+					_lines(PackedVector2Array([Vector2(0.1, 0.05), Vector2(0.18, 0.55)]), c, r, color, width * 0.8)
 				"artifact":
 					var hex := PackedVector2Array()
 					for i in 7:

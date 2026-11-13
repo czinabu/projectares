@@ -30,6 +30,7 @@ const CraftingTests := preload("res://tests/crafting_tests.gd")
 const AttachmentTests := preload("res://tests/attachment_tests.gd")
 const PowerWeaponTests := preload("res://tests/power_weapon_tests.gd")
 const ArtifactTests := preload("res://tests/artifact_tests.gd")
+const WatchTests := preload("res://tests/watch_tests.gd")
 const ContractTests := preload("res://tests/contract_tests.gd")
 const FeelTests := preload("res://tests/feel_tests.gd")
 const ViewMatchTests := preload("res://tests/view_match_tests.gd")
@@ -296,6 +297,7 @@ func _run() -> void:
 	await _test_attachments()
 	await _test_power_weapons()
 	await _test_artifacts()
+	await _test_watch()
 	await _test_feel()
 	await _test_view_match()
 	await _test_ads()
@@ -377,6 +379,10 @@ func _test_power_weapons() -> void:
 
 func _test_artifacts() -> void:
 	await ArtifactTests.run(self)
+
+
+func _test_watch() -> void:
+	await WatchTests.run(self)
 
 
 func check(condition: bool, what: String) -> void:
@@ -996,17 +1002,28 @@ func _test_main_flow() -> void:
 	for i in 20:
 		controller.scroll(-1)
 	await frames(2)
-	check(controller.watch_focus == 0 and wrist.focused_id() == "map" and wrist.text().begins_with(main.raid.world.display_name),
-			"scrolling up steps the card left to the map icon")
+	check(controller.watch_focus == 0 and wrist.focused_id() == "weapon" and controller.weapon_pick == 0
+			and wrist.card.focused_tab() == "summon",
+			"scrolling up steps the card left to the weapons, on the Summon tab")
 	controller.scroll(-1)
 	check(controller.watch_focus == 0, "and it stops at the card's left end")
-	controller.scroll(1)
+	for i in controller.watch_weapons().size():
+		controller.scroll(1)
 	await frames(2)
-	check(wrist.focused_id() == "pack", "scrolling down steps right, one icon a notch")
+	check(wrist.focused_id() == "vehicle", "scrolling down turns through the weapons, then steps right an icon a notch")
+	for i in 10:
+		if wrist.card.focused_tab() == "status":
+			break
+		controller.scroll(1)
+		await frames(2)
+	check(wrist.card.focused_tab() == "status" and wrist.focused_id() == "map"
+			and wrist.text().begins_with(main.raid.world.display_name) and wrist.card.bars.size() >= 3,
+			"past the Summon tab the wheel steps on to Status: the map and your standing, under the vitals strip")
 	for i in 20:
 		controller.scroll(1)
 	await frames(2)
-	check(wrist.focused_id() == "leave", "and stops at the right end on sign-out")
+	check(wrist.focused_id() == "leave" and wrist.card.focused_tab() == "mission",
+			"and stops at the right end on sign-out, on the Mission tab")
 	check(controller._pending_switch < 0 and p.active_weapon_index == weapon_before and is_equal_approx(controller.yaw, yaw_before),
 			"with the watch up the wheel never switches weapons or turns the view")
 	controller.toggle_view()
@@ -4007,6 +4024,62 @@ func _test_online() -> void:
 		check(alpha.actor_for(bravo.my_actor_id) != null and bravo.raid.players.size() == 2
 				and bravo.containers().size() == alpha.containers().size(),
 				"the other client sees them return, and they still see the world")
+		# The watch's summon, online: Alpha materializes a weapon looted from the bag.
+		# Prefer one unlike the weapon worn in its slot, so the swap is visible.
+		var looted_weapon := ""
+		for id in me.inventory.items:
+			if not Loadout.summonable(id):
+				continue
+			var worn_at := Loadout.worn_index(me, Loadout.weapon_slot(id))
+			var differs: bool = worn_at < 0 or me.weapons[worn_at].item_id != id
+			if looted_weapon == "" or differs:
+				looted_weapon = id
+				if differs:
+					break
+		check(looted_weapon != "", "the bag held a weapon to summon (%s)" % looted_weapon)
+		if looted_weapon != "" and back.call():
+			var slot := Loadout.weapon_slot(looted_weapon)
+			var worn_before: String = me.weapons[Loadout.worn_index(me, slot)].item_id
+			var pack_before := me.inventory.items.size()
+			check(alpha.raid.summon(me, looted_weapon) != "" and me.weapons[Loadout.worn_index(me, slot)].item_id == worn_before,
+					"a client cannot summon a weapon on its own")
+			alpha.summon("smg_stinger" if looted_weapon != "smg_stinger" and worn_before != "smg_stinger" else "rifle_carbine")
+			await frames(30)
+			check(me.weapons[Loadout.worn_index(me, slot)].item_id == worn_before and me.inventory.items.size() == pack_before,
+					"the server refuses a weapon that is not in the pack it keeps")
+			var swaps := [0]
+			me.weapon_swapped.connect(func(_id: String, _m: int, _r: int) -> void: swaps[0] += 1)
+			alpha.summon(looted_weapon)
+			var summoned := func() -> bool:
+				var at := Loadout.worn_index(me, slot)
+				return swaps[0] > 0 and at >= 0 and me.weapons[at].item_id == looted_weapon and at == me.active_weapon_index \
+						and (worn_before == looted_weapon or me.inventory.has_item(worn_before))
+			await _wait_until(summoned, 180)
+			check(summoned.call() and looted_weapon in me.gear_items and me.inventory.items.size() == pack_before,
+					"the server summons it: it is in the hand, and the one worn is in the pack")
+			check(me.materialize_time > 0.0, "it materializes on the summoner's screen (%.1f s)" % me.materialize_time)
+			await _wait_until(func() -> bool: return alpha.raid.summon_wait(me) > 0.0, 60)
+			check(alpha.raid.summon_wait(me) > 0.0, "and the client is told its watch is resting")
+			var seen_swap := func() -> bool:
+				var there := bravo.actor_for(alpha.my_actor_id)
+				return there != null and there.weapons.any(func(w: Weapon) -> bool: return w.item_id == looted_weapon) \
+						and (worn_before == looted_weapon
+						or not there.weapons.any(func(w: Weapon) -> bool: return w.item_id == worn_before))
+			await _wait_until(seen_swap, 180)
+			check(seen_swap.call(), "the other client sees the summoned weapon on them")
+			# A ping reaches the pinger; a stranger on another side hears nothing.
+			var ping_heard := [0, 0]
+			alpha.raid.pinged.connect(func(_a: Actor, _at: Vector3) -> void: ping_heard[0] += 1)
+			bravo.raid.pinged.connect(func(_a: Actor, _at: Vector3) -> void: ping_heard[1] += 1)
+			me.cmd.pitch = -0.6
+			me.cmd.aim_dir = Vector3.ZERO
+			await frames(10)
+			alpha.ping()
+			await _wait_until(func() -> bool: return ping_heard[0] > 0, 120)
+			await frames(20)
+			var allied: bool = alpha.raid.world.players_allied
+			check(ping_heard[0] == 1 and ping_heard[1] == (1 if allied else 0),
+					"a ping reaches the pinger and their side, nobody else")
 		if back.call():
 			var from := bravo.raid.player.global_position
 			# Walk where there is room: a drop point has a wall and a bike by it.
@@ -6565,7 +6638,7 @@ func _test_home_base() -> void:
 			and base.player.cmd.watch_up, "X raises the watch in the base and its card opens: %s" % ", ".join(watch_icons))
 	var home := Hud.base_watch_slots("Home base", {"vehicle": "bike_raider"})
 	var home_vehicle: Dictionary = home[Hud.Wrist.SLOTS.find("vehicle")]
-	check(home[0].detail == "Home base" and home_vehicle.detail == ItemDB.item_name("bike_raider")
+	check(home[Hud.Wrist.SLOTS.find("map")].detail == "Home base" and home_vehicle.detail == ItemDB.item_name("bike_raider")
 			and not home_vehicle.empty and Hud.base_watch_slots("Home base", {})[Hud.Wrist.SLOTS.find("vehicle")].empty,
 			"at home the card says where you are and which vehicle you deploy with")
 	watch_keys.wrist_raised = false
