@@ -661,10 +661,13 @@ func _base_shots(out_dir: String) -> void:
 		"base_blades.png": [Vector3(-15.0, 1.9, -2.6), Vector3(-15.6, 1.4, 5)],
 		"base_armor.png": [Vector3(-5.5, 2.0, -2.0), Vector3(-5.5, 1.1, -8.5)],
 		"base_rigs.png": [Vector3(5.5, 2.0, -2.0), Vector3(5.5, 1.1, -8.5)],
-		"base_garage.png": [Vector3(-1.0, 2.0, 3.2), Vector3(-2.5, 0.6, -1.5)],
+		"base_garage.png": [Vector3(5.0, 2.6, 1.0), Vector3(16.0, 0.8, 0.0)],
+		"base_range.png": [Vector3(0.0, 2.2, -8.0), Vector3(0.0, 1.4, -30.0)],
+		"base_range_lane.png": [Vector3(-2.5, 1.8, -12.0), Vector3(1.0, 2.5, -30.0)],
 		"base_shelves.png": [Vector3(-6.5, 1.8, 4.6), Vector3(-7, 1.2, 9)],
 		"base_stations_left.png": [Vector3(-3.5, 2.2, 4.0), Vector3(-11.0, 1.0, 1.0)],
-		"base_stations_right.png": [Vector3(1.5, 2.2, 6.5), Vector3(6.6, 1.0, 3.1)],
+		"base_stations_right.png": [Vector3(4.0, 2.2, 1.0), Vector3(11.1, 1.0, 6.0)],
+		"base_back_wall.png": [Vector3(0.0, 2.6, 4.0), Vector3(0.0, 1.5, -9.0)],
 		"base_launch.png": [Vector3(0, 2.4, 7.8), Vector3(0, 0.6, 1.5)],
 	}
 	for file: String in views:

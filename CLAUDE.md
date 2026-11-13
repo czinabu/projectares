@@ -581,7 +581,13 @@ without Caleb, and update the gap list when a PR closes a row.
   (`HomeBase.suit_up`) replaces the player with a new actor wearing
   `suit_kit()`, weapons locked, and emits `player_replaced` so `main.gd`
   hands it the controller; changing the loadout only changes what the
-  bay puts on next.
+  bay puts on next. Bikes park in the garage off the right wall
+  (`HomeBase.in_garage`). Behind the back wall is the firing range
+  (`HomeBase.in_range`): a suited player's weapons unlock only there and
+  never run dry, and `HomeBase` scores shots from each gun's `fired` signal
+  against its `RangeTarget`s, which stop shots like walls. Nothing on the
+  range goes through `Combat.deal` or pays mastery, because nothing there is
+  real damage; never add an Actor target that takes some.
   Using a display only emits `equip_requested`; `main.gd` applies it through
   `Profile` or `NetSession.equip`. Like `Raid`, `HomeBase` has no camera, HUD
   or input code, and its displays are greybox shapes that `Look` dresses

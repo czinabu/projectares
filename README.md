@@ -91,6 +91,11 @@ The **suit-up bay** beside the launch pad puts your loadout on you: use its
 control post and the bay's arms fit your armor, rig and weapons, so you can
 see what you are taking out before you deploy.
 
+Your bikes are parked in the **garage** off the right of the room. Through the
+door in the back wall is the **firing range**: once suited up, your weapons
+work past its firing line with endless ammo, targets stand, slide and fly at
+set distances, and a board keeps your score. Nothing there is lost or earned.
+
 The door behind you leads online (it opens the uplink). Signing out of a
 world, or dying and pressing L, brings you back here.
 
