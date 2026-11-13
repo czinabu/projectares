@@ -1360,6 +1360,33 @@ func pack_vehicle(actor: Actor) -> String:
 	return ""
 
 
+## Swaps helmets from the pack (a click on the watch's pack icon): puts on
+## the first helmet carried, and the one worn goes into the pack. With none
+## carried it takes the worn one off into the pack. Authority only; returns
+## why not, or "" when done. What is worn is gear and drops on death.
+func swap_helmet(actor: Actor) -> String:
+	var state := state_for(actor)
+	if mode == Mode.CLIENT or state == null or state.finished or actor.is_dead:
+		return "not now"
+	var wear := actor.inventory.first_with_tag("helmet")
+	var worn := actor.visor.item_id if actor.visor.enabled else ""
+	var why := ""
+	if wear == "" and worn == "":
+		why = "No helmet in your pack"
+	elif wear == "" and actor.inventory.is_full():
+		why = "Your pack is full"
+	if why != "":
+		actor.notice.emit(why)
+		return why
+	if wear != "":
+		actor.inventory.remove_item(wear)
+	Loadout.wear_helmet(actor, wear)
+	if worn != "":
+		actor.inventory.add_item(worn)
+	actor.notice.emit("Put on %s" % ItemDB.item_name(wear) if wear != "" else "Took off %s" % ItemDB.item_name(worn))
+	return ""
+
+
 ## Takes a vehicle out of the world, putting its rider on their feet.
 func remove_vehicle(vehicle: Node3D) -> void:
 	if not is_instance_valid(vehicle):

@@ -535,6 +535,17 @@ without Caleb, and update the gap list when a PR closes a row.
   helmets are never sold or dropped: like rigs, they are crafted from
   blueprints (DESIGN.md section 10), so no loot table may list them. Check the glass by eye with
   `visual_check.tscn -- <dir> --visors-only`.
+  A helmet is worn gear, not a flag: `Loadout.wear_helmet` is the one way
+  one goes on or comes off (it resets the visor, keeps `gear_items` right
+  and emits `Actor.helmet_changed`). Mid-raid, a click on the watch's pack
+  icon calls `Raid.swap_helmet` (authority only; online
+  `NetSession.swap_helmet`, and `_helmet_changed` tells every client): it
+  puts on the first helmet in the pack and the worn one goes in the pack,
+  or with none carried takes the worn one off. The skin wears it on the
+  head (`ActorSkin._update_helmet`, `build_helmet`: a shell, glass in the
+  visor's colour and a fitting per `mode`), hiding the head under it; it
+  hangs off the "Head" bone, so first person leaves it out with the head.
+  Check by eye with `visual_check.tscn -- <dir> --helmets-only`.
 - Vehicles are items tagged `vehicle`, tuned by their stats, and spawned by
   `Raid` (never carried). `core/vehicle/vehicle.gd` reads its rider's
   `ActorCommand` and moves the rider; `Actor` skips its own movement while

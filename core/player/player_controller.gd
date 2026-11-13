@@ -19,6 +19,8 @@ signal drop_requested(index: int)
 signal toy_throw_requested(item_id: String)
 ## The player asked to pack the vehicle they are looking at onto the watch.
 signal pack_requested
+## The player clicked the watch's pack icon: swap helmets from the pack.
+signal helmet_requested
 
 enum ViewMode { FIRST, THIRD }
 ## How the melee side is picked: by flicking the mouse, or by the movement keys.
@@ -280,9 +282,15 @@ func is_on_artifact() -> bool:
 			and actor.artifact.enabled
 
 
+## True while the card is open on the pack icon: fire swaps helmets, putting
+## on one carried in the pack or taking the worn one off (`Raid.swap_helmet`).
+func is_on_pack() -> bool:
+	return is_watch_up() and watch_focus_moved and watch_focus == Hud.Wrist.SLOTS.find("pack")
+
+
 ## Fire with the watch up: packs the vehicle being looked at onto the watch,
-## takes the picked toy into the hand, or uses the artifact. False if the
-## watch had no use for the click, and it is an ordinary shot.
+## takes the picked toy into the hand, uses the artifact, or swaps helmets.
+## False if the watch had no use for the click, and it is an ordinary shot.
 func click_watch() -> bool:
 	if pack_target() != null:
 		pack_requested.emit()
@@ -292,6 +300,9 @@ func click_watch() -> bool:
 		return true
 	if is_on_artifact():
 		_artifact_click = true
+		return true
+	if is_on_pack():
+		helmet_requested.emit()
 		return true
 	return false
 
@@ -483,7 +494,7 @@ func _physics_process(delta: float) -> void:
 	cmd.secondary_pressed = captured and Input.is_action_just_pressed("alt_fire")
 	if held_toy != "":
 		_use_toy_hand(cmd)
-	elif is_picking_toys() or pack_target() != null or is_on_artifact():
+	elif is_picking_toys() or pack_target() != null or is_on_artifact() or is_on_pack():
 		# With the watch up and something for it to do, fire works the watch.
 		if cmd.primary_pressed:
 			click_watch()

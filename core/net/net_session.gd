@@ -79,7 +79,7 @@ signal world_invite_accepted(invite: Dictionary)
 signal base_visit_requested(owner_name: String, stash: Array, loadout: Dictionary, upgrades: Array)
 
 const DEFAULT_PORT := 24565
-const PROTOCOL := 22
+const PROTOCOL := 23
 ## Every packet is compressed, both ways. State updates are mostly repeated
 ## numbers, and a big battle sends a player hundreds of them a second. Server
 ## and client must agree, so a change here needs a new PROTOCOL.
@@ -463,6 +463,10 @@ func _on_server_actor_spawned(actor: Actor) -> void:
 	actor.power_changed.connect(func(item_id: String, mag: int, reserve: int) -> void:
 		for peer in _joined_peers:
 			_power_changed.rpc_id(peer, id, item_id, mag, reserve))
+	# A helmet put on or taken off is seen by everyone, and its wearer's visor follows.
+	actor.helmet_changed.connect(func(item_id: String) -> void:
+		for peer in _joined_peers:
+			_helmet_changed.rpc_id(peer, id, item_id))
 	for peer in _joined_peers:
 		_send_spawn(peer, actor)
 
@@ -835,6 +839,8 @@ func _send_spawn(peer: int, actor: Actor) -> void:
 		if power >= 0:
 			var gun := actor.weapons[power] as Gun
 			data["power"] = [gun.item_id, gun.ammo_in_mag, gun.reserve_ammo]
+		# The helmet worn now, which may not be the one deployed with.
+		data["helmet"] = actor.visor.item_id if actor.visor.enabled else ""
 		if actor.has_meta("appearance"):
 			data["look"] = actor.get_meta("appearance")
 		if actor.clan_tag != "":
@@ -1403,6 +1409,16 @@ func _request_toy(item_id: String) -> void:
 		raid.throw_toy(actor, item_id)
 
 
+## In the world: swap helmets from the pack (`Raid.swap_helmet`).
+@rpc("any_peer", "call_remote", "reliable")
+func _request_helmet() -> void:
+	if not is_server or raid == null:
+		return
+	var actor: Actor = _peer_actor.get(_api.get_remote_sender_id())
+	if actor != null and is_instance_valid(actor):
+		raid.swap_helmet(actor)
+
+
 ## Drop into the server's world: from the lobby, or again after a death.
 ## `joined` follows, or `lobby_error`. `drop` is where to land, an id from
 ## `Raid.drop_choices`; the server decides whether it is still on offer.
@@ -1421,6 +1437,12 @@ func throw_toy(item_id: String) -> void:
 func pack_vehicle() -> void:
 	if _is_connected() and my_actor_id >= 0 and not _can_redeploy:
 		_request_toy.rpc_id(1, "")
+
+
+## In the world: ask the server to swap helmets from your pack.
+func swap_helmet() -> void:
+	if _is_connected() and my_actor_id >= 0 and not _can_redeploy:
+		_request_helmet.rpc_id(1)
 
 
 ## In the world: ask the server to start your sign-out, or to call it off.
@@ -1470,6 +1492,15 @@ func _power_changed(id: int, item_id: String, mag: int, reserve: int) -> void:
 	Loadout.set_power(actor, item_id, mag, reserve)
 
 
+## Client: someone put on a helmet or took theirs off. The server decided it.
+@rpc("authority", "call_remote", "reliable")
+func _helmet_changed(id: int, item_id: String) -> void:
+	var actor: Actor = _actors.get(id)
+	if actor == null or not is_instance_valid(actor) or (item_id != "" and not ItemDB.has_tag(item_id, "helmet")):
+		return
+	Loadout.wear_helmet(actor, item_id)
+
+
 @rpc("authority", "call_remote", "reliable")
 func _spawn(id: int, kind: String, shown_name: String, node_name: String, at: Vector3, yaw: float,
 		data: Dictionary) -> void:
@@ -1493,6 +1524,9 @@ func _spawn(id: int, kind: String, shown_name: String, node_name: String, at: Ve
 		var power: Variant = data.get("power")
 		if power is Array and power.size() == 3 and ItemDB.has_tag(str(power[0]), "power"):
 			Loadout.set_power(actor, power[0], int(power[1]), int(power[2]))
+		var helmet: Variant = data.get("helmet")
+		if typeof(helmet) == TYPE_STRING and helmet != actor.visor.item_id:
+			Loadout.wear_helmet(actor, helmet)
 		actor.weapons_locked = raid.world.safe_zone
 		Raid.MasteryTracker.apply_variants(actor, data.get("picks", {}))
 		raid.world.on_spawn(actor)

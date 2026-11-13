@@ -520,6 +520,7 @@ func _attach_player_view() -> void:
 	controller.drop_requested.connect(func(index: int) -> void: _on_drop_requested.call_deferred(index))
 	controller.toy_throw_requested.connect(_on_toy_throw_requested)
 	controller.pack_requested.connect(_on_pack_requested)
+	controller.helmet_requested.connect(_on_helmet_requested)
 	raid.add_child(controller)
 	hud = Hud.new()
 	hud.setup(raid, controller)
@@ -625,6 +626,17 @@ func _on_pack_requested() -> void:
 		net.pack_vehicle()
 	else:
 		raid.pack_vehicle(raid.player)
+
+
+## The player clicked the watch's pack icon: put on a carried helmet, or take
+## the worn one off.
+func _on_helmet_requested() -> void:
+	if raid == null or raid.player == null or not is_instance_valid(raid.player):
+		return
+	if net:
+		net.swap_helmet()
+	else:
+		raid.swap_helmet(raid.player)
 
 
 ## L: alive, start or cancel a sign-out. Down, go home.

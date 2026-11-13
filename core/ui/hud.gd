@@ -215,7 +215,16 @@ static func watch_slots(p_raid: Raid, p: Actor, picked_toy := 0, pack_name := ""
 		pack += " · %d heal%s" % [heals, "" if heals == 1 else "s"]
 	if p.scrip > 0:
 		pack += " · %d scrip" % p.scrip
-	slots.append(_slot("pack", str(p.inventory.total_value()), pack, [], -1.0,
+	# A click swaps helmets: one carried goes on, else the worn one comes off.
+	var hints: Array = []
+	var helmet := p.inventory.first_with_tag("helmet")
+	if helmet != "":
+		pack += " · wear " + ItemDB.item_name(helmet)
+		hints.append("click")
+	elif p.visor.enabled and not p.inventory.is_full():
+		pack += " · take helmet off"
+		hints.append("click")
+	slots.append(_slot("pack", str(p.inventory.total_value()), pack, hints, -1.0,
 			p.inventory.items.is_empty() and p.scrip <= 0,
 			p.inventory.items.size() >= p.inventory.capacity))
 	# The vehicle: toys on the watch, or the one a click would pack.

@@ -110,11 +110,11 @@ static func equip(actor: Actor, item_ids: Array) -> void:
 				actor.artifact.attune(id)
 				actor.gear_items.append(id)
 		elif ItemDB.has_tag(id, "helmet"):
-			actor.visor.enabled = true
-			actor.visor.item_id = id
-			actor.visor.display_name = ItemDB.item_name(id)
-			_apply_stats(actor.visor, stats)
-			actor.gear_items.append(id)
+			# One head: a second helmet is only carried, as loot.
+			if actor.visor.enabled:
+				actor.inventory.add_item(id)
+			else:
+				wear_helmet(actor, id)
 		elif ItemDB.has_tag(id, "armor"):
 			frames.append(id)
 		elif ItemDB.has_tag(id, "vehicle"):
@@ -141,6 +141,25 @@ static func equip(actor: Actor, item_ids: Array) -> void:
 		actor.heat_signature *= stats.get("heat_signature", 1.0)
 		actor.frame_name = ItemDB.item_name(id)
 		actor.gear_items.append(id)
+
+
+## Puts helmet `id` on the actor's head, or with "" leaves the head bare.
+## The helmet it replaces leaves `gear_items` (so it no longer drops or goes
+## home as worn gear); where it goes next is the caller's job. Emits
+## `Actor.helmet_changed`, which `NetSession` passes on and the skin follows.
+static func wear_helmet(actor: Actor, id: String) -> void:
+	if id != "" and not ItemDB.has_tag(id, "helmet"):
+		return
+	if actor.visor.enabled:
+		actor.gear_items.erase(actor.visor.item_id)
+	actor.visor.reset()
+	if id != "":
+		actor.visor.enabled = true
+		actor.visor.item_id = id
+		actor.visor.display_name = ItemDB.item_name(id)
+		_apply_stats(actor.visor, ItemDB.item_stats(id))
+		actor.gear_items.append(id)
+	actor.helmet_changed.emit(id)
 
 
 ## True for a primary that takes attachments: a firearm in the primary slot
