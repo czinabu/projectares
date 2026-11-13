@@ -84,6 +84,13 @@ var spin_move_mult := 1.0
 var ads_zoom := 1.0
 ## A suppressed gun leaves no tracer or muzzle flash and is much quieter.
 var quiet := false
+## How far a shot is heard (`Combat.noise`), and a suppressed one. Bots on
+## patrol within it come to look; a blade makes no such noise.
+var shot_noise := 45.0
+var quiet_noise := 10.0
+## A gun is heard at most this often, so a long burst costs one scan.
+var noise_every := 0.5
+var _noise_left := 0.0
 ## The attachment item ids fitted to this gun (see `fit`).
 var attachments: Array[String] = []
 
@@ -362,6 +369,7 @@ func controls_hint() -> String:
 
 func tick(delta: float) -> void:
 	_cooldown = maxf(0.0, _cooldown - delta)
+	_noise_left = maxf(0.0, _noise_left - delta)
 	_press_left = maxf(0.0, _press_left - delta)
 	_bloom = maxf(0.0, _bloom - bloom_recovery * delta)
 	if visual:
@@ -514,6 +522,9 @@ func _fire() -> void:
 		elif not quiet:
 			Fx.tracer(actor.get_parent(), drawn_from, to, tracer_color)
 	fired.emit(from, to)
+	if _noise_left <= 0.0:
+		_noise_left = noise_every
+		Combat.noise(actor, from, quiet_noise if quiet else shot_noise)
 	Sfx.play(shot_sound, null if actor.is_player else from, -14.0 if quiet else 0.0)
 
 
@@ -570,6 +581,7 @@ func _trace_shot(from: Vector3, dir: Vector3) -> Vector3:
 			if not body in struck:
 				struck.append(body)
 				var info := DamageInfo.make(amount, actor, damage_kind, at)
+				info.weapon_id = item_id
 				if Combat.is_headshot(hit):
 					info.headshot = true
 					info.amount *= headshot_mult

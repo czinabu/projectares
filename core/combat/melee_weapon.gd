@@ -13,9 +13,22 @@ extends Weapon
 ## A heavy lunges at the foe in front of you and stops at striking distance; in
 ## the air, with an airborne foe in the aim cone, it becomes the magnetic
 ## air-lunge instead of a dive slam.
+## Sprinting, the heavy is a dash-strike instead: it closes up to `dash_range`
+## on the foe in front within the same windup, so a blade can reach a gunner.
+## Backing away (move back) with a foe right behind you, a light attack is a
+## back strike: a reverse stab behind you for `back_strike_mult`.
 ## Defense: hold block to stop hits from the front at a stamina cost. Raising the
 ## guard just before a hit lands is a parry: no damage, the attacker is
-## staggered, and your next hit is a stronger riposte.
+## staggered, and your next hit is a stronger riposte. Against small-arms fire
+## the fresh guard deflects every round from the front for `deflect_window`; after
+## that a held guard only turns aside part of each. A guard raised again too
+## soon after the last (`guard_rearm`) gets no parry or deflect, so it has to
+## be timed rather than spammed.
+## Blades are quiet and slip past armor: melee hits ignore armor
+## (`armor_pierce`) and never make noise (`Combat.noise`), so a blade kill does
+## not bring the next patrol. Each melee item is tagged "one_handed" (moves
+## faster) or "two_handed" (moves slower, and its heavies stagger and break
+## armor), read with `is_two_handed_id`.
 ##
 ## Everything is directional. The actor's command carries a stance (overhead,
 ## left or right). An attack swings toward its stance: a left swing starts on
@@ -110,6 +123,17 @@ var parry_window := 0.22
 var block_stamina_per_damage := 0.6
 ## A blade only turns aside part of a bullet.
 var bullet_block_fraction := 0.5
+## Bullets from the front within this long of raising the guard are deflected
+## outright, each costing `deflect_stamina`.
+var deflect_window := 0.3
+var deflect_stamina := 3.0
+## Rounds from guns with any of these tags are not small arms: no guard
+## deflects or blocks them (Caleb's call: no deflecting sniper rounds or
+## explosives; blasts are not "bullet" hits at all).
+var undeflectable_tags: Array[String] = ["power", "marksman", "sniper"]
+## A guard raised within this long of the last one dropping gets no parry or
+## deflect window.
+var guard_rearm := 0.5
 var parry_stagger := 1.1
 var guard_break_stagger := 0.9
 var riposte_window := 1.6
@@ -132,6 +156,28 @@ var close_mult := 1.0
 ## A heavy hit that lands unblocked staggers the target for this long.
 var heavy_stagger := 0.0
 
+## Share of a melee hit that goes past armor (`DamageInfo.armor_pierce`).
+var armor_pierce := 1.0
+## Armor a hit tears off, as a share of its damage (`DamageInfo.armor_break`).
+var armor_break := 0.0
+## The hold class, from the item's "one_handed" or "two_handed" tag: walk
+## speed with it in hand, and what a two-hander adds to its heavies.
+var one_hand_speed := 1.08
+var two_hand_speed := 0.9
+## Overrides the hold class's speed when above zero (the knife is lighter).
+var move_mult := 0.0
+var two_hand_stagger := 0.7
+var two_hand_armor_break := 0.5
+
+## The dash-strike: a heavy started while sprinting reaches a foe up to this
+## far away (flat metres past striking distance), over the heavy's windup.
+var dash_range := 9.0
+## Extra stamina a heavy pays when it dashes further than a plain lunge.
+var dash_stamina := 12.0
+## A light attack while moving back, with a foe behind in reach, strikes
+## behind you for this much more. Zero turns the move off.
+var back_strike_mult := 1.4
+
 ## The stance the actor is asking for right now.
 var stance := Dir.OVERHEAD
 ## The side the current or last attack comes from, as the attacker sees it:
@@ -149,6 +195,18 @@ var _windup_damage := 0.0
 var _slamming := false
 var _blocking := false
 var _block_time := 0.0
+## Seconds since the guard last dropped, for `guard_rearm`.
+var _since_guard := 99.0
+## The guard now up was raised in time to parry or deflect.
+var _parry_ready := true
+## The command asked to sprint this tick: a heavy now is a dash-strike.
+var _sprinting := false
+## The lunge in progress is a dash-strike (status and tests).
+var _dashing := false
+## The command is moving back this tick: a light now may be a back strike.
+var _backing := false
+## The light winding up strikes behind (`back_strike_mult`).
+var _back_strike := false
 var _swing_left := 0.0
 ## Seconds the attack button has been held, or below zero when not charging.
 var _charge := -1.0
@@ -175,6 +233,47 @@ func build_visual() -> Node3D:
 	root.add_child(Weapon.make_part(Vector3(0.06, 0.95, 0.015), Vector3(0, 0.62, 0), Color(0.45, 0.9, 1.0), true))
 	root.rotation.x = REST_POSE
 	return root
+
+
+## True for an item held with both hands (its "two_handed" tag). The one
+## flag gameplay and the view (`Look.is_two_handed`) both read.
+static func is_two_handed_id(id: String) -> bool:
+	return id != "" and ItemDB.has_tag(id, "two_handed")
+
+
+func is_two_handed() -> bool:
+	return is_two_handed_id(item_id)
+
+
+func move_speed_mult() -> float:
+	if move_mult > 0.0:
+		return move_mult
+	return two_hand_speed if is_two_handed() else one_hand_speed
+
+
+## How long an unblocked heavy staggers: the item's own, or a two-hander's.
+func heavy_stagger_now() -> float:
+	return maxf(heavy_stagger, two_hand_stagger) if is_two_handed() else heavy_stagger
+
+
+func armor_break_now() -> float:
+	return maxf(armor_break, two_hand_armor_break) if is_two_handed() else armor_break
+
+
+## True when a guard can stop rounds from the gun `id`: small arms only.
+func stops_round(id: String) -> bool:
+	for tag in undeflectable_tags:
+		if id != "" and ItemDB.has_tag(id, tag):
+			return false
+	return true
+
+
+## True while the guard is fresh enough that a hit of `kind` is parried (a
+## blade) or deflected (a bullet) rather than only blocked.
+func in_parry_window(kind: String) -> bool:
+	if not _blocking or not _parry_ready:
+		return false
+	return _block_time <= (deflect_window if kind == "bullet" else parry_window)
 
 
 ## The side a swing toward `p_stance` starts from: a swing to the left is
@@ -234,11 +333,18 @@ func tick(delta: float) -> void:
 
 func handle_input(cmd: ActorCommand, delta: float) -> void:
 	stance = clampi(cmd.stance, 0, Dir.size() - 1) as Dir
+	_sprinting = cmd.sprint
+	_backing = cmd.move.y < -0.5
 	var wants_block := cmd.secondary and not _slamming and _windup_left <= 0.0 and actor.stamina > 0.0
 	if wants_block and not _blocking:
 		_block_time = 0.0
 		guard_dir = stance
+		_parry_ready = _since_guard >= guard_rearm
+	if _blocking and not wants_block:
+		_since_guard = 0.0
 	_blocking = wants_block
+	if not _blocking:
+		_since_guard += delta
 	if _blocking:
 		_charge = -1.0
 		_queued = false
@@ -325,6 +431,8 @@ func on_holster() -> void:
 	_windup_kind = ""
 	_lunge_left = 0.0
 	_air_lunge = false
+	_dashing = false
+	_back_strike = false
 	_lunge_foe = null
 	combo_step = 0
 	# A slam put away mid-fall does not land.
@@ -360,6 +468,8 @@ func is_lunging() -> bool:
 func status_text() -> String:
 	if _blocking:
 		return "%s  guarding %s" % [display_name, DIR_NAMES[guard_dir]]
+	if _dashing and _lunge_left > 0.0:
+		return "%s  dash strike" % display_name
 	if _slamming:
 		return "%s  dive slam" % display_name
 	if _air_lunge and _windup_left > 0.0:
@@ -374,6 +484,8 @@ func status_text() -> String:
 func modify_incoming(info: DamageInfo) -> void:
 	if not _blocking or info.kind not in ["bullet", "melee"]:
 		return
+	if info.kind == "bullet" and not stops_round(info.weapon_id):
+		return
 	var source := info.source as Node3D
 	if source == null:
 		return
@@ -387,7 +499,18 @@ func modify_incoming(info: DamageInfo) -> void:
 		actor.notice.emit("Wrong side")
 		return
 
-	if _block_time <= parry_window:
+	if info.kind == "bullet" and in_parry_window("bullet") and actor.spend_stamina(deflect_stamina):
+		# A fresh guard turns every round from the front aside.
+		info.amount = 0.0
+		info.parried = true
+		actor.notice.emit("Deflected")
+		if actor.is_inside_tree():
+			Fx.burst(actor.get_parent(), actor.get_eye_position() + actor.get_aim_dir() * 0.6, 0.25, Color(1.0, 0.85, 0.4))
+		parried_hit.emit(info)
+		Sfx.play("parry", null if actor.is_player else actor.global_position)
+		return
+
+	if info.kind == "melee" and in_parry_window("melee"):
 		info.amount = 0.0
 		info.parried = true
 		actor.riposte_left = riposte_window
@@ -422,6 +545,9 @@ func _light_attack(held: float) -> void:
 	_combo_timer = combo_window + windup
 	_cooldown = windup + light_recover * (1.6 if finisher else 1.0)
 	_begin_windup("light", light_damage * (combo_finisher_mult if finisher else 1.0), windup)
+	_back_strike = _backing and back_strike_mult > 0.0 and _foe_behind()
+	if _back_strike:
+		return
 	# Just out of reach: step in so the cut lands.
 	var foe := _lunge_target(reach + light_step)
 	if foe.size() > 0:
@@ -438,15 +564,39 @@ func _heavy_attack() -> void:
 	_begin_windup("heavy", heavy_damage, heavy_windup)
 	var time := maxf(heavy_windup, 0.05)
 	var most := heavy_lunge * time
-	var foe := _lunge_target(reach + most)
+	var dash := dash_range if _sprinting and dash_range > most else most
+	var foe := _lunge_target(reach + dash)
 	if foe.size() > 0:
 		# Close to striking distance, never past the foe.
-		var travel := clampf(foe[1] - reach * lunge_stop, 0.0, most)
+		var travel := clampf(foe[1] - reach * lunge_stop, 0.0, dash)
+		# Further than a plain lunge reaches is a dash-strike, and costs more.
+		if travel > most and not actor.spend_stamina(dash_stamina):
+			travel = most
+		_dashing = travel > most
 		_start_lunge(foe[2] * (travel / time), time)
 	else:
 		var forward := actor.get_aim_dir()
 		forward.y = 0.0
 		_start_lunge(forward.normalized() * (minf(heavy_step, most) / time), time)
+
+
+## True when a foe stands behind within striking reach, for a back strike.
+func _foe_behind() -> bool:
+	var back := -actor.get_aim_dir()
+	back.y = 0.0
+	if back.length() < 0.01:
+		return false
+	back = back.normalized()
+	var seen := Combat.positions_seen_by(actor)
+	for other in _other_actors():
+		var to: Vector3 = seen.get(other, other.global_position) - actor.global_position
+		if absf(to.y) > vertical_reach:
+			continue
+		to.y = 0.0
+		if to.length() > 0.01 and to.length() - HIT_ALLOWANCE <= reach \
+				and back.angle_to(to.normalized()) <= deg_to_rad(arc_deg) * 0.5:
+			return true
+	return false
 
 
 ## The nearest foe on the ground within `range_m` and the lunge cone, as
@@ -547,6 +697,7 @@ func _carry_lunge(delta: float) -> void:
 		actor.velocity.z = _lunge_vel.z
 	if _lunge_left <= 0.0:
 		_air_lunge = false
+		_dashing = false
 		_lunge_foe = null
 
 
@@ -589,6 +740,11 @@ func _strike(amount: float, kind: String) -> void:
 	var forward := actor.get_aim_dir()
 	forward.y = 0.0
 	forward = forward.normalized()
+	if _back_strike:
+		# The reverse stab reaches behind.
+		forward = -forward
+		amount *= back_strike_mult
+		_back_strike = false
 	var half_arc := deg_to_rad(arc_deg) * 0.5
 	var seen := Combat.positions_seen_by(actor)
 	for other in _other_actors():
@@ -611,9 +767,13 @@ func _strike(amount: float, kind: String) -> void:
 		var info := DamageInfo.make(hit, actor, "melee", at)
 		info.direction = attack_dir
 		info.guard_mult = guard_crush
-		if Combat.deal(other, info) and kind == "heavy" and heavy_stagger > 0.0 \
+		info.armor_pierce = armor_pierce
+		if kind == "heavy":
+			info.armor_break = armor_break_now()
+		var stagger := heavy_stagger_now()
+		if Combat.deal(other, info) and kind == "heavy" and stagger > 0.0 \
 				and not info.blocked and not info.parried and not other.is_dead:
-			other.stagger(heavy_stagger)
+			other.stagger(stagger)
 
 
 ## The strike reached `other`: guess what their guard does with it, and let
@@ -648,7 +808,7 @@ func guess_outcome(other: Actor) -> String:
 		return "hit"
 	if not guard_covers(blade.guard_dir, attack_dir):
 		return "hit"
-	return "parry" if blade._block_time <= blade.parry_window else "block"
+	return "parry" if blade.in_parry_window("melee") else "block"
 
 
 ## True when `from` is outside the front `front_arc_deg` of `target`, the way
@@ -679,6 +839,10 @@ func _animate(delta: float) -> void:
 		return
 	if _slamming:
 		pose = 1.3
+	elif _back_strike and _windup_left > 0.0:
+		# A reverse grip, the point turned back past the hip.
+		pose = -2.6
+		follow = 40.0
 	elif _windup_left > 0.0:
 		# Cocked on the side the swing comes from.
 		pose = 1.0 if _windup_kind == "heavy" else 0.7

@@ -49,6 +49,26 @@ static func deal(target: Object, info: DamageInfo) -> bool:
 	return true
 
 
+## `source` made a noise at `at` heard `radius` metres away: every other actor
+## in its raid within that range is told (`Actor.heard`). Only a person's
+## noise counts (a bot has a "Brain"), so bot battles never pull patrols
+## about. Guns make noise when they fire; melee never calls this, which is
+## what makes a blade kill silent. Authority only: hearing changes what bots do.
+static func noise(source: Actor, at: Vector3, radius: float) -> void:
+	if source == null or radius <= 0.0 or not authoritative or not source.is_inside_tree():
+		return
+	if source.get_node_or_null("Brain") is BotBrain:
+		return
+	var reach := radius * radius
+	for node in source.get_tree().get_nodes_in_group("actors"):
+		var other := node as Actor
+		if other == null or other == source or other.is_dead:
+			continue
+		if other.global_position.distance_squared_to(at) > reach or not Raid.together(source, other):
+			continue
+		other.heard.emit(at, source)
+
+
 ## True when a hit from `trace` landed on an actor's head: within
 ## `Actor.HEAD_SIZE` of the top of the body, where the shooter saw it.
 static func is_headshot(hit: Dictionary) -> bool:
