@@ -187,8 +187,9 @@ func _ready() -> void:
 
 	# Flight rigs. Each comes in tiers (see `RIG_CEILINGS`): a higher Mk lifts
 	# you higher and runs cooler, so it flies further, but every tier cruises
-	# at the same speed so a mixed squad keeps together. Mk2 and up are loot
-	# only, and at stake like any gear.
+	# at the same speed so a mixed squad keeps together. Only Mk1 drops or is
+	# sold; Mk2 and up are crafted from blueprints (DESIGN.md section 10) and
+	# are at stake like any gear.
 	register("jetpack_mk2", "Mk2 Jetpack", Rarity.RARE, 1000, ["flight_rig"],
 			{"thrust_accel": 42.0, "max_rise_speed": 11.0, "heat_per_sec": 25.0, "boost_speed": 22.0,
 			"heavy_lift": true, "tier": 2, "ceiling": RIG_CEILINGS[2]},
@@ -361,8 +362,9 @@ func _furniture(id: String, display_name: String, value: int, footprint: Vector3
 
 
 ## A higher tier of a flight rig: the `base` rig's stats with `changes` on
-## top, its tier and that tier's ceiling. Tiers above Mk1 are loot only, so
-## the base's "vendor" and "starter" tags are not copied.
+## top, its tier and that tier's ceiling. Tiers above Mk1 are crafted, never
+## sold or handed out, so the base's "vendor" and "starter" tags are not
+## copied.
 func _rig_tier(id: String, display_name: String, rarity: Rarity, value: int, base: String, tier: int,
 		changes: Dictionary, description: String) -> void:
 	var stats := item_stats(base).duplicate()

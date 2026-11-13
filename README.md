@@ -49,7 +49,8 @@ The jetpack runs on heat. Overheat it and you fall until it cools. Rooftop
 caches hold the best loot, and only a flight rig gets you there. Every rig
 comes as Mk1, Mk2 and Mk3: the Mk1 lifts you to rooftop height (25 m), the
 Mk2 to the tower tops (60 m) and the Mk3 over everything (100 m), and each
-tier up runs cooler. The better tiers are rooftop loot in Ashfront.
+tier up runs cooler. Rigs drop at Mk1; the better tiers will be crafted
+from blueprints.
 
 Almost nothing is drawn over the screen in a raid: the crosshair, hit marks
 and what E will do. Everything else is on your gear. You wear a holographic

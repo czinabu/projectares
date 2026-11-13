@@ -313,8 +313,9 @@ without Caleb, and update the gap list when a PR closes a row.
   from the world's ground, never a roof (`Actor.ground_level`: the map's
   `ground_height`, else its origin), and only limits lift: the climb eases
   off under it (`FlightRig.climb_room`) and a kick, pulse or launch is cut
-  to top out on it (`lift_cap`), or refused without heat. Mk2 and up are
-  loot only, in the full-loot world.
+  to top out on it (`lift_cap`), or refused without heat. Only Mk1 drops or
+  is sold: Mk2 and up are crafted from blueprints (DESIGN.md section 10),
+  so no loot table may list them.
   The keys fly every rig and the mouse only looks and aims (Caleb's call):
   wings bank on the strafe keys and dive or pull up on
   forward and back (`Actor.glide_trim`); forward with no strafe key banks

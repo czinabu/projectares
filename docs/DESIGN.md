@@ -326,9 +326,9 @@ glides you there.
 
 | Tier | Ceiling | Reaches | Where it comes from |
 | --- | --- | --- | --- |
-| Mk1 | 25 m | Rooftops and the 15 m decks and skybridges | The starter jetpack, the boots in shops, the wings as rooftop loot |
-| Mk2 | 60 m | The tower tops (40 m and up) and the high race rings | Ashfront rooftop loot (the jetpack also as before) |
-| Mk3 | 100 m | Over the highest towers and the spire | Ashfront rooftop loot, rarest |
+| Mk1 | 25 m | Rooftops and the 15 m decks and skybridges | The starter jetpack, the boots in shops, wings and boots as loot |
+| Mk2 | 60 m | The tower tops (40 m and up) and the high race rings | Crafted from a blueprint with upgrade data (section 10) |
+| Mk3 | 100 m | Over the highest towers and the spire | Crafted, a further step of upgrade data |
 
 Up a tier the rig also runs cooler (cheaper kicks, pulses and climbing,
 faster cooling), so it flies further. What never changes:
@@ -339,9 +339,11 @@ faster cooling), so it flies further. What never changes:
 - **The 100 heat bar and each rig's loop.** Boots still only cool near a
   surface, so a high climb is still a visit; wings still never stop; the
   jetpack is still loud and hot.
-- **Higher tiers are loot, not unlocks.** Mk2 and Mk3 are found in the PvP
-  world and at stake like any gear; mastery stays sidegrades. The gentle
-  PvE world does not drop them.
+- **Higher tiers follow the progression model (section 10).** Every rig
+  drops at Mk1; Mk2 and Mk3 are crafted from the rig's blueprint and upgrade
+  data, and once crafted they are ordinary gear, at stake in the PvP world.
+  Mastery never hands out a tier. Until crafting exists, Mk2 and Mk3 are
+  in the game but nothing drops them.
 
 Measured from the street (`feel_bench.tscn`): the Mk1 jetpack reaches its
 ceiling in about 7 s, Mk2 13 s, Mk3 19 s; boots kick to about 25 m, 46 m and

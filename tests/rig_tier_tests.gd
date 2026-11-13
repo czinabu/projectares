@@ -1,7 +1,7 @@
 extends RefCounted
 ## Checks for flight rig tiers: each rig comes as Mk1, Mk2 and Mk3, and a
 ## higher tier lifts you higher (`FlightRig.ceiling`) and runs cooler, but
-## cruises at the same speed. Mk2 and up are loot only.
+## cruises at the same speed. Only Mk1 drops; Mk2 and up are crafted.
 ## Run from the main test runner. Nothing here starts a server.
 
 const FeelBench := preload("res://tests/feel_bench.gd")
@@ -64,7 +64,7 @@ static func _test_items(t: Node) -> void:
 			t.check(is_equal_approx(rig.max_heat, 100.0), "%s keeps the same 100 heat bar" % id)
 			t.check(not ItemDB.has_tag(id, "vendor") and not ItemDB.has_tag(id, "starter")
 					and ItemDB.item_rarity(id) >= ItemDB.Rarity.RARE and not Economy.is_shop_item(id),
-					"%s is loot only" % id)
+					"%s is never sold or handed out" % id)
 			t.check(ItemDB.item_rarity(id) >= ItemDB.item_rarity(ids[i - 1]) and ItemDB.item_value(id) > ItemDB.item_value(ids[i - 1]),
 					"%s is at least as rare and worth more than the tier below" % id)
 			# Mastery follows gear type tags, so every tier trains the same track.
@@ -76,17 +76,23 @@ static func _test_items(t: Node) -> void:
 		base.free()
 
 
-## The better tiers drop on Ashfront's rooftops, where gear is at stake, and
-## not in the gentle PvE world.
+## Everything that drops is Mk1 (DESIGN.md section 10): no world's loot
+## table holds a rig above Mk1, since Mk2 and Mk3 are crafted from
+## blueprints. Mk1 rigs still drop on Ashfront's rooftops.
 static func _test_loot(t: Node) -> void:
-	var rooftop: Array = ASHFRONT.ROOFTOP_TABLE.map(func(e: Dictionary) -> String: return e["id"])
-	var frost: Array = []
-	for table: Array in [FROSTLINE.CACHE_TABLE, FROSTLINE.ROOFTOP_TABLE, FROSTLINE.RELAY_TABLE]:
-		frost.append_array(table.map(func(e: Dictionary) -> String: return e["id"]))
+	var found: Array = []
+	for world: Script in [ASHFRONT, FROSTLINE]:
+		for value: Variant in world.get_script_constant_map().values():
+			if value is Array:
+				for entry: Variant in value:
+					if entry is Dictionary and (entry as Dictionary).has("id"):
+						found.append(entry["id"])
+	t.check(not found.is_empty(), "the worlds' loot tables can be read (%d entries)" % found.size())
 	for family: String in FAMILIES:
 		for id: String in FAMILIES[family].slice(1):
-			t.check(id in rooftop, "%s drops on Ashfront's rooftops" % id)
-			t.check(id not in frost or ItemDB.has_tag(id, "vendor"), "%s stays out of Frostline's loot" % id)
+			t.check(id not in found, "%s never drops: it is crafted" % id)
+	var rooftop: Array = ASHFRONT.ROOFTOP_TABLE.map(func(e: Dictionary) -> String: return e["id"])
+	t.check(rooftop.has("wings_glide") and rooftop.has("boots_thruster"), "Mk1 rigs drop on Ashfront's rooftops")
 
 
 ## The ceiling only limits lift: a climb eases off under it, and a kick or
