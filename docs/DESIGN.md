@@ -342,7 +342,8 @@ Flying controls (Caleb's call): the keys fly every rig and the mouse only
 looks and aims. Space climbs, kicks, launches or glides (by rig), C sinks or
 coasts. Shift + a move key is an air dash that way on every rig, for a little
 heat (Shift alone dashes forward); holding Shift + W on a jetpack keeps
-boosting. Q and E fly nothing. Every rig dashes, so the dash is not an
+boosting. Gliding, Shift + S boosts upward instead of back (the wings are
+pulled up), and W turns the glide onto the way you face. Q and E fly nothing. Every rig dashes, so the dash is not an
 edge by itself: boots dash furthest (20 m/s for 0.3 s, 20 heat), jetpacks
 middling (16 m/s for 0.25 s, 15 heat), wings shortest but cheapest (12 m/s
 for 0.25 s, 10 heat, a barrel roll sideways). The stamina dash (Alt) is

@@ -88,6 +88,37 @@ var hover_lean := 0.45
 ## A sideways air dash while flat rolls the body once round its own length;
 ## after it, the body rights itself at this many radians a second.
 var twist_speed := 7.0
+## Thruster boots fly by thrust, and the body shows it. The boots must push
+## against gravity, against the air (`boot_drag` m/s² for every m/s of
+## speed) and toward wherever the flight is speeding up, so the body leans
+## into that push (up to `boot_max_lean` radians), the legs point the
+## nozzles away from it and the flames swivel up to `boot_gimbal` radians to
+## fire straight back along it. Speeding up is read from velocity, smoothed
+## at `boot_accel_rate` a second, so remote players match.
+## Flying forward the body lies out (`boot_hero_pitch` from upright at
+## cruise, `boot_hero_max` at dash speed), streamlined against the air the
+## way a skydiver tracks, while the legs drop from the hips so the heel
+## thrusters fire down and back: down holds you up, back drives you on.
+## Never quite flat, or nothing would hold you up. One knee bends
+## (`boot_knee`). The arms ride down by the sides, a little out and ahead
+## (`boot_arm`, body frame as `glide_arm`), weapon in hand; shooting or
+## aiming brings them up to it and lifts the chest by `boot_aim_ease` of the
+## pitch so they have room. The flames stretch with the thrust,
+## from `boot_flame_min` to `boot_flame_max` times their length.
+var boot_drag := 0.85
+var boot_accel_rate := 6.0
+var boot_max_lean := 0.8
+var boot_hero_pitch := 1.2
+var boot_hero_max := 1.38
+var boot_knee := 0.9
+var boot_arm := Vector3(0.35, -1.0, -0.2)
+var boot_aim_ease := 0.3
+var boot_gimbal := 0.6
+## How far the feet point while boots fire: flat, so each heel nozzle fires
+## down its shin.
+var boot_toes := 0.0
+var boot_flame_min := 0.8
+var boot_flame_max := 2.0
 
 ## Riding, the head turns at most this far (radians) toward the aim; the
 ## body stays facing along the vehicle.
@@ -174,6 +205,16 @@ var _flight_draw_left := 0.0
 var _flight_hold := 0.0
 var _air_fall := 0.0
 var _air_hang := 0.0
+## Boots (see `boot_drag`): the velocity lagging behind the real one (world
+## space), how far into the thrust pose the body is (0..1) and how far into
+## the forward flying pose, which way the exhaust blows (actor space, level,
+## unit) and how hard, in g. `_body_turn` is the body's attitude this frame.
+var _vel_lag := Vector3.ZERO
+var _boot_w := 0.0
+var _boot_hero := 0.0
+var _exhaust := Vector3.DOWN
+var _thrust_g := 1.0
+var _body_turn := Basis.IDENTITY
 ## 1 at the moment of takeoff, running down to 0 over `takeoff_time`.
 var _air_push := 0.0
 var _was_airborne := false
@@ -192,6 +233,9 @@ var _twist := 0.0
 var _face := 0.0
 var _last_heading := 0.0
 var _has_heading := false
+## The actor's yaw last frame: while the body lies flat in flight its
+## attitude is held in the world, not on the view (see `_update_glide`).
+var _last_yaw := 0.0
 var _attack_left := 0.0
 var _aim_left := 0.0
 ## Weapon -> the copy of it worn while holstered (null if it has no model),
@@ -322,6 +366,7 @@ func _process(delta: float) -> void:
 			_set_flash(0.0)
 	_flight_draw_left = aim_hold if actor.cmd.primary or actor.cmd.secondary else maxf(_flight_draw_left - delta, 0.0)
 	_flight_hold = move_toward(_flight_hold, 1.0 if _flight_draw_left > 0.0 else 0.0, glide_blend * delta)
+	_update_boot_thrust(delta)
 	_update_rig(delta)
 	_update_glide(delta)
 	_update_stowed()
@@ -843,6 +888,8 @@ func _update_rig(delta: float) -> void:
 	var burning := not actor.is_dead and (actor.flight.is_thrusting or actor.flight.is_skimming or _burst_left > 0.0)
 	for flame in _flames:
 		flame.visible = burning
+		if burning and actor.flight.can_skim():
+			_aim_flame(flame)
 	if _rig_back and _rig_back.has_node("WingL"):
 		var want := 1.0 if actor.flight.is_gliding and not actor.is_dead else 0.0
 		var was := _spread
@@ -889,12 +936,24 @@ func _update_glide(delta: float) -> void:
 		_has_heading = false
 		if alive and actor.flight.is_hovering:
 			tilt = dir * hover_lean * clampf(speed / maxf(actor.flight.fly_speed, 0.1), 0.0, 1.0)
+		elif alive and _boot_w > 0.0 and is_airborne():
+			tilt = _boot_tilt() * smoothstep(0.0, 1.0, _boot_w)
 		elif alive and _air > 0.0 and is_airborne():
 			# A running jump leans into it, and rights itself for the landing.
 			tilt = dir * leap_lean * clampf(speed / leap_lean_speed, 0.0, 1.0) * (1.0 - _air_fall)
+	# The actor turns with the view, and this model is its child. While the
+	# body is laid out in flight, a look round must not drag it round with
+	# the camera and then let it swing back: undo the view's turn first, so
+	# the attitude eases only toward the way the body really flies.
+	var yaw := actor.global_rotation.y
+	if _glide > 0.0 or _boost > 0.0:
+		var turned := wrapf(yaw - _last_yaw, -PI, PI)
+		_face -= turned
+		_tilt = _tilt.rotated(Vector3.UP, -turned)
+	_last_yaw = yaw
 	var follow := 1.0 - exp(-attitude_follow * delta)
 	_tilt = _tilt.lerp(tilt, follow)
-	_face = lerp_angle(_face, face, follow)
+	_face = lerp_angle(wrapf(_face, -PI, PI), face, follow)
 	_bank = lerpf(_bank, bank, 1.0 - exp(-bank_follow * delta))
 	# A sideways air dash: one full roll over the dash; then the body rights
 	# itself the short way round.
@@ -908,6 +967,7 @@ func _update_glide(delta: float) -> void:
 	var tip := Basis(Vector3.UP.cross(_tilt / angle).normalized(), angle) if angle > 0.001 else Basis.IDENTITY
 	# A positive bank or twist rolls to the right: right side down.
 	var turn := tip * Basis(Vector3.UP, _face - _bank + _twist)
+	_body_turn = turn
 	var pivot := Vector3(0, glide_pivot, 0)
 	transform = Transform3D(turn * Basis(Vector3.UP, PI), pivot - turn * pivot)
 	var seated: Variant = ride_frame()
@@ -1029,8 +1089,31 @@ func _pose_air() -> void:
 				.lerp(push_legs[at], push)
 		var shin: Vector3 = (leap_legs[at + 1] as Vector3).lerp(fall_legs[at + 1], _air_fall).lerp(hang_legs[at + 1], _air_hang) \
 				.lerp(push_legs[at + 1], push)
+		var toes := lerpf(air_toes, push_toes, push)
+		if _boot_w > 0.0:
+			# Boots firing: the legs point the nozzles down the exhaust.
+			var bw := smoothstep(0.0, 1.0, _boot_w)
+			var legs := _boot_legs(i, float(limb[3]))
+			thigh = thigh.lerp(legs[0], bw)
+			shin = shin.lerp(legs[1], bw)
+			toes = lerpf(toes, boot_toes, bw)
 		_pose_leg(limb, to_skeleton * Vector3(thigh.x * limb[3], thigh.y, thigh.z), right, w,
-				to_skeleton * Vector3(shin.x * limb[3], shin.y, shin.z), lerpf(air_toes, push_toes, push))
+				to_skeleton * Vector3(shin.x * limb[3], shin.y, shin.z), toes)
+	var arm_w := w * smoothstep(0.0, 1.0, _boot_w) * _boot_hero * (1.0 - smoothstep(0.0, 1.0, _flight_hold))
+	if arm_w > 0.001:
+		# Lying out, the arms ride by the sides until there is aiming to do.
+		for limb: Array in _glide_arms:
+			if limb.is_empty():
+				continue
+			var wanted := to_skeleton * Vector3(boot_arm.x * limb[3], boot_arm.y, boot_arm.z)
+			_aim_bone(limb[0], limb[1], wanted, arm_w)
+			_aim_bone(limb[1], limb[2], wanted, arm_w)
+	if _boot_w > 0.0 and _glide_neck >= 0:
+		# Lying out, the head comes up to look where it flies.
+		var pose := _skeleton.get_bone_global_pose(_glide_neck)
+		var pitch := maxf(-_tilt.z, 0.0) * 0.75 * smoothstep(0.0, 1.0, _boot_w) * w
+		pose.basis = Basis(right, pitch) * pose.basis
+		_skeleton.set_bone_global_pose(_glide_neck, pose)
 
 
 ## Lays a leg along `dir`, or bends it: the thigh along `dir` and the shin
@@ -1082,6 +1165,80 @@ func _aim_bone(bone: int, child: int, dir: Vector3, weight: float) -> void:
 	var turn := Quaternion(now.normalized(), dir.normalized())
 	pose.basis = Basis(Quaternion.IDENTITY.slerp(turn, weight)) * pose.basis
 	_skeleton.set_bone_global_pose(bone, pose)
+
+
+## Reads what thruster boots are doing from the actor's velocity: how hard
+## they push and which way (see `boot_drag`), and eases the body into or out
+## of the thrust pose and the forward flying pose.
+func _update_boot_thrust(delta: float) -> void:
+	var v := actor.velocity
+	_vel_lag = _vel_lag.lerp(v, 1.0 - exp(-boot_accel_rate * delta)) if delta > 0.0 else v
+	var boots := actor.flight.enabled and actor.flight.can_skim()
+	var burning := boots and not actor.is_dead and actor.vehicle == null and is_airborne() \
+			and (actor.flight.is_skimming or actor.air_dash_left > 0.0 or _burst_left > 0.0)
+	_boot_w = move_toward(_boot_w, 1.0 if burning else 0.0, air_blend * delta)
+	if not boots:
+		_boot_hero = 0.0
+		return
+	var to_local := actor.global_basis.inverse()
+	var local := to_local * v
+	var accel := to_local * ((v - _vel_lag) * boot_accel_rate)
+	var level := Vector3(local.x, 0.0, local.z)
+	var push := accel + level * boot_drag + Vector3(0.0, 9.8, 0.0)
+	# Boots only push: never down, however fast a sink is caught.
+	push.y = maxf(push.y, 2.0)
+	var follow := 1.0 - exp(-attitude_follow * delta)
+	_exhaust = _exhaust.lerp(-push.normalized(), follow).normalized()
+	_thrust_g = lerpf(_thrust_g, push.length() / 9.8, follow)
+	# Forward flying: how much of the speed is ahead, at cruise speed or more.
+	var ahead := -local.z
+	var cruise := maxf(actor.flight.skim_speed, 1.0)
+	var lined := clampf(ahead / maxf(level.length(), 0.1), 0.0, 1.0)
+	var hero := smoothstep(0.45, 0.9, ahead / cruise) * lined * lined if burning else 0.0
+	_boot_hero = lerpf(_boot_hero, hero, follow)
+
+
+## The body's lean while boots fire, as `_update_glide` takes it: into the
+## push, and lying out ahead in forward flight.
+func _boot_tilt() -> Vector3:
+	var push := Vector3(-_exhaust.x, 0.0, -_exhaust.z)
+	var lean := Vector3.ZERO
+	if push.length() > 0.001:
+		lean = push.normalized() * minf(atan2(push.length(), -_exhaust.y), boot_max_lean)
+	var ahead := -(actor.global_basis.inverse() * actor.velocity).z
+	var cruise := maxf(actor.flight.skim_speed, 1.0)
+	var pitch := lerpf(boot_hero_pitch, boot_hero_max,
+			clampf((ahead - cruise) / maxf(actor.flight.air_dash_speed, 1.0), 0.0, 1.0))
+	pitch *= 1.0 - boot_aim_ease * smoothstep(0.0, 1.0, _flight_hold)
+	return lean.lerp(Vector3.FORWARD * pitch, _boot_hero)
+
+
+## Thigh and shin directions for leg `i` while boots fire, in the body's own
+## frame before the tip and mirrored for `side` (as `_pose_air` reads them):
+## both legs follow the exhaust, a little apart; the second leg's knee bends,
+## more in forward flight.
+func _boot_legs(i: int, side: float) -> Array:
+	var along := _body_turn.inverse() * _exhaust
+	along = Vector3(along.x * side, along.y, along.z)
+	var thigh := (along + Vector3(0.06, 0.0, 0.0)).normalized()
+	if i == 0:
+		return [thigh, thigh]
+	var bend := 0.2 + boot_knee * _boot_hero
+	return [Basis(Vector3.RIGHT, bend * 0.3) * thigh, Basis(Vector3.RIGHT, -bend * 0.7) * thigh]
+
+
+## Swivels a boot flame to blow along the exhaust, as far as its nozzle can
+## turn (`boot_gimbal`), and stretches it with the thrust.
+func _aim_flame(flame: Node3D) -> void:
+	var nozzle := flame.get_parent() as Node3D
+	if nozzle == null:
+		return
+	var want := (nozzle.global_basis.inverse() * (actor.global_basis * _exhaust)).normalized()
+	var angle := Vector3.DOWN.angle_to(want)
+	var dir := Vector3.DOWN.slerp(want, minf(1.0, boot_gimbal / angle)) if angle > 0.001 else Vector3.DOWN
+	var stretch := clampf(_thrust_g, boot_flame_min, boot_flame_max)
+	var swivel := Basis(Quaternion(Vector3.DOWN, dir.normalized())) if angle > 0.001 else Basis.IDENTITY
+	flame.basis = swivel * Basis.from_scale(Vector3(sqrt(stretch), stretch, sqrt(stretch)))
 
 
 func _on_burst() -> void:

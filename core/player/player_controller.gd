@@ -196,8 +196,6 @@ func _unhandled_input(event: InputEvent) -> void:
 		# gun's, and will not be given back.
 		_kick_held = maxf(0.0, _kick_held - maxf(vertical * turn, 0.0))
 		_flick += event.relative
-	elif event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
-		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if captured else Input.MOUSE_MODE_CAPTURED
 	elif event is InputEventMouseButton and event.pressed and not captured:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	elif event is InputEventMouseButton and event.pressed \

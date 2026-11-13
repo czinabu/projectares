@@ -22,8 +22,8 @@ skies, animated models and effects (see "How it looks" below).
 | Jump. In the air: hold to climb, tap to light the jets and hover (jetpack); press to kick the way you steer, hold to skim low (thruster boots); press to launch, hold while falling to glide (glide wings) | Space |
 | Jetpack hovering: cruise with the move keys, Space climbs, C coasts down to cool, hold Shift + W to boost head first (Mk2). The keys fly every rig; the mouse only looks and aims | |
 | Glide wings gliding: Space again pulses up | |
-| Air dash with any rig, on heat: Shift + a move key dashes that way (Shift alone dashes forward). Sideways while gliding or boosting it barrel rolls | Shift + WASD |
-| Gliding: A / D bank round, W dives for speed, S pulls up to climb on it (the view is free to look and aim) | |
+| Air dash with any rig, on heat: Shift + a move key dashes that way (Shift alone dashes forward). Sideways while gliding or boosting it barrel rolls; gliding, Shift + S boosts upward instead of back | Shift + WASD |
+| Gliding: A / D bank round, W dives for speed and banks round onto the way you face, S pulls up to climb on it (with no keys the view is free to look and aim) | |
 | Use your ability | G |
 | Use your helmet's visor (zoom or scan) | T |
 | Dash (stamina) | Left Alt |
@@ -37,13 +37,13 @@ skies, animated models and effects (see "How it looks" below).
 | Use a medkit | H |
 | Loot, or get on and off a bike | F |
 | Ride a bike: throttle, brake or reverse, steer, boost | W, S, A / D, Shift |
-| Switch camera: first-person or third-person | V |
-| Scoreboard: who is fighting, who is down, kills | Hold Tab |
+| Switch camera: first-person or third-person | Tab |
+| Scoreboard: who is fighting, who is down, kills | Hold Q |
 | Sign out and go home with what you carry (10 seconds, out of a fight) | L |
 | After dying: drop back in, or go home | Enter, or L |
 | Open your phone: players, messages, invites, news, mirror, every control (Keys), settings | P |
 | Raise or lower the holographic watch on your wrist | X |
-| Free the mouse | Esc |
+| Phone at Settings (also frees the mouse); Esc again closes it | Esc |
 
 The jetpack runs on heat. Overheat it and you fall until it cools. Rooftop
 caches hold the best loot, and only the jetpack gets you there.
@@ -190,7 +190,7 @@ you have.
 
 ## What is in the prototype
 
-- First-person and third-person camera that you switch with V. Third person
+- First-person and third-person camera that you switch with Tab. Third person
   is a close view over the shoulder; the phone's settings set how far back it
   sits. It never changes
   on its own. Weapons are visible in your hand in both views.
@@ -319,7 +319,7 @@ you have.
   out. Press E on any bike nobody is riding to take
   it, including someone else's. Sign out riding a bike and it goes to your
   stash; die or leave it behind and it is gone. Abandoned bikes wait at the rim,
-  the landmarks and the jump ramps of the battlefield. Riding uses the third-person camera (V still
+  the landmarks and the jump ramps of the battlefield. Riding uses the third-person camera (Tab still
   switches), and pressing E in mid-air bails out with the bike's speed.
 - Mastery for every weapon type, ability and armor frame. Using gear earns XP
   for its type, levels unlock variants that trade one strength for another
