@@ -80,11 +80,8 @@ var _flushed := false
 @onready var INLAY := Look.surface("metal", {"tint": Color(0.75, 0.55, 0.3), "grime": 0.3, "scale": 0.3})
 ## Dark glass and metal panels: the hub's buildings. Lit seams, never a grid of
 ## windows (that read as old flats, not sci-fi).
-@onready var WALL := Look.surface("metal", {"tint": Color(0.13, 0.16, 0.23), "grime": 0.0, "scale": 0.08,
-		"rough_mult": 0.35, "wetness": 0.6})
-## The far city below keeps lit windows: it is scenery, seen from above.
-@onready var CITY := Look.surface("metal", {"tint": Color(0.16, 0.18, 0.26), "grime": 0.1, "scale": 0.1,
-		"window_glow": Color(0.55, 0.9, 1.0), "lit_windows": 0.45})
+@onready var WALL := Look.surface("metal", {"tint": Color(0.17, 0.21, 0.31), "grime": 0.0, "scale": 0.08,
+		"rough_mult": 0.25, "wetness": 0.8})
 @onready var STEEL := Look.surface("metal", {"tint": Color(0.42, 0.45, 0.52), "grime": 0.2, "scale": 0.3})
 @onready var DARK := Look.surface("metal", {"tint": Color(0.16, 0.18, 0.23), "grime": 0.2, "scale": 0.3})
 
@@ -250,6 +247,8 @@ func _build_towers() -> void:
 			var centre := at + Vector3(0, (tier[1] + tier[2]) * 0.5, 0)
 			_box(size, centre, WALL, yaw)
 			_add_seams(centre, size, yaw, color, 6.0)
+			# A bright band where each tier steps in.
+			_part(self, Vector3(w + 0.12, 0.6, w + 0.12), centre + Vector3(0, size.y * 0.5 - 0.3, 0), color, true, yaw)
 		_part(self, Vector3(TOWER_SIZE * 0.5 + 0.3, 0.3, TOWER_SIZE * 0.5 + 0.3), at + Vector3(0, tall, 0), color, true)
 		_part(self, Vector3(0.25, tall * 0.12, 0.25), at + Vector3(0, tall * 1.06, 0), color, true)
 		_box(Vector3(TOWER_SIZE + 8.0, 0.5, TOWER_SIZE + 8.0), at + Vector3(0, DECK_HEIGHT - 0.25, 0), DARK, yaw)
@@ -262,10 +261,13 @@ func _build_towers() -> void:
 		var mid := at + span * 0.5 + Vector3(0, DECK_HEIGHT - 0.25, 0)
 		var bridge_yaw := atan2(span.x, span.z)
 		_box(Vector3(4.0, 0.5, length), mid, DARK, bridge_yaw)
+		# Glass sides with a light along the handrail and the floor edge.
 		for side: float in [-1.0, 1.0]:
-			var rail := mid + Basis(Vector3.UP, bridge_yaw) * Vector3(side * 1.9, 0.6, 0)
-			_box(Vector3(0.15, 0.7, length), rail, STEEL, bridge_yaw)
-			_part(self, Vector3(0.1, 0.06, length), rail + Vector3(0, 0.38, 0), CYAN, true)
+			var rail := mid + Basis(Vector3.UP, bridge_yaw) * Vector3(side * 1.95, 0.8, 0)
+			_box(Vector3(0.08, 1.1, length), rail, _glass(), bridge_yaw)
+			_part(self, Vector3(0.14, 0.08, length), rail + Vector3(0, 0.58, 0), CYAN, true, bridge_yaw)
+			_part(self, Vector3(0.1, 0.05, length), rail + Vector3(-side * 0.1, -0.52, 0), CYAN.darkened(0.3), true,
+					bridge_yaw)
 
 
 ## One arch per raid world along the gate terrace, north of the spire, with
@@ -409,8 +411,11 @@ func _build_market() -> void:
 		var color: Color = SHOP_COLORS[i % SHOP_COLORS.size()]
 		# Back wall, side walls and roof, open toward the plaza.
 		_box(Vector3(9.0, 5.0, 0.6), at + facing * Vector3(0, 2.5, -2.4), WALL, yaw)
-		_box(Vector3(0.6, 5.0, 5.0), at + facing * Vector3(-4.5, 2.5, 0), WALL, yaw)
-		_box(Vector3(0.6, 5.0, 5.0), at + facing * Vector3(4.5, 2.5, 0), WALL, yaw)
+		_box(Vector3(0.12, 5.0, 5.0), at + facing * Vector3(-4.5, 2.5, 0), _glass(), yaw)
+		_box(Vector3(0.12, 5.0, 5.0), at + facing * Vector3(4.5, 2.5, 0), _glass(), yaw)
+		# A backlit wall behind the counter and a lit counter top.
+		_part(self, Vector3(8.0, 3.2, 0.05), at + facing * Vector3(0, 2.6, -2.07), Color(color, 1.0).darkened(0.6), true, yaw)
+		_part(self, Vector3(6.5, 0.06, 0.95), at + facing * Vector3(0, 1.13, 2.0), Color(color, 1.0).lightened(0.2), true, yaw)
 		_box(Vector3(10.0, 0.5, 6.0), at + facing * Vector3(0, 5.25, 0.3), DARK, yaw)
 		_box(Vector3(6.4, 1.1, 0.9), at + facing * Vector3(0, 0.55, 2.0), STEEL, yaw)
 		_part(self, Vector3(6.4, 0.08, 0.08), at + facing * Vector3(0, 1.14, 2.46), color, true)
@@ -588,23 +593,24 @@ func _build_city_below() -> void:
 	streets.position = Vector3(0, -80.0, 0)
 	streets.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	city.add_child(streets)
+	# Stepped towers of the same dark glass with lit seams, drawn as one mesh.
+	var blocks: Array = []
 	for i in 60:
 		var bearing := rng.randf() * 360.0
 		var r := rng.randf_range(RADIUS + 40.0, RADIUS + 260.0)
 		var w := rng.randf_range(14.0, 30.0)
 		var tall := rng.randf_range(80.0, 200.0) if r > RADIUS + 120.0 else rng.randf_range(20.0, 70.0)
 		var floor_y := -80.0
-		var size := Vector3(w, tall, w)
-		var mesh := BoxMesh.new()
-		mesh.size = size
-		mesh.material = CITY
-		var node := MeshInstance3D.new()
-		node.mesh = mesh
-		node.position = _at(r, bearing) + Vector3(0, floor_y + tall * 0.5, 0)
-		node.rotation.y = rng.randf() * TAU
-		node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		city.add_child(node)
-		Look.make_building(node, size, 100.0 + i)
+		var yaw := rng.randf() * TAU
+		var base := _at(r, bearing) + Vector3(0, floor_y, 0)
+		var color: Color = [CYAN, MAGENTA, Color(0.55, 0.7, 1.0)][i % 3]
+		var tiers := [[w, 0.0, tall * 0.6], [w * 0.7, tall * 0.6, tall]]
+		for tier: Array in tiers:
+			var size := Vector3(tier[0], tier[2] - tier[1], tier[0])
+			var centre := base + Vector3(0, (tier[1] + tier[2]) * 0.5, 0)
+			blocks.append([size, Transform3D(Basis(Vector3.UP, yaw), centre)])
+			_add_seams(centre, size, yaw, color, 10.0)
+	_batch_sized(blocks, WALL)
 
 
 func _dress() -> void:
