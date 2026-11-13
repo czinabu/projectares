@@ -79,7 +79,7 @@ signal world_invite_accepted(invite: Dictionary)
 signal base_visit_requested(owner_name: String, stash: Array, loadout: Dictionary, upgrades: Array)
 
 const DEFAULT_PORT := 24565
-const PROTOCOL := 20
+const PROTOCOL := 21
 ## Every packet is compressed, both ways. State updates are mostly repeated
 ## numbers, and a big battle sends a player hundreds of them a second. Server
 ## and client must agree, so a change here needs a new PROTOCOL.
@@ -726,6 +726,19 @@ func _request_buy_upgrade(upgrade_id: String) -> void:
 	_send_account(peer)
 
 
+## Lobby: craft one item at the gunsmith bench. The server checks the
+## blueprint and takes the parts and the fee.
+@rpc("any_peer", "call_remote", "reliable")
+func _request_craft(item_id: String) -> void:
+	var peer := _api.get_remote_sender_id()
+	if not is_server or not _peer_account.has(peer):
+		return
+	var result: Dictionary = stash.craft(_peer_account[peer], item_id.left(64))
+	if not result.ok:
+		_lobby_error.rpc_id(peer, result.error)
+	_send_account(peer)
+
+
 ## Lobby: sell stash items for scrip. An empty `item_id` sells all loot.
 @rpc("any_peer", "call_remote", "reliable")
 func _request_sell(item_id: String, count: int) -> void:
@@ -1328,6 +1341,12 @@ func buy(shop_id: String, item_id: String) -> void:
 func buy_upgrade(upgrade_id: String) -> void:
 	if _is_connected() and not account.is_empty():
 		_request_buy_upgrade.rpc_id(1, upgrade_id)
+
+
+## Lobby: ask the server to craft one item at the gunsmith bench.
+func craft(item_id: String) -> void:
+	if _is_connected() and not account.is_empty():
+		_request_craft.rpc_id(1, item_id)
 
 
 ## Lobby: ask the server to sell stash items ("" sells all loot).

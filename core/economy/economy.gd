@@ -30,7 +30,9 @@ const MAX_SHOP_RARITY := 1
 ## Items a shop stocks carry this tag.
 const VENDOR_TAG := "vendor"
 ## Loot with one of these tags is a trade good: it sells for its full value.
-const TRADE_TAGS := ["material", "augment", "relic"]
+## A blueprint only stays in a stash as a spare copy of one already known
+## (see `Crafting.learn`), so it is a trade good too.
+const TRADE_TAGS := ["material", "augment", "relic", "blueprint"]
 ## Everything else (gear, furniture) sells back for this share of its value.
 const SELL_BACK_RATE := 0.4
 ## Scrip is the one money. What you carry in a world is at stake: it joins
