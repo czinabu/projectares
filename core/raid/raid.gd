@@ -1279,9 +1279,9 @@ func summon(actor: Actor, item_id: String) -> String:
 	var state := state_for(actor)
 	if mode == Mode.CLIENT or state == null or state.finished or actor.is_dead:
 		return "not now"
-	# A helmet from the pack goes on the head, at once and with no wait.
-	if ItemDB.has_tag(item_id, "helmet"):
-		return swap_helmet(actor, item_id)
+	# A helmet or armor frame from the pack is put on (`swap_worn`).
+	if ItemDB.has_tag(item_id, "helmet") or ItemDB.has_tag(item_id, "armor"):
+		return swap_worn(actor, item_id)
 	var why := ""
 	if not actor.inventory.has_item(item_id):
 		why = "That is not in your pack"
@@ -1455,25 +1455,43 @@ func pack_vehicle(actor: Actor) -> String:
 	return ""
 
 
-## Puts on helmet `item_id` out of a player's pack (the watch's summon
-## carousel, through `summon`), and the one worn goes into the pack in its
-## place. Authority only; returns why not, or "" when done. What is worn is
-## gear and drops on death, and the one in the pack drops as loot.
-func swap_helmet(actor: Actor, item_id: String) -> String:
+## Puts on helmet or armor frame `item_id` out of a player's pack (the
+## watch's summon carousel, through `summon`), and the one worn goes into the
+## pack in its place (a frame with the armor it had left). Authority only;
+## returns why not, or "" when done. What is worn is gear and drops on death,
+## and what is in the pack drops as loot. A helmet goes on at once; a frame
+## takes the watch's rest after it, like a weapon, so spare plates are no
+## instant refill.
+func swap_worn(actor: Actor, item_id: String) -> String:
 	var state := state_for(actor)
 	if mode == Mode.CLIENT or state == null or state.finished or actor.is_dead:
 		return "not now"
+	var helmet := ItemDB.has_tag(item_id, "helmet")
 	var why := ""
-	if not ItemDB.has_tag(item_id, "helmet") or not actor.inventory.has_item(item_id):
-		why = "That helmet is not in your pack"
+	if not (helmet or ItemDB.has_tag(item_id, "armor")) or not actor.inventory.has_item(item_id):
+		why = "That is not in your pack"
 	elif state.sign_out_left >= 0.0:
 		why = "Not while signing out"
+	elif not helmet and summon_wait(actor) > 0.0:
+		why = "Watch recharging: %d s" % ceili(summon_wait(actor))
 	if why != "":
 		actor.notice.emit(why)
 		return why
-	var worn := actor.visor.item_id if actor.visor.enabled else ""
 	actor.inventory.remove_item(item_id)
-	Loadout.wear_helmet(actor, item_id)
+	var worn := ""
+	if helmet:
+		worn = actor.visor.item_id if actor.visor.enabled else ""
+		Loadout.wear_helmet(actor, item_id)
+	else:
+		worn = actor.frame_id
+		var left := Loadout.wear_frame(actor, item_id, float(actor.stowed_armor.get(item_id, -1.0)))
+		actor.stowed_armor.erase(item_id)
+		if worn != "":
+			actor.stowed_armor[worn] = left
+		state.summon_wait_total = Loadout.summon_cooldown(item_id)
+		state.summon_ready_at = clock + state.summon_wait_total
+		if dev_cheats.get("cooldowns", false):  # DEV MODE
+			state.summon_ready_at = clock
 	if worn != "":
 		# One out, one in: the pack is no fuller than it was.
 		actor.inventory.add_item(worn)

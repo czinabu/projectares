@@ -183,6 +183,11 @@ var vitals_offset := Vector3(0.0, 0.05, 0.172)
 var helmet_offset := Vector3(0.0, 0.1, 0.0)
 var helmet_size := Vector3(0.27, 0.31, 0.31)
 var helmet_shell_color := Color(0.22, 0.23, 0.25)
+## A worn armor frame is plates over the chest (on the "Chest" bone, front
+## toward -Z), and from medium up a belly plate and shoulder pads (on the
+## upper arm bones); heavy adds a collar. One model in every view.
+var frame_offset := Vector3(0.0, 0.0, 0.0)
+var pad_offset := Vector3(0.03, 0.05, 0.0)
 var vitals_width := 0.13
 var vitals_low := 0.35
 var hip_offset := Vector3(-0.2, 0.08, 0.02)
@@ -238,6 +243,9 @@ var _rig_holders: Array[Node3D] = []
 var _rig_back: Node3D
 var _vitals: Node3D
 var _helmet: Node3D
+var _frame_parts: Array[Node3D] = []
+## The frame `_frame_parts` were built for; "" for none.
+var _frame_id := ""
 ## The helmet `_helmet` was built for; "" while bare-headed.
 var _helmet_id := ""
 var _flames: Array[Node3D] = []
@@ -542,6 +550,7 @@ func _update(delta: float) -> void:
 	_update_stowed()
 	_update_switch(delta)
 	_update_helmet()
+	_update_frame()
 	_update_vitals()
 	_update_phone()
 	_update_watch_glow(delta)
@@ -1154,6 +1163,80 @@ static func build_helmet(mode: String, glass: Color, size: Vector3, shell_color:
 			var eye := _piece(root, "LensGlass", ring, _solid(glass, 1.6), lens.position + Vector3(0, 0, -0.022),
 					Vector3(0.08, 0.004, 0.08))
 			eye.rotation.x = PI * 0.5
+	return root
+
+
+## The colour every frame's plates are drawn in.
+const FRAME_COLOR := Color(0.46, 0.48, 0.45)
+
+
+## How heavy a frame looks: "light", "medium" or "heavy", from its tags.
+static func frame_weight(id: String) -> String:
+	if ItemDB.has_tag(id, "frame_heavy"):
+		return "heavy"
+	return "medium" if ItemDB.has_tag(id, "frame_medium") else "light"
+
+
+## Puts the worn armor frame's plates on the body, rebuilt when another goes on.
+func _update_frame() -> void:
+	var id := actor.frame_id
+	if id == _frame_id and (id == "" or (not _frame_parts.is_empty() and is_instance_valid(_frame_parts[0]))):
+		return
+	_frame_id = id
+	for part in _frame_parts:
+		if is_instance_valid(part):
+			part.queue_free()
+	_frame_parts.clear()
+	if id == "" or _skeleton == null:
+		return
+	var weight := frame_weight(id)
+	var height: float = _def.get("height", 1.8)
+	_frame_parts.append(_hang(build_frame(weight, FRAME_COLOR), "Frame", _def.get("back_bone", ""), frame_offset,
+			Vector3(0.0, height * 0.72, 0.0) + frame_offset))
+	if weight == "light":
+		return
+	for side: String in ["L", "R"]:
+		var out := -1.0 if side == "L" else 1.0
+		_frame_parts.append(_hang(build_pad(weight, FRAME_COLOR, out), "Pad" + side, "UpperArm." + side,
+				Vector3(pad_offset.x * out, pad_offset.y, pad_offset.z),
+				Vector3(0.2 * out, height * 0.8, 0.0)))
+
+
+## A frame's chest plates for its `weight`, front toward -Z, built round the
+## chest bone: a breastplate, a belly plate from medium up, a collar on heavy.
+static func build_frame(weight: String, color: Color) -> Node3D:
+	var root := Node3D.new()
+	root.name = "FrameModel"
+	var shell := _solid(color, 0.0)
+	var trim := _solid(color.darkened(0.45), 0.0)
+	var grow := {"light": 0.0, "medium": 0.02, "heavy": 0.045}[weight] as float
+	# The breastplate in two halves meeting in a ridge down the middle, with
+	# a lit seam along it.
+	for side: float in [-1.0, 1.0]:
+		var half := _piece(root, "Chest", BoxMesh.new(), shell,
+				Vector3(side * (0.075 + grow * 0.5), 0.03, -0.12 - grow * 0.5),
+				Vector3(0.16 + grow, 0.22 + grow * 2.0, 0.035 + grow))
+		half.rotation.y = side * 0.32
+	_piece(root, "Seam", BoxMesh.new(), _solid(Color(0.4, 0.85, 0.9), 0.8),
+			Vector3(0, 0.03, -0.152 - grow), Vector3(0.012, 0.16 + grow * 2.0, 0.01))
+	_piece(root, "Trim", BoxMesh.new(), trim, Vector3(0, -0.09 - grow, -0.125 - grow * 0.5),
+			Vector3(0.27 + grow * 2.0, 0.025, 0.035 + grow))
+	if weight != "light":
+		_piece(root, "Belly", BoxMesh.new(), shell, Vector3(0, -0.15 - grow, -0.115 - grow * 0.5),
+				Vector3(0.26 + grow, 0.09, 0.035 + grow))
+	if weight == "heavy":
+		_piece(root, "Collar", BoxMesh.new(), trim, Vector3(0, 0.17, -0.085),
+				Vector3(0.3, 0.06, 0.1))
+	return root
+
+
+## A shoulder pad for the side `out` (-1 left, 1 right), tipped down the arm.
+static func build_pad(weight: String, color: Color, out: float) -> Node3D:
+	var root := Node3D.new()
+	root.name = "PadModel"
+	var size := Vector3(0.12, 0.045, 0.14) if weight == "medium" else Vector3(0.15, 0.06, 0.17)
+	var pad := _piece(root, "Pad", BoxMesh.new(), _solid(color, 0.0), Vector3.ZERO, size)
+	pad.rotation.z = -0.35 * out
 	return root
 
 

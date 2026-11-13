@@ -18,6 +18,8 @@ signal heard(at: Vector3, source: Actor)
 signal power_changed(item_id: String, mag: int, reserve: int)
 ## The helmet on the head changed (`Loadout.wear_helmet`); "" is bare-headed.
 signal helmet_changed(item_id: String)
+## The armor frame worn changed (`Loadout.wear_frame`); "" is none.
+signal frame_changed(item_id: String)
 ## A weapon was materialized out of the pack in place of the one worn in its
 ## slot (`Loadout.swap_weapon`, the watch's summon).
 signal weapon_swapped(item_id: String, mag: int, reserve: int)
@@ -108,6 +110,11 @@ var active_weapon_index := 0
 ## Item ids of equipped gear (weapons, rig, armor). Dropped on death.
 var gear_items: Array[String] = []
 var frame_name := "No armor"
+## The armor frame worn (an item id), "" for none. Set by `Loadout.wear_frame`.
+var frame_id := ""
+## Armor left on frames taken off into the pack (item id -> armor), so one
+## put back on is no fresher than it was. A frame found comes whole.
+var stowed_armor := {}
 ## How warm this actor looks through a thermal visor next to a bare body (1).
 ## Armor frames change it (see `Visor.heat_of`).
 var heat_signature := 1.0
