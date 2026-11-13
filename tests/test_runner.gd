@@ -5737,8 +5737,8 @@ func _test_phone_view() -> void:
 		for i in 40:
 			await frames(1)
 		check(controller.phone_read > 0.99, "with the phone out in third person the camera eases in to read it")
-		check(controller.camera.global_position.distance_to(holo.global_position) < 0.8,
-				"and ends up close to the holo, over the shoulder")
+		check(controller.camera.global_position.distance_to(holo.global_position) < 1.8 and is_equal_approx(controller.camera.global_basis.x.y, 0.0),
+				"and frames it level from over the shoulder")
 		controller.phone_out = false
 		controller.input_blocked = false
 		for i in 40:

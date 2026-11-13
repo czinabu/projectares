@@ -54,9 +54,10 @@ var phone_out := false
 ## phone): the camera eases in over the right shoulder to the holo panel, this
 ## far back from it (m) and this far out to the right, and eases back out when
 ## the phone is put away. First person needs nothing: the panel is in view.
-var phone_read_distance := 0.44
-var phone_read_side := 0.34
-var phone_read_lift := 0.02
+var phone_read_distance := 0.9
+var phone_read_side := 0.72
+var phone_read_lift := 0.2
+var phone_read_fov := 32.0
 var phone_read_rate := 6.0
 ## How far in to the phone the third-person camera is now (0..1).
 var phone_read := 0.0
@@ -544,6 +545,8 @@ func _process(delta: float) -> void:
 	var fov := aim_fov(weapon) if aiming else wanted_base_fov() + _speed_fov_now
 	if _zoom() > 1.0:
 		fov = zoomed_fov(wanted_base_fov(), _zoom())
+	if phone_read > 0.0:
+		fov = lerpf(fov, phone_read_fov, smoothstep(0.0, 1.0, phone_read))
 	camera.fov = lerpf(camera.fov, fov, 1.0 - exp(-14.0 * delta))
 	if _thrust_audio:
 		var thrusting := actor.flight.is_thrusting and not actor.is_dead
@@ -768,9 +771,8 @@ func _read_phone(delta: float) -> void:
 		return
 	var w := smoothstep(0.0, 1.0, phone_read)
 	var centre := holo.global_position
-	var facing := holo.global_basis.z.normalized()
-	var side := Basis.from_euler(Vector3(0.0, yaw, 0.0)) * Vector3.RIGHT
-	var spot := centre + facing * phone_read_distance + side * phone_read_side + Vector3.UP * phone_read_lift
+	var heading := Basis.from_euler(Vector3(0.0, yaw, 0.0))
+	var spot := actor.get_eye_position() + heading * Vector3(phone_read_side, phone_read_lift, phone_read_distance)
 	var reading := Transform3D(Basis.looking_at(centre - spot, Vector3.UP), spot)
 	camera.global_transform = camera.global_transform.interpolate_with(reading, w)
 
