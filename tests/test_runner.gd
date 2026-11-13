@@ -5691,7 +5691,7 @@ func _test_phone_view() -> void:
 	for child in phone._body.get_children():
 		if child is PanelContainer and child.find_children("*", "HSlider", true, false).size() > 0:
 			sliders += 1
-	check(phone.settings_tab == "view" and sliders == 3, "the View tab has the fields of view and the camera distance")
+	check(phone.settings_tab == "view" and sliders == 4, "the View tab has the fields of view, the camera distance and the first-person pullback")
 	phone.open_app("news")
 	check(not phone._tabs.visible, "other apps have no tabs")
 	phone.open_app("settings")
