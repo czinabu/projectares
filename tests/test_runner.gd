@@ -993,9 +993,9 @@ func _test_main_flow() -> void:
 	var card_left := cam.unproject_position(holo.global_position - cam.global_basis.x * card_width * 0.5)
 	var card_right := cam.unproject_position(holo.global_position + cam.global_basis.x * card_width * 0.5)
 	var screen := cam.get_viewport().get_visible_rect().size
-	check(cam.global_position.distance_to(holo.global_position) < cam.global_position.distance_to(p.get_eye_position())
+	check(cam.global_position.distance_to(holo.global_position) > cam.global_position.distance_to(p.get_eye_position())
 			and (card_right.x - card_left.x) > screen.x * 0.25 and card_left.x >= 0.0,
-			"the third-person card opens near the camera, big enough to read and whole on screen (%d px wide)"
+			"the third-person card stands past the character, big enough to read and whole on screen (%d px wide)"
 			% roundi(card_right.x - card_left.x))
 	var head_on_screen := cam.unproject_position(p.get_eye_position())
 	check(card_right.x < head_on_screen.x and card_right.x < screen.x * 0.5,
@@ -1004,8 +1004,8 @@ func _test_main_flow() -> void:
 	get_tree().root.size = window_was
 	await frames(2)
 	var holo_mat := holo.material_override as ShaderMaterial
-	check(holo_mat.shader.code.contains("depth_test_disabled") and float(holo_mat.get_shader_parameter("backing")) > 0.5,
-			"in third person it is near solid and drawn over the world, like the phone's holo")
+	check(not holo_mat.shader.code.contains("depth_test_disabled") and float(holo_mat.get_shader_parameter("backing")) > 0.5,
+			"in third person it is near solid, and the body in front of it hides what it covers")
 	check(p.cmd.watch_up, "and the raised watch goes out with your inputs, so the arm glows for everyone")
 	var icons: Array = []
 	for slot in wrist.card.slots:

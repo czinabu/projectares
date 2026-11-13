@@ -1059,7 +1059,7 @@ class Wrist:
 	## that thin out, and a shimmer across it while it is still opening.
 	const HOLO_SHADER := """
 shader_type spatial;
-render_mode unshaded, depth_test_disabled, cull_disabled, blend_mix, shadows_disabled;
+render_mode unshaded, DEPTH, cull_disabled, blend_mix, shadows_disabled;
 uniform sampler2D card : source_color, filter_linear;
 uniform vec4 tint : source_color = vec4(0.75, 1.0, 1.0, 0.95);
 uniform float open = 1.0;
@@ -1107,19 +1107,20 @@ void fragment() {
 	## The light reaches out to it from the wrist.
 	var third_person_view := 0.84
 	var projection_at := Vector3(-0.85, 0.35, 0.9)
-	## Third person, read like the phone's holo (Caleb's feedback: far out
-	## past the character it was too small to read): the card opens near
-	## the camera, `tp_depth` metres out, as tall as `tp_screen` of the view,
-	## beside the character off the crosshair, near solid (`tp_backing`)
-	## and drawn over the world. The device, the arm and its pose are the
-	## same as in first person; only where the light lands differs.
-	var tp_depth := 1.2
+	## Third person (Caleb's feedback): the card stands just past the
+	## character, `tp_behind` metres beyond the head from the camera, so the
+	## body and the raised arm pass in front of it and it reads as thrown out
+	## of the watch. It is as tall as `tp_screen` of the view however far
+	## that is, beside the head off the crosshair, and near solid
+	## (`tp_backing`). The device, the arm and its pose are the same as in
+	## first person; only where the light lands differs.
+	var tp_behind := 0.5
 	var tp_screen := 0.34
 	var tp_lift := 0.06
 	var tp_backing := 0.9
 	## How far, in metres at the head, the card keeps clear of the head and
 	## helmet from the camera's view.
-	var head_clearance := 0.16
+	var head_clearance := 0.05
 	## The glow on the arm while the card is up: how bright, and how far it
 	## reaches.
 	var glow_energy := 0.7
@@ -1156,6 +1157,9 @@ void fragment() {
 	## The card's look over everything (first person) and in the world
 	## (third person, hidden behind whatever is in front of it).
 	var _holo_over: ShaderMaterial
+	## Third person: the same card, depth tested, so the body in front of
+	## it hides what it covers.
+	var _holo_behind: ShaderMaterial
 	var _third := false
 	## The light thrown up from the watch face to the card.
 	var _beam: MeshInstance3D
@@ -1181,13 +1185,8 @@ void fragment() {
 		# The card is light, drawn over everything in both views: from the
 		# eyes it hangs just in front of them, and from behind it is set
 		# beside the character, clear of the head (`_clear_of_head`).
-		_holo_over = ShaderMaterial.new()
-		var shader := Shader.new()
-		shader.code = HOLO_SHADER
-		_holo_over.shader = shader
-		_holo_over.set_shader_parameter("card", viewport.get_texture())
-		_holo_over.set_shader_parameter("tint", HOLO_TINT)
-		_holo_over.render_priority = 10
+		_holo_over = _holo_material(true)
+		_holo_behind = _holo_material(false)
 		_holo.material_override = _holo_over
 		_holo.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		add_child(_holo)
@@ -1337,37 +1336,56 @@ void fragment() {
 					spot = wrist + facing.y * fp_card_lift + facing.z * 0.02
 					size = clampf(cam.global_position.distance_to(spot) / fp_card_reads_at, 0.35, 1.0) * k
 				elif cam:
-					size = _tp_size(cam)
-					spot = _clear_of_head(p, cam, _tp_spot(p, cam), face_size.x * size * 0.5)
+					var depth := tp_depth(p, cam)
+					size = _tp_size(cam, depth)
+					spot = _clear_of_head(p, cam, _tp_spot(p, cam, depth), face_size.x * size * 0.5)
 					spot = _keep_on_screen(cam, spot, face_size.x * size * 0.5)
 				var at := wrist.lerp(spot, ease(open, -2.0))
 				_holo.global_transform = Transform3D(facing.scaled(Vector3(size, size * maxf(open, 0.001), size)), at)
 				_glow.global_position = wrist
 		_third = third
 		# From the eyes nothing comes between you and the card, so it is drawn
-		# over the world like the light it is; seen from behind, the body
-		# passes in front of it.
+		# over the world like the light it is; seen from behind, it stands
+		# past the character and the body passes in front of it.
 		var from_behind := third and cam != null and cam.global_position.distance_to(p.get_eye_position()) >= 0.7
-		_holo.material_override = _holo_over
+		_holo.material_override = _holo_behind if from_behind else _holo_over
 		(_holo.material_override as ShaderMaterial).set_shader_parameter("open", open)
 		(_holo.material_override as ShaderMaterial).set_shader_parameter("backing", tp_backing if from_behind else 0.0)
 		_draw_beam(third, open)
 
+	## One card material: drawn over everything (`over`, from the eyes) or
+	## depth tested (from behind, where the body stands in front of it).
+	func _holo_material(over: bool) -> ShaderMaterial:
+		var mat := ShaderMaterial.new()
+		var shader := Shader.new()
+		shader.code = HOLO_SHADER.replace("DEPTH", "depth_test_disabled" if over else "depth_draw_never")
+		mat.shader = shader
+		mat.set_shader_parameter("card", viewport.get_texture())
+		mat.set_shader_parameter("tint", HOLO_TINT)
+		mat.render_priority = 10
+		return mat
+
+	## Third person: how far out along the view the card stands, `tp_behind`
+	## past the character's head.
+	func tp_depth(p: Actor, cam: Camera3D) -> float:
+		var head := cam.global_transform.affine_inverse() * p.get_eye_position()
+		return maxf(-head.z, 0.5) + tp_behind
+
 	## Third person: the card's scale so it stands `tp_screen` of the view tall
-	## at `tp_depth` from the camera.
-	func _tp_size(cam: Camera3D) -> float:
-		var tall := 2.0 * tp_depth * tan(deg_to_rad(cam.fov) * 0.5)
+	## at `depth` from the camera.
+	func _tp_size(cam: Camera3D, depth: float) -> float:
+		var tall := 2.0 * depth * tan(deg_to_rad(cam.fov) * 0.5)
 		return tall * tp_screen / face_size.y
 
-	## Third person: where the card starts, `tp_depth` out from the camera,
+	## Third person: where the card starts, `depth` out from the camera,
 	## level with the head (a little over it), before it slides clear of it.
-	func _tp_spot(p: Actor, cam: Camera3D) -> Vector3:
+	func _tp_spot(p: Actor, cam: Camera3D, depth: float) -> Vector3:
 		var to_cam := cam.global_transform.affine_inverse()
 		var head := to_cam * (p.get_eye_position() + Vector3.UP * 0.1)
-		var y := tp_lift * tp_depth
+		var y := tp_lift * depth
 		if head.z < -0.01:
-			y += head.y * tp_depth / -head.z
-		return cam.global_transform * Vector3(0.0, y, -tp_depth)
+			y += head.y * depth / -head.z
+		return cam.global_transform * Vector3(0.0, y, -depth)
 
 	## Keeps a card `half_width` wide whole on screen: slid back right if its
 	## left edge would leave the view.
