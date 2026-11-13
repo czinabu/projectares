@@ -148,7 +148,8 @@ static func _kit(t: Node) -> void:
 	await t.frames(2)
 
 
-## Aiming with a scope narrows the view more than plain sights do.
+## A scope magnifies inside its lens only (picture in picture): the aimed
+## view itself stays as wide as plain sights, while its zoom is big.
 static func _scope_view(t: Node) -> void:
 	var holder := Node3D.new()
 	t.add_child(holder)
@@ -161,9 +162,11 @@ static func _scope_view(t: Node) -> void:
 	var controller := PlayerController.new()
 	controller.actor = actor
 	await t.frames(2)
-	t.check(controller.aim_fov(actor.weapons[0]) < controller.aim_fov(plain.weapons[0]) / 2.0
+	var scoped := actor.weapons[0] as Gun
+	t.check(scoped.scope_lens and scoped.aim_zoom() > 2.0
+			and is_equal_approx(controller.aim_fov(scoped), controller.ads_fov)
 			and is_equal_approx(controller.aim_fov(plain.weapons[0]), controller.ads_fov),
-			"a scope zooms the aimed view much further than iron sights")
+			"a scope magnifies in its lens and leaves the rest of the aimed view as wide as iron sights")
 	controller.free()
 	holder.queue_free()
 	await t.frames(2)

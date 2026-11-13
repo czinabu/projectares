@@ -1069,6 +1069,8 @@ void fragment() {
 	## The back of the wrist in that bone's space, where the watch face looks
 	## out (the bone's own +Y runs along the arm to the hand).
 	const FACE_AXIS := Vector3.RIGHT
+	## How far the back of the wrist is out from the wrist bone, in metres.
+	var wrist_skin := 0.03
 	## The card's face in metres, and its picture in pixels.
 	var face_size := Vector2(0.18, 0.104)
 	var pixels := Vector2i(520, 300)
@@ -1227,8 +1229,6 @@ void fragment() {
 			mat.emission_enabled = true
 			mat.emission = color
 			mat.emission_energy_multiplier = glow
-		mat.no_depth_test = true
-		mat.render_priority = 2
 		mesh.material = mat
 		var box := MeshInstance3D.new()
 		box.mesh = mesh
@@ -1253,6 +1253,9 @@ void fragment() {
 		var s := skeleton.global_basis.get_scale()
 		watch.basis = Basis(Quaternion(Vector3.UP, FACE_AXIS)) \
 				* Basis.from_scale(Vector3(1.0 / maxf(s.x, 0.001), 1.0 / maxf(s.y, 0.001), 1.0 / maxf(s.z, 0.001)))
+		# On the skin of the wrist, not inside it: the watch is depth tested
+		# like anything worn, so a gun or a hand in front of it hides it.
+		watch.position = FACE_AXIS * (wrist_skin / maxf(s.x, 0.001))
 		attach.add_child(watch)
 		_worn = attach
 

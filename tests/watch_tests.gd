@@ -20,6 +20,15 @@ static func run(t: Node) -> void:
 
 static func _rules(t: Node) -> void:
 	print("Watch: summon rules")
+	# The worn watch is a thing on the wrist, hidden by whatever is in front
+	# of it: drawn over everything, it showed through a held pistol.
+	var worn := Hud.Wrist._watch()
+	var hidden_by_things := true
+	for box: MeshInstance3D in worn.find_children("*", "MeshInstance3D", true, false):
+		var mat := (box.mesh as BoxMesh).material as BaseMaterial3D
+		hidden_by_things = hidden_by_things and mat != null and not mat.no_depth_test
+	t.check(hidden_by_things, "the worn watch is hidden behind a gun held in front of it")
+	worn.free()
 	t.check(Loadout.summonable("rifle_carbine") and Loadout.summonable("knife_gutter")
 			and Loadout.summonable("pistol_machine") and not Loadout.summonable("scrap_metal")
 			and not Loadout.summonable("artifact_cloak") and not Loadout.summonable("bike_scrapper"),

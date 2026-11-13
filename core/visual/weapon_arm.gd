@@ -101,7 +101,7 @@ var _ads_turn := Vector2.ZERO
 var ads_reach := 0.97
 ## How far ahead of the gun hand's wrist the off wrist comes to wrap round
 ## a sidearm's grip, for working out whether the off arm can reach it.
-var sidearm_wrap := 0.1
+var sidearm_wrap := 0.02
 var _ready_forearm: Variant = null
 var _spine: Array[int] = []
 var _neck := -1
@@ -706,8 +706,11 @@ func _support_turn(gun: Gun) -> Variant:
 	var fingers: Vector3
 	var palm: Vector3
 	if gun.is_sidearm:
-		fingers = turn * Vector3(0.0, -1.0, -0.25)
-		palm = turn * Vector3(1.0, 0.35, 0.0)
+		# Wrapped round the gun hand from the side, thumb forward along the
+		# frame: the hand points ahead and a little up from a wrist kept in
+		# line with the forearm, palm in against the grip.
+		fingers = turn * Vector3(0.2, 0.3, -1.0)
+		palm = turn * Vector3(1.0, 0.0, 0.0)
 	else:
 		fingers = turn * Vector3(1.0, 0.35, -0.15)
 		palm = turn * Vector3(0.0, 1.0, 0.0)

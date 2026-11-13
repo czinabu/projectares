@@ -318,7 +318,9 @@ without Caleb, and update the gap list when a PR closes a row.
   as in a real FPS hold (Caleb's references): under a long gun's fore end
   palm up, fingers up its side ("ForeGrip", found just under the fore end,
   `Look.FORE_CUP`), and wrapped round the shooting hand on a sidearm
-  (`ActionPose.ads_cup`); its wrist is turned by `WeaponArm._support_turn`.
+  (`ActionPose.ads_cup`), thumb forward with the wrist in line with the
+  forearm, the pistol held out in both hands; its wrist is turned by
+  `WeaponArm._support_turn`.
   `Look._fit_hands` finds a melee handle (up to its guard or
   head), puts it through the fist and gives a two-handed weapon
   (`Look.is_two_handed`) its off hand's place: a hand below on a short
@@ -376,7 +378,13 @@ without Caleb, and update the gap list when a PR closes a row.
   moves them onto the real model (`Look.GUN_MOUNTS`). An optic's "Sight"
   marker is the eye point: aiming brings it up to the model's eyes in both
   views, first person looks through it, and zooms by `Weapon.aim_zoom()`. Scopes are
-  real geometry you look down, never a screen overlay. Fitting happens at
+  real geometry you look down, never a screen overlay, and picture in
+  picture (Caleb's call: never a blacked-out screen): a scope's item has
+  `"lens": true` (`Gun.scope_lens`), its "Sight" sits a real eye relief
+  behind the eyepiece so the scope is a picture in the middle of the view,
+  the aimed view keeps `ads_fov`, and `PlayerController._update_scope`
+  renders the magnified view from the eye onto the eyepiece's "Lens" glass
+  (`assets/shaders/scope_lens.gdshader` draws the reticle there). Fitting happens at
   the home base's gunsmith bench (`BaseLayout` kind "gunsmith", which is
   kept at the bench, never hung on show: `BaseLayout.is_at_bench`).
 - Power weapons are items tagged "power" (Rail Lance, Helion launcher, Arc
@@ -909,7 +917,9 @@ without Caleb, and update the gap list when a PR closes a row.
   everywhere, the plaza included. Raised, the wrist comes up in front of
   the eyes along the aim (`WeaponArm.watch_point`), so it is in view in
   first person wherever you look, and the forearm rolls so the face, worn
-  on the back of the wrist (`Hud.Wrist.FACE_AXIS`), looks at the eyes
+  on the back of the wrist (`Hud.Wrist.FACE_AXIS`, out on the skin by
+  `wrist_skin` and depth tested like anything worn, so a gun or hand in
+  front of it hides it), looks at the eyes
   (`WeaponArm._face_watch`). From the eyes the card opens just over the
   face, sized to read like a card at arm's length (`fp_card_reads_at`). Check it by eye with
   `visual_check.tscn -- <dir> --watch-only` (`--base-watch-only` for just

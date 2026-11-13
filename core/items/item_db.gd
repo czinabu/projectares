@@ -118,10 +118,10 @@ func _ready() -> void:
 			{"model": "reflex", "zoom": 1.35, "mult": {"ads_spread_mult": 0.8}},
 			"Red dot in a small window. A little zoom, and steadier when aimed.")
 	_attachment("optic_scope", "4x Ranger Scope", Rarity.RARE, 700, "optic", false,
-			{"model": "scope", "zoom": 2.6, "mult": {"ads_spread_mult": 0.55, "spread_deg": 1.15}},
+			{"model": "scope", "zoom": 2.6, "lens": true, "mult": {"ads_spread_mult": 0.55, "spread_deg": 1.15}},
 			"Four times zoom and very steady when aimed. Looser from the hip.")
 	_attachment("optic_longscope", "8x Longscope", Rarity.EPIC, 1400, "optic", false,
-			{"model": "longscope", "zoom": 4.6, "mult": {"ads_spread_mult": 0.4, "spread_deg": 1.3}},
+			{"model": "longscope", "zoom": 4.6, "lens": true, "mult": {"ads_spread_mult": 0.4, "spread_deg": 1.3}},
 			"Eight times zoom for picking off targets across the map. Clumsy up close.")
 	_attachment("muzzle_compensator", "Compensator", Rarity.UNCOMMON, 240, "muzzle", true,
 			{"model": "compensator", "mult": {"recoil_kick_deg": 0.7, "recoil_side_deg": 0.75, "spread_deg": 1.08}},
