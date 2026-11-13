@@ -449,6 +449,11 @@ func is_reloading() -> bool:
 	return _reload_left > 0.0
 
 
+## Seconds left of the reload under way (0 when not reloading).
+func reload_left() -> float:
+	return maxf(_reload_left, 0.0)
+
+
 func start_reload() -> void:
 	if _reload_left <= 0.0 and ammo_in_mag < mag_size and reserve_ammo > 0:
 		_reload_left = reload_time

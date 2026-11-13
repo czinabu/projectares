@@ -199,6 +199,16 @@ without Caleb, and update the gap list when a PR closes a row.
   sends `switch_weapon = ActorCommand.HOLSTER` and draws `Actor.last_drawn`
   again; it is an index, never a toggle, so it replicates safely. Check with
   `--holster-only`.
+- First and third person show the same action the same way. Each actor has
+  one `ActionPose` (`core/visual/action_pose.gd`, a view-only child made by
+  `ActionPose.of`): the melee reach and shoulder turn, the reload motion,
+  the low ready, the weapon switch's progress toward a holster, and the
+  watch raise. Third person `WeaponArm` and `ActorSkin` pose the model from
+  it; first person `PlayerController.first_person_hold` moves the weapon in
+  front of the camera by the same offsets on the same clock, so a switch,
+  a flight stow or a windup plays out in both views. A new hand or weapon
+  animation goes into `ActionPose` and both views read it; never animate
+  one view only. Compare by eye with `visual_check.tscn -- <dir> --views-only`.
 - People are built from parts (`core/visual/human.gd`): an "appearance" names
   a build, four parts and colours. It is cosmetic only and never trusted:
   always pass one through `Look.clean_appearance` / `Look.set_appearance`,

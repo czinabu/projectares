@@ -58,6 +58,17 @@ var ride_distance := 5.2
 ## separately from the on-foot view, which comes back when you get off.
 var ride_view := ViewMode.THIRD
 var base_fov := 80.0
+## First person moves the held weapon by the actor's `ActionPose`, the same
+## state that moves the model's arm third person: melee reach is scaled by
+## `first_person_reach` (the hand is nearer the eye than a shoulder is) and
+## the shoulder turn swings the hand round the eye by `first_person_turn` of
+## it. A switch drops the hand toward the holster's side to
+## `first_person_stow` (camera space, x taken from the holster) and tips it
+## by `first_person_stow_tilt`, out of view.
+var first_person_reach := 0.85
+var first_person_turn := 0.5
+var first_person_stow := Vector3(0.0, -0.7, -0.4)
+var first_person_stow_tilt := Vector3(-1.1, 0.0, 0.0)
 ## Speed widens the view a little, so a boost, a dive or a bike reads as
 ## fast: up to `speed_fov` degrees more, from a sprint's speed up to
 ## `speed_fov_at` m/s. Never while aiming or zoomed.
@@ -490,14 +501,41 @@ func _process(delta: float) -> void:
 	_sight_blend = move_toward(_sight_blend, 1.0 if aiming and sight != null else 0.0, delta * 7.0)
 	sighted = _sight_blend > 0.9
 	if first_person:
-		var hand_at := FIRST_PERSON_HAND
+		var pose := ActionPose.of(actor)
+		pose.advance(delta)
+		var hold := first_person_hold(pose)
 		if sight != null and _sight_blend > 0.0:
 			# Raise the gun so its optic's eye point is at the eye: the view
 			# then looks straight down the sight.
 			var in_hand := actor.hand.global_transform.affine_inverse() * sight.global_transform.origin
 			var lined_up := Vector3(0, 0, -eye_relief) - in_hand
-			hand_at = FIRST_PERSON_HAND.lerp(lined_up, _sight_blend)
-		actor.hand.global_transform = camera.global_transform * Transform3D(Basis.IDENTITY, hand_at)
+			hold = hold.interpolate_with(Transform3D(Basis.IDENTITY, lined_up), _sight_blend)
+		actor.hand.global_transform = camera.global_transform * hold
+
+
+## Where the weapon hand goes in first person, in the camera's space: the
+## resting hold moved by the same shared pose the third-person arm follows
+## (melee reach and shoulder turn, a reload, the low ready, a switch).
+func first_person_hold(pose: ActionPose) -> Transform3D:
+	var at := FIRST_PERSON_HAND
+	var basis := Basis.IDENTITY
+	if pose == null:
+		return Transform3D(basis, at)
+	at += pose.reach * (first_person_reach * pose.reach_weight)
+	var gun := pose.gun_offset(true)
+	at += gun.origin
+	basis = gun.basis
+	var swing := Basis(Vector3.UP, pose.turn.x * first_person_turn) * Basis(Vector3.RIGHT, pose.turn.y * first_person_turn)
+	at = swing * at
+	basis = swing * basis
+	if pose.switch_weight > 0.0:
+		var side := clampf(pose.switch_point.x, -0.45, 0.45)
+		var stow := Vector3(side, first_person_stow.y, first_person_stow.z)
+		var tip := Basis.from_euler(first_person_stow_tilt + Vector3(0.0, 0.0, -0.5 * side))
+		var w := smoothstep(0.0, 1.0, pose.switch_weight)
+		at = at.lerp(stow, w)
+		basis = basis.slerp(tip, w)
+	return Transform3D(basis, at)
 
 
 ## The field of view while aiming `weapon`: optics zoom further in.
@@ -555,9 +593,14 @@ func _on_landed(impact_speed: float) -> void:
 func _update_dip(delta: float) -> void:
 	if is_zero_approx(_dip) and is_zero_approx(_dip_speed):
 		return
-	# A critically damped spring: down fast, back without a bounce.
-	_dip_speed += (-180.0 * _dip - 26.8 * _dip_speed) * delta
-	_dip += _dip_speed * delta
+	# A critically damped spring: down fast, back without a bounce. Stepped
+	# in small slices, since one long frame would make it blow up.
+	var left := delta
+	while left > 0.0:
+		var step := minf(left, 1.0 / 120.0)
+		left -= step
+		_dip_speed += (-180.0 * _dip - 26.8 * _dip_speed) * step
+		_dip += _dip_speed * step
 	if absf(_dip) < 0.0005 and absf(_dip_speed) < 0.005:
 		_dip = 0.0
 		_dip_speed = 0.0

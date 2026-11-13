@@ -27,40 +27,15 @@ var look: Node
 
 ## From the grip bone to where the weapon's handle sits, in the hand's space.
 var grip_offset := Vector3.ZERO
-## Where the weapon hand goes for each melee side, as an offset from the
-## resting hand: x to the actor's right, y up, z back.
-var arm_windup := {
-	MeleeWeapon.Dir.RIGHT: Vector3(0.0, 0.3, 0.25),
-	MeleeWeapon.Dir.LEFT: Vector3(-0.5, 0.3, 0.1),
-	MeleeWeapon.Dir.OVERHEAD: Vector3(-0.15, 0.5, 0.2),
-}
-var arm_follow := {
-	MeleeWeapon.Dir.RIGHT: Vector3(-0.5, -0.2, -0.2),
-	MeleeWeapon.Dir.LEFT: Vector3(0.15, -0.2, -0.2),
-	MeleeWeapon.Dir.OVERHEAD: Vector3(-0.15, -0.35, -0.25),
-}
-var arm_guard := Vector3(0.0, 0.08, -0.08)
-## How far the swing bows out in front of the straight line between the
-## windup and the follow-through, so the hand travels an arc.
-var swing_bow := Vector3(0.0, 0.05, -0.35)
-## How long the follow-through is held after the swing lands, in seconds.
-var follow_hold := 0.2
-## Shoulder turn (x, radians, positive toward the actor's left) and lean
-## (y, radians, positive backward) for each side.
-var turn_windup := {
-	MeleeWeapon.Dir.RIGHT: Vector2(-0.5, 0.0),
-	MeleeWeapon.Dir.LEFT: Vector2(0.45, 0.0),
-	MeleeWeapon.Dir.OVERHEAD: Vector2(0.0, 0.2),
-}
-var turn_follow := {
-	MeleeWeapon.Dir.RIGHT: Vector2(0.45, -0.1),
-	MeleeWeapon.Dir.LEFT: Vector2(-0.45, -0.1),
-	MeleeWeapon.Dir.OVERHEAD: Vector2(0.0, -0.35),
-}
-var turn_guard := 0.12
+## The melee hand offsets and shoulder turns live in `ActionPose`, which
+## first person reads too, so both views swing the same way.
 ## Where the elbows point, in the actor's space.
 var elbow := Vector3(0.8, 0.8, 0.3)
 var off_elbow := Vector3(-0.8, 0.8, 0.3)
+## Raising the watch (`ActionPose.watch`): where the left hand comes up to,
+## in front of the chest, and where that elbow points, in the actor's frame.
+var watch_at := Vector3(-0.04, 1.3, -0.36)
+var watch_elbow := Vector3(-0.9, 0.7, 0.0)
 ## The most the wrist bends to line the grip up with the blade, in radians.
 var wrist_limit := 1.3
 ## Where the off hand holds a two-handed weapon, along its handle from the grip.
@@ -92,10 +67,12 @@ var _off_pole := Node3D.new()
 var _weight := 0.0
 var _grip_weight := 0.0
 var _off_weight := 0.0
+var _gun_weight := 0.0
+var _watch := 0.0
 var _reach := Vector3.ZERO
 var _turn := Vector2.ZERO
-var _follow_left := 0.0
-var _follow_dir := MeleeWeapon.Dir.OVERHEAD
+## The actor's shared pose: what both views show the weapon hand doing.
+var pose: ActionPose
 
 
 ## `def` is the skin's entry in `Look.SKINS`. `fist_animation` is one where
@@ -121,6 +98,10 @@ func setup(def: Dictionary, fist_animation: Animation) -> void:
 	turn.name = "BodyTurn"
 	turn.run = _turn_body
 	skeleton.add_child(turn)
+	var gun_reach := Hook.new()
+	gun_reach.name = "GunReach"
+	gun_reach.run = _reach_gun
+	skeleton.add_child(gun_reach)
 	reach_ik = _two_bone("ArmReach", arm, _target, _pole)
 	var place := Hook.new()
 	place.name = "PlaceWeapon"
@@ -208,74 +189,42 @@ func _fist_point(names: Array) -> Vector3:
 
 
 ## The hand offset the current melee state asks for, or null when the
-## animation should have the arm.
+## animation should have the arm. The same offset moves the first-person hand.
 func arm_reach(melee: MeleeWeapon) -> Variant:
-	if melee == null or actor.is_dead or actor.hand_override:
-		return null
-	if melee._slamming:
-		return arm_windup[MeleeWeapon.Dir.OVERHEAD]
-	if melee.is_winding_up():
-		return arm_windup[melee.attack_dir]
-	if melee._swing_left > 0.0:
-		var from: Vector3 = arm_windup[melee.attack_dir]
-		var to: Vector3 = arm_follow[melee.attack_dir]
-		var done := swing_progress(melee)
-		# A curve through a point bowed out in front, so the hand sweeps
-		# round instead of cutting straight across.
-		var bow := (from + to) * 0.5 + swing_bow
-		return from.lerp(bow, done).lerp(bow.lerp(to, done), done)
-	if _follow_left > 0.0:
-		return arm_follow[_follow_dir]
-	if melee.is_blocking():
-		return arm_guard
-	return null
+	return _pose().arm_reach(melee)
 
 
 ## The shoulder turn and lean that go with `arm_reach`.
 func body_turn(melee: MeleeWeapon) -> Vector2:
-	if melee == null or actor.is_dead or actor.hand_override:
-		return Vector2.ZERO
-	if melee._slamming:
-		return turn_windup[MeleeWeapon.Dir.OVERHEAD]
-	if melee.is_winding_up():
-		return turn_windup[melee.attack_dir]
-	if melee._swing_left > 0.0:
-		return (turn_windup[melee.attack_dir] as Vector2).lerp(turn_follow[melee.attack_dir], swing_progress(melee))
-	if _follow_left > 0.0:
-		return turn_follow[_follow_dir]
-	if melee.is_blocking():
-		return Vector2(MeleeWeapon._side(melee.guard_dir) * turn_guard, 0.0)
-	return Vector2.ZERO
+	return _pose().body_turn(melee)
 
 
-static func swing_progress(melee: MeleeWeapon) -> float:
-	return 1.0 - clampf(melee._swing_left / MeleeWeapon.SWING_TIME, 0.0, 1.0)
+func _pose() -> ActionPose:
+	if pose == null or not is_instance_valid(pose):
+		pose = ActionPose.of(actor)
+	return pose
 
 
 func _process(delta: float) -> void:
 	if reach_ik == null or actor == null or not is_instance_valid(actor):
 		return
+	var shared := _pose()
+	shared.advance(delta)
 	var melee := actor.get_active_weapon() as MeleeWeapon
 	var holding := melee != null and melee.visual != null and not actor.is_dead and not actor.hand_override
-	if holding and melee._swing_left > 0.0:
-		_follow_left = follow_hold
-		_follow_dir = melee.attack_dir
-	elif _follow_left > 0.0:
-		_follow_left -= delta
-		if not holding or melee.is_winding_up() or melee.is_blocking():
-			_follow_left = 0.0
-
-	var reach: Variant = arm_reach(melee) if holding else null
-	_weight = move_toward(_weight, 0.0 if reach == null else 1.0, delta * 9.0)
+	var reaching := holding and shared.reach_weight > 0.0
+	_weight = shared.reach_weight if holding else move_toward(_weight, 0.0, delta * 9.0)
 	_grip_weight = move_toward(_grip_weight, 1.0 if holding else 0.0, delta * 8.0)
 	var two_handed: bool = holding and look.is_two_handed(melee)
 	_off_weight = move_toward(_off_weight, 1.0 if two_handed else 0.0, delta * 8.0)
-	# A swing is over in a few frames, so it is followed much more tightly.
-	var follow := 1.0 - exp(-(70.0 if holding and melee._swing_left > 0.0 else 26.0) * delta)
-	if reach != null:
-		var wanted: Vector3 = reach + melee.visual.position
-		_reach = wanted if _weight < 0.15 else _reach.lerp(wanted, follow)
-	_turn = _turn.lerp(body_turn(melee) if holding else Vector2.ZERO, follow)
+	if reaching:
+		_reach = shared.reach + melee.visual.position
+	_turn = shared.turn if holding else _turn.lerp(Vector2.ZERO, 1.0 - exp(-26.0 * delta))
+	var gun := actor.get_active_weapon() as Gun
+	_gun_weight = shared.reload if gun != null and gun.visual != null and gun.visual.visible \
+			and not actor.is_dead and not actor.hand_override else 0.0
+	# The watch takes the left hand off any two-handed hold while it is up.
+	_watch = shared.watch if not actor.is_dead and not actor.hand_override else 0.0
 
 	reach_ik.influence = _weight
 	var aim := Basis(Vector3.RIGHT, actor.cmd.pitch)
@@ -287,8 +236,22 @@ func _process(delta: float) -> void:
 		reach_ik.influence = maxf(_weight, override_weight)
 	_pole.global_position = actor.global_transform * elbow
 	if off_ik:
-		off_ik.influence = _off_weight
-		_off_pole.global_position = actor.global_transform * off_elbow
+		off_ik.influence = maxf(_off_weight * (1.0 - _watch), _watch)
+		_off_pole.global_position = actor.global_transform * off_elbow.lerp(watch_elbow, _watch)
+		if _watch > 0.0:
+			_off_target.global_position = actor.global_transform * watch_at
+
+
+## Before the arm reaches: during a reload, move the gun hand from where the
+## animation holds it by the shared reload offset, which first person shows
+## the same way.
+func _reach_gun() -> void:
+	if _gun_weight <= 0.0 or _wrist < 0 or override_weight > 0.001 or _weight > 0.001:
+		return
+	var wrist := skeleton.global_transform * skeleton.get_bone_global_pose(_wrist).origin
+	var aim := actor.global_basis.orthonormalized() * Basis(Vector3.RIGHT, actor.cmd.pitch)
+	_target.global_position = wrist + aim * pose.gun_offset(false).origin
+	reach_ik.influence = 1.0
 
 
 ## Turns the spine toward the attack before the arms reach, so they reach
@@ -334,7 +297,8 @@ func _place_weapon() -> void:
 			pose.basis = Basis(bend.get_axis().normalized(), angle) * pose.basis
 			skeleton.set_bone_global_pose(_wrist, pose)
 	hold_weapon()
-	_off_target.global_position = melee.visual.global_transform * Vector3(0.0, off_hand_at, 0.0)
+	var handle := melee.visual.global_transform * Vector3(0.0, off_hand_at, 0.0)
+	_off_target.global_position = handle.lerp(actor.global_transform * watch_at, _watch)
 
 
 ## Last of all, close the fingers round the handle.
@@ -356,6 +320,11 @@ func hold_weapon() -> void:
 	if grip_bone < 0 or actor.hand_override or actor.is_dead:
 		return
 	var grip: Vector3 = skeleton.global_transform * skeleton.get_bone_global_pose(grip_bone).origin
+	var gun := actor.get_active_weapon() as Gun
+	if gun != null and pose != null and is_instance_valid(pose):
+		# The gun turns in the hand through a reload, as it does first person.
+		actor.hand.global_basis = actor.global_basis.orthonormalized() \
+				* Basis(Vector3.RIGHT, actor.cmd.pitch) * pose.gun_offset(false).basis
 	var held := grip_offset
 	# A blade's guard and windup poses shift it off the hand node. The arm
 	# reaches for that spot instead, so take the shift back out here.
