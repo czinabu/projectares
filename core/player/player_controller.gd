@@ -51,9 +51,6 @@ var input_blocked := false
 ## everyone else sees (`ActorCommand.phone`), and the weapon is put away in
 ## the view until the phone is.
 var phone_out := false
-## The phone's grip (`Phone.grip`, set by `Main`): while the phone is out
-## your own right hand closes round it, in either view.
-var phone_grip: Node3D
 ## Set while a mirror stands in front of you (1-20, 0 for none). In first
 ## person your body stays drawn on this render layer, which this camera leaves
 ## out, so the mirror's camera can still show it.
@@ -621,8 +618,7 @@ func _update_arms(first_person: bool) -> void:
 			_arms_failed = true
 			return
 	if _arms != null:
-		var grip := phone_grip if phone_out and phone_grip != null and is_instance_valid(phone_grip) else null
-		_arms.update(first_person, ActionPose.of(actor).watch, held_toy != "", grip)
+		_arms.update(first_person, ActionPose.of(actor).watch, held_toy != "")
 
 
 ## True while your own arms are drawn in first person.

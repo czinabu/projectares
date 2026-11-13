@@ -103,12 +103,12 @@ var stand_legs_rate := 4.0
 ## as in life, in the actor's frame: where the phone sits, where the right
 ## wrist goes (just under it), which way the elbow bows, and how far the head
 ## and chest bow to look at it. The left arm is left as it was.
-var phone_at := Vector3(0.11, 1.4, -0.34)
-var phone_wrist := Vector3(0.12, 1.31, -0.3)
+var phone_at := Vector3(0.12, 1.5, -0.28)
+var phone_wrist := Vector3(0.12, 1.36, -0.22)
 var phone_elbow := Vector3(0.45, -1.0, 0.15)
-## How far past the wrist (m) the middle of the phone sits: it stands up out
-## of the fingers, as a phone does.
-var phone_palm := 0.13
+## How far past the wrist (m) the middle of the fist is, where the phone's
+## grip passes through it (`core/phone/handheld.gd`).
+var phone_palm := 0.085
 var phone_look_down := 0.85
 var phone_chest := 0.16
 

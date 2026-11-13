@@ -5248,6 +5248,23 @@ func _test_stash_service() -> void:
 const SocialService := preload("res://core/social/social_service.gd")
 const GameSettings := preload("res://core/settings/game_settings.gd")
 const PhoneScript := preload("res://core/phone/phone.gd")
+const Handheld := preload("res://core/phone/handheld.gd")
+
+
+## Stands in for `ActorSkin` in the phone tests: a hand holding `held`.
+class HandSkin extends Node:
+	var held: Node3D
+	var phone_screen: Material
+	var locomotion: Object = self
+
+	func handheld() -> Node3D:
+		return held
+
+	func set_phone_screen(screen: Material) -> void:
+		phone_screen = screen
+		var face := Handheld.face_of(held)
+		if face != null:
+			face.set_surface_override_material(0, screen)
 const MirrorScript := preload("res://core/visual/mirror.gd")
 const DevMode := preload("res://core/dev/dev_mode.gd")
 const DevEconomy := preload("res://core/economy/economy.gd")
@@ -5375,6 +5392,12 @@ func _test_dev_mode() -> void:
 	phone.dev_mode_changed.connect(func() -> void: changes[0] += 1)
 	phone.toggle()
 	phone.open_app("settings")
+	check("dev" in phone.settings_tabs(), "in a debug run the phone's settings have a Dev tab")
+	for child in phone._body.get_children():
+		check(not (child is CheckButton and (child as CheckButton).text.begins_with("Dev mode")),
+				"the dev switches stay off the other tabs")
+	phone.open_settings_tab("dev")
+	await frames(1)
 	var switch_shown := false
 	for child in phone._body.get_children():
 		if child is CheckButton and (child as CheckButton).text.begins_with("Dev mode"):
@@ -5611,6 +5634,18 @@ func _test_phone_view() -> void:
 	await _test_phone_controls(phone)
 	GameSettings.persist = false
 	phone.open_app("settings")
+	check(phone.settings_tab == "input" and phone._tabs.visible and phone._tabs.get_child_count() == phone.settings_tabs().size(),
+			"settings open on the Input tab, with a row of tabs")
+	phone.open_settings_tab("view")
+	await frames(1)
+	var sliders := 0
+	for child in phone._body.get_children():
+		if child is PanelContainer and child.find_children("*", "HSlider", true, false).size() > 0:
+			sliders += 1
+	check(phone.settings_tab == "view" and sliders == 3, "the View tab has the fields of view and the camera distance")
+	phone.open_app("news")
+	check(not phone._tabs.visible, "other apps have no tabs")
+	phone.open_app("settings")
 	phone.change_setting("field_of_view", 95.0)
 	check(is_equal_approx(GameSettings.field_of_view, 95.0) and "settings" in events, "settings change from the phone")
 	phone.change_setting("field_of_view_third", 105.0)
@@ -5674,48 +5709,64 @@ func _test_phone_home(phone: CanvasLayer) -> void:
 	check(phone.app == PhoneScript.HOME, "it opens where it was left")
 	check(phone._status.text.length() == 5 and phone._who.text == "Solo" and phone._bars.strength == 0,
 			"the status bar has the time, no signal and Solo while offline")
+	check(phone._readouts["link"].value.text == "SOLO" and phone._readouts["news"].value.text == str(SocialService.GAME_NEWS[0].title),
+			"the home screen reads out the link and the latest news")
+	phone._readouts["news"].tapped.emit()
+	check(phone.app == "news", "a readout opens its app")
+	phone.go_home()
 
-	# No camera: the screen shows flat, and a click on it lands on it.
+	# No hand to hold it: the screen shows flat, and a click on it lands on it.
 	await _drawn_frames(2)
-	check(phone._flat.visible and not phone._device.visible, "with no camera the screen shows flat")
+	check(phone._flat.visible and phone._device == null, "with no hand to hold it the screen shows flat")
 	var middle: Vector2 = phone._flat.get_global_rect().get_center()
 	check(phone.screen_point(middle).distance_to(Vector2(phone.screen_size) * 0.5) < 1.0,
 			"a click on the flat screen lands in the same spot on the phone")
 	check(phone.screen_point(phone._flat.get_global_rect().position - Vector2(5, 5)).x < 0.0, "a click beside it misses")
 
-	# A camera: the phone is held up in front of it, drawn over the world.
+	# The device itself: the one handheld every view shows, held by its grip.
+	var held: Node3D = Handheld.build()
+	var face := Handheld.face_of(held)
+	check(face != null and face.mesh.get_surface_count() == 2 and face.position.y > 0.0,
+			"the handheld's screen is a face of its own, above the grip at its origin")
+	check(held.get_node_or_null("Handle") != null and held.get_node("Handle").position == Vector3.ZERO,
+			"the grip is where the hand closes, at the handheld's origin")
+	held.free()
+	var slab: ArrayMesh = PhoneScript.rounded_slab(Vector2(0.15, 0.3), 0.02, 0.03)
+	check(slab.get_surface_count() == 2 and slab.get_aabb().size.is_equal_approx(Vector3(0.15, 0.3, 0.02)),
+			"the phone is a rounded slab, its face a surface of its own")
+	# Held in a hand: a click on the handheld's face lands on the screen.
 	var stage := Node3D.new()
 	add_child(stage)
 	var camera := Camera3D.new()
 	camera.fov = 75.0
 	stage.add_child(camera)
 	camera.make_current()
-	phone._raise = 1.0
+	var holder := Node3D.new()
+	stage.add_child(holder)
+	var skin := HandSkin.new()
+	skin.name = "Skin"
+	holder.add_child(skin)
+	var in_hand: Node3D = Handheld.build()
+	stage.add_child(in_hand)
+	in_hand.position = Vector3(0.05, -0.05, -0.3) - Handheld.face_of(in_hand).position
+	skin.held = in_hand
+	phone.set_holder(holder)
 	await _drawn_frames(2)
-	check(phone._device.visible and not phone._flat.visible and phone._dim.visible,
-			"with a camera the phone is held up in the world, the scene dimmed behind it")
-	var at: Vector3 = camera.global_transform.affine_inverse() * phone._device.global_position
-	check(at.z < -camera.near and at.x > 0.0, "it is held in front of the eyes, to the right")
-	var face: Vector3 = phone._device.global_basis.z
-	check(face.dot(-at.normalized()) > 0.9, "its screen faces the eyes")
-	var mat := phone._device.get_surface_override_material(0) as StandardMaterial3D
-	check(mat.no_depth_test and mat.albedo_texture == phone._screen.get_texture(),
-			"the screen shows the phone's display and is never hidden in a wall")
-	var centre: Vector3 = phone._device.global_position + face * phone.device_depth * 0.5
+	check(phone._device == Handheld.face_of(in_hand) and not phone._flat.visible,
+			"with a hand to hold it, the phone is the handheld in that hand, not a flat screen")
+	check(Handheld.face_of(in_hand).get_surface_override_material(0) == phone._face_mat,
+			"and its face shows this phone's screen")
+	var centre: Vector3 = phone._device.global_position + phone._device.global_basis.z * Handheld.DEPTH * 0.5
 	var mouse := camera.unproject_position(centre)
 	check(phone.screen_point(mouse).distance_to(Vector2(phone.screen_size) * 0.5) < 4.0,
-			"the mouse on the phone lands on its screen")
-	check(phone.screen_point(Vector2(1, 1)).x < 0.0, "the mouse off the phone misses it")
-	check(phone._device.layers == 1 << (MirrorScript.HELD_LAYER - 1), "a mirror never shows the held phone")
-	var slab: ArrayMesh = PhoneScript.rounded_slab(Vector2(0.15, 0.3), 0.02, 0.03)
-	check(slab.get_surface_count() == 2 and slab.get_aabb().size.is_equal_approx(Vector3(0.15, 0.3, 0.02)),
-			"the phone is a rounded slab, its face a surface of its own")
+			"the mouse on the handheld lands on its screen")
+	check(phone.screen_point(Vector2(1, 1)).x < 0.0, "the mouse off the handheld misses it")
+	check((phone._face_mat as StandardMaterial3D).albedo_texture == phone._screen.get_texture(),
+			"the handheld's face shows the phone's screen")
+	phone.set_holder(null)
 	phone.close()
-	var lowered := Time.get_ticks_msec() + int(phone.raise_time * 1000.0) + 200
-	while Time.get_ticks_msec() < lowered:
-		await _drawn_frames(1)
 	await _drawn_frames(2)
-	check(not phone._device.visible and not phone._dim.visible, "put away, it lowers out of view")
+	check(not phone._flat.visible, "put away, the flat screen goes too")
 	phone.open()
 	camera.queue_free()
 	stage.queue_free()

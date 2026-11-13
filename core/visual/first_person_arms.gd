@@ -109,15 +109,6 @@ var _off_wrap_world := Vector3.ZERO
 var _hand_on_weapon := Basis.IDENTITY
 var _hand_for: Object
 var _watch := 0.0
-## While the phone is out: the grip under it, which the weapon hand closes
-## round in place of a weapon's (`Phone.grip`). Null otherwise.
-var phone_grip: Node3D
-## With the phone in the right hand the left one hangs down out of view,
-## this far from the eye (camera space).
-var off_hang := Vector3(-0.28, -0.7, 0.05)
-## Where the right elbow points while holding the phone: down and in, so the
-## forearm comes up from below the device.
-var phone_elbow := Vector3(0.3, -1.0, 0.1)
 ## The watch on the copy's left wrist.
 var _worn_watch: Node3D
 
@@ -225,32 +216,19 @@ func _hold_clip(key: String) -> void:
 	_player.pause()
 
 
-## What the weapon hand holds now: the phone's grip while it is out, else
-## the weapon whose model is in the hand, or null.
+## The weapon whose model is in the hand now, or null.
 func held_visual() -> Node3D:
-	if phone_grip != null:
-		return phone_grip
 	var weapon := actor.get_active_weapon()
 	if weapon != null and weapon.visual != null and weapon.visual.visible:
 		return weapon.visual
 	return null
 
 
-## The weapon in the hand, as far as the arms are concerned: none while the
-## hand is on the phone.
-func _weapon() -> Weapon:
-	return null if phone_grip != null else actor.get_active_weapon()
-
-
 ## Called by the controller each frame after it has placed the hand.
 ## `shown` is whether first person is being drawn at all; `watch` how far
-## the watch is raised (0..1); `toy` true while a toy vehicle is in the hand;
-## `phone` the phone's grip while the phone is out (shown in either view,
-## since the phone is held in front of the eyes in both).
-func update(shown: bool, watch: float, toy: bool, phone: Node3D = null) -> void:
-	phone_grip = phone if phone != null and phone.is_visible_in_tree() else null
-	shown = shown or phone_grip != null
-	var weapon := _weapon()
+## the watch is raised (0..1); `toy` true while a toy vehicle is in the hand.
+func update(shown: bool, watch: float, toy: bool) -> void:
+	var weapon := actor.get_active_weapon()
 	var held := held_visual()
 	visible = shown and (held != null or toy or watch > 0.0)
 	_watch = watch
@@ -259,14 +237,13 @@ func update(shown: bool, watch: float, toy: bool, phone: Node3D = null) -> void:
 	if weapon is MeleeWeapon:
 		_hold_clip("idle_melee")
 	elif held != null:
-		# A gun's grip clip closes the fist round the phone's grip too.
 		_hold_clip("aim_gun")
 	else:
 		_hold_clip("idle")
 	var two_handed: bool = held != null and (weapon is Gun or look.is_two_handed(weapon))
 	_off_weight = 1.0 if two_handed else 0.0
 	_ik.influence = 1.0 if held != null or toy else 0.0
-	_off_ik.influence = 1.0 if phone_grip != null else maxf(_off_weight, watch)
+	_off_ik.influence = maxf(_off_weight, watch)
 	_worn_watch.visible = true
 
 
@@ -288,10 +265,10 @@ func _measure() -> void:
 	var held := held_visual()
 	if held != null:
 		anchor = held.global_transform.orthonormalized()
-		if _weapon() is MeleeWeapon:
+		if actor.get_active_weapon() is MeleeWeapon:
 			rest = rest * blade_rest
 	var turn := anchor.basis * rest.inverse()
-	var weapon := _weapon()
+	var weapon := actor.get_active_weapon()
 	var basis_world := to_world.basis.orthonormalized()
 	var wrist := to_world * skeleton.get_bone_global_pose(_wrist).origin
 	var grip := _fist_point()
@@ -309,8 +286,8 @@ func _measure() -> void:
 	var new_wrist := anchor.origin - hand * (wrist_basis.inverse() * (grip - wrist))
 	_target.global_position = new_wrist
 	# The elbow rides high with the arm cocked for a windup, as third person.
-	var raise := ActionPose.of(actor).elbow_raise if _weapon() is MeleeWeapon else 0.0
-	_pole.global_position = _elbow_for(0, _fore, _wrist, new_wrist, _rel, _axis_hand, _axis_world, cam * (phone_elbow if phone_grip != null else elbow.lerp(elbow_cocked, raise)))
+	var raise := ActionPose.of(actor).elbow_raise if actor.get_active_weapon() is MeleeWeapon else 0.0
+	_pole.global_position = _elbow_for(0, _fore, _wrist, new_wrist, _rel, _axis_hand, _axis_world, cam * elbow.lerp(elbow_cocked, raise))
 
 	var off := to_world * skeleton.get_bone_global_pose(_off_wrist).origin
 	var off_basis := basis_world * skeleton.get_bone_global_pose(_off_wrist).basis.orthonormalized()
@@ -349,8 +326,6 @@ func _measure() -> void:
 		var to_eye := (cam.origin - up).normalized()
 		var swing := Quaternion(face, to_eye)
 		_off_turn = (off_basis if _off_weight <= 0.0 else _off_turn).slerp(Basis(swing) * off_basis, _watch)
-	if phone_grip != null:
-		off_at = cam * off_hang
 	_off_target.global_position = off_at
 	_off_pole.global_position = _elbow_for(1, _off_fore, _off_wrist, off_at, _off_rel, _off_axis_hand, _off_axis_world, cam * off_elbow)
 

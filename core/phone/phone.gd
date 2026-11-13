@@ -4,13 +4,15 @@ extends CanvasLayer
 ## news, try on clothes in front of a mirror, look up the controls and change
 ## settings.
 ##
-## It is a real phone in the world, not a panel over the screen: the
-## character raises it (others see them looking at it, `ActorCommand.phone`),
-## it is held up in front of the view at a slight angle with the scene dimmed
-## behind it, and you click on its screen. The screen is a `SubViewport`
-## showing a home screen of app icons with badges and a status bar; an app
-## opens over it and the back arrow or the bar at the bottom goes home.
-## With no 3D camera (a headless test) the same screen shows flat.
+## It is a real thing in the world, not a panel over the screen: a rugged
+## handheld with a pistol grip (`core/phone/handheld.gd`) that your
+## character's own right hand closes round and raises (`ActorCommand.phone`),
+## so first person, third person, other players and a mirror all see the
+## same device in the same hand, and only the camera differs. You click on
+## its face. The screen is a `SubViewport` with the device's frame and chin
+## keys, a home screen of live readouts and app icons, and the page an app
+## draws on. With no hand to hold it (a headless test) the same screen
+## shows flat.
 ##
 ## It is a view. Online it shows the `NetSession.social_state` the server
 ## sent and turns taps into requests (`send_message`, `send_invite`,
@@ -38,6 +40,7 @@ const UiTheme := preload("res://core/visual/ui_theme.gd")
 const CharacterPanel := preload("res://core/ui/character_panel.gd")
 
 const MirrorScript := preload("res://core/visual/mirror.gd")
+const Handheld := preload("res://core/phone/handheld.gd")
 
 const APPS := ["contacts", "messages", "invites", "news", "mirror", "controls", "settings"]
 const APP_NAMES := {"contacts": "Contacts", "messages": "Messages", "invites": "Invites",
@@ -156,34 +159,6 @@ var screen_size := Vector2i(480, 800)
 var text_scale := 1.6
 ## Where the glass sits inside the frame (left, top, right, bottom, pixels).
 var glass_inset := Vector4(22, 44, 22, 104)
-## The device's height in the world, metres: a rugged handheld about the
-## size of a small tablet's half, held at about a gun's distance from the
-## eyes, with a pistol grip under it that the right hand closes round.
-var device_height := 0.2
-var device_depth := 0.02
-var corner_radius := 0.016
-## The grip under the device: its size (m), how far across the bottom it
-## sits (0 middle, 0.5 the right edge) and how far it rakes back.
-var grip_size := Vector3(0.03, 0.09, 0.026)
-var grip_across := 0.18
-var grip_rake := -0.32
-## How much of the view's height the device's face fills when held up.
-var fill := 0.5
-## Where it is held, in the view (-1 to 1 across and up). Further right while
-## the Mirror app is up, so the mirror is in view.
-var hold_at := Vector2(0.42, 0.1)
-var hold_at_mirror := Vector2(0.62, 0.1)
-## Turned in toward the middle of the view, tipped away at the top, and
-## rolled, in radians.
-var hold_turn := 0.14
-var hold_tilt := 0.1
-var hold_roll := -0.05
-## Seconds to raise it or put it away.
-var raise_time := 0.22
-## How dark the scene goes behind it: only a touch, the screen is lit.
-var dim_alpha := 0.1
-## The thin light the screen throws round the device.
-var glow_alpha := 0.14
 ## Seconds a pop-up stays on screen.
 var notice_seconds := 4.5
 
@@ -226,14 +201,15 @@ var _readouts := {}
 var settings_tab := "input"
 var _tabs: HBoxContainer
 var _chassis: Control
-## Where the right hand closes round the device's grip (a child of the
-## device). The first-person arms reach for it while the phone is out.
-var grip: Node3D
-## In the world: the phone, its glow and the shade over the scene.
+## Who holds this phone (your own actor, `set_holder`): their character's
+## hand holds the handheld (`ActorSkin.handheld`) and its face shows this
+## screen. Null in a test with no world.
+var holder: Node3D
+## The face of the handheld being held now, or null (then the screen shows
+## flat, as with no world at all).
 var _device: MeshInstance3D
-var _glow: MeshInstance3D
-var _dim: MeshInstance3D
-var _dim_mat: StandardMaterial3D
+## The material that puts this screen on the handheld's face.
+var _face_mat: StandardMaterial3D
 ## Without a camera: the screen shown flat.
 var _flat: TextureRect
 ## 0 put away, 1 held up.
@@ -250,7 +226,7 @@ func _ready() -> void:
 	layer = 50
 	GameSettings.ensure_loaded()
 	_build_screen()
-	_build_device()
+	_build_flat()
 	_build_notice()
 	for entry: Dictionary in SocialService.GAME_NEWS:
 		news_seen[entry.title] = false
@@ -333,7 +309,6 @@ func _process(delta: float) -> void:
 		_notice_panel.visible = _notice_left > 0.0
 	if is_open:
 		_update_status()
-	_raise = move_toward(_raise, 1.0 if is_open else 0.0, delta / maxf(raise_time, 0.001))
 	_hold(get_viewport().get_camera_3d())
 
 
@@ -397,7 +372,6 @@ func mirror_step(key: String, steps: int) -> void:
 ## shade so the mirror can be seen.
 func _sync_mirror() -> void:
 	var up := mirror_open()
-	_dim_mat.albedo_color.a = 0.0 if up else dim_alpha
 	if up != _mirror_was_up:
 		_mirror_was_up = up
 		mirror_changed.emit(up)
@@ -536,11 +510,6 @@ func _set_open(open_now: bool) -> void:
 	if changed:
 		opened_changed.emit(open_now)
 	_sync_mirror()
-
-
-## How dark the scene is behind the phone right now (none in front of a mirror).
-func dim_amount() -> float:
-	return _dim_mat.albedo_color.a if is_open else 0.0
 
 
 ## The home screen, from any app.
@@ -890,87 +859,10 @@ static func grabber_icon(lit: bool) -> ImageTexture:
 	return ImageTexture.create_from_image(image)
 
 
-## The device in the world: a rugged slab whose face shows the screen, with
-## rubber rails down its sides, armoured corners, a stub antenna and a raked
-## pistol grip under it that your right hand closes round (`grip`, which the
-## first-person arms reach for). It is drawn in the world like a gun in the
-## hand, so fingers wrap in front of the grip, with a thin glow behind it and
-## a light shade over the scene, on `MirrorScript.HELD_LAYER` so a mirror
-## never shows it.
-func _build_device() -> void:
-	var height := device_height
-	var width := height * float(screen_size.x) / float(screen_size.y)
-	var face := StandardMaterial3D.new()
-	face.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	face.albedo_texture = _screen.get_texture()
-	face.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
-	# Lit from within, so it reads in a dark street and the bloom catches it.
-	face.emission_enabled = true
-	face.emission_texture = _screen.get_texture()
-	face.emission_energy_multiplier = 0.45
-	var case := _hardware_material(CASE_COLOR)
-	var rubber := _hardware_material(Color(0.07, 0.07, 0.075))
-	var armour := _hardware_material(Color(0.3, 0.17, 0.06))
-	var glow := StandardMaterial3D.new()
-	glow.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	glow.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
-	var halo := GradientTexture2D.new()
-	halo.fill = GradientTexture2D.FILL_RADIAL
-	halo.fill_from = Vector2(0.5, 0.5)
-	halo.fill_to = Vector2(1.0, 0.5)
-	halo.gradient = Gradient.new()
-	halo.gradient.offsets = PackedFloat32Array([0.0, 0.5, 1.0])
-	var tint := UiTheme.ACCENT
-	halo.gradient.colors = PackedColorArray([Color(tint, glow_alpha), Color(tint, glow_alpha * 0.6), Color(tint, 0.0)])
-	glow.albedo_texture = halo
-	_dim_mat = StandardMaterial3D.new()
-	_dim_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	_dim_mat.albedo_color = Color(0.0, 0.0, 0.0, dim_alpha)
-	# The shade and the glow are drawn over the world; the device is drawn
-	# in it after them (transparent pass, by priority), so it is never shaded
-	# and a hand in front of its grip hides the grip.
-	var order := 0
-	for mat: StandardMaterial3D in [_dim_mat, glow, rubber, case, armour, face]:
-		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-		mat.disable_receive_shadows = true
-		mat.render_priority = 100 + order
-		order += 1
-	_dim_mat.no_depth_test = true
-	glow.no_depth_test = true
-
-	_dim = _held_mesh("Dim", QuadMesh.new(), _dim_mat)
-	_glow = _held_mesh("Glow", QuadMesh.new(), glow)
-	(_glow.mesh as QuadMesh).size = Vector2(width, height) * 1.7
-	_device = _held_mesh("Device", rounded_slab(Vector2(width, height), device_depth, corner_radius), null)
-	_device.set_surface_override_material(0, face)
-	_device.set_surface_override_material(1, case)
-
-	# The hardware round the slab: rails, corners, antenna and the grip.
-	var half := Vector2(width, height) * 0.5
-	var d := device_depth
-	for side: float in [-1.0, 1.0]:
-		_part("Rail", Vector3(0.004, height * 0.55, d * 1.2), Vector3(side * (half.x + 0.001), 0.0, 0.0), rubber)
-		for end: float in [-1.0, 1.0]:
-			_part("Corner", Vector3(0.013, 0.013, d * 1.25),
-					Vector3(side * (half.x - 0.004), end * (half.y - 0.004), 0.0), armour)
-	var antenna := CylinderMesh.new()
-	antenna.top_radius = 0.0035
-	antenna.bottom_radius = 0.005
-	antenna.height = 0.035
-	antenna.radial_segments = 8
-	var stub := _held_mesh("Antenna", antenna, rubber, _device)
-	stub.position = Vector3(-half.x + 0.018, half.y + 0.014, -d * 0.2)
-	var handle := _part("Handle", grip_size, Vector3.ZERO, rubber)
-	handle.basis = Basis(Vector3.RIGHT, grip_rake)
-	handle.position = Vector3(width * grip_across, -half.y - grip_size.y * 0.42, -d * 0.15)
-	var guard := _part("GripCap", Vector3(grip_size.x * 1.15, 0.012, grip_size.z * 1.2), Vector3.ZERO, armour)
-	guard.basis = handle.basis
-	guard.position = handle.position + handle.basis * Vector3(0.0, -grip_size.y * 0.5, 0.0)
-	grip = Node3D.new()
-	grip.name = "Grip"
-	grip.position = handle.position
-	_device.add_child(grip)
-
+## The screen shown flat, for when there is no hand to hold the device (a
+## headless test, or before your character is built).
+func _build_flat() -> void:
+	_face_mat = Handheld.screen_material(_screen.get_texture())
 	_flat = TextureRect.new()
 	_flat.name = "Flat"
 	_flat.texture = _screen.get_texture()
@@ -987,76 +879,40 @@ func _build_device() -> void:
 	add_child(_flat)
 
 
-## A dark, lightly lit material for the device's body and parts, with a
-## little light of its own so it never goes black in a dark street.
-static func _hardware_material(color: Color) -> StandardMaterial3D:
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = color
-	mat.roughness = 0.55
-	mat.metallic = 0.35
-	mat.emission_enabled = true
-	mat.emission = color
-	mat.emission_energy_multiplier = 0.35
-	return mat
+## The phone is held by `actor`'s own hand: the same handheld every view
+## shows (first person, third person, other players, a mirror), with this
+## screen on its face.
+func set_holder(actor: Node3D) -> void:
+	if holder != null and is_instance_valid(holder) and holder != actor:
+		var old := holder.get_node_or_null("Skin")
+		if old != null and old.has_method("set_phone_screen"):
+			old.set_phone_screen(null)
+	holder = actor
+	_device = null
 
 
-## A box on the device, `size` across at `at` in its frame.
-func _part(node_name: String, size: Vector3, at: Vector3, mat: Material) -> MeshInstance3D:
-	var box := BoxMesh.new()
-	box.size = size
-	var node := _held_mesh(node_name, box, mat, _device)
-	node.position = at
-	return node
+## Finds the handheld in the holder's hand and puts this screen on it. With
+## none (no world, or the phone still coming up) the screen shows flat while
+## the phone is open, so it can always be used.
+func _hold(_camera: Camera3D) -> void:
+	_device = null
+	if holder != null and is_instance_valid(holder) and holder.is_inside_tree():
+		var skin := holder.get_node_or_null("Skin")
+		if skin != null and skin.has_method("handheld"):
+			if skin.phone_screen != _face_mat:
+				skin.set_phone_screen(_face_mat)
+			_device = Handheld.face_of(skin.handheld())
+	_flat.visible = is_open and _device == null and not has_hand()
 
 
-func _held_mesh(node_name: String, mesh: Mesh, mat: Material, parent: Node = null) -> MeshInstance3D:
-	var node := MeshInstance3D.new()
-	node.name = node_name
-	node.mesh = mesh
-	if mat:
-		node.material_override = mat
-	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	node.layers = 1 << (MirrorScript.HELD_LAYER - 1)
-	if parent == null:
-		node.visible = false
-		add_child(node)
-	else:
-		parent.add_child(node)
-	return node
-
-
-## Puts the phone where it is held in front of `camera`: raised into place as
-## it comes out, lowered as it goes away. With no camera the screen shows flat.
-func _hold(camera: Camera3D) -> void:
-	var showing := _raise > 0.0
-	var in_world := camera != null and is_instance_valid(camera) and camera.is_inside_tree()
-	_flat.visible = is_open and not in_world
-	for node: MeshInstance3D in [_device, _glow, _dim]:
-		node.visible = showing and in_world
-	if not showing or not in_world:
-		return
-	var aspect := 16.0 / 9.0
-	var rect := get_viewport().get_visible_rect().size
-	if rect.y > 0.0:
-		aspect = rect.x / rect.y
-	var half_v := tan(deg_to_rad(camera.fov) * 0.5)
-	var distance := device_height * 0.5 / (half_v * fill)
-	var spot := hold_at_mirror if mirror_open() else hold_at
-	var up := ease(_raise, -2.0)
-	var lift := (1.0 - up) * 1.7
-	var origin := Vector3(spot.x * half_v * aspect * distance, (spot.y - lift) * half_v * distance, -distance)
-	# Square to the view, which keeps the screen undistorted, then turned in a
-	# little, tipped back at the top and rolled a touch: more on the way up.
-	var basis := Basis(Vector3.UP, hold_turn * signf(spot.x)) \
-			* Basis(Vector3.RIGHT, -hold_tilt - (1.0 - up) * 0.7) * Basis(Vector3.BACK, hold_roll)
-	var view := camera.global_transform
-	_device.global_transform = view * Transform3D(basis, origin)
-	_glow.global_transform = view * Transform3D(basis, origin + basis.z * -0.02)
-	(_glow.material_override as StandardMaterial3D).albedo_color.a = up
-	var near := maxf(camera.near * 1.5, 0.02)
-	(_dim.mesh as QuadMesh).size = Vector2(half_v * aspect, half_v) * near * 2.4
-	_dim.global_transform = view * Transform3D(Basis.IDENTITY, Vector3(0.0, 0.0, -near))
-	_dim.transparency = 1.0 - up
+## True when the holder has a hand to hold the device in (a dressed
+## character). Then the screen waits for the hand to bring it up rather than
+## flashing up flat.
+func has_hand() -> bool:
+	if holder == null or not is_instance_valid(holder):
+		return false
+	var skin := holder.get_node_or_null("Skin")
+	return skin != null and skin.has_method("handheld") and skin.get("locomotion") != null
 
 
 ## Where a mouse position on the game's screen lands on the phone's screen,
@@ -1069,19 +925,19 @@ func screen_point(mouse: Vector2) -> Vector2:
 		var at := local / scale
 		return at if Rect2(Vector2.ZERO, Vector2(screen_size)).has_point(at) else miss
 	var camera := get_viewport().get_camera_3d()
-	if camera == null or not _device.visible:
+	if camera == null or _device == null or not _device.is_visible_in_tree():
 		return miss
 	var to_local := _device.global_transform.affine_inverse()
 	var o := to_local * camera.project_ray_origin(mouse)
 	var d := to_local.basis * camera.project_ray_normal(mouse)
-	var front := device_depth * 0.5
+	var front := Handheld.DEPTH * 0.5
 	if absf(d.z) < 0.00001:
 		return miss
 	var t := (front - o.z) / d.z
 	if t < 0.0:
 		return miss
 	var p := o + d * t
-	var size := Vector2(device_height * float(screen_size.x) / float(screen_size.y), device_height)
+	var size := Handheld.body_size()
 	var u := p.x / size.x + 0.5
 	var v := 0.5 - p.y / size.y
 	if u < 0.0 or u > 1.0 or v < 0.0 or v > 1.0:
@@ -1089,45 +945,9 @@ func screen_point(mouse: Vector2) -> Vector2:
 	return Vector2(u * screen_size.x, v * screen_size.y)
 
 
-## A rounded slab `size` across and `depth` thick, its face toward +Z.
-## Surface 0 is the face, mapped 0 to 1 across it; surface 1 the edge and back.
+## A rounded slab `size` across and `depth` thick (see `Handheld`).
 static func rounded_slab(size: Vector2, depth: float, radius: float, steps := 8) -> ArrayMesh:
-	var outline: Array[Vector2] = []
-	var half := size * 0.5
-	var r := minf(radius, minf(half.x, half.y))
-	var corners := [Vector2(half.x - r, half.y - r), Vector2(-half.x + r, half.y - r),
-			Vector2(-half.x + r, -half.y + r), Vector2(half.x - r, -half.y + r)]
-	for c in 4:
-		for i in steps + 1:
-			var angle := (c + float(i) / steps) * PI * 0.5
-			outline.append((corners[c] as Vector2) + Vector2(cos(angle), sin(angle)) * r)
-	var front := depth * 0.5
-	var mesh := ArrayMesh.new()
-	var face := SurfaceTool.new()
-	face.begin(Mesh.PRIMITIVE_TRIANGLES)
-	face.set_normal(Vector3.BACK)
-	for i in outline.size():
-		var a := outline[i]
-		var b := outline[(i + 1) % outline.size()]
-		for point: Vector2 in [Vector2.ZERO, b, a]:
-			face.set_uv(Vector2(point.x / size.x + 0.5, 0.5 - point.y / size.y))
-			face.add_vertex(Vector3(point.x, point.y, front))
-	face.commit(mesh)
-	var shell := SurfaceTool.new()
-	shell.begin(Mesh.PRIMITIVE_TRIANGLES)
-	for i in outline.size():
-		var a := outline[i]
-		var b := outline[(i + 1) % outline.size()]
-		var out := Vector3(a.x + b.x, a.y + b.y, 0.0).normalized()
-		shell.set_normal(out)
-		for point: Vector3 in [Vector3(a.x, a.y, front), Vector3(b.x, b.y, front), Vector3(b.x, b.y, -front),
-				Vector3(a.x, a.y, front), Vector3(b.x, b.y, -front), Vector3(a.x, a.y, -front)]:
-			shell.add_vertex(point)
-		shell.set_normal(Vector3.FORWARD)
-		for point: Vector2 in [Vector2.ZERO, a, b]:
-			shell.add_vertex(Vector3(point.x, point.y, -front))
-	shell.commit(mesh)
-	return mesh
+	return Handheld.rounded_slab(size, depth, radius, steps)
 
 
 func _build_notice() -> void:
