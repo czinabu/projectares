@@ -320,7 +320,8 @@ looks and aims. Space climbs, kicks, launches or glides (by rig), C sinks or
 coasts. Shift + a move key is an air dash that way on every rig, for a little
 heat (Shift alone dashes forward); holding Shift + W on a jetpack keeps
 boosting. Wings are the exception to the mouse only looking: they fly
-where you look, like a bird, with momentum. Turns cost speed and pulling up
+where you look, like a bird, with momentum (hold V to free look while
+they fly straight on). Turns cost speed and pulling up
 hard in a turn stalls them. Gliding, Shift is a wing boost that thrusts you
 the way you face and keeps the speed, and Shift + S boosts upward; wings
 never dash sideways. Q and E fly nothing. Every rig dashes, so the dash is not an

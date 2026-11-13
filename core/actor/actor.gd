@@ -546,9 +546,12 @@ func _air_dash(wish: Vector3, yaw_basis: Basis, on_floor: bool, staggered: bool,
 			velocity.y = maxf(velocity.y, flight.glide_boost_climb)
 			return Vector3.ZERO
 		if boost > 0:
-			# A wing boost thrusts you the way you face, and the speed is kept:
-			# the glide carries it and bleeds it off at `glide_drag`.
-			return yaw_basis * Vector3.FORWARD * flight.glide_boost
+			# A wing boost thrusts you the way you face (the way the wings
+			# point, in free look), and the speed is kept: the glide carries
+			# it and bleeds it off at `glide_drag`.
+			var ahead := Vector3(velocity.x, 0.0, velocity.z)
+			var thrust := ahead.normalized() if cmd.free_look and ahead.length() > 1.0 else yaw_basis * Vector3.FORWARD
+			return thrust * flight.glide_boost
 		_air_dash_dir = wish.normalized() if wish.length() > 0.1 else yaw_basis * Vector3.FORWARD
 		air_dash_side = (yaw_basis.inverse() * _air_dash_dir).x
 		air_dash_left = flight.air_dash_time
@@ -602,10 +605,12 @@ func wings_block(weapon: Weapon) -> bool:
 ## wings fly where you look, like a bird (Caleb's call): they bank onto the
 ## view's heading, easing off as the heading comes round to it so they
 ## settle without swinging past. A strafe key held rolls them that way
-## instead, for a harder turn.
+## instead, for a harder turn. Holding free look (`ActorCommand.free_look`)
+## the wings fly straight on and only the strafe keys turn them, so the view
+## can look round and aim anywhere.
 func glide_steer(heading: Vector3, yaw_basis: Basis) -> float:
 	var strafe := clampf(cmd.move.x, -1.0, 1.0)
-	if absf(strafe) > 0.1:
+	if absf(strafe) > 0.1 or cmd.free_look:
 		return strafe
 	var off := heading.signed_angle_to(yaw_basis * Vector3.FORWARD, Vector3.UP)
 	return -clampf(off / maxf(flight.glide_align_angle, 0.01), -1.0, 1.0)

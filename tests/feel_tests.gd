@@ -113,6 +113,22 @@ static func _test_wings(t: Node) -> void:
 	await t.frames(30)
 	t.check(settled.angle_to(Vector3(p.velocity.x, 0, p.velocity.z).normalized()) < 0.02 and absf(p._bank) < 0.1,
 			"and it levels out on the view instead of swinging past")
+	# Free look: held, the wings fly straight on while the view looks away;
+	# let go and they come round onto the view again.
+	p.cmd.free_look = true
+	var held := Vector3(p.velocity.x, 0, p.velocity.z).normalized()
+	p.cmd.yaw = wrapf(p.cmd.yaw + 1.5, -PI, PI)
+	await t.frames(60)
+	t.check(held.dot(Vector3(p.velocity.x, 0, p.velocity.z).normalized()) > 0.999,
+			"holding free look, the wings fly straight on while you look away")
+	var copy := ActorCommand.new()
+	copy.apply_array(p.cmd.to_array())
+	t.check(copy.free_look, "free look travels in the network command")
+	p.cmd.free_look = false
+	view = Basis(Vector3.UP, p.cmd.yaw) * Vector3.FORWARD
+	await t.frames(150)
+	t.check(view.angle_to(Vector3(p.velocity.x, 0, p.velocity.z).normalized()) < 0.05,
+			"and letting go the wings come round onto the view")
 	await t.frames(60)
 	# A wing boost thrusts you the way you face and the glide keeps the speed.
 	var boost_heat := p.flight.heat

@@ -306,7 +306,9 @@ without Caleb, and update the gap list when a PR closes a row.
   bird's (Caleb's call, so you never fly sideways to your view). They bank
   round onto the view's heading (`Actor.glide_steer`), the strafe keys roll
   a harder turn, and forward and back dive or pull up (`Actor.glide_trim`),
-  never the view's pitch. A glide flies like a wing (`Actor._glide_velocity`):
+  never the view's pitch. Holding free look (V, `ActorCommand.free_look`,
+  Caleb's call) the wings fly straight on and the view looks and aims
+  anywhere; let go and they come round onto the view. A glide flies like a wing (`Actor._glide_velocity`):
   speed is momentum, a turn costs speed, a bank sinks faster, pulling up in a
   turn tightens it, and below the stall speed the wings stall
   (`Actor.glide_stalled`: they barely turn and drop at `stall_sink` until the

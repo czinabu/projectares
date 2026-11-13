@@ -23,7 +23,7 @@ skies, animated models and effects (see "How it looks" below).
 | Jetpack hovering: cruise with the move keys, Space climbs, C coasts down to cool, hold Shift + W to boost head first (Mk2). The keys fly every rig; the mouse only looks and aims | |
 | Glide wings gliding: Space again pulses up | |
 | Air dash with any rig, on heat: Shift + a move key dashes that way (Shift alone dashes forward). Sideways while boosting it barrel rolls. Gliding, Shift is a wing boost: it thrusts you the way you face and you keep the speed, and Shift + S boosts upward | Shift + WASD |
-| Gliding: the wings fly where you look, like a bird. A / D bank round harder, W dives for speed, S pulls up to climb on it. Turns cost speed, and pulling up hard in a turn stalls you | |
+| Gliding: the wings fly where you look, like a bird. A / D bank round harder, W dives for speed, S pulls up to climb on it. Turns cost speed, and pulling up hard in a turn stalls you. Hold V to free look while the wings fly straight on | |
 | Use your ability | G |
 | Use your helmet's visor (zoom or scan) | T |
 | Dash (stamina) | Left Alt |

@@ -28,6 +28,9 @@ var descend := false
 ## Pressed this tick: the sprint key went down. In the air with a flight rig
 ## that is a dash the way the move keys point (`FlightRig.air_dash_speed`).
 var sprint_pressed := false
+## Held: free look. Glide wings fly where you look; while this is held they
+## fly straight on instead, so the view can look and aim anywhere.
+var free_look := false
 
 ## Primary and secondary weapon actions (fire / aim, light / heavy attack).
 var primary := false
@@ -104,9 +107,10 @@ const FLAG_SPRINT_PRESSED := 262144
 ## Not an input: the server sets this bit in the commands it sends back with
 ## each state, to say the actor's jets are lit (`FlightRig.is_hovering`).
 const STATE_HOVERING := 1048576
+const FLAG_FREE_LOOK := 2097152
 ## Flags that describe a held key, and flags that last a single tick.
 const HELD_MASK := FLAG_SPRINT | FLAG_JUMP | FLAG_PRIMARY | FLAG_SECONDARY | VISOR_LEVEL_MASK \
-		| FLAG_DESCEND
+		| FLAG_DESCEND | FLAG_FREE_LOOK
 const ONE_SHOT_MASK := FLAG_JUMP_PRESSED | FLAG_DASH | FLAG_PRIMARY_PRESSED | FLAG_SECONDARY_PRESSED \
 		| FLAG_TERTIARY_PRESSED | FLAG_RELOAD_PRESSED | FLAG_INTERACT_PRESSED | FLAG_HEAL_PRESSED \
 		| FLAG_ABILITY_PRESSED | FLAG_SLIDE | FLAG_VISOR_PRESSED | FLAG_SPRINT_PRESSED
@@ -130,6 +134,7 @@ func flags() -> int:
 	if ability_pressed: out |= FLAG_ABILITY_PRESSED
 	if slide: out |= FLAG_SLIDE
 	if descend: out |= FLAG_DESCEND
+	if free_look: out |= FLAG_FREE_LOOK
 	if sprint_pressed: out |= FLAG_SPRINT_PRESSED
 	if visor_pressed: out |= FLAG_VISOR_PRESSED
 	out |= clampi(visor_level, 0, 3) << VISOR_LEVEL_SHIFT
@@ -166,6 +171,7 @@ func apply_array(data: Array) -> void:
 	ability_pressed = bits & FLAG_ABILITY_PRESSED != 0
 	slide = bits & FLAG_SLIDE != 0
 	descend = bits & FLAG_DESCEND != 0
+	free_look = bits & FLAG_FREE_LOOK != 0
 	sprint_pressed = bits & FLAG_SPRINT_PRESSED != 0
 	visor_pressed = bits & FLAG_VISOR_PRESSED != 0
 	visor_level = (bits & VISOR_LEVEL_MASK) >> VISOR_LEVEL_SHIFT
