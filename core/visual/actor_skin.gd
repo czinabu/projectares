@@ -191,6 +191,10 @@ var _wired := {}
 var _flash_left := 0.0
 var _materials: Array[ShaderMaterial] = []
 var _skeleton: Skeleton3D
+## The raised watch's glow on the left wrist, and how far it is up (0..1).
+var _watch_glow: Node3D
+var _watch_up := 0.0
+const WATCH_GLOW := Color(0.35, 0.95, 1.0)
 var _def := {}
 ## The flight rig being worn: its item id, the nodes holding its parts, its
 ## back part (or null), and a flame per nozzle.
@@ -278,6 +282,8 @@ var _moving: Weapon
 var _moving_weight := 0.0
 ## Makes the model hold its weapon, or null for skins without the bones.
 var arm: Node
+## The phone in the hands while `phone_up`, built the first time.
+var _phone_prop: Node3D
 ## Matches the legs to the actor's speed and direction.
 var locomotion: Node
 
@@ -324,6 +330,9 @@ func _ready() -> void:
 		arm.setup(def, _player.get_animation(_anims["idle_melee"]) if _player and _anims.has("idle_melee") else null)
 		# After the arm has put the hand on the model's hand.
 		skeleton.skeleton_updated.connect(_carry_moving)
+	if skeleton:
+		# Last, so the phone has the right hand whatever the arm was doing.
+		locomotion.add_phone_hook()
 	if skeleton:
 		_setup_glide_pose(skeleton, def)
 
@@ -390,8 +399,13 @@ func _process(delta: float) -> void:
 	_update_stowed()
 	_update_switch(delta)
 	_update_vitals()
+	_update_phone()
+	_update_watch_glow(delta)
 	_aim_left = maxf(_aim_left - delta, 0.0)
 	var weapon := actor.get_active_weapon()
+	if phone_up():
+		# Hands on the phone: stand as if empty-handed.
+		weapon = null
 	var melee := weapon as MeleeWeapon
 	if locomotion == null:
 		return
@@ -457,6 +471,75 @@ func flies_stowed() -> bool:
 	if not (actor.flight.is_gliding or actor.flight.is_boosting):
 		return false
 	return _flight_draw_left <= 0.0
+
+
+## True while the actor holds their phone up (`ActorCommand.phone`, which
+## travels with the held keys, so remote players show it too). The weapon is
+## worn meanwhile and drawn again when the phone goes away.
+func phone_up() -> bool:
+	return actor.cmd.phone and not actor.is_dead and actor.vehicle == null
+
+
+## Eases the phone hold in and out and keeps the phone itself in the right
+## hand, its lit screen turned up to the face.
+func _update_phone() -> void:
+	if locomotion == null:
+		return
+	locomotion.phone_up = phone_up()
+	var w: float = locomotion.phone_weight
+	if w <= 0.0:
+		if _phone_prop:
+			_phone_prop.visible = false
+		return
+	if _phone_prop == null:
+		_phone_prop = _build_phone_prop()
+		add_child(_phone_prop)
+	_phone_prop.visible = w > 0.5
+	var held: Vector3 = locomotion.phone_in_hand if locomotion.phone_in_hand != Vector3.ZERO else locomotion.phone_at
+	var at: Vector3 = actor.global_transform * held
+	var eyes := actor.global_transform * Vector3(0.0, actor.eye_height, 0.0)
+	var face := (eyes - at).normalized()
+	var basis := Basis.looking_at(-face, actor.global_basis.orthonormalized() * Vector3.FORWARD)
+	_phone_prop.global_transform = Transform3D(basis, at)
+
+
+## A greybox phone: a dark slab with a bright screen on the face (+Z) and a
+## faint glow that lights the face looking at it, so it reads from afar.
+func _build_phone_prop() -> Node3D:
+	var root := Node3D.new()
+	root.name = "PhoneProp"
+	var body := MeshInstance3D.new()
+	var slab := BoxMesh.new()
+	slab.size = Vector3(0.085, 0.175, 0.011)
+	body.mesh = slab
+	var dark := StandardMaterial3D.new()
+	dark.albedo_color = Color(0.12, 0.12, 0.13)
+	dark.metallic = 0.6
+	dark.roughness = 0.35
+	body.material_override = dark
+	root.add_child(body)
+	var glass := MeshInstance3D.new()
+	var quad := QuadMesh.new()
+	quad.size = Vector2(0.075, 0.16)
+	glass.mesh = quad
+	glass.position = Vector3(0.0, 0.0, 0.0057)
+	var lit := StandardMaterial3D.new()
+	lit.albedo_color = Color(0.25, 0.42, 0.55)
+	lit.emission_enabled = true
+	lit.emission = Color(0.35, 0.6, 0.8)
+	lit.emission_energy_multiplier = 3.0
+	glass.material_override = lit
+	root.add_child(glass)
+	var glow := OmniLight3D.new()
+	glow.light_color = Color(0.55, 0.78, 1.0)
+	glow.light_energy = 1.6
+	glow.omni_range = 0.7
+	glow.position = Vector3(0.0, 0.0, 0.06)
+	glow.shadow_enabled = false
+	root.add_child(glow)
+	for mesh: MeshInstance3D in [body, glass]:
+		mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	return root
 
 
 ## True once the actor has been off the ground long enough to show it.
@@ -585,7 +668,7 @@ func _update_switch(delta: float) -> void:
 	var active := actor.get_active_weapon()
 	# Flying flat with the arms at the sides, the weapon is worn, not left
 	# hanging in the air where the hands were. Shooting or aiming draws it.
-	if flies_stowed():
+	if flies_stowed() or phone_up():
 		active = null
 	if _in_hand != null and (not is_instance_valid(_in_hand) or not _in_hand in actor.weapons):
 		_in_hand = null
@@ -791,6 +874,57 @@ func _update_vitals() -> void:
 			_glow(light, ink, 2.2)
 		"charging":
 			_glow(light, ink.darkened(0.6), 0.3)
+
+
+## A raised watch (`ActorCommand.watch_up`) glows on the left wrist, so
+## anyone can see who is looking at their watch: a small lit spark over the
+## wrist and a soft light on the arm. Only that it is up shows, never what is
+## on it. Fades in and out with the raise.
+func _update_watch_glow(delta: float) -> void:
+	var goal := 1.0 if actor.cmd.watch_up and not actor.is_dead else 0.0
+	_watch_up = move_toward(_watch_up, goal, delta / 0.18)
+	if _watch_up <= 0.0:
+		if _watch_glow != null and is_instance_valid(_watch_glow):
+			_watch_glow.visible = false
+		return
+	if _watch_glow == null or not is_instance_valid(_watch_glow):
+		if _skeleton == null or _skeleton.find_bone("Wrist.L") < 0:
+			return
+		var attach := BoneAttachment3D.new()
+		attach.name = "WatchGlow"
+		attach.bone_name = "Wrist.L"
+		_skeleton.add_child(attach)
+		var spark := MeshInstance3D.new()
+		spark.name = "Spark"
+		var quad := QuadMesh.new()
+		quad.size = Vector2(0.06, 0.035)
+		spark.mesh = quad
+		var mat := StandardMaterial3D.new()
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+		mat.albedo_color = WATCH_GLOW
+		spark.material_override = mat
+		spark.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		attach.add_child(spark)
+		var light := OmniLight3D.new()
+		light.name = "Light"
+		light.light_color = WATCH_GLOW
+		light.omni_range = 0.6
+		attach.add_child(light)
+		# Undo the model's import scale so the glow keeps its size.
+		var s := _skeleton.global_basis.get_scale()
+		for child: Node3D in [spark, light]:
+			child.scale = Vector3(1.0 / maxf(s.x, 0.001), 1.0 / maxf(s.y, 0.001), 1.0 / maxf(s.z, 0.001))
+		_watch_glow = attach
+	_watch_glow.visible = true
+	var spark_node := _watch_glow.get_node("Spark") as MeshInstance3D
+	spark_node.position = _watch_glow.global_basis.inverse() * Vector3.UP * 0.08
+	if actor.body_mesh:
+		spark_node.layers = actor.body_mesh.layers
+	(spark_node.material_override as StandardMaterial3D).albedo_color = Color(WATCH_GLOW, 0.85 * _watch_up)
+	(_watch_glow.get_node("Light") as OmniLight3D).light_energy = 0.6 * _watch_up
 
 
 func _build_vitals() -> void:
@@ -1042,7 +1176,9 @@ func _update_ride() -> void:
 	var vehicle: Node3D = actor.vehicle if not actor.is_dead else null
 	locomotion.ride = vehicle
 	if arm:
-		arm.ride_grip = locomotion.grip_hold()
+		# The right hand's fingers wrap the phone while it is up.
+		var phone_grip := Vector2(0.0, 0.6 * smoothstep(0.0, 1.0, locomotion.phone_weight))
+		arm.ride_grip = locomotion.grip_hold().max(phone_grip)
 	if vehicle == null:
 		return
 	var free := _in_hand == null and _plan.is_empty()

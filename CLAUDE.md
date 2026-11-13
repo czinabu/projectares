@@ -397,9 +397,13 @@ without Caleb, and update the gap list when a PR closes a row.
   the lock brackets stay (`VisorHud.reticle_shown`), and the helmet wears
   its health strip and system light on the back of the head
   (`ActorSkin._update_vitals`, `helmet_light`), where a pack or a slung gun
-  never covers them. Apart from the
-  thin health arc, do not repeat the wrist on the glass (ammo, the map,
-  standing): the wrist shows you, the visor shows what is around you. Mk2
+  never covers them. The glass carries
+  only your always-in-view readings (the health arc with armor and stamina
+  inside it and the ability's state under it, and with a flight rig the
+  heat gauge and rig cue high on the right, `VisorHud._draw_vitals` and
+  `_draw_heat`; squad markers and the landing warning are still to come,
+  per DESIGN.md sections 3 and 5); do not put the map or standing there, they
+  stay on the watch. Mk2
   helmets are loot only. Check the glass by eye with
   `visual_check.tscn -- <dir> --visors-only`.
 - Vehicles are items tagged `vehicle`, tuned by their stats, and spawned by
@@ -453,8 +457,9 @@ without Caleb, and update the gap list when a PR closes a row.
   them (`NetSession.InputBuffer`): nothing is held back to smooth a bad
   connection, because a held input is input delay. A tick with nothing to
   play is a guess (the held keys carry on) that counts as the next input,
-  and the real one is skipped when it arrives late, keeping its presses;
-  inputs that stay spare are trimmed. Each state entry carries the input
+  and the real one is skipped when it arrives late, keeping its presses
+  and any held key that went down in it (a one-tick tap of the trigger is a
+  shot, see `InputBuffer._late_taps`); inputs that stay spare are trimmed. Each state entry carries the input
   number the actor had been simulated up to (guesses included), and a
   player's own entry also carries the newest input received, which is the
   answer that stops the resending. The client corrects its own
@@ -488,7 +493,14 @@ without Caleb, and update the gap list when a PR closes a row.
   a name in `SocialService.PLACE_NAMES`. The phone's Controls app lists
   every key from `Phone.CONTROLS`, whose `{action}` names are filled in from
   the live `InputMap`; a new input action needs a row there (a test fails
-  otherwise), and a changed control needs its row's wording updated. Settings live in
+  otherwise), and a changed control needs its row's wording updated. The phone
+  is held, not overlaid: its screen is a `SubViewport` on a rounded slab held
+  up in front of the camera (drawn over the world on `Mirror.HELD_LAYER`, the
+  scene dimmed behind it), with a home screen of app icons; a new app is an
+  entry in `Phone.APPS` with an icon glyph in `Phone.AppIcon`. Holding it is
+  `ActorCommand.phone`, a held flag, so everyone else sees the one-handed hold
+  (`Locomotion.phone_pose`, the one place to swap in a shared hand pose).
+  Settings live in
   `core/settings/game_settings.gd` (its own save file); a server never reads them.
 - Dev mode is TEMPORARY (Caleb's call, to come out once the game is further
   along): `core/dev/dev_mode.gd`, switched in the phone's Settings app and
@@ -544,13 +556,25 @@ without Caleb, and update the gap list when a PR closes a row.
   add full-screen panels or overlays; information about a thing goes on or
   next to the thing (a `Label3D` tag, a sign) or into the phone. The HUD is
   for the crosshair, prompts, hit feedback and brief notices.
-- The watch and the phone split the job (Caleb's rule). The holographic
-  watch (`Hud.Wrist`, raised with X) is for gameplay: vitals, pack, ammo,
-  heat, standing and strongpoints, landing choices, and future in-raid
-  actions such as calling something in. The phone is for settings, talking
-  to friends and players, and information (news, the war feed). A new
-  in-raid action goes on the watch; a new social or info feature is a
-  phone app.
+- The watch and the phone split the job (Caleb's rule, revised: the watch no
+  longer carries vitals, heat and ammo; see DESIGN.md section 3). Vitals,
+  flight heat and ammo are always in view on the visor and the gear (health
+  arc, gun display, pack screen), so no key is needed to see them. The
+  holographic watch (`Hud.Wrist`, raised with X) is for the things you choose
+  to do in action: vehicles, the heavy weapon, artifacts, sign-out, banking,
+  the map and pings, landing choices and the pack. The phone is for
+  settings, talking to friends and players, and information (news, the war
+  feed). A new in-raid action goes on the watch; a new social or info
+  feature is a phone app. The watch is a card-sized hologram of icons, one
+  per thing it holds (`Hud.watch_slots`, `Hud.Wrist.SLOTS`): the icon you
+  look at opens with one short line, and controls are glyphs (wheel, click,
+  key cap), never words. Where you look is `PlayerController.watch_glance`
+  (sideways mouse moves the eyes across the card before the head). A new
+  watch feature is a new slot, not a new line of text. In third person the
+  card rises off the worn watch with a glow on the arm; it is never hung in
+  front of the camera. Vitals go on the card only where the visor cannot
+  show them (no helmet, or third person). Check it by eye with
+  `visual_check.tscn -- <dir> --watch-only`.
 - Money (`core/economy/`): the rules live once, in `economy.gd` (static, like
   `StashRules`), shared by `Profile` and `StashService`. Online, `credits`
   lives on the server's account and only changes there: through

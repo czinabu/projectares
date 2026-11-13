@@ -914,25 +914,76 @@ func _test_main_flow() -> void:
 	await frames(30)
 	check(controller.wrist_raised and wrist.is_open() and holo.visible and wrist.get_parent() == p
 			and wrist.text().contains(main.raid.world.display_name) and wrist.text().contains("Pack "),
-			"X raises the watch, and in third person its hologram opens over your wrist")
-	var cam_to_holo := holo.global_position - controller.camera.global_position
-	var depth := cam_to_holo.dot(-controller.camera.global_basis.z)
-	check(depth > 0.0 and depth < wrist.projection_distance + 0.05,
-			"the third-person hologram hangs in front of the camera, close enough to read")
+			"X raises the watch, and in third person its card opens over your wrist")
+	var card_width := holo.global_basis.get_scale().x * wrist.face_size.x
+	var from_cam := controller.camera.global_position
+	check(from_cam.distance_to(holo.global_position) > from_cam.distance_to(p.get_eye_position()) + 0.3
+			and card_width < 2.0,
+			"the third-person card hangs out in front of the character, never behind them")
+	var card_on_screen := controller.camera.unproject_position(holo.global_position + controller.camera.global_basis.x * card_width * 0.5)
+	var head_on_screen := controller.camera.unproject_position(p.get_eye_position())
+	check(card_on_screen.x < head_on_screen.x, "and it keeps clear of the head and helmet on screen")
+	check(not (holo.material_override as ShaderMaterial).shader.code.contains("depth_test_disabled"),
+			"in third person the body passes in front of the card, like real light")
+	check(p.cmd.watch_up, "and the raised watch goes out with your inputs, so the arm glows for everyone")
+	var icons: Array = []
+	for slot in wrist.card.slots:
+		icons.append(slot.id)
+	check(icons == Hud.Wrist.SLOTS, "the card is a row of icons: %s" % ", ".join(icons))
+	check(wrist.card.bars.size() >= 3, "in third person the card carries the vitals strip, since there is no glass")
+	# Looking across the card opens the icon under your eyes, and barely
+	# turns the view.
+	var yaw_before := controller.yaw
+	var glance := InputEventMouseMotion.new()
+	glance.relative = Vector2(-2000.0, 0.0)
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	var captured := Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
+	if captured:
+		controller._unhandled_input(glance)
+	else:
+		controller.yaw -= controller.glance(glance.relative.x * controller.mouse_sensitivity)
+	await frames(2)
+	check(controller.watch_glance == -1.0 and wrist.focused_id() == "map" and wrist.text().begins_with(main.raid.world.display_name),
+			"glancing left along the card opens the map icon")
+	check(controller.yaw > yaw_before, "once the eyes reach the card's edge the head turns on")
+	controller.yaw = yaw_before
+	var small := controller.glance(controller.glance_span * 0.5)
+	check(is_zero_approx(small) and is_zero_approx(controller.watch_glance),
+			"a small glance moves only the eyes, not the view")
+	Input.action_press("fire")
+	check(is_equal_approx(controller.glance(0.05), 0.05) and is_zero_approx(controller.watch_glance),
+			"while firing, the mouse turns the view, not the eyes")
+	Input.action_release("fire")
 	controller.toggle_view()
 	await frames(40)
 	check(wrist.get_parent() == controller.camera and arm.visible and holo.visible,
-			"in first person your forearm comes up into view with the hologram over it")
+			"in first person your forearm comes up into view with the card over it")
+	check(holo.global_basis.get_scale().x * wrist.face_size.x < 0.2, "the card is card-sized, not a panel")
+	check(wrist.get_node("Beam").visible and (wrist.get_node("Beam") as MeshInstance3D).mesh.get_surface_count() > 0
+			and is_equal_approx(float((holo.material_override as ShaderMaterial).get_shader_parameter("open")), 1.0),
+			"light is thrown up from the watch face to the card, which is drawn as a hologram")
 	var narrow := holo.scale.x
 	controller.camera.fov = 110.0
 	wrist.mount(p, controller, true)
-	check(holo.scale.x > narrow * 1.3, "a wider view grows the hologram, so it reads the same")
+	check(holo.scale.x > narrow * 1.3, "a wider view grows the card, so it reads the same")
 	controller.camera.fov = controller.base_fov
 	check(Hud.Wrist.face_tint(0.1).r > 0.9 and Hud.Wrist.face_tint(1.0).b > 0.9,
 			"the watch face glows red when you are low and cyan when you are well")
 	controller._unhandled_input(x_key)
 	await frames(30)
 	check(not controller.wrist_raised and not holo.visible and not arm.visible, "X again puts it away")
+	var leaving := Hud.watch_slots(main.raid, p, 0, "", 0.5)
+	var leave_at := Hud.Wrist.SLOTS.find("leave")
+	check(is_equal_approx(float(leaving[leave_at].progress), 0.5) and Hud.default_focus(leaving) == leave_at,
+			"signing out fills a ring on the sign-out icon, and the card opens on it")
+	check(Hud.watch_slots(main.raid, p)[Hud.Wrist.SLOTS.find("artifact")].empty,
+			"the artifact slot is an empty socket until artifacts exist")
+	check(Hud.Wrist.slot_at(Hud.Wrist.glance_of(4, 6), 6) == 4 and Hud.Wrist.slot_at(-1.0, 6) == 0
+			and Hud.Wrist.slot_at(1.0, 6) == 5, "the glance maps across the card's icons")
+	# One long frame must not throw the landing dip's spring (and the camera).
+	controller._dip_speed = 9.0
+	controller._update_dip(0.5)
+	check(is_finite(controller._dip) and absf(controller._dip) < 0.3, "a long frame leaves the landing dip steady")
 	var gun: Gun = null
 	for w in p.weapons:
 		if w is Gun:
@@ -3063,7 +3114,7 @@ func _test_strongpoints() -> void:
 			"in a co-op world a site one player takes belongs to them all")
 	check(feed.has("The raiders took Echo Post from the Wardens"), "taking a site from the bots is announced (%s)" % " / ".join(feed))
 	check(a.renown == 150 and b.renown == 0 and notices.has("Took Echo Post   +150 renown"), "the players who were there are paid renown")
-	check(Hud.sites_text(raid, a) == "Echo Post: yours" and Hud.sites_text(raid, b) == "Strongpoints held: 1 of 3",
+	check(Hud.sites_text(raid, a) == "Echo Post: yours" and Hud.sites_text(raid, b) == "Held 1/3",
 			"the HUD shows what you hold")
 	var warden: Actor = raid.bots.filter(func(bot: Actor) -> bool: return bot.faction == "warden")[0]
 	warden.global_position = point.global_position + Vector3(-3, 0, 0)
@@ -3123,7 +3174,7 @@ func _test_strongpoints() -> void:
 			return gale.raid.strongpoints.size() == 3 and gale.raid.strongpoints.all(
 					func(p: Strongpoint) -> bool: return p.holder_name == "the Wardens")
 		await _wait_until(told, 180)
-		check(told.call() and Hud.sites_text(gale.raid, gale.raid.player) == "Strongpoints held: 0 of 3",
+		check(told.call() and Hud.sites_text(gale.raid, gale.raid.player) == "Held 0/3",
 				"the server tells a client who holds each strongpoint")
 		await _leave(gale)
 	OS.kill(pid)
@@ -3288,7 +3339,7 @@ func _test_scrip() -> void:
 	Combat.deal(raid.bots[0], DamageInfo.make(9999.0, a, "bullet"))
 	Combat.deal(raid.bots[0], DamageInfo.make(9999.0, a, "bullet"))
 	await frames(2)
-	check(a.scrip == 2 * StashService.Economy.KILL_BOUNTY and "Scrip 40" in Hud.standing_text(a) and b.scrip == 0,
+	check(a.scrip == 2 * StashService.Economy.KILL_BOUNTY and "40 scrip" in Hud.wrist_text(raid, a, {}, 0.0) and b.scrip == 0,
 			"kills pay scrip that you carry (%d)" % a.scrip)
 
 	# Banking makes it safe.
@@ -3343,6 +3394,11 @@ func _test_online() -> void:
 			and copy.sprint and copy.primary and copy.dash and copy.ability_pressed
 			and not copy.jump and not copy.heal_pressed and copy.stance == 2 and copy.switch_weapon == 1,
 			"a command survives the trip through its network form")
+	cmd.watch_up = true
+	var packed: Array = NetSession.unpack_inputs(NetSession.pack_inputs([[1, cmd.to_array(), 0]]))[0][1]
+	copy.apply_array(packed)
+	check(copy.watch_up and int(packed[ActorCommand.FLAGS_INDEX]) & ActorCommand.HELD_MASK & ActorCommand.FLAG_WATCH_UP != 0,
+			"a raised watch travels with the held keys, so others see it")
 	copy.apply_array([99.0, 99.0, "x", 50.0, NAN, 0.0, 0.0, 0, 7, 99])
 	check(copy.move.length() <= 1.001 and is_zero_approx(copy.yaw) and copy.pitch <= 1.5
 			and copy.aim_dir == Vector3.ZERO and copy.stance == 2 and copy.switch_weapon <= 8,
@@ -4278,8 +4334,11 @@ func _test_vehicle_toys() -> void:
 	check(hud.wrist.toys_shown() == raid.stowed_for(p) and hud.wrist.get_node("Hologram/Toys").get_child_count() == 2,
 			"the watch stands each toy over its hologram")
 	var shown := hud.wrist.get_node("Hologram/Toys")
-	check(shown.get_child(1).scale.x > shown.get_child(0).scale.x and hud.wrist.text().contains("Raider Bike")
-			and hud.wrist.text().contains("click: take"), "the picked toy stands out and the watch names it")
+	check(shown.get_child(1).scale.x > shown.get_child(0).scale.x and hud.wrist.focused_id() == "vehicle"
+			and hud.wrist.text().begins_with("Raider Bike") and shown.visible,
+			"the card opens on the vehicles, the picked toy stands out and the watch names it")
+	check("wheel" in hud.wrist.focused_hints() and "click" in hud.wrist.focused_hints()
+			and not hud.wrist.text().contains("click"), "its controls are glyphs, not words")
 	check(Hud.Wrist.toy_tint(true, true) != Hud.Wrist.toy_tint(true, false), "the toys dim while the watch recharges")
 	controller.take_picked_toy()
 	check(controller.held_toy == "bike_raider" and not controller.wrist_raised and not controller.is_browsing_toys(),
@@ -4296,7 +4355,8 @@ func _test_vehicle_toys() -> void:
 	check(controller.pack_target() == third and controller.click_watch() and packs[0] == 1 and controller.held_toy == "",
 			"with the watch up, clicking on a bike asks to pack it")
 	hud._process(0.016)
-	check(hud.wrist.text().contains("click: pack Raider Bike"), "and the watch says so")
+	check(hud.wrist.text().begins_with("Pack Raider Bike") and hud.wrist.focused_hints() == ["click"],
+			"and the watch says so, with a click glyph")
 	_aim_at(p, p.global_position + Vector3(0, 1.6, 10))
 	controller.yaw = p.cmd.yaw
 	controller.pitch = p.cmd.pitch
@@ -5161,6 +5221,7 @@ func _test_stash_service() -> void:
 const SocialService := preload("res://core/social/social_service.gd")
 const GameSettings := preload("res://core/settings/game_settings.gd")
 const PhoneScript := preload("res://core/phone/phone.gd")
+const MirrorScript := preload("res://core/visual/mirror.gd")
 const DevMode := preload("res://core/dev/dev_mode.gd")
 const DevEconomy := preload("res://core/economy/economy.gd")
 const DevStashRules := preload("res://core/account/stash_rules.gd")
@@ -5514,6 +5575,7 @@ func _test_phone_view() -> void:
 	check(phone.unseen_news() == SocialService.GAME_NEWS.size(), "unread news is counted")
 	phone.toggle()
 	check(phone.is_open and events == [true], "the phone opens")
+	await _test_phone_home(phone)
 	phone.open_app("news")
 	check(phone.unseen_news() == 0 and phone._body.get_child_count() == SocialService.GAME_NEWS.size(),
 			"news can be read offline")
@@ -5545,13 +5607,106 @@ func _test_phone_view() -> void:
 	raid.add_child(controller)
 	await frames(2)
 	controller.input_blocked = true
+	controller.phone_out = true
 	await frames(2)
 	check(raid.player.cmd.move == Vector2.ZERO and not raid.player.cmd.primary, "with the phone out the character lets go of the controls")
+	check(raid.player.cmd.phone, "and holds the phone up")
 	controller.input_blocked = false
+	controller.phone_out = false
+	await frames(2)
+	check(not raid.player.cmd.phone, "putting it away lowers it")
 	await _end_raid(raid)
 	GameSettings.reset()
 	phone.queue_free()
 	await frames(1)
+
+
+## The home screen, its icons and badges, going back, and the phone held up
+## in front of a camera with the scene dimmed behind it.
+func _test_phone_home(phone: CanvasLayer) -> void:
+	check(phone.app == PhoneScript.HOME and phone._home.visible and not phone._page.visible,
+			"the phone opens on its home screen")
+	check(phone._icons.size() == PhoneScript.APPS.size() and phone._icons.keys().all(
+			func(a: String) -> bool: return a in PhoneScript.APPS), "every app has an icon on the home screen")
+	check(phone._icons["news"].badge == SocialService.GAME_NEWS.size() and phone._icons["settings"].badge == 0,
+			"unread news shows as a badge on the News icon")
+	phone._icons["news"].tapped.emit()
+	check(phone.app == "news" and phone._page.visible and not phone._home.visible and phone._title.text == "News",
+			"tapping an icon opens the app")
+	check(phone._icons["news"].badge == 0, "reading the news clears its badge")
+	phone.go_back()
+	check(phone.app == PhoneScript.HOME and phone._home.visible, "back goes home")
+	phone.open_app("messages")
+	phone.chat_with = "someone"
+	phone.go_back()
+	check(phone.app == "messages" and phone.chat_with == "", "back from a conversation goes to the list of them")
+	phone.go_home()
+	check(phone.app == PhoneScript.HOME, "the home bar goes home from anywhere")
+	phone.close()
+	phone.open()
+	check(phone.app == PhoneScript.HOME, "it opens where it was left")
+	check(phone._status.text.length() == 5 and phone._who.text == "Solo" and phone._bars.strength == 0,
+			"the status bar has the time, no signal and Solo while offline")
+
+	# No camera: the screen shows flat, and a click on it lands on it.
+	await _drawn_frames(2)
+	check(phone._flat.visible and not phone._device.visible, "with no camera the screen shows flat")
+	var middle: Vector2 = phone._flat.get_global_rect().get_center()
+	check(phone.screen_point(middle).distance_to(Vector2(phone.screen_size) * 0.5) < 1.0,
+			"a click on the flat screen lands in the same spot on the phone")
+	check(phone.screen_point(phone._flat.get_global_rect().position - Vector2(5, 5)).x < 0.0, "a click beside it misses")
+
+	# A camera: the phone is held up in front of it, drawn over the world.
+	var stage := Node3D.new()
+	add_child(stage)
+	var camera := Camera3D.new()
+	camera.fov = 75.0
+	stage.add_child(camera)
+	camera.make_current()
+	phone._raise = 1.0
+	await _drawn_frames(2)
+	check(phone._device.visible and not phone._flat.visible and phone._dim.visible,
+			"with a camera the phone is held up in the world, the scene dimmed behind it")
+	var at: Vector3 = camera.global_transform.affine_inverse() * phone._device.global_position
+	check(at.z < -camera.near and at.x > 0.0, "it is held in front of the eyes, to the right")
+	var face: Vector3 = phone._device.global_basis.z
+	check(face.dot(-at.normalized()) > 0.9, "its screen faces the eyes")
+	var mat := phone._device.get_surface_override_material(0) as StandardMaterial3D
+	check(mat.no_depth_test and mat.albedo_texture == phone._screen.get_texture(),
+			"the screen shows the phone's display and is never hidden in a wall")
+	var centre: Vector3 = phone._device.global_position + face * phone.device_depth * 0.5
+	var mouse := camera.unproject_position(centre)
+	check(phone.screen_point(mouse).distance_to(Vector2(phone.screen_size) * 0.5) < 4.0,
+			"the mouse on the phone lands on its screen")
+	check(phone.screen_point(Vector2(1, 1)).x < 0.0, "the mouse off the phone misses it")
+	check(phone._device.layers == 1 << (MirrorScript.HELD_LAYER - 1), "a mirror never shows the held phone")
+	var slab: ArrayMesh = PhoneScript.rounded_slab(Vector2(0.15, 0.3), 0.02, 0.03)
+	check(slab.get_surface_count() == 2 and slab.get_aabb().size.is_equal_approx(Vector3(0.15, 0.3, 0.02)),
+			"the phone is a rounded slab, its face a surface of its own")
+	phone.close()
+	var lowered := Time.get_ticks_msec() + int(phone.raise_time * 1000.0) + 200
+	while Time.get_ticks_msec() < lowered:
+		await _drawn_frames(1)
+	await _drawn_frames(2)
+	check(not phone._device.visible and not phone._dim.visible, "put away, it lowers out of view")
+	phone.open()
+	camera.queue_free()
+	stage.queue_free()
+	await _drawn_frames(1)
+
+	# The flag that shows everyone else the phone is a held key.
+	var cmd := ActorCommand.new()
+	cmd.phone = true
+	var back := ActorCommand.new()
+	back.apply_array(cmd.to_array())
+	check(back.phone and cmd.flags() & ActorCommand.HELD_MASK & ActorCommand.FLAG_PHONE != 0,
+			"holding the phone travels with the held keys, so others see it")
+
+
+## Frames drawn, not physics ticks: the phone is placed as the view is drawn.
+func _drawn_frames(count: int) -> void:
+	for i in count:
+		await get_tree().process_frame
 
 
 func _test_online_phone() -> void:
