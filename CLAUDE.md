@@ -741,14 +741,29 @@ without Caleb, and update the gap list when a PR closes a row.
   the map and pings, landing choices and the pack. The phone is for
   settings, talking to friends and players, and information (news, the war
   feed). A new in-raid action goes on the watch; a new social or info
-  feature is a phone app. The watch is a card-sized hologram of icons, one
-  per thing it holds (`Hud.watch_slots`, `Hud.Wrist.SLOTS`): the open icon
-  shows one short line, and controls are glyphs (wheel, click, key cap),
-  never words. The mouse wheel moves across the card
+  feature is a phone app. The watch is a card-sized hologram of icons in
+  three tabs (`Hud.Wrist.TABS`, `TAB_SLOTS`, `SLOTS`; DESIGN.md section 3):
+  Summon (weapons, vehicles, artifacts, with the pack's line under it),
+  Status (map, standing) and Mission (contract, ping, sign-out). The open
+  icon shows one short line, and controls are glyphs (wheel, click, key
+  cap), never words. The mouse wheel moves across the card tab after tab
   (`PlayerController.watch_focus`, `step_watch`; Caleb's call), turning
-  through the toys on the vehicle icon before stepping on, and the mouse
-  only looks. While the watch is up the wheel never switches weapons. A new
-  watch feature is a new slot, not a new line of text. In third person the
+  through what an icon holds (weapons, toys, artifacts: `watch_entries`)
+  before stepping on, and the mouse only looks. While the watch is up the
+  wheel never switches weapons. A new watch feature is a new slot on a
+  tab, not a new line of text; something that only matters now and then is
+  a pop-up line (`Wrist.show_card`'s `popup`), not a slot. The summon
+  carousel (Caleb's call) shows only what is carried, never the stash:
+  `Hud.weapon_entries` is the weapons worn then in the pack, and picking
+  one in the pack asks the authority's `Raid.summon` (`NetSession.summon`
+  online), which swaps it with the one worn in its slot through
+  `Loadout.swap_weapon` (the old one goes in the pack with its rounds,
+  `Actor.stowed_rounds`; clients copy it from `Actor.weapon_swapped`). It
+  takes `Loadout.summon_time` by weight, during which the weapon cannot be
+  used (`Actor.materialize_left`) and is drawn digitizing in on the one
+  body (`ActorSkin._update_materialize`), then the watch rests
+  (`Loadout.summon_cooldown`). The squad ping (`Raid.ping`, `pinged`) goes
+  only to the pinger's side, like a visor tag. In third person the
   card rises off the worn watch with a glow on the arm; it is never hung in
   front of the camera. Vitals go on the card only where the visor cannot
   show them (no helmet, or third person). The watch works in the home base

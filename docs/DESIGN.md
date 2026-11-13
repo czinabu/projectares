@@ -242,18 +242,54 @@ frames or tints the view, and the same readings with no helmet worn appear
 on the gear alone (the gun and the pack). They show only your own state,
 never an enemy's.
 
+### The summon carousel (Caleb's call)
+
+Raising the watch opens a holo carousel, like pulling gear out of thin air:
+scroll through what you carry and pick it, and it materializes. The pack is
+the storage behind it.
+
+- **Only what you carry.** The carousel shows your loadout and your pack,
+  never the stash. Whatever you can summon is still what you drop when you
+  die, so the extraction stakes stay. The pack's capacity still applies: a
+  summoned weapon swaps places with the one worn in its slot, which goes into
+  the pack with the rounds it had.
+- **Three tabs**, stepped through with the mouse wheel:
+  - **Summon:** weapons (worn ones are drawn with a click, ones in the pack
+    are materialized into your hand), vehicles (the toy carousel) and
+    artifacts (the attuned one is used; others carried are shown but stay
+    loot, one per outing). The pack's fill, worth, heals and scrip sit under
+    the tab, so there is no separate pack page.
+  - **Status:** the map and where the war is, your standing and the hunted
+    warning, under the vitals strip where the visor cannot show it.
+  - **Mission:** the contract tracker (filled in by the contracts work), a
+    squad ping, and sign-out and banking.
+- **Pop-ups only while they matter:** the death report and landing choices
+  when you go down, the flight rig's status while flying, and a brief notice.
+- **Balance:** a weapon takes time to materialize by weight (a sidearm about
+  half a second, a rifle about a second, two-handers and marksman rifles
+  longer) and cannot be used until it is solid; then the watch rests for a
+  few seconds before the next. Vehicles keep their own recharge. So nobody
+  swaps for free mid-gunfight.
+- **The same in both views:** a weapon digitizes into the one real hand
+  under a shimmer of light, and the carried weapons stand over the card as
+  small holograms of their real models.
+- **Gearing up stays at the base locker.** The watch only handles what is
+  on you.
+
 ### What the watch holds
 
 | Feature | What it does |
 | --- | --- |
+| Weapon carousel | The weapons worn and in the pack: draw one worn, or materialize one from the pack (above). |
 | Vehicle carousel | The permanent garage: swipe through your vehicles, take one as a toy in your hand, throw it to unpack the full-size vehicle. Packs vehicles back up. |
 | Heavy weapon chamber | Holds one heavy weapon (section 6). |
 | Artifact | Holds and uses your one artifact for the outing (section 6). |
 | Sign-out | Starting a sign-out and its countdown (section 7). |
 | Banking | Banking at a depot and what is banked so far (section 7). |
-| Map and pings | The map, standing, strongpoints, and pings to your squad. |
+| Map and pings | The map, standing, strongpoints, and pings to your squad (the ping marks where you look, for your side only). |
+| Contract tracker | Your active contracts, on the Mission tab (section 10). |
 | Landing choices | Where to drop back in after dying. |
-| Pack | What you carry, your weight tier (section 4), and the rig readout for the pack's detail (section 5). |
+| Pack | What you carry, folded into the Summon tab: its fill, worth, heals and scrip, and later your weight tier (section 4). |
 
 Watch skins are cosmetics, shown off in the hub.
 

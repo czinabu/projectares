@@ -124,6 +124,7 @@ func _update_wrist(delta: float) -> void:
 			controller.watch_focus = focus
 	wrist.show_card(slots, focus, "", p.health.health / maxf(p.health.max_health, 1.0), [] as Array[float])
 	wrist.show_toys([] as Array[String], 0, true, delta)
+	wrist.show_weapons([] as Array[String], 0, true, delta)
 
 
 ## Hangs the tag over the display you look at, or puts it away.

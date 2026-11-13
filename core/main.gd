@@ -508,6 +508,8 @@ func _attach_player_view() -> void:
 	controller.drop_requested.connect(func(index: int) -> void: _on_drop_requested.call_deferred(index))
 	controller.toy_throw_requested.connect(_on_toy_throw_requested)
 	controller.pack_requested.connect(_on_pack_requested)
+	controller.summon_requested.connect(_on_summon_requested)
+	controller.ping_requested.connect(_on_ping_requested)
 	raid.add_child(controller)
 	hud = Hud.new()
 	hud.setup(raid, controller)
@@ -602,6 +604,27 @@ func _on_toy_throw_requested(item_id: String) -> void:
 		net.throw_toy(item_id)
 	else:
 		raid.throw_toy(raid.player, item_id)
+
+
+## The player picked a weapon in their pack on the watch. The world decides
+## whether it materializes.
+func _on_summon_requested(item_id: String) -> void:
+	if raid == null or raid.player == null or not is_instance_valid(raid.player):
+		return
+	if net:
+		net.summon(item_id)
+	else:
+		raid.summon(raid.player, item_id)
+
+
+## The player pinged where they are looking, from the watch.
+func _on_ping_requested() -> void:
+	if raid == null or raid.player == null or not is_instance_valid(raid.player):
+		return
+	if net:
+		net.ping()
+	else:
+		raid.ping(raid.player)
 
 
 ## The player asked to pack the vehicle they are looking at onto their watch.

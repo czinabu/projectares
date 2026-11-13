@@ -39,6 +39,9 @@ signal toy_thrown(actor: Actor, item_id: String, from: Vector3, toy_velocity: Ve
 signal toy_landed(actor: Actor, item_id: String, at: Vector3, unpacked: bool)
 ## What a player's watch holds, or when they can throw again, changed.
 signal watch_changed(actor: Actor)
+## A player pinged a spot for their side (`ping`). On a client it is only
+## ever heard for pings the server chose to tell this player about.
+signal pinged(actor: Actor, at: Vector3)
 
 ## Bots never start closer to the player than this, so a raid does not open with a fight.
 const MIN_BOT_SPAWN_DISTANCE := 40.0
@@ -89,6 +92,11 @@ var toy_bounce := 0.35
 var toy_cooldown := 8.0
 ## How many vehicles a watch holds.
 var watch_capacity := 2
+## A squad ping from the watch: how far it reaches, how long its marker
+## stands, and the wait before the next.
+var ping_range := 300.0
+var ping_time := 8.0
+var ping_cooldown := 2.0
 ## The clear box a vehicle needs to unpack: width, height, length. A vehicle
 ## with a `footprint` stat needs that instead.
 var unpack_room := Vector3(1.3, 1.2, 2.6)
@@ -1229,6 +1237,91 @@ func throw_toy(actor: Actor, item_id: String) -> String:
 	return ""
 
 
+## Seconds until a player's watch can materialize a weapon again, or 0.
+func summon_wait(actor: Actor) -> float:
+	var state := state_for(actor)
+	return maxf(0.0, state.summon_ready_at - clock) if state != null else 0.0
+
+
+## That wait as a share from 0 (just summoned) to 1 (ready).
+func summon_charge(actor: Actor) -> float:
+	var state := state_for(actor)
+	if state == null or state.summon_wait_total <= 0.0:
+		return 1.0
+	return clampf(1.0 - summon_wait(actor) / state.summon_wait_total, 0.0, 1.0)
+
+
+## The watch's summon: materializes weapon `item_id` out of a player's pack
+## into their hand, and the weapon it replaces goes into the pack in its
+## place, with the rounds it had. Only what is carried can be summoned,
+## never the stash, so everything summonable is still what a death drops.
+## It takes `Loadout.summon_time` to materialize (heavier is slower; the
+## weapon cannot be used until then) and the watch then waits
+## `Loadout.summon_cooldown`. Returns "" if it was summoned, or why not
+## (also sent as a notice).
+func summon(actor: Actor, item_id: String) -> String:
+	var state := state_for(actor)
+	if mode == Mode.CLIENT or state == null or state.finished or actor.is_dead:
+		return "not now"
+	var why := ""
+	if not actor.inventory.has_item(item_id):
+		why = "That is not in your pack"
+	elif not Loadout.summonable(item_id):
+		why = "The watch cannot summon that"
+	elif actor.weapons_locked:
+		why = "Weapons are locked here"
+	elif actor.stagger_left > 0.0:
+		why = "Not while staggered"
+	elif state.sign_out_left >= 0.0:
+		why = "Not while signing out"
+	elif summon_wait(actor) > 0.0:
+		why = "Watch recharging: %d s" % ceili(summon_wait(actor))
+	if why != "":
+		actor.notice.emit(why)
+		return why
+	var rounds: Array = actor.stowed_rounds.get(item_id, [-1, -1])
+	actor.stowed_rounds.erase(item_id)
+	actor.inventory.remove_item(item_id)
+	var given := Loadout.swap_weapon(actor, item_id, int(rounds[0]), int(rounds[1]))
+	var old: String = given.id
+	if old != "":
+		# One out, one in: the pack is no fuller than it was.
+		actor.inventory.add_item(old)
+		if int(given.mag) >= 0:
+			actor.stowed_rounds[old] = [given.mag, given.reserve]
+		var at := state.kit.find(old)
+		if at >= 0:
+			state.kit[at] = item_id
+	if old == "" or item_id not in state.kit:
+		state.kit.append(item_id)
+	state.summon_wait_total = Loadout.summon_cooldown(item_id)
+	state.summon_ready_at = clock + state.summon_wait_total
+	if dev_cheats.get("cooldowns", false):  # DEV MODE
+		state.summon_ready_at = clock
+	watch_changed.emit(actor)
+	return ""
+
+
+## The watch's squad ping: marks the spot a player is looking at for their
+## side for `ping_time` seconds. Returns "" if it went out, or why not.
+func ping(actor: Actor) -> String:
+	var state := state_for(actor)
+	if mode == Mode.CLIENT or state == null or state.finished or actor.is_dead:
+		return "not now"
+	if clock < state.ping_ready_at:
+		return "Ping recharging"
+	var from := actor.get_eye_position()
+	var to := from + actor.get_aim_dir() * ping_range
+	var query := PhysicsRayQueryParameters3D.create(from, to, Actor.LAYER_WORLD)
+	var hit := get_world_3d().direct_space_state.intersect_ray(query)
+	if hit.is_empty():
+		actor.notice.emit("Nothing there to ping")
+		return "Nothing there to ping"
+	state.ping_ready_at = clock + ping_cooldown
+	pinged.emit(actor, hit.position)
+	return ""
+
+
 ## Seconds the watch waits after the vehicle `item_id` is thrown.
 func toy_recharge(item_id: String) -> float:
 	return float(ItemDB.item_stats(item_id).get("watch_recharge", toy_cooldown))
@@ -1709,6 +1802,12 @@ class PlayerState:
 	var stowed: Array[String] = []
 	## `Raid.clock` when they can throw a toy again.
 	var toy_ready_at := -INF
+	## `Raid.clock` when their watch can materialize a weapon again, and how
+	## long that wait was (for the watch's ring).
+	var summon_ready_at := -INF
+	var summon_wait_total := 0.0
+	## `Raid.clock` when they can ping again.
+	var ping_ready_at := -INF
 	## The vehicles they unpacked from toys.
 	var parked: Array[Node3D] = []
 	## The vehicle they were riding when they left.
