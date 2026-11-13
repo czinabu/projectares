@@ -910,8 +910,10 @@ func _test_main_flow() -> void:
 			and wrist.text().contains(main.raid.world.display_name) and wrist.text().contains("Pack "),
 			"X raises the watch, and in third person its card opens over your wrist")
 	var card_width := holo.global_basis.get_scale().x * wrist.face_size.x
-	check(holo.global_position.distance_to(wrist.watch_position(p)) < card_width,
-			"the third-person card stands over the wrist, not hung out in front of the camera")
+	var from_cam := controller.camera.global_position
+	check(from_cam.distance_to(holo.global_position) > from_cam.distance_to(p.get_eye_position()) + 0.3
+			and card_width < 2.0,
+			"the third-person card hangs out in front of the character, never behind them")
 	check(p.cmd.watch_up, "and the raised watch goes out with your inputs, so the arm glows for everyone")
 	var icons: Array = []
 	for slot in wrist.card.slots:

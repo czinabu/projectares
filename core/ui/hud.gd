@@ -746,11 +746,12 @@ void fragment() {
 	var reference_fov := 80.0
 	## Third person: how big the card looks next to its first-person size
 	## (it grows with the camera's distance, so it reads the same from behind
-	## the shoulder), and how far above the watch it opens. It stands straight
-	## over the watch, drawn over the body, so the light visibly rises from
-	## the wrist into it.
-	var third_person_view := 0.8
-	var projection_lift := 0.12
+	## the shoulder), and where it hangs: in front of the character, beyond
+	## them from the camera, up and to the left of the head (metres ahead
+	## along the view, up from the eyes, and to the side, negative is left).
+	## The light reaches out to it from the wrist.
+	var third_person_view := 0.95
+	var projection_at := Vector3(-0.85, 0.35, 0.9)
 	## The glow on the arm while the card is up: how bright, and how far it
 	## reaches.
 	var glow_energy := 0.7
@@ -822,7 +823,8 @@ void fragment() {
 		beam_mat.vertex_color_use_as_albedo = true
 		beam_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 		beam_mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
-		beam_mat.no_depth_test = true
+		# Depth tested: in third person the body hides the light where it
+		# would pass behind it.
 		beam_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 		beam_mat.render_priority = 9
 		_beam.material_override = beam_mat
@@ -960,12 +962,18 @@ void fragment() {
 		if third:
 			if is_inside_tree():
 				var wrist := watch_position(p)
-				# Turned to face the camera, rising off the wrist. It is sized
-				# by the camera's distance to look as big as in first person.
+				# Out in front of the character, turned to face the camera, so
+				# it is never behind the body. It is sized by the camera's
+				# distance to look as big as in first person, and opens out
+				# from the wrist.
 				var facing := cam.global_basis.orthonormalized() if cam else p.global_basis.orthonormalized()
-				var far := cam.global_position.distance_to(wrist) if cam else 2.5
+				var ahead := Vector3(-facing.z.x, 0.0, -facing.z.z).normalized()
+				var side := Vector3(facing.x.x, 0.0, facing.x.z).normalized()
+				var spot := p.get_eye_position() + ahead * projection_at.z + Vector3.UP * projection_at.y \
+						+ side * projection_at.x
+				var far := cam.global_position.distance_to(spot) if cam else 3.0
 				var size := far / first_person_at.length() * third_person_view
-				var at := wrist + facing.y * (projection_lift + face_size.y * size * 0.5) * open
+				var at := wrist.lerp(spot, ease(open, -2.0))
 				_holo.global_transform = Transform3D(facing.scaled(Vector3(size, size * maxf(open, 0.001), size)), at)
 				_glow.global_position = wrist
 		else:
@@ -987,7 +995,7 @@ void fragment() {
 			return face.global_position
 		return _holo.global_position - _holo.global_basis.y.normalized() * 0.1
 
-	## Light thrown up from the watch face to the card's lower edge, bright
+	## Light thrown out from the watch face to the card's lower edge, bright
 	## at the face and thinning out towards the card, so the card reads as
 	## projected rather than floating.
 	func _draw_beam(third: bool, open: float) -> void:
