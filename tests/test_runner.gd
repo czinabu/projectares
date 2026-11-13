@@ -24,6 +24,7 @@ const SidearmTests := preload("res://tests/sidearm_tests.gd")
 const AttachmentTests := preload("res://tests/attachment_tests.gd")
 const PowerWeaponTests := preload("res://tests/power_weapon_tests.gd")
 const FeelTests := preload("res://tests/feel_tests.gd")
+const RigTierTests := preload("res://tests/rig_tier_tests.gd")
 
 var _passed := 0
 var _failed := 0
@@ -277,10 +278,15 @@ func _run() -> void:
 	await _test_attachments()
 	await _test_power_weapons()
 	await _test_feel()
+	await _test_rig_tiers()
 
 
 func _test_feel() -> void:
 	await FeelTests.run(self)
+
+
+func _test_rig_tiers() -> void:
+	await RigTierTests.run(self)
 
 
 func _test_look() -> void:
@@ -1451,7 +1457,7 @@ func _test_flight_rigs_and_abilities() -> void:
 	# Thruster boots: kicks up, skim low and cool, burn out high, dash on heat.
 	var raid := await _kit_raid(60, ["rifle_scrap", "blade_scrap", "boots_thruster", "plate_light"])
 	var p := raid.player
-	check(p.flight.display_name == "Thruster Boots" and p.flight.burst_velocity > 0.0
+	check(p.flight.display_name == "Mk1 Thruster Boots" and p.flight.burst_velocity > 0.0
 			and is_zero_approx(p.flight.thrust_accel) and p.flight.can_skim(), "boots stats come from the item")
 	check(is_equal_approx(p.flight.skim_speed, FlightRig.CRUISE_SPEED), "boots skim at the shared cruise speed")
 	await press_jump.call(p)
@@ -1490,6 +1496,8 @@ func _test_flight_rigs_and_abilities() -> void:
 	# Glide wings: launch, then fall slowly and travel far.
 	raid = await _kit_raid(61, ["rifle_scrap", "blade_scrap", "wings_glide", "plate_light"])
 	p = raid.player
+	# These check the handling high up, not the ceiling (`_test_rig_tiers`).
+	p.flight.ceiling = 0.0
 	p.global_position += Vector3(0, 30, 0)
 	p.velocity = Vector3.ZERO
 	await frames(30)
@@ -1510,12 +1518,14 @@ func _test_flight_rigs_and_abilities() -> void:
 
 	# The Mk2 jetpack: cruise, wide turns, coasting, a steady hover to shoot from.
 	raid = await _kit_raid(65, ["rifle_scrap", "blade_scrap", "jetpack_mk2", "frame_bulwark"])
+	raid.player.flight.ceiling = 0.0
 	await _check_jetpack_cruise(raid.player)
 	await _end_raid(raid)
 
 	# The jetpack still works and does not burst or glide.
 	raid = await _kit_raid(62, ["rifle_scrap", "blade_scrap", "jetpack_mk1", "plate_light"])
 	p = raid.player
+	p.flight.ceiling = 0.0
 	await press_jump.call(p)
 	await frames(10)
 	p.cmd.jump = true

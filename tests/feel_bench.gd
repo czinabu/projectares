@@ -7,13 +7,18 @@ extends Node
 ##
 ##   godot --headless --fixed-fps 60 --path . res://tests/feel_bench.tscn
 
-const RIGS: Array[String] = ["jetpack_mk1", "jetpack_mk2", "wings_glide", "boots_thruster"]
+const RIGS: Array[String] = ["jetpack_mk1", "jetpack_mk2", "jetpack_mk3", "wings_glide", "wings_glide_mk2",
+		"wings_glide_mk3", "boots_thruster", "boots_thruster_mk2", "boots_thruster_mk3"]
+## How long the climb to each rig's ceiling may take, in seconds.
+const CLIMB_LIMIT := 60.0
 
 var _actor: Actor
 var _last_velocity := Vector3.ZERO
 ## The hardest jolt in each move: move name -> m/s².
 var _jolts := {}
 var _move := ""
+## The ground's level, for flight ceilings: the top of the floor.
+var _floor := Node3D.new()
 
 
 func _ready() -> void:
@@ -26,9 +31,12 @@ func _ready() -> void:
 	ground.add_child(col)
 	ground.position.y = -0.5
 	add_child(ground)
+	add_child(_floor)
 	await _ground()
 	for rig in RIGS:
 		await _fly(rig)
+	for rig in RIGS:
+		await _climb(rig)
 	get_tree().quit(0)
 
 
@@ -234,3 +242,71 @@ func _fly(rig: String) -> void:
 		a.cmd.jump = false
 		notes.append("skims in %.2f s, stops in %.2f s over %.1f m, cuts sideways in %.2f s, a kick lifts %.1f m" % [up, stop, stop_dist, cut, kick])
 	print("%s: %s. Hardest jolts (m/s²): %s" % [f.display_name, ", ".join(notes), _hardest()])
+
+
+## Climbs from the ground as high as the rig will go, flown its own way, and
+## prints the top height, how long it took and what stopped it. The bench is
+## the ground for the ceiling (`Actor.ground_map`).
+func _climb(rig: String) -> void:
+	var a := _spawn(["rifle_scrap", rig])
+	a.ground_map = _floor
+	var top := await climb(a, CLIMB_LIMIT, _ticks)
+	print("%s climbs to %.1f m in %.1f s (ceiling %.0f m)%s. Hardest jolts (m/s²): %s"
+			% [a.flight.display_name, top.x, top.y, a.flight.ceiling,
+			", where the ceiling stops it" if top.x > a.flight.ceiling - 1.0 else "", _hardest()])
+	a.cmd = ActorCommand.new()
+
+
+## Flies `a` from the ground as high as its rig will take it in `limit`
+## seconds, its own way: a jetpack climbs and coasts to cool, boots kick at
+## the top of each kick, wings launch and pulse whenever the
+## heat allows. `step` runs ticks (`step.call(count, move)`, awaited). It
+## stops early once `stop` meters up.
+## Returns Vector2(highest altitude, seconds to reach it). Shared with the
+## tests (`RigTierTests`).
+static func climb(a: Actor, limit: float, step: Callable, stop := INF) -> Vector2:
+	var f := a.flight
+	var tps := Engine.physics_ticks_per_second
+	var top := 0.0
+	var top_at := 0.0
+	var cooling := false
+	a.cmd.jump_pressed = true
+	await step.call(1, "!jump")
+	a.cmd.jump_pressed = false
+	await step.call(6, "!jump")
+	for i in int(limit * tps):
+		var t := float(i) / tps
+		a.cmd.jump_pressed = false
+		if f.can_hover():
+			# Light the jets, climb, and coast down a little to cool.
+			if not f.is_hovering:
+				a.cmd.jump_pressed = not f.overheated
+			if f.heat > f.max_heat * 0.85:
+				cooling = true
+			elif f.heat < f.max_heat * 0.2:
+				cooling = false
+			a.cmd.jump = not cooling
+			a.cmd.descend = cooling
+		elif f.can_glide():
+			# Launch, glide in a wide circle, pulse when the heat allows.
+			a.cmd.jump = true
+			a.cmd.move = Vector2(0.3, 0)
+			var air := f.is_gliding or (f.launched and a.velocity.y < 0.0)
+			a.cmd.jump_pressed = (not f.launched or (air and a.velocity.y <= 0.0 \
+					and f.heat + f.pulse_heat <= f.max_heat)) and i % 2 == 0
+		elif f.can_skim():
+			# Kick again at the top of each kick. Holding a skim in between
+			# would burn heat up high.
+			a.cmd.jump_pressed = a.velocity.y <= 0.0 and not f.overheated and i % 2 == 0
+		await step.call(1, "climb" if not a.cmd.jump_pressed else "!kick")
+		var height := a.global_position.y - a.ground_level() if not is_nan(a.ground_level()) else a.global_position.y
+		if height > top + 0.05:
+			top = height
+			top_at = t
+		if top >= stop or (a.is_on_floor() and t > 2.0) or (t > top_at + 2.0 and a.velocity.y < -5.0):
+			# Done: back down, or falling from the top (a landing is no jolt).
+			break
+	a.cmd.jump = false
+	a.cmd.descend = false
+	a.cmd.move = Vector2.ZERO
+	return Vector2(top, top_at)

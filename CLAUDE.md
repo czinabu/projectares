@@ -301,8 +301,19 @@ without Caleb, and update the gap list when a PR closes a row.
   in open air they never cool (`FlightRig.aloft`), so they hold no open sky. Flown its
   own way a rig stays up for minutes, against type it overheats in seconds.
   Shooting from the air spreads wider (`Actor.air_aim`) except in a rig's
-  steady state. The keys fly every rig and the mouse only looks and aims
-  (Caleb's call): wings bank on the strafe keys and dive or pull up on
+  steady state. Rigs come in tiers (Caleb's call): Mk1 to Mk3 of each, a tier
+  made with `ItemDB._rig_tier` from a lower tier's stats. A tier sets `FlightRig.tier`
+  and `ceiling` (`ItemDB.RIG_CEILINGS`: 25, 60, 100 m) and may only make the
+  rig run cooler, never faster: cruise and dash speeds stay the same on
+  every tier, a boost is never faster than the Mk2 jetpack's, and the heat
+  bar stays 100. The ceiling is measured
+  from the world's ground, never a roof (`Actor.ground_level`: the map's
+  `ground_height`, else its origin), and only limits lift: the climb eases
+  off under it (`FlightRig.climb_room`) and a kick, pulse or launch is cut
+  to top out on it (`lift_cap`), or refused without heat. Mk2 and up are
+  loot only, in the full-loot world.
+  The keys fly every rig and the mouse only looks and aims (Caleb's call):
+  wings bank on the strafe keys and dive or pull up on
   forward and back (`Actor.glide_trim`); forward with no strafe key banks
   the glide round onto the view's heading (`Actor.glide_steer`), so
   "forward" is always the way you face, and with no keys the glide flies

@@ -52,6 +52,12 @@ const ROOFTOP_TABLE := [
 	{"id": "frame_bulwark", "weight": 8.0},
 	{"id": "jetpack_mk2", "weight": 7.0},
 	{"id": "wings_glide", "weight": 7.0},
+	# Higher rig tiers: they lift higher and fly further (`ItemDB.RIG_CEILINGS`).
+	{"id": "boots_thruster_mk2", "weight": 5.0},
+	{"id": "wings_glide_mk2", "weight": 4.0},
+	{"id": "jetpack_mk3", "weight": 2.0},
+	{"id": "wings_glide_mk3", "weight": 2.0},
+	{"id": "boots_thruster_mk3", "weight": 2.0},
 	{"id": "chip_blink", "weight": 7.0},
 	{"id": "chip_pulse", "weight": 7.0},
 	{"id": "optic_scope", "weight": 7.0},

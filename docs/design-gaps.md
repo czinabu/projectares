@@ -67,6 +67,8 @@ rows marked **pre-playtest** come before the friends playtest.
 | Boots as a skimming rig with height bands and air dashes | Missing | Today three quick kicks. PR 2. |
 | Air aim penalty, waived in each rig's steady state | Missing | No airborne spread in `Gun`. PR 1. |
 | Overheat cuts the rig out until heat is back to 35 | Built | `recover_heat` 35. |
+| Rig tiers Mk1 to Mk3, each with a ceiling (25, 60, 100 m over the ground) | Built | `FlightRig.ceiling`, `ItemDB.RIG_CEILINGS`. Mk2 and Mk3 are Ashfront rooftop loot. No readout yet when you reach the ceiling (the jets just stop climbing); add one to the watch once the watch rework lands. |
+| Ring races with a leaderboard per tier as well as per rig | Missing | With the hub's ring courses. |
 
 ## Heavy weapons and artifacts
 
