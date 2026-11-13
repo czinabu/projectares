@@ -893,7 +893,9 @@ without Caleb, and update the gap list when a PR closes a row.
   everywhere, the plaza included. Raised, the wrist comes up in front of
   the eyes along the aim (`WeaponArm.watch_point`), so it is in view in
   first person wherever you look, and the forearm rolls so the face, worn
-  on the back of the wrist (`Hud.Wrist.FACE_AXIS`), looks at the eyes
+  on the back of the wrist (`Hud.Wrist.FACE_AXIS`, out on the skin by
+  `wrist_skin` and depth tested like anything worn, so a gun or hand in
+  front of it hides it), looks at the eyes
   (`WeaponArm._face_watch`). From the eyes the card opens just over the
   face, sized to read like a card at arm's length (`fp_card_reads_at`). Check it by eye with
   `visual_check.tscn -- <dir> --watch-only` (`--base-watch-only` for just
