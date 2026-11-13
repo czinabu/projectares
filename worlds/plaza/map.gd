@@ -112,20 +112,22 @@ func _ready() -> void:
 
 
 func _build_environment() -> void:
-	# Permanent dusk: a calm, warm sky after the grey of the warzones.
+	# Permanent deep-blue twilight: dark enough that the hub's lights carry
+	# it, a calm, cool sky after the grey of the warzones (Caleb's call: grand
+	# and sci-fi, with the neon glowing).
 	Look.atmosphere(self, {
-		"sky_tint": Color(1.0, 0.72, 0.55),
-		"sky_saturation": 0.9,
-		"sky_energy": 0.9,
-		"fog_color": Color(0.45, 0.36, 0.42),
+		"sky_tint": Color(0.55, 0.6, 0.95),
+		"sky_saturation": 0.8,
+		"sky_energy": 0.6,
+		"fog_color": Color(0.16, 0.18, 0.3),
 		"fog_density": 0.003,
-		"sun_color": Color(1.0, 0.78, 0.6),
-		"sun_energy": 1.5,
-		"sun_angles": Vector3(-18, 35, 0),
-		"ambient_color": Color(0.62, 0.6, 0.72),
-		"ambient_energy": 1.1,
-		"saturation": 1.05,
-		"glow": 0.5,
+		"sun_color": Color(0.65, 0.7, 1.0),
+		"sun_energy": 0.6,
+		"sun_angles": Vector3(-14, 35, 0),
+		"ambient_color": Color(0.5, 0.55, 0.75),
+		"ambient_energy": 1.0,
+		"saturation": 0.95,
+		"glow": 0.75,
 	})
 	Look.weather(self, "embers", RADIUS * 0.5)
 
