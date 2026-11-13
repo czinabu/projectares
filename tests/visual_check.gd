@@ -302,7 +302,8 @@ func _toy_shots(out_dir: String) -> void:
 
 
 ## The body in the air: a jetpack hovering, boosting level and in a climb and
-## barrel rolling in a sideways dash, and wings level, banked into a turn each way and in a dive.
+## barrel rolling in a sideways dash, wings level, banked into a turn each way and in a dive,
+## and thruster boots skimming still, each way, aiming and dashing.
 ## Each from behind and from the side.
 func _flight_shots(out_dir: String) -> void:
 	# [name, rig, hovering, boosting, gliding, speed, climb, turn rate, look pitch, sideways air dash]
@@ -319,6 +320,13 @@ func _flight_shots(out_dir: String) -> void:
 		["wings_turn_right", "wings_glide", false, false, true, 16.0, -1.8, -1.4, 0.0, 0, Vector3.FORWARD],
 		["wings_dive", "wings_glide", false, false, true, 24.0, -10.0, 0.0, -0.9, 0, Vector3.FORWARD],
 		["wings_climb", "wings_glide", false, false, true, 18.0, 9.0, 0.0, 0.9, 0, Vector3.FORWARD],
+		# Thruster boots skimming: still, at cruise each way, and dashing.
+		["boots_hover", "boots_thruster", false, false, false, 0.0, 0.0, 0.0, 0.0, 0, Vector3.FORWARD],
+		["boots_forward", "boots_thruster", false, false, false, 15.0, 0.0, 0.0, 0.0, 0, Vector3.FORWARD],
+		["boots_forward_aim", "boots_thruster", false, false, false, 15.0, 0.0, 0.0, 0.0, 0, Vector3.FORWARD],
+		["boots_dash", "boots_thruster", false, false, false, 35.0, 0.0, 0.0, 0.0, 0, Vector3.FORWARD],
+		["boots_strafe", "boots_thruster", false, false, false, 15.0, 0.0, 0.0, 0.0, 0, Vector3(1, 0, 0)],
+		["boots_back", "boots_thruster", false, false, false, 15.0, 0.0, 0.0, 0.0, 0, Vector3.BACK],
 	]
 	for pose: Array in poses:
 		var raid := Raid.new()
@@ -340,6 +348,8 @@ func _flight_shots(out_dir: String) -> void:
 		p.flight.is_boosting = pose[3]
 		p.flight.is_thrusting = pose[2]
 		p.flight.is_gliding = pose[4]
+		p.flight.is_skimming = pose[1] == "boots_thruster"
+		p.cmd.secondary = String(pose[0]).ends_with("_aim")
 		p.cmd.pitch = pose[8]
 		var at := p.global_position
 		var back := p.global_transform.basis.z
@@ -349,6 +359,8 @@ func _flight_shots(out_dir: String) -> void:
 			"back": at + back * 3.4 + Vector3(0, 1.6, 0),
 			"side": at + side * 3.4 + Vector3(0, 1.2, 0),
 		}
+		if pose[1] == "boots_thruster":
+			views["front"] = at - back * 3.0 + side * 1.6 + Vector3(0, 1.4, 0)
 		for view: String in views:
 			camera.look_at_from_position(views[view], at + Vector3(0, 1.0, 0))
 			# Fly the turn in place for a second so the bank settles.
