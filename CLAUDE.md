@@ -675,6 +675,23 @@ without Caleb, and update the gap list when a PR closes a row.
   Doorways are "portal" markers (see `WorldDef`); `core/social/plaza_view.gd`
   offers them and `main.gd use_portal` decides where each destination leads.
   Use `Worlds.raid_worlds()` for anything you deploy into.
+- Squad portals (Caleb's call) replace the base's launch pad, arena gate and
+  teleporter pad: no station deploys you. The watch's portal icon (first on
+  the Mission tab, `Hud.portal_slot`, a carousel of `Portal.destinations()`:
+  every raid world and the arena) opens a `Portal` (`core/world/portal.gd`)
+  in front of you, open `Portal.open_time` (about 15 s) for your squad to
+  walk through. Portals open only in safe spaces: your base
+  (`HomeBase.open_portal`, which emits `portal_entered`) and safe-zone
+  worlds (`Raid.open_portal`, authority only; `Raid.may_open_portal`). Never
+  let one open where gear is at stake: it would leave a world without
+  `begin_sign_out`. A squad is `Raid.squad_of`: the key `Raid.set_squad`
+  gave the owner (`NetSession` sets the clan, in every world), else their
+  side. Only the authority decides who walks through (`portal_entered`);
+  online `NetSession` shows each portal to everyone (`_portal`, with whether
+  the viewer's squad may use it; the squad key never leaves the server) and
+  tells the walker (`portal_travel`). `main.gd go_through_portal` takes the
+  trip, and arrival is `add_player`'s drop `Raid.PORTAL_DROP`: the same
+  "outpost" marker for a whole squad, else a quiet drop.
 - A server runs several `NetSession`s in one process (plaza on the port, raid
   worlds after it, `main.gd start_server`), each raid in its own 3D world
   (`NetSession.isolated`) and all sharing one `StashService`. Never use
@@ -706,12 +723,12 @@ without Caleb, and update the gap list when a PR closes a row.
   only; only a pick asks for a change, through the same `equip_requested`.
   A new kind of weapon gets a rack
   section there, not a display of its own elsewhere in the room. The base is where you suit
-  up (Caleb's call): the suit-up bay beside the launch pad
+  up (Caleb's call): the suit-up bay in the deploy area
   (`HomeBase.suit_up`) replaces the player with a new actor wearing
   `suit_kit()`, weapons locked, and emits `player_replaced` so `main.gd`
   hands it the controller; changing the loadout only changes what the
   bay puts on next. The room has one job per wall: the deploy area
-  (suit-up bay, launch pad, the teleporter's place) along the front wall
+  (the suit-up bay, with room in front to open a portal) along the front wall
   right of the exit (`HomeBase.DEPLOY_FROM_X`), the storage wall's shelves
   (supplies, chips, trophies, `STORAGE_ROWS`) left of it, and gear bays
   for armor and rig stands along the back wall; the middle of the floor
@@ -775,7 +792,7 @@ without Caleb, and update the gap list when a PR closes a row.
   feature is a phone app. The watch is a card-sized hologram of icons in
   three tabs (`Hud.Wrist.TABS`, `TAB_SLOTS`, `SLOTS`; DESIGN.md section 3):
   Summon (weapons, vehicles, artifacts, with the pack's line under it),
-  Status (map, standing) and Mission (contract, ping, sign-out). The open
+  Status (map, standing) and Mission (portal, contract, ping, sign-out). The open
   icon shows one short line, and controls are glyphs (wheel, click, key
   cap), never words. The mouse wheel moves across the card tab after tab
   (`PlayerController.watch_focus`, `step_watch`; Caleb's call), turning

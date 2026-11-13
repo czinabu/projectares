@@ -105,6 +105,9 @@ var host_args := PackedStringArray()
 var _remember_address := ""
 ## The local player's last life, while they are down.
 var _death_result := {}
+## Joining a world's session through a squad portal: deploy into it as soon
+## as signed in, instead of opening its lobby.
+var _portal_deploy := false
 ## Time.get_ticks_msec() from which a dead player may drop back in.
 var _redeploy_at := 0
 
@@ -135,7 +138,6 @@ func _ready() -> void:
 	_travel.visible = false
 	add_child(_travel)
 	hub.closed.connect(_on_station_closed)
-	hub.deploy_requested.connect(start_raid)
 	hub.host_requested.connect(host_and_join.bind(""))
 	hub.join_requested.connect(join_online)
 	hub.online_equip_requested.connect(func(slot: String, item_id: String) -> void:
@@ -144,10 +146,6 @@ func _ready() -> void:
 	hub.online_pick_requested.connect(func(track: String, variant_id: String) -> void:
 		if net:
 			net.pick_mastery(track, variant_id))
-	hub.online_deploy_requested.connect(func() -> void:
-		if net and raid == null:
-			hub.set_online_status("Deploying...")
-			net.deploy())
 	hub.online_buy_requested.connect(func(shop_id: String, item_id: String) -> void:
 		if net:
 			net.buy(shop_id, item_id))
@@ -232,6 +230,7 @@ func _open_base(stash: Array, loadout: Dictionary, owner_name: String, upgrades:
 	base.leave_requested.connect(_on_base_door)
 	base.station_requested.connect(open_station)
 	base.bench_used.connect(open_bench)
+	base.portal_entered.connect(func(destination: String) -> void: go_through_portal.call_deferred(destination))
 	base.player_replaced.connect(func(_actor: Actor) -> void: _attach_base_view())
 	_attach_base_view()
 	base_hud = BaseHudScript.new()
@@ -256,6 +255,7 @@ func _attach_base_view() -> void:
 	controller = PlayerController.new()
 	controller.phone_out = phone != null and phone.is_open
 	controller.setup(base.player)
+	controller.portal_requested.connect(_on_portal_requested)
 	if phone != null:
 		# The phone is held by this body's own hand, in every view.
 		phone.set_holder(controller.actor)
@@ -355,10 +355,6 @@ func _on_bench_closed() -> void:
 ## A station in your base opens its screen over the room.
 func open_station(id: String) -> void:
 	if base == null or base.read_only:
-		return
-	if id == "arena":
-		# The arena gate is a way out, not a screen.
-		open_arena()
 		return
 	var console := base.station(id)
 	if console == null:
@@ -500,7 +496,7 @@ func leave_arena() -> void:
 
 # ------------------------------------------------------------------ solo ----
 
-func start_raid(world_id: String) -> void:
+func start_raid(world_id: String, drop := "") -> void:
 	var world := Worlds.get_world(world_id)
 	if world == null or raid != null or net != null:
 		return
@@ -514,7 +510,7 @@ func start_raid(world_id: String) -> void:
 	Profile.apply_dev_mode()
 	raid.dev_cheats = DevMode.raid_cheats()
 	raid.start(world, -1, Profile.checkout_loadout(world), Profile.mastery.active_picks(),
-			LOCAL_OWNER, Profile.renown)
+			LOCAL_OWNER, Profile.renown, drop)
 	_attach_player_view()
 	raid.player_finished.connect(_on_solo_finished)
 
@@ -555,6 +551,7 @@ func _attach_player_view() -> void:
 	controller.pack_requested.connect(_on_pack_requested)
 	controller.summon_requested.connect(_on_summon_requested)
 	controller.ping_requested.connect(_on_ping_requested)
+	controller.portal_requested.connect(_on_portal_requested)
 	raid.add_child(controller)
 	hud = Hud.new()
 	hud.setup(raid, controller)
@@ -671,6 +668,63 @@ func _on_ping_requested() -> void:
 		net.ping()
 	else:
 		raid.ping(raid.player)
+
+
+## The player picked a destination on the watch's portal icon: a squad
+## portal opens in front of them, if this is a safe space. In your base the
+## base opens it; in a world the world's authority does.
+func _on_portal_requested(destination: String) -> void:
+	var why := ""
+	if raid == null and base != null:
+		why = base.open_portal(destination)
+		if base_hud:
+			base_hud.show_notice(why if why != "" else "Portal to %s open. Walk through it." % Portal.title_of(destination))
+		return
+	if raid == null or raid.player == null or not is_instance_valid(raid.player):
+		return
+	if net:
+		net.open_portal(destination)
+	else:
+		why = raid.open_portal(raid.player, destination)
+		if why != "":
+			raid.player.notice.emit(why)
+
+
+## Walked through a squad portal: off to `destination` (a world id or the
+## arena's), landing at its gate outpost (`Raid.PORTAL_DROP`). From your own
+## base solo that starts the world here; online it deploys on the server,
+## by way of that world's session when it is another one.
+func go_through_portal(destination: String) -> void:
+	if destination == Arena.ArenaVenue.ID:
+		open_arena()
+		return
+	var world := Worlds.get_world(destination)
+	if world == null or world.safe_zone:
+		return
+	if net == null:
+		if raid == null and base != null and not base.read_only:
+			start_raid(destination, Raid.PORTAL_DROP)
+		return
+	if raid == null and hub.in_lobby() and net.world_id == destination:
+		hub.set_online_status("Deploying...")
+		net.deploy(Raid.PORTAL_DROP)
+		return
+	var port: int = net.routes.get(destination, -1)
+	if port < 0:
+		var why := "%s is not running on this server." % world.display_name
+		if base_hud:
+			base_hud.show_notice(why)
+		elif plaza_view:
+			plaza_view.show_notice(why)
+		return
+	_portal_deploy = true
+	if raid != null:
+		_leave_raid()
+	else:
+		net.queue_free()
+		net = null
+	_show_travel("Travelling to %s..." % world.display_name)
+	_begin_join(_join_address, port, 3)
 
 
 ## The player asked to pack the vehicle they are looking at onto their watch.
@@ -1034,6 +1088,7 @@ func _try_join() -> void:
 	net.run_finished.connect(_on_online_finished)
 	net.world_invite_accepted.connect(_on_world_invite_accepted)
 	net.base_visit_requested.connect(_on_base_visit_requested)
+	net.portal_travel.connect(func(destination: String) -> void: go_through_portal.call_deferred(destination))
 	phone.set_session(net)
 	var err := net.join(_join_address, _join_port)
 	if err != OK:
@@ -1061,6 +1116,15 @@ func _on_online_signed_in(account: Dictionary) -> void:
 		net.deploy()
 		return
 	var world := Worlds.get_world(net.world_id)
+	if _portal_deploy and not world.safe_zone:
+		# Through a squad portal: straight into the world, at its outpost.
+		_portal_deploy = false
+		hub.enter_lobby(account, world)
+		hub.set_leave_text("Back to %s" % Worlds.social_world().display_name if _plaza_port >= 0 else "Leave the server")
+		hub.set_online_status("Deploying...")
+		net.deploy(Raid.PORTAL_DROP)
+		return
+	_portal_deploy = false
 	if world.safe_zone:
 		# The server's front door is its plaza: walk straight in.
 		_plaza_address = _join_address
@@ -1075,7 +1139,7 @@ func _on_online_signed_in(account: Dictionary) -> void:
 	hub.set_leave_text("Back to %s" % Worlds.social_world().display_name if _plaza_port >= 0 else "Leave the server")
 	go_home()
 	if base_hud:
-		base_hud.show_notice("Connected to %s. The launch pad deploys you there." % world.display_name, 6.0)
+		base_hud.show_notice("Connected to %s. Open a portal from your watch to deploy." % world.display_name, 6.0)
 
 
 func _on_online_account_changed(account: Dictionary) -> void:
@@ -1290,6 +1354,7 @@ func _on_online_failed(reason: String) -> void:
 			_try_join()
 		return
 	_remember_address = ""
+	_portal_deploy = false
 	if _door_fallback and _lobby_port < 0 and raid == null:
 		# The server the door remembers is not there: start your own instead.
 		# The address stays remembered for the next time you head out.

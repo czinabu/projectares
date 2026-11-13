@@ -118,7 +118,7 @@ func _update_wrist(delta: float) -> void:
 	wrist.raised = controller != null and controller.wrist_raised
 	wrist.mount(p, controller, visible, delta)
 	var slots := Hud.base_watch_slots("Home base" if base.owner_name == "" else "%s's base" % base.owner_name, base.loadout,
-			contracts)
+			contracts, controller.portal_pick if controller != null else 0)
 	var focus := Hud.default_focus(slots)
 	if controller != null:
 		if controller.watch_focus_moved:

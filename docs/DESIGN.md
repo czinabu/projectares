@@ -99,9 +99,11 @@ canopy, holo signs over every kiosk and floating holo-ads.
   bikes in the garage, loot on shelves and trophies in the main room.
 - **Heavy weapons banked from the PvP world hang on the armory wall** and can
   be stacked there (see section 6).
-- Consoles do what menus would: launch pad, locker, gunsmith bench (crafting
-  from blueprints, section 10), mastery bench, wardrobe, records, trader,
-  uplink, arena gate.
+- Consoles do what menus would: locker, gunsmith bench (crafting from
+  blueprints, section 10), mastery bench, wardrobe, records, trader, uplink.
+- **No launch pad, gate screens or portal frames** (Caleb's call: they
+  cluttered the room). You leave for a world through a squad portal opened
+  from the watch (section 3, Mission tab).
 - The gunsmith bench holds one gun at a time. Walk up and use it and the view
   moves in to the bench: the mouse wheel turns through the guns you own, a
   click picks one, then the wheel moves between its attachment slots and
@@ -109,7 +111,7 @@ canopy, holo signs over every kiosk and floating holo-ads.
   bench before you pick it. A card on the bench behind the gun lists the
   slots and what the attachments change. Attachments are not hung on show.
 - Loadouts can be changed freely here, and only here: the base is where you
-  suit up. A suit-up bay beside the launch pad fits your loadout onto you in
+  suit up. A suit-up bay in the deploy area fits your loadout onto you in
   view before you deploy.
 - A garage off the room for the bikes you own, and a firing range behind the
   back wall (the first of the upgrades below, built early as a greybox).
@@ -141,7 +143,6 @@ has. Prices are placeholders until a playtest measures scrip per life.
 | Halls | Lounge | 800 | | Room for furniture and decor. Not built yet |
 | Headquarters | Ops consoles | 500 | | The mastery bench and records get their own consoles |
 | Headquarters | Firing range | 2,500 | | The range below |
-| Headquarters | Squad teleporter pad | 5,000 | Ops consoles | Below. Not built yet |
 | Headquarters | Finish | 1,500 | Any 4 upgrades | Lit trim and light columns |
 
 Crafting tiers are not gated by the bench upgrades: any bench crafts Mk2 and
@@ -156,10 +157,11 @@ headquarters, in the order they are built:
    risking it in PvP: every rig, your guns, and the heavy weapons on your
    armory wall with endless ammo. Nothing is spent or lost in it, and it
    gives no mastery XP (mastery pays for real use).
-2. **Squad teleporter pad.** Your squadmates (up to three) visit your base
-   together, look over your armory wall and garage, and launch together from
-   your launch pad into the PvE world, the PvP world or the arena. Needs
-   online base visits where everyone is in the same base at once.
+2. **Squad visits** (was the squad teleporter pad, now replaced by squad
+   portals from the watch). Your squadmates (up to three) visit your base
+   together and look over your armory wall and garage, then leave through a
+   portal one of you opens. Needs online base visits where everyone is in
+   the same base at once.
 3. **Trophies and blueprint pedestals** (later). Beating PvE bosses and
    winning arena brackets earns miniature statues and holographic boss
    trophies to place around the base. They come with those bosses and
@@ -269,8 +271,8 @@ the storage behind it.
     the tab, so there is no separate pack page.
   - **Status:** the map and where the war is, your standing and the hunted
     warning, under the vitals strip where the visor cannot show it.
-  - **Mission:** the contract tracker, a
-    squad ping, and sign-out and banking.
+  - **Mission:** the squad portal, the contract tracker, a squad ping, and
+    sign-out and banking.
 - **Pop-ups only while they matter:** the death report and landing choices
   when you go down, the flight rig's status while flying, and a brief notice.
 - **Balance:** a weapon takes time to materialize by weight (a sidearm about
@@ -283,6 +285,23 @@ the storage behind it.
   small holograms of their real models.
 - **Gearing up stays at the base locker.** The watch only handles what is
   on you.
+
+### Squad portals (Caleb's call)
+
+The watch opens portals to the other places: the way out of your base and
+the plaza, replacing the base's launch pad, arena gate and teleporter pad.
+
+- **Where:** only in safe spaces: your home base and the hub (and later the
+  gate outposts). So a portal is a deploy tool, never an escape hatch out of
+  a fight. Coming home still means signing out at an exit or a depot.
+- **Opening one:** raise the watch, go to the portal icon on the Mission
+  tab, wheel through the worlds and the arena, click. A portal unfolds in
+  front of you and stays open about 15 seconds, then folds away.
+- **Who goes through:** you and your squad (your clan, online). Others see
+  it but cannot use it.
+- **Arrival:** at that world's gate outpost, the whole squad together.
+- **The same in both views:** the portal is a ring of light in the world,
+  never a screen.
 
 ### What the watch holds
 
@@ -297,6 +316,7 @@ the storage behind it.
 | Map and pings | The map, standing, strongpoints, and pings to your squad (the ping marks where you look, for your side only). |
 | Contract tracker | Your active contracts, on the Mission tab (section 10). |
 | Landing choices | Where to drop back in after dying. |
+| Squad portal | Opens a portal to a world or the arena, in safe spaces only (above). |
 | Pack | What you carry, folded into the Summon tab: its fill, worth, heals and scrip, and later your weight tier (section 4). |
 
 Watch skins are cosmetics, shown off in the hub.
@@ -1028,7 +1048,7 @@ shown off in the hub.
    mech, jet), and the racing mode (section 9).
    Artifacts arrive with arena tournaments and PvE dungeons, and the Sky
    Leviathan with the jet and the PvE world. The hub's toy RC arena comes
-   last. The squad teleporter pad follows online base visits together;
+   last. Squad visits to a base follow online base visits together;
    trophies follow PvE bosses and arena brackets; blueprints and tech cores
    arrive with the meteor, the PvE world and the arena. The progression
    model (section 10) lands in steps: contracts and bounties first (mostly

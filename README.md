@@ -72,14 +72,12 @@ a tag over it says what it is and what it is worth.
 
 | Console | What it opens |
 | --- | --- |
-| Launch pad (middle of the room) | Deploy into any world |
 | Locker | Your loadout, slot by slot (or press F on gear on show) |
 | Mastery bench | Mastery levels and variant picks |
 | Wardrobe | The character customizer |
 | Records | Your stash, kills, rank, and how your last life went |
 | Trader | The shops: buy and sell |
 | Uplink | Your name, and joining a friend's server by its address |
-| Arena gate | Straight into the arena (see "The arena" below) |
 
 Every weapon you own hangs on one rack in the **armory**, the alcove off the
 left of the room: long guns on its back wall, sidearms on one side and melee
@@ -100,7 +98,15 @@ consoles. Look at a panel and press **E** twice to buy it. Upgrades never
 make you stronger and never hold gear: anything that does not fit on show is
 still yours at the locker.
 
-The **suit-up bay** beside the launch pad puts your loadout on you: use its
+To leave for a world, raise your watch (**X**), scroll to the **portal**
+icon on the Mission tab, scroll through the worlds and the arena on it and
+click. A portal unfolds in front of you and stays open about 15 seconds:
+walk through it. Online, in the plaza, your clanmates can walk through a
+portal you open too, and you all land at the world's gate outpost. Portals
+only open in safe places (your base and the plaza), never in a fight:
+coming back still means signing out.
+
+The **suit-up bay** in the deploy area by the door puts your loadout on you: use its
 control post and the bay's arms fit your armor, rig and weapons, so you can
 see what you are taking out before you deploy.
 
@@ -132,7 +138,7 @@ The **Uplink** console in your base is only for the other cases:
 - Joining a server puts you in its plaza, the Concourse (see below). A world's
   lobby is your home base again, but it shows the stash and loadout **the
   server keeps for you**, which is separate from your solo stash. Pick your
-  gear there and use the launch pad to **Deploy online**. Dying keeps you in
+  gear there and open a portal from your watch to **deploy online**. Dying keeps you in
   the world: press Enter to drop back in. Signing out (L) brings you back to
   the Concourse (or to the lobby base on a server without one).
 - The server knows you by your name plus a private key your game creates the
@@ -405,7 +411,7 @@ you have.
 
 ## The arena
 
-The **arena gate** console in your home base (or the arena gate in the plaza) takes you to
+A portal to the arena from your watch (or the arena gate in the plaza) takes you to
 the Pit, a colosseum where you watch from the stands. The big board over the
 pit shows the bout, both fighters' health and the wager pools. To take part,
 walk up to one of the bookmakers' booths in the stands and press **E** (Esc
@@ -495,7 +501,7 @@ Every asset is CC0 or OFL. Sources and licenses are in `assets/LICENSES.md`.
    `core/world/world_def.gd`. Give it a mood with `Look.atmosphere` and
    surfaces from `Look.surface`.
 
-The launch pad finds it automatically and adds a deploy button, and the
+The watch's portal icon finds it automatically and offers it, and the
 "Every world plugs in" tests run a raid in it. No core code changes.
 
 ### Frostline

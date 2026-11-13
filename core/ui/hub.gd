@@ -6,22 +6,20 @@ extends Control
 ## in the room (`Main` puts this in a viewport shown on a `WorldScreen`):
 ## the locker your loadout, the mastery bench your variants, the wardrobe the
 ## customizer, the records board your stash and last life, the trader the
-## shops, the launch pad a deploy button for every world, and the uplink the
-## online section.
+## shops, and the uplink the online section. There is no deploy screen: you
+## leave for a world through a squad portal opened from the watch.
 ##
 ## It also keeps what is on show: the local profile, or the account a server
 ## keeps for you while you are in its lobby (`enter_lobby`).
 
-signal deploy_requested(world_id: String)
 ## Start a server on this machine, running every world, then join it.
 signal host_requested
 ## Join the server at `address` ("host" or "host:port").
 signal join_requested(address: String)
-## In a server's lobby: change the loadout or a mastery pick there, deploy
-## into its world, or disconnect.
+## In a server's lobby: change the loadout or a mastery pick there, or
+## disconnect.
 signal online_equip_requested(slot: String, item_id: String)
 signal online_pick_requested(track: String, variant_id: String)
-signal online_deploy_requested
 ## In a server's lobby: buy from a hub shop, or sell stash items ("" sells all loot).
 signal online_buy_requested(shop_id: String, item_id: String)
 signal online_sell_requested(item_id: String, count: int)
@@ -44,7 +42,6 @@ const CraftPanel := preload("res://core/progression/craft_panel.gd")
 ## Which sections of this screen each home base station shows. The stations
 ## themselves, with their titles, are `HomeBase.STATIONS`.
 const STATIONS := {
-	"launch": {"sections": ["deploy", "status"]},
 	"locker": {"sections": ["loadout"]},
 	"mastery": {"sections": ["mastery"]},
 	"wardrobe": {"sections": ["character"]},
@@ -73,11 +70,10 @@ var _online_status: Label
 var _name_edit: LineEdit
 var _address_edit: LineEdit
 var _stash_title: Label
-var _solo_box: VBoxContainer
 var _connect_box: VBoxContainer
 var _lobby_box: VBoxContainer
 var _lobby_title: Label
-var _lobby_deploy: Button
+var _lobby_world: Label
 var _lobby_leave: Button
 ## The station whose screen is open, or "".
 var station := ""
@@ -180,23 +176,8 @@ func _ready() -> void:
 	_craft.changed.connect(_refresh_gear)
 	_section(box, "craft").add_child(_craft)
 
-	var deploy := _section(box, "deploy")
-	_solo_box = VBoxContainer.new()
-	_solo_box.add_theme_constant_override("separation", 10)
-	deploy.add_child(_solo_box)
-	_solo_box.add_child(_text("DEPLOY", 20, Color(1.0, 0.55, 0.25)))
-	for world in Worlds.raid_worlds():
-		var button := Button.new()
-		button.text = "Deploy to %s" % world.display_name
-		button.tooltip_text = world.description
-		button.custom_minimum_size = Vector2(0, 52)
-		button.add_theme_font_size_override("font_size", 22)
-		button.pressed.connect(func() -> void: deploy_requested.emit(world.id))
-		_solo_box.add_child(button)
-		_solo_box.add_child(_text(world.description, 14, Color(0.65, 0.65, 0.65)))
-	_build_lobby(deploy)
-
 	var online := _section(box, "online")
+	_build_lobby(online)
 	_connect_box = VBoxContainer.new()
 	_connect_box.add_theme_constant_override("separation", 10)
 	online.add_child(_connect_box)
@@ -472,8 +453,8 @@ func _build_online(box: VBoxContainer) -> void:
 	box.add_child(join_row)
 
 
-## The lobby part of the launch pad, shown instead of the solo deploy
-## buttons while connected to a server.
+## The lobby part of the uplink, shown while connected to a server. You
+## deploy from the watch, through a squad portal.
 func _build_lobby(box: VBoxContainer) -> void:
 	_lobby_box = VBoxContainer.new()
 	_lobby_box.add_theme_constant_override("separation", 10)
@@ -484,11 +465,8 @@ func _build_lobby(box: VBoxContainer) -> void:
 	_lobby_box.add_child(_text(
 		"The gear in this base is the stash this server keeps for you. "
 		+ "It is separate from your solo stash.", 13, Color(0.65, 0.65, 0.65)))
-	_lobby_deploy = Button.new()
-	_lobby_deploy.custom_minimum_size = Vector2(0, 52)
-	_lobby_deploy.add_theme_font_size_override("font_size", 22)
-	_lobby_deploy.pressed.connect(func() -> void: online_deploy_requested.emit())
-	_lobby_box.add_child(_lobby_deploy)
+	_lobby_world = _text("", 14, Color(0.65, 0.65, 0.65))
+	_lobby_box.add_child(_lobby_world)
 
 
 ## What the lobby's leave button says: it leads back to the plaza when the
@@ -509,8 +487,7 @@ func in_lobby() -> bool:
 ## world that server runs.
 func enter_lobby(p_account: Dictionary, world: WorldDef) -> void:
 	_lobby_title.text = "CONNECTED AS %s" % str(p_account.get("name", "")).to_upper()
-	_lobby_deploy.text = "Deploy online to %s" % world.display_name
-	_lobby_deploy.tooltip_text = world.description
+	_lobby_world.text = "Open a portal from your watch's Mission tab to deploy to %s." % world.display_name
 	update_account(p_account)
 
 
@@ -540,7 +517,6 @@ func leave_lobby() -> void:
 
 func _show_sections() -> void:
 	_lobby_box.visible = in_lobby()
-	_solo_box.visible = not in_lobby()
 	_connect_box.visible = not in_lobby()
 	_lobby_leave.visible = in_lobby()
 	_stash_title.text = "STASH ON THIS SERVER" if in_lobby() else "STASH"

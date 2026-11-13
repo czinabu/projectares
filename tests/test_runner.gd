@@ -31,6 +31,7 @@ const AttachmentTests := preload("res://tests/attachment_tests.gd")
 const PowerWeaponTests := preload("res://tests/power_weapon_tests.gd")
 const ArtifactTests := preload("res://tests/artifact_tests.gd")
 const WatchTests := preload("res://tests/watch_tests.gd")
+const PortalTests := preload("res://tests/portal_tests.gd")
 const ContractTests := preload("res://tests/contract_tests.gd")
 const FeelTests := preload("res://tests/feel_tests.gd")
 const ViewMatchTests := preload("res://tests/view_match_tests.gd")
@@ -298,6 +299,7 @@ func _run() -> void:
 	await _test_power_weapons()
 	await _test_artifacts()
 	await _test_watch()
+	await _test_portals()
 	await _test_feel()
 	await _test_view_match()
 	await _test_ads()
@@ -383,6 +385,10 @@ func _test_artifacts() -> void:
 
 func _test_watch() -> void:
 	await WatchTests.run(self)
+
+
+func _test_portals() -> void:
+	await PortalTests.run(self)
 
 
 func check(condition: bool, what: String) -> void:
@@ -877,17 +883,9 @@ func _test_main_flow() -> void:
 	await frames(2)
 	check(main.base != null and main.raid == null and not main.hub.visible and main.controller != null
 			and main.controller.camera.current, "the game opens in your home base, not on a menu")
-	check(main.base.station("launch") != null and main.base.door.get_prompt().contains("Head out"),
-			"the base has a launch pad, and its door leads out to the plaza")
-	main.open_station("launch")
-	check(main.hub.visible and main.hub.station == "launch" and main.controller.input_blocked,
-			"the launch pad opens the deploy screen over the base")
-	var deploy_buttons: Array = main.hub.find_children("*", "Button", true, false).filter(func(b: Node) -> bool:
-		return (b as Button).text.begins_with("Deploy to") and (b as Button).is_visible_in_tree())
-	check(deploy_buttons.size() == Worlds.raid_worlds().size(), "it offers every world")
-	(deploy_buttons[0] as Button).pressed.emit()
-	await frames(5)
-	check(main.raid != null and main.base == null and not main.hub.visible, "deploying from the launch pad starts a raid")
+	check(main.base.station("launch") == null and main.base.door.get_prompt().contains("Head out"),
+			"the base has no launch pad, and its door leads out to the plaza")
+	await PortalTests.through_base(self, main)
 	main._leave_raid()
 	main.go_home()
 	await frames(2)
@@ -2591,13 +2589,10 @@ func _test_vehicle_raids() -> void:
 func _test_every_world() -> void:
 	print("Every world plugs in")
 	check(Worlds.raid_worlds().size() >= 2, "registry finds more than one world (%d)" % Worlds.raid_worlds().size())
-	var hub := Hub.new()
-	add_child(hub)
-	await frames(1)
-	var buttons := hub.find_children("*", "Button", true, false).filter(func(b: Node) -> bool:
-		return (b as Button).text.begins_with("Deploy to"))
-	check(buttons.size() == Worlds.raid_worlds().size(), "the hub has a deploy button for every world")
-	hub.queue_free()
+	var every := true
+	for world in Worlds.raid_worlds():
+		every = every and world.id in Portal.destinations()
+	check(every, "a squad portal from the watch can lead to every world")
 	for world in Worlds.raid_worlds():
 		var kit := world.starter_loadout()
 		check(not kit.is_empty() and kit.all(func(id: String) -> bool: return ItemDB.has_item(id)),
@@ -5271,6 +5266,33 @@ func _test_world_heat() -> void:
 	await frames(1)
 
 
+## A squad portal in the plaza, online: Pia (`ada`) opens one from the
+## watch and her clanmate Pax (`bo`) walks through it. The server decides.
+func _plaza_portal(ada: NetSession, bo: NetSession) -> void:
+	await _wait_until(func() -> bool: return ada.raid.side_of(ada.raid.player)[0] != "", 30)
+	ada.open_portal("ashfront")
+	await _wait_until(func() -> bool: return not bo.raid.portals.is_empty() and not ada.raid.portals.is_empty(), 240)
+	var seen: Portal = bo.raid.portals[0] if not bo.raid.portals.is_empty() else null
+	check(seen != null and seen.destination == "ashfront" and seen.usable and seen.opener_name == "Pia",
+			"a portal opened from the watch shows up for the squad, ready to use")
+	if seen == null:
+		return
+	var travelled: Array[String] = []
+	bo.portal_travel.connect(func(destination: String) -> void: travelled.append(destination))
+	var walker := bo.raid.player
+	await frames(int(seen.unfold_time * 60.0) + 10)
+	for step in 360:
+		var to := seen.global_position - walker.global_position
+		to.y = 0.0
+		walker.cmd.yaw = atan2(-to.x, -to.z)
+		walker.cmd.move = Vector2(0, 1) if to.length() > 0.2 else Vector2.ZERO
+		await frames(1)
+		if not travelled.is_empty() or not is_instance_valid(seen):
+			break
+	walker.cmd.move = Vector2.ZERO
+	check(travelled == ["ashfront"], "a squadmate who walks in is sent through by the server")
+
+
 func _test_plaza_online() -> void:
 	print("Plaza online: a shared safe zone beside the warzone")
 	const PlazaView := preload("res://core/social/plaza_view.gd")
@@ -5356,6 +5378,7 @@ func _test_plaza_online() -> void:
 		ada.clan_ask("create", "Second", "SEC")
 		await frames(30)
 		check(ada.clan_state.clan.get("tag", "") == "NS", "you cannot found a second clan while in one")
+		await _plaza_portal(ada, bo)
 
 	# Through the gate: the same account, now in the warzone's lobby.
 	var war_port: int = ada.routes.get("ashfront", -1)
@@ -6402,17 +6425,16 @@ func _test_armory(base: HomeBase) -> void:
 func _test_suit_up(base: HomeBase) -> void:
 	print("Home base suit-up bay")
 	var bay_at := HomeBase.SUIT_AT
-	var pad: Vector3 = HomeBase.STATIONS["launch"]["at"]
-	check(base.inside(bay_at) and not base.in_armory(bay_at) and bay_at.distance_to(pad) < 5.0,
-			"the suit-up bay stands in the main room beside the launch pad")
+	check(base.inside(bay_at) and not base.in_armory(bay_at), "the suit-up bay stands in the main room")
+	check(not HomeBase.STATIONS.has("launch") and not HomeBase.STATIONS.has("arena") and base.bulkhead("teleporter") == null
+			and not BaseUpgrades.has_upgrade("teleporter"),
+			"no launch pad, arena gate or teleporter clutters the base: you leave through a portal from the watch")
 	# One deploy area along the front wall, beside the exit, so the middle of
 	# the room is clear; the shelves and the gear bays line the other walls.
 	var front := base.room_size.z * 0.5
 	var in_deploy := func(at: Vector3) -> bool:
 		return at.x >= HomeBase.DEPLOY_FROM_X and at.x <= HomeBase.DEPLOY_TO_X and at.z > front - HomeBase.DEPLOY_DEPTH
-	var teleporter := base.bulkhead("teleporter")
-	check(in_deploy.call(bay_at) and in_deploy.call(pad) and (teleporter == null or in_deploy.call(teleporter.position))
-			and base.has_node("DeploySign"), "the suit-up bay, launch pad and teleporter share one deploy area by the front wall")
+	check(in_deploy.call(bay_at) and base.has_node("DeploySign"), "the suit-up bay stands in the deploy area by the front wall")
 	var shelved := true
 	for kind: String in HomeBase.STORAGE_ROWS:
 		for i in int(BaseLayout.KINDS[kind]["spots"]):
@@ -7102,15 +7124,17 @@ func _test_arena() -> void:
 	check(Profile.stash == stash_before, "leaving the arena takes nothing from the stash")
 	Profile.reset()
 
-	# From your base: the arena gate opens it, with its own overlay.
+	# From your base: a portal from the watch opens it, with its own overlay.
 	var main: Node = load("res://scenes/main.tscn").instantiate()
 	add_child(main)
 	await frames(2)
-	main.base.station("arena").interact(main.base.player)
-	await frames(5)
+	check(main.base.open_portal(Arena.ArenaVenue.ID) == "", "a portal from the base's watch can lead to the arena")
+	await frames(int(main.base.portal.unfold_time * 60.0) + 4)
+	main.base.player.global_position = main.base.portal.global_position
+	await frames(8)
 	check(main.raid is Arena and not main.hub.visible and main.base == null
 			and main.raid.get_node_or_null("ArenaHud") != null
-			and main.controller != null, "the base's arena gate opens the arena")
+			and main.controller != null, "walking through it opens the arena")
 	var hud: CanvasLayer = main.raid.get_node("ArenaHud")
 	await frames(20)
 	var faces := get_tree().get_nodes_in_group("arena_board").filter(func(face: Node) -> bool:

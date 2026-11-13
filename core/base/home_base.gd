@@ -4,8 +4,9 @@ extends Node3D
 ## stash on show. Every weapon hangs on one rack in the armory, an alcove off
 ## the left of the room with the locker at its entrance and the gunsmith bench
 ## in a workshop corner of its own, off to the side of the way in. The main room holds armor and flight rigs along the back
-## wall, the garage, the launch pad, ability chips, and shelves for supplies
-## and loot.
+## wall, the garage, ability chips, and shelves for supplies and loot. There
+## is no launch pad: you leave for a world through a squad portal opened from
+## the watch (`open_portal`).
 ##
 ## The base is a view of a stash, never a second store. `show_gear` is given a
 ## stash and a loadout (the local `Profile`'s, or the account a server keeps)
@@ -29,8 +30,8 @@ signal equip_requested(slot: String, item_id: String)
 ## The player used the door.
 signal leave_requested
 ## The player used a station (a key of `STATIONS`): the locker, the mastery
-## bench, the wardrobe, the records board, the trader, the launch pad or the
-## uplink, or the arena gate. Whoever owns the base opens what it offers.
+## bench, the wardrobe, the records board, the trader or the uplink.
+## Whoever owns the base opens what it offers.
 signal station_requested(station: String)
 ## The player confirmed buying an upgrade (an id from `BaseUpgrades`) at its
 ## bulkhead. Whoever owns the account checks the price and takes the scrip.
@@ -41,6 +42,10 @@ signal gear_shown
 ## view to the bench and works it with `bench_scroll`, `bench_select`,
 ## `bench_back` and `leave_bench`.
 signal bench_used
+## The player walked into the squad portal they opened from the watch
+## (`open_portal`). Whoever owns the base sends them to `destination` (a
+## `Portal.destinations()` id).
+signal portal_entered(destination: String)
 ## The player suited up: `player` is now a new actor wearing the loadout.
 ## Whoever drives the player (a controller, a camera) takes it over.
 signal player_replaced(actor: Actor)
@@ -96,19 +101,16 @@ var read_only := false
 var door_text := "Head out: play online"
 
 ## Where each station stands and which way it faces (local +Z into the room),
-## with its title and prompt. The launch pad stands in the deploy area along
-## the front wall, the locker
+## with its title and prompt. The locker stands
 ## beside the way into the armory, the wardrobe and records along the left
 ## wall nearer the door, and the rest along the right wall either side of the
 ## way into the garage.
 const STATIONS := {
-	"launch": {"prompt": "Deploy", "title": "Launch pad", "at": Vector3(6.8, 0.0, 6.4), "yaw": PI, "color": Color(1.0, 0.55, 0.2)},
 	"locker": {"prompt": "Pick your loadout", "title": "Locker", "at": Vector3(-11.1, 0.0, -5.4), "yaw": PI / 2.0, "color": Color(0.45, 0.75, 1.0)},
 	"wardrobe": {"prompt": "Change how you look", "title": "Wardrobe", "at": Vector3(-11.1, 0.0, 5.3), "yaw": PI / 2.0, "color": Color(0.85, 0.6, 1.0)},
 	"records": {"prompt": "Read your record and stash", "title": "Records", "at": Vector3(-11.1, 0.0, 7.2), "yaw": PI / 2.0, "color": Color(0.9, 0.9, 0.85)},
 	"mastery": {"prompt": "Pick mastery variants", "title": "Mastery bench", "at": Vector3(11.1, 0.0, 7.9), "yaw": -PI / 2.0, "color": Color(1.0, 0.8, 0.3)},
 	"trader": {"prompt": "Buy and sell", "title": "Trader", "at": Vector3(11.1, 0.0, 6.0), "yaw": -PI / 2.0, "color": Color(0.45, 1.0, 0.6)},
-	"arena": {"prompt": "Enter the arena (no gear at risk)", "title": "Arena gate", "at": Vector3(11.1, 0.0, -7.9), "yaw": -PI / 2.0, "color": Color(1.0, 0.35, 0.3)},
 	"uplink": {"prompt": "Play online", "title": "Uplink", "at": Vector3(11.1, 0.0, -6.0), "yaw": -PI / 2.0, "color": Color(0.4, 0.95, 1.0)},
 }
 
@@ -139,13 +141,13 @@ const CRAFT_COLOR := Color(0.3, 0.9, 1.0)
 const MERGED := {"trader": "mastery", "wardrobe": "records"}
 
 ## The suit-up bay: where you put your loadout on before you deploy. It
-## stands in the deploy area beside the launch pad, its back to the front
+## stands in the deploy area, its back to the front
 ## wall, facing into the room (local +Z).
 const SUIT_AT := Vector3(3.8, 0.0, 7.2)
 const SUIT_YAW := PI
 ## The deploy area: the front wall between these x, this deep, clear of the
-## trader and mastery consoles in the corner. The suit-up bay, the launch
-## pad and the teleporter's place stand in it, in that order.
+## trader and mastery consoles in the corner. The suit-up bay stands in it,
+## with room in front to open a squad portal from the watch.
 const DEPLOY_FROM_X := 1.9
 const DEPLOY_TO_X := 10.2
 const DEPLOY_DEPTH := 4.4
@@ -163,6 +165,8 @@ const SIGNED_ELSEWHERE := ["bay", "gunsmith"]
 const SCREEN_SIZE := Vector2(1.6, 0.9)
 
 var player: Actor
+## The squad portal open in the room (`open_portal`), or null.
+var portal: Portal
 var displays: Array[Display] = []
 var door: Door
 var stations: Array[Station] = []
@@ -547,7 +551,7 @@ func suit_up() -> void:
 		return
 	var old := player
 	var fresh := _new_player(SUIT_AT + Vector3(0, 0.1, 0))
-	# Facing out of the bay, toward the launch pad and the room.
+	# Facing out of the bay, into the room.
 	fresh.cmd.yaw = SUIT_YAW + PI
 	if old and is_instance_valid(old):
 		if old.has_meta("appearance"):
@@ -572,7 +576,49 @@ func suit_up() -> void:
 	player_replaced.emit(fresh)
 
 
+## The watch's squad portal: opens a portal to `destination` (a
+## `Portal.destinations()` id) in front of the player, in place of any open
+## one. The base is a safe space, so it always may. Returns "" if it opened,
+## or why not. Online your squad joins you on the other side; only you are
+## in your base.
+func open_portal(destination: String) -> String:
+	if read_only:
+		return "Not your base"
+	if player == null or not is_instance_valid(player):
+		return "not now"
+	if destination not in Portal.destinations():
+		return "No portal goes there"
+	close_portal()
+	portal = Portal.new()
+	portal.name = "Portal"
+	portal.destination = destination
+	add_child(portal)
+	portal.global_transform = Portal.spot(get_world_3d().direct_space_state, player.get_eye_position(),
+			player.get_aim_dir(), global_position.y, portal.distance, portal.wall_gap)
+	return ""
+
+
+func close_portal() -> void:
+	if portal != null and is_instance_valid(portal):
+		portal.queue_free()
+	portal = null
+
+
+func _tick_portal(delta: float) -> void:
+	if portal == null or not is_instance_valid(portal):
+		portal = null
+		return
+	portal.tick(delta)
+	if not portal.is_open():
+		close_portal()
+	elif player != null and is_instance_valid(player) and player not in portal.sent \
+			and portal.contains(player.global_position):
+		portal.sent.append(player)
+		portal_entered.emit(portal.destination)
+
+
 func _physics_process(delta: float) -> void:
+	_tick_portal(delta)
 	_range_time += delta
 	for target in targets:
 		target.place(_range_time)
@@ -1087,8 +1133,8 @@ func _wall(size: Vector3, at: Vector3, inward: Vector3) -> void:
 
 
 ## The deploy area along the front wall, right of the door: the suit-up bay,
-## then the launch pad, inside one marked bay with its name on the wall. You
-## suit up, step across and deploy; the door out is beside it.
+## in one marked bay with its name on the wall. You suit up, raise the watch
+## and open a portal; the door out is beside it.
 func _build_deploy_area() -> void:
 	var wall_z := room_size.z * 0.5
 	var hazard := Color(1.0, 0.62, 0.22)
@@ -1195,27 +1241,14 @@ func _build_stations() -> void:
 		var title_at := Vector3(0, 2.2, 0)
 		var screen := Node3D.new()
 		screen.name = "Screen"
-		if id == "launch":
-			# A lit ring on the floor round a drop console with a tilted screen.
-			console.add_child(_part(Vector3(3.2, 0.04, 3.2), Vector3(0, 0.02, 0), dark))
-			for side: Vector3 in [Vector3(0, 0, 1.5), Vector3(0, 0, -1.5)]:
-				console.add_child(_part(Vector3(3.2, 0.05, 0.16), side + Vector3(0, 0.03, 0), color, true))
-			for side: Vector3 in [Vector3(1.5, 0, 0), Vector3(-1.5, 0, 0)]:
-				console.add_child(_part(Vector3(0.16, 0.05, 3.2), side + Vector3(0, 0.03, 0), color, true))
-			console.add_child(_part(Vector3(0.9, 1.0, 0.6), Vector3(0, 0.5, 0), dark))
-			screen.position = Vector3(0, 1.3, 0.1)
-			screen.rotation.x = -0.45
-			_add_collision(console, Vector3(1.0, 1.5, 0.8), Vector3(0, 0.75, 0))
-			title_at = Vector3(0, 2.15, 0)
-		else:
-			# A cabinet with a stripe of the station's colour and a monitor on top.
-			console.add_child(_part(Vector3(1.2, 1.0, 0.5), Vector3(0, 0.5, 0), dark))
-			console.add_child(_part(Vector3(1.22, 0.06, 0.52), Vector3(0, 0.3, 0), color, true))
-			console.add_child(_part(Vector3(0.12, 0.25, 0.12), Vector3(0, 1.1, 0), dark))
-			screen.position = Vector3(0, 1.62, 0.05)
-			screen.rotation.x = -0.08
-			_add_collision(console, Vector3(1.3, 1.7, 0.7), Vector3(0, 0.85, 0))
-			title_at = Vector3(0, 2.3, 0)
+		# A cabinet with a stripe of the station's colour and a monitor on top.
+		console.add_child(_part(Vector3(1.2, 1.0, 0.5), Vector3(0, 0.5, 0), dark))
+		console.add_child(_part(Vector3(1.22, 0.06, 0.52), Vector3(0, 0.3, 0), color, true))
+		console.add_child(_part(Vector3(0.12, 0.25, 0.12), Vector3(0, 1.1, 0), dark))
+		screen.position = Vector3(0, 1.62, 0.05)
+		screen.rotation.x = -0.08
+		_add_collision(console, Vector3(1.3, 1.7, 0.7), Vector3(0, 0.85, 0))
+		title_at = Vector3(0, 2.3, 0)
 		# The screen's bezel, and a glow in the station's colour while nobody
 		# is using it. The live screen is mounted in front of it.
 		screen.add_child(_part(Vector3(SCREEN_SIZE.x + 0.08, SCREEN_SIZE.y + 0.08, 0.06), Vector3(0, 0, -0.035), dark))
@@ -1305,8 +1338,6 @@ func _build_gates() -> void:
 		_add_bulkhead("lounge", _spot(Vector3(9.6, 0, -wall_z + 0.6), 0.0), "post")
 	if not owns("ops_consoles"):
 		_add_bulkhead("ops_consoles", _spot(STATIONS["mastery"]["at"], STATIONS["mastery"]["yaw"]), "post")
-	if not owns("teleporter"):
-		_add_bulkhead("teleporter", _spot(Vector3(9.3, 0, 8.1), PI), "hatch")
 	if not owns("finish"):
 		_add_bulkhead("finish", _spot(Vector3(-1.75, 0, wall_z - 0.55), PI), "post")
 	else:
@@ -1439,7 +1470,7 @@ func _new_player(at: Vector3) -> Actor:
 	return actor
 
 
-## The suit-up bay beside the launch pad: a lit disc to stand on between two
+## The suit-up bay in the deploy area: a lit disc to stand on between two
 ## frames whose arms swing in to fit the gear, and a control post to use.
 func _build_suit_bay() -> void:
 	var bay := Node3D.new()

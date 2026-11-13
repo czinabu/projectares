@@ -77,9 +77,12 @@ signal world_invite_accepted(invite: Dictionary)
 ## Client: you accepted an invite to someone's home base. The owner's stash
 ## and loadout come from the server, so a base can be shown read-only.
 signal base_visit_requested(owner_name: String, stash: Array, loadout: Dictionary, upgrades: Array)
+## Client: you walked through a squad portal your side may use; go to
+## `destination` (a world id or the arena's). The server decided.
+signal portal_travel(destination: String)
 
 const DEFAULT_PORT := 24565
-const PROTOCOL := 22
+const PROTOCOL := 23
 ## Every packet is compressed, both ways. State updates are mostly repeated
 ## numbers, and a big battle sends a player hundreds of them a second. Server
 ## and client must agree, so a change here needs a new PROTOCOL.
@@ -364,6 +367,16 @@ func _start_server_raid() -> void:
 		for peer in _joined_peers:
 			_toy.rpc_id(peer, item_id, from, toy_velocity))
 	raid.pinged.connect(_on_server_pinged)
+	raid.portal_opened.connect(func(portal: Portal) -> void:
+		for peer in _joined_peers:
+			_send_portal(peer, portal))
+	raid.portal_closed.connect(func(portal: Portal) -> void:
+		for peer in _joined_peers:
+			_portal_closed.rpc_id(peer, portal.get_instance_id()))
+	raid.portal_entered.connect(func(actor: Actor, destination: String) -> void:
+		var peer: int = _actor_peer.get(actor, 0)
+		if peer != 0:
+			_portal_travel.rpc_id(peer, destination))
 	raid.squad_spawn = squad_spawn
 	if lag_compensation:
 		raid.rewind = _seen_positions
@@ -686,11 +699,14 @@ func _request_clan(action: String, a := "", b := "") -> void:
 
 
 ## Server: marks an actor with its account's clan. Only where gear is at
-## stake do clanmates become one side; anywhere else the tag is just worn.
+## stake do clanmates become one side; anywhere else the tag is worn and the
+## clan is a squad (`Raid.set_squad`), for squad portals.
 func _wear_clan(actor: Actor, account_id: String) -> void:
 	var clan_id := clans.clan_of(account_id)
 	actor.clan_tag = clans.tag_of(clan_id)
 	actor.clan = clan_id if _clans_fight_together() else ""
+	# A clan is also a squad, everywhere: who may use a portal it opens.
+	raid.set_squad(account_id, clan_id)
 
 
 func _clans_fight_together() -> bool:
@@ -946,6 +962,8 @@ func _request_join(drop := "") -> void:
 	for id: int in _sent_standing:
 		_standing.rpc_id(peer, id, _sent_standing[id])
 	_war.rpc_id(peer, raid.war.intensity, raid.war.centre)
+	for portal in raid.portals:
+		_send_portal(peer, portal)
 	_send_watch(actor)
 	_sent_points.erase(peer)
 
@@ -1442,6 +1460,64 @@ func _on_server_pinged(pinger: Actor, at: Vector3) -> void:
 			continue
 		if viewer == pinger or Visor.allied(pinger, viewer):
 			_ping.rpc_id(peer, _ids[pinger], at)
+
+
+## In a safe zone: ask the server to open a squad portal to `destination`
+## in front of you (the watch's portal icon).
+func open_portal(destination: String) -> void:
+	if _is_connected() and my_actor_id >= 0 and not _can_redeploy and destination != "":
+		_request_portal.rpc_id(1, destination)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _request_portal(destination: String) -> void:
+	if not is_server or raid == null:
+		return
+	var peer := _api.get_remote_sender_id()
+	var actor: Actor = _peer_actor.get(peer)
+	if actor == null or not is_instance_valid(actor):
+		return
+	var why := raid.open_portal(actor, destination.left(32))
+	if why != "" and why != "not now":
+		_notice.rpc_id(peer, why)
+
+
+## Server: shows `peer` a portal, saying whether their side may use it. The
+## opener's side key never leaves the server.
+func _send_portal(peer: int, portal: Portal) -> void:
+	if not is_instance_valid(portal):
+		return
+	var viewer: Actor = _peer_actor.get(peer)
+	var usable: bool = portal.side == "" or (viewer != null and is_instance_valid(viewer)
+			and raid.squad_of(viewer) == portal.side)
+	_portal.rpc_id(peer, portal.get_instance_id(), portal.destination, portal.global_transform, usable,
+			portal.age, portal.opener_name)
+
+
+## Client: a squad portal is open here.
+@rpc("authority", "call_remote", "reliable")
+func _portal(key: int, destination: String, at: Transform3D, usable: bool, age: float, opener_name: String) -> void:
+	if raid == null or destination not in Portal.destinations() or not at.origin.is_finite():
+		return
+	var shown := raid.show_portal(destination, at, usable, age, opener_name.left(32))
+	shown.set_meta("net_key", key)
+
+
+## Client: a squad portal closed.
+@rpc("authority", "call_remote", "reliable")
+func _portal_closed(key: int) -> void:
+	if raid == null:
+		return
+	for portal in raid.portals.duplicate():
+		if portal.get_meta("net_key", -1) == key:
+			raid.close_portal(portal)
+
+
+## Client: you walked through a portal your side may use.
+@rpc("authority", "call_remote", "reliable")
+func _portal_travel(destination: String) -> void:
+	if destination in Portal.destinations():
+		portal_travel.emit(destination)
 
 
 ## Drop into the server's world: from the lobby, or again after a death.
