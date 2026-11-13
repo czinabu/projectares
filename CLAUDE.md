@@ -652,9 +652,12 @@ without Caleb, and update the gap list when a PR closes a row.
   front of the camera. Vitals go on the card only where the visor cannot
   show them (no helmet, or third person). The watch works in the home base
   too (`BaseHud.wrist`), its card saying what each icon holds for the next
-  deploy (`Hud.base_watch_slots`). Raised, the forearm rolls so the face,
-  worn on the back of the wrist (`Hud.Wrist.FACE_AXIS`), looks at the eyes
-  (`WeaponArm._face_watch`). Check it by eye with
+  deploy (`Hud.base_watch_slots`). Raised, the wrist comes up in front of
+  the eyes along the aim (`WeaponArm.watch_point`), so it is in view in
+  first person wherever you look, and the forearm rolls so the face, worn
+  on the back of the wrist (`Hud.Wrist.FACE_AXIS`), looks at the eyes
+  (`WeaponArm._face_watch`). From the eyes the card opens just over the
+  face, sized to read like a card at arm's length (`fp_card_reads_at`). Check it by eye with
   `visual_check.tscn -- <dir> --watch-only` (`--base-watch-only` for just
   the base).
 - Money (`core/economy/`): the rules live once, in `economy.gd` (static, like

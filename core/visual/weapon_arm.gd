@@ -33,11 +33,13 @@ var grip_offset := Vector3.ZERO
 var elbow := Vector3(0.8, 0.8, 0.3)
 var off_elbow := Vector3(-0.8, 0.8, 0.3)
 ## Raising the watch (`ActionPose.watch`): where the left wrist comes up to,
-## in front of the chest, and where that elbow points, in the actor's frame.
-## The elbow stays out to the side and low, so the forearm lies across the
-## chest, as you hold a wrist up to read a watch.
-var watch_at := Vector3(-0.12, 1.34, -0.32)
-var watch_elbow := Vector3(-0.8, 0.5, 0.4)
+## from the eyes along the aim (metres right, up and ahead, pitch clamped to
+## `watch_pitch`), so it comes up into the line of sight in both views, and
+## where that elbow points, in the actor's frame. The elbow stays out to the
+## side and low, so the forearm lies across in front of the chest.
+var watch_from_eyes := Vector3(-0.1, -0.1, -0.37)
+var watch_pitch := Vector2(-0.7, 0.5)
+var watch_elbow := Vector3(-1.0, 1.2, -0.15)
 ## With the watch up the forearm rolls so the back of the wrist, where the
 ## watch face is (`Hud.Wrist.FACE_AXIS` in the wrist bone), looks at the
 ## eyes, and the hand stays straight on from the forearm.
@@ -299,7 +301,15 @@ func _process(delta: float) -> void:
 		off_ik.influence = maxf(_off_weight * (1.0 - _watch), _watch)
 		_off_pole.global_position = actor.global_transform * off_elbow.lerp(watch_elbow, _watch)
 		if _watch > 0.0:
-			_off_target.global_position = actor.global_transform * watch_at
+			_off_target.global_position = watch_point()
+
+
+## Where the raised watch's wrist goes, in the world: below and ahead of
+## the eyes along the aim, so you look straight at it.
+func watch_point() -> Vector3:
+	var pitch := clampf(actor.cmd.pitch, watch_pitch.x, watch_pitch.y)
+	var aim := actor.global_basis.orthonormalized() * Basis(Vector3.RIGHT, pitch)
+	return actor.get_eye_position() + aim * watch_from_eyes
 
 
 ## Once the off arm has reached for the watch: roll the forearm so the watch
@@ -386,7 +396,7 @@ func _place_weapon() -> void:
 			skeleton.set_bone_global_pose(_wrist, pose)
 	hold_weapon()
 	var handle := melee.visual.global_transform * Vector3(0.0, off_hand_at, 0.0)
-	_off_target.global_position = handle.lerp(actor.global_transform * watch_at, _watch)
+	_off_target.global_position = handle.lerp(watch_point(), _watch)
 
 
 ## Last of all, close the fingers round the handle.
