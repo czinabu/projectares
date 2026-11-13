@@ -1628,7 +1628,11 @@ func _ride_shots(out_dir: String) -> void:
 func _view_shots(out_dir: String, only := "") -> void:
 	var raid := Raid.new()
 	add_child(raid)
-	raid.start(Worlds.get_world("ashfront"), 42, ["rifle_carbine", OS.get_environment("VIEW_MELEE") if OS.has_environment("VIEW_MELEE") else "blade_scrap", "pistol_service", "jetpack_mk1", "plate_light"])
+	var kit := ["rifle_carbine", OS.get_environment("VIEW_MELEE") if OS.has_environment("VIEW_MELEE") else "blade_scrap", "pistol_service", "jetpack_mk1", "plate_light"]
+	# `VIEW_OPTIC=<item id>` fits an optic to the rifle, for the aim rows.
+	if OS.has_environment("VIEW_OPTIC"):
+		kit.append(OS.get_environment("VIEW_OPTIC"))
+	raid.start(Worlds.get_world("ashfront"), 42, kit)
 	for bot in raid.bots:
 		bot.get_node("Brain").set_physics_process(false)
 		bot.global_position += Vector3(0, -500, 0)
@@ -1662,7 +1666,7 @@ func _view_shots(out_dir: String, only := "") -> void:
 	var outside := Camera3D.new()
 	outside.fov = 40.0
 	raid.add_child(outside)
-	var rows := ["gun_ready", "gun_low", "pistol_low", "blade_idle", "reload", "switch", "windup_left", "windup_right", "windup_overhead",
+	var rows := ["gun_ready", "ads", "pistol_ads", "gun_low", "pistol_low", "blade_idle", "reload", "switch", "windup_left", "windup_right", "windup_overhead",
 			"swing", "guard", "watch"]
 	if only != "":
 		rows = rows.filter(func(r: String) -> bool: return r in only.split(","))
@@ -1671,7 +1675,10 @@ func _view_shots(out_dir: String, only := "") -> void:
 	for row in rows.size():
 		var kind: String = rows[row]
 		var melee := kind.begins_with("windup") or kind == "swing" or kind == "guard" or kind == "blade_idle"
-		p.active_weapon_index = blade_at if melee else (pistol_at if kind == "pistol_low" else gun_at)
+		p.active_weapon_index = blade_at if melee else (pistol_at if kind.begins_with("pistol") else gun_at)
+		for w in p.weapons:
+			if w is Gun:
+				w._aiming = false
 		blade._windup_left = 0.0
 		blade._swing_left = 0.0
 		blade._blocking = false
@@ -1688,6 +1695,9 @@ func _view_shots(out_dir: String, only := "") -> void:
 			match kind:
 				"gun_ready":
 					skin._aim_left = 1.0
+				"ads", "pistol_ads":
+					p.cmd.secondary = true
+					(p.get_active_weapon() as Gun)._aiming = true
 				"reload":
 					gun._reload_left = gun.reload_time * 0.5
 				"switch":
@@ -1759,6 +1769,7 @@ func _phone_shots(out_dir: String) -> void:
 	phone.open()
 	controller.input_blocked = true
 	controller.phone_out = true
+	phone.set_holder(raid.player)
 	await _settle(30)
 	await _shot(out_dir.path_join("phone_home.png"))
 	phone._screen.get_texture().get_image().save_png(out_dir.path_join("phone_screen.png"))
@@ -1768,6 +1779,13 @@ func _phone_shots(out_dir: String) -> void:
 	phone.open_app("settings")
 	await _settle(10)
 	await _shot(out_dir.path_join("phone_settings.png"))
+	phone._screen.get_texture().get_image().save_png(out_dir.path_join("phone_settings_screen.png"))
+	phone.open_settings_tab("view")
+	await _settle(10)
+	phone._screen.get_texture().get_image().save_png(out_dir.path_join("phone_settings_view_screen.png"))
+	phone.open_settings_tab("dev")
+	await _settle(10)
+	phone._screen.get_texture().get_image().save_png(out_dir.path_join("phone_settings_dev_screen.png"))
 	phone.go_home()
 	controller.toggle_view()
 	await _settle(40)
@@ -1783,17 +1801,38 @@ func _phone_shots(out_dir: String) -> void:
 	controller.toggle_view()
 	controller.input_blocked = true
 	controller.phone_out = true
+	phone.set_holder(raid.player)
 	var me: Actor = raid.player
 	var cam := Camera3D.new()
 	cam.fov = 40.0
 	raid.add_child(cam)
 	cam.make_current()
 	var facing := Basis(Vector3.UP, controller.yaw)
-	for view: Array in [["phone_other_player.png", Vector3(0.35, 1.45, -2.6)], ["phone_other_player_side.png", Vector3(2.4, 1.5, -0.9)]]:
+	for view: Array in [["phone_other_player.png", Vector3(0.35, 1.45, -2.6)], ["phone_other_player_side.png", Vector3(2.4, 1.5, -0.9)],
+			["phone_over_shoulder.png", Vector3(0.45, 1.85, 0.9)]]:
 		var eye: Vector3 = me.global_position + facing * (view[1] as Vector3)
 		cam.look_at_from_position(eye, me.global_position + Vector3(0, 1.15, 0))
 		await _settle(40)
 		await _shot(out_dir.path_join(view[0]))
+	# From the eyes, as first person shows the real body: a camera at the
+	# eye point looking where the head looks, past the head itself.
+	# The head is left out, as first person leaves it out of its camera.
+	for node in me.find_children("*", "MeshInstance3D", true, false):
+		var mesh := node as MeshInstance3D
+		var on_head: bool = mesh.get_meta("slot", "") == "head"
+		var up := mesh.get_parent()
+		while up != null and up != me and not on_head:
+			if up is BoneAttachment3D and String((up as BoneAttachment3D).bone_name) in ["Head", "Neck", "neck", "head"]:
+				on_head = true
+			up = up.get_parent()
+		if on_head:
+			mesh.visible = false
+	var eyes: Vector3 = me.global_position + Vector3(0, me.eye_height, 0)
+	cam.fov = 75.0
+	cam.near = 0.12
+	cam.look_at_from_position(eyes, eyes + facing * Vector3(0.0, -0.3, -1.0))
+	await _settle(20)
+	await _shot(out_dir.path_join("phone_from_eyes.png"))
 	phone.queue_free()
 	raid.queue_free()
 	await _settle(3)

@@ -32,6 +32,7 @@ const STANCE_CONTROL_HINTS := [
 ]
 const VehicleScript := preload("res://core/vehicle/vehicle.gd")
 const MirrorScript := preload("res://core/visual/mirror.gd")
+const Handheld := preload("res://core/phone/handheld.gd")
 ## Where a toy vehicle sits in the hand, and how big it is drawn there next
 ## to a thrown toy (it is close to the eye in first person).
 const TOY_IN_HAND := Vector3(-0.08, 0.0, 0.1)
@@ -48,6 +49,18 @@ var input_blocked := false
 ## everyone else sees (`ActorCommand.phone`), and the weapon is put away in
 ## the view until the phone is.
 var phone_out := false
+## Reading the phone in third person (Caleb's call, like the riding view: an
+## exception to the camera never moving on its own, made by opening the
+## phone): the camera eases in over the right shoulder to the holo panel, this
+## far back from it (m) and this far out to the right, and eases back out when
+## the phone is put away. First person needs nothing: the panel is in view.
+var phone_read_distance := 0.9
+var phone_read_side := 0.72
+var phone_read_lift := 0.2
+var phone_read_fov := 32.0
+var phone_read_rate := 6.0
+## How far in to the phone the third-person camera is now (0..1).
+var phone_read := 0.0
 ## How far behind the eyes the third-person camera sits, in meters: a view
 ## over the right shoulder (the phone's "Camera distance" setting). Aiming
 ## moves in to `aim_distance_ratio` of it.
@@ -86,10 +99,10 @@ var ads_fov := 55.0
 ## Extra distance between the eye and an optic's own eye point (its "Sight"
 ## marker) when looking through it in first person, in meters.
 var eye_relief := 0.0
-## True while looking through an optic in first person: the HUD hides its
-## crosshair, since the optic's own reticle is in the middle of the view.
+## True while looking down the sights in first person: the HUD hides its
+## crosshair, since the sight (an optic's reticle, or the plain sights) is
+## in the middle of the view.
 var sighted := false
-var _sight_blend := 0.0
 ## First person: how far the model's eyes are from the actor's eye point,
 ## eased so the view never jolts with a step.
 var _eye_offset := Vector3.ZERO
@@ -530,11 +543,14 @@ func _process(delta: float) -> void:
 		if not hit.is_empty():
 			desired = pivot + (hit.position - pivot) * 0.85
 	camera.global_transform = Transform3D(look, desired)
+	_read_phone(delta)
 	var speeding := 0.0 if aiming or _zoom() > 1.0 else speed_fov_for(_view_speed())
 	_speed_fov_now = lerpf(_speed_fov_now, speeding, 1.0 - exp(-4.0 * delta))
 	var fov := aim_fov(weapon) if aiming else wanted_base_fov() + _speed_fov_now
 	if _zoom() > 1.0:
 		fov = zoomed_fov(wanted_base_fov(), _zoom())
+	if phone_read > 0.0:
+		fov = lerpf(fov, phone_read_fov, smoothstep(0.0, 1.0, phone_read))
 	camera.fov = lerpf(camera.fov, fov, 1.0 - exp(-14.0 * delta))
 	if _thrust_audio:
 		var thrusting := actor.flight.is_thrusting and not actor.is_dead
@@ -567,26 +583,23 @@ func _process(delta: float) -> void:
 	if skin != null and skin.has_method("hide_head"):
 		skin.hide_head(first_person)
 	ActionPose.of(actor).advance(delta)
-	# Aiming down an optic moves the eye to the sight, wherever the hands
-	# hold it; the gun is never moved to the eye.
-	var sight := _sight_of(weapon) if first_person and not phone_out else null
-	_sight_blend = move_toward(_sight_blend, 1.0 if aiming and sight != null else 0.0, delta * 7.0)
-	sighted = _sight_blend > 0.9
-	if sight != null and _sight_blend > 0.0:
-		var eye := Transform3D(look, sight.global_position + look * Vector3(0.0, 0.0, eye_relief))
-		camera.global_transform = camera.global_transform.interpolate_with(eye, ease(_sight_blend, -2.0))
+	# Aiming down sights the body brings the gun up to its eyes, the same in
+	# both views (`ActionPose.ads`). First person then settles the eye on the
+	# sight line as the gun comes up, so it looks straight down it; the gun
+	# is never moved to the camera. The sight is read where it is drawn
+	# (`ActionPose.sight_shown`), never where a physics tick left the hand.
+	var pose := ActionPose.of(actor)
+	var gun := weapon as Gun if first_person and not phone_out else null
+	var up := pose.ads if gun != null and gun.visual != null and gun.visual.visible else 0.0
+	sighted = up > 0.9
+	if up > 0.0:
+		var at := ActionPose.sight_shown(gun) + look * Vector3(0.0, 0.0, pose.relief_for(gun) + eye_relief)
+		camera.global_transform = camera.global_transform.interpolate_with(Transform3D(look, at), up)
 
 
 ## The field of view while aiming `weapon`: optics zoom further in.
 func aim_fov(weapon: Weapon) -> float:
 	return ads_fov / maxf(1.0, weapon.aim_zoom() if weapon else 1.0)
-
-
-## The sight line marker of the optic on `weapon`, or null for plain sights.
-func _sight_of(weapon: Weapon) -> Node3D:
-	if weapon == null or weapon.visual == null:
-		return null
-	return weapon.visual.get_node_or_null("Attachments/optic/Sight") as Node3D
 
 
 ## How much the mouse turns the view right now, relative to the resting view.
@@ -751,6 +764,31 @@ func wanted_base_fov() -> float:
 
 func is_third_person() -> bool:
 	return _cam_dist > 0.5
+
+
+## Eases the third-person camera in to read the phone's holo panel while it
+## is out, and back out after. The view is only moved, never switched.
+func _read_phone(delta: float) -> void:
+	var holo := phone_panel()
+	var wanted := 1.0 if phone_out and holo != null and _wants_third_person() and not actor.is_dead else 0.0
+	phone_read = move_toward(phone_read, wanted, phone_read_rate * delta)
+	if phone_read <= 0.0 or holo == null:
+		return
+	var w := smoothstep(0.0, 1.0, phone_read)
+	var centre := holo.global_position
+	var heading := Basis.from_euler(Vector3(0.0, yaw, 0.0))
+	var spot := actor.get_eye_position() + heading * Vector3(phone_read_side, phone_read_lift, phone_read_distance)
+	var reading := Transform3D(Basis.looking_at(centre - spot, Vector3.UP), spot)
+	camera.global_transform = camera.global_transform.interpolate_with(reading, w)
+
+
+## The holo panel of the phone in your hand, or null while it is away.
+func phone_panel() -> Node3D:
+	var skin := actor.get_node_or_null("Skin")
+	if skin == null or not skin.has_method("handheld"):
+		return null
+	var holo := Handheld.holo_of(skin.handheld())
+	return holo if holo != null and holo.is_visible_in_tree() else null
 
 
 func _wants_third_person() -> bool:

@@ -31,7 +31,10 @@ without Caleb, and update the gap list when a PR closes a row.
 - The camera never changes view on its own. First/third-person switches only
   when the player presses the toggle (playtest feedback). The one exception:
   getting on a vehicle uses a separate riding view (third-person by default),
-  and getting off restores the on-foot view.
+  and getting off restores the on-foot view. And in third person, while the
+  phone is out, the camera eases in over the shoulder to read its holo
+  (`PlayerController._read_phone`, Caleb's call) and eases back after; the
+  view stays third person.
 - `Raid` has no camera, HUD, or input code. It must keep working headless.
 - The endless warzone. A `Raid` is one running world and it never ends: no
   timer, no exits, no restart. It keeps itself alive (`_tick_bots`,
@@ -238,11 +241,24 @@ without Caleb, and update the gap list when a PR closes a row.
   worn on it to `Mirror.HEAD_LAYER`, which that camera culls; shadows and
   a mirror still see it). Never build a first-person-only copy of the arms,
   a weapon or a prop, and never move anything in front of the camera for
-  first person. Aiming down an optic moves the camera to the sight, never
-  the gun to the eye. Each actor has one `ActionPose`
+  first person. Aiming down sights is a body animation, the same in both
+  views (`ActionPose.ads`, eased by `ads_rate`): `WeaponArm._reach_sight`
+  reaches the gun hand so the sight (`ActionPose.sight_local`: an optic's
+  "Sight" marker, else the model's "IronSight", else the top of the model)
+  sits on the line out of the model's eyes, `ActionPose.relief_for` in front
+  of them (a sidearm out at arm's length, a long gun shouldered), and the
+  off hand takes the "ForeGrip" (or cups a sidearm). Guns tagged in
+  `ads_hip_tags` (the minigun) stay at the hip. First person then only
+  settles the camera on the sight line as it comes up; never move the gun
+  to the camera. A view that follows the gun reads it where it was drawn
+  (`ActionPose.sight_shown`, the hand's "shown_local" meta), never the hand
+  node a physics tick parked (that was the range's ADS stutter). A weapon
+  that takes no input on a tick stops aiming (`Weapon.drop_aim`). Each
+  actor has one `ActionPose`
   (`core/visual/action_pose.gd`, a view-only child made by `ActionPose.of`):
   the melee reach and shoulder turn, the reload motion, the low ready, the
   drawing back of a held heavy and the easing back of a recovering blade,
+  the gun brought up to the eye,
   the watch raise (from `ActorCommand.watch_up`) and the phone hold
   (`ActionPose.phone`, from `ActorCommand.phone`, which `Locomotion` poses
   the body from). `WeaponArm` and `ActorSkin` pose the model from it; a new
@@ -297,8 +313,8 @@ without Caleb, and update the gap list when a PR closes a row.
   `gear_items`, so they drop and come home with the gun. `Gun.build_attachment`
   builds each shape with its origin at the mount; `Look.mount_attachments`
   moves them onto the real model (`Look.GUN_MOUNTS`). An optic's "Sight"
-  marker is the eye point: in first person aiming moves the camera to it
-  (never the gun to the eye) so it looks through it, and zooms by `Weapon.aim_zoom()`. Scopes are
+  marker is the eye point: aiming brings it up to the model's eyes in both
+  views, first person looks through it, and zooms by `Weapon.aim_zoom()`. Scopes are
   real geometry you look down, never a screen overlay. Fitting happens at
   the home base's gunsmith bench (`BaseLayout` kind "gunsmith").
 - Power weapons are items tagged "power" (Rail Lance, Helion launcher, Arc
@@ -531,12 +547,21 @@ without Caleb, and update the gap list when a PR closes a row.
   every key from `Phone.CONTROLS`, whose `{action}` names are filled in from
   the live `InputMap`; a new input action needs a row there (a test fails
   otherwise), and a changed control needs its row's wording updated. The phone
-  is held, not overlaid: its screen is a `SubViewport` on a rounded slab held
-  up in front of the camera (drawn over the world on `Mirror.HELD_LAYER`, the
-  scene dimmed behind it), with a home screen of app icons; a new app is an
-  entry in `Phone.APPS` with an icon glyph in `Phone.AppIcon`. Holding it is
-  `ActorCommand.phone`, a held flag, so everyone else sees the one-handed hold
-  (`Locomotion.phone_pose`, the one place to swap in a shared hand pose).
+  is a thing in the hand, never an overlay, and every view shows the same
+  one: a rugged handheld with a pistol grip (`core/phone/handheld.gd`, its
+  origin at the grip) that the character's own right hand closes round with
+  the gun-grip fist (`ActorSkin._update_phone`, `Locomotion.phone_pose`,
+  driven by `ActorCommand.phone`, a held flag, so everyone sees it). Your own
+  phone puts its screen, a `SubViewport` drawn with the device's frame and
+  chin keys, on that handheld's face (`Phone.set_holder`,
+  `ActorSkin.set_phone_screen`) and clicks are cast onto it; other players'
+  show lit glass. The device also projects a holo of its screen
+  (`Handheld.holo_of`) for reading from outside: it sits on
+  `Mirror.HEAD_LAYER`, so your own first-person camera leaves it out like the
+  head and reads the screen in the hand, while third person reads and clicks
+  the holo (Caleb's call). A new app is an entry in `Phone.APPS` with a line glyph in
+  `Phone.AppIcon`; Settings are grouped in `Phone.SETTINGS_TABS`, and the dev
+  switches live only on the Dev tab.
   Settings live in
   `core/settings/game_settings.gd` (its own save file); a server never reads them.
 - Dev mode is TEMPORARY (Caleb's call, to come out once the game is further
@@ -652,9 +677,12 @@ without Caleb, and update the gap list when a PR closes a row.
   front of the camera. Vitals go on the card only where the visor cannot
   show them (no helmet, or third person). The watch works in the home base
   too (`BaseHud.wrist`), its card saying what each icon holds for the next
-  deploy (`Hud.base_watch_slots`). Raised, the forearm rolls so the face,
-  worn on the back of the wrist (`Hud.Wrist.FACE_AXIS`), looks at the eyes
-  (`WeaponArm._face_watch`). Check it by eye with
+  deploy (`Hud.base_watch_slots`). Raised, the wrist comes up in front of
+  the eyes along the aim (`WeaponArm.watch_point`), so it is in view in
+  first person wherever you look, and the forearm rolls so the face, worn
+  on the back of the wrist (`Hud.Wrist.FACE_AXIS`), looks at the eyes
+  (`WeaponArm._face_watch`). From the eyes the card opens just over the
+  face, sized to read like a card at arm's length (`fp_card_reads_at`). Check it by eye with
   `visual_check.tscn -- <dir> --watch-only` (`--base-watch-only` for just
   the base).
 - Money (`core/economy/`): the rules live once, in `economy.gd` (static, like

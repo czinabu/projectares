@@ -9,6 +9,8 @@ const Vfx := preload("res://core/visual/vfx.gd")
 const WeaponArm := preload("res://core/visual/weapon_arm.gd")
 const RigModel := preload("res://core/visual/rig_model.gd")
 const Locomotion := preload("res://core/visual/locomotion.gd")
+const Handheld := preload("res://core/phone/handheld.gd")
+const UiTheme := preload("res://core/visual/ui_theme.gd")
 ## Clips that loop and are cut between in step, keeping the stride's phase.
 const GAITS: Array[String] = ["walk", "run", "run_back", "run_left", "run_right", "move_gun"]
 ## Standing clips. Cuts into and out of them blend for longer, so stopping
@@ -302,6 +304,8 @@ var _head_hidden: Array[VisualInstance3D] = []
 var _head_bones := {}
 ## The phone in the hands while `phone_up`, built the first time.
 var _phone_prop: Node3D
+## What the phone's face shows (`set_phone_screen`); null for lit glass.
+var phone_screen: Material
 ## Matches the legs to the actor's speed and direction.
 var locomotion: Node
 ## Frames between poses now (see `detail_ranges`), frames since the last one
@@ -655,7 +659,7 @@ func phone_up() -> bool:
 
 
 ## Eases the phone hold in and out and keeps the phone itself in the right
-## hand, its lit screen turned up to the face.
+## hand, the fist round its grip and its screen turned up to the face.
 func _update_phone() -> void:
 	if locomotion == null:
 		return
@@ -673,47 +677,50 @@ func _update_phone() -> void:
 	var at: Vector3 = actor.global_transform * held
 	var eyes := actor.global_transform * Vector3(0.0, actor.eye_height, 0.0)
 	var face := (eyes - at).normalized()
-	var basis := Basis.looking_at(-face, actor.global_basis.orthonormalized() * Vector3.FORWARD)
+	# Upright in the hand, its face turned to the eyes.
+	var basis := Basis.looking_at(-face, Vector3.UP)
 	_phone_prop.global_transform = Transform3D(basis, at)
 
 
-## A greybox phone: a dark slab with a bright screen on the face (+Z) and a
-## faint glow that lights the face looking at it, so it reads from afar.
+## The phone in the hand: the handheld (`core/phone/handheld.gd`), the one
+## model every view shows, with a faint light from its screen so a player on
+## their phone reads from afar. Its face shows `phone_screen` when set (your
+## own phone's screen), else lit glass.
 func _build_phone_prop() -> Node3D:
-	var root := Node3D.new()
+	var root := Handheld.build(phone_screen)
 	root.name = "PhoneProp"
-	var body := MeshInstance3D.new()
-	var slab := BoxMesh.new()
-	slab.size = Vector3(0.085, 0.175, 0.011)
-	body.mesh = slab
-	var dark := StandardMaterial3D.new()
-	dark.albedo_color = Color(0.12, 0.12, 0.13)
-	dark.metallic = 0.6
-	dark.roughness = 0.35
-	body.material_override = dark
-	root.add_child(body)
-	var glass := MeshInstance3D.new()
-	var quad := QuadMesh.new()
-	quad.size = Vector2(0.075, 0.16)
-	glass.mesh = quad
-	glass.position = Vector3(0.0, 0.0, 0.0057)
-	var lit := StandardMaterial3D.new()
-	lit.albedo_color = Color(0.25, 0.42, 0.55)
-	lit.emission_enabled = true
-	lit.emission = Color(0.35, 0.6, 0.8)
-	lit.emission_energy_multiplier = 3.0
-	glass.material_override = lit
-	root.add_child(glass)
+	_phone_prop = root
+	_dress_phone_screen()
 	var glow := OmniLight3D.new()
-	glow.light_color = Color(0.55, 0.78, 1.0)
-	glow.light_energy = 1.6
-	glow.omni_range = 0.7
-	glow.position = Vector3(0.0, 0.0, 0.06)
+	glow.light_color = UiTheme.ACCENT.lerp(Color.WHITE, 0.4)
+	glow.light_energy = 0.8
+	glow.omni_range = 0.6
+	glow.position = -Handheld.grip_in_body() + Vector3(0.0, 0.0, 0.08)
 	glow.shadow_enabled = false
 	root.add_child(glow)
-	for mesh: MeshInstance3D in [body, glass]:
-		mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	return root
+
+
+## The phone being held, or null while it is put away (or never built).
+func handheld() -> Node3D:
+	return _phone_prop if _phone_prop != null and _phone_prop.visible else null
+
+
+## Sets what the phone shows on its face and its holo panel: your own
+## phone's screen, or null for lit glass and an unreadable sheen.
+func set_phone_screen(screen: Material) -> void:
+	phone_screen = screen
+	_dress_phone_screen()
+
+
+func _dress_phone_screen() -> void:
+	var face := Handheld.face_of(_phone_prop)
+	if face != null:
+		face.set_surface_override_material(0, phone_screen if phone_screen != null else Handheld.glass_material())
+	var holo := Handheld.holo_of(_phone_prop)
+	if holo != null:
+		var picture: Texture2D = (phone_screen as StandardMaterial3D).albedo_texture if phone_screen is StandardMaterial3D else null
+		holo.material_override = Handheld.holo_material(picture)
 
 
 ## True once the actor has been off the ground long enough to show it.
@@ -759,6 +766,9 @@ func _update_air(delta: float, airborne: bool) -> void:
 ## or a gun raised while the actor shoots or aims and for `aim_hold` after.
 ## Skins without the gun clips fall back to plain `idle`.
 func stand_key(weapon: Weapon) -> String:
+	if phone_up() and _anims.has("idle_gun"):
+		# The fist of a gun held low closes round the phone's grip.
+		return "idle_gun"
 	if weapon == null or weapon is MeleeWeapon or weapon.visual == null:
 		return "idle"
 	if actor.cmd.primary or actor.cmd.secondary:
