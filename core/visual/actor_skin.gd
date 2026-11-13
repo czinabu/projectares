@@ -216,6 +216,8 @@ var _moving: Weapon
 var _moving_weight := 0.0
 ## Makes the model hold its weapon, or null for skins without the bones.
 var arm: Node
+## The phone in the hands while `phone_up`, built the first time.
+var _phone_prop: Node3D
 ## Matches the legs to the actor's speed and direction.
 var locomotion: Node
 
@@ -262,6 +264,9 @@ func _ready() -> void:
 		arm.setup(def, _player.get_animation(_anims["idle_melee"]) if _player and _anims.has("idle_melee") else null)
 		# After the arm has put the hand on the model's hand.
 		skeleton.skeleton_updated.connect(_carry_moving)
+	if skeleton:
+		# Last, so the phone has both hands whatever the arm was doing.
+		locomotion.add_phone_hook()
 	if skeleton:
 		_setup_glide_pose(skeleton, def)
 
@@ -327,8 +332,12 @@ func _process(delta: float) -> void:
 	_update_stowed()
 	_update_switch(delta)
 	_update_vitals()
+	_update_phone()
 	_aim_left = maxf(_aim_left - delta, 0.0)
 	var weapon := actor.get_active_weapon()
+	if phone_up():
+		# Hands on the phone: stand as if empty-handed.
+		weapon = null
 	var melee := weapon as MeleeWeapon
 	if locomotion == null:
 		return
@@ -394,6 +403,66 @@ func flies_stowed() -> bool:
 	if not (actor.flight.is_gliding or actor.flight.is_boosting):
 		return false
 	return _flight_draw_left <= 0.0
+
+
+## True while the actor holds their phone up (`ActorCommand.phone`, which
+## travels with the held keys, so remote players show it too). The weapon is
+## worn meanwhile and drawn again when the phone goes away.
+func phone_up() -> bool:
+	return actor.cmd.phone and not actor.is_dead and actor.vehicle == null
+
+
+## Eases the phone hold in and out and keeps the phone itself between the
+## hands, its screen turned up to the face.
+func _update_phone() -> void:
+	if locomotion == null:
+		return
+	locomotion.phone_up = phone_up()
+	var w: float = locomotion.phone_weight
+	if w <= 0.0:
+		if _phone_prop:
+			_phone_prop.visible = false
+		return
+	if _phone_prop == null:
+		_phone_prop = _build_phone_prop()
+		add_child(_phone_prop)
+	_phone_prop.visible = w > 0.5
+	var at: Vector3 = actor.global_transform * locomotion.phone_at
+	var eyes := actor.global_transform * Vector3(0.0, actor.eye_height, 0.0)
+	var face := (eyes - at).normalized()
+	var basis := Basis.looking_at(-face, actor.global_basis.orthonormalized() * Vector3.FORWARD)
+	_phone_prop.global_transform = Transform3D(basis, at)
+
+
+## A greybox phone: a dark slab with a lit screen on the face (+Z).
+func _build_phone_prop() -> Node3D:
+	var root := Node3D.new()
+	root.name = "PhoneProp"
+	var body := MeshInstance3D.new()
+	var slab := BoxMesh.new()
+	slab.size = Vector3(0.075, 0.155, 0.01)
+	body.mesh = slab
+	var dark := StandardMaterial3D.new()
+	dark.albedo_color = Color(0.12, 0.12, 0.13)
+	dark.metallic = 0.6
+	dark.roughness = 0.35
+	body.material_override = dark
+	root.add_child(body)
+	var glass := MeshInstance3D.new()
+	var quad := QuadMesh.new()
+	quad.size = Vector2(0.066, 0.142)
+	glass.mesh = quad
+	glass.position = Vector3(0.0, 0.0, 0.0052)
+	var lit := StandardMaterial3D.new()
+	lit.albedo_color = Color(0.25, 0.42, 0.55)
+	lit.emission_enabled = true
+	lit.emission = Color(0.35, 0.6, 0.8)
+	lit.emission_energy_multiplier = 1.4
+	glass.material_override = lit
+	root.add_child(glass)
+	for mesh: MeshInstance3D in [body, glass]:
+		mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	return root
 
 
 ## True once the actor has been off the ground long enough to show it.
@@ -522,7 +591,7 @@ func _update_switch(delta: float) -> void:
 	var active := actor.get_active_weapon()
 	# Flying flat with the arms at the sides, the weapon is worn, not left
 	# hanging in the air where the hands were. Shooting or aiming draws it.
-	if flies_stowed():
+	if flies_stowed() or phone_up():
 		active = null
 	if _in_hand != null and (not is_instance_valid(_in_hand) or not _in_hand in actor.weapons):
 		_in_hand = null

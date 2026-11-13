@@ -52,6 +52,10 @@ var visor_level := 0
 ## Index of the weapon to switch to, -1 to keep the current one, or
 ## `HOLSTER` to put the weapon in hand away.
 var switch_weapon := -1
+## Held: the phone is out. Nothing in the simulation reads it; it travels
+## with the held keys so everyone else's view shows the player looking at
+## their phone (`ActorSkin`, `Locomotion.phone_weight`).
+var phone := false
 
 const HOLSTER := -2
 
@@ -101,12 +105,13 @@ const VISOR_LEVEL_SHIFT := 15
 const VISOR_LEVEL_MASK := 3 << VISOR_LEVEL_SHIFT
 const FLAG_DESCEND := 131072
 const FLAG_SPRINT_PRESSED := 262144
+const FLAG_PHONE := 524288
 ## Not an input: the server sets this bit in the commands it sends back with
 ## each state, to say the actor's jets are lit (`FlightRig.is_hovering`).
 const STATE_HOVERING := 1048576
 ## Flags that describe a held key, and flags that last a single tick.
 const HELD_MASK := FLAG_SPRINT | FLAG_JUMP | FLAG_PRIMARY | FLAG_SECONDARY | VISOR_LEVEL_MASK \
-		| FLAG_DESCEND
+		| FLAG_DESCEND | FLAG_PHONE
 const ONE_SHOT_MASK := FLAG_JUMP_PRESSED | FLAG_DASH | FLAG_PRIMARY_PRESSED | FLAG_SECONDARY_PRESSED \
 		| FLAG_TERTIARY_PRESSED | FLAG_RELOAD_PRESSED | FLAG_INTERACT_PRESSED | FLAG_HEAL_PRESSED \
 		| FLAG_ABILITY_PRESSED | FLAG_SLIDE | FLAG_VISOR_PRESSED | FLAG_SPRINT_PRESSED
@@ -132,6 +137,7 @@ func flags() -> int:
 	if descend: out |= FLAG_DESCEND
 	if sprint_pressed: out |= FLAG_SPRINT_PRESSED
 	if visor_pressed: out |= FLAG_VISOR_PRESSED
+	if phone: out |= FLAG_PHONE
 	out |= clampi(visor_level, 0, 3) << VISOR_LEVEL_SHIFT
 	return out
 
@@ -169,6 +175,7 @@ func apply_array(data: Array) -> void:
 	sprint_pressed = bits & FLAG_SPRINT_PRESSED != 0
 	visor_pressed = bits & FLAG_VISOR_PRESSED != 0
 	visor_level = (bits & VISOR_LEVEL_MASK) >> VISOR_LEVEL_SHIFT
+	phone = bits & FLAG_PHONE != 0
 	stance = clampi(int(_number(data[STANCE_INDEX])), 0, 2)
 	switch_weapon = clampi(int(_number(data[SWITCH_INDEX])), HOLSTER, 8)
 

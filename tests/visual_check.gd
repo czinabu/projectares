@@ -96,6 +96,12 @@ func _ready() -> void:
 		return
 
 	# `-- <output_dir> --arena-only` shoots just the arena.
+	# `-- <output_dir> --phone-only` shows the phone held up, and someone
+	# else holding theirs.
+	if "--phone-only" in args:
+		await _phone_shots(out_dir)
+		get_tree().quit()
+		return
 	if "--arena-only" in args:
 		await _arena_shots(out_dir)
 		get_tree().quit()
@@ -1359,3 +1365,66 @@ func _ride_shots(out_dir: String) -> void:
 	await _shot(out_dir.path_join("ride_first.png"))
 	raid.queue_free()
 
+
+
+## The phone held up in first and third person (home screen, an app, the
+## Settings list), and a player seen holding their phone.
+func _phone_shots(out_dir: String) -> void:
+	var raid := Raid.new()
+	add_child(raid)
+	raid.start(Worlds.get_world("ashfront"), 42)
+	var controller := PlayerController.new()
+	controller.setup(raid.player)
+	raid.add_child(controller)
+	var hud := Hud.new()
+	hud.setup(raid, controller)
+	raid.add_child(hud)
+	var phone: CanvasLayer = load("res://core/phone/phone.gd").new()
+	add_child(phone)
+	await _settle(60)
+	for bot in raid.bots:
+		bot.set_physics_process(false)
+		for child in bot.get_children():
+			if child is BotBrain:
+				child.set_physics_process(false)
+	phone.open()
+	controller.input_blocked = true
+	controller.phone_out = true
+	await _settle(30)
+	await _shot(out_dir.path_join("phone_home.png"))
+	phone._screen.get_texture().get_image().save_png(out_dir.path_join("phone_screen.png"))
+	phone.open_app("news")
+	await _settle(10)
+	await _shot(out_dir.path_join("phone_news.png"))
+	phone.open_app("settings")
+	await _settle(10)
+	await _shot(out_dir.path_join("phone_settings.png"))
+	phone.go_home()
+	controller.toggle_view()
+	await _settle(40)
+	await _shot(out_dir.path_join("phone_third_person.png"))
+	controller.toggle_view()
+	phone.close()
+	controller.phone_out = false
+	await _settle(30)
+	await _shot(out_dir.path_join("phone_put_away.png"))
+	# The player on their phone as everyone else sees them: the controller
+	# keeps holding it up (third person, so the body is drawn) while a camera
+	# of our own looks on from in front and from the side.
+	controller.toggle_view()
+	controller.input_blocked = true
+	controller.phone_out = true
+	var me: Actor = raid.player
+	var cam := Camera3D.new()
+	cam.fov = 40.0
+	raid.add_child(cam)
+	cam.make_current()
+	var facing := Basis(Vector3.UP, controller.yaw)
+	for view: Array in [["phone_other_player.png", Vector3(0.35, 1.45, -2.6)], ["phone_other_player_side.png", Vector3(2.4, 1.5, -0.9)]]:
+		var eye: Vector3 = me.global_position + facing * (view[1] as Vector3)
+		cam.look_at_from_position(eye, me.global_position + Vector3(0, 1.15, 0))
+		await _settle(40)
+		await _shot(out_dir.path_join(view[0]))
+	phone.queue_free()
+	raid.queue_free()
+	await _settle(3)

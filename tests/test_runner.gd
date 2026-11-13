@@ -5131,6 +5131,7 @@ func _test_stash_service() -> void:
 const SocialService := preload("res://core/social/social_service.gd")
 const GameSettings := preload("res://core/settings/game_settings.gd")
 const PhoneScript := preload("res://core/phone/phone.gd")
+const MirrorScript := preload("res://core/visual/mirror.gd")
 const DevMode := preload("res://core/dev/dev_mode.gd")
 const DevEconomy := preload("res://core/economy/economy.gd")
 const DevStashRules := preload("res://core/account/stash_rules.gd")
@@ -5480,6 +5481,7 @@ func _test_phone_view() -> void:
 	check(phone.unseen_news() == SocialService.GAME_NEWS.size(), "unread news is counted")
 	phone.toggle()
 	check(phone.is_open and events == [true], "the phone opens")
+	await _test_phone_home(phone)
 	phone.open_app("news")
 	check(phone.unseen_news() == 0 and phone._body.get_child_count() == SocialService.GAME_NEWS.size(),
 			"news can be read offline")
@@ -5511,13 +5513,106 @@ func _test_phone_view() -> void:
 	raid.add_child(controller)
 	await frames(2)
 	controller.input_blocked = true
+	controller.phone_out = true
 	await frames(2)
 	check(raid.player.cmd.move == Vector2.ZERO and not raid.player.cmd.primary, "with the phone out the character lets go of the controls")
+	check(raid.player.cmd.phone, "and holds the phone up")
 	controller.input_blocked = false
+	controller.phone_out = false
+	await frames(2)
+	check(not raid.player.cmd.phone, "putting it away lowers it")
 	await _end_raid(raid)
 	GameSettings.reset()
 	phone.queue_free()
 	await frames(1)
+
+
+## The home screen, its icons and badges, going back, and the phone held up
+## in front of a camera with the scene dimmed behind it.
+func _test_phone_home(phone: CanvasLayer) -> void:
+	check(phone.app == PhoneScript.HOME and phone._home.visible and not phone._page.visible,
+			"the phone opens on its home screen")
+	check(phone._icons.size() == PhoneScript.APPS.size() and phone._icons.keys().all(
+			func(a: String) -> bool: return a in PhoneScript.APPS), "every app has an icon on the home screen")
+	check(phone._icons["news"].badge == SocialService.GAME_NEWS.size() and phone._icons["settings"].badge == 0,
+			"unread news shows as a badge on the News icon")
+	phone._icons["news"].tapped.emit()
+	check(phone.app == "news" and phone._page.visible and not phone._home.visible and phone._title.text == "News",
+			"tapping an icon opens the app")
+	check(phone._icons["news"].badge == 0, "reading the news clears its badge")
+	phone.go_back()
+	check(phone.app == PhoneScript.HOME and phone._home.visible, "back goes home")
+	phone.open_app("messages")
+	phone.chat_with = "someone"
+	phone.go_back()
+	check(phone.app == "messages" and phone.chat_with == "", "back from a conversation goes to the list of them")
+	phone.go_home()
+	check(phone.app == PhoneScript.HOME, "the home bar goes home from anywhere")
+	phone.close()
+	phone.open()
+	check(phone.app == PhoneScript.HOME, "it opens where it was left")
+	check(phone._status.text.length() == 5 and phone._who.text == "Solo" and phone._bars.strength == 0,
+			"the status bar has the time, no signal and Solo while offline")
+
+	# No camera: the screen shows flat, and a click on it lands on it.
+	await _drawn_frames(2)
+	check(phone._flat.visible and not phone._device.visible, "with no camera the screen shows flat")
+	var middle: Vector2 = phone._flat.get_global_rect().get_center()
+	check(phone.screen_point(middle).distance_to(Vector2(phone.screen_size) * 0.5) < 1.0,
+			"a click on the flat screen lands in the same spot on the phone")
+	check(phone.screen_point(phone._flat.get_global_rect().position - Vector2(5, 5)).x < 0.0, "a click beside it misses")
+
+	# A camera: the phone is held up in front of it, drawn over the world.
+	var stage := Node3D.new()
+	add_child(stage)
+	var camera := Camera3D.new()
+	camera.fov = 75.0
+	stage.add_child(camera)
+	camera.make_current()
+	phone._raise = 1.0
+	await _drawn_frames(2)
+	check(phone._device.visible and not phone._flat.visible and phone._dim.visible,
+			"with a camera the phone is held up in the world, the scene dimmed behind it")
+	var at: Vector3 = camera.global_transform.affine_inverse() * phone._device.global_position
+	check(at.z < -camera.near and at.x > 0.0, "it is held in front of the eyes, to the right")
+	var face: Vector3 = phone._device.global_basis.z
+	check(face.dot(-at.normalized()) > 0.9, "its screen faces the eyes")
+	var mat := phone._device.get_surface_override_material(0) as StandardMaterial3D
+	check(mat.no_depth_test and mat.albedo_texture == phone._screen.get_texture(),
+			"the screen shows the phone's display and is never hidden in a wall")
+	var centre: Vector3 = phone._device.global_position + face * phone.device_depth * 0.5
+	var mouse := camera.unproject_position(centre)
+	check(phone.screen_point(mouse).distance_to(Vector2(phone.screen_size) * 0.5) < 4.0,
+			"the mouse on the phone lands on its screen")
+	check(phone.screen_point(Vector2(1, 1)).x < 0.0, "the mouse off the phone misses it")
+	check(phone._device.layers == 1 << (MirrorScript.HELD_LAYER - 1), "a mirror never shows the held phone")
+	var slab: ArrayMesh = PhoneScript.rounded_slab(Vector2(0.15, 0.3), 0.02, 0.03)
+	check(slab.get_surface_count() == 2 and slab.get_aabb().size.is_equal_approx(Vector3(0.15, 0.3, 0.02)),
+			"the phone is a rounded slab, its face a surface of its own")
+	phone.close()
+	var lowered := Time.get_ticks_msec() + int(phone.raise_time * 1000.0) + 200
+	while Time.get_ticks_msec() < lowered:
+		await _drawn_frames(1)
+	await _drawn_frames(2)
+	check(not phone._device.visible and not phone._dim.visible, "put away, it lowers out of view")
+	phone.open()
+	camera.queue_free()
+	stage.queue_free()
+	await _drawn_frames(1)
+
+	# The flag that shows everyone else the phone is a held key.
+	var cmd := ActorCommand.new()
+	cmd.phone = true
+	var back := ActorCommand.new()
+	back.apply_array(cmd.to_array())
+	check(back.phone and cmd.flags() & ActorCommand.HELD_MASK & ActorCommand.FLAG_PHONE != 0,
+			"holding the phone travels with the held keys, so others see it")
+
+
+## Frames drawn, not physics ticks: the phone is placed as the view is drawn.
+func _drawn_frames(count: int) -> void:
+	for i in count:
+		await get_tree().process_frame
 
 
 func _test_online_phone() -> void:

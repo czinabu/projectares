@@ -99,6 +99,15 @@ var ride_rate := 5.0
 
 ## How quickly the relaxed-stand legs blend in and out (per second).
 var stand_legs_rate := 4.0
+## Holding the phone up (`ActorCommand.phone`), in the actor's frame: where
+## the phone sits, where each wrist (left, right) goes, which way the elbows
+## bow, and how far the head and chest bow to look at it.
+var phone_at := Vector3(0.005, 1.25, -0.33)
+var phone_wrists := [Vector3(-0.05, 1.2, -0.28), Vector3(0.06, 1.21, -0.3)]
+var phone_elbow := Vector3(0.7, -1.0, 0.35)
+var phone_look_down := 0.5
+var phone_chest := 0.12
+var phone_rate := 5.0
 
 ## Clip key -> how the clip moves the body at playback speed 1, in the
 ## actor's space (x right, z back), m/s.
@@ -137,6 +146,9 @@ var current_anim := ""
 ## Whether the legs should take the relaxed stand now, and how far they have.
 var stand_legs := false
 var stand_legs_weight := 0.0
+## True while the phone is up; `phone_weight` eases toward it.
+var phone_up := false
+var phone_weight := 0.0
 
 var _roots: Array[int] = []
 var _spine: Array[int] = []
@@ -444,6 +456,7 @@ func update(delta: float) -> void:
 	stride = move_toward(stride, stride_target, stride_rate * delta)
 	stand_legs_weight = move_toward(stand_legs_weight, 1.0 if stand_legs and not _stand_tracks.is_empty() else 0.0,
 			stand_legs_rate * delta)
+	phone_weight = move_toward(phone_weight, 1.0 if phone_up else 0.0, phone_rate * delta)
 	if _stand_anim and _stand_anim.length > 0.0:
 		_stand_time = fposmod(_stand_time + delta, _stand_anim.length)
 	if ride != null and is_instance_valid(ride):
@@ -633,6 +646,46 @@ func _ride_pose() -> void:
 	if _neck >= 0:
 		var pose := skeleton.get_bone_global_pose(_neck)
 		pose.basis = Basis(up, ride_turn * w) * Basis(right, lean * ride_look_up * w) * pose.basis
+		skeleton.set_bone_global_pose(_neck, pose)
+
+
+## Adds the phone hold. Called by the skin after the weapon arm is set up,
+## so it runs last and both hands are the phone's, whatever was in them.
+## Everything about the hold is in `phone_pose`, so it is one swap away from
+## a shared hand pose.
+func add_phone_hook() -> void:
+	if skeleton == null:
+		return
+	var hold := WeaponArm.Hook.new()
+	hold.name = "PhonePose"
+	hold.run = phone_pose
+	skeleton.add_child(hold)
+
+
+## Both hands bring the phone up in front of the chest and the head bows to
+## look at it. View only, from `phone_weight`.
+func phone_pose() -> void:
+	if phone_weight <= 0.0 or skeleton == null or actor == null:
+		return
+	var w := smoothstep(0.0, 1.0, phone_weight)
+	var to_skeleton := skeleton.global_transform.affine_inverse() * actor.global_transform
+	var right := (to_skeleton.basis * Vector3.RIGHT).normalized()
+	if not _spine.is_empty():
+		var chest := _spine[_spine.size() - 1]
+		var pose := skeleton.get_bone_global_pose(chest)
+		pose.basis = Basis(right, -phone_chest * w) * pose.basis
+		skeleton.set_bone_global_pose(chest, pose)
+	for i in _arms.size():
+		var arm: Array[int] = _arms[i]
+		if arm.size() != 3:
+			continue
+		var side := _side_of(arm[0])
+		var wrist: Vector3 = to_skeleton * (phone_wrists[i] as Vector3)
+		var elbow := to_skeleton.basis * Vector3(phone_elbow.x * side, phone_elbow.y, phone_elbow.z)
+		_bend(arm, skeleton.get_bone_rest(arm[2]).origin, wrist, elbow, w)
+	if _neck >= 0:
+		var pose := skeleton.get_bone_global_pose(_neck)
+		pose.basis = Basis(right, -phone_look_down * w) * pose.basis
 		skeleton.set_bone_global_pose(_neck, pose)
 
 
