@@ -20,6 +20,7 @@ const EconomyTests := preload("res://tests/economy_tests.gd")
 const MeleeArsenalTests := preload("res://tests/melee_arsenal_tests.gd")
 const MeleeFeelTests := preload("res://tests/melee_feel_tests.gd")
 const MeleeViabilityTests := preload("res://tests/melee_viability_tests.gd")
+const BotAimTests := preload("res://tests/bot_aim_tests.gd")
 const CustomizerTests := preload("res://tests/customizer_tests.gd")
 const BattlefieldTests := preload("res://tests/battlefield_tests.gd")
 const VisorTests := preload("res://tests/visor_tests.gd")
@@ -240,6 +241,7 @@ func _run() -> void:
 	await _test_melee_arsenal()
 	await _test_melee_feel()
 	await _test_melee_viability()
+	await _test_bot_aim()
 	await _test_flight_rigs_and_abilities()
 	await _test_rig_tiers()
 	await _test_vehicle_driving()
@@ -343,6 +345,10 @@ func _test_melee_feel() -> void:
 
 func _test_melee_viability() -> void:
 	await MeleeViabilityTests.run(self)
+
+
+func _test_bot_aim() -> void:
+	await BotAimTests.run(self)
 
 
 func _test_economy() -> void:
