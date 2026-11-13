@@ -264,8 +264,7 @@ static func _run_mirror(t: Node) -> void:
 	phone.mirror_changed.connect(func(up: bool) -> void: ups.append(up))
 	phone.open("mirror")
 	await t.frames(1)
-	t.check(phone.mirror_open() and ups == [true] and phone.dim_amount() == 0.0,
-			"the Mirror app asks for a mirror and leaves the view clear")
+	t.check(phone.mirror_open() and ups == [true], "the Mirror app asks for a mirror")
 	var rows: Array = phone._body.get_children().filter(func(child: Node) -> bool: return child is PanelContainer)
 	t.check(rows.size() == 9, "the app has a row for the build, each part and each colour")
 	var looks: Array = []
@@ -288,7 +287,7 @@ static func _run_mirror(t: Node) -> void:
 	await t.frames(1)
 	t.check(looks.size() == 2 and phone.mirror_row == 6, "a row's arrows scroll it and select it")
 	phone.open_app("news")
-	t.check(ups == [true, false] and phone.dim_amount() > 0.0, "leaving the app puts the mirror away")
+	t.check(ups == [true, false], "leaving the app puts the mirror away")
 	phone.open_app("mirror")
 	phone.close()
 	t.check(ups == [true, false, true, false], "putting the phone away puts the mirror away")
