@@ -511,6 +511,8 @@ func _mark_zones() -> void:
 			node.set_meta("loot_source", "cache_outer")
 	var boss := _add_marker("spawn_boss", _open(Vector2(-6, 6), 2.0))
 	boss.set_meta("radius", 30.0)
+	# He serves neither army: both fight him for the Foundry.
+	boss.set_meta("faction", "warlord")
 
 
 func _build_field() -> void:
@@ -787,9 +789,9 @@ func _dress_core(art: Node3D) -> void:
 	slag.emission = Color(1.0, 0.36, 0.08)
 	slag.emission_energy_multiplier = 2.6
 	slag.roughness = 0.35
-	for i in 9:
+	for i in 16:
 		var at := Vector2.from_angle(_art_rng.randf() * TAU) * _art_rng.randf_range(8.0, CORE_RADIUS - 6.0)
-		if _blocked(at):
+		if _under_building(at, 5.0):
 			continue
 		var pool := MeshInstance3D.new()
 		var disc := CylinderMesh.new()
@@ -813,22 +815,27 @@ func _dress_core(art: Node3D) -> void:
 	for i in 4:
 		var at := Vector2.from_angle(TAU * i / 4.0 + 0.4) * CORE_RADIUS * 0.6
 		art.add_child(_smoke(_ground(at) + Vector3(0, 1.0, 0), 5.0))
-	# The rim of the core: a scorched line on the ground you see before you cross it.
-	var edge := MeshInstance3D.new()
-	var ring := TorusMesh.new()
-	ring.inner_radius = CORE_RADIUS - 0.6
-	ring.outer_radius = CORE_RADIUS + 0.6
+	# The rim of the core: a line of glowing cracks you see before you cross it,
+	# each laid on the ground where it lies.
 	var scorch := StandardMaterial3D.new()
 	scorch.albedo_color = Color(0.08, 0.04, 0.03)
 	scorch.emission_enabled = true
-	scorch.emission = Color(0.6, 0.16, 0.04)
-	scorch.emission_energy_multiplier = 0.8
-	ring.material = scorch
-	edge.mesh = ring
-	edge.scale = Vector3(1.0, 0.05, 1.0)
-	edge.position = _ground(Vector2.ZERO)
-	edge.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	art.add_child(edge)
+	scorch.emission = Color(0.9, 0.24, 0.05)
+	scorch.emission_energy_multiplier = 1.2
+	var crack := BoxMesh.new()
+	crack.size = Vector3(0.7, 0.12, 3.2)
+	crack.material = scorch
+	for k in 72:
+		var angle := TAU * k / 72.0 + _art_rng.randf_range(-0.01, 0.01)
+		var at := Vector2.from_angle(angle) * CORE_RADIUS
+		if _blocked(at):
+			continue
+		var piece := MeshInstance3D.new()
+		piece.mesh = crack
+		piece.position = _ground(at) + Vector3(0, 0.02, 0)
+		piece.rotation.y = -angle
+		piece.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		art.add_child(piece)
 
 
 ## Gate outposts are lit in a calm green, with their name and rule on the gate.
@@ -845,7 +852,7 @@ func _dress_outposts(art: Node3D) -> void:
 		plate.pixel_size = 0.01
 		plate.modulate = Color(0.6, 1.0, 0.75)
 		plate.outline_size = 16
-		plate.position = _ground(gate) + Vector3(0, 6.2, 0)
+		plate.position = _ground(gate) + Vector3(0, 8.6, 0)
 		plate.rotation.y = atan2(inward.x, inward.y)
 		art.add_child(plate)
 		for side: float in [-1.0, 1.0]:
@@ -855,6 +862,16 @@ func _dress_outposts(art: Node3D) -> void:
 			lamp.omni_range = 14.0
 			lamp.position = _ground(gate + inward.orthogonal() * side * 4.6) + Vector3(0, 6.8, 0)
 			art.add_child(lamp)
+
+
+## Whether a point is within `margin` metres of a building's footprint.
+func _under_building(at: Vector2, margin: float) -> bool:
+	for b in _buildings:
+		var size: Vector3 = b["size"]
+		var c: Vector3 = b["center"]
+		if absf(at.x - c.x) < size.x * 0.5 + margin and absf(at.y - c.z) < size.z * 0.5 + margin:
+			return true
+	return false
 
 
 ## Some wrecks still burn: a fire, its light, and smoke that leans downwind.
@@ -925,11 +942,8 @@ func _blocked(at: Vector2) -> bool:
 	for site: Dictionary in SITES:
 		if at.distance_to(site["at"]) < float(site["radius"]):
 			return true
-	for b in _buildings:
-		var size: Vector3 = b["size"]
-		var c: Vector3 = b["center"]
-		if absf(at.x - c.x) < size.x * 0.5 + 1.0 and absf(at.y - c.z) < size.z * 0.5 + 1.0:
-			return true
+	if _under_building(at, 1.0):
+		return true
 	for w in _wrecks:
 		var c: Vector3 = w["at"]
 		if at.distance_to(Vector2(c.x, c.z)) < 10.0:

@@ -210,9 +210,14 @@ func can_damage(attacker: Node, target: Node, _info: DamageInfo) -> bool:
 ## Raid sets `bot.faction` first); a bot from anywhere else is dealt one.
 func equip_bot(bot: Actor, rng: RandomNumberGenerator) -> void:
 	var coin := rng.randf()
-	if not ARMIES.has(bot.faction):
-		bot.faction = "legion" if coin < 0.5 else "tide"
-	var army: Dictionary = ARMIES[bot.faction]
+	# Dressed as one of the armies; a bot of another side (the core's
+	# warlord) keeps its own faction and fights both.
+	var dress := bot.faction
+	if not ARMIES.has(dress):
+		dress = "legion" if coin < 0.5 else "tide"
+		if bot.faction == "":
+			bot.faction = dress
+	var army: Dictionary = ARMIES[dress]
 	var tier := clampi(int(bot.get_meta("zone", 1)), 0, 2)
 	var heavy: bool = rng.randf() < HEAVY_CHANCE[tier]
 	var kind: Dictionary = army["heavy"] if heavy else army["soldier"]

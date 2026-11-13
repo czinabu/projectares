@@ -1108,6 +1108,9 @@ func _spawn_bots() -> void:
 
 ## Risk zones: a boss stands guard at each of the map's "spawn_boss" markers.
 func _spawn_bosses() -> void:
+	# A world run without bots (`--bots 0`) has no bosses either.
+	if world.bot_count <= 0:
+		return
 	for marker in _map_nodes("spawn_boss"):
 		_bosses.append({"marker": marker, "bot": _add_boss(marker), "back_in": 0.0})
 

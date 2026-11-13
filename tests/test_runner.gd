@@ -3670,7 +3670,7 @@ func _test_online() -> void:
 	raid.start_server(Worlds.get_world("ashfront"), 70)
 	for bot in raid.bots:
 		bot.get_node("Brain").set_physics_process(false)
-	check(raid.player == null and raid.players.is_empty() and raid.bots.size() == raid.world.bot_count,
+	check(raid.player == null and raid.players.is_empty() and raid.bots.size() == raid.world.bot_count + raid._bosses.size(),
 			"a server raid starts with bots and no players")
 	var a := raid.add_player([], {}, "Alpha")
 	var b := raid.add_player(["rifle_carbine", "blade_scrap", "jetpack_mk1", "plate_light"], {}, "Bravo")
@@ -3770,7 +3770,8 @@ func _test_online() -> void:
 			and alpha.raid.player.is_player and not Combat.authoritative,
 			"the client has its own actor and leaves damage to the server")
 	await _wait_until(func() -> bool: return alpha.raid.bots.size() == world.bot_count, 180)
-	check(alpha.raid.bots.size() == world.bot_count, "the client sees the server's bots")
+	check(alpha.raid.bots.size() == world.bot_count + alpha.raid._map_nodes("spawn_boss").size(),
+			"the client sees the server's bots")
 	# Interest: the client hears about itself and what is near in every
 	# update, and about the far side of the field a fraction as often.
 	await frames(30)
@@ -3809,7 +3810,7 @@ func _test_online() -> void:
 		check(seen != null and seen.display_name == "Alpha" and seen.weapons.size() == 3 and not seen.is_player,
 				"each client sees the other player, with their name and gear")
 		check(bravo.raid.players.size() == 2 and bravo.raid.active_players().size() == 2
-				and alpha.raid.bots.size() == world.bot_count,
+				and alpha.raid.bots.size() == world.bot_count + alpha.raid._map_nodes("spawn_boss").size(),
 				"a client's raid lists the players, separate from the bots")
 		if seen != null:
 			var from := seen.global_position
