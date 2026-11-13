@@ -69,6 +69,10 @@ static func run(t: Node) -> void:
 				seen["fist_up"] = (skel.global_basis * (wrist.basis * arm._grip_axis)).normalized()
 				seen["grip"] = gun.visual.global_transform * at.origin
 				seen["grip_up"] = (gun.visual.global_basis * at.basis.y).normalized()
+				if arm._off_palm != null:
+					var off: Transform3D = skel.get_bone_global_pose(arm._off_wrist)
+					seen["off_palm"] = (skel.global_basis * (off.basis * (arm._off_palm as Vector3))).normalized()
+					seen["off_fist"] = skel.global_transform * (off * (arm._off_hold_point as Vector3))
 			skel.skeleton_updated.connect(catch)
 			await t.frames(3)
 			skel.skeleton_updated.disconnect(catch)
@@ -77,6 +81,22 @@ static func run(t: Node) -> void:
 			t.check(off < 0.01, "%s, %s: the fist closes on the grip (%.3f m off)" % [id, how, off])
 			var lean := rad_to_deg((seen["fist_up"] as Vector3).angle_to(seen["grip_up"]))
 			t.check(lean < 14.0, "%s, %s: the hand lies along the grip's rake (%.1f deg off)" % [id, how, lean])
+			# Aiming, the off hand holds the gun too: palm up under a long
+			# gun's fore end, palm in against the gun hand on a sidearm.
+			if aiming and seen.has("off_palm"):
+				var up := gun.visual.global_basis.y.normalized()
+				var right := gun.visual.global_basis.x.normalized()
+				var facing: float = (seen["off_palm"] as Vector3).dot(right if gun.is_sidearm else up)
+				t.check(facing > 0.7, "%s: the off hand's palm %s (%.2f)" % [id, "is in against the gun hand" if gun.is_sidearm else "is up under the fore end", facing])
+				var fore := gun.visual.get_node_or_null("ForeGrip") as Node3D
+				if fore == null:
+					fore = gun.visual.get_node_or_null("Model/ForeGrip") as Node3D
+				var front: Vector3 = fore.global_position if fore != null and not gun.is_sidearm else seen["grip"]
+				var line := Geometry3D.get_closest_point_to_segment(seen["off_fist"], front, seen["grip"])
+				var gap: float = (seen["off_fist"] as Vector3).distance_to(line)
+				# (A spinning cannon braced at the hip is out of the off arm's reach.)
+				if not ActionPose.of(p).shoulders_never(gun):
+					t.check(gap < 0.07, "%s: the off hand closes on the gun (%.3f m off)" % [id, gap])
 		p.cmd.secondary = false
 		gun._aiming = false
 	# Gun models differ, so the hands do too.

@@ -295,8 +295,13 @@ without Caleb, and update the gap list when a PR closes a row.
   it (its rake) and the fore end ("Grip", "Trigger", "ForeGrip" markers;
   a power weapon marks its grip in `_power_grip`); the fist's middle closes
   on the grip level with the trigger and the wrist bends to its rake
-  (`WeaponArm._held_wrist`, `_bend_to_grip`), the off hand's fist on the
-  fore end. `Look._fit_hands` finds a melee handle (up to its guard or
+  (`WeaponArm._held_wrist`, `_bend_to_grip`). Whenever a gun is raised
+  (aiming or shooting, not held low or reloading) the off hand supports it
+  as in a real FPS hold (Caleb's references): under a long gun's fore end
+  palm up, fingers up its side ("ForeGrip", found just under the fore end,
+  `Look.FORE_CUP`), and wrapped round the shooting hand on a sidearm
+  (`ActionPose.ads_cup`); its wrist is turned by `WeaponArm._support_turn`.
+  `Look._fit_hands` finds a melee handle (up to its guard or
   head), puts it through the fist and gives a two-handed weapon
   (`Look.is_two_handed`) its off hand's place: a hand below on a short
   handle, up the haft of a long one, which rests carried across the body

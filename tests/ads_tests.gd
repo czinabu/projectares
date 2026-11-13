@@ -160,7 +160,7 @@ static func _check_with_skin(t: Node, kit: Array, what: String) -> void:
 		var twist := rad_to_deg(hand_way.get_rotation_quaternion().angle_to(aimed.get_rotation_quaternion()))
 		t.check(twist < 8.0, "%s: the gun hand sits round the grip as it does aiming from the hip (%.1f deg off)" % [what, twist])
 	if gun.is_sidearm:
-		t.check(pose.relief_now > 0.25, "%s: a sidearm is held well out (%.2f m)" % [what, pose.relief_now])
+		t.check(pose.relief_now > 0.15, "%s: a sidearm is held out in both hands (%.2f m)" % [what, pose.relief_now])
 	# First person looks straight down the sight.
 	var cam: Camera3D = controller.camera
 	var cam_off := (sight - cam.global_position) - ahead * (sight - cam.global_position).dot(ahead)

@@ -84,9 +84,10 @@ var min_relief := 0.06
 ## Guns with any of these tags are braced at the hip, never shouldered
 ## (a spinning cannon is too heavy to bring to the eye).
 var ads_hip_tags: Array[String] = ["minigun"]
-## Where the off hand cups a sidearm's grip, from the gun hand, in the
-## aim frame.
-var ads_cup := Vector3(-0.035, -0.045, 0.02)
+## Where the off hand's fist closes round a sidearm's grip, wrapped over
+## the gun hand's fingers from the off side: from the grip spot
+## (`hold_local`), in the gun's space.
+var ads_cup := Vector3(-0.03, -0.035, -0.01)
 ## The stance that goes with aiming down sights, as a shoulder turn and lean
 ## (like `turn`: x toward the actor's left, y backward): a long gun blades
 ## the body so the off shoulder comes forward to the fore end, a sidearm

@@ -863,7 +863,7 @@ func _power_model(gun: Gun) -> Node3D:
 			_power_box(holder, Vector3(0.025, 0.05, 0.85), Vector3(0.045 * side, 0.02, -0.55), trim)
 		for i in 5:
 			_power_box(holder, Vector3(0.07, 0.07, 0.03), Vector3(0, 0.02, -0.2 - i * 0.15), lit)
-		_power_grip(holder, Vector3(0.05, 0.14, 0.08), Vector3(0, -0.14, 0.08), body)
+		_power_grip(holder, Vector3(0.05, 0.14, 0.08), Vector3(0, -0.14, 0.08), body, Vector3(0, -0.075, -0.2))
 		_power_box(holder, Vector3(0.1, 0.05, 0.12), Vector3(0, 0.1, -0.05), lit)
 	elif "launcher" in tags:
 		# A wide plasma tube on the shoulder, glowing at both ends.
@@ -871,7 +871,7 @@ func _power_model(gun: Gun) -> Node3D:
 		_power_cyl(holder, 0.095, 0.08, Vector3(0, 0.02, -0.66), lit)
 		_power_cyl(holder, 0.095, 0.06, Vector3(0, 0.02, 0.17), trim)
 		_power_box(holder, Vector3(0.04, 0.03, 0.5), Vector3(0, 0.11, -0.25), lit)
-		_power_grip(holder, Vector3(0.05, 0.14, 0.07), Vector3(0, -0.12, -0.05), body)
+		_power_grip(holder, Vector3(0.05, 0.14, 0.07), Vector3(0, -0.12, -0.05), body, Vector3(0, -0.06, -0.38))
 		_power_box(holder, Vector3(0.12, 0.08, 0.12), Vector3(0.07, 0.05, -0.05), trim)
 	elif "grenade_launcher" in tags:
 		# Short barrel over a fat glowing drum of arc charges.
@@ -879,7 +879,7 @@ func _power_model(gun: Gun) -> Node3D:
 		_power_cyl(holder, 0.05, 0.35, Vector3(0, 0.05, -0.45), trim)
 		var drum := _power_cyl(holder, 0.1, 0.12, Vector3(0, -0.06, -0.12), lit)
 		drum.rotation = Vector3(0, 0, PI / 2.0)
-		_power_grip(holder, Vector3(0.05, 0.14, 0.07), Vector3(0, -0.13, 0.08), body)
+		_power_grip(holder, Vector3(0.05, 0.14, 0.07), Vector3(0, -0.13, 0.08), body, Vector3(0, -0.045, -0.3))
 		_power_box(holder, Vector3(0.09, 0.02, 0.3), Vector3(0, 0.07, -0.15), lit)
 	else:
 		# Rotary pulse cannon: a ring of barrels around a glowing core.
@@ -890,14 +890,19 @@ func _power_model(gun: Gun) -> Node3D:
 		_power_cyl(holder, 0.03, 0.72, Vector3(0, 0, -0.5), lit)
 		_power_cyl(holder, 0.11, 0.05, Vector3(0, 0, -0.25), lit)
 		_power_box(holder, Vector3(0.18, 0.06, 0.2), Vector3(0, 0.12, 0.05), trim)
-		_power_grip(holder, Vector3(0.05, 0.14, 0.07), Vector3(0, -0.14, 0.1), body)
+		_power_grip(holder, Vector3(0.05, 0.14, 0.07), Vector3(0, -0.14, 0.1), body, Vector3(0, -0.085, -0.12))
 	return holder
 
 
 ## A power weapon's hand grip, a box hanging under it, and the "Grip" and
-## "Trigger" markers where the gun hand closes on it (see `_measure_hold`).
-func _power_grip(holder: Node3D, size: Vector3, at: Vector3, mat: Material) -> void:
+## "Trigger" markers where the gun hand closes on it (see `_measure_hold`),
+## and the "ForeGrip" marker at `fore`, where the off hand holds it.
+func _power_grip(holder: Node3D, size: Vector3, at: Vector3, mat: Material, fore: Vector3) -> void:
 	_power_box(holder, size, at, mat)
+	var support := Marker3D.new()
+	support.name = "ForeGrip"
+	support.position = fore
+	holder.add_child(support)
 	var hold := Marker3D.new()
 	hold.name = "Grip"
 	hold.position = at + Vector3(0.0, size.y * 0.5 - 0.035, 0.0)
@@ -1123,8 +1128,10 @@ func _measure_mounts(model: Node3D, along: Dictionary) -> Dictionary:
 ## with the trigger, where the fist closes), "hold_up" (up along the grip),
 ## "trigger", and "fore" (where the off hand cups the fore end). Adds none
 ## when the outline has no trigger guard.
-## How far ahead of the trigger the off hand reaches along a long gun.
+## How far ahead of the trigger the off hand reaches along a long gun, and
+## how far under the fore end's underside the middle of its fist is.
 const FORE_REACH := 0.26
+const FORE_CUP := 0.015
 
 
 func _measure_hold(points: PackedVector3Array, low: Vector3, high: Vector3, out: Dictionary) -> void:
@@ -1195,10 +1202,15 @@ func _measure_hold(points: PackedVector3Array, low: Vector3, high: Vector3, out:
 		# barrel's own part of the outline (not a magazine hanging below).
 		var fore_z := maxi(int(guard["front"]) - cells.call(FORE_REACH), cells.call(0.03))
 		var under := clampi(bore, 0, ny - 1)
+		# Down from the bore to the barrel or fore end's top, then to its
+		# underside.
+		while under > 0 and solid[fore_z * ny + under] == 0 and bore - under < cells.call(0.04):
+			under -= 1
 		if solid[fore_z * ny + under] == 1:
-			while under > 0 and solid[fore_z * ny + under - 1] == 1 and bore - under < cells.call(0.06):
+			while under > 0 and solid[fore_z * ny + under - 1] == 1 and bore - under < cells.call(0.08):
 				under -= 1
-			out["fore"] = to_space.call(fore_z, under + minf(cells.call(0.025), (bore - under) * 0.5))
+			# The palm cups the underside, the fist's middle just under it.
+			out["fore"] = to_space.call(fore_z, under - 0.5) + Vector3(0.0, -FORE_CUP, 0.0)
 		return
 
 
