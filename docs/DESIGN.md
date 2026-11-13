@@ -185,6 +185,44 @@ headquarters, in the order they are built:
 - The only place heavy weapons are found.
 - Mid-map bank spots and sign-out create the extraction tension (section 7).
 
+### Risk zones (Caleb's call)
+
+The PvP world is split into rings of risk, so every outing is a choice of
+how far in to go. The best rewards are only in the middle, which pulls
+players into each other.
+
+| Zone | Enemies | Loot | Ways out |
+| --- | --- | --- | --- |
+| Outer ring | Basic soldiers, few heavies | Common: mostly materials, now and then a piece of gear | Many: the gate outposts, sign-out anywhere |
+| Middle | Tougher patrols, the landmarks' garrisons, warlords | Better crates (today's cache table) and rooftops | Depots at each landmark |
+| Core hotspots (a volcano, a storm core) | A boss on guard, the armies fighting over it | Top tier: the rooftop table on the ground, blueprints, artifacts from the boss | Few: one depot, and the ground drains you while you wait |
+
+- **Hazards drain you over time** in a core, so the best loot is on a
+  timer. They are seen in the world, never shown as an overlay: molten
+  slag, glow, smoke and a scorched line where the core begins.
+- **The watch's map** names the zone you are in (and says when you are
+  burning), on the Status page.
+- **Gate outposts** stand on the edge of the world. They are small safe
+  zones where you arrive, regroup with your squad, and bank or sign out at
+  a depot (a gate sign-out is quick). Weapons are locked inside and nobody
+  can be hurt there. Two rules keep them honest:
+  - **No camping at the gates.** The safe bubble ends at the gate wall.
+    Walking out gives a brief protection that ends the moment you fire.
+  - **No hiding mid-fight.** The gate turns you away while you are in a
+    fight or carrying a bounty.
+
+**What is built (MVP, Ashfront).** The zones are rings around the middle
+(`WorldDef.zone_at`, `hazard_at`): the Foundry is the core, molten and
+burning (1.5 damage a second, past armor, through `Combat.deal`) and held
+by a warlord who comes back 6 minutes after he dies (`spawn_boss`
+markers); the middle reaches past the four landmarks; the rest is the
+outer ring. Caches pay by zone (`cache_outer`, `cache`, `cache_core`), and
+soldiers arriving further in are more often heavies and tougher. Four gate
+outposts on the rim (`outpost` markers, run by `Raid._tick_outposts`) are
+where players drop in, each with a depot. Still to come: more hotspots (a
+volcano, a storm core), a drawn map on the watch with the rings on it,
+squad regrouping at the gates, and tuning.
+
 ### World events
 
 The warzone already runs one event at a time (supply pods and warlords,
@@ -283,8 +321,17 @@ the storage behind it.
 - **The same in both views:** a weapon digitizes into the one real hand
   under a shimmer of light, and the carried weapons stand over the card as
   small holograms of their real models.
-- **Gearing up stays at the base locker.** The watch only handles what is
-  on you.
+- **Everywhere (Caleb's call).** Every vehicle, the jet included, can be
+  thrown in every world, the plaza too, and a weapon in the pack can be
+  summoned there (in the plaza it stays locked like every weapon).
+- **At home it is the whole collection.** In the home base nothing is at
+  stake, so the carousel turns through every weapon and vehicle you own: a
+  vehicle thrown there unpacks to ride round the base and packs back onto
+  the watch, and a weapon picked is equipped. Out in a world it is only what
+  you carry.
+- **The heavy chamber.** A heavy weapon found in the world is scanned into
+  the watch and summoned from the weapon carousel, never drawn by a key
+  (section 6).
 
 ### Squad portals (Caleb's call)
 
@@ -606,7 +653,8 @@ world**.
   chamber**. This replaces the swap racks: there is no rack to trade at.
 - The chamber holds **one** heavy weapon. Finding another while full offers a
   swap: the old one is left where the new one was.
-- **Summoning** it (key 4, or from the watch) materialises it in your hands.
+- **Summoning** it from the watch's weapon carousel materialises it in your
+  hands (no key draws it, Caleb's call).
   Your primary is not dropped or deleted; it is put away.
 - When its ammo is spent it dissolves and your previous weapon comes back by
   itself. Putting it away early returns it to the chamber with the shots it
@@ -764,7 +812,7 @@ them simply wins:
 | Motorbike | No cover: the rider is fully exposed, and it is loud | Shoot the rider; a dive or a melee air-lunge knocks them off |
 | Rover | Big and slow to turn, needs open ground; the turret gunner's head shows | Heavy weapons, flanking fliers above its turret's arc, and its wheels can be disabled |
 | Mech | A rear power unit that takes extra damage, slow turning, and a long watch recharge | Get behind it: boots and wings outmanoeuvre it, and a heavy weapon in the back breaks it |
-| Jet | Fragile, cannot hover, and only in worlds with big open skies (a `WorldDef` setting); its missiles lock on with a warning the target feels | Flares (section 4) break locks, heavy weapons and a hovering jetpack can hit it on its strafing pass |
+| Jet | Fragile and cannot hover; its missiles lock on with a warning the target feels | Flares (section 4) break locks, heavy weapons and a hovering jetpack can hit it on its strafing pass |
 
 More on each:
 

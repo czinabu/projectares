@@ -125,9 +125,22 @@ func _update_wrist(delta: float) -> void:
 			focus = clampi(controller.watch_focus, 0, slots.size() - 1)
 		else:
 			controller.watch_focus = focus
+	# The Summon tab is live at home: every weapon and vehicle you own.
+	var toys := base.watch_vehicles()
+	var weapons: Array[Dictionary] = controller.watch_weapons() if controller != null else ([] as Array[Dictionary])
+	var weapon_pick := clampi(controller.weapon_pick if controller != null else 0, 0, maxi(weapons.size() - 1, 0))
+	var toy_pick := clampi(controller.watch_index if controller != null else 0, 0, maxi(toys.size() - 1, 0))
+	slots[Hud.Wrist.SLOTS.find("weapon")] = Hud.base_weapon_slot(p, weapons, weapon_pick)
+	slots[Hud.Wrist.SLOTS.find("vehicle")] = Hud.base_vehicle_slot(toys, toy_pick, controller != null and controller.pack_target() != null)
 	wrist.show_card(slots, focus, "", p.health.health / maxf(p.health.max_health, 1.0), [] as Array[float])
-	wrist.show_toys([] as Array[String], 0, true, delta)
-	wrist.show_weapons([] as Array[String], 0, true, delta)
+	var picking_toys := controller != null and controller.is_picking_toys()
+	var picking_weapons := controller != null and controller.is_picking_weapons()
+	wrist.show_toys(toys if picking_toys else ([] as Array[String]), toy_pick, true, delta)
+	var weapon_ids: Array[String] = []
+	if picking_weapons:
+		for entry in weapons:
+			weapon_ids.append(entry.id)
+	wrist.show_weapons(weapon_ids, weapon_pick, true, delta)
 
 
 ## Hangs the tag over the display you look at, or puts it away.

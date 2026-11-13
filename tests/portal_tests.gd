@@ -112,24 +112,16 @@ static func _outpost_drop(t: Node) -> void:
 	var raid := Raid.new()
 	t.add_child(raid)
 	raid.start_server(Worlds.get_world("ashfront"), 7)
-	var quiet := raid.add_player(KIT, {}, "Ada", "ada", 0, Raid.PORTAL_DROP)
-	t.check(quiet != null and is_instance_valid(quiet), "with no outpost, a portal lands you with a quiet drop")
-	var outpost := Marker3D.new()
-	outpost.add_to_group("outpost")
-	raid.map.add_child(outpost)
-	var spawns := raid.get_tree().get_nodes_in_group("spawn_player")
-	var far := (spawns[0] as Node3D).global_position + Vector3(30, 0, 30) if not spawns.is_empty() else Vector3(30, 0, 30)
-	outpost.global_position = far
+	t.check(not raid.outposts.is_empty(), "Ashfront has gate outposts to arrive at (%d)" % raid.outposts.size())
 	var squad: Array[Actor] = []
 	for key: String in ["bo", "cy"]:
-		raid.set_team(key, "crew")
+		raid.set_squad(key, "crew")
 		squad.append(raid.add_player(KIT, {}, key, key, 0, Raid.PORTAL_DROP))
-	var near := true
+	var landed: Array[Node3D] = []
 	for actor in squad:
-		var flat := actor.global_position - far
-		flat.y = 0.0
-		near = near and flat.length() < 4.0
-	t.check(near, "through a portal you land at the world's gate outpost, beside your squad")
+		landed.append(raid.outpost_at(actor.global_position))
+	t.check(landed[0] != null and landed[0] == landed[1],
+			"through a portal you land at the world's gate outpost, beside your squad")
 	raid.queue_free()
 	await t.frames(2)
 

@@ -27,6 +27,7 @@ rows marked **pre-playtest** come before the friends playtest.
 | Trophies and blueprint pedestals from PvE bosses and arena brackets | Partly | A trophy shelf and a Trophy Case furniture item exist; earned trophies need PvE bosses and arena brackets. Later. |
 | PvE world: quests, dungeons, bosses | Missing, deferred | Until after the friends playtest. Frostline stands in (no PvP, gentle death, basic loot). |
 | PvP world | Built | Ashfront: armies, strongpoints, war intensity, events, renown, full loot. |
+| PvP risk zones and gate outposts | Partly | Ashfront: outer ring, middle and a burning core held by a boss; loot and soldiers by zone; four weapons-locked gate outposts where players arrive, with the entry rules and protection on the way out; the zone named on the watch. Missing: more hotspots (volcano, storm core), a drawn watch map, squad regrouping at the gates. |
 | Heavy weapons only in the PvP world | Built | `power_weapon_rate` is 0 in Frostline and the arena. |
 | Arena with loadouts locked in a bout | Built | The Pit: own loadout, no healing or vehicles, nobody loses gear. A 40 m floor with cover for blades, guns and flight (pillars, platforms, rising barriers), fighters' tunnels with doors, a ceiling at 16 m, a ring of screens over the floor, and a navigation mesh for bots. Its own warm sci-fi night look: gunmetal and amber lit edges, red and blue sides, a holographic crowd, stadium floodlight towers and banners. |
 | World events: supply pods and warlords | Built | `Raid.event`, one at a time, sped up by the war. |
@@ -38,6 +39,7 @@ rows marked **pre-playtest** come before the friends playtest.
 | Item | State | Notes |
 | --- | --- | --- |
 | Watch card in three tabs: Summon (weapons, vehicles, artifacts, with the pack's line), Status (map, standing), Mission (contract, ping, sign-out/banking) | Built | `Hud.Wrist.TABS` and `Hud.watch_slots`: a card-sized hologram over the wrist; the mouse wheel steps across the icons tab after tab (`PlayerController.watch_focus`), turning through the weapons, toys and artifacts carried on their icons, and the open one shows its line. Contextual pop-ups only while they matter: the death report and landing choices when down, the rig's cue while flying (where the visor is not showing it), a brief notice. |
+| Summon in every world and at home | Built | Jets are thrown in every world (no `open_skies` gate) and summons work in the plaza. At home the carousel lists every weapon and vehicle owned (`HomeBase.watch_weapons`, `watch_vehicles`): vehicles unpack to be ridden in the base (`HomeBase.throw_toy`, `pack_vehicle`), a weapon picked is equipped. |
 | Summon carousel: weapons materialize out of the pack | Built | MVP. `Raid.summon` (server only, `NetSession.summon`) swaps a gun or melee weapon from the pack into the hand in place of the one worn in its slot, which goes into the pack with its rounds. Only what is carried, never the stash. `Loadout.summon_time` (heavier is slower; the weapon cannot be used until it is solid) and a watch rest of `Loadout.summon_cooldown`. The weapon digitizes in on the one body (`ActorSkin._update_materialize`), so both views and everyone see it. Missing: its own sound, armor or rig swaps. |
 | Contract tracker on the watch | Built | On the Mission tab (`Hud.contract_slot`): the job nearest done, with this life's progress on top. |
 | Vitals, heat and ammo always in view, off the watch | Built | First person with a helmet: health, armor and stamina arcs, heat gauge and the ability's state at the visor edges (`VisorHud._draw_vitals`, `_draw_heat`). Ammo is on the gun's counter. With no helmet, or in third person, the watch card carries the vitals as a thin strip. |
@@ -45,7 +47,7 @@ rows marked **pre-playtest** come before the friends playtest.
 | Banking readout on the watch | Missing | Banking happens at depots; the watch should show what is banked. Comes with banking. |
 | Landing choices | Built | |
 | Vehicle carousel (toys) | Built | Pick, throw, unpack, pack back; holds two. |
-| Heavy weapon chamber | Missing | Today a power weapon fills key 4 from a rack. **Pre-playtest.** |
+| Heavy weapon chamber | Partly | A heavy weapon is scanned into the watch and summoned from its weapon carousel; key 4 is gone. Missing: banking it and dropping it in the bag (see Heavy weapons below). |
 | Per-rig readouts (stall line, height band, dash pips) | Missing | Now part of the flight HUD (see Flight): at the visor edge and on the rig, not the watch. Comes with the aerial rig rework. **Pre-playtest.** |
 | Sign-out from the watch, with its countdown | Partly | Sign-out exists on L; not on the watch. |
 | Loadout swapping from the watch in the PvE world | Missing, deferred | With the PvE world. Today loadouts change only in a lobby or base. |
@@ -77,7 +79,7 @@ rows marked **pre-playtest** come before the friends playtest.
 | Rig tiers Mk1 to Mk3, each with a ceiling (25, 60, 100 m over the ground) | Built | `FlightRig.ceiling`, `ItemDB.RIG_CEILINGS`. Only Mk1 drops; Mk2 and Mk3 are crafted at the fabricator from the rig's blueprint and upgrade data (DESIGN.md section 10). No readout yet when you reach the ceiling (the jets just stop climbing); add one to the watch once the watch rework lands. |
 | Ring races with a leaderboard per tier as well as per rig | Missing | With the hub's ring courses. |
 | Overheat cuts the rig out until heat is back to 35 | Built | `recover_heat` 35. |
-| Flight HUD, first person: heat gauge, rig cue, squad markers and landing warning at the visor edges | Partly | Heat gauge and rig cue built (`VisorHud._draw_heat`); squad markers and landing warning missing. | New in DESIGN.md section 5. Extends `VisorHud`; the squad markers use the clan or team side. **Pre-playtest**, with the rig rework. |
+| Flight HUD, first person: heat gauge, rig cue, squad markers and landing warning at the visor edges | Partly | Heat gauge, rig cue (`VisorHud._draw_heat`) and squad markers on the visor's heading strip (`VisorHud.compass_marks`, clan or all-allied world) built; landing warning missing. | New in DESIGN.md section 5. Extends `VisorHud`; the squad markers use the clan or team side. **Pre-playtest**, with the rig rework. |
 | Flight HUD, third person: heat and cue on the pack screen, glowing vents, landing warning pulse | Missing | The pack already carries a screen (`ActorSkin.stow_place` keeps it clear); vents are new rig art. With the row above. |
 
 ## Heavy weapons and artifacts
@@ -86,8 +88,8 @@ rows marked **pre-playtest** come before the friends playtest.
 | --- | --- | --- |
 | Heavy weapons as data, splash through `Combat.deal` | Built | Rail Lance, Helion, Arc Mortar, Storm Cannon. |
 | Found at strongpoints, by pods, more as the war heats | Built | `PowerArmory`. Today they sit on swap racks. |
-| Scanned into the watch chamber instead of swapped at a rack | Missing | **Pre-playtest.** |
-| Summon without dropping the primary; auto-return when spent | Partly | Key 4 switches to it and the primary is kept. Check that a spent one returns the previous weapon by itself. |
+| Scanned into the watch chamber instead of swapped at a rack | Partly | Using the spot where one lies scans it into the chamber (`LootContainer._rack_swap` with `Loadout.set_power(..., draw = false)`); a second swaps, leaving the old one there with its shots. Missing: the spot still looks like a rack. |
+| Summon without dropping the primary; auto-return when spent | Built | Drawn only from the watch's weapon carousel (no key 4), materializing over `Loadout.summon_time` like any summon; the primary is kept, and a spent one is thrown away with your own weapon back in hand. |
 | Banked by depot or sign-out to the armory wall | Missing | Needs `StashRules.storable` to accept `power`, and the `CLAUDE.md` power weapon rule rewritten. **Pre-playtest.** |
 | Deploy with one from the wall (one per outing) | Missing | **Pre-playtest.** Open decision in DESIGN.md section 13. |
 | Dropped with your bag on death | Partly | Today a dead player's power weapon is left on a rack. |
@@ -117,7 +119,7 @@ rows marked **pre-playtest** come before the friends playtest.
 | Cargo space while riding | Missing | After the playtest. |
 | Mobile cover | Missing | Rover and mech; the bike gives none by design. |
 | Per-vehicle watch recharge (heavier is slower) | Built | A `watch_recharge` stat (`Raid.toy_recharge`): bike 8 s, rover 20 s, jet 40 s, mech 45 s. |
-| Rover, mech and jet | Partly | Drivable first versions on the one `Vehicle` class: Warden Rover (23 m/s, slow to turn, driver's seat on the left), Bulwark Mech (9 m/s, turns on the spot, jump-jet hop) and Kestrel Jet (takes off past 24 m/s, cannot hover, 120 m ceiling, only where `WorldDef.open_skies`). Greybox models. Missing: their weapons, passengers, armor and weak spots, vehicle health, The rover can be found parked in Ashfront; the mech and the jet are built at the fabricator from their blueprints, which warlords and supply pods carry. |
+| Rover, mech and jet | Partly | Drivable first versions on the one `Vehicle` class: Warden Rover (23 m/s, slow to turn, driver's seat on the left), Bulwark Mech (9 m/s, turns on the spot, jump-jet hop) and Kestrel Jet (takes off past 24 m/s, cannot hover, 120 m ceiling, thrown in any world). Greybox models. Missing: their weapons, passengers, armor and weak spots, vehicle health, The rover can be found parked in Ashfront; the mech and the jet are built at the fabricator from their blueprints, which warlords and supply pods carry. |
 
 ## Racing
 
@@ -137,7 +139,7 @@ rows marked **pre-playtest** come before the friends playtest.
 | Crafting Mk2 and Mk3 at the gunsmith bench, with a mastery gate on Mk2 | Partly | `core/progression/crafting.gd` and the fabricator console on the bench (`HomeBase.CraftConsole`, `craft_panel.gd`), server-checked online (`StashService.craft`). Mk2 and Mk3 rigs, two guns at base level, the mech and the jet. Costs are placeholders. Missing: the mastery gate, Mk2 and Mk3 weapons, Mk2 helmets, salvage on loss. |
 | All drops base level (Mk1), better loot in the PvP world | Partly | Shops already sell only base level, and no loot table lists a rig or helmet above Mk1 (`tests/rig_tier_tests.gd` checks every world's tables). Mk2 and Mk3 rigs are crafted; Mk2 helmets still have no source. |
 | Mastery unlocks attachments and mods | Partly | Mastery unlocks sidegrade variants today; attachments and fire modes as unlocks are missing. |
-| Contracts: daily, weekly and rare high-risk, from a board in the hub, tracked on the watch and visor, counted on extract | Partly | Built: the board beside the big screen (3 dailies and a weekly by date, hold 3, one reroll a day), counters from `Raid._count` and what came home, counted only on a sign-out, paid at once (scrip, upgrade data, a weekly blueprint once they exist), a contract icon on the watch. Missing: high-risk jobs, the visor tracker, per-world and per-rig jobs, contracts in solo runs, tuned payouts. |
+| Contracts: daily, weekly and rare high-risk, from a board in the hub, tracked on the watch and visor, counted on extract | Partly | Built: the board beside the big screen (3 dailies and a weekly by date, hold 3, one reroll a day), counters from `Raid._count` and what came home, counted only on a sign-out, paid at once (scrip, upgrade data, a weekly blueprint once they exist), a contract icon on the watch. The visor tracker shows the job nearest done (`VisorHud._draw_tracker`). Missing: high-risk jobs, per-world and per-rig jobs, contracts in solo runs, tuned payouts. |
 | Bounties on hot players, paid on extract, tied to the most-wanted board | Partly | Renown, bounties and the Marked exist in the PvP world; payouts in upgrade data and the board are missing. |
 | Safety nets: free Mk1 kit, one insured item, salvage on loss | Partly | The free `starter` scrap kit exists. Insurance and salvage are missing. |
 | Prestige vehicles and rigs from hard feats | Missing | List TBD. |

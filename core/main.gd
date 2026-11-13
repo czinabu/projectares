@@ -259,6 +259,11 @@ func _attach_base_view() -> void:
 	if phone != null:
 		# The phone is held by this body's own hand, in every view.
 		phone.set_holder(controller.actor)
+	# The watch's summon works at home too: vehicles unpack in the base and
+	# a weapon picked is equipped.
+	controller.toy_throw_requested.connect(_on_toy_throw_requested)
+	controller.pack_requested.connect(_on_pack_requested)
+	controller.summon_requested.connect(_on_summon_requested)
 	base.add_child(controller)
 	# The view is the player's choice: suiting up keeps it.
 	if view_third != controller.is_third_person():
@@ -641,6 +646,9 @@ func _on_redeploy_requested(drop := "") -> void:
 
 ## The player threw the toy vehicle in their hand. The world decides the rest.
 func _on_toy_throw_requested(item_id: String) -> void:
+	if base != null and raid == null:
+		base.throw_toy(base.player, item_id)
+		return
 	if raid == null or raid.player == null or not is_instance_valid(raid.player):
 		return
 	if net:
@@ -652,6 +660,10 @@ func _on_toy_throw_requested(item_id: String) -> void:
 ## The player picked a weapon in their pack on the watch. The world decides
 ## whether it materializes.
 func _on_summon_requested(item_id: String) -> void:
+	if base != null and raid == null:
+		if not base.read_only and Loadout.summonable(item_id):
+			_on_base_equip(Loadout.weapon_slot(item_id), item_id)
+		return
 	if raid == null or raid.player == null or not is_instance_valid(raid.player):
 		return
 	if net:
@@ -729,6 +741,9 @@ func go_through_portal(destination: String) -> void:
 
 ## The player asked to pack the vehicle they are looking at onto their watch.
 func _on_pack_requested() -> void:
+	if base != null and raid == null:
+		base.pack_vehicle(base.player)
+		return
 	if raid == null or raid.player == null or not is_instance_valid(raid.player):
 		return
 	if net:
@@ -923,6 +938,9 @@ func _run_dedicated_server(args: PackedStringArray) -> void:
 	# server run from the editor, and keeps this server's accounts apart.
 	var dev_host := _arg(args, "--dev-host", "") if DevMode.available() else ""
 	var accounts := _arg(args, "--accounts", DEV_ACCOUNTS if dev_host != "" else "")
+	# `--no-zone-rules`: no gate shelter and no hazards (the test suite's servers).
+	if "--no-zone-rules" in args:
+		Raid.zone_rules = false
 	var err := start_server(_arg(args, "--world", ""), port, "--no-plaza" not in args,
 			int(_arg(args, "--bots", "-1")), "--squad-spawn" in args, accounts,
 			"--no-rewind" not in args,

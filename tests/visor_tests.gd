@@ -14,11 +14,22 @@ const SCRAP: Array[String] = ["rifle_scrap", "blade_scrap", "jetpack_mk1", "plat
 static func run(t: Node) -> void:
 	_rules(t)
 	await _plain(t)
+	await _wear(t)
+	await _frames(t)
 	await _zoom(t)
 	await _scan(t)
 	await _glass(t)
+	await _strip(t)
 	await _threat(t)
 	await _thermal(t)
+
+
+## Players arrive inside a gate outpost, whose walls would stand between
+## them and the bots these checks put round them: stand on an open drop point.
+static func _out_in_the_open(raid: Raid, p: Actor) -> void:
+	var at := Vector2.from_angle(TAU * 0.5 / 12.0) * 248.0
+	p.global_position = raid._stand(Vector3(at.x, raid.map.call("ground_height", at.x, at.y), at.y))
+	p.velocity = Vector3.ZERO
 
 
 static func _kit(helmet: String) -> Array[String]:
@@ -92,10 +103,108 @@ static func _plain(t: Node) -> void:
 	await t._end_raid(raid)
 
 
+static func _wear(t: Node) -> void:
+	print("Visors: putting helmets on from the pack")
+	var raid: Raid = await t._kit_raid(315, _kit("helm_spotter"))
+	var p := raid.player
+	var changes: Array[String] = []
+	p.helmet_changed.connect(func(id: String) -> void: changes.append(id))
+	p.inventory.add_item("helm_seeker")
+	var entries := Hud.weapon_entries(p)
+	var at := entries.map(func(e: Dictionary) -> String: return e.id).find("helm_seeker")
+	t.check(at >= 0 and int(entries[at].index) == -1, "a helmet carried in the pack is on the watch's carousel")
+	var slot := Hud.weapon_slot(raid, p, at)
+	t.check("Seeker Helmet · wear" in str(slot.detail) and "click" in slot.hints,
+			"picked on the carousel, a click puts it on")
+	p.visor.zoom_level = 1
+	t.check(raid.summon(p, "helm_seeker") == "" and p.visor.mode == "scan" and p.visor.item_id == "helm_seeker"
+			and p.visor.cooldown == 25.0 and p.visor.zoom_level == 0 and raid.summon_wait(p) <= 0.0,
+			"the summon puts it on at once, its visor is the new helmet's, and the watch need not rest")
+	t.check("helm_seeker" in p.gear_items and "helm_spotter" not in p.gear_items
+			and p.inventory.has_item("helm_spotter") and not p.inventory.has_item("helm_seeker"),
+			"the helmet taken off goes into the pack, and the one put on is worn gear")
+	t.check("helm_seeker" in p.get_drop_items() and "helm_spotter" in p.get_drop_items(),
+			"both drop on death: the worn one as gear, the other as loot")
+	t.check("helm_seeker" in raid.state_for(p).kit and "helm_spotter" not in raid.state_for(p).kit,
+			"the kit others are told about follows, so a late joiner sees the helmet worn now")
+	t.check(raid.swap_worn(p, "helm_spotter") == "" and p.visor.mode == "zoom" and p.inventory.has_item("helm_seeker"),
+			"and the old one can go back on the same way")
+	t.check(raid.swap_worn(p, "helm_ember") != "" and p.visor.item_id == "helm_spotter",
+			"a helmet not in the pack cannot be put on")
+	t.check(changes == ["helm_seeker", "helm_spotter"], "each change is announced for the view and the network")
+	Loadout.wear_helmet(p, "")
+	t.check(not p.visor.enabled and p.visor.mode == "" and p.visor.levels() == 0 and "helm_spotter" not in p.gear_items,
+			"taken off, the visor is bare")
+	await t._end_raid(raid)
+
+	var two := _kit("helm_warden")
+	two.append("helm_ember")
+	raid = await t._kit_raid(316, two)
+	p = raid.player
+	t.check(p.visor.mode == "threat" and p.inventory.has_item("helm_ember") and "helm_ember" not in p.gear_items,
+			"one head: a second helmet in a kit is only carried")
+	await t._end_raid(raid)
+
+	var fittings := {"": "Crack", "zoom": "Lens0", "scan": "Fin", "threat": "Brow", "thermal": "Lens"}
+	var built := true
+	for mode: String in fittings:
+		var model := SkinScript.build_helmet(mode, Color.WHITE, Vector3(0.27, 0.31, 0.31), Color.GRAY)
+		built = built and model.get_node_or_null("Shell") != null and model.get_node_or_null("Glass") != null \
+				and model.get_node_or_null(fittings[mode]) != null
+		model.free()
+	t.check(built, "every visor mode has a helmet model: a shell, its glass and its own fitting")
+
+
+static func _frames(t: Node) -> void:
+	print("Armor: frames worn and put on from the pack")
+	var kit: Array[String] = ["rifle_scrap", "blade_scrap", "jetpack_mk1", "frame_trooper", "frame_runner"]
+	var raid: Raid = await t._kit_raid(317, kit)
+	var p := raid.player
+	var walk := p.walk_speed
+	var signature := p.heat_signature
+	t.check(p.frame_id == "frame_trooper" and is_equal_approx(p.health.max_armor, 85.0)
+			and p.inventory.has_item("frame_runner") and "frame_runner" not in p.gear_items,
+			"one frame is worn; a second in a kit is only carried")
+	var changes: Array[String] = []
+	p.frame_changed.connect(func(id: String) -> void: changes.append(id))
+	var ids := Hud.weapon_entries(p).map(func(e: Dictionary) -> String: return e.id)
+	t.check("frame_runner" in ids, "a frame carried in the pack is on the watch's carousel")
+	p.health.armor = 40.0
+	t.check(raid.summon(p, "frame_runner") == "" and p.frame_id == "frame_runner"
+			and is_equal_approx(p.health.max_armor, 45.0) and is_equal_approx(p.health.armor, 45.0),
+			"a summon puts the frame on, whole")
+	t.check(is_equal_approx(p.walk_speed, walk * 1.12) and is_equal_approx(p.heat_signature, signature * 0.7),
+			"the old frame's scaling comes off and the new one's goes on")
+	t.check("frame_runner" in p.gear_items and "frame_trooper" not in p.gear_items
+			and p.inventory.has_item("frame_trooper") and is_equal_approx(float(p.stowed_armor.get("frame_trooper", -1.0)), 40.0),
+			"the frame taken off goes into the pack with the armor it had left")
+	t.check(raid.summon_wait(p) > 0.0 and raid.swap_worn(p, "frame_trooper") != "",
+			"after a frame the watch rests, so spare plates are no instant refill")
+	raid.state_for(p).summon_ready_at = raid.clock
+	t.check(raid.swap_worn(p, "frame_trooper") == "" and is_equal_approx(p.health.armor, 40.0)
+			and is_equal_approx(p.walk_speed, walk) and is_equal_approx(p.heat_signature, signature),
+			"put back on, it is as worn as it was, and the body is back as it was")
+	t.check(changes == ["frame_runner", "frame_trooper"], "each change is announced for the view and the network")
+	t.check("frame_trooper" in p.get_drop_items() and "frame_runner" in p.get_drop_items(),
+			"both drop on death: the worn one as gear, the other as loot")
+	await t._end_raid(raid)
+
+	var built := true
+	for weight: String in ["light", "medium", "heavy"]:
+		var model := SkinScript.build_frame(weight, Color.GRAY)
+		built = built and model.get_node_or_null("Chest") != null \
+				and (model.get_node_or_null("Belly") != null) == (weight != "light") \
+				and (model.get_node_or_null("Collar") != null) == (weight == "heavy")
+		model.free()
+	t.check(built and SkinScript.frame_weight("frame_bulwark") == "heavy"
+			and SkinScript.frame_weight("plate_light") == "light", "each frame weight has its own plates")
+
+
 static func _zoom(t: Node) -> void:
 	print("Visors: Spotter binoculars")
 	var raid: Raid = await t._kit_raid(320, _kit("helm_spotter"))
 	var p := raid.player
+	_out_in_the_open(raid, p)
 	var v := p.visor
 	t.check(v.enabled and v.mode == "zoom" and v.zoom_levels == [4.0, 8.0], "Spotter stats come from the item")
 	t.check(PlayerController.next_visor_level(v, 0) == 1 and PlayerController.next_visor_level(v, 1) == 2
@@ -190,6 +299,7 @@ static func _scan(t: Node) -> void:
 	print("Visors: Seeker scan")
 	var raid: Raid = await t._kit_raid(330, _kit("helm_seeker"))
 	var p := raid.player
+	_out_in_the_open(raid, p)
 	var v := p.visor
 	t.check(v.mode == "scan" and is_equal_approx(v.scan_radius, 40.0) and is_equal_approx(v.cooldown, 25.0),
 			"Seeker stats come from the item")
@@ -648,4 +758,66 @@ static func _thermal(t: Node) -> void:
 	other.global_position = p.global_position + Vector3(0, 0.2, -60)
 	await t.frames(5)
 	t.check(not glass._embers.has(other), "and cannot be seen from far away")
+	await t._end_raid(raid)
+
+
+static func _strip(t: Node) -> void:
+	print("Visors: the heading strip, squad and roles")
+	t.check(VisorHud.role_name("zoom") == "RECON" and VisorHud.role_name("scan") == "INTEL"
+			and VisorHud.role_name("threat") == "TACTICAL" and VisorHud.role_name("thermal") == "THERMAL"
+			and VisorHud.role_name("") == "SCRAP", "every helmet has a role it shows as it comes on")
+	t.check(VisorHud.signature_text(0.5) == "SIG LOW" and VisorHud.signature_text(0.75) == "SIG MED"
+			and VisorHud.signature_text(1.6) == "SIG HIGH", "an Ember reads how warm its wearer looks")
+	var none: Array[Dictionary] = []
+	t.check(VisorHud.tracker_text(none, {}) == "", "with no contract held the tracker is blank")
+
+	var raid: Raid = await t._kit_raid(345, _kit("helm_warden"))
+	var p := raid.player
+	var glass := VisorHud.new()
+	glass.setup(raid, null)
+	raid.add_child(glass)
+	await t.frames(2)
+	var kinds := func() -> Array:
+		return glass.compass_marks(p).map(func(m: Dictionary) -> String: return m.kind)
+	t.check(raid.depots.is_empty() or "depot" in kinds.call(), "every working visor marks the nearest depot")
+	raid.war.intensity = 0.0
+	t.check(not "hot" in kinds.call(), "a quiet war has no hot zone on the strip")
+	raid.war.intensity = 0.8
+	t.check("hot" in kinds.call(), "a tactical visor marks where the war is hottest")
+	# Another player in the world: a squadmate only when they share a clan.
+	var other: Actor = raid.bots[0]
+	t.check(not VisorHud.squadmate(raid, p, other), "a bot is never on the squad")
+	var state := Raid.PlayerState.new()
+	state.actor = other
+	raid.players.append(state)
+	p.clan = "wolves"
+	other.clan = "ravens"
+	t.check(not VisorHud.squadmate(raid, p, other), "a player of another clan is never marked")
+	other.clan = "wolves"
+	t.check(VisorHud.squadmate(raid, p, other), "a clanmate is on the squad")
+	glass._process(0.016)
+	t.check(other in glass.squad and "squad" in kinds.call(), "and the strip marks where they are")
+	other.health.health = 0.0
+	other.is_dead = true
+	t.check(not VisorHud.squadmate(raid, p, other), "a fallen squadmate leaves the strip")
+	other.is_dead = false
+	raid.players.erase(state)
+	p.clan = ""
+	glass._process(0.016)
+	t.check(glass.squad.is_empty(), "alone, there is no squad to mark")
+	raid.pinged.emit(p, p.global_position + Vector3(10, 0, 0))
+	t.check("ping" in kinds.call(), "your own ping is marked on the strip")
+	for i in 3:
+		glass._process(raid.ping_time * 0.5)
+	t.check(not "ping" in kinds.call(), "and goes when the ping does")
+	glass.queue_free()
+	await t._end_raid(raid)
+
+	raid = await t._kit_raid(346, _kit("visor_scav"))
+	glass = VisorHud.new()
+	glass.setup(raid, null)
+	raid.add_child(glass)
+	await t.frames(2)
+	t.check(glass.compass_marks(raid.player).is_empty(), "a scrap visor marks nothing, only a bearing")
+	glass.queue_free()
 	await t._end_raid(raid)

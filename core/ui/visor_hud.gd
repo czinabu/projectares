@@ -10,12 +10,18 @@ extends Control
 ## stamina as thinner arcs inside it, and the ability's state under it. With
 ## a flight rig worn, its heat gauge and cue sit high on the right. A working
 ## helmet has its system on an arc on the right, a ring around the crosshair, and its height
-## readout in the air. The rest depends on the visor's `mode` (see `Visor`):
-## a compass, range finder, lock-on brackets and binocular scale for "zoom",
-## a sweep and contact count for "scan"; for "threat" the health of whoever
-## is under the crosshair, what nearby loot holds, the way to the nearest
-## depot and where a hit came from; for "thermal" a heat picture of the
-## whole view. The display is alive: it sweeps in when it comes on (`boot`),
+## readout in the air. Every working helmet has a heading strip across the
+## top, bowed with the glass, marking the squad, pings and the nearest depot
+## (`compass_marks`), and the contract nearest done in the top left. Each
+## helmet has a role (`role_name`), shown as it comes on, its own reticle,
+## and the rest depends on its `mode` (see `Visor`): range finder, lock-on
+## brackets, binocular scale and tagged targets on the strip for "zoom"
+## (recon); a sweep, contact count and the scan's contacts on the strip for
+## "scan" (intel); for "threat" (tactical) the health of whoever is under
+## the crosshair, what nearby loot holds, the war's hot zone on the strip
+## and where a hit came from; for "thermal" a heat picture of the whole view
+## and how warm you look yourself. A scrap visor only manages a bearing.
+## The display is alive: it sweeps in when it comes on (`boot`),
 ## trails the view a little as you turn (`sway`), sits dim until something
 ## happens (`alert`) and closes on what you aim at (`lock`). With no helmet,
 ## or in third person, nothing is drawn.
@@ -56,6 +62,22 @@ var lock_range := 220.0
 var lock_rate := 6.0
 ## The armor arc's colour (stamina takes the glass's own).
 const ARMOR_INK := Color(0.5, 0.75, 1.0)
+## Colours of the heading strip's marks that are not the glass's own.
+const SQUAD_INK := Color(0.45, 1.0, 0.6)
+const PING_INK := Color(0.35, 0.95, 1.0)
+const HOT_INK := Color(1.0, 0.55, 0.15)
+const TAG_INK := Color(1.0, 0.3, 0.2)
+## How many degrees either side of straight ahead the heading strip shows.
+var strip_reach := 45.0
+## How far the heading strip bows down at its ends, as a share of the
+## screen's height: the glass is curved.
+var strip_bow := 0.018
+## The war must be at least this hot before a tactical visor marks its centre.
+var hot_from := 0.25
+## How long the helmet's name stays up after the display comes on.
+var ident_time := 2.4
+## Seconds the glass's scan line takes to run down the view.
+var scanline_time := 5.5
 
 var raid: Raid
 var controller: PlayerController
@@ -83,10 +105,20 @@ var lock := 0.0
 var zoom_shown := 0.0
 ## Height above the ground while off it, below zero when standing on it.
 var altitude := -1.0
+## Everyone on the wearer's squad in this world, alive (see `squadmate`).
+var squad: Array[Actor] = []
+## Spots the wearer's side pinged: {"at": Vector3, "left": float}.
+var pings: Array[Dictionary] = []
+## The `Hud` this glass belongs to, for the contracts held. May be null.
+var hud: Hud
 
 var _world: Node3D
 var _ghosts: Array[MeshInstance3D] = []
 var _tag_marks := {}
+## Everyone tagged for the wearer's side right now, for the heading strip.
+var _tagged: Array[Actor] = []
+## Seconds since the display last came on, for the helmet's name.
+var _since_boot := 0.0
 var _glints := {}
 var _embers := {}
 var _threat_marks := {}
@@ -126,6 +158,7 @@ func _ready() -> void:
 		raid.player.visor.felt_scan.connect(_on_felt_scan)
 		raid.player.visor.threatened.connect(_on_threatened)
 		raid.player.health.damaged.connect(func(_info: DamageInfo) -> void: alert = 1.0)
+	raid.pinged.connect(_on_pinged)
 
 
 func _exit_tree() -> void:
@@ -196,6 +229,9 @@ func _process(delta: float) -> void:
 	for mark in hit_marks:
 		mark.left -= delta
 	hit_marks = hit_marks.filter(func(m: Dictionary) -> bool: return m.left > 0.0)
+	for mark in pings:
+		mark.left -= delta
+	pings = pings.filter(func(m: Dictionary) -> bool: return m.left > 0.0)
 	thermal_shown = p != null and glass_shown() and p.visor.thermal_on
 	_thermal.visible = thermal_shown
 	_animate(p, delta)
@@ -210,6 +246,10 @@ func _process(delta: float) -> void:
 		var other := node as Actor
 		if other != null and Raid.together(other, p):
 			around.append(other)
+	squad.clear()
+	for other in around:
+		if squadmate(raid, p, other):
+			squad.append(other)
 	_sync_actors(p, around)
 	_sync_heat(p, around)
 	_tick_rings(delta)
@@ -234,6 +274,9 @@ func _animate(p: Actor, delta: float) -> void:
 		var held := aim_target != null and is_instance_valid(aim_target) and not aim_target.is_dead
 		lock = move_toward(lock, 1.0 if held else 0.0, lock_rate * delta)
 		return
+	if boot <= 0.0:
+		_since_boot = 0.0
+	_since_boot += delta
 	boot = minf(1.0, boot + delta / maxf(boot_time, 0.01))
 	var look := Vector2(p.cmd.yaw, p.cmd.pitch)
 	if _look_known and delta > 0.0:
@@ -255,6 +298,93 @@ func _animate(p: Actor, delta: float) -> void:
 func _on_felt_scan(origin: Vector3) -> void:
 	felt.append({"origin": origin, "left": felt_time})
 	Sfx.play("ability", null, -9.0)
+
+
+## A ping from the wearer or their side (others never reach a client; solo
+## they are filtered here like the HUD's own marker).
+func _on_pinged(pinger: Actor, at: Vector3) -> void:
+	var p := _player()
+	if p == null or not is_instance_valid(pinger):
+		return
+	if pinger != p and raid.mode != Raid.Mode.CLIENT and not Visor.allied(p, pinger):
+		return
+	pings.append({"at": at, "left": raid.ping_time})
+
+
+## True if `other` is on the wearer's squad: another living player in the
+## same world who shares a clan with them, or anyone in a world where all
+## players fight together. Never a bot, never an enemy (DESIGN.md section 5).
+## Clans are what a client is told about, so this works the same online.
+static func squadmate(p_raid: Raid, p: Actor, other: Actor) -> bool:
+	if p_raid == null or other == null or other == p or other.is_dead or p_raid.state_for(other) == null:
+		return false
+	if p_raid.world != null and p_raid.world.players_allied:
+		return true
+	return p.clan != "" and p.clan == other.clan
+
+
+## What each helmet is for, shown as it comes on.
+static func role_name(mode: String) -> String:
+	match mode:
+		"zoom":
+			return "RECON"
+		"scan":
+			return "INTEL"
+		"threat":
+			return "TACTICAL"
+		"thermal":
+			return "THERMAL"
+	return "SCRAP"
+
+
+## How warm the wearer looks to a thermal visor (`Visor.heat_of`), for an
+## Ember's own readout.
+static func signature_text(heat: float) -> String:
+	if heat >= 1.2:
+		return "SIG HIGH"
+	if heat >= 0.7:
+		return "SIG MED"
+	return "SIG LOW"
+
+
+## The visor's contract tracker: the job nearest done (`Hud.contract_slot`),
+## or "" with none held.
+static func tracker_text(held: Array[Dictionary], tally: Dictionary) -> String:
+	if held.is_empty():
+		return ""
+	return str(Hud.contract_slot(held, tally).detail).to_upper()
+
+
+## What the heading strip marks, nearest the middle last so it draws on top:
+## {"kind", "at" (Vector3), "label"}. Kinds: "squad", "ping" and "depot" on
+## every working visor; "tag" (Spotter), "contact" (Seeker's snapshots) and
+## "hot" (the war's centre, Warden). A scrap visor marks nothing.
+func compass_marks(p: Actor) -> Array[Dictionary]:
+	var marks: Array[Dictionary] = []
+	var v := p.visor
+	if v.mode == "":
+		return marks
+	var nearest: Node3D = null
+	for depot in raid.depots:
+		if is_instance_valid(depot) and Raid.together(depot, p) and (nearest == null
+				or depot.global_position.distance_to(p.global_position)
+				< nearest.global_position.distance_to(p.global_position)):
+			nearest = depot
+	if nearest != null:
+		marks.append({"kind": "depot", "at": nearest.global_position, "label": "DEPOT"})
+	if v.mode == "threat" and raid.war.intensity >= hot_from:
+		marks.append({"kind": "hot", "at": raid.war.centre, "label": "HOT"})
+	for ghost in v.ghosts if v.mode == "scan" else []:
+		marks.append({"kind": "contact", "at": ghost.at, "label": ""})
+	for target in _tagged if v.mode == "zoom" else []:
+		if is_instance_valid(target):
+			marks.append({"kind": "tag", "at": target.global_position, "label": ""})
+	for ping in pings:
+		marks.append({"kind": "ping", "at": ping.at, "label": "PING"})
+	for mate in squad:
+		if is_instance_valid(mate):
+			marks.append({"kind": "squad", "at": mate.global_position, "label": mate.display_name.left(8).to_upper()})
+	return marks
 
 
 func _on_threatened(origin: Vector3) -> void:
@@ -346,6 +476,10 @@ func _sync_actors(p: Actor, around: Array[Actor]) -> void:
 	for other in p.visor.threats:
 		if is_instance_valid(other) and not other.is_dead:
 			sensed[other] = true
+	_tagged.clear()
+	for target: Variant in tagged:
+		if target is Actor and not (target as Actor).is_dead:
+			_tagged.append(target)
 	_sync_marks(_tag_marks, tagged, _new_tag_mark)
 	_sync_marks(_glints, glinting, _new_glint)
 	_sync_marks(_embers, embers, _new_ember)
@@ -521,14 +655,19 @@ func _draw() -> void:
 		if sin(_time * 1.7) * sin(_time * 4.3) > 0.82:
 			return
 		_draw_cracks(ink)
+	_draw_glass(ink)
 	_draw_vitals(p, ink, centre)
 	_draw_heat(p, ink, centre)
-	if v.mode != "":
-		_draw_reticle(ink, centre)
+	_draw_ident(v, ink)
+	if v.mode == "":
+		_draw_heading(p, ink)
+	else:
+		_draw_reticle(ink, centre, v.mode)
 		_draw_altitude(p, ink, centre)
+		_draw_compass(p, ink)
+		_draw_tracker(p, ink)
 	match v.mode:
 		"zoom":
-			_draw_compass(p, ink)
 			_draw_lock(p, ink, "%d m" % roundi(range_reading) if range_reading >= 0.0 else "")
 			_draw_range(ink, centre)
 			_draw_system(ink, centre, float(v.zoom_level) / maxf(v.zoom_levels.size(), 1.0),
@@ -543,7 +682,6 @@ func _draw() -> void:
 			_draw_lock(p, ink, "")
 			_draw_target(ink)
 			_draw_loot(p, ink)
-			_draw_depot(p, ink)
 			if v.is_sensing():
 				_draw_system(Color(1.0, 0.3, 0.2), centre, v.active_left / maxf(v.threat_time, 0.01),
 						"THREATS %d" % v.threats.size(), true)
@@ -554,6 +692,7 @@ func _draw() -> void:
 		"thermal":
 			_draw_system(ink, centre, v.charge_fraction(), "THERMAL" if v.thermal_on else "CELL %d%%" %
 					roundi(v.charge_fraction() * 100.0), v.thermal_on)
+			_draw_signature(p, ink, centre)
 	_draw_slivers(p, centre, felt, felt_time, Color(1.0, 0.2, 0.12), 0.4)
 	_draw_slivers(p, centre, hit_marks, hit_mark_time, Color(1.0, 0.6, 0.1), 0.34)
 
@@ -571,7 +710,7 @@ func reticle_shown() -> bool:
 func _draw_third_person() -> void:
 	var p := _player()
 	var ink := p.visor.glass_color
-	_draw_reticle(ink, size * 0.5)
+	_draw_reticle(ink, size * 0.5, p.visor.mode)
 	_draw_lock(p, ink, "")
 
 
@@ -587,13 +726,16 @@ func _swept() -> float:
 	return 1.0 if reticle_shown() else ease(boot, 0.4)
 
 
-## Small capitals, the way every readout is lettered. They type themselves in.
+## Small capitals, the way every readout is lettered. They type themselves in,
+## with a faint dark halo so they read against a bright sky.
 func _text(at: Vector2, text: String, color: Color, align := HORIZONTAL_ALIGNMENT_LEFT, width := 220.0,
-		font_size := 12) -> void:
+		font_size := 13) -> void:
 	var shown := text.substr(0, ceili(text.length() * _swept()))
 	var from := at if align == HORIZONTAL_ALIGNMENT_LEFT else at - Vector2(width * (0.5 if align
 			== HORIZONTAL_ALIGNMENT_CENTER else 1.0), 0.0)
-	draw_string(ThemeDB.fallback_font, from, shown, align, width, font_size, color)
+	var font := ThemeDB.fallback_font
+	draw_string_outline(font, from, shown, align, width, font_size, 3, Color(0.0, 0.02, 0.04, color.a * 0.45))
+	draw_string(font, from, shown, align, width, font_size, color)
 
 
 ## A band of short ticks along an arc, turned by `turn` radians.
@@ -706,14 +848,19 @@ func _draw_system(ink: Color, centre: Vector2, share: float, text: String, lit: 
 
 
 ## A broken ring around the crosshair that turns slowly, and closes in when
-## something is under it.
-func _draw_reticle(ink: Color, centre: Vector2) -> void:
+## something is under it. Each helmet breaks it its own way: three arcs for
+## recon, four for intel, two heavy brackets for tactical, six short ticks
+## for thermal.
+func _draw_reticle(ink: Color, centre: Vector2, mode := "") -> void:
 	var locked := aim_target != null and is_instance_valid(aim_target)
 	var radius := lerpf(30.0, 20.0, lock) * lerpf(2.2, 1.0, _swept())
 	var turn := _time * (1.4 if locked else 0.35)
-	for i in 3:
-		var from := turn + TAU * i / 3.0
-		draw_arc(centre, radius, from, from + TAU / 3.0 - 0.5, 12, _lit(ink, 0.55 + 0.35 * lock), 1.0, true)
+	var parts := {"scan": 4, "threat": 2, "thermal": 6}.get(mode, 3) as int
+	var gap := {"threat": 1.3, "thermal": 0.75}.get(mode, 0.5) as float
+	var width := 2.0 if mode == "threat" else 1.0
+	for i in parts:
+		var from := turn + TAU * i / parts
+		draw_arc(centre, radius, from, from + TAU / parts - gap, 12, _lit(ink, 0.55 + 0.35 * lock), width, true)
 
 
 ## Height above the ground, shown only while the wearer is off it.
@@ -739,28 +886,134 @@ func _draw_cracks(ink: Color) -> void:
 			color, 1.2, true)
 
 
-## A strip of bearings across the top that slides as the wearer turns.
+## Where the curved heading strip is at `off` degrees from straight ahead:
+## it bows down toward its ends, the way the glass curves.
+func _strip_point(off: float) -> Vector2:
+	var share := clampf(off / strip_reach, -1.0, 1.0)
+	return Vector2(size.x * 0.5 + sway.x + off * size.x * 0.0045,
+			size.y * 0.075 + sway.y + share * share * size.y * strip_bow)
+
+
+## A strip of bearings across the top that slides as the wearer turns, bowed
+## with the glass, with what the helmet knows marked on it (`compass_marks`):
+## squad, pings and the nearest depot on every working visor, and the
+## helmet's own finds. Something off the strip waits at its end, pointing.
 func _draw_compass(p: Actor, ink: Color) -> void:
 	var heading := bearing(p.cmd.yaw)
-	var per_degree := size.x * 0.0045
-	var y := size.y * 0.075 + sway.y
-	var mid := size.x * 0.5 + sway.x
-	var reach := 45.0 * _swept()
-	var first := int(floor((heading - 45.0) / 5.0)) * 5
-	for mark in range(first, first + 95, 5):
+	var reach := strip_reach * _swept()
+	var first := int(floor((heading - strip_reach) / 5.0)) * 5
+	for mark in range(first, first + int(strip_reach * 2.0) + 5, 5):
 		var off := mark - heading
 		if absf(off) > reach:
 			continue
 		# Marks fade toward the ends of the strip.
-		var color := _lit(ink, 0.85 * (1.0 - absf(off) / 50.0))
-		var x := mid + off * per_degree
+		var color := _lit(ink, 0.85 * (1.0 - absf(off) / (strip_reach + 5.0)))
+		var at := _strip_point(off)
 		var cardinal := posmod(mark, 45) == 0
-		draw_line(Vector2(x, y), Vector2(x, y + (10.0 if cardinal else 5.0)), color, 1.0, true)
+		draw_line(at, at + Vector2(0.0, 10.0 if cardinal else 5.0), color, 1.0, true)
 		if cardinal:
-			_text(Vector2(x, y - 6.0), compass_name(mark), color, HORIZONTAL_ALIGNMENT_CENTER, 60.0, 13)
-	draw_line(Vector2(mid - 5.0, y + 22.0), Vector2(mid, y + 15.0), _lit(ink, 0.9), 1.5, true)
-	draw_line(Vector2(mid + 5.0, y + 22.0), Vector2(mid, y + 15.0), _lit(ink, 0.9), 1.5, true)
-	_text(Vector2(mid, y + 38.0), "%03d" % roundi(heading), _lit(ink, 0.9), HORIZONTAL_ALIGNMENT_CENTER, 80.0)
+			_text(at + Vector2(0.0, -6.0), compass_name(mark), color, HORIZONTAL_ALIGNMENT_CENTER, 60.0, 13)
+	var mid := _strip_point(0.0)
+	draw_line(mid + Vector2(-5.0, 22.0), mid + Vector2(0.0, 15.0), _lit(ink, 0.9), 1.5, true)
+	draw_line(mid + Vector2(5.0, 22.0), mid + Vector2(0.0, 15.0), _lit(ink, 0.9), 1.5, true)
+	_text(mid + Vector2(0.0, -22.0), "%03d" % roundi(heading), _lit(ink, 0.9), HORIZONTAL_ALIGNMENT_CENTER, 80.0)
+	# Marks off the strip queue at its ends, inward, so they never sit on each other.
+	var queued := {-1.0: 0, 1.0: 0}
+	for mark in compass_marks(p):
+		var off := rad_to_deg(angle_to(mark.at, p.global_position, p.cmd.yaw))
+		var waiting := 0
+		if absf(off) > strip_reach:
+			waiting = queued[signf(off)]
+			queued[signf(off)] += 1
+		_draw_strip_mark(p, ink, mark, off, waiting)
+
+
+func _draw_strip_mark(p: Actor, ink: Color, mark: Dictionary, off: float, waiting: int) -> void:
+	var off_strip := absf(off) > strip_reach
+	var at := _strip_point(clampf(off, -strip_reach, strip_reach)) + Vector2(0.0, 34.0)
+	at.x -= signf(off) * waiting * 70.0
+	var away := roundi((mark.at as Vector3).distance_to(p.global_position))
+	var tint: Color = {"squad": SQUAD_INK, "ping": PING_INK, "hot": HOT_INK, "tag": TAG_INK}.get(mark.kind, ink)
+	var urgent: bool = mark.kind in ["tag", "contact", "ping"]
+	var color := _lit(tint, 0.95 if not off_strip else 0.7, not urgent)
+	match mark.kind:
+		"squad":
+			draw_colored_polygon(PackedVector2Array([at + Vector2(-6, 4), at + Vector2(6, 4), at + Vector2(0, -6)]), color)
+		"depot":
+			draw_rect(Rect2(at - Vector2(5, 5), Vector2(10, 10)), color, false, 1.5)
+		"hot":
+			var flicker := 0.7 + 0.3 * sin(_time * 4.0)
+			draw_arc(at, 6.0, 0.0, TAU, 16, Color(color, color.a * flicker), 2.0, true)
+			draw_circle(at, 2.0, color)
+		"contact":
+			draw_arc(at, 5.0, 0.0, TAU, 12, color, 1.5, true)
+		_:
+			# Pings and tags are diamonds.
+			draw_colored_polygon(PackedVector2Array([at + Vector2(0, -6), at + Vector2(6, 0), at + Vector2(0, 6),
+					at + Vector2(-6, 0)]), color)
+	if off_strip:
+		# Waiting at the end of the strip: a chevron says which way to turn.
+		var side := signf(off)
+		draw_polyline(PackedVector2Array([at + Vector2(side * 9.0, -5.0), at + Vector2(side * 14.0, 0.0),
+				at + Vector2(side * 9.0, 5.0)]), color, 1.5, true)
+	var label: String = mark.label
+	label = "%d m" % away if label == "" else "%s %d m" % [label, away]
+	_text(at + Vector2(0.0, 20.0), label, color, HORIZONTAL_ALIGNMENT_CENTER, 140.0, 11)
+
+
+## A scrap visor's failing projector manages a bearing and nothing more.
+func _draw_heading(p: Actor, ink: Color) -> void:
+	var heading := bearing(p.cmd.yaw)
+	_text(Vector2(size.x * 0.5, size.y * 0.08), "%03d %s" % [roundi(heading), compass_name(heading)],
+			_lit(ink, 0.7), HORIZONTAL_ALIGNMENT_CENTER, 120.0)
+
+
+## The helmet's name and role, typed in as it comes on and gone again
+## once it has settled, under the heading strip.
+func _draw_ident(v: Visor, ink: Color) -> void:
+	if _since_boot > ident_time:
+		return
+	var fade := clampf((ident_time - _since_boot) / 0.6, 0.0, 1.0)
+	var text := "%s · %s" % [v.display_name.to_upper(), role_name(v.mode)]
+	_text(Vector2(size.x * 0.5 + sway.x, size.y * 0.2 + sway.y), text, _lit(ink, 0.9 * fade, false),
+			HORIZONTAL_ALIGNMENT_CENTER, 400.0, 14)
+
+
+## The look of the glass itself, never a frame or a tint: a faint scan line
+## that rolls down the view, kept to the outer edges so the middle stays
+## clear, and two thin glints where the curved glass catches the light.
+func _draw_glass(ink: Color) -> void:
+	var y := fposmod(_time / maxf(scanline_time, 0.1), 1.0) * size.y
+	var line := _lit(ink, 0.06)
+	draw_line(Vector2(0.0, y), Vector2(size.x * 0.2, y), line, 2.0)
+	draw_line(Vector2(size.x * 0.8, y), Vector2(size.x, y), line, 2.0)
+	var glint := _lit(Color(1.0, 1.0, 1.0), 0.05)
+	var radius := size.y * 0.9
+	draw_arc(Vector2(size.x * 0.5, size.y * 0.95) + sway * 0.5, radius, PI * 1.12, PI * 1.2, 24, glint, 2.0, true)
+	draw_arc(Vector2(size.x * 0.5, size.y * 0.95) + sway * 0.5, radius, PI * 1.8, PI * 1.88, 24, glint, 2.0, true)
+
+
+## The contract nearest done, small and dim in the top left (DESIGN.md
+## section 10: "a small tracker on the visor"). Held contracts come from the
+## `Hud`; this life's counts ride on top.
+func _draw_tracker(p: Actor, ink: Color) -> void:
+	if hud == null:
+		return
+	var text := tracker_text(hud.contracts, p.tally)
+	if text == "":
+		return
+	var at := Vector2(size.x * 0.06, size.y * 0.075) + sway
+	draw_rect(Rect2(at + Vector2(0.0, -9.0), Vector2(7.0, 7.0)), _lit(ink, 0.7), false, 1.0)
+	_text(at + Vector2(13.0, 0.0), text, _lit(ink, 0.75), HORIZONTAL_ALIGNMENT_LEFT, 360.0, 12)
+
+
+## Thermal: how warm the wearer looks to another thermal visor, under the
+## system arc, so an Ember wearer knows when their own rig gives them away.
+func _draw_signature(p: Actor, ink: Color, centre: Vector2) -> void:
+	var heat := Visor.heat_of(p)
+	var hot := heat >= 1.2
+	var at := centre + Vector2(size.y * 0.43 - 16.0, 24.0)
+	_text(at, signature_text(heat), _lit(HOT_INK if hot else ink, 0.85, not hot), HORIZONTAL_ALIGNMENT_RIGHT, 160.0, 12)
 
 
 func _draw_range(ink: Color, centre: Vector2) -> void:
@@ -902,28 +1155,3 @@ func _draw_loot(p: Actor, ink: Color) -> void:
 		draw_line(at, elbow, _lit(ink, 0.6, false), 1.0, true)
 		draw_line(elbow, elbow + Vector2(120.0, 0.0), _lit(ink, 0.6, false), 1.0, true)
 		_text(elbow + Vector2(4.0, -5.0), text.to_upper(), _lit(ink, 0.95, false), HORIZONTAL_ALIGNMENT_LEFT, 300.0)
-
-
-## Tactical: a marker on the top edge that slides to point at the nearest
-## depot, with how far it is.
-func _draw_depot(p: Actor, ink: Color) -> void:
-	var nearest: Node3D = null
-	for depot in raid.depots:
-		if is_instance_valid(depot) and (nearest == null or depot.global_position.distance_to(p.global_position)
-				< nearest.global_position.distance_to(p.global_position)):
-			nearest = depot
-	if nearest == null:
-		return
-	var away := nearest.global_position.distance_to(p.global_position)
-	var turn := angle_to(nearest.global_position, p.global_position, p.cmd.yaw)
-	var x := size.x * 0.5 + sway.x + clampf(turn / 1.0, -1.0, 1.0) * size.x * 0.22
-	var y := size.y * 0.07 + sway.y
-	var color := _lit(ink, 0.85)
-	draw_line(Vector2(size.x * 0.28 + sway.x, y + 12.0), Vector2(size.x * 0.72 + sway.x, y + 12.0), _lit(ink, 0.18), 1.0)
-	draw_colored_polygon(PackedVector2Array([Vector2(x - 6.0, y), Vector2(x + 6.0, y), Vector2(x, y + 9.0)]), color)
-	var label := "DEPOT %d m" % roundi(away)
-	if turn > 1.0:
-		label += "  >"
-	elif turn < -1.0:
-		label = "<  " + label
-	_text(Vector2(x, y - 6.0), label, color, HORIZONTAL_ALIGNMENT_CENTER, 200.0)

@@ -125,6 +125,9 @@ const TOY_SCALE := 0.12
 var unpack_time := 0.6
 ## Seconds left of growing from a toy; above zero while it unpacks.
 var unpack_left := 0.0
+## True for a vehicle with no server over it (one unpacked in the home
+## base): getting off is decided here even on a client.
+var local_only := false
 
 var _model: Node3D
 ## How far the bike leans into a turn, in radians (positive leans right).
@@ -561,7 +564,7 @@ func _physics_process(delta: float) -> void:
 		dismount()
 	if rider != null:
 		var cmd := rider.cmd
-		if cmd.interact_pressed and Combat.authoritative:
+		if cmd.interact_pressed and (Combat.authoritative or local_only):
 			# The press is spent on getting off, not on looting.
 			cmd.interact_pressed = false
 			dismount()

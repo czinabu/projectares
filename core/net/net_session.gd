@@ -82,7 +82,7 @@ signal base_visit_requested(owner_name: String, stash: Array, loadout: Dictionar
 signal portal_travel(destination: String)
 
 const DEFAULT_PORT := 24565
-const PROTOCOL := 23
+const PROTOCOL := 25
 ## Every packet is compressed, both ways. State updates are mostly repeated
 ## numbers, and a big battle sends a player hundreds of them a second. Server
 ## and client must agree, so a change here needs a new PROTOCOL.
@@ -146,7 +146,7 @@ const CORRECTION_RATE := 0.2
 const FORWARDED_NOTICES := ["Parry!", "Wrong side", "Guard broken", "Staggered", "Killed ", "Looted ",
 		"Backpack full", "Someone is riding it", "Banked ", "Signing out", "Sign-out cancelled",
 		"You cannot sign out", "No room there", "Watch recharging", "Your watch is full",
-		"Look at a vehicle", "Packed ", "Get off first", "Not while signing out", "Vehicles stay on the watch", "No open sky",
+		"Look at a vehicle", "Packed ", "Get off first", "Not while signing out", "Vehicles stay on the watch",
 		"Scanned", "Sensed"]
 
 var is_server := false
@@ -477,6 +477,14 @@ func _on_server_actor_spawned(actor: Actor) -> void:
 	actor.power_changed.connect(func(item_id: String, mag: int, reserve: int) -> void:
 		for peer in _joined_peers:
 			_power_changed.rpc_id(peer, id, item_id, mag, reserve))
+	# A helmet or armor frame put on is seen by everyone, and its wearer's
+	# visor and frame follow.
+	actor.helmet_changed.connect(func(item_id: String) -> void:
+		for peer in _joined_peers:
+			_worn_changed.rpc_id(peer, id, "helmet", item_id))
+	actor.frame_changed.connect(func(item_id: String) -> void:
+		for peer in _joined_peers:
+			_worn_changed.rpc_id(peer, id, "armor", item_id))
 	# A weapon summoned from the watch is shown to all.
 	actor.weapon_swapped.connect(func(item_id: String, mag: int, reserve: int) -> void:
 		for peer in _joined_peers:
@@ -864,7 +872,7 @@ func _send_spawn(peer: int, actor: Actor) -> void:
 			data["clan"] = [actor.clan, actor.clan_tag]
 	else:
 		data = {"seed": raid.bot_seeds.get(actor, 0), "warlord": raid.warlords.has(actor),
-				"faction": actor.faction}
+				"faction": actor.faction, "zone": int(actor.get_meta("zone", -1))}
 	_spawn.rpc_id(peer, _ids[actor], "player" if state != null else "bot", actor.display_name,
 			String(actor.name), actor.global_position, actor.cmd.yaw, data)
 
@@ -1251,7 +1259,8 @@ func _state_entry(id: int, tier: int) -> Array:
 	var actor: Actor = _actors[id]
 	var cmd := actor.cmd.to_array()
 	cmd[ActorCommand.FLAGS_INDEX] = (int(cmd[ActorCommand.FLAGS_INDEX]) & ActorCommand.HELD_MASK) \
-			| int(_one_shots[tier].get(id, 0)) | (ActorCommand.STATE_HOVERING if actor.flight.is_hovering else 0)
+			| int(_one_shots[tier].get(id, 0)) | (ActorCommand.STATE_HOVERING if actor.flight.is_hovering else 0) \
+			| (ActorCommand.STATE_SHELTERED if actor.weapons_locked else 0)
 	cmd[ActorCommand.SWITCH_INDEX] = _switches[tier].get(id, -1)
 	return [id, actor.global_position, actor.velocity, cmd, actor.health.health,
 			actor.health.armor, actor.stagger_left, _dead_kind.get(id, ""), _applied_seq.get(id, 0)]
@@ -1596,7 +1605,22 @@ func _power_changed(id: int, item_id: String, mag: int, reserve: int) -> void:
 	var actor: Actor = _actors.get(id)
 	if actor == null or not is_instance_valid(actor) or (item_id != "" and not ItemDB.has_tag(item_id, "power")):
 		return
-	Loadout.set_power(actor, item_id, mag, reserve)
+	Loadout.set_power(actor, item_id, mag, reserve, false)
+
+
+## Client: someone put on a helmet or armor frame (`kind` "helmet" or
+## "armor"), or took one off. The server decided it; armor left follows in
+## the state.
+@rpc("authority", "call_remote", "reliable")
+func _worn_changed(id: int, kind: String, item_id: String) -> void:
+	var actor: Actor = _actors.get(id)
+	if actor == null or not is_instance_valid(actor) or kind not in ["helmet", "armor"] \
+			or (item_id != "" and not ItemDB.has_tag(item_id, kind)):
+		return
+	if kind == "helmet":
+		Loadout.wear_helmet(actor, item_id)
+	elif item_id != actor.frame_id:
+		Loadout.wear_frame(actor, item_id)
 
 
 ## Client: someone materialized a weapon out of their pack in place of the
@@ -1639,7 +1663,7 @@ func _spawn(id: int, kind: String, shown_name: String, node_name: String, at: Ve
 		Loadout.equip(actor, data.get("kit", []))
 		var power: Variant = data.get("power")
 		if power is Array and power.size() == 3 and ItemDB.has_tag(str(power[0]), "power"):
-			Loadout.set_power(actor, power[0], int(power[1]), int(power[2]))
+			Loadout.set_power(actor, power[0], int(power[1]), int(power[2]), false)
 		actor.weapons_locked = raid.world.safe_zone
 		Raid.MasteryTracker.apply_variants(actor, data.get("picks", {}))
 		raid.world.on_spawn(actor)
@@ -1651,7 +1675,7 @@ func _spawn(id: int, kind: String, shown_name: String, node_name: String, at: Ve
 		raid.players.append(state)
 	else:
 		actor = raid.spawn_bot(node_name, at, data.get("seed", 0), data.get("warlord", false),
-				data.get("faction", ""))
+				data.get("faction", ""), clampi(int(data.get("zone", -1)), -1, 2))
 		raid.world.on_spawn(actor)
 	actor.cmd.yaw = yaw
 	_actors[id] = actor
@@ -2188,6 +2212,10 @@ func _apply_state(actor: Actor, entry: Array, mine: bool) -> void:
 	var stagger: float = entry[6]
 	if absf(actor.stagger_left - stagger) > 0.15:
 		actor.stagger_left = stagger
+	# A gate outpost's lock is the server's call (`Raid._tick_outposts`).
+	if not raid.world.safe_zone:
+		actor.weapons_locked = typeof(entry[3]) == TYPE_ARRAY and entry[3].size() == ActorCommand.ARRAY_SIZE \
+				and int(ActorCommand._number(entry[3][ActorCommand.FLAGS_INDEX])) & ActorCommand.STATE_SHELTERED != 0
 	var id: int = entry[0]
 	if actor.vehicle != null:
 		# A rider goes where their vehicle goes.

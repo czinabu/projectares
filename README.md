@@ -352,6 +352,15 @@ you have.
   All of them give you away: a zoomed lens glints, a scan is seen, heard and
   felt by everyone it catches, Threat Sense tells whoever it shows, and a
   thermal visor glows up close. With no helmet the view is bare.
+  Every working visor has a curved heading strip across the top marking your
+  squad, pings and the nearest depot, plus its own finds (Spotter tags, Seeker
+  contacts, the Warden's hot zone), and a small tracker for your contract.
+  A helmet is worn on your head, each type its own shape, and seen the same
+  by everyone. Loot one and put it on mid-raid from the watch's weapon
+  carousel, like summoning a weapon (the old one goes in your pack). Armor
+  frames work the same way: worn as plates on your body (bigger the heavier
+  the frame), put on from the carousel with your old frame going into the
+  pack with whatever armor it had left; worn or carried, it drops when you die.
 - Six melee weapons, each with its own job. The Gutter Knife is quick and short
   and cuts from behind for more than double. The Splitter Axe drains a guard
   so fast that three chops break it. The Lancer Spear (rooftop loot) has the

@@ -174,7 +174,20 @@ var mount_band := 0.12
 ## A worn helmet carries its readouts on the back of the head, for third
 ## person and for anyone behind you: a health strip that drains and turns red,
 ## and a light for the helmet's own system. Placed over the "Head" bone.
-var vitals_offset := Vector3(0.0, 0.05, 0.145)
+var vitals_offset := Vector3(0.0, 0.05, 0.172)
+## A worn helmet is a shell over the whole head (the head itself is hidden
+## under it), with a faceplate in its glass colour and a fitting for what it
+## does. Its middle sits this far from the "Head" bone, and the shell is this
+## wide, tall and deep. The one model is worn in every view: first person
+## leaves it out with the head (`hide_head`), never a copy of its own.
+var helmet_offset := Vector3(0.0, 0.1, 0.0)
+var helmet_size := Vector3(0.27, 0.31, 0.31)
+var helmet_shell_color := Color(0.22, 0.23, 0.25)
+## A worn armor frame is plates over the chest (on the "Chest" bone, front
+## toward -Z), and from medium up a belly plate and shoulder pads (on the
+## upper arm bones); heavy adds a collar. One model in every view.
+var frame_offset := Vector3(0.0, 0.0, 0.0)
+var pad_offset := Vector3(0.03, 0.05, 0.0)
 var vitals_width := 0.13
 var vitals_low := 0.35
 var hip_offset := Vector3(-0.2, 0.08, 0.02)
@@ -229,6 +242,12 @@ var _rig_id := ""
 var _rig_holders: Array[Node3D] = []
 var _rig_back: Node3D
 var _vitals: Node3D
+var _helmet: Node3D
+var _frame_parts: Array[Node3D] = []
+## The frame `_frame_parts` were built for; "" for none.
+var _frame_id := ""
+## The helmet `_helmet` was built for; "" while bare-headed.
+var _helmet_id := ""
 var _flames: Array[Node3D] = []
 var _burst_left := 0.0
 var _spread := 0.0
@@ -530,6 +549,8 @@ func _update(delta: float) -> void:
 	_update_glide(delta)
 	_update_stowed()
 	_update_switch(delta)
+	_update_helmet()
+	_update_frame()
 	_update_vitals()
 	_update_phone()
 	_update_watch_glow(delta)
@@ -1045,6 +1066,203 @@ static func helmet_light(v: Visor) -> String:
 		"thermal":
 			return "ready" if v.charge_fraction() >= 0.25 else "charging"
 	return "ready"
+
+
+## Puts the worn helmet on the head, rebuilt when another goes on, and hides
+## the head under it. Bare-headed, the head shows again.
+func _update_helmet() -> void:
+	var id := actor.visor.item_id if actor.visor.enabled else ""
+	if id == _helmet_id and (id == "" or is_instance_valid(_helmet)):
+		return
+	_helmet_id = id
+	if _helmet != null and is_instance_valid(_helmet):
+		_helmet.queue_free()
+	_helmet = null
+	if _skeleton != null:
+		for node in _skeleton.get_children():
+			if node is MeshInstance3D and node.get_meta("slot", "") == "head":
+				(node as MeshInstance3D).visible = id == ""
+	if id == "":
+		return
+	var bone: String = "Head" if _skeleton and _skeleton.find_bone("Head") >= 0 else _def.get("neck", "")
+	_helmet = _hang(build_helmet(actor.visor.mode, actor.visor.glass_color, helmet_size, helmet_shell_color),
+			"Helmet", bone, helmet_offset, Vector3(0.0, _def.get("height", 1.8) * 0.93, 0.0) + helmet_offset)
+
+
+## The helmet model for a visor `mode` (see `Visor`): a shell of `size` round
+## the head, front toward -Z, a faceplate lit in `glass`, and the mode's
+## fitting: twin lenses (zoom), a sensor fin (scan), a brow and cheek plates
+## (threat), one round lens (thermal). A plain visor is a dull, cracked band.
+static func build_helmet(mode: String, glass: Color, size: Vector3, shell_color: Color) -> Node3D:
+	var root := Node3D.new()
+	root.name = "HelmetModel"
+	var shell := _solid(shell_color, 0.0)
+	var plate := _solid(shell_color.lightened(0.12), 0.0)
+	var lit := _solid(glass, 0.9 if mode != "" else 0.25)
+	# The dome and the band round the sides and back.
+	var dome := SphereMesh.new()
+	dome.radius = 0.5
+	dome.height = 1.0
+	_piece(root, "Shell", dome, shell, Vector3(0, 0.0, 0), size)
+	var neck := CylinderMesh.new()
+	neck.top_radius = 0.5
+	neck.bottom_radius = 0.55
+	neck.height = 1.0
+	_piece(root, "Neck", neck, shell, Vector3(0, -size.y * 0.45, size.z * 0.06),
+			Vector3(size.x * 0.55, size.y * 0.2, size.z * 0.55))
+	# The faceplate: glass over the eyes, wrapped round the front of the shell.
+	var face := SphereMesh.new()
+	face.radius = 0.5
+	face.height = 1.0
+	_piece(root, "Glass", face, lit, Vector3(0, -size.y * 0.04, -size.z * 0.12),
+			Vector3(size.x * 0.96, size.y * 0.4, size.z * 0.84))
+	if mode == "":
+		# A plain visor's glass is cracked across.
+		var crack := _piece(root, "Crack", BoxMesh.new(), _solid(Color(0.05, 0.05, 0.05), 0.0),
+				Vector3(size.x * 0.12, -size.y * 0.02, -size.z * 0.535), Vector3(size.x * 0.32, 0.006, 0.006))
+		crack.rotation.z = 0.5
+		return root
+	match mode:
+		"zoom":
+			# Twin lens barrels over the right eye, out from the glass.
+			var tube := CylinderMesh.new()
+			tube.top_radius = 0.5
+			tube.bottom_radius = 0.5
+			tube.height = 1.0
+			for i in 2:
+				var barrel := _piece(root, "Lens%d" % i, tube, plate,
+						Vector3(size.x * (0.16 + 0.13 * i), size.y * 0.02, -size.z * 0.5 + 0.03 * i),
+						Vector3(0.05 - 0.01 * i, 0.09, 0.05 - 0.01 * i))
+				barrel.rotation.x = PI * 0.5
+				var cap := _piece(root, "LensGlass%d" % i, tube, lit,
+						barrel.position + Vector3(0, 0, -0.046), Vector3(0.04 - 0.01 * i, 0.004, 0.04 - 0.01 * i))
+				cap.rotation.x = PI * 0.5
+		"scan":
+			# A sensor fin along the crown with a lit edge.
+			_piece(root, "Fin", BoxMesh.new(), plate, Vector3(0, size.y * 0.48, size.z * 0.08),
+					Vector3(0.022, 0.05, size.z * 0.6))
+			_piece(root, "FinEdge", BoxMesh.new(), lit, Vector3(0, size.y * 0.48 + 0.026, size.z * 0.08),
+					Vector3(0.026, 0.006, size.z * 0.5))
+		"threat":
+			# A heavy brow and plates down the cheeks.
+			_piece(root, "Brow", BoxMesh.new(), plate, Vector3(0, size.y * 0.17, -size.z * 0.4),
+					Vector3(size.x * 0.9, 0.035, 0.07))
+			for side: float in [-1.0, 1.0]:
+				var cheek := _piece(root, "Cheek", BoxMesh.new(), plate,
+						Vector3(side * size.x * 0.44, -size.y * 0.2, -size.z * 0.22), Vector3(0.03, 0.1, 0.11))
+				cheek.rotation.y = side * 0.5
+		"thermal":
+			# One round lens in the middle of the glass.
+			var ring := CylinderMesh.new()
+			ring.top_radius = 0.5
+			ring.bottom_radius = 0.5
+			ring.height = 1.0
+			var lens := _piece(root, "Lens", ring, plate, Vector3(0, -size.y * 0.04, -size.z * 0.53),
+					Vector3(0.11, 0.04, 0.11))
+			lens.rotation.x = PI * 0.5
+			var eye := _piece(root, "LensGlass", ring, _solid(glass, 1.6), lens.position + Vector3(0, 0, -0.022),
+					Vector3(0.08, 0.004, 0.08))
+			eye.rotation.x = PI * 0.5
+	return root
+
+
+## The colour every frame's plates are drawn in.
+const FRAME_COLOR := Color(0.46, 0.48, 0.45)
+
+
+## How heavy a frame looks: "light", "medium" or "heavy", from its tags.
+static func frame_weight(id: String) -> String:
+	if ItemDB.has_tag(id, "frame_heavy"):
+		return "heavy"
+	return "medium" if ItemDB.has_tag(id, "frame_medium") else "light"
+
+
+## Puts the worn armor frame's plates on the body, rebuilt when another goes on.
+func _update_frame() -> void:
+	var id := actor.frame_id
+	if id == _frame_id and (id == "" or (not _frame_parts.is_empty() and is_instance_valid(_frame_parts[0]))):
+		return
+	_frame_id = id
+	for part in _frame_parts:
+		if is_instance_valid(part):
+			part.queue_free()
+	_frame_parts.clear()
+	if id == "" or _skeleton == null:
+		return
+	var weight := frame_weight(id)
+	var height: float = _def.get("height", 1.8)
+	_frame_parts.append(_hang(build_frame(weight, FRAME_COLOR), "Frame", _def.get("back_bone", ""), frame_offset,
+			Vector3(0.0, height * 0.72, 0.0) + frame_offset))
+	if weight == "light":
+		return
+	for side: String in ["L", "R"]:
+		var out := -1.0 if side == "L" else 1.0
+		_frame_parts.append(_hang(build_pad(weight, FRAME_COLOR, out), "Pad" + side, "UpperArm." + side,
+				Vector3(pad_offset.x * out, pad_offset.y, pad_offset.z),
+				Vector3(0.2 * out, height * 0.8, 0.0)))
+
+
+## A frame's chest plates for its `weight`, front toward -Z, built round the
+## chest bone: a breastplate, a belly plate from medium up, a collar on heavy.
+static func build_frame(weight: String, color: Color) -> Node3D:
+	var root := Node3D.new()
+	root.name = "FrameModel"
+	var shell := _solid(color, 0.0)
+	var trim := _solid(color.darkened(0.45), 0.0)
+	var grow := {"light": 0.0, "medium": 0.02, "heavy": 0.045}[weight] as float
+	# The breastplate in two halves meeting in a ridge down the middle, with
+	# a lit seam along it.
+	for side: float in [-1.0, 1.0]:
+		var half := _piece(root, "Chest", BoxMesh.new(), shell,
+				Vector3(side * (0.075 + grow * 0.5), 0.03, -0.12 - grow * 0.5),
+				Vector3(0.16 + grow, 0.22 + grow * 2.0, 0.035 + grow))
+		half.rotation.y = side * 0.32
+	_piece(root, "Seam", BoxMesh.new(), _solid(Color(0.4, 0.85, 0.9), 0.8),
+			Vector3(0, 0.03, -0.152 - grow), Vector3(0.012, 0.16 + grow * 2.0, 0.01))
+	_piece(root, "Trim", BoxMesh.new(), trim, Vector3(0, -0.09 - grow, -0.125 - grow * 0.5),
+			Vector3(0.27 + grow * 2.0, 0.025, 0.035 + grow))
+	if weight != "light":
+		_piece(root, "Belly", BoxMesh.new(), shell, Vector3(0, -0.15 - grow, -0.115 - grow * 0.5),
+				Vector3(0.26 + grow, 0.09, 0.035 + grow))
+	if weight == "heavy":
+		_piece(root, "Collar", BoxMesh.new(), trim, Vector3(0, 0.17, -0.085),
+				Vector3(0.3, 0.06, 0.1))
+	return root
+
+
+## A shoulder pad for the side `out` (-1 left, 1 right), tipped down the arm.
+static func build_pad(weight: String, color: Color, out: float) -> Node3D:
+	var root := Node3D.new()
+	root.name = "PadModel"
+	var size := Vector3(0.12, 0.045, 0.14) if weight == "medium" else Vector3(0.15, 0.06, 0.17)
+	var pad := _piece(root, "Pad", BoxMesh.new(), _solid(color, 0.0), Vector3.ZERO, size)
+	pad.rotation.z = -0.35 * out
+	return root
+
+
+static func _solid(color: Color, energy: float) -> StandardMaterial3D:
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = color.darkened(0.35) if energy > 0.0 else color
+	mat.roughness = 0.2 if energy > 0.0 else 0.6
+	mat.metallic = 0.0 if energy > 0.0 else 0.35
+	if energy > 0.0:
+		mat.emission_enabled = true
+		mat.emission = color.darkened(0.2)
+		mat.emission_energy_multiplier = energy
+	return mat
+
+
+static func _piece(root: Node3D, piece_name: String, mesh: PrimitiveMesh, mat: Material, at: Vector3,
+		size: Vector3) -> MeshInstance3D:
+	var part := MeshInstance3D.new()
+	part.name = piece_name
+	var own := mesh.duplicate() as PrimitiveMesh
+	own.material = mat
+	part.mesh = own
+	part.position = at
+	part.scale = size
+	root.add_child(part)
+	return part
 
 
 func _update_vitals() -> void:

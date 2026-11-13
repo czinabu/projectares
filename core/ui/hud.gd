@@ -25,6 +25,7 @@ extends CanvasLayer
 
 const RenownLedger := preload("res://core/progression/renown_ledger.gd")
 const Contracts := preload("res://core/economy/contracts.gd")
+const SkinScript := preload("res://core/visual/actor_skin.gd")
 ## The name of the counter added to each gun's model.
 const AMMO_COUNTER := "AmmoCounter"
 ## The jetpack's screen bay, as the rig model names it.
@@ -79,6 +80,7 @@ func _ready() -> void:
 	visor = VisorHud.new()
 	visor.name = "Visor"
 	visor.setup(raid, controller)
+	visor.hud = self
 	root.add_child(visor)
 
 	_hit_marker = HitMarker.new()
@@ -200,14 +202,24 @@ func _process(delta: float) -> void:
 
 ## The weapons on the watch's carousel, in the order the wheel turns through
 ## them: the ones worn (primary, sidearm, melee, heavy) and then the ones in
-## the pack. Each is {"id", "index" (in `Actor.weapons`, or -1 in the pack)}.
+## the pack, then any helmets and armor in the pack (a click puts one on). Each is
+## {"id", "index" (in `Actor.weapons`, or -1 in the pack)}.
 ## Only what is carried is ever here, never the stash.
 static func weapon_entries(p: Actor) -> Array[Dictionary]:
 	var entries: Array[Dictionary] = []
 	for index in p.slot_order():
 		entries.append({"id": p.weapons[index].item_id, "index": index})
+	# The heavy chamber's weapon: drawn only from here, never by a key.
+	var heavy := Loadout.power_index(p)
+	if heavy >= 0:
+		entries.append({"id": p.weapons[heavy].item_id, "index": heavy})
 	for id in p.inventory.items:
 		if Loadout.summonable(id):
+			entries.append({"id": id, "index": -1})
+	# Helmets and armor frames carried are put on with a click, swapping for
+	# the one worn.
+	for id in p.inventory.items:
+		if ItemDB.has_tag(id, "helmet") or ItemDB.has_tag(id, "armor"):
 			entries.append({"id": id, "index": -1})
 	return entries
 
@@ -299,6 +311,9 @@ static func watch_slots(p_raid: Raid, p: Actor, picked_toy := 0, pack_name := ""
 		slots.append(relic)
 	# Status: where you are and how you stand.
 	var where := p_raid.world.display_name
+	# The risk zone you stand in (DESIGN.md section 2), or the outpost sheltering you.
+	if p_raid.zone_label(p) != "":
+		where += " · " + p_raid.zone_label(p)
 	if p_raid.war.intensity >= 0.2:
 		where += " · " + p_raid.war.level_name()
 	var held := sites_text(p_raid, p)
@@ -345,12 +360,43 @@ static func weapon_slot(p_raid: Raid, p: Actor, picked := 0) -> Dictionary:
 		if int(entry.index) == p.active_weapon_index:
 			return _slot("weapon", value, "%s · in hand" % detail, hints, -1.0, false, false, entries.size(), at)
 		return _slot("weapon", value, detail, hints + ["click"], -1.0, false, false, entries.size(), at)
+	if ItemDB.has_tag(entry.id, "helmet"):
+		return _slot("weapon", value, "%s · wear" % name, hints + ["click"], -1.0, false, false, entries.size(), at)
 	var wait := p_raid.summon_wait(p) if p_raid != null else 0.0
 	if wait > 0.0:
 		return _slot("weapon", value, "%s · %d s" % [name, ceili(wait)], hints, p_raid.summon_charge(p), false, false,
 				entries.size(), at)
 	return _slot("weapon", value, "%s · pack · %.1f s" % [name, Loadout.summon_time(entry.id)], hints + ["click"],
 			-1.0, false, false, entries.size(), at)
+
+
+## The weapon icon at home: the weapons worn, then every other one owned,
+## which a click equips (`HomeBase.watch_weapons`).
+static func base_weapon_slot(p: Actor, entries: Array[Dictionary], picked := 0) -> Dictionary:
+	if entries.is_empty():
+		return _slot("weapon", "", "No weapon", [], -1.0, true, false)
+	var at := clampi(picked, 0, entries.size() - 1)
+	var entry := entries[at]
+	var hints: Array = ["wheel"] if entries.size() > 1 else []
+	var value := "%d/%d" % [at + 1, entries.size()]
+	var name := ItemDB.item_name(entry.id)
+	if int(entry.index) >= 0 and int(entry.index) == p.active_weapon_index:
+		return _slot("weapon", value, "%s · in hand" % name, hints, -1.0, false, false, entries.size(), at)
+	if int(entry.index) >= 0:
+		return _slot("weapon", value, name, hints + ["click"], -1.0, false, false, entries.size(), at)
+	return _slot("weapon", value, "%s · equip" % name, hints + ["click"], -1.0, false, false, entries.size(), at)
+
+
+## The vehicle icon at home: every vehicle owned, one to throw, or packing
+## the one looked at.
+static func base_vehicle_slot(toys: Array[String], picked := 0, packing := false) -> Dictionary:
+	if packing:
+		return _slot("vehicle", "+", "Pack it onto your watch", ["click"], -1.0, false, true)
+	if toys.is_empty():
+		return _slot("vehicle", "", "No vehicle", [], -1.0, true, false)
+	var at := clampi(picked, 0, toys.size() - 1)
+	return _slot("vehicle", "%d" % toys.size(), ItemDB.item_name(toys[at]),
+			(["wheel"] if toys.size() > 1 else []) + ["click"], -1.0, false, false, toys.size(), at)
 
 
 ## The watch card at home (`HomeBase`), where there is no raid: the same
@@ -1452,10 +1498,20 @@ void fragment() {
 		var holo := Node3D.new()
 		holo.name = "Weapon"
 		holo.set_meta("item", id)
-		var weapon: Weapon = MeleeWeapon.new() if ItemDB.has_tag(id, "melee") else Gun.new()
-		weapon.item_id = id
-		var model := Look.weapon_model(weapon) if DisplayServer.get_name() != "headless" else null
-		weapon.free()
+		var model: Node3D = null
+		if ItemDB.has_tag(id, "helmet"):
+			# A helmet shows the model it is worn as.
+			var stats := ItemDB.item_stats(id)
+			model = SkinScript.build_helmet(str(stats.get("mode", "")), stats.get("glass_color", Color.WHITE),
+					Vector3(0.27, 0.31, 0.31), Color(0.22, 0.23, 0.25))
+		elif ItemDB.has_tag(id, "armor"):
+			# A frame shows the plates it is worn as.
+			model = SkinScript.build_frame(SkinScript.frame_weight(id), SkinScript.FRAME_COLOR)
+		else:
+			var weapon: Weapon = MeleeWeapon.new() if ItemDB.has_tag(id, "melee") else Gun.new()
+			weapon.item_id = id
+			model = Look.weapon_model(weapon) if DisplayServer.get_name() != "headless" else null
+			weapon.free()
 		if model == null:
 			return holo
 		holo.add_child(model)

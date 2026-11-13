@@ -46,7 +46,7 @@ const MAX_HEAL_ITEMS := 2
 ## Seconds a weapon takes to materialize out of the pack through the watch,
 ## by the first of these tags it carries (heavier is slower). An item's own
 ## `summon_time` stat wins.
-const SUMMON_TIMES := [["sidearm", 0.5], ["one_handed", 0.6], ["two_handed", 1.1], ["marksman", 1.3],
+const SUMMON_TIMES := [["armor", 1.5], ["power", 1.6], ["sidearm", 0.5], ["one_handed", 0.6], ["two_handed", 1.1], ["marksman", 1.3],
 		["firearm", 0.9]]
 ## The watch's wait after a summon, as a multiple of the materialize time.
 const SUMMON_COOLDOWN_MULT := 6.0
@@ -117,11 +117,11 @@ static func equip(actor: Actor, item_ids: Array) -> void:
 				actor.artifact.attune(id)
 				actor.gear_items.append(id)
 		elif ItemDB.has_tag(id, "helmet"):
-			actor.visor.enabled = true
-			actor.visor.item_id = id
-			actor.visor.display_name = ItemDB.item_name(id)
-			_apply_stats(actor.visor, stats)
-			actor.gear_items.append(id)
+			# One head: a second helmet is only carried, as loot.
+			if actor.visor.enabled:
+				actor.inventory.add_item(id)
+			else:
+				wear_helmet(actor, id)
 		elif ItemDB.has_tag(id, "armor"):
 			frames.append(id)
 		elif ItemDB.has_tag(id, "vehicle"):
@@ -129,25 +129,82 @@ static func equip(actor: Actor, item_ids: Array) -> void:
 			pass
 		else:
 			actor.inventory.add_item(id)
-	# Frames go last because they scale what the other gear set up.
+	# Frames go last because they scale what the other gear set up. One is
+	# worn; another is only carried, as loot.
 	for id in frames:
+		if actor.frame_id == "":
+			wear_frame(actor, id)
+		else:
+			actor.inventory.add_item(id)
+
+
+## Puts armor frame `id` on the actor, or with "" takes the worn one off,
+## undoing what the old one scaled first. `armor_left` below 0 means a whole
+## frame. Returns the armor the frame taken off had left. Like a helmet, the
+## one replaced leaves `gear_items`, and where it goes is the caller's job.
+## Emits `Actor.frame_changed`, which `NetSession` passes on and the skin follows.
+static func wear_frame(actor: Actor, id: String, armor_left := -1.0) -> float:
+	if id != "" and not ItemDB.has_tag(id, "armor"):
+		return -1.0
+	var left := -1.0
+	if actor.frame_id != "":
+		left = actor.health.armor
+		_scale_frame(actor, ItemDB.item_stats(actor.frame_id), true)
+		actor.gear_items.erase(actor.frame_id)
+	actor.frame_id = id
+	actor.frame_name = ItemDB.item_name(id) if id != "" else "No armor"
+	if id == "":
+		actor.health.set_armor(0.0)
+	else:
 		var stats := ItemDB.item_stats(id)
 		actor.health.set_armor(stats.get("armor", 0.0))
-		var speed: float = stats.get("speed_mult", 1.0)
-		actor.walk_speed *= speed
-		actor.sprint_speed *= speed
-		var heat_mult: float = stats.get("heat_mult", 1.0)
-		if actor.flight.heavy_lift:
-			# A jetpack carries heavy armor without running hotter.
-			heat_mult = minf(heat_mult, 1.0)
-		actor.flight.heat_per_sec *= heat_mult
-		actor.flight.burst_heat *= heat_mult
-		actor.flight.pulse_heat *= heat_mult
-		actor.flight.air_dash_heat *= heat_mult
-		actor.flight.glide_boost_heat *= heat_mult
-		actor.heat_signature *= stats.get("heat_signature", 1.0)
-		actor.frame_name = ItemDB.item_name(id)
+		if armor_left >= 0.0:
+			actor.health.armor = minf(armor_left, actor.health.max_armor)
+		_scale_frame(actor, stats, false)
 		actor.gear_items.append(id)
+	actor.frame_changed.emit(id)
+	return left
+
+
+## Applies a frame's speed and heat scaling, or with `undo` takes it back off.
+static func _scale_frame(actor: Actor, stats: Dictionary, undo: bool) -> void:
+	var speed: float = stats.get("speed_mult", 1.0)
+	var heat_mult: float = stats.get("heat_mult", 1.0)
+	if actor.flight.heavy_lift:
+		# A jetpack carries heavy armor without running hotter.
+		heat_mult = minf(heat_mult, 1.0)
+	var signature: float = stats.get("heat_signature", 1.0)
+	if undo:
+		speed = 1.0 / maxf(speed, 0.01)
+		heat_mult = 1.0 / maxf(heat_mult, 0.01)
+		signature = 1.0 / maxf(signature, 0.01)
+	actor.walk_speed *= speed
+	actor.sprint_speed *= speed
+	actor.flight.heat_per_sec *= heat_mult
+	actor.flight.burst_heat *= heat_mult
+	actor.flight.pulse_heat *= heat_mult
+	actor.flight.air_dash_heat *= heat_mult
+	actor.flight.glide_boost_heat *= heat_mult
+	actor.heat_signature *= signature
+
+
+## Puts helmet `id` on the actor's head, or with "" leaves the head bare.
+## The helmet it replaces leaves `gear_items` (so it no longer drops or goes
+## home as worn gear); where it goes next is the caller's job. Emits
+## `Actor.helmet_changed`, which `NetSession` passes on and the skin follows.
+static func wear_helmet(actor: Actor, id: String) -> void:
+	if id != "" and not ItemDB.has_tag(id, "helmet"):
+		return
+	if actor.visor.enabled:
+		actor.gear_items.erase(actor.visor.item_id)
+	actor.visor.reset()
+	if id != "":
+		actor.visor.enabled = true
+		actor.visor.item_id = id
+		actor.visor.display_name = ItemDB.item_name(id)
+		_apply_stats(actor.visor, ItemDB.item_stats(id))
+		actor.gear_items.append(id)
+	actor.helmet_changed.emit(id)
 
 
 ## True for a primary that takes attachments: a firearm in the primary slot
@@ -182,7 +239,7 @@ static func power_index(actor: Actor) -> int:
 ## was put down part used (below 0 means full). Returns what was given up,
 ## as {"id", "mag", "reserve", "spent"}, with "id" empty if the slot was
 ## empty. Emits `Actor.power_changed` so `NetSession` can tell clients.
-static func set_power(actor: Actor, id: String, mag := -1, reserve := -1) -> Dictionary:
+static func set_power(actor: Actor, id: String, mag := -1, reserve := -1, draw := true) -> Dictionary:
 	var given := {"id": "", "mag": -1, "reserve": -1, "spent": false}
 	if id != "" and not ItemDB.has_tag(id, "power"):
 		return given
@@ -208,8 +265,16 @@ static func set_power(actor: Actor, id: String, mag := -1, reserve := -1) -> Dic
 		actor.equip_weapon(gun)
 		index = actor.weapons.size() - 1
 	actor.gear_items.append(id)
-	# What you just picked up is what you hold.
-	actor.draw_weapon(index)
+	# Scanned into the watch's heavy chamber (`draw` false) it waits there to
+	# be summoned; otherwise what you just picked up is what you hold.
+	if draw:
+		actor.draw_weapon(index)
+	elif index == actor.active_weapon_index:
+		# Swapped into the chamber while the old one was out: the new one
+		# waits there too, and the hand goes back to what it held before.
+		var back := actor.last_drawn if actor.last_drawn >= 0 and actor.last_drawn != index \
+				and actor.last_drawn < actor.weapons.size() else actor.weapon_for_key(1)
+		actor.draw_weapon(back)
 	actor.power_changed.emit(id, gun.ammo_in_mag, gun.reserve_ammo)
 	return given
 
