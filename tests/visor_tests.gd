@@ -21,6 +21,14 @@ static func run(t: Node) -> void:
 	await _thermal(t)
 
 
+## Players arrive inside a gate outpost, whose walls would stand between
+## them and the bots these checks put round them: stand on an open drop point.
+static func _out_in_the_open(raid: Raid, p: Actor) -> void:
+	var at := Vector2.from_angle(TAU * 0.5 / 12.0) * 248.0
+	p.global_position = raid._stand(Vector3(at.x, raid.map.call("ground_height", at.x, at.y), at.y))
+	p.velocity = Vector3.ZERO
+
+
 static func _kit(helmet: String) -> Array[String]:
 	var kit := SCRAP.duplicate()
 	kit.append(helmet)
@@ -96,6 +104,7 @@ static func _zoom(t: Node) -> void:
 	print("Visors: Spotter binoculars")
 	var raid: Raid = await t._kit_raid(320, _kit("helm_spotter"))
 	var p := raid.player
+	_out_in_the_open(raid, p)
 	var v := p.visor
 	t.check(v.enabled and v.mode == "zoom" and v.zoom_levels == [4.0, 8.0], "Spotter stats come from the item")
 	t.check(PlayerController.next_visor_level(v, 0) == 1 and PlayerController.next_visor_level(v, 1) == 2
@@ -190,6 +199,7 @@ static func _scan(t: Node) -> void:
 	print("Visors: Seeker scan")
 	var raid: Raid = await t._kit_raid(330, _kit("helm_seeker"))
 	var p := raid.player
+	_out_in_the_open(raid, p)
 	var v := p.visor
 	t.check(v.mode == "scan" and is_equal_approx(v.scan_radius, 40.0) and is_equal_approx(v.cooldown, 25.0),
 			"Seeker stats come from the item")

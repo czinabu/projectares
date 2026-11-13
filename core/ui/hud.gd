@@ -200,6 +200,9 @@ static func watch_slots(p_raid: Raid, p: Actor, picked_toy := 0, pack_name := ""
 	var slots: Array[Dictionary] = []
 	# The map: where you are, your standing, the strongpoints.
 	var where := p_raid.world.display_name
+	# The risk zone you stand in (DESIGN.md section 2), or the outpost sheltering you.
+	if p_raid.zone_label(p) != "":
+		where += " · " + p_raid.zone_label(p)
 	if p_raid.war.intensity >= 0.2:
 		where += " · " + p_raid.war.level_name()
 	var parts: Array[String] = [where, standing_text(p).replace("   ", " · ")]

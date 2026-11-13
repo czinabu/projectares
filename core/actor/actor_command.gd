@@ -120,6 +120,9 @@ const FLAG_WATCH_UP := 4194304
 ## Not an input: the server sets this bit in the commands it sends back with
 ## each state, to say the actor's jets are lit (`FlightRig.is_hovering`).
 const STATE_HOVERING := 1048576
+## Not an input either: the actor is sheltered in a gate outpost, weapons
+## locked (`Raid._tick_outposts`).
+const STATE_SHELTERED := 16777216
 const FLAG_FREE_LOOK := 2097152
 const FLAG_ARTIFACT_PRESSED := 8388608
 ## Flags that describe a held key, and flags that last a single tick.
