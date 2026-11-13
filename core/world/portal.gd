@@ -10,7 +10,9 @@ extends Node3D
 ## and safe-zone worlds such as the plaza (`Raid.open_portal`, where only the
 ## authority opens them and `NetSession` shows them to everyone there). They
 ## are a way out to a fight, never out of one: leaving a world still means
-## signing out (`Raid.begin_sign_out`). Walking through lands you with the
+## signing out (`Raid.begin_sign_out`). The one portal inside a world is the
+## gate outpost's portal `HOME` (Caleb's call): opening it is a sign-out, the
+## ring is only how a gate sign-out looks, and it leads nowhere else. Walking through lands you with the
 ## "portal" drop (`Raid.PORTAL_DROP`), at the world's gate outpost where it
 ## has one.
 ##
@@ -18,6 +20,9 @@ extends Node3D
 ## use it, how old it is and whether a point is inside it; whoever owns it
 ## (the base or the raid) ticks it, sends walkers through and frees it. The
 ## ring is the same object in every view, built as greybox here.
+
+## The destination of a gate outpost's portal: home, through a sign-out.
+const HOME := "home"
 
 ## How long a portal stays open, in seconds.
 var open_time := 15.0
@@ -60,8 +65,24 @@ static func destinations() -> Array[String]:
 	return out
 
 
+## Where `actor` may open a portal to in `raid` (null for the home base):
+## every destination in a safe space, only `HOME` while sheltered in a gate
+## outpost, and nowhere else. Views read the shelter from the weapon lock
+## the server sends; the authority checks it again in `Raid.open_portal`.
+static func choices_for(raid: Raid, actor: Actor) -> Array[String]:
+	if actor == null or not is_instance_valid(actor) or actor.is_dead:
+		return []
+	if raid == null or (raid.world != null and raid.world.safe_zone):
+		return destinations()
+	if raid.world != null and actor.weapons_locked and raid.outpost_at(actor.global_position) != null:
+		return [HOME] as Array[String]
+	return []
+
+
 ## The name a destination is shown by.
 static func title_of(id: String) -> String:
+	if id == HOME:
+		return "home"
 	if id == Arena.ArenaVenue.ID:
 		return "the arena"
 	var world := Worlds.get_world(id)

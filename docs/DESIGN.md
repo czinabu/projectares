@@ -217,7 +217,7 @@ players into each other.
 
 **What is built (MVP, Ashfront).** The zones are rings around the middle
 (`WorldDef.zone_at`, `hazard_at`): the Foundry is the core, molten and
-burning (1.5 damage a second, past armor, through `Combat.deal`) and held
+burning (2 damage a second, past armor, through `Combat.deal`) and held
 by a warlord who comes back 6 minutes after he dies (`spawn_boss`
 markers); the middle reaches past the four landmarks; the rest is the
 outer ring. Caches pay by zone (`cache_outer`, `cache`, `cache_core`), and
@@ -342,9 +342,16 @@ the storage behind it.
 The watch opens portals to the other places: the way out of your base and
 the plaza, replacing the base's launch pad, arena gate and teleporter pad.
 
-- **Where:** only in safe spaces: your home base and the hub (and later the
-  gate outposts). So a portal is a deploy tool, never an escape hatch out of
-  a fight. Coming home still means signing out at an exit or a depot.
+- **Where:** only in safe spaces: your home base, the hub and a world's
+  gate outposts. So a portal is a deploy tool, never an escape hatch out of
+  a fight. Coming home still means signing out.
+- **At a gate outpost (Caleb's call):** the only portal leads home, and
+  opening it is the gate's sign-out with a door. It starts your sign-out
+  countdown (so a fight or a bounty still keeps you out of the outpost and
+  the portal), the ring unfolds over it, and when it ends you go home with
+  your gear like any sign-out. A squadmate who steps into the ring starts
+  their own countdown and follows. No portal leads from one world straight
+  into another.
 - **Opening one:** raise the watch, go to the portal icon on the Mission
   tab, wheel through the worlds and the arena, click. A portal unfolds in
   front of you and stays open about 15 seconds, then folds away.
@@ -367,7 +374,7 @@ the plaza, replacing the base's launch pad, arena gate and teleporter pad.
 | Map and pings | The map, standing, strongpoints, and pings to your squad (the ping marks where you look, for your side only). |
 | Contract tracker | Your active contracts, on the Mission tab (section 10). |
 | Landing choices | Where to drop back in after dying. |
-| Squad portal | Opens a portal to a world or the arena, in safe spaces only (above). |
+| Squad portal | Opens a portal to a world or the arena in safe spaces, or home from a gate outpost as a sign-out (above). |
 | Pack | What you carry, folded into the Summon tab: its fill, worth, heals and scrip, and later your weight tier (section 4). |
 
 Watch skins are cosmetics, shown off in the hub.
@@ -722,14 +729,14 @@ basic and unpolished, so the loop can be played before the rest:
 - **Time Rewind**: once an outing, back 4 s to where you were and how
   healthy you were (never less healthy than now). It leaves a glowing trail
   from where you were to where you landed, and a ghost where you land.
-- **Phase Cloak**: 6 s of near-invisibility, every 60 s. The whole body and
+- **Phase Cloak**: 6 s of near-invisibility, every 90 s. The whole body and
   its gear fade, the same in first and third person; nameplates hide. Firing
   or swinging breaks it, bots still notice you within 4 m, and a sign-out
   countdown waits while it runs.
 - **Overclock Core**: 10 s of flying with no heat, every 90 s; then the rig
   burns out and locks up overheated wherever you are.
 - **Static Bloom**: a ring that shuts off every flight rig within 14 m for
-  3 s, yours included. Everyone drops. Every 60 s.
+  3 s, yours included. Everyone drops. Every 75 s.
 
 How they work for now:
 
@@ -945,14 +952,14 @@ shared by solo and online play like the money rules.
   what is out there.
 - Where they come from today, in Ashfront only: rig and gun blueprints and
   upgrade data in rooftop caches; any blueprint, vehicles included, from a
-  warlord (1 in 2) or a supply pod (about 1 in 3), each with upgrade data
+  warlord (1 in 2) or a supply pod (1 in 4), each with upgrade data
   (2 and 1). Players carry what they found, so killing one pays it too.
   Contracts are the next source.
 
 | Recipe | Blueprint | Upgrade data | Parts | Scrip |
 | --- | --- | --- | --- | --- |
 | Mk2 jetpack, boots or wings | That rig's | 3 | 2 power cells, 1 alloy ingot | 400 |
-| Mk3 jetpack, boots or wings | That rig's (the same one) | 6 | 2 alloy ingots, 1 reactor core | 900 |
+| Mk3 jetpack, boots or wings | That rig's (the same one) | 8 | 2 alloy ingots, 1 reactor core | 1,200 |
 | Longshot DMR | Its own | none | 1 alloy ingot, 2 circuit boards | 300 |
 | Breacher Shotgun | Its own | none | 1 alloy ingot, 3 scrap metal | 300 |
 | Bulwark Mech | Its own | none | 1 reactor core, 3 alloy ingots, 2 power cells | 2,000 |
@@ -1079,6 +1086,37 @@ shown off in the hub.
 - In the PvP world, unbanked blueprints, upgrade data and gear drop on death
   like the rest of what you carry.
 - Renown, ranks, bounties and the Marked in the PvP world stay as they are.
+
+### Balance pass 1 (no playtest data yet)
+
+The first pass over the MVP's placeholder numbers, reasoned from design
+intent: a fair extraction loop where loot brought home is the money, the
+core pays best but is dangerous, Mk tiers and artifacts are a long chase,
+and melee stays the answer up close without hard-countering guns. Every
+value is still a plain var or table entry, easy to retune after a playtest.
+
+| System | Value | Was | Now | Why |
+| --- | --- | --- | --- | --- |
+| Crafting | Mk3 upgrade data / scrip | 6 / 900 | 8 / 1,200 | A core warlord drops 2 data and comes back every 6 min, so Mk3 came in about 5 boss kills. Mk3 should be the long chase; Mk2 (3 data) stays quick |
+| Blueprints | Supply pod blueprint chance (Ashfront) | 0.35 | 0.25 | Pods come every few minutes and anyone can loot them; the contested warlord (0.5) should be the better source |
+| Artifacts | Warlord / supply pod artifact chance | 0.5 / 0.1 | 0.25 / 0.05 | Artifacts are meant to be rare; at 1 in 2 a warlord farm handed one out every couple of kills |
+| Artifacts | Phase Cloak / Static Bloom cooldown | 60 s / 60 s | 90 s / 75 s | Unlimited uses: 6 s of invisibility every minute decided too many fights. Bloom grounds everyone, so it stays a bit more frequent |
+| Scrip | Bot kill bounty | 20 | 10 | A soldier carries one to three common materials; a 20 bounty on top paid nearly as much again, so farming bots rivalled hauling loot. Kill pay stays small next to loot |
+| Scrip | Strongpoint taken | 50 | 75 | Pays the objective, which pulls players into each other, over farming kills |
+| Contracts | "Take 2 strongpoints" daily | 200 scrip | 200 scrip + 1 upgrade data | Gives a steadier path to upgrade data that is not a warlord kill |
+| Melee | Bullet deflect stamina per round | 3 | 4 | An SMG burst inside the 0.3 s window cost about 14 stamina; sustained fire should break a guard sooner |
+| Bots | Gun aim skill (Ashfront) | 0.25 to 0.75 everywhere | outer 0.15 to 0.45, middle 0.3 to 0.65, core 0.5 to 0.85; warlords 0.7 to 0.9 | The outer ring is where new players learn; the core's armies should be its veterans (`WorldDef.bot_skill_range`) |
+| Vehicles | Watch recharge after a throw: bikes / rover / mech / jet | 8 / 20 / 45 / 40 s | 12 / 30 / 60 / 60 s | A wrecked vehicle could be replaced too fast to be a loss; the mech and jet are the strongest, so they wait longest |
+| Armor | Runner Frame speed | +12% | +8% | Stacks with a one-hander (+8%) or knife (+15%); a light frame should not outrun everyone |
+| Armor | Bulwark Frame armor | 140 | 125 | About 2.4x a starter's effective health against guns; 125 keeps it the tank without being a wall |
+| Risk zones | Foundry burn (Ashfront core) | 1.5 a second | 2 a second | 50 s from full on a starter instead of 67 s: the best loot is meant to be on a timer |
+
+Looked at and left alone: Mk2 rig cost (3 data, 400 scrip), gun and vehicle
+crafts, warlord blueprint chance (0.5), other contract payouts (dailies 120
+to 300 scrip, weeklies 700 to 900, kept small next to loot), heavy weapon
+summon (1.6 s to materialize, then about 10 s of watch rest), helmets (all
+utility, no armor), deflect window (0.3 s), two-handed stagger, lunge and
+dash-strike range, player kill scrip (60), sell-back rate (40%).
 
 ## 11. Social
 

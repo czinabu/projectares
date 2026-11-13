@@ -105,8 +105,11 @@ const ARMIES := {
 const HEAVY_CHANCE := [0.1, 0.25, 0.4]
 const SOLDIER_HEALTH := [65.0, 80.0, 95.0]
 const HEAVY_HEALTH := [100.0, 120.0, 140.0]
+## Gun aim skill by risk zone (`BotBrain.skill`): the outer ring is where new
+## players learn, the core is where the armies' veterans fight.
+const BOT_SKILL := [Vector2(0.15, 0.45), Vector2(0.3, 0.65), Vector2(0.5, 0.85)]
 ## Damage a second the Foundry's molten ground does to whoever stands in it.
-const CORE_BURN := 1.5
+const CORE_BURN := 2.0
 
 const BOT_TABLE := [
 	{"id": "scrap_metal", "weight": 45.0},
@@ -130,7 +133,7 @@ func _init() -> void:
 	depot_hold_time = 4.0
 	# The PvP world is where blueprints and upgrade data come from.
 	warlord_blueprint_chance = 0.5
-	pod_blueprint_chance = 0.35
+	pod_blueprint_chance = 0.25
 	warlord_upgrade_data = 2
 	pod_upgrade_data = 1
 
@@ -174,6 +177,13 @@ func roll_loot(source: String, rng: RandomNumberGenerator) -> Array[String]:
 	for i in count:
 		out.append(ItemDB.roll(table, rng))
 	return out
+
+
+## Bots further in aim better; a warlord keeps the default veteran's aim.
+func bot_skill_range(bot: Actor, warlord: bool) -> Vector2:
+	if warlord:
+		return super(bot, warlord)
+	return BOT_SKILL[clampi(int(bot.get_meta("zone", 1)), 0, 2)]
 
 
 ## Risk zones by distance from the middle of the field.

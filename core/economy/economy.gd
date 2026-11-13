@@ -39,10 +39,10 @@ const SELL_BACK_RATE := 0.4
 ## your banked balance only once it is banked at a depot or carried out
 ## alive, and a death drops what is carried into the bag. These are what
 ## earns it in the field.
-const KILL_BOUNTY := 20
+const KILL_BOUNTY := 10
 const PLAYER_KILL_SCRIP := 60
 const WARLORD_SCRIP := 150
-const STRONGPOINT_SCRIP := 50
+const STRONGPOINT_SCRIP := 75
 ## The most of one item sold in a single request.
 const MAX_SELL_COUNT := 99
 
