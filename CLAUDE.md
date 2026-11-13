@@ -429,30 +429,35 @@ without Caleb, and update the gap list when a PR closes a row.
   boost started by a sprint press in the air and held on sprint, no hover
   needed (`Actor._wants_boost`), that speeds you up along the look
   direction while the skin lays the body out prone as the speed builds, and a glide whose speed is energy
-  (`Actor._glide_velocity`). Every rig cruises at the same
-  `FlightRig.CRUISE_SPEED` so a squad on mixed rigs keeps together (Caleb's
-  call), and each stays up its own way and has its own edge: the jetpack
-  flies high in swoops (cruise, then coast down with the jets idle to cool),
-  stops dead and hovers to shoot steady, and carries heavy armor, but turns
-  wide and is loud and hot; wings glide and pulse to hold height, with the
-  fastest dives and tightest turns, silent and cold, but never
-  stop and fire only a sidearm while spread; boots skim low (`FlightRig.skim`),
-  cooling near a surface and burning out high up, kick up, dash furthest and
-  aim steady while low. Their kicks top a rooftop (three reach a 15 m roof,
-  Caleb's call) and a roof under the feet is a surface they cool over, but
-  in open air they never cool (`FlightRig.aloft`), so they hold no open sky. Flown its
-  own way a rig stays up for minutes, against type it overheats in seconds.
-  Shooting from the air spreads wider (`Actor.air_aim`) except in a rig's
-  steady state. Rigs come in tiers (Caleb's call): Mk1 to Mk3 of each, a tier
-  made with `ItemDB._rig_tier` from a lower tier's stats. A tier sets `FlightRig.tier`
-  and `ceiling` (`ItemDB.RIG_CEILINGS`: 25, 60, 100 m) and may only make the
-  rig run cooler, never faster: cruise and dash speeds stay the same on
-  every tier, a boost is never faster than the Mk2 jetpack's, and the heat
-  bar stays 100. The ceiling is measured
+  (`Actor._glide_velocity`). Each rig has one job and one weakness
+  (Caleb's balance pass, DESIGN.md section 5; the Mk1 numbers are
+  `ItemDB.JETPACK_MK1`, `BOOTS_MK1` and `WINGS_MK1`, measured by
+  `tests/rig_balance_tests.gd`): the jetpack is height and hover (8 s on a
+  full bar, climbing 1.5x and boosting 2.5x the heat, a 40 m ceiling,
+  steady aim), but slow across the map, loud and clumsy under a roof;
+  the boots are ground agility and stealth: no heat, `max_charges` pay for
+  kicks and dashes, a short skim (`skim_time`), faster on foot
+  (`ground_speed_mult`), no fall damage, a graze window on every dash
+  (`Actor.graze_left`, checked in `Actor.modify_incoming`), but a 10 m
+  ceiling; the wings are distance and speed: a launch, a fast glide on glide
+  stamina (`glide_heat`, refilled on the ground only) and two boosts a
+  flight, but no hover or climb of their own, poor aim, sidearm only, and
+  no use indoors. A rig's `scan_range` is how far scans and thermal pick
+  its wearer up (`Visor.reach_to`), `indoor_mult` how well it flies with a
+  roof overhead (`FlightRig.indoors`, probed by `Actor._measure_indoors`),
+  `flight_aim` its air spread in its own flight (`Actor.air_aim`) and
+  `fall_damage_mult` its share of fall damage (`Actor._hurt_by_fall`, out
+  in a world only, through `Combat.deal`). Rigs come in tiers (Caleb's
+  call): Mk1 to Mk3 of each, made with `ItemDB._rig_tier`, which scales
+  only the stats in the rig's `ItemDB.RIG_STRENGTH` list by
+  `RIG_TIER_STEP` (about 15% a tier, a charge a tier for boots): a tier
+  improves the rig's strength, never its weakness, and the heat bar stays
+  100. A rig's `ceiling` is measured
   from the world's ground, never a roof (`Actor.ground_level`: the map's
-  `ground_height`, else its origin), and only limits lift: the climb eases
-  off under it (`FlightRig.climb_room`) and a kick, pulse or launch is cut
-  to top out on it (`lift_cap`), or refused without heat. Only Mk1 drops or
+  `ground_height`, else its origin; the home base is its own ground), and
+  only limits lift: the climb eases
+  off under it (`FlightRig.climb_room`) and a kick, launch or boost is cut
+  to top out on it (`lift_cap`), or refused. Only Mk1 drops or
   is sold: Mk2 and up are crafted from blueprints (DESIGN.md section 10),
   so no loot table may list them.
   The keys fly every rig and the mouse only looks and aims
@@ -810,6 +815,11 @@ without Caleb, and update the gap list when a PR closes a row.
   written on a board hung over the lane, never on the screen. Nothing on the
   range goes through `Combat.deal` or pays mastery, because nothing there is
   real damage; never add an Actor target that takes some.
+  Past the range's far end is the flight course (`HomeBase._build_course`,
+  `in_course`): an open-topped yard whose walls stand over every rig's
+  ceiling, with a climb tower (and a ramp for wings), a gap to a second
+  tower and a sprint, timed by `_tick_course` from the player's position
+  alone and written on its board, never on the screen.
   The base grows with the account's upgrades (`core/base/base_upgrades.gd`,
   static rules like `Economy`): a list of owned upgrade ids kept beside the
   stash and scrip (`Profile.base_upgrades` solo, the account's online, sent

@@ -101,6 +101,7 @@ static func equip(actor: Actor, item_ids: Array) -> void:
 			actor.flight.item_id = id
 			actor.flight.display_name = ItemDB.item_name(id)
 			_apply_stats(actor.flight, stats)
+			actor.flight.fill()
 			actor.gear_items.append(id)
 		elif ItemDB.has_tag(id, "ability"):
 			actor.ability.enabled = true
@@ -185,6 +186,7 @@ static func _scale_frame(actor: Actor, stats: Dictionary, undo: bool) -> void:
 	actor.flight.pulse_heat *= heat_mult
 	actor.flight.air_dash_heat *= heat_mult
 	actor.flight.glide_boost_heat *= heat_mult
+	actor.flight.glide_heat *= heat_mult
 	actor.heat_signature *= signature
 
 

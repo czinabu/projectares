@@ -211,6 +211,9 @@ func _fly(rig: String) -> void:
 				% [up, turn, dive, top, gained])
 		a.cmd.jump = false
 	if f.can_skim():
+		# Handling only: lift the skim's time limit (`skim_time`, checked in
+		# the tests) so one skim lasts through every move.
+		f.skim_time = 0.0
 		a.global_position.y = 3.0
 		a.velocity = Vector3.ZERO
 		await _ticks(3, "!lift")
@@ -312,7 +315,7 @@ static func climb(a: Actor, limit: float, step: Callable, stop := INF) -> Vector
 		if height > top + 0.05:
 			top = height
 			top_at = t
-		if top >= stop or (a.is_on_floor() and t > 2.0) or (t > top_at + 2.0 and a.velocity.y < -5.0):
+		if top >= stop or (a.is_on_floor() and t > 2.0) or (t > top_at + 2.0 and a.velocity.y < -f.descend_speed - 1.0):
 			# Done: back down, or falling from the top (a landing is no jolt).
 			break
 	a.cmd.jump = false

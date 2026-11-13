@@ -58,6 +58,9 @@ static func _test_wings(t: Node) -> void:
 	var arena := _ground(t, Vector3(0, 0, -6000))
 	var p := _actor(arena, ["pistol_service", "wings_glide"])
 	await t.frames(5)
+	# Handling only: a long session of moves, so no glide stamina limit and
+	# fresh boosts where needed (both have checks of their own).
+	p.flight.glide_heat = 0.0
 	p.global_position.y = 300.0
 	p.velocity = Vector3(0, -1, 0)
 	await t.frames(40)
@@ -131,7 +134,6 @@ static func _test_wings(t: Node) -> void:
 			"and letting go the wings come round onto the view")
 	await t.frames(60)
 	# A wing boost thrusts you the way you face and the glide keeps the speed.
-	var boost_heat := p.flight.heat
 	var cruising := Vector2(p.velocity.x, p.velocity.z).length()
 	p.cmd.sprint = true
 	p.cmd.sprint_pressed = true
@@ -141,8 +143,8 @@ static func _test_wings(t: Node) -> void:
 	var kicked := Vector2(p.velocity.x, p.velocity.z).length()
 	await t.frames(60)
 	var carried := Vector2(p.velocity.x, p.velocity.z).length()
-	t.check(kicked > cruising + p.flight.glide_boost * 0.9 and p.flight.heat > boost_heat,
-			"Shift in a glide boosts you ahead, on heat (%.1f to %.1f m/s)" % [cruising, kicked])
+	t.check(kicked > cruising + p.flight.glide_boost * 0.9 and p.flight.charges < p.flight.max_charges,
+			"Shift in a glide boosts you ahead, on a charge (%.1f to %.1f m/s)" % [cruising, kicked])
 	t.check(carried > cruising + p.flight.glide_boost * 0.7 and view.angle_to(Vector3(p.velocity.x, 0, p.velocity.z).normalized()) < 0.05,
 			"and the glide carries that speed on the way you face (%.1f m/s a second later)" % carried)
 	# Shift + D is the same boost: wings never dash sideways.
@@ -158,7 +160,7 @@ static func _test_wings(t: Node) -> void:
 	# Shift + S with the wings pulled up climbs, keeping the heading.
 	var climb_heading := Vector3(p.velocity.x, 0, p.velocity.z).normalized()
 	var height := p.global_position.y
-	var dash_heat := p.flight.heat
+	p.flight.charges = p.flight.max_charges
 	p.cmd.move = Vector2(0, -1)
 	p.cmd.sprint = true
 	p.cmd.sprint_pressed = true
@@ -168,8 +170,8 @@ static func _test_wings(t: Node) -> void:
 	await t.frames(40)
 	p.cmd.sprint = false
 	var flat := Vector3(p.velocity.x, 0, p.velocity.z)
-	t.check(rise > p.flight.glide_boost_climb * 0.8 and p.flight.heat > dash_heat,
-			"Shift + S in a glide boosts upward, on heat (%.1f m/s up)" % rise)
+	t.check(rise > p.flight.glide_boost_climb * 0.8 and p.flight.charges == p.flight.max_charges - 1,
+			"Shift + S in a glide boosts upward, on a charge (%.1f m/s up)" % rise)
 	t.check(p.global_position.y > height + 2.0 and flat.normalized().dot(climb_heading) > 0.95
 			and flat.length() >= p.flight.glide_speed * p.flight.glide_stall - 0.01 and p.flight.is_gliding,
 			"and gains height flying on the same way, never backwards (%.1f m higher)" % (p.global_position.y - height))

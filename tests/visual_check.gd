@@ -850,6 +850,9 @@ func _base_shots(out_dir: String) -> void:
 		"base_deploy.png": [Vector3(4.0, 3.0, -1.0), Vector3(7.0, 1.0, 7.5)],
 		"base_door.png": [Vector3(-1.5, 2.0, 3.0), Vector3(-2.0, 1.4, 9.0)],
 		"base_range_board.png": [Vector3(0.0, 1.7, -10.6), Vector3(0.0, 4.0, -14.0)],
+		"base_course_door.png": [Vector3(-2.0, 2.0, -48.0), Vector3(-4.0, 1.8, -60.0)],
+		"base_course.png": [Vector3(-12.0, 16.0, -61.0), Vector3(6.0, 3.0, -105.0)],
+		"base_course_board.png": [Vector3(-7.5, 2.4, -60.5), Vector3(-7.5, 3.4, -66.5)],
 	}
 	for file: String in views:
 		camera.look_at_from_position(views[file][0], views[file][1])

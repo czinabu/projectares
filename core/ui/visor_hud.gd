@@ -565,7 +565,8 @@ func _sync_heat(p: Actor, around: Array[Actor]) -> void:
 	var warm := {}
 	if thermal_shown:
 		for other in around:
-			if other != p and not other.is_dead:
+			if other != p and not other.is_dead \
+					and other.global_position.distance_to(p.global_position) <= Visor.reach_to(other, INF):
 				warm[other] = true
 	_sync_marks(_heat, warm, _new_heat_shell)
 	for other: Actor in _heat:

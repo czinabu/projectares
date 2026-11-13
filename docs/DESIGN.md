@@ -436,14 +436,14 @@ they show the player's face and hair from the customizer.
 A loadout has one of three weight tiers: **light, medium or heavy**. It is
 worked out from the headgear (goggles or helmet), the armor frame and a heavy
 weapon carried in the chamber or the hands. It changes how you move, never
-how fast you cruise, so a mixed squad still keeps pace (section 5).
+a rig's top flight speed (section 5).
 
 | Weight changes | Lighter | Heavier |
 | --- | --- | --- |
 | Acceleration and turning, on foot and in the air | Quicker, nimble | Slower, planted |
 | Flight heat | Less heat for the same flying | More heat, so heavy loadouts cool off more often |
 | Ground speed, sprint and slide | A little faster, a little longer | A little slower, a little shorter |
-| Top flight cruise speed | Unchanged | Unchanged |
+| Top flight speed | Unchanged | Unchanged |
 
 - The tier shows on the watch's pack page and on the base locker's screen, next to the
   loadout it comes from.
@@ -528,69 +528,103 @@ effect and a counter.
 
 ## 5. Flight
 
-Follow the aerial rig proposal for the details and numbers:
-"Aerial gadgets: identities and balance"
-(https://claude.ai/artifact/5oqEMAXpKisXTojV9w47pv). Do not redesign it in a
-feature thread; changes go through Caleb. The core of it:
+Each rig has one clear job and one clear weakness (Caleb's balance pass,
+which replaced the earlier aerial rig proposal and its shared cruise speed).
+Tune against the table below; the numbers live in `ItemDB` as
+`JETPACK_MK1`, `BOOTS_MK1` and `WINGS_MK1`, and `tests/rig_balance_tests.gd`
+measures them.
 
-- **One cruise speed.** Holding forward caps every rig at 15 m/s (a sprint is
-  9.5), so a mixed squad stays together with no squad abilities. Each rig has
-  a burst above cruise that costs heat or height.
-- **Same 100 heat bar, different loops.** Flown its own way, a rig sustains
-  for minutes. Flown against type, it burns out in seconds. Flight is
-  sustained, not literally endless, so heat seekers, thermal and ground
-  fighters stay relevant.
-- **Overheat cuts the rig out** until heat falls back to 35.
-- **Air aim penalty**, except in each rig's steady state (hovering jetpack,
-  skimming boots).
+- **Jetpack: height and hover.** The best at climbing, holding a position
+  and aiming in the air. Slow across the map and it burns heat fast, so it
+  takes rooftops and fights from above; it is not for travel.
+- **Thruster boots: ground agility and stealth.** Short bursts (kicks, air
+  dashes, a brief skim) low to the ground, the quickest recovery and the
+  lowest ceiling. Always on: faster on foot, no fall damage, a dodge on every
+  dash, quiet and dim. The duelist's rig, best in close fights, stealth and
+  interiors.
+- **Wings: distance and speed.** The fastest across the map, gliding and
+  diving, but no hover, no climb of their own and poor aim. For travel,
+  flanking and escapes.
 
-| Rig | Flies at | Stays up by | Edge | Trade-off |
-| --- | --- | --- | --- | --- |
-| Jetpack "Skyhold" | High, 20 to 40 m (up to its tier's ceiling) | Cruise on jets, coast down to vent heat | Stops dead and hovers; steadiest gun platform; best for heavy armor and heavy weapons | Wide turns; loud, bright, heat-seeker bait |
-| Glide Wings "Longreach" | Middle, 8 to 30 m, in arcs | Gliding, diving for speed, wing pulses to climb | Fastest dives, tightest turns, silent and cold | Can never stop; sidearm only while the wings are out |
-| Thruster Boots "Skirmisher" | Low, within 6 m of a surface, rooftops included | Skimming near surfaces, where the boots cool | Instant air dashes, no aim penalty while skimming, works indoors; a set of kicks tops a 15 m roof | Only cool near a surface, so a climb is a visit: high in the open they burn out in seconds |
+### Mk1 targets
 
-The boots reach rooftops (Caleb's call after playtesting: "I should be able
-to reach the top of buildings, or at least make it up top for a bit before
-having to go lower to refuel"). Three kicks carry them onto a 15 m roof with
-heat to spare and a fourth is the ceiling, about 20 m. A roof under the feet
-is a surface like the street, so they cool up there; in open air above 6 m
-they never cool, so the open sky stays with the jetpack and the wings.
+| | Jetpack | Boots | Wings |
+|---|---|---|---|
+| **Role** | Height and hover | Agility and stealth | Distance and speed |
+| Ground speed | 100% | 115% (sprint and slide too) | 95% |
+| Top air speed | 14 m/s cruise, 18 m/s boost | 14 m/s dash | 22 m/s glide, 30 m/s dive |
+| Climb | 8 m/s | kicks (about 6 m/s on average) | none of their own |
+| Max height | 40 m | 10 m | their launch height |
+| Hover | 8 s | 1.5 s skim per jump | none |
+| Fuel | Heat: hover 1x (12.5 a second), climb 1.5x, boost 2.5x | 4 charges for kicks and dashes | 25 s of glide stamina |
+| Recharge | 4 s on the ground (coasting cools too) | 1 charge per 1.5 s, anywhere | 5 s, on the ground only |
+| Cross Ashfront (550 m) | about 45 s (measured 40) | about 60 s (measured 51) | about 25 s from a 30 m perch (measured 26) |
+| Air aim spread | +10% with the jets lit | +0% mid-dash or skimming low | +50% gliding |
+| Dodge | none | 0.2 s graze window per dash: rounds do 25% | none |
+| Fall damage | half | none | none out of a glide |
+| Noise and glow | loud, bright | quiet, dim | medium, wing trails |
+| Thermal and scan range | 120 m | 30 m | 80 m |
+| Indoors (a roof within 8 m) | clumsy: half speed and climb | full use | cannot open |
 
-**Rig tiers (Caleb's call).** Every rig comes in tiers, Mk1 to Mk3. The
-base level does not let you fly over the whole city; a higher tier gives
-more height and distance. Each
-tier has a **ceiling**, measured from the world's ground (a roof under you
-does not count, so roof-hopping never stacks it): the jets stop climbing
-there, and a kick, pulse or launch tops out on it. A ceiling only limits
-lift: dropping off something higher is fine, and the rig still holds or
-glides you there.
+The wings keep their boost (Caleb's call): two a flight, each +8 m/s ahead
+or a small lift (Shift + S), refilled only on the ground. That launches them
+off flat ground or saves a dying glide, but it never climbs for long, so the
+jetpack keeps vertical play. A launch is free, once per time in the air.
 
-| Tier | Ceiling | Reaches | Where it comes from |
-| --- | --- | --- | --- |
-| Mk1 | 25 m | Rooftops and the 15 m decks and skybridges | The starter jetpack, the boots in shops, wings and boots as loot |
-| Mk2 | 60 m | The tower tops (40 m and up) and the high race rings | Crafted from a blueprint with upgrade data (section 10) |
-| Mk3 | 100 m | Over the highest towers and the spire | Crafted, a further step of upgrade data |
+Strengths and weaknesses:
 
-Up a tier the rig also runs cooler (cheaper kicks, pulses and climbing,
-faster cooling), so it flies further. What never changes:
+- **Jetpack:** the best high ground and air fights, with an 8 s hover and
+  steady aim. But it is loud, shows on scans at 120 m, only middling for
+  travel, and a held boost overheats it in about 3 s (the Shift press is
+  also an air dash).
+- **Boots:** the fastest on foot, the only rig with a dodge, quiet, and they
+  work anywhere, the Foundry's buildings included. But they top out at
+  10 m and are slow over open ground, so jetpacks shoot down at them and
+  wings outrun them.
+- **Wings:** twice as fast across the map as the others, great for flanking
+  and escaping. But they cannot hover or climb on their own, aim is poor in
+  flight, only a sidearm fires with them spread, and they are useless
+  indoors.
 
-- **The cruise speed.** Every tier cruises and dashes at the same speed,
-  and none boosts faster than the Mk2 jetpack, so a mixed squad still keeps
-  together.
-- **The 100 heat bar and each rig's loop.** Boots still only cool near a
-  surface, so a high climb is still a visit; wings still never stop; the
-  jetpack is still loud and hot.
-- **Higher tiers follow the progression model (section 10).** Every rig
-  drops at Mk1; Mk2 and Mk3 are crafted from the rig's blueprint and upgrade
-  data, and once crafted they are ordinary gear, at stake in the PvP world.
-  Mastery never hands out a tier. Nothing drops a Mk2 or Mk3: the
-  fabricator on the gunsmith bench is the only way to one.
+Fall damage is new with this pass: landing faster than 16 m/s (about a 6 m
+drop) costs 4 health per m/s over, scaled by the rig, through `Combat.deal`,
+and only out in a world (the home base and safe zones cost nothing). Scan
+and thermal reach is the rig's: a Seeker's pulse or a thermal visor picks up
+someone wearing a rig from the rig's range above, in place of the visor's
+own. Overheat still cuts the jetpack and the wings out until heat falls back
+to 35.
 
-Measured from the street (`feel_bench.tscn`): the Mk1 jetpack reaches its
-ceiling in about 7 s, Mk2 13 s, Mk3 19 s; boots kick to about 25 m, 46 m and
-100 m; wings climb on pulses and upward boosts to their ceilings in about
-8 s (Mk1), 36 s (Mk2) and 29 s (Mk3), or launch off something high.
+**Rig tiers (Caleb's call).** Every rig comes in tiers, Mk1 to Mk3. Each
+tier adds about 15% to the rig's **strength only**, never its weakness
+(`ItemDB.RIG_STRENGTH`, `_rig_tier`):
+
+| Rig | Mk2 | Mk3 |
+| --- | --- | --- |
+| Jetpack | 15% longer hover (heat), faster cooling, 46 m ceiling | 32% longer hover, 53 m ceiling |
+| Boots | 5 charges, one back every 1.3 s | 6 charges, one back every 1.13 s |
+| Wings | 25.3 m/s glide (34.5 dive), 15% longer glide, a stronger boost | 29.1 m/s glide (39.7 dive), 32% longer glide |
+
+The ceiling is measured from the world's ground (a roof under you does not
+count, so roof-hopping never stacks it): the jets stop climbing there, and a
+kick, launch or boost tops out on it. It only limits lift: dropping off
+something higher is fine. Every rig drops at Mk1; Mk2 and Mk3 are crafted
+from the rig's blueprint and upgrade data (section 10), and once crafted
+they are ordinary gear, at stake in the PvP world. Mastery never hands out
+a tier.
+
+Measured from the street (`feel_bench.tscn`): the jetpack reaches its
+ceiling, cooling by coasting on the way (Mk1 about 17 s, Mk2 and Mk3 about
+11 s); boots kick to their 10 m ceiling in about 2 s; wings launch to about
+5 m and go no higher on their own.
+
+**The flight course.** Past the far end of the base's firing range is an
+open-topped yard (`HomeBase._build_course`) to time any rig on a climb (an
+8 m tower, with a ramp up its side for wings), a gap (14 m of open air to a
+second tower: touch the floor and the run ends) and a 40 m sprint to the
+finish. A board at the start shows each stage's time and every rig's best.
+Flown by the tests' pilots: jetpack 8.6 s (climb 3.3, gap 2.2, sprint 3.2),
+wings 9.8 s (4.4, 2.7, 2.7), boots 13.5 s (4.1, 5.4 with a wait for charges,
+3.9).
 
 Flying controls (Caleb's call): the keys fly every rig and the mouse only
 looks and aims. Space climbs, kicks, launches or glides (by rig), C sinks or
@@ -607,10 +641,11 @@ they fly straight on). Turns cost speed and pulling up
 hard in a turn stalls them. Gliding, Shift is a wing boost that thrusts you
 the way you face and keeps the speed, and Shift + S boosts upward; wings
 never dash sideways. Q and E fly nothing. Every rig dashes, so the dash is not an
-edge by itself: boots dash furthest (20 m/s for 0.3 s, 20 heat), jetpacks
-middling (16 m/s for 0.25 s, 15 heat), wings shortest but cheapest (12 m/s
-for 0.25 s, 10 heat, a barrel roll sideways). The stamina dash (Alt) is
-unchanged.
+edge by itself: boots dash furthest (14 m/s for 0.3 s, on a charge, with
+the graze window), jetpacks middling (16 m/s for 0.25 s, 15 heat), wings
+shortest (12 m/s for 0.25 s, on a boost charge, a barrel roll sideways).
+The stamina dash (Alt) is unchanged, and in boots it opens the graze window
+too.
 
 In a squad the layers become roles: the jetpack holds the high angle, the
 wings flank and dive in, the boots push through streets and buildings.
@@ -627,7 +662,7 @@ always in view, and the watch is not needed for any of them.
 | Reading | What it shows |
 | --- | --- |
 | Heat gauge | The 100 heat bar, with the 35 recovery mark. It warns before the overheat cut-out. |
-| Rig cue | One cue per rig: the jetpack's coast-and-vent window, the wings' stall line, the boots' height band and dash pips. |
+| Rig cue | One cue per rig: the jetpack's coast-and-vent window, the wings' stall line and boosts left, the boots' dash charges and skim time. |
 | Squad markers | Where your squad is, at the visor edge toward them. Squad only; never shows an enemy. |
 | Landing warning | Ground coming up while heat is high, or while the rig is about to cut out, so you can land or pulse before you fall. |
 
@@ -782,8 +817,10 @@ The exact air time is a tuning value on `WorldDef`.
 Vehicles must earn their place next to sustained flight.
 
 - **Clearly faster.** A bike's top speed on ground is well above flight
-  cruise (target: at least 1.5 times cruise, so 22 m/s or more against 15),
-  and its boost beats every rig's burst on open ground. Bikes cost no heat.
+  cruise (target: at least 1.5 times the jetpack's 14 m/s cruise, so 22 m/s
+  or more), and its boost beats every rig's burst on open ground. Wings
+  glide as fast as a bike's top speed, but only downhill from a perch and
+  for 25 s at a time. Bikes cost no heat.
 - **Tactical utility.** Mobile cover, mounted firepower, passenger seats for
   squadmates, heavy cargo (more pack space while riding).
 - **Seamless transitions.** Throw a toy vehicle from mid-air onto the road
@@ -871,8 +908,9 @@ something different:
 | Status | Both | Cosmetics, watch skins, leaderboards, the most-wanted board | Never |
 
 **Tier gaps stay small.** A higher Mk is a real step up but never a big one,
-so a skilled player in Mk1 can still beat a Mk3. Rigs gain height and range
-(section 5), never speed: cruise is the same on every tier. What a weapon
+so a skilled player in Mk1 can still beat a Mk3. Rigs gain about 15% a
+tier in their own strength only (section 5): jetpacks hover and climb
+further, boots get a charge, wings glide faster and longer. What a weapon
 gains per Mk is TBD (section 13), and kept small either way.
 
 ### Currency: scrip
@@ -1146,7 +1184,8 @@ dash-strike range, player kill scrip (60), sell-back rate (40%).
 
 Caleb's calls, still open:
 
-- Is 15 m/s the right cruise speed? To tune by feel in the playtest.
+- Are the balance pass's Mk1 numbers (section 5) right? To tune by feel in
+  the playtest, on the base's flight course.
 - Should bots fly?
 - The airborne sign-out: 25 seconds and a beacon column, or must you land?
 - Which gadgets to build first from the list in section 4.

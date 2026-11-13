@@ -1,28 +1,28 @@
 class_name FlightRig
 extends Node
-## Flight limited by heat. One class covers every rig; the item's stats decide
-## how it flies:
-##   jetpack        - `thrust_accel`: hold jump in the air for sustained lift,
-##                    hold aim in the air to hover and fly freely (see below).
-##   thruster boots - `burst_velocity`: press jump in the air for an instant kick
-##                    (a set of them tops a rooftop), and `skim_speed`: hold
-##                    jump in the air to skim low.
-##   glide wings    - a burst to launch, then `glide_fall_speed` and
-##                    `glide_speed`: hold jump to fall slowly and fly forward,
-##                    and `pulse_velocity`: press jump while gliding to climb.
-##
-## Every rig cruises at the same speed (`CRUISE_SPEED`) so a squad on mixed
-## rigs keeps together; each stays up its own way. A jetpack cruises in
-## swoops, coasting down with the jets idle to cool; wings glide for free and
-## pulse to hold height; boots skim low. Flown its own way a rig stays up for
-## minutes, flown against type it overheats in seconds.
+## One class covers every rig; the item's stats decide how it flies. Each rig
+## has one job and one weakness (DESIGN.md section 5, Caleb's balance pass):
+##   jetpack        - height and hover. `thrust_accel`: hold jump in the air
+##                    to climb, hold aim to hover and cruise, Shift boosts.
+##                    Heat-limited, steady aim, but loud and slow across the
+##                    map, and clumsy under a roof (`indoor_mult`).
+##   thruster boots - ground agility and stealth. Faster on foot
+##                    (`ground_speed_mult`), kicks (`burst_velocity`) and air
+##                    dashes paid from charges (`max_charges`), not heat, a
+##                    graze window on every dash (`graze_window`), a short
+##                    skim (`skim_time`), quiet on scans, low ceiling.
+##   glide wings    - distance and speed. A launch, then `glide_speed` with
+##                    dives; gliding spends glide stamina (`glide_heat`) that
+##                    refills only on the ground, and a couple of boosts a
+##                    flight (`max_charges`). No hover, poor aim, no use
+##                    indoors.
+## Each Mk tier adds about 15% to the rig's strength only.
 
 ## An air jump went off. Cosmetic: the model fires its nozzles for a moment.
 signal burst_fired
 
-## The level flying speed every rig shares (m/s). Bursts go faster but cost
-## heat or height.
-const CRUISE_SPEED := 15.0
+## The jetpack's level flying speed (m/s), the default `fly_speed`.
+const CRUISE_SPEED := 14.0
 ## How far past `max_heat` a burst or pulse may land (it then overheats).
 const BURST_SLACK := 0.05
 ## Below its ceiling a rig's climb eases off over this many meters, so the
@@ -37,8 +37,8 @@ var display_name := "No rig"
 ## False until a rig item is equipped.
 var enabled := false
 
-## The rig's tier (Mk1, Mk2, ...). Higher tiers lift higher and run cooler
-## but cruise at the same speed (`ItemDB.RIG_CEILINGS`).
+## The rig's tier (Mk1, Mk2, ...). Each tier adds about 15% to the rig's
+## own strength only (`ItemDB._rig_tier`).
 var tier := 1
 ## The highest the rig can lift you, in meters over the world's ground (a
 ## roof under you does not count, so roof-hopping never stacks it): jets
@@ -54,10 +54,12 @@ var altitude_known := false
 
 ## The defaults are the free Mk1 jetpack; other rigs set what differs.
 var thrust_accel := 36.0
-var max_rise_speed := 9.0
+var max_rise_speed := 8.0
 var max_heat := 100.0
-var heat_per_sec := 32.5
-var cool_per_sec := 26.0
+## Heat a second of hovering costs; climbing and boosting cost multiples of
+## it (`climb_heat_mult`, `boost_heat_mult`).
+var heat_per_sec := 12.5
+var cool_per_sec := 25.0
 var cool_delay := 0.5
 ## After overheating, thrust stays locked until heat falls below this.
 var recover_heat := 35.0
@@ -89,8 +91,9 @@ var glide_accel := 22.0
 ## needed, and holding sprint keeps it going: you speed up head first toward
 ## `boost_speed` along the view's heading, laid out prone, climbing or
 ## sinking only on jump and descend (0: no boost). The keys fly every rig; the mouse only looks.
-## Holding still costs `hover_heat_mult` of the full heat rate, cruising
-## `cruise_heat_mult`, climbing all of it and boosting `boost_heat_mult`.
+## Holding still costs `hover_heat_mult` of `heat_per_sec`, cruising
+## `cruise_heat_mult`, climbing `climb_heat_mult` and boosting
+## `boost_heat_mult` (Caleb's call: 1x, 1x, 1.5x, 2.5x).
 ## At cruise speed the heading turns at most `cruise_turn_rate` rad/s: a
 ## jetpack makes wide turns but stops dead. Landing or overheating puts the
 ## jets out.
@@ -101,10 +104,11 @@ var boost_accel := 16.0
 var descend_speed := 6.0
 ## How fast the jets bring your climb or sink to what you ask for, in m/s².
 var hover_accel := 30.0
-var hover_heat_mult := 0.4
-var cruise_heat_mult := 0.24
-var boost_heat_mult := 1.4
-var coast_cool := 30.0
+var hover_heat_mult := 1.0
+var cruise_heat_mult := 1.0
+var climb_heat_mult := 1.5
+var boost_heat_mult := 2.5
+var coast_cool := 25.0
 var cruise_turn_rate := 1.2
 ## A jetpack carries heavy armor: a frame's extra heat (`heat_mult` above 1)
 ## does not apply to it (`Loadout.equip`).
@@ -197,8 +201,48 @@ var glide_boost := 0.0
 var glide_boost_climb := 0.0
 var glide_boost_heat := 0.0
 
+## Rigs that run on charges instead of heat (the boots' kicks and dashes,
+## the wings' boosts): each spends one charge, and one comes back every
+## `charge_time` seconds, only on the ground with `charge_on_ground`. A
+## launch-once launch is free. 0: everything costs heat.
+var max_charges := 0
+var charge_time := 1.5
+var charge_on_ground := false
+## Boots: how long a skim holds you up per time in the air, refilled on
+## landing (0: no limit, only heat).
+var skim_time := 0.0
+## Wings: glide stamina, as heat a second of gliding builds. With
+## `ground_cool_only` it comes back only on the ground.
+var glide_heat := 0.0
+var ground_cool_only := false
+## On foot with the rig worn: walk, sprint and slide speed scale.
+var ground_speed_mult := 1.0
+## How much the air spoils aim while the rig flies its own way (jets lit
+## and not boosting, a boots dash, a glide), against 1 for a plain fall.
+## See `Actor.air_aim`.
+var flight_aim := 1.0
+## The share of fall damage taken on landing (`Actor.fall_safe_speed`).
+## Landing out of a glide takes none whatever the rig.
+var fall_damage_mult := 1.0
+## Boots: every dash opens a window this long where rounds only graze,
+## doing `graze_mult` of their damage (0: no window).
+var graze_window := 0.0
+var graze_mult := 0.25
+## How far a thermal visor or a Seeker scan picks up whoever wears the rig,
+## in meters (0: the visor's own reach). Loud, bright rigs carry further.
+var scan_range := 0.0
+## Under a roof (`indoors`): the share of flying speed and climb left. 1
+## works fully, 0 cannot fly at all (wings cannot open).
+var indoor_mult := 1.0
+
 var heat := 0.0
 var overheated := false
+## Charges left (see `max_charges`), and the skim time left this flight.
+var charges := 0
+var skim_left := 0.0
+## A roof is close overhead (the `Actor` sets it every tick in the air).
+var indoors := false
+var _charge_wait := 0.0
 ## An artifact's Overclock Core is running: flying makes no heat.
 var heat_free := false
 ## Seconds left with the rig shut off by an artifact's Static Bloom. While
@@ -238,8 +282,12 @@ func tick(wants_thrust: bool, delta: float, heat_mult := 1.0) -> float:
 			is_boosting = false
 		return thrust_accel
 	_since_thrust += delta
-	if is_gliding and glide_cool > 0.0:
-		heat = maxf(0.0, heat - glide_cool * delta)
+	if is_gliding and (glide_cool > 0.0 or glide_heat > 0.0):
+		heat = maxf(0.0, heat + (_heat(glide_heat) - glide_cool) * delta)
+		if heat >= max_heat:
+			heat = max_heat
+			overheated = true
+			is_gliding = false
 	elif _since_thrust >= cool_delay and not aloft:
 		heat = maxf(0.0, heat - cool_per_sec * delta)
 	_recover()
@@ -258,6 +306,7 @@ func coast(delta: float) -> void:
 func skim(delta: float, height: float) -> void:
 	is_thrusting = false
 	skim_height = height
+	skim_left = maxf(0.0, skim_left - delta)
 	if height < skim_low:
 		heat = maxf(0.0, heat - skim_cool * delta)
 		_recover()
@@ -279,13 +328,57 @@ func can_skim() -> bool:
 	return working() and skim_speed > 0.0
 
 
+## True if a skim may start or go on: boots with skim time left.
+func skim_ready() -> bool:
+	return can_skim() and not overheated and (skim_time <= 0.0 or skim_left > 0.0)
+
+
+## Every tick: a rig on charges refills them (only on the ground with
+## `charge_on_ground`), and landing refills the skim.
+func refill(delta: float, on_floor: bool) -> void:
+	if on_floor:
+		skim_left = skim_time
+	if max_charges <= 0 or charges >= max_charges:
+		_charge_wait = 0.0
+		return
+	if charge_on_ground and not on_floor:
+		return
+	_charge_wait += delta
+	while _charge_wait >= charge_time and charges < max_charges:
+		_charge_wait -= charge_time
+		charges += 1
+
+
+## Full charges and skim, as a rig is put on.
+func fill() -> void:
+	charges = max_charges
+	skim_left = skim_time
+	_charge_wait = 0.0
+
+
+## The share of flying speed and climb left here (see `indoor_mult`).
+func indoor_factor() -> float:
+	return indoor_mult if indoors else 1.0
+
+
+## Pays for a kick, dash or boost: a charge on a rig that runs on them,
+## else `cost` heat (see `_spend`).
+func _pay(cost: float) -> bool:
+	if max_charges <= 0:
+		return _spend(cost)
+	if charges <= 0:
+		return false
+	charges -= 1
+	return true
+
+
 ## A dash in the air. True if it goes off (and takes its heat).
 ## `cost` overrides the dash's heat (a wing boost); below zero it is
 ## `air_dash_heat`.
 func try_air_dash(cost := -1.0) -> bool:
-	if not working() or overheated or air_dash_speed <= 0.0:
+	if not working() or overheated or air_dash_speed <= 0.0 or indoor_factor() <= 0.0:
 		return false
-	if not _spend(air_dash_heat if cost < 0.0 else cost):
+	if not _pay(air_dash_heat if cost < 0.0 else cost):
 		return false
 	burst_fired.emit()
 	return true
@@ -300,9 +393,9 @@ func _recover() -> void:
 ## burst, is overheated or is too close under its ceiling (`cap`, from
 ## `lift_cap`: the speed is cut so the jump tops out on the ceiling).
 func try_burst(cap := INF) -> float:
-	if not working() or overheated or burst_velocity <= 0.0 or (launch_once and launched):
+	if not working() or overheated or burst_velocity <= 0.0 or (launch_once and launched) or indoor_factor() <= 0.0:
 		return 0.0
-	if minf(cap, burst_velocity) < MIN_LIFT or not _spend(burst_heat):
+	if minf(cap, burst_velocity) < MIN_LIFT or not (_spend(burst_heat) if launch_once else _pay(burst_heat)):
 		return 0.0
 	launched = true
 	burst_fired.emit()
@@ -373,8 +466,10 @@ func can_hover() -> bool:
 	return working() and thrust_accel > 0.0
 
 
+## True if the wings can spread: worn, working, with glide stamina left
+## and no roof overhead that stops them.
 func can_glide() -> bool:
-	return working() and glide_fall_speed > 0.0
+	return working() and glide_fall_speed > 0.0 and not overheated and indoor_factor() > 0.0
 
 
 ## What the jump key does with this rig, for the HUD.
@@ -386,9 +481,10 @@ func controls_hint() -> String:
 		parts.append("hold to climb, hold right mouse in the air to hover (C coasts down to cool%s)"
 				% (", Shift in the air to boost" if boost_speed > 0.0 else ""))
 	if burst_velocity > 0.0:
-		parts.append("press again in the air to boost" + (" the way you move" if burst_push > 0.0 else ""))
+		parts.append(("press again in the air to launch" if launch_once else "press again in the air to kick")
+				+ (" the way you move" if burst_push > 0.0 else ""))
 	if can_skim():
-		parts.append("hold in the air to skim low (stay near a surface to cool, C sinks)")
+		parts.append("hold in the air to skim a moment (C sinks)")
 	if can_glide():
 		parts.append("hold while falling to glide (look to steer, W dives, S climbs, Shift boosts%s)"
 				% (", press again to pulse up" if pulse_velocity > 0.0 else ""))
