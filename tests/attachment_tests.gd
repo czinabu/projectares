@@ -192,12 +192,23 @@ static func _bench(t: Node) -> void:
 	t.check(bench_gun != null and bench_gun.get_meta("display_item", "") == "rifle_carbine"
 			and bench_gun.find_child("optic", true, false) != null,
 			"the primary sits in the vise with its scope on")
+	var vise := bench_gun as HomeBase.Vise
+	var next := base.next_bench_gun()
+	t.check(vise != null and "rifle_carbine" in base.bench_guns() and next != "rifle_carbine"
+			and vise.get_prompt().begins_with("[F] Next gun in the vise"),
+			"the gun in the vise offers the next gun from the rack (%s)" % next)
+	asked.clear()
+	if vise:
+		vise.interact(base.player)
+	t.check(asked == [["primary", next]], "using the vise asks for the next gun as the primary (%s)" % [asked])
+	var on_rack := base.display_for("rifle_carbine")
+	t.check(on_rack != null and not on_rack.get_node("Model").visible and "ON THE BENCH" in on_rack.get_node("Plate").text
+			and on_rack.has_node("Mount"), "the rack's pegs for the gun in the vise stand empty")
 	var card := base.get_node_or_null("Displays/SpecCard") as Label3D
 	t.check(card != null and "Zoom" in card.text, "a card by the vise lists what the scope changes")
 	var spot := base.spot_transform("gunsmith", 0).origin
 	var last := base.spot_transform("gunsmith", 11).origin
-	var half := base.room_size * 0.5
-	t.check(absf(spot.x) < half.x and absf(spot.z) < half.z and absf(last.x) < half.x and last.y > 0.5,
+	t.check(base.inside(spot) and base.inside(last) and last.y > 0.5,
 			"the bench's pegboard is inside the room")
 	base.queue_free()
 	await t.frames(2)

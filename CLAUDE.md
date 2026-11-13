@@ -572,6 +572,26 @@ without Caleb, and update the gap list when a PR closes a row.
   `HomeBase.show_gear(stash, loadout)` rebuilds the room from plain data, so
   it shows the local `Profile` solo and the server's account snapshot in a
   lobby. `core/base/base_layout.gd` decides what goes where from item tags.
+  Every weapon goes on the one armory rack (`BaseLayout.ARMORY`, Caleb's
+  call): its sections hang on the walls of the armory alcove
+  (`HomeBase.in_armory`), with the gunsmith bench in the middle and the
+  locker at the way in. Each weapon hangs on a lit mount
+  (`HomeBase._build_mount`). The bench's vise holds the primary (its rack
+  pegs stand empty); using the vise puts the next gun from the rack in it
+  (`HomeBase.Vise`, `next_bench_gun`) through the same `equip_requested`,
+  so any gun can be fitted out there. A new kind of weapon gets a rack
+  section there, not a display of its own elsewhere in the room. The base is where you suit
+  up (Caleb's call): the suit-up bay beside the launch pad
+  (`HomeBase.suit_up`) replaces the player with a new actor wearing
+  `suit_kit()`, weapons locked, and emits `player_replaced` so `main.gd`
+  hands it the controller; changing the loadout only changes what the
+  bay puts on next. Bikes park in the garage off the right wall
+  (`HomeBase.in_garage`). Behind the back wall is the firing range
+  (`HomeBase.in_range`): a suited player's weapons unlock only there and
+  never run dry, and `HomeBase` scores shots from each gun's `fired` signal
+  against its `RangeTarget`s, which stop shots like walls. Nothing on the
+  range goes through `Combat.deal` or pays mastery, because nothing there is
+  real damage; never add an Actor target that takes some.
   Using a display only emits `equip_requested`; `main.gd` applies it through
   `Profile` or `NetSession.equip`. Like `Raid`, `HomeBase` has no camera, HUD
   or input code, and its displays are greybox shapes that `Look` dresses
