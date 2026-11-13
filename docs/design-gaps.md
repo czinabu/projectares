@@ -45,7 +45,7 @@ rows marked **pre-playtest** come before the friends playtest.
 | Per-rig readouts (stall line, height band, dash pips) | Missing | Now part of the flight HUD (see Flight): at the visor edge and on the rig, not the watch. Comes with the aerial rig rework. **Pre-playtest.** |
 | Sign-out from the watch, with its countdown | Partly | Sign-out exists on L; not on the watch. |
 | Loadout swapping from the watch in the PvE world | Missing, deferred | With the PvE world. Today loadouts change only in a lobby or base. |
-| Raising the watch with the character's own left arm, first and third person | Missing | Today third person only straps the watch to `Wrist.L` (the arm stays put and the hologram floats to the camera) and first person shows a grey box forearm. Left-arm IK already exists in `WeaponArm` (`off_ik`). |
+| Raising the watch with the character's own left arm, first and third person | Partly | Third person the left arm now lifts the wrist in front of the chest (`WeaponArm.watch_at`, from `ActionPose.watch`, on the same timing as first person). Still missing: turning the wrist so the face points at the eyes, opening the hologram from the real wrist, other players seeing it (the raise is not replicated), and first person showing the character's own arm instead of the grey box forearm. |
 
 ## Loadout
 

@@ -111,7 +111,6 @@ var phone_elbow := Vector3(0.45, -1.0, 0.15)
 var phone_palm := 0.13
 var phone_look_down := 0.85
 var phone_chest := 0.16
-var phone_rate := 5.0
 
 ## Clip key -> how the clip moves the body at playback speed 1, in the
 ## actor's space (x right, z back), m/s.
@@ -150,7 +149,8 @@ var current_anim := ""
 ## Whether the legs should take the relaxed stand now, and how far they have.
 var stand_legs := false
 var stand_legs_weight := 0.0
-## True while the phone is up; `phone_weight` eases toward it.
+## True while the phone is up; `phone_weight` is how far, read from the
+## actor's shared `ActionPose.phone` so every view holds it the same way.
 var phone_up := false
 var phone_weight := 0.0
 ## Where the phone is in the right hand now, in the actor's frame; set by
@@ -463,7 +463,9 @@ func update(delta: float) -> void:
 	stride = move_toward(stride, stride_target, stride_rate * delta)
 	stand_legs_weight = move_toward(stand_legs_weight, 1.0 if stand_legs and not _stand_tracks.is_empty() else 0.0,
 			stand_legs_rate * delta)
-	phone_weight = move_toward(phone_weight, 1.0 if phone_up else 0.0, phone_rate * delta)
+	var shared := ActionPose.of(actor)
+	shared.advance(delta)
+	phone_weight = shared.phone
 	if _stand_anim and _stand_anim.length > 0.0:
 		_stand_time = fposmod(_stand_time + delta, _stand_anim.length)
 	if ride != null and is_instance_valid(ride):

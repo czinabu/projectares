@@ -32,11 +32,12 @@ const STANCE_CONTROL_HINTS := [
 ]
 ## Where the held weapon sits relative to the camera in first-person.
 const VehicleScript := preload("res://core/vehicle/vehicle.gd")
+const FirstPersonArms := preload("res://core/visual/first_person_arms.gd")
 ## Where a toy vehicle sits in the hand, and how big it is drawn there next
 ## to a thrown toy (it is close to the eye in first person).
 const TOY_IN_HAND := Vector3(-0.08, 0.0, 0.1)
 const TOY_HAND_SIZE := 0.55
-const FIRST_PERSON_HAND := Vector3(0.32, -0.3, -0.75)
+const FIRST_PERSON_HAND := Vector3(0.16, -0.19, -0.3)
 
 var actor: Actor
 var camera: Camera3D
@@ -65,6 +66,25 @@ var ride_extra_distance := 1.6
 ## separately from the on-foot view, which comes back when you get off.
 var ride_view := ViewMode.THIRD
 var base_fov := 80.0
+## First person moves the held weapon by the actor's `ActionPose`, the same
+## state that moves the model's arm third person: melee reach is scaled by
+## `first_person_reach` (the hand is nearer the eye than a shoulder is) and
+## the shoulder turn swings the hand round the eye by `first_person_turn` of
+## it. A switch drops the hand toward the holster's side to
+## `first_person_stow` (camera space, x taken from the holster) and tips it
+## by `first_person_stow_tilt`, out of view.
+var first_person_reach := 0.45
+var first_person_turn := 0.35
+## The nearest the hand comes to the eye (m, straight ahead) and the furthest
+## it goes to either side, in first person.
+var first_person_near := 0.4
+var first_person_side := 0.3
+## A cocked hand is kept at least this far off the middle of the view (as
+## sideways over ahead), so a windup's arm comes in from the edge instead of
+## covering what you are about to hit. It fades out through the swing.
+var first_person_clear := 0.5
+var first_person_stow := Vector3(0.0, -0.7, -0.4)
+var first_person_stow_tilt := Vector3(-1.1, 0.0, 0.0)
 ## Speed widens the view a little, so a boost, a dive or a bike reads as
 ## fast: up to `speed_fov` degrees more, from a sprint's speed up to
 ## `speed_fov_at` m/s. Never while aiming or zoomed.
@@ -146,6 +166,10 @@ var flinch_deg := 1.2
 var _shake := Vector2.ZERO
 var _shake_speed := Vector2.ZERO
 var _speed_fov_now := 0.0
+## Your own arms in first person, and the look they were built for.
+var _arms: Node3D
+var _arms_look := {}
+var _arms_failed := false
 
 
 func setup(p_actor: Actor) -> void:
@@ -540,14 +564,87 @@ func _process(delta: float) -> void:
 	_sight_blend = move_toward(_sight_blend, 1.0 if aiming and sight != null else 0.0, delta * 7.0)
 	sighted = _sight_blend > 0.9
 	if first_person:
-		var hand_at := FIRST_PERSON_HAND
+		var pose := ActionPose.of(actor)
+		pose.advance(delta)
+		var hold := first_person_hold(pose)
 		if sight != null and _sight_blend > 0.0:
 			# Raise the gun so its optic's eye point is at the eye: the view
 			# then looks straight down the sight.
 			var in_hand := actor.hand.global_transform.affine_inverse() * sight.global_transform.origin
 			var lined_up := Vector3(0, 0, -eye_relief) - in_hand
-			hand_at = FIRST_PERSON_HAND.lerp(lined_up, _sight_blend)
-		actor.hand.global_transform = camera.global_transform * Transform3D(Basis.IDENTITY, hand_at)
+			hold = hold.interpolate_with(Transform3D(Basis.IDENTITY, lined_up), _sight_blend)
+		actor.hand.global_transform = camera.global_transform * hold
+		actor.hand.set_meta("shown", actor.hand.global_transform)
+	_update_arms(first_person)
+
+
+## Shows your own arms holding the weapon in first person (when the art
+## layer is on and the character has arms to copy).
+func _update_arms(first_person: bool) -> void:
+	if not Look.enabled or not actor.has_node("Skin"):
+		return
+	var wanted: Dictionary = {"skin": actor.get_meta("look", Look.DEFAULT_SKIN), "appearance": actor.get_meta("appearance", {})}
+	if _arms != null and wanted != _arms_look:
+		_arms.queue_free()
+		_arms = null
+		_arms_failed = false
+	if _arms == null and not _arms_failed:
+		_arms_look = wanted
+		_arms = FirstPersonArms.new()
+		_arms.name = "FirstPersonArms"
+		_arms.look = Look
+		_arms.actor = actor
+		_arms.camera = camera
+		camera.add_child(_arms)
+		if not _arms.build(wanted["skin"], wanted["appearance"]):
+			_arms.queue_free()
+			_arms = null
+			_arms_failed = true
+			return
+	if _arms != null:
+		_arms.update(first_person, ActionPose.of(actor).watch, held_toy != "")
+
+
+## True while your own arms are drawn in first person.
+func has_arms() -> bool:
+	return _arms != null and is_instance_valid(_arms)
+
+
+## Where the weapon hand goes in first person, in the camera's space: the
+## resting hold moved by the same shared pose the third-person arm follows
+## (melee reach and shoulder turn, a reload, the low ready, a switch).
+func first_person_hold(pose: ActionPose) -> Transform3D:
+	var at := FIRST_PERSON_HAND
+	var basis := Basis.IDENTITY
+	if pose == null:
+		return Transform3D(basis, at)
+	at += pose.reach * (first_person_reach * pose.reach_weight)
+	var gun := pose.gun_offset(true)
+	at += gun.origin
+	basis = gun.basis
+	var swing := Basis(Vector3.UP, pose.turn.x * first_person_turn) * Basis(Vector3.RIGHT, pose.turn.y * first_person_turn)
+	at = swing * at
+	basis = swing * basis
+	# However a pose moves it, the hand stays far enough out in front that
+	# the arm holding it does not fill the view.
+	if pose.reach_weight > 0.0:
+		at.z = lerpf(at.z, minf(at.z, -first_person_near), pose.reach_weight)
+		at.x = lerpf(at.x, clampf(at.x, -first_person_side, first_person_side), pose.reach_weight)
+		var off := Vector2(at.x, at.y)
+		var clear := first_person_clear * -at.z
+		if off.length() < clear:
+			var way := off.normalized() if off.length() > 0.03 else Vector2(0.8, 0.6)
+			var w := pose.reach_weight * pose.elbow_raise
+			at.x = lerpf(at.x, way.x * clear, w)
+			at.y = lerpf(at.y, way.y * clear, w)
+	if pose.switch_weight > 0.0:
+		var side := clampf(pose.switch_point.x, -0.45, 0.45)
+		var stow := Vector3(side, first_person_stow.y, first_person_stow.z)
+		var tip := Basis.from_euler(first_person_stow_tilt + Vector3(0.0, 0.0, -0.5 * side))
+		var w := smoothstep(0.0, 1.0, pose.switch_weight)
+		at = at.lerp(stow, w)
+		basis = basis.slerp(tip, w)
+	return Transform3D(basis, at)
 
 
 ## The field of view while aiming `weapon`: optics zoom further in.

@@ -171,7 +171,9 @@ var holster_offset := Vector3(0.21, -0.02, 0.0)
 ## Switching weapons is shown, not instant: the hand reaches to the holster
 ## and puts the old weapon away, moves on to the next one's holster and draws
 ## it. Seconds for each move. Only the view waits; the actor switched the
-## moment it was told, and first person stays instant.
+## moment it was told. First person plays the same plan through `ActionPose`:
+## the weapon drops toward the holster's side out of view and the next one
+## comes up, on the same clock.
 var reach_time := 0.22
 ## How long a blade takes to slide out of its hilt when drawn, or back in
 ## when put away (`Look.set_extend`).
@@ -328,6 +330,9 @@ func _ready() -> void:
 		arm.look = look
 		add_child(arm)
 		arm.setup(def, _player.get_animation(_anims["idle_melee"]) if _player and _anims.has("idle_melee") else null)
+		if _player:
+			arm.calibrate(_player.get_animation(_anims["aim_gun"]) if _anims.has("aim_gun") else null,
+					_player.get_animation(_anims["idle_melee"]) if _anims.has("idle_melee") else null)
 		# After the arm has put the hand on the model's hand.
 		skeleton.skeleton_updated.connect(_carry_moving)
 	if skeleton:
@@ -463,10 +468,10 @@ func _process(delta: float) -> void:
 
 
 ## True while the body lies flat in flight (gliding or boosting) and is not
-## shooting or aiming: the weapon in hand is shown worn. View only; in first
-## person the weapon stays in front of the camera.
+## shooting or aiming: the weapon in hand is shown worn. View only; first
+## person puts it away too (see `ActionPose.switch_weight`).
 func flies_stowed() -> bool:
-	if actor.is_dead or actor.vehicle != null or actor.hand_override:
+	if actor.is_dead or actor.vehicle != null:
 		return false
 	if not (actor.flight.is_gliding or actor.flight.is_boosting):
 		return false
@@ -674,7 +679,7 @@ func _update_switch(delta: float) -> void:
 		_in_hand = null
 	_moving = null
 	_moving_weight = 0.0
-	var instant := arm == null or actor.hand_override or actor.is_dead or _skeleton == null
+	var instant := arm == null or actor.is_dead or _skeleton == null
 	if instant or (_plan.is_empty() and _in_hand == active):
 		_in_hand = active
 		_plan_for = active
@@ -696,6 +701,12 @@ func _update_switch(delta: float) -> void:
 		arm.override_weight = _moving_weight if _moving else 0.0
 		if _moving:
 			arm.override_point = _hand_at_holster(_moving)
+	# The same switch, for first person.
+	var pose := ActionPose.of(actor)
+	pose.switch_weight = _moving_weight if _moving else 0.0
+	if _moving:
+		pose.switch_point = _hand_at_holster(_moving)
+	pose.low_wanted = _current == "idle_gun"
 	for weapon in actor.weapons:
 		if weapon.visual:
 			weapon.visual.visible = weapon == _in_hand
@@ -779,7 +790,10 @@ func _carry_moving() -> void:
 			held.set_meta("held_at", held.transform)
 		var base: Transform3D = held.get_meta("held_at")
 		var worn: Node3D = _stowed_models.get(weapon)
-		if weapon != _moving or worn == null or _moving_weight <= 0.0 or not worn.is_inside_tree():
+		# First person the hand itself drops toward the holster, out of view;
+		# the weapon stays in it rather than flying back to the hidden body.
+		if weapon != _moving or worn == null or _moving_weight <= 0.0 or not worn.is_inside_tree() \
+				or actor.hand_override:
 			held.transform = base
 			continue
 		var from := weapon.visual.global_transform * base
@@ -1033,11 +1047,15 @@ func _on_fired(from: Vector3, to: Vector3, gun: Gun) -> void:
 	var parent := actor.get_parent()
 	if parent == null:
 		return
-	var muzzle := from + (to - from).normalized() * 0.9
+	var fallback := from + (to - from).normalized() * 0.9
 	if gun.visual and gun.visual.is_inside_tree():
-		muzzle = gun.visual.global_transform * Vector3(0, -0.04, -0.5)
+		fallback = gun.visual.global_transform * Vector3(0, -0.04, -0.5)
+	# From the barrel as it is held in this view, along the barrel.
+	var muzzle := gun.muzzle_point(fallback)
+	var along := -gun.visual.global_basis.z.normalized() if gun.visual and gun.visual.is_inside_tree() \
+			else (to - from).normalized()
 	if not gun.quiet:
-		Vfx.muzzle_flash(parent, muzzle, (to - from).normalized())
+		Vfx.muzzle_flash(parent, muzzle, along)
 	if from.distance_to(to) < gun.max_range - 0.5:
 		Vfx.impact(parent, to, (from - to).normalized())
 

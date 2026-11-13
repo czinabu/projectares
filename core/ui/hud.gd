@@ -960,6 +960,8 @@ void fragment() {
 		var goal := 1.0 if raised else 0.0
 		raise_amount = move_toward(raise_amount, goal, delta / maxf(raise_time, 0.001)) if delta > 0.0 else goal
 		var t := ease(raise_amount, -2.0)
+		# The character's own left arm lifts with it, third person (WeaponArm).
+		ActionPose.of(p).watch = t if not p.is_dead else 0.0
 		visible = shown
 		# The card unfolds upwards once the wrist is up.
 		var open := clampf((raise_amount - 0.35) / 0.65, 0.0, 1.0)
@@ -973,7 +975,9 @@ void fragment() {
 		if cam:
 			k = tan(deg_to_rad(cam.fov) * 0.5) / tan(deg_to_rad(reference_fov) * 0.5)
 		var spread := Vector3(k, k, 1.0)
-		_arm.visible = not third and raise_amount > 0.0
+		# Your own arm lifts the watch in first person when it is drawn
+		# (`PlayerController.has_arms`); the grey box forearm stands in otherwise.
+		_arm.visible = not third and raise_amount > 0.0 and not (controller != null and controller.has_arms())
 		transform = Transform3D.IDENTITY
 		if third:
 			if is_inside_tree():
