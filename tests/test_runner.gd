@@ -5006,6 +5006,8 @@ func _test_plaza_online() -> void:
 			me.cmd.primary = false
 			var bo_me := bo.raid.player
 			check(bo_me.health.health == bo_me.health.max_health and not bo_me.is_dead, "nobody can be shot in the plaza")
+			# Aim again where Bo is now: the view of him can still settle after he stops.
+			aim = (bo_seen.global_position + Vector3(0, 1.1, 0) - me.get_eye_position()).normalized()
 			var looking := PlazaView.inspect_target(ada.raid, me, me.get_eye_position(), aim, 60.0, 9.0)
 			check(looking == bo_seen, "looking at a player picks them for the gear card")
 			check(PlazaView.gear_tag(bo_seen).begins_with(bo_seen.display_name.to_upper()) and "Kit worth" in PlazaView.gear_tag(bo_seen),
@@ -5289,6 +5291,23 @@ func _test_stash_service() -> void:
 const SocialService := preload("res://core/social/social_service.gd")
 const GameSettings := preload("res://core/settings/game_settings.gd")
 const PhoneScript := preload("res://core/phone/phone.gd")
+const Handheld := preload("res://core/phone/handheld.gd")
+
+
+## Stands in for `ActorSkin` in the phone tests: a hand holding `held`.
+class HandSkin extends Node:
+	var held: Node3D
+	var phone_screen: Material
+	var locomotion: Object = self
+
+	func handheld() -> Node3D:
+		return held
+
+	func set_phone_screen(screen: Material) -> void:
+		phone_screen = screen
+		var face := Handheld.face_of(held)
+		if face != null:
+			face.set_surface_override_material(0, screen)
 const MirrorScript := preload("res://core/visual/mirror.gd")
 const DevMode := preload("res://core/dev/dev_mode.gd")
 const DevEconomy := preload("res://core/economy/economy.gd")
@@ -5416,6 +5435,12 @@ func _test_dev_mode() -> void:
 	phone.dev_mode_changed.connect(func() -> void: changes[0] += 1)
 	phone.toggle()
 	phone.open_app("settings")
+	check("dev" in phone.settings_tabs(), "in a debug run the phone's settings have a Dev tab")
+	for child in phone._body.get_children():
+		check(not (child is CheckButton and (child as CheckButton).text.begins_with("Dev mode")),
+				"the dev switches stay off the other tabs")
+	phone.open_settings_tab("dev")
+	await frames(1)
 	var switch_shown := false
 	for child in phone._body.get_children():
 		if child is CheckButton and (child as CheckButton).text.begins_with("Dev mode"):
@@ -5652,6 +5677,18 @@ func _test_phone_view() -> void:
 	await _test_phone_controls(phone)
 	GameSettings.persist = false
 	phone.open_app("settings")
+	check(phone.settings_tab == "input" and phone._tabs.visible and phone._tabs.get_child_count() == phone.settings_tabs().size(),
+			"settings open on the Input tab, with a row of tabs")
+	phone.open_settings_tab("view")
+	await frames(1)
+	var sliders := 0
+	for child in phone._body.get_children():
+		if child is PanelContainer and child.find_children("*", "HSlider", true, false).size() > 0:
+			sliders += 1
+	check(phone.settings_tab == "view" and sliders == 3, "the View tab has the fields of view and the camera distance")
+	phone.open_app("news")
+	check(not phone._tabs.visible, "other apps have no tabs")
+	phone.open_app("settings")
 	phone.change_setting("field_of_view", 95.0)
 	check(is_equal_approx(GameSettings.field_of_view, 95.0) and "settings" in events, "settings change from the phone")
 	phone.change_setting("field_of_view_third", 105.0)
@@ -5683,6 +5720,42 @@ func _test_phone_view() -> void:
 	controller.phone_out = false
 	await frames(2)
 	check(not raid.player.cmd.phone, "putting it away lowers it")
+
+	# Third person eases the camera in to read the holo; first person never moves.
+	var reader := HandSkin.new()
+	reader.name = "Skin"
+	reader.held = Handheld.build()
+	var had_skin := raid.player.has_node("Skin")
+	if not had_skin:
+		raid.player.add_child(reader)
+		raid.player.add_child(reader.held)
+		reader.held.position = Vector3(0.15, 1.4, -0.4)
+		await frames(1)
+		var holo := controller.phone_panel()
+		check(holo != null, "the controller finds the holo of the phone in the hand")
+		controller.view_mode = PlayerController.ViewMode.THIRD
+		controller.input_blocked = true
+		controller.phone_out = true
+		for i in 40:
+			await frames(1)
+		check(controller.phone_read > 0.99, "with the phone out in third person the camera eases in to read it")
+		check(controller.camera.global_position.distance_to(holo.global_position) < 1.8 and is_equal_approx(controller.camera.global_basis.x.y, 0.0),
+				"and frames it level from over the shoulder")
+		controller.phone_out = false
+		controller.input_blocked = false
+		for i in 40:
+			await frames(1)
+		check(controller.phone_read == 0.0, "putting it away eases the camera back out")
+		controller.view_mode = PlayerController.ViewMode.FIRST
+		controller.input_blocked = true
+		controller.phone_out = true
+		await frames(5)
+		check(controller.phone_read == 0.0, "first person reads the phone from the eyes, without moving the camera")
+		controller.phone_out = false
+		controller.input_blocked = false
+	else:
+		reader.held.free()
+		reader.free()
 	await _end_raid(raid)
 	GameSettings.reset()
 	phone.queue_free()
@@ -5715,48 +5788,73 @@ func _test_phone_home(phone: CanvasLayer) -> void:
 	check(phone.app == PhoneScript.HOME, "it opens where it was left")
 	check(phone._status.text.length() == 5 and phone._who.text == "Solo" and phone._bars.strength == 0,
 			"the status bar has the time, no signal and Solo while offline")
+	check(phone._readouts["link"].value.text == "SOLO" and phone._readouts["news"].value.text == str(SocialService.GAME_NEWS[0].title),
+			"the home screen reads out the link and the latest news")
+	phone._readouts["news"].tapped.emit()
+	check(phone.app == "news", "a readout opens its app")
+	phone.go_home()
 
-	# No camera: the screen shows flat, and a click on it lands on it.
+	# No hand to hold it: the screen shows flat, and a click on it lands on it.
 	await _drawn_frames(2)
-	check(phone._flat.visible and not phone._device.visible, "with no camera the screen shows flat")
+	check(phone._flat.visible and phone._device == null, "with no hand to hold it the screen shows flat")
 	var middle: Vector2 = phone._flat.get_global_rect().get_center()
 	check(phone.screen_point(middle).distance_to(Vector2(phone.screen_size) * 0.5) < 1.0,
 			"a click on the flat screen lands in the same spot on the phone")
 	check(phone.screen_point(phone._flat.get_global_rect().position - Vector2(5, 5)).x < 0.0, "a click beside it misses")
 
-	# A camera: the phone is held up in front of it, drawn over the world.
+	# The device itself: the one handheld every view shows, held by its grip.
+	var held: Node3D = Handheld.build()
+	var face := Handheld.face_of(held)
+	check(face != null and face.mesh.get_surface_count() == 2 and face.position.y > 0.0,
+			"the handheld's screen is a face of its own, above the grip at its origin")
+	check(held.get_node_or_null("Handle") != null and held.get_node("Handle").position == Vector3.ZERO,
+			"the grip is where the hand closes, at the handheld's origin")
+	held.free()
+	var slab: ArrayMesh = PhoneScript.rounded_slab(Vector2(0.15, 0.3), 0.02, 0.03)
+	check(slab.get_surface_count() == 2 and slab.get_aabb().size.is_equal_approx(Vector3(0.15, 0.3, 0.02)),
+			"the phone is a rounded slab, its face a surface of its own")
+	# Held in a hand: a click on the handheld's face lands on the screen.
 	var stage := Node3D.new()
 	add_child(stage)
 	var camera := Camera3D.new()
 	camera.fov = 75.0
 	stage.add_child(camera)
 	camera.make_current()
-	phone._raise = 1.0
+	var holder := Node3D.new()
+	stage.add_child(holder)
+	var skin := HandSkin.new()
+	skin.name = "Skin"
+	holder.add_child(skin)
+	var in_hand: Node3D = Handheld.build()
+	stage.add_child(in_hand)
+	in_hand.position = Vector3(0.0, -0.25, -0.45)
+	skin.held = in_hand
+	phone.set_holder(holder)
 	await _drawn_frames(2)
-	check(phone._device.visible and not phone._flat.visible and phone._dim.visible,
-			"with a camera the phone is held up in the world, the scene dimmed behind it")
-	var at: Vector3 = camera.global_transform.affine_inverse() * phone._device.global_position
-	check(at.z < -camera.near and at.x > 0.0, "it is held in front of the eyes, to the right")
-	var face: Vector3 = phone._device.global_basis.z
-	check(face.dot(-at.normalized()) > 0.9, "its screen faces the eyes")
-	var mat := phone._device.get_surface_override_material(0) as StandardMaterial3D
-	check(mat.no_depth_test and mat.albedo_texture == phone._screen.get_texture(),
-			"the screen shows the phone's display and is never hidden in a wall")
-	var centre: Vector3 = phone._device.global_position + face * phone.device_depth * 0.5
-	var mouse := camera.unproject_position(centre)
+	check(phone._device == Handheld.holo_of(in_hand) and not phone._flat.visible,
+			"with a hand to hold it, the phone is the handheld in that hand, not a flat screen")
+	check(Handheld.face_of(in_hand).get_surface_override_material(0) == phone._face_mat,
+			"and its face shows this phone's screen")
+	var mouse := camera.unproject_position(phone._device.global_position)
 	check(phone.screen_point(mouse).distance_to(Vector2(phone.screen_size) * 0.5) < 4.0,
-			"the mouse on the phone lands on its screen")
-	check(phone.screen_point(Vector2(1, 1)).x < 0.0, "the mouse off the phone misses it")
-	check(phone._device.layers == 1 << (MirrorScript.HELD_LAYER - 1), "a mirror never shows the held phone")
-	var slab: ArrayMesh = PhoneScript.rounded_slab(Vector2(0.15, 0.3), 0.02, 0.03)
-	check(slab.get_surface_count() == 2 and slab.get_aabb().size.is_equal_approx(Vector3(0.15, 0.3, 0.02)),
-			"the phone is a rounded slab, its face a surface of its own")
+			"the mouse on the holo panel lands on the screen")
+	check(Handheld.holo_of(in_hand).global_position.y > Handheld.face_of(in_hand).global_position.y,
+			"the device projects its screen as a holo panel above it")
+	var head_bit := 1 << (MirrorScript.HEAD_LAYER - 1)
+	check(Handheld.holo_of(in_hand).layers == head_bit,
+			"the holo goes with the head, so your own first-person camera leaves it out")
+	camera.cull_mask = 0xFFFFF & ~head_bit
+	var on_face := camera.unproject_position(Handheld.face_of(in_hand).global_transform * Vector3(0.0, 0.0, Handheld.DEPTH * 0.5))
+	check(phone.screen_point(on_face).distance_to(Vector2(phone.screen_size) * 0.5) < 4.0,
+			"in first person the mouse on the handheld's own screen lands on the screen")
+	camera.cull_mask = 0xFFFFF
+	check(phone.screen_point(Vector2(1, 1)).x < 0.0, "the mouse off the handheld misses it")
+	check((phone._face_mat as StandardMaterial3D).albedo_texture == phone._screen.get_texture(),
+			"the handheld's face shows the phone's screen")
+	phone.set_holder(null)
 	phone.close()
-	var lowered := Time.get_ticks_msec() + int(phone.raise_time * 1000.0) + 200
-	while Time.get_ticks_msec() < lowered:
-		await _drawn_frames(1)
 	await _drawn_frames(2)
-	check(not phone._device.visible and not phone._dim.visible, "put away, it lowers out of view")
+	check(not phone._flat.visible, "put away, the flat screen goes too")
 	phone.open()
 	camera.queue_free()
 	stage.queue_free()
