@@ -1,7 +1,7 @@
 class_name StartScreen
 extends Control
 ## The first thing you see when the game launches: the title and Start,
-## centred over the lane between worlds (`TitleBackdrop`, built
+## centred in the lower third under the lane between worlds (`TitleBackdrop`, built
 ## by `core/start.gd`).
 ##
 ## `start_pressed` fires once, then `leave()` fades out while the lane jumps,
@@ -34,7 +34,7 @@ var leave_time := 0.8
 var leave_color := Color.BLACK
 var leave_delay := 0.0
 ## Side and bottom margins of the corner text and the hint, in pixels.
-var margin := Vector2(96, 60)
+var margin := Vector2(96, 36)
 
 var start_button: Button
 var _curtain: ColorRect
@@ -106,14 +106,19 @@ func leave() -> void:
 
 func _build_title_block() -> void:
 	var box := VBoxContainer.new()
-	box.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
-	box.grow_horizontal = Control.GROW_DIRECTION_BOTH
-	box.grow_vertical = Control.GROW_DIRECTION_BOTH
-	box.alignment = BoxContainer.ALIGNMENT_CENTER
+	# Centred left to right, in the lower third: the lane's vanishing point
+	# stays clear above it, and the type sits on the dark band at the bottom.
+	box.anchor_left = 0.0
+	box.anchor_right = 1.0
+	box.anchor_top = 1.0
+	box.anchor_bottom = 1.0
+	box.offset_top = -margin.y - 400
+	box.offset_bottom = -margin.y - 62
+	box.alignment = BoxContainer.ALIGNMENT_END
 	box.add_theme_constant_override("separation", 10)
 	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(box)
-	var title := _label(title_text, 96, INK, 12)
+	var title := _label(title_text, 84, INK, 12)
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	box.add_child(title)
 	_reveal.append(title)
@@ -129,13 +134,13 @@ func _build_title_block() -> void:
 	box.add_child(tagline)
 	_reveal.append(tagline)
 	var gap := Control.new()
-	gap.custom_minimum_size = Vector2(0, 34)
+	gap.custom_minimum_size = Vector2(0, 22)
 	box.add_child(gap)
 	start_button = Button.new()
 	start_button.text = "START"
 	start_button.focus_mode = Control.FOCUS_ALL
 	start_button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	start_button.custom_minimum_size = Vector2(240, 58)
+	start_button.custom_minimum_size = Vector2(240, 52)
 	start_button.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	var dim := UiTheme.ACCENT
 	start_button.add_theme_stylebox_override("normal", _frame(Color(0.02, 0.025, 0.05, 0.75), dim, 2))
@@ -246,8 +251,8 @@ func _add_shade() -> void:
 	wash.texture = pool_texture
 	wash.anchor_left = 0.15
 	wash.anchor_right = 0.85
-	wash.anchor_top = 0.2
-	wash.anchor_bottom = 0.85
+	wash.anchor_top = 0.45
+	wash.anchor_bottom = 1.05
 	wash.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	wash.stretch_mode = TextureRect.STRETCH_SCALE
 	wash.mouse_filter = Control.MOUSE_FILTER_IGNORE
