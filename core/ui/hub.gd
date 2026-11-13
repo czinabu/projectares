@@ -302,7 +302,7 @@ func refresh(last_result: Dictionary) -> void:
 			_result.text = ""
 	var bounty := Economy.payout(last_result)
 	if bounty > 0:
-		_result.text += "\nScrip brought home: +%d credits." % bounty
+		_result.text += "\nScrip brought home: +%d scrip." % bounty
 	_mastery.show_result(last_result)
 	_refresh_gear()
 
