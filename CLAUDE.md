@@ -237,6 +237,10 @@ without Caleb, and update the gap list when a PR closes a row.
 - First and third person differ only in where the camera is (Caleb's rule).
   Both look at the one real body, posed by the same code and holding the
   same weapon in the same hand: first person puts the camera at the eyes
+  (`ActorSkin.eye_point`, pulled back level by `GameSettings.eye_pullback`,
+  which eases off as the view tips down while the eyes lean ahead,
+  `PlayerController.look_down_lean`, so looking down sees the chest, never
+  the shoulders from behind)
   and leaves out only the head (`ActorSkin.hide_head` moves it and what is
   worn on it to `Mirror.HEAD_LAYER`, which that camera culls; shadows and
   a mirror still see it). Never build a first-person-only copy of the arms,

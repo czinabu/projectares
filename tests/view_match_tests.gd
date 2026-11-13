@@ -233,6 +233,17 @@ static func _check_with_skin(t: Node) -> void:
 	level_ahead.y = 0.0
 	t.check(controller.eye_pullback > 0.1 and back.dot(level_ahead.normalized()) < -0.1,
 			"first person, the camera sits pulled back from the face by the setting")
+	var level_pitch := controller.pitch
+	controller.pitch = -1.4
+	p.cmd.pitch = controller.pitch
+	await t.frames(30)
+	var down_eyes: Vector3 = skin.eye_point(controller.camera.global_basis)
+	var down_back := controller.camera.global_position - down_eyes
+	t.check(down_back.dot(level_ahead.normalized()) > 0.0,
+			"first person, looking down the pullback is gone and the eyes lean ahead, never over the shoulders")
+	controller.pitch = level_pitch
+	p.cmd.pitch = level_pitch
+	await t.frames(30)
 	var cam: Camera3D = controller.camera
 	t.check(cam != null and cam.cull_mask & head_bit == 0, "first person, the camera leaves out the head")
 	var drawn := {}
