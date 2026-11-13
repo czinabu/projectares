@@ -43,6 +43,13 @@ func _ready() -> void:
 		get_tree().quit()
 		return
 
+	# `-- <output_dir> --views-only [row,row]` shoots each action in first
+	# person, the third-person camera and from the front, side by side.
+	if "--views-only" in args:
+		var at := args.find("--views-only")
+		await _view_shots(out_dir, args[at + 1] if args.size() > at + 1 else "")
+		get_tree().quit()
+		return
 	# `-- <output_dir> --idle-only` shoots the player standing still.
 	if "--idle-only" in args:
 		await _idle_shots(out_dir)
@@ -1527,6 +1534,116 @@ func _ride_shots(out_dir: String) -> void:
 	await _shot(out_dir.path_join("ride_first.png"))
 	raid.queue_free()
 
+
+
+## One action per row, held still: as you see it in first person, in the
+## third-person camera, and from the front. Both views read the actor's one
+## `ActionPose`, so each row should read the same way across.
+func _view_shots(out_dir: String, only := "") -> void:
+	var raid := Raid.new()
+	add_child(raid)
+	raid.start(Worlds.get_world("ashfront"), 42, ["rifle_carbine", "blade_scrap", "pistol_service", "jetpack_mk1", "plate_light"])
+	for bot in raid.bots:
+		bot.get_node("Brain").set_physics_process(false)
+		bot.global_position += Vector3(0, -500, 0)
+	var p := raid.player
+	var controller := PlayerController.new()
+	controller.setup(p)
+	raid.add_child(controller)
+	var hud := Hud.new()
+	hud.setup(raid, controller)
+	raid.add_child(hud)
+	await _settle(30)
+	p.set_physics_process(false)
+	controller.set_physics_process(false)
+	controller.pitch = -0.05
+	p.cmd.pitch = controller.pitch
+	p.cmd.yaw = controller.yaw
+	var skin: Node = p.get_node("Skin")
+	var pose := ActionPose.of(p)
+	var gun_at := -1
+	var blade_at := -1
+	for i in p.weapons.size():
+		if p.weapons[i] is MeleeWeapon:
+			blade_at = i
+		elif p.weapons[i] is Gun and not p.weapons[i].is_sidearm and gun_at < 0:
+			gun_at = i
+	var gun := p.weapons[gun_at] as Gun
+	var blade := p.weapons[blade_at] as MeleeWeapon
+	var outside := Camera3D.new()
+	outside.fov = 40.0
+	raid.add_child(outside)
+	var rows := ["gun_ready", "gun_low", "reload", "switch", "windup_left", "windup_right", "windup_overhead",
+			"swing", "guard", "watch"]
+	if only != "":
+		rows = rows.filter(func(r: String) -> bool: return r in only.split(","))
+	var size := Vector2i(400, 300)
+	var sheet := Image.create(3 * size.x, rows.size() * size.y, false, Image.FORMAT_RGBA8)
+	for row in rows.size():
+		var kind: String = rows[row]
+		var melee := kind.begins_with("windup") or kind == "swing" or kind == "guard"
+		p.active_weapon_index = blade_at if melee else gun_at
+		blade._windup_left = 0.0
+		blade._swing_left = 0.0
+		blade._blocking = false
+		gun._reload_left = 0.0
+		controller.wrist_raised = kind == "watch"
+		p.cmd.primary = false
+		p.cmd.secondary = false
+		skin._aim_left = 0.0
+		for k in 40:
+			await get_tree().process_frame
+		var hold := func() -> void:
+			blade._animate(1.0 / 60.0)
+			match kind:
+				"gun_ready":
+					skin._aim_left = 1.0
+				"reload":
+					gun._reload_left = gun.reload_time * 0.5
+				"switch":
+					p.active_weapon_index = blade_at
+					skin._plan_t = minf(skin._plan_t, skin.reach_time * 0.85)
+				"windup_left", "windup_right", "windup_overhead":
+					blade._windup_left = 1.0
+					blade._windup_kind = "light"
+					blade.attack_dir = {"windup_left": MeleeWeapon.Dir.LEFT, "windup_right": MeleeWeapon.Dir.RIGHT,
+							"windup_overhead": MeleeWeapon.Dir.OVERHEAD}[kind]
+				"swing":
+					blade.attack_dir = MeleeWeapon.Dir.RIGHT
+					blade._swing_left = MeleeWeapon.SWING_TIME * 0.45
+				"guard":
+					blade._blocking = true
+					blade.guard_dir = MeleeWeapon.Dir.LEFT
+		for col in 3:
+			controller.view_mode = PlayerController.ViewMode.FIRST if col == 0 else PlayerController.ViewMode.THIRD
+			outside.current = col == 2
+			controller.camera.current = col != 2
+			for k in 45:
+				hold.call()
+				await get_tree().process_frame
+			if col == 2:
+				# From the front and a little to the right, so the arms show.
+				var at := p.global_position
+				outside.global_position = at + p.global_basis * Vector3(1.4, 1.5, -3.4)
+				outside.look_at(at + Vector3(0, 1.2, 0))
+			hold.call()
+			await RenderingServer.frame_post_draw
+			var frame := get_viewport().get_texture().get_image()
+			# Each shot full size too, to judge up close.
+			DirAccess.make_dir_recursive_absolute(out_dir.path_join("views"))
+			frame.save_png(out_dir.path_join("views/%s_%s.png" % [kind, ["first", "third", "front"][col]]))
+			var w := frame.get_width()
+			var h := frame.get_height()
+			var cut_h := h
+			var cut_w := cut_h * size.x / size.y
+			var cut := frame.get_region(Rect2i((w - cut_w) / 2, 0, cut_w, cut_h))
+			cut.resize(size.x, size.y)
+			cut.convert(Image.FORMAT_RGBA8)
+			sheet.blit_rect(cut, Rect2i(Vector2i.ZERO, size), Vector2i(col * size.x, row * size.y))
+		print("shot %s" % kind)
+	sheet.save_png(out_dir.path_join("views.png"))
+	print("saved views.png")
+	raid.queue_free()
 
 
 ## The phone held up in first and third person (home screen, an app, the
