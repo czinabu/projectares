@@ -37,6 +37,8 @@ const FeelTests := preload("res://tests/feel_tests.gd")
 const ViewMatchTests := preload("res://tests/view_match_tests.gd")
 const AdsTests := preload("res://tests/ads_tests.gd")
 const GripTests := preload("res://tests/grip_tests.gd")
+const TravelTests := preload("res://tests/travel_tests.gd")
+const TravelOnlineTests := preload("res://tests/travel_online_tests.gd")
 const RiskZoneTests := preload("res://tests/risk_zone_tests.gd")
 
 var _passed := 0
@@ -292,6 +294,8 @@ func _run() -> void:
 	await _test_arena()
 	await _test_arena_floor()
 	await _test_online_arena()
+	await TravelTests.run(self)
+	await TravelOnlineTests.run(self)
 	await _test_look()
 	await _test_rig_models()
 	await _test_customizer()
@@ -5444,18 +5448,6 @@ func _test_plaza_online() -> void:
 				"the clan hall door opens its terminal")
 		main.close_shop()
 		await frames(2)
-		main.use_portal("world:ashfront")
-		await _wait_until(func() -> bool:
-			return main.net != null and main.net.world_id == "ashfront" and not main.net.account.is_empty(), 600)
-		await _wait_until(func() -> bool: return main.base != null, 120)
-		check(main.hub.in_lobby() and main.raid == null and main.base != null and not main.hub.visible
-				and main.net != null and main.net.world_id == "ashfront",
-				"using a gate takes you to that world's lobby: your base on this server's stash")
-		check(main.base != null and main.base.door.get_prompt().contains("Back to"),
-				"the lobby base's door leads back to the plaza")
-		main.leave_server()
-		await _wait_until(func() -> bool: return main.raid != null and main.raid.player != null, 600)
-		check(main.raid != null and main.raid.world.safe_zone, "leaving the lobby leads back to the plaza")
 		var shops: Array = main.raid.map.shops()
 		if not shops.is_empty():
 			var shop_id: String = shops[0].id
@@ -5488,10 +5480,31 @@ func _test_plaza_online() -> void:
 			check(main.shop_view == null and main.shop_screen == null and not main.controller.input_blocked
 					and main.get_viewport().get_camera_3d() == main.controller.camera and main.hud.visible,
 					"stepping away gives control, the view and the HUD back")
+		main.use_portal("world:ashfront")
+		await _wait_until(func() -> bool:
+			return main.raid != null and main.raid.player != null and main.raid.world.id == "ashfront", 600)
+		check(main.raid != null and main.raid.world.id == "ashfront" and main.base == null and not main.hub.visible
+				and main.net != null and main.net.world_id == "ashfront",
+				"using a gate deploys you straight into that world, not into a lobby")
+		# Straight back, as going home while down does (the body stays out
+		# there a moment, so the stall above came first).
+		main._return_to_lobby({})
+		await _wait_until(func() -> bool: return main.raid != null and main.raid.player != null and main.raid.world.safe_zone, 600)
+		check(main.raid != null and main.raid.world.safe_zone, "leaving the world leads back to the plaza")
+		if main.raid != null and main.raid.player != null:
+			var back_gate: Node3D = null
+			for node in get_tree().get_nodes_in_group("portal"):
+				if main.raid.map.is_ancestor_of(node) and node.get_meta("destination", "") == "world:ashfront":
+					back_gate = node
+			var off: Vector3 = main.raid.player.global_position - back_gate.global_position
+			check(Vector2(off.x, off.z).length() < float(back_gate.get_meta("radius", 2.0)) + 4.0,
+					"and you arrive in front of that world's gate (%.1f m)" % Vector2(off.x, off.z).length())
 		main.use_portal("home")
 		await _wait_until(func() -> bool: return main.base != null, 600)
 		check(main.base != null and main.raid == null and main.hub.in_lobby(),
 				"the quarters door opens your home base on the server's stash")
+		check(main.base != null and main.base.door.get_prompt().contains("Back to"),
+				"the base's door leads back to the plaza")
 		main.base.leave_requested.emit()
 		await _wait_until(func() -> bool: return main.raid != null and main.raid.player != null, 600)
 		check(main.base == null and main.raid != null and main.raid.world.safe_zone,
@@ -6427,20 +6440,25 @@ func _test_armory(base: HomeBase) -> void:
 	await frames(2)
 
 
-## The suit-up bay puts the loadout on the player before they deploy.
+## Your own base dresses you in your loadout the moment you change it, with
+## no bay to walk to (Caleb's call), and a mirror on the wall shows it.
 func _test_suit_up(base: HomeBase) -> void:
-	print("Home base suit-up bay")
-	var bay_at := HomeBase.SUIT_AT
-	check(base.inside(bay_at) and not base.in_armory(bay_at), "the suit-up bay stands in the main room")
+	print("Home base: your loadout is on you, and the wall mirror")
+	var mirror_at := HomeBase.MIRROR_AT
+	var front := base.room_size.z * 0.5
+	check(base.wall_mirror != null and base.wall_mirror.wall_mounted and base.wall_mirror.is_inside_tree()
+			and base.inside(Vector3(mirror_at.x, 0, mirror_at.z)) and absf(mirror_at.z - front) < 0.3,
+			"every base has a mirror on its front wall")
+	check(base.wall_mirror != null and base.wall_mirror.global_basis.z.dot(Vector3(0, 0, -1)) > 0.99,
+			"its glass faces into the room")
 	check(not HomeBase.STATIONS.has("launch") and not HomeBase.STATIONS.has("arena") and base.bulkhead("teleporter") == null
 			and not BaseUpgrades.has_upgrade("teleporter"),
 			"no launch pad, arena gate or teleporter clutters the base: you leave through a portal from the watch")
 	# One deploy area along the front wall, beside the exit, so the middle of
 	# the room is clear; the shelves and the gear bays line the other walls.
-	var front := base.room_size.z * 0.5
 	var in_deploy := func(at: Vector3) -> bool:
 		return at.x >= HomeBase.DEPLOY_FROM_X and at.x <= HomeBase.DEPLOY_TO_X and at.z > front - HomeBase.DEPLOY_DEPTH
-	check(in_deploy.call(bay_at) and base.has_node("DeploySign"), "the suit-up bay stands in the deploy area by the front wall")
+	check(in_deploy.call(mirror_at) and base.has_node("DeploySign"), "the mirror stands in the deploy area by the front wall")
 	var shelved := true
 	for kind: String in HomeBase.STORAGE_ROWS:
 		for i in int(BaseLayout.KINDS[kind]["spots"]):
@@ -6454,36 +6472,44 @@ func _test_suit_up(base: HomeBase) -> void:
 	check(stands_back, "armor and rig stands stand in the gear bays along the back wall")
 	check(base.door.get_child_count() > 4 and base.has_node("ScoreBoard/RangeBoard"),
 			"the exit is a framed door and the range's score is on a board in the room")
-	check(base.suit_bay != null and base.suit_bay.get_prompt() == "[F] Suit up: put your loadout on",
-			"its control post offers to suit you up")
+	check(not base.has_node("SuitUpBay"), "there is no suit-up bay to walk to")
 	var kit := base.suit_kit()
 	check(base.loadout.get("primary", "") in kit and kit.any(func(id: String) -> bool: return ItemDB.has_tag(id, "melee"))
 			and not kit.any(func(id: String) -> bool: return ItemDB.has_tag(id, "vehicle")),
 			"the kit is your loadout, starter gear filling empty slots, with vehicles left parked (%s)" % [kit])
-	var before := base.player
-	var replaced := []
-	base.player_replaced.connect(func(actor: Actor) -> void: replaced.append(actor), CONNECT_ONE_SHOT)
-	base.suit_bay.interact(before)
-	await frames(3)
 	var worn := base.player
-	check(replaced == [worn] and worn != before,
-			"suiting up makes the player a new actor and says so")
 	var carried: Array[String] = []
 	for weapon in worn.weapons:
 		carried.append(weapon.item_id)
-	check(base.loadout.get("primary", "") in carried and worn.gear_items.size() >= kit.size() - 1,
-			"you wear your loadout (%s)" % [carried])
-	check(worn.weapons_locked and worn.global_position.distance_to(base.to_global(bay_at)) < 1.0,
-			"you stand in the bay, weapons locked: nobody fights at home")
-	check(base.suit_bay.get_prompt().ends_with("wearing your loadout"), "the bay says you are suited up")
+	check(base.suited and base.loadout.get("primary", "") in carried and worn.gear_items.size() >= kit.size() - 1,
+			"you are already wearing your loadout in your base (%s)" % [carried])
+	check(worn.weapons_locked, "weapons locked: nobody fights at home")
+	# Change the loadout where you stand: it goes straight on, there.
+	worn.position = Vector3(-2.0, 0.1, 1.5)
+	worn.cmd.yaw = 1.1
 	var kept := base.loadout.duplicate()
+	var kept_stash := base.stash.duplicate()
 	var changed := base.loadout.duplicate()
 	changed["primary"] = "dmr_longshot"
+	var replaced := []
+	base.player_replaced.connect(func(actor: Actor) -> void: replaced.append(actor), CONNECT_ONE_SHOT)
+	base.show_gear(base.stash + ["dmr_longshot"], changed)
+	await frames(3)
+	var dressed := base.player
+	check(replaced == [dressed] and dressed != worn and dressed.weapons.any(func(w: Weapon) -> bool: return w.item_id == "dmr_longshot"),
+			"equipping something puts it on you at once, as a new body the view follows")
+	check(dressed.position.distance_to(Vector3(-2.0, 0.1, 1.5)) < 0.3 and absf(dressed.cmd.yaw - 1.1) < 0.01,
+			"right where you stand, facing the same way")
+	replaced.clear()
+	base.player_replaced.connect(func(actor: Actor) -> void: replaced.append(actor), CONNECT_ONE_SHOT)
 	base.show_gear(base.stash, changed)
 	await frames(2)
-	check(base.suit_bay.get_prompt().begins_with("[F] Suit up again"), "a changed loadout asks you to suit up again")
-	base.show_gear(base.stash, kept)
-	await frames(2)
+	check(replaced.is_empty() and base.player == dressed, "showing the same loadout again changes nothing")
+	for c in base.player_replaced.get_connections():
+		if c.flags & CONNECT_ONE_SHOT:
+			base.player_replaced.disconnect(c.callable)
+	base.show_gear(kept_stash, kept)
+	await frames(3)
 	await _test_garage_and_range(base)
 	var visitor := HomeBase.new()
 	visitor.read_only = true
@@ -6491,10 +6517,11 @@ func _test_suit_up(base: HomeBase) -> void:
 	add_child(visitor)
 	await frames(2)
 	var guest := visitor.player
-	visitor.suit_bay.interact(guest)
+	visitor.show_gear(["rifle_carbine", "dmr_longshot"], {"primary": "dmr_longshot"})
 	await frames(2)
-	check(visitor.player == guest and not visitor.suited and visitor.suit_bay.get_prompt().ends_with("(not yours)"),
-			"a visitor cannot use someone else's bay")
+	check(visitor.player == guest and not visitor.suited and guest.weapons.is_empty(),
+			"in someone else's base you stay as you came: their gear never goes on you")
+	check(visitor.wall_mirror != null, "their base has a mirror too")
 	visitor.queue_free()
 	await frames(2)
 
@@ -6616,8 +6643,9 @@ func _test_home_base() -> void:
 	add_child(base)
 	await frames(30)
 	check(base.displays.size() == plan.size(), "the room builds one display per planned spot")
-	check(base.player != null and base.player.is_on_floor() and base.player.weapons.is_empty(),
-			"you stand in the base unarmed")
+	check(base.player != null and base.player.is_on_floor() and base.suited
+			and base.player.weapons.any(func(w: Weapon) -> bool: return w.item_id == "rifle_carbine"),
+			"you stand in your base already wearing your loadout")
 	var start := base.player.global_position
 	base.player.cmd.move = Vector2(0, 1)
 	await frames(30)
@@ -6636,6 +6664,9 @@ func _test_home_base() -> void:
 	var dmr := base.display_for("dmr_longshot")
 	_face_display(base.player, dmr)
 	await frames(2)
+	# Aim again from where the feet settled: the eye height decides which row
+	# of the rack the look lands on.
+	_face_display(base.player, dmr)
 	check(base.player.find_interactable() == dmr and dmr.get_prompt() == "[F] Equip Longshot DMR",
 			"looking at a gun on the rack offers to equip it")
 	await _use(base.player)
@@ -6694,9 +6725,11 @@ func _test_home_base() -> void:
 	base.player.cmd.pitch = 0.0
 	arm.free()
 	check(in_view, "the raised watch comes up in front of the eyes, wherever you look")
-	# Suiting up swaps in a new actor and frees the old one with the watch on
-	# it (playtest: X did nothing after suiting up).
-	base.suit_up()
+	# A change of gear swaps in a new actor and frees the old one with the
+	# watch on it (playtest: X did nothing after suiting up).
+	var regeared := base.loadout.duplicate()
+	regeared["primary"] = "dmr_longshot" if base.loadout.get("primary", "") != "dmr_longshot" else "rifle_carbine"
+	base.show_gear(base.stash + [regeared.primary], regeared)
 	await frames(3)
 	var suited_keys := PlayerController.new()
 	suited_keys.setup(base.player)
@@ -6772,22 +6805,16 @@ func _test_home_base() -> void:
 	main.base.equip_requested.emit("primary", "frame_bulwark")
 	check(Profile.equipped("vehicle") == "bike_scrapper" and Profile.equipped("primary") == "dmr_longshot",
 			"a parked bike can be picked, and gear cannot go in the wrong slot")
-	# Suiting up in the bay: real input on its control post.
-	var unsuited: Actor = main.base.player
-	_face_display(main.base.player, main.base.suit_bay)
-	main.controller.yaw = main.base.player.cmd.yaw
-	main.controller.pitch = main.base.player.cmd.pitch
-	await frames(3)
-	check(main.base.player.find_interactable() == main.base.suit_bay
-			and main.base.suit_bay.get_prompt().begins_with("[F] Suit up"), "the suit-up bay can be walked up to")
-	Input.action_press("interact")
-	await frames(3)
-	Input.action_release("interact")
+	# No bay to walk to: what you picked is already on you, and the controls
+	# and camera went with you into the new body.
 	await frames(3)
 	var suited: Actor = main.base.player
-	check(main.base.suited and suited != unsuited and suited.weapons.size() > 0, "using the bay suits you up")
+	check(main.base.suited and suited.weapons.any(func(w: Weapon) -> bool: return w.item_id == "dmr_longshot"),
+			"the DMR you picked off the rack is in your hands at once")
 	check(main.controller.actor == suited and main.controller.camera.current,
-			"the controls and camera follow you into your suit")
+			"the controls and camera follow you into your new gear")
+	check(main.base.wall_mirror.viewer == suited and main.base.wall_mirror.eye == main.controller.camera,
+			"the wall mirror shows you")
 	check(main.hub.equipped("primary") == "dmr_longshot", "the locker shows the loadout chosen in the base")
 	# Every station opens its screen over the room, and Esc steps away.
 	for id: String in HomeBase.STATIONS:

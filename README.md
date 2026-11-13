@@ -106,12 +106,12 @@ portal you open too, and you all land at the world's gate outpost. Portals
 only open in safe places (your base and the plaza), never in a fight:
 coming back still means signing out.
 
-The **suit-up bay** in the deploy area by the door puts your loadout on you: use its
-control post and the bay's arms fit your armor, rig and weapons, so you can
-see what you are taking out before you deploy.
+In your own base you always wear your loadout: equip something and it is on
+you at once, and you come home still wearing it. A **mirror** hangs on the
+wall by the door so you can see what you are taking out.
 
 Your bikes are parked in the **garage** off the right of the room. Through the
-door in the back wall is the **firing range**: once suited up, your weapons
+door in the back wall is the **firing range**: your weapons
 work past its firing line with endless ammo, targets stand, slide and fly at
 set distances, and a board keeps your score. Nothing there is lost or earned.
 
@@ -135,10 +135,12 @@ The **Uplink** console in your base is only for the other cases:
   The door remembers it: from then on it leads to that server, and falls back
   to a server of your own if that one does not answer.
 - **Host here and head out** points the door back at a server of your own.
-- Joining a server puts you in its plaza, the Concourse (see below). A world's
-  lobby is your home base again, but it shows the stash and loadout **the
-  server keeps for you**, which is separate from your solo stash. Pick your
-  gear there and open a portal from your watch to **deploy online**. Dying keeps you in
+- Joining a server puts you in its plaza, the Concourse (see below). On a
+  server your own door started you are the same player as at home: you
+  arrive in the loadout you left your base with, and what you do there is in
+  your base when you come back. **Someone else's server** keeps a stash and
+  loadout of its own, separate from yours at home; the Quarters door there
+  is your base on that stash, where you pick your gear. Dying keeps you in
   the world: press Enter to drop back in. Signing out (L) brings you back to
   the Concourse (or to the lobby base on a server without one).
 - The server knows you by your name plus a private key your game creates the
@@ -199,9 +201,10 @@ A bike in your loadout rides on your watch as a toy: throw it down to ride aroun
 
 Walk into a glowing pad and press **E** to use it:
 
-- **World gates** (north): each leads to that world's lobby, where you set
-  your loadout and deploy. After a run, or when you leave the lobby, you are
-  back in the Concourse. A sign over each gate says how that world is doing
+- **World gates** (north): each drops you straight into that world in the
+  loadout you are wearing. After a run you are back in the Concourse, in
+  front of the gate you took (coming back from your base or the arena, in
+  front of their doors). A sign over each gate says how that world is doing
   right now: its war level, how many players are in it, the biggest bounty
   on anyone's head and any event running. It reddens as the war heats up.
 - **Quarters** (west): the door to your home base. Its door leads back here.
