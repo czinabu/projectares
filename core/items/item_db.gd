@@ -237,7 +237,8 @@ func _ready() -> void:
 			"A shockwave that hurts and staggers everyone near you.")
 
 	# Helmets. The visor is the wearer's display in first person, and `mode`
-	# picks what it can do (see `Visor`). Mk2 helmets are loot only.
+	# picks what it can do (see `Visor`). Mk2 helmets are never sold or
+	# dropped: they are crafted from blueprints (DESIGN.md section 10).
 	register("visor_scav", "Scav Visor", Rarity.COMMON, 0, ["helmet", "visor_plain", "starter"],
 			{"mode": "", "glass_color": Color(0.8, 0.75, 0.6)},
 			"A cracked visor. Shows how hurt you are and nothing else.")
