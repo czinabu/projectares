@@ -360,9 +360,11 @@ without Caleb, and update the gap list when a PR closes a row.
   its health strip and system light on the back of the head
   (`ActorSkin._update_vitals`, `helmet_light`), where a pack or a slung gun
   never covers them. The glass carries
-  only your always-in-view readings (the health arc, and in flight the heat
-  gauge, rig cue, squad markers and landing warning at its edges, per
-  DESIGN.md sections 3 and 5); do not put the map or standing there, they
+  only your always-in-view readings (the health arc with armor and stamina
+  inside it and the ability's state under it, and with a flight rig the
+  heat gauge and rig cue low on the right, `VisorHud._draw_vitals` and
+  `_draw_heat`; squad markers and the landing warning are still to come,
+  per DESIGN.md sections 3 and 5); do not put the map or standing there, they
   stay on the watch. Mk2
   helmets are loot only. Check the glass by eye with
   `visual_check.tscn -- <dir> --visors-only`.
@@ -516,8 +518,16 @@ without Caleb, and update the gap list when a PR closes a row.
   the map and pings, landing choices and the pack. The phone is for
   settings, talking to friends and players, and information (news, the war
   feed). A new in-raid action goes on the watch; a new social or info
-  feature is a phone app. Until the always-in-view readings are built (see
-  `docs/design-gaps.md`), the watch still shows them.
+  feature is a phone app. The watch is a card-sized hologram of icons, one
+  per thing it holds (`Hud.watch_slots`, `Hud.Wrist.SLOTS`): the icon you
+  look at opens with one short line, and controls are glyphs (wheel, click,
+  key cap), never words. Where you look is `PlayerController.watch_glance`
+  (sideways mouse moves the eyes across the card before the head). A new
+  watch feature is a new slot, not a new line of text. In third person the
+  card rises off the worn watch with a glow on the arm; it is never hung in
+  front of the camera. Vitals go on the card only where the visor cannot
+  show them (no helmet, or third person). Check it by eye with
+  `visual_check.tscn -- <dir> --watch-only`.
 - Money (`core/economy/`): the rules live once, in `economy.gd` (static, like
   `StashRules`), shared by `Profile` and `StashService`. Online, `credits`
   lives on the server's account and only changes there: through

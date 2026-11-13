@@ -35,8 +35,8 @@ rows marked **pre-playtest** come before the friends playtest.
 
 | Item | State | Notes |
 | --- | --- | --- |
-| Pack, standing, strongpoints on the watch | Built | `Hud.Wrist`. Standing and strongpoints move to the map and pings page. |
-| Vitals, heat and ammo always in view, off the watch | Partly | Helmet back strip and the visor's thin health arc exist. Missing: armor and stamina on the arc, the heat gauge at the visor edge, ammo on the gun's display. Today the watch still shows all three, and stays until these land. |
+| Watch card: icons for map, pack, vehicle, heavy weapon, artifact, sign-out/banking | Built | `Hud.Wrist` and `Hud.watch_slots`: a card-sized hologram over the wrist; the icon you look at opens (`PlayerController.watch_glance`). Standing and strongpoints are on the map icon until the map and pings page exists. |
+| Vitals, heat and ammo always in view, off the watch | Built | First person with a helmet: health, armor and stamina arcs, heat gauge and the ability's state at the visor edges (`VisorHud._draw_vitals`, `_draw_heat`). Ammo is on the gun's counter. With no helmet, or in third person, the watch card carries the vitals as a thin strip. |
 | Map and pings page | Missing | Design: the watch holds the map and squad pings. |
 | Banking readout on the watch | Missing | Banking happens at depots; the watch should show what is banked. Comes with banking. |
 | Landing choices | Built | |
@@ -70,7 +70,7 @@ rows marked **pre-playtest** come before the friends playtest.
 | Boots as a skimming rig with height bands and air dashes | Missing | Today three quick kicks. PR 2. |
 | Air aim penalty, waived in each rig's steady state | Missing | No airborne spread in `Gun`. PR 1. |
 | Overheat cuts the rig out until heat is back to 35 | Built | `recover_heat` 35. |
-| Flight HUD, first person: heat gauge, rig cue, squad markers and landing warning at the visor edges | Missing | New in DESIGN.md section 5. Extends `VisorHud`; the squad markers use the clan or team side. **Pre-playtest**, with the rig rework. |
+| Flight HUD, first person: heat gauge, rig cue, squad markers and landing warning at the visor edges | Partly | Heat gauge and rig cue built (`VisorHud._draw_heat`); squad markers and landing warning missing. | New in DESIGN.md section 5. Extends `VisorHud`; the squad markers use the clan or team side. **Pre-playtest**, with the rig rework. |
 | Flight HUD, third person: heat and cue on the pack screen, glowing vents, landing warning pulse | Missing | The pack already carries a screen (`ActorSkin.stow_place` keeps it clear); vents are new rig art. With the row above. |
 
 ## Heavy weapons and artifacts
