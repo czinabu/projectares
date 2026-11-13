@@ -18,7 +18,7 @@ rows marked **pre-playtest** come before the friends playtest.
 | Hub spectating screens and bounty board | Partly | Heat signs over the world gates already show war level, players, top bounty and events (`world_status`). Missing: a most-wanted board, arena results, live arena video (later). First hub activity. |
 | Hub ring races and time trials, with per-rig and bike leaderboards | Missing | Second hub activity, after the hub is expanded. |
 | Hub toy RC arena | Missing | Later; a separate little game. |
-| Home base with armory wall, garage, trophies | Built | `core/base`: one armory rack for every weapon (long guns, sidearms, melee) in an alcove with the gunsmith bench and locker, a suit-up bay, a garage off the room, trophy shelf, consoles. |
+| Home base with armory wall, garage, trophies | Built | `core/base`: one armory rack for every weapon (long guns, sidearms, melee) in an alcove with the locker and a gunsmith workshop off it, a suit-up bay, a garage off the room, trophy shelf, consoles. |
 | Heavy weapons stacked on the armory wall | Missing | Power weapons cannot be stored (`StashRules.storable` refuses the `power` tag). **Pre-playtest**, with the heavy chamber. |
 | Home base upgrades: a starter bunker that grows, bought with scrip at sealed bulkheads | Partly | `core/base/base_upgrades.gd`: 13 upgrades in five tracks, owned ids kept on the account (`Profile` solo, `StashService` online, server-checked `buy_upgrade`), `BaseLayout.spots` and `HomeBase` follow them, dev mode keeps a full base. Missing: the heavy weapon wall, lounge and teleporter pad are shown sealed until their rooms are built; the starter room is not yet smaller than the full one; the gear and trophy halls add spots in the main room, not rooms of their own; prices are placeholders. |
 | Base firing range and flight tunnel (target drones, endless heavy-weapon ammo, nothing lost) | Partly | `HomeBase`: a 30 m range behind the back wall with standing, sliding and flying targets, a score board, endless ammo past the firing line, no damage and no mastery. Missing: heavy weapons (they never reach the base yet) and a proper flight tunnel. |
@@ -36,9 +36,11 @@ rows marked **pre-playtest** come before the friends playtest.
 
 | Item | State | Notes |
 | --- | --- | --- |
-| Watch card: icons for map, pack, vehicle, heavy weapon, artifact, sign-out/banking | Built | `Hud.Wrist` and `Hud.watch_slots`: a card-sized hologram over the wrist; the mouse wheel steps across the icons (`PlayerController.watch_focus`) and the open one shows its line. Standing and strongpoints are on the map icon until the map and pings page exists. |
+| Watch card in three tabs: Summon (weapons, vehicles, artifacts, with the pack's line), Status (map, standing), Mission (contract, ping, sign-out/banking) | Built | `Hud.Wrist.TABS` and `Hud.watch_slots`: a card-sized hologram over the wrist; the mouse wheel steps across the icons tab after tab (`PlayerController.watch_focus`), turning through the weapons, toys and artifacts carried on their icons, and the open one shows its line. Contextual pop-ups only while they matter: the death report and landing choices when down, the rig's cue while flying (where the visor is not showing it), a brief notice. |
+| Summon carousel: weapons materialize out of the pack | Built | MVP. `Raid.summon` (server only, `NetSession.summon`) swaps a gun or melee weapon from the pack into the hand in place of the one worn in its slot, which goes into the pack with its rounds. Only what is carried, never the stash. `Loadout.summon_time` (heavier is slower; the weapon cannot be used until it is solid) and a watch rest of `Loadout.summon_cooldown`. The weapon digitizes in on the one body (`ActorSkin._update_materialize`), so both views and everyone see it. Missing: its own sound, armor or rig swaps. |
+| Contract tracker on the watch | Built | On the Mission tab (`Hud.contract_slot`): the job nearest done, with this life's progress on top. |
 | Vitals, heat and ammo always in view, off the watch | Built | First person with a helmet: health, armor and stamina arcs, heat gauge and the ability's state at the visor edges (`VisorHud._draw_vitals`, `_draw_heat`). Ammo is on the gun's counter. With no helmet, or in third person, the watch card carries the vitals as a thin strip. |
-| Map and pings page | Missing | Design: the watch holds the map and squad pings. |
+| Map and pings page | Partly | Squad ping built: a click on the ping icon marks where you look for your side (`Raid.ping`, sent only to the pinger's side by `NetSession`, drawn as a column of light by `Hud.ping_mark`). The map is still a line of text on the Status tab. |
 | Banking readout on the watch | Missing | Banking happens at depots; the watch should show what is banked. Comes with banking. |
 | Landing choices | Built | |
 | Vehicle carousel (toys) | Built | Pick, throw, unpack, pack back; holds two. |
@@ -52,7 +54,7 @@ rows marked **pre-playtest** come before the friends playtest.
 
 | Item | State | Notes |
 | --- | --- | --- |
-| Primary with attachments | Built | Four attachment slots, gunsmith bench. |
+| Primary with attachments | Built | Four attachment slots, fitted at the gunsmith bench: one gun on the bench, the wheel turns through guns and each slot's attachments. |
 | Sidearm | Built | Key 2, drawn automatically when the primary runs dry. |
 | Melee weapon | Built | Six types, directional, block and parry. |
 | Melee against guns: dash-strike, back strike, timed bullet deflect, armor-piercing blades, silent kills, one/two-handed classes | Built | `MeleeWeapon` (`dash_range`, `back_strike_mult`, `deflect_window`, `guard_rearm`, `armor_pierce`, the hold tags), `Combat.noise`. Still to come: interiors that favour blades, more gun ammo pressure, bots using the dash-strike. |

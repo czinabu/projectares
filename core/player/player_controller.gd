@@ -17,10 +17,12 @@ signal drop_requested(index: int)
 
 ## The player threw the toy vehicle in their hand.
 signal toy_throw_requested(item_id: String)
+## The player picked a weapon in their pack on the watch: materialize it.
+signal summon_requested(item_id: String)
+## The player pinged where they are looking from the watch.
+signal ping_requested
 ## The player asked to pack the vehicle they are looking at onto the watch.
 signal pack_requested
-## The player clicked the watch's pack icon: swap helmets from the pack.
-signal helmet_requested
 
 enum ViewMode { FIRST, THIRD }
 ## How the melee side is picked: by flicking the mouse, or by the movement keys.
@@ -60,6 +62,7 @@ var phone_read_distance := 0.9
 var phone_read_side := 0.72
 var phone_read_lift := 0.2
 var phone_read_fov := 32.0
+var phone_read_offset := 0.1
 var phone_read_rate := 6.0
 ## How far in to the phone the third-person camera is now (0..1).
 var phone_read := 0.0
@@ -143,6 +146,10 @@ var watch_index := 0
 ## while you read the card. View only.
 var watch_focus: int = Hud.Wrist.SLOTS.find("vehicle")
 var watch_focus_moved := false
+## Which weapon and which artifact are picked out on the raised watch's
+## carousel (`Hud.weapon_entries`, `Hud.artifact_entries`), counting from 0.
+var weapon_pick := 0
+var artifact_pick := 0
 ## The artifact icon was clicked; sent as `artifact_pressed` next command.
 var _artifact_click := false
 var _toy_node: Node3D
@@ -275,22 +282,34 @@ func is_picking_toys() -> bool:
 	return is_browsing_toys() and (not watch_focus_moved or watch_focus == Hud.Wrist.SLOTS.find("vehicle"))
 
 
-## True while the card is open on the artifact icon with an artifact on it:
-## fire uses the artifact (`ActorCommand.artifact_pressed`).
+## True while the wheel has put the card on icon `id` (`Hud.Wrist.SLOTS`).
+func is_watch_on(id: String) -> bool:
+	return is_watch_up() and watch_focus_moved and watch_focus == Hud.Wrist.SLOTS.find(id)
+
+
+## True while the card is open on the artifact icon with the attuned artifact
+## picked out: fire uses it (`ActorCommand.artifact_pressed`).
 func is_on_artifact() -> bool:
-	return is_watch_up() and watch_focus_moved and watch_focus == Hud.Wrist.SLOTS.find("artifact") \
-			and actor.artifact.enabled
+	return is_watch_on("artifact") and actor.artifact.enabled and artifact_pick == 0
 
 
-## True while the card is open on the pack icon: fire swaps helmets, putting
-## on one carried in the pack or taking the worn one off (`Raid.swap_helmet`).
-func is_on_pack() -> bool:
-	return is_watch_up() and watch_focus_moved and watch_focus == Hud.Wrist.SLOTS.find("pack")
+## The weapons on the raised watch's carousel (`Hud.weapon_entries`).
+func watch_weapons() -> Array[Dictionary]:
+	if actor == null or not is_instance_valid(actor):
+		return []
+	return Hud.weapon_entries(actor)
+
+
+## True while the card is open on the weapon icon with weapons to pick from:
+## the wheel turns through them and fire draws or summons the picked one.
+func is_picking_weapons() -> bool:
+	return is_watch_on("weapon") and not is_riding() and not watch_weapons().is_empty()
 
 
 ## Fire with the watch up: packs the vehicle being looked at onto the watch,
-## takes the picked toy into the hand, uses the artifact, or swaps helmets.
-## False if the watch had no use for the click, and it is an ordinary shot.
+## takes the picked toy into the hand, draws or summons the picked weapon,
+## uses the artifact, or pings. False if the watch had no use for the
+## click, and it is an ordinary shot.
 func click_watch() -> bool:
 	if pack_target() != null:
 		pack_requested.emit()
@@ -298,13 +317,36 @@ func click_watch() -> bool:
 	if is_picking_toys():
 		take_picked_toy()
 		return true
+	if is_picking_weapons():
+		take_picked_weapon()
+		return true
 	if is_on_artifact():
 		_artifact_click = true
 		return true
-	if is_on_pack():
-		helmet_requested.emit()
+	if is_watch_on("ping"):
+		ping_requested.emit()
 		return true
 	return false
+
+
+## True while fire works the raised watch instead of the weapon.
+func watch_takes_fire() -> bool:
+	return is_picking_toys() or pack_target() != null or is_picking_weapons() or is_on_artifact() \
+			or is_watch_on("ping")
+
+
+## Draws the weapon picked on the carousel if it is worn, or asks the world
+## to materialize it out of the pack, and lowers the wrist.
+func take_picked_weapon() -> void:
+	var entries := watch_weapons()
+	if entries.is_empty():
+		return
+	var entry := entries[clampi(weapon_pick, 0, entries.size() - 1)]
+	if int(entry.index) >= 0:
+		_pending_switch = int(entry.index)
+	else:
+		summon_requested.emit(entry.id)
+	wrist_raised = false
 
 
 ## The mouse wheel: the next weapon, or with the watch up, the next icon on
@@ -322,27 +364,65 @@ func is_watch_up() -> bool:
 	return wrist_raised and actor != null and is_instance_valid(actor) and not actor.is_dead
 
 
-## Moves the watch card's open icon `step` along (`Hud.Wrist.SLOTS`). On the
-## vehicle icon with toys to pick, the wheel turns through them first, and
-## steps off the icon past the first or last toy. Stops at the card's ends.
+## How many things the wheel turns through on icon `id` before stepping on:
+## the weapons, the toys or the artifacts carried. 0 for a plain icon.
+func watch_entries(id: String) -> int:
+	match id:
+		"weapon":
+			return watch_weapons().size() if not is_riding() else 0
+		"vehicle":
+			return watch_toys().size() if is_browsing_toys() else 0
+		"artifact":
+			return Hud.artifact_entries(actor).size()
+	return 0
+
+
+func _watch_pick(id: String) -> int:
+	match id:
+		"weapon":
+			return weapon_pick
+		"vehicle":
+			return watch_index
+		"artifact":
+			return artifact_pick
+	return 0
+
+
+func _set_watch_pick(id: String, pick: int) -> void:
+	match id:
+		"weapon":
+			weapon_pick = pick
+		"vehicle":
+			watch_index = pick
+		"artifact":
+			artifact_pick = pick
+
+
+## Moves the watch card's open icon `step` along (`Hud.Wrist.SLOTS`), tab
+## after tab. On an icon that holds several things (weapons, toys,
+## artifacts) the wheel turns through them first, and steps off the icon
+## past the first or last. Stops at the card's ends.
 func step_watch(step: int) -> void:
 	if step == 0:
 		return
-	var count: int = Hud.Wrist.SLOTS.size()
-	var vehicle: int = Hud.Wrist.SLOTS.find("vehicle")
-	watch_focus = clampi(watch_focus, 0, count - 1)
+	var slots: Array = Hud.Wrist.SLOTS
+	watch_focus = clampi(watch_focus, 0, slots.size() - 1)
 	watch_focus_moved = true
-	var toys := watch_toys().size() if is_browsing_toys() else 0
-	if watch_focus == vehicle and toys > 1:
-		var next := watch_index + signi(step)
-		if next >= 0 and next < toys:
-			watch_index = next
+	var here: String = slots[watch_focus]
+	var held := watch_entries(here)
+	if held > 1:
+		var next := clampi(_watch_pick(here), 0, held - 1) + signi(step)
+		if next >= 0 and next < held:
+			_set_watch_pick(here, next)
 			return
 	var was := watch_focus
-	watch_focus = clampi(watch_focus + signi(step), 0, count - 1)
-	# Coming onto the vehicles from the right starts on the last toy.
-	if watch_focus == vehicle and was != vehicle and toys > 0:
-		watch_index = 0 if step > 0 else toys - 1
+	watch_focus = clampi(watch_focus + signi(step), 0, slots.size() - 1)
+	# Coming onto a carousel from the right starts on its last entry.
+	if watch_focus != was:
+		var onto: String = slots[watch_focus]
+		var count := watch_entries(onto)
+		if count > 0:
+			_set_watch_pick(onto, 0 if step > 0 else count - 1)
 
 
 ## Takes the picked toy off the raised watch, and lowers the wrist to throw.
@@ -494,7 +574,7 @@ func _physics_process(delta: float) -> void:
 	cmd.secondary_pressed = captured and Input.is_action_just_pressed("alt_fire")
 	if held_toy != "":
 		_use_toy_hand(cmd)
-	elif is_picking_toys() or pack_target() != null or is_on_artifact() or is_on_pack():
+	elif watch_takes_fire():
 		# With the watch up and something for it to do, fire works the watch.
 		if cmd.primary_pressed:
 			click_watch()
@@ -812,7 +892,10 @@ func _read_phone(delta: float) -> void:
 	var centre := holo.global_position
 	var heading := Basis.from_euler(Vector3(0.0, yaw, 0.0))
 	var spot := actor.get_eye_position() + heading * Vector3(phone_read_side, phone_read_lift, phone_read_distance)
-	var reading := Transform3D(Basis.looking_at(centre - spot, Vector3.UP), spot)
+	# Aim a little past its left edge so the panel sits right of the
+	# crosshair, off the middle of the scene and away from the head.
+	var aim_at := centre - heading * Vector3(phone_read_offset, 0.0, 0.0)
+	var reading := Transform3D(Basis.looking_at(aim_at - spot, Vector3.UP), spot)
 	camera.global_transform = camera.global_transform.interpolate_with(reading, w)
 
 

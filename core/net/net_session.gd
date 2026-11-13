@@ -363,6 +363,7 @@ func _start_server_raid() -> void:
 	raid.toy_thrown.connect(func(_actor: Actor, item_id: String, from: Vector3, toy_velocity: Vector3) -> void:
 		for peer in _joined_peers:
 			_toy.rpc_id(peer, item_id, from, toy_velocity))
+	raid.pinged.connect(_on_server_pinged)
 	raid.squad_spawn = squad_spawn
 	if lag_compensation:
 		raid.rewind = _seen_positions
@@ -467,6 +468,10 @@ func _on_server_actor_spawned(actor: Actor) -> void:
 	actor.helmet_changed.connect(func(item_id: String) -> void:
 		for peer in _joined_peers:
 			_helmet_changed.rpc_id(peer, id, item_id))
+	# A weapon summoned from the watch is shown to all.
+	actor.weapon_swapped.connect(func(item_id: String, mag: int, reserve: int) -> void:
+		for peer in _joined_peers:
+			_weapon_swapped.rpc_id(peer, id, item_id, mag, reserve))
 	for peer in _joined_peers:
 		_send_spawn(peer, actor)
 
@@ -547,7 +552,9 @@ func _send_vehicle(peer: int, id: int) -> void:
 func _send_watch(actor: Actor) -> void:
 	var peer: int = _actor_peer.get(actor, 0)
 	if peer != 0 and peer in _joined_peers and raid != null:
-		_watch.rpc_id(peer, raid.stowed_for(actor), raid.toy_wait(actor))
+		var state := raid.state_for(actor)
+		_watch.rpc_id(peer, raid.stowed_for(actor), raid.toy_wait(actor), raid.summon_wait(actor),
+				state.summon_wait_total if state != null else 0.0)
 
 
 ## Tells a player their contract counters for this life. Only the owner
@@ -839,8 +846,6 @@ func _send_spawn(peer: int, actor: Actor) -> void:
 		if power >= 0:
 			var gun := actor.weapons[power] as Gun
 			data["power"] = [gun.item_id, gun.ammo_in_mag, gun.reserve_ammo]
-		# The helmet worn now, which may not be the one deployed with.
-		data["helmet"] = actor.visor.item_id if actor.visor.enabled else ""
 		if actor.has_meta("appearance"):
 			data["look"] = actor.get_meta("appearance")
 		if actor.clan_tag != "":
@@ -1409,14 +1414,38 @@ func _request_toy(item_id: String) -> void:
 		raid.throw_toy(actor, item_id)
 
 
-## In the world: swap helmets from the pack (`Raid.swap_helmet`).
+## In the world: materialize a weapon out of the pack (the watch's summon).
+## The server checks the pack it keeps, never anything the client says it has.
 @rpc("any_peer", "call_remote", "reliable")
-func _request_helmet() -> void:
+func _request_summon(item_id: String) -> void:
 	if not is_server or raid == null:
 		return
 	var actor: Actor = _peer_actor.get(_api.get_remote_sender_id())
 	if actor != null and is_instance_valid(actor):
-		raid.swap_helmet(actor)
+		raid.summon(actor, item_id)
+
+
+## In the world: ping the spot being looked at for your side. The server
+## reads the aim from the actor it simulates.
+@rpc("any_peer", "call_remote", "reliable")
+func _request_ping() -> void:
+	if not is_server or raid == null:
+		return
+	var actor: Actor = _peer_actor.get(_api.get_remote_sender_id())
+	if actor != null and is_instance_valid(actor):
+		raid.ping(actor)
+
+
+## A player pinged a spot: they and their side are told, nobody else.
+func _on_server_pinged(pinger: Actor, at: Vector3) -> void:
+	if not _ids.has(pinger):
+		return
+	for peer in _joined_peers:
+		var viewer: Actor = _peer_actor.get(peer)
+		if viewer == null or not is_instance_valid(viewer):
+			continue
+		if viewer == pinger or Visor.allied(pinger, viewer):
+			_ping.rpc_id(peer, _ids[pinger], at)
 
 
 ## Drop into the server's world: from the lobby, or again after a death.
@@ -1439,10 +1468,16 @@ func pack_vehicle() -> void:
 		_request_toy.rpc_id(1, "")
 
 
-## In the world: ask the server to swap helmets from your pack.
-func swap_helmet() -> void:
+## In the world: ask the server to materialize a weapon out of your pack.
+func summon(item_id: String) -> void:
+	if _is_connected() and my_actor_id >= 0 and not _can_redeploy and item_id != "":
+		_request_summon.rpc_id(1, item_id)
+
+
+## In the world: ask the server to ping where you are looking for your side.
+func ping() -> void:
 	if _is_connected() and my_actor_id >= 0 and not _can_redeploy:
-		_request_helmet.rpc_id(1)
+		_request_ping.rpc_id(1)
 
 
 ## In the world: ask the server to start your sign-out, or to call it off.
@@ -1501,6 +1536,24 @@ func _helmet_changed(id: int, item_id: String) -> void:
 	Loadout.wear_helmet(actor, item_id)
 
 
+## Client: someone materialized a weapon out of their pack in place of the
+## one they wore (the watch's summon). The server decided it and keeps the
+## packs; this only makes the weapons here match.
+@rpc("authority", "call_remote", "reliable")
+func _weapon_swapped(id: int, item_id: String, mag: int, reserve: int) -> void:
+	var actor: Actor = _actors.get(id)
+	if actor != null and is_instance_valid(actor) and Loadout.summonable(item_id):
+		Loadout.swap_weapon(actor, item_id, mag, reserve)
+
+
+## Client: someone on your side (or you) pinged a spot.
+@rpc("authority", "call_remote", "reliable")
+func _ping(id: int, at: Vector3) -> void:
+	var actor: Actor = _actors.get(id)
+	if raid != null and actor != null and is_instance_valid(actor) and at.is_finite():
+		raid.pinged.emit(actor, at)
+
+
 @rpc("authority", "call_remote", "reliable")
 func _spawn(id: int, kind: String, shown_name: String, node_name: String, at: Vector3, yaw: float,
 		data: Dictionary) -> void:
@@ -1524,9 +1577,6 @@ func _spawn(id: int, kind: String, shown_name: String, node_name: String, at: Ve
 		var power: Variant = data.get("power")
 		if power is Array and power.size() == 3 and ItemDB.has_tag(str(power[0]), "power"):
 			Loadout.set_power(actor, power[0], int(power[1]), int(power[2]))
-		var helmet: Variant = data.get("helmet")
-		if typeof(helmet) == TYPE_STRING and helmet != actor.visor.item_id:
-			Loadout.wear_helmet(actor, helmet)
 		actor.weapons_locked = raid.world.safe_zone
 		Raid.MasteryTracker.apply_variants(actor, data.get("picks", {}))
 		raid.world.on_spawn(actor)
@@ -1953,7 +2003,7 @@ func _tally(counts: Dictionary) -> void:
 
 ## What is on your watch, and how long until you can throw again.
 @rpc("authority", "call_remote", "reliable")
-func _watch(stowed: Array, wait: float) -> void:
+func _watch(stowed: Array, wait: float, summon_wait := 0.0, summon_total := 0.0) -> void:
 	var me: Actor = _actors.get(my_actor_id)
 	var state := raid.state_for(me) if raid != null and me != null else null
 	if state == null:
@@ -1963,6 +2013,8 @@ func _watch(stowed: Array, wait: float) -> void:
 		if typeof(id) == TYPE_STRING and ItemDB.has_tag(id, "vehicle"):
 			state.stowed.append(id)
 	state.toy_ready_at = raid.clock + maxf(wait, 0.0)
+	state.summon_ready_at = raid.clock + clampf(summon_wait, 0.0, 120.0)
+	state.summon_wait_total = clampf(summon_total, 0.0, 120.0)
 	raid.watch_changed.emit(me)
 
 

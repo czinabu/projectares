@@ -18,6 +18,9 @@ signal heard(at: Vector3, source: Actor)
 signal power_changed(item_id: String, mag: int, reserve: int)
 ## The helmet on the head changed (`Loadout.wear_helmet`); "" is bare-headed.
 signal helmet_changed(item_id: String)
+## A weapon was materialized out of the pack in place of the one worn in its
+## slot (`Loadout.swap_weapon`, the watch's summon).
+signal weapon_swapped(item_id: String, mag: int, reserve: int)
 
 const LAYER_WORLD := 1
 const LAYER_ACTORS := 2
@@ -117,6 +120,13 @@ var is_dead := false
 ## abilities and healing do nothing.
 var weapons_locked := false
 var heal_time_left := 0.0
+## Seconds until a weapon summoned from the watch has finished materializing
+## in the hand (it cannot be used until then), and how long that one takes.
+var materialize_left := 0.0
+var materialize_time := 0.0
+## Rounds left in guns put away in the pack by a summon: item id ->
+## [magazine, reserve]. A gun summoned back comes as it was put away.
+var stowed_rounds := {}
 var airborne_time := 0.0
 ## While staggered the actor cannot attack, block, dash or jump.
 var stagger_left := 0.0
@@ -810,9 +820,10 @@ func _simulate_weapons(delta: float) -> void:
 	if cmd.switch_weapon != -1 and switch_to >= -1 and switch_to < weapons.size() \
 			and switch_to != active_weapon_index:
 		_draw_weapon(switch_to)
+	materialize_left = maxf(0.0, materialize_left - delta)
 	var weapon := get_active_weapon()
 	if weapon and heal_time_left <= 0.0 and stagger_left <= 0.0 and not weapons_locked \
-			and not visor.is_zoomed():
+			and not visor.is_zoomed() and materialize_left <= 0.0:
 		# Run dry with the trigger held: draw the sidearm instead of reloading.
 		# That pull only draws it; the next shot comes from the sidearm.
 		var gun := weapon as Gun

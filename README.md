@@ -45,7 +45,6 @@ skies, animated models and effects (see "How it looks" below).
 | Raise or lower the holographic watch on your wrist | X |
 | Move across the watch's icons (watch up) | Mouse wheel |
 | Use your artifact (watch up, on the artifact icon) | Click |
-| Put on a helmet from your pack, or take yours off (watch up, on the pack icon) | Click |
 | Phone at Settings (also frees the mouse); Esc again closes it | Esc |
 
 The jetpack runs on heat. Overheat it and you fall until it cools. Rooftop
@@ -84,10 +83,13 @@ a tag over it says what it is and what it is worth.
 
 Every weapon you own hangs on one rack in the **armory**, the alcove off the
 left of the room: long guns on its back wall, sidearms on one side and melee
-on the other. The locker stands at its way in. The gunsmith bench (in the
-middle of the armory) holds your attachments on its
-pegboard and your primary in its vise. Look at an attachment and press **E**
-to fit it; a tablet beside the vise lists what the fitted kit changes.
+on the other. The locker stands at its way in. The gunsmith bench has its
+own workshop corner just inside, on the left, with the fabricator beside it.
+It holds one gun at a time: press **F** on it and the view moves in. Scroll
+to turn through your guns and click to pick one, then scroll between its
+attachment slots, click one, scroll through what you own for it (shown on
+the gun as you go) and click to fit it. Right click steps back, **Esc**
+leaves. The card behind the gun lists what the fitted kit changes.
 
 You start in a **starter bunker** and the base grows as you spend scrip on
 it. What you do not own yet is sealed, with a panel in the room that names
@@ -345,8 +347,8 @@ you have.
   felt by everyone it catches, Threat Sense tells whoever it shows, and a
   thermal visor glows up close. With no helmet the view is bare.
   A helmet is worn on your head, each type its own shape, and seen the same
-  by everyone. Loot one and put it on mid-raid from the watch's pack icon
-  (the old one goes in your pack); worn or carried, it drops when you die.
+  by everyone. Loot one and put it on mid-raid from the watch's weapon
+  carousel, like summoning a weapon (the old one goes in your pack); worn or carried, it drops when you die.
 - Six melee weapons, each with its own job. The Gutter Knife is quick and short
   and cuts from behind for more than double. The Splitter Axe drains a guard
   so fast that three chops break it. The Lancer Spear (rooftop loot) has the

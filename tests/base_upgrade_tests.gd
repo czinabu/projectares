@@ -153,9 +153,9 @@ static func _bunker(t: Node) -> void:
 	await t.frames(20)
 	t.check(base.upgrades.is_empty() and _count(base, "rack_guns") == 4 and _count(base, "rack_sidearms") == 2
 			and _count(base, "rack_melee") == 2 and _count(base, "bay") == 1 and _count(base, "armor_stand") == 1
-			and _count(base, "rig_stand") == 1 and _count(base, "gunsmith") == 4 and _count(base, "supplies") <= 3
+			and _count(base, "rig_stand") == 1 and _count(base, "gunsmith") == 0 and _count(base, "supplies") <= 3
 			and _count(base, "chip_case") == 0 and _count(base, "trophy") == 0,
-			"a starter bunker shows a short rack, one bay, one stand of each kind and a small pegboard")
+			"a starter bunker shows a short rack, one bay and one stand of each kind")
 	var nook_wall := -base.room_size.x * 0.5 - base.nook_depth
 	var in_nook := true
 	var all_inside := true
@@ -164,9 +164,26 @@ static func _bunker(t: Node) -> void:
 		if BaseLayout.is_armory(display.kind):
 			in_nook = in_nook and base.in_armory(display.position) and display.position.x > nook_wall
 	t.check(in_nook and all_inside, "the starter rack hangs in the armory nook, in front of its sealed wall")
-	t.check(not base.in_armory(base.bench_transform().origin) and base.inside(base.bench_transform().origin)
-			and base.inside(base.spot_transform("gunsmith", 3).origin),
-			"the gunsmith bench stands in the room until the alcove opens")
+	t.check(base.in_workshop(base.bench_transform().origin) and base.inside(base.bench_transform().origin)
+			and base.in_workshop(base.station(HomeBase.CRAFT_ID).position),
+			"the starter bunker's bench and fabricator already stand in the workshop off the nook")
+	# The workshop opens off the nook, and only into it: the sealed alcove
+	# behind the nook's wall stays out of reach from the workshop too.
+	var p := base.player
+	for leg: Array in [[Vector3(-13.6, 0.1, 4.0), PI, "workshop"], [Vector3(-15.3, 0.1, 6.95), 0.0, "sealed"]]:
+		p.global_position = base.to_global(leg[0])
+		p.velocity = Vector3.ZERO
+		p.cmd.yaw = leg[1]
+		p.cmd.move = Vector2(0, 1)
+		await t.frames(50)
+		p.cmd.move = Vector2.ZERO
+		await t.frames(2)
+		var at := base.to_local(p.global_position)
+		if leg[2] == "workshop":
+			t.check(base.in_workshop(at), "you can walk from the nook into the workshop (%s)" % at)
+		else:
+			t.check(at.z > base.armory_size.z * 0.5 and at.x > -base.room_size.x * 0.5 - base.armory_size.x,
+					"the workshop does not lead past the nook's sealed wall (%s)" % at)
 	var shown: Array[String] = []
 	for gate in base.bulkheads:
 		shown.append(gate.id)
@@ -189,7 +206,6 @@ static func _bunker(t: Node) -> void:
 			and base.station("trader").get_prompt() == "[F] Trader and mastery bench: Buy and sell, pick mastery variants",
 			"the trader's console doubles as the mastery bench, the wardrobe's as the records")
 	# The firing range is shut.
-	var p := base.player
 	p.global_position = base.to_global(Vector3(0, 0.1, -6.5))
 	p.velocity = Vector3.ZERO
 	p.cmd.yaw = 0.0
@@ -313,7 +329,7 @@ static func _buying(t: Node) -> void:
 	for each in base.bulkheads:
 		left.append(each.id)
 	t.check(left.all(func(id: String) -> bool: return not BaseUpgrades.is_ready(id)) and _count(base, "bay") == 4
-			and _count(base, "gunsmith") > 4 and base.bench_name() == "Master bench" and _count(base, "trophy") > 0,
+			and _count(base, "gunsmith") == 0 and base.bench_name() == "Master bench" and _count(base, "trophy") > 0,
 			"a finished base has only the rooms still to be built left sealed (%s)" % [left])
 	base.queue_free()
 	await t.frames(2)

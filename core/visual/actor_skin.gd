@@ -19,6 +19,10 @@ const STANDS: Array[String] = ["idle", "idle_gun", "aim_gun", "idle_melee"]
 
 ## Drawn cloaked now (see `_update_cloak`), and the shared shimmer material.
 var _cloaked := false
+## The weapon model being drawn as it materializes (a watch summon), if any.
+var _materializing: Node3D
+var _materialize_mat: ShaderMaterial
+static var _materialize_shader: Shader
 static var _cloak_mat: Material
 
 ## How long a standing gun stays raised after the last shot, in seconds.
@@ -542,6 +546,7 @@ func _update(delta: float) -> void:
 	_update_phone()
 	_update_watch_glow(delta)
 	_update_cloak()
+	_update_materialize()
 	_aim_left = maxf(_aim_left - delta, 0.0)
 	var weapon := actor.get_active_weapon()
 	if phone_up():
@@ -1273,6 +1278,65 @@ void fragment() {
 		mat.shader = shader
 		_cloak_mat = mat
 	return _cloak_mat
+
+
+## A weapon summoned from the watch (`Loadout.swap_weapon`) digitizes into
+## the hand: its model fades in from nothing under a shimmer of light while
+## `Actor.materialize_left` runs down. It is the one weapon in the one hand,
+## so both views and everyone around see the same thing.
+func _update_materialize() -> void:
+	var weapon := actor.get_active_weapon()
+	var model: Node3D = weapon.visual if weapon != null and actor.materialize_left > 0.0 \
+			and weapon.visual != null and is_instance_valid(weapon.visual) else null
+	if _materializing != null and (model != _materializing or not is_instance_valid(_materializing)):
+		if is_instance_valid(_materializing):
+			_set_materialize(_materializing, 1.0)
+		_materializing = null
+	if model == null:
+		return
+	_materializing = model
+	_set_materialize(model, 1.0 - actor.materialize_left / maxf(actor.materialize_time, 0.01))
+
+
+## Draws `model` as `done` (0 to 1) materialized: 1 is the plain model.
+func _set_materialize(model: Node3D, done: float) -> void:
+	for node in model.find_children("*", "GeometryInstance3D", true, false):
+		var geometry := node as GeometryInstance3D
+		geometry.transparency = clampf(1.0 - done, 0.0, 1.0) * 0.9
+		geometry.material_overlay = materialize_material() if done < 1.0 else null
+	if _materialize_mat != null:
+		_materialize_mat.set_shader_parameter("done", done)
+
+
+## How far the weapon in hand has materialized, 0 to 1 (for checks).
+func materialized() -> float:
+	if _materializing == null or actor.materialize_time <= 0.0:
+		return 1.0
+	return clampf(1.0 - actor.materialize_left / actor.materialize_time, 0.0, 1.0)
+
+
+## The light a materializing weapon is drawn under: fine scanlines that
+## thin out as it becomes solid. One material per body, since each is at
+## its own point in the fade.
+func materialize_material() -> Material:
+	if _materialize_shader == null:
+		_materialize_shader = Shader.new()
+		_materialize_shader.code = """shader_type spatial;
+render_mode unshaded, blend_add, depth_draw_never, shadows_disabled, cull_disabled;
+uniform vec3 glow : source_color = vec3(0.35, 0.95, 1.0);
+uniform float done = 0.0;
+void fragment() {
+	float lines = 0.5 + 0.5 * sin(FRAGCOORD.y * 0.9 - TIME * 30.0);
+	float edge = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), 2.0);
+	float left = 1.0 - done;
+	ALBEDO = glow * (0.35 + lines * 0.9 + edge) * left;
+	ALPHA = clamp((0.25 + lines * 0.5 + edge * 0.5) * left, 0.0, 1.0);
+}
+"""
+	if _materialize_mat == null:
+		_materialize_mat = ShaderMaterial.new()
+		_materialize_mat.shader = _materialize_shader
+	return _materialize_mat
 
 
 ## A raised watch (`ActorCommand.watch_up`) glows on the left wrist, so

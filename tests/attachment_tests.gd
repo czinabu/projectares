@@ -16,6 +16,7 @@ static func run(t: Node) -> void:
 	await _kit(t)
 	await _scope_view(t)
 	await _bench(t)
+	await _bench_view(t)
 
 
 static func _attachments() -> Array[String]:
@@ -102,8 +103,8 @@ static func _fitting(t: Node) -> void:
 	t.check(visual.get_node_or_null("Attachments/muzzle") != null and sight != null,
 			"the attachments are on the gun's model, and the optic has a line of sight")
 	t.check(sight != null and sight.position.y > 0.03, "the optic's sight line sits above the gun")
-	var spec := HomeBase.spec_text(gun, bare)
-	t.check("Magazine" in spec and "Zoom" in spec and "4x Ranger Scope" in spec and "Suppressed" in spec,
+	var spec := "\n".join(HomeBase.spec_lines(gun, bare))
+	t.check("Magazine" in spec and "Zoom" in spec and "Suppressed" in spec,
 			"the bench card says what the attachments change")
 	visual.free()
 	for made: Gun in [bare, gun, doubled]:
@@ -168,47 +169,138 @@ static func _scope_view(t: Node) -> void:
 	await t.frames(2)
 
 
-## The gunsmith bench shows the stash's attachments; using one fits it.
+## The gunsmith bench holds one gun at a time. Using it, the wheel turns
+## through your guns and then each attachment slot's choices, each shown on
+## the gun at once; a click picks, and only a pick asks for an equip.
 static func _bench(t: Node) -> void:
 	var base := HomeBase.new()
-	base.show_gear(["rifle_carbine", "optic_scope", "grip_angled", "grip_angled"],
+	base.show_gear(["rifle_carbine", "smg_stinger", "optic_scope", "optic_reflex", "grip_angled", "grip_angled"],
 			{"primary": "rifle_carbine", "optic": "optic_scope"})
 	t.add_child(base)
 	await t.frames(2)
-	var scope := base.display_for("optic_scope")
-	var grip := base.display_for("grip_angled")
-	t.check(scope != null and scope.kind == "gunsmith" and scope.equipped and scope.slot == "optic",
-			"a fitted scope hangs on the bench, marked equipped")
-	t.check(grip != null and grip.count == 2 and not grip.equipped and grip.get_prompt().begins_with("[F] Equip"),
-			"a spare grip on the bench offers to fit")
-	var asked := []
-	base.equip_requested.connect(func(slot: String, id: String) -> void: asked.append([slot, id]))
-	if grip:
-		grip.interact(base.player)
-	if scope:
-		scope.interact(base.player)
-	t.check(asked == [["grip", "grip_angled"], ["optic", ""]], "using the bench fits and takes off attachments (%s)" % [asked])
+	var hung := 0
+	for display in base.displays:
+		if display.kind == "gunsmith":
+			hung += 1
+	t.check(hung == 0 and base.display_for("optic_scope") == null and BaseLayout.stored_away(base.stash).is_empty(),
+			"attachments are no longer hung on a pegboard, nor counted as stored away")
 	var bench_gun := base.get_node_or_null("Displays/BenchGun")
 	t.check(bench_gun != null and bench_gun.get_meta("display_item", "") == "rifle_carbine"
 			and bench_gun.find_child("optic", true, false) != null,
-			"the primary sits in the vise with its scope on")
-	var vise := bench_gun as HomeBase.Vise
-	var next := base.next_bench_gun()
-	t.check(vise != null and "rifle_carbine" in base.bench_guns() and next != "rifle_carbine"
-			and vise.get_prompt().begins_with("[F] Next gun in the vise"),
-			"the gun in the vise offers the next gun from the rack (%s)" % next)
-	asked.clear()
-	if vise:
-		vise.interact(base.player)
-	t.check(asked == [["primary", next]], "using the vise asks for the next gun as the primary (%s)" % [asked])
-	var on_rack := base.display_for("rifle_carbine")
-	t.check(on_rack != null and not on_rack.get_node("Model").visible and "ON THE BENCH" in on_rack.get_node("Plate").text
-			and on_rack.has_node("Mount"), "the rack's pegs for the gun in the vise stand empty")
+			"the primary sits on the bench with its scope on")
+	var bench := bench_gun as HomeBase.Bench
+	var used := [0]
+	base.bench_used.connect(func() -> void: used[0] += 1)
+	var asked := []
+	base.equip_requested.connect(func(slot: String, id: String) -> void: asked.append([slot, id]))
+	t.check(bench != null and bench.get_prompt().begins_with("[F] Gunsmith bench"), "the bench offers itself to use")
+	t._face_display(base.player, bench)
+	await t.frames(2)
+	t.check(base.player.find_interactable() == bench and base.in_workshop(base.to_local(base.player.global_position)),
+			"the bench can be walked up to from inside the workshop and looked at")
+	await t._use(base.player)
+	t.check(used[0] == 1 and base.bench_open and base.bench_picking and base.bench_row == 0
+			and base.bench_choice == "rifle_carbine", "using the bench starts on your gun, ready to turn")
+	t.check(base.bench_choices("primary") == ["rifle_carbine", "smg_stinger", ""]
+			and base.bench_choices("optic") == ["", "optic_scope", "optic_reflex"] and base.bench_choices("grip") == ["", "grip_angled"],
+			"the wheel turns through each gun once (then the free one) and each slot's owned attachments")
+	base.bench_scroll(1)
+	await t.frames(1)
+	bench_gun = base.get_node_or_null("Displays/BenchGun")
 	var card := base.get_node_or_null("Displays/SpecCard") as Label3D
-	t.check(card != null and "Zoom" in card.text, "a card by the vise lists what the scope changes")
-	var spot := base.spot_transform("gunsmith", 0).origin
-	var last := base.spot_transform("gunsmith", 11).origin
-	t.check(base.inside(spot) and base.inside(last) and last.y > 0.5,
-			"the bench's pegboard is inside the room")
+	t.check(bench_gun != null and bench_gun.get_meta("display_item", "") == "smg_stinger"
+			and bench_gun.find_child("optic", true, false) != null and asked.is_empty()
+			and card != null and "‹ Stinger SMG ›" in card.text,
+			"a notch of the wheel puts the next gun on the bench at once, fitted the same, without equipping it")
+	base.bench_select()
+	t.check(asked == [["primary", "smg_stinger"]] and not base.bench_picking and base.bench_row == 1,
+			"a click picks the gun and moves on to its attachments (%s)" % [asked])
+	base.show_gear(base.stash, {"primary": "smg_stinger", "optic": "optic_scope"})
+	await t.frames(1)
+	asked.clear()
+	base.bench_scroll(1)
+	base.bench_scroll(1)
+	t.check(base.bench_row == 3 and not base.bench_picking, "with no row open the wheel moves between the slots")
+	base.bench_select()
+	t.check(base.bench_picking and base.bench_choice == "", "a click opens the grip slot on what is fitted (nothing)")
+	base.bench_scroll(1)
+	await t.frames(1)
+	bench_gun = base.get_node_or_null("Displays/BenchGun")
+	card = base.get_node_or_null("Displays/SpecCard") as Label3D
+	t.check(bench_gun != null and bench_gun.find_child("grip", true, false) != null and asked.is_empty()
+			and "‹ Angled Grip ›" in card.text, "turning the grip slot shows the grip on the gun before it is picked")
+	t.check(base.bench_back() and not base.bench_picking, "a step back drops the grip on show")
+	await t.frames(1)
+	bench_gun = base.get_node_or_null("Displays/BenchGun")
+	t.check(asked.is_empty() and bench_gun.find_child("grip", true, false) == null, "and takes it back off the gun")
+	base.bench_scroll(-1)
+	base.bench_scroll(-1)
+	base.bench_select()
+	base.bench_scroll(1)
+	t.check(base.bench_choice == "optic_reflex", "the optic slot turns from the scope to the reflex sight")
+	base.bench_select()
+	t.check(asked == [["optic", "optic_reflex"]], "a click fits the optic on show (%s)" % [asked])
+	t.check(not base.bench_back(), "with nothing open a step back means leaving")
+	base.leave_bench()
+	t.check(not base.bench_open, "stepping away puts the bench at rest")
+	var on_rack := base.display_for("smg_stinger")
+	t.check(on_rack != null and not on_rack.get_node("Model").visible and "ON THE BENCH" in on_rack.get_node("Plate").text
+			and on_rack.has_node("Mount"), "the rack's pegs for the gun on the bench stand empty")
+	card = base.get_node_or_null("Displays/SpecCard") as Label3D
+	var stats := base.get_node_or_null("Displays/SpecStats") as Label3D
+	t.check(card != null and stats != null and "Zoom" in stats.text and "OPTIC" in card.text and "4x Ranger Scope" in card.text,
+			"the card behind the gun lists each slot and what the scope changes")
+	base.read_only = true
+	var visiting := base.get_node_or_null("Displays/BenchGun") as HomeBase.Bench
+	if visiting:
+		visiting.interact(base.player)
+	t.check(visiting != null and used[0] == 1 and not base.bench_open and not visiting.get_prompt().begins_with("[F]"),
+			"a visitor sees the gun on someone else's bench but cannot use it")
+	base.read_only = false
 	base.queue_free()
 	await t.frames(2)
+
+
+## In the game, using the bench brings the view to it; the wheel, a click and
+## Esc work it, and stepping away gives the player back the room.
+static func _bench_view(t: Node) -> void:
+	Profile.reset()
+	Profile.welcome_granted = true
+	Profile.add_to_stash(["rifle_carbine", "smg_stinger", "optic_reflex"])
+	Profile.equip("primary", "rifle_carbine")
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	t.add_child(main)
+	await t.frames(20)
+	var base: HomeBase = main.base
+	var bench := base.get_node("Displays/BenchGun") as HomeBase.Bench
+	bench.interact(base.player)
+	await t.frames(30)
+	var view: Node3D = main.bench_view
+	var camera := t.get_viewport().get_camera_3d()
+	var bench_at := base.global_transform * base.bench_transform()
+	t.check(view != null and main.controller.input_blocked and camera != null and camera.name == "BenchCamera"
+			and camera.global_position.distance_to(bench_at * Vector3(0, 1.5, 0)) < 2.5,
+			"using the bench moves the view in to it and takes the mouse from the controller")
+	var wheel := InputEventMouseButton.new()
+	wheel.button_index = MOUSE_BUTTON_WHEEL_DOWN
+	wheel.pressed = true
+	view._unhandled_input(wheel)
+	var click := InputEventMouseButton.new()
+	click.button_index = MOUSE_BUTTON_LEFT
+	click.pressed = true
+	view._unhandled_input(click)
+	await t.frames(3)
+	t.check(Profile.loadout.get("primary", "") == "smg_stinger" and base.loadout.get("primary", "") == "smg_stinger"
+			and base.get_node("Displays/BenchGun").get_meta("display_item", "") == "smg_stinger",
+			"a notch and a click put the next gun on the bench as your primary")
+	var esc := InputEventKey.new()
+	esc.keycode = KEY_ESCAPE
+	esc.pressed = true
+	view._unhandled_input(esc)
+	await t.frames(3)
+	t.check(main.bench_view == null and not main.controller.input_blocked and not base.bench_open
+			and t.get_viewport().get_camera_3d() != null and t.get_viewport().get_camera_3d().name != "BenchCamera",
+			"Esc steps away from the bench and gives back the view and the controls")
+	main.queue_free()
+	await t.frames(2)
+	Profile.reset()

@@ -231,8 +231,9 @@ static func _at_the_bench(t: Node) -> void:
 	t.check(console != null and console.screen != null and console.get_prompt().begins_with("[F] Fabricator"),
 			"the starter bunker's bench has a fabricator")
 	var bench := base.bench_transform()
-	var behind := bench.affine_inverse() * console.global_position
-	t.check(behind.z < -0.5 and absf(behind.x) < 0.1, "it stands behind the bench's pegboard, out of the rack's way")
+	var beside := bench.affine_inverse() * console.position
+	t.check(base.in_workshop(console.position) and absf(beside.x) > 1.2 and beside.distance_to(Vector3.ZERO) < 3.0,
+			"it stands beside the bench in the workshop, out of the rack's way")
 	console.interact(base.player)
 	await t.frames(2)
 	var hub: Hub = main.hub
@@ -259,7 +260,7 @@ static func _at_the_bench(t: Node) -> void:
 	await t.frames(3)
 	var moved := base.station(HomeBase.CRAFT_ID)
 	t.check(moved != null and moved != console and base.in_armory(base.to_local(moved.global_position))
-			and base.stations.count(moved) == 1, "the fabricator moves into the armory with the bench")
+			and base.stations.count(moved) == 1, "the fabricator stays beside the bench when the alcove opens")
 	main.queue_free()
 	await t.frames(2)
 	Profile.reset()

@@ -43,6 +43,13 @@ const ATTACHMENT_SLOTS := ["optic", "muzzle", "grip", "magazine"]
 const OPTIONAL_SLOTS := ["ability", "vehicle", "artifact", "optic", "muzzle", "grip", "magazine"]
 ## How many healing items are taken from the stash on deploy.
 const MAX_HEAL_ITEMS := 2
+## Seconds a weapon takes to materialize out of the pack through the watch,
+## by the first of these tags it carries (heavier is slower). An item's own
+## `summon_time` stat wins.
+const SUMMON_TIMES := [["sidearm", 0.5], ["one_handed", 0.6], ["two_handed", 1.1], ["marksman", 1.3],
+		["firearm", 0.9]]
+## The watch's wait after a summon, as a multiple of the materialize time.
+const SUMMON_COOLDOWN_MULT := 6.0
 
 
 ## True if item `id` can go in loadout slot `slot`. A sidearm is a firearm
@@ -223,6 +230,96 @@ static func set_power(actor: Actor, id: String, mag := -1, reserve := -1) -> Dic
 	# What you just picked up is what you hold.
 	actor.draw_weapon(index)
 	actor.power_changed.emit(id, gun.ammo_in_mag, gun.reserve_ammo)
+	return given
+
+
+## True if `id` is a weapon the watch can materialize out of the pack: a gun
+## or a melee weapon. Power weapons never sit in a pack.
+static func summonable(id: String) -> bool:
+	return ItemDB.has_item(id) and not ItemDB.has_tag(id, "power") \
+			and (ItemDB.has_tag(id, "firearm") or ItemDB.has_tag(id, "melee"))
+
+
+## Seconds weapon `id` takes to materialize in the hand. Heavier is slower.
+static func summon_time(id: String) -> float:
+	var stats := ItemDB.item_stats(id)
+	if stats.has("summon_time"):
+		return float(stats["summon_time"])
+	for entry: Array in SUMMON_TIMES:
+		if ItemDB.has_tag(id, entry[0]):
+			return entry[1]
+	return 0.9
+
+
+## Seconds the watch waits after materializing weapon `id`.
+static func summon_cooldown(id: String) -> float:
+	return summon_time(id) * SUMMON_COOLDOWN_MULT
+
+
+## The weapon slot a summonable item takes: "primary", "sidearm" or "melee".
+static func weapon_slot(id: String) -> String:
+	if ItemDB.has_tag(id, "melee"):
+		return "melee"
+	return "sidearm" if ItemDB.has_tag(id, "sidearm") else "primary"
+
+
+## Index in `actor.weapons` of the weapon worn in `slot` ("primary",
+## "sidearm", "melee"), or -1.
+static func worn_index(actor: Actor, slot: String) -> int:
+	for i in actor.weapons.size():
+		var worn := actor.weapons[i]
+		if worn.item_id != "" and not ItemDB.has_tag(worn.item_id, "power") and weapon_slot(worn.item_id) == slot:
+			return i
+	return -1
+
+
+## Materializes weapon `id` in the actor's hand in place of the one worn in
+## its slot (the watch's summon). `mag` and `reserve` restore a gun put away
+## part used (below 0 means as it comes). Only the weapons and the gear list
+## change here: the caller moves the items in and out of the pack. Returns
+## what was put away as {"id", "mag", "reserve"}, "id" empty if the slot was
+## empty or `id` cannot be summoned. Emits `Actor.weapon_swapped`.
+static func swap_weapon(actor: Actor, id: String, mag := -1, reserve := -1) -> Dictionary:
+	var given := {"id": "", "mag": -1, "reserve": -1}
+	if not summonable(id):
+		return given
+	var index := worn_index(actor, weapon_slot(id))
+	var weapon: Weapon
+	if ItemDB.has_tag(id, "melee"):
+		weapon = MeleeWeapon.new()
+	else:
+		var gun := Gun.new()
+		gun.is_sidearm = ItemDB.has_tag(id, "sidearm")
+		weapon = gun
+	_setup_weapon(weapon, id, ItemDB.item_stats(id))
+	var new_gun := weapon as Gun
+	if new_gun:
+		if is_primary(id):
+			# The attachments stay on the watch's rail and fit the new gun.
+			var fittings: Array[String] = []
+			for other in actor.gear_items:
+				if ItemDB.has_tag(other, "attachment"):
+					fittings.append(other)
+			new_gun.fit(fittings)
+		if mag >= 0:
+			new_gun.ammo_in_mag = mini(mag, new_gun.mag_size)
+		if reserve >= 0:
+			new_gun.reserve_ammo = reserve
+	if index >= 0:
+		var old := actor.weapons[index]
+		var old_gun := old as Gun
+		given = {"id": old.item_id, "mag": old_gun.ammo_in_mag if old_gun else -1,
+				"reserve": old_gun.reserve_ammo if old_gun else -1}
+		actor.gear_items.erase(old.item_id)
+		actor.replace_weapon(index, weapon)
+	else:
+		actor.equip_weapon(weapon)
+		index = actor.weapons.size() - 1
+	actor.gear_items.append(id)
+	actor.draw_weapon(index)
+	actor.materialize_time = summon_time(id)
+	actor.materialize_left = actor.materialize_time
+	actor.weapon_swapped.emit(id, new_gun.ammo_in_mag if new_gun else -1, new_gun.reserve_ammo if new_gun else -1)
 	return given
 
 

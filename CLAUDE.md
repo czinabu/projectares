@@ -371,7 +371,8 @@ without Caleb, and update the gap list when a PR closes a row.
   marker is the eye point: aiming brings it up to the model's eyes in both
   views, first person looks through it, and zooms by `Weapon.aim_zoom()`. Scopes are
   real geometry you look down, never a screen overlay. Fitting happens at
-  the home base's gunsmith bench (`BaseLayout` kind "gunsmith").
+  the home base's gunsmith bench (`BaseLayout` kind "gunsmith", which is
+  kept at the bench, never hung on show: `BaseLayout.is_at_bench`).
 - Power weapons are items tagged "power" (Rail Lance, Helion launcher, Arc
   Mortar, Storm Cannon), still plain `Gun` data: stats such as
   `charge_time`, `pierce`, `projectile` ("rocket"/"grenade", flown by
@@ -537,11 +538,12 @@ without Caleb, and update the gap list when a PR closes a row.
   `visual_check.tscn -- <dir> --visors-only`.
   A helmet is worn gear, not a flag: `Loadout.wear_helmet` is the one way
   one goes on or comes off (it resets the visor, keeps `gear_items` right
-  and emits `Actor.helmet_changed`). Mid-raid, a click on the watch's pack
-  icon calls `Raid.swap_helmet` (authority only; online
-  `NetSession.swap_helmet`, and `_helmet_changed` tells every client): it
-  puts on the first helmet in the pack and the worn one goes in the pack,
-  or with none carried takes the worn one off. The skin wears it on the
+  and emits `Actor.helmet_changed`). Mid-raid, helmets in the pack
+  ride the watch's weapon carousel (`Hud.weapon_entries`, shown as their
+  own model), and a click on one goes through the summon
+  (`Raid.summon`, online `NetSession.summon`) to `Raid.swap_helmet`
+  (authority only, at once, no watch wait): it goes on and the worn one
+  goes in the pack; `_helmet_changed` tells every client. The skin wears it on the
   head (`ActorSkin._update_helmet`, `build_helmet`: a shell, glass in the
   visor's colour and a fitting per `mode`), hiding the head under it; it
   hangs off the "Head" bone, so first person leaves it out with the head.
@@ -655,7 +657,9 @@ without Caleb, and update the gap list when a PR closes a row.
   (`Handheld.holo_of`) for reading from outside: it sits on
   `Mirror.HEAD_LAYER`, so your own first-person camera leaves it out like the
   head and reads the screen in the hand, while third person reads and clicks
-  the holo (Caleb's call). A new app is an entry in `Phone.APPS` with a line glyph in
+  the holo (Caleb's call), solid and drawn over signs, framed off the
+  crosshair (`PlayerController.phone_read_offset`). The other hand hangs at
+  the side while the phone is out (`Locomotion.phone_rest`). A new app is an entry in `Phone.APPS` with a line glyph in
   `Phone.AppIcon`; Settings are grouped in `Phone.SETTINGS_TABS`, and the dev
   switches live only on the Dev tab.
   Settings live in
@@ -697,12 +701,22 @@ without Caleb, and update the gap list when a PR closes a row.
   lobby. `core/base/base_layout.gd` decides what goes where from item tags.
   Every weapon goes on the one armory rack (`BaseLayout.ARMORY`, Caleb's
   call): its sections hang on the walls of the armory alcove
-  (`HomeBase.in_armory`), with the gunsmith bench in the middle and the
-  locker at the way in. Each weapon hangs on a lit mount
-  (`HomeBase._build_mount`). The bench's vise holds the primary (its rack
-  pegs stand empty); using the vise puts the next gun from the rack in it
-  (`HomeBase.Vise`, `next_bench_gun`) through the same `equip_requested`,
-  so any gun can be fitted out there. A new kind of weapon gets a rack
+  (`HomeBase.in_armory`), with the locker at the way in. Each weapon hangs
+  on a lit mount (`HomeBase._build_mount`). The gunsmith bench has a corner
+  of its own, the workshop (`HomeBase.WORKSHOP_X/Z`, `in_workshop`), a
+  recess off the armory's left-hand wall just inside the way in, where it
+  stands with the fabricator beside it, clear of the rack and the walk in
+  (Caleb's call), in the starter bunker too. The bench holds one gun at a
+  time and nothing else is on show there (Caleb's call: no pegboard of
+  attachments). At rest it is the primary (its rack pegs stand empty) with
+  its attachments on; using it (`HomeBase.Bench`) emits `bench_used`, and
+  `main.gd` brings the view in to it (`core/ui/bench_view.gd`, a camera and
+  input like `WorldScreen`, no overlay): the wheel turns through your guns
+  and then each attachment slot's choices, each shown on the gun and the
+  bench card at once, a click picks, a right click steps back, Esc leaves.
+  The bench state (`bench_row`, `bench_picking`, `bench_choice`) is view
+  only; only a pick asks for a change, through the same `equip_requested`.
+  A new kind of weapon gets a rack
   section there, not a display of its own elsewhere in the room. The base is where you suit
   up (Caleb's call): the suit-up bay beside the launch pad
   (`HomeBase.suit_up`) replaces the player with a new actor wearing
@@ -770,14 +784,29 @@ without Caleb, and update the gap list when a PR closes a row.
   the map and pings, landing choices and the pack. The phone is for
   settings, talking to friends and players, and information (news, the war
   feed). A new in-raid action goes on the watch; a new social or info
-  feature is a phone app. The watch is a card-sized hologram of icons, one
-  per thing it holds (`Hud.watch_slots`, `Hud.Wrist.SLOTS`): the open icon
-  shows one short line, and controls are glyphs (wheel, click, key cap),
-  never words. The mouse wheel moves across the card
+  feature is a phone app. The watch is a card-sized hologram of icons in
+  three tabs (`Hud.Wrist.TABS`, `TAB_SLOTS`, `SLOTS`; DESIGN.md section 3):
+  Summon (weapons, vehicles, artifacts, with the pack's line under it),
+  Status (map, standing) and Mission (contract, ping, sign-out). The open
+  icon shows one short line, and controls are glyphs (wheel, click, key
+  cap), never words. The mouse wheel moves across the card tab after tab
   (`PlayerController.watch_focus`, `step_watch`; Caleb's call), turning
-  through the toys on the vehicle icon before stepping on, and the mouse
-  only looks. While the watch is up the wheel never switches weapons. A new
-  watch feature is a new slot, not a new line of text. In third person the
+  through what an icon holds (weapons, toys, artifacts: `watch_entries`)
+  before stepping on, and the mouse only looks. While the watch is up the
+  wheel never switches weapons. A new watch feature is a new slot on a
+  tab, not a new line of text; something that only matters now and then is
+  a pop-up line (`Wrist.show_card`'s `popup`), not a slot. The summon
+  carousel (Caleb's call) shows only what is carried, never the stash:
+  `Hud.weapon_entries` is the weapons worn then in the pack, and picking
+  one in the pack asks the authority's `Raid.summon` (`NetSession.summon`
+  online), which swaps it with the one worn in its slot through
+  `Loadout.swap_weapon` (the old one goes in the pack with its rounds,
+  `Actor.stowed_rounds`; clients copy it from `Actor.weapon_swapped`). It
+  takes `Loadout.summon_time` by weight, during which the weapon cannot be
+  used (`Actor.materialize_left`) and is drawn digitizing in on the one
+  body (`ActorSkin._update_materialize`), then the watch rests
+  (`Loadout.summon_cooldown`). The squad ping (`Raid.ping`, `pinged`) goes
+  only to the pinger's side, like a visor tag. In third person the
   card rises off the worn watch with a glow on the arm; it is never hung in
   front of the camera. Vitals go on the card only where the visor cannot
   show them (no helmet, or third person). The watch works in the home base

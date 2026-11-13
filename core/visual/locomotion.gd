@@ -102,10 +102,14 @@ var stand_legs_rate := 4.0
 ## Holding the phone up (`ActorCommand.phone`), one-handed in the right hand
 ## as in life, in the actor's frame: where the phone sits, where the right
 ## wrist goes (just under it), which way the elbow bows, and how far the head
-## and chest bow to look at it. The left arm is left as it was.
-var phone_at := Vector3(0.09, 1.59, -0.27)
-var phone_wrist := Vector3(0.1, 1.44, -0.3)
+## and chest bow to look at it. The wrist is near enough that the elbow
+## bends, as in life, never locked out. The left arm hangs by the side
+## (`phone_rest`), out of the way of the screen.
+var phone_at := Vector3(0.06, 1.62, -0.23)
+var phone_wrist := Vector3(0.08, 1.46, -0.25)
 var phone_elbow := Vector3(0.45, -1.0, 0.15)
+var phone_rest := Vector3(-0.24, 0.92, -0.02)
+var phone_rest_elbow := Vector3(-0.3, 0.0, 1.0)
 ## How far past the wrist (m) the middle of the fist is, where the phone's
 ## grip passes through it (`core/phone/handheld.gd`).
 var phone_palm := 0.085
@@ -685,7 +689,11 @@ func phone_pose() -> void:
 		pose.basis = Basis(right, -phone_chest * w) * pose.basis
 		skeleton.set_bone_global_pose(chest, pose)
 	for arm: Array[int] in _arms:
-		if arm.size() != 3 or _side_of(arm[0]) < 0.0:
+		if arm.size() != 3:
+			continue
+		if _side_of(arm[0]) < 0.0:
+			_bend(arm, skeleton.get_bone_rest(arm[2]).origin, to_skeleton * phone_rest,
+					to_skeleton.basis * phone_rest_elbow, w)
 			continue
 		var wrist := to_skeleton * phone_wrist
 		var elbow := to_skeleton.basis * phone_elbow
