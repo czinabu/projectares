@@ -370,7 +370,8 @@ static func incoming_side(p: Actor) -> int:
 		if other == null or other == p or other.is_dead:
 			continue
 		var blade := other.get_active_weapon() as MeleeWeapon
-		if blade == null or not blade.is_winding_up():
+		# A windup, or a heavy being held back: both show their side.
+		if blade == null or blade.threat_dir() < 0:
 			continue
 		var to := other.global_position - p.global_position
 		to.y = 0.0
@@ -379,7 +380,7 @@ static func incoming_side(p: Actor) -> int:
 			continue
 		if dist > 0.5 and forward.length() > 0.01 and forward.normalized().dot(to.normalized()) < 0.2:
 			continue
-		best = MeleeWeapon.mirror(blade.attack_dir)
+		best = MeleeWeapon.mirror(blade.threat_dir())
 		best_dist = dist
 	return best
 

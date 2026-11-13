@@ -97,6 +97,45 @@ static func _test_wings(t: Node) -> void:
 	var swung := before.angle_to(Vector3(p.velocity.x, 0, p.velocity.z).normalized())
 	t.check(swung > p.flight.glide_turn_rate * 0.5 * 0.8, "and holding it turns at the full rate (%.2f rad in half a second)" % swung)
 	p.cmd.move = Vector2.ZERO
+	await t.frames(60)
+	# Looking round in a glide, then pressing forward: the wings bank round
+	# onto the view's heading and fly the way you face, not the old way.
+	var flying := Vector3(p.velocity.x, 0, p.velocity.z).normalized()
+	p.cmd.yaw = wrapf(atan2(-flying.x, -flying.z) + 2.4, -PI, PI)
+	await t.frames(30)
+	var view := Basis(Vector3.UP, p.cmd.yaw) * Vector3.FORWARD
+	var off := view.angle_to(Vector3(p.velocity.x, 0, p.velocity.z).normalized())
+	t.check(off > 2.0, "with no keys a glide flies straight on wherever you look (%.2f rad off the view)" % off)
+	p.cmd.move = Vector2(0, 1)
+	worst = await _jolt(t, p, 150)
+	off = view.angle_to(Vector3(p.velocity.x, 0, p.velocity.z).normalized())
+	t.check(off < 0.05 and p.flight.is_gliding, "forward after looking round flies the way you face (%.3f rad off)" % off)
+	t.check(worst < 90.0, "and the wings bank round onto it without a snap (hardest %.0f m/s² in a tick)" % worst)
+	var settled := Vector3(p.velocity.x, 0, p.velocity.z).normalized()
+	await t.frames(30)
+	t.check(settled.angle_to(Vector3(p.velocity.x, 0, p.velocity.z).normalized()) < 0.02 and absf(p._bank) < 0.1,
+			"and it levels out on the view instead of swinging past")
+	p.cmd.move = Vector2.ZERO
+	await t.frames(60)
+	# Shift + S with the wings pulled up climbs, keeping the heading.
+	var climb_heading := Vector3(p.velocity.x, 0, p.velocity.z).normalized()
+	var height := p.global_position.y
+	var dash_heat := p.flight.heat
+	p.cmd.move = Vector2(0, -1)
+	p.cmd.sprint = true
+	p.cmd.sprint_pressed = true
+	await t.frames(1)
+	p.cmd.sprint_pressed = false
+	var rise := p.velocity.y
+	await t.frames(40)
+	p.cmd.sprint = false
+	var flat := Vector3(p.velocity.x, 0, p.velocity.z)
+	t.check(rise > p.flight.air_dash_speed * 0.8 and p.flight.heat > dash_heat,
+			"Shift + S in a glide boosts upward, on heat (%.1f m/s up)" % rise)
+	t.check(p.global_position.y > height + 2.0 and flat.normalized().dot(climb_heading) > 0.95
+			and flat.length() >= p.flight.glide_speed * p.flight.glide_stall - 0.01 and p.flight.is_gliding,
+			"and gains height flying on the same way, never backwards (%.1f m higher)" % (p.global_position.y - height))
+	p.cmd.move = Vector2.ZERO
 	arena.queue_free()
 	await t.frames(2)
 
@@ -332,7 +371,7 @@ static func _test_input_buffer(t: Node) -> void:
 	# Inputs travel packed small: a full packet fits in one datagram.
 	var full: Array = []
 	for number in Net.MAX_INPUTS_PER_PACKET:
-		full.append(_input(70000 + number, ActorCommand.FLAG_ROLL_RIGHT | ActorCommand.FLAG_JUMP, ActorCommand.HOLSTER))
+		full.append(_input(70000 + number, ActorCommand.FLAG_SPRINT_PRESSED | ActorCommand.FLAG_JUMP, ActorCommand.HOLSTER))
 	full[3][1][0] = -0.5
 	full[3][1][2] = 123.25
 	full[3][1][ActorCommand.STANCE_INDEX] = 2

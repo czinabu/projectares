@@ -308,10 +308,10 @@ func _toy_shots(out_dir: String) -> void:
 
 
 ## The body in the air: a jetpack hovering, boosting level and in a climb and
-## rolled over, and wings level, banked into a turn each way and in a dive.
+## barrel rolling in a sideways dash, and wings level, banked into a turn each way and in a dive.
 ## Each from behind and from the side.
 func _flight_shots(out_dir: String) -> void:
-	# [name, rig, hovering, boosting, gliding, speed, climb, turn rate, look pitch, roll key]
+	# [name, rig, hovering, boosting, gliding, speed, climb, turn rate, look pitch, sideways air dash]
 	var poses := [
 		["jet_hover_strafe", "jetpack_mk2", true, false, false, 10.0, 0.0, 0.0, 0.0, 0, Vector3(1, 0, 0)],
 		["jet_boost", "jetpack_mk2", true, true, false, 22.0, 0.0, 0.0, 0.0, 0, Vector3.FORWARD],
@@ -363,7 +363,9 @@ func _flight_shots(out_dir: String) -> void:
 				if absf(float(pose[7])) > 0.0 and i == 0:
 					heading = p.global_transform.basis * (pose[10] as Vector3)
 				p.velocity = heading * float(pose[5]) + Vector3(0, float(pose[6]), 0)
-				p.cmd.roll = int(pose[9]) if i > 55 else 0
+				# Physics is off, so the dash only runs out when cleared here.
+				p.air_dash_left = p.flight.air_dash_time if int(pose[9]) != 0 and i >= 64 else 0.0
+				p.air_dash_side = float(pose[9])
 				await get_tree().process_frame
 			await _shot(out_dir.path_join("flight_%s_%s.png" % [pose[0], view]))
 		raid.queue_free()

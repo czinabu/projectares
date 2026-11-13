@@ -52,26 +52,28 @@ const CONTROLS := [
 		["Slide (while sprinting)", "{slide}"],
 		["First or third person", "{toggle_view}"],
 	]],
+	["FLYING: EVERY RIG", [
+		["Dash the way you steer, on heat (in the air)", "{sprint} + {move_forward} {move_left} {move_back} {move_right}"],
+		["Dash forward (in the air)", "Tap {sprint}"],
+	]],
 	["FLYING: JETPACK", [
 		["Climb (in the air)", "Hold {jump}"],
 		["Light the jets and hover", "Tap {jump} in the air"],
 		["Cruise while hovering", "{move_forward} {move_left} {move_back} {move_right}"],
 		["Coast down with the jets idle to cool", "Hold {slide}"],
-		["Boost head first (Mk2)", "{sprint} + {move_forward}"],
+		["Boost head first (Mk2)", "Hold {sprint} + {move_forward}"],
 	]],
 	["FLYING: THRUSTER BOOTS", [
 		["Kick up and the way you steer (three reach a roof)", "{jump} in the air"],
 		["Skim low (cools near a street or a roof)", "Hold {jump} in the air"],
-		["Dash on heat", "{dash} in the air"],
 	]],
 	["FLYING: GLIDE WINGS", [
 		["Launch", "{jump} in the air"],
 		["Glide (while falling)", "Hold {jump}"],
 		["Pulse up while gliding", "{jump} again"],
 		["Bank round", "{move_left} / {move_right}"],
-		["Dive for speed, pull up to climb on it", "{move_forward} / {move_back}"],
-		["Barrel roll while gliding", "{roll_left} / {roll_right}"],
-		["Roll the body while boosting", "{roll_left} / {roll_right}"],
+		["Dive for speed the way you face, pull up to climb on it", "{move_forward} / {move_back}"],
+		["Boost upward (wings pulled up)", "{sprint} + {move_back}"],
 	]],
 	["WEAPONS", [
 		["Fire", "{fire}"],
@@ -114,7 +116,7 @@ const CONTROLS := [
 	]],
 	["PHONE AND MOUSE", [
 		["Open or close the phone", "{phone}"],
-		["Free the mouse, step back from a console", "Esc"],
+		["Open the phone at Settings, or close it; step back from a console", "Esc"],
 		["Mirror app: choose, then scroll", "Arrows or W A S D"],
 	]],
 ]
@@ -127,6 +129,8 @@ var notice_seconds := 4.5
 var net: NetSession
 var is_open := false
 var app := "contacts"
+## Tests set this: a headless run has no real mouse mode to capture.
+var mouse_in_world := false
 ## The contact whose conversation is open in Messages, or "".
 var chat_with := ""
 ## Contact id -> newest message id (in your own log) you have seen.
@@ -181,8 +185,20 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif is_open and event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
 		close()
 		get_viewport().set_input_as_handled()
+	elif not is_open and opens_on_escape(event):
+		open("settings")
+		get_viewport().set_input_as_handled()
 	elif mirror_open() and event is InputEventKey and event.pressed and _mirror_key(event.keycode):
 		get_viewport().set_input_as_handled()
+
+
+## Esc in the world opens the phone at Settings. Only when nothing else has
+## the mouse: a station, booth or shop shows the mouse and takes Esc for
+## itself, so Esc there steps away as before.
+func opens_on_escape(event: InputEvent) -> bool:
+	return event is InputEventKey and event.pressed and not event.echo \
+			and event.keycode == KEY_ESCAPE \
+			and (mouse_in_world or Input.mouse_mode == Input.MOUSE_MODE_CAPTURED)
 
 
 ## The Mirror app's keys: up and down (or W and S) pick a choice, left and
@@ -901,6 +917,8 @@ func _draw_settings() -> void:
 			func(v: float) -> String: return "%d" % roundi(v))
 	_slider("Field of view (third person)", "field_of_view_third", GameSettings.FOV_RANGE, 1.0,
 			GameSettings.field_of_view_third, func(v: float) -> String: return "%d" % roundi(v))
+	_slider("Camera distance (third person)", "camera_distance", GameSettings.CAMERA_DISTANCE_RANGE, 0.1,
+			GameSettings.camera_distance, func(v: float) -> String: return "%.1f m" % v)
 	_slider("Volume", "master_volume", Vector2(0.0, 1.0), 0.05, GameSettings.master_volume,
 			func(v: float) -> String: return "%d%%" % roundi(v * 100.0))
 	_toggle("Fullscreen", "fullscreen", GameSettings.fullscreen)
