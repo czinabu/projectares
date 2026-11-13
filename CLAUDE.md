@@ -318,7 +318,9 @@ without Caleb, and update the gap list when a PR closes a row.
   as in a real FPS hold (Caleb's references): under a long gun's fore end
   palm up, fingers up its side ("ForeGrip", found just under the fore end,
   `Look.FORE_CUP`), and wrapped round the shooting hand on a sidearm
-  (`ActionPose.ads_cup`); its wrist is turned by `WeaponArm._support_turn`.
+  (`ActionPose.ads_cup`), thumb forward with the wrist in line with the
+  forearm, the pistol held out in both hands; its wrist is turned by
+  `WeaponArm._support_turn`.
   `Look._fit_hands` finds a melee handle (up to its guard or
   head), puts it through the fist and gives a two-handed weapon
   (`Look.is_two_handed`) its off hand's place: a hand below on a short
@@ -376,7 +378,13 @@ without Caleb, and update the gap list when a PR closes a row.
   moves them onto the real model (`Look.GUN_MOUNTS`). An optic's "Sight"
   marker is the eye point: aiming brings it up to the model's eyes in both
   views, first person looks through it, and zooms by `Weapon.aim_zoom()`. Scopes are
-  real geometry you look down, never a screen overlay. Fitting happens at
+  real geometry you look down, never a screen overlay, and picture in
+  picture (Caleb's call: never a blacked-out screen): a scope's item has
+  `"lens": true` (`Gun.scope_lens`), its "Sight" sits a real eye relief
+  behind the eyepiece so the scope is a picture in the middle of the view,
+  the aimed view keeps `ads_fov`, and `PlayerController._update_scope`
+  renders the magnified view from the eye onto the eyepiece's "Lens" glass
+  (`assets/shaders/scope_lens.gdshader` draws the reticle there). Fitting happens at
   the home base's gunsmith bench (`BaseLayout` kind "gunsmith", which is
   kept at the bench, never hung on show: `BaseLayout.is_at_bench`).
 - Power weapons are items tagged "power" (Rail Lance, Helion launcher, Arc
@@ -889,9 +897,13 @@ without Caleb, and update the gap list when a PR closes a row.
   Status (map, standing) and Mission (portal, contract, ping, sign-out). The open
   icon shows one short line, and controls are glyphs (wheel, click, key
   cap), never words. The mouse wheel moves across the card tab after tab
-  (`PlayerController.watch_focus`, `step_watch`; Caleb's call), turning
-  through what an icon holds (weapons, toys, artifacts: `watch_entries`)
-  before stepping on, and the mouse only looks. While the watch is up the
+  (`PlayerController.watch_focus`, `step_watch`; Caleb's call) over the
+  main icons only. Two levels (Caleb's call): a click on an icon that holds
+  several things (weapons, toys, artifacts, portal places: `watch_entries`)
+  opens it (`PlayerController.watch_open`), the wheel then turns through
+  them and stops at the list's ends, a click acts and a right click backs
+  out (`close_watch_icon`); a closed icon shows the click glyph instead of
+  the wheel (`Hud.mark_open`). The mouse only looks. While the watch is up the
   wheel never switches weapons. A new watch feature is a new slot on a
   tab, not a new line of text; something that only matters now and then is
   a pop-up line (`Wrist.show_card`'s `popup`), not a slot. The summon
@@ -906,8 +918,12 @@ without Caleb, and update the gap list when a PR closes a row.
   body (`ActorSkin._update_materialize`), then the watch rests
   (`Loadout.summon_cooldown`). The squad ping (`Raid.ping`, `pinged`) goes
   only to the pinger's side, like a visor tag. In third person the
-  card rises off the worn watch with a glow on the arm; it is never hung in
-  front of the camera. Vitals go on the card only where the visor cannot
+  card rises off the worn watch with a glow on the arm (Caleb's feedback):
+  it stands just past the character (`Wrist.tp_depth`, `tp_behind`), so the
+  body passes in front of it and it reads as coming from the watch, beside
+  the head clear of the crosshair, a third of the view tall and near solid
+  (`_tp_spot`, `_tp_size`, `tp_backing`); the arm and its
+  pose stay the same, only where the light lands differs. Vitals go on the card only where the visor cannot
   show them (no helmet, or third person). The watch works in the home base
   too (`BaseHud.wrist`), its card saying what each icon holds for the next
   deploy (`Hud.base_watch_slots`), and there its Summon tab is the whole
@@ -919,7 +935,9 @@ without Caleb, and update the gap list when a PR closes a row.
   everywhere, the plaza included. Raised, the wrist comes up in front of
   the eyes along the aim (`WeaponArm.watch_point`), so it is in view in
   first person wherever you look, and the forearm rolls so the face, worn
-  on the back of the wrist (`Hud.Wrist.FACE_AXIS`), looks at the eyes
+  on the back of the wrist (`Hud.Wrist.FACE_AXIS`, out on the skin by
+  `wrist_skin` and depth tested like anything worn, so a gun or hand in
+  front of it hides it), looks at the eyes
   (`WeaponArm._face_watch`). From the eyes the card opens just over the
   face, sized to read like a card at arm's length (`fp_card_reads_at`). Check it by eye with
   `visual_check.tscn -- <dir> --watch-only` (`--base-watch-only` for just

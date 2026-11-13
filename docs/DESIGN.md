@@ -305,6 +305,11 @@ the storage behind it.
   die, so the extraction stakes stay. The pack's capacity still applies: a
   summoned weapon swaps places with the one worn in its slot, which goes into
   the pack with the rounds it had.
+- **Two levels (Caleb's call).** The mouse wheel steps only across the main
+  icons, tab after tab. A click on an icon that holds several things
+  (weapons, vehicles, artifacts, portal places) opens its list, and only
+  then does the wheel turn through what it holds; a click picks, and a
+  right click closes the list and goes back to the icons.
 - **Three tabs**, stepped through with the mouse wheel:
   - **Summon:** weapons (worn ones are drawn with a click, ones in the pack
     are materialized into your hand), vehicles (the toy carousel) and
@@ -353,7 +358,7 @@ the plaza, replacing the base's launch pad, arena gate and teleporter pad.
   their own countdown and follows. No portal leads from one world straight
   into another.
 - **Opening one:** raise the watch, go to the portal icon on the Mission
-  tab, wheel through the worlds and the arena, click. A portal unfolds in
+  tab, click to open its list, wheel through the worlds and the arena, click. A portal unfolds in
   front of you and stays open about 15 seconds, then folds away.
 - **Who goes through:** you and your squad (your clan, online). Others see
   it but cannot use it.

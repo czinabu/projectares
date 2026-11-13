@@ -110,6 +110,19 @@ var eye_relief := 0.0
 ## crosshair, since the sight (an optic's reticle, or the plain sights) is
 ## in the middle of the view.
 var sighted := false
+## A scope (`Gun.scope_lens`) is picture in picture: aimed in first person,
+## a second camera renders the magnified view onto its eyepiece's glass and
+## the world around the scope stays as it is (Caleb's call: never a black
+## screen). How many pixels across that picture is.
+var scope_pixels := 640
+## How far ahead the scope's camera starts drawing, so the gun and the scope
+## itself are never in their own picture.
+var scope_near := 0.9
+var _scope_view: SubViewport
+var _scope_cam: Camera3D
+var _scope_mat: ShaderMaterial
+## The lens the magnified view is drawn on now, if any.
+var _scope_lens: MeshInstance3D
 ## First person: how far the model's eyes are from the actor's eye point,
 ## eased so the view never jolts with a step.
 var _eye_offset := Vector3.ZERO
@@ -148,6 +161,9 @@ var watch_index := 0
 ## while you read the card. View only.
 var watch_focus: int = Hud.Wrist.SLOTS.find("vehicle")
 var watch_focus_moved := false
+## The icon opened with a click ("" on the main row): only then does the
+## wheel turn through what it holds (Caleb's call). A right click closes it.
+var watch_open := ""
 ## Which weapon and which artifact are picked out on the raised watch's
 ## carousel (`Hud.weapon_entries`, `Hud.artifact_entries`), counting from 0.
 var weapon_pick := 0
@@ -219,6 +235,7 @@ func _ready() -> void:
 
 func _exit_tree() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	_update_scope(null)
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -246,6 +263,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event.is_action_pressed("check_wrist"):
 		wrist_raised = not wrist_raised
 		watch_focus_moved = false
+		watch_open = ""
 	elif event.is_action_pressed("melee_control"):
 		toggle_stance_control()
 	elif event.is_action_pressed("sign_out"):
@@ -288,7 +306,8 @@ func is_browsing_toys() -> bool:
 ## the wheel turns through them and fire takes the picked one into the hand.
 ## Before the wheel turns the card opens on the vehicles on its own.
 func is_picking_toys() -> bool:
-	return is_browsing_toys() and (not watch_focus_moved or watch_focus == Hud.Wrist.SLOTS.find("vehicle"))
+	return is_browsing_toys() and (not watch_focus_moved or watch_focus == Hud.Wrist.SLOTS.find("vehicle")) \
+			and _is_open("vehicle")
 
 
 ## True while the wheel has put the card on icon `id` (`Hud.Wrist.SLOTS`).
@@ -299,7 +318,7 @@ func is_watch_on(id: String) -> bool:
 ## True while the card is open on the artifact icon with the attuned artifact
 ## picked out: fire uses it (`ActorCommand.artifact_pressed`).
 func is_on_artifact() -> bool:
-	return is_watch_on("artifact") and actor.artifact.enabled and artifact_pick == 0
+	return is_watch_on("artifact") and actor.artifact.enabled and artifact_pick == 0 and _is_open("artifact")
 
 
 ## Where a squad portal from the watch can lead from here
@@ -329,7 +348,7 @@ func watch_weapons() -> Array[Dictionary]:
 ## True while the card is open on the weapon icon with weapons to pick from:
 ## the wheel turns through them and fire draws or summons the picked one.
 func is_picking_weapons() -> bool:
-	return is_watch_on("weapon") and not is_riding() and not watch_weapons().is_empty()
+	return is_watch_on("weapon") and not is_riding() and not watch_weapons().is_empty() and _is_open("weapon")
 
 
 ## Fire with the watch up: packs the vehicle being looked at onto the watch,
@@ -339,6 +358,14 @@ func is_picking_weapons() -> bool:
 func click_watch() -> bool:
 	if pack_target() != null:
 		pack_requested.emit()
+		return true
+	# Two levels (Caleb's call): on the main row a click opens an icon that
+	# holds several things, and only then does the wheel turn through them.
+	var here := focused_watch_icon()
+	if watch_open == "" and watch_entries(here) > 1:
+		watch_open = here
+		watch_focus = Hud.Wrist.SLOTS.find(here)
+		watch_focus_moved = true
 		return true
 	if is_picking_toys():
 		take_picked_toy()
@@ -352,17 +379,18 @@ func click_watch() -> bool:
 	if is_watch_on("ping"):
 		ping_requested.emit()
 		return true
-	if is_watch_on("portal") and not portal_choices().is_empty():
+	if is_watch_on("portal") and not portal_choices().is_empty() and _is_open("portal"):
 		var choices := portal_choices()
 		portal_requested.emit(choices[clampi(portal_pick, 0, choices.size() - 1)])
 		wrist_raised = false
+		watch_open = ""
 		return true
 	return false
 
 
 ## True while fire works the raised watch instead of the weapon.
 func watch_takes_fire() -> bool:
-	return is_picking_toys() or pack_target() != null or is_picking_weapons() or is_on_artifact() \
+	return (watch_open == "" and watch_entries(focused_watch_icon()) > 1) or is_picking_toys() or pack_target() != null or is_picking_weapons() or is_on_artifact() \
 			or is_watch_on("ping") or is_watch_on("portal")
 
 
@@ -378,6 +406,7 @@ func take_picked_weapon() -> void:
 	else:
 		summon_requested.emit(entry.id)
 	wrist_raised = false
+	watch_open = ""
 
 
 ## The mouse wheel: the next weapon, or with the watch up, the next icon on
@@ -444,22 +473,41 @@ func step_watch(step: int) -> void:
 		return
 	var slots: Array = Hud.Wrist.SLOTS
 	watch_focus = clampi(watch_focus, 0, slots.size() - 1)
+	# An opened icon keeps the wheel until a right click closes it.
+	if watch_open != "":
+		var held := watch_entries(watch_open)
+		if held > 0:
+			_set_watch_pick(watch_open, clampi(_watch_pick(watch_open) + signi(step), 0, held - 1))
+		return
+	if not watch_focus_moved and is_browsing_toys():
+		watch_focus = slots.find("vehicle")
 	watch_focus_moved = true
-	var here: String = slots[watch_focus]
-	var held := watch_entries(here)
-	if held > 1:
-		var next := clampi(_watch_pick(here), 0, held - 1) + signi(step)
-		if next >= 0 and next < held:
-			_set_watch_pick(here, next)
-			return
-	var was := watch_focus
 	watch_focus = clampi(watch_focus + signi(step), 0, slots.size() - 1)
-	# Coming onto a carousel from the right starts on its last entry.
-	if watch_focus != was:
-		var onto: String = slots[watch_focus]
-		var count := watch_entries(onto)
-		if count > 0:
-			_set_watch_pick(onto, 0 if step > 0 else count - 1)
+
+
+## The icon the card is on (`Hud.Wrist.SLOTS`): where the wheel put it, or
+## before it moved, the vehicles if there are toys to throw.
+func focused_watch_icon() -> String:
+	if not is_watch_up():
+		return ""
+	if not watch_focus_moved:
+		return "vehicle" if is_browsing_toys() else ""
+	return Hud.Wrist.SLOTS[clampi(watch_focus, 0, Hud.Wrist.SLOTS.size() - 1)]
+
+
+## True if icon `id`'s things can be acted on now: it is opened, or holds
+## only one, so a click acts on it straight away.
+func _is_open(id: String) -> bool:
+	return watch_open == id or watch_entries(id) <= 1
+
+
+## Right click on the watch: closes an opened icon back to the main row.
+## False if nothing was open.
+func close_watch_icon() -> bool:
+	if watch_open == "":
+		return false
+	watch_open = ""
+	return true
 
 
 ## Takes the picked toy off the raised watch, and lowers the wrist to throw.
@@ -471,6 +519,7 @@ func take_picked_toy() -> void:
 	hold_toy(toys[watch_index])
 	if held_toy != "":
 		wrist_raised = false
+		watch_open = ""
 
 
 ## Takes the toy `item_id` off the watch into the hand ("" puts it back).
@@ -609,6 +658,15 @@ func _physics_process(delta: float) -> void:
 	cmd.primary_pressed = captured and Input.is_action_just_pressed("fire")
 	cmd.secondary = captured and Input.is_action_pressed("alt_fire")
 	cmd.secondary_pressed = captured and Input.is_action_just_pressed("alt_fire")
+	if not wrist_raised:
+		watch_open = ""
+	elif watch_open != "" and cmd.secondary_pressed:
+		# Right click backs out of an opened icon to the main row.
+		close_watch_icon()
+		cmd.secondary = false
+		cmd.secondary_pressed = false
+	elif watch_open != "":
+		cmd.secondary = false
 	if held_toy != "":
 		_use_toy_hand(cmd)
 	elif watch_takes_fire():
@@ -746,10 +804,60 @@ func _process(delta: float) -> void:
 	if up > 0.0:
 		var at := ActionPose.sight_shown(gun) + look * Vector3(0.0, 0.0, (pose.relief_now if pose.relief_now >= 0.0 else pose.relief_for(gun)) + eye_relief)
 		camera.global_transform = camera.global_transform.interpolate_with(Transform3D(look, at), up)
+	_update_scope(gun if up > 0.5 else null)
+
+
+## A scoped gun aimed in first person shows its magnified view on the glass
+## of its eyepiece, rendered from the eye by a camera of its own, and leaves
+## everything around the scope as the eye sees it. The picture spans what the
+## lens covers in the view divided by the scope's zoom, so it is magnified by
+## exactly that. Everything else is left alone; the glass goes back to plain
+## glass when the gun comes down.
+func _update_scope(gun: Gun) -> void:
+	var lens: MeshInstance3D = null
+	if gun != null and gun.scope_lens and gun.visual != null:
+		lens = gun.visual.find_child("Lens", true, false) as MeshInstance3D
+	if lens != _scope_lens:
+		if _scope_lens != null and is_instance_valid(_scope_lens):
+			_scope_lens.material_override = null
+		_scope_lens = lens
+		if _scope_view != null:
+			_scope_view.render_target_update_mode = SubViewport.UPDATE_DISABLED
+	if lens == null or camera == null:
+		return
+	if _scope_view == null:
+		_scope_view = SubViewport.new()
+		_scope_view.name = "ScopeView"
+		_scope_view.size = Vector2i(scope_pixels, scope_pixels)
+		add_child(_scope_view)
+		_scope_cam = Camera3D.new()
+		_scope_view.add_child(_scope_cam)
+		_scope_mat = ShaderMaterial.new()
+		_scope_mat.shader = load("res://assets/shaders/scope_lens.gdshader")
+		_scope_mat.set_shader_parameter("view", _scope_view.get_texture())
+	_scope_view.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	lens.material_override = _scope_mat
+	var eye := camera.global_transform
+	var ahead := -eye.basis.z.normalized()
+	var reach := maxf((lens.global_position - eye.origin).dot(ahead), 0.01)
+	var half := (lens.mesh as QuadMesh).size.y * 0.5 * lens.global_basis.get_scale().y
+	var zoom := maxf(gun.aim_zoom(), 1.0)
+	_scope_cam.global_transform = eye
+	_scope_cam.cull_mask = camera.cull_mask
+	_scope_cam.near = scope_near
+	_scope_cam.fov = rad_to_deg(2.0 * atan(half / reach / zoom))
+
+
+## Whether the magnified view is being drawn in a scope's lens right now.
+func scoped() -> bool:
+	return _scope_lens != null and is_instance_valid(_scope_lens)
 
 
 ## The field of view while aiming `weapon`: optics zoom further in.
 func aim_fov(weapon: Weapon) -> float:
+	if weapon is Gun and (weapon as Gun).scope_lens:
+		# A scope magnifies inside its lens only (`_update_scope`).
+		return ads_fov
 	return ads_fov / maxf(1.0, weapon.aim_zoom() if weapon else 1.0)
 
 
@@ -757,7 +865,11 @@ func aim_fov(weapon: Weapon) -> float:
 func _zoom_scale() -> float:
 	if camera == null:
 		return 1.0
-	return clampf(tan(deg_to_rad(camera.fov) * 0.5) / tan(deg_to_rad(wanted_base_fov()) * 0.5), 0.1, 1.0)
+	var scale := tan(deg_to_rad(camera.fov) * 0.5) / tan(deg_to_rad(wanted_base_fov()) * 0.5)
+	if scoped():
+		# Aim through the lens as steadily as the view it magnifies.
+		scale /= maxf(actor.get_active_weapon().aim_zoom(), 1.0) if actor and actor.get_active_weapon() else 1.0
+	return clampf(scale, 0.05, 1.0)
 
 
 ## Each shot kicks the view up and a little sideways. The player pulls down to

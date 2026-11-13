@@ -988,16 +988,29 @@ func _test_main_flow() -> void:
 	check(controller.wrist_raised and wrist.is_open() and holo.visible and wrist.get_parent() == p
 			and wrist.text().contains(main.raid.world.display_name) and wrist.text().contains("Pack "),
 			"X raises the watch, and in third person its card opens over your wrist")
+	# Judged on a wide screen like a player's (headless, the window is a
+	# small square).
+	var window_was := get_tree().root.size
+	get_tree().root.size = Vector2i(1600, 900)
+	await frames(3)
 	var card_width := holo.global_basis.get_scale().x * wrist.face_size.x
-	var from_cam := controller.camera.global_position
-	check(from_cam.distance_to(holo.global_position) > from_cam.distance_to(p.get_eye_position()) + 0.3
-			and card_width < 2.0,
-			"the third-person card hangs out in front of the character, never behind them")
-	var card_on_screen := controller.camera.unproject_position(holo.global_position + controller.camera.global_basis.x * card_width * 0.5)
-	var head_on_screen := controller.camera.unproject_position(p.get_eye_position())
-	check(card_on_screen.x < head_on_screen.x, "and it keeps clear of the head and helmet on screen")
-	check(not (holo.material_override as ShaderMaterial).shader.code.contains("depth_test_disabled"),
-			"in third person the body passes in front of the card, like real light")
+	var cam := controller.camera
+	var card_left := cam.unproject_position(holo.global_position - cam.global_basis.x * card_width * 0.5)
+	var card_right := cam.unproject_position(holo.global_position + cam.global_basis.x * card_width * 0.5)
+	var screen := cam.get_viewport().get_visible_rect().size
+	check(cam.global_position.distance_to(holo.global_position) > cam.global_position.distance_to(p.get_eye_position())
+			and (card_right.x - card_left.x) > screen.x * 0.25 and card_left.x >= 0.0,
+			"the third-person card stands past the character, big enough to read and whole on screen (%d px wide)"
+			% roundi(card_right.x - card_left.x))
+	var head_on_screen := cam.unproject_position(p.get_eye_position())
+	check(card_right.x < head_on_screen.x and card_right.x < screen.x * 0.5,
+			"and beside the character, clear of the head and the crosshair (card to %d, head at %d, of %d)"
+			% [roundi(card_right.x), roundi(head_on_screen.x), roundi(screen.x)])
+	get_tree().root.size = window_was
+	await frames(2)
+	var holo_mat := holo.material_override as ShaderMaterial
+	check(not holo_mat.shader.code.contains("depth_test_disabled") and float(holo_mat.get_shader_parameter("backing")) > 0.5,
+			"in third person it is near solid, and the body in front of it hides what it covers")
 	check(p.cmd.watch_up, "and the raised watch goes out with your inputs, so the arm glows for everyone")
 	var icons: Array = []
 	for slot in wrist.card.slots:
@@ -1023,10 +1036,10 @@ func _test_main_flow() -> void:
 			"scrolling up steps the card left to the weapons, on the Summon tab")
 	controller.scroll(-1)
 	check(controller.watch_focus == 0, "and it stops at the card's left end")
-	for i in controller.watch_weapons().size():
-		controller.scroll(1)
+	controller.scroll(1)
 	await frames(2)
-	check(wrist.focused_id() == "vehicle", "scrolling down turns through the weapons, then steps right an icon a notch")
+	check(wrist.focused_id() == "vehicle" and controller.weapon_pick == 0,
+			"scrolling down steps right an icon a notch, past the weapons without turning through them")
 	for i in 10:
 		if wrist.card.focused_tab() == "status":
 			break
@@ -4647,27 +4660,30 @@ func _test_vehicle_toys() -> void:
 	controller.wrist_raised = true
 	check(controller.is_browsing_toys(), "raising the watch with toys on it lets you pick one")
 	var weapon_before := p.active_weapon_index
+	var vehicle_at := Hud.Wrist.SLOTS.find("vehicle")
+	check(not controller.is_picking_toys() and controller.focused_watch_icon() == "vehicle",
+			"the card opens on the vehicles, closed: the toys wait for a click")
+	check(controller.watch_takes_fire() and controller.click_watch() and controller.watch_open == "vehicle"
+			and controller.is_picking_toys() and controller.held_toy == "", "a click opens the vehicle icon's list")
 	controller.scroll(1)
 	check(controller.watch_index == 1 and controller._pending_switch < 0 and p.active_weapon_index == weapon_before,
-			"with the watch up the wheel turns through the toys, not the weapons")
-	var vehicle_at := Hud.Wrist.SLOTS.find("vehicle")
+			"with the list open the wheel turns through the toys, not the weapons")
 	controller.scroll(1)
-	check(controller.watch_focus == vehicle_at + 1 and not controller.is_picking_toys(),
-			"past the last toy the wheel steps on to the next icon, and fire no longer takes a toy")
-	controller.scroll(-1)
 	check(controller.watch_focus == vehicle_at and controller.watch_index == 1 and controller.is_picking_toys(),
-			"scrolling back onto the vehicles lands on the last toy")
-	controller.scroll(-1)
-	controller.scroll(-1)
-	check(controller.watch_focus == vehicle_at - 1, "and before the first toy it steps off to the left")
+			"the list stops at its last toy; the wheel never leaves it")
+	check(controller.close_watch_icon() and controller.watch_open == "" and not controller.is_picking_toys(),
+			"a right click closes the list")
 	controller.scroll(1)
-	controller.scroll(1)
-	check(controller.watch_focus == vehicle_at and controller.watch_index == 1, "back on the second toy")
+	check(controller.watch_focus == vehicle_at + 1 and controller.watch_index == 1,
+			"closed, the wheel steps across the icons and leaves the pick alone")
+	controller.scroll(-1)
+	check(controller.watch_focus == vehicle_at and controller.watch_index == 1, "back on the vehicles, the second toy still picked")
 	controller.wrist_raised = false
 	controller.scroll(1)
 	check(controller._pending_switch >= 0, "with the watch down the wheel switches weapons again")
 	controller._pending_switch = -1
 	controller.wrist_raised = true
+	check(controller.click_watch() and controller.watch_open == "vehicle", "raised again, a click opens the toys")
 	await get_tree().process_frame
 	await get_tree().process_frame
 	check(hud.wrist.toys_shown() == raid.stowed_for(p) and hud.wrist.get_node("Hologram/Toys").get_child_count() == 2,

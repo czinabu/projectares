@@ -195,6 +195,8 @@ static func through_base(t: Node, main: Node) -> void:
 	var card: Dictionary = Hud.base_watch_slots("Home base", base.loadout, [] as Array[Dictionary],
 			controller.portal_pick)[Hud.Wrist.SLOTS.find("portal")]
 	t.check(card.detail == "Portal to Ashfront", "the watch's portal icon offers %s" % card.detail)
+	t.check(controller.watch_takes_fire() and controller.click_watch() and controller.watch_open == "portal"
+			and base.portal == null, "a first click opens the icon's list of places")
 	t.check(controller.watch_takes_fire() and controller.click_watch(), "a click on it opens the portal")
 	var portal: Portal = base.portal
 	t.check(portal != null and portal.destination == "ashfront" and not controller.wrist_raised,

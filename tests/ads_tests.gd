@@ -166,6 +166,17 @@ static func _check_with_skin(t: Node, kit: Array, what: String) -> void:
 	var cam_off := (sight - cam.global_position) - ahead * (sight - cam.global_position).dot(ahead)
 	t.check(cam_off.length() < 0.01 and controller.sighted,
 			"%s: first person looks down the sight (%.3f m off)" % [what, cam_off.length()])
+	if gun.scope_lens:
+		# Picture in picture: the world around the scope stays as wide as
+		# plain sights, and the lens shows the view magnified by the zoom.
+		var lens := gun.visual.find_child("Lens", true, false) as MeshInstance3D
+		var reach := (lens.global_position - cam.global_position).dot(ahead)
+		var seen_deg := rad_to_deg(2.0 * atan((lens.mesh as QuadMesh).size.y * 0.5 * lens.global_basis.get_scale().y / reach))
+		t.check(controller.scoped() and lens.material_override != null
+				and absf(controller._scope_cam.fov * gun.aim_zoom() - seen_deg) < seen_deg * 0.15 + 0.5,
+				"%s: the lens shows the view magnified %.1fx (%.1f of %.1f deg)" % [what, gun.aim_zoom(), controller._scope_cam.fov, seen_deg])
+		t.check(seen_deg < cam.fov * 0.7 and absf(controller.aim_fov(gun) - controller.ads_fov) < 0.01,
+				"%s: the scope is a picture in the middle of the view, the world around it still seen (%.0f of %.0f deg)" % [what, seen_deg, cam.fov])
 	# The stutter: a physics tick parks the hand node at its rest; the view
 	# must follow the sight as drawn, not where the tick left it.
 	var shown_local: Transform3D = p.hand.get_meta("shown_local")
@@ -183,6 +194,9 @@ static func _check_with_skin(t: Node, kit: Array, what: String) -> void:
 	_aim(p, gun, false)
 	await t.frames(40)
 	t.check(pose.ads == 0.0 and not controller.sighted, "%s: letting go lowers the gun" % what)
+	if gun.scope_lens:
+		var glass := gun.visual.find_child("Lens", true, false) as MeshInstance3D
+		t.check(not controller.scoped() and glass.material_override == null, "%s: lowered, the lens is plain glass again" % what)
 	controller.queue_free()
 	Look.enabled = false
 	raid.queue_free()

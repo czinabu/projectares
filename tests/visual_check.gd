@@ -380,9 +380,11 @@ func _watch_shots(out_dir: String) -> void:
 				await _shot(out_dir.path_join("watch_look_%s.png" % Hud.Wrist.SLOTS[i]))
 			# The weapon carousel on a weapon in the pack.
 			controller.watch_focus = Hud.Wrist.SLOTS.find("weapon")
+			controller.watch_open = "weapon"
 			controller.weapon_pick = 3
 			await _settle(20)
 			await _shot(out_dir.path_join("watch_carousel_pack_weapon.png"))
+			controller.watch_open = ""
 			controller.watch_focus_moved = false
 		controller.toggle_view()
 		await _settle(40)
@@ -392,9 +394,11 @@ func _watch_shots(out_dir: String) -> void:
 			# digitizing into the hand, part way and done, in both views.
 			controller.watch_focus = Hud.Wrist.SLOTS.find("weapon")
 			controller.watch_focus_moved = true
+			controller.watch_open = "weapon"
 			controller.weapon_pick = 3
 			await _settle(20)
 			await _shot(out_dir.path_join("watch_carousel_third.png"))
+			controller.watch_open = ""
 			controller.wrist_raised = false
 			await _settle(30)
 			raid.summon(p, "rifle_carbine")
@@ -480,6 +484,7 @@ func _portal_shots(out_dir: String) -> void:
 	controller.wrist_raised = true
 	controller.watch_focus = Hud.Wrist.SLOTS.find("portal")
 	controller.watch_focus_moved = true
+	controller.watch_open = "portal"
 	controller.portal_pick = Portal.destinations().find("ashfront")
 	await _settle(30)
 	await _shot(out_dir.path_join("portal_watch_first.png"))
@@ -511,6 +516,7 @@ func _toy_shots(out_dir: String) -> void:
 	raid.add_child(hud)
 	await _settle(90)
 	controller.wrist_raised = true
+	controller.click_watch()
 	await _settle(40)
 	await _shot(out_dir.path_join("toys_watch_first.png"))
 	controller.watch_index = 1
