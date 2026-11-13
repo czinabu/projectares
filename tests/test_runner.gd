@@ -5006,6 +5006,8 @@ func _test_plaza_online() -> void:
 			me.cmd.primary = false
 			var bo_me := bo.raid.player
 			check(bo_me.health.health == bo_me.health.max_health and not bo_me.is_dead, "nobody can be shot in the plaza")
+			# Aim again where Bo is now: the view of him can still settle after he stops.
+			aim = (bo_seen.global_position + Vector3(0, 1.1, 0) - me.get_eye_position()).normalized()
 			var looking := PlazaView.inspect_target(ada.raid, me, me.get_eye_position(), aim, 60.0, 9.0)
 			check(looking == bo_seen, "looking at a player picks them for the gear card")
 			check(PlazaView.gear_tag(bo_seen).begins_with(bo_seen.display_name.to_upper()) and "Kit worth" in PlazaView.gear_tag(bo_seen),
