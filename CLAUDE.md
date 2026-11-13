@@ -457,8 +457,9 @@ without Caleb, and update the gap list when a PR closes a row.
   them (`NetSession.InputBuffer`): nothing is held back to smooth a bad
   connection, because a held input is input delay. A tick with nothing to
   play is a guess (the held keys carry on) that counts as the next input,
-  and the real one is skipped when it arrives late, keeping its presses;
-  inputs that stay spare are trimmed. Each state entry carries the input
+  and the real one is skipped when it arrives late, keeping its presses
+  and any held key that went down in it (a one-tick tap of the trigger is a
+  shot, see `InputBuffer._late_taps`); inputs that stay spare are trimmed. Each state entry carries the input
   number the actor had been simulated up to (guesses included), and a
   player's own entry also carries the newest input received, which is the
   answer that stops the resending. The client corrects its own
