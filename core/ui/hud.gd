@@ -752,6 +752,9 @@ void fragment() {
 	## The light reaches out to it from the wrist.
 	var third_person_view := 0.95
 	var projection_at := Vector3(-0.85, 0.35, 0.9)
+	## How far, in metres at the head, the card keeps clear of the head and
+	## helmet from the camera's view.
+	var head_clearance := 0.3
 	## The glow on the arm while the card is up: how bright, and how far it
 	## reaches.
 	var glow_energy := 0.7
@@ -973,6 +976,8 @@ void fragment() {
 						+ side * projection_at.x
 				var far := cam.global_position.distance_to(spot) if cam else 3.0
 				var size := far / first_person_at.length() * third_person_view
+				if cam:
+					spot = _clear_of_head(p, cam, spot, face_size.x * size * 0.5)
 				var at := wrist.lerp(spot, ease(open, -2.0))
 				_holo.global_transform = Transform3D(facing.scaled(Vector3(size, size * maxf(open, 0.001), size)), at)
 				_glow.global_position = wrist
@@ -984,6 +989,23 @@ void fragment() {
 			_glow.position = _holo.position + Vector3(0, -0.04, 0.02)
 		(_holo.material_override as ShaderMaterial).set_shader_parameter("open", open)
 		_draw_beam(third, open)
+
+	## Third person: slides the card's centre `spot` left, as the camera sees
+	## it, until the card (half as wide as `half_width`) clears the head and
+	## helmet with room to spare, so the character is never hidden behind it.
+	func _clear_of_head(p: Actor, cam: Camera3D, spot: Vector3, half_width: float) -> Vector3:
+		var to_cam := cam.global_transform.affine_inverse()
+		var card := to_cam * spot
+		var head := to_cam * (p.get_eye_position() + Vector3.UP * 0.1)
+		if card.z >= -0.01 or head.z >= -0.01:
+			return spot
+		# The head's side and its edge, brought to the card's depth.
+		var at_depth := card.z / head.z
+		var head_left := head.x * at_depth - head_clearance * at_depth
+		var overlap := card.x + half_width - head_left
+		if overlap <= 0.0:
+			return spot
+		return cam.global_transform * (card - Vector3(overlap, 0.0, 0.0))
 
 	## The watch face, where the light comes from: the forearm's watch in
 	## first person, the one worn on the wrist bone in third.
