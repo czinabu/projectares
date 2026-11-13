@@ -46,7 +46,11 @@ skies, animated models and effects (see "How it looks" below).
 | Phone at Settings (also frees the mouse); Esc again closes it | Esc |
 
 The jetpack runs on heat. Overheat it and you fall until it cools. Rooftop
-caches hold the best loot, and only the jetpack gets you there.
+caches hold the best loot, and only a flight rig gets you there. Every rig
+comes as Mk1, Mk2 and Mk3: the Mk1 lifts you to rooftop height (25 m), the
+Mk2 to the tower tops (60 m) and the Mk3 over everything (100 m), and each
+tier up runs cooler. Rigs drop at Mk1; the better tiers will be crafted
+from blueprints.
 
 Almost nothing is drawn over the screen in a raid: the crosshair, hit marks
 and what E will do. Everything else is on your gear. You wear a holographic
@@ -284,7 +288,9 @@ you have.
   never cool and burn out in seconds. Jump kicks you up, and three kicks top
   a 15 m roof, which is a surface to cool on again. They dash furthest of any rig, and the aim stays
   steady while skimming low. Shooting from the
-  air spreads wider, except from a hover or a low skim.
+  air spreads wider, except from a hover or a low skim. Each rig comes in
+  three tiers with a higher ceiling and cooler running each time, at the
+  same cruise speed.
 - An ability slot. Phase Step blinks you forward, Kinetic Barrier cuts damage
   for a few seconds, Shock Pulse staggers everyone near you. Each has a cooldown.
 - Attachments for your primary, in four slots: optic, muzzle, grip and
