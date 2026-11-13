@@ -121,6 +121,15 @@ var warlord_escort := 2
 ## holds one. 0 keeps them out of this world.
 var warlord_artifact_chance := 0.5
 var pod_artifact_chance := 0.1
+## Blueprints and upgrade data (DESIGN.md section 10) come from the fights
+## worth having: the chance that a warlord carries a blueprint and that a
+## supply pod holds one, and how much upgrade data each always has. 0 keeps
+## them out of this world, which is the default: only a PvP world hands
+## them out.
+var warlord_blueprint_chance := 0.0
+var pod_blueprint_chance := 0.0
+var warlord_upgrade_data := 0
+var pod_upgrade_data := 0
 ## Seconds between dying and being allowed to drop in again.
 var redeploy_delay := 3.0
 ## False for a venue where nobody loses gear (the arena). The server then
@@ -192,6 +201,23 @@ func roll_artifact(rng: RandomNumberGenerator, chance: float) -> String:
 
 
 ## PvP rules live here. Called for every hit before damage is applied.
+## What a world event adds for crafting: a blueprint with chance `chance`,
+## picked evenly from every item tagged "blueprint", and `data` upgrade data.
+func roll_crafting_loot(rng: RandomNumberGenerator, chance: float, data: int) -> Array[String]:
+	var out: Array[String] = []
+	if chance > 0.0 and rng.randf() < chance:
+		var ids: Array[String] = []
+		for id: String in ItemDB.all_ids():
+			if ItemDB.has_tag(id, "blueprint"):
+				ids.append(id)
+		if not ids.is_empty():
+			ids.sort()
+			out.append(ids[rng.randi() % ids.size()])
+	for i in maxi(data, 0):
+		out.append("upgrade_data")
+	return out
+
+
 func can_damage(attacker: Node, target: Node, _info: DamageInfo) -> bool:
 	return attacker != target
 

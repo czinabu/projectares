@@ -64,6 +64,14 @@ const ROOFTOP_TABLE := [
 	{"id": "helm_seeker", "weight": 4.0},
 	{"id": "helm_warden", "weight": 4.0},
 	{"id": "helm_ember", "weight": 4.0},
+	# Blueprints for rigs and guns, and the upgrade data that steps a rig up
+	# (DESIGN.md section 10). Vehicle blueprints only come from world events.
+	{"id": "upgrade_data", "weight": 8.0},
+	{"id": "bp_jetpack", "weight": 2.0},
+	{"id": "bp_boots_thruster", "weight": 2.0},
+	{"id": "bp_wings_glide", "weight": 2.0},
+	{"id": "bp_dmr_longshot", "weight": 2.0},
+	{"id": "bp_shotgun_breacher", "weight": 2.0},
 ]
 
 ## Abandoned vehicles parked around the field. Anyone can ride one out. The
@@ -112,6 +120,11 @@ func _init() -> void:
 	depot_hold_time = 4.0
 	# The open battlefield is big enough to fly a jet over.
 	open_skies = true
+	# The PvP world is where blueprints and upgrade data come from.
+	warlord_blueprint_chance = 0.5
+	pod_blueprint_chance = 0.35
+	warlord_upgrade_data = 2
+	pod_upgrade_data = 1
 
 
 func create_map() -> Node3D:

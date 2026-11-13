@@ -9,6 +9,7 @@ const Arsenal := preload("res://tests/melee_arsenal_tests.gd")
 
 static func run(t: Node) -> void:
 	_data(t)
+	_motion(t)
 	await _in_raid(t)
 
 
@@ -69,6 +70,71 @@ static func _data(t: Node) -> void:
 	health.apply_damage(cut)
 	t.check(is_equal_approx(health.armor, 40.0), "an armor-breaking hit tears plates off")
 	health.free()
+
+
+## How each weapon's attacks are shown: its own swing style, a swing that
+## speeds into the hit and eases out, a windup that keeps coiling.
+static func _motion(t: Node) -> void:
+	print("Melee viability: swing styles and timing")
+	var styles := {}
+	for id: String in ItemDB.all_ids():
+		if not ItemDB.has_tag(id, "melee"):
+			continue
+		var blade := Arsenal._make(id)
+		for style in [blade.swing_style, blade.heavy_style]:
+			if style not in ["slash", "thrust", "chop", ""] or blade.swing_style == "":
+				t.check(false, "%s has a known swing style" % id)
+		styles[id] = [blade.swing_style, blade.heavy_style]
+		blade.free()
+	t.check(styles["spear_lancer"][0] == "thrust", "the spear thrusts")
+	t.check(styles["axe_splitter"][0] == "chop" and styles["hammer_breaker"][0] == "chop", "the axe and hammer chop")
+	t.check(styles["blade_scrap"][0] == "slash" and styles["blade_arc"][0] == "slash", "swords slash")
+	t.check(styles["knife_gutter"] == ["slash", "thrust"], "the knife slashes, and its heavy is a stab")
+
+	var sword := Arsenal._make("blade_scrap")
+	sword._windup_kind = "light"
+	sword._windup_left = 0.3
+	sword._windup_total = 0.3
+	sword._swing_lead = 0.09
+	t.check(sword.swing_arc() < 0.0 and sword.windup_coil() == 0.0, "early in a windup no swing shows yet")
+	sword._windup_left = 0.15
+	var coil_mid := sword.windup_coil()
+	sword._windup_left = 0.1
+	t.check(sword.windup_coil() > coil_mid and coil_mid > 0.0, "the windup keeps drawing back as it goes on")
+	sword._windup_left = 0.06
+	var early := sword.swing_arc()
+	sword._windup_left = 0.03
+	var late := sword.swing_arc()
+	t.check(early >= 0.0 and late > early and late - early > early, "the swing starts before the hit and speeds up into it")
+	sword._windup_left = 0.0
+	sword._swing_time = MeleeWeapon.SWING_TIME
+	sword._swing_left = sword._swing_time
+	t.check(is_equal_approx(sword.swing_arc(), 0.5), "the blade is mid-arc as the hit lands")
+	sword._swing_left = sword._swing_time * 0.5
+	var mid := sword.swing_arc()
+	sword._swing_left = 0.0001
+	t.check(mid > 0.5 and mid - 0.5 > sword.swing_arc() - mid, "and slows through the follow-through")
+	sword.free()
+
+	var pose := ActionPose.new()
+	var spear := Arsenal._make("spear_lancer")
+	var plain := Arsenal._make("blade_scrap")
+	var axe := Arsenal._make("axe_splitter")
+	var knife := Arsenal._make("knife_gutter")
+	var right := MeleeWeapon.Dir.RIGHT
+	t.check(pose.follow_reach(spear, right).z < -0.3 and pose.windup_reach(spear, right).z > 0.2,
+			"a thrust draws the hand back, then drives it out ahead")
+	t.check(pose.windup_reach(axe, right).y > pose.windup_reach(plain, right).y + 0.15,
+			"a chop is raised higher than a slash")
+	t.check(pose.follow_reach(axe, right).y < pose.follow_reach(plain, right).y, "and ends lower")
+	t.check(pose.windup_reach(knife, MeleeWeapon.Dir.LEFT).length() < pose.windup_reach(plain, MeleeWeapon.Dir.LEFT).length(),
+			"a knife's swings are tighter than a sword's")
+	var hammer := Arsenal._make("hammer_breaker")
+	hammer._shown_kind = "light"
+	t.check(hammer.is_two_handed() and MeleeWeapon.TWO_HAND_SWING > 1.0, "a two-hander swings slower, with its weight")
+	for blade in [spear, plain, axe, knife, hammer]:
+		blade.free()
+	pose.free()
 
 
 static func _in_raid(t: Node) -> void:

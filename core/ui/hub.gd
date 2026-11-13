@@ -25,6 +25,8 @@ signal online_deploy_requested
 ## In a server's lobby: buy from a hub shop, or sell stash items ("" sells all loot).
 signal online_buy_requested(shop_id: String, item_id: String)
 signal online_sell_requested(item_id: String, count: int)
+## In a server's lobby: craft one item at the gunsmith bench.
+signal online_craft_requested(item_id: String)
 signal online_leave_requested
 ## A station screen was put away (Esc or the button).
 signal closed
@@ -37,6 +39,7 @@ const MasteryBook := preload("res://core/progression/mastery_book.gd")
 const RenownLedger := preload("res://core/progression/renown_ledger.gd")
 const ShopPanel := preload("res://core/economy/shop_panel.gd")
 const Economy := preload("res://core/economy/economy.gd")
+const CraftPanel := preload("res://core/progression/craft_panel.gd")
 
 ## Which sections of this screen each home base station shows. The stations
 ## themselves, with their titles, are `HomeBase.STATIONS`.
@@ -48,6 +51,8 @@ const STATIONS := {
 	"records": {"sections": ["records"]},
 	"trader": {"sections": ["shop"]},
 	"uplink": {"sections": ["online", "status"]},
+	# The fabricator on the gunsmith bench (`HomeBase.CraftConsole`).
+	"craft": {"sections": ["craft"], "title": "Fabricator"},
 }
 
 ## Your account on the server you are connected to (see
@@ -62,6 +67,7 @@ var _pickers := {}
 var _details := {}
 var _mastery: MasteryPanel
 var _shop: ShopPanel
+var _craft: CraftPanel
 var character: CharacterPanel
 var _online_status: Label
 var _name_edit: LineEdit
@@ -169,6 +175,11 @@ func _ready() -> void:
 	_shop.changed.connect(_refresh_gear)
 	_section(box, "shop").add_child(_shop)
 
+	_craft = CraftPanel.new()
+	_craft.craft_requested.connect(func(item_id: String) -> void: online_craft_requested.emit(item_id))
+	_craft.changed.connect(_refresh_gear)
+	_section(box, "craft").add_child(_craft)
+
 	var deploy := _section(box, "deploy")
 	_solo_box = VBoxContainer.new()
 	_solo_box.add_theme_constant_override("separation", 10)
@@ -227,8 +238,10 @@ func open_station(id: String, also: Array = []) -> void:
 	if not STATIONS.has(id):
 		return
 	station = id
+	_craft.show_message("")
 	var sections: Array = STATIONS[id]["sections"].duplicate()
-	var names: Array[String] = [str(HomeBase.STATIONS[id]["title"]) if HomeBase.STATIONS.has(id) else id]
+	var names: Array[String] = [str(HomeBase.STATIONS[id]["title"]) if HomeBase.STATIONS.has(id)
+			else str(STATIONS[id].get("title", id))]
 	for other: Variant in also:
 		if not STATIONS.has(other):
 			continue
@@ -339,6 +352,7 @@ func _refresh_gear() -> void:
 		record.get("raids_played"), record.get("raids_extracted"), record.get("kills"),
 		renown_text(lifetime)]
 	_shop.refresh()
+	_craft.refresh()
 	# Clothing in the stash unlocks its outfits in the customizer.
 	character.owned = Economy.unlocked_outfits(stash_items())
 	character.set_appearance(Profile.appearance)
@@ -508,6 +522,7 @@ func update_account(p_account: Dictionary) -> void:
 	_mastery.book = book
 	_mastery.loadout = account.get("loadout", {})
 	_shop.account = account
+	_craft.account = account
 	_show_sections()
 	_refresh_gear()
 
@@ -518,6 +533,7 @@ func leave_lobby() -> void:
 	_mastery.book = null
 	_mastery.loadout = null
 	_shop.account = null
+	_craft.account = null
 	_show_sections()
 	_refresh_gear()
 
@@ -537,6 +553,11 @@ func stash_items() -> Array:
 ## The home base upgrades on show: the server's account's, or the profile's.
 func base_upgrades() -> Array:
 	return account.get("base_upgrades", []) if in_lobby() else Profile.base_upgrades
+
+
+## The blueprints known: the server's account's, or the profile's.
+func blueprints() -> Array:
+	return account.get("blueprints", []) if in_lobby() else Profile.blueprints
 
 
 ## The scrip on show: the server's account's, or the profile's.

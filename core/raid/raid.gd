@@ -580,6 +580,7 @@ func start_event(kind: String) -> bool:
 		var relic := world.roll_artifact(rng, world.pod_artifact_chance)
 		if relic != "":
 			items.append(relic)
+		items.append_array(world.roll_crafting_loot(rng, world.pod_blueprint_chance, world.pod_upgrade_data))
 		_event_pod = spawn_container(items, false, "Supply pod", at)
 		armory.on_supply_pod(at)
 		event = {"kind": "supply_pod", "title": "Supply pod"}
@@ -1096,6 +1097,9 @@ func _add_bot(marker: Node3D, warlord := false) -> Actor:
 		var relic := world.roll_artifact(rng, world.warlord_artifact_chance)
 		if relic != "":
 			bot.inventory.add_item(relic)
+		# And what crafting runs on (DESIGN.md section 10).
+		for id in world.roll_crafting_loot(rng, world.warlord_blueprint_chance, world.warlord_upgrade_data):
+			bot.inventory.add_item(id)
 	_bot_count += 1
 	var brain := BotBrain.new()
 	brain.name = "Brain"

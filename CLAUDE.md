@@ -177,7 +177,19 @@ without Caleb, and update the gap list when a PR closes a row.
   `DamageInfo.weapon_id` and `undeflectable_tags` (marksman, power) go
   through any guard. Noise is `Combat.noise`, which only guns call (a person's
   shot, at most every `Gun.noise_every`): patrolling bots hear it through
-  `Actor.heard`. Never make a blade call it; melee kills are silent. Every melee
+  `Actor.heard`. Never make a blade call it; melee kills are silent.
+  Each weapon swings its own way, from item stats (view only):
+  `swing_style` "slash" (swords' arcs), "thrust" (straight out along the
+  aim: the spear), "chop" (down from over the shoulder: the axe, the
+  hammer), `heavy_style` for a heavy of its own (the knife's stab) and
+  `swing_scale` for its size. `ActionPose.windup_reach`/`follow_reach` and
+  `MeleeWeapon._animate` read `style_now()`. The shown swing starts
+  `SWING_LEAD` before the strike and speeds into it, half its arc at the
+  hit, then eases out (`MeleeWeapon.swing_arc`; both views read it); a
+  windup keeps coiling back (`windup_coil`); two-handers swing slower and
+  turn the body more. A new melee weapon picks a style; check it by eye with
+  `visual_check.tscn -- <dir> --swing-only` (run with `--fixed-fps 60`),
+  which films each move frame by frame. Every melee
   model is dressed as tech by `Look._tech_melee` (`assets/shaders/melee.gdshader`):
   bare metal becomes alloy with an energy edge in the weapon's rarity color,
   wood and wraps black polymer with glowing seams. A holstered blade is worn
@@ -289,7 +301,24 @@ without Caleb, and update the gap list when a PR closes a row.
   (`ActionPose.phone`, from `ActorCommand.phone`, which `Locomotion` poses
   the body from). `WeaponArm` and `ActorSkin` pose the model from it; a new
   hand or weapon animation goes there. Weapons are held, not floated
-  (Caleb's call): the hand carries them. A blade lies along the closed fist
+  (Caleb's call): the hand carries them, each by its own grip (Caleb's
+  call), found on the model rather than tuned by hand. `Look._measure_hold`
+  reads a gun's side outline for its trigger guard, the pistol grip behind
+  it (its rake) and the fore end ("Grip", "Trigger", "ForeGrip" markers;
+  a power weapon marks its grip in `_power_grip`); the fist's middle closes
+  on the grip level with the trigger and the wrist bends to its rake
+  (`WeaponArm._held_wrist`, `_bend_to_grip`). Whenever a gun is raised
+  (aiming or shooting, not held low or reloading) the off hand supports it
+  as in a real FPS hold (Caleb's references): under a long gun's fore end
+  palm up, fingers up its side ("ForeGrip", found just under the fore end,
+  `Look.FORE_CUP`), and wrapped round the shooting hand on a sidearm
+  (`ActionPose.ads_cup`); its wrist is turned by `WeaponArm._support_turn`.
+  `Look._fit_hands` finds a melee handle (up to its guard or
+  head), puts it through the fist and gives a two-handed weapon
+  (`Look.is_two_handed`) its off hand's place: a hand below on a short
+  handle, up the haft of a long one, which rests carried across the body
+  (`WeaponArm.carry_point`). Check by eye with
+  `visual_check.tscn -- <dir> --hands-only`. A blade lies along the closed fist
   and a gun held low turns with the wrist (`WeaponArm`); swings turn the
   arm about the shoulder (`ActionPose.swing_reach`, `elbow_pole`). Shots
   are judged from the eyes but drawn from the gun's "Muzzle" marker as it
@@ -633,7 +662,8 @@ without Caleb, and update the gap list when a PR closes a row.
   `Main.DEV_ACCOUNTS`, apart from real ones. No cheats online. Every line
   it touches is marked "DEV MODE". Never build a feature on it; to remove it,
   delete `core/dev/` and every "DEV MODE" line or block, plus
-  `_test_dev_mode` in the tests.
+  `_test_dev_mode` in the tests. Dev mode also knows every blueprint
+  (`DevMode.top_up_blueprints`).
 - Safe zones: a world with `WorldDef.safe_zone` (the plaza, `worlds/plaza`)
   is a social space run by the same `Raid` and `NetSession`. `Combat.deal`
   refuses every hit there, `Actor.weapons_locked` stops attacks, abilities
@@ -749,6 +779,24 @@ without Caleb, and update the gap list when a PR closes a row.
   face, sized to read like a card at arm's length (`fp_card_reads_at`). Check it by eye with
   `visual_check.tscn -- <dir> --watch-only` (`--base-watch-only` for just
   the base).
+- Blueprints and crafting (`core/progression/crafting.gd`, static rules like
+  `Economy`, DESIGN.md section 10). A blueprint is an item tagged
+  "blueprint": loot while carried, learned when it reaches a stash
+  (`Crafting.learn` moves it to the account's known list:
+  `Profile.blueprints` solo, the account's online, in the snapshot), and
+  never lost after that; a spare copy stays in the stash as a trade good.
+  Anything that hands an account items must go through
+  `Profile.add_to_stash` or `StashService.Account.add_items`, never append
+  to a stash, or a blueprint is stored instead of learned. A recipe
+  (`Crafting.RECIPES`) makes one item from a known blueprint for scrip,
+  parts and, for a higher Mk, the item `upgrade_data`; what it makes is
+  ordinary gear. Crafting is done at the fabricator on the gunsmith bench
+  (`HomeBase.CraftConsole`, the hub's "craft" section, `craft_panel.gd`):
+  `Profile.craft` solo, `NetSession.craft` online, where only
+  `StashService.craft` decides. Blueprints and upgrade data come from the
+  PvP world only (`WorldDef.roll_crafting_loot` and its chances, 0 by
+  default; a world's own loot tables). A new craftable is a recipe row and,
+  if it needs one, a `_blueprint` item. Costs are placeholders.
 - Money (`core/economy/`): the rules live once, in `economy.gd` (static, like
   `StashRules`), shared by `Profile` and `StashService`. Online, `scrip`
   lives on the server's account and only changes there: through

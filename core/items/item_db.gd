@@ -155,7 +155,7 @@ func _ready() -> void:
 			"Faster swings and a more forgiving parry.")
 	register("hammer_breaker", "Breaker Hammer", Rarity.UNCOMMON, 500, ["weapon", "melee", "two_handed", "hammer", "vendor"],
 			{"light_damage": 42.0, "heavy_damage": 95.0, "light_windup": 0.22, "light_recover": 0.45,
-			"heavy_windup": 0.55, "light_stamina": 16.0, "heavy_stamina": 36.0, "reach": 3.1,
+			"heavy_windup": 0.55, "light_stamina": 16.0, "heavy_stamina": 36.0, "reach": 3.1, "swing_style": "chop",
 			"slam_damage": 85.0, "slam_radius": 5.5},
 			"Slow and brutal. Its dive slam hits a wide area.")
 	register("knife_gutter", "Gutter Knife", Rarity.COMMON, 250, ["weapon", "melee", "one_handed", "knife", "vendor"],
@@ -163,18 +163,18 @@ func _ready() -> void:
 			"light_windup": 0.08, "light_recover": 0.15, "heavy_windup": 0.25, "heavy_recover": 0.35,
 			"heavy_lunge": 12.0, "light_stamina": 6.0, "heavy_stamina": 18.0, "parry_window": 0.16,
 			"slam_damage": 35.0, "slam_radius": 3.0, "backstab_mult": 2.2, "backstab_arc_deg": 180.0,
-			"move_mult": 1.15},
+			"move_mult": 1.15, "heavy_style": "thrust", "swing_scale": 0.7},
 			"Very quick, short and light. Cuts from behind do more than double, so get round their guard.")
 	register("axe_splitter", "Splitter Axe", Rarity.UNCOMMON, 550, ["weapon", "melee", "one_handed", "axe", "vendor"],
 			{"light_damage": 33.0, "heavy_damage": 85.0, "reach": 2.6, "light_windup": 0.16,
 			"light_recover": 0.34, "heavy_windup": 0.48, "light_stamina": 13.0, "heavy_stamina": 32.0,
-			"guard_crush": 2.5},
+			"guard_crush": 2.5, "swing_style": "chop", "swing_scale": 0.9},
 			"Chops through guards. Blocking it costs two and a half times the stamina, so a few hits break a guard.")
 	register("spear_lancer", "Lancer Spear", Rarity.RARE, 900, ["weapon", "melee", "two_handed", "spear"],
 			{"light_damage": 27.0, "heavy_damage": 62.0, "reach": 4.1, "arc_deg": 40.0,
 			"vertical_reach": 3.8, "close_range": 1.5, "close_mult": 0.5, "light_windup": 0.14,
 			"light_recover": 0.3, "heavy_windup": 0.42, "heavy_lunge": 6.0, "heavy_stagger": 0.6,
-			"slam_damage": 40.0, "slam_radius": 3.5},
+			"slam_damage": 40.0, "slam_radius": 3.5, "swing_style": "thrust"},
 			"The longest reach of any blade, and it pokes fliers overhead. Narrow thrusts, half damage up close, and a heavy thrust staggers.")
 
 	# Armor frames
@@ -336,6 +336,29 @@ func _ready() -> void:
 			"footprint": Vector3(5.0, 1.8, 6.6), "watch_recharge": 40.0, "bay_scale": 0.42},
 			"Starfighter. Fast across the map and fragile; it cannot hover, and only flies in worlds with open skies.")
 
+	# Blueprints (DESIGN.md section 10). Found in the PvP world and at stake
+	# until they are home; once in a stash a blueprint is learned for good
+	# and what it makes is crafted at the gunsmith bench (`Crafting`). A copy
+	# of one already known is loot to sell. Never sold in a shop.
+	_blueprint("bp_jetpack", "Jetpack Blueprint", Rarity.RARE, 300,
+			"Plans for the jetpack. Craft the Mk2 and Mk3 from it with upgrade data.")
+	_blueprint("bp_boots_thruster", "Thruster Boots Blueprint", Rarity.RARE, 300,
+			"Plans for the thruster boots. Craft the Mk2 and Mk3 from it with upgrade data.")
+	_blueprint("bp_wings_glide", "Glide Wings Blueprint", Rarity.RARE, 300,
+			"Plans for the glide wings. Craft the Mk2 and Mk3 from it with upgrade data.")
+	_blueprint("bp_dmr_longshot", "Longshot DMR Blueprint", Rarity.RARE, 250,
+			"Plans for the Longshot DMR. Craft one whenever you have the parts.")
+	_blueprint("bp_shotgun_breacher", "Breacher Shotgun Blueprint", Rarity.RARE, 250,
+			"Plans for the Breacher Shotgun. Craft one whenever you have the parts.")
+	_blueprint("bp_mech_bulwark", "Bulwark Mech Blueprint", Rarity.EPIC, 1200,
+			"Plans for the Bulwark Mech. The only way to own one.")
+	_blueprint("bp_jet_kestrel", "Kestrel Jet Blueprint", Rarity.EPIC, 1200,
+			"Plans for the Kestrel Jet. The only way to own one.")
+	# What a Mk2 or Mk3 craft spends. Worth nothing to a shop, so it is never
+	# sold by accident; it is only kept if you get it home.
+	register("upgrade_data", "Upgrade Data", Rarity.RARE, 0, ["upgrade_data"], {},
+			"Combat data pulled from the war. Steps a blueprint up to Mk2 and Mk3 at the gunsmith bench.")
+
 	# Consumables
 	register("medkit", "Medkit", Rarity.COMMON, 60, ["consumable", "heal", "vendor"], {"heal": 50.0}, "Heals 50.")
 
@@ -401,6 +424,11 @@ func _attachment(id: String, display_name: String, rarity: Rarity, value: int, s
 	if vendor:
 		tags.append("vendor")
 	register(id, display_name, rarity, value, tags, stats, description)
+
+
+## Registers a blueprint (see `core/progression/crafting.gd` for what it makes).
+func _blueprint(id: String, display_name: String, rarity: Rarity, value: int, description: String) -> void:
+	register(id, display_name, rarity, value, ["blueprint"], {}, description)
 
 
 ## Registers a clothing item that unlocks the customizer outfits `outfits`.

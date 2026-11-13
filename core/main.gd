@@ -151,6 +151,9 @@ func _ready() -> void:
 	hub.online_sell_requested.connect(func(item_id: String, count: int) -> void:
 		if net:
 			net.sell(item_id, count))
+	hub.online_craft_requested.connect(func(item_id: String) -> void:
+		if net:
+			net.craft(item_id))
 	hub.online_leave_requested.connect(leave_server)
 	_setup_phone()
 	hub.look_changed.connect(func(appearance: Dictionary) -> void:
@@ -356,9 +359,9 @@ func _unmount_station_screen() -> void:
 ## Stepped away from a station: the room takes the mouse back.
 func _on_station_closed() -> void:
 	_unmount_station_screen()
-	# The trader may have changed what you can afford.
-	if base != null and not base.read_only:
-		base.set_scrip(hub.scrip())
+	# The trader or the fabricator may have changed the stash and what you
+	# can afford: the room shows the same stash the screen did.
+	_refresh_base()
 	if base_hud:
 		base_hud.visible = true
 	if controller != null and is_instance_valid(controller) and not phone.is_open:

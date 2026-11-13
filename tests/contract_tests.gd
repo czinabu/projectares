@@ -127,6 +127,13 @@ static func _server(t: Node) -> void:
 	t.check(settled.ok and service.scrip_of(id) == before + Contracts.job("cull").scrip
 			and service.snapshot(id).contracts.active.is_empty() and settled.contracts.finished == [Contracts.job("cull").title],
 			"settling a sign-out pays the finished job into the account")
+	t.check(service.contract(id, "take", "tyrant").ok, "a weekly can be taken")
+	var known_before := account.blueprints.size()
+	service.deploy(id, Worlds.raid_worlds()[0])
+	service.settle(id, {"outcome": "left", "brought_home": [], "tally": {"warlords": 3}})
+	t.check(account.blueprints.size() == known_before + 1 and "upgrade_data" in account.stash
+			and not account.stash.any(func(item: String) -> bool: return ItemDB.has_tag(item, "blueprint")),
+			"a weekly's blueprint reward is learned, not stored, and upgrade data comes with it")
 	var saved := account.to_dict()
 	var loaded := Accounts.Account.new()
 	loaded.load_dict(JSON.parse_string(JSON.stringify(saved)))

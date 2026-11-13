@@ -45,8 +45,24 @@ var watch_elbow := Vector3(-1.0, 1.2, -0.15)
 ## eyes, and the hand stays straight on from the forearm.
 ## The most the wrist bends to line the grip up with the blade, in radians.
 var wrist_limit := 1.3
-## Where the off hand holds a two-handed weapon, along its handle from the grip.
+## The most the wrist bends from the aim clip's hold to lie along a gun's
+## own pistol grip, in radians.
+var grip_bend_limit := 0.6
+## Where the off hand holds a two-handed weapon, along its handle from the
+## grip, where the model does not say (`Look._fit_hands`).
 var off_hand_at := -0.16
+## A two-handed weapon at rest is carried across the body: where the weapon
+## hand's wrist goes (actor frame) and which way the haft runs up from it,
+## so the off hand reaches it too.
+var carry_point := Vector3(0.14, 1.1, -0.22)
+var carry_up := Vector3(-0.6, 0.75, -0.3)
+## How far into that carry the arms are.
+var _carry := 0.0
+## Where the off fist should close on a two-handed blade's handle this
+## frame (INF when it holds none), and what its reach was left short last
+## frame, in the actor's frame.
+var _off_spot := Vector3.INF
+var _off_fix := Vector3.ZERO
 
 var grip_bone := -1
 ## Set by the skin while drawing or putting a weapon away: a point in the
@@ -83,6 +99,9 @@ var _ads_turn := Vector2.ZERO
 ## How far the gun arm may reach while aiming, as a share of its length,
 ## so it never locks out straight.
 var ads_reach := 0.97
+## How far ahead of the gun hand's wrist the off wrist comes to wrap round
+## a sidearm's grip, for working out whether the off arm can reach it.
+var sidearm_wrap := 0.1
 var _ready_forearm: Variant = null
 var _spine: Array[int] = []
 var _neck := -1
@@ -91,6 +110,20 @@ var _fist := {}
 var _off_fist := {}
 ## The line through a closed fist that a handle lies along, in wrist space.
 var _grip_axis := Vector3.ZERO
+## Where a handle runs through the closed fist, in wrist space: the middle
+## of the curled fingers, level with the first finger (what goes on a gun's
+## trigger), and the same for the off hand (the middle of its fist).
+var _hold_point: Variant = null
+var _off_hold_point: Variant = null
+## The middle of the weapon hand's closed fist, where a blade's handle runs.
+var _ring_point: Variant = null
+## The off hand's own axes in its wrist's space: from the wrist out along
+## the fingers, and out of the palm. Null when the rig lacks the joints.
+var _off_fingers: Variant = null
+var _off_palm: Variant = null
+## How far the off hand is on a gun: fully while aiming down sights or with
+## the gun raised (`ActionPose.low` down), off while it hangs low or reloads.
+var _support := 0.0
 var _target := Node3D.new()
 var _pole := Node3D.new()
 var _off_target := Node3D.new()
@@ -251,6 +284,36 @@ func _learn_fist(animation: Animation, wrist_name: String, off_wrist_name: Strin
 	var little := _fist_point(["Pinky2", "Pinky3"])
 	if first != Vector3.INF and little != Vector3.INF and first.distance_to(little) > 0.0001:
 		_grip_axis = (first - little).normalized()
+	var ring := _fist_ring(_fist, _wrist)
+	if ring != Vector3.INF:
+		_ring_point = ring
+	if ring != Vector3.INF and _grip_axis != Vector3.ZERO:
+		var index := _fist_point(["Index2", "Index1"])
+		_hold_point = ring + _grip_axis * (index - ring).dot(_grip_axis) if index != Vector3.INF else ring
+	if off_wrist >= 0:
+		var off_ring := _fist_ring(_off_fist, off_wrist)
+		if off_ring != Vector3.INF:
+			_off_hold_point = off_ring
+			var knuckle := _fist_point(["Middle1"], _off_fist, off_wrist)
+			if knuckle != Vector3.INF and knuckle.length() > 0.001:
+				var fingers := knuckle.normalized()
+				var palm := (off_ring - knuckle) - fingers * (off_ring - knuckle).dot(fingers)
+				if palm.length() > 0.001:
+					_off_fingers = fingers
+					_off_palm = palm.normalized()
+
+
+## The middle of a closed fist's ring of fingers, in wrist space: the
+## middle finger's three joints, closed.
+func _fist_ring(fist: Dictionary, wrist: int) -> Vector3:
+	var sum := Vector3.ZERO
+	var found := 0
+	for joint: String in ["Middle1", "Middle2", "Middle3"]:
+		var at := _fist_point([joint], fist, wrist)
+		if at != Vector3.INF:
+			sum += at
+			found += 1
+	return sum / found if found == 3 else Vector3.INF
 
 
 func _is_under(bone: int, ancestor: int) -> bool:
@@ -264,17 +327,20 @@ func _is_under(bone: int, ancestor: int) -> bool:
 
 ## Where a finger joint sits in wrist space when the fist is closed. Tries
 ## each name in turn, since not every rig has every joint.
-func _fist_point(names: Array) -> Vector3:
-	for bone: int in _fist:
+func _fist_point(names: Array, fist: Dictionary = {}, wrist := -1) -> Vector3:
+	if fist.is_empty():
+		fist = _fist
+		wrist = _wrist
+	for bone: int in fist:
 		var bone_name := skeleton.get_bone_name(bone)
 		if not names.any(func(n: String) -> bool: return bone_name.begins_with(n)):
 			continue
 		var at := Transform3D.IDENTITY
 		var up := bone
-		while up >= 0 and up != _wrist:
+		while up >= 0 and up != wrist:
 			var local := skeleton.get_bone_rest(up)
-			if _fist.has(up):
-				local.basis = Basis(_fist[up]).scaled(local.basis.get_scale())
+			if fist.has(up):
+				local.basis = Basis(fist[up]).scaled(local.basis.get_scale())
 			at = local * at
 			up = skeleton.get_bone_parent(up)
 		return at.origin
@@ -310,6 +376,7 @@ func _process(delta: float) -> void:
 	_grip_weight = move_toward(_grip_weight, 1.0 if holding else 0.0, delta * 8.0)
 	var two_handed: bool = holding and look.is_two_handed(melee)
 	_off_weight = move_toward(_off_weight, 1.0 if two_handed else 0.0, delta * 8.0)
+	_carry = move_toward(_carry, 1.0 if two_handed else 0.0, delta * 6.0)
 	if reaching:
 		_reach = shared.reach + melee.visual.position
 	_turn = shared.turn if holding else _turn.lerp(Vector2.ZERO, 1.0 - exp(-26.0 * delta))
@@ -322,21 +389,33 @@ func _process(delta: float) -> void:
 			and not actor.is_dead and override_weight <= 0.001 else 0.0
 	if _ads <= 0.0:
 		_ads_fix = Vector3.ZERO
+	var raised := 0.0
+	if gun != null and gun.visual != null and gun.visual.visible and not actor.is_dead and override_weight <= 0.001:
+		raised = (1.0 - shared.low) * (1.0 - shared.reload)
+	_support = maxf(_ads, raised)
 	_ads_turn = shared.ads_stance(gun) * _ads if _ads > 0.0 else Vector2.ZERO
 
 	reach_ik.influence = _weight
 	var aim := Basis(Vector3.RIGHT, actor.cmd.pitch)
 	_target.global_position = actor.global_transform * (Actor.HAND_REST + aim * _reach)
+	# At rest a two-handed weapon is carried across the body; an attack or
+	# guard takes the hand from there.
+	var carried := _carry * (1.0 - _weight)
+	if carried > 0.0:
+		var carry := actor.global_transform * carry_point
+		_target.global_position = carry if _weight <= 0.0 else _target.global_position.lerp(carry, carried)
+		reach_ik.influence = minf(_weight + carried, 1.0)
 	if override_weight > 0.001:
 		# Reaching for a holster takes the hand over from any hold or guard.
 		var holster := actor.global_transform * override_point
-		_target.global_position = holster if _weight <= 0.0 else _target.global_position.lerp(holster, override_weight)
-		reach_ik.influence = maxf(_weight, override_weight)
+		var held_by := reach_ik.influence
+		_target.global_position = holster if held_by <= 0.0 else _target.global_position.lerp(holster, override_weight)
+		reach_ik.influence = maxf(held_by, override_weight)
 	# Cocked for a windup the elbow rides high; thrown through, it drops.
 	_pole.global_position = actor.global_transform * (elbow.lerp(shared.elbow_pole(), _weight) if holding else elbow)
 	if off_ik:
-		off_ik.influence = maxf(maxf(_off_weight, _ads) * (1.0 - _watch), _watch)
-		var off_pole := off_elbow.lerp(ads_off_elbow, _ads) if _off_weight <= 0.0 else off_elbow
+		off_ik.influence = maxf(maxf(_off_weight, _support) * (1.0 - _watch), _watch)
+		var off_pole := off_elbow.lerp(ads_off_elbow, _support) if _off_weight <= 0.0 else off_elbow
 		_off_pole.global_position = actor.global_transform * off_pole.lerp(watch_elbow, _watch)
 		if _watch > 0.0:
 			_off_target.global_position = watch_point()
@@ -405,6 +484,16 @@ func _reach_sight() -> void:
 	var wrist := skeleton.global_transform * skeleton.get_bone_global_pose(_wrist).origin
 	var grip := skeleton.global_transform * skeleton.get_bone_global_pose(grip_bone).origin
 	var sight_now := grip + aimed * (grip_offset + gun.visual.transform * ActionPose.sight_local(gun))
+	var hold: Variant = ActionPose.hold_local(gun)
+	if hold != null and _hold_point != null and _aim_wrist != null:
+		# The fist on the grip, with the wrist as it will be turned to the
+		# aim once the arm has reached.
+		var held := _held_wrist(gun)
+		var now := skeleton.get_bone_global_pose(_wrist)
+		var turned := Basis((now.basis.orthonormalized() * _aim_wrist.orthonormalized().inverse() * held).get_rotation_quaternion() \
+				.slerp(_aim_basis(held).get_rotation_quaternion(), _ads))
+		var fist := skeleton.global_transform * (Transform3D(turned * Basis.from_scale(now.basis.get_scale()), now.origin) * (_hold_point as Vector3))
+		sight_now = fist + aimed * (gun.visual.transform * ActionPose.sight_local(gun) - gun.visual.transform * (hold as Transform3D).origin)
 	var fix := actor.global_basis.orthonormalized() * _ads_fix
 	_relief_now = _pose().relief_for(gun)
 	var reach := wrist + sight_target(gun, aimed) - sight_now + fix
@@ -416,6 +505,21 @@ func _reach_sight() -> void:
 		var length := (shoulder.distance_to(elbow) + elbow.distance_to(wrist)) * ads_reach
 		var ahead := -aimed.z
 		var d := reach - shoulder
+		if d.length() > length:
+			var along := d.dot(ahead)
+			var back := along - sqrt(maxf(along * along - (d.length_squared() - length * length), 0.0))
+			back = clampf(back, 0.0, _relief_now)
+			_relief_now -= back
+			reach -= ahead * back
+	# A sidearm is held in both hands: the off arm has to reach round the
+	# gun hand too, so the gun comes back until it can.
+	if gun.is_sidearm and _off_upper >= 0 and _off_forearm >= 0 and _off_wrist >= 0:
+		var shoulder := skeleton.global_transform * skeleton.get_bone_global_pose(_off_upper).origin
+		var elbow := skeleton.global_transform * skeleton.get_bone_global_pose(_off_forearm).origin
+		var off_wrist := skeleton.global_transform * skeleton.get_bone_global_pose(_off_wrist).origin
+		var length := (shoulder.distance_to(elbow) + elbow.distance_to(off_wrist)) * ads_reach
+		var ahead := -aimed.z
+		var d := reach + ahead * sidearm_wrap - shoulder
 		if d.length() > length:
 			var along := d.dot(ahead)
 			var back := along - sqrt(maxf(along * along - (d.length_squared() - length * length), 0.0))
@@ -466,7 +570,11 @@ func _rotate_bone(bone: int, by: Basis) -> void:
 ## physics tick, so the weapon has to be placed here, before the off arm
 ## reaches for it.
 func _place_weapon() -> void:
-	if _ads > 0.0:
+	_off_spot = Vector3.INF
+	if _off_weight <= 0.0:
+		_off_fix = Vector3.ZERO
+	_bend_to_grip()
+	if _support > 0.0:
 		_steady_gun()
 	if _grip_weight <= 0.0:
 		return
@@ -476,14 +584,40 @@ func _place_weapon() -> void:
 	if _grip_axis != Vector3.ZERO:
 		var pose := skeleton.get_bone_global_pose(_wrist)
 		var now := (pose.basis.orthonormalized() * _grip_axis).normalized()
-		var blade := (skeleton.global_basis.orthonormalized().inverse() * melee.visual.global_basis.y).normalized()
+		# Toward where the blade is about to be turned (the hand node itself
+		# may still be where a physics tick parked it).
+		var aimed := actor.global_basis.orthonormalized() * Basis(Vector3.RIGHT, actor.cmd.pitch)
+		var turn := _blade_turn(aimed) * melee.visual.transform.basis.orthonormalized()
+		var blade := (skeleton.global_basis.orthonormalized().inverse() * turn.y).normalized()
 		var bend := Quaternion(now, blade)
 		var angle := minf(bend.get_angle(), wrist_limit) * _grip_weight
 		if angle > 0.001:
 			pose.basis = Basis(bend.get_axis().normalized(), angle) * pose.basis
 			skeleton.set_bone_global_pose(_wrist, pose)
 	hold_weapon()
-	var handle := melee.visual.global_transform * Vector3(0.0, off_hand_at, 0.0)
+	# Each model says where on its handle the off hand closes (`Look._fit_hands`);
+	# the off arm reaches its wrist so the fist's middle is there.
+	var model := melee.visual.get_node_or_null("Model")
+	var along: float = model.get_meta("off_grip", off_hand_at) if model != null else off_hand_at
+	var handle := melee.visual.global_transform * Vector3(0.0, along, 0.0)
+	# Out of the off arm's reach (a long haft hanging at the side), the hand
+	# slides up the handle toward the weapon hand until it can hold it.
+	if _off_upper >= 0 and _off_forearm >= 0 and absf(along) > Look.HAND_WIDTH * 0.8:
+		var shoulder := skeleton.global_transform * skeleton.get_bone_global_pose(_off_upper).origin
+		var elbow := skeleton.global_transform * skeleton.get_bone_global_pose(_off_forearm).origin
+		var wrist := skeleton.global_transform * skeleton.get_bone_global_pose(_off_wrist).origin
+		var length := (shoulder.distance_to(elbow) + elbow.distance_to(wrist)) * ads_reach
+		# Toward the weapon hand, along the handle.
+		var up := melee.visual.global_basis.y.normalized() * -signf(along)
+		var d := handle - shoulder
+		if d.length() > length:
+			var toward := d.dot(up)
+			var slide := -toward - sqrt(maxf(toward * toward - (d.length_squared() - length * length), 0.0))
+			handle += up * clampf(slide, 0.0, absf(along) - Look.HAND_WIDTH * 0.8)
+	_off_spot = handle
+	if _off_hold_point != null and _off_wrist >= 0:
+		handle -= skeleton.global_basis * (skeleton.get_bone_global_pose(_off_wrist).basis * (_off_hold_point as Vector3))
+		handle += actor.global_basis.orthonormalized() * _off_fix
 	_off_target.global_position = handle.lerp(watch_point(), _watch)
 
 
@@ -495,8 +629,8 @@ func _steady_gun() -> void:
 		return
 	# The hand turns with the gun as it is held in the aim clip, so a wrist
 	# never twists round the grip.
-	if _aim_wrist != null:
-		_turn_to_aim(_wrist, _aim_wrist, _ads)
+	if _aim_wrist != null and _ads > 0.0:
+		_turn_to_aim(_wrist, _held_wrist(gun), _ads)
 	hold_weapon()
 	if _ads > 0.99:
 		var aimed := actor.global_basis.orthonormalized() * Basis(Vector3.RIGHT, actor.cmd.pitch)
@@ -504,12 +638,22 @@ func _steady_gun() -> void:
 		_ads_fix = (_ads_fix + actor.global_basis.orthonormalized().inverse() * miss * 0.5).limit_length(0.1)
 	var at: Vector3
 	var fore := gun.visual.get_node_or_null("ForeGrip") as Node3D
-	if gun.is_sidearm:
+	if fore == null:
+		fore = gun.visual.get_node_or_null("Model/ForeGrip") as Node3D
+	var hold: Variant = ActionPose.hold_local(gun)
+	if gun.is_sidearm and hold != null:
+		# Wrapped round the gun hand's fingers from the off side.
+		at = gun.visual.global_transform * ((hold as Transform3D).origin + _pose().ads_cup)
+	elif gun.is_sidearm:
 		at = actor.hand.global_position + actor.hand.global_basis * _pose().ads_cup
 	elif fore != null:
 		at = fore.global_position
 	else:
 		at = gun.visual.global_transform * (ActionPose.sight_local(gun) + ads_fore)
+	# The off arm reaches its wrist; the fist's middle goes on the spot.
+	var cupped: Variant = _support_turn(gun)
+	if _off_hold_point != null and cupped != null:
+		at -= skeleton.global_basis * ((cupped as Basis) * (_off_hold_point as Vector3))
 	# Out of the off arm's reach, the hand slides back along the gun toward
 	# the grip until it can hold it (a short arm takes the fore end nearer).
 	if _off_upper >= 0 and _off_forearm >= 0:
@@ -518,7 +662,8 @@ func _steady_gun() -> void:
 		var wrist := skeleton.global_transform * skeleton.get_bone_global_pose(_off_wrist).origin
 		var length := (shoulder.distance_to(elbow) + elbow.distance_to(wrist)) * ads_reach
 		var back := -gun.visual.global_basis.z.normalized()
-		var room := maxf((at - actor.hand.global_position).dot(back), 0.0)
+		var grip_at: Vector3 = gun.visual.global_transform * (hold as Transform3D).origin if hold != null else actor.hand.global_position
+		var room := maxf((at - grip_at).dot(back) - 0.06, 0.0)
 		var d := at - shoulder
 		if d.length() > length:
 			var along := d.dot(back)
@@ -531,9 +676,49 @@ func _steady_gun() -> void:
 ## fore end, turned with the aim, so it supports the gun rather than
 ## twisting across it.
 func _turn_off_hand() -> void:
-	if _ads <= 0.0 or _aim_off_wrist == null or _off_wrist < 0:
+	# A two-handed blade: what the reach left between the off fist and its
+	# spot on the handle goes onto the next frame's reach, so it settles on.
+	if _off_spot != Vector3.INF and _off_hold_point != null and _off_wrist >= 0 and _watch <= 0.0:
+		var fist := skeleton.global_transform * (skeleton.get_bone_global_pose(_off_wrist) * (_off_hold_point as Vector3))
+		_off_fix = (_off_fix + actor.global_basis.orthonormalized().inverse() * (_off_spot - fist) * 0.5).limit_length(0.15)
+	var gun := actor.get_active_weapon() as Gun
+	var cupped: Variant = _support_turn(gun) if _support > 0.0 else null
+	if cupped == null or _off_wrist < 0:
 		return
-	_turn_to_aim(_off_wrist, _aim_off_wrist, _ads * (1.0 - _watch))
+	var weight := _support * (1.0 - _watch)
+	var pose := skeleton.get_bone_global_pose(_off_wrist)
+	var now := pose.basis.orthonormalized()
+	pose.basis = Basis(now.get_rotation_quaternion().slerp((cupped as Basis).get_rotation_quaternion(), weight)) \
+			* Basis.from_scale(pose.basis.get_scale())
+	skeleton.set_bone_global_pose(_off_wrist, pose)
+
+
+## How the off hand turns to hold `gun`, in the skeleton's space, or null:
+## under a long gun's fore end palm up, the fingers across beneath it and
+## curling up its far side, the thumb along the near side toward the
+## muzzle; on a sidearm palm in against the gun hand, the fingers wrapped
+## down round its fingers, the thumb along the frame.
+func _support_turn(gun: Gun) -> Variant:
+	if gun == null or gun.visual == null or _off_fingers == null:
+		return null
+	var to_skeleton := skeleton.global_basis.orthonormalized().inverse()
+	var turn := gun.visual.global_basis.orthonormalized()
+	var fingers: Vector3
+	var palm: Vector3
+	if gun.is_sidearm:
+		fingers = turn * Vector3(0.0, -1.0, -0.25)
+		palm = turn * Vector3(1.0, 0.35, 0.0)
+	else:
+		fingers = turn * Vector3(1.0, 0.35, -0.15)
+		palm = turn * Vector3(0.0, 1.0, 0.0)
+	fingers = (to_skeleton * fingers).normalized()
+	palm = to_skeleton * palm
+	palm = (palm - fingers * palm.dot(fingers)).normalized()
+	var local_fingers: Vector3 = _off_fingers
+	var local_palm: Vector3 = _off_palm
+	var wanted := Basis(fingers, palm, fingers.cross(palm))
+	var own := Basis(local_fingers, local_palm, local_fingers.cross(local_palm))
+	return (wanted * own.inverse()).orthonormalized()
 
 
 ## Sets `bone` (a wrist) to how it sits in `calibrated` (the aim clip, gun
@@ -542,10 +727,7 @@ func _turn_off_hand() -> void:
 func _turn_to_aim(bone: int, calibrated: Basis, weight: float) -> void:
 	if weight <= 0.0:
 		return
-	var to_world := skeleton.global_basis.orthonormalized()
-	var aimed := actor.global_basis.orthonormalized() * Basis(Vector3.RIGHT, actor.cmd.pitch)
-	var ahead := actor.global_basis.orthonormalized()
-	var wanted := (to_world.inverse() * aimed * ahead.inverse() * to_world * calibrated).orthonormalized()
+	var wanted := _aim_basis(calibrated)
 	var pose := skeleton.get_bone_global_pose(bone)
 	var now := pose.basis.orthonormalized()
 	pose.basis = Basis(now.get_rotation_quaternion().slerp(wanted.get_rotation_quaternion(), weight)) \
@@ -553,10 +735,56 @@ func _turn_to_aim(bone: int, calibrated: Basis, weight: float) -> void:
 	skeleton.set_bone_global_pose(bone, pose)
 
 
+## A wrist's turn in the skeleton's space as it sits in `calibrated` (the
+## aim clip, gun straight ahead), turned to the current aim.
+func _aim_basis(calibrated: Basis) -> Basis:
+	var to_world := skeleton.global_basis.orthonormalized()
+	var aimed := actor.global_basis.orthonormalized() * Basis(Vector3.RIGHT, actor.cmd.pitch)
+	var ahead := actor.global_basis.orthonormalized()
+	return (to_world.inverse() * aimed * ahead.inverse() * to_world * calibrated.orthonormalized()).orthonormalized()
+
+
+## How the gun hand's wrist sits holding `gun` aimed straight ahead: the
+## aim clip's wrist, bent so the closed fist lies along this gun's own
+## pistol grip (`ActionPose.hold_local`), within `grip_bend_limit`. Each gun
+## model rakes its grip its own way, so each is held a little differently.
+func _held_wrist(gun: Gun) -> Basis:
+	var calibrated: Basis = (_aim_wrist as Basis).orthonormalized() if _aim_wrist != null else Basis.IDENTITY
+	var hold: Variant = ActionPose.hold_local(gun)
+	if hold == null or _aim_wrist == null or _grip_axis == Vector3.ZERO or gun.visual == null:
+		return calibrated
+	var to_skeleton := skeleton.global_basis.orthonormalized().inverse() * actor.global_basis.orthonormalized()
+	var up := (to_skeleton * gun.visual.transform.basis.orthonormalized() * (hold as Transform3D).basis.y).normalized()
+	var fist := (calibrated * _grip_axis).normalized()
+	var bend := Quaternion(fist, up)
+	if bend.get_angle() > grip_bend_limit:
+		bend = Quaternion(bend.get_axis().normalized(), grip_bend_limit)
+	return Basis(bend) * calibrated
+
+
+## Before the gun is placed: bend the gun hand's wrist from how the clip
+## holds it to how it holds this gun's grip (`_held_wrist`). The gun itself
+## still points where the clip and the aim say; only the hand turns on it.
+func _bend_to_grip() -> void:
+	var gun := actor.get_active_weapon() as Gun
+	if gun == null or gun.visual == null or not gun.visual.visible or actor.is_dead or _aim_wrist == null or _wrist < 0:
+		return
+	var weight := 1.0 - override_weight
+	if weight <= 0.0:
+		return
+	var calibrated: Basis = (_aim_wrist as Basis).orthonormalized()
+	var bend := calibrated.inverse() * _held_wrist(gun)
+	var pose := skeleton.get_bone_global_pose(_wrist)
+	var now := pose.basis.orthonormalized()
+	var bent := now * bend
+	pose.basis = Basis(now.get_rotation_quaternion().slerp(bent.get_rotation_quaternion(), weight)) * Basis.from_scale(pose.basis.get_scale())
+	skeleton.set_bone_global_pose(_wrist, pose)
+
+
 ## Last of all, close the fingers round the handle.
 func _close_grip() -> void:
 	_curl(_fist, maxf(_grip_weight, ride_grip.y))
-	_curl(_off_fist, maxf(maxf(_off_weight, _ads * (1.0 - _watch)), ride_grip.x))
+	_curl(_off_fist, maxf(maxf(_off_weight, _support * (1.0 - _watch)), ride_grip.x))
 
 
 func _curl(fist: Dictionary, weight: float) -> void:
@@ -564,6 +792,22 @@ func _curl(fist: Dictionary, weight: float) -> void:
 		return
 	for bone: int in fist:
 		skeleton.set_bone_pose_rotation(bone, skeleton.get_bone_pose_rotation(bone).slerp(fist[bone], weight))
+
+
+## How a blade's hand node turns before it settles into the fist: at rest
+## where the forearm takes it (a walk swings it, a run carries it), or for
+## a two-handed weapon carried across the body, the haft up and over to the
+## left; an attack or guard takes it back to the aim.
+func _blade_turn(aimed: Basis) -> Basis:
+	var hang := clampf(1.0 - _pose().reach_weight, 0.0, 1.0)
+	var turn := aimed.slerp(_follow_turn(_forearm, _ready_forearm), hang) if _ready_forearm != null else aimed
+	if _carry > 0.0:
+		var body := actor.global_basis.orthonormalized()
+		var up := (body * carry_up).normalized()
+		var side := up.cross(body.z).normalized()
+		var across := Basis(side, up, side.cross(up).normalized())
+		turn = turn.slerp(across, _carry * hang)
+	return turn
 
 
 ## Puts the actor's hand node, which carries the weapon, on the model's hand.
@@ -580,13 +824,10 @@ func hold_weapon() -> void:
 		# shoots. It turns in the hand through a reload.
 		var turn := aimed
 		if _aim_wrist != null and pose.low > 0.0:
-			turn = aimed.slerp(_follow_turn(_wrist, _aim_wrist), pose.low)
+			turn = aimed.slerp(_follow_turn(_wrist, _held_wrist(gun)), pose.low)
 		actor.hand.global_basis = turn * pose.gun_offset().basis
 	elif melee != null and shared and _ready_forearm != null:
-		# A blade at rest goes where the forearm takes it (a walk swings it,
-		# a run carries it); an attack or guard takes it back to the aim.
-		var hang := clampf(1.0 - pose.reach_weight, 0.0, 1.0)
-		actor.hand.global_basis = aimed.slerp(_follow_turn(_forearm, _ready_forearm), hang)
+		actor.hand.global_basis = _blade_turn(aimed)
 	if melee != null and melee.visual != null and _grip_axis != Vector3.ZERO and _wrist >= 0 and _grip_weight > 0.0:
 		# The blade lies along the closed fist, wherever the wrist could
 		# actually turn: the hand carries it, it never turns past the hand.
@@ -600,7 +841,17 @@ func hold_weapon() -> void:
 	# reaches for that spot instead, so take the shift back out here.
 	if melee and melee.visual:
 		held -= melee.visual.position
+		# Its handle runs through the middle of the closed fist.
+		if _ring_point != null and _wrist >= 0:
+			grip = skeleton.global_transform * (skeleton.get_bone_global_pose(_wrist) * (_ring_point as Vector3))
 	actor.hand.global_position = grip + actor.hand.global_basis * held
+	# A gun with a known grip sits with that grip in the closed fist, the
+	# first finger level with the trigger: every gun model sits in the hand
+	# by its own grip, not by one spot shared by all.
+	var hold: Variant = ActionPose.hold_local(gun) if gun != null and gun.visual != null else null
+	if hold != null and _hold_point != null and _wrist >= 0:
+		var fist := skeleton.global_transform * (skeleton.get_bone_global_pose(_wrist) * (_hold_point as Vector3))
+		actor.hand.global_position = fist - actor.hand.global_basis * (gun.visual.transform * (hold as Transform3D).origin)
 	actor.hand.set_meta("shown", actor.hand.global_transform)
 	# The same, kept from the actor, for a view that follows it the next
 	# frame after the actor has moved on (`ActionPose.sight_shown`).
