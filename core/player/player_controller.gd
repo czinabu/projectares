@@ -50,10 +50,13 @@ var input_blocked := false
 ## person your body stays drawn on this render layer, which this camera leaves
 ## out, so the mirror's camera can still show it.
 var body_layer := 0
-var third_person_distance := 3.8
-var third_person_aim_distance := 2.2
-## Camera distance while riding a vehicle, which is bigger than a person.
-var ride_distance := 5.2
+## How far behind the eyes the third-person camera sits, in meters: a view
+## over the right shoulder (the phone's "Camera distance" setting). Aiming
+## moves in to `aim_distance_ratio` of it.
+var third_person_distance := 2.0
+var aim_distance_ratio := 0.6
+## A vehicle is bigger than a person: riding sits this much further back.
+var ride_extra_distance := 1.6
 ## The view used while riding. It starts in third-person and V switches it,
 ## separately from the on-foot view, which comes back when you get off.
 var ride_view := ViewMode.THIRD
@@ -362,7 +365,6 @@ func _physics_process(delta: float) -> void:
 		cmd.sprint = false
 		cmd.jump = false
 		cmd.descend = false
-		cmd.roll = 0
 		cmd.primary = false
 		cmd.secondary = false
 		cmd.switch_weapon = -1
@@ -382,13 +384,15 @@ func _physics_process(delta: float) -> void:
 	_flick *= exp(-flick_decay * delta)
 	cmd.stance = stance
 	cmd.sprint = Input.is_action_pressed("sprint")
+	cmd.sprint_pressed = Input.is_action_just_pressed("sprint")
 	cmd.jump = Input.is_action_pressed("jump")
 	cmd.jump_pressed = Input.is_action_just_pressed("jump")
 	cmd.dash = Input.is_action_just_pressed("dash")
 	cmd.slide = Input.is_action_just_pressed("slide")
 	cmd.descend = Input.is_action_pressed("slide")
-	cmd.roll = int(Input.is_action_pressed("roll_right")) - int(Input.is_action_pressed("roll_left"))
 	if cmd.dash and actor.stamina >= actor.dash_stamina:
+		Sfx.play("dash", null, -6.0)
+	elif cmd.sprint_pressed and not actor.is_on_floor() and actor.flight.enabled and not actor.flight.overheated:
 		Sfx.play("dash", null, -6.0)
 	cmd.primary = captured and Input.is_action_pressed("fire")
 	cmd.primary_pressed = captured and Input.is_action_just_pressed("fire")
@@ -456,8 +460,7 @@ func _process(delta: float) -> void:
 	var aiming := weapon != null and weapon.is_aiming()
 	var target_dist := 0.0
 	if _wants_third_person():
-		var far := ride_distance if is_riding() else third_person_distance
-		target_dist = third_person_aim_distance if aiming else far
+		target_dist = view_distance(aiming)
 	_cam_dist = lerpf(_cam_dist, target_dist, 1.0 - exp(-12.0 * delta))
 	if absf(_cam_dist - target_dist) < 0.01:
 		_cam_dist = target_dist
@@ -667,6 +670,13 @@ func _zoom() -> float:
 
 
 ## The resting field of view for the view in use.
+## How far back the third-person camera wants to be.
+func view_distance(aiming: bool) -> float:
+	if aiming:
+		return third_person_distance * aim_distance_ratio
+	return third_person_distance + (ride_extra_distance if is_riding() else 0.0)
+
+
 func wanted_base_fov() -> float:
 	return base_fov_third if _wants_third_person() else base_fov
 

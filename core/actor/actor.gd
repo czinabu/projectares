@@ -146,13 +146,16 @@ var _dash_cd := 0.0
 var _dash_dir := Vector3.ZERO
 var _dash_speed_now := 0.0
 var _slide_cd := 0.0
-## Wings: the barrel roll's sidestep (velocity added this tick, taken off
-## again before the glide steers next tick), its time left and cooldown.
-var _roll_vel := Vector3.ZERO
-var _roll_left := 0.0
-var _roll_cd := 0.0
-var _last_roll := 0
-var _roll_side := 0.0
+## The air dash (sprint pressed in the air with a rig): the velocity it
+## added this tick, taken off again before the rig steers next tick, its
+## direction and cooldown. `air_dash_left` is the time it has left and
+## `air_dash_side` how much of it runs sideways (-1 left to 1 right), for
+## the skin's barrel roll.
+var air_dash_left := 0.0
+var air_dash_side := 0.0
+var _air_dash_vel := Vector3.ZERO
+var _air_dash_dir := Vector3.ZERO
+var _air_dash_cd := 0.0
 ## Wings: how far the bank has rolled in, -1 to 1. It follows the strafe keys
 ## at `FlightRig.glide_bank_rate`, so a tap nudges the heading and a hold
 ## comes round at the full turn rate.
@@ -339,8 +342,13 @@ func _simulate_movement(delta: float) -> void:
 	var staggered := stagger_left > 0.0
 	if staggered:
 		speed *= stagger_speed_mult
-	var horizontal := Vector3(velocity.x, 0.0, velocity.z) - _roll_vel
-	_roll_vel = Vector3.ZERO
+	# Take last tick's air dash back off, as far as it is still there (a wall
+	# may have stopped it), so the rig's own flight carries on underneath.
+	var horizontal := Vector3(velocity.x, 0.0, velocity.z)
+	if _air_dash_vel != Vector3.ZERO:
+		var dir := _air_dash_vel.normalized()
+		horizontal -= dir * clampf(horizontal.dot(dir), 0.0, _air_dash_vel.length())
+		_air_dash_vel = Vector3.ZERO
 	if on_floor:
 		flight.launched = false
 	# Gliding: holding jump while falling with wings carries you forward.
@@ -366,13 +374,7 @@ func _simulate_movement(delta: float) -> void:
 		horizontal = horizontal.move_toward(wish * speed, air_accel * delta)
 
 	_dash_cd = maxf(0.0, _dash_cd - delta)
-	if cmd.dash and not on_floor and not staggered and _dash_left <= 0.0 and flight.air_dash_speed > 0.0:
-		# Boots dash in the air on heat, not stamina.
-		if flight.try_air_dash():
-			_dash_dir = wish.normalized() if wish.length() > 0.1 else yaw_basis * Vector3.FORWARD
-			_dash_left = flight.air_dash_time
-			_dash_speed_now = flight.air_dash_speed
-	elif cmd.dash and _dash_cd <= 0.0 and not staggered and spend_stamina(dash_stamina):
+	if cmd.dash and _dash_cd <= 0.0 and not staggered and spend_stamina(dash_stamina):
 		_dash_dir = wish.normalized() if wish.length() > 0.1 else yaw_basis * Vector3.FORWARD
 		_dash_left = dash_time
 		_dash_cd = dash_cooldown
@@ -383,7 +385,7 @@ func _simulate_movement(delta: float) -> void:
 		slide_left = 0.0
 	horizontal = _simulate_slide(horizontal, on_floor, staggered, delta)
 
-	horizontal += _roll_dodge(yaw_basis, delta)
+	horizontal += _air_dash(wish, yaw_basis, on_floor, staggered, delta)
 	velocity.x = horizontal.x
 	velocity.z = horizontal.z
 
@@ -519,22 +521,24 @@ func _cruise_velocity(horizontal: Vector3, wish: Vector3, delta: float) -> Vecto
 	return heading * move_toward(speed, wish.length() * flight.fly_speed, flight.fly_accel * delta)
 
 
-## Wings: a roll key pressed while gliding snaps a sidestep that way. Returns
-## the sideways velocity to add this tick.
-func _roll_dodge(yaw_basis: Basis, delta: float) -> Vector3:
-	_roll_cd = maxf(0.0, _roll_cd - delta)
-	var pressed := cmd.roll != 0 and _last_roll != cmd.roll
-	_last_roll = cmd.roll
-	if pressed and flight.is_gliding and flight.roll_dodge_speed > 0.0 and _roll_cd <= 0.0:
-		_roll_left = flight.roll_dodge_time
-		_roll_cd = flight.roll_cooldown
-		_roll_side = float(cmd.roll)
-	if _roll_left <= 0.0 or not flight.is_gliding:
-		_roll_left = 0.0
+## Every rig: sprint pressed in the air dashes the way the move keys point,
+## forward with none held, on heat. Returns the velocity to add this tick;
+## it is taken off again next tick, so the rig's own flight (a glide, a
+## cruise, a skim) carries on the same way after it.
+func _air_dash(wish: Vector3, yaw_basis: Basis, on_floor: bool, staggered: bool, delta: float) -> Vector3:
+	_air_dash_cd = maxf(0.0, _air_dash_cd - delta)
+	if on_floor or staggered:
+		air_dash_left = 0.0
+	elif cmd.sprint_pressed and _air_dash_cd <= 0.0 and air_dash_left <= 0.0 and flight.try_air_dash():
+		_air_dash_dir = wish.normalized() if wish.length() > 0.1 else yaw_basis * Vector3.FORWARD
+		air_dash_side = (yaw_basis.inverse() * _air_dash_dir).x
+		air_dash_left = flight.air_dash_time
+		_air_dash_cd = flight.air_dash_time + flight.air_dash_cooldown
+	if air_dash_left <= 0.0:
 		return Vector3.ZERO
-	_roll_left -= delta
-	_roll_vel = yaw_basis * Vector3(_roll_side * flight.roll_dodge_speed, 0.0, 0.0)
-	return _roll_vel
+	air_dash_left -= delta
+	_air_dash_vel = _air_dash_dir * flight.air_dash_speed
+	return _air_dash_vel
 
 
 ## Wings: touching down fast turns into a slide that keeps the speed.

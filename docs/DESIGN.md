@@ -315,6 +315,16 @@ heat to spare and a fourth is the ceiling, about 20 m. A roof under the feet
 is a surface like the street, so they cool up there; in open air above 6 m
 they never cool, so the open sky stays with the jetpack and the wings.
 
+Flying controls (Caleb's call): the keys fly every rig and the mouse only
+looks and aims. Space climbs, kicks, launches or glides (by rig), C sinks or
+coasts. Shift + a move key is an air dash that way on every rig, for a little
+heat (Shift alone dashes forward); holding Shift + W on a jetpack keeps
+boosting. Q and E fly nothing. Every rig dashes, so the dash is not an
+edge by itself: boots dash furthest (20 m/s for 0.3 s, 20 heat), jetpacks
+middling (16 m/s for 0.25 s, 15 heat), wings shortest but cheapest (12 m/s
+for 0.25 s, 10 heat, a barrel roll sideways). The stamina dash (Alt) is
+unchanged.
+
 In a squad the layers become roles: the jetpack holds the high angle, the
 wings flank and dive in, the boots push through streets and buildings.
 

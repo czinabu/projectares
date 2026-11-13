@@ -10,8 +10,6 @@ const KEY_ACTIONS := {
 	"jump": KEY_SPACE,
 	"sprint": KEY_SHIFT,
 	"dash": KEY_ALT,
-	"roll_left": KEY_Q,
-	"roll_right": KEY_E,
 	"slide": KEY_C,
 	"interact": KEY_F,
 	"reload": KEY_R,
@@ -35,9 +33,6 @@ const KEY_ACTIONS := {
 const MOUSE_ACTIONS := {
 	"fire": MOUSE_BUTTON_LEFT,
 	"alt_fire": MOUSE_BUTTON_RIGHT,
-	# The thumb buttons roll too, for hands that stay on the move keys.
-	"roll_left": MOUSE_BUTTON_XBUTTON1,
-	"roll_right": MOUSE_BUTTON_XBUTTON2,
 }
 
 
