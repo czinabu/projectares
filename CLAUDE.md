@@ -575,8 +575,12 @@ without Caleb, and update the gap list when a PR closes a row.
   Every weapon goes on the one armory rack (`BaseLayout.ARMORY`, Caleb's
   call): its sections hang on the walls of the armory alcove
   (`HomeBase.in_armory`), with the gunsmith bench in the middle and the
-  locker at the way in. A new kind of weapon gets a rack section there, not
-  a display of its own elsewhere in the room. The base is where you suit
+  locker at the way in. Each weapon hangs on a lit mount
+  (`HomeBase._build_mount`). The bench's vise holds the primary (its rack
+  pegs stand empty); using the vise puts the next gun from the rack in it
+  (`HomeBase.Vise`, `next_bench_gun`) through the same `equip_requested`,
+  so any gun can be fitted out there. A new kind of weapon gets a rack
+  section there, not a display of its own elsewhere in the room. The base is where you suit
   up (Caleb's call): the suit-up bay beside the launch pad
   (`HomeBase.suit_up`) replaces the player with a new actor wearing
   `suit_kit()`, weapons locked, and emits `player_replaced` so `main.gd`
