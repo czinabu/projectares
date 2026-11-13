@@ -91,6 +91,31 @@ static func _check_without_skin(t: Node) -> void:
 	t.check(pose.reach_weight == 0.0 and controller.first_person_hold(pose).origin.distance_to(rest.origin) < 0.01,
 			"once the swing is over the blade is back in its hold")
 
+	# Holding the button draws the arm back toward the swing's side, and
+	# after a strike the arm eases back from the follow-through as the blade
+	# recovers.
+	blade.stance = MeleeWeapon.Dir.LEFT
+	blade._charge = blade.hold_time
+	for i in 30:
+		await t.frames(1)
+		pose.advance(1.0 / 30.0)
+	var from := MeleeWeapon.swing_from(blade.stance)
+	t.check(pose.reach.distance_to(pose.arm_windup[from]) < 0.02 and pose.elbow_raise > 0.9,
+			"holding toward a heavy draws the arm back to the side the swing comes from")
+	blade._charge = -1.0
+	blade.attack_dir = MeleeWeapon.Dir.RIGHT
+	blade._recover_total = 1.0
+	blade._cooldown = 0.9
+	t.check(is_equal_approx(ActionPose.recover_left(blade), 1.0 - smoothstep(0.0, 1.0, 0.1)),
+			"just after a strike the arm still holds most of its follow-through")
+	blade._cooldown = 0.05
+	t.check(ActionPose.recover_left(blade) < 0.02, "and is nearly back once the blade is ready")
+	blade._cooldown = 0.0
+	blade._recover_total = 0.0
+	for i in 40:
+		await t.frames(1)
+		pose.advance(1.0 / 30.0)
+
 	# A switch: the hand drops toward the holster's side and out of view.
 	pose.switch_point = Vector3(-0.2, 0.95, 0.0)
 	pose.switch_weight = 1.0
@@ -185,16 +210,17 @@ static func _check_with_skin(t: Node) -> void:
 	gun._reload_left = 0.0
 	await t.frames(10)
 
-	# Raising the watch lifts the model's left arm, from the same amount.
-	pose.watch = 1.0
-	await t.frames(2)
-	pose.watch = 1.0
-	skin.arm._process(0.016)
+	# Raising the watch lifts the model's left arm, from the command, so a
+	# remote player's does too.
+	p.cmd.watch_up = true
+	await t.frames(20)
+	t.check(is_equal_approx(pose.watch, 1.0), "the shared pose raises the watch from the command")
 	t.check(skin.arm.off_ik != null and is_equal_approx(skin.arm.off_ik.influence, 1.0),
 			"third person, a raised watch lifts the left arm")
-	pose.watch = 0.0
-	skin.arm._process(0.016)
-	t.check(skin.arm.off_ik == null or skin.arm.off_ik.influence < 0.01, "lowering the watch lets the arm down")
+	p.cmd.watch_up = false
+	await t.frames(20)
+	t.check(pose.watch == 0.0 and (skin.arm.off_ik == null or skin.arm.off_ik.influence < 0.01),
+			"lowering the watch lets the arm down")
 
 	# Standing still with a gun, third person holds it low; first person too.
 	p.cmd.primary = false

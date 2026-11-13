@@ -222,7 +222,8 @@ without Caleb, and update the gap list when a PR closes a row.
   one `ActionPose` (`core/visual/action_pose.gd`, a view-only child made by
   `ActionPose.of`): the melee reach and shoulder turn, the reload motion,
   the low ready, the weapon switch's progress toward a holster, the
-  watch raise and the phone hold (`ActionPose.phone`, from
+  drawing back of a held heavy and the easing back of a recovering blade,
+  the watch raise (from `ActorCommand.watch_up`) and the phone hold (`ActionPose.phone`, from
   `ActorCommand.phone`, which `Locomotion` poses the body from). Third person `WeaponArm` and `ActorSkin` pose the model from
   it; first person `PlayerController.first_person_hold` moves the weapon in
   front of the camera by the same offsets on the same clock, so a switch,
