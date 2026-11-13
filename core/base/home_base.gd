@@ -65,10 +65,11 @@ var garage_size := Vector3(8.0, 6.0, 12.0)
 var garage_opening := 10.0
 ## The firing range behind the back wall (-Z): width (x), height (y) and
 ## length (z), entered through a door `range_door` wide and high.
-var range_size := Vector3(8.0, 10.0, 30.0)
+var range_size := Vector3(12.0, 10.0, 50.0)
 var range_door := Vector2(1.6, 3.0)
-## How far past the back wall the firing line stands.
-var firing_line := 2.0
+## How far past the back wall the firing line stands: a clear lobby between
+## the door and the line.
+var firing_line := 8.0
 var spawn_point := Vector3(0.0, 0.1, 5.5)
 ## Weapons hang a little larger than life so they read from across the room.
 var weapon_scale := 1.5
@@ -897,9 +898,9 @@ func _build_range() -> void:
 	var line_z := -wall_z - firing_line
 	# The firing line: a counter either side of a gap to walk through, and a
 	# stripe on the floor.
-	var counter := (width - 1.4) * 0.5
+	var counter := (width - 3.0) * 0.5
 	for side: float in [-1.0, 1.0]:
-		_box(Vector3(counter, 1.0, 0.5), Vector3(side * (0.7 + counter * 0.5), 0.5, line_z), wall_mat)
+		_box(Vector3(counter, 1.0, 0.5), Vector3(side * (1.5 + counter * 0.5), 0.5, line_z), wall_mat)
 	var stripe := _part(Vector3(width, 0.03, 0.12), Vector3(0, 0.02, line_z - 0.4), accent, true)
 	stripe.name = "FiringLine"
 	add_child(stripe)
@@ -919,7 +920,7 @@ func _build_range() -> void:
 	# line, with the score written on it.
 	var board := Node3D.new()
 	board.name = "ScoreBoard"
-	board.position = Vector3(0, 4.2, line_z - 3.0)
+	board.position = Vector3(0, 4.2, line_z - 4.0)
 	add_child(board)
 	board.add_child(_part(Vector3(4.2, 1.15, 0.12), Vector3(0, 0, -0.08), Color(0.1, 0.11, 0.12)))
 	board.add_child(_part(Vector3(4.0, 0.98, 0.02), Vector3(0, 0, -0.01), Color(0.02, 0.05, 0.07), true))
@@ -934,23 +935,26 @@ func _build_range() -> void:
 	_update_board()
 	_build_targets(line_z)
 	if Look.enabled:
-		for at_z: float in [line_z, line_z - 9.0, line_z - 18.0, line_z - 26.0]:
+		for at_z: float in [-wall_z - 3.0, line_z, line_z - 12.0, line_z - 24.0, line_z - 36.0]:
 			var light := Look.lamp(Color(1.0, 0.94, 0.85), 3.5, 14.0)
 			light.position = Vector3(0, y - 1.0, at_z)
 			add_child(light)
 
 
-## Standing plates at 10, 20 and 27 m, one sliding across the lane at 15 m,
-## and three drones circling high up for shooting from a rig.
+## Standing plates at 10, 20, 30 and 40 m, sliders at 15 and 35 m, and drones
+## circling high up at 14 to 30 m for shooting from a rig.
 func _build_targets(line_z: float) -> void:
 	var specs := [
-		{"at": Vector3(-2.0, 0, line_z - 10.0), "kind": "plate"},
-		{"at": Vector3(2.0, 0, line_z - 20.0), "kind": "plate"},
-		{"at": Vector3(0.0, 0, line_z - 27.0), "kind": "plate"},
+		{"at": Vector3(-3.0, 0, line_z - 10.0), "kind": "plate"},
+		{"at": Vector3(3.0, 0, line_z - 20.0), "kind": "plate"},
+		{"at": Vector3(-2.0, 0, line_z - 30.0), "kind": "plate"},
+		{"at": Vector3(0.0, 0, line_z - 40.0), "kind": "plate"},
 		{"at": Vector3(0.0, 0, line_z - 15.0), "kind": "slider"},
+		{"at": Vector3(0.0, 0, line_z - 35.0), "kind": "slider"},
 		{"at": Vector3(0.0, 6.0, line_z - 18.0), "kind": "drone", "phase": 0.0},
-		{"at": Vector3(0.0, 7.0, line_z - 22.0), "kind": "drone", "phase": TAU / 3.0},
+		{"at": Vector3(0.0, 7.0, line_z - 26.0), "kind": "drone", "phase": TAU / 3.0},
 		{"at": Vector3(0.0, 5.0, line_z - 14.0), "kind": "drone", "phase": TAU * 2.0 / 3.0},
+		{"at": Vector3(0.0, 7.0, line_z - 30.0), "kind": "drone", "phase": TAU / 2.0},
 	]
 	for spec: Dictionary in specs:
 		var target := RangeTarget.new()
