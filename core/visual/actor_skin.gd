@@ -180,6 +180,10 @@ var _wired := {}
 var _flash_left := 0.0
 var _materials: Array[ShaderMaterial] = []
 var _skeleton: Skeleton3D
+## The raised watch's glow on the left wrist, and how far it is up (0..1).
+var _watch_glow: Node3D
+var _watch_up := 0.0
+const WATCH_GLOW := Color(0.35, 0.95, 1.0)
 var _def := {}
 ## The flight rig being worn: its item id, the nodes holding its parts, its
 ## back part (or null), and a flame per nozzle.
@@ -372,6 +376,7 @@ func _process(delta: float) -> void:
 	_update_stowed()
 	_update_switch(delta)
 	_update_vitals()
+	_update_watch_glow(delta)
 	_aim_left = maxf(_aim_left - delta, 0.0)
 	var weapon := actor.get_active_weapon()
 	var melee := weapon as MeleeWeapon
@@ -776,6 +781,57 @@ func _update_vitals() -> void:
 			_glow(light, ink, 2.2)
 		"charging":
 			_glow(light, ink.darkened(0.6), 0.3)
+
+
+## A raised watch (`ActorCommand.watch_up`) glows on the left wrist, so
+## anyone can see who is looking at their watch: a small lit spark over the
+## wrist and a soft light on the arm. Only that it is up shows, never what is
+## on it. Fades in and out with the raise.
+func _update_watch_glow(delta: float) -> void:
+	var goal := 1.0 if actor.cmd.watch_up and not actor.is_dead else 0.0
+	_watch_up = move_toward(_watch_up, goal, delta / 0.18)
+	if _watch_up <= 0.0:
+		if _watch_glow != null and is_instance_valid(_watch_glow):
+			_watch_glow.visible = false
+		return
+	if _watch_glow == null or not is_instance_valid(_watch_glow):
+		if _skeleton == null or _skeleton.find_bone("Wrist.L") < 0:
+			return
+		var attach := BoneAttachment3D.new()
+		attach.name = "WatchGlow"
+		attach.bone_name = "Wrist.L"
+		_skeleton.add_child(attach)
+		var spark := MeshInstance3D.new()
+		spark.name = "Spark"
+		var quad := QuadMesh.new()
+		quad.size = Vector2(0.06, 0.035)
+		spark.mesh = quad
+		var mat := StandardMaterial3D.new()
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+		mat.albedo_color = WATCH_GLOW
+		spark.material_override = mat
+		spark.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		attach.add_child(spark)
+		var light := OmniLight3D.new()
+		light.name = "Light"
+		light.light_color = WATCH_GLOW
+		light.omni_range = 0.6
+		attach.add_child(light)
+		# Undo the model's import scale so the glow keeps its size.
+		var s := _skeleton.global_basis.get_scale()
+		for child: Node3D in [spark, light]:
+			child.scale = Vector3(1.0 / maxf(s.x, 0.001), 1.0 / maxf(s.y, 0.001), 1.0 / maxf(s.z, 0.001))
+		_watch_glow = attach
+	_watch_glow.visible = true
+	var spark_node := _watch_glow.get_node("Spark") as MeshInstance3D
+	spark_node.position = _watch_glow.global_basis.inverse() * Vector3.UP * 0.08
+	if actor.body_mesh:
+		spark_node.layers = actor.body_mesh.layers
+	(spark_node.material_override as StandardMaterial3D).albedo_color = Color(WATCH_GLOW, 0.85 * _watch_up)
+	(_watch_glow.get_node("Light") as OmniLight3D).light_energy = 0.6 * _watch_up
 
 
 func _build_vitals() -> void:

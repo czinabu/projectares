@@ -912,8 +912,7 @@ func _test_main_flow() -> void:
 	var card_width := holo.global_basis.get_scale().x * wrist.face_size.x
 	check(holo.global_position.distance_to(wrist.watch_position(p)) < card_width,
 			"the third-person card rises off the wrist, not hung out in front of the camera")
-	check(wrist.get_node("Glow").visible and (wrist.get_node("Glow") as OmniLight3D).light_energy > 0.0,
-			"and the arm glows while it is up")
+	check(p.cmd.watch_up, "and the raised watch goes out with your inputs, so the arm glows for everyone")
 	var icons: Array = []
 	for slot in wrist.card.slots:
 		icons.append(slot.id)
@@ -3369,6 +3368,11 @@ func _test_online() -> void:
 			and copy.sprint and copy.primary and copy.dash and copy.ability_pressed
 			and not copy.jump and not copy.heal_pressed and copy.stance == 2 and copy.switch_weapon == 1,
 			"a command survives the trip through its network form")
+	cmd.watch_up = true
+	var packed: Array = NetSession.unpack_inputs(NetSession.pack_inputs([[1, cmd.to_array(), 0]]))[0][1]
+	copy.apply_array(packed)
+	check(copy.watch_up and int(packed[ActorCommand.FLAGS_INDEX]) & ActorCommand.HELD_MASK & ActorCommand.FLAG_WATCH_UP != 0,
+			"a raised watch travels with the held keys, so others see it")
 	copy.apply_array([99.0, 99.0, "x", 50.0, NAN, 0.0, 0.0, 0, 7, 99])
 	check(copy.move.length() <= 1.001 and is_zero_approx(copy.yaw) and copy.pitch <= 1.5
 			and copy.aim_dir == Vector3.ZERO and copy.stance == 2 and copy.switch_weapon <= 8,

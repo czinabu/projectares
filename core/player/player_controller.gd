@@ -441,6 +441,7 @@ func _physics_process(delta: float) -> void:
 	if cmd.visor_pressed:
 		_visor_level = next_visor_level(actor.visor, _visor_level)
 	cmd.visor_level = _visor_level
+	cmd.watch_up = wrist_raised and not actor.is_dead
 	var key_slot := -1
 	for n in range(1, 5):
 		if Input.is_action_just_pressed("weapon_%d" % n):

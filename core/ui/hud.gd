@@ -908,8 +908,10 @@ class Wrist:
 		# The card unfolds upwards once the wrist is up.
 		var open := clampf((raise_amount - 0.35) / 0.65, 0.0, 1.0)
 		_holo.visible = open > 0.0
+		# In third person the skin lights the arm for everyone
+		# (`ActorSkin._update_watch_glow`); first person lights the forearm.
 		_glow.light_energy = glow_energy * open
-		_glow.visible = open > 0.0
+		_glow.visible = open > 0.0 and not third
 		# A wider view shrinks everything in it; the watch grows to match.
 		var k := 1.0
 		if cam:
