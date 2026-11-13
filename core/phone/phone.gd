@@ -45,10 +45,16 @@ const APP_NAMES := {"contacts": "Contacts", "messages": "Messages", "invites": "
 ## The names under the home screen's icons.
 const NAV_NAMES := {"contacts": "People", "messages": "Chat", "invites": "Invites",
 		"news": "News", "mirror": "Mirror", "controls": "Keys", "settings": "Settings"}
-## Each app icon's colour.
-const APP_TINTS := {"contacts": Color(0.22, 0.68, 0.45), "messages": Color(0.24, 0.52, 0.95),
-		"invites": Color(0.95, 0.58, 0.2), "news": Color(0.88, 0.3, 0.3), "mirror": Color(0.58, 0.4, 0.9),
-		"controls": Color(0.18, 0.66, 0.72), "settings": Color(0.42, 0.44, 0.48)}
+## The screen's colours: the dark glass, the panels on it, and the dimmer
+## ink for secondary text. The device's body is gunmetal.
+const SCREEN_BG := Color(0.035, 0.04, 0.047)
+const PANEL_BG := Color(0.06, 0.065, 0.075, 0.92)
+const DIM_INK := Color(0.62, 0.62, 0.6)
+const CASE_COLOR := Color(0.12, 0.122, 0.13)
+## The Settings app's tabs, in order, and their names. "dev" is only shown
+## where dev mode is available (DEV MODE).
+const SETTINGS_TABS := ["input", "view", "system", "dev"]
+const SETTINGS_TAB_NAMES := {"input": "Input", "view": "View", "system": "System", "dev": "Dev"}
 ## The home screen, which is not an app of its own.
 const HOME := "home"
 
@@ -141,31 +147,43 @@ const CONTROLS := [
 	]],
 ]
 
-## The screen's pixels, bezel included (the phone is about 1:2).
-var screen_size := Vector2i(440, 900)
-## The phone's height in the world, metres. Held this size, it is a little
-## further from the eyes than a real one, which keeps it clear of the near
-## plane; it is drawn over the world anyway, so it never pokes into a wall.
-var device_height := 0.32
-var device_depth := 0.022
-var corner_radius := 0.026
-## How much of the view's height the phone fills when held up.
-var fill := 0.74
+## The screen's pixels, the hardware round it included: the frame, the
+## corner screws and the chin with its two buttons are drawn on the same
+## viewport, so the whole face is one picture and one place to click.
+var screen_size := Vector2i(480, 800)
+## Text on the screen is drawn this much bigger than the sizes the apps ask
+## for, so it still reads with the device held small and low.
+var text_scale := 1.6
+## Where the glass sits inside the frame (left, top, right, bottom, pixels).
+var glass_inset := Vector4(22, 44, 22, 104)
+## The device's height in the world, metres: a rugged handheld about the
+## size of a small tablet's half, held at about a gun's distance from the
+## eyes, with a pistol grip under it that the right hand closes round.
+var device_height := 0.2
+var device_depth := 0.02
+var corner_radius := 0.016
+## The grip under the device: its size (m), how far across the bottom it
+## sits (0 middle, 0.5 the right edge) and how far it rakes back.
+var grip_size := Vector3(0.03, 0.09, 0.026)
+var grip_across := 0.18
+var grip_rake := -0.32
+## How much of the view's height the device's face fills when held up.
+var fill := 0.5
 ## Where it is held, in the view (-1 to 1 across and up). Further right while
 ## the Mirror app is up, so the mirror is in view.
-var hold_at := Vector2(0.4, 0.0)
-var hold_at_mirror := Vector2(0.62, 0.0)
+var hold_at := Vector2(0.42, 0.1)
+var hold_at_mirror := Vector2(0.62, 0.1)
 ## Turned in toward the middle of the view, tipped away at the top, and
 ## rolled, in radians.
-var hold_turn := 0.1
-var hold_tilt := 0.08
-var hold_roll := -0.035
+var hold_turn := 0.14
+var hold_tilt := 0.1
+var hold_roll := -0.05
 ## Seconds to raise it or put it away.
 var raise_time := 0.22
-## How dark the scene goes behind the phone.
-var dim_alpha := 0.38
-## The soft light the screen throws around the phone.
-var glow_alpha := 0.4
+## How dark the scene goes behind it: only a touch, the screen is lit.
+var dim_alpha := 0.1
+## The thin light the screen throws round the device.
+var glow_alpha := 0.14
 ## Seconds a pop-up stays on screen.
 var notice_seconds := 4.5
 
@@ -202,6 +220,15 @@ var _title: Label
 var _body: VBoxContainer
 var _scroll: ScrollContainer
 var _icons := {}
+## The home screen's live readings ("link", "inbox", "news").
+var _readouts := {}
+## The Settings app's open tab (`SETTINGS_TABS`) and the row of tabs.
+var settings_tab := "input"
+var _tabs: HBoxContainer
+var _chassis: Control
+## Where the right hand closes round the device's grip (a child of the
+## device). The first-person arms reach for it while the phone is out.
+var grip: Node3D
 ## In the world: the phone, its glow and the shade over the scene.
 var _device: MeshInstance3D
 var _glow: MeshInstance3D
@@ -583,8 +610,9 @@ func show_notice(text: String) -> void:
 
 # ---------------------------------------------------------------- layout ----
 
-## The screen: a 2D viewport with the bezel, the status bar, the home
-## screen and the page an app draws on.
+## The screen: a 2D viewport with the device's frame and chin, the glass
+## inside it (a dark backdrop, the status bar, the home screen and the page
+## an app draws on) and the chin's back and home buttons.
 func _build_screen() -> void:
 	_screen = SubViewport.new()
 	_screen.name = "Screen"
@@ -595,136 +623,143 @@ func _build_screen() -> void:
 	_screen.render_target_update_mode = SubViewport.UPDATE_WHEN_VISIBLE
 	add_child(_screen)
 
-	var bezel := Panel.new()
-	bezel.name = "Bezel"
-	var frame := StyleBoxFlat.new()
-	frame.bg_color = Color(0.02, 0.02, 0.025)
-	frame.border_color = Color(0.2, 0.19, 0.18)
-	frame.set_border_width_all(3)
-	frame.set_corner_radius_all(int(screen_size.x * corner_radius / (device_height * screen_size.x / screen_size.y)))
-	frame.anti_aliasing_size = 1.5
-	bezel.add_theme_stylebox_override("panel", frame)
-	bezel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_screen.add_child(bezel)
+	var chassis := Chassis.new()
+	chassis.name = "Bezel"
+	chassis.glass = glass_inset
+	chassis.theme = screen_theme(text_scale)
+	chassis.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_screen.add_child(chassis)
+	_chassis = chassis
 
-	# The glass: a lit wallpaper inside the bezel, with everything clipped to
-	# its rounded corners.
+	# The glass: everything on it is clipped to its rounded corners.
 	var glass := Panel.new()
 	glass.name = "Glass"
 	var lit := StyleBoxFlat.new()
-	lit.bg_color = Color(0.055, 0.06, 0.075)
-	lit.set_corner_radius_all(maxi(frame.corner_radius_top_left - 12, 8))
+	lit.bg_color = SCREEN_BG
+	lit.set_corner_radius_all(14)
 	lit.anti_aliasing_size = 1.5
 	glass.add_theme_stylebox_override("panel", lit)
 	glass.clip_children = CanvasItem.CLIP_CHILDREN_AND_DRAW
 	glass.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	for side: Side in [SIDE_LEFT, SIDE_TOP]:
-		glass.set_offset(side, 12.0)
-	for side: Side in [SIDE_RIGHT, SIDE_BOTTOM]:
-		glass.set_offset(side, -12.0)
-	bezel.add_child(glass)
-	var wallpaper := TextureRect.new()
-	var shade := GradientTexture2D.new()
-	shade.gradient = Gradient.new()
-	shade.gradient.set_color(0, Color(0.46, 0.26, 0.14))
-	shade.gradient.set_color(1, Color(0.1, 0.13, 0.26))
-	shade.fill_from = Vector2(0.2, 0.0)
-	shade.fill_to = Vector2(0.7, 1.0)
-	wallpaper.texture = shade
-	wallpaper.stretch_mode = TextureRect.STRETCH_SCALE
-	wallpaper.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	wallpaper.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	wallpaper.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	glass.add_child(wallpaper)
+	glass.offset_left = glass_inset.x
+	glass.offset_top = glass_inset.y
+	glass.offset_right = -glass_inset.z
+	glass.offset_bottom = -glass_inset.w
+	chassis.add_child(glass)
+	var backdrop := Backdrop.new()
+	backdrop.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	glass.add_child(backdrop)
 
 	var margin := MarginContainer.new()
 	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	for side: String in ["left", "right"]:
-		margin.add_theme_constant_override("margin_" + side, 18)
-	margin.add_theme_constant_override("margin_top", 14)
-	margin.add_theme_constant_override("margin_bottom", 8)
+		margin.add_theme_constant_override("margin_" + side, 16)
+	margin.add_theme_constant_override("margin_top", 8)
+	margin.add_theme_constant_override("margin_bottom", 12)
 	glass.add_child(margin)
 	var column := VBoxContainer.new()
-	column.add_theme_constant_override("separation", 6)
+	column.add_theme_constant_override("separation", 8)
 	margin.add_child(column)
 
-	# Status bar: the time, the signal and who you are signed in as.
+	# Status bar: the time, the link and who you are signed in as.
 	var bar := HBoxContainer.new()
-	bar.add_theme_constant_override("separation", 8)
-	# Clear of the rounded corners.
-	var inset := Control.new()
-	inset.custom_minimum_size = Vector2(26, 0)
-	bar.add_child(inset)
-	_status = _label("", 15, UiTheme.INK)
+	bar.add_theme_constant_override("separation", 10)
+	_status = _label("", 14, UiTheme.INK)
 	_status.autowrap_mode = TextServer.AUTOWRAP_OFF
 	_status.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	bar.add_child(_status)
 	_bars = SignalBars.new()
 	_bars.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	bar.add_child(_bars)
-	_who = _label("", 15, Color(0.78, 0.78, 0.78))
+	_who = _label("", 14, DIM_INK)
 	_who.autowrap_mode = TextServer.AUTOWRAP_OFF
-	_who.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	_who.custom_minimum_size = Vector2(0, 0)
 	bar.add_child(_who)
-	bar.add_child(inset.duplicate())
 	column.add_child(bar)
+	var rule := ColorRect.new()
+	rule.color = Color(UiTheme.ACCENT, 0.35)
+	rule.custom_minimum_size = Vector2(0, 2)
+	rule.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	column.add_child(rule)
 
-	# The home screen: a clock and the app icons.
+	# The home screen: the clock, three live readouts and the apps.
 	_home = VBoxContainer.new()
 	_home.name = "Home"
 	_home.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_home.add_theme_constant_override("separation", 0)
+	_home.add_theme_constant_override("separation", 10)
 	column.add_child(_home)
-	var top_gap := Control.new()
-	top_gap.custom_minimum_size = Vector2(0, 30)
-	_home.add_child(top_gap)
-	_clock = _label("", 72, UiTheme.INK)
-	_clock.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_home.add_child(_clock)
-	_home_note = _label("", 16, Color(0.8, 0.78, 0.74))
-	_home_note.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_home.add_child(_home_note)
-	var gap := Control.new()
-	gap.custom_minimum_size = Vector2(0, 46)
-	_home.add_child(gap)
+	var clock_row := HBoxContainer.new()
+	clock_row.add_theme_constant_override("separation", 12)
+	_clock = _label("", 40, UiTheme.INK)
+	_clock.autowrap_mode = TextServer.AUTOWRAP_OFF
+	clock_row.add_child(_clock)
+	var clock_side := VBoxContainer.new()
+	clock_side.alignment = BoxContainer.ALIGNMENT_CENTER
+	clock_side.add_theme_constant_override("separation", -4)
+	clock_side.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var brand := _label("ARES // LINK", 11, UiTheme.ACCENT)
+	brand.autowrap_mode = TextServer.AUTOWRAP_OFF
+	clock_side.add_child(brand)
+	_home_note = _label("", 12, DIM_INK)
+	_home_note.autowrap_mode = TextServer.AUTOWRAP_OFF
+	_home_note.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	clock_side.add_child(_home_note)
+	clock_row.add_child(clock_side)
+	_home.add_child(clock_row)
+
+	var readouts := HBoxContainer.new()
+	readouts.add_theme_constant_override("separation", 8)
+	_home.add_child(readouts)
+	for spec: Array in [["link", "LINK", "contacts"], ["inbox", "INBOX", "messages"]]:
+		var widget := Readout.new(spec[1])
+		widget.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		widget.tapped.connect(open_app.bind(spec[2]))
+		readouts.add_child(widget)
+		_readouts[spec[0]] = widget
+	var latest := Readout.new("LATEST")
+	latest.tapped.connect(open_app.bind("news"))
+	_home.add_child(latest)
+	_readouts["news"] = latest
+
 	var grid := GridContainer.new()
 	grid.columns = 4
 	grid.add_theme_constant_override("h_separation", 8)
-	grid.add_theme_constant_override("v_separation", 18)
+	grid.add_theme_constant_override("v_separation", 8)
 	grid.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	_home.add_child(grid)
 	for app_name: String in APPS:
 		var icon := AppIcon.new()
 		icon.app = app_name
 		icon.title = NAV_NAMES[app_name]
-		icon.tint = APP_TINTS[app_name]
 		icon.tapped.connect(open_app.bind(app_name))
 		grid.add_child(icon)
 		_icons[app_name] = icon
 
-	# An app's page: a back arrow and its name, then what it shows.
+	# An app's page: its name, then what it shows.
 	_page = VBoxContainer.new()
 	_page.name = "Page"
 	_page.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_page.add_theme_constant_override("separation", 6)
+	_page.add_theme_constant_override("separation", 8)
 	column.add_child(_page)
 	var head := HBoxContainer.new()
-	head.add_theme_constant_override("separation", 4)
+	head.add_theme_constant_override("separation", 8)
 	var back := Button.new()
 	back.text = "<"
 	back.flat = true
 	back.focus_mode = Control.FOCUS_NONE
-	back.custom_minimum_size = Vector2(40, 40)
-	back.add_theme_font_size_override("font_size", 26)
+	back.custom_minimum_size = Vector2(44, 44)
+	back.add_theme_font_size_override("font_size", 30)
 	back.add_theme_color_override("font_color", UiTheme.ACCENT)
 	back.pressed.connect(go_back)
 	head.add_child(back)
-	_title = _label("", 28, UiTheme.ACCENT)
+	_title = _label("", 20, UiTheme.ACCENT)
 	_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_title.uppercase = true
 	head.add_child(_title)
 	_page.add_child(head)
-	_error = _label("", 13, Color(1.0, 0.55, 0.45))
+	_tabs = HBoxContainer.new()
+	_tabs.add_theme_constant_override("separation", 4)
+	_page.add_child(_tabs)
+	_error = _label("", 12, Color(1.0, 0.55, 0.45))
 	_page.add_child(_error)
 	_scroll = ScrollContainer.new()
 	_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -732,19 +767,136 @@ func _build_screen() -> void:
 	_page.add_child(_scroll)
 	_body = VBoxContainer.new()
 	_body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_body.add_theme_constant_override("separation", 8)
+	_body.add_theme_constant_override("separation", 10)
 	_scroll.add_child(_body)
 
-	# The home bar: tap it to go home from anywhere.
-	var home_bar := HomeBar.new()
-	home_bar.tapped.connect(go_home)
-	column.add_child(home_bar)
+	# The chin's hardware buttons: back, and home from anywhere.
+	var keys := HBoxContainer.new()
+	keys.add_theme_constant_override("separation", 40)
+	keys.anchor_left = 0.5
+	keys.anchor_right = 0.5
+	keys.anchor_top = 1.0
+	keys.anchor_bottom = 1.0
+	keys.offset_left = -80
+	keys.offset_right = 80
+	keys.offset_top = -glass_inset.w + 24
+	keys.offset_bottom = -glass_inset.w + 72
+	keys.alignment = BoxContainer.ALIGNMENT_CENTER
+	chassis.add_child(keys)
+	for kind: String in ["back", "home"]:
+		var key := ChinKey.new()
+		key.kind = kind
+		key.tapped.connect(go_back if kind == "back" else go_home)
+		keys.add_child(key)
 
 
-## The phone in the world: a rounded slab whose face shows the screen, a soft
-## glow behind it, and a shade over the scene. All of it is drawn over the
-## world (no depth test), in that order, on `MirrorScript.HELD_LAYER` so a
-## mirror never shows it.
+## The screen's look: dark panels with a thin accent edge, chamfered
+## switches and sliders in the accent, and text at `scale` times the size
+## asked for, so the device reads held small.
+static func screen_theme(scale: float) -> Theme:
+	var theme := Theme.new()
+	theme.default_font_size = roundi(15 * scale)
+	theme.set_constant("outline_size", "Label", 0)
+	theme.set_constant("shadow_offset_y", "Label", 0)
+	theme.set_color("font_shadow_color", "Label", Color(0, 0, 0, 0))
+	for type: String in ["Button", "OptionButton"]:
+		theme.set_stylebox("normal", type, _flat_box(PANEL_BG, Color(UiTheme.ACCENT, 0.35), 2, 8))
+		theme.set_stylebox("hover", type, _flat_box(Color(0.14, 0.1, 0.06), UiTheme.ACCENT, 2, 8))
+		theme.set_stylebox("pressed", type, _flat_box(Color(0.3, 0.17, 0.05), UiTheme.ACCENT, 2, 8))
+		theme.set_stylebox("focus", type, StyleBoxEmpty.new())
+		theme.set_color("font_color", type, UiTheme.INK)
+		theme.set_color("font_hover_color", type, UiTheme.ACCENT.lightened(0.3))
+		theme.set_color("font_focus_color", type, UiTheme.INK)
+		theme.set_color("font_pressed_color", type, Color.WHITE)
+	for type: String in ["CheckButton"]:
+		var row := _flat_box(PANEL_BG, Color(1, 1, 1, 0.06), 1, 10)
+		theme.set_stylebox("normal", type, row)
+		theme.set_stylebox("pressed", type, row)
+		theme.set_stylebox("hover", type, _flat_box(Color(0.1, 0.09, 0.08), Color(UiTheme.ACCENT, 0.5), 1, 10))
+		theme.set_stylebox("hover_pressed", type, _flat_box(Color(0.1, 0.09, 0.08), Color(UiTheme.ACCENT, 0.5), 1, 10))
+		theme.set_stylebox("focus", type, StyleBoxEmpty.new())
+		theme.set_color("font_color", type, UiTheme.INK)
+		theme.set_color("font_hover_color", type, UiTheme.INK)
+		theme.set_color("font_pressed_color", type, UiTheme.INK)
+		theme.set_color("font_hover_pressed_color", type, UiTheme.INK)
+		theme.set_color("font_focus_color", type, UiTheme.INK)
+		theme.set_icon("checked", type, switch_icon(true))
+		theme.set_icon("unchecked", type, switch_icon(false))
+	var track := _flat_box(Color(1, 1, 1, 0.12), Color(0, 0, 0, 0), 0, 0)
+	track.content_margin_top = 3
+	track.content_margin_bottom = 3
+	theme.set_stylebox("slider", "HSlider", track)
+	var filled := _flat_box(Color(UiTheme.ACCENT, 0.85), Color(0, 0, 0, 0), 0, 0)
+	theme.set_stylebox("grabber_area", "HSlider", filled)
+	theme.set_stylebox("grabber_area_highlight", "HSlider", filled)
+	theme.set_icon("grabber", "HSlider", grabber_icon(false))
+	theme.set_icon("grabber_highlight", "HSlider", grabber_icon(true))
+	var lane := _flat_box(Color(1, 1, 1, 0.04), Color(0, 0, 0, 0), 0, 0)
+	lane.content_margin_left = 3
+	lane.content_margin_right = 3
+	theme.set_stylebox("scroll", "VScrollBar", lane)
+	for state: String in ["grabber", "grabber_highlight", "grabber_pressed"]:
+		theme.set_stylebox(state, "VScrollBar", _flat_box(Color(UiTheme.ACCENT, 0.55 if state == "grabber" else 0.9), Color(0, 0, 0, 0), 0, 0))
+	theme.set_stylebox("normal", "LineEdit", _flat_box(Color(0.02, 0.025, 0.03), Color(UiTheme.ACCENT, 0.35), 2, 8))
+	theme.set_stylebox("focus", "LineEdit", _flat_box(Color(0, 0, 0, 0), UiTheme.ACCENT, 2, 8))
+	theme.set_stylebox("panel", "PanelContainer", _flat_box(PANEL_BG, Color(1, 1, 1, 0.07), 1, 10))
+	theme.set_stylebox("panel", "PopupMenu", _flat_box(Color(0.04, 0.045, 0.05), Color(UiTheme.ACCENT, 0.6), 2, 6))
+	theme.set_stylebox("hover", "PopupMenu", _flat_box(Color(0.3, 0.17, 0.05), Color(0, 0, 0, 0), 0, 4))
+	theme.set_color("font_color", "PopupMenu", UiTheme.INK)
+	theme.set_font_size("font_size", "PopupMenu", roundi(14 * scale))
+	return theme
+
+
+## A panel with square corners cut by `cut` pixels at the top left and the
+## bottom right, the device's chamfered look, and a `width` edge.
+static func _flat_box(fill_color: Color, edge: Color, width: int, pad: int) -> StyleBoxFlat:
+	var box := StyleBoxFlat.new()
+	box.bg_color = fill_color
+	box.border_color = edge
+	box.set_border_width_all(width)
+	box.corner_radius_top_left = 8
+	box.corner_radius_bottom_right = 8
+	box.corner_radius_top_right = 2
+	box.corner_radius_bottom_left = 2
+	box.corner_detail = 1
+	box.anti_aliasing_size = 1.0
+	box.set_content_margin_all(pad)
+	return box
+
+
+## The switch on a toggle row: a square-cut slot, its block to the right and
+## lit in the accent when on.
+static func switch_icon(on: bool) -> ImageTexture:
+	var w := 64
+	var h := 32
+	var image := Image.create(w, h, false, Image.FORMAT_RGBA8)
+	image.fill(Color(0, 0, 0, 0))
+	var edge := UiTheme.ACCENT if on else Color(0.45, 0.45, 0.45)
+	image.fill_rect(Rect2i(0, 0, w, h), edge)
+	image.fill_rect(Rect2i(2, 2, w - 4, h - 4), Color(0.25, 0.14, 0.04) if on else Color(0.05, 0.055, 0.06))
+	var block := Rect2i(w - 28, 5, 23, h - 10) if on else Rect2i(5, 5, 23, h - 10)
+	image.fill_rect(block, UiTheme.ACCENT if on else Color(0.4, 0.4, 0.4))
+	for i in 3:
+		image.fill_rect(Rect2i(block.position.x + 7 + i * 4, block.position.y + 6, 2, block.size.y - 12),
+				Color(0, 0, 0, 0.35))
+	return ImageTexture.create_from_image(image)
+
+
+## A slider's handle: an upright bar in the accent with a dark notch.
+static func grabber_icon(lit: bool) -> ImageTexture:
+	var image := Image.create(16, 30, false, Image.FORMAT_RGBA8)
+	image.fill(UiTheme.ACCENT.lightened(0.25) if lit else UiTheme.ACCENT)
+	image.fill_rect(Rect2i(7, 6, 2, 18), Color(0, 0, 0, 0.45))
+	return ImageTexture.create_from_image(image)
+
+
+## The device in the world: a rugged slab whose face shows the screen, with
+## rubber rails down its sides, armoured corners, a stub antenna and a raked
+## pistol grip under it that your right hand closes round (`grip`, which the
+## first-person arms reach for). It is drawn in the world like a gun in the
+## hand, so fingers wrap in front of the grip, with a thin glow behind it and
+## a light shade over the scene, on `MirrorScript.HELD_LAYER` so a mirror
+## never shows it.
 func _build_device() -> void:
 	var height := device_height
 	var width := height * float(screen_size.x) / float(screen_size.y)
@@ -755,13 +907,10 @@ func _build_device() -> void:
 	# Lit from within, so it reads in a dark street and the bloom catches it.
 	face.emission_enabled = true
 	face.emission_texture = _screen.get_texture()
-	face.emission_energy_multiplier = 0.6
-	var case := StandardMaterial3D.new()
-	case.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	case.albedo_color = Color(0.17, 0.165, 0.16)
-	# Flat-coloured and drawn over the world, so which side is in front does
-	# not matter.
-	case.cull_mode = BaseMaterial3D.CULL_DISABLED
+	face.emission_energy_multiplier = 0.45
+	var case := _hardware_material(CASE_COLOR)
+	var rubber := _hardware_material(Color(0.07, 0.07, 0.075))
+	var armour := _hardware_material(Color(0.3, 0.17, 0.06))
 	var glow := StandardMaterial3D.new()
 	glow.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	glow.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
@@ -770,27 +919,57 @@ func _build_device() -> void:
 	halo.fill_from = Vector2(0.5, 0.5)
 	halo.fill_to = Vector2(1.0, 0.5)
 	halo.gradient = Gradient.new()
-	halo.gradient.offsets = PackedFloat32Array([0.0, 0.45, 1.0])
-	halo.gradient.colors = PackedColorArray([Color(1.0, 0.75, 0.5, glow_alpha),
-			Color(1.0, 0.75, 0.5, glow_alpha * 0.8), Color(1.0, 0.75, 0.5, 0.0)])
+	halo.gradient.offsets = PackedFloat32Array([0.0, 0.5, 1.0])
+	var tint := UiTheme.ACCENT
+	halo.gradient.colors = PackedColorArray([Color(tint, glow_alpha), Color(tint, glow_alpha * 0.6), Color(tint, 0.0)])
 	glow.albedo_texture = halo
 	_dim_mat = StandardMaterial3D.new()
 	_dim_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	_dim_mat.albedo_color = Color(0.0, 0.0, 0.0, dim_alpha)
+	# The shade and the glow are drawn over the world; the device is drawn
+	# in it after them (transparent pass, by priority), so it is never shaded
+	# and a hand in front of its grip hides the grip.
 	var order := 0
-	for mat: StandardMaterial3D in [_dim_mat, glow, case, face]:
+	for mat: StandardMaterial3D in [_dim_mat, glow, rubber, case, armour, face]:
 		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-		mat.no_depth_test = true
 		mat.disable_receive_shadows = true
 		mat.render_priority = 100 + order
 		order += 1
+	_dim_mat.no_depth_test = true
+	glow.no_depth_test = true
 
 	_dim = _held_mesh("Dim", QuadMesh.new(), _dim_mat)
 	_glow = _held_mesh("Glow", QuadMesh.new(), glow)
-	(_glow.mesh as QuadMesh).size = Vector2(width, height) * 2.2
+	(_glow.mesh as QuadMesh).size = Vector2(width, height) * 1.7
 	_device = _held_mesh("Device", rounded_slab(Vector2(width, height), device_depth, corner_radius), null)
 	_device.set_surface_override_material(0, face)
 	_device.set_surface_override_material(1, case)
+
+	# The hardware round the slab: rails, corners, antenna and the grip.
+	var half := Vector2(width, height) * 0.5
+	var d := device_depth
+	for side: float in [-1.0, 1.0]:
+		_part("Rail", Vector3(0.004, height * 0.55, d * 1.2), Vector3(side * (half.x + 0.001), 0.0, 0.0), rubber)
+		for end: float in [-1.0, 1.0]:
+			_part("Corner", Vector3(0.013, 0.013, d * 1.25),
+					Vector3(side * (half.x - 0.004), end * (half.y - 0.004), 0.0), armour)
+	var antenna := CylinderMesh.new()
+	antenna.top_radius = 0.0035
+	antenna.bottom_radius = 0.005
+	antenna.height = 0.035
+	antenna.radial_segments = 8
+	var stub := _held_mesh("Antenna", antenna, rubber, _device)
+	stub.position = Vector3(-half.x + 0.018, half.y + 0.014, -d * 0.2)
+	var handle := _part("Handle", grip_size, Vector3.ZERO, rubber)
+	handle.basis = Basis(Vector3.RIGHT, grip_rake)
+	handle.position = Vector3(width * grip_across, -half.y - grip_size.y * 0.42, -d * 0.15)
+	var guard := _part("GripCap", Vector3(grip_size.x * 1.15, 0.012, grip_size.z * 1.2), Vector3.ZERO, armour)
+	guard.basis = handle.basis
+	guard.position = handle.position + handle.basis * Vector3(0.0, -grip_size.y * 0.5, 0.0)
+	grip = Node3D.new()
+	grip.name = "Grip"
+	grip.position = handle.position
+	_device.add_child(grip)
 
 	_flat = TextureRect.new()
 	_flat.name = "Flat"
@@ -808,7 +987,29 @@ func _build_device() -> void:
 	add_child(_flat)
 
 
-func _held_mesh(node_name: String, mesh: Mesh, mat: Material) -> MeshInstance3D:
+## A dark, lightly lit material for the device's body and parts, with a
+## little light of its own so it never goes black in a dark street.
+static func _hardware_material(color: Color) -> StandardMaterial3D:
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = color
+	mat.roughness = 0.55
+	mat.metallic = 0.35
+	mat.emission_enabled = true
+	mat.emission = color
+	mat.emission_energy_multiplier = 0.35
+	return mat
+
+
+## A box on the device, `size` across at `at` in its frame.
+func _part(node_name: String, size: Vector3, at: Vector3, mat: Material) -> MeshInstance3D:
+	var box := BoxMesh.new()
+	box.size = size
+	var node := _held_mesh(node_name, box, mat, _device)
+	node.position = at
+	return node
+
+
+func _held_mesh(node_name: String, mesh: Mesh, mat: Material, parent: Node = null) -> MeshInstance3D:
 	var node := MeshInstance3D.new()
 	node.name = node_name
 	node.mesh = mesh
@@ -816,8 +1017,11 @@ func _held_mesh(node_name: String, mesh: Mesh, mat: Material) -> MeshInstance3D:
 		node.material_override = mat
 	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	node.layers = 1 << (MirrorScript.HELD_LAYER - 1)
-	node.visible = false
-	add_child(node)
+	if parent == null:
+		node.visible = false
+		add_child(node)
+	else:
+		parent.add_child(node)
 	return node
 
 
@@ -936,6 +1140,7 @@ func _build_notice() -> void:
 	_notice_panel.offset_top = 24.0
 	_notice_panel.offset_bottom = 70.0
 	_notice_label = _label("", 16, UiTheme.INK)
+	_notice_label.add_theme_font_size_override("font_size", 16)
 	_notice_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_notice_panel.add_child(_notice_label)
 	_notice_panel.visible = false
@@ -956,9 +1161,32 @@ func _update_status() -> void:
 	var clock := "%02d:%02d" % [time.hour, time.minute]
 	_status.text = clock
 	_bars.strength = 4 if online() else 0
-	_who.text = net.account.get("name", "") if online() else "Solo"
+	_who.text = str(net.account.get("name", "")).left(16) if online() else "Solo"
 	_clock.text = clock
-	_home_note.text = ("Online as %s" % net.account.get("name", "")) if online() else "Offline (solo)"
+	_home_note.text = ("Online as %s" % net.account.get("name", "")) if online() else "Offline, solo"
+
+
+## The home screen's readings: the link (who is about), the inbox and the
+## newest headline.
+func _update_readouts() -> void:
+	if _readouts.is_empty():
+		return
+	if online():
+		var here := contacts().filter(func(c: Dictionary) -> bool: return c.online and not c.blocked).size()
+		_readouts["link"].show_reading("ONLINE", "%d %s here" % [here, "player" if here == 1 else "players"])
+		var unread := unread_count()
+		_readouts["inbox"].show_reading("%d new" % unread if unread > 0 else "Clear",
+				"%d %s" % [invites().size(), "invite" if invites().size() == 1 else "invites"])
+	else:
+		_readouts["link"].show_reading("SOLO", "No server link")
+		_readouts["inbox"].show_reading("Offline", "Join a server")
+	var latest := news()
+	if latest.is_empty():
+		_readouts["news"].show_reading("No news", "")
+	else:
+		var top: Dictionary = latest[0]
+		var fresh := unseen_news()
+		_readouts["news"].show_reading(str(top.title), ("%d unread" % fresh) if fresh > 0 else str(top.get("date", "")))
 
 
 ## Redraws the badges, and the open app unless `redraw` is false (so a
@@ -973,6 +1201,7 @@ func refresh(redraw := true) -> void:
 			"invites": badge = invites().size()
 			"news": badge = unseen_news()
 		_icons[app_name].badge = badge
+	_update_readouts()
 	if not is_open or not redraw:
 		return
 	_update_status()
@@ -980,6 +1209,7 @@ func refresh(redraw := true) -> void:
 	_home.visible = home
 	_page.visible = not home
 	_title.text = "" if home else APP_NAMES[app]
+	_build_tabs()
 	_error.text = ""
 	if app != "messages" or chat_with == "":
 		_compose = null
@@ -1297,35 +1527,93 @@ static func _event_name(event: InputEvent) -> String:
 	return ""
 
 
+## The tabs under the Settings app's name; none for any other app.
+func _build_tabs() -> void:
+	for child in _tabs.get_children():
+		_tabs.remove_child(child)
+		child.queue_free()
+	_tabs.visible = app == "settings"
+	if app != "settings":
+		return
+	var tabs := settings_tabs()
+	if settings_tab not in tabs:
+		settings_tab = tabs[0]
+	for tab: String in tabs:
+		var button := Button.new()
+		button.text = SETTINGS_TAB_NAMES[tab].to_upper()
+		button.toggle_mode = true
+		button.button_pressed = tab == settings_tab
+		button.focus_mode = Control.FOCUS_NONE
+		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		button.add_theme_font_size_override("font_size", roundi(13 * text_scale))
+		if tab == settings_tab:
+			button.add_theme_color_override("font_color", UiTheme.ACCENT)
+			button.add_theme_stylebox_override("normal", _flat_box(Color(0.2, 0.12, 0.04), UiTheme.ACCENT, 2, 6))
+		button.pressed.connect(open_settings_tab.bind(tab))
+		_tabs.add_child(button)
+
+
+## The Settings tabs on offer here: the dev tab only where dev mode is
+## available (DEV MODE).
+func settings_tabs() -> Array[String]:
+	var out: Array[String] = []
+	for tab: String in SETTINGS_TABS:
+		if tab != "dev" or DevMode.available():  # DEV MODE
+			out.append(tab)
+	return out
+
+
+## Opens the Settings app at one of its tabs.
+func open_settings_tab(tab: String) -> void:
+	settings_tab = tab
+	if app != "settings":
+		open_app("settings")
+	else:
+		# Deferred: the tab that was clicked is freed by the redraw.
+		refresh.call_deferred()
+
+
+## Settings, grouped in tabs: Input (mouse, melee, the key list), View
+## (fields of view, camera, names, fullscreen), System (sound, quit) and,
+## in a debug run, Dev.
 func _draw_settings() -> void:
-	_body.add_child(_label("CONTROLS", 15, UiTheme.ACCENT))
-	_body.add_child(_button("See what every key does", open_app.bind("controls")))
-	_slider("Mouse sensitivity", "mouse_sensitivity", GameSettings.SENSITIVITY_RANGE, 0.0001,
-			GameSettings.mouse_sensitivity, func(v: float) -> String: return "%.1f" % (v * 1000.0))
-	_toggle("Invert mouse up and down", "invert_y", GameSettings.invert_y)
-	var melee := OptionButton.new()
-	melee.add_item("Melee side: mouse flick")
-	melee.add_item("Melee side: movement keys")
-	melee.select(1 if Profile.melee_control == "move" else 0)
-	melee.item_selected.connect(func(index: int) -> void:
-		Profile.melee_control = "move" if index == 1 else "mouse"
-		Profile.save()
-		settings_changed.emit())
-	_body.add_child(melee)
-	_body.add_child(_label("VIEW AND SOUND", 15, UiTheme.ACCENT))
-	_slider("Field of view (first person)", "field_of_view", GameSettings.FOV_RANGE, 1.0, GameSettings.field_of_view,
-			func(v: float) -> String: return "%d" % roundi(v))
-	_slider("Field of view (third person)", "field_of_view_third", GameSettings.FOV_RANGE, 1.0,
-			GameSettings.field_of_view_third, func(v: float) -> String: return "%d" % roundi(v))
-	_slider("Camera distance (third person)", "camera_distance", GameSettings.CAMERA_DISTANCE_RANGE, 0.1,
-			GameSettings.camera_distance, func(v: float) -> String: return "%.1f m" % v)
-	_slider("Volume", "master_volume", Vector2(0.0, 1.0), 0.05, GameSettings.master_volume,
-			func(v: float) -> String: return "%d%%" % roundi(v * 100.0))
-	_toggle("Fullscreen", "fullscreen", GameSettings.fullscreen)
-	_toggle("Names over other players", "show_nameplates", GameSettings.show_nameplates)
-	_draw_dev_mode()  # DEV MODE
-	_body.add_child(_label("GAME", 15, UiTheme.ACCENT))
-	_body.add_child(_button("Quit the game", func() -> void: quit_requested.emit()))
+	match settings_tab:
+		"input":
+			_slider("Mouse sensitivity", "mouse_sensitivity", GameSettings.SENSITIVITY_RANGE, 0.0001,
+					GameSettings.mouse_sensitivity, func(v: float) -> String: return "%.1f" % (v * 1000.0))
+			_toggle("Invert mouse up and down", "invert_y", GameSettings.invert_y)
+			_body.add_child(_section("MELEE SIDE"))
+			var melee := OptionButton.new()
+			melee.add_item("Mouse flick")
+			melee.add_item("Movement keys")
+			melee.select(1 if Profile.melee_control == "move" else 0)
+			melee.item_selected.connect(func(index: int) -> void:
+				Profile.melee_control = "move" if index == 1 else "mouse"
+				Profile.save()
+				settings_changed.emit())
+			_body.add_child(melee)
+			_body.add_child(_button("See what every key does", open_app.bind("controls")))
+		"view":
+			_slider("Field of view, first person", "field_of_view", GameSettings.FOV_RANGE, 1.0, GameSettings.field_of_view,
+					func(v: float) -> String: return "%d" % roundi(v))
+			_slider("Field of view, third person", "field_of_view_third", GameSettings.FOV_RANGE, 1.0,
+					GameSettings.field_of_view_third, func(v: float) -> String: return "%d" % roundi(v))
+			_slider("Camera distance, third person", "camera_distance", GameSettings.CAMERA_DISTANCE_RANGE, 0.1,
+					GameSettings.camera_distance, func(v: float) -> String: return "%.1f m" % v)
+			_toggle("Names over other players", "show_nameplates", GameSettings.show_nameplates)
+			_toggle("Fullscreen", "fullscreen", GameSettings.fullscreen)
+		"system":
+			_slider("Volume", "master_volume", Vector2(0.0, 1.0), 0.05, GameSettings.master_volume,
+					func(v: float) -> String: return "%d%%" % roundi(v * 100.0))
+			_body.add_child(_section("GAME"))
+			_body.add_child(_button("Quit the game", func() -> void: quit_requested.emit()))
+		"dev":
+			_draw_dev_mode()  # DEV MODE
+
+
+## A small heading inside an app's page.
+func _section(text: String) -> Label:
+	return _label(text, 12, UiTheme.ACCENT)
 
 
 ## DEV MODE: the temporary switches for testing. Only in a debug or editor
@@ -1334,7 +1622,7 @@ func _draw_dev_mode() -> void:
 	if not DevMode.available():
 		return
 	DevMode.ensure_loaded()
-	_body.add_child(_label("DEV MODE (TESTING ONLY)", 15, UiTheme.ACCENT))
+	_body.add_child(_section("TESTING ONLY, NEVER IN A RELEASE"))
 	var main := CheckButton.new()
 	main.text = "Dev mode: everything unlocked"
 	main.button_pressed = DevMode.enabled
@@ -1369,15 +1657,18 @@ func set_dev_cheat(on: bool, cheat: String) -> void:
 	dev_mode_changed.emit()
 
 
+## A setting with a range: its name and value over the slider, on a card.
 func _slider(text: String, key: String, range_: Vector2, step: float, value: float, shown: Callable) -> void:
+	var card := _card()
+	var box: VBoxContainer = card.get_child(0)
 	var head := HBoxContainer.new()
-	var name_label := _label(text, 15, UiTheme.INK)
+	var name_label := _label(text, 14, UiTheme.INK)
 	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	head.add_child(name_label)
-	var value_label := _label(shown.call(value), 15, Color(0.75, 0.75, 0.75))
+	var value_label := _label(shown.call(value), 14, UiTheme.ACCENT)
 	value_label.autowrap_mode = TextServer.AUTOWRAP_OFF
 	head.add_child(value_label)
-	_body.add_child(head)
+	box.add_child(head)
 	var slider := HSlider.new()
 	slider.min_value = range_.x
 	slider.max_value = range_.y
@@ -1386,7 +1677,9 @@ func _slider(text: String, key: String, range_: Vector2, step: float, value: flo
 	slider.value_changed.connect(func(v: float) -> void:
 		value_label.text = shown.call(v)
 		change_setting(key, v))
-	_body.add_child(slider)
+	slider.custom_minimum_size = Vector2(0, 30)
+	box.add_child(slider)
+	_body.add_child(card)
 
 
 func _toggle(text: String, key: String, value: bool) -> void:
@@ -1408,7 +1701,7 @@ func _label(text: String, font_size: int, color: Color) -> Label:
 	var label := Label.new()
 	label.text = text
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	label.add_theme_font_size_override("font_size", font_size)
+	label.add_theme_font_size_override("font_size", roundi(font_size * text_scale))
 	label.add_theme_color_override("font_color", color)
 	return label
 
@@ -1416,7 +1709,7 @@ func _label(text: String, font_size: int, color: Color) -> Label:
 func _button(text: String, action: Callable) -> Button:
 	var button := Button.new()
 	button.text = text
-	button.add_theme_font_size_override("font_size", 14)
+	button.add_theme_font_size_override("font_size", roundi(14 * text_scale))
 	button.pressed.connect(action)
 	return button
 
@@ -1440,24 +1733,23 @@ static func _preview(text: String) -> String:
 
 # ------------------------------------------------------------ home screen ----
 
-## An app on the home screen: a rounded tile in the app's colour with a
-## glyph drawn on it, the name below and a badge with the count of anything
-## new. Tap it to open the app.
+## An app on the home screen: a dark chamfered tile with the app's glyph
+## drawn in thin accent lines, the name below and a count of anything new in
+## an accent tag. Tap it to open the app.
 class AppIcon extends Control:
 	signal tapped
 	var app := ""
 	var title := ""
-	var tint := Color.GRAY
 	var badge := 0:
 		set(value):
 			if value != badge:
 				badge = value
 				queue_redraw()
-	var tile := 70.0
+	var tile := 78.0
 	var _hover := false
 
 	func _init() -> void:
-		custom_minimum_size = Vector2(92, 104)
+		custom_minimum_size = Vector2(92, 116)
 		mouse_filter = Control.MOUSE_FILTER_STOP
 		mouse_entered.connect(_set_hover.bind(true))
 		mouse_exited.connect(_set_hover.bind(false))
@@ -1474,107 +1766,126 @@ class AppIcon extends Control:
 
 	func _draw() -> void:
 		var box := Rect2(Vector2((size.x - tile) * 0.5, 4.0), Vector2(tile, tile))
-		var style := StyleBoxFlat.new()
-		style.bg_color = tint.lightened(0.12) if _hover else tint
-		style.set_corner_radius_all(18)
-		style.anti_aliasing_size = 1.2
-		style.shadow_color = Color(0, 0, 0, 0.35)
-		style.shadow_size = 6
-		style.shadow_offset = Vector2(0, 3)
-		draw_style_box(style, box)
-		# A lighter top half reads as a lit, slightly curved tile.
-		var sheen := StyleBoxFlat.new()
-		sheen.bg_color = Color(1, 1, 1, 0.12)
-		sheen.corner_radius_top_left = 18
-		sheen.corner_radius_top_right = 18
-		sheen.anti_aliasing_size = 1.2
-		draw_style_box(sheen, Rect2(box.position, Vector2(tile, tile * 0.5)))
-		_draw_glyph(box.get_center(), tile / 70.0)
+		var cut := 14.0
+		var outline := PackedVector2Array([box.position + Vector2(cut, 0), Vector2(box.end.x, box.position.y),
+				Vector2(box.end.x, box.end.y - cut), box.end - Vector2(cut, 0), Vector2(box.position.x, box.end.y),
+				box.position + Vector2(0, cut)])
+		draw_colored_polygon(outline, Color(0.1, 0.085, 0.07) if _hover else Color(0.055, 0.06, 0.068))
+		var edge := outline.duplicate()
+		edge.append(outline[0])
+		draw_polyline(edge, Color(UiTheme.ACCENT, 0.9 if _hover else 0.4), 2.0, true)
+		# A short lit tick on the top edge, like a status light.
+		draw_line(box.position + Vector2(cut + 6, 5), box.position + Vector2(cut + 22, 5), Color(UiTheme.ACCENT, 0.8), 2.0)
+		_draw_glyph(box.get_center() + Vector2(0, 2), tile / 70.0)
 		var font := get_theme_default_font()
-		var width := font.get_string_size(title, HORIZONTAL_ALIGNMENT_LEFT, -1, 15).x
-		var at := Vector2((size.x - width) * 0.5, box.end.y + 20.0)
-		draw_string(font, at + Vector2(0, 1.5), title, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(0, 0, 0, 0.6))
-		draw_string(font, at, title, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, UiTheme.INK)
+		var text := title.to_upper()
+		var font_size := 21
+		var width := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x
+		draw_string(font, Vector2((size.x - width) * 0.5, box.end.y + 22.0), text, HORIZONTAL_ALIGNMENT_LEFT, -1,
+				font_size, UiTheme.INK if _hover else DIM_INK)
 		if badge > 0:
 			var shown := str(badge) if badge < 100 else "99+"
-			var text_w := font.get_string_size(shown, HORIZONTAL_ALIGNMENT_LEFT, -1, 14).x
-			var pill := Rect2(Vector2(box.end.x - 14.0, box.position.y - 6.0), Vector2(maxf(24.0, text_w + 12.0), 24.0))
-			var red := StyleBoxFlat.new()
-			red.bg_color = Color(0.92, 0.2, 0.18)
-			red.border_color = Color(0.02, 0.02, 0.025)
-			red.set_border_width_all(2)
-			red.set_corner_radius_all(12)
-			red.anti_aliasing_size = 1.2
-			draw_style_box(red, pill)
-			draw_string(font, Vector2(pill.get_center().x - text_w * 0.5, pill.position.y + 18.0), shown,
-					HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color.WHITE)
+			var text_w := font.get_string_size(shown, HORIZONTAL_ALIGNMENT_LEFT, -1, 19).x
+			var tag := Rect2(Vector2(box.end.x - 16.0, box.position.y - 6.0), Vector2(maxf(26.0, text_w + 10.0), 26.0))
+			draw_rect(tag, UiTheme.ACCENT)
+			draw_rect(tag, SCREEN_BG, false, 2.0)
+			draw_string(font, Vector2(tag.get_center().x - text_w * 0.5, tag.position.y + 20.0), shown,
+					HORIZONTAL_ALIGNMENT_LEFT, -1, 19, SCREEN_BG)
 
-	## Each app's picture, in white on the tile, `k` scaling it.
+	## Each app's picture in accent lines, `k` scaling it.
 	func _draw_glyph(c: Vector2, k: float) -> void:
-		var ink := Color(1, 1, 1, 0.95)
-		var deep := tint.darkened(0.25)
+		var ink := UiTheme.ACCENT.lightened(0.15) if _hover else UiTheme.ACCENT
+		var w := 2.6 * k
 		match app:
 			"contacts":
-				_person(c + Vector2(9, -2) * k, 0.8 * k, Color(1, 1, 1, 0.55))
-				_person(c + Vector2(-5, 2) * k, k, ink)
+				draw_arc(c + Vector2(-6, -8) * k, 7.0 * k, 0.0, TAU, 20, ink, w, true)
+				draw_arc(c + Vector2(-6, 16) * k, 14.0 * k, PI * 1.08, PI * 1.92, 16, ink, w, true)
+				draw_arc(c + Vector2(11, -5) * k, 5.5 * k, 0.0, TAU, 16, Color(ink, 0.6), w, true)
+				draw_arc(c + Vector2(13, 15) * k, 11.0 * k, PI * 1.15, PI * 1.85, 12, Color(ink, 0.6), w, true)
 			"messages":
-				var bubble := StyleBoxFlat.new()
-				bubble.bg_color = ink
-				bubble.set_corner_radius_all(int(12 * k))
-				bubble.anti_aliasing_size = 1.0
-				draw_style_box(bubble, Rect2(c + Vector2(-21, -16) * k, Vector2(42, 28) * k))
-				draw_colored_polygon(PackedVector2Array([c + Vector2(-12, 10) * k, c + Vector2(-2, 10) * k,
-						c + Vector2(-16, 20) * k]), ink)
+				var b := PackedVector2Array([c + Vector2(-20, -15) * k, c + Vector2(20, -15) * k, c + Vector2(20, 9) * k,
+						c + Vector2(-4, 9) * k, c + Vector2(-13, 18) * k, c + Vector2(-13, 9) * k, c + Vector2(-20, 9) * k,
+						c + Vector2(-20, -15) * k])
+				draw_polyline(b, ink, w, true)
 				for i in 3:
-					draw_circle(c + Vector2(-10 + i * 10, -2) * k, 3.2 * k, deep)
+					draw_rect(Rect2(c + Vector2(-11 + i * 9, -5) * k, Vector2(4, 4) * k), ink)
 			"invites":
-				var r := Rect2(c + Vector2(-22, -15) * k, Vector2(44, 30) * k)
-				draw_rect(r, ink)
-				draw_polyline(PackedVector2Array([r.position, c + Vector2(0, 3) * k, Vector2(r.end.x, r.position.y)]),
-						deep, 3.0 * k, true)
+				var r := Rect2(c + Vector2(-21, -14) * k, Vector2(42, 28) * k)
+				draw_rect(r, ink, false, w)
+				draw_polyline(PackedVector2Array([r.position, c + Vector2(0, 3) * k, Vector2(r.end.x, r.position.y)]), ink, w, true)
 			"news":
-				draw_rect(Rect2(c + Vector2(-17, -21) * k, Vector2(34, 42) * k), ink)
-				draw_rect(Rect2(c + Vector2(-12, -16) * k, Vector2(24, 9) * k), deep)
-				for i in 4:
-					var w := 24.0 if i % 2 == 0 else 17.0
-					draw_rect(Rect2(c + Vector2(-12, -2 + i * 5.5) * k, Vector2(w, 2.4) * k), deep)
+				draw_rect(Rect2(c + Vector2(-16, -20) * k, Vector2(32, 40) * k), ink, false, w)
+				draw_rect(Rect2(c + Vector2(-10, -13) * k, Vector2(20, 7) * k), ink)
+				for i in 3:
+					draw_line(c + Vector2(-10, 0 + i * 6.5) * k, c + Vector2(10 if i % 2 == 0 else 4, 0 + i * 6.5) * k, ink, 2.0 * k)
 			"mirror":
 				var ring := PackedVector2Array()
 				for i in 33:
 					var angle := TAU * i / 32.0
-					ring.append(c + Vector2(cos(angle) * 15.0, sin(angle) * 21.0) * k)
-				draw_colored_polygon(ring, Color(1, 1, 1, 0.3))
-				draw_polyline(ring, ink, 3.5 * k, true)
-				draw_line(c + Vector2(-7, -4) * k, c + Vector2(3, -14) * k, ink, 3.0 * k, true)
-				draw_line(c + Vector2(-6, 6) * k, c + Vector2(8, -8) * k, Color(1, 1, 1, 0.6), 2.0 * k, true)
+					ring.append(c + Vector2(cos(angle) * 14.0, sin(angle) * 20.0) * k)
+				draw_polyline(ring, ink, w, true)
+				draw_line(c + Vector2(-6, -3) * k, c + Vector2(3, -12) * k, Color(ink, 0.7), 2.0 * k, true)
+				draw_line(c + Vector2(-5, 6) * k, c + Vector2(7, -6) * k, Color(ink, 0.45), 2.0 * k, true)
 			"controls":
-				var cap := StyleBoxFlat.new()
-				cap.bg_color = ink
-				cap.set_corner_radius_all(int(3 * k))
 				for row in 2:
 					for col in 4:
-						draw_style_box(cap, Rect2(c + Vector2(-22 + col * 11.5, -16 + row * 11.5) * k, Vector2(9, 9) * k))
-				draw_style_box(cap, Rect2(c + Vector2(-14, 7) * k, Vector2(28, 9) * k))
+						draw_rect(Rect2(c + Vector2(-21 + col * 11, -14 + row * 11) * k, Vector2(8, 8) * k), ink, false, 2.0 * k)
+				draw_rect(Rect2(c + Vector2(-13, 9) * k, Vector2(26, 7) * k), ink, false, 2.0 * k)
 			"settings":
 				var gear := PackedVector2Array()
 				var teeth := 8
-				for i in teeth * 4:
+				for i in teeth * 4 + 1:
 					var angle := TAU * i / (teeth * 4.0)
 					var outer := (i % 4) < 2
-					gear.append(c + Vector2.from_angle(angle + PI / (teeth * 4.0)) * (21.0 if outer else 15.5) * k)
-				draw_colored_polygon(gear, ink)
-				draw_circle(c, 7.0 * k, deep)
-
-	func _person(at: Vector2, k: float, color: Color) -> void:
-		draw_circle(at + Vector2(0, -9) * k, 8.0 * k, color)
-		var shoulders := PackedVector2Array()
-		for i in 17:
-			var angle := PI + PI * i / 16.0
-			shoulders.append(at + Vector2(0, 19) * k + Vector2(cos(angle), sin(angle)) * Vector2(15, 17) * k)
-		draw_colored_polygon(shoulders, color)
+					gear.append(c + Vector2.from_angle(angle + PI / (teeth * 4.0)) * (19.0 if outer else 14.0) * k)
+				draw_polyline(gear, ink, w * 0.85, true)
+				draw_arc(c, 6.0 * k, 0.0, TAU, 16, ink, w, true)
 
 
-## The status bar's signal strength: four bars, lit by `strength`.
+## A live reading on the home screen (the link, the inbox, the latest
+## news): a small heading over a line or two. Tap it to open its app.
+class Readout extends PanelContainer:
+	signal tapped
+	var heading: Label
+	var value: Label
+	var detail: Label
+
+	func _init(title: String) -> void:
+		mouse_filter = Control.MOUSE_FILTER_STOP
+		var box := VBoxContainer.new()
+		box.add_theme_constant_override("separation", -2)
+		box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		add_child(box)
+		heading = _line(title, 18, UiTheme.ACCENT)
+		value = _line("", 28, UiTheme.INK)
+		detail = _line("", 20, DIM_INK)
+		for label: Label in [heading, value, detail]:
+			box.add_child(label)
+
+	func show_reading(main: String, more: String) -> void:
+		value.text = main
+		detail.text = more
+		detail.visible = more != ""
+
+	func _gui_input(event: InputEvent) -> void:
+		var button := event as InputEventMouseButton
+		if button != null and button.pressed and button.button_index == MOUSE_BUTTON_LEFT:
+			accept_event()
+			tapped.emit()
+
+	static func _line(text: String, font_size: int, color: Color) -> Label:
+		var label := Label.new()
+		label.text = text
+		label.autowrap_mode = TextServer.AUTOWRAP_OFF
+		label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		label.add_theme_font_size_override("font_size", font_size)
+		label.add_theme_color_override("font_color", color)
+		label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		return label
+
+
+## The status bar's link strength: four stepped bars, lit by `strength`.
+## Off the network they all stay dim; nothing flashes.
 class SignalBars extends Control:
 	var strength := 0:
 		set(value):
@@ -1583,27 +1894,122 @@ class SignalBars extends Control:
 				queue_redraw()
 
 	func _init() -> void:
-		custom_minimum_size = Vector2(22, 14)
+		custom_minimum_size = Vector2(30, 18)
 		mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 	func _draw() -> void:
 		for i in 4:
-			var h := 4.0 + i * 3.3
+			var h := 5.0 + i * 4.0
 			var lit := i < strength
-			draw_rect(Rect2(Vector2(i * 5.5, size.y - h), Vector2(3.5, h)),
-					UiTheme.INK if lit else Color(1, 1, 1, 0.22))
-		if strength == 0:
-			draw_line(Vector2(13, 1), Vector2(21, 9), Color(0.95, 0.4, 0.35), 2.0, true)
-			draw_line(Vector2(21, 1), Vector2(13, 9), Color(0.95, 0.4, 0.35), 2.0, true)
+			draw_rect(Rect2(Vector2(i * 7.5, size.y - h), Vector2(5.0, h)),
+					UiTheme.ACCENT if lit else Color(1, 1, 1, 0.18))
 
 
-## The bar along the bottom of the screen. Tap it to go home.
-class HomeBar extends Control:
+## The device's frame round the glass: gunmetal with an accent edge, screws
+## in the corners, a speaker slot and camera over the glass, and the chin
+## under it with the maker's mark. Drawn in the screen's own viewport, so it
+## is part of the face.
+class Chassis extends Control:
+	## Where the glass sits (left, top, right, bottom insets, pixels).
+	var glass := Vector4(22, 44, 22, 104)
+
+	func _init() -> void:
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	func _draw() -> void:
+		var body := StyleBoxFlat.new()
+		body.bg_color = CASE_COLOR.lightened(0.08)
+		body.border_color = Color(0.05, 0.05, 0.055)
+		body.set_border_width_all(4)
+		body.set_corner_radius_all(30)
+		body.anti_aliasing_size = 1.5
+		draw_style_box(body, Rect2(Vector2.ZERO, size))
+		# A lighter band down the top and a fine accent line round the glass.
+		var shine := StyleBoxFlat.new()
+		shine.bg_color = Color(1, 1, 1, 0.035)
+		shine.corner_radius_top_left = 28
+		shine.corner_radius_top_right = 28
+		draw_style_box(shine, Rect2(Vector2(4, 4), Vector2(size.x - 8, glass.y * 0.6)))
+		var inner := Rect2(Vector2(glass.x, glass.y), size - Vector2(glass.x + glass.z, glass.y + glass.w))
+		var edge := StyleBoxFlat.new()
+		edge.bg_color = Color(0, 0, 0, 0)
+		edge.border_color = Color(UiTheme.ACCENT, 0.5)
+		edge.set_border_width_all(2)
+		edge.set_corner_radius_all(16)
+		edge.anti_aliasing_size = 1.2
+		draw_style_box(edge, inner.grow(4))
+		# Screws.
+		for at: Vector2 in [Vector2(20, 20), Vector2(size.x - 20, 20), Vector2(20, size.y - 20), Vector2(size.x - 20, size.y - 20)]:
+			draw_circle(at, 6.0, Color(0.05, 0.05, 0.055))
+			draw_circle(at, 4.5, Color(0.32, 0.32, 0.34))
+			draw_line(at + Vector2(-3, -3), at + Vector2(3, 3), Color(0.08, 0.08, 0.08), 1.5)
+		# Speaker slot and camera.
+		var slot := StyleBoxFlat.new()
+		slot.bg_color = Color(0.03, 0.03, 0.035)
+		slot.set_corner_radius_all(3)
+		draw_style_box(slot, Rect2(Vector2(size.x * 0.5 - 40, glass.y * 0.36), Vector2(80, 6)))
+		draw_circle(Vector2(size.x * 0.5 + 64, glass.y * 0.36 + 3), 5.0, Color(0.03, 0.03, 0.035))
+		draw_circle(Vector2(size.x * 0.5 + 64, glass.y * 0.36 + 3), 2.0, Color(0.2, 0.35, 0.5))
+		# The chin: the maker's mark and a vent either side of the keys.
+		var font := get_theme_default_font()
+		var chin := size.y - glass.w
+		var mark := "ARES  //  LINK-7"
+		var mark_w := font.get_string_size(mark, HORIZONTAL_ALIGNMENT_LEFT, -1, 14).x
+		draw_string(font, Vector2((size.x - mark_w) * 0.5, chin + 20.0), mark, HORIZONTAL_ALIGNMENT_LEFT, -1, 14,
+				Color(0.55, 0.53, 0.5))
+		for side: float in [-1.0, 1.0]:
+			for i in 4:
+				var x := size.x * 0.5 + side * (120.0 + i * 10.0)
+				draw_line(Vector2(x, chin + 40.0), Vector2(x, chin + 70.0), Color(0.03, 0.03, 0.035), 4.0)
+		# A status light on the chin's corner.
+		draw_circle(Vector2(size.x - 44, chin + 20.0), 4.0, Color(UiTheme.ACCENT, 0.9))
+
+
+## The dark glass behind every screen: a deep gradient, a faint grid and
+## scan lines, and the maker's emblem low down.
+class Backdrop extends Control:
+	func _init() -> void:
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	func _draw() -> void:
+		var rows := 24
+		for i in rows:
+			var t := float(i) / rows
+			draw_rect(Rect2(Vector2(0, size.y * t), Vector2(size.x, size.y / rows + 1.0)),
+					SCREEN_BG.lerp(Color(0.012, 0.016, 0.02), t))
+		var step := 28.0
+		var line := Color(UiTheme.ACCENT, 0.045)
+		var x := step
+		while x < size.x:
+			draw_line(Vector2(x, 0), Vector2(x, size.y), line, 1.0)
+			x += step
+		var y := step
+		while y < size.y:
+			draw_line(Vector2(0, y), Vector2(size.x, y), line, 1.0)
+			y += step
+		y = 0.0
+		while y < size.y:
+			draw_line(Vector2(0, y), Vector2(size.x, y), Color(0, 0, 0, 0.18), 1.0)
+			y += 3.0
+		# The emblem: a hexagon round a chevron.
+		var c := Vector2(size.x * 0.5, size.y * 0.82)
+		var hex := PackedVector2Array()
+		for i in 7:
+			hex.append(c + Vector2.from_angle(PI / 6.0 + TAU * i / 6.0) * 70.0)
+		draw_polyline(hex, Color(UiTheme.ACCENT, 0.07), 3.0, true)
+		draw_polyline(PackedVector2Array([c + Vector2(-30, 26), c + Vector2(0, -30), c + Vector2(30, 26)]),
+				Color(UiTheme.ACCENT, 0.08), 6.0, true)
+		draw_line(c + Vector2(-14, 6), c + Vector2(14, 6), Color(UiTheme.ACCENT, 0.08), 5.0)
+
+
+## A hardware key on the device's chin: back (a chevron) or home (a ring).
+class ChinKey extends Control:
 	signal tapped
+	var kind := "home"
 	var _hover := false
 
 	func _init() -> void:
-		custom_minimum_size = Vector2(0, 22)
+		custom_minimum_size = Vector2(52, 44)
 		mouse_filter = Control.MOUSE_FILTER_STOP
 		mouse_entered.connect(_set_hover.bind(true))
 		mouse_exited.connect(_set_hover.bind(false))
@@ -1619,9 +2025,15 @@ class HomeBar extends Control:
 			tapped.emit()
 
 	func _draw() -> void:
-		var pill := StyleBoxFlat.new()
-		pill.bg_color = Color(1, 1, 1, 0.85 if _hover else 0.55)
-		pill.set_corner_radius_all(3)
-		pill.anti_aliasing_size = 1.0
-		var w := 130.0
-		draw_style_box(pill, Rect2(Vector2((size.x - w) * 0.5, size.y * 0.5 - 3.0), Vector2(w, 6.0)))
+		var c := size * 0.5
+		var cap := StyleBoxFlat.new()
+		cap.bg_color = Color(0.09, 0.09, 0.1) if not _hover else Color(0.16, 0.12, 0.08)
+		cap.border_color = Color(0.03, 0.03, 0.035)
+		cap.set_border_width_all(2)
+		cap.set_corner_radius_all(8)
+		draw_style_box(cap, Rect2(Vector2.ZERO, size))
+		var ink := UiTheme.ACCENT if _hover else Color(0.6, 0.58, 0.55)
+		if kind == "back":
+			draw_polyline(PackedVector2Array([c + Vector2(5, -9), c + Vector2(-5, 0), c + Vector2(5, 9)]), ink, 3.0, true)
+		else:
+			draw_arc(c, 9.0, 0.0, TAU, 20, ink, 3.0, true)

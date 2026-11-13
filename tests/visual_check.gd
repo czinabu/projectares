@@ -1670,6 +1670,7 @@ func _phone_shots(out_dir: String) -> void:
 	phone.open()
 	controller.input_blocked = true
 	controller.phone_out = true
+	controller.phone_grip = phone.grip
 	await _settle(30)
 	await _shot(out_dir.path_join("phone_home.png"))
 	phone._screen.get_texture().get_image().save_png(out_dir.path_join("phone_screen.png"))
@@ -1679,6 +1680,13 @@ func _phone_shots(out_dir: String) -> void:
 	phone.open_app("settings")
 	await _settle(10)
 	await _shot(out_dir.path_join("phone_settings.png"))
+	phone._screen.get_texture().get_image().save_png(out_dir.path_join("phone_settings_screen.png"))
+	phone.open_settings_tab("view")
+	await _settle(10)
+	phone._screen.get_texture().get_image().save_png(out_dir.path_join("phone_settings_view_screen.png"))
+	phone.open_settings_tab("dev")
+	await _settle(10)
+	phone._screen.get_texture().get_image().save_png(out_dir.path_join("phone_settings_dev_screen.png"))
 	phone.go_home()
 	controller.toggle_view()
 	await _settle(40)
@@ -1694,6 +1702,7 @@ func _phone_shots(out_dir: String) -> void:
 	controller.toggle_view()
 	controller.input_blocked = true
 	controller.phone_out = true
+	controller.phone_grip = phone.grip
 	var me: Actor = raid.player
 	var cam := Camera3D.new()
 	cam.fov = 40.0
