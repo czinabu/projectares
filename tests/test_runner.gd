@@ -2016,9 +2016,10 @@ func _check_wing_moves(p: Actor) -> void:
 	p.flight.overheated = false
 	# The main gun is stowed while the wings are out.
 	check(p.wings_block(p.weapons[0]) and p.air_aim() == 1.0, "only a sidearm fires with the wings spread")
-	# Shift + D snaps a sidestep, for a little heat.
+	# Shift + D is a wing boost, never a sidestep: wings fly where they point.
 	await frames(130)
 	var side_before := (Basis(Vector3.UP, p.cmd.yaw).inverse() * p.velocity).x
+	var speed_before := Vector2(p.velocity.x, p.velocity.z).length()
 	var heat_before := p.flight.heat
 	p.cmd.move = Vector2(1, 0)
 	p.cmd.sprint_pressed = true
@@ -2027,11 +2028,12 @@ func _check_wing_moves(p: Actor) -> void:
 	p.cmd.move = Vector2.ZERO
 	await frames(5)
 	var side := (Basis(Vector3.UP, p.cmd.yaw).inverse() * p.velocity).x
-	check(side > side_before + 8.0 and p.flight.heat > heat_before + 5.0,
-			"Shift + D snaps the wings into a sidestep on heat (%.1f m/s sideways)" % side)
+	check(absf(side - side_before) < 2.0 and Vector2(p.velocity.x, p.velocity.z).length() > speed_before + 8.0
+			and p.flight.heat > heat_before + 5.0,
+			"Shift + D boosts the wings ahead on heat, never sideways (%.1f m/s sideways)" % side)
 	await frames(30)
 	var heading := Vector3(p.velocity.x, 0, p.velocity.z).normalized()
-	check(heading.dot(Vector3.FORWARD) > 0.95, "and the glide carries on the same way after it")
+	check(heading.dot(Basis(Vector3.UP, p.cmd.yaw) * Vector3.FORWARD) > 0.95, "and the glide carries on the way you face")
 	# Stalling: slow below the stall speed and the wings sink fast.
 	p.velocity = Vector3(0, 0, -3)
 	await frames(2)
@@ -2049,16 +2051,21 @@ func _check_glide_flying(p: Actor) -> void:
 	await frames(120)
 	var cruise := Vector2(p.velocity.x, p.velocity.z).length()
 	check(absf(cruise - p.flight.glide_speed) < 0.5, "a level glide settles at glide speed (%.1f)" % cruise)
-	# Turning the view only looks: the glide flies straight on.
+	# The wings fly where you look, like a bird's: turning the view banks
+	# the glide round onto it, and looking down never dives it.
 	var before := Vector3(p.velocity.x, 0, p.velocity.z).normalized()
 	p.cmd.yaw -= PI / 2.0
 	p.cmd.pitch = -0.9
-	await frames(30)
-	var looked := Vector3(p.velocity.x, 0, p.velocity.z).normalized()
-	check(before.dot(looked) > 0.999 and Vector2(p.velocity.x, p.velocity.z).length() < cruise + 0.5,
-			"looking around while gliding neither turns nor dives the wings")
+	await frames(20)
+	var turning := Vector3(p.velocity.x, 0, p.velocity.z).normalized()
+	check(before.signed_angle_to(turning, Vector3.UP) < -0.2 and p.velocity.y > -p.flight.glide_fall_speed * 2.5,
+			"looking right banks the glide round to the right, without diving")
+	await frames(100)
+	var view := Basis(Vector3.UP, p.cmd.yaw) * Vector3.FORWARD
+	before = Vector3(p.velocity.x, 0, p.velocity.z).normalized()
+	check(before.dot(view) > 0.999, "and it settles on the way you look")
 	p.cmd.pitch = 0.0
-	# Holding a strafe key banks the glide round in an arc.
+	# Holding a strafe key banks the glide round harder, in an arc.
 	p.cmd.move = Vector2(1, 0)
 	await frames(10)
 	var during := Vector3(p.velocity.x, 0, p.velocity.z).normalized()
@@ -2066,13 +2073,12 @@ func _check_glide_flying(p: Actor) -> void:
 	check(swung > 0.1 and swung < 0.5, "a strafe key banks the wings round in an arc (%.2f rad)" % swung)
 	check(before.signed_angle_to(during, Vector3.UP) < 0.0, "and the right key turns right")
 	p.cmd.move = Vector2.ZERO
-	# The bank rolls level over a moment, then the glide flies straight.
-	await frames(10)
-	var levelled := Vector3(p.velocity.x, 0, p.velocity.z).normalized()
-	check(during.angle_to(levelled) < 0.25, "letting go rolls the wings level (%.2f rad more)" % during.angle_to(levelled))
-	await frames(30)
+	# Letting go, the wings roll back onto the view and fly straight on it.
+	await frames(90)
 	var after := Vector3(p.velocity.x, 0, p.velocity.z).normalized()
-	check(levelled.dot(after) > 0.999, "and then flies straight on")
+	check(after.dot(view) > 0.999, "letting go, the wings come back onto the view")
+	await frames(30)
+	check(after.dot(Vector3(p.velocity.x, 0, p.velocity.z).normalized()) > 0.999, "and then fly straight on")
 	p.cmd.move = Vector2(0, 1)
 	await frames(150)
 	var dived := Vector2(p.velocity.x, p.velocity.z).length()
