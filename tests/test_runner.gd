@@ -5671,6 +5671,42 @@ func _test_phone_view() -> void:
 	controller.phone_out = false
 	await frames(2)
 	check(not raid.player.cmd.phone, "putting it away lowers it")
+
+	# Third person eases the camera in to read the holo; first person never moves.
+	var reader := HandSkin.new()
+	reader.name = "Skin"
+	reader.held = Handheld.build()
+	var had_skin := raid.player.has_node("Skin")
+	if not had_skin:
+		raid.player.add_child(reader)
+		raid.player.add_child(reader.held)
+		reader.held.position = Vector3(0.15, 1.4, -0.4)
+		await frames(1)
+		var holo := controller.phone_panel()
+		check(holo != null, "the controller finds the holo of the phone in the hand")
+		controller.view_mode = PlayerController.ViewMode.THIRD
+		controller.input_blocked = true
+		controller.phone_out = true
+		for i in 40:
+			await frames(1)
+		check(controller.phone_read > 0.99, "with the phone out in third person the camera eases in to read it")
+		check(controller.camera.global_position.distance_to(holo.global_position) < 0.8,
+				"and ends up close to the holo, over the shoulder")
+		controller.phone_out = false
+		controller.input_blocked = false
+		for i in 40:
+			await frames(1)
+		check(controller.phone_read == 0.0, "putting it away eases the camera back out")
+		controller.view_mode = PlayerController.ViewMode.FIRST
+		controller.input_blocked = true
+		controller.phone_out = true
+		await frames(5)
+		check(controller.phone_read == 0.0, "first person reads the phone from the eyes, without moving the camera")
+		controller.phone_out = false
+		controller.input_blocked = false
+	else:
+		reader.held.free()
+		reader.free()
 	await _end_raid(raid)
 	GameSettings.reset()
 	phone.queue_free()

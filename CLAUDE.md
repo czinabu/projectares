@@ -31,7 +31,10 @@ without Caleb, and update the gap list when a PR closes a row.
 - The camera never changes view on its own. First/third-person switches only
   when the player presses the toggle (playtest feedback). The one exception:
   getting on a vehicle uses a separate riding view (third-person by default),
-  and getting off restores the on-foot view.
+  and getting off restores the on-foot view. And in third person, while the
+  phone is out, the camera eases in over the shoulder to read its holo
+  (`PlayerController._read_phone`, Caleb's call) and eases back after; the
+  view stays third person.
 - `Raid` has no camera, HUD, or input code. It must keep working headless.
 - The endless warzone. A `Raid` is one running world and it never ends: no
   timer, no exits, no restart. It keeps itself alive (`_tick_bots`,
