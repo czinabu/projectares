@@ -174,7 +174,15 @@ var mount_band := 0.12
 ## A worn helmet carries its readouts on the back of the head, for third
 ## person and for anyone behind you: a health strip that drains and turns red,
 ## and a light for the helmet's own system. Placed over the "Head" bone.
-var vitals_offset := Vector3(0.0, 0.05, 0.145)
+var vitals_offset := Vector3(0.0, 0.05, 0.172)
+## A worn helmet is a shell over the whole head (the head itself is hidden
+## under it), with a faceplate in its glass colour and a fitting for what it
+## does. Its middle sits this far from the "Head" bone, and the shell is this
+## wide, tall and deep. The one model is worn in every view: first person
+## leaves it out with the head (`hide_head`), never a copy of its own.
+var helmet_offset := Vector3(0.0, 0.1, 0.0)
+var helmet_size := Vector3(0.27, 0.31, 0.31)
+var helmet_shell_color := Color(0.22, 0.23, 0.25)
 var vitals_width := 0.13
 var vitals_low := 0.35
 var hip_offset := Vector3(-0.2, 0.08, 0.02)
@@ -229,6 +237,9 @@ var _rig_id := ""
 var _rig_holders: Array[Node3D] = []
 var _rig_back: Node3D
 var _vitals: Node3D
+var _helmet: Node3D
+## The helmet `_helmet` was built for; "" while bare-headed.
+var _helmet_id := ""
 var _flames: Array[Node3D] = []
 var _burst_left := 0.0
 var _spread := 0.0
@@ -530,6 +541,7 @@ func _update(delta: float) -> void:
 	_update_glide(delta)
 	_update_stowed()
 	_update_switch(delta)
+	_update_helmet()
 	_update_vitals()
 	_update_phone()
 	_update_watch_glow(delta)
@@ -1045,6 +1057,129 @@ static func helmet_light(v: Visor) -> String:
 		"thermal":
 			return "ready" if v.charge_fraction() >= 0.25 else "charging"
 	return "ready"
+
+
+## Puts the worn helmet on the head, rebuilt when another goes on, and hides
+## the head under it. Bare-headed, the head shows again.
+func _update_helmet() -> void:
+	var id := actor.visor.item_id if actor.visor.enabled else ""
+	if id == _helmet_id and (id == "" or is_instance_valid(_helmet)):
+		return
+	_helmet_id = id
+	if _helmet != null and is_instance_valid(_helmet):
+		_helmet.queue_free()
+	_helmet = null
+	if _skeleton != null:
+		for node in _skeleton.get_children():
+			if node is MeshInstance3D and node.get_meta("slot", "") == "head":
+				(node as MeshInstance3D).visible = id == ""
+	if id == "":
+		return
+	var bone: String = "Head" if _skeleton and _skeleton.find_bone("Head") >= 0 else _def.get("neck", "")
+	_helmet = _hang(build_helmet(actor.visor.mode, actor.visor.glass_color, helmet_size, helmet_shell_color),
+			"Helmet", bone, helmet_offset, Vector3(0.0, _def.get("height", 1.8) * 0.93, 0.0) + helmet_offset)
+
+
+## The helmet model for a visor `mode` (see `Visor`): a shell of `size` round
+## the head, front toward -Z, a faceplate lit in `glass`, and the mode's
+## fitting: twin lenses (zoom), a sensor fin (scan), a brow and cheek plates
+## (threat), one round lens (thermal). A plain visor is a dull, cracked band.
+static func build_helmet(mode: String, glass: Color, size: Vector3, shell_color: Color) -> Node3D:
+	var root := Node3D.new()
+	root.name = "HelmetModel"
+	var shell := _solid(shell_color, 0.0)
+	var plate := _solid(shell_color.lightened(0.12), 0.0)
+	var lit := _solid(glass, 0.9 if mode != "" else 0.25)
+	# The dome and the band round the sides and back.
+	var dome := SphereMesh.new()
+	dome.radius = 0.5
+	dome.height = 1.0
+	_piece(root, "Shell", dome, shell, Vector3(0, 0.0, 0), size)
+	var neck := CylinderMesh.new()
+	neck.top_radius = 0.5
+	neck.bottom_radius = 0.55
+	neck.height = 1.0
+	_piece(root, "Neck", neck, shell, Vector3(0, -size.y * 0.45, size.z * 0.06),
+			Vector3(size.x * 0.55, size.y * 0.2, size.z * 0.55))
+	# The faceplate: glass over the eyes, wrapped round the front of the shell.
+	var face := SphereMesh.new()
+	face.radius = 0.5
+	face.height = 1.0
+	_piece(root, "Glass", face, lit, Vector3(0, -size.y * 0.04, -size.z * 0.12),
+			Vector3(size.x * 0.96, size.y * 0.4, size.z * 0.84))
+	if mode == "":
+		# A plain visor's glass is cracked across.
+		var crack := _piece(root, "Crack", BoxMesh.new(), _solid(Color(0.05, 0.05, 0.05), 0.0),
+				Vector3(size.x * 0.12, -size.y * 0.02, -size.z * 0.535), Vector3(size.x * 0.32, 0.006, 0.006))
+		crack.rotation.z = 0.5
+		return root
+	match mode:
+		"zoom":
+			# Twin lens barrels over the right eye, out from the glass.
+			var tube := CylinderMesh.new()
+			tube.top_radius = 0.5
+			tube.bottom_radius = 0.5
+			tube.height = 1.0
+			for i in 2:
+				var barrel := _piece(root, "Lens%d" % i, tube, plate,
+						Vector3(size.x * (0.16 + 0.13 * i), size.y * 0.02, -size.z * 0.5 + 0.03 * i),
+						Vector3(0.05 - 0.01 * i, 0.09, 0.05 - 0.01 * i))
+				barrel.rotation.x = PI * 0.5
+				var cap := _piece(root, "LensGlass%d" % i, tube, lit,
+						barrel.position + Vector3(0, 0, -0.046), Vector3(0.04 - 0.01 * i, 0.004, 0.04 - 0.01 * i))
+				cap.rotation.x = PI * 0.5
+		"scan":
+			# A sensor fin along the crown with a lit edge.
+			_piece(root, "Fin", BoxMesh.new(), plate, Vector3(0, size.y * 0.48, size.z * 0.08),
+					Vector3(0.022, 0.05, size.z * 0.6))
+			_piece(root, "FinEdge", BoxMesh.new(), lit, Vector3(0, size.y * 0.48 + 0.026, size.z * 0.08),
+					Vector3(0.026, 0.006, size.z * 0.5))
+		"threat":
+			# A heavy brow and plates down the cheeks.
+			_piece(root, "Brow", BoxMesh.new(), plate, Vector3(0, size.y * 0.17, -size.z * 0.4),
+					Vector3(size.x * 0.9, 0.035, 0.07))
+			for side: float in [-1.0, 1.0]:
+				var cheek := _piece(root, "Cheek", BoxMesh.new(), plate,
+						Vector3(side * size.x * 0.44, -size.y * 0.2, -size.z * 0.22), Vector3(0.03, 0.1, 0.11))
+				cheek.rotation.y = side * 0.5
+		"thermal":
+			# One round lens in the middle of the glass.
+			var ring := CylinderMesh.new()
+			ring.top_radius = 0.5
+			ring.bottom_radius = 0.5
+			ring.height = 1.0
+			var lens := _piece(root, "Lens", ring, plate, Vector3(0, -size.y * 0.04, -size.z * 0.53),
+					Vector3(0.11, 0.04, 0.11))
+			lens.rotation.x = PI * 0.5
+			var eye := _piece(root, "LensGlass", ring, _solid(glass, 1.6), lens.position + Vector3(0, 0, -0.022),
+					Vector3(0.08, 0.004, 0.08))
+			eye.rotation.x = PI * 0.5
+	return root
+
+
+static func _solid(color: Color, energy: float) -> StandardMaterial3D:
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = color.darkened(0.35) if energy > 0.0 else color
+	mat.roughness = 0.2 if energy > 0.0 else 0.6
+	mat.metallic = 0.0 if energy > 0.0 else 0.35
+	if energy > 0.0:
+		mat.emission_enabled = true
+		mat.emission = color.darkened(0.2)
+		mat.emission_energy_multiplier = energy
+	return mat
+
+
+static func _piece(root: Node3D, piece_name: String, mesh: PrimitiveMesh, mat: Material, at: Vector3,
+		size: Vector3) -> MeshInstance3D:
+	var part := MeshInstance3D.new()
+	part.name = piece_name
+	var own := mesh.duplicate() as PrimitiveMesh
+	own.material = mat
+	part.mesh = own
+	part.position = at
+	part.scale = size
+	root.add_child(part)
+	return part
 
 
 func _update_vitals() -> void:
