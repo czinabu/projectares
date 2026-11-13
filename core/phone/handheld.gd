@@ -43,6 +43,9 @@ const HOLO_TURN := 0.3
 
 ## Builds the handheld with `screen` on its face (a plain lit glass if null).
 ## The face is the node "Body", surface 0.
+const MirrorScript := preload("res://core/visual/mirror.gd")
+
+
 static func build(screen: Material = null) -> Node3D:
 	var root := Node3D.new()
 	root.name = "Handheld"
@@ -95,6 +98,10 @@ static func build(screen: Material = null) -> Node3D:
 	beam.mesh = _beam_mesh(size)
 	beam.material_override = _beam_material()
 	body.add_child(beam)
+	# The holo is for reading from outside: your own first-person camera
+	# leaves it out with the head (Caleb's call) and reads the screen itself.
+	holo.layers = 1 << (MirrorScript.HEAD_LAYER - 1)
+	beam.layers = holo.layers
 	for node in root.find_children("*", "MeshInstance3D", true, false):
 		(node as MeshInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	return root

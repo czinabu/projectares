@@ -928,10 +928,16 @@ func screen_point(mouse: Vector2) -> Vector2:
 	var camera := get_viewport().get_camera_3d()
 	if camera == null or _device == null or not _device.is_visible_in_tree():
 		return miss
-	var to_local := _device.global_transform.affine_inverse()
+	var target := _device
+	if camera.cull_mask & _device.layers == 0:
+		# A camera that leaves out the holo (first person) clicks on the face.
+		target = _device.get_parent() as MeshInstance3D
+		if target == null:
+			return miss
+	var to_local := target.global_transform.affine_inverse()
 	var o := to_local * camera.project_ray_origin(mouse)
 	var d := to_local.basis * camera.project_ray_normal(mouse)
-	var panel := _device.mesh as QuadMesh
+	var panel := target.mesh as QuadMesh
 	var front := 0.0 if panel != null else Handheld.DEPTH * 0.5
 	if absf(d.z) < 0.00001:
 		return miss

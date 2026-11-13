@@ -542,7 +542,11 @@ without Caleb, and update the gap list when a PR closes a row.
   phone puts its screen, a `SubViewport` drawn with the device's frame and
   chin keys, on that handheld's face (`Phone.set_holder`,
   `ActorSkin.set_phone_screen`) and clicks are cast onto it; other players'
-  show lit glass. A new app is an entry in `Phone.APPS` with a line glyph in
+  show lit glass. The device also projects a holo of its screen
+  (`Handheld.holo_of`) for reading from outside: it sits on
+  `Mirror.HEAD_LAYER`, so your own first-person camera leaves it out like the
+  head and reads the screen in the hand, while third person reads and clicks
+  the holo (Caleb's call). A new app is an entry in `Phone.APPS` with a line glyph in
   `Phone.AppIcon`; Settings are grouped in `Phone.SETTINGS_TABS`, and the dev
   switches live only on the Dev tab.
   Settings live in

@@ -5837,7 +5837,15 @@ func _test_phone_home(phone: CanvasLayer) -> void:
 	check(phone.screen_point(mouse).distance_to(Vector2(phone.screen_size) * 0.5) < 4.0,
 			"the mouse on the holo panel lands on the screen")
 	check(Handheld.holo_of(in_hand).global_position.y > Handheld.face_of(in_hand).global_position.y,
-			"the device projects its screen as a holo panel above it, in every view")
+			"the device projects its screen as a holo panel above it")
+	var head_bit := 1 << (MirrorScript.HEAD_LAYER - 1)
+	check(Handheld.holo_of(in_hand).layers == head_bit,
+			"the holo goes with the head, so your own first-person camera leaves it out")
+	camera.cull_mask = 0xFFFFF & ~head_bit
+	var on_face := camera.unproject_position(Handheld.face_of(in_hand).global_transform * Vector3(0.0, 0.0, Handheld.DEPTH * 0.5))
+	check(phone.screen_point(on_face).distance_to(Vector2(phone.screen_size) * 0.5) < 4.0,
+			"in first person the mouse on the handheld's own screen lands on the screen")
+	camera.cull_mask = 0xFFFFF
 	check(phone.screen_point(Vector2(1, 1)).x < 0.0, "the mouse off the handheld misses it")
 	check((phone._face_mat as StandardMaterial3D).albedo_texture == phone._screen.get_texture(),
 			"the handheld's face shows the phone's screen")
