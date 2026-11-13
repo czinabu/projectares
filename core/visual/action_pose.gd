@@ -78,7 +78,7 @@ var phone_rate := 5.0
 ## plain sights come `relief_for` in front of it, at least `min_relief`.
 ## An optic's eye point is its own relief.
 var ads_rate := 7.0
-var sidearm_relief := 0.26
+var sidearm_relief := 0.5
 var stock_ahead := 0.17
 var min_relief := 0.06
 ## Guns with any of these tags are braced at the hip, never shouldered
@@ -87,6 +87,12 @@ var ads_hip_tags: Array[String] = ["minigun"]
 ## Where the off hand cups a sidearm's grip, from the gun hand, in the
 ## aim frame.
 var ads_cup := Vector3(-0.035, -0.045, 0.02)
+## The stance that goes with aiming down sights, as a shoulder turn and lean
+## (like `turn`: x toward the actor's left, y backward): a long gun blades
+## the body so the off shoulder comes forward to the fore end, a sidearm
+## squares up and leans in so the arms reach out.
+var ads_stance_long := Vector2(-0.35, -0.06)
+var ads_stance_sidearm := Vector2(0.3, -0.06)
 
 var actor: Actor
 
@@ -114,6 +120,10 @@ var reload := 0.0
 var low := 0.0
 ## How far the gun is up at the eye (0 at the hold, 1 sighted), eased.
 var ads := 0.0
+## How far in front of the eyes the sight sits now (`relief_for`, drawn in
+## to what the model's arm reaches). Set by the skin's arm; a view puts its
+## eye this far behind the sight.
+var relief_now := -1.0
 var _ads_raise := 0.0
 
 var _follow_left := 0.0
@@ -187,6 +197,13 @@ func ads_wanted(gun: Gun) -> bool:
 	if gun.visual == null or not gun.visual.visible:
 		return false
 	return not shoulders_never(gun)
+
+
+## The aiming stance for `gun` (see `ads_stance_long`).
+func ads_stance(gun: Gun) -> Vector2:
+	if gun == null:
+		return Vector2.ZERO
+	return ads_stance_sidearm if gun.is_sidearm else ads_stance_long
 
 
 ## True for a gun that is aimed from the hip (`ads_hip_tags`).
