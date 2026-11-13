@@ -3,6 +3,7 @@ extends Node
 ##   godot --headless --path . res://tests/test_runner.tscn
 ## Exits with code 0 when everything passes, 1 otherwise.
 
+const StashRules := preload("res://core/account/stash_rules.gd")
 const VehicleScript := preload("res://core/vehicle/vehicle.gd")
 const RaidRoster := preload("res://core/ui/raid_roster.gd")
 const NameplatesScript := preload("res://core/ui/nameplates.gd")
@@ -38,6 +39,7 @@ const ViewMatchTests := preload("res://tests/view_match_tests.gd")
 const AdsTests := preload("res://tests/ads_tests.gd")
 const GripTests := preload("res://tests/grip_tests.gd")
 const TravelTests := preload("res://tests/travel_tests.gd")
+const BareLoadoutTests := preload("res://tests/bare_loadout_tests.gd")
 const TravelOnlineTests := preload("res://tests/travel_online_tests.gd")
 const RiskZoneTests := preload("res://tests/risk_zone_tests.gd")
 
@@ -295,6 +297,7 @@ func _run() -> void:
 	await _test_arena_floor()
 	await _test_online_arena()
 	await TravelTests.run(self)
+	await BareLoadoutTests.run(self)
 	await TravelOnlineTests.run(self)
 	await _test_look()
 	await _test_rig_models()
@@ -1356,7 +1359,8 @@ func _test_loadouts() -> void:
 	raid.player.kill("test")
 	await frames(2)
 	check("rifle_carbine" not in Profile.stash and "frame_bulwark" not in Profile.stash, "dying loses your gear")
-	check(Profile.equipped("primary") == "" and Profile.equipped("frame") == "", "lost gear leaves the loadout")
+	check(Profile.equipped("primary") == "rifle_scrap" and Profile.equipped("frame") == "plate_light",
+			"lost gear leaves the loadout, and the free scrap piece takes its slot")
 	await _end_raid(raid)
 
 	# With nothing owned, the kit is the full free scrap kit.
@@ -1407,13 +1411,13 @@ func _test_loadouts() -> void:
 	var hub := Hub.new()
 	add_child(hub)
 	await frames(2)
-	check(hub.options_for("primary") == (["dmr_longshot", "rifle_carbine"] as Array[String])
-			and hub.options_for("frame") == (["frame_runner"] as Array[String]),
-			"the hub lists owned gear per slot")
+	check(hub.options_for("primary") == (["dmr_longshot", "rifle_carbine", "rifle_scrap"] as Array[String])
+			and hub.options_for("frame") == (["frame_runner", "plate_light"] as Array[String]),
+			"the hub lists owned gear per slot, and the free scrap piece")
 	hub._on_picked(1, "primary")
 	check(Profile.equipped("primary") == "dmr_longshot", "picking in the hub equips the item")
 	hub._on_picked(0, "primary")
-	check(Profile.equipped("primary") == "", "picking the scrap kit unequips")
+	check(Profile.equipped("primary") == "", "picking None unequips")
 	hub.queue_free()
 	Profile.reset()
 	Profile.welcome_granted = true
@@ -5634,7 +5638,8 @@ func _test_stash_service() -> void:
 	deploy = restarted.deploy(id, world)
 	restarted.settle(id, {"outcome": "died", "brought_home": [], "kills": 2, "mastery_xp": {"rifle": 999999}})
 	home = restarted.snapshot(id)
-	check("rifle_carbine" not in home.stash and home.loadout.get("primary", "") == "", "dying loses the gear and empties the slot")
+	check("rifle_carbine" not in home.stash and home.loadout.get("primary", "") == "rifle_scrap",
+			"dying loses the gear, and the free scrap gun takes its slot")
 	check(home.kills == 2 and restarted.pick_mastery(id, "rifle", "cut_down").ok, "mastery XP is kept after death")
 
 	# A join that never happened gives everything back.
@@ -6474,9 +6479,10 @@ func _test_suit_up(base: HomeBase) -> void:
 			"the exit is a framed door and the range's score is on a board in the room")
 	check(not base.has_node("SuitUpBay"), "there is no suit-up bay to walk to")
 	var kit := base.suit_kit()
-	check(base.loadout.get("primary", "") in kit and kit.any(func(id: String) -> bool: return ItemDB.has_tag(id, "melee"))
+	check(base.loadout.get("primary", "") in kit and kit.size() == base.loadout.keys().filter(func(slot: String) -> bool:
+				return not ItemDB.has_tag(base.loadout[slot], "vehicle")).size()
 			and not kit.any(func(id: String) -> bool: return ItemDB.has_tag(id, "vehicle")),
-			"the kit is your loadout, starter gear filling empty slots, with vehicles left parked (%s)" % [kit])
+			"the kit is your loadout and nothing else, empty slots bare, with vehicles left parked (%s)" % [kit])
 	var worn := base.player
 	var carried: Array[String] = []
 	for weapon in worn.weapons:
@@ -6642,7 +6648,8 @@ func _test_home_base() -> void:
 	base.show_gear(stash, {"primary": "rifle_carbine"}, full)
 	add_child(base)
 	await frames(30)
-	check(base.displays.size() == plan.size(), "the room builds one display per planned spot")
+	check(base.displays.size() == BaseLayout.plan(StashRules.equippable(stash), {"primary": "rifle_carbine"}, full).size(),
+			"the room builds one display per planned spot, the free scrap pieces included")
 	check(base.player != null and base.player.is_on_floor() and base.suited
 			and base.player.weapons.any(func(w: Weapon) -> bool: return w.item_id == "rifle_carbine"),
 			"you stand in your base already wearing your loadout")
@@ -6754,7 +6761,7 @@ func _test_home_base() -> void:
 		check(base.player.find_interactable() == shown, "a %s display can be walked up to and looked at" % kind)
 	base.show_gear(["blade_arc"], {})
 	await frames(2)
-	check(base.displays.size() == 1 and base.display_for("dmr_longshot") == null,
+	check(base.displays.size() == 1 + StashRules.free_items().size() and base.display_for("dmr_longshot") == null,
 			"gear that leaves the stash leaves the base")
 	var left := [0]
 	base.leave_requested.connect(func() -> void: left[0] += 1)
@@ -6786,7 +6793,7 @@ func _test_home_base() -> void:
 	check(main.base != null and not main.hub.visible and main.raid == null, "you start in your home base")
 	check(main.controller != null and main.controller.camera.current and main.base_hud != null,
 			"the base has a camera and an overlay")
-	check(main.base.displays.size() == 5 and main.base.display_for("rifle_carbine").equipped,
+	check(main.base.displays.size() == 5 + StashRules.free_items().size() and main.base.display_for("rifle_carbine").equipped,
 			"it shows your stash and what you have equipped")
 	# Real input: look at the DMR and press F.
 	var target: Node3D = main.base.display_for("dmr_longshot")
@@ -6901,7 +6908,9 @@ func _test_home_base() -> void:
 			"mastery": {}, "raids_played": 0, "raids_extracted": 0, "kills": 0})
 	main.enter_base()
 	await frames(5)
-	check(main.base.displays.size() == 2 and main.base.display_for("blade_arc").equipped,
+	check(main.base.displays.size() == BaseLayout.plan(StashRules.equippable(["blade_arc", "bike_raider"]),
+				{"melee": "blade_arc"}, main.base.upgrades).size()
+			and main.base.display_for("blade_arc").equipped and main.base.display_for("rifle_scrap") != null,
 			"in a lobby the base shows the stash that server keeps")
 	main.base.equip_requested.emit("vehicle", "bike_raider")
 	check(Profile.equipped("vehicle") == "bike_scrapper", "online changes go to the server, not the local profile")
@@ -6918,9 +6927,10 @@ func _test_home_base() -> void:
 	check(main.base != null and main.base.read_only and main.base.owner_name == "Kestrel"
 			and main.base.displays.size() == 2 and main.base.upgrades == ["trophy_hall"],
 			"someone else's base can be visited, with the upgrades they have")
+	var own_melee := Profile.equipped("melee")
 	main.base.displays[0].interact(main.base.player)
 	main.base.displays[1].interact(main.base.player)
-	check(Profile.equipped("melee") == "", "visiting never changes your own loadout")
+	check(Profile.equipped("melee") == own_melee, "visiting never changes your own loadout")
 	main.base.station("locker").interact(main.base.player)
 	check(not main.hub.visible, "another player's stations cannot be used")
 	main.base.leave_requested.emit()

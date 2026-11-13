@@ -317,7 +317,10 @@ you have.
   Look at a piece of gear and press F to equip it for your next run.
 - Loadouts picked in your base from your stash: primary weapon, melee weapon,
   flight rig and armor frame. Equipped gear is at risk. Sign out alive and it
-  comes home, die and it drops. Empty slots use a free scrap kit.
+  comes home, die and it drops. The scrap kit is free: one of each piece
+  hangs in your base to equip like any other, costs nothing to lose, and is
+  what takes the place of gear you lose. Any slot can be left empty, down to
+  going fully bare.
 - Three kinds of flight rig, all cruising at the same speed so a squad on
   mixed rigs keeps together, each staying up its own way. Jetpacks fly high:
   cruise straight over everything, coast down with the jets idle to cool,
@@ -393,7 +396,7 @@ you have.
 - Full loot on death, then straight back in. Dying drops everything you carry
   in a bag where you fell. Press Enter to drop in again, away from the
   fighting and protected for a few seconds, with whatever your loadout can
-  still supply from the stash, or the scrap kit.
+  still supply from the stash, with free scrap in place of what you lost.
 - Signing out. Press L, stay out of trouble for 10 seconds, and you go home
   with everything on you. A hit, given or taken, cancels it. Quitting or
   losing your connection online leaves your body standing in the world for

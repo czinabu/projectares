@@ -893,14 +893,16 @@ func _can_bank(actor: Actor) -> bool:
 
 ## Drops a player in and returns their actor: the start of one life. In a
 ## solo raid the newest one is `player`, so calling this again after a death
-## drops the player back in. `p_kit` empty means the world's free scrap kit.
+## drops the player back in. `p_kit` empty means the world's free scrap kit;
+## `[Loadout.BARE]` means nothing at all.
 ## `p_owner` says whose life this is (an account id), so renown carries over
 ## from their earlier lives here; without it every life is a stranger's.
 ## `p_renown` is their lifetime renown, which sets the rank others see.
 func add_player(p_kit: Array = [], p_mastery: Dictionary = {}, p_name := "Raider",
 		p_owner := "", p_renown := 0, p_drop := "") -> Actor:
 	var state := PlayerState.new()
-	state.kit.assign(p_kit if not p_kit.is_empty() else world.starter_loadout())
+	state.kit.assign((p_kit if not p_kit.is_empty() else world.starter_loadout()).filter(
+			func(id: Variant) -> bool: return id != Loadout.BARE))
 	state.picks = p_mastery
 	var spawns := _map_nodes("spawn_player")
 	var marker := 0

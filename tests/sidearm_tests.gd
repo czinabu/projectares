@@ -32,8 +32,8 @@ static func _slots(t: Node) -> void:
 			"the stash rules only take a sidearm in the sidearm slot")
 	var loadout := {"primary": "rifle_carbine", "sidearm": "pistol_machine"}
 	var kit := StashRules.checkout(stash, loadout, Worlds.get_world("ashfront"))
-	t.check("pistol_machine" in kit and "rifle_carbine" in kit and "blade_scrap" in kit
-			and not "pistol_service" in kit, "a chosen sidearm deploys instead of the free one")
+	t.check("pistol_machine" in kit and "rifle_carbine" in kit and not "blade_scrap" in kit
+			and not "pistol_service" in kit, "a chosen sidearm deploys instead of the free one, and an empty melee slot stays empty")
 	t.check(not ItemDB.has_tag("pistol_hand_cannon", "vendor"), "the hand cannon is loot only")
 	t.check(ItemDB.has_tag("pistol_service", "starter"), "the service pistol is part of the free kit")
 

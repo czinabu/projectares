@@ -90,10 +90,7 @@ static func kind_for(id: String) -> String:
 
 ## The loadout slot an item can be equipped in, or "" if it is not gear.
 static func slot_for(id: String) -> String:
-	for slot: String in Loadout.SLOTS:
-		if Loadout.fits(slot, id):
-			return slot
-	return ""
+	return Loadout.slot_of(id)
 
 
 ## Plans the room. Returns one Dictionary per filled spot:

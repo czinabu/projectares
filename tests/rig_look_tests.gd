@@ -423,8 +423,9 @@ static func run(t: Node) -> void:
 			var model := node.get_node_or_null("Model")
 			if model and model.has_node("Mannequin"):
 				shown[node.get_meta("display_item")] = model
-	t.check(shown.size() == 3, "every flight rig on show stands on a mannequin")
-	if shown.size() == 3:
+	t.check(shown.size() == 4 and shown.has("jetpack_mk1"),
+			"every flight rig on show stands on a mannequin, the free scrap jetpack too")
+	if shown.size() == 4:
 		t.check((shown["jetpack_mk2"] as Node).has_node("Jetpack") and (shown["wings_glide"] as Node).has_node("WingPack")
 				and (shown["boots_thruster"] as Node).has_node("BootL"), "each stand shows the rig's real model")
 	base.queue_free()
