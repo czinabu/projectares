@@ -6519,6 +6519,8 @@ func _test_garage_and_range(base: HomeBase) -> void:
 	for target in base.targets:
 		kinds[target.kind] = true
 	check(kinds.has("plate") and kinds.has("slider") and kinds.has("drone"), "standing, sliding and flying targets")
+	check(base.firing_line >= 6.0 and base.range_size.z >= 45.0 and base.range_size.x >= 10.0,
+			"the range is wide and long, with a clear lobby between the door and the firing line")
 	var p := base.player
 	check(p.weapons_locked, "weapons stay locked in the main room")
 	# Walk through the door in the back wall.

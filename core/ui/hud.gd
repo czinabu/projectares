@@ -25,6 +25,7 @@ extends CanvasLayer
 
 const RenownLedger := preload("res://core/progression/renown_ledger.gd")
 const Contracts := preload("res://core/economy/contracts.gd")
+const SkinScript := preload("res://core/visual/actor_skin.gd")
 ## The name of the counter added to each gun's model.
 const AMMO_COUNTER := "AmmoCounter"
 ## The jetpack's screen bay, as the rig model names it.
@@ -200,7 +201,8 @@ func _process(delta: float) -> void:
 
 ## The weapons on the watch's carousel, in the order the wheel turns through
 ## them: the ones worn (primary, sidearm, melee, heavy) and then the ones in
-## the pack. Each is {"id", "index" (in `Actor.weapons`, or -1 in the pack)}.
+## the pack, then any helmets in the pack (a click puts one on). Each is
+## {"id", "index" (in `Actor.weapons`, or -1 in the pack)}.
 ## Only what is carried is ever here, never the stash.
 static func weapon_entries(p: Actor) -> Array[Dictionary]:
 	var entries: Array[Dictionary] = []
@@ -208,6 +210,10 @@ static func weapon_entries(p: Actor) -> Array[Dictionary]:
 		entries.append({"id": p.weapons[index].item_id, "index": index})
 	for id in p.inventory.items:
 		if Loadout.summonable(id):
+			entries.append({"id": id, "index": -1})
+	# Helmets carried go on the head with a click, swapping for the one worn.
+	for id in p.inventory.items:
+		if ItemDB.has_tag(id, "helmet"):
 			entries.append({"id": id, "index": -1})
 	return entries
 
@@ -342,6 +348,8 @@ static func weapon_slot(p_raid: Raid, p: Actor, picked := 0) -> Dictionary:
 		if int(entry.index) == p.active_weapon_index:
 			return _slot("weapon", value, "%s · in hand" % detail, hints, -1.0, false, false, entries.size(), at)
 		return _slot("weapon", value, detail, hints + ["click"], -1.0, false, false, entries.size(), at)
+	if ItemDB.has_tag(entry.id, "helmet"):
+		return _slot("weapon", value, "%s · wear" % name, hints + ["click"], -1.0, false, false, entries.size(), at)
 	var wait := p_raid.summon_wait(p) if p_raid != null else 0.0
 	if wait > 0.0:
 		return _slot("weapon", value, "%s · %d s" % [name, ceili(wait)], hints, p_raid.summon_charge(p), false, false,
@@ -1435,10 +1443,17 @@ void fragment() {
 		var holo := Node3D.new()
 		holo.name = "Weapon"
 		holo.set_meta("item", id)
-		var weapon: Weapon = MeleeWeapon.new() if ItemDB.has_tag(id, "melee") else Gun.new()
-		weapon.item_id = id
-		var model := Look.weapon_model(weapon) if DisplayServer.get_name() != "headless" else null
-		weapon.free()
+		var model: Node3D = null
+		if ItemDB.has_tag(id, "helmet"):
+			# A helmet shows the model it is worn as.
+			var stats := ItemDB.item_stats(id)
+			model = SkinScript.build_helmet(str(stats.get("mode", "")), stats.get("glass_color", Color.WHITE),
+					Vector3(0.27, 0.31, 0.31), Color(0.22, 0.23, 0.25))
+		else:
+			var weapon: Weapon = MeleeWeapon.new() if ItemDB.has_tag(id, "melee") else Gun.new()
+			weapon.item_id = id
+			model = Look.weapon_model(weapon) if DisplayServer.get_name() != "headless" else null
+			weapon.free()
 		if model == null:
 			return holo
 		holo.add_child(model)

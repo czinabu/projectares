@@ -349,6 +349,9 @@ you have.
   All of them give you away: a zoomed lens glints, a scan is seen, heard and
   felt by everyone it catches, Threat Sense tells whoever it shows, and a
   thermal visor glows up close. With no helmet the view is bare.
+  A helmet is worn on your head, each type its own shape, and seen the same
+  by everyone. Loot one and put it on mid-raid from the watch's weapon
+  carousel, like summoning a weapon (the old one goes in your pack); worn or carried, it drops when you die.
 - Six melee weapons, each with its own job. The Gutter Knife is quick and short
   and cuts from behind for more than double. The Splitter Axe drains a guard
   so fast that three chops break it. The Lancer Spear (rooftop loot) has the

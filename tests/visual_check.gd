@@ -121,6 +121,11 @@ func _ready() -> void:
 		get_tree().quit()
 		return
 
+	# `-- <output_dir> --helmets-only` shoots each helmet worn, close up.
+	if "--helmets-only" in args:
+		await _helmet_shots(out_dir)
+		get_tree().quit()
+		return
 	# `-- <output_dir> --visors-only` shoots each helmet's visor in first person.
 	if "--visors-only" in args:
 		await _visor_shots(out_dir)
@@ -790,8 +795,8 @@ func _base_shots(out_dir: String) -> void:
 		"base_armor.png": [Vector3(-5.5, 2.0, -2.0), Vector3(-5.5, 1.1, -8.5)],
 		"base_rigs.png": [Vector3(5.5, 2.0, -2.0), Vector3(5.5, 1.1, -8.5)],
 		"base_garage.png": [Vector3(5.0, 2.6, 1.0), Vector3(16.0, 0.8, 0.0)],
-		"base_range.png": [Vector3(0.0, 2.2, -8.0), Vector3(0.0, 1.4, -30.0)],
-		"base_range_lane.png": [Vector3(-2.5, 1.8, -12.0), Vector3(1.0, 2.5, -30.0)],
+		"base_range.png": [Vector3(0.0, 2.2, -14.0), Vector3(0.0, 1.4, -40.0)],
+		"base_range_lane.png": [Vector3(-2.5, 1.8, -18.0), Vector3(1.0, 2.5, -45.0)],
 		"base_shelves.png": [Vector3(-6.8, 2.0, 3.6), Vector3(-6.8, 1.6, 9)],
 		"base_stations_left.png": [Vector3(-3.5, 2.2, 4.0), Vector3(-11.0, 1.0, 1.0)],
 		"base_stations_right.png": [Vector3(4.0, 2.2, 1.0), Vector3(11.1, 1.0, 6.0)],
@@ -1284,6 +1289,57 @@ func _visor_shots(out_dir: String) -> void:
 			await _shot(out_dir.path_join("visor_helm_seeker_after.png"))
 		raid.queue_free()
 		await _settle(3)
+
+
+## Every helmet worn, and a bare head, from the front, the side and behind,
+## one row each, in one sheet. The same model first person leaves out.
+func _helmet_shots(out_dir: String) -> void:
+	var raid := Raid.new()
+	add_child(raid)
+	raid.start(Worlds.get_world("ashfront"), 42)
+	for bot in raid.bots:
+		bot.get_node("Brain").set_physics_process(false)
+		bot.global_position += Vector3(0, -200, 0)
+	var player := raid.player
+	player.set_physics_process(false)
+	player.cmd.yaw = player.rotation.y
+	player.cmd.pitch = 0.0
+	player.cmd.aim_dir = -player.global_basis.z
+	await _settle(10)
+	var skin: Node = player.get_node("Skin")
+	var cam := Camera3D.new()
+	raid.add_child(cam)
+	cam.current = true
+	cam.fov = 30.0
+	# A lamp beside the camera, so the face is not lost against the sky.
+	var lamp := OmniLight3D.new()
+	lamp.omni_range = 6.0
+	lamp.light_energy = 1.5
+	cam.add_child(lamp)
+	lamp.position = Vector3(0.6, 0.4, 0)
+	var helmets := ["", "visor_scav", "helm_spotter", "helm_seeker", "helm_warden", "helm_ember"]
+	var sheet := Image.create(3 * 320, helmets.size() * 320, false, Image.FORMAT_RGBA8)
+	for row in helmets.size():
+		Loadout.wear_helmet(player, helmets[row])
+		for k in 10:
+			skin._process(1.0 / 60.0)
+			await get_tree().process_frame
+		var views := [-player.global_basis.z, player.global_basis.x, player.global_basis.z]
+		for i in views.size():
+			var head := player.global_position + Vector3(0, 1.62, 0)
+			cam.global_position = head + (views[i] as Vector3) * 2.2 + Vector3(0, 0.15, 0)
+			cam.look_at(head)
+			await RenderingServer.frame_post_draw
+			var frame := get_viewport().get_texture().get_image()
+			var h := frame.get_height()
+			var w := frame.get_width()
+			var cut := frame.get_region(Rect2i(w / 2 - h / 4, h / 4, h / 2, h / 2))
+			cut.resize(320, 320)
+			cut.convert(Image.FORMAT_RGBA8)
+			sheet.blit_rect(cut, Rect2i(0, 0, 320, 320), Vector2i(i * 320, row * 320))
+	sheet.save_png(out_dir.path_join("helmets.png"))
+	print("saved helmets.png")
+	raid.queue_free()
 
 
 func _shot(path: String) -> void:
