@@ -38,7 +38,7 @@ func _ready() -> void:
 			"Reliable semi-auto sidearm. Accurate, and quick to reload.")
 	register("jetpack_mk1", "Mk1 Jetpack", Rarity.COMMON, 0, ["flight_rig", "starter"],
 			{"heavy_lift": true, "tier": 1, "ceiling": RIG_CEILINGS[1]},
-			"Basic jetpack. Tap jump in the air to hover and cruise, coast down to cool. Lifts you to rooftop height and no higher. Runs hotter than the Mk2 and has no boost.")
+			"Basic jetpack. Hold aim in the air to hover and cruise, coast down to cool. Lifts you to rooftop height and no higher. Runs hotter than the Mk2 and has no boost.")
 	register("plate_light", "Scrap Plate", Rarity.COMMON, 0, ["armor", "frame_light", "starter"],
 			{"armor": 30.0}, "30 armor.")
 	register("field_dressing", "Field Dressing", Rarity.COMMON, 0, ["consumable", "heal", "starter"],
