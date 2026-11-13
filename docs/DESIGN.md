@@ -680,8 +680,9 @@ anything else. The blueprint stays, so you can craft it again.
 **Rig tiers (Caleb's call, moved to crafting).** The rig tiers in section 5
 (Mk1 to Mk3, each with a higher ceiling and cooler running, never faster)
 come from blueprints here. Only Mk1 rigs (and, once they exist, Mk1 rig
-blueprints) drop as loot; Mk2 and Mk3 are crafted. Until crafting is built,
-nothing hands out a rig above Mk1.
+blueprints) drop as loot; Mk2 and Mk3 are crafted. Mk2 helmets follow the
+same rule. Until crafting is built, nothing hands out a rig or helmet above
+Mk1.
 
 **Vehicle blueprints** still unlock new vehicles, such as the mech and the
 jet (the supply meteor carries them). Tech cores craft high-tier gadgets.

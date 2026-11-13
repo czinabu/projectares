@@ -77,8 +77,8 @@ static func _test_items(t: Node) -> void:
 
 
 ## Everything that drops is Mk1 (DESIGN.md section 10): no world's loot
-## table holds a rig above Mk1, since Mk2 and Mk3 are crafted from
-## blueprints. Mk1 rigs still drop on Ashfront's rooftops.
+## table holds a rig or helmet above Mk1, since Mk2 and up are crafted from
+## blueprints. Mk1 rigs and helmets still drop on Ashfront's rooftops.
 static func _test_loot(t: Node) -> void:
 	var found: Array = []
 	for world: Script in [ASHFRONT, FROSTLINE]:
@@ -91,8 +91,14 @@ static func _test_loot(t: Node) -> void:
 	for family: String in FAMILIES:
 		for id: String in FAMILIES[family].slice(1):
 			t.check(id not in found, "%s never drops: it is crafted" % id)
+	var helmets := ItemDB.all_ids().filter(func(id: String) -> bool:
+		return ItemDB.has_tag(id, "helmet") and id.ends_with("_mk2"))
+	t.check(helmets.size() >= 4, "there are Mk2 helmets to check (%d)" % helmets.size())
+	for id: String in helmets:
+		t.check(id not in found and not Economy.is_shop_item(id), "%s is never found or sold: it is crafted" % id)
 	var rooftop: Array = ASHFRONT.ROOFTOP_TABLE.map(func(e: Dictionary) -> String: return e["id"])
 	t.check(rooftop.has("wings_glide") and rooftop.has("boots_thruster"), "Mk1 rigs drop on Ashfront's rooftops")
+	t.check(rooftop.has("helm_spotter") and rooftop.has("helm_ember"), "Mk1 helmets drop on Ashfront's rooftops")
 
 
 ## The ceiling only limits lift: a climb eases off under it, and a kick or
