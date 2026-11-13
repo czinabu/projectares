@@ -604,8 +604,21 @@ else. The list is TBD.
 Mastery says "I know this gun." Using gear levels up its type (keyed by
 type, never by item id, as today), and levels unlock **attachments and
 mods**: optics, grips, magazines, muzzles, fire modes and the sidegrade
-variants that exist today. Every one trades a strength for a weakness,
-never raw power. You pick them at the mastery bench in your base.
+variants that exist today. You pick them at the mastery bench in your base.
+
+**Trade-offs only, no flat boosts (Caleb's call).** Every attachment or mod
+boosts one stat and costs another, for example:
+
+| Attachment or mod | Gains | Costs |
+| --- | --- | --- |
+| Long barrel | Range and accuracy | Slower aiming |
+| Extended magazine | More rounds | Slower reloads |
+| Foregrip | Less recoil | Slower handling |
+| Fire-mode mod | Burst instead of auto, or the reverse | The other mode's strengths |
+
+A mastered gun plays better for you because it is tuned to your style, but
+it is never stronger overall than someone else's. Raw power comes only from
+the Mk tier. Mastery can never be lost, so it must never beat skill.
 
 - Mastery pays for real use, never for extracting, and the firing range
   gives none (section 2).
