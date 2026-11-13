@@ -22,6 +22,7 @@ extends CanvasLayer
 ## gives the HUD one.
 
 const RenownLedger := preload("res://core/progression/renown_ledger.gd")
+const Contracts := preload("res://core/economy/contracts.gd")
 ## The name of the counter added to each gun's model.
 const AMMO_COUNTER := "AmmoCounter"
 ## The jetpack's screen bay, as the rig model names it.
@@ -33,6 +34,9 @@ var raid: Raid
 var controller: PlayerController
 ## Where war news goes (the phone's `show_notice`). Unset, it goes on the wrist.
 var notice_sink: Callable
+## The contracts held (`Contracts.held` of the account), for the watch's
+## contract icon. Set by `main.gd`; counted against `Actor.tally`.
+var contracts: Array[Dictionary] = []
 ## The wrist display.
 var wrist: Wrist
 ## What the helmet draws on its glass in first person, and what its visor
@@ -160,7 +164,7 @@ func _process(delta: float) -> void:
 		_prompt.text = "Click: pack %s onto your watch" % pack_name
 	elif _prompt.text.contains("Ride ") and not p.is_dead:
 		_prompt.text += "      Watch up, then click: pack it"
-	var slots := watch_slots(raid, p, picked, pack_name, leaving, banking)
+	var slots := watch_slots(raid, p, picked, pack_name, leaving, banking, contracts)
 	var focus := default_focus(slots)
 	if controller != null:
 		if controller.watch_focus_moved:
@@ -192,7 +196,7 @@ func _process(delta: float) -> void:
 ## pack, `leaving` the sign-out progress (below 0 for none) and `banking`
 ## the depot progress.
 static func watch_slots(p_raid: Raid, p: Actor, picked_toy := 0, pack_name := "", leaving := -1.0,
-		banking := 0.0) -> Array[Dictionary]:
+		banking := 0.0, jobs: Array[Dictionary] = []) -> Array[Dictionary]:
 	var slots: Array[Dictionary] = []
 	# The map: where you are, your standing, the strongpoints.
 	var where := p_raid.world.display_name
@@ -240,6 +244,8 @@ static func watch_slots(p_raid: Raid, p: Actor, picked_toy := 0, pack_name := ""
 		slots.append(_slot("heavy", "", "No heavy weapon", [], -1.0, true, false))
 	# The artifact carried for this outing (section 6 of the design doc).
 	slots.append(artifact_slot(p.artifact))
+	# The contracts held, with this life's progress on them.
+	slots.append(contract_slot(jobs, p.tally))
 	# Sign-out and banking.
 	if leaving >= 0.0:
 		slots.append(_slot("leave", "", "Signing out", ["key:L"], leaving, false, true))
@@ -254,7 +260,7 @@ static func watch_slots(p_raid: Raid, p: Actor, picked_toy := 0, pack_name := ""
 ## icons, each saying what it holds for the next deploy. `loadout` is the
 ## base's loadout (slot -> item id). Nothing on it can be used from here: the
 ## base's stations do that.
-static func base_watch_slots(base_name: String, loadout: Dictionary) -> Array[Dictionary]:
+static func base_watch_slots(base_name: String, loadout: Dictionary, held: Array[Dictionary] = []) -> Array[Dictionary]:
 	var slots: Array[Dictionary] = []
 	slots.append(_slot("map", "", base_name, [], -1.0, false, false))
 	slots.append(_slot("pack", "", "Pack empty", [], -1.0, true, false))
@@ -269,8 +275,33 @@ static func base_watch_slots(base_name: String, loadout: Dictionary) -> Array[Di
 		slots.append(_slot("artifact", "", ItemDB.item_name(relic), [], -1.0, false, false))
 	else:
 		slots.append(_slot("artifact", "", "No artifact", [], -1.0, true, false))
+	slots.append(contract_slot(held, {}))
 	slots.append(_slot("leave", "", "Home", [], -1.0, true, false))
 	return slots
+
+
+## The contract icon: how many jobs are held, and the one nearest done as its
+## line, counting this life's `tally` on top (it only counts once you sign out
+## alive, which the "+" says). The ring is that job's progress.
+static func contract_slot(held: Array[Dictionary], tally: Dictionary) -> Dictionary:
+	if held.is_empty():
+		return _slot("contract", "", "No contracts", [], -1.0, true, false)
+	var best := {}
+	var best_share := -1.0
+	var best_now := 0
+	for entry in held:
+		var now := Contracts.live(entry.stat, tally)
+		var share := minf(float(entry.have + now) / maxf(float(entry.goal), 1.0), 1.0)
+		if share > best_share:
+			best = entry
+			best_share = share
+			best_now = now
+	var line := "%s · %d/%d" % [best.title, best.have, best.goal]
+	if best_now > 0:
+		line += " +%d" % best_now
+	if held.size() > 1:
+		line += " · %d held" % held.size()
+	return _slot("contract", str(held.size()), line, [], best_share, false, best_share >= 1.0)
 
 
 ## The artifact icon: uses left (or a countdown), a ring while it runs or
@@ -747,7 +778,7 @@ class Wrist:
 	const VehicleScript := preload("res://core/vehicle/vehicle.gd")
 
 	## The card's icons, left to right (see `Hud.watch_slots`).
-	const SLOTS := ["map", "pack", "vehicle", "heavy", "artifact", "leave"]
+	const SLOTS := ["map", "pack", "vehicle", "heavy", "artifact", "contract", "leave"]
 	const HOLO_TINT := Color(0.75, 1.0, 1.0, 0.95)
 	const GLOW_COLOR := Color(0.35, 0.95, 1.0)
 	## The card as projected light: faint scanlines that crawl up it, a
@@ -1339,6 +1370,14 @@ void fragment() {
 					_lines(hex, c, r, color, width)
 					_lines(PackedVector2Array([Vector2(0, -0.5), Vector2(0.38, 0), Vector2(0, 0.5),
 							Vector2(-0.38, 0), Vector2(0, -0.5)]), c, r, color, width * 0.7)
+				"contract":
+					# A clipboard with a tick on it.
+					_lines(PackedVector2Array([Vector2(-0.7, -0.8), Vector2(0.7, -0.8), Vector2(0.7, 1),
+							Vector2(-0.7, 1), Vector2(-0.7, -0.8)]), c, r, color, width)
+					_lines(PackedVector2Array([Vector2(-0.3, -1), Vector2(0.3, -1), Vector2(0.3, -0.6),
+							Vector2(-0.3, -0.6), Vector2(-0.3, -1)]), c, r, color, width * 0.7)
+					_lines(PackedVector2Array([Vector2(-0.4, 0.15), Vector2(-0.1, 0.5), Vector2(0.45, -0.25)]),
+							c, r, color, width)
 				"leave":
 					_lines(PackedVector2Array([Vector2(-0.75, -0.1), Vector2(-0.75, 1), Vector2(0.75, 1),
 							Vector2(0.75, -0.1)]), c, r, color, width)

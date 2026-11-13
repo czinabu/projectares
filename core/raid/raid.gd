@@ -39,6 +39,8 @@ signal toy_thrown(actor: Actor, item_id: String, from: Vector3, toy_velocity: Ve
 signal toy_landed(actor: Actor, item_id: String, at: Vector3, unpacked: bool)
 ## What a player's watch holds, or when they can throw again, changed.
 signal watch_changed(actor: Actor)
+## A player's contract counters for this life changed (`Actor.tally`).
+signal tally_changed(actor: Actor)
 
 ## Bots never start closer to the player than this, so a raid does not open with a fight.
 const MIN_BOT_SPAWN_DISTANCE := 40.0
@@ -456,6 +458,7 @@ func _on_strongpoint_taken(point: Strongpoint, inside: Array[Actor], loser: Stri
 				continue
 			var paid := renown.award(state.owner, renown.strongpoint_taken)
 			_pay_scrip(state, Economy.STRONGPOINT_SCRIP)
+			_count(state, "strongpoints")
 			actor.notice.emit("Took %s   +%d renown" % [point.title, paid])
 		_publish_standing()
 	strongpoint_taken.emit(point)
@@ -914,6 +917,7 @@ func add_player(p_kit: Array = [], p_mastery: Dictionary = {}, p_name := "Raider
 	if arriving:
 		actor.protected_left = world.spawn_protection
 	actor.died.connect(_on_actor_died)
+	actor.artifact.used.connect(func(_effect: String) -> void: _count(state, "artifacts"))
 	actor.health.damaged.connect(func(_info: DamageInfo) -> void: _mark_combat(state))
 	actor.hit_confirmed.connect(func(_target: Actor, _info: DamageInfo, _lethal: bool) -> void:
 		_mark_combat(state))
@@ -1182,8 +1186,18 @@ func spawn_vehicle(id: String, at: Vector3, heading: float, unpacking := false) 
 	if unpacking:
 		vehicle.unpack()
 	vehicles.append(vehicle)
+	vehicle.mounted.connect(_on_vehicle_mounted.bind(vehicle))
 	vehicle_spawned.emit(vehicle)
 	return vehicle
+
+
+## Each vehicle a player gets on counts once a life toward contracts.
+func _on_vehicle_mounted(actor: Actor, vehicle: Node3D) -> void:
+	var state := state_for(actor)
+	if state == null or vehicle.get_instance_id() in state.ridden:
+		return
+	state.ridden.append(vehicle.get_instance_id())
+	_count(state, "rides")
 
 
 ## The toy vehicles on a player's watch, as item ids.
@@ -1402,8 +1416,10 @@ func _on_actor_died(actor: Actor, info: DamageInfo) -> void:
 		gained = _settle_renown(state, killer, actor, by)
 		if killer != null:
 			var pay := Economy.KILL_BOUNTY
+			_count(killer, "kills")
 			if warlords.has(actor):
 				pay += Economy.WARLORD_SCRIP
+				_count(killer, "warlords")
 			elif state != null and not _wears_scrap(actor):
 				pay = Economy.PLAYER_KILL_SCRIP
 			_pay_scrip(killer, pay)
@@ -1552,6 +1568,19 @@ func _on_actor_banked(actor: Actor) -> void:
 	player_banked.emit(actor, items)
 
 
+## Adds to a living player's contract counters for this life (see
+## `Contracts.JOBS` for the stats). Only the authority counts, and only where
+## gear is at stake, so the arena and the safe zone count nothing. They reach
+## the account in the result's `tally`, and only a sign-out counts them.
+func _count(state: PlayerState, stat: String, amount := 1) -> void:
+	if mode == Mode.CLIENT or world.safe_zone or not world.gear_at_risk or amount <= 0 \
+			or state == null or not is_instance_valid(state.actor) or state.finished:
+		return
+	state.tally[stat] = int(state.tally.get(stat, 0)) + amount
+	state.actor.tally = state.tally.duplicate()
+	tally_changed.emit(state.actor)
+
+
 ## Scrip a living player earned. It is carried, so it is at stake.
 func _pay_scrip(state: PlayerState, amount: int) -> void:
 	if mode == Mode.CLIENT or world.safe_zone or not world.gear_at_risk or amount <= 0 \
@@ -1655,6 +1684,8 @@ func _finish_player(state: PlayerState, outcome: String, cause: String, killed_b
 		"scrip_banked": state.scrip_banked,
 		"scrip_lost": state.scrip_lost,
 		"mastery_xp": state.mastery.report(),
+		# Contract counters (`_count`). Only a sign-out counts them.
+		"tally": state.tally.duplicate(),
 	}
 	var standing := renown.get_standing(state.owner)
 	if standing != null:
@@ -1706,6 +1737,10 @@ class PlayerState:
 	## Mastery variants the player deployed with (track -> variant id).
 	var picks := {}
 	var kills := 0
+	## Contract counters for this life: stat -> count (`Raid._count`).
+	var tally := {}
+	## The vehicles ridden this life, so each counts once.
+	var ridden: Array[int] = []
 	## Vehicle items the player deployed with. Lost unless they leave riding one.
 	var deployed_vehicles: Array[String] = []
 	## The toy vehicles on their watch: ones they brought and have not thrown,

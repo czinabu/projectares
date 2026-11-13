@@ -813,6 +813,16 @@ without Caleb, and update the gap list when a PR closes a row.
   (`LootContainer.scrip`); a depot moves it to `scrip_banked`. It reaches an
   account only through the result (`scrip`, `scrip_banked`) and
   `Economy.payout`, never directly, and nothing is paid for kills alone.
+- Contracts (`core/economy/contracts.gd`, static rules like `Economy`): the
+  board's jobs are data in `Contracts.JOBS`, offered by the date so every
+  machine agrees, and held on the online account (`Account.contracts`, in the
+  snapshot); only the server takes, drops, rerolls (`StashService.contract`,
+  asked with `NetSession.contract_ask`) and pays them, in `settle`. A life's
+  counters are the `Raid`'s (`_count`, authority only, never in a safe zone
+  or where gear is not at stake) and travel in the result's `tally`; the
+  owner's copy for the watch is `Actor.tally`. Only a sign-out counts, and no
+  job may count player kills or reward signing straight out. A new job is a
+  `JOBS` entry; a new stat is a `_count` call where the event happens.
 - Furniture (`furniture`, small pieces also `decor`) and clothing
   (`cosmetic`, with an `outfits` stat of customizer outfit ids) are ordinary
   stash items that fit no loadout slot, so they never go on a raid.
