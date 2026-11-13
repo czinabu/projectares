@@ -712,7 +712,7 @@ func _request_buy(shop_id: String, item_id: String) -> void:
 	_send_account(peer)
 
 
-## Lobby: sell stash items for credits. An empty `item_id` sells all loot.
+## Lobby: sell stash items for scrip. An empty `item_id` sells all loot.
 @rpc("any_peer", "call_remote", "reliable")
 func _request_sell(item_id: String, count: int) -> void:
 	var peer := _api.get_remote_sender_id()

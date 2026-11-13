@@ -143,7 +143,7 @@ class Tournament:
 class Bank:
 	extends RefCounted
 
-	func credits(_key: String) -> int:
+	func scrip(_key: String) -> int:
 		return 0
 
 	## Adds `delta` (negative to take). False, changing nothing, if it cannot.
@@ -154,15 +154,15 @@ class Bank:
 		pass
 
 
-## Solo: the local profile's credits.
+## Solo: the local profile's scrip.
 class ProfileBank:
 	extends Bank
 
-	func credits(_key: String) -> int:
-		return Profile.credits
+	func scrip(_key: String) -> int:
+		return Profile.scrip
 
 	func change(_key: String, delta: int) -> bool:
-		return Profile.change_credits(delta)
+		return Profile.change_scrip(delta)
 
 	func record(_key: String, won: bool) -> void:
 		Profile.record_arena(won)
@@ -177,11 +177,11 @@ class StashBank:
 	func _init(p_service: StashServiceScript) -> void:
 		service = p_service
 
-	func credits(key: String) -> int:
-		return service.credits_of(key)
+	func scrip(key: String) -> int:
+		return service.scrip_of(key)
 
 	func change(key: String, delta: int) -> bool:
-		return service.change_credits(key, delta)
+		return service.change_scrip(key, delta)
 
 	func record(key: String, won: bool) -> void:
 		service.record_arena(key, won)
@@ -189,7 +189,7 @@ class StashBank:
 
 # --- Starting ------------------------------------------------------------------
 
-## A solo arena: you, the stands, and bot gladiators. Credits come from the
+## A solo arena: you, the stands, and bot gladiators. Scrip come from the
 ## local profile.
 func start_solo(p_kit: Array = [], p_mastery: Dictionary = {}) -> void:
 	bank = ProfileBank.new()
@@ -250,7 +250,7 @@ func is_busy(actor: Actor) -> bool:
 	return tournament != null and tournament.has(actor)
 
 
-## Pays out a bout's wagers. Returns account key -> credits to hand back
+## Pays out a bout's wagers. Returns account key -> scrip to hand back
 ## (stake plus winnings). `winner` is 0 or 1, or -1 for a draw. Pure: used by
 ## `_settle` and by the tests.
 static func wager_payouts(bets: Dictionary, winner: int, cut: float) -> Dictionary:
@@ -328,13 +328,13 @@ func _challenge(actor: Actor, target: Actor, stake: int) -> Dictionary:
 		return _fail("You already have a bout lined up.")
 	if is_busy(target):
 		return _fail("%s already has a bout lined up." % target.display_name)
-	if stake > 0 and (bank == null or bank.credits(key_of(actor)) < stake):
-		return _fail("You do not have %d credits." % stake)
+	if stake > 0 and (bank == null or bank.scrip(key_of(actor)) < stake):
+		return _fail("You do not have %d scrip." % stake)
 	for c in challenges:
 		if c.from == actor and c.to == target:
 			return _fail("You already challenged %s." % target.display_name)
 	challenges.append({"from": actor, "to": target, "stake": stake, "left": challenge_time})
-	var staked := " for %d credits" % stake if stake > 0 else ""
+	var staked := " for %d scrip" % stake if stake > 0 else ""
 	_tell(target, "%s challenges you to a duel%s" % [actor.display_name, staked])
 	return {"ok": true}
 
@@ -352,7 +352,7 @@ func _accept(actor: Actor, from: Actor) -> Dictionary:
 			return _fail("%s cannot cover the stake any more." % from.display_name)
 		if not bank.change(key_of(actor), -stake):
 			bank.change(key_of(from), stake)
-			return _fail("You do not have %d credits." % stake)
+			return _fail("You do not have %d scrip." % stake)
 	# Neither of them can take up another challenge now.
 	challenges = challenges.filter(func(c: Dictionary) -> bool:
 		return c.from != actor and c.to != actor and c.from != from and c.to != from)
@@ -389,14 +389,14 @@ func _bet(actor: Actor, side: int, amount: int) -> Dictionary:
 		return _fail("Fighters cannot bet on their own bout.")
 	var key := key_of(actor)
 	if bank == null or key == "":
-		return _fail("You have no credits here.")
+		return _fail("You have no scrip here.")
 	var already: Array = bout.bets.get(key, [side, 0])
 	if int(already[0]) != side:
 		return _fail("You already backed the other side.")
 	if amount < min_bet or int(already[1]) + amount > max_bet:
-		return _fail("Bets are %d to %d credits a bout." % [min_bet, max_bet])
+		return _fail("Bets are %d to %d scrip a bout." % [min_bet, max_bet])
 	if not bank.change(key, -amount):
-		return _fail("You do not have %d credits." % amount)
+		return _fail("You do not have %d scrip." % amount)
 	bout.bets[key] = [side, int(already[1]) + amount]
 	bout.pools[side] += amount
 	return {"ok": true}
@@ -410,7 +410,7 @@ func _join_tournament(actor: Actor) -> Dictionary:
 	if tournament != null and tournament.entrants.size() >= tournament_max:
 		return _fail("The bracket is full.")
 	if tournament_fee > 0 and (bank == null or not bank.change(key_of(actor), -tournament_fee)):
-		return _fail("The entry fee is %d credits." % tournament_fee)
+		return _fail("The entry fee is %d scrip." % tournament_fee)
 	if tournament == null:
 		tournament = Tournament.new()
 		tournament.signup_left = tournament_signup_time
@@ -772,7 +772,7 @@ func _crown() -> void:
 	last_result = "%s is the champion" % name
 	if _is_actor(champion) and bank != null and tournament.pot > 0:
 		bank.change(key_of(champion), tournament.pot)
-		_tell(champion, "You won the tournament and %d credits" % tournament.pot)
+		_tell(champion, "You won the tournament and %d scrip" % tournament.pot)
 	tournament = null
 	_dirty = true
 
@@ -977,7 +977,7 @@ func board_for(viewer: Actor) -> Dictionary:
 				"starts_in": maxf(tournament.signup_left, 0.0), "round": tournament.round}
 	if viewer != null:
 		var key := key_of(viewer)
-		var you := {"credits": bank.credits(key) if bank != null and key != "" else 0,
+		var you := {"scrip": bank.scrip(key) if bank != null and key != "" else 0,
 				"busy": is_busy(viewer), "fighting": bout != null and viewer in bout.fighters,
 				"entered": tournament != null and tournament.has(viewer)}
 		if bout != null and bout.bets.has(key):

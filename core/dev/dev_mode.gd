@@ -12,7 +12,7 @@ extends RefCounted
 ##   - Swaps the local `Profile` onto a separate dev save
 ##     (`Profile.DEV_SAVE_PATH`), so the real stash is never touched, and keeps
 ##     that dev stash topped up with every piece of gear, clothing and
-##     furniture, plenty of medkits, and as many credits as a stash holds.
+##     furniture, plenty of medkits, and as many scrip as a stash holds.
 ##   - Cheats in a solo `Raid` (`Raid.dev_cheats`, applied by the `Raid` to
 ##     its own players only): god mode, endless flight heat, endless ammo and
 ##     no ability cooldowns.
@@ -101,7 +101,7 @@ static func save() -> void:
 
 ## Every storable item a dev stash keeps, with how many: all gear that fits a
 ## loadout slot, clothing and furniture once each, and healing in bulk. Loot
-## that is only worth selling is left out; the credits cover that.
+## that is only worth selling is left out; the scrip cover that.
 static func wanted_items() -> Dictionary:
 	var want := {}
 	for id: String in ItemDB.all_ids():
@@ -114,8 +114,8 @@ static func wanted_items() -> Dictionary:
 	return want
 
 
-## Tops a stash up to `wanted_items` and returns the credits to hold
-## (`Economy.MAX_CREDITS`). Adds only what is missing, so gear lost in a raid
+## Tops a stash up to `wanted_items` and returns the scrip to hold
+## (`Economy.MAX_SCRIP`). Adds only what is missing, so gear lost in a raid
 ## comes back and nothing piles up. Plain data, so it works on any stash.
 static func top_up(stash: Array[String]) -> int:
 	var want := wanted_items()
@@ -123,7 +123,7 @@ static func top_up(stash: Array[String]) -> int:
 		var missing: int = want[id] - stash.count(id)
 		for i in missing:
 			stash.append(id)
-	return Economy.MAX_CREDITS
+	return Economy.MAX_SCRIP
 
 
 static func _fits_any_slot(id: String) -> bool:
