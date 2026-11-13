@@ -79,7 +79,7 @@ signal world_invite_accepted(invite: Dictionary)
 signal base_visit_requested(owner_name: String, stash: Array, loadout: Dictionary, upgrades: Array)
 
 const DEFAULT_PORT := 24565
-const PROTOCOL := 23
+const PROTOCOL := 24
 ## Every packet is compressed, both ways. State updates are mostly repeated
 ## numbers, and a big battle sends a player hundreds of them a second. Server
 ## and client must agree, so a change here needs a new PROTOCOL.
