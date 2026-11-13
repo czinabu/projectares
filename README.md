@@ -37,8 +37,8 @@ skies, animated models and effects (see "How it looks" below).
 | Use a medkit | H |
 | Loot, or get on and off a bike | F |
 | Ride a bike: throttle, brake or reverse, steer, boost | W, S, A / D, Shift |
-| Switch camera: first-person or third-person | V |
-| Scoreboard: who is fighting, who is down, kills | Hold Tab |
+| Switch camera: first-person or third-person | Tab |
+| Scoreboard: who is fighting, who is down, kills | Hold Q |
 | Sign out and go home with what you carry (10 seconds, out of a fight) | L |
 | After dying: drop back in, or go home | Enter, or L |
 | Open your phone: players, messages, invites, news, mirror, every control (Keys), settings | P |
@@ -190,7 +190,7 @@ you have.
 
 ## What is in the prototype
 
-- First-person and third-person camera that you switch with V. Third person
+- First-person and third-person camera that you switch with Tab. Third person
   is a close view over the shoulder; the phone's settings set how far back it
   sits. It never changes
   on its own. Weapons are visible in your hand in both views.
@@ -319,7 +319,7 @@ you have.
   out. Press E on any bike nobody is riding to take
   it, including someone else's. Sign out riding a bike and it goes to your
   stash; die or leave it behind and it is gone. Abandoned bikes wait at the rim,
-  the landmarks and the jump ramps of the battlefield. Riding uses the third-person camera (V still
+  the landmarks and the jump ramps of the battlefield. Riding uses the third-person camera (Tab still
   switches), and pressing E in mid-air bails out with the bike's speed.
 - Mastery for every weapon type, ability and armor frame. Using gear earns XP
   for its type, levels unlock variants that trade one strength for another

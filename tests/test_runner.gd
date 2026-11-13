@@ -839,7 +839,7 @@ func _test_main_flow() -> void:
 	check(main.raid != null and not main.hub.visible, "deploying starts a raid")
 	check(main.controller.camera.current and main.hud != null, "raid has a camera and HUD")
 	check(main.nameplates != null and main.scoreboard != null and not main.scoreboard.visible,
-			"raid has nameplates and a scoreboard, closed until Tab is held")
+			"raid has nameplates and a scoreboard, closed until Q is held")
 	var controller: PlayerController = main.controller
 	check(controller.view_mode == PlayerController.ViewMode.FIRST and not controller.is_third_person(),
 			"camera starts in first-person")
@@ -2641,8 +2641,8 @@ func _leave(session: NetSession) -> void:
 func _test_nameplates_and_scoreboard() -> void:
 	print("Nameplates and scoreboard")
 	check(InputMap.has_action("scoreboard") and InputMap.action_get_events("scoreboard").any(
-			func(e: InputEvent) -> bool: return e is InputEventKey and e.physical_keycode == KEY_TAB),
-			"Tab is bound to the scoreboard")
+			func(e: InputEvent) -> bool: return e is InputEventKey and e.physical_keycode == KEY_Q),
+			"Q is bound to the scoreboard")
 	var raid := Raid.new()
 	add_child(raid)
 	raid.start_server(Worlds.get_world("ashfront"), 71)
