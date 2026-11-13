@@ -65,7 +65,13 @@ static func run(t: Node) -> void:
 		if skin.arm.grip_bone >= 0 and skeleton != null:
 			skin.arm.hold_weapon()
 			var palm: Vector3 = skeleton.global_transform * skeleton.get_bone_global_pose(skin.arm.grip_bone).origin
-			t.check(raid.player.hand.global_position.distance_to(palm) < 0.2, tag + "the weapon sits in the model's hand")
+			# A gun is held by its own grip, which can sit well back of its origin.
+			var held: Vector3 = raid.player.hand.global_position
+			var gun := raid.player.get_active_weapon() as Gun
+			var hold: Variant = ActionPose.hold_local(gun)
+			if hold is Transform3D:
+				held = gun.visual.global_transform * (hold as Transform3D).origin
+			t.check(held.distance_to(palm) < 0.2, tag + "the weapon sits in the model's hand (%.3f m)" % held.distance_to(palm))
 			t.check(raid.player.hand.global_position.distance_to(raid.player.to_global(Actor.HAND_REST)) > 0.05,
 					tag + "the weapon is no longer left floating at the greybox hand spot")
 		# The weapon arm shows the side of a melee attack or guard.
@@ -116,7 +122,9 @@ static func run(t: Node) -> void:
 			raid.player.active_weapon_index = raid.player.weapons.find(sword)
 			sword.visual.position = Vector3(0.2, 0.1, 0.0)
 			skin.arm.hold_weapon()
-			var grip_at: Vector3 = skeleton.global_transform * skeleton.get_bone_global_pose(skin.arm.grip_bone).origin
+			# The handle runs through the middle of the closed fist.
+			var grip_at: Vector3 = skeleton.global_transform * (skeleton.get_bone_global_pose(skin.arm._wrist) * (skin.arm._ring_point as Vector3)) \
+					if skin.arm._ring_point != null else skeleton.global_transform * skeleton.get_bone_global_pose(skin.arm.grip_bone).origin
 			t.check(sword.visual.global_position.distance_to(grip_at) < 0.02, tag + "the blade stays in the hand when its pose shifts it")
 			sword.visual.position = Vector3.ZERO
 			raid.player.active_weapon_index = was_active

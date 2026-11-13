@@ -863,7 +863,7 @@ func _power_model(gun: Gun) -> Node3D:
 			_power_box(holder, Vector3(0.025, 0.05, 0.85), Vector3(0.045 * side, 0.02, -0.55), trim)
 		for i in 5:
 			_power_box(holder, Vector3(0.07, 0.07, 0.03), Vector3(0, 0.02, -0.2 - i * 0.15), lit)
-		_power_box(holder, Vector3(0.05, 0.14, 0.08), Vector3(0, -0.14, 0.08), body)
+		_power_grip(holder, Vector3(0.05, 0.14, 0.08), Vector3(0, -0.14, 0.08), body, Vector3(0, -0.075, -0.2))
 		_power_box(holder, Vector3(0.1, 0.05, 0.12), Vector3(0, 0.1, -0.05), lit)
 	elif "launcher" in tags:
 		# A wide plasma tube on the shoulder, glowing at both ends.
@@ -871,7 +871,7 @@ func _power_model(gun: Gun) -> Node3D:
 		_power_cyl(holder, 0.095, 0.08, Vector3(0, 0.02, -0.66), lit)
 		_power_cyl(holder, 0.095, 0.06, Vector3(0, 0.02, 0.17), trim)
 		_power_box(holder, Vector3(0.04, 0.03, 0.5), Vector3(0, 0.11, -0.25), lit)
-		_power_box(holder, Vector3(0.05, 0.14, 0.07), Vector3(0, -0.12, -0.05), body)
+		_power_grip(holder, Vector3(0.05, 0.14, 0.07), Vector3(0, -0.12, -0.05), body, Vector3(0, -0.06, -0.38))
 		_power_box(holder, Vector3(0.12, 0.08, 0.12), Vector3(0.07, 0.05, -0.05), trim)
 	elif "grenade_launcher" in tags:
 		# Short barrel over a fat glowing drum of arc charges.
@@ -879,7 +879,7 @@ func _power_model(gun: Gun) -> Node3D:
 		_power_cyl(holder, 0.05, 0.35, Vector3(0, 0.05, -0.45), trim)
 		var drum := _power_cyl(holder, 0.1, 0.12, Vector3(0, -0.06, -0.12), lit)
 		drum.rotation = Vector3(0, 0, PI / 2.0)
-		_power_box(holder, Vector3(0.05, 0.14, 0.07), Vector3(0, -0.13, 0.08), body)
+		_power_grip(holder, Vector3(0.05, 0.14, 0.07), Vector3(0, -0.13, 0.08), body, Vector3(0, -0.045, -0.3))
 		_power_box(holder, Vector3(0.09, 0.02, 0.3), Vector3(0, 0.07, -0.15), lit)
 	else:
 		# Rotary pulse cannon: a ring of barrels around a glowing core.
@@ -890,8 +890,28 @@ func _power_model(gun: Gun) -> Node3D:
 		_power_cyl(holder, 0.03, 0.72, Vector3(0, 0, -0.5), lit)
 		_power_cyl(holder, 0.11, 0.05, Vector3(0, 0, -0.25), lit)
 		_power_box(holder, Vector3(0.18, 0.06, 0.2), Vector3(0, 0.12, 0.05), trim)
-		_power_box(holder, Vector3(0.05, 0.14, 0.07), Vector3(0, -0.14, 0.1), body)
+		_power_grip(holder, Vector3(0.05, 0.14, 0.07), Vector3(0, -0.14, 0.1), body, Vector3(0, -0.085, -0.12))
 	return holder
+
+
+## A power weapon's hand grip, a box hanging under it, and the "Grip" and
+## "Trigger" markers where the gun hand closes on it (see `_measure_hold`),
+## and the "ForeGrip" marker at `fore`, where the off hand holds it.
+func _power_grip(holder: Node3D, size: Vector3, at: Vector3, mat: Material, fore: Vector3) -> void:
+	_power_box(holder, size, at, mat)
+	var support := Marker3D.new()
+	support.name = "ForeGrip"
+	support.position = fore
+	holder.add_child(support)
+	var hold := Marker3D.new()
+	hold.name = "Grip"
+	hold.position = at + Vector3(0.0, size.y * 0.5 - 0.035, 0.0)
+	hold.set_meta("up", Vector3.UP)
+	holder.add_child(hold)
+	var trigger := Marker3D.new()
+	trigger.name = "Trigger"
+	trigger.position = hold.position + Vector3(0.0, 0.0, -size.z * 0.5 - 0.015)
+	holder.add_child(trigger)
 
 
 func _power_mat(color: Color, metal: float, rough: float, glow := Color.BLACK,
@@ -967,6 +987,7 @@ func weapon_model(weapon: Weapon) -> Node3D:
 	holder.rotation.y = PI / 2.0
 	holder.position = Vector3(0, -0.1, -0.08)
 	holder.set_meta("gun_file", file)
+	holder.set_meta("gun_length", length)
 	return holder
 
 
@@ -979,9 +1000,12 @@ func mount_attachments(visual: Node3D) -> void:
 	if model == null or not model.has_meta("gun_file"):
 		return
 	var file: String = model.get_meta("gun_file")
-	if not _gun_mounts.has(file):
-		_gun_mounts[file] = _measure_mounts(model, GUN_MOUNTS.get(file, GUN_MOUNTS[DEFAULT_GUN]))
-	var mounts: Dictionary = _gun_mounts[file]
+	# One model is used at more than one size (two pistols), so it is
+	# measured once per size.
+	var key := "%s@%.3f" % [file, float(model.get_meta("gun_length", GUN_LENGTH))]
+	if not _gun_mounts.has(key):
+		_gun_mounts[key] = _measure_mounts(model, GUN_MOUNTS.get(file, GUN_MOUNTS[DEFAULT_GUN]))
+	var mounts: Dictionary = _gun_mounts[key]
 	if fitted != null:
 		for part in fitted.get_children():
 			if part is Node3D and mounts.has(part.name):
@@ -1024,7 +1048,14 @@ func _place_muzzle(visual: Node3D, fitted: Node3D, mounts: Dictionary) -> void:
 	# mount, or a fitted grip).
 	if mounts.has("grip"):
 		var grip := fitted.get_node_or_null("grip") as Node3D if fitted != null else null
-		_marker(visual, "ForeGrip").position = grip.position if grip != null else mounts["grip"]
+		_marker(visual, "ForeGrip").position = grip.position if grip != null else mounts.get("fore", mounts["grip"])
+	# Where the gun hand closes on the pistol grip and which way the grip
+	# runs, and the trigger, found from the model (`_measure_hold`).
+	if mounts.has("hold"):
+		var hold := _marker(visual, "Grip")
+		hold.position = mounts["hold"]
+		hold.set_meta("up", mounts["hold_up"])
+		_marker(visual, "Trigger").position = mounts["trigger"]
 
 
 func _marker(visual: Node3D, marker_name: String) -> Marker3D:
@@ -1085,7 +1116,185 @@ func _measure_mounts(model: Node3D, along: Dictionary) -> Dictionary:
 	for slot: String in ["grip", "magazine"]:
 		var spot: Array = along.get(slot, [0.6, 0.4])
 		out[slot] = Vector3(mid_x, low.y + float(spot[1]) * height, high.z - float(spot[0]) * length)
+	_measure_hold(points, low, high, out)
 	return out
+
+
+## Where the hands go on a gun model, read off its side outline (the mesh
+## seen from the side, in squares a 160th of its length): the trigger guard is the
+## hole low in the outline, the pistol grip the solid just behind it running
+## down, and the fore end the underside some way ahead of the guard. Adds to
+## `out` (all in the gun's visual space) "hold" (the grip's middle, level
+## with the trigger, where the fist closes), "hold_up" (up along the grip),
+## "trigger", and "fore" (where the off hand cups the fore end). Adds none
+## when the outline has no trigger guard.
+## How far ahead of the trigger the off hand reaches along a long gun, and
+## how far under the fore end's underside the middle of its fist is.
+const FORE_REACH := 0.26
+const FORE_CUP := 0.015
+
+
+func _measure_hold(points: PackedVector3Array, low: Vector3, high: Vector3, out: Dictionary) -> void:
+	var size_cell := maxf((high.z - low.z) / 160.0, 0.0015)
+	var nz := int((high.z - low.z) / size_cell) + 2
+	var ny := int((high.y - low.y) / size_cell) + 2
+	var cells := func(metres: float) -> int:
+		return maxi(int(round(metres / size_cell)), 1)
+	var solid := PackedByteArray()
+	solid.resize(nz * ny)
+	var cell := func(q: Vector3) -> Vector2:
+		return Vector2((q.z - low.z) / size_cell, (q.y - low.y) / size_cell)
+	for i in range(0, points.size() - 2, 3):
+		var a: Vector2 = cell.call(points[i])
+		var b: Vector2 = cell.call(points[i + 1])
+		var c: Vector2 = cell.call(points[i + 2])
+		var area := (b - a).cross(c - a)
+		for corner: Vector2 in [a, b, c]:
+			solid[clampi(int(corner.x), 0, nz - 1) * ny + clampi(int(corner.y), 0, ny - 1)] = 1
+		if absf(area) < 0.0001:
+			continue
+		for z in range(maxi(int(minf(a.x, minf(b.x, c.x))), 0), mini(int(maxf(a.x, maxf(b.x, c.x))) + 1, nz)):
+			for y in range(maxi(int(minf(a.y, minf(b.y, c.y))), 0), mini(int(maxf(a.y, maxf(b.y, c.y))) + 1, ny)):
+				var q := Vector2(z + 0.5, y + 0.5)
+				var u := (b - q).cross(c - q) / area
+				var v := (c - q).cross(a - q) / area
+				if u >= -0.02 and v >= -0.02 and 1.0 - u - v >= -0.02:
+					solid[z * ny + y] = 1
+	# Everything empty that the outside cannot reach is a hole.
+	var mark := PackedInt32Array()
+	mark.resize(nz * ny)
+	var todo: Array[int] = []
+	for z in nz:
+		todo.append(z * ny)
+		todo.append(z * ny + ny - 1)
+	for y in ny:
+		todo.append(y)
+		todo.append((nz - 1) * ny + y)
+	_flood(solid, mark, todo, nz, ny, -1)
+	var holes: Array[Dictionary] = []
+	for start in nz * ny:
+		if solid[start] == 0 and mark[start] == 0:
+			holes.append(_flood(solid, mark, [start], nz, ny, holes.size() + 1))
+	# The guard: the front-most finger-sized hole low in the outline with a
+	# grip behind it (on a bullpup the thumbhole behind the grip is a hole
+	# too, and a bigger one).
+	holes.sort_custom(func(p: Dictionary, q: Dictionary) -> bool: return p["front"] < q["front"])
+	var mid_x: float = (out["muzzle"] as Vector3).x
+	var to_space := func(z: float, yy: float) -> Vector3:
+		return Vector3(mid_x, low.y + (yy + 0.5) * size_cell, low.z + (z + 0.5) * size_cell)
+	var bore := int(((out["muzzle"] as Vector3).y - low.y) / size_cell)
+	for guard in holes:
+		var size: Vector2i = guard["size"]
+		if size.x < cells.call(0.009) or size.y < cells.call(0.008) or size.x > cells.call(0.1) \
+				or size.y > cells.call(0.07) or float(guard["top"]) > ny * 0.75:
+			continue
+		var grip := _trace_grip(solid, guard, nz, ny, cells)
+		if grip.is_empty():
+			continue
+		var level: float = float(guard["top"] + guard["bottom"]) * 0.5
+		# The fist closes behind the guard, never in it.
+		var hold_z := maxf(grip["k"] * level + grip["m"], float(guard["back"]) + cells.call(0.012))
+		out["hold"] = to_space.call(hold_z, level)
+		out["hold_up"] = Vector3(0.0, 1.0, grip["k"]).normalized()
+		out["trigger"] = to_space.call(float(guard["front"] + guard["back"]) * 0.5, level)
+		# The fore end: the underside FORE_REACH ahead of the trigger, or
+		# the front of the gun where it is shorter, the palm under the
+		# barrel's own part of the outline (not a magazine hanging below).
+		var fore_z := maxi(int(guard["front"]) - cells.call(FORE_REACH), cells.call(0.03))
+		var under := clampi(bore, 0, ny - 1)
+		# Down from the bore to the barrel or fore end's top, then to its
+		# underside.
+		while under > 0 and solid[fore_z * ny + under] == 0 and bore - under < cells.call(0.04):
+			under -= 1
+		if solid[fore_z * ny + under] == 1:
+			while under > 0 and solid[fore_z * ny + under - 1] == 1 and bore - under < cells.call(0.08):
+				under -= 1
+			# The palm cups the underside, the fist's middle just under it.
+			out["fore"] = to_space.call(fore_z, under - 0.5) + Vector3(0.0, -FORE_CUP, 0.0)
+		return
+
+
+## The pistol grip behind a trigger guard (a hole in the outline, see
+## `_flood`), read row by row from the guard's top down: the line down its
+## middle as z = k * y + m in cells, or empty where nothing runs down. Where
+## the solid behind the guard runs on back (a stock's wrist, as on a pump
+## gun), the hand closes just behind the guard and the grip leans back
+## along the wrist's underside.
+func _trace_grip(solid: PackedByteArray, guard: Dictionary, nz: int, ny: int, cells: Callable) -> Dictionary:
+	var mids := PackedVector2Array()
+	var unders := PackedVector2Array()
+	var widest: int = cells.call(0.055)
+	var from: int = int(guard["back"]) - cells.call(0.01)
+	var last_back := -1
+	var long := false
+	for y in range(int(guard["top"]), maxi(int(guard["top"]) - cells.call(0.13), -1), -1):
+		var z := from
+		while z < nz - 1 and z <= from + cells.call(0.05) and solid[z * ny + y] == 0:
+			z += 1
+		if solid[z * ny + y] == 0:
+			break
+		var front := z
+		while z < nz and solid[z * ny + y] == 1:
+			z += 1
+		if z - front > widest:
+			long = true
+			if y <= int(guard["bottom"]):
+				unders.append(Vector2(front, y))
+			from = front - cells.call(0.01)
+			continue
+		# Where the back edge jumps the grip has ended (or run into a stock).
+		if last_back >= 0 and absi(z - last_back) > cells.call(0.02):
+			break
+		mids.append(Vector2((front + z) * 0.5, y))
+		from = front - cells.call(0.01)
+		last_back = z
+	if long and mids.size() < 4 or mids.size() < 2:
+		# A stock's wrist: the hand behind the guard, the grip leaning back
+		# as the front of the solid behind the guard does below it.
+		var k := -1.0
+		if unders.size() >= 2:
+			k = minf((unders[unders.size() - 1].x - unders[0].x) / minf(unders[unders.size() - 1].y - unders[0].y, -1.0), -0.3)
+		var back: float = float(guard["back"]) + cells.call(0.022)
+		return {"k": k, "m": back - k * float(guard["top"] + guard["bottom"]) * 0.5}
+	# A line through the middles, by least squares.
+	var sy := 0.0
+	var sz := 0.0
+	var syy := 0.0
+	var syz := 0.0
+	for r in mids:
+		sy += r.y
+		sz += r.x
+		syy += r.y * r.y
+		syz += r.y * r.x
+	var count := float(mids.size())
+	var k := (count * syz - sy * sz) / maxf(count * syy - sy * sy, 0.0001)
+	# Grips rake back, from upright to about 40 degrees.
+	k = clampf(k, -0.85, 0.0)
+	return {"k": k, "m": (sz - k * sy) / count}
+
+
+## Fills the connected empty cells from `todo` with `id` and returns the
+## region's extent in cells.
+func _flood(solid: PackedByteArray, mark: PackedInt32Array, todo: Array, nz: int, ny: int, id: int) -> Dictionary:
+	var region := {"front": nz, "back": -1, "top": -1, "bottom": ny, "cells": 0}
+	while not todo.is_empty():
+		var at: int = todo.pop_back()
+		if solid[at] == 1 or mark[at] != 0:
+			continue
+		mark[at] = id
+		var z := at / ny
+		var y := at % ny
+		region["cells"] += 1
+		region["front"] = mini(region["front"], z)
+		region["back"] = maxi(region["back"], z)
+		region["bottom"] = mini(region["bottom"], y)
+		region["top"] = maxi(region["top"], y)
+		if z > 0: todo.append(at - ny)
+		if z < nz - 1: todo.append(at + ny)
+		if y > 0: todo.append(at - 1)
+		if y < ny - 1: todo.append(at + 1)
+	region["size"] = Vector2i(region["back"] - region["front"] + 1, region["top"] - region["bottom"] + 1)
+	return region
 
 
 ## Gives a gun model a sci-fi energy look in `glow`: warm parts become glowing
@@ -1136,7 +1345,10 @@ func _energize(model: Node3D, holder: Node3D, glow: Color) -> void:
 func _melee_model(weapon: Weapon) -> Node3D:
 	var pick := _melee_pick(weapon)
 	if pick[1] == "":
-		return _spear_model(pick[2], pick[3], energy_color(weapon.item_id), energy_strength(weapon.item_id))
+		var spear := _spear_model(pick[2], pick[3], energy_color(weapon.item_id), energy_strength(weapon.item_id))
+		# Its grip is wrapped where the weapon hand goes, so it keeps that spot.
+		_fit_hands(spear, "spear@%.2f" % pick[2], is_two_handed(weapon), pick[3])
+		return spear
 	var model := _instance(WEAPONS + pick[1])
 	if model == null:
 		return null
@@ -1148,7 +1360,122 @@ func _melee_model(weapon: Weapon) -> Node3D:
 			0.7 if weapon.item_id == "" or ItemDB.has_tag(weapon.item_id, "starter") else 0.3,
 			{"mode": pick[4]})
 	holder.position.y = -pick[3]
+	_fit_hands(holder, "%s@%.2f" % [pick[1], pick[2]], is_two_handed(weapon))
 	return holder
+
+
+## Where the hands go on a melee model, read off its shape: sliced along its
+## length (pommel at the bottom), the handle runs up to the first slice
+## clearly wider than the rest below (a guard or a head). The weapon hand
+## closes just under the guard on a short handle and near the end of a long
+## haft; the holder
+## moves so that spot, on the handle's middle line, is the visual's origin
+## (where the fist is). A two-handed weapon also gets an "off_grip" meta:
+## where the off hand closes, from the weapon hand along the handle: a
+## hand's width below on a short handle (a long sword's two-hand grip), up
+## the haft on a long one, which is carried across the body
+## (`WeaponArm.carry_point`) with the weapon hand low near its end. A
+## model with no handle found keeps `holder`'s place. `key` caches the
+## measuring per model.
+const HAND_WIDTH := 0.095
+## How far up a long haft the off hand closes above the weapon hand.
+const HAND_CARRY := 0.3
+## How much wider than the handle below it a guard or head is.
+const HANDLE_GUARD := 1.15
+var _handles := {}
+
+
+func _fit_hands(holder: Node3D, key: String, two_handed: bool, fixed_grip := -1.0) -> void:
+	var at := holder.position
+	holder.position = Vector3.ZERO
+	if not _handles.has(key):
+		_handles[key] = _measure_handle(holder)
+	var handle: Dictionary = _handles[key]
+	holder.position = at
+	if handle.is_empty():
+		return
+	var bottom: float = handle["bottom"]
+	var top: float = handle["top"]
+	var span := top - bottom
+	var grip := top - HAND_WIDTH * 0.55
+	if span >= 0.35:
+		grip = bottom + HAND_WIDTH
+	if fixed_grip >= 0.0:
+		grip = fixed_grip
+	grip = clampf(grip, bottom + HAND_WIDTH * 0.4, maxf(top - HAND_WIDTH * 0.4, bottom + HAND_WIDTH * 0.4))
+	var centre: Vector2 = handle["centre"]
+	holder.position = Vector3(-centre.x, -grip, -centre.y)
+	if two_handed:
+		if span < 0.35:
+			holder.set_meta("off_grip", -maxf(minf(HAND_WIDTH, grip - bottom - HAND_WIDTH * 0.3), HAND_WIDTH * 0.8))
+		else:
+			holder.set_meta("off_grip", maxf(minf(HAND_CARRY, top - grip - HAND_WIDTH * 0.5), HAND_WIDTH * 0.8))
+
+
+## A melee model's handle in its holder's space: {"bottom", "top"} up its
+## length and "centre" (x, z) across it, or empty when nothing marks where
+## it ends (a knife all one width keeps its table grip).
+func _measure_handle(holder: Node3D) -> Dictionary:
+	var points := PackedVector3Array()
+	for node in holder.find_children("*", "MeshInstance3D", true, false):
+		var mesh_node := node as MeshInstance3D
+		if mesh_node.mesh == null:
+			continue
+		var xform := mesh_node.transform
+		var up := mesh_node.get_parent()
+		while up != null and up != holder:
+			if up is Node3D:
+				xform = (up as Node3D).transform * xform
+			up = up.get_parent()
+		for v in mesh_node.mesh.get_faces():
+			points.append(xform * v)
+	if points.size() < 3:
+		return {}
+	var low := points[0]
+	var high := points[0]
+	for q in points:
+		low = low.min(q)
+		high = high.max(q)
+	var slice := maxf((high.y - low.y) / 120.0, 0.004)
+	var count := int((high.y - low.y) / slice) + 1
+	var lows: Array[Vector3] = []
+	var highs: Array[Vector3] = []
+	for i in count:
+		lows.append(Vector3.INF)
+		highs.append(-Vector3.INF)
+	# Every triangle, sampled finer than a slice, so long faces count too.
+	for i in range(0, points.size() - 2, 3):
+		var a := points[i]
+		var b := points[i + 1]
+		var c := points[i + 2]
+		var steps := mini(int(maxf(absf(a.y - b.y), maxf(absf(b.y - c.y), absf(a.y - c.y))) / (slice * 0.5)) + 1, 400)
+		for u in steps + 1:
+			for v in steps + 1 - u:
+				var q := a + (b - a) * (float(u) / steps) + (c - a) * (float(v) / steps)
+				var row := clampi(int((q.y - low.y) / slice), 0, count - 1)
+				lows[row] = lows[row].min(q)
+				highs[row] = highs[row].max(q)
+	# The handle runs up from the bottom to the guard, cross-guard or head:
+	# the first slice clearly wider than anything below it (a pommel too).
+	var widest := 0.0
+	var guard := -1
+	for row in count:
+		if lows[row] == Vector3.INF:
+			continue
+		var size := highs[row] - lows[row]
+		var width := maxf(size.x, size.z)
+		if row * slice > HAND_WIDTH and width > widest * HANDLE_GUARD:
+			guard = row
+			break
+		widest = maxf(widest, width)
+	if guard < 0:
+		return {}
+	var best := Vector2i(0, guard)
+	var centre := Vector2.ZERO
+	for row in range(best.x, best.y):
+		centre += Vector2(lows[row].x + highs[row].x, lows[row].z + highs[row].z) * 0.5
+	centre /= best.y - best.x
+	return {"bottom": low.y + best.x * slice, "top": low.y + best.y * slice, "centre": centre}
 
 
 ## The glow a melee weapon's energy edge takes: its rarity color, with plain
