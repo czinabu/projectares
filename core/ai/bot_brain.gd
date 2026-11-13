@@ -181,10 +181,10 @@ func _attack_melee(cmd: ActorCommand, blade: MeleeWeapon, delta: float) -> void:
 		_move_toward(cmd, target.global_position, delta, false)
 
 	var foe_blade := target.get_active_weapon() as MeleeWeapon
-	var threatened := foe_blade != null and foe_blade.is_winding_up() and dist <= foe_blade.reach * 1.5
+	var threatened := foe_blade != null and foe_blade.threat_dir() >= 0 and dist <= foe_blade.reach * 1.5
 	if threatened and not _threat_seen and _rng.randf() < guard_skill:
 		_read_left = guard_reaction
-		_read_dir = MeleeWeapon.mirror(foe_blade.attack_dir)
+		_read_dir = MeleeWeapon.mirror(foe_blade.threat_dir())
 	_threat_seen = threatened
 	if _read_left > 0.0:
 		_read_left -= delta

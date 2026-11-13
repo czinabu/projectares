@@ -187,13 +187,14 @@ func _ready() -> void:
 	register("boots_thruster", "Thruster Boots", Rarity.UNCOMMON, 1000, ["flight_rig", "vendor"],
 			{"thrust_accel": 0.0, "burst_velocity": 14.5, "burst_heat": 22.0, "cool_per_sec": 34.0,
 			"cool_delay": 0.3, "burst_push": 11.0, "skim_speed": 15.0, "air_dash_speed": 20.0,
-			"air_dash_heat": 20.0},
-			"Hold jump in the air to skim low over streets and roofs, and stop dead. Kick up with jump: a set of kicks tops a rooftop. The boots only cool near a surface, a roof included; high in the open they burn out in seconds. Dash in the air on heat. Steady aim while skimming low.")
+			"air_dash_time": 0.3, "air_dash_heat": 20.0, "air_dash_cooldown": 0.4},
+			"Hold jump in the air to skim low over streets and roofs, and stop dead. Kick up with jump: a set of kicks tops a rooftop. The boots only cool near a surface, a roof included; high in the open they burn out in seconds. Dash furthest of any rig. Steady aim while skimming low.")
 	register("wings_glide", "Glide Wings", Rarity.RARE, 1000, ["flight_rig"],
 			{"thrust_accel": 0.0, "burst_velocity": 14.0, "burst_heat": 40.0, "launch_once": true,
 			"cool_per_sec": 20.0, "pulse_velocity": 11.0, "pulse_heat": 30.0, "glide_cool": 12.0,
 			"glide_fall_speed": 1.2, "glide_speed": 15.0, "glide_dive_gain": 0.74, "glide_turn_rate": 2.4,
-			"stall_sink": 6.0, "roll_dodge_speed": 12.0, "glide_sidearm_only": true, "slide_landing_speed": 18.0},
+			"stall_sink": 6.0, "air_dash_speed": 12.0, "air_dash_heat": 10.0, "air_dash_cooldown": 1.0,
+			"glide_sidearm_only": true, "slide_landing_speed": 18.0},
 			"One launch, then hold jump to glide and press it again to pulse up. Fastest dives, tightest turns, silent and cold between pulses. Never stops: slow down and you stall. Sidearm only while the wings are out.")
 
 	# Abilities

@@ -111,11 +111,6 @@ var glide_catch_accel := 45.0
 var glide_bank_rate := 8.0
 ## Below the stall speed a glide sinks this fast (0: just the glide sink).
 var stall_sink := 0.0
-## Wings: a press of a roll key while gliding snaps a sidestep this fast for
-## `roll_dodge_time`, then waits `roll_cooldown` (0: no dodge).
-var roll_dodge_speed := 0.0
-var roll_dodge_time := 0.25
-var roll_cooldown := 2.0
 ## Wings: only a sidearm fires while they are spread, and a main gun only
 ## `glide_stow_time` after they fold.
 var glide_sidearm_only := false
@@ -143,11 +138,18 @@ var skim_mid_heat := 8.0
 var skim_high_heat := 20.0
 ## How far down the boots look for a surface.
 var skim_probe := 30.0
-## Boots: the dash key in the air dashes at `air_dash_speed` for
-## `air_dash_time` for `air_dash_heat`, instead of spending stamina.
-var air_dash_speed := 0.0
-var air_dash_time := 0.3
-var air_dash_heat := 0.0
+## Every rig: pressing sprint in the air dashes the way the move keys point
+## (forward with none held). The dash adds `air_dash_speed` that way on top
+## of how the rig is flying for `air_dash_time`, then takes it back off, so
+## a glide or a cruise carries on as before. It costs `air_dash_heat` and
+## waits `air_dash_cooldown` before the next (0 speed: no dash). The
+## defaults are the jetpacks'; boots dash furthest (their edge), wings
+## shortest but cheapest. Holding sprint on after a jetpack's forward dash
+## keeps boosting (`boost_speed`).
+var air_dash_speed := 16.0
+var air_dash_time := 0.25
+var air_dash_heat := 15.0
+var air_dash_cooldown := 0.7
 
 var heat := 0.0
 var overheated := false
@@ -226,7 +228,7 @@ func can_skim() -> bool:
 	return enabled and skim_speed > 0.0
 
 
-## A boot dash in the air. True if it goes off (and takes its heat).
+## A dash in the air. True if it goes off (and takes its heat).
 func try_air_dash() -> bool:
 	if not enabled or overheated or air_dash_speed <= 0.0:
 		return false
@@ -290,16 +292,17 @@ func controls_hint() -> String:
 		return "Space jump"
 	var parts: Array[String] = ["Space jump"]
 	if thrust_accel > 0.0:
-		parts.append("hold to climb, tap in the air to hover (C coasts down to cool%s, Q/E roll)"
-				% (", Shift+W boosts" if boost_speed > 0.0 else ""))
+		parts.append("hold to climb, tap in the air to hover (C coasts down to cool%s)"
+				% (", hold Shift+W to boost" if boost_speed > 0.0 else ""))
 	if burst_velocity > 0.0:
 		parts.append("press again in the air to boost" + (" the way you move" if burst_push > 0.0 else ""))
 	if can_skim():
-		parts.append("hold in the air to skim low (stay near a surface to cool, C sinks, Ctrl dashes)")
+		parts.append("hold in the air to skim low (stay near a surface to cool, C sinks)")
 	if can_glide():
-		parts.append("hold while falling to glide (steer to bank, look down to dive, up to climb, %sQ/E %s)"
-				% ["press again to pulse up, " if pulse_velocity > 0.0 else "",
-				"barrel roll" if roll_dodge_speed > 0.0 else "roll"])
+		parts.append("hold while falling to glide (steer to bank, W dives, S climbs%s)"
+				% (", press again to pulse up" if pulse_velocity > 0.0 else ""))
+	if air_dash_speed > 0.0:
+		parts.append("Shift + a move key dashes that way in the air")
 	return ", ".join(parts)
 
 

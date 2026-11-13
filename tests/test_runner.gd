@@ -16,6 +16,7 @@ const LookTests := preload("res://tests/look_tests.gd")
 const RigLookTests := preload("res://tests/rig_look_tests.gd")
 const EconomyTests := preload("res://tests/economy_tests.gd")
 const MeleeArsenalTests := preload("res://tests/melee_arsenal_tests.gd")
+const MeleeFeelTests := preload("res://tests/melee_feel_tests.gd")
 const CustomizerTests := preload("res://tests/customizer_tests.gd")
 const BattlefieldTests := preload("res://tests/battlefield_tests.gd")
 const VisorTests := preload("res://tests/visor_tests.gd")
@@ -227,6 +228,7 @@ func _run() -> void:
 	await _test_melee_defense()
 	await _test_directional_melee()
 	await _test_melee_arsenal()
+	await _test_melee_feel()
 	await _test_flight_rigs_and_abilities()
 	await _test_vehicle_driving()
 	await _test_vehicle_raids()
@@ -296,6 +298,10 @@ func _test_customizer() -> void:
 
 func _test_melee_arsenal() -> void:
 	await MeleeArsenalTests.run(self)
+
+
+func _test_melee_feel() -> void:
+	await MeleeFeelTests.run(self)
 
 
 func _test_economy() -> void:
@@ -842,6 +848,13 @@ func _test_main_flow() -> void:
 	check(is_equal_approx(controller.wanted_base_fov(), 70.0), "first person uses its own field of view")
 	controller.toggle_view()
 	check(is_equal_approx(controller.wanted_base_fov(), 100.0), "third person uses its own field of view")
+	check(is_equal_approx(controller.view_distance(false), controller.third_person_distance)
+			and controller.third_person_distance <= 2.5, "the third-person camera sits close, over the shoulder")
+	check(controller.view_distance(true) < controller.view_distance(false) and controller.view_distance(true) > 0.5,
+			"aiming moves it in further")
+	controller.third_person_distance = 4.0
+	check(is_equal_approx(controller.view_distance(false), 4.0), "and its distance can be set")
+	controller.third_person_distance = 2.0
 	controller.toggle_view()
 	# Melee and flight must not move the camera on their own.
 	var p: Actor = main.raid.player
@@ -1307,15 +1320,19 @@ func _test_directional_melee() -> void:
 	var blade := p.get_active_weapon() as MeleeWeapon
 	var total := func() -> float: return p.health.health + p.health.armor
 
-	# The foe swings from its left, which arrives on the player's right.
-	foe.cmd.stance = left
+	# The foe swings to its right, so it comes from its left and arrives on
+	# the player's right.
+	check(MeleeWeapon.swing_from(left) == right and MeleeWeapon.swing_from(right) == left
+			and MeleeWeapon.swing_from(over) == over, "a swing to one side starts on the other")
+	foe.cmd.stance = right
 	p.cmd.stance = left
 	p.cmd.secondary = true
 	await frames(30)
 	var before: float = total.call()
 	await _foe_swing(foe)
 	await frames(10)
-	check(foe_blade.is_winding_up() and foe_blade.attack_dir == left, "a swing takes the stance it started in")
+	check(foe_blade.is_winding_up() and foe_blade.attack_dir == left,
+			"a swing keeps the side it started from (a right swing comes from the left)")
 	check(Hud.incoming_side(p) == right, "the HUD warns which side to guard")
 	await frames(30)
 	check(total.call() < before, "a guard on the wrong side stops nothing")
@@ -1363,8 +1380,10 @@ func _test_directional_melee() -> void:
 	await frames(120)
 	foe.stagger_left = 0.0
 	p.riposte_left = 0.0
+	# A swing to the player's right comes from their left and arrives on the
+	# foe's right: guarding the same side as the swing's stance meets it.
 	p.cmd.stance = right
-	foe.cmd.stance = left
+	foe.cmd.stance = right
 	foe.cmd.secondary = true
 	await frames(30)
 	var foe_before := foe.health.health + foe.health.armor
@@ -1703,6 +1722,39 @@ func _check_free_flight(p: Actor) -> void:
 	await frames(5)
 	check(p.flight.is_hovering and not p.flight.is_boosting, "letting go of the boost drops back to a hover")
 	p.flight.boost_speed = boost_was
+	# Shift + a move key dashes that way on heat, and the hover carries on.
+	await frames(30)
+	var dash_heat := p.flight.heat
+	var dash_stamina := p.stamina
+	p.cmd.move = Vector2(-1, 0)
+	p.cmd.sprint = true
+	p.cmd.sprint_pressed = true
+	await frames(1)
+	p.cmd.sprint_pressed = false
+	p.cmd.move = Vector2.ZERO
+	await frames(3)
+	var dash_side := (Basis(Vector3.UP, p.cmd.yaw).inverse() * p.velocity).x
+	check(dash_side < -(p.flight.air_dash_speed - 2.0) and p.flight.heat > dash_heat + p.flight.air_dash_heat * 0.8
+			and is_equal_approx(p.stamina, dash_stamina),
+			"Shift + A dashes left off a hover, on heat (%.1f m/s)" % dash_side)
+	var heat_after := p.flight.heat
+	p.cmd.sprint_pressed = true
+	await frames(1)
+	p.cmd.sprint_pressed = false
+	check(p.flight.heat < heat_after + 2.0, "a second press right away waits for the cooldown")
+	p.cmd.sprint = false
+	await frames(60)
+	dash_side = (Basis(Vector3.UP, p.cmd.yaw).inverse() * p.velocity).x
+	check(p.flight.is_hovering and absf(dash_side) < 3.0, "after the dash the jets hold you where you were going")
+	p.cmd.sprint = true
+	p.cmd.sprint_pressed = true
+	await frames(1)
+	p.cmd.sprint_pressed = false
+	await frames(3)
+	var ahead := (Basis(Vector3.UP, p.cmd.yaw).inverse() * p.velocity).z
+	check(ahead < -(p.flight.air_dash_speed - 2.0), "Shift alone dashes forward (%.1f m/s)" % -ahead)
+	p.cmd.sprint = false
+	await frames(40)
 	p.flight.heat_per_sec = 4000.0
 	await frames(60)
 	check(p.flight.overheated and not p.flight.is_hovering and p.velocity.y < 0.0, "overheating puts the jets out and you fall")
@@ -1722,11 +1774,11 @@ func _check_free_flight(p: Actor) -> void:
 	p.cmd.jump = false
 	var copy := ActorCommand.new()
 	p.cmd.descend = true
-	p.cmd.roll = -1
+	p.cmd.sprint_pressed = true
 	copy.apply_array(p.cmd.to_array())
-	check(copy.descend and copy.roll == -1, "descend and roll travel in the network command")
+	check(copy.descend and copy.sprint_pressed, "descend and a sprint press travel in the network command")
 	p.cmd.descend = false
-	p.cmd.roll = 0
+	p.cmd.sprint_pressed = false
 
 
 ## The Mk2 jetpack. `p` stands on the ground in heavy armor.
@@ -1825,13 +1877,20 @@ func _check_boot_skim(p: Actor) -> void:
 	var stamina := p.stamina
 	var heat := p.flight.heat
 	p.cmd.move = Vector2(1, 0)
-	p.cmd.dash = true
+	p.cmd.sprint = true
+	p.cmd.sprint_pressed = true
 	await frames(1)
-	p.cmd.dash = false
+	p.cmd.sprint_pressed = false
 	await frames(2)
 	var side := (p.global_basis.inverse() * p.velocity).x
 	check(side > p.flight.air_dash_speed - 1.0 and p.flight.heat > heat + 15.0 and is_equal_approx(p.stamina, stamina),
-			"a boot dash in the air goes off on heat (%.1f m/s)" % side)
+			"Shift + D dashes the boots right on heat (%.1f m/s)" % side)
+	var jet := FlightRig.new()
+	check(p.flight.air_dash_speed > ItemDB.item_stats("wings_glide")["air_dash_speed"]
+			and p.flight.air_dash_speed * p.flight.air_dash_time > jet.air_dash_speed * jet.air_dash_time,
+			"boots dash further than wings or a jetpack (their edge)")
+	jet.free()
+	p.cmd.sprint = false
 	p.cmd.move = Vector2.ZERO
 	await frames(30)
 	# High up the boots burn out fast.
@@ -1957,14 +2016,19 @@ func _check_wing_moves(p: Actor) -> void:
 	p.flight.overheated = false
 	# The main gun is stowed while the wings are out.
 	check(p.wings_block(p.weapons[0]) and p.air_aim() == 1.0, "only a sidearm fires with the wings spread")
-	# A barrel roll snaps sideways.
+	# Shift + D snaps a sidestep, for a little heat.
 	await frames(130)
 	var side_before := (Basis(Vector3.UP, p.cmd.yaw).inverse() * p.velocity).x
-	p.cmd.roll = 1
-	await frames(6)
+	var heat_before := p.flight.heat
+	p.cmd.move = Vector2(1, 0)
+	p.cmd.sprint_pressed = true
+	await frames(1)
+	p.cmd.sprint_pressed = false
+	p.cmd.move = Vector2.ZERO
+	await frames(5)
 	var side := (Basis(Vector3.UP, p.cmd.yaw).inverse() * p.velocity).x
-	check(side > side_before + 8.0, "a roll key snaps a sidestep (%.1f m/s sideways)" % side)
-	p.cmd.roll = 0
+	check(side > side_before + 8.0 and p.flight.heat > heat_before + 5.0,
+			"Shift + D snaps the wings into a sidestep on heat (%.1f m/s sideways)" % side)
 	await frames(30)
 	var heading := Vector3(p.velocity.x, 0, p.velocity.z).normalized()
 	check(heading.dot(Vector3.FORWARD) > 0.95, "and the glide carries on the same way after it")
@@ -5352,7 +5416,17 @@ func _test_phone_controls(phone: CanvasLayer) -> void:
 	check(missing.is_empty(), "every keybind is listed in the phone's Controls app (missing: %s)" % ", ".join(missing))
 	check(PhoneScript.key_name("interact") == "F" and PhoneScript.key_name("fire") == "Left mouse",
 			"keys are named the way a player reads them")
-	check(PhoneScript.key_name("roll_left") == "Q or Mouse back", "an action bound twice shows both")
+	InputMap.add_action("test_twice")
+	var first_key := InputEventKey.new()
+	first_key.physical_keycode = KEY_Q
+	InputMap.action_add_event("test_twice", first_key)
+	var thumb := InputEventMouseButton.new()
+	thumb.button_index = MOUSE_BUTTON_XBUTTON1
+	InputMap.action_add_event("test_twice", thumb)
+	check(PhoneScript.key_name("test_twice") == "Q or Mouse back", "an action bound twice shows both")
+	InputMap.erase_action("test_twice")
+	check(not InputMap.has_action("roll_left") and not InputMap.has_action("roll_right"),
+			"Q and E fly nothing: the air dash is Shift + a move key")
 	check(PhoneScript.controls_text("Hold {jump}") == "Hold Space", "a key spec reads from the input map")
 	phone.open_app("controls")
 	check(phone.app == "controls" and phone._title.text == "Controls" and phone._body.get_child_count() > 20,
@@ -5402,6 +5476,13 @@ func _test_phone_view() -> void:
 	check(is_equal_approx(GameSettings.field_of_view_third, 105.0) and is_equal_approx(GameSettings.field_of_view, 95.0),
 			"first and third person keep their own field of view")
 	check(GameSettings.to_dict().has("field_of_view_third"), "the third-person field of view is saved")
+	check(is_equal_approx(GameSettings.camera_distance, 2.0), "the third-person camera starts close, over the shoulder")
+	phone.change_setting("camera_distance", 3.5)
+	check(is_equal_approx(GameSettings.camera_distance, 3.5) and GameSettings.to_dict().has("camera_distance"),
+			"the phone sets how far back the third-person camera sits, and it is saved")
+	phone.change_setting("camera_distance", 99.0)
+	check(is_equal_approx(GameSettings.camera_distance, GameSettings.CAMERA_DISTANCE_RANGE.y), "within its range")
+	GameSettings.camera_distance = 2.0
 	phone.close()
 	check(not phone.is_open and events[events.size() - 1] == false, "the phone closes")
 
