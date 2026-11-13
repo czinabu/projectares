@@ -839,7 +839,7 @@ func _test_main_flow() -> void:
 	check(main.raid != null and not main.hub.visible, "deploying starts a raid")
 	check(main.controller.camera.current and main.hud != null, "raid has a camera and HUD")
 	check(main.nameplates != null and main.scoreboard != null and not main.scoreboard.visible,
-			"raid has nameplates and a scoreboard, closed until Tab is held")
+			"raid has nameplates and a scoreboard, closed until Q is held")
 	var controller: PlayerController = main.controller
 	check(controller.view_mode == PlayerController.ViewMode.FIRST and not controller.is_third_person(),
 			"camera starts in first-person")
@@ -2641,8 +2641,8 @@ func _leave(session: NetSession) -> void:
 func _test_nameplates_and_scoreboard() -> void:
 	print("Nameplates and scoreboard")
 	check(InputMap.has_action("scoreboard") and InputMap.action_get_events("scoreboard").any(
-			func(e: InputEvent) -> bool: return e is InputEventKey and e.physical_keycode == KEY_TAB),
-			"Tab is bound to the scoreboard")
+			func(e: InputEvent) -> bool: return e is InputEventKey and e.physical_keycode == KEY_Q),
+			"Q is bound to the scoreboard")
 	var raid := Raid.new()
 	add_child(raid)
 	raid.start_server(Worlds.get_world("ashfront"), 71)
@@ -5275,6 +5275,7 @@ func _test_phone() -> void:
 	_test_social_service()
 	_test_game_settings()
 	await _test_phone_view()
+	await _test_phone_escape()
 	await _test_online_phone()
 
 
@@ -5448,6 +5449,27 @@ func _test_phone_controls(phone: CanvasLayer) -> void:
 		if child is Button and (child as Button).text.contains("every key"):
 			link = true
 	check(link, "settings link to the Controls app")
+
+
+func _test_phone_escape() -> void:
+	print("Phone: Tab and Esc")
+	check(PhoneScript.key_name("toggle_view") == "Tab" and PhoneScript.key_name("scoreboard") == "Q",
+			"Tab switches the camera and Q holds the scoreboard")
+	var phone: CanvasLayer = PhoneScript.new()
+	add_child(phone)
+	await frames(1)
+	var esc_key := InputEventKey.new()
+	esc_key.keycode = KEY_ESCAPE
+	esc_key.pressed = true
+	check(not phone.opens_on_escape(esc_key), "Esc leaves the phone shut where a screen has the mouse")
+	phone.mouse_in_world = true
+	check(phone.opens_on_escape(esc_key), "Esc is the phone's when the world has the mouse")
+	phone._unhandled_input(esc_key)
+	check(phone.is_open and phone.app == "settings", "Esc in the world opens the phone at Settings")
+	phone._unhandled_input(esc_key)
+	check(not phone.is_open, "Esc again closes the phone")
+	phone.queue_free()
+	await frames(1)
 
 
 func _test_phone_view() -> void:

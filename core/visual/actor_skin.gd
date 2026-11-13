@@ -233,6 +233,9 @@ var _twist := 0.0
 var _face := 0.0
 var _last_heading := 0.0
 var _has_heading := false
+## The actor's yaw last frame: while the body lies flat in flight its
+## attitude is held in the world, not on the view (see `_update_glide`).
+var _last_yaw := 0.0
 var _attack_left := 0.0
 var _aim_left := 0.0
 ## Weapon -> the copy of it worn while holstered (null if it has no model),
@@ -938,9 +941,19 @@ func _update_glide(delta: float) -> void:
 		elif alive and _air > 0.0 and is_airborne():
 			# A running jump leans into it, and rights itself for the landing.
 			tilt = dir * leap_lean * clampf(speed / leap_lean_speed, 0.0, 1.0) * (1.0 - _air_fall)
+	# The actor turns with the view, and this model is its child. While the
+	# body is laid out in flight, a look round must not drag it round with
+	# the camera and then let it swing back: undo the view's turn first, so
+	# the attitude eases only toward the way the body really flies.
+	var yaw := actor.global_rotation.y
+	if _glide > 0.0 or _boost > 0.0:
+		var turned := wrapf(yaw - _last_yaw, -PI, PI)
+		_face -= turned
+		_tilt = _tilt.rotated(Vector3.UP, -turned)
+	_last_yaw = yaw
 	var follow := 1.0 - exp(-attitude_follow * delta)
 	_tilt = _tilt.lerp(tilt, follow)
-	_face = lerp_angle(_face, face, follow)
+	_face = lerp_angle(wrapf(_face, -PI, PI), face, follow)
 	_bank = lerpf(_bank, bank, 1.0 - exp(-bank_follow * delta))
 	# A sideways air dash: one full roll over the dash; then the body rights
 	# itself the short way round.
