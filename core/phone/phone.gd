@@ -205,8 +205,8 @@ var _chassis: Control
 ## hand holds the handheld (`ActorSkin.handheld`) and its face shows this
 ## screen. Null in a test with no world.
 var holder: Node3D
-## The face of the handheld being held now, or null (then the screen shows
-## flat, as with no world at all).
+## The holo panel of the handheld being held now, where clicks land, or
+## null (then the screen shows flat, as with no world at all).
 var _device: MeshInstance3D
 ## The material that puts this screen on the handheld's face.
 var _face_mat: StandardMaterial3D
@@ -901,7 +901,8 @@ func _hold(_camera: Camera3D) -> void:
 		if skin != null and skin.has_method("handheld"):
 			if skin.phone_screen != _face_mat:
 				skin.set_phone_screen(_face_mat)
-			_device = Handheld.face_of(skin.handheld())
+			# Clicks land on the holo panel, where the screen is read.
+			_device = Handheld.holo_of(skin.handheld())
 	_flat.visible = is_open and _device == null and not has_hand()
 
 
@@ -930,14 +931,15 @@ func screen_point(mouse: Vector2) -> Vector2:
 	var to_local := _device.global_transform.affine_inverse()
 	var o := to_local * camera.project_ray_origin(mouse)
 	var d := to_local.basis * camera.project_ray_normal(mouse)
-	var front := Handheld.DEPTH * 0.5
+	var panel := _device.mesh as QuadMesh
+	var front := 0.0 if panel != null else Handheld.DEPTH * 0.5
 	if absf(d.z) < 0.00001:
 		return miss
 	var t := (front - o.z) / d.z
 	if t < 0.0:
 		return miss
 	var p := o + d * t
-	var size := Handheld.body_size()
+	var size := panel.size if panel != null else Handheld.body_size()
 	var u := p.x / size.x + 0.5
 	var v := 0.5 - p.y / size.y
 	if u < 0.0 or u > 1.0 or v < 0.0 or v > 1.0:

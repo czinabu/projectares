@@ -5748,18 +5748,19 @@ func _test_phone_home(phone: CanvasLayer) -> void:
 	holder.add_child(skin)
 	var in_hand: Node3D = Handheld.build()
 	stage.add_child(in_hand)
-	in_hand.position = Vector3(0.05, -0.05, -0.3) - Handheld.face_of(in_hand).position
+	in_hand.position = Vector3(0.0, -0.25, -0.45)
 	skin.held = in_hand
 	phone.set_holder(holder)
 	await _drawn_frames(2)
-	check(phone._device == Handheld.face_of(in_hand) and not phone._flat.visible,
+	check(phone._device == Handheld.holo_of(in_hand) and not phone._flat.visible,
 			"with a hand to hold it, the phone is the handheld in that hand, not a flat screen")
 	check(Handheld.face_of(in_hand).get_surface_override_material(0) == phone._face_mat,
 			"and its face shows this phone's screen")
-	var centre: Vector3 = phone._device.global_position + phone._device.global_basis.z * Handheld.DEPTH * 0.5
-	var mouse := camera.unproject_position(centre)
+	var mouse := camera.unproject_position(phone._device.global_position)
 	check(phone.screen_point(mouse).distance_to(Vector2(phone.screen_size) * 0.5) < 4.0,
-			"the mouse on the handheld lands on its screen")
+			"the mouse on the holo panel lands on the screen")
+	check(Handheld.holo_of(in_hand).global_position.y > Handheld.face_of(in_hand).global_position.y,
+			"the device projects its screen as a holo panel above it, in every view")
 	check(phone.screen_point(Vector2(1, 1)).x < 0.0, "the mouse off the handheld misses it")
 	check((phone._face_mat as StandardMaterial3D).albedo_texture == phone._screen.get_texture(),
 			"the handheld's face shows the phone's screen")
