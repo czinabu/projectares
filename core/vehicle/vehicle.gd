@@ -340,10 +340,11 @@ func _build_mech() -> Node3D:
 		_legs.append(leg)
 	root.add_child(_part(Vector3(1.1, 0.4, 0.9), Vector3(0, 1.8, 0.1), c.steel))               # hip block
 	root.add_child(_part(Vector3(1.4, 0.3, 1.5), Vector3(0, 2.12, 0.05), c.paint))              # pod floor
-	root.add_child(_part(Vector3(1.4, 0.9, 0.12), Vector3(0, 2.5, -0.75), c.paint, -0.3))       # front armor
-	root.add_child(_part(Vector3(0.12, 0.6, 1.4), Vector3(-0.72, 2.45, 0.05), c.paint))         # pod side L
-	root.add_child(_part(Vector3(0.12, 0.6, 1.4), Vector3(0.72, 2.45, 0.05), c.paint))          # pod side R
-	root.add_child(_part(Vector3(1.3, 0.45, 0.04), Vector3(0, 3.05, -0.65), c.glass, 0.6))      # visor
+	# An open cockpit: low armor round the pilot, who sits exposed from the chest up.
+	root.add_child(_part(Vector3(1.4, 0.6, 0.12), Vector3(0, 2.45, -0.75), c.paint, -0.3))      # front armor
+	root.add_child(_part(Vector3(0.12, 0.36, 1.4), Vector3(-0.72, 2.4, 0.05), c.paint))         # pod side L
+	root.add_child(_part(Vector3(0.12, 0.36, 1.4), Vector3(0.72, 2.4, 0.05), c.paint))          # pod side R
+	root.add_child(_part(Vector3(1.0, 0.2, 0.04), Vector3(0, 2.82, -0.86), c.glass, 0.5))       # screen
 	root.add_child(_part(Vector3(0.45, 0.12, 0.45), Vector3(0, 2.24, 0.15), c.dark))            # seat
 	root.add_child(_part(Vector3(0.45, 0.6, 0.1), Vector3(0, 2.55, 0.42), c.dark, -0.15))       # seat back
 	root.add_child(_part(Vector3(1.0, 0.9, 0.5), Vector3(0, 2.55, 0.75), c.dark))               # power unit
@@ -377,7 +378,7 @@ func _build_jet() -> Node3D:
 		root.add_child(wing)
 		root.add_child(_part(Vector3(0.08, 0.04, 1.2), Vector3(x * 2.45, 0.98, 1.3), null, 0.0, c.glow))  # wingtip
 		var fin := _part(Vector3(0.08, 0.9, 0.9), Vector3(x * 0.4, 1.7, 2.4), c.paint, -0.4)
-		fin.rotation.z = x * -0.25
+		fin.rotation.z = x * 0.25
 		root.add_child(fin)
 		root.add_child(_part(Vector3(0.42, 0.42, 0.3), Vector3(x * 0.3, 1.0, 3.0), null, 0.0, c.glow))  # engine
 		root.add_child(_part(Vector3(0.06, 0.06, 0.3), Vector3(x * 0.22, 1.32, -1.15), c.steel, 0.4))  # stick

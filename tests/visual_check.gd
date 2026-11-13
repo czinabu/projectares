@@ -1559,6 +1559,8 @@ func _ride_shots(out_dir: String) -> void:
 	# Bigger vehicles are framed from further out and higher up.
 	var seat_y: float = bike.seat_point.y
 	var frame_out := maxf(1.0, seat_y / 0.98)
+	if bike.model != "bike":
+		frame_out = maxf(frame_out, bike.body_size.z / 2.6)
 	await _settle(20)
 	bike.mount(player)
 	player.set_physics_process(false)
@@ -1607,10 +1609,10 @@ func _ride_shots(out_dir: String) -> void:
 	player._refresh_weapon_visuals()
 	bike.set_physics_process(true)
 	await _settle(40)
-	var close := [[-bike.global_basis.x * 2.4 + Vector3(0, 0.2, 0), "ride_close_side.png"],
-		[(-bike.global_basis.z * 1.6 + bike.global_basis.x * 0.9 + Vector3(0, 1.0, 0)), "ride_close_front.png"]]
+	var close := [[(-bike.global_basis.x * 2.4 + Vector3(0, 0.2, 0)) * frame_out, "ride_close_side.png"],
+		[(-bike.global_basis.z * 1.6 + bike.global_basis.x * 0.9 + Vector3(0, 1.0, 0)) * frame_out, "ride_close_front.png"]]
 	for shot in close:
-		var focus := bike.global_position + bike.global_basis * (bike.seat_point + Vector3(0, 0.02, -0.38))
+		var focus: Vector3 = bike.global_position + bike.global_basis * (bike.seat_point + Vector3(0, 0.02, -0.38))
 		cam.global_position = focus + shot[0]
 		cam.look_at(focus)
 		await _settle(2)
