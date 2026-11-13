@@ -140,6 +140,19 @@ without Caleb, and update the gap list when a PR closes a row.
   A new per-tick cost that grows with the number of actors (a scan of the
   "actors" group, something sent to every peer) needs the same treatment.
   A world sets how many players it takes with `WorldDef.max_players`.
+  The player's frame rate is measured with
+  `godot --path . res://tests/frame_bench.tscn -- --mode solo --bots 120`
+  (or `--mode online`, which starts a server and drops in beside the
+  fighting; `--probe` shows what the draw calls go to). What keeps the
+  frame affordable, all view only: a far body is posed every few frames
+  (`ActorSkin.detail_step`, scaled by the camera's zoom, which steps its
+  animation and skeleton by hand while it is far) and its weapons cast no
+  shadow; open ground is drawn in tiles (`Terrain.tile_cells`) so only the
+  ones in view and in shadow range are drawn; small map props fade out
+  with distance by their size (`Look._limit_draw_distance`); a parked
+  vehicle nobody rides rests instead of moving every tick. Every ENet
+  packet is compressed (`NetSession.COMPRESSION`); changing it needs a new
+  `PROTOCOL`.
 - Mastery pays for using gear, never for leaving alive, or signing out over
   and over would farm it.
 - Blocking and parrying happen in `Weapon.modify_incoming`, which `Combat.deal`

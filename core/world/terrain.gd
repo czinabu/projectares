@@ -17,7 +17,10 @@ var cell := 4.0
 var side := 161
 ## Row by row along Z, `side * side` values.
 var heights := PackedFloat32Array()
-var mesh_node: MeshInstance3D
+## The ground is drawn in square tiles this many cells across, so only the
+## tiles in view (and near enough to cast a shadow there) are drawn.
+var tile_cells := 80
+var tiles: Array[MeshInstance3D] = []
 
 
 ## The width of the ground in metres.
@@ -77,9 +80,15 @@ func build(material: Material, collision: PackedFloat32Array = PackedFloat32Arra
 	var col := CollisionShape3D.new()
 	col.shape = field
 	add_child(col)
-	mesh_node = MeshInstance3D.new()
-	mesh_node.mesh = _mesh(material)
-	add_child(mesh_node)
+	var cells := side - 1
+	var step := maxi(tile_cells, 1)
+	for z0 in range(0, cells, step):
+		for x0 in range(0, cells, step):
+			var tile := MeshInstance3D.new()
+			tile.name = "Tile_%d_%d" % [x0 / step, z0 / step]
+			tile.mesh = _mesh(material, x0, z0, mini(step, cells - x0), mini(step, cells - z0))
+			add_child(tile)
+			tiles.append(tile)
 
 
 ## The ground sampled every metre, as the heightmap shape wants it.
@@ -94,36 +103,41 @@ func collision_data() -> PackedFloat32Array:
 	return data
 
 
-func _mesh(material: Material) -> ArrayMesh:
+## The mesh of one tile: `count_x` by `count_z` cells from cell (x0, z0).
+## Neighbouring tiles share their edge samples and normals, so no seam shows.
+func _mesh(material: Material, x0: int, z0: int, count_x: int, count_z: int) -> ArrayMesh:
 	var half := extent() * 0.5
+	var row := count_x + 1
 	var verts := PackedVector3Array()
 	var normals := PackedVector3Array()
 	var uvs := PackedVector2Array()
 	var indices := PackedInt32Array()
-	verts.resize(side * side)
-	normals.resize(side * side)
-	uvs.resize(side * side)
-	for iz in side:
-		for ix in side:
-			var i := iz * side + ix
-			verts[i] = Vector3(ix * cell - half, heights[i], iz * cell - half)
+	verts.resize(row * (count_z + 1))
+	normals.resize(verts.size())
+	uvs.resize(verts.size())
+	for tz in count_z + 1:
+		for tx in row:
+			var ix := x0 + tx
+			var iz := z0 + tz
+			var i := tz * row + tx
+			verts[i] = Vector3(ix * cell - half, heights[iz * side + ix], iz * cell - half)
 			var left := heights[iz * side + maxi(ix - 1, 0)]
 			var right := heights[iz * side + mini(ix + 1, side - 1)]
 			var up := heights[maxi(iz - 1, 0) * side + ix]
 			var down := heights[mini(iz + 1, side - 1) * side + ix]
 			normals[i] = Vector3(left - right, 2.0 * cell, up - down).normalized()
 			uvs[i] = Vector2(ix, iz)
-	indices.resize((side - 1) * (side - 1) * 6)
+	indices.resize(count_x * count_z * 6)
 	var n := 0
-	for iz in side - 1:
-		for ix in side - 1:
-			var i := iz * side + ix
+	for tz in count_z:
+		for tx in count_x:
+			var i := tz * row + tx
 			indices[n] = i
 			indices[n + 1] = i + 1
-			indices[n + 2] = i + side
+			indices[n + 2] = i + row
 			indices[n + 3] = i + 1
-			indices[n + 4] = i + side + 1
-			indices[n + 5] = i + side
+			indices[n + 4] = i + row + 1
+			indices[n + 5] = i + row
 			n += 6
 	var arrays := []
 	arrays.resize(Mesh.ARRAY_MAX)

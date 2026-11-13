@@ -165,6 +165,12 @@ var _folded := {}
 var _prop_sizes := {}
 ## Gun model file -> attachment slot -> mount point (see `mount_attachments`).
 var _gun_mounts := {}
+## Map props are drawn out to this many metres for each metre of their size
+## (`_limit_draw_distance`), never nearer than `draw_distance_min`; one that
+## would reach `draw_distance_cap` is drawn as far as the camera sees.
+var draw_distance_per_metre := 70.0
+var draw_distance_min := 40.0
+var draw_distance_cap := 380.0
 
 
 func _ready() -> void:
@@ -202,6 +208,29 @@ func _on_node_added(node: Node) -> void:
 	elif node is CharacterBody3D and node.get_script() != null \
 			and node.get_script().resource_path == VEHICLE_SCRIPT:
 		_dress_vehicle.call_deferred(node)
+	elif node.name == "Map" and node.get_parent() is Raid:
+		_limit_draw_distance.call_deferred(node)
+
+
+## Small things in a map stop being drawn once they are too far away to
+## make out: each mesh fades out at `draw_distance_per_metre` times its
+## size, so a crate goes long before a building does. Big open maps draw
+## hundreds of small props (and their shadows) otherwise. A mesh that
+## already has a visibility range keeps it.
+func _limit_draw_distance(map: Node3D) -> void:
+	if not is_instance_valid(map):
+		return
+	for node in map.find_children("*", "MeshInstance3D", true, false):
+		var mesh := node as MeshInstance3D
+		if mesh.mesh == null or mesh.visibility_range_end > 0.0:
+			continue
+		var size := (mesh.global_transform * mesh.get_aabb()).size
+		var reach := maxf(size.x, maxf(size.y, size.z)) * draw_distance_per_metre
+		if reach >= draw_distance_cap:
+			continue
+		mesh.visibility_range_end = maxf(reach, draw_distance_min)
+		mesh.visibility_range_end_margin = mesh.visibility_range_end * 0.15
+		mesh.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
 
 
 # --- Surfaces -----------------------------------------------------------------
