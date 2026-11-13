@@ -46,7 +46,7 @@ const MAX_HEAL_ITEMS := 2
 ## Seconds a weapon takes to materialize out of the pack through the watch,
 ## by the first of these tags it carries (heavier is slower). An item's own
 ## `summon_time` stat wins.
-const SUMMON_TIMES := [["sidearm", 0.5], ["one_handed", 0.6], ["two_handed", 1.1], ["marksman", 1.3],
+const SUMMON_TIMES := [["power", 1.6], ["sidearm", 0.5], ["one_handed", 0.6], ["two_handed", 1.1], ["marksman", 1.3],
 		["firearm", 0.9]]
 ## The watch's wait after a summon, as a multiple of the materialize time.
 const SUMMON_COOLDOWN_MULT := 6.0
@@ -201,7 +201,7 @@ static func power_index(actor: Actor) -> int:
 ## was put down part used (below 0 means full). Returns what was given up,
 ## as {"id", "mag", "reserve", "spent"}, with "id" empty if the slot was
 ## empty. Emits `Actor.power_changed` so `NetSession` can tell clients.
-static func set_power(actor: Actor, id: String, mag := -1, reserve := -1) -> Dictionary:
+static func set_power(actor: Actor, id: String, mag := -1, reserve := -1, draw := true) -> Dictionary:
 	var given := {"id": "", "mag": -1, "reserve": -1, "spent": false}
 	if id != "" and not ItemDB.has_tag(id, "power"):
 		return given
@@ -227,8 +227,16 @@ static func set_power(actor: Actor, id: String, mag := -1, reserve := -1) -> Dic
 		actor.equip_weapon(gun)
 		index = actor.weapons.size() - 1
 	actor.gear_items.append(id)
-	# What you just picked up is what you hold.
-	actor.draw_weapon(index)
+	# Scanned into the watch's heavy chamber (`draw` false) it waits there to
+	# be summoned; otherwise what you just picked up is what you hold.
+	if draw:
+		actor.draw_weapon(index)
+	elif index == actor.active_weapon_index:
+		# Swapped into the chamber while the old one was out: the new one
+		# waits there too, and the hand goes back to what it held before.
+		var back := actor.last_drawn if actor.last_drawn >= 0 and actor.last_drawn != index \
+				and actor.last_drawn < actor.weapons.size() else actor.weapon_for_key(1)
+		actor.draw_weapon(back)
 	actor.power_changed.emit(id, gun.ammo_in_mag, gun.reserve_ammo)
 	return given
 

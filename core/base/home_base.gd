@@ -2117,3 +2117,131 @@ func _label(text: String, color: Color, height: float) -> Label3D:
 	# behind. Labels that turn to face you (billboards) are unaffected.
 	label.double_sided = false
 	return label
+
+
+# ------------------------------------------------ the watch's summon at home ----
+# Every vehicle and weapon the account owns can be summoned off the watch at
+# home (Caleb's call). Like the rest of the room this is a view of the stash:
+# a vehicle thrown here unpacks to be ridden around the base and packs back
+# onto the watch, and nothing here is stored, risked or sent anywhere. A
+# weapon picked on the watch is equipped through `equip_requested`.
+
+## How far ahead of the thrower a vehicle unpacks, at most.
+var toy_reach := 7.0
+## The room a vehicle needs to unpack, unless its `footprint` stat says.
+var toy_room := Vector3(1.3, 1.2, 2.6)
+## The vehicles out in the base, item id -> vehicle.
+var out_vehicles := {}
+
+
+## The base a node is in, or null.
+static func of(node: Node) -> HomeBase:
+	while node != null:
+		if node is HomeBase:
+			return node
+		node = node.get_parent()
+	return null
+
+
+## The vehicles on the watch at home: every one the owner has, one of each,
+## less those already out in the base.
+func watch_vehicles() -> Array[String]:
+	var ids: Array[String] = []
+	if read_only:
+		return ids
+	for id: String in stash + [str(loadout.get("vehicle", ""))]:
+		if ItemDB.has_tag(id, "vehicle") and id not in ids and not is_instance_valid(out_vehicles.get(id)):
+			ids.append(id)
+	return ids
+
+
+## The weapons the owner has that are not worn, for the watch's carousel at
+## home, one of each.
+func watch_weapons() -> Array[String]:
+	var ids: Array[String] = []
+	if read_only:
+		return ids
+	var worn: Array = [loadout.get("primary", ""), loadout.get("sidearm", ""), loadout.get("melee", "")]
+	for id: String in stash:
+		if Loadout.summonable(id) and id not in ids and id not in worn:
+			ids.append(id)
+	return ids
+
+
+## Throws vehicle `item_id` off the watch: it unpacks on the floor ahead of
+## `actor`, where they aim, if there is room. Returns "" if it did, or why
+## not (also sent as a notice).
+func throw_toy(actor: Actor, item_id: String) -> String:
+	var why := ""
+	var at := Vector3.INF
+	var heading := actor.cmd.yaw if actor != null else 0.0
+	var room: Vector3 = ItemDB.item_stats(item_id).get("footprint", toy_room)
+	if actor == null or actor != player or actor.is_dead:
+		why = "not now"
+	elif item_id not in watch_vehicles():
+		why = "That is not on your watch"
+	elif actor.vehicle != null:
+		why = "Get off first"
+	else:
+		at = toy_spot(actor, room)
+		if at == Vector3.INF:
+			why = "No room there"
+	if why != "":
+		if actor != null:
+			actor.notice.emit(why)
+		return why
+	var vehicle: Node3D = VehicleScript.new()
+	vehicle.name = "Out_%s" % item_id
+	vehicle.setup(item_id)
+	vehicle.set("local_only", true)
+	vehicle.rotation.y = heading
+	add_child(vehicle)
+	vehicle.global_position = at + Vector3(0.0, 0.25, 0.0)
+	vehicle.call("unpack")
+	out_vehicles[item_id] = vehicle
+	return ""
+
+
+## Where a vehicle needing `room` unpacks for `actor`: on the floor along
+## their aim, short of any wall, or `Vector3.INF` if it does not fit.
+func toy_spot(actor: Actor, room: Vector3) -> Vector3:
+	var space := get_world_3d().direct_space_state
+	var flat := Vector3(actor.get_aim_dir().x, 0.0, actor.get_aim_dir().z)
+	if flat.length() < 0.01:
+		flat = Vector3(-sin(actor.cmd.yaw), 0.0, -cos(actor.cmd.yaw))
+	flat = flat.normalized()
+	var chest := actor.global_position + Vector3(0.0, 1.0, 0.0)
+	var reach := toy_reach
+	var wall := space.intersect_ray(PhysicsRayQueryParameters3D.create(chest, chest + flat * reach, Actor.LAYER_WORLD))
+	if not wall.is_empty():
+		reach = chest.distance_to(wall.position) - room.z * 0.5 - 0.3
+	# Out from under the thrower's own feet, then as far as it goes.
+	var near := room.z * 0.5 + 1.2
+	var d := reach
+	while d >= near:
+		var over := chest + flat * d
+		var hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(over, over + Vector3.DOWN * 4.0, Actor.LAYER_WORLD))
+		if not hit.is_empty() and Raid.room_to_unpack(space, hit.position, actor.cmd.yaw, room):
+			return hit.position
+		d -= 0.75
+	return Vector3.INF
+
+
+## Packs the vehicle `actor` is looking at back onto the watch, if it is one
+## of theirs out in the base with nobody on it. "" if it was packed.
+func pack_vehicle(actor: Actor) -> String:
+	var seat := actor.find_interactable() if actor != null and actor.vehicle == null else null
+	var vehicle: Variant = seat.get("vehicle") if seat != null else null
+	var id := ""
+	for key: String in out_vehicles:
+		if out_vehicles[key] == vehicle:
+			id = key
+	if id == "" or vehicle.get("rider") != null:
+		var why := "Look at a vehicle to pack it" if id == "" else "Someone is riding it"
+		if actor != null:
+			actor.notice.emit(why)
+		return why
+	out_vehicles.erase(id)
+	vehicle.queue_free()
+	actor.notice.emit("Packed %s onto your watch" % ItemDB.item_name(id))
+	return ""

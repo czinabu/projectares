@@ -2500,8 +2500,7 @@ func _test_vehicle_roster() -> void:
 		rider.velocity = Vector3.ZERO
 		await frames(10)
 
-	# On the watch: heavier vehicles take longer to recharge, and jets only
-	# fly where the sky is open.
+	# On the watch: heavier vehicles take longer to recharge.
 	var world := Worlds.get_world("ashfront")
 	var raid := Raid.new()
 	add_child(raid)
@@ -2512,12 +2511,6 @@ func _test_vehicle_roster() -> void:
 			and raid.toy_recharge("mech_bulwark") > raid.toy_recharge("rover_warden"),
 			"heavier vehicles take longer for the watch to recharge")
 	var p := raid.player
-	check(world.open_skies, "Ashfront's open sky takes a jet")
-	world.open_skies = false
-	check(raid.throw_toy(p, "jet_kestrel").begins_with("No open sky") and raid.stowed_for(p).has("jet_kestrel"),
-			"a world without open skies keeps the jet on the watch")
-	world.open_skies = true
-	check(not Worlds.get_world("plaza").open_skies, "the plaza has no sky for jets")
 	raid.queue_free()
 	arena.queue_free()
 	await frames(2)

@@ -285,8 +285,17 @@ the storage behind it.
 - **The same in both views:** a weapon digitizes into the one real hand
   under a shimmer of light, and the carried weapons stand over the card as
   small holograms of their real models.
-- **Gearing up stays at the base locker.** The watch only handles what is
-  on you.
+- **Everywhere (Caleb's call).** Every vehicle, the jet included, can be
+  thrown in every world, the plaza too, and a weapon in the pack can be
+  summoned there (in the plaza it stays locked like every weapon).
+- **At home it is the whole collection.** In the home base nothing is at
+  stake, so the carousel turns through every weapon and vehicle you own: a
+  vehicle thrown there unpacks to ride round the base and packs back onto
+  the watch, and a weapon picked is equipped. Out in a world it is only what
+  you carry.
+- **The heavy chamber.** A heavy weapon found in the world is scanned into
+  the watch and summoned from the weapon carousel, never drawn by a key
+  (section 6).
 
 ### What the watch holds
 
@@ -590,7 +599,8 @@ world**.
   chamber**. This replaces the swap racks: there is no rack to trade at.
 - The chamber holds **one** heavy weapon. Finding another while full offers a
   swap: the old one is left where the new one was.
-- **Summoning** it (key 4, or from the watch) materialises it in your hands.
+- **Summoning** it from the watch's weapon carousel materialises it in your
+  hands (no key draws it, Caleb's call).
   Your primary is not dropped or deleted; it is put away.
 - When its ammo is spent it dissolves and your previous weapon comes back by
   itself. Putting it away early returns it to the chamber with the shots it
@@ -748,7 +758,7 @@ them simply wins:
 | Motorbike | No cover: the rider is fully exposed, and it is loud | Shoot the rider; a dive or a melee air-lunge knocks them off |
 | Rover | Big and slow to turn, needs open ground; the turret gunner's head shows | Heavy weapons, flanking fliers above its turret's arc, and its wheels can be disabled |
 | Mech | A rear power unit that takes extra damage, slow turning, and a long watch recharge | Get behind it: boots and wings outmanoeuvre it, and a heavy weapon in the back breaks it |
-| Jet | Fragile, cannot hover, and only in worlds with big open skies (a `WorldDef` setting); its missiles lock on with a warning the target feels | Flares (section 4) break locks, heavy weapons and a hovering jetpack can hit it on its strafing pass |
+| Jet | Fragile and cannot hover; its missiles lock on with a warning the target feels | Flares (section 4) break locks, heavy weapons and a hovering jetpack can hit it on its strafing pass |
 
 More on each:
 

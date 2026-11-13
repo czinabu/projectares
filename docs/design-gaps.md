@@ -37,6 +37,7 @@ rows marked **pre-playtest** come before the friends playtest.
 | Item | State | Notes |
 | --- | --- | --- |
 | Watch card in three tabs: Summon (weapons, vehicles, artifacts, with the pack's line), Status (map, standing), Mission (contract, ping, sign-out/banking) | Built | `Hud.Wrist.TABS` and `Hud.watch_slots`: a card-sized hologram over the wrist; the mouse wheel steps across the icons tab after tab (`PlayerController.watch_focus`), turning through the weapons, toys and artifacts carried on their icons, and the open one shows its line. Contextual pop-ups only while they matter: the death report and landing choices when down, the rig's cue while flying (where the visor is not showing it), a brief notice. |
+| Summon in every world and at home | Built | Jets are thrown in every world (no `open_skies` gate) and summons work in the plaza. At home the carousel lists every weapon and vehicle owned (`HomeBase.watch_weapons`, `watch_vehicles`): vehicles unpack to be ridden in the base (`HomeBase.throw_toy`, `pack_vehicle`), a weapon picked is equipped. |
 | Summon carousel: weapons materialize out of the pack | Built | MVP. `Raid.summon` (server only, `NetSession.summon`) swaps a gun or melee weapon from the pack into the hand in place of the one worn in its slot, which goes into the pack with its rounds. Only what is carried, never the stash. `Loadout.summon_time` (heavier is slower; the weapon cannot be used until it is solid) and a watch rest of `Loadout.summon_cooldown`. The weapon digitizes in on the one body (`ActorSkin._update_materialize`), so both views and everyone see it. Missing: its own sound, armor or rig swaps. |
 | Contract tracker on the watch | Built | On the Mission tab (`Hud.contract_slot`): the job nearest done, with this life's progress on top. |
 | Vitals, heat and ammo always in view, off the watch | Built | First person with a helmet: health, armor and stamina arcs, heat gauge and the ability's state at the visor edges (`VisorHud._draw_vitals`, `_draw_heat`). Ammo is on the gun's counter. With no helmet, or in third person, the watch card carries the vitals as a thin strip. |
@@ -44,7 +45,7 @@ rows marked **pre-playtest** come before the friends playtest.
 | Banking readout on the watch | Missing | Banking happens at depots; the watch should show what is banked. Comes with banking. |
 | Landing choices | Built | |
 | Vehicle carousel (toys) | Built | Pick, throw, unpack, pack back; holds two. |
-| Heavy weapon chamber | Missing | Today a power weapon fills key 4 from a rack. **Pre-playtest.** |
+| Heavy weapon chamber | Partly | A heavy weapon is scanned into the watch and summoned from its weapon carousel; key 4 is gone. Missing: banking it and dropping it in the bag (see Heavy weapons below). |
 | Per-rig readouts (stall line, height band, dash pips) | Missing | Now part of the flight HUD (see Flight): at the visor edge and on the rig, not the watch. Comes with the aerial rig rework. **Pre-playtest.** |
 | Sign-out from the watch, with its countdown | Partly | Sign-out exists on L; not on the watch. |
 | Loadout swapping from the watch in the PvE world | Missing, deferred | With the PvE world. Today loadouts change only in a lobby or base. |
@@ -85,8 +86,8 @@ rows marked **pre-playtest** come before the friends playtest.
 | --- | --- | --- |
 | Heavy weapons as data, splash through `Combat.deal` | Built | Rail Lance, Helion, Arc Mortar, Storm Cannon. |
 | Found at strongpoints, by pods, more as the war heats | Built | `PowerArmory`. Today they sit on swap racks. |
-| Scanned into the watch chamber instead of swapped at a rack | Missing | **Pre-playtest.** |
-| Summon without dropping the primary; auto-return when spent | Partly | Key 4 switches to it and the primary is kept. Check that a spent one returns the previous weapon by itself. |
+| Scanned into the watch chamber instead of swapped at a rack | Partly | Using the spot where one lies scans it into the chamber (`LootContainer._rack_swap` with `Loadout.set_power(..., draw = false)`); a second swaps, leaving the old one there with its shots. Missing: the spot still looks like a rack. |
+| Summon without dropping the primary; auto-return when spent | Built | Drawn only from the watch's weapon carousel (no key 4), materializing over `Loadout.summon_time` like any summon; the primary is kept, and a spent one is thrown away with your own weapon back in hand. |
 | Banked by depot or sign-out to the armory wall | Missing | Needs `StashRules.storable` to accept `power`, and the `CLAUDE.md` power weapon rule rewritten. **Pre-playtest.** |
 | Deploy with one from the wall (one per outing) | Missing | **Pre-playtest.** Open decision in DESIGN.md section 13. |
 | Dropped with your bag on death | Partly | Today a dead player's power weapon is left on a rack. |
@@ -116,7 +117,7 @@ rows marked **pre-playtest** come before the friends playtest.
 | Cargo space while riding | Missing | After the playtest. |
 | Mobile cover | Missing | Rover and mech; the bike gives none by design. |
 | Per-vehicle watch recharge (heavier is slower) | Built | A `watch_recharge` stat (`Raid.toy_recharge`): bike 8 s, rover 20 s, jet 40 s, mech 45 s. |
-| Rover, mech and jet | Partly | Drivable first versions on the one `Vehicle` class: Warden Rover (23 m/s, slow to turn, driver's seat on the left), Bulwark Mech (9 m/s, turns on the spot, jump-jet hop) and Kestrel Jet (takes off past 24 m/s, cannot hover, 120 m ceiling, only where `WorldDef.open_skies`). Greybox models. Missing: their weapons, passengers, armor and weak spots, vehicle health, The rover can be found parked in Ashfront; the mech and the jet are built at the fabricator from their blueprints, which warlords and supply pods carry. |
+| Rover, mech and jet | Partly | Drivable first versions on the one `Vehicle` class: Warden Rover (23 m/s, slow to turn, driver's seat on the left), Bulwark Mech (9 m/s, turns on the spot, jump-jet hop) and Kestrel Jet (takes off past 24 m/s, cannot hover, 120 m ceiling, thrown in any world). Greybox models. Missing: their weapons, passengers, armor and weak spots, vehicle health, The rover can be found parked in Ashfront; the mech and the jet are built at the fabricator from their blueprints, which warlords and supply pods carry. |
 
 ## Racing
 
