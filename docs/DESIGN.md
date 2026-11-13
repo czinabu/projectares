@@ -93,14 +93,21 @@ canopy, holo signs over every kiosk and floating holo-ads.
 ### Home base
 
 - The stash on show: every weapon (long guns, sidearms, melee) on one rack
-  in the armory, an alcove off the main room with the gunsmith bench in its
-  middle and the locker at its way in; armor stands, rigs, ability chips,
+  in the armory, an alcove off the main room with the locker at its way in
+  and the gunsmith bench in a workshop corner of its own off to the side;
+  armor stands, rigs, ability chips,
   bikes in the garage, loot on shelves and trophies in the main room.
 - **Heavy weapons banked from the PvP world hang on the armory wall** and can
   be stacked there (see section 6).
 - Consoles do what menus would: launch pad, locker, gunsmith bench (crafting
   from blueprints, section 10), mastery bench, wardrobe, records, trader,
   uplink, arena gate.
+- The gunsmith bench holds one gun at a time. Walk up and use it and the view
+  moves in to the bench: the mouse wheel turns through the guns you own, a
+  click picks one, then the wheel moves between its attachment slots and
+  turns through what you own for each, every change shown on the gun on the
+  bench before you pick it. A card on the bench behind the gun lists the
+  slots and what the attachments change. Attachments are not hung on show.
 - Loadouts can be changed freely here, and only here: the base is where you
   suit up. A suit-up bay beside the launch pad fits your loadout onto you in
   view before you deploy.
@@ -111,7 +118,7 @@ canopy, holo signs over every kiosk and floating holo-ads.
 everything it takes to play (deploy, change loadout, trade, mastery picks,
 fit attachments, go online) and little on show: a short weapon rack in an
 armory nook (4 long guns, 2 sidearms, 2 melee), one garage bay, one armor
-stand and one rig stand, a small pegboard and supplies shelf, and the mastery
+stand and one rig stand, a small supplies shelf, the gunsmith's workshop, and the mastery
 bench and records sharing the trader's and the wardrobe's consoles. Each
 upgrade is a one-off scrip purchase kept on the account (never in the stash,
 never lost), bought in the room at the sealed bulkhead it opens: look at it
@@ -123,11 +130,11 @@ has. Prices are placeholders until a playtest measures scrip per life.
 
 | Track | Upgrade | Scrip | Needs | Adds |
 | --- | --- | --- | --- | --- |
-| Armory | Armory alcove | 1,200 | | The full rack: 12 long guns, 8 sidearms, 6 melee; the bench moves inside |
+| Armory | Armory alcove | 1,200 | | The full rack: 12 long guns, 8 sidearms, 6 melee |
 | Armory | Heavy weapon wall | 4,000 | Armory alcove | Banked heavy weapons (section 6). Not built yet |
 | Garage | Second bay | 600 | | 2 vehicles on show |
 | Garage | Full garage | 2,000 | Second bay | 4 bays and a lift that turns the first bike |
-| Gunsmith | Workshop bench | 3,000 | Armory alcove | A bigger pegboard (12 attachments) |
+| Gunsmith | Workshop bench | 3,000 | Armory alcove | A bigger bench: a parts cabinet and a second lamp (looks only) |
 | Gunsmith | Master bench | 8,000 | Workshop bench | Looks only |
 | Halls | Gear hall | 1,000 | | 6 armor stands, 4 rig stands, the chip case |
 | Halls | Trophy hall | 1,500 | | The trophy shelf and a full supplies shelf |
@@ -139,7 +146,7 @@ has. Prices are placeholders until a playtest measures scrip per life.
 
 Crafting tiers are not gated by the bench upgrades: any bench crafts Mk2 and
 Mk3 for a small scrip fee per craft (section 10). The crafting console, the
-fabricator, stands behind the bench's pegboard and moves with the bench.
+fabricator, stands beside the bench in the gunsmith's workshop.
 
 The bigger upgrades, which turn the base from a display room into a
 headquarters, in the order they are built:
@@ -281,18 +288,54 @@ frames or tints the view, and the same readings with no helmet worn appear
 on the gear alone (the gun and the pack). They show only your own state,
 never an enemy's.
 
+### The summon carousel (Caleb's call)
+
+Raising the watch opens a holo carousel, like pulling gear out of thin air:
+scroll through what you carry and pick it, and it materializes. The pack is
+the storage behind it.
+
+- **Only what you carry.** The carousel shows your loadout and your pack,
+  never the stash. Whatever you can summon is still what you drop when you
+  die, so the extraction stakes stay. The pack's capacity still applies: a
+  summoned weapon swaps places with the one worn in its slot, which goes into
+  the pack with the rounds it had.
+- **Three tabs**, stepped through with the mouse wheel:
+  - **Summon:** weapons (worn ones are drawn with a click, ones in the pack
+    are materialized into your hand), vehicles (the toy carousel) and
+    artifacts (the attuned one is used; others carried are shown but stay
+    loot, one per outing). The pack's fill, worth, heals and scrip sit under
+    the tab, so there is no separate pack page.
+  - **Status:** the map and where the war is, your standing and the hunted
+    warning, under the vitals strip where the visor cannot show it.
+  - **Mission:** the contract tracker, a
+    squad ping, and sign-out and banking.
+- **Pop-ups only while they matter:** the death report and landing choices
+  when you go down, the flight rig's status while flying, and a brief notice.
+- **Balance:** a weapon takes time to materialize by weight (a sidearm about
+  half a second, a rifle about a second, two-handers and marksman rifles
+  longer) and cannot be used until it is solid; then the watch rests for a
+  few seconds before the next. Vehicles keep their own recharge. So nobody
+  swaps for free mid-gunfight.
+- **The same in both views:** a weapon digitizes into the one real hand
+  under a shimmer of light, and the carried weapons stand over the card as
+  small holograms of their real models.
+- **Gearing up stays at the base locker.** The watch only handles what is
+  on you.
+
 ### What the watch holds
 
 | Feature | What it does |
 | --- | --- |
+| Weapon carousel | The weapons worn and in the pack: draw one worn, or materialize one from the pack (above). |
 | Vehicle carousel | The permanent garage: swipe through your vehicles, take one as a toy in your hand, throw it to unpack the full-size vehicle. Packs vehicles back up. |
 | Heavy weapon chamber | Holds one heavy weapon (section 6). |
 | Artifact | Holds and uses your one artifact for the outing (section 6). |
 | Sign-out | Starting a sign-out and its countdown (section 7). |
 | Banking | Banking at a depot and what is banked so far (section 7). |
-| Map and pings | The map, standing, strongpoints, and pings to your squad. |
+| Map and pings | The map, standing, strongpoints, and pings to your squad (the ping marks where you look, for your side only). |
+| Contract tracker | Your active contracts, on the Mission tab (section 10). |
 | Landing choices | Where to drop back in after dying. |
-| Pack | What you carry, your weight tier (section 4), and the rig readout for the pack's detail (section 5). |
+| Pack | What you carry, folded into the Summon tab: its fill, worth, heals and scrip, and later your weight tier (section 4). |
 
 Watch skins are cosmetics, shown off in the hub.
 
@@ -862,7 +905,7 @@ shared by solo and online play like the money rules.
 - Each craft also takes parts: the materials already found as loot (scrap
   metal, circuit boards, power cells, alloy ingots, reactor cores). Loot is
   now worth keeping as well as selling.
-- You craft at the fabricator, a console behind the bench's pegboard. Its
+- You craft at the fabricator, a console beside the bench. Its
   screen lists every recipe with what it costs against what you hold;
   recipes whose blueprint you have not found are listed dim, so you know
   what is out there.

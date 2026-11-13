@@ -40,9 +40,10 @@ const KINDS := {
 		"per_copy": true, "title": "Garage"},
 	"supplies": {"tag": "consumable", "spots": 6, "starter": 3, "steps": {"trophy_hall": 6},
 		"per_copy": false, "title": "Supplies"},
-	# Optics, muzzles, grips and magazines hang on the gunsmith bench's pegboard.
-	"gunsmith": {"tag": "attachment", "spots": 12, "starter": 4, "steps": {"bench_workshop": 12},
-		"per_copy": false, "title": "Gunsmith bench"},
+	# Optics, muzzles, grips and magazines are not hung up: they are kept at
+	# the gunsmith bench and turned through there, one slot at a time, on the
+	# one gun on the bench ("at_bench": no spots, nothing stored away).
+	"gunsmith": {"tag": "attachment", "spots": 0, "starter": 0, "per_copy": false, "title": "Gunsmith bench", "at_bench": true},
 	# Anything else worth keeping: materials, relics, augments.
 	"trophy": {"tag": "", "spots": 8, "starter": 0, "steps": {"trophy_hall": 8},
 		"per_copy": false, "title": "Trophy shelf"},
@@ -70,6 +71,12 @@ const ARMORY: Array[String] = ["rack_guns", "rack_sidearms", "rack_melee"]
 ## True if this display kind is a section of the armory rack.
 static func is_armory(kind: String) -> bool:
 	return KINDS.has(kind) and bool(KINDS[kind].get("armory", false))
+
+
+## True if this kind is kept at the gunsmith bench rather than on show: it
+## has no spots, and the bench lists what the stash holds of it.
+static func is_at_bench(kind: String) -> bool:
+	return KINDS.has(kind) and bool(KINDS[kind].get("at_bench", false))
 
 
 ## The display kind an item belongs to, by its tags.
@@ -103,6 +110,8 @@ static func plan(stash: Array, loadout: Dictionary, upgrades: Array = []) -> Arr
 	var out: Array[Dictionary] = []
 	var by_kind := _sorted_by_kind(stash)
 	for kind: String in KINDS:
+		if is_at_bench(kind):
+			continue
 		var ids: Array = by_kind.get(kind, [])
 		var room := spots(kind, upgrades)
 		# Only one copy can be equipped, so only the first spot shows it.
@@ -130,6 +139,8 @@ static func stored_away(stash: Array, upgrades: Array = []) -> Dictionary:
 	var out := {}
 	var by_kind := _sorted_by_kind(stash)
 	for kind: String in by_kind:
+		if is_at_bench(kind):
+			continue
 		var extra: int = by_kind[kind].size() - spots(kind, upgrades)
 		if extra > 0:
 			out[kind] = extra

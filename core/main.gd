@@ -33,6 +33,7 @@ const PhoneScript := preload("res://core/phone/phone.gd")
 const MirrorScript := preload("res://core/visual/mirror.gd")
 const GameSettings := preload("res://core/settings/game_settings.gd")
 const BaseHudScript := preload("res://core/ui/base_hud.gd")
+const BenchViewScript := preload("res://core/ui/bench_view.gd")
 const ArenaHudScript := preload("res://core/arena/arena_hud.gd")
 ## The arena listens this many ports above the raid server.
 const ARENA_PORT_OFFSET := 10
@@ -72,6 +73,8 @@ var mirror: Node3D
 ## The home base while the player is walking around it, else null.
 var base: HomeBase
 var base_hud: CanvasLayer
+## The view at the gunsmith bench while the player works it, else null.
+var bench_view: Node3D
 var plaza_view: CanvasLayer
 ## The shop screen while trading at a plaza storefront, else null.
 var shop_view: ShopView
@@ -228,6 +231,7 @@ func _open_base(stash: Array, loadout: Dictionary, owner_name: String, upgrades:
 	base.upgrade_requested.connect(_on_base_upgrade)
 	base.leave_requested.connect(_on_base_door)
 	base.station_requested.connect(open_station)
+	base.bench_used.connect(open_bench)
 	base.player_replaced.connect(func(_actor: Actor) -> void: _attach_base_view())
 	_attach_base_view()
 	base_hud = BaseHudScript.new()
@@ -270,6 +274,7 @@ func leave_base() -> void:
 	base.queue_free()
 	base = null
 	base_hud = null
+	bench_view = null
 	controller = null
 
 
@@ -317,6 +322,34 @@ func head_out() -> void:
 		join_online(Profile.home_server, false)
 	else:
 		host_and_join()
+
+
+## The gunsmith bench was taken up: the view moves in to it and the mouse
+## works it until the player steps away (`BenchView`).
+func open_bench() -> void:
+	if base == null or base.read_only or bench_view != null:
+		return
+	bench_view = BenchViewScript.new()
+	bench_view.name = "BenchView"
+	bench_view.base = base
+	bench_view.closed.connect(_on_bench_closed)
+	base.add_child(bench_view)
+	bench_view.focus()
+	if base_hud:
+		base_hud.visible = false
+	if controller != null and is_instance_valid(controller):
+		controller.input_blocked = true
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+
+
+## Stepped away from the bench: the room takes the mouse back.
+func _on_bench_closed() -> void:
+	bench_view = null
+	if base_hud:
+		base_hud.visible = true
+	if controller != null and is_instance_valid(controller) and not phone.is_open:
+		controller.input_blocked = false
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 
 ## A station in your base opens its screen over the room.
@@ -520,6 +553,8 @@ func _attach_player_view() -> void:
 	controller.drop_requested.connect(func(index: int) -> void: _on_drop_requested.call_deferred(index))
 	controller.toy_throw_requested.connect(_on_toy_throw_requested)
 	controller.pack_requested.connect(_on_pack_requested)
+	controller.summon_requested.connect(_on_summon_requested)
+	controller.ping_requested.connect(_on_ping_requested)
 	raid.add_child(controller)
 	hud = Hud.new()
 	hud.setup(raid, controller)
@@ -617,6 +652,27 @@ func _on_toy_throw_requested(item_id: String) -> void:
 		raid.throw_toy(raid.player, item_id)
 
 
+## The player picked a weapon in their pack on the watch. The world decides
+## whether it materializes.
+func _on_summon_requested(item_id: String) -> void:
+	if raid == null or raid.player == null or not is_instance_valid(raid.player):
+		return
+	if net:
+		net.summon(item_id)
+	else:
+		raid.summon(raid.player, item_id)
+
+
+## The player pinged where they are looking, from the watch.
+func _on_ping_requested() -> void:
+	if raid == null or raid.player == null or not is_instance_valid(raid.player):
+		return
+	if net:
+		net.ping()
+	else:
+		raid.ping(raid.player)
+
+
 ## The player asked to pack the vehicle they are looking at onto their watch.
 func _on_pack_requested() -> void:
 	if raid == null or raid.player == null or not is_instance_valid(raid.player):
@@ -692,7 +748,8 @@ func _on_phone_opened(open: bool) -> void:
 	if controller != null and is_instance_valid(controller):
 		# A station screen still open behind the phone keeps the mouse.
 		var arena_hud := raid.get_node_or_null("ArenaHud") if raid != null else null
-		var screen_open: bool = hub.station != "" or shop_view != null or (arena_hud != null and arena_hud.booth_open)
+		var screen_open: bool = hub.station != "" or shop_view != null or bench_view != null \
+				or (arena_hud != null and arena_hud.booth_open)
 		controller.input_blocked = open or screen_open
 		controller.phone_out = open
 		if phone != null:

@@ -34,7 +34,7 @@ const UPGRADES := {
 	"garage_full": {"title": "Full garage", "track": "Garage", "price": 2000, "needs": ["bay_second"],
 		"adds": "4 bays and a lift that turns\nyour best vehicle"},
 	"bench_workshop": {"title": "Workshop bench", "track": "Gunsmith", "price": 3000, "needs": ["armory_alcove"],
-		"adds": "A bigger pegboard: 12 attachments"},
+		"adds": "A bigger bench: a parts cabinet\nand a second lamp"},
 	"bench_master": {"title": "Master bench", "track": "Gunsmith", "price": 8000, "needs": ["bench_workshop"],
 		"adds": "A master gunsmith's bench"},
 	"gear_hall": {"title": "Gear hall", "track": "Halls", "price": 1000,

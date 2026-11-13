@@ -92,6 +92,14 @@ func _ready() -> void:
 		get_tree().quit()
 		return
 
+	# `-- <output_dir> --bench-only` shoots the gunsmith's workshop off the
+	# armory and the bench in use: at rest, turning through the guns, and
+	# turning through an attachment slot, as the player sees it.
+	if "--bench-only" in args:
+		await _bench_shots(out_dir)
+		get_tree().quit()
+		return
+
 	# `-- <output_dir> --crafting-only` shoots the fabricator on the gunsmith
 	# bench: in the starter bunker, in the armory, and its screen in use.
 	if "--crafting-only" in args:
@@ -335,6 +343,9 @@ func _watch_shots(out_dir: String) -> void:
 			bot.get_node("Brain").set_physics_process(false)
 		raid.state_for(raid.player).stowed.append("bike_raider")
 		var p := raid.player
+		# Loot in the pack for the carousel: two weapons, an artifact, scrap.
+		for id: String in ["rifle_carbine", "knife_gutter", "artifact_cloak", "scrap_metal"]:
+			p.inventory.add_item(id)
 		p.health.health = p.health.max_health * 0.6
 		p.stamina = p.max_stamina * 0.4
 		p.flight.heat = p.flight.max_heat * 0.55
@@ -356,10 +367,48 @@ func _watch_shots(out_dir: String) -> void:
 				controller.watch_focus_moved = true
 				await _settle(4)
 				await _shot(out_dir.path_join("watch_look_%s.png" % Hud.Wrist.SLOTS[i]))
+			# The weapon carousel on a weapon in the pack.
+			controller.watch_focus = Hud.Wrist.SLOTS.find("weapon")
+			controller.weapon_pick = 3
+			await _settle(20)
+			await _shot(out_dir.path_join("watch_carousel_pack_weapon.png"))
 			controller.watch_focus_moved = false
 		controller.toggle_view()
 		await _settle(40)
 		await _shot(out_dir.path_join("watch_third_%s.png" % tag))
+		if helmet == "":
+			# Third person on the carousel, then the summon: the carbine
+			# digitizing into the hand, part way and done, in both views.
+			controller.watch_focus = Hud.Wrist.SLOTS.find("weapon")
+			controller.watch_focus_moved = true
+			controller.weapon_pick = 3
+			await _settle(20)
+			await _shot(out_dir.path_join("watch_carousel_third.png"))
+			controller.wrist_raised = false
+			await _settle(30)
+			raid.summon(p, "rifle_carbine")
+			# Held half way through materializing for the picture.
+			p.materialize_time = 30.0
+			p.materialize_left = 15.0
+			await _settle(10)
+			await _shot(out_dir.path_join("summon_third_half.png"))
+			p.materialize_left = 0.0
+			await _settle(30)
+			await _shot(out_dir.path_join("summon_third_done.png"))
+			controller.toggle_view()
+			raid.state_for(p).summon_ready_at = -INF
+			await _settle(40)
+			raid.summon(p, "rifle_scrap")
+			p.materialize_time = 30.0
+			p.materialize_left = 15.0
+			await _settle(10)
+			await _shot(out_dir.path_join("summon_first_half.png"))
+			p.materialize_left = 0.0
+			p.cmd.pitch = -0.25
+			await _settle(10)
+			raid.ping(p)
+			await _settle(20)
+			await _shot(out_dir.path_join("ping_first.png"))
 		raid.queue_free()
 		await _settle(3)
 	await _base_watch_shots(out_dir)
@@ -748,8 +797,8 @@ func _base_shots(out_dir: String) -> void:
 		"base_armor.png": [Vector3(-5.5, 2.0, -2.0), Vector3(-5.5, 1.1, -8.5)],
 		"base_rigs.png": [Vector3(5.5, 2.0, -2.0), Vector3(5.5, 1.1, -8.5)],
 		"base_garage.png": [Vector3(5.0, 2.6, 1.0), Vector3(16.0, 0.8, 0.0)],
-		"base_range.png": [Vector3(0.0, 2.2, -8.0), Vector3(0.0, 1.4, -30.0)],
-		"base_range_lane.png": [Vector3(-2.5, 1.8, -12.0), Vector3(1.0, 2.5, -30.0)],
+		"base_range.png": [Vector3(0.0, 2.2, -14.0), Vector3(0.0, 1.4, -40.0)],
+		"base_range_lane.png": [Vector3(-2.5, 1.8, -18.0), Vector3(1.0, 2.5, -45.0)],
 		"base_shelves.png": [Vector3(-6.8, 2.0, 3.6), Vector3(-6.8, 1.6, 9)],
 		"base_stations_left.png": [Vector3(-3.5, 2.2, 4.0), Vector3(-11.0, 1.0, 1.0)],
 		"base_stations_right.png": [Vector3(4.0, 2.2, 1.0), Vector3(11.1, 1.0, 6.0)],
@@ -1000,7 +1049,7 @@ func _attachment_shots(out_dir: String) -> void:
 		await _settle(2)
 
 
-## The fabricator behind the bench's pegboard, and the craft screen on it.
+## The fabricator beside the bench, and the craft screen on it.
 func _crafting_shots(out_dir: String) -> void:
 	for full: bool in [false, true]:
 		var base := HomeBase.new()
@@ -1014,10 +1063,10 @@ func _crafting_shots(out_dir: String) -> void:
 		base.player.global_position = Vector3(0, 0.1, 6)
 		await _settle(20)
 		var bench := base.bench_transform()
-		camera.look_at_from_position(bench * Vector3(1.6, 1.9, -3.4), bench * Vector3(0, 1.3, -0.4))
+		camera.look_at_from_position(bench * Vector3(-0.3, 1.9, 1.7), bench * Vector3(2.0, 1.4, 0.8))
 		await _settle(4)
 		await _shot(out_dir.path_join("fabricator_%s.png" % ("armory" if full else "bunker")))
-		camera.look_at_from_position(bench * Vector3(-3.2, 2.2, 3.4), bench * Vector3(0, 1.3, -0.2))
+		camera.look_at_from_position(Vector3(-13.2, 2.2, 1.0), Vector3(-14.4, 1.3, 7.8))
 		await _settle(4)
 		await _shot(out_dir.path_join("fabricator_%s_front.png" % ("armory" if full else "bunker")))
 		base.queue_free()
@@ -1037,6 +1086,57 @@ func _crafting_shots(out_dir: String) -> void:
 	await _shot(out_dir.path_join("fabricator_screen.png"))
 	main.queue_free()
 	await _settle(2)
+
+
+## The gunsmith's workshop off the armory, and the bench in use.
+func _bench_shots(out_dir: String) -> void:
+	var every: Array = ["rifle_carbine", "smg_stinger", "dmr_longshot"]
+	for id: String in ItemDB.all_ids():
+		if ItemDB.has_tag(id, "attachment"):
+			every.append(id)
+	var loadout := {"primary": "rifle_carbine", "optic": "optic_reflex", "grip": "grip_vertical"}
+	for full: bool in [true, false]:
+		var base := HomeBase.new()
+		base.show_gear(every, loadout, BaseUpgrades.full() if full else [])
+		add_child(base)
+		var camera := Camera3D.new()
+		camera.fov = 60.0
+		base.add_child(camera)
+		camera.make_current()
+		base.player.global_position = Vector3(0, 0.1, 6)
+		await _settle(20)
+		var tag := "armory" if full else "bunker"
+		# From the room, through the way into the armory.
+		camera.look_at_from_position(Vector3(-6.0, 2.4, 0.0), Vector3(-16.0, 1.4, 2.5))
+		await _settle(4)
+		await _shot(out_dir.path_join("bench_%s_way_in.png" % tag))
+		# Inside the armory, looking across to the workshop.
+		camera.look_at_from_position(Vector3(-12.8 if not full else -17.0, 2.2, -3.5 if not full else -2.0), Vector3(-14.0, 1.3, 7.5))
+		await _settle(4)
+		await _shot(out_dir.path_join("bench_%s_workshop.png" % tag))
+		if full:
+			var view: Node3D = load("res://core/ui/bench_view.gd").new()
+			view.base = base
+			var at := base.bench_transform()
+			camera.global_transform = Transform3D(Basis.looking_at(at * view.look_at_point - at * view.eye, Vector3.UP), at * view.eye)
+			camera.fov = view.fov
+			view.free()
+			await _settle(4)
+			await _shot(out_dir.path_join("bench_rest.png"))
+			base.use_bench()
+			base.bench_scroll(1)
+			await _settle(6)
+			await _shot(out_dir.path_join("bench_pick_gun.png"))
+			base.bench_select()
+			base.show_gear(every, {"primary": "smg_stinger", "optic": "optic_reflex", "grip": "grip_vertical"})
+			base.bench_scroll(1)
+			base.bench_select()
+			base.bench_scroll(1)
+			base.bench_scroll(1)
+			await _settle(6)
+			await _shot(out_dir.path_join("bench_pick_muzzle.png"))
+		base.queue_free()
+		await _settle(2)
 
 
 ## Aiming down each optic in first person, in a raid, and with iron sights.

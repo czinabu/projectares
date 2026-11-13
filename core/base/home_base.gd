@@ -2,8 +2,8 @@ class_name HomeBase
 extends Node3D
 ## A player's home base: a room you walk around in, with everything in your
 ## stash on show. Every weapon hangs on one rack in the armory, an alcove off
-## the left of the room with the gunsmith bench in its middle and the locker
-## at its entrance. The main room holds armor and flight rigs along the back
+## the left of the room with the locker at its entrance and the gunsmith bench
+## in a workshop corner of its own, off to the side of the way in. The main room holds armor and flight rigs along the back
 ## wall, the garage, the launch pad, ability chips, and shelves for supplies
 ## and loot.
 ##
@@ -37,6 +37,10 @@ signal station_requested(station: String)
 signal upgrade_requested(id: String)
 ## The displays were rebuilt.
 signal gear_shown
+## The player used the gunsmith bench. Whoever drives the player brings the
+## view to the bench and works it with `bench_scroll`, `bench_select`,
+## `bench_back` and `leave_bench`.
+signal bench_used
 ## The player suited up: `player` is now a new actor wearing the loadout.
 ## Whoever drives the player (a controller, a camera) takes it over.
 signal player_replaced(actor: Actor)
@@ -49,7 +53,7 @@ const VehicleScript := preload("res://core/vehicle/vehicle.gd")
 var room_size := Vector3(24.0, 6.0, 18.0)
 ## The armory alcove off the room's left wall (-X): how deep it goes (x), how
 ## high (y) and how wide (z). It is centred on the wall.
-var armory_size := Vector3(7.0, 6.0, 12.0)
+var armory_size := Vector3(10.5, 6.0, 12.0)
 ## How wide the way into the armory is, through the room's left wall.
 var armory_opening := 8.0
 ## Until the armory alcove is bought the armory is a nook this deep, closed
@@ -61,10 +65,11 @@ var garage_size := Vector3(8.0, 6.0, 12.0)
 var garage_opening := 10.0
 ## The firing range behind the back wall (-Z): width (x), height (y) and
 ## length (z), entered through a door `range_door` wide and high.
-var range_size := Vector3(8.0, 10.0, 30.0)
+var range_size := Vector3(12.0, 10.0, 50.0)
 var range_door := Vector2(1.6, 3.0)
-## How far past the back wall the firing line stands.
-var firing_line := 2.0
+## How far past the back wall the firing line stands: a clear lobby between
+## the door and the line.
+var firing_line := 8.0
 var spawn_point := Vector3(0.0, 0.1, 5.5)
 ## Weapons hang a little larger than life so they read from across the room.
 var weapon_scale := 1.5
@@ -73,7 +78,7 @@ var confirm_time := 4.0
 ## How long the full garage's lift takes to turn the bike on it once.
 var lift_turn_time := 16.0
 ## How big the gun in the gunsmith bench's vise is shown.
-var bench_scale := 1.6
+var bench_scale := 1.4
 ## Long guns on the armory's back wall hang bigger still, so they read from
 ## the way in.
 var rack_gun_scale := 2.1
@@ -107,24 +112,27 @@ const STATIONS := {
 	"uplink": {"prompt": "Play online", "title": "Uplink", "at": Vector3(11.1, 0.0, -6.0), "yaw": -PI / 2.0, "color": Color(0.4, 0.95, 1.0)},
 }
 
+## The workshop: the gunsmith's corner, a recess off the armory's left-hand
+## side wall (going in) just inside the way in, behind the room's left wall.
+## It spans these x and z (local to the base), so the bench and the
+## fabricator stand out of the walkway and never hide the rack. It is there
+## in the starter bunker too: the nook's wall stops short of it.
+const WORKSHOP_X := Vector2(-16.0, -12.5)
+const WORKSHOP_Z := Vector2(6.5, 9.0)
 ## The gunsmith bench: where it stands and which way it faces (local +Z is
-## where you stand to use it). It stands in the middle of the armory, long
-## side along it, so from the way in you look past its end to the rack. Its
-## pegboard holds the attachments in the stash and its vise the primary you
-## will deploy with, wearing what is fitted.
-const BENCH_AT := Vector3(-15.6, 0.0, 0.4)
-const BENCH_YAW := 0.0
-## Where the bench stands until the armory alcove is bought: on the room's
-## floor beside the way into the nook, end-on to it so its pegboard does not
-## hide the rack. See `bench_transform`.
-const STARTER_BENCH_AT := Vector3(-9.0, 0.0, -2.8)
-const STARTER_BENCH_YAW := 0.0
-## The fabricator: the crafting console behind the bench's pegboard, in the
-## bench's own space (local +Z is where you stand to use the bench, so the
-## console faces the other way and never hides the rack or the pegboard).
+## where you stand to use it), against the workshop's back wall. One gun sits
+## on it at a time: using the bench brings the view to it, where the wheel
+## turns through your guns and then each attachment slot's choices, shown on
+## the gun as you go (`bench_used`).
+const BENCH_AT := Vector3(-13.75, 0.0, 8.55)
+const BENCH_YAW := PI
+## The fabricator: the crafting console beside the bench, against the
+## workshop's far wall, in the bench's own space (local +Z is where you
+## stand to use the bench). It faces across the workshop toward its way in.
 const CRAFT_ID := "craft"
 const CRAFT_TITLE := "Fabricator"
-const CRAFT_AT := Vector3(0.0, 0.0, -0.75)
+const CRAFT_AT := Vector3(2.0, 0.0, 0.8)
+const CRAFT_YAW := -PI / 2.0
 const CRAFT_COLOR := Color(0.3, 0.9, 1.0)
 ## Until the ops consoles are bought, each of these stations also shows the
 ## station named beside it, which has no console of its own yet.
@@ -180,6 +188,16 @@ var scrip := 0
 var bulkheads: Array[Bulkhead] = []
 ## Everything built from the upgrades, rebuilt when they change.
 var _gated: Array[Node] = []
+## The gunsmith bench in use. While `bench_open`, `bench_row` is the row the
+## bench card points at (0 the gun, then each of `Loadout.ATTACHMENT_SLOTS`)
+## and, while `bench_picking`, the wheel turns through that row's choices
+## and `bench_choice` is the one on show. Nothing is equipped until a choice
+## is picked (`bench_select`), which asks through `equip_requested`. View
+## state only: the loadout stays whatever its owner says it is.
+var bench_open := false
+var bench_row := 0
+var bench_picking := false
+var bench_choice := ""
 
 var _display_root := Node3D.new()
 
@@ -368,9 +386,8 @@ class Bulkhead:
 		status.modulate = Color(0.5, 1.0, 0.6) if why == "" else Color(1.0, 0.8, 0.4)
 
 
-## The gun in the gunsmith bench's vise. Using it puts the next gun from the
-## rack in the vise as your primary, so any gun can be fitted out here.
-class Vise:
+## The gun on the gunsmith bench. Using it takes up the bench (`bench_used`).
+class Bench:
 	extends Interactable
 
 	var base: HomeBase
@@ -379,18 +396,12 @@ class Vise:
 	func get_prompt() -> String:
 		var shown := ItemDB.item_name(item_id)
 		if base == null or base.read_only:
-			return shown
-		var next := base.next_bench_gun()
-		if next == base.loadout.get("primary", ""):
-			return "%s in the vise" % shown
-		var next_name := ItemDB.item_name(next if next != "" else HomeBase.starter_primary())
-		return "[F] Next gun in the vise: %s" % next_name
+			return "%s on the bench" % shown
+		return "[F] %s: pick your gun and fit it out" % base.bench_name()
 
 	func interact(_actor: Actor) -> void:
-		if base and not base.read_only:
-			var next := base.next_bench_gun()
-			if next != base.loadout.get("primary", ""):
-				base.equip_requested.emit("primary", next)
+		if base and not base.read_only and not base.bench_open:
+			base.use_bench()
 
 
 ## The way out.
@@ -493,12 +504,10 @@ func station_title(id: String) -> String:
 	return title
 
 
-## Where the gunsmith bench stands and which way it faces: in the middle of
-## the armory once the alcove is open, in front of the nook until then.
+## Where the gunsmith bench stands and which way it faces: in the workshop,
+## the same place in the starter bunker and the full armory.
 func bench_transform() -> Transform3D:
-	if owns("armory_alcove"):
-		return _spot(BENCH_AT, BENCH_YAW)
-	return _spot(STARTER_BENCH_AT, STARTER_BENCH_YAW)
+	return _spot(BENCH_AT, BENCH_YAW)
 
 
 ## A number with thousands separators: 1200 -> "1,200".
@@ -642,10 +651,19 @@ func in_range(point: Vector3) -> bool:
 	return point.z < -wall_z and point.z > -wall_z - range_size.z and absf(point.x) < range_size.x * 0.5
 
 
-## True if `point` (local to the base) is inside the armory alcove.
+## True if `point` (local to the base) is inside the armory alcove or its
+## workshop.
 func in_armory(point: Vector3) -> bool:
 	var wall_x := room_size.x * 0.5
+	if in_workshop(point):
+		return true
 	return point.x < -wall_x and point.x > -wall_x - armory_size.x and absf(point.z) < armory_size.z * 0.5
+
+
+## True if `point` (local to the base) is inside the workshop, the gunsmith's
+## corner off the armory.
+func in_workshop(point: Vector3) -> bool:
+	return point.x > WORKSHOP_X.x and point.x < WORKSHOP_X.y and point.z > WORKSHOP_Z.x - 0.5 and point.z < WORKSHOP_Z.y
 
 
 ## Where a spot is, and which way it faces: local +Z points into the room.
@@ -672,7 +690,11 @@ func spot_transform(kind: String, index: int) -> Transform3D:
 			var row := float(index / 4)
 			return _spot(Vector3(back_x + 1.4 + 1.2 * col, 2.3 - 0.95 * row, -side_z + 0.3), 0.0)
 		"rack_melee":
-			# The armory's left-hand wall: one row, standing upright.
+			# The armory's left-hand wall: one row, standing upright, short of
+			# the workshop's way in. In the nook that wall is the way in, so
+			# its two hang upright on the sealed wall, past the long guns.
+			if not alcove:
+				return _spot(Vector3(back_x + 0.3, 1.3, side_z - 1.6 + 0.9 * i), PI / 2.0)
 			return _spot(Vector3(back_x + 0.6 + 1.05 * i, 1.3, side_z - 0.3), PI)
 		"armor_stand":
 			# The back wall, left of the door to the range.
@@ -689,11 +711,6 @@ func spot_transform(kind: String, index: int) -> Transform3D:
 		"bay":
 			# Side by side in the garage, parked nose-out toward the room.
 			return _spot(Vector3(wall_x + garage_size.x * 0.5, 0.0, -4.2 + 2.8 * i), -PI / 2.0)
-		"gunsmith":
-			# Four across and three up on the pegboard behind the bench.
-			var col := float(index % 4)
-			var row := float(index / 4)
-			return bench_transform() * _spot(Vector3(-0.78 + 0.52 * col, 1.92 - 0.4 * row, -0.36), 0.0)
 		_:
 			return _spot(Vector3(-10.5 + 1.1 * i, 1.1, wall_z - 0.3), PI)
 
@@ -745,29 +762,34 @@ func _build_room() -> void:
 
 ## The armory: an alcove off the left wall with its own floor, walls and
 ## lights, a sign over the way in and a lit sill across it. Its rack is the
-## displays of the `BaseLayout.ARMORY` kinds; the bench stands in its middle.
+## displays of the `BaseLayout.ARMORY` kinds, and the gunsmith's workshop
+## opens off its left-hand wall just inside the way in (`_build_workshop`).
 func _build_armory() -> void:
 	var wall_x := room_size.x * 0.5
 	var depth := armory_size.x
 	var y := armory_size.y
 	var width := armory_size.z
 	var mid_x := -wall_x - depth * 0.5
+	var back := -wall_x - depth
 	_floor(Vector2(depth, width), Vector3(mid_x, 0, 0))
 	_ceiling(Vector2(depth, width), Vector3(mid_x, 0, 0), y)
-	_wall(Vector3(0.5, y, width + 1.0), Vector3(-wall_x - depth - 0.25, y * 0.5, 0), Vector3.RIGHT)
-	for side: float in [-1.0, 1.0]:
-		_wall(Vector3(depth, y, 0.5), Vector3(mid_x, y * 0.5, side * (width * 0.5 + 0.25)), Vector3(0, 0, -side))
+	_wall(Vector3(0.5, y, width + 1.0), Vector3(back - 0.25, y * 0.5, 0), Vector3.RIGHT)
+	# The right-hand side wall runs the whole way; the left-hand one stops at
+	# the workshop's way in.
+	var left_long := WORKSHOP_X.x - back
+	_wall(Vector3(depth, y, 0.5), Vector3(mid_x, y * 0.5, -(width * 0.5 + 0.25)), Vector3.BACK)
+	_wall(Vector3(left_long, y, 0.5), Vector3(back + left_long * 0.5, y * 0.5, width * 0.5 + 0.25), Vector3.FORWARD)
 	var accent := Color(1.0, 0.62, 0.22)
 	# A dark band behind the rack on each wall, so the weapons read as one rack.
 	var band := Color(0.13, 0.13, 0.14)
-	add_child(_part(Vector3(0.04, 2.6, width - 0.6), Vector3(-wall_x - depth + 0.1, 2.0, 0), band))
-	for side: float in [-1.0, 1.0]:
-		add_child(_part(Vector3(depth - 0.8, 2.4, 0.04), Vector3(mid_x - 0.1, 1.9, side * (width * 0.5 - 0.1)), band))
+	add_child(_part(Vector3(0.04, 2.6, width - 0.6), Vector3(back + 0.1, 2.0, 0), band))
+	add_child(_part(Vector3(depth - 0.8, 2.4, 0.04), Vector3(mid_x - 0.1, 1.9, -(width * 0.5 - 0.1)), band))
+	add_child(_part(Vector3(left_long - 0.6, 2.4, 0.04), Vector3(back + left_long * 0.5, 1.9, width * 0.5 - 0.1), band))
 	# A light bar over each wall of the rack, so the weapons are lit from above.
 	var bar_glow := Color(1.0, 0.93, 0.8)
-	add_child(_part(Vector3(0.12, 0.05, width - 0.8), Vector3(-wall_x - depth + 0.35, 3.45, 0), bar_glow, true))
-	for side: float in [-1.0, 1.0]:
-		add_child(_part(Vector3(depth - 1.0, 0.05, 0.12), Vector3(mid_x - 0.1, 3.25, side * (width * 0.5 - 0.35)), bar_glow, true))
+	add_child(_part(Vector3(0.12, 0.05, width - 0.8), Vector3(back + 0.35, 3.45, 0), bar_glow, true))
+	add_child(_part(Vector3(depth - 1.0, 0.05, 0.12), Vector3(mid_x - 0.1, 3.25, -(width * 0.5 - 0.35)), bar_glow, true))
+	add_child(_part(Vector3(left_long - 0.8, 0.05, 0.12), Vector3(back + left_long * 0.5, 3.25, width * 0.5 - 0.35), bar_glow, true))
 	# A lit sill across the way in.
 	var sill := _part(Vector3(0.14, 0.04, armory_opening), Vector3(-wall_x, 0.02, 0), accent, true)
 	sill.name = "ArmorySill"
@@ -778,12 +800,44 @@ func _build_armory() -> void:
 	title.rotation.y = PI / 2.0
 	add_child(title)
 	if Look.enabled:
-		for at: Vector3 in [Vector3(mid_x, 4.6, 0), Vector3(-wall_x - depth + 1.4, 3.2, -3.0),
-				Vector3(-wall_x - depth + 1.4, 3.2, 3.0), Vector3(mid_x, 3.0, -width * 0.5 + 1.2),
-				Vector3(mid_x, 3.0, width * 0.5 - 1.2)]:
+		for at: Vector3 in [Vector3(mid_x, 4.6, 0), Vector3(back + 1.4, 3.2, -3.0),
+				Vector3(back + 1.4, 3.2, 3.0), Vector3(mid_x, 3.0, -width * 0.5 + 1.2),
+				Vector3(back + left_long * 0.5, 3.0, width * 0.5 - 1.2)]:
 			var light := Look.lamp(Color(1.0, 0.92, 0.82), 3.6, 9.0)
 			light.position = at
 			add_child(light)
+	_build_workshop()
+
+
+## The workshop: the gunsmith's corner, a recess off the armory's left-hand
+## wall (`WORKSHOP_X`, `WORKSHOP_Z`) with its own floor, walls, a warm lamp
+## and its name over the way in. The bench and the fabricator stand in it.
+func _build_workshop() -> void:
+	var y := armory_size.y
+	var from_z := armory_size.z * 0.5
+	var size := Vector2(WORKSHOP_X.y - WORKSHOP_X.x, WORKSHOP_Z.y - from_z)
+	var mid := Vector3((WORKSHOP_X.x + WORKSHOP_X.y) * 0.5, 0, (from_z + WORKSHOP_Z.y) * 0.5)
+	_floor(size, mid)
+	_ceiling(size, mid, y)
+	_wall(Vector3(size.x + 1.0, y, 0.5), Vector3(mid.x, y * 0.5, WORKSHOP_Z.y + 0.25), Vector3.FORWARD)
+	_wall(Vector3(0.5, y, size.y + 0.5), Vector3(WORKSHOP_X.x - 0.25, y * 0.5, mid.z + 0.25), Vector3.RIGHT)
+	# The armory's wall carries on over the way in.
+	var head := 3.2
+	_wall(Vector3(size.x, y - head, 0.5), Vector3(mid.x, (y + head) * 0.5, from_z + 0.25), Vector3.FORWARD)
+	var accent := Color(1.0, 0.62, 0.22)
+	# A lit sill across the way in, and the workshop's name over it.
+	var sill := _part(Vector3(size.x, 0.04, 0.14), Vector3(mid.x, 0.02, from_z + 0.25), accent, true)
+	sill.name = "WorkshopSill"
+	add_child(sill)
+	var title := _label("GUNSMITH", accent, 0.36)
+	title.name = "WorkshopSign"
+	title.position = Vector3(mid.x, 3.9, from_z - 0.1)
+	title.rotation.y = PI
+	add_child(title)
+	if Look.enabled:
+		var light := Look.lamp(Color(1.0, 0.9, 0.75), 3.0, 7.0)
+		light.position = Vector3(mid.x, 3.6, mid.z + 0.4)
+		add_child(light)
 
 
 ## The garage: a bay off the right wall, like the armory, where every bike
@@ -844,9 +898,9 @@ func _build_range() -> void:
 	var line_z := -wall_z - firing_line
 	# The firing line: a counter either side of a gap to walk through, and a
 	# stripe on the floor.
-	var counter := (width - 1.4) * 0.5
+	var counter := (width - 3.0) * 0.5
 	for side: float in [-1.0, 1.0]:
-		_box(Vector3(counter, 1.0, 0.5), Vector3(side * (0.7 + counter * 0.5), 0.5, line_z), wall_mat)
+		_box(Vector3(counter, 1.0, 0.5), Vector3(side * (1.5 + counter * 0.5), 0.5, line_z), wall_mat)
 	var stripe := _part(Vector3(width, 0.03, 0.12), Vector3(0, 0.02, line_z - 0.4), accent, true)
 	stripe.name = "FiringLine"
 	add_child(stripe)
@@ -866,7 +920,7 @@ func _build_range() -> void:
 	# line, with the score written on it.
 	var board := Node3D.new()
 	board.name = "ScoreBoard"
-	board.position = Vector3(0, 4.2, line_z - 3.0)
+	board.position = Vector3(0, 4.2, line_z - 4.0)
 	add_child(board)
 	board.add_child(_part(Vector3(4.2, 1.15, 0.12), Vector3(0, 0, -0.08), Color(0.1, 0.11, 0.12)))
 	board.add_child(_part(Vector3(4.0, 0.98, 0.02), Vector3(0, 0, -0.01), Color(0.02, 0.05, 0.07), true))
@@ -881,23 +935,26 @@ func _build_range() -> void:
 	_update_board()
 	_build_targets(line_z)
 	if Look.enabled:
-		for at_z: float in [line_z, line_z - 9.0, line_z - 18.0, line_z - 26.0]:
+		for at_z: float in [-wall_z - 3.0, line_z, line_z - 12.0, line_z - 24.0, line_z - 36.0]:
 			var light := Look.lamp(Color(1.0, 0.94, 0.85), 3.5, 14.0)
 			light.position = Vector3(0, y - 1.0, at_z)
 			add_child(light)
 
 
-## Standing plates at 10, 20 and 27 m, one sliding across the lane at 15 m,
-## and three drones circling high up for shooting from a rig.
+## Standing plates at 10, 20, 30 and 40 m, sliders at 15 and 35 m, and drones
+## circling high up at 14 to 30 m for shooting from a rig.
 func _build_targets(line_z: float) -> void:
 	var specs := [
-		{"at": Vector3(-2.0, 0, line_z - 10.0), "kind": "plate"},
-		{"at": Vector3(2.0, 0, line_z - 20.0), "kind": "plate"},
-		{"at": Vector3(0.0, 0, line_z - 27.0), "kind": "plate"},
+		{"at": Vector3(-3.0, 0, line_z - 10.0), "kind": "plate"},
+		{"at": Vector3(3.0, 0, line_z - 20.0), "kind": "plate"},
+		{"at": Vector3(-2.0, 0, line_z - 30.0), "kind": "plate"},
+		{"at": Vector3(0.0, 0, line_z - 40.0), "kind": "plate"},
 		{"at": Vector3(0.0, 0, line_z - 15.0), "kind": "slider"},
+		{"at": Vector3(0.0, 0, line_z - 35.0), "kind": "slider"},
 		{"at": Vector3(0.0, 6.0, line_z - 18.0), "kind": "drone", "phase": 0.0},
-		{"at": Vector3(0.0, 7.0, line_z - 22.0), "kind": "drone", "phase": TAU / 3.0},
+		{"at": Vector3(0.0, 7.0, line_z - 26.0), "kind": "drone", "phase": TAU / 3.0},
 		{"at": Vector3(0.0, 5.0, line_z - 14.0), "kind": "drone", "phase": TAU * 2.0 / 3.0},
+		{"at": Vector3(0.0, 7.0, line_z - 30.0), "kind": "drone", "phase": TAU / 2.0},
 	]
 	for spec: Dictionary in specs:
 		var target := RangeTarget.new()
@@ -1211,6 +1268,11 @@ func _build_gates() -> void:
 		_keep(_part(Vector3(0.04, 2.6, armory_size.z - 0.6), Vector3(x + 0.02, 2.0, 0), Color(0.13, 0.13, 0.14)))
 		for y: float in [0.12, 3.9]:
 			_keep(_part(Vector3(0.05, 0.14, armory_size.z - 0.6), Vector3(x + 0.03, y, 0), hazard, true))
+		# The workshop's way in is wider than the nook: wall off the part of it
+		# past the sealed wall, so it leads only into the nook.
+		var cut := x - WORKSHOP_X.x
+		if cut > 0.0:
+			_gated.append(_box(Vector3(cut, armory_size.y, 0.5), Vector3(WORKSHOP_X.x + cut * 0.5, armory_size.y * 0.5, armory_size.z * 0.5 + 0.25), seal_mat))
 		_add_bulkhead("armory_alcove", _spot(Vector3(-wall_x - 0.6, 0, armory_opening * 0.5 - 0.7), PI / 2.0), "post")
 	elif not owns("heavy_wall"):
 		_add_bulkhead("heavy_wall", _spot(Vector3(-wall_x + 0.5, 0, -6.9), PI / 2.0), "post")
@@ -1582,20 +1644,6 @@ func _fill(display: Display) -> void:
 			box = Vector3(1.2, 2.0, 1.0)
 			box_at = Vector3(0, 1.0, 0)
 			plate_at = Vector3(0, 2.25, 0)
-		"gunsmith":
-			var part := Gun.build_attachment(id)
-			if part:
-				part.name = "Attachment"
-				part.position = Vector3.ZERO
-				# Side-on to the room, like the guns on the rack.
-				part.rotation.y = PI / 2.0
-				part.scale = Vector3.ONE * 1.5
-				model.add_child(part)
-			# A peg to hang it on.
-			display.add_child(_part(Vector3(0.02, 0.02, 0.1), Vector3(0, 0.02, -0.04), Color(0.55, 0.55, 0.5)))
-			box = Vector3(0.46, 0.34, 0.3)
-			plate_at = Vector3(0, -0.15, 0.06)
-			plate_size = 0.045
 		"chip_case":
 			model.add_child(_part(Vector3(0.5, 0.08, 0.5), Vector3(0, -0.3, 0), Color(0.16, 0.16, 0.18)))
 			var chip := _part(Vector3(0.26, 0.26, 0.04), Vector3(0, 0, 0), color, true)
@@ -1660,68 +1708,68 @@ func _fill(display: Display) -> void:
 		display.add_child(bar)
 
 
-## The gunsmith bench: a heavy table with a vise and a pegboard behind it.
-## The gear on it is rebuilt with the rest of the displays.
+## The gunsmith bench: a heavy table against the workshop's back wall, with a
+## cradle in the middle for the one gun on it and a lit card on the panel
+## behind that says what is on the gun and what can go on it. The gun and
+## the card are rebuilt with the rest of the displays.
 func _build_bench() -> void:
 	var bench := StaticBody3D.new()
 	bench.name = "GunsmithBench"
 	bench.collision_layer = Actor.LAYER_WORLD
 	bench.collision_mask = 0
 	bench.transform = bench_transform()
-	var wood := Color(0.36, 0.28, 0.2)
+	var top := Color(0.2, 0.21, 0.23)
 	var steel := Color(0.24, 0.25, 0.27)
-	bench.add_child(_part(Vector3(2.2, 0.08, 0.9), Vector3(0, 0.92, 0), wood))
-	for x: float in [-1.0, 1.0]:
-		for z: float in [-0.38, 0.38]:
+	var dark := Color(0.1, 0.1, 0.11)
+	bench.add_child(_part(Vector3(2.0, 0.08, 0.8), Vector3(0, 0.92, 0), top))
+	for x: float in [-0.92, 0.92]:
+		for z: float in [-0.34, 0.34]:
 			bench.add_child(_part(Vector3(0.08, 0.88, 0.08), Vector3(x, 0.44, z), steel))
-	bench.add_child(_part(Vector3(2.1, 0.04, 0.8), Vector3(0, 0.25, 0), steel))
-	# The pegboard, framed, on two posts at the back.
-	bench.add_child(_part(Vector3(2.2, 1.45, 0.04), Vector3(0, 1.72, -0.42), Color(0.55, 0.46, 0.34)))
-	for x: float in [-1.12, 1.12]:
-		bench.add_child(_part(Vector3(0.06, 1.55, 0.06), Vector3(x, 1.72, -0.42), steel))
-	bench.add_child(_part(Vector3(2.3, 0.06, 0.06), Vector3(0, 2.47, -0.42), steel))
-	# A vise in the middle of the bench, and a lamp over it.
-	# The vise holds the gun by its receiver, just ahead of the grip.
-	bench.add_child(_part(Vector3(0.12, 0.2, 0.16), Vector3(-0.3, 1.06, 0.1), steel))
-	bench.add_child(_part(Vector3(0.16, 0.04, 0.04), Vector3(-0.3, 1.18, 0.1), Color(0.12, 0.13, 0.15)))
-	bench.add_child(_part(Vector3(0.002, 0.12, 0.1), Vector3(-0.239, 1.06, 0.1), Color(0.25, 0.9, 1.0), true))
-	bench.add_child(_part(Vector3(0.4, 0.03, 0.12), Vector3(0, 2.38, 0.1), Color(1.0, 0.85, 0.6), true))
+	bench.add_child(_part(Vector3(1.9, 0.04, 0.7), Vector3(0, 0.25, 0), steel))
+	# The cradle the gun lies in, lit along its front edge.
+	bench.add_child(_part(Vector3(1.2, 0.05, 0.3), Vector3(0, 0.985, 0.0), dark))
+	bench.add_child(_part(Vector3(1.2, 0.012, 0.02), Vector3(0, 1.01, 0.16), Color(0.25, 0.9, 1.0), true))
+	for x: float in [-0.35, 0.35]:
+		bench.add_child(_part(Vector3(0.06, 0.16, 0.2), Vector3(x, 1.06, 0.0), steel))
+	# The panel behind, which carries the card, and a lamp over the cradle.
+	bench.add_child(_part(Vector3(2.0, 1.3, 0.05), Vector3(0, 1.62, -0.38), Color(0.15, 0.15, 0.17)))
+	bench.add_child(_part(Vector3(0.5, 0.03, 0.12), Vector3(0, 2.36, -0.25), Color(1.0, 0.85, 0.6), true))
+	if owns("bench_workshop"):
+		# A workshop bench: a parts cabinet under the top and a second lamp.
+		bench.add_child(_part(Vector3(0.6, 0.6, 0.6), Vector3(0.6, 0.57, 0.0), steel))
+		for y: float in [0.42, 0.72]:
+			bench.add_child(_part(Vector3(0.5, 0.02, 0.01), Vector3(0.6, y, 0.305), Color(1.0, 0.85, 0.6), true))
+		bench.add_child(_part(Vector3(0.4, 0.03, 0.12), Vector3(-0.7, 2.36, -0.25), Color(1.0, 0.85, 0.6), true))
+	if owns("bench_master"):
+		# A master's bench: lit edges.
+		for z: float in [-0.4, 0.4]:
+			bench.add_child(_part(Vector3(2.0, 0.03, 0.03), Vector3(0, 0.95, z), Color(0.25, 0.9, 1.0), true))
 	var shape := BoxShape3D.new()
-	shape.size = Vector3(2.3, 1.0, 0.95)
+	shape.size = Vector3(2.1, 1.0, 0.85)
 	var col := CollisionShape3D.new()
 	col.shape = shape
 	col.position = Vector3(0, 0.5, 0)
 	bench.add_child(col)
-	var title := _label(bench_name().to_upper(), Color(1.0, 0.62, 0.22), 0.22)
+	var title := _label(bench_name().to_upper(), Color(1.0, 0.62, 0.22), 0.2)
 	title.name = "Title"
-	title.position = Vector3(0, 2.75, -0.42)
+	title.position = Vector3(0, 2.5, -0.35)
 	bench.add_child(title)
-	var how := _label("F on the gun: next gun in the vise.  F on an attachment: fit it.\n"
-			+ "Round the back: the fabricator crafts from blueprints.", Color(0.85, 0.83, 0.8), 0.08)
-	how.name = "HowTo"
-	how.position = Vector3(0, 2.6, -0.38)
-	bench.add_child(how)
-	if owns("bench_master"):
-		# A master's bench: lit edges and a second lamp.
-		for z: float in [-0.44, 0.44]:
-			bench.add_child(_part(Vector3(2.2, 0.03, 0.03), Vector3(0, 0.95, z), Color(0.25, 0.9, 1.0), true))
-		bench.add_child(_part(Vector3(0.4, 0.03, 0.12), Vector3(-0.7, 2.38, 0.1), Color(1.0, 0.85, 0.6), true))
 	_keep(bench)
 	_build_craft_console()
 	if Look.enabled:
 		var light := Look.lamp(Color(1.0, 0.9, 0.75), 2.0, 5.0)
-		light.position = bench_transform() * Vector3(0.6, 2.2, 0)
+		light.position = bench_transform() * Vector3(0, 2.2, 0.2)
 		_keep(light)
 
 
-## The fabricator: a cabinet backed onto the bench's pegboard with a screen
-## on top, where gear is crafted from blueprints.
+## The fabricator: a cabinet beside the bench, against the workshop's far
+## wall, with a screen on top, where gear is crafted from blueprints.
 func _build_craft_console() -> void:
 	var console := CraftConsole.new()
 	console.name = "Station_%s" % CRAFT_ID
 	console.base = self
 	console.id = CRAFT_ID
-	console.transform = bench_transform() * _spot(CRAFT_AT, PI)
+	console.transform = bench_transform() * _spot(CRAFT_AT, CRAFT_YAW)
 	var dark := Color(0.17, 0.17, 0.19)
 	console.add_child(_part(Vector3(1.2, 1.0, 0.5), Vector3(0, 0.5, 0), dark))
 	console.add_child(_part(Vector3(1.22, 0.06, 0.52), Vector3(0, 0.3, 0), CRAFT_COLOR, true))
@@ -1759,23 +1807,23 @@ func bench_name() -> String:
 	return "Workshop bench" if owns("bench_workshop") else "Gunsmith bench"
 
 
-## The primary you will deploy with, in the bench's vise with its attachments
-## on, and a card beside it saying what they change.
+## The one gun on the bench, its attachments on, and the card behind it. At
+## rest that is the primary you will deploy with; in use it is whatever the
+## wheel has turned to (`bench_shown_gun`, `bench_shown_fitted`), so every
+## change shows on the gun before it is picked.
 func _build_bench_gun() -> void:
-	var id: String = loadout.get("primary", "")
-	if id == "" or not ItemDB.has_tag(id, "firearm"):
-		id = starter_primary()
+	var id := bench_shown_gun()
 	if id == "":
 		return
-	var fitted := fitted_attachments()
+	var fitted := bench_shown_fitted()
 	var gun := bench_gun(id, fitted)
 	var bare := bench_gun(id, [])
 	var visual := gun.build_visual()
-	var shown := Vise.new()
+	var shown := Bench.new()
 	shown.base = self
 	shown.item_id = id
 	shown.name = "BenchGun"
-	shown.transform = bench_transform() * _spot(Vector3(-0.15, 1.36, 0.1), 0.0)
+	shown.transform = bench_transform() * _spot(Vector3(0.0, 1.2, 0.0), 0.0)
 	var model := Node3D.new()
 	model.name = "Model"
 	visual.rotation.y = PI / 2.0
@@ -1783,43 +1831,242 @@ func _build_bench_gun() -> void:
 	visual.scale = Vector3.ONE * bench_scale
 	model.add_child(visual)
 	shown.add_child(model)
-	_add_collision(shown, Vector3(1.4, 0.5, 0.4), Vector3.ZERO)
+	_add_collision(shown, Vector3(1.6, 0.5, 0.6), Vector3.ZERO)
 	# `Look` swaps in the real model and moves the attachments onto it.
 	shown.set_meta("display_item", id)
 	_display_root.add_child(shown)
-	# The card: a small lit tablet propped on the bench beside the vise.
-	var tablet := _part(Vector3(0.46, 0.62, 0.02), Vector3.ZERO, Color(0.08, 0.09, 0.1))
+	# The card: a lit panel on the board above the gun, the rows on its left
+	# and what the attachments change on its right.
+	var where := bench_transform() * Transform3D(Basis.IDENTITY, Vector3(0, 1.93, -0.35))
+	var tablet := _part(Vector3(1.84, 0.62, 0.02), Vector3.ZERO, Color(0.05, 0.06, 0.07))
 	tablet.name = "SpecTablet"
-	tablet.transform = bench_transform() * Transform3D(Basis.from_euler(Vector3(-0.3, 0, 0)), Vector3(0.74, 1.27, -0.08))
+	tablet.transform = where
 	_display_root.add_child(tablet)
-	var card := _label(spec_text(gun, bare), Color(0.55, 0.95, 1.0), 0.026)
-	card.name = "SpecCard"
-	card.outline_size = 4
-	card.transform = tablet.transform * Transform3D(Basis.IDENTITY, Vector3(0, 0, 0.012))
-	_display_root.add_child(card)
+	var columns := [["SpecCard", bench_card(), -0.46], ["SpecStats", bench_stats(gun, bare), 0.46]]
+	for column: Array in columns:
+		var label := _label(column[1], Color(0.55, 0.95, 1.0), 0.036)
+		label.name = column[0]
+		label.outline_size = 4
+		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+		label.vertical_alignment = VERTICAL_ALIGNMENT_TOP
+		# Each column is 0.84 m wide, its text from its left edge.
+		label.width = 0.84 / label.pixel_size
+		label.autowrap_mode = TextServer.AUTOWRAP_OFF
+		label.transform = where * Transform3D(Basis.IDENTITY, Vector3(column[2], 0.27, 0.012))
+		_display_root.add_child(label)
 	gun.free()
 	bare.free()
 
 
-## Every gun that can go in the vise: the primaries in the stash, in stash
-## order, one of each.
-func bench_guns() -> Array[String]:
+# --- Using the bench -----------------------------------------------------------
+
+## The rows on the bench card: the gun, then each attachment slot.
+func bench_rows() -> Array[String]:
+	var rows: Array[String] = ["primary"]
+	for slot: String in Loadout.ATTACHMENT_SLOTS:
+		rows.append(slot)
+	return rows
+
+
+## What a row can be turned to. The gun: every primary in the stash, one of
+## each, then "" (nothing equipped: the free scrap gun). An attachment slot:
+## "" (nothing fitted), then every attachment in the stash that fits it.
+func bench_choices(slot: String) -> Array[String]:
 	var out: Array[String] = []
-	for id: String in stash:
-		if Loadout.is_primary(id) and id not in out:
+	if slot == "primary":
+		out = bench_guns()
+		out.append("")
+		return out
+	out.append("")
+	for id: Variant in stash:
+		if typeof(id) == TYPE_STRING and Loadout.fits(slot, id) and id not in out:
 			out.append(id)
 	return out
 
 
-## The gun the vise takes next: the one after the primary in `bench_guns`,
-## and after the last one "" (nothing equipped: the free scrap gun).
-func next_bench_gun() -> String:
-	var guns := bench_guns()
-	var current: String = loadout.get("primary", "")
-	var at := guns.find(current)
-	if at + 1 < guns.size():
-		return guns[at + 1]
-	return "" if current != "" or guns.is_empty() else guns[0]
+## Every gun that can go on the bench: the primaries in the stash, in stash
+## order, one of each.
+func bench_guns() -> Array[String]:
+	var out: Array[String] = []
+	for id: Variant in stash:
+		if typeof(id) == TYPE_STRING and Loadout.is_primary(id) and id not in out:
+			out.append(id)
+	return out
+
+
+## What a row holds in the loadout now ("" for nothing).
+func bench_current(slot: String) -> String:
+	var id: String = loadout.get(slot, "")
+	if slot == "primary" and (id == "" or not ItemDB.has_tag(id, "firearm")):
+		return ""
+	return id
+
+
+## The gun on the bench: the one the wheel is on while the gun row is being
+## picked, else the primary in the loadout (or the free scrap gun).
+func bench_shown_gun() -> String:
+	var id := bench_current("primary")
+	if bench_open and bench_picking and bench_row == 0:
+		id = bench_choice
+	return id if id != "" else starter_primary()
+
+
+## The attachments on the bench's gun: the loadout's, with the one the wheel
+## is on in place of its slot's while an attachment row is being picked.
+func bench_shown_fitted() -> Array[String]:
+	var out: Array[String] = []
+	var picking := bench_rows()[bench_row] if bench_open and bench_picking and bench_row > 0 else ""
+	for slot: String in Loadout.ATTACHMENT_SLOTS:
+		var id := bench_choice if slot == picking else bench_current(slot)
+		if id != "":
+			out.append(id)
+	return out
+
+
+## Takes up the bench: the wheel starts on the gun row, on the gun in the
+## loadout.
+func use_bench() -> void:
+	if read_only:
+		return
+	bench_open = true
+	bench_row = 0
+	bench_picking = true
+	bench_choice = bench_current("primary")
+	bench_used.emit()
+	_refresh_bench()
+
+
+## Steps away from the bench. Anything turned to but not picked is dropped.
+func leave_bench() -> void:
+	if not bench_open:
+		return
+	bench_open = false
+	bench_picking = false
+	bench_row = 0
+	_refresh_bench()
+
+
+## A notch of the wheel (`step` 1 down, -1 up): picking, the next choice of
+## the row, shown on the gun at once; otherwise the next attachment row.
+func bench_scroll(step: int) -> void:
+	if not bench_open or step == 0:
+		return
+	if bench_picking:
+		var choices := bench_choices(bench_rows()[bench_row])
+		var at := maxi(choices.find(bench_choice), 0)
+		bench_choice = choices[posmod(at + signi(step), choices.size())]
+	else:
+		var count := bench_rows().size() - 1
+		bench_row = 1 + posmod(bench_row - 1 + signi(step), count)
+	_refresh_bench()
+
+
+## A click: on a row, start turning through its choices; picking, take the
+## choice on show. A gun picked moves on to its attachments.
+func bench_select() -> void:
+	if not bench_open:
+		return
+	if not bench_picking:
+		bench_picking = true
+		bench_choice = bench_current(bench_rows()[bench_row])
+		_refresh_bench()
+		return
+	var slot := bench_rows()[bench_row]
+	var choice := bench_choice
+	bench_picking = false
+	if slot == "primary":
+		bench_row = 1
+	_refresh_bench()
+	if choice != bench_current(slot):
+		equip_requested.emit(slot, choice)
+
+
+## A step back: picking, drop the choice on show and return to the rows.
+## Returns false when there is nothing to step back from (time to leave).
+func bench_back() -> bool:
+	if not bench_open:
+		return false
+	if not bench_picking:
+		return false
+	bench_picking = false
+	if bench_row == 0:
+		bench_row = 1
+	_refresh_bench()
+	return true
+
+
+## Rebuilds the bench's gun and card from the bench state.
+func _refresh_bench() -> void:
+	if not is_inside_tree():
+		return
+	for node_name: String in ["BenchGun", "SpecTablet", "SpecCard", "SpecStats"]:
+		var old := _display_root.get_node_or_null(node_name)
+		if old:
+			_display_root.remove_child(old)
+			old.queue_free()
+	_build_bench_gun()
+
+
+## The bench card's left column: a row for the gun and each attachment slot
+## with what is on it, the row in use marked (‹ › while the wheel turns
+## through it), and in use the controls under them.
+func bench_card() -> String:
+	var lines: Array[String] = []
+	var rows := bench_rows()
+	for i in rows.size():
+		var slot := rows[i]
+		var id := bench_shown_gun() if slot == "primary" else ""
+		if slot != "primary":
+			var shown := bench_shown_fitted()
+			for fitted: String in shown:
+				if Loadout.attachment_slot(fitted) == slot:
+					id = fitted
+		var label := "GUN" if slot == "primary" else slot.to_upper()
+		var value := ItemDB.item_name(id) if id != "" else "—"
+		if slot == "primary" and bench_current("primary") == "" and id == starter_primary():
+			value += " (free)"
+		if slot != "primary":
+			var spare := bench_choices(slot).size() - 1
+			if id == "" and spare == 0:
+				value = "— (none owned)"
+		var here := bench_open and bench_row == i
+		if here and bench_picking:
+			value = "‹ %s ›" % value
+		lines.append("%s %s   %s" % ["▶" if here else "   ", label, value])
+	if bench_open:
+		lines.append("")
+		lines.append("◎ turn   ● pick   ○ back   Esc leave")
+	return "\n".join(lines)
+
+
+## The bench card's right column: the gun's name and what its attachments
+## change, from the bare gun's value to the fitted one.
+func bench_stats(gun: Gun, bare: Gun) -> String:
+	var lines: Array[String] = [gun.display_name.to_upper()]
+	var diffs := spec_lines(gun, bare)
+	if diffs.is_empty():
+		lines.append("Nothing fitted changes it")
+	lines.append_array(diffs)
+	return "\n".join(lines)
+
+
+## What the attachments change on a gun, one line per stat, from the bare
+## gun's value to the fitted one.
+static func spec_lines(gun: Gun, bare: Gun) -> Array[String]:
+	var lines: Array[String] = []
+	var rows := [
+		["Damage", "damage", "%.0f"], ["Fire rate", "rpm", "%.0f/min"], ["Magazine", "mag_size", "%d"],
+		["Reload", "reload_time", "%.1fs"], ["Spread", "spread_deg", "%.2f°"], ["Aimed spread", "ads", "%.2f°"],
+		["Recoil", "recoil_kick_deg", "%.2f°"], ["Range", "max_range", "%.0fm"], ["Zoom", "ads_zoom", "%.1fx"],
+	]
+	for row: Array in rows:
+		var before := _spec_value(bare, row[1])
+		var after := _spec_value(gun, row[1])
+		if absf(after - before) > 0.001:
+			lines.append("%s  %s → %s" % [row[0], row[2] % before, row[2] % after])
+	if gun.quiet:
+		lines.append("Suppressed: no tracer or flash")
+	return lines
 
 
 ## The attachments in the loadout, one per slot.
@@ -1848,29 +2095,6 @@ static func bench_gun(id: String, fitted: Array) -> Gun:
 	Loadout._apply_stats(gun, ItemDB.item_stats(id))
 	gun.fit(fitted)
 	return gun
-
-
-## The card by the bench gun: its name, what is fitted, and every stat the
-## attachments change, from the bare gun's value to the fitted one.
-static func spec_text(gun: Gun, bare: Gun) -> String:
-	var lines: Array[String] = [gun.display_name.to_upper()]
-	if gun.attachments.is_empty():
-		lines.append("Nothing fitted")
-	for id in gun.attachments:
-		lines.append("+ %s" % ItemDB.item_name(id))
-	var rows := [
-		["Damage", "damage", "%.0f"], ["Fire rate", "rpm", "%.0f/min"], ["Magazine", "mag_size", "%d"],
-		["Reload", "reload_time", "%.1fs"], ["Spread", "spread_deg", "%.2f°"], ["Aimed spread", "ads", "%.2f°"],
-		["Recoil", "recoil_kick_deg", "%.2f°"], ["Range", "max_range", "%.0fm"], ["Zoom", "ads_zoom", "%.1fx"],
-	]
-	for row: Array in rows:
-		var before := _spec_value(bare, row[1])
-		var after := _spec_value(gun, row[1])
-		if absf(after - before) > 0.001:
-			lines.append("%s  %s → %s" % [row[0], row[2] % before, row[2] % after])
-	if gun.quiet:
-		lines.append("Suppressed: no tracer or flash")
-	return "\n".join(lines)
 
 
 static func _spec_value(gun: Gun, key: String) -> float:
