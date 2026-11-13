@@ -893,14 +893,16 @@ func _can_bank(actor: Actor) -> bool:
 
 ## Drops a player in and returns their actor: the start of one life. In a
 ## solo raid the newest one is `player`, so calling this again after a death
-## drops the player back in. `p_kit` empty means the world's free scrap kit.
+## drops the player back in. `p_kit` empty means the world's free scrap kit;
+## `[Loadout.BARE]` means nothing at all.
 ## `p_owner` says whose life this is (an account id), so renown carries over
 ## from their earlier lives here; without it every life is a stranger's.
 ## `p_renown` is their lifetime renown, which sets the rank others see.
 func add_player(p_kit: Array = [], p_mastery: Dictionary = {}, p_name := "Raider",
 		p_owner := "", p_renown := 0, p_drop := "") -> Actor:
 	var state := PlayerState.new()
-	state.kit.assign(p_kit if not p_kit.is_empty() else world.starter_loadout())
+	state.kit.assign((p_kit if not p_kit.is_empty() else world.starter_loadout()).filter(
+			func(id: Variant) -> bool: return id != Loadout.BARE))
 	state.picks = p_mastery
 	var spawns := _map_nodes("spawn_player")
 	var marker := 0
@@ -1586,26 +1588,44 @@ func squad_of(actor: Actor) -> String:
 	return side_of(actor)[0]
 
 
-## Whether `actor` may open a squad portal where they are: only in a safe
-## zone, so a portal is a way out to a fight, never out of one.
-func may_open_portal(actor: Actor) -> bool:
-	return world != null and world.safe_zone and actor != null and is_instance_valid(actor) and not actor.is_dead
+## Whether `actor` may open a squad portal where they are: anywhere in a
+## safe zone, so a portal is a way out to a fight, never out of one; and,
+## to `Portal.HOME` only, while sheltered in a gate outpost, where opening
+## it is the gate sign-out (`open_portal`).
+func may_open_portal(actor: Actor, destination := "") -> bool:
+	if world == null or actor == null or not is_instance_valid(actor) or actor.is_dead:
+		return false
+	if world.safe_zone:
+		return destination != Portal.HOME
+	var state := state_for(actor)
+	return destination == Portal.HOME and state != null and state.sheltered
 
 
 ## The watch's squad portal: opens a portal to `destination` (a
 ## `Portal.destinations()` id) in front of `actor`, for their side to walk
 ## through for `Portal.open_time`. Their last one folds away. Authority
 ## only. Returns "" if it opened, or why not.
+##
+## In a gate outpost the only portal is `Portal.HOME`, and opening it is a
+## sign-out (Caleb's call): it starts the opener's gate sign-out
+## (`begin_sign_out`, so a fight or a bounty still refuses it) and the ring
+## unfolds over that countdown. Each squadmate who steps in starts their own
+## (`_tick_portals`). Everyone leaves the usual way, with outcome "left",
+## when their own countdown ends; the ring never sends anyone anywhere.
 func open_portal(actor: Actor, destination: String) -> String:
 	var state := state_for(actor)
 	if mode == Mode.CLIENT or state == null or state.finished:
 		return "not now"
-	if not may_open_portal(actor):
-		return "Portals open only in safe zones"
-	if destination not in Portal.destinations():
+	if not may_open_portal(actor, destination):
+		if destination == Portal.HOME and world.safe_zone:
+			return "No portal goes there"
+		return "Portals open only in safe zones and gate outposts"
+	if destination != Portal.HOME and destination not in Portal.destinations():
 		return "No portal goes there"
 	if clock < state.portal_ready_at:
 		return "Portal recharging"
+	if destination == Portal.HOME and not begin_sign_out(actor):
+		return "You cannot sign out now"
 	state.portal_ready_at = clock + portal_cooldown
 	for old in portals.duplicate():
 		if old.opener == state.owner:
@@ -1616,6 +1636,9 @@ func open_portal(actor: Actor, destination: String) -> String:
 	portal.side = squad_of(actor)
 	portal.opener = state.owner
 	portal.opener_name = actor.display_name
+	if destination == Portal.HOME:
+		# It opens as the gate sign-out ends.
+		portal.unfold_time = maxf(world.outpost_sign_out_time, 0.1)
 	add_child(portal)
 	portal.global_transform = Portal.spot(get_world_3d().direct_space_state, actor.get_eye_position(),
 			actor.get_aim_dir(), actor.global_position.y, portal.distance, portal.wall_gap)
@@ -1632,6 +1655,8 @@ func show_portal(destination: String, at: Transform3D, p_usable: bool, p_age := 
 	portal.usable = p_usable
 	portal.age = p_age
 	portal.opener_name = p_name
+	if destination == Portal.HOME:
+		portal.unfold_time = maxf(world.outpost_sign_out_time, 0.1)
 	add_child(portal)
 	portal.global_transform = at
 	portals.append(portal)
@@ -1666,9 +1691,15 @@ func _tick_portals(delta: float) -> void:
 				continue
 			if portal.side != "" and squad_of(actor) != portal.side:
 				continue
-			if portal.contains(actor.global_position):
-				portal.sent.append(actor)
-				portal_entered.emit(actor, portal.destination)
+			if not portal.contains(actor.global_position):
+				continue
+			if portal.destination == Portal.HOME:
+				# Stepping into a gate portal starts your own gate sign-out.
+				if state.sheltered and state.sign_out_left < 0.0 and begin_sign_out(actor):
+					portal.sent.append(actor)
+				continue
+			portal.sent.append(actor)
+			portal_entered.emit(actor, portal.destination)
 
 
 ## Seconds the watch waits after the vehicle `item_id` is thrown.
