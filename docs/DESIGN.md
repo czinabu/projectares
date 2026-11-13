@@ -92,14 +92,20 @@ canopy, holo signs over every kiosk and floating holo-ads.
 
 ### Home base
 
-- The stash on show: guns on the armory wall, blades, armor stands, rigs,
-  ability chips, bikes in the garage, loot on shelves, trophies.
+- The stash on show: every weapon (long guns, sidearms, melee) on one rack
+  in the armory, an alcove off the main room with the gunsmith bench in its
+  middle and the locker at its way in; armor stands, rigs, ability chips,
+  bikes in the garage, loot on shelves and trophies in the main room.
 - **Heavy weapons banked from the PvP world hang on the armory wall** and can
   be stacked there (see section 6).
 - Consoles do what menus would: launch pad, locker, gunsmith bench (crafting
   from blueprints, section 10), mastery bench, wardrobe, records, trader,
   uplink, arena gate.
-- Loadouts can be changed freely here.
+- Loadouts can be changed freely here, and only here: the base is where you
+  suit up. A suit-up bay beside the launch pad fits your loadout onto you in
+  view before you deploy.
+- A garage off the room for the bikes you own, and a firing range behind the
+  back wall (the first of the upgrades below, built early as a greybox).
 
 **Upgrades** turn the base from a display room into a headquarters, in this
 order:
@@ -641,10 +647,8 @@ gains per Mk is TBD (section 13), and kept small either way.
 
 **Scrip, earned everywhere.** The everyday money, used in the hub for
 cosmetic skins, thruster trail colours, watch faces and basic gear. We keep
-the name scrip rather than switching to credits. Today the game has both:
-scrip you carry (at stake until banked) and a safe credits balance it turns
-into. They become one currency called scrip: what you carry in the field is
-at stake, and what you have banked is safe.
+the name scrip, not credits. There is one currency:
+what you carry in the field is at stake, and what you have banked is safe.
 
 - Loot is the money; scrip comes mainly from getting loot home.
 - Shops sell only base-level gear.

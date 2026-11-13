@@ -231,28 +231,30 @@ without Caleb, and update the gap list when a PR closes a row.
   sends `switch_weapon = ActorCommand.HOLSTER` and draws `Actor.last_drawn`
   again; it is an index, never a toggle, so it replicates safely. Check with
   `--holster-only`.
-- First and third person show the same action the same way. Each actor has
-  one `ActionPose` (`core/visual/action_pose.gd`, a view-only child made by
-  `ActionPose.of`): the melee reach and shoulder turn, the reload motion,
-  the low ready, the weapon switch's progress toward a holster, the
+- First and third person differ only in where the camera is (Caleb's rule).
+  Both look at the one real body, posed by the same code and holding the
+  same weapon in the same hand: first person puts the camera at the eyes
+  and leaves out only the head (`ActorSkin.hide_head` moves it and what is
+  worn on it to `Mirror.HEAD_LAYER`, which that camera culls; shadows and
+  a mirror still see it). Never build a first-person-only copy of the arms,
+  a weapon or a prop, and never move anything in front of the camera for
+  first person. Aiming down an optic moves the camera to the sight, never
+  the gun to the eye. Each actor has one `ActionPose`
+  (`core/visual/action_pose.gd`, a view-only child made by `ActionPose.of`):
+  the melee reach and shoulder turn, the reload motion, the low ready, the
   drawing back of a held heavy and the easing back of a recovering blade,
-  the watch raise (from `ActorCommand.watch_up`) and the phone hold (`ActionPose.phone`, from
-  `ActorCommand.phone`, which `Locomotion` poses the body from). Third person `WeaponArm` and `ActorSkin` pose the model from
-  it; first person `PlayerController.first_person_hold` moves the weapon in
-  front of the camera by the same offsets on the same clock, so a switch,
-  a flight stow or a windup plays out in both views. A new hand or weapon
-  animation goes into `ActionPose` and both views read it; never animate
-  one view only. Weapons are held, not floated (Caleb's call): the hand
-  carries them. Third person a blade lies along the closed fist and a gun
-  held low turns with the wrist (`WeaponArm`); swings turn the arm about the
-  shoulder (`ActionPose.swing_reach`, `elbow_pole`). First person draws a
-  copy of the character's own arms (`core/visual/first_person_arms.gd`)
-  whose hands grip the weapon: the weapon hand on the grip, the off hand on
-  a gun's "ForeGrip" marker or a two-handed handle, and the left arm lifts
-  the watch. Shots are judged from the eyes but drawn from the gun's
-  "Muzzle" marker as it is shown (`Gun.muzzle_point`). Compare by eye with
-  `visual_check.tscn -- <dir> --views-only [rows]`, which also saves each
-  shot full size under `views/`.
+  the watch raise (from `ActorCommand.watch_up`) and the phone hold
+  (`ActionPose.phone`, from `ActorCommand.phone`, which `Locomotion` poses
+  the body from). `WeaponArm` and `ActorSkin` pose the model from it; a new
+  hand or weapon animation goes there. Weapons are held, not floated
+  (Caleb's call): the hand carries them. A blade lies along the closed fist
+  and a gun held low turns with the wrist (`WeaponArm`); swings turn the
+  arm about the shoulder (`ActionPose.swing_reach`, `elbow_pole`). Shots
+  are judged from the eyes but drawn from the gun's "Muzzle" marker as it
+  is shown (`Gun.muzzle_point`). Compare by eye with
+  `visual_check.tscn -- <dir> --views-only [rows]` (`VIEW_MELEE=<item id>`
+  picks the melee weapon), which also saves each shot full size under
+  `views/`.
 - People are built from parts (`core/visual/human.gd`): an "appearance" names
   a build, four parts and colours. It is cosmetic only and never trusted:
   always pass one through `Look.clean_appearance` / `Look.set_appearance`,
@@ -262,9 +264,8 @@ without Caleb, and update the gap list when a PR closes a row.
   A look changed while in a world (the phone's Mirror app) is checked by the
   server in `_request_look` and passed to everyone there with `_look_changed`.
   The mirror itself (`core/visual/mirror.gd`) is a client-side view: no
-  collision, and nothing in `Raid` reads it. In first person the body is drawn on
-  `Mirror.BODY_LAYER`, which their own camera leaves out
-  (`PlayerController.body_layer`), so only the mirror shows it.
+  collision, and nothing in `Raid` reads it. Its camera sees the head that
+  your own first-person camera leaves out (`Mirror.HEAD_LAYER`).
   Players may only wear `Human.STARTER` clothes plus outfits they own:
   `Human.player_look(raw, owned)` enforces it on the profile, in the
   customizer and on the server. Better outfits are bought or earned, never
@@ -296,8 +297,8 @@ without Caleb, and update the gap list when a PR closes a row.
   `gear_items`, so they drop and come home with the gun. `Gun.build_attachment`
   builds each shape with its origin at the mount; `Look.mount_attachments`
   moves them onto the real model (`Look.GUN_MOUNTS`). An optic's "Sight"
-  marker is the eye point: in first person the controller moves the hand so
-  the camera looks through it, and zooms by `Weapon.aim_zoom()`. Scopes are
+  marker is the eye point: in first person aiming moves the camera to it
+  (never the gun to the eye) so it looks through it, and zooms by `Weapon.aim_zoom()`. Scopes are
   real geometry you look down, never a screen overlay. Fitting happens at
   the home base's gunsmith bench (`BaseLayout` kind "gunsmith").
 - Power weapons are items tagged "power" (Rail Lance, Helion launcher, Arc
@@ -547,7 +548,7 @@ without Caleb, and update the gap list when a PR closes a row.
   along): `core/dev/dev_mode.gd`, switched in the phone's Settings app and
   only in a debug or editor run (`DevMode.available`), never in an exported
   game. Solo, it puts `Profile` on a separate save
-  (`Profile.DEV_SAVE_PATH`) kept topped up with all gear and max credits, and
+  (`Profile.DEV_SAVE_PATH`) kept topped up with all gear and max scrip, and
   hands a solo `Raid` its cheats (`Raid.dev_cheats`: god mode, endless heat
   and ammo, no cooldowns); a server or client raid ignores them. Online, only
   a server hosted from the editor in dev mode (`main.gd host_and_join`
@@ -577,6 +578,26 @@ without Caleb, and update the gap list when a PR closes a row.
   `HomeBase.show_gear(stash, loadout)` rebuilds the room from plain data, so
   it shows the local `Profile` solo and the server's account snapshot in a
   lobby. `core/base/base_layout.gd` decides what goes where from item tags.
+  Every weapon goes on the one armory rack (`BaseLayout.ARMORY`, Caleb's
+  call): its sections hang on the walls of the armory alcove
+  (`HomeBase.in_armory`), with the gunsmith bench in the middle and the
+  locker at the way in. Each weapon hangs on a lit mount
+  (`HomeBase._build_mount`). The bench's vise holds the primary (its rack
+  pegs stand empty); using the vise puts the next gun from the rack in it
+  (`HomeBase.Vise`, `next_bench_gun`) through the same `equip_requested`,
+  so any gun can be fitted out there. A new kind of weapon gets a rack
+  section there, not a display of its own elsewhere in the room. The base is where you suit
+  up (Caleb's call): the suit-up bay beside the launch pad
+  (`HomeBase.suit_up`) replaces the player with a new actor wearing
+  `suit_kit()`, weapons locked, and emits `player_replaced` so `main.gd`
+  hands it the controller; changing the loadout only changes what the
+  bay puts on next. Bikes park in the garage off the right wall
+  (`HomeBase.in_garage`). Behind the back wall is the firing range
+  (`HomeBase.in_range`): a suited player's weapons unlock only there and
+  never run dry, and `HomeBase` scores shots from each gun's `fired` signal
+  against its `RangeTarget`s, which stop shots like walls. Nothing on the
+  range goes through `Combat.deal` or pays mastery, because nothing there is
+  real damage; never add an Actor target that takes some.
   Using a display only emits `equip_requested`; `main.gd` applies it through
   `Profile` or `NetSession.equip`. Like `Raid`, `HomeBase` has no camera, HUD
   or input code, and its displays are greybox shapes that `Look` dresses
@@ -616,17 +637,22 @@ without Caleb, and update the gap list when a PR closes a row.
   watch feature is a new slot, not a new line of text. In third person the
   card rises off the worn watch with a glow on the arm; it is never hung in
   front of the camera. Vitals go on the card only where the visor cannot
-  show them (no helmet, or third person). Check it by eye with
-  `visual_check.tscn -- <dir> --watch-only`.
+  show them (no helmet, or third person). The watch works in the home base
+  too (`BaseHud.wrist`), its card saying what each icon holds for the next
+  deploy (`Hud.base_watch_slots`). Raised, the forearm rolls so the face,
+  worn on the back of the wrist (`Hud.Wrist.FACE_AXIS`), looks at the eyes
+  (`WeaponArm._face_watch`). Check it by eye with
+  `visual_check.tscn -- <dir> --watch-only` (`--base-watch-only` for just
+  the base).
 - Money (`core/economy/`): the rules live once, in `economy.gd` (static, like
-  `StashRules`), shared by `Profile` and `StashService`. Online, `credits`
+  `StashRules`), shared by `Profile` and `StashService`. Online, `scrip`
   lives on the server's account and only changes there: through
-  `StashService.buy` / `sell`, the payout in `settle`, or `change_credits`
+  `StashService.buy` / `sell`, the payout in `settle`, or `change_scrip`
   for other server systems. A client never sends a price or an amount.
   Shops are tag-driven: an item is stocked if it has the `vendor` tag and one
   of the shop's tags (`shop_db.gd`), and `Economy.is_shop_item` refuses
   anything above Uncommon, so rare gear stays loot-only. Keep every sell
-  price below its buy price, and keep run payouts small next to loot: credits
+  price below its buy price, and keep run payouts small next to loot: scrip
   must come from getting loot home, so full loot stays the stake.
 - Scrip is what a life pays, and it is at stake. The `Raid` pays it
   (`_pay_scrip`, amounts in `Economy`) into `PlayerState.scrip`, copied to
@@ -648,8 +674,8 @@ without Caleb, and update the gap list when a PR closes a row.
   other (`Arena.may_hurt`). Results, wagers, stakes and tournament pots are
   decided only by the authority's `Arena` and paid through `Arena.bank`;
   a client only sends `Arena.ask` requests and shows the board the server
-  sends. Credits change only through `StashService.change_credits` online and
-  `Profile.change_credits` solo. The Pit's moving parts (the tunnel doors and
+  sends. Scrip changes only through `StashService.change_scrip` online and
+  `Profile.change_scrip` solo. The Pit's moving parts (the tunnel doors and
   the rising barriers) are worked out from the bout's phase and fight clock
   alone (`ArenaVenue.doors_open`, `barrier_raise`), which the `Arena` hands
   the map every tick (`set_stage`) on every machine, so they need no messages

@@ -281,7 +281,7 @@ func _rebuild(b: Dictionary) -> void:
 		child.queue_free()
 	var you: Dictionary = b.get("you", {})
 	_label(_panel, "BOOKMAKER", 26, GOLD)
-	_label(_panel, "Credits: %d" % int(you.get("credits", 0)), 18, Color.WHITE)
+	_label(_panel, "Scrip: %d" % int(you.get("scrip", 0)), 18, Color.WHITE)
 	_label(_panel, "Nobody loses gear here. Beaten fighters yield.", 15, Color(0.65, 0.65, 0.65))
 
 	var bout: Dictionary = b.get("bout", {})

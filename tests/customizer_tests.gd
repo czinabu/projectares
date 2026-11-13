@@ -324,10 +324,9 @@ static func _run_mirror(t: Node) -> void:
 				"its feet are on the ground, not floating or sunk")
 		t.check(mirror.global_basis.z.dot(-to_mirror.normalized()) > 0.95, "its glass faces the player")
 		t.check(mirror.find_children("*", "CollisionObject3D", true, false).is_empty(), "the mirror has no collision")
-		t.check(controller.body_layer == MirrorScript.BODY_LAYER and me.body_mesh.visible and not me.hand_override,
-				"in first person the body stays drawn for the mirror, with the gear back on the body")
-		t.check(controller.camera.cull_mask & (1 << (MirrorScript.BODY_LAYER - 1)) == 0,
-				"but the player's own camera leaves it out")
+		t.check(me.body_mesh.visible, "in first person the body stays drawn for the mirror")
+		t.check(controller.camera.cull_mask & (1 << (MirrorScript.HEAD_LAYER - 1)) == 0,
+				"but the player's own camera leaves the head out")
 		t.check(not main.hud.crosshair.visible, "the crosshair is hidden so it does not sit on your face in the mirror")
 	var before: Dictionary = me.get_meta("appearance", {}).duplicate()
 	main.phone.mirror_step("body", 1)
@@ -339,8 +338,7 @@ static func _run_mirror(t: Node) -> void:
 	for i in 2:
 		await t.get_tree().process_frame
 	t.check(main.mirror == null and main.raid.find_children("Mirror", "", true, false).is_empty()
-			and controller.body_layer == 0 and not me.body_mesh.visible
-			and controller.camera.cull_mask == 0xFFFFF and main.hud.crosshair.visible,
+			and main.hud.crosshair.visible,
 			"putting the phone away takes the mirror away and brings the crosshair back")
 
 	# Rendered: a reflection camera through the glass, and the body on its layer.
@@ -363,16 +361,21 @@ static func _run_mirror(t: Node) -> void:
 		t.check(reflection.global_position.distance_to(eye - 2.0 * gap * normal) < 0.05,
 				"the reflection looks from the player's eye mirrored through the glass")
 	var skin := me.get_node_or_null("Skin")
-	var stamped := skin != null and skin.find_children("*", "VisualInstance3D", true, false).all(
-			func(node: VisualInstance3D) -> bool: return node.layers == 1 << (MirrorScript.BODY_LAYER - 1))
-	t.check(stamped, "the player's model is drawn on the mirror's body layer")
+	var head_seen := false
+	if skin != null and reflection != null:
+		for node in skin.find_children("*", "MeshInstance3D", true, false):
+			if node.get_meta("slot", "") == "head" and (node as MeshInstance3D).layers & reflection.cull_mask != 0:
+				head_seen = true
+	t.check(reflection != null and head_seen, "the mirror's camera sees the head your own camera leaves out")
 	main.phone.close()
 	await t.frames(3)
 	for i in 2:
 		await t.get_tree().process_frame
 	skin = me.get_node_or_null("Skin")
+	var head_bit := 1 << (MirrorScript.HEAD_LAYER - 1)
 	t.check(skin != null and skin.find_children("*", "VisualInstance3D", true, false).all(
-			func(node: VisualInstance3D) -> bool: return node.layers == 1), "and back on the normal layer afterwards")
+			func(node: VisualInstance3D) -> bool: return node.layers == 1 or node.layers == head_bit),
+			"afterwards the body is on the normal layer, with only the head left out of your own view")
 	Look.enabled = was_enabled
 	main.queue_free()
 	await t.frames(3)

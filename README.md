@@ -80,9 +80,21 @@ a tag over it says what it is and what it is worth.
 | Uplink | Your name, host a server, or join one |
 | Arena gate | Straight into the arena (see "The arena" below) |
 
-The gunsmith bench (back left, by the gun rack) holds your attachments on its
+Every weapon you own hangs on one rack in the **armory**, the alcove off the
+left of the room: long guns on its back wall, sidearms on one side and melee
+on the other. The locker stands at its way in. The gunsmith bench (in the
+middle of the armory) holds your attachments on its
 pegboard and your primary in its vise. Look at an attachment and press **E**
 to fit it; a tablet beside the vise lists what the fitted kit changes.
+
+The **suit-up bay** beside the launch pad puts your loadout on you: use its
+control post and the bay's arms fit your armor, rig and weapons, so you can
+see what you are taking out before you deploy.
+
+Your bikes are parked in the **garage** off the right of the room. Through the
+door in the back wall is the **firing range**: once suited up, your weapons
+work past its firing line with endless ammo, targets stand, slide and fly at
+set distances, and a board keeps your score. Nothing there is lost or earned.
 
 The door behind you leads online (it opens the uplink). Signing out of a
 world, or dying and pressing L, brings you back here.
@@ -246,8 +258,8 @@ you have.
   you can drop back in and a number key picks one: a quiet drop away from
   everyone, a strongpoint your side holds, or, once a battle is on, right
   beside the heaviest fighting. Enter still lets the world pick for you.
-- Scrip. Kills, warlords and strongpoints pay scrip that you carry. It turns
-  into credits one for one, but only when you bank it at a depot or sign out
+- Scrip. Kills, warlords and strongpoints pay scrip that you carry. It joins
+  your banked balance, which is safe, only when you bank it at a depot or sign out
   alive. Die with it and it lies in your bag for whoever gets there first.
 - World events. Every few minutes, and more often as the war heats up, either
   a supply pod lands with a better haul than any cache, or a warlord marches
@@ -271,7 +283,7 @@ you have.
   All of them drop loot bags.
 - Loot caches with five rarity tiers, a backpack, and a stash that persists.
 - A home base you walk around in, where the game opens. Everything in your
-  stash is on show: guns on a rack, blades on the wall, armor on stands,
+  stash is on show: every weapon on one rack in the armory, armor on stands,
   flight rigs, ability chips, bikes parked in the garage, loot on shelves.
   Look at a piece of gear and press F to equip it for your next run.
 - Loadouts picked in your base from your stash: primary weapon, melee weapon,
@@ -349,26 +361,26 @@ you have.
   losing your connection online leaves your body standing in the world for
   the same time (30 seconds if you were in a fight), so nobody escapes a
   fight by closing the game.
-- Credits and shops. The trader in your base has five shops: the Armory (weapons and attachments), Outfitter
+- Scrip and shops. The trader in your base has five shops: the Armory (weapons and attachments), Outfitter
   (armor, flight rigs, medkits), Garage (bikes), Furnisher (furniture and
-  decorations for your home base) and Tailor (clothing). See "Credits and
+  decorations for your home base) and Tailor (clothing). See "Scrip and
   shops" below.
 
-## Credits and shops
+## Scrip and shops
 
-- **Loot is the money.** You earn credits mostly by selling the loot you get
+- **Loot is the money.** You earn scrip mostly by selling the loot you get
   home, by banking it at a depot or signing out with it, so nothing is earned
   until it survives. Loot sells for its full value.
-- **Kills pay a small bounty**: 20 credits each for a life you sign out of
-  alive, a quarter of that for a life that ends in death. It is small on purpose, so running in with the free
-  scrap kit never beats risking real gear.
-- **Credits are safe, gear is not.** Your balance is never lost on death. But
-  credits only become power as gear, and bought gear drops like any other.
+- **Kills pay a small bounty**: 20 scrip each, carried like all scrip, so it
+  is only yours if you bank it or sign out alive. It is small on purpose, so
+  running in with the free scrap kit never beats risking real gear.
+- **Banked scrip is safe, gear is not.** Your balance is never lost on death. But
+  scrip only becomes power as gear, and bought gear drops like any other.
 - **Shops sell base-level gear only** (Common and Uncommon). Rare gear and
   better can only be found.
 - **Selling gear back pays 40%** of its value, so trading with a shop can
   never make money.
-- A new player starts with 500 credits. Online, the server keeps your balance
+- A new player starts with 500 scrip. Online, the server keeps your balance
   next to your stash and decides every price; your game only asks.
 
 ## The arena
@@ -414,7 +426,7 @@ core/            Shared by every world. Never names a specific world.
   profile/       Stash and stats that persist between raids (local play)
   base/          The home base: a room that puts the stash on show
   account/       Server-owned stashes for online play, and the shared gear rules
-  economy/       Credits: the money rules, the shop list, and the shop screen
+  economy/       Scrip: the money rules, the shop list, and the shop screen
   progression/   Mastery: tracks and variants, XP tracking in a raid, hub panel
   net/           Online play: the server and client ends of a raid
 worlds/

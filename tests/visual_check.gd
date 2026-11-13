@@ -59,6 +59,11 @@ func _ready() -> void:
 	# `-- <output_dir> --watch-only` shows the watch card raised: in first
 	# person with no helmet (vitals on the card), with a helmet and a jetpack
 	# (vitals and heat on the visor), each icon looked at, and in third person.
+	# `--base-watch-only` shows just the home base's.
+	if "--base-watch-only" in args:
+		await _base_watch_shots(out_dir)
+		get_tree().quit()
+		return
 	if "--watch-only" in args:
 		await _watch_shots(out_dir)
 		get_tree().quit()
@@ -319,6 +324,44 @@ func _watch_shots(out_dir: String) -> void:
 		await _shot(out_dir.path_join("watch_third_%s.png" % tag))
 		raid.queue_free()
 		await _settle(3)
+	await _base_watch_shots(out_dir)
+
+
+## The watch raised in the home base, empty-handed (playtest: it half-raised
+## with no card there): first person, then third.
+func _base_watch_shots(out_dir: String) -> void:
+	var base := HomeBase.new()
+	base.show_gear(["bike_raider", "rifle_carbine"], {"vehicle": "bike_raider"})
+	add_child(base)
+	var controller := PlayerController.new()
+	controller.setup(base.player)
+	base.add_child(controller)
+	var base_hud: CanvasLayer = preload("res://core/ui/base_hud.gd").new()
+	base_hud.setup(base)
+	base.add_child(base_hud)
+	await _settle(60)
+	controller.wrist_raised = true
+	await _settle(30)
+	await _shot(out_dir.path_join("watch_base_first.png"))
+	controller.toggle_view()
+	await _settle(40)
+	await _shot(out_dir.path_join("watch_base_third.png"))
+	# The pose itself, close up: from the front and from the left. These
+	# cameras are not the player's, so the card stays turned to the player's.
+	var close := Camera3D.new()
+	close.fov = 50.0
+	base.add_child(close)
+	close.make_current()
+	var p := base.player
+	var face := p.find_child("WornWatch", true, false).get_child(0).get_node("Face") as Node3D
+	var eye_dir := (p.get_eye_position() - face.global_position).normalized()
+	print("watch face to eyes: %.0f degrees" % rad_to_deg(face.global_basis.y.normalized().angle_to(eye_dir)))
+	for view: Array in [["front", Vector3(-0.5, 1.45, -1.4)], ["left", Vector3(-1.5, 1.4, -0.3)]]:
+		close.look_at_from_position(p.global_transform * view[1], p.global_transform * Vector3(-0.1, 1.25, -0.2))
+		await _settle(4)
+		await _shot(out_dir.path_join("watch_base_pose_%s.png" % view[0]))
+	base.queue_free()
+	await _settle(3)
 
 
 func _toy_shots(out_dir: String) -> void:
@@ -618,6 +661,7 @@ func _hub_shots(out_dir: String) -> void:
 	var arrival: Vector3 = map.get("ARRIVAL") if map.get("ARRIVAL") != null else Vector3.ZERO
 	var views := [
 		["arrival", arrival + Vector3(0, 1.7, 0), Vector3(0, 12, 0)],
+		["plaza", Vector3(9, 1.7, 22), Vector3(-2, 2.5, -8)],
 		["arrival_high", arrival + Vector3(0, 6, 9), Vector3(0, 6, -20)],
 		["gates", Vector3(0, 2.5, -60), Vector3(0, 7, -100)],
 		["market", Vector3(-14, 1.7, -46), Vector3(-40, 4, -42)],
@@ -641,7 +685,8 @@ func _hub_shots(out_dir: String) -> void:
 func _base_shots(out_dir: String) -> void:
 	var base := HomeBase.new()
 	base.show_gear(["rifle_carbine", "smg_stinger", "dmr_longshot", "shotgun_breacher", "blade_arc",
-			"hammer_breaker", "frame_runner", "frame_trooper", "frame_bulwark", "jetpack_mk2", "boots_thruster",
+			"hammer_breaker", "knife_gutter", "axe_splitter", "spear_lancer", "pistol_machine", "pistol_hand_cannon",
+			"optic_scope", "optic_reflex", "muzzle_suppressor", "grip_vertical", "frame_runner", "frame_trooper", "frame_bulwark", "jetpack_mk2", "boots_thruster",
 			"wings_glide", "chip_blink", "chip_barrier", "chip_pulse", "bike_scrapper", "bike_raider", "medkit",
 			"medkit", "scrap_metal", "scrap_metal", "scrap_metal", "alloy_ingot", "reactor_core", "lattice_shard"],
 			{"primary": "dmr_longshot", "frame": "frame_bulwark", "vehicle": "bike_raider"})
@@ -654,20 +699,37 @@ func _base_shots(out_dir: String) -> void:
 	await _settle(40)
 	var views := {
 		"base_overview.png": [Vector3(0, 3.2, 8.2), Vector3(0, 1.2, -4)],
-		"base_weapons.png": [Vector3(-3, 1.9, -4.2), Vector3(-4.5, 1.5, -9)],
-		"base_blades.png": [Vector3(6, 1.9, -5.2), Vector3(6, 1.5, -9)],
-		"base_armor.png": [Vector3(-6.0, 1.8, -1.5), Vector3(-11, 1.2, -2.5)],
-		"base_rigs.png": [Vector3(6.0, 1.8, -1.0), Vector3(11, 1.2, -1.0)],
-		"base_garage.png": [Vector3(-1.0, 2.0, 3.2), Vector3(-2.5, 0.6, -1.5)],
+		"base_armory.png": [Vector3(-6.5, 2.6, 1.0), Vector3(-17.0, 1.6, -0.5)],
+		"base_weapons.png": [Vector3(-12.6, 2.0, 2.6), Vector3(-19, 1.9, -1.0)],
+		"base_sidearms.png": [Vector3(-15.0, 1.9, 3.0), Vector3(-15.6, 1.8, -5)],
+		"base_blades.png": [Vector3(-15.0, 1.9, -2.6), Vector3(-15.6, 1.4, 5)],
+		"base_armor.png": [Vector3(-5.5, 2.0, -2.0), Vector3(-5.5, 1.1, -8.5)],
+		"base_rigs.png": [Vector3(5.5, 2.0, -2.0), Vector3(5.5, 1.1, -8.5)],
+		"base_garage.png": [Vector3(5.0, 2.6, 1.0), Vector3(16.0, 0.8, 0.0)],
+		"base_range.png": [Vector3(0.0, 2.2, -8.0), Vector3(0.0, 1.4, -30.0)],
+		"base_range_lane.png": [Vector3(-2.5, 1.8, -12.0), Vector3(1.0, 2.5, -30.0)],
 		"base_shelves.png": [Vector3(-6.5, 1.8, 4.6), Vector3(-7, 1.2, 9)],
-		"base_stations_left.png": [Vector3(-1.5, 2.2, 6.5), Vector3(-6.6, 1.0, 3.1)],
-		"base_stations_right.png": [Vector3(1.5, 2.2, 6.5), Vector3(6.6, 1.0, 3.1)],
+		"base_stations_left.png": [Vector3(-3.5, 2.2, 4.0), Vector3(-11.0, 1.0, 1.0)],
+		"base_stations_right.png": [Vector3(4.0, 2.2, 1.0), Vector3(11.1, 1.0, 6.0)],
+		"base_back_wall.png": [Vector3(0.0, 2.6, 4.0), Vector3(0.0, 1.5, -9.0)],
 		"base_launch.png": [Vector3(0, 2.4, 7.8), Vector3(0, 0.6, 1.5)],
 	}
 	for file: String in views:
 		camera.look_at_from_position(views[file][0], views[file][1])
 		await _settle(4)
 		await _shot(out_dir.path_join(file))
+	# The suit-up bay, empty, then with the player suited up in it.
+	var bay := HomeBase.SUIT_AT
+	camera.look_at_from_position(bay + Vector3(1.6, 2.0, 4.2), bay + Vector3(0, 1.1, 0))
+	await _settle(4)
+	await _shot(out_dir.path_join("base_suit_bay.png"))
+	base.suit_up()
+	# The arms move in real time: catch them at the body.
+	await get_tree().create_timer(base.suit_time * 0.45).timeout
+	await _shot(out_dir.path_join("base_suit_up.png"))
+	await get_tree().create_timer(base.suit_time).timeout
+	await _settle(4)
+	await _shot(out_dir.path_join("base_suited.png"))
 	# A station's screen, live on the console: from across the room, then
 	# moved in to use it.
 	var screen_view := SubViewport.new()
@@ -861,12 +923,13 @@ func _attachment_shots(out_dir: String) -> void:
 		camera.make_current()
 		base.player.global_position = Vector3(0, 0.1, 6)
 		await _settle(20)
-		var bench := HomeBase.BENCH_AT
+		# Views in the bench's own frame (+Z is where you stand to use it).
+		var bench := Transform3D(Basis(Vector3.UP, HomeBase.BENCH_YAW), HomeBase.BENCH_AT)
 		if primary == "rifle_scrap":
-			camera.look_at_from_position(bench + Vector3(3.2, 1.9, 0.6), bench + Vector3(0, 1.4, 0))
+			camera.look_at_from_position(bench * Vector3(-0.6, 1.9, 3.2), bench * Vector3(0, 1.4, 0))
 			await _settle(4)
 			await _shot(out_dir.path_join("bench_overview.png"))
-		camera.look_at_from_position(bench + Vector3(1.0, 1.45, 0.25), bench + Vector3(0, 1.2, 0.0))
+		camera.look_at_from_position(bench * Vector3(-0.25, 1.45, 1.0), bench * Vector3(0, 1.2, 0.0))
 		await _settle(4)
 		await _shot(out_dir.path_join("bench_%s.png" % primary))
 		base.queue_free()
@@ -1542,7 +1605,7 @@ func _ride_shots(out_dir: String) -> void:
 func _view_shots(out_dir: String, only := "") -> void:
 	var raid := Raid.new()
 	add_child(raid)
-	raid.start(Worlds.get_world("ashfront"), 42, ["rifle_carbine", "blade_scrap", "pistol_service", "jetpack_mk1", "plate_light"])
+	raid.start(Worlds.get_world("ashfront"), 42, ["rifle_carbine", OS.get_environment("VIEW_MELEE") if OS.has_environment("VIEW_MELEE") else "blade_scrap", "pistol_service", "jetpack_mk1", "plate_light"])
 	for bot in raid.bots:
 		bot.get_node("Brain").set_physics_process(false)
 		bot.global_position += Vector3(0, -500, 0)
@@ -1563,17 +1626,20 @@ func _view_shots(out_dir: String, only := "") -> void:
 	var pose := ActionPose.of(p)
 	var gun_at := -1
 	var blade_at := -1
+	var pistol_at := -1
 	for i in p.weapons.size():
 		if p.weapons[i] is MeleeWeapon:
 			blade_at = i
-		elif p.weapons[i] is Gun and not p.weapons[i].is_sidearm and gun_at < 0:
+		elif p.weapons[i] is Gun and p.weapons[i].is_sidearm:
+			pistol_at = i
+		elif p.weapons[i] is Gun and gun_at < 0:
 			gun_at = i
 	var gun := p.weapons[gun_at] as Gun
 	var blade := p.weapons[blade_at] as MeleeWeapon
 	var outside := Camera3D.new()
 	outside.fov = 40.0
 	raid.add_child(outside)
-	var rows := ["gun_ready", "gun_low", "reload", "switch", "windup_left", "windup_right", "windup_overhead",
+	var rows := ["gun_ready", "gun_low", "pistol_low", "blade_idle", "reload", "switch", "windup_left", "windup_right", "windup_overhead",
 			"swing", "guard", "watch"]
 	if only != "":
 		rows = rows.filter(func(r: String) -> bool: return r in only.split(","))
@@ -1581,8 +1647,8 @@ func _view_shots(out_dir: String, only := "") -> void:
 	var sheet := Image.create(3 * size.x, rows.size() * size.y, false, Image.FORMAT_RGBA8)
 	for row in rows.size():
 		var kind: String = rows[row]
-		var melee := kind.begins_with("windup") or kind == "swing" or kind == "guard"
-		p.active_weapon_index = blade_at if melee else gun_at
+		var melee := kind.begins_with("windup") or kind == "swing" or kind == "guard" or kind == "blade_idle"
+		p.active_weapon_index = blade_at if melee else (pistol_at if kind == "pistol_low" else gun_at)
 		blade._windup_left = 0.0
 		blade._swing_left = 0.0
 		blade._blocking = false

@@ -30,14 +30,11 @@ const STANCE_CONTROL_HINTS := [
 	"flick the mouse left, right or up",
 	"hold A, D or W as you attack or guard",
 ]
-## Where the held weapon sits relative to the camera in first-person.
 const VehicleScript := preload("res://core/vehicle/vehicle.gd")
-const FirstPersonArms := preload("res://core/visual/first_person_arms.gd")
+const MirrorScript := preload("res://core/visual/mirror.gd")
 ## Where a toy vehicle sits in the hand, and how big it is drawn there next
 ## to a thrown toy (it is close to the eye in first person).
 const TOY_IN_HAND := Vector3(-0.08, 0.0, 0.1)
-const TOY_HAND_SIZE := 0.55
-const FIRST_PERSON_HAND := Vector3(0.16, -0.19, -0.3)
 
 var actor: Actor
 var camera: Camera3D
@@ -51,10 +48,6 @@ var input_blocked := false
 ## everyone else sees (`ActorCommand.phone`), and the weapon is put away in
 ## the view until the phone is.
 var phone_out := false
-## Set while a mirror stands in front of you (1-20, 0 for none). In first
-## person your body stays drawn on this render layer, which this camera leaves
-## out, so the mirror's camera can still show it.
-var body_layer := 0
 ## How far behind the eyes the third-person camera sits, in meters: a view
 ## over the right shoulder (the phone's "Camera distance" setting). Aiming
 ## moves in to `aim_distance_ratio` of it.
@@ -66,25 +59,6 @@ var ride_extra_distance := 1.6
 ## separately from the on-foot view, which comes back when you get off.
 var ride_view := ViewMode.THIRD
 var base_fov := 80.0
-## First person moves the held weapon by the actor's `ActionPose`, the same
-## state that moves the model's arm third person: melee reach is scaled by
-## `first_person_reach` (the hand is nearer the eye than a shoulder is) and
-## the shoulder turn swings the hand round the eye by `first_person_turn` of
-## it. A switch drops the hand toward the holster's side to
-## `first_person_stow` (camera space, x taken from the holster) and tips it
-## by `first_person_stow_tilt`, out of view.
-var first_person_reach := 0.45
-var first_person_turn := 0.35
-## The nearest the hand comes to the eye (m, straight ahead) and the furthest
-## it goes to either side, in first person.
-var first_person_near := 0.4
-var first_person_side := 0.3
-## A cocked hand is kept at least this far off the middle of the view (as
-## sideways over ahead), so a windup's arm comes in from the edge instead of
-## covering what you are about to hit. It fades out through the swing.
-var first_person_clear := 0.5
-var first_person_stow := Vector3(0.0, -0.7, -0.4)
-var first_person_stow_tilt := Vector3(-1.1, 0.0, 0.0)
 ## Speed widens the view a little, so a boost, a dive or a bike reads as
 ## fast: up to `speed_fov` degrees more, from a sprint's speed up to
 ## `speed_fov_at` m/s. Never while aiming or zoomed.
@@ -116,6 +90,9 @@ var eye_relief := 0.0
 ## crosshair, since the optic's own reticle is in the middle of the view.
 var sighted := false
 var _sight_blend := 0.0
+## First person: how far the model's eyes are from the actor's eye point,
+## eased so the view never jolts with a step.
+var _eye_offset := Vector3.ZERO
 ## How far the mouse has to move, in pixels, to count as a stance flick.
 var flick_threshold := 45.0
 ## How quickly old mouse movement stops counting toward a flick.
@@ -164,10 +141,6 @@ var flinch_deg := 1.2
 var _shake := Vector2.ZERO
 var _shake_speed := Vector2.ZERO
 var _speed_fov_now := 0.0
-## Your own arms in first person, and the look they were built for.
-var _arms: Node3D
-var _arms_look := {}
-var _arms_failed := false
 
 
 func setup(p_actor: Actor) -> void:
@@ -359,8 +332,7 @@ func throw_held_toy() -> void:
 func _show_held_toy() -> void:
 	var shown: String = _toy_node.get_meta("display_item", "") if _toy_node != null else ""
 	if _toy_node != null:
-		# Close to the eye in first person it is drawn smaller.
-		_toy_node.scale = Vector3.ONE * VehicleScript.TOY_SCALE * (1.0 if is_third_person() else TOY_HAND_SIZE)
+		_toy_node.scale = Vector3.ONE * VehicleScript.TOY_SCALE
 	if shown == held_toy:
 		return
 	if _toy_node != null:
@@ -567,100 +539,34 @@ func _process(delta: float) -> void:
 		elif not thrusting and _thrust_audio.playing:
 			_thrust_audio.stop()
 	var first_person := not actor.is_dead and pivot.distance_to(desired) <= 0.7
-	var for_mirror := first_person and body_layer > 0
+	var skin := actor.get_node_or_null("Skin")
+	# First person looks out of the model's own eyes (`ActorSkin.eye_point`),
+	# which sit a little ahead of the actor's eye point; aim is still judged
+	# from the actor.
+	var eyes: Variant = skin.eye_point(look) if first_person and skin != null and skin.has_method("eye_point") else null
+	var offset: Vector3 = eyes - actor.get_eye_position() if eyes != null else Vector3.ZERO
+	_eye_offset = _eye_offset.lerp(offset, 1.0 - exp(-18.0 * delta)) if first_person else offset
+	if first_person:
+		camera.global_position += _eye_offset * (1.0 - minf(_cam_dist / 0.7, 1.0))
+	# First and third person differ only in where the camera is (Caleb's
+	# rule): your own body is drawn and posed the same in both, holding the
+	# same weapon in the same hand. First person only leaves your head out of
+	# this camera (`Mirror.HEAD_LAYER`), since the eyes are inside it; a
+	# mirror's camera still sees it.
 	if actor.body_mesh:
-		actor.body_mesh.visible = not first_person or for_mirror
-	camera.cull_mask = 0xFFFFF & ~(1 << (body_layer - 1)) if for_mirror else 0xFFFFF
-	# In first-person the weapon is held in front of the camera; otherwise it
-	# rests on the body, where the Actor poses it. In front of a mirror the
-	# hands are on the phone, so it rests on the body there too.
-	first_person = first_person and not for_mirror and not phone_out
-	actor.hand_override = first_person
-	var sight := _sight_of(weapon) if first_person else null
+		actor.body_mesh.visible = true
+	camera.cull_mask = 0xFFFFF & ~(1 << (MirrorScript.HEAD_LAYER - 1)) if first_person else 0xFFFFF
+	if skin != null and skin.has_method("hide_head"):
+		skin.hide_head(first_person)
+	ActionPose.of(actor).advance(delta)
+	# Aiming down an optic moves the eye to the sight, wherever the hands
+	# hold it; the gun is never moved to the eye.
+	var sight := _sight_of(weapon) if first_person and not phone_out else null
 	_sight_blend = move_toward(_sight_blend, 1.0 if aiming and sight != null else 0.0, delta * 7.0)
 	sighted = _sight_blend > 0.9
-	if first_person:
-		var pose := ActionPose.of(actor)
-		pose.advance(delta)
-		var hold := first_person_hold(pose)
-		if sight != null and _sight_blend > 0.0:
-			# Raise the gun so its optic's eye point is at the eye: the view
-			# then looks straight down the sight.
-			var in_hand := actor.hand.global_transform.affine_inverse() * sight.global_transform.origin
-			var lined_up := Vector3(0, 0, -eye_relief) - in_hand
-			hold = hold.interpolate_with(Transform3D(Basis.IDENTITY, lined_up), _sight_blend)
-		actor.hand.global_transform = camera.global_transform * hold
-		actor.hand.set_meta("shown", actor.hand.global_transform)
-	_update_arms(first_person)
-
-
-## Shows your own arms holding the weapon in first person (when the art
-## layer is on and the character has arms to copy).
-func _update_arms(first_person: bool) -> void:
-	if not Look.enabled or not actor.has_node("Skin"):
-		return
-	var wanted: Dictionary = {"skin": actor.get_meta("look", Look.DEFAULT_SKIN), "appearance": actor.get_meta("appearance", {})}
-	if _arms != null and wanted != _arms_look:
-		_arms.queue_free()
-		_arms = null
-		_arms_failed = false
-	if _arms == null and not _arms_failed:
-		_arms_look = wanted
-		_arms = FirstPersonArms.new()
-		_arms.name = "FirstPersonArms"
-		_arms.look = Look
-		_arms.actor = actor
-		_arms.camera = camera
-		camera.add_child(_arms)
-		if not _arms.build(wanted["skin"], wanted["appearance"]):
-			_arms.queue_free()
-			_arms = null
-			_arms_failed = true
-			return
-	if _arms != null:
-		_arms.update(first_person, ActionPose.of(actor).watch, held_toy != "")
-
-
-## True while your own arms are drawn in first person.
-func has_arms() -> bool:
-	return _arms != null and is_instance_valid(_arms)
-
-
-## Where the weapon hand goes in first person, in the camera's space: the
-## resting hold moved by the same shared pose the third-person arm follows
-## (melee reach and shoulder turn, a reload, the low ready, a switch).
-func first_person_hold(pose: ActionPose) -> Transform3D:
-	var at := FIRST_PERSON_HAND
-	var basis := Basis.IDENTITY
-	if pose == null:
-		return Transform3D(basis, at)
-	at += pose.reach * (first_person_reach * pose.reach_weight)
-	var gun := pose.gun_offset(true)
-	at += gun.origin
-	basis = gun.basis
-	var swing := Basis(Vector3.UP, pose.turn.x * first_person_turn) * Basis(Vector3.RIGHT, pose.turn.y * first_person_turn)
-	at = swing * at
-	basis = swing * basis
-	# However a pose moves it, the hand stays far enough out in front that
-	# the arm holding it does not fill the view.
-	if pose.reach_weight > 0.0:
-		at.z = lerpf(at.z, minf(at.z, -first_person_near), pose.reach_weight)
-		at.x = lerpf(at.x, clampf(at.x, -first_person_side, first_person_side), pose.reach_weight)
-		var off := Vector2(at.x, at.y)
-		var clear := first_person_clear * -at.z
-		if off.length() < clear:
-			var way := off.normalized() if off.length() > 0.03 else Vector2(0.8, 0.6)
-			var w := pose.reach_weight * pose.elbow_raise
-			at.x = lerpf(at.x, way.x * clear, w)
-			at.y = lerpf(at.y, way.y * clear, w)
-	if pose.switch_weight > 0.0:
-		var side := clampf(pose.switch_point.x, -0.45, 0.45)
-		var stow := Vector3(side, first_person_stow.y, first_person_stow.z)
-		var tip := Basis.from_euler(first_person_stow_tilt + Vector3(0.0, 0.0, -0.5 * side))
-		var w := smoothstep(0.0, 1.0, pose.switch_weight)
-		at = at.lerp(stow, w)
-		basis = basis.slerp(tip, w)
-	return Transform3D(basis, at)
+	if sight != null and _sight_blend > 0.0:
+		var eye := Transform3D(look, sight.global_position + look * Vector3(0.0, 0.0, eye_relief))
+		camera.global_transform = camera.global_transform.interpolate_with(eye, ease(_sight_blend, -2.0))
 
 
 ## The field of view while aiming `weapon`: optics zoom further in.

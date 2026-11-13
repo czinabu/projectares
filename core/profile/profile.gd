@@ -54,7 +54,7 @@ var raids_played := 0
 var raids_extracted := 0
 var kills := 0
 ## Money for the hub shops. Safe between raids: only gear is ever at risk.
-var credits := Economy.STARTING_CREDITS
+var scrip := Economy.STARTING_SCRIP
 var arena_wins := 0
 var arena_losses := 0
 
@@ -74,7 +74,7 @@ func _ready() -> void:
 func apply_dev_mode() -> void:
 	use_save(DEV_SAVE_PATH if DevMode.active() else SAVE_PATH)
 	if save_path == DEV_SAVE_PATH:
-		credits = DevMode.top_up(stash)
+		scrip = DevMode.top_up(stash)
 		save()
 
 
@@ -110,7 +110,7 @@ func reset() -> void:
 	raids_extracted = 0
 	kills = 0
 	renown = 0
-	credits = Economy.STARTING_CREDITS
+	scrip = Economy.STARTING_SCRIP
 	arena_wins = 0
 	arena_losses = 0
 
@@ -178,31 +178,31 @@ func checkout_loadout(world: WorldDef) -> Array[String]:
 
 ## Buys one item from a hub shop into the stash. Returns {"ok"} or {"ok": false, "error"}.
 func buy(shop_id: String, item_id: String) -> Dictionary:
-	return _bank(Economy.buy(stash, credits, shop_id, item_id))
+	return _bank(Economy.buy(stash, scrip, shop_id, item_id))
 
 
 ## Sells up to `count` of a stash item to the shops.
 func sell(item_id: String, count: int = 1) -> Dictionary:
-	return _bank(Economy.sell(stash, loadout, credits, item_id, count))
+	return _bank(Economy.sell(stash, loadout, scrip, item_id, count))
 
 
 ## Sells every trade good (loot that is not gear) in the stash.
 func sell_loot() -> Dictionary:
-	return _bank(Economy.sell_loot(stash, credits))
+	return _bank(Economy.sell_loot(stash, scrip))
 
 
-## Adds `delta` credits (a cost when negative) for anything outside the
+## Adds `delta` scrip (a cost when negative) for anything outside the
 ## shops, such as a wager. Refuses, changing nothing, if it would go below zero.
-func change_credits(delta: int) -> bool:
-	if not Economy.can_change(credits, delta):
+func change_scrip(delta: int) -> bool:
+	if not Economy.can_change(scrip, delta):
 		return false
-	credits = Economy.add(credits, delta)
+	scrip = Economy.add(scrip, delta)
 	save()
 	return true
 
 
 func _bank(result: Dictionary) -> Dictionary:
-	credits = result.credits
+	scrip = result.scrip
 	if result.ok:
 		save()
 	return result
@@ -235,7 +235,7 @@ func record_raid(result: Dictionary) -> void:
 		raids_extracted += 1
 	kills += result.get("kills", 0)
 	renown += maxi(0, int(result.get("renown", 0)))
-	credits = Economy.add(credits, Economy.payout(result))
+	scrip = Economy.add(scrip, Economy.payout(result))
 	var gained: Dictionary = result.get("mastery_xp", {})
 	for track: String in gained:
 		mastery.add_xp(track, int(gained[track]))
@@ -269,7 +269,7 @@ func save() -> void:
 		"raids_extracted": raids_extracted,
 		"kills": kills,
 		"renown": renown,
-		"credits": credits,
+		"scrip": scrip,
 		"arena_wins": arena_wins,
 		"arena_losses": arena_losses,
 	}, "\t"))
@@ -309,7 +309,7 @@ func load_profile() -> void:
 	raids_extracted = int(data.get("raids_extracted", 0))
 	kills = int(data.get("kills", 0))
 	renown = maxi(0, int(data.get("renown", 0)))
-	credits = Economy.read_saved(data)
+	scrip = Economy.read_saved(data)
 	arena_wins = maxi(0, int(data.get("arena_wins", 0)))
 	arena_losses = maxi(0, int(data.get("arena_losses", 0)))
 	validate_loadout()

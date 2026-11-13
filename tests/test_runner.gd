@@ -880,7 +880,6 @@ func _test_main_flow() -> void:
 	check(p.get_active_weapon() is MeleeWeapon and not p.is_on_floor(),
 			"real input reaches the actor (blade out, airborne)")
 	check(not controller.is_third_person(), "camera stays put when using the blade or flying")
-	check(p.hand_override, "first-person holds the weapon in front of the camera")
 	# Melee side from the movement keys, once the player switches to them.
 	Input.action_press("move_left")
 	await frames(5)
@@ -912,7 +911,6 @@ func _test_main_flow() -> void:
 	# The HUD lives on your gear: a holographic watch and a counter on the gun.
 	var wrist: Hud.Wrist = main.hud.wrist
 	var holo := wrist.get_node("Hologram") as Node3D
-	var arm := wrist.get_node("Forearm") as Node3D
 	check(not controller.wrist_raised and not holo.visible, "the watch's hologram is down until you raise it")
 	var x_key := InputEventAction.new()
 	x_key.action = "check_wrist"
@@ -967,22 +965,18 @@ func _test_main_flow() -> void:
 			"with the watch up the wheel never switches weapons or turns the view")
 	controller.toggle_view()
 	await frames(40)
-	check(wrist.get_parent() == controller.camera and arm.visible and holo.visible,
-			"in first person your forearm comes up into view with the card over it")
-	check(holo.global_basis.get_scale().x * wrist.face_size.x < 0.2, "the card is card-sized, not a panel")
+	check(wrist.get_parent() == p and holo.visible,
+			"in first person the card rises off the watch on your own wrist, as in third person")
+	var card_angle := holo.global_basis.get_scale().x * wrist.face_size.x / controller.camera.global_position.distance_to(holo.global_position)
+	check(card_angle < 0.6, "the card is card-sized, not a panel (%.2f)" % card_angle)
 	check(wrist.get_node("Beam").visible and (wrist.get_node("Beam") as MeshInstance3D).mesh.get_surface_count() > 0
 			and is_equal_approx(float((holo.material_override as ShaderMaterial).get_shader_parameter("open")), 1.0),
 			"light is thrown up from the watch face to the card, which is drawn as a hologram")
-	var narrow := holo.scale.x
-	controller.camera.fov = 110.0
-	wrist.mount(p, controller, true)
-	check(holo.scale.x > narrow * 1.3, "a wider view grows the card, so it reads the same")
-	controller.camera.fov = controller.base_fov
 	check(Hud.Wrist.face_tint(0.1).r > 0.9 and Hud.Wrist.face_tint(1.0).b > 0.9,
 			"the watch face glows red when you are low and cyan when you are well")
 	controller._unhandled_input(x_key)
 	await frames(30)
-	check(not controller.wrist_raised and not holo.visible and not arm.visible, "X again puts it away")
+	check(not controller.wrist_raised and not holo.visible, "X again puts it away")
 	var leaving := Hud.watch_slots(main.raid, p, 0, "", 0.5)
 	var leave_at := Hud.Wrist.SLOTS.find("leave")
 	check(is_equal_approx(float(leaving[leave_at].progress), 0.5) and Hud.default_focus(leaving) == leave_at,
@@ -5111,15 +5105,15 @@ func _test_plaza_online() -> void:
 					and main.hud != null and not main.hud.visible and not main.plaza_view.visible,
 					"the shop comes up on the terminal on its counter and the view moves in to it")
 			var panel: Control = main.shop_view.panel
-			var before: int = panel.credits()
+			var before: int = panel.scrip()
 			var stock: Array = panel.find_children("*", "Button", true, false).filter(func(b: Node) -> bool:
 				return (b as Button).text.begins_with("Buy") and not (b as Button).disabled)
-			check(not stock.is_empty() and before > 0, "the stall shows stock and your credits on this server (%d)" % before)
+			check(not stock.is_empty() and before > 0, "the stall shows stock and your scrip on this server (%d)" % before)
 			if not stock.is_empty():
 				(stock[0] as Button).pressed.emit()
 				await _wait_until(func() -> bool:
-					return main.shop_view != null and main.shop_view.panel.credits() < before, 240)
-				check(main.shop_view.panel.credits() < before, "buying at the stall goes through the server")
+					return main.shop_view != null and main.shop_view.panel.scrip() < before, 240)
+				check(main.shop_view.panel.scrip() < before, "buying at the stall goes through the server")
 			main.close_shop()
 			await frames(2)
 			check(main.shop_view == null and main.shop_screen == null and not main.controller.input_blocked
@@ -5280,9 +5274,9 @@ func _test_dev_mode() -> void:
 	check(DevMode.available(), "dev mode can be switched on in a debug run")
 	check(DevMode.raid_cheats().is_empty(), "with dev mode off a raid gets no cheats")
 
-	# The dev stash: every piece of gear, healing in bulk, max credits.
+	# The dev stash: every piece of gear, healing in bulk, max scrip.
 	var stash: Array[String] = []
-	check(DevMode.top_up(stash) == DevEconomy.MAX_CREDITS, "dev mode holds as many credits as a stash can")
+	check(DevMode.top_up(stash) == DevEconomy.MAX_SCRIP, "dev mode holds as many scrip as a stash can")
 	var every_fit := true
 	for id: String in ItemDB.all_ids():
 		if not DevStashRules.storable(id):
@@ -5311,17 +5305,17 @@ func _test_dev_mode() -> void:
 	Profile.save_path = real_path
 	Profile.player_name = "Tester"
 	Profile.add_to_stash(["rifle_carbine", "rifle_carbine", "rifle_carbine"])
-	var real_credits := Profile.credits
+	var real_scrip := Profile.scrip
 	Profile.use_save(dev_path)
-	Profile.credits = DevMode.top_up(Profile.stash)
+	Profile.scrip = DevMode.top_up(Profile.stash)
 	Profile.save()
 	check(Profile.save_path == dev_path and "helm_ember_mk2" in Profile.stash and Profile.player_name == "Tester",
 			"the dev save has everything and keeps who you are")
 	Profile.use_save(real_path)
 	check("helm_ember_mk2" not in Profile.stash and Profile.stash.count("rifle_carbine") >= 3
-			and Profile.credits == real_credits, "switching back finds the real stash untouched")
+			and Profile.scrip == real_scrip, "switching back finds the real stash untouched")
 	Profile.use_save(dev_path)
-	check("helm_ember_mk2" in Profile.stash and Profile.credits == DevEconomy.MAX_CREDITS,
+	check("helm_ember_mk2" in Profile.stash and Profile.scrip == DevEconomy.MAX_SCRIP,
 			"the dev save is kept between switches")
 	Profile.persist = false
 	Profile.save_path = Profile.SAVE_PATH
@@ -5337,8 +5331,8 @@ func _test_dev_mode() -> void:
 	var host_id: String = service.sign_in("Dev Host", StashService.new_secret()).account_id
 	var friend_id: String = service.sign_in("Dev Friend", StashService.new_secret()).account_id
 	var host_view := service.snapshot(host_id)
-	check("helm_ember_mk2" in host_view.stash and host_view.credits == DevEconomy.MAX_CREDITS,
-			"a dev server gives the host's account everything and max credits")
+	check("helm_ember_mk2" in host_view.stash and host_view.scrip == DevEconomy.MAX_SCRIP,
+			"a dev server gives the host's account everything and max scrip")
 	check("helm_ember_mk2" not in service.snapshot(friend_id).stash, "other players on it get nothing extra")
 	var host_account = service.load_account(host_id)
 	host_account.stash.erase("wings_glide")
@@ -5901,9 +5895,196 @@ func _use(actor: Actor) -> void:
 	await frames(1)
 
 
+## Every weapon hangs on the one armory rack, in the alcove with the bench
+## and the locker at its way in; nothing else is shown there.
+func _test_armory(base: HomeBase) -> void:
+	print("Home base armory")
+	var weapons: Array[String] = []
+	for id: String in ItemDB.all_ids():
+		if ItemDB.has_tag(id, "weapon") and not ItemDB.has_tag(id, "starter"):
+			weapons.append(id)
+	var every_weapon := true
+	for id in weapons:
+		every_weapon = every_weapon and BaseLayout.is_armory(BaseLayout.kind_for(id))
+	check(not weapons.is_empty() and every_weapon, "every weapon belongs on the armory rack (%d weapons)" % weapons.size())
+	var spots := 0
+	var in_alcove := true
+	var others_out := true
+	for kind: String in BaseLayout.KINDS:
+		var last := int(BaseLayout.KINDS[kind]["spots"]) - 1
+		var ends := [base.spot_transform(kind, 0).origin, base.spot_transform(kind, last).origin]
+		if BaseLayout.is_armory(kind):
+			spots += last + 1
+			for at: Vector3 in ends:
+				in_alcove = in_alcove and base.in_armory(at)
+		elif kind != "gunsmith":
+			for at: Vector3 in ends:
+				others_out = others_out and not base.in_armory(at)
+	check(in_alcove and BaseLayout.ARMORY.size() == 3, "the rack's sections all hang inside the armory")
+	check(others_out, "armor, rigs, the garage and the shelves stay in the main room")
+	check(spots > 14, "the rack holds more weapons than the old gun rack and blade wall did (%d spots)" % spots)
+	await _test_suit_up(base)
+	check(base.in_armory(HomeBase.BENCH_AT) and base.in_armory(base.spot_transform("gunsmith", 11).origin),
+			"the gunsmith bench and its pegboard stand in the armory")
+	var locker: Vector3 = HomeBase.STATIONS["locker"]["at"]
+	check(not base.in_armory(locker) and absf(locker.x + base.room_size.x * 0.5) < 1.5
+			and absf(locker.z) < base.armory_opening * 0.5 + 2.0, "the locker stands beside the way into the armory")
+	check(base.has_node("ArmorySign") and base.has_node("ArmorySill"), "a sign over the way in names the armory")
+	# Signage: nothing mirrored from behind, names only up close, one title each.
+	var mirrored := 0
+	var bench_titles := 0
+	for node in base.find_children("*", "Label3D", true, false):
+		var label := node as Label3D
+		if label.double_sided and label.billboard == BaseMaterial3D.BILLBOARD_DISABLED:
+			mirrored += 1
+		if label.text == "GUNSMITH BENCH":
+			bench_titles += 1
+	check(mirrored == 0, "no wall label can be read mirrored from behind (%d can)" % mirrored)
+	check(bench_titles == 1 and not base.has_node("Displays/Sign_bay") and not base.has_node("Displays/Sign_gunsmith"),
+			"the bench and the garage carry one title each, not a second section sign")
+	var plates_near := true
+	for display in base.displays:
+		var plate := display.get_node("Plate") as Label3D
+		plates_near = plates_near and plate.visibility_range_end > 0.0 and plate.visibility_range_end <= 6.0
+	check(plates_near, "item names show only from close up")
+	# The way in is open: walk from the room to the rack.
+	var walker := base.player
+	var was := walker.global_position
+	walker.global_position = base.to_global(Vector3(-9.0, 0.1, -2.5))
+	walker.velocity = Vector3.ZERO
+	await frames(2)
+	walker.cmd.yaw = PI / 2.0
+	walker.cmd.move = Vector2(0, 1)
+	await frames(90)
+	walker.cmd.move = Vector2.ZERO
+	check(base.in_armory(base.to_local(walker.global_position)), "you can walk from the room into the armory")
+	walker.global_position = was
+	walker.velocity = Vector3.ZERO
+	await frames(2)
+
+
+## The suit-up bay puts the loadout on the player before they deploy.
+func _test_suit_up(base: HomeBase) -> void:
+	print("Home base suit-up bay")
+	var bay_at := HomeBase.SUIT_AT
+	var pad: Vector3 = HomeBase.STATIONS["launch"]["at"]
+	check(base.inside(bay_at) and not base.in_armory(bay_at) and bay_at.distance_to(pad) < 5.0,
+			"the suit-up bay stands in the main room beside the launch pad")
+	check(base.suit_bay != null and base.suit_bay.get_prompt() == "[F] Suit up: put your loadout on",
+			"its control post offers to suit you up")
+	var kit := base.suit_kit()
+	check(base.loadout.get("primary", "") in kit and kit.any(func(id: String) -> bool: return ItemDB.has_tag(id, "melee"))
+			and not kit.any(func(id: String) -> bool: return ItemDB.has_tag(id, "vehicle")),
+			"the kit is your loadout, starter gear filling empty slots, with vehicles left parked (%s)" % [kit])
+	var before := base.player
+	var replaced := []
+	base.player_replaced.connect(func(actor: Actor) -> void: replaced.append(actor), CONNECT_ONE_SHOT)
+	base.suit_bay.interact(before)
+	await frames(3)
+	var worn := base.player
+	check(replaced == [worn] and worn != before,
+			"suiting up makes the player a new actor and says so")
+	var carried: Array[String] = []
+	for weapon in worn.weapons:
+		carried.append(weapon.item_id)
+	check(base.loadout.get("primary", "") in carried and worn.gear_items.size() >= kit.size() - 1,
+			"you wear your loadout (%s)" % [carried])
+	check(worn.weapons_locked and worn.global_position.distance_to(base.to_global(bay_at)) < 1.0,
+			"you stand in the bay, weapons locked: nobody fights at home")
+	check(base.suit_bay.get_prompt().ends_with("wearing your loadout"), "the bay says you are suited up")
+	var kept := base.loadout.duplicate()
+	var changed := base.loadout.duplicate()
+	changed["primary"] = "dmr_longshot"
+	base.show_gear(base.stash, changed)
+	await frames(2)
+	check(base.suit_bay.get_prompt().begins_with("[F] Suit up again"), "a changed loadout asks you to suit up again")
+	base.show_gear(base.stash, kept)
+	await frames(2)
+	await _test_garage_and_range(base)
+	var visitor := HomeBase.new()
+	visitor.read_only = true
+	visitor.show_gear(["rifle_carbine"], {"primary": "rifle_carbine"})
+	add_child(visitor)
+	await frames(2)
+	var guest := visitor.player
+	visitor.suit_bay.interact(guest)
+	await frames(2)
+	check(visitor.player == guest and not visitor.suited and visitor.suit_bay.get_prompt().ends_with("(not yours)"),
+			"a visitor cannot use someone else's bay")
+	visitor.queue_free()
+	await frames(2)
+
+
+## Bikes park in the garage off the right wall; behind the back wall the
+## firing range frees a suited player's weapons and scores what they hit.
+func _test_garage_and_range(base: HomeBase) -> void:
+	print("Home base garage and firing range")
+	var parked := true
+	for i in int(BaseLayout.KINDS["bay"]["spots"]):
+		parked = parked and base.in_garage(base.spot_transform("bay", i).origin)
+	check(parked and base.has_node("GarageSign"), "every garage bay is in the garage off the room")
+	var clear := true
+	for id: String in HomeBase.STATIONS:
+		var at: Vector3 = HomeBase.STATIONS[id]["at"]
+		clear = clear and base.inside(at) and not base.in_garage(at) and not base.in_armory(at) and not base.in_range(at)
+	check(clear, "the consoles stand in the main room, clear of the garage, armory and range")
+	var all_on_range := true
+	for target in base.targets:
+		all_on_range = all_on_range and base.in_range(target.home)
+	check(base.targets.size() >= 6 and all_on_range, "the range has targets down its lane (%d)" % base.targets.size())
+	var kinds := {}
+	for target in base.targets:
+		kinds[target.kind] = true
+	check(kinds.has("plate") and kinds.has("slider") and kinds.has("drone"), "standing, sliding and flying targets")
+	var p := base.player
+	check(p.weapons_locked, "weapons stay locked in the main room")
+	# Walk through the door in the back wall.
+	p.global_position = base.to_global(Vector3(0, 0.1, -6.5))
+	p.velocity = Vector3.ZERO
+	p.cmd.yaw = 0.0
+	p.cmd.pitch = 0.0
+	p.cmd.move = Vector2(0, 1)
+	await frames(60)
+	p.cmd.move = Vector2.ZERO
+	await frames(2)
+	check(base.in_range(base.to_local(p.global_position)), "you can walk through the back wall into the range")
+	check(not p.weapons_locked, "past the line your weapons are free")
+	var gun := p.get_active_weapon() as Gun
+	check(gun != null and gun.reserve_ammo >= gun.mag_size * 4, "and never run dry")
+	# Shoot the nearest plate.
+	var plate: HomeBase.RangeTarget = base.targets[0]
+	var line_z := -base.room_size.z * 0.5 - base.firing_line
+	p.global_position = base.to_global(Vector3(plate.home.x, 0.1, line_z - 0.8))
+	p.velocity = Vector3.ZERO
+	await frames(2)
+	var eye := p.global_position + Vector3(0, p.eye_height, 0)
+	var dir := (plate.to_global(plate.centre) - eye).normalized()
+	p.cmd.yaw = atan2(-dir.x, -dir.z)
+	p.cmd.pitch = asin(dir.y)
+	p.cmd.aim_dir = dir
+	await frames(10)
+	var shots_before := base.range_shots
+	for i in 3:
+		p.cmd.primary_pressed = true
+		p.cmd.primary = true
+		await frames(1)
+		p.cmd.primary_pressed = false
+		p.cmd.primary = false
+		await frames(20)
+	check(base.range_shots > shots_before and base.range_hits > 0 and plate.hits > 0,
+			"shots on the range are counted and hits on a plate score (%d shots, %d hits)" % [base.range_shots, base.range_hits])
+	check("HITS" in base.range_board.text and base.range_last != "", "the board over the lane keeps score")
+	# Back into the room: locked again.
+	p.global_position = base.to_global(Vector3(0, 0.1, 2.0))
+	p.velocity = Vector3.ZERO
+	await frames(3)
+	check(p.weapons_locked, "weapons lock again back in the room")
+
+
 func _test_home_base() -> void:
 	print("Home base layout")
-	check(BaseLayout.kind_for("dmr_longshot") == "gun_rack" and BaseLayout.kind_for("hammer_breaker") == "blade_wall"
+	check(BaseLayout.kind_for("dmr_longshot") == "rack_guns" and BaseLayout.kind_for("hammer_breaker") == "rack_melee"
+			and BaseLayout.kind_for("pistol_machine") == "rack_sidearms" and BaseLayout.kind_for("power_rail_lance") == "rack_guns"
 			and BaseLayout.kind_for("frame_bulwark") == "armor_stand" and BaseLayout.kind_for("wings_glide") == "rig_stand"
 			and BaseLayout.kind_for("chip_blink") == "chip_case" and BaseLayout.kind_for("bike_raider") == "bay"
 			and BaseLayout.kind_for("medkit") == "supplies" and BaseLayout.kind_for("lattice_shard") == "trophy",
@@ -5919,7 +6100,7 @@ func _test_home_base() -> void:
 		if not by_kind.has(entry["kind"]):
 			by_kind[entry["kind"]] = []
 		by_kind[entry["kind"]].append(entry)
-	var guns: Array = by_kind.get("gun_rack", [])
+	var guns: Array = by_kind.get("rack_guns", [])
 	check(guns.size() == 2 and guns[0]["id"] == "dmr_longshot" and guns[0]["index"] == 0
 			and guns[1]["id"] == "rifle_carbine", "the most valuable gun gets the first spot")
 	check(guns[1]["count"] == 2 and guns[1]["equipped"] and not guns[0]["equipped"],
@@ -5958,10 +6139,10 @@ func _test_home_base() -> void:
 	var apart := true
 	for display in base.displays:
 		var key := "%s/%d" % [display.kind, display.index]
-		apart = apart and not spots.has(key) and absf(display.global_position.x) < base.room_size.x * 0.5 \
-				and absf(display.global_position.z) < base.room_size.z * 0.5
+		apart = apart and not spots.has(key) and base.inside(display.position)
 		spots[key] = true
 	check(apart, "every display has its own spot inside the room")
+	await _test_armory(base)
 	var asked := []
 	base.equip_requested.connect(func(slot: String, id: String) -> void: asked.append([slot, id]))
 	var dmr := base.display_for("dmr_longshot")
@@ -5992,6 +6173,27 @@ func _test_home_base() -> void:
 	check(lines[0] == "Lattice Shard" and "Relic" in lines[1], "the overlay names what you look at and its rarity")
 	check(hud.tag.visible and hud.tag.text == lines[1] and hud.tag.global_position.distance_to(shard.global_position) < 2.0,
 			"what it is shows on a tag over the gear itself, not on the screen")
+	# The watch works at home as in a raid (playtest: X half-raised the arm
+	# with no card): it rises with the key and its card has every icon.
+	check(hud.wrist != null and not hud.wrist.raised, "the base wears the watch, lowered")
+	var watch_keys := PlayerController.new()
+	watch_keys.setup(base.player)
+	base.add_child(watch_keys)
+	watch_keys.wrist_raised = true
+	await frames(30)
+	var watch_icons: Array = hud.wrist.card.slots.map(func(slot: Dictionary) -> String: return slot.id)
+	check(hud.wrist.raised and hud.wrist.raise_amount >= 1.0 and watch_icons == Hud.Wrist.SLOTS
+			and base.player.cmd.watch_up, "X raises the watch in the base and its card opens: %s" % ", ".join(watch_icons))
+	var home := Hud.base_watch_slots("Home base", {"vehicle": "bike_raider"})
+	var home_vehicle: Dictionary = home[Hud.Wrist.SLOTS.find("vehicle")]
+	check(home[0].detail == "Home base" and home_vehicle.detail == ItemDB.item_name("bike_raider")
+			and not home_vehicle.empty and Hud.base_watch_slots("Home base", {})[Hud.Wrist.SLOTS.find("vehicle")].empty,
+			"at home the card says where you are and which vehicle you deploy with")
+	watch_keys.wrist_raised = false
+	await frames(30)
+	check(hud.wrist.raise_amount <= 0.0 and not base.player.cmd.watch_up, "X lowers it again")
+	watch_keys.queue_free()
+	await frames(2)
 	check(base.get_node("Banner/Title").text == "HOME BASE" and "press F" in base.banner_text(),
 			"the base's name and how it works hang on a banner in the room")
 	for kind: String in BaseLayout.KINDS:
@@ -6054,6 +6256,22 @@ func _test_home_base() -> void:
 	main.base.equip_requested.emit("primary", "frame_bulwark")
 	check(Profile.equipped("vehicle") == "bike_scrapper" and Profile.equipped("primary") == "dmr_longshot",
 			"a parked bike can be picked, and gear cannot go in the wrong slot")
+	# Suiting up in the bay: real input on its control post.
+	var unsuited: Actor = main.base.player
+	_face_display(main.base.player, main.base.suit_bay)
+	main.controller.yaw = main.base.player.cmd.yaw
+	main.controller.pitch = main.base.player.cmd.pitch
+	await frames(3)
+	check(main.base.player.find_interactable() == main.base.suit_bay
+			and main.base.suit_bay.get_prompt().begins_with("[F] Suit up"), "the suit-up bay can be walked up to")
+	Input.action_press("interact")
+	await frames(3)
+	Input.action_release("interact")
+	await frames(3)
+	var suited: Actor = main.base.player
+	check(main.base.suited and suited != unsuited and suited.weapons.size() > 0, "using the bay suits you up")
+	check(main.controller.actor == suited and main.controller.camera.current,
+			"the controls and camera follow you into your suit")
 	check(main.hub.equipped("primary") == "dmr_longshot", "the locker shows the loadout chosen in the base")
 	# Every station opens its screen over the room, and Esc steps away.
 	for id: String in HomeBase.STATIONS:
@@ -6164,7 +6382,7 @@ func _test_home_base() -> void:
 
 # --- Arena ---------------------------------------------------------------------
 
-## Credits in a dictionary, for arena tests that need several wallets.
+## Scrip in a dictionary, for arena tests that need several wallets.
 class FakeBank:
 	extends Arena.Bank
 
@@ -6172,13 +6390,13 @@ class FakeBank:
 	var wins := {}
 	var losses := {}
 
-	func credits(key: String) -> int:
+	func scrip(key: String) -> int:
 		return money.get(key, 0)
 
 	func change(key: String, delta: int) -> bool:
-		if credits(key) + delta < 0:
+		if scrip(key) + delta < 0:
 			return false
-		money[key] = credits(key) + delta
+		money[key] = scrip(key) + delta
 		return true
 
 	func record(key: String, won: bool) -> void:
@@ -6336,7 +6554,7 @@ func _test_arena() -> void:
 	await frames(2)
 	check(not Arena.ArenaVenue.in_pit(me.global_position), "spectators who drop into the pit are put back in the stands")
 	arena.ask("bet", {"side": 0, "amount": 10})
-	check(Profile.credits == StashService.Economy.STARTING_CREDITS, "bets are refused when no bout is being called")
+	check(Profile.scrip == StashService.Economy.STARTING_SCRIP, "bets are refused when no bout is being called")
 	arena.ask("practice")
 	check(arena.queue.size() == 1 or arena.bout != null, "you can ask for a practice bout")
 	await _arena_phase(arena, Arena.Phase.CALLING, 30)
@@ -6344,7 +6562,7 @@ func _test_arena() -> void:
 	check(board.phase == "calling" and board.bout.names[0] == "You" and board.bout.names[1] != "",
 			"the bout is called with both fighters' names")
 	arena.ask("bet", {"side": 0, "amount": 10})
-	check(Profile.credits == StashService.Economy.STARTING_CREDITS and not arena.bout.bets.has("local"),
+	check(Profile.scrip == StashService.Economy.STARTING_SCRIP and not arena.bout.bets.has("local"),
 			"fighters cannot bet on their own bout")
 	await _arena_phase(arena, Arena.Phase.FIGHT)
 	var bot: Actor = arena.bout.fighters[1]
@@ -6368,13 +6586,13 @@ func _test_arena() -> void:
 	await _arena_phase(arena, Arena.Phase.CALLING, 60)
 	check(arena.bout != null and arena.bout.kind == "exhibition", "with nothing queued, bot gladiators put on an exhibition")
 	arena.ask("bet", {"side": 1, "amount": 50})
-	check(Profile.credits == StashService.Economy.STARTING_CREDITS - 50 and arena.bout.pools[1] == 50,
+	check(Profile.scrip == StashService.Economy.STARTING_SCRIP - 50 and arena.bout.pools[1] == 50,
 			"the crowd can bet while a bout is being called")
 	arena.ask("bet", {"side": 0, "amount": 50})
 	check(arena.bout.pools[0] == 0, "you cannot back both sides")
 	arena.exhibition_delay = -1.0
 	await _win_bout(arena, 0)
-	check(Profile.credits == StashService.Economy.STARTING_CREDITS, "a wager nobody took the other side of is refunded")
+	check(Profile.scrip == StashService.Economy.STARTING_SCRIP, "a wager nobody took the other side of is refunded")
 	arena.queue_free()
 	await frames(3)
 	check(Profile.stash == stash_before, "leaving the arena takes nothing from the stash")
@@ -6514,9 +6732,9 @@ func _test_online_arena() -> void:
 	service.persist = false
 	var made := service.sign_in("Wren", StashService.new_secret())
 	var stash_before: Array = service.snapshot(made.account_id).stash
-	check(service.credits_of("wren") == StashService.Economy.STARTING_CREDITS, "a new account starts with credits")
-	check(not service.change_credits("wren", -10000) and service.change_credits("wren", -50)
-			and service.credits_of("wren") == StashService.Economy.STARTING_CREDITS - 50, "credits never go below zero")
+	check(service.scrip_of("wren") == StashService.Economy.STARTING_SCRIP, "a new account starts with scrip")
+	check(not service.change_scrip("wren", -10000) and service.change_scrip("wren", -50)
+			and service.scrip_of("wren") == StashService.Economy.STARTING_SCRIP - 50, "scrip never go below zero")
 	service.equip("wren", "primary", "rifle_carbine")
 	var deployed := service.deploy("wren", Arena.ArenaVenue.new())
 	check(deployed.ok and "rifle_carbine" in deployed.kit and service.snapshot("wren").stash == stash_before
@@ -6538,8 +6756,8 @@ func _test_online_arena() -> void:
 	check(not ash.account.get("deployed", true), "nothing left the stash to enter the arena")
 	var ash_arena: Arena = ash.raid
 	await _wait_until(func() -> bool: return ash_arena.board.get("players", []).size() == 1, 240)
-	check(ash_arena.board.get("you", {}).get("credits", 0) == StashService.Economy.STARTING_CREDITS
-			and ash_arena.board.players[0].name == "Brix", "each player gets the board, with their credits")
+	check(ash_arena.board.get("you", {}).get("scrip", 0) == StashService.Economy.STARTING_SCRIP
+			and ash_arena.board.players[0].name == "Brix", "each player gets the board, with their scrip")
 	var notices: Array[String] = []
 	ash.raid.player.notice.connect(func(text: String) -> void: notices.append(text))
 	ash_arena.ask("bet", {"side": 0, "amount": 10})
@@ -6554,7 +6772,7 @@ func _test_online_arena() -> void:
 	await _wait_until(func() -> bool: return bex_arena.board.get("phase", "") == "calling", 240)
 	check(bex_arena.board.get("phase", "") == "calling" and bex_arena.board.bout.names == ["Ashe", "Brix"]
 			and bex_arena.board.bout.stake == 50, "the server calls the duel with both stakes in the purse")
-	check(int(bex_arena.board.get("you", {}).get("credits", 0)) == StashService.Economy.STARTING_CREDITS - 25,
+	check(int(bex_arena.board.get("you", {}).get("scrip", 0)) == StashService.Economy.STARTING_SCRIP - 25,
 			"the stake is taken from the server's account")
 	OS.kill(pid)
 	await _leave(ash)
