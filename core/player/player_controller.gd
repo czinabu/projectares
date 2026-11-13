@@ -62,6 +62,7 @@ var phone_read_distance := 0.9
 var phone_read_side := 0.72
 var phone_read_lift := 0.2
 var phone_read_fov := 32.0
+var phone_read_offset := 0.1
 var phone_read_rate := 6.0
 ## How far in to the phone the third-person camera is now (0..1).
 var phone_read := 0.0
@@ -891,7 +892,10 @@ func _read_phone(delta: float) -> void:
 	var centre := holo.global_position
 	var heading := Basis.from_euler(Vector3(0.0, yaw, 0.0))
 	var spot := actor.get_eye_position() + heading * Vector3(phone_read_side, phone_read_lift, phone_read_distance)
-	var reading := Transform3D(Basis.looking_at(centre - spot, Vector3.UP), spot)
+	# Aim a little past its left edge so the panel sits right of the
+	# crosshair, off the middle of the scene and away from the head.
+	var aim_at := centre - heading * Vector3(phone_read_offset, 0.0, 0.0)
+	var reading := Transform3D(Basis.looking_at(aim_at - spot, Vector3.UP), spot)
 	camera.global_transform = camera.global_transform.interpolate_with(reading, w)
 
 
