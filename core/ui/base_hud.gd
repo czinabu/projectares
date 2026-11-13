@@ -13,6 +13,8 @@ var base: HomeBase
 var controller: PlayerController
 ## The watch, as in a raid (`Hud.Wrist`).
 var wrist: Hud.Wrist
+## The contracts held, for the watch's contract icon (set by `main.gd`).
+var contracts: Array[Dictionary] = []
 
 ## Rarity, worth and description of the gear you look at, floating over it.
 var tag: Label3D
@@ -115,7 +117,8 @@ func _update_wrist(delta: float) -> void:
 	var p := base.player
 	wrist.raised = controller != null and controller.wrist_raised
 	wrist.mount(p, controller, visible, delta)
-	var slots := Hud.base_watch_slots("Home base" if base.owner_name == "" else "%s's base" % base.owner_name, base.loadout)
+	var slots := Hud.base_watch_slots("Home base" if base.owner_name == "" else "%s's base" % base.owner_name, base.loadout,
+			contracts)
 	var focus := Hud.default_focus(slots)
 	if controller != null:
 		if controller.watch_focus_moved:

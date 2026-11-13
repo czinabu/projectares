@@ -146,6 +146,10 @@ var renown := 0
 ## Scrip carried: pay that is lost with the body until it is banked. Written
 ## by the `Raid`, like renown.
 var scrip := 0
+## This life's contract counters so far (`Raid._count`), for views: the
+## watch's contract icon reads it. Set by the authority, and online sent to
+## the owner only. Counted toward contracts only on a sign-out.
+var tally := {}
 var rank := 0
 var streak := 0
 var bounty := 0

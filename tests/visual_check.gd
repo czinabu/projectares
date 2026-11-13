@@ -740,6 +740,7 @@ func _hub_shots(out_dir: String) -> void:
 		["market", Vector3(-14, 1.7, -46), Vector3(-40, 4, -42)],
 		["deck", Vector3(26.5, 16.7, -64), Vector3(-30, 8, 40)],
 		["screens", Vector3(0, 3, 62), Vector3(0, 7, 106)],
+		["contracts", Vector3(30, 2.2, 86), Vector3(32, 3.2, 96)],
 		["overview", Vector3(150, 120, 150), Vector3(0, 0, 0)],
 	]
 	for v: Array in views:

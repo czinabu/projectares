@@ -24,6 +24,7 @@ extends CanvasLayer
 ## gives the HUD one.
 
 const RenownLedger := preload("res://core/progression/renown_ledger.gd")
+const Contracts := preload("res://core/economy/contracts.gd")
 ## The name of the counter added to each gun's model.
 const AMMO_COUNTER := "AmmoCounter"
 ## The jetpack's screen bay, as the rig model names it.
@@ -35,6 +36,9 @@ var raid: Raid
 var controller: PlayerController
 ## Where war news goes (the phone's `show_notice`). Unset, it goes on the wrist.
 var notice_sink: Callable
+## The contracts held (`Contracts.held` of the account), for the watch's
+## contract icon. Set by `main.gd`; counted against `Actor.tally`.
+var contracts: Array[Dictionary] = []
 ## The wrist display.
 var wrist: Wrist
 ## What the helmet draws on its glass in first person, and what its visor
@@ -168,7 +172,7 @@ func _process(delta: float) -> void:
 		_prompt.text += "      Watch up, then click: pack it"
 	var picks := {"weapon": controller.weapon_pick, "artifact": controller.artifact_pick} \
 			if controller != null else {}
-	var slots := watch_slots(raid, p, picked, pack_name, leaving, banking, picks)
+	var slots := watch_slots(raid, p, picked, pack_name, leaving, banking, picks, contracts)
 	var focus := default_focus(slots)
 	if controller != null:
 		if controller.watch_focus_moved:
@@ -261,7 +265,7 @@ static func flight_popup(p: Actor) -> String:
 ## depot progress, and `picks` the weapon and artifact picked out
 ## ({"weapon": n, "artifact": n}).
 static func watch_slots(p_raid: Raid, p: Actor, picked_toy := 0, pack_name := "", leaving := -1.0,
-		banking := 0.0, picks := {}) -> Array[Dictionary]:
+		banking := 0.0, picks := {}, jobs: Array[Dictionary] = []) -> Array[Dictionary]:
 	var slots: Array[Dictionary] = []
 	# Summon: what you carry, materialized through the watch.
 	slots.append(weapon_slot(p_raid, p, int(picks.get("weapon", 0))))
@@ -305,7 +309,7 @@ static func watch_slots(p_raid: Raid, p: Actor, picked_toy := 0, pack_name := ""
 	slots.append(_slot("standing", str(p.renown) if p.renown > 0 else "", standing_text(p).replace("   ", " · "),
 			[], -1.0, false, hunted))
 	# Mission: the contract, the squad ping, and sign-out and banking.
-	slots.append(contract_slot(p_raid, p))
+	slots.append(contract_slot(jobs, p.tally))
 	slots.append(_slot("ping", "", "Ping where you look", ["click"], -1.0, false, false))
 	if leaving >= 0.0:
 		slots.append(_slot("leave", "", "Signing out", ["key:L"], leaving, false, true))
@@ -346,17 +350,11 @@ static func weapon_slot(p_raid: Raid, p: Actor, picked := 0) -> Dictionary:
 			-1.0, false, false, entries.size(), at)
 
 
-## The contract icon on the Mission tab. Empty until contracts exist: the
-## contract tracker fills this in (DESIGN.md "Contracts and bounties").
-static func contract_slot(_p_raid: Raid, _p: Actor) -> Dictionary:
-	return _slot("contract", "", "No contract", [], -1.0, true, false)
-
-
 ## The watch card at home (`HomeBase`), where there is no raid: the same
 ## icons, each saying what it holds for the next deploy. `loadout` is the
 ## base's loadout (slot -> item id). Nothing on it can be used from here: the
 ## base's stations do that.
-static func base_watch_slots(base_name: String, loadout: Dictionary) -> Array[Dictionary]:
+static func base_watch_slots(base_name: String, loadout: Dictionary, held: Array[Dictionary] = []) -> Array[Dictionary]:
 	var slots: Array[Dictionary] = []
 	var worn: Array[String] = []
 	for slot: String in ["primary", "sidearm", "melee"]:
@@ -377,10 +375,34 @@ static func base_watch_slots(base_name: String, loadout: Dictionary) -> Array[Di
 		slots.append(_slot("artifact", "", "No artifact", [], -1.0, true, false))
 	slots.append(_slot("map", "", base_name, [], -1.0, false, false))
 	slots.append(_slot("standing", "", "At home", [], -1.0, true, false))
-	slots.append(_slot("contract", "", "No contract", [], -1.0, true, false))
+	slots.append(contract_slot(held, {}))
 	slots.append(_slot("ping", "", "No squad here", [], -1.0, true, false))
 	slots.append(_slot("leave", "", "Home", [], -1.0, true, false))
 	return slots
+
+
+## The contract icon: how many jobs are held, and the one nearest done as its
+## line, counting this life's `tally` on top (it only counts once you sign out
+## alive, which the "+" says). The ring is that job's progress.
+static func contract_slot(held: Array[Dictionary], tally: Dictionary) -> Dictionary:
+	if held.is_empty():
+		return _slot("contract", "", "No contracts", [], -1.0, true, false)
+	var best := {}
+	var best_share := -1.0
+	var best_now := 0
+	for entry in held:
+		var now := Contracts.live(entry.stat, tally)
+		var share := minf(float(entry.have + now) / maxf(float(entry.goal), 1.0), 1.0)
+		if share > best_share:
+			best = entry
+			best_share = share
+			best_now = now
+	var line := "%s · %d/%d" % [best.title, best.have, best.goal]
+	if best_now > 0:
+		line += " +%d" % best_now
+	if held.size() > 1:
+		line += " · %d held" % held.size()
+	return _slot("contract", str(held.size()), line, [], best_share, false, best_share >= 1.0)
 
 
 ## The artifact icon: uses left (or a countdown), a ring while it runs or
@@ -1695,14 +1717,6 @@ void fragment() {
 					_lines(PackedVector2Array([Vector2(-0.8, 0.5), Vector2(0, -0.3), Vector2(0.8, 0.5)]),
 							c, r, color, width)
 					_lines(PackedVector2Array([Vector2(-0.8, 0.95), Vector2(0.8, 0.95)]), c, r, color, width * 0.7)
-				"contract":
-					# A sheet with lines and a tick.
-					_lines(PackedVector2Array([Vector2(-0.65, -1), Vector2(0.65, -1), Vector2(0.65, 1),
-							Vector2(-0.65, 1), Vector2(-0.65, -1)]), c, r, color, width)
-					_lines(PackedVector2Array([Vector2(-0.35, -0.5), Vector2(0.35, -0.5)]), c, r, color, width * 0.6)
-					_lines(PackedVector2Array([Vector2(-0.35, -0.1), Vector2(0.35, -0.1)]), c, r, color, width * 0.6)
-					_lines(PackedVector2Array([Vector2(-0.35, 0.45), Vector2(-0.1, 0.7), Vector2(0.38, 0.2)]),
-							c, r, color, width * 0.8)
 				"ping":
 					# A point with rings going out.
 					draw_circle(c, 0.16 * r, color)
@@ -1734,6 +1748,14 @@ void fragment() {
 					_lines(hex, c, r, color, width)
 					_lines(PackedVector2Array([Vector2(0, -0.5), Vector2(0.38, 0), Vector2(0, 0.5),
 							Vector2(-0.38, 0), Vector2(0, -0.5)]), c, r, color, width * 0.7)
+				"contract":
+					# A clipboard with a tick on it.
+					_lines(PackedVector2Array([Vector2(-0.7, -0.8), Vector2(0.7, -0.8), Vector2(0.7, 1),
+							Vector2(-0.7, 1), Vector2(-0.7, -0.8)]), c, r, color, width)
+					_lines(PackedVector2Array([Vector2(-0.3, -1), Vector2(0.3, -1), Vector2(0.3, -0.6),
+							Vector2(-0.3, -0.6), Vector2(-0.3, -1)]), c, r, color, width * 0.7)
+					_lines(PackedVector2Array([Vector2(-0.4, 0.15), Vector2(-0.1, 0.5), Vector2(0.45, -0.25)]),
+							c, r, color, width)
 				"leave":
 					_lines(PackedVector2Array([Vector2(-0.75, -0.1), Vector2(-0.75, 1), Vector2(0.75, 1),
 							Vector2(0.75, -0.1)]), c, r, color, width)

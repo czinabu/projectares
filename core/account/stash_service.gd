@@ -30,6 +30,7 @@ const MasteryBook := preload("res://core/progression/mastery_book.gd")
 const ProfileScript := preload("res://core/profile/profile.gd")
 const Economy := preload("res://core/economy/economy.gd")
 const BaseUpgrades := preload("res://core/base/base_upgrades.gd")
+const Contracts := preload("res://core/economy/contracts.gd")
 const Crafting := preload("res://core/progression/crafting.gd")
 const DevMode := preload("res://core/dev/dev_mode.gd")  # DEV MODE
 
@@ -42,6 +43,9 @@ const MIN_SECRET := 16
 var save_dir := "user://accounts"
 ## Tests turn this off so they never touch real saves.
 var persist := true
+## The day contracts are counted on (`Contracts.today`). Below zero is the
+## real date; tests set it to move time.
+var day_override := -1
 
 ## Account id -> Account. Loaded lazily from disk.
 var _accounts := {}
@@ -77,6 +81,8 @@ class Account:
 	var arena_losses := 0
 	## The home base upgrades owned (ids from `BaseUpgrades`). Never lost.
 	var base_upgrades: Array[String] = []
+	## Contracts taken from the board and their progress (`Contracts.clean`).
+	var contracts := {}
 	## The blueprints known (blueprint item ids, see `Crafting`). Never lost.
 	var blueprints: Array[String] = []
 
@@ -111,6 +117,7 @@ class Account:
 			"arena_wins": arena_wins,
 			"arena_losses": arena_losses,
 			"base_upgrades": base_upgrades,
+			"contracts": contracts,
 			"blueprints": blueprints,
 		}
 
@@ -149,6 +156,9 @@ class Account:
 		arena_wins = maxi(0, int(data.get("arena_wins", 0)))
 		arena_losses = maxi(0, int(data.get("arena_losses", 0)))
 		base_upgrades = BaseUpgrades.clean(data.get("base_upgrades"))
+		# Cleaned and brought up to date on first use (`_contracts_of`).
+		var saved_contracts: Variant = data.get("contracts", {})
+		contracts = saved_contracts.duplicate(true) if typeof(saved_contracts) == TYPE_DICTIONARY else {}
 		blueprints = Crafting.clean(data.get("blueprints"))
 		Crafting.learn(stash, blueprints)
 
@@ -266,6 +276,7 @@ func snapshot(account_id: String) -> Dictionary:
 		"arena_wins": account.arena_wins,
 		"arena_losses": account.arena_losses,
 		"base_upgrades": account.base_upgrades.duplicate(),
+		"contracts": _contracts_of(account).duplicate(true),
 		"blueprints": account.blueprints.duplicate(),
 	}
 
@@ -340,6 +351,38 @@ func buy_upgrade(account_id: String, upgrade_id: String) -> Dictionary:
 	if account.is_deployed():
 		return _fail("You are in a raid.")
 	return _bank(account, BaseUpgrades.buy(account.base_upgrades, account.scrip, upgrade_id))
+
+
+## The contract board: "take" or "drop" job `job_id`, or "reroll" today's
+## offers. The rules are `Contracts`; the server decides.
+func contract(account_id: String, action: String, job_id: String = "") -> Dictionary:
+	var account := load_account(account_id)
+	if account == null:
+		return _fail("No such account.")
+	var state := _contracts_of(account)
+	var result: Dictionary
+	match action:
+		"take":
+			result = Contracts.take(state, job_id, today())
+		"drop":
+			result = Contracts.drop(state, job_id, today())
+		"reroll":
+			result = Contracts.reroll(state, today())
+		_:
+			return _fail("Unknown request.")
+	if result.ok:
+		_save(account)
+	return result
+
+
+## The day contracts count on.
+func today() -> int:
+	return day_override if day_override >= 0 else Contracts.today()
+
+
+func _contracts_of(account: Account) -> Dictionary:
+	account.contracts = Contracts.clean(account.contracts, today())
+	return account.contracts
 
 
 ## Crafts one item (an id from `Crafting.RECIPES`) into the stash. Whether
@@ -449,6 +492,11 @@ func settle(account_id: String, result: Dictionary) -> Dictionary:
 	account.kills += maxi(0, int(result.get("kills", 0)))
 	account.renown += maxi(0, int(result.get("renown", 0)))
 	account.scrip = Economy.add(account.scrip, Economy.payout(result))
+	# Contracts count a sign-out and pay at once.
+	# A blueprint reward is one the account does not know yet, and is learned.
+	var paid := Contracts.settle(_contracts_of(account), result, today(), account.blueprints)
+	account.scrip = Economy.add(account.scrip, paid.scrip)
+	account.add_items(paid.items)
 	var gained: Variant = result.get("mastery_xp", {})
 	if typeof(gained) == TYPE_DICTIONARY:
 		for track: Variant in gained:
@@ -458,7 +506,7 @@ func settle(account_id: String, result: Dictionary) -> Dictionary:
 	account.deployed_world = ""
 	StashRules.validate_loadout(account.stash, account.loadout)
 	_save(account)
-	return {"ok": true}
+	return {"ok": true, "contracts": paid}
 
 
 # --- Arena ---------------------------------------------------------------------
