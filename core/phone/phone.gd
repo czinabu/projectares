@@ -901,6 +901,8 @@ func _draw_settings() -> void:
 			func(v: float) -> String: return "%d" % roundi(v))
 	_slider("Field of view (third person)", "field_of_view_third", GameSettings.FOV_RANGE, 1.0,
 			GameSettings.field_of_view_third, func(v: float) -> String: return "%d" % roundi(v))
+	_slider("Camera distance (third person)", "camera_distance", GameSettings.CAMERA_DISTANCE_RANGE, 0.1,
+			GameSettings.camera_distance, func(v: float) -> String: return "%.1f m" % v)
 	_slider("Volume", "master_volume", Vector2(0.0, 1.0), 0.05, GameSettings.master_volume,
 			func(v: float) -> String: return "%d%%" % roundi(v * 100.0))
 	_toggle("Fullscreen", "fullscreen", GameSettings.fullscreen)

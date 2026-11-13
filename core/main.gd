@@ -676,6 +676,7 @@ func _apply_settings() -> void:
 		controller.invert_y = GameSettings.invert_y
 		controller.base_fov = GameSettings.field_of_view
 		controller.base_fov_third = GameSettings.field_of_view_third
+		controller.third_person_distance = GameSettings.camera_distance
 		controller.stance_control = PlayerController.StanceControl.MOVE if Profile.melee_control == "move" \
 				else PlayerController.StanceControl.MOUSE
 	if nameplates != null and is_instance_valid(nameplates):

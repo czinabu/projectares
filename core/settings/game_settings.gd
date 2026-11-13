@@ -12,6 +12,8 @@ extends RefCounted
 const SAVE_PATH := "user://settings.json"
 const SENSITIVITY_RANGE := Vector2(0.0005, 0.006)
 const FOV_RANGE := Vector2(60.0, 110.0)
+## How far behind the character the third-person camera sits, in meters.
+const CAMERA_DISTANCE_RANGE := Vector2(1.2, 4.5)
 
 ## Tests turn this off so they never touch a real settings file.
 static var persist := true
@@ -21,6 +23,7 @@ static var invert_y := false
 ## that view is active. (The first-person one keeps the old saved key.)
 static var field_of_view := 80.0
 static var field_of_view_third := 80.0
+static var camera_distance := 2.0
 ## 0 to 1, applied to the master audio bus.
 static var master_volume := 0.8
 static var fullscreen := false
@@ -42,6 +45,7 @@ static func reset() -> void:
 	invert_y = false
 	field_of_view = 80.0
 	field_of_view_third = 80.0
+	camera_distance = 2.0
 	master_volume = 0.8
 	fullscreen = false
 	show_nameplates = true
@@ -57,6 +61,8 @@ static func set_value(key: String, value: Variant) -> void:
 			field_of_view = clampf(float(value), FOV_RANGE.x, FOV_RANGE.y)
 		"field_of_view_third":
 			field_of_view_third = clampf(float(value), FOV_RANGE.x, FOV_RANGE.y)
+		"camera_distance":
+			camera_distance = clampf(float(value), CAMERA_DISTANCE_RANGE.x, CAMERA_DISTANCE_RANGE.y)
 		"master_volume":
 			master_volume = clampf(float(value), 0.0, 1.0)
 		"fullscreen":
@@ -71,7 +77,7 @@ static func set_value(key: String, value: Variant) -> void:
 
 static func to_dict() -> Dictionary:
 	return {"mouse_sensitivity": mouse_sensitivity, "invert_y": invert_y, "field_of_view": field_of_view,
-			"field_of_view_third": field_of_view_third,
+			"field_of_view_third": field_of_view_third, "camera_distance": camera_distance,
 			"master_volume": master_volume, "fullscreen": fullscreen, "show_nameplates": show_nameplates}
 
 

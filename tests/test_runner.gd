@@ -842,6 +842,13 @@ func _test_main_flow() -> void:
 	check(is_equal_approx(controller.wanted_base_fov(), 70.0), "first person uses its own field of view")
 	controller.toggle_view()
 	check(is_equal_approx(controller.wanted_base_fov(), 100.0), "third person uses its own field of view")
+	check(is_equal_approx(controller.view_distance(false), controller.third_person_distance)
+			and controller.third_person_distance <= 2.5, "the third-person camera sits close, over the shoulder")
+	check(controller.view_distance(true) < controller.view_distance(false) and controller.view_distance(true) > 0.5,
+			"aiming moves it in further")
+	controller.third_person_distance = 4.0
+	check(is_equal_approx(controller.view_distance(false), 4.0), "and its distance can be set")
+	controller.third_person_distance = 2.0
 	controller.toggle_view()
 	# Melee and flight must not move the camera on their own.
 	var p: Actor = main.raid.player
@@ -5388,6 +5395,13 @@ func _test_phone_view() -> void:
 	check(is_equal_approx(GameSettings.field_of_view_third, 105.0) and is_equal_approx(GameSettings.field_of_view, 95.0),
 			"first and third person keep their own field of view")
 	check(GameSettings.to_dict().has("field_of_view_third"), "the third-person field of view is saved")
+	check(is_equal_approx(GameSettings.camera_distance, 2.0), "the third-person camera starts close, over the shoulder")
+	phone.change_setting("camera_distance", 3.5)
+	check(is_equal_approx(GameSettings.camera_distance, 3.5) and GameSettings.to_dict().has("camera_distance"),
+			"the phone sets how far back the third-person camera sits, and it is saved")
+	phone.change_setting("camera_distance", 99.0)
+	check(is_equal_approx(GameSettings.camera_distance, GameSettings.CAMERA_DISTANCE_RANGE.y), "within its range")
+	GameSettings.camera_distance = 2.0
 	phone.close()
 	check(not phone.is_open and events[events.size() - 1] == false, "the phone closes")
 
