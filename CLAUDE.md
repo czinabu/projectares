@@ -575,8 +575,12 @@ without Caleb, and update the gap list when a PR closes a row.
   Every weapon goes on the one armory rack (`BaseLayout.ARMORY`, Caleb's
   call): its sections hang on the walls of the armory alcove
   (`HomeBase.in_armory`), with the gunsmith bench in the middle and the
-  locker at the way in. A new kind of weapon gets a rack section there, not
-  a display of its own elsewhere in the room. The base is where you suit
+  locker at the way in. Each weapon hangs on a lit mount
+  (`HomeBase._build_mount`). The bench's vise holds the primary (its rack
+  pegs stand empty); using the vise puts the next gun from the rack in it
+  (`HomeBase.Vise`, `next_bench_gun`) through the same `equip_requested`,
+  so any gun can be fitted out there. A new kind of weapon gets a rack
+  section there, not a display of its own elsewhere in the room. The base is where you suit
   up (Caleb's call): the suit-up bay beside the launch pad
   (`HomeBase.suit_up`) replaces the player with a new actor wearing
   `suit_kit()`, weapons locked, and emits `player_replaced` so `main.gd`
@@ -641,8 +645,13 @@ without Caleb, and update the gap list when a PR closes a row.
   watch feature is a new slot, not a new line of text. In third person the
   card rises off the worn watch with a glow on the arm; it is never hung in
   front of the camera. Vitals go on the card only where the visor cannot
-  show them (no helmet, or third person). Check it by eye with
-  `visual_check.tscn -- <dir> --watch-only`.
+  show them (no helmet, or third person). The watch works in the home base
+  too (`BaseHud.wrist`), its card saying what each icon holds for the next
+  deploy (`Hud.base_watch_slots`). Raised, the forearm rolls so the face,
+  worn on the back of the wrist (`Hud.Wrist.FACE_AXIS`), looks at the eyes
+  (`WeaponArm._face_watch`). Check it by eye with
+  `visual_check.tscn -- <dir> --watch-only` (`--base-watch-only` for just
+  the base).
 - Money (`core/economy/`): the rules live once, in `economy.gd` (static, like
   `StashRules`), shared by `Profile` and `StashService`. Online, `scrip`
   lives on the server's account and only changes there: through

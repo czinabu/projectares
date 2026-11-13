@@ -72,6 +72,8 @@ var weapon_scale := 1.5
 var confirm_time := 4.0
 ## How long the full garage's lift takes to turn the bike on it once.
 var lift_turn_time := 16.0
+## How big the gun in the gunsmith bench's vise is shown.
+var bench_scale := 1.6
 
 ## Whose base this is, shown on the HUD. "" for your own.
 var owner_name := ""
@@ -119,6 +121,9 @@ const SUIT_AT := Vector3(-3.7, 0.0, 3.0)
 const SUIT_YAW := 0.0
 ## How long the bay's arms take to fit the gear, there and back (view only).
 var suit_time := 0.9
+
+## Display kinds whose title is already on the room or the furniture.
+const SIGNED_ELSEWHERE := ["bay", "gunsmith"]
 
 ## The size of every station's screen, in metres (16:9).
 const SCREEN_SIZE := Vector2(1.6, 0.9)
@@ -323,6 +328,31 @@ class Bulkhead:
 		var why := base.upgrade_blocked(id)
 		status.text = "Press F to buy" if why == "" else why
 		status.modulate = Color(0.5, 1.0, 0.6) if why == "" else Color(1.0, 0.8, 0.4)
+
+
+## The gun in the gunsmith bench's vise. Using it puts the next gun from the
+## rack in the vise as your primary, so any gun can be fitted out here.
+class Vise:
+	extends Interactable
+
+	var base: HomeBase
+	var item_id := ""
+
+	func get_prompt() -> String:
+		var shown := ItemDB.item_name(item_id)
+		if base == null or base.read_only:
+			return shown
+		var next := base.next_bench_gun()
+		if next == base.loadout.get("primary", ""):
+			return "%s in the vise" % shown
+		var next_name := ItemDB.item_name(next if next != "" else HomeBase.starter_primary())
+		return "[F] Next gun in the vise: %s" % next_name
+
+	func interact(_actor: Actor) -> void:
+		if base and not base.read_only:
+			var next := base.next_bench_gun()
+			if next != base.loadout.get("primary", ""):
+				base.equip_requested.emit("primary", next)
 
 
 ## The way out.
@@ -1230,24 +1260,54 @@ func _rebuild() -> void:
 	gear_shown.emit()
 
 
-## A title over each section, with how much did not fit on show.
+## A small rail label just over each section, with how much did not fit on
+## show. Rooms carry the big signs (one over each way in); a section that is
+## a room of its own (the garage) or has its own title (the bench) needs none.
+## Rail labels only show from nearby, so the room is not a cloud of text.
 func _build_signs() -> void:
 	var stored := BaseLayout.stored_away(stash, upgrades)
 	for kind: String in BaseLayout.KINDS:
 		# A kind with no spots yet has no section: its upgrade's panel names it.
 		var room := BaseLayout.spots(kind, upgrades)
-		if room <= 0:
+		if room <= 0 or kind in SIGNED_ELSEWHERE:
 			continue
 		var text: String = str(BaseLayout.KINDS[kind]["title"]).to_upper()
 		if stored.has(kind):
-			text += "\n+%d more in storage" % stored[kind]
-		var sign_label := _label(text, Color(1.0, 0.62, 0.22), 0.26)
+			text += "  (+%d in storage)" % stored[kind]
+		var sign_label := _label(text, Color(1.0, 0.62, 0.22), 0.16)
+		sign_label.name = "Sign_%s" % kind
 		var first := spot_transform(kind, 0)
 		var last := spot_transform(kind, room - 1)
 		var mid := first.origin.lerp(last.origin, 0.5)
-		sign_label.position = Vector3(mid.x, 3.4, mid.z) + first.basis.z * 0.05
+		var top := maxf(first.origin.y, last.origin.y)
+		# Stands stand on the floor; everything else hangs on a wall.
+		var height := 2.6 if top < 0.1 else top + 0.95
+		sign_label.position = Vector3(mid.x, height, mid.z) + first.basis.z * 0.05
 		sign_label.rotation.y = first.basis.get_euler().y
+		_near_only(sign_label, 14.0)
 		_display_root.add_child(sign_label)
+
+
+## A weapon's place on the armory rack: a lit panel behind it, so it stands
+## out from the wall, with a strip of its rarity colour along the bottom.
+func _build_mount(display: Display, size: Vector2, at: Vector3, color: Color) -> void:
+	var mount := Node3D.new()
+	mount.name = "Mount"
+	mount.position = at
+	mount.add_child(_part(Vector3(size.x, size.y, 0.03), Vector3(0, 0, -0.12), Color(0.3, 0.31, 0.33)))
+	var edge := _part(Vector3(size.x + 0.04, size.y + 0.04, 0.02), Vector3(0, 0, -0.135), Color(0.1, 0.1, 0.11))
+	mount.add_child(edge)
+	var strip := _part(Vector3(size.x * 0.9, 0.025, 0.02), Vector3(0, -size.y * 0.5 + 0.04, -0.1), color, true)
+	strip.name = "RarityStrip"
+	mount.add_child(strip)
+	display.add_child(mount)
+
+
+## Fades a label out past `reach` metres from the camera.
+func _near_only(label: Label3D, reach: float) -> void:
+	label.visibility_range_end = reach
+	label.visibility_range_end_margin = reach * 0.15
+	label.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
 
 
 ## Builds the greybox model, hit box and name plate for one display.
@@ -1277,6 +1337,12 @@ func _fill(display: Display) -> void:
 			box = Vector3(0.8, 0.7, 0.6) if small else Vector3(1.3, 0.9, 0.6)
 			if small:
 				plate_at = Vector3(0, -0.45, 0.12)
+			_build_mount(display, Vector2(1.0, 0.62) if small else Vector2(1.4, 0.82), Vector3(0, 0, 0.0), color)
+			if display.equipped and display.kind == "rack_guns" and Loadout.is_primary(id):
+				# The primary you deploy with is on the bench, not on the wall:
+				# its pegs stand empty.
+				model.visible = false
+				model.set_meta("on_bench", true)
 		"rack_melee":
 			var blade := MeleeWeapon.new()
 			blade.item_id = id
@@ -1290,6 +1356,7 @@ func _fill(display: Display) -> void:
 			box = Vector3(1.0, 2.2, 0.6)
 			box_at = Vector3(0, 0.3, 0)
 			plate_at = Vector3(0, 1.6, 0.12)
+			_build_mount(display, Vector2(0.8, 2.3), Vector3(0, 0.3, 0.0), color)
 		"armor_stand":
 			_build_armor(model, id, color)
 			box = Vector3(1.2, 2.0, 1.0)
@@ -1349,9 +1416,13 @@ func _fill(display: Display) -> void:
 	var text := ItemDB.item_name(id)
 	if display.count > 1:
 		text += "  x%d" % display.count
-	if display.equipped:
+	if model.has_meta("on_bench"):
+		text += "\nON THE BENCH"
+	elif display.equipped:
 		text += "\nEQUIPPED"
 	var plate := _label(text, color, plate_size)
+	# A name shows once you walk up to the item, not from across the room.
+	_near_only(plate, 5.0)
 	plate.name = "Plate"
 	plate.position = plate_at
 	display.add_child(plate)
@@ -1399,7 +1470,7 @@ func _build_bench() -> void:
 	title.name = "Title"
 	title.position = Vector3(0, 2.75, -0.42)
 	bench.add_child(title)
-	var how := _label("Look at an attachment and press F to fit it to your primary", Color(0.85, 0.83, 0.8), 0.08)
+	var how := _label("F on the gun: next gun in the vise.  F on an attachment: fit it.", Color(0.85, 0.83, 0.8), 0.08)
 	how.name = "HowTo"
 	how.position = Vector3(0, 2.6, -0.38)
 	bench.add_child(how)
@@ -1434,14 +1505,19 @@ func _build_bench_gun() -> void:
 	var gun := bench_gun(id, fitted)
 	var bare := bench_gun(id, [])
 	var visual := gun.build_visual()
-	var shown := Node3D.new()
+	var shown := Vise.new()
+	shown.base = self
+	shown.item_id = id
 	shown.name = "BenchGun"
-	shown.transform = bench_transform() * _spot(Vector3(-0.15, 1.3, 0.1), 0.0)
+	shown.transform = bench_transform() * _spot(Vector3(-0.15, 1.36, 0.1), 0.0)
 	var model := Node3D.new()
 	model.name = "Model"
 	visual.rotation.y = PI / 2.0
+	# Bigger than on the rack, so what is fitted shows from the bench.
+	visual.scale = Vector3.ONE * bench_scale
 	model.add_child(visual)
 	shown.add_child(model)
+	_add_collision(shown, Vector3(1.4, 0.5, 0.4), Vector3.ZERO)
 	# `Look` swaps in the real model and moves the attachments onto it.
 	shown.set_meta("display_item", id)
 	_display_root.add_child(shown)
@@ -1457,6 +1533,27 @@ func _build_bench_gun() -> void:
 	_display_root.add_child(card)
 	gun.free()
 	bare.free()
+
+
+## Every gun that can go in the vise: the primaries in the stash, in stash
+## order, one of each.
+func bench_guns() -> Array[String]:
+	var out: Array[String] = []
+	for id: String in stash:
+		if Loadout.is_primary(id) and id not in out:
+			out.append(id)
+	return out
+
+
+## The gun the vise takes next: the one after the primary in `bench_guns`,
+## and after the last one "" (nothing equipped: the free scrap gun).
+func next_bench_gun() -> String:
+	var guns := bench_guns()
+	var current: String = loadout.get("primary", "")
+	var at := guns.find(current)
+	if at + 1 < guns.size():
+		return guns[at + 1]
+	return "" if current != "" or guns.is_empty() else guns[0]
 
 
 ## The attachments in the loadout, one per slot.
@@ -1581,4 +1678,7 @@ func _label(text: String, color: Color, height: float) -> Label3D:
 	label.pixel_size = height / 64.0
 	label.outline_size = 12
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	# Writing on a wall is read from the front only, never mirrored from
+	# behind. Labels that turn to face you (billboards) are unaffected.
+	label.double_sided = false
 	return label

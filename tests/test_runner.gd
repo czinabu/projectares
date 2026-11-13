@@ -5898,6 +5898,23 @@ func _test_armory(base: HomeBase) -> void:
 	check(not base.in_armory(locker) and absf(locker.x + base.room_size.x * 0.5) < 1.5
 			and absf(locker.z) < base.armory_opening * 0.5 + 2.0, "the locker stands beside the way into the armory")
 	check(base.has_node("ArmorySign") and base.has_node("ArmorySill"), "a sign over the way in names the armory")
+	# Signage: nothing mirrored from behind, names only up close, one title each.
+	var mirrored := 0
+	var bench_titles := 0
+	for node in base.find_children("*", "Label3D", true, false):
+		var label := node as Label3D
+		if label.double_sided and label.billboard == BaseMaterial3D.BILLBOARD_DISABLED:
+			mirrored += 1
+		if label.text == base.bench_name().to_upper():
+			bench_titles += 1
+	check(mirrored == 0, "no wall label can be read mirrored from behind (%d can)" % mirrored)
+	check(bench_titles == 1 and not base.has_node("Displays/Sign_bay") and not base.has_node("Displays/Sign_gunsmith"),
+			"the bench and the garage carry one title each, not a second section sign")
+	var plates_near := true
+	for display in base.displays:
+		var plate := display.get_node("Plate") as Label3D
+		plates_near = plates_near and plate.visibility_range_end > 0.0 and plate.visibility_range_end <= 6.0
+	check(plates_near, "item names show only from close up")
 	# The way in is open: walk from the room to the rack.
 	var walker := base.player
 	var was := walker.global_position
@@ -6126,6 +6143,27 @@ func _test_home_base() -> void:
 	check(lines[0] == "Lattice Shard" and "Relic" in lines[1], "the overlay names what you look at and its rarity")
 	check(hud.tag.visible and hud.tag.text == lines[1] and hud.tag.global_position.distance_to(shard.global_position) < 2.0,
 			"what it is shows on a tag over the gear itself, not on the screen")
+	# The watch works at home as in a raid (playtest: X half-raised the arm
+	# with no card): it rises with the key and its card has every icon.
+	check(hud.wrist != null and not hud.wrist.raised, "the base wears the watch, lowered")
+	var watch_keys := PlayerController.new()
+	watch_keys.setup(base.player)
+	base.add_child(watch_keys)
+	watch_keys.wrist_raised = true
+	await frames(30)
+	var watch_icons: Array = hud.wrist.card.slots.map(func(slot: Dictionary) -> String: return slot.id)
+	check(hud.wrist.raised and hud.wrist.raise_amount >= 1.0 and watch_icons == Hud.Wrist.SLOTS
+			and base.player.cmd.watch_up, "X raises the watch in the base and its card opens: %s" % ", ".join(watch_icons))
+	var home := Hud.base_watch_slots("Home base", {"vehicle": "bike_raider"})
+	var home_vehicle: Dictionary = home[Hud.Wrist.SLOTS.find("vehicle")]
+	check(home[0].detail == "Home base" and home_vehicle.detail == ItemDB.item_name("bike_raider")
+			and not home_vehicle.empty and Hud.base_watch_slots("Home base", {})[Hud.Wrist.SLOTS.find("vehicle")].empty,
+			"at home the card says where you are and which vehicle you deploy with")
+	watch_keys.wrist_raised = false
+	await frames(30)
+	check(hud.wrist.raise_amount <= 0.0 and not base.player.cmd.watch_up, "X lowers it again")
+	watch_keys.queue_free()
+	await frames(2)
 	check(base.get_node("Banner/Title").text == "HOME BASE" and "press F" in base.banner_text(),
 			"the base's name and how it works hang on a banner in the room")
 	for kind: String in BaseLayout.KINDS:
