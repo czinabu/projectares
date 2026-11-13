@@ -784,11 +784,15 @@ func _simulate_weapons(delta: float) -> void:
 				return
 		if not wings_block(weapon):
 			weapon.handle_input(cmd, delta)
+		else:
+			weapon.drop_aim()
 		# A power weapon with nothing left is thrown away. The authority
 		# decides; a client hears it through `power_changed`.
 		if gun and gun.is_power() and gun.is_spent() and Combat.authoritative:
 			notice.emit("%s spent" % gun.display_name)
 			Loadout.set_power(self, "")
+	elif weapon:
+		weapon.drop_aim()
 
 
 ## Index of a sidearm with rounds in its magazine, or -1.

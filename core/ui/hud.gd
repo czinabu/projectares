@@ -761,6 +761,9 @@ void fragment() {
 	## Where the card opens when the camera looks out of the eyes, in the
 	## camera's space, at `reference_fov`: just over the raised wrist.
 	var first_person_at := Vector3(-0.1, -0.1, -0.38)
+	## From the eyes, how far above the watch face the card's centre stands.
+	var fp_card_lift := 0.09
+	var fp_card_reads_at := 0.42
 	## The field of view the sizes above are for. A wider view grows them.
 	var reference_fov := 80.0
 	## Third person: how big the card looks next to its first-person size
@@ -978,16 +981,23 @@ void fragment() {
 				var from_eyes := cam != null and cam.global_position.distance_to(p.get_eye_position()) < 0.7
 				if from_eyes:
 					# Looking out of the eyes, the card stands just over the
-					# raised wrist, low on the left of the view.
-					spot = cam.global_transform * first_person_at
-					size = k
+					# raised wrist (`WeaponArm.watch_point` brings it up into
+					# view), at its real size, turned to the eye.
+					# Held close to the face it is smaller, so it always looks as
+					# big as a card at `fp_card_reads_at` metres.
+					spot = wrist + facing.y * fp_card_lift + facing.z * 0.02
+					size = clampf(cam.global_position.distance_to(spot) / fp_card_reads_at, 0.35, 1.0) * k
 				elif cam:
 					spot = _clear_of_head(p, cam, spot, face_size.x * size * 0.5)
 				var at := wrist.lerp(spot, ease(open, -2.0))
 				_holo.global_transform = Transform3D(facing.scaled(Vector3(size, size * maxf(open, 0.001), size)), at)
 				_glow.global_position = wrist
 		_third = third
-		_holo.material_override = _holo_in_world if third else _holo_over
+		# From the eyes nothing comes between you and the card, so it is drawn
+		# over the world like the light it is; seen from behind, the body
+		# passes in front of it.
+		var over := not third or (cam != null and cam.global_position.distance_to(p.get_eye_position()) < 0.7)
+		_holo.material_override = _holo_over if over else _holo_in_world
 		(_holo.material_override as ShaderMaterial).set_shader_parameter("open", open)
 		_draw_beam(third, open)
 
@@ -1193,7 +1203,7 @@ void fragment() {
 			var h := size.y
 			var font := ThemeDB.fallback_font
 			# A faint plate with lit corners: light, not a box.
-			draw_rect(Rect2(Vector2(4, 4), size - Vector2(8, 8)), Color(0.0, 0.16, 0.2, 0.32))
+			draw_rect(Rect2(Vector2(4, 4), size - Vector2(8, 8)), Color(0.0, 0.14, 0.18, 0.5))
 			for corner in [Vector2(6, 6), Vector2(w - 6, 6), Vector2(6, h - 6), Vector2(w - 6, h - 6)]:
 				var sx := 1.0 if corner.x < w * 0.5 else -1.0
 				var sy := 1.0 if corner.y < h * 0.5 else -1.0

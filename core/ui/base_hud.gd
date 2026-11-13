@@ -99,12 +99,18 @@ func _process(delta: float) -> void:
 
 ## Raises and fills the watch, as the raid's HUD does.
 func _update_wrist(delta: float) -> void:
-	if wrist == null or not is_instance_valid(wrist):
-		return
-	if controller == null or not is_instance_valid(controller):
+	# The watch rides on the player, so suiting up (a new actor in place of
+	# the old, freed with everything on it) takes it away: put on a new one.
+	if wrist == null or not is_instance_valid(wrist) or wrist.is_queued_for_deletion():
+		wrist = Hud.Wrist.new()
+		wrist.name = "Wrist"
+		add_child(wrist)
+	if controller == null or not is_instance_valid(controller) or controller.actor != base.player:
+		# The one whose keys drive the player now (`main.gd` hands its own on
+		# to a suited-up player; elsewhere, look under the base).
 		controller = null
 		for child in base.get_children():
-			if child is PlayerController:
+			if child is PlayerController and not child.is_queued_for_deletion() and child.actor == base.player:
 				controller = child
 	var p := base.player
 	wrist.raised = controller != null and controller.wrist_raised
