@@ -465,7 +465,7 @@ func _steady_gun() -> void:
 		at = fore.global_position
 	else:
 		at = gun.visual.global_transform * (ActionPose.sight_local(gun) + ads_fore)
-	_off_target.global_position = at.lerp(actor.global_transform * watch_at, _watch)
+	_off_target.global_position = at.lerp(watch_point(), _watch)
 
 
 ## Last of all, close the fingers round the handle.
