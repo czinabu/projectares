@@ -51,6 +51,8 @@ var fore_twist := 0.65
 var fore_roll_limit := deg_to_rad(110.0)
 ## How far a wrist may bend off its forearm at most.
 var wrist_limit := deg_to_rad(50.0)
+## How far a hand on a fore end may turn about its palm to wrap the barrel.
+var wrap_limit := deg_to_rad(70.0)
 ## Where the elbow goes is picked round its circle so the forearm meets the
 ## handle at the angle the clip's fist holds it; this much (radians of score
 ## per unit of turn away) keeps it near the usual pole, so it never flips up.
@@ -74,6 +76,8 @@ var _wrist := -1
 var _off_wrist := -1
 var _shoulders: Array[int] = []
 var _grip := -1
+## The finger bones that close round a handle (from the grip bone out).
+var _fingers: Array[int] = []
 var _ik: TwoBoneIK3D
 var _off_ik: TwoBoneIK3D
 var _target := Node3D.new()
@@ -95,6 +99,10 @@ var _axis_hand := Vector3.ZERO
 var _axis_world := Vector3.ZERO
 var _off_axis_hand := Vector3.ZERO
 var _off_axis_world := Vector3.ZERO
+## For a hand on a fore end, the barrel's line too (hand frame and world),
+## which the fingers wrap across once the palm is on the gun.
+var _off_wrap_hand := Vector3.ZERO
+var _off_wrap_world := Vector3.ZERO
 ## How the weapon hand ended up on the weapon last frame (in the weapon's
 ## frame), so this frame's reach puts the fist on the grip, and the weapon
 ## it was for.
@@ -127,6 +135,11 @@ func build(skin_name: String, appearance: Dictionary) -> bool:
 	_fore = skeleton.find_bone(arm[1])
 	_off_fore = skeleton.find_bone(off_arm[1])
 	_grip = skeleton.find_bone(def.get("grip_bone", ""))
+	var finger := _grip
+	while finger >= 0:
+		_fingers.append(finger)
+		var next := skeleton.get_bone_children(finger)
+		finger = next[0] if next.size() > 0 else -1
 	for bone: String in [arm[0], off_arm[0]]:
 		_shoulders.append(skeleton.find_bone(bone))
 	if _wrist < 0 or _off_wrist < 0 or _grip < 0:
@@ -258,7 +271,7 @@ func _measure() -> void:
 	var weapon := actor.get_active_weapon()
 	var basis_world := to_world.basis.orthonormalized()
 	var wrist := to_world * skeleton.get_bone_global_pose(_wrist).origin
-	var grip := to_world * skeleton.get_bone_global_pose(_grip).origin
+	var grip := _fist_point()
 	var wrist_basis := basis_world * skeleton.get_bone_global_pose(_wrist).basis.orthonormalized()
 	_wrist_turn = turn * wrist_basis
 	# A blade's handle is round: the fist only has to lie along it.
@@ -297,9 +310,13 @@ func _measure() -> void:
 		off_line = Vector3.UP
 	elif weapon is MeleeWeapon and held != null:
 		off_line = Vector3.UP
+	_off_wrap_hand = Vector3.ZERO
 	if off_line != Vector3.ZERO and _watch <= 0.0:
 		_off_axis_hand = off_basis.inverse() * (rest * off_line)
 		_off_axis_world = anchor.basis * off_line
+		if weapon is Gun:
+			_off_wrap_hand = off_basis.inverse() * (rest * Vector3.BACK)
+			_off_wrap_world = anchor.basis * Vector3.BACK
 	if _watch > 0.0:
 		var k := tan(deg_to_rad(camera.fov) * 0.5) / tan(deg_to_rad(80.0) * 0.5)
 		var up := cam * Vector3(watch_at.x * k, watch_at.y * k, watch_at.z)
@@ -365,7 +382,18 @@ func _turn_wrists() -> void:
 			var world := skeleton.global_basis.orthonormalized() * hand
 			_hand_on_weapon = held.global_basis.orthonormalized().inverse() * world
 	if _off_ik.influence > 0.0:
-		_turn_hand(_off_fore, _off_wrist, _off_rel, to_skeleton * _off_turn, _off_axis_hand, to_skeleton * _off_axis_world)
+		var off_hand := _turn_hand(_off_fore, _off_wrist, _off_rel, to_skeleton * _off_turn, _off_axis_hand, to_skeleton * _off_axis_world)
+		if _off_wrap_hand != Vector3.ZERO and _off_axis_hand != Vector3.ZERO:
+			# Palm on the gun; now turn it about the palm so the fingers
+			# wrap across the barrel as the clip's do.
+			var palm := (to_skeleton * _off_axis_world).normalized()
+			var have := off_hand * _off_wrap_hand
+			var want := to_skeleton * _off_wrap_world
+			have -= palm * have.dot(palm)
+			want -= palm * want.dot(palm)
+			if have.length() > 0.1 and want.length() > 0.1:
+				var spin := clampf(have.signed_angle_to(want, palm), -wrap_limit, wrap_limit)
+				_set_turn(_off_wrist, Basis(palm, spin) * off_hand)
 
 
 ## Where the arm cannot quite bring the fist onto a blade's handle, the blade
@@ -375,7 +403,7 @@ func _carry_in_fist(held: Node3D, hand: Basis) -> void:
 	var to_world := skeleton.global_transform
 	var fist := (to_world.basis.orthonormalized() * hand * _axis_hand).normalized()
 	var line := (held.global_basis * Vector3.UP).normalized()
-	var grip := to_world * skeleton.get_bone_global_pose(_grip).origin
+	var grip := _fist_point()
 	var turn := Basis(Quaternion(line, fist)) if line.angle_to(fist) > 0.001 else Basis.IDENTITY
 	var shown := Transform3D(turn * held.global_basis, grip)
 	var on_hand := actor.hand.global_transform.affine_inverse() * held.global_transform
@@ -416,6 +444,19 @@ func _turn_hand(fore: int, wrist: int, rel: Basis, wanted: Basis, line_hand: Vec
 		hand = Basis(axis.normalized(), minf(bend, wrist_limit)) * hand
 	_set_turn(wrist, hand)
 	return hand.orthonormalized()
+
+
+## The middle of the closed fist (world), where a handle passes through:
+## among the curled finger joints and the palm below the knuckles, not on
+## the knuckle itself.
+func _fist_point() -> Vector3:
+	var to_world := skeleton.global_transform
+	var knuckle := skeleton.get_bone_global_pose(_grip).origin
+	var palm := skeleton.get_bone_global_pose(_wrist).origin.lerp(knuckle, 0.6)
+	var sum := palm
+	for bone in _fingers:
+		sum += skeleton.get_bone_global_pose(bone).origin
+	return to_world * (sum / float(_fingers.size() + 1))
 
 
 ## How bone `child` is turned from bone `parent`, in the current pose.

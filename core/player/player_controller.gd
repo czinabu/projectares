@@ -75,6 +75,10 @@ var first_person_turn := 0.35
 ## it goes to either side, in first person.
 var first_person_near := 0.4
 var first_person_side := 0.3
+## A cocked hand is kept at least this far off the middle of the view (as
+## sideways over ahead), so a windup's arm comes in from the edge instead of
+## covering what you are about to hit. It fades out through the swing.
+var first_person_clear := 0.5
 var first_person_stow := Vector3(0.0, -0.7, -0.4)
 var first_person_stow_tilt := Vector3(-1.1, 0.0, 0.0)
 ## Speed widens the view a little, so a boost, a dive or a bike reads as
@@ -589,6 +593,13 @@ func first_person_hold(pose: ActionPose) -> Transform3D:
 	if pose.reach_weight > 0.0:
 		at.z = lerpf(at.z, minf(at.z, -first_person_near), pose.reach_weight)
 		at.x = lerpf(at.x, clampf(at.x, -first_person_side, first_person_side), pose.reach_weight)
+		var off := Vector2(at.x, at.y)
+		var clear := first_person_clear * -at.z
+		if off.length() < clear:
+			var way := off.normalized() if off.length() > 0.03 else Vector2(0.8, 0.6)
+			var w := pose.reach_weight * pose.elbow_raise
+			at.x = lerpf(at.x, way.x * clear, w)
+			at.y = lerpf(at.y, way.y * clear, w)
 	if pose.switch_weight > 0.0:
 		var side := clampf(pose.switch_point.x, -0.45, 0.45)
 		var stow := Vector3(side, first_person_stow.y, first_person_stow.z)
