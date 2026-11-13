@@ -362,7 +362,7 @@ without Caleb, and update the gap list when a PR closes a row.
   never covers them. The glass carries
   only your always-in-view readings (the health arc with armor and stamina
   inside it and the ability's state under it, and with a flight rig the
-  heat gauge and rig cue low on the right, `VisorHud._draw_vitals` and
+  heat gauge and rig cue high on the right, `VisorHud._draw_vitals` and
   `_draw_heat`; squad markers and the landing warning are still to come,
   per DESIGN.md sections 3 and 5); do not put the map or standing there, they
   stay on the watch. Mk2

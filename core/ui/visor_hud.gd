@@ -8,7 +8,7 @@ extends Control
 ## tinted, and nothing sits over the middle of the view but the reticle.
 ## Every helmet has your vitals on the left: a health arc, with armor and
 ## stamina as thinner arcs inside it, and the ability's state under it. With
-## a flight rig worn, its heat gauge and cue sit low on the right. A working
+## a flight rig worn, its heat gauge and cue sit high on the right. A working
 ## helmet has its system on an arc on the right, a ring around the crosshair, and its height
 ## readout in the air. The rest depends on the visor's `mode` (see `Visor`):
 ## a compass, range finder, lock-on brackets and binocular scale for "zoom",
@@ -662,7 +662,7 @@ static func ability_text(ability: Ability) -> String:
 	return name
 
 
-## Low on the right, while a flight rig is worn: its heat as a gauge that
+## High on the right, while a flight rig is worn: its heat as a gauge that
 ## fills upward and warms from green to red, with a notch at the heat it
 ## must cool to after an overheat, and the rig's cue under it
 ## (`Hud.rig_text`). It brightens as it gets hot.
@@ -673,19 +673,20 @@ func _draw_heat(p: Actor, _ink: Color, centre: Vector2) -> void:
 	var heat := rig.heat_fraction()
 	var color := Hud.heat_color(heat, rig.overheated)
 	var radius := size.y * 0.43
-	var from := 0.46
-	var to := from + 0.3 * _swept()
+	# High on the right, above the system arc: clear of the gun in the hand.
+	var bottom := -0.46
+	var top := bottom - 0.3 * _swept()
 	var hot := rig.overheated or heat > 0.6
-	draw_arc(centre, radius, from, to, 24, _lit(color, 0.22), 1.0, true)
+	draw_arc(centre, radius, top, bottom, 24, _lit(color, 0.22), 1.0, true)
 	if heat > 0.0:
-		# Fills from the bottom end (`to`) upward towards the system arc.
-		draw_arc(centre, radius - 6.0, to - (to - from) * heat, to, 24, _lit(color, 0.9, not hot), 4.0, true)
-	var notch := to - (to - from) * clampf(rig.recover_heat / maxf(rig.max_heat, 1.0), 0.0, 1.0)
+		# Fills from the bottom end upward, away from the system arc.
+		draw_arc(centre, radius - 6.0, bottom - (bottom - top) * heat, bottom, 24, _lit(color, 0.9, not hot), 4.0, true)
+	var notch := bottom - (bottom - top) * clampf(rig.recover_heat / maxf(rig.max_heat, 1.0), 0.0, 1.0)
 	var dir := Vector2(cos(notch), sin(notch))
 	draw_line(centre + dir * (radius - 11.0), centre + dir * (radius + 3.0), _lit(color, 0.6, not hot), 1.0, true)
-	var end := centre + Vector2(cos(to), sin(to)) * radius
+	var end := centre + Vector2(cos(top), sin(top)) * radius
 	var cue := Hud.rig_text(p).to_upper()
-	_text(end + Vector2(-10.0, 22.0), Hud.heat_text(rig) + ("   " + cue if cue != "" else ""),
+	_text(end + Vector2(-10.0, -10.0), Hud.heat_text(rig) + ("   " + cue if cue != "" else ""),
 			_lit(color, 0.9, not hot), HORIZONTAL_ALIGNMENT_RIGHT, 320.0)
 
 
