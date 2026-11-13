@@ -313,8 +313,13 @@ static func _glass(t: Node) -> void:
 	await t.frames(5)
 	var glass := hud.visor
 	t.check(glass != null and glass.glass_shown(), "wearing a helmet in first person, the visor is on")
-	t.check("[T] Seeker Helmet" in Hud.wrist_text(raid, p, {}, 0.0, [] as Array[String]),
-			"the wrist names the visor key and what it does")
+	t.check(not "Seeker Helmet" in Hud.wrist_text(raid, p, {}, 0.0),
+			"the visor's state is on its own glass, not repeated on the watch")
+	hud._process(0.016)
+	t.check(hud.wrist.card.bars.is_empty(), "with the glass showing your vitals, the watch card leaves them off")
+	if p.ability.enabled:
+		t.check(VisorHud.ability_text(p.ability) == p.ability.display_name.to_upper(),
+				"a ready ability is named under the vitals on the glass")
 	# The glass is alive: it boots, trails the view, wakes on trouble and locks.
 	# Stepped by hand so the checks do not depend on how fast frames run.
 	var step := func(count: int) -> void:

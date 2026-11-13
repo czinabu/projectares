@@ -49,6 +49,14 @@ func _ready() -> void:
 		get_tree().quit()
 		return
 
+	# `-- <output_dir> --watch-only` shows the watch card raised: in first
+	# person with no helmet (vitals on the card), with a helmet and a jetpack
+	# (vitals and heat on the visor), each icon looked at, and in third person.
+	if "--watch-only" in args:
+		await _watch_shots(out_dir)
+		get_tree().quit()
+		return
+
 	# `-- <output_dir> --toys-only` shows the toy vehicles: on the watch, in
 	# the hand, in the air, unpacking and unpacked.
 	if "--toys-only" in args:
@@ -95,6 +103,12 @@ func _ready() -> void:
 		get_tree().quit()
 		return
 
+	# `-- <output_dir> --phone-only` shows the phone held up, and someone
+	# else holding theirs.
+	if "--phone-only" in args:
+		await _phone_shots(out_dir)
+		get_tree().quit()
+		return
 	# `-- <output_dir> --arena-only` shoots just the arena.
 	# `-- <output_dir> --hub-only` walks round the Concourse from fixed spots
 	# and prints what a frame of it costs to draw.
@@ -256,6 +270,48 @@ func _ready() -> void:
 	await _settle(2)
 	await _world_shots(out_dir)
 	get_tree().quit()
+
+
+func _watch_shots(out_dir: String) -> void:
+	for helmet: String in ["", "helm_seeker"]:
+		var raid := Raid.new()
+		add_child(raid)
+		var world := Worlds.get_world("ashfront")
+		var kit: Array[String] = ["rifle_scrap", "blade_scrap", "pistol_service", "jetpack_mk1", "plate_light"]
+		if helmet != "":
+			kit.append(helmet)
+		raid.start(world, 42, kit)
+		for bot in raid.bots:
+			bot.get_node("Brain").set_physics_process(false)
+		raid.state_for(raid.player).stowed.append("bike_raider")
+		var p := raid.player
+		p.health.health = p.health.max_health * 0.6
+		p.stamina = p.max_stamina * 0.4
+		p.flight.heat = p.flight.max_heat * 0.55
+		p.flight.cool_per_sec = 0.0
+		var controller := PlayerController.new()
+		controller.setup(p)
+		raid.add_child(controller)
+		var hud := Hud.new()
+		hud.setup(raid, controller)
+		raid.add_child(hud)
+		await _settle(60)
+		controller.wrist_raised = true
+		await _settle(30)
+		var tag := "helmet" if helmet != "" else "bare"
+		await _shot(out_dir.path_join("watch_first_%s.png" % tag))
+		if helmet == "":
+			for i in Hud.Wrist.SLOTS.size():
+				controller.watch_glance = Hud.Wrist.glance_of(i, Hud.Wrist.SLOTS.size())
+				controller.watch_glance_moved = true
+				await _settle(4)
+				await _shot(out_dir.path_join("watch_look_%s.png" % Hud.Wrist.SLOTS[i]))
+			controller.watch_glance_moved = false
+		controller.toggle_view()
+		await _settle(40)
+		await _shot(out_dir.path_join("watch_third_%s.png" % tag))
+		raid.queue_free()
+		await _settle(3)
 
 
 func _toy_shots(out_dir: String) -> void:
@@ -1471,3 +1527,66 @@ func _ride_shots(out_dir: String) -> void:
 	await _shot(out_dir.path_join("ride_first.png"))
 	raid.queue_free()
 
+
+
+## The phone held up in first and third person (home screen, an app, the
+## Settings list), and a player seen holding their phone.
+func _phone_shots(out_dir: String) -> void:
+	var raid := Raid.new()
+	add_child(raid)
+	raid.start(Worlds.get_world("ashfront"), 42)
+	var controller := PlayerController.new()
+	controller.setup(raid.player)
+	raid.add_child(controller)
+	var hud := Hud.new()
+	hud.setup(raid, controller)
+	raid.add_child(hud)
+	var phone: CanvasLayer = load("res://core/phone/phone.gd").new()
+	add_child(phone)
+	await _settle(60)
+	for bot in raid.bots:
+		bot.set_physics_process(false)
+		for child in bot.get_children():
+			if child is BotBrain:
+				child.set_physics_process(false)
+	phone.open()
+	controller.input_blocked = true
+	controller.phone_out = true
+	await _settle(30)
+	await _shot(out_dir.path_join("phone_home.png"))
+	phone._screen.get_texture().get_image().save_png(out_dir.path_join("phone_screen.png"))
+	phone.open_app("news")
+	await _settle(10)
+	await _shot(out_dir.path_join("phone_news.png"))
+	phone.open_app("settings")
+	await _settle(10)
+	await _shot(out_dir.path_join("phone_settings.png"))
+	phone.go_home()
+	controller.toggle_view()
+	await _settle(40)
+	await _shot(out_dir.path_join("phone_third_person.png"))
+	controller.toggle_view()
+	phone.close()
+	controller.phone_out = false
+	await _settle(30)
+	await _shot(out_dir.path_join("phone_put_away.png"))
+	# The player on their phone as everyone else sees them: the controller
+	# keeps holding it up (third person, so the body is drawn) while a camera
+	# of our own looks on from in front and from the side.
+	controller.toggle_view()
+	controller.input_blocked = true
+	controller.phone_out = true
+	var me: Actor = raid.player
+	var cam := Camera3D.new()
+	cam.fov = 40.0
+	raid.add_child(cam)
+	cam.make_current()
+	var facing := Basis(Vector3.UP, controller.yaw)
+	for view: Array in [["phone_other_player.png", Vector3(0.35, 1.45, -2.6)], ["phone_other_player_side.png", Vector3(2.4, 1.5, -0.9)]]:
+		var eye: Vector3 = me.global_position + facing * (view[1] as Vector3)
+		cam.look_at_from_position(eye, me.global_position + Vector3(0, 1.15, 0))
+		await _settle(40)
+		await _shot(out_dir.path_join(view[0]))
+	phone.queue_free()
+	raid.queue_free()
+	await _settle(3)
