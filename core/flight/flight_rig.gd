@@ -3,7 +3,7 @@ extends Node
 ## Flight limited by heat. One class covers every rig; the item's stats decide
 ## how it flies:
 ##   jetpack        - `thrust_accel`: hold jump in the air for sustained lift,
-##                    tap jump in the air to hover and fly freely (see below).
+##                    hold aim in the air to hover and fly freely (see below).
 ##   thruster boots - `burst_velocity`: press jump in the air for an instant kick
 ##                    (a set of them tops a rooftop), and `skim_speed`: hold
 ##                    jump in the air to skim low.
@@ -80,13 +80,15 @@ var glide_fall_speed := 0.0
 var glide_speed := 0.0
 var glide_accel := 22.0
 
-## Jet flight, for rigs with thrust. Tapping jump in the air lights the jets
-## and keeps them lit: the rig holds you up, the move keys cruise you about at
+## Jet flight, for rigs with thrust. Holding aim in the air lights the jets
+## and they stay lit only while it is held (Caleb's call: no hover that stays
+## on by itself): the rig holds you up, the move keys cruise you about at
 ## `fly_speed`, jump climbs and the descend key (held slide) coasts: the jets
 ## idle, you sink at `descend_speed` keeping your speed, and the rig cools at
-## `coast_cool` a second. Sprinting forward is a boost: you fly head first at
-## `boost_speed` along the view's heading, climbing or sinking only on jump
-## and descend (0: no boost). The keys fly every rig; the mouse only looks.
+## `coast_cool` a second. A sprint press in the air is a boost, no hover
+## needed, and holding sprint keeps it going: you speed up head first toward
+## `boost_speed` along the view's heading, laid out prone, climbing or
+## sinking only on jump and descend (0: no boost). The keys fly every rig; the mouse only looks.
 ## Holding still costs `hover_heat_mult` of the full heat rate, cruising
 ## `cruise_heat_mult`, climbing all of it and boosting `boost_heat_mult`.
 ## At cruise speed the heading turns at most `cruise_turn_rate` rad/s: a
@@ -342,8 +344,8 @@ func controls_hint() -> String:
 		return "Space jump"
 	var parts: Array[String] = ["Space jump"]
 	if thrust_accel > 0.0:
-		parts.append("hold to climb, tap in the air to hover (C coasts down to cool%s)"
-				% (", hold Shift+W to boost" if boost_speed > 0.0 else ""))
+		parts.append("hold to climb, hold right mouse in the air to hover (C coasts down to cool%s)"
+				% (", Shift in the air to boost" if boost_speed > 0.0 else ""))
 	if burst_velocity > 0.0:
 		parts.append("press again in the air to boost" + (" the way you move" if burst_push > 0.0 else ""))
 	if can_skim():

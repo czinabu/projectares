@@ -61,7 +61,9 @@ var off_ik: TwoBoneIK3D
 
 var _wrist := -1
 var _forearm := -1
+var _upper := -1
 var _off_wrist := -1
+var _off_upper := -1
 var _off_forearm := -1
 ## The wrist's turn in the skeleton's space while a gun is raised to aim
 ## (the `aim_gun` clip), and the forearm's while a blade is held ready
@@ -69,6 +71,18 @@ var _off_forearm := -1
 ## by the difference, so a gun held low points down with the hand instead of
 ## staying level with the aim. Null when the clips are missing.
 var _aim_wrist: Variant = null
+## The off wrist's turn in the same clip, where it holds the fore end: the
+## off hand takes it, turned with the aim, while aiming down sights.
+var _aim_off_wrist: Variant = null
+## How far in front of the eyes the sight goes this frame: the gun's relief
+## (`ActionPose.relief_for`), drawn in to what the arm can reach.
+var _relief_now := 0.0
+## The shoulder turn and lean of the aiming stance (`ActionPose.ads_stance`),
+## eased by `_ads`, on top of any melee turn.
+var _ads_turn := Vector2.ZERO
+## How far the gun arm may reach while aiming, as a share of its length,
+## so it never locks out straight.
+var ads_reach := 0.97
 var _ready_forearm: Variant = null
 var _spine: Array[int] = []
 var _neck := -1
@@ -114,6 +128,7 @@ func setup(def: Dictionary, fist_animation: Animation) -> void:
 		return
 	_wrist = skeleton.find_bone(arm[2])
 	_forearm = skeleton.find_bone(arm[1])
+	_upper = skeleton.find_bone(arm[0])
 	for bone: String in def.get("spine", []):
 		if skeleton.find_bone(bone) >= 0:
 			_spine.append(skeleton.find_bone(bone))
@@ -140,6 +155,11 @@ func setup(def: Dictionary, fist_animation: Animation) -> void:
 		off_ik = _two_bone("OffArmReach", off_arm, _off_target, _off_pole)
 		_off_forearm = skeleton.find_bone(off_arm[1])
 		_off_wrist = skeleton.find_bone(off_arm[2])
+		_off_upper = skeleton.find_bone(off_arm[0])
+		var steady := Hook.new()
+		steady.name = "SteadyHand"
+		steady.run = _turn_off_hand
+		skeleton.add_child(steady)
 		var face := Hook.new()
 		face.name = "WatchFace"
 		face.run = _face_watch
@@ -170,6 +190,8 @@ func _two_bone(ik_name: String, bones: Array, target: Node3D, pole: Node3D) -> T
 func calibrate(aim: Animation, ready: Animation) -> void:
 	if _wrist >= 0 and aim != null:
 		_aim_wrist = clip_basis(skeleton, aim, _wrist)
+	if _off_wrist >= 0 and aim != null:
+		_aim_off_wrist = clip_basis(skeleton, aim, _off_wrist)
 	if _forearm >= 0 and ready != null:
 		_ready_forearm = clip_basis(skeleton, ready, _forearm)
 
@@ -300,6 +322,7 @@ func _process(delta: float) -> void:
 			and not actor.is_dead and override_weight <= 0.001 else 0.0
 	if _ads <= 0.0:
 		_ads_fix = Vector3.ZERO
+	_ads_turn = shared.ads_stance(gun) * _ads if _ads > 0.0 else Vector2.ZERO
 
 	reach_ik.influence = _weight
 	var aim := Basis(Vector3.RIGHT, actor.cmd.pitch)
@@ -383,33 +406,51 @@ func _reach_sight() -> void:
 	var grip := skeleton.global_transform * skeleton.get_bone_global_pose(grip_bone).origin
 	var sight_now := grip + aimed * (grip_offset + gun.visual.transform * ActionPose.sight_local(gun))
 	var fix := actor.global_basis.orthonormalized() * _ads_fix
-	_target.global_position = wrist + (sight_target(gun, aimed) - sight_now + fix) * _ads
+	_relief_now = _pose().relief_for(gun)
+	var reach := wrist + sight_target(gun, aimed) - sight_now + fix
+	# Out of the arm's reach (a sidearm held well out), the gun comes back
+	# toward the eye along the sight line until the arm can hold it.
+	if _upper >= 0:
+		var shoulder := skeleton.global_transform * skeleton.get_bone_global_pose(_upper).origin
+		var elbow := skeleton.global_transform * skeleton.get_bone_global_pose(_forearm).origin
+		var length := (shoulder.distance_to(elbow) + elbow.distance_to(wrist)) * ads_reach
+		var ahead := -aimed.z
+		var d := reach - shoulder
+		if d.length() > length:
+			var along := d.dot(ahead)
+			var back := along - sqrt(maxf(along * along - (d.length_squared() - length * length), 0.0))
+			back = clampf(back, 0.0, _relief_now)
+			_relief_now -= back
+			reach -= ahead * back
+	_pose().relief_now = _relief_now
+	_target.global_position = wrist + (reach - wrist) * _ads
 	reach_ik.influence = 1.0
 
 
 ## Where the sight of `gun` goes when it is fully up: on the line out of
-## the model's eyes, `ActionPose.relief_for` in front of them.
+## the model's eyes, `_relief_now` in front of them.
 func sight_target(gun: Gun, aimed: Basis) -> Vector3:
 	var skin := get_parent()
 	var eye: Variant = skin.eye_point(aimed) if skin != null and skin.has_method("eye_point") else null
 	if eye == null:
 		eye = actor.get_eye_position()
-	return (eye as Vector3) + aimed * Vector3(0.0, 0.0, -_pose().relief_for(gun))
+	return (eye as Vector3) + aimed * Vector3(0.0, 0.0, -_relief_now)
 
 
 ## Turns the spine toward the attack before the arms reach, so they reach
 ## from where the shoulders have gone. The neck turns back to keep the eyes
 ## on the target.
 func _turn_body() -> void:
-	if _spine.is_empty() or _turn.length_squared() < 0.000001:
+	var turn := _turn + _ads_turn
+	if _spine.is_empty() or turn.length_squared() < 0.000001:
 		return
 	var to_skeleton := skeleton.global_basis.orthonormalized().inverse() * actor.global_basis.orthonormalized()
 	var share := 1.0 / _spine.size()
-	var step := Basis(to_skeleton * Vector3.UP, _turn.x * share) * Basis(to_skeleton * Vector3.RIGHT, _turn.y * share)
+	var step := Basis(to_skeleton * Vector3.UP, turn.x * share) * Basis(to_skeleton * Vector3.RIGHT, turn.y * share)
 	for bone in _spine:
 		_rotate_bone(bone, step)
 	if _neck >= 0:
-		_rotate_bone(_neck, Basis(to_skeleton * Vector3.UP, -_turn.x * 0.7) * Basis(to_skeleton * Vector3.RIGHT, -_turn.y * 0.5))
+		_rotate_bone(_neck, Basis(to_skeleton * Vector3.UP, -turn.x * 0.7) * Basis(to_skeleton * Vector3.RIGHT, -turn.y * 0.5))
 
 
 ## Rotates a bone in place, in the skeleton's space.
@@ -452,6 +493,10 @@ func _steady_gun() -> void:
 	var gun := actor.get_active_weapon() as Gun
 	if gun == null or gun.visual == null or off_ik == null:
 		return
+	# The hand turns with the gun as it is held in the aim clip, so a wrist
+	# never twists round the grip.
+	if _aim_wrist != null:
+		_turn_to_aim(_wrist, _aim_wrist, _ads)
 	hold_weapon()
 	if _ads > 0.99:
 		var aimed := actor.global_basis.orthonormalized() * Basis(Vector3.RIGHT, actor.cmd.pitch)
@@ -465,7 +510,47 @@ func _steady_gun() -> void:
 		at = fore.global_position
 	else:
 		at = gun.visual.global_transform * (ActionPose.sight_local(gun) + ads_fore)
+	# Out of the off arm's reach, the hand slides back along the gun toward
+	# the grip until it can hold it (a short arm takes the fore end nearer).
+	if _off_upper >= 0 and _off_forearm >= 0:
+		var shoulder := skeleton.global_transform * skeleton.get_bone_global_pose(_off_upper).origin
+		var elbow := skeleton.global_transform * skeleton.get_bone_global_pose(_off_forearm).origin
+		var wrist := skeleton.global_transform * skeleton.get_bone_global_pose(_off_wrist).origin
+		var length := (shoulder.distance_to(elbow) + elbow.distance_to(wrist)) * ads_reach
+		var back := -gun.visual.global_basis.z.normalized()
+		var room := maxf((at - actor.hand.global_position).dot(back), 0.0)
+		var d := at - shoulder
+		if d.length() > length:
+			var along := d.dot(back)
+			var slide := along - sqrt(maxf(along * along - (d.length_squared() - length * length), 0.0))
+			at -= back * clampf(slide, 0.0, room)
 	_off_target.global_position = at.lerp(watch_point(), _watch)
+
+
+## After the off arm has reached: its hand turns as the aim clip holds the
+## fore end, turned with the aim, so it supports the gun rather than
+## twisting across it.
+func _turn_off_hand() -> void:
+	if _ads <= 0.0 or _aim_off_wrist == null or _off_wrist < 0:
+		return
+	_turn_to_aim(_off_wrist, _aim_off_wrist, _ads * (1.0 - _watch))
+
+
+## Sets `bone` (a wrist) to how it sits in `calibrated` (the aim clip, gun
+## straight ahead), turned to the current aim, by `weight`: the inverse of
+## `_follow_turn`.
+func _turn_to_aim(bone: int, calibrated: Basis, weight: float) -> void:
+	if weight <= 0.0:
+		return
+	var to_world := skeleton.global_basis.orthonormalized()
+	var aimed := actor.global_basis.orthonormalized() * Basis(Vector3.RIGHT, actor.cmd.pitch)
+	var ahead := actor.global_basis.orthonormalized()
+	var wanted := (to_world.inverse() * aimed * ahead.inverse() * to_world * calibrated).orthonormalized()
+	var pose := skeleton.get_bone_global_pose(bone)
+	var now := pose.basis.orthonormalized()
+	pose.basis = Basis(now.get_rotation_quaternion().slerp(wanted.get_rotation_quaternion(), weight)) \
+			* Basis.from_scale(pose.basis.get_scale())
+	skeleton.set_bone_global_pose(bone, pose)
 
 
 ## Last of all, close the fingers round the handle.

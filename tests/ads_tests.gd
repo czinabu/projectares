@@ -127,19 +127,38 @@ static func _check_with_skin(t: Node, kit: Array, what: String) -> void:
 	t.check(pose.ads > 0.99, "%s: the gun is up (%.2f)" % [what, pose.ads])
 	var aimed := p.global_basis.orthonormalized() * Basis(Vector3.RIGHT, p.cmd.pitch)
 	var ahead := -aimed.z
-	var eye: Vector3 = skin.eye_point(aimed)
+	# Bone poses are only final while the skeleton reports its update.
+	var arm = skin.arm
+	var skel: Skeleton3D = arm.skeleton
+	var seen := {}
+	var catch := func() -> void:
+		seen["eye"] = skin.eye_point(aimed)
+		seen["off"] = skel.global_transform * skel.get_bone_global_pose(arm._off_wrist).origin
+	skel.skeleton_updated.connect(catch)
+	await t.frames(3)
+	skel.skeleton_updated.disconnect(catch)
+	var eye: Vector3 = seen["eye"]
 	var sight := ActionPose.sight_shown(gun)
 	var off_line := (sight - eye) - ahead * (sight - eye).dot(ahead)
 	t.check(off_line.length() < 0.015,
 			"%s: the sight is on the eye line (%.3f m off)" % [what, off_line.length()])
 	var relief := (sight - eye).dot(ahead)
-	t.check(absf(relief - pose.relief_for(gun)) < 0.05,
+	t.check(absf(relief - pose.relief_now) < 0.03 and pose.relief_now <= pose.relief_for(gun) + 0.001,
 			"%s: the sight sits its relief in front of the eye (%.2f m)" % [what, relief])
 	t.check(sight.y > before.y + 0.05, "%s: aiming raises the gun from its hold" % what)
 	var off_hand: Vector3 = skin.arm._off_target.global_position
 	t.check(skin.arm.off_ik.influence > 0.99, "%s: the off hand comes onto the gun" % what)
 	var gun_box_reach := off_hand.distance_to(gun.visual.global_position)
 	t.check(gun_box_reach < 0.45, "%s: the off hand holds the gun (%.2f m from it)" % [what, gun_box_reach])
+	var off_wrist: Vector3 = seen.get("off", Vector3.ZERO)
+	t.check(off_wrist.distance_to(off_hand) < 0.06,
+			"%s: the off hand reaches the gun (%.3f m short)" % [what, off_wrist.distance_to(off_hand)])
+	if arm._aim_wrist != null:
+		var hand_way: Basis = arm._follow_turn(arm._wrist, arm._aim_wrist)
+		var twist := rad_to_deg(hand_way.get_rotation_quaternion().angle_to(aimed.get_rotation_quaternion()))
+		t.check(twist < 8.0, "%s: the gun hand sits round the grip as it does aiming from the hip (%.1f deg off)" % [what, twist])
+	if gun.is_sidearm:
+		t.check(pose.relief_now > 0.25, "%s: a sidearm is held well out (%.2f m)" % [what, pose.relief_now])
 	# First person looks straight down the sight.
 	var cam: Camera3D = controller.camera
 	var cam_off := (sight - cam.global_position) - ahead * (sight - cam.global_position).dot(ahead)

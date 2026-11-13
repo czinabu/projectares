@@ -218,6 +218,11 @@ static func run(t: Node) -> void:
 	var hover_axis := p.global_basis.inverse() * (skin as Node3D).global_basis.y
 	t.check(hover_axis.x > 0.2 and hover_axis.y > 0.8, "a hovering body leans the way it drifts")
 	p.flight.is_boosting = true
+	p.flight.boost_speed = 22.0
+	p.velocity = -p.global_basis.z * 3.0
+	await t.get_tree().create_timer(0.7).timeout
+	var setting_off := p.global_basis.inverse() * (skin as Node3D).global_basis.y
+	t.check(setting_off.z < -0.3 and setting_off.y > 0.5, "a boost setting off leans the body in, not yet flat (%s)" % setting_off)
 	p.velocity = -p.global_basis.z * 22.0
 	await t.get_tree().create_timer(0.7).timeout
 	var boost_axis := p.global_basis.inverse() * (skin as Node3D).global_basis.y
