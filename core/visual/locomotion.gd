@@ -99,14 +99,18 @@ var ride_rate := 5.0
 
 ## How quickly the relaxed-stand legs blend in and out (per second).
 var stand_legs_rate := 4.0
-## Holding the phone up (`ActorCommand.phone`), in the actor's frame: where
-## the phone sits, where each wrist (left, right) goes, which way the elbows
-## bow, and how far the head and chest bow to look at it.
-var phone_at := Vector3(0.005, 1.25, -0.33)
-var phone_wrists := [Vector3(-0.05, 1.2, -0.28), Vector3(0.06, 1.21, -0.3)]
-var phone_elbow := Vector3(0.7, -1.0, 0.35)
-var phone_look_down := 0.5
-var phone_chest := 0.12
+## Holding the phone up (`ActorCommand.phone`), one-handed in the right hand
+## as in life, in the actor's frame: where the phone sits, where the right
+## wrist goes (just under it), which way the elbow bows, and how far the head
+## and chest bow to look at it. The left arm is left as it was.
+var phone_at := Vector3(0.11, 1.4, -0.34)
+var phone_wrist := Vector3(0.12, 1.31, -0.3)
+var phone_elbow := Vector3(0.45, -1.0, 0.15)
+## How far past the wrist (m) the middle of the phone sits: it stands up out
+## of the fingers, as a phone does.
+var phone_palm := 0.13
+var phone_look_down := 0.85
+var phone_chest := 0.16
 var phone_rate := 5.0
 
 ## Clip key -> how the clip moves the body at playback speed 1, in the
@@ -149,6 +153,9 @@ var stand_legs_weight := 0.0
 ## True while the phone is up; `phone_weight` eases toward it.
 var phone_up := false
 var phone_weight := 0.0
+## Where the phone is in the right hand now, in the actor's frame; set by
+## `phone_pose` (left at `phone_at` on a body without arms).
+var phone_in_hand := Vector3.ZERO
 
 var _roots: Array[int] = []
 var _spine: Array[int] = []
@@ -650,7 +657,7 @@ func _ride_pose() -> void:
 
 
 ## Adds the phone hold. Called by the skin after the weapon arm is set up,
-## so it runs last and both hands are the phone's, whatever was in them.
+## so it runs last and the right hand is the phone's, whatever was in it.
 ## Everything about the hold is in `phone_pose`, so it is one swap away from
 ## a shared hand pose.
 func add_phone_hook() -> void:
@@ -662,8 +669,8 @@ func add_phone_hook() -> void:
 	skeleton.add_child(hold)
 
 
-## Both hands bring the phone up in front of the chest and the head bows to
-## look at it. View only, from `phone_weight`.
+## The right hand brings the phone up in front of the chest and the head
+## bows to look at it. View only, from `phone_weight`.
 func phone_pose() -> void:
 	if phone_weight <= 0.0 or skeleton == null or actor == null:
 		return
@@ -675,14 +682,17 @@ func phone_pose() -> void:
 		var pose := skeleton.get_bone_global_pose(chest)
 		pose.basis = Basis(right, -phone_chest * w) * pose.basis
 		skeleton.set_bone_global_pose(chest, pose)
-	for i in _arms.size():
-		var arm: Array[int] = _arms[i]
-		if arm.size() != 3:
+	for arm: Array[int] in _arms:
+		if arm.size() != 3 or _side_of(arm[0]) < 0.0:
 			continue
-		var side := _side_of(arm[0])
-		var wrist: Vector3 = to_skeleton * (phone_wrists[i] as Vector3)
-		var elbow := to_skeleton.basis * Vector3(phone_elbow.x * side, phone_elbow.y, phone_elbow.z)
+		var wrist := to_skeleton * phone_wrist
+		var elbow := to_skeleton.basis * phone_elbow
 		_bend(arm, skeleton.get_bone_rest(arm[2]).origin, wrist, elbow, w)
+		# The phone sits in the palm, a hand's length on from the wrist.
+		var to_actor := to_skeleton.affine_inverse()
+		var wrist_now := to_actor * skeleton.get_bone_global_pose(arm[2]).origin
+		var elbow_now := to_actor * skeleton.get_bone_global_pose(arm[1]).origin
+		phone_in_hand = wrist_now + (wrist_now - elbow_now).normalized() * phone_palm
 	if _neck >= 0:
 		var pose := skeleton.get_bone_global_pose(_neck)
 		pose.basis = Basis(right, -phone_look_down * w) * pose.basis

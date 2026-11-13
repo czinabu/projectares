@@ -481,7 +481,7 @@ without Caleb, and update the gap list when a PR closes a row.
   up in front of the camera (drawn over the world on `Mirror.HELD_LAYER`, the
   scene dimmed behind it), with a home screen of app icons; a new app is an
   entry in `Phone.APPS` with an icon glyph in `Phone.AppIcon`. Holding it is
-  `ActorCommand.phone`, a held flag, so everyone else sees the hold pose
+  `ActorCommand.phone`, a held flag, so everyone else sees the one-handed hold
   (`Locomotion.phone_pose`, the one place to swap in a shared hand pose).
   Settings live in
   `core/settings/game_settings.gd` (its own save file); a server never reads them.

@@ -327,7 +327,7 @@ func _ready() -> void:
 		# After the arm has put the hand on the model's hand.
 		skeleton.skeleton_updated.connect(_carry_moving)
 	if skeleton:
-		# Last, so the phone has both hands whatever the arm was doing.
+		# Last, so the phone has the right hand whatever the arm was doing.
 		locomotion.add_phone_hook()
 	if skeleton:
 		_setup_glide_pose(skeleton, def)
@@ -475,8 +475,8 @@ func phone_up() -> bool:
 	return actor.cmd.phone and not actor.is_dead and actor.vehicle == null
 
 
-## Eases the phone hold in and out and keeps the phone itself between the
-## hands, its screen turned up to the face.
+## Eases the phone hold in and out and keeps the phone itself in the right
+## hand, its lit screen turned up to the face.
 func _update_phone() -> void:
 	if locomotion == null:
 		return
@@ -490,20 +490,22 @@ func _update_phone() -> void:
 		_phone_prop = _build_phone_prop()
 		add_child(_phone_prop)
 	_phone_prop.visible = w > 0.5
-	var at: Vector3 = actor.global_transform * locomotion.phone_at
+	var held: Vector3 = locomotion.phone_in_hand if locomotion.phone_in_hand != Vector3.ZERO else locomotion.phone_at
+	var at: Vector3 = actor.global_transform * held
 	var eyes := actor.global_transform * Vector3(0.0, actor.eye_height, 0.0)
 	var face := (eyes - at).normalized()
 	var basis := Basis.looking_at(-face, actor.global_basis.orthonormalized() * Vector3.FORWARD)
 	_phone_prop.global_transform = Transform3D(basis, at)
 
 
-## A greybox phone: a dark slab with a lit screen on the face (+Z).
+## A greybox phone: a dark slab with a bright screen on the face (+Z) and a
+## faint glow that lights the face looking at it, so it reads from afar.
 func _build_phone_prop() -> Node3D:
 	var root := Node3D.new()
 	root.name = "PhoneProp"
 	var body := MeshInstance3D.new()
 	var slab := BoxMesh.new()
-	slab.size = Vector3(0.075, 0.155, 0.01)
+	slab.size = Vector3(0.085, 0.175, 0.011)
 	body.mesh = slab
 	var dark := StandardMaterial3D.new()
 	dark.albedo_color = Color(0.12, 0.12, 0.13)
@@ -513,16 +515,23 @@ func _build_phone_prop() -> Node3D:
 	root.add_child(body)
 	var glass := MeshInstance3D.new()
 	var quad := QuadMesh.new()
-	quad.size = Vector2(0.066, 0.142)
+	quad.size = Vector2(0.075, 0.16)
 	glass.mesh = quad
-	glass.position = Vector3(0.0, 0.0, 0.0052)
+	glass.position = Vector3(0.0, 0.0, 0.0057)
 	var lit := StandardMaterial3D.new()
 	lit.albedo_color = Color(0.25, 0.42, 0.55)
 	lit.emission_enabled = true
 	lit.emission = Color(0.35, 0.6, 0.8)
-	lit.emission_energy_multiplier = 1.4
+	lit.emission_energy_multiplier = 3.0
 	glass.material_override = lit
 	root.add_child(glass)
+	var glow := OmniLight3D.new()
+	glow.light_color = Color(0.55, 0.78, 1.0)
+	glow.light_energy = 1.6
+	glow.omni_range = 0.7
+	glow.position = Vector3(0.0, 0.0, 0.06)
+	glow.shadow_enabled = false
+	root.add_child(glow)
 	for mesh: MeshInstance3D in [body, glass]:
 		mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	return root
@@ -1111,8 +1120,8 @@ func _update_ride() -> void:
 	var vehicle: Node3D = actor.vehicle if not actor.is_dead else null
 	locomotion.ride = vehicle
 	if arm:
-		# Both hands close round the phone while it is up.
-		var phone_grip := Vector2.ONE * smoothstep(0.0, 1.0, locomotion.phone_weight)
+		# The right hand's fingers wrap the phone while it is up.
+		var phone_grip := Vector2(0.0, 0.6 * smoothstep(0.0, 1.0, locomotion.phone_weight))
 		arm.ride_grip = locomotion.grip_hold().max(phone_grip)
 	if vehicle == null:
 		return
