@@ -32,7 +32,7 @@ skies, animated models and effects (see "How it looks" below).
 | Aim down sights, or block with the blade (tap just before a hit to parry) | Right mouse |
 | Pick a melee side: left, right or overhead | Flick the mouse that way, or hold A, D or W |
 | Switch how the melee side is picked (mouse flick or movement keys) | B |
-| Switch to primary / sidearm / melee / power weapon | 1 / 2 / 3 / 4, or mouse wheel |
+| Switch to primary / sidearm / melee / power weapon | 1 / 2 / 3 / 4, or mouse wheel (watch down) |
 | Reload | R |
 | Use a medkit | H |
 | Loot, or get on and off a bike | F |
@@ -43,6 +43,7 @@ skies, animated models and effects (see "How it looks" below).
 | After dying: drop back in, or go home | Enter, or L |
 | Open your phone: players, messages, invites, news, mirror, every control (Keys), settings | P |
 | Raise or lower the holographic watch on your wrist | X |
+| Move across the watch's icons (watch up) | Mouse wheel |
 | Phone at Settings (also frees the mouse); Esc again closes it | Esc |
 
 The jetpack runs on heat. Overheat it and you fall until it cools. Rooftop
@@ -321,7 +322,7 @@ you have.
 - More gear to find: carbine, SMG, marksman rifle, shotgun, arc blade, breaker
   hammer, three armor frames, and a better jetpack.
 - Motorbikes, the first vehicle. Put one in the vehicle slot and it rides on
-  your watch as a toy. Raise the watch (X), turn the wheel to pick a toy and
+  your watch as a toy. Raise the watch (X), turn the wheel across its icons to the vehicle and on through the toys to pick one, and
   click to take it in your hand, then click again to throw it: it grows into
   the full-size bike where it lands (right click puts it back). It needs clear
   ground, or it jumps back to your watch, and the watch recharges for a few

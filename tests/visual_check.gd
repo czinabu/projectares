@@ -309,11 +309,11 @@ func _watch_shots(out_dir: String) -> void:
 		await _shot(out_dir.path_join("watch_first_%s.png" % tag))
 		if helmet == "":
 			for i in Hud.Wrist.SLOTS.size():
-				controller.watch_glance = Hud.Wrist.glance_of(i, Hud.Wrist.SLOTS.size())
-				controller.watch_glance_moved = true
+				controller.watch_focus = i
+				controller.watch_focus_moved = true
 				await _settle(4)
 				await _shot(out_dir.path_join("watch_look_%s.png" % Hud.Wrist.SLOTS[i]))
-			controller.watch_glance_moved = false
+			controller.watch_focus_moved = false
 		controller.toggle_view()
 		await _settle(40)
 		await _shot(out_dir.path_join("watch_third_%s.png" % tag))

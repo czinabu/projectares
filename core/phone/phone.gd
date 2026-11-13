@@ -98,7 +98,7 @@ const CONTROLS := [
 		["Fire", "{fire}"],
 		["Aim down sights", "Hold {alt_fire}"],
 		["Reload", "{reload}"],
-		["Primary / sidearm / melee / power weapon", "{weapon_1} {weapon_2} {weapon_3} {weapon_4}, or the wheel"],
+		["Primary / sidearm / melee / power weapon", "{weapon_1} {weapon_2} {weapon_3} {weapon_4}, or the wheel (watch down)"],
 		["Put away, or draw again", "{holster}"],
 		["Use a medkit", "{heal}"],
 		["Use your ability", "{ability}"],
@@ -114,7 +114,8 @@ const CONTROLS := [
 	]],
 	["WATCH", [
 		["Raise or lower the watch", "{check_wrist}"],
-		["Pick a toy vehicle (watch up)", "Mouse wheel"],
+		["Move across the watch's icons (watch up)", "Mouse wheel"],
+		["Pick a toy vehicle (watch up, on the vehicle icon)", "Mouse wheel"],
 		["Take the toy in your hand (watch up)", "{fire}"],
 		["Throw the toy, or put it back", "{fire}, or {alt_fire}"],
 		["Pack the bike you look at (watch up)", "{fire}"],
