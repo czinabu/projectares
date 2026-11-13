@@ -86,6 +86,10 @@ var climb_accel := 14.0
 var ceiling := 120.0
 ## How far the nose pitches with the climb, in radians at full climb.
 var flight_pitch := 0.35
+## Height over the ground below which a flier levels its wings and nose,
+## fully level at the ground (`_clearance_share`). A bank or a pitch tips
+## the wingtips and tail about this far.
+var level_height := 3.0
 
 ## Clear ground it needs to unpack from a toy, width, height and length
 ## (`Raid.has_room_to_unpack`).
@@ -99,6 +103,8 @@ var bay_scale := 1.0
 ## The walker's stride, in radians, read by the legs (`_animate_legs`).
 var stride_phase := 0.0
 var _legs: Array[Node3D] = []
+## Height of a walker's hip joints over the ground.
+const LEG_HIP := 1.75
 ## The steer this tick, for a walker's shuffle on the spot.
 var _turning := 0.0
 
@@ -165,12 +171,23 @@ func _build_body() -> void:
 		seat_shape.size = Vector3(0.9, 1.1, 2.1)
 		seat_col.position.y = 0.55
 	else:
-		# A box that stands a little off the ground, so it climbs kerbs.
-		var shape := BoxShape3D.new()
+		# A box over a capsule lying along the body: the capsule's round ends
+		# roll it over kerbs and ramp lips, and its underside is the ground
+		# line the model stands on (wheels and feet reach down to y = 0).
 		var lift := minf(0.3, body_size.y * 0.25)
+		var shape := BoxShape3D.new()
 		shape.size = Vector3(body_size.x, body_size.y - lift, body_size.z)
 		col.shape = shape
 		col.position.y = lift + (body_size.y - lift) * 0.5
+		var keel_shape := CapsuleShape3D.new()
+		keel_shape.radius = lift
+		keel_shape.height = maxf(body_size.z, lift * 2.0)
+		var keel := CollisionShape3D.new()
+		keel.name = "Keel"
+		keel.shape = keel_shape
+		keel.rotation.x = PI / 2.0
+		keel.position.y = lift
+		add_child(keel)
 		seat_shape.size = body_size + Vector3(0.2, 0.2, 0.2)
 		seat_col.position.y = body_size.y * 0.5
 	add_child(col)
@@ -330,10 +347,10 @@ func _build_mech() -> Node3D:
 	for x: float in [-0.62, 0.62]:
 		var leg := Node3D.new()
 		leg.name = "LegL" if x < 0.0 else "LegR"
-		leg.position = Vector3(x, 1.75, 0.1)
+		leg.position = Vector3(x, LEG_HIP, 0.1)
 		leg.add_child(_part(Vector3(0.36, 0.95, 0.42), Vector3(0, -0.42, -0.12), c.paint, 0.25))  # thigh
 		leg.add_child(_part(Vector3(0.3, 0.3, 0.3), Vector3(0, -0.86, -0.22), c.steel))            # knee
-		leg.add_child(_part(Vector3(0.28, 0.95, 0.32), Vector3(0, -1.3, -0.08), c.dark, -0.3))     # shin
+		leg.add_child(_part(Vector3(0.28, 0.9, 0.32), Vector3(0, -1.2, -0.08), c.dark, -0.3))      # shin
 		leg.add_child(_part(Vector3(0.5, 0.14, 0.8), Vector3(0, -1.68, -0.05), c.dark))            # foot
 		leg.add_child(_part(Vector3(0.04, 0.5, 0.04), Vector3(x * 0.3, -0.42, 0.05), null, 0.25, c.glow))
 		root.add_child(leg)
@@ -452,6 +469,9 @@ func _animate_legs(delta: float) -> void:
 		if airborne_time > 0.1:
 			want = -0.25
 		leg.rotation.x = lerpf(leg.rotation.x, want, 1.0 - exp(-10.0 * delta))
+		# A swung leg is lifted at the hip, so its foot steps over the ground
+		# instead of sweeping through it.
+		leg.position.y = LEG_HIP + absf(sin(leg.rotation.x)) * 0.45
 
 
 func _show_unpack() -> void:
@@ -639,6 +659,19 @@ func _fly(throttle: float, steer: float, boosting: bool, lift: float, delta: flo
 	velocity = forward * speed + Vector3(0.0, vy, 0.0)
 
 
+## How free a flier is to bank and pitch, 0 at the ground to 1 from
+## `level_height` up, from a ray straight down onto the world.
+func _clearance_share() -> float:
+	if not is_inside_tree():
+		return 1.0
+	var from := global_position + Vector3.UP * 0.5
+	var query := PhysicsRayQueryParameters3D.create(from, from + Vector3.DOWN * (level_height + 0.5), Actor.LAYER_WORLD)
+	var hit := get_world_3d().direct_space_state.intersect_ray(query)
+	if hit.is_empty():
+		return 1.0
+	return clampf((global_position.y - hit.position.y) / level_height, 0.0, 1.0)
+
+
 ## The world's ground height under the vehicle (the map's `ground_height`,
 ## else its origin), or NAN outside a raid. The same rule as
 ## `Actor.ground_level`.
@@ -699,8 +732,13 @@ func _update_visual(steer: float, delta: float) -> void:
 		pitch = clampf(velocity.y / maxf(climb_rate, 0.1), -1.0, 1.0) * flight_pitch
 	elif not is_on_floor() and jump_speed <= 0.0:
 		pitch = clampf(velocity.y * 0.03, -0.4, 0.4)
+	var tilt := Vector3(pitch, 0.0, -lean)
+	if flies and not is_on_floor():
+		# Near the ground a flier levels out, so a banked wingtip or a
+		# pitched nose or tail never dips into the ground it is landing on.
+		tilt *= _clearance_share()
 	# A positive lean rolls the right side down.
-	_model.rotation = Vector3(pitch, 0.0, -lean)
+	_model.rotation = tilt
 
 
 ## The interact target for a vehicle. It rides along on the vehicle and only

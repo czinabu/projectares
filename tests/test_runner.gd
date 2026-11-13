@@ -2344,6 +2344,17 @@ func _test_vehicle_roster() -> void:
 		var model: Node3D = v.get_node("Model")
 		check(v.is_on_floor() and model != null and model.get_child_count() > 10,
 				"%s stands on the ground with its own greybox body" % id)
+		var parked_dip := _lowest_point(model) - arena.global_position.y
+		check(absf(parked_dip) < 0.05, "%s rests on the ground, not in it (lowest point %.3f m)" % [id, parked_dip])
+		# The ground is the arena's floor, at the arena's height (and the ramp
+		# is far away): track the deepest the model goes from here on.
+		var dip := {"min": INF}
+		var watch_dip := func() -> void:
+			var off: Vector3 = v.global_position - arena.global_position
+			if is_instance_valid(model) and off.distance_to(Vector3(60, 0, -40)) > 15.0 \
+					and absf(off.x) < 190.0 and absf(off.z) < 190.0:
+				dip.min = minf(dip.min, _lowest_point(model) - arena.global_position.y)
+		get_tree().physics_frame.connect(watch_dip)
 		var seat_at: Vector3 = v.seat_point
 		check(v.grip_points.size() == 2 and v.peg_points.size() == 2
 				and v.grip_points[0].x < v.grip_points[1].x and v.peg_points[0].x < v.peg_points[1].x,
@@ -2409,10 +2420,20 @@ func _test_vehicle_roster() -> void:
 				await frames(20)
 				check(v.lean < -0.2, "it banks into a turn (%.2f)" % v.lean)
 				rider.cmd.move = Vector2.ZERO
+				# Back over the middle of the floor, so it comes down on it.
+				v.global_position = arena.global_position + Vector3(0, 12, 0)
+				v.velocity = Vector3.ZERO
+				v.speed = v.stall_speed
+				await frames(2)
 				v.dismount()
 				var height: float = v.global_position.y
 				await frames(60)
 				check(v.global_position.y < height - 3.0, "with nobody at the stick it drops")
+				await _wait_until(func() -> bool: return v.is_on_floor(), 600)
+				await frames(30)
+				check(v.is_on_floor(), "and comes down on the ground")
+		get_tree().physics_frame.disconnect(watch_dip)
+		check(dip.min > -0.06, "%s never sinks into the ground driving, landing or hopping (deepest %.3f m)" % [id, dip.min])
 		rider.cmd.move = Vector2.ZERO
 		rider.cmd.jump = false
 		v.dismount()
@@ -2443,6 +2464,16 @@ func _test_vehicle_roster() -> void:
 	raid.queue_free()
 	arena.queue_free()
 	await frames(2)
+
+
+## The lowest point of every mesh under `node`, in world height.
+func _lowest_point(node: Node3D) -> float:
+	var low := INF
+	for mesh_node: MeshInstance3D in node.find_children("*", "MeshInstance3D", true, false):
+		var box := mesh_node.get_aabb()
+		for i in 8:
+			low = minf(low, (mesh_node.global_transform * box.get_endpoint(i)).y)
+	return low
 
 
 func _test_vehicle_raids() -> void:
