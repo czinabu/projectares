@@ -1281,6 +1281,9 @@ func summon(actor: Actor, item_id: String) -> String:
 	var state := state_for(actor)
 	if mode == Mode.CLIENT or state == null or state.finished or actor.is_dead:
 		return "not now"
+	# A helmet from the pack goes on the head, at once and with no wait.
+	if ItemDB.has_tag(item_id, "helmet"):
+		return swap_helmet(actor, item_id)
 	var why := ""
 	if not actor.inventory.has_item(item_id):
 		why = "That is not in your pack"
@@ -1449,6 +1452,38 @@ func pack_vehicle(actor: Actor) -> String:
 	remove_vehicle(vehicle)
 	state.stowed.append(id)
 	actor.notice.emit("Packed %s onto your watch" % ItemDB.item_name(id))
+	watch_changed.emit(actor)
+	return ""
+
+
+## Puts on helmet `item_id` out of a player's pack (the watch's summon
+## carousel, through `summon`), and the one worn goes into the pack in its
+## place. Authority only; returns why not, or "" when done. What is worn is
+## gear and drops on death, and the one in the pack drops as loot.
+func swap_helmet(actor: Actor, item_id: String) -> String:
+	var state := state_for(actor)
+	if mode == Mode.CLIENT or state == null or state.finished or actor.is_dead:
+		return "not now"
+	var why := ""
+	if not ItemDB.has_tag(item_id, "helmet") or not actor.inventory.has_item(item_id):
+		why = "That helmet is not in your pack"
+	elif state.sign_out_left >= 0.0:
+		why = "Not while signing out"
+	if why != "":
+		actor.notice.emit(why)
+		return why
+	var worn := actor.visor.item_id if actor.visor.enabled else ""
+	actor.inventory.remove_item(item_id)
+	Loadout.wear_helmet(actor, item_id)
+	if worn != "":
+		# One out, one in: the pack is no fuller than it was.
+		actor.inventory.add_item(worn)
+	var at := state.kit.find(worn) if worn != "" else -1
+	if at >= 0:
+		state.kit[at] = item_id
+	else:
+		state.kit.append(item_id)
+	actor.notice.emit("Put on %s" % ItemDB.item_name(item_id))
 	watch_changed.emit(actor)
 	return ""
 
