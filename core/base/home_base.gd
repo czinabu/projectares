@@ -51,6 +51,7 @@ signal portal_entered(destination: String)
 ## takes it over.
 signal player_replaced(actor: Actor)
 
+const StashRules := preload("res://core/account/stash_rules.gd")
 const BaseLayout := preload("res://core/base/base_layout.gd")
 const BaseUpgrades := preload("res://core/base/base_upgrades.gd")
 const VehicleScript := preload("res://core/vehicle/vehicle.gd")
@@ -511,20 +512,13 @@ static func commas(amount: int) -> String:
 	return ("-" if amount < 0 else "") + digits + out
 
 
-## What you wear in your base: each loadout slot's item, or the free starter
-## item that fits an empty slot, as a deploy would. Vehicles stay parked and
-## supplies stay on the shelf: only what is worn or carried in hand.
+## What you wear in your base: each loadout slot's item, as a deploy would
+## take it. An empty slot is bare. Vehicles stay parked and supplies stay on
+## the shelf: only what is worn or carried in hand.
 func suit_kit() -> Array[String]:
 	var kit: Array[String] = []
 	for slot: String in Loadout.SLOTS:
 		var id: String = loadout.get(slot, "")
-		if id == "" and slot in Loadout.OPTIONAL_SLOTS:
-			continue
-		if id == "":
-			for free_id: String in ItemDB.all_ids():
-				if ItemDB.has_tag(free_id, "starter") and Loadout.fits(slot, free_id):
-					id = free_id
-					break
 		if id != "" and not ItemDB.has_tag(id, "vehicle"):
 			kit.append(id)
 	return kit
@@ -1483,7 +1477,11 @@ func _rebuild() -> void:
 		_display_root.remove_child(child)
 		child.queue_free()
 	displays.clear()
-	for entry: Dictionary in BaseLayout.plan(stash, loadout, upgrades):
+	# In your own base the free scrap pieces are on show too, last in their
+	# sections: every player owns them, and taking one off leaves its slot
+	# bare. A base you visit shows only its owner's stash.
+	var shown: Array = stash if read_only else StashRules.equippable(stash)
+	for entry: Dictionary in BaseLayout.plan(shown, loadout, upgrades):
 		var display := Display.new()
 		display.base = self
 		display.item_id = entry["id"]
@@ -1861,10 +1859,10 @@ func bench_choices(slot: String) -> Array[String]:
 
 
 ## Every gun that can go on the bench: the primaries in the stash, in stash
-## order, one of each.
+## order, one of each, then the free scrap gun.
 func bench_guns() -> Array[String]:
 	var out: Array[String] = []
-	for id: Variant in stash:
+	for id: Variant in StashRules.equippable(stash):
 		if typeof(id) == TYPE_STRING and Loadout.is_primary(id) and id not in out:
 			out.append(id)
 	return out
@@ -1999,8 +1997,9 @@ func bench_card() -> String:
 					id = fitted
 		var label := "GUN" if slot == "primary" else slot.to_upper()
 		var value := ItemDB.item_name(id) if id != "" else "—"
-		if slot == "primary" and bench_current("primary") == "" and id == starter_primary():
-			value += " (free)"
+		if slot == "primary" and bench_current("primary") == "" and not (bench_open and bench_picking and bench_row == 0):
+			# No primary: the scrap gun stands in so attachments show on something.
+			value = "— none equipped"
 		if slot != "primary":
 			var spare := bench_choices(slot).size() - 1
 			if id == "" and spare == 0:
@@ -2193,7 +2192,7 @@ func watch_weapons() -> Array[String]:
 	if read_only:
 		return ids
 	var worn: Array = [loadout.get("primary", ""), loadout.get("sidearm", ""), loadout.get("melee", "")]
-	for id: String in stash:
+	for id: String in StashRules.equippable(stash):
 		if Loadout.summonable(id) and id not in ids and id not in worn:
 			ids.append(id)
 	return ids

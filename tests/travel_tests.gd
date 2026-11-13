@@ -34,7 +34,8 @@ static func _handoff(t: Node) -> void:
 	check_stranger(t, service)
 	var signed := service.sign_in("Wren", secret)
 	var me := service.snapshot(str(signed.get("account_id", "")))
-	t.check(signed.get("ok", false) and me.loadout == {"primary": "dmr_longshot", "frame": "frame_bulwark"}
+	t.check(signed.get("ok", false) and me.loadout == Profile.loadout and me.loadout.primary == "dmr_longshot"
+			and me.loadout.frame == "frame_bulwark"
 			and int(me.scrip) == 777 and "dmr_longshot" in me.stash and not "rifle_scrap" in me.stash,
 			"on your own server your account is your profile: same loadout, stash and scrip")
 	t.check(service.host_profile.is_empty(), "the hand-over happens once")
@@ -60,7 +61,8 @@ static func check_stranger(t: Node, service: Accounts) -> void:
 	other.host_profile = service.host_profile.duplicate(true)
 	var stranger := other.sign_in("Wren", Accounts.new_secret())
 	var theirs := other.snapshot(str(stranger.get("account_id", "")))
-	t.check(stranger.get("ok", false) and theirs.loadout.is_empty() and not other.host_profile.is_empty(),
+	t.check(stranger.get("ok", false) and theirs.loadout == StashRules.starter_loadout()
+			and not other.host_profile.is_empty(),
 			"a stranger signing in with the host's name does not get the host's gear")
 
 

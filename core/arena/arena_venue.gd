@@ -132,9 +132,9 @@ func create_map() -> Node3D:
 	return Pit.new()
 
 
-## The free scrap kit from the core item list, for empty loadout slots: the
-## same pieces every world hands out, so an empty slot looks the same here as
-## it did in your base (no healing, though: there is none in the pit).
+## The free scrap kit from the core item list, for a fighter added with no
+## kit at all (bots, tests). A player's kit is their loadout, bare slots
+## included. No healing: there is none in the pit.
 func starter_loadout() -> Array[String]:
 	return ["rifle_scrap", "blade_scrap", "pistol_service", "jetpack_mk1", "plate_light", "visor_scav"]
 

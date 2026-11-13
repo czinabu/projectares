@@ -371,8 +371,8 @@ static func _at_home(t: Node) -> void:
 	var p := base.player
 	t.check(base.watch_vehicles() == vehicles, "every vehicle owned is on the watch at home, one of each: %s"
 			% ", ".join(base.watch_vehicles()))
-	t.check(base.watch_weapons() == (["smg_stinger", "knife_gutter"] as Array[String]),
-			"every weapon owned and not worn is on the carousel, and nothing else: %s" % ", ".join(base.watch_weapons()))
+	t.check(base.watch_weapons() == (["smg_stinger", "knife_gutter", "rifle_scrap", "blade_scrap", "pistol_service"] as Array[String]),
+			"every weapon owned and not worn is on the carousel, the free scrap ones too, and nothing else: %s" % ", ".join(base.watch_weapons()))
 	# Stand mid-room and aim across it.
 	p.global_position = base.to_global(Vector3(-2.0, 0.1, 0.0))
 	p.cmd.yaw = PI / 2.0
