@@ -84,6 +84,9 @@ func _init() -> void:
 	# Power weapons belong to the war worlds. A world where you keep your
 	# gear on death would hand them out without the stakes.
 	power_weapon_rate = 0.0
+	# Artifacts too: rare gear stays in the full-loot war worlds for now.
+	warlord_artifact_chance = 0.0
+	pod_artifact_chance = 0.0
 	bot_count = 9
 	depot_hold_time = 6.0
 

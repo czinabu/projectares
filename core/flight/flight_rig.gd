@@ -199,6 +199,11 @@ var glide_boost_heat := 0.0
 
 var heat := 0.0
 var overheated := false
+## An artifact's Overclock Core is running: flying makes no heat.
+var heat_free := false
+## Seconds left with the rig shut off by an artifact's Static Bloom. While
+## jammed it does nothing at all: no thrust, no glide, no skim, no dash.
+var jam_left := 0.0
 var is_thrusting := false
 var is_gliding := false
 ## The jets are lit and holding you up (see `fly_speed`).
@@ -222,10 +227,10 @@ var _since_thrust := 0.0
 ## Advances the rig one tick and returns the upward acceleration it provides.
 ## `heat_mult` scales the heat this tick costs (hovering costs less).
 func tick(wants_thrust: bool, delta: float, heat_mult := 1.0) -> float:
-	is_thrusting = enabled and wants_thrust and not overheated and thrust_accel > 0.0
+	is_thrusting = working() and wants_thrust and not overheated and thrust_accel > 0.0
 	if is_thrusting:
 		_since_thrust = 0.0
-		heat += heat_per_sec * heat_mult * delta
+		heat += _heat(heat_per_sec * heat_mult * delta)
 		if heat >= max_heat:
 			heat = max_heat
 			overheated = true
@@ -258,7 +263,7 @@ func skim(delta: float, height: float) -> void:
 		_recover()
 		return
 	_since_thrust = 0.0
-	heat += (skim_mid_heat if height < skim_high else skim_high_heat) * delta
+	heat += _heat((skim_mid_heat if height < skim_high else skim_high_heat) * delta)
 	if heat >= max_heat:
 		heat = max_heat
 		overheated = true
@@ -271,14 +276,14 @@ func skim_band() -> int:
 
 
 func can_skim() -> bool:
-	return enabled and skim_speed > 0.0
+	return working() and skim_speed > 0.0
 
 
 ## A dash in the air. True if it goes off (and takes its heat).
 ## `cost` overrides the dash's heat (a wing boost); below zero it is
 ## `air_dash_heat`.
 func try_air_dash(cost := -1.0) -> bool:
-	if not enabled or overheated or air_dash_speed <= 0.0:
+	if not working() or overheated or air_dash_speed <= 0.0:
 		return false
 	if not _spend(air_dash_heat if cost < 0.0 else cost):
 		return false
@@ -295,7 +300,7 @@ func _recover() -> void:
 ## burst, is overheated or is too close under its ceiling (`cap`, from
 ## `lift_cap`: the speed is cut so the jump tops out on the ceiling).
 func try_burst(cap := INF) -> float:
-	if not enabled or overheated or burst_velocity <= 0.0 or (launch_once and launched):
+	if not working() or overheated or burst_velocity <= 0.0 or (launch_once and launched):
 		return 0.0
 	if minf(cap, burst_velocity) < MIN_LIFT or not _spend(burst_heat):
 		return 0.0
@@ -307,7 +312,7 @@ func try_burst(cap := INF) -> float:
 ## A wing pulse while gliding. Returns the upward speed to set, or zero;
 ## `cap` limits it under the ceiling like a burst.
 func try_pulse(cap := INF) -> float:
-	if not enabled or overheated or pulse_velocity <= 0.0 or minf(cap, pulse_velocity) < MIN_LIFT:
+	if not working() or overheated or pulse_velocity <= 0.0 or minf(cap, pulse_velocity) < MIN_LIFT:
 		return 0.0
 	if not _spend(pulse_heat):
 		return 0.0
@@ -322,20 +327,54 @@ func _spend(cost: float) -> bool:
 	if heat + cost > max_heat * (1.0 + BURST_SLACK):
 		return false
 	_since_thrust = 0.0
-	heat += cost
+	heat += _heat(cost)
 	if heat >= max_heat:
 		heat = max_heat
 		overheated = true
 	return true
 
 
+## True if a rig is worn and not shut off (`jam`).
+func working() -> bool:
+	return enabled and jam_left <= 0.0
+
+
+## Shuts the rig off for `seconds` (an artifact's Static Bloom): whatever it
+## was doing stops, and you drop.
+func jam(seconds: float) -> void:
+	if not enabled:
+		return
+	jam_left = maxf(jam_left, seconds)
+	is_thrusting = false
+	is_hovering = false
+	is_boosting = false
+	is_gliding = false
+	is_skimming = false
+
+
+## Overheats the rig at once (an Overclock Core burning out).
+func lock_up() -> void:
+	if not enabled:
+		return
+	heat = max_heat
+	overheated = true
+	is_hovering = false
+	is_boosting = false
+	is_skimming = false
+
+
+## Heat that `amount` really adds: none while overclocked.
+func _heat(amount: float) -> float:
+	return 0.0 if heat_free else amount
+
+
 ## True if the rig can hold you up and fly you about (it has thrust).
 func can_hover() -> bool:
-	return enabled and thrust_accel > 0.0
+	return working() and thrust_accel > 0.0
 
 
 func can_glide() -> bool:
-	return enabled and glide_fall_speed > 0.0
+	return working() and glide_fall_speed > 0.0
 
 
 ## What the jump key does with this rig, for the HUD.

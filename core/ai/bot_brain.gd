@@ -286,6 +286,9 @@ func _find_target() -> Actor:
 		var dist := eye.distance_to(chest)
 		if dist >= best_dist:
 			continue
+		# A Phase Cloak hides all but someone right beside the bot.
+		if other.is_cloaked() and dist > other.artifact.cloak_sense_range:
+			continue
 		if not Raid.together(actor, other):
 			continue
 		if world and not world.can_damage(actor, other, null):

@@ -88,7 +88,7 @@ rows marked **pre-playtest** come before the friends playtest.
 | Banked by depot or sign-out to the armory wall | Missing | Needs `StashRules.storable` to accept `power`, and the `CLAUDE.md` power weapon rule rewritten. **Pre-playtest.** |
 | Deploy with one from the wall (one per outing) | Missing | **Pre-playtest.** Open decision in DESIGN.md section 13. |
 | Dropped with your bag on death | Partly | Today a dead player's power weapon is left on a rack. |
-| Artifacts: one per outing, earned in PvE dungeons and arena tournaments, dropped on death in PvP, banked at bank spots | Missing | Eleven designed (DESIGN.md section 6). Need the PvE world or arena rewards to earn them. |
+| Artifacts: one per outing on the watch, dropped on death in PvP, banked with the pack, taken home on sign-out | Partly | MVP built (`Artifact`, `core/abilities/artifact.gd`): four of the eleven (Time Rewind, Phase Cloak, Overclock Core, Static Bloom), an optional `artifact` loadout slot, used by a click on the watch's artifact icon, shown in the base's artifact case. Until PvE dungeons and arena tournaments exist they drop from world events (`WorldDef.warlord_artifact_chance`, `pod_artifact_chance`; off in Frostline). Missing: the other seven, attuning one found mid-outing, their own art and sounds. |
 | Gravity Well gadget | Missing | A normal gadget, not an artifact. |
 
 ## Banking and leaving

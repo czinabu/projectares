@@ -128,6 +128,7 @@ const CONTROLS := [
 		["Take the toy in your hand (watch up)", "{fire}"],
 		["Throw the toy, or put it back", "{fire}, or {alt_fire}"],
 		["Pack the bike you look at (watch up)", "{fire}"],
+		["Use your artifact (watch up, on the artifact icon)", "{fire}"],
 	]],
 	["VEHICLES", [
 		["Get on or off", "{interact}"],
