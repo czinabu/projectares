@@ -93,6 +93,10 @@ var _sight_blend := 0.0
 ## First person: how far the model's eyes are from the actor's eye point,
 ## eased so the view never jolts with a step.
 var _eye_offset := Vector3.ZERO
+## First person: how far the camera sits back from the model's eyes, level
+## along the view, in meters (the phone's "Camera pulled back" setting). The
+## head is left out of this camera, so it never gets in the way.
+var eye_pullback := 0.15
 ## How far the mouse has to move, in pixels, to count as a stance flick.
 var flick_threshold := 45.0
 ## How quickly old mouse movement stops counting toward a flick.
@@ -545,6 +549,10 @@ func _process(delta: float) -> void:
 	# from the actor.
 	var eyes: Variant = skin.eye_point(look) if first_person and skin != null and skin.has_method("eye_point") else null
 	var offset: Vector3 = eyes - actor.get_eye_position() if eyes != null else Vector3.ZERO
+	if eyes != null:
+		var ahead := Vector3(-look.z.x, 0.0, -look.z.z)
+		if ahead.length_squared() > 0.0001:
+			offset -= ahead.normalized() * eye_pullback
 	_eye_offset = _eye_offset.lerp(offset, 1.0 - exp(-18.0 * delta)) if first_person else offset
 	if first_person:
 		camera.global_position += _eye_offset * (1.0 - minf(_cam_dist / 0.7, 1.0))

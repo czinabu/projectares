@@ -5665,6 +5665,11 @@ func _test_phone_view() -> void:
 	phone.change_setting("camera_distance", 99.0)
 	check(is_equal_approx(GameSettings.camera_distance, GameSettings.CAMERA_DISTANCE_RANGE.y), "within its range")
 	GameSettings.camera_distance = 2.0
+	check(GameSettings.eye_pullback > 0.0, "the first-person camera starts pulled back a little from the face")
+	phone.change_setting("eye_pullback", 99.0)
+	check(is_equal_approx(GameSettings.eye_pullback, GameSettings.EYE_PULLBACK_RANGE.y)
+			and GameSettings.to_dict().has("eye_pullback"), "it can be set from the phone, within its range")
+	GameSettings.eye_pullback = 0.15
 	phone.close()
 	check(not phone.is_open and events[events.size() - 1] == false, "the phone closes")
 
