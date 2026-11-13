@@ -572,6 +572,9 @@ func start_event(kind: String) -> bool:
 		# Always a good haul, and a better one in a hot war.
 		var items := world.roll_war_loot("cache", rng, maxf(war.intensity, 0.5))
 		items.append_array(world.roll_war_loot("cache", rng, 1.0))
+		var relic := world.roll_artifact(rng, world.pod_artifact_chance)
+		if relic != "":
+			items.append(relic)
 		_event_pod = spawn_container(items, false, "Supply pod", at)
 		armory.on_supply_pod(at)
 		event = {"kind": "supply_pod", "title": "Supply pod"}
@@ -1018,6 +1021,9 @@ func _tick_sign_outs(delta: float) -> void:
 	for state in players.duplicate():
 		if state.finished or state.sign_out_left < 0.0:
 			continue
+		# A Phase Cloak never hides a sign-out: the countdown waits for it.
+		if state.actor != null and is_instance_valid(state.actor) and state.actor.is_cloaked():
+			continue
 		state.sign_out_left = maxf(0.0, state.sign_out_left - delta)
 		# A client only shows the countdown. The server decides when it ends.
 		if state.sign_out_left <= 0.0 and mode != Mode.CLIENT:
@@ -1080,6 +1086,10 @@ func _add_bot(marker: Node3D, warlord := false) -> Actor:
 		# What a warlord carries is worth the fight.
 		for id in world.roll_war_loot("bot", rng, 1.0) + world.roll_war_loot("cache", rng, 1.0):
 			bot.inventory.add_item(id)
+		# A boss may carry an artifact, the long chase (DESIGN.md section 6).
+		var relic := world.roll_artifact(rng, world.warlord_artifact_chance)
+		if relic != "":
+			bot.inventory.add_item(relic)
 	_bot_count += 1
 	var brain := BotBrain.new()
 	brain.name = "Brain"

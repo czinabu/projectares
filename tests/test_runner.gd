@@ -26,6 +26,7 @@ const SidearmTests := preload("res://tests/sidearm_tests.gd")
 const BaseUpgradeTests := preload("res://tests/base_upgrade_tests.gd")
 const AttachmentTests := preload("res://tests/attachment_tests.gd")
 const PowerWeaponTests := preload("res://tests/power_weapon_tests.gd")
+const ArtifactTests := preload("res://tests/artifact_tests.gd")
 const FeelTests := preload("res://tests/feel_tests.gd")
 const ViewMatchTests := preload("res://tests/view_match_tests.gd")
 const AdsTests := preload("res://tests/ads_tests.gd")
@@ -284,6 +285,7 @@ func _run() -> void:
 	await _test_sidearms()
 	await _test_attachments()
 	await _test_power_weapons()
+	await _test_artifacts()
 	await _test_feel()
 	await _test_view_match()
 	await _test_ads()
@@ -348,6 +350,10 @@ func _test_visors() -> void:
 
 func _test_power_weapons() -> void:
 	await PowerWeaponTests.run(self)
+
+
+func _test_artifacts() -> void:
+	await ArtifactTests.run(self)
 
 
 func check(condition: bool, what: String) -> void:
@@ -991,7 +997,7 @@ func _test_main_flow() -> void:
 	check(is_equal_approx(float(leaving[leave_at].progress), 0.5) and Hud.default_focus(leaving) == leave_at,
 			"signing out fills a ring on the sign-out icon, and the card opens on it")
 	check(Hud.watch_slots(main.raid, p)[Hud.Wrist.SLOTS.find("artifact")].empty,
-			"the artifact slot is an empty socket until artifacts exist")
+			"with no artifact on, the artifact slot is an empty socket")
 	# One long frame must not throw the landing dip's spring (and the camera).
 	controller._dip_speed = 9.0
 	controller._update_dip(0.5)

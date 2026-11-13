@@ -236,6 +236,22 @@ func _ready() -> void:
 			"pulse_stagger": 1.3},
 			"A shockwave that hurts and staggers everyone near you.")
 
+	# Artifacts (DESIGN.md section 6): rare, powerful, one per outing on the
+	# watch. Earned, never sold: no "vendor" tag. `effect` picks what the
+	# `Artifact` does; every one is seen or felt by the people it touches.
+	register("artifact_rewind", "Time Rewind", Rarity.RELIC, 3000, ["artifact", "rewind"],
+			{"effect": "rewind", "charges": 1, "rewind_seconds": 4.0},
+			"Once an outing: snap back to where you were, and how healthy you were, four seconds ago. Leaves a glowing trail the shooter can follow.")
+	register("artifact_cloak", "Phase Cloak", Rarity.RELIC, 2800, ["artifact", "cloak"],
+			{"effect": "cloak", "charges": 0, "cooldown": 60.0, "duration": 6.0, "cloak_sense_range": 4.0},
+			"Near-invisible for six seconds. Firing or swinging breaks it, anyone close still notices you, and a sign-out waits while it runs.")
+	register("artifact_overclock", "Overclock Core", Rarity.RELIC, 2600, ["artifact", "overclock"],
+			{"effect": "overclock", "charges": 0, "cooldown": 90.0, "duration": 10.0},
+			"Your flight rig makes no heat for ten seconds. Then it burns out and locks up overheated, wherever you are.")
+	register("artifact_bloom", "Static Bloom", Rarity.RELIC, 2600, ["artifact", "bloom"],
+			{"effect": "bloom", "charges": 0, "cooldown": 60.0, "bloom_radius": 14.0, "jam_time": 3.0},
+			"A pulse that shuts off every flight rig within 14 meters for three seconds. Yours too: everyone drops.")
+
 	# Helmets. The visor is the wearer's display in first person, and `mode`
 	# picks what it can do (see `Visor`). Mk2 helmets are never sold or
 	# dropped: they are crafted from blueprints (DESIGN.md section 10).

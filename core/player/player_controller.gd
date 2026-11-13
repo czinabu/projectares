@@ -141,6 +141,8 @@ var watch_index := 0
 ## while you read the card. View only.
 var watch_focus: int = Hud.Wrist.SLOTS.find("vehicle")
 var watch_focus_moved := false
+## The artifact icon was clicked; sent as `artifact_pressed` next command.
+var _artifact_click := false
 var _toy_node: Node3D
 var _cam_dist := 0.0
 var _pending_switch := -1
@@ -271,15 +273,25 @@ func is_picking_toys() -> bool:
 	return is_browsing_toys() and (not watch_focus_moved or watch_focus == Hud.Wrist.SLOTS.find("vehicle"))
 
 
+## True while the card is open on the artifact icon with an artifact on it:
+## fire uses the artifact (`ActorCommand.artifact_pressed`).
+func is_on_artifact() -> bool:
+	return is_watch_up() and watch_focus_moved and watch_focus == Hud.Wrist.SLOTS.find("artifact") \
+			and actor.artifact.enabled
+
+
 ## Fire with the watch up: packs the vehicle being looked at onto the watch,
-## or else takes the picked toy into the hand. False if the watch had no use
-## for the click, and it is an ordinary shot.
+## takes the picked toy into the hand, or uses the artifact. False if the
+## watch had no use for the click, and it is an ordinary shot.
 func click_watch() -> bool:
 	if pack_target() != null:
 		pack_requested.emit()
 		return true
 	if is_picking_toys():
 		take_picked_toy()
+		return true
+	if is_on_artifact():
+		_artifact_click = true
 		return true
 	return false
 
@@ -471,7 +483,7 @@ func _physics_process(delta: float) -> void:
 	cmd.secondary_pressed = captured and Input.is_action_just_pressed("alt_fire")
 	if held_toy != "":
 		_use_toy_hand(cmd)
-	elif is_picking_toys() or pack_target() != null:
+	elif is_picking_toys() or pack_target() != null or is_on_artifact():
 		# With the watch up and something for it to do, fire works the watch.
 		if cmd.primary_pressed:
 			click_watch()
@@ -481,6 +493,8 @@ func _physics_process(delta: float) -> void:
 	cmd.interact_pressed = Input.is_action_just_pressed("interact")
 	cmd.heal_pressed = Input.is_action_just_pressed("heal")
 	cmd.ability_pressed = captured and Input.is_action_just_pressed("ability")
+	cmd.artifact_pressed = _artifact_click
+	_artifact_click = false
 	cmd.visor_pressed = captured and Input.is_action_just_pressed("visor")
 	if cmd.visor_pressed:
 		_visor_level = next_visor_level(actor.visor, _visor_level)

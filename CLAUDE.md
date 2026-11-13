@@ -341,6 +341,24 @@ without Caleb, and update the gap list when a PR closes a row.
 - Flight rigs and abilities are data too. `FlightRig` and `Ability` are single
   classes whose item stats pick the behavior. Abilities fire from
   `ActorCommand.ability_pressed`.
+- Artifacts (DESIGN.md section 6) are data too: items tagged "artifact" in
+  the optional `artifact` loadout slot, run by the one `Artifact` class
+  (`core/abilities/artifact.gd`, `Actor.artifact`) whose `effect` stat picks
+  what it does ("rewind", "cloak", "overclock", "bloom"), with `charges` per
+  outing (0 for no limit) and a `cooldown`. One per outing: `Loadout.equip`
+  attunes the first and a second is only carried as loot. It is used from
+  the watch (a click on the artifact icon, `PlayerController.is_on_artifact`)
+  through `ActorCommand.artifact_pressed`, so it is simulated from the
+  command on every machine like an ability. It is gear (`gear_items`), so it
+  drops in the bag and goes home like the rest. Every effect must be seen or
+  felt by the people it touches, and in the world, never on the screen: the
+  rewind trail and bloom ring are `Fx`, the cloak fades the whole body in
+  `ActorSkin._update_cloak` (the same body in both views). A cloak is read
+  with `Actor.is_cloaked()` by bots, nameplates and the sign-out countdown.
+  A jammed rig (`FlightRig.jam`, `working()`) and an overclocked one
+  (`heat_free`, `lock_up`) are rig states, not new rig types. Until PvE
+  dungeons and arena tournaments exist, artifacts drop from world events
+  (`WorldDef.roll_artifact`, `warlord_artifact_chance`, `pod_artifact_chance`).
 - Flight is simulated in `Actor` from the command, like a dash, so it
   predicts and replicates: jets lit by a tap in the air
   (`FlightRig.is_hovering`, flown by `Actor._simulate_hover`; the server

@@ -32,6 +32,10 @@ const KINDS := {
 		"per_copy": false, "title": "Flight rigs"},
 	"chip_case": {"tag": "ability", "spots": 6, "starter": 0, "steps": {"gear_hall": 6},
 		"per_copy": false, "title": "Ability chips"},
+	# Artifacts sit in a lit case at the end of the chip shelf. Even the
+	# starter bunker shows one: they are the long chase.
+	"artifact_case": {"tag": "artifact", "spots": 2, "starter": 1, "steps": {"gear_hall": 2},
+		"per_copy": false, "title": "Artifacts"},
 	"bay": {"tag": "vehicle", "spots": 4, "starter": 1, "steps": {"bay_second": 2, "garage_full": 4},
 		"per_copy": true, "title": "Garage"},
 	"supplies": {"tag": "consumable", "spots": 6, "starter": 3, "steps": {"trophy_hall": 6},

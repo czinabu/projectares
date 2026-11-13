@@ -90,6 +90,9 @@ var flight := FlightRig.new()
 ## bench or test with no raid sets its own). See `ground_level`.
 var ground_map: Node3D = null
 var ability := Ability.new()
+## The artifact carried on the watch for this outing. Always there;
+## `Artifact.enabled` says whether one is worn.
+var artifact := Artifact.new()
 ## The helmet. Always there; `Visor.enabled` says whether one is worn.
 var visor := Visor.new()
 var weapons: Array[Weapon] = []
@@ -185,6 +188,9 @@ func _init() -> void:
 	ability.name = "Ability"
 	ability.actor = self
 	add_child(ability)
+	artifact.name = "Artifact"
+	artifact.actor = self
+	add_child(artifact)
 	visor.name = "Visor"
 	visor.actor = self
 	add_child(visor)
@@ -275,6 +281,9 @@ func _physics_process(delta: float) -> void:
 	ability.tick(delta)
 	if cmd.ability_pressed and stagger_left <= 0.0 and not weapons_locked:
 		ability.activate()
+	artifact.tick(delta)
+	if cmd.artifact_pressed and stagger_left <= 0.0 and not weapons_locked:
+		artifact.activate()
 	visor.tick(cmd, delta)
 	if not weapons_locked:
 		_simulate_heal(delta)
@@ -291,6 +300,7 @@ func _simulate_timers(delta: float) -> void:
 	stagger_left = maxf(0.0, stagger_left - delta)
 	riposte_left = maxf(0.0, riposte_left - delta)
 	protected_left = maxf(0.0, protected_left - delta)
+	flight.jam_left = maxf(0.0, flight.jam_left - delta)
 	_stamina_wait = maxf(0.0, _stamina_wait - delta)
 	if _stamina_wait <= 0.0:
 		stamina = minf(max_stamina, stamina + stamina_regen * delta)
@@ -886,11 +896,27 @@ func get_active_weapon() -> Weapon:
 func equip_weapon(weapon: Weapon) -> void:
 	weapon.actor = self
 	weapons.append(weapon)
+	_watch_attacks(weapon)
 	add_child(weapon)
 	weapon.visual = weapon.build_visual()
 	if weapon.visual:
 		hand.add_child(weapon.visual)
 	_refresh_weapon_visuals()
+
+
+## Shots and swings break a cloak (`Artifact.on_attack`).
+func _watch_attacks(weapon: Weapon) -> void:
+	var gun := weapon as Gun
+	if gun:
+		gun.fired.connect(func(_from: Vector3, _to: Vector3) -> void: artifact.on_attack())
+	var blade := weapon as MeleeWeapon
+	if blade:
+		blade.swung.connect(func(_kind: String) -> void: artifact.on_attack())
+
+
+## True while an artifact's Phase Cloak hides this actor.
+func is_cloaked() -> bool:
+	return artifact.is_cloaked()
 
 
 ## Puts `weapon` where the weapon at `index` was, freeing the old one. Used
@@ -908,6 +934,7 @@ func replace_weapon(index: int, weapon: Weapon) -> void:
 	old.queue_free()
 	weapon.actor = self
 	weapons[index] = weapon
+	_watch_attacks(weapon)
 	add_child(weapon)
 	weapon.visual = weapon.build_visual()
 	if weapon.visual:

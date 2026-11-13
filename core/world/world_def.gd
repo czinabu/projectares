@@ -112,6 +112,12 @@ var event_interval := 420.0
 var event_lifetime := 300.0
 ## How many bots march with a warlord.
 var warlord_escort := 2
+## Artifacts (items tagged "artifact", DESIGN.md section 6). Until the PvE
+## dungeons and arena tournaments that should hand them out exist, world
+## events do: the chance that a warlord carries one, and that a supply pod
+## holds one. 0 keeps them out of this world.
+var warlord_artifact_chance := 0.5
+var pod_artifact_chance := 0.1
 ## Seconds between dying and being allowed to drop in again.
 var redeploy_delay := 3.0
 ## False for a venue where nobody loses gear (the arena). The server then
@@ -165,6 +171,21 @@ func _haul_rarity(ids: Array[String]) -> int:
 	for id in ids:
 		total += ItemDB.item_rarity(id)
 	return total
+
+
+## An artifact with chance `chance`, picked evenly from every item tagged
+## "artifact", or "" for none.
+func roll_artifact(rng: RandomNumberGenerator, chance: float) -> String:
+	if chance <= 0.0 or rng.randf() >= chance:
+		return ""
+	var ids: Array[String] = []
+	for id: String in ItemDB.all_ids():
+		if ItemDB.has_tag(id, "artifact"):
+			ids.append(id)
+	if ids.is_empty():
+		return ""
+	ids.sort()
+	return ids[rng.randi() % ids.size()]
 
 
 ## PvP rules live here. Called for every hit before damage is applied.
