@@ -1,5 +1,5 @@
 extends CanvasLayer
-## Hold Tab in a raid to see everyone playing: who is fighting, who is down,
+## Hold Q in a raid to see everyone playing: who is fighting, who is down,
 ## who has left, kills across all their lives, and their renown and bounty. Plain themed controls so the UI theme styles it.
 
 const RaidRoster := preload("res://core/ui/raid_roster.gd")
