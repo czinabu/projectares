@@ -6280,6 +6280,17 @@ func _test_start_screen() -> void:
 	screen.start_button.pressed.emit()
 	check(count[0] == 1, "pressing Start fires once, however often it is pressed")
 	screen.queue_free()
+	var by_key := StartScreen.new()
+	add_child(by_key)
+	await frames(1)
+	var keyed := [0]
+	by_key.start_pressed.connect(func() -> void: keyed[0] += 1)
+	var space := InputEventKey.new()
+	space.keycode = KEY_SPACE
+	space.pressed = true
+	by_key._unhandled_input(space)
+	check(keyed[0] == 1, "Space starts the game too")
+	by_key.queue_free()
 	await frames(1)
 	# Behind it: the lane between worlds, running forever on a fixed set of gates.
 	var backdrop := TitleBackdrop.new()

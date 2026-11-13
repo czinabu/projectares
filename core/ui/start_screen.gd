@@ -14,8 +14,10 @@ const UiTheme := preload("res://core/visual/ui_theme.gd")
 ## Used when there is no scene behind the screen.
 const BACKDROP_COLOR := Color(0.035, 0.03, 0.04)
 const INK := Color(0.94, 0.93, 0.9)
-const QUIET := Color(0.74, 0.76, 0.82)
-const FAINT := Color(0.6, 0.64, 0.74, 0.75)
+const QUIET := Color(0.84, 0.86, 0.9)
+const FAINT := Color(0.72, 0.76, 0.84, 0.9)
+## Text on a lit (amber) button.
+const INK_DARK := Color(0.06, 0.05, 0.04)
 
 var title_text := "PROJECT ARES"
 var tagline_text := "Take what you can carry. Get out alive."
@@ -37,7 +39,6 @@ var margin := Vector2(96, 84)
 var start_button: Button
 var _curtain: ColorRect
 var _rule: ColorRect
-var _marker: ColorRect
 var _reveal: Array[Control] = []
 var _started := false
 
@@ -56,7 +57,7 @@ func _ready() -> void:
 		add_child(back)
 	_build_title_block()
 	if location_text != "":
-		var corner := _label(location_text.to_upper(), 14, FAINT, 3)
+		var corner := _label(location_text.to_upper(), 16, FAINT, 3)
 		corner.anchor_left = 1.0
 		corner.anchor_right = 1.0
 		corner.anchor_top = 1.0
@@ -125,53 +126,54 @@ func _build_title_block() -> void:
 	_rule.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	_rule.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	box.add_child(_rule)
-	var tagline := _label(tagline_text, 20, QUIET, 1)
+	var tagline := _label(tagline_text, 24, QUIET, 1)
 	box.add_child(tagline)
 	_reveal.append(tagline)
 	var gap := Control.new()
 	gap.custom_minimum_size = Vector2(0, 30)
 	box.add_child(gap)
 	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 14)
+	row.add_theme_constant_override("separation", 16)
 	box.add_child(row)
 	_reveal.append(row)
-	# A small bar that lights and slides in when Start has focus or the mouse.
-	var mark_slot := Control.new()
-	mark_slot.custom_minimum_size = Vector2(16, 0)
-	mark_slot.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	row.add_child(mark_slot)
-	_marker = ColorRect.new()
-	_marker.color = UiTheme.ACCENT
-	_marker.size = Vector2(4, 20)
-	_marker.position = Vector2(0, 13)
-	_marker.modulate.a = 0.0
-	_marker.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	mark_slot.add_child(_marker)
+	# Start is a real button you can click, with the key that also starts
+	# the game in a keycap beside it.
 	start_button = Button.new()
 	start_button.text = "START"
-	start_button.flat = true
 	start_button.focus_mode = Control.FOCUS_ALL
 	start_button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	start_button.custom_minimum_size = Vector2(0, 46)
-	var empty := StyleBoxEmpty.new()
-	for state: String in ["normal", "hover", "pressed", "focus", "disabled", "hover_pressed"]:
-		start_button.add_theme_stylebox_override(state, empty)
-	start_button.add_theme_font_override("font", _spaced(6))
-	start_button.add_theme_font_size_override("font_size", 26)
-	start_button.add_theme_color_override("font_color", UiTheme.ACCENT.lerp(INK, 0.35))
-	start_button.add_theme_color_override("font_focus_color", UiTheme.ACCENT)
-	start_button.add_theme_color_override("font_hover_color", UiTheme.ACCENT.lightened(0.25))
-	start_button.add_theme_color_override("font_pressed_color", Color.WHITE)
-	start_button.add_theme_color_override("font_disabled_color", UiTheme.ACCENT)
+	start_button.custom_minimum_size = Vector2(220, 56)
+	var dim := UiTheme.ACCENT
+	start_button.add_theme_stylebox_override("normal", _frame(Color(0.02, 0.025, 0.05, 0.75), dim, 2))
+	start_button.add_theme_stylebox_override("focus", _frame(Color(0, 0, 0, 0), dim, 2))
+	start_button.add_theme_stylebox_override("hover", _frame(dim, dim, 2))
+	start_button.add_theme_stylebox_override("hover_pressed", _frame(dim.lightened(0.2), dim, 2))
+	start_button.add_theme_stylebox_override("pressed", _frame(dim.lightened(0.2), dim, 2))
+	start_button.add_theme_stylebox_override("disabled", _frame(dim, dim, 2))
+	start_button.add_theme_font_override("font", _spaced(8))
+	start_button.add_theme_font_size_override("font_size", 28)
+	start_button.add_theme_color_override("font_color", INK)
+	start_button.add_theme_color_override("font_focus_color", INK)
+	start_button.add_theme_color_override("font_hover_color", INK_DARK)
+	start_button.add_theme_color_override("font_pressed_color", INK_DARK)
+	start_button.add_theme_color_override("font_hover_pressed_color", INK_DARK)
+	start_button.add_theme_color_override("font_disabled_color", INK_DARK)
 	start_button.pressed.connect(press_start)
-	start_button.focus_entered.connect(_mark.bind(true))
-	start_button.focus_exited.connect(_mark.bind(false))
-	start_button.mouse_entered.connect(_mark.bind(true))
-	start_button.mouse_exited.connect(func() -> void: _mark(start_button.has_focus()))
 	row.add_child(start_button)
-	var hint := _label("ENTER", 14, FAINT, 4)
-	hint.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	row.add_child(hint)
+	var key := PanelContainer.new()
+	var cap := _frame(Color(0.02, 0.025, 0.05, 0.6), QUIET, 1)
+	cap.content_margin_left = 12
+	cap.content_margin_right = 12
+	cap.content_margin_top = 4
+	cap.content_margin_bottom = 4
+	key.add_theme_stylebox_override("panel", cap)
+	key.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	key.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	key.add_child(_label("SPACE", 18, INK, 3))
+	row.add_child(key)
+	var or_click := _label("or click", 20, QUIET, 1)
+	or_click.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	row.add_child(or_click)
 
 
 ## The title block comes in once the scene is up: the black lifts, then the
@@ -189,20 +191,23 @@ func _play_intro() -> void:
 			.set_delay(reveal_delay + reveal_step).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 
 
-func _mark(on: bool) -> void:
-	if _marker == null:
-		return
-	var tween := create_tween().set_parallel()
-	tween.tween_property(_marker, "position:x", 8.0 if on else 0.0, 0.18)
-	tween.tween_property(_marker, "modulate:a", 1.0 if on else 0.0, 0.18)
+func _frame(fill: Color, edge: Color, border: int) -> StyleBoxFlat:
+	var box := StyleBoxFlat.new()
+	box.bg_color = fill
+	box.border_color = edge
+	box.set_border_width_all(border)
+	box.set_corner_radius_all(2)
+	box.content_margin_left = 28
+	box.content_margin_right = 28
+	return box
 
 
-## A soft dark band along the bottom so the type reads over whatever plays
-## behind it. Kept low and faint: it is there for legibility, not as a look.
+## Dark washes under the title block so the type reads over whatever plays
+## behind it: a band along the bottom and a pool behind the title.
 func _add_shade() -> void:
 	var gradient := Gradient.new()
 	gradient.set_color(0, Color(0.01, 0.01, 0.03, 0.0))
-	gradient.set_color(1, Color(0.01, 0.01, 0.03, 0.7))
+	gradient.set_color(1, Color(0.01, 0.01, 0.03, 0.85))
 	var texture := GradientTexture2D.new()
 	texture.gradient = gradient
 	texture.fill_from = Vector2(0, 0)
@@ -210,12 +215,31 @@ func _add_shade() -> void:
 	var shade := TextureRect.new()
 	shade.texture = texture
 	shade.anchor_right = 1.0
-	shade.anchor_top = 0.5
+	shade.anchor_top = 0.4
 	shade.anchor_bottom = 1.0
 	shade.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	shade.stretch_mode = TextureRect.STRETCH_SCALE
 	shade.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(shade)
+	# And a soft pool of shadow behind the title block, so the streaks dim
+	# there. Radial, so it has no edge to spot.
+	var pool := Gradient.new()
+	pool.set_color(0, Color(0.01, 0.01, 0.03, 0.75))
+	pool.set_color(1, Color(0.01, 0.01, 0.03, 0.0))
+	var pool_texture := GradientTexture2D.new()
+	pool_texture.gradient = pool
+	pool_texture.fill = GradientTexture2D.FILL_RADIAL
+	pool_texture.fill_from = Vector2(0.15, 0.75)
+	pool_texture.fill_to = Vector2(0.95, 0.75)
+	var wash := TextureRect.new()
+	wash.texture = pool_texture
+	wash.anchor_right = 0.65
+	wash.anchor_top = 0.2
+	wash.anchor_bottom = 1.0
+	wash.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	wash.stretch_mode = TextureRect.STRETCH_SCALE
+	wash.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(wash)
 
 
 func _label(text: String, size: int, color: Color, spacing: int) -> Label:
@@ -224,8 +248,10 @@ func _label(text: String, size: int, color: Color, spacing: int) -> Label:
 	label.add_theme_font_override("font", _spaced(spacing))
 	label.add_theme_font_size_override("font_size", size)
 	label.add_theme_color_override("font_color", color)
-	label.add_theme_constant_override("outline_size", 0)
-	label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.35))
+	label.add_theme_constant_override("outline_size", 6)
+	label.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.02, 0.55))
+	label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.6))
+	label.add_theme_constant_override("shadow_offset_y", 2)
 	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	return label
 
