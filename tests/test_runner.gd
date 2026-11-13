@@ -14,6 +14,7 @@ const BaseLayout := preload("res://core/base/base_layout.gd")
 const BaseHudScript := preload("res://core/ui/base_hud.gd")
 const LookTests := preload("res://tests/look_tests.gd")
 const RigLookTests := preload("res://tests/rig_look_tests.gd")
+const RigTierTests := preload("res://tests/rig_tier_tests.gd")
 const EconomyTests := preload("res://tests/economy_tests.gd")
 const MeleeArsenalTests := preload("res://tests/melee_arsenal_tests.gd")
 const MeleeFeelTests := preload("res://tests/melee_feel_tests.gd")
@@ -230,6 +231,7 @@ func _run() -> void:
 	await _test_melee_arsenal()
 	await _test_melee_feel()
 	await _test_flight_rigs_and_abilities()
+	await _test_rig_tiers()
 	await _test_vehicle_driving()
 	await _test_vehicle_raids()
 	await _test_vehicle_toys()
@@ -290,6 +292,10 @@ func _test_look() -> void:
 func _test_rig_models() -> void:
 	print("Flight rig models")
 	await RigLookTests.run(self)
+
+
+func _test_rig_tiers() -> void:
+	await RigTierTests.run(self)
 
 
 func _test_customizer() -> void:
@@ -1451,7 +1457,7 @@ func _test_flight_rigs_and_abilities() -> void:
 	# Thruster boots: kicks up, skim low and cool, burn out high, dash on heat.
 	var raid := await _kit_raid(60, ["rifle_scrap", "blade_scrap", "boots_thruster", "plate_light"])
 	var p := raid.player
-	check(p.flight.display_name == "Thruster Boots" and p.flight.burst_velocity > 0.0
+	check(p.flight.display_name == "Mk1 Thruster Boots" and p.flight.burst_velocity > 0.0
 			and is_zero_approx(p.flight.thrust_accel) and p.flight.can_skim(), "boots stats come from the item")
 	check(is_equal_approx(p.flight.skim_speed, FlightRig.CRUISE_SPEED), "boots skim at the shared cruise speed")
 	await press_jump.call(p)
@@ -1490,6 +1496,8 @@ func _test_flight_rigs_and_abilities() -> void:
 	# Glide wings: launch, then fall slowly and travel far.
 	raid = await _kit_raid(61, ["rifle_scrap", "blade_scrap", "wings_glide", "plate_light"])
 	p = raid.player
+	# These check the handling high up, not the ceiling (`_test_rig_tiers`).
+	p.flight.ceiling = 0.0
 	p.global_position += Vector3(0, 30, 0)
 	p.velocity = Vector3.ZERO
 	await frames(30)
@@ -1510,12 +1518,14 @@ func _test_flight_rigs_and_abilities() -> void:
 
 	# The Mk2 jetpack: cruise, wide turns, coasting, a steady hover to shoot from.
 	raid = await _kit_raid(65, ["rifle_scrap", "blade_scrap", "jetpack_mk2", "frame_bulwark"])
+	raid.player.flight.ceiling = 0.0
 	await _check_jetpack_cruise(raid.player)
 	await _end_raid(raid)
 
 	# The jetpack still works and does not burst or glide.
 	raid = await _kit_raid(62, ["rifle_scrap", "blade_scrap", "jetpack_mk1", "plate_light"])
 	p = raid.player
+	p.flight.ceiling = 0.0
 	await press_jump.call(p)
 	await frames(10)
 	p.cmd.jump = true
@@ -2016,9 +2026,10 @@ func _check_wing_moves(p: Actor) -> void:
 	p.flight.overheated = false
 	# The main gun is stowed while the wings are out.
 	check(p.wings_block(p.weapons[0]) and p.air_aim() == 1.0, "only a sidearm fires with the wings spread")
-	# Shift + D snaps a sidestep, for a little heat.
+	# Shift + D is a wing boost, never a sidestep: wings fly where they point.
 	await frames(130)
 	var side_before := (Basis(Vector3.UP, p.cmd.yaw).inverse() * p.velocity).x
+	var speed_before := Vector2(p.velocity.x, p.velocity.z).length()
 	var heat_before := p.flight.heat
 	p.cmd.move = Vector2(1, 0)
 	p.cmd.sprint_pressed = true
@@ -2027,11 +2038,12 @@ func _check_wing_moves(p: Actor) -> void:
 	p.cmd.move = Vector2.ZERO
 	await frames(5)
 	var side := (Basis(Vector3.UP, p.cmd.yaw).inverse() * p.velocity).x
-	check(side > side_before + 8.0 and p.flight.heat > heat_before + 5.0,
-			"Shift + D snaps the wings into a sidestep on heat (%.1f m/s sideways)" % side)
+	check(absf(side - side_before) < 2.0 and Vector2(p.velocity.x, p.velocity.z).length() > speed_before + 8.0
+			and p.flight.heat > heat_before + 5.0,
+			"Shift + D boosts the wings ahead on heat, never sideways (%.1f m/s sideways)" % side)
 	await frames(30)
 	var heading := Vector3(p.velocity.x, 0, p.velocity.z).normalized()
-	check(heading.dot(Vector3.FORWARD) > 0.95, "and the glide carries on the same way after it")
+	check(heading.dot(Basis(Vector3.UP, p.cmd.yaw) * Vector3.FORWARD) > 0.95, "and the glide carries on the way you face")
 	# Stalling: slow below the stall speed and the wings sink fast.
 	p.velocity = Vector3(0, 0, -3)
 	await frames(2)
@@ -2049,16 +2061,21 @@ func _check_glide_flying(p: Actor) -> void:
 	await frames(120)
 	var cruise := Vector2(p.velocity.x, p.velocity.z).length()
 	check(absf(cruise - p.flight.glide_speed) < 0.5, "a level glide settles at glide speed (%.1f)" % cruise)
-	# Turning the view only looks: the glide flies straight on.
+	# The wings fly where you look, like a bird's: turning the view banks
+	# the glide round onto it, and looking down never dives it.
 	var before := Vector3(p.velocity.x, 0, p.velocity.z).normalized()
 	p.cmd.yaw -= PI / 2.0
 	p.cmd.pitch = -0.9
-	await frames(30)
-	var looked := Vector3(p.velocity.x, 0, p.velocity.z).normalized()
-	check(before.dot(looked) > 0.999 and Vector2(p.velocity.x, p.velocity.z).length() < cruise + 0.5,
-			"looking around while gliding neither turns nor dives the wings")
+	await frames(20)
+	var turning := Vector3(p.velocity.x, 0, p.velocity.z).normalized()
+	check(before.signed_angle_to(turning, Vector3.UP) < -0.2 and p.velocity.y > -p.flight.glide_fall_speed * 2.5,
+			"looking right banks the glide round to the right, without diving")
+	await frames(100)
+	var view := Basis(Vector3.UP, p.cmd.yaw) * Vector3.FORWARD
+	before = Vector3(p.velocity.x, 0, p.velocity.z).normalized()
+	check(before.dot(view) > 0.999, "and it settles on the way you look")
 	p.cmd.pitch = 0.0
-	# Holding a strafe key banks the glide round in an arc.
+	# Holding a strafe key banks the glide round harder, in an arc.
 	p.cmd.move = Vector2(1, 0)
 	await frames(10)
 	var during := Vector3(p.velocity.x, 0, p.velocity.z).normalized()
@@ -2066,13 +2083,12 @@ func _check_glide_flying(p: Actor) -> void:
 	check(swung > 0.1 and swung < 0.5, "a strafe key banks the wings round in an arc (%.2f rad)" % swung)
 	check(before.signed_angle_to(during, Vector3.UP) < 0.0, "and the right key turns right")
 	p.cmd.move = Vector2.ZERO
-	# The bank rolls level over a moment, then the glide flies straight.
-	await frames(10)
-	var levelled := Vector3(p.velocity.x, 0, p.velocity.z).normalized()
-	check(during.angle_to(levelled) < 0.25, "letting go rolls the wings level (%.2f rad more)" % during.angle_to(levelled))
-	await frames(30)
+	# Letting go, the wings roll back onto the view and fly straight on it.
+	await frames(90)
 	var after := Vector3(p.velocity.x, 0, p.velocity.z).normalized()
-	check(levelled.dot(after) > 0.999, "and then flies straight on")
+	check(after.dot(view) > 0.999, "letting go, the wings come back onto the view")
+	await frames(30)
+	check(after.dot(Vector3(p.velocity.x, 0, p.velocity.z).normalized()) > 0.999, "and then fly straight on")
 	p.cmd.move = Vector2(0, 1)
 	await frames(150)
 	var dived := Vector2(p.velocity.x, p.velocity.z).length()
@@ -4677,8 +4693,22 @@ func _test_plaza() -> void:
 				apart = false
 	check(apart, "no two doorways overlap")
 	var reachable := portals.all(func(n: Node) -> bool:
-		return (n as Node3D).global_position.length() < 50.0 and absf((n as Node3D).global_position.y) < 0.5)
+		return (n as Node3D).global_position.length() < raid.map.RADIUS and absf((n as Node3D).global_position.y) < 0.5)
 	check(reachable, "every portal is on the plaza floor")
+	# An open district, not a courtyard: the skyline's landing decks stay in
+	# reach of the thruster boots (three kicks top 15 m).
+	var decks := raid.map.get_children().filter(func(n: Node) -> bool: return n.is_in_group("landing_deck"))
+	check(raid.map.RADIUS >= 120.0 and decks.size() >= 6 and decks.all(func(n: Node) -> bool:
+		return (n as Node3D).global_position.y <= 15.5), "the hub is open and its landing decks are in boot reach (%d)" % decks.size())
+	var floor_hit := raid.get_world_3d().direct_space_state.intersect_ray(PhysicsRayQueryParameters3D.create(
+			Vector3(0, 5, raid.map.RADIUS - 6.0), Vector3(0, -5, raid.map.RADIUS - 6.0), Actor.LAYER_WORLD))
+	check(not floor_hit.is_empty(), "the deck reaches out to the balcony rail")
+	var deck: Node3D = decks[0] if not decks.is_empty() else null
+	var deck_hit := {} if deck == null else raid.get_world_3d().direct_space_state.intersect_ray(
+			PhysicsRayQueryParameters3D.create(deck.global_position + Vector3(0, 5, 0),
+			deck.global_position - Vector3(0, 5, 0), Actor.LAYER_WORLD))
+	check(not deck_hit.is_empty() and absf(deck_hit.position.y - deck.global_position.y) < 0.3,
+			"a landing deck is solid where it is marked")
 
 	# Leaving takes you and nothing else: no body, no bag.
 	raid.remove_player(b)

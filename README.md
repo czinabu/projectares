@@ -22,8 +22,8 @@ skies, animated models and effects (see "How it looks" below).
 | Jump. In the air: hold to climb, tap to light the jets and hover (jetpack); press to kick the way you steer, hold to skim low (thruster boots); press to launch, hold while falling to glide (glide wings) | Space |
 | Jetpack hovering: cruise with the move keys, Space climbs, C coasts down to cool, hold Shift + W to boost head first (Mk2). The keys fly every rig; the mouse only looks and aims | |
 | Glide wings gliding: Space again pulses up | |
-| Air dash with any rig, on heat: Shift + a move key dashes that way (Shift alone dashes forward). Sideways while gliding or boosting it barrel rolls; gliding, Shift + S boosts upward instead of back | Shift + WASD |
-| Gliding: A / D bank round, W dives for speed and banks round onto the way you face, S pulls up to climb on it (with no keys the view is free to look and aim) | |
+| Air dash with any rig, on heat: Shift + a move key dashes that way (Shift alone dashes forward). Sideways while boosting it barrel rolls. Gliding, Shift is a wing boost: it thrusts you the way you face and you keep the speed, and Shift + S boosts upward | Shift + WASD |
+| Gliding: the wings fly where you look, like a bird. A / D bank round harder, W dives for speed, S pulls up to climb on it. Turns cost speed, and pulling up hard in a turn stalls you. Hold V to free look while the wings fly straight on: the body twists to face where you look, and looking behind flips you onto your back to shoot behind you | |
 | Use your ability | G |
 | Use your helmet's visor (zoom or scan) | T |
 | Dash (stamina) | Left Alt |
@@ -46,7 +46,11 @@ skies, animated models and effects (see "How it looks" below).
 | Phone at Settings (also frees the mouse); Esc again closes it | Esc |
 
 The jetpack runs on heat. Overheat it and you fall until it cools. Rooftop
-caches hold the best loot, and only the jetpack gets you there.
+caches hold the best loot, and only a flight rig gets you there. Every rig
+comes as Mk1, Mk2 and Mk3: the Mk1 lifts you to rooftop height (25 m), the
+Mk2 to the tower tops (60 m) and the Mk3 over everything (100 m), and each
+tier up runs cooler. Rigs drop at Mk1; the better tiers will be crafted
+from blueprints.
 
 Almost nothing is drawn over the screen in a raid: the crosshair, hit marks
 and what E will do. Everything else is on your gear. You wear a holographic
@@ -147,8 +151,9 @@ to run every raid world, or add `--no-plaza` for one world alone on the port.
 
 ### The Concourse
 
-Joining a server puts you in its plaza, the Concourse: a walled safe zone
-shared by everyone on that server. Weapons are locked and nobody can be hurt.
+Joining a server puts you in its plaza, the Concourse: an open district on a
+high deck around a lit beacon spire, with a balcony over the city below. It is
+a safe zone shared by everyone on that server. Weapons are locked and nobody can be hurt.
 You appear wearing your equipped loadout, and it never leaves your stash, so
 nothing is at risk there. Look at another player and a tag over their head lists what they are wearing.
 A bike in your loadout rides on your watch as a toy: throw it down to ride around.
@@ -161,9 +166,13 @@ Walk into a glowing pad and press **E** to use it:
   right now: its war level, how many players are in it, the biggest bounty
   on anyone's head and any event running. It reddens as the war heats up.
 - **Quarters** (west): the door to your home base. Its door leads back here.
-- **Storefronts** (the corners): one for every shop. Step up to the counter
+- **Kiosks** (under the arcade ring round the spire): one for every shop. Step up to the counter
   and press F to use its terminal: buy and sell on the screen without leaving
   the plaza.
+- **The skyline**: slim towers ring the arcade, each with a landing deck and
+  a skybridge to the next at 15 m, in reach of the thruster boots. The arcade
+  roof (8 m) and the quarters and clan hall roofs (12 m) are steps on the way
+  up. The tower tops are for wings and jetpacks.
 - **Clan hall** (east): the terminal by the door founds a clan (a name and
   a short tag), joins one or leaves yours. Clanmates wear the tag by their
   name. In a warzone a clan is one side: you cannot hurt each other, you
@@ -279,7 +288,9 @@ you have.
   never cool and burn out in seconds. Jump kicks you up, and three kicks top
   a 15 m roof, which is a surface to cool on again. They dash furthest of any rig, and the aim stays
   steady while skimming low. Shooting from the
-  air spreads wider, except from a hover or a low skim.
+  air spreads wider, except from a hover or a low skim. Each rig comes in
+  three tiers with a higher ceiling and cooler running each time, at the
+  same cruise speed.
 - An ability slot. Phase Step blinks you forward, Kinetic Barrier cuts damage
   for a few seconds, Shock Pulse staggers everyone near you. Each has a cooldown.
 - Attachments for your primary, in four slots: optic, muzzle, grip and

@@ -76,10 +76,17 @@ new planet is a new folder under `worlds/`.
    It is really a separate little game with its own controls and balance, so
    it waits.
 
-**Expanding the hub comes first.** The Concourse is a walled courtyard and
-has no room for these. It needs a skyline tall and open enough for ring
-courses (and a bike track at ground level), a screens area where people
-gather to watch, and a space set aside for the RC arena.
+**Expanding the hub comes first.** The Concourse was a walled courtyard with
+no room for these. It is now an open district on a high deck with no wall
+(Caleb's call: grand, open and sci-fi, not industrial): a lit beacon spire
+at the centre, a kiosk arcade round it, slim towers with landing decks and
+skybridges at 15 m so the boots can hop the skyline while the tower tops are
+for wings and jetpacks, a gate terrace with spare arches for new worlds, a
+bike loop round the edge, a big-screen amphitheatre to gather and watch, and
+a pad kept clear for the RC arena. Everything is within about 25 seconds'
+walk of the arrival pad. It looks sci-fi, not industrial: dark glass and
+metal with lit seams instead of brick and punched windows, a glass arcade
+canopy, holo signs over every kiosk and floating holo-ads.
 
 ### Home base
 
@@ -306,7 +313,7 @@ feature thread; changes go through Caleb. The core of it:
 
 | Rig | Flies at | Stays up by | Edge | Trade-off |
 | --- | --- | --- | --- | --- |
-| Jetpack "Skyhold" | High, 20 to 40 m | Cruise on jets, coast down to vent heat | Stops dead and hovers; steadiest gun platform; best for heavy armor and heavy weapons | Wide turns; loud, bright, heat-seeker bait |
+| Jetpack "Skyhold" | High, 20 to 40 m (up to its tier's ceiling) | Cruise on jets, coast down to vent heat | Stops dead and hovers; steadiest gun platform; best for heavy armor and heavy weapons | Wide turns; loud, bright, heat-seeker bait |
 | Glide Wings "Longreach" | Middle, 8 to 30 m, in arcs | Gliding, diving for speed, wing pulses to climb | Fastest dives, tightest turns, silent and cold | Can never stop; sidearm only while the wings are out |
 | Thruster Boots "Skirmisher" | Low, within 6 m of a surface, rooftops included | Skimming near surfaces, where the boots cool | Instant air dashes, no aim penalty while skimming, works indoors; a set of kicks tops a 15 m roof | Only cool near a surface, so a climb is a visit: high in the open they burn out in seconds |
 
@@ -317,12 +324,51 @@ heat to spare and a fourth is the ceiling, about 20 m. A roof under the feet
 is a surface like the street, so they cool up there; in open air above 6 m
 they never cool, so the open sky stays with the jetpack and the wings.
 
+**Rig tiers (Caleb's call).** Every rig comes in tiers, Mk1 to Mk3. The
+base level does not let you fly over the whole city; a higher tier gives
+more height and distance. Each
+tier has a **ceiling**, measured from the world's ground (a roof under you
+does not count, so roof-hopping never stacks it): the jets stop climbing
+there, and a kick, pulse or launch tops out on it. A ceiling only limits
+lift: dropping off something higher is fine, and the rig still holds or
+glides you there.
+
+| Tier | Ceiling | Reaches | Where it comes from |
+| --- | --- | --- | --- |
+| Mk1 | 25 m | Rooftops and the 15 m decks and skybridges | The starter jetpack, the boots in shops, wings and boots as loot |
+| Mk2 | 60 m | The tower tops (40 m and up) and the high race rings | Crafted from a blueprint with upgrade data (section 10) |
+| Mk3 | 100 m | Over the highest towers and the spire | Crafted, a further step of upgrade data |
+
+Up a tier the rig also runs cooler (cheaper kicks, pulses and climbing,
+faster cooling), so it flies further. What never changes:
+
+- **The cruise speed.** Every tier cruises and dashes at the same speed,
+  and none boosts faster than the Mk2 jetpack, so a mixed squad still keeps
+  together.
+- **The 100 heat bar and each rig's loop.** Boots still only cool near a
+  surface, so a high climb is still a visit; wings still never stop; the
+  jetpack is still loud and hot.
+- **Higher tiers follow the progression model (section 10).** Every rig
+  drops at Mk1; Mk2 and Mk3 are crafted from the rig's blueprint and upgrade
+  data, and once crafted they are ordinary gear, at stake in the PvP world.
+  Mastery never hands out a tier. Until crafting exists, Mk2 and Mk3 are
+  in the game but nothing drops them.
+
+Measured from the street (`feel_bench.tscn`): the Mk1 jetpack reaches its
+ceiling in about 7 s, Mk2 13 s, Mk3 19 s; boots kick to about 25 m, 46 m and
+100 m; wings climb on pulses and upward boosts to their ceilings in about
+8 s (Mk1), 36 s (Mk2) and 29 s (Mk3), or launch off something high.
+
 Flying controls (Caleb's call): the keys fly every rig and the mouse only
 looks and aims. Space climbs, kicks, launches or glides (by rig), C sinks or
 coasts. Shift + a move key is an air dash that way on every rig, for a little
 heat (Shift alone dashes forward); holding Shift + W on a jetpack keeps
-boosting. Gliding, Shift + S boosts upward instead of back (the wings are
-pulled up), and W turns the glide onto the way you face. Q and E fly nothing. Every rig dashes, so the dash is not an
+boosting. Wings are the exception to the mouse only looking: they fly
+where you look, like a bird, with momentum (hold V to free look while
+they fly straight on). Turns cost speed and pulling up
+hard in a turn stalls them. Gliding, Shift is a wing boost that thrusts you
+the way you face and keeps the speed, and Shift + S boosts upward; wings
+never dash sideways. Q and E fly nothing. Every rig dashes, so the dash is not an
 edge by itself: boots dash furthest (20 m/s for 0.3 s, 20 heat), jetpacks
 middling (16 m/s for 0.25 s, 15 heat), wings shortest but cheapest (12 m/s
 for 0.25 s, 10 heat, a barrel roll sideways). The stamina dash (Alt) is

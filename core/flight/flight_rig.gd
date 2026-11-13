@@ -25,11 +25,32 @@ signal burst_fired
 const CRUISE_SPEED := 15.0
 ## How far past `max_heat` a burst or pulse may land (it then overheats).
 const BURST_SLACK := 0.05
+## Below its ceiling a rig's climb eases off over this many meters, so the
+## climb comes to rest on the ceiling instead of hitting it.
+const CEILING_EASE := 4.0
+## A kick, pulse or launch that could lift you less than this (m/s) under the
+## ceiling is refused rather than spent.
+const MIN_LIFT := 3.0
 
 var item_id := ""
 var display_name := "No rig"
 ## False until a rig item is equipped.
 var enabled := false
+
+## The rig's tier (Mk1, Mk2, ...). Higher tiers lift higher and run cooler
+## but cruise at the same speed (`ItemDB.RIG_CEILINGS`).
+var tier := 1
+## The highest the rig can lift you, in meters over the world's ground (a
+## roof under you does not count, so roof-hopping never stacks it): jets
+## stop climbing there and a kick, pulse or launch tops out on it. It only
+## limits lift; dropping off something higher is fine, and the rig still
+## holds or glides you there. 0: no ceiling.
+var ceiling := 0.0
+## Set by the `Actor` every tick in the air: how high you are over the
+## world's ground, and whether the world says where that is
+## (`Actor.ground_level`). Where it does not, there is no ceiling.
+var altitude := 0.0
+var altitude_known := false
 
 ## The defaults are the free Mk1 jetpack; other rigs set what differs.
 var thrust_accel := 36.0
@@ -113,6 +134,17 @@ var glide_bank_rate := 8.0
 ## full bank while it is off by this many radians or more, easing to level
 ## as it comes round, so it settles on the view without swinging past.
 var glide_align_angle := 0.5
+## Flying like a wing (see `Actor._glide_velocity`): speed lost a second in
+## a full bank, how much more a pull tightens a banked turn, how much faster
+## a full bank sinks (1: twice as fast), how much of a pull's climb a full
+## bank turns into turning instead, and how well stalled wings still turn.
+var glide_turn_drag := 3.0
+var glide_pull_turn := 0.6
+var glide_bank_sink := 1.0
+var glide_bank_lift_loss := 0.7
+var stall_authority := 0.3
+## Stalled, the nose drops and the fall gives back this much speed a second.
+var stall_recover := 8.0
 ## Below the stall speed a glide sinks this fast (0: just the glide sink).
 var stall_sink := 0.0
 ## Wings: only a sidearm fires while they are spread, and a main gun only
@@ -154,6 +186,14 @@ var air_dash_speed := 16.0
 var air_dash_time := 0.25
 var air_dash_heat := 15.0
 var air_dash_cooldown := 0.7
+## Wings: Shift (or Shift + W) in a glide is a boost instead of a dash. It
+## thrusts you the way you face, adding `glide_boost` m/s of airspeed that
+## the glide keeps and bleeds off at `glide_drag`, and Shift + S climbs at
+## `glide_boost_climb` m/s, keeping the airspeed. Either costs
+## `glide_boost_heat` (0 boost: the ordinary dash).
+var glide_boost := 0.0
+var glide_boost_climb := 0.0
+var glide_boost_heat := 0.0
 
 var heat := 0.0
 var overheated := false
@@ -233,10 +273,12 @@ func can_skim() -> bool:
 
 
 ## A dash in the air. True if it goes off (and takes its heat).
-func try_air_dash() -> bool:
+## `cost` overrides the dash's heat (a wing boost); below zero it is
+## `air_dash_heat`.
+func try_air_dash(cost := -1.0) -> bool:
 	if not enabled or overheated or air_dash_speed <= 0.0:
 		return false
-	if not _spend(air_dash_heat):
+	if not _spend(air_dash_heat if cost < 0.0 else cost):
 		return false
 	burst_fired.emit()
 	return true
@@ -248,23 +290,27 @@ func _recover() -> void:
 
 
 ## An air jump. Returns the upward speed to set, or zero if the rig has no
-## burst or is overheated.
-func try_burst() -> float:
+## burst, is overheated or is too close under its ceiling (`cap`, from
+## `lift_cap`: the speed is cut so the jump tops out on the ceiling).
+func try_burst(cap := INF) -> float:
 	if not enabled or overheated or burst_velocity <= 0.0 or (launch_once and launched):
 		return 0.0
-	if not _spend(burst_heat):
+	if minf(cap, burst_velocity) < MIN_LIFT or not _spend(burst_heat):
 		return 0.0
 	launched = true
 	burst_fired.emit()
-	return burst_velocity
+	return minf(burst_velocity, cap)
 
 
-## A wing pulse while gliding. Returns the upward speed to set, or zero.
-func try_pulse() -> float:
-	if not enabled or overheated or pulse_velocity <= 0.0 or not _spend(pulse_heat):
+## A wing pulse while gliding. Returns the upward speed to set, or zero;
+## `cap` limits it under the ceiling like a burst.
+func try_pulse(cap := INF) -> float:
+	if not enabled or overheated or pulse_velocity <= 0.0 or minf(cap, pulse_velocity) < MIN_LIFT:
+		return 0.0
+	if not _spend(pulse_heat):
 		return 0.0
 	burst_fired.emit()
-	return pulse_velocity
+	return minf(pulse_velocity, cap)
 
 
 ## Takes `cost` heat if it fits under the limit, with a little slack
@@ -303,11 +349,32 @@ func controls_hint() -> String:
 	if can_skim():
 		parts.append("hold in the air to skim low (stay near a surface to cool, C sinks)")
 	if can_glide():
-		parts.append("hold while falling to glide (steer to bank, W dives, S climbs%s)"
+		parts.append("hold while falling to glide (look to steer, W dives, S climbs, Shift boosts%s)"
 				% (", press again to pulse up" if pulse_velocity > 0.0 else ""))
 	if air_dash_speed > 0.0:
-		parts.append("Shift + a move key dashes that way in the air%s" % (" (Shift + S climbs while gliding)" if can_glide() else ""))
+		parts.append("Shift + a move key dashes that way in the air%s" % (" (gliding, Shift boosts ahead and Shift + S climbs)" if can_glide() else ""))
 	return ", ".join(parts)
+
+
+## How much of a full climb the ceiling still allows, 0 to 1: 1 well under
+## it, easing to 0 over the last `CEILING_EASE` meters.
+func climb_room() -> float:
+	if ceiling <= 0.0 or not altitude_known:
+		return 1.0
+	return clampf((ceiling - altitude) / CEILING_EASE, 0.0, 1.0)
+
+
+## The most upward speed a kick, pulse or launch may give so that, under
+## `gravity`, it tops out on the ceiling (INF with no ceiling).
+func lift_cap(gravity: float) -> float:
+	if ceiling <= 0.0 or not altitude_known:
+		return INF
+	return sqrt(2.0 * gravity * maxf(0.0, ceiling - altitude))
+
+
+## True once the rig can lift you no higher.
+func at_ceiling() -> bool:
+	return climb_room() <= 0.0
 
 
 func heat_fraction() -> float:
