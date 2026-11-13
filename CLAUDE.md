@@ -515,7 +515,16 @@ without Caleb, and update the gap list when a PR closes a row.
   Back-slung weapons ride higher up the back (`ride_sling_lift`); weapons
   clamped to a back rig's rails stay in their clamps. A new
   vehicle type sets those anchor points for its model. Check by eye:
-  `visual_check.tscn -- <dir> --ride-only`.
+  `visual_check.tscn -- <dir> --ride-only` (`RIDE_VEHICLE=<item id>` for
+  another vehicle). Every vehicle is that one class, picked by data: the
+  `model` stat picks the greybox body ("bike", "rover", "mech", "jet"),
+  `body_size` its collision box, `pivot_turn` lets a walker turn on the
+  spot, `jump_speed` gives it a jump-jet hop, and the "aircraft" tag flies
+  it (`Vehicle._fly`: takes off past `takeoff_speed` with jump, never
+  hovers, drops below `stall_speed` or with nobody at the stick, climbs no
+  higher than `ceiling` over the world's ground). Jets are thrown only where
+  `WorldDef.open_skies`. A vehicle's `watch_recharge` and `footprint` stats
+  set the watch's wait after a throw and the room it needs to unpack.
 - Toy vehicles: a vehicle a player owns in a world rides on their watch as
   a toy (`Raid.PlayerState.stowed`, read with `Raid.stowed_for`), never in
   the inventory. `Raid.throw_toy` throws one from the actor along their aim;

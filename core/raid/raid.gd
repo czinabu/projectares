@@ -84,11 +84,13 @@ var toy_gravity := 20.0
 var toy_max_flight := 5.0
 ## How much speed a toy keeps when it bounces off a wall.
 var toy_bounce := 0.35
-## Seconds between one throw and the next.
+## Seconds between one throw and the next, for a vehicle with no
+## `watch_recharge` stat of its own (heavier vehicles take longer).
 var toy_cooldown := 8.0
 ## How many vehicles a watch holds.
 var watch_capacity := 2
-## The clear box a vehicle needs to unpack: width, height, length.
+## The clear box a vehicle needs to unpack: width, height, length. A vehicle
+## with a `footprint` stat needs that instead.
 var unpack_room := Vector3(1.3, 1.2, 2.6)
 ## Toys in the air: { state, id, at, velocity, age, heading, node }.
 var toys: Array[Dictionary] = []
@@ -1194,6 +1196,8 @@ func throw_toy(actor: Actor, item_id: String) -> String:
 		why = "That is not on your watch"
 	elif not world.vehicle_toys:
 		why = "Vehicles stay on the watch here"
+	elif ItemDB.has_tag(item_id, "aircraft") and not world.open_skies:
+		why = "No open sky for a jet here"
 	elif actor.vehicle != null:
 		why = "Get off first"
 	elif state.sign_out_left >= 0.0:
@@ -1204,7 +1208,7 @@ func throw_toy(actor: Actor, item_id: String) -> String:
 		actor.notice.emit(why)
 		return why
 	state.stowed.erase(item_id)
-	state.toy_ready_at = clock + toy_cooldown
+	state.toy_ready_at = clock + toy_recharge(item_id)
 	var aim := actor.get_aim_dir()
 	var from := actor.get_eye_position() + aim * 0.6 - Vector3(0.0, 0.25, 0.0)
 	var toy_velocity := (aim + Vector3.UP * toy_lift).normalized() * toy_speed \
@@ -1213,6 +1217,11 @@ func throw_toy(actor: Actor, item_id: String) -> String:
 	toy_thrown.emit(actor, item_id, from, toy_velocity)
 	watch_changed.emit(actor)
 	return ""
+
+
+## Seconds the watch waits after the vehicle `item_id` is thrown.
+func toy_recharge(item_id: String) -> float:
+	return float(ItemDB.item_stats(item_id).get("watch_recharge", toy_cooldown))
 
 
 ## Puts a toy in the air. With no `state` it is only for show (a client
@@ -1265,7 +1274,7 @@ func _land_toy(toy: Dictionary, on_ground: bool) -> void:
 	var actor: Actor = state.actor if is_instance_valid(state.actor) else null
 	var id: String = toy.id
 	var at: Vector3 = toy.at
-	if on_ground and has_room_to_unpack(at, toy.heading):
+	if on_ground and has_room_to_unpack(at, toy.heading, ItemDB.item_stats(id).get("footprint", unpack_room)):
 		var vehicle := spawn_vehicle(id, at + Vector3(0.0, 0.25, 0.0), toy.heading, true)
 		state.parked.append(vehicle)
 		toy_landed.emit(actor, id, at, true)
@@ -1281,13 +1290,15 @@ func _land_toy(toy: Dictionary, on_ground: bool) -> void:
 
 ## True if a vehicle facing `heading` fits on the ground at `at` without
 ## touching the map, a person or another vehicle.
-func has_room_to_unpack(at: Vector3, heading: float) -> bool:
+func has_room_to_unpack(at: Vector3, heading: float, room := Vector3.ZERO) -> bool:
+	if room == Vector3.ZERO:
+		room = unpack_room
 	var box := BoxShape3D.new()
-	box.size = unpack_room
+	box.size = room
 	var query := PhysicsShapeQueryParameters3D.new()
 	query.shape = box
 	# Lifted clear of the ground it stands on, so a slope does not count.
-	query.transform = Transform3D(Basis(Vector3.UP, heading), at + Vector3(0.0, unpack_room.y * 0.5 + 0.45, 0.0))
+	query.transform = Transform3D(Basis(Vector3.UP, heading), at + Vector3(0.0, room.y * 0.5 + 0.45, 0.0))
 	query.collision_mask = Actor.LAYER_WORLD | Actor.LAYER_ACTORS | VehicleScript.LAYER_VEHICLES
 	return get_world_3d().direct_space_state.intersect_shape(query, 1).is_empty()
 
