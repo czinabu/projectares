@@ -177,7 +177,19 @@ without Caleb, and update the gap list when a PR closes a row.
   `DamageInfo.weapon_id` and `undeflectable_tags` (marksman, power) go
   through any guard. Noise is `Combat.noise`, which only guns call (a person's
   shot, at most every `Gun.noise_every`): patrolling bots hear it through
-  `Actor.heard`. Never make a blade call it; melee kills are silent. Every melee
+  `Actor.heard`. Never make a blade call it; melee kills are silent.
+  Each weapon swings its own way, from item stats (view only):
+  `swing_style` "slash" (swords' arcs), "thrust" (straight out along the
+  aim: the spear), "chop" (down from over the shoulder: the axe, the
+  hammer), `heavy_style` for a heavy of its own (the knife's stab) and
+  `swing_scale` for its size. `ActionPose.windup_reach`/`follow_reach` and
+  `MeleeWeapon._animate` read `style_now()`. The shown swing starts
+  `SWING_LEAD` before the strike and speeds into it, half its arc at the
+  hit, then eases out (`MeleeWeapon.swing_arc`; both views read it); a
+  windup keeps coiling back (`windup_coil`); two-handers swing slower and
+  turn the body more. A new melee weapon picks a style; check it by eye with
+  `visual_check.tscn -- <dir> --swing-only` (run with `--fixed-fps 60`),
+  which films each move frame by frame. Every melee
   model is dressed as tech by `Look._tech_melee` (`assets/shaders/melee.gdshader`):
   bare metal becomes alloy with an energy edge in the weapon's rarity color,
   wood and wraps black polymer with glowing seams. A holstered blade is worn

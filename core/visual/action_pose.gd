@@ -55,6 +55,30 @@ var turn_follow := {
 	MeleeWeapon.Dir.OVERHEAD: Vector2(0.0, -0.35),
 }
 var turn_guard := 0.12
+## A windup keeps drawing back as it goes on, by up to this share of its
+## reach and turn (`MeleeWeapon.windup_coil`), so it never freezes.
+var windup_coil := 0.18
+## A two-handed weapon turns the shoulders this much further: its weight
+## comes from the body, not the wrist.
+var two_hand_turn := 1.3
+## The back strike: the hand drops back past the hip and thrusts behind,
+## the shoulders turning to look back.
+var arm_back := Vector3(0.12, -0.3, 0.38)
+var turn_back := Vector2(-0.7, 0.1)
+## A dash-strike leans the body forward (radians) as it closes in.
+var dash_lean := 0.35
+## Each weapon swings its own way (`MeleeWeapon.style_now`). "slash" is the
+## sword's arcs above. A "thrust" (the spear, a knife's stab) draws the hand
+## straight back at the side and drives it straight out along the aim, the
+## shoulders turning into it. A "chop" (the axe, the hammer) raises the hand
+## high over the shoulder and brings it down through a diagonal, ending low.
+var thrust_windup := Vector3(0.08, 0.02, 0.3)
+var thrust_follow := Vector3(-0.08, 0.04, -0.42)
+var thrust_turn_windup := Vector2(-0.35, 0.05)
+var thrust_turn_follow := Vector2(0.3, -0.15)
+var chop_raise := Vector3(0.0, 0.28, 0.15)
+var chop_drop := Vector3(0.0, -0.2, 0.0)
+var chop_lean := 0.15
 ## A reload: at its deepest the gun is brought down and in toward the off
 ## hand (`reload_reach`), and tipped (`reload_tilt`: pitch, yaw, roll in
 ## radians, roll positive to the left) to bring the magazine well round.
@@ -158,7 +182,7 @@ func advance(delta: float) -> void:
 	var weapon := actor.get_active_weapon()
 	var melee := weapon as MeleeWeapon
 	var holding := melee != null and melee.visual != null and not actor.is_dead
-	if holding and melee._swing_left > 0.0:
+	if holding and melee._swing_left > 0.0 and not melee.is_winding_up():
 		_follow_left = follow_hold
 		_follow_dir = melee.attack_dir
 	elif _follow_left > 0.0:
@@ -169,7 +193,7 @@ func advance(delta: float) -> void:
 	var wanted: Variant = arm_reach(melee) if holding else null
 	reach_weight = move_toward(reach_weight, 0.0 if wanted == null else 1.0, delta * 9.0)
 	# A swing is over in a few frames, so it is followed much more tightly.
-	var follow := 1.0 - exp(-(70.0 if holding and melee._swing_left > 0.0 else 26.0) * delta)
+	var follow := 1.0 - exp(-(70.0 if holding and melee.swing_arc() >= 0.0 else 26.0) * delta)
 	if wanted != null:
 		reach = wanted if reach_weight < 0.15 else reach.lerp(wanted, follow)
 	turn = turn.lerp(body_turn(melee) if holding else Vector2.ZERO, follow)
@@ -292,45 +316,111 @@ func arm_reach(melee: MeleeWeapon) -> Variant:
 	if melee == null or actor.is_dead:
 		return null
 	if melee._slamming:
-		return arm_windup[MeleeWeapon.Dir.OVERHEAD]
+		return windup_reach(melee, MeleeWeapon.Dir.OVERHEAD)
+	if melee.showing_back_strike():
+		return arm_back * (0.4 + 0.6 * maxf(melee.swing_arc(), 0.0))
+	var arc := melee.swing_arc()
+	if arc >= 0.0:
+		if melee.style_now() == "thrust":
+			# Straight out along the aim, not round the shoulder.
+			return windup_reach(melee, melee.attack_dir).lerp(follow_reach(melee, melee.attack_dir), arc)
+		return swing_reach(windup_reach(melee, melee.attack_dir), follow_reach(melee, melee.attack_dir), arc)
 	if melee.is_winding_up():
-		return arm_windup[melee.attack_dir]
-	if melee._swing_left > 0.0:
-		return swing_reach(arm_windup[melee.attack_dir], arm_follow[melee.attack_dir], swing_progress(melee))
+		return windup_reach(melee, melee.attack_dir) * (1.0 + windup_coil * melee.windup_coil())
 	if _follow_left > 0.0:
-		return arm_follow[_follow_dir]
+		return follow_reach(melee, _follow_dir)
 	if melee.is_blocking():
 		return arm_guard
 	var charge := charge_amount(melee)
 	if charge > 0.0:
-		return (arm_windup[MeleeWeapon.swing_from(melee.stance)] as Vector3) * charge
+		return windup_reach(melee, MeleeWeapon.swing_from(melee.stance)) * charge
 	var back := recover_left(melee)
 	if back > 0.0:
-		return (arm_follow[melee.attack_dir] as Vector3) * back
+		return follow_reach(melee, melee.attack_dir) * back
 	return null
 
 
-## The shoulder turn and lean that go with `arm_reach`.
+## The shoulder turn and lean that go with `arm_reach`: heavier for a
+## two-hander, leaning in through a dash-strike.
 func body_turn(melee: MeleeWeapon) -> Vector2:
 	if melee == null or actor.is_dead:
 		return Vector2.ZERO
+	var turned := _body_turn(melee)
+	if melee.is_two_handed():
+		turned *= two_hand_turn
+	if melee._dashing and melee.is_lunging():
+		turned.y -= dash_lean
+	return turned
+
+
+func _body_turn(melee: MeleeWeapon) -> Vector2:
 	if melee._slamming:
-		return turn_windup[MeleeWeapon.Dir.OVERHEAD]
+		return windup_turn(melee, MeleeWeapon.Dir.OVERHEAD)
+	if melee.showing_back_strike():
+		return turn_back
+	var arc := melee.swing_arc()
+	if arc >= 0.0:
+		return windup_turn(melee, melee.attack_dir).lerp(follow_turn(melee, melee.attack_dir), arc)
 	if melee.is_winding_up():
-		return turn_windup[melee.attack_dir]
-	if melee._swing_left > 0.0:
-		return (turn_windup[melee.attack_dir] as Vector2).lerp(turn_follow[melee.attack_dir], swing_progress(melee))
+		return windup_turn(melee, melee.attack_dir) * (1.0 + windup_coil * melee.windup_coil())
 	if _follow_left > 0.0:
-		return turn_follow[_follow_dir]
+		return follow_turn(melee, _follow_dir)
 	if melee.is_blocking():
 		return Vector2(MeleeWeapon._side(melee.guard_dir) * turn_guard, 0.0)
 	var charge := charge_amount(melee)
 	if charge > 0.0:
-		return (turn_windup[MeleeWeapon.swing_from(melee.stance)] as Vector2) * charge
+		return windup_turn(melee, MeleeWeapon.swing_from(melee.stance)) * charge
 	var back := recover_left(melee)
 	if back > 0.0:
-		return (turn_follow[melee.attack_dir] as Vector2) * back
+		return follow_turn(melee, melee.attack_dir) * back
 	return Vector2.ZERO
+
+
+## Where the hand is cocked for a swing from `dir`, by the weapon's style
+## and scaled by its `swing_scale` (a knife's swings are small).
+func windup_reach(melee: MeleeWeapon, dir: int) -> Vector3:
+	var at: Vector3
+	match melee.style_now():
+		"thrust":
+			at = thrust_windup + Vector3(-MeleeWeapon._side(dir) * 0.1, 0.0, 0.0)
+		"chop":
+			at = (arm_windup[dir] as Vector3) + chop_raise
+		_:
+			at = arm_windup[dir]
+	return at * melee.swing_scale
+
+
+## Where the hand ends a swing from `dir`.
+func follow_reach(melee: MeleeWeapon, dir: int) -> Vector3:
+	var at: Vector3
+	match melee.style_now():
+		"thrust":
+			at = thrust_follow
+		"chop":
+			at = (arm_follow[dir] as Vector3) + chop_drop
+		_:
+			at = arm_follow[dir]
+	return at * melee.swing_scale
+
+
+## The shoulder turn and lean for a windup from `dir`.
+func windup_turn(melee: MeleeWeapon, dir: int) -> Vector2:
+	match melee.style_now():
+		"thrust":
+			return thrust_turn_windup
+		"chop":
+			return (turn_windup[dir] as Vector2) + Vector2(0.0, chop_lean)
+	return turn_windup[dir]
+
+
+## The shoulder turn and lean at the end of a swing from `dir`.
+func follow_turn(melee: MeleeWeapon, dir: int) -> Vector2:
+	match melee.style_now():
+		"thrust":
+			return thrust_turn_follow
+		"chop":
+			return (turn_follow[dir] as Vector2) - Vector2(0.0, chop_lean * 1.5)
+	return turn_follow[dir]
 
 
 ## The hand offset `done` (0..1) of the way through a swing from `from` to
@@ -348,10 +438,11 @@ func swing_reach(from: Vector3, to: Vector3, done: float) -> Vector3:
 func elbow_wanted(melee: MeleeWeapon) -> float:
 	if melee == null or actor.is_dead:
 		return 0.0
+	var arc := melee.swing_arc()
+	if arc >= 0.0:
+		return 1.0 - arc
 	if melee._slamming or melee.is_winding_up():
 		return 1.0
-	if melee._swing_left > 0.0:
-		return 1.0 - swing_progress(melee)
 	if melee.is_blocking():
 		return 0.6
 	return maxf(charge_amount(melee), 0.0)
@@ -385,8 +476,9 @@ static func recover_left(melee: MeleeWeapon) -> float:
 	return 1.0 - smoothstep(0.0, 1.0, done)
 
 
+## How far through the shown swing (0 to 1), or 0 when none is showing.
 static func swing_progress(melee: MeleeWeapon) -> float:
-	return 1.0 - clampf(melee._swing_left / MeleeWeapon.SWING_TIME, 0.0, 1.0)
+	return maxf(melee.swing_arc(), 0.0)
 
 
 ## How deep into the reload motion `gun` is: 0 outside a reload, easing to 1
