@@ -320,7 +320,12 @@ without Caleb, and update the gap list when a PR closes a row.
   cruise carries on after it. Q and E fly nothing (Caleb's call).
   The body's attitude in the air (flat, banked, leaning, barrel rolled by a
   sideways air dash) is the skin's job (`ActorSkin._update_glide`), read
-  from velocity and the simulated actor only, so remote players match. Off the
+  from velocity and the simulated actor only, so remote players match. Boots
+  show their thrust (`ActorSkin._update_boot_thrust`): the body leans into
+  the push (gravity, drag and speeding up), the legs and swivelling flames
+  fire down the exhaust, and flying forward lies the body out near flat with
+  the legs dropped so the heel jets fire down and back (never fully flat,
+  or nothing would hold you up). Off the
   ground (`ActorSkin.is_airborne`, from `Actor.airborne_time`) the legs
   never play a gait: a stand plays under an air pose (leap, fall, or
   hanging from lit jets). Leaving the ground starts with a short push-off
