@@ -3609,11 +3609,12 @@ func _test_scrip() -> void:
 
 	# Banking makes it safe.
 	var depot := raid.depots[0]
+	var k := StashService.Economy.KILL_BOUNTY
 	depot.actor_banked.emit(a)
-	check(a.scrip == 0 and raid.state_for(a).scrip_banked == 40, "a depot banks the scrip you carry")
+	check(a.scrip == 0 and raid.state_for(a).scrip_banked == 2 * k, "a depot banks the scrip you carry")
 	Combat.deal(raid.bots[0], DamageInfo.make(9999.0, a, "bullet"))
 	await frames(2)
-	check(a.scrip == 20, "more kills pay more")
+	check(a.scrip == k, "more kills pay more")
 
 	# Dying drops what was not banked.
 	a.protected_left = 0.0
@@ -3623,18 +3624,18 @@ func _test_scrip() -> void:
 	for node in raid.get_children():
 		if node is LootContainer and node.is_bag and node.scrip > 0:
 			bag = node
-	check(bag != null and bag.scrip == 20 and "20 scrip" in bag.get_prompt(), "what you carried drops with your bag (%s)" % (bag.get_prompt() if bag else "no bag"))
-	check(results.has("Alpha") and results.Alpha.scrip == 0 and results.Alpha.scrip_banked == 40 and results.Alpha.scrip_lost == 20
-			and StashService.Economy.payout(results.Alpha) == 40 and "Scrip dropped: 20" in Hud.death_text(results.Alpha, 0.0),
+	check(bag != null and bag.scrip == k and "%d scrip" % k in bag.get_prompt(), "what you carried drops with your bag (%s)" % (bag.get_prompt() if bag else "no bag"))
+	check(results.has("Alpha") and results.Alpha.scrip == 0 and results.Alpha.scrip_banked == 2 * k and results.Alpha.scrip_lost == k
+			and StashService.Economy.payout(results.Alpha) == 2 * k and "Scrip dropped: %d" % k in Hud.death_text(results.Alpha, 0.0),
 			"the dead keep only what they banked")
 	if bag != null:
 		bag.interact(b)
 		await frames(2)
-		check(b.scrip == 20, "whoever loots the bag takes the scrip (%d)" % b.scrip)
+		check(b.scrip == k, "whoever loots the bag takes the scrip (%d)" % b.scrip)
 
 	# Leaving alive carries it home.
 	raid._leave(raid.state_for(b))
-	check(results.has("Bravo") and results.Bravo.scrip == 20 and StashService.Economy.payout(results.Bravo) == 20,
+	check(results.has("Bravo") and results.Bravo.scrip == k and StashService.Economy.payout(results.Bravo) == k,
 			"signing out carries your scrip home")
 	raid.queue_free()
 	await frames(2)
