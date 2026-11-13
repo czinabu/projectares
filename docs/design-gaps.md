@@ -121,4 +121,13 @@ rows marked **pre-playtest** come before the friends playtest.
 | --- | --- | --- |
 | One everyday currency named scrip | Partly | Today scrip (carried, at stake) turns into a separate credits balance. Merge the names so the banked balance is scrip too. |
 | Hub cosmetics for scrip: skins, thruster trail colours, watch faces | Partly | The Tailor sells clothing; trail colours and watch faces are missing. |
-| Blueprints and tech cores, earned through risk, dropped on PvP death until banked | Missing | Unlock vehicles (mech, jet) and craft high-tier gadgets; unlocks, never raw power. Arrive with the meteor, PvE dungeons and arena rewards. |
+| Blueprints and tech cores, earned through risk, dropped on PvP death until banked | Missing | Vehicle blueprints unlock vehicles (mech, jet); tech cores craft high-tier gadgets. Arrive with the meteor, PvE dungeons and arena rewards. |
+| Mk1 blueprints for weapons and rigs as PvP drops, kept for good once extracted | Missing | DESIGN.md section 10. Replaces the old "unlocks, never raw power" rule. |
+| Upgrade data from hot zones, elites, players, contracts and bounties, kept only on extract | Missing | Steps a blueprint from Mk1 to Mk2 to Mk3. |
+| Crafting Mk2 and Mk3 at the gunsmith bench, with a mastery gate on Mk2 | Missing | Costs TBD. Mk2 and Mk3 rigs (#95) are crafted here; until then no rig above Mk1 is handed out. |
+| All drops base level (Mk1), better loot in the PvP world | Partly | Shops already sell only base level, and #95 keeps rigs above Mk1 out of every loot table. Other Mk2 gear (helmets) still drops as loot. |
+| Mastery unlocks attachments and mods | Partly | Mastery unlocks sidegrade variants today; attachments and fire modes as unlocks are missing. |
+| Contracts: daily, weekly and rare high-risk, from a board in the hub, tracked on the watch and visor, counted on extract | Missing | Mostly counters on events already tracked. |
+| Bounties on hot players, paid on extract, tied to the most-wanted board | Partly | Renown, bounties and the Marked exist in the PvP world; payouts in upgrade data and the board are missing. |
+| Safety nets: free Mk1 kit, one insured item, salvage on loss | Partly | The free `starter` scrap kit exists. Insurance and salvage are missing. |
+| Prestige vehicles and rigs from hard feats | Missing | List TBD. |
