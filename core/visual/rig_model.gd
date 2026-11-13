@@ -19,6 +19,11 @@ extends RefCounted
 ##   "HeatDisplay" Marker3D on a jetpack: a clear flat face, looking back (+Z),
 ##                 kept free for an in-world heat readout. Its meta "size"
 ##                 (Vector2, meters) is the room there is.
+##   "MountL/R"    Marker3D on a jetpack: the outer face of the weapon rail on
+##                 each side, where a holstered long weapon is clamped. +Y
+##                 runs up the rail (leaning out at the top, so the two
+##                 weapons stand in a slight V) and +X points straight out
+##                 of the clamp faces on the right side, into them on the left.
 
 const Self := preload("res://core/visual/rig_model.gd")
 
@@ -35,6 +40,11 @@ var wing_span := 1.05
 var wing_root_chord := 0.34
 var wing_tip_chord := 0.12
 var wing_sweep := 0.22
+## How far each weapon rail on a jetpack leans out at the top, and its length.
+var mount_lean := deg_to_rad(6.0)
+var rail_length := 0.3
+## How far a clamp's prongs reach out past the rail to grip a weapon.
+var clamp_reach := 0.05
 
 
 ## Which model an item gets: "jetpack", "boots", "wings", or "" if it is not a
@@ -162,6 +172,7 @@ func _jetpack(id: String) -> Node3D:
 		cowl.basis = Basis(Vector3(0, 0, 1), Vector3(0, 1, 0), Vector3(-1, 0, 0))
 		cowl.position = Vector3(x + side * (pod_r + 0.012), -0.02, pod_z)
 		root.add_child(cowl)
+		_weapon_rail(root, side, Vector3(x + side * (pod_r + 0.019), -0.02, pod_z), glow)
 		# The nozzle: a faceted bell with a glowing throat.
 		var bottom := -0.04 - pod_h * 0.5
 		root.add_child(_cylinder(pod_r * 0.7, pod_r * 0.8, 0.03, Vector3(x, bottom - 0.015, pod_z), _mat(trim), Vector3.ZERO, 8))
@@ -174,13 +185,60 @@ func _jetpack(id: String) -> Node3D:
 		root.add_child(nozzle)
 		if heavy:
 			# A swept stabilizer off each cowl.
+			# Swept back off the pod rather than out to the side, so it never
+			# crosses a weapon clamped to the rail.
 			var fin := _slab(PackedVector2Array([Vector2(0, 0.06), Vector2(0.1, -0.04), Vector2(0.11, -0.12), Vector2(0, -0.08)]),
 					0.012, _mat(armor))
-			fin.basis = Basis(Vector3(side, 0, 0), Vector3(0, 1, 0), Vector3(0, 0, side))
-			fin.position = Vector3(x + side * (pod_r + 0.02), -0.1, pod_z + 0.02)
+			fin.basis = Basis(Vector3(0, 0, 1), Vector3(0, 1, 0), Vector3(-1, 0, 0))
+			fin.position = Vector3(x, -0.1, pod_z + pod_r * 0.6)
 			root.add_child(fin)
-			root.add_child(_box(Vector3(0.006, 0.05, 0.006), Vector3(x + side * (pod_r + 0.11), -0.18, pod_z + 0.03), _mat(glow, 2.0)))
+			root.add_child(_box(Vector3(0.006, 0.05, 0.006), Vector3(x, -0.18, pod_z + pod_r * 0.6 + 0.11), _mat(glow, 2.0)))
 	return root
+
+
+## A weapon rail on the outer face of a jetpack's pod cowl (`at`): a bar
+## that stands on the cowl at its foot and leans out at the top on a longer
+## post, with a clamp near each end. Holstered long weapons are worn against
+## the clamps ("MountL/R"), so they sit on the pack, not beside it.
+func _weapon_rail(root: Node3D, side: float, at: Vector3, glow: Color) -> void:
+	var lean := Basis(Vector3.BACK, -side * mount_lean)
+	var out := lean * Vector3(side, 0, 0)
+	var up := lean * Vector3.UP
+	var thick := 0.014
+	var foot := at + Vector3(0, -rail_length * 0.5, 0)
+	var centre := foot + up * rail_length * 0.5 + out * thick * 0.5
+	var bar := _box(Vector3(thick, rail_length, 0.026), Vector3.ZERO, _mat(STEEL))
+	bar.basis = lean
+	bar.position = centre
+	root.add_child(bar)
+	# Posts back to the cowl: a short one at the foot, a longer one up top.
+	for t: float in [0.12, 0.88]:
+		var on_rail := foot + up * rail_length * t
+		var gap := absf(on_rail.x - at.x) + 0.004
+		root.add_child(_box(Vector3(gap, 0.022, 0.02), Vector3(at.x + side * gap * 0.5, on_rail.y, at.z), _mat(DARK)))
+	# The clamps: a jaw block on the rail's face, with a prong reaching out
+	# past the weapon's front and back to grip it, and a lit latch.
+	var jaw := 0.012
+	for t: float in [0.2, 0.8]:
+		var at_t := foot + up * rail_length * t
+		var block := _box(Vector3(jaw, 0.034, 0.09), Vector3.ZERO, _mat(DARK))
+		block.basis = lean
+		block.position = at_t + out * (thick + jaw * 0.5)
+		root.add_child(block)
+		for z: float in [-1.0, 1.0]:
+			var prong := _box(Vector3(clamp_reach, 0.03, 0.01), Vector3.ZERO, _mat(DARK))
+			prong.basis = lean
+			prong.position = at_t + out * (thick + jaw + clamp_reach * 0.5) + Vector3(0, 0, z * 0.04)
+			root.add_child(prong)
+		var latch := _box(Vector3(0.012, 0.008, 0.004), Vector3.ZERO, _mat(glow, 2.0))
+		latch.basis = lean
+		latch.position = at_t + out * (thick + jaw + clamp_reach * 0.6) + Vector3(0, 0, 0.046)
+		root.add_child(latch)
+	var mount := Marker3D.new()
+	mount.name = "Mount" + ("L" if side < 0.0 else "R")
+	mount.basis = lean
+	mount.position = foot + up * rail_length * 0.5 + out * (thick + jaw)
+	root.add_child(mount)
 
 
 ## Back plate and shoulder straps, shared by every back-worn rig.
