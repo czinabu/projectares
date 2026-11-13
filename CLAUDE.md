@@ -613,7 +613,11 @@ without Caleb, and update the gap list when a PR closes a row.
   (any node with the meta `display_item`).
 - The game opens in the world, never on a menu screen. Solo it boots into the
   home base; online, joining a server puts you in its plaza, and a world's
-  lobby is the home base again on the server's stash. `Hub` (`core/ui/hub.gd`)
+  lobby is the home base again on the server's stash. The base's door goes
+  straight out to the plaza with no screen (`main.gd head_out`): it joins the
+  server it remembers (`Profile.home_server`, set by a join at the uplink) or
+  starts one here that runs every world, since worlds are chosen at the
+  plaza's gates, never before going online. `Hub` (`core/ui/hub.gd`)
   is never a main screen: it holds the screens that the base's stations
   (`HomeBase.STATIONS`, sections in `Hub.STATIONS`) show, and the travel
   screen shown while connecting. A new menu feature gets a station (or a

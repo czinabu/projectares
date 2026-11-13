@@ -44,6 +44,9 @@ var melee_control := "mouse"
 ## Shown to other players online, and the last server address joined.
 var player_name := "Raider"
 var last_server := "127.0.0.1"
+## Where your base's door leads: the address of the server you last joined
+## from the uplink, or "" for a server of your own, started on this computer.
+var home_server := ""
 ## Proves to a server that an online account is yours. Made on first use.
 var online_secret := ""
 ## How your character looks (see `core/visual/human.gd`). Cosmetic only.
@@ -91,7 +94,8 @@ func use_save(path: String) -> void:
 	if path == save_path:
 		return
 	save()
-	var keep := {"player_name": player_name, "last_server": last_server, "online_secret": online_secret,
+	var keep := {"player_name": player_name, "last_server": last_server, "home_server": home_server,
+			"online_secret": online_secret,
 			"melee_control": melee_control, "appearance": appearance}
 	save_path = path
 	reset()
@@ -100,6 +104,7 @@ func use_save(path: String) -> void:
 	grant_gear_crates()
 	player_name = keep.player_name
 	last_server = keep.last_server
+	home_server = keep.home_server
 	online_secret = keep.online_secret
 	melee_control = keep.melee_control
 	appearance = keep.appearance
@@ -276,6 +281,7 @@ func save() -> void:
 		"melee_control": melee_control,
 		"player_name": player_name,
 		"last_server": last_server,
+		"home_server": home_server,
 		"online_secret": online_secret,
 		"appearance": appearance,
 		"raids_played": raids_played,
@@ -315,6 +321,7 @@ func load_profile() -> void:
 	melee_control = "move" if data.get("melee_control", "mouse") == "move" else "mouse"
 	player_name = str(data.get("player_name", "Raider")).left(20)
 	last_server = str(data.get("last_server", "127.0.0.1")).left(80)
+	home_server = str(data.get("home_server", "")).left(80)
 	online_secret = str(data.get("online_secret", "")).left(128)
 	# Kept as chosen: clothing bought on a server is not in the local stash.
 	# What may actually be worn is checked wherever the look is used.

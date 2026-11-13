@@ -77,7 +77,7 @@ a tag over it says what it is and what it is worth.
 | Wardrobe | The character customizer |
 | Records | Your stash, kills, rank, and how your last life went |
 | Trader | The shops: buy and sell |
-| Uplink | Your name, host a server, or join one |
+| Uplink | Your name, and joining a friend's server by its address |
 | Arena gate | Straight into the arena (see "The arena" below) |
 
 Every weapon you own hangs on one rack in the **armory**, the alcove off the
@@ -105,7 +105,8 @@ door in the back wall is the **firing range**: once suited up, your weapons
 work past its firing line with endless ammo, targets stand, slide and fly at
 set distances, and a board keeps your score. Nothing there is lost or earned.
 
-The door behind you leads online (it opens the uplink). Signing out of a
+The door behind you leads straight out to the plaza, online (no screen in
+between). Signing out of a
 world, or dying and pressing L, brings you back here.
 
 After you pull new code, the first launch may show "Updating the project" for a
@@ -113,11 +114,17 @@ few seconds and restart on its own. That is Godot learning about new scripts.
 
 ## Play online (early test)
 
-The **Uplink** console in your home base (or its door) is where you go online.
+Walk out of your home base's **door** and you are in the plaza. The first time,
+that starts a server on your computer in the background, running every world,
+and joins it; you choose a world at the plaza's gates. It stops when you leave.
 
-- **Host a world and join it** starts a server on your computer and connects you to it.
-- **Join a world at this address** connects to someone else's server. On the same
-  network, that is the host's local address, for example `192.168.1.20`.
+The **Uplink** console in your base is only for the other cases:
+
+- **Join the server at this address** connects to someone else's server. On the
+  same network, that is the host's local address, for example `192.168.1.20`.
+  The door remembers it: from then on it leads to that server, and falls back
+  to a server of your own if that one does not answer.
+- **Host here and head out** points the door back at a server of your own.
 - Joining a server puts you in its plaza, the Concourse (see below). A world's
   lobby is your home base again, but it shows the stash and loadout **the
   server keeps for you**, which is separate from your solo stash. Pick your
