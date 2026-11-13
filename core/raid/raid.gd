@@ -1405,8 +1405,6 @@ func throw_toy(actor: Actor, item_id: String) -> String:
 		why = "That is not on your watch"
 	elif not world.vehicle_toys:
 		why = "Vehicles stay on the watch here"
-	elif ItemDB.has_tag(item_id, "aircraft") and not world.open_skies:
-		why = "No open sky for a jet here"
 	elif actor.vehicle != null:
 		why = "Get off first"
 	elif state.sign_out_left >= 0.0:
@@ -1462,8 +1460,6 @@ func summon(actor: Actor, item_id: String) -> String:
 		why = "That is not in your pack"
 	elif not Loadout.summonable(item_id):
 		why = "The watch cannot summon that"
-	elif actor.weapons_locked:
-		why = "Weapons are locked here"
 	elif actor.stagger_left > 0.0:
 		why = "Not while staggered"
 	elif state.sign_out_left >= 0.0:
@@ -1588,8 +1584,11 @@ func _land_toy(toy: Dictionary, on_ground: bool) -> void:
 ## True if a vehicle facing `heading` fits on the ground at `at` without
 ## touching the map, a person or another vehicle.
 func has_room_to_unpack(at: Vector3, heading: float, room := Vector3.ZERO) -> bool:
-	if room == Vector3.ZERO:
-		room = unpack_room
+	return room_to_unpack(get_world_3d().direct_space_state, at, heading, room if room != Vector3.ZERO else unpack_room)
+
+
+## The same test in any space (the home base has one too, and no raid).
+static func room_to_unpack(space: PhysicsDirectSpaceState3D, at: Vector3, heading: float, room: Vector3) -> bool:
 	var box := BoxShape3D.new()
 	box.size = room
 	var query := PhysicsShapeQueryParameters3D.new()
@@ -1597,7 +1596,7 @@ func has_room_to_unpack(at: Vector3, heading: float, room := Vector3.ZERO) -> bo
 	# Lifted clear of the ground it stands on, so a slope does not count.
 	query.transform = Transform3D(Basis(Vector3.UP, heading), at + Vector3(0.0, room.y * 0.5 + 0.45, 0.0))
 	query.collision_mask = Actor.LAYER_WORLD | Actor.LAYER_ACTORS | VehicleScript.LAYER_VEHICLES
-	return get_world_3d().direct_space_state.intersect_shape(query, 1).is_empty()
+	return space.intersect_shape(query, 1).is_empty()
 
 
 ## Packs the vehicle a player is looking at (within reach, nobody on it) back

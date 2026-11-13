@@ -128,8 +128,6 @@ func _init() -> void:
 	max_players = 32
 	bots_contest_sites = true
 	depot_hold_time = 4.0
-	# The open battlefield is big enough to fly a jet over.
-	open_skies = true
 	# The PvP world is where blueprints and upgrade data come from.
 	warlord_blueprint_chance = 0.5
 	pod_blueprint_chance = 0.35

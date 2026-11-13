@@ -1258,6 +1258,21 @@ func _visor_shots(out_dir: String) -> void:
 			raid.bots[i].global_position = p.global_position + look * places[i]
 			raid.bots[i].cmd.yaw = controller.yaw + PI
 		p.health.health = 28.0 if helmet == "visor_scav" else p.health.max_health
+		# A squadmate off to the left, a ping ahead, a contract held and a hot war,
+		# so the heading strip has what it marks.
+		var mate: Actor = raid.bots[3]
+		mate.global_position = p.global_position + look * Vector3(-30, 0.3, -40)
+		mate.display_name = "Rook"
+		var mate_state := Raid.PlayerState.new()
+		mate_state.actor = mate
+		raid.players.append(mate_state)
+		p.clan = "squad"
+		mate.clan = "squad"
+		raid.pinged.emit(p, p.global_position + look * Vector3(12, 0, -60))
+		raid.war.intensity = 0.7
+		raid.war.centre = p.global_position + look * Vector3(150, 0, -120)
+		hud.contracts.assign([{"id": "cull", "title": "Kill 8 enemies", "stat": "kills", "goal": 8, "have": 3}])
+		p.tally["kills"] = 2
 		await _settle(20)
 		await _shot(out_dir.path_join("visor_%s.png" % helmet))
 		if helmet == "helm_spotter":

@@ -255,7 +255,11 @@ func _unhandled_input(event: InputEvent) -> void:
 ## The toy vehicles on the player's watch (item ids), as the world last said.
 func watch_toys() -> Array[String]:
 	var raid := Raid.of(actor) if actor != null and is_instance_valid(actor) else null
-	return raid.stowed_for(actor) if raid != null else ([] as Array[String])
+	if raid != null:
+		return raid.stowed_for(actor)
+	# At home every vehicle the owner has is on the watch (`HomeBase`).
+	var base := HomeBase.of(actor) if actor != null and is_instance_valid(actor) else null
+	return base.watch_vehicles() if base != null else ([] as Array[String])
 
 
 ## The vehicle the raised watch would pack: the one being looked at, within
@@ -297,7 +301,15 @@ func is_on_artifact() -> bool:
 func watch_weapons() -> Array[Dictionary]:
 	if actor == null or not is_instance_valid(actor):
 		return []
-	return Hud.weapon_entries(actor)
+	var entries := Hud.weapon_entries(actor)
+	# At home the carousel turns on through every weapon the owner has
+	# (`HomeBase.watch_weapons`); picking one equips it.
+	var base := HomeBase.of(actor) if Raid.of(actor) == null else null
+	if base != null:
+		for id in base.watch_weapons():
+			if not entries.any(func(e: Dictionary) -> bool: return e.id == id):
+				entries.append({"id": id, "index": -1})
+	return entries
 
 
 ## True while the card is open on the weapon icon with weapons to pick from:
@@ -592,7 +604,7 @@ func _physics_process(delta: float) -> void:
 	cmd.visor_level = _visor_level
 	cmd.watch_up = wrist_raised and not actor.is_dead
 	var key_slot := -1
-	for n in range(1, 5):
+	for n in range(1, 4):
 		if Input.is_action_just_pressed("weapon_%d" % n):
 			key_slot = actor.weapon_for_key(n)
 	if key_slot >= 0:
