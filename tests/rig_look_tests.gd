@@ -409,7 +409,7 @@ static func run(t: Node) -> void:
 
 	# A rig on a home base stand is the same model on a mannequin.
 	var base := HomeBase.new()
-	base.show_gear(["jetpack_mk2", "boots_thruster", "wings_glide"], {})
+	base.show_gear(["jetpack_mk2", "boots_thruster", "wings_glide"], {}, ["gear_hall"])
 	t.add_child(base)
 	await t.frames(3)
 	var shown := {}

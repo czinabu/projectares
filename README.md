@@ -87,6 +87,15 @@ middle of the armory) holds your attachments on its
 pegboard and your primary in its vise. Look at an attachment and press **E**
 to fit it; a tablet beside the vise lists what the fitted kit changes.
 
+You start in a **starter bunker** and the base grows as you spend scrip on
+it. What you do not own yet is sealed, with a panel in the room that names
+it, what it adds and its price: the armory starts as a nook with a short
+rack, the garage has one bay behind a shutter, the firing range's door is
+shut, and the mastery bench and records share the trader's and wardrobe's
+consoles. Look at a panel and press **E** twice to buy it. Upgrades never
+make you stronger and never hold gear: anything that does not fit on show is
+still yours at the locker.
+
 The **suit-up bay** beside the launch pad puts your loadout on you: use its
 control post and the bay's arms fit your armor, rig and weapons, so you can
 see what you are taking out before you deploy.

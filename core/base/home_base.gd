@@ -12,6 +12,14 @@ extends Node3D
 ## and rebuilds the displays. Using a display asks for a loadout change through
 ## `equip_requested`; whoever owns the stash decides and calls `show_gear` again.
 ##
+## The base grows with the account's upgrades (`BaseUpgrades`, the third
+## thing `show_gear` is given). With none it is the starter bunker: the
+## armory is a shallow nook, the garage has one bay, the firing range is shut
+## and a few displays have fewer spots (`BaseLayout.spots`). What is not
+## owned yet is sealed behind a `Bulkhead` that shows its name and price in
+## the room; using one twice asks to buy it through `upgrade_requested`, and
+## whoever owns the account decides and calls `show_gear` again.
+##
 ## Like `Raid`, this has no camera, HUD or input code. `player` is an `Actor`
 ## driven through its `ActorCommand`, so it runs headless.
 
@@ -24,6 +32,9 @@ signal leave_requested
 ## bench, the wardrobe, the records board, the trader, the launch pad or the
 ## uplink, or the arena gate. Whoever owns the base opens what it offers.
 signal station_requested(station: String)
+## The player confirmed buying an upgrade (an id from `BaseUpgrades`) at its
+## bulkhead. Whoever owns the account checks the price and takes the scrip.
+signal upgrade_requested(id: String)
 ## The displays were rebuilt.
 signal gear_shown
 ## The player suited up: `player` is now a new actor wearing the loadout.
@@ -31,6 +42,7 @@ signal gear_shown
 signal player_replaced(actor: Actor)
 
 const BaseLayout := preload("res://core/base/base_layout.gd")
+const BaseUpgrades := preload("res://core/base/base_upgrades.gd")
 const VehicleScript := preload("res://core/vehicle/vehicle.gd")
 
 # Room tuning.
@@ -40,6 +52,9 @@ var room_size := Vector3(24.0, 6.0, 18.0)
 var armory_size := Vector3(7.0, 6.0, 10.0)
 ## How wide the way into the armory is, through the room's left wall.
 var armory_opening := 8.0
+## Until the armory alcove is bought the armory is a nook this deep, closed
+## off by a sealed wall that carries the short starter rack.
+var nook_depth := 3.0
 ## The garage off the room's right wall (+X), laid out like the armory:
 ## depth (x), height (y), width (z), and how wide its way in is.
 var garage_size := Vector3(8.0, 6.0, 12.0)
@@ -53,6 +68,10 @@ var firing_line := 2.0
 var spawn_point := Vector3(0.0, 0.1, 5.5)
 ## Weapons hang a little larger than life so they read from across the room.
 var weapon_scale := 1.5
+## How long a first press on a bulkhead waits for the second that confirms.
+var confirm_time := 4.0
+## How long the full garage's lift takes to turn the bike on it once.
+var lift_turn_time := 16.0
 ## How big the gun in the gunsmith bench's vise is shown.
 var bench_scale := 1.6
 
@@ -87,6 +106,14 @@ const STATIONS := {
 ## will deploy with, wearing what is fitted.
 const BENCH_AT := Vector3(-15.6, 0.0, 0.4)
 const BENCH_YAW := 0.0
+## Where the bench stands until the armory alcove is bought: on the room's
+## floor beside the way into the nook, end-on to it so its pegboard does not
+## hide the rack. See `bench_transform`.
+const STARTER_BENCH_AT := Vector3(-9.0, 0.0, -2.8)
+const STARTER_BENCH_YAW := 0.0
+## Until the ops consoles are bought, each of these stations also shows the
+## station named beside it, which has no console of its own yet.
+const MERGED := {"trader": "mastery", "wardrobe": "records"}
 
 ## The suit-up bay: where you put your loadout on before you deploy. It
 ## stands beside the launch pad, facing the way in (local +Z).
@@ -118,6 +145,15 @@ var range_board: Label3D
 var _range_time := 0.0
 var stash: Array = []
 var loadout := {}
+## The upgrade ids this base's owner has (see `BaseUpgrades`). Empty is the
+## starter bunker.
+var upgrades: Array[String] = []
+## The owner's scrip, shown on the price panels. Set it with `set_scrip`.
+var scrip := 0
+## The sealed upgrades on show, each with its price panel.
+var bulkheads: Array[Bulkhead] = []
+## Everything built from the upgrades, rebuilt when they change.
+var _gated: Array[Node] = []
 
 var _display_root := Node3D.new()
 
@@ -161,10 +197,15 @@ class Station:
 	var screen: Node3D
 
 	func get_prompt() -> String:
-		var title: String = HomeBase.STATIONS[id]["title"]
+		var title: String = base.station_title(id) if base else str(HomeBase.STATIONS[id]["title"])
 		if base and base.read_only:
 			return "%s (not yours)" % title
-		return "[F] %s: %s" % [title, HomeBase.STATIONS[id]["prompt"]]
+		var prompt: String = HomeBase.STATIONS[id]["prompt"]
+		if base:
+			for other: String in base.also_shows(id):
+				var more: String = HomeBase.STATIONS[other]["prompt"]
+				prompt += ", " + more.left(1).to_lower() + more.substr(1)
+		return "[F] %s: %s" % [title, prompt]
 
 	func interact(_actor: Actor) -> void:
 		if base and not base.read_only:
@@ -240,6 +281,55 @@ class RangeTarget:
 				plate.scale = Vector3.ONE
 
 
+## A sealed upgrade: a bulkhead, shutter or post with a panel that names
+## what is behind it, what it adds and what it costs. The first use arms it
+## and a second within `HomeBase.confirm_time` asks to buy it.
+class Bulkhead:
+	extends Interactable
+
+	var base: HomeBase
+	## The upgrade's id in `BaseUpgrades`.
+	var id := ""
+	var status: Label3D
+	var _armed_until := 0
+
+	func armed() -> bool:
+		return Time.get_ticks_msec() < _armed_until
+
+	func get_prompt() -> String:
+		var title := BaseUpgrades.title(id)
+		if base == null or base.read_only:
+			return "%s (sealed)" % title
+		var cost := "%s scrip" % HomeBase.commas(BaseUpgrades.price(id))
+		var why := base.upgrade_blocked(id)
+		if why != "":
+			return "%s, %s. %s" % [title, cost, why]
+		if armed():
+			return "[F] Press again to confirm: %s for %s" % [title, cost]
+		return "[F] Buy %s: %s" % [title, cost]
+
+	func interact(_actor: Actor) -> void:
+		if base == null or base.read_only or base.upgrade_blocked(id) != "":
+			return
+		if armed():
+			_armed_until = 0
+			base.upgrade_requested.emit(id)
+		else:
+			_armed_until = Time.get_ticks_msec() + int(base.confirm_time * 1000.0)
+
+	## Writes the panel's last line: whether it can be bought, and if not, why.
+	func refresh() -> void:
+		if status == null:
+			return
+		if base == null or base.read_only:
+			status.text = "Sealed"
+			status.modulate = Color(0.7, 0.7, 0.72)
+			return
+		var why := base.upgrade_blocked(id)
+		status.text = "Press F to buy" if why == "" else why
+		status.modulate = Color(0.5, 1.0, 0.6) if why == "" else Color(1.0, 0.8, 0.4)
+
+
 ## The gun in the gunsmith bench's vise. Using it puts the next gun from the
 ## rack in the vise as your primary, so any gun can be fitted out here.
 class Vise:
@@ -287,20 +377,96 @@ func _ready() -> void:
 	_display_root.name = "Displays"
 	add_child(_display_root)
 	_build_door()
-	_build_bench()
 	_build_suit_bay()
-	_build_stations()
 	_build_banner()
+	_build_upgrades()
 	_spawn_player()
 	_rebuild()
 
 
-## Shows this stash and loadout. Safe to call before the base is in the tree.
-func show_gear(p_stash: Array, p_loadout: Dictionary) -> void:
+## Shows this stash and loadout, in a base with these upgrades (ids from
+## `BaseUpgrades`; leave them out to keep the ones it has). Safe to call
+## before the base is in the tree.
+func show_gear(p_stash: Array, p_loadout: Dictionary, p_upgrades: Variant = null) -> void:
 	stash = p_stash.duplicate()
 	loadout = p_loadout.duplicate()
+	if p_upgrades != null:
+		var fresh := BaseUpgrades.clean(p_upgrades)
+		if fresh != upgrades:
+			upgrades = fresh
+			if is_inside_tree():
+				_build_upgrades()
 	if is_inside_tree():
 		_rebuild()
+
+
+## Shows the owner's scrip on the price panels.
+func set_scrip(amount: int) -> void:
+	scrip = amount
+	for gate in bulkheads:
+		gate.refresh()
+
+
+## True if the base's owner has this upgrade.
+func owns(id: String) -> bool:
+	return id in upgrades
+
+
+## Why the owner cannot buy this upgrade right now, or "" if they can.
+func upgrade_blocked(id: String) -> String:
+	var why := BaseUpgrades.blocked(upgrades, id)
+	if why == "" and scrip < BaseUpgrades.price(id):
+		why = "Not enough scrip: you have %s." % commas(scrip)
+	return why
+
+
+## The bulkhead selling this upgrade, or null if it is owned or not on show.
+func bulkhead(id: String) -> Bulkhead:
+	for gate in bulkheads:
+		if gate.id == id:
+			return gate
+	return null
+
+
+## True if this station has a console in the room. The mastery bench and the
+## records board share another station's console until the ops consoles are
+## bought (`MERGED`).
+func has_station(id: String) -> bool:
+	return STATIONS.has(id) and (owns("ops_consoles") or id not in MERGED.values())
+
+
+## The other stations this station's console shows as well, for now.
+func also_shows(id: String) -> Array[String]:
+	var out: Array[String] = []
+	if MERGED.has(id) and not owns("ops_consoles"):
+		out.append(MERGED[id])
+	return out
+
+
+## The name on a station's console.
+func station_title(id: String) -> String:
+	var title: String = STATIONS[id]["title"]
+	for other in also_shows(id):
+		title += " and " + str(STATIONS[other]["title"]).to_lower()
+	return title
+
+
+## Where the gunsmith bench stands and which way it faces: in the middle of
+## the armory once the alcove is open, in front of the nook until then.
+func bench_transform() -> Transform3D:
+	if owns("armory_alcove"):
+		return _spot(BENCH_AT, BENCH_YAW)
+	return _spot(STARTER_BENCH_AT, STARTER_BENCH_YAW)
+
+
+## A number with thousands separators: 1200 -> "1,200".
+static func commas(amount: int) -> String:
+	var digits := str(absi(amount))
+	var out := ""
+	while digits.length() > 3:
+		out = "," + digits.right(3) + out
+		digits = digits.left(digits.length() - 3)
+	return ("-" if amount < 0 else "") + digits + out
 
 
 ## What the bay puts on you: each loadout slot's item, or the free starter
@@ -444,16 +610,20 @@ func in_armory(point: Vector3) -> bool:
 func spot_transform(kind: String, index: int) -> Transform3D:
 	var wall_x := room_size.x * 0.5
 	var wall_z := room_size.z * 0.5
-	# The armory's back wall, and its side walls either side of the bench.
-	var back_x := -wall_x - armory_size.x
+	# The armory's back wall (the nook's sealed wall until the alcove is
+	# bought), and its side walls either side of the bench.
+	var alcove := owns("armory_alcove")
+	var back_x := -wall_x - (armory_size.x if alcove else nook_depth)
 	var side_z := armory_size.z * 0.5
 	var i := float(index)
 	match kind:
 		"rack_guns":
-			# The armory's back wall: two rows of six, facing the way in.
-			var col := float(index % 6)
-			var row := float(index / 6)
-			return _spot(Vector3(back_x + 0.3, 2.55 - 1.15 * row, -3.75 + 1.5 * col), PI / 2.0)
+			# The armory's back wall: two rows of six, facing the way in. The
+			# nook's short rack is one row of four.
+			var cols := 6 if alcove else 4
+			var col := float(index % cols)
+			var row := float(index / cols)
+			return _spot(Vector3(back_x + 0.3, 2.55 - 1.15 * row, -0.75 * float(cols - 1) + 1.5 * col), PI / 2.0)
 		"rack_sidearms":
 			# The armory's right-hand wall (going in): two rows of four.
 			var col := float(index % 4)
@@ -480,8 +650,7 @@ func spot_transform(kind: String, index: int) -> Transform3D:
 			# Four across and three up on the pegboard behind the bench.
 			var col := float(index % 4)
 			var row := float(index / 4)
-			var bench := _spot(BENCH_AT, BENCH_YAW)
-			return bench * _spot(Vector3(-0.78 + 0.52 * col, 1.92 - 0.4 * row, -0.36), 0.0)
+			return bench_transform() * _spot(Vector3(-0.78 + 0.52 * col, 1.92 - 0.4 * row, -0.36), 0.0)
 		_:
 			return _spot(Vector3(-10.5 + 1.1 * i, 1.1, wall_z - 0.3), PI)
 
@@ -745,6 +914,8 @@ func _build_door() -> void:
 
 func _build_stations() -> void:
 	for id: String in STATIONS:
+		if not has_station(id):
+			continue
 		var info: Dictionary = STATIONS[id]
 		var console := Station.new()
 		console.name = "Station_%s" % id
@@ -790,13 +961,169 @@ func _build_stations() -> void:
 		screen.add_child(hint)
 		console.add_child(screen)
 		console.screen = screen
-		var title := _label(str(info["title"]).to_upper(), color, 0.22)
+		var title := _label(station_title(id).to_upper(), color, 0.22)
 		title.name = "Title"
 		title.position = title_at
 		title.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
 		console.add_child(title)
 		add_child(console)
+		_gated.append(console)
 		stations.append(console)
+
+
+## Builds everything that depends on the upgrades: the consoles, the bench,
+## the walls that seal what is not owned, and a bulkhead for every upgrade
+## still to buy. Called again whenever the upgrades change.
+func _build_upgrades() -> void:
+	for node in _gated:
+		if is_instance_valid(node):
+			if node.get_parent():
+				node.get_parent().remove_child(node)
+			node.queue_free()
+	_gated.clear()
+	stations.clear()
+	bulkheads.clear()
+	_build_bench()
+	_build_stations()
+	_build_gates()
+
+
+func _build_gates() -> void:
+	var wall_x := room_size.x * 0.5
+	var wall_z := room_size.z * 0.5
+	var seal_mat := Look.surface("concrete", {"tint": Color(0.36, 0.37, 0.4), "grime": 0.4, "scale": 0.3})
+	var hazard := Color(1.0, 0.62, 0.22)
+	var dark := Color(0.15, 0.15, 0.17)
+	# The armory: a nook closed by a sealed wall until the alcove is bought.
+	if not owns("armory_alcove"):
+		var x := -wall_x - nook_depth
+		_gated.append(_box(Vector3(0.5, armory_size.y, armory_size.z), Vector3(x - 0.25, armory_size.y * 0.5, 0), seal_mat))
+		_keep(_part(Vector3(0.04, 2.6, armory_size.z - 0.6), Vector3(x + 0.02, 2.0, 0), Color(0.13, 0.13, 0.14)))
+		for y: float in [0.12, 3.9]:
+			_keep(_part(Vector3(0.05, 0.14, armory_size.z - 0.6), Vector3(x + 0.03, y, 0), hazard, true))
+		_add_bulkhead("armory_alcove", _spot(Vector3(-wall_x - 0.6, 0, armory_opening * 0.5 - 0.7), PI / 2.0), "post")
+	elif not owns("heavy_wall"):
+		_add_bulkhead("heavy_wall", _spot(Vector3(-wall_x + 0.5, 0, -6.9), PI / 2.0), "post")
+	# The garage: the bays not owned yet are walled off behind a lowered shutter.
+	var bays := BaseLayout.spots("bay", upgrades)
+	if bays < int(BaseLayout.KINDS["bay"]["spots"]):
+		var edge := spot_transform("bay", bays - 1).origin.z + 1.4
+		var mid_x := wall_x + garage_size.x * 0.5
+		_gated.append(_box(Vector3(garage_size.x, garage_size.y, 0.4), Vector3(mid_x, garage_size.y * 0.5, edge + 0.2), seal_mat))
+		var width := garage_opening * 0.5 - edge
+		_add_bulkhead("garage_full" if owns("bay_second") else "bay_second",
+				_spot(Vector3(wall_x + 0.25, 0, edge + width * 0.5), -PI / 2.0), "slab", Vector2(width, 4.35))
+	else:
+		# The lift: a turntable under the first bay (the bike on it turns, see `_rebuild`).
+		var lift := spot_transform("bay", 0).origin
+		_keep(_part(Vector3(2.7, 0.05, 2.7), lift + Vector3(0, 0.035, 0), dark))
+		for side: float in [-1.0, 1.0]:
+			_keep(_part(Vector3(2.7, 0.06, 0.08), lift + Vector3(0, 0.04, side * 1.35), hazard, true))
+			_keep(_part(Vector3(0.08, 0.06, 2.7), lift + Vector3(side * 1.35, 0.04, 0), hazard, true))
+	# The firing range: its door is shut.
+	if not owns("firing_range"):
+		_add_bulkhead("firing_range", _spot(Vector3(0, 0, -wall_z - 0.25), 0.0), "slab", range_door)
+	# Upgrades that add spots to what is already in the room have a post
+	# where the new spots will be.
+	if not owns("gear_hall"):
+		_add_bulkhead("gear_hall", _spot(Vector3(-6.0, 0, -wall_z + 0.7), 0.0), "post")
+	if not owns("trophy_hall"):
+		_add_bulkhead("trophy_hall", _spot(Vector3(-6.6, 0, wall_z - 0.7), PI), "post")
+	if not owns("lounge"):
+		_add_bulkhead("lounge", _spot(Vector3(9.6, 0, -wall_z + 0.6), 0.0), "post")
+	if not owns("ops_consoles"):
+		_add_bulkhead("ops_consoles", _spot(STATIONS["mastery"]["at"], STATIONS["mastery"]["yaw"]), "post")
+	if not owns("teleporter"):
+		_add_bulkhead("teleporter", _spot(Vector3(4.9, 0, 2.6), -PI / 2.0), "hatch")
+	if not owns("finish"):
+		_add_bulkhead("finish", _spot(Vector3(-1.75, 0, wall_z - 0.55), PI), "post")
+	else:
+		# Lit trim round the top of the room and a light column in each corner.
+		var trim := Color(0.45, 0.9, 1.0)
+		var top := room_size.y - 0.2
+		for side: float in [-1.0, 1.0]:
+			_keep(_part(Vector3(room_size.x, 0.08, 0.05), Vector3(0, top, side * (wall_z - 0.03)), trim, true))
+			_keep(_part(Vector3(0.05, 0.08, room_size.z), Vector3(side * (wall_x - 0.03), top, 0), trim, true))
+			for end: float in [-1.0, 1.0]:
+				_keep(_part(Vector3(0.12, room_size.y, 0.12), Vector3(side * (wall_x - 0.06), room_size.y * 0.5, end * (wall_z - 0.06)), trim, true))
+	# The bench's own upgrades are bought at the bench.
+	for id: String in ["bench_workshop", "bench_master"]:
+		if not owns(id):
+			_add_bulkhead(id, bench_transform() * Transform3D(Basis.from_euler(Vector3(-0.5, 0, 0)), Vector3(-0.9, 1.12, 0.3)), "tag")
+			break
+
+
+## Adds a part built from the upgrades, so it is cleared when they change.
+func _keep(node: Node3D) -> Node3D:
+	add_child(node)
+	_gated.append(node)
+	return node
+
+
+## Builds one sealed upgrade with its price panel. `where` is where it stands
+## and faces (local +Z toward the reader). Styles: "slab" fills a doorway
+## `size` across and blocks it, "post" is a panel on a post, "hatch" a post
+## beside a sealed plate in the floor, "tag" a small panel on a bench.
+func _add_bulkhead(id: String, where: Transform3D, style: String, size := Vector2(2.2, 3.0)) -> void:
+	var gate := Bulkhead.new()
+	gate.name = "Bulkhead_%s" % id
+	gate.base = self
+	gate.id = id
+	gate.transform = where
+	# Amber if it can be bought some day soon, grey while it is not built.
+	var accent := Color(1.0, 0.62, 0.22) if BaseUpgrades.is_ready(id) else Color(0.55, 0.58, 0.62)
+	var dark := Color(0.15, 0.15, 0.17)
+	var glass := Color(0.05, 0.06, 0.07)
+	var text_at := Vector3.ZERO
+	var s := 1.0
+	match style:
+		"slab":
+			# It blocks the way as well as carrying the panel.
+			gate.collision_layer = Actor.LAYER_WORLD | Actor.LAYER_INTERACT
+			gate.add_child(_part(Vector3(size.x, size.y, 0.5), Vector3(0, size.y * 0.5, 0), Color(0.2, 0.21, 0.23)))
+			for y: float in [0.1, size.y - 0.1]:
+				gate.add_child(_part(Vector3(size.x, 0.14, 0.02), Vector3(0, y, 0.26), accent, true))
+			s = clampf(size.x / 2.2, 0.6, 1.0)
+			text_at = Vector3(0, minf(1.8, size.y * 0.55), 0.3)
+			gate.add_child(_part(Vector3(1.9 * s, 1.35 * s, 0.03), text_at - Vector3(0, 0, 0.03), glass))
+			_add_collision(gate, Vector3(size.x, size.y, 0.5), Vector3(0, size.y * 0.5, 0))
+		"tag":
+			s = 0.2
+			gate.add_child(_part(Vector3(0.4, 0.29, 0.02), Vector3(0, 0, -0.012), glass))
+			_add_collision(gate, Vector3(0.42, 0.3, 0.12), Vector3.ZERO)
+		_:
+			if style == "hatch":
+				# A sealed plate in the floor, where you stand to read the post.
+				gate.add_child(_part(Vector3(1.6, 0.05, 1.6), Vector3(0, 0.025, 1.3), Color(0.2, 0.21, 0.23)))
+				for side: float in [-1.0, 1.0]:
+					gate.add_child(_part(Vector3(1.6, 0.055, 0.08), Vector3(0, 0.03, 1.3 + side * 0.76), accent, true))
+					gate.add_child(_part(Vector3(0.08, 0.055, 1.6), Vector3(side * 0.76, 0.03, 1.3), accent, true))
+			gate.add_child(_part(Vector3(0.24, 1.0, 0.24), Vector3(0, 0.5, 0), dark))
+			gate.add_child(_part(Vector3(0.06, 1.0, 0.02), Vector3(0, 0.5, 0.125), accent, true))
+			s = 0.5
+			text_at = Vector3(0, 1.42, 0.06)
+			gate.add_child(_part(Vector3(0.98, 0.7, 0.04), text_at - Vector3(0, 0, 0.03), glass))
+			_add_collision(gate, Vector3(1.0, 1.8, 0.4), Vector3(0, 0.9, 0))
+	var title := _label(BaseUpgrades.title(id).to_upper(), accent, 0.16 * s)
+	title.name = "Title"
+	title.position = text_at + Vector3(0, 0.46 * s, 0)
+	gate.add_child(title)
+	var what := _label(BaseUpgrades.adds(id), Color(0.85, 0.83, 0.8), 0.085 * s)
+	what.name = "Adds"
+	what.position = text_at + Vector3(0, 0.14 * s, 0)
+	gate.add_child(what)
+	var price := _label("%s SCRIP" % commas(BaseUpgrades.price(id)), Color(1.0, 0.85, 0.4), 0.17 * s)
+	price.name = "Price"
+	price.position = text_at + Vector3(0, -0.2 * s, 0)
+	gate.add_child(price)
+	gate.status = _label("", Color(1.0, 0.8, 0.4), 0.085 * s)
+	gate.status.name = "Status"
+	gate.status.position = text_at + Vector3(0, -0.47 * s, 0)
+	gate.add_child(gate.status)
+	gate.refresh()
+	add_child(gate)
+	_gated.append(gate)
+	bulkheads.append(gate)
 
 
 ## A banner high on the far wall, facing the way in: whose base this is and
@@ -822,8 +1149,8 @@ func _build_banner() -> void:
 func banner_text() -> String:
 	if read_only:
 		return "You are visiting. Look around: the gear stays where it is."
-	return "Everything in your stash is on show. Look at gear and press F to equip it.\n" \
-			+ "Walk up to a console and press F to use its screen. Esc steps back."
+	return "Look at gear and press F to equip it. Walk up to a console and press F to use its screen.\n" \
+			+ "Sealed parts of the base open for scrip: look at one and press F twice to buy it."
 
 
 func _spawn_player() -> void:
@@ -908,7 +1235,7 @@ func _rebuild() -> void:
 		_display_root.remove_child(child)
 		child.queue_free()
 	displays.clear()
-	for entry: Dictionary in BaseLayout.plan(stash, loadout):
+	for entry: Dictionary in BaseLayout.plan(stash, loadout, upgrades):
 		var display := Display.new()
 		display.base = self
 		display.item_id = entry["id"]
@@ -924,6 +1251,10 @@ func _rebuild() -> void:
 		_fill(display)
 		_display_root.add_child(display)
 		displays.append(display)
+		if display.kind == "bay" and display.index == 0 and owns("garage_full"):
+			# The lift turns the bike parked on it. View only.
+			var turn := display.create_tween().set_loops()
+			turn.tween_property(display.get_node("Model"), "rotation:y", PI + TAU, lift_turn_time).from(PI)
 	_build_signs()
 	_build_bench_gun()
 	gear_shown.emit()
@@ -934,9 +1265,11 @@ func _rebuild() -> void:
 ## a room of its own (the garage) or has its own title (the bench) needs none.
 ## Rail labels only show from nearby, so the room is not a cloud of text.
 func _build_signs() -> void:
-	var stored := BaseLayout.stored_away(stash)
+	var stored := BaseLayout.stored_away(stash, upgrades)
 	for kind: String in BaseLayout.KINDS:
-		if kind in SIGNED_ELSEWHERE:
+		# A kind with no spots yet has no section: its upgrade's panel names it.
+		var room := BaseLayout.spots(kind, upgrades)
+		if room <= 0 or kind in SIGNED_ELSEWHERE:
 			continue
 		var text: String = str(BaseLayout.KINDS[kind]["title"]).to_upper()
 		if stored.has(kind):
@@ -944,7 +1277,7 @@ func _build_signs() -> void:
 		var sign_label := _label(text, Color(1.0, 0.62, 0.22), 0.16)
 		sign_label.name = "Sign_%s" % kind
 		var first := spot_transform(kind, 0)
-		var last := spot_transform(kind, int(BaseLayout.KINDS[kind]["spots"]) - 1)
+		var last := spot_transform(kind, room - 1)
 		var mid := first.origin.lerp(last.origin, 0.5)
 		var top := maxf(first.origin.y, last.origin.y)
 		# Stands stand on the floor; everything else hangs on a wall.
@@ -1108,8 +1441,7 @@ func _build_bench() -> void:
 	bench.name = "GunsmithBench"
 	bench.collision_layer = Actor.LAYER_WORLD
 	bench.collision_mask = 0
-	bench.position = BENCH_AT
-	bench.rotation.y = BENCH_YAW
+	bench.transform = bench_transform()
 	var wood := Color(0.36, 0.28, 0.2)
 	var steel := Color(0.24, 0.25, 0.27)
 	bench.add_child(_part(Vector3(2.2, 0.08, 0.9), Vector3(0, 0.92, 0), wood))
@@ -1134,7 +1466,7 @@ func _build_bench() -> void:
 	col.shape = shape
 	col.position = Vector3(0, 0.5, 0)
 	bench.add_child(col)
-	var title := _label("GUNSMITH BENCH", Color(1.0, 0.62, 0.22), 0.22)
+	var title := _label(bench_name().to_upper(), Color(1.0, 0.62, 0.22), 0.22)
 	title.name = "Title"
 	title.position = Vector3(0, 2.75, -0.42)
 	bench.add_child(title)
@@ -1142,11 +1474,23 @@ func _build_bench() -> void:
 	how.name = "HowTo"
 	how.position = Vector3(0, 2.6, -0.38)
 	bench.add_child(how)
-	add_child(bench)
+	if owns("bench_master"):
+		# A master's bench: lit edges and a second lamp.
+		for z: float in [-0.44, 0.44]:
+			bench.add_child(_part(Vector3(2.2, 0.03, 0.03), Vector3(0, 0.95, z), Color(0.25, 0.9, 1.0), true))
+		bench.add_child(_part(Vector3(0.4, 0.03, 0.12), Vector3(-0.7, 2.38, 0.1), Color(1.0, 0.85, 0.6), true))
+	_keep(bench)
 	if Look.enabled:
 		var light := Look.lamp(Color(1.0, 0.9, 0.75), 2.0, 5.0)
-		light.position = BENCH_AT + Vector3(0.6, 2.2, 0)
-		add_child(light)
+		light.position = bench_transform() * Vector3(0.6, 2.2, 0)
+		_keep(light)
+
+
+## What the bench is called, by how far it has been upgraded.
+func bench_name() -> String:
+	if owns("bench_master"):
+		return "Master bench"
+	return "Workshop bench" if owns("bench_workshop") else "Gunsmith bench"
 
 
 ## The primary you will deploy with, in the bench's vise with its attachments
@@ -1165,7 +1509,7 @@ func _build_bench_gun() -> void:
 	shown.base = self
 	shown.item_id = id
 	shown.name = "BenchGun"
-	shown.transform = _spot(BENCH_AT, BENCH_YAW) * _spot(Vector3(-0.15, 1.36, 0.1), 0.0)
+	shown.transform = bench_transform() * _spot(Vector3(-0.15, 1.36, 0.1), 0.0)
 	var model := Node3D.new()
 	model.name = "Model"
 	visual.rotation.y = PI / 2.0
@@ -1180,7 +1524,7 @@ func _build_bench_gun() -> void:
 	# The card: a small lit tablet propped on the bench beside the vise.
 	var tablet := _part(Vector3(0.46, 0.62, 0.02), Vector3.ZERO, Color(0.08, 0.09, 0.1))
 	tablet.name = "SpecTablet"
-	tablet.transform = _spot(BENCH_AT, BENCH_YAW) * Transform3D(Basis.from_euler(Vector3(-0.3, 0, 0)), Vector3(0.74, 1.27, -0.08))
+	tablet.transform = bench_transform() * Transform3D(Basis.from_euler(Vector3(-0.3, 0, 0)), Vector3(0.74, 1.27, -0.08))
 	_display_root.add_child(tablet)
 	var card := _label(spec_text(gun, bare), Color(0.55, 0.95, 1.0), 0.026)
 	card.name = "SpecCard"

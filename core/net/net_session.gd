@@ -76,10 +76,10 @@ signal social_notice(text: String)
 signal world_invite_accepted(invite: Dictionary)
 ## Client: you accepted an invite to someone's home base. The owner's stash
 ## and loadout come from the server, so a base can be shown read-only.
-signal base_visit_requested(owner_name: String, stash: Array, loadout: Dictionary)
+signal base_visit_requested(owner_name: String, stash: Array, loadout: Dictionary, upgrades: Array)
 
 const DEFAULT_PORT := 24565
-const PROTOCOL := 19
+const PROTOCOL := 20
 ## Every packet is compressed, both ways. State updates are mostly repeated
 ## numbers, and a big battle sends a player hundreds of them a second. Server
 ## and client must agree, so a change here needs a new PROTOCOL.
@@ -712,6 +712,19 @@ func _request_buy(shop_id: String, item_id: String) -> void:
 	_send_account(peer)
 
 
+## Lobby: buy a home base upgrade. The server checks what it needs and sets
+## the price.
+@rpc("any_peer", "call_remote", "reliable")
+func _request_buy_upgrade(upgrade_id: String) -> void:
+	var peer := _api.get_remote_sender_id()
+	if not is_server or not _peer_account.has(peer):
+		return
+	var result: Dictionary = stash.buy_upgrade(_peer_account[peer], upgrade_id.left(64))
+	if not result.ok:
+		_lobby_error.rpc_id(peer, result.error)
+	_send_account(peer)
+
+
 ## Lobby: sell stash items for scrip. An empty `item_id` sells all loot.
 @rpc("any_peer", "call_remote", "reliable")
 func _request_sell(item_id: String, count: int) -> void:
@@ -1308,6 +1321,12 @@ func pick_mastery(track: String, variant_id: String) -> void:
 func buy(shop_id: String, item_id: String) -> void:
 	if _is_connected() and not account.is_empty():
 		_request_buy.rpc_id(1, shop_id, item_id)
+
+
+## Lobby: ask the server to buy a home base upgrade.
+func buy_upgrade(upgrade_id: String) -> void:
+	if _is_connected() and not account.is_empty():
+		_request_buy_upgrade.rpc_id(1, upgrade_id)
 
 
 ## Lobby: ask the server to sell stash items ("" sells all loot).
@@ -2180,9 +2199,10 @@ func _request_answer_invite(invite_id: int, accept: bool) -> void:
 	if not accept:
 		return
 	if invite.kind == "base":
-		# A base is a view of the owner's gear, so send just that.
+		# A base is a view of the owner's gear and upgrades, so send just that.
 		var owner := stash.snapshot(invite.from)
-		_base_visit.rpc_id(peer, invite.from_name, owner.get("stash", []), owner.get("loadout", {}))
+		_base_visit.rpc_id(peer, invite.from_name, owner.get("stash", []), owner.get("loadout", {}),
+				owner.get("base_upgrades", []))
 	else:
 		_world_invite_accepted.rpc_id(peer, invite)
 
@@ -2227,8 +2247,8 @@ func _world_invite_accepted(invite: Dictionary) -> void:
 
 
 @rpc("authority", "call_remote", "reliable")
-func _base_visit(owner_name: String, owner_stash: Array, owner_loadout: Dictionary) -> void:
-	base_visit_requested.emit(owner_name, owner_stash, owner_loadout)
+func _base_visit(owner_name: String, owner_stash: Array, owner_loadout: Dictionary, owner_upgrades: Array) -> void:
+	base_visit_requested.emit(owner_name, owner_stash, owner_loadout, owner_upgrades)
 
 
 ## Phone: message a player on this server, or a saved contact.
