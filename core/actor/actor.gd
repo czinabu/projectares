@@ -16,6 +16,8 @@ signal hit_confirmed(target: Actor, info: DamageInfo, lethal: bool)
 signal heard(at: Vector3, source: Actor)
 ## The power weapon slot changed mid-raid (`Loadout.set_power`); "" is empty.
 signal power_changed(item_id: String, mag: int, reserve: int)
+## The helmet on the head changed (`Loadout.wear_helmet`); "" is bare-headed.
+signal helmet_changed(item_id: String)
 ## A weapon was materialized out of the pack in place of the one worn in its
 ## slot (`Loadout.swap_weapon`, the watch's summon).
 signal weapon_swapped(item_id: String, mag: int, reserve: int)

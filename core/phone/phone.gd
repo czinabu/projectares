@@ -125,7 +125,7 @@ const CONTROLS := [
 		["Raise or lower the watch", "{check_wrist}"],
 		["Move across the watch's icons and tabs (watch up)", "Mouse wheel"],
 		["Pick a weapon, toy vehicle or artifact (watch up, on its icon)", "Mouse wheel"],
-		["Draw the picked weapon, or summon it out of your pack (watch up)", "{fire}"],
+		["Draw the picked weapon, summon it out of your pack, or put on a helmet from it (watch up)", "{fire}"],
 		["Take the toy in your hand (watch up)", "{fire}"],
 		["Throw the toy, or put it back", "{fire}, or {alt_fire}"],
 		["Pack the bike you look at (watch up)", "{fire}"],

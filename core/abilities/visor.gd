@@ -100,6 +100,17 @@ var _sensed: Array[Actor] = []
 var _ran_flat := false
 
 
+## Takes the helmet's stats back to a new visor's, so the next helmet put on
+## starts clean (`Loadout.wear_helmet`). Who wears it stays.
+func reset() -> void:
+	_end_threat_sense()
+	var fresh := Visor.new()
+	for prop in get_script().get_script_property_list():
+		if prop.usage & PROPERTY_USAGE_SCRIPT_VARIABLE and prop.name != "actor":
+			set(prop.name, fresh.get(prop.name))
+	fresh.free()
+
+
 ## Runs one tick from the actor's command.
 func tick(cmd: ActorCommand, delta: float) -> void:
 	cooldown_left = maxf(0.0, cooldown_left - delta)
