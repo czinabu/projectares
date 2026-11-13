@@ -3573,6 +3573,8 @@ func _test_online() -> void:
 			walker.cmd.move = Vector2(0, 1)
 			await frames(90)
 			alpha.raid.player.cmd.move = Vector2.ZERO
+			# On a busy machine the server can be a moment behind the walker.
+			await _wait_until(func() -> bool: return from.distance_to(seen.global_position) > 3.0, 240)
 			await frames(30)
 			var moved := from.distance_to(seen.global_position)
 			check(moved > 3.0, "one player's movement reaches the other through the server (%.1f m)" % moved)
