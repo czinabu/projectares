@@ -49,7 +49,7 @@ const VehicleScript := preload("res://core/vehicle/vehicle.gd")
 var room_size := Vector3(24.0, 6.0, 18.0)
 ## The armory alcove off the room's left wall (-X): how deep it goes (x), how
 ## high (y) and how wide (z). It is centred on the wall.
-var armory_size := Vector3(7.0, 6.0, 10.0)
+var armory_size := Vector3(7.0, 6.0, 12.0)
 ## How wide the way into the armory is, through the room's left wall.
 var armory_opening := 8.0
 ## Until the armory alcove is bought the armory is a nook this deep, closed
@@ -74,6 +74,13 @@ var confirm_time := 4.0
 var lift_turn_time := 16.0
 ## How big the gun in the gunsmith bench's vise is shown.
 var bench_scale := 1.6
+## Long guns on the armory's back wall hang bigger still, so they read from
+## the way in.
+var rack_gun_scale := 2.1
+## The shell: floor plates, ceiling beams and wall ribs are this far apart.
+var plate_size := 2.0
+var beam_spacing := 3.0
+var rib_spacing := 2.5
 
 ## Whose base this is, shown on the HUD. "" for your own.
 var owner_name := ""
@@ -84,12 +91,13 @@ var read_only := false
 var door_text := "Head out: play online"
 
 ## Where each station stands and which way it faces (local +Z into the room),
-## with its title and prompt. The launch pad stands in the middle, the locker
+## with its title and prompt. The launch pad stands in the deploy area along
+## the front wall, the locker
 ## beside the way into the armory, the wardrobe and records along the left
 ## wall nearer the door, and the rest along the right wall either side of the
 ## way into the garage.
 const STATIONS := {
-	"launch": {"prompt": "Deploy", "title": "Launch pad", "at": Vector3(0.0, 0.0, 2.6), "yaw": 0.0, "color": Color(1.0, 0.55, 0.2)},
+	"launch": {"prompt": "Deploy", "title": "Launch pad", "at": Vector3(6.8, 0.0, 6.4), "yaw": PI, "color": Color(1.0, 0.55, 0.2)},
 	"locker": {"prompt": "Pick your loadout", "title": "Locker", "at": Vector3(-11.1, 0.0, -5.4), "yaw": PI / 2.0, "color": Color(0.45, 0.75, 1.0)},
 	"wardrobe": {"prompt": "Change how you look", "title": "Wardrobe", "at": Vector3(-11.1, 0.0, 5.3), "yaw": PI / 2.0, "color": Color(0.85, 0.6, 1.0)},
 	"records": {"prompt": "Read your record and stash", "title": "Records", "at": Vector3(-11.1, 0.0, 7.2), "yaw": PI / 2.0, "color": Color(0.9, 0.9, 0.85)},
@@ -116,9 +124,20 @@ const STARTER_BENCH_YAW := 0.0
 const MERGED := {"trader": "mastery", "wardrobe": "records"}
 
 ## The suit-up bay: where you put your loadout on before you deploy. It
-## stands beside the launch pad, facing the way in (local +Z).
-const SUIT_AT := Vector3(-3.7, 0.0, 3.0)
-const SUIT_YAW := 0.0
+## stands in the deploy area beside the launch pad, its back to the front
+## wall, facing into the room (local +Z).
+const SUIT_AT := Vector3(3.8, 0.0, 7.2)
+const SUIT_YAW := PI
+## The deploy area: the front wall between these x, this deep, clear of the
+## trader and mastery consoles in the corner. The suit-up bay, the launch
+## pad and the teleporter's place stand in it, in that order.
+const DEPLOY_FROM_X := 1.9
+const DEPLOY_TO_X := 10.2
+const DEPLOY_DEPTH := 4.4
+## The storage wall: shelves along the front wall from this x, left of the
+## door, and the height of each kind's shelf.
+const STORAGE_FROM_X := -10.6
+const STORAGE_ROWS := {"supplies": 0.95, "chip_case": 1.9, "trophy": 2.85}
 ## How long the bay's arms take to fit the gear, there and back (view only).
 var suit_time := 0.9
 
@@ -623,7 +642,7 @@ func spot_transform(kind: String, index: int) -> Transform3D:
 			var cols := 6 if alcove else 4
 			var col := float(index % cols)
 			var row := float(index / cols)
-			return _spot(Vector3(back_x + 0.3, 2.55 - 1.15 * row, -0.75 * float(cols - 1) + 1.5 * col), PI / 2.0)
+			return _spot(Vector3(back_x + 0.3, 2.55 - 1.2 * row, -0.95 * float(cols - 1) + 1.9 * col), PI / 2.0)
 		"rack_sidearms":
 			# The armory's right-hand wall (going in): two rows of four.
 			var col := float(index % 4)
@@ -638,14 +657,12 @@ func spot_transform(kind: String, index: int) -> Transform3D:
 		"rig_stand":
 			# The back wall, right of the door to the range.
 			return _spot(Vector3(2.0 + 2.0 * i, 0.0, -wall_z + 1.0), 0.0)
-		"chip_case":
-			# The front wall, in the right-hand corner.
-			return _spot(Vector3(8.1 + 0.7 * i, 1.1, wall_z - 0.45), PI)
+		"chip_case", "supplies", "trophy":
+			# A shelf each on the storage wall, left of the door.
+			return _spot(Vector3(STORAGE_FROM_X + 0.95 * i, STORAGE_ROWS[kind], wall_z - 0.4), PI)
 		"bay":
 			# Side by side in the garage, parked nose-out toward the room.
 			return _spot(Vector3(wall_x + garage_size.x * 0.5, 0.0, -4.2 + 2.8 * i), -PI / 2.0)
-		"supplies":
-			return _spot(Vector3(2.0 + 1.0 * i, 1.1, wall_z - 0.3), PI)
 		"gunsmith":
 			# Four across and three up on the pegboard behind the bench.
 			var col := float(index % 4)
@@ -662,29 +679,30 @@ func _spot(at: Vector3, yaw: float) -> Transform3D:
 # --- The room ----------------------------------------------------------------
 
 func _build_room() -> void:
-	var floor_mat := Look.surface("concrete", {"tint": Color(0.5, 0.48, 0.46), "grime": 0.6})
-	var wall_mat := Look.surface("concrete", {"tint": Color(0.62, 0.6, 0.58), "grime": 0.3, "scale": 0.3})
 	var x := room_size.x
 	var y := room_size.y
 	var z := room_size.z
-	_box(Vector3(x, 0.5, z), Vector3(0, -0.25, 0), floor_mat)
-	_box(Vector3(x, 0.5, z), Vector3(0, y + 0.25, 0), wall_mat)
+	_floor(Vector2(x, z), Vector3.ZERO)
+	_ceiling(Vector2(x, z), Vector3.ZERO, y)
 	# The back wall has a door through to the firing range.
 	var door_w := range_door.x
 	var side_w := (x + 1.0 - door_w) * 0.5
 	for side: float in [-1.0, 1.0]:
-		_box(Vector3(side_w, y, 0.5), Vector3(side * (door_w + side_w) * 0.5, y * 0.5, -z * 0.5 - 0.25), wall_mat)
-	_box(Vector3(door_w, y - range_door.y, 0.5), Vector3(0, (y + range_door.y) * 0.5, -z * 0.5 - 0.25), wall_mat)
-	_box(Vector3(x + 1.0, y, 0.5), Vector3(0, y * 0.5, z * 0.5 + 0.25), wall_mat)
+		_wall(Vector3(side_w, y, 0.5), Vector3(side * (door_w + side_w) * 0.5, y * 0.5, -z * 0.5 - 0.25), Vector3.BACK)
+	_wall(Vector3(door_w, y - range_door.y, 0.5), Vector3(0, (y + range_door.y) * 0.5, -z * 0.5 - 0.25), Vector3.ZERO)
+	_wall(Vector3(x + 1.0, y, 0.5), Vector3(0, y * 0.5, z * 0.5 + 0.25), Vector3.FORWARD)
 	# The left wall stops either side of the way into the armory.
 	var piece := (z - armory_opening) * 0.5
 	for side: float in [-1.0, 1.0]:
-		_box(Vector3(0.5, y, piece), Vector3(-x * 0.5 - 0.25, y * 0.5, side * (armory_opening * 0.5 + piece * 0.5)), wall_mat)
+		_wall(Vector3(0.5, y, piece), Vector3(-x * 0.5 - 0.25, y * 0.5, side * (armory_opening * 0.5 + piece * 0.5)), Vector3.RIGHT)
 	# The right wall stops either side of the way into the garage.
 	var right_piece := (z - garage_opening) * 0.5
 	for side: float in [-1.0, 1.0]:
-		_box(Vector3(0.5, y, right_piece), Vector3(x * 0.5 + 0.25, y * 0.5, side * (garage_opening * 0.5 + right_piece * 0.5)), wall_mat)
-	Look.interior(self, Color(0.62, 0.58, 0.54), 1.3)
+		_wall(Vector3(0.5, y, right_piece), Vector3(x * 0.5 + 0.25, y * 0.5, side * (garage_opening * 0.5 + right_piece * 0.5)), Vector3.LEFT)
+	_build_deploy_area()
+	_build_storage_wall()
+	_build_gear_bays()
+	Look.interior(self, Color(0.56, 0.6, 0.66), 1.3)
 	if Look.enabled:
 		# Ceiling lamps for the floor, and a wash low on each wall for the gear.
 		for at: Vector3 in [Vector3(-6, 4.6, -3), Vector3(6, 4.6, -3), Vector3(-6, 4.6, 4),
@@ -703,24 +721,27 @@ func _build_room() -> void:
 ## lights, a sign over the way in and a lit sill across it. Its rack is the
 ## displays of the `BaseLayout.ARMORY` kinds; the bench stands in its middle.
 func _build_armory() -> void:
-	var floor_mat := Look.surface("concrete", {"tint": Color(0.46, 0.45, 0.44), "grime": 0.5})
-	var wall_mat := Look.surface("concrete", {"tint": Color(0.5, 0.5, 0.5), "grime": 0.3, "scale": 0.3})
 	var wall_x := room_size.x * 0.5
 	var depth := armory_size.x
 	var y := armory_size.y
 	var width := armory_size.z
 	var mid_x := -wall_x - depth * 0.5
-	_box(Vector3(depth, 0.5, width), Vector3(mid_x, -0.25, 0), floor_mat)
-	_box(Vector3(depth, 0.5, width), Vector3(mid_x, y + 0.25, 0), wall_mat)
-	_box(Vector3(0.5, y, width + 1.0), Vector3(-wall_x - depth - 0.25, y * 0.5, 0), wall_mat)
+	_floor(Vector2(depth, width), Vector3(mid_x, 0, 0))
+	_ceiling(Vector2(depth, width), Vector3(mid_x, 0, 0), y)
+	_wall(Vector3(0.5, y, width + 1.0), Vector3(-wall_x - depth - 0.25, y * 0.5, 0), Vector3.RIGHT)
 	for side: float in [-1.0, 1.0]:
-		_box(Vector3(depth, y, 0.5), Vector3(mid_x, y * 0.5, side * (width * 0.5 + 0.25)), wall_mat)
+		_wall(Vector3(depth, y, 0.5), Vector3(mid_x, y * 0.5, side * (width * 0.5 + 0.25)), Vector3(0, 0, -side))
 	var accent := Color(1.0, 0.62, 0.22)
 	# A dark band behind the rack on each wall, so the weapons read as one rack.
 	var band := Color(0.13, 0.13, 0.14)
-	add_child(_part(Vector3(0.04, 2.6, width - 0.6), Vector3(-wall_x - depth + 0.02, 2.0, 0), band))
+	add_child(_part(Vector3(0.04, 2.6, width - 0.6), Vector3(-wall_x - depth + 0.1, 2.0, 0), band))
 	for side: float in [-1.0, 1.0]:
-		add_child(_part(Vector3(depth - 0.8, 2.4, 0.04), Vector3(mid_x - 0.1, 1.9, side * (width * 0.5 - 0.02)), band))
+		add_child(_part(Vector3(depth - 0.8, 2.4, 0.04), Vector3(mid_x - 0.1, 1.9, side * (width * 0.5 - 0.1)), band))
+	# A light bar over each wall of the rack, so the weapons are lit from above.
+	var bar_glow := Color(1.0, 0.93, 0.8)
+	add_child(_part(Vector3(0.12, 0.05, width - 0.8), Vector3(-wall_x - depth + 0.35, 3.45, 0), bar_glow, true))
+	for side: float in [-1.0, 1.0]:
+		add_child(_part(Vector3(depth - 1.0, 0.05, 0.12), Vector3(mid_x - 0.1, 3.25, side * (width * 0.5 - 0.35)), bar_glow, true))
 	# A lit sill across the way in.
 	var sill := _part(Vector3(0.14, 0.04, armory_opening), Vector3(-wall_x, 0.02, 0), accent, true)
 	sill.name = "ArmorySill"
@@ -731,9 +752,10 @@ func _build_armory() -> void:
 	title.rotation.y = PI / 2.0
 	add_child(title)
 	if Look.enabled:
-		for at: Vector3 in [Vector3(mid_x, 4.6, 0), Vector3(-wall_x - depth + 1.5, 3.2, 0),
-				Vector3(mid_x, 3.0, -width * 0.5 + 1.2), Vector3(mid_x, 3.0, width * 0.5 - 1.2)]:
-			var light := Look.lamp(Color(1.0, 0.9, 0.78), 3.0, 10.0)
+		for at: Vector3 in [Vector3(mid_x, 4.6, 0), Vector3(-wall_x - depth + 1.4, 3.2, -3.0),
+				Vector3(-wall_x - depth + 1.4, 3.2, 3.0), Vector3(mid_x, 3.0, -width * 0.5 + 1.2),
+				Vector3(mid_x, 3.0, width * 0.5 - 1.2)]:
+			var light := Look.lamp(Color(1.0, 0.92, 0.82), 3.6, 9.0)
 			light.position = at
 			add_child(light)
 
@@ -741,18 +763,16 @@ func _build_armory() -> void:
 ## The garage: a bay off the right wall, like the armory, where every bike
 ## you own is parked nose-out on its own painted bay.
 func _build_garage() -> void:
-	var floor_mat := Look.surface("concrete", {"tint": Color(0.4, 0.4, 0.41), "grime": 0.8})
-	var wall_mat := Look.surface("concrete", {"tint": Color(0.5, 0.5, 0.5), "grime": 0.4, "scale": 0.3})
 	var wall_x := room_size.x * 0.5
 	var depth := garage_size.x
 	var y := garage_size.y
 	var width := garage_size.z
 	var mid_x := wall_x + depth * 0.5
-	_box(Vector3(depth, 0.5, width), Vector3(mid_x, -0.25, 0), floor_mat)
-	_box(Vector3(depth, 0.5, width), Vector3(mid_x, y + 0.25, 0), wall_mat)
-	_box(Vector3(0.5, y, width + 1.0), Vector3(wall_x + depth + 0.25, y * 0.5, 0), wall_mat)
+	_floor(Vector2(depth, width), Vector3(mid_x, 0, 0))
+	_ceiling(Vector2(depth, width), Vector3(mid_x, 0, 0), y)
+	_wall(Vector3(0.5, y, width + 1.0), Vector3(wall_x + depth + 0.25, y * 0.5, 0), Vector3.LEFT)
 	for side: float in [-1.0, 1.0]:
-		_box(Vector3(depth, y, 0.5), Vector3(mid_x, y * 0.5, side * (width * 0.5 + 0.25)), wall_mat)
+		_wall(Vector3(depth, y, 0.5), Vector3(mid_x, y * 0.5, side * (width * 0.5 + 0.25)), Vector3(0, 0, -side))
 	var hazard := Color(0.85, 0.65, 0.15)
 	# A roll-up door frame across the way in, raised, and hazard stripes.
 	var steel := Color(0.28, 0.29, 0.31)
@@ -781,27 +801,26 @@ func _build_garage() -> void:
 ## at set distances. A board over the lane keeps score. Nothing here is real:
 ## no damage is dealt and no mastery is earned (only use in a world pays).
 func _build_range() -> void:
-	var floor_mat := Look.surface("concrete", {"tint": Color(0.44, 0.43, 0.42), "grime": 0.5})
-	var wall_mat := Look.surface("concrete", {"tint": Color(0.46, 0.46, 0.47), "grime": 0.3, "scale": 0.3})
+	var wall_mat := _shell("wall")
 	var wall_z := room_size.z * 0.5
 	var width := range_size.x
 	var y := range_size.y
 	var length := range_size.z
 	var mid_z := -wall_z - length * 0.5
-	_box(Vector3(width, 0.5, length), Vector3(0, -0.25, mid_z), floor_mat)
-	_box(Vector3(width, 0.5, length), Vector3(0, y + 0.25, mid_z), wall_mat)
-	_box(Vector3(width + 1.0, y, 0.5), Vector3(0, y * 0.5, -wall_z - length - 0.25), wall_mat)
+	_floor(Vector2(width, length), Vector3(0, 0, mid_z))
+	_ceiling(Vector2(width, length), Vector3(0, 0, mid_z), y)
+	_wall(Vector3(width + 1.0, y, 0.5), Vector3(0, y * 0.5, -wall_z - length - 0.25), Vector3.BACK)
 	for side: float in [-1.0, 1.0]:
-		_box(Vector3(0.5, y, length), Vector3(side * (width * 0.5 + 0.25), y * 0.5, mid_z), wall_mat)
+		_wall(Vector3(0.5, y, length), Vector3(side * (width * 0.5 + 0.25), y * 0.5, mid_z), Vector3(-side, 0, 0))
 	# Above the room's own ceiling the range's end of the back wall goes on up.
-	_box(Vector3(width, y - room_size.y, 0.5), Vector3(0, (y + room_size.y) * 0.5, -wall_z - 0.25), wall_mat)
+	_wall(Vector3(width, y - room_size.y, 0.5), Vector3(0, (y + room_size.y) * 0.5, -wall_z - 0.25), Vector3.ZERO)
 	var accent := Color(1.0, 0.62, 0.22)
 	var line_z := -wall_z - firing_line
 	# The firing line: a counter either side of a gap to walk through, and a
 	# stripe on the floor.
 	var counter := (width - 1.4) * 0.5
 	for side: float in [-1.0, 1.0]:
-		_box(Vector3(counter, 1.0, 0.5), Vector3(side * (0.7 + counter * 0.5), 0.5, line_z), floor_mat)
+		_box(Vector3(counter, 1.0, 0.5), Vector3(side * (0.7 + counter * 0.5), 0.5, line_z), wall_mat)
 	var stripe := _part(Vector3(width, 0.03, 0.12), Vector3(0, 0.02, line_z - 0.4), accent, true)
 	stripe.name = "FiringLine"
 	add_child(stripe)
@@ -817,10 +836,22 @@ func _build_range() -> void:
 	title.name = "RangeSign"
 	title.position = Vector3(0, range_door.y + 0.5, -wall_z + 0.06)
 	add_child(title)
-	range_board = _label("", Color(0.9, 0.95, 1.0), 0.2)
+	# The scoreboard: a screen hung over the lane on two rods, facing the
+	# line, with the score written on it.
+	var board := Node3D.new()
+	board.name = "ScoreBoard"
+	board.position = Vector3(0, 4.2, line_z - 3.0)
+	add_child(board)
+	board.add_child(_part(Vector3(4.2, 1.15, 0.12), Vector3(0, 0, -0.08), Color(0.1, 0.11, 0.12)))
+	board.add_child(_part(Vector3(4.0, 0.98, 0.02), Vector3(0, 0, -0.01), Color(0.02, 0.05, 0.07), true))
+	board.add_child(_part(Vector3(4.2, 0.04, 0.03), Vector3(0, -0.6, 0.0), accent, true))
+	for x: float in [-1.6, 1.6]:
+		board.add_child(_part(Vector3(0.05, y - 4.8, 0.05), Vector3(x, (y - 4.2) * 0.5 + 0.3, -0.08), Color(0.3, 0.31, 0.33)))
+	range_board = _label("", Color(0.6, 0.95, 1.0), 0.17)
 	range_board.name = "RangeBoard"
-	range_board.position = Vector3(0, 4.2, line_z - 3.0)
-	add_child(range_board)
+	range_board.outline_size = 0
+	range_board.position = Vector3(0, 0, 0.02)
+	board.add_child(range_board)
 	_update_board()
 	_build_targets(line_z)
 	if Look.enabled:
@@ -896,6 +927,148 @@ func _box(size: Vector3, at: Vector3, material: Material) -> StaticBody3D:
 	return body
 
 
+## The base's shell is steel, not rock: dark plated floors, panelled walls
+## between ribs and a ceiling grid. One material for each part.
+func _shell(part: String) -> Material:
+	match part:
+		"floor":
+			return Look.surface("metal", {"tint": Color(0.62, 0.64, 0.68), "grime": 0.3, "scale": 0.5, "metal": 0.1, "rough_mult": 1.5})
+		"ceiling":
+			return Look.surface("metal", {"tint": Color(0.42, 0.44, 0.47), "grime": 0.2, "scale": 0.5, "metal": 0.1, "rough_mult": 1.4})
+		"seal":
+			return Look.surface("metal", {"tint": Color(0.3, 0.31, 0.34), "grime": 0.3, "scale": 0.4, "metal": 0.4})
+	return Look.surface("metal", {"tint": Color(0.66, 0.69, 0.73), "grime": 0.15, "scale": 0.4, "metal": 0.15, "rough_mult": 1.3})
+
+
+## A plated floor `size` across (x, z) centred on `at`, its top at y 0, with a
+## seam every `plate_size` metres.
+func _floor(size: Vector2, at: Vector3) -> void:
+	_box(Vector3(size.x, 0.5, size.y), at + Vector3(0, -0.25, 0), _shell("floor"))
+	var seam := Color(0.14, 0.15, 0.17)
+	var x := -size.x * 0.5 + plate_size
+	while x < size.x * 0.5 - 0.1:
+		add_child(_part(Vector3(0.035, 0.008, size.y), at + Vector3(x, 0.004, 0), seam))
+		x += plate_size
+	var z := -size.y * 0.5 + plate_size
+	while z < size.y * 0.5 - 0.1:
+		add_child(_part(Vector3(size.x, 0.008, 0.035), at + Vector3(0, 0.004, z), seam))
+		z += plate_size
+
+
+## A ceiling over a space `size` across centred on `at`, `height` up: a grid of
+## beams with a light panel in every other bay of it.
+func _ceiling(size: Vector2, at: Vector3, height: float) -> void:
+	_box(Vector3(size.x, 0.5, size.y), at + Vector3(0, height + 0.25, 0), _shell("ceiling"))
+	var beam := Color(0.2, 0.21, 0.23)
+	var glow := Color(0.92, 0.95, 1.0)
+	var cols := maxi(1, int(round(size.x / beam_spacing)))
+	var rows := maxi(1, int(round(size.y / beam_spacing)))
+	var step := Vector2(size.x / cols, size.y / rows)
+	for i in range(1, cols):
+		add_child(_part(Vector3(0.16, 0.2, size.y), at + Vector3(-size.x * 0.5 + step.x * i, height - 0.1, 0), beam))
+	for j in range(1, rows):
+		add_child(_part(Vector3(size.x, 0.2, 0.16), at + Vector3(0, height - 0.1, -size.y * 0.5 + step.y * j), beam))
+	for i in cols:
+		for j in rows:
+			if (i + j) % 2 == 0:
+				var centre := Vector3(-size.x * 0.5 + step.x * (i + 0.5), height - 0.02, -size.y * 0.5 + step.y * (j + 0.5))
+				add_child(_part(Vector3(minf(step.x * 0.5, 1.6), 0.03, minf(step.y * 0.3, 0.6)), at + centre, glow, true))
+
+
+## A wall: a box like `_box`, panelled on the face toward `inward` (a unit
+## axis, or zero for a wall that shows no face) with ribs every
+## `rib_spacing` metres, a kick plate at the floor and a rail at the top.
+func _wall(size: Vector3, at: Vector3, inward: Vector3) -> void:
+	_box(size, at, _shell("wall"))
+	if inward == Vector3.ZERO:
+		return
+	var along_x := absf(inward.z) > 0.5
+	var length := size.x if along_x else size.z
+	var depth := (size.z if along_x else size.x) * 0.5
+	var face := at + inward * depth
+	var bottom := at.y - size.y * 0.5
+	var rib := Color(0.3, 0.32, 0.35)
+	var kick := Color(0.18, 0.19, 0.21)
+	var span := func(long: float, high: float, thick: float) -> Vector3:
+		return Vector3(long, high, thick) if along_x else Vector3(thick, high, long)
+	add_child(_part(span.call(length, 0.25, 0.06), face + inward * 0.03 + Vector3(0, bottom + 0.125 - at.y, 0), kick))
+	add_child(_part(span.call(length, 0.12, 0.06), face + inward * 0.03 + Vector3(0, bottom + size.y - 0.3 - at.y, 0), rib))
+	var count := int(floor(length / rib_spacing))
+	if count < 1:
+		return
+	var gap := length / float(count + 1)
+	for i in range(1, count + 1):
+		var offset := -length * 0.5 + gap * i
+		var rib_at := face + inward * 0.04 + (Vector3(offset, 0, 0) if along_x else Vector3(0, 0, offset))
+		add_child(_part(span.call(0.16, size.y - 0.4, 0.08), rib_at + Vector3(0, 0.05, 0), rib))
+
+
+## The deploy area along the front wall, right of the door: the suit-up bay,
+## then the launch pad, inside one marked bay with its name on the wall. You
+## suit up, step across and deploy; the door out is beside it.
+func _build_deploy_area() -> void:
+	var wall_z := room_size.z * 0.5
+	var hazard := Color(1.0, 0.62, 0.22)
+	var from_x := DEPLOY_FROM_X
+	var to_x := DEPLOY_TO_X
+	var near_z := wall_z - DEPLOY_DEPTH
+	var mid_x := (from_x + to_x) * 0.5
+	var width := to_x - from_x
+	add_child(_part(Vector3(width, 0.012, DEPLOY_DEPTH), Vector3(mid_x, 0.006, wall_z - DEPLOY_DEPTH * 0.5), Color(0.2, 0.21, 0.23)))
+	add_child(_part(Vector3(width, 0.02, 0.1), Vector3(mid_x, 0.01, near_z), hazard, true))
+	for x: float in [from_x, to_x]:
+		add_child(_part(Vector3(0.1, 0.02, DEPLOY_DEPTH), Vector3(x, 0.01, wall_z - DEPLOY_DEPTH * 0.5), hazard, true))
+	# A panel on the wall behind with the area's name, lit along its top.
+	add_child(_part(Vector3(width - 0.4, 2.2, 0.06), Vector3(mid_x, 2.9, wall_z - 0.08), Color(0.16, 0.17, 0.19)))
+	add_child(_part(Vector3(width - 0.4, 0.06, 0.08), Vector3(mid_x, 4.04, wall_z - 0.1), hazard, true))
+	var title := _label("DEPLOY", hazard, 0.5)
+	title.name = "DeploySign"
+	title.position = Vector3(mid_x, 3.5, wall_z - 0.13)
+	title.rotation.y = PI
+	add_child(title)
+
+
+## The storage wall: shelving along the front wall left of the door, one
+## shelf each for the supplies, the ability chips and the trophies.
+func _build_storage_wall() -> void:
+	var wall_z := room_size.z * 0.5
+	var left := STORAGE_FROM_X - 0.6
+	var right := STORAGE_FROM_X + 7.6
+	var mid := (left + right) * 0.5
+	var width := right - left
+	var steel := Color(0.24, 0.25, 0.27)
+	var back := Color(0.16, 0.17, 0.19)
+	add_child(_part(Vector3(width, 3.2, 0.05), Vector3(mid, 1.9, wall_z - 0.08), back))
+	for kind: String in STORAGE_ROWS:
+		var y: float = STORAGE_ROWS[kind]
+		add_child(_part(Vector3(width, 0.05, 0.55), Vector3(mid, y - 0.33, wall_z - 0.36), steel))
+		add_child(_part(Vector3(width, 0.02, 0.02), Vector3(mid, y - 0.31, wall_z - 0.64), Color(0.45, 0.9, 1.0), true))
+	for x: float in [left, right]:
+		add_child(_part(Vector3(0.08, 3.3, 0.6), Vector3(x, 1.65, wall_z - 0.36), steel))
+	add_child(_part(Vector3(width, 0.06, 0.08), Vector3(mid, 3.52, wall_z - 0.12), Color(0.92, 0.95, 1.0), true))
+
+
+## Gear bays along the back wall, either side of the range door: a low plate
+## with lit edges that the armor and rig stands stand on, a panel behind
+## them and a light bar over it, so each reads as one bay.
+func _build_gear_bays() -> void:
+	var wall_z := room_size.z * 0.5
+	var accent := Color(0.45, 0.9, 1.0)
+	for bay: Vector2 in [Vector2(-11.6, -0.9), Vector2(1.1, 9.0)]:
+		var mid := (bay.x + bay.y) * 0.5
+		var width := bay.y - bay.x
+		var z := -wall_z + 1.0
+		add_child(_part(Vector3(width, 0.03, 1.9), Vector3(mid, 0.015, z), Color(0.2, 0.21, 0.23)))
+		add_child(_part(Vector3(width, 0.035, 0.06), Vector3(mid, 0.02, z + 0.95), accent, true))
+		add_child(_part(Vector3(width, 3.0, 0.05), Vector3(mid, 1.7, -wall_z + 0.08), Color(0.16, 0.17, 0.19)))
+		add_child(_part(Vector3(width, 0.06, 0.1), Vector3(mid, 3.24, -wall_z + 0.12), Color(0.92, 0.95, 1.0), true))
+		if Look.enabled:
+			for at_x: float in [bay.x + width * 0.25, bay.x + width * 0.75]:
+				var light := Look.lamp(Color(0.92, 0.95, 1.0), 2.2, 5.0)
+				light.position = Vector3(at_x, 3.0, z + 0.4)
+				add_child(light)
+
+
 func _build_door() -> void:
 	door = Door.new()
 	door.name = "Door"
@@ -905,9 +1078,20 @@ func _build_door() -> void:
 	door.rotation.y = PI
 	var size := Vector3(2.2, 2.6, 0.3)
 	_add_collision(door, size, Vector3.ZERO)
-	door.add_child(_part(size, Vector3.ZERO, Color(0.9, 0.5, 0.2), true))
-	var sign_label := _label("EXIT", Color(1.0, 0.62, 0.22), 0.3)
-	sign_label.position = Vector3(0, 1.7, 0.2)
+	# A pair of steel leaves in a heavy frame, with a lit seam between them
+	# and a lit header: a door, not a glowing slab.
+	var steel := Color(0.3, 0.32, 0.35)
+	var frame := Color(0.16, 0.17, 0.19)
+	var accent := Color(1.0, 0.62, 0.22)
+	door.add_child(_part(Vector3(2.7, 0.3, 0.36), Vector3(0, 1.45, 0), frame))
+	for side: float in [-1.0, 1.0]:
+		door.add_child(_part(Vector3(0.25, 2.9, 0.36), Vector3(side * 1.22, 0.15, 0), frame))
+		door.add_child(_part(Vector3(1.04, 2.56, 0.12), Vector3(side * 0.54, 0.0, 0), steel))
+		door.add_child(_part(Vector3(0.6, 0.08, 0.02), Vector3(side * 0.54, 0.2, 0.07), frame))
+	door.add_child(_part(Vector3(0.04, 2.56, 0.13), Vector3.ZERO, accent, true))
+	door.add_child(_part(Vector3(2.2, 0.06, 0.05), Vector3(0, 1.36, 0.17), accent, true))
+	var sign_label := _label("EXIT", accent, 0.3)
+	sign_label.position = Vector3(0, 1.85, 0.06)
 	door.add_child(sign_label)
 	add_child(door)
 
@@ -991,7 +1175,7 @@ func _build_upgrades() -> void:
 func _build_gates() -> void:
 	var wall_x := room_size.x * 0.5
 	var wall_z := room_size.z * 0.5
-	var seal_mat := Look.surface("concrete", {"tint": Color(0.36, 0.37, 0.4), "grime": 0.4, "scale": 0.3})
+	var seal_mat := _shell("seal")
 	var hazard := Color(1.0, 0.62, 0.22)
 	var dark := Color(0.15, 0.15, 0.17)
 	# The armory: a nook closed by a sealed wall until the alcove is bought.
@@ -1028,13 +1212,13 @@ func _build_gates() -> void:
 	if not owns("gear_hall"):
 		_add_bulkhead("gear_hall", _spot(Vector3(-6.0, 0, -wall_z + 0.7), 0.0), "post")
 	if not owns("trophy_hall"):
-		_add_bulkhead("trophy_hall", _spot(Vector3(-6.6, 0, wall_z - 0.7), PI), "post")
+		_add_bulkhead("trophy_hall", _spot(Vector3(-6.6, 0, wall_z - 1.1), PI), "post")
 	if not owns("lounge"):
 		_add_bulkhead("lounge", _spot(Vector3(9.6, 0, -wall_z + 0.6), 0.0), "post")
 	if not owns("ops_consoles"):
 		_add_bulkhead("ops_consoles", _spot(STATIONS["mastery"]["at"], STATIONS["mastery"]["yaw"]), "post")
 	if not owns("teleporter"):
-		_add_bulkhead("teleporter", _spot(Vector3(4.9, 0, 2.6), -PI / 2.0), "hatch")
+		_add_bulkhead("teleporter", _spot(Vector3(9.3, 0, 8.1), PI), "hatch")
 	if not owns("finish"):
 		_add_bulkhead("finish", _spot(Vector3(-1.75, 0, wall_z - 0.55), PI), "post")
 	else:
@@ -1280,9 +1464,15 @@ func _build_signs() -> void:
 		var last := spot_transform(kind, room - 1)
 		var mid := first.origin.lerp(last.origin, 0.5)
 		var top := maxf(first.origin.y, last.origin.y)
-		# Stands stand on the floor; everything else hangs on a wall.
-		var height := 2.6 if top < 0.1 else top + 0.95
-		sign_label.position = Vector3(mid.x, height, mid.z) + first.basis.z * 0.05
+		if STORAGE_ROWS.has(kind):
+			# On the lip of its shelf, under what is on it.
+			sign_label.pixel_size *= 0.7
+			sign_label.position = Vector3(mid.x, top - 0.43, mid.z) + first.basis.z * 0.27
+		elif top < 0.1:
+			# Stands stand in a bay: the sign is on the panel behind them.
+			sign_label.position = Vector3(mid.x, 2.75, mid.z) - first.basis.z * 0.86
+		else:
+			sign_label.position = Vector3(mid.x, top + 0.95, mid.z) + first.basis.z * 0.05
 		sign_label.rotation.y = first.basis.get_euler().y
 		_near_only(sign_label, 14.0)
 		_display_root.add_child(sign_label)
@@ -1328,16 +1518,15 @@ func _fill(display: Display) -> void:
 			gun.free()
 			# Side-on to the room, hanging on two pegs.
 			visual.rotation.y = PI / 2.0
-			visual.scale = Vector3.ONE * weapon_scale
+			var small := display.kind == "rack_sidearms"
+			visual.scale = Vector3.ONE * (weapon_scale if small else rack_gun_scale)
 			model.add_child(visual)
 			model.position.z = 0.15
-			var small := display.kind == "rack_sidearms"
 			for x: float in ([-0.15, 0.15] if small else [-0.3, 0.3]):
 				display.add_child(_part(Vector3(0.05, 0.05, 0.3), Vector3(x, -0.18, 0.05), Color(0.2, 0.2, 0.22)))
-			box = Vector3(0.8, 0.7, 0.6) if small else Vector3(1.3, 0.9, 0.6)
-			if small:
-				plate_at = Vector3(0, -0.45, 0.12)
-			_build_mount(display, Vector2(1.0, 0.62) if small else Vector2(1.4, 0.82), Vector3(0, 0, 0.0), color)
+			box = Vector3(0.8, 0.7, 0.6) if small else Vector3(1.8, 1.0, 0.6)
+			plate_at = Vector3(0, -0.45, 0.12) if small else Vector3(0, -0.6, 0.12)
+			_build_mount(display, Vector2(1.0, 0.62) if small else Vector2(1.82, 1.05), Vector3(0, 0, 0.0), color)
 			if display.equipped and display.kind == "rack_guns" and Loadout.is_primary(id):
 				# The primary you deploy with is on the bench, not on the wall:
 				# its pegs stand empty.
@@ -1386,8 +1575,8 @@ func _fill(display: Display) -> void:
 			var chip := _part(Vector3(0.26, 0.26, 0.04), Vector3(0, 0, 0), color, true)
 			chip.rotation.z = PI / 4.0
 			model.add_child(chip)
-			box = Vector3(0.7, 0.9, 0.7)
-			plate_at = Vector3(0, 0.5, 0)
+			box = Vector3(0.7, 0.8, 0.6)
+			plate_at = Vector3(0, 0.42, 0)
 		"bay":
 			var vehicle: Node3D = VehicleScript.new()
 			vehicle.setup(id)
@@ -1403,14 +1592,14 @@ func _fill(display: Display) -> void:
 			box_at = Vector3(0, 0.7, 0)
 			plate_at = Vector3(0, 1.75, 0)
 		_:
-			model.add_child(_part(Vector3(1.0, 0.06, 0.5), Vector3(0, -0.3, 0), Color(0.2, 0.2, 0.22)))
+			model.add_child(_part(Vector3(0.8, 0.04, 0.45), Vector3(0, -0.29, 0), Color(0.2, 0.2, 0.22)))
 			var glow: bool = ItemDB.item_rarity(id) >= ItemDB.Rarity.EPIC
 			# A taller stack the more copies you hold.
 			var stack := mini(display.count, 4)
 			for n in stack:
 				model.add_child(_part(Vector3(0.36, 0.16, 0.3), Vector3(0, -0.19 + 0.17 * n, 0), color, glow))
-			box = Vector3(1.0, 1.0, 0.7)
-			plate_at = Vector3(0, 0.62, 0)
+			box = Vector3(0.85, 0.8, 0.6)
+			plate_at = Vector3(0, 0.45, 0)
 	display.add_child(model)
 	_add_collision(display, box, box_at)
 	var text := ItemDB.item_name(id)
