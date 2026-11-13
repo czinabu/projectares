@@ -18,6 +18,8 @@ const StashRules := preload("res://core/account/stash_rules.gd")
 const Economy := preload("res://core/economy/economy.gd")
 ## The same home base upgrade rules the server's StashService uses.
 const BaseUpgrades := preload("res://core/base/base_upgrades.gd")
+## The same blueprint and crafting rules the server's StashService uses.
+const Crafting := preload("res://core/progression/crafting.gd")
 const Human := preload("res://core/visual/human.gd")
 ## Given once to every profile so there is gear to try loadouts with.
 const WELCOME_CRATE: Array[String] = ["rifle_carbine", "frame_trooper", "medkit", "medkit"]
@@ -65,6 +67,8 @@ var arena_losses := 0
 ## The home base upgrades owned (ids from `BaseUpgrades`). Never lost. A save
 ## from before upgrades existed has none: the starter bunker.
 var base_upgrades: Array[String] = []
+## The blueprints known (blueprint item ids, see `Crafting`). Never lost.
+var blueprints: Array[String] = []
 
 
 func _ready() -> void:
@@ -84,6 +88,7 @@ func apply_dev_mode() -> void:
 	if save_path == DEV_SAVE_PATH:
 		scrip = DevMode.top_up(stash)
 		DevMode.top_up_base(base_upgrades)
+		DevMode.top_up_blueprints(blueprints)
 		save()
 
 
@@ -125,6 +130,7 @@ func reset() -> void:
 	arena_wins = 0
 	arena_losses = 0
 	base_upgrades.clear()
+	blueprints.clear()
 
 
 func record_arena(won: bool) -> void:
@@ -150,9 +156,11 @@ func grant_gear_crates() -> void:
 			add_to_stash(GEAR_CRATES[crate])
 
 
-## Adds items to the stash. Starter kit items are free and never stashed.
+## Adds items to the stash. Starter kit items are free and never stashed,
+## and a blueprint not known yet is learned instead of stored.
 func add_to_stash(ids: Array) -> void:
 	StashRules.add_items(stash, ids)
+	Crafting.learn(stash, blueprints)
 	save()
 
 
@@ -207,6 +215,13 @@ func sell_loot() -> Dictionary:
 ## and its price, and takes the scrip. Returns {"ok"} or {"ok": false, "error"}.
 func buy_upgrade(upgrade_id: String) -> Dictionary:
 	return _bank(BaseUpgrades.buy(base_upgrades, scrip, upgrade_id))
+
+
+## Crafts one item (an id from `Crafting.RECIPES`) at the gunsmith bench:
+## checks the blueprint, takes the parts and the fee, and adds what was made
+## to the stash. Returns {"ok"} or {"ok": false, "error"}.
+func craft(item_id: String) -> Dictionary:
+	return _bank(Crafting.craft(stash, blueprints, scrip, item_id))
 
 
 ## Adds `delta` scrip (a cost when negative) for anything outside the
@@ -292,6 +307,7 @@ func save() -> void:
 		"arena_wins": arena_wins,
 		"arena_losses": arena_losses,
 		"base_upgrades": base_upgrades,
+		"blueprints": blueprints,
 	}, "\t"))
 
 
@@ -334,4 +350,6 @@ func load_profile() -> void:
 	arena_wins = maxi(0, int(data.get("arena_wins", 0)))
 	arena_losses = maxi(0, int(data.get("arena_losses", 0)))
 	base_upgrades = BaseUpgrades.clean(data.get("base_upgrades"))
+	blueprints = Crafting.clean(data.get("blueprints"))
+	Crafting.learn(stash, blueprints)
 	validate_loadout()

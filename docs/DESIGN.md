@@ -138,7 +138,8 @@ has. Prices are placeholders until a playtest measures scrip per life.
 | Headquarters | Finish | 1,500 | Any 4 upgrades | Lit trim and light columns |
 
 Crafting tiers are not gated by the bench upgrades: any bench crafts Mk2 and
-Mk3 for a small scrip fee per craft (section 10).
+Mk3 for a small scrip fee per craft (section 10). The crafting console, the
+fabricator, stands behind the bench's pegboard and moves with the bench.
 
 The bigger upgrades, which turn the base from a display room into a
 headquarters, in the order they are built:
@@ -462,8 +463,8 @@ faster cooling), so it flies further. What never changes:
 - **Higher tiers follow the progression model (section 10).** Every rig
   drops at Mk1; Mk2 and Mk3 are crafted from the rig's blueprint and upgrade
   data, and once crafted they are ordinary gear, at stake in the PvP world.
-  Mastery never hands out a tier. Until crafting exists, Mk2 and Mk3 are
-  in the game but nothing drops them.
+  Mastery never hands out a tier. Nothing drops a Mk2 or Mk3: the
+  fabricator on the gunsmith bench is the only way to one.
 
 Measured from the street (`feel_bench.tscn`): the Mk1 jetpack reaches its
 ceiling in about 7 s, Mk2 13 s, Mk3 19 s; boots kick to about 25 m, 46 m and
@@ -800,19 +801,57 @@ TBD.
 
 **Crafting** happens at the gunsmith bench in your base (any bench, whatever
 its base upgrade): blueprint, plus upgrade data, plus a small scrip fee per
-craft (amount TBD). A crafted Mk2 or Mk3 is
+craft. A crafted Mk2 or Mk3 is
 ordinary gear: it goes in the stash and is at stake in the PvP world like
 anything else. The blueprint stays, so you can craft it again.
 
+**What is built (first version).** Rules in `core/progression/crafting.gd`,
+shared by solo and online play like the money rules.
+
+- A blueprint is an item you carry out. The moment it reaches your stash
+  (banked at a depot, or carried out alive) it is learned: it leaves the
+  stash for a list of known blueprints kept on the account, which nothing
+  takes away. A second copy of one you know stays as loot to sell.
+- Upgrade data is an item too. It is at stake while carried and sits in the
+  stash once home. No shop buys it, so it cannot be sold by mistake.
+- Each craft also takes parts: the materials already found as loot (scrap
+  metal, circuit boards, power cells, alloy ingots, reactor cores). Loot is
+  now worth keeping as well as selling.
+- You craft at the fabricator, a console behind the bench's pegboard. Its
+  screen lists every recipe with what it costs against what you hold;
+  recipes whose blueprint you have not found are listed dim, so you know
+  what is out there.
+- Where they come from today, in Ashfront only: rig and gun blueprints and
+  upgrade data in rooftop caches; any blueprint, vehicles included, from a
+  warlord (1 in 2) or a supply pod (about 1 in 3), each with upgrade data
+  (2 and 1). Players carry what they found, so killing one pays it too.
+  Contracts are the next source.
+
+| Recipe | Blueprint | Upgrade data | Parts | Scrip |
+| --- | --- | --- | --- | --- |
+| Mk2 jetpack, boots or wings | That rig's | 3 | 2 power cells, 1 alloy ingot | 400 |
+| Mk3 jetpack, boots or wings | That rig's (the same one) | 6 | 2 alloy ingots, 1 reactor core | 900 |
+| Longshot DMR | Its own | none | 1 alloy ingot, 2 circuit boards | 300 |
+| Breacher Shotgun | Its own | none | 1 alloy ingot, 3 scrap metal | 300 |
+| Bulwark Mech | Its own | none | 1 reactor core, 3 alloy ingots, 2 power cells | 2,000 |
+| Kestrel Jet | Its own | none | 1 reactor core, 2 alloy ingots, 4 circuit boards | 2,000 |
+
+Every number in the table and every drop chance is a placeholder until the
+playtest. Not built yet: the mastery gate (rigs have no mastery track to
+gate on yet), Mk2 and Mk3 weapons (what a weapon gains per Mk is still
+open, so the two guns are crafted at base level), Mk2 helmets, salvage and
+insurance.
+
 **Rig tiers (Caleb's call, moved to crafting).** The rig tiers in section 5
 (Mk1 to Mk3, each with a higher ceiling and cooler running, never faster)
-come from blueprints here. Only Mk1 rigs (and, once they exist, Mk1 rig
-blueprints) drop as loot; Mk2 and Mk3 are crafted. Mk2 helmets follow the
-same rule. Until crafting is built, nothing hands out a rig or helmet above
-Mk1.
+come from blueprints here. Only Mk1 rigs and rig blueprints drop as loot; Mk2 and
+Mk3 are crafted. Mk2 helmets follow the same rule, but have no blueprints
+yet, so nothing hands out a helmet above Mk1.
 
 **Vehicle blueprints** still unlock new vehicles, such as the mech and the
-jet (the supply meteor carries them). Tech cores craft high-tier gadgets.
+jet (the supply meteor carries them; until it exists, warlords and supply
+pods do). The mech and the jet are built at the fabricator and are then
+ordinary vehicles in the garage. Tech cores craft high-tier gadgets.
 
 **Prestige gear from hard feats.** Some vehicles and rigs (or rig variants)
 only come from the hardest or longest jobs: a rare contract chain, a world
@@ -927,7 +966,8 @@ shown off in the hub.
    model (section 10) lands in steps: contracts and bounties first (mostly
    counters on events the game already tracks), then Mk1 blueprints and
    upgrade data as drops, then crafting at the gunsmith bench, which is when
-   rig tiers move from loot to crafting.
+   rig tiers move from loot to crafting. A first version of blueprints,
+   upgrade data and crafting is built (section 10).
 4. **The PvE world:** quests, dungeons and bosses.
 5. **More worlds** as plug-ins.
 
@@ -947,7 +987,9 @@ Caleb's calls, still open:
     height and range, never speed; should weapons gain any damage at all, or
     only handling, range and magazine?
   - How much upgrade data each step costs, and the materials or scrip on
-    top.
+    top. (Placeholders are in: 3 and 6 data, 400 and 900 scrip, see the
+    table in section 10.)
+  - How often blueprints and upgrade data drop, and from what.
   - The mastery level that gates Mk2, and whether Mk3 has a higher gate.
   - Insurance: its cost, cooldown, and which items can be insured.
   - How much salvage a lost crafted item pays back.

@@ -85,6 +85,12 @@ func _ready() -> void:
 		get_tree().quit()
 		return
 
+	# `-- <output_dir> --crafting-only` shoots the fabricator on the gunsmith
+	# bench: in the starter bunker, in the armory, and its screen in use.
+	if "--crafting-only" in args:
+		await _crafting_shots(out_dir)
+		get_tree().quit()
+		return
 	# `-- <output_dir> --holster-only [melee item id]` shoots holstered
 	# weapons on the body, with that melee weapon in place of the kit's.
 	if "--holster-only" in args:
@@ -970,6 +976,47 @@ func _attachment_shots(out_dir: String) -> void:
 		await _shot(out_dir.path_join("bench_%s.png" % primary))
 		base.queue_free()
 		await _settle(2)
+
+
+## The fabricator behind the bench's pegboard, and the craft screen on it.
+func _crafting_shots(out_dir: String) -> void:
+	for full: bool in [false, true]:
+		var base := HomeBase.new()
+		base.show_gear(["rifle_carbine", "optic_reflex", "jetpack_mk2", "mech_bulwark"], {"primary": "rifle_carbine"},
+				BaseUpgrades.full() if full else [])
+		add_child(base)
+		var camera := Camera3D.new()
+		camera.fov = 55.0
+		base.add_child(camera)
+		camera.make_current()
+		base.player.global_position = Vector3(0, 0.1, 6)
+		await _settle(20)
+		var bench := base.bench_transform()
+		camera.look_at_from_position(bench * Vector3(1.6, 1.9, -3.4), bench * Vector3(0, 1.3, -0.4))
+		await _settle(4)
+		await _shot(out_dir.path_join("fabricator_%s.png" % ("armory" if full else "bunker")))
+		camera.look_at_from_position(bench * Vector3(-3.2, 2.2, 3.4), bench * Vector3(0, 1.3, -0.2))
+		await _settle(4)
+		await _shot(out_dir.path_join("fabricator_%s_front.png" % ("armory" if full else "bunker")))
+		base.queue_free()
+		await _settle(2)
+	# The screen in use, as the player sees it, with one recipe ready.
+	Profile.persist = false
+	Profile.reset()
+	Profile.welcome_granted = true
+	Profile.scrip = 1000
+	Profile.add_to_stash(["bp_jetpack", "bp_dmr_longshot", "upgrade_data", "upgrade_data", "upgrade_data",
+			"power_cell", "power_cell", "alloy_ingot", "circuit_board"])
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await _settle(30)
+	main.open_station(HomeBase.CRAFT_ID)
+	await _settle(60)
+	await _shot(out_dir.path_join("fabricator_screen.png"))
+	main.queue_free()
+	await _settle(2)
+
+
 ## Aiming down each optic in first person, in a raid, and with iron sights.
 func _aim_shots(out_dir: String) -> void:
 	for kit: Array in [["rifle_carbine", "optic_scope", "muzzle_suppressor"], ["smg_stinger", "optic_reflex"],

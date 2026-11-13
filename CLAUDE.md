@@ -633,7 +633,8 @@ without Caleb, and update the gap list when a PR closes a row.
   `Main.DEV_ACCOUNTS`, apart from real ones. No cheats online. Every line
   it touches is marked "DEV MODE". Never build a feature on it; to remove it,
   delete `core/dev/` and every "DEV MODE" line or block, plus
-  `_test_dev_mode` in the tests.
+  `_test_dev_mode` in the tests. Dev mode also knows every blueprint
+  (`DevMode.top_up_blueprints`).
 - Safe zones: a world with `WorldDef.safe_zone` (the plaza, `worlds/plaza`)
   is a social space run by the same `Raid` and `NetSession`. `Combat.deal`
   refuses every hit there, `Actor.weapons_locked` stops attacks, abilities
@@ -749,6 +750,24 @@ without Caleb, and update the gap list when a PR closes a row.
   face, sized to read like a card at arm's length (`fp_card_reads_at`). Check it by eye with
   `visual_check.tscn -- <dir> --watch-only` (`--base-watch-only` for just
   the base).
+- Blueprints and crafting (`core/progression/crafting.gd`, static rules like
+  `Economy`, DESIGN.md section 10). A blueprint is an item tagged
+  "blueprint": loot while carried, learned when it reaches a stash
+  (`Crafting.learn` moves it to the account's known list:
+  `Profile.blueprints` solo, the account's online, in the snapshot), and
+  never lost after that; a spare copy stays in the stash as a trade good.
+  Anything that hands an account items must go through
+  `Profile.add_to_stash` or `StashService.Account.add_items`, never append
+  to a stash, or a blueprint is stored instead of learned. A recipe
+  (`Crafting.RECIPES`) makes one item from a known blueprint for scrip,
+  parts and, for a higher Mk, the item `upgrade_data`; what it makes is
+  ordinary gear. Crafting is done at the fabricator on the gunsmith bench
+  (`HomeBase.CraftConsole`, the hub's "craft" section, `craft_panel.gd`):
+  `Profile.craft` solo, `NetSession.craft` online, where only
+  `StashService.craft` decides. Blueprints and upgrade data come from the
+  PvP world only (`WorldDef.roll_crafting_loot` and its chances, 0 by
+  default; a world's own loot tables). A new craftable is a recipe row and,
+  if it needs one, a `_blueprint` item. Costs are placeholders.
 - Money (`core/economy/`): the rules live once, in `economy.gd` (static, like
   `StashRules`), shared by `Profile` and `StashService`. Online, `scrip`
   lives on the server's account and only changes there: through
