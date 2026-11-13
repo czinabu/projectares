@@ -206,6 +206,10 @@ static func weapon_entries(p: Actor) -> Array[Dictionary]:
 	var entries: Array[Dictionary] = []
 	for index in p.slot_order():
 		entries.append({"id": p.weapons[index].item_id, "index": index})
+	# The heavy chamber's weapon: drawn only from here, never by a key.
+	var heavy := Loadout.power_index(p)
+	if heavy >= 0:
+		entries.append({"id": p.weapons[heavy].item_id, "index": heavy})
 	for id in p.inventory.items:
 		if Loadout.summonable(id):
 			entries.append({"id": id, "index": -1})
@@ -348,6 +352,35 @@ static func weapon_slot(p_raid: Raid, p: Actor, picked := 0) -> Dictionary:
 				entries.size(), at)
 	return _slot("weapon", value, "%s · pack · %.1f s" % [name, Loadout.summon_time(entry.id)], hints + ["click"],
 			-1.0, false, false, entries.size(), at)
+
+
+## The weapon icon at home: the weapons worn, then every other one owned,
+## which a click equips (`HomeBase.watch_weapons`).
+static func base_weapon_slot(p: Actor, entries: Array[Dictionary], picked := 0) -> Dictionary:
+	if entries.is_empty():
+		return _slot("weapon", "", "No weapon", [], -1.0, true, false)
+	var at := clampi(picked, 0, entries.size() - 1)
+	var entry := entries[at]
+	var hints: Array = ["wheel"] if entries.size() > 1 else []
+	var value := "%d/%d" % [at + 1, entries.size()]
+	var name := ItemDB.item_name(entry.id)
+	if int(entry.index) >= 0 and int(entry.index) == p.active_weapon_index:
+		return _slot("weapon", value, "%s · in hand" % name, hints, -1.0, false, false, entries.size(), at)
+	if int(entry.index) >= 0:
+		return _slot("weapon", value, name, hints + ["click"], -1.0, false, false, entries.size(), at)
+	return _slot("weapon", value, "%s · equip" % name, hints + ["click"], -1.0, false, false, entries.size(), at)
+
+
+## The vehicle icon at home: every vehicle owned, one to throw, or packing
+## the one looked at.
+static func base_vehicle_slot(toys: Array[String], picked := 0, packing := false) -> Dictionary:
+	if packing:
+		return _slot("vehicle", "+", "Pack it onto your watch", ["click"], -1.0, false, true)
+	if toys.is_empty():
+		return _slot("vehicle", "", "No vehicle", [], -1.0, true, false)
+	var at := clampi(picked, 0, toys.size() - 1)
+	return _slot("vehicle", "%d" % toys.size(), ItemDB.item_name(toys[at]),
+			(["wheel"] if toys.size() > 1 else []) + ["click"], -1.0, false, false, toys.size(), at)
 
 
 ## The watch card at home (`HomeBase`), where there is no raid: the same

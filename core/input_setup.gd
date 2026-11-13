@@ -21,7 +21,6 @@ const KEY_ACTIONS := {
 	"weapon_1": KEY_1,
 	"weapon_2": KEY_2,
 	"weapon_3": KEY_3,
-	"weapon_4": KEY_4,
 	"holster": KEY_Z,
 	"scoreboard": KEY_Q,
 	"sign_out": KEY_L,

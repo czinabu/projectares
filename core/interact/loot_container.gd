@@ -3,7 +3,8 @@ extends Interactable
 ## A world cache, or the bag a dead actor drops (`is_bag`).
 ##
 ## A container labelled `RACK_LABEL` is a power rack (`PowerArmory`): using
-## it puts its power weapon in your power slot instead of your pack.
+## it scans its heavy (power) weapon into your watch's heavy chamber instead
+## of your pack, to be summoned from the watch.
 
 const RACK_LABEL := "Power rack"
 
@@ -108,12 +109,12 @@ func _rack_prompt(actor: Actor) -> String:
 		return ""
 	var index := Loadout.power_index(actor) if actor != null else -1
 	if index < 0:
-		return "[F] Take %s" % ItemDB.item_name(offer)
-	return "[F] Take %s, leave your %s" % [ItemDB.item_name(offer), actor.weapons[index].display_name]
+		return "[F] Scan %s into your watch" % ItemDB.item_name(offer)
+	return "[F] Scan %s into your watch, leave your %s" % [ItemDB.item_name(offer), actor.weapons[index].display_name]
 
 
-## Puts the rack's power weapon in the actor's power slot (key 4) and in
-## hand. A power weapon they already carried goes on the rack with the
+## Scans the rack's power weapon into the actor's heavy chamber on the
+## watch, to be summoned from there. A power weapon they already carried goes on the rack with the
 ## shots it had. Returns false if the rack had nothing to hand over.
 func _rack_swap(actor: Actor) -> bool:
 	var offer := rack_offer()
@@ -126,13 +127,13 @@ func _rack_swap(actor: Actor) -> bool:
 		rounds = stack.pop_back()
 		if stack.is_empty():
 			ammo.erase(offer)
-	var given := Loadout.set_power(actor, offer, rounds[0], rounds[1])
+	var given := Loadout.set_power(actor, offer, rounds[0], rounds[1], false)
 	if given.id != "" and not given.spent:
 		items.append(given.id)
 		if not ammo.has(given.id):
 			ammo[given.id] = []
 		ammo[given.id].append([given.mag, given.reserve])
-	actor.notice.emit("Took %s" % ItemDB.item_name(offer))
+	actor.notice.emit("Scanned %s into your watch" % ItemDB.item_name(offer))
 	if actor.is_player:
 		Sfx.play("loot")
 	changed.emit()

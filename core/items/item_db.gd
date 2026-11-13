@@ -78,7 +78,7 @@ func _ready() -> void:
 			"Slow, heavy revolver. Headshots hit twice as hard.")
 
 	# Power weapons: found, never bought or brought. They lie on racks in
-	# the world (`PowerArmory`) and go in their own slot (key 4) when taken.
+	# the world (`PowerArmory`) and are scanned into the watch when taken.
 	# A few shots each; one that runs dry is thrown away. Tagged "power" so
 	# they never reach a stash or a bag.
 	register("power_rail_lance", "Rail Lance", Rarity.EPIC, 0, ["weapon", "firearm", "power", "railgun"],

@@ -860,6 +860,12 @@ func _draw_weapon(index: int) -> void:
 		old.on_holster()
 		last_drawn = active_weapon_index
 	active_weapon_index = index
+	# A heavy weapon drawn out of the watch's chamber materializes first, the
+	# same on every machine, since it follows the switch in the command.
+	var heavy := get_active_weapon()
+	if heavy != null and heavy != old and heavy.item_id != "" and ItemDB.has_tag(heavy.item_id, "power"):
+		materialize_time = Loadout.summon_time(heavy.item_id)
+		materialize_left = materialize_time
 	_refresh_weapon_visuals()
 
 
@@ -888,11 +894,13 @@ func get_aim_dir() -> Vector3:
 
 
 ## Weapon indices in key order: primary (1), sidearm (2), melee (3), then any
-## power or special weapon (4). The number keys and the mouse wheel both use
-## this, so the order never depends on how the loadout was equipped.
+## special weapon. The number keys and the mouse wheel both use this, so the
+## order never depends on how the loadout was equipped. A heavy (power)
+## weapon is not in it: it waits in the watch's heavy chamber and is drawn
+## only from the watch (Caleb's call, DESIGN.md section 6).
 func slot_order() -> Array[int]:
 	var order: Array[int] = []
-	for rank in 4:
+	for rank in 3:
 		for i in weapons.size():
 			if _slot_rank(weapons[i]) == rank:
 				order.append(i)
@@ -916,7 +924,7 @@ func cycle_weapon_index(step: int) -> int:
 
 
 static func _slot_rank(w: Weapon) -> int:
-	# Power weapons are guns too, but they have their own key (4).
+	# Power weapons are guns too, but they wait in the watch's chamber.
 	if w.item_id != "" and ItemDB.has_tag(w.item_id, "power"):
 		return 3
 	if w is Gun:
