@@ -79,6 +79,7 @@ func _ready() -> void:
 	visor = VisorHud.new()
 	visor.name = "Visor"
 	visor.setup(raid, controller)
+	visor.hud = self
 	root.add_child(visor)
 
 	_hit_marker = HitMarker.new()
