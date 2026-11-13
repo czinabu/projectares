@@ -1,5 +1,5 @@
 extends RefCounted
-## The money rules: what credits are earned for, what things cost, and what a
+## The money rules: what scrip is earned for, what things cost, and what a
 ## shop may sell. Shared by the local `Profile` and the server's
 ## `StashService`, so solo and online play follow the same rules. Pure
 ## functions on plain data, like `StashRules`: no files, no network.
@@ -7,12 +7,12 @@ extends RefCounted
 ## Load with `const Economy := preload("res://core/economy/economy.gd")`.
 ##
 ## How the economy is meant to work:
-##   - Loot is the money. Credits come mostly from selling what you carried
+##   - Loot is the money. Scrip come mostly from selling what you carried
 ##     home, so nothing is earned until loot survives the trip. Dying still
 ##     costs everything you carried.
 ##   - Kills pay a small bounty, most of it only if you get home alive. It is
 ##     kept small on purpose: a free scrap kit must never out-earn real risk.
-##   - Credits are safe in the bank, but they only turn into power as gear,
+##   - Scrip is safe in the bank, but it only turns into power as gear,
 ##     and bought gear is lost on death like any other.
 ##   - Shops sell base-level gear only (see `MAX_SHOP_RARITY`). Anything
 ##     better has to be found.
@@ -23,8 +23,8 @@ const ShopDB := preload("res://core/economy/shop_db.gd")
 const StashRules := preload("res://core/account/stash_rules.gd")
 
 ## What a new profile or account starts with: about one base weapon.
-const STARTING_CREDITS := 500
-const MAX_CREDITS := 9_999_999
+const STARTING_SCRIP := 500
+const MAX_SCRIP := 9_999_999
 ## The best rarity a shop may ever sell (ItemDB.Rarity.UNCOMMON).
 const MAX_SHOP_RARITY := 1
 ## Items a shop stocks carry this tag.
@@ -33,9 +33,10 @@ const VENDOR_TAG := "vendor"
 const TRADE_TAGS := ["material", "augment", "relic"]
 ## Everything else (gear, furniture) sells back for this share of its value.
 const SELL_BACK_RATE := 0.4
-## Scrip is pay you carry in a world. It turns into credits one for one, but
-## only once it is banked at a depot or carried out alive; a death drops what
-## is carried into the bag. These are what earns it.
+## Scrip is the one money. What you carry in a world is at stake: it joins
+## your banked balance only once it is banked at a depot or carried out
+## alive, and a death drops what is carried into the bag. These are what
+## earns it in the field.
 const KILL_BOUNTY := 20
 const PLAYER_KILL_SCRIP := 60
 const WARLORD_SCRIP := 150
@@ -93,26 +94,26 @@ static func stock(shop_id: String) -> Array[String]:
 	return out
 
 
-## Buys one item into `stash`. Returns {"ok", "credits"} with the new balance,
-## or {"ok": false, "error", "credits"} with the balance unchanged.
-static func buy(stash: Array[String], credits: int, shop_id: String, item_id: String) -> Dictionary:
+## Buys one item into `stash`. Returns {"ok", "scrip"} with the new balance,
+## or {"ok": false, "error", "scrip"} with the balance unchanged.
+static func buy(stash: Array[String], scrip: int, shop_id: String, item_id: String) -> Dictionary:
 	if not for_sale(shop_id, item_id):
-		return _fail("That is not for sale here.", credits)
+		return _fail("That is not for sale here.", scrip)
 	var price := buy_price(item_id)
-	if credits < price:
-		return _fail("Not enough credits.", credits)
+	if scrip < price:
+		return _fail("Not enough scrip.", scrip)
 	stash.append(item_id)
-	return {"ok": true, "credits": credits - price, "spent": price}
+	return {"ok": true, "scrip": scrip - price, "spent": price}
 
 
 ## Sells up to `count` of one item out of `stash`. Loadout entries that no
-## longer have an item behind them are dropped. Returns {"ok", "credits",
+## longer have an item behind them are dropped. Returns {"ok", "scrip",
 ## "sold", "earned"}.
-static func sell(stash: Array[String], loadout: Dictionary, credits: int, item_id: String,
+static func sell(stash: Array[String], loadout: Dictionary, scrip: int, item_id: String,
 		count: int = 1) -> Dictionary:
 	var price := sell_price(item_id)
 	if price <= 0 or item_id not in stash:
-		return _fail("You cannot sell that.", credits)
+		return _fail("You cannot sell that.", scrip)
 	var sold := 0
 	for i in clampi(count, 1, MAX_SELL_COUNT):
 		if item_id not in stash:
@@ -120,11 +121,11 @@ static func sell(stash: Array[String], loadout: Dictionary, credits: int, item_i
 		stash.erase(item_id)
 		sold += 1
 	StashRules.validate_loadout(stash, loadout)
-	return {"ok": true, "credits": add(credits, price * sold), "sold": sold, "earned": price * sold}
+	return {"ok": true, "scrip": add(scrip, price * sold), "sold": sold, "earned": price * sold}
 
 
 ## Sells every trade good in `stash`. Gear and furniture are left alone.
-static func sell_loot(stash: Array[String], credits: int) -> Dictionary:
+static func sell_loot(stash: Array[String], scrip: int) -> Dictionary:
 	var earned := 0
 	var sold := 0
 	for id: String in stash.duplicate():
@@ -133,8 +134,8 @@ static func sell_loot(stash: Array[String], credits: int) -> Dictionary:
 			earned += sell_price(id)
 			sold += 1
 	if sold == 0:
-		return _fail("No loot to sell.", credits)
-	return {"ok": true, "credits": add(credits, earned), "sold": sold, "earned": earned}
+		return _fail("No loot to sell.", scrip)
+	return {"ok": true, "scrip": add(scrip, earned), "sold": sold, "earned": earned}
 
 
 ## What the stash's trade goods would sell for.
@@ -160,35 +161,35 @@ static func unlocked_outfits(stash: Array) -> Array[String]:
 	return out
 
 
-## Credits a finished run pays on its own, before any loot is sold. `result`
+## Scrip a finished run pays on its own, before any loot is sold. `result`
 ## is a raid's `player_finished` dictionary and must come from the authority
 ## (the server online), never from a client.
 static func payout(result: Dictionary) -> int:
 	var home := maxi(int(result.get("scrip_banked", 0)), 0)
 	if result.get("outcome", "") != "died":
 		home += maxi(int(result.get("scrip", 0)), 0)
-	return mini(home, MAX_CREDITS)
+	return mini(home, MAX_SCRIP)
 
 
-## True if `credits` can take `delta` (a cost when negative) without going
+## True if `scrip` can take `delta` (a cost when negative) without going
 ## below zero.
-static func can_change(credits: int, delta: int) -> bool:
-	return credits + delta >= 0
+static func can_change(scrip: int, delta: int) -> bool:
+	return scrip + delta >= 0
 
 
 ## A balance after adding `amount`, kept inside the legal range.
-static func add(credits: int, amount: int) -> int:
-	return clampi(credits + amount, 0, MAX_CREDITS)
+static func add(scrip: int, amount: int) -> int:
+	return clampi(scrip + amount, 0, MAX_SCRIP)
 
 
-## Reads a saved balance. A save from before credits existed gets the
-## starting amount.
+## Reads a saved balance. Saves from when it was called "credits" still load,
+## and a save from before money existed gets the starting amount.
 static func read_saved(data: Dictionary) -> int:
-	var saved: Variant = data.get("credits", STARTING_CREDITS)
+	var saved: Variant = data.get("scrip", data.get("credits", STARTING_SCRIP))
 	if typeof(saved) != TYPE_INT and typeof(saved) != TYPE_FLOAT:
-		return STARTING_CREDITS
-	return clampi(int(saved), 0, MAX_CREDITS)
+		return STARTING_SCRIP
+	return clampi(int(saved), 0, MAX_SCRIP)
 
 
-static func _fail(reason: String, credits: int) -> Dictionary:
-	return {"ok": false, "error": reason, "credits": credits}
+static func _fail(reason: String, scrip: int) -> Dictionary:
+	return {"ok": false, "error": reason, "scrip": scrip}

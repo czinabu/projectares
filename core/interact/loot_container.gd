@@ -9,7 +9,7 @@ const RACK_LABEL := "Power rack"
 
 ## The contents changed (someone looted it).
 signal changed
-## An actor picked up the scrip that was in here. The `Raid` credits it.
+## An actor picked up the scrip that was in here. The `Raid` scrip it.
 signal scrip_taken(actor: Actor, amount: int)
 
 var items: Array[String] = []
