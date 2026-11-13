@@ -86,6 +86,9 @@ var cmd := ActorCommand.new()
 var health := HealthComponent.new()
 var inventory := Inventory.new()
 var flight := FlightRig.new()
+## Where flight ceilings are measured from: the raid's map unless set (a
+## bench or test with no raid sets its own). See `ground_level`.
+var ground_map: Node3D = null
 var ability := Ability.new()
 ## The helmet. Always there; `Visor.enabled` says whether one is worn.
 var visor := Visor.new()
@@ -353,6 +356,7 @@ func _simulate_movement(delta: float) -> void:
 		_air_dash_vel = Vector3.ZERO
 	if on_floor:
 		flight.launched = false
+	_measure_altitude(on_floor)
 	# Gliding: holding jump while falling with wings carries you forward.
 	# Once gliding you stay gliding while you climb on your speed.
 	flight.is_gliding = flight.can_glide() and cmd.jump and not on_floor and not staggered \
@@ -396,11 +400,11 @@ func _simulate_movement(delta: float) -> void:
 		velocity.y = jump_velocity
 	elif cmd.jump_pressed and not staggered and flight.is_gliding and flight.pulse_velocity > 0.0:
 		# A wing pulse: up, keeping the airspeed.
-		var pulse := flight.try_pulse()
+		var pulse := flight.try_pulse(flight.lift_cap(gravity))
 		if pulse > 0.0:
 			velocity.y = maxf(velocity.y, pulse)
 	elif cmd.jump_pressed and not staggered:
-		var burst := flight.try_burst()
+		var burst := flight.try_burst(flight.lift_cap(gravity))
 		if burst > 0.0:
 			velocity.y = maxf(velocity.y, burst)
 			if flight.burst_push > 0.0 and wish.length() > 0.1:
@@ -428,7 +432,8 @@ func _simulate_movement(delta: float) -> void:
 		var thrust := flight.tick(cmd.jump and not on_floor and not staggered, delta)
 		velocity.y += (thrust - gravity) * delta
 		if thrust > 0.0:
-			velocity.y = minf(velocity.y, flight.max_rise_speed)
+			# Under the ceiling the climb eases off and stops on it.
+			velocity.y = minf(velocity.y, flight.max_rise_speed * flight.climb_room())
 		if flight.is_gliding:
 			# The wings catch a fall or a dive over a moment, never in one
 			# tick: sinking faster than the glide allows eases back to it.
@@ -444,6 +449,8 @@ func _simulate_movement(delta: float) -> void:
 				var lift := air_speed * sin(pull * 0.7) * clampf(spare / (flight.glide_speed * 0.15), 0.0, 1.0)
 				# Banked, the pull goes into the turn more than into height.
 				lift *= 1.0 - flight.glide_bank_lift_loss * absf(_bank)
+				# Speed buys height only up to the ceiling.
+				lift = minf(lift, flight.lift_cap(gravity))
 				caught = maxf(caught, minf(lift, velocity.y + (gravity + flight.glide_lift_accel) * delta))
 			velocity.y = caught
 	velocity.y = maxf(velocity.y, -max_fall_speed)
@@ -475,11 +482,11 @@ func _simulate_hover(delta: float) -> void:
 		# Along the view's heading, level: jump and descend climb and sink.
 		# The mouse's pitch only aims (Caleb's call: keys fly).
 		var want := Basis(Vector3.UP, cmd.yaw) * Vector3(cmd.move.x * flight.fly_speed * 0.5, 0.0, -flight.boost_speed)
-		want.y += flight.max_rise_speed if climb > 0.0 else climb * flight.descend_speed
+		want.y += flight.max_rise_speed * flight.climb_room() if climb > 0.0 else climb * flight.descend_speed
 		velocity = velocity.move_toward(want, flight.boost_accel * delta)
 		flight.tick(true, delta, flight.boost_heat_mult)
 		return
-	var rise := flight.max_rise_speed if climb > 0.0 else climb * flight.descend_speed
+	var rise := flight.max_rise_speed * flight.climb_room() if climb > 0.0 else climb * flight.descend_speed
 	velocity.y = move_toward(velocity.y, rise, flight.hover_accel * delta)
 	if flight.is_coasting:
 		# Jets idle: sink, keep the speed, and cool off.
@@ -498,6 +505,36 @@ func _simulate_skim(delta: float) -> void:
 		velocity.y = move_toward(velocity.y, -flight.descend_speed if cmd.descend else 0.0,
 				flight.skim_hold_accel * delta)
 	flight.skim(delta, height_above_ground(flight.skim_probe))
+
+
+## Tells the flight rig how high it is over the world's ground, for its
+## ceiling (`FlightRig.ceiling`). Only rigs with a ceiling ask, and only in
+## the air.
+func _measure_altitude(on_floor: bool) -> void:
+	flight.altitude_known = false
+	if not flight.enabled or flight.ceiling <= 0.0 or on_floor:
+		return
+	var ground := ground_level()
+	if is_nan(ground):
+		return
+	flight.altitude_known = true
+	flight.altitude = global_position.y - ground
+
+
+## The height of the world's ground under the actor, ignoring roofs and
+## anything else built on it: the map's `ground_height` where it has one,
+## else the map's own origin (see the map contract in `WorldDef`). NAN
+## outside a raid, where nothing says where the ground is.
+func ground_level() -> float:
+	var map := ground_map
+	if map == null:
+		var raid := Raid.of(self)
+		map = raid.map if raid != null else null
+	if map == null or not is_instance_valid(map) or not map.is_inside_tree():
+		return NAN
+	if map.has_method("ground_height"):
+		return map.call("ground_height", global_position.x, global_position.z)
+	return map.global_position.y
 
 
 ## How high the feet are over the world below, up to `reach` meters.
@@ -543,7 +580,7 @@ func _air_dash(wish: Vector3, yaw_basis: Basis, on_floor: bool, staggered: bool,
 		if boost < 0:
 			# Wings pulled up (back held): the boost climbs instead of going
 			# backwards (Caleb's call), keeping the airspeed like a pulse.
-			velocity.y = maxf(velocity.y, flight.glide_boost_climb)
+			velocity.y = maxf(velocity.y, minf(flight.glide_boost_climb, flight.lift_cap(gravity)))
 			return Vector3.ZERO
 		if boost > 0:
 			# A wing boost thrusts you the way you face (the way the wings

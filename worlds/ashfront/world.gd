@@ -50,8 +50,10 @@ const ROOFTOP_TABLE := [
 	{"id": "blade_arc", "weight": 9.0},
 	{"id": "spear_lancer", "weight": 8.0},
 	{"id": "frame_bulwark", "weight": 8.0},
-	{"id": "jetpack_mk2", "weight": 7.0},
+	# Rigs drop at Mk1 only: Mk2 and Mk3 are crafted from blueprints
+	# (DESIGN.md section 10), never found.
 	{"id": "wings_glide", "weight": 7.0},
+	{"id": "boots_thruster", "weight": 5.0},
 	{"id": "chip_blink", "weight": 7.0},
 	{"id": "chip_pulse", "weight": 7.0},
 	{"id": "optic_scope", "weight": 7.0},
