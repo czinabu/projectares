@@ -46,7 +46,7 @@ const MAX_HEAL_ITEMS := 2
 ## Seconds a weapon takes to materialize out of the pack through the watch,
 ## by the first of these tags it carries (heavier is slower). An item's own
 ## `summon_time` stat wins.
-const SUMMON_TIMES := [["power", 1.6], ["sidearm", 0.5], ["one_handed", 0.6], ["two_handed", 1.1], ["marksman", 1.3],
+const SUMMON_TIMES := [["armor", 1.5], ["power", 1.6], ["sidearm", 0.5], ["one_handed", 0.6], ["two_handed", 1.1], ["marksman", 1.3],
 		["firearm", 0.9]]
 ## The watch's wait after a summon, as a multiple of the materialize time.
 const SUMMON_COOLDOWN_MULT := 6.0
@@ -129,25 +129,63 @@ static func equip(actor: Actor, item_ids: Array) -> void:
 			pass
 		else:
 			actor.inventory.add_item(id)
-	# Frames go last because they scale what the other gear set up.
+	# Frames go last because they scale what the other gear set up. One is
+	# worn; another is only carried, as loot.
 	for id in frames:
+		if actor.frame_id == "":
+			wear_frame(actor, id)
+		else:
+			actor.inventory.add_item(id)
+
+
+## Puts armor frame `id` on the actor, or with "" takes the worn one off,
+## undoing what the old one scaled first. `armor_left` below 0 means a whole
+## frame. Returns the armor the frame taken off had left. Like a helmet, the
+## one replaced leaves `gear_items`, and where it goes is the caller's job.
+## Emits `Actor.frame_changed`, which `NetSession` passes on and the skin follows.
+static func wear_frame(actor: Actor, id: String, armor_left := -1.0) -> float:
+	if id != "" and not ItemDB.has_tag(id, "armor"):
+		return -1.0
+	var left := -1.0
+	if actor.frame_id != "":
+		left = actor.health.armor
+		_scale_frame(actor, ItemDB.item_stats(actor.frame_id), true)
+		actor.gear_items.erase(actor.frame_id)
+	actor.frame_id = id
+	actor.frame_name = ItemDB.item_name(id) if id != "" else "No armor"
+	if id == "":
+		actor.health.set_armor(0.0)
+	else:
 		var stats := ItemDB.item_stats(id)
 		actor.health.set_armor(stats.get("armor", 0.0))
-		var speed: float = stats.get("speed_mult", 1.0)
-		actor.walk_speed *= speed
-		actor.sprint_speed *= speed
-		var heat_mult: float = stats.get("heat_mult", 1.0)
-		if actor.flight.heavy_lift:
-			# A jetpack carries heavy armor without running hotter.
-			heat_mult = minf(heat_mult, 1.0)
-		actor.flight.heat_per_sec *= heat_mult
-		actor.flight.burst_heat *= heat_mult
-		actor.flight.pulse_heat *= heat_mult
-		actor.flight.air_dash_heat *= heat_mult
-		actor.flight.glide_boost_heat *= heat_mult
-		actor.heat_signature *= stats.get("heat_signature", 1.0)
-		actor.frame_name = ItemDB.item_name(id)
+		if armor_left >= 0.0:
+			actor.health.armor = minf(armor_left, actor.health.max_armor)
+		_scale_frame(actor, stats, false)
 		actor.gear_items.append(id)
+	actor.frame_changed.emit(id)
+	return left
+
+
+## Applies a frame's speed and heat scaling, or with `undo` takes it back off.
+static func _scale_frame(actor: Actor, stats: Dictionary, undo: bool) -> void:
+	var speed: float = stats.get("speed_mult", 1.0)
+	var heat_mult: float = stats.get("heat_mult", 1.0)
+	if actor.flight.heavy_lift:
+		# A jetpack carries heavy armor without running hotter.
+		heat_mult = minf(heat_mult, 1.0)
+	var signature: float = stats.get("heat_signature", 1.0)
+	if undo:
+		speed = 1.0 / maxf(speed, 0.01)
+		heat_mult = 1.0 / maxf(heat_mult, 0.01)
+		signature = 1.0 / maxf(signature, 0.01)
+	actor.walk_speed *= speed
+	actor.sprint_speed *= speed
+	actor.flight.heat_per_sec *= heat_mult
+	actor.flight.burst_heat *= heat_mult
+	actor.flight.pulse_heat *= heat_mult
+	actor.flight.air_dash_heat *= heat_mult
+	actor.flight.glide_boost_heat *= heat_mult
+	actor.heat_signature *= signature
 
 
 ## Puts helmet `id` on the actor's head, or with "" leaves the head bare.
