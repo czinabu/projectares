@@ -108,8 +108,16 @@ var sighted := false
 var _eye_offset := Vector3.ZERO
 ## First person: how far the camera sits back from the model's eyes, level
 ## along the view, in meters (the phone's "Camera pulled back" setting). The
-## head is left out of this camera, so it never gets in the way.
+## head is left out of this camera, so it never gets in the way. It eases
+## off as the view tips down (gone by `pullback_fade_pitch`), or the camera
+## would sit behind the neck and look down onto the shoulders.
 var eye_pullback := 0.15
+## How far down (radians) the view tips before the pullback is gone.
+var pullback_fade_pitch := 0.45
+## First person: how far the eyes move ahead, level, looking straight down,
+## as a head bowing forward does, so the chest is seen from the front and
+## never from over the shoulders.
+var look_down_lean := 0.05
 ## How far the mouse has to move, in pixels, to count as a stance flick.
 var flick_threshold := 45.0
 ## How quickly old mouse movement stops counting toward a flick.
@@ -566,9 +574,10 @@ func _process(delta: float) -> void:
 	var eyes: Variant = skin.eye_point(look) if first_person and skin != null and skin.has_method("eye_point") else null
 	var offset: Vector3 = eyes - actor.get_eye_position() if eyes != null else Vector3.ZERO
 	if eyes != null:
-		var ahead := Vector3(-look.z.x, 0.0, -look.z.z)
-		if ahead.length_squared() > 0.0001:
-			offset -= ahead.normalized() * eye_pullback
+		var ahead := Basis(Vector3.UP, yaw) * Vector3.FORWARD
+		var down := clampf(-sin(pitch), 0.0, 1.0)
+		var pull := eye_pullback * (1.0 - smoothstep(0.0, sin(pullback_fade_pitch), down))
+		offset += ahead * (down * look_down_lean - pull)
 	_eye_offset = _eye_offset.lerp(offset, 1.0 - exp(-18.0 * delta)) if first_person else offset
 	if first_person:
 		camera.global_position += _eye_offset * (1.0 - minf(_cam_dist / 0.7, 1.0))
