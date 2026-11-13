@@ -456,13 +456,14 @@ func _portal_shots(out_dir: String) -> void:
 	add_child(base)
 	var controller := PlayerController.new()
 	controller.setup(base.player)
+	controller.portal_requested.connect(func(to: String) -> void: base.open_portal(to))
 	base.add_child(controller)
 	var base_hud: CanvasLayer = preload("res://core/ui/base_hud.gd").new()
 	base_hud.setup(base)
 	base.add_child(base_hud)
 	# Face the open floor in front of the deploy area.
-	base.player.global_position = Vector3(3.0, 0.1, 2.0)
-	controller.yaw = PI * 0.75
+	base.player.global_position = Vector3(2.0, 0.1, 3.0)
+	controller.yaw = PI * 0.6
 	await _settle(60)
 	controller.wrist_raised = true
 	controller.watch_focus = Hud.Wrist.SLOTS.find("portal")
