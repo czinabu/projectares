@@ -911,7 +911,7 @@ without Caleb, and update the gap list when a PR closes a row.
   card rises off the worn watch with a glow on the arm (Caleb's feedback):
   it stands just past the character (`Wrist.tp_depth`, `tp_behind`), so the
   body passes in front of it and it reads as coming from the watch, beside
-  the head clear of the crosshair, a third of the view tall and near solid
+  the head clear of the crosshair, a third of the view tall, backed but still see-through (a hologram, Caleb's call)
   (`_tp_spot`, `_tp_size`, `tp_backing`); the arm and its
   pose stay the same, only where the light lands differs. Vitals go on the card only where the visor cannot
   show them (no helmet, or third person). The watch works in the home base
