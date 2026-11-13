@@ -3967,7 +3967,7 @@ func _test_online_movement() -> void:
 		burst_top = maxf(burst_top, seen.global_position.y - ground)
 	check(burst_top > 0.6, "a press made while every packet is being lost still reaches the server (%.2f m)" % burst_top)
 
-	# Free flight is predicted like running: jump, tap again to light the
+	# Free flight is predicted like running: jump, hold aim to light the
 	# jets, fly sideways, and the server agrees all the way.
 	if me.flight.can_hover():
 		await frames(60)
@@ -3975,9 +3975,7 @@ func _test_online_movement() -> void:
 		await frames(1)
 		me.cmd.jump_pressed = false
 		await frames(12)
-		me.cmd.jump_pressed = true
-		await frames(1)
-		me.cmd.jump_pressed = false
+		me.cmd.secondary = true
 		dana.max_correction = 0.0
 		me.cmd.jump = true
 		await frames(30)
@@ -3996,6 +3994,7 @@ func _test_online_movement() -> void:
 		me.cmd.descend = false
 		await frames(30)
 		check(not me.flight.is_hovering and not seen.flight.is_hovering, "landing puts the jets out on both screens")
+		me.cmd.secondary = false
 
 	# Other players glide between updates instead of stepping.
 	me.cmd.move = Vector2(1, 0)
