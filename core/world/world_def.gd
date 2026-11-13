@@ -130,8 +130,8 @@ var warlord_escort := 2
 ## dungeons and arena tournaments that should hand them out exist, world
 ## events do: the chance that a warlord carries one, and that a supply pod
 ## holds one. 0 keeps them out of this world.
-var warlord_artifact_chance := 0.5
-var pod_artifact_chance := 0.1
+var warlord_artifact_chance := 0.25
+var pod_artifact_chance := 0.05
 ## Blueprints and upgrade data (DESIGN.md section 10) come from the fights
 ## worth having: the chance that a warlord carries a blueprint and that a
 ## supply pod holds one, and how much upgrade data each always has. 0 keeps
@@ -231,6 +231,13 @@ func roll_crafting_loot(rng: RandomNumberGenerator, chance: float, data: int) ->
 	for i in maxi(data, 0):
 		out.append("upgrade_data")
 	return out
+
+
+## How sharp a bot's gun aim is (`BotBrain.skill`, 0 a rookie, 1 a veteran):
+## the range each bot rolls from. Called on the authority only, before the
+## brain starts; a world with risk zones can read the bot's meta "zone".
+func bot_skill_range(_bot: Actor, warlord: bool) -> Vector2:
+	return Vector2(0.7, 0.9) if warlord else Vector2(0.25, 0.75)
 
 
 ## The risk zone at a point: 0 the outer ring, 1 the middle, 2 the core, or
