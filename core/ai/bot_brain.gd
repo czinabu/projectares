@@ -32,6 +32,9 @@ var guard_reaction := 0.22
 ## view. Moving, airborne and distant targets are harder to hit.
 ## 0 is a rookie, 1 a veteran. Below 0, each bot rolls its own from its seed.
 var skill := -1.0
+## The range a bot rolls its skill from when `skill` is below 0. The `Raid`
+## sets it from `WorldDef.bot_skill_range` (risk zones, warlords).
+var skill_range := Vector2(0.25, 0.75)
 ## Turn speed onto the target, degrees a second (at skill 0.5).
 var turn_speed_deg := 200.0
 ## Seconds the aim trails a moving target (at skill 0.5).
@@ -103,7 +106,7 @@ func _ready() -> void:
 	# Not every bot thinks on the same tick.
 	_think_left = _rng.randf() * 0.2
 	if skill < 0.0:
-		skill = _rng.randf_range(0.25, 0.75)
+		skill = _rng.randf_range(skill_range.x, skill_range.y)
 	actor.health.damaged.connect(_on_damaged)
 	actor.heard.connect(_on_heard)
 

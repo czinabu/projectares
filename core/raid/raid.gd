@@ -91,7 +91,7 @@ var toy_max_flight := 5.0
 var toy_bounce := 0.35
 ## Seconds between one throw and the next, for a vehicle with no
 ## `watch_recharge` stat of its own (heavier vehicles take longer).
-var toy_cooldown := 8.0
+var toy_cooldown := 12.0
 ## How many vehicles a watch holds.
 var watch_capacity := 2
 ## A squad ping from the watch: how far it reaches, how long its marker
@@ -1309,6 +1309,7 @@ func _add_bot(marker: Node3D, warlord := false) -> Actor:
 	var brain := BotBrain.new()
 	brain.name = "Brain"
 	brain.seed_value = rng.randi()
+	brain.skill_range = world.bot_skill_range(bot, warlord)
 	bot.add_child(brain)
 	bot.died.connect(_on_actor_died)
 	world.on_spawn(bot)

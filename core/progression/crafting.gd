@@ -27,8 +27,9 @@ const UPGRADE_DATA := "upgrade_data"
 
 ## What each craft of a tier costs in upgrade data and scrip. Mk1 crafts (a
 ## gun, a vehicle) take no data and name their own fee.
-const TIER_DATA := {2: 3, 3: 6}
-const TIER_SCRIP := {2: 400, 3: 900}
+## Balance pass: Mk3 is the long chase (8 data, 11 in all from Mk1).
+const TIER_DATA := {2: 3, 3: 8}
+const TIER_SCRIP := {2: 400, 3: 1200}
 
 ## Result item id -> its recipe:
 ##   blueprint  the blueprint item that must be known

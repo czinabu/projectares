@@ -1327,7 +1327,7 @@ func _test_loadouts() -> void:
 	var hammer := p.weapons[1] as MeleeWeapon
 	check(gun.display_name == "Ashfront Carbine" and is_equal_approx(gun.damage, 24.0), "weapon stats come from the item")
 	check(hammer.display_name == "Breaker Hammer" and is_equal_approx(hammer.heavy_damage, 95.0), "melee stats come from the item")
-	check(is_equal_approx(p.health.armor, 140.0), "the frame sets armor")
+	check(is_equal_approx(p.health.armor, float(ItemDB.item_stats("frame_bulwark").armor)), "the frame sets armor")
 	var base := Actor.new()
 	check(p.walk_speed < base.walk_speed and is_equal_approx(p.flight.heat_per_sec, FlightRig.new().heat_per_sec),
 			"a heavy frame is slower, and a jetpack carries it without running hotter")
@@ -3609,7 +3609,7 @@ func _test_scrip() -> void:
 	Combat.deal(raid.bots[0], DamageInfo.make(9999.0, a, "bullet"))
 	Combat.deal(raid.bots[0], DamageInfo.make(9999.0, a, "bullet"))
 	await frames(2)
-	check(a.scrip == 2 * StashService.Economy.KILL_BOUNTY and "40 scrip" in Hud.wrist_text(raid, a, {}, 0.0) and b.scrip == 0,
+	check(a.scrip == 2 * StashService.Economy.KILL_BOUNTY and "%d scrip" % (2 * StashService.Economy.KILL_BOUNTY) in Hud.wrist_text(raid, a, {}, 0.0) and b.scrip == 0,
 			"kills pay scrip that you carry (%d)" % a.scrip)
 
 	# Banking makes it safe.

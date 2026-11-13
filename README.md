@@ -403,7 +403,7 @@ you have.
 - **Loot is the money.** You earn scrip mostly by selling the loot you get
   home, by banking it at a depot or signing out with it, so nothing is earned
   until it survives. Loot sells for its full value.
-- **Kills pay a small bounty**: 20 scrip each, carried like all scrip, so it
+- **Kills pay a small bounty**: 10 scrip each, carried like all scrip, so it
   is only yours if you bank it or sign out alive. It is small on purpose, so
   running in with the free scrap kit never beats risking real gear.
 - **Banked scrip is safe, gear is not.** Your balance is never lost on death. But

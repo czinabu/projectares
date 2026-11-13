@@ -179,14 +179,14 @@ func _ready() -> void:
 
 	# Armor frames
 	register("frame_runner", "Runner Frame", Rarity.UNCOMMON, 400, ["armor", "frame_light", "vendor"],
-			{"armor": 45.0, "speed_mult": 1.12, "heat_mult": 0.8, "heat_signature": 0.7},
-			"Light: 45 armor, 12% faster, jetpack runs cooler. Dim on thermal.")
+			{"armor": 45.0, "speed_mult": 1.08, "heat_mult": 0.8, "heat_signature": 0.7},
+			"Light: 45 armor, 8% faster, jetpack runs cooler. Dim on thermal.")
 	register("frame_trooper", "Trooper Frame", Rarity.UNCOMMON, 450, ["armor", "frame_medium", "vendor"],
 			{"armor": 85.0},
 			"Medium: 85 armor, no penalties.")
 	register("frame_bulwark", "Bulwark Frame", Rarity.RARE, 900, ["armor", "frame_heavy"],
-			{"armor": 140.0, "speed_mult": 0.86, "heat_mult": 1.25, "heat_signature": 1.3},
-			"Heavy: 140 armor, 14% slower, wings and boots run hotter (jetpacks carry it). Bright on thermal.")
+			{"armor": 125.0, "speed_mult": 0.86, "heat_mult": 1.25, "heat_signature": 1.3},
+			"Heavy: 125 armor, 14% slower, wings and boots run hotter (jetpacks carry it). Bright on thermal.")
 
 	# Flight rigs. Each comes in tiers (see `RIG_CEILINGS`): a higher Mk lifts
 	# you higher and runs cooler, so it flies further, but every tier cruises
@@ -246,13 +246,13 @@ func _ready() -> void:
 			{"effect": "rewind", "charges": 1, "rewind_seconds": 4.0},
 			"Once an outing: snap back to where you were, and how healthy you were, four seconds ago. Leaves a glowing trail the shooter can follow.")
 	register("artifact_cloak", "Phase Cloak", Rarity.RELIC, 2800, ["artifact", "cloak"],
-			{"effect": "cloak", "charges": 0, "cooldown": 60.0, "duration": 6.0, "cloak_sense_range": 4.0},
+			{"effect": "cloak", "charges": 0, "cooldown": 90.0, "duration": 6.0, "cloak_sense_range": 4.0},
 			"Near-invisible for six seconds. Firing or swinging breaks it, anyone close still notices you, and a sign-out waits while it runs.")
 	register("artifact_overclock", "Overclock Core", Rarity.RELIC, 2600, ["artifact", "overclock"],
 			{"effect": "overclock", "charges": 0, "cooldown": 90.0, "duration": 10.0},
 			"Your flight rig makes no heat for ten seconds. Then it burns out and locks up overheated, wherever you are.")
 	register("artifact_bloom", "Static Bloom", Rarity.RELIC, 2600, ["artifact", "bloom"],
-			{"effect": "bloom", "charges": 0, "cooldown": 60.0, "bloom_radius": 14.0, "jam_time": 3.0},
+			{"effect": "bloom", "charges": 0, "cooldown": 75.0, "bloom_radius": 14.0, "jam_time": 3.0},
 			"A pulse that shuts off every flight rig within 14 meters for three seconds. Yours too: everyone drops.")
 
 	# Helmets. The visor is the wearer's display in first person, and `mode`
@@ -312,7 +312,7 @@ func _ready() -> void:
 			"grip_points": [Vector3(-0.58, 1.27, -0.25), Vector3(-0.22, 1.27, -0.25)] as Array[Vector3],
 			"peg_points": [Vector3(-0.52, 0.86, -0.5), Vector3(-0.28, 0.86, -0.5)] as Array[Vector3],
 			"exit_offset": Vector3(-1.9, 0.1, 0.0), "body_color": Color(0.42, 0.48, 0.32),
-			"footprint": Vector3(2.3, 1.4, 4.4), "watch_recharge": 20.0, "bay_scale": 0.6},
+			"footprint": Vector3(2.3, 1.4, 4.4), "watch_recharge": 30.0, "bay_scale": 0.6},
 			"Armored four-wheeler. Slow to turn and needs open ground, but it shrugs off rough terrain.")
 	register("mech_bulwark", "Bulwark Mech", Rarity.EPIC, 4200, ["vehicle", "walker"],
 			{"model": "mech", "max_speed": 9.0, "boost_speed": 13.0, "accel": 8.0, "turn_rate": 1.2,
@@ -322,7 +322,7 @@ func _ready() -> void:
 			"grip_points": [Vector3(-0.25, 2.5, -0.38), Vector3(0.25, 2.5, -0.38)] as Array[Vector3],
 			"peg_points": [Vector3(-0.16, 2.08, -0.5), Vector3(0.16, 2.08, -0.5)] as Array[Vector3],
 			"exit_offset": Vector3(1.8, 0.1, 0.0), "body_color": Color(0.55, 0.52, 0.45),
-			"footprint": Vector3(2.0, 3.0, 2.0), "watch_recharge": 45.0, "bay_scale": 0.6},
+			"footprint": Vector3(2.0, 3.0, 2.0), "watch_recharge": 60.0, "bay_scale": 0.6},
 			"Compact walker. Slow and heavy, turns on the spot and hops on jump-jets. Its power unit "
 			+ "sits exposed on its back.")
 	register("jet_kestrel", "Kestrel Jet", Rarity.EPIC, 4600, ["vehicle", "aircraft"],
@@ -333,7 +333,7 @@ func _ready() -> void:
 			"grip_points": [Vector3(-0.22, 1.47, -1.05), Vector3(0.22, 1.47, -1.05)] as Array[Vector3],
 			"peg_points": [Vector3(-0.15, 0.9, -1.6), Vector3(0.15, 0.9, -1.6)] as Array[Vector3],
 			"exit_offset": Vector3(1.6, 0.1, -0.5), "body_color": Color(0.6, 0.65, 0.72),
-			"footprint": Vector3(5.0, 1.8, 6.6), "watch_recharge": 40.0, "bay_scale": 0.42},
+			"footprint": Vector3(5.0, 1.8, 6.6), "watch_recharge": 60.0, "bay_scale": 0.42},
 			"Starfighter. Fast across the map and fragile; it cannot hover, and only flies in worlds with open skies.")
 
 	# Blueprints (DESIGN.md section 10). Found in the PvP world and at stake

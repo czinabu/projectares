@@ -140,7 +140,7 @@ var bullet_block_fraction := 0.5
 ## Bullets from the front within this long of raising the guard are deflected
 ## outright, each costing `deflect_stamina`.
 var deflect_window := 0.3
-var deflect_stamina := 3.0
+var deflect_stamina := 4.0
 ## Rounds from guns with any of these tags are not small arms: no guard
 ## deflects or blocks them (Caleb's call: no deflecting sniper rounds or
 ## explosives; blasts are not "bullet" hits at all).
