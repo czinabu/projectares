@@ -113,8 +113,8 @@ rows marked **pre-playtest** come before the friends playtest.
 | Mounted firepower | Missing | Rover turret, mech cannons, jet missiles. After the playtest. |
 | Cargo space while riding | Missing | After the playtest. |
 | Mobile cover | Missing | Rover and mech; the bike gives none by design. |
-| Per-vehicle watch recharge (heavier is slower) | Missing | One `Raid.toy_cooldown` for all vehicles today. |
-| Rover, mech and jet | Missing | Agreed roster, each with a weakness and counter (DESIGN.md section 8). After the playtest. |
+| Per-vehicle watch recharge (heavier is slower) | Built | A `watch_recharge` stat (`Raid.toy_recharge`): bike 8 s, rover 20 s, jet 40 s, mech 45 s. |
+| Rover, mech and jet | Partly | Drivable first versions on the one `Vehicle` class: Warden Rover (23 m/s, slow to turn, driver's seat on the left), Bulwark Mech (9 m/s, turns on the spot, jump-jet hop) and Kestrel Jet (takes off past 24 m/s, cannot hover, 120 m ceiling, only where `WorldDef.open_skies`). Greybox models. Missing: their weapons, passengers, armor and weak spots, vehicle health, and how mech and jet are earned (blueprints); today the rover can be found parked in Ashfront and the mech and jet only come with dev mode. |
 
 ## Racing
 
