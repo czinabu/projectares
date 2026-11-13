@@ -1113,13 +1113,14 @@ void fragment() {
 	## character, `tp_behind` metres beyond the head from the camera, so the
 	## body and the raised arm pass in front of it and it reads as thrown out
 	## of the watch. It is as tall as `tp_screen` of the view however far
-	## that is, beside the head off the crosshair, and near solid
-	## (`tp_backing`). The device, the arm and its pose are the same as in
-	## first person; only where the light lands differs.
+	## that is, beside the head off the crosshair, and backed with dark glass
+	## the world still shows through (`tp_backing`; it is a hologram, Caleb's
+	## call). The device, the arm and its pose are the same as in first
+	## person; only where the light lands differs.
 	var tp_behind := 0.5
 	var tp_screen := 0.34
 	var tp_lift := 0.06
-	var tp_backing := 0.9
+	var tp_backing := 0.6
 	## How far, in metres at the head, the card keeps clear of the head and
 	## helmet from the camera's view.
 	var head_clearance := 0.05

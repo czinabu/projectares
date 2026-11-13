@@ -1007,8 +1007,9 @@ func _test_main_flow() -> void:
 	get_tree().root.size = window_was
 	await frames(2)
 	var holo_mat := holo.material_override as ShaderMaterial
-	check(not holo_mat.shader.code.contains("depth_test_disabled") and float(holo_mat.get_shader_parameter("backing")) > 0.5,
-			"in third person it is near solid, and the body in front of it hides what it covers")
+	check(not holo_mat.shader.code.contains("depth_test_disabled") and float(holo_mat.get_shader_parameter("backing")) > 0.3
+			and float(holo_mat.get_shader_parameter("backing")) < 0.8,
+			"in third person it is backed but still see-through, and the body in front of it hides what it covers")
 	check(p.cmd.watch_up, "and the raised watch goes out with your inputs, so the arm glows for everyone")
 	var icons: Array = []
 	for slot in wrist.card.slots:
