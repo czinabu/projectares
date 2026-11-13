@@ -210,7 +210,7 @@ func _open_base(stash: Array, loadout: Dictionary, owner_name: String) -> void:
 	_attach_base_view()
 	base_hud = BaseHudScript.new()
 	base_hud.name = "BaseHud"
-	base_hud.setup(base)
+	base_hud.setup(base, controller)
 	base.add_child(base_hud)
 	_apply_settings()
 

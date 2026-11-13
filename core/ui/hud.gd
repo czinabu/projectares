@@ -250,6 +250,25 @@ static func watch_slots(p_raid: Raid, p: Actor, picked_toy := 0, pack_name := ""
 	return slots
 
 
+## The watch card at home (`HomeBase`), where there is no raid: the same
+## icons, each saying what it holds for the next deploy. `loadout` is the
+## base's loadout (slot -> item id). Nothing on it can be used from here: the
+## base's stations do that.
+static func base_watch_slots(base_name: String, loadout: Dictionary) -> Array[Dictionary]:
+	var slots: Array[Dictionary] = []
+	slots.append(_slot("map", "", base_name, [], -1.0, false, false))
+	slots.append(_slot("pack", "", "Pack empty", [], -1.0, true, false))
+	var vehicle: String = loadout.get("vehicle", "")
+	if vehicle != "" and ItemDB.has_item(vehicle):
+		slots.append(_slot("vehicle", "1", ItemDB.item_name(vehicle), [], -1.0, false, false))
+	else:
+		slots.append(_slot("vehicle", "", "No vehicle", [], -1.0, true, false))
+	slots.append(_slot("heavy", "", "No heavy weapon", [], -1.0, true, false))
+	slots.append(_slot("artifact", "", "No artifact", [], -1.0, true, false))
+	slots.append(_slot("leave", "", "Home", [], -1.0, true, false))
+	return slots
+
+
 static func _slot(id: String, value: String, detail: String, hints: Array, progress: float, empty: bool,
 		alert: bool) -> Dictionary:
 	return {"id": id, "value": value, "detail": detail, "hints": hints, "progress": progress,
@@ -733,6 +752,9 @@ void fragment() {
 """
 	## The bone the watch is worn on in third person.
 	const WRIST_BONE := "Wrist.L"
+	## The back of the wrist in that bone's space, where the watch face looks
+	## out (the bone's own +Y runs along the arm to the hand).
+	const FACE_AXIS := Vector3.RIGHT
 	## The card's face in metres, and its picture in pixels.
 	var face_size := Vector2(0.18, 0.104)
 	var pixels := Vector2i(520, 300)
@@ -921,9 +943,11 @@ void fragment() {
 		attach.bone_name = WRIST_BONE
 		skeleton.add_child(attach)
 		var watch := _watch()
-		# Undo the model's import scale so the watch keeps its size.
+		# Face out of the back of the wrist, and undo the model's import
+		# scale so the watch keeps its size.
 		var s := skeleton.global_basis.get_scale()
-		watch.scale = Vector3(1.0 / maxf(s.x, 0.001), 1.0 / maxf(s.y, 0.001), 1.0 / maxf(s.z, 0.001))
+		watch.basis = Basis(Quaternion(Vector3.UP, FACE_AXIS)) \
+				* Basis.from_scale(Vector3(1.0 / maxf(s.x, 0.001), 1.0 / maxf(s.y, 0.001), 1.0 / maxf(s.z, 0.001)))
 		attach.add_child(watch)
 		_worn = attach
 		_body_mesh = null
