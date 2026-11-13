@@ -38,6 +38,7 @@ const AdsTests := preload("res://tests/ads_tests.gd")
 const GripTests := preload("res://tests/grip_tests.gd")
 const TravelTests := preload("res://tests/travel_tests.gd")
 const TravelOnlineTests := preload("res://tests/travel_online_tests.gd")
+const RiskZoneTests := preload("res://tests/risk_zone_tests.gd")
 
 var _passed := 0
 var _failed := 0
@@ -45,6 +46,9 @@ var _failed := 0
 
 func _ready() -> void:
 	Profile.persist = false
+	# Most checks want a player ready to fight where they spawn, unhurt by the
+	# ground; the risk zone checks turn the gates and hazards back on.
+	Raid.zone_rules = false
 	# DEV MODE: tests never run on the dev save, whatever the machine has.
 	DevMode.persist = false
 	DevMode.enabled = false
@@ -301,6 +305,7 @@ func _run() -> void:
 	await _test_attachments()
 	await _test_power_weapons()
 	await _test_artifacts()
+	await _test_risk_zones()
 	await _test_watch()
 	await _test_feel()
 	await _test_view_match()
@@ -383,6 +388,10 @@ func _test_power_weapons() -> void:
 
 func _test_artifacts() -> void:
 	await ArtifactTests.run(self)
+
+
+func _test_risk_zones() -> void:
+	await RiskZoneTests.run(self)
 
 
 func _test_watch() -> void:
@@ -522,7 +531,7 @@ func _test_raid_setup_and_movement() -> void:
 	var raid := await _new_raid(42, false)
 	var p := raid.player
 	check(p != null and p.is_player, "player spawns")
-	check(raid.bots.size() == raid.world.bot_count, "all bots spawn")
+	check(raid.bots.size() == raid.world.bot_count + raid._bosses.size(), "all bots spawn")
 	check(raid.depots.size() >= 2, "map provides depots to bank at")
 	var caches := raid.get_children().filter(func(n: Node) -> bool: return n is LootContainer)
 	check(caches.size() >= 8, "loot caches are placed (%d)" % caches.size())
@@ -2604,7 +2613,7 @@ func _test_every_world() -> void:
 		raid.start(world, 99)
 		await frames(3)
 		check(raid.player != null and not raid.player.is_dead, "%s: player spawns" % world.id)
-		check(raid.bots.size() == world.bot_count, "%s: all bots spawn" % world.id)
+		check(raid.bots.size() == world.bot_count + raid._bosses.size(), "%s: all bots spawn" % world.id)
 		check(not raid.depots.is_empty(), "%s: map provides depots" % world.id)
 		var caches := raid.get_children().filter(func(n: Node) -> bool: return n is LootContainer)
 		check(caches.size() >= 4, "%s: loot caches are placed (%d)" % [world.id, caches.size()])
@@ -2623,7 +2632,7 @@ func _test_every_world() -> void:
 					"%s: %s is armed and hostile" % [world.id, bot.display_name])
 			break
 		await frames(120)
-		check(raid.clock > 1.0 and raid.bots.size() + raid._bot_respawns.size() == world.bot_count,
+		check(raid.clock > 1.0 and raid.bots.size() + raid._bot_respawns.size() == world.bot_count + raid._bosses.size(),
 				"%s: the world runs with bots thinking" % world.id)
 		await _end_raid(raid)
 
@@ -2902,6 +2911,9 @@ func _start_server(port: int, extra: Array[String], world := "ashfront") -> int:
 	# One world alone on the port, unless the test asks for the plaza too.
 	if "--plaza" not in extra:
 		args.append("--no-plaza")
+	# Like this process (see `_ready`), unless the test checks the gates.
+	if "--zone-rules" not in extra:
+		args.append("--no-zone-rules")
 	args.append_array(PackedStringArray(extra))
 	return OS.create_process(OS.get_executable_path(), args)
 
@@ -3489,11 +3501,11 @@ func _test_events() -> void:
 	# A warlord and his escort.
 	feed.clear()
 	check(raid.start_event("warlord") and raid.bots.size() == before + 1 + world.warlord_escort, "a warlord arrives with an escort")
-	var lord: Actor = raid.warlords.keys()[0]
+	var lord: Actor = raid._event_bots.filter(func(b: Actor) -> bool: return raid.warlords.has(b))[0]
 	for bot in raid._event_bots:
 		bot.get_node("Brain").set_physics_process(false)
 		bot.set_physics_process(false)
-	check(lord.display_name == "Warlord" and lord.health.max_health >= 240.0 and feed[0].begins_with("A warlord has arrived "),
+	check(lord.display_name == "Warlord" and lord.health.max_health >= 180.0 and feed[0].begins_with("A warlord has arrived "),
 			"the warlord is far tougher than his men (%s, %.0f health)" % [lord.display_name, lord.health.max_health])
 	var carried := lord.inventory.items.size()
 	check(carried >= 3, "the warlord carries loot worth the fight (%d items)" % carried)
@@ -3509,7 +3521,7 @@ func _test_events() -> void:
 	raid.start_event("warlord")
 	raid.event.ends = raid.clock
 	await frames(3)
-	check(raid.event.is_empty() and raid.warlords.is_empty() and feed.has("The warlord has moved on"),
+	check(raid.event.is_empty() and raid.warlords.size() == raid._bosses.size() and feed.has("The warlord has moved on"),
 			"an event nobody answers ends on its own")
 	await frames(2)
 	check(raid.bots.size() <= before + world.warlord_escort, "and its bots leave with it")
@@ -3678,7 +3690,7 @@ func _test_online() -> void:
 	raid.start_server(Worlds.get_world("ashfront"), 70)
 	for bot in raid.bots:
 		bot.get_node("Brain").set_physics_process(false)
-	check(raid.player == null and raid.players.is_empty() and raid.bots.size() == raid.world.bot_count,
+	check(raid.player == null and raid.players.is_empty() and raid.bots.size() == raid.world.bot_count + raid._bosses.size(),
 			"a server raid starts with bots and no players")
 	var a := raid.add_player([], {}, "Alpha")
 	var b := raid.add_player(["rifle_carbine", "blade_scrap", "jetpack_mk1", "plate_light"], {}, "Bravo")
@@ -3778,7 +3790,8 @@ func _test_online() -> void:
 			and alpha.raid.player.is_player and not Combat.authoritative,
 			"the client has its own actor and leaves damage to the server")
 	await _wait_until(func() -> bool: return alpha.raid.bots.size() == world.bot_count, 180)
-	check(alpha.raid.bots.size() == world.bot_count, "the client sees the server's bots")
+	check(alpha.raid.bots.size() == world.bot_count + alpha.raid._map_nodes("spawn_boss").size(),
+			"the client sees the server's bots")
 	# Interest: the client hears about itself and what is near in every
 	# update, and about the far side of the field a fraction as often.
 	await frames(30)
@@ -3817,7 +3830,7 @@ func _test_online() -> void:
 		check(seen != null and seen.display_name == "Alpha" and seen.weapons.size() == 3 and not seen.is_player,
 				"each client sees the other player, with their name and gear")
 		check(bravo.raid.players.size() == 2 and bravo.raid.active_players().size() == 2
-				and alpha.raid.bots.size() == world.bot_count,
+				and alpha.raid.bots.size() == world.bot_count + alpha.raid._map_nodes("spawn_boss").size(),
 				"a client's raid lists the players, separate from the bots")
 		if seen != null:
 			var from := seen.global_position

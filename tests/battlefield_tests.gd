@@ -75,7 +75,8 @@ static func run(t: Node) -> void:
 			near = near or depot.global_position.distance_to(site.global_position) < float(site.get_meta("radius", 0.0)) + 6.0
 		served = served and near
 	t.check(named and names.size() == sites.size(), "each strongpoint has its own name and a radius")
-	t.check(served and raid.depots.size() == sites.size(), "each strongpoint has a depot of its own")
+	t.check(served and raid.depots.size() == sites.size() + raid.outposts.size(),
+			"each strongpoint has a depot of its own, and so does each gate outpost")
 
 	var caches: Array = grouped.call("spawn_cache")
 	var high := caches.filter(func(c: Node3D) -> bool: return c.get_meta("loot_source", "cache") == "rooftop")
@@ -85,7 +86,7 @@ static func run(t: Node) -> void:
 	t.check(caches.size() >= 30 and high.size() >= 6, "loot is spread over the field (%d caches, %d up high)"
 			% [caches.size(), high.size()])
 	t.check(out_of_reach, "the best loot sits where only a flight rig reaches")
-	t.check(raid.bots.size() == raid.world.bot_count and raid.bots.size() >= 24,
+	t.check(raid.bots.size() == raid.world.bot_count + raid._bosses.size() and raid.bots.size() >= 24,
 			"the field starts with its garrisons and patrols (%d bots)" % raid.bots.size())
 	t.check(grouped.call("spawn_vehicle").size() >= 10, "bikes are parked at the rim and the strongpoints")
 
@@ -327,7 +328,7 @@ static func _armies(t: Node) -> void:
 		bot.get_node("Brain").set_physics_process(false)
 	var legion := raid.bots.filter(func(b: Actor) -> bool: return b.faction == "legion")
 	var tide := raid.bots.filter(func(b: Actor) -> bool: return b.faction == "tide")
-	t.check(legion.size() == tide.size() and legion.size() + tide.size() == raid.bots.size() and legion.size() >= 12,
+	t.check(legion.size() == tide.size() and legion.size() + tide.size() == raid.bots.size() - raid._bosses.size() and legion.size() >= 12,
 			"the field starts with two armies of equal size (%d and %d)" % [legion.size(), tide.size()])
 	t.check(not world.can_damage(legion[0], legion[1], null) and world.can_damage(legion[0], tide[0], null)
 			and world.can_damage(tide[0], legion[0], null), "soldiers fight the other army, never their own")
@@ -402,7 +403,7 @@ static func _armies(t: Node) -> void:
 	raid.bots[0].kill("bullet", null)
 	await t.frames(2)
 	t.check(raid._bot_respawns.is_empty(), "once it cools, the extra bots are not replaced")
-	while raid.bots.size() >= world.bot_count:
+	while raid._standing_bots() >= world.bot_count:
 		raid.bots[0].kill("bullet", null)
 	await t.frames(2)
 	t.check(raid._bot_respawns.size() == 1, "but the world never drops below its usual number")
