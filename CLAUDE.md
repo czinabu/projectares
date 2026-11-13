@@ -563,7 +563,12 @@ without Caleb, and update the gap list when a PR closes a row.
   call): its sections hang on the walls of the armory alcove
   (`HomeBase.in_armory`), with the gunsmith bench in the middle and the
   locker at the way in. A new kind of weapon gets a rack section there, not
-  a display of its own elsewhere in the room.
+  a display of its own elsewhere in the room. The base is where you suit
+  up (Caleb's call): the suit-up bay beside the launch pad
+  (`HomeBase.suit_up`) replaces the player with a new actor wearing
+  `suit_kit()`, weapons locked, and emits `player_replaced` so `main.gd`
+  hands it the controller; changing the loadout only changes what the
+  bay puts on next.
   Using a display only emits `equip_requested`; `main.gd` applies it through
   `Profile` or `NetSession.equip`. Like `Raid`, `HomeBase` has no camera, HUD
   or input code, and its displays are greybox shapes that `Look` dresses

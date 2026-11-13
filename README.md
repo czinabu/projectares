@@ -87,6 +87,10 @@ middle of the armory) holds your attachments on its
 pegboard and your primary in its vise. Look at an attachment and press **E**
 to fit it; a tablet beside the vise lists what the fitted kit changes.
 
+The **suit-up bay** beside the launch pad puts your loadout on you: use its
+control post and the bay's arms fit your armor, rig and weapons, so you can
+see what you are taking out before you deploy.
+
 The door behind you leads online (it opens the uplink). Signing out of a
 world, or dying and pressing L, brings you back here.
 

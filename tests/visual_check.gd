@@ -671,6 +671,18 @@ func _base_shots(out_dir: String) -> void:
 		camera.look_at_from_position(views[file][0], views[file][1])
 		await _settle(4)
 		await _shot(out_dir.path_join(file))
+	# The suit-up bay, empty, then with the player suited up in it.
+	var bay := HomeBase.SUIT_AT
+	camera.look_at_from_position(bay + Vector3(1.6, 2.0, 4.2), bay + Vector3(0, 1.1, 0))
+	await _settle(4)
+	await _shot(out_dir.path_join("base_suit_bay.png"))
+	base.suit_up()
+	# The arms move in real time: catch them at the body.
+	await get_tree().create_timer(base.suit_time * 0.45).timeout
+	await _shot(out_dir.path_join("base_suit_up.png"))
+	await get_tree().create_timer(base.suit_time).timeout
+	await _settle(4)
+	await _shot(out_dir.path_join("base_suited.png"))
 	# A station's screen, live on the console: from across the room, then
 	# moved in to use it.
 	var screen_view := SubViewport.new()

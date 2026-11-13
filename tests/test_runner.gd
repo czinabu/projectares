@@ -5877,6 +5877,7 @@ func _test_armory(base: HomeBase) -> void:
 	check(in_alcove and BaseLayout.ARMORY.size() == 3, "the rack's sections all hang inside the armory")
 	check(others_out, "armor, rigs, the garage and the shelves stay in the main room")
 	check(spots > 14, "the rack holds more weapons than the old gun rack and blade wall did (%d spots)" % spots)
+	await _test_suit_up(base)
 	check(base.in_armory(HomeBase.BENCH_AT) and base.in_armory(base.spot_transform("gunsmith", 11).origin),
 			"the gunsmith bench and its pegboard stand in the armory")
 	var locker: Vector3 = HomeBase.STATIONS["locker"]["at"]
@@ -5896,6 +5897,57 @@ func _test_armory(base: HomeBase) -> void:
 	check(base.in_armory(base.to_local(walker.global_position)), "you can walk from the room into the armory")
 	walker.global_position = was
 	walker.velocity = Vector3.ZERO
+	await frames(2)
+
+
+## The suit-up bay puts the loadout on the player before they deploy.
+func _test_suit_up(base: HomeBase) -> void:
+	print("Home base suit-up bay")
+	var bay_at := HomeBase.SUIT_AT
+	var pad: Vector3 = HomeBase.STATIONS["launch"]["at"]
+	check(base.inside(bay_at) and not base.in_armory(bay_at) and bay_at.distance_to(pad) < 5.0,
+			"the suit-up bay stands in the main room beside the launch pad")
+	check(base.suit_bay != null and base.suit_bay.get_prompt() == "[F] Suit up: put your loadout on",
+			"its control post offers to suit you up")
+	var kit := base.suit_kit()
+	check(base.loadout.get("primary", "") in kit and kit.any(func(id: String) -> bool: return ItemDB.has_tag(id, "melee"))
+			and not kit.any(func(id: String) -> bool: return ItemDB.has_tag(id, "vehicle")),
+			"the kit is your loadout, starter gear filling empty slots, with vehicles left parked (%s)" % [kit])
+	var before := base.player
+	var replaced := []
+	base.player_replaced.connect(func(actor: Actor) -> void: replaced.append(actor), CONNECT_ONE_SHOT)
+	base.suit_bay.interact(before)
+	await frames(3)
+	var worn := base.player
+	check(replaced == [worn] and worn != before,
+			"suiting up makes the player a new actor and says so")
+	var carried: Array[String] = []
+	for weapon in worn.weapons:
+		carried.append(weapon.item_id)
+	check(base.loadout.get("primary", "") in carried and worn.gear_items.size() >= kit.size() - 1,
+			"you wear your loadout (%s)" % [carried])
+	check(worn.weapons_locked and worn.global_position.distance_to(base.to_global(bay_at)) < 1.0,
+			"you stand in the bay, weapons locked: nobody fights at home")
+	check(base.suit_bay.get_prompt().ends_with("wearing your loadout"), "the bay says you are suited up")
+	var kept := base.loadout.duplicate()
+	var changed := base.loadout.duplicate()
+	changed["primary"] = "dmr_longshot"
+	base.show_gear(base.stash, changed)
+	await frames(2)
+	check(base.suit_bay.get_prompt().begins_with("[F] Suit up again"), "a changed loadout asks you to suit up again")
+	base.show_gear(base.stash, kept)
+	await frames(2)
+	var visitor := HomeBase.new()
+	visitor.read_only = true
+	visitor.show_gear(["rifle_carbine"], {"primary": "rifle_carbine"})
+	add_child(visitor)
+	await frames(2)
+	var guest := visitor.player
+	visitor.suit_bay.interact(guest)
+	await frames(2)
+	check(visitor.player == guest and not visitor.suited and visitor.suit_bay.get_prompt().ends_with("(not yours)"),
+			"a visitor cannot use someone else's bay")
+	visitor.queue_free()
 	await frames(2)
 
 
@@ -6053,6 +6105,22 @@ func _test_home_base() -> void:
 	main.base.equip_requested.emit("primary", "frame_bulwark")
 	check(Profile.equipped("vehicle") == "bike_scrapper" and Profile.equipped("primary") == "dmr_longshot",
 			"a parked bike can be picked, and gear cannot go in the wrong slot")
+	# Suiting up in the bay: real input on its control post.
+	var unsuited: Actor = main.base.player
+	_face_display(main.base.player, main.base.suit_bay)
+	main.controller.yaw = main.base.player.cmd.yaw
+	main.controller.pitch = main.base.player.cmd.pitch
+	await frames(3)
+	check(main.base.player.find_interactable() == main.base.suit_bay
+			and main.base.suit_bay.get_prompt().begins_with("[F] Suit up"), "the suit-up bay can be walked up to")
+	Input.action_press("interact")
+	await frames(3)
+	Input.action_release("interact")
+	await frames(3)
+	var suited: Actor = main.base.player
+	check(main.base.suited and suited != unsuited and suited.weapons.size() > 0, "using the bay suits you up")
+	check(main.controller.actor == suited and main.controller.camera.current,
+			"the controls and camera follow you into your suit")
 	check(main.hub.equipped("primary") == "dmr_longshot", "the locker shows the loadout chosen in the base")
 	# Every station opens its screen over the room, and Esc steps away.
 	for id: String in HomeBase.STATIONS:

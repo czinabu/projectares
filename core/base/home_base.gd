@@ -26,6 +26,9 @@ signal leave_requested
 signal station_requested(station: String)
 ## The displays were rebuilt.
 signal gear_shown
+## The player suited up: `player` is now a new actor wearing the loadout.
+## Whoever drives the player (a controller, a camera) takes it over.
+signal player_replaced(actor: Actor)
 
 const BaseLayout := preload("res://core/base/base_layout.gd")
 const VehicleScript := preload("res://core/vehicle/vehicle.gd")
@@ -72,6 +75,13 @@ const STATIONS := {
 const BENCH_AT := Vector3(-15.6, 0.0, 0.4)
 const BENCH_YAW := 0.0
 
+## The suit-up bay: where you put your loadout on before you deploy. It
+## stands beside the launch pad, facing the way in (local +Z).
+const SUIT_AT := Vector3(-3.7, 0.0, 3.0)
+const SUIT_YAW := 0.0
+## How long the bay's arms take to fit the gear, there and back (view only).
+var suit_time := 0.9
+
 ## The size of every station's screen, in metres (16:9).
 const SCREEN_SIZE := Vector2(1.6, 0.9)
 
@@ -79,6 +89,10 @@ var player: Actor
 var displays: Array[Display] = []
 var door: Door
 var stations: Array[Station] = []
+var suit_bay: SuitBay
+## True once the player has suited up in this visit, wearing `suited_kit`.
+var suited := false
+var suited_kit: Array[String] = []
 var stash: Array = []
 var loadout := {}
 
@@ -134,6 +148,28 @@ class Station:
 			base.station_requested.emit(id)
 
 
+## The suit-up bay's control post. Using it puts the loadout on you.
+class SuitBay:
+	extends Interactable
+
+	var base: HomeBase
+
+	func get_prompt() -> String:
+		if base == null or base.read_only:
+			return "Suit-up bay (not yours)"
+		if base.suited and base.suited_kit == base.suit_kit():
+			return "[F] Suit-up bay: you are wearing your loadout"
+		if base.suited:
+			return "[F] Suit up again: your loadout changed"
+		return "[F] Suit up: put your loadout on"
+
+	func interact(_actor: Actor) -> void:
+		# Deferred: the actor using the post is the one the bay replaces, and
+		# it is still in the middle of its tick.
+		if base and not base.read_only:
+			base.suit_up.call_deferred()
+
+
 ## The way out.
 class Door:
 	extends Interactable
@@ -155,6 +191,7 @@ func _ready() -> void:
 	add_child(_display_root)
 	_build_door()
 	_build_bench()
+	_build_suit_bay()
 	_build_stations()
 	_build_banner()
 	_spawn_player()
@@ -167,6 +204,54 @@ func show_gear(p_stash: Array, p_loadout: Dictionary) -> void:
 	loadout = p_loadout.duplicate()
 	if is_inside_tree():
 		_rebuild()
+
+
+## What the bay puts on you: each loadout slot's item, or the free starter
+## item that fits an empty slot, as a deploy would. Vehicles stay parked and
+## supplies stay on the shelf: only what is worn or carried in hand.
+func suit_kit() -> Array[String]:
+	var kit: Array[String] = []
+	for slot: String in Loadout.SLOTS:
+		var id: String = loadout.get(slot, "")
+		if id == "" and slot in Loadout.OPTIONAL_SLOTS:
+			continue
+		if id == "":
+			for free_id: String in ItemDB.all_ids():
+				if ItemDB.has_tag(free_id, "starter") and Loadout.fits(slot, free_id):
+					id = free_id
+					break
+		if id != "" and not ItemDB.has_tag(id, "vehicle"):
+			kit.append(id)
+	return kit
+
+
+## Puts the loadout on: the player steps into the bay as a new actor wearing
+## `suit_kit()`, its weapons holstered and locked (nobody fights at home),
+## while the bay's arms swing in and out. `player_replaced` says who it is.
+func suit_up() -> void:
+	if read_only or not is_inside_tree():
+		return
+	var old := player
+	var fresh := _new_player(SUIT_AT + Vector3(0, 0.1, 0))
+	# Facing out of the bay, toward the launch pad and the room.
+	fresh.cmd.yaw = SUIT_YAW + PI
+	if old and is_instance_valid(old):
+		if old.has_meta("appearance"):
+			fresh.set_meta("appearance", old.get_meta("appearance"))
+		# Freed at the end of the frame, still in the tree until then, so
+		# whatever is posing it this frame finishes cleanly.
+		old.name = "OldPlayer"
+		old.visible = false
+		old.queue_free()
+	add_child(fresh)
+	player = fresh
+	# Equipped once it stands in the room: the hand holds weapons in the world.
+	suited_kit = suit_kit()
+	Loadout.equip(fresh, suited_kit)
+	fresh.weapons_locked = true
+	suited = true
+	_play_suit_arms()
+	player_replaced.emit(fresh)
 
 
 ## The station with this id, or null.
@@ -436,12 +521,78 @@ func banner_text() -> String:
 
 
 func _spawn_player() -> void:
-	player = Actor.new()
-	player.name = "Player"
-	player.is_player = true
-	player.display_name = "You"
-	player.position = spawn_point
+	player = _new_player(spawn_point)
 	add_child(player)
+
+
+func _new_player(at: Vector3) -> Actor:
+	var actor := Actor.new()
+	actor.name = "Player"
+	actor.is_player = true
+	actor.display_name = "You"
+	actor.position = at
+	return actor
+
+
+## The suit-up bay beside the launch pad: a lit disc to stand on between two
+## frames whose arms swing in to fit the gear, and a control post to use.
+func _build_suit_bay() -> void:
+	var bay := Node3D.new()
+	bay.name = "SuitUpBay"
+	bay.position = SUIT_AT
+	bay.rotation.y = SUIT_YAW
+	add_child(bay)
+	var accent := Color(0.4, 0.9, 1.0)
+	var steel := Color(0.3, 0.31, 0.34)
+	var dark := Color(0.15, 0.15, 0.17)
+	bay.add_child(_part(Vector3(1.8, 0.06, 1.8), Vector3(0, 0.03, 0), dark))
+	bay.add_child(_part(Vector3(1.3, 0.07, 1.3), Vector3(0, 0.035, 0), accent.darkened(0.5), true))
+	for side: float in [-1.0, 1.0]:
+		var frame := Node3D.new()
+		frame.name = "Frame%s" % ("L" if side < 0 else "R")
+		frame.position = Vector3(side * 0.95, 0, -0.1)
+		bay.add_child(frame)
+		frame.add_child(_part(Vector3(0.16, 2.5, 0.3), Vector3(0, 1.25, 0), steel))
+		frame.add_child(_part(Vector3(0.04, 2.2, 0.04), Vector3(-side * 0.09, 1.2, 0.12), accent, true))
+		# Two arms, folded back against the frame until the bay works.
+		for height: float in [1.0, 1.55]:
+			var arm := Node3D.new()
+			arm.name = "Arm%d" % int(height * 100.0)
+			arm.position = Vector3(0, height, 0)
+			arm.set_meta("side", side)
+			arm.add_child(_part(Vector3(0.5, 0.1, 0.12), Vector3(-side * 0.25, 0, 0), steel))
+			arm.add_child(_part(Vector3(0.1, 0.16, 0.16), Vector3(-side * 0.5, 0, 0), accent, true))
+			arm.rotation.y = side * 1.3
+			frame.add_child(arm)
+	# A gantry over the top with the bay's name.
+	bay.add_child(_part(Vector3(2.06, 0.16, 0.3), Vector3(0, 2.55, -0.1), steel))
+	var title := _label("SUIT-UP BAY", accent, 0.22)
+	title.position = Vector3(0, 2.85, -0.1)
+	title.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
+	bay.add_child(title)
+	# The control post, front right, that you use.
+	suit_bay = SuitBay.new()
+	suit_bay.name = "Control"
+	suit_bay.base = self
+	suit_bay.position = Vector3(1.35, 0, 0.7)
+	suit_bay.add_child(_part(Vector3(0.24, 1.1, 0.24), Vector3(0, 0.55, 0), dark))
+	var panel := _part(Vector3(0.36, 0.26, 0.05), Vector3(0, 1.2, 0.05), accent, true)
+	panel.rotation.x = -0.5
+	suit_bay.add_child(panel)
+	_add_collision(suit_bay, Vector3(0.5, 1.4, 0.5), Vector3(0, 0.7, 0))
+	bay.add_child(suit_bay)
+
+
+## The bay's arms swing in to the body and fold back again. View only.
+func _play_suit_arms() -> void:
+	for arm: Node in find_child("SuitUpBay", false, false).find_children("Arm*", "Node3D", true, false):
+		if not arm.has_meta("side"):
+			continue
+		var side: float = arm.get_meta("side")
+		var tween := create_tween()
+		tween.tween_property(arm, "rotation:y", 0.0, suit_time * 0.4)
+		tween.tween_interval(suit_time * 0.2)
+		tween.tween_property(arm, "rotation:y", side * 1.3, suit_time * 0.4)
 
 
 # --- Displays ----------------------------------------------------------------

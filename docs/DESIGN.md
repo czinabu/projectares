@@ -101,7 +101,9 @@ canopy, holo signs over every kiosk and floating holo-ads.
 - Consoles do what menus would: launch pad, locker, gunsmith bench (crafting
   from blueprints, section 10), mastery bench, wardrobe, records, trader,
   uplink, arena gate.
-- Loadouts can be changed freely here.
+- Loadouts can be changed freely here, and only here: the base is where you
+  suit up. A suit-up bay beside the launch pad fits your loadout onto you in
+  view before you deploy.
 
 **Upgrades** turn the base from a display room into a headquarters, in this
 order:
