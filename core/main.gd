@@ -245,6 +245,8 @@ func _attach_base_view() -> void:
 	Look.set_appearance(base.player, _my_look())
 	controller = PlayerController.new()
 	controller.phone_out = phone != null and phone.is_open
+	if phone != null:
+		phone.set_holder(controller.actor)
 	controller.setup(base.player)
 	base.add_child(controller)
 	# The view is the player's choice: suiting up keeps it.
@@ -496,6 +498,8 @@ func _attach_player_view() -> void:
 		Look.set_appearance(raid.player, _my_look())
 	controller = PlayerController.new()
 	controller.phone_out = phone != null and phone.is_open
+	if phone != null:
+		phone.set_holder(controller.actor)
 	controller.setup(raid.player)
 	controller.sign_out_requested.connect(func() -> void: _on_sign_out_requested.call_deferred())
 	controller.redeploy_requested.connect(func() -> void: _on_redeploy_requested.call_deferred())

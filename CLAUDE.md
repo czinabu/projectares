@@ -31,7 +31,10 @@ without Caleb, and update the gap list when a PR closes a row.
 - The camera never changes view on its own. First/third-person switches only
   when the player presses the toggle (playtest feedback). The one exception:
   getting on a vehicle uses a separate riding view (third-person by default),
-  and getting off restores the on-foot view.
+  and getting off restores the on-foot view. And in third person, while the
+  phone is out, the camera eases in over the shoulder to read its holo
+  (`PlayerController._read_phone`, Caleb's call) and eases back after; the
+  view stays third person.
 - `Raid` has no camera, HUD, or input code. It must keep working headless.
 - The endless warzone. A `Raid` is one running world and it never ends: no
   timer, no exits, no restart. It keeps itself alive (`_tick_bots`,
@@ -544,12 +547,21 @@ without Caleb, and update the gap list when a PR closes a row.
   every key from `Phone.CONTROLS`, whose `{action}` names are filled in from
   the live `InputMap`; a new input action needs a row there (a test fails
   otherwise), and a changed control needs its row's wording updated. The phone
-  is held, not overlaid: its screen is a `SubViewport` on a rounded slab held
-  up in front of the camera (drawn over the world on `Mirror.HELD_LAYER`, the
-  scene dimmed behind it), with a home screen of app icons; a new app is an
-  entry in `Phone.APPS` with an icon glyph in `Phone.AppIcon`. Holding it is
-  `ActorCommand.phone`, a held flag, so everyone else sees the one-handed hold
-  (`Locomotion.phone_pose`, the one place to swap in a shared hand pose).
+  is a thing in the hand, never an overlay, and every view shows the same
+  one: a rugged handheld with a pistol grip (`core/phone/handheld.gd`, its
+  origin at the grip) that the character's own right hand closes round with
+  the gun-grip fist (`ActorSkin._update_phone`, `Locomotion.phone_pose`,
+  driven by `ActorCommand.phone`, a held flag, so everyone sees it). Your own
+  phone puts its screen, a `SubViewport` drawn with the device's frame and
+  chin keys, on that handheld's face (`Phone.set_holder`,
+  `ActorSkin.set_phone_screen`) and clicks are cast onto it; other players'
+  show lit glass. The device also projects a holo of its screen
+  (`Handheld.holo_of`) for reading from outside: it sits on
+  `Mirror.HEAD_LAYER`, so your own first-person camera leaves it out like the
+  head and reads the screen in the hand, while third person reads and clicks
+  the holo (Caleb's call). A new app is an entry in `Phone.APPS` with a line glyph in
+  `Phone.AppIcon`; Settings are grouped in `Phone.SETTINGS_TABS`, and the dev
+  switches live only on the Dev tab.
   Settings live in
   `core/settings/game_settings.gd` (its own save file); a server never reads them.
 - Dev mode is TEMPORARY (Caleb's call, to come out once the game is further
