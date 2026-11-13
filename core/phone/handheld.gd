@@ -140,9 +140,14 @@ static func holo_material(texture: Texture2D) -> StandardMaterial3D:
 		sheen.fill_from = Vector2(0.5, 0.0)
 		sheen.fill_to = Vector2(0.5, 1.0)
 		sheen.gradient = Gradient.new()
-		sheen.gradient.colors = PackedColorArray([Color(UiTheme.ACCENT, 0.35), Color(UiTheme.ACCENT, 0.08)])
+		sheen.gradient.colors = PackedColorArray([_dim(UiTheme.ACCENT, 0.14), _dim(UiTheme.ACCENT, 0.03)])
 		mat.albedo_texture = sheen
 	return mat
+
+
+## `color` scaled down for additive light, kept opaque so it adds only that much.
+static func _dim(color: Color, amount: float) -> Color:
+	return Color(color.r * amount, color.g * amount, color.b * amount, 1.0)
 
 
 ## A faint fan of light from the device's top edge up to the panel.
@@ -197,7 +202,7 @@ static func glass_material() -> StandardMaterial3D:
 	lit.emission_enabled = true
 	lit.emission = UiTheme.ACCENT
 	lit.emission_energy_multiplier = 0.35
-	lit.roughness = 0.2
+	lit.roughness = 0.6
 	return lit
 
 
