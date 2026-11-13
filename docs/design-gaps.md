@@ -35,11 +35,14 @@ rows marked **pre-playtest** come before the friends playtest.
 
 | Item | State | Notes |
 | --- | --- | --- |
-| Vitals, pack, ammo, heat, standing, strongpoints | Built | `Hud.Wrist`. |
+| Watch card: icons for map, pack, vehicle, heavy weapon, artifact, sign-out/banking | Built | `Hud.Wrist` and `Hud.watch_slots`: a card-sized hologram over the wrist; the icon you look at opens (`PlayerController.watch_glance`). Standing and strongpoints are on the map icon until the map and pings page exists. |
+| Vitals, heat and ammo always in view, off the watch | Built | First person with a helmet: health, armor and stamina arcs, heat gauge and the ability's state at the visor edges (`VisorHud._draw_vitals`, `_draw_heat`). Ammo is on the gun's counter. With no helmet, or in third person, the watch card carries the vitals as a thin strip. |
+| Map and pings page | Missing | Design: the watch holds the map and squad pings. |
+| Banking readout on the watch | Missing | Banking happens at depots; the watch should show what is banked. Comes with banking. |
 | Landing choices | Built | |
 | Vehicle carousel (toys) | Built | Pick, throw, unpack, pack back; holds two. |
 | Heavy weapon chamber | Missing | Today a power weapon fills key 4 from a rack. **Pre-playtest.** |
-| Per-rig readouts (stall line, height band, dash pips) | Missing | Comes with the aerial rig rework. **Pre-playtest.** |
+| Per-rig readouts (stall line, height band, dash pips) | Missing | Now part of the flight HUD (see Flight): at the visor edge and on the rig, not the watch. Comes with the aerial rig rework. **Pre-playtest.** |
 | Sign-out from the watch, with its countdown | Partly | Sign-out exists on L; not on the watch. |
 | Loadout swapping from the watch in the PvE world | Missing, deferred | With the PvE world. Today loadouts change only in a lobby or base. |
 | Raising the watch with the character's own left arm, first and third person | Missing | Today third person only straps the watch to `Wrist.L` (the arm stays put and the hologram floats to the camera) and first person shows a grey box forearm. Left-arm IK already exists in `WeaponArm` (`off_ik`). |
@@ -69,6 +72,8 @@ rows marked **pre-playtest** come before the friends playtest.
 | Rig tiers Mk1 to Mk3, each with a ceiling (25, 60, 100 m over the ground) | Built | `FlightRig.ceiling`, `ItemDB.RIG_CEILINGS`. Only Mk1 drops; Mk2 and Mk3 wait for crafting from blueprints (DESIGN.md section 10), so nothing hands them out yet. No readout yet when you reach the ceiling (the jets just stop climbing); add one to the watch once the watch rework lands. |
 | Ring races with a leaderboard per tier as well as per rig | Missing | With the hub's ring courses. |
 | Overheat cuts the rig out until heat is back to 35 | Built | `recover_heat` 35. |
+| Flight HUD, first person: heat gauge, rig cue, squad markers and landing warning at the visor edges | Partly | Heat gauge and rig cue built (`VisorHud._draw_heat`); squad markers and landing warning missing. | New in DESIGN.md section 5. Extends `VisorHud`; the squad markers use the clan or team side. **Pre-playtest**, with the rig rework. |
+| Flight HUD, third person: heat and cue on the pack screen, glowing vents, landing warning pulse | Missing | The pack already carries a screen (`ActorSkin.stow_place` keeps it clear); vents are new rig art. With the row above. |
 
 ## Heavy weapons and artifacts
 

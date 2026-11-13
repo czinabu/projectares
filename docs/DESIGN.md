@@ -32,10 +32,12 @@ Two standing rules shape every feature:
   screen-space overlays are a last resort, and Caleb is asked before one is
   built (accessibility, a critical error, or something that cannot work
   in-world).
-- **Watch vs phone.** The holographic wrist watch is for gameplay: vitals,
-  pack, ammo, heat, landing choices, vehicles, the heavy weapon and anything
-  else used in action. The phone is for settings, friends and players, and
-  information.
+- **Watch vs phone.** Your vitals, flight heat and ammo are always in
+  view on the visor and the gear itself (section 3), so staying alive never
+  needs the watch. The holographic wrist watch is for the things you choose
+  to do in action: vehicles, the heavy weapon, artifacts, sign-out, banking,
+  the map and pings, landing, and the pack. The phone is for settings,
+  friends and players, and information.
 
 ## 2. The places
 
@@ -167,18 +169,39 @@ vehicle has a job:
 
 ## 3. The watch
 
-The wrist-mounted holographic watch is the central in-action interface.
-Raised with X; it comes up by itself when you go down.
+The wrist-mounted holographic watch is the interface for the things you do
+in action. Raised with X; it comes up by itself when you go down.
+
+> **This replaces the earlier "watch for gameplay" rule**, which put vitals,
+> heat and ammo on the watch. Those now live on the visor and the gear, so
+> you never press X just to see how you are doing. The watch keeps the
+> actions and the things you manage.
+
+### Always in view: vitals, heat and ammo
+
+| Reading | First person | Third person |
+| --- | --- | --- |
+| Health, armor, stamina | A thin arc at the visor edge (the existing health arc, widened to cover armor and stamina). | The strip and system light on the back of the helmet (already built). |
+| Flight heat | A gauge at the visor edge, only while a flight rig is worn (section 5). | The screen on the back of the pack and glowing vents on the rig (section 5). |
+| Ammo | On the gun's own display, where you already look down the sight. | The same display on the gun, seen on the model. |
+
+These follow the visor rules: thin projected light that rests dim and never
+frames or tints the view, and the same readings with no helmet worn appear
+on the gear alone (the gun and the pack). They show only your own state,
+never an enemy's.
+
+### What the watch holds
 
 | Feature | What it does |
 | --- | --- |
-| Vitals and loadout | Health, armor, stamina, flight heat, ammo, pack, standing, strongpoints, and your weight tier (section 4). |
-| Rig readout | One extra readout per flight rig (section 5). |
 | Vehicle carousel | The permanent garage: swipe through your vehicles, take one as a toy in your hand, throw it to unpack the full-size vehicle. Packs vehicles back up. |
 | Heavy weapon chamber | Holds one heavy weapon (section 6). |
 | Artifact | Holds and uses your one artifact for the outing (section 6). |
-| Landing choices | Where to drop back in after dying. |
 | Sign-out | Starting a sign-out and its countdown (section 7). |
+| Banking | Banking at a depot and what is banked so far (section 7). |
+| Map and pings | The map, standing, strongpoints, and pings to your squad. |
+| Landing choices | Where to drop back in after dying. |
+| Pack | What you carry, your weight tier (section 4), and the rig readout for the pack's detail (section 5). |
 
 Watch skins are cosmetics, shown off in the hub.
 
@@ -255,7 +278,7 @@ how fast you cruise, so a mixed squad still keeps pace (section 5).
 | Ground speed, sprint and slide | A little faster, a little longer | A little slower, a little shorter |
 | Top flight cruise speed | Unchanged | Unchanged |
 
-- The tier shows on the watch and on the base locker's screen, next to the
+- The tier shows on the watch's pack page and on the base locker's screen, next to the
   loadout it comes from.
 - The jetpack's existing allowance for heavy armor (it ignores the armor
   heat penalty, per the aerial proposal) folds into this: the jetpack takes
@@ -377,8 +400,33 @@ unchanged.
 In a squad the layers become roles: the jetpack holds the high angle, the
 wings flank and dive in, the boots push through streets and buildings.
 
-Rig readouts go on the watch and on the rig itself (heat screen, wingtip
-lights, boot pips), never on a screen overlay.
+Rig readouts go on the visor edge and on the rig itself (heat screen,
+wingtip lights, boot pips), never on a screen overlay. The next section says
+where each one sits.
+
+### Flight HUD
+
+Four readings make up the flight HUD. Like the vitals in section 3 they are
+always in view, and the watch is not needed for any of them.
+
+| Reading | What it shows |
+| --- | --- |
+| Heat gauge | The 100 heat bar, with the 35 recovery mark. It warns before the overheat cut-out. |
+| Rig cue | One cue per rig: the jetpack's coast-and-vent window, the wings' stall line, the boots' height band and dash pips. |
+| Squad markers | Where your squad is, at the visor edge toward them. Squad only; never shows an enemy. |
+| Landing warning | Ground coming up while heat is high, or while the rig is about to cut out, so you can land or pulse before you fall. |
+
+- **First person.** The readings sit at the visor edges, as thin projected
+  light that rests dim and brightens when it matters (the visor rule in
+  `CLAUDE.md`). Nothing sits in the middle of the view.
+- **Third person.** The visor glass is gone, so the readings move onto the
+  gear. Heat and the rig cue show on the screen on the back of the pack
+  (a rig with no pack screen uses its own: wingtip lights, boot pips), the
+  rig's vents glow with heat so others can read it too, and the landing
+  warning pulses the vents and the pack screen.
+- **Fair to read.** Glowing vents are a visible cost of flying hot, in line
+  with the thermal rule: the jetpack is the brightest and heat-seekers can
+  use it. Squad markers show friends only.
 
 ## 6. Heavy weapons and artifacts
 

@@ -49,6 +49,14 @@ func _ready() -> void:
 		get_tree().quit()
 		return
 
+	# `-- <output_dir> --watch-only` shows the watch card raised: in first
+	# person with no helmet (vitals on the card), with a helmet and a jetpack
+	# (vitals and heat on the visor), each icon looked at, and in third person.
+	if "--watch-only" in args:
+		await _watch_shots(out_dir)
+		get_tree().quit()
+		return
+
 	# `-- <output_dir> --toys-only` shows the toy vehicles: on the watch, in
 	# the hand, in the air, unpacking and unpacked.
 	if "--toys-only" in args:
@@ -262,6 +270,48 @@ func _ready() -> void:
 	await _settle(2)
 	await _world_shots(out_dir)
 	get_tree().quit()
+
+
+func _watch_shots(out_dir: String) -> void:
+	for helmet: String in ["", "helm_seeker"]:
+		var raid := Raid.new()
+		add_child(raid)
+		var world := Worlds.get_world("ashfront")
+		var kit: Array[String] = ["rifle_scrap", "blade_scrap", "pistol_service", "jetpack_mk1", "plate_light"]
+		if helmet != "":
+			kit.append(helmet)
+		raid.start(world, 42, kit)
+		for bot in raid.bots:
+			bot.get_node("Brain").set_physics_process(false)
+		raid.state_for(raid.player).stowed.append("bike_raider")
+		var p := raid.player
+		p.health.health = p.health.max_health * 0.6
+		p.stamina = p.max_stamina * 0.4
+		p.flight.heat = p.flight.max_heat * 0.55
+		p.flight.cool_per_sec = 0.0
+		var controller := PlayerController.new()
+		controller.setup(p)
+		raid.add_child(controller)
+		var hud := Hud.new()
+		hud.setup(raid, controller)
+		raid.add_child(hud)
+		await _settle(60)
+		controller.wrist_raised = true
+		await _settle(30)
+		var tag := "helmet" if helmet != "" else "bare"
+		await _shot(out_dir.path_join("watch_first_%s.png" % tag))
+		if helmet == "":
+			for i in Hud.Wrist.SLOTS.size():
+				controller.watch_glance = Hud.Wrist.glance_of(i, Hud.Wrist.SLOTS.size())
+				controller.watch_glance_moved = true
+				await _settle(4)
+				await _shot(out_dir.path_join("watch_look_%s.png" % Hud.Wrist.SLOTS[i]))
+			controller.watch_glance_moved = false
+		controller.toggle_view()
+		await _settle(40)
+		await _shot(out_dir.path_join("watch_third_%s.png" % tag))
+		raid.queue_free()
+		await _settle(3)
 
 
 func _toy_shots(out_dir: String) -> void:
