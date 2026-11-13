@@ -279,6 +279,17 @@ func stash_value() -> int:
 	return ItemDB.total_value(stash)
 
 
+## Takes on the player state (`StashRules.CARRIED`) of your account on a
+## server you host yourself, where you are the same player: what you did
+## there is what you have at home. `snapshot` is `StashService.snapshot`.
+func adopt_account(snapshot: Dictionary) -> void:
+	var data := to_dict()
+	for key: String in StashRules.CARRIED:
+		if snapshot.has(key):
+			data[key] = snapshot[key]
+	load_dict(data)
+
+
 func save() -> void:
 	if not persist:
 		return
@@ -286,7 +297,12 @@ func save() -> void:
 	if file == null:
 		push_warning("Profile: could not write %s" % save_path)
 		return
-	file.store_string(JSON.stringify({
+	file.store_string(JSON.stringify(to_dict(), "\t"))
+
+
+## Everything the save holds, as plain data.
+func to_dict() -> Dictionary:
+	return {
 		"version": 2,
 		"stash": stash,
 		"loadout": loadout,
@@ -308,7 +324,7 @@ func save() -> void:
 		"arena_losses": arena_losses,
 		"base_upgrades": base_upgrades,
 		"blueprints": blueprints,
-	}, "\t"))
+	}.duplicate(true)
 
 
 func load_profile() -> void:
@@ -318,6 +334,11 @@ func load_profile() -> void:
 	if typeof(data) != TYPE_DICTIONARY:
 		push_warning("Profile: save file is unreadable, starting fresh")
 		return
+	load_dict(data)
+
+
+## Takes on a save's data, checked as it goes.
+func load_dict(data: Dictionary) -> void:
 	stash.clear()
 	for id: Variant in data.get("stash", []):
 		if typeof(id) == TYPE_STRING and ItemDB.has_item(id) and not ItemDB.has_tag(id, "starter"):

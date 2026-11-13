@@ -915,6 +915,10 @@ func add_player(p_kit: Array = [], p_mastery: Dictionary = {}, p_name := "Raider
 	if forward != null:
 		var angle := rng.randf_range(0.0, TAU)
 		at = forward.global_position + Vector3(cos(angle), 0.0, sin(angle)) * forward.radius * 0.4
+	# Back in a safe zone through one of its doorways: in front of that door.
+	var doorway := _arrival_doorway(p_drop)
+	if doorway != null:
+		at = arrival_point(doorway)
 	var actor := Actor.new()
 	actor.name = "Player" if _player_count == 0 else "Player%d" % _player_count
 	_player_count += 1
@@ -922,7 +926,7 @@ func add_player(p_kit: Array = [], p_mastery: Dictionary = {}, p_name := "Raider
 	actor.display_name = p_name
 	add_child(actor)
 	# Spread out players who arrive at the same spawn point.
-	if mode == Mode.SERVER:
+	if mode == Mode.SERVER and doorway == null:
 		at += Vector3(rng.randf_range(-2.5, 2.5), 0, rng.randf_range(-2.5, 2.5))
 	actor.global_position = _stand(at)
 	Loadout.equip(actor, state.kit)
@@ -956,6 +960,30 @@ func add_player(p_kit: Array = [], p_mastery: Dictionary = {}, p_name := "Raider
 			state.stowed.append(id)
 	watch_changed.emit(actor)
 	return actor
+
+
+## The doorway someone comes back through, for a `p_drop` of
+## "from:<destination>": in a safe zone, the "portal" marker leading where
+## they have been ("world:ashfront", "arena", "home"). Null otherwise, and
+## they arrive the usual way.
+func _arrival_doorway(drop: String) -> Node3D:
+	if not world.safe_zone or not drop.begins_with("from:"):
+		return null
+	var destination := drop.trim_prefix("from:")
+	for node in _map_nodes("portal"):
+		if str(node.get_meta("destination", "")) == destination:
+			return node
+	return null
+
+
+## Where someone coming out of a doorway stands: just clear of it, toward
+## the middle of the map, so they see the door they came through and are not
+## offered the trip again. The same spot every time.
+static func arrival_point(doorway: Node3D) -> Vector3:
+	var at := doorway.global_position
+	var inward := Vector3(-at.x, 0.0, -at.z)
+	inward = inward.normalized() if inward.length() > 0.01 else Vector3.BACK
+	return at + inward * (float(doorway.get_meta("radius", 2.0)) + 2.0)
 
 
 ## The spawn point farthest from everyone already in the raid, so nobody

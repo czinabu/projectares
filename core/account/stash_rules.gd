@@ -11,6 +11,13 @@ extends RefCounted
 ## banked at a depot is added while you are out. Starter (scrap) items
 ## are free and never stored, and power weapons are raid-only.
 
+## The one player state: what a player takes from place to place. Your solo
+## profile and your account on a server you host yourself (`main.gd
+## host_and_join`) are the same player, so these keys are handed whole between
+## them (`Profile.adopt_account`, `StashService.host_profile`), never merged.
+const CARRIED: Array[String] = ["stash", "loadout", "mastery", "raids_played", "raids_extracted", "kills",
+		"renown", "scrip", "arena_wins", "arena_losses", "base_upgrades", "blueprints"]
+
 
 ## True if an item may be stored in a stash at all.
 static func storable(id: Variant) -> bool:

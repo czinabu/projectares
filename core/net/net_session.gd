@@ -892,7 +892,7 @@ func _request_join(drop := "") -> void:
 	raid.set_team(account_id, clan_id if _clans_fight_together() else "", clans.name_of(clan_id))
 	# Renown is kept under the account, never under a name the client chose.
 	var actor := raid.add_player(deployed.kit, deployed.picks, who.name, account_id, int(who.get("renown", 0)),
-			drop.left(16))
+			drop.left(48))
 	_joining_look = {}
 	_wear_clan(actor, account_id)
 	if not safe:
