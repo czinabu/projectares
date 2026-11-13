@@ -96,6 +96,9 @@ var bank_follow := 5.0
 ## Hovering on a jetpack, the body leans the way it flies: radians at full
 ## fly speed, and how far the legs trail.
 var hover_lean := 0.45
+## How far a jetpack boost leans the body in as it sets off (radians from
+## upright); it lies flat once at full boost speed.
+var boost_start_lean := 0.5
 ## A sideways air dash while flat rolls the body once round its own length;
 ## after it, the body rights itself at this many radians a second.
 var twist_speed := 7.0
@@ -1299,7 +1302,12 @@ func _update_glide(delta: float) -> void:
 	var bank := 0.0
 	if flat:
 		var path := atan2(actor.velocity.y, maxf(speed, 0.5)) if actor.velocity.length() > 1.0 else 0.0
-		var lie := glide_pitch if actor.flight.is_gliding else PI / 2.0
+		var lie := glide_pitch
+		if not actor.flight.is_gliding:
+			# A jetpack boost speeds you up into a prone, head-first pose:
+			# leaning in as it sets off, flat out at full boost speed.
+			var gained := clampf(speed / maxf(actor.flight.boost_speed, 1.0), 0.0, 1.0)
+			lie = lerpf(boost_start_lean, PI / 2.0, smoothstep(0.0, 1.0, gained))
 		if speed <= 0.5:
 			dir = Vector3.FORWARD
 		tilt = dir * clampf(lie - path, 0.0, PI * 0.95)

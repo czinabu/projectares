@@ -1741,7 +1741,12 @@ func _check_free_flight(p: Actor) -> void:
 	p.cmd.jump_pressed = true
 	await frames(1)
 	p.cmd.jump_pressed = false
-	check(p.flight.is_hovering, "tapping jump in the air lights the jets")
+	check(not p.flight.is_hovering, "tapping jump in the air no longer lights the jets")
+	await frames(10)
+	check(not p.flight.is_hovering and p.velocity.y < -1.0, "with aim let go a jetpack does not hover: you fall")
+	p.cmd.secondary = true
+	await frames(1)
+	check(p.flight.is_hovering, "holding aim in the air lights the jets")
 	await frames(40)
 	var held := p.global_position.y
 	await frames(40)
@@ -1793,7 +1798,30 @@ func _check_free_flight(p: Actor) -> void:
 	p.cmd.move = Vector2.ZERO
 	p.cmd.pitch = 0.0
 	await frames(5)
-	check(p.flight.is_hovering and not p.flight.is_boosting, "letting go of the boost drops back to a hover")
+	check(p.flight.is_hovering and not p.flight.is_boosting, "letting go of the boost drops back to a hover while aim is held")
+	# Aim let go: the jets go out. A Shift press in the air boosts with no
+	# hover first, and the speed builds rather than snapping on.
+	p.cmd.secondary = false
+	await frames(30)
+	check(not p.flight.is_hovering and p.velocity.y < -1.0, "letting go of aim puts the jets out")
+	p.velocity = Vector3.ZERO
+	p.cmd.sprint = true
+	await frames(5)
+	check(not p.flight.is_boosting, "Shift held from before does not boost on its own")
+	p.cmd.sprint_pressed = true
+	await frames(1)
+	p.cmd.sprint_pressed = false
+	check(p.flight.is_boosting and p.flight.is_hovering, "a Shift press in the air boosts with aim let go")
+	var early := p.velocity.dot(Basis(Vector3.UP, p.cmd.yaw) * Vector3.FORWARD)
+	await frames(90)
+	along = p.velocity.dot(Basis(Vector3.UP, p.cmd.yaw) * Vector3.FORWARD)
+	check(p.flight.is_boosting and along > early + 3.0 and along > p.flight.boost_speed - 1.0 and absf(p.velocity.y) < 1.0,
+			"the boost accelerates you forward (%.1f then %.1f m/s)" % [early, along])
+	p.cmd.sprint = false
+	await frames(5)
+	check(not p.flight.is_hovering and not p.flight.is_boosting, "letting go of Shift without aim ends the flight")
+	p.cmd.secondary = true
+	p.velocity = Vector3.ZERO
 	p.flight.boost_speed = boost_was
 	# Shift + a move key dashes that way on heat, and the hover carries on.
 	await frames(30)
@@ -1831,6 +1859,7 @@ func _check_free_flight(p: Actor) -> void:
 	p.flight.heat_per_sec = 4000.0
 	await frames(60)
 	check(p.flight.overheated and not p.flight.is_hovering and p.velocity.y < 0.0, "overheating puts the jets out and you fall")
+	p.cmd.secondary = false
 	p.flight.heat_per_sec = heat_rate
 	for i in 400:
 		await get_tree().physics_frame
@@ -1845,6 +1874,21 @@ func _check_free_flight(p: Actor) -> void:
 	await frames(1)
 	check(not p.flight.is_hovering, "a jump off the ground does not light the jets")
 	p.cmd.jump = false
+	# A sprinting jump stays a jump: Shift held from the ground never boosts.
+	for i in 400:
+		await get_tree().physics_frame
+		if p.is_on_floor():
+			break
+	p.cmd.sprint = true
+	p.cmd.move = Vector2(0, 1)
+	await frames(10)
+	p.cmd.jump_pressed = true
+	await frames(1)
+	p.cmd.jump_pressed = false
+	await frames(5)
+	check(not p.is_on_floor() and not p.flight.is_boosting, "a sprinting jump does not boost")
+	p.cmd.sprint = false
+	p.cmd.move = Vector2.ZERO
 	var copy := ActorCommand.new()
 	p.cmd.descend = true
 	p.cmd.sprint_pressed = true
@@ -1864,9 +1908,7 @@ func _check_jetpack_cruise(p: Actor) -> void:
 	p.velocity = Vector3.ZERO
 	p.flight.heat = 0.0
 	await frames(2)
-	p.cmd.jump_pressed = true
-	await frames(1)
-	p.cmd.jump_pressed = false
+	p.cmd.secondary = true
 	await frames(30)
 	var still := p.flight.heat
 	await frames(60)
@@ -1910,9 +1952,11 @@ func _check_jetpack_cruise(p: Actor) -> void:
 		p.cmd.sprint = false
 		p.cmd.move = Vector2.ZERO
 		await frames(5)
-		check(gun.current_spread_deg() < wild - 1.0, "a gun spreads wider in the air than from a hover")
+		check(gun._air_spread() == 0.0 and gun.current_spread_deg() < wild - 0.01,
+				"a gun spreads wider in the air than from a hover")
 	p.cmd.sprint = false
 	p.cmd.move = Vector2.ZERO
+	p.cmd.secondary = false
 
 
 ## Boots skimming. `p` stands on open ground with thruster boots.
@@ -3923,7 +3967,7 @@ func _test_online_movement() -> void:
 		burst_top = maxf(burst_top, seen.global_position.y - ground)
 	check(burst_top > 0.6, "a press made while every packet is being lost still reaches the server (%.2f m)" % burst_top)
 
-	# Free flight is predicted like running: jump, tap again to light the
+	# Free flight is predicted like running: jump, hold aim to light the
 	# jets, fly sideways, and the server agrees all the way.
 	if me.flight.can_hover():
 		await frames(60)
@@ -3931,9 +3975,7 @@ func _test_online_movement() -> void:
 		await frames(1)
 		me.cmd.jump_pressed = false
 		await frames(12)
-		me.cmd.jump_pressed = true
-		await frames(1)
-		me.cmd.jump_pressed = false
+		me.cmd.secondary = true
 		dana.max_correction = 0.0
 		me.cmd.jump = true
 		await frames(30)
@@ -3952,6 +3994,7 @@ func _test_online_movement() -> void:
 		me.cmd.descend = false
 		await frames(30)
 		check(not me.flight.is_hovering and not seen.flight.is_hovering, "landing puts the jets out on both screens")
+		me.cmd.secondary = false
 
 	# Other players glide between updates instead of stepping.
 	me.cmd.move = Vector2(1, 0)

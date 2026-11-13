@@ -342,10 +342,13 @@ without Caleb, and update the gap list when a PR closes a row.
   classes whose item stats pick the behavior. Abilities fire from
   `ActorCommand.ability_pressed`.
 - Flight is simulated in `Actor` from the command, like a dash, so it
-  predicts and replicates: jets lit by a tap in the air
-  (`FlightRig.is_hovering`, flown by `Actor._simulate_hover`; the server
-  repeats it in each state as `ActorCommand.STATE_HOVERING`), a boost along
-  the look direction, and a glide whose speed is energy
+  predicts and replicates: jets lit only while aim is held in the air
+  (`Actor._wants_hover`, Caleb's call: never a hover that stays on by
+  itself; `FlightRig.is_hovering`, flown by `Actor._simulate_hover`; the
+  server repeats it in each state as `ActorCommand.STATE_HOVERING`), a
+  boost started by a sprint press in the air and held on sprint, no hover
+  needed (`Actor._wants_boost`), that speeds you up along the look
+  direction while the skin lays the body out prone as the speed builds, and a glide whose speed is energy
   (`Actor._glide_velocity`). Every rig cruises at the same
   `FlightRig.CRUISE_SPEED` so a squad on mixed rigs keeps together (Caleb's
   call), and each stays up its own way and has its own edge: the jetpack

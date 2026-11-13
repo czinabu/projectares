@@ -19,8 +19,8 @@ skies, animated models and effects (see "How it looks" below).
 | Action | Key |
 | --- | --- |
 | Move / sprint | WASD / Shift |
-| Jump. In the air: hold to climb, tap to light the jets and hover (jetpack); press to kick the way you steer, hold to skim low (thruster boots); press to launch, hold while falling to glide (glide wings) | Space |
-| Jetpack hovering: cruise with the move keys, Space climbs, C coasts down to cool, hold Shift + W to boost head first (Mk2). The keys fly every rig; the mouse only looks and aims | |
+| Jump. In the air: hold to climb (jetpack); press to kick the way you steer, hold to skim low (thruster boots); press to launch, hold while falling to glide (glide wings) | Space |
+| Jetpack: hold right mouse (aim) in the air to hover; let go and you fall. Hovering, cruise with the move keys, Space climbs, C coasts down to cool. Shift in the air boosts (Mk2): it speeds you up head first into a prone pose, and holding it keeps boosting. The keys fly every rig; the mouse only looks and aims | |
 | Glide wings gliding: Space again pulses up | |
 | Air dash with any rig, on heat: Shift + a move key dashes that way (Shift alone dashes forward). Sideways while boosting it barrel rolls. Gliding, Shift is a wing boost: it thrusts you the way you face and you keep the speed, and Shift + S boosts upward | Shift + WASD |
 | Gliding: the wings fly where you look, like a bird. A / D bank round harder, W dives for speed, S pulls up to climb on it. Turns cost speed, and pulling up hard in a turn stalls you. Hold V to free look while the wings fly straight on: the body twists to face where you look, and looking behind flips you onto your back to shoot behind you | |

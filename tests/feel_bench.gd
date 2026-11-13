@@ -134,7 +134,7 @@ func _fly(rig: String) -> void:
 		a.global_position.y = 60.0
 		a.velocity = Vector3.ZERO
 		await _ticks(3, "!lift")
-		await _press_jump()
+		a.cmd.secondary = true
 		await _ticks(30, "light the jets")
 		a.cmd.move = Vector2(0, 1)
 		var up := await _until(func() -> bool: return _flat_speed() > f.fly_speed * 0.95, 300, "cruise off")
@@ -173,6 +173,7 @@ func _fly(rig: String) -> void:
 			var ease := await _until(func() -> bool: return _flat_speed() < f.fly_speed * 1.05, 300, "end boost")
 			notes.append("boost in %.2f s, back to cruise in %.2f s" % [boost, ease])
 			a.cmd.move = Vector2.ZERO
+		a.cmd.secondary = false
 	if f.can_glide():
 		a.global_position.y = 400.0
 		a.velocity = Vector3(0, -1, 0)
@@ -278,9 +279,10 @@ static func climb(a: Actor, limit: float, step: Callable, stop := INF) -> Vector
 		var t := float(i) / tps
 		a.cmd.jump_pressed = false
 		if f.can_hover():
-			# Light the jets, climb, and coast down a little to cool.
-			if not f.is_hovering:
-				a.cmd.jump_pressed = not f.overheated
+			# Jump off the ground, hold aim to keep the jets lit, climb, and
+			# coast down a little to cool.
+			a.cmd.secondary = true
+			a.cmd.jump_pressed = a.is_on_floor() and i < 10
 			if f.heat > f.max_heat * 0.85:
 				cooling = true
 			elif f.heat < f.max_heat * 0.2:
@@ -315,6 +317,7 @@ static func climb(a: Actor, limit: float, step: Callable, stop := INF) -> Vector
 			break
 	a.cmd.jump = false
 	a.cmd.descend = false
+	a.cmd.secondary = false
 	a.cmd.sprint_pressed = false
 	a.cmd.move = Vector2.ZERO
 	return Vector2(top, top_at)
