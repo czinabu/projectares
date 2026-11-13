@@ -309,7 +309,8 @@ func _toy_shots(out_dir: String) -> void:
 
 
 ## The body in the air: a jetpack hovering, boosting level and in a climb and
-## barrel rolling in a sideways dash, and wings level, banked into a turn each way and in a dive.
+## barrel rolling in a sideways dash, wings level, banked into a turn each way and in a dive,
+## and thruster boots skimming still, each way, aiming and dashing.
 ## Each from behind and from the side.
 func _flight_shots(out_dir: String) -> void:
 	# [name, rig, hovering, boosting, gliding, speed, climb, turn rate, look pitch, sideways air dash]
@@ -326,6 +327,13 @@ func _flight_shots(out_dir: String) -> void:
 		["wings_turn_right", "wings_glide", false, false, true, 16.0, -1.8, -1.4, 0.0, 0, Vector3.FORWARD],
 		["wings_dive", "wings_glide", false, false, true, 24.0, -10.0, 0.0, -0.9, 0, Vector3.FORWARD],
 		["wings_climb", "wings_glide", false, false, true, 18.0, 9.0, 0.0, 0.9, 0, Vector3.FORWARD],
+		# Thruster boots skimming: still, at cruise each way, and dashing.
+		["boots_hover", "boots_thruster", false, false, false, 0.0, 0.0, 0.0, 0.0, 0, Vector3.FORWARD],
+		["boots_forward", "boots_thruster", false, false, false, 15.0, 0.0, 0.0, 0.0, 0, Vector3.FORWARD],
+		["boots_forward_aim", "boots_thruster", false, false, false, 15.0, 0.0, 0.0, 0.0, 0, Vector3.FORWARD],
+		["boots_dash", "boots_thruster", false, false, false, 35.0, 0.0, 0.0, 0.0, 0, Vector3.FORWARD],
+		["boots_strafe", "boots_thruster", false, false, false, 15.0, 0.0, 0.0, 0.0, 0, Vector3(1, 0, 0)],
+		["boots_back", "boots_thruster", false, false, false, 15.0, 0.0, 0.0, 0.0, 0, Vector3.BACK],
 	]
 	for pose: Array in poses:
 		var raid := Raid.new()
@@ -347,6 +355,8 @@ func _flight_shots(out_dir: String) -> void:
 		p.flight.is_boosting = pose[3]
 		p.flight.is_thrusting = pose[2]
 		p.flight.is_gliding = pose[4]
+		p.flight.is_skimming = pose[1] == "boots_thruster"
+		p.cmd.secondary = String(pose[0]).ends_with("_aim")
 		p.cmd.pitch = pose[8]
 		var at := p.global_position
 		var back := p.global_transform.basis.z
@@ -356,6 +366,8 @@ func _flight_shots(out_dir: String) -> void:
 			"back": at + back * 3.4 + Vector3(0, 1.6, 0),
 			"side": at + side * 3.4 + Vector3(0, 1.2, 0),
 		}
+		if pose[1] == "boots_thruster":
+			views["front"] = at - back * 3.0 + side * 1.6 + Vector3(0, 1.4, 0)
 		for view: String in views:
 			camera.look_at_from_position(views[view], at + Vector3(0, 1.0, 0))
 			# Fly the turn in place for a second so the bank settles.
@@ -1169,7 +1181,8 @@ func _power_shots(out_dir: String) -> void:
 
 ## A contact sheet of where holstered weapons are worn: one row each for the
 ## blade in hand (gun slung on the back) and the gun in hand (blade on the hip),
-## with the jetpack on and off, seen from four sides.
+## with the jetpack on and off, seen from four sides; then everything
+## holstered on each flight rig in turn (holster_rigs.png).
 func _holster_shots(out_dir: String, melee_id := "") -> void:
 	var raid := Raid.new()
 	add_child(raid)
@@ -1232,6 +1245,37 @@ func _holster_shots(out_dir: String, melee_id := "") -> void:
 			sheet.blit_rect(cut, Rect2i(0, 0, 320, 360), Vector2i(c * 320, row * 360))
 	sheet.save_png(out_dir.path_join("holster.png"))
 	print("saved holster.png")
+	# Everything holstered on every rig: clamped to a jetpack's side rails,
+	# slung over wings, across the back with boots or nothing on.
+	var rig_was := player.flight.item_id
+	var rigs: Array[String] = ["jetpack_mk1", "jetpack_mk2", "wings_glide", "boots_thruster", ""]
+	var rig_sheet := Image.create(4 * 320, rigs.size() * 360, false, Image.FORMAT_RGBA8)
+	player.active_weapon_index = -1
+	player._refresh_weapon_visuals()
+	for row in rigs.size():
+		player.flight.item_id = rigs[row]
+		player.flight.enabled = rigs[row] != ""
+		for k in 60:
+			skin._process(1.0 / 60.0)
+			await get_tree().process_frame
+		var sides: Array[Vector3] = [player.global_basis.z, player.global_basis.x, -player.global_basis.x,
+				(player.global_basis.z - player.global_basis.x).normalized()]
+		for c in sides.size():
+			var at := player.global_position + Vector3(0, 1.1, 0)
+			cam.global_position = at + sides[c] * 3.0
+			cam.look_at(at)
+			await _settle(1)
+			await RenderingServer.frame_post_draw
+			var frame := get_viewport().get_texture().get_image()
+			var w := frame.get_width()
+			var h := frame.get_height()
+			var cut := frame.get_region(Rect2i(w / 2 - 160 * h / 720, h / 2 - 180 * h / 720, 320 * h / 720, 360 * h / 720))
+			cut.resize(320, 360)
+			cut.convert(Image.FORMAT_RGBA8)
+			rig_sheet.blit_rect(cut, Rect2i(0, 0, 320, 360), Vector2i(c * 320, row * 360))
+	rig_sheet.save_png(out_dir.path_join("holster_rigs.png"))
+	print("saved holster_rigs.png")
+	player.flight.item_id = rig_was
 	# A switch, frame by frame from behind and to the right: gun to blade,
 	# blade to sidearm (if carried), then holstered.
 	var steps := [blade, sidearm if sidearm >= 0 else gun, -1]

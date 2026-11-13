@@ -205,8 +205,11 @@ without Caleb, and update the gap list when a PR closes a row.
   the stand with `--idle-only`.
   Holstered weapons are worn, not hidden (`ActorSkin.stow_place`): a primary
   gun or two-handed weapon slung across the back, outside a worn back rig
-  (down the side of a rig with a screen on its back, so a jetpack's heat
-  gauge stays in view), a
+  (on a jetpack or wing pack, clamped to the weapon rail down its side
+  instead, gun right and long blade left, leaning out in a slight V, so the
+  heat gauge on its back stays in view; a wing pack's rails stand behind
+  its wing slots: the rig model's "MountL/R" markers, and the
+  skin rests the weapon's near side on the clamps), a
   sidearm muzzle down on the right hip, and a one-handed blade on the left
   hip. These are view-only copies; the weapon's own node stays on the hand.
   A switch is shown as the hand putting one away and drawing the next
@@ -337,7 +340,12 @@ without Caleb, and update the gap list when a PR closes a row.
   cruise carries on after it. Q and E fly nothing (Caleb's call).
   The body's attitude in the air (flat, banked, leaning, barrel rolled by a
   sideways air dash) is the skin's job (`ActorSkin._update_glide`), read
-  from velocity and the simulated actor only, so remote players match. Off the
+  from velocity and the simulated actor only, so remote players match. Boots
+  show their thrust (`ActorSkin._update_boot_thrust`): the body leans into
+  the push (gravity, drag and speeding up), the legs and swivelling flames
+  fire down the exhaust, and flying forward lies the body out near flat with
+  the legs dropped so the heel jets fire down and back (never fully flat,
+  or nothing would hold you up). Off the
   ground (`ActorSkin.is_airborne`, from `Actor.airborne_time`) the legs
   never play a gait: a stand plays under an air pose (leap, fall, or
   hanging from lit jets). Leaving the ground starts with a short push-off
@@ -402,7 +410,8 @@ without Caleb, and update the gap list when a PR closes a row.
   bike's lean (`ActorSkin.ride_frame`). The left hand keeps its grip; the
   right takes its grip only with nothing in it, holds a gun out toward the
   aim, and leaves a blade to its usual hold, so melee windups still show.
-  Back-slung weapons ride higher up the back (`ride_sling_lift`). A new
+  Back-slung weapons ride higher up the back (`ride_sling_lift`); weapons
+  clamped to a back rig's rails stay in their clamps. A new
   vehicle type sets those anchor points for its model. Check by eye:
   `visual_check.tscn -- <dir> --ride-only`.
 - Toy vehicles: a vehicle a player owns in a world rides on their watch as
