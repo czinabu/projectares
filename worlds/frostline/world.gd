@@ -95,7 +95,7 @@ func register_items() -> void:
 			"The heart of the relay mast. Hums when you hold it.")
 	ItemDB.register("frost_ice_axe", "Ice Axe", ItemDB.Rarity.RARE, 750, ["weapon", "melee", "one_handed", "axe"],
 			{"light_damage": 30.0, "heavy_damage": 80.0, "heavy_lunge": 12.0, "slam_damage": 70.0,
-			"reach": 2.9},
+			"reach": 2.9, "swing_style": "chop", "swing_scale": 0.9},
 			"Long heavy lunge and a hard dive slam. Built for closing distance on open ice.")
 
 
