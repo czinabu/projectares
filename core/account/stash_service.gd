@@ -112,6 +112,7 @@ class Account:
 			"secret_hash": secret_hash,
 			"stash": stash,
 			"loadout": loadout,
+			StashRules.BARE_KEY: true,
 			"mastery": mastery.to_dict(),
 			"crates_granted": crates_granted,
 			"deployed": deployed,
@@ -141,6 +142,7 @@ class Account:
 		var saved_loadout: Variant = data.get("loadout", {})
 		if typeof(saved_loadout) == TYPE_DICTIONARY:
 			loadout = saved_loadout.duplicate()
+		StashRules.upgrade_loadout(data, loadout)
 		mastery.load_dict(data.get("mastery", {}))
 		crates_granted.clear()
 		for crate: Variant in data.get("crates_granted", []):
@@ -213,6 +215,7 @@ func sign_in(shown_name: String, secret: String) -> Dictionary:
 	account.shown_name = shown_name.strip_edges().left(MAX_NAME)
 	account.salt = Crypto.new().generate_random_bytes(16).hex_encode()
 	account.secret_hash = _hash(account.salt, secret)
+	account.loadout = StashRules.starter_loadout()
 	StashRules.add_items(account.stash, ProfileScript.WELCOME_CRATE)
 	_accounts[id] = account
 	grant_gear_crates(account)

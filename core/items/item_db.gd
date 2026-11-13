@@ -24,8 +24,9 @@ var _items := {}
 
 
 func _ready() -> void:
-	# Free scrap kit. Tagged "starter": it fills empty loadout slots, and it
-	# can never be stashed, so it cannot be farmed.
+	# Free scrap kit. Tagged "starter": every player owns one of each to
+	# equip (`StashRules.free_items`), and it can never be stashed, so it
+	# cannot be farmed.
 	register("rifle_scrap", "Scrap Rifle", Rarity.COMMON, 0, ["weapon", "firearm", "rifle", "starter"], {},
 			"Worn automatic rifle.")
 	register("blade_scrap", "Scrap Blade", Rarity.COMMON, 0, ["weapon", "melee", "one_handed", "blade", "starter"], {},

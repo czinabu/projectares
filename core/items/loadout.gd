@@ -39,7 +39,8 @@ const SLOT_NAMES := {
 }
 ## Slots that hold an attachment for the primary weapon.
 const ATTACHMENT_SLOTS := ["optic", "muzzle", "grip", "magazine"]
-## Slots with no free scrap item. Left empty, you deploy without one.
+## Slots with no free scrap item (`StashRules.free_items`). Any slot can be
+## left empty, and an empty slot deploys with nothing in it.
 const OPTIONAL_SLOTS := ["ability", "vehicle", "artifact", "optic", "muzzle", "grip", "magazine"]
 ## How many healing items are taken from the stash on deploy.
 const MAX_HEAL_ITEMS := 2
@@ -50,6 +51,19 @@ const SUMMON_TIMES := [["armor", 1.5], ["power", 1.6], ["sidearm", 0.5], ["one_h
 		["firearm", 0.9]]
 ## The watch's wait after a summon, as a multiple of the materialize time.
 const SUMMON_COOLDOWN_MULT := 6.0
+
+
+## A kit of only this means "nothing at all": an empty kit means the world's
+## scrap kit to `Raid.add_player`. Not an item; the `Raid` drops it.
+const BARE := "(bare)"
+
+
+## The loadout slot item `id` goes in, or "" if it is not gear.
+static func slot_of(id: String) -> String:
+	for slot: String in SLOTS:
+		if fits(slot, id):
+			return slot
+	return ""
 
 
 ## True if item `id` can go in loadout slot `slot`. A sidearm is a firearm

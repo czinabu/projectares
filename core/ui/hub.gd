@@ -31,6 +31,7 @@ signal closed
 ## The player changed how their character looks.
 signal look_changed(appearance: Dictionary)
 
+const StashRules := preload("res://core/account/stash_rules.gd")
 const MasteryPanel := preload("res://core/progression/mastery_panel.gd")
 const CharacterPanel := preload("res://core/ui/character_panel.gd")
 const MasteryBook := preload("res://core/progression/mastery_book.gd")
@@ -127,7 +128,7 @@ func _ready() -> void:
 	locker.add_child(_text(
 		"Gear you equip leaves your stash when you deploy. Die and it is gone. Sign out alive (L) and it comes back.\n"
 		+ "Bank loot at a depot to send it here without leaving.\n"
-		+ "Empty slots use the free scrap kit, which costs nothing and can never be stashed.",
+		+ "Scrap gear is free to equip, costs nothing to lose and can never be stashed. An empty slot goes without.",
 		13, Color(0.65, 0.65, 0.65)))
 	_loadout_box = VBoxContainer.new()
 	_loadout_box.add_theme_constant_override("separation", 4)
@@ -352,7 +353,7 @@ static func renown_text(lifetime: int) -> String:
 ## Item ids in the stash that fit a slot, best first, without duplicates.
 func options_for(slot: String) -> Array[String]:
 	var out: Array[String] = []
-	for id: String in stash_items():
+	for id: String in StashRules.equippable(stash_items()):
 		if Loadout.fits(slot, id) and id not in out:
 			out.append(id)
 	out.sort_custom(func(a: String, b: String) -> bool: return ItemDB.item_value(a) > ItemDB.item_value(b))
@@ -363,19 +364,20 @@ func _refresh_loadout() -> void:
 	for slot: String in Loadout.SLOTS:
 		var picker: OptionButton = _pickers[slot]
 		picker.clear()
-		picker.add_item("None" if slot in Loadout.OPTIONAL_SLOTS else "Scrap kit (free)")
+		picker.add_item("None")
 		picker.set_item_metadata(0, "")
 		var worn := equipped(slot)
 		var selected := 0
 		for id in options_for(slot):
-			picker.add_item("%s  [%s]  x%d" % [ItemDB.item_name(id), ItemDB.rarity_name(id), stash_items().count(id)])
+			var have := "free" if StashRules.is_free(id) else "x%d" % stash_items().count(id)
+			picker.add_item("%s  [%s]  %s" % [ItemDB.item_name(id), ItemDB.rarity_name(id), have])
 			var index := picker.item_count - 1
 			picker.set_item_metadata(index, id)
 			if id == worn:
 				selected = index
 		picker.select(selected)
 		var detail: Label = _details[slot]
-		detail.text = ItemDB.item_description(worn) if worn != "" else "Nothing at risk."
+		detail.text = ItemDB.item_description(worn) if worn != "" else "Nothing: you go without one."
 	_mastery.refresh()
 
 
