@@ -1,6 +1,7 @@
 extends Node3D
 ## A tall mirror that stands in front of the player while the phone's Mirror
 ## app is open, wherever they are: the home base, the plaza or a warzone.
+## Every home base also has one hung on its wall (`wall_mounted`).
 ## The phone lists the clothes and colours they own; the mirror shows the
 ## result on their own character as they scroll.
 ##
@@ -41,6 +42,11 @@ var frame_width := 0.035
 var resolution := 900
 ## Seconds it takes to rise out of the floor.
 var rise_seconds := 0.3
+## Hung on a wall (the home base's) instead of standing in front of the
+## viewer: it stays where it was put, has no feet, and only draws its
+## reflection while the viewer is in front of it within `draw_range`.
+var wall_mounted := false
+var draw_range := 12.0
 
 ## The player it stands in front of, and the camera they look through.
 var viewer: Actor
@@ -52,7 +58,8 @@ var _glass: MeshInstance3D
 var _rise := 0.0
 
 
-## Call before adding it to the tree.
+## Call before adding it to the tree; a wall-mounted one can be told again
+## whenever the viewer changes.
 func setup(p_viewer: Actor, p_eye: Camera3D) -> void:
 	viewer = p_viewer
 	eye = p_eye
@@ -60,13 +67,15 @@ func setup(p_viewer: Actor, p_eye: Camera3D) -> void:
 
 func _ready() -> void:
 	process_priority = 100
-	if viewer == null or not is_instance_valid(viewer):
-		return
-	place()
+	if not wall_mounted:
+		if viewer == null or not is_instance_valid(viewer):
+			return
+		place()
 	if not Look.enabled:
 		return
 	_build()
-	scale = Vector3(1.0, 0.02, 1.0)
+	if not wall_mounted:
+		scale = Vector3(1.0, 0.02, 1.0)
 
 
 ## Stands the mirror on the floor in front of the viewer, facing them, closer
@@ -132,10 +141,11 @@ func _build() -> void:
 			[Vector3(lip, height, 0.01), Vector3(width * 0.5 - lip * 0.5, mid, 0.004), Vector3(0, -0.6, 0)]]:
 		_part(edge[0], edge[1], bevel).rotation = edge[2]
 	_part(Vector3(outer.x, outer.y, 0.02), Vector3(0, mid, -0.04), metal)
-	# Two slim feet, swept back so it looks stood, not floating.
-	for side in [-1.0, 1.0]:
-		_part(Vector3(0.05, 0.04, 0.5), Vector3(side * (width * 0.5 - 0.1), 0.02, -0.12), metal)
-	_add_shadow(Vector2(outer.x + 0.9, 1.5))
+	if not wall_mounted:
+		# Two slim feet, swept back so it looks stood, not floating.
+		for side in [-1.0, 1.0]:
+			_part(Vector3(0.05, 0.04, 0.5), Vector3(side * (width * 0.5 - 0.1), 0.02, -0.12), metal)
+		_add_shadow(Vector2(outer.x + 0.9, 1.5))
 
 	_viewport = SubViewport.new()
 	_viewport.name = "Reflection"
@@ -230,15 +240,30 @@ func _part(size: Vector3, at: Vector3, mat: Material) -> MeshInstance3D:
 
 
 func _process(delta: float) -> void:
-	if viewer == null or not is_instance_valid(viewer) or not viewer.is_inside_tree():
-		return
 	if _camera == null:
+		return
+	if wall_mounted:
+		# A second view of the room costs a frame's worth of drawing: only
+		# while someone could be looking into it.
+		var near := viewer != null and is_instance_valid(viewer) and viewer.is_inside_tree() \
+				and eye != null and is_instance_valid(eye) and _faces(eye.global_position)
+		_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS if near else SubViewport.UPDATE_DISABLED
+		if near:
+			_aim_reflection()
+		return
+	if viewer == null or not is_instance_valid(viewer) or not viewer.is_inside_tree():
 		return
 	if _rise < rise_seconds:
 		_rise = minf(_rise + delta, rise_seconds)
 		var t := _rise / rise_seconds
 		scale = Vector3(1.0, lerpf(0.02, 1.0, 1.0 - pow(1.0 - t, 3.0)), 1.0)
 	_aim_reflection()
+
+
+## True if `point` is in front of the glass and within `draw_range`.
+func _faces(point: Vector3) -> bool:
+	var off := point - glass_centre()
+	return off.length() < draw_range and off.dot(global_basis.z) > 0.05
 
 
 ## Puts the reflection camera at the viewer's eye mirrored through the glass,

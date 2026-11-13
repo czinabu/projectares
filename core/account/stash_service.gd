@@ -54,6 +54,13 @@ var _accounts := {}
 ## with `--dev-host` sets it, and that server keeps its accounts in a
 ## separate folder, so real online accounts are never touched.
 var dev_accounts: Array[String] = []
+## The solo profile (`Profile.to_dict`) of the player hosting this server on
+## their own computer, handed over when it starts (`main.gd host_and_join`).
+## On their own server they are the same player as at home: the first time
+## they sign in, their account here takes the profile's player state
+## (`StashRules.CARRIED`), so they arrive with the loadout they left with.
+## Only the profile's own name and secret claim it. Empty for anyone else's server.
+var host_profile := {}
 
 
 ## One player's server-side record. Plain data plus its save format.
@@ -198,6 +205,7 @@ func sign_in(shown_name: String, secret: String) -> Dictionary:
 		if _hash(account.salt, secret) != account.secret_hash:
 			return _fail("That name belongs to someone else.")
 		grant_gear_crates(account)
+		_adopt_host_profile(account, secret)
 		_dev_top_up(account)  # DEV MODE
 		return {"ok": true, "account_id": id, "created": false}
 	account = Account.new()
@@ -208,8 +216,27 @@ func sign_in(shown_name: String, secret: String) -> Dictionary:
 	StashRules.add_items(account.stash, ProfileScript.WELCOME_CRATE)
 	_accounts[id] = account
 	grant_gear_crates(account)
+	_adopt_host_profile(account, secret)
 	_dev_top_up(account)  # DEV MODE
 	return {"ok": true, "account_id": id, "created": true}
+
+
+## The host signing in to their own server: their account takes on the
+## player state of the profile they left home with (see `host_profile`).
+func _adopt_host_profile(account: Account, secret: String) -> void:
+	if host_profile.is_empty() or account.id != id_for_name(str(host_profile.get("player_name", ""))) \
+			or secret != str(host_profile.get("online_secret", "")):
+		return
+	var data := account.to_dict().duplicate(true)
+	for key: String in StashRules.CARRIED:
+		if host_profile.has(key):
+			data[key] = host_profile[key]
+	# The profile is the whole truth: nothing of this account is still out.
+	data["deployed"] = []
+	data["deployed_world"] = ""
+	account.load_dict(data)
+	host_profile = {}
+	_save(account)
 
 
 ## The account, from memory or disk, or null if there is none. Loading an

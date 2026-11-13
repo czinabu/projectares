@@ -89,6 +89,12 @@ without Caleb, and update the gap list when a PR closes a row.
   drop if the choice is no longer on offer. Online the client only sends the
   id with `NetSession.deploy(drop)`; a client lists its choices from what the
   server already told it (`Strongpoint.viewer_holds`, war intensity).
+  Arriving in a safe zone is just as fixed: a `p_drop` of
+  "from:<destination>" ("home", "arena", "world:<id>") lands you just
+  outside the plaza doorway that leads there (`Raid.arrival_point`), the
+  same spot every time, and `main.gd` sends it (`_arrive_from`) whenever you
+  come back that way. A plaza gate deploys you straight into its world
+  (`_gate_deploy`); the world's lobby is only where a refused deploy waits.
 - Clans (`core/social/clan_service.gd`, `NetSession.clans`): the server keeps
   who is in which clan, keyed by account id, in one service shared by every
   session like the `StashService`. A client only asks (`NetSession.clan_ask`)
@@ -619,7 +625,15 @@ without Caleb, and update the gap list when a PR closes a row.
   `StashService.settle`. `NetSession` does both. A client only signs in
   (name plus `Profile.online_secret`) and sends requests (equip, pick, deploy)
   from the lobby; it never sends a kit, and online play never reads or writes
-  the local `Profile` stash. The hub shows the server's account snapshot while
+  the local `Profile` stash, with one exception: one player state. On a
+  server you host yourself (`main.gd host_and_join`, the base's door) you
+  are the player you are at home: the client hands the server your profile
+  (`--host-profile`, read once into `StashService.host_profile`, claimed only
+  with your own name and secret), and every account snapshot that comes back
+  while you are not deployed becomes your profile again
+  (`Main._keep_profile_in_step`, `Profile.adopt_account`). What is handed is
+  `StashRules.CARRIED`, whole, never merged. Anyone else's server keeps a
+  stash of its own. The hub shows the server's account snapshot while
   in a lobby (`Hub.enter_lobby`). Stash rules live once, in `core/account/stash_rules.gd`,
   shared by `Profile` and the service.
 - The phone (`core/phone/phone.gd`) is the game's menu and only a view. Online,
@@ -705,13 +719,16 @@ without Caleb, and update the gap list when a PR closes a row.
   The bench state (`bench_row`, `bench_picking`, `bench_choice`) is view
   only; only a pick asks for a change, through the same `equip_requested`.
   A new kind of weapon gets a rack
-  section there, not a display of its own elsewhere in the room. The base is where you suit
-  up (Caleb's call): the suit-up bay beside the launch pad
-  (`HomeBase.suit_up`) replaces the player with a new actor wearing
-  `suit_kit()`, weapons locked, and emits `player_replaced` so `main.gd`
-  hands it the controller; changing the loadout only changes what the
-  bay puts on next. The room has one job per wall: the deploy area
-  (suit-up bay, launch pad, the teleporter's place) along the front wall
+  section there, not a display of its own elsewhere in the room. In your own base
+  you always wear your loadout, and what you equip goes straight on (Caleb's
+  call: no suit-up step): `HomeBase.suit_up`, run when the base opens and
+  whenever `show_gear` brings a changed `suit_kit()`, replaces the player
+  in place with a new actor wearing it, weapons locked, and emits
+  `player_replaced` so `main.gd` hands it the controller. A visited base
+  never dresses you. Every base has a mirror on its wall
+  (`HomeBase.wall_mirror`, the phone's `Mirror` with `wall_mounted`, drawn
+  only while its viewer is in front of it). The room has one job per wall: the deploy area
+  (wall mirror, launch pad, the teleporter's place) along the front wall
   right of the exit (`HomeBase.DEPLOY_FROM_X`), the storage wall's shelves
   (supplies, chips, trophies, `STORAGE_ROWS`) left of it, and gear bays
   for armor and rig stands along the back wall; the middle of the floor
@@ -719,7 +736,7 @@ without Caleb, and update the gap list when a PR closes a row.
   wall panels and a ceiling grid (`HomeBase._floor`, `_wall`, `_ceiling`),
   so a new space builds with those. Bikes park in the garage off the right wall
   (`HomeBase.in_garage`). Behind the back wall is the firing range
-  (`HomeBase.in_range`): a suited player's weapons unlock only there and
+  (`HomeBase.in_range`): the player's weapons unlock only there and
   never run dry, and `HomeBase` scores shots from each gun's `fired` signal
   against its `RangeTarget`s, which stop shots like walls; the score is
   written on a board hung over the lane, never on the screen. Nothing on the

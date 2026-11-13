@@ -41,13 +41,15 @@ signal gear_shown
 ## view to the bench and works it with `bench_scroll`, `bench_select`,
 ## `bench_back` and `leave_bench`.
 signal bench_used
-## The player suited up: `player` is now a new actor wearing the loadout.
-## Whoever drives the player (a controller, a camera) takes it over.
+## The loadout changed and the player now wears it: `player` is a new actor
+## in the same spot. Whoever drives the player (a controller, a camera)
+## takes it over.
 signal player_replaced(actor: Actor)
 
 const BaseLayout := preload("res://core/base/base_layout.gd")
 const BaseUpgrades := preload("res://core/base/base_upgrades.gd")
 const VehicleScript := preload("res://core/vehicle/vehicle.gd")
+const MirrorScript := preload("res://core/visual/mirror.gd")
 
 # Room tuning.
 var room_size := Vector3(24.0, 6.0, 18.0)
@@ -137,13 +139,13 @@ const CRAFT_COLOR := Color(0.3, 0.9, 1.0)
 ## station named beside it, which has no console of its own yet.
 const MERGED := {"trader": "mastery", "wardrobe": "records"}
 
-## The suit-up bay: where you put your loadout on before you deploy. It
-## stands in the deploy area beside the launch pad, its back to the front
-## wall, facing into the room (local +Z).
-const SUIT_AT := Vector3(3.8, 0.0, 7.2)
-const SUIT_YAW := PI
+## The wall mirror (Caleb's call: every base has one): on the front wall in
+## the deploy area beside the launch pad, its glass facing into the room
+## (local +Z), so you see what you are wearing before you head out.
+const MIRROR_AT := Vector3(3.8, 0.35, 8.84)
+const MIRROR_YAW := PI
 ## The deploy area: the front wall between these x, this deep, clear of the
-## trader and mastery consoles in the corner. The suit-up bay, the launch
+## trader and mastery consoles in the corner. The wall mirror, the launch
 ## pad and the teleporter's place stand in it, in that order.
 const DEPLOY_FROM_X := 1.9
 const DEPLOY_TO_X := 10.2
@@ -152,8 +154,6 @@ const DEPLOY_DEPTH := 4.4
 ## door, and the height of each kind's shelf.
 const STORAGE_FROM_X := -10.6
 const STORAGE_ROWS := {"supplies": 0.95, "chip_case": 1.9, "trophy": 2.85}
-## How long the bay's arms take to fit the gear, there and back (view only).
-var suit_time := 0.9
 
 ## Display kinds whose title is already on the room or the furniture.
 const SIGNED_ELSEWHERE := ["bay", "gunsmith"]
@@ -165,8 +165,11 @@ var player: Actor
 var displays: Array[Display] = []
 var door: Door
 var stations: Array[Station] = []
-var suit_bay: SuitBay
-## True once the player has suited up in this visit, wearing `suited_kit`.
+## The mirror on the wall (`core/visual/mirror.gd`, view only). Whoever
+## drives the player tells it who looks into it (`Mirror.setup`).
+var wall_mirror: Node3D
+## True while the player wears the owner's loadout (`suited_kit`). In your
+## own base that is always: gear you equip goes straight on (Caleb's call).
 var suited := false
 var suited_kit: Array[String] = []
 ## The firing range's targets, its score and the board that shows it.
@@ -265,28 +268,6 @@ class CraftConsole:
 		if base and base.read_only:
 			return "%s (not yours)" % HomeBase.CRAFT_TITLE
 		return "[F] %s: craft from blueprints" % HomeBase.CRAFT_TITLE
-
-
-## The suit-up bay's control post. Using it puts the loadout on you.
-class SuitBay:
-	extends Interactable
-
-	var base: HomeBase
-
-	func get_prompt() -> String:
-		if base == null or base.read_only:
-			return "Suit-up bay (not yours)"
-		if base.suited and base.suited_kit == base.suit_kit():
-			return "[F] Suit-up bay: you are wearing your loadout"
-		if base.suited:
-			return "[F] Suit up again: your loadout changed"
-		return "[F] Suit up: put your loadout on"
-
-	func interact(_actor: Actor) -> void:
-		# Deferred: the actor using the post is the one the bay replaces, and
-		# it is still in the middle of its tick.
-		if base and not base.read_only:
-			base.suit_up.call_deferred()
 
 
 ## Something to shoot at on the firing range: a plate on a post, one that
@@ -425,11 +406,13 @@ func _ready() -> void:
 	_display_root.name = "Displays"
 	add_child(_display_root)
 	_build_door()
-	_build_suit_bay()
+	_build_wall_mirror()
 	_build_banner()
 	_build_upgrades()
 	_spawn_player()
 	_rebuild()
+	# Your own base: you stand in it wearing your loadout.
+	suit_up()
 
 
 ## Shows this stash and loadout, in a base with these upgrades (ids from
@@ -446,6 +429,10 @@ func show_gear(p_stash: Array, p_loadout: Dictionary, p_upgrades: Variant = null
 				_build_upgrades()
 	if is_inside_tree():
 		_rebuild()
+		# What you equip goes straight on. Deferred: the change may come from
+		# the player's own tick (using a display), and the player is replaced.
+		if suited and suited_kit != suit_kit():
+			suit_up.call_deferred()
 
 
 ## Shows the owner's scrip on the price panels.
@@ -519,7 +506,7 @@ static func commas(amount: int) -> String:
 	return ("-" if amount < 0 else "") + digits + out
 
 
-## What the bay puts on you: each loadout slot's item, or the free starter
+## What you wear in your base: each loadout slot's item, or the free starter
 ## item that fits an empty slot, as a deploy would. Vehicles stay parked and
 ## supplies stay on the shelf: only what is worn or carried in hand.
 func suit_kit() -> Array[String]:
@@ -538,17 +525,26 @@ func suit_kit() -> Array[String]:
 	return kit
 
 
-## Puts the loadout on: the player steps into the bay as a new actor wearing
-## `suit_kit()`, its weapons holstered and locked (nobody fights at home),
-## while the bay's arms swing in and out. `player_replaced` says who it is.
+## Puts the loadout on where the player stands: a new actor in the same
+## spot, facing the same way, wearing `suit_kit()`, its weapons holstered and
+## locked (nobody fights at home, the range aside). `player_replaced` says
+## who it is. Called whenever the loadout changes, so your own base always
+## shows you in what you will deploy with; a base you visit leaves you as
+## you came.
 func suit_up() -> void:
-	if read_only or not is_inside_tree():
+	if read_only or not is_inside_tree() or (suited and suited_kit == suit_kit()):
 		return
 	var old := player
-	var fresh := _new_player(SUIT_AT + Vector3(0, 0.1, 0))
-	# Facing out of the bay, toward the launch pad and the room.
-	fresh.cmd.yaw = SUIT_YAW + PI
+	var at := spawn_point
+	var yaw := 0.0
 	if old and is_instance_valid(old):
+		at = old.position
+		yaw = old.cmd.yaw
+	var fresh := _new_player(at)
+	fresh.cmd.yaw = yaw
+	if old and is_instance_valid(old):
+		fresh.cmd.pitch = old.cmd.pitch
+		fresh.rotation.y = old.rotation.y
 		if old.has_meta("appearance"):
 			fresh.set_meta("appearance", old.get_meta("appearance"))
 		# Freed at the end of the frame, still in the tree until then, so
@@ -567,7 +563,6 @@ func suit_up() -> void:
 		if gun:
 			gun.fired.connect(_on_range_shot.bind(gun))
 	suited = true
-	_play_suit_arms()
 	player_replaced.emit(fresh)
 
 
@@ -610,7 +605,7 @@ func _update_board() -> void:
 	if range_last != "":
 		range_board.text += "\nLast hit: %s" % range_last
 	else:
-		range_board.text += "\nSuit up, step past the line and fire. Nothing here is lost."
+		range_board.text += "\nStep past the line and fire. Nothing here is lost."
 
 
 ## The station with this id, or null.
@@ -1082,9 +1077,10 @@ func _wall(size: Vector3, at: Vector3, inward: Vector3) -> void:
 		add_child(_part(span.call(0.16, size.y - 0.4, 0.08), rib_at + Vector3(0, 0.05, 0), rib))
 
 
-## The deploy area along the front wall, right of the door: the suit-up bay,
+## The deploy area along the front wall, right of the door: the wall mirror,
 ## then the launch pad, inside one marked bay with its name on the wall. You
-## suit up, step across and deploy; the door out is beside it.
+## check your gear in the mirror, step across and deploy; the door out is
+## beside it.
 func _build_deploy_area() -> void:
 	var wall_z := room_size.z * 0.5
 	var hazard := Color(1.0, 0.62, 0.22)
@@ -1435,65 +1431,14 @@ func _new_player(at: Vector3) -> Actor:
 	return actor
 
 
-## The suit-up bay beside the launch pad: a lit disc to stand on between two
-## frames whose arms swing in to fit the gear, and a control post to use.
-func _build_suit_bay() -> void:
-	var bay := Node3D.new()
-	bay.name = "SuitUpBay"
-	bay.position = SUIT_AT
-	bay.rotation.y = SUIT_YAW
-	add_child(bay)
-	var accent := Color(0.4, 0.9, 1.0)
-	var steel := Color(0.3, 0.31, 0.34)
-	var dark := Color(0.15, 0.15, 0.17)
-	bay.add_child(_part(Vector3(1.8, 0.06, 1.8), Vector3(0, 0.03, 0), dark))
-	bay.add_child(_part(Vector3(1.3, 0.07, 1.3), Vector3(0, 0.035, 0), accent.darkened(0.5), true))
-	for side: float in [-1.0, 1.0]:
-		var frame := Node3D.new()
-		frame.name = "Frame%s" % ("L" if side < 0 else "R")
-		frame.position = Vector3(side * 0.95, 0, -0.1)
-		bay.add_child(frame)
-		frame.add_child(_part(Vector3(0.16, 2.5, 0.3), Vector3(0, 1.25, 0), steel))
-		frame.add_child(_part(Vector3(0.04, 2.2, 0.04), Vector3(-side * 0.09, 1.2, 0.12), accent, true))
-		# Two arms, folded back against the frame until the bay works.
-		for height: float in [1.0, 1.55]:
-			var arm := Node3D.new()
-			arm.name = "Arm%d" % int(height * 100.0)
-			arm.position = Vector3(0, height, 0)
-			arm.set_meta("side", side)
-			arm.add_child(_part(Vector3(0.5, 0.1, 0.12), Vector3(-side * 0.25, 0, 0), steel))
-			arm.add_child(_part(Vector3(0.1, 0.16, 0.16), Vector3(-side * 0.5, 0, 0), accent, true))
-			arm.rotation.y = side * 1.3
-			frame.add_child(arm)
-	# A gantry over the top with the bay's name.
-	bay.add_child(_part(Vector3(2.06, 0.16, 0.3), Vector3(0, 2.55, -0.1), steel))
-	var title := _label("SUIT-UP BAY", accent, 0.22)
-	title.position = Vector3(0, 2.85, -0.1)
-	title.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
-	bay.add_child(title)
-	# The control post, front right, that you use.
-	suit_bay = SuitBay.new()
-	suit_bay.name = "Control"
-	suit_bay.base = self
-	suit_bay.position = Vector3(1.35, 0, 0.7)
-	suit_bay.add_child(_part(Vector3(0.24, 1.1, 0.24), Vector3(0, 0.55, 0), dark))
-	var panel := _part(Vector3(0.36, 0.26, 0.05), Vector3(0, 1.2, 0.05), accent, true)
-	panel.rotation.x = -0.5
-	suit_bay.add_child(panel)
-	_add_collision(suit_bay, Vector3(0.5, 1.4, 0.5), Vector3(0, 0.7, 0))
-	bay.add_child(suit_bay)
-
-
-## The bay's arms swing in to the body and fold back again. View only.
-func _play_suit_arms() -> void:
-	for arm: Node in find_child("SuitUpBay", false, false).find_children("Arm*", "Node3D", true, false):
-		if not arm.has_meta("side"):
-			continue
-		var side: float = arm.get_meta("side")
-		var tween := create_tween()
-		tween.tween_property(arm, "rotation:y", 0.0, suit_time * 0.4)
-		tween.tween_interval(suit_time * 0.2)
-		tween.tween_property(arm, "rotation:y", side * 1.3, suit_time * 0.4)
+## The mirror on the front wall, beside the launch pad, in every base.
+func _build_wall_mirror() -> void:
+	wall_mirror = MirrorScript.new()
+	wall_mirror.name = "WallMirror"
+	wall_mirror.wall_mounted = true
+	wall_mirror.position = MIRROR_AT
+	wall_mirror.rotation.y = MIRROR_YAW
+	add_child(wall_mirror)
 
 
 # --- Displays ----------------------------------------------------------------

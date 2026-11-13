@@ -109,8 +109,12 @@ canopy, holo signs over every kiosk and floating holo-ads.
   bench before you pick it. A card on the bench behind the gun lists the
   slots and what the attachments change. Attachments are not hung on show.
 - Loadouts can be changed freely here, and only here: the base is where you
-  suit up. A suit-up bay beside the launch pad fits your loadout onto you in
-  view before you deploy.
+  suit up. Whatever you equip goes straight on you (Caleb's call: no
+  suit-up step), and you come home still wearing it. A mirror hangs on the
+  wall beside the launch pad.
+- You are one player everywhere you go: the loadout you leave the base with
+  is what you wear in the hub, a world and the arena, and coming back to the
+  hub through a door puts you in front of that door.
 - A garage off the room for the bikes you own, and a firing range behind the
   back wall (the first of the upgrades below, built early as a greybox).
 

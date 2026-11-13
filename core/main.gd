@@ -103,6 +103,14 @@ var host_args := PackedStringArray()
 ## The address typed at the uplink, kept as the door's destination once the
 ## server has let you in.
 var _remember_address := ""
+## Through a plaza gate into a world: deploy straight in on arrival rather
+## than stopping in that world's lobby.
+var _gate_deploy := false
+## Where you are coming back to the plaza from (a doorway's destination:
+## "home", "arena", "world:<id>"), so you arrive in front of that door.
+var _arrive_from := ""
+## Where the hand-off of your profile to a server you host waits for it.
+const HOST_PROFILE := "user://host_profile.json"
 ## The local player's last life, while they are down.
 var _death_result := {}
 ## Time.get_ticks_msec() from which a dead player may drop back in.
@@ -242,8 +250,8 @@ func _open_base(stash: Array, loadout: Dictionary, owner_name: String, upgrades:
 	_apply_settings()
 
 
-## Gives the base's player a camera and controls. Called again when they
-## suit up, which makes them a new actor wearing their loadout.
+## Gives the base's player a camera and controls. Called again whenever
+## their loadout changes, which makes them a new actor wearing it.
 func _attach_base_view() -> void:
 	if base == null:
 		return
@@ -260,7 +268,9 @@ func _attach_base_view() -> void:
 		# The phone is held by this body's own hand, in every view.
 		phone.set_holder(controller.actor)
 	base.add_child(controller)
-	# The view is the player's choice: suiting up keeps it.
+	if base.wall_mirror != null:
+		base.wall_mirror.setup(controller.actor, controller.camera)
+	# The view is the player's choice: a change of gear keeps it.
 	if view_third != controller.is_third_person():
 		controller.toggle_view()
 
@@ -317,6 +327,7 @@ func head_out() -> void:
 	if raid != null or net != null or base == null or base.read_only:
 		return
 	_show_travel("Heading out to %s..." % _outside_name())
+	_arrive_from = "home"
 	if Profile.home_server != "":
 		_door_fallback = true
 		join_online(Profile.home_server, false)
@@ -493,6 +504,8 @@ func leave_arena() -> void:
 		_join_port = _lobby_port
 		_lobby_port = -1
 		_show_travel("Leaving the arena...")
+		if _join_port == _plaza_port:
+			_arrive_from = Arena.ArenaVenue.ID
 		_begin_join(_join_address, _join_port, 3)
 		return
 	go_home()
@@ -877,6 +890,12 @@ func _run_dedicated_server(args: PackedStringArray) -> void:
 		push_error("Server: could not listen from port %d (%s)" % [port, error_string(err)])
 		get_tree().quit(1)
 		return
+	var handed := _arg(args, "--host-profile", "")
+	if handed != "" and FileAccess.file_exists(handed):
+		var data: Variant = JSON.parse_string(FileAccess.get_file_as_string(handed))
+		DirAccess.remove_absolute(handed)
+		if data is Dictionary:
+			net.stash.host_profile = data
 	if dev_host != "":  # DEV MODE
 		net.stash.dev_accounts.append(net.stash.id_for_name(dev_host))
 		print("Server: dev mode for %s (accounts in %s)" % [dev_host, accounts])
@@ -973,6 +992,14 @@ func host_and_join(world_id := "") -> void:
 		args.append_array(["--world", world_id])
 	if DevMode.active():  # DEV MODE: your account gets everything on your own server
 		args.append_array(["--dev-host", Profile.player_name])
+	# On your own server you are the player you are at home: it takes on your
+	# profile (loadout, stash, scrip...), and hands it back as you play.
+	Profile.get_online_secret()
+	var handoff := FileAccess.open(HOST_PROFILE, FileAccess.WRITE)
+	if handoff != null:
+		handoff.store_string(JSON.stringify(Profile.to_dict()))
+		handoff.close()
+		args.append_array(["--host-profile", ProjectSettings.globalize_path(HOST_PROFILE)])
 	_server_pid = OS.create_process(OS.get_executable_path(), args)
 	if _server_pid <= 0:
 		hub.set_online_status("Could not start a server on this computer.")
@@ -1024,6 +1051,10 @@ func _try_join() -> void:
 	net.account_changed.connect(_on_online_account_changed)
 	net.lobby_error.connect(func(reason: String) -> void:
 		hub.set_online_status(reason)
+		if _gate_deploy and raid == null:
+			# The gate could not drop you in: wait in that world's lobby.
+			_gate_deploy = false
+			go_home()
 		if base_hud:
 			base_hud.show_notice(reason)
 		if raid != null and hud != null and is_instance_valid(hud):
@@ -1051,6 +1082,7 @@ func _try_join() -> void:
 func _on_online_signed_in(account: Dictionary) -> void:
 	_join_attempts = 0
 	_door_fallback = false
+	_keep_profile_in_step(account)
 	if _remember_address != "":
 		Profile.home_server = _remember_address
 		Profile.save()
@@ -1066,19 +1098,27 @@ func _on_online_signed_in(account: Dictionary) -> void:
 		_plaza_address = _join_address
 		_plaza_port = _join_port
 		hub.set_online_status("Entering %s..." % world.display_name)
-		net.deploy()
+		# Back through a doorway: you arrive in front of it.
+		net.deploy("from:" + _arrive_from if _arrive_from != "" else "")
+		_arrive_from = ""
 		return
 	# A world's lobby is your home base, showing what this server keeps for
 	# you. Its launch pad deploys into this world; its door leads back.
 	hub.set_online_status("")
 	hub.enter_lobby(account, world)
 	hub.set_leave_text("Back to %s" % Worlds.social_world().display_name if _plaza_port >= 0 else "Leave the server")
+	if _gate_deploy:
+		# Through a plaza gate: straight into the world, as the gate says.
+		hub.set_online_status("Deploying to %s..." % world.display_name)
+		net.deploy()
+		return
 	go_home()
 	if base_hud:
 		base_hud.show_notice("Connected to %s. The launch pad deploys you there." % world.display_name, 6.0)
 
 
 func _on_online_account_changed(account: Dictionary) -> void:
+	_keep_profile_in_step(account)
 	if shop_view != null and is_instance_valid(shop_view):
 		shop_view.panel.set("account", account)
 		shop_view.panel.call("refresh")
@@ -1091,6 +1131,7 @@ func _on_online_account_changed(account: Dictionary) -> void:
 
 
 func _on_online_joined(p_raid: Raid) -> void:
+	_gate_deploy = false
 	leave_base()
 	hub.close()
 	raid = p_raid
@@ -1117,6 +1158,7 @@ func use_portal(destination: String) -> void:
 			return
 		_leave_raid()
 		_show_travel("Travelling to %s..." % world.display_name)
+		_gate_deploy = true
 		_begin_join(_plaza_address, port, 3)
 	elif destination.begins_with("shop:"):
 		open_shop(destination.trim_prefix("shop:"))
@@ -1290,6 +1332,7 @@ func _on_online_failed(reason: String) -> void:
 			_try_join()
 		return
 	_remember_address = ""
+	_gate_deploy = false
 	if _door_fallback and _lobby_port < 0 and raid == null:
 		# The server the door remembers is not there: start your own instead.
 		# The address stays remembered for the next time you head out.
@@ -1298,6 +1341,7 @@ func _on_online_failed(reason: String) -> void:
 			hub.set_online_status("Could not reach %s. Starting a server of your own..." % Profile.home_server)
 			return
 	_door_fallback = false
+	_arrive_from = ""
 	_stop_local_server()
 	_plaza_port = -1
 	hub.leave_lobby()
@@ -1359,6 +1403,7 @@ func _return_to_lobby(result: Dictionary) -> void:
 		return
 	var account := net.account
 	var was_safe := raid != null and raid.world.safe_zone
+	var came_from := "world:%s" % raid.world.id if raid != null else ""
 	_leave_raid()
 	hub.update_account(account)
 	hub.refresh(result)
@@ -1369,6 +1414,7 @@ func _return_to_lobby(result: Dictionary) -> void:
 	# Back to the plaza if the server has one, else to the lobby.
 	if _plaza_port >= 0:
 		_show_travel("Returning to %s..." % Worlds.social_world().display_name)
+		_arrive_from = came_from
 		_begin_join(_plaza_address, _plaza_port, 3)
 		return
 	_show_travel("Returning to your base...")
@@ -1387,14 +1433,28 @@ func leave_server() -> void:
 		net = null
 	hub.leave_lobby()
 	if _plaza_port >= 0 and _join_port != _plaza_port:
-		# Leaving a world's lobby leads back to the plaza, not off the server.
+		# Leaving a world's lobby (your base on this server) leads back to the
+		# plaza, out of the quarters door, not off the server.
 		_show_travel("Returning to %s..." % Worlds.social_world().display_name)
+		_arrive_from = "home"
 		_begin_join(_plaza_address, _plaza_port, 3)
 		return
 	_plaza_port = -1
 	_stop_local_server()
 	hub.set_online_status("")
 	go_home()
+
+
+## On a server you host yourself your account is your profile: every fresh
+## copy of it the server sends while you are not out in a world becomes your
+## profile too, so going home keeps what you did there. (While deployed the
+## account is missing the gear you carry; the profile keeps it until the life
+## is settled, as the server would after a crash.) Anyone else's server keeps
+## a stash of its own.
+func _keep_profile_in_step(account: Dictionary) -> void:
+	if _server_pid > 0 and _join_address == "127.0.0.1" and account.get("ok", false) \
+			and not account.get("deployed", false):
+		Profile.adopt_account(account)
 
 
 func _stop_local_server() -> void:

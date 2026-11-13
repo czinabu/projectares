@@ -804,19 +804,14 @@ func _base_shots(out_dir: String) -> void:
 		camera.look_at_from_position(views[file][0], views[file][1])
 		await _settle(4)
 		await _shot(out_dir.path_join(file))
-	# The suit-up bay, empty, then with the player suited up in it.
-	var bay := HomeBase.SUIT_AT
-	var facing := Basis.from_euler(Vector3(0, HomeBase.SUIT_YAW, 0))
-	camera.look_at_from_position(bay + facing * Vector3(1.6, 2.0, 4.2), bay + Vector3(0, 1.1, 0))
-	await _settle(4)
-	await _shot(out_dir.path_join("base_suit_bay.png"))
-	base.suit_up()
-	# The arms move in real time: catch them at the body.
-	await get_tree().create_timer(base.suit_time * 0.45).timeout
-	await _shot(out_dir.path_join("base_suit_up.png"))
-	await get_tree().create_timer(base.suit_time).timeout
-	await _settle(4)
-	await _shot(out_dir.path_join("base_suited.png"))
+	# The wall mirror, with you in your loadout standing in front of it.
+	var glass := HomeBase.MIRROR_AT
+	base.player.position = glass + Vector3(0.0, -0.25, -1.8)
+	base.player.cmd.yaw = 0.0
+	base.wall_mirror.setup(base.player, camera)
+	camera.look_at_from_position(glass + Vector3(-1.2, 1.4, -4.2), glass + Vector3(0, 1.2, 0))
+	await _settle(8)
+	await _shot(out_dir.path_join("base_wall_mirror.png"))
 	# A station's screen, live on the console: from across the room, then
 	# moved in to use it.
 	var screen_view := SubViewport.new()
