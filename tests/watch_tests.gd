@@ -189,9 +189,19 @@ static func _card(t: Node) -> void:
 	for i in 20:
 		controller.scroll(-1)
 	await t.frames(20)
-	t.check(controller.is_picking_weapons() and controller.weapon_pick == 0 and hud.wrist.focused_id() == "weapon"
-			and hud.wrist.card.focused_tab() == "summon" and hud.wrist.text().contains("Pack "),
-			"with the watch up the wheel reaches the weapons, on the Summon tab, with the pack's line under it")
+	t.check(hud.wrist.focused_id() == "weapon" and not controller.is_picking_weapons() and controller.watch_open == ""
+			and hud.wrist.card.focused_tab() == "summon" and hud.wrist.text().contains("Pack ")
+			and "click" in hud.wrist.focused_hints() and not "wheel" in hud.wrist.focused_hints(),
+			"with the watch up the wheel reaches the weapons icon, on the Summon tab, and offers a click to open it")
+	controller.scroll(1)
+	await t.frames(2)
+	t.check(hud.wrist.focused_id() == "vehicle" and controller.weapon_pick == 0,
+			"on the main row the wheel moves between icons, never through their lists (Caleb's call)")
+	controller.scroll(-1)
+	t.check(controller.watch_takes_fire() and controller.click_watch() and controller.watch_open == "weapon"
+			and controller.is_picking_weapons() and controller.wrist_raised and asked.is_empty(),
+			"a click opens the weapons, and nothing is drawn yet")
+	await t.frames(20)
 	t.check(hud.wrist.weapons_shown().size() == 4 and hud.wrist.get_node("Hologram/Weapons").visible
 			and hud.wrist.get_node("Hologram/Weapons").get_child_count() == 4,
 			"the weapons carried stand over the card as holograms")
@@ -201,35 +211,49 @@ static func _card(t: Node) -> void:
 	await t.frames(2)
 	t.check(controller.weapon_pick == 1 and controller._pending_switch < 0 and hud.wrist.focused_id() == "weapon"
 			and "click" in hud.wrist.focused_hints() and "wheel" in hud.wrist.focused_hints(),
-			"the wheel turns through the weapons without switching, and a worn one offers a click")
+			"opened, the wheel turns through the weapons without switching, and a worn one offers a click")
 	var sidearm := int(Hud.weapon_entries(p)[1].index)
 	t.check(controller.click_watch() and controller._pending_switch == sidearm and not controller.wrist_raised
 			and asked.is_empty(), "a click on a worn weapon draws it and lowers the watch")
 	controller._pending_switch = -1
 	controller.wrist_raised = true
+	controller.watch_focus_moved = true
+	controller.watch_focus = Hud.Wrist.SLOTS.find("weapon")
+	controller.click_watch()
 	controller.scroll(1)
 	controller.scroll(1)
 	await t.frames(2)
 	t.check(controller.weapon_pick == 3 and hud.wrist.text().begins_with("Ashfront Carbine")
 			and hud.wrist.text().get_slice("\n", 0).contains("pack"),
 			"past the worn weapons come the ones in the pack: %s" % hud.wrist.text().get_slice("\n", 0))
+	for i in 5:
+		controller.scroll(1)
+	await t.frames(2)
+	t.check(hud.wrist.focused_id() == "weapon" and controller.weapon_pick == Hud.weapon_entries(p).size() - 1,
+			"an opened list stops at its end; the wheel never leaves it")
+	controller.weapon_pick = 3
 	t.check(controller.watch_takes_fire() and controller.click_watch() and asked == (["rifle_carbine"] as Array[String])
 			and controller._pending_switch < 0 and not controller.wrist_raised,
 			"a click on one asks the world to summon it, and lowers the watch")
 	controller.wrist_raised = true
+	controller.watch_focus_moved = true
+	controller.watch_focus = Hud.Wrist.SLOTS.find("weapon")
+	controller.click_watch()
+	t.check(controller.close_watch_icon() and controller.watch_open == "" and not controller.is_picking_weapons(),
+			"a right click closes the list, back to the icons")
+	controller.scroll(1)
 	controller.scroll(1)
 	await t.frames(2)
-	t.check(hud.wrist.focused_id() == "vehicle" and not controller.is_picking_weapons()
-			and not hud.wrist.get_node("Hologram/Weapons").visible,
-			"past the last weapon the wheel steps on to the vehicles")
+	t.check(hud.wrist.focused_id() == "artifact" and not controller.is_on_artifact() and controller.watch_takes_fire(),
+			"on the artifacts (one attuned, one carried) a click first opens them")
+	controller.click_watch()
 	controller.scroll(1)
-	controller.scroll(1)
-	await t.frames(2)
-	t.check(hud.wrist.focused_id() == "artifact" and controller.artifact_pick == 1 and not controller.is_on_artifact()
-			and not controller.watch_takes_fire(), "on a carried artifact a click does nothing")
+	t.check(controller.artifact_pick == 1 and not controller.is_on_artifact() and not controller.watch_takes_fire(),
+			"on a carried artifact a click does nothing")
 	controller.scroll(-1)
 	t.check(controller.artifact_pick == 0 and controller.is_on_artifact(), "on the attuned one it uses it")
-	for i in 3:
+	controller.close_watch_icon()
+	for i in 2:
 		controller.scroll(1)
 	await t.frames(2)
 	t.check(hud.wrist.card.focused_tab() == "status" and hud.wrist.focused_id() == "standing",
