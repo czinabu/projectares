@@ -33,6 +33,19 @@ const WRECKS := 56
 const TITANS := 5
 const COVER_LOTS := 44
 const FIELD_PATROLS := 8
+## Risk zones (DESIGN.md section 2): the core is the molten Foundry, the
+## middle reaches past the four landmarks, the outer ring is the rest.
+const CORE_RADIUS := 52.0
+const MIDDLE_RADIUS := 225.0
+## Gate outposts: safe bubbles on four of the rim's drop points, where
+## players arrive. Each is a walled yard open toward the middle of the map.
+const OUTPOSTS := [
+	{"spawn": 2, "name": "Cinder Gate"},
+	{"spawn": 5, "name": "Ember Gate"},
+	{"spawn": 8, "name": "Slag Gate"},
+	{"spawn": 11, "name": "Ash Gate"},
+]
+const OUTPOST_RADIUS := 13.0
 ## Jump ramps need level ground, so each gets a pad by the old front.
 const RAMP_SPOTS := [Vector2(-52, -40), Vector2(58, -44), Vector2(-56, 44), Vector2(52, 40)]
 
@@ -98,6 +111,7 @@ func _ready() -> void:
 	_build_sites()
 	_build_spawns()
 	_build_field()
+	_mark_zones()
 	_art_rng.seed = LAYOUT_SEED
 	_dress()
 	set_process(Look.enabled)
@@ -441,15 +455,64 @@ func _build_carrier(at: Vector2) -> void:
 # --- The rim and the open field ---------------------------------------------------
 
 func _build_spawns() -> void:
+	var gates := {}
+	for gate: Dictionary in OUTPOSTS:
+		gates[gate["spawn"]] = gate["name"]
 	for i in PLAYER_SPAWNS:
 		var dir := Vector2.from_angle(TAU * (i + 0.5) / PLAYER_SPAWNS)
 		var at := dir * SPAWN_RING
-		_add_marker("spawn_player", _ground(at))
-		# A low wall to drop in behind, and at every other spawn a bike.
-		_add_wall(_ground(at - dir * 6.0), Vector3(6.0, 1.4, 1.0), -dir.angle() + PI * 0.5)
+		if gates.has(i):
+			_build_outpost(at, dir, gates[i])
+		else:
+			# The other drop points are open ground: a low wall to land behind.
+			_add_wall(_ground(at - dir * 6.0), Vector3(6.0, 1.4, 1.0), -dir.angle() + PI * 0.5)
+		# At every other drop point a bike.
 		if i % 2 == 0:
 			var bike := _add_marker("spawn_vehicle", _ground(at + dir.orthogonal() * 7.0))
 			bike.rotation.y = atan2(dir.x, dir.y)
+
+
+## A gate outpost: a walled yard open toward the middle (the gate), with a
+## depot at the back and the players' arrival spots. The Raid makes it safe
+## from the "outpost" marker.
+func _build_outpost(at: Vector2, dir: Vector2, title: String) -> void:
+	var marker := _add_marker("outpost", _ground(at))
+	marker.set_meta("name", title)
+	marker.set_meta("radius", OUTPOST_RADIUS)
+	var segments := 12
+	for k in segments:
+		var angle := TAU * (k + 0.5) / segments
+		var out := Vector2.from_angle(angle)
+		# Leave the side facing the middle open: that is the gate.
+		if out.dot(-dir) > 0.8:
+			continue
+		var spot := at + out * (OUTPOST_RADIUS + 0.6)
+		_add_wall(_ground(spot), Vector3(7.2, 2.4, 0.8), -angle + PI * 0.5)
+	# The gate posts either side of the opening.
+	for side: float in [-1.0, 1.0]:
+		var post := at - dir * (OUTPOST_RADIUS + 0.6) + dir.orthogonal() * side * 4.6
+		var base := _ground(post)
+		_box(Vector3(1.0, 7.0, 1.0), base + Vector3(0, 3.0, 0), COVER_CONCRETE)
+	_add_depot(_ground(at + dir * 7.0))
+	for spot: Vector2 in [at + dir.orthogonal() * 4.0, at - dir.orthogonal() * 4.0, at - dir * 3.0]:
+		_add_marker("spawn_player", _ground(spot))
+
+
+## Risk zones: caches pay by the zone they stand in (rooftops keep their own
+## table), and a warlord holds the core.
+func _mark_zones() -> void:
+	for node in get_children():
+		if not node.is_in_group("spawn_cache") or node.get_meta("loot_source", "cache") != "cache":
+			continue
+		var out := Vector2(node.position.x, node.position.z).length()
+		if out <= CORE_RADIUS:
+			node.set_meta("loot_source", "cache_core")
+		elif out > MIDDLE_RADIUS:
+			node.set_meta("loot_source", "cache_outer")
+	var boss := _add_marker("spawn_boss", _open(Vector2(-6, 6), 2.0))
+	boss.set_meta("radius", 30.0)
+	# He serves neither army: both fight him for the Foundry.
+	boss.set_meta("faction", "warlord")
 
 
 func _build_field() -> void:
@@ -663,6 +726,8 @@ func _dress() -> void:
 	_dress_rooftops(art)
 	_dress_field(art)
 	_dress_fires(art)
+	_dress_core(art)
+	_dress_outposts(art)
 	_dress_horizon(art)
 
 
@@ -712,6 +777,101 @@ func _dress_field(art: Node3D) -> void:
 		p.position = _ground(at) + Vector3(0, -0.15, 0)
 		p.rotation = Vector3(_art_rng.randf_range(-0.12, 0.12), _art_rng.randf() * TAU, _art_rng.randf_range(-0.12, 0.12))
 		art.add_child(p)
+
+
+## The core reads as dangerous from across the field: molten slag pooled
+## between the works, a red glow under the smoke and heat haze over it all.
+## Decoration only; the burn itself is `hazard_at` in the world.
+func _dress_core(art: Node3D) -> void:
+	var slag := StandardMaterial3D.new()
+	slag.albedo_color = Color(0.25, 0.06, 0.02)
+	slag.emission_enabled = true
+	slag.emission = Color(1.0, 0.36, 0.08)
+	slag.emission_energy_multiplier = 2.6
+	slag.roughness = 0.35
+	for i in 16:
+		var at := Vector2.from_angle(_art_rng.randf() * TAU) * _art_rng.randf_range(8.0, CORE_RADIUS - 6.0)
+		if _under_building(at, 5.0):
+			continue
+		var pool := MeshInstance3D.new()
+		var disc := CylinderMesh.new()
+		var width := _art_rng.randf_range(2.5, 5.5)
+		disc.top_radius = width
+		disc.bottom_radius = width
+		disc.height = 0.1
+		disc.material = slag
+		pool.mesh = disc
+		pool.scale = Vector3(1.0, 1.0, _art_rng.randf_range(0.5, 1.0))
+		pool.rotation.y = _art_rng.randf() * TAU
+		pool.position = _ground(at) + Vector3(0, 0.06, 0)
+		pool.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		art.add_child(pool)
+		var glow := OmniLight3D.new()
+		glow.light_color = Color(1.0, 0.42, 0.15)
+		glow.light_energy = 2.2
+		glow.omni_range = width * 3.0
+		glow.position = pool.position + Vector3(0, 1.2, 0)
+		art.add_child(glow)
+	for i in 4:
+		var at := Vector2.from_angle(TAU * i / 4.0 + 0.4) * CORE_RADIUS * 0.6
+		art.add_child(_smoke(_ground(at) + Vector3(0, 1.0, 0), 5.0))
+	# The rim of the core: a line of glowing cracks you see before you cross it,
+	# each laid on the ground where it lies.
+	var scorch := StandardMaterial3D.new()
+	scorch.albedo_color = Color(0.08, 0.04, 0.03)
+	scorch.emission_enabled = true
+	scorch.emission = Color(0.9, 0.24, 0.05)
+	scorch.emission_energy_multiplier = 1.2
+	var crack := BoxMesh.new()
+	crack.size = Vector3(0.7, 0.12, 3.2)
+	crack.material = scorch
+	for k in 72:
+		var angle := TAU * k / 72.0 + _art_rng.randf_range(-0.01, 0.01)
+		var at := Vector2.from_angle(angle) * CORE_RADIUS
+		if _blocked(at):
+			continue
+		var piece := MeshInstance3D.new()
+		piece.mesh = crack
+		piece.position = _ground(at) + Vector3(0, 0.02, 0)
+		piece.rotation.y = -angle
+		piece.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		art.add_child(piece)
+
+
+## Gate outposts are lit in a calm green, with their name and rule on the gate.
+func _dress_outposts(art: Node3D) -> void:
+	for node in get_children():
+		if not node.is_in_group("outpost"):
+			continue
+		var at := Vector2(node.position.x, node.position.z)
+		var inward := -at.normalized()
+		var gate := at + inward * (OUTPOST_RADIUS + 0.6)
+		var plate := Label3D.new()
+		plate.text = "%s\nSAFE ZONE · WEAPONS LOCKED" % str(node.get_meta("name", "Outpost")).to_upper()
+		plate.font_size = 96
+		plate.pixel_size = 0.01
+		plate.modulate = Color(0.6, 1.0, 0.75)
+		plate.outline_size = 16
+		plate.position = _ground(gate) + Vector3(0, 8.6, 0)
+		plate.rotation.y = atan2(inward.x, inward.y)
+		art.add_child(plate)
+		for side: float in [-1.0, 1.0]:
+			var lamp := OmniLight3D.new()
+			lamp.light_color = Color(0.45, 1.0, 0.6)
+			lamp.light_energy = 2.0
+			lamp.omni_range = 14.0
+			lamp.position = _ground(gate + inward.orthogonal() * side * 4.6) + Vector3(0, 6.8, 0)
+			art.add_child(lamp)
+
+
+## Whether a point is within `margin` metres of a building's footprint.
+func _under_building(at: Vector2, margin: float) -> bool:
+	for b in _buildings:
+		var size: Vector3 = b["size"]
+		var c: Vector3 = b["center"]
+		if absf(at.x - c.x) < size.x * 0.5 + margin and absf(at.y - c.z) < size.z * 0.5 + margin:
+			return true
+	return false
 
 
 ## Some wrecks still burn: a fire, its light, and smoke that leans downwind.
@@ -782,11 +942,8 @@ func _blocked(at: Vector2) -> bool:
 	for site: Dictionary in SITES:
 		if at.distance_to(site["at"]) < float(site["radius"]):
 			return true
-	for b in _buildings:
-		var size: Vector3 = b["size"]
-		var c: Vector3 = b["center"]
-		if absf(at.x - c.x) < size.x * 0.5 + 1.0 and absf(at.y - c.z) < size.z * 0.5 + 1.0:
-			return true
+	if _under_building(at, 1.0):
+		return true
 	for w in _wrecks:
 		var c: Vector3 = w["at"]
 		if at.distance_to(Vector2(c.x, c.z)) < 10.0:

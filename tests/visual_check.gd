@@ -159,6 +159,13 @@ func _ready() -> void:
 		get_tree().quit()
 		return
 
+	# `-- <output_dir> --zones-only` shows Ashfront's risk zones: a gate
+	# outpost from the field, and the burning core from its edge.
+	if "--zones-only" in args:
+		await _zone_shots(out_dir)
+		get_tree().quit()
+		return
+
 	# `-- <output_dir> --phone-only` shows the phone held up, and someone
 	# else holding theirs.
 	if "--phone-only" in args:
@@ -1392,6 +1399,30 @@ func _war_shots(out_dir: String) -> void:
 		mood.follow = 100.0
 		await _settle(240 if step[0] > 0.0 else 60)
 		await _shot(out_dir.path_join(step[1] + ".png"))
+	raid.queue_free()
+
+
+func _zone_shots(out_dir: String) -> void:
+	var raid := Raid.new()
+	add_child(raid)
+	raid.start(Worlds.get_world("ashfront"), 42)
+	for bot in raid.bots:
+		bot.get_node("Brain").set_physics_process(false)
+	var camera := Camera3D.new()
+	camera.far = 900.0
+	raid.add_child(camera)
+	camera.make_current()
+	var gate: Node3D = raid.outposts[0]
+	var inward := -Vector3(gate.global_position.x, 0, gate.global_position.z).normalized()
+	camera.global_position = gate.global_position + inward * 32.0 + Vector3(0, 9, 0)
+	camera.look_at(gate.global_position + Vector3(0, 2, 0))
+	await _settle(30)
+	await _shot(out_dir.path_join("zone_outpost.png"))
+	var ground: float = raid.map.call("ground_height", 0.0, 72.0)
+	camera.global_position = Vector3(0, ground + 14.0, 78.0)
+	camera.look_at(Vector3(0, ground, 0))
+	await _settle(30)
+	await _shot(out_dir.path_join("zone_core.png"))
 	raid.queue_free()
 
 

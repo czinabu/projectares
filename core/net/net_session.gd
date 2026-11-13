@@ -856,7 +856,7 @@ func _send_spawn(peer: int, actor: Actor) -> void:
 			data["clan"] = [actor.clan, actor.clan_tag]
 	else:
 		data = {"seed": raid.bot_seeds.get(actor, 0), "warlord": raid.warlords.has(actor),
-				"faction": actor.faction}
+				"faction": actor.faction, "zone": int(actor.get_meta("zone", -1))}
 	_spawn.rpc_id(peer, _ids[actor], "player" if state != null else "bot", actor.display_name,
 			String(actor.name), actor.global_position, actor.cmd.yaw, data)
 
@@ -1241,7 +1241,8 @@ func _state_entry(id: int, tier: int) -> Array:
 	var actor: Actor = _actors[id]
 	var cmd := actor.cmd.to_array()
 	cmd[ActorCommand.FLAGS_INDEX] = (int(cmd[ActorCommand.FLAGS_INDEX]) & ActorCommand.HELD_MASK) \
-			| int(_one_shots[tier].get(id, 0)) | (ActorCommand.STATE_HOVERING if actor.flight.is_hovering else 0)
+			| int(_one_shots[tier].get(id, 0)) | (ActorCommand.STATE_HOVERING if actor.flight.is_hovering else 0) \
+			| (ActorCommand.STATE_SHELTERED if actor.weapons_locked else 0)
 	cmd[ActorCommand.SWITCH_INDEX] = _switches[tier].get(id, -1)
 	return [id, actor.global_position, actor.velocity, cmd, actor.health.health,
 			actor.health.armor, actor.stagger_left, _dead_kind.get(id, ""), _applied_seq.get(id, 0)]
@@ -1598,7 +1599,7 @@ func _spawn(id: int, kind: String, shown_name: String, node_name: String, at: Ve
 		raid.players.append(state)
 	else:
 		actor = raid.spawn_bot(node_name, at, data.get("seed", 0), data.get("warlord", false),
-				data.get("faction", ""))
+				data.get("faction", ""), clampi(int(data.get("zone", -1)), -1, 2))
 		raid.world.on_spawn(actor)
 	actor.cmd.yaw = yaw
 	_actors[id] = actor
@@ -2135,6 +2136,10 @@ func _apply_state(actor: Actor, entry: Array, mine: bool) -> void:
 	var stagger: float = entry[6]
 	if absf(actor.stagger_left - stagger) > 0.15:
 		actor.stagger_left = stagger
+	# A gate outpost's lock is the server's call (`Raid._tick_outposts`).
+	if not raid.world.safe_zone:
+		actor.weapons_locked = typeof(entry[3]) == TYPE_ARRAY and entry[3].size() == ActorCommand.ARRAY_SIZE \
+				and int(ActorCommand._number(entry[3][ActorCommand.FLAGS_INDEX])) & ActorCommand.STATE_SHELTERED != 0
 	var id: int = entry[0]
 	if actor.vehicle != null:
 		# A rider goes where their vehicle goes.

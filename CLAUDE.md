@@ -712,6 +712,20 @@ without Caleb, and update the gap list when a PR closes a row.
   Doorways are "portal" markers (see `WorldDef`); `core/social/plaza_view.gd`
   offers them and `main.gd use_portal` decides where each destination leads.
   Use `Worlds.raid_worlds()` for anything you deploy into.
+- Risk zones (DESIGN.md section 2): a world tiers its map with
+  `WorldDef.zone_at` (0 outer, 1 middle, 2 core) and burns with
+  `hazard_at`, which `Raid._tick_hazards` deals through `Combat.deal` once a
+  second. The `Raid` marks each bot with the zone it spawned in (meta
+  "zone", sent to clients so they build the same bot) before `equip_bot`.
+  Bosses stand at "spawn_boss" markers (warlords, `Raid._bosses`, outside
+  the armies like event bots, `Raid._is_extra`). Gate outposts are
+  "outpost" markers inside a PvP world, not safe-zone worlds: only the
+  authority shelters a player (`Raid._tick_outposts`: weapons locked and
+  `protected_left` held up), turns away anyone in a fight or with a bounty,
+  and gives `spawn_protection` on the way out, which firing ends. Clients
+  get the lock from `ActorCommand.STATE_SHELTERED` in the state. Hazards
+  and zones are shown in the world and on the watch (`Raid.zone_label`),
+  never as an overlay.
 - A server runs several `NetSession`s in one process (plaza on the port, raid
   worlds after it, `main.gd start_server`), each raid in its own 3D world
   (`NetSession.isolated`) and all sharing one `StashService`. Never use

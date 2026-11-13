@@ -138,6 +138,15 @@ var warlords := {}
 var _event_in := 0.0
 var _event_bots: Array[Actor] = []
 var _event_pod: LootContainer
+## Risk zones (DESIGN.md section 2): the map's gate outposts (Marker3D, metas
+## "name" and "radius") and its core bosses, { marker, bot, back_in }.
+var outposts: Array[Node3D] = []
+## Whether gate outposts shelter anyone and hazards burn. Only the test suite
+## turns it off, for the checks written before risk zones that need a player
+## ready to fight where they spawn and unhurt by the ground.
+static var zone_rules := true
+var _bosses: Array[Dictionary] = []
+var _hazard_in := 0.0
 ## When false, the raid reports results but leaves the stash alone, so a server
 ## never writes to a profile that is not the player's.
 var apply_to_profile := true
@@ -204,6 +213,7 @@ func start(p_world: WorldDef, p_seed: int = -1, p_kit: Array = [], p_mastery: Di
 	armory.setup(self)
 	add_player(p_kit, p_mastery, "You", p_owner, p_renown)
 	_spawn_bots()
+	_spawn_bosses()
 	_spawn_map_vehicles()
 
 
@@ -216,6 +226,7 @@ func start_server(p_world: WorldDef, p_seed: int = -1) -> void:
 	_spawn_caches()
 	armory.setup(self)
 	_spawn_bots()
+	_spawn_bosses()
 	_spawn_map_vehicles()
 
 
@@ -264,6 +275,7 @@ func _setup(p_world: WorldDef, p_seed: int) -> void:
 		if faction != "":
 			point.hold("faction:" + faction, marker.get_meta("holder_name", faction.capitalize()), false)
 		strongpoints.append(point)
+	outposts = _map_nodes("outpost")
 	_assault_in = world.assault_interval
 	_event_in = world.event_interval
 
@@ -293,6 +305,9 @@ func _physics_process(delta: float) -> void:
 	if world.safe_zone:
 		_keep_everyone_safe()
 		return
+	_tick_outposts()
+	_tick_hazards(delta)
+	_tick_bosses(delta)
 	_tick_strongpoints(delta)
 	_tick_events(delta)
 	_tick_caches(delta)
@@ -619,7 +634,9 @@ func end_event(timed_out := false) -> void:
 ## Whether the event has been dealt with: the pod emptied, or the warlord dead.
 func _event_over() -> bool:
 	if event.kind == "warlord":
-		return warlords.is_empty()
+		# The event's own warlord, not a core boss standing guard elsewhere.
+		return not _event_bots.any(func(bot: Actor) -> bool:
+			return is_instance_valid(bot) and warlords.has(bot))
 	return not is_instance_valid(_event_pod) or _event_pod.items.is_empty()
 
 
@@ -715,7 +732,7 @@ func _tick_detail(delta: float) -> void:
 func _standing_bots() -> int:
 	var count := 0
 	for bot in bots:
-		if not _event_bots.has(bot):
+		if not _is_extra(bot):
 			count += 1
 	return count
 
@@ -732,7 +749,7 @@ func _reinforcement_spawns() -> Array[Node3D]:
 	if alive.is_empty():
 		return spawns
 	for bot in bots:
-		if alive.has(bot.faction) and not _event_bots.has(bot):
+		if alive.has(bot.faction) and not _is_extra(bot):
 			alive[bot.faction] += 1
 	var weakest := ""
 	for faction: String in alive:
@@ -761,7 +778,7 @@ func _tick_orders(delta: float) -> void:
 	_orders_in = ORDERS_EVERY
 	var armies := {}
 	for bot in bots:
-		if is_instance_valid(bot) and not bot.is_dead and bot.has_node("Brain") and not _event_bots.has(bot) \
+		if is_instance_valid(bot) and not bot.is_dead and bot.has_node("Brain") and not _is_extra(bot) \
 				and float(_busy_until.get(bot, 0.0)) <= clock:
 			if not armies.has(bot.faction):
 				armies[bot.faction] = []
@@ -1007,6 +1024,10 @@ func begin_sign_out(actor: Actor, forced := false) -> bool:
 	elif fighting:
 		actor.notice.emit("You cannot sign out in a fight")
 		return false
+	elif state.sheltered:
+		# A gate outpost is the way out: a quick sign-out, nobody can interrupt it.
+		state.sign_out_left = world.outpost_sign_out_time
+		actor.notice.emit("Signing out at the gate")
 	else:
 		state.sign_out_left = world.sign_out_time
 		actor.notice.emit("Signing out. Stay out of trouble for %d seconds" % ceili(world.sign_out_time))
@@ -1093,6 +1114,154 @@ func _spawn_bots() -> void:
 		_add_bot(spawns[i % spawns.size()])
 
 
+## Risk zones: a boss stands guard at each of the map's "spawn_boss" markers.
+func _spawn_bosses() -> void:
+	# A world run without bots (`--bots 0`) has no bosses either.
+	if world.bot_count <= 0:
+		return
+	for marker in _map_nodes("spawn_boss"):
+		_bosses.append({"marker": marker, "bot": _add_boss(marker), "back_in": 0.0})
+
+
+func _add_boss(marker: Node3D) -> Actor:
+	var bot := _add_bot(marker, true)
+	var brain := bot.get_node_or_null("Brain") as BotBrain
+	if brain != null:
+		brain.post_to(marker.global_position, float(marker.get_meta("radius", 12.0)))
+	return bot
+
+
+## A dead boss comes back after `WorldDef.boss_respawn_time`.
+func _tick_bosses(delta: float) -> void:
+	for boss in _bosses:
+		var bot: Variant = boss.bot
+		if bot != null and is_instance_valid(bot) and not (bot as Actor).is_dead:
+			continue
+		if boss.back_in <= 0.0:
+			boss.back_in = world.boss_respawn_time
+			boss.bot = null
+			continue
+		boss.back_in -= delta
+		if boss.back_in <= 0.0:
+			boss.bot = _add_boss(boss.marker)
+			war_feed.emit("A warlord has taken %s again" % _whereabouts(boss.marker.global_position))
+
+
+## Bots outside the world's own army: an event's, and the core bosses. They
+## are never ordered about by the war, and nobody replaces them.
+func _is_extra(bot: Actor) -> bool:
+	if _event_bots.has(bot):
+		return true
+	for boss in _bosses:
+		if boss.bot == bot:
+			return true
+	return false
+
+
+## The gate outpost a point is inside, or null.
+func outpost_at(at: Vector3) -> Node3D:
+	for marker in outposts:
+		var flat := Vector2(at.x - marker.global_position.x, at.z - marker.global_position.z)
+		if flat.length() <= float(marker.get_meta("radius", 10.0)) and absf(at.y - marker.global_position.y) < 12.0:
+			return marker
+	return null
+
+
+## Gate outposts are safe bubbles: weapons locked and nobody can hurt you.
+## Someone in a fight or carrying a bounty is turned away at the gate (put
+## back outside it), so nobody ducks in to escape a fight. Walking out gives
+## a moment of protection that ends as soon as you fire. Authority only:
+## clients learn the lock from the state (`ActorCommand.STATE_SHELTERED`).
+func _tick_outposts() -> void:
+	if outposts.is_empty() or not zone_rules:
+		return
+	for state in players:
+		var actor := state.actor
+		if state.finished or not is_instance_valid(actor) or actor.is_dead:
+			continue
+		var gate := outpost_at(actor.global_position)
+		if gate != null and not state.sheltered:
+			var fighting := clock - state.last_combat < world.combat_time
+			if fighting or actor.bounty > 0:
+				_turn_away(state, gate, "in a fight" if fighting else "carrying a bounty")
+				continue
+			state.sheltered = true
+			state.leaving_gate = false
+			actor.weapons_locked = true
+			actor.notice.emit("%s: safe, weapons locked" % gate.get_meta("name", "Outpost"))
+		elif gate == null and state.sheltered:
+			state.sheltered = false
+			state.leaving_gate = true
+			actor.weapons_locked = false
+			actor.protected_left = world.spawn_protection
+		if state.sheltered:
+			actor.protected_left = maxf(actor.protected_left, 0.5)
+		elif state.leaving_gate:
+			# Firing gives the protection up, hit or miss.
+			if actor.protected_left <= 0.0 or actor.cmd.primary or actor.cmd.primary_pressed \
+					or actor.cmd.ability_pressed or actor.cmd.artifact_pressed:
+				actor.protected_left = 0.0
+				state.leaving_gate = false
+
+
+## Puts someone who may not shelter back outside the gate's edge.
+func _turn_away(state: PlayerState, gate: Node3D, why: String) -> void:
+	var actor := state.actor
+	var centre := gate.global_position
+	var out := Vector2(actor.global_position.x - centre.x, actor.global_position.z - centre.z)
+	if out.length() < 0.1:
+		out = Vector2(0, 1)
+	var edge := out.normalized() * (float(gate.get_meta("radius", 10.0)) + 1.0)
+	var vehicle := actor.vehicle
+	if vehicle != null:
+		vehicle.global_position = _stand(Vector3(centre.x + edge.x, vehicle.global_position.y, centre.z + edge.y))
+	else:
+		actor.global_position = _stand(Vector3(centre.x + edge.x, actor.global_position.y, centre.z + edge.y))
+		actor.velocity = Vector3.ZERO
+	if clock - state.refused_at > 3.0:
+		actor.notice.emit("The gate stays shut while you are %s" % why)
+	state.refused_at = clock
+
+
+## Hazard ground (a molten core) drains whoever stands in it, once a second.
+func _tick_hazards(delta: float) -> void:
+	if not zone_rules:
+		return
+	_hazard_in -= delta
+	if _hazard_in > 0.0:
+		return
+	_hazard_in = 1.0
+	for state in players:
+		var actor := state.actor
+		if state.finished or not is_instance_valid(actor) or actor.is_dead:
+			continue
+		var burn := world.hazard_at(actor.global_position)
+		if burn <= 0.0:
+			continue
+		var info := DamageInfo.new()
+		info.amount = burn
+		info.kind = "hazard"
+		info.position = actor.global_position
+		info.armor_pierce = 1.0
+		Combat.deal(actor, info)
+
+
+## The risk zone someone is in as the watch says it: the tier's name, or the
+## outpost sheltering them. Works on clients (from the lock the server sent).
+func zone_label(actor: Actor) -> String:
+	if world == null or world.safe_zone or actor == null:
+		return ""
+	if actor.weapons_locked:
+		var gate := outpost_at(actor.global_position)
+		if gate != null:
+			return "%s · safe" % gate.get_meta("name", "Outpost")
+	var tier := world.zone_at(actor.global_position)
+	var label := world.zone_name(tier)
+	if label != "" and world.hazard_at(actor.global_position) > 0.0:
+		label += " · burning"
+	return label
+
+
 ## A new bot with a brain, at a spawn marker.
 func _add_bot(marker: Node3D, warlord := false) -> Actor:
 	var at := marker.global_position + Vector3(rng.randf_range(-1, 1), 0, rng.randf_range(-1, 1))
@@ -1150,11 +1319,15 @@ func _farthest_from_players(markers: Array[Node3D]) -> int:
 
 ## Creates a bot equipped from `equip_seed`, with no brain. A client calls this
 ## with the server's seed to get the same bot.
-func spawn_bot(bot_name: String, at: Vector3, equip_seed: int, warlord := false, faction := "") -> Actor:
+func spawn_bot(bot_name: String, at: Vector3, equip_seed: int, warlord := false, faction := "",
+		zone := -2) -> Actor:
 	var bot := Actor.new()
 	bot.name = bot_name
 	if faction != "":
 		bot.faction = faction
+	# The risk zone it arrived in, for `equip_bot`. A client is told it, since
+	# the bot may have walked elsewhere by the time the client hears of it.
+	bot.set_meta("zone", zone if zone >= -1 else world.zone_at(at))
 	add_child(bot)
 	bot.global_position = at
 	var equip_rng := RandomNumberGenerator.new()
@@ -1588,7 +1761,7 @@ func _on_actor_died(actor: Actor, info: DamageInfo) -> void:
 		warlords.erase(actor)
 		# A world event's bots are extra: nobody takes their place. Neither
 		# are reinforcements replaced once the war has cooled.
-		if mode != Mode.CLIENT and not _event_bots.has(actor):
+		if mode != Mode.CLIENT and not _is_extra(actor):
 			if _standing_bots() + _bot_respawns.size() < bot_target():
 				_bot_respawns.append(world.bot_respawn_time)
 			# Bots killing bots keep the war simmering.
@@ -1912,4 +2085,10 @@ class PlayerState:
 	var sign_out_forced := false
 	## `Raid.clock` when they last gave or took a hit.
 	var last_combat := -INF
+	## Inside a gate outpost, under its shelter (`Raid._tick_outposts`).
+	var sheltered := false
+	## Walked out of an outpost and still protected: firing ends it.
+	var leaving_gate := false
+	## `Raid.clock` when an outpost last turned them away, so it says so once.
+	var refused_at := -INF
 	var finished := false

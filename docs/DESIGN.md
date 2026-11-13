@@ -183,6 +183,44 @@ headquarters, in the order they are built:
 - The only place heavy weapons are found.
 - Mid-map bank spots and sign-out create the extraction tension (section 7).
 
+### Risk zones (Caleb's call)
+
+The PvP world is split into rings of risk, so every outing is a choice of
+how far in to go. The best rewards are only in the middle, which pulls
+players into each other.
+
+| Zone | Enemies | Loot | Ways out |
+| --- | --- | --- | --- |
+| Outer ring | Basic soldiers, few heavies | Common: mostly materials, now and then a piece of gear | Many: the gate outposts, sign-out anywhere |
+| Middle | Tougher patrols, the landmarks' garrisons, warlords | Better crates (today's cache table) and rooftops | Depots at each landmark |
+| Core hotspots (a volcano, a storm core) | A boss on guard, the armies fighting over it | Top tier: the rooftop table on the ground, blueprints, artifacts from the boss | Few: one depot, and the ground drains you while you wait |
+
+- **Hazards drain you over time** in a core, so the best loot is on a
+  timer. They are seen in the world, never shown as an overlay: molten
+  slag, glow, smoke and a scorched line where the core begins.
+- **The watch's map** names the zone you are in (and says when you are
+  burning), on the Status page.
+- **Gate outposts** stand on the edge of the world. They are small safe
+  zones where you arrive, regroup with your squad, and bank or sign out at
+  a depot (a gate sign-out is quick). Weapons are locked inside and nobody
+  can be hurt there. Two rules keep them honest:
+  - **No camping at the gates.** The safe bubble ends at the gate wall.
+    Walking out gives a brief protection that ends the moment you fire.
+  - **No hiding mid-fight.** The gate turns you away while you are in a
+    fight or carrying a bounty.
+
+**What is built (MVP, Ashfront).** The zones are rings around the middle
+(`WorldDef.zone_at`, `hazard_at`): the Foundry is the core, molten and
+burning (1.5 damage a second, past armor, through `Combat.deal`) and held
+by a warlord who comes back 6 minutes after he dies (`spawn_boss`
+markers); the middle reaches past the four landmarks; the rest is the
+outer ring. Caches pay by zone (`cache_outer`, `cache`, `cache_core`), and
+soldiers arriving further in are more often heavies and tougher. Four gate
+outposts on the rim (`outpost` markers, run by `Raid._tick_outposts`) are
+where players drop in, each with a depot. Still to come: more hotspots (a
+volcano, a storm core), a drawn map on the watch with the rings on it,
+squad regrouping at the gates, and tuning.
+
 ### World events
 
 The warzone already runs one event at a time (supply pods and warlords,

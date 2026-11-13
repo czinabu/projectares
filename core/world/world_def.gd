@@ -40,6 +40,20 @@ extends RefCounted
 ##     "Screen": a terminal's face, centred on it and facing its +Z, 1.6 by
 ##     0.9 metres. The screen is shown there (`WorldScreen`).
 ##
+## Risk zones (DESIGN.md section 2, "Risk zones"): a world may split its map
+## into tiers by overriding `zone_at` (0 the outer ring, 1 the middle, 2 the
+## core) and `hazard_at`, and its map may add:
+##   - Marker3D nodes in group "outpost": gate outposts, small safe bubbles
+##     inside a PvP world. Metas: "name" and "radius" (metres). The Raid
+##     shelters a player inside one (weapons locked, cannot be hurt) unless
+##     they arrive in a fight or carrying a bounty, and gives them
+##     `spawn_protection` again as they walk out. Put a depot and the player
+##     spawns inside them.
+##   - Marker3D nodes in group "spawn_boss": a boss (a bot made a warlord)
+##     stands guard there, and comes back `boss_respawn_time` after it dies.
+## The Raid marks each spawned bot with the tier it arrived in (meta "zone")
+## before `equip_bot`, so a world can make bots tougher further in.
+##
 ## Looks: a world may give a bot a model with `bot.set_meta("look", "<skin>")`
 ## in `equip_bot`. The skins are listed in `core/visual/look.gd`.
 
@@ -127,6 +141,10 @@ var warlord_blueprint_chance := 0.0
 var pod_blueprint_chance := 0.0
 var warlord_upgrade_data := 0
 var pod_upgrade_data := 0
+## Risk zones: seconds before a core boss comes back after it dies, and the
+## sign-out time while sheltered in a gate outpost (it is the way out there).
+var boss_respawn_time := 360.0
+var outpost_sign_out_time := 3.0
 ## Seconds between dying and being allowed to drop in again.
 var redeploy_delay := 3.0
 ## False for a venue where nobody loses gear (the arena). The server then
@@ -213,6 +231,23 @@ func roll_crafting_loot(rng: RandomNumberGenerator, chance: float, data: int) ->
 	for i in maxi(data, 0):
 		out.append("upgrade_data")
 	return out
+
+
+## The risk zone at a point: 0 the outer ring, 1 the middle, 2 the core, or
+## -1 for a world without zones.
+func zone_at(_pos: Vector3) -> int:
+	return -1
+
+
+## What a zone tier is called on the watch.
+func zone_name(tier: int) -> String:
+	return ["Outer ring", "Middle zone", "Core"][tier] if tier >= 0 and tier <= 2 else ""
+
+
+## Damage a second that the ground at a point does to a player standing in it
+## (heat, fumes), or 0. The Raid deals it through `Combat.deal`.
+func hazard_at(_pos: Vector3) -> float:
+	return 0.0
 
 
 func can_damage(attacker: Node, target: Node, _info: DamageInfo) -> bool:

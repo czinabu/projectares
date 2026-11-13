@@ -26,6 +26,7 @@ rows marked **pre-playtest** come before the friends playtest.
 | Trophies and blueprint pedestals from PvE bosses and arena brackets | Partly | A trophy shelf and a Trophy Case furniture item exist; earned trophies need PvE bosses and arena brackets. Later. |
 | PvE world: quests, dungeons, bosses | Missing, deferred | Until after the friends playtest. Frostline stands in (no PvP, gentle death, basic loot). |
 | PvP world | Built | Ashfront: armies, strongpoints, war intensity, events, renown, full loot. |
+| PvP risk zones and gate outposts | Partly | Ashfront: outer ring, middle and a burning core held by a boss; loot and soldiers by zone; four weapons-locked gate outposts where players arrive, with the entry rules and protection on the way out; the zone named on the watch. Missing: more hotspots (volcano, storm core), a drawn watch map, squad regrouping at the gates. |
 | Heavy weapons only in the PvP world | Built | `power_weapon_rate` is 0 in Frostline and the arena. |
 | Arena with loadouts locked in a bout | Built | The Pit: own loadout, no healing or vehicles, nobody loses gear. A 40 m floor with cover for blades, guns and flight (pillars, platforms, rising barriers), fighters' tunnels with doors, a ceiling at 16 m, a ring of screens over the floor, and a navigation mesh for bots. Its own warm sci-fi night look: gunmetal and amber lit edges, red and blue sides, a holographic crowd, stadium floodlight towers and banners. |
 | World events: supply pods and warlords | Built | `Raid.event`, one at a time, sped up by the war. |

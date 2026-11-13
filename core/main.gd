@@ -884,6 +884,9 @@ func _run_dedicated_server(args: PackedStringArray) -> void:
 	# server run from the editor, and keeps this server's accounts apart.
 	var dev_host := _arg(args, "--dev-host", "") if DevMode.available() else ""
 	var accounts := _arg(args, "--accounts", DEV_ACCOUNTS if dev_host != "" else "")
+	# `--no-zone-rules`: no gate shelter and no hazards (the test suite's servers).
+	if "--no-zone-rules" in args:
+		Raid.zone_rules = false
 	var err := start_server(_arg(args, "--world", ""), port, "--no-plaza" not in args,
 			int(_arg(args, "--bots", "-1")), "--squad-spawn" in args, accounts,
 			"--no-rewind" not in args,
