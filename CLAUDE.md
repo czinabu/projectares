@@ -301,7 +301,24 @@ without Caleb, and update the gap list when a PR closes a row.
   (`ActionPose.phone`, from `ActorCommand.phone`, which `Locomotion` poses
   the body from). `WeaponArm` and `ActorSkin` pose the model from it; a new
   hand or weapon animation goes there. Weapons are held, not floated
-  (Caleb's call): the hand carries them. A blade lies along the closed fist
+  (Caleb's call): the hand carries them, each by its own grip (Caleb's
+  call), found on the model rather than tuned by hand. `Look._measure_hold`
+  reads a gun's side outline for its trigger guard, the pistol grip behind
+  it (its rake) and the fore end ("Grip", "Trigger", "ForeGrip" markers;
+  a power weapon marks its grip in `_power_grip`); the fist's middle closes
+  on the grip level with the trigger and the wrist bends to its rake
+  (`WeaponArm._held_wrist`, `_bend_to_grip`). Whenever a gun is raised
+  (aiming or shooting, not held low or reloading) the off hand supports it
+  as in a real FPS hold (Caleb's references): under a long gun's fore end
+  palm up, fingers up its side ("ForeGrip", found just under the fore end,
+  `Look.FORE_CUP`), and wrapped round the shooting hand on a sidearm
+  (`ActionPose.ads_cup`); its wrist is turned by `WeaponArm._support_turn`.
+  `Look._fit_hands` finds a melee handle (up to its guard or
+  head), puts it through the fist and gives a two-handed weapon
+  (`Look.is_two_handed`) its off hand's place: a hand below on a short
+  handle, up the haft of a long one, which rests carried across the body
+  (`WeaponArm.carry_point`). Check by eye with
+  `visual_check.tscn -- <dir> --hands-only`. A blade lies along the closed fist
   and a gun held low turns with the wrist (`WeaponArm`); swings turn the
   arm about the shoulder (`ActionPose.swing_reach`, `elbow_pole`). Shots
   are judged from the eyes but drawn from the gun's "Muzzle" marker as it
@@ -807,6 +824,16 @@ without Caleb, and update the gap list when a PR closes a row.
   (`LootContainer.scrip`); a depot moves it to `scrip_banked`. It reaches an
   account only through the result (`scrip`, `scrip_banked`) and
   `Economy.payout`, never directly, and nothing is paid for kills alone.
+- Contracts (`core/economy/contracts.gd`, static rules like `Economy`): the
+  board's jobs are data in `Contracts.JOBS`, offered by the date so every
+  machine agrees, and held on the online account (`Account.contracts`, in the
+  snapshot); only the server takes, drops, rerolls (`StashService.contract`,
+  asked with `NetSession.contract_ask`) and pays them, in `settle`. A life's
+  counters are the `Raid`'s (`_count`, authority only, never in a safe zone
+  or where gear is not at stake) and travel in the result's `tally`; the
+  owner's copy for the watch is `Actor.tally`. Only a sign-out counts, and no
+  job may count player kills or reward signing straight out. A new job is a
+  `JOBS` entry; a new stat is a `_count` call where the event happens.
 - Furniture (`furniture`, small pieces also `decor`) and clothing
   (`cosmetic`, with an `outfits` stat of customizer outfit ids) are ordinary
   stash items that fit no loadout slot, so they never go on a raid.

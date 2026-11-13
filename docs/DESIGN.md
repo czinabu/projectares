@@ -925,6 +925,24 @@ to 3 at a time.
   pickups, race times), which keeps them cheap to build.
 - Later, high-risk contracts can grow into real missions.
 
+**What is built (MVP).** The board stands beside the big screen in the
+Concourse: a lit wall listing today's jobs, and a terminal in front of it to
+take, drop and reroll them (`core/economy/contracts.gd` holds the rules,
+`contract_panel.gd` the screen). It offers 3 dailies and 1 weekly from small
+pools, picked by the date (UTC) so everyone sees the same board; a reroll
+changes only your own dailies. Jobs live on the online account, so the board
+is the server's; solo launch-pad runs count nothing yet. A life counts kills,
+warlords, strongpoints taken, vehicles ridden (each once) and artifact uses
+(`Raid._count`), plus the loot value and items by tag that came home; only a
+sign-out counts them, and an "extract" needs at least 100 scrip of loot home
+so signing straight out farms nothing. Nothing counts player kills. A finished
+job pays at once into the account: scrip, upgrade data where it exists, and
+on weeklies a blueprint you do not know yet once blueprints exist. The watch
+has a contract icon showing the job nearest done, with this life's progress
+on top; the phone buzzes when a job is paid. Still to come: per-world and
+per-rig jobs, ring-race jobs, the visor tracker, high-risk jobs, and the
+balance of payouts (placeholders today).
+
 **Bounties** are about hunting players, and tie into the most-wanted board
 (section 2) and the renown and Marked rules already in the PvP world. When a
 player gets hot, a bounty goes up on them; whoever takes them down and

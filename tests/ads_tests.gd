@@ -134,6 +134,8 @@ static func _check_with_skin(t: Node, kit: Array, what: String) -> void:
 	var catch := func() -> void:
 		seen["eye"] = skin.eye_point(aimed)
 		seen["off"] = skel.global_transform * skel.get_bone_global_pose(arm._off_wrist).origin
+		if arm._aim_wrist != null:
+			seen["hand_way"] = arm._follow_turn(arm._wrist, arm._held_wrist(gun))
 	skel.skeleton_updated.connect(catch)
 	await t.frames(3)
 	skel.skeleton_updated.disconnect(catch)
@@ -154,11 +156,11 @@ static func _check_with_skin(t: Node, kit: Array, what: String) -> void:
 	t.check(off_wrist.distance_to(off_hand) < 0.06,
 			"%s: the off hand reaches the gun (%.3f m short)" % [what, off_wrist.distance_to(off_hand)])
 	if arm._aim_wrist != null:
-		var hand_way: Basis = arm._follow_turn(arm._wrist, arm._aim_wrist)
+		var hand_way: Basis = seen["hand_way"]
 		var twist := rad_to_deg(hand_way.get_rotation_quaternion().angle_to(aimed.get_rotation_quaternion()))
 		t.check(twist < 8.0, "%s: the gun hand sits round the grip as it does aiming from the hip (%.1f deg off)" % [what, twist])
 	if gun.is_sidearm:
-		t.check(pose.relief_now > 0.25, "%s: a sidearm is held well out (%.2f m)" % [what, pose.relief_now])
+		t.check(pose.relief_now > 0.15, "%s: a sidearm is held out in both hands (%.2f m)" % [what, pose.relief_now])
 	# First person looks straight down the sight.
 	var cam: Camera3D = controller.camera
 	var cam_off := (sight - cam.global_position) - ahead * (sight - cam.global_position).dot(ahead)

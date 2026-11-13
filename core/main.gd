@@ -39,6 +39,8 @@ const ArenaHudScript := preload("res://core/arena/arena_hud.gd")
 const ARENA_PORT_OFFSET := 10
 const PlazaViewScript := preload("res://core/social/plaza_view.gd")
 const ClanPanel := preload("res://core/social/clan_panel.gd")
+const ContractPanel := preload("res://core/economy/contract_panel.gd")
+const Contracts := preload("res://core/economy/contracts.gd")
 ## The plaza holds more people than a raid.
 const PLAZA_PLAYERS := 32
 const SHOP_PANEL := "res://core/economy/shop_panel.gd"
@@ -235,6 +237,7 @@ func _open_base(stash: Array, loadout: Dictionary, owner_name: String, upgrades:
 	base_hud = BaseHudScript.new()
 	base_hud.name = "BaseHud"
 	base_hud.setup(base, controller)
+	base_hud.contracts = _held_contracts()
 	base.add_child(base_hud)
 	_apply_settings()
 
@@ -516,6 +519,12 @@ func start_raid(world_id: String) -> void:
 	raid.player_finished.connect(_on_solo_finished)
 
 
+## The contracts the account holds, for the watch. They live on the
+## server's account, so there are none solo.
+func _held_contracts() -> Array[Dictionary]:
+	return Contracts.held(net.account.get("contracts")) if net != null else ([] as Array[Dictionary])
+
+
 ## The player's chosen look, limited to the clothing they own where they are:
 ## the local stash solo, the server's stash in a lobby.
 func _my_look() -> Dictionary:
@@ -547,6 +556,7 @@ func _attach_player_view() -> void:
 	raid.add_child(controller)
 	hud = Hud.new()
 	hud.setup(raid, controller)
+	hud.contracts = _held_contracts()
 	# War news buzzes the phone instead of scrolling over the screen.
 	if phone != null:
 		hud.notice_sink = phone.show_notice
@@ -1097,6 +1107,8 @@ func use_portal(destination: String) -> void:
 		leave_server()
 	elif destination == "clans":
 		open_clans()
+	elif destination == "contracts":
+		open_contracts()
 	else:
 		plaza_view.show_notice("Opening soon.")
 
@@ -1121,6 +1133,20 @@ func open_clans() -> void:
 	panel.tree_exited.connect(func() -> void:
 		if is_instance_valid(session) and session.clan_changed.is_connected(on_change):
 			session.clan_changed.disconnect(on_change))
+	_open_terminal(panel)
+
+
+## The contract board by the big screen: take, drop or reroll jobs. The
+## server decides; a new account snapshot redraws it
+## (`_on_online_account_changed`).
+func open_contracts() -> void:
+	if net == null or raid == null or shop_view != null:
+		return
+	var panel: Control = ContractPanel.new()
+	panel.account = net.account
+	panel.asked.connect(func(action: String, job_id: String) -> void:
+		if net:
+			net.contract_ask(action, job_id))
 	_open_terminal(panel)
 
 
@@ -1294,6 +1320,10 @@ func _on_online_disconnected() -> void:
 ## there, and nothing is written to the local profile. A death keeps you in
 ## the world; a finished sign-out goes back to the lobby.
 func _on_online_finished(result: Dictionary) -> void:
+	# A finished contract buzzes the phone with what it paid.
+	var finished: Array = result.get("contracts_finished", [])
+	if not finished.is_empty() and phone != null:
+		phone.show_notice("Contract done: %s   +%d scrip" % [", ".join(finished), int(result.get("contract_scrip", 0))])
 	if result.get("outcome", "") == "died":
 		_show_death(result)
 		return

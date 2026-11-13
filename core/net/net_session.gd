@@ -79,7 +79,7 @@ signal world_invite_accepted(invite: Dictionary)
 signal base_visit_requested(owner_name: String, stash: Array, loadout: Dictionary, upgrades: Array)
 
 const DEFAULT_PORT := 24565
-const PROTOCOL := 21
+const PROTOCOL := 22
 ## Every packet is compressed, both ways. State updates are mostly repeated
 ## numbers, and a big battle sends a player hundreds of them a second. Server
 ## and client must agree, so a change here needs a new PROTOCOL.
@@ -359,6 +359,7 @@ func _start_server_raid() -> void:
 	raid.vehicle_spawned.connect(_on_server_vehicle_spawned)
 	raid.vehicle_removed.connect(_on_server_vehicle_removed)
 	raid.watch_changed.connect(_send_watch)
+	raid.tally_changed.connect(_send_tally)
 	raid.toy_thrown.connect(func(_actor: Actor, item_id: String, from: Vector3, toy_velocity: Vector3) -> void:
 		for peer in _joined_peers:
 			_toy.rpc_id(peer, item_id, from, toy_velocity))
@@ -545,6 +546,14 @@ func _send_watch(actor: Actor) -> void:
 		_watch.rpc_id(peer, raid.stowed_for(actor), raid.toy_wait(actor))
 
 
+## Tells a player their contract counters for this life. Only the owner
+## hears them.
+func _send_tally(actor: Actor) -> void:
+	var peer: int = _actor_peer.get(actor, 0)
+	if peer != 0 and peer in _joined_peers and raid != null:
+		_tally.rpc_id(peer, actor.tally)
+
+
 func _on_server_player_finished(actor: Actor, result: Dictionary) -> void:
 	var peer: int = _actor_peer.get(actor, 0)
 	var online := peer != 0 and peer in _api.get_peers()
@@ -554,7 +563,12 @@ func _on_server_player_finished(actor: Actor, result: Dictionary) -> void:
 		_actor_account.erase(actor)
 		# Nothing to settle where no gear was at risk (the arena).
 		if raid.world.gear_at_risk:
-			stash.settle(account_id, result)
+			var settled: Dictionary = stash.settle(account_id, result)
+			# Contracts this life finished, for the player's own report.
+			var paid: Dictionary = settled.get("contracts", {})
+			if not paid.get("finished", []).is_empty():
+				result["contracts_finished"] = paid.finished
+				result["contract_scrip"] = paid.scrip
 		# Everyone signed in to the account hears, including a player back in
 		# the lobby whose old body just finished its sign-out.
 		for other: int in _peer_account:
@@ -708,6 +722,19 @@ func _request_buy(shop_id: String, item_id: String) -> void:
 	if not is_server or not _peer_account.has(peer):
 		return
 	var result: Dictionary = stash.buy(_peer_account[peer], shop_id, item_id)
+	if not result.ok:
+		_lobby_error.rpc_id(peer, result.error)
+	_send_account(peer)
+
+
+## Lobby: the contract board. Take or drop a job, or reroll the offers. The
+## server decides; the answer is a fresh account snapshot.
+@rpc("any_peer", "call_remote", "reliable")
+func _request_contract(action: String, job_id: String) -> void:
+	var peer := _api.get_remote_sender_id()
+	if not is_server or not _peer_account.has(peer):
+		return
+	var result: Dictionary = stash.contract(_peer_account[peer], action.left(16), job_id.left(32))
 	if not result.ok:
 		_lobby_error.rpc_id(peer, result.error)
 	_send_account(peer)
@@ -1338,6 +1365,12 @@ func buy(shop_id: String, item_id: String) -> void:
 
 
 ## Lobby: ask the server to buy a home base upgrade.
+## Asks the server's contract board to "take" or "drop" a job, or "reroll".
+func contract_ask(action: String, job_id: String = "") -> void:
+	if _is_connected() and not account.is_empty():
+		_request_contract.rpc_id(1, action, job_id)
+
+
 func buy_upgrade(upgrade_id: String) -> void:
 	if _is_connected() and not account.is_empty():
 		_request_buy_upgrade.rpc_id(1, upgrade_id)
@@ -1869,6 +1902,19 @@ func _receive_board(p_board: Dictionary) -> void:
 	if me != null and p_board.get("phase", "") == "countdown" and was != "countdown" \
 			and String(me.name) in bout.get("nodes", []):
 		Arena.refresh_fighter(me)
+
+
+## Your contract counters for this life, for the watch.
+@rpc("authority", "call_remote", "reliable")
+func _tally(counts: Dictionary) -> void:
+	var me: Actor = _actors.get(my_actor_id)
+	if me == null:
+		return
+	var clean := {}
+	for stat: Variant in counts:
+		if typeof(stat) == TYPE_STRING:
+			clean[stat] = maxi(0, int(counts[stat]))
+	me.tally = clean
 
 
 ## What is on your watch, and how long until you can throw again.
