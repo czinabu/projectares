@@ -5989,6 +5989,12 @@ func _test_phone_view() -> void:
 		check(controller.phone_read > 0.99, "with the phone out in third person the camera eases in to read it")
 		check(controller.camera.global_position.distance_to(holo.global_position) < 1.8 and is_equal_approx(controller.camera.global_basis.x.y, 0.0),
 				"and frames it level from over the shoulder")
+		var to_holo := controller.camera.global_transform.affine_inverse() * holo.global_position
+		check(to_holo.x > 0.02, "the holo sits off the centre of the screen, clear of the crosshair")
+		var holo_mat := Handheld.holo_material(ImageTexture.new())
+		check(holo_mat.blend_mode == BaseMaterial3D.BLEND_MODE_MIX and holo_mat.albedo_color.a > 0.9
+				and holo_mat.render_priority == Material.RENDER_PRIORITY_MAX,
+				"a readable holo is solid and drawn over signs behind it")
 		controller.phone_out = false
 		controller.input_blocked = false
 		for i in 40:

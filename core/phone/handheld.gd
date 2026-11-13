@@ -32,6 +32,8 @@ const CASE_COLOR := Color(0.12, 0.122, 0.13)
 ## device's top edge it floats, and how far its top tips back to the eyes.
 ## It is part of the device, so every view shows the same one.
 const HOLO_SIZE := Vector2(0.24, 0.4)
+## How solid the holo of a readable screen is.
+const HOLO_OPACITY := 0.94
 const HOLO_GAP := 0.035
 const HOLO_TIP := 0.22
 ## How far out to the right (m) the panel floats, and how far it turns back
@@ -133,8 +135,14 @@ static func holo_material(texture: Texture2D) -> StandardMaterial3D:
 	mat.disable_receive_shadows = true
 	mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
 	if texture != null:
+		# A readable screen is near solid (playtest feedback: the world bled
+		# through), and drawn after the scene's other see-through things so a
+		# sign behind it never prints over it.
+		mat.blend_mode = BaseMaterial3D.BLEND_MODE_MIX
+		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 		mat.albedo_texture = texture
-		mat.albedo_color = Color(1.0, 0.95, 0.9)
+		mat.albedo_color = Color(1.0, 0.97, 0.94, HOLO_OPACITY)
+		mat.render_priority = Material.RENDER_PRIORITY_MAX
 	else:
 		var sheen := GradientTexture2D.new()
 		sheen.fill_from = Vector2(0.5, 0.0)
