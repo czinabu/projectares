@@ -750,11 +750,11 @@ void fragment() {
 	## them from the camera, up and to the left of the head (metres ahead
 	## along the view, up from the eyes, and to the side, negative is left).
 	## The light reaches out to it from the wrist.
-	var third_person_view := 0.95
+	var third_person_view := 0.84
 	var projection_at := Vector3(-0.85, 0.35, 0.9)
 	## How far, in metres at the head, the card keeps clear of the head and
 	## helmet from the camera's view.
-	var head_clearance := 0.3
+	var head_clearance := 0.06
 	## The glow on the arm while the card is up: how bright, and how far it
 	## reaches.
 	var glow_energy := 0.7
