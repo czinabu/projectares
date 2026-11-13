@@ -540,8 +540,17 @@ without Caleb, and update the gap list when a PR closes a row.
   only your always-in-view readings (the health arc with armor and stamina
   inside it and the ability's state under it, and with a flight rig the
   heat gauge and rig cue high on the right, `VisorHud._draw_vitals` and
-  `_draw_heat`; squad markers and the landing warning are still to come,
-  per DESIGN.md sections 3 and 5); do not put the map or standing there, they
+  `_draw_heat`; the landing warning is still to come, per DESIGN.md
+  section 5). Every working helmet also has a heading strip across the top,
+  bowed with the glass, that marks only what the wearer is already told
+  (`VisorHud.compass_marks`): squadmates (`VisorHud.squadmate`: a player in
+  the same clan, or everyone where `WorldDef.players_allied`; never a bot or
+  an enemy), the side's pings and the nearest depot, plus each helmet's own
+  finds (Spotter tags, Seeker scan snapshots, Warden the war's hot zone),
+  and the contract nearest done as a small tracker top left (`hud.contracts`).
+  Each helmet has a role it names as it comes on (`role_name`) and its own
+  reticle; an Ember also reads its wearer's own heat signature. A scrap
+  visor manages only a bearing. Do not put the map or standing there, they
   stay on the watch. Mk2
   helmets are never sold or dropped: like rigs, they are crafted from
   blueprints (DESIGN.md section 10), so no loot table may list them. Check the glass by eye with
