@@ -6287,6 +6287,33 @@ func _test_home_base() -> void:
 	watch_keys.wrist_raised = false
 	await frames(30)
 	check(hud.wrist.raise_amount <= 0.0 and not base.player.cmd.watch_up, "X lowers it again")
+	# The raised wrist comes up into the line of sight from the eyes, so the
+	# card over it is in view (playtest: it stayed under the view in first
+	# person), wherever you are looking.
+	var arm = preload("res://core/visual/weapon_arm.gd").new()
+	arm.actor = base.player
+	var in_view := true
+	for look_pitch: float in [-0.4, 0.0, 0.4]:
+		base.player.cmd.pitch = look_pitch
+		var aim_dir: Vector3 = base.player.global_basis * Basis(Vector3.RIGHT, look_pitch) * Vector3.FORWARD
+		var to_wrist: Vector3 = arm.watch_point() - base.player.get_eye_position()
+		in_view = in_view and rad_to_deg(aim_dir.angle_to(to_wrist)) < 30.0 and to_wrist.length() < 0.6
+	base.player.cmd.pitch = 0.0
+	arm.free()
+	check(in_view, "the raised watch comes up in front of the eyes, wherever you look")
+	# Suiting up swaps in a new actor and frees the old one with the watch on
+	# it (playtest: X did nothing after suiting up).
+	base.suit_up()
+	await frames(3)
+	var suited_keys := PlayerController.new()
+	suited_keys.setup(base.player)
+	base.add_child(suited_keys)
+	suited_keys.wrist_raised = true
+	await frames(30)
+	check(is_instance_valid(hud.wrist) and hud.wrist.get_parent() == base.player and hud.wrist.raise_amount >= 1.0
+			and hud.wrist.card.slots.size() == Hud.Wrist.SLOTS.size(), "the watch still raises after suiting up")
+	suited_keys.queue_free()
+	await frames(2)
 	watch_keys.queue_free()
 	await frames(2)
 	check(base.get_node("Banner/Title").text == "HOME BASE" and "press F" in base.banner_text(),
