@@ -124,7 +124,7 @@ rows marked **pre-playtest** come before the friends playtest.
 
 | Item | State | Notes |
 | --- | --- | --- |
-| One everyday currency named scrip | Partly | Today scrip (carried, at stake) turns into a separate credits balance. Merge the names so the banked balance is scrip too. |
+| One everyday currency named scrip | Built | The banked balance and the scrip you carry are both scrip (`Economy`, `Profile.scrip`). Old saves with a "credits" field still load. |
 | Hub cosmetics for scrip: skins, thruster trail colours, watch faces | Partly | The Tailor sells clothing; trail colours and watch faces are missing. |
 | Blueprints and tech cores, earned through risk, dropped on PvP death until banked | Missing | Vehicle blueprints unlock vehicles (mech, jet); tech cores craft high-tier gadgets. Arrive with the meteor, PvE dungeons and arena rewards. |
 | Mk1 blueprints for weapons and rigs as PvP drops, kept for good once extracted | Missing | DESIGN.md section 10. Replaces the old "unlocks, never raw power" rule. |
