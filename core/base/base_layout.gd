@@ -13,9 +13,14 @@ extends RefCounted
 ## Display kinds, in the order the room is planned. Each entry: the item tag
 ## that puts an item there, how many spots the room has, and whether every
 ## copy gets its own spot (vehicles) or copies share one with a count.
+## The first tag that matches wins, so a sidearm (also a firearm) is listed
+## before the long guns.
+## Every weapon goes on the one armory rack, in the alcove off the room: kinds
+## with "armory" set are its sections (see `ARMORY`).
 const KINDS := {
-	"gun_rack": {"tag": "firearm", "spots": 8, "per_copy": false, "title": "Gun rack"},
-	"blade_wall": {"tag": "melee", "spots": 6, "per_copy": false, "title": "Blade wall"},
+	"rack_sidearms": {"tag": "sidearm", "spots": 8, "per_copy": false, "title": "Sidearms", "armory": true},
+	"rack_guns": {"tag": "firearm", "spots": 12, "per_copy": false, "title": "Long guns", "armory": true},
+	"rack_melee": {"tag": "melee", "spots": 6, "per_copy": false, "title": "Melee", "armory": true},
 	"armor_stand": {"tag": "armor", "spots": 6, "per_copy": false, "title": "Armor stands"},
 	"rig_stand": {"tag": "flight_rig", "spots": 4, "per_copy": false, "title": "Flight rigs"},
 	"chip_case": {"tag": "ability", "spots": 6, "per_copy": false, "title": "Ability chips"},
@@ -26,6 +31,15 @@ const KINDS := {
 	# Anything else worth keeping: materials, relics, augments.
 	"trophy": {"tag": "", "spots": 8, "per_copy": false, "title": "Trophy shelf"},
 }
+
+
+## The sections of the armory rack, the one place every weapon is shown.
+const ARMORY: Array[String] = ["rack_guns", "rack_sidearms", "rack_melee"]
+
+
+## True if this display kind is a section of the armory rack.
+static func is_armory(kind: String) -> bool:
+	return KINDS.has(kind) and bool(KINDS[kind].get("armory", false))
 
 
 ## The display kind an item belongs to, by its tags.

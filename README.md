@@ -80,9 +80,21 @@ a tag over it says what it is and what it is worth.
 | Uplink | Your name, host a server, or join one |
 | Arena gate | Straight into the arena (see "The arena" below) |
 
-The gunsmith bench (back left, by the gun rack) holds your attachments on its
+Every weapon you own hangs on one rack in the **armory**, the alcove off the
+left of the room: long guns on its back wall, sidearms on one side and melee
+on the other. The locker stands at its way in. The gunsmith bench (in the
+middle of the armory) holds your attachments on its
 pegboard and your primary in its vise. Look at an attachment and press **E**
 to fit it; a tablet beside the vise lists what the fitted kit changes.
+
+The **suit-up bay** beside the launch pad puts your loadout on you: use its
+control post and the bay's arms fit your armor, rig and weapons, so you can
+see what you are taking out before you deploy.
+
+Your bikes are parked in the **garage** off the right of the room. Through the
+door in the back wall is the **firing range**: once suited up, your weapons
+work past its firing line with endless ammo, targets stand, slide and fly at
+set distances, and a board keeps your score. Nothing there is lost or earned.
 
 The door behind you leads online (it opens the uplink). Signing out of a
 world, or dying and pressing L, brings you back here.
@@ -271,7 +283,7 @@ you have.
   All of them drop loot bags.
 - Loot caches with five rarity tiers, a backpack, and a stash that persists.
 - A home base you walk around in, where the game opens. Everything in your
-  stash is on show: guns on a rack, blades on the wall, armor on stands,
+  stash is on show: every weapon on one rack in the armory, armor on stands,
   flight rigs, ability chips, bikes parked in the garage, loot on shelves.
   Look at a piece of gear and press F to equip it for your next run.
 - Loadouts picked in your base from your stash: primary weapon, melee weapon,
