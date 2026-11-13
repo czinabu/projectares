@@ -11,26 +11,52 @@ extends RefCounted
 ## the stash (deployed and lost, for example).
 
 ## Display kinds, in the order the room is planned. Each entry: the item tag
-## that puts an item there, how many spots the room has, and whether every
-## copy gets its own spot (vehicles) or copies share one with a count.
+## that puts an item there, how many spots a finished base has ("spots"), how
+## many the starter bunker has ("starter"), which upgrades raise that
+## ("steps": upgrade id -> spots, see `spots`), and whether every copy gets
+## its own spot (vehicles) or copies share one with a count.
 ## The first tag that matches wins, so a sidearm (also a firearm) is listed
 ## before the long guns.
 ## Every weapon goes on the one armory rack, in the alcove off the room: kinds
 ## with "armory" set are its sections (see `ARMORY`).
 const KINDS := {
-	"rack_sidearms": {"tag": "sidearm", "spots": 8, "per_copy": false, "title": "Sidearms", "armory": true},
-	"rack_guns": {"tag": "firearm", "spots": 12, "per_copy": false, "title": "Long guns", "armory": true},
-	"rack_melee": {"tag": "melee", "spots": 6, "per_copy": false, "title": "Melee", "armory": true},
-	"armor_stand": {"tag": "armor", "spots": 6, "per_copy": false, "title": "Armor stands"},
-	"rig_stand": {"tag": "flight_rig", "spots": 4, "per_copy": false, "title": "Flight rigs"},
-	"chip_case": {"tag": "ability", "spots": 6, "per_copy": false, "title": "Ability chips"},
-	"bay": {"tag": "vehicle", "spots": 4, "per_copy": true, "title": "Garage"},
-	"supplies": {"tag": "consumable", "spots": 6, "per_copy": false, "title": "Supplies"},
+	"rack_sidearms": {"tag": "sidearm", "spots": 8, "starter": 2, "steps": {"armory_alcove": 8},
+		"per_copy": false, "title": "Sidearms", "armory": true},
+	"rack_guns": {"tag": "firearm", "spots": 12, "starter": 4, "steps": {"armory_alcove": 12},
+		"per_copy": false, "title": "Long guns", "armory": true},
+	"rack_melee": {"tag": "melee", "spots": 6, "starter": 2, "steps": {"armory_alcove": 6},
+		"per_copy": false, "title": "Melee", "armory": true},
+	"armor_stand": {"tag": "armor", "spots": 6, "starter": 1, "steps": {"gear_hall": 6},
+		"per_copy": false, "title": "Armor stands"},
+	"rig_stand": {"tag": "flight_rig", "spots": 4, "starter": 1, "steps": {"gear_hall": 4},
+		"per_copy": false, "title": "Flight rigs"},
+	"chip_case": {"tag": "ability", "spots": 6, "starter": 0, "steps": {"gear_hall": 6},
+		"per_copy": false, "title": "Ability chips"},
+	"bay": {"tag": "vehicle", "spots": 4, "starter": 1, "steps": {"bay_second": 2, "garage_full": 4},
+		"per_copy": true, "title": "Garage"},
+	"supplies": {"tag": "consumable", "spots": 6, "starter": 3, "steps": {"trophy_hall": 6},
+		"per_copy": false, "title": "Supplies"},
 	# Optics, muzzles, grips and magazines hang on the gunsmith bench's pegboard.
-	"gunsmith": {"tag": "attachment", "spots": 12, "per_copy": false, "title": "Gunsmith bench"},
+	"gunsmith": {"tag": "attachment", "spots": 12, "starter": 4, "steps": {"bench_workshop": 12},
+		"per_copy": false, "title": "Gunsmith bench"},
 	# Anything else worth keeping: materials, relics, augments.
-	"trophy": {"tag": "", "spots": 8, "per_copy": false, "title": "Trophy shelf"},
+	"trophy": {"tag": "", "spots": 8, "starter": 0, "steps": {"trophy_hall": 8},
+		"per_copy": false, "title": "Trophy shelf"},
 }
+
+
+## How many spots a display kind has in a base that owns `upgrades` (ids from
+## `BaseUpgrades`). No upgrades is the starter bunker. An upgrade only ever
+## adds room to show gear: what does not fit is still owned (`stored_away`).
+static func spots(kind: String, upgrades: Array = []) -> int:
+	if not KINDS.has(kind):
+		return 0
+	var count := int(KINDS[kind].get("starter", KINDS[kind]["spots"]))
+	var steps: Dictionary = KINDS[kind].get("steps", {})
+	for id: String in steps:
+		if id in upgrades:
+			count = maxi(count, int(steps[id]))
+	return count
 
 
 ## The sections of the armory rack, the one place every weapon is shown.
@@ -67,16 +93,17 @@ static func slot_for(id: String) -> String:
 ##   slot      the loadout slot it fits, or ""
 ##   equipped  true if it is in the loadout right now
 ## Within a kind the most valuable items get the first spots. Items that do
-## not fit are left in storage: see `stored_away`.
-static func plan(stash: Array, loadout: Dictionary) -> Array[Dictionary]:
+## not fit are left in storage: see `stored_away`. `upgrades` is the base's
+## owned upgrade ids: it sets how many spots each kind has (see `spots`).
+static func plan(stash: Array, loadout: Dictionary, upgrades: Array = []) -> Array[Dictionary]:
 	var out: Array[Dictionary] = []
 	var by_kind := _sorted_by_kind(stash)
 	for kind: String in KINDS:
 		var ids: Array = by_kind.get(kind, [])
-		var spots: int = KINDS[kind]["spots"]
+		var room := spots(kind, upgrades)
 		# Only one copy can be equipped, so only the first spot shows it.
 		var marked := {}
-		for i in mini(ids.size(), spots):
+		for i in mini(ids.size(), room):
 			var id: String = ids[i]
 			var slot := slot_for(id)
 			var worn: bool = slot != "" and loadout.get(slot, "") == id and not marked.has(id)
@@ -95,11 +122,11 @@ static func plan(stash: Array, loadout: Dictionary) -> Array[Dictionary]:
 
 ## How many items of each kind are owned but have no free spot: kind -> count.
 ## Copies that share a spot are on show, so they are not counted.
-static func stored_away(stash: Array) -> Dictionary:
+static func stored_away(stash: Array, upgrades: Array = []) -> Dictionary:
 	var out := {}
 	var by_kind := _sorted_by_kind(stash)
 	for kind: String in by_kind:
-		var extra: int = by_kind[kind].size() - int(KINDS[kind]["spots"])
+		var extra: int = by_kind[kind].size() - spots(kind, upgrades)
 		if extra > 0:
 			out[kind] = extra
 	return out

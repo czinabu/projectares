@@ -4,6 +4,8 @@ extends Node
 ##   godot --path . res://tests/visual_check.tscn -- <output_dir>
 ## Add a world id after the folder to shoot only that world.
 
+const BaseUpgrades := preload("res://core/base/base_upgrades.gd")
+
 func _ready() -> void:
 	var out_dir := "user://"
 	var args := OS.get_cmdline_user_args()
@@ -640,12 +642,14 @@ func _hub_shots(out_dir: String) -> void:
 ## The home base with one of everything on show, from a few fixed angles.
 func _base_shots(out_dir: String) -> void:
 	var base := HomeBase.new()
-	base.show_gear(["rifle_carbine", "smg_stinger", "dmr_longshot", "shotgun_breacher", "blade_arc",
+	var gear := ["rifle_carbine", "smg_stinger", "dmr_longshot", "shotgun_breacher", "blade_arc",
 			"hammer_breaker", "knife_gutter", "axe_splitter", "spear_lancer", "pistol_machine", "pistol_hand_cannon",
 			"optic_scope", "optic_reflex", "muzzle_suppressor", "grip_vertical", "frame_runner", "frame_trooper", "frame_bulwark", "jetpack_mk2", "boots_thruster",
 			"wings_glide", "chip_blink", "chip_barrier", "chip_pulse", "bike_scrapper", "bike_raider", "medkit",
-			"medkit", "scrap_metal", "scrap_metal", "scrap_metal", "alloy_ingot", "reactor_core", "lattice_shard"],
-			{"primary": "dmr_longshot", "frame": "frame_bulwark", "vehicle": "bike_raider"})
+			"medkit", "scrap_metal", "scrap_metal", "scrap_metal", "alloy_ingot", "reactor_core", "lattice_shard"]
+	var worn := {"primary": "dmr_longshot", "frame": "frame_bulwark", "vehicle": "bike_raider"}
+	# The finished base first; the starter bunker is shot at the end.
+	base.show_gear(gear, worn, BaseUpgrades.full())
 	add_child(base)
 	var camera := Camera3D.new()
 	camera.fov = 75.0
@@ -712,6 +716,25 @@ func _base_shots(out_dir: String) -> void:
 		live.queue_free()
 		hub.close()
 	screen_view.queue_free()
+	# The starter bunker: what a new player sees, with every upgrade sealed.
+	base.show_gear(gear, worn, [])
+	base.set_scrip(1500)
+	base.player.global_position = Vector3(3, 0.1, 5)
+	await _settle(10)
+	var bunker := {
+		"bunker_overview.png": [Vector3(0, 3.2, 8.2), Vector3(0, 1.2, -4)],
+		"bunker_nook.png": [Vector3(-5.5, 2.4, 2.5), Vector3(-15.0, 1.6, -0.5)],
+		"bunker_garage.png": [Vector3(5.0, 2.6, 1.0), Vector3(16.0, 1.4, 0.0)],
+		"bunker_range_door.png": [Vector3(0.0, 1.8, -4.5), Vector3(0.0, 1.7, -9.0)],
+		"bunker_gear_post.png": [Vector3(-6.0, 1.6, -6.0), Vector3(-6.0, 1.4, -9.0)],
+		"bunker_consoles.png": [Vector3(6.5, 2.0, 5.5), Vector3(11.1, 1.3, 7.0)],
+		"bunker_bench.png": [Vector3(-8.2, 1.8, -0.2), Vector3(-9.2, 1.3, -2.8)],
+	}
+	for file: String in bunker:
+		camera.make_current()
+		camera.look_at_from_position(bunker[file][0], bunker[file][1])
+		await _settle(4)
+		await _shot(out_dir.path_join(file))
 	base.queue_free()
 	await _settle(2)
 
@@ -871,7 +894,7 @@ func _attachment_shots(out_dir: String) -> void:
 		var base := HomeBase.new()
 		var stash: Array = every.duplicate()
 		stash.append(primary)
-		base.show_gear(stash, loadout)
+		base.show_gear(stash, loadout, BaseUpgrades.full())
 		add_child(base)
 		var camera := Camera3D.new()
 		camera.fov = 50.0
