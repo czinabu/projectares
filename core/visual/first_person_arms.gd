@@ -11,6 +11,13 @@ extends Node3D
 ## two-handed blade's handle, and comes up to read the watch when it is
 ## raised, in place of the HUD's grey box forearm.
 ##
+## Hands turn the way arms do (`_turn_hand`): each elbow is placed round
+## its circle so the forearm meets the handle as the clip's fist does
+## (`_elbow_for`), the forearm rolls the fist round, and the wrist only bends
+## the rest, never past `wrist_limit`. A blade's fist need only lie along its
+## round handle, and where the arm still falls short the blade goes with the
+## fist (`_carry_in_fist`) rather than floating out of it.
+##
 ## View only, like the rest of `Look`: no collision, nothing reads it back,
 ## and it is only built when there is a screen and a skin with the bones.
 
@@ -35,6 +42,19 @@ var elbow_cocked := Vector3(0.8, 0.2, 0.3)
 ## Raising the watch: where the left wrist comes up to, in the camera's
 ## space, at the reference field of view.
 var watch_at := Vector3(-0.1, -0.2, -0.32)
+## A hand closes round a handle the way an arm would: the forearm rolls
+## (from the elbow, as yours does) up to `fore_roll_limit` to bring the fist
+## round, taking `fore_twist` of it while the wrist takes the rest, and the
+## wrist then bends the fist onto the handle's line. The fist may turn about
+## a round handle, so only that line has to match.
+var fore_twist := 0.65
+var fore_roll_limit := deg_to_rad(110.0)
+## How far a wrist may bend off its forearm at most.
+var wrist_limit := deg_to_rad(50.0)
+## Where the elbow goes is picked round its circle so the forearm meets the
+## handle at the angle the clip's fist holds it; this much (radians of score
+## per unit of turn away) keeps it near the usual pole, so it never flips up.
+var elbow_habit := 0.6
 ## A sidearm is held with the off hand cupped under the grip: its clip offset
 ## from the weapon hand is shrunk by this much.
 var sidearm_support := 0.35
@@ -64,6 +84,22 @@ var _off_pole := Node3D.new()
 var _wrist_turn := Basis.IDENTITY
 var _off_turn := Basis.IDENTITY
 var _off_weight := 0.0
+## How each clip wrist sits on its forearm, measured each frame before the reach.
+var _rel := Basis.IDENTITY
+var _off_rel := Basis.IDENTITY
+var _fore := -1
+var _off_fore := -1
+## The handle's line in each hand (in the clip's hand frame) and in the
+## world, or zero where the whole hand turns as the clip holds it.
+var _axis_hand := Vector3.ZERO
+var _axis_world := Vector3.ZERO
+var _off_axis_hand := Vector3.ZERO
+var _off_axis_world := Vector3.ZERO
+## How the weapon hand ended up on the weapon last frame (in the weapon's
+## frame), so this frame's reach puts the fist on the grip, and the weapon
+## it was for.
+var _hand_on_weapon := Basis.IDENTITY
+var _hand_for: Object
 var _watch := 0.0
 ## The watch on the copy's left wrist.
 var _worn_watch: Node3D
@@ -88,6 +124,8 @@ func build(skin_name: String, appearance: Dictionary) -> bool:
 		return false
 	_wrist = skeleton.find_bone(arm[2])
 	_off_wrist = skeleton.find_bone(off_arm[2])
+	_fore = skeleton.find_bone(arm[1])
+	_off_fore = skeleton.find_bone(off_arm[1])
 	_grip = skeleton.find_bone(def.get("grip_bone", ""))
 	for bone: String in [arm[0], off_arm[0]]:
 		_shoulders.append(skeleton.find_bone(bone))
@@ -207,6 +245,8 @@ func _measure() -> void:
 		var at := skeleton.get_bone_global_pose(bone)
 		at.origin += shift
 		skeleton.set_bone_global_pose(bone, at)
+	_rel = _local_turn(_fore, _wrist)
+	_off_rel = _local_turn(_off_fore, _off_wrist)
 	var anchor := actor.hand.global_transform.orthonormalized()
 	var rest := cam.basis.orthonormalized()
 	var held := held_visual()
@@ -215,19 +255,29 @@ func _measure() -> void:
 		if actor.get_active_weapon() is MeleeWeapon:
 			rest = rest * blade_rest
 	var turn := anchor.basis * rest.inverse()
+	var weapon := actor.get_active_weapon()
+	var basis_world := to_world.basis.orthonormalized()
 	var wrist := to_world * skeleton.get_bone_global_pose(_wrist).origin
 	var grip := to_world * skeleton.get_bone_global_pose(_grip).origin
-	var wrist_basis := to_world.basis.orthonormalized() * skeleton.get_bone_global_pose(_wrist).basis.orthonormalized()
-	var new_wrist := anchor.origin - turn * (grip - wrist)
-	_target.global_position = new_wrist
+	var wrist_basis := basis_world * skeleton.get_bone_global_pose(_wrist).basis.orthonormalized()
 	_wrist_turn = turn * wrist_basis
+	# A blade's handle is round: the fist only has to lie along it.
+	_axis_hand = Vector3.ZERO
+	if weapon is MeleeWeapon and held != null:
+		_axis_hand = wrist_basis.inverse() * (rest * Vector3.UP)
+		_axis_world = anchor.basis * Vector3.UP
+	if _hand_for != held:
+		_hand_for = held
+		_hand_on_weapon = anchor.basis.inverse() * _wrist_turn
+	var hand := (anchor.basis * _hand_on_weapon).orthonormalized()
+	var new_wrist := anchor.origin - hand * (wrist_basis.inverse() * (grip - wrist))
+	_target.global_position = new_wrist
 	# The elbow rides high with the arm cocked for a windup, as third person.
 	var raise := ActionPose.of(actor).elbow_raise if actor.get_active_weapon() is MeleeWeapon else 0.0
-	_pole.global_position = cam * elbow.lerp(elbow_cocked, raise)
+	_pole.global_position = _elbow_for(0, _fore, _wrist, new_wrist, _rel, _axis_hand, _axis_world, cam * elbow.lerp(elbow_cocked, raise))
 
 	var off := to_world * skeleton.get_bone_global_pose(_off_wrist).origin
-	var off_basis := to_world.basis.orthonormalized() * skeleton.get_bone_global_pose(_off_wrist).basis.orthonormalized()
-	var weapon := actor.get_active_weapon()
+	var off_basis := basis_world * skeleton.get_bone_global_pose(_off_wrist).basis.orthonormalized()
 	var off_at := new_wrist + turn * (off - wrist)
 	var fore := held.get_node_or_null("ForeGrip") as Node3D if held != null else null
 	if weapon is Gun and (weapon as Gun).is_sidearm:
@@ -239,6 +289,17 @@ func _measure() -> void:
 	elif weapon is MeleeWeapon and held != null:
 		off_at = held.global_transform * Vector3(0.0, -0.16, 0.0)
 	_off_turn = turn * off_basis
+	# The off hand cups a fore end, palm against the gun's underside, or
+	# wraps a long handle: only that line has to match.
+	_off_axis_hand = Vector3.ZERO
+	var off_line := Vector3.ZERO
+	if weapon is Gun and fore != null and not (weapon as Gun).is_sidearm:
+		off_line = Vector3.UP
+	elif weapon is MeleeWeapon and held != null:
+		off_line = Vector3.UP
+	if off_line != Vector3.ZERO and _watch <= 0.0:
+		_off_axis_hand = off_basis.inverse() * (rest * off_line)
+		_off_axis_world = anchor.basis * off_line
 	if _watch > 0.0:
 		var k := tan(deg_to_rad(camera.fov) * 0.5) / tan(deg_to_rad(80.0) * 0.5)
 		var up := cam * Vector3(watch_at.x * k, watch_at.y * k, watch_at.z)
@@ -249,7 +310,46 @@ func _measure() -> void:
 		var swing := Quaternion(face, to_eye)
 		_off_turn = (off_basis if _off_weight <= 0.0 else _off_turn).slerp(Basis(swing) * off_basis, _watch)
 	_off_target.global_position = off_at
-	_off_pole.global_position = cam * off_elbow
+	_off_pole.global_position = _elbow_for(1, _off_fore, _off_wrist, off_at, _off_rel, _off_axis_hand, _off_axis_world, cam * off_elbow)
+
+
+## A pole for an arm reaching to `at` (world) that puts its elbow where the
+## forearm meets the handle line `line` at the angle the clip's hand keeps it
+## (`line_hand` in the hand, carried by `rel`): out of all the elbows on the
+## circle the arm allows, the best fit, held near the usual pole `usual`.
+func _elbow_for(side: int, fore: int, wrist: int, at: Vector3, rel: Basis, line_hand: Vector3, line: Vector3, usual: Vector3) -> Vector3:
+	if line_hand == Vector3.ZERO:
+		return usual
+	var to_world := skeleton.global_transform
+	var shoulder := to_world * skeleton.get_bone_global_pose(_shoulders[side]).origin
+	var elbow_at := to_world * skeleton.get_bone_global_pose(fore).origin
+	var wrist_at := to_world * skeleton.get_bone_global_pose(wrist).origin
+	var upper := shoulder.distance_to(elbow_at)
+	var lower := elbow_at.distance_to(wrist_at)
+	var reach := shoulder.distance_to(at)
+	if reach >= upper + lower - 0.005 or reach < 0.01:
+		return usual
+	var way := (at - shoulder) / reach
+	var a := (upper * upper - lower * lower + reach * reach) / (2.0 * reach)
+	var r := sqrt(maxf(upper * upper - a * a, 0.0))
+	var centre := shoulder + way * a
+	var x := (usual - centre)
+	x = (x - way * x.dot(way)).normalized()
+	if x == Vector3.ZERO:
+		return usual
+	var y := way.cross(x)
+	var keep := acos(clampf((rel * line_hand).normalized().y, -1.0, 1.0))
+	var want := line.normalized()
+	var best := 0.0
+	var best_score := INF
+	for i in 36:
+		var t := (float(i) / 36.0 - 0.5) * TAU
+		var e := centre + (x * cos(t) + y * sin(t)) * r
+		var score := absf((at - e).normalized().angle_to(want) - keep) + elbow_habit * absf(t)
+		if score < best_score:
+			best_score = score
+			best = t
+	return centre + (x * cos(best) + y * sin(best)) * (r + 0.3)
 
 
 ## After the arms reach: turn each wrist so the hand meets the weapon the way
@@ -257,9 +357,72 @@ func _measure() -> void:
 func _turn_wrists() -> void:
 	var to_skeleton := skeleton.global_basis.orthonormalized().inverse()
 	if _ik.influence > 0.0:
-		_set_turn(_wrist, to_skeleton * _wrist_turn)
+		var hand := _turn_hand(_fore, _wrist, _rel, to_skeleton * _wrist_turn, _axis_hand, to_skeleton * _axis_world)
+		var held := held_visual()
+		if held != null and _axis_hand != Vector3.ZERO and is_visible_in_tree():
+			_carry_in_fist(held, hand)
+		if held != null:
+			var world := skeleton.global_basis.orthonormalized() * hand
+			_hand_on_weapon = held.global_basis.orthonormalized().inverse() * world
 	if _off_ik.influence > 0.0:
-		_set_turn(_off_wrist, to_skeleton * _off_turn)
+		_turn_hand(_off_fore, _off_wrist, _off_rel, to_skeleton * _off_turn, _off_axis_hand, to_skeleton * _off_axis_world)
+
+
+## Where the arm cannot quite bring the fist onto a blade's handle, the blade
+## goes where the fist is rather than floating free of it: the hand node is
+## turned and moved so the handle lies along the fist, through the grip.
+func _carry_in_fist(held: Node3D, hand: Basis) -> void:
+	var to_world := skeleton.global_transform
+	var fist := (to_world.basis.orthonormalized() * hand * _axis_hand).normalized()
+	var line := (held.global_basis * Vector3.UP).normalized()
+	var grip := to_world * skeleton.get_bone_global_pose(_grip).origin
+	var turn := Basis(Quaternion(line, fist)) if line.angle_to(fist) > 0.001 else Basis.IDENTITY
+	var shown := Transform3D(turn * held.global_basis, grip)
+	var on_hand := actor.hand.global_transform.affine_inverse() * held.global_transform
+	actor.hand.global_transform = shown * on_hand.affine_inverse()
+
+
+## Turns a hand the way an arm does and returns its new turn (skeleton
+## space). With no handle line (`line_hand` zero) the hand takes `wanted`
+## outright. Otherwise the fist is brought onto the line `line` from where the
+## forearm carries it (`rel`, as the clip holds it): the forearm rolls it
+## round first, and the wrist bends the rest.
+func _turn_hand(fore: int, wrist: int, rel: Basis, wanted: Basis, line_hand: Vector3, line: Vector3) -> Basis:
+	if line_hand == Vector3.ZERO:
+		_set_turn(wrist, wanted)
+		return wanted.orthonormalized()
+	var fore_pose := skeleton.get_bone_global_pose(fore)
+	var fore_basis := fore_pose.basis.orthonormalized()
+	var along := (fore_basis * Vector3.UP).normalized()
+	var want := line.normalized()
+	var have := (fore_basis * rel * line_hand).normalized()
+	# The roll about the forearm that best brings the fist round.
+	var have_flat := have - along * have.dot(along)
+	var want_flat := want - along * want.dot(along)
+	var roll := 0.0
+	if have_flat.length() > 0.15 and want_flat.length() > 0.15:
+		roll = clampf(have_flat.signed_angle_to(want_flat, along), -fore_roll_limit, fore_roll_limit)
+	fore_basis = fore_basis * Basis(Vector3.UP, roll * fore_twist)
+	fore_pose.basis = fore_basis.scaled(fore_pose.basis.get_scale())
+	skeleton.set_bone_global_pose(fore, fore_pose)
+	var hand := Basis(along, roll * (1.0 - fore_twist)) * (fore_basis * rel).orthonormalized()
+	# The wrist bends the fist onto the line.
+	have = (hand * line_hand).normalized()
+	var bend := have.angle_to(want)
+	if bend > 0.001:
+		var axis := have.cross(want)
+		if axis.length_squared() < 1e-8:
+			axis = along.cross(have)
+		hand = Basis(axis.normalized(), minf(bend, wrist_limit)) * hand
+	_set_turn(wrist, hand)
+	return hand.orthonormalized()
+
+
+## How bone `child` is turned from bone `parent`, in the current pose.
+func _local_turn(parent: int, child: int) -> Basis:
+	var a := skeleton.get_bone_global_pose(parent).basis.orthonormalized()
+	var b := skeleton.get_bone_global_pose(child).basis.orthonormalized()
+	return a.inverse() * b
 
 
 func _set_turn(bone: int, turn: Basis) -> void:
