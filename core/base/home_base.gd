@@ -93,6 +93,9 @@ const SUIT_YAW := 0.0
 ## How long the bay's arms take to fit the gear, there and back (view only).
 var suit_time := 0.9
 
+## Display kinds whose title is already on the room or the furniture.
+const SIGNED_ELSEWHERE := ["bay", "gunsmith"]
+
 ## The size of every station's screen, in metres (16:9).
 const SCREEN_SIZE := Vector2(1.6, 0.9)
 
@@ -899,20 +902,37 @@ func _rebuild() -> void:
 	gear_shown.emit()
 
 
-## A title over each section, with how much did not fit on show.
+## A small rail label just over each section, with how much did not fit on
+## show. Rooms carry the big signs (one over each way in); a section that is
+## a room of its own (the garage) or has its own title (the bench) needs none.
+## Rail labels only show from nearby, so the room is not a cloud of text.
 func _build_signs() -> void:
 	var stored := BaseLayout.stored_away(stash)
 	for kind: String in BaseLayout.KINDS:
+		if kind in SIGNED_ELSEWHERE:
+			continue
 		var text: String = str(BaseLayout.KINDS[kind]["title"]).to_upper()
 		if stored.has(kind):
-			text += "\n+%d more in storage" % stored[kind]
-		var sign_label := _label(text, Color(1.0, 0.62, 0.22), 0.26)
+			text += "  (+%d in storage)" % stored[kind]
+		var sign_label := _label(text, Color(1.0, 0.62, 0.22), 0.16)
+		sign_label.name = "Sign_%s" % kind
 		var first := spot_transform(kind, 0)
 		var last := spot_transform(kind, int(BaseLayout.KINDS[kind]["spots"]) - 1)
 		var mid := first.origin.lerp(last.origin, 0.5)
-		sign_label.position = Vector3(mid.x, 3.4, mid.z) + first.basis.z * 0.05
+		var top := maxf(first.origin.y, last.origin.y)
+		# Stands stand on the floor; everything else hangs on a wall.
+		var height := 2.6 if top < 0.1 else top + 0.95
+		sign_label.position = Vector3(mid.x, height, mid.z) + first.basis.z * 0.05
 		sign_label.rotation.y = first.basis.get_euler().y
+		_near_only(sign_label, 14.0)
 		_display_root.add_child(sign_label)
+
+
+## Fades a label out past `reach` metres from the camera.
+func _near_only(label: Label3D, reach: float) -> void:
+	label.visibility_range_end = reach
+	label.visibility_range_end_margin = reach * 0.15
+	label.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
 
 
 ## Builds the greybox model, hit box and name plate for one display.
@@ -1017,6 +1037,8 @@ func _fill(display: Display) -> void:
 	if display.equipped:
 		text += "\nEQUIPPED"
 	var plate := _label(text, color, plate_size)
+	# A name shows once you walk up to the item, not from across the room.
+	_near_only(plate, 5.0)
 	plate.name = "Plate"
 	plate.position = plate_at
 	display.add_child(plate)
@@ -1235,4 +1257,7 @@ func _label(text: String, color: Color, height: float) -> Label3D:
 	label.pixel_size = height / 64.0
 	label.outline_size = 12
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	# Writing on a wall is read from the front only, never mirrored from
+	# behind. Labels that turn to face you (billboards) are unaffected.
+	label.double_sided = false
 	return label

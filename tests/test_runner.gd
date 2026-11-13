@@ -5884,6 +5884,23 @@ func _test_armory(base: HomeBase) -> void:
 	check(not base.in_armory(locker) and absf(locker.x + base.room_size.x * 0.5) < 1.5
 			and absf(locker.z) < base.armory_opening * 0.5 + 2.0, "the locker stands beside the way into the armory")
 	check(base.has_node("ArmorySign") and base.has_node("ArmorySill"), "a sign over the way in names the armory")
+	# Signage: nothing mirrored from behind, names only up close, one title each.
+	var mirrored := 0
+	var bench_titles := 0
+	for node in base.find_children("*", "Label3D", true, false):
+		var label := node as Label3D
+		if label.double_sided and label.billboard == BaseMaterial3D.BILLBOARD_DISABLED:
+			mirrored += 1
+		if label.text == "GUNSMITH BENCH":
+			bench_titles += 1
+	check(mirrored == 0, "no wall label can be read mirrored from behind (%d can)" % mirrored)
+	check(bench_titles == 1 and not base.has_node("Displays/Sign_bay") and not base.has_node("Displays/Sign_gunsmith"),
+			"the bench and the garage carry one title each, not a second section sign")
+	var plates_near := true
+	for display in base.displays:
+		var plate := display.get_node("Plate") as Label3D
+		plates_near = plates_near and plate.visibility_range_end > 0.0 and plate.visibility_range_end <= 6.0
+	check(plates_near, "item names show only from close up")
 	# The way in is open: walk from the room to the rack.
 	var walker := base.player
 	var was := walker.global_position
