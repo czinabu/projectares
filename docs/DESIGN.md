@@ -83,8 +83,9 @@ skybridges at 15 m so the boots can hop the skyline while the tower tops are
 for wings and jetpacks, a gate terrace with spare arches for new worlds, a
 bike loop round the edge, a big-screen amphitheatre to gather and watch, and
 a pad kept clear for the RC arena. Everything is within about 25 seconds'
-walk of the arrival pad. A sci-fi look pass (glass and metal with lit seams,
-holo signs, kiosk art) follows the greybox.
+walk of the arrival pad. It looks sci-fi, not industrial: dark glass and
+metal with lit seams instead of brick and punched windows, a glass arcade
+canopy, holo signs over every kiosk and floating holo-ads.
 
 ### Home base
 

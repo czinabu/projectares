@@ -66,12 +66,24 @@ var _art_rng := RandomNumberGenerator.new()
 var _gates: Array[Dictionary] = []
 var _stalls: Array[Dictionary] = []
 var _glow_mats := {}
+## Lit seams waiting to be drawn: colour -> [[size, transform], ...], drawn as
+## one mesh per colour by `_flush_seams`.
+var _seams := {}
+var _glass_mat: StandardMaterial3D
+## Plain parts of the map waiting to be drawn: [colour, glow] -> [[size, transform], ...].
+var _parts := {}
+var _flushed := false
 
-@onready var FLOOR := Look.surface("metal", {"tint": Color(0.3, 0.32, 0.38), "grime": 0.05, "scale": 0.06,
-		"wetness": 0.4})
+@onready var FLOOR := Look.surface("metal", {"tint": Color(0.36, 0.39, 0.46), "grime": 0.0, "scale": 0.05,
+		"wetness": 0.25})
 @onready var PAVING := Look.surface("metal", {"tint": Color(0.3, 0.33, 0.4), "grime": 0.1, "scale": 0.2})
 @onready var INLAY := Look.surface("metal", {"tint": Color(0.75, 0.55, 0.3), "grime": 0.3, "scale": 0.3})
-@onready var WALL := Look.surface("metal", {"tint": Color(0.22, 0.25, 0.32), "grime": 0.15, "scale": 0.1,
+## Dark glass and metal panels: the hub's buildings. Lit seams, never a grid of
+## windows (that read as old flats, not sci-fi).
+@onready var WALL := Look.surface("metal", {"tint": Color(0.13, 0.16, 0.23), "grime": 0.0, "scale": 0.08,
+		"rough_mult": 0.35, "wetness": 0.6})
+## The far city below keeps lit windows: it is scenery, seen from above.
+@onready var CITY := Look.surface("metal", {"tint": Color(0.16, 0.18, 0.26), "grime": 0.1, "scale": 0.1,
 		"window_glow": Color(0.55, 0.9, 1.0), "lit_windows": 0.45})
 @onready var STEEL := Look.surface("metal", {"tint": Color(0.42, 0.45, 0.52), "grime": 0.2, "scale": 0.3})
 @onready var DARK := Look.surface("metal", {"tint": Color(0.16, 0.18, 0.23), "grime": 0.2, "scale": 0.3})
@@ -96,7 +108,9 @@ func _ready() -> void:
 	_build_arrival()
 	_build_screens()
 	_build_show_floor()
+	_build_fill()
 	_build_city_below()
+	_flush_seams()
 	_dress()
 
 
@@ -124,6 +138,7 @@ func _build_environment() -> void:
 ## with glowing boulevards from the spire out to every district.
 func _build_ground() -> void:
 	_disc(RADIUS + 2.0, 1.0, Vector3(0, -0.5, 0), FLOOR)
+	_build_tiles()
 	# The rail: waist high, so the view stays open. Hop it and you fall to the
 	# city, and the safe zone puts you back on the arrival pad.
 	var segments := 72
@@ -193,10 +208,15 @@ func _build_arcade() -> void:
 	for i in segments:
 		var bearing := 360.0 * (i + 0.5) / segments
 		roof.append(Transform3D(Basis(Vector3.UP, -deg_to_rad(bearing)),
-				_at(MARKET_RING, bearing) + Vector3(0, ARCADE_HEIGHT - 0.25, 0)))
-	_batch(Vector3(TAU * outer / segments + 0.3, 0.5, ARCADE_WIDTH), roof, DARK, true)
-	_slab_ring(inner, 0.2, segments, MAGENTA, ARCADE_HEIGHT - 0.55)
-	_slab_ring(outer, 0.2, segments, MAGENTA, ARCADE_HEIGHT - 0.55)
+				_at(MARKET_RING, bearing) + Vector3(0, ARCADE_HEIGHT - 0.1, 0)))
+	# A thin glass canopy on steel ribs: the sky and the spire show through.
+	_batch(Vector3(TAU * outer / segments + 0.3, 0.2, ARCADE_WIDTH), roof, _glass(), true)
+	var ribs: Array[Transform3D] = []
+	for place in roof:
+		ribs.append(place.translated_local(Vector3(TAU * outer / segments * 0.5, 0, 0)))
+	_batch(Vector3(0.25, 0.35, ARCADE_WIDTH), ribs, STEEL, false)
+	_slab_ring(inner, 0.15, segments, MAGENTA, ARCADE_HEIGHT - 0.25)
+	_slab_ring(outer, 0.15, segments, MAGENTA, ARCADE_HEIGHT - 0.25)
 	# Pillars along both edges, kept out of the boulevards.
 	var pillars: Array[Transform3D] = []
 	for i in 24:
@@ -205,8 +225,8 @@ func _build_arcade() -> void:
 			continue
 		for r: float in [inner + 0.4, outer - 0.4]:
 			pillars.append(Transform3D(Basis(Vector3.UP, -deg_to_rad(bearing)),
-					_at(r, bearing) + Vector3(0, (ARCADE_HEIGHT - 0.5) * 0.5, 0)))
-	_batch(Vector3(0.5, ARCADE_HEIGHT - 0.5, 0.5), pillars, STEEL, true)
+					_at(r, bearing) + Vector3(0, (ARCADE_HEIGHT - 0.2) * 0.5, 0)))
+	_batch(Vector3(0.3, ARCADE_HEIGHT - 0.2, 0.3), pillars, STEEL, true)
 
 
 ## Slim towers round the promenade. Each has a landing deck at DECK_HEIGHT and
@@ -219,11 +239,19 @@ func _build_towers() -> void:
 		var tall: float = TOWER_HEIGHTS[i]
 		var at := _at(TOWER_RING, bearing)
 		var yaw := -deg_to_rad(bearing)
-		var tower := _box(Vector3(TOWER_SIZE, tall, TOWER_SIZE), at + Vector3(0, tall * 0.5, 0), WALL, yaw)
-		Look.make_building(tower.get_child(1), Vector3(TOWER_SIZE, tall, TOWER_SIZE), 40.0 + i)
-		# A crown light on top, and the deck ringing the tower.
-		_part(self, Vector3(TOWER_SIZE + 0.4, 0.4, TOWER_SIZE + 0.4), at + Vector3(0, tall, 0),
-				[CYAN, MAGENTA][i % 2], true)
+		# Three tiers stepping in as they climb, each with lit seams, and a
+		# crown light on top.
+		var tiers := [[TOWER_SIZE, 0.0, tall * 0.55], [TOWER_SIZE * 0.75, tall * 0.55, tall * 0.85],
+				[TOWER_SIZE * 0.5, tall * 0.85, tall]]
+		var color: Color = [CYAN, MAGENTA][i % 2]
+		for tier: Array in tiers:
+			var w: float = tier[0]
+			var size := Vector3(w, tier[2] - tier[1], w)
+			var centre := at + Vector3(0, (tier[1] + tier[2]) * 0.5, 0)
+			_box(size, centre, WALL, yaw)
+			_add_seams(centre, size, yaw, color, 6.0)
+		_part(self, Vector3(TOWER_SIZE * 0.5 + 0.3, 0.3, TOWER_SIZE * 0.5 + 0.3), at + Vector3(0, tall, 0), color, true)
+		_part(self, Vector3(0.25, tall * 0.12, 0.25), at + Vector3(0, tall * 1.06, 0), color, true)
 		_box(Vector3(TOWER_SIZE + 8.0, 0.5, TOWER_SIZE + 8.0), at + Vector3(0, DECK_HEIGHT - 0.25, 0), DARK, yaw)
 		_add_marker("landing_deck", at + Vector3(0, DECK_HEIGHT + 0.1, 0) + Basis(Vector3.UP, yaw)
 				* Vector3(0, 0, TOWER_SIZE * 0.5 + 2.0))
@@ -249,7 +277,17 @@ func _build_gates() -> void:
 	var wall_width := arches * GATE_SPACING + 16.0
 	_slab(Vector3(wall_width, 0.04, 26.0), Vector3(0, 0, -GATE_LINE + 6.0), PAVING, 0.0)
 	_slab(Vector3(wall_width, 0.06, 0.4), Vector3(0, 0, -GATE_LINE + 19.0), _glow(Color(1.0, 0.55, 0.25)), 0.0)
-	_box(Vector3(wall_width, 14.0, 4.0), Vector3(0, 7.0, -GATE_LINE - 3.4), DARK, 0.0)
+	_box(Vector3(wall_width, 14.0, 4.0), Vector3(0, 7.0, -GATE_LINE - 3.4), WALL, 0.0)
+	_add_seams(Vector3(0, 7.0, -GATE_LINE - 3.4), Vector3(wall_width, 14.0, 4.0), 0.0, Color(1.0, 0.55, 0.25), 14.0)
+	# A lit cornice and a header over the whole terrace.
+	_box(Vector3(wall_width + 2.0, 1.2, 6.0), Vector3(0, 14.6, -GATE_LINE - 2.4), DARK, 0.0)
+	_part(self, Vector3(wall_width + 2.0, 0.2, 0.1), Vector3(0, 14.4, -GATE_LINE + 0.62), Color(1.0, 0.55, 0.25), true)
+	_sign("DEPLOY", Vector3(0, 17.2, -GATE_LINE - 2.0), 0.0, 3.0, Color(1.0, 0.65, 0.35))
+	# Fins between the arches, lit down their edges.
+	for i in arches + 1:
+		var x := (float(i) - float(arches) * 0.5) * GATE_SPACING
+		_box(Vector3(1.2, 14.0, 3.0), Vector3(x, 7.0, -GATE_LINE - 0.4), WALL, 0.0)
+		_part(self, Vector3(0.12, 13.6, 0.1), Vector3(x, 7.0, -GATE_LINE + 1.15), Color(1.0, 0.55, 0.25), true)
 	for i in arches:
 		var at := Vector3((float(i) - float(arches - 1) * 0.5) * GATE_SPACING, 0, -GATE_LINE)
 		var open := i < worlds.size()
@@ -279,8 +317,8 @@ func _build_gates() -> void:
 ## reach of the boots.
 func _build_quarters() -> void:
 	var at := Vector3(-SIDE_DISTRICT, 0, 0)
-	var block := _box(Vector3(14, 12, 28), at + Vector3(-6, 6, 0), WALL, 0.0)
-	Look.make_building(block.get_child(1), Vector3(14, 12, 28), 3.0)
+	_box(Vector3(14, 12, 28), at + Vector3(-6, 6, 0), WALL, 0.0)
+	_add_seams(at + Vector3(-6, 6, 0), Vector3(14, 12, 28), 0.0, Color(0.5, 0.85, 1.0), 4.0)
 	_box(Vector3(4, 0.4, 9), at + Vector3(2.5, 5.2, 0), DARK, 0.0)
 	_box(Vector3(0.5, 5.0, 0.5), at + Vector3(4.2, 2.5, -4.2), STEEL, 0.0)
 	_box(Vector3(0.5, 5.0, 0.5), at + Vector3(4.2, 2.5, 4.2), STEEL, 0.0)
@@ -292,8 +330,8 @@ func _build_quarters() -> void:
 ## East: the clan hall, with banner plinths for clan colours.
 func _build_clan_hall() -> void:
 	var at := Vector3(SIDE_DISTRICT, 0, 0)
-	var hall := _box(Vector3(14, 12, 30), at + Vector3(6, 6, 0), WALL, 0.0)
-	Look.make_building(hall.get_child(1), Vector3(14, 12, 30), 5.0)
+	_box(Vector3(14, 12, 30), at + Vector3(6, 6, 0), WALL, 0.0)
+	_add_seams(at + Vector3(6, 6, 0), Vector3(14, 12, 30), 0.0, Color(0.85, 0.6, 1.0), 4.0)
 	_box(Vector3(5, 0.5, 14), at + Vector3(-1.5, 6.0, 0), DARK, 0.0)
 	for z: float in [-6.5, 6.5]:
 		_box(Vector3(0.8, 6.0, 0.8), at + Vector3(-3.4, 3.0, z), STEEL, 0.0)
@@ -320,8 +358,8 @@ func _build_arena_gate() -> void:
 	var at := _at(98.0, ARENA_BEARING)
 	var yaw := -deg_to_rad(ARENA_BEARING)
 	var facing := Basis(Vector3.UP, yaw)
-	var block := _box(Vector3(22, 10, 14), at + facing * Vector3(0, 5.0, -8.6), WALL, yaw)
-	Look.make_building(block.get_child(1), Vector3(22, 10, 14), 9.0)
+	_box(Vector3(22, 10, 14), at + facing * Vector3(0, 5.0, -8.6), WALL, yaw)
+	_add_seams(at + facing * Vector3(0, 5.0, -8.6), Vector3(22, 10, 14), yaw, Color(1.0, 0.3, 0.35), 5.0)
 	_box(Vector3(1.6, 8.0, 2.4), at + facing * Vector3(-4.0, 4.0, 0), DARK, yaw)
 	_box(Vector3(1.6, 8.0, 2.4), at + facing * Vector3(4.0, 4.0, 0), DARK, yaw)
 	_box(Vector3(9.6, 1.4, 2.4), at + facing * Vector3(0, 8.7, 0), STEEL, yaw)
@@ -376,6 +414,9 @@ func _build_market() -> void:
 		_box(Vector3(10.0, 0.5, 6.0), at + facing * Vector3(0, 5.25, 0.3), DARK, yaw)
 		_box(Vector3(6.4, 1.1, 0.9), at + facing * Vector3(0, 0.55, 2.0), STEEL, yaw)
 		_part(self, Vector3(6.4, 0.08, 0.08), at + facing * Vector3(0, 1.14, 2.46), color, true)
+		for side: float in [-1.0, 1.0]:
+			_part(self, Vector3(0.1, 5.0, 0.1), at + facing * Vector3(side * 4.78, 2.5, 2.52), color, true, yaw)
+		_part(self, Vector3(10.0, 0.1, 0.1), at + facing * Vector3(0, 5.5, 3.32), color, true, yaw)
 		var portal := _add_portal("shop:%s" % entry.get("id", ""), "Trade at the %s" % entry.get("name", "shop"),
 				at + facing * Vector3(0, 0, 4.2), 2.4)
 		portal.add_to_group("shop_front")
@@ -392,6 +433,17 @@ func _build_market() -> void:
 		_sign(str(entry.get("name", "")).to_upper(), at + facing * Vector3(0, 6.2, 3.45), yaw, 0.9, color)
 		_sign(entry.get("blurb", ""), at + facing * Vector3(0, 4.3, -2.05), yaw, 0.26, Color(0.9, 0.9, 0.9), 8.0)
 		_box(Vector3(10.0, 1.4, 0.3), at + facing * Vector3(0, 6.2, 3.25), DARK, yaw)
+		# A tall holo sign over the arcade, so each shop can be found from the
+		# spire: a slim mast through the canopy and a lit blade with its name.
+		var mast := at + facing * Vector3(0, 0, -2.0)
+		_part(self, Vector3(0.3, 16.0, 0.3), mast + Vector3(0, 8.0, 0), Color(0.25, 0.28, 0.34), false, yaw)
+		var blade := mast + Vector3(0, 13.5, 0)
+		_part(self, Vector3(7.0, 3.0, 0.15), blade, Color(color, 1.0).darkened(0.55), true, yaw)
+		_part(self, Vector3(7.4, 0.12, 0.2), blade + Vector3(0, 1.56, 0), color, true, yaw)
+		_part(self, Vector3(7.4, 0.12, 0.2), blade - Vector3(0, 1.56, 0), color, true, yaw)
+		for face: float in [0.0, PI]:
+			_sign(str(entry.get("name", "")).to_upper(), blade + Basis(Vector3.UP, yaw + face) * Vector3(0, 0, 0.1),
+					yaw + face, 1.6, Color(1, 1, 1).lerp(color, 0.35))
 		_stalls.append({"at": at, "yaw": yaw, "color": color})
 
 
@@ -413,20 +465,38 @@ func _build_arrival() -> void:
 ## people gather to watch how the worlds are doing. What plays on it comes later.
 func _build_screens() -> void:
 	var wall_at := SCREENS_AT + Vector3(0, 0, 10)
-	var back := _box(Vector3(40, 16, 3), wall_at + Vector3(0, 8, 1.5), WALL, 0.0)
-	Look.make_building(back.get_child(1), Vector3(40, 16, 3), 11.0)
+	_box(Vector3(40, 16, 3), wall_at + Vector3(0, 8, 1.5), WALL, 0.0)
+	_add_seams(wall_at + Vector3(0, 8, 1.5), Vector3(40, 16, 3), 0.0, CYAN, 20.0)
+	# Pylons either side, lit up their fronts.
+	for side: float in [-1.0, 1.0]:
+		var pylon := wall_at + Vector3(side * 21.5, 10.0, 0.5)
+		_box(Vector3(3, 20, 4), pylon, WALL, 0.0)
+		_part(self, Vector3(0.25, 19.0, 0.1), pylon + Vector3(-side * 0.8, 0, -2.05), MAGENTA, true)
+		_part(self, Vector3(0.25, 19.0, 0.1), pylon + Vector3(side * 0.8, 0, -2.05), MAGENTA, true)
 	var screen := Node3D.new()
 	screen.name = "ScreenWall"
 	screen.position = wall_at + Vector3(0, 8.5, -0.1)
 	screen.rotation.y = PI
 	screen.add_to_group("screen_wall")
 	add_child(screen)
-	_part(screen, Vector3(30, 11, 0.1), Vector3.ZERO, Color(0.05, 0.2, 0.3), true)
-	_sign("THE BIG SCREEN", wall_at + Vector3(0, 15.0, -0.2), PI, 1.4, CYAN)
-	# Tiers facing the screen, low enough to step up.
+	# The node faces the seats: its local -Z is toward the wall behind it.
+	_part(screen, Vector3(31, 12, 0.08), Vector3(0, 0, -0.06), Color(0.05, 0.06, 0.08))
+	_part(screen, Vector3(30, 11, 0.1), Vector3.ZERO, Color(0.04, 0.16, 0.26), true)
+	# A lit frame round the picture.
+	for y: float in [-5.75, 5.75]:
+		_part(screen, Vector3(31, 0.2, 0.12), Vector3(0, y, 0.04), CYAN, true)
+	for x: float in [-15.5, 15.5]:
+		_part(screen, Vector3(0.2, 11.7, 0.12), Vector3(x, 0, 0.04), CYAN, true)
+	_sign("THE BIG SCREEN", wall_at + Vector3(0, 15.2, -0.2), PI, 1.4, CYAN)
+	_sign("WAR ROOM", wall_at + Vector3(0, 10.5, -0.25), PI, 2.4, Color(0.6, 0.95, 1.0))
+	_sign("Live from the worlds", wall_at + Vector3(0, 8.4, -0.25), PI, 0.8, Color(0.85, 0.9, 1.0))
+	# Tiers facing the screen, low enough to step up, a light along each edge.
 	for row in 4:
 		var z := SCREENS_AT.z - 14.0 - row * 3.0
-		_box(Vector3(30.0 + row * 4.0, 0.4 + row * 0.4, 2.6), Vector3(0, (0.4 + row * 0.4) * 0.5, z), STEEL, 0.0)
+		var tall := 0.4 + row * 0.4
+		var width := 30.0 + row * 4.0
+		_box(Vector3(width, tall, 2.6), Vector3(0, tall * 0.5, z), STEEL, 0.0)
+		_part(self, Vector3(width, 0.06, 0.08), Vector3(0, tall - 0.05, z + 1.32), CYAN, true)
 
 
 ## Two raised stages by the spire, lit for showing off, and benches round it.
@@ -438,6 +508,66 @@ func _build_show_floor() -> void:
 	for i in 8:
 		var bearing := 360.0 * i / 8.0 + 22.5
 		_box(Vector3(4.0, 0.5, 1.0), _at(21.0, bearing) + Vector3(0, 0.25, 0), STEEL, -deg_to_rad(bearing))
+
+
+## Between the plaza and the arcade: floating holo-ads, lit planters and
+## seats, so the open floor feels lived in without boxing it in. The ads are
+## made-up brands; nothing here has collision but the planters and seats.
+const ADS := [["RIG TUNING", "Fly further. Ask the Outfitter.", CYAN],
+		["THE PIT", "Bouts every hour. Bring a blade.", Color(1.0, 0.35, 0.4)],
+		["FROSTLINE", "Quiet snow. Old secrets.", Color(0.55, 0.85, 1.0)],
+		["NOVA THREADS", "Look the part. Tailor, west arcade.", MAGENTA],
+		["ASHFRONT", "Full loot. No refunds.", Color(1.0, 0.6, 0.3)],
+		["HOMEWARD", "Your quarters, your trophies.", Color(0.5, 1.0, 0.75)]]
+
+
+func _build_fill() -> void:
+	var slots := [22.5, 67.5, 112.5, 247.5, 292.5, 337.5]
+	for i in slots.size():
+		var bearing: float = slots[i]
+		var ad: Array = ADS[i % ADS.size()]
+		var at := _at(40.0, bearing)
+		var yaw := -deg_to_rad(bearing)
+		var color: Color = ad[2]
+		# A slim post and a floating panel facing the spire.
+		_part(self, Vector3(0.2, 5.0, 0.2), at + Vector3(0, 2.5, 0), Color(0.25, 0.28, 0.34))
+		var panel := at + Vector3(0, 6.5, 0)
+		_part(self, Vector3(5.0, 2.6, 0.06), panel, Color(color, 1.0).darkened(0.7), true, yaw)
+		_part(self, Vector3(5.2, 0.08, 0.1), panel + Vector3(0, 1.34, 0), color, true, yaw)
+		var front := Basis(Vector3.UP, yaw) * Vector3(0, 0, 0.06)
+		_sign(ad[0], panel + front + Vector3(0, 0.45, 0), yaw, 0.75, Color(1, 1, 1).lerp(color, 0.3))
+		_sign(ad[1], panel + front - Vector3(0, 0.45, 0), yaw, 0.28, Color(0.9, 0.92, 1.0), 4.6)
+		# Planters with a light rim either side, and a seat between.
+		var across := Basis(Vector3.UP, yaw) * Vector3(1, 0, 0)
+		for side: float in [-1.0, 1.0]:
+			var pot := at + across * side * 5.0
+			_box(Vector3(2.6, 0.8, 2.6), pot + Vector3(0, 0.4, 0), DARK, yaw)
+			_part(self, Vector3(2.7, 0.06, 2.7), pot + Vector3(0, 0.82, 0), color.darkened(0.2), true, yaw)
+			# Light reeds: thin glowing stems of different heights.
+			for k in 5:
+				var stem := pot + Basis(Vector3.UP, yaw + k * 1.3) * Vector3(0.7, 0, 0) * (0.3 + 0.15 * k)
+				var tall := 1.4 + 0.35 * ((k * 3 + i) % 4)
+				_part(self, Vector3(0.07, tall, 0.07), stem + Vector3(0, 0.8 + tall * 0.5, 0), Color(0.35, 1.0, 0.75), true)
+		_box(Vector3(3.4, 0.45, 0.9), at + Basis(Vector3.UP, yaw) * Vector3(0, 0.225, 1.6), STEEL, yaw)
+
+
+## Clean floor tiles: a fine grid of seams over the deck, drawn as one mesh.
+func _build_tiles() -> void:
+	var step := 6.0
+	var parts: Array = []
+	var reach := RADIUS - 2.0
+	var lines := int(reach / step)
+	for i in range(-lines, lines + 1):
+		var offset := i * step
+		var half := sqrt(maxf(reach * reach - offset * offset, 0.0))
+		if half < 1.0:
+			continue
+		parts.append([Vector3(0.06, 0.012, half * 2.0), Transform3D(Basis.IDENTITY, Vector3(offset, 0.006, 0))])
+		parts.append([Vector3(half * 2.0, 0.012, 0.06), Transform3D(Basis.IDENTITY, Vector3(0, 0.006, offset))])
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(0.08, 0.09, 0.12)
+	mat.roughness = 0.4
+	_batch_sized(parts, mat)
 
 
 ## The city far below the balcony and the skyline round it: scenery only, with
@@ -467,7 +597,7 @@ func _build_city_below() -> void:
 		var size := Vector3(w, tall, w)
 		var mesh := BoxMesh.new()
 		mesh.size = size
-		mesh.material = WALL
+		mesh.material = CITY
 		var node := MeshInstance3D.new()
 		node.mesh = mesh
 		node.position = _at(r, bearing) + Vector3(0, floor_y + tall * 0.5, 0)
@@ -539,6 +669,78 @@ func _near_kiosk(bearing: float) -> bool:
 		if deg_to_rad(absf(wrapf(bearing - slot, -180.0, 180.0))) * MARKET_RING < 7.0:
 			return true
 	return false
+
+
+## Lit seams on a box: a band round it every `spacing` metres and a strip up
+## each corner. Collected and drawn as one mesh per colour (`_flush_seams`).
+func _add_seams(centre: Vector3, size: Vector3, yaw: float, color: Color, spacing: float) -> void:
+	if not _seams.has(color):
+		_seams[color] = []
+	var list: Array = _seams[color]
+	var turn := Basis(Vector3.UP, yaw)
+	var bottom := -size.y * 0.5
+	var y := spacing
+	while y < size.y - 0.5:
+		for face in 4:
+			var along_x := face % 2 == 0
+			var sign_f := 1.0 if face < 2 else -1.0
+			var offset := Vector3(0, bottom + y, sign_f * (size.z * 0.5 + 0.03)) if along_x \
+					else Vector3(sign_f * (size.x * 0.5 + 0.03), bottom + y, 0)
+			var band := Vector3(size.x + 0.02, 0.12, 0.04) if along_x else Vector3(0.04, 0.12, size.z + 0.02)
+			list.append([band, Transform3D(turn, centre + turn * offset)])
+		y += spacing
+	for cx: float in [-1.0, 1.0]:
+		for cz: float in [-1.0, 1.0]:
+			var corner := Vector3(cx * (size.x * 0.5 + 0.02), 0, cz * (size.z * 0.5 + 0.02))
+			list.append([Vector3(0.1, size.y, 0.1), Transform3D(turn, centre + turn * corner)])
+
+
+func _flush_seams() -> void:
+	for color: Color in _seams:
+		_batch_sized(_seams[color], _glow(color))
+	_seams.clear()
+	for key: Array in _parts:
+		var mat: Material
+		if key[1]:
+			mat = _glow(key[0])
+		else:
+			var plain := StandardMaterial3D.new()
+			plain.albedo_color = key[0]
+			mat = plain
+		_batch_sized(_parts[key], mat)
+	_parts.clear()
+	_flushed = true
+
+
+## Boxes of many sizes as one mesh, no collision: [[size, transform], ...].
+func _batch_sized(parts: Array, material: Material) -> void:
+	if parts.is_empty():
+		return
+	var tool := SurfaceTool.new()
+	tool.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for part: Array in parts:
+		var box := BoxMesh.new()
+		box.size = part[0]
+		tool.append_from(box, 0, part[1])
+	var mesh := tool.commit()
+	mesh.surface_set_material(0, material)
+	var node := MeshInstance3D.new()
+	node.mesh = mesh
+	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(node)
+
+
+## Tinted glass for canopies: see-through, with a sheen.
+func _glass() -> StandardMaterial3D:
+	if _glass_mat:
+		return _glass_mat
+	_glass_mat = StandardMaterial3D.new()
+	_glass_mat.albedo_color = Color(0.45, 0.8, 1.0, 0.2)
+	_glass_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	_glass_mat.metallic = 0.6
+	_glass_mat.roughness = 0.05
+	_glass_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	return _glass_mat
 
 
 ## A glowing material, one per colour.
@@ -693,7 +895,14 @@ func _sign(text: String, at: Vector3, yaw: float, size: float, color: Color, wid
 
 
 ## A plain box with no collision under `parent` (a terminal's casing).
-func _part(parent: Node3D, size: Vector3, at: Vector3, color: Color, glow := false) -> void:
+func _part(parent: Node3D, size: Vector3, at: Vector3, color: Color, glow := false, yaw := 0.0) -> void:
+	# Fixed parts of the map itself are drawn in batches by colour.
+	if parent == self and not _flushed:
+		var key := [color, glow]
+		if not _parts.has(key):
+			_parts[key] = []
+		(_parts[key] as Array).append([size, Transform3D(Basis(Vector3.UP, yaw), at)])
+		return
 	var mesh := BoxMesh.new()
 	mesh.size = size
 	var mat := StandardMaterial3D.new()
@@ -706,6 +915,7 @@ func _part(parent: Node3D, size: Vector3, at: Vector3, color: Color, glow := fal
 	var node := MeshInstance3D.new()
 	node.mesh = mesh
 	node.position = at
+	node.rotation.y = yaw
 	parent.add_child(node)
 
 
