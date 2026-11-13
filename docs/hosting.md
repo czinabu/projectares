@@ -5,8 +5,8 @@ join from anywhere, even when your own computer is off. It takes about 30
 minutes the first time and costs a few dollars a month. Everything here runs
 from PowerShell on Windows; you do not need to install anything on your PC.
 
-The server is the same one the hub starts when you press **Host a world and join
-it**, only running on its own with no window (`--server` mode).
+The server is the same one the game starts when you walk out of your base's
+door, only running on its own with no window (`--server` mode).
 
 ## What you need
 
@@ -110,8 +110,9 @@ Type `exit` to leave the server.
 
 ## 7. Join it
 
-In the game hub, under **Online**, type the server's address into **Join a world
-at this address** and join. Your friends do the same. Each of you lands in the
+At the **Uplink** console in your home base, type the server's address into
+**Join the server at this address** and join. Your friends do the same. Your
+base's door remembers it and leads there from then on. Each of you lands in the
 server's lobby, picks a loadout from the stash the server keeps for you, and
 presses **Deploy online**.
 
