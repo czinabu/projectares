@@ -277,9 +277,9 @@ without Caleb, and update the gap list when a PR closes a row.
   flies high in swoops (cruise, then coast down with the jets idle to cool),
   stops dead and hovers to shoot steady, and carries heavy armor, but turns
   wide and is loud and hot; wings glide and pulse to hold height, with the
-  fastest dives, tightest turns and a barrel roll, silent and cold, but never
+  fastest dives and tightest turns, silent and cold, but never
   stop and fire only a sidearm while spread; boots skim low (`FlightRig.skim`),
-  cooling near a surface and burning out high up, kick up, dash on heat and
+  cooling near a surface and burning out high up, kick up, dash furthest and
   aim steady while low. Their kicks top a rooftop (three reach a 15 m roof,
   Caleb's call) and a roof under the feet is a surface they cool over, but
   in open air they never cool (`FlightRig.aloft`), so they hold no open sky. Flown its
@@ -289,9 +289,13 @@ without Caleb, and update the gap list when a PR closes a row.
   (Caleb's call): wings bank on the strafe keys and dive or pull up on
   forward and back (`Actor.glide_trim`), and a boost runs along the view's
   heading, climbing only on jump and descend, never on the view's pitch.
-  The body's attitude in the air (flat, banked, leaning, rolled by
-  `ActorCommand.roll`) is the skin's job (`ActorSkin._update_glide`), read
-  from velocity and the command only, so remote players match. Off the
+  Every rig air dashes on Shift + a move key (`ActorCommand.sprint_pressed`,
+  `Actor._air_dash`, tuned by the rig's `air_dash_*` stats): the dash is
+  added on top of the rig's own flight and taken back off, so a glide or a
+  cruise carries on after it. Q and E fly nothing (Caleb's call).
+  The body's attitude in the air (flat, banked, leaning, barrel rolled by a
+  sideways air dash) is the skin's job (`ActorSkin._update_glide`), read
+  from velocity and the simulated actor only, so remote players match. Off the
   ground (`ActorSkin.is_airborne`, from `Actor.airborne_time`) the legs
   never play a gait: a stand plays under an air pose (leap, fall, or
   hanging from lit jets). Leaving the ground starts with a short push-off

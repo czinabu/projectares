@@ -19,14 +19,14 @@ skies, animated models and effects (see "How it looks" below).
 | Action | Key |
 | --- | --- |
 | Move / sprint | WASD / Shift |
-| Jump. In the air: hold to climb, tap to light the jets and hover (jetpack); press to kick the way you steer, hold to skim low, dash key dashes (thruster boots); press to launch, hold while falling to glide (glide wings) | Space |
-| Jetpack hovering: cruise with the move keys, Space climbs, C coasts down to cool, Shift + W boosts head first (Mk2). The keys fly every rig; the mouse only looks and aims | |
-| Glide wings gliding: Space again pulses up, Q / E snaps a barrel roll | |
+| Jump. In the air: hold to climb, tap to light the jets and hover (jetpack); press to kick the way you steer, hold to skim low (thruster boots); press to launch, hold while falling to glide (glide wings) | Space |
+| Jetpack hovering: cruise with the move keys, Space climbs, C coasts down to cool, hold Shift + W to boost head first (Mk2). The keys fly every rig; the mouse only looks and aims | |
+| Glide wings gliding: Space again pulses up | |
+| Air dash with any rig, on heat: Shift + a move key dashes that way (Shift alone dashes forward). Sideways while gliding or boosting it barrel rolls | Shift + WASD |
 | Gliding: A / D bank round, W dives for speed, S pulls up to climb on it (the view is free to look and aim) | |
-| Roll the body left / right while gliding or boosting | Q / E (or the mouse thumb buttons) |
 | Use your ability | G |
 | Use your helmet's visor (zoom or scan) | T |
-| Dash | Left Alt |
+| Dash (stamina) | Left Alt |
 | Slide (while sprinting) | C |
 | Fire, or melee: tap for the combo, hold for a heavy (dive slam in the air) | Left mouse |
 | Aim down sights, or block with the blade (tap just before a hit to parry) | Right mouse |
@@ -271,11 +271,11 @@ you have.
   stop dead and hover to shoot steady, and carry heavy armor without running
   hotter; they turn wide and their heat draws seekers. Glide wings never
   stop: launch once, glide, pulse up to hold height, dive for the fastest
-  speed in the game, turn tightest and barrel roll, cold and quiet, but only
+  speed in the game, turn tightest, cold and quiet, but only
   a sidearm fires while they are spread. Thruster boots skim low over streets
   and roofs and stop dead: near a surface they cool, high in the open they
   never cool and burn out in seconds. Jump kicks you up, and three kicks top
-  a 15 m roof, which is a surface to cool on again. The dash key dashes on heat, and the aim stays
+  a 15 m roof, which is a surface to cool on again. They dash furthest of any rig, and the aim stays
   steady while skimming low. Shooting from the
   air spreads wider, except from a hover or a low skim.
 - An ability slot. Phase Step blinks you forward, Kinetic Barrier cuts damage

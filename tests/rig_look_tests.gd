@@ -170,7 +170,7 @@ static func run(t: Node) -> void:
 	p.airborne_time = 1.0
 
 	# A jetpack boost lays the body out head first with the arms down at the
-	# sides; a hover leans the way it drifts; the roll keys turn it over.
+	# sides; a hover leans the way it drifts; a sideways air dash rolls it over.
 	_equip(p, "jetpack_mk2")
 	await t.frames(2)
 	p.flight.is_hovering = true
@@ -202,14 +202,15 @@ static func run(t: Node) -> void:
 		await t.get_tree().create_timer(2.6).timeout
 		t.check(not held.visual.visible, "and it goes back when you stop")
 	var belly := p.global_basis.inverse() * (skin as Node3D).global_basis.z
-	p.cmd.roll = 1
-	await t.get_tree().create_timer(0.25).timeout
+	p.air_dash_side = 1.0
+	p.air_dash_left = p.flight.air_dash_time
+	await t.get_tree().create_timer(p.flight.air_dash_time * 0.45).timeout
 	var rolled := p.global_basis.inverse() * (skin as Node3D).global_basis.z
-	t.check(belly.angle_to(rolled) > 1.0, "the roll keys turn the body over in flight")
-	p.cmd.roll = 0
-	await t.get_tree().create_timer(0.6).timeout
+	t.check(belly.angle_to(rolled) > 1.0, "a sideways air dash barrel rolls the body in flight")
+	p.air_dash_left = 0.0
+	await t.get_tree().create_timer(0.8).timeout
 	rolled = p.global_basis.inverse() * (skin as Node3D).global_basis.z
-	t.check(belly.angle_to(rolled) < 0.1, "letting go rights the body again")
+	t.check(belly.angle_to(rolled) < 0.1, "after the dash the body rights itself")
 	p.flight.is_hovering = false
 	p.flight.is_boosting = false
 	p.velocity = Vector3.ZERO
