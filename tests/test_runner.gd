@@ -911,7 +911,7 @@ func _test_main_flow() -> void:
 			"X raises the watch, and in third person its card opens over your wrist")
 	var card_width := holo.global_basis.get_scale().x * wrist.face_size.x
 	check(holo.global_position.distance_to(wrist.watch_position(p)) < card_width,
-			"the third-person card rises off the wrist, not hung out in front of the camera")
+			"the third-person card stands over the wrist, not hung out in front of the camera")
 	check(p.cmd.watch_up, "and the raised watch goes out with your inputs, so the arm glows for everyone")
 	var icons: Array = []
 	for slot in wrist.card.slots:

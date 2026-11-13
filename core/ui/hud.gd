@@ -746,12 +746,11 @@ void fragment() {
 	var reference_fov := 80.0
 	## Third person: how big the card looks next to its first-person size
 	## (it grows with the camera's distance, so it reads the same from behind
-	## the shoulder), how far above the watch it opens, and how far it sits
-	## out to the side of the wrist, in card widths, so it hangs beside the
-	## body rather than over it.
+	## the shoulder), and how far above the watch it opens. It stands straight
+	## over the watch, drawn over the body, so the light visibly rises from
+	## the wrist into it.
 	var third_person_view := 0.8
-	var projection_lift := 0.06
-	var projection_aside := 0.5
+	var projection_lift := 0.12
 	## The glow on the arm while the card is up: how bright, and how far it
 	## reaches.
 	var glow_energy := 0.7
@@ -808,7 +807,8 @@ void fragment() {
 		mat.shader = shader
 		mat.set_shader_parameter("card", viewport.get_texture())
 		mat.set_shader_parameter("tint", HOLO_TINT)
-		mat.render_priority = 3
+		# Drawn over everything, the wearer's own body included.
+		mat.render_priority = 10
 		_holo.material_override = mat
 		_holo.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		add_child(_holo)
@@ -824,7 +824,7 @@ void fragment() {
 		beam_mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
 		beam_mat.no_depth_test = true
 		beam_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-		beam_mat.render_priority = 2
+		beam_mat.render_priority = 9
 		_beam.material_override = beam_mat
 		add_child(_beam)
 		_glow = OmniLight3D.new()
@@ -965,8 +965,7 @@ void fragment() {
 				var facing := cam.global_basis.orthonormalized() if cam else p.global_basis.orthonormalized()
 				var far := cam.global_position.distance_to(wrist) if cam else 2.5
 				var size := far / first_person_at.length() * third_person_view
-				var at := wrist + Vector3.UP * (projection_lift + face_size.y * size * 0.5) * open \
-						- facing.x * face_size.x * size * projection_aside
+				var at := wrist + facing.y * (projection_lift + face_size.y * size * 0.5) * open
 				_holo.global_transform = Transform3D(facing.scaled(Vector3(size, size * maxf(open, 0.001), size)), at)
 				_glow.global_position = wrist
 		else:
@@ -1098,7 +1097,7 @@ void fragment() {
 					mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 					mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 					mat.no_depth_test = true
-					mat.render_priority = 4
+					mat.render_priority = 11
 					(mesh as MeshInstance3D).material_override = mat
 				mat.albedo_color = tint
 
