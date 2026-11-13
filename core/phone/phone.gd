@@ -87,8 +87,11 @@ const CONTROLS := [
 		["Launch", "{jump} in the air"],
 		["Glide (while falling)", "Hold {jump}"],
 		["Pulse up while gliding", "{jump} again"],
-		["Bank round", "{move_left} / {move_right}"],
-		["Dive for speed the way you face, pull up to climb on it", "{move_forward} / {move_back}"],
+		["Steer: the wings fly where you look", "Mouse"],
+		["Free look (the wings fly straight on)", "Hold {free_look}"],
+		["Bank round harder", "{move_left} / {move_right}"],
+		["Dive for speed, pull up to climb on it", "{move_forward} / {move_back}"],
+		["Boost ahead the way you face", "{sprint}"],
 		["Boost upward (wings pulled up)", "{sprint} + {move_back}"],
 	]],
 	["WEAPONS", [
@@ -622,8 +625,8 @@ func _build_screen() -> void:
 	var wallpaper := TextureRect.new()
 	var shade := GradientTexture2D.new()
 	shade.gradient = Gradient.new()
-	shade.gradient.set_color(0, Color(0.3, 0.17, 0.1))
-	shade.gradient.set_color(1, Color(0.06, 0.07, 0.13))
+	shade.gradient.set_color(0, Color(0.46, 0.26, 0.14))
+	shade.gradient.set_color(1, Color(0.1, 0.13, 0.26))
 	shade.fill_from = Vector2(0.2, 0.0)
 	shade.fill_to = Vector2(0.7, 1.0)
 	wallpaper.texture = shade

@@ -194,6 +194,7 @@ func _ready() -> void:
 			"cool_per_sec": 20.0, "pulse_velocity": 11.0, "pulse_heat": 30.0, "glide_cool": 12.0,
 			"glide_fall_speed": 1.2, "glide_speed": 15.0, "glide_dive_gain": 0.74, "glide_turn_rate": 2.4,
 			"stall_sink": 6.0, "air_dash_speed": 12.0, "air_dash_heat": 10.0, "air_dash_cooldown": 1.0,
+			"glide_boost": 13.0, "glide_boost_climb": 17.0, "glide_boost_heat": 22.0,
 			"glide_sidearm_only": true, "slide_landing_speed": 18.0},
 			"One launch, then hold jump to glide and press it again to pulse up. Fastest dives, tightest turns, silent and cold between pulses. Never stops: slow down and you stall. Sidearm only while the wings are out.")
 

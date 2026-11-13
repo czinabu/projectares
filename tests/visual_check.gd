@@ -95,13 +95,20 @@ func _ready() -> void:
 		get_tree().quit()
 		return
 
-	# `-- <output_dir> --arena-only` shoots just the arena.
 	# `-- <output_dir> --phone-only` shows the phone held up, and someone
 	# else holding theirs.
 	if "--phone-only" in args:
 		await _phone_shots(out_dir)
 		get_tree().quit()
 		return
+	# `-- <output_dir> --arena-only` shoots just the arena.
+	# `-- <output_dir> --hub-only` walks round the Concourse from fixed spots
+	# and prints what a frame of it costs to draw.
+	if "--hub-only" in args:
+		await _hub_shots(out_dir)
+		get_tree().quit()
+		return
+
 	if "--arena-only" in args:
 		await _arena_shots(out_dir)
 		get_tree().quit()
@@ -326,6 +333,9 @@ func _flight_shots(out_dir: String) -> void:
 		["wings_turn_right", "wings_glide", false, false, true, 16.0, -1.8, -1.4, 0.0, 0, Vector3.FORWARD],
 		["wings_dive", "wings_glide", false, false, true, 24.0, -10.0, 0.0, -0.9, 0, Vector3.FORWARD],
 		["wings_climb", "wings_glide", false, false, true, 18.0, 9.0, 0.0, 0.9, 0, Vector3.FORWARD],
+		# Free look: flying one way, looking to the side and behind (a backstroke).
+		["wings_freelook_side", "wings_glide", false, false, true, 16.0, -1.8, 0.0, 0.0, 0, Vector3(1, 0, 0)],
+		["wings_freelook_back", "wings_glide", false, false, true, 16.0, -1.8, 0.0, 0.0, 0, Vector3.BACK],
 		# Thruster boots skimming: still, at cruise each way, and dashing.
 		["boots_hover", "boots_thruster", false, false, false, 0.0, 0.0, 0.0, 0.0, 0, Vector3.FORWARD],
 		["boots_forward", "boots_thruster", false, false, false, 15.0, 0.0, 0.0, 0.0, 0, Vector3.FORWARD],
@@ -356,6 +366,7 @@ func _flight_shots(out_dir: String) -> void:
 		p.flight.is_gliding = pose[4]
 		p.flight.is_skimming = pose[1] == "boots_thruster"
 		p.cmd.secondary = String(pose[0]).ends_with("_aim")
+		p.cmd.free_look = String(pose[0]).contains("freelook")
 		p.cmd.pitch = pose[8]
 		var at := p.global_position
 		var back := p.global_transform.basis.z
@@ -531,6 +542,42 @@ func _world_shots(out_dir: String, only := "") -> void:
 			await _plaza_shots(out_dir, raid, camera, lineup)
 		raid.queue_free()
 		await _settle(2)
+
+
+## The Concourse from the spots people stand: arriving, under the arcade, at
+## the gates, up on a tower deck, and from high above. Prints the draw calls
+## and objects of each view, the frame cost that grows with the map.
+func _hub_shots(out_dir: String) -> void:
+	var plaza := Worlds.social_world()
+	var raid := Raid.new()
+	add_child(raid)
+	raid.start(plaza, 5)
+	var map: Node3D = raid.map
+	var camera := Camera3D.new()
+	camera.far = 1500.0
+	camera.fov = 75.0
+	add_child(camera)
+	camera.make_current()
+	var arrival: Vector3 = map.get("ARRIVAL") if map.get("ARRIVAL") != null else Vector3.ZERO
+	var views := [
+		["arrival", arrival + Vector3(0, 1.7, 0), Vector3(0, 12, 0)],
+		["arrival_high", arrival + Vector3(0, 6, 9), Vector3(0, 6, -20)],
+		["gates", Vector3(0, 2.5, -60), Vector3(0, 7, -100)],
+		["market", Vector3(-14, 1.7, -46), Vector3(-40, 4, -42)],
+		["deck", Vector3(26.5, 16.7, -64), Vector3(-30, 8, 40)],
+		["screens", Vector3(0, 3, 62), Vector3(0, 7, 106)],
+		["overview", Vector3(150, 120, 150), Vector3(0, 0, 0)],
+	]
+	for v: Array in views:
+		camera.look_at_from_position(v[1], v[2])
+		await _settle(20)
+		await _shot(out_dir.path_join("hub_%s.png" % v[0]))
+		print("  %s: %d draw calls, %d objects" % [v[0],
+				RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_DRAW_CALLS_IN_FRAME),
+				RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_OBJECTS_IN_FRAME)])
+	camera.queue_free()
+	raid.queue_free()
+	await _settle(2)
 
 
 ## The home base with one of everything on show, from a few fixed angles.
@@ -1180,7 +1227,8 @@ func _power_shots(out_dir: String) -> void:
 
 ## A contact sheet of where holstered weapons are worn: one row each for the
 ## blade in hand (gun slung on the back) and the gun in hand (blade on the hip),
-## with the jetpack on and off, seen from four sides.
+## with the jetpack on and off, seen from four sides; then everything
+## holstered on each flight rig in turn (holster_rigs.png).
 func _holster_shots(out_dir: String, melee_id := "") -> void:
 	var raid := Raid.new()
 	add_child(raid)
@@ -1243,6 +1291,37 @@ func _holster_shots(out_dir: String, melee_id := "") -> void:
 			sheet.blit_rect(cut, Rect2i(0, 0, 320, 360), Vector2i(c * 320, row * 360))
 	sheet.save_png(out_dir.path_join("holster.png"))
 	print("saved holster.png")
+	# Everything holstered on every rig: clamped to a jetpack's side rails,
+	# slung over wings, across the back with boots or nothing on.
+	var rig_was := player.flight.item_id
+	var rigs: Array[String] = ["jetpack_mk1", "jetpack_mk2", "wings_glide", "boots_thruster", ""]
+	var rig_sheet := Image.create(4 * 320, rigs.size() * 360, false, Image.FORMAT_RGBA8)
+	player.active_weapon_index = -1
+	player._refresh_weapon_visuals()
+	for row in rigs.size():
+		player.flight.item_id = rigs[row]
+		player.flight.enabled = rigs[row] != ""
+		for k in 60:
+			skin._process(1.0 / 60.0)
+			await get_tree().process_frame
+		var sides: Array[Vector3] = [player.global_basis.z, player.global_basis.x, -player.global_basis.x,
+				(player.global_basis.z - player.global_basis.x).normalized()]
+		for c in sides.size():
+			var at := player.global_position + Vector3(0, 1.1, 0)
+			cam.global_position = at + sides[c] * 3.0
+			cam.look_at(at)
+			await _settle(1)
+			await RenderingServer.frame_post_draw
+			var frame := get_viewport().get_texture().get_image()
+			var w := frame.get_width()
+			var h := frame.get_height()
+			var cut := frame.get_region(Rect2i(w / 2 - 160 * h / 720, h / 2 - 180 * h / 720, 320 * h / 720, 360 * h / 720))
+			cut.resize(320, 360)
+			cut.convert(Image.FORMAT_RGBA8)
+			rig_sheet.blit_rect(cut, Rect2i(0, 0, 320, 360), Vector2i(c * 320, row * 360))
+	rig_sheet.save_png(out_dir.path_join("holster_rigs.png"))
+	print("saved holster_rigs.png")
+	player.flight.item_id = rig_was
 	# A switch, frame by frame from behind and to the right: gun to blade,
 	# blade to sidearm (if carried), then holstered.
 	var steps := [blade, sidearm if sidearm >= 0 else gun, -1]

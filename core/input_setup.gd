@@ -28,6 +28,7 @@ const KEY_ACTIONS := {
 	"redeploy": KEY_ENTER,
 	"phone": KEY_P,
 	"check_wrist": KEY_X,
+	"free_look": KEY_V,
 }
 
 const MOUSE_ACTIONS := {

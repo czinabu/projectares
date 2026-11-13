@@ -44,6 +44,14 @@ var glide_leg := Vector3(0.06, -1.0, -0.06)
 ## the feet point, in radians.
 var glide_look := 1.0
 var glide_toes := 1.0
+## Free look behind in a glide (a backstroke, see `_look_roll`): lying on
+## the back, the arms open out wide to the sides and a little up for
+## balance, the legs part a little, and the head comes up off the pack to
+## look back down the body past the feet (a negative look tips the chin in).
+## Same frame as `glide_arm`. Blended in as the body rolls over.
+var backstroke_arm := Vector3(0.95, -0.35, -0.3)
+var backstroke_leg := Vector3(0.08, -1.0, -0.08)
+var backstroke_look := -0.7
 ## Off the ground the legs stop running. `air_grace` seconds after leaving
 ## it (so steps and kerbs do not flicker) they go to an air pose, blended in
 ## at `air_blend` full changes a second. Each pose is a thigh and a shin
@@ -141,17 +149,20 @@ var sling_height := -0.2
 ## middle of a slung weapon sits out from the back or the rig's outer face.
 var back_surface := 0.13
 var sling_clearance := 0.04
-## Over a rig with a screen on its back (a jetpack's heat gauge), a slung
-## weapon rides down the side of the rig instead, so it never hides the
-## screen: this far out past the rig's edge, leaning this much.
-var side_sling_gap := 0.035
+## Over a rig with weapon rails down its sides (a jetpack or wing pack,
+## whose back holds its heat gauge), a long weapon is clamped to the rail on its side instead,
+## so it never hides the screen: its middle this far up the rail from the
+## rail's middle, and this far out from the clamp faces.
+var mount_rise := 0.02
+var mount_clearance := 0.003
+## How far up and down from its middle the rail's clamps hold a weapon.
+var mount_band := 0.12
 ## A worn helmet carries its readouts on the back of the head, for third
 ## person and for anyone behind you: a health strip that drains and turns red,
 ## and a light for the helmet's own system. Placed over the "Head" bone.
 var vitals_offset := Vector3(0.0, 0.05, 0.145)
 var vitals_width := 0.13
 var vitals_low := 0.35
-var side_sling_tilt := deg_to_rad(9.0)
 var hip_offset := Vector3(-0.2, 0.08, 0.02)
 ## How far a sheathed blade tips from pointing straight up, toward the back.
 var sheath_angle := deg_to_rad(138.0)
@@ -236,6 +247,13 @@ var _has_heading := false
 ## The actor's yaw last frame: while the body lies flat in flight its
 ## attitude is held in the world, not on the view (see `_update_glide`).
 var _last_yaw := 0.0
+## Free look in a glide: how far the body has rolled to face the view, about
+## its own length (PI: on its back, a backstroke, looking behind).
+var _look_roll := 0.0
+## Free look in a glide: the body starts to roll toward the view once it is
+## this far off the way it flies, and lies on its back by `look_roll_full`.
+var look_roll_start := 0.6
+var look_roll_full := 2.6
 var _attack_left := 0.0
 var _aim_left := 0.0
 ## Weapon -> the copy of it worn while holstered (null if it has no model),
@@ -781,25 +799,22 @@ func stow_place(weapon: Weapon) -> Dictionary:
 		return {"bone": _def.get("hip_bone", ""), "at": holster_offset, "basis": Basis(Vector3.RIGHT, -PI / 2.0),
 			"centre": false}
 	var side := 1.0 if weapon is Gun else -1.0
-	if _rig_back and _rig_back.find_child("HeatDisplay", true, false) != null:
-		# Down the side of the rig (gun right, long blade left), clear of its screen.
-		var box: AABB = look.model_bounds(_rig_back)
-		var beside := Vector3(side * (maxf(absf(box.position.x), absf(box.end.x)) + side_sling_gap),
-				sling_height + 0.12, back_gap + box.end.z - 0.03)
-		if weapon is MeleeWeapon:
-			return {"bone": back_bone, "at": beside, "basis": Basis(Vector3.BACK, side_sling_tilt), "centre": true}
-		return {"bone": back_bone, "at": beside,
-			"basis": Basis(Vector3.BACK, -side_sling_tilt) * Basis(Vector3.RIGHT, PI / 2.0) * Basis(Vector3.BACK, PI / 2.0),
-			"centre": true}
+	# Guns point along -Z in the hand, top up: roll it onto its side so its
+	# profile shows, and stand it muzzle up. Long blades already stand up.
+	var upright := Basis.IDENTITY if weapon is MeleeWeapon \
+			else Basis(Vector3.RIGHT, PI / 2.0) * Basis(Vector3.BACK, PI / 2.0)
+	var mount := _rig_back.get_node_or_null("MountR" if side > 0.0 else "MountL") as Marker3D if _rig_back else null
+	if mount:
+		# Clamped to the rail on the pack's side (gun right, long blade left),
+		# leaning out with it. `_stow` moves it out by its own half width.
+		return {"bone": back_bone, "at": Vector3(0, back_drop, back_gap) + mount.position + mount.basis.y * mount_rise,
+			"basis": mount.basis * upright, "centre": true, "out": mount.basis.x * side, "upright": upright, "side": side}
 	if weapon is MeleeWeapon:
 		# Head up over the left shoulder, crossing a slung gun.
 		return {"bone": back_bone, "at": out + Vector3(0, 0, sling_clearance), "basis": Basis(Vector3.BACK, sling_tilt),
 			"centre": true}
-	# Guns point along -Z in the hand, top up: roll it onto its side so its
-	# profile shows, stand it muzzle up, then lean it over the right shoulder.
-	return {"bone": back_bone, "at": out,
-		"basis": Basis(Vector3.BACK, -sling_tilt) * Basis(Vector3.RIGHT, PI / 2.0) * Basis(Vector3.BACK, PI / 2.0),
-		"centre": true}
+	# A gun leans over the right shoulder.
+	return {"bone": back_bone, "at": out, "basis": Basis(Vector3.BACK, -sling_tilt) * upright, "centre": true}
 
 
 ## What the light on a helmet's back says: "" (a plain visor has none),
@@ -904,11 +919,48 @@ func _stow(weapon: Weapon) -> Node3D:
 	if place["centre"]:
 		model.position -= look.folded_bounds(model).get_center()
 	pivot.basis = place["basis"]
-	var fallback: Vector3 = Vector3(0.0, _def.get("height", 1.8) * 0.7, 0.0) + place["at"]
-	var root := _hang(pivot, "Stowed" + str(actor.weapons.find(weapon)), place["bone"], place["at"], fallback)
-	root.set_meta("slung", place["centre"])
+	var at: Vector3 = place["at"]
+	if place.has("out"):
+		# Clamped: its near side rests on the clamp faces.
+		at += (place["out"] as Vector3) * (_near_side(model, place["upright"], place["side"]) + mount_clearance)
+	var fallback: Vector3 = Vector3(0.0, _def.get("height", 1.8) * 0.7, 0.0) + at
+	var root := _hang(pivot, "Stowed" + str(actor.weapons.find(weapon)), place["bone"], at, fallback)
+	# Riding lifts what is slung on the back clear of the seat; a weapon
+	# clamped to a rail stays in its clamps (it rides beside the seat).
+	root.set_meta("slung", place["centre"] and not place.has("out"))
 	_stowed_models[weapon] = model
 	return root
+
+
+## How far a centred, stood-up weapon reaches toward the pack (-X for a
+## weapon on the right, `side` 1; +X on the left) where the
+## rail's clamps hold it, so a spear head or a magazine further along does
+## not hold the part in the clamps off the rail. Measured from the meshes,
+## unfolded; falls back to half the folded width.
+func _near_side(model: Node3D, upright: Basis, side: float) -> float:
+	var stood: AABB = Transform3D(upright, Vector3.ZERO) * look.folded_bounds(model)
+	var band := mount_band
+	var near := -INF
+	for node in model.find_children("*", "MeshInstance3D", true, false):
+		var mesh_node := node as MeshInstance3D
+		if mesh_node.mesh == null:
+			continue
+		var xform := mesh_node.transform
+		var up := mesh_node.get_parent()
+		while up != null and up != model.get_parent():
+			if up is Node3D:
+				xform = (up as Node3D).transform * xform
+			up = up.get_parent()
+		xform = Transform3D(upright, Vector3.ZERO) * xform
+		for i in mesh_node.mesh.get_surface_count():
+			var verts: PackedVector3Array = mesh_node.mesh.surface_get_arrays(i)[Mesh.ARRAY_VERTEX]
+			for v in verts:
+				var p := xform * v
+				if absf(p.y + mount_rise) <= band:
+					near = maxf(near, -side * p.x)
+	if near == -INF:
+		return stood.size.x * 0.5
+	return near
 
 
 func _on_fired(from: Vector3, to: Vector3, gun: Gun) -> void:
@@ -1024,6 +1076,14 @@ func _update_glide(delta: float) -> void:
 	_tilt = _tilt.lerp(tilt, follow)
 	_face = lerp_angle(wrapf(_face, -PI, PI), face, follow)
 	_bank = lerpf(_bank, bank, 1.0 - exp(-bank_follow * delta))
+	# Free look in a glide: the body twists round its own length to face the
+	# view, so looking behind lays it on its back (a backstroke) while the
+	# wings fly on, and a sidearm aims back past the feet.
+	var look_roll := 0.0
+	if flat and actor.flight.is_gliding and actor.cmd.free_look:
+		var off := wrapf(face, -PI, PI)
+		look_roll = -signf(off) * smoothstep(look_roll_start, look_roll_full, absf(off)) * PI
+	_look_roll = lerp_angle(_look_roll, look_roll, 1.0 - exp(-bank_follow * delta))
 	# A sideways air dash: one full roll over the dash; then the body rights
 	# itself the short way round.
 	if flat and actor.air_dash_left > 0.0 and absf(actor.air_dash_side) > 0.5:
@@ -1035,7 +1095,7 @@ func _update_glide(delta: float) -> void:
 	var angle := _tilt.length()
 	var tip := Basis(Vector3.UP.cross(_tilt / angle).normalized(), angle) if angle > 0.001 else Basis.IDENTITY
 	# A positive bank or twist rolls to the right: right side down.
-	var turn := tip * Basis(Vector3.UP, _face - _bank + _twist)
+	var turn := tip * Basis(Vector3.UP, _face - _bank + _twist + _look_roll)
 	_body_turn = turn
 	var pivot := Vector3(0, glide_pivot, 0)
 	transform = Transform3D(turn * Basis(Vector3.UP, PI), pivot - turn * pivot)
@@ -1051,7 +1111,9 @@ func _update_ride() -> void:
 	var vehicle: Node3D = actor.vehicle if not actor.is_dead else null
 	locomotion.ride = vehicle
 	if arm:
-		arm.ride_grip = locomotion.grip_hold()
+		# Both hands close round the phone while it is up.
+		var phone_grip := Vector2.ONE * smoothstep(0.0, 1.0, locomotion.phone_weight)
+		arm.ride_grip = locomotion.grip_hold().max(phone_grip)
 	if vehicle == null:
 		return
 	var free := _in_hand == null and _plan.is_empty()
@@ -1122,10 +1184,12 @@ func _pose_glide() -> void:
 	# The skin faces the model's way, turned half round from the actor.
 	var to_skeleton := _skeleton.basis.orthonormalized().inverse() * _model_basis_inverse() * Basis(Vector3.UP, PI)
 	var right := (to_skeleton * Vector3.RIGHT).normalized()
+	# How far over onto the back free look has rolled the body.
+	var back := smoothstep(0.35, 0.9, absf(_look_roll) / PI)
 	for limb: Array in _glide_arms:
 		if limb.is_empty():
 			continue
-		var arm_dir := glide_arm.lerp(boost_arm, smoothstep(0.0, 1.0, _boost))
+		var arm_dir := glide_arm.lerp(boost_arm, smoothstep(0.0, 1.0, _boost)).lerp(backstroke_arm, back)
 		var wanted := to_skeleton * Vector3(arm_dir.x * limb[3], arm_dir.y, arm_dir.z)
 		# Shooting or aiming, the arms keep their hold on the weapon.
 		var arm_w := w * (1.0 - smoothstep(0.0, 1.0, _flight_hold))
@@ -1133,10 +1197,11 @@ func _pose_glide() -> void:
 		_aim_bone(limb[1], limb[2], wanted, arm_w)
 	for limb: Array in _glide_legs:
 		if not limb.is_empty():
-			_pose_leg(limb, to_skeleton * Vector3(glide_leg.x * limb[3], glide_leg.y, glide_leg.z), right, w)
+			var leg := glide_leg.lerp(backstroke_leg, back)
+			_pose_leg(limb, to_skeleton * Vector3(leg.x * limb[3], leg.y, leg.z), right, w)
 	if _glide_neck >= 0:
 		var pose := _skeleton.get_bone_global_pose(_glide_neck)
-		pose.basis = Basis((to_skeleton * Vector3.RIGHT).normalized(), glide_look * w) * pose.basis
+		pose.basis = Basis((to_skeleton * Vector3.RIGHT).normalized(), lerpf(glide_look, backstroke_look, back) * w) * pose.basis
 		_skeleton.set_bone_global_pose(_glide_neck, pose)
 
 
