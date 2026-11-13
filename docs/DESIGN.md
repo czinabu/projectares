@@ -176,8 +176,9 @@ vehicle has a job:
   screens over the middle shows the bout to every seat. Its look is its own
   warm sci-fi night (Caleb's call): dark gunmetal, amber lit edges and red
   against blue, next to the hub's cool twilight, with a holographic crowd in
-  the stands and a ring of stadium floodlight towers (Caleb's call) that
-  light the floor so the fighters stand out.
+  the stands and a ring of stadium floodlight towers (Caleb's call) whose
+  white beams spread out over the floor to its edges, never meeting at one
+  point, so the fighters stand out.
 
 ## 3. The watch
 

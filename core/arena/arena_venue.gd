@@ -89,6 +89,13 @@ const DAIS_HEIGHT := 0.9
 ## stands on the rim wall.
 const FLOODLIGHTS := 12
 const FLOODLIGHT_HEIGHT := 12.0
+## Where the banks aim: swung this far round from the tower's own bearing,
+## at these distances from the center in turn, so the light spreads over the
+## floor out to the arena's edges (Caleb's call: never all at one point).
+const FLOODLIGHT_SWING := deg_to_rad(130.0)
+const FLOODLIGHT_REACH := [16.5, 12.5]
+## Floodlights are plain white (Caleb's call), apart from the venue's amber.
+const FLOOD_COLOR := Color(0.94, 0.97, 1.0)
 ## Colours of the look: amber for the venue, red and blue for the sides.
 const AMBER := Color(1.0, 0.55, 0.18)
 const SIDE_COLORS := [Color(1.0, 0.22, 0.16), Color(0.22, 0.45, 1.0)]
@@ -230,15 +237,15 @@ class Pit:
 		_stand_mat = Look.surface("concrete", {"tint": Color(0.4, 0.36, 0.34), "grime": 0.4, "scale": 0.25})
 		_stand_alt_mat = Look.surface("concrete", {"tint": Color(0.3, 0.27, 0.26), "grime": 0.5, "scale": 0.25})
 		Look.atmosphere(self, {
-			"sky_tint": Color(0.75, 0.45, 0.6),
+			"sky_tint": Color(0.5, 0.48, 0.72),
 			"sky_saturation": 0.7,
 			"sky_energy": 0.22,
-			"fog_color": Color(0.14, 0.08, 0.08),
+			"fog_color": Color(0.08, 0.08, 0.12),
 			"fog_density": 0.004,
 			"sun_color": Color(1.0, 0.7, 0.5),
 			"sun_energy": 0.25,
 			"sun_angles": Vector3(-35, 140, 0),
-			"ambient_color": Color(0.8, 0.6, 0.52),
+			"ambient_color": Color(0.72, 0.66, 0.68),
 			"ambient_energy": 1.8,
 			"exposure": 1.3,
 			"saturation": 1.0,
@@ -716,11 +723,11 @@ class Pit:
 	## night. Every tower glows and throws a soft beam through the haze; only
 	## every other one carries a real light, to keep the cost down.
 	func _dress_lights() -> void:
-		var centre := Look.lamp(AMBER, 2.0, 24.0)
+		var centre := Look.lamp(FLOOD_COLOR, 2.0, 24.0)
 		centre.position = Vector3(0, 13.0, 0)
 		add_child(centre)
 		var rim_top := WALL_HEIGHT + STAND_TIERS * TIER_RISE + 4.0
-		var lens := _glow_mat(Color(1.0, 0.92, 0.78), 6.0)
+		var lens := _glow_mat(FLOOD_COLOR, 6.0)
 		var beams := SurfaceTool.new()
 		beams.begin(Mesh.PRIMITIVE_TRIANGLES)
 		for i in FLOODLIGHTS:
@@ -738,7 +745,12 @@ class Pit:
 						_between(brace_from, brace_to))
 			# The lamp bank faces the middle, tipped down at the floor.
 			var head := foot + Vector3(0, FLOODLIGHT_HEIGHT + 1.4, 0) - out * 0.4
-			var target := -out * 6.0
+			# Each bank lights its own patch across the floor, swung round
+			# from straight across, so the beams spread over the floor
+			# instead of meeting in the middle.
+			var aim := bearing + FLOODLIGHT_SWING
+			var reach: float = FLOODLIGHT_REACH[i % FLOODLIGHT_REACH.size()]
+			var target := Vector3(cos(aim), 0, sin(aim)) * reach
 			var facing := Basis.looking_at(target - head, Vector3.UP)
 			_batch(_wall_mat).append_from(_box_mesh(Vector3(4.6, 2.8, 0.5)), 0, Transform3D(facing, head))
 			_glow(Vector3(4.8, 0.1, 0.55), Transform3D(facing, head + facing * Vector3(0, 1.45, 0)), AMBER, 2.5)
@@ -760,7 +772,7 @@ class Pit:
 			beams.append_from(cone, 0, _between(head + down * length, head))
 			if i % 2 == 0:
 				var spot := SpotLight3D.new()
-				spot.light_color = Color(1.0, 0.95, 0.88)
+				spot.light_color = FLOOD_COLOR
 				spot.light_energy = 9.0
 				spot.spot_range = 80.0
 				spot.spot_angle = 34.0
@@ -771,6 +783,7 @@ class Pit:
 		var beam_mesh := beams.commit()
 		var beam_mat := ShaderMaterial.new()
 		beam_mat.shader = load("res://assets/shaders/light_beam.gdshader") as Shader
+		beam_mat.set_shader_parameter("tint", FLOOD_COLOR)
 		beam_mesh.surface_set_material(0, beam_mat)
 		var beam_node := MeshInstance3D.new()
 		beam_node.name = "Beams"

@@ -4,7 +4,7 @@ shader_type spatial;
 // edges and toward its far end, so it has no hard sides.
 render_mode unshaded, blend_add, cull_disabled, depth_draw_never, shadows_disabled;
 
-uniform vec4 tint : source_color = vec4(1.0, 0.85, 0.65, 1.0);
+uniform vec4 tint : source_color = vec4(0.94, 0.97, 1.0, 1.0);
 uniform float strength = 0.045;
 
 void fragment() {
