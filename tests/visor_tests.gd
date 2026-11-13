@@ -19,6 +19,7 @@ static func run(t: Node) -> void:
 	await _zoom(t)
 	await _scan(t)
 	await _glass(t)
+	await _strip(t)
 	await _threat(t)
 	await _thermal(t)
 
@@ -747,4 +748,66 @@ static func _thermal(t: Node) -> void:
 	other.global_position = p.global_position + Vector3(0, 0.2, -60)
 	await t.frames(5)
 	t.check(not glass._embers.has(other), "and cannot be seen from far away")
+	await t._end_raid(raid)
+
+
+static func _strip(t: Node) -> void:
+	print("Visors: the heading strip, squad and roles")
+	t.check(VisorHud.role_name("zoom") == "RECON" and VisorHud.role_name("scan") == "INTEL"
+			and VisorHud.role_name("threat") == "TACTICAL" and VisorHud.role_name("thermal") == "THERMAL"
+			and VisorHud.role_name("") == "SCRAP", "every helmet has a role it shows as it comes on")
+	t.check(VisorHud.signature_text(0.5) == "SIG LOW" and VisorHud.signature_text(0.75) == "SIG MED"
+			and VisorHud.signature_text(1.6) == "SIG HIGH", "an Ember reads how warm its wearer looks")
+	var none: Array[Dictionary] = []
+	t.check(VisorHud.tracker_text(none, {}) == "", "with no contract held the tracker is blank")
+
+	var raid: Raid = await t._kit_raid(345, _kit("helm_warden"))
+	var p := raid.player
+	var glass := VisorHud.new()
+	glass.setup(raid, null)
+	raid.add_child(glass)
+	await t.frames(2)
+	var kinds := func() -> Array:
+		return glass.compass_marks(p).map(func(m: Dictionary) -> String: return m.kind)
+	t.check(raid.depots.is_empty() or "depot" in kinds.call(), "every working visor marks the nearest depot")
+	raid.war.intensity = 0.0
+	t.check(not "hot" in kinds.call(), "a quiet war has no hot zone on the strip")
+	raid.war.intensity = 0.8
+	t.check("hot" in kinds.call(), "a tactical visor marks where the war is hottest")
+	# Another player in the world: a squadmate only when they share a clan.
+	var other: Actor = raid.bots[0]
+	t.check(not VisorHud.squadmate(raid, p, other), "a bot is never on the squad")
+	var state := Raid.PlayerState.new()
+	state.actor = other
+	raid.players.append(state)
+	p.clan = "wolves"
+	other.clan = "ravens"
+	t.check(not VisorHud.squadmate(raid, p, other), "a player of another clan is never marked")
+	other.clan = "wolves"
+	t.check(VisorHud.squadmate(raid, p, other), "a clanmate is on the squad")
+	glass._process(0.016)
+	t.check(other in glass.squad and "squad" in kinds.call(), "and the strip marks where they are")
+	other.health.health = 0.0
+	other.is_dead = true
+	t.check(not VisorHud.squadmate(raid, p, other), "a fallen squadmate leaves the strip")
+	other.is_dead = false
+	raid.players.erase(state)
+	p.clan = ""
+	glass._process(0.016)
+	t.check(glass.squad.is_empty(), "alone, there is no squad to mark")
+	raid.pinged.emit(p, p.global_position + Vector3(10, 0, 0))
+	t.check("ping" in kinds.call(), "your own ping is marked on the strip")
+	for i in 3:
+		glass._process(raid.ping_time * 0.5)
+	t.check(not "ping" in kinds.call(), "and goes when the ping does")
+	glass.queue_free()
+	await t._end_raid(raid)
+
+	raid = await t._kit_raid(346, _kit("visor_scav"))
+	glass = VisorHud.new()
+	glass.setup(raid, null)
+	raid.add_child(glass)
+	await t.frames(2)
+	t.check(glass.compass_marks(raid.player).is_empty(), "a scrap visor marks nothing, only a bearing")
+	glass.queue_free()
 	await t._end_raid(raid)

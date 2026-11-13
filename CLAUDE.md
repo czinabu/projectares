@@ -350,9 +350,9 @@ without Caleb, and update the gap list when a PR closes a row.
 - Gear behavior comes from the item's `stats` in `ItemDB`, applied by
   `Loadout.equip`. Add a new gun or frame as data, not as a new class.
 - A loadout carries one primary, one melee weapon and one sidearm. Keys are by
-  type, not equip order: 1 primary, 2 sidearm, 3 melee, 4 power or special
-  weapon (`Actor.slot_order`, `weapon_for_key`); the mouse wheel cycles the
-  same order. Sidearms are firearms also tagged "sidearm";
+  type, not equip order: 1 primary, 2 sidearm, 3 melee, and a power or special
+  weapon from the watch only (`Actor.slot_order`, `weapon_for_key`); the
+  mouse wheel cycles the same order. Sidearms are firearms also tagged "sidearm";
   `Loadout.fits(slot, id)` decides what goes in a slot (a sidearm never fits
   the primary slot), and `Weapon.is_sidearm` marks one once equipped. Running
   the primary dry with the trigger held draws a loaded sidearm instead of
@@ -383,8 +383,12 @@ without Caleb, and update the gap list when a PR closes a row.
   labelled `LootContainer.RACK_LABEL`) at strongpoints, beside supply pods
   and sometimes beside a refilled cache, more often as `Raid.war` heats up,
   scaled by `WorldDef.power_weapon_rate` (0 in Frostline and the arena).
-  Taking one fills a fourth weapon slot (key 4) through `Loadout.set_power`;
-  one already carried goes on the rack with its shots. A spent one is thrown
+  Using a rack scans its weapon into the watch's heavy chamber, a fourth
+  weapon slot filled through `Loadout.set_power` with `draw` false; one
+  already carried goes on the rack with its shots. No key draws it and the
+  wheel skips it (`Actor.slot_order`, Caleb's call): it is summoned from the
+  watch's weapon carousel and materializes over `Loadout.summon_time`
+  (`Actor._draw_weapon`). A spent one is thrown
   away, a dead player's is left on a rack, and `StashRules.storable` refuses
   them, so they never reach a stash, a bag or a result. Online the swap
   reaches clients as `Actor.power_changed` through `NetSession`. Their art is
@@ -530,8 +534,17 @@ without Caleb, and update the gap list when a PR closes a row.
   only your always-in-view readings (the health arc with armor and stamina
   inside it and the ability's state under it, and with a flight rig the
   heat gauge and rig cue high on the right, `VisorHud._draw_vitals` and
-  `_draw_heat`; squad markers and the landing warning are still to come,
-  per DESIGN.md sections 3 and 5); do not put the map or standing there, they
+  `_draw_heat`; the landing warning is still to come, per DESIGN.md
+  section 5). Every working helmet also has a heading strip across the top,
+  bowed with the glass, that marks only what the wearer is already told
+  (`VisorHud.compass_marks`): squadmates (`VisorHud.squadmate`: a player in
+  the same clan, or everyone where `WorldDef.players_allied`; never a bot or
+  an enemy), the side's pings and the nearest depot, plus each helmet's own
+  finds (Spotter tags, Seeker scan snapshots, Warden the war's hot zone),
+  and the contract nearest done as a small tracker top left (`hud.contracts`).
+  Each helmet has a role it names as it comes on (`role_name`) and its own
+  reticle; an Ember also reads its wearer's own heat signature. A scrap
+  visor manages only a bearing. Do not put the map or standing there, they
   stay on the watch. Mk2
   helmets are never sold or dropped: like rigs, they are crafted from
   blueprints (DESIGN.md section 10), so no loot table may list them. Check the glass by eye with
@@ -582,8 +595,8 @@ without Caleb, and update the gap list when a PR closes a row.
   spot, `jump_speed` gives it a jump-jet hop, and the "aircraft" tag flies
   it (`Vehicle._fly`: takes off past `takeoff_speed` with jump, never
   hovers, drops below `stall_speed` or with nobody at the stick, climbs no
-  higher than `ceiling` over the world's ground). Jets are thrown only where
-  `WorldDef.open_skies`. A vehicle's `watch_recharge` and `footprint` stats
+  higher than `ceiling` over the world's ground). Every vehicle, the jet
+  included, can be thrown in every world (Caleb's call). A vehicle's `watch_recharge` and `footprint` stats
   set the watch's wait after a throw and the room it needs to unpack.
 - Toy vehicles: a vehicle a player owns in a world rides on their watch as
   a toy (`Raid.PlayerState.stowed`, read with `Raid.stowed_for`), never in
@@ -823,7 +836,13 @@ without Caleb, and update the gap list when a PR closes a row.
   front of the camera. Vitals go on the card only where the visor cannot
   show them (no helmet, or third person). The watch works in the home base
   too (`BaseHud.wrist`), its card saying what each icon holds for the next
-  deploy (`Hud.base_watch_slots`). Raised, the wrist comes up in front of
+  deploy (`Hud.base_watch_slots`), and there its Summon tab is the whole
+  collection (Caleb's call): every weapon and vehicle owned
+  (`HomeBase.watch_weapons`, `watch_vehicles`). A vehicle thrown at home
+  unpacks to be ridden in the base (`HomeBase.throw_toy`, `pack_vehicle`;
+  `Vehicle.local_only`, since no server runs it) and a weapon picked is
+  equipped through `equip_requested`. Out in a world summons work
+  everywhere, the plaza included. Raised, the wrist comes up in front of
   the eyes along the aim (`WeaponArm.watch_point`), so it is in view in
   first person wherever you look, and the forearm rolls so the face, worn
   on the back of the wrist (`Hud.Wrist.FACE_AXIS`), looks at the eyes

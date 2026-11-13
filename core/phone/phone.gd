@@ -107,7 +107,7 @@ const CONTROLS := [
 		["Fire", "{fire}"],
 		["Aim down sights", "Hold {alt_fire}"],
 		["Reload", "{reload}"],
-		["Primary / sidearm / melee / power weapon", "{weapon_1} {weapon_2} {weapon_3} {weapon_4}, or the wheel (watch down)"],
+		["Primary / sidearm / melee", "{weapon_1} {weapon_2} {weapon_3}, or the wheel (watch down)"],
 		["Put away, or draw again", "{holster}"],
 		["Use a medkit", "{heal}"],
 		["Use your ability", "{ability}"],
