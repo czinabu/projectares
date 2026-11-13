@@ -464,6 +464,10 @@ func _on_server_actor_spawned(actor: Actor) -> void:
 	actor.power_changed.connect(func(item_id: String, mag: int, reserve: int) -> void:
 		for peer in _joined_peers:
 			_power_changed.rpc_id(peer, id, item_id, mag, reserve))
+	# A helmet put on or taken off is seen by everyone, and its wearer's visor follows.
+	actor.helmet_changed.connect(func(item_id: String) -> void:
+		for peer in _joined_peers:
+			_helmet_changed.rpc_id(peer, id, item_id))
 	# A weapon summoned from the watch is shown to all.
 	actor.weapon_swapped.connect(func(item_id: String, mag: int, reserve: int) -> void:
 		for peer in _joined_peers:
@@ -1522,6 +1526,15 @@ func _power_changed(id: int, item_id: String, mag: int, reserve: int) -> void:
 	if actor == null or not is_instance_valid(actor) or (item_id != "" and not ItemDB.has_tag(item_id, "power")):
 		return
 	Loadout.set_power(actor, item_id, mag, reserve)
+
+
+## Client: someone put on a helmet or took theirs off. The server decided it.
+@rpc("authority", "call_remote", "reliable")
+func _helmet_changed(id: int, item_id: String) -> void:
+	var actor: Actor = _actors.get(id)
+	if actor == null or not is_instance_valid(actor) or (item_id != "" and not ItemDB.has_tag(item_id, "helmet")):
+		return
+	Loadout.wear_helmet(actor, item_id)
 
 
 ## Client: someone materialized a weapon out of their pack in place of the

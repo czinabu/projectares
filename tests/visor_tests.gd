@@ -14,6 +14,7 @@ const SCRAP: Array[String] = ["rifle_scrap", "blade_scrap", "jetpack_mk1", "plat
 static func run(t: Node) -> void:
 	_rules(t)
 	await _plain(t)
+	await _wear(t)
 	await _zoom(t)
 	await _scan(t)
 	await _glass(t)
@@ -98,6 +99,58 @@ static func _plain(t: Node) -> void:
 	p = raid.player
 	t.check("helm_seeker" in p.get_drop_items(), "a helmet drops with the rest of your gear when you die")
 	await t._end_raid(raid)
+
+
+static func _wear(t: Node) -> void:
+	print("Visors: putting helmets on from the pack")
+	var raid: Raid = await t._kit_raid(315, _kit("helm_spotter"))
+	var p := raid.player
+	var changes: Array[String] = []
+	p.helmet_changed.connect(func(id: String) -> void: changes.append(id))
+	p.inventory.add_item("helm_seeker")
+	var entries := Hud.weapon_entries(p)
+	var at := entries.map(func(e: Dictionary) -> String: return e.id).find("helm_seeker")
+	t.check(at >= 0 and int(entries[at].index) == -1, "a helmet carried in the pack is on the watch's carousel")
+	var slot := Hud.weapon_slot(raid, p, at)
+	t.check("Seeker Helmet · wear" in str(slot.detail) and "click" in slot.hints,
+			"picked on the carousel, a click puts it on")
+	p.visor.zoom_level = 1
+	t.check(raid.summon(p, "helm_seeker") == "" and p.visor.mode == "scan" and p.visor.item_id == "helm_seeker"
+			and p.visor.cooldown == 25.0 and p.visor.zoom_level == 0 and raid.summon_wait(p) <= 0.0,
+			"the summon puts it on at once, its visor is the new helmet's, and the watch need not rest")
+	t.check("helm_seeker" in p.gear_items and "helm_spotter" not in p.gear_items
+			and p.inventory.has_item("helm_spotter") and not p.inventory.has_item("helm_seeker"),
+			"the helmet taken off goes into the pack, and the one put on is worn gear")
+	t.check("helm_seeker" in p.get_drop_items() and "helm_spotter" in p.get_drop_items(),
+			"both drop on death: the worn one as gear, the other as loot")
+	t.check("helm_seeker" in raid.state_for(p).kit and "helm_spotter" not in raid.state_for(p).kit,
+			"the kit others are told about follows, so a late joiner sees the helmet worn now")
+	t.check(raid.swap_helmet(p, "helm_spotter") == "" and p.visor.mode == "zoom" and p.inventory.has_item("helm_seeker"),
+			"and the old one can go back on the same way")
+	t.check(raid.swap_helmet(p, "helm_ember") != "" and p.visor.item_id == "helm_spotter",
+			"a helmet not in the pack cannot be put on")
+	t.check(changes == ["helm_seeker", "helm_spotter"], "each change is announced for the view and the network")
+	Loadout.wear_helmet(p, "")
+	t.check(not p.visor.enabled and p.visor.mode == "" and p.visor.levels() == 0 and "helm_spotter" not in p.gear_items,
+			"taken off, the visor is bare")
+	await t._end_raid(raid)
+
+	var two := _kit("helm_warden")
+	two.append("helm_ember")
+	raid = await t._kit_raid(316, two)
+	p = raid.player
+	t.check(p.visor.mode == "threat" and p.inventory.has_item("helm_ember") and "helm_ember" not in p.gear_items,
+			"one head: a second helmet in a kit is only carried")
+	await t._end_raid(raid)
+
+	var fittings := {"": "Crack", "zoom": "Lens0", "scan": "Fin", "threat": "Brow", "thermal": "Lens"}
+	var built := true
+	for mode: String in fittings:
+		var model := SkinScript.build_helmet(mode, Color.WHITE, Vector3(0.27, 0.31, 0.31), Color.GRAY)
+		built = built and model.get_node_or_null("Shell") != null and model.get_node_or_null("Glass") != null \
+				and model.get_node_or_null(fittings[mode]) != null
+		model.free()
+	t.check(built, "every visor mode has a helmet model: a shell, its glass and its own fitting")
 
 
 static func _zoom(t: Node) -> void:
