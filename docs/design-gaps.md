@@ -14,7 +14,7 @@ rows marked **pre-playtest** come before the friends playtest.
 | Main hub as a safe social space | Built | The Concourse: safe zone, gates, shops, clan hall, arena gate, look tags. |
 | Hub vehicles limited to harmless fun | Partly | Bikes can be ridden in the plaza and nobody can be hurt. Not checked: whether parked bikes pack themselves away so the hub stays clear. |
 | Watch skins shown off in the hub | Missing | No watch skin items yet. |
-| Expand the main hub | Missing | Prerequisite for the hub activities below. Needs a tall, open skyline for ring courses and a ground bike track, a screens area to gather and watch, and space for the RC arena. |
+| Expand the main hub | Built | Built: an open district about 280 m across on a deck with no wall, a beacon spire, a kiosk arcade, eight towers with landing decks and skybridges at 15 m (boot reach), a gate terrace with spare arches, a bike loop, a big-screen amphitheatre and a clear pad for the RC arena. Sci-fi look: dark glass towers with lit seams, a glass arcade canopy, holo signs over the kiosks, holo-ads and light planters, a tiled floor. Still code-built greybox art; hand-made models can replace it later. |
 | Hub spectating screens and bounty board | Partly | Heat signs over the world gates already show war level, players, top bounty and events (`world_status`). Missing: a most-wanted board, arena results, live arena video (later). First hub activity. |
 | Hub ring races and time trials, with per-rig and bike leaderboards | Missing | Second hub activity, after the hub is expanded. |
 | Hub toy RC arena | Missing | Later; a separate little game. |
@@ -26,7 +26,7 @@ rows marked **pre-playtest** come before the friends playtest.
 | PvE world: quests, dungeons, bosses | Missing, deferred | Until after the friends playtest. Frostline stands in (no PvP, gentle death, basic loot). |
 | PvP world | Built | Ashfront: armies, strongpoints, war intensity, events, renown, full loot. |
 | Heavy weapons only in the PvP world | Built | `power_weapon_rate` is 0 in Frostline and the arena. |
-| Arena with loadouts locked in a bout | Built | The Pit: own loadout, no healing or vehicles, nobody loses gear. |
+| Arena with loadouts locked in a bout | Built | The Pit: own loadout, no healing or vehicles, nobody loses gear. A 40 m floor with cover for blades, guns and flight (pillars, platforms, rising barriers), fighters' tunnels with doors, a ceiling at 16 m, a ring of screens over the floor, and a navigation mesh for bots. Its own warm sci-fi night look: gunmetal and amber lit edges, red and blue sides, a holographic crowd, stadium floodlight towers and banners. |
 | World events: supply pods and warlords | Built | `Raid.event`, one at a time, sped up by the war. |
 | Supply meteor event (hot crater, contested 20 s core channel, heavy weapon, artifact chance, vehicle blueprint) | Missing | First new event, after the friends playtest. Vehicle blueprints are new too. |
 | Sky Leviathan event (airship with weak spots at three heights, drops loot along its path) | Missing | Later: needs the jet and the PvE world's boss work. |
@@ -35,13 +35,17 @@ rows marked **pre-playtest** come before the friends playtest.
 
 | Item | State | Notes |
 | --- | --- | --- |
-| Vitals, pack, ammo, heat, standing, strongpoints | Built | `Hud.Wrist`. |
+| Watch card: icons for map, pack, vehicle, heavy weapon, artifact, sign-out/banking | Built | `Hud.Wrist` and `Hud.watch_slots`: a card-sized hologram over the wrist; the mouse wheel steps across the icons (`PlayerController.watch_focus`) and the open one shows its line. Standing and strongpoints are on the map icon until the map and pings page exists. |
+| Vitals, heat and ammo always in view, off the watch | Built | First person with a helmet: health, armor and stamina arcs, heat gauge and the ability's state at the visor edges (`VisorHud._draw_vitals`, `_draw_heat`). Ammo is on the gun's counter. With no helmet, or in third person, the watch card carries the vitals as a thin strip. |
+| Map and pings page | Missing | Design: the watch holds the map and squad pings. |
+| Banking readout on the watch | Missing | Banking happens at depots; the watch should show what is banked. Comes with banking. |
 | Landing choices | Built | |
 | Vehicle carousel (toys) | Built | Pick, throw, unpack, pack back; holds two. |
 | Heavy weapon chamber | Missing | Today a power weapon fills key 4 from a rack. **Pre-playtest.** |
-| Per-rig readouts (stall line, height band, dash pips) | Missing | Comes with the aerial rig rework. **Pre-playtest.** |
+| Per-rig readouts (stall line, height band, dash pips) | Missing | Now part of the flight HUD (see Flight): at the visor edge and on the rig, not the watch. Comes with the aerial rig rework. **Pre-playtest.** |
 | Sign-out from the watch, with its countdown | Partly | Sign-out exists on L; not on the watch. |
 | Loadout swapping from the watch in the PvE world | Missing, deferred | With the PvE world. Today loadouts change only in a lobby or base. |
+| Raising the watch with the character's own left arm, first and third person | Partly | Third person the left arm now lifts the wrist in front of the chest (`WeaponArm.watch_at`, from `ActionPose.watch`, on the same timing as first person). Still missing: turning the wrist so the face points at the eyes, opening the hologram from the real wrist, other players seeing it (the raise is not replicated), and first person showing the character's own arm instead of the grey box forearm. |
 
 ## Loadout
 
@@ -50,7 +54,7 @@ rows marked **pre-playtest** come before the friends playtest.
 | Primary with attachments | Built | Four attachment slots, gunsmith bench. |
 | Sidearm | Built | Key 2, drawn automatically when the primary runs dry. |
 | Melee weapon | Built | Six types, directional, block and parry. |
-| Melee magnetic air-lunge | Missing | There is a ground heavy lunge and a dive slam onto targets below, but no lunge to an airborne enemy. After the playtest. |
+| Melee magnetic air-lunge | Built | A heavy in the air at an airborne foe within `air_lunge_range` and the aim cone homes on them through its windup; otherwise the dive slam. Ground heavies lunge to striking distance too. |
 | Flight rig | Partly | Three rigs exist, but not the agreed identities (next section). |
 | Gadget slot | Partly | The `ability` slot exists with Phase Step, Kinetic Barrier and Shock Pulse. The gadget list (DESIGN.md section 4) needs Caleb's pick before more are built. |
 | Goggles: helmet-slot visor with no protection, lighter, more fragile glass | Missing | Shows the customizer's face and hair. Needs the weight system for its trade. |
@@ -62,10 +66,14 @@ rows marked **pre-playtest** come before the friends playtest.
 | --- | --- | --- |
 | One 15 m/s cruise for every rig | Missing | Jetpack hovers at 10 m/s and boosts at 22; wings glide at 16; boots have no sustained flight. **Pre-playtest**, PR 1 of the proposal. |
 | Jetpack cruise and coast loop | Missing | PR 1. |
-| Wings: pulse, stall, barrel roll, sidearm-only while spread, slide landing | Missing | PR 1. Q/E only tilts today. |
+| Wings: pulse, stall, barrel roll, sidearm-only while spread, slide landing | Missing | PR 1. The barrel roll is now a sideways air dash (Shift + A / D); Q/E are gone. |
 | Boots as a skimming rig with height bands and air dashes | Missing | Today three quick kicks. PR 2. |
 | Air aim penalty, waived in each rig's steady state | Missing | No airborne spread in `Gun`. PR 1. |
+| Rig tiers Mk1 to Mk3, each with a ceiling (25, 60, 100 m over the ground) | Built | `FlightRig.ceiling`, `ItemDB.RIG_CEILINGS`. Only Mk1 drops; Mk2 and Mk3 wait for crafting from blueprints (DESIGN.md section 10), so nothing hands them out yet. No readout yet when you reach the ceiling (the jets just stop climbing); add one to the watch once the watch rework lands. |
+| Ring races with a leaderboard per tier as well as per rig | Missing | With the hub's ring courses. |
 | Overheat cuts the rig out until heat is back to 35 | Built | `recover_heat` 35. |
+| Flight HUD, first person: heat gauge, rig cue, squad markers and landing warning at the visor edges | Partly | Heat gauge and rig cue built (`VisorHud._draw_heat`); squad markers and landing warning missing. | New in DESIGN.md section 5. Extends `VisorHud`; the squad markers use the clan or team side. **Pre-playtest**, with the rig rework. |
+| Flight HUD, third person: heat and cue on the pack screen, glowing vents, landing warning pulse | Missing | The pack already carries a screen (`ActorSkin.stow_place` keeps it clear); vents are new rig art. With the row above. |
 
 ## Heavy weapons and artifacts
 
@@ -118,4 +126,13 @@ rows marked **pre-playtest** come before the friends playtest.
 | --- | --- | --- |
 | One everyday currency named scrip | Partly | Today scrip (carried, at stake) turns into a separate credits balance. Merge the names so the banked balance is scrip too. |
 | Hub cosmetics for scrip: skins, thruster trail colours, watch faces | Partly | The Tailor sells clothing; trail colours and watch faces are missing. |
-| Blueprints and tech cores, earned through risk, dropped on PvP death until banked | Missing | Unlock vehicles (mech, jet) and craft high-tier gadgets; unlocks, never raw power. Arrive with the meteor, PvE dungeons and arena rewards. |
+| Blueprints and tech cores, earned through risk, dropped on PvP death until banked | Missing | Vehicle blueprints unlock vehicles (mech, jet); tech cores craft high-tier gadgets. Arrive with the meteor, PvE dungeons and arena rewards. |
+| Mk1 blueprints for weapons and rigs as PvP drops, kept for good once extracted | Missing | DESIGN.md section 10. Replaces the old "unlocks, never raw power" rule. |
+| Upgrade data from hot zones, elites, players, contracts and bounties, kept only on extract | Missing | Steps a blueprint from Mk1 to Mk2 to Mk3. |
+| Crafting Mk2 and Mk3 at the gunsmith bench, with a mastery gate on Mk2 | Missing | Costs TBD. Mk2 and Mk3 rigs (#95) are crafted here; until then no rig above Mk1 is handed out. |
+| All drops base level (Mk1), better loot in the PvP world | Partly | Shops already sell only base level, and no loot table lists a rig or helmet above Mk1 (`tests/rig_tier_tests.gd` checks every world's tables). Mk2 and up wait for crafting, so nothing hands them out yet. |
+| Mastery unlocks attachments and mods | Partly | Mastery unlocks sidegrade variants today; attachments and fire modes as unlocks are missing. |
+| Contracts: daily, weekly and rare high-risk, from a board in the hub, tracked on the watch and visor, counted on extract | Missing | Mostly counters on events already tracked. |
+| Bounties on hot players, paid on extract, tied to the most-wanted board | Partly | Renown, bounties and the Marked exist in the PvP world; payouts in upgrade data and the board are missing. |
+| Safety nets: free Mk1 kit, one insured item, salvage on loss | Partly | The free `starter` scrap kit exists. Insurance and salvage are missing. |
+| Prestige vehicles and rigs from hard feats | Missing | List TBD. |

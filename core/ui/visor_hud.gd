@@ -6,8 +6,10 @@ extends Control
 ## helmet is worn: the visor projects its readouts into your view. It is a
 ## display of thin lines of light, never a frame: nothing is blacked out or
 ## tinted, and nothing sits over the middle of the view but the reticle.
-## Every helmet has a health arc on the left; a working one has its system
-## on an arc on the right, a ring around the crosshair, and its height
+## Every helmet has your vitals on the left: a health arc, with armor and
+## stamina as thinner arcs inside it, and the ability's state under it. With
+## a flight rig worn, its heat gauge and cue sit high on the right. A working
+## helmet has its system on an arc on the right, a ring around the crosshair, and its height
 ## readout in the air. The rest depends on the visor's `mode` (see `Visor`):
 ## a compass, range finder, lock-on brackets and binocular scale for "zoom",
 ## a sweep and contact count for "scan"; for "threat" the health of whoever
@@ -52,6 +54,8 @@ var alert_fade := 0.7
 ## How far the brackets lock on to someone, and how fast they close.
 var lock_range := 220.0
 var lock_rate := 6.0
+## The armor arc's colour (stamina takes the glass's own).
+const ARMOR_INK := Color(0.5, 0.75, 1.0)
 
 var raid: Raid
 var controller: PlayerController
@@ -518,6 +522,7 @@ func _draw() -> void:
 			return
 		_draw_cracks(ink)
 	_draw_vitals(p, ink, centre)
+	_draw_heat(p, ink, centre)
 	if v.mode != "":
 		_draw_reticle(ink, centre)
 		_draw_altitude(p, ink, centre)
@@ -601,8 +606,10 @@ func _ticks(centre: Vector2, radius: float, from: float, to: float, step: float,
 		angle += step
 
 
-## The left arc: health, as a row of segments that empties from the top. It
-## is the only thing the visor repeats from the wrist. Hurt, it goes red.
+## The left arc: health, as a row of segments that empties from the top,
+## with armor and then stamina as thin arcs just inside it, and the
+## ability's state under it. These are your always-in-view readings: the
+## watch no longer carries them. Hurt, the health arc goes red.
 func _draw_vitals(p: Actor, ink: Color, centre: Vector2) -> void:
 	var share := clampf(p.health.health / maxf(p.health.max_health, 1.0), 0.0, 1.0)
 	var radius := size.y * 0.43
@@ -620,8 +627,68 @@ func _draw_vitals(p: Actor, ink: Color, centre: Vector2) -> void:
 		var beat := 0.6 + 0.4 * sin(_time * 9.0) if low else 1.0
 		draw_arc(centre, radius - 6.0, a0, a1, 4,
 				_lit(color, 0.85 * beat, not low), 3.0, true)
+	# Armor and stamina: thin unbroken arcs inside, filling the same way.
+	var armor := clampf(p.health.armor / p.health.max_armor, 0.0, 1.0) if p.health.max_armor > 0.0 else -1.0
+	var stamina := clampf(p.stamina / maxf(p.max_stamina, 1.0), 0.0, 1.0)
+	var inner := radius - 13.0
+	for reading: Array in [[armor, ARMOR_INK], [stamina, ink]]:
+		var value: float = reading[0]
+		if value < 0.0:
+			continue
+		var tint: Color = reading[1]
+		draw_arc(centre, inner, PI - half, PI + half, 32, _lit(tint, 0.14), 1.0, true)
+		if value > 0.0:
+			draw_arc(centre, inner, PI + half - 2.0 * half * value, PI + half, 32,
+					_lit(tint, 0.7, value > 0.3), 2.0, true)
+		inner -= 5.0
 	if low:
 		_text(centre + Vector2(-radius + 16.0, 4.0), "CRITICAL", _lit(color, 0.6 + 0.4 * sin(_time * 9.0), false))
+	var ability := ability_text(p.ability)
+	if ability != "":
+		var ready := p.ability.cooldown_left <= 0.0 and not p.ability.is_active()
+		_text(centre + Vector2(-radius + 4.0, size.y * 0.43 * sin(half) + 22.0), ability,
+				_lit(ink, 0.85, not ready))
+
+
+## The ability's state under the vitals: its name when ready, the seconds
+## left while it runs or recharges, "" with none.
+static func ability_text(ability: Ability) -> String:
+	if not ability.enabled:
+		return ""
+	var name := ability.display_name.to_upper()
+	if ability.is_active():
+		return "%s %.1f" % [name, ability.active_left]
+	if ability.cooldown_left > 0.0:
+		return "%s %d" % [name, ceili(ability.cooldown_left)]
+	return name
+
+
+## High on the right, while a flight rig is worn: its heat as a gauge that
+## fills upward and warms from green to red, with a notch at the heat it
+## must cool to after an overheat, and the rig's cue under it
+## (`Hud.rig_text`). It brightens as it gets hot.
+func _draw_heat(p: Actor, _ink: Color, centre: Vector2) -> void:
+	var rig := p.flight
+	if not rig.enabled:
+		return
+	var heat := rig.heat_fraction()
+	var color := Hud.heat_color(heat, rig.overheated)
+	var radius := size.y * 0.43
+	# High on the right, above the system arc: clear of the gun in the hand.
+	var bottom := -0.46
+	var top := bottom - 0.3 * _swept()
+	var hot := rig.overheated or heat > 0.6
+	draw_arc(centre, radius, top, bottom, 24, _lit(color, 0.22), 1.0, true)
+	if heat > 0.0:
+		# Fills from the bottom end upward, away from the system arc.
+		draw_arc(centre, radius - 6.0, bottom - (bottom - top) * heat, bottom, 24, _lit(color, 0.9, not hot), 4.0, true)
+	var notch := bottom - (bottom - top) * clampf(rig.recover_heat / maxf(rig.max_heat, 1.0), 0.0, 1.0)
+	var dir := Vector2(cos(notch), sin(notch))
+	draw_line(centre + dir * (radius - 11.0), centre + dir * (radius + 3.0), _lit(color, 0.6, not hot), 1.0, true)
+	var end := centre + Vector2(cos(top), sin(top)) * radius
+	var cue := Hud.rig_text(p).to_upper()
+	_text(end + Vector2(-10.0, -10.0), Hud.heat_text(rig) + ("   " + cue if cue != "" else ""),
+			_lit(color, 0.9, not hot), HORIZONTAL_ALIGNMENT_RIGHT, 320.0)
 
 
 ## The right arc: the helmet's own system. How full it is shows a recharge,

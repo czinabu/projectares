@@ -32,11 +32,12 @@ const STANCE_CONTROL_HINTS := [
 ]
 ## Where the held weapon sits relative to the camera in first-person.
 const VehicleScript := preload("res://core/vehicle/vehicle.gd")
+const FirstPersonArms := preload("res://core/visual/first_person_arms.gd")
 ## Where a toy vehicle sits in the hand, and how big it is drawn there next
 ## to a thrown toy (it is close to the eye in first person).
 const TOY_IN_HAND := Vector3(-0.08, 0.0, 0.1)
 const TOY_HAND_SIZE := 0.55
-const FIRST_PERSON_HAND := Vector3(0.32, -0.3, -0.75)
+const FIRST_PERSON_HAND := Vector3(0.16, -0.19, -0.3)
 
 var actor: Actor
 var camera: Camera3D
@@ -46,18 +47,62 @@ var invert_y := false
 ## Set while the phone is open: the character stands still and the mouse is
 ## left alone, so you can tap and type.
 var input_blocked := false
+## Set while the phone is out (`Main`): the character holds it up, which
+## everyone else sees (`ActorCommand.phone`), and the weapon is put away in
+## the view until the phone is.
+var phone_out := false
 ## Set while a mirror stands in front of you (1-20, 0 for none). In first
 ## person your body stays drawn on this render layer, which this camera leaves
 ## out, so the mirror's camera can still show it.
 var body_layer := 0
-var third_person_distance := 3.8
-var third_person_aim_distance := 2.2
-## Camera distance while riding a vehicle, which is bigger than a person.
-var ride_distance := 5.2
+## How far behind the eyes the third-person camera sits, in meters: a view
+## over the right shoulder (the phone's "Camera distance" setting). Aiming
+## moves in to `aim_distance_ratio` of it.
+var third_person_distance := 2.0
+var aim_distance_ratio := 0.6
+## A vehicle is bigger than a person: riding sits this much further back.
+var ride_extra_distance := 1.6
 ## The view used while riding. It starts in third-person and V switches it,
 ## separately from the on-foot view, which comes back when you get off.
 var ride_view := ViewMode.THIRD
 var base_fov := 80.0
+## First person moves the held weapon by the actor's `ActionPose`, the same
+## state that moves the model's arm third person: melee reach is scaled by
+## `first_person_reach` (the hand is nearer the eye than a shoulder is) and
+## the shoulder turn swings the hand round the eye by `first_person_turn` of
+## it. A switch drops the hand toward the holster's side to
+## `first_person_stow` (camera space, x taken from the holster) and tips it
+## by `first_person_stow_tilt`, out of view.
+var first_person_reach := 0.45
+var first_person_turn := 0.35
+## The nearest the hand comes to the eye (m, straight ahead) and the furthest
+## it goes to either side, in first person.
+var first_person_near := 0.4
+var first_person_side := 0.3
+## A cocked hand is kept at least this far off the middle of the view (as
+## sideways over ahead), so a windup's arm comes in from the edge instead of
+## covering what you are about to hit. It fades out through the swing.
+var first_person_clear := 0.5
+var first_person_stow := Vector3(0.0, -0.7, -0.4)
+var first_person_stow_tilt := Vector3(-1.1, 0.0, 0.0)
+## Speed widens the view a little, so a boost, a dive or a bike reads as
+## fast: up to `speed_fov` degrees more, from a sprint's speed up to
+## `speed_fov_at` m/s. Never while aiming or zoomed.
+var speed_fov := 9.0
+var speed_fov_at := 26.0
+## A landing dips the view by the speed you came down at (m per m/s, up to
+## `land_dip_max` m) and springs back.
+var land_dip := 0.016
+var land_dip_max := 0.25
+## Recoil. A shot's kick reaches the view over a few frames, not in one
+## (`recoil_snap`, per second). Once the trigger rests for
+## `recoil_settle_delay`, the view comes back down by `recoil_return` of the
+## kick you did not pull down against yourself (`recoil_settle`, per second),
+## so paced shots return to the aim point and a spray you fight stays put.
+var recoil_snap := 45.0
+var recoil_return := 1.0
+var recoil_settle_delay := 0.1
+var recoil_settle := 9.0
 ## True while the player has the watch on their wrist raised to read it
 ## (the `check_wrist` key toggles it). Only the HUD reads it.
 var wrist_raised := false
@@ -86,6 +131,14 @@ var yaw := 0.0
 var pitch := 0.0
 ## Which toy on the raised watch is picked out, counting from 0.
 var watch_index := 0
+## The icon open on the raised watch's card (`Hud.Wrist.SLOTS`), counting
+## from 0. The mouse wheel moves it across the card, one icon a notch, and on
+## the vehicle icon it turns through the toys before moving on. The HUD sets
+## it to the icon it would open on its own until the wheel turns
+## (`watch_focus_moved`). The mouse only looks, so the view never drifts
+## while you read the card. View only.
+var watch_focus: int = Hud.Wrist.SLOTS.find("vehicle")
+var watch_focus_moved := false
 var _toy_node: Node3D
 var _cam_dist := 0.0
 var _pending_switch := -1
@@ -94,6 +147,27 @@ var _visor_level := 0
 var _flick := Vector2.ZERO
 var _rng := RandomNumberGenerator.new()
 var _thrust_audio: AudioStreamPlayer
+## Kick still on its way to the view (x pitch, y yaw, radians), the kick the
+## view is holding that has yet to settle back, and seconds since a shot.
+var _kick_coming := Vector2.ZERO
+var _kick_held := 0.0
+var _since_shot := 99.0
+## The landing dip: how far the view is pushed down, and its speed.
+var _dip := 0.0
+var _dip_speed := 0.0
+## A blade strike that connects jolts the view the way it swung, a parry
+## throws it back, and a cut taken flinches it. View only: it never moves the
+## aim (`pitch`, `yaw`), and springs back on its own.
+var melee_kick_deg := 1.4
+var parry_kick_deg := 3.0
+var flinch_deg := 1.2
+var _shake := Vector2.ZERO
+var _shake_speed := Vector2.ZERO
+var _speed_fov_now := 0.0
+## Your own arms in first person, and the look they were built for.
+var _arms: Node3D
+var _arms_look := {}
+var _arms_failed := false
 
 
 func setup(p_actor: Actor) -> void:
@@ -115,8 +189,12 @@ func _ready() -> void:
 		var gun := weapon as Gun
 		if gun:
 			gun.fired.connect(_on_gun_fired.bind(gun))
+		var blade := weapon as MeleeWeapon
+		if blade:
+			blade.contact.connect(_on_blade_contact.bind(blade))
 	actor.hit_confirmed.connect(_on_hit_confirmed)
 	actor.health.damaged.connect(_on_damaged)
+	actor.landed.connect(_on_landed)
 	var thrust_stream := Sfx.get_stream("thrust")
 	if thrust_stream:
 		_thrust_audio = AudioStreamPlayer.new()
@@ -140,9 +218,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		yaw -= event.relative.x * turn
 		var vertical: float = -event.relative.y if invert_y else event.relative.y
 		pitch = clampf(pitch - vertical * turn, -1.5, 1.5)
+		# Pulling down against a spray: that much kick is yours, not the
+		# gun's, and will not be given back.
+		_kick_held = maxf(0.0, _kick_held - maxf(vertical * turn, 0.0))
 		_flick += event.relative
-	elif event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
-		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if captured else Input.MOUSE_MODE_CAPTURED
 	elif event is InputEventMouseButton and event.pressed and not captured:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	elif event is InputEventMouseButton and event.pressed \
@@ -152,6 +231,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		toggle_view()
 	elif event.is_action_pressed("check_wrist"):
 		wrist_raised = not wrist_raised
+		watch_focus_moved = false
 	elif event.is_action_pressed("melee_control"):
 		toggle_stance_control()
 	elif event.is_action_pressed("sign_out"):
@@ -180,11 +260,17 @@ func pack_target() -> Node3D:
 	return found if found is Node3D and found.get("rider") == null else null
 
 
-## True while the watch is up with toy vehicles on it to pick from: the wheel
-## turns through them and fire takes the picked one into the hand.
+## True while the watch is up with toy vehicles on it to pick from.
 func is_browsing_toys() -> bool:
 	return wrist_raised and held_toy == "" and actor != null and is_instance_valid(actor) \
 			and not actor.is_dead and not is_riding() and not watch_toys().is_empty()
+
+
+## True while the card is open on the vehicle icon with toys to pick from:
+## the wheel turns through them and fire takes the picked one into the hand.
+## Before the wheel turns the card opens on the vehicles on its own.
+func is_picking_toys() -> bool:
+	return is_browsing_toys() and (not watch_focus_moved or watch_focus == Hud.Wrist.SLOTS.find("vehicle"))
 
 
 ## Fire with the watch up: packs the vehicle being looked at onto the watch,
@@ -194,18 +280,48 @@ func click_watch() -> bool:
 	if pack_target() != null:
 		pack_requested.emit()
 		return true
-	if is_browsing_toys():
+	if is_picking_toys():
 		take_picked_toy()
 		return true
 	return false
 
 
-## The mouse wheel: the next weapon, or with the watch up, the next toy on it.
+## The mouse wheel: the next weapon, or with the watch up, the next icon on
+## its card (`step` 1 is down the wheel, to the right). With the watch up the
+## wheel never switches weapons.
 func scroll(step: int) -> void:
-	if is_browsing_toys():
-		watch_index = posmod(watch_index + step, watch_toys().size())
+	if is_watch_up():
+		step_watch(step)
 	else:
 		_pending_switch = actor.cycle_weapon_index(step)
+
+
+## True while the raised watch takes the wheel: up, and you are alive.
+func is_watch_up() -> bool:
+	return wrist_raised and actor != null and is_instance_valid(actor) and not actor.is_dead
+
+
+## Moves the watch card's open icon `step` along (`Hud.Wrist.SLOTS`). On the
+## vehicle icon with toys to pick, the wheel turns through them first, and
+## steps off the icon past the first or last toy. Stops at the card's ends.
+func step_watch(step: int) -> void:
+	if step == 0:
+		return
+	var count: int = Hud.Wrist.SLOTS.size()
+	var vehicle: int = Hud.Wrist.SLOTS.find("vehicle")
+	watch_focus = clampi(watch_focus, 0, count - 1)
+	watch_focus_moved = true
+	var toys := watch_toys().size() if is_browsing_toys() else 0
+	if watch_focus == vehicle and toys > 1:
+		var next := watch_index + signi(step)
+		if next >= 0 and next < toys:
+			watch_index = next
+			return
+	var was := watch_focus
+	watch_focus = clampi(watch_focus + signi(step), 0, count - 1)
+	# Coming onto the vehicles from the right starts on the last toy.
+	if watch_focus == vehicle and was != vehicle and toys > 0:
+		watch_index = 0 if step > 0 else toys - 1
 
 
 ## Takes the picked toy off the raised watch, and lowers the wrist to throw.
@@ -314,13 +430,14 @@ func _physics_process(delta: float) -> void:
 		return
 	var cmd := actor.cmd
 	cmd.clear_one_shots()
+	cmd.phone = phone_out
 	if input_blocked:
 		# Hands on the phone: let go of everything, keep facing the same way.
 		cmd.move = Vector2.ZERO
 		cmd.sprint = false
 		cmd.jump = false
 		cmd.descend = false
-		cmd.roll = 0
+		cmd.free_look = false
 		cmd.primary = false
 		cmd.secondary = false
 		cmd.switch_weapon = -1
@@ -340,13 +457,16 @@ func _physics_process(delta: float) -> void:
 	_flick *= exp(-flick_decay * delta)
 	cmd.stance = stance
 	cmd.sprint = Input.is_action_pressed("sprint")
+	cmd.sprint_pressed = Input.is_action_just_pressed("sprint")
 	cmd.jump = Input.is_action_pressed("jump")
 	cmd.jump_pressed = Input.is_action_just_pressed("jump")
 	cmd.dash = Input.is_action_just_pressed("dash")
 	cmd.slide = Input.is_action_just_pressed("slide")
 	cmd.descend = Input.is_action_pressed("slide")
-	cmd.roll = int(Input.is_action_pressed("roll_right")) - int(Input.is_action_pressed("roll_left"))
+	cmd.free_look = Input.is_action_pressed("free_look")
 	if cmd.dash and actor.stamina >= actor.dash_stamina:
+		Sfx.play("dash", null, -6.0)
+	elif cmd.sprint_pressed and not actor.is_on_floor() and actor.flight.enabled and not actor.flight.overheated:
 		Sfx.play("dash", null, -6.0)
 	cmd.primary = captured and Input.is_action_pressed("fire")
 	cmd.primary_pressed = captured and Input.is_action_just_pressed("fire")
@@ -354,7 +474,7 @@ func _physics_process(delta: float) -> void:
 	cmd.secondary_pressed = captured and Input.is_action_just_pressed("alt_fire")
 	if held_toy != "":
 		_use_toy_hand(cmd)
-	elif is_browsing_toys() or pack_target() != null:
+	elif is_picking_toys() or pack_target() != null:
 		# With the watch up and something for it to do, fire works the watch.
 		if cmd.primary_pressed:
 			click_watch()
@@ -368,6 +488,7 @@ func _physics_process(delta: float) -> void:
 	if cmd.visor_pressed:
 		_visor_level = next_visor_level(actor.visor, _visor_level)
 	cmd.visor_level = _visor_level
+	cmd.watch_up = wrist_raised and not actor.is_dead
 	var key_slot := -1
 	for n in range(1, 5):
 		if Input.is_action_just_pressed("weapon_%d" % n):
@@ -414,14 +535,16 @@ func _process(delta: float) -> void:
 	var aiming := weapon != null and weapon.is_aiming()
 	var target_dist := 0.0
 	if _wants_third_person():
-		var far := ride_distance if is_riding() else third_person_distance
-		target_dist = third_person_aim_distance if aiming else far
+		target_dist = view_distance(aiming)
 	_cam_dist = lerpf(_cam_dist, target_dist, 1.0 - exp(-12.0 * delta))
 	if absf(_cam_dist - target_dist) < 0.01:
 		_cam_dist = target_dist
 
-	var look := Basis.from_euler(Vector3(pitch, yaw, 0.0))
-	var pivot := actor.get_eye_position()
+	_update_recoil(delta)
+	_update_dip(delta)
+	_update_shake(delta)
+	var look := Basis.from_euler(Vector3(pitch + _shake.y, yaw + _shake.x, 0.0))
+	var pivot := actor.get_eye_position() - Vector3(0.0, _dip, 0.0)
 	var t := minf(_cam_dist / third_person_distance, 1.0)
 	var desired := pivot + look * Vector3(0.6 * t, 0.3 * t, _cam_dist)
 	if _cam_dist > 0.05:
@@ -431,7 +554,9 @@ func _process(delta: float) -> void:
 		if not hit.is_empty():
 			desired = pivot + (hit.position - pivot) * 0.85
 	camera.global_transform = Transform3D(look, desired)
-	var fov := aim_fov(weapon) if aiming else wanted_base_fov()
+	var speeding := 0.0 if aiming or _zoom() > 1.0 else speed_fov_for(_view_speed())
+	_speed_fov_now = lerpf(_speed_fov_now, speeding, 1.0 - exp(-4.0 * delta))
+	var fov := aim_fov(weapon) if aiming else wanted_base_fov() + _speed_fov_now
 	if _zoom() > 1.0:
 		fov = zoomed_fov(wanted_base_fov(), _zoom())
 	camera.fov = lerpf(camera.fov, fov, 1.0 - exp(-14.0 * delta))
@@ -449,20 +574,93 @@ func _process(delta: float) -> void:
 	# In first-person the weapon is held in front of the camera; otherwise it
 	# rests on the body, where the Actor poses it. In front of a mirror the
 	# hands are on the phone, so it rests on the body there too.
-	first_person = first_person and not for_mirror
+	first_person = first_person and not for_mirror and not phone_out
 	actor.hand_override = first_person
 	var sight := _sight_of(weapon) if first_person else null
 	_sight_blend = move_toward(_sight_blend, 1.0 if aiming and sight != null else 0.0, delta * 7.0)
 	sighted = _sight_blend > 0.9
 	if first_person:
-		var hand_at := FIRST_PERSON_HAND
+		var pose := ActionPose.of(actor)
+		pose.advance(delta)
+		var hold := first_person_hold(pose)
 		if sight != null and _sight_blend > 0.0:
 			# Raise the gun so its optic's eye point is at the eye: the view
 			# then looks straight down the sight.
 			var in_hand := actor.hand.global_transform.affine_inverse() * sight.global_transform.origin
 			var lined_up := Vector3(0, 0, -eye_relief) - in_hand
-			hand_at = FIRST_PERSON_HAND.lerp(lined_up, _sight_blend)
-		actor.hand.global_transform = camera.global_transform * Transform3D(Basis.IDENTITY, hand_at)
+			hold = hold.interpolate_with(Transform3D(Basis.IDENTITY, lined_up), _sight_blend)
+		actor.hand.global_transform = camera.global_transform * hold
+		actor.hand.set_meta("shown", actor.hand.global_transform)
+	_update_arms(first_person)
+
+
+## Shows your own arms holding the weapon in first person (when the art
+## layer is on and the character has arms to copy).
+func _update_arms(first_person: bool) -> void:
+	if not Look.enabled or not actor.has_node("Skin"):
+		return
+	var wanted: Dictionary = {"skin": actor.get_meta("look", Look.DEFAULT_SKIN), "appearance": actor.get_meta("appearance", {})}
+	if _arms != null and wanted != _arms_look:
+		_arms.queue_free()
+		_arms = null
+		_arms_failed = false
+	if _arms == null and not _arms_failed:
+		_arms_look = wanted
+		_arms = FirstPersonArms.new()
+		_arms.name = "FirstPersonArms"
+		_arms.look = Look
+		_arms.actor = actor
+		_arms.camera = camera
+		camera.add_child(_arms)
+		if not _arms.build(wanted["skin"], wanted["appearance"]):
+			_arms.queue_free()
+			_arms = null
+			_arms_failed = true
+			return
+	if _arms != null:
+		_arms.update(first_person, ActionPose.of(actor).watch, held_toy != "")
+
+
+## True while your own arms are drawn in first person.
+func has_arms() -> bool:
+	return _arms != null and is_instance_valid(_arms)
+
+
+## Where the weapon hand goes in first person, in the camera's space: the
+## resting hold moved by the same shared pose the third-person arm follows
+## (melee reach and shoulder turn, a reload, the low ready, a switch).
+func first_person_hold(pose: ActionPose) -> Transform3D:
+	var at := FIRST_PERSON_HAND
+	var basis := Basis.IDENTITY
+	if pose == null:
+		return Transform3D(basis, at)
+	at += pose.reach * (first_person_reach * pose.reach_weight)
+	var gun := pose.gun_offset(true)
+	at += gun.origin
+	basis = gun.basis
+	var swing := Basis(Vector3.UP, pose.turn.x * first_person_turn) * Basis(Vector3.RIGHT, pose.turn.y * first_person_turn)
+	at = swing * at
+	basis = swing * basis
+	# However a pose moves it, the hand stays far enough out in front that
+	# the arm holding it does not fill the view.
+	if pose.reach_weight > 0.0:
+		at.z = lerpf(at.z, minf(at.z, -first_person_near), pose.reach_weight)
+		at.x = lerpf(at.x, clampf(at.x, -first_person_side, first_person_side), pose.reach_weight)
+		var off := Vector2(at.x, at.y)
+		var clear := first_person_clear * -at.z
+		if off.length() < clear:
+			var way := off.normalized() if off.length() > 0.03 else Vector2(0.8, 0.6)
+			var w := pose.reach_weight * pose.elbow_raise
+			at.x = lerpf(at.x, way.x * clear, w)
+			at.y = lerpf(at.y, way.y * clear, w)
+	if pose.switch_weight > 0.0:
+		var side := clampf(pose.switch_point.x, -0.45, 0.45)
+		var stow := Vector3(side, first_person_stow.y, first_person_stow.z)
+		var tip := Basis.from_euler(first_person_stow_tilt + Vector3(0.0, 0.0, -0.5 * side))
+		var w := smoothstep(0.0, 1.0, pose.switch_weight)
+		at = at.lerp(stow, w)
+		basis = basis.slerp(tip, w)
+	return Transform3D(basis, at)
 
 
 ## The field of view while aiming `weapon`: optics zoom further in.
@@ -485,24 +683,123 @@ func _zoom_scale() -> float:
 
 
 ## Each shot kicks the view up and a little sideways. The player pulls down to
-## hold a spray on target.
+## hold a spray on target. The kick arrives and settles in `_update_recoil`.
 func _on_gun_fired(_from: Vector3, _to: Vector3, gun: Gun) -> void:
 	var scale := 0.6 if gun.is_aiming() else 1.0
-	pitch = clampf(pitch + deg_to_rad(gun.recoil_kick_deg) * scale, -1.5, 1.5)
-	yaw += deg_to_rad(_rng.randf_range(-gun.recoil_side_deg, gun.recoil_side_deg)) * scale
+	_kick_coming.x += deg_to_rad(gun.recoil_kick_deg) * scale
+	_kick_coming.y += deg_to_rad(_rng.randf_range(-gun.recoil_side_deg, gun.recoil_side_deg)) * scale
+	_since_shot = 0.0
+
+
+## Moves the kick of recent shots into the view, and lets the view settle
+## back down once the trigger rests.
+func _update_recoil(delta: float) -> void:
+	_since_shot += delta
+	if _kick_coming.length() > 0.00001:
+		var step := _kick_coming * (1.0 - exp(-recoil_snap * delta))
+		_kick_coming -= step
+		var before := pitch
+		pitch = clampf(pitch + step.x, -1.5, 1.5)
+		yaw += step.y
+		_kick_held += (pitch - before) * recoil_return
+	else:
+		_kick_coming = Vector2.ZERO
+	if _since_shot >= recoil_settle_delay and _kick_held > 0.0:
+		var back := _kick_held * (1.0 - exp(-recoil_settle * delta)) if _kick_held > 0.0005 else _kick_held
+		_kick_held -= back
+		pitch = clampf(pitch - back, -1.5, 1.5)
+
+
+## The view dips on a landing and springs back.
+func _on_landed(impact_speed: float) -> void:
+	_dip_speed += minf(impact_speed * land_dip, land_dip_max) * 36.0
+
+
+func _update_dip(delta: float) -> void:
+	if is_zero_approx(_dip) and is_zero_approx(_dip_speed):
+		return
+	# A critically damped spring: down fast, back without a bounce. Stepped
+	# in short slices, since one long frame (a hitch, a slow machine) would
+	# otherwise throw the spring off and the camera with it.
+	var left := delta
+	while left > 0.0:
+		var step := minf(left, 1.0 / 120.0)
+		_dip_speed += (-180.0 * _dip - 26.8 * _dip_speed) * step
+		_dip += _dip_speed * step
+		left -= step
+	if absf(_dip) < 0.0005 and absf(_dip_speed) < 0.005:
+		_dip = 0.0
+		_dip_speed = 0.0
+
+
+## How fast the player is travelling, for the view: their ride's speed on a vehicle.
+func _view_speed() -> float:
+	if actor.vehicle != null:
+		return absf(float(actor.vehicle.get("speed")))
+	return actor.velocity.length()
+
+
+## Degrees the view widens at `speed` m/s: none up to a sprint, all of
+## `speed_fov` from `speed_fov_at`.
+func speed_fov_for(speed: float) -> float:
+	return speed_fov * smoothstep(actor.sprint_speed, speed_fov_at, speed)
+
+
+## The blade reached someone: answer now, before the server's word (which
+## still drives the hit marker). The sound and the jolt follow the local
+## guess of what their guard did.
+func _on_blade_contact(_target: Actor, outcome: String, _at: Vector3, blade: MeleeWeapon) -> void:
+	var side := MeleeWeapon._side(blade.attack_dir)
+	match outcome:
+		"parry":
+			Sfx.play("parry", null, -4.0)
+			kick_view(Vector2(0.0, deg_to_rad(parry_kick_deg)))
+		"block":
+			Sfx.play("block")
+			kick_view(Vector2(side * 0.5, 0.3) * deg_to_rad(melee_kick_deg))
+		_:
+			Sfx.play("hit")
+			# The view follows through: sideways for a side cut, down for overhead.
+			var down := 1.0 if blade.attack_dir == MeleeWeapon.Dir.OVERHEAD else 0.25
+			kick_view(Vector2(side, -down) * deg_to_rad(melee_kick_deg))
+
+
+## Jolts the view by `kick` (yaw, pitch in radians); it springs back.
+func kick_view(kick: Vector2) -> void:
+	_shake_speed += kick * 30.0
+
+
+func _update_shake(delta: float) -> void:
+	if _shake.is_zero_approx() and _shake_speed.is_zero_approx():
+		return
+	# A stiff, critically damped spring, like the landing dip.
+	_shake_speed += (-400.0 * _shake - 40.0 * _shake_speed) * delta
+	_shake += _shake_speed * delta
+	if _shake.length() < 0.00005 and _shake_speed.length() < 0.0005:
+		_shake = Vector2.ZERO
+		_shake_speed = Vector2.ZERO
+
+
+## How far the view is jolted right now, (yaw, pitch) in radians.
+func view_shake() -> Vector2:
+	return _shake
 
 
 func _on_hit_confirmed(_target: Actor, info: DamageInfo, lethal: bool) -> void:
 	if lethal:
 		Sfx.play("kill")
+	elif info.kind == "melee":
+		pass  # The blade's contact already answered.
 	elif info.parried or info.blocked:
 		Sfx.play("block", null, -6.0)
 	else:
 		Sfx.play("hit")
 
 
-func _on_damaged(_info: DamageInfo) -> void:
+func _on_damaged(info: DamageInfo) -> void:
 	Sfx.play("hurt")
+	if info.kind in ["melee", "slam"]:
+		kick_view(Vector2(_rng.randf_range(-0.5, 0.5), -1.0) * deg_to_rad(flinch_deg))
 
 
 ## The visor level the visor key moves to from `level`: up through the
@@ -527,6 +824,13 @@ func _zoom() -> float:
 
 
 ## The resting field of view for the view in use.
+## How far back the third-person camera wants to be.
+func view_distance(aiming: bool) -> float:
+	if aiming:
+		return third_person_distance * aim_distance_ratio
+	return third_person_distance + (ride_extra_distance if is_riding() else 0.0)
+
+
 func wanted_base_fov() -> float:
 	return base_fov_third if _wants_third_person() else base_fov
 

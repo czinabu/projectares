@@ -19,34 +19,39 @@ skies, animated models and effects (see "How it looks" below).
 | Action | Key |
 | --- | --- |
 | Move / sprint | WASD / Shift |
-| Jump. In the air: hold to climb, tap to light the jets and hover (jetpack); press to kick the way you steer, hold to skim low, dash key dashes (thruster boots); press to launch, hold while falling to glide (glide wings) | Space |
-| Jetpack hovering: cruise with the move keys, Space climbs, C coasts down to cool, Shift + W boosts head first (Mk2). The keys fly every rig; the mouse only looks and aims | |
-| Glide wings gliding: Space again pulses up, Q / E snaps a barrel roll | |
-| Gliding: A / D bank round, W dives for speed, S pulls up to climb on it (the view is free to look and aim) | |
-| Roll the body left / right while gliding or boosting | Q / E (or the mouse thumb buttons) |
+| Jump. In the air: hold to climb, tap to light the jets and hover (jetpack); press to kick the way you steer, hold to skim low (thruster boots); press to launch, hold while falling to glide (glide wings) | Space |
+| Jetpack hovering: cruise with the move keys, Space climbs, C coasts down to cool, hold Shift + W to boost head first (Mk2). The keys fly every rig; the mouse only looks and aims | |
+| Glide wings gliding: Space again pulses up | |
+| Air dash with any rig, on heat: Shift + a move key dashes that way (Shift alone dashes forward). Sideways while boosting it barrel rolls. Gliding, Shift is a wing boost: it thrusts you the way you face and you keep the speed, and Shift + S boosts upward | Shift + WASD |
+| Gliding: the wings fly where you look, like a bird. A / D bank round harder, W dives for speed, S pulls up to climb on it. Turns cost speed, and pulling up hard in a turn stalls you. Hold V to free look while the wings fly straight on: the body twists to face where you look, and looking behind flips you onto your back to shoot behind you | |
 | Use your ability | G |
 | Use your helmet's visor (zoom or scan) | T |
-| Dash | Left Alt |
+| Dash (stamina) | Left Alt |
 | Slide (while sprinting) | C |
 | Fire, or melee: tap for the combo, hold for a heavy (dive slam in the air) | Left mouse |
 | Aim down sights, or block with the blade (tap just before a hit to parry) | Right mouse |
 | Pick a melee side: left, right or overhead | Flick the mouse that way, or hold A, D or W |
 | Switch how the melee side is picked (mouse flick or movement keys) | B |
-| Switch to primary / sidearm / melee / power weapon | 1 / 2 / 3 / 4, or mouse wheel |
+| Switch to primary / sidearm / melee / power weapon | 1 / 2 / 3 / 4, or mouse wheel (watch down) |
 | Reload | R |
 | Use a medkit | H |
 | Loot, or get on and off a bike | F |
 | Ride a bike: throttle, brake or reverse, steer, boost | W, S, A / D, Shift |
-| Switch camera: first-person or third-person | V |
-| Scoreboard: who is fighting, who is down, kills | Hold Tab |
+| Switch camera: first-person or third-person | Tab |
+| Scoreboard: who is fighting, who is down, kills | Hold Q |
 | Sign out and go home with what you carry (10 seconds, out of a fight) | L |
 | After dying: drop back in, or go home | Enter, or L |
 | Open your phone: players, messages, invites, news, mirror, every control (Keys), settings | P |
 | Raise or lower the holographic watch on your wrist | X |
-| Free the mouse | Esc |
+| Move across the watch's icons (watch up) | Mouse wheel |
+| Phone at Settings (also frees the mouse); Esc again closes it | Esc |
 
 The jetpack runs on heat. Overheat it and you fall until it cools. Rooftop
-caches hold the best loot, and only the jetpack gets you there.
+caches hold the best loot, and only a flight rig gets you there. Every rig
+comes as Mk1, Mk2 and Mk3: the Mk1 lifts you to rooftop height (25 m), the
+Mk2 to the tower tops (60 m) and the Mk3 over everything (100 m), and each
+tier up runs cooler. Rigs drop at Mk1; the better tiers will be crafted
+from blueprints.
 
 Almost nothing is drawn over the screen in a raid: the crosshair, hit marks
 and what E will do. Everything else is on your gear. You wear a holographic
@@ -147,8 +152,9 @@ to run every raid world, or add `--no-plaza` for one world alone on the port.
 
 ### The Concourse
 
-Joining a server puts you in its plaza, the Concourse: a walled safe zone
-shared by everyone on that server. Weapons are locked and nobody can be hurt.
+Joining a server puts you in its plaza, the Concourse: an open district on a
+high deck around a lit beacon spire, with a balcony over the city below. It is
+a safe zone shared by everyone on that server. Weapons are locked and nobody can be hurt.
 You appear wearing your equipped loadout, and it never leaves your stash, so
 nothing is at risk there. Look at another player and a tag over their head lists what they are wearing.
 A bike in your loadout rides on your watch as a toy: throw it down to ride around.
@@ -161,9 +167,13 @@ Walk into a glowing pad and press **E** to use it:
   right now: its war level, how many players are in it, the biggest bounty
   on anyone's head and any event running. It reddens as the war heats up.
 - **Quarters** (west): the door to your home base. Its door leads back here.
-- **Storefronts** (the corners): one for every shop. Step up to the counter
+- **Kiosks** (under the arcade ring round the spire): one for every shop. Step up to the counter
   and press F to use its terminal: buy and sell on the screen without leaving
   the plaza.
+- **The skyline**: slim towers ring the arcade, each with a landing deck and
+  a skybridge to the next at 15 m, in reach of the thruster boots. The arcade
+  roof (8 m) and the quarters and clan hall roofs (12 m) are steps on the way
+  up. The tower tops are for wings and jetpacks.
 - **Clan hall** (east): the terminal by the door founds a clan (a name and
   a short tag), joins one or leaves yours. Clanmates wear the tag by their
   name. In a warzone a clan is one side: you cannot hurt each other, you
@@ -190,7 +200,9 @@ you have.
 
 ## What is in the prototype
 
-- First-person and third-person camera that you switch with V. It never changes
+- First-person and third-person camera that you switch with Tab. Third person
+  is a close view over the shoulder; the phone's settings set how far back it
+  sits. It never changes
   on its own. Weapons are visible in your hand in both views.
 - Renown. Kills raise it, a streak makes each kill pay more, and dying hands
   a tenth of it to your killer. Your lifetime total never drops and sets your
@@ -243,7 +255,9 @@ you have.
   pays 300 renown. Everyone is told where on the war feed. Caches that refill
   during a war also hold rarer loot.
 - Hitscan rifle with reloads and aim down sights.
-- Rifle recoil that kicks your view and widens the spread under sustained fire.
+- Recoil that kicks your view and widens the spread under sustained fire. The
+  kick settles back when you pause, so paced shots return to your aim point;
+  what you pull down against stays where you put it.
 - Blade with a three-hit combo, a heavy lunge, and a dive slam from the air.
 - Directional melee. Flick the mouse left, right or up to pick a side. Attacks
   come from that side and a guard only covers the side it was raised on. Read
@@ -269,12 +283,15 @@ you have.
   stop dead and hover to shoot steady, and carry heavy armor without running
   hotter; they turn wide and their heat draws seekers. Glide wings never
   stop: launch once, glide, pulse up to hold height, dive for the fastest
-  speed in the game, turn tightest and barrel roll, cold and quiet, but only
+  speed in the game, turn tightest, cold and quiet, but only
   a sidearm fires while they are spread. Thruster boots skim low over streets
-  and roofs and stop dead: near a surface they cool, high up they burn out in
-  seconds. Jump kicks you up, the dash key dashes on heat, and the aim stays
+  and roofs and stop dead: near a surface they cool, high in the open they
+  never cool and burn out in seconds. Jump kicks you up, and three kicks top
+  a 15 m roof, which is a surface to cool on again. They dash furthest of any rig, and the aim stays
   steady while skimming low. Shooting from the
-  air spreads wider, except from a hover or a low skim.
+  air spreads wider, except from a hover or a low skim. Each rig comes in
+  three tiers with a higher ceiling and cooler running each time, at the
+  same cruise speed.
 - An ability slot. Phase Step blinks you forward, Kinetic Barrier cuts damage
   for a few seconds, Shock Pulse staggers everyone near you. Each has a cooldown.
 - Attachments for your primary, in four slots: optic, muzzle, grip and
@@ -305,7 +322,7 @@ you have.
 - More gear to find: carbine, SMG, marksman rifle, shotgun, arc blade, breaker
   hammer, three armor frames, and a better jetpack.
 - Motorbikes, the first vehicle. Put one in the vehicle slot and it rides on
-  your watch as a toy. Raise the watch (X), turn the wheel to pick a toy and
+  your watch as a toy. Raise the watch (X), turn the wheel across its icons to the vehicle and on through the toys to pick one, and
   click to take it in your hand, then click again to throw it: it grows into
   the full-size bike where it lands (right click puts it back). It needs clear
   ground, or it jumps back to your watch, and the watch recharges for a few
@@ -314,7 +331,7 @@ you have.
   out. Press E on any bike nobody is riding to take
   it, including someone else's. Sign out riding a bike and it goes to your
   stash; die or leave it behind and it is gone. Abandoned bikes wait at the rim,
-  the landmarks and the jump ramps of the battlefield. Riding uses the third-person camera (V still
+  the landmarks and the jump ramps of the battlefield. Riding uses the third-person camera (Tab still
   switches), and pressing E in mid-air bails out with the bike's speed.
 - Mastery for every weapon type, ability and armor frame. Using gear earns XP
   for its type, levels unlock variants that trade one strength for another

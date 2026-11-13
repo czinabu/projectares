@@ -14,14 +14,18 @@ const BaseLayout := preload("res://core/base/base_layout.gd")
 const BaseHudScript := preload("res://core/ui/base_hud.gd")
 const LookTests := preload("res://tests/look_tests.gd")
 const RigLookTests := preload("res://tests/rig_look_tests.gd")
+const RigTierTests := preload("res://tests/rig_tier_tests.gd")
 const EconomyTests := preload("res://tests/economy_tests.gd")
 const MeleeArsenalTests := preload("res://tests/melee_arsenal_tests.gd")
+const MeleeFeelTests := preload("res://tests/melee_feel_tests.gd")
 const CustomizerTests := preload("res://tests/customizer_tests.gd")
 const BattlefieldTests := preload("res://tests/battlefield_tests.gd")
 const VisorTests := preload("res://tests/visor_tests.gd")
 const SidearmTests := preload("res://tests/sidearm_tests.gd")
 const AttachmentTests := preload("res://tests/attachment_tests.gd")
 const PowerWeaponTests := preload("res://tests/power_weapon_tests.gd")
+const FeelTests := preload("res://tests/feel_tests.gd")
+const ViewMatchTests := preload("res://tests/view_match_tests.gd")
 
 var _passed := 0
 var _failed := 0
@@ -29,6 +33,10 @@ var _failed := 0
 
 func _ready() -> void:
 	Profile.persist = false
+	# DEV MODE: tests never run on the dev save, whatever the machine has.
+	DevMode.persist = false
+	DevMode.enabled = false
+	Profile.save_path = Profile.SAVE_PATH
 	Profile.reset()
 	# Accounts a previous run left behind hold that run's secrets and would
 	# refuse this run's sign-ins, so every run starts with none.
@@ -222,7 +230,9 @@ func _run() -> void:
 	await _test_melee_defense()
 	await _test_directional_melee()
 	await _test_melee_arsenal()
+	await _test_melee_feel()
 	await _test_flight_rigs_and_abilities()
+	await _test_rig_tiers()
 	await _test_vehicle_driving()
 	await _test_vehicle_raids()
 	await _test_vehicle_toys()
@@ -256,8 +266,10 @@ func _run() -> void:
 	await _test_plaza_online()
 	await _test_stash_service()
 	await _test_phone()
+	await _test_dev_mode()
 	await _test_home_base()
 	await _test_arena()
+	await _test_arena_floor()
 	await _test_online_arena()
 	await _test_look()
 	await _test_rig_models()
@@ -268,6 +280,16 @@ func _run() -> void:
 	await _test_sidearms()
 	await _test_attachments()
 	await _test_power_weapons()
+	await _test_feel()
+	await _test_view_match()
+
+
+func _test_view_match() -> void:
+	await ViewMatchTests.run(self)
+
+
+func _test_feel() -> void:
+	await FeelTests.run(self)
 
 
 func _test_look() -> void:
@@ -279,12 +301,20 @@ func _test_rig_models() -> void:
 	await RigLookTests.run(self)
 
 
+func _test_rig_tiers() -> void:
+	await RigTierTests.run(self)
+
+
 func _test_customizer() -> void:
 	await CustomizerTests.run(self)
 
 
 func _test_melee_arsenal() -> void:
 	await MeleeArsenalTests.run(self)
+
+
+func _test_melee_feel() -> void:
+	await MeleeFeelTests.run(self)
 
 
 func _test_economy() -> void:
@@ -822,7 +852,7 @@ func _test_main_flow() -> void:
 	check(main.raid != null and not main.hub.visible, "deploying starts a raid")
 	check(main.controller.camera.current and main.hud != null, "raid has a camera and HUD")
 	check(main.nameplates != null and main.scoreboard != null and not main.scoreboard.visible,
-			"raid has nameplates and a scoreboard, closed until Tab is held")
+			"raid has nameplates and a scoreboard, closed until Q is held")
 	var controller: PlayerController = main.controller
 	check(controller.view_mode == PlayerController.ViewMode.FIRST and not controller.is_third_person(),
 			"camera starts in first-person")
@@ -831,6 +861,13 @@ func _test_main_flow() -> void:
 	check(is_equal_approx(controller.wanted_base_fov(), 70.0), "first person uses its own field of view")
 	controller.toggle_view()
 	check(is_equal_approx(controller.wanted_base_fov(), 100.0), "third person uses its own field of view")
+	check(is_equal_approx(controller.view_distance(false), controller.third_person_distance)
+			and controller.third_person_distance <= 2.5, "the third-person camera sits close, over the shoulder")
+	check(controller.view_distance(true) < controller.view_distance(false) and controller.view_distance(true) > 0.5,
+			"aiming moves it in further")
+	controller.third_person_distance = 4.0
+	check(is_equal_approx(controller.view_distance(false), 4.0), "and its distance can be set")
+	controller.third_person_distance = 2.0
 	controller.toggle_view()
 	# Melee and flight must not move the camera on their own.
 	var p: Actor = main.raid.player
@@ -884,25 +921,78 @@ func _test_main_flow() -> void:
 	await frames(30)
 	check(controller.wrist_raised and wrist.is_open() and holo.visible and wrist.get_parent() == p
 			and wrist.text().contains(main.raid.world.display_name) and wrist.text().contains("Pack "),
-			"X raises the watch, and in third person its hologram opens over your wrist")
-	var cam_to_holo := holo.global_position - controller.camera.global_position
-	var depth := cam_to_holo.dot(-controller.camera.global_basis.z)
-	check(depth > 0.0 and depth < wrist.projection_distance + 0.05,
-			"the third-person hologram hangs in front of the camera, close enough to read")
+			"X raises the watch, and in third person its card opens over your wrist")
+	var card_width := holo.global_basis.get_scale().x * wrist.face_size.x
+	var from_cam := controller.camera.global_position
+	check(from_cam.distance_to(holo.global_position) > from_cam.distance_to(p.get_eye_position()) + 0.3
+			and card_width < 2.0,
+			"the third-person card hangs out in front of the character, never behind them")
+	var card_on_screen := controller.camera.unproject_position(holo.global_position + controller.camera.global_basis.x * card_width * 0.5)
+	var head_on_screen := controller.camera.unproject_position(p.get_eye_position())
+	check(card_on_screen.x < head_on_screen.x, "and it keeps clear of the head and helmet on screen")
+	check(not (holo.material_override as ShaderMaterial).shader.code.contains("depth_test_disabled"),
+			"in third person the body passes in front of the card, like real light")
+	check(p.cmd.watch_up, "and the raised watch goes out with your inputs, so the arm glows for everyone")
+	var icons: Array = []
+	for slot in wrist.card.slots:
+		icons.append(slot.id)
+	check(icons == Hud.Wrist.SLOTS, "the card is a row of icons: %s" % ", ".join(icons))
+	check(wrist.card.bars.size() >= 3, "in third person the card carries the vitals strip, since there is no glass")
+	# The mouse wheel steps across the card; the mouse only looks.
+	var yaw_before := controller.yaw
+	var weapon_before := p.active_weapon_index
+	var look := InputEventMouseMotion.new()
+	look.relative = Vector2(-200.0, 0.0)
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+		controller._unhandled_input(look)
+		check(controller.yaw > yaw_before and not controller.watch_focus_moved,
+				"with the watch up the mouse turns the view and leaves the card alone")
+	controller.yaw = yaw_before
+	for i in 20:
+		controller.scroll(-1)
+	await frames(2)
+	check(controller.watch_focus == 0 and wrist.focused_id() == "map" and wrist.text().begins_with(main.raid.world.display_name),
+			"scrolling up steps the card left to the map icon")
+	controller.scroll(-1)
+	check(controller.watch_focus == 0, "and it stops at the card's left end")
+	controller.scroll(1)
+	await frames(2)
+	check(wrist.focused_id() == "pack", "scrolling down steps right, one icon a notch")
+	for i in 20:
+		controller.scroll(1)
+	await frames(2)
+	check(wrist.focused_id() == "leave", "and stops at the right end on sign-out")
+	check(controller._pending_switch < 0 and p.active_weapon_index == weapon_before and is_equal_approx(controller.yaw, yaw_before),
+			"with the watch up the wheel never switches weapons or turns the view")
 	controller.toggle_view()
 	await frames(40)
 	check(wrist.get_parent() == controller.camera and arm.visible and holo.visible,
-			"in first person your forearm comes up into view with the hologram over it")
+			"in first person your forearm comes up into view with the card over it")
+	check(holo.global_basis.get_scale().x * wrist.face_size.x < 0.2, "the card is card-sized, not a panel")
+	check(wrist.get_node("Beam").visible and (wrist.get_node("Beam") as MeshInstance3D).mesh.get_surface_count() > 0
+			and is_equal_approx(float((holo.material_override as ShaderMaterial).get_shader_parameter("open")), 1.0),
+			"light is thrown up from the watch face to the card, which is drawn as a hologram")
 	var narrow := holo.scale.x
 	controller.camera.fov = 110.0
 	wrist.mount(p, controller, true)
-	check(holo.scale.x > narrow * 1.3, "a wider view grows the hologram, so it reads the same")
+	check(holo.scale.x > narrow * 1.3, "a wider view grows the card, so it reads the same")
 	controller.camera.fov = controller.base_fov
 	check(Hud.Wrist.face_tint(0.1).r > 0.9 and Hud.Wrist.face_tint(1.0).b > 0.9,
 			"the watch face glows red when you are low and cyan when you are well")
 	controller._unhandled_input(x_key)
 	await frames(30)
 	check(not controller.wrist_raised and not holo.visible and not arm.visible, "X again puts it away")
+	var leaving := Hud.watch_slots(main.raid, p, 0, "", 0.5)
+	var leave_at := Hud.Wrist.SLOTS.find("leave")
+	check(is_equal_approx(float(leaving[leave_at].progress), 0.5) and Hud.default_focus(leaving) == leave_at,
+			"signing out fills a ring on the sign-out icon, and the card opens on it")
+	check(Hud.watch_slots(main.raid, p)[Hud.Wrist.SLOTS.find("artifact")].empty,
+			"the artifact slot is an empty socket until artifacts exist")
+	# One long frame must not throw the landing dip's spring (and the camera).
+	controller._dip_speed = 9.0
+	controller._update_dip(0.5)
+	check(is_finite(controller._dip) and absf(controller._dip) < 0.3, "a long frame leaves the landing dip steady")
 	var gun: Gun = null
 	for w in p.weapons:
 		if w is Gun:
@@ -1296,15 +1386,19 @@ func _test_directional_melee() -> void:
 	var blade := p.get_active_weapon() as MeleeWeapon
 	var total := func() -> float: return p.health.health + p.health.armor
 
-	# The foe swings from its left, which arrives on the player's right.
-	foe.cmd.stance = left
+	# The foe swings to its right, so it comes from its left and arrives on
+	# the player's right.
+	check(MeleeWeapon.swing_from(left) == right and MeleeWeapon.swing_from(right) == left
+			and MeleeWeapon.swing_from(over) == over, "a swing to one side starts on the other")
+	foe.cmd.stance = right
 	p.cmd.stance = left
 	p.cmd.secondary = true
 	await frames(30)
 	var before: float = total.call()
 	await _foe_swing(foe)
 	await frames(10)
-	check(foe_blade.is_winding_up() and foe_blade.attack_dir == left, "a swing takes the stance it started in")
+	check(foe_blade.is_winding_up() and foe_blade.attack_dir == left,
+			"a swing keeps the side it started from (a right swing comes from the left)")
 	check(Hud.incoming_side(p) == right, "the HUD warns which side to guard")
 	await frames(30)
 	check(total.call() < before, "a guard on the wrong side stops nothing")
@@ -1352,8 +1446,10 @@ func _test_directional_melee() -> void:
 	await frames(120)
 	foe.stagger_left = 0.0
 	p.riposte_left = 0.0
+	# A swing to the player's right comes from their left and arrives on the
+	# foe's right: guarding the same side as the swing's stance meets it.
 	p.cmd.stance = right
-	foe.cmd.stance = left
+	foe.cmd.stance = right
 	foe.cmd.secondary = true
 	await frames(30)
 	var foe_before := foe.health.health + foe.health.armor
@@ -1421,7 +1517,7 @@ func _test_flight_rigs_and_abilities() -> void:
 	# Thruster boots: kicks up, skim low and cool, burn out high, dash on heat.
 	var raid := await _kit_raid(60, ["rifle_scrap", "blade_scrap", "boots_thruster", "plate_light"])
 	var p := raid.player
-	check(p.flight.display_name == "Thruster Boots" and p.flight.burst_velocity > 0.0
+	check(p.flight.display_name == "Mk1 Thruster Boots" and p.flight.burst_velocity > 0.0
 			and is_zero_approx(p.flight.thrust_accel) and p.flight.can_skim(), "boots stats come from the item")
 	check(is_equal_approx(p.flight.skim_speed, FlightRig.CRUISE_SPEED), "boots skim at the shared cruise speed")
 	await press_jump.call(p)
@@ -1439,11 +1535,17 @@ func _test_flight_rigs_and_abilities() -> void:
 	for i in 6:
 		await press_jump.call(p)
 		await frames(4)
-	check(p.flight.overheated, "kicking over and over overheats the boots")
-	check(not p.flight.is_hovering and not p.flight.is_skimming, "boots cannot hover, nor skim overheated")
+	check(p.flight.heat > p.flight.max_heat - p.flight.burst_heat,
+			"kicking over and over spends the boots' heat (%.0f)" % p.flight.heat)
 	var vy := p.velocity.y
 	await press_jump.call(p)
-	check(p.velocity.y <= vy, "overheated boots do nothing")
+	check(p.velocity.y <= vy, "boots out of heat do nothing")
+	p.flight.heat = p.flight.max_heat
+	p.flight.overheated = true
+	p.cmd.jump = true
+	await frames(2)
+	check(not p.flight.is_hovering and not p.flight.is_skimming, "boots cannot hover, nor skim overheated")
+	p.cmd.jump = false
 	for i in 400:
 		await get_tree().physics_frame
 		if p.is_on_floor():
@@ -1454,6 +1556,8 @@ func _test_flight_rigs_and_abilities() -> void:
 	# Glide wings: launch, then fall slowly and travel far.
 	raid = await _kit_raid(61, ["rifle_scrap", "blade_scrap", "wings_glide", "plate_light"])
 	p = raid.player
+	# These check the handling high up, not the ceiling (`_test_rig_tiers`).
+	p.flight.ceiling = 0.0
 	p.global_position += Vector3(0, 30, 0)
 	p.velocity = Vector3.ZERO
 	await frames(30)
@@ -1474,12 +1578,14 @@ func _test_flight_rigs_and_abilities() -> void:
 
 	# The Mk2 jetpack: cruise, wide turns, coasting, a steady hover to shoot from.
 	raid = await _kit_raid(65, ["rifle_scrap", "blade_scrap", "jetpack_mk2", "frame_bulwark"])
+	raid.player.flight.ceiling = 0.0
 	await _check_jetpack_cruise(raid.player)
 	await _end_raid(raid)
 
 	# The jetpack still works and does not burst or glide.
 	raid = await _kit_raid(62, ["rifle_scrap", "blade_scrap", "jetpack_mk1", "plate_light"])
 	p = raid.player
+	p.flight.ceiling = 0.0
 	await press_jump.call(p)
 	await frames(10)
 	p.cmd.jump = true
@@ -1686,6 +1792,39 @@ func _check_free_flight(p: Actor) -> void:
 	await frames(5)
 	check(p.flight.is_hovering and not p.flight.is_boosting, "letting go of the boost drops back to a hover")
 	p.flight.boost_speed = boost_was
+	# Shift + a move key dashes that way on heat, and the hover carries on.
+	await frames(30)
+	var dash_heat := p.flight.heat
+	var dash_stamina := p.stamina
+	p.cmd.move = Vector2(-1, 0)
+	p.cmd.sprint = true
+	p.cmd.sprint_pressed = true
+	await frames(1)
+	p.cmd.sprint_pressed = false
+	p.cmd.move = Vector2.ZERO
+	await frames(3)
+	var dash_side := (Basis(Vector3.UP, p.cmd.yaw).inverse() * p.velocity).x
+	check(dash_side < -(p.flight.air_dash_speed - 2.0) and p.flight.heat > dash_heat + p.flight.air_dash_heat * 0.8
+			and is_equal_approx(p.stamina, dash_stamina),
+			"Shift + A dashes left off a hover, on heat (%.1f m/s)" % dash_side)
+	var heat_after := p.flight.heat
+	p.cmd.sprint_pressed = true
+	await frames(1)
+	p.cmd.sprint_pressed = false
+	check(p.flight.heat < heat_after + 2.0, "a second press right away waits for the cooldown")
+	p.cmd.sprint = false
+	await frames(60)
+	dash_side = (Basis(Vector3.UP, p.cmd.yaw).inverse() * p.velocity).x
+	check(p.flight.is_hovering and absf(dash_side) < 3.0, "after the dash the jets hold you where you were going")
+	p.cmd.sprint = true
+	p.cmd.sprint_pressed = true
+	await frames(1)
+	p.cmd.sprint_pressed = false
+	await frames(3)
+	var ahead := (Basis(Vector3.UP, p.cmd.yaw).inverse() * p.velocity).z
+	check(ahead < -(p.flight.air_dash_speed - 2.0), "Shift alone dashes forward (%.1f m/s)" % -ahead)
+	p.cmd.sprint = false
+	await frames(40)
 	p.flight.heat_per_sec = 4000.0
 	await frames(60)
 	check(p.flight.overheated and not p.flight.is_hovering and p.velocity.y < 0.0, "overheating puts the jets out and you fall")
@@ -1705,11 +1844,11 @@ func _check_free_flight(p: Actor) -> void:
 	p.cmd.jump = false
 	var copy := ActorCommand.new()
 	p.cmd.descend = true
-	p.cmd.roll = -1
+	p.cmd.sprint_pressed = true
 	copy.apply_array(p.cmd.to_array())
-	check(copy.descend and copy.roll == -1, "descend and roll travel in the network command")
+	check(copy.descend and copy.sprint_pressed, "descend and a sprint press travel in the network command")
 	p.cmd.descend = false
-	p.cmd.roll = 0
+	p.cmd.sprint_pressed = false
 
 
 ## The Mk2 jetpack. `p` stands on the ground in heavy armor.
@@ -1778,6 +1917,10 @@ func _check_boot_skim(p: Actor) -> void:
 	p.flight.heat = 0.0
 	p.flight.overheated = false
 	p.global_position = Vector3(0.0, p.global_position.y, 60.0)
+	for i in 200:
+		await get_tree().physics_frame
+		if p.is_on_floor():
+			break
 	await frames(10)
 	var ground := p.global_position.y
 	p.cmd.jump_pressed = true
@@ -1804,13 +1947,20 @@ func _check_boot_skim(p: Actor) -> void:
 	var stamina := p.stamina
 	var heat := p.flight.heat
 	p.cmd.move = Vector2(1, 0)
-	p.cmd.dash = true
+	p.cmd.sprint = true
+	p.cmd.sprint_pressed = true
 	await frames(1)
-	p.cmd.dash = false
+	p.cmd.sprint_pressed = false
 	await frames(2)
 	var side := (p.global_basis.inverse() * p.velocity).x
 	check(side > p.flight.air_dash_speed - 1.0 and p.flight.heat > heat + 15.0 and is_equal_approx(p.stamina, stamina),
-			"a boot dash in the air goes off on heat (%.1f m/s)" % side)
+			"Shift + D dashes the boots right on heat (%.1f m/s)" % side)
+	var jet := FlightRig.new()
+	check(p.flight.air_dash_speed > ItemDB.item_stats("wings_glide")["air_dash_speed"]
+			and p.flight.air_dash_speed * p.flight.air_dash_time > jet.air_dash_speed * jet.air_dash_time,
+			"boots dash further than wings or a jetpack (their edge)")
+	jet.free()
+	p.cmd.sprint = false
 	p.cmd.move = Vector2.ZERO
 	await frames(30)
 	# High up the boots burn out fast.
@@ -1819,7 +1969,7 @@ func _check_boot_skim(p: Actor) -> void:
 	p.velocity = Vector3.ZERO
 	await frames(30)
 	check(p.flight.skim_band() == 2 and p.air_aim() == 1.0, "skimming high is the burning band and spoils the aim")
-	for i in 240:
+	for i in 400:
 		await get_tree().physics_frame
 		if p.flight.overheated:
 			break
@@ -1829,6 +1979,67 @@ func _check_boot_skim(p: Actor) -> void:
 		await get_tree().physics_frame
 		if p.is_on_floor():
 			break
+	# High in the open the boots never cool, even with the jets off.
+	p.global_position.y = ground + 25.0
+	p.velocity = Vector3.ZERO
+	await frames(2)
+	p.flight.heat = 50.0
+	p.flight.overheated = false
+	await frames(40)
+	check(is_equal_approx(p.flight.heat, 50.0), "boots do not cool high in the open (%.0f)" % p.flight.heat)
+	for i in 400:
+		await get_tree().physics_frame
+		if p.is_on_floor():
+			break
+	await frames(60)
+	check(p.flight.heat < 20.0, "back on the ground they cool fast (%.0f)" % p.flight.heat)
+	# A set of kicks tops a 15 m roof, and the roof is a surface to cool on.
+	var roof := StaticBody3D.new()
+	roof.collision_layer = Actor.LAYER_WORLD
+	var roof_shape := BoxShape3D.new()
+	roof_shape.size = Vector3(12, 1, 12)
+	var roof_col := CollisionShape3D.new()
+	roof_col.shape = roof_shape
+	roof.add_child(roof_col)
+	p.get_parent().add_child(roof)
+	roof.global_position = Vector3(p.global_position.x, ground + 14.5, p.global_position.z - 8.5)
+	p.flight.heat = 0.0
+	p.flight.overheated = false
+	p.cmd.yaw = 0.0
+	p.cmd.jump_pressed = true
+	p.cmd.jump = true
+	await frames(1)
+	p.cmd.jump_pressed = false
+	await frames(2)
+	var kicks := 0
+	for i in 600:
+		await get_tree().physics_frame
+		if p.global_position.y > ground + 15.5 or p.flight.overheated:
+			break
+		if p.velocity.y <= 0.0 and not p.cmd.jump_pressed:
+			p.cmd.jump_pressed = true
+			kicks += 1
+		else:
+			p.cmd.jump_pressed = false
+	p.cmd.jump_pressed = false
+	check(p.global_position.y > ground + 15.5 and kicks <= 3 and p.flight.heat < 90.0,
+			"%d kicks carry the boots over a 15 m roof with heat to spare (%.1f m, heat %.0f)"
+			% [kicks, p.global_position.y - ground, p.flight.heat])
+	p.cmd.move = Vector2(0, 1)
+	for i in 120:
+		await get_tree().physics_frame
+		if p.flight.skim_band() == 0:
+			break
+	p.cmd.move = Vector2.ZERO
+	var hot := p.flight.heat
+	await frames(60)
+	check(p.flight.is_skimming and p.flight.skim_band() == 0 and p.flight.heat < hot,
+			"skimming over the roof is skimming low: the boots cool up there (%.0f to %.0f)" % [hot, p.flight.heat])
+	p.cmd.jump = false
+	await frames(90)
+	check(p.is_on_floor() and p.global_position.y > ground + 14.0 and p.flight.heat < hot - 30.0,
+			"standing on the roof cools them fast (%.0f)" % p.flight.heat)
+	roof.queue_free()
 
 
 ## The wings' own moves. `p` is gliding high up with glide wings.
@@ -1875,17 +2086,24 @@ func _check_wing_moves(p: Actor) -> void:
 	p.flight.overheated = false
 	# The main gun is stowed while the wings are out.
 	check(p.wings_block(p.weapons[0]) and p.air_aim() == 1.0, "only a sidearm fires with the wings spread")
-	# A barrel roll snaps sideways.
+	# Shift + D is a wing boost, never a sidestep: wings fly where they point.
 	await frames(130)
 	var side_before := (Basis(Vector3.UP, p.cmd.yaw).inverse() * p.velocity).x
-	p.cmd.roll = 1
-	await frames(6)
+	var speed_before := Vector2(p.velocity.x, p.velocity.z).length()
+	var heat_before := p.flight.heat
+	p.cmd.move = Vector2(1, 0)
+	p.cmd.sprint_pressed = true
+	await frames(1)
+	p.cmd.sprint_pressed = false
+	p.cmd.move = Vector2.ZERO
+	await frames(5)
 	var side := (Basis(Vector3.UP, p.cmd.yaw).inverse() * p.velocity).x
-	check(side > side_before + 8.0, "a roll key snaps a sidestep (%.1f m/s sideways)" % side)
-	p.cmd.roll = 0
+	check(absf(side - side_before) < 2.0 and Vector2(p.velocity.x, p.velocity.z).length() > speed_before + 8.0
+			and p.flight.heat > heat_before + 5.0,
+			"Shift + D boosts the wings ahead on heat, never sideways (%.1f m/s sideways)" % side)
 	await frames(30)
 	var heading := Vector3(p.velocity.x, 0, p.velocity.z).normalized()
-	check(heading.dot(Vector3.FORWARD) > 0.95, "and the glide carries on the same way after it")
+	check(heading.dot(Basis(Vector3.UP, p.cmd.yaw) * Vector3.FORWARD) > 0.95, "and the glide carries on the way you face")
 	# Stalling: slow below the stall speed and the wings sink fast.
 	p.velocity = Vector3(0, 0, -3)
 	await frames(2)
@@ -1903,16 +2121,21 @@ func _check_glide_flying(p: Actor) -> void:
 	await frames(120)
 	var cruise := Vector2(p.velocity.x, p.velocity.z).length()
 	check(absf(cruise - p.flight.glide_speed) < 0.5, "a level glide settles at glide speed (%.1f)" % cruise)
-	# Turning the view only looks: the glide flies straight on.
+	# The wings fly where you look, like a bird's: turning the view banks
+	# the glide round onto it, and looking down never dives it.
 	var before := Vector3(p.velocity.x, 0, p.velocity.z).normalized()
 	p.cmd.yaw -= PI / 2.0
 	p.cmd.pitch = -0.9
-	await frames(30)
-	var looked := Vector3(p.velocity.x, 0, p.velocity.z).normalized()
-	check(before.dot(looked) > 0.999 and Vector2(p.velocity.x, p.velocity.z).length() < cruise + 0.5,
-			"looking around while gliding neither turns nor dives the wings")
+	await frames(20)
+	var turning := Vector3(p.velocity.x, 0, p.velocity.z).normalized()
+	check(before.signed_angle_to(turning, Vector3.UP) < -0.2 and p.velocity.y > -p.flight.glide_fall_speed * 2.5,
+			"looking right banks the glide round to the right, without diving")
+	await frames(100)
+	var view := Basis(Vector3.UP, p.cmd.yaw) * Vector3.FORWARD
+	before = Vector3(p.velocity.x, 0, p.velocity.z).normalized()
+	check(before.dot(view) > 0.999, "and it settles on the way you look")
 	p.cmd.pitch = 0.0
-	# Holding a strafe key banks the glide round in an arc.
+	# Holding a strafe key banks the glide round harder, in an arc.
 	p.cmd.move = Vector2(1, 0)
 	await frames(10)
 	var during := Vector3(p.velocity.x, 0, p.velocity.z).normalized()
@@ -1920,9 +2143,12 @@ func _check_glide_flying(p: Actor) -> void:
 	check(swung > 0.1 and swung < 0.5, "a strafe key banks the wings round in an arc (%.2f rad)" % swung)
 	check(before.signed_angle_to(during, Vector3.UP) < 0.0, "and the right key turns right")
 	p.cmd.move = Vector2.ZERO
-	await frames(30)
+	# Letting go, the wings roll back onto the view and fly straight on it.
+	await frames(90)
 	var after := Vector3(p.velocity.x, 0, p.velocity.z).normalized()
-	check(during.dot(after) > 0.999, "letting go flies straight on")
+	check(after.dot(view) > 0.999, "letting go, the wings come back onto the view")
+	await frames(30)
+	check(after.dot(Vector3(p.velocity.x, 0, p.velocity.z).normalized()) > 0.999, "and then fly straight on")
 	p.cmd.move = Vector2(0, 1)
 	await frames(150)
 	var dived := Vector2(p.velocity.x, p.velocity.z).length()
@@ -2491,8 +2717,8 @@ func _leave(session: NetSession) -> void:
 func _test_nameplates_and_scoreboard() -> void:
 	print("Nameplates and scoreboard")
 	check(InputMap.has_action("scoreboard") and InputMap.action_get_events("scoreboard").any(
-			func(e: InputEvent) -> bool: return e is InputEventKey and e.physical_keycode == KEY_TAB),
-			"Tab is bound to the scoreboard")
+			func(e: InputEvent) -> bool: return e is InputEventKey and e.physical_keycode == KEY_Q),
+			"Q is bound to the scoreboard")
 	var raid := Raid.new()
 	add_child(raid)
 	raid.start_server(Worlds.get_world("ashfront"), 71)
@@ -2897,7 +3123,7 @@ func _test_strongpoints() -> void:
 			"in a co-op world a site one player takes belongs to them all")
 	check(feed.has("The raiders took Echo Post from the Wardens"), "taking a site from the bots is announced (%s)" % " / ".join(feed))
 	check(a.renown == 150 and b.renown == 0 and notices.has("Took Echo Post   +150 renown"), "the players who were there are paid renown")
-	check(Hud.sites_text(raid, a) == "Echo Post: yours" and Hud.sites_text(raid, b) == "Strongpoints held: 1 of 3",
+	check(Hud.sites_text(raid, a) == "Echo Post: yours" and Hud.sites_text(raid, b) == "Held 1/3",
 			"the HUD shows what you hold")
 	var warden: Actor = raid.bots.filter(func(bot: Actor) -> bool: return bot.faction == "warden")[0]
 	warden.global_position = point.global_position + Vector3(-3, 0, 0)
@@ -2957,7 +3183,7 @@ func _test_strongpoints() -> void:
 			return gale.raid.strongpoints.size() == 3 and gale.raid.strongpoints.all(
 					func(p: Strongpoint) -> bool: return p.holder_name == "the Wardens")
 		await _wait_until(told, 180)
-		check(told.call() and Hud.sites_text(gale.raid, gale.raid.player) == "Strongpoints held: 0 of 3",
+		check(told.call() and Hud.sites_text(gale.raid, gale.raid.player) == "Held 0/3",
 				"the server tells a client who holds each strongpoint")
 		await _leave(gale)
 	OS.kill(pid)
@@ -3122,7 +3348,7 @@ func _test_scrip() -> void:
 	Combat.deal(raid.bots[0], DamageInfo.make(9999.0, a, "bullet"))
 	Combat.deal(raid.bots[0], DamageInfo.make(9999.0, a, "bullet"))
 	await frames(2)
-	check(a.scrip == 2 * StashService.Economy.KILL_BOUNTY and "Scrip 40" in Hud.standing_text(a) and b.scrip == 0,
+	check(a.scrip == 2 * StashService.Economy.KILL_BOUNTY and "40 scrip" in Hud.wrist_text(raid, a, {}, 0.0) and b.scrip == 0,
 			"kills pay scrip that you carry (%d)" % a.scrip)
 
 	# Banking makes it safe.
@@ -3177,6 +3403,11 @@ func _test_online() -> void:
 			and copy.sprint and copy.primary and copy.dash and copy.ability_pressed
 			and not copy.jump and not copy.heal_pressed and copy.stance == 2 and copy.switch_weapon == 1,
 			"a command survives the trip through its network form")
+	cmd.watch_up = true
+	var packed: Array = NetSession.unpack_inputs(NetSession.pack_inputs([[1, cmd.to_array(), 0]]))[0][1]
+	copy.apply_array(packed)
+	check(copy.watch_up and int(packed[ActorCommand.FLAGS_INDEX]) & ActorCommand.HELD_MASK & ActorCommand.FLAG_WATCH_UP != 0,
+			"a raised watch travels with the held keys, so others see it")
 	copy.apply_array([99.0, 99.0, "x", 50.0, NAN, 0.0, 0.0, 0, 7, 99])
 	check(copy.move.length() <= 1.001 and is_zero_approx(copy.yaw) and copy.pitch <= 1.5
 			and copy.aim_dir == Vector3.ZERO and copy.stance == 2 and copy.switch_weapon <= 8,
@@ -3571,6 +3802,26 @@ func _test_online() -> void:
 	check(Combat.authoritative, "leaving an online raid hands damage back to this game")
 
 
+## How many ticks a jump pressed by `me` takes to show on the copy of them
+## another client sees (`seen`), averaged over `presses` jumps.
+func _press_delay(me: Actor, seen: Actor, presses: int) -> float:
+	var total := 0
+	for press in presses:
+		var ground := seen.global_position.y
+		me.cmd.jump_pressed = true
+		await frames(1)
+		me.cmd.jump_pressed = false
+		var took := 0
+		while took < 60 and seen.global_position.y < ground + 0.05:
+			await frames(1)
+			took += 1
+		total += took
+		await _wait_until(func() -> bool: return me.is_on_floor() and seen.is_on_floor(), 120)
+		# Not on a beat: presses land anywhere between two state updates.
+		await frames(13 + press)
+	return float(total) / presses
+
+
 func _test_online_movement() -> void:
 	print("Online: smooth movement on a bad connection")
 	var port := 24816
@@ -3618,8 +3869,12 @@ func _test_online_movement() -> void:
 	var apart := seen.global_position.distance_to(me.global_position) if is_instance_valid(seen) else 99.0
 	check(apart < 0.5, "after stopping, the other player sees them where they are (%.2f m apart)" % apart)
 
-	# One in five input packets lost: a single-tick press must still arrive.
+	# How long a press takes to show on the other player's screen, on a clean
+	# connection, to compare with a lossy one below.
 	dana.simulated_lag = 0.04
+	await frames(60)
+	var clean_delay := await _press_delay(me, seen, 6)
+	# One in five input packets lost: a single-tick press must still arrive.
 	dana.simulated_loss = 0.2
 	await frames(60)
 	dana.max_correction = 0.0
@@ -3639,6 +3894,12 @@ func _test_online_movement() -> void:
 			seen_jumps += 1
 	check(top > 0.6, "the player jumps on their own screen at once (%.2f m)" % top)
 	check(seen_jumps == 5, "every jump reaches the server despite lost packets (%d of 5 seen by the other player)" % seen_jumps)
+	# Steady loss must not leave the server playing inputs late: by now the
+	# old input queue sat at its limit, five ticks (about 80 ms) behind.
+	var lossy_delay := await _press_delay(me, seen, 6)
+	check(lossy_delay < clean_delay + 2.5 and lossy_delay < 8.5,
+			"steady packet loss adds no lasting input delay (a press shows after %.1f ticks, %.1f on a clean connection)"
+			% [lossy_delay, clean_delay])
 	dana.simulated_loss = 0.0
 
 	# A bad moment: every packet for a sixth of a second is lost, with a press
@@ -4077,13 +4338,34 @@ func _test_vehicle_toys() -> void:
 	controller.scroll(1)
 	check(controller.watch_index == 1 and controller._pending_switch < 0 and p.active_weapon_index == weapon_before,
 			"with the watch up the wheel turns through the toys, not the weapons")
+	var vehicle_at := Hud.Wrist.SLOTS.find("vehicle")
+	controller.scroll(1)
+	check(controller.watch_focus == vehicle_at + 1 and not controller.is_picking_toys(),
+			"past the last toy the wheel steps on to the next icon, and fire no longer takes a toy")
+	controller.scroll(-1)
+	check(controller.watch_focus == vehicle_at and controller.watch_index == 1 and controller.is_picking_toys(),
+			"scrolling back onto the vehicles lands on the last toy")
+	controller.scroll(-1)
+	controller.scroll(-1)
+	check(controller.watch_focus == vehicle_at - 1, "and before the first toy it steps off to the left")
+	controller.scroll(1)
+	controller.scroll(1)
+	check(controller.watch_focus == vehicle_at and controller.watch_index == 1, "back on the second toy")
+	controller.wrist_raised = false
+	controller.scroll(1)
+	check(controller._pending_switch >= 0, "with the watch down the wheel switches weapons again")
+	controller._pending_switch = -1
+	controller.wrist_raised = true
 	await get_tree().process_frame
 	await get_tree().process_frame
 	check(hud.wrist.toys_shown() == raid.stowed_for(p) and hud.wrist.get_node("Hologram/Toys").get_child_count() == 2,
 			"the watch stands each toy over its hologram")
 	var shown := hud.wrist.get_node("Hologram/Toys")
-	check(shown.get_child(1).scale.x > shown.get_child(0).scale.x and hud.wrist.text().contains("Raider Bike")
-			and hud.wrist.text().contains("click: take"), "the picked toy stands out and the watch names it")
+	check(shown.get_child(1).scale.x > shown.get_child(0).scale.x and hud.wrist.focused_id() == "vehicle"
+			and hud.wrist.text().begins_with("Raider Bike") and shown.visible,
+			"the card opens on the vehicles, the picked toy stands out and the watch names it")
+	check("wheel" in hud.wrist.focused_hints() and "click" in hud.wrist.focused_hints()
+			and not hud.wrist.text().contains("click"), "its controls are glyphs, not words")
 	check(Hud.Wrist.toy_tint(true, true) != Hud.Wrist.toy_tint(true, false), "the toys dim while the watch recharges")
 	controller.take_picked_toy()
 	check(controller.held_toy == "bike_raider" and not controller.wrist_raised and not controller.is_browsing_toys(),
@@ -4100,7 +4382,8 @@ func _test_vehicle_toys() -> void:
 	check(controller.pack_target() == third and controller.click_watch() and packs[0] == 1 and controller.held_toy == "",
 			"with the watch up, clicking on a bike asks to pack it")
 	hud._process(0.016)
-	check(hud.wrist.text().contains("click: pack Raider Bike"), "and the watch says so")
+	check(hud.wrist.text().begins_with("Pack Raider Bike") and hud.wrist.focused_hints() == ["click"],
+			"and the watch says so, with a click glyph")
 	_aim_at(p, p.global_position + Vector3(0, 1.6, 10))
 	controller.yaw = p.cmd.yaw
 	controller.pitch = p.cmd.pitch
@@ -4497,8 +4780,22 @@ func _test_plaza() -> void:
 				apart = false
 	check(apart, "no two doorways overlap")
 	var reachable := portals.all(func(n: Node) -> bool:
-		return (n as Node3D).global_position.length() < 50.0 and absf((n as Node3D).global_position.y) < 0.5)
+		return (n as Node3D).global_position.length() < raid.map.RADIUS and absf((n as Node3D).global_position.y) < 0.5)
 	check(reachable, "every portal is on the plaza floor")
+	# An open district, not a courtyard: the skyline's landing decks stay in
+	# reach of the thruster boots (three kicks top 15 m).
+	var decks := raid.map.get_children().filter(func(n: Node) -> bool: return n.is_in_group("landing_deck"))
+	check(raid.map.RADIUS >= 120.0 and decks.size() >= 6 and decks.all(func(n: Node) -> bool:
+		return (n as Node3D).global_position.y <= 15.5), "the hub is open and its landing decks are in boot reach (%d)" % decks.size())
+	var floor_hit := raid.get_world_3d().direct_space_state.intersect_ray(PhysicsRayQueryParameters3D.create(
+			Vector3(0, 5, raid.map.RADIUS - 6.0), Vector3(0, -5, raid.map.RADIUS - 6.0), Actor.LAYER_WORLD))
+	check(not floor_hit.is_empty(), "the deck reaches out to the balcony rail")
+	var deck: Node3D = decks[0] if not decks.is_empty() else null
+	var deck_hit := {} if deck == null else raid.get_world_3d().direct_space_state.intersect_ray(
+			PhysicsRayQueryParameters3D.create(deck.global_position + Vector3(0, 5, 0),
+			deck.global_position - Vector3(0, 5, 0), Actor.LAYER_WORLD))
+	check(not deck_hit.is_empty() and absf(deck_hit.position.y - deck.global_position.y) < 0.3,
+			"a landing deck is solid where it is marked")
 
 	# Leaving takes you and nothing else: no body, no bag.
 	raid.remove_player(b)
@@ -4951,12 +5248,152 @@ func _test_stash_service() -> void:
 const SocialService := preload("res://core/social/social_service.gd")
 const GameSettings := preload("res://core/settings/game_settings.gd")
 const PhoneScript := preload("res://core/phone/phone.gd")
+const MirrorScript := preload("res://core/visual/mirror.gd")
+const DevMode := preload("res://core/dev/dev_mode.gd")
+const DevEconomy := preload("res://core/economy/economy.gd")
+const DevStashRules := preload("res://core/account/stash_rules.gd")
+
+
+## DEV MODE: the temporary testing mode (`core/dev/dev_mode.gd`). Delete this
+## group along with it.
+func _test_dev_mode() -> void:
+	print("Dev mode (temporary)")
+	DevMode.persist = false
+	DevMode.enabled = false
+	check(DevMode.available(), "dev mode can be switched on in a debug run")
+	check(DevMode.raid_cheats().is_empty(), "with dev mode off a raid gets no cheats")
+
+	# The dev stash: every piece of gear, healing in bulk, max credits.
+	var stash: Array[String] = []
+	check(DevMode.top_up(stash) == DevEconomy.MAX_CREDITS, "dev mode holds as many credits as a stash can")
+	var every_fit := true
+	for id: String in ItemDB.all_ids():
+		if not DevStashRules.storable(id):
+			check(id not in stash, "%s (starter or power) never enters a dev stash" % id)
+			continue
+		for slot: String in Loadout.SLOTS:
+			if Loadout.fits(slot, id) and id not in stash:
+				every_fit = false
+	check(every_fit, "every rig, gun, blade, helmet, ability, attachment and vehicle is in the dev stash")
+	check(stash.count("medkit") == DevMode.CONSUMABLE_COPIES, "the dev stash has healing in bulk")
+	var full := stash.size()
+	DevMode.top_up(stash)
+	check(stash.size() == full, "topping up again adds nothing")
+	stash.erase("wings_glide")
+	DevMode.top_up(stash)
+	check("wings_glide" in stash and stash.size() == full, "gear lost in a run comes back on the next top-up")
+
+	# The dev save never touches the real one, and you stay you.
+	var real_path := "user://test_profile_real.json"
+	var dev_path := "user://test_profile_dev.json"
+	for path in [real_path, dev_path]:
+		if FileAccess.file_exists(path):
+			DirAccess.remove_absolute(path)
+	Profile.reset()
+	Profile.persist = true
+	Profile.save_path = real_path
+	Profile.player_name = "Tester"
+	Profile.add_to_stash(["rifle_carbine", "rifle_carbine", "rifle_carbine"])
+	var real_credits := Profile.credits
+	Profile.use_save(dev_path)
+	Profile.credits = DevMode.top_up(Profile.stash)
+	Profile.save()
+	check(Profile.save_path == dev_path and "helm_ember_mk2" in Profile.stash and Profile.player_name == "Tester",
+			"the dev save has everything and keeps who you are")
+	Profile.use_save(real_path)
+	check("helm_ember_mk2" not in Profile.stash and Profile.stash.count("rifle_carbine") >= 3
+			and Profile.credits == real_credits, "switching back finds the real stash untouched")
+	Profile.use_save(dev_path)
+	check("helm_ember_mk2" in Profile.stash and Profile.credits == DevEconomy.MAX_CREDITS,
+			"the dev save is kept between switches")
+	Profile.persist = false
+	Profile.save_path = Profile.SAVE_PATH
+	Profile.player_name = "Raider"
+	Profile.reset()
+	for path in [real_path, dev_path]:
+		DirAccess.remove_absolute(path)
+
+	# Online: a server hosted in dev mode tops up the host's account only.
+	var service := StashService.new()
+	service.persist = false
+	service.dev_accounts.append(StashService.id_for_name("Dev Host"))
+	var host_id: String = service.sign_in("Dev Host", StashService.new_secret()).account_id
+	var friend_id: String = service.sign_in("Dev Friend", StashService.new_secret()).account_id
+	var host_view := service.snapshot(host_id)
+	check("helm_ember_mk2" in host_view.stash and host_view.credits == DevEconomy.MAX_CREDITS,
+			"a dev server gives the host's account everything and max credits")
+	check("helm_ember_mk2" not in service.snapshot(friend_id).stash, "other players on it get nothing extra")
+	var host_account = service.load_account(host_id)
+	host_account.stash.erase("wings_glide")
+	check("wings_glide" in service.snapshot(host_id).stash, "gear the host lost comes back on the server too")
+
+	# Cheats in a solo raid.
+	DevMode.enabled = true
+	check(DevMode.raid_cheats().size() == DevMode.CHEATS.size(), "dev mode on hands a raid its cheats")
+	DevMode.set_cheat("ammo", false)
+	check(not DevMode.raid_cheats().has("ammo"), "a cheat can be switched off on its own")
+	DevMode.set_cheat("ammo", true)
+	var raid := await _new_raid(77, false)
+	raid.set_dev_cheats(DevMode.raid_cheats())
+	await frames(2)
+	var me := raid.player
+	me.protected_left = 0.0
+	var bot: Actor = raid.bots[0] if not raid.bots.is_empty() else null
+	var hit := Combat.deal(me, DamageInfo.make(500.0, bot, "bullet"))
+	check(not hit and not me.is_dead and me.dev_invulnerable, "god mode: no hit gets through")
+	me.flight.heat = me.flight.max_heat
+	me.flight.overheated = true
+	me.ability.cooldown_left = 5.0
+	var gun: Gun = null
+	for weapon in me.weapons:
+		if weapon is Gun:
+			gun = weapon
+	if gun != null:
+		gun.ammo_in_mag = 0
+	await frames(2)
+	check(me.flight.heat == 0.0 and not me.flight.overheated, "endless flight heat")
+	check(me.ability.cooldown_left == 0.0, "no ability cooldowns")
+	check(gun != null and gun.ammo_in_mag == gun.mag_size, "endless ammo keeps the magazine full")
+	raid.set_dev_cheats({})
+	await frames(1)
+	me.protected_left = 0.0
+	check(not me.dev_invulnerable and Combat.deal(me, DamageInfo.make(5.0, bot, "bullet")),
+			"turning god mode off lets hits through again")
+	await _end_raid(raid)
+	var server := Raid.new()
+	server.mode = Raid.Mode.SERVER
+	server.set_dev_cheats({"god": true})
+	check(server.dev_cheats.is_empty(), "an online server raid never runs dev cheats")
+	server.free()
+
+	# The switch lives in the phone's settings.
+	DevMode.enabled = false
+	var phone: CanvasLayer = PhoneScript.new()
+	add_child(phone)
+	await frames(1)
+	var changes := [0]
+	phone.dev_mode_changed.connect(func() -> void: changes[0] += 1)
+	phone.toggle()
+	phone.open_app("settings")
+	var switch_shown := false
+	for child in phone._body.get_children():
+		if child is CheckButton and (child as CheckButton).text.begins_with("Dev mode"):
+			switch_shown = true
+	check(switch_shown, "the phone's settings have the dev mode switch")
+	phone.set_dev_mode(true)
+	check(DevMode.enabled and changes[0] == 1, "the phone turns dev mode on")
+	phone.set_dev_mode(false)
+	check(not DevMode.enabled and changes[0] == 2, "and off again")
+	phone.close()
+	phone.queue_free()
+	await frames(1)
 
 
 func _test_phone() -> void:
 	_test_social_service()
 	_test_game_settings()
 	await _test_phone_view()
+	await _test_phone_escape()
 	await _test_online_phone()
 
 
@@ -5098,7 +5535,17 @@ func _test_phone_controls(phone: CanvasLayer) -> void:
 	check(missing.is_empty(), "every keybind is listed in the phone's Controls app (missing: %s)" % ", ".join(missing))
 	check(PhoneScript.key_name("interact") == "F" and PhoneScript.key_name("fire") == "Left mouse",
 			"keys are named the way a player reads them")
-	check(PhoneScript.key_name("roll_left") == "Q or Mouse back", "an action bound twice shows both")
+	InputMap.add_action("test_twice")
+	var first_key := InputEventKey.new()
+	first_key.physical_keycode = KEY_Q
+	InputMap.action_add_event("test_twice", first_key)
+	var thumb := InputEventMouseButton.new()
+	thumb.button_index = MOUSE_BUTTON_XBUTTON1
+	InputMap.action_add_event("test_twice", thumb)
+	check(PhoneScript.key_name("test_twice") == "Q or Mouse back", "an action bound twice shows both")
+	InputMap.erase_action("test_twice")
+	check(not InputMap.has_action("roll_left") and not InputMap.has_action("roll_right"),
+			"Q and E fly nothing: the air dash is Shift + a move key")
 	check(PhoneScript.controls_text("Hold {jump}") == "Hold Space", "a key spec reads from the input map")
 	phone.open_app("controls")
 	check(phone.app == "controls" and phone._title.text == "Controls" and phone._body.get_child_count() > 20,
@@ -5122,6 +5569,27 @@ func _test_phone_controls(phone: CanvasLayer) -> void:
 	check(link, "settings link to the Controls app")
 
 
+func _test_phone_escape() -> void:
+	print("Phone: Tab and Esc")
+	check(PhoneScript.key_name("toggle_view") == "Tab" and PhoneScript.key_name("scoreboard") == "Q",
+			"Tab switches the camera and Q holds the scoreboard")
+	var phone: CanvasLayer = PhoneScript.new()
+	add_child(phone)
+	await frames(1)
+	var esc_key := InputEventKey.new()
+	esc_key.keycode = KEY_ESCAPE
+	esc_key.pressed = true
+	check(not phone.opens_on_escape(esc_key), "Esc leaves the phone shut where a screen has the mouse")
+	phone.mouse_in_world = true
+	check(phone.opens_on_escape(esc_key), "Esc is the phone's when the world has the mouse")
+	phone._unhandled_input(esc_key)
+	check(phone.is_open and phone.app == "settings", "Esc in the world opens the phone at Settings")
+	phone._unhandled_input(esc_key)
+	check(not phone.is_open, "Esc again closes the phone")
+	phone.queue_free()
+	await frames(1)
+
+
 func _test_phone_view() -> void:
 	print("Phone: the menu itself")
 	var phone: CanvasLayer = PhoneScript.new()
@@ -5134,6 +5602,7 @@ func _test_phone_view() -> void:
 	check(phone.unseen_news() == SocialService.GAME_NEWS.size(), "unread news is counted")
 	phone.toggle()
 	check(phone.is_open and events == [true], "the phone opens")
+	await _test_phone_home(phone)
 	phone.open_app("news")
 	check(phone.unseen_news() == 0 and phone._body.get_child_count() == SocialService.GAME_NEWS.size(),
 			"news can be read offline")
@@ -5148,6 +5617,13 @@ func _test_phone_view() -> void:
 	check(is_equal_approx(GameSettings.field_of_view_third, 105.0) and is_equal_approx(GameSettings.field_of_view, 95.0),
 			"first and third person keep their own field of view")
 	check(GameSettings.to_dict().has("field_of_view_third"), "the third-person field of view is saved")
+	check(is_equal_approx(GameSettings.camera_distance, 2.0), "the third-person camera starts close, over the shoulder")
+	phone.change_setting("camera_distance", 3.5)
+	check(is_equal_approx(GameSettings.camera_distance, 3.5) and GameSettings.to_dict().has("camera_distance"),
+			"the phone sets how far back the third-person camera sits, and it is saved")
+	phone.change_setting("camera_distance", 99.0)
+	check(is_equal_approx(GameSettings.camera_distance, GameSettings.CAMERA_DISTANCE_RANGE.y), "within its range")
+	GameSettings.camera_distance = 2.0
 	phone.close()
 	check(not phone.is_open and events[events.size() - 1] == false, "the phone closes")
 
@@ -5158,13 +5634,106 @@ func _test_phone_view() -> void:
 	raid.add_child(controller)
 	await frames(2)
 	controller.input_blocked = true
+	controller.phone_out = true
 	await frames(2)
 	check(raid.player.cmd.move == Vector2.ZERO and not raid.player.cmd.primary, "with the phone out the character lets go of the controls")
+	check(raid.player.cmd.phone, "and holds the phone up")
 	controller.input_blocked = false
+	controller.phone_out = false
+	await frames(2)
+	check(not raid.player.cmd.phone, "putting it away lowers it")
 	await _end_raid(raid)
 	GameSettings.reset()
 	phone.queue_free()
 	await frames(1)
+
+
+## The home screen, its icons and badges, going back, and the phone held up
+## in front of a camera with the scene dimmed behind it.
+func _test_phone_home(phone: CanvasLayer) -> void:
+	check(phone.app == PhoneScript.HOME and phone._home.visible and not phone._page.visible,
+			"the phone opens on its home screen")
+	check(phone._icons.size() == PhoneScript.APPS.size() and phone._icons.keys().all(
+			func(a: String) -> bool: return a in PhoneScript.APPS), "every app has an icon on the home screen")
+	check(phone._icons["news"].badge == SocialService.GAME_NEWS.size() and phone._icons["settings"].badge == 0,
+			"unread news shows as a badge on the News icon")
+	phone._icons["news"].tapped.emit()
+	check(phone.app == "news" and phone._page.visible and not phone._home.visible and phone._title.text == "News",
+			"tapping an icon opens the app")
+	check(phone._icons["news"].badge == 0, "reading the news clears its badge")
+	phone.go_back()
+	check(phone.app == PhoneScript.HOME and phone._home.visible, "back goes home")
+	phone.open_app("messages")
+	phone.chat_with = "someone"
+	phone.go_back()
+	check(phone.app == "messages" and phone.chat_with == "", "back from a conversation goes to the list of them")
+	phone.go_home()
+	check(phone.app == PhoneScript.HOME, "the home bar goes home from anywhere")
+	phone.close()
+	phone.open()
+	check(phone.app == PhoneScript.HOME, "it opens where it was left")
+	check(phone._status.text.length() == 5 and phone._who.text == "Solo" and phone._bars.strength == 0,
+			"the status bar has the time, no signal and Solo while offline")
+
+	# No camera: the screen shows flat, and a click on it lands on it.
+	await _drawn_frames(2)
+	check(phone._flat.visible and not phone._device.visible, "with no camera the screen shows flat")
+	var middle: Vector2 = phone._flat.get_global_rect().get_center()
+	check(phone.screen_point(middle).distance_to(Vector2(phone.screen_size) * 0.5) < 1.0,
+			"a click on the flat screen lands in the same spot on the phone")
+	check(phone.screen_point(phone._flat.get_global_rect().position - Vector2(5, 5)).x < 0.0, "a click beside it misses")
+
+	# A camera: the phone is held up in front of it, drawn over the world.
+	var stage := Node3D.new()
+	add_child(stage)
+	var camera := Camera3D.new()
+	camera.fov = 75.0
+	stage.add_child(camera)
+	camera.make_current()
+	phone._raise = 1.0
+	await _drawn_frames(2)
+	check(phone._device.visible and not phone._flat.visible and phone._dim.visible,
+			"with a camera the phone is held up in the world, the scene dimmed behind it")
+	var at: Vector3 = camera.global_transform.affine_inverse() * phone._device.global_position
+	check(at.z < -camera.near and at.x > 0.0, "it is held in front of the eyes, to the right")
+	var face: Vector3 = phone._device.global_basis.z
+	check(face.dot(-at.normalized()) > 0.9, "its screen faces the eyes")
+	var mat := phone._device.get_surface_override_material(0) as StandardMaterial3D
+	check(mat.no_depth_test and mat.albedo_texture == phone._screen.get_texture(),
+			"the screen shows the phone's display and is never hidden in a wall")
+	var centre: Vector3 = phone._device.global_position + face * phone.device_depth * 0.5
+	var mouse := camera.unproject_position(centre)
+	check(phone.screen_point(mouse).distance_to(Vector2(phone.screen_size) * 0.5) < 4.0,
+			"the mouse on the phone lands on its screen")
+	check(phone.screen_point(Vector2(1, 1)).x < 0.0, "the mouse off the phone misses it")
+	check(phone._device.layers == 1 << (MirrorScript.HELD_LAYER - 1), "a mirror never shows the held phone")
+	var slab: ArrayMesh = PhoneScript.rounded_slab(Vector2(0.15, 0.3), 0.02, 0.03)
+	check(slab.get_surface_count() == 2 and slab.get_aabb().size.is_equal_approx(Vector3(0.15, 0.3, 0.02)),
+			"the phone is a rounded slab, its face a surface of its own")
+	phone.close()
+	var lowered := Time.get_ticks_msec() + int(phone.raise_time * 1000.0) + 200
+	while Time.get_ticks_msec() < lowered:
+		await _drawn_frames(1)
+	await _drawn_frames(2)
+	check(not phone._device.visible and not phone._dim.visible, "put away, it lowers out of view")
+	phone.open()
+	camera.queue_free()
+	stage.queue_free()
+	await _drawn_frames(1)
+
+	# The flag that shows everyone else the phone is a held key.
+	var cmd := ActorCommand.new()
+	cmd.phone = true
+	var back := ActorCommand.new()
+	back.apply_array(cmd.to_array())
+	check(back.phone and cmd.flags() & ActorCommand.HELD_MASK & ActorCommand.FLAG_PHONE != 0,
+			"holding the phone travels with the held keys, so others see it")
+
+
+## Frames drawn, not physics ticks: the phone is placed as the view is drawn.
+func _drawn_frames(count: int) -> void:
+	for i in count:
+		await get_tree().process_frame
 
 
 func _test_online_phone() -> void:
@@ -5603,6 +6172,73 @@ func _win_bout(arena: Arena, side: int) -> void:
 	await _arena_phase(arena, Arena.Phase.IDLE)
 
 
+## The Pit's floor: cover, tunnels and doors, the rising barriers, the
+## ceiling, and bots finding their way round it all.
+func _test_arena_floor() -> void:
+	print("Arena: the floor, tunnels and rising barriers")
+	var V := Arena.ArenaVenue
+	check(V.doors_open("fight", 0.0) and V.doors_open("fight", V.DOOR_OPEN_TIME - 0.1)
+			and not V.doors_open("fight", V.DOOR_OPEN_TIME + 0.1) and not V.doors_open("countdown", -1.0),
+			"the tunnel doors open as the fight starts and close behind the fighters")
+	check(V.barrier_raise(0, -1.0) == 1.0 and V.barrier_raise(1, -1.0) == 0.0
+			and V.barrier_raise(0, V.BARRIER_PERIOD + V.BARRIER_MOVE) == 0.0
+			and V.barrier_raise(1, V.BARRIER_PERIOD + V.BARRIER_MOVE) == 1.0
+			and V.barrier_raise(0, V.BARRIER_PERIOD * 2.0 + V.BARRIER_MOVE) == 1.0,
+			"the rising barriers take turns, one pair up at a time")
+	var mid := V.barrier_raise(1, V.BARRIER_PERIOD + V.BARRIER_MOVE * 0.5)
+	check(mid > 0.1 and mid < 0.9, "a barrier rises over a moment, not all at once")
+	check(V.in_tunnel(Vector3(-V.GATE_DISTANCE, 0.1, 0)) and not V.in_pit(Vector3(-V.GATE_DISTANCE, 0.1, 0))
+			and not V.in_tunnel(Vector3(0, 0.1, V.GATE_DISTANCE)) and V.in_pit(V.entry_point(1))
+			and not V.in_tunnel(Vector3(-V.GATE_DISTANCE, V.WALL_HEIGHT, 0)),
+			"each tunnel runs under the stands, apart from the floor and the seats over it")
+
+	var arena := await _quick_arena(["ana", "bo"])
+	var map := arena.map
+	var gates := arena._map_nodes("arena_gate")
+	check(gates.size() == 2 and gates.all(func(g: Node3D) -> bool: return V.in_tunnel(g.global_position)),
+			"both fighters wait in a tunnel")
+	var space := map.get_world_3d().direct_space_state
+	var gate_line := PhysicsRayQueryParameters3D.create(V.entry_point(0) + Vector3(0, 1.7, 0),
+			V.entry_point(1) + Vector3(0, 1.7, 0), Actor.LAYER_WORLD)
+	check(not space.intersect_ray(gate_line).is_empty(), "cover blocks the line from one gate to the other")
+	var up := PhysicsRayQueryParameters3D.create(Vector3(3, 2, 3), Vector3(3, 40, 3), Actor.LAYER_WORLD)
+	var lid := space.intersect_ray(up)
+	check(not lid.is_empty() and absf(lid.position.y - V.CEILING) < 0.2, "a ceiling keeps flight over the floor")
+	var meshes := map.find_children("*", "MeshInstance3D", true, false)
+	check(meshes.size() < 30, "the venue is a handful of meshes, not hundreds of boxes (%d)" % meshes.size())
+	var nav: NavigationRegion3D = map.get("nav_region")
+	check(nav != null and nav.navigation_mesh != null and nav.navigation_mesh.get_polygon_count() > 10,
+			"bots get a navigation mesh round the cover")
+
+	# A practice bout: doors shut while the fighters wait, open for the fight,
+	# shut again behind them; the barriers follow the clock.
+	var ana: Actor = arena.players[0].actor
+	arena.request(ana, "practice", {})
+	await _arena_phase(arena, Arena.Phase.COUNTDOWN)
+	var door: Node3D = map.get_node("Door0")
+	var shut_y := door.position.y
+	check(V.in_tunnel(ana.global_position), "a fighter is brought in to their tunnel")
+	await _arena_phase(arena, Arena.Phase.FIGHT)
+	await frames(2)
+	check(door.position.y < shut_y - 2.0, "the door sinks open when the fight starts")
+	arena.phase_left = arena.fight_time - V.DOOR_OPEN_TIME - 0.5
+	await frames(2)
+	check(is_equal_approx(door.position.y, shut_y) and V.in_pit(ana.global_position),
+			"once the doors close, a fighter still in the tunnel is put on the floor")
+	var barriers := get_tree().get_nodes_in_group("arena_barrier").filter(func(b: Node) -> bool:
+		return map.is_ancestor_of(b))
+	var heights := barriers.map(func(b: Node3D) -> float: return b.position.y)
+	arena.phase_left = arena.fight_time - V.BARRIER_PERIOD - V.BARRIER_MOVE - 0.2
+	await frames(2)
+	var moved := 0
+	for i in barriers.size():
+		if absf(barriers[i].position.y - heights[i]) > 1.0:
+			moved += 1
+	check(barriers.size() == 4 and moved == 4, "every rising barrier changes over when the pairs swap")
+	arena.queue_free()
+	await frames(2)
+
+
 func _test_arena() -> void:
 	print("Arena: wagers, duels and tournaments")
 	var bets := {"cara": [0, 100], "dax": [1, 50], "eve": [0, 50]}
@@ -5660,7 +6296,7 @@ func _test_arena() -> void:
 			"fighters cannot bet on their own bout")
 	await _arena_phase(arena, Arena.Phase.FIGHT)
 	var bot: Actor = arena.bout.fighters[1]
-	check(Arena.ArenaVenue.in_pit(me.global_position) and bot != null and bot in arena.bots
+	check(Arena.ArenaVenue.in_bounds(me.global_position) and bot != null and bot in arena.bots
 			and me.health.min_health > 0.0, "the fighters are in the pit and cannot die")
 	check(Combat.deal(bot, DamageInfo.make(5.0, me, "blade")) and not Combat.deal(me, DamageInfo.make(5.0, null, "fall")),
 			"only the two fighters can hurt each other")
@@ -5705,7 +6341,7 @@ func _test_arena() -> void:
 	await frames(20)
 	var faces := get_tree().get_nodes_in_group("arena_board").filter(func(face: Node) -> bool:
 		return main.raid.map.is_ancestor_of(face))
-	check(faces.size() == 4 and faces.all(func(face: Node) -> bool:
+	check(faces.size() == Arena.ArenaVenue.BOARD_FACES and faces.all(func(face: Node) -> bool:
 			return face.get_children().any(func(c: Node) -> bool: return c is WorldScreen)),
 			"the bout is shown on the big board over the pit, on every side")
 	var booths := get_tree().get_nodes_in_group("arena_booth").filter(func(b: Node) -> bool:
@@ -5895,7 +6531,7 @@ func _test_start_screen() -> void:
 	var screen := StartScreen.new()
 	add_child(screen)
 	await frames(2)
-	check(screen.start_button != null and screen.start_button.text == "Start game", "it offers Start game")
+	check(screen.start_button != null and screen.start_button.text == "START", "it offers Start")
 	check(screen.title_text == "PROJECT ARES", "it shows the game title")
 	var count := [0]
 	screen.start_pressed.connect(func() -> void: count[0] += 1)
@@ -5903,4 +6539,40 @@ func _test_start_screen() -> void:
 	screen.start_button.pressed.emit()
 	check(count[0] == 1, "pressing Start fires once, however often it is pressed")
 	screen.queue_free()
+	var by_key := StartScreen.new()
+	add_child(by_key)
+	await frames(1)
+	var keyed := [0]
+	by_key.start_pressed.connect(func() -> void: keyed[0] += 1)
+	var space := InputEventKey.new()
+	space.keycode = KEY_SPACE
+	space.pressed = true
+	by_key._unhandled_input(space)
+	check(keyed[0] == 1, "Space starts the game too")
+	by_key.queue_free()
+	await frames(1)
+	# Behind it: the lane between worlds, running forever on a fixed set of gates.
+	var backdrop := TitleBackdrop.new()
+	add_child(backdrop)
+	await frames(2)
+	check(backdrop.camera != null and backdrop.camera.is_current(), "the start screen has its own camera")
+	var gates := backdrop.get_children().filter(func(n: Node) -> bool: return n.has_node("Sign"))
+	check(gates.size() == backdrop.gate_count, "the lane is a row of gate frames")
+	var zs := func() -> Array: return gates.map(func(g: Node3D) -> float: return g.position.z)
+	backdrop.advance(backdrop.gate_spacing * backdrop.gate_count * 3.3)
+	var after: Array = zs.call()
+	var lane := backdrop.gate_spacing * backdrop.gate_count
+	check(after.all(func(z: float) -> bool: return z <= backdrop.gate_spacing * 0.5 and z > -lane),
+			"gates that pass the camera go round to the far end, so the lane never runs out")
+	var signs := gates.map(func(g: Node) -> String: return (g.get_node("Sign") as Label3D).text) \
+			.filter(func(t: String) -> bool: return t != "")
+	var names := Worlds.raid_worlds().map(func(w: WorldDef) -> String: return w.display_name.to_upper())
+	check(not signs.is_empty() and signs.all(func(t: String) -> bool: return t in names),
+			"some gates carry the names of the worlds you can deploy to")
+	backdrop.jump_time = 0.1
+	await backdrop.jump()
+	await frames(1)
+	check(backdrop.speed >= backdrop.jump_speed * 0.99 and backdrop.camera.fov > backdrop.fov + 20.0,
+			"Start throws the lane into a jump")
+	backdrop.queue_free()
 	await frames(1)

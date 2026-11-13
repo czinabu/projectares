@@ -7,6 +7,10 @@ extends Node
 ## when you deploy, and only comes back if you leave the world alive.
 
 const SAVE_PATH := "user://profile.json"
+## DEV MODE: the separate save dev mode plays on (`core/dev/dev_mode.gd`), so
+## the real stash above is never touched by it.
+const DEV_SAVE_PATH := "user://profile_dev.json"
+const DevMode := preload("res://core/dev/dev_mode.gd")
 const MasteryBook := preload("res://core/progression/mastery_book.gd")
 ## The same gear rules the server's StashService uses.
 const StashRules := preload("res://core/account/stash_rules.gd")
@@ -24,6 +28,8 @@ const GEAR_CRATES := {
 
 ## Tests turn this off so they never touch a real save.
 var persist := true
+## The file this profile saves to: `SAVE_PATH`, or `DEV_SAVE_PATH` in dev mode.
+var save_path := SAVE_PATH
 var stash: Array[String] = []
 ## Slot name (see Loadout.SLOTS) -> item id. A missing slot uses the free scrap kit.
 var loadout := {}
@@ -57,6 +63,41 @@ func _ready() -> void:
 	load_profile()
 	grant_welcome_crate()
 	grant_gear_crates()
+	# DEV MODE: start on the dev save if dev mode was left on.
+	DevMode.ensure_loaded()
+	apply_dev_mode()
+
+
+## DEV MODE: puts this profile on the save dev mode asks for (the dev save
+## while it is on, the real one otherwise) and, while on, tops the dev stash
+## up with everything. Call again whenever dev mode changes or after a run.
+func apply_dev_mode() -> void:
+	use_save(DEV_SAVE_PATH if DevMode.active() else SAVE_PATH)
+	if save_path == DEV_SAVE_PATH:
+		credits = DevMode.top_up(stash)
+		save()
+
+
+## Saves to the current file, then switches to `path` and loads it. Who you
+## are (name, look, online secret, controls) comes along, so dev mode and
+## online play see the same player.
+func use_save(path: String) -> void:
+	if path == save_path:
+		return
+	save()
+	var keep := {"player_name": player_name, "last_server": last_server, "online_secret": online_secret,
+			"melee_control": melee_control, "appearance": appearance}
+	save_path = path
+	reset()
+	load_profile()
+	grant_welcome_crate()
+	grant_gear_crates()
+	player_name = keep.player_name
+	last_server = keep.last_server
+	online_secret = keep.online_secret
+	melee_control = keep.melee_control
+	appearance = keep.appearance
+	save()
 
 
 func reset() -> void:
@@ -208,9 +249,9 @@ func stash_value() -> int:
 func save() -> void:
 	if not persist:
 		return
-	var file := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
+	var file := FileAccess.open(save_path, FileAccess.WRITE)
 	if file == null:
-		push_warning("Profile: could not write %s" % SAVE_PATH)
+		push_warning("Profile: could not write %s" % save_path)
 		return
 	file.store_string(JSON.stringify({
 		"version": 2,
@@ -235,9 +276,9 @@ func save() -> void:
 
 
 func load_profile() -> void:
-	if not persist or not FileAccess.file_exists(SAVE_PATH):
+	if not persist or not FileAccess.file_exists(save_path):
 		return
-	var data: Variant = JSON.parse_string(FileAccess.get_file_as_string(SAVE_PATH))
+	var data: Variant = JSON.parse_string(FileAccess.get_file_as_string(save_path))
 	if typeof(data) != TYPE_DICTIONARY:
 		push_warning("Profile: save file is unreadable, starting fresh")
 		return

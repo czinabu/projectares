@@ -174,9 +174,25 @@ without Caleb, and update the gap list when a PR closes a row.
   starts the heavy (a dive slam in the air) with its full visible windup. A bare
   `primary_pressed` with no hold is a light (how bots swing), and
   `tertiary_pressed` still asks for a heavy outright, but no key binds it.
+  A press made while the blade is busy is kept (`press_buffer`) and plays
+  once it is free, and the time a tap was held counts toward its windup (down
+  to `light_windup_floor`). A heavy lunges at the foe in front and stops at
+  striking distance (`heavy_lunge` is its speed through the windup); in the
+  air, at an airborne foe in the aim cone, it is the magnetic air-lunge
+  (`air_lunge_range`) instead of a slam. Lunges are held by
+  `MeleeWeapon._carry_lunge` from the command and the foe's position as the
+  attacker saw it (`Combat.positions_seen_by`), so they predict online.
+  A strike that reaches someone emits `MeleeWeapon.contact` on every machine
+  it is simulated on, with a local guess at the guard; the attacker's view
+  answers that (sound, `PlayerController.kick_view`, a hitstop of the blade's
+  pose) at once, and the server's `hit_confirmed` only drives the hit marker.
 - Melee is directional. The stance travels in `ActorCommand.stance`, attacks
   set `DamageInfo.direction`, and `MeleeWeapon.guard_covers` decides whether a
-  guard stops a hit. Windup and guard poses must show their side.
+  guard stops a hit. A swing goes toward its stance (Caleb's call): a left
+  swing starts on the right and ends on the left, so `attack_dir` (the side
+  it comes from) is `MeleeWeapon.swing_from(stance)`. A guard covers its
+  stance's side, so a left swing meets a left guard. Windup and guard poses
+  must show their side; `threat_dir()` is what a defender reads.
 - Sound and visual effects (`Sfx`, `Fx`) must stay no-ops on a headless server.
 - Art lives in the `Look` autoload (`core/visual/`), not in gameplay scripts.
   Gameplay scripts keep building plain greybox shapes; `Look` dresses them
@@ -202,8 +218,11 @@ without Caleb, and update the gap list when a PR closes a row.
   the stand with `--idle-only`.
   Holstered weapons are worn, not hidden (`ActorSkin.stow_place`): a primary
   gun or two-handed weapon slung across the back, outside a worn back rig
-  (down the side of a rig with a screen on its back, so a jetpack's heat
-  gauge stays in view), a
+  (on a jetpack or wing pack, clamped to the weapon rail down its side
+  instead, gun right and long blade left, leaning out in a slight V, so the
+  heat gauge on its back stays in view; a wing pack's rails stand behind
+  its wing slots: the rig model's "MountL/R" markers, and the
+  skin rests the weapon's near side on the clamps), a
   sidearm muzzle down on the right hip, and a one-handed blade on the left
   hip. These are view-only copies; the weapon's own node stays on the hand.
   A switch is shown as the hand putting one away and drawing the next
@@ -212,6 +231,28 @@ without Caleb, and update the gap list when a PR closes a row.
   sends `switch_weapon = ActorCommand.HOLSTER` and draws `Actor.last_drawn`
   again; it is an index, never a toggle, so it replicates safely. Check with
   `--holster-only`.
+- First and third person show the same action the same way. Each actor has
+  one `ActionPose` (`core/visual/action_pose.gd`, a view-only child made by
+  `ActionPose.of`): the melee reach and shoulder turn, the reload motion,
+  the low ready, the weapon switch's progress toward a holster, the
+  drawing back of a held heavy and the easing back of a recovering blade,
+  the watch raise (from `ActorCommand.watch_up`) and the phone hold (`ActionPose.phone`, from
+  `ActorCommand.phone`, which `Locomotion` poses the body from). Third person `WeaponArm` and `ActorSkin` pose the model from
+  it; first person `PlayerController.first_person_hold` moves the weapon in
+  front of the camera by the same offsets on the same clock, so a switch,
+  a flight stow or a windup plays out in both views. A new hand or weapon
+  animation goes into `ActionPose` and both views read it; never animate
+  one view only. Weapons are held, not floated (Caleb's call): the hand
+  carries them. Third person a blade lies along the closed fist and a gun
+  held low turns with the wrist (`WeaponArm`); swings turn the arm about the
+  shoulder (`ActionPose.swing_reach`, `elbow_pole`). First person draws a
+  copy of the character's own arms (`core/visual/first_person_arms.gd`)
+  whose hands grip the weapon: the weapon hand on the grip, the off hand on
+  a gun's "ForeGrip" marker or a two-handed handle, and the left arm lifts
+  the watch. Shots are judged from the eyes but drawn from the gun's
+  "Muzzle" marker as it is shown (`Gun.muzzle_point`). Compare by eye with
+  `visual_check.tscn -- <dir> --views-only [rows]`, which also saves each
+  shot full size under `views/`.
 - People are built from parts (`core/visual/human.gd`): an "appearance" names
   a build, four parts and colours. It is cosmetic only and never trusted:
   always pass one through `Look.clean_appearance` / `Look.set_appearance`,
@@ -290,19 +331,60 @@ without Caleb, and update the gap list when a PR closes a row.
   flies high in swoops (cruise, then coast down with the jets idle to cool),
   stops dead and hovers to shoot steady, and carries heavy armor, but turns
   wide and is loud and hot; wings glide and pulse to hold height, with the
-  fastest dives, tightest turns and a barrel roll, silent and cold, but never
+  fastest dives and tightest turns, silent and cold, but never
   stop and fire only a sidearm while spread; boots skim low (`FlightRig.skim`),
-  cooling near a surface and burning out high up, kick up, dash on heat and
-  aim steady while low, but have no high ground. Flown its
+  cooling near a surface and burning out high up, kick up, dash furthest and
+  aim steady while low. Their kicks top a rooftop (three reach a 15 m roof,
+  Caleb's call) and a roof under the feet is a surface they cool over, but
+  in open air they never cool (`FlightRig.aloft`), so they hold no open sky. Flown its
   own way a rig stays up for minutes, against type it overheats in seconds.
   Shooting from the air spreads wider (`Actor.air_aim`) except in a rig's
-  steady state. The keys fly every rig and the mouse only looks and aims
-  (Caleb's call): wings bank on the strafe keys and dive or pull up on
-  forward and back (`Actor.glide_trim`), and a boost runs along the view's
-  heading, climbing only on jump and descend, never on the view's pitch.
-  The body's attitude in the air (flat, banked, leaning, rolled by
-  `ActorCommand.roll`) is the skin's job (`ActorSkin._update_glide`), read
-  from velocity and the command only, so remote players match. Off the
+  steady state. Rigs come in tiers (Caleb's call): Mk1 to Mk3 of each, a tier
+  made with `ItemDB._rig_tier` from a lower tier's stats. A tier sets `FlightRig.tier`
+  and `ceiling` (`ItemDB.RIG_CEILINGS`: 25, 60, 100 m) and may only make the
+  rig run cooler, never faster: cruise and dash speeds stay the same on
+  every tier, a boost is never faster than the Mk2 jetpack's, and the heat
+  bar stays 100. The ceiling is measured
+  from the world's ground, never a roof (`Actor.ground_level`: the map's
+  `ground_height`, else its origin), and only limits lift: the climb eases
+  off under it (`FlightRig.climb_room`) and a kick, pulse or launch is cut
+  to top out on it (`lift_cap`), or refused without heat. Only Mk1 drops or
+  is sold: Mk2 and up are crafted from blueprints (DESIGN.md section 10),
+  so no loot table may list them.
+  The keys fly every rig and the mouse only looks and aims
+  (Caleb's call), with one exception: wings fly where you look, like a
+  bird's (Caleb's call, so you never fly sideways to your view). They bank
+  round onto the view's heading (`Actor.glide_steer`), the strafe keys roll
+  a harder turn, and forward and back dive or pull up (`Actor.glide_trim`),
+  never the view's pitch. Holding free look (V, `ActorCommand.free_look`,
+  Caleb's call) the wings fly straight on and the view looks and aims
+  anywhere; let go and they come round onto the view. In free look the
+  body twists round its length to face the view, so looking behind lays it
+  on its back, a backstroke, to shoot behind (`ActorSkin._look_roll`, view
+  only; check with `visual_check.tscn -- <dir> --flight-only`). A glide flies like a wing (`Actor._glide_velocity`):
+  speed is momentum, a turn costs speed, a bank sinks faster, pulling up in a
+  turn tightens it, and below the stall speed the wings stall
+  (`Actor.glide_stalled`: they barely turn and drop at `stall_sink` until the
+  nose drops and the speed comes back). Gliding, Shift is a wing boost
+  instead of a dash (`FlightRig.glide_boost`): it thrusts you the way you
+  face and the glide keeps that speed, and Shift + S boosts upward
+  (`glide_boost_climb`); wings never dash sideways. The glide's attitude is
+  held in the world while the view turns, so spinning the camera never
+  drags the body round (`ActorSkin._update_glide`). And a jetpack boost
+  runs along the view's heading, climbing only on jump and descend, never
+  on the view's pitch.
+  Every rig air dashes on Shift + a move key (`ActorCommand.sprint_pressed`,
+  `Actor._air_dash`, tuned by the rig's `air_dash_*` stats): the dash is
+  added on top of the rig's own flight and taken back off, so a glide or a
+  cruise carries on after it. Q and E fly nothing (Caleb's call).
+  The body's attitude in the air (flat, banked, leaning, barrel rolled by a
+  sideways air dash) is the skin's job (`ActorSkin._update_glide`), read
+  from velocity and the simulated actor only, so remote players match. Boots
+  show their thrust (`ActorSkin._update_boot_thrust`): the body leans into
+  the push (gravity, drag and speeding up), the legs and swivelling flames
+  fire down the exhaust, and flying forward lies the body out near flat with
+  the legs dropped so the heel jets fire down and back (never fully flat,
+  or nothing would hold you up). Off the
   ground (`ActorSkin.is_airborne`, from `Actor.airborne_time`) the legs
   never play a gait: a stand plays under an air pose (leap, fall, or
   hanging from lit jets). Leaving the ground starts with a short push-off
@@ -310,6 +392,19 @@ without Caleb, and update the gap list when a PR closes a row.
   knees by how hard it was (`Locomotion.squat`). All of it is view only. A boost keeps the arms down at the sides, never
   reaching ahead (Caleb's call). Check it by eye:
   `visual_check.tscn -- <dir> --flight-only` (or `--takeoff-only`).
+- Feel is measured, not guessed: `godot --headless --fixed-fps 60 --path .
+  res://tests/feel_bench.tscn` flies every rig through set moves and prints
+  how long each takes to answer and the hardest jolt (velocity change in one
+  tick, as m/s²). Movement eases: nothing but a jump, burst, pulse or dash
+  may change an actor's velocity by more than its own accelerations in one
+  tick (wings catch a fall at `FlightRig.glide_catch_accel` and roll into a
+  bank at `glide_bank_rate`; never clamp a velocity straight to its target).
+  What only the player sees is the controller's job and view only: recoil
+  reaching the view over a few frames and settling back
+  (`PlayerController._update_recoil`), the view widening with speed
+  (`speed_fov`) and dipping on a landing (`land_dip`). A semi-auto keeps a
+  pull made just before it is ready (`Gun.press_buffer`); that is simulated,
+  so it is in `Gun`, from the command.
 - Helmets are items tagged `helmet` in the `helmet` loadout slot, and data
   like abilities: `Visor` (`core/abilities/visor.gd`, `Actor.visor`) is one
   class whose `mode` stat picks what the visor does ("" plain, "zoom"
@@ -337,10 +432,15 @@ without Caleb, and update the gap list when a PR closes a row.
   the lock brackets stay (`VisorHud.reticle_shown`), and the helmet wears
   its health strip and system light on the back of the head
   (`ActorSkin._update_vitals`, `helmet_light`), where a pack or a slung gun
-  never covers them. Apart from the
-  thin health arc, do not repeat the wrist on the glass (ammo, the map,
-  standing): the wrist shows you, the visor shows what is around you. Mk2
-  helmets are loot only. Check the glass by eye with
+  never covers them. The glass carries
+  only your always-in-view readings (the health arc with armor and stamina
+  inside it and the ability's state under it, and with a flight rig the
+  heat gauge and rig cue high on the right, `VisorHud._draw_vitals` and
+  `_draw_heat`; squad markers and the landing warning are still to come,
+  per DESIGN.md sections 3 and 5); do not put the map or standing there, they
+  stay on the watch. Mk2
+  helmets are never sold or dropped: like rigs, they are crafted from
+  blueprints (DESIGN.md section 10), so no loot table may list them. Check the glass by eye with
   `visual_check.tscn -- <dir> --visors-only`.
 - Vehicles are items tagged `vehicle`, tuned by their stats, and spawned by
   `Raid` (never carried). `core/vehicle/vehicle.gd` reads its rider's
@@ -354,7 +454,8 @@ without Caleb, and update the gap list when a PR closes a row.
   bike's lean (`ActorSkin.ride_frame`). The left hand keeps its grip; the
   right takes its grip only with nothing in it, holds a gun out toward the
   aim, and leaves a blade to its usual hold, so melee windups still show.
-  Back-slung weapons ride higher up the back (`ride_sling_lift`). A new
+  Back-slung weapons ride higher up the back (`ride_sling_lift`); weapons
+  clamped to a back rig's rails stay in their clamps. A new
   vehicle type sets those anchor points for its model. Check by eye:
   `visual_check.tscn -- <dir> --ride-only`.
 - Toy vehicles: a vehicle a player owns in a world rides on their watch as
@@ -385,11 +486,19 @@ without Caleb, and update the gap list when a PR closes a row.
   or decides an outcome. Anything that changes a result must run on the server
   and reach clients through `NetSession`.
 - Online movement: a client numbers every input and each packet repeats
-  every input the server has not answered for yet (up to
-  `NetSession.MAX_INPUTS_PER_PACKET`), so a press survives a run of lost
-  packets; the server plays them in order, one per tick, and each state
-  entry carries the input number it had reached, which is also the answer
-  that stops the resending. The client corrects its own
+  every input the server has not received yet (up to
+  `NetSession.MAX_INPUTS_PER_PACKET`, packed small by `pack_inputs` so a
+  full packet fits in one datagram), so a press survives a run of lost
+  packets. The server plays them in order, one per tick, as soon as it has
+  them (`NetSession.InputBuffer`): nothing is held back to smooth a bad
+  connection, because a held input is input delay. A tick with nothing to
+  play is a guess (the held keys carry on) that counts as the next input,
+  and the real one is skipped when it arrives late, keeping its presses
+  and any held key that went down in it (a one-tick tap of the trigger is a
+  shot, see `InputBuffer._late_taps`); inputs that stay spare are trimmed. Each state entry carries the input
+  number the actor had been simulated up to (guesses included), and a
+  player's own entry also carries the newest input received, which is the
+  answer that stops the resending. The client corrects its own
   actor by comparing the server's position with its remembered prediction for
   that input (`NetSession._history`), never with its current position, and
   blends every correction over several ticks. Keep `Actor` movement
@@ -420,8 +529,29 @@ without Caleb, and update the gap list when a PR closes a row.
   a name in `SocialService.PLACE_NAMES`. The phone's Controls app lists
   every key from `Phone.CONTROLS`, whose `{action}` names are filled in from
   the live `InputMap`; a new input action needs a row there (a test fails
-  otherwise), and a changed control needs its row's wording updated. Settings live in
+  otherwise), and a changed control needs its row's wording updated. The phone
+  is held, not overlaid: its screen is a `SubViewport` on a rounded slab held
+  up in front of the camera (drawn over the world on `Mirror.HELD_LAYER`, the
+  scene dimmed behind it), with a home screen of app icons; a new app is an
+  entry in `Phone.APPS` with an icon glyph in `Phone.AppIcon`. Holding it is
+  `ActorCommand.phone`, a held flag, so everyone else sees the one-handed hold
+  (`Locomotion.phone_pose`, the one place to swap in a shared hand pose).
+  Settings live in
   `core/settings/game_settings.gd` (its own save file); a server never reads them.
+- Dev mode is TEMPORARY (Caleb's call, to come out once the game is further
+  along): `core/dev/dev_mode.gd`, switched in the phone's Settings app and
+  only in a debug or editor run (`DevMode.available`), never in an exported
+  game. Solo, it puts `Profile` on a separate save
+  (`Profile.DEV_SAVE_PATH`) kept topped up with all gear and max credits, and
+  hands a solo `Raid` its cheats (`Raid.dev_cheats`: god mode, endless heat
+  and ammo, no cooldowns); a server or client raid ignores them. Online, only
+  a server hosted from the editor in dev mode (`main.gd host_and_join`
+  passes `--dev-host <name>`) tops that one account up
+  (`StashService.dev_accounts`), and such a server keeps its accounts in
+  `Main.DEV_ACCOUNTS`, apart from real ones. No cheats online. Every line
+  it touches is marked "DEV MODE". Never build a feature on it; to remove it,
+  delete `core/dev/` and every "DEV MODE" line or block, plus
+  `_test_dev_mode` in the tests.
 - Safe zones: a world with `WorldDef.safe_zone` (the plaza, `worlds/plaza`)
   is a social space run by the same `Raid` and `NetSession`. `Combat.deal`
   refuses every hit there, `Actor.weapons_locked` stops attacks, abilities
@@ -462,13 +592,27 @@ without Caleb, and update the gap list when a PR closes a row.
   add full-screen panels or overlays; information about a thing goes on or
   next to the thing (a `Label3D` tag, a sign) or into the phone. The HUD is
   for the crosshair, prompts, hit feedback and brief notices.
-- The watch and the phone split the job (Caleb's rule). The holographic
-  watch (`Hud.Wrist`, raised with X) is for gameplay: vitals, pack, ammo,
-  heat, standing and strongpoints, landing choices, and future in-raid
-  actions such as calling something in. The phone is for settings, talking
-  to friends and players, and information (news, the war feed). A new
-  in-raid action goes on the watch; a new social or info feature is a
-  phone app.
+- The watch and the phone split the job (Caleb's rule, revised: the watch no
+  longer carries vitals, heat and ammo; see DESIGN.md section 3). Vitals,
+  flight heat and ammo are always in view on the visor and the gear (health
+  arc, gun display, pack screen), so no key is needed to see them. The
+  holographic watch (`Hud.Wrist`, raised with X) is for the things you choose
+  to do in action: vehicles, the heavy weapon, artifacts, sign-out, banking,
+  the map and pings, landing choices and the pack. The phone is for
+  settings, talking to friends and players, and information (news, the war
+  feed). A new in-raid action goes on the watch; a new social or info
+  feature is a phone app. The watch is a card-sized hologram of icons, one
+  per thing it holds (`Hud.watch_slots`, `Hud.Wrist.SLOTS`): the open icon
+  shows one short line, and controls are glyphs (wheel, click, key cap),
+  never words. The mouse wheel moves across the card
+  (`PlayerController.watch_focus`, `step_watch`; Caleb's call), turning
+  through the toys on the vehicle icon before stepping on, and the mouse
+  only looks. While the watch is up the wheel never switches weapons. A new
+  watch feature is a new slot, not a new line of text. In third person the
+  card rises off the worn watch with a glow on the arm; it is never hung in
+  front of the camera. Vitals go on the card only where the visor cannot
+  show them (no helmet, or third person). Check it by eye with
+  `visual_check.tscn -- <dir> --watch-only`.
 - Money (`core/economy/`): the rules live once, in `economy.gd` (static, like
   `StashRules`), shared by `Profile` and `StashService`. Online, `credits`
   lives on the server's account and only changes there: through
@@ -500,7 +644,11 @@ without Caleb, and update the gap list when a PR closes a row.
   decided only by the authority's `Arena` and paid through `Arena.bank`;
   a client only sends `Arena.ask` requests and shows the board the server
   sends. Credits change only through `StashService.change_credits` online and
-  `Profile.change_credits` solo.
+  `Profile.change_credits` solo. The Pit's moving parts (the tunnel doors and
+  the rising barriers) are worked out from the bout's phase and fight clock
+  alone (`ArenaVenue.doors_open`, `barrier_raise`), which the `Arena` hands
+  the map every tick (`set_stage`) on every machine, so they need no messages
+  of their own. Static venue boxes are merged into one mesh per material.
 
 ## Conventions
 
@@ -527,6 +675,7 @@ godot --headless --path . res://tests/test_runner.tscn -- --only online   # one 
 godot --headless --fixed-fps 60 --path . res://tests/test_runner.tscn -- --tier offline   # fast, ~1 min
 godot --headless --path . res://tests/test_runner.tscn -- --tier net --shard 1/3   # a third of the online groups
 godot --headless --path . res://tests/battle_bench.tscn -- --bots 150 --players 32   # server cost of a big battle
+godot --headless --fixed-fps 60 --path . res://tests/feel_bench.tscn   # how each rig answers, in numbers
 ```
 
 CI (`.github/workflows/tests.yml`) runs the suite in two tiers. The offline

@@ -25,9 +25,12 @@ var dash := false
 var slide := false
 ## Held: sink while hovering with a jetpack (the slide key).
 var descend := false
-## Held: roll the body left or right in flight. -1 left, 1 right, 0 none.
-## Cosmetic: the skin twists the body round; the simulation ignores it.
-var roll := 0
+## Pressed this tick: the sprint key went down. In the air with a flight rig
+## that is a dash the way the move keys point (`FlightRig.air_dash_speed`).
+var sprint_pressed := false
+## Held: free look. Glide wings fly where you look; while this is held they
+## fly straight on instead, so the view can look and aim anywhere.
+var free_look := false
 
 ## Primary and secondary weapon actions (fire / aim, light / heavy attack).
 var primary := false
@@ -49,9 +52,17 @@ var ability_pressed := false
 var visor_pressed := false
 ## Held: the zoom level asked of a helmet with binoculars, 0 for off.
 var visor_level := 0
+## Held: the watch on the left wrist is raised. Nothing in the simulation
+## reads it; it travels with the held keys so everyone sees a raised watch
+## (`ActorSkin._update_watch_glow`, and the arm lift).
+var watch_up := false
 ## Index of the weapon to switch to, -1 to keep the current one, or
 ## `HOLSTER` to put the weapon in hand away.
 var switch_weapon := -1
+## Held: the phone is out. Nothing in the simulation reads it; it travels
+## with the held keys so everyone else's view shows the player looking at
+## their phone (`ActorSkin`, `Locomotion.phone_weight`).
+var phone := false
 
 const HOLSTER := -2
 
@@ -59,6 +70,7 @@ const HOLSTER := -2
 ## Clears everything that should only last a single tick.
 func clear_one_shots() -> void:
 	jump_pressed = false
+	sprint_pressed = false
 	dash = false
 	slide = false
 	primary_pressed = false
@@ -99,17 +111,19 @@ const FLAG_VISOR_PRESSED := 16384
 const VISOR_LEVEL_SHIFT := 15
 const VISOR_LEVEL_MASK := 3 << VISOR_LEVEL_SHIFT
 const FLAG_DESCEND := 131072
-const FLAG_ROLL_LEFT := 262144
-const FLAG_ROLL_RIGHT := 524288
+const FLAG_SPRINT_PRESSED := 262144
+const FLAG_PHONE := 524288
+const FLAG_WATCH_UP := 4194304
 ## Not an input: the server sets this bit in the commands it sends back with
 ## each state, to say the actor's jets are lit (`FlightRig.is_hovering`).
 const STATE_HOVERING := 1048576
+const FLAG_FREE_LOOK := 2097152
 ## Flags that describe a held key, and flags that last a single tick.
 const HELD_MASK := FLAG_SPRINT | FLAG_JUMP | FLAG_PRIMARY | FLAG_SECONDARY | VISOR_LEVEL_MASK \
-		| FLAG_DESCEND | FLAG_ROLL_LEFT | FLAG_ROLL_RIGHT
+		| FLAG_DESCEND | FLAG_PHONE | FLAG_FREE_LOOK | FLAG_WATCH_UP
 const ONE_SHOT_MASK := FLAG_JUMP_PRESSED | FLAG_DASH | FLAG_PRIMARY_PRESSED | FLAG_SECONDARY_PRESSED \
 		| FLAG_TERTIARY_PRESSED | FLAG_RELOAD_PRESSED | FLAG_INTERACT_PRESSED | FLAG_HEAL_PRESSED \
-		| FLAG_ABILITY_PRESSED | FLAG_SLIDE | FLAG_VISOR_PRESSED
+		| FLAG_ABILITY_PRESSED | FLAG_SLIDE | FLAG_VISOR_PRESSED | FLAG_SPRINT_PRESSED
 
 
 ## Every button, held or pressed, packed into one integer.
@@ -130,9 +144,11 @@ func flags() -> int:
 	if ability_pressed: out |= FLAG_ABILITY_PRESSED
 	if slide: out |= FLAG_SLIDE
 	if descend: out |= FLAG_DESCEND
-	if roll < 0: out |= FLAG_ROLL_LEFT
-	if roll > 0: out |= FLAG_ROLL_RIGHT
+	if free_look: out |= FLAG_FREE_LOOK
+	if sprint_pressed: out |= FLAG_SPRINT_PRESSED
 	if visor_pressed: out |= FLAG_VISOR_PRESSED
+	if phone: out |= FLAG_PHONE
+	if watch_up: out |= FLAG_WATCH_UP
 	out |= clampi(visor_level, 0, 3) << VISOR_LEVEL_SHIFT
 	return out
 
@@ -167,9 +183,12 @@ func apply_array(data: Array) -> void:
 	ability_pressed = bits & FLAG_ABILITY_PRESSED != 0
 	slide = bits & FLAG_SLIDE != 0
 	descend = bits & FLAG_DESCEND != 0
-	roll = (1 if bits & FLAG_ROLL_RIGHT != 0 else 0) - (1 if bits & FLAG_ROLL_LEFT != 0 else 0)
+	free_look = bits & FLAG_FREE_LOOK != 0
+	sprint_pressed = bits & FLAG_SPRINT_PRESSED != 0
 	visor_pressed = bits & FLAG_VISOR_PRESSED != 0
+	watch_up = bits & FLAG_WATCH_UP != 0
 	visor_level = (bits & VISOR_LEVEL_MASK) >> VISOR_LEVEL_SHIFT
+	phone = bits & FLAG_PHONE != 0
 	stance = clampi(int(_number(data[STANCE_INDEX])), 0, 2)
 	switch_weapon = clampi(int(_number(data[SWITCH_INDEX])), HOLSTER, 8)
 

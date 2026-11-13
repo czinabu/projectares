@@ -20,7 +20,9 @@ extends RefCounted
 ##   - optionally a `bake_navigation()` method for bot pathfinding
 ##   - optionally a `ground_height(x, z)` method, on a map with open ground
 ##     that is not level (see `core/world/terrain.gd`). The Raid stands
-##     players and bots on it when they spawn.
+##     players and bots on it when they spawn. Flight rig ceilings are
+##     measured from it too (`FlightRig.ceiling`); a map without one has its
+##     ground level at its own origin, so keep the floor there.
 ##   - optionally Marker3D nodes in group "strongpoint": sites to capture and
 ##     hold. Metas: "name" (String), "radius" (float, metres), and optionally
 ##     "holder" (a bot faction that holds it from the start) with

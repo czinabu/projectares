@@ -80,6 +80,7 @@ static func run(t: Node) -> void:
 				sword = held
 		t.check(skin.arm.reach_ik != null, tag + "the player's model can pose its weapon arm")
 		if sword != null and skin.arm.reach_ik != null:
+			var pose := ActionPose.of(raid.player)
 			t.check(skin.arm.arm_reach(sword) == null, tag + "the animation keeps the arm when no attack or guard is up")
 			var reaches := {}
 			for side: int in [MeleeWeapon.Dir.LEFT, MeleeWeapon.Dir.RIGHT, MeleeWeapon.Dir.OVERHEAD]:
@@ -87,10 +88,10 @@ static func run(t: Node) -> void:
 				sword.attack_dir = side
 				reaches[skin.arm.arm_reach(sword)] = true
 			t.check(reaches.size() == 3 and not reaches.has(null), tag + "each attack side cocks the arm differently")
-			var left: Vector3 = skin.arm.arm_windup[MeleeWeapon.Dir.LEFT]
-			var right: Vector3 = skin.arm.arm_windup[MeleeWeapon.Dir.RIGHT]
+			var left: Vector3 = pose.arm_windup[MeleeWeapon.Dir.LEFT]
+			var right: Vector3 = pose.arm_windup[MeleeWeapon.Dir.RIGHT]
 			t.check(left.x < right.x, tag + "a left windup holds the hand further to the actor's left")
-			t.check(skin.arm.arm_windup[MeleeWeapon.Dir.OVERHEAD].y > maxf(left.y, right.y), tag + "an overhead windup raises the hand highest")
+			t.check(pose.arm_windup[MeleeWeapon.Dir.OVERHEAD].y > maxf(left.y, right.y), tag + "an overhead windup raises the hand highest")
 			# The body turns with the arm, opposite ways for opposite sides.
 			sword.attack_dir = MeleeWeapon.Dir.LEFT
 			var turn_left: Vector2 = skin.arm.body_turn(sword)
@@ -101,19 +102,20 @@ static func run(t: Node) -> void:
 			sword._windup_left = 0.0
 			sword._swing_left = MeleeWeapon.SWING_TIME * 0.5
 			var mid: Vector3 = skin.arm.arm_reach(sword)
-			var straight: Vector3 = (skin.arm.arm_windup[MeleeWeapon.Dir.RIGHT] + skin.arm.arm_follow[MeleeWeapon.Dir.RIGHT]) * 0.5
+			var straight: Vector3 = (pose.arm_windup[MeleeWeapon.Dir.RIGHT] + pose.arm_follow[MeleeWeapon.Dir.RIGHT]) * 0.5
 			t.check(mid.z < straight.z - 0.05, tag + "the hand bows forward through a swing")
 			t.check(signf(skin.arm.body_turn(sword).x - turn_right.x) > 0.0, tag + "the shoulders unwind through a swing")
 			sword._swing_left = 0.0
-			skin.arm._follow_left = 0.1
-			skin.arm._follow_dir = MeleeWeapon.Dir.RIGHT
-			t.check(skin.arm.arm_reach(sword) == skin.arm.arm_follow[MeleeWeapon.Dir.RIGHT], tag + "the follow-through is held after the swing lands")
-			skin.arm._follow_left = 0.0
+			pose._follow_left = 0.1
+			pose._follow_dir = MeleeWeapon.Dir.RIGHT
+			t.check(skin.arm.arm_reach(sword) == pose.arm_follow[MeleeWeapon.Dir.RIGHT], tag + "the follow-through is held after the swing lands")
+			pose._follow_left = 0.0
 			sword._windup_left = 1.0
 			t.check(not skin.arm._fist.is_empty() and skin.arm._grip_axis.length() > 0.9, tag + "the model knows how to close its hand on a handle")
 			t.check(skin.arm.off_ik != null and not skin.arm._off_fist.is_empty(), tag + "the model has an off hand for two-handed weapons")
 			raid.player.hand_override = true
-			t.check(skin.arm.arm_reach(sword) == null, tag + "the arm is left alone in first person")
+			t.check(skin.arm.arm_reach(sword) == pose.arm_windup[sword.attack_dir],
+					tag + "first person reads the same windup the third-person arm reaches for")
 			raid.player.hand_override = false
 			sword._windup_left = 0.0
 			sword._blocking = true
@@ -275,7 +277,7 @@ static func run(t: Node) -> void:
 
 
 ## A holstered weapon is worn on the body, not hidden: a gun slung across
-## the back (outside a worn jetpack), a one-handed blade on the hip.
+## the back (or clamped down a worn jetpack's side), a one-handed blade on the hip.
 static func _check_holster(t: Node, tag: String, player: Actor, skin: Node) -> void:
 	var gun_at := -1
 	var blade_at := -1
@@ -312,9 +314,17 @@ static func _check_holster(t: Node, tag: String, player: Actor, skin: Node) -> v
 		var at: Vector3 = centre.call(slung)
 		var skeleton: Skeleton3D = skin._skeleton
 		var chest := to_actor * skeleton.global_transform * skeleton.get_bone_global_pose(skeleton.find_bone("Chest")).origin
-		t.check(at.z > chest.z + 0.12 and at.y > 0.9 and at.y < 1.6 and absf(at.x) < 0.3,
-				tag + "a holstered gun is slung across the back%s (%.2f m behind the chest bone)" % [label, at.z - chest.z])
-		if skin._rig_back:
+		var railed: bool = skin._rig_back != null and skin._rig_back.has_node("MountR")
+		if railed:
+			# A jetpack clamps it to the rail down its right side instead
+			# (rig_look_tests checks the fit).
+			var rail: Vector3 = to_actor * (skin._rig_back.get_node("MountR") as Node3D).global_position
+			t.check(at.x > rail.x and at.x < rail.x + 0.3 and at.z > chest.z + 0.05 and at.y > 0.9 and at.y < 1.6,
+					tag + "a holstered gun is clamped down the jetpack's right side (%.2f m out from its rail)" % (at.x - rail.x))
+		else:
+			t.check(at.z > chest.z + 0.12 and at.y > 0.9 and at.y < 1.6 and absf(at.x) < 0.3,
+					tag + "a holstered gun is slung across the back%s (%.2f m behind the chest bone)" % [label, at.z - chest.z])
+		if skin._rig_back and not railed:
 			var pack: Vector3 = to_actor * skin._rig_back.global_transform * Look.model_bounds(skin._rig_back).end
 			t.check(at.z > pack.z - 0.05, tag + "a holstered gun hangs outside the jetpack, not inside it")
 		player.active_weapon_index = gun_at

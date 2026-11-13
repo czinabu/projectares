@@ -29,6 +29,13 @@ static func _attachments() -> Array[String]:
 static func _items(t: Node) -> void:
 	var all := _attachments()
 	t.check(all.size() >= 10, "there are attachments to find (%d)" % all.size())
+	# Helmets that zoom are tagged "optic" too, but are never a gun's optic.
+	var helmets_as_optics: Array[String] = []
+	for id: String in ItemDB.all_ids():
+		if ItemDB.has_tag(id, "helmet") and Loadout.fits("optic", id):
+			helmets_as_optics.append(id)
+	t.check(helmets_as_optics.is_empty() and Loadout.fits("helmet", "helm_spotter"),
+			"the Optic slot offers no helmets (%s)" % ", ".join(helmets_as_optics))
 	var per_slot := {}
 	for id in all:
 		var slot := Loadout.attachment_slot(id)

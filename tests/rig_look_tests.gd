@@ -32,6 +32,44 @@ static func run(t: Node) -> void:
 	var mk2 := RigModel.build_back("jetpack_mk2")
 	t.check(Look.model_bounds(mk2).size.length() > mk1_size.length(), "the Mk2 jetpack is the bigger pack")
 	mk2.free()
+	# A rail down each side clamps the holstered long weapons, leaning out at
+	# the top so they stand in a V; nothing else on the pack sticks out past it.
+	for id: String in ["jetpack_mk1", "jetpack_mk2", "wings_glide"]:
+		var jet_model := RigModel.build_back(id)
+		var mount_l := jet_model.get_node_or_null("MountL") as Marker3D
+		var mount_r := jet_model.get_node_or_null("MountR") as Marker3D
+		t.check(mount_l != null and mount_r != null, "%s has a weapon rail on each side" % id)
+		if mount_l and mount_r:
+			t.check(mount_r.position.x > 0.15 and mount_l.position.x < -0.15
+					and absf(mount_r.position.x + mount_l.position.x) < 0.001, "%s's rails are on its sides" % id)
+			t.check(mount_r.basis.y.x > 0.05 and mount_l.basis.y.x < -0.05 and mount_r.basis.y.y > 0.98,
+					"%s's rails lean out at the top, a slight V" % id)
+			var past := 0.0
+			for node in jet_model.find_children("*", "MeshInstance3D", true, false):
+				var box: AABB = _in_xform(jet_model, node as Node3D) * (node as MeshInstance3D).get_aabb()
+				# Only what is level with the rail could hold a weapon off it.
+				if box.end.y > mount_r.position.y - 0.4 and box.position.y < mount_r.position.y + 0.4:
+					var rail_x := mount_r.position.x + (box.get_center().y - mount_r.position.y) * mount_r.basis.y.x
+					past = maxf(past, maxf(box.end.x, -box.position.x) - rail_x)
+			t.check(past < 0.06, "%s has nothing past its rails but the clamps (%.3f m)" % [id, past])
+		t.check(jet_model.get_node_or_null("HeatDisplay") != null, "%s has a heat screen on its back" % id)
+		if jet_model.has_node("WingR"):
+			# Spread, a wing passes in front of the rail, never through a
+			# weapon clamped there.
+			RigModel.set_wing_spread(jet_model, 1.0)
+			var wing_back := -INF
+			for node in jet_model.get_node("WingR").find_children("*", "MeshInstance3D", true, false):
+				var mesh_node := node as MeshInstance3D
+				var xform := _in_xform(jet_model, mesh_node)
+				for i in mesh_node.mesh.get_surface_count():
+					for v: Vector3 in mesh_node.mesh.surface_get_arrays(i)[Mesh.ARRAY_VERTEX]:
+						var at := xform * v
+						# As far out as a clamped weapon reaches.
+						if mount_r and at.x < mount_r.position.x + 0.35:
+							wing_back = maxf(wing_back, at.z)
+			t.check(mount_r != null and mount_r.position.z - wing_back > 0.04,
+					"the wing pack's rails stand behind the wings (%.3f m clear)" % (mount_r.position.z - wing_back if mount_r else 0.0))
+		jet_model.free()
 	t.check(RigModel.build_back("boots_thruster") == null and RigModel.build_boot("jetpack_mk1", 1.0) == null,
 			"boots go only on the feet, and a jetpack only on the back")
 
@@ -67,6 +105,7 @@ static func run(t: Node) -> void:
 		t.check(at.z > 0.0 and at.y > 1.0 and at.y < 1.6 and absf(at.x) < 0.1, "the jetpack sits on the player's back")
 		t.check(jet.global_basis.get_scale().is_equal_approx(Vector3.ONE * jet.global_basis.get_scale().x)
 				and absf(jet.global_basis.get_scale().x - 1.0) < 0.05, "the jetpack is built to the player's size")
+		_check_clamped(t, p, skin, jet)
 		var flames := jet.find_children("Flame", "Node3D", true, false)
 		t.check(flames.size() == 2 and not flames.any(func(f: Node3D) -> bool: return f.visible), "the nozzles are cold at rest")
 		p.flight.is_thrusting = true
@@ -170,7 +209,7 @@ static func run(t: Node) -> void:
 	p.airborne_time = 1.0
 
 	# A jetpack boost lays the body out head first with the arms down at the
-	# sides; a hover leans the way it drifts; the roll keys turn it over.
+	# sides; a hover leans the way it drifts; a sideways air dash rolls it over.
 	_equip(p, "jetpack_mk2")
 	await t.frames(2)
 	p.flight.is_hovering = true
@@ -202,19 +241,88 @@ static func run(t: Node) -> void:
 		await t.get_tree().create_timer(2.6).timeout
 		t.check(not held.visual.visible, "and it goes back when you stop")
 	var belly := p.global_basis.inverse() * (skin as Node3D).global_basis.z
-	p.cmd.roll = 1
-	await t.get_tree().create_timer(0.25).timeout
+	p.air_dash_side = 1.0
+	p.air_dash_left = p.flight.air_dash_time
+	await t.get_tree().create_timer(p.flight.air_dash_time * 0.45).timeout
 	var rolled := p.global_basis.inverse() * (skin as Node3D).global_basis.z
-	t.check(belly.angle_to(rolled) > 1.0, "the roll keys turn the body over in flight")
-	p.cmd.roll = 0
-	await t.get_tree().create_timer(0.6).timeout
+	t.check(belly.angle_to(rolled) > 1.0, "a sideways air dash barrel rolls the body in flight")
+	p.air_dash_left = 0.0
+	await t.get_tree().create_timer(0.8).timeout
 	rolled = p.global_basis.inverse() * (skin as Node3D).global_basis.z
-	t.check(belly.angle_to(rolled) < 0.1, "letting go rights the body again")
+	t.check(belly.angle_to(rolled) < 0.1, "after the dash the body rights itself")
 	p.flight.is_hovering = false
 	p.flight.is_boosting = false
 	p.velocity = Vector3.ZERO
 	await t.get_tree().create_timer(0.6).timeout
 	t.check((skin as Node3D).transform.basis.y.y > 0.99, "the body stands up again after a boost")
+
+	# Thruster boots lean into their push, point the nozzles down the
+	# exhaust and swivel the flames along it; flying forward the body lies
+	# out like a diver, never quite flat, and a dash flattens it further.
+	_equip(p, "boots_thruster")
+	p.flight.skim_speed = 15.0
+	p.flight.air_dash_speed = 20.0
+	await t.frames(2)
+	var heel_flames: Array[Node3D] = []
+	heel_flames.assign(skin.find_children("Flame", "Node3D", true, false).filter(
+			func(n: Node) -> bool: return not n.is_queued_for_deletion()))
+	var exhaust := func() -> Vector3:
+		return p.global_basis.inverse() * -(heel_flames[0].global_basis.y.normalized())
+	var body_pitch := func() -> float:
+		return (p.global_basis.inverse() * (skin as Node3D).global_basis.y).angle_to(Vector3.UP)
+	p.flight.is_skimming = true
+	p.velocity = Vector3.ZERO
+	await t.get_tree().create_timer(0.8).timeout
+	t.check(body_pitch.call() < 0.15, "skimming in place, the boots hold the body upright (%.2f rad)" % body_pitch.call())
+	t.check(heel_flames.size() == 2 and heel_flames.all(func(f: Node3D) -> bool: return f.visible)
+			and exhaust.call().y < -0.9, "and the heel flames fire straight down")
+	p.velocity = -p.global_basis.z * 15.0
+	await t.get_tree().create_timer(0.9).timeout
+	var cruise_pitch: float = body_pitch.call()
+	var cruise_axis := p.global_basis.inverse() * (skin as Node3D).global_basis.y
+	t.check(cruise_axis.z < -0.8 and cruise_pitch > 1.0 and cruise_pitch < 1.45,
+			"skimming forward, the body lies out head first but never flat (%.2f rad)" % cruise_pitch)
+	var cruise_exhaust: Vector3 = exhaust.call()
+	t.check(cruise_exhaust.y < -0.4 and cruise_exhaust.z > 0.4,
+			"the heel flames fire down and back: holding you up and driving you on (%s)" % cruise_exhaust)
+	if skeleton and skeleton.find_bone("Head") >= 0 and foot_bone >= 0:
+		skin._pose_glide()
+		var head_at := p.to_local(skeleton.to_global(skeleton.get_bone_global_pose(skeleton.find_bone("Head")).origin))
+		var foot_at := p.to_local(skeleton.to_global(skeleton.get_bone_global_pose(foot_bone).origin))
+		t.check(head_at.z < foot_at.z - 1.0 and foot_at.y < head_at.y,
+				"head out ahead, feet trailing below and behind (head %s, foot %s)" % [head_at, foot_at])
+	p.cmd.secondary = true
+	await t.get_tree().create_timer(0.9).timeout
+	var aim_pitch: float = body_pitch.call()
+	t.check(aim_pitch < cruise_pitch - 0.2, "aiming lifts the chest so the arms have room (%.2f rad)" % aim_pitch)
+	var held_gun := p.get_active_weapon()
+	if held_gun and held_gun.visual:
+		var aim_dir := (p.global_basis * Basis(Vector3.RIGHT, p.cmd.pitch) * Vector3.FORWARD).normalized()
+		var gun_at := p.to_local(held_gun.visual.global_position)
+		t.check(held_gun.visual.visible and (-held_gun.visual.global_basis.z).normalized().dot(aim_dir) > 0.95
+				and gun_at.z < 0.0 and gun_at.y > 0.5, "lying out, the gun is held ahead and still points along the aim")
+	p.cmd.secondary = false
+	await t.get_tree().create_timer(skin.aim_hold + 1.0).timeout
+	p.velocity = -p.global_basis.z * 35.0
+	await t.get_tree().create_timer(0.9).timeout
+	t.check(body_pitch.call() > cruise_pitch + 0.05 and body_pitch.call() < PI / 2.0,
+			"a dash flattens the body further (%.2f rad)" % body_pitch.call())
+	t.check(heel_flames[0].scale.y > 1.3, "and the flames stretch with the harder push (%.2f)" % heel_flames[0].scale.y)
+	p.velocity = p.global_basis.x * 15.0
+	await t.get_tree().create_timer(0.9).timeout
+	var strafe_axis := p.global_basis.inverse() * (skin as Node3D).global_basis.y
+	t.check(strafe_axis.x > 0.4 and body_pitch.call() < skin.boot_max_lean + 0.05,
+			"skimming sideways, the body rolls into the push (%s)" % strafe_axis)
+	t.check(exhaust.call().x < -0.3, "and the flames blow the other way")
+	p.velocity = p.global_basis.z * 15.0
+	await t.get_tree().create_timer(0.9).timeout
+	var back_axis := p.global_basis.inverse() * (skin as Node3D).global_basis.y
+	t.check(back_axis.z > 0.4 and body_pitch.call() < skin.boot_max_lean + 0.05,
+			"skimming backward, the body leans back, never lying out (%s)" % back_axis)
+	p.flight.is_skimming = false
+	p.velocity = Vector3.ZERO
+	await t.get_tree().create_timer(0.9).timeout
+	t.check((skin as Node3D).transform.basis.y.y > 0.99 and skin._boot_w < 0.01, "letting go of the boots stands the body up")
 
 	_equip(p, "wings_glide")
 	await t.frames(2)
@@ -222,6 +330,7 @@ static func run(t: Node) -> void:
 	t.check(pack_node != null and skin.find_children("Boot*", "Node3D", true, false).filter(
 			func(n: Node) -> bool: return not n.is_queued_for_deletion()).is_empty(), "glide wings replace the boots")
 	if pack_node:
+		_check_clamped(t, p, skin, pack_node)
 		var wing_tip := pack_node.get_node("WingR/Panel/TipLight") as Node3D
 		var stowed_at := p.to_local(wing_tip.global_position)
 		t.check(absf(stowed_at.x) < 0.2 and not wing_tip.is_visible_in_tree(), "the wings stay retracted on the ground")
@@ -251,6 +360,43 @@ static func run(t: Node) -> void:
 			await t.get_tree().process_frame
 		bank_gap = port_tip.global_position.y - wing_tip.global_position.y
 		t.check(bank_gap < -0.6, "and into a left turn, left wing down (%.2f m)" % bank_gap)
+		# Spinning the view while the glide flies straight on: the body keeps
+		# facing the way it flies and never swings round with the camera.
+		p.velocity = flying * 16.0 + Vector3(0, -1.8, 0)
+		await t.get_tree().create_timer(0.6).timeout
+		var worst_face := 1.0
+		for i in 40:
+			p.cmd.yaw = wrapf(p.cmd.yaw + 0.2, -PI, PI)
+			p.rotation.y = p.cmd.yaw
+			await t.get_tree().process_frame
+			var nose := (skin as Node3D).global_basis.y
+			worst_face = minf(worst_face, Vector3(nose.x, 0, nose.z).normalized().dot(flying))
+		t.check(worst_face > 0.95, "spinning the view in a glide leaves the body facing the way it flies (worst %.2f)" % worst_face)
+		# Free look: look to the side and the body twists round to face it;
+		# look behind and it lies on its back, a backstroke, flying on.
+		var z0 := (skin as Node3D).global_basis.z
+		var front_axis := 1.0 if z0.y < 0.0 else -1.0
+		var flight_yaw := atan2(-flying.x, -flying.z)
+		p.cmd.free_look = true
+		p.cmd.yaw = wrapf(flight_yaw - PI / 2.0, -PI, PI)
+		p.rotation.y = p.cmd.yaw
+		await t.get_tree().create_timer(0.8).timeout
+		var front := (skin as Node3D).global_basis.z * front_axis
+		var view := Basis(Vector3.UP, p.cmd.yaw) * Vector3.FORWARD
+		t.check(front.dot(view) > 0.5, "free look to the side twists the body to face it (%.2f)" % front.dot(view))
+		p.cmd.yaw = wrapf(flight_yaw + PI - 0.05, -PI, PI)
+		p.rotation.y = p.cmd.yaw
+		await t.get_tree().create_timer(0.8).timeout
+		front = (skin as Node3D).global_basis.z * front_axis
+		var nose := (skin as Node3D).global_basis.y
+		t.check(front.y > 0.8 and Vector3(nose.x, 0, nose.z).normalized().dot(flying) > 0.9,
+				"free look behind lays the body on its back, still flying head first (%.2f up)" % front.y)
+		p.cmd.free_look = false
+		p.cmd.yaw = flight_yaw
+		p.rotation.y = p.cmd.yaw
+		await t.get_tree().create_timer(0.8).timeout
+		front = (skin as Node3D).global_basis.z * front_axis
+		t.check(front.y < -0.8, "letting go of free look rolls the body face down again")
 		p.velocity = flying * 24.0 + Vector3(0, -10.0, 0)
 		await t.get_tree().create_timer(0.6).timeout
 		t.check((skin as Node3D).global_basis.y.y < -0.2, "a dive points the nose down")
@@ -286,6 +432,59 @@ static func _equip(actor: Actor, id: String) -> void:
 	actor.flight.item_id = id
 	actor.flight.display_name = ItemDB.item_name(id)
 	actor.flight.enabled = true
+
+
+## With a jetpack or wing pack on and the weapons holstered, the gun is
+## clamped to the rail on the right: its near side on the clamps, leaning out with the rail,
+## and clear of the heat screen on the pack's back.
+static func _check_clamped(t: Node, p: Actor, skin: Node, jet: Node3D) -> void:
+	var gun: Weapon = null
+	for w in p.weapons:
+		if w is Gun and not skin.is_sidearm(w):
+			gun = w
+	if gun == null:
+		return
+	var was := p.active_weapon_index
+	p.active_weapon_index = -1
+	for i in 30:
+		skin._process(1.0 / 60.0)
+	var model: Node3D = skin._stowed_models.get(gun)
+	var mount := jet.get_node("MountR") as Marker3D
+	var screen := jet.get_node("HeatDisplay") as Marker3D
+	t.check(model != null and model.is_visible_in_tree(), "a holstered gun is worn with a %s on" % jet.name)
+	if model:
+		var to_jet := jet.global_transform.affine_inverse()
+		var near := INF
+		var inner := INF
+		for node in model.find_children("*", "MeshInstance3D", true, false):
+			var mesh_node := node as MeshInstance3D
+			var xform := to_jet * mesh_node.global_transform
+			for i in mesh_node.mesh.get_surface_count():
+				for v: Vector3 in mesh_node.mesh.surface_get_arrays(i)[Mesh.ARRAY_VERTEX]:
+					var at := xform * v
+					inner = minf(inner, at.x)
+					if absf(at.y - mount.position.y) < 0.08:
+						# Distance out from the rail's clamp faces, along the rail's normal.
+						near = minf(near, (at - mount.position).dot(mount.basis.x))
+		t.check(near > -0.01 and near < 0.02, "a holstered gun rests on the %s's clamps, not off them (%.3f m)" % [jet.name, near])
+		t.check(inner > screen.position.x + screen.get_meta("size", Vector2.ZERO).x * 0.5,
+				"a holstered gun leaves the %s's heat screen in view" % jet.name)
+		var along: Vector3 = (to_jet.basis * (model.get_parent() as Node3D).global_basis * Vector3.FORWARD).normalized()
+		# Held, a gun points along -Z; worn, that is up the rail.
+		t.check(along.x > 0.05 and along.y > 0.95, "a clamped gun leans out at the top with its rail")
+	p.active_weapon_index = was
+	for i in 30:
+		skin._process(1.0 / 60.0)
+
+
+## A node's transform in `root`'s space, before either is in the tree.
+static func _in_xform(root: Node3D, node: Node3D) -> Transform3D:
+	var xform := node.transform
+	var up := node.get_parent()
+	while up != null and up != root:
+		xform = (up as Node3D).transform * xform
+		up = up.get_parent()
+	return xform
 
 
 ## A node's position in `root`'s space, before either is in the tree.

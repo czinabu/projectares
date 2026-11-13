@@ -43,9 +43,24 @@ func _ready() -> void:
 		get_tree().quit()
 		return
 
+	# `-- <output_dir> --views-only [row,row]` shoots each action in first
+	# person, the third-person camera and from the front, side by side.
+	if "--views-only" in args:
+		var at := args.find("--views-only")
+		await _view_shots(out_dir, args[at + 1] if args.size() > at + 1 else "")
+		get_tree().quit()
+		return
 	# `-- <output_dir> --idle-only` shoots the player standing still.
 	if "--idle-only" in args:
 		await _idle_shots(out_dir)
+		get_tree().quit()
+		return
+
+	# `-- <output_dir> --watch-only` shows the watch card raised: in first
+	# person with no helmet (vitals on the card), with a helmet and a jetpack
+	# (vitals and heat on the visor), each icon looked at, and in third person.
+	if "--watch-only" in args:
+		await _watch_shots(out_dir)
 		get_tree().quit()
 		return
 
@@ -95,7 +110,20 @@ func _ready() -> void:
 		get_tree().quit()
 		return
 
+	# `-- <output_dir> --phone-only` shows the phone held up, and someone
+	# else holding theirs.
+	if "--phone-only" in args:
+		await _phone_shots(out_dir)
+		get_tree().quit()
+		return
 	# `-- <output_dir> --arena-only` shoots just the arena.
+	# `-- <output_dir> --hub-only` walks round the Concourse from fixed spots
+	# and prints what a frame of it costs to draw.
+	if "--hub-only" in args:
+		await _hub_shots(out_dir)
+		get_tree().quit()
+		return
+
 	if "--arena-only" in args:
 		await _arena_shots(out_dir)
 		get_tree().quit()
@@ -251,6 +279,48 @@ func _ready() -> void:
 	get_tree().quit()
 
 
+func _watch_shots(out_dir: String) -> void:
+	for helmet: String in ["", "helm_seeker"]:
+		var raid := Raid.new()
+		add_child(raid)
+		var world := Worlds.get_world("ashfront")
+		var kit: Array[String] = ["rifle_scrap", "blade_scrap", "pistol_service", "jetpack_mk1", "plate_light"]
+		if helmet != "":
+			kit.append(helmet)
+		raid.start(world, 42, kit)
+		for bot in raid.bots:
+			bot.get_node("Brain").set_physics_process(false)
+		raid.state_for(raid.player).stowed.append("bike_raider")
+		var p := raid.player
+		p.health.health = p.health.max_health * 0.6
+		p.stamina = p.max_stamina * 0.4
+		p.flight.heat = p.flight.max_heat * 0.55
+		p.flight.cool_per_sec = 0.0
+		var controller := PlayerController.new()
+		controller.setup(p)
+		raid.add_child(controller)
+		var hud := Hud.new()
+		hud.setup(raid, controller)
+		raid.add_child(hud)
+		await _settle(60)
+		controller.wrist_raised = true
+		await _settle(30)
+		var tag := "helmet" if helmet != "" else "bare"
+		await _shot(out_dir.path_join("watch_first_%s.png" % tag))
+		if helmet == "":
+			for i in Hud.Wrist.SLOTS.size():
+				controller.watch_focus = i
+				controller.watch_focus_moved = true
+				await _settle(4)
+				await _shot(out_dir.path_join("watch_look_%s.png" % Hud.Wrist.SLOTS[i]))
+			controller.watch_focus_moved = false
+		controller.toggle_view()
+		await _settle(40)
+		await _shot(out_dir.path_join("watch_third_%s.png" % tag))
+		raid.queue_free()
+		await _settle(3)
+
+
 func _toy_shots(out_dir: String) -> void:
 	var raid := Raid.new()
 	add_child(raid)
@@ -302,10 +372,11 @@ func _toy_shots(out_dir: String) -> void:
 
 
 ## The body in the air: a jetpack hovering, boosting level and in a climb and
-## rolled over, and wings level, banked into a turn each way and in a dive.
+## barrel rolling in a sideways dash, wings level, banked into a turn each way and in a dive,
+## and thruster boots skimming still, each way, aiming and dashing.
 ## Each from behind and from the side.
 func _flight_shots(out_dir: String) -> void:
-	# [name, rig, hovering, boosting, gliding, speed, climb, turn rate, look pitch, roll key]
+	# [name, rig, hovering, boosting, gliding, speed, climb, turn rate, look pitch, sideways air dash]
 	var poses := [
 		["jet_hover_strafe", "jetpack_mk2", true, false, false, 10.0, 0.0, 0.0, 0.0, 0, Vector3(1, 0, 0)],
 		["jet_boost", "jetpack_mk2", true, true, false, 22.0, 0.0, 0.0, 0.0, 0, Vector3.FORWARD],
@@ -319,6 +390,16 @@ func _flight_shots(out_dir: String) -> void:
 		["wings_turn_right", "wings_glide", false, false, true, 16.0, -1.8, -1.4, 0.0, 0, Vector3.FORWARD],
 		["wings_dive", "wings_glide", false, false, true, 24.0, -10.0, 0.0, -0.9, 0, Vector3.FORWARD],
 		["wings_climb", "wings_glide", false, false, true, 18.0, 9.0, 0.0, 0.9, 0, Vector3.FORWARD],
+		# Free look: flying one way, looking to the side and behind (a backstroke).
+		["wings_freelook_side", "wings_glide", false, false, true, 16.0, -1.8, 0.0, 0.0, 0, Vector3(1, 0, 0)],
+		["wings_freelook_back", "wings_glide", false, false, true, 16.0, -1.8, 0.0, 0.0, 0, Vector3.BACK],
+		# Thruster boots skimming: still, at cruise each way, and dashing.
+		["boots_hover", "boots_thruster", false, false, false, 0.0, 0.0, 0.0, 0.0, 0, Vector3.FORWARD],
+		["boots_forward", "boots_thruster", false, false, false, 15.0, 0.0, 0.0, 0.0, 0, Vector3.FORWARD],
+		["boots_forward_aim", "boots_thruster", false, false, false, 15.0, 0.0, 0.0, 0.0, 0, Vector3.FORWARD],
+		["boots_dash", "boots_thruster", false, false, false, 35.0, 0.0, 0.0, 0.0, 0, Vector3.FORWARD],
+		["boots_strafe", "boots_thruster", false, false, false, 15.0, 0.0, 0.0, 0.0, 0, Vector3(1, 0, 0)],
+		["boots_back", "boots_thruster", false, false, false, 15.0, 0.0, 0.0, 0.0, 0, Vector3.BACK],
 	]
 	for pose: Array in poses:
 		var raid := Raid.new()
@@ -340,6 +421,9 @@ func _flight_shots(out_dir: String) -> void:
 		p.flight.is_boosting = pose[3]
 		p.flight.is_thrusting = pose[2]
 		p.flight.is_gliding = pose[4]
+		p.flight.is_skimming = pose[1] == "boots_thruster"
+		p.cmd.secondary = String(pose[0]).ends_with("_aim")
+		p.cmd.free_look = String(pose[0]).contains("freelook")
 		p.cmd.pitch = pose[8]
 		var at := p.global_position
 		var back := p.global_transform.basis.z
@@ -349,6 +433,8 @@ func _flight_shots(out_dir: String) -> void:
 			"back": at + back * 3.4 + Vector3(0, 1.6, 0),
 			"side": at + side * 3.4 + Vector3(0, 1.2, 0),
 		}
+		if pose[1] == "boots_thruster":
+			views["front"] = at - back * 3.0 + side * 1.6 + Vector3(0, 1.4, 0)
 		for view: String in views:
 			camera.look_at_from_position(views[view], at + Vector3(0, 1.0, 0))
 			# Fly the turn in place for a second so the bank settles.
@@ -357,7 +443,9 @@ func _flight_shots(out_dir: String) -> void:
 				if absf(float(pose[7])) > 0.0 and i == 0:
 					heading = p.global_transform.basis * (pose[10] as Vector3)
 				p.velocity = heading * float(pose[5]) + Vector3(0, float(pose[6]), 0)
-				p.cmd.roll = int(pose[9]) if i > 55 else 0
+				# Physics is off, so the dash only runs out when cleared here.
+				p.air_dash_left = p.flight.air_dash_time if int(pose[9]) != 0 and i >= 64 else 0.0
+				p.air_dash_side = float(pose[9])
 				await get_tree().process_frame
 			await _shot(out_dir.path_join("flight_%s_%s.png" % [pose[0], view]))
 		raid.queue_free()
@@ -513,6 +601,42 @@ func _world_shots(out_dir: String, only := "") -> void:
 		await _settle(2)
 
 
+## The Concourse from the spots people stand: arriving, under the arcade, at
+## the gates, up on a tower deck, and from high above. Prints the draw calls
+## and objects of each view, the frame cost that grows with the map.
+func _hub_shots(out_dir: String) -> void:
+	var plaza := Worlds.social_world()
+	var raid := Raid.new()
+	add_child(raid)
+	raid.start(plaza, 5)
+	var map: Node3D = raid.map
+	var camera := Camera3D.new()
+	camera.far = 1500.0
+	camera.fov = 75.0
+	add_child(camera)
+	camera.make_current()
+	var arrival: Vector3 = map.get("ARRIVAL") if map.get("ARRIVAL") != null else Vector3.ZERO
+	var views := [
+		["arrival", arrival + Vector3(0, 1.7, 0), Vector3(0, 12, 0)],
+		["arrival_high", arrival + Vector3(0, 6, 9), Vector3(0, 6, -20)],
+		["gates", Vector3(0, 2.5, -60), Vector3(0, 7, -100)],
+		["market", Vector3(-14, 1.7, -46), Vector3(-40, 4, -42)],
+		["deck", Vector3(26.5, 16.7, -64), Vector3(-30, 8, 40)],
+		["screens", Vector3(0, 3, 62), Vector3(0, 7, 106)],
+		["overview", Vector3(150, 120, 150), Vector3(0, 0, 0)],
+	]
+	for v: Array in views:
+		camera.look_at_from_position(v[1], v[2])
+		await _settle(20)
+		await _shot(out_dir.path_join("hub_%s.png" % v[0]))
+		print("  %s: %d draw calls, %d objects" % [v[0],
+				RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_DRAW_CALLS_IN_FRAME),
+				RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_OBJECTS_IN_FRAME)])
+	camera.queue_free()
+	raid.queue_free()
+	await _settle(2)
+
+
 ## The home base with one of everything on show, from a few fixed angles.
 func _base_shots(out_dir: String) -> void:
 	var base := HomeBase.new()
@@ -622,6 +746,27 @@ func _arena_shots(out_dir: String) -> void:
 	controller.view_mode = PlayerController.ViewMode.THIRD
 	await _settle(30)
 	await _shot(out_dir.path_join("arena_third_person.png"))
+	# The floor's layout: from high over the stands, from the rim, from the
+	# middle of the floor, and from a fighter's tunnel.
+	var camera := Camera3D.new()
+	camera.fov = 70.0
+	arena.add_child(camera)
+	camera.make_current()
+	hud.visible = false
+	overlay.visible = false
+	for view: Array in [["arena_overview", Vector3(0, 48, 34), Vector3(0, 0, 0)],
+			["arena_rim", Vector3(-22, 9, 22), Vector3(4, 2, -4)],
+			["arena_floor", Vector3(0, 1.7, 17), Vector3(0, 3, 0)],
+			["arena_tunnel", Vector3(-Arena.ArenaVenue.GATE_DISTANCE - 2.0, 1.7, 0), Vector3(0, 2, 0)],
+			["arena_stands", Vector3(10, 6.5, 23), Vector3(-6, 2, -4)],
+			["arena_board", Vector3(4, 1.7, 9), Vector3(0, 18, 0)]]:
+		camera.look_at_from_position(view[1], view[2])
+		await _settle(10)
+		await _shot(out_dir.path_join("%s.png" % view[0]))
+		print("%s: %d draw calls, %d objects" % [view[0],
+				Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME),
+				Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME)])
+	camera.queue_free()
 
 
 ## The plaza as a player sees it: the gates, and another player's gear card.
@@ -1160,7 +1305,8 @@ func _power_shots(out_dir: String) -> void:
 
 ## A contact sheet of where holstered weapons are worn: one row each for the
 ## blade in hand (gun slung on the back) and the gun in hand (blade on the hip),
-## with the jetpack on and off, seen from four sides.
+## with the jetpack on and off, seen from four sides; then everything
+## holstered on each flight rig in turn (holster_rigs.png).
 func _holster_shots(out_dir: String, melee_id := "") -> void:
 	var raid := Raid.new()
 	add_child(raid)
@@ -1223,6 +1369,37 @@ func _holster_shots(out_dir: String, melee_id := "") -> void:
 			sheet.blit_rect(cut, Rect2i(0, 0, 320, 360), Vector2i(c * 320, row * 360))
 	sheet.save_png(out_dir.path_join("holster.png"))
 	print("saved holster.png")
+	# Everything holstered on every rig: clamped to a jetpack's side rails,
+	# slung over wings, across the back with boots or nothing on.
+	var rig_was := player.flight.item_id
+	var rigs: Array[String] = ["jetpack_mk1", "jetpack_mk2", "wings_glide", "boots_thruster", ""]
+	var rig_sheet := Image.create(4 * 320, rigs.size() * 360, false, Image.FORMAT_RGBA8)
+	player.active_weapon_index = -1
+	player._refresh_weapon_visuals()
+	for row in rigs.size():
+		player.flight.item_id = rigs[row]
+		player.flight.enabled = rigs[row] != ""
+		for k in 60:
+			skin._process(1.0 / 60.0)
+			await get_tree().process_frame
+		var sides: Array[Vector3] = [player.global_basis.z, player.global_basis.x, -player.global_basis.x,
+				(player.global_basis.z - player.global_basis.x).normalized()]
+		for c in sides.size():
+			var at := player.global_position + Vector3(0, 1.1, 0)
+			cam.global_position = at + sides[c] * 3.0
+			cam.look_at(at)
+			await _settle(1)
+			await RenderingServer.frame_post_draw
+			var frame := get_viewport().get_texture().get_image()
+			var w := frame.get_width()
+			var h := frame.get_height()
+			var cut := frame.get_region(Rect2i(w / 2 - 160 * h / 720, h / 2 - 180 * h / 720, 320 * h / 720, 360 * h / 720))
+			cut.resize(320, 360)
+			cut.convert(Image.FORMAT_RGBA8)
+			rig_sheet.blit_rect(cut, Rect2i(0, 0, 320, 360), Vector2i(c * 320, row * 360))
+	rig_sheet.save_png(out_dir.path_join("holster_rigs.png"))
+	print("saved holster_rigs.png")
+	player.flight.item_id = rig_was
 	# A switch, frame by frame from behind and to the right: gun to blade,
 	# blade to sidearm (if carried), then holstered.
 	var steps := [blade, sidearm if sidearm >= 0 else gun, -1]
@@ -1357,3 +1534,177 @@ func _ride_shots(out_dir: String) -> void:
 	await _shot(out_dir.path_join("ride_first.png"))
 	raid.queue_free()
 
+
+
+## One action per row, held still: as you see it in first person, in the
+## third-person camera, and from the front. Both views read the actor's one
+## `ActionPose`, so each row should read the same way across.
+func _view_shots(out_dir: String, only := "") -> void:
+	var raid := Raid.new()
+	add_child(raid)
+	raid.start(Worlds.get_world("ashfront"), 42, ["rifle_carbine", "blade_scrap", "pistol_service", "jetpack_mk1", "plate_light"])
+	for bot in raid.bots:
+		bot.get_node("Brain").set_physics_process(false)
+		bot.global_position += Vector3(0, -500, 0)
+	var p := raid.player
+	var controller := PlayerController.new()
+	controller.setup(p)
+	raid.add_child(controller)
+	var hud := Hud.new()
+	hud.setup(raid, controller)
+	raid.add_child(hud)
+	await _settle(30)
+	p.set_physics_process(false)
+	controller.set_physics_process(false)
+	controller.pitch = -0.05
+	p.cmd.pitch = controller.pitch
+	p.cmd.yaw = controller.yaw
+	var skin: Node = p.get_node("Skin")
+	var pose := ActionPose.of(p)
+	var gun_at := -1
+	var blade_at := -1
+	for i in p.weapons.size():
+		if p.weapons[i] is MeleeWeapon:
+			blade_at = i
+		elif p.weapons[i] is Gun and not p.weapons[i].is_sidearm and gun_at < 0:
+			gun_at = i
+	var gun := p.weapons[gun_at] as Gun
+	var blade := p.weapons[blade_at] as MeleeWeapon
+	var outside := Camera3D.new()
+	outside.fov = 40.0
+	raid.add_child(outside)
+	var rows := ["gun_ready", "gun_low", "reload", "switch", "windup_left", "windup_right", "windup_overhead",
+			"swing", "guard", "watch"]
+	if only != "":
+		rows = rows.filter(func(r: String) -> bool: return r in only.split(","))
+	var size := Vector2i(400, 300)
+	var sheet := Image.create(3 * size.x, rows.size() * size.y, false, Image.FORMAT_RGBA8)
+	for row in rows.size():
+		var kind: String = rows[row]
+		var melee := kind.begins_with("windup") or kind == "swing" or kind == "guard"
+		p.active_weapon_index = blade_at if melee else gun_at
+		blade._windup_left = 0.0
+		blade._swing_left = 0.0
+		blade._blocking = false
+		gun._reload_left = 0.0
+		controller.wrist_raised = kind == "watch"
+		p.cmd.watch_up = kind == "watch"
+		p.cmd.primary = false
+		p.cmd.secondary = false
+		skin._aim_left = 0.0
+		for k in 40:
+			await get_tree().process_frame
+		var hold := func() -> void:
+			blade._animate(1.0 / 60.0)
+			match kind:
+				"gun_ready":
+					skin._aim_left = 1.0
+				"reload":
+					gun._reload_left = gun.reload_time * 0.5
+				"switch":
+					p.active_weapon_index = blade_at
+					skin._plan_t = minf(skin._plan_t, skin.reach_time * 0.85)
+				"windup_left", "windup_right", "windup_overhead":
+					blade._windup_left = 1.0
+					blade._windup_kind = "light"
+					blade.attack_dir = {"windup_left": MeleeWeapon.Dir.LEFT, "windup_right": MeleeWeapon.Dir.RIGHT,
+							"windup_overhead": MeleeWeapon.Dir.OVERHEAD}[kind]
+				"swing":
+					blade.attack_dir = MeleeWeapon.Dir.RIGHT
+					blade._swing_left = MeleeWeapon.SWING_TIME * 0.45
+				"guard":
+					blade._blocking = true
+					blade.guard_dir = MeleeWeapon.Dir.LEFT
+		for col in 3:
+			controller.view_mode = PlayerController.ViewMode.FIRST if col == 0 else PlayerController.ViewMode.THIRD
+			outside.current = col == 2
+			controller.camera.current = col != 2
+			for k in 45:
+				hold.call()
+				await get_tree().process_frame
+			if col == 2:
+				# From the front and a little to the right, so the arms show.
+				var at := p.global_position
+				outside.global_position = at + p.global_basis * Vector3(1.4, 1.5, -3.4)
+				outside.look_at(at + Vector3(0, 1.2, 0))
+			hold.call()
+			await RenderingServer.frame_post_draw
+			var frame := get_viewport().get_texture().get_image()
+			# Each shot full size too, to judge up close.
+			DirAccess.make_dir_recursive_absolute(out_dir.path_join("views"))
+			frame.save_png(out_dir.path_join("views/%s_%s.png" % [kind, ["first", "third", "front"][col]]))
+			var w := frame.get_width()
+			var h := frame.get_height()
+			var cut_h := h
+			var cut_w := cut_h * size.x / size.y
+			var cut := frame.get_region(Rect2i((w - cut_w) / 2, 0, cut_w, cut_h))
+			cut.resize(size.x, size.y)
+			cut.convert(Image.FORMAT_RGBA8)
+			sheet.blit_rect(cut, Rect2i(Vector2i.ZERO, size), Vector2i(col * size.x, row * size.y))
+		print("shot %s" % kind)
+	sheet.save_png(out_dir.path_join("views.png"))
+	print("saved views.png")
+	raid.queue_free()
+
+
+## The phone held up in first and third person (home screen, an app, the
+## Settings list), and a player seen holding their phone.
+func _phone_shots(out_dir: String) -> void:
+	var raid := Raid.new()
+	add_child(raid)
+	raid.start(Worlds.get_world("ashfront"), 42)
+	var controller := PlayerController.new()
+	controller.setup(raid.player)
+	raid.add_child(controller)
+	var hud := Hud.new()
+	hud.setup(raid, controller)
+	raid.add_child(hud)
+	var phone: CanvasLayer = load("res://core/phone/phone.gd").new()
+	add_child(phone)
+	await _settle(60)
+	for bot in raid.bots:
+		bot.set_physics_process(false)
+		for child in bot.get_children():
+			if child is BotBrain:
+				child.set_physics_process(false)
+	phone.open()
+	controller.input_blocked = true
+	controller.phone_out = true
+	await _settle(30)
+	await _shot(out_dir.path_join("phone_home.png"))
+	phone._screen.get_texture().get_image().save_png(out_dir.path_join("phone_screen.png"))
+	phone.open_app("news")
+	await _settle(10)
+	await _shot(out_dir.path_join("phone_news.png"))
+	phone.open_app("settings")
+	await _settle(10)
+	await _shot(out_dir.path_join("phone_settings.png"))
+	phone.go_home()
+	controller.toggle_view()
+	await _settle(40)
+	await _shot(out_dir.path_join("phone_third_person.png"))
+	controller.toggle_view()
+	phone.close()
+	controller.phone_out = false
+	await _settle(30)
+	await _shot(out_dir.path_join("phone_put_away.png"))
+	# The player on their phone as everyone else sees them: the controller
+	# keeps holding it up (third person, so the body is drawn) while a camera
+	# of our own looks on from in front and from the side.
+	controller.toggle_view()
+	controller.input_blocked = true
+	controller.phone_out = true
+	var me: Actor = raid.player
+	var cam := Camera3D.new()
+	cam.fov = 40.0
+	raid.add_child(cam)
+	cam.make_current()
+	var facing := Basis(Vector3.UP, controller.yaw)
+	for view: Array in [["phone_other_player.png", Vector3(0.35, 1.45, -2.6)], ["phone_other_player_side.png", Vector3(2.4, 1.5, -0.9)]]:
+		var eye: Vector3 = me.global_position + facing * (view[1] as Vector3)
+		cam.look_at_from_position(eye, me.global_position + Vector3(0, 1.15, 0))
+		await _settle(40)
+		await _shot(out_dir.path_join(view[0]))
+	phone.queue_free()
+	raid.queue_free()
+	await _settle(3)

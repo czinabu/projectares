@@ -10,34 +10,30 @@ const KEY_ACTIONS := {
 	"jump": KEY_SPACE,
 	"sprint": KEY_SHIFT,
 	"dash": KEY_ALT,
-	"roll_left": KEY_Q,
-	"roll_right": KEY_E,
 	"slide": KEY_C,
 	"interact": KEY_F,
 	"reload": KEY_R,
 	"heal": KEY_H,
 	"ability": KEY_G,
 	"visor": KEY_T,
-	"toggle_view": KEY_V,
+	"toggle_view": KEY_TAB,
 	"melee_control": KEY_B,
 	"weapon_1": KEY_1,
 	"weapon_2": KEY_2,
 	"weapon_3": KEY_3,
 	"weapon_4": KEY_4,
 	"holster": KEY_Z,
-	"scoreboard": KEY_TAB,
+	"scoreboard": KEY_Q,
 	"sign_out": KEY_L,
 	"redeploy": KEY_ENTER,
 	"phone": KEY_P,
 	"check_wrist": KEY_X,
+	"free_look": KEY_V,
 }
 
 const MOUSE_ACTIONS := {
 	"fire": MOUSE_BUTTON_LEFT,
 	"alt_fire": MOUSE_BUTTON_RIGHT,
-	# The thumb buttons roll too, for hands that stay on the move keys.
-	"roll_left": MOUSE_BUTTON_XBUTTON1,
-	"roll_right": MOUSE_BUTTON_XBUTTON2,
 }
 
 

@@ -86,6 +86,9 @@ var cmd := ActorCommand.new()
 var health := HealthComponent.new()
 var inventory := Inventory.new()
 var flight := FlightRig.new()
+## Where flight ceilings are measured from: the raid's map unless set (a
+## bench or test with no raid sets its own). See `ground_level`.
+var ground_map: Node3D = null
 var ability := Ability.new()
 ## The helmet. Always there; `Visor.enabled` says whether one is worn.
 var visor := Visor.new()
@@ -118,6 +121,9 @@ var riposte_left := 0.0
 ## Seconds left of drop-in protection: nothing can hurt this actor. It ends
 ## early the moment they attack someone (see `Combat.deal`).
 var protected_left := 0.0
+## DEV MODE: god mode, set by a solo `Raid` running `dev_cheats`. Checked in
+## `Combat.deal`, like `protected_left`, so no hit gets through.
+var dev_invulnerable := false
 ## Public reputation. Written by the `Raid` that decides it (online, copied
 ## from the server); read by nameplates and the HUD. See `RenownLedger`.
 var renown := 0
@@ -143,13 +149,22 @@ var _dash_cd := 0.0
 var _dash_dir := Vector3.ZERO
 var _dash_speed_now := 0.0
 var _slide_cd := 0.0
-## Wings: the barrel roll's sidestep (velocity added this tick, taken off
-## again before the glide steers next tick), its time left and cooldown.
-var _roll_vel := Vector3.ZERO
-var _roll_left := 0.0
-var _roll_cd := 0.0
-var _last_roll := 0
-var _roll_side := 0.0
+## The air dash (sprint pressed in the air with a rig): the velocity it
+## added this tick, taken off again before the rig steers next tick, its
+## direction and cooldown. `air_dash_left` is the time it has left and
+## `air_dash_side` how much of it runs sideways (-1 left to 1 right), for
+## the skin's barrel roll.
+var air_dash_left := 0.0
+var air_dash_side := 0.0
+var _air_dash_vel := Vector3.ZERO
+var _air_dash_dir := Vector3.ZERO
+var _air_dash_cd := 0.0
+## Wings: how far the bank has rolled in, -1 to 1. It follows the strafe keys
+## at `FlightRig.glide_bank_rate`, so a tap nudges the heading and a hold
+## comes round at the full turn rate.
+var _bank := 0.0
+## Wings: the glide is still being launched (see `_glide_velocity`).
+var _glide_launch := true
 ## Wings: seconds until a main gun can fire again after the wings fold.
 var _wing_stow := 0.0
 var _slide_dir := Vector3.ZERO
@@ -332,16 +347,25 @@ func _simulate_movement(delta: float) -> void:
 	var staggered := stagger_left > 0.0
 	if staggered:
 		speed *= stagger_speed_mult
-	var horizontal := Vector3(velocity.x, 0.0, velocity.z) - _roll_vel
-	_roll_vel = Vector3.ZERO
+	# Take last tick's air dash back off, as far as it is still there (a wall
+	# may have stopped it), so the rig's own flight carries on underneath.
+	var horizontal := Vector3(velocity.x, 0.0, velocity.z)
+	if _air_dash_vel != Vector3.ZERO:
+		var dir := _air_dash_vel.normalized()
+		horizontal -= dir * clampf(horizontal.dot(dir), 0.0, _air_dash_vel.length())
+		_air_dash_vel = Vector3.ZERO
 	if on_floor:
 		flight.launched = false
+	_measure_altitude(on_floor)
 	# Gliding: holding jump while falling with wings carries you forward.
 	# Once gliding you stay gliding while you climb on your speed.
 	flight.is_gliding = flight.can_glide() and cmd.jump and not on_floor and not staggered \
 			and (velocity.y < 0.0 or flight.is_gliding)
 	flight.is_skimming = flight.can_skim() and cmd.jump and not on_floor and not staggered \
 			and not flight.overheated
+	if not flight.is_gliding:
+		_bank = 0.0
+		_glide_launch = true
 	if on_floor:
 		horizontal = horizontal.move_toward(wish * speed, ground_accel * delta)
 	elif flight.is_skimming:
@@ -357,13 +381,7 @@ func _simulate_movement(delta: float) -> void:
 		horizontal = horizontal.move_toward(wish * speed, air_accel * delta)
 
 	_dash_cd = maxf(0.0, _dash_cd - delta)
-	if cmd.dash and not on_floor and not staggered and _dash_left <= 0.0 and flight.air_dash_speed > 0.0:
-		# Boots dash in the air on heat, not stamina.
-		if flight.try_air_dash():
-			_dash_dir = wish.normalized() if wish.length() > 0.1 else yaw_basis * Vector3.FORWARD
-			_dash_left = flight.air_dash_time
-			_dash_speed_now = flight.air_dash_speed
-	elif cmd.dash and _dash_cd <= 0.0 and not staggered and spend_stamina(dash_stamina):
+	if cmd.dash and _dash_cd <= 0.0 and not staggered and spend_stamina(dash_stamina):
 		_dash_dir = wish.normalized() if wish.length() > 0.1 else yaw_basis * Vector3.FORWARD
 		_dash_left = dash_time
 		_dash_cd = dash_cooldown
@@ -374,7 +392,7 @@ func _simulate_movement(delta: float) -> void:
 		slide_left = 0.0
 	horizontal = _simulate_slide(horizontal, on_floor, staggered, delta)
 
-	horizontal += _roll_dodge(yaw_basis, delta)
+	horizontal += _air_dash(wish, yaw_basis, on_floor, staggered, delta)
 	velocity.x = horizontal.x
 	velocity.z = horizontal.z
 
@@ -382,11 +400,11 @@ func _simulate_movement(delta: float) -> void:
 		velocity.y = jump_velocity
 	elif cmd.jump_pressed and not staggered and flight.is_gliding and flight.pulse_velocity > 0.0:
 		# A wing pulse: up, keeping the airspeed.
-		var pulse := flight.try_pulse()
+		var pulse := flight.try_pulse(flight.lift_cap(gravity))
 		if pulse > 0.0:
 			velocity.y = maxf(velocity.y, pulse)
 	elif cmd.jump_pressed and not staggered:
-		var burst := flight.try_burst()
+		var burst := flight.try_burst(flight.lift_cap(gravity))
 		if burst > 0.0:
 			velocity.y = maxf(velocity.y, burst)
 			if flight.burst_push > 0.0 and wish.length() > 0.1:
@@ -408,12 +426,20 @@ func _simulate_movement(delta: float) -> void:
 	elif flight.is_skimming:
 		_simulate_skim(delta)
 	else:
+		# Boots cool only near a surface: the street, or the roof they reached.
+		flight.aloft = flight.can_skim() and not on_floor \
+				and height_above_ground(flight.skim_probe) >= flight.skim_low
 		var thrust := flight.tick(cmd.jump and not on_floor and not staggered, delta)
 		velocity.y += (thrust - gravity) * delta
 		if thrust > 0.0:
-			velocity.y = minf(velocity.y, flight.max_rise_speed)
+			# Under the ceiling the climb eases off and stops on it.
+			velocity.y = minf(velocity.y, flight.max_rise_speed * flight.climb_room())
 		if flight.is_gliding:
-			velocity.y = maxf(velocity.y, -_glide_sink())
+			# The wings catch a fall or a dive over a moment, never in one
+			# tick: sinking faster than the glide allows eases back to it.
+			var sink := -_glide_sink()
+			var caught := velocity.y if velocity.y >= sink \
+					else minf(sink, velocity.y + (gravity + flight.glide_catch_accel) * delta)
 			# Pulling up with speed in hand climbs on it.
 			var pull := -glide_trim()
 			var air_speed := Vector2(velocity.x, velocity.z).length()
@@ -421,7 +447,12 @@ func _simulate_movement(delta: float) -> void:
 			if pull > 0.0 and spare > 0.1:
 				# The lift fades out as the speed comes down to the stall.
 				var lift := air_speed * sin(pull * 0.7) * clampf(spare / (flight.glide_speed * 0.15), 0.0, 1.0)
-				velocity.y = maxf(velocity.y, minf(lift, velocity.y + flight.glide_lift_accel * delta))
+				# Banked, the pull goes into the turn more than into height.
+				lift *= 1.0 - flight.glide_bank_lift_loss * absf(_bank)
+				# Speed buys height only up to the ceiling.
+				lift = minf(lift, flight.lift_cap(gravity))
+				caught = maxf(caught, minf(lift, velocity.y + (gravity + flight.glide_lift_accel) * delta))
+			velocity.y = caught
 	velocity.y = maxf(velocity.y, -max_fall_speed)
 
 	var fall_speed := -velocity.y
@@ -451,11 +482,11 @@ func _simulate_hover(delta: float) -> void:
 		# Along the view's heading, level: jump and descend climb and sink.
 		# The mouse's pitch only aims (Caleb's call: keys fly).
 		var want := Basis(Vector3.UP, cmd.yaw) * Vector3(cmd.move.x * flight.fly_speed * 0.5, 0.0, -flight.boost_speed)
-		want.y += flight.max_rise_speed if climb > 0.0 else climb * flight.descend_speed
+		want.y += flight.max_rise_speed * flight.climb_room() if climb > 0.0 else climb * flight.descend_speed
 		velocity = velocity.move_toward(want, flight.boost_accel * delta)
 		flight.tick(true, delta, flight.boost_heat_mult)
 		return
-	var rise := flight.max_rise_speed if climb > 0.0 else climb * flight.descend_speed
+	var rise := flight.max_rise_speed * flight.climb_room() if climb > 0.0 else climb * flight.descend_speed
 	velocity.y = move_toward(velocity.y, rise, flight.hover_accel * delta)
 	if flight.is_coasting:
 		# Jets idle: sink, keep the speed, and cool off.
@@ -474,6 +505,36 @@ func _simulate_skim(delta: float) -> void:
 		velocity.y = move_toward(velocity.y, -flight.descend_speed if cmd.descend else 0.0,
 				flight.skim_hold_accel * delta)
 	flight.skim(delta, height_above_ground(flight.skim_probe))
+
+
+## Tells the flight rig how high it is over the world's ground, for its
+## ceiling (`FlightRig.ceiling`). Only rigs with a ceiling ask, and only in
+## the air.
+func _measure_altitude(on_floor: bool) -> void:
+	flight.altitude_known = false
+	if not flight.enabled or flight.ceiling <= 0.0 or on_floor:
+		return
+	var ground := ground_level()
+	if is_nan(ground):
+		return
+	flight.altitude_known = true
+	flight.altitude = global_position.y - ground
+
+
+## The height of the world's ground under the actor, ignoring roofs and
+## anything else built on it: the map's `ground_height` where it has one,
+## else the map's own origin (see the map contract in `WorldDef`). NAN
+## outside a raid, where nothing says where the ground is.
+func ground_level() -> float:
+	var map := ground_map
+	if map == null:
+		var raid := Raid.of(self)
+		map = raid.map if raid != null else null
+	if map == null or not is_instance_valid(map) or not map.is_inside_tree():
+		return NAN
+	if map.has_method("ground_height"):
+		return map.call("ground_height", global_position.x, global_position.z)
+	return map.global_position.y
 
 
 ## How high the feet are over the world below, up to `reach` meters.
@@ -502,22 +563,50 @@ func _cruise_velocity(horizontal: Vector3, wish: Vector3, delta: float) -> Vecto
 	return heading * move_toward(speed, wish.length() * flight.fly_speed, flight.fly_accel * delta)
 
 
-## Wings: a roll key pressed while gliding snaps a sidestep that way. Returns
-## the sideways velocity to add this tick.
-func _roll_dodge(yaw_basis: Basis, delta: float) -> Vector3:
-	_roll_cd = maxf(0.0, _roll_cd - delta)
-	var pressed := cmd.roll != 0 and _last_roll != cmd.roll
-	_last_roll = cmd.roll
-	if pressed and flight.is_gliding and flight.roll_dodge_speed > 0.0 and _roll_cd <= 0.0:
-		_roll_left = flight.roll_dodge_time
-		_roll_cd = flight.roll_cooldown
-		_roll_side = float(cmd.roll)
-	if _roll_left <= 0.0 or not flight.is_gliding:
-		_roll_left = 0.0
+## Every rig: sprint pressed in the air dashes the way the move keys point,
+## forward with none held, on heat. Returns the velocity to add this tick;
+## it is taken off again next tick, so the rig's own flight (a glide, a
+## cruise, a skim) carries on the same way after it.
+func _air_dash(wish: Vector3, yaw_basis: Basis, on_floor: bool, staggered: bool, delta: float) -> Vector3:
+	_air_dash_cd = maxf(0.0, _air_dash_cd - delta)
+	if on_floor or staggered:
+		air_dash_left = 0.0
+	elif cmd.sprint_pressed and _air_dash_cd <= 0.0 and air_dash_left <= 0.0:
+		var boost := _glide_boost_kind()
+		if not flight.try_air_dash(flight.glide_boost_heat if boost != 0 else -1.0):
+			return Vector3.ZERO
+		_air_dash_cd = flight.air_dash_time + flight.air_dash_cooldown
+		air_dash_side = 0.0
+		if boost < 0:
+			# Wings pulled up (back held): the boost climbs instead of going
+			# backwards (Caleb's call), keeping the airspeed like a pulse.
+			velocity.y = maxf(velocity.y, minf(flight.glide_boost_climb, flight.lift_cap(gravity)))
+			return Vector3.ZERO
+		if boost > 0:
+			# A wing boost thrusts you the way you face (the way the wings
+			# point, in free look), and the speed is kept: the glide carries
+			# it and bleeds it off at `glide_drag`.
+			var ahead := Vector3(velocity.x, 0.0, velocity.z)
+			var thrust := ahead.normalized() if cmd.free_look and ahead.length() > 1.0 else yaw_basis * Vector3.FORWARD
+			return thrust * flight.glide_boost
+		_air_dash_dir = wish.normalized() if wish.length() > 0.1 else yaw_basis * Vector3.FORWARD
+		air_dash_side = (yaw_basis.inverse() * _air_dash_dir).x
+		air_dash_left = flight.air_dash_time
+	if air_dash_left <= 0.0:
 		return Vector3.ZERO
-	_roll_left -= delta
-	_roll_vel = yaw_basis * Vector3(_roll_side * flight.roll_dodge_speed, 0.0, 0.0)
-	return _roll_vel
+	air_dash_left -= delta
+	_air_dash_vel = _air_dash_dir * flight.air_dash_speed
+	return _air_dash_vel
+
+
+## What a sprint press does in a glide on a rig with a wing boost
+## (`FlightRig.glide_boost`): -1 climbs (Shift + S), 1 thrusts the way you
+## face (Shift with any other key: wings never dash sideways), 0 is the
+## ordinary air dash (not gliding).
+func _glide_boost_kind() -> int:
+	if not flight.is_gliding or flight.glide_boost <= 0.0:
+		return 0
+	return -1 if cmd.move.y < -0.1 and absf(cmd.move.x) <= absf(cmd.move.y) else 1
 
 
 ## Wings: touching down fast turns into a slide that keeps the speed.
@@ -549,26 +638,58 @@ func wings_block(weapon: Weapon) -> bool:
 	return _wing_stow > 0.0 and weapon is Gun and not (weapon as Gun).is_sidearm
 
 
+## The bank the wings roll toward, -1 to 1 (positive turns right). The
+## wings fly where you look, like a bird (Caleb's call): they bank onto the
+## view's heading, easing off as the heading comes round to it so they
+## settle without swinging past. A strafe key held rolls them that way
+## instead, for a harder turn. Holding free look (`ActorCommand.free_look`)
+## the wings fly straight on and only the strafe keys turn them, so the view
+## can look round and aim anywhere.
+func glide_steer(heading: Vector3, yaw_basis: Basis) -> float:
+	var strafe := clampf(cmd.move.x, -1.0, 1.0)
+	if absf(strafe) > 0.1 or cmd.free_look:
+		return strafe
+	var off := heading.signed_angle_to(yaw_basis * Vector3.FORWARD, Vector3.UP)
+	return -clampf(off / maxf(flight.glide_align_angle, 0.01), -1.0, 1.0)
+
+
 ## How far the glide is tipped, from the forward and back keys: 1 a full
 ## dive (forward), -1 a full flare (back).
 func glide_trim() -> float:
 	return clampf(cmd.move.y, -1.0, 1.0)
 
 
-## Wings are flown on the keys, never the mouse (Caleb's call: the mouse only
-## looks and aims): the strafe keys bank the heading round at up to
-## `FlightRig.glide_turn_rate`, forward dives and back pulls up
-## (`glide_trim`). With no keys the glide flies straight on, wherever you
-## look. A glide that has no heading yet (the launch) sets off the way you face.
+## A glide flies like a wing: it only ever goes the way it points, and its
+## speed is momentum. The wings bank round onto where you look
+## (`glide_steer`) and the heading turns with the bank, at up to
+## `FlightRig.glide_turn_rate`; forward dives for speed and back pulls up
+## (`glide_trim`), never the mouse's pitch. Like an airplane:
+## - a turn costs speed (`glide_turn_drag` at full bank), and pulling up in a
+##   bank tightens the turn (`glide_pull_turn`) rather than climbing, so it
+##   costs more;
+## - a banked wing holds you up less, so you sink faster
+##   (`glide_bank_sink`, see `_glide_sink`);
+## - slow down past the stall speed and the wings stall: they barely turn,
+##   you drop at `stall_sink` and pick speed back up only by falling.
+## The launch is the one time the wings hand you speed: a glide that starts
+## slower than the stall sets off the way you face and is carried up to it.
 func _glide_velocity(horizontal: Vector3, _wish: Vector3, yaw_basis: Basis, delta: float) -> Vector3:
 	var heading := horizontal.normalized() if horizontal.length() > 1.0 else yaw_basis * Vector3.FORWARD
-	heading = heading.rotated(Vector3.UP, -clampf(cmd.move.x, -1.0, 1.0) * flight.glide_turn_rate * delta)
-	var trim := glide_trim()
 	var air_speed := horizontal.length()
 	var cruise := flight.glide_speed
-	if air_speed < cruise * flight.glide_stall:
+	var stall := cruise * flight.glide_stall
+	if air_speed >= stall:
+		_glide_launch = false
+	var trim := glide_trim()
+	var pull := maxf(0.0, -trim)
+	_bank = move_toward(_bank, glide_steer(heading, yaw_basis), flight.glide_bank_rate * delta)
+	# Under the stall speed the wings lose their bite fast.
+	var authority := pow(clampf(air_speed / maxf(stall, 0.1), flight.stall_authority, 1.0), 2.0)
+	heading = heading.rotated(Vector3.UP,
+			-_bank * flight.glide_turn_rate * authority * (1.0 + flight.glide_pull_turn * pull) * delta)
+	if _glide_launch:
 		# The launch: the wings bite and carry you off.
-		air_speed = move_toward(air_speed, cruise * flight.glide_stall, flight.glide_accel * delta)
+		air_speed = move_toward(air_speed, stall, flight.glide_accel * delta)
 	elif trim > 0.0:
 		var top := cruise * (1.0 + flight.glide_dive_gain * trim)
 		air_speed = move_toward(air_speed, top, (flight.glide_dive_accel * trim if air_speed < top else flight.glide_drag) * delta)
@@ -578,20 +699,38 @@ func _glide_velocity(horizontal: Vector3, _wish: Vector3, yaw_basis: Basis, delt
 		if velocity.y > 0.0:
 			# Height is paid for in speed.
 			air_speed -= flight.glide_climb_cost * velocity.y / maxf(air_speed, 1.0) * delta
-		var hold := cruise * lerpf(1.0, flight.glide_stall, -trim)
-		air_speed = move_toward(air_speed, hold, (flight.glide_recover if air_speed < hold else flight.glide_drag) * delta)
-		air_speed = maxf(air_speed, cruise * flight.glide_stall)
-	return heading * air_speed
+		# Pulling up never gives speed back: held through a turn, it bleeds
+		# away into a stall.
+		var hold := cruise * lerpf(1.0, flight.glide_stall, pull)
+		if air_speed > hold:
+			air_speed = move_toward(air_speed, hold, flight.glide_drag * delta)
+		elif pull <= 0.0:
+			air_speed = move_toward(air_speed, hold, flight.glide_recover * delta)
+		# Stalled, the nose drops and the fall gives speed back, but a wing
+		# still pulled up stays stalled: it mushes down well under the stall.
+		var floor_speed := stall * (0.6 if pull > 0.0 else 1.0)
+		if air_speed < floor_speed:
+			air_speed = move_toward(air_speed, floor_speed, flight.stall_recover * delta)
+	if not _glide_launch:
+		# A turn costs speed, and a tight one, pulled in, costs more.
+		air_speed -= flight.glide_turn_drag * absf(_bank) * (1.0 + pull) * delta
+	return heading * maxf(air_speed, 0.0)
 
 
-## The fastest a glide sinks right now.
+## True while the wings are stalled: too slow to hold you up.
+func glide_stalled() -> bool:
+	return flight.is_gliding and not _glide_launch \
+			and Vector2(velocity.x, velocity.z).length() < flight.glide_speed * flight.glide_stall - 0.5
+
+
+## The fastest a glide sinks right now: faster in a dive and in a bank, and
+## at `stall_sink` once stalled.
 func _glide_sink() -> float:
-	if flight.stall_sink > 0.0 and Vector2(velocity.x, velocity.z).length() < flight.glide_speed * flight.glide_stall - 0.5:
+	if flight.stall_sink > 0.0 and glide_stalled():
 		return flight.stall_sink
 	var trim := glide_trim()
-	if trim > 0.0:
-		return lerpf(flight.glide_fall_speed, flight.glide_dive_fall, trim)
-	return flight.glide_fall_speed
+	var sink := lerpf(flight.glide_fall_speed, flight.glide_dive_fall, trim) if trim > 0.0 else flight.glide_fall_speed
+	return sink * (1.0 + flight.glide_bank_sink * absf(_bank))
 
 
 ## Starts, carries on, or ends a slide, and returns the ground velocity.

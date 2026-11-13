@@ -15,6 +15,10 @@ signal fired(from: Vector3, to: Vector3)
 var damage := 20.0
 ## Fires once per trigger pull instead of while the trigger is held.
 var semi_auto := false
+## A semi-auto remembers a pull made this long before it is ready (between
+## shots, or as a reload ends) and fires then, so a click a moment early is
+## not swallowed.
+var press_buffer := 0.12
 ## Damage multiplier for a shot that lands on an actor's head.
 var headshot_mult := 1.0
 ## Projectiles per shot. Each one deals `damage` and gets its own spread.
@@ -34,6 +38,13 @@ var bloom_recovery := 5.0
 ## How far each shot kicks the shooter's view, in degrees.
 var recoil_kick_deg := 0.55
 var recoil_side_deg := 0.22
+## How far the held model jumps back and tips up at a shot from a gun that
+## kicks `MODEL_KICK_AT` degrees. Harder kicking guns jump further (up to
+## `MODEL_KICK_MAX` times), and less while aimed, so a scope stays off the eye.
+const MODEL_KICK := Vector2(0.05, 0.06)
+const MODEL_KICK_AT := 0.55
+const MODEL_KICK_MAX := 3.0
+const MODEL_KICK_AIMED := 0.4
 ## Effects. Power weapons use these to look and sound like what they are.
 var tracer_color := Color(1.0, 0.85, 0.4)
 var shot_sound := "shot"
@@ -92,6 +103,8 @@ var _bloom := 0.0
 var _rng := RandomNumberGenerator.new()
 var _charge := 0.0
 var _spin := 0.0
+## Seconds a semi-auto's last pull is still remembered (`press_buffer`).
+var _press_left := 0.0
 
 
 ## Fits attachments (item ids tagged "attachment"): one per slot, later ones
@@ -349,6 +362,7 @@ func controls_hint() -> String:
 
 func tick(delta: float) -> void:
 	_cooldown = maxf(0.0, _cooldown - delta)
+	_press_left = maxf(0.0, _press_left - delta)
 	_bloom = maxf(0.0, _bloom - bloom_recovery * delta)
 	if visual:
 		# Recoil kick settles back to rest.
@@ -381,8 +395,11 @@ func handle_input(cmd: ActorCommand, delta: float) -> void:
 		if _charge < charge_time:
 			return
 		_charge = 0.0
-	var trigger := cmd.primary_pressed if semi_auto else cmd.primary
+	if cmd.primary_pressed:
+		_press_left = press_buffer
+	var trigger := (cmd.primary_pressed or _press_left > 0.0) if semi_auto else cmd.primary
 	if trigger and _cooldown <= 0.0 and _reload_left <= 0.0:
+		_press_left = 0.0
 		if ammo_in_mag > 0:
 			_fire()
 		else:
@@ -393,6 +410,7 @@ func on_holster() -> void:
 	_aiming = false
 	_charge = 0.0
 	_spin = 0.0
+	_press_left = 0.0
 
 
 ## How far a charge has built, 0 to 1.
@@ -431,6 +449,11 @@ func is_reloading() -> bool:
 	return _reload_left > 0.0
 
 
+## Seconds left of the reload under way (0 when not reloading).
+func reload_left() -> float:
+	return maxf(_reload_left, 0.0)
+
+
 func start_reload() -> void:
 	if _reload_left <= 0.0 and ammo_in_mag < mag_size and reserve_ammo > 0:
 		_reload_left = reload_time
@@ -464,8 +487,9 @@ func _fire() -> void:
 	ammo_in_mag -= 1
 	_cooldown = fire_interval
 	if visual:
-		visual.position.z = 0.05
-		visual.rotation.x = 0.06
+		var kick := model_kick()
+		visual.position.z = kick.x
+		visual.rotation.x = kick.y
 	var from := actor.get_eye_position()
 	var aim := actor.get_aim_dir()
 	var spread := deg_to_rad(spread_deg + _bloom + _air_spread()) * (ads_spread_mult if _aiming else 1.0)
@@ -473,19 +497,53 @@ func _fire() -> void:
 	_bloom = minf(max_bloom * air_bloom, _bloom + bloom_per_shot * air_bloom)
 	var to := from + aim * max_range
 	for i in pellets:
-		var jitter := Vector3(_rng.randf_range(-1, 1), _rng.randf_range(-1, 1), _rng.randf_range(-1, 1))
-		var dir := (aim + jitter * tan(spread)).normalized()
+		var dir := spread_dir(aim, spread, _rng.randf(), _rng.randf())
 		var muzzle := from + dir * 0.8 - Vector3(0, 0.15, 0)
 		if projectile != "":
 			_launch(muzzle, dir)
 			continue
 		to = _trace_shot(from, dir)
+		# The shot is judged from the eyes; what is drawn leaves the barrel.
+		var drawn_from := muzzle_point(muzzle)
 		if beam_time > 0.0:
-			Fx.beam(actor.get_parent(), muzzle, to, tracer_color, beam_time)
+			Fx.beam(actor.get_parent(), drawn_from, to, tracer_color, beam_time)
 		elif not quiet:
-			Fx.tracer(actor.get_parent(), muzzle, to, tracer_color)
+			Fx.tracer(actor.get_parent(), drawn_from, to, tracer_color)
 	fired.emit(from, to)
 	Sfx.play(shot_sound, null if actor.is_player else from, -14.0 if quiet else 0.0)
+
+
+## Where a shot's flash and tracer start: the "Muzzle" marker the art layer
+## puts on the gun's model, as it is held in whichever view is drawn, or
+## `fallback` when there is none (headless, greybox). View only: the shot
+## itself always leaves the eyes, and nothing here changes the simulation.
+func muzzle_point(fallback: Vector3) -> Vector3:
+	var marker := visual.get_node_or_null("Muzzle") as Node3D if visual != null else null
+	if marker == null or not marker.is_inside_tree():
+		return fallback
+	var at := marker.global_position
+	# The actor parks its hand node every tick; the views move it to where
+	# the weapon is drawn and leave that here as the "shown" meta.
+	var hand := actor.hand if actor != null else null
+	if hand != null and hand.has_meta("shown"):
+		at = (hand.get_meta("shown") as Transform3D) * (hand.global_transform.affine_inverse() * at)
+	return at
+
+
+## How far back (m) and up (radians) the held model jumps at a shot.
+func model_kick() -> Vector2:
+	return MODEL_KICK * clampf(recoil_kick_deg / MODEL_KICK_AT, 0.6, MODEL_KICK_MAX) \
+			* (MODEL_KICK_AIMED if _aiming else 1.0)
+
+
+## A direction within `spread` radians of `aim`, spread evenly over a round
+## cone (never a square one), picked by `turn` and `out`, each 0 to 1.
+static func spread_dir(aim: Vector3, spread: float, turn: float, out: float) -> Vector3:
+	var side := aim.cross(Vector3.UP)
+	side = side.normalized() if side.length_squared() > 0.0001 else Vector3.RIGHT
+	var up := side.cross(aim).normalized()
+	var angle := turn * TAU
+	return (aim + (side * cos(angle) + up * sin(angle)) * sqrt(out) * tan(spread)).normalized()
 
 
 ## One hitscan round along `dir`. Deals its damage and returns where it

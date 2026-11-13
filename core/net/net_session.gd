@@ -14,7 +14,8 @@ extends Node
 ## (`Combat.authoritative` is false there).
 ##
 ## Every input a client sends is numbered and the server plays them in order,
-## one per tick. Its answer says which input it had reached, so the client
+## one per tick, with no queue building up behind a lost packet (see
+## `InputBuffer`). Its answer says which input it had reached, so the client
 ## compares the server's position with its own prediction for that same
 ## input and blends away only the real difference. Your own movement stays
 ## smooth however slow the connection is. A vehicle you ride is predicted
@@ -78,7 +79,7 @@ signal world_invite_accepted(invite: Dictionary)
 signal base_visit_requested(owner_name: String, stash: Array, loadout: Dictionary)
 
 const DEFAULT_PORT := 24565
-const PROTOCOL := 18
+const PROTOCOL := 19
 ## Every packet is compressed, both ways. State updates are mostly repeated
 ## numbers, and a big battle sends a player hundreds of them a second. Server
 ## and client must agree, so a change here needs a new PROTOCOL.
@@ -114,9 +115,23 @@ const SNAP_DISTANCE := 5.0
 ## lost packets and not only a single one. On a good connection that is the
 ## three or four ticks still in flight.
 const MAX_INPUTS_PER_PACKET := 16
+## Bytes one input takes in a packet (`pack_inputs`). A full packet must fit
+## in one datagram: split in two, it is lost when either half is, which
+## makes loss worse just when it is bad.
+const INPUT_BYTES := 42
 ## The server holds at most this many unplayed inputs per player. More means
 ## the player's packets arrived in a burst, and the oldest are folded together.
 const MAX_QUEUED_INPUTS := 6
+## A tick with no input to play is played as a guess (the held keys carry on)
+## and counted as the next input, so the real one is skipped when it turns up
+## late and the player's inputs never queue up behind a lost packet. The
+## server guesses at most this many inputs past the newest it has received;
+## a longer silence is a stall, and the count waits.
+const MAX_GUESSED_INPUTS := 8
+## An input the server always has to spare is a tick of delay for nothing.
+## Every this many ticks, half of what was spare throughout (at least one
+## input) is folded away.
+const INPUT_TRIM_TICKS := 20
 ## The furthest back the server rewinds a target for an attacker's ping
 ## (30 = half a second). A slower connection has to lead by the rest.
 const MAX_REWIND_TICKS := 30
@@ -200,8 +215,7 @@ var _peer_account := {}  # peer id -> account id (server)
 var _peer_look := {}  # peer id -> appearance (server). Cosmetic only.
 var _joining_look := {}  # the look of the player being added right now (server)
 var _actor_account := {} # Actor -> account id, until the run is settled (server)
-var _input_queue := {}   # peer id -> [[seq, command array], ...] not yet played (server)
-var _queued_seq := {}    # peer id -> newest input number received (server)
+var _inputs := {}        # peer id -> InputBuffer: their inputs not yet played (server)
 var _applied_seq := {}   # actor id -> input number the actor last simulated (server)
 var _seen_tick := {}     # Actor -> server tick the player was looking at (server)
 var _past := {}          # server tick -> {Actor: position} after that tick (server)
@@ -370,8 +384,7 @@ func _clear_tables() -> void:
 	_peer_actor.clear()
 	_actor_peer.clear()
 	_joined_peers.clear()
-	_input_queue.clear()
-	_queued_seq.clear()
+	_inputs.clear()
 	_applied_seq.clear()
 	_seen_tick.clear()
 	_past.clear()
@@ -427,8 +440,7 @@ func _on_peer_disconnected(peer: int) -> void:
 	_social_left(peer)
 	_peer_account.erase(peer)
 	_peer_look.erase(peer)
-	_input_queue.erase(peer)
-	_queued_seq.erase(peer)
+	_inputs.erase(peer)
 	_died_at.erase(peer)
 	# Their body stays in the world for a while. The run is settled into the
 	# account when it is killed or its sign-out runs out.
@@ -550,7 +562,8 @@ func _on_server_player_finished(actor: Actor, result: Dictionary) -> void:
 	if _peer_actor.get(peer) == actor:
 		# Free to drop in again, after a short wait if they died.
 		_peer_actor.erase(peer)
-		_input_queue.erase(peer)
+		if _inputs.has(peer):
+			(_inputs[peer] as InputBuffer).rest()
 		if result.get("outcome", "") == "died":
 			_died_at[peer] = Time.get_ticks_msec()
 	if online:
@@ -932,32 +945,54 @@ func _request_sign_out(start: bool) -> void:
 
 
 @rpc("any_peer", "call_remote", "unreliable_ordered")
-func _send_input(inputs: Array) -> void:
-	if not is_server or inputs.size() > MAX_INPUTS_PER_PACKET:
+func _send_input(packet: PackedByteArray) -> void:
+	if not is_server or packet.size() > MAX_INPUTS_PER_PACKET * INPUT_BYTES:
 		return
 	var peer := _api.get_remote_sender_id()
 	if not _peer_actor.has(peer):
 		return
-	# Each packet repeats recent ticks. Queue only the ones not seen before,
-	# in order, so every tick the player simulated is played here exactly once.
-	var queue: Array = _input_queue.get_or_add(peer, [])
-	for input: Variant in inputs:
-		if typeof(input) != TYPE_ARRAY or input.size() != 3 or typeof(input[0]) != TYPE_INT \
-				or typeof(input[1]) != TYPE_ARRAY or input[1].size() != ActorCommand.ARRAY_SIZE \
-				or typeof(input[2]) != TYPE_INT:
-			return
-		if input[0] > int(_queued_seq.get(peer, 0)):
-			_queued_seq[peer] = input[0]
-			queue.append(input)
-	# A burst after a stall: fold the oldest inputs together to catch up,
-	# keeping every press.
-	while queue.size() > MAX_QUEUED_INPUTS:
-		var dropped: Array = queue.pop_front()[1]
-		var next: Array = queue[0][1]
-		next[ActorCommand.FLAGS_INDEX] = int(next[ActorCommand.FLAGS_INDEX]) \
-				| (int(dropped[ActorCommand.FLAGS_INDEX]) & ActorCommand.ONE_SHOT_MASK)
-		if int(next[ActorCommand.SWITCH_INDEX]) < 0:
-			next[ActorCommand.SWITCH_INDEX] = dropped[ActorCommand.SWITCH_INDEX]
+	var inputs := unpack_inputs(packet)
+	if inputs.is_empty():
+		return
+	if not _inputs.has(peer):
+		_inputs[peer] = InputBuffer.new()
+	(_inputs[peer] as InputBuffer).receive(inputs)
+
+
+## Inputs ([number, command array, view tick], see `ActorCommand.to_array`)
+## as the bytes of one packet: `INPUT_BYTES` each, so sixteen fit in a
+## datagram with room to spare.
+static func pack_inputs(inputs: Array) -> PackedByteArray:
+	var packet := PackedByteArray()
+	packet.resize(inputs.size() * INPUT_BYTES)
+	var at := 0
+	for input: Array in inputs:
+		var cmd: Array = input[1]
+		packet.encode_u32(at, int(input[0]))
+		packet.encode_u32(at + 4, int(input[2]))
+		for i in ActorCommand.FLAGS_INDEX:
+			packet.encode_float(at + 8 + i * 4, cmd[i])
+		packet.encode_u32(at + 36, int(cmd[ActorCommand.FLAGS_INDEX]))
+		packet.encode_s8(at + 40, int(cmd[ActorCommand.STANCE_INDEX]))
+		packet.encode_s8(at + 41, int(cmd[ActorCommand.SWITCH_INDEX]))
+		at += INPUT_BYTES
+	return packet
+
+
+## The inputs in a packet from `pack_inputs`, or none if it is not one.
+static func unpack_inputs(packet: PackedByteArray) -> Array:
+	var inputs: Array = []
+	if packet.size() % INPUT_BYTES != 0:
+		return inputs
+	for at in range(0, packet.size(), INPUT_BYTES):
+		var cmd: Array = []
+		for i in ActorCommand.FLAGS_INDEX:
+			cmd.append(packet.decode_float(at + 8 + i * 4))
+		cmd.append(packet.decode_u32(at + 36))
+		cmd.append(packet.decode_s8(at + 40))
+		cmd.append(packet.decode_s8(at + 41))
+		inputs.append([packet.decode_u32(at), cmd, packet.decode_u32(at + 4)])
+	return inputs
 
 
 func _server_early_tick() -> void:
@@ -969,16 +1004,19 @@ func _server_early_tick() -> void:
 			continue
 		# With nothing new to play, held keys carry on and presses do not repeat.
 		actor.cmd.clear_one_shots()
-		var queue: Array = _input_queue.get(peer, [])
-		if not queue.is_empty():
-			var input: Array = queue.pop_front()
+		var buffer: InputBuffer = _inputs.get(peer)
+		if buffer == null:
+			continue
+		var input := buffer.next()
+		if not input.is_empty():
 			actor.cmd.apply_array(input[1])
-			_applied_seq[_ids[actor]] = input[0]
 			# Never later than now: a client cannot see the future.
 			_seen_tick[actor] = mini(input[2], _tick)
 		elif _seen_tick.has(actor):
 			# A held trigger keeps firing at what the player is watching move on.
 			_seen_tick[actor] = mini(int(_seen_tick[actor]) + 1, _tick)
+		if buffer.live:
+			_applied_seq[_ids[actor]] = buffer.played
 
 
 ## `Combat.rewind` on a server: where everyone else was on `attacker`'s screen
@@ -1102,7 +1140,15 @@ func _send_states() -> void:
 				continue
 			if not built[tier].has(id):
 				built[tier][id] = _state_entry(id, tier)
-			chunk.append(built[tier][id])
+			if id == own and _inputs.has(peer):
+				# Your own entry also says which inputs have arrived, so you
+				# stop repeating those. A guessed tick is played but has not
+				# arrived: its input is still wanted, for its presses.
+				var mine: Array = built[tier][id].duplicate()
+				mine.append((_inputs[peer] as InputBuffer).newest)
+				chunk.append(mine)
+			else:
+				chunk.append(built[tier][id])
 			if chunk.size() == ACTORS_PER_PACKET:
 				_state.rpc_id(peer, _tick, chunk)
 				entries_sent += chunk.size()
@@ -1447,9 +1493,9 @@ func _receive_state(tick: int, entries: Array) -> void:
 	for entry: Array in entries:
 		var id: int = entry[0]
 		entries_received[id] = int(entries_received.get(id, 0)) + 1
-		# The server has played your inputs up to here: stop resending those.
-		if id == my_actor_id:
-			_acked_seq = maxi(_acked_seq, int(entry[8]))
+		# The server has your inputs up to here: stop resending those.
+		if id == my_actor_id and entry.size() > 9:
+			_acked_seq = maxi(_acked_seq, int(entry[9]))
 		# Presses from an update we have not applied yet must not be lost.
 		if _latest.has(id):
 			var cmd: Array = entry[3]
@@ -1988,7 +2034,7 @@ func _client_late_tick() -> void:
 	if simulated_loss <= 0.0 or randf() >= simulated_loss:
 		_delayed_out.append([now + simulated_lag * 1000.0, _recent_inputs.duplicate()])
 	while not _delayed_out.is_empty() and _delayed_out[0][0] <= now:
-		_send_input.rpc_id(1, _delayed_out.pop_front()[1])
+		_send_input.rpc_id(1, pack_inputs(_delayed_out.pop_front()[1]))
 
 
 func _is_connected() -> bool:
@@ -2252,3 +2298,144 @@ class LateTick:
 			session._server_late_tick(delta)
 		else:
 			session._client_late_tick()
+
+
+## One player's inputs on the server, between arriving and being played.
+##
+## The server plays one input a tick, in order, as soon as it has it. Nothing
+## is held back to smooth over a bad connection, because a held input is
+## input delay. So two things can go wrong, and each has its answer:
+##
+## Nothing to play (a lost or late packet). The tick is played as a guess:
+## the held keys carry on, and it counts as the next input (`played` moves
+## on). When the real input turns up, its tick has been played already, so it
+## is skipped: only its presses are kept, for the next input played, along
+## with any held key that went down in it (a trigger tapped for one tick is
+## a shot, and must not vanish with the input it was in). The
+## server's count of ticks stays in step with the player's, and a guess is
+## exactly right whenever the keys had not changed. If the late input is the
+## newest there is, the player's inputs are running later than the server
+## thought: it is played after all, under the number the guess took.
+##
+## More than is needed (a burst after a stall, or inputs arriving faster than
+## they are played). Inputs that were spare for a whole window are folded
+## away, keeping their presses and taps, so the delay does not stay.
+class InputBuffer:
+	extends RefCounted
+
+	## Held keys a skipped input may hand on as a tap. The visor's zoom level
+	## is a number, not a key, so it is left out.
+	const TAP_MASK := ActorCommand.HELD_MASK & ~ActorCommand.VISOR_LEVEL_MASK
+
+	## Inputs not yet played, oldest first: [number, command array, view tick].
+	var queue: Array = []
+	## The newest input number received.
+	var newest := 0
+	## The input number the actor has been simulated up to. A guess counts.
+	var played := 0
+	## An input has been played in this life. Before that nothing is guessed.
+	var live := false
+	## How many ticks were guesses, and how many inputs were skipped or folded.
+	var guessed := 0
+	var skipped := 0
+	## The newest input that arrived after its tick had been guessed, if it
+	## has not been dealt with yet, and the presses of every such input.
+	var _late: Array = []
+	var _late_flags := 0
+	var _late_switch := -1
+	## Held keys that went down in a skipped or folded input: taps the actor
+	## has not seen yet. They ride on the next input played, like a press.
+	var _late_taps := 0
+	## The held keys of the last input played, which a guess carries on with.
+	var _held := 0
+	var _spare := 0
+	var _window := 0
+
+	## Takes the inputs of one packet: every input the player has not had an
+	## answer for, oldest first. Ones seen before are ignored.
+	func receive(inputs: Array) -> void:
+		for input: Array in inputs:
+			var number: int = input[0]
+			if number <= newest:
+				continue
+			newest = number
+			if number > played or not live:
+				queue.append(input)
+			else:
+				_keep_presses(input[1])
+				_late = input
+				skipped += 1
+		# A burst after a stall: fold the oldest inputs together to catch up.
+		while queue.size() > NetSession.MAX_QUEUED_INPUTS:
+			_fold_oldest()
+
+	## The input to play this tick, as [number, command array, view tick], or
+	## an empty array when there is none and the held keys carry on.
+	func next() -> Array:
+		_trim()
+		if not queue.is_empty():
+			var input: Array = queue.pop_front()
+			_spare = mini(_spare, queue.size())
+			_add_presses(input[1])
+			_late = []
+			played = input[0]
+			live = true
+			return input
+		_spare = 0
+		if not _late.is_empty():
+			# Late, and still the newest there is: play it under the number
+			# the guess took.
+			var input := _late
+			_late = []
+			_add_presses(input[1])
+			skipped -= 1
+			return input
+		if live and played - newest < NetSession.MAX_GUESSED_INPUTS:
+			played += 1
+			guessed += 1
+		return []
+
+	## The life this buffer fed has ended: nothing waits for the next one.
+	func rest() -> void:
+		queue.clear()
+		_late = []
+		_late_flags = 0
+		_late_switch = -1
+		_late_taps = 0
+		_held = 0
+		live = false
+		played = newest
+
+	func _trim() -> void:
+		_window += 1
+		if _window < NetSession.INPUT_TRIM_TICKS:
+			return
+		for i in mini(ceili(_spare / 2.0), queue.size() - 1):
+			_fold_oldest()
+		_window = 0
+		_spare = queue.size()
+
+	## Drops the oldest input, keeping its presses for the one after it.
+	func _fold_oldest() -> void:
+		_keep_presses(queue.pop_front()[1])
+		skipped += 1
+
+	func _keep_presses(cmd: Array) -> void:
+		_late_flags |= int(cmd[ActorCommand.FLAGS_INDEX]) & ActorCommand.ONE_SHOT_MASK
+		# A key that was not down in the last input played went down in this
+		# one. If it is up again in the next input played, that was a tap the
+		# actor never saw: an automatic's single shot, lost with its input.
+		_late_taps |= int(cmd[ActorCommand.FLAGS_INDEX]) & TAP_MASK & ~_held
+		if int(cmd[ActorCommand.SWITCH_INDEX]) != -1:
+			_late_switch = int(cmd[ActorCommand.SWITCH_INDEX])
+
+	## Adds the kept presses and taps of skipped inputs to the command about
+	## to be played.
+	func _add_presses(cmd: Array) -> void:
+		cmd[ActorCommand.FLAGS_INDEX] = int(cmd[ActorCommand.FLAGS_INDEX]) | _late_flags | _late_taps
+		_late_taps = 0
+		_held = int(cmd[ActorCommand.FLAGS_INDEX]) & TAP_MASK
+		if int(cmd[ActorCommand.SWITCH_INDEX]) == -1:
+			cmd[ActorCommand.SWITCH_INDEX] = _late_switch
+		_late_flags = 0
+		_late_switch = -1

@@ -47,6 +47,10 @@ const MAX_HEAL_ITEMS := 2
 static func fits(slot: String, id: String) -> bool:
 	if not SLOTS.has(slot) or not ItemDB.has_tag(id, SLOTS[slot]):
 		return false
+	# Attachment slots take attachments only: a Spotter helmet is tagged
+	# "optic" too, but it is a helmet.
+	if slot in ATTACHMENT_SLOTS and not ItemDB.has_tag(id, "attachment"):
+		return false
 	return slot != "primary" or not ItemDB.has_tag(id, "sidearm")
 
 
@@ -121,6 +125,8 @@ static func equip(actor: Actor, item_ids: Array) -> void:
 		actor.flight.heat_per_sec *= heat_mult
 		actor.flight.burst_heat *= heat_mult
 		actor.flight.pulse_heat *= heat_mult
+		actor.flight.air_dash_heat *= heat_mult
+		actor.flight.glide_boost_heat *= heat_mult
 		actor.heat_signature *= stats.get("heat_signature", 1.0)
 		actor.frame_name = ItemDB.item_name(id)
 		actor.gear_items.append(id)
