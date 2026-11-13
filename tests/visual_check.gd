@@ -1759,6 +1759,7 @@ func _phone_shots(out_dir: String) -> void:
 	phone.open()
 	controller.input_blocked = true
 	controller.phone_out = true
+	phone.set_holder(raid.player)
 	await _settle(30)
 	await _shot(out_dir.path_join("phone_home.png"))
 	phone._screen.get_texture().get_image().save_png(out_dir.path_join("phone_screen.png"))
@@ -1768,6 +1769,13 @@ func _phone_shots(out_dir: String) -> void:
 	phone.open_app("settings")
 	await _settle(10)
 	await _shot(out_dir.path_join("phone_settings.png"))
+	phone._screen.get_texture().get_image().save_png(out_dir.path_join("phone_settings_screen.png"))
+	phone.open_settings_tab("view")
+	await _settle(10)
+	phone._screen.get_texture().get_image().save_png(out_dir.path_join("phone_settings_view_screen.png"))
+	phone.open_settings_tab("dev")
+	await _settle(10)
+	phone._screen.get_texture().get_image().save_png(out_dir.path_join("phone_settings_dev_screen.png"))
 	phone.go_home()
 	controller.toggle_view()
 	await _settle(40)
@@ -1783,17 +1791,38 @@ func _phone_shots(out_dir: String) -> void:
 	controller.toggle_view()
 	controller.input_blocked = true
 	controller.phone_out = true
+	phone.set_holder(raid.player)
 	var me: Actor = raid.player
 	var cam := Camera3D.new()
 	cam.fov = 40.0
 	raid.add_child(cam)
 	cam.make_current()
 	var facing := Basis(Vector3.UP, controller.yaw)
-	for view: Array in [["phone_other_player.png", Vector3(0.35, 1.45, -2.6)], ["phone_other_player_side.png", Vector3(2.4, 1.5, -0.9)]]:
+	for view: Array in [["phone_other_player.png", Vector3(0.35, 1.45, -2.6)], ["phone_other_player_side.png", Vector3(2.4, 1.5, -0.9)],
+			["phone_over_shoulder.png", Vector3(0.45, 1.85, 0.9)]]:
 		var eye: Vector3 = me.global_position + facing * (view[1] as Vector3)
 		cam.look_at_from_position(eye, me.global_position + Vector3(0, 1.15, 0))
 		await _settle(40)
 		await _shot(out_dir.path_join(view[0]))
+	# From the eyes, as first person shows the real body: a camera at the
+	# eye point looking where the head looks, past the head itself.
+	# The head is left out, as first person leaves it out of its camera.
+	for node in me.find_children("*", "MeshInstance3D", true, false):
+		var mesh := node as MeshInstance3D
+		var on_head: bool = mesh.get_meta("slot", "") == "head"
+		var up := mesh.get_parent()
+		while up != null and up != me and not on_head:
+			if up is BoneAttachment3D and String((up as BoneAttachment3D).bone_name) in ["Head", "Neck", "neck", "head"]:
+				on_head = true
+			up = up.get_parent()
+		if on_head:
+			mesh.visible = false
+	var eyes: Vector3 = me.global_position + Vector3(0, me.eye_height, 0)
+	cam.fov = 75.0
+	cam.near = 0.12
+	cam.look_at_from_position(eyes, eyes + facing * Vector3(0.0, -0.3, -1.0))
+	await _settle(20)
+	await _shot(out_dir.path_join("phone_from_eyes.png"))
 	phone.queue_free()
 	raid.queue_free()
 	await _settle(3)
