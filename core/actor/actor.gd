@@ -530,10 +530,16 @@ func _air_dash(wish: Vector3, yaw_basis: Basis, on_floor: bool, staggered: bool,
 	if on_floor or staggered:
 		air_dash_left = 0.0
 	elif cmd.sprint_pressed and _air_dash_cd <= 0.0 and air_dash_left <= 0.0 and flight.try_air_dash():
+		_air_dash_cd = flight.air_dash_time + flight.air_dash_cooldown
+		if flight.is_gliding and cmd.move.y < -0.1 and absf(cmd.move.x) <= absf(cmd.move.y):
+			# Wings pulled up (back held): the dash climbs instead of going
+			# backwards (Caleb's call), keeping the airspeed like a pulse.
+			velocity.y = maxf(velocity.y, flight.air_dash_speed)
+			air_dash_side = 0.0
+			return Vector3.ZERO
 		_air_dash_dir = wish.normalized() if wish.length() > 0.1 else yaw_basis * Vector3.FORWARD
 		air_dash_side = (yaw_basis.inverse() * _air_dash_dir).x
 		air_dash_left = flight.air_dash_time
-		_air_dash_cd = flight.air_dash_time + flight.air_dash_cooldown
 	if air_dash_left <= 0.0:
 		return Vector3.ZERO
 	air_dash_left -= delta
@@ -570,20 +576,34 @@ func wings_block(weapon: Weapon) -> bool:
 	return _wing_stow > 0.0 and weapon is Gun and not (weapon as Gun).is_sidearm
 
 
+## The bank the wings roll toward, -1 to 1 (positive turns right): the
+## strafe keys when one is held, else with forward held a bank onto the
+## view's heading that eases off as the heading comes round to it.
+func glide_steer(heading: Vector3, yaw_basis: Basis) -> float:
+	var strafe := clampf(cmd.move.x, -1.0, 1.0)
+	if absf(strafe) > 0.1 or cmd.move.y <= 0.1:
+		return strafe
+	var off := heading.signed_angle_to(yaw_basis * Vector3.FORWARD, Vector3.UP)
+	return -clampf(off / maxf(flight.glide_align_angle, 0.01), -1.0, 1.0)
+
+
 ## How far the glide is tipped, from the forward and back keys: 1 a full
 ## dive (forward), -1 a full flare (back).
 func glide_trim() -> float:
 	return clampf(cmd.move.y, -1.0, 1.0)
 
 
-## Wings are flown on the keys, never the mouse (Caleb's call: the mouse only
-## looks and aims): the strafe keys bank the heading round at up to
-## `FlightRig.glide_turn_rate`, forward dives and back pulls up
-## (`glide_trim`). With no keys the glide flies straight on, wherever you
-## look. A glide that has no heading yet (the launch) sets off the way you face.
+## Wings are flown on the keys, never the mouse's pitch: the strafe keys bank
+## the heading round at up to `FlightRig.glide_turn_rate`, forward dives and
+## back pulls up (`glide_trim`). With no keys the glide flies straight on,
+## wherever you look. Forward with no strafe key flies forward the way you
+## face: the wings bank round onto the view's heading at the same turn rate
+## and level out on it (`FlightRig.glide_align_angle`), so after looking
+## round, pressing forward never keeps flying the old way. A glide that has
+## no heading yet (the launch) sets off the way you face.
 func _glide_velocity(horizontal: Vector3, _wish: Vector3, yaw_basis: Basis, delta: float) -> Vector3:
 	var heading := horizontal.normalized() if horizontal.length() > 1.0 else yaw_basis * Vector3.FORWARD
-	_bank = move_toward(_bank, clampf(cmd.move.x, -1.0, 1.0), flight.glide_bank_rate * delta)
+	_bank = move_toward(_bank, glide_steer(heading, yaw_basis), flight.glide_bank_rate * delta)
 	heading = heading.rotated(Vector3.UP, -_bank * flight.glide_turn_rate * delta)
 	var trim := glide_trim()
 	var air_speed := horizontal.length()

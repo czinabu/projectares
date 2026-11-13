@@ -292,6 +292,18 @@ static func run(t: Node) -> void:
 			await t.get_tree().process_frame
 		bank_gap = port_tip.global_position.y - wing_tip.global_position.y
 		t.check(bank_gap < -0.6, "and into a left turn, left wing down (%.2f m)" % bank_gap)
+		# Spinning the view while the glide flies straight on: the body keeps
+		# facing the way it flies and never swings round with the camera.
+		p.velocity = flying * 16.0 + Vector3(0, -1.8, 0)
+		await t.get_tree().create_timer(0.6).timeout
+		var worst_face := 1.0
+		for i in 40:
+			p.cmd.yaw = wrapf(p.cmd.yaw + 0.2, -PI, PI)
+			p.rotation.y = p.cmd.yaw
+			await t.get_tree().process_frame
+			var nose := (skin as Node3D).global_basis.y
+			worst_face = minf(worst_face, Vector3(nose.x, 0, nose.z).normalized().dot(flying))
+		t.check(worst_face > 0.95, "spinning the view in a glide leaves the body facing the way it flies (worst %.2f)" % worst_face)
 		p.velocity = flying * 24.0 + Vector3(0, -10.0, 0)
 		await t.get_tree().create_timer(0.6).timeout
 		t.check((skin as Node3D).global_basis.y.y < -0.2, "a dive points the nose down")
