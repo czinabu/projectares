@@ -73,17 +73,27 @@ var _glass_mat: StandardMaterial3D
 ## Plain parts of the map waiting to be drawn: [colour, glow] -> [[size, transform], ...].
 var _parts := {}
 var _flushed := false
+## Where the plaza's street lamps stand; `_dress` hangs a light in each.
+var _lamps: Array[Vector3] = []
 
-@onready var FLOOR := Look.surface("metal", {"tint": Color(0.36, 0.39, 0.46), "grime": 0.0, "scale": 0.05,
-		"wetness": 0.25})
-@onready var PAVING := Look.surface("metal", {"tint": Color(0.3, 0.33, 0.4), "grime": 0.1, "scale": 0.2})
+## The deck reads as pale brushed alloy under the twilight: mostly diffuse
+## (low metal, rougher), so it catches the lamps and the glow strips instead
+## of mirroring the dark sky, which made it read as black.
+@onready var FLOOR := Look.surface("metal", {"tint": Color(0.85, 0.9, 1.0), "grime": 0.0, "scale": 0.05,
+		"wetness": 0.08, "metal": 0.15, "rough_mult": 1.5})
+@onready var PAVING := Look.surface("metal", {"tint": Color(0.75, 0.8, 0.9), "grime": 0.1, "scale": 0.2,
+		"metal": 0.15, "rough_mult": 1.4})
 @onready var INLAY := Look.surface("metal", {"tint": Color(0.75, 0.55, 0.3), "grime": 0.3, "scale": 0.3})
 ## Dark glass and metal panels: the hub's buildings. Lit seams, never a grid of
 ## windows (that read as old flats, not sci-fi).
 @onready var WALL := Look.surface("metal", {"tint": Color(0.17, 0.21, 0.31), "grime": 0.0, "scale": 0.08,
 		"rough_mult": 0.25, "wetness": 0.8})
-@onready var STEEL := Look.surface("metal", {"tint": Color(0.42, 0.45, 0.52), "grime": 0.2, "scale": 0.3})
-@onready var DARK := Look.surface("metal", {"tint": Color(0.16, 0.18, 0.23), "grime": 0.2, "scale": 0.3})
+@onready var STEEL := Look.surface("metal", {"tint": Color(0.52, 0.55, 0.62), "grime": 0.2, "scale": 0.3,
+		"metal": 0.5, "rough_mult": 1.2})
+## Podiums, planters and stages: darker than the deck so they stand out, but
+## not so metallic that they turn into black holes against the floor.
+@onready var DARK := Look.surface("metal", {"tint": Color(0.4, 0.44, 0.52), "grime": 0.2, "scale": 0.3,
+		"metal": 0.4, "rough_mult": 1.2})
 
 
 func _ready() -> void:
@@ -194,6 +204,8 @@ func _build_spire() -> void:
 		var at := _at(PODIUM_RING, bearing)
 		_box(Vector3(3.2, 0.35, 3.2), at + Vector3(0, 0.175, 0), DARK, -deg_to_rad(bearing))
 		_box(Vector3(2.4, 0.35, 2.4), at + Vector3(0, 0.525, 0), INLAY, -deg_to_rad(bearing))
+		# A light skirt at the foot, so the podium reads against the floor.
+		_part(self, Vector3(3.4, 0.05, 3.4), at + Vector3(0, 0.025, 0), CYAN.darkened(0.4), true, -deg_to_rad(bearing))
 		_add_marker("podium", at + Vector3(0, 0.7, 0))
 
 
@@ -515,6 +527,16 @@ func _build_show_floor() -> void:
 	for i in 8:
 		var bearing := 360.0 * i / 8.0 + 22.5
 		_box(Vector3(4.0, 0.5, 1.0), _at(21.0, bearing) + Vector3(0, 0.25, 0), STEEL, -deg_to_rad(bearing))
+		_part(self, Vector3(4.2, 0.05, 1.2), _at(21.0, bearing) + Vector3(0, 0.025, 0), CYAN.darkened(0.4), true,
+				-deg_to_rad(bearing))
+	# Street lamps round the plaza, behind the benches, so the floor people
+	# stand on is lit from close by and not only by the sky.
+	for i in 8:
+		var at := _at(25.0, 360.0 * i / 8.0 + 22.5)
+		_part(self, Vector3(0.18, 4.6, 0.18), at + Vector3(0, 2.3, 0), Color(0.25, 0.28, 0.34))
+		_part(self, Vector3(0.9, 0.12, 0.9), at + Vector3(0, 4.66, 0), Color(0.85, 0.95, 1.0), true)
+		_part(self, Vector3(1.2, 0.04, 1.2), at + Vector3(0, 0.02, 0), CYAN.darkened(0.4), true)
+		_lamps.append(at + Vector3(0, 4.3, 0))
 
 
 ## Between the plaza and the arcade: floating holo-ads, lit planters and
@@ -629,6 +651,11 @@ func _dress() -> void:
 	var base := Look.lamp(Color(0.5, 0.9, 1.0), 4.0, 24.0)
 	base.position = Vector3(0, 6.0, 0)
 	art.add_child(base)
+	# Plaza lamps: cool white pools on the floor, no shadows.
+	for at in _lamps:
+		var pool := Look.lamp(Color(0.8, 0.9, 1.0), 6.0, 20.0)
+		pool.position = at
+		art.add_child(pool)
 	for gate in _gates:
 		var glow := Look.lamp(Color(1.0, 0.5, 0.2), 5.0, 16.0)
 		glow.position = gate["at"] + Vector3(0, 5.0, 2.0)
