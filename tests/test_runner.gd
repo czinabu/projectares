@@ -14,6 +14,7 @@ const BaseLayout := preload("res://core/base/base_layout.gd")
 const BaseHudScript := preload("res://core/ui/base_hud.gd")
 const LookTests := preload("res://tests/look_tests.gd")
 const RigLookTests := preload("res://tests/rig_look_tests.gd")
+const RigTierTests := preload("res://tests/rig_tier_tests.gd")
 const EconomyTests := preload("res://tests/economy_tests.gd")
 const MeleeArsenalTests := preload("res://tests/melee_arsenal_tests.gd")
 const MeleeFeelTests := preload("res://tests/melee_feel_tests.gd")
@@ -24,7 +25,6 @@ const SidearmTests := preload("res://tests/sidearm_tests.gd")
 const AttachmentTests := preload("res://tests/attachment_tests.gd")
 const PowerWeaponTests := preload("res://tests/power_weapon_tests.gd")
 const FeelTests := preload("res://tests/feel_tests.gd")
-const RigTierTests := preload("res://tests/rig_tier_tests.gd")
 
 var _passed := 0
 var _failed := 0
@@ -231,6 +231,7 @@ func _run() -> void:
 	await _test_melee_arsenal()
 	await _test_melee_feel()
 	await _test_flight_rigs_and_abilities()
+	await _test_rig_tiers()
 	await _test_vehicle_driving()
 	await _test_vehicle_raids()
 	await _test_vehicle_toys()
@@ -278,15 +279,10 @@ func _run() -> void:
 	await _test_attachments()
 	await _test_power_weapons()
 	await _test_feel()
-	await _test_rig_tiers()
 
 
 func _test_feel() -> void:
 	await FeelTests.run(self)
-
-
-func _test_rig_tiers() -> void:
-	await RigTierTests.run(self)
 
 
 func _test_look() -> void:
@@ -296,6 +292,10 @@ func _test_look() -> void:
 func _test_rig_models() -> void:
 	print("Flight rig models")
 	await RigLookTests.run(self)
+
+
+func _test_rig_tiers() -> void:
+	await RigTierTests.run(self)
 
 
 func _test_customizer() -> void:
