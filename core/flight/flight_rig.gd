@@ -109,6 +109,10 @@ var glide_catch_accel := 45.0
 ## How fast the bank rolls in and out on the strafe keys, per second: full
 ## bank after 1 / `glide_bank_rate` seconds. A tap only nudges the heading.
 var glide_bank_rate := 8.0
+## Forward held with no strafe key turns the glide onto the view's heading:
+## full bank while it is off by this many radians or more, easing to level
+## as it comes round, so it settles on the view without swinging past.
+var glide_align_angle := 0.5
 ## Below the stall speed a glide sinks this fast (0: just the glide sink).
 var stall_sink := 0.0
 ## Wings: only a sidearm fires while they are spread, and a main gun only
@@ -302,7 +306,7 @@ func controls_hint() -> String:
 		parts.append("hold while falling to glide (steer to bank, W dives, S climbs%s)"
 				% (", press again to pulse up" if pulse_velocity > 0.0 else ""))
 	if air_dash_speed > 0.0:
-		parts.append("Shift + a move key dashes that way in the air")
+		parts.append("Shift + a move key dashes that way in the air%s" % (" (Shift + S climbs while gliding)" if can_glide() else ""))
 	return ", ".join(parts)
 
 
