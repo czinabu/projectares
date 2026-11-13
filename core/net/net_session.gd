@@ -2303,7 +2303,9 @@ class LateTick:
 ## Nothing to play (a lost or late packet). The tick is played as a guess:
 ## the held keys carry on, and it counts as the next input (`played` moves
 ## on). When the real input turns up, its tick has been played already, so it
-## is skipped: only its presses are kept, for the next input played. The
+## is skipped: only its presses are kept, for the next input played, along
+## with any held key that went down in it (a trigger tapped for one tick is
+## a shot, and must not vanish with the input it was in). The
 ## server's count of ticks stays in step with the player's, and a guess is
 ## exactly right whenever the keys had not changed. If the late input is the
 ## newest there is, the player's inputs are running later than the server
@@ -2311,9 +2313,13 @@ class LateTick:
 ##
 ## More than is needed (a burst after a stall, or inputs arriving faster than
 ## they are played). Inputs that were spare for a whole window are folded
-## away, keeping their presses, so the delay does not stay.
+## away, keeping their presses and taps, so the delay does not stay.
 class InputBuffer:
 	extends RefCounted
+
+	## Held keys a skipped input may hand on as a tap. The visor's zoom level
+	## is a number, not a key, so it is left out.
+	const TAP_MASK := ActorCommand.HELD_MASK & ~ActorCommand.VISOR_LEVEL_MASK
 
 	## Inputs not yet played, oldest first: [number, command array, view tick].
 	var queue: Array = []
@@ -2331,6 +2337,11 @@ class InputBuffer:
 	var _late: Array = []
 	var _late_flags := 0
 	var _late_switch := -1
+	## Held keys that went down in a skipped or folded input: taps the actor
+	## has not seen yet. They ride on the next input played, like a press.
+	var _late_taps := 0
+	## The held keys of the last input played, which a guess carries on with.
+	var _held := 0
 	var _spare := 0
 	var _window := 0
 
@@ -2384,6 +2395,8 @@ class InputBuffer:
 		_late = []
 		_late_flags = 0
 		_late_switch = -1
+		_late_taps = 0
+		_held = 0
 		live = false
 		played = newest
 
@@ -2403,12 +2416,19 @@ class InputBuffer:
 
 	func _keep_presses(cmd: Array) -> void:
 		_late_flags |= int(cmd[ActorCommand.FLAGS_INDEX]) & ActorCommand.ONE_SHOT_MASK
+		# A key that was not down in the last input played went down in this
+		# one. If it is up again in the next input played, that was a tap the
+		# actor never saw: an automatic's single shot, lost with its input.
+		_late_taps |= int(cmd[ActorCommand.FLAGS_INDEX]) & TAP_MASK & ~_held
 		if int(cmd[ActorCommand.SWITCH_INDEX]) != -1:
 			_late_switch = int(cmd[ActorCommand.SWITCH_INDEX])
 
-	## Adds the kept presses of skipped inputs to the command about to be played.
+	## Adds the kept presses and taps of skipped inputs to the command about
+	## to be played.
 	func _add_presses(cmd: Array) -> void:
-		cmd[ActorCommand.FLAGS_INDEX] = int(cmd[ActorCommand.FLAGS_INDEX]) | _late_flags
+		cmd[ActorCommand.FLAGS_INDEX] = int(cmd[ActorCommand.FLAGS_INDEX]) | _late_flags | _late_taps
+		_late_taps = 0
+		_held = int(cmd[ActorCommand.FLAGS_INDEX]) & TAP_MASK
 		if int(cmd[ActorCommand.SWITCH_INDEX]) == -1:
 			cmd[ActorCommand.SWITCH_INDEX] = _late_switch
 		_late_flags = 0

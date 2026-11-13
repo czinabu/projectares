@@ -377,6 +377,57 @@ static func _test_input_buffer(t: Node) -> void:
 			"and its press and weapon switch ride on the next input played")
 	t.check(int(_input(4)[1][ActorCommand.FLAGS_INDEX]) == 0 and buffer.next().is_empty(), "a kept press is played once")
 
+	# A trigger tapped for a single tick, in an input that is skipped: the
+	# tap rides on the next input played. A client running under 60 frames a
+	# second sends its inputs two to a packet, so one late packet used to eat
+	# every other input, and with it any shot that short.
+	buffer = Net.InputBuffer.new()
+	buffer.receive([_input(1)])
+	buffer.next()
+	buffer.next()
+	buffer.receive([_input(2, ActorCommand.FLAG_PRIMARY), _input(3)])
+	var tapped := buffer.next()
+	t.check(tapped[0] == 3 and int(tapped[1][ActorCommand.FLAGS_INDEX]) & ActorCommand.FLAG_PRIMARY != 0,
+			"a trigger tapped in an input that arrives late still fires, on the next input played")
+	buffer.receive([_input(4)])
+	t.check(int(buffer.next()[1][ActorCommand.FLAGS_INDEX]) & ActorCommand.FLAG_PRIMARY == 0, "a kept tap is played once")
+	# Held before the skipped input and let go after it: the guess already
+	# played that tick with the key down, so nothing is added.
+	buffer = Net.InputBuffer.new()
+	buffer.receive([_input(1, ActorCommand.FLAG_PRIMARY)])
+	buffer.next()
+	buffer.next()
+	buffer.receive([_input(2, ActorCommand.FLAG_PRIMARY), _input(3)])
+	t.check(int(buffer.next()[1][ActorCommand.FLAGS_INDEX]) & ActorCommand.FLAG_PRIMARY == 0,
+			"a key that was already held is not held a tick longer")
+	# The same for inputs folded away after a burst.
+	buffer = Net.InputBuffer.new()
+	var taps: Array = []
+	for number in range(1, 13):
+		taps.append(_input(number, ActorCommand.FLAG_PRIMARY if number == 3 else 0))
+	buffer.receive(taps)
+	t.check(int(buffer.next()[1][ActorCommand.FLAGS_INDEX]) & ActorCommand.FLAG_PRIMARY != 0
+			and int(buffer.next()[1][ActorCommand.FLAGS_INDEX]) & ActorCommand.FLAG_PRIMARY == 0,
+			"a tap in an input folded away after a burst is played once too")
+	# Every other input skipped, as for a client at 30 frames a second after
+	# one late packet: each tap is still played exactly once.
+	buffer = Net.InputBuffer.new()
+	buffer.receive([_input(1), _input(2)])
+	buffer.next()
+	buffer.next()
+	buffer.next()
+	var taps_played := 0
+	for pair in 40:
+		var number := 3 + pair * 2
+		buffer.receive([_input(number, ActorCommand.FLAG_PRIMARY if pair % 3 == 0 else 0), _input(number + 1)])
+		for tick in 2:
+			var input := buffer.next()
+			if not input.is_empty() and int(input[1][ActorCommand.FLAGS_INDEX]) & ActorCommand.FLAG_PRIMARY != 0:
+				taps_played += 1
+	t.check(taps_played == 14 and buffer.skipped >= 40,
+			"with inputs arriving in pairs, one always late, every tap is played once (%d of 14, %d inputs skipped)"
+			% [taps_played, buffer.skipped])
+
 	# Late and still the newest: the player's inputs are running later than
 	# the server thought, so it is played after all.
 	buffer = Net.InputBuffer.new()
