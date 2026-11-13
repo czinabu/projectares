@@ -236,6 +236,13 @@ var _has_heading := false
 ## The actor's yaw last frame: while the body lies flat in flight its
 ## attitude is held in the world, not on the view (see `_update_glide`).
 var _last_yaw := 0.0
+## Free look in a glide: how far the body has rolled to face the view, about
+## its own length (PI: on its back, a backstroke, looking behind).
+var _look_roll := 0.0
+## Free look in a glide: the body starts to roll toward the view once it is
+## this far off the way it flies, and lies on its back by `look_roll_full`.
+var look_roll_start := 0.6
+var look_roll_full := 2.6
 var _attack_left := 0.0
 var _aim_left := 0.0
 ## Weapon -> the copy of it worn while holstered (null if it has no model),
@@ -955,6 +962,14 @@ func _update_glide(delta: float) -> void:
 	_tilt = _tilt.lerp(tilt, follow)
 	_face = lerp_angle(wrapf(_face, -PI, PI), face, follow)
 	_bank = lerpf(_bank, bank, 1.0 - exp(-bank_follow * delta))
+	# Free look in a glide: the body twists round its own length to face the
+	# view, so looking behind lays it on its back (a backstroke) while the
+	# wings fly on, and a sidearm aims back past the feet.
+	var look_roll := 0.0
+	if flat and actor.flight.is_gliding and actor.cmd.free_look:
+		var off := wrapf(face, -PI, PI)
+		look_roll = -signf(off) * smoothstep(look_roll_start, look_roll_full, absf(off)) * PI
+	_look_roll = lerp_angle(_look_roll, look_roll, 1.0 - exp(-bank_follow * delta))
 	# A sideways air dash: one full roll over the dash; then the body rights
 	# itself the short way round.
 	if flat and actor.air_dash_left > 0.0 and absf(actor.air_dash_side) > 0.5:
@@ -966,7 +981,7 @@ func _update_glide(delta: float) -> void:
 	var angle := _tilt.length()
 	var tip := Basis(Vector3.UP.cross(_tilt / angle).normalized(), angle) if angle > 0.001 else Basis.IDENTITY
 	# A positive bank or twist rolls to the right: right side down.
-	var turn := tip * Basis(Vector3.UP, _face - _bank + _twist)
+	var turn := tip * Basis(Vector3.UP, _face - _bank + _twist + _look_roll)
 	_body_turn = turn
 	var pivot := Vector3(0, glide_pivot, 0)
 	transform = Transform3D(turn * Basis(Vector3.UP, PI), pivot - turn * pivot)

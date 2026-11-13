@@ -332,6 +332,31 @@ static func run(t: Node) -> void:
 			var nose := (skin as Node3D).global_basis.y
 			worst_face = minf(worst_face, Vector3(nose.x, 0, nose.z).normalized().dot(flying))
 		t.check(worst_face > 0.95, "spinning the view in a glide leaves the body facing the way it flies (worst %.2f)" % worst_face)
+		# Free look: look to the side and the body twists round to face it;
+		# look behind and it lies on its back, a backstroke, flying on.
+		var z0 := (skin as Node3D).global_basis.z
+		var front_axis := 1.0 if z0.y < 0.0 else -1.0
+		var flight_yaw := atan2(-flying.x, -flying.z)
+		p.cmd.free_look = true
+		p.cmd.yaw = wrapf(flight_yaw - PI / 2.0, -PI, PI)
+		p.rotation.y = p.cmd.yaw
+		await t.get_tree().create_timer(0.8).timeout
+		var front := (skin as Node3D).global_basis.z * front_axis
+		var view := Basis(Vector3.UP, p.cmd.yaw) * Vector3.FORWARD
+		t.check(front.dot(view) > 0.5, "free look to the side twists the body to face it (%.2f)" % front.dot(view))
+		p.cmd.yaw = wrapf(flight_yaw + PI - 0.05, -PI, PI)
+		p.rotation.y = p.cmd.yaw
+		await t.get_tree().create_timer(0.8).timeout
+		front = (skin as Node3D).global_basis.z * front_axis
+		var nose := (skin as Node3D).global_basis.y
+		t.check(front.y > 0.8 and Vector3(nose.x, 0, nose.z).normalized().dot(flying) > 0.9,
+				"free look behind lays the body on its back, still flying head first (%.2f up)" % front.y)
+		p.cmd.free_look = false
+		p.cmd.yaw = flight_yaw
+		p.rotation.y = p.cmd.yaw
+		await t.get_tree().create_timer(0.8).timeout
+		front = (skin as Node3D).global_basis.z * front_axis
+		t.check(front.y < -0.8, "letting go of free look rolls the body face down again")
 		p.velocity = flying * 24.0 + Vector3(0, -10.0, 0)
 		await t.get_tree().create_timer(0.6).timeout
 		t.check((skin as Node3D).global_basis.y.y < -0.2, "a dive points the nose down")

@@ -320,6 +320,9 @@ func _flight_shots(out_dir: String) -> void:
 		["wings_turn_right", "wings_glide", false, false, true, 16.0, -1.8, -1.4, 0.0, 0, Vector3.FORWARD],
 		["wings_dive", "wings_glide", false, false, true, 24.0, -10.0, 0.0, -0.9, 0, Vector3.FORWARD],
 		["wings_climb", "wings_glide", false, false, true, 18.0, 9.0, 0.0, 0.9, 0, Vector3.FORWARD],
+		# Free look: flying one way, looking to the side and behind (a backstroke).
+		["wings_freelook_side", "wings_glide", false, false, true, 16.0, -1.8, 0.0, 0.0, 0, Vector3(1, 0, 0)],
+		["wings_freelook_back", "wings_glide", false, false, true, 16.0, -1.8, 0.0, 0.0, 0, Vector3.BACK],
 		# Thruster boots skimming: still, at cruise each way, and dashing.
 		["boots_hover", "boots_thruster", false, false, false, 0.0, 0.0, 0.0, 0.0, 0, Vector3.FORWARD],
 		["boots_forward", "boots_thruster", false, false, false, 15.0, 0.0, 0.0, 0.0, 0, Vector3.FORWARD],
@@ -350,6 +353,7 @@ func _flight_shots(out_dir: String) -> void:
 		p.flight.is_gliding = pose[4]
 		p.flight.is_skimming = pose[1] == "boots_thruster"
 		p.cmd.secondary = String(pose[0]).ends_with("_aim")
+		p.cmd.free_look = String(pose[0]).contains("freelook")
 		p.cmd.pitch = pose[8]
 		var at := p.global_position
 		var back := p.global_transform.basis.z

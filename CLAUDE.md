@@ -308,7 +308,10 @@ without Caleb, and update the gap list when a PR closes a row.
   a harder turn, and forward and back dive or pull up (`Actor.glide_trim`),
   never the view's pitch. Holding free look (V, `ActorCommand.free_look`,
   Caleb's call) the wings fly straight on and the view looks and aims
-  anywhere; let go and they come round onto the view. A glide flies like a wing (`Actor._glide_velocity`):
+  anywhere; let go and they come round onto the view. In free look the
+  body twists round its length to face the view, so looking behind lays it
+  on its back, a backstroke, to shoot behind (`ActorSkin._look_roll`, view
+  only; check with `visual_check.tscn -- <dir> --flight-only`). A glide flies like a wing (`Actor._glide_velocity`):
   speed is momentum, a turn costs speed, a bank sinks faster, pulling up in a
   turn tightens it, and below the stall speed the wings stall
   (`Actor.glide_stalled`: they barely turn and drop at `stall_sink` until the
