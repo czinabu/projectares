@@ -1567,6 +1567,7 @@ func _view_shots(out_dir: String, only := "") -> void:
 		blade._blocking = false
 		gun._reload_left = 0.0
 		controller.wrist_raised = kind == "watch"
+		p.cmd.watch_up = kind == "watch"
 		p.cmd.primary = false
 		p.cmd.secondary = false
 		skin._aim_left = 0.0

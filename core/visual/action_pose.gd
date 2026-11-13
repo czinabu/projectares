@@ -84,8 +84,12 @@ var switch_weight := 0.0
 var switch_point := Actor.HAND_REST
 ## Set by the skin: true while it holds the gun low (the `idle_gun` stand).
 var low_wanted := false
-## Set by the watch: 0 lowered, 1 raised to read.
+## How far the watch is raised to read (0 lowered, 1 up), eased, from the
+## actor's command (`ActorCommand.watch_up`), so remote players raise it too.
 var watch := 0.0
+## Seconds the watch takes to come up or go down (as `Hud.Wrist.raise_time`).
+var watch_time := 0.18
+var _watch_raise := 0.0
 ## How far the phone is up in the right hand (0..1), from the actor's
 ## command (`ActorCommand.phone`), so everyone who sees them agrees.
 var phone := 0.0
@@ -150,6 +154,9 @@ func advance(delta: float) -> void:
 	turn = turn.lerp(body_turn(melee) if holding else Vector2.ZERO, follow)
 	elbow_raise = lerpf(elbow_raise, elbow_wanted(melee) if holding else 0.0, follow)
 
+	var watch_wanted := actor.cmd != null and actor.cmd.watch_up and not actor.is_dead
+	_watch_raise = move_toward(_watch_raise, 1.0 if watch_wanted else 0.0, delta / maxf(watch_time, 0.001))
+	watch = ease(_watch_raise, -2.0)
 	var phone_wanted := actor.cmd != null and actor.cmd.phone and not actor.is_dead and actor.vehicle == null
 	phone = move_toward(phone, 1.0 if phone_wanted else 0.0, phone_rate * delta)
 
@@ -174,6 +181,12 @@ func arm_reach(melee: MeleeWeapon) -> Variant:
 		return arm_follow[_follow_dir]
 	if melee.is_blocking():
 		return arm_guard
+	var charge := charge_amount(melee)
+	if charge > 0.0:
+		return (arm_windup[MeleeWeapon.swing_from(melee.stance)] as Vector3) * charge
+	var back := recover_left(melee)
+	if back > 0.0:
+		return (arm_follow[melee.attack_dir] as Vector3) * back
 	return null
 
 
@@ -191,6 +204,12 @@ func body_turn(melee: MeleeWeapon) -> Vector2:
 		return turn_follow[_follow_dir]
 	if melee.is_blocking():
 		return Vector2(MeleeWeapon._side(melee.guard_dir) * turn_guard, 0.0)
+	var charge := charge_amount(melee)
+	if charge > 0.0:
+		return (turn_windup[MeleeWeapon.swing_from(melee.stance)] as Vector2) * charge
+	var back := recover_left(melee)
+	if back > 0.0:
+		return (turn_follow[melee.attack_dir] as Vector2) * back
 	return Vector2.ZERO
 
 
@@ -215,12 +234,35 @@ func elbow_wanted(melee: MeleeWeapon) -> float:
 		return 1.0 - swing_progress(melee)
 	if melee.is_blocking():
 		return 0.6
-	return 0.0
+	return maxf(charge_amount(melee), 0.0)
 
 
 ## The weapon elbow's pole in the actor's frame, between cocked and thrown.
 func elbow_pole() -> Vector3:
 	return elbow_thrown.lerp(elbow_cocked, elbow_raise)
+
+
+## How far the arm is drawn back while the button is held toward a heavy
+## (0..1), toward the side the swing will come from, or -1 when not.
+static func charge_amount(melee: MeleeWeapon) -> float:
+	var held := -1.0
+	if melee._charge >= 0.0:
+		held = melee._charge
+	elif melee._queued and melee._queued_held >= 0.0:
+		held = melee._queued_held
+	if held < 0.0:
+		return -1.0
+	return clampf(held / maxf(melee.hold_time, 0.01), 0.0, 1.0)
+
+
+## How much of the follow-through the arm still holds while the blade
+## recovers after a strike (1 just after, easing to 0 once ready), so the
+## wait before the next attack shows in both views.
+static func recover_left(melee: MeleeWeapon) -> float:
+	var done := melee.recover_progress()
+	if done < 0.0:
+		return 0.0
+	return 1.0 - smoothstep(0.0, 1.0, done)
 
 
 static func swing_progress(melee: MeleeWeapon) -> float:
