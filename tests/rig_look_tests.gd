@@ -217,6 +217,74 @@ static func run(t: Node) -> void:
 	await t.get_tree().create_timer(0.6).timeout
 	t.check((skin as Node3D).transform.basis.y.y > 0.99, "the body stands up again after a boost")
 
+	# Thruster boots lean into their push, point the nozzles down the
+	# exhaust and swivel the flames along it; flying forward the body lies
+	# out like a diver, never quite flat, and a dash flattens it further.
+	_equip(p, "boots_thruster")
+	p.flight.skim_speed = 15.0
+	p.flight.air_dash_speed = 20.0
+	await t.frames(2)
+	var heel_flames: Array[Node3D] = []
+	heel_flames.assign(skin.find_children("Flame", "Node3D", true, false).filter(
+			func(n: Node) -> bool: return not n.is_queued_for_deletion()))
+	var exhaust := func() -> Vector3:
+		return p.global_basis.inverse() * -(heel_flames[0].global_basis.y.normalized())
+	var body_pitch := func() -> float:
+		return (p.global_basis.inverse() * (skin as Node3D).global_basis.y).angle_to(Vector3.UP)
+	p.flight.is_skimming = true
+	p.velocity = Vector3.ZERO
+	await t.get_tree().create_timer(0.8).timeout
+	t.check(body_pitch.call() < 0.15, "skimming in place, the boots hold the body upright (%.2f rad)" % body_pitch.call())
+	t.check(heel_flames.size() == 2 and heel_flames.all(func(f: Node3D) -> bool: return f.visible)
+			and exhaust.call().y < -0.9, "and the heel flames fire straight down")
+	p.velocity = -p.global_basis.z * 15.0
+	await t.get_tree().create_timer(0.9).timeout
+	var cruise_pitch: float = body_pitch.call()
+	var cruise_axis := p.global_basis.inverse() * (skin as Node3D).global_basis.y
+	t.check(cruise_axis.z < -0.8 and cruise_pitch > 1.0 and cruise_pitch < 1.45,
+			"skimming forward, the body lies out head first but never flat (%.2f rad)" % cruise_pitch)
+	var cruise_exhaust: Vector3 = exhaust.call()
+	t.check(cruise_exhaust.y < -0.4 and cruise_exhaust.z > 0.4,
+			"the heel flames fire down and back: holding you up and driving you on (%s)" % cruise_exhaust)
+	if skeleton and skeleton.find_bone("Head") >= 0 and foot_bone >= 0:
+		skin._pose_glide()
+		var head_at := p.to_local(skeleton.to_global(skeleton.get_bone_global_pose(skeleton.find_bone("Head")).origin))
+		var foot_at := p.to_local(skeleton.to_global(skeleton.get_bone_global_pose(foot_bone).origin))
+		t.check(head_at.z < foot_at.z - 1.0 and foot_at.y < head_at.y,
+				"head out ahead, feet trailing below and behind (head %s, foot %s)" % [head_at, foot_at])
+	p.cmd.secondary = true
+	await t.get_tree().create_timer(0.9).timeout
+	var aim_pitch: float = body_pitch.call()
+	t.check(aim_pitch < cruise_pitch - 0.2, "aiming lifts the chest so the arms have room (%.2f rad)" % aim_pitch)
+	var held_gun := p.get_active_weapon()
+	if held_gun and held_gun.visual:
+		var aim_dir := (p.global_basis * Basis(Vector3.RIGHT, p.cmd.pitch) * Vector3.FORWARD).normalized()
+		var gun_at := p.to_local(held_gun.visual.global_position)
+		t.check(held_gun.visual.visible and (-held_gun.visual.global_basis.z).normalized().dot(aim_dir) > 0.95
+				and gun_at.z < 0.0 and gun_at.y > 0.5, "lying out, the gun is held ahead and still points along the aim")
+	p.cmd.secondary = false
+	await t.get_tree().create_timer(skin.aim_hold + 1.0).timeout
+	p.velocity = -p.global_basis.z * 35.0
+	await t.get_tree().create_timer(0.9).timeout
+	t.check(body_pitch.call() > cruise_pitch + 0.05 and body_pitch.call() < PI / 2.0,
+			"a dash flattens the body further (%.2f rad)" % body_pitch.call())
+	t.check(heel_flames[0].scale.y > 1.3, "and the flames stretch with the harder push (%.2f)" % heel_flames[0].scale.y)
+	p.velocity = p.global_basis.x * 15.0
+	await t.get_tree().create_timer(0.9).timeout
+	var strafe_axis := p.global_basis.inverse() * (skin as Node3D).global_basis.y
+	t.check(strafe_axis.x > 0.4 and body_pitch.call() < skin.boot_max_lean + 0.05,
+			"skimming sideways, the body rolls into the push (%s)" % strafe_axis)
+	t.check(exhaust.call().x < -0.3, "and the flames blow the other way")
+	p.velocity = p.global_basis.z * 15.0
+	await t.get_tree().create_timer(0.9).timeout
+	var back_axis := p.global_basis.inverse() * (skin as Node3D).global_basis.y
+	t.check(back_axis.z > 0.4 and body_pitch.call() < skin.boot_max_lean + 0.05,
+			"skimming backward, the body leans back, never lying out (%s)" % back_axis)
+	p.flight.is_skimming = false
+	p.velocity = Vector3.ZERO
+	await t.get_tree().create_timer(0.9).timeout
+	t.check((skin as Node3D).transform.basis.y.y > 0.99 and skin._boot_w < 0.01, "letting go of the boots stands the body up")
+
 	_equip(p, "wings_glide")
 	await t.frames(2)
 	var pack_node := skin.find_child("WingPack", true, false) as Node3D
@@ -252,6 +320,18 @@ static func run(t: Node) -> void:
 			await t.get_tree().process_frame
 		bank_gap = port_tip.global_position.y - wing_tip.global_position.y
 		t.check(bank_gap < -0.6, "and into a left turn, left wing down (%.2f m)" % bank_gap)
+		# Spinning the view while the glide flies straight on: the body keeps
+		# facing the way it flies and never swings round with the camera.
+		p.velocity = flying * 16.0 + Vector3(0, -1.8, 0)
+		await t.get_tree().create_timer(0.6).timeout
+		var worst_face := 1.0
+		for i in 40:
+			p.cmd.yaw = wrapf(p.cmd.yaw + 0.2, -PI, PI)
+			p.rotation.y = p.cmd.yaw
+			await t.get_tree().process_frame
+			var nose := (skin as Node3D).global_basis.y
+			worst_face = minf(worst_face, Vector3(nose.x, 0, nose.z).normalized().dot(flying))
+		t.check(worst_face > 0.95, "spinning the view in a glide leaves the body facing the way it flies (worst %.2f)" % worst_face)
 		p.velocity = flying * 24.0 + Vector3(0, -10.0, 0)
 		await t.get_tree().create_timer(0.6).timeout
 		t.check((skin as Node3D).global_basis.y.y < -0.2, "a dive points the nose down")

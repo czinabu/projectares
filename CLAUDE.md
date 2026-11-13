@@ -303,7 +303,13 @@ without Caleb, and update the gap list when a PR closes a row.
   Shooting from the air spreads wider (`Actor.air_aim`) except in a rig's
   steady state. The keys fly every rig and the mouse only looks and aims
   (Caleb's call): wings bank on the strafe keys and dive or pull up on
-  forward and back (`Actor.glide_trim`), and a boost runs along the view's
+  forward and back (`Actor.glide_trim`); forward with no strafe key banks
+  the glide round onto the view's heading (`Actor.glide_steer`), so
+  "forward" is always the way you face, and with no keys the glide flies
+  straight on wherever you look. Gliding, Shift + S (wings pulled up) boosts
+  upward instead of back (Caleb's call). The glide's attitude is held in the
+  world while the view turns, so spinning the camera never drags the body
+  round (`ActorSkin._update_glide`). And a boost runs along the view's
   heading, climbing only on jump and descend, never on the view's pitch.
   Every rig air dashes on Shift + a move key (`ActorCommand.sprint_pressed`,
   `Actor._air_dash`, tuned by the rig's `air_dash_*` stats): the dash is
@@ -311,7 +317,12 @@ without Caleb, and update the gap list when a PR closes a row.
   cruise carries on after it. Q and E fly nothing (Caleb's call).
   The body's attitude in the air (flat, banked, leaning, barrel rolled by a
   sideways air dash) is the skin's job (`ActorSkin._update_glide`), read
-  from velocity and the simulated actor only, so remote players match. Off the
+  from velocity and the simulated actor only, so remote players match. Boots
+  show their thrust (`ActorSkin._update_boot_thrust`): the body leans into
+  the push (gravity, drag and speeding up), the legs and swivelling flames
+  fire down the exhaust, and flying forward lies the body out near flat with
+  the legs dropped so the heel jets fire down and back (never fully flat,
+  or nothing would hold you up). Off the
   ground (`ActorSkin.is_airborne`, from `Actor.airborne_time`) the legs
   never play a gait: a stand plays under an air pose (leap, fall, or
   hanging from lit jets). Leaving the ground starts with a short push-off
