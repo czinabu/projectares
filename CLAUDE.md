@@ -869,9 +869,13 @@ without Caleb, and update the gap list when a PR closes a row.
   Status (map, standing) and Mission (portal, contract, ping, sign-out). The open
   icon shows one short line, and controls are glyphs (wheel, click, key
   cap), never words. The mouse wheel moves across the card tab after tab
-  (`PlayerController.watch_focus`, `step_watch`; Caleb's call), turning
-  through what an icon holds (weapons, toys, artifacts: `watch_entries`)
-  before stepping on, and the mouse only looks. While the watch is up the
+  (`PlayerController.watch_focus`, `step_watch`; Caleb's call) over the
+  main icons only. Two levels (Caleb's call): a click on an icon that holds
+  several things (weapons, toys, artifacts, portal places: `watch_entries`)
+  opens it (`PlayerController.watch_open`), the wheel then turns through
+  them and stops at the list's ends, a click acts and a right click backs
+  out (`close_watch_icon`); a closed icon shows the click glyph instead of
+  the wheel (`Hud.mark_open`). The mouse only looks. While the watch is up the
   wheel never switches weapons. A new watch feature is a new slot on a
   tab, not a new line of text; something that only matters now and then is
   a pop-up line (`Wrist.show_card`'s `popup`), not a slot. The summon

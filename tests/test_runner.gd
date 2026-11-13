@@ -1031,10 +1031,10 @@ func _test_main_flow() -> void:
 			"scrolling up steps the card left to the weapons, on the Summon tab")
 	controller.scroll(-1)
 	check(controller.watch_focus == 0, "and it stops at the card's left end")
-	for i in controller.watch_weapons().size():
-		controller.scroll(1)
+	controller.scroll(1)
 	await frames(2)
-	check(wrist.focused_id() == "vehicle", "scrolling down turns through the weapons, then steps right an icon a notch")
+	check(wrist.focused_id() == "vehicle" and controller.weapon_pick == 0,
+			"scrolling down steps right an icon a notch, past the weapons without turning through them")
 	for i in 10:
 		if wrist.card.focused_tab() == "status":
 			break
@@ -4663,27 +4663,30 @@ func _test_vehicle_toys() -> void:
 	controller.wrist_raised = true
 	check(controller.is_browsing_toys(), "raising the watch with toys on it lets you pick one")
 	var weapon_before := p.active_weapon_index
+	var vehicle_at := Hud.Wrist.SLOTS.find("vehicle")
+	check(not controller.is_picking_toys() and controller.focused_watch_icon() == "vehicle",
+			"the card opens on the vehicles, closed: the toys wait for a click")
+	check(controller.watch_takes_fire() and controller.click_watch() and controller.watch_open == "vehicle"
+			and controller.is_picking_toys() and controller.held_toy == "", "a click opens the vehicle icon's list")
 	controller.scroll(1)
 	check(controller.watch_index == 1 and controller._pending_switch < 0 and p.active_weapon_index == weapon_before,
-			"with the watch up the wheel turns through the toys, not the weapons")
-	var vehicle_at := Hud.Wrist.SLOTS.find("vehicle")
+			"with the list open the wheel turns through the toys, not the weapons")
 	controller.scroll(1)
-	check(controller.watch_focus == vehicle_at + 1 and not controller.is_picking_toys(),
-			"past the last toy the wheel steps on to the next icon, and fire no longer takes a toy")
-	controller.scroll(-1)
 	check(controller.watch_focus == vehicle_at and controller.watch_index == 1 and controller.is_picking_toys(),
-			"scrolling back onto the vehicles lands on the last toy")
-	controller.scroll(-1)
-	controller.scroll(-1)
-	check(controller.watch_focus == vehicle_at - 1, "and before the first toy it steps off to the left")
+			"the list stops at its last toy; the wheel never leaves it")
+	check(controller.close_watch_icon() and controller.watch_open == "" and not controller.is_picking_toys(),
+			"a right click closes the list")
 	controller.scroll(1)
-	controller.scroll(1)
-	check(controller.watch_focus == vehicle_at and controller.watch_index == 1, "back on the second toy")
+	check(controller.watch_focus == vehicle_at + 1 and controller.watch_index == 1,
+			"closed, the wheel steps across the icons and leaves the pick alone")
+	controller.scroll(-1)
+	check(controller.watch_focus == vehicle_at and controller.watch_index == 1, "back on the vehicles, the second toy still picked")
 	controller.wrist_raised = false
 	controller.scroll(1)
 	check(controller._pending_switch >= 0, "with the watch down the wheel switches weapons again")
 	controller._pending_switch = -1
 	controller.wrist_raised = true
+	check(controller.click_watch() and controller.watch_open == "vehicle", "raised again, a click opens the toys")
 	await get_tree().process_frame
 	await get_tree().process_frame
 	check(hud.wrist.toys_shown() == raid.stowed_for(p) and hud.wrist.get_node("Hologram/Toys").get_child_count() == 2,

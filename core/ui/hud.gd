@@ -175,6 +175,7 @@ func _process(delta: float) -> void:
 	var picks := {"weapon": controller.weapon_pick, "artifact": controller.artifact_pick, "portal": controller.portal_pick} \
 			if controller != null else {}
 	var slots := watch_slots(raid, p, picked, pack_name, leaving, banking, picks, contracts)
+	mark_open(slots, controller.watch_open if controller != null else "")
 	var focus := default_focus(slots)
 	if controller != null:
 		if controller.watch_focus_moved:
@@ -198,6 +199,18 @@ func _process(delta: float) -> void:
 			carried.append(entry.id)
 	wrist.show_weapons(carried, int(picks.get("weapon", 0)), raid.summon_wait(p) <= 0.0, delta)
 	_update_pings(delta)
+
+
+## Two-level watch (Caleb's call): an icon that holds several things shows
+## the wheel glyph only once opened; on the main row it shows a click, which
+## opens it, and the wheel moves between icons.
+static func mark_open(slots: Array[Dictionary], opened: String) -> void:
+	for slot in slots:
+		if int(slot.get("count", 0)) > 1 and slot.id != opened:
+			var hints: Array = slot.hints.filter(func(h: String) -> bool: return h != "wheel")
+			if not hints.has("click"):
+				hints.append("click")
+			slot.hints = hints
 
 
 ## The weapons on the watch's carousel, in the order the wheel turns through
