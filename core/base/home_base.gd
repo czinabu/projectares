@@ -119,6 +119,13 @@ const BENCH_YAW := 0.0
 ## hide the rack. See `bench_transform`.
 const STARTER_BENCH_AT := Vector3(-9.0, 0.0, -2.8)
 const STARTER_BENCH_YAW := 0.0
+## The fabricator: the crafting console behind the bench's pegboard, in the
+## bench's own space (local +Z is where you stand to use the bench, so the
+## console faces the other way and never hides the rack or the pegboard).
+const CRAFT_ID := "craft"
+const CRAFT_TITLE := "Fabricator"
+const CRAFT_AT := Vector3(0.0, 0.0, -0.75)
+const CRAFT_COLOR := Color(0.3, 0.9, 1.0)
 ## Until the ops consoles are bought, each of these stations also shows the
 ## station named beside it, which has no console of its own yet.
 const MERGED := {"trader": "mastery", "wardrobe": "records"}
@@ -229,6 +236,18 @@ class Station:
 	func interact(_actor: Actor) -> void:
 		if base and not base.read_only:
 			base.station_requested.emit(id)
+
+
+## The fabricator on the gunsmith bench: the console that crafts gear from
+## blueprints (`Hub.STATIONS["craft"]`, DESIGN.md section 10). A station like
+## the others, but it stands with the bench, not at a spot of its own.
+class CraftConsole:
+	extends Station
+
+	func get_prompt() -> String:
+		if base and base.read_only:
+			return "%s (not yours)" % HomeBase.CRAFT_TITLE
+		return "[F] %s: craft from blueprints" % HomeBase.CRAFT_TITLE
 
 
 ## The suit-up bay's control post. Using it puts the loadout on you.
@@ -449,14 +468,18 @@ func bulkhead(id: String) -> Bulkhead:
 
 ## True if this station has a console in the room. The mastery bench and the
 ## records board share another station's console until the ops consoles are
-## bought (`MERGED`).
+## bought (`MERGED`). The fabricator comes with the bench.
 func has_station(id: String) -> bool:
+	if id == CRAFT_ID:
+		return true
 	return STATIONS.has(id) and (owns("ops_consoles") or id not in MERGED.values())
 
 
 ## The other stations this station's console shows as well, for now.
 func also_shows(id: String) -> Array[String]:
 	var out: Array[String] = []
+	if id == CRAFT_ID:
+		return out
 	if MERGED.has(id) and not owns("ops_consoles"):
 		out.append(MERGED[id])
 	return out
@@ -1673,7 +1696,8 @@ func _build_bench() -> void:
 	title.name = "Title"
 	title.position = Vector3(0, 2.75, -0.42)
 	bench.add_child(title)
-	var how := _label("F on the gun: next gun in the vise.  F on an attachment: fit it.", Color(0.85, 0.83, 0.8), 0.08)
+	var how := _label("F on the gun: next gun in the vise.  F on an attachment: fit it.\n"
+			+ "Round the back: the fabricator crafts from blueprints.", Color(0.85, 0.83, 0.8), 0.08)
 	how.name = "HowTo"
 	how.position = Vector3(0, 2.6, -0.38)
 	bench.add_child(how)
@@ -1683,10 +1707,49 @@ func _build_bench() -> void:
 			bench.add_child(_part(Vector3(2.2, 0.03, 0.03), Vector3(0, 0.95, z), Color(0.25, 0.9, 1.0), true))
 		bench.add_child(_part(Vector3(0.4, 0.03, 0.12), Vector3(-0.7, 2.38, 0.1), Color(1.0, 0.85, 0.6), true))
 	_keep(bench)
+	_build_craft_console()
 	if Look.enabled:
 		var light := Look.lamp(Color(1.0, 0.9, 0.75), 2.0, 5.0)
 		light.position = bench_transform() * Vector3(0.6, 2.2, 0)
 		_keep(light)
+
+
+## The fabricator: a cabinet backed onto the bench's pegboard with a screen
+## on top, where gear is crafted from blueprints.
+func _build_craft_console() -> void:
+	var console := CraftConsole.new()
+	console.name = "Station_%s" % CRAFT_ID
+	console.base = self
+	console.id = CRAFT_ID
+	console.transform = bench_transform() * _spot(CRAFT_AT, PI)
+	var dark := Color(0.17, 0.17, 0.19)
+	console.add_child(_part(Vector3(1.2, 1.0, 0.5), Vector3(0, 0.5, 0), dark))
+	console.add_child(_part(Vector3(1.22, 0.06, 0.52), Vector3(0, 0.3, 0), CRAFT_COLOR, true))
+	console.add_child(_part(Vector3(0.12, 0.25, 0.12), Vector3(0, 1.1, 0), dark))
+	# A print bed beside the monitor post, lit like something is being made.
+	console.add_child(_part(Vector3(0.4, 0.03, 0.3), Vector3(0.36, 1.02, 0.05), CRAFT_COLOR, true))
+	_add_collision(console, Vector3(1.3, 1.7, 0.7), Vector3(0, 0.85, 0))
+	var screen := Node3D.new()
+	screen.name = "Screen"
+	screen.position = Vector3(0, 1.62, 0.05)
+	screen.rotation.x = -0.08
+	screen.add_child(_part(Vector3(SCREEN_SIZE.x + 0.08, SCREEN_SIZE.y + 0.08, 0.06), Vector3(0, 0, -0.035), dark))
+	var idle := _part(Vector3(SCREEN_SIZE.x, SCREEN_SIZE.y, 0.01), Vector3.ZERO, CRAFT_COLOR.darkened(0.78), true)
+	idle.name = "Idle"
+	screen.add_child(idle)
+	var hint := _label("Craft from blueprints", CRAFT_COLOR.lightened(0.2), 0.12)
+	hint.name = "IdleText"
+	hint.position = Vector3(0, 0, 0.012)
+	screen.add_child(hint)
+	console.add_child(screen)
+	console.screen = screen
+	var title := _label(CRAFT_TITLE.to_upper(), CRAFT_COLOR, 0.22)
+	title.name = "Title"
+	title.position = Vector3(0, 2.3, 0)
+	title.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
+	console.add_child(title)
+	_keep(console)
+	stations.append(console)
 
 
 ## What the bench is called, by how far it has been upgraded.

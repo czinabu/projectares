@@ -92,6 +92,12 @@ func _ready() -> void:
 		get_tree().quit()
 		return
 
+	# `-- <output_dir> --crafting-only` shoots the fabricator on the gunsmith
+	# bench: in the starter bunker, in the armory, and its screen in use.
+	if "--crafting-only" in args:
+		await _crafting_shots(out_dir)
+		get_tree().quit()
+		return
 	# `-- <output_dir> --holster-only [melee item id]` shoots holstered
 	# weapons on the body, with that melee weapon in place of the kit's.
 	if "--holster-only" in args:
@@ -116,6 +122,13 @@ func _ready() -> void:
 	# `-- <output_dir> --sidearms-only` shoots each sidearm model side on.
 	if "--sidearms-only" in args:
 		await _sidearm_shots(out_dir)
+		get_tree().quit()
+		return
+
+	# `-- <output_dir> --hands-only` shoots the hands close up on every gun
+	# and melee weapon, held low and aimed: each is held by its own grip.
+	if "--hands-only" in args:
+		await _hands_shots(out_dir)
 		get_tree().quit()
 		return
 
@@ -1018,6 +1031,47 @@ func _attachment_shots(out_dir: String) -> void:
 		await _shot(out_dir.path_join("bench_%s.png" % primary))
 		base.queue_free()
 		await _settle(2)
+
+
+## The fabricator behind the bench's pegboard, and the craft screen on it.
+func _crafting_shots(out_dir: String) -> void:
+	for full: bool in [false, true]:
+		var base := HomeBase.new()
+		base.show_gear(["rifle_carbine", "optic_reflex", "jetpack_mk2", "mech_bulwark"], {"primary": "rifle_carbine"},
+				BaseUpgrades.full() if full else [])
+		add_child(base)
+		var camera := Camera3D.new()
+		camera.fov = 55.0
+		base.add_child(camera)
+		camera.make_current()
+		base.player.global_position = Vector3(0, 0.1, 6)
+		await _settle(20)
+		var bench := base.bench_transform()
+		camera.look_at_from_position(bench * Vector3(1.6, 1.9, -3.4), bench * Vector3(0, 1.3, -0.4))
+		await _settle(4)
+		await _shot(out_dir.path_join("fabricator_%s.png" % ("armory" if full else "bunker")))
+		camera.look_at_from_position(bench * Vector3(-3.2, 2.2, 3.4), bench * Vector3(0, 1.3, -0.2))
+		await _settle(4)
+		await _shot(out_dir.path_join("fabricator_%s_front.png" % ("armory" if full else "bunker")))
+		base.queue_free()
+		await _settle(2)
+	# The screen in use, as the player sees it, with one recipe ready.
+	Profile.persist = false
+	Profile.reset()
+	Profile.welcome_granted = true
+	Profile.scrip = 1000
+	Profile.add_to_stash(["bp_jetpack", "bp_dmr_longshot", "upgrade_data", "upgrade_data", "upgrade_data",
+			"power_cell", "power_cell", "alloy_ingot", "circuit_board"])
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await _settle(30)
+	main.open_station(HomeBase.CRAFT_ID)
+	await _settle(60)
+	await _shot(out_dir.path_join("fabricator_screen.png"))
+	main.queue_free()
+	await _settle(2)
+
+
 ## Aiming down each optic in first person, in a raid, and with iron sights.
 func _aim_shots(out_dir: String) -> void:
 	for kit: Array in [["rifle_carbine", "optic_scope", "muzzle_suppressor"], ["smg_stinger", "optic_reflex"],
@@ -1504,6 +1558,78 @@ func _sidearm_shots(out_dir: String) -> void:
 
 ## The four power weapons side on (power_weapons.png), then one in use in a
 ## raid: a Rail Lance beam, a plasma burst and an arc burst (power_fire.png).
+## The weapon hand close up on each weapon, from the side and from ahead,
+## at the hip and aiming (a blade: at rest, both shots the same), one row a
+## weapon. Every model is held by its own grip (`Look._measure_hold`,
+## `Look._fit_hands`), so the hands sit differently on each.
+func _hands_shots(out_dir: String) -> void:
+	var ids := ["rifle_scrap", "rifle_carbine", "smg_stinger", "dmr_longshot", "shotgun_breacher",
+			"pistol_service", "pistol_machine", "pistol_hand_cannon", "power_rail_lance", "power_storm_cannon",
+			"blade_scrap", "blade_arc", "knife_gutter", "axe_splitter", "hammer_breaker", "spear_lancer"]
+	if OS.has_environment("HANDS_IDS"):
+		ids = Array(OS.get_environment("HANDS_IDS").split(","))
+	var raid := Raid.new()
+	add_child(raid)
+	raid.start(Worlds.get_world("ashfront"), 42, ["blade_scrap", "plate_light"])
+	for bot in raid.bots:
+		bot.get_node("Brain").set_physics_process(false)
+		bot.global_position += Vector3(0, -500, 0)
+	await _settle(30)
+	var p := raid.player
+	p.set_physics_process(false)
+	p.cmd.pitch = 0.0
+	var cam := Camera3D.new()
+	cam.fov = 30.0
+	raid.add_child(cam)
+	cam.current = true
+	DirAccess.make_dir_recursive_absolute(out_dir.path_join("hands"))
+	var cell := Vector2i(360, 300)
+	var sheet := Image.create(4 * cell.x, ids.size() * cell.y, false, Image.FORMAT_RGBA8)
+	for row in ids.size():
+		var id: String = ids[row]
+		if ItemDB.has_tag(id, "power"):
+			Loadout.equip(p, ["blade_scrap", "plate_light"])
+			Loadout.set_power(p, id)
+		else:
+			Loadout.equip(p, [id, "plate_light"])
+		var weapon: Weapon = null
+		for i in p.weapons.size():
+			if p.weapons[i].item_id == id:
+				weapon = p.weapons[i]
+				p.active_weapon_index = i
+		await _settle(70)
+		var gun := weapon as Gun
+		for col in 4:
+			var aiming := col >= 2 and gun != null
+			p.cmd.secondary = aiming
+			if gun != null:
+				gun._aiming = aiming
+			await _settle(40 if col % 2 == 0 else 3)
+			var hand: Vector3 = (p.hand.get_meta("shown") as Transform3D).origin if p.hand.has_meta("shown") else p.hand.global_position
+			var right := p.global_basis.x.normalized()
+			var ahead := -p.global_basis.z.normalized()
+			var side := right * 0.75 + Vector3.UP * 0.12 if col % 2 == 0 else ahead * 0.65 + right * 0.4 + Vector3.UP * 0.1
+			var focus := hand + ahead * (0.12 if gun != null and not gun.is_sidearm else 0.04)
+			cam.global_position = focus + side * (1.6 if weapon is MeleeWeapon and Look.is_two_handed(weapon) else 1.0)
+			cam.look_at(focus)
+			await _settle(2)
+			await RenderingServer.frame_post_draw
+			var frame := get_viewport().get_texture().get_image()
+			frame.save_png(out_dir.path_join("hands/%s_%d.png" % [id, col]))
+			var w := frame.get_width()
+			var h := frame.get_height()
+			var cut := frame.get_region(Rect2i(w / 2 - cell.x * h / 720, h / 2 - cell.y * h / 720, 2 * cell.x * h / 720, 2 * cell.y * h / 720))
+			cut.resize(cell.x, cell.y)
+			cut.convert(Image.FORMAT_RGBA8)
+			sheet.blit_rect(cut, Rect2i(Vector2i.ZERO, cell), Vector2i(col * cell.x, row * cell.y))
+		p.cmd.secondary = false
+		if gun != null:
+			gun._aiming = false
+	sheet.save_png(out_dir.path_join("hands.png"))
+	print("saved hands.png")
+	raid.queue_free()
+
+
 func _power_shots(out_dir: String) -> void:
 	var stage := Node3D.new()
 	add_child(stage)
@@ -1837,7 +1963,11 @@ func _ride_shots(out_dir: String) -> void:
 func _view_shots(out_dir: String, only := "") -> void:
 	var raid := Raid.new()
 	add_child(raid)
-	var kit := ["rifle_carbine", OS.get_environment("VIEW_MELEE") if OS.has_environment("VIEW_MELEE") else "blade_scrap", "pistol_service", "jetpack_mk1", "plate_light"]
+	# `VIEW_GUN` and `VIEW_SIDEARM` pick the guns (each model is held by
+	# its own grip, so compare them).
+	var kit := [OS.get_environment("VIEW_GUN") if OS.has_environment("VIEW_GUN") else "rifle_carbine",
+			OS.get_environment("VIEW_MELEE") if OS.has_environment("VIEW_MELEE") else "blade_scrap",
+			OS.get_environment("VIEW_SIDEARM") if OS.has_environment("VIEW_SIDEARM") else "pistol_service", "jetpack_mk1", "plate_light"]
 	# `VIEW_OPTIC=<item id>` fits an optic to the rifle, for the aim rows.
 	if OS.has_environment("VIEW_OPTIC"):
 		kit.append(OS.get_environment("VIEW_OPTIC"))

@@ -13,7 +13,8 @@ extends RefCounted
 ##     (`Profile.DEV_SAVE_PATH`), so the real stash is never touched, and keeps
 ##     that dev stash topped up with every piece of gear, clothing and
 ##     furniture, plenty of medkits, and as many scrip as a stash holds.
-##     It also keeps the home base fully upgraded (`top_up_base`).
+##     It also keeps the home base fully upgraded (`top_up_base`) and every
+##     blueprint known (`top_up_blueprints`).
 ##   - Cheats in a solo `Raid` (`Raid.dev_cheats`, applied by the `Raid` to
 ##     its own players only): god mode, endless flight heat, endless ammo and
 ##     no ability cooldowns.
@@ -24,6 +25,7 @@ extends RefCounted
 const StashRules := preload("res://core/account/stash_rules.gd")
 const Economy := preload("res://core/economy/economy.gd")
 const BaseUpgrades := preload("res://core/base/base_upgrades.gd")
+const Crafting := preload("res://core/progression/crafting.gd")
 const SAVE_PATH := "user://dev_mode.json"
 ## How many of each kind of item a dev stash is kept at.
 const GEAR_COPIES := 1
@@ -136,6 +138,17 @@ static func top_up_base(owned: Array[String]) -> bool:
 		return false
 	owned.clear()
 	owned.append_array(full)
+	return true
+
+
+## Tops a list of known blueprints up to every blueprint, so dev mode can
+## craft anything. Returns true if it added any.
+static func top_up_blueprints(known: Array[String]) -> bool:
+	var all := Crafting.blueprints()
+	if known == all:
+		return false
+	known.clear()
+	known.append_array(all)
 	return true
 
 

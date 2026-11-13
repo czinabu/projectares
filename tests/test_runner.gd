@@ -25,6 +25,7 @@ const BattlefieldTests := preload("res://tests/battlefield_tests.gd")
 const VisorTests := preload("res://tests/visor_tests.gd")
 const SidearmTests := preload("res://tests/sidearm_tests.gd")
 const BaseUpgradeTests := preload("res://tests/base_upgrade_tests.gd")
+const CraftingTests := preload("res://tests/crafting_tests.gd")
 const AttachmentTests := preload("res://tests/attachment_tests.gd")
 const PowerWeaponTests := preload("res://tests/power_weapon_tests.gd")
 const ArtifactTests := preload("res://tests/artifact_tests.gd")
@@ -32,6 +33,7 @@ const WatchTests := preload("res://tests/watch_tests.gd")
 const FeelTests := preload("res://tests/feel_tests.gd")
 const ViewMatchTests := preload("res://tests/view_match_tests.gd")
 const AdsTests := preload("res://tests/ads_tests.gd")
+const GripTests := preload("res://tests/grip_tests.gd")
 
 var _passed := 0
 var _failed := 0
@@ -277,6 +279,7 @@ func _run() -> void:
 	await _test_dev_mode()
 	await _test_home_base()
 	await BaseUpgradeTests.run(self)
+	await CraftingTests.run(self)
 	await _test_arena()
 	await _test_arena_floor()
 	await _test_online_arena()
@@ -294,6 +297,7 @@ func _run() -> void:
 	await _test_feel()
 	await _test_view_match()
 	await _test_ads()
+	await _test_grips()
 
 
 func _test_view_match() -> void:
@@ -302,6 +306,10 @@ func _test_view_match() -> void:
 
 func _test_ads() -> void:
 	await AdsTests.run(self)
+
+
+func _test_grips() -> void:
+	await GripTests.run(self)
 
 
 func _test_feel() -> void:
@@ -4934,6 +4942,12 @@ func _test_online_stash() -> void:
 	await _wait_until(func() -> bool: return errors.size() == 3, 120)
 	check(errors.size() == 3 and cara.account.get("base_upgrades", []).size() == 1,
 			"the server refuses an upgrade the account cannot pay for")
+	# Crafting is decided on the server too: no blueprint, no craft.
+	check(cara.account.get("blueprints", ["?"]) == [], "a new account knows no blueprints")
+	cara.craft("jetpack_mk2")
+	await _wait_until(func() -> bool: return errors.size() == 4, 120)
+	check(errors.size() == 4 and "jetpack_mk2" not in cara.account.stash and int(cara.account.scrip) == 0,
+			"the server refuses a craft without its blueprint (%s)" % [errors.back()])
 
 	cara.deploy()
 	await _wait_until(func() -> bool: return cara.raid != null and cara.raid.player != null, 240)

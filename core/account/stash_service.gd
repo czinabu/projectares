@@ -30,6 +30,7 @@ const MasteryBook := preload("res://core/progression/mastery_book.gd")
 const ProfileScript := preload("res://core/profile/profile.gd")
 const Economy := preload("res://core/economy/economy.gd")
 const BaseUpgrades := preload("res://core/base/base_upgrades.gd")
+const Crafting := preload("res://core/progression/crafting.gd")
 const DevMode := preload("res://core/dev/dev_mode.gd")  # DEV MODE
 
 const SAVE_VERSION := 1
@@ -76,6 +77,15 @@ class Account:
 	var arena_losses := 0
 	## The home base upgrades owned (ids from `BaseUpgrades`). Never lost.
 	var base_upgrades: Array[String] = []
+	## The blueprints known (blueprint item ids, see `Crafting`). Never lost.
+	var blueprints: Array[String] = []
+
+	## Adds the storable items in `ids` to the stash. A blueprint not known
+	## yet is learned instead of stored. Anything that hands this account
+	## items (loot, a reward) goes through here.
+	func add_items(ids: Array) -> void:
+		StashRules.add_items(stash, ids)
+		Crafting.learn(stash, blueprints)
 
 	func is_deployed() -> bool:
 		return deployed_world != ""
@@ -101,6 +111,7 @@ class Account:
 			"arena_wins": arena_wins,
 			"arena_losses": arena_losses,
 			"base_upgrades": base_upgrades,
+			"blueprints": blueprints,
 		}
 
 	func load_dict(data: Dictionary) -> void:
@@ -138,6 +149,8 @@ class Account:
 		arena_wins = maxi(0, int(data.get("arena_wins", 0)))
 		arena_losses = maxi(0, int(data.get("arena_losses", 0)))
 		base_upgrades = BaseUpgrades.clean(data.get("base_upgrades"))
+		blueprints = Crafting.clean(data.get("blueprints"))
+		Crafting.learn(stash, blueprints)
 
 
 # --- Identity ----------------------------------------------------------------
@@ -253,6 +266,7 @@ func snapshot(account_id: String) -> Dictionary:
 		"arena_wins": account.arena_wins,
 		"arena_losses": account.arena_losses,
 		"base_upgrades": account.base_upgrades.duplicate(),
+		"blueprints": account.blueprints.duplicate(),
 	}
 
 
@@ -328,6 +342,18 @@ func buy_upgrade(account_id: String, upgrade_id: String) -> Dictionary:
 	return _bank(account, BaseUpgrades.buy(account.base_upgrades, account.scrip, upgrade_id))
 
 
+## Crafts one item (an id from `Crafting.RECIPES`) into the stash. Whether
+## the blueprint is known and what it costs are decided here, never by the
+## client.
+func craft(account_id: String, item_id: String) -> Dictionary:
+	var account := load_account(account_id)
+	if account == null:
+		return _fail("No such account.")
+	if account.is_deployed():
+		return _fail("You are in a raid.")
+	return _bank(account, Crafting.craft(account.stash, account.blueprints, account.scrip, item_id))
+
+
 ## The account's balance, or 0 if there is no such account.
 func scrip_of(account_id: String) -> int:
 	var account := load_account(account_id)
@@ -399,7 +425,7 @@ func bank(account_id: String, items: Array) -> Dictionary:
 		return _fail("No such account.")
 	if not account.is_deployed():
 		return _fail("Not in a raid.")
-	StashRules.add_items(account.stash, items)
+	account.add_items(items)
 	_save(account)
 	return {"ok": true}
 
@@ -416,7 +442,7 @@ func settle(account_id: String, result: Dictionary) -> Dictionary:
 		return _fail("Not in a raid.")
 	var home: Variant = result.get("brought_home", [])
 	if typeof(home) == TYPE_ARRAY:
-		StashRules.add_items(account.stash, home)
+		account.add_items(home)
 	account.raids_played += 1
 	if result.get("outcome", "") == "left":
 		account.raids_extracted += 1
@@ -491,7 +517,8 @@ func _dev_top_up(account: Account) -> void:
 	var had := account.stash.size()
 	var had_scrip := account.scrip
 	account.scrip = DevMode.top_up(account.stash)
-	if DevMode.top_up_base(account.base_upgrades) or account.stash.size() != had or account.scrip != had_scrip:
+	var learned := DevMode.top_up_blueprints(account.blueprints)
+	if DevMode.top_up_base(account.base_upgrades) or learned or account.stash.size() != had or account.scrip != had_scrip:
 		_save(account)
 
 

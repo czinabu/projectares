@@ -336,6 +336,29 @@ func _ready() -> void:
 			"footprint": Vector3(5.0, 1.8, 6.6), "watch_recharge": 40.0, "bay_scale": 0.42},
 			"Starfighter. Fast across the map and fragile; it cannot hover, and only flies in worlds with open skies.")
 
+	# Blueprints (DESIGN.md section 10). Found in the PvP world and at stake
+	# until they are home; once in a stash a blueprint is learned for good
+	# and what it makes is crafted at the gunsmith bench (`Crafting`). A copy
+	# of one already known is loot to sell. Never sold in a shop.
+	_blueprint("bp_jetpack", "Jetpack Blueprint", Rarity.RARE, 300,
+			"Plans for the jetpack. Craft the Mk2 and Mk3 from it with upgrade data.")
+	_blueprint("bp_boots_thruster", "Thruster Boots Blueprint", Rarity.RARE, 300,
+			"Plans for the thruster boots. Craft the Mk2 and Mk3 from it with upgrade data.")
+	_blueprint("bp_wings_glide", "Glide Wings Blueprint", Rarity.RARE, 300,
+			"Plans for the glide wings. Craft the Mk2 and Mk3 from it with upgrade data.")
+	_blueprint("bp_dmr_longshot", "Longshot DMR Blueprint", Rarity.RARE, 250,
+			"Plans for the Longshot DMR. Craft one whenever you have the parts.")
+	_blueprint("bp_shotgun_breacher", "Breacher Shotgun Blueprint", Rarity.RARE, 250,
+			"Plans for the Breacher Shotgun. Craft one whenever you have the parts.")
+	_blueprint("bp_mech_bulwark", "Bulwark Mech Blueprint", Rarity.EPIC, 1200,
+			"Plans for the Bulwark Mech. The only way to own one.")
+	_blueprint("bp_jet_kestrel", "Kestrel Jet Blueprint", Rarity.EPIC, 1200,
+			"Plans for the Kestrel Jet. The only way to own one.")
+	# What a Mk2 or Mk3 craft spends. Worth nothing to a shop, so it is never
+	# sold by accident; it is only kept if you get it home.
+	register("upgrade_data", "Upgrade Data", Rarity.RARE, 0, ["upgrade_data"], {},
+			"Combat data pulled from the war. Steps a blueprint up to Mk2 and Mk3 at the gunsmith bench.")
+
 	# Consumables
 	register("medkit", "Medkit", Rarity.COMMON, 60, ["consumable", "heal", "vendor"], {"heal": 50.0}, "Heals 50.")
 
@@ -401,6 +424,11 @@ func _attachment(id: String, display_name: String, rarity: Rarity, value: int, s
 	if vendor:
 		tags.append("vendor")
 	register(id, display_name, rarity, value, tags, stats, description)
+
+
+## Registers a blueprint (see `core/progression/crafting.gd` for what it makes).
+func _blueprint(id: String, display_name: String, rarity: Rarity, value: int, description: String) -> void:
+	register(id, display_name, rarity, value, ["blueprint"], {}, description)
 
 
 ## Registers a clothing item that unlocks the customizer outfits `outfits`.
