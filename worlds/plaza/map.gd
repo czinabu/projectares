@@ -30,6 +30,10 @@ const LAYOUT_SEED := 707
 ## The shops come from the economy's shop list, read at runtime so the plaza
 ## still builds in a game without one.
 const SHOP_DB := "res://core/economy/shop_db.gd"
+## The contract rules, read the same way, for the jobs written on the board.
+const CONTRACTS := "res://core/economy/contracts.gd"
+## The contract board stands beside the big screen, facing the plaza.
+const CONTRACT_BOARD_AT := Vector3(32, 0, 96)
 ## The arcade's middle line, its width and its roof height.
 const MARKET_RING := 55.0
 const ARCADE_WIDTH := 10.0
@@ -114,6 +118,7 @@ func _ready() -> void:
 	_build_market()
 	_build_arrival()
 	_build_screens()
+	_build_contract_board()
 	_build_show_floor()
 	_build_fill()
 	_build_city_below()
@@ -516,6 +521,47 @@ func _build_screens() -> void:
 		var width := 30.0 + row * 4.0
 		_box(Vector3(width, tall, 2.6), Vector3(0, tall * 0.5, z), STEEL, 0.0)
 		_part(self, Vector3(width, 0.06, 0.08), Vector3(0, tall - 0.05, z + 1.32), CYAN, true)
+
+
+## Beside the big screen: the contract board, a lit wall listing today's
+## jobs, with a terminal in front of it to take them (DESIGN.md section 10).
+func _build_contract_board() -> void:
+	var at := CONTRACT_BOARD_AT
+	var yaw := PI
+	var facing := Basis(Vector3.UP, yaw)
+	var amber := Color(1.0, 0.75, 0.3)
+	_box(Vector3(12, 7, 0.8), at + facing * Vector3(0, 3.5, -0.4), WALL, yaw)
+	for side: float in [-1.0, 1.0]:
+		_part(self, Vector3(0.1, 7.0, 0.1), at + facing * Vector3(side * 6.02, 3.5, 0.02), amber, true, yaw)
+	_part(self, Vector3(10.5, 4.6, 0.05), at + facing * Vector3(0, 3.6, 0.02), Color(0.06, 0.05, 0.03), true, yaw)
+	for y: float in [1.25, 5.95]:
+		_part(self, Vector3(10.7, 0.1, 0.08), at + facing * Vector3(0, y, 0.05), amber, true, yaw)
+	_sign("CONTRACTS", at + facing * Vector3(0, 6.6, 0.1), yaw, 1.0, amber)
+	_sign("\n".join(contract_lines()), at + facing * Vector3(0, 3.6, 0.1), yaw, 0.32, Color(1.0, 0.92, 0.8), 10.0)
+	# The terminal in front of the board, its screen facing the plaza.
+	_box(Vector3(1.2, 1.1, 0.6), at + facing * Vector3(0, 0.55, 1.4), STEEL, yaw)
+	var portal := _add_portal("contracts", "Use the contract board", at + facing * Vector3(0, 0, 3.4), 2.2)
+	var screen := Node3D.new()
+	screen.name = "Screen"
+	screen.position = facing * Vector3(0, 1.85, -1.95)
+	screen.basis = facing * Basis(Vector3.RIGHT, -0.12)
+	portal.add_child(screen)
+	_part(screen, Vector3(1.7, 1.0, 0.06), Vector3(0, 0, -0.04), DARK_GLASS)
+	_part(screen, Vector3(1.6, 0.9, 0.01), Vector3.ZERO, amber.darkened(0.75), true)
+
+
+## What the board's wall says: today's jobs and how they pay. The same for
+## everyone, since the offers follow the date (a reroll only changes your own
+## screen).
+static func contract_lines() -> Array[String]:
+	var out: Array[String] = ["Jobs that pay scrip. They count when you sign out alive.", ""]
+	if not ResourceLoader.exists(CONTRACTS):
+		return out
+	var rules := load(CONTRACTS) as Script
+	for id: String in rules.call("offers_for", rules.call("today")):
+		var job: Dictionary = rules.call("job", id)
+		out.append("%s  %s   %s" % [str(job.get("kind", "")).to_upper(), job.get("title", ""), rules.call("reward_text", id)])
+	return out
 
 
 ## Two raised stages by the spire, lit for showing off, and benches round it.

@@ -28,6 +28,7 @@ const BaseUpgradeTests := preload("res://tests/base_upgrade_tests.gd")
 const AttachmentTests := preload("res://tests/attachment_tests.gd")
 const PowerWeaponTests := preload("res://tests/power_weapon_tests.gd")
 const ArtifactTests := preload("res://tests/artifact_tests.gd")
+const ContractTests := preload("res://tests/contract_tests.gd")
 const FeelTests := preload("res://tests/feel_tests.gd")
 const ViewMatchTests := preload("res://tests/view_match_tests.gd")
 const AdsTests := preload("res://tests/ads_tests.gd")
@@ -276,6 +277,7 @@ func _run() -> void:
 	await _test_dev_mode()
 	await _test_home_base()
 	await BaseUpgradeTests.run(self)
+	await ContractTests.run(self)
 	await _test_arena()
 	await _test_arena_floor()
 	await _test_online_arena()
@@ -5230,6 +5232,12 @@ func _test_plaza_online() -> void:
 			check(PlazaView.gear_tag(bo_seen).begins_with(bo_seen.display_name.to_upper()) and "Kit worth" in PlazaView.gear_tag(bo_seen),
 					"their gear is written on a tag over their head")
 
+	# The contract board: taking a job is the server's call, and the answer
+	# comes back in the account.
+	var job: String = ada.account.get("contracts", {}).get("offers", [""])[0]
+	ada.contract_ask("take", job)
+	await _wait_until(func() -> bool: return ada.account.get("contracts", {}).get("active", []).size() == 1, 240)
+	check(job != "" and ada.account.contracts.active[0].id == job, "the plaza's contract board takes a job on the server")
 	# The clan hall: Pia founds a clan, Pax joins it, and both wear its tag.
 	ada.clan_ask("create", "Night Shift", "ns")
 	await _wait_until(func() -> bool: return not ada.clan_state.get("clan", {}).is_empty(), 240)
