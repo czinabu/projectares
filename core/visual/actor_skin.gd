@@ -677,7 +677,8 @@ func _update_phone() -> void:
 	var at: Vector3 = actor.global_transform * held
 	var eyes := actor.global_transform * Vector3(0.0, actor.eye_height, 0.0)
 	var face := (eyes - at).normalized()
-	var basis := Basis.looking_at(-face, actor.global_basis.orthonormalized() * Vector3.FORWARD)
+	# Upright in the hand, its face turned to the eyes.
+	var basis := Basis.looking_at(-face, Vector3.UP)
 	_phone_prop.global_transform = Transform3D(basis, at)
 
 
