@@ -11,6 +11,9 @@ signal landed(impact_speed: float)
 signal notice(text: String)
 ## This actor's attack landed on `target`. Drives hit markers and sounds.
 signal hit_confirmed(target: Actor, info: DamageInfo, lethal: bool)
+## A person's gunfire within earshot (`Combat.noise`): bots on patrol go to
+## look. Blades make none, so a melee kill alerts nobody.
+signal heard(at: Vector3, source: Actor)
 ## The power weapon slot changed mid-raid (`Loadout.set_power`); "" is empty.
 signal power_changed(item_id: String, mag: int, reserve: int)
 

@@ -164,7 +164,20 @@ without Caleb, and update the gap list when a PR closes a row.
   `backstab_mult` (knife), `guard_crush` (axe, carried on
   `DamageInfo.guard_mult`), `vertical_reach`, `close_range`/`close_mult` and
   `heavy_stagger` (spear). Their defaults change nothing. Add a melee type as
-  data plus a `Look.MELEE_MODELS` entry, not as a new class. Every melee
+  data plus a `Look.MELEE_MODELS` entry, not as a new class. Every melee item
+  carries exactly one hold tag, "one_handed" or "two_handed"
+  (`MeleeWeapon.is_two_handed_id`): it sets the walk speed with it in hand,
+  makes a two-hander's heavies stagger and break armor, and is what
+  `Look.is_two_handed` (the one place views ask) answers for the grip.
+  Melee is made to answer guns (DESIGN.md "Melee against guns"): blades go
+  past armor (`DamageInfo.armor_pierce`), a heavy started sprinting is a
+  dash-strike (`dash_range`), a light while moving back at a foe behind is a
+  back strike, and a fresh guard deflects small-arms rounds for
+  `deflect_window`, rearming after `guard_rearm`; a gun's round carries its
+  `DamageInfo.weapon_id` and `undeflectable_tags` (marksman, power) go
+  through any guard. Noise is `Combat.noise`, which only guns call (a person's
+  shot, at most every `Gun.noise_every`): patrolling bots hear it through
+  `Actor.heard`. Never make a blade call it; melee kills are silent. Every melee
   model is dressed as tech by `Look._tech_melee` (`assets/shaders/melee.gdshader`):
   bare metal becomes alloy with an energy edge in the weapon's rarity color,
   wood and wraps black polymer with glowing seams. A holstered blade is worn
@@ -189,7 +202,9 @@ without Caleb, and update the gap list when a PR closes a row.
   it is simulated on, with a local guess at the guard; the attacker's view
   answers that (sound, `PlayerController.kick_view`, a hitstop of the blade's
   pose) at once, and the server's `hit_confirmed` only drives the hit marker.
-- Melee is directional. The stance travels in `ActorCommand.stance`, attacks
+- Melee is directional. The stance travels in `ActorCommand.stance` (picked
+  by default from the movement keys, Jedi Academy style, Caleb's call; B
+  switches to the mouse flick), attacks
   set `DamageInfo.direction`, and `MeleeWeapon.guard_covers` decides whether a
   guard stops a hit. A swing goes toward its stance (Caleb's call): a left
   swing starts on the right and ends on the left, so `attack_dir` (the side
