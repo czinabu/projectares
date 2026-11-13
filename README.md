@@ -190,7 +190,9 @@ you have.
 
 ## What is in the prototype
 
-- First-person and third-person camera that you switch with V. It never changes
+- First-person and third-person camera that you switch with V. Third person
+  is a close view over the shoulder; the phone's settings set how far back it
+  sits. It never changes
   on its own. Weapons are visible in your hand in both views.
 - Renown. Kills raise it, a streak makes each kill pay more, and dying hands
   a tenth of it to your killer. Your lifetime total never drops and sets your
