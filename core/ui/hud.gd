@@ -758,13 +758,9 @@ void fragment() {
 	## The card's face in metres, and its picture in pixels.
 	var face_size := Vector2(0.18, 0.104)
 	var pixels := Vector2i(520, 300)
-	## Where the card opens in first person, in the camera's space, at
-	## `reference_fov`: just over the watch on the raised forearm.
+	## Where the card opens when the camera looks out of the eyes, in the
+	## camera's space, at `reference_fov`: just over the raised wrist.
 	var first_person_at := Vector3(-0.1, -0.1, -0.38)
-	## Where the forearm sits under it when raised, and how far below the
-	## view it waits when lowered.
-	var arm_at := Vector3(-0.1, -0.215, -0.4)
-	var arm_lowered_drop := 0.32
 	## The field of view the sizes above are for. A wider view grows them.
 	var reference_fov := 80.0
 	## Third person: how big the card looks next to its first-person size
@@ -812,10 +808,8 @@ void fragment() {
 	var _third := false
 	## The light thrown up from the watch face to the card.
 	var _beam: MeshInstance3D
-	var _arm: Node3D
 	## The watch worn on the character's wrist bone, third person.
 	var _worn: Node3D
-	var _body_mesh: MeshInstance3D
 
 	func _ready() -> void:
 		viewport = SubViewport.new()
@@ -875,31 +869,12 @@ void fragment() {
 		_glow.light_energy = 0.0
 		_glow.shadow_enabled = false
 		add_child(_glow)
-		_arm = _build_arm()
-		add_child(_arm)
 
 	## Takes the watch off the character (the HUD going away).
 	func take_off() -> void:
 		if _worn != null and is_instance_valid(_worn):
 			_worn.queue_free()
 		_worn = null
-
-	## A greybox forearm in a sleeve, with the watch on top, for first person.
-	func _build_arm() -> Node3D:
-		var arm := Node3D.new()
-		arm.name = "Forearm"
-		# The forearm runs from the bottom left in towards the middle.
-		arm.rotation = Vector3(0.25, 0.0, 0.35)
-		var sleeve := _box(Vector3(0.36, 0.075, 0.08), Color(0.2, 0.22, 0.2))
-		sleeve.position = Vector3(-0.17, 0, 0)
-		arm.add_child(sleeve)
-		var hand := _box(Vector3(0.08, 0.035, 0.07), Color(0.62, 0.48, 0.38))
-		hand.position = Vector3(0.05, -0.005, 0)
-		arm.add_child(hand)
-		var watch := _watch()
-		watch.position = Vector3(-0.03, 0.04, 0)
-		arm.add_child(watch)
-		return arm
 
 	## The watch itself: a band and a small glowing face, face up (+Y).
 	static func _watch() -> Node3D:
@@ -950,18 +925,6 @@ void fragment() {
 				* Basis.from_scale(Vector3(1.0 / maxf(s.x, 0.001), 1.0 / maxf(s.y, 0.001), 1.0 / maxf(s.z, 0.001)))
 		attach.add_child(watch)
 		_worn = attach
-		_body_mesh = null
-		for child in skeleton.find_children("*", "MeshInstance3D", true, false):
-			_body_mesh = child
-			break
-
-	## The watch is drawn on the same layers as the body, so in first person,
-	## where your own camera leaves the body out, it goes with it.
-	func _match_body_layers() -> void:
-		if _worn == null or not is_instance_valid(_worn) or _body_mesh == null or not is_instance_valid(_body_mesh):
-			return
-		for child in _worn.find_children("*", "MeshInstance3D", true, false):
-			(child as MeshInstance3D).layers = _body_mesh.layers
 
 	## Where the watch is in the world, third person: on the wrist bone, or
 	## where a left wrist would be when there is no skin.
@@ -973,18 +936,18 @@ void fragment() {
 	## Puts the watch and its card where the view can see them, and opens or
 	## closes the card towards `raised`. Hidden with the HUD.
 	func mount(p: Actor, controller: PlayerController, shown: bool, delta := 0.0) -> void:
-		var third := controller != null and controller.is_third_person()
+		# The card rises off the watch on your own wrist in both views: first
+		# and third person differ only in where the camera is (Caleb's rule).
+		var third := true
 		var cam := controller.camera if controller else null
-		var holder: Node3D = p if third or cam == null else cam
+		var holder: Node3D = p
 		if get_parent() != holder:
 			if get_parent():
 				get_parent().remove_child(self)
 			holder.add_child(self)
 		_wear(p)
-		_match_body_layers()
 		var goal := 1.0 if raised else 0.0
 		raise_amount = move_toward(raise_amount, goal, delta / maxf(raise_time, 0.001)) if delta > 0.0 else goal
-		var t := ease(raise_amount, -2.0)
 		visible = shown
 		# The card unfolds upwards once the wrist is up.
 		var open := clampf((raise_amount - 0.35) / 0.65, 0.0, 1.0)
@@ -997,10 +960,6 @@ void fragment() {
 		var k := 1.0
 		if cam:
 			k = tan(deg_to_rad(cam.fov) * 0.5) / tan(deg_to_rad(reference_fov) * 0.5)
-		var spread := Vector3(k, k, 1.0)
-		# Your own arm lifts the watch in first person when it is drawn
-		# (`PlayerController.has_arms`); the grey box forearm stands in otherwise.
-		_arm.visible = not third and raise_amount > 0.0 and not (controller != null and controller.has_arms())
 		transform = Transform3D.IDENTITY
 		if third:
 			if is_inside_tree():
@@ -1016,17 +975,17 @@ void fragment() {
 						+ side * projection_at.x
 				var far := cam.global_position.distance_to(spot) if cam else 3.0
 				var size := far / first_person_at.length() * third_person_view
-				if cam:
+				var from_eyes := cam != null and cam.global_position.distance_to(p.get_eye_position()) < 0.7
+				if from_eyes:
+					# Looking out of the eyes, the card stands just over the
+					# raised wrist, low on the left of the view.
+					spot = cam.global_transform * first_person_at
+					size = k
+				elif cam:
 					spot = _clear_of_head(p, cam, spot, face_size.x * size * 0.5)
 				var at := wrist.lerp(spot, ease(open, -2.0))
 				_holo.global_transform = Transform3D(facing.scaled(Vector3(size, size * maxf(open, 0.001), size)), at)
 				_glow.global_position = wrist
-		else:
-			_arm.position = arm_at * spread + Vector3(0, -arm_lowered_drop * (1.0 - t), 0)
-			_arm.scale = Vector3.ONE * k
-			_holo.transform = Transform3D(Basis.IDENTITY.scaled(Vector3(k, k * maxf(open, 0.001), k)),
-					first_person_at * spread + Vector3(0, -arm_lowered_drop * (1.0 - t), 0))
-			_glow.position = _holo.position + Vector3(0, -0.04, 0.02)
 		_third = third
 		_holo.material_override = _holo_in_world if third else _holo_over
 		(_holo.material_override as ShaderMaterial).set_shader_parameter("open", open)
@@ -1052,8 +1011,7 @@ void fragment() {
 	## The watch face, where the light comes from: the forearm's watch in
 	## first person, the one worn on the wrist bone in third.
 	func _face_position(third: bool) -> Vector3:
-		var watch: Node = _arm.get_node_or_null("Watch") if not third else \
-				(_worn.get_child(0) if _worn != null and is_instance_valid(_worn) and _worn.get_child_count() > 0 else null)
+		var watch: Node = _worn.get_child(0) if _worn != null and is_instance_valid(_worn) and _worn.get_child_count() > 0 else null
 		var face := watch.get_node_or_null("Face") as Node3D if watch != null else null
 		if face != null and face.is_inside_tree():
 			return face.global_position
@@ -1108,7 +1066,7 @@ void fragment() {
 		# The watch face shows health even with the card down: cyan when
 		# well, red when low.
 		face_color = face_tint(clampf(health, 0.0, 1.0))
-		for watch: Node in [_arm.get_node_or_null("Watch"), _worn.get_child(0) if _worn != null and is_instance_valid(_worn) and _worn.get_child_count() > 0 else null]:
+		for watch: Node in [_worn.get_child(0) if _worn != null and is_instance_valid(_worn) and _worn.get_child_count() > 0 else null]:
 			var face := watch.get_node_or_null("Face") as MeshInstance3D if watch != null else null
 			if face:
 				var mat := (face.mesh as BoxMesh).material as StandardMaterial3D

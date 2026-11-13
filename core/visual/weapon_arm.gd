@@ -27,8 +27,8 @@ var look: Node
 
 ## From the grip bone to where the weapon's handle sits, in the hand's space.
 var grip_offset := Vector3.ZERO
-## The melee hand offsets and shoulder turns live in `ActionPose`, which
-## first person reads too, so both views swing the same way.
+## The melee hand offsets and shoulder turns live in `ActionPose`. Both
+## views look at this same arm, so they swing the same way.
 ## Where the elbows point, in the actor's space.
 var elbow := Vector3(0.8, 0.8, 0.3)
 var off_elbow := Vector3(-0.8, 0.8, 0.3)
@@ -270,7 +270,7 @@ func _process(delta: float) -> void:
 	var shared := _pose()
 	shared.advance(delta)
 	var melee := actor.get_active_weapon() as MeleeWeapon
-	var holding := melee != null and melee.visual != null and not actor.is_dead and not actor.hand_override
+	var holding := melee != null and melee.visual != null and not actor.is_dead
 	var reaching := holding and shared.reach_weight > 0.0
 	_weight = shared.reach_weight if holding else move_toward(_weight, 0.0, delta * 9.0)
 	_grip_weight = move_toward(_grip_weight, 1.0 if holding else 0.0, delta * 8.0)
@@ -281,14 +281,14 @@ func _process(delta: float) -> void:
 	_turn = shared.turn if holding else _turn.lerp(Vector2.ZERO, 1.0 - exp(-26.0 * delta))
 	var gun := actor.get_active_weapon() as Gun
 	_gun_weight = shared.reload if gun != null and gun.visual != null and gun.visual.visible \
-			and not actor.is_dead and not actor.hand_override else 0.0
+			and not actor.is_dead else 0.0
 	# The watch takes the left hand off any two-handed hold while it is up.
-	_watch = shared.watch if not actor.is_dead and not actor.hand_override else 0.0
+	_watch = shared.watch if not actor.is_dead else 0.0
 
 	reach_ik.influence = _weight
 	var aim := Basis(Vector3.RIGHT, actor.cmd.pitch)
 	_target.global_position = actor.global_transform * (Actor.HAND_REST + aim * _reach)
-	if override_weight > 0.001 and not actor.hand_override:
+	if override_weight > 0.001:
 		# Reaching for a holster takes the hand over from any hold or guard.
 		var holster := actor.global_transform * override_point
 		_target.global_position = holster if _weight <= 0.0 else _target.global_position.lerp(holster, override_weight)
@@ -332,14 +332,13 @@ func _face_watch() -> void:
 
 
 ## Before the arm reaches: during a reload, move the gun hand from where the
-## animation holds it by the shared reload offset, which first person shows
-## the same way.
+## animation holds it by the shared reload offset.
 func _reach_gun() -> void:
 	if _gun_weight <= 0.0 or _wrist < 0 or override_weight > 0.001 or _weight > 0.001:
 		return
 	var wrist := skeleton.global_transform * skeleton.get_bone_global_pose(_wrist).origin
 	var aim := actor.global_basis.orthonormalized() * Basis(Vector3.RIGHT, actor.cmd.pitch)
-	_target.global_position = wrist + aim * pose.gun_offset(false).origin
+	_target.global_position = wrist + aim * pose.gun_offset().origin
 	reach_ik.influence = 1.0
 
 
@@ -404,9 +403,8 @@ func _curl(fist: Dictionary, weight: float) -> void:
 
 
 ## Puts the actor's hand node, which carries the weapon, on the model's hand.
-## The controller owns the hand in first person, so this leaves it alone then.
 func hold_weapon() -> void:
-	if grip_bone < 0 or actor.hand_override or actor.is_dead:
+	if grip_bone < 0 or actor.is_dead:
 		return
 	var grip: Vector3 = skeleton.global_transform * skeleton.get_bone_global_pose(grip_bone).origin
 	var gun := actor.get_active_weapon() as Gun
@@ -415,11 +413,11 @@ func hold_weapon() -> void:
 	var shared := pose != null and is_instance_valid(pose)
 	if gun != null and shared:
 		# Held low, the gun hangs with the hand; raised, it points where it
-		# shoots. It turns in the hand through a reload, as in first person.
+		# shoots. It turns in the hand through a reload.
 		var turn := aimed
 		if _aim_wrist != null and pose.low > 0.0:
 			turn = aimed.slerp(_follow_turn(_wrist, _aim_wrist), pose.low)
-		actor.hand.global_basis = turn * pose.gun_offset(false).basis
+		actor.hand.global_basis = turn * pose.gun_offset().basis
 	elif melee != null and shared and _ready_forearm != null:
 		# A blade at rest goes where the forearm takes it (a walk swings it,
 		# a run carries it); an attack or guard takes it back to the aim.

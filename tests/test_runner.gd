@@ -880,7 +880,6 @@ func _test_main_flow() -> void:
 	check(p.get_active_weapon() is MeleeWeapon and not p.is_on_floor(),
 			"real input reaches the actor (blade out, airborne)")
 	check(not controller.is_third_person(), "camera stays put when using the blade or flying")
-	check(p.hand_override, "first-person holds the weapon in front of the camera")
 	# Melee side from the movement keys, once the player switches to them.
 	Input.action_press("move_left")
 	await frames(5)
@@ -912,7 +911,6 @@ func _test_main_flow() -> void:
 	# The HUD lives on your gear: a holographic watch and a counter on the gun.
 	var wrist: Hud.Wrist = main.hud.wrist
 	var holo := wrist.get_node("Hologram") as Node3D
-	var arm := wrist.get_node("Forearm") as Node3D
 	check(not controller.wrist_raised and not holo.visible, "the watch's hologram is down until you raise it")
 	var x_key := InputEventAction.new()
 	x_key.action = "check_wrist"
@@ -967,22 +965,18 @@ func _test_main_flow() -> void:
 			"with the watch up the wheel never switches weapons or turns the view")
 	controller.toggle_view()
 	await frames(40)
-	check(wrist.get_parent() == controller.camera and arm.visible and holo.visible,
-			"in first person your forearm comes up into view with the card over it")
-	check(holo.global_basis.get_scale().x * wrist.face_size.x < 0.2, "the card is card-sized, not a panel")
+	check(wrist.get_parent() == p and holo.visible,
+			"in first person the card rises off the watch on your own wrist, as in third person")
+	var card_angle := holo.global_basis.get_scale().x * wrist.face_size.x / controller.camera.global_position.distance_to(holo.global_position)
+	check(card_angle < 0.6, "the card is card-sized, not a panel (%.2f)" % card_angle)
 	check(wrist.get_node("Beam").visible and (wrist.get_node("Beam") as MeshInstance3D).mesh.get_surface_count() > 0
 			and is_equal_approx(float((holo.material_override as ShaderMaterial).get_shader_parameter("open")), 1.0),
 			"light is thrown up from the watch face to the card, which is drawn as a hologram")
-	var narrow := holo.scale.x
-	controller.camera.fov = 110.0
-	wrist.mount(p, controller, true)
-	check(holo.scale.x > narrow * 1.3, "a wider view grows the card, so it reads the same")
-	controller.camera.fov = controller.base_fov
 	check(Hud.Wrist.face_tint(0.1).r > 0.9 and Hud.Wrist.face_tint(1.0).b > 0.9,
 			"the watch face glows red when you are low and cyan when you are well")
 	controller._unhandled_input(x_key)
 	await frames(30)
-	check(not controller.wrist_raised and not holo.visible and not arm.visible, "X again puts it away")
+	check(not controller.wrist_raised and not holo.visible, "X again puts it away")
 	var leaving := Hud.watch_slots(main.raid, p, 0, "", 0.5)
 	var leave_at := Hud.Wrist.SLOTS.find("leave")
 	check(is_equal_approx(float(leaving[leave_at].progress), 0.5) and Hud.default_focus(leaving) == leave_at,
