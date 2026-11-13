@@ -14,7 +14,7 @@ rows marked **pre-playtest** come before the friends playtest.
 | Main hub as a safe social space | Built | The Concourse: safe zone, gates, shops, clan hall, arena gate, look tags. |
 | Hub vehicles limited to harmless fun | Partly | Bikes can be ridden in the plaza and nobody can be hurt. Not checked: whether parked bikes pack themselves away so the hub stays clear. |
 | Watch skins shown off in the hub | Missing | No watch skin items yet. |
-| Expand the main hub | Missing | Prerequisite for the hub activities below. Needs a tall, open skyline for ring courses and a ground bike track, a screens area to gather and watch, and space for the RC arena. |
+| Expand the main hub | Built | Built: an open district about 280 m across on a deck with no wall, a beacon spire, a kiosk arcade, eight towers with landing decks and skybridges at 15 m (boot reach), a gate terrace with spare arches, a bike loop, a big-screen amphitheatre and a clear pad for the RC arena. Sci-fi look: dark glass towers with lit seams, a glass arcade canopy, holo signs over the kiosks, holo-ads and light planters, a tiled floor. Still code-built greybox art; hand-made models can replace it later. |
 | Hub spectating screens and bounty board | Partly | Heat signs over the world gates already show war level, players, top bounty and events (`world_status`). Missing: a most-wanted board, arena results, live arena video (later). First hub activity. |
 | Hub ring races and time trials, with per-rig and bike leaderboards | Missing | Second hub activity, after the hub is expanded. |
 | Hub toy RC arena | Missing | Later; a separate little game. |

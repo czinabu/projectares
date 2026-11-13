@@ -4693,8 +4693,22 @@ func _test_plaza() -> void:
 				apart = false
 	check(apart, "no two doorways overlap")
 	var reachable := portals.all(func(n: Node) -> bool:
-		return (n as Node3D).global_position.length() < 50.0 and absf((n as Node3D).global_position.y) < 0.5)
+		return (n as Node3D).global_position.length() < raid.map.RADIUS and absf((n as Node3D).global_position.y) < 0.5)
 	check(reachable, "every portal is on the plaza floor")
+	# An open district, not a courtyard: the skyline's landing decks stay in
+	# reach of the thruster boots (three kicks top 15 m).
+	var decks := raid.map.get_children().filter(func(n: Node) -> bool: return n.is_in_group("landing_deck"))
+	check(raid.map.RADIUS >= 120.0 and decks.size() >= 6 and decks.all(func(n: Node) -> bool:
+		return (n as Node3D).global_position.y <= 15.5), "the hub is open and its landing decks are in boot reach (%d)" % decks.size())
+	var floor_hit := raid.get_world_3d().direct_space_state.intersect_ray(PhysicsRayQueryParameters3D.create(
+			Vector3(0, 5, raid.map.RADIUS - 6.0), Vector3(0, -5, raid.map.RADIUS - 6.0), Actor.LAYER_WORLD))
+	check(not floor_hit.is_empty(), "the deck reaches out to the balcony rail")
+	var deck: Node3D = decks[0] if not decks.is_empty() else null
+	var deck_hit := {} if deck == null else raid.get_world_3d().direct_space_state.intersect_ray(
+			PhysicsRayQueryParameters3D.create(deck.global_position + Vector3(0, 5, 0),
+			deck.global_position - Vector3(0, 5, 0), Actor.LAYER_WORLD))
+	check(not deck_hit.is_empty() and absf(deck_hit.position.y - deck.global_position.y) < 0.3,
+			"a landing deck is solid where it is marked")
 
 	# Leaving takes you and nothing else: no body, no bag.
 	raid.remove_player(b)
