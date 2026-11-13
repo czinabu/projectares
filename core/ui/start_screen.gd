@@ -173,7 +173,9 @@ func _build_title_block() -> void:
 	hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(hint)
 	_reveal.append(hint)
-	var press := _label("PRESS", 18, QUIET, 3)
+	# Kept faint: it is a reminder, the button is what to look at.
+	hint.set_meta("faint", 0.45)
+	var press := _label("PRESS", 16, QUIET, 3)
 	press.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	hint.add_child(press)
 	var key := PanelContainer.new()
@@ -185,9 +187,9 @@ func _build_title_block() -> void:
 	key.add_theme_stylebox_override("panel", cap)
 	key.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	key.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	key.add_child(_label("SPACE", 18, INK, 3))
+	key.add_child(_label("SPACE", 16, INK, 3))
 	hint.add_child(key)
-	var or_click := _label("OR CLICK START", 18, QUIET, 3)
+	var or_click := _label("OR CLICK START", 16, QUIET, 3)
 	or_click.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	hint.add_child(or_click)
 
@@ -200,7 +202,7 @@ func _play_intro() -> void:
 	var delay := reveal_delay
 	for item in _reveal:
 		item.modulate.a = 0.0
-		tween.tween_property(item, "modulate:a", 1.0, 0.7).set_delay(delay)
+		tween.tween_property(item, "modulate:a", item.get_meta("faint", 1.0), 0.7).set_delay(delay)
 		delay += reveal_step
 	_rule.custom_minimum_size.x = 0.0
 	tween.tween_property(_rule, "custom_minimum_size:x", 72.0, 0.8) \
