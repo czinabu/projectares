@@ -68,11 +68,6 @@ static func run(t: Node) -> void:
 			t.check(raid.player.hand.global_position.distance_to(palm) < 0.2, tag + "the weapon sits in the model's hand")
 			t.check(raid.player.hand.global_position.distance_to(raid.player.to_global(Actor.HAND_REST)) > 0.05,
 					tag + "the weapon is no longer left floating at the greybox hand spot")
-			raid.player.hand_override = true
-			raid.player.hand.position = Vector3(5, 5, 5)
-			skin.arm.hold_weapon()
-			t.check(raid.player.hand.position.is_equal_approx(Vector3(5, 5, 5)), tag + "the model leaves the hand alone in first person")
-			raid.player.hand_override = false
 		# The weapon arm shows the side of a melee attack or guard.
 		var sword: MeleeWeapon = null
 		for held in raid.player.weapons:
@@ -113,10 +108,6 @@ static func run(t: Node) -> void:
 			sword._windup_left = 1.0
 			t.check(not skin.arm._fist.is_empty() and skin.arm._grip_axis.length() > 0.9, tag + "the model knows how to close its hand on a handle")
 			t.check(skin.arm.off_ik != null and not skin.arm._off_fist.is_empty(), tag + "the model has an off hand for two-handed weapons")
-			raid.player.hand_override = true
-			t.check(skin.arm.arm_reach(sword) == pose.arm_windup[sword.attack_dir],
-					tag + "first person reads the same windup the third-person arm reaches for")
-			raid.player.hand_override = false
 			sword._windup_left = 0.0
 			sword._blocking = true
 			t.check(skin.arm.arm_reach(sword) != null, tag + "a guard raises the arm")

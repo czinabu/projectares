@@ -1605,7 +1605,7 @@ func _ride_shots(out_dir: String) -> void:
 func _view_shots(out_dir: String, only := "") -> void:
 	var raid := Raid.new()
 	add_child(raid)
-	raid.start(Worlds.get_world("ashfront"), 42, ["rifle_carbine", "blade_scrap", "pistol_service", "jetpack_mk1", "plate_light"])
+	raid.start(Worlds.get_world("ashfront"), 42, ["rifle_carbine", OS.get_environment("VIEW_MELEE") if OS.has_environment("VIEW_MELEE") else "blade_scrap", "pistol_service", "jetpack_mk1", "plate_light"])
 	for bot in raid.bots:
 		bot.get_node("Brain").set_physics_process(false)
 		bot.global_position += Vector3(0, -500, 0)
@@ -1626,17 +1626,20 @@ func _view_shots(out_dir: String, only := "") -> void:
 	var pose := ActionPose.of(p)
 	var gun_at := -1
 	var blade_at := -1
+	var pistol_at := -1
 	for i in p.weapons.size():
 		if p.weapons[i] is MeleeWeapon:
 			blade_at = i
-		elif p.weapons[i] is Gun and not p.weapons[i].is_sidearm and gun_at < 0:
+		elif p.weapons[i] is Gun and p.weapons[i].is_sidearm:
+			pistol_at = i
+		elif p.weapons[i] is Gun and gun_at < 0:
 			gun_at = i
 	var gun := p.weapons[gun_at] as Gun
 	var blade := p.weapons[blade_at] as MeleeWeapon
 	var outside := Camera3D.new()
 	outside.fov = 40.0
 	raid.add_child(outside)
-	var rows := ["gun_ready", "gun_low", "reload", "switch", "windup_left", "windup_right", "windup_overhead",
+	var rows := ["gun_ready", "gun_low", "pistol_low", "blade_idle", "reload", "switch", "windup_left", "windup_right", "windup_overhead",
 			"swing", "guard", "watch"]
 	if only != "":
 		rows = rows.filter(func(r: String) -> bool: return r in only.split(","))
@@ -1644,8 +1647,8 @@ func _view_shots(out_dir: String, only := "") -> void:
 	var sheet := Image.create(3 * size.x, rows.size() * size.y, false, Image.FORMAT_RGBA8)
 	for row in rows.size():
 		var kind: String = rows[row]
-		var melee := kind.begins_with("windup") or kind == "swing" or kind == "guard"
-		p.active_weapon_index = blade_at if melee else gun_at
+		var melee := kind.begins_with("windup") or kind == "swing" or kind == "guard" or kind == "blade_idle"
+		p.active_weapon_index = blade_at if melee else (pistol_at if kind == "pistol_low" else gun_at)
 		blade._windup_left = 0.0
 		blade._swing_left = 0.0
 		blade._blocking = false
