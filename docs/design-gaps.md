@@ -18,7 +18,7 @@ rows marked **pre-playtest** come before the friends playtest.
 | Hub spectating screens and bounty board | Partly | Heat signs over the world gates already show war level, players, top bounty and events (`world_status`). Missing: a most-wanted board, arena results, live arena video (later). First hub activity. |
 | Hub ring races and time trials, with per-rig and bike leaderboards | Missing | Second hub activity, after the hub is expanded. |
 | Hub toy RC arena | Missing | Later; a separate little game. |
-| Home base with armory wall, garage, trophies | Built | `core/base`: one armory rack for every weapon (long guns, sidearms, melee) in an alcove with the gunsmith bench and locker, a suit-up bay, a garage off the room, trophy shelf, consoles. |
+| Home base with armory wall, garage, trophies | Built | `core/base`: one armory rack for every weapon (long guns, sidearms, melee) in an alcove with the locker and a gunsmith workshop off it, a suit-up bay, a garage off the room, trophy shelf, consoles. |
 | Heavy weapons stacked on the armory wall | Missing | Power weapons cannot be stored (`StashRules.storable` refuses the `power` tag). **Pre-playtest**, with the heavy chamber. |
 | Home base upgrades: a starter bunker that grows, bought with scrip at sealed bulkheads | Partly | `core/base/base_upgrades.gd`: 13 upgrades in five tracks, owned ids kept on the account (`Profile` solo, `StashService` online, server-checked `buy_upgrade`), `BaseLayout.spots` and `HomeBase` follow them, dev mode keeps a full base. Missing: the heavy weapon wall, lounge and teleporter pad are shown sealed until their rooms are built; the starter room is not yet smaller than the full one; the gear and trophy halls add spots in the main room, not rooms of their own; prices are placeholders. |
 | Base firing range and flight tunnel (target drones, endless heavy-weapon ammo, nothing lost) | Partly | `HomeBase`: a 30 m range behind the back wall with standing, sliding and flying targets, a score board, endless ammo past the firing line, no damage and no mastery. Missing: heavy weapons (they never reach the base yet) and a proper flight tunnel. |
@@ -52,7 +52,7 @@ rows marked **pre-playtest** come before the friends playtest.
 
 | Item | State | Notes |
 | --- | --- | --- |
-| Primary with attachments | Built | Four attachment slots, gunsmith bench. |
+| Primary with attachments | Built | Four attachment slots, fitted at the gunsmith bench: one gun on the bench, the wheel turns through guns and each slot's attachments. |
 | Sidearm | Built | Key 2, drawn automatically when the primary runs dry. |
 | Melee weapon | Built | Six types, directional, block and parry. |
 | Melee against guns: dash-strike, back strike, timed bullet deflect, armor-piercing blades, silent kills, one/two-handed classes | Built | `MeleeWeapon` (`dash_range`, `back_strike_mult`, `deflect_window`, `guard_rearm`, `armor_pierce`, the hold tags), `Combat.noise`. Still to come: interiors that favour blades, more gun ammo pressure, bots using the dash-strike. |

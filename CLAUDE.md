@@ -354,7 +354,8 @@ without Caleb, and update the gap list when a PR closes a row.
   marker is the eye point: aiming brings it up to the model's eyes in both
   views, first person looks through it, and zooms by `Weapon.aim_zoom()`. Scopes are
   real geometry you look down, never a screen overlay. Fitting happens at
-  the home base's gunsmith bench (`BaseLayout` kind "gunsmith").
+  the home base's gunsmith bench (`BaseLayout` kind "gunsmith", which is
+  kept at the bench, never hung on show: `BaseLayout.is_at_bench`).
 - Power weapons are items tagged "power" (Rail Lance, Helion launcher, Arc
   Mortar, Storm Cannon), still plain `Gun` data: stats such as
   `charge_time`, `pierce`, `projectile` ("rocket"/"grenade", flown by
@@ -669,12 +670,22 @@ without Caleb, and update the gap list when a PR closes a row.
   lobby. `core/base/base_layout.gd` decides what goes where from item tags.
   Every weapon goes on the one armory rack (`BaseLayout.ARMORY`, Caleb's
   call): its sections hang on the walls of the armory alcove
-  (`HomeBase.in_armory`), with the gunsmith bench in the middle and the
-  locker at the way in. Each weapon hangs on a lit mount
-  (`HomeBase._build_mount`). The bench's vise holds the primary (its rack
-  pegs stand empty); using the vise puts the next gun from the rack in it
-  (`HomeBase.Vise`, `next_bench_gun`) through the same `equip_requested`,
-  so any gun can be fitted out there. A new kind of weapon gets a rack
+  (`HomeBase.in_armory`), with the locker at the way in. Each weapon hangs
+  on a lit mount (`HomeBase._build_mount`). The gunsmith bench has a corner
+  of its own, the workshop (`HomeBase.WORKSHOP_X/Z`, `in_workshop`), a
+  recess off the armory's left-hand wall just inside the way in, where it
+  stands with the fabricator beside it, clear of the rack and the walk in
+  (Caleb's call), in the starter bunker too. The bench holds one gun at a
+  time and nothing else is on show there (Caleb's call: no pegboard of
+  attachments). At rest it is the primary (its rack pegs stand empty) with
+  its attachments on; using it (`HomeBase.Bench`) emits `bench_used`, and
+  `main.gd` brings the view in to it (`core/ui/bench_view.gd`, a camera and
+  input like `WorldScreen`, no overlay): the wheel turns through your guns
+  and then each attachment slot's choices, each shown on the gun and the
+  bench card at once, a click picks, a right click steps back, Esc leaves.
+  The bench state (`bench_row`, `bench_picking`, `bench_choice`) is view
+  only; only a pick asks for a change, through the same `equip_requested`.
+  A new kind of weapon gets a rack
   section there, not a display of its own elsewhere in the room. The base is where you suit
   up (Caleb's call): the suit-up bay beside the launch pad
   (`HomeBase.suit_up`) replaces the player with a new actor wearing

@@ -83,10 +83,13 @@ a tag over it says what it is and what it is worth.
 
 Every weapon you own hangs on one rack in the **armory**, the alcove off the
 left of the room: long guns on its back wall, sidearms on one side and melee
-on the other. The locker stands at its way in. The gunsmith bench (in the
-middle of the armory) holds your attachments on its
-pegboard and your primary in its vise. Look at an attachment and press **E**
-to fit it; a tablet beside the vise lists what the fitted kit changes.
+on the other. The locker stands at its way in. The gunsmith bench has its
+own workshop corner just inside, on the left, with the fabricator beside it.
+It holds one gun at a time: press **F** on it and the view moves in. Scroll
+to turn through your guns and click to pick one, then scroll between its
+attachment slots, click one, scroll through what you own for it (shown on
+the gun as you go) and click to fit it. Right click steps back, **Esc**
+leaves. The card behind the gun lists what the fitted kit changes.
 
 You start in a **starter bunker** and the base grows as you spend scrip on
 it. What you do not own yet is sealed, with a panel in the room that names

@@ -6251,8 +6251,17 @@ func _test_armory(base: HomeBase) -> void:
 	check(others_out, "armor, rigs, the garage and the shelves stay in the main room")
 	check(spots > 14, "the rack holds more weapons than the old gun rack and blade wall did (%d spots)" % spots)
 	await _test_suit_up(base)
-	check(base.in_armory(HomeBase.BENCH_AT) and base.in_armory(base.spot_transform("gunsmith", 11).origin),
-			"the gunsmith bench and its pegboard stand in the armory")
+	# The bench has a corner of its own off the armory, clear of the rack
+	# and of the walk in, with the fabricator beside it.
+	var bench_at := base.bench_transform().origin
+	var craft := base.station(HomeBase.CRAFT_ID)
+	var clear := true
+	for display in base.displays:
+		if BaseLayout.is_armory(display.kind):
+			clear = clear and display.position.distance_to(bench_at) > 2.0 and not base.in_workshop(display.position)
+	check(base.in_armory(bench_at) and base.in_workshop(bench_at) and bench_at.z > base.armory_size.z * 0.5
+			and craft != null and base.in_workshop(craft.position) and clear and base.has_node("WorkshopSign"),
+			"the gunsmith bench and the fabricator stand in a workshop of their own off the armory, clear of the rack")
 	var locker: Vector3 = HomeBase.STATIONS["locker"]["at"]
 	check(not base.in_armory(locker) and absf(locker.x + base.room_size.x * 0.5) < 1.5
 			and absf(locker.z) < base.armory_opening * 0.5 + 2.0, "the locker stands beside the way into the armory")
