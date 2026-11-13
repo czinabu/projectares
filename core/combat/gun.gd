@@ -82,6 +82,10 @@ var spin_up := 0.0
 var spin_move_mult := 1.0
 ## How far the view magnifies while aiming: 1 is the plain sights. Optics raise it.
 var ads_zoom := 1.0
+## A scope magnifies only inside its lens (picture in picture): aiming shows
+## the zoomed view on the lens of the real scope and leaves the world around
+## it as it is, never the whole screen (Caleb's call).
+var scope_lens := false
 ## A suppressed gun leaves no tracer or muzzle flash and is much quieter.
 var quiet := false
 ## How far a shot is heard (`Combat.noise`), and a suppressed one. Bots on
@@ -129,6 +133,7 @@ func fit(ids: Array) -> void:
 		var stats := ItemDB.item_stats(id)
 		ads_zoom = maxf(ads_zoom, float(stats.get("zoom", 1.0)))
 		quiet = quiet or bool(stats.get("quiet", false))
+		scope_lens = scope_lens or bool(stats.get("lens", false))
 		var mult: Dictionary = stats.get("mult", {})
 		for key: String in mult:
 			if not key in self:
@@ -234,7 +239,15 @@ static func build_attachment(id: String) -> Node3D:
 				var size := Vector3(radius * 0.45, 0.0004, 0.0004) if tick.y == 0.0 else Vector3(0.0004, radius * 0.45, 0.0004)
 				root.add_child(_glow(Weapon.make_part(size, at + tick, ink, true), 0.25))
 			root.add_child(_glow(Weapon.make_part(Vector3(0.0009, 0.0009, 0.0004), at, Color(1.0, 0.3, 0.2), true), 0.6))
-			sight = Vector3(0, axis, length * 0.5 + 0.022)
+			# The eyepiece's glass, which the aiming view draws the magnified
+			# picture on (`PlayerController._update_scope`); plain glass else.
+			var lens := _pane(Vector2(radius * 2.0, radius * 2.0), Vector3(0, axis, length * 0.5 - 0.004), cyan)
+			lens.name = "Lens"
+			lens.set_meta("radius", radius * 0.98)
+			root.add_child(lens)
+			# The eye sits a scope's eye relief behind the eyepiece, so the
+			# lens is a picture in the middle of the view, not the whole view.
+			sight = Vector3(0, axis, length * 0.5 + 0.09)
 		"compensator":
 			root.add_child(_tube(0.02, 0.07, Vector3(0, 0, -0.035), metal, true, 6))
 			for z: float in [-0.018, -0.035, -0.052]:

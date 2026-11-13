@@ -110,6 +110,19 @@ var eye_relief := 0.0
 ## crosshair, since the sight (an optic's reticle, or the plain sights) is
 ## in the middle of the view.
 var sighted := false
+## A scope (`Gun.scope_lens`) is picture in picture: aimed in first person,
+## a second camera renders the magnified view onto its eyepiece's glass and
+## the world around the scope stays as it is (Caleb's call: never a black
+## screen). How many pixels across that picture is.
+var scope_pixels := 640
+## How far ahead the scope's camera starts drawing, so the gun and the scope
+## itself are never in their own picture.
+var scope_near := 0.9
+var _scope_view: SubViewport
+var _scope_cam: Camera3D
+var _scope_mat: ShaderMaterial
+## The lens the magnified view is drawn on now, if any.
+var _scope_lens: MeshInstance3D
 ## First person: how far the model's eyes are from the actor's eye point,
 ## eased so the view never jolts with a step.
 var _eye_offset := Vector3.ZERO
@@ -219,6 +232,7 @@ func _ready() -> void:
 
 func _exit_tree() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	_update_scope(null)
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -749,10 +763,60 @@ func _process(delta: float) -> void:
 	if up > 0.0:
 		var at := ActionPose.sight_shown(gun) + look * Vector3(0.0, 0.0, (pose.relief_now if pose.relief_now >= 0.0 else pose.relief_for(gun)) + eye_relief)
 		camera.global_transform = camera.global_transform.interpolate_with(Transform3D(look, at), up)
+	_update_scope(gun if up > 0.5 else null)
+
+
+## A scoped gun aimed in first person shows its magnified view on the glass
+## of its eyepiece, rendered from the eye by a camera of its own, and leaves
+## everything around the scope as the eye sees it. The picture spans what the
+## lens covers in the view divided by the scope's zoom, so it is magnified by
+## exactly that. Everything else is left alone; the glass goes back to plain
+## glass when the gun comes down.
+func _update_scope(gun: Gun) -> void:
+	var lens: MeshInstance3D = null
+	if gun != null and gun.scope_lens and gun.visual != null:
+		lens = gun.visual.find_child("Lens", true, false) as MeshInstance3D
+	if lens != _scope_lens:
+		if _scope_lens != null and is_instance_valid(_scope_lens):
+			_scope_lens.material_override = null
+		_scope_lens = lens
+		if _scope_view != null:
+			_scope_view.render_target_update_mode = SubViewport.UPDATE_DISABLED
+	if lens == null or camera == null:
+		return
+	if _scope_view == null:
+		_scope_view = SubViewport.new()
+		_scope_view.name = "ScopeView"
+		_scope_view.size = Vector2i(scope_pixels, scope_pixels)
+		add_child(_scope_view)
+		_scope_cam = Camera3D.new()
+		_scope_view.add_child(_scope_cam)
+		_scope_mat = ShaderMaterial.new()
+		_scope_mat.shader = load("res://assets/shaders/scope_lens.gdshader")
+		_scope_mat.set_shader_parameter("view", _scope_view.get_texture())
+	_scope_view.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	lens.material_override = _scope_mat
+	var eye := camera.global_transform
+	var ahead := -eye.basis.z.normalized()
+	var reach := maxf((lens.global_position - eye.origin).dot(ahead), 0.01)
+	var half := (lens.mesh as QuadMesh).size.y * 0.5 * lens.global_basis.get_scale().y
+	var zoom := maxf(gun.aim_zoom(), 1.0)
+	_scope_cam.global_transform = eye
+	_scope_cam.cull_mask = camera.cull_mask
+	_scope_cam.near = scope_near
+	_scope_cam.fov = rad_to_deg(2.0 * atan(half / reach / zoom))
+
+
+## Whether the magnified view is being drawn in a scope's lens right now.
+func scoped() -> bool:
+	return _scope_lens != null and is_instance_valid(_scope_lens)
 
 
 ## The field of view while aiming `weapon`: optics zoom further in.
 func aim_fov(weapon: Weapon) -> float:
+	if weapon is Gun and (weapon as Gun).scope_lens:
+		# A scope magnifies inside its lens only (`_update_scope`).
+		return ads_fov
 	return ads_fov / maxf(1.0, weapon.aim_zoom() if weapon else 1.0)
 
 
@@ -760,7 +824,11 @@ func aim_fov(weapon: Weapon) -> float:
 func _zoom_scale() -> float:
 	if camera == null:
 		return 1.0
-	return clampf(tan(deg_to_rad(camera.fov) * 0.5) / tan(deg_to_rad(wanted_base_fov()) * 0.5), 0.1, 1.0)
+	var scale := tan(deg_to_rad(camera.fov) * 0.5) / tan(deg_to_rad(wanted_base_fov()) * 0.5)
+	if scoped():
+		# Aim through the lens as steadily as the view it magnifies.
+		scale /= maxf(actor.get_active_weapon().aim_zoom(), 1.0) if actor and actor.get_active_weapon() else 1.0
+	return clampf(scale, 0.05, 1.0)
 
 
 ## Each shot kicks the view up and a little sideways. The player pulls down to
