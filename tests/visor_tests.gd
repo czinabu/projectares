@@ -173,7 +173,7 @@ static func _frames(t: Node) -> void:
 	t.check(raid.summon(p, "frame_runner") == "" and p.frame_id == "frame_runner"
 			and is_equal_approx(p.health.max_armor, 45.0) and is_equal_approx(p.health.armor, 45.0),
 			"a summon puts the frame on, whole")
-	t.check(is_equal_approx(p.walk_speed, walk * 1.12) and is_equal_approx(p.heat_signature, signature * 0.7),
+	t.check(is_equal_approx(p.walk_speed, walk * ItemDB.item_stats("frame_runner").speed_mult) and is_equal_approx(p.heat_signature, signature * 0.7),
 			"the old frame's scaling comes off and the new one's goes on")
 	t.check("frame_runner" in p.gear_items and "frame_trooper" not in p.gear_items
 			and p.inventory.has_item("frame_trooper") and is_equal_approx(float(p.stowed_armor.get("frame_trooper", -1.0)), 40.0),
