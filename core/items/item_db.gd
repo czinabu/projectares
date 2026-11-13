@@ -15,6 +15,11 @@ const RARITY_COLORS := [
 	Color(1.0, 0.65, 0.15),
 ]
 
+## How high each tier of flight rig can lift you, in meters over the world's
+## ground (a roof does not count): Mk1 reaches rooftops and decks, Mk2 the
+## tower tops, Mk3 over the highest towers. See `FlightRig.ceiling`.
+const RIG_CEILINGS := {1: 25.0, 2: 60.0, 3: 100.0}
+
 var _items := {}
 
 
@@ -31,8 +36,9 @@ func _ready() -> void:
 			"reserve_ammo": 60, "reload_time": 1.1, "spread_deg": 0.6, "bloom_per_shot": 0.5,
 			"recoil_kick_deg": 0.7, "max_range": 90.0},
 			"Reliable semi-auto sidearm. Accurate, and quick to reload.")
-	register("jetpack_mk1", "Mk1 Jetpack", Rarity.COMMON, 0, ["flight_rig", "starter"], {"heavy_lift": true},
-			"Basic jetpack. Tap jump in the air to hover and cruise anywhere, coast down to cool. Runs hotter than the Mk2 and has no boost.")
+	register("jetpack_mk1", "Mk1 Jetpack", Rarity.COMMON, 0, ["flight_rig", "starter"],
+			{"heavy_lift": true, "tier": 1, "ceiling": RIG_CEILINGS[1]},
+			"Basic jetpack. Tap jump in the air to hover and cruise, coast down to cool. Lifts you to rooftop height and no higher. Runs hotter than the Mk2 and has no boost.")
 	register("plate_light", "Scrap Plate", Rarity.COMMON, 0, ["armor", "frame_light", "starter"],
 			{"armor": 30.0}, "30 armor.")
 	register("field_dressing", "Field Dressing", Rarity.COMMON, 0, ["consumable", "heal", "starter"],
@@ -179,23 +185,44 @@ func _ready() -> void:
 			{"armor": 140.0, "speed_mult": 0.86, "heat_mult": 1.25, "heat_signature": 1.3},
 			"Heavy: 140 armor, 14% slower, wings and boots run hotter (jetpacks carry it). Bright on thermal.")
 
-	# Flight rigs
+	# Flight rigs. Each comes in tiers (see `RIG_CEILINGS`): a higher Mk lifts
+	# you higher and runs cooler, so it flies further, but every tier cruises
+	# at the same speed so a mixed squad keeps together. Only Mk1 drops or is
+	# sold; Mk2 and up are crafted from blueprints (DESIGN.md section 10) and
+	# are at stake like any gear.
 	register("jetpack_mk2", "Mk2 Jetpack", Rarity.RARE, 1000, ["flight_rig"],
 			{"thrust_accel": 42.0, "max_rise_speed": 11.0, "heat_per_sec": 25.0, "boost_speed": 22.0,
-			"heavy_lift": true},
-			"The high ground. Cruise straight over everything, stop dead and hover to shoot steady, coast down to cool. Carries heavy armor without running hotter. Wide turns, loud and hot: heat seekers love it.")
-	register("boots_thruster", "Thruster Boots", Rarity.UNCOMMON, 1000, ["flight_rig", "vendor"],
+			"heavy_lift": true, "tier": 2, "ceiling": RIG_CEILINGS[2]},
+			"The high ground. Cruise straight over everything, stop dead and hover to shoot steady, coast down to cool. Climbs to the tower tops. Carries heavy armor without running hotter. Wide turns, loud and hot: heat seekers love it.")
+	_rig_tier("jetpack_mk3", "Mk3 Jetpack", Rarity.EPIC, 2200, "jetpack_mk2", 3,
+			{"thrust_accel": 45.0, "max_rise_speed": 12.0, "heat_per_sec": 20.0, "coast_cool": 36.0, "cool_per_sec": 30.0},
+			"The whole sky. Climbs over the highest towers and runs cooler than the Mk2, so it stays up longer between coasts. Same cruise and boost; still loud and hot.")
+	register("boots_thruster", "Mk1 Thruster Boots", Rarity.UNCOMMON, 1000, ["flight_rig", "vendor"],
 			{"thrust_accel": 0.0, "burst_velocity": 14.5, "burst_heat": 22.0, "cool_per_sec": 34.0,
 			"cool_delay": 0.3, "burst_push": 11.0, "skim_speed": 15.0, "air_dash_speed": 20.0,
-			"air_dash_time": 0.3, "air_dash_heat": 20.0, "air_dash_cooldown": 0.4},
+			"air_dash_time": 0.3, "air_dash_heat": 20.0, "air_dash_cooldown": 0.4, "tier": 1,
+			"ceiling": RIG_CEILINGS[1]},
 			"Hold jump in the air to skim low over streets and roofs, and stop dead. Kick up with jump: a set of kicks tops a rooftop. The boots only cool near a surface, a roof included; high in the open they burn out in seconds. Dash furthest of any rig. Steady aim while skimming low.")
-	register("wings_glide", "Glide Wings", Rarity.RARE, 1000, ["flight_rig"],
+	_rig_tier("boots_thruster_mk2", "Mk2 Thruster Boots", Rarity.RARE, 1300, "boots_thruster", 2,
+			{"burst_heat": 12.0, "skim_mid_heat": 6.0, "skim_high_heat": 15.0},
+			"Cheaper kicks: a set of them climbs a tower, not just a rooftop, and the boots last longer up high. Still only cool near a surface.")
+	_rig_tier("boots_thruster_mk3", "Mk3 Thruster Boots", Rarity.EPIC, 2200, "boots_thruster", 3,
+			{"burst_velocity": 16.0, "burst_heat": 6.5, "skim_mid_heat": 4.0, "skim_high_heat": 11.0, "skim_cool": 8.0},
+			"Kick from the street to the top of the tallest tower in one go. Harder kicks, the cheapest of any boots, and they cool faster low down. Still only cool near a surface.")
+	register("wings_glide", "Mk1 Glide Wings", Rarity.RARE, 1000, ["flight_rig"],
 			{"thrust_accel": 0.0, "burst_velocity": 14.0, "burst_heat": 40.0, "launch_once": true,
 			"cool_per_sec": 20.0, "pulse_velocity": 11.0, "pulse_heat": 30.0, "glide_cool": 12.0,
 			"glide_fall_speed": 1.2, "glide_speed": 15.0, "glide_dive_gain": 0.74, "glide_turn_rate": 2.4,
 			"stall_sink": 6.0, "air_dash_speed": 12.0, "air_dash_heat": 10.0, "air_dash_cooldown": 1.0,
-			"glide_sidearm_only": true, "slide_landing_speed": 18.0},
-			"One launch, then hold jump to glide and press it again to pulse up. Fastest dives, tightest turns, silent and cold between pulses. Never stops: slow down and you stall. Sidearm only while the wings are out.")
+			"glide_boost": 13.0, "glide_boost_climb": 17.0, "glide_boost_heat": 22.0,
+			"glide_sidearm_only": true, "slide_landing_speed": 18.0, "tier": 1, "ceiling": RIG_CEILINGS[1]},
+			"One launch, then hold jump to glide and press it again to pulse up. Fastest dives, tightest turns, silent and cold between pulses. Never stops: slow down and you stall. Pulses no higher than rooftop height. Sidearm only while the wings are out.")
+	_rig_tier("wings_glide_mk2", "Mk2 Glide Wings", Rarity.RARE, 1400, "wings_glide", 2,
+			{"burst_velocity": 16.0, "pulse_heat": 22.0, "glide_cool": 15.0},
+			"A higher launch and cheaper pulses that cool off quicker: pulse your way up to the tower tops and glide the length of the city.")
+	_rig_tier("wings_glide_mk3", "Mk3 Glide Wings", Rarity.EPIC, 2200, "wings_glide", 3,
+			{"burst_velocity": 18.0, "pulse_heat": 16.0, "glide_cool": 18.0},
+			"The highest launch and the cheapest pulses of any wings: climb over the highest towers and stay up for as long as you like. Still silent, still never stops.")
 
 	# Abilities
 	register("chip_blink", "Phase Step", Rarity.RARE, 900, ["ability", "blink"],
@@ -210,7 +237,8 @@ func _ready() -> void:
 			"A shockwave that hurts and staggers everyone near you.")
 
 	# Helmets. The visor is the wearer's display in first person, and `mode`
-	# picks what it can do (see `Visor`). Mk2 helmets are loot only.
+	# picks what it can do (see `Visor`). Mk2 helmets are never sold or
+	# dropped: they are crafted from blueprints (DESIGN.md section 10).
 	register("visor_scav", "Scav Visor", Rarity.COMMON, 0, ["helmet", "visor_plain", "starter"],
 			{"mode": "", "glass_color": Color(0.8, 0.75, 0.6)},
 			"A cracked visor. Shows how hurt you are and nothing else.")
@@ -333,6 +361,21 @@ func _furniture(id: String, display_name: String, value: int, footprint: Vector3
 	if decor:
 		tags.append("decor")
 	register(id, display_name, rarity, value, tags, {"footprint": footprint, "color": color}, description)
+
+
+## A higher tier of a flight rig: the `base` rig's stats with `changes` on
+## top, its tier and that tier's ceiling. Tiers above Mk1 are crafted, never
+## sold or handed out, so the base's "vendor" and "starter" tags are not
+## copied.
+func _rig_tier(id: String, display_name: String, rarity: Rarity, value: int, base: String, tier: int,
+		changes: Dictionary, description: String) -> void:
+	var stats := item_stats(base).duplicate()
+	stats.merge(changes, true)
+	stats["tier"] = tier
+	stats["ceiling"] = RIG_CEILINGS[tier]
+	var tags: Array = get_item(base).get("tags", []).filter(func(tag: String) -> bool:
+			return tag != "vendor" and tag != "starter")
+	register(id, display_name, rarity, value, tags, stats, description)
 
 
 ## Tags also pick the mastery track an item trains: "rifle", "blink", "frame_heavy"

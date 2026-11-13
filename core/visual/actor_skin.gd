@@ -44,6 +44,14 @@ var glide_leg := Vector3(0.06, -1.0, -0.06)
 ## the feet point, in radians.
 var glide_look := 1.0
 var glide_toes := 1.0
+## Free look behind in a glide (a backstroke, see `_look_roll`): lying on
+## the back, the arms open out wide to the sides and a little up for
+## balance, the legs part a little, and the head comes up off the pack to
+## look back down the body past the feet (a negative look tips the chin in).
+## Same frame as `glide_arm`. Blended in as the body rolls over.
+var backstroke_arm := Vector3(0.95, -0.35, -0.3)
+var backstroke_leg := Vector3(0.08, -1.0, -0.08)
+var backstroke_look := -0.7
 ## Off the ground the legs stop running. `air_grace` seconds after leaving
 ## it (so steps and kerbs do not flicker) they go to an air pose, blended in
 ## at `air_blend` full changes a second. Each pose is a thigh and a shin
@@ -185,6 +193,10 @@ var _wired := {}
 var _flash_left := 0.0
 var _materials: Array[ShaderMaterial] = []
 var _skeleton: Skeleton3D
+## The raised watch's glow on the left wrist, and how far it is up (0..1).
+var _watch_glow: Node3D
+var _watch_up := 0.0
+const WATCH_GLOW := Color(0.35, 0.95, 1.0)
 var _def := {}
 ## The flight rig being worn: its item id, the nodes holding its parts, its
 ## back part (or null), and a flame per nozzle.
@@ -241,6 +253,13 @@ var _has_heading := false
 ## The actor's yaw last frame: while the body lies flat in flight its
 ## attitude is held in the world, not on the view (see `_update_glide`).
 var _last_yaw := 0.0
+## Free look in a glide: how far the body has rolled to face the view, about
+## its own length (PI: on its back, a backstroke, looking behind).
+var _look_roll := 0.0
+## Free look in a glide: the body starts to roll toward the view once it is
+## this far off the way it flies, and lies on its back by `look_roll_full`.
+var look_roll_start := 0.6
+var look_roll_full := 2.6
 var _attack_left := 0.0
 var _aim_left := 0.0
 ## Weapon -> the copy of it worn while holstered (null if it has no model),
@@ -265,6 +284,8 @@ var _moving: Weapon
 var _moving_weight := 0.0
 ## Makes the model hold its weapon, or null for skins without the bones.
 var arm: Node
+## The phone in the hands while `phone_up`, built the first time.
+var _phone_prop: Node3D
 ## Matches the legs to the actor's speed and direction.
 var locomotion: Node
 
@@ -314,6 +335,9 @@ func _ready() -> void:
 					_player.get_animation(_anims["idle_melee"]) if _anims.has("idle_melee") else null)
 		# After the arm has put the hand on the model's hand.
 		skeleton.skeleton_updated.connect(_carry_moving)
+	if skeleton:
+		# Last, so the phone has the right hand whatever the arm was doing.
+		locomotion.add_phone_hook()
 	if skeleton:
 		_setup_glide_pose(skeleton, def)
 
@@ -380,8 +404,13 @@ func _process(delta: float) -> void:
 	_update_stowed()
 	_update_switch(delta)
 	_update_vitals()
+	_update_phone()
+	_update_watch_glow(delta)
 	_aim_left = maxf(_aim_left - delta, 0.0)
 	var weapon := actor.get_active_weapon()
+	if phone_up():
+		# Hands on the phone: stand as if empty-handed.
+		weapon = null
 	var melee := weapon as MeleeWeapon
 	if locomotion == null:
 		return
@@ -447,6 +476,75 @@ func flies_stowed() -> bool:
 	if not (actor.flight.is_gliding or actor.flight.is_boosting):
 		return false
 	return _flight_draw_left <= 0.0
+
+
+## True while the actor holds their phone up (`ActorCommand.phone`, which
+## travels with the held keys, so remote players show it too). The weapon is
+## worn meanwhile and drawn again when the phone goes away.
+func phone_up() -> bool:
+	return actor.cmd.phone and not actor.is_dead and actor.vehicle == null
+
+
+## Eases the phone hold in and out and keeps the phone itself in the right
+## hand, its lit screen turned up to the face.
+func _update_phone() -> void:
+	if locomotion == null:
+		return
+	locomotion.phone_up = phone_up()
+	var w: float = locomotion.phone_weight
+	if w <= 0.0:
+		if _phone_prop:
+			_phone_prop.visible = false
+		return
+	if _phone_prop == null:
+		_phone_prop = _build_phone_prop()
+		add_child(_phone_prop)
+	_phone_prop.visible = w > 0.5
+	var held: Vector3 = locomotion.phone_in_hand if locomotion.phone_in_hand != Vector3.ZERO else locomotion.phone_at
+	var at: Vector3 = actor.global_transform * held
+	var eyes := actor.global_transform * Vector3(0.0, actor.eye_height, 0.0)
+	var face := (eyes - at).normalized()
+	var basis := Basis.looking_at(-face, actor.global_basis.orthonormalized() * Vector3.FORWARD)
+	_phone_prop.global_transform = Transform3D(basis, at)
+
+
+## A greybox phone: a dark slab with a bright screen on the face (+Z) and a
+## faint glow that lights the face looking at it, so it reads from afar.
+func _build_phone_prop() -> Node3D:
+	var root := Node3D.new()
+	root.name = "PhoneProp"
+	var body := MeshInstance3D.new()
+	var slab := BoxMesh.new()
+	slab.size = Vector3(0.085, 0.175, 0.011)
+	body.mesh = slab
+	var dark := StandardMaterial3D.new()
+	dark.albedo_color = Color(0.12, 0.12, 0.13)
+	dark.metallic = 0.6
+	dark.roughness = 0.35
+	body.material_override = dark
+	root.add_child(body)
+	var glass := MeshInstance3D.new()
+	var quad := QuadMesh.new()
+	quad.size = Vector2(0.075, 0.16)
+	glass.mesh = quad
+	glass.position = Vector3(0.0, 0.0, 0.0057)
+	var lit := StandardMaterial3D.new()
+	lit.albedo_color = Color(0.25, 0.42, 0.55)
+	lit.emission_enabled = true
+	lit.emission = Color(0.35, 0.6, 0.8)
+	lit.emission_energy_multiplier = 3.0
+	glass.material_override = lit
+	root.add_child(glass)
+	var glow := OmniLight3D.new()
+	glow.light_color = Color(0.55, 0.78, 1.0)
+	glow.light_energy = 1.6
+	glow.omni_range = 0.7
+	glow.position = Vector3(0.0, 0.0, 0.06)
+	glow.shadow_enabled = false
+	root.add_child(glow)
+	for mesh: MeshInstance3D in [body, glass]:
+		mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	return root
 
 
 ## True once the actor has been off the ground long enough to show it.
@@ -575,7 +673,7 @@ func _update_switch(delta: float) -> void:
 	var active := actor.get_active_weapon()
 	# Flying flat with the arms at the sides, the weapon is worn, not left
 	# hanging in the air where the hands were. Shooting or aiming draws it.
-	if flies_stowed():
+	if flies_stowed() or phone_up():
 		active = null
 	if _in_hand != null and (not is_instance_valid(_in_hand) or not _in_hand in actor.weapons):
 		_in_hand = null
@@ -790,6 +888,57 @@ func _update_vitals() -> void:
 			_glow(light, ink, 2.2)
 		"charging":
 			_glow(light, ink.darkened(0.6), 0.3)
+
+
+## A raised watch (`ActorCommand.watch_up`) glows on the left wrist, so
+## anyone can see who is looking at their watch: a small lit spark over the
+## wrist and a soft light on the arm. Only that it is up shows, never what is
+## on it. Fades in and out with the raise.
+func _update_watch_glow(delta: float) -> void:
+	var goal := 1.0 if actor.cmd.watch_up and not actor.is_dead else 0.0
+	_watch_up = move_toward(_watch_up, goal, delta / 0.18)
+	if _watch_up <= 0.0:
+		if _watch_glow != null and is_instance_valid(_watch_glow):
+			_watch_glow.visible = false
+		return
+	if _watch_glow == null or not is_instance_valid(_watch_glow):
+		if _skeleton == null or _skeleton.find_bone("Wrist.L") < 0:
+			return
+		var attach := BoneAttachment3D.new()
+		attach.name = "WatchGlow"
+		attach.bone_name = "Wrist.L"
+		_skeleton.add_child(attach)
+		var spark := MeshInstance3D.new()
+		spark.name = "Spark"
+		var quad := QuadMesh.new()
+		quad.size = Vector2(0.06, 0.035)
+		spark.mesh = quad
+		var mat := StandardMaterial3D.new()
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+		mat.albedo_color = WATCH_GLOW
+		spark.material_override = mat
+		spark.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		attach.add_child(spark)
+		var light := OmniLight3D.new()
+		light.name = "Light"
+		light.light_color = WATCH_GLOW
+		light.omni_range = 0.6
+		attach.add_child(light)
+		# Undo the model's import scale so the glow keeps its size.
+		var s := _skeleton.global_basis.get_scale()
+		for child: Node3D in [spark, light]:
+			child.scale = Vector3(1.0 / maxf(s.x, 0.001), 1.0 / maxf(s.y, 0.001), 1.0 / maxf(s.z, 0.001))
+		_watch_glow = attach
+	_watch_glow.visible = true
+	var spark_node := _watch_glow.get_node("Spark") as MeshInstance3D
+	spark_node.position = _watch_glow.global_basis.inverse() * Vector3.UP * 0.08
+	if actor.body_mesh:
+		spark_node.layers = actor.body_mesh.layers
+	(spark_node.material_override as StandardMaterial3D).albedo_color = Color(WATCH_GLOW, 0.85 * _watch_up)
+	(_watch_glow.get_node("Light") as OmniLight3D).light_energy = 0.6 * _watch_up
 
 
 func _build_vitals() -> void:
@@ -1010,6 +1159,14 @@ func _update_glide(delta: float) -> void:
 	_tilt = _tilt.lerp(tilt, follow)
 	_face = lerp_angle(wrapf(_face, -PI, PI), face, follow)
 	_bank = lerpf(_bank, bank, 1.0 - exp(-bank_follow * delta))
+	# Free look in a glide: the body twists round its own length to face the
+	# view, so looking behind lays it on its back (a backstroke) while the
+	# wings fly on, and a sidearm aims back past the feet.
+	var look_roll := 0.0
+	if flat and actor.flight.is_gliding and actor.cmd.free_look:
+		var off := wrapf(face, -PI, PI)
+		look_roll = -signf(off) * smoothstep(look_roll_start, look_roll_full, absf(off)) * PI
+	_look_roll = lerp_angle(_look_roll, look_roll, 1.0 - exp(-bank_follow * delta))
 	# A sideways air dash: one full roll over the dash; then the body rights
 	# itself the short way round.
 	if flat and actor.air_dash_left > 0.0 and absf(actor.air_dash_side) > 0.5:
@@ -1021,7 +1178,7 @@ func _update_glide(delta: float) -> void:
 	var angle := _tilt.length()
 	var tip := Basis(Vector3.UP.cross(_tilt / angle).normalized(), angle) if angle > 0.001 else Basis.IDENTITY
 	# A positive bank or twist rolls to the right: right side down.
-	var turn := tip * Basis(Vector3.UP, _face - _bank + _twist)
+	var turn := tip * Basis(Vector3.UP, _face - _bank + _twist + _look_roll)
 	_body_turn = turn
 	var pivot := Vector3(0, glide_pivot, 0)
 	transform = Transform3D(turn * Basis(Vector3.UP, PI), pivot - turn * pivot)
@@ -1037,7 +1194,9 @@ func _update_ride() -> void:
 	var vehicle: Node3D = actor.vehicle if not actor.is_dead else null
 	locomotion.ride = vehicle
 	if arm:
-		arm.ride_grip = locomotion.grip_hold()
+		# The right hand's fingers wrap the phone while it is up.
+		var phone_grip := Vector2(0.0, 0.6 * smoothstep(0.0, 1.0, locomotion.phone_weight))
+		arm.ride_grip = locomotion.grip_hold().max(phone_grip)
 	if vehicle == null:
 		return
 	var free := _in_hand == null and _plan.is_empty()
@@ -1108,10 +1267,12 @@ func _pose_glide() -> void:
 	# The skin faces the model's way, turned half round from the actor.
 	var to_skeleton := _skeleton.basis.orthonormalized().inverse() * _model_basis_inverse() * Basis(Vector3.UP, PI)
 	var right := (to_skeleton * Vector3.RIGHT).normalized()
+	# How far over onto the back free look has rolled the body.
+	var back := smoothstep(0.35, 0.9, absf(_look_roll) / PI)
 	for limb: Array in _glide_arms:
 		if limb.is_empty():
 			continue
-		var arm_dir := glide_arm.lerp(boost_arm, smoothstep(0.0, 1.0, _boost))
+		var arm_dir := glide_arm.lerp(boost_arm, smoothstep(0.0, 1.0, _boost)).lerp(backstroke_arm, back)
 		var wanted := to_skeleton * Vector3(arm_dir.x * limb[3], arm_dir.y, arm_dir.z)
 		# Shooting or aiming, the arms keep their hold on the weapon.
 		var arm_w := w * (1.0 - smoothstep(0.0, 1.0, _flight_hold))
@@ -1119,10 +1280,11 @@ func _pose_glide() -> void:
 		_aim_bone(limb[1], limb[2], wanted, arm_w)
 	for limb: Array in _glide_legs:
 		if not limb.is_empty():
-			_pose_leg(limb, to_skeleton * Vector3(glide_leg.x * limb[3], glide_leg.y, glide_leg.z), right, w)
+			var leg := glide_leg.lerp(backstroke_leg, back)
+			_pose_leg(limb, to_skeleton * Vector3(leg.x * limb[3], leg.y, leg.z), right, w)
 	if _glide_neck >= 0:
 		var pose := _skeleton.get_bone_global_pose(_glide_neck)
-		pose.basis = Basis((to_skeleton * Vector3.RIGHT).normalized(), glide_look * w) * pose.basis
+		pose.basis = Basis((to_skeleton * Vector3.RIGHT).normalized(), lerpf(glide_look, backstroke_look, back) * w) * pose.basis
 		_skeleton.set_bone_global_pose(_glide_neck, pose)
 
 

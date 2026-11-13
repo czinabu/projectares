@@ -47,6 +47,10 @@ var invert_y := false
 ## Set while the phone is open: the character stands still and the mouse is
 ## left alone, so you can tap and type.
 var input_blocked := false
+## Set while the phone is out (`Main`): the character holds it up, which
+## everyone else sees (`ActorCommand.phone`), and the weapon is put away in
+## the view until the phone is.
+var phone_out := false
 ## Set while a mirror stands in front of you (1-20, 0 for none). In first
 ## person your body stays drawn on this render layer, which this camera leaves
 ## out, so the mirror's camera can still show it.
@@ -127,6 +131,16 @@ var yaw := 0.0
 var pitch := 0.0
 ## Which toy on the raised watch is picked out, counting from 0.
 var watch_index := 0
+## Where your eyes are on the raised watch's card, from -1 (its left edge)
+## to 1 (its right). The icon under them opens up (`Hud.Wrist`). With the
+## watch up, sideways mouse movement moves the eyes first and the head only
+## once they reach the card's edge, so a glance across the card barely turns
+## the view. The HUD sets it to the icon it would open on its own until the
+## mouse moves (`watch_glance_moved`). View only.
+var watch_glance := 0.0
+var watch_glance_moved := false
+## How far the mouse turns the view, in radians, to glance across the card.
+var glance_span := 0.12
 var _toy_node: Node3D
 var _cam_dist := 0.0
 var _pending_switch := -1
@@ -203,7 +217,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		# Zoomed in (a scope or binoculars), the mouse turns the view less, so
 		# a target moves across the screen at the same speed as without it.
 		var turn := mouse_sensitivity * _zoom_scale()
-		yaw -= event.relative.x * turn
+		yaw -= glance(event.relative.x * turn)
 		var vertical: float = -event.relative.y if invert_y else event.relative.y
 		pitch = clampf(pitch - vertical * turn, -1.5, 1.5)
 		# Pulling down against a spray: that much kick is yours, not the
@@ -219,6 +233,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		toggle_view()
 	elif event.is_action_pressed("check_wrist"):
 		wrist_raised = not wrist_raised
+		watch_glance_moved = false
 	elif event.is_action_pressed("melee_control"):
 		toggle_stance_control()
 	elif event.is_action_pressed("sign_out"):
@@ -228,6 +243,24 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event is InputEventKey and event.pressed and not event.echo and is_instance_valid(actor) \
 			and actor.is_dead and event.keycode >= KEY_1 and event.keycode <= KEY_9:
 		drop_requested.emit(event.keycode - KEY_1)
+
+
+## Sideways turn `turn` (radians, rightward) with the watch up: the eyes take
+## it across the card first, and what is left over turns the view. Returns
+## the turn left for the view. With the watch down, or while aiming or
+## firing, it all turns the view.
+func glance(turn: float) -> float:
+	if not wrist_raised or actor == null or not is_instance_valid(actor) or actor.is_dead or glance_span <= 0.0:
+		return turn
+	# In a fight the view comes first: while aiming or firing, the eyes stay put.
+	var weapon := actor.get_active_weapon()
+	if (weapon != null and weapon.is_aiming()) or Input.is_action_pressed("fire"):
+		return turn
+	var wanted := watch_glance + turn / glance_span * 2.0
+	watch_glance = clampf(wanted, -1.0, 1.0)
+	if turn != 0.0:
+		watch_glance_moved = true
+	return (wanted - watch_glance) * glance_span * 0.5
 
 
 ## The toy vehicles on the player's watch (item ids), as the world last said.
@@ -381,12 +414,14 @@ func _physics_process(delta: float) -> void:
 		return
 	var cmd := actor.cmd
 	cmd.clear_one_shots()
+	cmd.phone = phone_out
 	if input_blocked:
 		# Hands on the phone: let go of everything, keep facing the same way.
 		cmd.move = Vector2.ZERO
 		cmd.sprint = false
 		cmd.jump = false
 		cmd.descend = false
+		cmd.free_look = false
 		cmd.primary = false
 		cmd.secondary = false
 		cmd.switch_weapon = -1
@@ -412,6 +447,7 @@ func _physics_process(delta: float) -> void:
 	cmd.dash = Input.is_action_just_pressed("dash")
 	cmd.slide = Input.is_action_just_pressed("slide")
 	cmd.descend = Input.is_action_pressed("slide")
+	cmd.free_look = Input.is_action_pressed("free_look")
 	if cmd.dash and actor.stamina >= actor.dash_stamina:
 		Sfx.play("dash", null, -6.0)
 	elif cmd.sprint_pressed and not actor.is_on_floor() and actor.flight.enabled and not actor.flight.overheated:
@@ -436,6 +472,7 @@ func _physics_process(delta: float) -> void:
 	if cmd.visor_pressed:
 		_visor_level = next_visor_level(actor.visor, _visor_level)
 	cmd.visor_level = _visor_level
+	cmd.watch_up = wrist_raised and not actor.is_dead
 	var key_slot := -1
 	for n in range(1, 5):
 		if Input.is_action_just_pressed("weapon_%d" % n):
@@ -521,7 +558,7 @@ func _process(delta: float) -> void:
 	# In first-person the weapon is held in front of the camera; otherwise it
 	# rests on the body, where the Actor poses it. In front of a mirror the
 	# hands are on the phone, so it rests on the body there too.
-	first_person = first_person and not for_mirror
+	first_person = first_person and not for_mirror and not phone_out
 	actor.hand_override = first_person
 	var sight := _sight_of(weapon) if first_person else null
 	_sight_blend = move_toward(_sight_blend, 1.0 if aiming and sight != null else 0.0, delta * 7.0)
@@ -666,13 +703,14 @@ func _update_dip(delta: float) -> void:
 	if is_zero_approx(_dip) and is_zero_approx(_dip_speed):
 		return
 	# A critically damped spring: down fast, back without a bounce. Stepped
-	# in small slices, since one long frame would make it blow up.
+	# in short slices, since one long frame (a hitch, a slow machine) would
+	# otherwise throw the spring off and the camera with it.
 	var left := delta
 	while left > 0.0:
 		var step := minf(left, 1.0 / 120.0)
-		left -= step
 		_dip_speed += (-180.0 * _dip - 26.8 * _dip_speed) * step
 		_dip += _dip_speed * step
+		left -= step
 	if absf(_dip) < 0.0005 and absf(_dip_speed) < 0.005:
 		_dip = 0.0
 		_dip_speed = 0.0

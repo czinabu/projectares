@@ -82,41 +82,79 @@ static func _test_wings(t: Node) -> void:
 	worst = maxf(worst, await _jolt(t, p, 90))
 	p.cmd.move = Vector2.ZERO
 	t.check(worst < 90.0, "opening the wings, diving, levelling and pulling up never snap (hardest %.0f m/s² in a tick)" % worst)
-	# The bank rolls in: a tap nudges the heading, a hold comes right round.
+	# The bank rolls in: a tap nudges the heading, a hold comes right round,
+	# and letting go the wings come back onto the view.
 	await t.frames(120)
 	var before := Vector3(p.velocity.x, 0, p.velocity.z).normalized()
 	p.cmd.move = Vector2(1, 0)
 	await t.frames(3)
 	p.cmd.move = Vector2.ZERO
-	await t.frames(20)
+	await t.frames(4)
 	var nudged := before.angle_to(Vector3(p.velocity.x, 0, p.velocity.z).normalized())
-	t.check(nudged > 0.005 and nudged < 0.08 and is_zero_approx(p._bank), "a tap of a strafe key nudges the wings' heading (%.3f rad)" % nudged)
+	t.check(nudged > 0.005 and nudged < 0.08, "a tap of a strafe key nudges the wings' heading (%.3f rad)" % nudged)
+	await t.frames(90)
 	before = Vector3(p.velocity.x, 0, p.velocity.z).normalized()
 	p.cmd.move = Vector2(1, 0)
 	await t.frames(30)
 	var swung := before.angle_to(Vector3(p.velocity.x, 0, p.velocity.z).normalized())
-	t.check(swung > p.flight.glide_turn_rate * 0.5 * 0.8, "and holding it turns at the full rate (%.2f rad in half a second)" % swung)
+	t.check(swung > p.flight.glide_turn_rate * 0.5 * 0.7, "and holding it turns at the full rate (%.2f rad in half a second)" % swung)
 	p.cmd.move = Vector2.ZERO
-	await t.frames(60)
-	# Looking round in a glide, then pressing forward: the wings bank round
-	# onto the view's heading and fly the way you face, not the old way.
+	await t.frames(120)
+	# Looking round in a glide: the wings bank round onto the view's heading
+	# like a bird's and fly the way you face, never sideways to it.
 	var flying := Vector3(p.velocity.x, 0, p.velocity.z).normalized()
 	p.cmd.yaw = wrapf(atan2(-flying.x, -flying.z) + 2.4, -PI, PI)
-	await t.frames(30)
 	var view := Basis(Vector3.UP, p.cmd.yaw) * Vector3.FORWARD
-	var off := view.angle_to(Vector3(p.velocity.x, 0, p.velocity.z).normalized())
-	t.check(off > 2.0, "with no keys a glide flies straight on wherever you look (%.2f rad off the view)" % off)
-	p.cmd.move = Vector2(0, 1)
 	worst = await _jolt(t, p, 150)
-	off = view.angle_to(Vector3(p.velocity.x, 0, p.velocity.z).normalized())
-	t.check(off < 0.05 and p.flight.is_gliding, "forward after looking round flies the way you face (%.3f rad off)" % off)
+	var off := view.angle_to(Vector3(p.velocity.x, 0, p.velocity.z).normalized())
+	t.check(off < 0.05 and p.flight.is_gliding, "looking round turns the glide the way you face (%.3f rad off)" % off)
 	t.check(worst < 90.0, "and the wings bank round onto it without a snap (hardest %.0f m/s² in a tick)" % worst)
 	var settled := Vector3(p.velocity.x, 0, p.velocity.z).normalized()
 	await t.frames(30)
 	t.check(settled.angle_to(Vector3(p.velocity.x, 0, p.velocity.z).normalized()) < 0.02 and absf(p._bank) < 0.1,
 			"and it levels out on the view instead of swinging past")
-	p.cmd.move = Vector2.ZERO
+	# Free look: held, the wings fly straight on while the view looks away;
+	# let go and they come round onto the view again.
+	p.cmd.free_look = true
+	var held := Vector3(p.velocity.x, 0, p.velocity.z).normalized()
+	p.cmd.yaw = wrapf(p.cmd.yaw + 1.5, -PI, PI)
 	await t.frames(60)
+	t.check(held.dot(Vector3(p.velocity.x, 0, p.velocity.z).normalized()) > 0.999,
+			"holding free look, the wings fly straight on while you look away")
+	var copy := ActorCommand.new()
+	copy.apply_array(p.cmd.to_array())
+	t.check(copy.free_look, "free look travels in the network command")
+	p.cmd.free_look = false
+	view = Basis(Vector3.UP, p.cmd.yaw) * Vector3.FORWARD
+	await t.frames(150)
+	t.check(view.angle_to(Vector3(p.velocity.x, 0, p.velocity.z).normalized()) < 0.05,
+			"and letting go the wings come round onto the view")
+	await t.frames(60)
+	# A wing boost thrusts you the way you face and the glide keeps the speed.
+	var boost_heat := p.flight.heat
+	var cruising := Vector2(p.velocity.x, p.velocity.z).length()
+	p.cmd.sprint = true
+	p.cmd.sprint_pressed = true
+	await t.frames(1)
+	p.cmd.sprint_pressed = false
+	p.cmd.sprint = false
+	var kicked := Vector2(p.velocity.x, p.velocity.z).length()
+	await t.frames(60)
+	var carried := Vector2(p.velocity.x, p.velocity.z).length()
+	t.check(kicked > cruising + p.flight.glide_boost * 0.9 and p.flight.heat > boost_heat,
+			"Shift in a glide boosts you ahead, on heat (%.1f to %.1f m/s)" % [cruising, kicked])
+	t.check(carried > cruising + p.flight.glide_boost * 0.7 and view.angle_to(Vector3(p.velocity.x, 0, p.velocity.z).normalized()) < 0.05,
+			"and the glide carries that speed on the way you face (%.1f m/s a second later)" % carried)
+	# Shift + D is the same boost: wings never dash sideways.
+	await t.frames(120)
+	p.cmd.move = Vector2(1, 0)
+	p.cmd.sprint_pressed = true
+	await t.frames(1)
+	p.cmd.sprint_pressed = false
+	p.cmd.move = Vector2.ZERO
+	var side := (Basis(Vector3.UP, p.cmd.yaw).inverse() * p.velocity).x
+	t.check(absf(side) < 2.0, "Shift + D in a glide never throws you sideways (%.1f m/s)" % side)
+	await t.frames(240)
 	# Shift + S with the wings pulled up climbs, keeping the heading.
 	var climb_heading := Vector3(p.velocity.x, 0, p.velocity.z).normalized()
 	var height := p.global_position.y
@@ -130,12 +168,24 @@ static func _test_wings(t: Node) -> void:
 	await t.frames(40)
 	p.cmd.sprint = false
 	var flat := Vector3(p.velocity.x, 0, p.velocity.z)
-	t.check(rise > p.flight.air_dash_speed * 0.8 and p.flight.heat > dash_heat,
+	t.check(rise > p.flight.glide_boost_climb * 0.8 and p.flight.heat > dash_heat,
 			"Shift + S in a glide boosts upward, on heat (%.1f m/s up)" % rise)
 	t.check(p.global_position.y > height + 2.0 and flat.normalized().dot(climb_heading) > 0.95
 			and flat.length() >= p.flight.glide_speed * p.flight.glide_stall - 0.01 and p.flight.is_gliding,
 			"and gains height flying on the same way, never backwards (%.1f m higher)" % (p.global_position.y - height))
 	p.cmd.move = Vector2.ZERO
+	# Pulled up hard in a turn, the wings bleed their speed and stall into a
+	# sinking spiral instead of circling in place for free.
+	await t.frames(240)
+	p.cmd.move = Vector2(1, -1)
+	await t.frames(300)
+	var spiral := Vector2(p.velocity.x, p.velocity.z).length()
+	t.check(p.glide_stalled() and p.velocity.y < -p.flight.stall_sink + 0.5,
+			"S + D bleeds the speed into a stall that sinks (%.1f m/s ahead, %.1f down)" % [spiral, -p.velocity.y])
+	p.cmd.move = Vector2.ZERO
+	await t.frames(120)
+	t.check(not p.glide_stalled() and Vector2(p.velocity.x, p.velocity.z).length() > p.flight.glide_speed * p.flight.glide_stall,
+			"letting go, the nose drops and the wings fly again")
 	arena.queue_free()
 	await t.frames(2)
 
@@ -326,6 +376,57 @@ static func _test_input_buffer(t: Node) -> void:
 	t.check(int(third[1][ActorCommand.FLAGS_INDEX]) & ActorCommand.FLAG_DASH != 0 and third[1][ActorCommand.SWITCH_INDEX] == 1,
 			"and its press and weapon switch ride on the next input played")
 	t.check(int(_input(4)[1][ActorCommand.FLAGS_INDEX]) == 0 and buffer.next().is_empty(), "a kept press is played once")
+
+	# A trigger tapped for a single tick, in an input that is skipped: the
+	# tap rides on the next input played. A client running under 60 frames a
+	# second sends its inputs two to a packet, so one late packet used to eat
+	# every other input, and with it any shot that short.
+	buffer = Net.InputBuffer.new()
+	buffer.receive([_input(1)])
+	buffer.next()
+	buffer.next()
+	buffer.receive([_input(2, ActorCommand.FLAG_PRIMARY), _input(3)])
+	var tapped := buffer.next()
+	t.check(tapped[0] == 3 and int(tapped[1][ActorCommand.FLAGS_INDEX]) & ActorCommand.FLAG_PRIMARY != 0,
+			"a trigger tapped in an input that arrives late still fires, on the next input played")
+	buffer.receive([_input(4)])
+	t.check(int(buffer.next()[1][ActorCommand.FLAGS_INDEX]) & ActorCommand.FLAG_PRIMARY == 0, "a kept tap is played once")
+	# Held before the skipped input and let go after it: the guess already
+	# played that tick with the key down, so nothing is added.
+	buffer = Net.InputBuffer.new()
+	buffer.receive([_input(1, ActorCommand.FLAG_PRIMARY)])
+	buffer.next()
+	buffer.next()
+	buffer.receive([_input(2, ActorCommand.FLAG_PRIMARY), _input(3)])
+	t.check(int(buffer.next()[1][ActorCommand.FLAGS_INDEX]) & ActorCommand.FLAG_PRIMARY == 0,
+			"a key that was already held is not held a tick longer")
+	# The same for inputs folded away after a burst.
+	buffer = Net.InputBuffer.new()
+	var taps: Array = []
+	for number in range(1, 13):
+		taps.append(_input(number, ActorCommand.FLAG_PRIMARY if number == 3 else 0))
+	buffer.receive(taps)
+	t.check(int(buffer.next()[1][ActorCommand.FLAGS_INDEX]) & ActorCommand.FLAG_PRIMARY != 0
+			and int(buffer.next()[1][ActorCommand.FLAGS_INDEX]) & ActorCommand.FLAG_PRIMARY == 0,
+			"a tap in an input folded away after a burst is played once too")
+	# Every other input skipped, as for a client at 30 frames a second after
+	# one late packet: each tap is still played exactly once.
+	buffer = Net.InputBuffer.new()
+	buffer.receive([_input(1), _input(2)])
+	buffer.next()
+	buffer.next()
+	buffer.next()
+	var taps_played := 0
+	for pair in 40:
+		var number := 3 + pair * 2
+		buffer.receive([_input(number, ActorCommand.FLAG_PRIMARY if pair % 3 == 0 else 0), _input(number + 1)])
+		for tick in 2:
+			var input := buffer.next()
+			if not input.is_empty() and int(input[1][ActorCommand.FLAGS_INDEX]) & ActorCommand.FLAG_PRIMARY != 0:
+				taps_played += 1
+	t.check(taps_played == 14 and buffer.skipped >= 40,
+			"with inputs arriving in pairs, one always late, every tap is played once (%d of 14, %d inputs skipped)"
+			% [taps_played, buffer.skipped])
 
 	# Late and still the newest: the player's inputs are running later than
 	# the server thought, so it is played after all.

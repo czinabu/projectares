@@ -72,6 +72,8 @@ var low_reach := Vector3(-0.05, -0.08, 0.05)
 var low_tilt := Vector3(-0.38, 0.28, 0.1)
 var raise_rate := 9.0
 var lower_rate := 2.5
+## How fast the phone comes up and goes away (per second).
+var phone_rate := 5.0
 
 var actor: Actor
 
@@ -84,6 +86,9 @@ var switch_point := Actor.HAND_REST
 var low_wanted := false
 ## Set by the watch: 0 lowered, 1 raised to read.
 var watch := 0.0
+## How far the phone is up in the right hand (0..1), from the actor's
+## command (`ActorCommand.phone`), so everyone who sees them agrees.
+var phone := 0.0
 
 ## The melee hand offset, smoothed, and how much it has the arm (0..1).
 var reach := Vector3.ZERO
@@ -144,6 +149,9 @@ func advance(delta: float) -> void:
 		reach = wanted if reach_weight < 0.15 else reach.lerp(wanted, follow)
 	turn = turn.lerp(body_turn(melee) if holding else Vector2.ZERO, follow)
 	elbow_raise = lerpf(elbow_raise, elbow_wanted(melee) if holding else 0.0, follow)
+
+	var phone_wanted := actor.cmd != null and actor.cmd.phone and not actor.is_dead and actor.vehicle == null
+	phone = move_toward(phone, 1.0 if phone_wanted else 0.0, phone_rate * delta)
 
 	var gun := weapon as Gun
 	reload = reload_depth(gun) if gun != null and not actor.is_dead else 0.0

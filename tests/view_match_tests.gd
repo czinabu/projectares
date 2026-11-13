@@ -97,6 +97,18 @@ static func _check_without_skin(t: Node) -> void:
 	var stowing := controller.first_person_hold(pose)
 	t.check(stowing.origin.y < -0.6 and stowing.origin.x < 0.0, "first person, switching drops the hand toward the holster")
 	pose.switch_weight = 0.0
+
+	# The phone comes up from the command, the same for every view.
+	p.cmd.phone = true
+	for i in 20:
+		await t.frames(1)
+		pose.advance(1.0 / 30.0)
+	t.check(is_equal_approx(pose.phone, 1.0), "the shared pose brings the phone up from the command")
+	p.cmd.phone = false
+	for i in 20:
+		await t.frames(1)
+		pose.advance(1.0 / 30.0)
+	t.check(pose.phone == 0.0, "and puts it away again")
 	raid.queue_free()
 	await t.frames(2)
 

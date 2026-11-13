@@ -50,18 +50,20 @@ const ROOFTOP_TABLE := [
 	{"id": "blade_arc", "weight": 9.0},
 	{"id": "spear_lancer", "weight": 8.0},
 	{"id": "frame_bulwark", "weight": 8.0},
-	{"id": "jetpack_mk2", "weight": 7.0},
+	# Rigs and helmets drop at Mk1 only: Mk2 and up are crafted from
+	# blueprints (DESIGN.md section 10), never found.
 	{"id": "wings_glide", "weight": 7.0},
+	{"id": "boots_thruster", "weight": 5.0},
 	{"id": "chip_blink", "weight": 7.0},
 	{"id": "chip_pulse", "weight": 7.0},
 	{"id": "optic_scope", "weight": 7.0},
 	{"id": "muzzle_suppressor", "weight": 6.0},
 	{"id": "mag_drum", "weight": 6.0},
 	{"id": "optic_longscope", "weight": 2.5},
-	{"id": "helm_spotter_mk2", "weight": 6.0},
-	{"id": "helm_seeker_mk2", "weight": 6.0},
-	{"id": "helm_warden_mk2", "weight": 6.0},
-	{"id": "helm_ember_mk2", "weight": 6.0},
+	{"id": "helm_spotter", "weight": 4.0},
+	{"id": "helm_seeker", "weight": 4.0},
+	{"id": "helm_warden", "weight": 4.0},
+	{"id": "helm_ember", "weight": 4.0},
 ]
 
 ## Abandoned bikes parked around the field. Anyone can ride one out.

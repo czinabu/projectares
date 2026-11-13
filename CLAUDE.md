@@ -221,8 +221,9 @@ without Caleb, and update the gap list when a PR closes a row.
 - First and third person show the same action the same way. Each actor has
   one `ActionPose` (`core/visual/action_pose.gd`, a view-only child made by
   `ActionPose.of`): the melee reach and shoulder turn, the reload motion,
-  the low ready, the weapon switch's progress toward a holster, and the
-  watch raise. Third person `WeaponArm` and `ActorSkin` pose the model from
+  the low ready, the weapon switch's progress toward a holster, the
+  watch raise and the phone hold (`ActionPose.phone`, from
+  `ActorCommand.phone`, which `Locomotion` poses the body from). Third person `WeaponArm` and `ActorSkin` pose the model from
   it; first person `PlayerController.first_person_hold` moves the weapon in
   front of the camera by the same offsets on the same clock, so a switch,
   a flight stow or a windup plays out in both views. A new hand or weapon
@@ -324,16 +325,40 @@ without Caleb, and update the gap list when a PR closes a row.
   in open air they never cool (`FlightRig.aloft`), so they hold no open sky. Flown its
   own way a rig stays up for minutes, against type it overheats in seconds.
   Shooting from the air spreads wider (`Actor.air_aim`) except in a rig's
-  steady state. The keys fly every rig and the mouse only looks and aims
-  (Caleb's call): wings bank on the strafe keys and dive or pull up on
-  forward and back (`Actor.glide_trim`); forward with no strafe key banks
-  the glide round onto the view's heading (`Actor.glide_steer`), so
-  "forward" is always the way you face, and with no keys the glide flies
-  straight on wherever you look. Gliding, Shift + S (wings pulled up) boosts
-  upward instead of back (Caleb's call). The glide's attitude is held in the
-  world while the view turns, so spinning the camera never drags the body
-  round (`ActorSkin._update_glide`). And a boost runs along the view's
-  heading, climbing only on jump and descend, never on the view's pitch.
+  steady state. Rigs come in tiers (Caleb's call): Mk1 to Mk3 of each, a tier
+  made with `ItemDB._rig_tier` from a lower tier's stats. A tier sets `FlightRig.tier`
+  and `ceiling` (`ItemDB.RIG_CEILINGS`: 25, 60, 100 m) and may only make the
+  rig run cooler, never faster: cruise and dash speeds stay the same on
+  every tier, a boost is never faster than the Mk2 jetpack's, and the heat
+  bar stays 100. The ceiling is measured
+  from the world's ground, never a roof (`Actor.ground_level`: the map's
+  `ground_height`, else its origin), and only limits lift: the climb eases
+  off under it (`FlightRig.climb_room`) and a kick, pulse or launch is cut
+  to top out on it (`lift_cap`), or refused without heat. Only Mk1 drops or
+  is sold: Mk2 and up are crafted from blueprints (DESIGN.md section 10),
+  so no loot table may list them.
+  The keys fly every rig and the mouse only looks and aims
+  (Caleb's call), with one exception: wings fly where you look, like a
+  bird's (Caleb's call, so you never fly sideways to your view). They bank
+  round onto the view's heading (`Actor.glide_steer`), the strafe keys roll
+  a harder turn, and forward and back dive or pull up (`Actor.glide_trim`),
+  never the view's pitch. Holding free look (V, `ActorCommand.free_look`,
+  Caleb's call) the wings fly straight on and the view looks and aims
+  anywhere; let go and they come round onto the view. In free look the
+  body twists round its length to face the view, so looking behind lays it
+  on its back, a backstroke, to shoot behind (`ActorSkin._look_roll`, view
+  only; check with `visual_check.tscn -- <dir> --flight-only`). A glide flies like a wing (`Actor._glide_velocity`):
+  speed is momentum, a turn costs speed, a bank sinks faster, pulling up in a
+  turn tightens it, and below the stall speed the wings stall
+  (`Actor.glide_stalled`: they barely turn and drop at `stall_sink` until the
+  nose drops and the speed comes back). Gliding, Shift is a wing boost
+  instead of a dash (`FlightRig.glide_boost`): it thrusts you the way you
+  face and the glide keeps that speed, and Shift + S boosts upward
+  (`glide_boost_climb`); wings never dash sideways. The glide's attitude is
+  held in the world while the view turns, so spinning the camera never
+  drags the body round (`ActorSkin._update_glide`). And a jetpack boost
+  runs along the view's heading, climbing only on jump and descend, never
+  on the view's pitch.
   Every rig air dashes on Shift + a move key (`ActorCommand.sprint_pressed`,
   `Actor._air_dash`, tuned by the rig's `air_dash_*` stats): the dash is
   added on top of the rig's own flight and taken back off, so a glide or a
@@ -393,10 +418,15 @@ without Caleb, and update the gap list when a PR closes a row.
   the lock brackets stay (`VisorHud.reticle_shown`), and the helmet wears
   its health strip and system light on the back of the head
   (`ActorSkin._update_vitals`, `helmet_light`), where a pack or a slung gun
-  never covers them. Apart from the
-  thin health arc, do not repeat the wrist on the glass (ammo, the map,
-  standing): the wrist shows you, the visor shows what is around you. Mk2
-  helmets are loot only. Check the glass by eye with
+  never covers them. The glass carries
+  only your always-in-view readings (the health arc with armor and stamina
+  inside it and the ability's state under it, and with a flight rig the
+  heat gauge and rig cue high on the right, `VisorHud._draw_vitals` and
+  `_draw_heat`; squad markers and the landing warning are still to come,
+  per DESIGN.md sections 3 and 5); do not put the map or standing there, they
+  stay on the watch. Mk2
+  helmets are never sold or dropped: like rigs, they are crafted from
+  blueprints (DESIGN.md section 10), so no loot table may list them. Check the glass by eye with
   `visual_check.tscn -- <dir> --visors-only`.
 - Vehicles are items tagged `vehicle`, tuned by their stats, and spawned by
   `Raid` (never carried). `core/vehicle/vehicle.gd` reads its rider's
@@ -449,8 +479,9 @@ without Caleb, and update the gap list when a PR closes a row.
   them (`NetSession.InputBuffer`): nothing is held back to smooth a bad
   connection, because a held input is input delay. A tick with nothing to
   play is a guess (the held keys carry on) that counts as the next input,
-  and the real one is skipped when it arrives late, keeping its presses;
-  inputs that stay spare are trimmed. Each state entry carries the input
+  and the real one is skipped when it arrives late, keeping its presses
+  and any held key that went down in it (a one-tick tap of the trigger is a
+  shot, see `InputBuffer._late_taps`); inputs that stay spare are trimmed. Each state entry carries the input
   number the actor had been simulated up to (guesses included), and a
   player's own entry also carries the newest input received, which is the
   answer that stops the resending. The client corrects its own
@@ -484,7 +515,14 @@ without Caleb, and update the gap list when a PR closes a row.
   a name in `SocialService.PLACE_NAMES`. The phone's Controls app lists
   every key from `Phone.CONTROLS`, whose `{action}` names are filled in from
   the live `InputMap`; a new input action needs a row there (a test fails
-  otherwise), and a changed control needs its row's wording updated. Settings live in
+  otherwise), and a changed control needs its row's wording updated. The phone
+  is held, not overlaid: its screen is a `SubViewport` on a rounded slab held
+  up in front of the camera (drawn over the world on `Mirror.HELD_LAYER`, the
+  scene dimmed behind it), with a home screen of app icons; a new app is an
+  entry in `Phone.APPS` with an icon glyph in `Phone.AppIcon`. Holding it is
+  `ActorCommand.phone`, a held flag, so everyone else sees the one-handed hold
+  (`Locomotion.phone_pose`, the one place to swap in a shared hand pose).
+  Settings live in
   `core/settings/game_settings.gd` (its own save file); a server never reads them.
 - Dev mode is TEMPORARY (Caleb's call, to come out once the game is further
   along): `core/dev/dev_mode.gd`, switched in the phone's Settings app and
@@ -540,13 +578,25 @@ without Caleb, and update the gap list when a PR closes a row.
   add full-screen panels or overlays; information about a thing goes on or
   next to the thing (a `Label3D` tag, a sign) or into the phone. The HUD is
   for the crosshair, prompts, hit feedback and brief notices.
-- The watch and the phone split the job (Caleb's rule). The holographic
-  watch (`Hud.Wrist`, raised with X) is for gameplay: vitals, pack, ammo,
-  heat, standing and strongpoints, landing choices, and future in-raid
-  actions such as calling something in. The phone is for settings, talking
-  to friends and players, and information (news, the war feed). A new
-  in-raid action goes on the watch; a new social or info feature is a
-  phone app.
+- The watch and the phone split the job (Caleb's rule, revised: the watch no
+  longer carries vitals, heat and ammo; see DESIGN.md section 3). Vitals,
+  flight heat and ammo are always in view on the visor and the gear (health
+  arc, gun display, pack screen), so no key is needed to see them. The
+  holographic watch (`Hud.Wrist`, raised with X) is for the things you choose
+  to do in action: vehicles, the heavy weapon, artifacts, sign-out, banking,
+  the map and pings, landing choices and the pack. The phone is for
+  settings, talking to friends and players, and information (news, the war
+  feed). A new in-raid action goes on the watch; a new social or info
+  feature is a phone app. The watch is a card-sized hologram of icons, one
+  per thing it holds (`Hud.watch_slots`, `Hud.Wrist.SLOTS`): the icon you
+  look at opens with one short line, and controls are glyphs (wheel, click,
+  key cap), never words. Where you look is `PlayerController.watch_glance`
+  (sideways mouse moves the eyes across the card before the head). A new
+  watch feature is a new slot, not a new line of text. In third person the
+  card rises off the worn watch with a glow on the arm; it is never hung in
+  front of the camera. Vitals go on the card only where the visor cannot
+  show them (no helmet, or third person). Check it by eye with
+  `visual_check.tscn -- <dir> --watch-only`.
 - Money (`core/economy/`): the rules live once, in `economy.gd` (static, like
   `StashRules`), shared by `Profile` and `StashService`. Online, `credits`
   lives on the server's account and only changes there: through
