@@ -128,6 +128,8 @@ var notice_seconds := 4.5
 var net: NetSession
 var is_open := false
 var app := "contacts"
+## Tests set this: a headless run has no real mouse mode to capture.
+var mouse_in_world := false
 ## The contact whose conversation is open in Messages, or "".
 var chat_with := ""
 ## Contact id -> newest message id (in your own log) you have seen.
@@ -195,7 +197,7 @@ func _unhandled_input(event: InputEvent) -> void:
 func opens_on_escape(event: InputEvent) -> bool:
 	return event is InputEventKey and event.pressed and not event.echo \
 			and event.keycode == KEY_ESCAPE \
-			and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
+			and (mouse_in_world or Input.mouse_mode == Input.MOUSE_MODE_CAPTURED)
 
 
 ## The Mirror app's keys: up and down (or W and S) pick a choice, left and
