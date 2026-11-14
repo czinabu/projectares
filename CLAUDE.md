@@ -646,9 +646,12 @@ without Caleb, and update the gap list when a PR closes a row.
   the base or in the arena, and a kit of nothing is `[Loadout.BARE]`,
   because an empty kit still means the world's scrap kit to
   `Raid.add_player`. Only lost gear falls back to its scrap piece
-  (`StashRules.validate_loadout`); a new player starts in the scrap kit
-  (`StashRules.starter_loadout`), and a save without `StashRules.BARE_KEY`
-  is from before this rule and gets its empty slots filled once.
+  (`StashRules.validate_loadout`). A new player starts with nothing
+  equipped (`StashRules.new_player_loadout`, Caleb's call): no weapons,
+  armor or helmet, and puts everything on by hand the first time (the
+  welcome crate and the scrap pieces wait in the base). A save without
+  `StashRules.BARE_KEY` is from before the bare rule and gets its empty
+  slots filled once with the scrap kit (`StashRules.starter_loadout`).
 - `Raid` never touches `Profile` to build a kit. The kit is passed into
   `Raid.start`, so a server can supply it later.
 
@@ -811,6 +814,9 @@ without Caleb, and update the gap list when a PR closes a row.
   `HomeBase.show_gear(stash, loadout)` rebuilds the room from plain data, so
   it shows the local `Profile` solo and the server's account snapshot in a
   lobby. `core/base/base_layout.gd` decides what goes where from item tags.
+  Whatever is worn is always on show (`BaseLayout.plan` gives it a spot
+  even when better gear fills its section), so anything can be taken off
+  in the room. Helmets sit on the helmet shelf over the armor stands.
   Every weapon goes on the one armory rack (`BaseLayout.ARMORY`, Caleb's
   call): its sections hang on the walls of the armory alcove
   (`HomeBase.in_armory`), with the locker at the way in. Each weapon hangs
@@ -852,6 +858,11 @@ without Caleb, and update the gap list when a PR closes a row.
   written on a board hung over the lane, never on the screen. Nothing on the
   range goes through `Combat.deal` or pays mastery, because nothing there is
   real damage; never add an Actor target that takes some.
+  The starter bunker has no range: the same door opens on a small test
+  lane (`HomeBase._build_test_lane`, `in_lane`), 3 m by 15 m, a counter and
+  three plates at 4, 8 and 12 m that drop and pop back up, a hit counter on
+  its end wall, sealed at the far end by the firing range's bulkhead.
+  Buying the range removes the lane. Nothing there is real damage either.
   Past the range's far end is the flight course (`HomeBase._build_course`,
   `in_course`): an open-topped yard whose walls stand over every rig's
   ceiling, with a climb tower (and a ramp for wings), a gap to a second
@@ -930,7 +941,16 @@ without Caleb, and update the gap list when a PR closes a row.
   takes `Loadout.summon_time` by weight, during which the weapon cannot be
   used (`Actor.materialize_left`) and is drawn digitizing in on the one
   body (`ActorSkin._update_materialize`), then the watch rests
-  (`Loadout.summon_cooldown`). The squad ping (`Raid.ping`, `pinged`) goes
+  (`Loadout.summon_cooldown`). Storing is the summon in reverse: a click
+  on the weapon in hand asks `Raid.store` (`NetSession.store` online),
+  which puts it in the pack with its rounds at once and starts
+  `Loadout.store_weapon` (clients copy it from `Actor.weapon_stored`): the
+  weapon fades out of the hand over `Loadout.store_time`
+  (`Actor.dematerialize_left`, the same `_update_materialize` light run
+  backwards), unusable and with no switching, then `Actor._tick_store`
+  takes it off and leaves the hands empty. It needs room in the pack,
+  never stores a heavy weapon, and does not rest the watch. At home it
+  unequips the slot. The squad ping (`Raid.ping`, `pinged`) goes
   only to the pinger's side, like a visor tag. In third person the
   card rises off the worn watch with a glow on the arm (Caleb's feedback):
   it stands just past the character (`Wrist.tp_depth`, `tp_behind`), so the

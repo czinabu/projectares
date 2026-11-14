@@ -907,6 +907,8 @@ func _test_main_flow() -> void:
 	main._leave_raid()
 	main.go_home()
 	await frames(2)
+	# Something in hand to test with: a new player starts bare.
+	Profile.loadout = StashRules.starter_loadout()
 	main.start_raid("ashfront")
 	await frames(5)
 	check(main.raid != null and not main.hub.visible, "deploying starts a raid")
@@ -1319,6 +1321,8 @@ func _test_loadouts() -> void:
 
 	Profile.reset()
 	Profile.welcome_granted = true
+	# Wearing the scrap kit (a new player starts bare and puts it on by hand).
+	Profile.loadout = StashRules.starter_loadout()
 	Profile.add_to_stash(["rifle_carbine", "frame_bulwark", "hammer_breaker", "medkit", "medkit", "medkit", "scrap_metal"])
 	check(not Profile.equip("primary", "hammer_breaker"), "an item cannot go in the wrong slot")
 	check(not Profile.equip("primary", "dmr_longshot"), "an item you do not own cannot be equipped")
@@ -1328,7 +1332,7 @@ func _test_loadouts() -> void:
 	var kit := Profile.checkout_loadout(world)
 	check("rifle_carbine" in kit and "frame_bulwark" in kit and "hammer_breaker" in kit,
 			"deploying takes the chosen gear")
-	check("jetpack_mk1" in kit, "an empty slot gets the free scrap item")
+	check("jetpack_mk1" in kit, "a scrap piece left on deploys with the rest")
 	check(kit.count("medkit") == 2 and "field_dressing" not in kit, "up to two medkits come along")
 	check(Profile.stash == (["medkit", "scrap_metal"] as Array[String]), "deployed gear leaves the stash")
 
@@ -1379,11 +1383,16 @@ func _test_loadouts() -> void:
 			"lost gear leaves the loadout, and the free scrap piece takes its slot")
 	await _end_raid(raid)
 
-	# With nothing owned, the kit is the full free scrap kit.
+	# A new player has nothing on, so deploys bare; the scrap kit put on by
+	# hand deploys as the full free scrap kit.
 	Profile.reset()
 	Profile.welcome_granted = true
 	kit = Profile.checkout_loadout(world)
-	check(kit == world.starter_loadout(), "an empty stash deploys the scrap kit")
+	check(kit.all(func(id: String) -> bool: return ItemDB.has_tag(id, "heal")),
+			"a new player with nothing equipped deploys bare (healing aside): %s" % [kit])
+	Profile.loadout = StashRules.starter_loadout()
+	kit = Profile.checkout_loadout(world)
+	check(kit == world.starter_loadout(), "with the scrap kit put on, an empty stash deploys the scrap kit")
 
 	# Healing uses any heal item and its own strength.
 	raid = await _new_raid(62, false)
@@ -2880,10 +2889,11 @@ func _test_mastery() -> void:
 
 	# Hub: the panel shows the tracks of your loadout and what a raid earned.
 	Profile.reset()
+	Profile.loadout = StashRules.starter_loadout()
 	var panel := MasteryPanel.new()
 	add_child(panel)
 	check(panel.loadout_tracks() == ["rifle", "blade", "frame_light"],
-			"an empty loadout shows the scrap kit's mastery")
+			"the scrap kit shows its mastery")
 	Profile.mastery.add_xp("rifle", 200)
 	var text := panel.describe_earned({"mastery_xp": {"rifle": 100}})
 	check("Rifle +100" in text and "level 1!" in text, "the hub announces a level up")
@@ -2963,10 +2973,14 @@ func _sign_in(session_name: String, port: int) -> NetSession:
 
 
 ## Signs in, equips `gear` (slot -> item id) in the lobby, and deploys.
-func _join(session_name: String, port: int, gear := {}) -> NetSession:
+## A new account starts bare, so test players put on the scrap kit first and
+## `gear` on top of it.
+func _join(session_name: String, port: int, p_gear := {}) -> NetSession:
 	var session := await _sign_in(session_name, port)
 	if session == null:
 		return null
+	var gear := StashRules.starter_loadout()
+	gear.merge(p_gear, true)
 	for slot: String in gear:
 		session.equip(slot, gear[slot])
 	await _wait_until(func() -> bool:
@@ -4090,6 +4104,22 @@ func _test_online() -> void:
 						or not there.weapons.any(func(w: Weapon) -> bool: return w.item_id == worn_before))
 			await _wait_until(seen_swap, 180)
 			check(seen_swap.call(), "the other client sees the summoned weapon on them")
+			# The watch's store, online: the summoned weapon goes back into the pack.
+			await _wait_until(func() -> bool: return me.materialize_left <= 0.0, 180)
+			var stores := [0]
+			me.weapon_stored.connect(func(_id: String, _m: int, _r: int) -> void: stores[0] += 1)
+			var pack_now := me.inventory.items.size()
+			alpha.store(looted_weapon)
+			var put_away := func() -> bool:
+				return stores[0] > 0 and Loadout.worn_index(me, slot) < 0 and me.inventory.items.size() == pack_now + 1
+			await _wait_until(put_away, 240)
+			check(put_away.call() and looted_weapon not in me.gear_items,
+					"the server stores the weapon in hand: it fades out and is in the pack")
+			var seen_store := func() -> bool:
+				var there := bravo.actor_for(alpha.my_actor_id)
+				return there != null and Loadout.worn_index(there, slot) < 0
+			await _wait_until(seen_store, 180)
+			check(seen_store.call(), "the other client sees it put away")
 			# A ping reaches the pinger; a stranger on another side hears nothing.
 			var ping_heard := [0, 0]
 			alpha.raid.pinged.connect(func(_a: Actor, _at: Vector3) -> void: ping_heard[0] += 1)
@@ -4950,9 +4980,9 @@ func _test_online_stash() -> void:
 		OS.kill(pid)
 		return
 	check(cara.raid == null and cara.my_actor_id < 0, "signing in does not enter the raid")
-	check("rifle_carbine" in cara.account.stash and cara.account.loadout == StashRules.starter_loadout()
+	check("rifle_carbine" in cara.account.stash and cara.account.loadout.is_empty()
 			and not cara.account.has("secret_hash"),
-			"the lobby shows the stash the server keeps, with a new account's crates, in the scrap kit")
+			"the lobby shows the stash the server keeps, with a new account's crates, nothing equipped")
 
 	# Someone else cannot take the name.
 	var thief := _new_client("Cara", StashService.new_secret())
@@ -4968,7 +4998,7 @@ func _test_online_stash() -> void:
 	cara.lobby_error.connect(func(reason: String) -> void: errors.append(reason))
 	cara.equip("primary", "dmr_longshot")
 	await _wait_until(func() -> bool: return not errors.is_empty(), 120)
-	check(errors.size() == 1 and cara.account.loadout.get("primary", "") == "rifle_scrap",
+	check(errors.size() == 1 and cara.account.loadout.get("primary", "") == "",
 			"the server refuses gear the account does not own")
 	cara.equip("primary", "rifle_carbine")
 	await _wait_until(func() -> bool: return cara.account.loadout.get("primary", "") == "rifle_carbine", 120)
@@ -5049,7 +5079,7 @@ func _test_online_stash() -> void:
 	hub.online_equip_requested.connect(func(slot: String, item_id: String) -> void: asked.append([slot, item_id]))
 	hub.enter_lobby(service.snapshot(id), Worlds.get_world("ashfront"))
 	check(hub.in_lobby() and hub.options_for("primary") == (["rifle_carbine", "rifle_scrap"] as Array[String])
-			and hub.equipped("primary") == "rifle_scrap", "in a lobby the hub lists the server's stash and the free scrap")
+			and hub.equipped("primary") == "", "in a lobby the hub lists the server's stash and the free scrap, nothing on yet")
 	var loadout_before := Profile.loadout.duplicate()
 	hub._on_picked(1, "primary")
 	check(asked == [["primary", "rifle_carbine"]] and Profile.loadout == loadout_before,

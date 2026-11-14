@@ -54,8 +54,16 @@ static func _rules(t: Node) -> void:
 static func _saves(t: Node) -> void:
 	Profile.reset()
 	Profile.welcome_granted = true
-	t.check(Profile.loadout == StashRules.starter_loadout() and Profile.equipped("primary") == "rifle_scrap",
-			"a new player starts in the free scrap kit")
+	t.check(Profile.loadout.is_empty() and Profile.equipped("primary") == "" and Profile.equipped("helmet") == ""
+			and Profile.equipped("frame") == "",
+			"a new player starts with nothing equipped: no weapons, armor or helmet")
+	Profile.welcome_granted = false
+	Profile.grant_welcome_crate()
+	t.check("rifle_carbine" in Profile.stash and "frame_trooper" in Profile.stash and Profile.loadout.is_empty(),
+			"the welcome crate waits in the stash, not worn")
+	t.check(Profile.equip("primary", "rifle_carbine") and Profile.equip("helmet", "visor_scav")
+			and Profile.equipped("primary") == "rifle_carbine" and Profile.equipped("helmet") == "visor_scav",
+			"and the new player puts it on by hand")
 	for slot: String in Loadout.SLOTS:
 		Profile.unequip(slot)
 	t.check(Profile.loadout.is_empty(), "every slot can be taken off")
@@ -73,7 +81,8 @@ static func _saves(t: Node) -> void:
 	service.persist = false
 	var signed := service.sign_in("Bare", Accounts.new_secret())
 	var id := str(signed.get("account_id", ""))
-	t.check(service.snapshot(id).loadout == StashRules.starter_loadout(), "a new account starts in the scrap kit too")
+	t.check(service.snapshot(id).loadout.is_empty() and "rifle_carbine" in service.snapshot(id).stash,
+			"a new account starts with nothing equipped too, its welcome crate in the stash")
 	for slot: String in Loadout.SLOTS:
 		service.unequip(id, slot)
 	t.check(service.snapshot(id).loadout.is_empty() and service.deploy(id, Arena.ArenaVenue.new()).kit.all(

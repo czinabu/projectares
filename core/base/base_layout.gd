@@ -28,6 +28,10 @@ const KINDS := {
 		"per_copy": false, "title": "Melee", "armory": true},
 	"armor_stand": {"tag": "armor", "spots": 6, "starter": 1, "steps": {"gear_hall": 6},
 		"per_copy": false, "title": "Armor stands"},
+	# Helmets sit on a shelf over the armor stands, so the one you wear can
+	# always be taken off in the room (the free Scav Visor included).
+	"helmet_shelf": {"tag": "helmet", "spots": 6, "starter": 2, "steps": {"gear_hall": 6},
+		"per_copy": false, "title": "Helmets"},
 	"rig_stand": {"tag": "flight_rig", "spots": 4, "starter": 1, "steps": {"gear_hall": 4},
 		"per_copy": false, "title": "Flight rigs"},
 	"chip_case": {"tag": "ability", "spots": 6, "starter": 0, "steps": {"gear_hall": 6},
@@ -100,17 +104,19 @@ static func slot_for(id: String) -> String:
 ##   count     how many copies the stash holds
 ##   slot      the loadout slot it fits, or ""
 ##   equipped  true if it is in the loadout right now
-## Within a kind the most valuable items get the first spots. Items that do
-## not fit are left in storage: see `stored_away`. `upgrades` is the base's
-## owned upgrade ids: it sets how many spots each kind has (see `spots`).
+## Within a kind the most valuable items get the first spots, except that
+## whatever you have on is always on show, so it can be taken off there.
+## Items that do not fit are left in storage: see `stored_away`. `upgrades`
+## is the base's owned upgrade ids: it sets how many spots each kind has
+## (see `spots`).
 static func plan(stash: Array, loadout: Dictionary, upgrades: Array = []) -> Array[Dictionary]:
 	var out: Array[Dictionary] = []
 	var by_kind := _sorted_by_kind(stash)
 	for kind: String in KINDS:
 		if is_at_bench(kind):
 			continue
-		var ids: Array = by_kind.get(kind, [])
 		var room := spots(kind, upgrades)
+		var ids: Array = _worn_shown(by_kind.get(kind, []), loadout, room)
 		# Only one copy can be equipped, so only the first spot shows it.
 		var marked := {}
 		for i in mini(ids.size(), room):
@@ -142,6 +148,29 @@ static func stored_away(stash: Array, upgrades: Array = []) -> Dictionary:
 		if extra > 0:
 			out[kind] = extra
 	return out
+
+
+## `ids` (most valuable first) with anything `loadout` wears that would not
+## fit in `room` spots moved into the last spots that would show, so what you
+## have on is always on show. Order kept otherwise.
+static func _worn_shown(ids: Array, loadout: Dictionary, room: int) -> Array:
+	if ids.size() <= room or room <= 0:
+		return ids
+	var shown := ids.slice(0, room)
+	var hidden := ids.slice(room)
+	var worn := hidden.filter(func(id: String) -> bool:
+		var slot := slot_for(id)
+		return slot != "" and loadout.get(slot, "") == id and id not in shown)
+	var unique: Array = []
+	for id: String in worn:
+		if id not in unique:
+			unique.append(id)
+	worn = unique.slice(0, room)
+	if worn.is_empty():
+		return ids
+	var bumped := shown.slice(room - worn.size())
+	return shown.slice(0, room - worn.size()) + worn + bumped + hidden.filter(func(id: String) -> bool:
+		return id not in worn)
 
 
 ## kind -> the ids that want a spot there, most valuable first. One entry per

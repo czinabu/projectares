@@ -15,8 +15,8 @@ extends Node3D
 ##
 ## The base grows with the account's upgrades (`BaseUpgrades`, the third
 ## thing `show_gear` is given). With none it is the starter bunker: the
-## armory is a shallow nook, the garage has one bay, the firing range is shut
-## and a few displays have fewer spots (`BaseLayout.spots`). What is not
+## armory is a shallow nook, the garage has one bay, the firing range is
+## replaced by a small test lane (`_build_test_lane`) and a few displays have fewer spots (`BaseLayout.spots`). What is not
 ## owned yet is sealed behind a `Bulkhead` that shows its name and price in
 ## the room; using one twice asks to buy it through `upgrade_requested`, and
 ## whoever owns the account decides and calls `show_gear` again.
@@ -56,6 +56,7 @@ const BaseLayout := preload("res://core/base/base_layout.gd")
 const BaseUpgrades := preload("res://core/base/base_upgrades.gd")
 const VehicleScript := preload("res://core/vehicle/vehicle.gd")
 const MirrorScript := preload("res://core/visual/mirror.gd")
+const SkinScript := preload("res://core/visual/actor_skin.gd")
 
 # Room tuning.
 var room_size := Vector3(24.0, 6.0, 18.0)
@@ -75,6 +76,15 @@ var garage_opening := 10.0
 ## length (z), entered through a door `range_door` wide and high.
 var range_size := Vector3(12.0, 10.0, 50.0)
 var range_door := Vector2(1.6, 3.0)
+## The starter bunker's test lane, in the first stretch of the range's hall
+## behind the same door: width (x), height (y) and length (z) from the back
+## wall's face, a counter `lane_counter` in from the wall, and a plate this
+## far past the counter for each of `lane_plates`. A plate that is hit drops
+## and stands again after `lane_pop`. Buying the firing range takes it away.
+var lane_size := Vector3(3.0, 3.5, 15.0)
+var lane_counter := 1.5
+var lane_plates: Array[float] = [4.0, 8.0, 12.0]
+var lane_pop := 1.5
 ## The flight course (Caleb's balance pass): an open-topped yard past the
 ## far end of the range, entered through a door `course_door` (x offset,
 ## width, height) in the range's end wall, to time each rig on a climb, a
@@ -170,6 +180,9 @@ const DEPLOY_DEPTH := 4.4
 ## The storage wall: shelves along the front wall from this x, left of the
 ## door, and the height of each kind's shelf.
 const STORAGE_FROM_X := -10.6
+## How high the helmet shelf over the armor stands is: above the stands' sign,
+## still in reach.
+const HELMET_SHELF_Y := 3.2
 const STORAGE_ROWS := {"supplies": 0.95, "chip_case": 1.9, "trophy": 2.85}
 
 ## Display kinds whose title is already on the room or the furniture.
@@ -197,6 +210,13 @@ var range_shots := 0
 var range_hits := 0
 var range_last := ""
 var range_board: Label3D
+var range_sign: Label3D
+## The starter bunker's test lane: its plates, its score and the small board
+## that shows it. Empty once the firing range is bought.
+var lane_targets: Array[RangeTarget] = []
+var lane_shots := 0
+var lane_hits := 0
+var lane_board: Label3D
 ## The flight course's run: -1 waiting at the start line, then 0 climbing,
 ## 1 crossing the gap, 2 sprinting. Seconds since the start, the time at
 ## each stage's end, the rig flown, the last result and each rig's best
@@ -314,7 +334,10 @@ class RangeTarget:
 	var centre := Vector3.ZERO
 	var plate: MeshInstance3D
 	var hits := 0
+	## More than 0: a hit drops it, and it stands again after this many seconds.
+	var pop_time := 0.0
 	var _flash := 0.0
+	var _down := 0.0
 
 	func _init() -> void:
 		collision_layer = Actor.LAYER_WORLD
@@ -331,6 +354,8 @@ class RangeTarget:
 
 	## True if a shot that stopped at `point` (global) stopped on this.
 	func took(point: Vector3) -> bool:
+		if _down > 0.0:
+			return false
 		var local := to_local(point) - centre
 		var half := size * 0.5 + Vector3.ONE * 0.12
 		return absf(local.x) <= half.x and absf(local.y) <= half.y and absf(local.z) <= half.z
@@ -338,7 +363,11 @@ class RangeTarget:
 	func flash() -> void:
 		hits += 1
 		_flash = 0.15
-		if plate:
+		if pop_time > 0.0:
+			_down = pop_time
+			rotation.x = -1.45
+			collision_layer = 0
+		elif plate:
 			plate.scale = Vector3.ONE * 1.12
 
 	func cool(delta: float) -> void:
@@ -346,6 +375,13 @@ class RangeTarget:
 			_flash -= delta
 			if _flash <= 0.0 and plate:
 				plate.scale = Vector3.ONE
+		if _down > 0.0:
+			_down -= delta
+			if _down <= 0.0:
+				rotation.x = 0.0
+				collision_layer = Actor.LAYER_WORLD
+			elif _down < 0.2:
+				rotation.x = -1.45 * _down / 0.2
 
 
 ## A sealed upgrade: a bulkhead, shutter or post with a panel that names
@@ -638,6 +674,8 @@ func _physics_process(delta: float) -> void:
 	for target in targets:
 		target.place(_range_time)
 		target.cool(delta)
+	for target in lane_targets:
+		target.cool(delta)
 	if not suited or player == null or not is_instance_valid(player):
 		return
 	_tick_course(delta)
@@ -653,6 +691,15 @@ func _physics_process(delta: float) -> void:
 
 ## A shot from the player's gun: scored if it was fired on the range.
 func _on_range_shot(from: Vector3, to: Vector3, gun: Gun) -> void:
+	if in_lane(to_local(from)):
+		lane_shots += 1
+		for target in lane_targets:
+			if target.took(to):
+				target.flash()
+				lane_hits += 1
+				break
+		_update_lane_board()
+		return
 	if not in_range(to_local(from)):
 		return
 	range_shots += 1
@@ -674,6 +721,16 @@ func _update_board() -> void:
 		range_board.text += "\nLast hit: %s" % range_last
 	else:
 		range_board.text += "\nStep past the line and fire. Nothing here is lost."
+
+
+func _update_lane_board() -> void:
+	if lane_board == null:
+		return
+	lane_board.text = "HITS %d    SHOTS %d" % [lane_hits, lane_shots]
+	var marks := PackedStringArray()
+	for metres in lane_plates:
+		marks.append(str(int(metres)))
+	lane_board.text += "\nPlates at %s m" % ", ".join(marks)
 
 
 ## The station with this id, or null.
@@ -711,6 +768,15 @@ func in_garage(point: Vector3) -> bool:
 func in_range(point: Vector3) -> bool:
 	var wall_z := room_size.z * 0.5
 	return point.z < -wall_z and point.z > -wall_z - range_size.z and absf(point.x) < range_size.x * 0.5
+
+
+## True if `point` (local to the base) is inside the starter bunker's test
+## lane (never once the firing range is bought: it takes its place).
+func in_lane(point: Vector3) -> bool:
+	if owns("firing_range"):
+		return false
+	var wall_z := room_size.z * 0.5
+	return point.z < -wall_z and point.z > -wall_z - 0.5 - lane_size.z and absf(point.x) < lane_size.x * 0.5
 
 
 ## True if `point` (local to the base) is inside the flight course's yard.
@@ -861,6 +927,9 @@ func spot_transform(kind: String, index: int) -> Transform3D:
 		"armor_stand":
 			# The back wall, left of the door to the range.
 			return _spot(Vector3(-10.5 + 1.8 * i, 0.0, -wall_z + 1.0), 0.0)
+		"helmet_shelf":
+			# A shelf on the back wall over the armor stands, above their sign.
+			return _spot(Vector3(-10.5 + 0.9 * i, HELMET_SHELF_Y, -wall_z + 0.3), 0.0)
 		"rig_stand":
 			# The back wall, right of the door to the range.
 			return _spot(Vector3(2.0 + 2.0 * i, 0.0, -wall_z + 1.0), 0.0)
@@ -1083,6 +1152,7 @@ func _build_range() -> void:
 		number.rotation.x = -PI / 2.0
 		add_child(number)
 	var title := _label("FIRING RANGE", accent, 0.36)
+	range_sign = title
 	title.name = "RangeSign"
 	title.position = Vector3(0, range_door.y + 0.5, -wall_z + 0.06)
 	add_child(title)
@@ -1109,6 +1179,70 @@ func _build_range() -> void:
 			var light := Look.lamp(Color(1.0, 0.94, 0.85), 3.5, 14.0)
 			light.position = Vector3(0, y - 1.0, at_z)
 			add_child(light)
+
+
+## The starter bunker's test lane: bare concrete behind the back wall's door,
+## 3 m wide and about 15 m long, with a waist-high counter to shoot over and
+## three plates that drop when hit and stand again, at set distances from the
+## counter, and a small board on the end wall that counts hits. It sits in
+## the range's own hall, so the weapons are free there like on the range
+## (`in_range`), but it is sealed at its far end by the firing range's
+## bulkhead; buying the range clears all of this. Nothing here is real damage.
+func _build_test_lane() -> void:
+	var wall_z := room_size.z * 0.5
+	var width := lane_size.x
+	var height := lane_size.y
+	var length := lane_size.z
+	var start := -wall_z - 0.5
+	var mid := start - length * 0.5
+	var end := start - length
+	var accent := Color(1.0, 0.62, 0.22)
+	var first := get_child_count()
+	for side: float in [-1.0, 1.0]:
+		_wall(Vector3(0.5, height, length), Vector3(side * (width * 0.5 + 0.25), height * 0.5, mid), Vector3(-side, 0, 0))
+	_ceiling(Vector2(width, length), Vector3(0, 0, mid), height)
+	# Bare concrete over the range's floor marks.
+	add_child(_part(Vector3(width, 0.04, length), Vector3(0, 0.02, mid), Color(0.38, 0.38, 0.37)))
+	var line_z := start - lane_counter
+	_box(Vector3(width, 1.0, 0.5), Vector3(0, 0.5, line_z), _shell("wall"))
+	add_child(_part(Vector3(width, 0.04, 0.6), Vector3(0, 1.02, line_z), accent, true))
+	var plate_x: Array[float] = [-0.8, 0.8, -0.8]
+	for i in lane_plates.size():
+		var metres := lane_plates[i]
+		var at := Vector3(plate_x[i % plate_x.size()], 0, line_z - metres)
+		var target := _make_target("plate", at)
+		target.pop_time = lane_pop
+		target.name = "LanePlate_%d" % i
+		add_child(target)
+		lane_targets.append(target)
+		var number := _label("%d m" % int(metres), Color(0.85, 0.85, 0.8), 0.25)
+		number.position = Vector3(-width * 0.5 + 0.5, 0.06, line_z - metres)
+		number.rotation.x = -PI / 2.0
+		add_child(number)
+	var board := Node3D.new()
+	board.name = "LaneBoard"
+	board.position = Vector3(0, 2.95, end + 0.08)
+	board.add_child(_part(Vector3(2.4, 0.55, 0.05), Vector3(0, 0, -0.03), Color(0.1, 0.11, 0.12)))
+	board.add_child(_part(Vector3(2.28, 0.45, 0.02), Vector3(0, 0, 0.0), Color(0.02, 0.05, 0.07), true))
+	lane_board = _label("", Color(0.6, 0.95, 1.0), 0.12)
+	lane_board.name = "LaneScore"
+	lane_board.outline_size = 0
+	lane_board.position = Vector3(0, 0, 0.02)
+	board.add_child(lane_board)
+	add_child(board)
+	_update_lane_board()
+	if Look.enabled:
+		var light := Look.lamp(Color(1.0, 0.94, 0.85), 3.0, 10.0)
+		light.position = Vector3(0, height - 0.4, mid)
+		add_child(light)
+	# All of it goes with the upgrade: one node to clear.
+	var lane := Node3D.new()
+	lane.name = "TestLane"
+	for node in get_children().slice(first):
+		remove_child(node)
+		lane.add_child(node)
+	_keep(lane)
+	_add_bulkhead("firing_range", _spot(Vector3(0, 0, end - 0.25), 0.0), "slab", Vector2(width, height))
 
 
 ## The flight course's yard past the range: open to the sky, low walls,
@@ -1198,37 +1332,44 @@ func _build_targets(line_z: float) -> void:
 		{"at": Vector3(0.0, 7.0, line_z - 30.0), "kind": "drone", "phase": TAU / 2.0},
 	]
 	for spec: Dictionary in specs:
-		var target := RangeTarget.new()
-		target.kind = spec["kind"]
-		target.home = spec["at"]
-		target.phase = spec.get("phase", 0.0)
+		var target := _make_target(spec["kind"], spec["at"], spec.get("phase", 0.0))
 		target.name = "Target_%s_%d" % [target.kind, targets.size()]
-		target.position = target.home
-		var face := Color(0.95, 0.9, 0.8)
-		var size := Vector3(0.8, 1.6, 0.1)
-		var centre := Vector3(0, 1.3, 0)
-		if target.kind == "drone":
-			size = Vector3(0.7, 0.3, 0.7)
-			centre = Vector3.ZERO
-			face = Color(0.4, 0.9, 1.0)
-		else:
-			target.add_child(_part(Vector3(0.08, 0.5, 0.08), Vector3(0, 0.25, 0), Color(0.3, 0.3, 0.32)))
-		target.size = size
-		target.centre = centre
-		target.plate = _part(size, centre, face, target.kind == "drone")
-		target.add_child(target.plate)
-		if target.kind != "drone":
-			# Rings on the plate, so a hit near the middle reads as one.
-			target.add_child(_part(Vector3(0.4, 0.4, 0.02), centre + Vector3(0, 0.2, 0.06), Color(0.8, 0.25, 0.2)))
-			target.add_child(_part(Vector3(0.14, 0.14, 0.03), centre + Vector3(0, 0.2, 0.07), Color(0.95, 0.9, 0.8)))
-		var shape := BoxShape3D.new()
-		shape.size = size
-		var col := CollisionShape3D.new()
-		col.shape = shape
-		col.position = centre
-		target.add_child(col)
 		add_child(target)
 		targets.append(target)
+
+
+## One range target of this kind standing (or flying) at `at`: a plate on a
+## post or a drone, with its collision. The caller names it and adds it.
+func _make_target(kind: String, at: Vector3, phase := 0.0) -> RangeTarget:
+	var target := RangeTarget.new()
+	target.kind = kind
+	target.home = at
+	target.phase = phase
+	target.position = at
+	var face := Color(0.95, 0.9, 0.8)
+	var size := Vector3(0.8, 1.6, 0.1)
+	var centre := Vector3(0, 1.3, 0)
+	if kind == "drone":
+		size = Vector3(0.7, 0.3, 0.7)
+		centre = Vector3.ZERO
+		face = Color(0.4, 0.9, 1.0)
+	else:
+		target.add_child(_part(Vector3(0.08, 0.5, 0.08), Vector3(0, 0.25, 0), Color(0.3, 0.3, 0.32)))
+	target.size = size
+	target.centre = centre
+	target.plate = _part(size, centre, face, kind == "drone")
+	target.add_child(target.plate)
+	if kind != "drone":
+		# Rings on the plate, so a hit near the middle reads as one.
+		target.add_child(_part(Vector3(0.4, 0.4, 0.02), centre + Vector3(0, 0.2, 0.06), Color(0.8, 0.25, 0.2)))
+		target.add_child(_part(Vector3(0.14, 0.14, 0.03), centre + Vector3(0, 0.2, 0.07), Color(0.95, 0.9, 0.8)))
+	var shape := BoxShape3D.new()
+	shape.size = size
+	var col := CollisionShape3D.new()
+	col.shape = shape
+	col.position = centre
+	target.add_child(col)
+	return target
 
 
 func _box(size: Vector3, at: Vector3, material: Material) -> StaticBody3D:
@@ -1479,6 +1620,8 @@ func _build_upgrades() -> void:
 	_gated.clear()
 	stations.clear()
 	bulkheads.clear()
+	lane_targets.clear()
+	lane_board = null
 	_build_bench()
 	_build_stations()
 	_build_gates()
@@ -1521,9 +1664,12 @@ func _build_gates() -> void:
 		for side: float in [-1.0, 1.0]:
 			_keep(_part(Vector3(2.7, 0.06, 0.08), lift + Vector3(0, 0.04, side * 1.35), hazard, true))
 			_keep(_part(Vector3(0.08, 0.06, 2.7), lift + Vector3(side * 1.35, 0.04, 0), hazard, true))
-	# The firing range: its door is shut.
+	# The firing range: the starter bunker has a small test lane through the
+	# door, sealed off at its far end from the range hall.
+	if range_sign:
+		range_sign.text = "FIRING RANGE" if owns("firing_range") else "TEST LANE"
 	if not owns("firing_range"):
-		_add_bulkhead("firing_range", _spot(Vector3(0, 0, -wall_z - 0.25), 0.0), "slab", range_door)
+		_build_test_lane()
 	# Upgrades that add spots to what is already in the room have a post
 	# where the new spots will be.
 	if not owns("gear_hall"):
@@ -1821,6 +1967,18 @@ func _fill(display: Display) -> void:
 			box = Vector3(1.2, 2.0, 1.0)
 			box_at = Vector3(0, 1.0, 0)
 			plate_at = Vector3(0, 2.25, 0)
+		"helmet_shelf":
+			# A bracket off the wall, the helmet resting on it as it is worn.
+			model.add_child(_part(Vector3(0.6, 0.05, 0.45), Vector3(0, -0.2, 0.1), Color(0.2, 0.2, 0.22)))
+			var stats := ItemDB.item_stats(id)
+			var helmet := SkinScript.build_helmet(str(stats.get("mode", "")), stats.get("glass_color", Color.WHITE),
+					Vector3(0.27, 0.31, 0.31), Color(0.22, 0.23, 0.25))
+			helmet.position = Vector3(0, -0.02, 0.12)
+			model.add_child(helmet)
+			box = Vector3(0.7, 0.55, 0.55)
+			box_at = Vector3(0, -0.05, 0.1)
+			plate_at = Vector3(0, -0.36, 0.38)
+			plate_size = 0.09
 		"rig_stand":
 			_build_rig(model, id, color)
 			box = Vector3(1.2, 2.0, 1.0)

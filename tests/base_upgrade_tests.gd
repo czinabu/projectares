@@ -6,6 +6,7 @@ extends RefCounted
 
 const BaseUpgrades := preload("res://core/base/base_upgrades.gd")
 const BaseLayout := preload("res://core/base/base_layout.gd")
+const StashRules := preload("res://core/account/stash_rules.gd")
 const Accounts := preload("res://core/account/stash_service.gd")
 const DevMode := preload("res://core/dev/dev_mode.gd")
 
@@ -60,6 +61,46 @@ static func _rules(t: Node) -> void:
 		if BaseUpgrades.price(id) <= 1500 and BaseUpgrades.blocked([], id) == "":
 			cheap += 1
 	t.check(cheap >= 3, "a new player has cheap first steps to choose from (%d)" % cheap)
+
+
+## The starter bunker's test lane: three plates that drop when hit and pop
+## back up, a hit counter, free weapons, and a sealed far end.
+static func _test_lane(t: Node, base: HomeBase, p: Actor) -> void:
+	t.check(base.lane_targets.size() == 3 and base.lane_size.x <= 3.0 and base.lane_size.z <= 15.0
+			and base.lane_targets.all(func(target: HomeBase.RangeTarget) -> bool:
+				return base.in_lane(target.home)), "three plates stand in a lane 3 m wide and 15 m long at most")
+	var counter_z := -base.room_size.z * 0.5 - 0.5 - base.lane_counter
+	var metres: Array[int] = []
+	for target in base.lane_targets:
+		metres.append(int(round(counter_z - target.home.z)))
+	t.check(metres == [4, 8, 12] and base.range_sign.text == "TEST LANE", "plates at 4, 8 and 12 m from the counter, under a lane sign")
+	t.check(not p.weapons_locked, "weapons are free in the lane")
+	var plate: HomeBase.RangeTarget = base.lane_targets[0]
+	p.global_position = base.to_global(Vector3(plate.home.x, 0.1, counter_z + 1.0))
+	p.velocity = Vector3.ZERO
+	await t.frames(2)
+	var eye := p.global_position + Vector3(0, p.eye_height, 0)
+	var dir := (plate.to_global(plate.centre) - eye).normalized()
+	p.cmd.yaw = atan2(-dir.x, -dir.z)
+	p.cmd.pitch = asin(dir.y)
+	p.cmd.aim_dir = dir
+	await t.frames(10)
+	var gun := p.get_active_weapon() as Gun
+	t.check(gun != null and gun.reserve_ammo > 0, "the starter kit's gun is in hand in the lane")
+	var shots := base.lane_shots
+	p.cmd.primary_pressed = true
+	p.cmd.primary = true
+	await t.frames(1)
+	p.cmd.primary_pressed = false
+	p.cmd.primary = false
+	await t.frames(3)
+	t.check(base.lane_shots == shots + 1 and base.lane_hits == 1 and plate.hits == 1
+			and "HITS 1" in base.lane_board.text and plate.rotation.x < -1.0 and plate.collision_layer == 0,
+			"a hit on a plate counts on the lane's board and drops it (%s)" % base.lane_board.text.replace("\n", " / "))
+	await t.frames(int(base.lane_pop * 60.0) + 30)
+	t.check(is_zero_approx(plate.rotation.x) and plate.collision_layer == Actor.LAYER_WORLD,
+			"the plate pops back up")
+	p.cmd.aim_dir = Vector3.ZERO
 
 
 ## How many spots each display kind has, by what is owned.
@@ -143,12 +184,51 @@ static func _count(base: HomeBase, kind: String) -> int:
 	return base.displays.filter(func(d: HomeBase.Display) -> bool: return d.kind == kind).size()
 
 
+## Caleb could not take his helmet off: helmets had no place in the room. They
+## sit on a shelf over the armor stands, the worn one always among them, and
+## using it there leaves the head bare.
+static func _helmet_shelf(t: Node, stash: Array[String]) -> void:
+	print("Home base helmet shelf")
+	var owned := stash.duplicate()
+	owned.append_array(["helm_warden", "helm_seeker", "helm_ember"])
+	t.check(BaseLayout.kind_for("helm_warden") == "helmet_shelf" and BaseLayout.kind_for("visor_scav") == "helmet_shelf",
+			"helmets go on the helmet shelf")
+	var plan := BaseLayout.plan(StashRules.equippable(owned), {"helmet": "visor_scav"})
+	var shelf := plan.filter(func(e: Dictionary) -> bool: return e["kind"] == "helmet_shelf")
+	t.check(shelf.size() == BaseLayout.spots("helmet_shelf") and shelf.any(func(e: Dictionary) -> bool:
+				return e["id"] == "visor_scav" and e["equipped"]),
+			"the helmet worn is on show even when better ones fill the starter shelf")
+	var base := HomeBase.new()
+	base.show_gear(owned, {"helmet": "visor_scav"})
+	t.add_child(base)
+	await t.frames(20)
+	var worn := base.display_for("visor_scav")
+	t.check(worn != null and worn.equipped and base.inside(worn.position) and worn.has_node("Model/HelmetModel"),
+			"the worn Scav Visor sits on the shelf as the helmet it is")
+	t.check(base.player.visor.enabled and base.player.visor.item_id == "visor_scav", "and you wear it in the room")
+	var asked := []
+	base.equip_requested.connect(func(slot: String, id: String) -> void: asked.append([slot, id]))
+	t._face_display(base.player, worn)
+	await t.frames(2)
+	t._face_display(base.player, worn)
+	t.check(base.player.find_interactable() == worn and worn.get_prompt() == "[F] Take off Scav Visor (equipped)",
+			"looking at it from the floor offers to take it off")
+	await t._use(base.player)
+	t.check(asked == [["helmet", ""]], "using it asks to leave the head bare")
+	base.show_gear(owned, {})
+	await t.frames(2)
+	t.check(not base.player.visor.enabled and not base.displays.any(func(d: HomeBase.Display) -> bool: return d.equipped),
+			"with it taken off you stand bareheaded")
+	base.queue_free()
+	await t.frames(2)
+
+
 ## The base with no upgrades: fewer spots, sealed rooms, shared consoles.
 static func _bunker(t: Node) -> void:
 	print("Home base starter bunker")
 	var stash := _big_stash()
 	var base := HomeBase.new()
-	base.show_gear(stash, {})
+	base.show_gear(stash, StashRules.starter_loadout())
 	t.add_child(base)
 	await t.frames(20)
 	t.check(base.upgrades.is_empty() and _count(base, "rack_guns") == 4 and _count(base, "rack_sidearms") == 2
@@ -156,6 +236,7 @@ static func _bunker(t: Node) -> void:
 			and _count(base, "rig_stand") == 1 and _count(base, "gunsmith") == 0 and _count(base, "supplies") <= 3
 			and _count(base, "chip_case") == 0 and _count(base, "trophy") == 0,
 			"a starter bunker shows a short rack, one bay and one stand of each kind")
+	await _helmet_shelf(t, stash)
 	var nook_wall := -base.room_size.x * 0.5 - base.nook_depth
 	var in_nook := true
 	var all_inside := true
@@ -214,8 +295,11 @@ static func _bunker(t: Node) -> void:
 	await t.frames(60)
 	p.cmd.move = Vector2.ZERO
 	await t.frames(2)
-	t.check(not base.in_range(base.to_local(p.global_position)) and base.bulkhead("firing_range") != null,
-			"the firing range's door is sealed")
+	var lane_at := base.to_local(p.global_position)
+	t.check(base.in_lane(lane_at) and base.bulkhead("firing_range") != null
+			and base.bulkhead("firing_range").position.z < lane_at.z,
+			"the starter bunker's door leads to a test lane, sealed from the range at its far end")
+	await _test_lane(t, base, p)
 	# The garage beyond the first bay is walled off.
 	p.global_position = base.to_global(base.spot_transform("bay", 0).origin + Vector3(-2.6, 0.1, 0.9))
 	p.velocity = Vector3.ZERO
@@ -321,8 +405,10 @@ static func _buying(t: Node) -> void:
 	await t.frames(60)
 	p.cmd.move = Vector2.ZERO
 	await t.frames(2)
-	t.check(base.in_range(base.to_local(p.global_position)) and base.bulkhead("firing_range") == null,
-			"the firing range's door opens once it is bought")
+	t.check(base.in_range(base.to_local(p.global_position)) and base.bulkhead("firing_range") == null
+			and not base.in_lane(base.to_local(p.global_position)) and base.lane_targets.is_empty()
+			and base.get_node_or_null("TestLane") == null,
+			"the firing range's door opens once it is bought, and the test lane goes")
 	base.show_gear(stash, {}, BaseUpgrades.full())
 	await t.frames(3)
 	var left: Array[String] = []

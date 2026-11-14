@@ -410,6 +410,14 @@ func _watch_shots(out_dir: String) -> void:
 			p.materialize_left = 0.0
 			await _settle(30)
 			await _shot(out_dir.path_join("summon_third_done.png"))
+			# Stored back: the same light, the other way.
+			raid.store(p, "rifle_carbine")
+			p.dematerialize_time = 30.0
+			p.dematerialize_left = 15.0
+			await _settle(10)
+			await _shot(out_dir.path_join("store_third_half.png"))
+			p.dematerialize_left = 0.0
+			await _settle(10)
 			controller.toggle_view()
 			raid.state_for(p).summon_ready_at = -INF
 			await _settle(40)
@@ -419,6 +427,13 @@ func _watch_shots(out_dir: String) -> void:
 			await _settle(10)
 			await _shot(out_dir.path_join("summon_first_half.png"))
 			p.materialize_left = 0.0
+			await _settle(10)
+			raid.store(p, "rifle_scrap")
+			p.dematerialize_time = 30.0
+			p.dematerialize_left = 15.0
+			await _settle(10)
+			await _shot(out_dir.path_join("store_first_half.png"))
+			p.dematerialize_left = 0.0
 			p.cmd.pitch = -0.25
 			await _settle(10)
 			raid.ping(p)
@@ -825,10 +840,10 @@ func _base_shots(out_dir: String) -> void:
 	var base := HomeBase.new()
 	var gear := ["rifle_carbine", "smg_stinger", "dmr_longshot", "shotgun_breacher", "blade_arc",
 			"hammer_breaker", "knife_gutter", "axe_splitter", "spear_lancer", "pistol_machine", "pistol_hand_cannon",
-			"optic_scope", "optic_reflex", "muzzle_suppressor", "grip_vertical", "frame_runner", "frame_trooper", "frame_bulwark", "jetpack_mk2", "boots_thruster",
+			"optic_scope", "optic_reflex", "muzzle_suppressor", "grip_vertical", "frame_runner", "frame_trooper", "frame_bulwark", "helm_warden", "helm_seeker", "helm_ember", "jetpack_mk2", "boots_thruster",
 			"wings_glide", "chip_blink", "chip_barrier", "chip_pulse", "bike_scrapper", "bike_raider", "medkit",
 			"medkit", "scrap_metal", "scrap_metal", "scrap_metal", "alloy_ingot", "reactor_core", "lattice_shard"]
-	var worn := {"primary": "dmr_longshot", "frame": "frame_bulwark", "vehicle": "bike_raider"}
+	var worn := {"primary": "dmr_longshot", "frame": "frame_bulwark", "helmet": "helm_warden", "vehicle": "bike_raider"}
 	# The finished base first; the starter bunker is shot at the end.
 	base.show_gear(gear, worn, BaseUpgrades.full())
 	add_child(base)
@@ -845,6 +860,7 @@ func _base_shots(out_dir: String) -> void:
 		"base_sidearms.png": [Vector3(-15.0, 1.9, 3.0), Vector3(-15.6, 1.8, -5)],
 		"base_blades.png": [Vector3(-15.0, 1.9, -2.6), Vector3(-15.6, 1.4, 5)],
 		"base_armor.png": [Vector3(-5.5, 2.0, -2.0), Vector3(-5.5, 1.1, -8.5)],
+		"base_helmets.png": [Vector3(-8.2, 2.4, -4.5), Vector3(-8.2, 2.9, -9.0)],
 		"base_rigs.png": [Vector3(5.5, 2.0, -2.0), Vector3(5.5, 1.1, -8.5)],
 		"base_garage.png": [Vector3(5.0, 2.6, 1.0), Vector3(16.0, 0.8, 0.0)],
 		"base_range.png": [Vector3(0.0, 2.2, -14.0), Vector3(0.0, 1.4, -40.0)],
@@ -908,6 +924,8 @@ func _base_shots(out_dir: String) -> void:
 		"bunker_nook.png": [Vector3(-5.5, 2.4, 2.5), Vector3(-15.0, 1.6, -0.5)],
 		"bunker_garage.png": [Vector3(5.0, 2.6, 1.0), Vector3(16.0, 1.4, 0.0)],
 		"bunker_range_door.png": [Vector3(0.0, 1.8, -4.5), Vector3(0.0, 1.7, -9.0)],
+		"bunker_test_lane.png": [Vector3(0.0, 1.7, -10.0), Vector3(0.0, 1.5, -24.0)],
+		"bunker_test_lane_side.png": [Vector3(1.2, 2.4, -11.4), Vector3(-0.6, 0.8, -20.0)],
 		"bunker_gear_post.png": [Vector3(-6.0, 1.6, -6.0), Vector3(-6.0, 1.4, -9.0)],
 		"bunker_consoles.png": [Vector3(6.5, 2.0, 5.5), Vector3(11.1, 1.3, 7.0)],
 		"bunker_bench.png": [Vector3(-8.2, 1.8, -0.2), Vector3(-9.2, 1.3, -2.8)],
