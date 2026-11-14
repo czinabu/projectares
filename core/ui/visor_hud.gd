@@ -1000,12 +1000,18 @@ func _draw_glass(ink: Color) -> void:
 func _draw_tracker(p: Actor, ink: Color) -> void:
 	if hud == null:
 		return
-	var text := tracker_text(hud.contracts, p.tally)
-	if text == "":
-		return
 	var at := Vector2(size.x * 0.06, size.y * 0.075) + sway
-	draw_rect(Rect2(at + Vector2(0.0, -9.0), Vector2(7.0, 7.0)), _lit(ink, 0.7), false, 1.0)
-	_text(at + Vector2(13.0, 0.0), text, _lit(ink, 0.75), HORIZONTAL_ALIGNMENT_LEFT, 360.0, 12)
+	var text := tracker_text(hud.contracts, p.tally)
+	if text != "":
+		draw_rect(Rect2(at + Vector2(0.0, -9.0), Vector2(7.0, 7.0)), _lit(ink, 0.7), false, 1.0)
+		_text(at + Vector2(13.0, 0.0), text, _lit(ink, 0.75), HORIZONTAL_ALIGNMENT_LEFT, 360.0, 12)
+		at.y += 18.0
+	# The new player's tour: what the handler asked for next, under it.
+	if hud.objective != "":
+		var c := at + Vector2(3.5, -5.5)
+		draw_polyline(PackedVector2Array([c + Vector2(0, -4), c + Vector2(4, 0), c + Vector2(0, 4),
+				c + Vector2(-4, 0), c + Vector2(0, -4)]), _lit(ink, 0.8), 1.0, true)
+		_text(at + Vector2(13.0, 0.0), hud.objective.to_upper(), _lit(ink, 0.8), HORIZONTAL_ALIGNMENT_LEFT, 360.0, 12)
 
 
 ## Thermal: how warm the wearer looks to another thermal visor, under the

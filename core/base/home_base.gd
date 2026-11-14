@@ -50,6 +50,9 @@ signal portal_entered(destination: String)
 ## in the same spot. Whoever drives the player (a controller, a camera)
 ## takes it over.
 signal player_replaced(actor: Actor)
+## A shot hit a plate on the test lane or a target on the firing range.
+## Nothing there is real damage; the new player's tour listens for it.
+signal target_hit
 
 const StashRules := preload("res://core/account/stash_rules.gd")
 const BaseLayout := preload("res://core/base/base_layout.gd")
@@ -698,6 +701,7 @@ func _on_range_shot(from: Vector3, to: Vector3, gun: Gun) -> void:
 			if target.took(to):
 				target.flash()
 				lane_hits += 1
+				target_hit.emit()
 				break
 		_update_lane_board()
 		return
@@ -709,6 +713,7 @@ func _on_range_shot(from: Vector3, to: Vector3, gun: Gun) -> void:
 			target.flash()
 			range_hits += 1
 			range_last = "%s at %d m" % [gun.display_name, int(round(from.distance_to(to)))]
+			target_hit.emit()
 			break
 	_update_board()
 

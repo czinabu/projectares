@@ -21,6 +21,8 @@ const BaseUpgrades := preload("res://core/base/base_upgrades.gd")
 ## The same blueprint and crafting rules the server's StashService uses.
 const Crafting := preload("res://core/progression/crafting.gd")
 const Human := preload("res://core/visual/human.gd")
+## The new player's tour (the handler on the phone).
+const Onboarding := preload("res://core/progression/onboarding.gd")
 ## Given once to every new player: a first gun, a frame, some healing and the
 ## starter motorbike (DESIGN.md section 8).
 const WELCOME_CRATE: Array[String] = ["rifle_carbine", "frame_trooper", "medkit", "medkit", "bike_scrapper"]
@@ -76,6 +78,9 @@ var arena_losses := 0
 var base_upgrades: Array[String] = []
 ## The blueprints known (blueprint item ids, see `Crafting`). Never lost.
 var blueprints: Array[String] = []
+## How far through the new player's tour this player is (`Onboarding`). A
+## view of their own progress, kept only here: a server never reads it.
+var onboarding := Onboarding.fresh()
 
 
 func _ready() -> void:
@@ -145,6 +150,7 @@ func reset() -> void:
 	arena_losses = 0
 	base_upgrades.clear()
 	blueprints.clear()
+	onboarding = Onboarding.fresh()
 
 
 func record_arena(won: bool) -> void:
@@ -340,6 +346,7 @@ func to_dict() -> Dictionary:
 		"arena_losses": arena_losses,
 		"base_upgrades": base_upgrades,
 		"blueprints": blueprints,
+		"onboarding": onboarding,
 	}.duplicate(true)
 
 
@@ -409,3 +416,11 @@ func load_dict(data: Dictionary) -> void:
 	blueprints = Crafting.clean(data.get("blueprints"))
 	Crafting.learn(stash, blueprints)
 	validate_loadout()
+	# A save from before the tour existed gets it only if it is a brand new
+	# player's (nothing played, nothing on); anyone else already knows the way.
+	if data.has("onboarding"):
+		onboarding = Onboarding.clean(data.onboarding)
+	elif raids_played == 0 and loadout.is_empty():
+		onboarding = Onboarding.fresh()
+	else:
+		onboarding = Onboarding.finished()

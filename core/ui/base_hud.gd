@@ -15,6 +15,9 @@ var controller: PlayerController
 var wrist: Hud.Wrist
 ## The contracts held, for the watch's contract icon (set by `main.gd`).
 var contracts: Array[Dictionary] = []
+## The new player's tour objective, a small line on the watch card (set by
+## `main.gd`, "" for none).
+var objective := ""
 
 ## Rarity, worth and description of the gear you look at, floating over it.
 var tag: Label3D
@@ -133,6 +136,7 @@ func _update_wrist(delta: float) -> void:
 	slots[Hud.Wrist.SLOTS.find("weapon")] = Hud.base_weapon_slot(p, weapons, weapon_pick)
 	slots[Hud.Wrist.SLOTS.find("vehicle")] = Hud.base_vehicle_slot(toys, toy_pick, controller != null and controller.pack_target() != null)
 	Hud.mark_open(slots, controller.watch_open if controller != null else "")
+	wrist.objective = objective
 	wrist.show_card(slots, focus, "", p.health.health / maxf(p.health.max_health, 1.0), [] as Array[float])
 	var picking_toys := controller != null and controller.is_picking_toys()
 	var picking_weapons := controller != null and controller.is_picking_weapons()

@@ -32,6 +32,9 @@ signal quit_requested
 ## The Mirror app was opened (true) or left (false). `Main` stands a mirror
 ## in front of the player while it is up (`core/visual/mirror.gd`).
 signal mirror_changed(up: bool)
+## The new player's tour was asked to stop ("skip") or start over ("replay")
+## from Settings. `Main` runs the tour (`Onboarding`).
+signal tour_requested(action: String)
 
 const SocialService := preload("res://core/social/social_service.gd")
 const GameSettings := preload("res://core/settings/game_settings.gd")
@@ -186,6 +189,15 @@ var wardrobe: CharacterPanel
 var mirror_up := false
 ## The choice the Mirror app's keys move (an index of `wardrobe.pick_keys()`).
 var mirror_row := 0
+## Messages kept on this phone only, offline too: the new player's handler
+## (`Onboarding.HANDLER_ID`). Each like a server message: {id, from,
+## from_name, to, to_name, text, time}. `Main` fills it.
+var local_messages: Array[Dictionary] = []
+## Contact id -> shown name, for the senders of `local_messages`.
+var local_names := {}
+## Whether the Settings app offers to skip the tour (it is running) or to
+## play it again. `Main` sets it.
+var tour_running := false
 
 ## The screen's 2D viewport: everything on the phone draws here.
 var _screen: SubViewport
@@ -417,10 +429,39 @@ func news() -> Array:
 	return social().get("news", SocialService.GAME_NEWS) if online() else SocialService.GAME_NEWS
 
 
+## The server's messages, then the ones kept on this phone (the handler).
+func all_messages() -> Array:
+	return social().get("messages", []) + local_messages
+
+
+## A message from someone who lives on this phone only (the new player's
+## handler), shown in Messages offline too, with a notice that names them.
+## `notice` is the short line the notice shows ("" shows the message);
+## `quiet` adds it with no notice at all (putting back old messages).
+func add_local_message(from: String, from_name: String, text: String, notice := "", quiet := false) -> void:
+	local_names[from] = from_name
+	local_messages.append({"id": local_messages.size() + 1, "from": from, "from_name": from_name,
+			"to": "", "to_name": "", "text": text, "time": Time.get_unix_time_from_system()})
+	if is_open and app == "messages" and chat_with == from:
+		_mark_read(from)
+	if not quiet:
+		show_notice("%s: %s" % [from_name, notice if notice != "" else _preview(text)])
+	refresh(app == "messages")
+
+
+## Forgets the messages from `from` kept on this phone.
+func clear_local_messages(from: String) -> void:
+	local_messages = local_messages.filter(func(m: Dictionary) -> bool: return m.from != from)
+	for i in local_messages.size():
+		local_messages[i].id = i + 1
+	read_upto.erase(from)
+	refresh(app == "messages")
+
+
 ## Every message to or from `other`, oldest first.
 func conversation_with(other: String) -> Array:
 	var out: Array = []
-	for message: Dictionary in social().get("messages", []):
+	for message: Dictionary in all_messages():
 		if message.from == other or message.to == other:
 			out.append(message)
 	return out
@@ -429,7 +470,7 @@ func conversation_with(other: String) -> Array:
 ## Contact ids you have messages with, newest conversation first.
 func conversations() -> Array[String]:
 	var out: Array[String] = []
-	var messages: Array = social().get("messages", [])
+	var messages := all_messages()
 	for i in range(messages.size() - 1, -1, -1):
 		var message: Dictionary = messages[i]
 		var other: String = message.to if message.from == my_id() else message.from
@@ -1111,13 +1152,16 @@ func _draw_contacts() -> void:
 
 
 func _draw_messages(draft: String) -> void:
-	if not online():
+	if not online() and local_messages.is_empty():
 		_offline_note()
 		return
 	if chat_with == "":
 		var others := conversations()
 		if others.is_empty():
 			_body.add_child(_label("No messages yet. Open Contacts and tap Message.", 15, Color(0.75, 0.75, 0.75)))
+		if not online():
+			_body.add_child(_label("You are offline: other players' messages reach you on a server.",
+					13, Color(0.6, 0.6, 0.6)))
 		for other in others:
 			var thread := conversation_with(other)
 			var last: Dictionary = thread[thread.size() - 1]
@@ -1132,7 +1176,7 @@ func _draw_messages(draft: String) -> void:
 	var info := contact(chat_with)
 	var head := HBoxContainer.new()
 	head.add_child(_button("< Back", open_app.bind("messages")))
-	var who := _label(info.get("name", chat_with), 19, UiTheme.INK)
+	var who := _label(info.get("name", local_names.get(chat_with, chat_with)), 19, UiTheme.INK)
 	who.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	head.add_child(who)
 	_body.add_child(head)
@@ -1145,6 +1189,11 @@ func _draw_messages(draft: String) -> void:
 		stamp.horizontal_alignment = bubble.horizontal_alignment
 		_body.add_child(stamp)
 		_body.add_child(bubble)
+	if local_names.has(chat_with):
+		# Someone who lives on this phone only does not read replies.
+		_compose = null
+		_scroll.set_deferred("scroll_vertical", 1 << 20)
+		return
 	var row := HBoxContainer.new()
 	_compose = LineEdit.new()
 	_compose.max_length = SocialService.MAX_MESSAGE
@@ -1440,10 +1489,23 @@ func _draw_settings() -> void:
 		"system":
 			_slider("Volume", "master_volume", Vector2(0.0, 1.0), 0.05, GameSettings.master_volume,
 					func(v: float) -> String: return "%d%%" % roundi(v * 100.0))
+			_body.add_child(_section("NEW PLAYER TOUR"))
+			if tour_running:
+				_body.add_child(_label("Your handler is walking you through the basics in Messages.", 13, DIM_INK))
+				_body.add_child(_button("Skip the tour", _ask_tour.bind("skip")))
+			else:
+				_body.add_child(_button("Play the tour again", _ask_tour.bind("replay")))
 			_body.add_child(_section("GAME"))
 			_body.add_child(_button("Quit the game", func() -> void: quit_requested.emit()))
 		"dev":
 			_draw_dev_mode()  # DEV MODE
+
+
+## Skip or replay the tour, then redraw (deferred: the button that was
+## clicked goes with the redraw).
+func _ask_tour(action: String) -> void:
+	tour_requested.emit(action)
+	refresh.call_deferred()
 
 
 ## A small heading inside an app's page.

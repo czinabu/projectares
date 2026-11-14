@@ -40,6 +40,9 @@ var notice_sink: Callable
 ## The contracts held (`Contracts.held` of the account), for the watch's
 ## contract icon. Set by `main.gd`; counted against `Actor.tally`.
 var contracts: Array[Dictionary] = []
+## The new player's tour objective (`Onboarding.objective`), set by
+## `main.gd`: a small line on the watch card and the visor glass, "" for none.
+var objective := ""
 ## The wrist display.
 var wrist: Wrist
 ## What the helmet draws on its glass in first person, and what its visor
@@ -187,6 +190,7 @@ func _process(delta: float) -> void:
 	# Your vitals are on the visor's edges while you look through it; with
 	# no helmet, or in third person, the card carries them in a thin strip.
 	var on_glass := visor != null and visor.glass_shown()
+	wrist.objective = objective
 	wrist.show_card(slots, focus, death, p.health.health / maxf(p.health.max_health, 1.0),
 			wrist_bars(p) if not on_glass else ([] as Array[float]),
 			log_lines.slice(maxi(0, log_lines.size() - 1)), {"summon": pack_text(p)},
@@ -1102,6 +1106,9 @@ void fragment() {
 	## The back of the wrist in that bone's space, where the watch face looks
 	## out (the bone's own +Y runs along the arm to the hand).
 	const FACE_AXIS := Vector3.RIGHT
+	## The new player's tour objective, drawn as a small line on the card
+	## (set before `show_card`). "" for none.
+	var objective := ""
 	## How far the back of the wrist is out from the wrist bone, in metres.
 	var wrist_skin := 0.03
 	## The card's face in metres, and its picture in pixels.
@@ -1494,6 +1501,7 @@ void fragment() {
 		card.slots = slots
 		card.summaries = summaries
 		card.popup = popup
+		card.objective = objective
 		card.focus = clampi(focus, 0, maxi(slots.size() - 1, 0))
 		card.death = death
 		card.bars = bars
@@ -1701,6 +1709,8 @@ void fragment() {
 				lines.append(card.summaries[tab])
 		if card.popup != "":
 			lines.append(card.popup)
+		if card.objective != "":
+			lines.append(card.objective)
 		return "\n".join(lines)
 
 	## The id of the icon being looked at ("" with none).
@@ -1733,6 +1743,8 @@ void fragment() {
 		var summaries := {}
 		## A line that is only there while it matters (the rig's cue in flight).
 		var popup := ""
+		## The new player's tour objective, a marked line under the tabs.
+		var objective := ""
 		var _time := 0.0
 
 		func _process(delta: float) -> void:
@@ -1845,6 +1857,16 @@ void fragment() {
 				y += 18.0
 				draw_string(font, Vector2(20, y), popup, HORIZONTAL_ALIGNMENT_CENTER, w - 40, 17,
 						Color(WARM, 0.95))
+			if objective != "":
+				y += 18.0
+				# A small diamond marks it as the thing to do next.
+				var text_w := minf(font.get_string_size(objective, HORIZONTAL_ALIGNMENT_LEFT, -1, 17).x, w - 70.0)
+				var x := (w - text_w) * 0.5
+				var c := Vector2(x - 12.0, y - 6.0)
+				var mark := Color(WARM, 0.75 + 0.25 * sin(_time * 3.0))
+				draw_polyline(PackedVector2Array([c + Vector2(0, -5), c + Vector2(5, 0), c + Vector2(0, 5),
+						c + Vector2(-5, 0), c + Vector2(0, -5)]), mark, 1.5, true)
+				draw_string(font, Vector2(x, y), objective, HORIZONTAL_ALIGNMENT_LEFT, w - 70.0, 17, Color(WARM, 0.9))
 			return y
 
 		## The vitals strip along the top, when the visor is not showing them:
