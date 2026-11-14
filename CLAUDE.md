@@ -32,13 +32,16 @@ without Caleb, and update the gap list when a PR closes a row.
   when the player presses the toggle (playtest feedback). The one exception:
   getting on a vehicle uses a separate riding view (third-person by default),
   and getting off restores the on-foot view. And in third person, while the
-  phone is out, the camera eases in over the shoulder to read the phone in
-  the hand (`PlayerController._read_phone`, Caleb's call) and eases back
-  after; the view stays third person. In both views the eyes drop to the
-  phone while it is out (`phone_view_pitch`, less with the Mirror app's
-  mirror up), the view only: `pitch` and the aim stay put, and the view
-  zooms in on it like aiming down sights (`phone_zoom`, Caleb's pick so the
-  screen reads; not with the mirror up).
+  phone is out, the camera eases in beside the head, square onto the
+  phone's screen and tipped with it so its lines read level, to read the
+  phone in the hand (`PlayerController._read_phone`, Caleb's call; over the
+  shoulder with the Mirror app's mirror up) and eases back after; the view
+  stays third person. In both views the eyes drop to the phone while it is
+  out (`phone_view_pitch`, less with the mirror up), the view only: `pitch`
+  and the aim stay put, and the view zooms in on it like aiming down sights
+  until the phone stands `phone_zoom` of the view's height, whatever the
+  field of view setting, with all of it kept in frame (`phone_fit_fov`,
+  Caleb's pick so the screen reads; not with the mirror up).
 - `Raid` has no camera, HUD, or input code. It must keep working headless.
 - The endless warzone. A `Raid` is one running world and it never ends: no
   timer, no exits, no restart. It keeps itself alive (`_tick_bots`,
@@ -779,9 +782,10 @@ without Caleb, and update the gap list when a PR closes a row.
   old holo panel): it is held at the chest, a forearm out and right of the
   middle, below the face (`Locomotion.phone_wrist`), so others and a mirror
   see a person reading a phone, and every view reads and clicks that same
-  face: first person from the eyes, third person over the shoulder, framed
-  off the crosshair (`PlayerController.phone_read_offset`) and widened to
-  keep the Mirror app's mirror in frame (`phone_mirror`). That mirror
+  face: first person from the eyes, third person from beside the head,
+  framed off the crosshair (`PlayerController.phone_read_offset`), and over
+  the shoulder, widened, to keep the Mirror app's mirror in frame
+  (`phone_mirror`). That mirror
   stands square in front of the body, never along the camera. The Mirror
   app's wheel works like a watch icon: it moves between rows, a click opens
   one for the wheel to turn, a right click closes it (`Phone._mirror_mouse`),
