@@ -1088,31 +1088,22 @@ void fragment() {
 	ALPHA = clamp(a + back * (1.0 - a), 0.0, 1.0) * mix(1.0, 0.6, settle);
 }
 """
-	## The light thrown from the watch face to the card: a cone that opens
-	## out of the face (UV.y 0 there, 1 at the card's frame), with faint
-	## bands of light running out along it to the card, so it reads as
-	## projected outwards, never drawn in (Caleb's feedback). `open` fades it
-	## while the card unfolds.
+	## The light thrown from the watch face up to the card: bright where it
+	## leaves the face (UV.y 0) and thinning towards the card (UV.y 1), with
+	## faint bands of light running out along it from the watch to the card,
+	## so it reads as projected outwards, never drawn in (Caleb's feedback).
+	## `open` fades it while the card unfolds.
 	const BEAM_SHADER := """
 shader_type spatial;
 render_mode unshaded, blend_add, cull_disabled, depth_draw_never, shadows_disabled;
 uniform vec3 color : source_color = vec3(0.35, 0.95, 1.0);
 uniform float open = 1.0;
-uniform float strength = 1.0;
 void fragment() {
 	float out_along = UV.y;
-	// Bands running outwards from the watch to the card.
-	float bands = 0.5 + 0.5 * sin((out_along * 7.0 - TIME * 3.2) * 6.2832);
+	float bands = 0.5 + 0.5 * sin((out_along * 6.0 - TIME * 2.8) * 6.2832);
 	bands = pow(bands, 3.0);
-	// Brightest where it leaves the face, still lit where it lands, and a
-	// soft rim on the card's frame where the light meets it.
-	float body = mix(0.16, 0.07, out_along) + 0.09 * bands;
-	float rim = smoothstep(0.9, 1.0, out_along) * 0.12;
-	// The sides fade so the cone's edges are where the light is.
-	float side = 1.0 - abs(UV.x * 2.0 - 1.0);
-	float edge = mix(1.0, 0.55, smoothstep(0.0, 0.6, side));
 	ALBEDO = color;
-	ALPHA = clamp((body * edge + rim) * open * strength, 0.0, 1.0);
+	ALPHA = clamp((mix(0.22, 0.04, out_along) + 0.08 * bands) * open, 0.0, 1.0);
 }
 """
 	## The bone the watch is worn on in third person.
@@ -1125,35 +1116,42 @@ void fragment() {
 	## The card's face in metres, and its picture in pixels.
 	var face_size := Vector2(0.18, 0.104)
 	var pixels := Vector2i(520, 300)
+	## Where the card opens when the camera looks out of the eyes, in the
+	## camera's space, at `reference_fov`: just over the raised wrist.
+	var first_person_at := Vector3(-0.1, -0.1, -0.38)
 	## From the eyes, how far above the watch face the card's centre stands.
 	var fp_card_lift := 0.09
 	var fp_card_reads_at := 0.42
 	## The field of view the sizes above are for. A wider view grows them.
 	var reference_fov := 80.0
-	## Third person: how big the card looks next to its first-person size,
-	## used only when there is no camera to size it by.
+	## Third person: how big the card looks next to its first-person size
+	## (it grows with the camera's distance, so it reads the same from behind
+	## the shoulder), and where it hangs: in front of the character, beyond
+	## them from the camera, up and to the left of the head (metres ahead
+	## along the view, up from the eyes, and to the side, negative is left).
+	## The light reaches out to it from the wrist.
 	var third_person_view := 0.84
-	## Third person (Caleb's feedback): the card is anchored on the arm, as in
-	## first person, not thrown out beside the character. It stands just over
-	## the raised wrist (`WeaponArm.watch_point`, in front of the chest and
-	## face), its lower edge `tp_card_lift` metres over the watch along the
-	## view's up, nudged `tp_card_out` further out along the view and
-	## `tp_card_side` to the side (negative is left, the watch arm's side). It
-	## is `tp_screen` of the view tall at its distance, kept between
-	## `tp_scale_range` of its first-person size so it never turns into a
-	## wall-sized panel, and backed with dark glass the world still shows
-	## through (`tp_backing`; it is a hologram, Caleb's call). The camera eases
-	## in over the shoulder while it is up (`PlayerController._read_watch`).
-	## The device, the arm and its pose are the same as in first person.
-	var tp_card_lift := 0.05
-	var tp_card_out := 0.04
-	var tp_card_side := -0.22
-	var tp_screen := 0.2
-	var tp_scale_range := Vector2(1.0, 3.4)
+	var projection_at := Vector3(-0.85, 0.35, 0.9)
+	## Third person (Caleb's feedback): the card stands just past the
+	## character, `tp_behind` metres beyond the head from the camera, so the
+	## body and the raised arm pass in front of it and it reads as thrown out
+	## of the watch. It is as tall as `tp_screen` of the view however far
+	## that is, beside the head off the crosshair, and backed with dark glass
+	## the world still shows through (`tp_backing`; it is a hologram, Caleb's
+	## call). The device, the arm and its pose are the same as in first
+	## person; only where the light lands differs.
+	var tp_behind := 0.5
+	var tp_screen := 0.34
+	var tp_lift := 0.06
 	var tp_backing := 0.6
-	## How wide the light is where it leaves the watch face, in metres (the
-	## face is 0.036 across).
-	var beam_mouth := 0.03
+	## How far, in metres at the head, the card keeps clear of the head and
+	## helmet from the camera's view.
+	var head_clearance := 0.05
+	## Third person: how far over the watch, as the camera sees it (a share
+	## of the view's height), the card's lower edge stays, so the light
+	## opens upwards from the wrist into the card rather than slanting down
+	## to it (Caleb's feedback).
+	var tp_over_wrist := 0.1
 	## The glow on the arm while the card is up: how bright, and how far it
 	## reaches.
 	var glow_energy := 0.7
@@ -1217,7 +1215,7 @@ void fragment() {
 		_holo.mesh = quad
 		# The card is light, drawn over everything in both views: from the
 		# eyes it hangs just in front of them, and from behind it is set
-		# over the raised wrist, past the arm from the camera.
+		# beside the character, clear of the head (`_clear_of_head`).
 		_holo_over = _holo_material(true)
 		_holo_behind = _holo_material(false)
 		_holo.material_override = _holo_over
@@ -1228,8 +1226,6 @@ void fragment() {
 		_beam.top_level = true
 		_beam.mesh = ImmediateMesh.new()
 		_beam.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		# Depth tested: in third person the body hides the light where it
-		# would pass behind it.
 		var beam_mat := ShaderMaterial.new()
 		var beam_shader := Shader.new()
 		beam_shader.code = BEAM_SHADER
@@ -1348,11 +1344,17 @@ void fragment() {
 		if third:
 			if is_inside_tree():
 				var wrist := watch_position(p)
-				# Over the raised wrist in both views, turned to face the
-				# camera, opening out of the watch.
+				# Out in front of the character, turned to face the camera, so
+				# it is never behind the body. It is sized by the camera's
+				# distance to look as big as in first person, and opens out
+				# from the wrist.
 				var facing := cam.global_basis.orthonormalized() if cam else p.global_basis.orthonormalized()
-				var spot := _tp_spot(wrist, facing, third_person_view)
-				var size := third_person_view
+				var ahead := Vector3(-facing.z.x, 0.0, -facing.z.z).normalized()
+				var side := Vector3(facing.x.x, 0.0, facing.x.z).normalized()
+				var spot := p.get_eye_position() + ahead * projection_at.z + Vector3.UP * projection_at.y \
+						+ side * projection_at.x
+				var far := cam.global_position.distance_to(spot) if cam else 3.0
+				var size := far / first_person_at.length() * third_person_view
 				var from_eyes := cam != null and cam.global_position.distance_to(p.get_eye_position()) < 0.7
 				if from_eyes:
 					# Looking out of the eyes, the card stands just over the
@@ -1363,8 +1365,11 @@ void fragment() {
 					spot = wrist + facing.y * fp_card_lift + facing.z * 0.02
 					size = clampf(cam.global_position.distance_to(spot) / fp_card_reads_at, 0.35, 1.0) * k
 				elif cam:
-					size = _tp_size(cam, wrist)
-					spot = _tp_spot(wrist, facing, size)
+					var depth := tp_depth(p, cam)
+					size = _tp_size(cam, depth)
+					spot = _clear_of_head(p, cam, _tp_spot(p, cam, depth), face_size.x * size * 0.5)
+					spot = _keep_on_screen(cam, spot, face_size.x * size * 0.5)
+					spot = _over_wrist(cam, spot, wrist, face_size.y * size * 0.5)
 				var at := wrist.lerp(spot, ease(open, -2.0))
 				_holo.global_transform = Transform3D(facing.scaled(Vector3(size, size * maxf(open, 0.001), size)), at)
 				_glow.global_position = wrist
@@ -1390,17 +1395,77 @@ void fragment() {
 		mat.render_priority = 10
 		return mat
 
-	## Third person: the card's scale so it stands `tp_screen` of the view
-	## tall where it opens over the wrist, kept within `tp_scale_range`.
-	func _tp_size(cam: Camera3D, wrist: Vector3) -> float:
-		var depth := maxf(-(cam.global_transform.affine_inverse() * wrist).z, 0.3)
-		var tall := 2.0 * depth * tan(deg_to_rad(cam.fov) * 0.5)
-		return clampf(tall * tp_screen / face_size.y, tp_scale_range.x, tp_scale_range.y)
+	## Third person: how far out along the view the card stands, `tp_behind`
+	## past the character's head.
+	func tp_depth(p: Actor, cam: Camera3D) -> float:
+		var head := cam.global_transform.affine_inverse() * p.get_eye_position()
+		return maxf(-head.z, 0.5) + tp_behind
 
-	## Third person: the card's centre, its lower edge just over the watch.
-	func _tp_spot(wrist: Vector3, facing: Basis, size: float) -> Vector3:
-		return wrist + facing.y * (tp_card_lift + face_size.y * size * 0.5) \
-				- facing.z * tp_card_out + facing.x * tp_card_side
+	## Third person: the card's scale so it stands `tp_screen` of the view tall
+	## at `depth` from the camera.
+	func _tp_size(cam: Camera3D, depth: float) -> float:
+		var tall := 2.0 * depth * tan(deg_to_rad(cam.fov) * 0.5)
+		return tall * tp_screen / face_size.y
+
+	## Third person: where the card starts, `depth` out from the camera,
+	## level with the head (a little over it), before it slides clear of it.
+	func _tp_spot(p: Actor, cam: Camera3D, depth: float) -> Vector3:
+		var to_cam := cam.global_transform.affine_inverse()
+		var head := to_cam * (p.get_eye_position() + Vector3.UP * 0.1)
+		var y := tp_lift * depth
+		if head.z < -0.01:
+			y += head.y * depth / -head.z
+		return cam.global_transform * Vector3(0.0, y, -depth)
+
+	## Third person: lifts the card's centre `spot` until its lower edge
+	## (`half_height` below it) stands `tp_over_wrist` over the watch as the
+	## camera sees it, so the projected light runs up into the card.
+	func _over_wrist(cam: Camera3D, spot: Vector3, wrist: Vector3, half_height: float) -> Vector3:
+		var to_cam := cam.global_transform.affine_inverse()
+		var card := to_cam * spot
+		var watch := to_cam * wrist
+		if card.z >= -0.01 or watch.z >= -0.01:
+			return spot
+		var watch_y := watch.y * card.z / watch.z
+		var view_tall := -2.0 * card.z * tan(deg_to_rad(cam.fov) * 0.5)
+		var short := watch_y + tp_over_wrist * view_tall - (card.y - half_height)
+		if short <= 0.0:
+			return spot
+		return cam.global_transform * (card + Vector3(0.0, short, 0.0))
+
+	## Keeps a card `half_width` wide whole on screen: slid back right if its
+	## left edge would leave the view.
+	func _keep_on_screen(cam: Camera3D, spot: Vector3, half_width: float) -> Vector3:
+		var to_cam := cam.global_transform.affine_inverse()
+		var card := to_cam * spot
+		if card.z >= -0.01:
+			return spot
+		var vp := cam.get_viewport()
+		var aspect := 16.0 / 9.0
+		if vp != null and vp.get_visible_rect().size.y > 0.0:
+			aspect = vp.get_visible_rect().size.x / vp.get_visible_rect().size.y
+		var half_view := -card.z * tan(deg_to_rad(cam.fov) * 0.5) * aspect
+		var left := card.x - half_width
+		if left < -half_view * 0.97:
+			card.x += -half_view * 0.97 - left
+		return cam.global_transform * card
+
+	## Third person: slides the card's centre `spot` left, as the camera sees
+	## it, until the card (half as wide as `half_width`) clears the head and
+	## helmet with room to spare, so the character is never hidden behind it.
+	func _clear_of_head(p: Actor, cam: Camera3D, spot: Vector3, half_width: float) -> Vector3:
+		var to_cam := cam.global_transform.affine_inverse()
+		var card := to_cam * spot
+		var head := to_cam * (p.get_eye_position() + Vector3.UP * 0.1)
+		if card.z >= -0.01 or head.z >= -0.01:
+			return spot
+		# The head's side and its edge, brought to the card's depth.
+		var at_depth := card.z / head.z
+		var head_left := head.x * at_depth - head_clearance * at_depth
+		var overlap := card.x + half_width - head_left
+		if overlap <= 0.0:
+			return spot
+		return cam.global_transform * (card - Vector3(overlap, 0.0, 0.0))
 
 	## The watch face, where the light comes from: the forearm's watch in
 	## first person, the one worn on the wrist bone in third.
@@ -1411,10 +1476,10 @@ void fragment() {
 			return face.global_position
 		return _holo.global_position - _holo.global_basis.y.normalized() * 0.1
 
-	## Light thrown out from the watch face to the card: a cone that starts
-	## at the face, the size of the face, and opens out to all four edges of
-	## the card, with a fine ray up each corner. The card is the cone's open
-	## end, so it reads as projected from the watch.
+	## Light thrown out from the watch face up to the card's lower edge,
+	## bright at the face and thinning out towards the card, with bands of
+	## light running out along it, so the card reads as projected rather
+	## than floating. Nothing crosses the card's face, so it stays readable.
 	func _draw_beam(third: bool, open: float) -> void:
 		var mesh := _beam.mesh as ImmediateMesh
 		mesh.clear_surfaces()
@@ -1425,40 +1490,24 @@ void fragment() {
 		(_beam.material_override as ShaderMaterial).set_shader_parameter("open", open)
 		var apex := _face_position(third)
 		var half := face_size * 0.5
-		var corners: Array[Vector3] = []
-		for c: Vector2 in [Vector2(-half.x, -half.y), Vector2(half.x, -half.y), Vector2(half.x, half.y), Vector2(-half.x, half.y)]:
-			corners.append(_holo.global_transform * Vector3(c.x, c.y, 0.0))
-		# Where the light leaves the face: a small square the size of the
-		# face, turned like the card.
-		var basis := _holo.global_basis.orthonormalized()
-		var mouth := beam_mouth * 0.5
-		var starts: Array[Vector3] = []
-		for c: Vector2 in [Vector2(-1, -1), Vector2(1, -1), Vector2(1, 1), Vector2(-1, 1)]:
-			starts.append(apex + basis.x * c.x * mouth + basis.y * c.y * mouth)
+		var left := _holo.global_transform * Vector3(-half.x, -half.y, 0.0)
+		var right := _holo.global_transform * Vector3(half.x, -half.y, 0.0)
+		# A fan of light up to the card's lower edge (UV.y runs out from the
+		# face, 0, to the card, 1) and two fine rays at its sides.
 		mesh.surface_begin(Mesh.PRIMITIVE_TRIANGLES)
-		for i in 4:
-			var j := (i + 1) % 4
-			# One side of the cone: from the face's edge out to the card's.
-			mesh.surface_set_uv(Vector2(0.0, 0.0))
-			mesh.surface_add_vertex(starts[i])
-			mesh.surface_set_uv(Vector2(1.0, 0.0))
-			mesh.surface_add_vertex(starts[j])
-			mesh.surface_set_uv(Vector2(1.0, 1.0))
-			mesh.surface_add_vertex(corners[j])
-			mesh.surface_set_uv(Vector2(0.0, 0.0))
-			mesh.surface_add_vertex(starts[i])
-			mesh.surface_set_uv(Vector2(1.0, 1.0))
-			mesh.surface_add_vertex(corners[j])
-			mesh.surface_set_uv(Vector2(0.0, 1.0))
-			mesh.surface_add_vertex(corners[i])
+		mesh.surface_set_uv(Vector2(0.5, 0.0))
+		mesh.surface_add_vertex(apex)
+		mesh.surface_set_uv(Vector2(0.0, 1.0))
+		mesh.surface_add_vertex(left)
+		mesh.surface_set_uv(Vector2(1.0, 1.0))
+		mesh.surface_add_vertex(right)
 		mesh.surface_end()
-		# Fine rays up the corners, lit the same way.
 		mesh.surface_begin(Mesh.PRIMITIVE_LINES)
-		for i in 4:
+		for corner in [left, right]:
 			mesh.surface_set_uv(Vector2(0.0, 0.0))
-			mesh.surface_add_vertex(starts[i])
+			mesh.surface_add_vertex(apex)
 			mesh.surface_set_uv(Vector2(0.0, 1.0))
-			mesh.surface_add_vertex(corners[i])
+			mesh.surface_add_vertex(corner)
 		mesh.surface_end()
 
 	## Fills the card: `slots` from `Hud.watch_slots`, `focus` the icon being

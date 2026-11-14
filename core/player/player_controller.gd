@@ -68,19 +68,6 @@ var phone_read_offset := 0.1
 var phone_read_rate := 6.0
 ## How far in to the phone the third-person camera is now (0..1).
 var phone_read := 0.0
-## Reading the watch in third person (Caleb's call, like the phone: made by
-## raising the watch, and the view stays third person): the camera eases in
-## over the left shoulder, the watch arm's side (the phone, in the right
-## hand, reads over the right), this far back from the eyes (m), out to the
-## side and up, keeping where it looks, so the card over the raised wrist
-## reads; it eases back out when the watch goes down. It never comes closer
-## than `Hud.Wrist` treats as looking out of the eyes (0.7 m).
-var watch_read_distance := 1.15
-var watch_read_side := -0.65
-var watch_read_lift := 0.12
-var watch_read_rate := 5.0
-## How far in to the watch the third-person camera is now (0..1).
-var watch_read := 0.0
 ## How far behind the eyes the third-person camera sits, in meters: a view
 ## over the right shoulder (the phone's "Camera distance" setting). Aiming
 ## moves in to `aim_distance_ratio` of it.
@@ -765,7 +752,6 @@ func _process(delta: float) -> void:
 			desired = pivot + (hit.position - pivot) * 0.85
 	camera.global_transform = Transform3D(look, desired)
 	_read_phone(delta)
-	_read_watch(delta, pivot, look)
 	var speeding := 0.0 if aiming or _zoom() > 1.0 else speed_fov_for(_view_speed())
 	_speed_fov_now = lerpf(_speed_fov_now, speeding, 1.0 - exp(-4.0 * delta))
 	var fov := aim_fov(weapon) if aiming else wanted_base_fov() + _speed_fov_now
@@ -1060,24 +1046,6 @@ func _read_phone(delta: float) -> void:
 	var aim_at := centre - heading * Vector3(phone_read_offset, 0.0, 0.0)
 	var reading := Transform3D(Basis.looking_at(aim_at - spot, Vector3.UP), spot)
 	camera.global_transform = camera.global_transform.interpolate_with(reading, w)
-
-
-## Eases the third-person camera in over the shoulder while the watch is up
-## so its card reads, and back out after. Only moved, never switched or
-## turned: the mouse looks as before. The phone's own reading view wins.
-func _read_watch(delta: float, pivot: Vector3, look: Basis) -> void:
-	var wanted := 1.0 if is_watch_up() and _wants_third_person() and not is_riding() and phone_read <= 0.0 else 0.0
-	watch_read = move_toward(watch_read, wanted, watch_read_rate * delta)
-	if watch_read <= 0.0 or _cam_dist <= watch_read_distance:
-		return
-	var spot := pivot + look * Vector3(watch_read_side, watch_read_lift, watch_read_distance)
-	# Pull in when a wall is in the way, as the usual view does.
-	var query := PhysicsRayQueryParameters3D.create(pivot, spot, Actor.LAYER_WORLD)
-	var hit := actor.get_world_3d().direct_space_state.intersect_ray(query)
-	if not hit.is_empty():
-		spot = pivot + (hit.position - pivot) * 0.85
-	var w := smoothstep(0.0, 1.0, watch_read)
-	camera.global_position = camera.global_position.lerp(spot, w)
 
 
 ## The holo panel of the phone in your hand, or null while it is away.
