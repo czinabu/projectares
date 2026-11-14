@@ -593,7 +593,9 @@ without Caleb, and update the gap list when a PR closes a row.
   `Visor.heat_of`: `Actor.heat_signature` (frames set it with a
   `heat_signature` stat) plus flight rig heat. The picture is `VisorHud`
   (`core/ui/visor_hud.gd`), a view: its glass is drawn in first person only
-  and only while a helmet is worn (Caleb agreed a visor counts as in-world,
+  and only while a helmet is worn, wherever it is worn: worlds, the plaza,
+  the arena and the home base (`BaseHud.visor`, `VisorHud.setup_base`;
+  Caleb's call) (Caleb agreed a visor counts as in-world,
   since you look through it); what a visor shows out in the world (snapshots,
   tag markers, pulse rings, glints) is there in either view. The glass is thin
   projected light, never a frame, a tint or a mask over the view (playtest
@@ -603,18 +605,28 @@ without Caleb, and update the gap list when a PR closes a row.
   the lock brackets stay (`VisorHud.reticle_shown`), and the helmet wears
   its health strip and system light on the back of the head
   (`ActorSkin._update_vitals`, `helmet_light`), where a pack or a slung gun
-  never covers them. The glass carries
-  only your always-in-view readings (the health arc with armor and stamina
-  inside it and the ability's state under it, and with a flight rig the
-  heat gauge and rig cue high on the right, `VisorHud._draw_vitals` and
-  `_draw_heat`; the landing warning is still to come, per DESIGN.md
-  section 5). Every working helmet also has a heading strip across the top,
-  bowed with the glass, that marks only what the wearer is already told
-  (`VisorHud.compass_marks`): squadmates (`VisorHud.squadmate`: a player in
+  never covers them. The glass hugs
+  its rim and keeps the middle clear (Caleb's redesign, from a reference he
+  liked, made our own: never copy any one game's look). It carries your
+  always-in-view readings as a row of hex cells along the lower left curve,
+  each filling like a gauge with its number over it (health, armor,
+  stamina, with a flight rig its heat and cue, the ability;
+  `VisorHud.vital_cells`; the landing warning is still to come, per
+  DESIGN.md section 5). Every working helmet also has a heading tape across
+  the top, bowed with the glass, that marks only what the wearer is already
+  told (`VisorHud.compass_marks`): squadmates (`VisorHud.squadmate`: a player in
   the same clan, or everyone where `WorldDef.players_allied`; never a bot or
   an enemy), the side's pings and the nearest depot, plus each helmet's own
-  finds (Spotter tags, Seeker scan snapshots, Warden the war's hot zone),
-  and the contract nearest done as a small tracker top left (`hud.contracts`).
+  finds (Spotter tags, Seeker scan snapshots, Warden the war's hot zone).
+  The same marks are plotted round you on a small contact scope top left
+  (`scope_points`; never ground or walls, it is not a map), with the
+  helmet's name, role and system beside it; the contracts held and the
+  tour's step are an objective block top right (`objective_lines`, from
+  `hud.contracts` and `hud.objective`); faint pitch ticks run up both edges.
+  Bottom right, mirroring the vitals, a quiet weapon readout (Caleb's pick):
+  the weapon in hand, the mag over a tick a round and the pack's rounds,
+  resting dim and lit only on a reload, a low mag or just after a switch
+  (`VisorHud.weapon_awake`); ammo is still read off the gun's own counter.
   Each helmet has a role it names as it comes on (`role_name`) and its own
   reticle; an Ember also reads its wearer's own heat signature. A scrap
   visor manages only a bearing. Do not put the map or standing there, they
@@ -983,7 +995,7 @@ without Caleb, and update the gap list when a PR closes a row.
   phone (`Phone.add_local_message`, kept on the phone only, so it works
   offline), one step at a time, and the step's objective is a small line on
   the watch card (`Hud.Wrist.objective`) and the visor glass (`Hud.objective`,
-  drawn by `VisorHud._draw_tracker`), never an overlay. Steps finish on the
+  drawn by `VisorHud._draw_objectives`), never an overlay. Steps finish on the
   action itself, reported by `main.gd` as events (`_tour_event`) and as what
   is already true (`_tour_check`), never on a button. It is a view of the
   player's own progress: it never locks, unlocks or hands out anything, and
