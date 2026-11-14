@@ -303,9 +303,13 @@ without Caleb, and update the gap list when a PR closes a row.
   the melee reach and shoulder turn, the reload motion, the low ready, the
   drawing back of a held heavy and the easing back of a recovering blade,
   the gun brought up to the eye,
-  the watch raise (from `ActorCommand.watch_up`) and the phone hold
+  the watch raise (from `ActorCommand.watch_up`), the phone hold
   (`ActionPose.phone`, from `ActorCommand.phone`, which `Locomotion` poses
-  the body from). `WeaponArm` and `ActorSkin` pose the model from it; a new
+  the body from) and the inspect key's look over (`ActionPose.inspect`,
+  from the held flag `ActorCommand.inspect`: the wrist comes to
+  `inspect_point` and turns the item through `INSPECT_TURNS`, timed by each
+  view from when it saw the flag; check with `visual_check.tscn -- <dir>
+  --inspect-only`). `WeaponArm` and `ActorSkin` pose the model from it; a new
   hand or weapon animation goes there. Weapons are held, not floated
   (Caleb's call): the hand carries them, each by its own grip (Caleb's
   call), found on the model rather than tuned by hand. `Look._measure_hold`

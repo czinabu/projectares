@@ -381,8 +381,8 @@ func _process(delta: float) -> void:
 		_reach = shared.reach + melee.visual.position
 	_turn = shared.turn if holding else _turn.lerp(Vector2.ZERO, 1.0 - exp(-26.0 * delta))
 	var gun := actor.get_active_weapon() as Gun
-	_gun_weight = shared.reload if gun != null and gun.visual != null and gun.visual.visible \
-			and not actor.is_dead else 0.0
+	_gun_weight = maxf(shared.reload, shared.inspect_for("gun")) if gun != null and gun.visual != null \
+			and gun.visual.visible and not actor.is_dead else 0.0
 	# The watch takes the left hand off any two-handed hold while it is up.
 	_watch = shared.watch if not actor.is_dead else 0.0
 	_ads = shared.ads if gun != null and gun.visual != null and gun.visual.visible \
@@ -391,7 +391,7 @@ func _process(delta: float) -> void:
 		_ads_fix = Vector3.ZERO
 	var raised := 0.0
 	if gun != null and gun.visual != null and gun.visual.visible and not actor.is_dead and override_weight <= 0.001:
-		raised = (1.0 - shared.low) * (1.0 - shared.reload)
+		raised = (1.0 - shared.low) * (1.0 - shared.reload) * (1.0 - shared.inspect_for("gun"))
 	_support = maxf(_ads, raised)
 	_ads_turn = shared.ads_stance(gun) * _ads if _ads > 0.0 else Vector2.ZERO
 
@@ -411,6 +411,12 @@ func _process(delta: float) -> void:
 		var held_by := reach_ik.influence
 		_target.global_position = holster if held_by <= 0.0 else _target.global_position.lerp(holster, override_weight)
 		reach_ik.influence = maxf(held_by, override_weight)
+	# Looking over a toy vehicle (or, as others see it, an empty hand): the
+	# hand comes up in front of the chest on its own.
+	var hand_look := shared.inspect_for("hand")
+	if hand_look > 0.0 and _weight <= 0.001 and override_weight <= 0.001:
+		_target.global_position = shared.inspect_point()
+		reach_ik.influence = hand_look
 	# Cocked for a windup the elbow rides high; thrown through, it drops.
 	_pole.global_position = actor.global_transform * (elbow.lerp(shared.elbow_pole(), _weight) if holding else elbow)
 	if off_ik:
@@ -470,6 +476,9 @@ func _reach_gun() -> void:
 	var wrist := skeleton.global_transform * skeleton.get_bone_global_pose(_wrist).origin
 	var aim := actor.global_basis.orthonormalized() * Basis(Vector3.RIGHT, actor.cmd.pitch)
 	_target.global_position = wrist + aim * pose.gun_offset().origin
+	var looking := pose.inspect_for("gun")
+	if looking > 0.0:
+		_target.global_position = _target.global_position.lerp(pose.inspect_point(), looking)
 	reach_ik.influence = 1.0
 
 
@@ -573,6 +582,7 @@ func _place_weapon() -> void:
 	_off_spot = Vector3.INF
 	if _off_weight <= 0.0:
 		_off_fix = Vector3.ZERO
+	_inspect_wrist()
 	_bend_to_grip()
 	if _support > 0.0:
 		_steady_gun()
@@ -619,6 +629,19 @@ func _place_weapon() -> void:
 		handle -= skeleton.global_basis * (skeleton.get_bone_global_pose(_off_wrist).basis * (_off_hold_point as Vector3))
 		handle += actor.global_basis.orthonormalized() * _off_fix
 	_off_target.global_position = handle.lerp(watch_point(), _watch)
+
+
+## Looking over what is in the hand (`ActionPose.inspect`): once the arm
+## has reached, the wrist turns the way the item is turned, so the hand
+## turns it rather than the item turning in a still hand.
+func _inspect_wrist() -> void:
+	var shared := _pose()
+	if _wrist < 0 or shared.inspecting() == "":
+		return
+	var aimed := actor.global_basis.orthonormalized() * Basis(Vector3.RIGHT, actor.cmd.pitch)
+	var world := aimed * shared.inspect_basis() * aimed.inverse()
+	var to_skeleton := skeleton.global_basis.orthonormalized()
+	_rotate_bone(_wrist, (to_skeleton.inverse() * world * to_skeleton).orthonormalized())
 
 
 ## Aiming down sights the off hand comes onto the gun: the fore grip of a
@@ -810,6 +833,8 @@ func _blade_turn(aimed: Basis) -> Basis:
 		var side := up.cross(body.z).normalized()
 		var across := Basis(side, up, side.cross(up).normalized())
 		turn = turn.slerp(across, _carry * hang)
+	if _pose().inspecting() == "melee":
+		turn = turn * _pose().inspect_basis()
 	return turn
 
 
@@ -831,6 +856,10 @@ func hold_weapon() -> void:
 		actor.hand.global_basis = turn * pose.gun_offset().basis
 	elif melee != null and shared and _ready_forearm != null:
 		actor.hand.global_basis = _blade_turn(aimed)
+	if shared and pose.inspect_for("hand") > 0.0:
+		# A toy vehicle turns in the hand as it is looked over.
+		var from := actor.global_basis.orthonormalized()
+		actor.hand.global_basis = from.slerp(aimed * pose.inspect_basis(), pose.inspect_for("hand"))
 	if melee != null and melee.visual != null and _grip_axis != Vector3.ZERO and _wrist >= 0 and _grip_weight > 0.0:
 		# The blade lies along the closed fist, wherever the wrist could
 		# actually turn: the hand carries it, it never turns past the hand.

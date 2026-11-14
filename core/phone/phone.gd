@@ -109,6 +109,7 @@ const CONTROLS := [
 		["Reload", "{reload}"],
 		["Primary / sidearm / melee", "{weapon_1} {weapon_2} {weapon_3}, or the wheel (watch down)"],
 		["Put away, or draw again", "{holster}"],
+		["Inspect what is in your hand (any key or click stops)", "{inspect}"],
 		["Use a medkit", "{heal}"],
 		["Use your ability", "{ability}"],
 		["Use your helmet's visor (zoom, scan, thermal)", "{visor}, again to step or turn off"],

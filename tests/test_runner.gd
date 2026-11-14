@@ -43,6 +43,7 @@ const TravelTests := preload("res://tests/travel_tests.gd")
 const BareLoadoutTests := preload("res://tests/bare_loadout_tests.gd")
 const TravelOnlineTests := preload("res://tests/travel_online_tests.gd")
 const RiskZoneTests := preload("res://tests/risk_zone_tests.gd")
+const InspectTests := preload("res://tests/inspect_tests.gd")
 
 var _passed := 0
 var _failed := 0
@@ -318,6 +319,7 @@ func _run() -> void:
 	await _test_view_match()
 	await _test_ads()
 	await _test_grips()
+	await _test_inspect()
 
 
 func _test_view_match() -> void:
@@ -330,6 +332,10 @@ func _test_ads() -> void:
 
 func _test_grips() -> void:
 	await GripTests.run(self)
+
+
+func _test_inspect() -> void:
+	await InspectTests.run(self)
 
 
 func _test_feel() -> void:

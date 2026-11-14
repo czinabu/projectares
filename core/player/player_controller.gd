@@ -148,6 +148,12 @@ var stance_control := StanceControl.MOVE
 ## The toy vehicle in the hand (an item id off the watch), or "". While one
 ## is held the weapon is put away: fire throws it, aim puts it back.
 var held_toy := ""
+## Seconds left of looking over what is in the hand (the inspect key),
+## sent as the held flag `ActorCommand.inspect` so everyone sees the item
+## brought up and turned (`ActionPose.inspect`). Anything you do with your
+## hands, sprinting, the watch or the phone stops it early. View only:
+## nothing in the simulation reads it.
+var inspect_left := 0.0
 
 var yaw := 0.0
 var pitch := 0.0
@@ -544,6 +550,9 @@ func throw_held_toy() -> void:
 
 ## Keeps the toy model in the hand in step with `held_toy`.
 func _show_held_toy() -> void:
+	var pose := actor.get_node_or_null(ActionPose.NODE_NAME) as ActionPose
+	if pose != null:
+		pose.toy_in_hand = held_toy != ""
 	var shown: String = _toy_node.get_meta("display_item", "") if _toy_node != null else ""
 	if _toy_node != null:
 		_toy_node.scale = Vector3.ONE * VehicleScript.TOY_SCALE
@@ -629,6 +638,8 @@ func _physics_process(delta: float) -> void:
 		cmd.switch_weapon = -1
 		_visor_level = 0
 		cmd.visor_level = 0
+		stop_inspect()
+		cmd.inspect = false
 		return
 	var captured := Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
 	cmd.yaw = yaw
@@ -658,6 +669,7 @@ func _physics_process(delta: float) -> void:
 	cmd.primary_pressed = captured and Input.is_action_just_pressed("fire")
 	cmd.secondary = captured and Input.is_action_pressed("alt_fire")
 	cmd.secondary_pressed = captured and Input.is_action_just_pressed("alt_fire")
+	var busy_hands := cmd.primary_pressed or cmd.secondary_pressed or cmd.sprint or cmd.dash or cmd.slide
 	if not wrist_raised:
 		watch_open = ""
 	elif watch_open != "" and cmd.secondary_pressed:
@@ -703,6 +715,42 @@ func _physics_process(delta: float) -> void:
 		cmd.switch_weapon = _pending_switch
 	_pending_switch = -1
 	cmd.aim_dir = _compute_aim_dir()
+	if Input.is_action_just_pressed("inspect"):
+		if inspect_left > 0.0:
+			stop_inspect()
+		else:
+			start_inspect()
+	elif busy_hands or cmd.reload_pressed or cmd.heal_pressed or cmd.ability_pressed \
+			or cmd.interact_pressed or cmd.switch_weapon != -1:
+		stop_inspect()
+	_tick_inspect(cmd, delta)
+
+
+## Starts looking over what is in the hand: the weapon drawn, or a toy
+## vehicle. Nothing happens with empty hands, on a vehicle, with the watch
+## up or the phone out.
+func start_inspect() -> void:
+	if actor == null or not is_instance_valid(actor) or actor.is_dead or is_riding() \
+			or wrist_raised or phone_out:
+		return
+	if held_toy == "" and actor.get_active_weapon() == null:
+		return
+	inspect_left = ActionPose.INSPECT_SECONDS
+
+
+## Puts the item back to the ready hold before the look over is done.
+func stop_inspect() -> void:
+	inspect_left = 0.0
+
+
+## Counts the look over down, and stops it once the hands are wanted for
+## something else (the watch, the phone, a vehicle, or nothing left in hand).
+func _tick_inspect(cmd: ActorCommand, delta: float) -> void:
+	if inspect_left > 0.0 and (wrist_raised or phone_out or is_riding() or actor.is_dead \
+			or (held_toy == "" and actor.get_active_weapon() == null)):
+		stop_inspect()
+	inspect_left = maxf(inspect_left - delta, 0.0)
+	cmd.inspect = inspect_left > 0.0
 
 
 ## With a toy in the hand the weapon is away: fire throws, aim puts it back.
