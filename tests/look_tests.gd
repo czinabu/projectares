@@ -82,7 +82,8 @@ static func run(t: Node) -> void:
 		t.check(skin.arm.reach_ik != null, tag + "the player's model can pose its weapon arm")
 		if sword != null and skin.arm.reach_ik != null:
 			var pose := ActionPose.of(raid.player)
-			t.check(skin.arm.arm_reach(sword) == null, tag + "the animation keeps the arm when no attack or guard is up")
+			t.check(skin.arm.arm_reach(sword) == pose.ready_reach(sword) and skin.arm.arm_reach(sword) != null,
+					tag + "with no attack or guard up the blade is held ready in front")
 			var reaches := {}
 			for side: int in [MeleeWeapon.Dir.LEFT, MeleeWeapon.Dir.RIGHT, MeleeWeapon.Dir.OVERHEAD]:
 				sword._windup_left = 1.0
@@ -116,7 +117,7 @@ static func run(t: Node) -> void:
 			t.check(skin.arm.off_ik != null and not skin.arm._off_fist.is_empty(), tag + "the model has an off hand for two-handed weapons")
 			sword._windup_left = 0.0
 			sword._blocking = true
-			t.check(skin.arm.arm_reach(sword) != null, tag + "a guard raises the arm")
+			t.check(skin.arm.arm_reach(sword) == pose.arm_guard, tag + "a guard raises the arm")
 			sword._blocking = false
 			var was_active := raid.player.active_weapon_index
 			raid.player.active_weapon_index = raid.player.weapons.find(sword)

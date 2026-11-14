@@ -130,6 +130,11 @@ var _off_target := Node3D.new()
 var _off_pole := Node3D.new()
 var _weight := 0.0
 var _grip_weight := 0.0
+## How far the empty hand is up as a guard behind a knife held ready (0..1).
+var _guard := 0.0
+## How far the off hand is on the handle under the weapon hand, for a
+## one-handed blade held ready in both hands (the katana), 0..1.
+var _hilt := 0.0
 var _off_weight := 0.0
 var _gun_weight := 0.0
 var _watch := 0.0
@@ -376,6 +381,9 @@ func _process(delta: float) -> void:
 	_grip_weight = move_toward(_grip_weight, 1.0 if holding else 0.0, delta * 8.0)
 	var two_handed: bool = holding and look.is_two_handed(melee)
 	_off_weight = move_toward(_off_weight, 1.0 if two_handed else 0.0, delta * 8.0)
+	var off_hold := shared.ready_off(melee) if holding else ""
+	_guard = shared.held_ready if off_hold == "guard" else move_toward(_guard, 0.0, delta * 8.0)
+	_hilt = shared.held_ready if off_hold == "hilt" and not two_handed else move_toward(_hilt, 0.0, delta * 8.0)
 	_carry = move_toward(_carry, 1.0 if two_handed else 0.0, delta * 6.0)
 	if reaching:
 		_reach = shared.reach + melee.visual.position
@@ -414,7 +422,7 @@ func _process(delta: float) -> void:
 	# Cocked for a windup the elbow rides high; thrown through, it drops.
 	_pole.global_position = actor.global_transform * (elbow.lerp(shared.elbow_pole(), _weight) if holding else elbow)
 	if off_ik:
-		off_ik.influence = maxf(maxf(_off_weight, _support) * (1.0 - _watch), _watch)
+		off_ik.influence = maxf(maxf(maxf(maxf(_off_weight, _support), _guard), _hilt) * (1.0 - _watch), _watch)
 		var off_pole := off_elbow.lerp(ads_off_elbow, _support) if _off_weight <= 0.0 else off_elbow
 		_off_pole.global_position = actor.global_transform * off_pole.lerp(watch_elbow, _watch)
 		if _watch > 0.0:
@@ -571,7 +579,7 @@ func _rotate_bone(bone: int, by: Basis) -> void:
 ## reaches for it.
 func _place_weapon() -> void:
 	_off_spot = Vector3.INF
-	if _off_weight <= 0.0:
+	if _off_weight <= 0.0 and _hilt <= 0.0:
 		_off_fix = Vector3.ZERO
 	_bend_to_grip()
 	if _support > 0.0:
@@ -589,6 +597,9 @@ func _place_weapon() -> void:
 		var aimed := actor.global_basis.orthonormalized() * Basis(Vector3.RIGHT, actor.cmd.pitch)
 		var turn := _blade_turn(aimed) * melee.visual.transform.basis.orthonormalized()
 		var blade := (skeleton.global_basis.orthonormalized().inverse() * turn.y).normalized()
+		# A reverse grip: the blade leaves the fist on the little-finger side.
+		if _pose().ready_reversed(melee):
+			blade = -blade
 		var bend := Quaternion(now, blade)
 		var angle := minf(bend.get_angle(), wrist_limit) * _grip_weight
 		if angle > 0.001:
@@ -599,6 +610,9 @@ func _place_weapon() -> void:
 	# the off arm reaches its wrist so the fist's middle is there.
 	var model := melee.visual.get_node_or_null("Model")
 	var along: float = model.get_meta("off_grip", off_hand_at) if model != null else off_hand_at
+	if _hilt > 0.0 and _off_weight <= 0.0:
+		# Held ready in both hands: the off fist right under the weapon hand.
+		along = -Look.HAND_WIDTH
 	var handle := melee.visual.global_transform * Vector3(0.0, along, 0.0)
 	# Out of the off arm's reach (a long haft hanging at the side), the hand
 	# slides up the handle toward the weapon hand until it can hold it.
@@ -618,6 +632,8 @@ func _place_weapon() -> void:
 	if _off_hold_point != null and _off_wrist >= 0:
 		handle -= skeleton.global_basis * (skeleton.get_bone_global_pose(_off_wrist).basis * (_off_hold_point as Vector3))
 		handle += actor.global_basis.orthonormalized() * _off_fix
+	if _guard > 0.0:
+		handle = handle.lerp(actor.global_transform * _pose().off_guard, _guard)
 	_off_target.global_position = handle.lerp(watch_point(), _watch)
 
 
@@ -804,6 +820,13 @@ func _curl(fist: Dictionary, weight: float) -> void:
 func _blade_turn(aimed: Basis) -> Basis:
 	var hang := clampf(1.0 - _pose().reach_weight, 0.0, 1.0)
 	var turn := aimed.slerp(_follow_turn(_forearm, _ready_forearm), hang) if _ready_forearm != null else aimed
+	# Held ready, the weapon stands in the fist the way its hold says.
+	var shared := _pose()
+	var melee := actor.get_active_weapon() as MeleeWeapon
+	if shared.held_ready > 0.0:
+		var stood: Variant = shared.ready_turn(melee)
+		if stood != null:
+			turn = turn.slerp(aimed * (stood as Basis), shared.held_ready)
 	if _carry > 0.0:
 		var body := actor.global_basis.orthonormalized()
 		var up := (body * carry_up).normalized()
@@ -836,6 +859,8 @@ func hold_weapon() -> void:
 		# actually turn: the hand carries it, it never turns past the hand.
 		var fist := (skeleton.global_basis.orthonormalized() * skeleton.get_bone_global_pose(_wrist).basis.orthonormalized()
 				* _grip_axis).normalized()
+		if pose.ready_reversed(melee):
+			fist = -fist
 		var blade := (actor.hand.global_basis.orthonormalized() * melee.visual.transform.basis.orthonormalized() * Vector3.UP).normalized()
 		var settle := Quaternion(blade, fist)
 		actor.hand.global_basis = Basis(Quaternion.IDENTITY.slerp(settle, _grip_weight)) * actor.hand.global_basis.orthonormalized()

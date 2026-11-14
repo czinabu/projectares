@@ -139,16 +139,18 @@ const GUN_GLOW := [
 ## Melee models picked by item tag, first match wins: file, length in meters,
 ## how far up from the pommel the hand grips it, and how it folds away when holstered (see `set_extend`): "blade" draws the
 ## blade into the hilt, "telescope" slides the shaft into itself, "" keeps
-## its shape. No file means the model is built in code (see `_spear_model`).
+## its shape, and how it is held ready in one hand (a key of
+## `ActionPose.ready_holds`; two-handed weapons are carried instead). No file
+## means the model is built in code (see `_spear_model`).
 const MELEE_MODELS := [
-	["hammer", "Hammer.glb", 1.15, 0.3, ""],
-	["knife", "Knife.glb", 0.5, 0.1, "blade"],
-	["axe", "Axe.glb", 0.85, 0.12, ""],
-	["spear", "", 2.1, 0.75, "telescope"],
-	["starter", "Sword.glb", 1.15, 0.13, "blade"],
-	["blade", "Katana.glb", 1.2, 0.14, "blade"],
+	["hammer", "Hammer.glb", 1.15, 0.3, "", "upright"],
+	["knife", "Knife.glb", 0.5, 0.1, "blade", "knife"],
+	["axe", "Axe.glb", 0.85, 0.12, "", "upright"],
+	["spear", "", 2.1, 0.75, "telescope", "upright"],
+	["starter", "Sword.glb", 1.15, 0.13, "blade", "upright"],
+	["blade", "Katana.glb", 1.2, 0.14, "blade", "katana"],
 ]
-const DEFAULT_MELEE := ["", "Sword.glb", 1.15, 0.13, "blade"]
+const DEFAULT_MELEE := ["", "Sword.glb", 1.15, 0.13, "blade", "upright"]
 const GUN_LENGTH := 0.72
 
 ## False on a headless server: nothing is dressed and no art is loaded.
@@ -1746,6 +1748,11 @@ func _spear_part(model: Node3D, mesh: PrimitiveMesh, at: Vector3, mat: Material,
 	part.position = at
 	part.scale = scale
 	model.add_child(part)
+
+
+## How `weapon` is held ready in one hand (see `MELEE_MODELS`).
+func ready_hold(weapon: Weapon) -> String:
+	return _melee_pick(weapon)[5]
 
 
 func _melee_pick(weapon: Weapon) -> Array:
