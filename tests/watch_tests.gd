@@ -12,6 +12,7 @@ const KIT: Array[String] = ["rifle_scrap", "blade_scrap", "pistol_service", "jet
 static func run(t: Node) -> void:
 	_rules(t)
 	await _summon(t)
+	await _store(t)
 	await _card(t)
 	await _ping_and_popups(t)
 	await _everywhere(t)
@@ -152,6 +153,116 @@ static func _summon(t: Node) -> void:
 	await t._end_raid(raid)
 
 
+static func _store(t: Node) -> void:
+	print("Watch: storing a weapon back into the pack")
+	var raid: Raid = await t._kit_raid(87, KIT)
+	var p := raid.player
+	var state := raid.state_for(p)
+	p.protected_left = 0.0
+	p.draw_weapon(p.weapon_for_key(1))
+	await t.frames(3)
+	var rifle := p.get_active_weapon() as Gun
+	t.check(rifle != null and rifle.item_id == "rifle_scrap", "holding the primary")
+	var held := Hud.weapon_slot(raid, p, 0)
+	t.check(held.detail.contains("store") and "click" in held.hints,
+			"the carousel offers to store the weapon in hand with a click: %s" % held.detail)
+	var stored: Array[String] = []
+	p.weapon_stored.connect(func(id: String, _mag: int, _reserve: int) -> void: stored.append(id))
+	t.check(raid.store(p, "pistol_service") != "" and raid.store(p, "scrap_metal") != "" and stored.is_empty(),
+			"only the weapon in hand can be stored")
+	t._aim_at(p, p.global_position + Vector3(0, 1.6, 30))
+	p.cmd.primary = true
+	p.cmd.primary_pressed = true
+	await t.frames(30)
+	p.cmd.primary = false
+	p.cmd.primary_pressed = false
+	await t.frames(5)
+	var rounds := rifle.ammo_in_mag
+	var reserve := rifle.reserve_ammo
+	var carried := p.inventory.items.size()
+	var worn := p.weapons.size()
+	var changes := [0]
+	raid.watch_changed.connect(func(_a: Actor) -> void: changes[0] += 1)
+	t.check(raid.store(p, "rifle_scrap") == "" and stored == (["rifle_scrap"] as Array[String]) and changes[0] == 1,
+			"the weapon in hand can be stored")
+	t.check(p.inventory.has_item("rifle_scrap") and p.inventory.items.size() == carried + 1
+			and "rifle_scrap" not in p.gear_items and "rifle_scrap" not in state.kit
+			and p.get_drop_items().count("rifle_scrap") == 1,
+			"it goes into the pack at once, and is still dropped exactly once")
+	t.check(p.storing_weapon() == rifle and p.dematerialize_left > 0.0
+			and is_equal_approx(p.dematerialize_time, Loadout.store_time("rifle_scrap"))
+			and Loadout.store_time("rifle_scrap") < Loadout.summon_time("rifle_scrap"),
+			"it dematerializes out of the hand, a little quicker than it came (%.2f s)" % p.dematerialize_time)
+	var ids: Array = Hud.weapon_entries(p).map(func(e: Dictionary) -> String: return e.id)
+	t.check(ids.count("rifle_scrap") == 1 and int(Hud.weapon_entries(p)[ids.find("rifle_scrap")].index) == -1,
+			"the carousel already lists it in the pack, once: %s" % ", ".join(ids))
+	t.check(raid.store(p, "rifle_scrap") != "", "and it cannot be stored twice")
+	p.cmd.primary = true
+	p.cmd.primary_pressed = true
+	p.cmd.switch_weapon = p.weapon_for_key(2)
+	await t.frames(3)
+	p.cmd.primary_pressed = false
+	p.cmd.switch_weapon = -1
+	t.check(rifle.ammo_in_mag == rounds and p.get_active_weapon() == rifle,
+			"while it fades it cannot be fired, or swapped for another")
+	p.cmd.primary = false
+	await t.frames(ceili(p.dematerialize_time * 60.0) + 10)
+	t.check(p.storing_weapon() == null and p.weapons.size() == worn - 1 and p.active_weapon_index == -1
+			and Loadout.worn_index(p, "primary") < 0 and not is_instance_valid(rifle),
+			"once it has, it is gone from the hands and the primary slot is empty")
+	t.check(p.weapons[p.last_drawn].item_id == "pistol_service" and p.weapon_for_key(1) >= 0
+			and p.weapons[p.weapon_for_key(1)].item_id == "pistol_service",
+			"the keys move up, and the holster key draws what is still worn")
+	t.check(raid.summon_wait(p) <= 0.0 and raid.summon(p, "rifle_scrap") == "",
+			"storing does not rest the watch, so it can be summoned straight back")
+	var back := p.get_active_weapon() as Gun
+	t.check(back != null and back.item_id == "rifle_scrap" and back.ammo_in_mag == rounds and back.reserve_ammo == reserve
+			and p.weapons.size() == worn and not p.inventory.has_item("rifle_scrap") and "rifle_scrap" in state.kit,
+			"summoned back into the empty slot, it comes with the rounds it had (%d/%d)" % [back.ammo_in_mag, back.reserve_ammo])
+	t.check(raid.store(p, "rifle_scrap") != "", "nor can one still materializing be stored")
+	await t.frames(ceili(p.materialize_time * 60.0) + 5)
+	while not p.inventory.is_full():
+		p.inventory.add_item("scrap_metal")
+	t.check(raid.store(p, "rifle_scrap") != "" and "click" not in Hud.weapon_slot(raid, p, 0).hints,
+			"with the pack full there is no room to store it")
+	raid.mode = Raid.Mode.CLIENT
+	t.check(raid.store(p, "rifle_scrap") != "", "a client cannot store on its own")
+	raid.mode = Raid.Mode.SOLO
+	# What a remote copy does with the server's word.
+	var copy := Actor.new()
+	raid.add_child(copy)
+	Loadout.equip(copy, KIT)
+	copy.draw_weapon(copy.weapon_for_key(3))
+	var blade := copy.get_active_weapon()
+	t.check(Loadout.store_weapon(copy, "rifle_carbine").id == "" and copy.storing_weapon() == null,
+			"a copy ignores a weapon it does not wear")
+	t.check(Loadout.store_weapon(copy, "blade_scrap").id == "blade_scrap" and copy.storing_weapon() == blade
+			and copy.inventory.items.is_empty(),
+			"a copy of another player dematerializes the weapon it is told, and touches no pack")
+	await t.frames(ceili(Loadout.store_time("blade_scrap") * 60.0) + 10)
+	t.check(Loadout.worn_index(copy, "melee") < 0 and copy.active_weapon_index == -1, "and then it is gone there too")
+	copy.queue_free()
+	# The controller: a click on the weapon in hand asks for the store.
+	var controller := PlayerController.new()
+	controller.setup(p)
+	raid.add_child(controller)
+	var asked: Array[String] = []
+	var summons: Array[String] = []
+	controller.store_requested.connect(func(id: String) -> void: asked.append(id))
+	controller.summon_requested.connect(func(id: String) -> void: summons.append(id))
+	controller.wrist_raised = true
+	controller.watch_focus_moved = true
+	controller.watch_focus = Hud.Wrist.SLOTS.find("weapon")
+	controller.click_watch()
+	var entries := controller.watch_weapons()
+	controller.weapon_pick = entries.map(func(e: Dictionary) -> int: return int(e.index)).find(p.active_weapon_index)
+	t.check(controller.click_watch() and asked == (["rifle_scrap"] as Array[String]) and summons.is_empty()
+			and controller._pending_switch < 0 and not controller.wrist_raised,
+			"a click on the weapon in hand asks to store it, and lowers the watch")
+	controller.queue_free()
+	await t._end_raid(raid)
+
+
 static func _card(t: Node) -> void:
 	print("Watch: the carousel card")
 	var kit: Array[String] = KIT.duplicate()
@@ -205,8 +316,9 @@ static func _card(t: Node) -> void:
 	t.check(hud.wrist.weapons_shown().size() == 4 and hud.wrist.get_node("Hologram/Weapons").visible
 			and hud.wrist.get_node("Hologram/Weapons").get_child_count() == 4,
 			"the weapons carried stand over the card as holograms")
-	t.check(hud.wrist.text().begins_with("Scrap Rifle") and hud.wrist.text().contains("in hand"),
-			"the weapon in your hand says so: %s" % hud.wrist.text().get_slice("\n", 0))
+	t.check(hud.wrist.text().begins_with("Scrap Rifle") and hud.wrist.text().contains("store")
+			and "click" in hud.wrist.focused_hints(),
+			"the weapon in your hand offers to store it: %s" % hud.wrist.text().get_slice("\n", 0))
 	controller.scroll(1)
 	await t.frames(2)
 	t.check(controller.weapon_pick == 1 and controller._pending_switch < 0 and hud.wrist.focused_id() == "weapon"

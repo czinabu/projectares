@@ -1481,11 +1481,16 @@ void fragment() {
 
 ## A weapon summoned from the watch (`Loadout.swap_weapon`) digitizes into
 ## the hand: its model fades in from nothing under a shimmer of light while
-## `Actor.materialize_left` runs down. It is the one weapon in the one hand,
+## `Actor.materialize_left` runs down, and one stored back fades out the same
+## way as `Actor.dematerialize_left` runs down. It is the one weapon in the one hand,
 ## so both views and everyone around see the same thing.
 func _update_materialize() -> void:
 	var weapon := actor.get_active_weapon()
-	var model: Node3D = weapon.visual if weapon != null and actor.materialize_left > 0.0 \
+	# Stored back through the watch, it runs the other way: the solid model
+	# breaks up into the same light and fades out of the hand.
+	var storing := actor.storing_weapon()
+	var fading := storing != null and storing == weapon
+	var model: Node3D = weapon.visual if weapon != null and (actor.materialize_left > 0.0 or fading) \
 			and weapon.visual != null and is_instance_valid(weapon.visual) else null
 	if _materializing != null and (model != _materializing or not is_instance_valid(_materializing)):
 		if is_instance_valid(_materializing):
@@ -1494,7 +1499,10 @@ func _update_materialize() -> void:
 	if model == null:
 		return
 	_materializing = model
-	_set_materialize(model, 1.0 - actor.materialize_left / maxf(actor.materialize_time, 0.01))
+	if fading:
+		_set_materialize(model, actor.dematerialize_left / maxf(actor.dematerialize_time, 0.01))
+	else:
+		_set_materialize(model, 1.0 - actor.materialize_left / maxf(actor.materialize_time, 0.01))
 
 
 ## Draws `model` as `done` (0 to 1) materialized: 1 is the plain model.
@@ -1509,6 +1517,8 @@ func _set_materialize(model: Node3D, done: float) -> void:
 
 ## How far the weapon in hand has materialized, 0 to 1 (for checks).
 func materialized() -> float:
+	if _materializing != null and actor.storing_weapon() != null:
+		return clampf(actor.dematerialize_left / maxf(actor.dematerialize_time, 0.01), 0.0, 1.0)
 	if _materializing == null or actor.materialize_time <= 0.0:
 		return 1.0
 	return clampf(1.0 - actor.materialize_left / actor.materialize_time, 0.0, 1.0)

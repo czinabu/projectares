@@ -304,15 +304,18 @@ the storage behind it.
   never the stash. Whatever you can summon is still what you drop when you
   die, so the extraction stakes stay. The pack's capacity still applies: a
   summoned weapon swaps places with the one worn in its slot, which goes into
-  the pack with the rounds it had.
+  the pack with the rounds it had. The weapon in your hand can be stored
+  the same way in reverse: a click on it dematerializes it back into the
+  pack, leaving its slot empty and your hands free, if the pack has room.
 - **Two levels (Caleb's call).** The mouse wheel steps only across the main
   icons, tab after tab. A click on an icon that holds several things
   (weapons, vehicles, artifacts, portal places) opens its list, and only
   then does the wheel turn through what it holds; a click picks, and a
   right click closes the list and goes back to the icons.
 - **Three tabs**, stepped through with the mouse wheel:
-  - **Summon:** weapons (worn ones are drawn with a click, ones in the pack
-    are materialized into your hand), vehicles (the toy carousel) and
+  - **Summon:** weapons (worn ones are drawn with a click, the one in hand
+    is stored back into the pack, ones in the pack are materialized into
+    your hand), vehicles (the toy carousel) and
     artifacts (the attuned one is used; others carried are shown but stay
     loot, one per outing). The pack's fill, worth, heals and scrip sit under
     the tab, so there is no separate pack page.

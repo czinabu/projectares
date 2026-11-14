@@ -410,6 +410,14 @@ func _watch_shots(out_dir: String) -> void:
 			p.materialize_left = 0.0
 			await _settle(30)
 			await _shot(out_dir.path_join("summon_third_done.png"))
+			# Stored back: the same light, the other way.
+			raid.store(p, "rifle_carbine")
+			p.dematerialize_time = 30.0
+			p.dematerialize_left = 15.0
+			await _settle(10)
+			await _shot(out_dir.path_join("store_third_half.png"))
+			p.dematerialize_left = 0.0
+			await _settle(10)
 			controller.toggle_view()
 			raid.state_for(p).summon_ready_at = -INF
 			await _settle(40)
@@ -419,6 +427,13 @@ func _watch_shots(out_dir: String) -> void:
 			await _settle(10)
 			await _shot(out_dir.path_join("summon_first_half.png"))
 			p.materialize_left = 0.0
+			await _settle(10)
+			raid.store(p, "rifle_scrap")
+			p.dematerialize_time = 30.0
+			p.dematerialize_left = 15.0
+			await _settle(10)
+			await _shot(out_dir.path_join("store_first_half.png"))
+			p.dematerialize_left = 0.0
 			p.cmd.pitch = -0.25
 			await _settle(10)
 			raid.ping(p)

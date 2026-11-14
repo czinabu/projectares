@@ -51,6 +51,9 @@ const SUMMON_TIMES := [["armor", 1.5], ["power", 1.6], ["sidearm", 0.5], ["one_h
 		["firearm", 0.9]]
 ## The watch's wait after a summon, as a multiple of the materialize time.
 const SUMMON_COOLDOWN_MULT := 6.0
+## How long a weapon stored back through the watch takes to dematerialize,
+## as a multiple of its materialize time (putting away is quicker).
+const STORE_TIME_MULT := 0.6
 
 
 ## A kit of only this means "nothing at all": an empty kit means the world's
@@ -382,6 +385,35 @@ static func swap_weapon(actor: Actor, id: String, mag := -1, reserve := -1) -> D
 	actor.materialize_time = summon_time(id)
 	actor.materialize_left = actor.materialize_time
 	actor.weapon_swapped.emit(id, new_gun.ammo_in_mag if new_gun else -1, new_gun.reserve_ammo if new_gun else -1)
+	return given
+
+
+## Seconds weapon `id` takes to dematerialize back into the pack.
+static func store_time(id: String) -> float:
+	return summon_time(id) * STORE_TIME_MULT
+
+
+## Starts weapon `id`, worn in its slot, dematerializing back into the pack
+## (the watch's store, the summon in reverse): it leaves the gear list at
+## once and is taken off the actor once `store_time` has run
+## (`Actor.begin_store`). Only the weapons and the gear list change here:
+## the caller puts the item in the pack. Returns {"id", "mag", "reserve"}
+## of what is being put away, "id" empty if `id` is not worn or cannot go
+## in a pack. Emits `Actor.weapon_stored`.
+static func store_weapon(actor: Actor, id: String) -> Dictionary:
+	var given := {"id": "", "mag": -1, "reserve": -1}
+	if not summonable(id) or actor.storing_weapon() != null:
+		return given
+	var index := worn_index(actor, weapon_slot(id))
+	if index < 0 or actor.weapons[index].item_id != id:
+		return given
+	var weapon := actor.weapons[index]
+	var gun := weapon as Gun
+	given = {"id": id, "mag": gun.ammo_in_mag if gun else -1, "reserve": gun.reserve_ammo if gun else -1}
+	actor.gear_items.erase(id)
+	actor.materialize_left = 0.0
+	actor.begin_store(weapon, store_time(id))
+	actor.weapon_stored.emit(id, given.mag, given.reserve)
 	return given
 
 
