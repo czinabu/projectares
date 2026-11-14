@@ -813,6 +813,54 @@ static func _thermal(t: Node) -> void:
 	await t._end_raid(raid)
 
 
+## The layout round the edges (Caleb's redesign): vitals as hex cells on
+## the lower left curve, the contact scope top left, objectives top right.
+static func _layout(t: Node, raid: Raid, glass: VisorHud) -> void:
+	print("Visors: the layout round the edges")
+	var p := raid.player
+	glass.size = Vector2(1920, 1080)
+	var ink := p.visor.glass_color
+	var kinds := func() -> Array:
+		return glass.vital_cells(p, ink).map(func(c: Dictionary) -> String: return c.kind)
+	t.check(kinds.call().slice(0, 1) == ["health"] and "stamina" in kinds.call() and "armor" in kinds.call()
+			and "heat" in kinds.call(), "the vitals are cells: health first, then armor, stamina and the rig's heat")
+	p.flight.enabled = false
+	t.check(not "heat" in kinds.call(), "with no flight rig there is no heat cell")
+	p.flight.enabled = true
+	p.health.health = p.health.max_health * 0.2
+	var health: Dictionary = glass.vital_cells(p, ink)[0]
+	t.check(health.warn and health.label == "CRITICAL" and health.value == "20%",
+			"low on health, its cell turns red and says so")
+	p.health.health = p.health.max_health
+	var first := glass.cell_point(0.0)
+	var last := glass.cell_point(4.0)
+	t.check(first.x < last.x and last.x < 960.0 * 0.7 and first.y > 540.0 * 1.5 and last.y > first.y,
+			"the cells run along the lower left curve of the glass, lifting toward its edge, clear of the middle")
+	t.check(VisorHud.hex_points(Vector2.ZERO, 10.0).size() == 6, "each cell is a hexagon")
+	# The scope: a mark close by plots inside it, one far off waits on its rim.
+	var scope := glass.scope_rect()
+	t.check(scope.end.x < 960.0 * 0.5 and scope.end.y < 540.0, "the contact scope sits in the top left corner")
+	raid.pinged.emit(p, p.global_position + p.get_aim_dir().slide(Vector3.UP).normalized() * 30.0)
+	var near: Array = glass.scope_points(p).filter(func(d: Dictionary) -> bool: return d.mark.kind == "ping")
+	t.check(near.size() == 1 and near[0].inside and near[0].at.y < scope.get_center().y,
+			"a ping 30 m ahead plots inside the scope, above the middle")
+	raid.pinged.emit(p, p.global_position + Vector3(400, 0, 0))
+	var far: Array = glass.scope_points(p).filter(func(d: Dictionary) -> bool:
+		return d.mark.kind == "ping" and not d.inside)
+	t.check(far.size() == 1 and absf(far[0].at.distance_to(scope.get_center()) - (scope.size.x * 0.5 - 6.0)) < 1.0,
+			"one beyond its reach waits on the rim, pointing the way")
+	# The objective block: nearest done first, this life's counts on top, the
+	# tour's step last.
+	var held: Array[Dictionary] = [{"title": "Kill 8 enemies", "stat": "kills", "goal": 8, "have": 1},
+			{"title": "Ride 2 vehicles", "stat": "rides", "goal": 2, "have": 1}]
+	var lines: Array[Dictionary] = glass.objective_lines(held, {"kills": 2}, "Bank your loot at a depot")
+	t.check(lines.size() == 3 and lines[0].title == "Ride 2 vehicles" and lines[1].have == 3 and lines[1].goal == 8
+			and lines[2].tour and not lines[0].done, "objectives list nearest done first, with this life's kills counted")
+	lines = glass.objective_lines(held, {"rides": 1}, "")
+	t.check(lines.size() == 2 and lines[0].done and lines[0].share == 1.0, "a finished contract is marked done")
+	t.check(glass.objective_lines([] as Array[Dictionary], {}, "").is_empty(), "with nothing to do the block is empty")
+
+
 static func _strip(t: Node) -> void:
 	print("Visors: the heading strip, squad and roles")
 	t.check(VisorHud.role_name("zoom") == "RECON" and VisorHud.role_name("scan") == "INTEL"
@@ -862,6 +910,7 @@ static func _strip(t: Node) -> void:
 	for i in 3:
 		glass._process(raid.ping_time * 0.5)
 	t.check(not "ping" in kinds.call(), "and goes when the ping does")
+	await _layout(t, raid, glass)
 	glass.queue_free()
 	await t._end_raid(raid)
 

@@ -6,25 +6,34 @@ extends Control
 ## helmet is worn: the visor projects its readouts into your view. It is a
 ## display of thin lines of light, never a frame: nothing is blacked out or
 ## tinted, and nothing sits over the middle of the view but the reticle.
-## Every helmet has your vitals on the left: a health arc, with armor and
-## stamina as thinner arcs inside it, and the ability's state under it. With
-## a flight rig worn, its heat gauge and cue sit high on the right. A working
-## helmet has its system on an arc on the right, a ring around the crosshair, and its height
-## readout in the air. Every working helmet has a heading strip across the
-## top, bowed with the glass, marking the squad, pings and the nearest depot
-## (`compass_marks`), and the contract nearest done in the top left. Each
-## helmet has a role (`role_name`), shown as it comes on, its own reticle,
+## Everything hugs the rim of the glass and the middle stays clear (Caleb's
+## redesign, after a reference he liked, made our own): every helmet has its
+## vitals as a short row of hex cells along the lower left curve (health,
+## armor, stamina, a flight rig's heat and cue, the ability), each filling
+## like a gauge with its number over it (`vital_cells`). A working helmet
+## also has a heading tape across the top, bowed with the glass, numbered
+## every 15 degrees with the heading in a notch under it, marking the squad,
+## pings and the nearest depot (`compass_marks`); a contact scope top left
+## plotting those same marks round you, never a map (`scope_points`), with
+## the squad's size on its rim; the helmet's name, role and system beside the
+## scope; an objective block top right under a thin bracket, a hex bullet,
+## progress bar and count per contract held, then the tour's step
+## (`objective_lines`); faint pitch ticks up both edges; and a ring round the
+## crosshair. Each helmet has a role (`role_name`), shown as it comes on, its own reticle,
 ## and the rest depends on its `mode` (see `Visor`): range finder, lock-on
 ## brackets, binocular scale and tagged targets on the strip for "zoom"
 ## (recon); a sweep, contact count and the scan's contacts on the strip for
 ## "scan" (intel); for "threat" (tactical) the health of whoever is under
 ## the crosshair, what nearby loot holds, the war's hot zone on the strip
 ## and where a hit came from; for "thermal" a heat picture of the whole view
-## and how warm you look yourself. A scrap visor only manages a bearing.
+## and how warm you look yourself. A scrap visor only manages a bearing and
+## the vitals.
 ## The display is alive: it sweeps in when it comes on (`boot`),
 ## trails the view a little as you turn (`sway`), sits dim until something
 ## happens (`alert`) and closes on what you aim at (`lock`). With no helmet,
-## or in third person, nothing is drawn.
+## or in third person, nothing is drawn. It works wherever a helmet is worn:
+## a world, the plaza and the arena (`setup`, a `Raid`) and the home base
+## (`setup_base`).
 ##
 ## The world. Things a visor puts out there, seen in either view: the frozen
 ## snapshots of a scan, markers over tagged targets, the ring of a scan pulse
@@ -32,6 +41,8 @@ extends Control
 ## looking your way, and the ember of a thermal visor seen up close.
 ##
 ## A view only: it reads `Visor` state and never decides what is revealed.
+
+const Contracts := preload("res://core/economy/contracts.gd")
 
 ## How long the mark for a scan that caught you stays on the glass.
 var felt_time := 2.5
@@ -72,6 +83,17 @@ var strip_reach := 45.0
 ## How far the heading strip bows down at its ends, as a share of the
 ## screen's height: the glass is curved.
 var strip_bow := 0.018
+## How far out the contact scope reaches, in metres, before a mark sits on
+## its rim.
+var scope_range := 80.0
+## Where the vitals cells sit along the glass's lower left curve: how far in
+## the first is and how low the row runs (shares of the view's height), and
+## how much the row lifts toward the left edge, as the glass curves up there.
+var vitals_left := 0.075
+var vitals_low := 0.9
+var vitals_lift := 0.07
+## Pitch ticks: pixels per degree, as a share of the view's height.
+var pitch_scale := 0.009
 ## The war must be at least this hot before a tactical visor marks its centre.
 var hot_from := 0.25
 ## How long the helmet's name stays up after the display comes on.
@@ -698,43 +720,44 @@ func _draw() -> void:
 			return
 		_draw_cracks(ink)
 	_draw_glass(ink)
-	_draw_vitals(p, ink, centre)
-	_draw_heat(p, ink, centre)
+	_draw_vitals(p, ink)
 	_draw_ident(v, ink)
 	if v.mode == "":
 		_draw_heading(p, ink)
 	else:
 		_draw_reticle(ink, centre, v.mode)
-		_draw_altitude(p, ink, centre)
+		_draw_pitch(p, ink)
 		_draw_compass(p, ink)
-		_draw_tracker(p, ink)
+		_draw_scope(p, ink)
+		_draw_objectives(p, ink)
 	match v.mode:
 		"zoom":
 			_draw_lock(p, ink, "%d m" % roundi(range_reading) if range_reading >= 0.0 else "")
 			_draw_range(ink, centre)
-			_draw_system(ink, centre, float(v.zoom_level) / maxf(v.zoom_levels.size(), 1.0),
-					"OPTIC %dx" % roundi(v.zoom_factor()) if v.is_zoomed() else "OPTIC", v.is_zoomed())
+			_draw_system(ink, float(v.zoom_level) / maxf(v.zoom_levels.size(), 1.0),
+					"OPTIC %dx" % roundi(v.zoom_factor()) if v.is_zoomed() else "OPTIC READY", v.is_zoomed())
 			if zoom_shown > 0.01:
 				_draw_binoculars(v, ink, centre)
 		"scan":
-			_draw_system(ink, centre, 1.0 - clampf(v.cooldown_left / maxf(v.cooldown, 0.01), 0.0, 1.0),
-					"SCAN" if v.cooldown_left <= 0.0 else "SCAN %d" % ceili(v.cooldown_left), v.cooldown_left <= 0.0)
+			_draw_system(ink, 1.0 - clampf(v.cooldown_left / maxf(v.cooldown, 0.01), 0.0, 1.0),
+					"SCAN READY" if v.cooldown_left <= 0.0 else "SCAN IN %d" % ceili(v.cooldown_left),
+					v.cooldown_left <= 0.0)
 			_draw_sweep(v, ink, centre)
 		"threat":
 			_draw_lock(p, ink, "")
 			_draw_target(ink)
 			_draw_loot(p, ink)
 			if v.is_sensing():
-				_draw_system(Color(1.0, 0.3, 0.2), centre, v.active_left / maxf(v.threat_time, 0.01),
+				_draw_system(Color(1.0, 0.3, 0.2), v.active_left / maxf(v.threat_time, 0.01),
 						"THREATS %d" % v.threats.size(), true)
 			else:
-				_draw_system(ink, centre, 1.0 - clampf(v.cooldown_left / maxf(v.cooldown, 0.01), 0.0, 1.0),
-						"SENSE" if v.cooldown_left <= 0.0 else "SENSE %d" % ceili(v.cooldown_left),
+				_draw_system(ink, 1.0 - clampf(v.cooldown_left / maxf(v.cooldown, 0.01), 0.0, 1.0),
+						"SENSE READY" if v.cooldown_left <= 0.0 else "SENSE IN %d" % ceili(v.cooldown_left),
 						v.cooldown_left <= 0.0)
 		"thermal":
-			_draw_system(ink, centre, v.charge_fraction(), "THERMAL" if v.thermal_on else "CELL %d%%" %
+			_draw_system(ink, v.charge_fraction(), "THERMAL ON" if v.thermal_on else "CELL %d%%" %
 					roundi(v.charge_fraction() * 100.0), v.thermal_on)
-			_draw_signature(p, ink, centre)
+			_draw_signature(p, ink)
 	_draw_slivers(p, centre, felt, felt_time, Color(1.0, 0.2, 0.12), 0.4)
 	_draw_slivers(p, centre, hit_marks, hit_mark_time, Color(1.0, 0.6, 0.1), 0.34)
 
@@ -790,50 +813,6 @@ func _ticks(centre: Vector2, radius: float, from: float, to: float, step: float,
 		angle += step
 
 
-## The left arc: health, as a row of segments that empties from the top,
-## with armor and then stamina as thin arcs just inside it, and the
-## ability's state under it. These are your always-in-view readings: the
-## watch no longer carries them. Hurt, the health arc goes red.
-func _draw_vitals(p: Actor, ink: Color, centre: Vector2) -> void:
-	var share := clampf(p.health.health / maxf(p.health.max_health, 1.0), 0.0, 1.0)
-	var radius := size.y * 0.43
-	var half := 0.36 * _swept()
-	var low := share < 0.35
-	var color := Color(1.0, 0.25, 0.15) if low else ink
-	draw_arc(centre, radius, PI - half, PI + half, 40, _lit(color, 0.22), 1.0, true)
-	_ticks(centre, radius + 5.0, PI - half, PI + half, 0.045, 5.0, _lit(color, 0.22), _time * 0.05)
-	# Health fills from the bottom of the arc (PI - half) upward.
-	var segments := 18
-	var filled := ceili(segments * share)
-	for i in filled:
-		var a0 := PI - half + (2.0 * half) * (float(i) + 0.15) / segments
-		var a1 := PI - half + (2.0 * half) * (float(i) + 0.85) / segments
-		var beat := 0.6 + 0.4 * sin(_time * 9.0) if low else 1.0
-		draw_arc(centre, radius - 6.0, a0, a1, 4,
-				_lit(color, 0.85 * beat, not low), 3.0, true)
-	# Armor and stamina: thin unbroken arcs inside, filling the same way.
-	var armor := clampf(p.health.armor / p.health.max_armor, 0.0, 1.0) if p.health.max_armor > 0.0 else -1.0
-	var stamina := clampf(p.stamina / maxf(p.max_stamina, 1.0), 0.0, 1.0)
-	var inner := radius - 13.0
-	for reading: Array in [[armor, ARMOR_INK], [stamina, ink]]:
-		var value: float = reading[0]
-		if value < 0.0:
-			continue
-		var tint: Color = reading[1]
-		draw_arc(centre, inner, PI - half, PI + half, 32, _lit(tint, 0.14), 1.0, true)
-		if value > 0.0:
-			draw_arc(centre, inner, PI + half - 2.0 * half * value, PI + half, 32,
-					_lit(tint, 0.7, value > 0.3), 2.0, true)
-		inner -= 5.0
-	if low:
-		_text(centre + Vector2(-radius + 16.0, 4.0), "CRITICAL", _lit(color, 0.6 + 0.4 * sin(_time * 9.0), false))
-	var ability := ability_text(p.ability)
-	if ability != "":
-		var ready := p.ability.cooldown_left <= 0.0 and not p.ability.is_active()
-		_text(centre + Vector2(-radius + 4.0, size.y * 0.43 * sin(half) + 22.0), ability,
-				_lit(ink, 0.85, not ready))
-
-
 ## The ability's state under the vitals: its name when ready, the seconds
 ## left while it runs or recharges, "" with none.
 static func ability_text(ability: Ability) -> String:
@@ -845,48 +824,6 @@ static func ability_text(ability: Ability) -> String:
 	if ability.cooldown_left > 0.0:
 		return "%s %d" % [name, ceili(ability.cooldown_left)]
 	return name
-
-
-## High on the right, while a flight rig is worn: its heat as a gauge that
-## fills upward and warms from green to red, with a notch at the heat it
-## must cool to after an overheat, and the rig's cue under it
-## (`Hud.rig_text`). It brightens as it gets hot.
-func _draw_heat(p: Actor, _ink: Color, centre: Vector2) -> void:
-	var rig := p.flight
-	if not rig.enabled:
-		return
-	var heat := rig.heat_fraction()
-	var color := Hud.heat_color(heat, rig.overheated)
-	var radius := size.y * 0.43
-	# High on the right, above the system arc: clear of the gun in the hand.
-	var bottom := -0.46
-	var top := bottom - 0.3 * _swept()
-	var hot := rig.overheated or heat > 0.6
-	draw_arc(centre, radius, top, bottom, 24, _lit(color, 0.22), 1.0, true)
-	if heat > 0.0:
-		# Fills from the bottom end upward, away from the system arc.
-		draw_arc(centre, radius - 6.0, bottom - (bottom - top) * heat, bottom, 24, _lit(color, 0.9, not hot), 4.0, true)
-	var notch := bottom - (bottom - top) * clampf(rig.recover_heat / maxf(rig.max_heat, 1.0), 0.0, 1.0)
-	var dir := Vector2(cos(notch), sin(notch))
-	draw_line(centre + dir * (radius - 11.0), centre + dir * (radius + 3.0), _lit(color, 0.6, not hot), 1.0, true)
-	var end := centre + Vector2(cos(top), sin(top)) * radius
-	var cue := Hud.rig_text(p).to_upper()
-	_text(end + Vector2(-10.0, -10.0), Hud.heat_text(rig) + ("   " + cue if cue != "" else ""),
-			_lit(color, 0.9, not hot), HORIZONTAL_ALIGNMENT_RIGHT, 320.0)
-
-
-## The right arc: the helmet's own system. How full it is shows a recharge,
-## a battery or time left; `lit` means it is ready or running.
-func _draw_system(ink: Color, centre: Vector2, share: float, text: String, lit: bool) -> void:
-	var radius := size.y * 0.43
-	var half := 0.36 * _swept()
-	draw_arc(centre, radius, -half, half, 40, _lit(ink, 0.22), 1.0, true)
-	_ticks(centre, radius + 5.0, -half, half, 0.045, 5.0, _lit(ink, 0.22), -_time * (0.3 if lit else 0.05))
-	var glow := 0.75 + 0.25 * sin(_time * 5.0) if lit else 0.6
-	if share > 0.0:
-		draw_arc(centre, radius - 6.0, half - 2.0 * half * clampf(share, 0.0, 1.0), half, 32,
-				_lit(ink, 0.85 * glow, not lit), 3.0, true)
-	_text(centre + Vector2(radius - 16.0, 4.0), text, _lit(ink, 0.9, not lit), HORIZONTAL_ALIGNMENT_RIGHT, 160.0)
 
 
 ## A broken ring around the crosshair that turns slowly, and closes in when
@@ -903,16 +840,6 @@ func _draw_reticle(ink: Color, centre: Vector2, mode := "") -> void:
 	for i in parts:
 		var from := turn + TAU * i / parts
 		draw_arc(centre, radius, from, from + TAU / parts - gap, 12, _lit(ink, 0.55 + 0.35 * lock), width, true)
-
-
-## Height above the ground, shown only while the wearer is off it.
-func _draw_altitude(p: Actor, ink: Color, centre: Vector2) -> void:
-	if altitude < 0.0:
-		return
-	var at := centre + Vector2(-size.y * 0.43 + 16.0, size.y * 0.2)
-	_text(at, "ALT %d m" % roundi(altitude), _lit(ink, 0.9, false))
-	var climb := clampf(p.velocity.y / 12.0, -1.0, 1.0)
-	draw_line(at + Vector2(-8.0, -4.0), at + Vector2(-8.0, -4.0 - 14.0 * climb), _lit(ink, 0.9, false), 2.0, true)
 
 
 ## A plain visor has seen better days.
@@ -934,40 +861,6 @@ func _strip_point(off: float) -> Vector2:
 	var share := clampf(off / strip_reach, -1.0, 1.0)
 	return Vector2(size.x * 0.5 + sway.x + off * size.x * 0.0045,
 			size.y * 0.075 + sway.y + share * share * size.y * strip_bow)
-
-
-## A strip of bearings across the top that slides as the wearer turns, bowed
-## with the glass, with what the helmet knows marked on it (`compass_marks`):
-## squad, pings and the nearest depot on every working visor, and the
-## helmet's own finds. Something off the strip waits at its end, pointing.
-func _draw_compass(p: Actor, ink: Color) -> void:
-	var heading := bearing(p.cmd.yaw)
-	var reach := strip_reach * _swept()
-	var first := int(floor((heading - strip_reach) / 5.0)) * 5
-	for mark in range(first, first + int(strip_reach * 2.0) + 5, 5):
-		var off := mark - heading
-		if absf(off) > reach:
-			continue
-		# Marks fade toward the ends of the strip.
-		var color := _lit(ink, 0.85 * (1.0 - absf(off) / (strip_reach + 5.0)))
-		var at := _strip_point(off)
-		var cardinal := posmod(mark, 45) == 0
-		draw_line(at, at + Vector2(0.0, 10.0 if cardinal else 5.0), color, 1.0, true)
-		if cardinal:
-			_text(at + Vector2(0.0, -6.0), compass_name(mark), color, HORIZONTAL_ALIGNMENT_CENTER, 60.0, 13)
-	var mid := _strip_point(0.0)
-	draw_line(mid + Vector2(-5.0, 22.0), mid + Vector2(0.0, 15.0), _lit(ink, 0.9), 1.5, true)
-	draw_line(mid + Vector2(5.0, 22.0), mid + Vector2(0.0, 15.0), _lit(ink, 0.9), 1.5, true)
-	_text(mid + Vector2(0.0, -22.0), "%03d" % roundi(heading), _lit(ink, 0.9), HORIZONTAL_ALIGNMENT_CENTER, 80.0)
-	# Marks off the strip queue at its ends, inward, so they never sit on each other.
-	var queued := {-1.0: 0, 1.0: 0}
-	for mark in compass_marks(p):
-		var off := rad_to_deg(angle_to(mark.at, p.global_position, p.cmd.yaw))
-		var waiting := 0
-		if absf(off) > strip_reach:
-			waiting = queued[signf(off)]
-			queued[signf(off)] += 1
-		_draw_strip_mark(p, ink, mark, off, waiting)
 
 
 func _draw_strip_mark(p: Actor, ink: Color, mark: Dictionary, off: float, waiting: int) -> void:
@@ -1033,38 +926,6 @@ func _draw_glass(ink: Color) -> void:
 	var radius := size.y * 0.9
 	draw_arc(Vector2(size.x * 0.5, size.y * 0.95) + sway * 0.5, radius, PI * 1.12, PI * 1.2, 24, glint, 2.0, true)
 	draw_arc(Vector2(size.x * 0.5, size.y * 0.95) + sway * 0.5, radius, PI * 1.8, PI * 1.88, 24, glint, 2.0, true)
-
-
-## The contract nearest done, small and dim in the top left (DESIGN.md
-## section 10: "a small tracker on the visor"). Held contracts come from the
-## `Hud`; this life's counts ride on top.
-func _draw_tracker(p: Actor, ink: Color) -> void:
-	if hud == null:
-		return
-	var at := Vector2(size.x * 0.06, size.y * 0.075) + sway
-	var held: Array[Dictionary] = []
-	held.assign(hud.get("contracts") if hud.get("contracts") is Array else [])
-	var objective := str(hud.get("objective")) if hud.get("objective") != null else ""
-	var text := tracker_text(held, p.tally)
-	if text != "":
-		draw_rect(Rect2(at + Vector2(0.0, -9.0), Vector2(7.0, 7.0)), _lit(ink, 0.7), false, 1.0)
-		_text(at + Vector2(13.0, 0.0), text, _lit(ink, 0.75), HORIZONTAL_ALIGNMENT_LEFT, 360.0, 12)
-		at.y += 18.0
-	# The new player's tour: what the handler asked for next, under it.
-	if objective != "":
-		var c := at + Vector2(3.5, -5.5)
-		draw_polyline(PackedVector2Array([c + Vector2(0, -4), c + Vector2(4, 0), c + Vector2(0, 4),
-				c + Vector2(-4, 0), c + Vector2(0, -4)]), _lit(ink, 0.8), 1.0, true)
-		_text(at + Vector2(13.0, 0.0), objective.to_upper(), _lit(ink, 0.8), HORIZONTAL_ALIGNMENT_LEFT, 360.0, 12)
-
-
-## Thermal: how warm the wearer looks to another thermal visor, under the
-## system arc, so an Ember wearer knows when their own rig gives them away.
-func _draw_signature(p: Actor, ink: Color, centre: Vector2) -> void:
-	var heat := Visor.heat_of(p)
-	var hot := heat >= 1.2
-	var at := centre + Vector2(size.y * 0.43 - 16.0, 24.0)
-	_text(at, signature_text(heat), _lit(HOT_INK if hot else ink, 0.85, not hot), HORIZONTAL_ALIGNMENT_RIGHT, 160.0, 12)
 
 
 func _draw_range(ink: Color, centre: Vector2) -> void:
@@ -1206,3 +1067,403 @@ func _draw_loot(p: Actor, ink: Color) -> void:
 		draw_line(at, elbow, _lit(ink, 0.6, false), 1.0, true)
 		draw_line(elbow, elbow + Vector2(120.0, 0.0), _lit(ink, 0.6, false), 1.0, true)
 		_text(elbow + Vector2(4.0, -5.0), text.to_upper(), _lit(ink, 0.95, false), HORIZONTAL_ALIGNMENT_LEFT, 300.0)
+
+
+# --- The layout around the edges --------------------------------------------------
+# Everything hugs the rim of the glass and the middle stays clear. Each
+# helmet keeps its own glass colour; nothing here is a box laid over the view.
+
+## Where the vitals cell at `slot` (0 the leftmost, fractions between)
+## sits: along the lower left curve of the glass, lifting toward the left
+## edge the way the visor curves, so they follow its rim, not a straight row.
+func cell_point(slot: float) -> Vector2:
+	var radius := cell_radius()
+	var x := size.y * vitals_left + slot * radius * 2.3
+	var from_middle := clampf((size.x * 0.5 - x) / maxf(size.x * 0.5, 1.0), 0.0, 1.0)
+	return Vector2(x, size.y * vitals_low - from_middle * from_middle * size.y * vitals_lift) + sway
+
+
+func cell_radius() -> float:
+	return clampf(size.y * 0.028, 18.0, 40.0)
+
+
+## A flat-topped hexagon's corners.
+static func hex_points(at: Vector2, radius: float) -> PackedVector2Array:
+	var points := PackedVector2Array()
+	for i in 6:
+		var angle := TAU * i / 6.0
+		points.append(at + Vector2(cos(angle), sin(angle)) * radius)
+	return points
+
+
+## A hex cell, outlined, filled from the bottom by `share` (0 to 1).
+func _hex_cell(at: Vector2, radius: float, share: float, color: Color, fill_alpha: float) -> void:
+	var hex := hex_points(at, radius)
+	var closed := hex.duplicate()
+	closed.append(hex[0])
+	draw_colored_polygon(hex, Color(color.r, color.g, color.b, color.a * 0.08))
+	if share > 0.0:
+		var top := at.y + radius - 2.0 * radius * clampf(share, 0.0, 1.0)
+		var cut := PackedVector2Array([Vector2(at.x - radius * 2.0, top), Vector2(at.x + radius * 2.0, top),
+				Vector2(at.x + radius * 2.0, at.y + radius * 2.0), Vector2(at.x - radius * 2.0, at.y + radius * 2.0)])
+		for part in Geometry2D.intersect_polygons(hex_points(at, radius - 3.0), cut):
+			draw_colored_polygon(part, Color(color.r, color.g, color.b, color.a * fill_alpha))
+	draw_polyline(closed, color, 1.5, true)
+
+
+## A line glyph for a vitals cell, drawn in `color` around `at`.
+func _glyph(kind: String, at: Vector2, unit: float, color: Color) -> void:
+	var pts := func(list: Array) -> PackedVector2Array:
+		var out := PackedVector2Array()
+		for point: Vector2 in list:
+			out.append(at + point * unit)
+		return out
+	match kind:
+		"health":
+			draw_polyline(pts.call([Vector2(-1, 0), Vector2(-0.35, 0), Vector2(-0.1, -0.7), Vector2(0.25, 0.7),
+					Vector2(0.45, 0), Vector2(1, 0)]), color, 2.0, true)
+		"armor":
+			var shield: PackedVector2Array = pts.call([Vector2(0, -0.95), Vector2(0.8, -0.6), Vector2(0.65, 0.35),
+					Vector2(0, 0.95), Vector2(-0.65, 0.35), Vector2(-0.8, -0.6), Vector2(0, -0.95)])
+			draw_polyline(shield, color, 2.0, true)
+		"stamina":
+			draw_polyline(pts.call([Vector2(0.35, -1), Vector2(-0.4, 0.1), Vector2(0.4, 0.1), Vector2(-0.35, 1)]),
+					color, 2.0, true)
+		"heat":
+			draw_polyline(pts.call([Vector2(-0.6, 0.8), Vector2(-0.7, 0.1), Vector2(-0.25, -0.35), Vector2(-0.1, 0.1),
+					Vector2(0.15, -0.95), Vector2(0.65, -0.1), Vector2(0.6, 0.8), Vector2(-0.6, 0.8)]), color, 2.0, true)
+		"ability":
+			draw_arc(at, unit * 0.8, 0.0, TAU, 20, color, 2.0, true)
+			draw_polyline(pts.call([Vector2(-0.4, 0), Vector2(0.45, 0)]), color, 2.0, true)
+			draw_polyline(pts.call([Vector2(0.15, -0.3), Vector2(0.45, 0), Vector2(0.15, 0.3)]), color, 2.0, true)
+
+
+## What the vitals cells show, left to right: {"kind", "share" (0 to 1),
+## "value" (the number beside it), "label", "ink", "warn"}. Health always;
+## armor with an armor frame; stamina always; flight heat with a rig on;
+## the ability with one fitted. These are your always-in-view readings: the
+## watch no longer carries them.
+func vital_cells(p: Actor, ink: Color) -> Array[Dictionary]:
+	var cells: Array[Dictionary] = []
+	var health := clampf(p.health.health / maxf(p.health.max_health, 1.0), 0.0, 1.0)
+	var low := health < 0.35
+	cells.append({"kind": "health", "share": health, "value": "%d%%" % roundi(health * 100.0),
+			"label": "CRITICAL" if low else "HEALTH", "ink": Color(1.0, 0.25, 0.15) if low else ink, "warn": low})
+	if p.health.max_armor > 0.0:
+		var armor := clampf(p.health.armor / p.health.max_armor, 0.0, 1.0)
+		cells.append({"kind": "armor", "share": armor, "value": "%d%%" % roundi(armor * 100.0),
+				"label": "ARMOR", "ink": ARMOR_INK, "warn": false})
+	var stamina := clampf(p.stamina / maxf(p.max_stamina, 1.0), 0.0, 1.0)
+	cells.append({"kind": "stamina", "share": stamina, "value": "%d%%" % roundi(stamina * 100.0),
+			"label": "STAMINA", "ink": ink, "warn": false})
+	var rig := p.flight
+	if rig.enabled:
+		var heat := rig.heat_fraction()
+		var cue := Hud.rig_text(p).to_upper()
+		cells.append({"kind": "heat", "share": heat, "value": Hud.heat_text(rig),
+				"label": cue if cue != "" else "RIG HEAT", "ink": Hud.heat_color(heat, rig.overheated),
+				"warn": rig.overheated or heat > 0.6})
+	var ability := p.ability
+	if ability.enabled:
+		var share := 1.0
+		var value := "RDY"
+		if ability.is_active():
+			share = ability.active_left / maxf(ability.duration, 0.01)
+			value = "%.1f" % ability.active_left
+		elif ability.cooldown_left > 0.0:
+			share = 1.0 - ability.cooldown_left / maxf(ability.cooldown, 0.01)
+			value = str(ceili(ability.cooldown_left))
+		cells.append({"kind": "ability", "share": clampf(share, 0.0, 1.0), "value": value,
+				"label": ability.display_name.to_upper(), "ink": ink, "warn": false})
+	return cells
+
+
+## The vitals: a short row of hex cells along the lower left curve of the
+## glass, each filling like a gauge, its number beside it. Hurt, the health
+## cell goes red and beats.
+func _draw_vitals(p: Actor, ink: Color) -> void:
+	var cells := vital_cells(p, ink)
+	var radius := cell_radius()
+	var swept := _swept()
+	for i in cells.size():
+		var cell: Dictionary = cells[i]
+		# Health sits highest, by the left edge; the rest run down the rim
+		# toward the bottom. Booting, they slide out along it from the edge.
+		var at := cell_point(lerpf(-1.5, float(i), swept))
+		var warn: bool = cell.warn
+		var beat := 0.6 + 0.4 * sin(_time * 9.0) if warn and cell.kind == "health" else 1.0
+		var color := _lit(cell.ink, 0.85 * beat, not warn)
+		_hex_cell(at, radius, float(cell.share) * swept, color, 0.4)
+		_glyph(cell.kind, at, radius * 0.42, _lit(Color.WHITE.lerp(cell.ink, 0.35), 0.9 * beat, not warn))
+		# The number over the cell, and its name under it.
+		_text(at + Vector2(0.0, -radius - 6.0), str(cell.value), color, HORIZONTAL_ALIGNMENT_CENTER, 100.0,
+				roundi(radius * 0.6))
+		_text(at + Vector2(0.0, radius + 14.0), str(cell.label), _lit(cell.ink, 0.65, not warn),
+				HORIZONTAL_ALIGNMENT_CENTER, 110.0, 11)
+	if altitude >= 0.0:
+		var top := cell_point(0.0) + Vector2(-radius, -radius * 2.6)
+		_text(top, "ALT %d m" % roundi(altitude), _lit(ink, 0.9, false), HORIZONTAL_ALIGNMENT_LEFT, 140.0, 13)
+		var climb := clampf(p.velocity.y / 12.0, -1.0, 1.0)
+		draw_line(top + Vector2(-8.0, -4.0), top + Vector2(-8.0, -4.0 - 14.0 * climb), _lit(ink, 0.9, false), 2.0, true)
+
+
+## Faint pitch ticks up both edges of the glass, sliding as the head tips,
+## with where the view points marked at the middle.
+func _draw_pitch(p: Actor, ink: Color) -> void:
+	var degrees := rad_to_deg(p.cmd.pitch)
+	var per := size.y * pitch_scale
+	var mid := size.y * 0.5 + sway.y
+	var band := size.y * 0.23 * _swept()
+	for side: float in [-1.0, 1.0]:
+		var edge := size.y * 0.035 + sway.x if side < 0.0 else size.x - size.y * 0.035 + sway.x
+		var first := int(floor((degrees - band / per) / 5.0)) * 5
+		var mark := first
+		while mark <= degrees + band / per + 5.0:
+			var y := mid - (mark - degrees) * per
+			var off := absf(y - mid)
+			if off <= band:
+				var fade := 1.0 - off / maxf(band, 1.0)
+				var major := posmod(mark, 15) == 0
+				var length := 16.0 if major else 7.0
+				var from := Vector2(edge, y)
+				var to := from + Vector2(-side * length, 0.0)
+				draw_line(from, to, _lit(ink, (0.5 if major else 0.3) * fade), 1.5 if major else 1.0, true)
+				if major and mark != 0:
+					_text(to + Vector2(-side * 6.0, 4.0), "%+d" % mark,
+							_lit(ink, 0.45 * fade), HORIZONTAL_ALIGNMENT_RIGHT if side > 0.0 else HORIZONTAL_ALIGNMENT_LEFT,
+							60.0, 11)
+			mark += 5
+		var caret := Vector2(edge - side * 22.0, mid)
+		draw_colored_polygon(PackedVector2Array([caret, caret + Vector2(-side * 9.0, -5.0),
+				caret + Vector2(-side * 9.0, 5.0)]), _lit(SQUAD_INK, 0.85))
+		_text(caret + Vector2(-side * 14.0, 5.0), "%+d" % roundi(degrees),
+				_lit(SQUAD_INK, 0.85), HORIZONTAL_ALIGNMENT_RIGHT if side > 0.0 else HORIZONTAL_ALIGNMENT_LEFT, 60.0, 13)
+
+
+## A strip of bearings across the top that slides as the wearer turns, bowed
+## with the glass, with what the helmet knows marked under it
+## (`compass_marks`): squad, pings and the nearest depot on every working
+## visor, and the helmet's own finds. Bearings are numbered every 15 degrees,
+## the eight winds named, and the heading is read out in a notch under the
+## middle. Something off the strip waits at its end, pointing.
+func _draw_compass(p: Actor, ink: Color) -> void:
+	var heading := bearing(p.cmd.yaw)
+	var reach := strip_reach * _swept()
+	var first := int(floor((heading - strip_reach) / 5.0)) * 5
+	for mark in range(first, first + int(strip_reach * 2.0) + 5, 5):
+		var off := mark - heading
+		if absf(off) > reach:
+			continue
+		# Marks fade toward the ends of the strip.
+		var color := _lit(ink, 0.85 * (1.0 - absf(off) / (strip_reach + 5.0)))
+		var at := _strip_point(off)
+		var major := posmod(mark, 15) == 0
+		draw_line(at, at + Vector2(0.0, 9.0 if major else 4.0), color, 1.5 if major else 1.0, true)
+		if major:
+			var name := compass_name(posmod(mark, 360)) if posmod(mark, 45) == 0 else "%03d" % posmod(mark, 360)
+			_text(at + Vector2(0.0, -5.0), name, color, HORIZONTAL_ALIGNMENT_CENTER, 60.0,
+					14 if posmod(mark, 45) == 0 else 11)
+	# The heading in a notch under the middle, a thin bracket open at the top.
+	var mid := _strip_point(0.0) + Vector2(0.0, 13.0)
+	draw_colored_polygon(PackedVector2Array([mid, mid + Vector2(-5.0, 6.0), mid + Vector2(5.0, 6.0)]), _lit(ink, 0.9))
+	var notch := PackedVector2Array([mid + Vector2(-26.0, 8.0), mid + Vector2(-26.0, 26.0), mid + Vector2(26.0, 26.0),
+			mid + Vector2(26.0, 8.0)])
+	draw_polyline(notch, _lit(ink, 0.55), 1.0, true)
+	_text(mid + Vector2(0.0, 22.0), "%03d" % roundi(heading), _lit(ink, 0.95), HORIZONTAL_ALIGNMENT_CENTER, 52.0, 15)
+	# Marks off the strip queue at its ends, inward, so they never sit on each other.
+	var queued := {-1.0: 0, 1.0: 0}
+	for mark in compass_marks(p):
+		var off := rad_to_deg(angle_to(mark.at, p.global_position, p.cmd.yaw))
+		var waiting := 0
+		if absf(off) > strip_reach:
+			waiting = queued[signf(off)]
+			queued[signf(off)] += 1
+		_draw_strip_mark(p, ink, mark, off, waiting)
+
+
+## Where the contact scope sits, and its radius: top left, in the corner of
+## the glass.
+func scope_rect() -> Rect2:
+	var radius := clampf(size.y * 0.075, 48.0, 110.0)
+	var at := Vector2(size.y * 0.05 + radius, size.y * 0.06 + radius) + sway
+	return Rect2(at - Vector2.ONE * radius, Vector2.ONE * radius * 2.0)
+
+
+## Where each of the heading strip's marks lands on the contact scope: the
+## wearer at the middle facing up, `scope_range` metres to the rim; further
+## off it sits on the rim. {"mark", "at" (Vector2), "inside" (bool)}.
+func scope_points(p: Actor) -> Array[Dictionary]:
+	var rect := scope_rect()
+	var centre := rect.get_center()
+	var radius := rect.size.x * 0.5
+	var out: Array[Dictionary] = []
+	for mark in compass_marks(p):
+		var flat := Vector2(mark.at.x - p.global_position.x, mark.at.z - p.global_position.z)
+		var away := flat.length()
+		var angle := angle_to(mark.at, p.global_position, p.cmd.yaw)
+		var reach := minf(away / maxf(scope_range, 1.0), 1.0) * (radius - 6.0)
+		out.append({"mark": mark, "at": centre + Vector2(sin(angle), -cos(angle)) * reach,
+				"inside": away <= scope_range})
+	return out
+
+
+## The contact scope: a small round plot of what the heading strip already
+## marks (squad, pings, the depot and the helmet's finds) around the wearer,
+## turned so ahead is up. It is not a map: no ground, walls or roads, which
+## stay on the watch. The squad's size rides on its rim.
+func _draw_scope(p: Actor, ink: Color) -> void:
+	var rect := scope_rect()
+	var centre := rect.get_center()
+	var radius := rect.size.x * 0.5 * lerpf(0.4, 1.0, _swept())
+	draw_arc(centre, radius, 0.0, TAU, 64, _lit(ink, 0.5), 1.5, true)
+	draw_arc(centre, radius * 0.6, 0.0, TAU, 48, _lit(ink, 0.16), 1.0, true)
+	draw_arc(centre, radius * 0.25, 0.0, TAU, 32, _lit(ink, 0.14), 1.0, true)
+	# Rim ticks turn with the heading; north gets its letter.
+	var turn := -deg_to_rad(bearing(p.cmd.yaw))
+	_ticks(centre, radius - 5.0, -PI, PI, TAU / 24.0, 5.0, _lit(ink, 0.35), turn - PI * 0.5)
+	var north := centre + Vector2(sin(turn), -cos(turn)) * (radius + 9.0)
+	_text(north + Vector2(-20.0, 4.0), "N", _lit(ink, 0.8), HORIZONTAL_ALIGNMENT_CENTER, 40.0, 11)
+	# The view's cone and a slow sweep.
+	for edge: float in [-0.6, 0.6]:
+		draw_line(centre, centre + Vector2(sin(edge), -cos(edge)) * radius, _lit(ink, 0.18), 1.0, true)
+	var sweep := fposmod(_time * 1.3, TAU)
+	draw_arc(centre, radius * 0.55, sweep, sweep + 0.5, 12, _lit(ink, 0.1), radius * 0.9, false)
+	draw_colored_polygon(PackedVector2Array([centre + Vector2(0, -6), centre + Vector2(4.5, 5),
+			centre + Vector2(-4.5, 5)]), _lit(ink, 0.95))
+	for point in scope_points(p):
+		var mark: Dictionary = point.mark
+		var tint: Color = {"squad": SQUAD_INK, "ping": PING_INK, "hot": HOT_INK, "tag": TAG_INK}.get(mark.kind, ink)
+		var color := _lit(tint, 0.95 if point.inside else 0.55, mark.kind not in ["tag", "contact", "ping"])
+		var at: Vector2 = point.at
+		if not point.inside:
+			var dir := (at - centre).normalized()
+			draw_line(centre + dir * (radius - 2.0), centre + dir * (radius + 5.0), color, 2.0, true)
+			continue
+		match mark.kind:
+			"squad":
+				draw_polyline(PackedVector2Array([at + Vector2(-5, 4), at + Vector2(5, 4), at + Vector2(0, -5),
+						at + Vector2(-5, 4)]), color, 1.5, true)
+			"depot":
+				draw_rect(Rect2(at - Vector2(4, 4), Vector2(8, 8)), color, false, 1.5)
+			"contact":
+				draw_arc(at, 4.0, 0.0, TAU, 10, color, 1.5, true)
+			_:
+				draw_colored_polygon(PackedVector2Array([at + Vector2(0, -5), at + Vector2(5, 0), at + Vector2(0, 5),
+						at + Vector2(-5, 0)]), color)
+	# The rim's readouts: the squad on the lower left of it, the range on the right.
+	var lower := centre + Vector2(0.0, radius + 18.0)
+	if not squad.is_empty():
+		_text(lower + Vector2(-radius - 10.0, 0.0), "SQUAD %d" % (squad.size() + 1), _lit(SQUAD_INK, 0.85),
+				HORIZONTAL_ALIGNMENT_LEFT, 120.0, 12)
+	_text(lower + Vector2(radius + 10.0, 0.0), "%d M" % roundi(scope_range), _lit(ink, 0.5),
+			HORIZONTAL_ALIGNMENT_RIGHT, 90.0, 11)
+
+
+## Beside the scope: the helmet's name and role, and its system. How full the
+## bar is shows a recharge, a battery or time left; `lit` means it is ready
+## or running.
+func _draw_system(ink: Color, share: float, text: String, lit: bool) -> void:
+	var p := _player()
+	var rect := scope_rect()
+	var at := Vector2(rect.end.x + 22.0, rect.position.y + rect.size.y * 0.3)
+	var width := 190.0 * _swept()
+	var glow := 0.75 + 0.25 * sin(_time * 5.0) if lit else 0.6
+	_text(at, p.visor.display_name.to_upper() if p != null else "", _lit(ink, 0.95), HORIZONTAL_ALIGNMENT_LEFT, 190.0, 16)
+	_text(at + Vector2(0.0, 15.0), role_name(p.visor.mode) if p != null else "", _lit(ink, 0.5),
+			HORIZONTAL_ALIGNMENT_LEFT, 190.0, 11)
+	var bar := at + Vector2(0.0, 26.0)
+	draw_line(bar, bar + Vector2(width, 0.0), _lit(ink, 0.2), 3.0)
+	if share > 0.0:
+		draw_line(bar, bar + Vector2(width * clampf(share, 0.0, 1.0), 0.0), _lit(ink, 0.9 * glow, not lit), 3.0)
+	# Hash marks every tenth, so the bar reads as a gauge, not a loading bar.
+	for i in range(1, 10):
+		var x := bar.x + width * i / 10.0
+		draw_line(Vector2(x, bar.y + 3.0), Vector2(x, bar.y + 6.0), _lit(ink, 0.25), 1.0)
+	_text(bar + Vector2(0.0, 22.0), text, _lit(ink, 0.9, not lit), HORIZONTAL_ALIGNMENT_LEFT, 190.0, 13)
+
+
+## Thermal: how warm the wearer looks to another thermal visor, under the
+## helmet's system, so an Ember wearer knows when their own rig gives them away.
+func _draw_signature(p: Actor, ink: Color) -> void:
+	var heat := Visor.heat_of(p)
+	var hot := heat >= 1.2
+	var rect := scope_rect()
+	var at := Vector2(rect.end.x + 22.0, rect.position.y + rect.size.y * 0.3 + 66.0)
+	_text(at, signature_text(heat), _lit(HOT_INK if hot else ink, 0.85, not hot), HORIZONTAL_ALIGNMENT_LEFT, 220.0, 12)
+
+
+## What the objective block lists, in order: {"title", "have", "goal",
+## "share", "done", "tour"}. The contracts held, nearest done first, with this
+## life's counts on top, then the new player's tour objective.
+func objective_lines(held: Array[Dictionary], tally: Dictionary, objective: String) -> Array[Dictionary]:
+	var lines: Array[Dictionary] = []
+	for entry in held:
+		var have: int = int(entry.get("have", 0)) + Contracts.live(str(entry.get("stat", "")), tally)
+		var goal: int = maxi(int(entry.get("goal", 1)), 1)
+		lines.append({"title": str(entry.get("title", "")), "have": mini(have, goal), "goal": goal,
+				"share": clampf(float(have) / goal, 0.0, 1.0), "done": have >= goal, "tour": false})
+	lines.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a.share > b.share)
+	if objective != "":
+		lines.append({"title": objective, "have": 0, "goal": 0, "share": -1.0, "done": false, "tour": true})
+	return lines
+
+
+## The objective block, top right: a thin bracket that draws itself along the
+## top and down the right edge as the visor comes on, and under it one line per
+## objective with a hex bullet, its progress as a thin bar and the count in
+## colour. A finished one goes green; the tour's step is marked in the ping
+## colour. Nothing is boxed in.
+func _draw_objectives(p: Actor, ink: Color) -> void:
+	if hud == null:
+		return
+	var held: Array[Dictionary] = []
+	held.assign(hud.get("contracts") if hud.get("contracts") is Array else [])
+	var objective := str(hud.get("objective")) if hud.get("objective") != null else ""
+	var lines := objective_lines(held, p.tally, objective)
+	if lines.is_empty():
+		return
+	var right := size.x - size.y * 0.06 + sway.x
+	var width := clampf(size.x * 0.2, 260.0, 420.0)
+	var top := size.y * 0.075 + sway.y
+	var row := 36.0
+	var drawn := _swept()
+	var tall := 34.0 + row * lines.size()
+	# The bracket: a rule along the top that runs out from the right, a tick
+	# down at its far end, and a line down the right edge.
+	draw_line(Vector2(right, top), Vector2(right - width * drawn, top), _lit(ink, 0.6), 1.5, true)
+	draw_line(Vector2(right - width * drawn, top), Vector2(right - width * drawn, top + 7.0), _lit(ink, 0.6), 1.5, true)
+	draw_line(Vector2(right, top), Vector2(right, top + tall * drawn), _lit(ink, 0.35), 1.0, true)
+	draw_line(Vector2(right - 6.0, top + tall * drawn), Vector2(right, top + tall * drawn), _lit(ink, 0.35), 1.0, true)
+	var contracts := held.size()
+	_text(Vector2(right - width, top - 7.0), "OBJECTIVES" if contracts == 0 else "CONTRACTS", _lit(ink, 0.55),
+			HORIZONTAL_ALIGNMENT_LEFT, 200.0, 12)
+	if contracts > 0:
+		_text(Vector2(right - 8.0, top - 7.0), "%d HELD" % contracts, _lit(ink, 0.55), HORIZONTAL_ALIGNMENT_RIGHT,
+				150.0, 12)
+	var y := top + 28.0
+	for line in lines:
+		var x := right - width
+		var done: bool = line.done
+		var tour: bool = line.tour
+		var tint := SQUAD_INK if done else (PING_INK if tour else HOT_INK)
+		var bullet := hex_points(Vector2(x + 6.0, y - 5.0), 6.0)
+		if done:
+			draw_colored_polygon(bullet, _lit(tint, 0.9, false))
+		else:
+			var closed := bullet.duplicate()
+			closed.append(bullet[0])
+			draw_polyline(closed, _lit(tint, 0.95, false), 1.5, true)
+			if tour:
+				draw_circle(Vector2(x + 6.0, y - 5.0), 2.0, _lit(tint, 0.95, false))
+		var title: String = line.title
+		_text(Vector2(x + 20.0, y), title, _lit(SQUAD_INK if done else Color.WHITE.lerp(ink, 0.4), 0.92),
+				HORIZONTAL_ALIGNMENT_LEFT, width - 80.0, 16)
+		if not tour:
+			_text(Vector2(right - 14.0, y), "%d/%d" % [line.have, line.goal],
+					_lit(SQUAD_INK if float(line.share) > 0.0 else ink, 0.95), HORIZONTAL_ALIGNMENT_RIGHT, 60.0, 15)
+			var bar := Vector2(x + 20.0, y + 8.0)
+			var long := (width - 34.0) * drawn
+			draw_line(bar, bar + Vector2(long, 0.0), _lit(ink, 0.18), 2.0)
+			if float(line.share) > 0.0:
+				draw_line(bar, bar + Vector2(long * float(line.share), 0.0), _lit(SQUAD_INK if done else ink, 0.85), 2.0)
+		y += row
