@@ -49,6 +49,8 @@ const Economy := preload("res://core/economy/economy.gd")
 const BaseUpgrades := preload("res://core/base/base_upgrades.gd")
 ## DEV MODE: temporary, see `core/dev/dev_mode.gd`.
 const DevMode := preload("res://core/dev/dev_mode.gd")
+## The new player's tour: the handler on the phone (see "new player's tour").
+const Onboarding := preload("res://core/progression/onboarding.gd")
 ## DEV MODE: where a dev server keeps its accounts, apart from real ones.
 const DEV_ACCOUNTS := "user://accounts_dev"
 
@@ -123,6 +125,9 @@ var _death_result := {}
 var _portal_deploy := false
 ## Time.get_ticks_msec() from which a dead player may drop back in.
 var _redeploy_at := 0
+## How many items the server's account held at the last snapshot, so the
+## tour can tell a depot banking (the stash grows mid-life). -1 unknown.
+var _tour_stash_size := -1
 
 
 func _ready() -> void:
@@ -174,6 +179,7 @@ func _ready() -> void:
 			net.send_look(Profile.appearance))
 	# The game opens in the world: your home base.
 	go_home()
+	_tour_start()
 
 
 ## Between places the hub's travel screen fills the window; anywhere else it
@@ -181,6 +187,8 @@ func _ready() -> void:
 func _process(_delta: float) -> void:
 	if _travel != null:
 		_travel.visible = hub.visible and hub.station == ""
+	if controller != null and is_instance_valid(controller) and controller.wrist_raised:
+		_tour_event("watch")
 
 
 func _notification(what: int) -> void:
@@ -242,6 +250,8 @@ func _open_base(stash: Array, loadout: Dictionary, owner_name: String, upgrades:
 	base.bench_used.connect(open_bench)
 	base.portal_entered.connect(func(destination: String) -> void: go_through_portal.call_deferred(destination))
 	base.player_replaced.connect(func(_actor: Actor) -> void: _attach_base_view())
+	if not base.read_only:
+		base.target_hit.connect(_tour_event.bind("target"))
 	_attach_base_view()
 	base_hud = BaseHudScript.new()
 	base_hud.name = "BaseHud"
@@ -249,6 +259,8 @@ func _open_base(stash: Array, loadout: Dictionary, owner_name: String, upgrades:
 	base_hud.contracts = _held_contracts()
 	base.add_child(base_hud)
 	_apply_settings()
+	_tour_check()
+	_tour_show()
 
 
 ## Gives the base's player a camera and controls. Called again whenever
@@ -502,6 +514,7 @@ func _refresh_base() -> void:
 	if base and not base.read_only:
 		base.set_scrip(hub.scrip())
 		base.show_gear(hub.stash_items(), hub.current_loadout(), hub.base_upgrades())
+		_tour_check()
 
 
 # ----------------------------------------------------------------- arena ----
@@ -578,6 +591,10 @@ func start_raid(world_id: String, drop := "") -> void:
 			LOCAL_OWNER, Profile.renown, drop)
 	_attach_player_view()
 	raid.player_finished.connect(_on_solo_finished)
+	raid.player_banked.connect(func(actor: Actor, _items: Array) -> void:
+		if raid != null and actor == raid.player:
+			_tour_event("banked"))
+	_tour_check()
 
 
 ## The contracts the account holds, for the watch. They live on the
@@ -627,6 +644,7 @@ func _attach_player_view() -> void:
 	if phone != null:
 		hud.notice_sink = phone.show_notice
 	raid.add_child(hud)
+	_tour_show()
 	if nameplates != null and is_instance_valid(nameplates):
 		# The same world, a new life: they only need to know who you are now.
 		nameplates.viewer = raid.player
@@ -663,6 +681,7 @@ func _on_booth_changed(open: bool) -> void:
 
 ## One solo life ended. A death keeps you in the world; leaving goes home.
 func _on_solo_finished(_actor: Actor, result: Dictionary) -> void:
+	_tour_life_ended(result)
 	if result.get("outcome", "") == "died":
 		_show_death(result)
 		return
@@ -900,6 +919,7 @@ func _setup_phone() -> void:
 	phone.quit_requested.connect(func() -> void: get_tree().quit())
 	phone.set_wardrobe(hub.character)
 	phone.mirror_changed.connect(_on_mirror_changed)
+	phone.tour_requested.connect(_on_tour_requested)
 	phone.host_requested.connect(_go_online_from_phone.bind(""))
 	phone.join_requested.connect(_go_online_from_phone)
 	phone.leave_server_requested.connect(_leave_from_phone)
@@ -919,6 +939,146 @@ func _on_phone_opened(open: bool) -> void:
 		if phone != null:
 			phone.set_holder(controller.actor)
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if open or screen_open else Input.MOUSE_MODE_CAPTURED
+
+
+# ---------------------------------------------------- new player's tour ----
+# A handler messages a new player step by step on the phone (`Onboarding`),
+# and the step's objective sits on the watch card and the visor. Each step
+# finishes on the action itself; this section reports the actions
+# (`_tour_event`) and what is already true (`_tour_check`). It is only a
+# view of the player's progress and never changes a rule of the game. Dev
+# mode never runs it.
+
+## True while the tour runs here (never in dev mode).
+func _tour_running() -> bool:
+	return Onboarding.is_active(Profile.onboarding) and not DevMode.active()  # DEV MODE
+
+
+func _tour_names() -> Dictionary:
+	return Onboarding.names(PhoneScript.key_name("check_wrist"), PhoneScript.key_name("weapon_1"))
+
+
+func _tour_has_messages() -> bool:
+	return phone != null and phone.local_messages.any(func(m: Dictionary) -> bool:
+		return m.from == Onboarding.HANDLER_ID)
+
+
+## Puts the handler's messages so far on the phone (they are not saved, only
+## how far the tour got) and buzzes the current objective. Does nothing if
+## they are there already or the tour is not running.
+func _tour_start() -> void:
+	if phone == null or not _tour_running() or _tour_has_messages():
+		return
+	var names := _tour_names()
+	var texts := Onboarding.messages(Profile.onboarding, names)
+	for text in texts:
+		phone.add_local_message(Onboarding.HANDLER_ID, Onboarding.HANDLER_NAME, text, "", true)
+	# Only the newest is unread.
+	phone.read_upto[Onboarding.HANDLER_ID] = texts.size() - 1
+	phone.refresh(false)
+	phone.show_notice("%s: %s" % [Onboarding.HANDLER_NAME, Onboarding.objective(Profile.onboarding, names)])
+
+
+## The player did `event` (see `Onboarding.notify`).
+func _tour_event(event: String) -> void:
+	if _tour_running() and Onboarding.notify(Profile.onboarding, event):
+		_tour_settle()
+		_tour_moved()
+
+
+## Passes every step whose action is already done: gear on, standing in the
+## plaza, a contract held, out in a world.
+func _tour_check() -> void:
+	if _tour_running() and _tour_settle():
+		_tour_moved()
+
+
+## Feeds the tour what is true now until it stops moving. True if it moved.
+func _tour_settle() -> bool:
+	var moved := false
+	var again := true
+	while again and _tour_running():
+		again = false
+		for fact in _tour_facts():
+			if Onboarding.notify(Profile.onboarding, fact):
+				moved = true
+				again = true
+	return moved
+
+
+func _tour_facts() -> Array[String]:
+	var facts: Array[String] = []
+	var kit := hub.current_loadout()
+	for slot: String in ["primary", "sidearm", "melee"]:
+		if str(kit.get(slot, "")) != "":
+			facts.append("equipped")
+			break
+	if raid != null and is_instance_valid(raid) and raid.world != null and raid.world.safe_zone:
+		facts.append("plaza")
+	if not _held_contracts().is_empty():
+		facts.append("contract")
+	if _out_in_a_world():
+		facts.append("deployed")
+	return facts
+
+
+## True while in a world where gear is at risk (not the plaza or the arena).
+func _out_in_a_world() -> bool:
+	return raid != null and is_instance_valid(raid) and raid.world != null and not raid.world.safe_zone \
+			and raid.world.gear_at_risk and not (raid is Arena)
+
+
+## The tour moved on: saved, the handler sends the next step (or the
+## goodbye) and the objective changes.
+func _tour_moved() -> void:
+	Profile.save()
+	var names := _tour_names()
+	if Onboarding.is_active(Profile.onboarding):
+		if not _tour_has_messages():
+			_tour_start()
+		else:
+			phone.add_local_message(Onboarding.HANDLER_ID, Onboarding.HANDLER_NAME,
+					Onboarding.fill(Onboarding.current(Profile.onboarding).message, names),
+					Onboarding.objective(Profile.onboarding, names))
+	elif Profile.onboarding.get("state", "") == Onboarding.DONE and phone != null:
+		phone.add_local_message(Onboarding.HANDLER_ID, Onboarding.HANDLER_NAME,
+				Onboarding.fill(Onboarding.DONE_MESSAGE, names))
+	_tour_show()
+
+
+## A life ended: a sign-out from a world counts as getting loot home.
+func _tour_life_ended(result: Dictionary) -> void:
+	if result.get("outcome", "") == "left" and _out_in_a_world():
+		_tour_event("banked")
+
+
+## The objective on whichever HUD is up, and the phone's Settings button.
+func _tour_show() -> void:
+	var line := Onboarding.objective(Profile.onboarding, _tour_names()) if _tour_running() else ""
+	if hud != null and is_instance_valid(hud):
+		hud.objective = line
+	if base_hud != null and is_instance_valid(base_hud):
+		base_hud.objective = line
+	if phone != null:
+		phone.tour_running = _tour_running()
+
+
+## The phone's Settings asked to skip the tour or play it again.
+func _on_tour_requested(action: String) -> void:
+	match action:
+		"skip":
+			if not Onboarding.is_active(Profile.onboarding):
+				return
+			Onboarding.skip(Profile.onboarding)
+			Profile.save()
+			phone.add_local_message(Onboarding.HANDLER_ID, Onboarding.HANDLER_NAME, Onboarding.SKIP_MESSAGE)
+		"replay":
+			Onboarding.restart(Profile.onboarding)
+			Profile.save()
+			phone.clear_local_messages(Onboarding.HANDLER_ID)
+			_tour_start()
+			_tour_check()
+	_tour_show()
 
 
 # ---------------------------------------------------------------- mirror ----
@@ -984,6 +1144,9 @@ func _on_dev_mode_changed() -> void:
 	Profile.apply_dev_mode()
 	hub.refresh_gear()
 	_refresh_base()
+	# The tour pauses in dev mode and picks up again after it.
+	_tour_start()
+	_tour_show()
 
 
 ## Puts a new look on the player's character at once, wherever they are.
@@ -1247,6 +1410,7 @@ func _try_join() -> void:
 
 ## Signed in: the hub becomes that server's lobby.
 func _on_online_signed_in(account: Dictionary) -> void:
+	_tour_stash_size = (account.get("stash", []) as Array).size()
 	_join_attempts = 0
 	_door_fallback = false
 	_keep_profile_in_step(account)
@@ -1288,6 +1452,14 @@ func _on_online_signed_in(account: Dictionary) -> void:
 
 func _on_online_account_changed(account: Dictionary) -> void:
 	_keep_profile_in_step(account)
+	# The server sends the account mid-life when a depot banks into it: the
+	# stash grows while the player is alive out in a world.
+	var stash_size := (account.get("stash", []) as Array).size()
+	if _tour_stash_size >= 0 and stash_size > _tour_stash_size and _out_in_a_world() \
+			and raid.player != null and is_instance_valid(raid.player) and not raid.player.is_dead:
+		_tour_event("banked")
+	_tour_stash_size = stash_size
+	_tour_check()
 	if shop_view != null and is_instance_valid(shop_view):
 		shop_view.panel.set("account", account)
 		shop_view.panel.call("refresh")
@@ -1313,6 +1485,7 @@ func _on_online_joined(p_raid: Raid) -> void:
 		raid.add_child(plaza_view)
 		net.world_status_changed.connect(plaza_view.refresh_heat.unbind(1))
 		plaza_view.portal_used.connect(use_portal)
+	_tour_check()
 
 
 ## A player in the plaza stepped into a portal and asked to go.
@@ -1556,6 +1729,7 @@ func _on_online_disconnected() -> void:
 ## there, and nothing is written to the local profile. A death keeps you in
 ## the world; a finished sign-out goes back to the lobby.
 func _on_online_finished(result: Dictionary) -> void:
+	_tour_life_ended(result)
 	# A finished contract buzzes the phone with what it paid.
 	var finished: Array = result.get("contracts_finished", [])
 	if not finished.is_empty() and phone != null:
