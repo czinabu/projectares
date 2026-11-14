@@ -30,8 +30,8 @@ signal equip_requested(slot: String, item_id: String)
 ## The player used the door.
 signal leave_requested
 ## The player used a station (a key of `STATIONS`): the locker, the mastery
-## bench, the wardrobe, the records board, the trader or the uplink.
-## Whoever owns the base opens what it offers.
+## bench, the wardrobe, the records board or the trader. (Going online is
+## the phone's Servers app, not a station.) Whoever owns the base opens what it offers.
 signal station_requested(station: String)
 ## The player confirmed buying an upgrade (an id from `BaseUpgrades`) at its
 ## bulkhead. Whoever owns the account checks the price and takes the scrip.
@@ -138,7 +138,6 @@ const STATIONS := {
 	"records": {"prompt": "Read your record and stash", "title": "Records", "at": Vector3(-11.1, 0.0, 7.2), "yaw": PI / 2.0, "color": Color(0.9, 0.9, 0.85)},
 	"mastery": {"prompt": "Pick mastery variants", "title": "Mastery bench", "at": Vector3(11.1, 0.0, 7.9), "yaw": -PI / 2.0, "color": Color(1.0, 0.8, 0.3)},
 	"trader": {"prompt": "Buy and sell", "title": "Trader", "at": Vector3(11.1, 0.0, 6.0), "yaw": -PI / 2.0, "color": Color(0.45, 1.0, 0.6)},
-	"uplink": {"prompt": "Play online", "title": "Uplink", "at": Vector3(11.1, 0.0, -6.0), "yaw": -PI / 2.0, "color": Color(0.4, 0.95, 1.0)},
 }
 
 ## The workshop: the gunsmith's corner, a recess off the armory's left-hand
