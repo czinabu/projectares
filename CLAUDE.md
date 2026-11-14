@@ -259,9 +259,23 @@ without Caleb, and update the gap list when a PR closes a row.
   aim. Remote players work the same way from their replicated velocity.
   Past a relaxed cadence a run lengthens its stride (feet stretched about
   their average spot, legs solved to reach them) rather than only spinning
-  faster: that is the sprint. A slide (`Actor.slide_left`, `Actor.crouch`)
+  faster: that is the sprint. A slide (`Actor.slide_left`, `Actor.slide_low`)
   is simulated from `ActorCommand.slide` like a dash, so it predicts and
-  replicates; the skin bends the model into a slide pose from `crouch`.
+  replicates; the skin bends the model into a slide pose from `slide_low`.
+  The crouch key (C) slides from a sprint and otherwise toggles the crouch
+  (`PlayerController.crouch_key`), sent as the held `ActorCommand.crouch` so
+  it predicts and every view sees it. `Actor.crouched` follows it but stays
+  down while `room_to_stand` finds no headroom (a slide that ends under
+  something low ends crouched); crouched you walk at `crouch_speed`, the
+  eyes drop `crouch_eye_drop`, guns spread less (`aim_steadiness`) and bots
+  sense you behind them only closer in (`crouch_sense_mult`). The body is
+  `Actor.body_height()` tall (`CROUCH_HEIGHT` crouched or sliding): the
+  collision capsule, `Combat.capsule_entry`, headshots and anything aiming
+  at a chest use it, so low cover hides a crouched body. The skin sinks the
+  model onto bent knees from `Actor.crouch` (`Locomotion._crouch_pose`, the
+  landing squat's `_sink`, heels up onto the balls of the feet, a short step,
+  the chest leant in) under the stand or walk, so gun carries, ADS and
+  melee holds come down with the chest, in both views.
   Standing still is a relaxed stand (`idle`); a gun is held low (`idle_gun`)
   over the relaxed stand's legs and raised (`aim_gun`) only while shooting
   or aiming and briefly after.
@@ -579,7 +593,9 @@ without Caleb, and update the gap list when a PR closes a row.
   `Visor.heat_of`: `Actor.heat_signature` (frames set it with a
   `heat_signature` stat) plus flight rig heat. The picture is `VisorHud`
   (`core/ui/visor_hud.gd`), a view: its glass is drawn in first person only
-  and only while a helmet is worn (Caleb agreed a visor counts as in-world,
+  and only while a helmet is worn, wherever it is worn: worlds, the plaza,
+  the arena and the home base (`BaseHud.visor`, `VisorHud.setup_base`;
+  Caleb's call) (Caleb agreed a visor counts as in-world,
   since you look through it); what a visor shows out in the world (snapshots,
   tag markers, pulse rings, glints) is there in either view. The glass is thin
   projected light, never a frame, a tint or a mask over the view (playtest
@@ -589,18 +605,28 @@ without Caleb, and update the gap list when a PR closes a row.
   the lock brackets stay (`VisorHud.reticle_shown`), and the helmet wears
   its health strip and system light on the back of the head
   (`ActorSkin._update_vitals`, `helmet_light`), where a pack or a slung gun
-  never covers them. The glass carries
-  only your always-in-view readings (the health arc with armor and stamina
-  inside it and the ability's state under it, and with a flight rig the
-  heat gauge and rig cue high on the right, `VisorHud._draw_vitals` and
-  `_draw_heat`; the landing warning is still to come, per DESIGN.md
-  section 5). Every working helmet also has a heading strip across the top,
-  bowed with the glass, that marks only what the wearer is already told
-  (`VisorHud.compass_marks`): squadmates (`VisorHud.squadmate`: a player in
+  never covers them. The glass hugs
+  its rim and keeps the middle clear (Caleb's redesign, from a reference he
+  liked, made our own: never copy any one game's look). It carries your
+  always-in-view readings as a row of hex cells along the lower left curve,
+  each filling like a gauge with its number over it (health, armor,
+  stamina, with a flight rig its heat and cue, the ability;
+  `VisorHud.vital_cells`; the landing warning is still to come, per
+  DESIGN.md section 5). Every working helmet also has a heading tape across
+  the top, bowed with the glass, that marks only what the wearer is already
+  told (`VisorHud.compass_marks`): squadmates (`VisorHud.squadmate`: a player in
   the same clan, or everyone where `WorldDef.players_allied`; never a bot or
   an enemy), the side's pings and the nearest depot, plus each helmet's own
-  finds (Spotter tags, Seeker scan snapshots, Warden the war's hot zone),
-  and the contract nearest done as a small tracker top left (`hud.contracts`).
+  finds (Spotter tags, Seeker scan snapshots, Warden the war's hot zone).
+  The same marks are plotted round you on a small contact scope top left
+  (`scope_points`; never ground or walls, it is not a map), with the
+  helmet's name, role and system beside it; the contracts held and the
+  tour's step are an objective block top right (`objective_lines`, from
+  `hud.contracts` and `hud.objective`); faint pitch ticks run up both edges.
+  Bottom right, mirroring the vitals, a quiet weapon readout (Caleb's pick):
+  the weapon in hand, the mag over a tick a round and the pack's rounds,
+  resting dim and lit only on a reload, a low mag or just after a switch
+  (`VisorHud.weapon_awake`); ammo is still read off the gun's own counter.
   Each helmet has a role it names as it comes on (`role_name`) and its own
   reticle; an Ember also reads its wearer's own heat signature. A scrap
   visor manages only a bearing. Do not put the map or standing there, they
@@ -659,7 +685,17 @@ without Caleb, and update the gap list when a PR closes a row.
   another vehicle). Every vehicle is that one class, picked by data: the
   `model` stat picks the greybox body ("bike", "rover", "mech", "jet"),
   `body_size` its collision box, `pivot_turn` lets a walker turn on the
-  spot, `jump_speed` gives it a jump-jet hop, and the "aircraft" tag flies
+  spot, `jump_speed` gives it a jump-jet hop, the "hover" tag floats it on
+  a cushion ("hoverbike", the Raider: it drifts through turns by `slip`,
+  which travels in the ride state and is corrected like `speed`, holds
+  level over a gap for `hang_time` and hugs the ground off a ramp, never
+  flying), `passenger_seat` adds a pillion seat behind the rider
+  (`Vehicle.passenger`, `mount(actor, true)`; the seat's interact puts a
+  second player there; a passenger is seated by the same riding pose from
+  the pillion anchors, `Vehicle.ride_anchor`, makes it heavier, the
+  `laden_*` shares, and only the server decides who sits there, sent in the
+  ride state; check anything that asks whether a vehicle is free with
+  `is_occupied`, never `rider` alone), and the "aircraft" tag flies
   it (`Vehicle._fly`: takes off past `takeoff_speed` with jump, never
   hovers, drops below `stall_speed` or with nobody at the stick, climbs no
   higher than `ceiling` over the world's ground). Every vehicle, the jet
@@ -969,7 +1005,7 @@ without Caleb, and update the gap list when a PR closes a row.
   phone (`Phone.add_local_message`, kept on the phone only, so it works
   offline), one step at a time, and the step's objective is a small line on
   the watch card (`Hud.Wrist.objective`) and the visor glass (`Hud.objective`,
-  drawn by `VisorHud._draw_tracker`), never an overlay. Steps finish on the
+  drawn by `VisorHud._draw_objectives`), never an overlay. Steps finish on the
   action itself, reported by `main.gd` as events (`_tour_event`) and as what
   is already true (`_tour_check`), never on a button. It is a view of the
   player's own progress: it never locks, unlocks or hands out anything, and

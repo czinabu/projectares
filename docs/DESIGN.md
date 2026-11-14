@@ -858,6 +858,7 @@ covers the fighter and the gunship.
 | Vehicle | Crew | Terrain | Role |
 | --- | --- | --- | --- |
 | Motorbike (starter) | 1 to 2 (driver and a rear passenger) | Roads, dirt trails, jump ramps | High-speed street racing, tight drifting, launching off ramps into flight |
+| Hoverbike (the Raider) | 2 (driver and a passenger behind) | Rough ground, rubble, short gaps | The bike's upgrade: floats over broken ground and gaps a wheel would drop into, drifts through turns, carries a squadmate |
 | Armored squad rover | 4 (a full squad) | Rough off-road, canyons, open battlefields | Mobile squad gunship: a roof turret, two passenger firing seats, extra loot storage |
 | Compact mech / walker | 1 | Urban streets, boss arenas, bank spots | Heavy frontline tank: thick armor, twin cannons, short hydraulic jump-jets |
 | Fighter jet / starfighter | 1 to 2 (pilot and co-pilot) | High-altitude open skies | Fast cross-map travel, aerial dogfighting, heavy air-to-ground missile strikes |
@@ -868,6 +869,7 @@ them simply wins:
 | Vehicle | Weakness | Counter |
 | --- | --- | --- |
 | Motorbike | No cover: the rider is fully exposed, and it is loud | Shoot the rider; a dive or a melee air-lunge knocks them off |
+| Hoverbike | As the motorbike, with two exposed riders; it drifts wide, brakes late, cannot climb steep banks and barely leaves the ground off a ramp | Shoot either rider; catch it on a slope or in a tight turn |
 | Rover | Big and slow to turn, needs open ground; the turret gunner's head shows | Heavy weapons, flanking fliers above its turret's arc, and its wheels can be disabled |
 | Mech | A rear power unit that takes extra damage, slow turning, and a long watch recharge | Get behind it: boots and wings outmanoeuvre it, and a heavy weapon in the back breaks it |
 | Jet | Fragile and cannot hover; its missiles lock on with a warning the target feels | Flares (section 4) break locks, heavy weapons and a hovering jetpack can hit it on its strafing pass |
@@ -876,6 +878,32 @@ More on each:
 
 - **Motorbike:** the starter. Ramp launches hand straight over to the
   flight rig.
+- **Hoverbike (Caleb's call, replacing the Raider's motorbike):** the
+  Scrapper's rare upgrade, built on the same class (the "hover" tag, model
+  "hoverbike", `passenger_seat`). Hover vehicles in well-liked games tend to
+  share a shape: faster than a wheeled vehicle and smooth over rough ground,
+  paid for with lower grip (a drift you have to manage), weaker braking,
+  little armor and no real climbing or flight, often with a short float
+  over gaps and the ability to turn slowly on the spot. The numbers follow
+  that, sized against the bike and flight:
+  - Speed 26 m/s, boost 35 (Scrapper 22/29, rover 23/28). A step up from
+    the Scrapper, not a new class: the old Raider was 27/37, and the
+    hoverbike gave a little of that back for its terrain tricks. Still well
+    over the jetpack's 14 m/s cruise.
+  - Handling: acceleration 16 (Scrapper 14), turn 2.4 rad/s, but the course
+    trails the nose by up to 0.45 rad and grips back at 4 a second, so hard
+    turns drift wide and scrub a little speed. It turns slowly on the spot
+    (0.8 rad/s), coasts on (2.5 m/s² against 5) and brakes worse (22 against
+    32).
+  - Ground: rides a 0.45 m cushion, so kerbs and rubble pass under it.
+    Off a level edge at 10 m/s or more it holds level for 0.45 s, about a
+    12 m gap at top speed and 15 m on boost; off a ramp it keeps 60% of its
+    climb and falls 1.6 times as fast while rising, so it barely leaves the
+    ground. It cannot drive up slopes over 30 degrees (wheels manage 40).
+  - Two up: 92% top speed, 85% acceleration and turn rate, and 60% of the
+    gap float, back to full the moment the passenger gets off.
+  - Rare, 1,400 scrip, loot only, 10 s watch recharge (the solo bike 8 s).
+    Durability waits for vehicle health, which no vehicle has yet.
 - **Rover:** the squad vehicle. Passengers who can shoot are the reason to
   ride together instead of flying.
 - **Mech:** without a weak spot and a long recharge, a mech parked on a bank

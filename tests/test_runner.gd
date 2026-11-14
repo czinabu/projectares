@@ -18,6 +18,7 @@ const LookTests := preload("res://tests/look_tests.gd")
 const RigLookTests := preload("res://tests/rig_look_tests.gd")
 const RigTierTests := preload("res://tests/rig_tier_tests.gd")
 const RigBalanceTests := preload("res://tests/rig_balance_tests.gd")
+const HoverbikeTests := preload("res://tests/hoverbike_tests.gd")
 const EconomyTests := preload("res://tests/economy_tests.gd")
 const MeleeArsenalTests := preload("res://tests/melee_arsenal_tests.gd")
 const MeleeFeelTests := preload("res://tests/melee_feel_tests.gd")
@@ -260,6 +261,7 @@ func _run() -> void:
 	await RigBalanceTests.run(self)
 	await _test_vehicle_driving()
 	await _test_vehicle_roster()
+	await _test_hoverbike()
 	await _test_vehicle_raids()
 	await _test_vehicle_toys()
 	await _test_toy_throw_pose()
@@ -289,6 +291,7 @@ func _run() -> void:
 	await _test_online_movement()
 	await _test_online_lag_compensation()
 	await _test_online_riding()
+	await _test_online_pillion()
 	await _test_plaza()
 	await _test_plaza_online()
 	await _test_stash_service()
@@ -584,6 +587,7 @@ func _test_raid_setup_and_movement() -> void:
 			break
 	check(p.is_on_floor(), "player comes back down")
 	await _check_slide(p)
+	await _check_crouch(p)
 	await _end_raid(raid)
 
 
@@ -621,7 +625,7 @@ func _check_slide(p: Actor) -> void:
 	p.cmd.slide = false
 	for i in 120:
 		p._simulate_slide(Vector3.ZERO, true, false, dt)
-	check(is_zero_approx(p.crouch) and is_equal_approx(p.get_eye_position().y, stand_eyes), "the actor stands back up")
+	check(is_zero_approx(p.slide_low) and is_equal_approx(p.get_eye_position().y, stand_eyes), "the actor stands back up")
 
 	# Through the physics loop, as the server and every client run it.
 	p.velocity = p.global_basis * Vector3(0, 0, -p.sprint_speed)
@@ -641,6 +645,154 @@ func _check_slide(p: Actor) -> void:
 	check(not copy.slide, "a slide press lasts one tick")
 	for i in 90:
 		await get_tree().physics_frame
+
+
+## Crouching: the crouch key toggles it (and slides from a sprint), it walks
+## slow, drops the eyes and the body so low cover hides it, keeps you down
+## under a low ceiling, steadies the aim, lets you creep up on a bot, and
+## travels with the command as a held key.
+func _check_crouch(p: Actor) -> void:
+	for i in 60:
+		await get_tree().physics_frame
+		if p.is_on_floor() and not p.is_sliding() and p.slide_low <= 0.0:
+			break
+	p.cmd.move = Vector2.ZERO
+	p.velocity = Vector3.ZERO
+	await frames(2)
+	var stand_eyes := p.get_eye_position().y
+
+	# The key, as the controller reads it (not in the tree, so it never reads Input).
+	var keys := PlayerController.new()
+	keys.setup(p)
+	p.cmd.sprint = false
+	p.cmd.move = Vector2(0, 1)
+	keys.crouch_key(true)
+	check(p.cmd.crouch and not p.cmd.slide, "the crouch key crouches when not sprinting")
+	keys.crouch_key(false)
+	check(p.cmd.crouch, "the crouch stays on after the key comes up (a toggle)")
+	keys.crouch_key(true)
+	check(not p.cmd.crouch, "pressing it again stands you up")
+	keys.crouch_key(true)
+	p.cmd.sprint = true
+	p.cmd.sprint_pressed = true
+	keys.crouch_key(false)
+	check(not p.cmd.crouch, "sprinting stands you up")
+	p.cmd.sprint_pressed = false
+	keys.crouch_key(true)
+	check(p.cmd.slide and not p.cmd.crouch, "the crouch key while sprinting forward is a slide")
+	p.cmd.slide = false
+	p.cmd.sprint = false
+	keys.crouch_key(true)
+	p.cmd.jump_pressed = true
+	keys.crouch_key(false)
+	check(not p.cmd.crouch, "jumping stands you up")
+	p.cmd.jump_pressed = false
+	keys.free()
+
+	# Crouched: lower eyes, a shorter body, a slow walk.
+	p.cmd.move = Vector2.ZERO
+	p.cmd.crouch = true
+	await frames(20)
+	check(p.crouched and is_equal_approx(p.crouch, 1.0), "the actor crouches")
+	check(absf(p.get_eye_position().y - (stand_eyes - p.crouch_eye_drop)) < 0.01, "crouching drops the eyes")
+	check(is_equal_approx(p.body_height(), Actor.CROUCH_HEIGHT) and is_equal_approx(p._body_shape.height, Actor.CROUCH_HEIGHT),
+			"crouching lowers the body's collision")
+	var steady := p.aim_steadiness()
+	check(steady < 1.0, "crouched on the ground the aim is steadier")
+	var gun := p.weapons[0] as Gun
+	if gun:
+		p.cmd.crouch = false
+		await frames(20)
+		var standing_spread := gun.current_spread_deg()
+		p.cmd.crouch = true
+		await frames(20)
+		check(gun.current_spread_deg() < standing_spread, "a crouched gun spreads less")
+	p.cmd.yaw = 0.0
+	p.cmd.move = Vector2(0, 1)
+	p.cmd.sprint = true
+	await frames(30)
+	var speed := Vector2(p.velocity.x, p.velocity.z).length()
+	check(speed <= p.crouch_speed + 0.01 and speed > 1.0, "crouched you walk slowly, sprint held or not (%.1f m/s)" % speed)
+	p.cmd.sprint = false
+	p.cmd.move = Vector2.ZERO
+	p.velocity = Vector3.ZERO
+	await frames(10)
+
+	# Low cover: a shot over a wall too low to hide behind standing up hits
+	# the standing head and passes over the crouched one.
+	var from := p.global_position + Vector3(0, 1.5, -10)
+	var to := p.global_position + Vector3(0, 1.5, 10)
+	check(Combat.capsule_entry(from, to, p.global_position, p.body_height()).is_empty(),
+			"a shot at standing head height passes over a crouched body")
+	check(not Combat.capsule_entry(from, to, p.global_position).is_empty(), "and hits a standing one")
+	var head_hit := {"position": p.global_position + Vector3(0, Actor.CROUCH_HEIGHT - 0.1, 0), "collider": p,
+			"feet": p.global_position}
+	check(Combat.is_headshot(head_hit), "a crouched head is lower down")
+
+	# Under a low ceiling there is no room to stand: you stay down.
+	var roof := StaticBody3D.new()
+	roof.collision_layer = Actor.LAYER_WORLD
+	var shape := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = Vector3(4, 0.2, 4)
+	shape.shape = box
+	roof.add_child(shape)
+	p.get_parent().add_child(roof)
+	roof.global_position = p.global_position + Vector3(0, Actor.CROUCH_HEIGHT + 0.2, 0)
+	await frames(2)
+	check(not p.room_to_stand(), "a low ceiling leaves no room to stand")
+	p.cmd.crouch = false
+	await frames(20)
+	check(p.crouched and p.body_height() < Actor.BODY_HEIGHT - 0.3, "under it you stay crouched")
+	roof.queue_free()
+	await frames(20)
+	check(not p.crouched and is_zero_approx(p.crouch) and is_equal_approx(p.body_height(), Actor.BODY_HEIGHT),
+			"out from under it you stand up")
+	check(is_equal_approx(p.get_eye_position().y - p.global_position.y, p.eye_height), "standing puts the eyes back")
+
+	# Bots sense a crouched actor behind them only closer in.
+	var bot: Actor = null
+	for other in get_tree().get_nodes_in_group("actors"):
+		if other is Actor and other != p and other.get_node_or_null("Brain") is BotBrain and not other.is_dead:
+			bot = other
+			break
+	check(bot != null, "a bot to sneak up on")
+	if bot:
+		var brain := bot.get_node("Brain") as BotBrain
+		var bot_was := bot.global_position
+		var bot_yaw := bot.cmd.yaw
+		# The bot faces away (-Z is forward at yaw 0), the player behind it.
+		bot.global_position = p.global_position + Vector3(0, 0, -brain.close_sense_range * 0.6)
+		bot.cmd.yaw = 0.0
+		bot.velocity = Vector3.ZERO
+		bot.process_mode = Node.PROCESS_MODE_DISABLED
+		brain.target = null
+		p.cmd.crouch = false
+		await frames(20)
+		var heard_standing := brain._find_target() == p
+		p.cmd.crouch = true
+		await frames(20)
+		var heard_crouched := brain._find_target() == p
+		check(heard_standing and not heard_crouched, "a bot senses someone behind it standing, not crouched (%s, %s)"
+				% [heard_standing, heard_crouched])
+		bot.global_position = bot_was
+		bot.cmd.yaw = bot_yaw
+		bot.process_mode = Node.PROCESS_MODE_INHERIT
+
+	# It travels with the command as a held key, so everyone sees the crouch.
+	var cmd := ActorCommand.new()
+	cmd.crouch = true
+	var copy := ActorCommand.new()
+	copy.apply_array(cmd.to_array())
+	copy.clear_one_shots()
+	check(copy.crouch and cmd.flags() & ActorCommand.HELD_MASK & ActorCommand.FLAG_CROUCH != 0,
+			"a crouch travels with the command as a held key")
+	var packed := NetSession.unpack_inputs(NetSession.pack_inputs([[1, cmd.to_array(), 0]]))
+	var unpacked := ActorCommand.new()
+	unpacked.apply_array(packed[0][1])
+	check(unpacked.crouch, "and survives the packed input")
+	p.cmd.crouch = false
+	await frames(20)
 
 
 func _test_combat_and_loot() -> void:
@@ -2599,6 +2751,10 @@ func _test_vehicle_roster() -> void:
 	raid.queue_free()
 	arena.queue_free()
 	await frames(2)
+
+
+func _test_hoverbike() -> void:
+	await HoverbikeTests.run(self)
 
 
 ## The lowest point of every mesh under `node`, in world height.
@@ -4627,6 +4783,108 @@ func _test_online_riding() -> void:
 	await frames(30)
 
 
+func _test_online_pillion() -> void:
+	print("Online: a passenger behind the rider")
+	_wipe_dir(NET_ACCOUNTS)
+	# Hal owns a Raider hoverbike: put one in the account before the server reads it.
+	var service := StashService.new()
+	service.save_dir = NET_ACCOUNTS
+	if not _net_secrets.has("Hal"):
+		_net_secrets["Hal"] = StashService.new_secret()
+	service.sign_in("Hal", _net_secrets["Hal"])
+	var account := service.load_account(StashService.id_for_name("Hal"))
+	account.add_items(["bike_raider"])
+	service._save(account)
+	var port := 24881
+	var pid := _start_server(port, ["--bots", "0", "--squad-spawn"])
+	var hal := await _join("Hal", port, {"vehicle": "bike_raider"})
+	var ida := await _join("Ida", port) if hal != null else null
+	check(hal != null and ida != null, "two clients join for the passenger checks")
+	var bike: Node3D = null
+	if hal != null and ida != null:
+		await _throw_own_bike(hal)
+		for v: Node3D in hal.vehicles():
+			if v.get("item_id") == "bike_raider":
+				bike = v
+	if bike == null:
+		check(false, "the hoverbike is there")
+		await _leave(ida)
+		await _leave(hal)
+		OS.kill(pid)
+		await frames(30)
+		return
+	var me := hal.raid.player
+	_aim_at(me, bike.global_position + Vector3(0, 0.6, 0))
+	await frames(6)
+	me.cmd.interact_pressed = true
+	await frames(1)
+	me.cmd.interact_pressed = false
+	await _wait_until(func() -> bool: return me.vehicle == bike, 90)
+	check(me.vehicle == bike, "the rider gets on the hoverbike")
+	# Ida walks up and climbs on behind.
+	var her := ida.raid.player
+	var her_bike: Node3D = null
+	for v: Node3D in ida.vehicles():
+		if v.get("item_id") == "bike_raider":
+			her_bike = v
+	for i in 400:
+		var gap := her_bike.global_position - her.global_position if her_bike != null else Vector3.ZERO
+		gap.y = 0.0
+		if gap.length() < 2.0:
+			break
+		her.cmd.yaw = _yaw_toward(gap)
+		her.cmd.pitch = 0.0
+		her.cmd.aim_dir = Vector3.ZERO
+		her.cmd.move = Vector2(0, 1)
+		await frames(1)
+	her.cmd.move = Vector2.ZERO
+	await frames(10)
+	if her_bike != null:
+		_aim_at(her, her_bike.global_position + Vector3(0, 0.7, 0.3))
+	await frames(6)
+	her.cmd.interact_pressed = true
+	await frames(1)
+	her.cmd.interact_pressed = false
+	var ida_on_hal := func() -> Actor:
+		return hal._actors.get(ida.my_actor_id)
+	await _wait_until(func() -> bool:
+		return her.vehicle == her_bike and bike.get("passenger") != null and bike.get("passenger") == ida_on_hal.call(), 120)
+	check(her.vehicle == her_bike and her_bike.get("passenger") == her and her_bike.get("rider") != null,
+			"the passenger sits behind the rider in their own game")
+	check(bike.get("passenger") != null and bike.get("passenger") == ida_on_hal.call() and bike.get("rider") == me,
+			"and the rider's game seats them there too")
+	# The rider drives two up on a slow connection; the server agrees.
+	hal.simulated_lag = 0.12
+	await frames(40)
+	hal.max_correction = 0.0
+	var from := bike.global_position
+	me.cmd.move = Vector2(0, 1)
+	await frames(60)
+	me.cmd.move = Vector2(-0.8, 1)
+	await frames(40)
+	me.cmd.move = Vector2(0, -1)
+	await _wait_until(func() -> bool: return float(bike.get("speed")) <= 0.5, 150)
+	me.cmd.move = Vector2.ZERO
+	var carried := bike.global_position.distance_to(from)
+	check(carried > 3.0, "the hoverbike carries both (%.1f m)" % carried)
+	check(hal.max_correction < 0.6, "the server agrees with the predicted two-up drift (worst %.2f m)" % hal.max_correction)
+	await frames(60)
+	var apart := her_bike.global_position.distance_to(bike.global_position)
+	check(apart < 0.6 and her.global_position.distance_to(her_bike.global_position) < 1.5,
+			"the passenger is carried where the rider has it (%.2f m apart)" % apart)
+	# F lets the passenger off; the rider stays on.
+	her.cmd.interact_pressed = true
+	await frames(1)
+	her.cmd.interact_pressed = false
+	await _wait_until(func() -> bool: return her.vehicle == null and bike.get("passenger") == null, 120)
+	check(her.vehicle == null and bike.get("passenger") == null and me.vehicle == bike,
+			"F lets the passenger off for everyone and the rider rides on")
+	await _leave(ida)
+	await _leave(hal)
+	OS.kill(pid)
+	await frames(30)
+
+
 ## Aims an actor at a point, the way a controller would.
 func _aim_at(actor: Actor, point: Vector3) -> void:
 	var aim := (point - actor.get_eye_position()).normalized()
@@ -4825,7 +5083,7 @@ func _test_vehicle_toys() -> void:
 			"the watch stands each toy over its hologram")
 	var shown := hud.wrist.get_node("Hologram/Toys")
 	check(shown.get_child(1).scale.x > shown.get_child(0).scale.x and hud.wrist.focused_id() == "vehicle"
-			and hud.wrist.text().begins_with("Raider Bike") and shown.visible,
+			and hud.wrist.text().begins_with("Raider Hoverbike") and shown.visible,
 			"the card opens on the vehicles, the picked toy stands out and the watch names it")
 	check("wheel" in hud.wrist.focused_hints() and "click" in hud.wrist.focused_hints()
 			and not hud.wrist.text().contains("click"), "its controls are glyphs, not words")
@@ -4845,7 +5103,7 @@ func _test_vehicle_toys() -> void:
 	check(controller.pack_target() == third and controller.click_watch() and packs[0] == 1 and controller.held_toy == "",
 			"with the watch up, clicking on a bike asks to pack it")
 	hud._process(0.016)
-	check(hud.wrist.text().begins_with("Pack Raider Bike") and hud.wrist.focused_hints() == ["click"],
+	check(hud.wrist.text().begins_with("Pack Raider Hoverbike") and hud.wrist.focused_hints() == ["click"],
 			"and the watch says so, with a click glyph")
 	_aim_at(p, p.global_position + Vector3(0, 1.6, 10))
 	controller.yaw = p.cmd.yaw

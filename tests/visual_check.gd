@@ -1381,7 +1381,7 @@ func _settle(count: int) -> void:
 ## Spotter resting and zoomed, the Seeker ready and just after a scan, the
 ## Warden with Threat Sense running, and the Ember in thermal.
 func _visor_shots(out_dir: String) -> void:
-	var scrap: Array[String] = ["rifle_scrap", "blade_scrap", "jetpack_mk1", "plate_light"]
+	var scrap: Array[String] = ["rifle_scrap", "blade_scrap", "jetpack_mk1", "plate_light", "chip_blink"]
 	for helmet: String in ["visor_scav", "helm_spotter", "helm_seeker", "helm_warden", "helm_ember"]:
 		var raid := Raid.new()
 		add_child(raid)
@@ -1417,8 +1417,16 @@ func _visor_shots(out_dir: String) -> void:
 		raid.pinged.emit(p, p.global_position + look * Vector3(12, 0, -60))
 		raid.war.intensity = 0.7
 		raid.war.centre = p.global_position + look * Vector3(150, 0, -120)
-		hud.contracts.assign([{"id": "cull", "title": "Kill 8 enemies", "stat": "kills", "goal": 8, "have": 3}])
+		hud.contracts.assign([{"id": "cull", "title": "Kill 8 enemies", "stat": "kills", "goal": 8, "have": 3},
+				{"id": "haul", "title": "Bring home 600 scrip of loot", "stat": "loot_value", "goal": 600, "have": 240},
+				{"id": "ride", "title": "Ride 2 vehicles", "stat": "rides", "goal": 2, "have": 2}])
+		hud.objective = "Bank your loot at a depot"
+		p.flight.heat = p.flight.max_heat * 0.45
 		p.tally["kills"] = 2
+		# A low mag, so the weapon readout bottom right wakes up.
+		var held_gun := p.get_active_weapon() as Gun
+		if held_gun != null:
+			held_gun.ammo_in_mag = 4
 		await _settle(20)
 		await _shot(out_dir.path_join("visor_%s.png" % helmet))
 		if helmet == "helm_spotter":
@@ -1462,6 +1470,23 @@ func _visor_shots(out_dir: String) -> void:
 			await _shot(out_dir.path_join("visor_helm_seeker_after.png"))
 		raid.queue_free()
 		await _settle(3)
+	# The same glass at home: a helmet shows it wherever it is worn.
+	var base := HomeBase.new()
+	base.show_gear(["helm_warden", "rifle_carbine", "frame_trooper", "jetpack_mk1"],
+			{"helmet": "helm_warden", "primary": "rifle_carbine", "frame": "frame_trooper", "rig": "jetpack_mk1"})
+	add_child(base)
+	var home_controller := PlayerController.new()
+	home_controller.setup(base.player)
+	base.add_child(home_controller)
+	var base_hud: CanvasLayer = preload("res://core/ui/base_hud.gd").new()
+	base_hud.setup(base, home_controller)
+	base_hud.contracts.assign([{"id": "cull", "title": "Kill 8 enemies", "stat": "kills", "goal": 8, "have": 5}])
+	base_hud.objective = "Head out to the plaza"
+	base.add_child(base_hud)
+	await _settle(60)
+	await _shot(out_dir.path_join("visor_home_base.png"))
+	base.queue_free()
+	await _settle(3)
 
 
 ## Every helmet worn, and a bare head, from the front, the side and behind,
@@ -1772,13 +1797,18 @@ func _gait_shots(out_dir: String) -> void:
 		["diagonal", Vector3(-4.2, 0, -4.2), 0.0],
 		["backpedal", Vector3(0, 0, player.walk_speed), 0.0],
 		["slide", Vector3(0, 0, -player.slide_speed), 1.0],
+		["crouch", Vector3.ZERO, -1.0],
+		["crouch_walk", Vector3(0, 0, -player.crouch_speed), -1.0],
 	]
 	for view: String in ["side", "front"]:
 		var sheet := Image.create(6 * 320, moves.size() * 360, false, Image.FORMAT_RGBA8)
 		for row in moves.size():
 			var move: Array = moves[row]
 			player.slide_left = 0.5 if move[2] > 0.0 else 0.0
-			player.crouch = move[2]
+			player.slide_low = maxf(move[2], 0.0)
+			# A negative weight is the crouch.
+			player.crouch = 1.0 if move[2] < 0.0 else 0.0
+			player.crouched = move[2] < 0.0
 			player.velocity = player.global_basis * move[1]
 			for i in 6:
 				for k in 5:
@@ -2241,6 +2271,21 @@ func _ride_shots(out_dir: String) -> void:
 	await _settle(20)
 	bike.mount(player)
 	player.set_physics_process(false)
+	if bike.passenger_seat:
+		# A passenger behind the rider, to see the two-up seating.
+		# A plain soldier, not a heavy in a walker frame.
+		var pillion: Actor = null
+		for tries in 20:
+			pillion = raid.spawn_bot("Pillion%d" % tries, at + Vector3(-2.0, 0.3, 0.0), 7 + tries, false, "tide", 0)
+			if pillion.display_name == "Tide Raider":
+				break
+			raid.bots.erase(pillion)
+			pillion.free()
+		if pillion.has_node("Brain"):
+			pillion.get_node("Brain").set_physics_process(false)
+		await _settle(5)
+		bike.mount(pillion, true)
+		pillion.set_physics_process(false)
 	player.rotation.y = 0.6
 	var skin: Node = player.get_node("Skin")
 	var gun := -1
@@ -2576,6 +2621,8 @@ func _carry_shots(out_dir: String) -> void:
 		["strafe", Vector3(-p.walk_speed, 0, 0), false],
 		["slide", Vector3(0, 0, -p.slide_speed), false],
 		["shoot_run", Vector3(0, 0, -p.walk_speed), true],
+		["crouch_walk", Vector3(0, 0, -p.crouch_speed), false],
+		["crouch_aim", Vector3.ZERO, true],
 	]
 	var size := Vector2i(320, 360)
 	DirAccess.make_dir_recursive_absolute(out_dir.path_join("carry"))
@@ -2591,7 +2638,12 @@ func _carry_shots(out_dir: String) -> void:
 			var hold := func() -> void:
 				p.velocity = p.global_basis * (move[1] as Vector3)
 				p.slide_left = 0.5 if sliding else 0.0
-				p.crouch = 1.0 if sliding else 0.0
+				p.slide_low = 1.0 if sliding else 0.0
+				var low: bool = (move[0] as String).begins_with("crouch")
+				p.cmd.crouch = low
+				p.crouched = low
+				p.crouch = 1.0 if low else 0.0
+				p.cmd.secondary = move[0] == "crouch_aim"
 				p.cmd.primary = move[2]
 			for col in 5:
 				var first := col == 4

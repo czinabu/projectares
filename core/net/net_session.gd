@@ -82,7 +82,7 @@ signal base_visit_requested(owner_name: String, stash: Array, loadout: Dictionar
 signal portal_travel(destination: String)
 
 const DEFAULT_PORT := 24565
-const PROTOCOL := 27
+const PROTOCOL := 29
 ## Every packet is compressed, both ways. State updates are mostly repeated
 ## numbers, and a big battle sends a player hundreds of them a second. Server
 ## and client must agree, so a change here needs a new PROTOCOL.
@@ -1150,8 +1150,10 @@ func _server_late_tick(_delta: float) -> void:
 				var vehicle: Node3D = _vehicles[id]
 				var rider: Actor = vehicle.get("rider")
 				var rider_id: int = _ids.get(rider, -1) if rider != null else -1
+				var passenger: Actor = vehicle.get("passenger")
 				rides.append([id, vehicle.global_position, vehicle.get("heading"), vehicle.get("speed"),
-						rider_id, _applied_seq.get(rider_id, 0)])
+						rider_id, _applied_seq.get(rider_id, 0),
+						_ids.get(passenger, -1) if passenger != null else -1, vehicle.get("slip")])
 			for peer in _joined_peers:
 				_vehicle_state.rpc_id(peer, rides)
 	_send_boards()
@@ -1877,7 +1879,7 @@ func _vehicle_gone(id: int) -> void:
 	_vehicle_targets.erase(id)
 	if vehicle == null or not is_instance_valid(vehicle):
 		return
-	vehicle.call("dismount")
+	vehicle.call("dismount_all")
 	if raid != null:
 		raid.vehicles.erase(vehicle)
 	vehicle.queue_free()
@@ -1911,6 +1913,8 @@ func _client_move_vehicles() -> void:
 			if not is_same(entry, _ride_entry):
 				_ride_entry = entry
 				_correct_ride(vehicle, entry)
+				# Who sits behind is the server's call, like the rider.
+				_seat_from_state(vehicle, "passenger", int(entry[6]), true)
 			continue
 		var at: Vector3 = entry[1]
 		if vehicle.global_position.distance_to(at) > SNAP_DISTANCE:
@@ -1921,21 +1925,31 @@ func _client_move_vehicles() -> void:
 		vehicle.set("heading", heading)
 		vehicle.rotation = Vector3(0.0, heading, 0.0)
 		vehicle.set("speed", entry[3])
-		var rider: Actor = _actors.get(entry[4]) if int(entry[4]) >= 0 else null
-		if rider != null and not is_instance_valid(rider):
-			rider = null
-		var current: Actor = vehicle.get("rider")
-		if current != rider:
-			if current != null:
-				vehicle.call("dismount")
-			if rider != null:
-				if rider.vehicle != null:
-					rider.vehicle.call("dismount")
-				vehicle.call("mount", rider)
+		vehicle.set("slip", entry[7])
+		if _seat_from_state(vehicle, "rider", int(entry[4]), false):
 			_ride_history.clear()
 			_ride_fix = Vector3.ZERO
 			_ride_turn = 0.0
+		_seat_from_state(vehicle, "passenger", int(entry[6]), true)
 		vehicle.call("_place_rider")
+
+
+## Puts whoever the server says is on `seat` ("rider" or "passenger") there.
+## True if that changed who sits there.
+func _seat_from_state(vehicle: Node3D, seat: String, actor_id: int, behind: bool) -> bool:
+	var want: Actor = _actors.get(actor_id) if actor_id >= 0 else null
+	if want != null and not is_instance_valid(want):
+		want = null
+	var current: Actor = vehicle.get(seat)
+	if current == want:
+		return false
+	if current != null:
+		vehicle.call("get_off", current)
+	if want != null:
+		if want.vehicle != null:
+			want.vehicle.call("get_off", want)
+		vehicle.call("mount", want, behind)
+	return true
 
 
 ## Compares the server's position for your ride with where this game predicted
@@ -1959,8 +1973,12 @@ func _correct_ride(vehicle: Node3D, entry: Array) -> void:
 	# the remembered rides too so the next answer only sees what is still wrong.
 	var speed_miss := float(entry[3]) - float(then[2])
 	vehicle.set("speed", float(vehicle.get("speed")) + speed_miss)
+	# A hover's drift carries on the same way.
+	var slip_miss := float(entry[7]) - float(then[3])
+	vehicle.set("slip", float(vehicle.get("slip")) + slip_miss)
 	for later: int in _ride_history:
 		_ride_history[later][2] += speed_miss
+		_ride_history[later][3] += slip_miss
 
 
 func _snap_ride(vehicle: Node3D, entry: Array) -> void:
@@ -1968,6 +1986,7 @@ func _snap_ride(vehicle: Node3D, entry: Array) -> void:
 	vehicle.set("heading", entry[2])
 	vehicle.rotation = Vector3(0.0, entry[2], 0.0)
 	vehicle.set("speed", entry[3])
+	vehicle.set("slip", entry[7])
 	_ride_history.clear()
 	_ride_fix = Vector3.ZERO
 	_ride_turn = 0.0
@@ -2364,7 +2383,7 @@ func _client_late_tick() -> void:
 		# A rider goes where their vehicle goes; the ride is what is compared.
 		_history.clear()
 		_ride_history[_seq] = [me.vehicle.global_position, float(me.vehicle.get("heading")),
-				float(me.vehicle.get("speed"))]
+				float(me.vehicle.get("speed")), float(me.vehicle.get("slip"))]
 		_ride_history.erase(_seq - HISTORY_TICKS)
 	else:
 		_ride_history.clear()

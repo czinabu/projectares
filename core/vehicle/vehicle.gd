@@ -1,9 +1,10 @@
 extends CharacterBody3D
-## A rideable vehicle: the motorbike, the squad rover, the mech and the jet
-## are all this one class, picked by item data. The `model` stat picks the
-## greybox body, and the rest is tuning: `pivot_turn` lets a walker turn on
-## the spot, `jump_speed` gives it jump-jets, and the "aircraft" tag flies it
-## (`_fly`).
+## A rideable vehicle: the motorbike, the hoverbike, the squad rover, the mech
+## and the jet are all this one class, picked by item data. The `model` stat
+## picks the greybox body, and the rest is tuning: `pivot_turn` lets a walker
+## turn on the spot, `jump_speed` gives it jump-jets, the "hover" tag floats
+## it on a cushion of thrust (see "Hover" below), `passenger_seat` gives it a
+## pillion seat behind the rider, and the "aircraft" tag flies it (`_fly`).
 ##
 ## Like the Actor, a vehicle is driven only by its rider's ActorCommand, so it
 ## runs the same on a headless server. It reads the rider's command before the
@@ -26,10 +27,13 @@ const LAYER_VEHICLES := 8
 
 var item_id := ""
 var display_name := "Vehicle"
-## Which greybox body to build: "bike", "rover", "mech" or "jet".
+## Which greybox body to build: "bike", "hoverbike", "rover", "mech" or "jet".
 var model := "bike"
 ## True for an item tagged "aircraft": it takes off past `takeoff_speed`.
 var flies := false
+## True for an item tagged "hover": it rides a cushion of thrust instead of
+## wheels (see "Hover" below).
+var hovers := false
 
 # Driving tuning. Item stats in ItemDB override these.
 var max_speed := 24.0
@@ -45,6 +49,8 @@ var turn_rate := 2.3
 var full_turn_speed := 6.0
 var gravity := 20.0
 var max_fall_speed := 50.0
+## The steepest ground it can drive up, in degrees. Steeper is a wall.
+var max_slope := 40.0
 ## Where the rider's feet are carried, relative to the vehicle. Low and over
 ## the seat, so a seated rider's head (and eyes, and headshot zone) is about
 ## where it shows.
@@ -73,6 +79,50 @@ var pivot_turn := 0.0
 var jump_speed := 0.0
 var jump_cooldown := 2.5
 var _jump_wait := 0.0
+
+# Hover, for a "hover" item only. It handles like a wheeled bike that slides:
+# its course (where it is going) trails its heading (where it points) by
+# `slip`, which steering opens and `grip` closes, so it drifts through turns.
+# The cushion holds it level for `hang_time` after it runs off an edge at
+# speed, so it crosses a gap of about speed times `hang_time`, and holds it
+# down off a crest or ramp (it keeps `launch_keep` of its climb and falls at
+# `downforce` times gravity while it rises), so it hugs the ground and never
+# really flies.
+## How fast the course swings round onto the heading, per second.
+var grip := 3.5
+## The widest the course may trail the heading, in radians.
+var max_slip := 0.55
+## Seconds of level glide off an edge, at `hang_min_speed` or faster.
+var hang_time := 0.45
+var hang_min_speed := 10.0
+## Share of its upward speed it keeps leaving a crest or ramp lip.
+var launch_keep := 0.6
+## Gravity scale while it rises off a crest or ramp.
+var downforce := 1.6
+## True when it left the ground level (off an edge, not up a ramp): only
+## then does the cushion hold it level.
+var _left_level := false
+## Height of the hull's underside over the ground: the cushion.
+var hover_height := 0.45
+## Radians the course trails the heading (positive: the course is to the left).
+var slip := 0.0
+
+# A pillion seat behind the rider (`passenger_seat`). Its anchors work like
+# the rider's (`seat_offset`, `seat_point`, `grip_points`, `peg_points`,
+# `rider_lean`, `exit_offset`); the passenger only sits, and may shoot.
+var passenger_seat := false
+var pillion_offset := Vector3(0.0, 0.17, 0.76)
+var pillion_point := Vector3(0.0, 1.1, 0.76)
+var pillion_grips: Array[Vector3] = [Vector3(-0.24, 1.1, 0.56), Vector3(0.24, 1.1, 0.56)]
+var pillion_pegs: Array[Vector3] = [Vector3(-0.36, 0.8, 0.5), Vector3(0.36, 0.8, 0.5)]
+var pillion_lean := 0.25
+var pillion_exit := Vector3(-1.4, 0.1, 0.6)
+## Two up it is heavier: these share of top speed, acceleration, turn rate
+## and gap glide are what is left with a passenger aboard.
+var laden_speed := 0.92
+var laden_accel := 0.85
+var laden_turn := 0.85
+var laden_hang := 0.6
 
 # Flight, for an "aircraft" only. It rolls along the ground like any vehicle
 # until it is past `takeoff_speed`, then jump climbs and descend sinks. It
@@ -109,6 +159,8 @@ const LEG_HIP := 1.75
 var _turning := 0.0
 
 var rider: Actor
+## Whoever sits on the pillion seat, or null.
+var passenger: Actor
 ## The direction the vehicle points, in radians around up.
 var heading := 0.0
 ## Signed speed along the heading. Negative while reversing.
@@ -133,12 +185,17 @@ var _model: Node3D
 ## How far the bike leans into a turn, in radians (positive leans right).
 var lean := 0.0
 var _seat: Seat
+## The pillion seat's anchors, riding on the model (`ride_anchor`).
+var _pillion: Pillion
+## Seconds of hover bob, for the look only.
+var _bob_time := 0.0
 
 
 func setup(p_item_id: String) -> void:
 	item_id = p_item_id
 	display_name = ItemDB.item_name(p_item_id)
 	flies = ItemDB.has_tag(p_item_id, "aircraft")
+	hovers = ItemDB.has_tag(p_item_id, "hover")
 	var stats := ItemDB.item_stats(p_item_id)
 	for key: String in stats:
 		if key in self:
@@ -154,7 +211,7 @@ func _ready() -> void:
 	collision_layer = LAYER_VEHICLES
 	collision_mask = Actor.LAYER_WORLD | Actor.LAYER_ACTORS
 	floor_snap_length = 0.4
-	floor_max_angle = deg_to_rad(40.0)
+	floor_max_angle = deg_to_rad(max_slope)
 	heading = rotation.y
 	_build_body()
 
@@ -163,7 +220,19 @@ func _build_body() -> void:
 	var col := CollisionShape3D.new()
 	var seat_shape := BoxShape3D.new()
 	var seat_col := CollisionShape3D.new()
-	if model == "bike":
+	if model == "hoverbike":
+		# The cushion: a fat capsule under the hull, its underside on the
+		# ground, so the hull floats `hover_height` up and rough ground and
+		# kerbs pass under it.
+		var cushion := CapsuleShape3D.new()
+		cushion.radius = hover_height
+		cushion.height = 2.3
+		col.shape = cushion
+		col.rotation.x = PI / 2.0
+		col.position.y = hover_height
+		seat_shape.size = Vector3(0.9, 1.2, 2.4)
+		seat_col.position.y = 0.7
+	elif model == "bike":
 		# A capsule lying along the bike rolls over kerbs and ramp lips.
 		var shape := CapsuleShape3D.new()
 		shape.radius = 0.35
@@ -204,6 +273,12 @@ func _build_body() -> void:
 
 	_model = build_visual()
 	add_child(_model)
+	if passenger_seat:
+		# On the model, so the pillion rider tips with the lean like the rider.
+		_pillion = Pillion.new()
+		_pillion.name = "Pillion"
+		_pillion.vehicle = self
+		_model.add_child(_pillion)
 
 
 ## The greybox body for `model`. Each puts grips and pegs where the rider's
@@ -216,6 +291,8 @@ func build_visual() -> Node3D:
 			return _build_mech()
 		"jet":
 			return _build_jet()
+		"hoverbike":
+			return _build_hoverbike()
 	return _build_bike()
 
 
@@ -269,6 +346,63 @@ func _build_bike() -> Node3D:
 	lamp_mat.emission_enabled = true
 	lamp_mat.emission = Color(1.0, 0.85, 0.5)
 	root.add_child(_part(Vector3(0.18, 0.08, 0.06), Vector3(0, 0.88, -0.7), lamp_mat))  # headlight
+	return root
+
+
+## Greybox hoverbike: a long, low hull on four downward thruster pods with
+## glowing discs, so it floats on its cushion (`hover_height`) with daylight
+## under it. A raked nose with a low screen, bars over it, a stepped two-up
+## seat with grab rails for a pillion rider, side skirts with glow strips and
+## a glowing rear thruster. No wheels anywhere.
+func _build_hoverbike() -> Node3D:
+	var root := Node3D.new()
+	root.name = "Model"
+	var c := _palette()
+	var thrust := _mat(Color(0.5, 0.9, 1.0))
+	thrust.emission_enabled = true
+	thrust.emission = Color(0.35, 0.85, 1.0)
+	thrust.emission_energy_multiplier = 2.5
+	var base := hover_height
+	for z: float in [-0.72, 0.68]:
+		for x: float in [-0.27, 0.27]:
+			var pod := _wheel(0.2, 0.1, c.dark)
+			pod.rotation = Vector3.ZERO  # standing up: a pod pointing down
+			pod.position = Vector3(x, base + 0.08, z)
+			root.add_child(pod)
+			var disc_mesh := CylinderMesh.new()
+			disc_mesh.top_radius = 0.17
+			disc_mesh.bottom_radius = 0.17
+			disc_mesh.height = 0.03
+			disc_mesh.radial_segments = 20
+			var disc := MeshInstance3D.new()
+			disc.name = "Thruster%d" % root.get_child_count()
+			disc.mesh = disc_mesh
+			disc.material_override = thrust
+			disc.position = Vector3(x, base + 0.015, z)
+			root.add_child(disc)
+		root.add_child(_part(Vector3(0.66, 0.08, 0.3), Vector3(0, base + 0.17, z), c.steel))         # pod beam
+	root.add_child(_part(Vector3(0.5, 0.3, 1.6), Vector3(0, base + 0.42, 0.0), c.paint))              # hull
+	root.add_child(_part(Vector3(0.44, 0.24, 0.5), Vector3(0, base + 0.44, -0.95), c.paint, 0.3))     # nose cowl
+	root.add_child(_part(Vector3(0.3, 0.12, 0.36), Vector3(0, base + 0.32, -1.22), c.dark, 0.15))     # nose tip
+	root.add_child(_part(Vector3(0.36, 0.16, 0.42), Vector3(0, base + 0.62, -0.36), c.paint, 0.12))   # tank
+	var screen := _part(Vector3(0.34, 0.04, 0.28), Vector3(0, base + 0.8, -0.66), null, 0.95, _clear_glass())
+	screen.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	root.add_child(screen)
+	root.add_child(_part(Vector3(0.3, 0.1, 0.5), Vector3(0, base + 0.53, 0.2), c.dark))               # rider's seat
+	root.add_child(_part(Vector3(0.32, 0.12, 0.4), Vector3(0, base + 0.59, 0.74), c.dark))            # pillion seat
+	root.add_child(_part(Vector3(0.36, 0.26, 0.42), Vector3(0, base + 0.4, 0.98), c.paint, -0.2))     # tail
+	root.add_child(_part(Vector3(0.3, 0.14, 0.05), Vector3(0, base + 0.42, 1.2), null, 0.0, thrust))  # rear thruster
+	root.add_child(_part(Vector3(0.6, 0.04, 0.04), Vector3(0, 1.3, -0.42), c.steel))                  # handlebar
+	root.add_child(_part(Vector3(0.06, 0.06, 0.34), Vector3(0, 1.17, -0.52), c.steel, -0.9))          # bar riser
+	for side: float in [-1.0, 1.0]:
+		root.add_child(_part(Vector3(0.04, 0.16, 1.7), Vector3(side * 0.28, base + 0.24, 0.0), c.paint))  # skirt
+		root.add_child(_part(Vector3(0.02, 0.04, 1.3), Vector3(side * 0.3, base + 0.34, -0.05), null, 0.0, c.glow))  # strip
+		root.add_child(_part(Vector3(0.12, 0.05, 0.05), Vector3(side * 0.3, 1.3, -0.42), c.dark))    # grip
+		root.add_child(_part(Vector3(0.14, 0.04, 0.1), Vector3(side * 0.36, 0.72, -0.04), c.steel))  # rider's peg
+		root.add_child(_part(Vector3(0.12, 0.04, 0.1), Vector3(side * 0.36, 0.78, 0.5), c.steel))    # pillion peg
+		root.add_child(_part(Vector3(0.04, 0.04, 0.32), Vector3(side * 0.24, 1.08, 0.64), c.steel))  # grab rail
+		root.add_child(_part(Vector3(0.04, 0.12, 0.04), Vector3(side * 0.24, 1.02, 0.8), c.steel))   # its post
+		root.add_child(_part(Vector3(0.1, 0.06, 0.04), Vector3(side * 0.16, base + 0.36, -1.38), c.lamp))  # headlight
 	return root
 
 
@@ -531,6 +665,22 @@ func _process(delta: float) -> void:
 		_show_unpack()
 	if not _legs.is_empty():
 		_animate_legs(delta)
+	if hovers and _model != null:
+		_animate_hover(delta)
+
+
+## A hover bobs gently on its cushion and its thrusters burn brighter with
+## speed (view only, from `speed`, which a client keeps for every vehicle).
+func _animate_hover(delta: float) -> void:
+	_bob_time = fmod(_bob_time + delta, TAU * 10.0)
+	var pace := clampf(absf(speed) / maxf(max_speed, 0.1), 0.0, 1.0)
+	_model.position.y = sin(_bob_time * 2.4) * 0.035 * (1.0 - 0.6 * pace)
+	for node in _model.get_children():
+		if node.name.begins_with("Thruster"):
+			var mat := (node as MeshInstance3D).material_override as StandardMaterial3D
+			if mat != null:
+				mat.emission_energy_multiplier = 2.0 + 2.5 * pace + 0.3 * sin(_bob_time * 17.0)
+			break
 
 
 ## Swings a walker's legs with its speed (view only, and from `speed`, which
@@ -583,34 +733,75 @@ func _mat(color: Color) -> StandardMaterial3D:
 
 
 func get_prompt() -> String:
-	if rider:
-		return "%s (ridden)" % display_name
-	return "[F] Ride %s" % display_name
+	if rider == null:
+		return "[F] Ride %s" % display_name
+	if passenger_seat and passenger == null:
+		return "[F] Ride behind on %s" % display_name
+	return "%s (ridden)" % display_name
 
 
-## Puts an actor on the seat. Returns false if it is taken or they cannot ride.
-func mount(actor: Actor) -> bool:
-	if rider != null or actor == null or actor.is_dead or actor.vehicle != null or unpack_left > 0.0:
+## True with anyone aboard, rider or passenger.
+func is_occupied() -> bool:
+	return rider != null or passenger != null
+
+
+## Puts an actor on the seat, or with `behind` on the pillion seat. Returns
+## false if that seat is taken or they cannot ride.
+func mount(actor: Actor, behind := false) -> bool:
+	if actor == null or actor.is_dead or actor.vehicle != null or unpack_left > 0.0:
 		return false
-	rider = actor
+	if not behind and rider == null:
+		rider = actor
+	elif behind and passenger_seat and passenger == null:
+		passenger = actor
+	else:
+		return false
 	actor.vehicle = self
 	add_collision_exception_with(actor)
 	actor.add_collision_exception_with(self)
 	if not actor.died.is_connected(_on_rider_died):
 		actor.died.connect(_on_rider_died)
 	_place_rider()
-	actor.notice.emit("Riding %s. F to get off" % display_name)
+	if actor == passenger:
+		actor.notice.emit("Riding behind on %s. F to get off" % display_name)
+	else:
+		actor.notice.emit("Riding %s. F to get off" % display_name)
 	mounted.emit(actor)
 	return true
 
 
 ## Drops the rider beside the vehicle. They keep its momentum, so getting off
 ## in mid-air off a ramp is a bail-out: the flight rig takes over from there.
+## A passenger stays aboard.
 func dismount() -> void:
-	if rider == null:
-		return
-	var actor := rider
-	rider = null
+	if rider != null:
+		_let_off(rider)
+
+
+## Drops the passenger off the pillion seat.
+func dismount_passenger() -> void:
+	if passenger != null:
+		_let_off(passenger)
+
+
+## Everyone off.
+func dismount_all() -> void:
+	dismount()
+	dismount_passenger()
+
+
+## Lets `actor` off, whichever seat they are on.
+func get_off(actor: Actor) -> void:
+	if actor != null and (actor == rider or actor == passenger):
+		_let_off(actor)
+
+
+func _let_off(actor: Actor) -> void:
+	var behind := actor == passenger
+	if behind:
+		passenger = null
+	else:
+		rider = null
 	if not is_instance_valid(actor):
 		return
 	actor.vehicle = null
@@ -618,15 +809,31 @@ func dismount() -> void:
 		actor.died.disconnect(_on_rider_died)
 	if not actor.is_dead:
 		# The exit spot is clear of the bike's body, so they collide again at once.
-		actor.global_position = global_position + Basis(Vector3.UP, heading) * exit_offset
+		actor.global_position = global_position + Basis(Vector3.UP, heading) * (pillion_exit if behind else exit_offset)
 		actor.velocity = velocity
 	remove_collision_exception_with(actor)
 	actor.remove_collision_exception_with(self)
 	dismounted.emit(actor)
 
 
-func _on_rider_died(_actor: Actor, _info: DamageInfo) -> void:
-	dismount()
+func _on_rider_died(actor: Actor, _info: DamageInfo) -> void:
+	if actor == passenger:
+		dismount_passenger()
+	else:
+		dismount()
+
+
+## What a seated actor's pose is fitted to: the vehicle itself for the rider,
+## the pillion seat's anchors (on the model) for a passenger.
+func ride_anchor(actor: Actor) -> Node3D:
+	if actor != null and actor == passenger and _pillion != null:
+		return _pillion
+	return self
+
+
+## Share of a stat left with a passenger aboard (1 when ridden alone).
+func _laden(share: float) -> float:
+	return share if passenger != null else 1.0
 
 
 func _physics_process(delta: float) -> void:
@@ -638,6 +845,11 @@ func _physics_process(delta: float) -> void:
 	_jump_wait = maxf(0.0, _jump_wait - delta)
 	if rider != null and (not is_instance_valid(rider) or rider.is_dead):
 		dismount()
+	if passenger != null and (not is_instance_valid(passenger) or passenger.is_dead):
+		dismount_passenger()
+	if passenger != null and passenger.cmd.interact_pressed and (Combat.authoritative or local_only):
+		passenger.cmd.interact_pressed = false
+		dismount_passenger()
 	if rider != null:
 		var cmd := rider.cmd
 		if cmd.interact_pressed and (Combat.authoritative or local_only):
@@ -656,7 +868,7 @@ func _physics_process(delta: float) -> void:
 	# A parked bike nobody rides, standing where its last move left it, has
 	# no move to make. A map has a dozen standing about, and the move is the
 	# dearest part of a tick. Anything that moves, turns or pushes it wakes it.
-	if rider == null and is_on_floor() and speed == 0.0 and velocity.is_zero_approx() \
+	if rider == null and is_on_floor() and speed == 0.0 and velocity.is_zero_approx() and slip == 0.0 \
 			and global_position == _rest_at and heading == _rest_heading:
 		_update_visual(0.0, delta)
 		return
@@ -675,7 +887,10 @@ func _physics_process(delta: float) -> void:
 				# Jump-jets: a hop that keeps the stride's speed.
 				velocity.y = jump_speed
 				_jump_wait = jump_cooldown
-		velocity.y = maxf(velocity.y - gravity * delta, -max_fall_speed)
+		velocity.y = maxf(velocity.y - gravity * _gravity_share(on_floor) * delta, -max_fall_speed)
+		if _hanging(on_floor):
+			# The cushion still holds it level off the edge.
+			velocity.y = maxf(velocity.y, 0.0)
 	# The seated rider's body overlaps the bike. The collision exception keeps
 	# it out of the slide, but not out of every query the move makes (the
 	# floor snap found it under Jolt), so the rider leaves the actors layer
@@ -684,11 +899,18 @@ func _physics_process(delta: float) -> void:
 	var rider_layer := rider.collision_layer if carried else 0
 	if carried:
 		rider.collision_layer = 0
+	var pillion := passenger != null and is_instance_valid(passenger)
+	var pillion_layer := passenger.collision_layer if pillion else 0
+	if pillion:
+		passenger.collision_layer = 0
 	move_and_slide()
 	if carried:
 		rider.collision_layer = rider_layer
+	if pillion:
+		passenger.collision_layer = pillion_layer
 
-	var forward := Basis(Vector3.UP, heading) * Vector3.FORWARD
+	# Where it is going: along the heading, or for a hover trailing it by `slip`.
+	var forward := Basis(Vector3.UP, heading + slip) * Vector3.FORWARD
 	var horizontal := Vector3(velocity.x, 0.0, velocity.z)
 	if is_on_wall():
 		# Hitting something scrubs off the speed that went into it.
@@ -700,11 +922,18 @@ func _physics_process(delta: float) -> void:
 			# Landing: keep whatever speed still points along the bike.
 			speed = horizontal.dot(forward)
 	else:
+		if airborne_time == 0.0 and hovers:
+			# Just left the ground: off a lip the cushion damps the climb, and
+			# off a level edge it will hold it up for a moment.
+			if velocity.y > 0.5:
+				velocity.y *= launch_keep
+			_left_level = velocity.y <= 0.5
 		airborne_time += delta
 	rotation = Vector3(0.0, heading, 0.0)
 	if is_on_floor() and Vector2(velocity.x, velocity.z).length() < 0.01 and absf(speed) < 0.01:
 		# At rest: settle exactly, so the next tick can tell nothing changed.
 		speed = 0.0
+		slip = 0.0
 		velocity = Vector3.ZERO
 	_rest_at = global_position
 	_rest_heading = heading
@@ -764,27 +993,55 @@ func _ground_level() -> float:
 	return map.global_position.y
 
 
+## Share of gravity this tick. A hover falls slowly for a moment off an edge
+## at speed (the cushion carries it over a gap; less of a moment two up) and
+## is pulled down harder while it rises off a crest, so it hugs the ground.
+func _gravity_share(on_floor: bool) -> float:
+	if not hovers or on_floor:
+		return 1.0
+	if velocity.y > 0.5:
+		return downforce
+	if _hanging(on_floor):
+		return 0.0
+	return 1.0
+
+
+## True while the cushion holds a hover level off an edge it ran off at speed.
+func _hanging(on_floor: bool) -> bool:
+	return hovers and not on_floor and _left_level and airborne_time < hang_time * _laden(laden_hang) \
+			and absf(speed) >= hang_min_speed
+
+
 func _drive(throttle: float, steer: float, boosting: bool, delta: float) -> void:
-	var top := boost_speed if boosting else max_speed
+	var top := (boost_speed if boosting else max_speed) * _laden(laden_speed)
+	var push := accel * _laden(laden_accel)
 	if throttle > 0.05:
-		var rate := brake_decel if speed < 0.0 else accel
+		var rate := brake_decel if speed < 0.0 else push
 		speed = move_toward(speed, top * throttle, rate * delta)
 	elif throttle < -0.05:
 		if speed > 0.5:
 			speed = move_toward(speed, 0.0, brake_decel * delta)
 		else:
-			speed = move_toward(speed, -reverse_speed, accel * delta)
+			speed = move_toward(speed, -reverse_speed, push * delta)
 	else:
 		speed = move_toward(speed, 0.0, coast_decel * delta)
 
 	var turn_factor := clampf(absf(speed) / full_turn_speed, 0.0, 1.0)
-	var rate := turn_rate * turn_factor
+	var rate := turn_rate * _laden(laden_turn) * turn_factor
 	var way := -1.0 if speed < -0.5 else 1.0
 	if pivot_turn > rate:
-		# A walker turns on the spot.
+		# A walker turns on the spot (a hover too, slowly).
 		rate = pivot_turn
-	heading -= steer * rate * way * delta
-	var forward := Basis(Vector3.UP, heading) * Vector3.FORWARD
+	var turn := -steer * rate * way * delta
+	heading += turn
+	if hovers:
+		# The course keeps going the old way and swings round after the nose:
+		# a drift, which grip closes and which scrubs a little speed.
+		slip = clampf(slip - turn, -max_slip, max_slip) * exp(-grip * delta)
+		if absf(slip) < 0.0005:
+			slip = 0.0
+		speed -= speed * absf(sin(slip)) * 0.25 * delta
+	var forward := Basis(Vector3.UP, heading + slip) * Vector3.FORWARD
 	# Follow the ground: up a ramp the bike gains upward speed, which is what
 	# launches it off the top.
 	var along := forward.slide(get_floor_normal()).normalized()
@@ -792,10 +1049,12 @@ func _drive(throttle: float, steer: float, boosting: bool, delta: float) -> void
 
 
 func _place_rider() -> void:
-	if rider == null or not is_instance_valid(rider):
-		return
-	rider.global_position = global_position + Basis(Vector3.UP, heading) * seat_offset
-	rider.velocity = velocity
+	if rider != null and is_instance_valid(rider):
+		rider.global_position = global_position + Basis(Vector3.UP, heading) * seat_offset
+		rider.velocity = velocity
+	if passenger != null and is_instance_valid(passenger):
+		passenger.global_position = global_position + Basis(Vector3.UP, heading) * pillion_offset
+		passenger.velocity = velocity
 
 
 func _update_visual(steer: float, delta: float) -> void:
@@ -822,6 +1081,23 @@ func _update_visual(steer: float, delta: float) -> void:
 
 ## The interact target for a vehicle. It rides along on the vehicle and only
 ## exists on the interactables layer, so it never blocks anything.
+## The pillion seat's anchors, for a passenger's pose (`ride_anchor`). It
+## rides on the model, so it tips with the lean; it has the same anchor
+## names as a vehicle, so the riding pose reads either.
+class Pillion extends Node3D:
+	var vehicle
+	var seat_offset: Vector3:
+		get: return vehicle.pillion_offset
+	var seat_point: Vector3:
+		get: return vehicle.pillion_point
+	var grip_points: Array[Vector3]:
+		get: return vehicle.pillion_grips
+	var peg_points: Array[Vector3]:
+		get: return vehicle.pillion_pegs
+	var rider_lean: float:
+		get: return vehicle.pillion_lean
+
+
 class Seat extends Interactable:
 	## The vehicle this seat belongs to (untyped: this script has no class_name).
 	var vehicle
@@ -830,5 +1106,6 @@ class Seat extends Interactable:
 		return vehicle.get_prompt()
 
 	func interact(actor: Actor) -> void:
-		if not vehicle.mount(actor):
-			actor.notice.emit("Someone is riding it")
+		# The front seat first; with someone on it, behind them.
+		if not vehicle.mount(actor, vehicle.rider != null):
+			actor.notice.emit("Someone is riding it" if not vehicle.passenger_seat else "No room on it")

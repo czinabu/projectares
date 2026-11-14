@@ -858,7 +858,7 @@ func _order(bot: Actor, point: Strongpoint) -> void:
 ## Vehicles nobody rides are cleared away, and empty parking spots get a new one.
 func _tick_vehicles(delta: float) -> void:
 	for vehicle in vehicles.duplicate():
-		if vehicle.get("rider") != null:
+		if vehicle.call("is_occupied"):
 			_idle[vehicle] = 0.0
 			continue
 		_idle[vehicle] = _idle.get(vehicle, 0.0) + delta
@@ -1049,8 +1049,7 @@ func remove_player(actor: Actor) -> void:
 		# Nothing was at stake: they and the vehicle they showed off just go.
 		for vehicle in state.parked:
 			if is_instance_valid(vehicle):
-				if vehicle.get("rider") != null:
-					vehicle.call("dismount")
+				vehicle.call("dismount_all")
 				vehicles.erase(vehicle)
 				vehicle_removed.emit(vehicle)
 				vehicle.queue_free()
@@ -1913,7 +1912,7 @@ func pack_vehicle(actor: Actor) -> String:
 	var why := ""
 	if vehicle == null or vehicle not in vehicles:
 		why = "Look at a vehicle to pack it"
-	elif vehicle.get("rider") != null or float(vehicle.get("unpack_left")) > 0.0:
+	elif vehicle.call("is_occupied") or float(vehicle.get("unpack_left")) > 0.0:
 		why = "Someone is riding it"
 	elif state.stowed.size() >= watch_capacity:
 		why = "Your watch is full"
@@ -1983,8 +1982,7 @@ func swap_worn(actor: Actor, item_id: String) -> String:
 func remove_vehicle(vehicle: Node3D) -> void:
 	if not is_instance_valid(vehicle):
 		return
-	if vehicle.get("rider") != null:
-		vehicle.call("dismount")
+	vehicle.call("dismount_all")
 	vehicles.erase(vehicle)
 	_idle.erase(vehicle)
 	vehicle_removed.emit(vehicle)
