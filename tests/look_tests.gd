@@ -80,6 +80,8 @@ static func run(t: Node) -> void:
 			if held is MeleeWeapon:
 				sword = held
 		t.check(skin.arm.reach_ik != null, tag + "the player's model can pose its weapon arm")
+		if world == Worlds.raid_worlds()[0] and skin.arm.reach_ik != null:
+			await _toy_in_hand(t, raid.player, skin, skeleton, tag)
 		if sword != null and skin.arm.reach_ik != null:
 			var pose := ActionPose.of(raid.player)
 			t.check(skin.arm.arm_reach(sword) == pose.ready_reach(sword) and skin.arm.arm_reach(sword) != null,
@@ -595,3 +597,42 @@ static func _fold_mats(model: Node3D) -> Array[ShaderMaterial]:
 			if mat and mat.get_shader_parameter("fold_slide") != null and mat.get_shader_parameter("fold_slide") > 0.0:
 				out.append(mat)
 	return out
+
+
+## A toy vehicle off the watch digitizes into the model's own right hand in
+## place of the weapon, and the throw takes that hand back over the shoulder
+## and through: the one body, so both views show it.
+static func _toy_in_hand(t: Node, p: Actor, skin: Node, skeleton: Skeleton3D, tag: String) -> void:
+	var raid := Raid.of(p)
+	raid.hold_toy(p, "")
+	raid.state_for(p).stowed.append("bike_scrapper")
+	t.check(raid.hold_toy(p, "bike_scrapper") == "", tag + "a toy goes into the hand")
+	await t.frames(50)
+	var toy: Node3D = skin.toy_prop()
+	# The hand node is put on the model's hand as the skeleton is posed (bone
+	# poses read here would be the clip's, before the arm reaches).
+	var local := func() -> Vector3:
+		return p.to_local(p.hand.global_position)
+	var held: Vector3 = local.call()
+	var wanted := ActionPose.of(p).toy_hand_point()
+	t.check(toy != null and toy.get_parent() == p.hand and skin.toy_digitized() == 1.0,
+			tag + "the toy digitizes into the hand")
+	t.check(held.distance_to(wanted) < 0.2 and toy.global_position.distance_to(p.hand.global_position) < 0.15,
+			tag + "the model's own hand holds it up in front (%.2f m from the hold)" % held.distance_to(wanted))
+	t.check(p.weapons.all(func(w: Weapon) -> bool: return w.visual == null or not w.visual.visible),
+			tag + "the weapon is put away while the toy is held")
+	raid.toy_windup = 10.0  # Keep it in the hand: only the arm is watched here.
+	t.check(raid.throw_toy(p, "bike_scrapper") == "", tag + "the toy is thrown")
+	var furthest_back := held.z
+	for i in 14:
+		await t.frames(1)
+		furthest_back = maxf(furthest_back, (local.call() as Vector3).z)
+	t.check(furthest_back > held.z + 0.25, tag + "the throw draws the hand back over the shoulder (%.2f m)" % (furthest_back - held.z))
+	raid.toy_windup = 0.3
+	await t.frames(60)
+	t.check(skin.toy_prop() == null, tag + "the toy has left the hand once the throw is through")
+	await t.frames(30)
+	t.check(p.get_active_weapon() == null or p.get_active_weapon().visual.visible, tag + "and the weapon comes back to the hand")
+	for toy_left in raid.toys.duplicate():
+		raid.toys.erase(toy_left)
+	p.toy_in_hand = ""

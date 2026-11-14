@@ -5,19 +5,15 @@ extends Control
 ## and each station there (`STATIONS`) shows one part of it on its own screen
 ## in the room (`Main` puts this in a viewport shown on a `WorldScreen`):
 ## the locker your loadout, the mastery bench your variants, the wardrobe the
-## customizer, the records board your stash and last life, the trader the
-## shops, and the uplink the online section. There is no deploy screen: you
-## leave for a world through a squad portal opened from the watch.
+## customizer, the records board your stash and last life, and the trader the
+## shops. Going online is the phone's Servers app, not a station. There is no
+## deploy screen: you leave for a world through a squad portal opened from the
+## watch.
 ##
 ## It also keeps what is on show: the local profile, or the account a server
 ## keeps for you while you are in its lobby (`enter_lobby`).
 
-## Start a server on this machine, running every world, then join it.
-signal host_requested
-## Join the server at `address` ("host" or "host:port").
-signal join_requested(address: String)
-## In a server's lobby: change the loadout or a mastery pick there, or
-## disconnect.
+## In a server's lobby: change the loadout or a mastery pick there.
 signal online_equip_requested(slot: String, item_id: String)
 signal online_pick_requested(track: String, variant_id: String)
 ## In a server's lobby: buy from a hub shop, or sell stash items ("" sells all loot).
@@ -25,7 +21,9 @@ signal online_buy_requested(shop_id: String, item_id: String)
 signal online_sell_requested(item_id: String, count: int)
 ## In a server's lobby: craft one item at the gunsmith bench.
 signal online_craft_requested(item_id: String)
-signal online_leave_requested
+## The line on going online changed (`set_online_status`). The phone's
+## Servers app shows it too.
+signal online_status_changed(text: String)
 ## A station screen was put away (Esc or the button).
 signal closed
 ## The player changed how their character looks.
@@ -48,7 +46,6 @@ const STATIONS := {
 	"wardrobe": {"sections": ["character"]},
 	"records": {"sections": ["records"]},
 	"trader": {"sections": ["shop"]},
-	"uplink": {"sections": ["online", "status"]},
 	# The fabricator on the gunsmith bench (`HomeBase.CraftConsole`).
 	"craft": {"sections": ["craft"], "title": "Fabricator"},
 }
@@ -68,14 +65,9 @@ var _shop: ShopPanel
 var _craft: CraftPanel
 var character: CharacterPanel
 var _online_status: Label
-var _name_edit: LineEdit
-var _address_edit: LineEdit
 var _stash_title: Label
-var _connect_box: VBoxContainer
-var _lobby_box: VBoxContainer
-var _lobby_title: Label
-var _lobby_world: Label
-var _lobby_leave: Button
+## What the base's door says while in a server's lobby (`set_leave_text`).
+var _leave_text := "Leave the server"
 ## The station whose screen is open, or "".
 var station := ""
 var _sections := {}
@@ -176,19 +168,6 @@ func _ready() -> void:
 	_craft.craft_requested.connect(func(item_id: String) -> void: online_craft_requested.emit(item_id))
 	_craft.changed.connect(_refresh_gear)
 	_section(box, "craft").add_child(_craft)
-
-	var online := _section(box, "online")
-	_build_lobby(online)
-	_connect_box = VBoxContainer.new()
-	_connect_box.add_theme_constant_override("separation", 10)
-	online.add_child(_connect_box)
-	_build_online(_connect_box)
-	_lobby_leave = Button.new()
-	_lobby_leave.text = "Leave the server"
-	_lobby_leave.custom_minimum_size = Vector2(0, 44)
-	_lobby_leave.visible = false
-	_lobby_leave.pressed.connect(func() -> void: online_leave_requested.emit())
-	online.add_child(_lobby_leave)
 
 	_online_status = _text("", 14, Color(1.0, 0.8, 0.4))
 	_section(box, "status").add_child(_online_status)
@@ -403,82 +382,14 @@ func _text(text: String, font_size: int, color: Color) -> Label:
 	return label
 
 
-## The online section: your name, hosting a raid on this machine, joining one.
-func _build_online(box: VBoxContainer) -> void:
-	box.add_child(_text("ONLINE (EARLY TEST)", 20, Color(1.0, 0.55, 0.25)))
-	box.add_child(_text(
-		"Your base's door leads to the server you used last, or to one of your own.\n"
-		+ "Join a friend here by their computer's address; the door remembers it.",
-		13, Color(0.65, 0.65, 0.65)))
-	var name_row := HBoxContainer.new()
-	var name_label := _text("Your name", 16, Color(0.85, 0.85, 0.85))
-	name_label.custom_minimum_size = Vector2(170, 0)
-	name_label.autowrap_mode = TextServer.AUTOWRAP_OFF
-	name_row.add_child(name_label)
-	_name_edit = LineEdit.new()
-	_name_edit.text = Profile.player_name
-	_name_edit.max_length = 20
-	_name_edit.custom_minimum_size = Vector2(330, 0)
-	_name_edit.text_changed.connect(func(text: String) -> void: Profile.player_name = text)
-	name_row.add_child(_name_edit)
-	box.add_child(name_row)
-
-	var host_row := HBoxContainer.new()
-	var host_label := _text("Your own server", 16, Color(0.85, 0.85, 0.85))
-	host_label.custom_minimum_size = Vector2(170, 0)
-	host_label.autowrap_mode = TextServer.AUTOWRAP_OFF
-	host_row.add_child(host_label)
-	var host := Button.new()
-	host.text = "Host here and head out"
-	host.custom_minimum_size = Vector2(330, 40)
-	host.pressed.connect(func() -> void:
-		Profile.home_server = ""
-		Profile.save()
-		host_requested.emit())
-	host_row.add_child(host)
-	box.add_child(host_row)
-
-	var join_row := HBoxContainer.new()
-	_address_edit = LineEdit.new()
-	_address_edit.text = Profile.last_server
-	_address_edit.placeholder_text = "Server address"
-	_address_edit.custom_minimum_size = Vector2(170, 0)
-	join_row.add_child(_address_edit)
-	var join := Button.new()
-	join.text = "Join the server at this address"
-	join.custom_minimum_size = Vector2(330, 40)
-	join.pressed.connect(func() -> void:
-		Profile.last_server = _address_edit.text.strip_edges()
-		Profile.save()
-		join_requested.emit(Profile.last_server))
-	join_row.add_child(join)
-	box.add_child(join_row)
-
-
-## The lobby part of the uplink, shown while connected to a server. You
-## deploy from the watch, through a squad portal.
-func _build_lobby(box: VBoxContainer) -> void:
-	_lobby_box = VBoxContainer.new()
-	_lobby_box.add_theme_constant_override("separation", 10)
-	_lobby_box.visible = false
-	box.add_child(_lobby_box)
-	_lobby_title = _text("", 20, Color(1.0, 0.55, 0.25))
-	_lobby_box.add_child(_lobby_title)
-	_lobby_box.add_child(_text(
-		"The gear in this base is the stash this server keeps for you. "
-		+ "It is separate from your solo stash.", 13, Color(0.65, 0.65, 0.65)))
-	_lobby_world = _text("", 14, Color(0.65, 0.65, 0.65))
-	_lobby_box.add_child(_lobby_world)
-
-
-## What the lobby's leave button says: it leads back to the plaza when the
-## server has one.
+## What the base's door says in a server's lobby: it leads back to the plaza
+## when the server has one.
 func set_leave_text(text: String) -> void:
-	_lobby_leave.text = text
+	_leave_text = text
 
 
 func leave_text() -> String:
-	return _lobby_leave.text
+	return _leave_text
 
 
 func in_lobby() -> bool:
@@ -487,9 +398,7 @@ func in_lobby() -> bool:
 
 ## Switches the hub to the account a server keeps for you. `world` is the
 ## world that server runs.
-func enter_lobby(p_account: Dictionary, world: WorldDef) -> void:
-	_lobby_title.text = "CONNECTED AS %s" % str(p_account.get("name", "")).to_upper()
-	_lobby_world.text = "Open a portal from your watch's Mission tab to deploy to %s." % world.display_name
+func enter_lobby(p_account: Dictionary, _world: WorldDef) -> void:
 	update_account(p_account)
 
 
@@ -518,9 +427,6 @@ func leave_lobby() -> void:
 
 
 func _show_sections() -> void:
-	_lobby_box.visible = in_lobby()
-	_connect_box.visible = not in_lobby()
-	_lobby_leave.visible = in_lobby()
 	_stash_title.text = "STASH ON THIS SERVER" if in_lobby() else "STASH"
 
 
@@ -550,3 +456,4 @@ func equipped(slot: String) -> String:
 func set_online_status(text: String) -> void:
 	if _online_status:
 		_online_status.text = text
+	online_status_changed.emit(text)

@@ -118,6 +118,31 @@ var raise_rate := 9.0
 var lower_rate := 2.5
 ## How fast the phone comes up and goes away (per second).
 var phone_rate := 5.0
+## A toy vehicle off the watch (`Actor.toy_in_hand`) is held up in the right
+## hand, and thrown overarm: the hand draws back over the shoulder, whips
+## forward and lets go at `toy_release` (the `Raid` lets it fly after the
+## same wait, `Raid.toy_windup`), and follows through down across the body.
+## Points are in the actor's frame (x right, y up, z back) and turn with the
+## aim's pitch by `toy_pitch_share` about the shoulder.
+var toy_hold := Vector3(0.24, 1.3, -0.46)
+var toy_cocked := Vector3(0.3, 1.62, 0.12)
+var toy_let_go := Vector3(0.18, 1.56, -0.5)
+var toy_follow := Vector3(0.04, 1.05, -0.36)
+var toy_pitch_share := 0.5
+## The throw's timing, in seconds from its start: drawn back by
+## `toy_cocked_at`, let go at `toy_release`, followed through by
+## `toy_follow_at`, and handed back to the usual hold by `toy_throw_time`.
+var toy_cocked_at := 0.2
+var toy_release := 0.3
+var toy_follow_at := 0.42
+var toy_throw_time := 0.62
+## How fast the hand comes up to hold a toy and goes back (per second).
+var toy_rate := 6.0
+## The shoulders' turn and lean (as `turn`) drawn back and thrown through.
+var toy_turn_cocked := Vector2(-0.45, 0.06)
+var toy_turn_thrown := Vector2(0.3, -0.12)
+## Where the throwing elbow points, cocked (actor frame).
+var toy_elbow := Vector3(0.9, 1.75, 0.3)
 ## Aiming down sights: the gun is brought up until its sight line runs
 ## through the eyes, the stock in the shoulder and the off hand on the fore
 ## end, the same body in both views. `ads_rate` is how fast it comes up and
@@ -158,6 +183,15 @@ var _watch_raise := 0.0
 ## How far the phone is up in the right hand (0..1), from the actor's
 ## command (`ActorCommand.phone`), so everyone who sees them agrees.
 var phone := 0.0
+## How far the hand is up holding a toy or throwing it (0..1), eased.
+var toy := 0.0
+## Seconds into the toy throw being shown, or below zero when none is.
+var toy_throw_t := -1.0
+## Set by the skin: false while the hand is still putting a weapon away, so
+## the toy comes up only into an empty hand. True with no skin (checks).
+var toy_hand_free := true
+var _toy_throws_seen := -1
+var _toy_thrown := ""
 
 ## The melee hand offset, smoothed, and how much it has the arm (0..1).
 var reach := Vector3.ZERO
@@ -232,6 +266,7 @@ func advance(delta: float) -> void:
 	watch = ease(_watch_raise, -2.0)
 	var phone_wanted := actor.cmd != null and actor.cmd.phone and not actor.is_dead and actor.vehicle == null
 	phone = move_toward(phone, 1.0 if phone_wanted else 0.0, phone_rate * delta)
+	advance_toy(delta)
 
 	var gun := weapon as Gun
 	reload = reload_depth(gun) if gun != null and not actor.is_dead else 0.0
@@ -239,6 +274,101 @@ func advance(delta: float) -> void:
 	low = move_toward(low, 1.0 if lowered else 0.0, delta * (lower_rate if lowered else raise_rate))
 	_ads_raise = move_toward(_ads_raise, 1.0 if ads_wanted(gun) else 0.0, delta * ads_rate)
 	ads = ease(_ads_raise, -2.0)
+
+
+## Moves the toy hold and throw on by `delta` seconds. A throw starts when
+## `Actor.toy_throws` goes up (not for the count first seen: a body that
+## comes into view mid-game does not replay an old throw).
+func advance_toy(delta: float) -> void:
+	if _toy_throws_seen < 0:
+		_toy_throws_seen = actor.toy_throws
+	if actor.toy_throws != _toy_throws_seen:
+		_toy_throws_seen = actor.toy_throws
+		toy_throw_t = 0.0 if not actor.is_dead else -1.0
+		_toy_thrown = actor.toy_in_hand
+	elif toy_throw_t >= 0.0:
+		toy_throw_t += delta
+		if toy_throw_t >= toy_throw_time or actor.is_dead:
+			toy_throw_t = -1.0
+	# The toy thrown may stay in the hand's record a moment after it has
+	# flown (online, until the server says so): it is gone all the same.
+	if actor.toy_in_hand != _toy_thrown:
+		_toy_thrown = ""
+	var holding := held_toy() != "" and toy_hand_free
+	if toy_throw_t >= 0.0:
+		# A throw takes the hand at once and hands it back as it ends.
+		var going := smoothstep(toy_follow_at, toy_throw_time, toy_throw_t) if not holding else 0.0
+		toy = minf(maxf(toy, smoothstep(0.0, 0.08, toy_throw_t)), 1.0 - going)
+	else:
+		toy = move_toward(toy, 1.0 if holding else 0.0, toy_rate * delta)
+
+
+## The toy held up in the hand (not one already thrown), or "".
+func held_toy() -> String:
+	if actor.is_dead or actor.vehicle != null or actor.toy_in_hand == _toy_thrown:
+		return ""
+	return actor.toy_in_hand
+
+
+## The toy the hand shows: held, or thrown and not yet let go. "" for none.
+func toy_shown() -> String:
+	if actor.is_dead or actor.vehicle != null:
+		return ""
+	if toy_throw_t >= 0.0:
+		return _toy_thrown if toy_throw_t < toy_release else ""
+	return held_toy()
+
+
+## True while the hand is busy with a toy (held up or mid-throw): the weapon
+## stays put away.
+func toy_busy() -> bool:
+	return toy > 0.0 or toy_throw_t >= 0.0 or held_toy() != ""
+
+
+## Where the throwing hand goes now, in the actor's frame: up holding the toy,
+## or along the throw (back over the shoulder, through the release, down
+## across the body).
+func toy_hand_point() -> Vector3:
+	var at := toy_hold
+	var t := toy_throw_t
+	if t >= 0.0:
+		if t < toy_cocked_at:
+			at = toy_hold.lerp(toy_cocked, smoothstep(0.0, toy_cocked_at, t))
+		elif t < toy_release:
+			# The whip: slow out of the cock, fastest at the release.
+			var u := (t - toy_cocked_at) / maxf(toy_release - toy_cocked_at, 0.001)
+			at = _toy_arc(toy_cocked, toy_let_go, u * u)
+		else:
+			var u := clampf((t - toy_release) / maxf(toy_follow_at - toy_release, 0.001), 0.0, 1.0)
+			at = toy_let_go.lerp(toy_follow, 1.0 - (1.0 - u) * (1.0 - u))
+	var pitch := clampf(actor.cmd.pitch if actor.cmd != null else 0.0, -1.2, 1.2) * toy_pitch_share
+	return shoulder + Basis(Vector3.RIGHT, pitch) * (at - shoulder)
+
+
+## From `from` to `to` over the top of the shoulder, not straight through it.
+func _toy_arc(from: Vector3, to: Vector3, u: float) -> Vector3:
+	return from.lerp(to, u) + Vector3(0.0, 0.12, 0.0) * sin(u * PI)
+
+
+## The shoulder turn and lean of the throw (as `turn`), 0 outside one.
+func toy_turn() -> Vector2:
+	var t := toy_throw_t
+	if t < 0.0:
+		return Vector2.ZERO
+	if t < toy_cocked_at:
+		return toy_turn_cocked * smoothstep(0.0, toy_cocked_at, t)
+	if t < toy_release:
+		return toy_turn_cocked.lerp(toy_turn_thrown, smoothstep(toy_cocked_at, toy_release, t))
+	return toy_turn_thrown * (1.0 - smoothstep(toy_release, toy_throw_time, t))
+
+
+## How cocked the throwing elbow is (0 to 1): up and back through the draw,
+## dropping as the arm comes through.
+func toy_elbow_raise() -> float:
+	var t := toy_throw_t
+	if t < 0.0:
+		return 0.0
+	return smoothstep(0.0, toy_cocked_at, t) * (1.0 - smoothstep(toy_cocked_at, toy_follow_at, t))
 
 
 ## True while `gun` should be up at the eye: aimed, in hand, shown, not

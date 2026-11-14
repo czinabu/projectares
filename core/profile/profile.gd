@@ -54,7 +54,7 @@ var melee_control := "move"
 var player_name := "Raider"
 var last_server := "127.0.0.1"
 ## Where your base's door leads: the address of the server you last joined
-## from the uplink, or "" for a server of your own, started on this computer.
+## from the phone's Servers app, or "" for a server of your own, started on this computer.
 var home_server := ""
 ## Proves to a server that an online account is yours. Made on first use.
 var online_secret := ""
@@ -83,8 +83,8 @@ func _ready() -> void:
 	# (it would race the game that started it for the same files).
 	if "--server" in OS.get_cmdline_user_args():
 		persist = false
-	# A new player starts in the free scrap kit; a save replaces it.
-	loadout = StashRules.starter_loadout()
+	# A new player starts with nothing on; a save replaces it.
+	loadout = StashRules.new_player_loadout()
 	load_profile()
 	grant_welcome_crate()
 	grant_gear_crates()
@@ -133,7 +133,7 @@ func reset() -> void:
 	crates_granted.clear()
 	mastery.clear()
 	stash.clear()
-	loadout = StashRules.starter_loadout()
+	loadout = StashRules.new_player_loadout()
 	welcome_granted = false
 	fresh_start = FRESH_START
 	raids_played = 0
