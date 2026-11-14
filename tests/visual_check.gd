@@ -2254,12 +2254,20 @@ func _ride_shots(out_dir: String) -> void:
 	var controller := PlayerController.new()
 	controller.setup(player)
 	raid.add_child(controller)
+	# Looking straight down the vehicle, as a driver does.
+	controller.yaw = bike.heading
+	controller.pitch = -0.05
 	controller.ride_view = PlayerController.ViewMode.THIRD
 	await _settle(40)
 	await _shot(out_dir.path_join("ride_third.png"))
 	controller.ride_view = PlayerController.ViewMode.FIRST
 	await _settle(40)
 	await _shot(out_dir.path_join("ride_first.png"))
+	# And glancing down at the controls, which shows whether the eyes are
+	# where the seated body's are, not down in its collar.
+	controller.pitch = -0.6
+	await _settle(40)
+	await _shot(out_dir.path_join("ride_first_down.png"))
 	raid.queue_free()
 
 

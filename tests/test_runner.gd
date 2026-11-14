@@ -2479,6 +2479,25 @@ func _test_vehicle_roster() -> void:
 		var start: Vector3 = v.global_position
 		match id:
 			"rover_warden":
+				# The driver sees out: straight ahead from a seated driver's
+				# eyes, nothing but see-through glass stands in the way.
+				var eye := seat_at + Vector3(0.0, 0.78, 0.0)
+				var blocked: Array[String] = []
+				var glassed := false
+				for node in model.find_children("*", "MeshInstance3D", true, false):
+					var part := node as MeshInstance3D
+					var box: AABB = (model.global_transform.affine_inverse() * part.global_transform) * part.get_aabb()
+					for ahead: Vector3 in [Vector3(0, 0, -3), Vector3(0, -0.4, -3), Vector3(0.6, 0, -3), Vector3(-0.6, 0, -3)]:
+						if box.intersects_segment(eye, eye + ahead) == null:
+							continue
+						var mat := part.material_override as BaseMaterial3D
+						if mat != null and mat.transparency != BaseMaterial3D.TRANSPARENCY_DISABLED:
+							glassed = true
+						else:
+							blocked.append("%s at %s" % [part.name, part.position])
+						break
+				check(blocked.is_empty() and glassed,
+						"the rover's driver looks out through a see-through windscreen (blocked by %s)" % [blocked])
 				rider.cmd.move = Vector2(0, 1)
 				await frames(240)
 				check(v.speed > FlightRig.CRUISE_SPEED, "the rover outruns flight cruise on the ground (%.1f m/s)" % v.speed)
@@ -6940,6 +6959,26 @@ func _test_home_base() -> void:
 	check(lines[0] == "Lattice Shard" and "Relic" in lines[1], "the overlay names what you look at and its rarity")
 	check(hud.tag.visible and hud.tag.text == lines[1] and hud.tag.global_position.distance_to(shard.global_position) < 2.0,
 			"what it is shows on a tag over the gear itself, not on the screen")
+	# Riding, F gets you off, so the vehicle under you is not offered
+	# (playtest: "Warden Rover (ridden)" stayed on the screen in the base).
+	var stood_at := base.player.global_position
+	var ride = VehicleScript.new()
+	ride.setup("rover_warden")
+	ride.local_only = true
+	base.add_child(ride)
+	ride.global_position = stood_at + Vector3(0, 0.3, 0)
+	await frames(2)
+	check(ride.mount(base.player), "you can climb on a vehicle in the base")
+	var aim_was := base.player.cmd.aim_dir
+	base.player.cmd.aim_dir = Vector3(0.0, -1.0, -0.2)
+	await frames(3)
+	check(base.player.find_interactable() != null and hud.get("_prompt").text == "",
+			"riding in the base, the vehicle under you is not offered on the screen")
+	base.player.cmd.aim_dir = aim_was
+	ride.dismount()
+	ride.queue_free()
+	base.player.global_position = stood_at
+	await frames(2)
 	# The watch works at home as in a raid (playtest: X half-raised the arm
 	# with no card): it rises with the key and its card has every icon.
 	check(hud.wrist != null and not hud.wrist.raised, "the base wears the watch, lowered")
