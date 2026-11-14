@@ -938,6 +938,21 @@ without Caleb, and update the gap list when a PR closes a row.
   `Profile` or `NetSession.equip`. Like `Raid`, `HomeBase` has no camera, HUD
   or input code, and its displays are greybox shapes that `Look` dresses
   (any node with the meta `display_item`).
+- The new player's tour (`core/progression/onboarding.gd`, static rules on
+  a small dictionary in `Profile.onboarding`, run by `main.gd`'s "new
+  player's tour" section): a handler contact messages a new player on the
+  phone (`Phone.add_local_message`, kept on the phone only, so it works
+  offline), one step at a time, and the step's objective is a small line on
+  the watch card (`Hud.Wrist.objective`) and the visor glass (`Hud.objective`,
+  drawn by `VisorHud._draw_tracker`), never an overlay. Steps finish on the
+  action itself, reported by `main.gd` as events (`_tour_event`) and as what
+  is already true (`_tour_check`), never on a button. It is a view of the
+  player's own progress: it never locks, unlocks or hands out anything, and
+  a server never reads it. It names worlds by what they are (`Onboarding.names`),
+  never by id. A save from before it starts it only if nothing was played or
+  equipped. Settings' System tab skips or replays it, and dev mode never
+  runs it. A new step is an entry in `Onboarding.STEPS` and an event reported
+  where the action happens.
 - The game opens in the world, never on a menu screen. Solo it boots into the
   home base; online, joining a server puts you in its plaza, and a world's
   lobby is the home base again on the server's stash. The base's door goes

@@ -85,6 +85,12 @@ func _ready() -> void:
 		await _watch_shots(out_dir)
 		get_tree().quit()
 		return
+	# `--tour-only` shows the new player's tour objective: on the base's
+	# watch card in both views, and on a helmet's visor glass out in a world.
+	if "--tour-only" in args:
+		await _tour_shots(out_dir)
+		get_tree().quit()
+		return
 	# `--portal-only` shows the watch's portal icon in the home base, then the
 	# squad portal it opens, in first and third person.
 	if "--portal-only" in args:
@@ -494,6 +500,48 @@ func _base_watch_shots(out_dir: String) -> void:
 		await _settle(4)
 		await _shot(out_dir.path_join("watch_base_pose_%s.png" % view[0]))
 	base.queue_free()
+	await _settle(3)
+
+
+func _tour_shots(out_dir: String) -> void:
+	var line := "Hit a plate on the test lane"
+	var base := HomeBase.new()
+	base.show_gear(["rifle_carbine"], {"primary": "rifle_carbine"})
+	add_child(base)
+	var controller := PlayerController.new()
+	controller.setup(base.player)
+	base.add_child(controller)
+	var base_hud: CanvasLayer = preload("res://core/ui/base_hud.gd").new()
+	base_hud.setup(base)
+	base_hud.objective = line
+	base.add_child(base_hud)
+	await _settle(60)
+	controller.wrist_raised = true
+	await _settle(30)
+	await _shot(out_dir.path_join("tour_watch_first.png"))
+	controller.toggle_view()
+	await _settle(40)
+	await _shot(out_dir.path_join("tour_watch_third.png"))
+	base.queue_free()
+	await _settle(3)
+	var raid := Raid.new()
+	add_child(raid)
+	raid.start(Worlds.get_world("frostline"), 42, ["rifle_scrap", "helm_seeker"] as Array[String])
+	for bot in raid.bots:
+		bot.get_node("Brain").set_physics_process(false)
+	var raider := PlayerController.new()
+	raider.setup(raid.player)
+	raid.add_child(raider)
+	var hud := Hud.new()
+	hud.setup(raid, raider)
+	hud.objective = "Bank your loot at a depot"
+	raid.add_child(hud)
+	await _settle(80)
+	await _shot(out_dir.path_join("tour_visor.png"))
+	raider.wrist_raised = true
+	await _settle(30)
+	await _shot(out_dir.path_join("tour_visor_watch.png"))
+	raid.queue_free()
 	await _settle(3)
 
 
