@@ -534,42 +534,59 @@ func _toy_shots(out_dir: String) -> void:
 	var controller := PlayerController.new()
 	controller.setup(raid.player)
 	raid.add_child(controller)
+	controller.toy_hold_requested.connect(func(id: String) -> void: raid.hold_toy(raid.player, id))
+	controller.toy_throw_requested.connect(func(id: String) -> void: raid.throw_toy(raid.player, id))
 	var hud := Hud.new()
 	hud.setup(raid, controller)
 	raid.add_child(hud)
 	await _settle(90)
-	controller.wrist_raised = true
-	controller.click_watch()
-	await _settle(40)
-	await _shot(out_dir.path_join("toys_watch_first.png"))
-	controller.watch_index = 1
-	await _settle(20)
-	await _shot(out_dir.path_join("toys_watch_picked_second.png"))
-	controller.watch_index = 0
-	controller.take_picked_toy()
-	await _settle(30)
-	await _shot(out_dir.path_join("toys_in_hand.png"))
-	controller.pitch = -0.1
-	await _settle(5)
-	controller.throw_held_toy()
-	raid.throw_toy(raid.player, "bike_scrapper")
-	await _settle(3)
-	await _shot(out_dir.path_join("toys_in_air.png"))
-	for i in 200:
-		if raid.toys.is_empty():
-			break
-		await _settle(1)
-	await _settle(1)
-	await _shot(out_dir.path_join("toys_unpacking.png"))
-	await _settle(60)
-	await _shot(out_dir.path_join("toys_unpacked.png"))
-	controller.toggle_view()
-	controller.wrist_raised = true
-	await _settle(60)
-	await _shot(out_dir.path_join("toys_watch_third.png"))
-	controller.take_picked_toy()
-	await _settle(30)
-	await _shot(out_dir.path_join("toys_in_hand_third.png"))
+	for view in ["first", "third"]:
+		if view == "third":
+			controller.toggle_view()
+			await _settle(30)
+		var state := raid.state_for(raid.player)
+		state.toy_ready_at = raid.clock
+		controller.pitch = 0.0
+		controller.wrist_raised = true
+		controller.watch_focus_moved = false
+		controller.click_watch()
+		await _settle(40)
+		await _shot(out_dir.path_join("toys_watch_%s.png" % view))
+		if view == "first":
+			controller.watch_index = 1
+			await _settle(20)
+			await _shot(out_dir.path_join("toys_watch_picked_second.png"))
+		controller.watch_index = 0
+		controller.take_picked_toy()
+		# The weapon goes away, then the toy digitizes into the hand.
+		await _settle(24)
+		await _shot(out_dir.path_join("toys_%s_1_digitizing.png" % view))
+		await _settle(30)
+		await _shot(out_dir.path_join("toys_%s_2_in_hand.png" % view))
+		controller.pitch = -0.1
+		await _settle(5)
+		controller.throw_held_toy()
+		# The throw, frame by frame at 60 fps: drawn back, coming through,
+		# let go, the follow-through.
+		var frames := [7, 5, 4, 4, 6]
+		var names := ["3_drawn_back", "4_coming_through", "5_let_go", "6_follow_through", "7_toy_away"]
+		for i in frames.size():
+			await _settle(frames[i])
+			await _shot(out_dir.path_join("toys_%s_%s.png" % [view, names[i]]))
+		for i in 200:
+			if raid.toys.is_empty():
+				break
+			await _settle(1)
+		await _settle(4)
+		await _shot(out_dir.path_join("toys_%s_8_unpacking.png" % view))
+		await _settle(60)
+		await _shot(out_dir.path_join("toys_%s_9_unpacked.png" % view))
+		# Pack it again for the next view.
+		var bike: Node3D = raid.vehicles[raid.vehicles.size() - 1]
+		raid.remove_vehicle(bike)
+		state.parked.erase(bike)
+		state.stowed.insert(0, "bike_scrapper")
+		await _settle(10)
 	raid.queue_free()
 	await _settle(2)
 
@@ -848,10 +865,10 @@ func _base_shots(out_dir: String) -> void:
 	var base := HomeBase.new()
 	var gear := ["rifle_carbine", "smg_stinger", "dmr_longshot", "shotgun_breacher", "blade_arc",
 			"hammer_breaker", "knife_gutter", "axe_splitter", "spear_lancer", "pistol_machine", "pistol_hand_cannon",
-			"optic_scope", "optic_reflex", "muzzle_suppressor", "grip_vertical", "frame_runner", "frame_trooper", "frame_bulwark", "jetpack_mk2", "boots_thruster",
+			"optic_scope", "optic_reflex", "muzzle_suppressor", "grip_vertical", "frame_runner", "frame_trooper", "frame_bulwark", "helm_warden", "helm_seeker", "helm_ember", "jetpack_mk2", "boots_thruster",
 			"wings_glide", "chip_blink", "chip_barrier", "chip_pulse", "bike_scrapper", "bike_raider", "medkit",
 			"medkit", "scrap_metal", "scrap_metal", "scrap_metal", "alloy_ingot", "reactor_core", "lattice_shard"]
-	var worn := {"primary": "dmr_longshot", "frame": "frame_bulwark", "vehicle": "bike_raider"}
+	var worn := {"primary": "dmr_longshot", "frame": "frame_bulwark", "helmet": "helm_warden", "vehicle": "bike_raider"}
 	# The finished base first; the starter bunker is shot at the end.
 	base.show_gear(gear, worn, BaseUpgrades.full())
 	add_child(base)
@@ -868,6 +885,7 @@ func _base_shots(out_dir: String) -> void:
 		"base_sidearms.png": [Vector3(-15.0, 1.9, 3.0), Vector3(-15.6, 1.8, -5)],
 		"base_blades.png": [Vector3(-15.0, 1.9, -2.6), Vector3(-15.6, 1.4, 5)],
 		"base_armor.png": [Vector3(-5.5, 2.0, -2.0), Vector3(-5.5, 1.1, -8.5)],
+		"base_helmets.png": [Vector3(-8.2, 2.4, -4.5), Vector3(-8.2, 2.9, -9.0)],
 		"base_rigs.png": [Vector3(5.5, 2.0, -2.0), Vector3(5.5, 1.1, -8.5)],
 		"base_garage.png": [Vector3(5.0, 2.6, 1.0), Vector3(16.0, 0.8, 0.0)],
 		"base_range.png": [Vector3(0.0, 2.2, -14.0), Vector3(0.0, 1.4, -40.0)],
@@ -903,7 +921,7 @@ func _base_shots(out_dir: String) -> void:
 	add_child(screen_view)
 	var hub := Hub.new()
 	screen_view.add_child(hub)
-	for id: String in ["locker", "trader", "uplink"]:
+	for id: String in ["locker", "trader"]:
 		hub.open_station(id)
 		var live := WorldScreen.new()
 		live.size = HomeBase.SCREEN_SIZE

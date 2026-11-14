@@ -184,6 +184,45 @@ static func _count(base: HomeBase, kind: String) -> int:
 	return base.displays.filter(func(d: HomeBase.Display) -> bool: return d.kind == kind).size()
 
 
+## Caleb could not take his helmet off: helmets had no place in the room. They
+## sit on a shelf over the armor stands, the worn one always among them, and
+## using it there leaves the head bare.
+static func _helmet_shelf(t: Node, stash: Array[String]) -> void:
+	print("Home base helmet shelf")
+	var owned := stash.duplicate()
+	owned.append_array(["helm_warden", "helm_seeker", "helm_ember"])
+	t.check(BaseLayout.kind_for("helm_warden") == "helmet_shelf" and BaseLayout.kind_for("visor_scav") == "helmet_shelf",
+			"helmets go on the helmet shelf")
+	var plan := BaseLayout.plan(StashRules.equippable(owned), {"helmet": "visor_scav"})
+	var shelf := plan.filter(func(e: Dictionary) -> bool: return e["kind"] == "helmet_shelf")
+	t.check(shelf.size() == BaseLayout.spots("helmet_shelf") and shelf.any(func(e: Dictionary) -> bool:
+				return e["id"] == "visor_scav" and e["equipped"]),
+			"the helmet worn is on show even when better ones fill the starter shelf")
+	var base := HomeBase.new()
+	base.show_gear(owned, {"helmet": "visor_scav"})
+	t.add_child(base)
+	await t.frames(20)
+	var worn := base.display_for("visor_scav")
+	t.check(worn != null and worn.equipped and base.inside(worn.position) and worn.has_node("Model/HelmetModel"),
+			"the worn Scav Visor sits on the shelf as the helmet it is")
+	t.check(base.player.visor.enabled and base.player.visor.item_id == "visor_scav", "and you wear it in the room")
+	var asked := []
+	base.equip_requested.connect(func(slot: String, id: String) -> void: asked.append([slot, id]))
+	t._face_display(base.player, worn)
+	await t.frames(2)
+	t._face_display(base.player, worn)
+	t.check(base.player.find_interactable() == worn and worn.get_prompt() == "[F] Take off Scav Visor (equipped)",
+			"looking at it from the floor offers to take it off")
+	await t._use(base.player)
+	t.check(asked == [["helmet", ""]], "using it asks to leave the head bare")
+	base.show_gear(owned, {})
+	await t.frames(2)
+	t.check(not base.player.visor.enabled and not base.displays.any(func(d: HomeBase.Display) -> bool: return d.equipped),
+			"with it taken off you stand bareheaded")
+	base.queue_free()
+	await t.frames(2)
+
+
 ## The base with no upgrades: fewer spots, sealed rooms, shared consoles.
 static func _bunker(t: Node) -> void:
 	print("Home base starter bunker")
@@ -197,6 +236,7 @@ static func _bunker(t: Node) -> void:
 			and _count(base, "rig_stand") == 1 and _count(base, "gunsmith") == 0 and _count(base, "supplies") <= 3
 			and _count(base, "chip_case") == 0 and _count(base, "trophy") == 0,
 			"a starter bunker shows a short rack, one bay and one stand of each kind")
+	await _helmet_shelf(t, stash)
 	var nook_wall := -base.room_size.x * 0.5 - base.nook_depth
 	var in_nook := true
 	var all_inside := true

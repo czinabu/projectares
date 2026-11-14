@@ -83,7 +83,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           zip="dist/${{ steps.zip.outputs.name }}.zip"
-          notes="Newest main, built automatically on every merge: ${{ steps.zip.outputs.name }}. Unzip, run ProjectAres.exe, join the host from the Uplink console. Everyone, host included, must be on the same build (the name of the zip)."
+          notes="Newest main, built automatically on every merge: ${{ steps.zip.outputs.name }}. Unzip, run ProjectAres.exe, join the host from the phone's Servers app (P). Everyone, host included, must be on the same build (the name of the zip)."
           if gh release view latest >/dev/null 2>&1; then
             for old in $(gh release view latest --json assets -q '.assets[].name'); do
               gh release delete-asset latest "$old" -y
@@ -101,4 +101,4 @@ jobs:
           gh release create "playtest-${{ steps.zip.outputs.name }}" "dist/${{ steps.zip.outputs.name }}.zip" \
             --draft --prerelease --target "$GITHUB_SHA" \
             --title "Playtest build $(git rev-parse --short HEAD)" \
-            --notes "Windows client for playtests. Unzip, run ProjectAres.exe, join the host from the Uplink console. Everyone, host included, must be on this same build."
+            --notes "Windows client for playtests. Unzip, run ProjectAres.exe, join the host from the phone's Servers app (P). Everyone, host included, must be on this same build."

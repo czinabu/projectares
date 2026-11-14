@@ -17,6 +17,9 @@ signal drop_requested(index: int)
 
 ## The player threw the toy vehicle in their hand.
 signal toy_throw_requested(item_id: String)
+## The player took a toy vehicle off the watch into their hand, or put it
+## back (""). The world shows it in the hand for everyone.
+signal toy_hold_requested(item_id: String)
 ## The player picked a weapon in their pack on the watch: materialize it.
 signal summon_requested(item_id: String)
 ## The watch's store: put weapon `item_id`, the one in hand, back into the pack.
@@ -41,9 +44,6 @@ const STANCE_CONTROL_HINTS := [
 const VehicleScript := preload("res://core/vehicle/vehicle.gd")
 const MirrorScript := preload("res://core/visual/mirror.gd")
 const Handheld := preload("res://core/phone/handheld.gd")
-## Where a toy vehicle sits in the hand, and how big it is drawn there next
-## to a thrown toy (it is close to the eye in first person).
-const TOY_IN_HAND := Vector3(-0.08, 0.0, 0.1)
 
 var actor: Actor
 var camera: Camera3D
@@ -175,7 +175,9 @@ var artifact_pick := 0
 var portal_pick := 0
 ## The artifact icon was clicked; sent as `artifact_pressed` next command.
 var _artifact_click := false
-var _toy_node: Node3D
+## Seconds left of the throw just made: the hand is busy, so the weapon
+## stays put away and takes no input (`ActionPose.toy_throw_time`).
+var _toy_busy_left := 0.0
 var _cam_dist := 0.0
 var _pending_switch := -1
 ## The zoom level asked of a helmet with binoculars. The visor key steps it.
@@ -531,11 +533,12 @@ func take_picked_toy() -> void:
 
 ## Takes the toy `item_id` off the watch into the hand ("" puts it back).
 func hold_toy(item_id: String) -> void:
-	if item_id != "" and (item_id not in watch_toys() or actor.is_dead or is_riding()):
+	if item_id != "" and (item_id not in watch_toys() or actor.is_dead or is_riding() or _toy_busy_left > 0.0):
 		item_id = ""
 	if item_id == held_toy:
 		return
 	held_toy = item_id
+	toy_hold_requested.emit(item_id)
 	if item_id != "":
 		actor.notice.emit("%s in hand. Fire to throw it, aim to put it back" % ItemDB.item_name(item_id))
 
@@ -546,29 +549,8 @@ func throw_held_toy() -> void:
 		return
 	var id := held_toy
 	held_toy = ""
+	_toy_busy_left = ActionPose.of(actor).toy_throw_time
 	toy_throw_requested.emit(id)
-
-
-## Keeps the toy model in the hand in step with `held_toy`.
-func _show_held_toy() -> void:
-	var shown: String = _toy_node.get_meta("display_item", "") if _toy_node != null else ""
-	if _toy_node != null:
-		_toy_node.scale = Vector3.ONE * VehicleScript.TOY_SCALE
-	if shown == held_toy:
-		return
-	if _toy_node != null:
-		_toy_node.queue_free()
-		_toy_node = null
-	if held_toy != "":
-		_toy_node = VehicleScript.toy_model(held_toy)
-		_toy_node.position = TOY_IN_HAND
-		_toy_node.rotation = Vector3(0.0, -1.2, 0.0)
-		actor.hand.add_child(_toy_node)
-		for weapon in actor.weapons:
-			if weapon.visual:
-				weapon.visual.visible = false
-	else:
-		actor._refresh_weapon_visuals()
 
 
 func toggle_view() -> void:
@@ -674,7 +656,7 @@ func _physics_process(delta: float) -> void:
 		cmd.secondary_pressed = false
 	elif watch_open != "":
 		cmd.secondary = false
-	if held_toy != "":
+	if held_toy != "" or _toy_busy_left > 0.0:
 		_use_toy_hand(cmd)
 	elif watch_takes_fire():
 		# With the watch up and something for it to do, fire works the watch.
@@ -714,12 +696,14 @@ func _physics_process(delta: float) -> void:
 
 ## With a toy in the hand the weapon is away: fire throws, aim puts it back.
 func _use_toy_hand(cmd: ActorCommand) -> void:
-	if is_riding() or held_toy not in watch_toys():
-		held_toy = ""
+	if held_toy == "":
+		pass
+	elif is_riding() or held_toy not in watch_toys():
+		hold_toy("")
 	elif cmd.primary_pressed:
 		throw_held_toy()
 	elif cmd.secondary_pressed:
-		held_toy = ""
+		hold_toy("")
 	cmd.primary = false
 	cmd.primary_pressed = false
 	cmd.secondary = false
@@ -732,9 +716,9 @@ func _use_toy_hand(cmd: ActorCommand) -> void:
 func _process(delta: float) -> void:
 	if actor == null or not is_instance_valid(actor):
 		return
-	if actor.is_dead:
-		held_toy = ""
-	_show_held_toy()
+	if actor.is_dead and held_toy != "":
+		hold_toy("")
+	_toy_busy_left = maxf(_toy_busy_left - delta, 0.0)
 	var weapon := actor.get_active_weapon()
 	var aiming := weapon != null and weapon.is_aiming()
 	var target_dist := 0.0

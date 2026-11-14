@@ -386,6 +386,8 @@ func _process(delta: float) -> void:
 	if reaching:
 		_reach = shared.reach + melee.visual.position
 	_turn = shared.turn if holding else _turn.lerp(Vector2.ZERO, 1.0 - exp(-26.0 * delta))
+	if shared.toy_throw_t >= 0.0:
+		_turn = shared.toy_turn()
 	var gun := actor.get_active_weapon() as Gun
 	_gun_weight = shared.reload if gun != null and gun.visual != null and gun.visual.visible \
 			and not actor.is_dead else 0.0
@@ -422,6 +424,14 @@ func _process(delta: float) -> void:
 		reach_ik.influence = maxf(held_by, override_weight)
 	# Cocked for a windup the elbow rides high; thrown through, it drops.
 	_pole.global_position = actor.global_transform * (elbow.lerp(shared.elbow_pole(), _weight) if holding else elbow)
+	if shared.toy > 0.0 and not actor.is_dead:
+		# A toy vehicle held up or thrown: the hand follows the shared throw,
+		# taking over from any hold, and the elbow rides up as it cocks.
+		var toy_spot := actor.global_transform * shared.toy_hand_point()
+		var held_by := reach_ik.influence
+		_target.global_position = toy_spot if held_by <= 0.0 else _target.global_position.lerp(toy_spot, shared.toy)
+		reach_ik.influence = maxf(held_by, shared.toy)
+		_pole.global_position = _pole.global_position.lerp(actor.global_transform * shared.toy_elbow, shared.toy_elbow_raise())
 	if off_ik:
 		off_ik.influence = maxf(maxf(_off_weight, _support) * (1.0 - _watch), _watch)
 		var off_pole := off_elbow.lerp(ads_off_elbow, _support) if _off_weight <= 0.0 else off_elbow
