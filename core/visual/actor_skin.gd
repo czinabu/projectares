@@ -187,7 +187,7 @@ var helmet_shell_color := Color(0.22, 0.23, 0.25)
 ## toward -Z), and from medium up a belly plate and shoulder pads (on the
 ## upper arm bones); heavy adds a collar. One model in every view.
 var frame_offset := Vector3(0.0, 0.0, 0.0)
-var pad_offset := Vector3(0.03, 0.05, 0.0)
+var pad_offset := Vector3(0.0, 0.0, 0.0)
 var vitals_width := 0.13
 var vitals_low := 0.35
 var hip_offset := Vector3(-0.2, 0.08, 0.02)
@@ -1202,42 +1202,143 @@ func _update_frame() -> void:
 				Vector3(0.2 * out, height * 0.8, 0.0)))
 
 
-## A frame's chest plates for its `weight`, front toward -Z, built round the
-## chest bone: a breastplate, a belly plate from medium up, a collar on heavy.
+## A frame's plates for its `weight`, front toward -Z, built round the chest
+## bone and shaped to the torso (thin curved shells, bevelled at the edges,
+## a finger's width off the body), so they never stand out like boxes. The
+## tier shows in coverage, not bulk: light is a breastplate, medium wraps it
+## round the ribs and adds a belly lame, heavy closes it into a cuirass with
+## a back plate, a second lame and a collar.
 static func build_frame(weight: String, color: Color) -> Node3D:
 	var root := Node3D.new()
 	root.name = "FrameModel"
 	var shell := _solid(color, 0.0)
 	var trim := _solid(color.darkened(0.45), 0.0)
-	var grow := {"light": 0.0, "medium": 0.02, "heavy": 0.045}[weight] as float
-	# The breastplate in two halves meeting in a ridge down the middle, with
-	# a lit seam along it.
-	for side: float in [-1.0, 1.0]:
-		var half := _piece(root, "Chest", BoxMesh.new(), shell,
-				Vector3(side * (0.075 + grow * 0.5), 0.03, -0.12 - grow * 0.5),
-				Vector3(0.16 + grow, 0.22 + grow * 2.0, 0.035 + grow))
-		half.rotation.y = side * 0.32
-	_piece(root, "Seam", BoxMesh.new(), _solid(Color(0.4, 0.85, 0.9), 0.8),
-			Vector3(0, 0.03, -0.152 - grow), Vector3(0.012, 0.16 + grow * 2.0, 0.01))
-	_piece(root, "Trim", BoxMesh.new(), trim, Vector3(0, -0.09 - grow, -0.125 - grow * 0.5),
-			Vector3(0.27 + grow * 2.0, 0.025, 0.035 + grow))
+	# The torso round the chest bone, with the plates' gap off it.
+	var rx := 0.128 + FRAME_GAP
+	var rz := 0.108 + FRAME_GAP
+	var mid := Vector3(0.0, 0.0, 0.005)
+	var wrap := {"light": 0.95, "medium": 1.35, "heavy": 1.7}[weight] as float
+	var low := {"light": -0.06, "medium": -0.1, "heavy": -0.12}[weight] as float
+	_plate(root, "Chest", _shell(rx, rz, -wrap, wrap, low, 0.11, FRAME_THICK, 0.012, 0.08), shell, mid)
+	# A lit seam down the middle of the breastplate.
+	_plate(root, "Seam", _shell(rx + FRAME_THICK, rz + FRAME_THICK, -0.03, 0.03, low + 0.03, 0.08, 0.004, 0.012),
+			_solid(Color(0.4, 0.85, 0.9), 0.8), mid)
+	# The lower edge of the breastplate, a darker band.
+	_plate(root, "Trim", _shell(rx + 0.002, rz + 0.002, -wrap * 0.92, wrap * 0.92, low - 0.008, low + 0.01,
+			FRAME_THICK + 0.004), trim, mid)
 	if weight != "light":
-		_piece(root, "Belly", BoxMesh.new(), shell, Vector3(0, -0.15 - grow, -0.115 - grow * 0.5),
-				Vector3(0.26 + grow, 0.09, 0.035 + grow))
+		# Lames over the belly, narrower than the chest, each just under the last.
+		var lames := 2 if weight == "heavy" else 1
+		for i in lames:
+			var top := low - 0.02 - i * 0.07
+			_plate(root, "Belly" if i == 0 else "Belly%d" % i,
+					_shell(0.114 + FRAME_GAP, 0.1 + FRAME_GAP, -1.0, 1.0, top - 0.06, top, FRAME_THICK, 0.004), shell, mid)
 	if weight == "heavy":
-		_piece(root, "Collar", BoxMesh.new(), trim, Vector3(0, 0.17, -0.085),
-				Vector3(0.3, 0.06, 0.1))
+		_plate(root, "Back", _shell(rx, rz, PI - 1.2, PI + 1.2, low, 0.11, FRAME_THICK, 0.008, 0.08), shell, mid)
+		# A low collar round the base of the neck, under the chin.
+		_plate(root, "Collar", _shell(0.1, 0.09, -2.3, 2.3, 0.115, 0.15, FRAME_THICK, 0.0, -0.3), trim,
+				Vector3(0.0, 0.0, -0.01))
 	return root
 
 
-## A shoulder pad for the side `out` (-1 left, 1 right), tipped down the arm.
+## A shoulder cap for the side `out` (-1 left, 1 right), curved over the top
+## of the arm from the collarbone to the outside of the shoulder; heavy adds
+## a second lame under it.
 static func build_pad(weight: String, color: Color, out: float) -> Node3D:
 	var root := Node3D.new()
 	root.name = "PadModel"
-	var size := Vector3(0.12, 0.045, 0.14) if weight == "medium" else Vector3(0.15, 0.06, 0.17)
-	var pad := _piece(root, "Pad", BoxMesh.new(), _solid(color, 0.0), Vector3.ZERO, size)
-	pad.rotation.z = -0.35 * out
+	var heavy := weight == "heavy"
+	var r := 0.07 if heavy else 0.062
+	var length := 0.12 if heavy else 0.1
+	var lames := 2 if heavy else 1
+	for i in lames:
+		# A band round the arm's front-to-back line: built round Y, then laid on Z.
+		var cap := _plate(root, "Pad" if i == 0 else "Pad%d" % i,
+				_shell(r + i * 0.008, r + i * 0.008, -0.35, 1.45 - i * 0.3, -length * 0.5, length * 0.5,
+				FRAME_THICK, 0.006), _solid(color if i == 0 else color.darkened(0.25), 0.0),
+				Vector3(0.0, -i * 0.03, 0.0))
+		# Round Y the shell runs from -Z; turned so it runs from up, over the
+		# top and down the outside of this shoulder.
+		cap.basis = Basis(Vector3.RIGHT, PI * 0.5)
+		if out < 0.0:
+			cap.basis = Basis(Vector3.UP, PI) * cap.basis
 	return root
+
+
+## How thick a plate is, and how far off the body it rides.
+const FRAME_THICK := 0.011
+const FRAME_GAP := 0.012
+
+
+static func _plate(root: Node3D, piece_name: String, mesh: Mesh, mat: Material, at: Vector3) -> MeshInstance3D:
+	var part := MeshInstance3D.new()
+	part.name = piece_name
+	part.mesh = mesh
+	if mat is BaseMaterial3D:
+		(mat as BaseMaterial3D).cull_mode = BaseMaterial3D.CULL_DISABLED
+	part.material_override = mat
+	part.position = at
+	root.add_child(part)
+	return part
+
+
+## A curved plate: a band of an upright elliptical cylinder of radii `rx`
+## and `rz`, from angle `from` to `to` (0 at -Z, growing toward +X) and
+## height `low` to `high`, `thick` thick and thinning to a bevel at its
+## edges. `bulge` swells its middle out and `flare` widens its top (a
+## negative flare narrows it, for a collar).
+static func _shell(rx: float, rz: float, from: float, to: float, low: float, high: float, thick: float,
+		bulge := 0.0, flare := 0.0) -> ArrayMesh:
+	var cols := maxi(4, ceili((to - from) / 0.12))
+	var rows := 5
+	# The bevel runs in this far from each edge, less on a narrow band.
+	var bevel := minf(0.022, 0.3 * minf(high - low, (to - from) * rx))
+	var outer := []
+	var inner := []
+	var normals := []
+	for j in rows + 1:
+		var v := float(j) / rows
+		var row_out := []
+		var row_in := []
+		var row_n := []
+		for i in cols + 1:
+			var u := float(i) / cols
+			var a := lerpf(from, to, u)
+			var grow := 1.0 + flare * (v - 0.5) + bulge * sin(PI * v) * sin(PI * u) / maxf(rx, 0.01)
+			var at := Vector3(rx * grow * sin(a), lerpf(low, high, v), -rz * grow * cos(a))
+			var n := Vector3(sin(a) / rx, 0.0, -cos(a) / rz).normalized()
+			var edge := minf(minf(u, 1.0 - u) * (to - from) * rx, minf(v, 1.0 - v) * (high - low))
+			var t := thick * lerpf(0.3, 1.0, smoothstep(0.0, bevel, edge))
+			row_in.append(at)
+			row_out.append(at + n * t)
+			row_n.append(n)
+		outer.append(row_out)
+		inner.append(row_in)
+		normals.append(row_n)
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for j in rows:
+		for i in cols:
+			_shell_quad(st, [outer[j][i], outer[j][i + 1], outer[j + 1][i + 1], outer[j + 1][i]],
+					[normals[j][i], normals[j][i + 1], normals[j + 1][i + 1], normals[j + 1][i]], 1.0)
+			_shell_quad(st, [inner[j][i], inner[j][i + 1], inner[j + 1][i + 1], inner[j + 1][i]],
+					[normals[j][i], normals[j][i + 1], normals[j + 1][i + 1], normals[j + 1][i]], -1.0)
+	# The rims: bottom, top, then the two sides.
+	for i in cols:
+		for j: int in [0, rows]:
+			var down: Vector3 = Vector3.DOWN if j == 0 else Vector3.UP
+			_shell_quad(st, [inner[j][i], inner[j][i + 1], outer[j][i + 1], outer[j][i]], [down, down, down, down], 1.0)
+	for j in rows:
+		for i: int in [0, cols]:
+			var side: Vector3 = (inner[j][mini(i + 1, cols)] - inner[j][maxi(i - 1, 0)]).normalized() * (1.0 if i == cols else -1.0)
+			_shell_quad(st, [inner[j][i], inner[j + 1][i], outer[j + 1][i], outer[j][i]], [side, side, side, side], 1.0)
+	return st.commit()
+
+
+static func _shell_quad(st: SurfaceTool, at: Array, n: Array, sign: float) -> void:
+	for k: int in [0, 1, 2, 0, 2, 3]:
+		st.set_normal((n[k] as Vector3) * sign)
+		st.add_vertex(at[k])
 
 
 static func _solid(color: Color, energy: float) -> StandardMaterial3D:

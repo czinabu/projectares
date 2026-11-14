@@ -2172,7 +2172,10 @@ func _view_shots(out_dir: String, only := "") -> void:
 	# its own grip, so compare them).
 	var kit := [OS.get_environment("VIEW_GUN") if OS.has_environment("VIEW_GUN") else "rifle_carbine",
 			OS.get_environment("VIEW_MELEE") if OS.has_environment("VIEW_MELEE") else "blade_scrap",
-			OS.get_environment("VIEW_SIDEARM") if OS.has_environment("VIEW_SIDEARM") else "pistol_service", "jetpack_mk1", "plate_light"]
+			OS.get_environment("VIEW_SIDEARM") if OS.has_environment("VIEW_SIDEARM") else "pistol_service", "jetpack_mk1",
+			OS.get_environment("VIEW_FRAME") if OS.has_environment("VIEW_FRAME") else "plate_light"]
+	# `VIEW_FRAME=<item id>` picks the armor frame worn, and `VIEW_PITCH`
+	# tips the view (negative looks down), to see what the plates block.
 	# `VIEW_OPTIC=<item id>` fits an optic to the rifle, for the aim rows.
 	if OS.has_environment("VIEW_OPTIC"):
 		kit.append(OS.get_environment("VIEW_OPTIC"))
@@ -2190,7 +2193,7 @@ func _view_shots(out_dir: String, only := "") -> void:
 	await _settle(30)
 	p.set_physics_process(false)
 	controller.set_physics_process(false)
-	controller.pitch = -0.05
+	controller.pitch = OS.get_environment("VIEW_PITCH").to_float() if OS.has_environment("VIEW_PITCH") else -0.05
 	p.cmd.pitch = controller.pitch
 	p.cmd.yaw = controller.yaw
 	var skin: Node = p.get_node("Skin")

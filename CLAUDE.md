@@ -583,10 +583,13 @@ without Caleb, and update the gap list when a PR closes a row.
   takes the watch's rest after it (`Loadout.SUMMON_TIMES` "armor"), and
   one taken off keeps its armor left in `Actor.stowed_armor`, so spare
   plates are no instant refill. The skin wears its plates
-  (`ActorSkin._update_frame`, `build_frame`, `build_pad`: a breastplate,
-  then a belly plate and shoulder pads from medium, a collar on heavy, by
-  `frame_weight`) on the chest and upper arm bones, the same body in both
-  views.
+  (`ActorSkin._update_frame`, `build_frame`, `build_pad`, by `frame_weight`)
+  on the chest and upper arm bones, the same body in both views. Plates are
+  fitted, never boxes (Caleb's call): thin curved shells (`_shell`) a
+  finger's width off the torso, bevelled at the edges, and the tier shows
+  in coverage, not bulk: light a breastplate, medium wrapped round the ribs
+  with a belly lame and shoulder caps, heavy a cuirass with a back plate,
+  two lames, double caps and a low collar.
 - Vehicles are items tagged `vehicle`, tuned by their stats, and spawned by
   `Raid` (never carried). `core/vehicle/vehicle.gd` reads its rider's
   `ActorCommand` and moves the rider; `Actor` skips its own movement while
