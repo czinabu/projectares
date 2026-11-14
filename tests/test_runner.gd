@@ -3895,7 +3895,7 @@ func _test_online() -> void:
 	cmd.switch_weapon = 1
 	var copy := ActorCommand.new()
 	copy.apply_array(cmd.to_array())
-	check(copy.move.is_equal_approx(cmd.move.limit_length(1.0)) and is_equal_approx(copy.yaw, 1.25)
+	check(copy.move.is_equal_approx(cmd.move) and is_equal_approx(copy.yaw, 1.25)
 			and copy.sprint and copy.primary and copy.dash and copy.ability_pressed
 			and not copy.jump and not copy.heal_pressed and copy.stance == 2 and copy.switch_weapon == 1,
 			"a command survives the trip through its network form")
@@ -3905,9 +3905,18 @@ func _test_online() -> void:
 	check(copy.watch_up and int(packed[ActorCommand.FLAGS_INDEX]) & ActorCommand.HELD_MASK & ActorCommand.FLAG_WATCH_UP != 0,
 			"a raised watch travels with the held keys, so others see it")
 	copy.apply_array([99.0, 99.0, "x", 50.0, NAN, 0.0, 0.0, 0, 7, 99])
-	check(copy.move.length() <= 1.001 and is_zero_approx(copy.yaw) and copy.pitch <= 1.5
+	check(copy.move == Vector2.ONE and is_zero_approx(copy.yaw) and copy.pitch <= 1.5
 			and copy.aim_dir == Vector3.ZERO and copy.stance == 2 and copy.switch_weapon <= 8,
 			"a command from the network is clamped to legal values")
+	# The server must play the very move the client predicted with. A
+	# keyboard diagonal is (1, 1), and riding with throttle and steer held is
+	# exactly that; shortened on the way, the server rode a slower, wider turn.
+	var diagonal := ActorCommand.new()
+	for move: Vector2 in [Vector2(1, 1), Vector2(0.7, 1), Vector2(-0.5, 1), Vector2(-1, -1)]:
+		diagonal.move = move
+		var sent: Array = NetSession.unpack_inputs(NetSession.pack_inputs([[1, diagonal.to_array(), 0]]))[0][1]
+		copy.apply_array(sent)
+		check(copy.move.is_equal_approx(move), "a move of %s reaches the server as the client predicted it (%s)" % [move, copy.move])
 	cmd.switch_weapon = ActorCommand.HOLSTER
 	copy.apply_array(cmd.to_array())
 	check(copy.switch_weapon == ActorCommand.HOLSTER, "putting the weapon away survives the network form")
@@ -4231,19 +4240,33 @@ func _test_online() -> void:
 			var bag_id := bag.get_instance_id()
 			var carried := me.inventory.items.size()
 			var looted := func() -> bool: return me.inventory.items.size() > carried
+			# The server loots whatever the eyes' ray meets first, like a
+			# player's use key. The bike ridden earlier, or a bump in the
+			# ground, can stand between the looter and the bag, so press only
+			# while the ray is on the bag, and step round it until it is.
+			var in_way := "nothing"
+			var gap := 99.0
 			for i in 600:
 				if looted.call() or not is_instance_valid(bag):
 					break
 				face.call(bag.global_position + Vector3(0, 0.3, 0))
-				var gap := Vector2(bag.global_position.x - me.global_position.x,
+				gap = Vector2(bag.global_position.x - me.global_position.x,
 						bag.global_position.z - me.global_position.z).length()
-				me.cmd.move = _move_toward(me, bag.global_position) if gap > 1.6 else Vector2.ZERO
-				me.cmd.interact_pressed = gap <= 2.6 and i % 10 == 0
+				var aimed := me.find_interactable()
+				var on_bag := aimed == bag
+				if gap <= 2.6 and not on_bag:
+					in_way = aimed.name if aimed != null else "the ground or a wall"
+				if gap > 1.6:
+					me.cmd.move = _move_toward(me, bag.global_position)
+				else:
+					me.cmd.move = Vector2.ZERO if on_bag else Vector2(1, 0)
+				me.cmd.interact_pressed = gap <= 2.6 and on_bag and i % 10 == 0
 				await frames(1)
 			me.cmd.move = Vector2.ZERO
 			me.cmd.interact_pressed = false
 			await _wait_until(looted, 60)
-			check(looted.call(), "looting the bag fills the backpack from the server (%d items)" % me.inventory.items.size())
+			check(looted.call(), "looting the bag fills the backpack from the server (%d items; %.1f m from the bag, last in the way: %s)"
+					% [me.inventory.items.size(), gap, in_way])
 			# The notice is its own message and can land a moment after the backpack.
 			var told_loot := func() -> bool:
 				return notices.any(func(text: String) -> bool: return text.begins_with("Looted "))
