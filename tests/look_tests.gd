@@ -84,7 +84,8 @@ static func run(t: Node) -> void:
 			await _toy_in_hand(t, raid.player, skin, skeleton, tag)
 		if sword != null and skin.arm.reach_ik != null:
 			var pose := ActionPose.of(raid.player)
-			t.check(skin.arm.arm_reach(sword) == null, tag + "the animation keeps the arm when no attack or guard is up")
+			t.check(skin.arm.arm_reach(sword) == pose.ready_reach(sword) and skin.arm.arm_reach(sword) != null,
+					tag + "with no attack or guard up the blade is held ready in front")
 			var reaches := {}
 			for side: int in [MeleeWeapon.Dir.LEFT, MeleeWeapon.Dir.RIGHT, MeleeWeapon.Dir.OVERHEAD]:
 				sword._windup_left = 1.0
@@ -118,7 +119,7 @@ static func run(t: Node) -> void:
 			t.check(skin.arm.off_ik != null and not skin.arm._off_fist.is_empty(), tag + "the model has an off hand for two-handed weapons")
 			sword._windup_left = 0.0
 			sword._blocking = true
-			t.check(skin.arm.arm_reach(sword) != null, tag + "a guard raises the arm")
+			t.check(skin.arm.arm_reach(sword) == pose.arm_guard, tag + "a guard raises the arm")
 			sword._blocking = false
 			var was_active := raid.player.active_weapon_index
 			raid.player.active_weapon_index = raid.player.weapons.find(sword)
@@ -185,6 +186,28 @@ static func run(t: Node) -> void:
 		t.check(blade_model.find_children("*", "CollisionObject3D", true, false).is_empty(), "the blade model has no collision")
 		blade_model.free()
 	t.check(not Look.is_two_handed(blade), "a plain blade is one-handed")
+	# The scrap kit's blade is a sword made from scrap: patch plates, rivets,
+	# a wired grip and a nut for a pommel, on the plain sword model. The
+	# plates on the blade fold away with it when holstered.
+	blade.item_id = "blade_scrap"
+	var scrap_model := Look.weapon_model(blade)
+	var bits := scrap_model.get_node_or_null("Scrap") if scrap_model != null else null
+	t.check(bits != null and bits.get_child_count() >= 10, "the scrap blade is patched together from scrap")
+	if bits != null:
+		var folding := 0
+		for part in bits.get_children():
+			var mat := (part as MeshInstance3D).get_surface_override_material(0)
+			if mat != null and mat.has_meta("tech_fold"):
+				folding += 1
+		t.check(folding >= 6, "its patch plates fold away with the blade")
+	if scrap_model:
+		scrap_model.free()
+	blade.item_id = "blade_arc"
+	var arc_model := Look.weapon_model(blade)
+	t.check(arc_model != null and arc_model.get_node_or_null("Scrap") == null, "a crafted blade is left clean")
+	if arc_model:
+		arc_model.free()
+	blade.item_id = ""
 	blade.item_id = "hammer_breaker"
 	t.check(Look.is_two_handed(blade), "a hammer takes both hands")
 	# No pack has a spear, so Look builds one: long, standing along +Y, held

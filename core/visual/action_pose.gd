@@ -28,6 +28,32 @@ var arm_follow := {
 	MeleeWeapon.Dir.OVERHEAD: Vector3(-0.15, -0.35, -0.25),
 }
 var arm_guard := Vector3(0.0, 0.08, -0.08)
+## Holding a one-handed weapon ready (standing, moving, between attacks) the
+## hand is out in front, low on the right of the view, with the weapon
+## standing in the fist (Caleb's references). Each model picks its hold
+## (`Look.ready_hold`, the last field of `Look.MELEE_MODELS`): where the hand
+## goes (an offset from `Actor.HAND_REST`, aim frame), which way the blade
+## points (aim frame: x right, y up, z back), what the off hand does
+## (`ready_off`) and whether the blade comes out of the little-finger side
+## of the fist (a reverse grip, `ready_reversed`). A swing starts from the
+## hold and eases back to it; a reverse grip turns over in the hand as it
+## goes. Two-handed weapons are carried across the body instead
+## (`WeaponArm.carry_point`).
+var ready_holds := {
+	# A straight sword: upright, the point barely forward.
+	"upright": [Vector3(0.02, 0.14, -0.2), Vector3(0.0, 1.0, -0.1), "", false],
+	# A katana in both hands, the off hand under the weapon hand: the point
+	# forward and leaning in toward the middle of the view.
+	"katana": [Vector3(0.04, 0.08, -0.2), Vector3(-0.38, 1.0, -0.35), "hilt", false],
+	# A knife in a reverse grip: lying flat, the point out to the right and
+	# ahead, the pommel over the thumb, the empty hand up low as a guard.
+	"knife": [Vector3(-0.06, 0.12, -0.2), Vector3(0.85, -0.1, -0.5), "guard", true],
+}
+## Where the empty hand is held as a guard behind a knife (`ready_holds`):
+## low in front of the chest, left of the middle, in the actor's frame.
+var off_guard := Vector3(-0.16, 1.3, -0.5)
+## How far the weapon is in its ready hold (0..1), eased.
+var held_ready := 0.0
 ## A swing turns the arm about the shoulder (`shoulder`, in the actor's
 ## frame, like `Actor.HAND_REST`): the hand sweeps round from the windup to
 ## the follow-through on an arc, and the arm straightens by `swing_extend`
@@ -351,6 +377,7 @@ func advance(delta: float) -> void:
 	if wanted != null:
 		reach = wanted if reach_weight < 0.15 else reach.lerp(wanted, follow)
 	turn = turn.lerp(body_turn(melee) if holding else Vector2.ZERO, follow)
+	held_ready = lerpf(held_ready, ready_amount(melee) if holding else 0.0, follow)
 	elbow_raise = lerpf(elbow_raise, elbow_wanted(melee) if holding else 0.0, follow)
 
 	var watch_wanted := actor.cmd != null and actor.cmd.watch_up and not actor.is_dead
@@ -682,19 +709,77 @@ func arm_reach(melee: MeleeWeapon) -> Variant:
 		return follow_reach(melee, _follow_dir)
 	if melee.is_blocking():
 		return arm_guard
+	var hold: Variant = ready_reach(melee)
+	var rest: Vector3 = hold if hold != null else Vector3.ZERO
 	var charge := charge_amount(melee)
 	if charge > 0.0:
-		return windup_reach(melee, MeleeWeapon.swing_from(melee.stance)) * charge
+		return rest.lerp(windup_reach(melee, MeleeWeapon.swing_from(melee.stance)), charge)
 	var back := recover_left(melee)
 	if back > 0.0:
-		return follow_reach(melee, melee.attack_dir) * back
+		return rest.lerp(follow_reach(melee, melee.attack_dir), back)
 	if inspect_for("melee") > 0.0:
 		# The resting hand's offset (from `Actor.HAND_REST`, in the aim
-		# frame) that puts it on the inspect point.
+		# frame) that puts it on the inspect point, eased from the hold.
 		var aim := actor.global_basis.orthonormalized() * Basis(Vector3.RIGHT, actor.cmd.pitch)
-		var rest := actor.global_transform * Actor.HAND_REST
-		return (aim.inverse() * (inspect_point() - rest)) * inspect
-	return null
+		var at := actor.global_transform * Actor.HAND_REST
+		return rest.lerp(aim.inverse() * (inspect_point() - at), inspect)
+	return hold
+
+
+## The ready hold `melee` is held in at rest (an entry of `ready_holds`), or
+## an empty array for a two-handed weapon, which is carried instead.
+func ready_hold(melee: MeleeWeapon) -> Array:
+	if melee == null or melee.is_two_handed():
+		return []
+	return ready_holds.get(Look.ready_hold(melee), [])
+
+
+## Where the hand is held ready (`ready_holds`), or null.
+func ready_reach(melee: MeleeWeapon) -> Variant:
+	var hold := ready_hold(melee)
+	return hold[0] if not hold.is_empty() else null
+
+
+## How the weapon stands in the hand held ready, in the aim frame, as the
+## turn of the hand node (the weapon's own rest pitch taken back out), or
+## null when it has no ready hold.
+func ready_turn(melee: MeleeWeapon) -> Variant:
+	var hold := ready_hold(melee)
+	if hold.is_empty():
+		return null
+	var points := (hold[1] as Vector3).normalized()
+	return Basis(Quaternion(Vector3.UP, points)) * Basis(Vector3.RIGHT, -MeleeWeapon.REST_POSE)
+
+
+## True while the blade is held reversed in the fist (`ready_holds`): from
+## halfway into the ready hold, so it turns over as an attack starts.
+func ready_reversed(melee: MeleeWeapon) -> bool:
+	var hold := ready_hold(melee)
+	return not hold.is_empty() and hold[3] and held_ready > 0.5
+
+
+## What the off hand does in the ready hold: "guard" (up empty, low in
+## front), "hilt" (on the handle under the weapon hand) or "" (nothing).
+func ready_off(melee: MeleeWeapon) -> String:
+	var hold := ready_hold(melee)
+	return hold[2] if not hold.is_empty() else ""
+
+
+## How much the ready hold has the weapon (0..1): all of it at rest, none
+## through an attack or guard, and part of it while drawing back for a heavy
+## or easing back after a strike.
+func ready_amount(melee: MeleeWeapon) -> float:
+	if melee == null or actor.is_dead or ready_hold(melee).is_empty():
+		return 0.0
+	if melee._slamming or melee.showing_back_strike() or melee.swing_arc() >= 0.0:
+		return 0.0
+	if melee.is_winding_up() or _follow_left > 0.0 or melee.is_blocking():
+		return 0.0
+	var charge := charge_amount(melee)
+	if charge > 0.0:
+		return 1.0 - charge
+	# Looked over, the weapon turns in the hand as the inspect says.
+	return (1.0 - recover_left(melee)) * (1.0 - inspect_for("melee"))
 
 
 ## The shoulder turn and lean that go with `arm_reach`: heavier for a

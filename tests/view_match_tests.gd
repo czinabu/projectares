@@ -78,7 +78,9 @@ static func _check_without_skin(t: Node) -> void:
 	for i in 40:
 		await t.frames(1)
 		pose.advance(1.0 / 30.0)
-	t.check(pose.reach_weight == 0.0, "once the swing is over the blade is back in its hold")
+	t.check(pose.reach_weight > 0.99 and pose.reach.distance_to(pose.ready_reach(blade)) < 0.01 and pose.held_ready > 0.99,
+			"once the swing is over the blade is back in its ready hold")
+	_check_ready_holds(t, pose, blade)
 
 	# Holding the button draws the arm back toward the swing's side, and
 	# after a strike the arm eases back from the follow-through as the blade
@@ -118,6 +120,55 @@ static func _check_without_skin(t: Node) -> void:
 	t.check(pose.phone == 0.0, "and puts it away again")
 	raid.queue_free()
 	await t.frames(2)
+
+
+## Each one-handed weapon has its own ready hold (Caleb's references): a
+## straight sword upright, a katana leaning in with the off hand under the
+## weapon hand, a knife flat in a reverse grip with the empty hand up.
+## Two-handed weapons are carried instead.
+static func _check_ready_holds(t: Node, pose: ActionPose, blade: MeleeWeapon) -> void:
+	var probe := MeleeWeapon.new()
+	var holds := {}
+	for id: String in ["blade_scrap", "blade_arc", "knife_gutter", "axe_splitter", "hammer_breaker", "spear_lancer"]:
+		probe.item_id = id
+		holds[id] = pose.ready_hold(probe)
+	t.check(Look.ready_hold(blade) == "upright" and holds["blade_scrap"] == pose.ready_holds["upright"],
+			"the scrap blade, a straight sword, is held upright")
+	t.check(holds["blade_arc"] == pose.ready_holds["katana"], "the arc blade, a katana, has the katana hold")
+	t.check(holds["knife_gutter"] == pose.ready_holds["knife"], "a knife has the knife hold")
+	t.check(not holds["axe_splitter"].is_empty(), "every one-handed weapon has a ready hold")
+	t.check(holds["hammer_breaker"].is_empty() and holds["spear_lancer"].is_empty(),
+			"two-handed weapons are carried, not held ready")
+	var up := func(hold: Array) -> Vector3:
+		return (hold[1] as Vector3).normalized()
+	t.check(up.call(holds["blade_scrap"]).y > 0.98, "the sword stands nearly straight up")
+	var katana: Vector3 = up.call(holds["blade_arc"])
+	t.check(katana.y > 0.8 and katana.x < -0.2 and katana.z < -0.2, "the katana leans in toward the middle and forward")
+	var knife: Vector3 = up.call(holds["knife_gutter"])
+	t.check(absf(knife.y) < 0.2 and knife.x > 0.6 and knife.z < 0.0, "the knife lies flat, its point out to the right and ahead")
+	t.check(holds["blade_arc"][2] == "hilt" and holds["knife_gutter"][2] == "guard" and holds["blade_scrap"][2] == "",
+			"the off hand holds the katana's handle, guards behind the knife and hangs free with the sword")
+	t.check(holds["knife_gutter"][3] and not holds["blade_scrap"][3] and not holds["blade_arc"][3],
+			"only the knife is held in a reverse grip")
+	# The hand node is turned so the blade, with its own rest pitch, points
+	# where the hold says.
+	for id: String in ["blade_scrap", "blade_arc", "knife_gutter"]:
+		probe.item_id = id
+		var shown := (pose.ready_turn(probe) as Basis) * Basis(Vector3.RIGHT, MeleeWeapon.REST_POSE) * Vector3.UP
+		t.check(shown.distance_to(up.call(holds[id])) < 0.01, "held ready, %s points the way its hold says" % id)
+	probe.free()
+	# The hold gives way to an attack and comes back after.
+	blade._windup_left = 1.0
+	blade.attack_dir = MeleeWeapon.Dir.RIGHT
+	t.check(pose.ready_amount(blade) == 0.0, "a windup takes the blade out of its ready hold")
+	blade._windup_left = 0.0
+	t.check(pose.ready_amount(blade) == 1.0, "at rest the blade is all the way in its ready hold")
+	blade._charge = blade.hold_time * 0.5
+	var drawn: float = pose.ready_amount(blade)
+	t.check(drawn > 0.3 and drawn < 0.7, "drawing back for a heavy eases out of the hold")
+	t.check(pose.arm_reach(blade).distance_to(pose.ready_reach(blade).lerp(pose.arm_windup[MeleeWeapon.swing_from(blade.stance)], 0.5)) < 0.01,
+			"and the hand moves from the hold toward the windup")
+	blade._charge = -1.0
 
 
 ## With the model: third person and first person play the same switch,

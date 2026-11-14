@@ -200,7 +200,11 @@ without Caleb, and update the gap list when a PR closes a row.
   which films each move frame by frame. Every melee
   model is dressed as tech by `Look._tech_melee` (`assets/shaders/melee.gdshader`):
   bare metal becomes alloy with an energy edge in the weapon's rarity color,
-  wood and wraps black polymer with glowing seams. A holstered blade is worn
+  wood and wraps black polymer with glowing seams. The scrap kit's blade
+  (`starter`) is a sword made from scrap (Caleb's call): `Look._scrap_bits`
+  welds crooked patch plates and rivets on the blade, winds wire round the
+  grip and threads a nut on for a pommel, and it runs dim and worn
+  (`scrap_energy`, `scrap_wear`). A holstered blade is worn
   folded away (the last field of its `MELEE_MODELS` entry: "blade" draws the
   blade into the hilt, "telescope" slides a spear shaft into itself) and
   slides out once drawn (`Look.set_extend`, timed by `ActorSkin._update_fold`).
@@ -346,7 +350,14 @@ without Caleb, and update the gap list when a PR closes a row.
   (`Look.is_two_handed`) its off hand's place: a hand below on a short
   handle, up the haft of a long one, which rests carried across the body
   (`WeaponArm.carry_point`). Check by eye with
-  `visual_check.tscn -- <dir> --hands-only`. A blade lies along the closed fist
+  `visual_check.tscn -- <dir> --hands-only`. A one-handed weapon at rest is
+  held ready, not left to the idle clip (Caleb's references): the arm
+  reaches the hand to the lower right of the view and the weapon stands in
+  the fist the way its hold says (`ActionPose.ready_holds`, picked by the
+  last field of `Look.MELEE_MODELS`): a straight sword upright, a katana
+  leaning in with the off hand under the weapon hand, a knife lying flat in
+  a reverse grip with the empty hand up as a guard. Attacks start from the
+  hold and ease back into it (`ActionPose.held_ready`). A blade lies along the closed fist
   and a gun held low turns with the wrist (`WeaponArm`); swings turn the
   arm about the shoulder (`ActionPose.swing_reach`, `elbow_pole`). Shots
   are judged from the eyes but drawn from the gun's "Muzzle" marker as it

@@ -2367,14 +2367,15 @@ func _view_shots(out_dir: String, only := "") -> void:
 			controller.view_mode = PlayerController.ViewMode.FIRST if col == 0 else PlayerController.ViewMode.THIRD
 			outside.current = col == 2
 			controller.camera.current = col != 2
-			for k in 45:
-				hold.call()
-				await get_tree().process_frame
 			if col == 2:
 				# From the front and a little to the right, so the arms show.
+				# Placed before the body settles, so it is posed up close.
 				var at := p.global_position
 				outside.global_position = at + p.global_basis * Vector3(1.4, 1.5, -3.4)
 				outside.look_at(at + Vector3(0, 1.2, 0))
+			for k in 45:
+				hold.call()
+				await get_tree().process_frame
 			hold.call()
 			await RenderingServer.frame_post_draw
 			var frame := get_viewport().get_texture().get_image()
