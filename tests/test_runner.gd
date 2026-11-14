@@ -1779,10 +1779,16 @@ func _test_flight_rigs_and_abilities() -> void:
 			has_ability = true
 	check(not has_ability, "an empty ability slot deploys with no ability")
 	Profile.grant_gear_crates()
-	var crate_size := Profile.stash.size()
-	Profile.grant_gear_crates()
-	check(crate_size > 0 and Profile.stash.size() == crate_size and "chip_blink" in Profile.stash,
-			"the flight and abilities crate is granted once")
+	check(Profile.stash.is_empty() and Profile.GEAR_CRATES.is_empty(),
+			"no free test-gear crate goes to every player (dev mode has the gear)")
+	Profile.reset()
+	Profile.grant_welcome_crate()
+	var welcome := Profile.stash.size()
+	Profile.grant_welcome_crate()
+	check(welcome == Profile.WELCOME_CRATE.size() and Profile.stash.size() == welcome
+			and "bike_scrapper" in Profile.stash and "wings_glide" not in Profile.stash
+			and Profile.base_upgrades.is_empty() and Profile.blueprints.is_empty(),
+			"a new player gets the welcome crate once, with the starter bike, and a starter bunker")
 	Profile.reset()
 
 
@@ -5694,6 +5700,7 @@ const MirrorScript := preload("res://core/visual/mirror.gd")
 const DevMode := preload("res://core/dev/dev_mode.gd")
 const DevEconomy := preload("res://core/economy/economy.gd")
 const DevStashRules := preload("res://core/account/stash_rules.gd")
+const DevBaseUpgrades := preload("res://core/base/base_upgrades.gd")
 
 
 ## DEV MODE: the temporary testing mode (`core/dev/dev_mode.gd`). Delete this
@@ -5755,12 +5762,68 @@ func _test_dev_mode() -> void:
 	for path in [real_path, dev_path]:
 		DirAccess.remove_absolute(path)
 
-	# Online: a server hosted in dev mode tops up the host's account only.
+	# A save from before the fresh start (free test gear, a full base, leaked
+	# dev scrip) is set back to a fresh player once, keeping who you are.
+	Profile.reset()
+	var old_save := Profile.to_dict()
+	old_save.erase("fresh_start")
+	old_save.player_name = "Caleb"
+	old_save.online_secret = "kept-secret"
+	old_save.stash = ["wings_glide", "boots_thruster", "chip_blink", "helm_ember_mk2"]
+	old_save.scrip = DevEconomy.MAX_SCRIP
+	old_save.base_upgrades = DevBaseUpgrades.full()
+	old_save.welcome_granted = true
+	Profile.load_dict(old_save)
+	check(Profile.fresh_start < Profile.FRESH_START, "a save from before the fresh start is spotted")
+	Profile.start_fresh()
+	Profile.grant_welcome_crate()
+	check(Profile.player_name == "Caleb" and Profile.online_secret == "kept-secret"
+			and Profile.scrip == DevEconomy.STARTING_SCRIP and Profile.base_upgrades.is_empty()
+			and "wings_glide" not in Profile.stash and "helm_ember_mk2" not in Profile.stash
+			and "bike_scrapper" in Profile.stash and Profile.fresh_start == Profile.FRESH_START,
+			"the fresh start keeps who you are and leaves a new player's stash, scrip and base")
+	Profile.load_dict(Profile.to_dict())
+	check(Profile.fresh_start == Profile.FRESH_START, "and it happens only once")
+	Profile.player_name = "Raider"
+	Profile.online_secret = ""
+	Profile.reset()
+
+	# A dev server's snapshots never go back into the real save: the game only
+	# takes on snapshots from a server it hosted from the same save.
+	var main_view: Node = load("res://core/main.gd").new()
+	main_view._server_pid = 1
+	main_view._join_address = "127.0.0.1"
+	main_view._hosted_save = Profile.DEV_SAVE_PATH
+	var dev_snapshot := {"ok": true, "stash": ["helm_ember_mk2"], "scrip": DevEconomy.MAX_SCRIP,
+			"base_upgrades": DevBaseUpgrades.full()}
+	main_view._keep_profile_in_step(dev_snapshot)
+	check("helm_ember_mk2" not in Profile.stash and Profile.base_upgrades.is_empty()
+			and Profile.scrip == DevEconomy.STARTING_SCRIP,
+			"turning dev mode off on your own dev server leaks nothing into the real profile")
+	main_view._hosted_save = Profile.save_path
+	main_view._keep_profile_in_step(dev_snapshot)
+	check("helm_ember_mk2" in Profile.stash, "a server hosted from this save still keeps it in step")
+	main_view._server_pid = -1
+	main_view.free()
+	Profile.reset()
+
+	# Online: a server hosted in dev mode tops up the host's account only, and
+	# the host is whoever claims the handed profile with its secret, never
+	# just someone using the host's name.
 	var service := StashService.new()
 	service.persist = false
-	service.dev_accounts.append(StashService.id_for_name("Dev Host"))
-	var host_id: String = service.sign_in("Dev Host", StashService.new_secret()).account_id
+	service.dev_host = true
+	var host_secret := StashService.new_secret()
+	service.host_profile = {"player_name": "Dev Host", "online_secret": host_secret}
+	var host_id: String = service.sign_in("Dev Host", host_secret).account_id
 	var friend_id: String = service.sign_in("Dev Friend", StashService.new_secret()).account_id
+	var spoofed := StashService.new()
+	spoofed.persist = false
+	spoofed.dev_host = true
+	spoofed.host_profile = {"player_name": "Dev Host", "online_secret": host_secret}
+	var faker: String = spoofed.sign_in("Dev Host", StashService.new_secret()).account_id
+	check("helm_ember_mk2" not in spoofed.snapshot(faker).stash,
+			"signing in with the host's name but not their secret gets no dev stash")
 	var host_view := service.snapshot(host_id)
 	check("helm_ember_mk2" in host_view.stash and host_view.scrip == DevEconomy.MAX_SCRIP,
 			"a dev server gives the host's account everything and max scrip")
