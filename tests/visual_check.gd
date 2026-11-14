@@ -2241,6 +2241,21 @@ func _ride_shots(out_dir: String) -> void:
 	await _settle(20)
 	bike.mount(player)
 	player.set_physics_process(false)
+	if bike.passenger_seat:
+		# A passenger behind the rider, to see the two-up seating.
+		# A plain soldier, not a heavy in a walker frame.
+		var pillion: Actor = null
+		for tries in 20:
+			pillion = raid.spawn_bot("Pillion%d" % tries, at + Vector3(-2.0, 0.3, 0.0), 7 + tries, false, "tide", 0)
+			if pillion.display_name == "Tide Raider":
+				break
+			raid.bots.erase(pillion)
+			pillion.free()
+		if pillion.has_node("Brain"):
+			pillion.get_node("Brain").set_physics_process(false)
+		await _settle(5)
+		bike.mount(pillion, true)
+		pillion.set_physics_process(false)
 	player.rotation.y = 0.6
 	var skin: Node = player.get_node("Skin")
 	var gun := -1

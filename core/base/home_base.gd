@@ -2756,7 +2756,7 @@ func pack_vehicle(actor: Actor) -> String:
 	for key: String in out_vehicles:
 		if out_vehicles[key] == vehicle:
 			id = key
-	if id == "" or vehicle.get("rider") != null:
+	if id == "" or vehicle.call("is_occupied"):
 		var why := "Look at a vehicle to pack it" if id == "" else "Someone is riding it"
 		if actor != null:
 			actor.notice.emit(why)

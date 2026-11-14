@@ -279,10 +279,23 @@ func _ready() -> void:
 	register("bike_scrapper", "Scrapper Bike", Rarity.UNCOMMON, 600, ["vehicle", "vendor"],
 			{"max_speed": 22.0, "boost_speed": 29.0, "body_color": Color(0.6, 0.45, 0.3)},
 			"Rattly motorbike. Fast, loud, and no cover for the rider.")
-	register("bike_raider", "Raider Bike", Rarity.RARE, 1400, ["vehicle"],
-			{"max_speed": 27.0, "boost_speed": 37.0, "accel": 18.0, "turn_rate": 2.6,
-			"body_color": Color(0.85, 0.2, 0.15)},
-			"Tuned motorbike. Quicker off the line and much faster flat out.")
+	# The Raider is a hoverbike: the "hover" tag floats it (`Vehicle`, "Hover").
+	# Against the Scrapper it is a little quicker and glides over rough ground
+	# and short gaps, but it drifts in turns, brakes and climbs worse, and two
+	# up it is heavier (the `laden_*` shares). Reasoning in DESIGN.md section 8.
+	register("bike_raider", "Raider Hoverbike", Rarity.RARE, 1400, ["vehicle", "hover"],
+			{"model": "hoverbike", "max_speed": 26.0, "boost_speed": 35.0, "accel": 16.0,
+			"turn_rate": 2.4, "full_turn_speed": 5.0, "pivot_turn": 0.8, "coast_decel": 2.5,
+			"brake_decel": 22.0, "max_slope": 30.0, "grip": 4.0, "max_slip": 0.45,
+			"hang_time": 0.45, "launch_keep": 0.6, "downforce": 1.6, "hover_height": 0.45,
+			"lean_amount": 0.45, "rider_lean": 0.6,
+			"seat_offset": Vector3(0.0, 0.1, 0.2), "seat_point": Vector3(0.0, 1.03, 0.2),
+			"grip_points": [Vector3(-0.3, 1.3, -0.42), Vector3(0.3, 1.3, -0.42)] as Array[Vector3],
+			"peg_points": [Vector3(-0.36, 0.74, -0.04), Vector3(0.36, 0.74, -0.04)] as Array[Vector3],
+			"passenger_seat": true, "body_color": Color(0.85, 0.2, 0.15),
+			"footprint": Vector3(1.3, 1.3, 2.8), "watch_recharge": 10.0},
+			"Two-seat hoverbike. Floats over rough ground and short gaps and drifts through turns. "
+			+ "Brakes and climbs worse than wheels, and carries a passenger behind you.")
 	# The rest of the agreed roster (DESIGN.md section 8), at a first,
 	# drivable level: no turret, passengers, armor or missiles yet.
 	# `watch_recharge` is the watch's wait after one is thrown (heavier is

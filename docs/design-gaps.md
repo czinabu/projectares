@@ -113,11 +113,11 @@ rows marked **pre-playtest** come before the friends playtest.
 
 | Item | State | Notes |
 | --- | --- | --- |
-| Motorbikes on the watch, no heat cost | Built | Scrapper 22 m/s (boost 29), Raider 27 m/s (boost 37). |
+| Motorbikes on the watch, no heat cost | Built | Scrapper motorbike 22 m/s (boost 29). The Raider is now a two-seat hoverbike: 26 m/s (boost 35), drifts in turns, holds level over gaps for 0.45 s, hugs the ground off ramps, no slopes over 30 degrees, slower two up (DESIGN.md section 8). |
 | Clearly faster than flight | Partly | On paper both bikes beat the jetpack's 14 m/s cruise, but the jetpack boost (18), the wing glide (22) and dive (30) match or beat the Scrapper. Tune after the rig rework, and check on real terrain. **Pre-playtest.** |
 | Throw a toy from mid-air onto the road below | Partly | Throwing works off the ground in code; not checked as a planned move (throw, fall, land on the bike). |
 | Eject upward off a speeding bike into flight | Partly | Getting off in mid-air keeps the bike's speed and the rig takes over; there is no upward eject. |
-| Passenger seats | Missing | Bike rear seat, rover's four. After the playtest. |
+| Passenger seats | Partly | The Raider hoverbike has a pillion seat (`passenger_seat`): a second player sits behind the rider, can shoot, and gets off with F; online the server decides who sits there. Missing: the Scrapper's rear seat and the rover's four. |
 | Mounted firepower | Missing | Rover turret, mech cannons, jet missiles. After the playtest. |
 | Cargo space while riding | Missing | After the playtest. |
 | Mobile cover | Missing | Rover and mech; the bike gives none by design. |

@@ -18,6 +18,7 @@ const LookTests := preload("res://tests/look_tests.gd")
 const RigLookTests := preload("res://tests/rig_look_tests.gd")
 const RigTierTests := preload("res://tests/rig_tier_tests.gd")
 const RigBalanceTests := preload("res://tests/rig_balance_tests.gd")
+const HoverbikeTests := preload("res://tests/hoverbike_tests.gd")
 const EconomyTests := preload("res://tests/economy_tests.gd")
 const MeleeArsenalTests := preload("res://tests/melee_arsenal_tests.gd")
 const MeleeFeelTests := preload("res://tests/melee_feel_tests.gd")
@@ -260,6 +261,7 @@ func _run() -> void:
 	await RigBalanceTests.run(self)
 	await _test_vehicle_driving()
 	await _test_vehicle_roster()
+	await _test_hoverbike()
 	await _test_vehicle_raids()
 	await _test_vehicle_toys()
 	await _test_toy_throw_pose()
@@ -289,6 +291,7 @@ func _run() -> void:
 	await _test_online_movement()
 	await _test_online_lag_compensation()
 	await _test_online_riding()
+	await _test_online_pillion()
 	await _test_plaza()
 	await _test_plaza_online()
 	await _test_stash_service()
@@ -2601,6 +2604,10 @@ func _test_vehicle_roster() -> void:
 	await frames(2)
 
 
+func _test_hoverbike() -> void:
+	await HoverbikeTests.run(self)
+
+
 ## The lowest point of every mesh under `node`, in world height.
 func _lowest_point(node: Node3D) -> float:
 	var low := INF
@@ -4618,6 +4625,108 @@ func _test_online_riding() -> void:
 	await frames(30)
 
 
+func _test_online_pillion() -> void:
+	print("Online: a passenger behind the rider")
+	_wipe_dir(NET_ACCOUNTS)
+	# Hal owns a Raider hoverbike: put one in the account before the server reads it.
+	var service := StashService.new()
+	service.save_dir = NET_ACCOUNTS
+	if not _net_secrets.has("Hal"):
+		_net_secrets["Hal"] = StashService.new_secret()
+	service.sign_in("Hal", _net_secrets["Hal"])
+	var account := service.load_account(StashService.id_for_name("Hal"))
+	account.add_items(["bike_raider"])
+	service._save(account)
+	var port := 24881
+	var pid := _start_server(port, ["--bots", "0", "--squad-spawn"])
+	var hal := await _join("Hal", port, {"vehicle": "bike_raider"})
+	var ida := await _join("Ida", port) if hal != null else null
+	check(hal != null and ida != null, "two clients join for the passenger checks")
+	var bike: Node3D = null
+	if hal != null and ida != null:
+		await _throw_own_bike(hal)
+		for v: Node3D in hal.vehicles():
+			if v.get("item_id") == "bike_raider":
+				bike = v
+	if bike == null:
+		check(false, "the hoverbike is there")
+		await _leave(ida)
+		await _leave(hal)
+		OS.kill(pid)
+		await frames(30)
+		return
+	var me := hal.raid.player
+	_aim_at(me, bike.global_position + Vector3(0, 0.6, 0))
+	await frames(6)
+	me.cmd.interact_pressed = true
+	await frames(1)
+	me.cmd.interact_pressed = false
+	await _wait_until(func() -> bool: return me.vehicle == bike, 90)
+	check(me.vehicle == bike, "the rider gets on the hoverbike")
+	# Ida walks up and climbs on behind.
+	var her := ida.raid.player
+	var her_bike: Node3D = null
+	for v: Node3D in ida.vehicles():
+		if v.get("item_id") == "bike_raider":
+			her_bike = v
+	for i in 400:
+		var gap := her_bike.global_position - her.global_position if her_bike != null else Vector3.ZERO
+		gap.y = 0.0
+		if gap.length() < 2.0:
+			break
+		her.cmd.yaw = _yaw_toward(gap)
+		her.cmd.pitch = 0.0
+		her.cmd.aim_dir = Vector3.ZERO
+		her.cmd.move = Vector2(0, 1)
+		await frames(1)
+	her.cmd.move = Vector2.ZERO
+	await frames(10)
+	if her_bike != null:
+		_aim_at(her, her_bike.global_position + Vector3(0, 0.7, 0.3))
+	await frames(6)
+	her.cmd.interact_pressed = true
+	await frames(1)
+	her.cmd.interact_pressed = false
+	var ida_on_hal := func() -> Actor:
+		return hal._actors.get(ida.my_actor_id)
+	await _wait_until(func() -> bool:
+		return her.vehicle == her_bike and bike.get("passenger") != null and bike.get("passenger") == ida_on_hal.call(), 120)
+	check(her.vehicle == her_bike and her_bike.get("passenger") == her and her_bike.get("rider") != null,
+			"the passenger sits behind the rider in their own game")
+	check(bike.get("passenger") != null and bike.get("passenger") == ida_on_hal.call() and bike.get("rider") == me,
+			"and the rider's game seats them there too")
+	# The rider drives two up on a slow connection; the server agrees.
+	hal.simulated_lag = 0.12
+	await frames(40)
+	hal.max_correction = 0.0
+	var from := bike.global_position
+	me.cmd.move = Vector2(0, 1)
+	await frames(60)
+	me.cmd.move = Vector2(-0.8, 1)
+	await frames(40)
+	me.cmd.move = Vector2(0, -1)
+	await _wait_until(func() -> bool: return float(bike.get("speed")) <= 0.5, 150)
+	me.cmd.move = Vector2.ZERO
+	var carried := bike.global_position.distance_to(from)
+	check(carried > 3.0, "the hoverbike carries both (%.1f m)" % carried)
+	check(hal.max_correction < 0.6, "the server agrees with the predicted two-up drift (worst %.2f m)" % hal.max_correction)
+	await frames(60)
+	var apart := her_bike.global_position.distance_to(bike.global_position)
+	check(apart < 0.6 and her.global_position.distance_to(her_bike.global_position) < 1.5,
+			"the passenger is carried where the rider has it (%.2f m apart)" % apart)
+	# F lets the passenger off; the rider stays on.
+	her.cmd.interact_pressed = true
+	await frames(1)
+	her.cmd.interact_pressed = false
+	await _wait_until(func() -> bool: return her.vehicle == null and bike.get("passenger") == null, 120)
+	check(her.vehicle == null and bike.get("passenger") == null and me.vehicle == bike,
+			"F lets the passenger off for everyone and the rider rides on")
+	await _leave(ida)
+	await _leave(hal)
+	OS.kill(pid)
+	await frames(30)
+
+
 ## Aims an actor at a point, the way a controller would.
 func _aim_at(actor: Actor, point: Vector3) -> void:
 	var aim := (point - actor.get_eye_position()).normalized()
@@ -4816,7 +4925,7 @@ func _test_vehicle_toys() -> void:
 			"the watch stands each toy over its hologram")
 	var shown := hud.wrist.get_node("Hologram/Toys")
 	check(shown.get_child(1).scale.x > shown.get_child(0).scale.x and hud.wrist.focused_id() == "vehicle"
-			and hud.wrist.text().begins_with("Raider Bike") and shown.visible,
+			and hud.wrist.text().begins_with("Raider Hoverbike") and shown.visible,
 			"the card opens on the vehicles, the picked toy stands out and the watch names it")
 	check("wheel" in hud.wrist.focused_hints() and "click" in hud.wrist.focused_hints()
 			and not hud.wrist.text().contains("click"), "its controls are glyphs, not words")
@@ -4836,7 +4945,7 @@ func _test_vehicle_toys() -> void:
 	check(controller.pack_target() == third and controller.click_watch() and packs[0] == 1 and controller.held_toy == "",
 			"with the watch up, clicking on a bike asks to pack it")
 	hud._process(0.016)
-	check(hud.wrist.text().begins_with("Pack Raider Bike") and hud.wrist.focused_hints() == ["click"],
+	check(hud.wrist.text().begins_with("Pack Raider Hoverbike") and hud.wrist.focused_hints() == ["click"],
 			"and the watch says so, with a click glyph")
 	_aim_at(p, p.global_position + Vector3(0, 1.6, 10))
 	controller.yaw = p.cmd.yaw
