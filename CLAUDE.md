@@ -646,9 +646,12 @@ without Caleb, and update the gap list when a PR closes a row.
   the base or in the arena, and a kit of nothing is `[Loadout.BARE]`,
   because an empty kit still means the world's scrap kit to
   `Raid.add_player`. Only lost gear falls back to its scrap piece
-  (`StashRules.validate_loadout`); a new player starts in the scrap kit
-  (`StashRules.starter_loadout`), and a save without `StashRules.BARE_KEY`
-  is from before this rule and gets its empty slots filled once.
+  (`StashRules.validate_loadout`). A new player starts with nothing
+  equipped (`StashRules.new_player_loadout`, Caleb's call): no weapons,
+  armor or helmet, and puts everything on by hand the first time (the
+  welcome crate and the scrap pieces wait in the base). A save without
+  `StashRules.BARE_KEY` is from before the bare rule and gets its empty
+  slots filled once with the scrap kit (`StashRules.starter_loadout`).
 - `Raid` never touches `Profile` to build a kit. The kit is passed into
   `Raid.start`, so a server can supply it later.
 
@@ -808,6 +811,9 @@ without Caleb, and update the gap list when a PR closes a row.
   `HomeBase.show_gear(stash, loadout)` rebuilds the room from plain data, so
   it shows the local `Profile` solo and the server's account snapshot in a
   lobby. `core/base/base_layout.gd` decides what goes where from item tags.
+  Whatever is worn is always on show (`BaseLayout.plan` gives it a spot
+  even when better gear fills its section), so anything can be taken off
+  in the room. Helmets sit on the helmet shelf over the armor stands.
   Every weapon goes on the one armory rack (`BaseLayout.ARMORY`, Caleb's
   call): its sections hang on the walls of the armory alcove
   (`HomeBase.in_armory`), with the locker at the way in. Each weapon hangs
