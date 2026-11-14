@@ -82,7 +82,7 @@ signal base_visit_requested(owner_name: String, stash: Array, loadout: Dictionar
 signal portal_travel(destination: String)
 
 const DEFAULT_PORT := 24565
-const PROTOCOL := 25
+const PROTOCOL := 27
 ## Every packet is compressed, both ways. State updates are mostly repeated
 ## numbers, and a big battle sends a player hundreds of them a second. Server
 ## and client must agree, so a change here needs a new PROTOCOL.
@@ -363,9 +363,11 @@ func _start_server_raid() -> void:
 	raid.vehicle_removed.connect(_on_server_vehicle_removed)
 	raid.watch_changed.connect(_send_watch)
 	raid.tally_changed.connect(_send_tally)
-	raid.toy_thrown.connect(func(_actor: Actor, item_id: String, from: Vector3, toy_velocity: Vector3) -> void:
+	raid.toy_thrown.connect(func(actor: Actor, item_id: String, from: Vector3, toy_velocity: Vector3) -> void:
+		var thrower: int = _ids.get(actor, -1)
 		for peer in _joined_peers:
-			_toy.rpc_id(peer, item_id, from, toy_velocity))
+			_toy.rpc_id(peer, thrower, item_id, from, toy_velocity, actor.cmd.yaw))
+	raid.toy_hand_changed.connect(_on_server_toy_hand)
 	raid.pinged.connect(_on_server_pinged)
 	raid.portal_opened.connect(func(portal: Portal) -> void:
 		for peer in _joined_peers:
@@ -489,6 +491,10 @@ func _on_server_actor_spawned(actor: Actor) -> void:
 	actor.weapon_swapped.connect(func(item_id: String, mag: int, reserve: int) -> void:
 		for peer in _joined_peers:
 			_weapon_swapped.rpc_id(peer, id, item_id, mag, reserve))
+	# So is one stored back into the pack.
+	actor.weapon_stored.connect(func(item_id: String, _mag: int, _reserve: int) -> void:
+		for peer in _joined_peers:
+			_weapon_stored.rpc_id(peer, id, item_id))
 	for peer in _joined_peers:
 		_send_spawn(peer, actor)
 
@@ -1437,6 +1443,38 @@ func _request_toy(item_id: String) -> void:
 		raid.throw_toy(actor, item_id)
 
 
+## In the world: take a toy off the watch into the hand to throw, or put it
+## back (""). Only the look, so everyone sees what is in the hand.
+@rpc("any_peer", "call_remote", "reliable")
+func _request_toy_hold(item_id: String) -> void:
+	if not is_server or raid == null:
+		return
+	var actor: Actor = _peer_actor.get(_api.get_remote_sender_id())
+	if actor != null and is_instance_valid(actor):
+		raid.hold_toy(actor, item_id)
+
+
+## Server: the toy in someone's hand changed, or they started a throw. Tells
+## everyone else here; the thrower's own game shows its own hand at once.
+func _on_server_toy_hand(actor: Actor) -> void:
+	if not _ids.has(actor):
+		return
+	for peer in _joined_peers:
+		if _peer_actor.get(peer) != actor and peer in _api.get_peers():
+			_toy_hand.rpc_id(peer, _ids[actor], actor.toy_in_hand, actor.toy_throws)
+
+
+## Client: what someone else has in their hand, and how many throws they
+## have started (a new one plays the throw).
+@rpc("authority", "call_remote", "reliable")
+func _toy_hand(id: int, item_id: String, throws: int) -> void:
+	var actor: Actor = _actors.get(id)
+	if actor == null or not is_instance_valid(actor) or id == my_actor_id:
+		return
+	actor.toy_in_hand = item_id if item_id == "" or ItemDB.has_tag(item_id, "vehicle") else ""
+	actor.toy_throws = throws
+
+
 ## In the world: materialize a weapon out of the pack (the watch's summon).
 ## The server checks the pack it keeps, never anything the client says it has.
 @rpc("any_peer", "call_remote", "reliable")
@@ -1446,6 +1484,17 @@ func _request_summon(item_id: String) -> void:
 	var actor: Actor = _peer_actor.get(_api.get_remote_sender_id())
 	if actor != null and is_instance_valid(actor):
 		raid.summon(actor, item_id)
+
+
+## In the world: store the weapon in hand back into the pack (the watch's
+## store). The server checks the hand of the actor it simulates.
+@rpc("any_peer", "call_remote", "reliable")
+func _request_store(item_id: String) -> void:
+	if not is_server or raid == null:
+		return
+	var actor: Actor = _peer_actor.get(_api.get_remote_sender_id())
+	if actor != null and is_instance_valid(actor):
+		raid.store(actor, item_id)
 
 
 ## In the world: ping the spot being looked at for your side. The server
@@ -1537,10 +1586,25 @@ func deploy(drop := "") -> void:
 		_request_join.rpc_id(1, drop)
 
 
-## In the world: ask the server to throw a toy vehicle off your watch.
+## In the world: ask the server to throw a toy vehicle off your watch. Your
+## own hand starts the throw at once; the server lets the toy fly after the
+## same windup (`Raid.toy_windup`).
 func throw_toy(item_id: String) -> void:
 	if _is_connected() and my_actor_id >= 0 and not _can_redeploy and item_id != "":
 		_request_toy.rpc_id(1, item_id)
+		var me := raid.player if raid != null else null
+		if me != null and is_instance_valid(me) and item_id in raid.stowed_for(me) and raid.toy_wait(me) <= 0.0:
+			me.toy_in_hand = item_id
+			me.toy_throws += 1
+
+
+## In the world: take a toy off your watch into your hand, or put it back
+## (""). Your own hand shows it at once; the server tells everyone else.
+func hold_toy(item_id: String) -> void:
+	if _is_connected() and my_actor_id >= 0 and not _can_redeploy:
+		_request_toy_hold.rpc_id(1, item_id)
+		if raid != null and raid.player != null and is_instance_valid(raid.player):
+			raid.player.toy_in_hand = item_id
 
 
 ## In the world: ask the server to pack the vehicle you are looking at.
@@ -1553,6 +1617,12 @@ func pack_vehicle() -> void:
 func summon(item_id: String) -> void:
 	if _is_connected() and my_actor_id >= 0 and not _can_redeploy and item_id != "":
 		_request_summon.rpc_id(1, item_id)
+
+
+## In the world: ask the server to store the weapon in your hand.
+func store(item_id: String) -> void:
+	if _is_connected() and my_actor_id >= 0 and not _can_redeploy and item_id != "":
+		_request_store.rpc_id(1, item_id)
 
 
 ## In the world: ask the server to ping where you are looking for your side.
@@ -1631,6 +1701,16 @@ func _weapon_swapped(id: int, item_id: String, mag: int, reserve: int) -> void:
 	var actor: Actor = _actors.get(id)
 	if actor != null and is_instance_valid(actor) and Loadout.summonable(item_id):
 		Loadout.swap_weapon(actor, item_id, mag, reserve)
+
+
+## Client: someone stored the weapon they held back into their pack (the
+## watch's store). The server decided it and keeps the packs; this only
+## starts the same dematerialize here.
+@rpc("authority", "call_remote", "reliable")
+func _weapon_stored(id: int, item_id: String) -> void:
+	var actor: Actor = _actors.get(id)
+	if actor != null and is_instance_valid(actor) and Loadout.summonable(item_id):
+		Loadout.store_weapon(actor, item_id)
 
 
 ## Client: someone on your side (or you) pinged a spot.
@@ -2105,12 +2185,17 @@ func _watch(stowed: Array, wait: float, summon_wait := 0.0, summon_total := 0.0)
 	raid.watch_changed.emit(me)
 
 
-## Someone threw a toy vehicle: draw it flying. The vehicle itself follows
-## from the server when it lands.
+## Someone threw a toy vehicle: it has left their hand, so draw it flying.
+## The vehicle itself follows from the server when it lands.
 @rpc("authority", "call_remote", "reliable")
-func _toy(item_id: String, from: Vector3, toy_velocity: Vector3) -> void:
-	if raid != null and ItemDB.has_tag(item_id, "vehicle") and from.is_finite() and toy_velocity.is_finite():
-		raid.fly_toy(item_id, from, toy_velocity)
+func _toy(thrower: int, item_id: String, from: Vector3, toy_velocity: Vector3, heading: float) -> void:
+	if raid == null or not ItemDB.has_tag(item_id, "vehicle") or not from.is_finite() \
+			or not toy_velocity.is_finite() or not is_finite(heading):
+		return
+	var actor: Actor = _actors.get(thrower)
+	if actor != null and is_instance_valid(actor) and actor.toy_in_hand == item_id:
+		actor.toy_in_hand = ""
+	raid.fly_toy(item_id, from, toy_velocity, heading)
 
 
 ## Your sign-out started, with this many seconds to go, or stopped (below zero).

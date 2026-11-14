@@ -4,6 +4,9 @@ extends CanvasLayer
 ## news, try on clothes in front of a mirror, look up the controls and change
 ## settings.
 ##
+## Going online lives here too: the Servers app hosts a server on this
+## computer, joins a friend's by its address, and leaves the one you are on.
+##
 ## It is a real thing in the world, not a panel over the screen: a rugged
 ## handheld with a pistol grip (`core/phone/handheld.gd`) that your
 ## character's own right hand closes round and raises (`ActorCommand.phone`),
@@ -32,6 +35,12 @@ signal quit_requested
 ## The Mirror app was opened (true) or left (false). `Main` stands a mirror
 ## in front of the player while it is up (`core/visual/mirror.gd`).
 signal mirror_changed(up: bool)
+## The Servers app asks `Main` to go online: start a server on this computer
+## that runs every world and head out to it, join the server at `address`
+## ("host" or "host:port"), or leave the server you are on.
+signal host_requested
+signal join_requested(address: String)
+signal leave_server_requested
 
 const SocialService := preload("res://core/social/social_service.gd")
 const GameSettings := preload("res://core/settings/game_settings.gd")
@@ -42,12 +51,12 @@ const CharacterPanel := preload("res://core/ui/character_panel.gd")
 const MirrorScript := preload("res://core/visual/mirror.gd")
 const Handheld := preload("res://core/phone/handheld.gd")
 
-const APPS := ["contacts", "messages", "invites", "news", "mirror", "controls", "settings"]
+const APPS := ["contacts", "messages", "invites", "news", "servers", "mirror", "controls", "settings"]
 const APP_NAMES := {"contacts": "Contacts", "messages": "Messages", "invites": "Invites",
-		"news": "News", "mirror": "Mirror", "controls": "Controls", "settings": "Settings"}
+		"news": "News", "servers": "Servers", "mirror": "Mirror", "controls": "Controls", "settings": "Settings"}
 ## The names under the home screen's icons.
 const NAV_NAMES := {"contacts": "People", "messages": "Chat", "invites": "Invites",
-		"news": "News", "mirror": "Mirror", "controls": "Keys", "settings": "Settings"}
+		"news": "News", "servers": "Servers", "mirror": "Mirror", "controls": "Keys", "settings": "Settings"}
 ## The screen's colours: the dark glass, the panels on it, and the dimmer
 ## ink for secondary text. The device's body is gunmetal.
 const SCREEN_BG := Color(0.035, 0.04, 0.047)
@@ -230,6 +239,16 @@ var _notice_left := 0.0
 var _error: Label
 var _compose: LineEdit
 var _mirror_was_up := false
+## The Servers app: the line `Main` gives on going online (connecting, what
+## went wrong; `set_link_status`), and where the link leads ("your own
+## server" or the address joined), set by `Main` as it connects.
+var link_status := ""
+var link_where := ""
+## The Servers app's address field, and which of its fields had the keys, so
+## a redraw keeps your typing.
+var _address_edit: LineEdit
+var _address_draft := ""
+var _link_focus := ""
 
 
 func _ready() -> void:
@@ -425,6 +444,11 @@ func _on_session_gone() -> void:
 	set_session(null)
 
 
+## True while a server link is open or being opened (signed in or not).
+func linked() -> bool:
+	return net != null and is_instance_valid(net)
+
+
 func online() -> bool:
 	return net != null and is_instance_valid(net) and not net.social_state.is_empty()
 
@@ -550,6 +574,7 @@ func _set_open(open_now: bool) -> void:
 		var focused := _screen.gui_get_focus_owner()
 		if focused:
 			focused.release_focus()
+		_link_focus = ""
 		_hold(get_viewport().get_camera_3d() if is_inside_tree() else null)
 	if changed:
 		opened_changed.emit(open_now)
@@ -576,6 +601,7 @@ func open_app(p_app: String) -> void:
 	app = p_app
 	chat_with = ""
 	mirror_picking = false
+	_link_focus = ""
 	if app == "news":
 		for entry: Dictionary in news():
 			news_seen[entry.title] = true
@@ -723,7 +749,7 @@ func _build_screen() -> void:
 	var readouts := HBoxContainer.new()
 	readouts.add_theme_constant_override("separation", 8)
 	_home.add_child(readouts)
-	for spec: Array in [["link", "LINK", "contacts"], ["inbox", "INBOX", "messages"]]:
+	for spec: Array in [["link", "LINK", "servers"], ["inbox", "INBOX", "messages"]]:
 		var widget := Readout.new(spec[1])
 		widget.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		widget.tapped.connect(open_app.bind(spec[2]))
@@ -1091,6 +1117,7 @@ func refresh(redraw := true) -> void:
 		"messages": _draw_messages(keep_draft)
 		"invites": _draw_invites()
 		"news": _draw_news()
+		"servers": _draw_servers()
 		"mirror": _draw_mirror()
 		"controls": _draw_controls()
 		"settings": _draw_settings()
@@ -1100,7 +1127,7 @@ func refresh(redraw := true) -> void:
 
 
 func _offline_note() -> void:
-	_body.add_child(_label("You are offline. Join a server from the hub to reach other players. "
+	_body.add_child(_label("You are offline. Join a server from the Servers app to reach other players. "
 			+ "Everyone signed in to the same server shows up here.", 15, Color(0.75, 0.75, 0.75)))
 
 
@@ -1233,6 +1260,142 @@ func _draw_news() -> void:
 		box.add_child(_label(str(entry.title), 19, UiTheme.ACCENT))
 		box.add_child(_label(str(entry.get("body", "")), 15, UiTheme.INK))
 		_body.add_child(card)
+
+
+# --------------------------------------------------------------- servers ----
+
+## `Main`'s line on going online. Shown in the Servers app.
+func set_link_status(text: String) -> void:
+	if text == link_status:
+		return
+	link_status = text
+	if is_open and app == "servers":
+		refresh()
+
+
+## Starts a server on this computer and heads out to it. The base's door
+## leads to your own server from then on.
+func host_server() -> void:
+	if linked():
+		return
+	Profile.home_server = ""
+	Profile.save()
+	host_requested.emit()
+
+
+## Joins the server at `address` ("host" or "host:port"). Once it lets you
+## in, the base's door leads there.
+func join_server(address: String) -> void:
+	if linked():
+		return
+	var clean := address.strip_edges()
+	if clean == "":
+		set_link_status("Type the server's address first.")
+		return
+	_address_draft = clean
+	Profile.last_server = clean
+	Profile.save()
+	join_requested.emit(clean)
+
+
+## Leaves the server you are on (or stops trying to reach it).
+func leave_server() -> void:
+	if linked():
+		leave_server_requested.emit()
+
+
+## The base's door goes back to starting a server of your own.
+func forget_home_server() -> void:
+	Profile.home_server = ""
+	Profile.save()
+	refresh()
+
+
+## The Servers app. Offline: your name, hosting here, joining a friend by
+## address, and where the base's door leads. Linked: who you are there, which
+## server it is, and leaving it.
+func _draw_servers() -> void:
+	_address_edit = null
+	if linked():
+		var card := _card()
+		var box: VBoxContainer = card.get_child(0)
+		if net.account.is_empty():
+			box.add_child(_label("Connecting%s..." % (" to " + link_where if link_where != "" else ""), 19, UiTheme.ACCENT))
+			if link_status != "":
+				box.add_child(_label(link_status, 14, DIM_INK))
+			box.add_child(_button("Stop", leave_server))
+			_body.add_child(card)
+			return
+		box.add_child(_label("Connected as %s" % str(net.account.get("name", "")), 19, UiTheme.ACCENT))
+		if link_where != "":
+			box.add_child(_label("On %s" % link_where, 15, UiTheme.INK))
+		var world := Worlds.get_world(net.world_id)
+		if world != null:
+			box.add_child(_label(("You are in %s." % world.display_name) if world.safe_zone
+					else "Open a portal from your watch's Mission tab to deploy to %s." % world.display_name,
+					14, DIM_INK))
+		box.add_child(_label("The gear in your base here is the stash this server keeps for you. "
+				+ "It is separate from your solo stash.", 13, DIM_INK))
+		_body.add_child(card)
+		if link_status != "":
+			_body.add_child(_label(link_status, 14, UiTheme.ACCENT))
+		_body.add_child(_button("Leave the server", leave_server))
+		return
+
+	_body.add_child(_label("Play online: host a server here for your friends, or join theirs by its address.",
+			15, Color(0.75, 0.75, 0.75)))
+	if link_status != "":
+		_body.add_child(_label(link_status, 14, UiTheme.ACCENT))
+	var name_card := _card()
+	var name_box: VBoxContainer = name_card.get_child(0)
+	name_box.add_child(_label("Your name", 14, DIM_INK))
+	var name_edit := LineEdit.new()
+	name_edit.name = "NameEdit"
+	name_edit.text = Profile.player_name
+	name_edit.max_length = 20
+	name_edit.text_changed.connect(func(text: String) -> void: Profile.player_name = text)
+	name_edit.text_submitted.connect(func(_text: String) -> void: Profile.save())
+	name_edit.focus_exited.connect(Profile.save)
+	name_edit.focus_entered.connect(func() -> void: _link_focus = "name")
+	name_box.add_child(name_edit)
+	_body.add_child(name_card)
+
+	var host_card := _card()
+	var host_box: VBoxContainer = host_card.get_child(0)
+	host_box.add_child(_label("Your own server", 17, UiTheme.INK))
+	host_box.add_child(_label("Runs every world on this computer. Friends join it by your computer's address.",
+			13, DIM_INK))
+	host_box.add_child(_button("Host here and head out", host_server))
+	_body.add_child(host_card)
+
+	var join_card := _card()
+	var join_box: VBoxContainer = join_card.get_child(0)
+	join_box.add_child(_label("A friend's server", 17, UiTheme.INK))
+	_address_edit = LineEdit.new()
+	_address_edit.name = "AddressEdit"
+	_address_edit.text = _address_draft if _address_draft != "" else Profile.last_server
+	_address_edit.placeholder_text = "Server address"
+	_address_edit.text_changed.connect(func(text: String) -> void: _address_draft = text)
+	_address_edit.text_submitted.connect(join_server)
+	_address_edit.focus_entered.connect(func() -> void: _link_focus = "address")
+	join_box.add_child(_address_edit)
+	var edit := _address_edit
+	join_box.add_child(_button("Join", func() -> void: join_server(edit.text)))
+	_body.add_child(join_card)
+
+	var door := _card()
+	var door_box: VBoxContainer = door.get_child(0)
+	if Profile.home_server != "":
+		door_box.add_child(_label("Your base's door leads to %s, the server you joined last." % Profile.home_server,
+				13, DIM_INK))
+		door_box.add_child(_button("Host my own instead", forget_home_server))
+	else:
+		door_box.add_child(_label("Your base's door starts a server of your own. Join a friend here and it leads to theirs.",
+				13, DIM_INK))
+	_body.add_child(door)
+	match _link_focus:
+		"name": name_edit.grab_focus.call_deferred()
+		"address": _address_edit.grab_focus.call_deferred()
 
 
 ## Each choice of the look as a row to scroll through: arrows, the mouse
@@ -1690,6 +1853,15 @@ class AppIcon extends Control:
 				draw_rect(Rect2(c + Vector2(-10, -13) * k, Vector2(20, 7) * k), ink)
 				for i in 3:
 					draw_line(c + Vector2(-10, 0 + i * 6.5) * k, c + Vector2(10 if i % 2 == 0 else 4, 0 + i * 6.5) * k, ink, 2.0 * k)
+			"servers":
+				# A mast sending out rings.
+				draw_line(c + Vector2(0, -4) * k, c + Vector2(0, 20) * k, ink, w, true)
+				draw_line(c + Vector2(-9, 20) * k, c + Vector2(9, 20) * k, ink, w, true)
+				draw_circle(c + Vector2(0, -6) * k, 3.5 * k, ink)
+				for i in 2:
+					var r := (11.0 + i * 8.0) * k
+					draw_arc(c + Vector2(0, -6) * k, r, PI * 0.78, PI * 1.22, 10, Color(ink, 1.0 - i * 0.35), w, true)
+					draw_arc(c + Vector2(0, -6) * k, r, -PI * 0.22, PI * 0.22, 10, Color(ink, 1.0 - i * 0.35), w, true)
 			"mirror":
 				var ring := PackedVector2Array()
 				for i in 33:
