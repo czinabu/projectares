@@ -19,6 +19,7 @@ static func run(t: Node) -> void:
 	await _zoom(t)
 	await _scan(t)
 	await _glass(t)
+	await _base_glass(t)
 	await _strip(t)
 	await _threat(t)
 	await _thermal(t)
@@ -413,6 +414,42 @@ static func _scan(t: Node) -> void:
 	t.check(raid.player.visor.scan_radius > 40.0 and raid.player.visor.cooldown < 25.0,
 			"the Mk2 Seeker reaches further and recharges sooner")
 	await t._end_raid(raid)
+
+
+## A helmet shows its glass wherever it is worn, the home base included
+## (Caleb: "the helmet HUDs should be visible everywhere").
+static func _base_glass(t: Node) -> void:
+	print("Visors: the glass at home")
+	const BaseHudScript := preload("res://core/ui/base_hud.gd")
+	var owned: Array[String] = ["helm_seeker"]
+	var base := HomeBase.new()
+	base.show_gear(owned, {"helmet": "helm_seeker"})
+	t.add_child(base)
+	await t.frames(10)
+	var controller := PlayerController.new()
+	controller.setup(base.player)
+	base.add_child(controller)
+	var hud = BaseHudScript.new()
+	hud.setup(base, controller)
+	base.add_child(hud)
+	await t.frames(5)
+	var glass: VisorHud = hud.visor
+	t.check(glass != null and glass.glass_shown(), "wearing a helmet in your base, the visor's glass is on")
+	for i in 90:
+		glass._process(1.0 / 60.0)
+	t.check(is_equal_approx(glass.boot, 1.0) and glass.compass_marks(base.player).is_empty(),
+			"it boots up at home, with nothing from a world on its heading strip")
+	base.player.health.damaged.emit(DamageInfo.new())
+	t.check(is_equal_approx(glass.alert, 1.0), "and it follows the wearer's own state")
+	controller.set("_cam_dist", 4.0)
+	t.check(not glass.glass_shown(), "in third person the glass is gone, as out in a world")
+	controller.set("_cam_dist", 0.0)
+	base.show_gear(owned, {})
+	await t.frames(3)
+	t.check(not glass.glass_shown(), "taking the helmet off at home takes the glass away")
+	hud.queue_free()
+	base.queue_free()
+	await t.frames(2)
 
 
 static func _glass(t: Node) -> void:

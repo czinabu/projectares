@@ -579,7 +579,9 @@ without Caleb, and update the gap list when a PR closes a row.
   `Visor.heat_of`: `Actor.heat_signature` (frames set it with a
   `heat_signature` stat) plus flight rig heat. The picture is `VisorHud`
   (`core/ui/visor_hud.gd`), a view: its glass is drawn in first person only
-  and only while a helmet is worn (Caleb agreed a visor counts as in-world,
+  and only while a helmet is worn, wherever it is worn: worlds, the plaza,
+  the arena and the home base (`BaseHud.visor`, `VisorHud.setup_base`;
+  Caleb's call) (Caleb agreed a visor counts as in-world,
   since you look through it); what a visor shows out in the world (snapshots,
   tag markers, pulse rings, glints) is there in either view. The glass is thin
   projected light, never a frame, a tint or a mask over the view (playtest

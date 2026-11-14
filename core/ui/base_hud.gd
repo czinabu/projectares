@@ -2,7 +2,9 @@ extends CanvasLayer
 ## What you see over your home base: a crosshair, the prompt for whatever you
 ## are looking at, the odd notice, and the holographic watch on your wrist
 ## (`wrist`, raised with X as in a raid; its card says what each icon holds
-## for the next deploy, `Hud.base_watch_slots`). Everything else is in the room: the
+## for the next deploy, `Hud.base_watch_slots`), and a worn helmet's glass
+## (`visor`, the same `VisorHud` as out in a world, set up with
+## `setup_base`). Everything else is in the room: the
 ## base's name and how it works hang on the banner, and the gear you look at
 ## gets a tag in the world saying what it is (`tag`).
 ##
@@ -13,6 +15,9 @@ var base: HomeBase
 var controller: PlayerController
 ## The watch, as in a raid (`Hud.Wrist`).
 var wrist: Hud.Wrist
+## The worn helmet's glass, as in a raid: a helmet shows its display
+## wherever it is worn.
+var visor: VisorHud
 ## The contracts held, for the watch's contract icon (set by `main.gd`).
 var contracts: Array[Dictionary] = []
 ## The new player's tour objective, a small line on the watch card (set by
@@ -39,6 +44,11 @@ func _ready() -> void:
 	root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(root)
+	visor = VisorHud.new()
+	visor.name = "Visor"
+	visor.setup_base(base, controller)
+	visor.hud = self
+	root.add_child(visor)
 	crosshair = _label(root, "+", 22, Color.WHITE)
 	_place(crosshair, 0.5, 0.5, Vector2(-7, -17), Vector2(14, 30))
 	_prompt = _label(root, "", 20, Color.WHITE)
@@ -118,6 +128,8 @@ func _update_wrist(delta: float) -> void:
 		for child in base.get_children():
 			if child is PlayerController and not child.is_queued_for_deletion() and child.actor == base.player:
 				controller = child
+	if visor != null:
+		visor.controller = controller
 	var p := base.player
 	wrist.raised = controller != null and controller.wrist_raised
 	wrist.mount(p, controller, visible, delta)

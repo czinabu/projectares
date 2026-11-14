@@ -79,7 +79,11 @@ var ident_time := 2.4
 ## Seconds the glass's scan line takes to run down the view.
 var scanline_time := 5.5
 
+## Where the wearer is: a `Raid` (a world, the plaza, the arena) or, with
+## `setup_base`, a `HomeBase`. The glass works the same in both, so a helmet
+## shows its display wherever it is worn.
 var raid: Raid
+var base: HomeBase
 var controller: PlayerController
 ## The range finder's last reading in metres, below zero for nothing in reach.
 var range_reading := -1.0
@@ -109,8 +113,9 @@ var altitude := -1.0
 var squad: Array[Actor] = []
 ## Spots the wearer's side pinged: {"at": Vector3, "left": float}.
 var pings: Array[Dictionary] = []
-## The `Hud` this glass belongs to, for the contracts held. May be null.
-var hud: Hud
+## The HUD this glass belongs to (`Hud`, or the home base's), for the
+## contracts held and the tour's objective. May be null.
+var hud: Node
 
 var _world: Node3D
 var _ghosts: Array[MeshInstance3D] = []
@@ -130,10 +135,20 @@ var _range_wait := 0.0
 var _time := 0.0
 var _last_look := Vector2.ZERO
 var _look_known := false
+## The actor whose signals the glass listens to. The home base swaps its
+## actor out when it has to, so this is followed rather than set once.
+var _wired: Actor
 
 
 func setup(p_raid: Raid, p_controller: PlayerController) -> void:
 	raid = p_raid
+	controller = p_controller
+
+
+## The glass in a home base: the same display, with nothing a world adds
+## (pings, depots, the war).
+func setup_base(p_base: HomeBase, p_controller: PlayerController) -> void:
+	base = p_base
 	controller = p_controller
 
 
@@ -142,7 +157,9 @@ func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_world = Node3D.new()
 	_world.name = "VisorWorld"
-	raid.add_child.call_deferred(_world)
+	var host: Node = raid if raid != null else base
+	if host != null:
+		host.add_child.call_deferred(_world)
 	_thermal = ColorRect.new()
 	_thermal.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_thermal.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -154,11 +171,29 @@ func _ready() -> void:
 	material.shader = shader
 	_thermal.material = material
 	add_child(_thermal)
-	if raid.player != null:
-		raid.player.visor.felt_scan.connect(_on_felt_scan)
-		raid.player.visor.threatened.connect(_on_threatened)
-		raid.player.health.damaged.connect(func(_info: DamageInfo) -> void: alert = 1.0)
-	raid.pinged.connect(_on_pinged)
+	_wire(_player())
+	if raid != null:
+		raid.pinged.connect(_on_pinged)
+
+
+## Listens to the wearer's scans, hits and damage, moving over when the
+## wearer is a new actor.
+func _wire(p: Actor) -> void:
+	if p == _wired:
+		return
+	if _wired != null and is_instance_valid(_wired):
+		_wired.visor.felt_scan.disconnect(_on_felt_scan)
+		_wired.visor.threatened.disconnect(_on_threatened)
+		_wired.health.damaged.disconnect(_on_damaged)
+	_wired = p
+	if p != null:
+		p.visor.felt_scan.connect(_on_felt_scan)
+		p.visor.threatened.connect(_on_threatened)
+		p.health.damaged.connect(_on_damaged)
+
+
+func _on_damaged(_info: DamageInfo) -> void:
+	alert = 1.0
 
 
 func _exit_tree() -> void:
@@ -215,14 +250,20 @@ static func compass_name(degrees: float) -> String:
 
 
 func _player() -> Actor:
-	if raid == null or raid.player == null or not is_instance_valid(raid.player):
+	var p: Actor = null
+	if raid != null:
+		p = raid.player
+	elif base != null and is_instance_valid(base):
+		p = base.player
+	if p == null or not is_instance_valid(p) or p.is_queued_for_deletion():
 		return null
-	return raid.player
+	return p
 
 
 func _process(delta: float) -> void:
 	_time += delta
 	var p := _player()
+	_wire(p)
 	for mark in felt:
 		mark.left -= delta
 	felt = felt.filter(func(m: Dictionary) -> bool: return m.left > 0.0)
@@ -365,14 +406,14 @@ func compass_marks(p: Actor) -> Array[Dictionary]:
 	if v.mode == "":
 		return marks
 	var nearest: Node3D = null
-	for depot in raid.depots:
+	for depot in raid.depots if raid != null else []:
 		if is_instance_valid(depot) and Raid.together(depot, p) and (nearest == null
 				or depot.global_position.distance_to(p.global_position)
 				< nearest.global_position.distance_to(p.global_position)):
 			nearest = depot
 	if nearest != null:
 		marks.append({"kind": "depot", "at": nearest.global_position, "label": "DEPOT"})
-	if v.mode == "threat" and raid.war.intensity >= hot_from:
+	if v.mode == "threat" and raid != null and raid.war.intensity >= hot_from:
 		marks.append({"kind": "hot", "at": raid.war.centre, "label": "HOT"})
 	for ghost in v.ghosts if v.mode == "scan" else []:
 		marks.append({"kind": "contact", "at": ghost.at, "label": ""})
@@ -1001,17 +1042,20 @@ func _draw_tracker(p: Actor, ink: Color) -> void:
 	if hud == null:
 		return
 	var at := Vector2(size.x * 0.06, size.y * 0.075) + sway
-	var text := tracker_text(hud.contracts, p.tally)
+	var held: Array[Dictionary] = []
+	held.assign(hud.get("contracts") if hud.get("contracts") is Array else [])
+	var objective := str(hud.get("objective")) if hud.get("objective") != null else ""
+	var text := tracker_text(held, p.tally)
 	if text != "":
 		draw_rect(Rect2(at + Vector2(0.0, -9.0), Vector2(7.0, 7.0)), _lit(ink, 0.7), false, 1.0)
 		_text(at + Vector2(13.0, 0.0), text, _lit(ink, 0.75), HORIZONTAL_ALIGNMENT_LEFT, 360.0, 12)
 		at.y += 18.0
 	# The new player's tour: what the handler asked for next, under it.
-	if hud.objective != "":
+	if objective != "":
 		var c := at + Vector2(3.5, -5.5)
 		draw_polyline(PackedVector2Array([c + Vector2(0, -4), c + Vector2(4, 0), c + Vector2(0, 4),
 				c + Vector2(-4, 0), c + Vector2(0, -4)]), _lit(ink, 0.8), 1.0, true)
-		_text(at + Vector2(13.0, 0.0), hud.objective.to_upper(), _lit(ink, 0.8), HORIZONTAL_ALIGNMENT_LEFT, 360.0, 12)
+		_text(at + Vector2(13.0, 0.0), objective.to_upper(), _lit(ink, 0.8), HORIZONTAL_ALIGNMENT_LEFT, 360.0, 12)
 
 
 ## Thermal: how warm the wearer looks to another thermal visor, under the
