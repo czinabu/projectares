@@ -842,6 +842,11 @@ without Caleb, and update the gap list when a PR closes a row.
   written on a board hung over the lane, never on the screen. Nothing on the
   range goes through `Combat.deal` or pays mastery, because nothing there is
   real damage; never add an Actor target that takes some.
+  The starter bunker has no range: the same door opens on a small test
+  lane (`HomeBase._build_test_lane`, `in_lane`), 3 m by 15 m, a counter and
+  three plates at 4, 8 and 12 m that drop and pop back up, a hit counter on
+  its end wall, sealed at the far end by the firing range's bulkhead.
+  Buying the range removes the lane. Nothing there is real damage either.
   Past the range's far end is the flight course (`HomeBase._build_course`,
   `in_course`): an open-topped yard whose walls stand over every rig's
   ceiling, with a climb tower (and a ramp for wings), a gap to a second
