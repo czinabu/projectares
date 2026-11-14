@@ -684,14 +684,19 @@ static func _check_legs(t: Node, tag: String, player: Actor, skin: Node, skeleto
 		var to_actor := player.global_transform.affine_inverse() * skeleton.global_transform
 		var head := skeleton.find_bone("Head")
 		var head_before := (to_actor * skeleton.get_bone_global_pose(head).origin).y
-		var feet_before := (to_actor * skeleton.get_bone_global_pose(loco._lead[2]).origin).y
+		var low_foot := func() -> float:
+			return minf((to_actor * skeleton.get_bone_global_pose(loco._lead[2]).origin).y,
+					(to_actor * skeleton.get_bone_global_pose(loco._trail[2]).origin).y)
+		var feet_before: float = low_foot.call()
 		player.crouch = 1.0
 		loco._crouch_pose()
 		var head_after := (to_actor * skeleton.get_bone_global_pose(head).origin).y
-		var feet_after := (to_actor * skeleton.get_bone_global_pose(loco._lead[2]).origin).y
+		var feet_after: float = low_foot.call()
 		t.check(absf(head_before - head_after - player.crouch_eye_drop) < 0.12,
 				tag + "a crouched model's head drops with the eyes (%.2f m)" % (head_before - head_after))
-		t.check(absf(feet_after - feet_before) < 0.03, tag + "a crouched model keeps its feet on the ground")
+		# The heel comes up a little (onto the ball of the foot); it never sinks.
+		t.check(feet_after > feet_before - 0.03 and feet_after < feet_before + 0.1,
+				tag + "a crouched model keeps its planted foot on the ground (%.2f m)" % (feet_after - feet_before))
 		player.crouch = 0.0
 		for bone: int in saved_crouch:
 			skeleton.set_bone_pose_position(bone, saved_crouch[bone][0])

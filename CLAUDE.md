@@ -273,7 +273,8 @@ without Caleb, and update the gap list when a PR closes a row.
   collision capsule, `Combat.capsule_entry`, headshots and anything aiming
   at a chest use it, so low cover hides a crouched body. The skin sinks the
   model onto bent knees from `Actor.crouch` (`Locomotion._crouch_pose`, the
-  landing squat's `_sink`) under the stand or walk, so gun carries, ADS and
+  landing squat's `_sink`, heels up onto the balls of the feet, a short step,
+  the chest leant in) under the stand or walk, so gun carries, ADS and
   melee holds come down with the chest, in both views.
   Standing still is a relaxed stand (`idle`); a gun is held low (`idle_gun`)
   over the relaxed stand's legs and raised (`aim_gun`) only while shooting

@@ -77,11 +77,19 @@ var stride_rate := 3.0
 var squat_drop := 0.3
 var squat_lean := 0.22
 var squat := 0.0
-## The crouch (`Actor.crouch`): how far the hips drop (m) at a full crouch,
-## about the eyes' drop (`Actor.crouch_eye_drop`), and how far the body tips
-## forward over the knees (radians).
-var crouch_drop := 0.38
-var crouch_lean := 0.12
+## The crouch (`Actor.crouch`): how far the hips drop (m) at a full crouch
+## and how far the chest leans forward from the hips (radians); together
+## they bring the head down about the eyes' drop (`Actor.crouch_eye_drop`)
+## while the knees stay a ready bend, never a kneel. `crouch_lean` tips the
+## whole body a little over the knees.
+var crouch_drop := 0.3
+var crouch_spine_lean := 0.5
+var crouch_lean := 0.05
+## Crouched the heels come up (radians the foot rolls onto its ball), so the
+## ankle never folds flat over the foot; `foot_reach` is how far ahead of the
+## ankle bone (m) the ball of the foot is.
+var crouch_heel := 0.45
+var foot_reach := 0.13
 ## Crouched, the walk's feet stay this much as far from their average spot
 ## (a short, careful step), so the bent legs reach them without splaying.
 var crouch_step := 0.55
@@ -598,16 +606,27 @@ func _crouch_pose() -> void:
 			var local_up := up if parent < 0 else (skeleton.get_bone_global_pose(parent).basis.inverse() * up).normalized()
 			var mean: Vector3 = means[bone]
 			var off := skeleton.get_bone_pose_position(bone) - mean
-			var lift := local_up * local_up.dot(off)
-			skeleton.set_bone_pose_position(bone, mean + (off - lift) * keep + lift)
-	_sink(crouch_drop, crouch_lean, weight)
+			var rise := local_up.dot(off)
+			var lift := local_up * rise
+			# A foot swinging through (above its average height) stays lower,
+			# so the trailing foot never kicks up behind; a planted one stays put.
+			skeleton.set_bone_pose_position(bone, mean + (off - lift) * keep + lift * (keep if rise > 0.0 else 1.0))
+	_sink(crouch_drop, crouch_lean, weight, crouch_heel)
+	if not _spine.is_empty():
+		var to_skeleton := skeleton.global_basis.orthonormalized().inverse() * actor.global_basis.orthonormalized()
+		var right := (to_skeleton * Basis(Vector3.UP, twist) * Vector3.RIGHT).normalized()
+		var pose := skeleton.get_bone_global_pose(_spine[0])
+		pose.basis = Basis(right, -crouch_spine_lean * weight) * pose.basis
+		skeleton.set_bone_global_pose(_spine[0], pose)
 
 
 ## Sinks the body onto bent knees, feet planted where they were: the hips
 ## drop `drop` meters and tip forward `lean` radians at a full `weight`, and
 ## each leg is bent to still reach its foot. Everything above the hips (the
 ## arms, the gun and its sights, a held blade) comes down with them.
-func _sink(drop_m: float, lean: float, weight: float) -> void:
+## `heel` (radians) rolls each foot forward onto its ball, toes kept where
+## they were, so a deep bend lifts the heels rather than folding the ankle.
+func _sink(drop_m: float, lean: float, weight: float, heel := 0.0) -> void:
 	if weight <= 0.001 or actor == null or _lead.size() != 3 or _trail.size() != 3:
 		return
 	var to_skeleton := skeleton.global_basis.orthonormalized().inverse() * actor.global_basis.orthonormalized()
@@ -620,6 +639,13 @@ func _sink(drop_m: float, lean: float, weight: float) -> void:
 			* Transform3D(Basis(right, -lean * weight), Vector3.ZERO) * Transform3D(Basis.IDENTITY, -pivot)
 	for bone in _roots:
 		skeleton.set_bone_global_pose(bone, drop * skeleton.get_bone_global_pose(bone))
+	if heel > 0.0:
+		var forward := (to_skeleton * Basis(Vector3.UP, twist) * Vector3.FORWARD).normalized()
+		var side := (to_skeleton * Basis(Vector3.UP, twist) * Vector3.RIGHT).normalized()
+		var roll := Basis(side, -heel * weight)
+		for i in 2:
+			var toe := feet[i].origin + forward * foot_reach * meter
+			feet[i] = Transform3D(roll * feet[i].basis, toe + roll * (feet[i].origin - toe))
 	var legs := [_lead, _trail]
 	for i in 2:
 		var leg: Array[int] = legs[i]
