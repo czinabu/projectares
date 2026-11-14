@@ -143,6 +143,86 @@ var ads_cup := Vector3(-0.03, -0.035, -0.01)
 ## squares up and leans in so the arms reach out.
 var ads_stance_long := Vector2(-0.35, -0.06)
 var ads_stance_sidearm := Vector2(0.3, -0.06)
+## Inspecting what is in the hand (`ActorCommand.inspect`, the inspect key):
+## the hand brings it in closer, a little up and toward the middle of the
+## body, and turns it through `INSPECT_TURNS` so each side shows, then it
+## goes back to the ready hold. The same body in both views, and everyone
+## sees it, since the flag travels with the held keys. Offsets are in the
+## aim frame like the rest, so it comes up wherever you look.
+## `inspect_from_eyes` is where the wrist comes to (metres right, up and
+## ahead of the eyes along the aim, the pitch clamped to `inspect_pitch`),
+## whatever is in hand; `inspect_rate` is how fast it comes up and goes
+## back (per second).
+var inspect_from_eyes := Vector3(0.05, -0.18, -0.45)
+var inspect_pitch := Vector2(-0.7, 0.5)
+var inspect_rate := 3.5
+## How long a look over takes, in seconds. The controller holds the flag
+## this long (`PlayerController.inspect_left`); every view times the turns
+## from when it saw the flag go on.
+const INSPECT_SECONDS := 3.4
+## The turns the item goes through, as [seconds in, Vector3(pitch, yaw,
+## roll)] in radians, eased from one to the next (yaw positive to the left,
+## roll about the item's own length): a gun's muzzle swung left across the
+## body to show its right side, then out to the right and rolled to show
+## its left side and top, then tipped up, and back.
+const INSPECT_TURNS := [
+	[0.0, Vector3.ZERO],
+	[0.55, Vector3(0.15, 1.15, 0.35)],
+	[1.25, Vector3(0.15, 1.25, 0.45)],
+	[1.95, Vector3(-0.1, -0.35, -1.1)],
+	[2.5, Vector3(-0.1, -0.45, -1.2)],
+	[3.0, Vector3(0.55, 0.3, 0.0)],
+	[3.4, Vector3.ZERO],
+]
+
+## Carrying a gun on the move (Caleb's "running with a weapon" pass). Out of
+## a fight a gun is carried, not pointed: jogging it sits at a low ready
+## (stock in under the shoulder, muzzle down ahead of the feet, both hands
+## on it), sprinting a long gun goes across the chest at port (muzzle up and
+## to the off side, the off hand on the fore end) and a sidearm is tucked in
+## to the chest muzzle down in one hand while the other arm pumps. Shooting,
+## aiming or reloading takes it straight back up (`carry_out_rate` is quick,
+## the way a sprint-to-fire is). Each pose is where the gun hand's wrist goes
+## from the chest, in the actor's frame (x right, y up, z back), and how the
+## gun turns from straight ahead (pitch up, yaw toward the off side, roll
+## toward the off side, radians). The chest carries it, so the run's own lean
+## and bounce move the gun with the body.
+var carry_low_long := Vector3(0.16, 1.27, -0.3)
+var carry_low_long_turn := Vector3(-0.3, 0.15, 0.08)
+var carry_port_long := Vector3(0.15, 1.2, -0.28)
+var carry_port_long_turn := Vector3(0.75, 1.0, 0.6)
+var carry_low_sidearm := Vector3(0.05, 1.24, -0.3)
+var carry_low_sidearm_turn := Vector3(-0.5, 0.1, 0.0)
+var carry_port_sidearm := Vector3(0.17, 1.16, -0.2)
+var carry_port_sidearm_turn := Vector3(-1.0, 0.15, 0.15)
+## How much the off hand holds the gun in each carry: both hands at a low
+## ready, a long gun at port; a sprinting sidearm leaves the off arm free.
+var carry_support_low := 1.0
+var carry_support_port_long := 1.0
+var carry_support_port_sidearm := 0.0
+## How fast the gun goes into its carry and comes back up out of it, and
+## how fast it moves between the low ready and the sprint carry (per second).
+var carry_in_rate := 3.5
+var carry_out_rate := 9.0
+var sprint_rate := 4.0
+## The share of the chest's lean (a sprint's, a slide's) the carried gun
+## follows: most, so it rides the body, but it stays steadier than the chest.
+var carry_body_follow := 0.8
+## The bob of a carried gun with each stride: the run's footfalls drop it
+## twice a cycle and it swings side to side once, metres at a jog and at a
+## sprint, and a little tip of the muzzle with the drop (radians).
+var bob_drop := Vector2(0.008, 0.016)
+var bob_swing := Vector2(0.01, 0.025)
+var bob_tip := 0.04
+## Inertia: a carried gun lags behind the body as it speeds up, stops or
+## turns, on a damped spring. `sway_gain` is metres per m/s² of the body's
+## change of speed, `sway_turn` metres per radian a second of turning,
+## `sway_limit` the most it lags, and the spring's stiffness and damping.
+var sway_gain := 0.004
+var sway_turn := 0.012
+var sway_limit := 0.05
+var sway_stiffness := 120.0
+var sway_damping := 18.0
 
 var actor: Actor
 
@@ -166,6 +246,13 @@ var toy_throw_t := -1.0
 var toy_hand_free := true
 var _toy_throws_seen := -1
 var _toy_thrown := ""
+## How far the item in hand is brought in to be looked over (0..1, eased),
+## and how long this look has been going (seconds), from
+## `ActorCommand.inspect`.
+var inspect := 0.0
+var inspect_clock := 0.0
+var _inspect_raise := 0.0
+var _inspect_was := false
 
 ## The melee hand offset, smoothed, and how much it has the arm (0..1).
 var reach := Vector3.ZERO
@@ -184,6 +271,26 @@ var ads := 0.0
 ## eye this far behind the sight.
 var relief_now := -1.0
 var _ads_raise := 0.0
+
+## Set by the skin each frame: whether the gun in hand should be carried
+## (moving out of a fight), how much of a sprint it is (0..1), and where the
+## stride is (`stride_phase`, 0..1 through the gait clip) and how hard the
+## body is moving (`stride_amount`, 0 standing to 1 at a sprint).
+var carry_wanted := false
+var sprint_wanted := 0.0
+var stride_phase := 0.0
+var stride_amount := 0.0
+## How far into its carry the gun is (0 raised, 1 carried), and how far the
+## carry is from the low ready toward the sprint carry, eased.
+var carry := 0.0
+var sprint := 0.0
+## How far the carried gun lags behind the body, in the actor's frame, and
+## the spring's speed.
+var sway := Vector3.ZERO
+var _sway_speed := Vector3.ZERO
+var _last_velocity := Vector3.ZERO
+var _last_yaw := 0.0
+var _sway_primed := false
 
 var _follow_left := 0.0
 var _follow_dir := MeleeWeapon.Dir.OVERHEAD
@@ -214,6 +321,18 @@ func advance(delta: float) -> void:
 	_frame = frame
 	if actor == null or not is_instance_valid(actor):
 		return
+	var inspect_wanted := actor.cmd != null and actor.cmd.inspect and not actor.is_dead \
+			and actor.vehicle == null and not actor.cmd.phone
+	if inspect_wanted and not _inspect_was:
+		inspect_clock = 0.0
+	_inspect_was = inspect_wanted
+	if inspect_wanted or _inspect_raise > 0.0:
+		inspect_clock += delta
+	else:
+		inspect_clock = 0.0
+	_inspect_raise = move_toward(_inspect_raise, 1.0 if inspect_wanted else 0.0, inspect_rate * delta)
+	inspect = smoothstep(0.0, 1.0, _inspect_raise)
+
 	var weapon := actor.get_active_weapon()
 	var melee := weapon as MeleeWeapon
 	var holding := melee != null and melee.visual != null and not actor.is_dead
@@ -243,10 +362,86 @@ func advance(delta: float) -> void:
 
 	var gun := weapon as Gun
 	reload = reload_depth(gun) if gun != null and not actor.is_dead else 0.0
-	var lowered := low_wanted and gun != null and not gun.is_aiming() and reload <= 0.0
+	var lowered := low_wanted and gun != null and not gun.is_aiming() and reload <= 0.0 \
+			and inspecting() != "gun"
 	low = move_toward(low, 1.0 if lowered else 0.0, delta * (lower_rate if lowered else raise_rate))
 	_ads_raise = move_toward(_ads_raise, 1.0 if ads_wanted(gun) else 0.0, delta * ads_rate)
 	ads = ease(_ads_raise, -2.0)
+	var carried := carry_wanted and gun != null and not actor.is_dead and reload <= 0.0 and not gun.is_aiming() \
+			and inspecting() != "gun"
+	carry = move_toward(carry, 1.0 if carried else 0.0, delta * (carry_in_rate if carried else carry_out_rate))
+	sprint = move_toward(sprint, clampf(sprint_wanted, 0.0, 1.0), delta * sprint_rate)
+	_update_sway(delta)
+
+
+## The carried gun's lag behind the body: a damped spring pulled by how the
+## body's speed and heading change, so it trails a start, swings on through
+## a stop and lags round a turn. View only, read from the actor's velocity
+## and facing, so a remote player's gun sways the same.
+func _update_sway(delta: float) -> void:
+	var basis := actor.global_basis.orthonormalized()
+	var local := basis.inverse() * actor.velocity
+	local.y = 0.0
+	var yaw := actor.global_rotation.y
+	if not _sway_primed or delta <= 0.0:
+		_sway_primed = true
+		_last_velocity = local
+		_last_yaw = yaw
+		return
+	var accel := (local - _last_velocity) / delta
+	var turning := wrapf(yaw - _last_yaw, -PI, PI) / delta
+	_last_velocity = local
+	_last_yaw = yaw
+	# A start pulls the gun back, a stop throws it on, a turn left leaves it
+	# out to the right.
+	var pull := (-accel * sway_gain + Vector3(turning * sway_turn, 0.0, 0.0)).limit_length(sway_limit * 2.0)
+	var step := minf(delta, 1.0 / 30.0)
+	var steps := ceili(delta / step)
+	for i in steps:
+		var force := (pull - sway) * sway_stiffness - _sway_speed * sway_damping
+		_sway_speed += force * step
+		sway += _sway_speed * step
+	sway = sway.limit_length(sway_limit)
+
+
+## Where the gun hand's wrist goes in the carry now, from the chest, and how
+## the gun turns from straight ahead (pitch, yaw, roll), for `gun`: the low
+## ready blended toward the sprint carry, plus the stride's bob and the sway.
+func carry_point(gun: Gun) -> Vector3:
+	var side := gun != null and gun.is_sidearm
+	var low_at := carry_low_sidearm if side else carry_low_long
+	var port_at := carry_port_sidearm if side else carry_port_long
+	return low_at.lerp(port_at, sprint) + carry_bob() + sway
+
+
+func carry_turn(gun: Gun) -> Vector3:
+	var side := gun != null and gun.is_sidearm
+	var low_turn := carry_low_sidearm_turn if side else carry_low_long_turn
+	var port_turn := carry_port_sidearm_turn if side else carry_port_long_turn
+	var drop := cos(TAU * 2.0 * stride_phase) * stride_amount
+	return low_turn.lerp(port_turn, sprint) + Vector3(-bob_tip * drop, 0.0, 0.0)
+
+
+## A turn given as pitch (up), yaw (toward the off side) and roll (top
+## toward the off side), in radians, from straight ahead.
+static func turn_basis(turn: Vector3) -> Basis:
+	return Basis(Vector3.UP, turn.y) * Basis(Vector3.RIGHT, turn.x) * Basis(Vector3.BACK, turn.z)
+
+
+## How much the off hand holds the carried gun (0..1).
+func carry_support(gun: Gun) -> float:
+	var side := gun != null and gun.is_sidearm
+	return lerpf(carry_support_low, carry_support_port_sidearm if side else carry_support_port_long, sprint)
+
+
+## The stride's bob of a carried gun, in the actor's frame: down at each
+## footfall, side to side once a cycle, bigger the harder the body moves.
+func carry_bob() -> Vector3:
+	if stride_amount <= 0.0:
+		return Vector3.ZERO
+	var drop := lerpf(bob_drop.x, bob_drop.y, sprint) * stride_amount
+	var swing := lerpf(bob_swing.x, bob_swing.y, sprint) * stride_amount
+	return Vector3(swing * sin(TAU * stride_phase), -drop * cos(TAU * 2.0 * stride_phase), 0.0)
 
 
 ## Moves the toy hold and throw on by `delta` seconds. A throw starts when
@@ -493,6 +688,12 @@ func arm_reach(melee: MeleeWeapon) -> Variant:
 	var back := recover_left(melee)
 	if back > 0.0:
 		return follow_reach(melee, melee.attack_dir) * back
+	if inspect_for("melee") > 0.0:
+		# The resting hand's offset (from `Actor.HAND_REST`, in the aim
+		# frame) that puts it on the inspect point.
+		var aim := actor.global_basis.orthonormalized() * Basis(Vector3.RIGHT, actor.cmd.pitch)
+		var rest := actor.global_transform * Actor.HAND_REST
+		return (aim.inverse() * (inspect_point() - rest)) * inspect
 	return null
 
 
@@ -648,6 +849,64 @@ func reload_depth(gun: Gun) -> float:
 	return minf(ease_in, ease_out)
 
 
-## The gun's offset from its usual hold, in the aim frame: the reload motion.
+## The gun's offset from its usual hold, in the aim frame: the reload
+## motion, and the gun brought in and turned while it is looked over.
 func gun_offset() -> Transform3D:
-	return Transform3D(Basis.from_euler(reload_tilt * reload), reload_reach * reload)
+	var reloading := Transform3D(Basis.from_euler(reload_tilt * reload), reload_reach * reload)
+	if inspecting() != "gun":
+		return reloading
+	return Transform3D(inspect_basis(), Vector3.ZERO) * reloading
+
+
+## Where the wrist goes to look the item in hand over, in the world: in
+## front of the chest, under the eyes along the aim (`inspect_from_eyes`).
+func inspect_point() -> Vector3:
+	var pitch := clampf(actor.cmd.pitch, inspect_pitch.x, inspect_pitch.y)
+	var aim := actor.global_basis.orthonormalized() * Basis(Vector3.RIGHT, pitch)
+	return actor.get_eye_position() + aim * inspect_from_eyes
+
+
+## What is being looked over: "gun", "melee", "hand" (a toy vehicle held
+## up, `Actor.toy_in_hand`), or "" when nothing is.
+func inspecting() -> String:
+	if inspect <= 0.0 or actor == null or actor.is_dead:
+		return ""
+	if toy_busy():
+		return "hand"
+	var weapon := actor.get_active_weapon()
+	if weapon == null or weapon.visual == null or not weapon.visual.visible:
+		return "hand"
+	if weapon is Gun:
+		return "gun"
+	if weapon is MeleeWeapon:
+		return "melee"
+	return "hand"
+
+
+## How much of the hand's (or gun's) own reach and turn the look over has,
+## for what `inspecting` says is in hand: 0 when something else is.
+func inspect_for(what: String) -> float:
+	return inspect if inspecting() == what else 0.0
+
+
+## How the item in hand is turned now while looked over, in the aim frame
+## (identity when it is not).
+func inspect_basis() -> Basis:
+	if inspect <= 0.0:
+		return Basis.IDENTITY
+	return Basis.from_euler(inspect_turn(inspect_clock) * inspect)
+
+
+## The turn `seconds` into a look over (`INSPECT_TURNS`), eased between
+## the steps, back to none once it is done.
+static func inspect_turn(seconds: float) -> Vector3:
+	var last: Array = INSPECT_TURNS[INSPECT_TURNS.size() - 1]
+	if seconds <= 0.0 or seconds >= float(last[0]):
+		return Vector3.ZERO
+	for i in range(1, INSPECT_TURNS.size()):
+		var to: Array = INSPECT_TURNS[i]
+		if seconds <= float(to[0]):
+			var from: Array = INSPECT_TURNS[i - 1]
+			var done := (seconds - float(from[0])) / maxf(float(to[0]) - float(from[0]), 0.001)
+			return (from[1] as Vector3).lerp(to[1], smoothstep(0.0, 1.0, done))
+	return Vector3.ZERO

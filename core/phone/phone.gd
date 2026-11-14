@@ -4,6 +4,9 @@ extends CanvasLayer
 ## news, try on clothes in front of a mirror, look up the controls and change
 ## settings.
 ##
+## Going online lives here too: the Servers app hosts a server on this
+## computer, joins a friend's by its address, and leaves the one you are on.
+##
 ## It is a real thing in the world, not a panel over the screen: a rugged
 ## handheld with a pistol grip (`core/phone/handheld.gd`) that your
 ## character's own right hand closes round and raises (`ActorCommand.phone`),
@@ -35,6 +38,12 @@ signal mirror_changed(up: bool)
 ## The new player's tour was asked to stop ("skip") or start over ("replay")
 ## from Settings. `Main` runs the tour (`Onboarding`).
 signal tour_requested(action: String)
+## The Servers app asks `Main` to go online: start a server on this computer
+## that runs every world and head out to it, join the server at `address`
+## ("host" or "host:port"), or leave the server you are on.
+signal host_requested
+signal join_requested(address: String)
+signal leave_server_requested
 
 const SocialService := preload("res://core/social/social_service.gd")
 const GameSettings := preload("res://core/settings/game_settings.gd")
@@ -45,12 +54,12 @@ const CharacterPanel := preload("res://core/ui/character_panel.gd")
 const MirrorScript := preload("res://core/visual/mirror.gd")
 const Handheld := preload("res://core/phone/handheld.gd")
 
-const APPS := ["contacts", "messages", "invites", "news", "mirror", "controls", "settings"]
+const APPS := ["contacts", "messages", "invites", "news", "servers", "mirror", "controls", "settings"]
 const APP_NAMES := {"contacts": "Contacts", "messages": "Messages", "invites": "Invites",
-		"news": "News", "mirror": "Mirror", "controls": "Controls", "settings": "Settings"}
+		"news": "News", "servers": "Servers", "mirror": "Mirror", "controls": "Controls", "settings": "Settings"}
 ## The names under the home screen's icons.
 const NAV_NAMES := {"contacts": "People", "messages": "Chat", "invites": "Invites",
-		"news": "News", "mirror": "Mirror", "controls": "Keys", "settings": "Settings"}
+		"news": "News", "servers": "Servers", "mirror": "Mirror", "controls": "Keys", "settings": "Settings"}
 ## The screen's colours: the dark glass, the panels on it, and the dimmer
 ## ink for secondary text. The device's body is gunmetal.
 const SCREEN_BG := Color(0.035, 0.04, 0.047)
@@ -112,6 +121,7 @@ const CONTROLS := [
 		["Reload", "{reload}"],
 		["Primary / sidearm / melee", "{weapon_1} {weapon_2} {weapon_3}, or the wheel (watch down)"],
 		["Put away, or draw again", "{holster}"],
+		["Inspect what is in your hand (any key or click stops)", "{inspect}"],
 		["Use a medkit", "{heal}"],
 		["Use your ability", "{ability}"],
 		["Use your helmet's visor (zoom, scan, thermal)", "{visor}, again to step or turn off"],
@@ -154,7 +164,8 @@ const CONTROLS := [
 	["PHONE AND MOUSE", [
 		["Open or close the phone", "{phone}"],
 		["Open the phone at Settings, or close it; step back from a console", "Esc"],
-		["Mirror app: choose, then scroll", "Arrows or W A S D"],
+		["Mirror app: wheel to a row, click it, wheel through it; right click to go back", "Wheel, clicks"],
+		["Mirror app: choose a row, then scroll it", "Arrows or W A S D"],
 	]],
 ]
 
@@ -198,6 +209,10 @@ var local_names := {}
 ## Whether the Settings app offers to skip the tour (it is running) or to
 ## play it again. `Main` sets it.
 var tour_running := false
+## True while that row is open (like a watch icon, Caleb's call): the wheel
+## then turns through its options instead of moving between rows. A click
+## on a row opens it, a right click closes it.
+var mirror_picking := false
 
 ## The screen's 2D viewport: everything on the phone draws here.
 var _screen: SubViewport
@@ -222,7 +237,7 @@ var _chassis: Control
 ## hand holds the handheld (`ActorSkin.handheld`) and its face shows this
 ## screen. Null in a test with no world.
 var holder: Node3D
-## The holo panel of the handheld being held now, where clicks land, or
+## The face of the handheld being held now, where clicks land, or
 ## null (then the screen shows flat, as with no world at all).
 var _device: MeshInstance3D
 ## The material that puts this screen on the handheld's face.
@@ -237,6 +252,16 @@ var _notice_left := 0.0
 var _error: Label
 var _compose: LineEdit
 var _mirror_was_up := false
+## The Servers app: the line `Main` gives on going online (connecting, what
+## went wrong; `set_link_status`), and where the link leads ("your own
+## server" or the address joined), set by `Main` as it connects.
+var link_status := ""
+var link_where := ""
+## The Servers app's address field, and which of its fields had the keys, so
+## a redraw keeps your typing.
+var _address_edit: LineEdit
+var _address_draft := ""
+var _link_focus := ""
 
 
 func _ready() -> void:
@@ -261,6 +286,8 @@ func _input(event: InputEvent) -> void:
 		var mouse := event as InputEventMouse
 		var at := screen_point(mouse.position)
 		get_viewport().set_input_as_handled()
+		if mirror_open() and _mirror_mouse(mouse as InputEventMouseButton):
+			return
 		if at.x < 0.0:
 			var button := mouse as InputEventMouseButton
 			if button != null and button.pressed and button.button_index == MOUSE_BUTTON_LEFT:
@@ -303,6 +330,34 @@ func opens_on_escape(event: InputEvent) -> bool:
 			and (mouse_in_world or Input.mouse_mode == Input.MOUSE_MODE_CAPTURED)
 
 
+## The Mirror app's wheel and right click, wherever the mouse is, so the
+## wheel never both scrolls the page and turns a row (Caleb's feedback): the
+## wheel moves between the rows, stopping at the ends, until one is open
+## (a click on it), then turns through its options; a right click closes
+## it. Returns true when the press was the Mirror app's.
+func _mirror_mouse(button: InputEventMouseButton) -> bool:
+	if button == null or not button.pressed or wardrobe == null:
+		return false
+	var keys := wardrobe.pick_keys()
+	if keys.is_empty():
+		return false
+	match button.button_index:
+		MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN:
+			var steps := -1 if button.button_index == MOUSE_BUTTON_WHEEL_UP else 1
+			if mirror_picking:
+				mirror_step(keys[clampi(mirror_row, 0, keys.size() - 1)], steps)
+			else:
+				mirror_row = clampi(mirror_row + steps, 0, keys.size() - 1)
+		MOUSE_BUTTON_RIGHT:
+			if not mirror_picking:
+				return false
+			mirror_picking = false
+		_:
+			return false
+	refresh()
+	return true
+
+
 ## The Mirror app's keys: up and down (or W and S) pick a choice, left and
 ## right (or A and D) scroll through it.
 func _mirror_key(key: Key) -> bool:
@@ -310,8 +365,12 @@ func _mirror_key(key: Key) -> bool:
 	if rows == 0:
 		return false
 	match key:
-		KEY_UP, KEY_W: mirror_row = posmod(mirror_row - 1, rows)
-		KEY_DOWN, KEY_S: mirror_row = posmod(mirror_row + 1, rows)
+		KEY_UP, KEY_W:
+			mirror_row = posmod(mirror_row - 1, rows)
+			mirror_picking = false
+		KEY_DOWN, KEY_S:
+			mirror_row = posmod(mirror_row + 1, rows)
+			mirror_picking = false
 		KEY_LEFT, KEY_A: mirror_step(wardrobe.pick_keys()[mirror_row], -1)
 		KEY_RIGHT, KEY_D: mirror_step(wardrobe.pick_keys()[mirror_row], 1)
 		_: return false
@@ -396,6 +455,11 @@ func _sync_mirror() -> void:
 
 func _on_session_gone() -> void:
 	set_session(null)
+
+
+## True while a server link is open or being opened (signed in or not).
+func linked() -> bool:
+	return net != null and is_instance_valid(net)
 
 
 func online() -> bool:
@@ -552,6 +616,7 @@ func _set_open(open_now: bool) -> void:
 		var focused := _screen.gui_get_focus_owner()
 		if focused:
 			focused.release_focus()
+		_link_focus = ""
 		_hold(get_viewport().get_camera_3d() if is_inside_tree() else null)
 	if changed:
 		opened_changed.emit(open_now)
@@ -577,6 +642,8 @@ func open_app(p_app: String) -> void:
 		return
 	app = p_app
 	chat_with = ""
+	mirror_picking = false
+	_link_focus = ""
 	if app == "news":
 		for entry: Dictionary in news():
 			news_seen[entry.title] = true
@@ -724,7 +791,7 @@ func _build_screen() -> void:
 	var readouts := HBoxContainer.new()
 	readouts.add_theme_constant_override("separation", 8)
 	_home.add_child(readouts)
-	for spec: Array in [["link", "LINK", "contacts"], ["inbox", "INBOX", "messages"]]:
+	for spec: Array in [["link", "LINK", "servers"], ["inbox", "INBOX", "messages"]]:
 		var widget := Readout.new(spec[1])
 		widget.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		widget.tapped.connect(open_app.bind(spec[2]))
@@ -947,8 +1014,9 @@ func _hold(_camera: Camera3D) -> void:
 		if skin != null and skin.has_method("handheld"):
 			if skin.phone_screen != _face_mat:
 				skin.set_phone_screen(_face_mat)
-			# Clicks land on the holo panel, where the screen is read.
-			_device = Handheld.holo_of(skin.handheld())
+			# Clicks land on the handheld's own face, where the screen is
+			# read in every view.
+			_device = Handheld.face_of(skin.handheld())
 	_flat.visible = is_open and _device == null and not has_hand()
 
 
@@ -975,23 +1043,17 @@ func screen_point(mouse: Vector2) -> Vector2:
 	if camera == null or _device == null or not _device.is_visible_in_tree():
 		return miss
 	var target := _device
-	if camera.cull_mask & _device.layers == 0:
-		# A camera that leaves out the holo (first person) clicks on the face.
-		target = _device.get_parent() as MeshInstance3D
-		if target == null:
-			return miss
 	var to_local := target.global_transform.affine_inverse()
 	var o := to_local * camera.project_ray_origin(mouse)
 	var d := to_local.basis * camera.project_ray_normal(mouse)
-	var panel := target.mesh as QuadMesh
-	var front := 0.0 if panel != null else Handheld.DEPTH * 0.5
+	var front := Handheld.DEPTH * 0.5
 	if absf(d.z) < 0.00001:
 		return miss
 	var t := (front - o.z) / d.z
 	if t < 0.0:
 		return miss
 	var p := o + d * t
-	var size := panel.size if panel != null else Handheld.body_size()
+	var size := Handheld.body_size()
 	var u := p.x / size.x + 0.5
 	var v := 0.5 - p.y / size.y
 	if u < 0.0 or u > 1.0 or v < 0.0 or v > 1.0:
@@ -1097,6 +1159,7 @@ func refresh(redraw := true) -> void:
 		"messages": _draw_messages(keep_draft)
 		"invites": _draw_invites()
 		"news": _draw_news()
+		"servers": _draw_servers()
 		"mirror": _draw_mirror()
 		"controls": _draw_controls()
 		"settings": _draw_settings()
@@ -1106,7 +1169,7 @@ func refresh(redraw := true) -> void:
 
 
 func _offline_note() -> void:
-	_body.add_child(_label("You are offline. Join a server from the hub to reach other players. "
+	_body.add_child(_label("You are offline. Join a server from the Servers app to reach other players. "
 			+ "Everyone signed in to the same server shows up here.", 15, Color(0.75, 0.75, 0.75)))
 
 
@@ -1249,6 +1312,142 @@ func _draw_news() -> void:
 		_body.add_child(card)
 
 
+# --------------------------------------------------------------- servers ----
+
+## `Main`'s line on going online. Shown in the Servers app.
+func set_link_status(text: String) -> void:
+	if text == link_status:
+		return
+	link_status = text
+	if is_open and app == "servers":
+		refresh()
+
+
+## Starts a server on this computer and heads out to it. The base's door
+## leads to your own server from then on.
+func host_server() -> void:
+	if linked():
+		return
+	Profile.home_server = ""
+	Profile.save()
+	host_requested.emit()
+
+
+## Joins the server at `address` ("host" or "host:port"). Once it lets you
+## in, the base's door leads there.
+func join_server(address: String) -> void:
+	if linked():
+		return
+	var clean := address.strip_edges()
+	if clean == "":
+		set_link_status("Type the server's address first.")
+		return
+	_address_draft = clean
+	Profile.last_server = clean
+	Profile.save()
+	join_requested.emit(clean)
+
+
+## Leaves the server you are on (or stops trying to reach it).
+func leave_server() -> void:
+	if linked():
+		leave_server_requested.emit()
+
+
+## The base's door goes back to starting a server of your own.
+func forget_home_server() -> void:
+	Profile.home_server = ""
+	Profile.save()
+	refresh()
+
+
+## The Servers app. Offline: your name, hosting here, joining a friend by
+## address, and where the base's door leads. Linked: who you are there, which
+## server it is, and leaving it.
+func _draw_servers() -> void:
+	_address_edit = null
+	if linked():
+		var card := _card()
+		var box: VBoxContainer = card.get_child(0)
+		if net.account.is_empty():
+			box.add_child(_label("Connecting%s..." % (" to " + link_where if link_where != "" else ""), 19, UiTheme.ACCENT))
+			if link_status != "":
+				box.add_child(_label(link_status, 14, DIM_INK))
+			box.add_child(_button("Stop", leave_server))
+			_body.add_child(card)
+			return
+		box.add_child(_label("Connected as %s" % str(net.account.get("name", "")), 19, UiTheme.ACCENT))
+		if link_where != "":
+			box.add_child(_label("On %s" % link_where, 15, UiTheme.INK))
+		var world := Worlds.get_world(net.world_id)
+		if world != null:
+			box.add_child(_label(("You are in %s." % world.display_name) if world.safe_zone
+					else "Open a portal from your watch's Mission tab to deploy to %s." % world.display_name,
+					14, DIM_INK))
+		box.add_child(_label("The gear in your base here is the stash this server keeps for you. "
+				+ "It is separate from your solo stash.", 13, DIM_INK))
+		_body.add_child(card)
+		if link_status != "":
+			_body.add_child(_label(link_status, 14, UiTheme.ACCENT))
+		_body.add_child(_button("Leave the server", leave_server))
+		return
+
+	_body.add_child(_label("Play online: host a server here for your friends, or join theirs by its address.",
+			15, Color(0.75, 0.75, 0.75)))
+	if link_status != "":
+		_body.add_child(_label(link_status, 14, UiTheme.ACCENT))
+	var name_card := _card()
+	var name_box: VBoxContainer = name_card.get_child(0)
+	name_box.add_child(_label("Your name", 14, DIM_INK))
+	var name_edit := LineEdit.new()
+	name_edit.name = "NameEdit"
+	name_edit.text = Profile.player_name
+	name_edit.max_length = 20
+	name_edit.text_changed.connect(func(text: String) -> void: Profile.player_name = text)
+	name_edit.text_submitted.connect(func(_text: String) -> void: Profile.save())
+	name_edit.focus_exited.connect(Profile.save)
+	name_edit.focus_entered.connect(func() -> void: _link_focus = "name")
+	name_box.add_child(name_edit)
+	_body.add_child(name_card)
+
+	var host_card := _card()
+	var host_box: VBoxContainer = host_card.get_child(0)
+	host_box.add_child(_label("Your own server", 17, UiTheme.INK))
+	host_box.add_child(_label("Runs every world on this computer. Friends join it by your computer's address.",
+			13, DIM_INK))
+	host_box.add_child(_button("Host here and head out", host_server))
+	_body.add_child(host_card)
+
+	var join_card := _card()
+	var join_box: VBoxContainer = join_card.get_child(0)
+	join_box.add_child(_label("A friend's server", 17, UiTheme.INK))
+	_address_edit = LineEdit.new()
+	_address_edit.name = "AddressEdit"
+	_address_edit.text = _address_draft if _address_draft != "" else Profile.last_server
+	_address_edit.placeholder_text = "Server address"
+	_address_edit.text_changed.connect(func(text: String) -> void: _address_draft = text)
+	_address_edit.text_submitted.connect(join_server)
+	_address_edit.focus_entered.connect(func() -> void: _link_focus = "address")
+	join_box.add_child(_address_edit)
+	var edit := _address_edit
+	join_box.add_child(_button("Join", func() -> void: join_server(edit.text)))
+	_body.add_child(join_card)
+
+	var door := _card()
+	var door_box: VBoxContainer = door.get_child(0)
+	if Profile.home_server != "":
+		door_box.add_child(_label("Your base's door leads to %s, the server you joined last." % Profile.home_server,
+				13, DIM_INK))
+		door_box.add_child(_button("Host my own instead", forget_home_server))
+	else:
+		door_box.add_child(_label("Your base's door starts a server of your own. Join a friend here and it leads to theirs.",
+				13, DIM_INK))
+	_body.add_child(door)
+	match _link_focus:
+		"name": name_edit.grab_focus.call_deferred()
+		"address": _address_edit.grab_focus.call_deferred()
+
+
 ## Each choice of the look as a row to scroll through: arrows, the mouse
 ## wheel over the row, or the keys. Only starter clothes and outfits the
 ## player owns are offered, so this is their wardrobe.
@@ -1266,7 +1465,8 @@ func _draw_mirror() -> void:
 		_body.add_child(row)
 		if i == mirror_row:
 			_keep_in_view.call_deferred(row)
-	_body.add_child(_label("Up / down: choose   Left / right or the wheel: scroll", 13, Color(0.6, 0.6, 0.6)))
+	_body.add_child(_label("Wheel: move between rows. Click a row, then the wheel turns it. Right click: back.",
+			13, Color(0.6, 0.6, 0.6)))
 	var shuffle := _button("Surprise me", func() -> void: wardrobe.randomize_look())
 	shuffle.focus_mode = Control.FOCUS_NONE
 	_body.add_child(shuffle)
@@ -1281,9 +1481,10 @@ func _keep_in_view(row: Control) -> void:
 func _mirror_row(key: String, selected: bool) -> PanelContainer:
 	var card := PanelContainer.new()
 	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.12, 0.11, 0.1, 0.95) if selected else Color(0.08, 0.075, 0.07, 0.9)
+	var open := selected and mirror_picking
+	style.bg_color = Color(0.2, 0.15, 0.08, 0.97) if open else Color(0.12, 0.11, 0.1, 0.95) if selected else Color(0.08, 0.075, 0.07, 0.9)
 	style.border_color = UiTheme.ACCENT if selected else Color(0.2, 0.19, 0.17)
-	style.set_border_width_all(2)
+	style.set_border_width_all(4 if open else 2)
 	style.set_corner_radius_all(8)
 	style.set_content_margin_all(6)
 	card.add_theme_stylebox_override("panel", style)
@@ -1291,14 +1492,14 @@ func _mirror_row(key: String, selected: bool) -> PanelContainer:
 		var button := event as InputEventMouseButton
 		if button == null or not button.pressed:
 			return
-		if button.button_index not in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN, MOUSE_BUTTON_LEFT]:
+		if button.button_index != MOUSE_BUTTON_LEFT:
 			return
-		# Taken before the redraw below frees this row.
+		# Taken before the redraw below frees this row. A click opens the
+		# row for the wheel, and a click on the open row closes it.
 		card.accept_event()
-		match button.button_index:
-			MOUSE_BUTTON_WHEEL_UP: mirror_step(key, -1)
-			MOUSE_BUTTON_WHEEL_DOWN: mirror_step(key, 1)
-			MOUSE_BUTTON_LEFT: mirror_row = wardrobe.pick_keys().find(key)
+		var at := wardrobe.pick_keys().find(key)
+		mirror_picking = not (mirror_picking and at == mirror_row)
+		mirror_row = at
 		refresh.call_deferred())
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 6)
@@ -1715,6 +1916,15 @@ class AppIcon extends Control:
 				draw_rect(Rect2(c + Vector2(-10, -13) * k, Vector2(20, 7) * k), ink)
 				for i in 3:
 					draw_line(c + Vector2(-10, 0 + i * 6.5) * k, c + Vector2(10 if i % 2 == 0 else 4, 0 + i * 6.5) * k, ink, 2.0 * k)
+			"servers":
+				# A mast sending out rings.
+				draw_line(c + Vector2(0, -4) * k, c + Vector2(0, 20) * k, ink, w, true)
+				draw_line(c + Vector2(-9, 20) * k, c + Vector2(9, 20) * k, ink, w, true)
+				draw_circle(c + Vector2(0, -6) * k, 3.5 * k, ink)
+				for i in 2:
+					var r := (11.0 + i * 8.0) * k
+					draw_arc(c + Vector2(0, -6) * k, r, PI * 0.78, PI * 1.22, 10, Color(ink, 1.0 - i * 0.35), w, true)
+					draw_arc(c + Vector2(0, -6) * k, r, -PI * 0.22, PI * 0.22, 10, Color(ink, 1.0 - i * 0.35), w, true)
 			"mirror":
 				var ring := PackedVector2Array()
 				for i in 33:

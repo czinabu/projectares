@@ -37,8 +37,13 @@ var _toy_released := false
 static var _materialize_shader: Shader
 static var _cloak_mat: Material
 
-## How long a standing gun stays raised after the last shot, in seconds.
+## How long a gun stays raised after the last shot, in seconds, standing or
+## on the move; after that, moving, it goes back to its carry.
 var aim_hold := 1.5
+## Faster than this share of the actor's own walking pace (its walk speed
+## with the gun's and rig's speed scaling), moving forward, the gun goes into
+## its sprint carry, fully by the second.
+var sprint_from := Vector2(1.08, 1.35)
 ## Blend times, in seconds: between two gaits, into or out of a stand, else.
 var gait_blend := 0.2
 var stand_blend := 0.35
@@ -464,9 +469,11 @@ func _process(delta: float) -> void:
 	_detail_wait += 1
 	if _detail_wait < _detail_every:
 		# The actor puts its hand back every tick; keep the weapon on the
-		# model's hand as it was last posed.
+		# model's hand as it was last posed. The bones read back here are
+		# the clip's, not where the arm reached (an aimed gun, a look over),
+		# so the hand goes where it was last shown, carried with the actor.
 		if arm != null and _skeleton != null:
-			arm.hold_weapon()
+			arm.hold_shown()
 		return
 	var step := _detail_delta
 	_detail_delta = 0.0
@@ -575,6 +582,8 @@ func _update(delta: float) -> void:
 		# Hands on the phone or a toy: stand as if empty-handed.
 		weapon = null
 	var melee := weapon as MeleeWeapon
+	if weapon is Gun and (actor.cmd.primary or actor.cmd.secondary):
+		_aim_left = aim_hold
 	if locomotion == null:
 		return
 	_update_ride()
@@ -583,6 +592,7 @@ func _update(delta: float) -> void:
 	locomotion.stride_target = 1.0
 	locomotion.overlay = false
 	locomotion.stand_legs = false
+	ActionPose.of(actor).carry_wanted = false
 	if actor.is_dead:
 		_play("death")
 		return
@@ -593,8 +603,9 @@ func _update(delta: float) -> void:
 	_attack_left -= delta
 	if _attack_left > 0.0:
 		return
-	# With a gun out the arm stays up, so the gun keeps pointing where it shoots.
-	var armed := weapon != null and melee == null and _anims.has("move_gun")
+	# In a fight (shooting, aiming, reloading, or just after) the gun stays up
+	# on the move, pointing where it shoots; out of one it is carried.
+	var armed := weapon != null and melee == null and _anims.has("move_gun") and in_fight(weapon)
 	# Read from velocity alone, so a remote player, whose velocity comes with
 	# each state from the server, moves its legs the same as a local one.
 	var gait: Dictionary = {} if actor.vehicle != null or _glide > 0.0 else \
@@ -613,8 +624,9 @@ func _update(delta: float) -> void:
 		_play("idle_melee" if melee and _anims.has("idle_melee") else stand_key(weapon))
 		locomotion.stand_legs = _current == "idle_gun"
 	elif actor.is_sliding():
-		# The slide pose bends whatever plays under it; the arms keep their hold.
-		_play("idle_melee" if melee and _anims.has("idle_melee") else "idle")
+		# The slide pose bends whatever plays under it; the arms keep their
+		# hold: a gun carried, or raised to shoot out of the slide.
+		_play("idle_melee" if melee and _anims.has("idle_melee") else stand_key(weapon))
 		locomotion.twist_target = clampf(Locomotion.heading(locomotion.velocity), -locomotion.max_twist, locomotion.max_twist)
 	elif not gait.is_empty():
 		_play(gait["key"], gait["speed"])
@@ -628,6 +640,44 @@ func _update(delta: float) -> void:
 	else:
 		_play(stand_key(weapon))
 		locomotion.stand_legs = _current == "idle_gun"
+	_update_carry(weapon, gait, airborne)
+
+
+## True while `weapon` (a gun) is in a fight: shooting or aiming now or in
+## the last `aim_hold`, or reloading. Read from the command and the gun, so
+## a remote player's gun comes up when they shoot too.
+func in_fight(weapon: Weapon) -> bool:
+	var gun := weapon as Gun
+	if gun == null:
+		return false
+	return _aim_left > 0.0 or gun.is_aiming() or gun.is_reloading()
+
+
+## Tells the shared pose how the gun in hand is carried on the move: out of
+## a fight, moving on foot (or sliding, or in a running jump), a gun goes to
+## its carry, the low ready at a jog and the sprint carry at a sprint, and
+## bobs with the stride. View only, from velocity, so remote players match.
+func _update_carry(weapon: Weapon, gait: Dictionary, airborne: bool) -> void:
+	var pose := ActionPose.of(actor)
+	var gun := weapon as Gun
+	var flat := Vector3(locomotion.velocity.x, 0.0, locomotion.velocity.z)
+	var moving: bool = flat.length() > locomotion.move_threshold
+	var on_foot := actor.vehicle == null and _glide <= 0.0 and not actor.is_dead and not phone_up()
+	pose.carry_wanted = gun != null and gun.visual != null and on_foot and not in_fight(gun) \
+			and (actor.is_sliding() or (moving and (airborne or not gait.is_empty())))
+	var pace := actor.walk_speed * gun.move_speed_mult() if gun != null else actor.walk_speed
+	if actor.flight.enabled:
+		pace *= actor.flight.ground_speed_mult
+	var ratio := flat.length() / maxf(pace, 0.1)
+	# Forward only: a strafe or a backpedal keeps the low ready.
+	var ahead := clampf(-flat.z / maxf(flat.length(), 0.001), 0.0, 1.0)
+	var sprinting := not airborne and not actor.is_sliding() and not gait.is_empty()
+	pose.sprint_wanted = smoothstep(sprint_from.x, sprint_from.y, ratio) * smoothstep(0.6, 0.9, ahead) if sprinting else 0.0
+	if not gait.is_empty() and _player and _player.current_animation_length > 0.0:
+		pose.stride_phase = _player.current_animation_position / _player.current_animation_length
+		pose.stride_amount = clampf(ratio / sprint_from.y, 0.0, 1.0)
+	else:
+		pose.stride_amount = 0.0
 
 
 ## True while the body lies flat in flight (gliding or boosting) and is not
@@ -753,8 +803,8 @@ func handheld() -> Node3D:
 	return _phone_prop if _phone_prop != null and _phone_prop.visible else null
 
 
-## Sets what the phone shows on its face and its holo panel: your own
-## phone's screen, or null for lit glass and an unreadable sheen.
+## Sets what the phone shows on its face: your own phone's screen, or null
+## for lit glass.
 func set_phone_screen(screen: Material) -> void:
 	phone_screen = screen
 	_dress_phone_screen()
@@ -764,10 +814,6 @@ func _dress_phone_screen() -> void:
 	var face := Handheld.face_of(_phone_prop)
 	if face != null:
 		face.set_surface_override_material(0, phone_screen if phone_screen != null else Handheld.glass_material())
-	var holo := Handheld.holo_of(_phone_prop)
-	if holo != null:
-		var picture: Texture2D = (phone_screen as StandardMaterial3D).albedo_texture if phone_screen is StandardMaterial3D else null
-		holo.material_override = Handheld.holo_material(picture)
 
 
 ## True once the actor has been off the ground long enough to show it.
@@ -1589,7 +1635,11 @@ func _update_toy(delta: float) -> void:
 	var size := Vector3.ONE * VehicleScript.TOY_SCALE * lerpf(0.4, 1.0, grown)
 	# Kept in the hand's own frame, so it moves with the hand wherever the
 	# hand is put this frame, turned to face the way the actor faces.
-	var turn := actor.hand.global_basis.orthonormalized().inverse() * actor.global_basis.orthonormalized()
+	# Looked over (the inspect key), it turns with the wrist.
+	var facing := actor.global_basis.orthonormalized()
+	if pose.inspecting() == "hand":
+		facing = facing * pose.inspect_basis()
+	var turn := actor.hand.global_basis.orthonormalized().inverse() * facing
 	_toy_prop.transform = Transform3D(turn * Basis.from_scale(size), turn * toy_on_palm)
 	_set_toy_digitized(grown if _toy_in < 1.0 else 1.0)
 

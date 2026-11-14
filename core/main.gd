@@ -4,7 +4,8 @@ extends Node
 ##
 ## The game opens in your home base, never on a menu screen. Its stations open
 ## what the menu used to hold (`Hub`): loadout, mastery, wardrobe, records,
-## trader and the uplink that goes online. The watch opens squad portals out.
+## and trader. Going online is the phone's Servers app. The watch opens squad
+## portals out.
 ## Joining a server puts you in its plaza; a world's lobby on that server is
 ## your home base again, showing the stash that server keeps for you.
 ##
@@ -106,7 +107,7 @@ var _door_fallback := false
 ## with (a test keeps its accounts apart this way).
 var host_port := NetSession.DEFAULT_PORT
 var host_args := PackedStringArray()
-## The address typed at the uplink, kept as the door's destination once the
+## The address typed in the phone's Servers app, kept as the door's destination once the
 ## server has let you in.
 var _remember_address := ""
 ## Through a plaza gate into a world: deploy straight in on arrival rather
@@ -155,8 +156,6 @@ func _ready() -> void:
 	_travel.visible = false
 	add_child(_travel)
 	hub.closed.connect(_on_station_closed)
-	hub.host_requested.connect(host_and_join.bind(""))
-	hub.join_requested.connect(join_online)
 	hub.online_equip_requested.connect(func(slot: String, item_id: String) -> void:
 		if net:
 			net.equip(slot, item_id))
@@ -172,7 +171,6 @@ func _ready() -> void:
 	hub.online_craft_requested.connect(func(item_id: String) -> void:
 		if net:
 			net.craft(item_id))
-	hub.online_leave_requested.connect(leave_server)
 	_setup_phone()
 	hub.look_changed.connect(func(appearance: Dictionary) -> void:
 		Profile.set_appearance(appearance, hub.character.owned)
@@ -344,7 +342,8 @@ func _outside_name() -> String:
 
 
 ## Out of your own base by its door, with no screen in the way: to the server
-## the door remembers (`Profile.home_server`, set at the uplink), else to a
+## the door remembers (`Profile.home_server`, set by a join from the phone's
+## Servers app), else to a
 ## server of your own. Worlds are chosen out there, at its gates.
 func head_out() -> void:
 	if raid != null or net != null or base == null or base.read_only:
@@ -356,6 +355,48 @@ func head_out() -> void:
 		join_online(Profile.home_server, false)
 	else:
 		host_and_join()
+
+
+## The phone's Servers app: host a server here (`address` "") or join one,
+## heading out of the base the way the door does. Only from home: a solo
+## run has to end first.
+func _go_online_from_phone(address: String) -> void:
+	if net != null:
+		return
+	if raid != null:
+		phone.show_notice("Go home first: you go online from your base.")
+		return
+	phone.close()
+	_arrive_from = "home"
+	if address == "":
+		_show_travel("Starting a server...")
+		host_and_join()
+	else:
+		_show_travel("Connecting to %s..." % address)
+		join_online(address)
+	if net == null and raid == null:
+		# It never got going (no server could start): back to the base,
+		# with the reason on the phone.
+		_arrive_from = ""
+		go_home()
+
+
+## The phone's Servers app: off the server altogether, home to your solo
+## base. Not from out in a world, where leaving goes through a sign-out.
+func _leave_from_phone() -> void:
+	if net == null:
+		return
+	if raid is Arena:
+		phone.show_notice("Step out of the arena first, then leave the server.")
+		return
+	if raid != null and not raid.world.safe_zone:
+		phone.show_notice("Sign out from your watch first, then leave the server.")
+		return
+	phone.close()
+	if raid != null:
+		_leave_raid()
+	_plaza_port = -1
+	leave_server()
 
 
 ## The gunsmith bench was taken up: the view moves in to it and the mouse
@@ -879,6 +920,10 @@ func _setup_phone() -> void:
 	phone.set_wardrobe(hub.character)
 	phone.mirror_changed.connect(_on_mirror_changed)
 	phone.tour_requested.connect(_on_tour_requested)
+	phone.host_requested.connect(_go_online_from_phone.bind(""))
+	phone.join_requested.connect(_go_online_from_phone)
+	phone.leave_server_requested.connect(_leave_from_phone)
+	hub.online_status_changed.connect(phone.set_link_status)
 
 
 ## Hands on the phone: the character stops, raises it (everyone sees) and the
@@ -1063,6 +1108,7 @@ func _on_mirror_changed(up: bool) -> void:
 	mirror.name = "Mirror"
 	mirror.setup(me, controller.camera)
 	me.get_parent().add_child(mirror)
+	controller.phone_mirror = mirror
 	phone.set_mirror_up(true)
 
 
@@ -1070,6 +1116,8 @@ func _put_away_mirror() -> void:
 	if mirror != null and is_instance_valid(mirror):
 		mirror.queue_free()
 	mirror = null
+	if controller != null and is_instance_valid(controller):
+		controller.phone_mirror = null
 	_show_aim(true)
 
 
@@ -1254,7 +1302,7 @@ func start_server(world_id: String, port: int, with_plaza := true, bots := -1, s
 
 ## Starts a server on this machine as a second process, then joins it.
 ## `world_id` "" runs every world behind the plaza's gates, which is what the
-## base's door and the uplink ask for; naming one runs only that world.
+## base's door and the phone's Servers app ask for; naming one runs only that world.
 func host_and_join(world_id := "") -> void:
 	if raid != null or net != null:
 		return
@@ -1306,6 +1354,8 @@ func join_online(address: String, remember := true) -> void:
 
 
 func _begin_join(host: String, port: int, attempts: int) -> void:
+	phone.link_where = "your own server" if host == "127.0.0.1" and _server_pid > 0 \
+			else (_plaza_address if _plaza_port >= 0 and _plaza_address != "" else host)
 	_join_address = host
 	_join_port = port
 	_join_attempts = attempts
@@ -1646,8 +1696,7 @@ func _on_online_failed(reason: String) -> void:
 	# Back home on the local stash, with a word on what went wrong. A base
 	# open on the server's stash falls back to the local one.
 	if raid == null:
-		if hub.station != "uplink":
-			go_home()
+		go_home()
 		_refresh_base()
 		_update_door()
 	if base_hud:

@@ -32,9 +32,11 @@ without Caleb, and update the gap list when a PR closes a row.
   when the player presses the toggle (playtest feedback). The one exception:
   getting on a vehicle uses a separate riding view (third-person by default),
   and getting off restores the on-foot view. And in third person, while the
-  phone is out, the camera eases in over the shoulder to read its holo
-  (`PlayerController._read_phone`, Caleb's call) and eases back after; the
-  view stays third person.
+  phone is out, the camera eases in over the shoulder to read the phone in
+  the hand (`PlayerController._read_phone`, Caleb's call) and eases back
+  after; the view stays third person. In both views the eyes drop to the
+  phone while it is out (`phone_view_pitch`, less with the Mirror app's
+  mirror up), the view only: `pitch` and the aim stay put.
 - `Raid` has no camera, HUD, or input code. It must keep working headless.
 - The endless warzone. A `Raid` is one running world and it never ends: no
   timer, no exits, no restart. It keeps itself alive (`_tick_bots`,
@@ -250,8 +252,22 @@ without Caleb, and update the gap list when a PR closes a row.
   Standing still is a relaxed stand (`idle`); a gun is held low (`idle_gun`)
   over the relaxed stand's legs and raised (`aim_gun`) only while shooting
   or aiming and briefly after.
-  Check leg changes by eye: `visual_check.tscn -- <dir> --gait-only`, and
-  the stand with `--idle-only`.
+  On the move a gun is carried, not pointed (Caleb's running pass, after
+  real carries and well-liked shooters): out of a fight (`ActorSkin.in_fight`:
+  shooting, aiming or reloading now, or within `aim_hold`) it sits at a
+  compressed low ready at a jog, strafe or slide, both hands on a rifle,
+  goes across the chest at port in a sprint (a pistol tucked muzzle down in
+  one hand while the other arm pumps), bobs with the stride and lags on a
+  spring as the body speeds up, stops or turns (`ActionPose.carry`,
+  `sprint`, `carry_point`, `carry_turn`, `sway`; placed from the chest by
+  `WeaponArm._reach_carry` and `carry_frame`), and the legs run the plain
+  run. In a fight the run-and-shoot arms come back and the gun points where
+  it shoots; a shot, aim or reload takes it out of the carry at once
+  (`carry_out_rate`). All of it is read from velocity and the command, so
+  remote players match, and it is the same body in both views.
+  Check leg changes by eye: `visual_check.tscn -- <dir> --gait-only`, the
+  stand with `--idle-only`, and a rifle and a pistol carried on the move
+  with `--carry-only`.
   Holstered weapons are worn, not hidden (`ActorSkin.stow_place`): a primary
   gun or two-handed weapon slung across the back, outside a worn back rig
   (on a jetpack or wing pack, clamped to the weapon rail down its side
@@ -303,9 +319,13 @@ without Caleb, and update the gap list when a PR closes a row.
   the melee reach and shoulder turn, the reload motion, the low ready, the
   drawing back of a held heavy and the easing back of a recovering blade,
   the gun brought up to the eye,
-  the watch raise (from `ActorCommand.watch_up`) and the phone hold
+  the watch raise (from `ActorCommand.watch_up`), the phone hold
   (`ActionPose.phone`, from `ActorCommand.phone`, which `Locomotion` poses
-  the body from). `WeaponArm` and `ActorSkin` pose the model from it; a new
+  the body from) and the inspect key's look over (`ActionPose.inspect`,
+  from the held flag `ActorCommand.inspect`: the wrist comes to
+  `inspect_point` and turns the item through `INSPECT_TURNS`, timed by each
+  view from when it saw the flag; check with `visual_check.tscn -- <dir>
+  --inspect-only`). `WeaponArm` and `ActorSkin` pose the model from it; a new
   hand or weapon animation goes there. Weapons are held, not floated
   (Caleb's call): the hand carries them, each by its own grip (Caleb's
   call), found on the model rather than tuned by hand. `Look._measure_hold`
@@ -737,14 +757,22 @@ without Caleb, and update the gap list when a PR closes a row.
   phone puts its screen, a `SubViewport` drawn with the device's frame and
   chin keys, on that handheld's face (`Phone.set_holder`,
   `ActorSkin.set_phone_screen`) and clicks are cast onto it; other players'
-  show lit glass. The device also projects a holo of its screen
-  (`Handheld.holo_of`) for reading from outside: it sits on
-  `Mirror.HEAD_LAYER`, so your own first-person camera leaves it out like the
-  head and reads the screen in the hand, while third person reads and clicks
-  the holo (Caleb's call), solid and drawn over signs, framed off the
-  crosshair (`PlayerController.phone_read_offset`). The other hand hangs at
-  the side while the phone is out (`Locomotion.phone_rest`). A new app is an entry in `Phone.APPS` with a line glyph in
-  `Phone.AppIcon`; Settings are grouped in `Phone.SETTINGS_TABS`, and the dev
+  show lit glass. Nothing floats off the device (Caleb's call, replacing the
+  old holo panel): it is held at the chest, a forearm out and right of the
+  middle, below the face (`Locomotion.phone_wrist`), so others and a mirror
+  see a person reading a phone, and every view reads and clicks that same
+  face: first person from the eyes, third person over the shoulder, framed
+  off the crosshair (`PlayerController.phone_read_offset`) and widened to
+  keep the Mirror app's mirror in frame (`phone_mirror`). That mirror
+  stands square in front of the body, never along the camera. The Mirror
+  app's wheel works like a watch icon: it moves between rows, a click opens
+  one for the wheel to turn, a right click closes it (`Phone._mirror_mouse`).
+  The other hand hangs at the side while the phone is out
+  (`Locomotion.phone_rest`). A new app is an entry in `Phone.APPS` with a line glyph in
+  `Phone.AppIcon`. Going online is the Servers app (Caleb's call: no Uplink
+  console in the base): it asks `Main` to host, join by address or leave
+  (`host_requested`, `join_requested`, `leave_server_requested`) and shows
+  `Hub.set_online_status`'s line (`Phone.set_link_status`). Settings are grouped in `Phone.SETTINGS_TABS`, and the dev
   switches live only on the Dev tab.
   Settings live in
   `core/settings/game_settings.gd` (its own save file); a server never reads them.
@@ -918,7 +946,8 @@ without Caleb, and update the gap list when a PR closes a row.
   home base; online, joining a server puts you in its plaza, and a world's
   lobby is the home base again on the server's stash. The base's door goes
   straight out to the plaza with no screen (`main.gd head_out`): it joins the
-  server it remembers (`Profile.home_server`, set by a join at the uplink) or
+  server it remembers (`Profile.home_server`, set by a join from the phone's
+  Servers app) or
   starts one here that runs every world, since worlds are chosen at the
   plaza's gates, never before going online. `Hub` (`core/ui/hub.gd`)
   is never a main screen: it holds the screens that the base's stations

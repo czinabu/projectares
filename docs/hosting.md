@@ -110,8 +110,8 @@ Type `exit` to leave the server.
 
 ## 7. Join it
 
-At the **Uplink** console in your home base, type the server's address into
-**Join the server at this address** and join. Your friends do the same. Your
+Open your phone (**P**), go to the **Servers** app, type the server's address
+under **A friend's server** and press **Join**. Your friends do the same. Your
 base's door remembers it and leads there from then on. Each of you lands in the
 server's lobby, picks a loadout from the stash the server keeps for you, and
 presses **Deploy online**.
