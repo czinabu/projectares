@@ -908,6 +908,8 @@ func _base_shots(out_dir: String) -> void:
 		"bunker_nook.png": [Vector3(-5.5, 2.4, 2.5), Vector3(-15.0, 1.6, -0.5)],
 		"bunker_garage.png": [Vector3(5.0, 2.6, 1.0), Vector3(16.0, 1.4, 0.0)],
 		"bunker_range_door.png": [Vector3(0.0, 1.8, -4.5), Vector3(0.0, 1.7, -9.0)],
+		"bunker_test_lane.png": [Vector3(0.0, 1.7, -10.0), Vector3(0.0, 1.5, -24.0)],
+		"bunker_test_lane_side.png": [Vector3(1.2, 2.4, -11.4), Vector3(-0.6, 0.8, -20.0)],
 		"bunker_gear_post.png": [Vector3(-6.0, 1.6, -6.0), Vector3(-6.0, 1.4, -9.0)],
 		"bunker_consoles.png": [Vector3(6.5, 2.0, 5.5), Vector3(11.1, 1.3, 7.0)],
 		"bunker_bench.png": [Vector3(-8.2, 1.8, -0.2), Vector3(-9.2, 1.3, -2.8)],
