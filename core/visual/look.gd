@@ -147,7 +147,7 @@ const MELEE_MODELS := [
 	["knife", "Knife.glb", 0.5, 0.1, "blade", "knife"],
 	["axe", "Axe.glb", 0.85, 0.12, "", "upright"],
 	["spear", "", 2.1, 0.75, "telescope", "upright"],
-	["starter", "Sword.glb", 1.15, 0.13, "blade", "upright"],
+	["starter", "Sword.glb", 0.7, 0.085, "blade", "upright"],
 	["blade", "Katana.glb", 1.2, 0.14, "blade", "katana"],
 ]
 const DEFAULT_MELEE := ["", "Sword.glb", 1.15, 0.13, "blade", "upright"]
@@ -1377,9 +1377,9 @@ func _melee_model(weapon: Weapon) -> Node3D:
 ## it is dressed, so they fold away with the blade and take its finish.
 ## `handle` is the model's measured handle (`_measure_handle`); with none
 ## found the model is left plain.
-var scrap_blade_width := 0.07
-var scrap_blade_thick := 0.014
-var scrap_grip_radius := 0.02
+var scrap_blade_width := 0.04
+var scrap_blade_thick := 0.008
+var scrap_grip_radius := 0.016
 var scrap_energy := 0.4
 var scrap_wear := 0.95
 
@@ -1404,28 +1404,28 @@ func _scrap_bits(holder: Node3D, handle: Dictionary) -> void:
 	var t := scrap_blade_thick
 	# Patch plates welded on crooked, each held by a pair of rivets.
 	# (height up the blade, tilt, height of the plate, shift across)
-	for patch: Array in [[0.14, 0.32, 0.11, 0.25], [0.45, -0.26, 0.08, -0.3], [0.68, 0.2, 0.07, 0.2]]:
+	for patch: Array in [[0.08, 0.3, 0.04, 0.25], [0.24, -0.25, 0.03, -0.28], [0.37, 0.2, 0.026, 0.2]]:
 		var y: float = guard + patch[0]
 		var shift: float = w * patch[3]
-		var piece := _scrap_box(bits, Vector3(w * 0.9, patch[2], t * 2.0), at.call(y, shift), plate)
+		var piece := _scrap_box(bits, Vector3(w * 0.6, patch[2], t * 1.8), at.call(y, shift), plate)
 		piece.rotation.z = patch[1]
 		for side in [-1.0, 1.0]:
-			var off := Vector3(side * w * 0.28, 0.0, 0.0).rotated(Vector3.BACK, patch[1])
-			_scrap_box(bits, Vector3(0.014, 0.014, t * 2.8), at.call(y + off.y, shift + off.x), steel)
+			var off := Vector3(side * w * 0.2, 0.0, 0.0).rotated(Vector3.BACK, patch[1])
+			_scrap_box(bits, Vector3(0.007, 0.007, t * 2.4), at.call(y + off.y, shift + off.x), steel)
 	# Wire wound round the grip, and tape over one arm of the guard.
 	var span := guard - bottom
 	for i in 4:
 		var ring := MeshInstance3D.new()
-		var mesh := _cylinder(scrap_grip_radius, 0.012)
+		var mesh := _cylinder(scrap_grip_radius, 0.006)
 		mesh.material = wire
 		ring.mesh = mesh
 		ring.position = at.call(bottom + span * (0.2 + 0.2 * i))
 		ring.rotation.z = 0.15 if i % 2 == 0 else -0.15
 		bits.add_child(ring)
-	_scrap_box(bits, Vector3(0.05, 0.035, t * 3.0), at.call(guard - 0.01, w * 0.9), wire)
+	_scrap_box(bits, Vector3(0.03, 0.02, t * 3.0), at.call(guard - 0.005, w * 0.8), wire)
 	# A hex nut threaded on for a pommel.
 	var nut := MeshInstance3D.new()
-	var hex := _cylinder(scrap_grip_radius * 1.4, 0.028)
+	var hex := _cylinder(scrap_grip_radius * 1.2, 0.018)
 	hex.radial_segments = 6
 	hex.material = steel
 	nut.mesh = hex
