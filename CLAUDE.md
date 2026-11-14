@@ -36,7 +36,9 @@ without Caleb, and update the gap list when a PR closes a row.
   the hand (`PlayerController._read_phone`, Caleb's call) and eases back
   after; the view stays third person. In both views the eyes drop to the
   phone while it is out (`phone_view_pitch`, less with the Mirror app's
-  mirror up), the view only: `pitch` and the aim stay put.
+  mirror up), the view only: `pitch` and the aim stay put, and the view
+  zooms in on it like aiming down sights (`phone_zoom`, Caleb's pick so the
+  screen reads; not with the mirror up).
 - `Raid` has no camera, HUD, or input code. It must keep working headless.
 - The endless warzone. A `Raid` is one running world and it never ends: no
   timer, no exits, no restart. It keeps itself alive (`_tick_bots`,
@@ -780,8 +782,9 @@ without Caleb, and update the gap list when a PR closes a row.
   one for the wheel to turn, a right click closes it (`Phone._mirror_mouse`),
   and the page scrolls to keep the chosen row in view (`Phone._keep_in_view`,
   once the redrawn rows are laid out). The device and its text are sized to
-  be read at that hold (`Handheld.HEIGHT`, `Phone.text_scale`, Caleb's
-  feedback); make it readable by size, never by bringing it to the face.
+  be read at that hold (`Handheld.HEIGHT`, `Phone.text_scale`, and the
+  view's `PlayerController.phone_zoom`, Caleb's feedback); make it readable
+  by size and zoom, never by bringing it to the face.
   The other hand hangs at the side while the phone is out
   (`Locomotion.phone_rest`). A new app is an entry in `Phone.APPS` with a line glyph in
   `Phone.AppIcon`. Going online is the Servers app (Caleb's call: no Uplink
