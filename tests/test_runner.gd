@@ -295,6 +295,7 @@ func _run() -> void:
 	await _test_phone()
 	await _test_dev_mode()
 	await _test_home_base()
+	_test_refit()
 	await BaseUpgradeTests.run(self)
 	await ContractTests.run(self)
 	await CraftingTests.run(self)
@@ -6789,24 +6790,52 @@ func _test_suit_up(base: HomeBase) -> void:
 	check(base.suited and base.loadout.get("primary", "") in carried and worn.gear_items.size() >= kit.size() - 1,
 			"you are already wearing your loadout in your base (%s)" % [carried])
 	check(worn.weapons_locked, "weapons locked: nobody fights at home")
-	# Change the loadout where you stand: it goes straight on, there.
+	# Change the loadout where you stand: it goes straight on, there, on the
+	# same body (a new one stopped you dead: the stutter on every equip).
 	worn.position = Vector3(-2.0, 0.1, 1.5)
 	worn.cmd.yaw = 1.1
+	worn.velocity = Vector3(3.0, 0.0, 1.0)
 	var kept := base.loadout.duplicate()
 	var kept_stash := base.stash.duplicate()
 	var changed := base.loadout.duplicate()
 	changed["primary"] = "dmr_longshot"
+	var kept_weapons: Array[Weapon] = []
+	for weapon in worn.weapons:
+		if weapon.item_id != kept.get("primary", ""):
+			kept_weapons.append(weapon)
+	var kept_displays := {}
+	for display in base.displays:
+		if display.kind not in ["rack_guns", "bench"]:
+			kept_displays[display] = true
 	var replaced := []
 	base.player_replaced.connect(func(actor: Actor) -> void: replaced.append(actor), CONNECT_ONE_SHOT)
 	base.show_gear(base.stash + ["dmr_longshot"], changed)
+	base.suit_up()
+	var moving_on := worn.velocity
 	await frames(3)
 	var dressed := base.player
-	check(replaced == [dressed] and dressed != worn and dressed.weapons.any(func(w: Weapon) -> bool: return w.item_id == "dmr_longshot"),
-			"equipping something puts it on you at once, as a new body the view follows")
-	check(dressed.position.distance_to(Vector3(-2.0, 0.1, 1.5)) < 0.3 and absf(dressed.cmd.yaw - 1.1) < 0.01,
-			"right where you stand, facing the same way")
-	replaced.clear()
-	base.player_replaced.connect(func(actor: Actor) -> void: replaced.append(actor), CONNECT_ONE_SHOT)
+	check(replaced.is_empty() and dressed == worn and dressed.weapons.any(func(w: Weapon) -> bool: return w.item_id == "dmr_longshot")
+			and not dressed.weapons.any(func(w: Weapon) -> bool: return w.item_id == kept.get("primary", "")),
+			"equipping something puts it on you at once, on the same body")
+	check(kept_weapons.all(func(w: Weapon) -> bool: return is_instance_valid(w) and w in dressed.weapons),
+			"what you did not change stays on you as it was, model and all")
+	check(dressed.position.distance_to(Vector3(-2.0, 0.1, 1.5)) < 0.3 and absf(dressed.cmd.yaw - 1.1) < 0.01
+			and moving_on == Vector3(3.0, 0.0, 1.0),
+			"right where you stand, facing the same way, still moving (%s)" % moving_on)
+	check(dressed.weapons_locked and dressed.gear_items.has("dmr_longshot") and not dressed.gear_items.has(kept.get("primary", "")),
+			"still locked, and the worn gear list follows the swap (%s)" % [dressed.gear_items])
+	var still_shown := 0
+	for display in base.displays:
+		if kept_displays.has(display):
+			still_shown += 1
+	check(still_shown > 0 and still_shown >= kept_displays.size() - 2,
+			"the room keeps the displays that did not change (%d of %d)" % [still_shown, kept_displays.size()])
+	var names_unique := true
+	var seen := {}
+	for display in base.displays:
+		names_unique = names_unique and not seen.has(display.name) and display.name == "%s_%d" % [display.kind, display.index]
+		seen[display.name] = true
+	check(names_unique, "every display keeps its plain name")
 	base.show_gear(base.stash, changed)
 	await frames(2)
 	check(replaced.is_empty() and base.player == dressed, "showing the same loadout again changes nothing")
@@ -6897,6 +6926,75 @@ func _test_garage_and_range(base: HomeBase) -> void:
 	p.velocity = Vector3.ZERO
 	await frames(3)
 	check(p.weapons_locked, "weapons lock again back in the room")
+
+
+## `Loadout.refit` dresses an actor in place (the home base's equip, which
+## used to build a new actor and stuttered). Whatever it is changed to, it
+## must end up wearing exactly what a fresh `Loadout.equip` would.
+func _test_refit() -> void:
+	print("Loadout refit: changing gear in place")
+	var kits: Array = [
+		["rifle_scrap", "blade_scrap", "pistol_service", "jetpack_mk1", "plate_light"],
+		["rifle_carbine", "optic_reflex", "muzzle_compensator", "blade_scrap", "pistol_service", "boots_thruster", "frame_bulwark", "helm_spotter", "chip_blink", "artifact_cloak"],
+		["rifle_carbine", "optic_scope", "blade_arc", "jetpack_mk1", "frame_bulwark", "helm_warden", "chip_pulse"],
+		["smg_stinger", "pistol_machine", "wings_glide", "frame_trooper"],
+		[],
+		["dmr_longshot", "optic_longscope", "spear_lancer", "jetpack_mk1", "frame_trooper", "helm_ember", "artifact_rewind"],
+	]
+	var worn := Actor.new()
+	add_child(worn)
+	var all_match := true
+	var why := ""
+	var kept_blade: Weapon = null
+	for i in kits.size():
+		var kit: Array = kits[i]
+		Loadout.refit(worn, kit)
+		var fresh := Actor.new()
+		add_child(fresh)
+		Loadout.equip(fresh, kit)
+		var a := _refit_summary(worn)
+		var b := _refit_summary(fresh)
+		if a != b:
+			all_match = false
+			why = "kit %d: %s vs %s" % [i, a, b]
+		fresh.free()
+		if i == 1:
+			kept_blade = worn.weapons.filter(func(w: Weapon) -> bool: return w.item_id == "blade_scrap")[0]
+		if i == 2:
+			check(not is_instance_valid(kept_blade) or kept_blade.is_queued_for_deletion(),
+					"a weapon taken off is freed")
+	check(all_match, "after every change the actor wears exactly what a fresh equip would %s" % why)
+	Loadout.refit(worn, kits[1])
+	var blade: Weapon = worn.weapons.filter(func(w: Weapon) -> bool: return w.item_id == "blade_scrap")[0]
+	var gun: Weapon = worn.weapons.filter(func(w: Weapon) -> bool: return w.item_id == "rifle_carbine")[0]
+	worn.active_weapon_index = worn.weapons.find(blade)
+	var changed: Array = kits[1].duplicate()
+	changed.erase("optic_reflex")
+	changed.erase("chip_blink")
+	changed.append("frame_trooper")
+	changed.erase("frame_bulwark")
+	Loadout.refit(worn, changed)
+	check(blade in worn.weapons and worn.get_active_weapon() == blade,
+			"a weapon you keep keeps its node, and stays in hand")
+	check(gun not in worn.weapons and worn.weapons.any(func(w: Weapon) -> bool: return w.item_id == "rifle_carbine"),
+			"a primary whose attachments change is built again with them")
+	worn.free()
+
+
+func _refit_summary(actor: Actor) -> Dictionary:
+	var gear := actor.gear_items.duplicate()
+	gear.sort()
+	var guns := []
+	for weapon in actor.weapons:
+		var gun := weapon as Gun
+		guns.append([weapon.item_id, gun.mag_size if gun else 0, snappedf(gun.spread_deg, 0.001) if gun else 0.0,
+				gun.ads_zoom if gun else 0.0, gun.attachments.duplicate() if gun else []])
+	return {"gear": gear, "weapons": guns, "walk": snappedf(actor.walk_speed, 0.001), "sprint": snappedf(actor.sprint_speed, 0.001),
+			"rig": [actor.flight.enabled, actor.flight.item_id, snappedf(actor.flight.heat_per_sec, 0.001),
+				snappedf(actor.flight.glide_heat, 0.001), snappedf(actor.flight.burst_heat, 0.001), actor.flight.heavy_lift],
+			"armor": [actor.frame_id, actor.health.max_armor, actor.health.armor], "heat": snappedf(actor.heat_signature, 0.001),
+			"helmet": [actor.visor.enabled, actor.visor.item_id, actor.visor.mode],
+			"chip": [actor.ability.enabled, actor.ability.item_id], "artifact": [actor.artifact.enabled, actor.artifact.item_id, actor.artifact.uses_left]}
 
 
 func _test_home_base() -> void:
@@ -7051,8 +7149,10 @@ func _test_home_base() -> void:
 	base.player.cmd.pitch = 0.0
 	arm.free()
 	check(in_view, "the raised watch comes up in front of the eyes, wherever you look")
-	# A change of gear swaps in a new actor and frees the old one with the
-	# watch on it (playtest: X did nothing after suiting up).
+	# A change of gear dresses the same body, and the watch on it keeps
+	# working (playtest: X did nothing after suiting up).
+	watch_keys.queue_free()
+	await frames(2)
 	var regeared := base.loadout.duplicate()
 	regeared["primary"] = "dmr_longshot" if base.loadout.get("primary", "") != "dmr_longshot" else "rifle_carbine"
 	base.show_gear(base.stash + [regeared.primary], regeared)
@@ -7065,8 +7165,6 @@ func _test_home_base() -> void:
 	check(is_instance_valid(hud.wrist) and hud.wrist.get_parent() == base.player and hud.wrist.raise_amount >= 1.0
 			and hud.wrist.card.slots.size() == Hud.Wrist.SLOTS.size(), "the watch still raises after suiting up")
 	suited_keys.queue_free()
-	await frames(2)
-	watch_keys.queue_free()
 	await frames(2)
 	check(base.get_node("Banner/Title").text == "HOME BASE" and "press F" in base.banner_text(),
 			"the base's name and how it works hang on a banner in the room")
