@@ -880,7 +880,7 @@ func _base_shots(out_dir: String) -> void:
 	add_child(screen_view)
 	var hub := Hub.new()
 	screen_view.add_child(hub)
-	for id: String in ["locker", "trader", "uplink"]:
+	for id: String in ["locker", "trader"]:
 		hub.open_station(id)
 		var live := WorldScreen.new()
 		live.size = HomeBase.SCREEN_SIZE

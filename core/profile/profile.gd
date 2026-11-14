@@ -54,7 +54,7 @@ var melee_control := "move"
 var player_name := "Raider"
 var last_server := "127.0.0.1"
 ## Where your base's door leads: the address of the server you last joined
-## from the uplink, or "" for a server of your own, started on this computer.
+## from the phone's Servers app, or "" for a server of your own, started on this computer.
 var home_server := ""
 ## Proves to a server that an online account is yours. Made on first use.
 var online_secret := ""

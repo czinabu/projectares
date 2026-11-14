@@ -100,7 +100,9 @@ canopy, holo signs over every kiosk and floating holo-ads.
 - **Heavy weapons banked from the PvP world hang on the armory wall** and can
   be stacked there (see section 6).
 - Consoles do what menus would: locker, gunsmith bench (crafting from
-  blueprints, section 10), mastery bench, wardrobe, records, trader, uplink.
+  blueprints, section 10), mastery bench, wardrobe, records, trader. Going
+  online (host, join by address, leave) is the phone's Servers app, not a
+  console.
 - **No launch pad, gate screens or portal frames** (Caleb's call: they
   cluttered the room). You leave for a world through a squad portal opened
   from the watch (section 3, Mission tab).

@@ -5447,7 +5447,11 @@ func _test_plaza_online() -> void:
 	add_child(main)
 	await frames(2)
 	Profile.player_name = "Quill"
-	main.join_online("127.0.0.1:%d" % port)
+	# Joined the way a player does: from the phone's Servers app.
+	main.phone.open("servers")
+	main.phone.join_server("127.0.0.1:%d" % port)
+	check(not main.phone.is_open and main.base == null and main.net != null,
+			"joining from the phone puts it away and heads out of the base")
 	await _wait_until(func() -> bool: return main.raid != null and main.raid.player != null, 600)
 	check(main.raid != null and main.raid.world.safe_zone and main.plaza_view != null and not main.hub.visible,
 			"joining a server puts you in its plaza")
@@ -5536,15 +5540,22 @@ func _test_plaza_online() -> void:
 		await frames(5)
 		check(main.net == null and main.raid == null and main.base != null and not main.hub.in_lobby(),
 				"the exit leaves the server and takes you home")
-		check(Profile.home_server == "127.0.0.1:%d" % port, "the door remembers the server you joined at the uplink")
+		check(Profile.home_server == "127.0.0.1:%d" % port, "the door remembers the server you joined from the phone")
 		# Straight out of the door: no screen, back in that server's plaza.
 		main.base.leave_requested.emit()
 		check(main.hub.station == "" and main.station_screen == null, "the door opens no screen")
 		await _wait_until(func() -> bool: return main.raid != null and main.raid.player != null, 600)
 		check(main.raid != null and main.raid.world.safe_zone and main.net != null and main._server_pid <= 0,
 				"the door of your own base leads straight to the plaza of the server it remembers")
-		main.use_portal("leave")
+		main.phone.open("servers")
+		await frames(1)
+		check(main.phone._body.find_children("*", "Label", true, false).any(
+				func(label: Label) -> bool: return label.text == "Connected as Quill"),
+				"online, the phone's Servers app says who you are on the server")
+		main.phone.leave_server()
 		await frames(5)
+		check(main.net == null and main.raid == null and main.base != null and not main.hub.in_lobby()
+				and not main.phone.is_open, "the phone's Servers app leaves the server and takes you home")
 	OS.kill(pid)
 	await frames(30)
 	# The remembered server is gone: the door starts a server of your own,
@@ -6962,10 +6973,23 @@ func _test_home_base() -> void:
 	main.hub.close()
 	check(main.base.door.get_prompt().contains(Worlds.social_world().display_name),
 			"the door of your own base says it leads out to the plaza")
-	main.open_station("uplink")
-	check(main.hub.station == "uplink" and main.hub._sections["online"].find_children("*", "OptionButton", true, false).is_empty(),
-			"the uplink no longer asks for a map: worlds are picked at the plaza's gates")
-	main.hub.close()
+	check(not HomeBase.STATIONS.has("uplink") and not Hub.STATIONS.has("uplink") and main.base.station("uplink") == null
+			and not main.hub._sections.has("online"), "the base has no uplink console: going online is on the phone")
+	main.phone.open("servers")
+	await frames(1)
+	var address_edit: LineEdit = main.phone._address_edit
+	check(main.phone.app == "servers" and address_edit != null and address_edit.text == Profile.last_server
+			and main.phone._body.find_child("NameEdit", true, false) != null
+			and main.phone._body.find_children("*", "OptionButton", true, false).is_empty(),
+			"the phone's Servers app takes your name and a server's address, and never asks for a map")
+	main.phone.join_server("   ")
+	await frames(1)
+	check(main.net == null and main.base != null and main.phone.link_status == "Type the server's address first.",
+			"joining with no address asks for one and stays home")
+	main._leave_from_phone()
+	check(main.net == null and main.base != null, "leaving with no server does nothing")
+	main.phone.set_link_status("")
+	main.phone.close()
 	var door_path := "user://test_door_%d.json" % Time.get_ticks_usec()
 	var real_path := Profile.save_path
 	Profile.save_path = door_path

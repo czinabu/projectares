@@ -725,7 +725,10 @@ without Caleb, and update the gap list when a PR closes a row.
   the holo (Caleb's call), solid and drawn over signs, framed off the
   crosshair (`PlayerController.phone_read_offset`). The other hand hangs at
   the side while the phone is out (`Locomotion.phone_rest`). A new app is an entry in `Phone.APPS` with a line glyph in
-  `Phone.AppIcon`; Settings are grouped in `Phone.SETTINGS_TABS`, and the dev
+  `Phone.AppIcon`. Going online is the Servers app (Caleb's call: no Uplink
+  console in the base): it asks `Main` to host, join by address or leave
+  (`host_requested`, `join_requested`, `leave_server_requested`) and shows
+  `Hub.set_online_status`'s line (`Phone.set_link_status`). Settings are grouped in `Phone.SETTINGS_TABS`, and the dev
   switches live only on the Dev tab.
   Settings live in
   `core/settings/game_settings.gd` (its own save file); a server never reads them.
@@ -876,7 +879,8 @@ without Caleb, and update the gap list when a PR closes a row.
   home base; online, joining a server puts you in its plaza, and a world's
   lobby is the home base again on the server's stash. The base's door goes
   straight out to the plaza with no screen (`main.gd head_out`): it joins the
-  server it remembers (`Profile.home_server`, set by a join at the uplink) or
+  server it remembers (`Profile.home_server`, set by a join from the phone's
+  Servers app) or
   starts one here that runs every world, since worlds are chosen at the
   plaza's gates, never before going online. `Hub` (`core/ui/hub.gd`)
   is never a main screen: it holds the screens that the base's stations
