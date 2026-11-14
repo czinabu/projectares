@@ -1033,6 +1033,14 @@ func _test_main_flow() -> void:
 	check(card_low.y < watch_seen.y and wrist.BEAM_SHADER.contains("TIME"),
 			"the light rises from the watch up into the card, with bands running out along it (card edge at %d, watch at %d)"
 			% [roundi(card_low.y), roundi(watch_seen.y)])
+	# The weapon and toy holograms over the card are smaller than from the
+	# eyes and stay in the view (Caleb's feedback: they were cut off at the
+	# top); the card keeps its size.
+	var rows_top := cam.unproject_position(holo.global_position + holo.global_basis.y
+			* (wrist.face_size.y * 0.5 + wrist.rows_tall * wrist._row_scale))
+	check(wrist._row_scale <= wrist.tp_rows and wrist._row_scale < 1.0 and rows_top.y >= 0.0,
+			"the holograms over the card are drawn smaller and stay on screen (%.2f of their size, top at %d)"
+			% [wrist._row_scale, roundi(rows_top.y)])
 	get_tree().root.size = window_was
 	await frames(2)
 	var holo_mat := holo.material_override as ShaderMaterial
