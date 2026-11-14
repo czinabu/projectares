@@ -1008,6 +1008,13 @@ func _test_main_flow() -> void:
 	check(card_right.x < head_on_screen.x and card_right.x < screen.x * 0.5,
 			"and beside the character, clear of the head and the crosshair (card to %d, head at %d, of %d)"
 			% [roundi(card_right.x), roundi(head_on_screen.x), roundi(screen.x)])
+	# The light rises from the watch up into the card's lower edge (Caleb's
+	# feedback: never slanting down to it), and runs outwards along it.
+	var card_low := cam.unproject_position(holo.global_position - holo.global_basis.y * wrist.face_size.y * 0.5)
+	var watch_seen := cam.unproject_position(wrist.watch_position(p))
+	check(card_low.y < watch_seen.y and wrist.BEAM_SHADER.contains("TIME"),
+			"the light rises from the watch up into the card, with bands running out along it (card edge at %d, watch at %d)"
+			% [roundi(card_low.y), roundi(watch_seen.y)])
 	get_tree().root.size = window_was
 	await frames(2)
 	var holo_mat := holo.material_override as ShaderMaterial
