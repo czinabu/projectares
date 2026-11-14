@@ -9,7 +9,6 @@ const BaseLayout := preload("res://core/base/base_layout.gd")
 const StashRules := preload("res://core/account/stash_rules.gd")
 const Accounts := preload("res://core/account/stash_service.gd")
 const DevMode := preload("res://core/dev/dev_mode.gd")
-const StashRules := preload("res://core/account/stash_rules.gd")
 
 
 static func run(t: Node) -> void:
