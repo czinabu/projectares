@@ -1,7 +1,9 @@
 extends RefCounted
 ## Checks for flight rig tiers: each rig comes as Mk1, Mk2 and Mk3, and a
-## higher tier lifts you higher (`FlightRig.ceiling`) and runs cooler, but
-## cruises at the same speed. Only Mk1 drops; Mk2 and up are crafted.
+## higher tier adds about 15% to the rig's strength only (Caleb's call):
+## jetpacks hover longer and climb higher, boots get a charge and a faster
+## refill, wings glide faster and longer. Their weaknesses never improve.
+## Only Mk1 drops; Mk2 and up are crafted.
 ## Run from the main test runner. Nothing here starts a server.
 
 const FeelBench := preload("res://tests/feel_bench.gd")
@@ -16,13 +18,6 @@ const FAMILIES := {
 	"wings": ["wings_glide", "wings_glide_mk2", "wings_glide_mk3"],
 	"boots": ["boots_thruster", "boots_thruster_mk2", "boots_thruster_mk3"],
 }
-## How high each tier must be able to climb from the street, flown its own
-## way: Mk1 the 15 m decks and roofs, Mk2 a 40 m tower top, Mk3 a 90 m one.
-const REACH := {1: 15.0, 2: 40.0, 3: 90.0}
-## Heat costs a higher tier may never raise.
-const HEAT_COSTS := ["heat_per_sec", "burst_heat", "pulse_heat", "air_dash_heat", "skim_mid_heat", "skim_high_heat"]
-## Rates a higher tier may never lower.
-const COOLING := ["cool_per_sec", "coast_cool", "glide_cool", "skim_cool"]
 
 
 static func run(t: Node) -> void:
@@ -34,34 +29,36 @@ static func run(t: Node) -> void:
 	await _test_raid_ground(t)
 
 
-## Every rig has three tiers. Up a tier the ceiling rises and nothing runs
-## hotter, but the cruise (and the boost) stay the same.
+## Every rig has three tiers. Up a tier its strength stats grow by about
+## 15% (charges by one) and every other stat stays the Mk1's.
 static func _test_items(t: Node) -> void:
 	for family: String in FAMILIES:
 		var ids: Array = FAMILIES[family]
-		var base := _rig(ids[0])
+		var strength: Array = ItemDB.RIG_STRENGTH[ids[0]]
+		var base_stats := ItemDB.item_stats(ids[0])
 		for i in ids.size():
 			var id: String = ids[i]
 			var rig := _rig(id)
-			t.check(ItemDB.has_tag(id, "flight_rig") and rig.tier == i + 1
-					and is_equal_approx(rig.ceiling, ItemDB.RIG_CEILINGS[i + 1]),
-					"%s is a Mk%d rig with a %.0f m ceiling" % [id, i + 1, ItemDB.RIG_CEILINGS[i + 1]])
+			t.check(ItemDB.has_tag(id, "flight_rig") and rig.tier == i + 1, "%s is a Mk%d rig" % [id, i + 1])
 			t.check(ItemDB.item_name(id).begins_with("Mk%d " % (i + 1)), "%s says its tier in its name" % id)
-			t.check(is_equal_approx(rig.fly_speed, base.fly_speed) and is_equal_approx(rig.skim_speed, base.skim_speed)
-					and is_equal_approx(rig.glide_speed, base.glide_speed) and is_equal_approx(rig.air_dash_speed, base.air_dash_speed),
-					"%s cruises and dashes at the same speed as the Mk1" % id)
+			t.check(is_equal_approx(rig.max_heat, 100.0), "%s keeps the same 100 heat bar" % id)
 			if i == 0:
 				rig.free()
 				continue
-			var below := _rig(ids[i - 1])
-			t.check(rig.ceiling > below.ceiling, "%s lifts higher than the tier below" % id)
-			t.check(is_equal_approx(rig.boost_speed, below.boost_speed) or below.tier == 1,
-					"%s boosts no faster than the tier below" % id)
-			var hotter := HEAT_COSTS.filter(func(stat: String) -> bool: return rig.get(stat) > below.get(stat) + 0.001)
-			var slower := COOLING.filter(func(stat: String) -> bool: return rig.get(stat) < below.get(stat) - 0.001)
-			t.check(hotter.is_empty() and slower.is_empty(),
-					"%s never runs hotter or cools slower than the tier below %s" % [id, hotter + slower])
-			t.check(is_equal_approx(rig.max_heat, 100.0), "%s keeps the same 100 heat bar" % id)
+			var stats := ItemDB.item_stats(id)
+			var same := base_stats.keys().filter(func(stat: String) -> bool:
+				return stat != "tier" and stat not in strength and ("-" + stat) not in strength \
+						and str(stats.get(stat)) != str(base_stats[stat]))
+			t.check(same.is_empty(), "%s improves only its strength; its weaknesses stay the Mk1's %s" % [id, same])
+			var below := ItemDB.item_stats(ids[i - 1])
+			for entry: String in strength:
+				var stat := entry.trim_prefix("-")
+				var step: float = float(stats[stat]) / maxf(float(below[stat]), 0.001)
+				if entry.begins_with("-"):
+					step = 1.0 / step
+				var ok := int(stats[stat]) == int(below[stat]) + 1 if stat == "max_charges" \
+						else absf(step - ItemDB.RIG_TIER_STEP) < 0.03
+				t.check(ok, "%s: %s is %s (Mk%d: %s)" % [id, stat, str(stats[stat]), i, str(below[stat])])
 			t.check(not ItemDB.has_tag(id, "vendor") and not ItemDB.has_tag(id, "starter")
 					and ItemDB.item_rarity(id) >= ItemDB.Rarity.RARE and not Economy.is_shop_item(id),
 					"%s is never sold or handed out" % id)
@@ -71,9 +68,7 @@ static func _test_items(t: Node) -> void:
 			var tags: Array = ItemDB.get_item(id)["tags"]
 			t.check(tags == ItemDB.get_item(ids[1])["tags"], "%s trains the same mastery as its other tiers" % id)
 			t.check(StashRules.storable(id), "%s can be stashed" % id)
-			below.free()
 			rig.free()
-		base.free()
 
 
 ## Everything that drops is Mk1 (DESIGN.md section 10): no world's loot
@@ -175,16 +170,16 @@ static func _test_climbs(t: Node) -> void:
 			if r.is_empty():
 				t.check(false, "%s finished its climb" % id)
 				continue
-			var tier: int = r["tier"]
-			t.check(r["top"] >= REACH[tier], "%s climbs to %.0f m (%.1f m, %.0f s)" % [id, REACH[tier], r["top"], r["at"]])
+			var reach: float = r["ceiling"] - 1.5 if family == "jetpack" else (8.0 if family == "boots" else 3.0)
+			t.check(r["top"] >= reach, "%s climbs to %.0f m (%.1f m, %.0f s)" % [id, reach, r["top"], r["at"]])
+			if family == "wings":
+				t.check(r["top"] < 8.0, "%s cannot climb on its own: a launch and two boosts (%.1f m)" % [id, r["top"]])
 			t.check(r["top"] <= r["ceiling"] + 0.25, "%s never goes over its %.0f m ceiling (%.1f m)" % [id, r["ceiling"], r["top"]])
 			t.check(r["jolt"] <= 45.0, "%s climbs without a jolt (%.0f m/s²)" % [id, r["jolt"]])
 			(r["actor"] as Actor).get_parent().queue_free()
 
 
-## Climbs one actor and files the result under `id`. Jetpacks and boots go
-## as high as they can; wings stop at their target, since a slow spiral up
-## to the ceiling would take long.
+## Climbs one actor as high as it will go and files the result under `id`.
 static func _climb_one(t: Node, actor: Actor, id: String, results: Dictionary) -> void:
 	var tier := actor.flight.tier
 	var jolt := [0.0]
@@ -196,8 +191,7 @@ static func _climb_one(t: Node, actor: Actor, id: String, results: Dictionary) -
 				jolt[0] = maxf(jolt[0], (actor.velocity - last[0]).length() * Engine.physics_ticks_per_second)
 			last[0] = actor.velocity
 	await t.frames(3)
-	var stop: float = REACH[tier] + 1.0 if actor.flight.can_glide() else INF
-	var top: Vector2 = await FeelBench.climb(actor, 40.0, step, stop)
+	var top: Vector2 = await FeelBench.climb(actor, 40.0, step)
 	results[id] = {"actor": actor, "tier": tier, "top": top.x, "at": top.y, "ceiling": actor.flight.ceiling, "jolt": jolt[0]}
 
 
@@ -212,10 +206,10 @@ static func _test_raid_ground(t: Node) -> void:
 	var p := raid.player
 	var ground: float = raid.map.call("ground_height", p.global_position.x, p.global_position.z)
 	t.check(is_equal_approx(p.ground_level(), ground), "in Ashfront the ground is the terrain under you")
-	p.global_position.y = ground + 40.0
+	p.global_position.y = ground + 45.0
 	p.velocity = Vector3.ZERO
 	await t.frames(2)
-	t.check(p.flight.altitude_known and absf(p.flight.altitude - 40.0) < 2.0,
+	t.check(p.flight.altitude_known and absf(p.flight.altitude - 45.0) < 2.0,
 			"the rig knows its height over the ground (%.1f m)" % p.flight.altitude)
 	p.cmd.secondary = true
 	p.cmd.jump = true

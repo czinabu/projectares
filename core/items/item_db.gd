@@ -15,10 +15,10 @@ const RARITY_COLORS := [
 	Color(1.0, 0.65, 0.15),
 ]
 
-## How high each tier of flight rig can lift you, in meters over the world's
-## ground (a roof does not count): Mk1 reaches rooftops and decks, Mk2 the
-## tower tops, Mk3 over the highest towers. See `FlightRig.ceiling`.
-const RIG_CEILINGS := {1: 25.0, 2: 60.0, 3: 100.0}
+## How much each Mk tier adds to a flight rig's strength (Caleb's call:
+## about 15% a tier, to the strength only, never the weakness). Mk2 is
+## Mk1 times this, Mk3 times it twice. See `_rig_tier`.
+const RIG_TIER_STEP := 1.15
 
 var _items := {}
 
@@ -37,9 +37,8 @@ func _ready() -> void:
 			"reserve_ammo": 60, "reload_time": 1.1, "spread_deg": 0.6, "bloom_per_shot": 0.5,
 			"recoil_kick_deg": 0.7, "max_range": 90.0},
 			"Reliable semi-auto sidearm. Accurate, and quick to reload.")
-	register("jetpack_mk1", "Mk1 Jetpack", Rarity.COMMON, 0, ["flight_rig", "starter"],
-			{"heavy_lift": true, "tier": 1, "ceiling": RIG_CEILINGS[1]},
-			"Basic jetpack. Hold aim in the air to hover and cruise, coast down to cool. Lifts you to rooftop height and no higher. Runs hotter than the Mk2 and has no boost.")
+	register("jetpack_mk1", "Mk1 Jetpack", Rarity.COMMON, 0, ["flight_rig", "starter"], JETPACK_MK1.duplicate(),
+			"Height and hover. Climb to 40 m and hover 8 s to fight from above with steady aim. Slow across the map, a boost overheats it in seconds, clumsy under a roof, and loud and bright on scans and thermal.")
 	register("plate_light", "Scrap Plate", Rarity.COMMON, 0, ["armor", "frame_light", "starter"],
 			{"armor": 30.0}, "30 armor.")
 	register("field_dressing", "Field Dressing", Rarity.COMMON, 0, ["consumable", "heal", "starter"],
@@ -189,44 +188,27 @@ func _ready() -> void:
 			{"armor": 125.0, "speed_mult": 0.86, "heat_mult": 1.25, "heat_signature": 1.3},
 			"Heavy: 125 armor, 14% slower, wings and boots run hotter (jetpacks carry it). Bright on thermal.")
 
-	# Flight rigs. Each comes in tiers (see `RIG_CEILINGS`): a higher Mk lifts
-	# you higher and runs cooler, so it flies further, but every tier cruises
-	# at the same speed so a mixed squad keeps together. Only Mk1 drops or is
-	# sold; Mk2 and up are crafted from blueprints (DESIGN.md section 10) and
-	# are at stake like any gear.
-	register("jetpack_mk2", "Mk2 Jetpack", Rarity.RARE, 1000, ["flight_rig"],
-			{"thrust_accel": 42.0, "max_rise_speed": 11.0, "heat_per_sec": 25.0, "boost_speed": 22.0,
-			"heavy_lift": true, "tier": 2, "ceiling": RIG_CEILINGS[2]},
-			"The high ground. Cruise straight over everything, stop dead and hover to shoot steady, coast down to cool. Climbs to the tower tops. Carries heavy armor without running hotter. Wide turns, loud and hot: heat seekers love it.")
-	_rig_tier("jetpack_mk3", "Mk3 Jetpack", Rarity.EPIC, 2200, "jetpack_mk2", 3,
-			{"thrust_accel": 45.0, "max_rise_speed": 12.0, "heat_per_sec": 20.0, "coast_cool": 36.0, "cool_per_sec": 30.0},
-			"The whole sky. Climbs over the highest towers and runs cooler than the Mk2, so it stays up longer between coasts. Same cruise and boost; still loud and hot.")
-	register("boots_thruster", "Mk1 Thruster Boots", Rarity.UNCOMMON, 1000, ["flight_rig", "vendor"],
-			{"thrust_accel": 0.0, "burst_velocity": 14.5, "burst_heat": 22.0, "cool_per_sec": 34.0,
-			"cool_delay": 0.3, "burst_push": 11.0, "skim_speed": 15.0, "air_dash_speed": 20.0,
-			"air_dash_time": 0.3, "air_dash_heat": 20.0, "air_dash_cooldown": 0.4, "tier": 1,
-			"ceiling": RIG_CEILINGS[1]},
-			"Hold jump in the air to skim low over streets and roofs, and stop dead. Kick up with jump: a set of kicks tops a rooftop. The boots only cool near a surface, a roof included; high in the open they burn out in seconds. Dash furthest of any rig. Steady aim while skimming low.")
+	# Flight rigs (the Mk1 numbers are `JETPACK_MK1`, `BOOTS_MK1` and
+	# `WINGS_MK1` at the bottom of this file). Each comes in tiers: a higher
+	# Mk adds about 15% to the rig's strength only (`_rig_tier`). Only Mk1
+	# drops or is sold; Mk2 and up are crafted from blueprints (DESIGN.md
+	# section 10) and are at stake like any gear.
+	_rig_tier("jetpack_mk2", "Mk2 Jetpack", Rarity.RARE, 1000, "jetpack_mk1", 2,
+			"Longer hover and more heat to burn, and a higher ceiling. Still slow across the map, loud and bright.")
+	_rig_tier("jetpack_mk3", "Mk3 Jetpack", Rarity.EPIC, 2200, "jetpack_mk1", 3,
+			"The longest hover and the highest ceiling of any rig. Still slow across the map, loud and bright.")
+	register("boots_thruster", "Mk1 Thruster Boots", Rarity.UNCOMMON, 1000, ["flight_rig", "vendor"], BOOTS_MK1.duplicate(),
+			"Ground agility and stealth. 15% faster on foot, no fall damage, and 4 charges for kicks and dashes, each dash a brief window where rounds only graze. Quiet and dim on scans, and they work indoors. Top out at 10 m and are slow over open ground.")
 	_rig_tier("boots_thruster_mk2", "Mk2 Thruster Boots", Rarity.RARE, 1300, "boots_thruster", 2,
-			{"burst_heat": 12.0, "skim_mid_heat": 6.0, "skim_high_heat": 15.0},
-			"Cheaper kicks: a set of them climbs a tower, not just a rooftop, and the boots last longer up high. Still only cool near a surface.")
+			"One more charge and a faster refill. Still top out at 10 m.")
 	_rig_tier("boots_thruster_mk3", "Mk3 Thruster Boots", Rarity.EPIC, 2200, "boots_thruster", 3,
-			{"burst_velocity": 16.0, "burst_heat": 6.5, "skim_mid_heat": 4.0, "skim_high_heat": 11.0, "skim_cool": 8.0},
-			"Kick from the street to the top of the tallest tower in one go. Harder kicks, the cheapest of any boots, and they cool faster low down. Still only cool near a surface.")
-	register("wings_glide", "Mk1 Glide Wings", Rarity.RARE, 1000, ["flight_rig"],
-			{"thrust_accel": 0.0, "burst_velocity": 14.0, "burst_heat": 40.0, "launch_once": true,
-			"cool_per_sec": 20.0, "pulse_velocity": 11.0, "pulse_heat": 30.0, "glide_cool": 12.0,
-			"glide_fall_speed": 1.2, "glide_speed": 15.0, "glide_dive_gain": 0.74, "glide_turn_rate": 2.4,
-			"stall_sink": 6.0, "air_dash_speed": 12.0, "air_dash_heat": 10.0, "air_dash_cooldown": 1.0,
-			"glide_boost": 13.0, "glide_boost_climb": 17.0, "glide_boost_heat": 22.0,
-			"glide_sidearm_only": true, "slide_landing_speed": 18.0, "tier": 1, "ceiling": RIG_CEILINGS[1]},
-			"One launch, then hold jump to glide and press it again to pulse up. Fastest dives, tightest turns, silent and cold between pulses. Never stops: slow down and you stall. Pulses no higher than rooftop height. Sidearm only while the wings are out.")
+			"Two more charges than the Mk1 and the fastest refill. Still top out at 10 m.")
+	register("wings_glide", "Mk1 Glide Wings", Rarity.RARE, 1000, ["flight_rig"], WINGS_MK1.duplicate(),
+			"Distance and speed. Launch, then glide at 22 m/s and dive at 30, for 25 s of glide stamina that refills on the ground, with two boosts a flight. Twice as fast across the map, but no hover or climb, poor aim, sidearm only while spread, and they cannot open indoors.")
 	_rig_tier("wings_glide_mk2", "Mk2 Glide Wings", Rarity.RARE, 1400, "wings_glide", 2,
-			{"burst_velocity": 16.0, "pulse_heat": 22.0, "glide_cool": 15.0},
-			"A higher launch and cheaper pulses that cool off quicker: pulse your way up to the tower tops and glide the length of the city.")
+			"Faster glides, dives and boosts, and longer glide stamina. Still no hover or climb.")
 	_rig_tier("wings_glide_mk3", "Mk3 Glide Wings", Rarity.EPIC, 2200, "wings_glide", 3,
-			{"burst_velocity": 18.0, "pulse_heat": 16.0, "glide_cool": 18.0},
-			"The highest launch and the cheapest pulses of any wings: climb over the highest towers and stay up for as long as you like. Still silent, still never stops.")
+			"The fastest rig there is, with the longest glide. Still no hover or climb.")
 
 	# Abilities
 	register("chip_blink", "Phase Step", Rarity.RARE, 900, ["ability", "blink"],
@@ -447,16 +429,29 @@ func _furniture(id: String, display_name: String, value: int, footprint: Vector3
 	register(id, display_name, rarity, value, tags, {"footprint": footprint, "color": color}, description)
 
 
-## A higher tier of a flight rig: the `base` rig's stats with `changes` on
-## top, its tier and that tier's ceiling. Tiers above Mk1 are crafted, never
-## sold or handed out, so the base's "vendor" and "starter" tags are not
-## copied.
+## A higher tier of a flight rig: the Mk1 `base` rig's stats with its
+## strength scaled up by `RIG_TIER_STEP` once per tier above Mk1. Which
+## stats are the strength is the rig's `RIG_STRENGTH` list: a stat named there
+## grows, and one named with a leading "-" shrinks (a heat cost or a wait).
+## Integer stats (charges) round. Tiers above Mk1 are crafted, never sold or
+## handed out, so the base's "vendor" and "starter" tags are not copied.
 func _rig_tier(id: String, display_name: String, rarity: Rarity, value: int, base: String, tier: int,
-		changes: Dictionary, description: String) -> void:
+		description: String) -> void:
 	var stats := item_stats(base).duplicate()
-	stats.merge(changes, true)
+	var scale := pow(RIG_TIER_STEP, tier - 1)
+	for entry: String in RIG_STRENGTH[base]:
+		var shrink := entry.begins_with("-")
+		var stat := entry.trim_prefix("-")
+		var value_now: Variant = stats[stat]
+		var scaled: float = float(value_now) / scale if shrink else float(value_now) * scale
+		if stat == "max_charges":
+			# Boots: one more charge a tier (Caleb's call), not 15% of four.
+			stats[stat] = int(value_now) + tier - 1
+		elif typeof(value_now) == TYPE_INT:
+			stats[stat] = roundi(scaled)
+		else:
+			stats[stat] = snappedf(scaled, 0.01)
 	stats["tier"] = tier
-	stats["ceiling"] = RIG_CEILINGS[tier]
 	var tags: Array = get_item(base).get("tags", []).filter(func(tag: String) -> bool:
 			return tag != "vendor" and tag != "starter")
 	register(id, display_name, rarity, value, tags, stats, description)
@@ -554,3 +549,62 @@ func summarize(ids: Array) -> String:
 	for id: String in keys:
 		parts.append("%dx %s" % [counts[id], item_name(id)])
 	return ", ".join(parts)
+
+
+# The Mk1 flight rigs (Caleb's balance pass, DESIGN.md section 5). Each rig
+# has one job and one weakness; tune them here. Heat is out of 100.
+
+## Jetpack: height and hover. Hover burns `heat_per_sec` (8 s on a full
+## bar), climbing 1.5x and boosting 2.5x (about 3 s). Climbs at 8 m/s to a
+## 40 m ceiling, cruises at 14 and boosts at 18 m/s. Cools in 4 s on the
+## ground. Steady in the air (+10% spread), half fall damage, clumsy under a
+## roof, seen 120 m away on scans and thermal.
+const JETPACK_MK1 := {
+	"thrust_accel": 36.0, "max_rise_speed": 8.0, "fly_speed": 14.0, "boost_speed": 18.0,
+	"heat_per_sec": 12.5, "hover_heat_mult": 1.0, "cruise_heat_mult": 1.0, "climb_heat_mult": 1.5,
+	"boost_heat_mult": 2.5, "cool_per_sec": 25.0, "coast_cool": 25.0, "ceiling": 40.0,
+	"flight_aim": 0.1, "fall_damage_mult": 0.5, "scan_range": 120.0, "indoor_mult": 0.5,
+	"heavy_lift": true, "tier": 1,
+}
+
+## Thruster boots: ground agility and stealth. No heat: 4 charges pay for
+## kicks (up to a 10 m ceiling) and 14 m/s air dashes, one back every
+## 1.5 s. A 1.5 s skim per jump. 15% faster on foot, no fall damage, a
+## 0.2 s graze window on every dash, steady aim mid-dash, full use indoors,
+## seen only 30 m away on scans and thermal.
+const BOOTS_MK1 := {
+	"thrust_accel": 0.0, "burst_velocity": 12.0, "burst_heat": 0.0, "burst_push": 11.0,
+	"max_charges": 4, "charge_time": 1.5, "skim_speed": 12.0, "skim_time": 1.5,
+	"skim_mid_heat": 0.0, "skim_high_heat": 0.0, "air_dash_speed": 14.0, "air_dash_time": 0.3,
+	"air_dash_heat": 0.0, "air_dash_cooldown": 0.25, "ground_speed_mult": 1.15, "flight_aim": 0.0,
+	"fall_damage_mult": 0.0, "graze_window": 0.2, "scan_range": 30.0, "indoor_mult": 1.0,
+	"ceiling": 10.0, "tier": 1,
+}
+
+## Glide wings: distance and speed. A free launch, then a 22 m/s glide that
+## dives to 30, on 25 s of glide stamina (`glide_heat`) that refills in 5 s
+## on the ground only. Two boosts a flight (+8 m/s, or a small lift on
+## Shift + S), refilled on the ground. No hover and no climb of their own,
+## poor aim (+50% spread), sidearm only, 5% slower on foot, no fall damage
+## out of a glide, cannot open indoors, seen 80 m away.
+const WINGS_MK1 := {
+	"thrust_accel": 0.0, "burst_velocity": 14.0, "burst_heat": 0.0, "launch_once": true,
+	"cool_per_sec": 20.0, "ground_cool_only": true, "glide_heat": 4.0, "glide_cool": 0.0,
+	"glide_fall_speed": 1.2, "glide_speed": 22.0, "glide_dive_gain": 0.364, "glide_turn_rate": 2.4,
+	"stall_sink": 6.0, "air_dash_speed": 12.0, "air_dash_heat": 0.0, "air_dash_cooldown": 1.0,
+	"glide_boost": 8.0, "glide_boost_climb": 6.0, "glide_boost_heat": 0.0,
+	"max_charges": 2, "charge_time": 1.0, "charge_on_ground": true,
+	"glide_sidearm_only": true, "slide_landing_speed": 18.0, "ground_speed_mult": 0.95,
+	"flight_aim": 1.5, "fall_damage_mult": 1.0, "scan_range": 80.0, "indoor_mult": 0.0,
+	"ceiling": 40.0, "tier": 1,
+}
+
+## What a higher tier improves on each rig: its strength only (see
+## `_rig_tier`; "-" lowers a cost or a wait). Jetpacks get more hover, heat
+## and height; boots one more charge and a faster refill; wings more speed
+## and glide time.
+const RIG_STRENGTH := {
+	"jetpack_mk1": ["-heat_per_sec", "cool_per_sec", "coast_cool", "ceiling"],
+	"boots_thruster": ["max_charges", "-charge_time"],
+	"wings_glide": ["glide_speed", "glide_boost", "-glide_heat"],
+}

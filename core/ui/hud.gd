@@ -538,8 +538,8 @@ static func wrist_text(p_raid: Raid, p: Actor, death: Dictionary, wait: float, p
 ## card's vitals strip without the glass): overheating, then what the rig
 ## needs you to know in the air. A jetpack warns when a heat seeker could lock on
 ## (`Gun.heat_target`'s rule); wings show airspeed against the stall and
-## whether a pulse is ready; boots show the height band (cool, warm,
-## burning) and how many dashes the heat leaves.
+## the boosts left this flight; boots show their dash charges and the skim
+## time left.
 static func rig_text(p: Actor) -> String:
 	var rig := p.flight
 	if not rig.enabled:
@@ -552,7 +552,12 @@ static func rig_text(p: Actor) -> String:
 		var pulse := ""
 		if rig.pulse_velocity > 0.0:
 			pulse = "   pulse ready" if rig.heat + rig.pulse_heat <= rig.max_heat else "   pulse cooling"
+		if rig.max_charges > 0:
+			pulse += "   boosts %d" % rig.charges
 		return "Air %d m/s%s%s" % [roundi(air), "  STALL" if air < stall - 0.5 else "", pulse]
+	if rig.can_skim() and rig.max_charges > 0:
+		var skim := "skim %.1fs" % rig.skim_left if rig.is_skimming else ("" if rig.skim_left > 0.0 else "skim spent")
+		return ("dashes %d/%d   %s" % [rig.charges, rig.max_charges, skim]).strip_edges()
 	if rig.can_skim() and (rig.is_skimming or p.airborne_time > 0.3):
 		var dashes := floori((rig.max_heat * (1.0 + FlightRig.BURST_SLACK) - rig.heat) / maxf(rig.air_dash_heat, 1.0))
 		var band: String = ["low, cooling", "warm", "BURNING"][rig.skim_band()] if rig.is_skimming else "falling"
@@ -1113,13 +1118,14 @@ void fragment() {
 	## character, `tp_behind` metres beyond the head from the camera, so the
 	## body and the raised arm pass in front of it and it reads as thrown out
 	## of the watch. It is as tall as `tp_screen` of the view however far
-	## that is, beside the head off the crosshair, and near solid
-	## (`tp_backing`). The device, the arm and its pose are the same as in
-	## first person; only where the light lands differs.
+	## that is, beside the head off the crosshair, and backed with dark glass
+	## the world still shows through (`tp_backing`; it is a hologram, Caleb's
+	## call). The device, the arm and its pose are the same as in first
+	## person; only where the light lands differs.
 	var tp_behind := 0.5
 	var tp_screen := 0.34
 	var tp_lift := 0.06
-	var tp_backing := 0.9
+	var tp_backing := 0.6
 	## How far, in metres at the head, the card keeps clear of the head and
 	## helmet from the camera's view.
 	var head_clearance := 0.05
