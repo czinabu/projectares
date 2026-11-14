@@ -84,15 +84,11 @@ jobs:
         run: |
           zip="dist/${{ steps.zip.outputs.name }}.zip"
           notes="Newest main, built automatically on every merge: ${{ steps.zip.outputs.name }}. Unzip, run ProjectAres.exe, join the host from the phone's Servers app (P). Everyone, host included, must be on the same build (the name of the zip)."
-          if gh release view latest >/dev/null 2>&1; then
-            for old in $(gh release view latest --json assets -q '.assets[].name'); do
-              gh release delete-asset latest "$old" -y
-            done
-            gh release upload latest "$zip" --clobber
-            gh release edit latest --prerelease --target "$GITHUB_SHA" --title "Latest build ($(git rev-parse --short HEAD))" --notes "$notes"
-          else
-            gh release create latest "$zip" --prerelease --target "$GITHUB_SHA" --title "Latest build ($(git rev-parse --short HEAD))" --notes "$notes"
-          fi
+          # Recreate the release every time: editing it in place keeps the
+          # original publish date, so the page would look hours out of date.
+          gh release delete latest --cleanup-tag -y || true
+          gh release create latest "$zip" --prerelease --target "$GITHUB_SHA" \
+            --title "Latest build ($(git rev-parse --short HEAD), $(date -u '+%Y-%m-%d %H:%M UTC'))" --notes "$notes"
       - name: Draft release
         if: github.event_name == 'workflow_dispatch' && inputs.release
         env:
