@@ -589,45 +589,42 @@ func suit_kit() -> Array[String]:
 	return kit
 
 
-## Puts the loadout on where the player stands: a new actor in the same
-## spot, facing the same way, wearing `suit_kit()`, its weapons holstered and
-## locked (nobody fights at home, the range aside). `player_replaced` says
-## who it is. Called whenever the loadout changes, so your own base always
-## shows you in what you will deploy with; a base you visit leaves you as
-## you came.
+## Puts the loadout on the player where they stand, wearing `suit_kit()`,
+## its weapons locked (nobody fights at home, the range aside). The player
+## is dressed in place (`Loadout.refit`): only the pieces that changed are
+## swapped, so they keep moving and the view never drops a beat. A new actor
+## is made only when there is none standing (`player_replaced` says who it
+## is). Called whenever the loadout changes, so your own base always shows
+## you in what you will deploy with; a base you visit leaves you as you came.
 func suit_up() -> void:
 	if read_only or not is_inside_tree() or (suited and suited_kit == suit_kit()):
 		return
-	var old := player
-	var at := spawn_point
-	var yaw := 0.0
-	if old and is_instance_valid(old):
-		at = old.position
-		yaw = old.cmd.yaw
-	var fresh := _new_player(at)
-	fresh.cmd.yaw = yaw
-	if old and is_instance_valid(old):
-		fresh.cmd.pitch = old.cmd.pitch
-		fresh.rotation.y = old.rotation.y
-		if old.has_meta("appearance"):
-			fresh.set_meta("appearance", old.get_meta("appearance"))
-		# Freed at the end of the frame, still in the tree until then, so
-		# whatever is posing it this frame finishes cleanly.
-		old.name = "OldPlayer"
-		old.visible = false
-		old.queue_free()
+	var kit := suit_kit()
+	if player != null and is_instance_valid(player) and player.is_inside_tree() and not player.is_dead:
+		Loadout.refit(player, kit)
+		suited_kit = kit
+		_suit_locked(player)
+		suited = true
+		return
+	var fresh := _new_player(spawn_point)
 	add_child(fresh)
 	player = fresh
 	# Equipped once it stands in the room: the hand holds weapons in the world.
-	suited_kit = suit_kit()
+	suited_kit = kit
 	Loadout.equip(fresh, suited_kit)
-	fresh.weapons_locked = true
-	for weapon in fresh.weapons:
-		var gun := weapon as Gun
-		if gun:
-			gun.fired.connect(_on_range_shot.bind(gun))
+	_suit_locked(fresh)
 	suited = true
 	player_replaced.emit(fresh)
+
+
+## Locks the suited player's weapons and has the range score their shots.
+func _suit_locked(actor: Actor) -> void:
+	actor.weapons_locked = true
+	for weapon in actor.weapons:
+		var gun := weapon as Gun
+		if gun and not gun.has_meta("range_scored"):
+			gun.set_meta("range_scored", true)
+			gun.fired.connect(_on_range_shot.bind(gun))
 
 
 ## The watch's squad portal: opens a portal to `destination` (a
@@ -1832,8 +1829,32 @@ func _build_wall_mirror() -> void:
 
 # --- Displays ----------------------------------------------------------------
 
+## The bench's nodes under the displays, built by `_build_bench_gun`.
+const BENCH_NODES := ["BenchGun", "SpecTablet", "SpecCard", "SpecStats"]
+## What the signs and the bench were last built for (see `_rebuild`).
+var _signs_key := ""
+var _bench_key := ""
+
+
 func _rebuild() -> void:
+	# A display whose plan is unchanged keeps its node and its dressed model:
+	# rebuilding every model in the room on each equip was a hitch. Only the
+	# displays that changed, the signs and the bench are built again.
+	var old_displays := {}
+	for display in displays:
+		if is_instance_valid(display):
+			old_displays[display.get_meta("plan_key", "")] = display
+	# The signs and the bench likewise stay when what they show is the same.
+	var signs_key := var_to_str([BaseLayout.stored_away(stash, upgrades), upgrades])
+	var keep_signs := signs_key == _signs_key
+	var keep_bench := _bench_key_now() == _bench_key
 	for child in _display_root.get_children():
+		if child is Display and old_displays.values().has(child):
+			continue
+		if keep_signs and str(child.name).begins_with("Sign_"):
+			continue
+		if keep_bench and str(child.name) in BENCH_NODES:
+			continue
 		_display_root.remove_child(child)
 		child.queue_free()
 	displays.clear()
@@ -1841,7 +1862,26 @@ func _rebuild() -> void:
 	# sections: every player owns them, and taking one off leaves its slot
 	# bare. A base you visit shows only its owner's stash.
 	var shown: Array = stash if read_only else StashRules.equippable(stash)
-	for entry: Dictionary in BaseLayout.plan(shown, loadout, upgrades):
+	var plan := BaseLayout.plan(shown, loadout, upgrades)
+	var keys: Array[String] = []
+	for entry: Dictionary in plan:
+		keys.append(var_to_str([entry, spot_transform(entry["kind"], entry["index"]), upgrades]))
+	# What is no longer on show goes first, so a new display can take its name.
+	for key: String in old_displays.keys():
+		if key not in keys:
+			var gone: Display = old_displays[key]
+			old_displays.erase(key)
+			_display_root.remove_child(gone)
+			gone.queue_free()
+	for i in plan.size():
+		var entry: Dictionary = plan[i]
+		var at := spot_transform(entry["kind"], entry["index"])
+		var key := keys[i]
+		var reused: Display = old_displays.get(key)
+		if reused != null:
+			old_displays.erase(key)
+			displays.append(reused)
+			continue
 		var display := Display.new()
 		display.base = self
 		display.item_id = entry["id"]
@@ -1851,7 +1891,8 @@ func _rebuild() -> void:
 		display.slot = entry["slot"]
 		display.equipped = entry["equipped"]
 		display.name = "%s_%d" % [display.kind, display.index]
-		display.transform = spot_transform(display.kind, display.index)
+		display.transform = at
+		display.set_meta("plan_key", key)
 		# `Look` swaps in real models for displays tagged like this.
 		display.set_meta("display_item", display.item_id)
 		_fill(display)
@@ -1861,8 +1902,11 @@ func _rebuild() -> void:
 			# The lift turns the bike parked on it. View only.
 			var turn := display.create_tween().set_loops()
 			turn.tween_property(display.get_node("Model"), "rotation:y", PI + TAU, lift_turn_time).from(PI)
-	_build_signs()
-	_build_bench_gun()
+	if not keep_signs:
+		_signs_key = signs_key
+		_build_signs()
+	if not keep_bench:
+		_build_bench_gun()
 	gear_shown.emit()
 
 
@@ -2158,6 +2202,7 @@ func bench_name() -> String:
 ## wheel has turned to (`bench_shown_gun`, `bench_shown_fitted`), so every
 ## change shows on the gun before it is picked.
 func _build_bench_gun() -> void:
+	_bench_key = _bench_key_now()
 	var id := bench_shown_gun()
 	if id == "":
 		return
@@ -2341,11 +2386,16 @@ func bench_back() -> bool:
 	return true
 
 
+## What the bench shows, to tell when it needs building again.
+func _bench_key_now() -> String:
+	return var_to_str([bench_shown_gun(), bench_shown_fitted(), bench_card()])
+
+
 ## Rebuilds the bench's gun and card from the bench state.
 func _refresh_bench() -> void:
 	if not is_inside_tree():
 		return
-	for node_name: String in ["BenchGun", "SpecTablet", "SpecCard", "SpecStats"]:
+	for node_name: String in BENCH_NODES:
 		var old := _display_root.get_node_or_null(node_name)
 		if old:
 			_display_root.remove_child(old)

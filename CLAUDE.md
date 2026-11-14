@@ -902,9 +902,14 @@ without Caleb, and update the gap list when a PR closes a row.
   section there, not a display of its own elsewhere in the room. In your own base
   you always wear your loadout, and what you equip goes straight on (Caleb's
   call: no suit-up step): `HomeBase.suit_up`, run when the base opens and
-  whenever `show_gear` brings a changed `suit_kit()`, replaces the player
-  in place with a new actor wearing it, weapons locked, and emits
-  `player_replaced` so `main.gd` hands it the controller. A visited base
+  whenever `show_gear` brings a changed `suit_kit()`, dresses the player
+  where they stand with `Loadout.refit`, weapons locked: the same actor,
+  only the changed pieces swapped, so they keep moving (a new actor on every
+  equip was Caleb's equip stutter). Only with no player standing does it
+  make a new actor and emit `player_replaced` for `main.gd` to hand it the
+  controller. Likewise `show_gear` rebuilds only the displays whose plan
+  changed (`HomeBase._rebuild`'s `plan_key`), never every model in the
+  room; measure with `equip_bench.tscn`. A visited base
   never dresses you. Every base has a mirror on its wall
   (`HomeBase.wall_mirror`, the phone's `Mirror` with `wall_mounted`, drawn
   only while its viewer is in front of it). The room has one job per wall: the deploy area
@@ -1152,6 +1157,7 @@ godot --headless --fixed-fps 60 --path . res://tests/test_runner.tscn -- --tier 
 godot --headless --path . res://tests/test_runner.tscn -- --tier net --shard 1/3   # a third of the online groups
 godot --headless --path . res://tests/battle_bench.tscn -- --bots 150 --players 32   # server cost of a big battle
 godot --headless --fixed-fps 60 --path . res://tests/feel_bench.tscn   # how each rig answers, in numbers
+godot --path . res://tests/equip_bench.tscn -- --walk   # what an equip costs in the base, and whether you keep moving
 ```
 
 CI (`.github/workflows/tests.yml`) runs the suite in two tiers. The offline

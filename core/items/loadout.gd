@@ -156,6 +156,156 @@ static func equip(actor: Actor, item_ids: Array) -> void:
 			actor.inventory.add_item(id)
 
 
+## Changes what `actor` wears to `kit` (item ids, as for `equip`) in place,
+## touching only what differs: a weapon still in the kit keeps its node and
+## model, and the actor keeps moving. The home base dresses its player this
+## way whenever the loadout changes (`HomeBase.suit_up`); building a whole
+## new actor stopped the player dead and rebuilt every model on them, which
+## was the stutter on every equip. One of each kind is worn; the inventory
+## is left as it is.
+static func refit(actor: Actor, kit: Array) -> void:
+	var fittings: Array[String] = []
+	for id: String in kit:
+		if ItemDB.has_tag(id, "attachment") and attachment_slot(id) != "" and fittings.all(func(other: String) -> bool:
+				return attachment_slot(other) != attachment_slot(id)):
+			fittings.append(id)
+	var old_fittings: Array[String] = []
+	for id in actor.gear_items:
+		if ItemDB.has_tag(id, "attachment"):
+			old_fittings.append(id)
+	var fittings_sorted := fittings.duplicate()
+	fittings_sorted.sort()
+	var old_sorted := old_fittings.duplicate()
+	old_sorted.sort()
+	var refit_primary := fittings_sorted != old_sorted
+	for id in old_fittings:
+		actor.gear_items.erase(id)
+	actor.gear_items.append_array(fittings)
+	# Weapons: one per slot, in kit order, keeping the ones still worn.
+	var wanted: Array[String] = []
+	var taken := {}
+	for id: String in kit:
+		if ItemDB.has_tag(id, "firearm") or ItemDB.has_tag(id, "melee"):
+			var slot := weapon_slot(id)
+			if not taken.has(slot):
+				taken[slot] = true
+				wanted.append(id)
+	var held := actor.get_active_weapon()
+	var kept: Array[Weapon] = []
+	for i in range(actor.weapons.size() - 1, -1, -1):
+		var weapon := actor.weapons[i]
+		var stays := weapon.item_id in wanted and not kept.any(func(w: Weapon) -> bool: return w.item_id == weapon.item_id) \
+				and not (refit_primary and weapon is Gun and is_primary(weapon.item_id))
+		if stays:
+			kept.append(weapon)
+		else:
+			actor.gear_items.erase(weapon.item_id)
+			actor.remove_weapon(i)
+	var primary_done := false
+	for id in wanted:
+		if kept.any(func(w: Weapon) -> bool: return w.item_id == id):
+			primary_done = primary_done or is_primary(id)
+			continue
+		var stats := ItemDB.item_stats(id)
+		if ItemDB.has_tag(id, "firearm"):
+			var gun := Gun.new()
+			gun.is_sidearm = ItemDB.has_tag(id, "sidearm")
+			_setup_weapon(gun, id, stats)
+			if not primary_done and is_primary(id):
+				primary_done = true
+				gun.fit(fittings)
+			actor.equip_weapon(gun)
+		else:
+			var blade := MeleeWeapon.new()
+			_setup_weapon(blade, id, stats)
+			actor.equip_weapon(blade)
+		actor.gear_items.append(id)
+	# Keep the weapons in kit order, as a fresh `equip` would have them, and
+	# keep the one in hand in hand.
+	var ordered: Array[Weapon] = []
+	for id in wanted:
+		for weapon in actor.weapons:
+			if weapon.item_id == id and weapon not in ordered:
+				ordered.append(weapon)
+				break
+	for weapon in actor.weapons:
+		if weapon not in ordered:
+			ordered.append(weapon)
+	actor.weapons = ordered
+	if held != null and held in ordered:
+		actor.active_weapon_index = ordered.find(held)
+	elif held != null or actor.active_weapon_index >= 0:
+		# What was in hand came off: the first weapon worn takes its place.
+		actor.active_weapon_index = 0 if not ordered.is_empty() else -1
+	actor.last_drawn = clampi(actor.last_drawn, 0, maxi(ordered.size() - 1, 0))
+	actor._refresh_weapon_visuals()
+	# The frame scales what the rig set up, so it comes off first whenever
+	# either changes, and goes back on last.
+	var rig := _first_tagged(kit, "flight_rig")
+	var frame := _first_tagged(kit, "armor")
+	var rig_now := actor.flight.item_id if actor.flight.enabled else ""
+	var frame_now := actor.frame_id
+	if rig != rig_now or frame != frame_now:
+		var armor_left := -1.0
+		if frame_now != "":
+			armor_left = wear_frame(actor, "")
+		if rig != rig_now:
+			if rig_now != "":
+				actor.gear_items.erase(rig_now)
+			_reset_to_new(actor.flight)
+			if rig != "":
+				actor.flight.enabled = true
+				actor.flight.item_id = rig
+				actor.flight.display_name = ItemDB.item_name(rig)
+				_apply_stats(actor.flight, ItemDB.item_stats(rig))
+				actor.flight.fill()
+				actor.gear_items.append(rig)
+		if frame != "":
+			wear_frame(actor, frame, armor_left if frame == frame_now else -1.0)
+	var chip := _first_tagged(kit, "ability")
+	var chip_now := actor.ability.item_id if actor.ability.enabled else ""
+	if chip != chip_now:
+		if chip_now != "":
+			actor.gear_items.erase(chip_now)
+		_reset_to_new(actor.ability)
+		if chip != "":
+			actor.ability.enabled = true
+			actor.ability.item_id = chip
+			actor.ability.display_name = ItemDB.item_name(chip)
+			_apply_stats(actor.ability, ItemDB.item_stats(chip))
+			actor.gear_items.append(chip)
+	var relic := _first_tagged(kit, "artifact")
+	var relic_now := actor.artifact.item_id if actor.artifact.enabled else ""
+	if relic != relic_now:
+		if relic_now != "":
+			actor.gear_items.erase(relic_now)
+		_reset_to_new(actor.artifact)
+		if relic != "":
+			_apply_stats(actor.artifact, ItemDB.item_stats(relic))
+			actor.artifact.attune(relic)
+			actor.gear_items.append(relic)
+	var helmet := _first_tagged(kit, "helmet")
+	if helmet != (actor.visor.item_id if actor.visor.enabled else ""):
+		wear_helmet(actor, helmet)
+
+
+static func _first_tagged(kit: Array, tag: String) -> String:
+	for id: String in kit:
+		if ItemDB.has_tag(id, tag):
+			return id
+	return ""
+
+
+## Sets a gear node's script variables back to a new one's, keeping who wears
+## it, its name and whatever is connected to its signals.
+static func _reset_to_new(target: Node) -> void:
+	var fresh: Node = target.get_script().new()
+	for prop in target.get_script().get_script_property_list():
+		if prop.usage & PROPERTY_USAGE_SCRIPT_VARIABLE and prop.name != "actor":
+			target.set(prop.name, fresh.get(prop.name))
+	fresh.free()
+
+
 ## Puts armor frame `id` on the actor, or with "" takes the worn one off,
 ## undoing what the old one scaled first. `armor_left` below 0 means a whole
 ## frame. Returns the armor the frame taken off had left. Like a helmet, the
