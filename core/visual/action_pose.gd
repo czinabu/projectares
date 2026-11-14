@@ -128,7 +128,7 @@ var ads_stance_sidearm := Vector2(0.3, -0.06)
 ## ahead of the eyes along the aim, the pitch clamped to `inspect_pitch`),
 ## whatever is in hand; `inspect_rate` is how fast it comes up and goes
 ## back (per second).
-var inspect_from_eyes := Vector3(0.08, -0.3, -0.4)
+var inspect_from_eyes := Vector3(0.05, -0.18, -0.45)
 var inspect_pitch := Vector2(-0.7, 0.5)
 var inspect_rate := 3.5
 ## How long a look over takes, in seconds. The controller holds the flag
@@ -136,15 +136,17 @@ var inspect_rate := 3.5
 ## from when it saw the flag go on.
 const INSPECT_SECONDS := 3.4
 ## The turns the item goes through, as [seconds in, Vector3(pitch, yaw,
-## roll)] in radians, eased from one to the next: the near side, the far
-## side, then tipped up to show its top, and back.
+## roll)] in radians, eased from one to the next (yaw positive to the left,
+## roll about the item's own length): a gun's muzzle swung left across the
+## body to show its right side, then out to the right and rolled to show
+## its left side and top, then tipped up, and back.
 const INSPECT_TURNS := [
 	[0.0, Vector3.ZERO],
-	[0.55, Vector3(0.1, -0.85, -0.35)],
-	[1.25, Vector3(0.15, -0.95, -0.45)],
-	[1.95, Vector3(-0.05, 0.75, 0.55)],
-	[2.5, Vector3(-0.1, 0.85, 0.6)],
-	[3.0, Vector3(0.6, 0.1, 0.0)],
+	[0.55, Vector3(0.15, 1.15, 0.35)],
+	[1.25, Vector3(0.15, 1.25, 0.45)],
+	[1.95, Vector3(-0.1, -0.35, -1.1)],
+	[2.5, Vector3(-0.1, -0.45, -1.2)],
+	[3.0, Vector3(0.55, 0.3, 0.0)],
 	[3.4, Vector3.ZERO],
 ]
 

@@ -53,7 +53,8 @@ static func _check_turns(t: Node) -> void:
 	var near := ActionPose.inspect_turn(1.0)
 	var far := ActionPose.inspect_turn(2.2)
 	var top := ActionPose.inspect_turn(3.0)
-	t.check(near.y < -0.5 and far.y > 0.5 and top.x > 0.4, "it turns to one side, then the other, then tips up to show the top")
+	t.check(near.y > 0.8 and far.y < 0.0 and far.z < -0.8 and top.x > 0.4,
+			"it swings across to show one side, rolls out to show the other, then tips up to show the top")
 	var jolt := 0.0
 	var last := Vector3.ZERO
 	for i in range(1, 341):

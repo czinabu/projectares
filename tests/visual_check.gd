@@ -2308,7 +2308,7 @@ func _view_shots(out_dir: String, only := "") -> void:
 
 ## The inspect key: each thing in hand brought in and turned, at points
 ## through the look over (`ActionPose.INSPECT_TURNS`), seen from the eyes,
-## over the shoulder and from the front. Saves `inspect.png`, and each shot
+## over the shoulder and from the right. Saves `inspect.png`, and each shot
 ## full size under `inspect/`.
 func _inspect_shots(out_dir: String) -> void:
 	var raid := Raid.new()
@@ -2344,7 +2344,11 @@ func _inspect_shots(out_dir: String) -> void:
 	outside.fov = 40.0
 	raid.add_child(outside)
 	var rows := ["rifle", "pistol", "blade", "toy"]
-	# [seconds into the look over, camera]: 0 first person, 1 third, 2 front.
+	# `INSPECT_ROWS=rifle,toy` shoots only those.
+	if OS.has_environment("INSPECT_ROWS"):
+		rows = Array(OS.get_environment("INSPECT_ROWS").split(","))
+	# [seconds into the look over, camera]: 0 first person, 1 third, 2 from
+	# the right (the left of the spawn is walled in).
 	var cols := [[0.0, 0], [0.9, 0], [2.3, 0], [2.85, 0], [0.9, 1], [2.3, 1], [0.9, 2], [2.3, 2]]
 	var size := Vector2i(320, 240)
 	var sheet := Image.create(cols.size() * size.x, rows.size() * size.y, false, Image.FORMAT_RGBA8)
@@ -2368,12 +2372,12 @@ func _inspect_shots(out_dir: String) -> void:
 				await get_tree().process_frame
 			if cam == 2:
 				var at := p.global_position
-				outside.global_position = at + p.global_basis * Vector3(1.2, 1.6, -2.6)
+				outside.global_position = at + p.global_basis * Vector3(2.6, 1.6, -0.6)
 				outside.look_at(at + Vector3(0, 1.35, 0))
 			pose.inspect_clock = at_time
 			await RenderingServer.frame_post_draw
 			var frame := get_viewport().get_texture().get_image()
-			frame.save_png(out_dir.path_join("inspect/%s_%d_%s.png" % [kind, int(at_time * 100), ["first", "third", "front"][cam]]))
+			frame.save_png(out_dir.path_join("inspect/%s_%d_%s.png" % [kind, int(at_time * 100), ["first", "third", "right"][cam]]))
 			var w := frame.get_width()
 			var h := frame.get_height()
 			var cut_w := h * size.x / size.y
