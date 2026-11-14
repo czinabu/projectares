@@ -42,7 +42,7 @@ skies, animated models and effects (see "How it looks" below).
 | Scoreboard: who is fighting, who is down, kills | Hold Q |
 | Sign out and go home with what you carry (10 seconds, out of a fight) | L |
 | After dying: drop back in, or go home | Enter, or L |
-| Open your phone: players, messages, invites, news, mirror, every control (Keys), settings | P |
+| Open your phone: players, messages, invites, news, servers, mirror, every control (Keys), settings | P |
 | Raise or lower the holographic watch on your wrist | X |
 | Move across the watch's icons (watch up) | Mouse wheel |
 | Use your artifact (watch up, on the artifact icon) | Click |
@@ -78,7 +78,6 @@ a tag over it says what it is and what it is worth.
 | Wardrobe | The character customizer |
 | Records | Your stash, kills, rank, and how your last life went |
 | Trader | The shops: buy and sell |
-| Uplink | Your name, and joining a friend's server by its address |
 
 Every weapon you own hangs on one rack in the **armory**, the alcove off the
 left of the room: long guns on its back wall, sidearms on one side and melee
@@ -132,13 +131,14 @@ Walk out of your home base's **door** and you are in the plaza. The first time,
 that starts a server on your computer in the background, running every world,
 and joins it; you choose a world at the plaza's gates. It stops when you leave.
 
-The **Uplink** console in your base is only for the other cases:
+Your phone's **Servers** app (press **P**) is for the other cases. It also
+holds your player name:
 
-- **Join the server at this address** connects to someone else's server. On the
+- **Join** connects to someone else's server. On the
   same network, that is the host's local address, for example `192.168.1.20`.
   The door remembers it: from then on it leads to that server, and falls back
   to a server of your own if that one does not answer.
-- **Host here and head out** points the door back at a server of your own.
+- **Host here and head out** starts a server of your own and points the door back at a server of your own.
 - Joining a server puts you in its plaza, the Concourse (see below). On a
   server your own door started you are the same player as at home: you
   arrive in the loadout you left your base with, and what you do there is in
@@ -167,6 +167,10 @@ your character stands still and the mouse is free.
   or raid). Message them, invite them to the raid or to your home base, save
   them as a contact, or block them. Saved contacts can be messaged while
   offline; they see it at their next sign-in on that server.
+- **Servers**: go online. Set your name, host a server on this computer, join
+  a friend's by its address, and see where your base's door leads. Online it
+  shows which server you are on and has **Leave the server** (from your base or
+  the plaza; out in a world, sign out first).
 - **Chat**: your conversations. New messages also pop up at the top of the screen.
 - **Invites**: accept or decline. A raid invite deploys you into that server's
   raid from the lobby. Invites run out after two minutes.
@@ -183,7 +187,7 @@ your character stands still and the mouse is free.
 - **Settings**: mouse sensitivity, invert mouse, melee side control, field of
   view, volume, fullscreen and nameplates. Saved in `user://settings.json`.
 
-Players, chat and invites need a server; news, the mirror and settings work solo too.
+Players, chat and invites need a server; news, servers, the mirror and settings work solo too.
 
 A server can also run on its own, with no window:
 
