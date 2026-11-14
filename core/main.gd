@@ -274,8 +274,10 @@ func _attach_base_view() -> void:
 	# The watch's summon works at home too: vehicles unpack in the base and
 	# a weapon picked is equipped.
 	controller.toy_throw_requested.connect(_on_toy_throw_requested)
+	controller.toy_hold_requested.connect(_on_toy_hold_requested)
 	controller.pack_requested.connect(_on_pack_requested)
 	controller.summon_requested.connect(_on_summon_requested)
+	controller.store_requested.connect(_on_store_requested)
 	base.add_child(controller)
 	if base.wall_mirror != null:
 		base.wall_mirror.setup(controller.actor, controller.camera)
@@ -570,8 +572,10 @@ func _attach_player_view() -> void:
 	controller.redeploy_requested.connect(func() -> void: _on_redeploy_requested.call_deferred())
 	controller.drop_requested.connect(func(index: int) -> void: _on_drop_requested.call_deferred(index))
 	controller.toy_throw_requested.connect(_on_toy_throw_requested)
+	controller.toy_hold_requested.connect(_on_toy_hold_requested)
 	controller.pack_requested.connect(_on_pack_requested)
 	controller.summon_requested.connect(_on_summon_requested)
+	controller.store_requested.connect(_on_store_requested)
 	controller.ping_requested.connect(_on_ping_requested)
 	controller.portal_requested.connect(_on_portal_requested)
 	raid.add_child(controller)
@@ -674,6 +678,19 @@ func _on_toy_throw_requested(item_id: String) -> void:
 		raid.throw_toy(raid.player, item_id)
 
 
+## The player took a toy into their hand or put it back. The world shows it.
+func _on_toy_hold_requested(item_id: String) -> void:
+	if base != null and raid == null:
+		base.hold_toy(base.player, item_id)
+		return
+	if raid == null or raid.player == null or not is_instance_valid(raid.player):
+		return
+	if net:
+		net.hold_toy(item_id)
+	else:
+		raid.hold_toy(raid.player, item_id)
+
+
 ## The player picked a weapon in their pack on the watch. The world decides
 ## whether it materializes.
 func _on_summon_requested(item_id: String) -> void:
@@ -687,6 +704,21 @@ func _on_summon_requested(item_id: String) -> void:
 		net.summon(item_id)
 	else:
 		raid.summon(raid.player, item_id)
+
+
+## The watch's store: the weapon in hand goes back into the pack. At home
+## that takes it off the loadout, back onto its rack.
+func _on_store_requested(item_id: String) -> void:
+	if base != null and raid == null:
+		if not base.read_only and Loadout.summonable(item_id):
+			_on_base_equip(Loadout.weapon_slot(item_id), "")
+		return
+	if raid == null or raid.player == null or not is_instance_valid(raid.player):
+		return
+	if net:
+		net.store(item_id)
+	else:
+		raid.store(raid.player, item_id)
 
 
 ## The player pinged where they are looking, from the watch.

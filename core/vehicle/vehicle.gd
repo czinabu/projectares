@@ -443,10 +443,28 @@ static func toy_model(p_item_id: String) -> Node3D:
 	return toy
 
 
-## Starts the vehicle off toy-sized and lets it grow to full size.
+## Seconds a thrown toy takes to turn its one flip in the air. After it the
+## toy flies level, facing the way it will unpack, so the vehicle grows out
+## of it without a jump (`toy_flight_basis`).
+const TOY_FLIP_TIME := 0.45
+
+
+## How a thrown toy is turned `age` seconds into its flight, thrown facing
+## `heading`: one forward flip that slows as it comes round, then level,
+## facing `heading`, the way the vehicle unpacks.
+static func toy_flight_basis(heading: float, age: float) -> Basis:
+	var flip := TAU * ease(clampf(age / TOY_FLIP_TIME, 0.0, 1.0), 0.6)
+	return Basis(Vector3.UP, heading) * Basis(Vector3.RIGHT, -flip)
+
+
+## Starts the vehicle off toy-sized and lets it grow to full size, with a
+## ring of light on the ground and a thump where it lands.
 func unpack() -> void:
 	unpack_left = unpack_time
 	_show_unpack()
+	if is_inside_tree():
+		Fx.ring(get_parent(), global_position + Vector3(0.0, 0.05, 0.0), body_size.z * 0.6, Color(0.35, 0.95, 1.0), 0.5)
+		Sfx.play("slam", global_position, -8.0)
 
 
 func _process(delta: float) -> void:

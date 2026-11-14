@@ -55,8 +55,16 @@ static func equippable(stash: Array) -> Array[String]:
 	return out
 
 
-## The loadout a player with nothing chosen yet starts in: the free scrap
-## piece in each slot that has one.
+## The loadout a new player starts in: nothing at all (Caleb's call). They
+## put everything on by hand the first time, at the locker or the room's
+## displays; the welcome crate and the free scrap pieces wait in the base.
+static func new_player_loadout() -> Dictionary:
+	return {}
+
+
+## The free scrap piece in each slot that has one: what lost gear falls back
+## to (`validate_loadout`) and what a save from before the bare rule always
+## deployed with (`upgrade_loadout`). Not what a new player wears.
 static func starter_loadout() -> Dictionary:
 	var out := {}
 	for id in free_items():

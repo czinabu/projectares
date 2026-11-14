@@ -157,6 +157,29 @@ static func _check_pose(t: Node) -> void:
 		t.check(weapon.visual.global_position.distance_to(ready_at) < 0.05 and back < 6.0 and pose.inspect <= 0.0,
 				"%s: back to the ready hold once done (%.2f m, %.0f degrees off)" % [kind,
 				weapon.visual.global_position.distance_to(ready_at), back])
+	# A toy vehicle held up off the watch (`Actor.toy_in_hand`, which
+	# everyone sees): brought in and turned the same way.
+	p.active_weapon_index = -1
+	p.cmd.inspect = false
+	p.toy_in_hand = "bike_scrapper"
+	await t.frames(70)
+	var toy: Node3D = skin.toy_prop()
+	t.check(toy != null, "toy: held up in the hand")
+	if toy != null:
+		var toy_ready := toy.global_position
+		var toy_turn := toy.global_basis.orthonormalized()
+		p.cmd.inspect = true
+		await t.frames(20)
+		pose.inspect_clock = 1.0
+		await t.frames(1)
+		var turned := rad_to_deg(Quaternion(toy_turn).angle_to(Quaternion(toy.global_basis.orthonormalized())))
+		t.check(pose.inspecting() == "hand" and turned > 25.0 and toy.global_position.distance_to(toy_ready) > 0.05,
+				"toy: brought in and turned to show a side (%.0f degrees)" % turned)
+		p.cmd.inspect = false
+		await t.frames(60)
+		var back := rad_to_deg(Quaternion(toy_turn).angle_to(Quaternion(toy.global_basis.orthonormalized())))
+		t.check(toy.global_position.distance_to(toy_ready) < 0.05 and back < 6.0, "toy: back to the hold once done")
+	p.toy_in_hand = ""
 	Look.enabled = false
 	raid.queue_free()
 	await t.frames(2)

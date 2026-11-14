@@ -23,6 +23,9 @@ signal frame_changed(item_id: String)
 ## A weapon was materialized out of the pack in place of the one worn in its
 ## slot (`Loadout.swap_weapon`, the watch's summon).
 signal weapon_swapped(item_id: String, mag: int, reserve: int)
+## The weapon in hand started dematerializing back into the pack
+## (`Loadout.store_weapon`, the watch's store), with the rounds it had.
+signal weapon_stored(item_id: String, mag: int, reserve: int)
 
 const LAYER_WORLD := 1
 const LAYER_ACTORS := 2
@@ -139,9 +142,25 @@ var heal_time_left := 0.0
 ## in the hand (it cannot be used until then), and how long that one takes.
 var materialize_left := 0.0
 var materialize_time := 0.0
+## Seconds until a weapon being stored through the watch has dematerialized
+## out of the hand (`Loadout.store_weapon`), and how long that one takes.
+## It cannot be used or switched from meanwhile, and is gone after.
+var dematerialize_left := 0.0
+var dematerialize_time := 0.0
+## The weapon dematerializing, or null.
+var _storing: Weapon = null
 ## Rounds left in guns put away in the pack by a summon: item id ->
 ## [magazine, reserve]. A gun summoned back comes as it was put away.
 var stowed_rounds := {}
+## The toy vehicle in the right hand (an item id off the watch), or "".
+## Set only by whoever runs the world (`Raid.hold_toy`, `HomeBase.hold_toy`)
+## and copied to clients by `NetSession`; nothing in the simulation reads
+## it. Every view draws the toy in the one hand (`ActorSkin._update_toy`).
+var toy_in_hand := ""
+## How many toy throws this actor has started. A view that sees it go up
+## plays the throw (`ActionPose.toy_throw_t`); a count, not a flag, so a
+## repeated or late copy plays it once.
+var toy_throws := 0
 var airborne_time := 0.0
 ## While staggered the actor cannot attack, block, dash or jump.
 var stagger_left := 0.0
@@ -878,16 +897,17 @@ func _simulate_weapons(delta: float) -> void:
 		_wing_stow = flight.glide_stow_time
 	else:
 		_wing_stow = maxf(0.0, _wing_stow - delta)
+	_tick_store(delta)
 	var switch_to := cmd.switch_weapon
 	if switch_to == ActorCommand.HOLSTER:
 		switch_to = -1 if active_weapon_index >= 0 else -2
 	if cmd.switch_weapon != -1 and switch_to >= -1 and switch_to < weapons.size() \
-			and switch_to != active_weapon_index:
+			and switch_to != active_weapon_index and _storing == null:
 		_draw_weapon(switch_to)
 	materialize_left = maxf(0.0, materialize_left - delta)
 	var weapon := get_active_weapon()
 	if weapon and heal_time_left <= 0.0 and stagger_left <= 0.0 and not weapons_locked \
-			and not visor.is_zoomed() and materialize_left <= 0.0:
+			and not visor.is_zoomed() and materialize_left <= 0.0 and _storing == null:
 		# Run dry with the trigger held: draw the sidearm instead of reloading.
 		# That pull only draws it; the next shot comes from the sidearm.
 		var gun := weapon as Gun
@@ -920,6 +940,45 @@ func loaded_sidearm_index() -> int:
 
 
 ## Takes out the weapon at `index`, or puts the one in hand away with -1.
+## The weapon dematerializing back into the pack (the watch's store), or null.
+func storing_weapon() -> Weapon:
+	return _storing if _storing != null and is_instance_valid(_storing) else null
+
+
+## Starts weapon `weapon` dematerializing out of the hand over `time`
+## seconds (`Loadout.store_weapon`). Once it has, it is taken away and the
+## hands are empty.
+func begin_store(weapon: Weapon, time: float) -> void:
+	_storing = weapon
+	dematerialize_time = maxf(time, 0.01)
+	dematerialize_left = dematerialize_time
+
+
+func _tick_store(delta: float) -> void:
+	if _storing == null:
+		return
+	if not is_instance_valid(_storing):
+		_storing = null
+		dematerialize_left = 0.0
+		return
+	dematerialize_left = maxf(0.0, dematerialize_left - delta)
+	if dematerialize_left > 0.0:
+		return
+	var index := weapons.find(_storing)
+	var was_held := index >= 0 and index == active_weapon_index
+	_storing = null
+	if index < 0:
+		return
+	remove_weapon(index)
+	if was_held:
+		# Put away, not swapped: the hands are empty, and the holster key
+		# draws the first weapon still worn.
+		var order := slot_order()
+		active_weapon_index = -1
+		last_drawn = order[0] if not order.is_empty() else 0
+		_refresh_weapon_visuals()
+
+
 func _draw_weapon(index: int) -> void:
 	var old := get_active_weapon()
 	if old:
