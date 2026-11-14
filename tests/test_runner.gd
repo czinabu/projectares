@@ -4240,19 +4240,33 @@ func _test_online() -> void:
 			var bag_id := bag.get_instance_id()
 			var carried := me.inventory.items.size()
 			var looted := func() -> bool: return me.inventory.items.size() > carried
+			# The server loots whatever the eyes' ray meets first, like a
+			# player's use key. The bike ridden earlier, or a bump in the
+			# ground, can stand between the looter and the bag, so press only
+			# while the ray is on the bag, and step round it until it is.
+			var in_way := "nothing"
+			var gap := 99.0
 			for i in 600:
 				if looted.call() or not is_instance_valid(bag):
 					break
 				face.call(bag.global_position + Vector3(0, 0.3, 0))
-				var gap := Vector2(bag.global_position.x - me.global_position.x,
+				gap = Vector2(bag.global_position.x - me.global_position.x,
 						bag.global_position.z - me.global_position.z).length()
-				me.cmd.move = _move_toward(me, bag.global_position) if gap > 1.6 else Vector2.ZERO
-				me.cmd.interact_pressed = gap <= 2.6 and i % 10 == 0
+				var aimed := me.find_interactable()
+				var on_bag := aimed == bag
+				if gap <= 2.6 and not on_bag:
+					in_way = aimed.name if aimed != null else "the ground or a wall"
+				if gap > 1.6:
+					me.cmd.move = _move_toward(me, bag.global_position)
+				else:
+					me.cmd.move = Vector2.ZERO if on_bag else Vector2(1, 0)
+				me.cmd.interact_pressed = gap <= 2.6 and on_bag and i % 10 == 0
 				await frames(1)
 			me.cmd.move = Vector2.ZERO
 			me.cmd.interact_pressed = false
 			await _wait_until(looted, 60)
-			check(looted.call(), "looting the bag fills the backpack from the server (%d items)" % me.inventory.items.size())
+			check(looted.call(), "looting the bag fills the backpack from the server (%d items; %.1f m from the bag, last in the way: %s)"
+					% [me.inventory.items.size(), gap, in_way])
 			# The notice is its own message and can land a moment after the backpack.
 			var told_loot := func() -> bool:
 				return notices.any(func(text: String) -> bool: return text.begins_with("Looted "))
