@@ -464,9 +464,11 @@ func _process(delta: float) -> void:
 	_detail_wait += 1
 	if _detail_wait < _detail_every:
 		# The actor puts its hand back every tick; keep the weapon on the
-		# model's hand as it was last posed.
+		# model's hand as it was last posed. The bones read back here are
+		# the clip's, not where the arm reached (an aimed gun, a look over),
+		# so the hand goes where it was last shown, carried with the actor.
 		if arm != null and _skeleton != null:
-			arm.hold_weapon()
+			arm.hold_shown()
 		return
 	var step := _detail_delta
 	_detail_delta = 0.0

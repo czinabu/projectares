@@ -848,6 +848,17 @@ func _blade_turn(aimed: Basis) -> Basis:
 	return turn
 
 
+## Between poses of a body posed every few frames (`ActorSkin.detail_step`):
+## the hand node back where `hold_weapon` last showed it, in the actor's
+## frame, since the skeleton's bones only hold what the arm reached inside
+## its update.
+func hold_shown() -> void:
+	if actor.is_dead or not actor.hand.has_meta("shown_local"):
+		hold_weapon()
+		return
+	actor.hand.global_transform = actor.global_transform * (actor.hand.get_meta("shown_local") as Transform3D)
+
+
 ## Puts the actor's hand node, which carries the weapon, on the model's hand.
 func hold_weapon() -> void:
 	if grip_bone < 0 or actor.is_dead:

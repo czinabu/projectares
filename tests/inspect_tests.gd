@@ -151,6 +151,16 @@ static func _check_pose(t: Node) -> void:
 				"%s: brought in toward the middle of the body (%.2f m in)" % [kind, (ready_at - in_at).dot(side)])
 		t.check((in_at - eye).dot(ahead) > 0.1, "%s: still in front of the eyes, where first person sees it" % kind)
 		t.check(turned > 25.0, "%s: turned in the hand to show a side (%.0f degrees)" % [kind, turned])
+		# A body posed every few frames (someone further off) keeps the item
+		# in the hand between poses, not back on the clip's hand.
+		var shown_at := weapon.visual.global_position
+		p.hand.position = Actor.HAND_REST
+		skin._detail_every = 3
+		skin._detail_wait = 0
+		skin._process(1.0 / 60.0)
+		t.check(weapon.visual.global_position.distance_to(shown_at) < 0.01,
+				"%s: posed every few frames, it stays in the hand between poses" % kind)
+		skin._detail_every = 1
 		p.cmd.inspect = false
 		await t.frames(60)
 		var back := rad_to_deg(Quaternion(ready_turn).angle_to(Quaternion(weapon.visual.global_basis.orthonormalized())))
