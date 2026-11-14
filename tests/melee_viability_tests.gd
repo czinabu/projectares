@@ -82,13 +82,14 @@ static func _motion(t: Node) -> void:
 			continue
 		var blade := Arsenal._make(id)
 		for style in [blade.swing_style, blade.heavy_style]:
-			if style not in ["slash", "thrust", "chop", ""] or blade.swing_style == "":
+			if style not in ["slash", "thrust", "chop", "cut", ""] or blade.swing_style == "":
 				t.check(false, "%s has a known swing style" % id)
 		styles[id] = [blade.swing_style, blade.heavy_style]
 		blade.free()
 	t.check(styles["spear_lancer"][0] == "thrust", "the spear thrusts")
 	t.check(styles["axe_splitter"][0] == "chop" and styles["hammer_breaker"][0] == "chop", "the axe and hammer chop")
-	t.check(styles["blade_scrap"][0] == "slash" and styles["blade_arc"][0] == "slash", "swords slash")
+	t.check(styles["blade_scrap"][0] == "slash", "the straight sword slashes")
+	t.check(styles["blade_arc"] == ["cut", ""], "the katana cuts in both hands, its heavy too")
 	t.check(styles["knife_gutter"] == ["slash", "thrust"], "the knife slashes, and its heavy is a stab")
 
 	var sword := Arsenal._make("blade_scrap")

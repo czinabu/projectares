@@ -185,7 +185,8 @@ var two_hand_armor_break := 0.5
 
 ## How the attacks look, from the item's stats (view only): "slash" sweeps an
 ## arc (swords), "thrust" stabs straight out along the aim (the spear),
-## "chop" comes down from over the shoulder (the axe, the hammer).
+## "chop" comes down from over the shoulder (the axe, the hammer), "cut"
+## is a two-handed sword's kenjutsu cuts (the katana, `ActionPose.cuts`).
 ## `heavy_style` gives the heavy its own, "" for the same. `swing_scale`
 ## sizes the motion (a knife's are small and tight).
 var swing_style := "slash"

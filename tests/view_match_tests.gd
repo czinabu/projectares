@@ -8,6 +8,7 @@ static func run(t: Node) -> void:
 	print("First and third person match")
 	await _check_without_skin(t)
 	await _check_with_skin(t)
+	await _check_katana_cuts(t)
 
 
 ## The shared state works with no model at all (headless, or a skin without
@@ -319,6 +320,103 @@ static func _check_with_skin(t: Node) -> void:
 	await t.get_tree().create_timer(0.5).timeout
 	t.check(pose.low < 0.1, "aiming raises it again (low %.2f, stand %s)" % [pose.low, skin._current])
 	p.cmd.secondary = false
+	Look.enabled = false
+	raid.queue_free()
+	await t.frames(2)
+
+
+## The katana cuts in both hands (kenjutsu and kendo, `ActionPose.cuts`):
+## kesa-giri from the right, gyaku-kesa from the left, shomen from over
+## the head and a tsuki for the heavy from the middle. The cut sweeps out
+## in front of the body edge first, and the off hand stays on the handle
+## from the windup to the follow-through, in both views (one body).
+static func _check_katana_cuts(t: Node) -> void:
+	Look.enabled = true
+	var raid := Raid.new()
+	t.add_child(raid)
+	raid.start(Worlds.get_world("ashfront"), 33, ["rifle_carbine", "blade_arc", "plate_light"])
+	await t.frames(20)
+	var p := raid.player
+	var skin := p.get_node_or_null("Skin")
+	t.check(skin != null and skin.arm != null and skin.arm.off_ik != null, "the player has both arms to hold a katana")
+	if skin == null or skin.arm == null or skin.arm.off_ik == null:
+		Look.enabled = false
+		raid.queue_free()
+		return
+	p.set_physics_process(false)
+	var pose := ActionPose.of(p)
+	var blade: MeleeWeapon = null
+	for i in p.weapons.size():
+		if p.weapons[i] is MeleeWeapon:
+			blade = p.weapons[i]
+			p.active_weapon_index = i
+	await t.frames(60)
+	t.check(blade != null and blade.style_now() == "cut", "the katana swings in two-handed cuts")
+	if blade == null:
+		Look.enabled = false
+		raid.queue_free()
+		return
+	var D := MeleeWeapon.Dir
+	# The cuts as data: through the contact key at the hit, the blade
+	# pointing out ahead there, edge leading the way the cut goes.
+	blade._shown_kind = "light"
+	for dir: int in [D.RIGHT, D.LEFT, D.OVERHEAD]:
+		var hit: Vector3 = pose.cuts[dir][1][0]
+		t.check(pose.cut_reach(blade, dir, 0.5).distance_to(hit) < 0.001, "cut %d passes through its contact key" % dir)
+		var at_hit: Basis = pose._cut_blade_at(dir, 0.5)
+		t.check((at_hit * Vector3.UP).z < -0.6, "cut %d: at the hit the blade points out in front" % dir)
+		t.check((pose._cut_blade_at(dir, 0.0) * Vector3.UP).y > 0.5, "cut %d: wound up the blade is raised" % dir)
+		var edge := at_hit * pose.cut_edge
+		var leads := edge.x < -0.3 if dir == D.RIGHT else (edge.x > 0.3 if dir == D.LEFT else edge.y < -0.3)
+		t.check(leads, "cut %d: the edge leads the cut (%s)" % [dir, edge])
+		# Never through the body: the blade at every step points ahead of it
+		# or out to the side, not back into the chest.
+		var through := false
+		for k in 11:
+			var way: Vector3 = pose._cut_blade_at(dir, k / 10.0) * Vector3.UP
+			through = through or (way.z > 0.5 and absf(way.x) < 0.2 and way.y < 0.0)
+		t.check(not through, "cut %d never swings back through the body" % dir)
+	t.check(pose.windup_reach(blade, D.RIGHT).x > pose.windup_reach(blade, D.LEFT).x
+			and pose.windup_reach(blade, D.OVERHEAD).y > pose.windup_reach(blade, D.RIGHT).y,
+			"windups show their side: by the right shoulder, the left, and over the head")
+	t.check(str(pose.cut_key(blade, D.OVERHEAD)) == str(D.OVERHEAD), "a light from the middle is a shomen cut")
+	blade._shown_kind = "heavy"
+	t.check(str(pose.cut_key(blade, D.OVERHEAD)) == "tsuki" and str(pose.cut_key(blade, D.RIGHT)) == str(D.RIGHT),
+			"a heavy from the middle is a two-handed thrust, from a side a heavy kesa cut")
+	t.check(pose.windup_reach(blade, D.RIGHT).y > pose.cuts[D.RIGHT][0][0].y, "a heavy cut is raised higher")
+	blade._shown_kind = "light"
+	# Held mid-swing (a light from the right): both hands on the handle,
+	# the blade turned the way the cut has it.
+	blade.attack_dir = D.RIGHT
+	blade._windup_left = 0.0
+	blade._swing_time = MeleeWeapon.SWING_TIME
+	blade._swing_left = blade._swing_time * 0.5
+	await t.frames(30)
+	var arm = skin.arm
+	t.check(pose.cut_grip > 0.99 and arm._hilt > 0.99 and arm.off_ik.influence > 0.99,
+			"through a cut the off hand stays on the handle")
+	# Bone poses are only final inside the skeleton's update.
+	var skel: Skeleton3D = arm.skeleton
+	var gap := [INF]
+	var read := func() -> void:
+		if arm._off_hold_point != null and arm._off_spot != Vector3.INF:
+			var fist: Vector3 = skel.global_transform * (skel.get_bone_global_pose(arm._off_wrist) * (arm._off_hold_point as Vector3))
+			gap[0] = fist.distance_to(arm._off_spot)
+	skel.skeleton_updated.connect(read)
+	await t.frames(3)
+	skel.skeleton_updated.disconnect(read)
+	t.check(gap[0] < Look.HAND_WIDTH * 1.25, "the off fist is on the handle mid-cut (%.3f m off)" % gap[0])
+	var aim := p.global_basis.orthonormalized() * Basis(Vector3.RIGHT, p.cmd.pitch)
+	var wanted: Vector3 = (aim * (pose.cut_blade(blade) as Basis) * Vector3.UP).normalized()
+	var shown := (blade.visual.global_basis.orthonormalized() * Vector3.UP).normalized()
+	t.check(shown.angle_to(wanted) < 0.4, "the blade is shown the way the cut has it (%.2f rad off)" % shown.angle_to(wanted))
+	# Done: at rest it is back in the ready hold, both hands on.
+	blade._swing_left = 0.0
+	blade._cooldown = 0.0
+	pose._follow_left = 0.0
+	await t.frames(40)
+	t.check(pose.cut_blade(blade) == null and pose.held_ready > 0.95 and arm._hilt > 0.95,
+			"after the cut the katana is back in its two-handed ready hold")
 	Look.enabled = false
 	raid.queue_free()
 	await t.frames(2)
