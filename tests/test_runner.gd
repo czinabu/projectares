@@ -1014,9 +1014,17 @@ func _test_main_flow() -> void:
 			"the third-person card stands past the character, big enough to read and whole on screen (%d px wide)"
 			% roundi(card_right.x - card_left.x))
 	var head_on_screen := cam.unproject_position(p.get_eye_position())
-	check(card_right.x < head_on_screen.x and card_right.x < screen.x * 0.5,
-			"and beside the character, clear of the head and the crosshair (card to %d, head at %d, of %d)"
-			% [roundi(card_right.x), roundi(head_on_screen.x), roundi(screen.x)])
+	# Only the card's bare right margin (`tp_tuck`) may sit behind the head;
+	# its text stays clear of the character.
+	var text_right := card_right.x - (card_right.x - card_left.x) * wrist.tp_tuck
+	check(text_right < head_on_screen.x and text_right < screen.x * 0.5,
+			"and beside the character, its text clear of the head and the crosshair (text to %d, head at %d, of %d)"
+			% [roundi(text_right), roundi(head_on_screen.x), roundi(screen.x)])
+	# Close to the body: its lower edge sits just over the watch.
+	var edge_low := cam.unproject_position(holo.global_position - holo.global_basis.y * wrist.face_size.y * 0.5)
+	var watch_at := cam.unproject_position(wrist.watch_position(p))
+	check(edge_low.y < watch_at.y and watch_at.y - edge_low.y < screen.y * 0.1,
+			"it sits close to the body, its lower edge just over the watch (%d px over it)" % roundi(watch_at.y - edge_low.y))
 	# The light rises from the watch up into the card's lower edge (Caleb's
 	# feedback: never slanting down to it), and runs outwards along it.
 	var card_low := cam.unproject_position(holo.global_position - holo.global_basis.y * wrist.face_size.y * 0.5)
