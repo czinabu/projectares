@@ -56,6 +56,7 @@ const BaseLayout := preload("res://core/base/base_layout.gd")
 const BaseUpgrades := preload("res://core/base/base_upgrades.gd")
 const VehicleScript := preload("res://core/vehicle/vehicle.gd")
 const MirrorScript := preload("res://core/visual/mirror.gd")
+const SkinScript := preload("res://core/visual/actor_skin.gd")
 
 # Room tuning.
 var room_size := Vector3(24.0, 6.0, 18.0)
@@ -180,6 +181,9 @@ const DEPLOY_DEPTH := 4.4
 ## The storage wall: shelves along the front wall from this x, left of the
 ## door, and the height of each kind's shelf.
 const STORAGE_FROM_X := -10.6
+## How high the helmet shelf over the armor stands is: above the stands' sign,
+## still in reach.
+const HELMET_SHELF_Y := 3.2
 const STORAGE_ROWS := {"supplies": 0.95, "chip_case": 1.9, "trophy": 2.85}
 
 ## Display kinds whose title is already on the room or the furniture.
@@ -925,6 +929,9 @@ func spot_transform(kind: String, index: int) -> Transform3D:
 		"armor_stand":
 			# The back wall, left of the door to the range.
 			return _spot(Vector3(-10.5 + 1.8 * i, 0.0, -wall_z + 1.0), 0.0)
+		"helmet_shelf":
+			# A shelf on the back wall over the armor stands, above their sign.
+			return _spot(Vector3(-10.5 + 0.9 * i, HELMET_SHELF_Y, -wall_z + 0.3), 0.0)
 		"rig_stand":
 			# The back wall, right of the door to the range.
 			return _spot(Vector3(2.0 + 2.0 * i, 0.0, -wall_z + 1.0), 0.0)
@@ -1962,6 +1969,18 @@ func _fill(display: Display) -> void:
 			box = Vector3(1.2, 2.0, 1.0)
 			box_at = Vector3(0, 1.0, 0)
 			plate_at = Vector3(0, 2.25, 0)
+		"helmet_shelf":
+			# A bracket off the wall, the helmet resting on it as it is worn.
+			model.add_child(_part(Vector3(0.6, 0.05, 0.45), Vector3(0, -0.2, 0.1), Color(0.2, 0.2, 0.22)))
+			var stats := ItemDB.item_stats(id)
+			var helmet := SkinScript.build_helmet(str(stats.get("mode", "")), stats.get("glass_color", Color.WHITE),
+					Vector3(0.27, 0.31, 0.31), Color(0.22, 0.23, 0.25))
+			helmet.position = Vector3(0, -0.02, 0.12)
+			model.add_child(helmet)
+			box = Vector3(0.7, 0.55, 0.55)
+			box_at = Vector3(0, -0.05, 0.1)
+			plate_at = Vector3(0, -0.36, 0.38)
+			plate_size = 0.09
 		"rig_stand":
 			_build_rig(model, id, color)
 			box = Vector3(1.2, 2.0, 1.0)

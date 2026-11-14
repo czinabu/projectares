@@ -218,7 +218,7 @@ func sign_in(shown_name: String, secret: String) -> Dictionary:
 	account.shown_name = shown_name.strip_edges().left(MAX_NAME)
 	account.salt = Crypto.new().generate_random_bytes(16).hex_encode()
 	account.secret_hash = _hash(account.salt, secret)
-	account.loadout = StashRules.starter_loadout()
+	account.loadout = StashRules.new_player_loadout()
 	StashRules.add_items(account.stash, ProfileScript.WELCOME_CRATE)
 	_accounts[id] = account
 	grant_gear_crates(account)
