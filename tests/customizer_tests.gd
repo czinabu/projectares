@@ -286,6 +286,32 @@ static func _run_mirror(t: Node) -> void:
 	phone.mirror_step("hair", 1)
 	await t.frames(1)
 	t.check(looks.size() == 2 and phone.mirror_row == 6, "a row's arrows scroll it and select it")
+	# The wheel works like the watch's icons (Caleb's feedback: it used to
+	# scroll the page and turn the row under the mouse at once).
+	var wheel := InputEventMouseButton.new()
+	wheel.button_index = MOUSE_BUTTON_WHEEL_DOWN
+	wheel.pressed = true
+	t.check(phone._mirror_mouse(wheel) and phone.mirror_row == 7 and not phone.mirror_picking and looks.size() == 2,
+			"with no row open the wheel moves between the rows and changes nothing")
+	await t.frames(1)
+	var click := InputEventMouseButton.new()
+	click.button_index = MOUSE_BUTTON_LEFT
+	click.pressed = true
+	rows = phone._body.get_children().filter(func(child: Node) -> bool: return child is PanelContainer)
+	(rows[7] as Control).gui_input.emit(click)
+	await t.frames(1)
+	t.check(phone.mirror_picking and phone.mirror_row == 7, "a click opens the row")
+	t.check(phone._mirror_mouse(wheel) and phone.mirror_row == 7 and looks.size() == 3,
+			"with the row open the wheel turns through its options and stays on the row")
+	var right_click := InputEventMouseButton.new()
+	right_click.button_index = MOUSE_BUTTON_RIGHT
+	right_click.pressed = true
+	t.check(phone._mirror_mouse(right_click) and not phone.mirror_picking, "a right click closes the row")
+	phone._mirror_mouse(wheel)
+	phone._mirror_mouse(wheel)
+	t.check(phone.mirror_row == rows.size() - 1 and looks.size() == 3, "closed, the wheel stops at the last row")
+	t.check(not phone._mirror_mouse(right_click), "a right click with no row open is left alone")
+	await t.frames(1)
 	phone.open_app("news")
 	t.check(ups == [true, false], "leaving the app puts the mirror away")
 	phone.open_app("mirror")
@@ -330,6 +356,15 @@ static func _run_mirror(t: Node) -> void:
 		t.check(controller.camera.cull_mask & (1 << (MirrorScript.HEAD_LAYER - 1)) == 0,
 				"but the player's own camera leaves the head out")
 		t.check(not main.hud.crosshair.visible, "the crosshair is hidden so it does not sit on your face in the mirror")
+		t.check(controller.phone_mirror == mirror, "the camera knows the mirror, so third person keeps it in frame")
+		# Stood in front of the body, never along a camera that looks off to
+		# one side (third person over the shoulder, reading the phone).
+		controller.camera.global_rotation.y += 0.8
+		mirror.place()
+		var square := mirror.global_position - me.global_position
+		square.y = 0.0
+		t.check(square.normalized().dot(-me.global_basis.z) > 0.95,
+				"the mirror stands square in front of the body, wherever the camera looks")
 	var before: Dictionary = me.get_meta("appearance", {}).duplicate()
 	main.phone.mirror_step("body", 1)
 	await t.frames(2)
@@ -340,7 +375,7 @@ static func _run_mirror(t: Node) -> void:
 	for i in 2:
 		await t.get_tree().process_frame
 	t.check(main.mirror == null and main.raid.find_children("Mirror", "", true, false).is_empty()
-			and main.hud.crosshair.visible,
+			and main.hud.crosshair.visible and controller.phone_mirror == null,
 			"putting the phone away takes the mirror away and brings the crosshair back")
 
 	# Rendered: a reflection camera through the glass, and the body on its layer.

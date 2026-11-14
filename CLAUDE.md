@@ -32,9 +32,11 @@ without Caleb, and update the gap list when a PR closes a row.
   when the player presses the toggle (playtest feedback). The one exception:
   getting on a vehicle uses a separate riding view (third-person by default),
   and getting off restores the on-foot view. And in third person, while the
-  phone is out, the camera eases in over the shoulder to read its holo
-  (`PlayerController._read_phone`, Caleb's call) and eases back after; the
-  view stays third person.
+  phone is out, the camera eases in over the shoulder to read the phone in
+  the hand (`PlayerController._read_phone`, Caleb's call) and eases back
+  after; the view stays third person. In both views the eyes drop to the
+  phone while it is out (`phone_view_pitch`, less with the Mirror app's
+  mirror up), the view only: `pitch` and the aim stay put.
 - `Raid` has no camera, HUD, or input code. It must keep working headless.
 - The endless warzone. A `Raid` is one running world and it never ends: no
   timer, no exits, no restart. It keeps itself alive (`_tick_bots`,
@@ -321,9 +323,13 @@ without Caleb, and update the gap list when a PR closes a row.
   the melee reach and shoulder turn, the reload motion, the low ready, the
   drawing back of a held heavy and the easing back of a recovering blade,
   the gun brought up to the eye,
-  the watch raise (from `ActorCommand.watch_up`) and the phone hold
+  the watch raise (from `ActorCommand.watch_up`), the phone hold
   (`ActionPose.phone`, from `ActorCommand.phone`, which `Locomotion` poses
-  the body from). `WeaponArm` and `ActorSkin` pose the model from it; a new
+  the body from) and the inspect key's look over (`ActionPose.inspect`,
+  from the held flag `ActorCommand.inspect`: the wrist comes to
+  `inspect_point` and turns the item through `INSPECT_TURNS`, timed by each
+  view from when it saw the flag; check with `visual_check.tscn -- <dir>
+  --inspect-only`). `WeaponArm` and `ActorSkin` pose the model from it; a new
   hand or weapon animation goes there. Weapons are held, not floated
   (Caleb's call): the hand carries them, each by its own grip (Caleb's
   call), found on the model rather than tuned by hand. `Look._measure_hold`
@@ -762,13 +768,18 @@ without Caleb, and update the gap list when a PR closes a row.
   phone puts its screen, a `SubViewport` drawn with the device's frame and
   chin keys, on that handheld's face (`Phone.set_holder`,
   `ActorSkin.set_phone_screen`) and clicks are cast onto it; other players'
-  show lit glass. The device also projects a holo of its screen
-  (`Handheld.holo_of`) for reading from outside: it sits on
-  `Mirror.HEAD_LAYER`, so your own first-person camera leaves it out like the
-  head and reads the screen in the hand, while third person reads and clicks
-  the holo (Caleb's call), solid and drawn over signs, framed off the
-  crosshair (`PlayerController.phone_read_offset`). The other hand hangs at
-  the side while the phone is out (`Locomotion.phone_rest`). A new app is an entry in `Phone.APPS` with a line glyph in
+  show lit glass. Nothing floats off the device (Caleb's call, replacing the
+  old holo panel): it is held at the chest, a forearm out and right of the
+  middle, below the face (`Locomotion.phone_wrist`), so others and a mirror
+  see a person reading a phone, and every view reads and clicks that same
+  face: first person from the eyes, third person over the shoulder, framed
+  off the crosshair (`PlayerController.phone_read_offset`) and widened to
+  keep the Mirror app's mirror in frame (`phone_mirror`). That mirror
+  stands square in front of the body, never along the camera. The Mirror
+  app's wheel works like a watch icon: it moves between rows, a click opens
+  one for the wheel to turn, a right click closes it (`Phone._mirror_mouse`).
+  The other hand hangs at the side while the phone is out
+  (`Locomotion.phone_rest`). A new app is an entry in `Phone.APPS` with a line glyph in
   `Phone.AppIcon`. Going online is the Servers app (Caleb's call: no Uplink
   console in the base): it asks `Main` to host, join by address or leave
   (`host_requested`, `join_requested`, `leave_server_requested`) and shows

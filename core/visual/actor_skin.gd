@@ -469,9 +469,11 @@ func _process(delta: float) -> void:
 	_detail_wait += 1
 	if _detail_wait < _detail_every:
 		# The actor puts its hand back every tick; keep the weapon on the
-		# model's hand as it was last posed.
+		# model's hand as it was last posed. The bones read back here are
+		# the clip's, not where the arm reached (an aimed gun, a look over),
+		# so the hand goes where it was last shown, carried with the actor.
 		if arm != null and _skeleton != null:
-			arm.hold_weapon()
+			arm.hold_shown()
 		return
 	var step := _detail_delta
 	_detail_delta = 0.0
@@ -801,8 +803,8 @@ func handheld() -> Node3D:
 	return _phone_prop if _phone_prop != null and _phone_prop.visible else null
 
 
-## Sets what the phone shows on its face and its holo panel: your own
-## phone's screen, or null for lit glass and an unreadable sheen.
+## Sets what the phone shows on its face: your own phone's screen, or null
+## for lit glass.
 func set_phone_screen(screen: Material) -> void:
 	phone_screen = screen
 	_dress_phone_screen()
@@ -812,10 +814,6 @@ func _dress_phone_screen() -> void:
 	var face := Handheld.face_of(_phone_prop)
 	if face != null:
 		face.set_surface_override_material(0, phone_screen if phone_screen != null else Handheld.glass_material())
-	var holo := Handheld.holo_of(_phone_prop)
-	if holo != null:
-		var picture: Texture2D = (phone_screen as StandardMaterial3D).albedo_texture if phone_screen is StandardMaterial3D else null
-		holo.material_override = Handheld.holo_material(picture)
 
 
 ## True once the actor has been off the ground long enough to show it.
@@ -1637,7 +1635,11 @@ func _update_toy(delta: float) -> void:
 	var size := Vector3.ONE * VehicleScript.TOY_SCALE * lerpf(0.4, 1.0, grown)
 	# Kept in the hand's own frame, so it moves with the hand wherever the
 	# hand is put this frame, turned to face the way the actor faces.
-	var turn := actor.hand.global_basis.orthonormalized().inverse() * actor.global_basis.orthonormalized()
+	# Looked over (the inspect key), it turns with the wrist.
+	var facing := actor.global_basis.orthonormalized()
+	if pose.inspecting() == "hand":
+		facing = facing * pose.inspect_basis()
+	var turn := actor.hand.global_basis.orthonormalized().inverse() * facing
 	_toy_prop.transform = Transform3D(turn * Basis.from_scale(size), turn * toy_on_palm)
 	_set_toy_digitized(grown if _toy_in < 1.0 else 1.0)
 

@@ -28,6 +28,7 @@ const KEY_ACTIONS := {
 	"phone": KEY_P,
 	"check_wrist": KEY_X,
 	"free_look": KEY_V,
+	"inspect": KEY_I,
 }
 
 const MOUSE_ACTIONS := {

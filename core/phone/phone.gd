@@ -118,6 +118,7 @@ const CONTROLS := [
 		["Reload", "{reload}"],
 		["Primary / sidearm / melee", "{weapon_1} {weapon_2} {weapon_3}, or the wheel (watch down)"],
 		["Put away, or draw again", "{holster}"],
+		["Inspect what is in your hand (any key or click stops)", "{inspect}"],
 		["Use a medkit", "{heal}"],
 		["Use your ability", "{ability}"],
 		["Use your helmet's visor (zoom, scan, thermal)", "{visor}, again to step or turn off"],
@@ -160,7 +161,8 @@ const CONTROLS := [
 	["PHONE AND MOUSE", [
 		["Open or close the phone", "{phone}"],
 		["Open the phone at Settings, or close it; step back from a console", "Esc"],
-		["Mirror app: choose, then scroll", "Arrows or W A S D"],
+		["Mirror app: wheel to a row, click it, wheel through it; right click to go back", "Wheel, clicks"],
+		["Mirror app: choose a row, then scroll it", "Arrows or W A S D"],
 	]],
 ]
 
@@ -195,6 +197,10 @@ var wardrobe: CharacterPanel
 var mirror_up := false
 ## The choice the Mirror app's keys move (an index of `wardrobe.pick_keys()`).
 var mirror_row := 0
+## True while that row is open (like a watch icon, Caleb's call): the wheel
+## then turns through its options instead of moving between rows. A click
+## on a row opens it, a right click closes it.
+var mirror_picking := false
 
 ## The screen's 2D viewport: everything on the phone draws here.
 var _screen: SubViewport
@@ -219,7 +225,7 @@ var _chassis: Control
 ## hand holds the handheld (`ActorSkin.handheld`) and its face shows this
 ## screen. Null in a test with no world.
 var holder: Node3D
-## The holo panel of the handheld being held now, where clicks land, or
+## The face of the handheld being held now, where clicks land, or
 ## null (then the screen shows flat, as with no world at all).
 var _device: MeshInstance3D
 ## The material that puts this screen on the handheld's face.
@@ -268,6 +274,8 @@ func _input(event: InputEvent) -> void:
 		var mouse := event as InputEventMouse
 		var at := screen_point(mouse.position)
 		get_viewport().set_input_as_handled()
+		if mirror_open() and _mirror_mouse(mouse as InputEventMouseButton):
+			return
 		if at.x < 0.0:
 			var button := mouse as InputEventMouseButton
 			if button != null and button.pressed and button.button_index == MOUSE_BUTTON_LEFT:
@@ -310,6 +318,34 @@ func opens_on_escape(event: InputEvent) -> bool:
 			and (mouse_in_world or Input.mouse_mode == Input.MOUSE_MODE_CAPTURED)
 
 
+## The Mirror app's wheel and right click, wherever the mouse is, so the
+## wheel never both scrolls the page and turns a row (Caleb's feedback): the
+## wheel moves between the rows, stopping at the ends, until one is open
+## (a click on it), then turns through its options; a right click closes
+## it. Returns true when the press was the Mirror app's.
+func _mirror_mouse(button: InputEventMouseButton) -> bool:
+	if button == null or not button.pressed or wardrobe == null:
+		return false
+	var keys := wardrobe.pick_keys()
+	if keys.is_empty():
+		return false
+	match button.button_index:
+		MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN:
+			var steps := -1 if button.button_index == MOUSE_BUTTON_WHEEL_UP else 1
+			if mirror_picking:
+				mirror_step(keys[clampi(mirror_row, 0, keys.size() - 1)], steps)
+			else:
+				mirror_row = clampi(mirror_row + steps, 0, keys.size() - 1)
+		MOUSE_BUTTON_RIGHT:
+			if not mirror_picking:
+				return false
+			mirror_picking = false
+		_:
+			return false
+	refresh()
+	return true
+
+
 ## The Mirror app's keys: up and down (or W and S) pick a choice, left and
 ## right (or A and D) scroll through it.
 func _mirror_key(key: Key) -> bool:
@@ -317,8 +353,12 @@ func _mirror_key(key: Key) -> bool:
 	if rows == 0:
 		return false
 	match key:
-		KEY_UP, KEY_W: mirror_row = posmod(mirror_row - 1, rows)
-		KEY_DOWN, KEY_S: mirror_row = posmod(mirror_row + 1, rows)
+		KEY_UP, KEY_W:
+			mirror_row = posmod(mirror_row - 1, rows)
+			mirror_picking = false
+		KEY_DOWN, KEY_S:
+			mirror_row = posmod(mirror_row + 1, rows)
+			mirror_picking = false
 		KEY_LEFT, KEY_A: mirror_step(wardrobe.pick_keys()[mirror_row], -1)
 		KEY_RIGHT, KEY_D: mirror_step(wardrobe.pick_keys()[mirror_row], 1)
 		_: return false
@@ -561,6 +601,7 @@ func open_app(p_app: String) -> void:
 		return
 	app = p_app
 	chat_with = ""
+	mirror_picking = false
 	_link_focus = ""
 	if app == "news":
 		for entry: Dictionary in news():
@@ -932,8 +973,9 @@ func _hold(_camera: Camera3D) -> void:
 		if skin != null and skin.has_method("handheld"):
 			if skin.phone_screen != _face_mat:
 				skin.set_phone_screen(_face_mat)
-			# Clicks land on the holo panel, where the screen is read.
-			_device = Handheld.holo_of(skin.handheld())
+			# Clicks land on the handheld's own face, where the screen is
+			# read in every view.
+			_device = Handheld.face_of(skin.handheld())
 	_flat.visible = is_open and _device == null and not has_hand()
 
 
@@ -960,23 +1002,17 @@ func screen_point(mouse: Vector2) -> Vector2:
 	if camera == null or _device == null or not _device.is_visible_in_tree():
 		return miss
 	var target := _device
-	if camera.cull_mask & _device.layers == 0:
-		# A camera that leaves out the holo (first person) clicks on the face.
-		target = _device.get_parent() as MeshInstance3D
-		if target == null:
-			return miss
 	var to_local := target.global_transform.affine_inverse()
 	var o := to_local * camera.project_ray_origin(mouse)
 	var d := to_local.basis * camera.project_ray_normal(mouse)
-	var panel := target.mesh as QuadMesh
-	var front := 0.0 if panel != null else Handheld.DEPTH * 0.5
+	var front := Handheld.DEPTH * 0.5
 	if absf(d.z) < 0.00001:
 		return miss
 	var t := (front - o.z) / d.z
 	if t < 0.0:
 		return miss
 	var p := o + d * t
-	var size := panel.size if panel != null else Handheld.body_size()
+	var size := Handheld.body_size()
 	var u := p.x / size.x + 0.5
 	var v := 0.5 - p.y / size.y
 	if u < 0.0 or u > 1.0 or v < 0.0 or v > 1.0:
@@ -1380,7 +1416,8 @@ func _draw_mirror() -> void:
 		_body.add_child(row)
 		if i == mirror_row:
 			_keep_in_view.call_deferred(row)
-	_body.add_child(_label("Up / down: choose   Left / right or the wheel: scroll", 13, Color(0.6, 0.6, 0.6)))
+	_body.add_child(_label("Wheel: move between rows. Click a row, then the wheel turns it. Right click: back.",
+			13, Color(0.6, 0.6, 0.6)))
 	var shuffle := _button("Surprise me", func() -> void: wardrobe.randomize_look())
 	shuffle.focus_mode = Control.FOCUS_NONE
 	_body.add_child(shuffle)
@@ -1395,9 +1432,10 @@ func _keep_in_view(row: Control) -> void:
 func _mirror_row(key: String, selected: bool) -> PanelContainer:
 	var card := PanelContainer.new()
 	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.12, 0.11, 0.1, 0.95) if selected else Color(0.08, 0.075, 0.07, 0.9)
+	var open := selected and mirror_picking
+	style.bg_color = Color(0.2, 0.15, 0.08, 0.97) if open else Color(0.12, 0.11, 0.1, 0.95) if selected else Color(0.08, 0.075, 0.07, 0.9)
 	style.border_color = UiTheme.ACCENT if selected else Color(0.2, 0.19, 0.17)
-	style.set_border_width_all(2)
+	style.set_border_width_all(4 if open else 2)
 	style.set_corner_radius_all(8)
 	style.set_content_margin_all(6)
 	card.add_theme_stylebox_override("panel", style)
@@ -1405,14 +1443,14 @@ func _mirror_row(key: String, selected: bool) -> PanelContainer:
 		var button := event as InputEventMouseButton
 		if button == null or not button.pressed:
 			return
-		if button.button_index not in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN, MOUSE_BUTTON_LEFT]:
+		if button.button_index != MOUSE_BUTTON_LEFT:
 			return
-		# Taken before the redraw below frees this row.
+		# Taken before the redraw below frees this row. A click opens the
+		# row for the wheel, and a click on the open row closes it.
 		card.accept_event()
-		match button.button_index:
-			MOUSE_BUTTON_WHEEL_UP: mirror_step(key, -1)
-			MOUSE_BUTTON_WHEEL_DOWN: mirror_step(key, 1)
-			MOUSE_BUTTON_LEFT: mirror_row = wardrobe.pick_keys().find(key)
+		var at := wardrobe.pick_keys().find(key)
+		mirror_picking = not (mirror_picking and at == mirror_row)
+		mirror_row = at
 		refresh.call_deferred())
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 6)

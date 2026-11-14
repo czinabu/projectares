@@ -34,6 +34,7 @@ skies, animated models and effects (see "How it looks" below).
 | Switch how the melee side is picked (mouse flick or movement keys) | B |
 | Switch to primary / sidearm / melee / power weapon | 1 / 2 / 3 / 4, or mouse wheel (watch down) |
 | Reload | R |
+| Inspect what is in your hand (the weapon, or a toy vehicle): it comes up close and turns. Anything else you do stops it | I |
 | Use a medkit | H |
 | Loot, or get on and off a bike | F |
 | Ride a bike: throttle, brake or reverse, steer, boost | W, S, A / D, Shift |

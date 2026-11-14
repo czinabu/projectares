@@ -8,6 +8,8 @@ extends RefCounted
 ## The face of the body is a surface of its own, so the screen can be any
 ## material: your own phone shows its screen's viewport there
 ## (`Phone.screen_texture`), everyone else's shows a lit, unreadable glass.
+## Nothing floats off it (Caleb's call): the screen is read where it is, in
+## the hand, from the eyes in first person and over the shoulder in third.
 ##
 ## Load with `const Handheld := preload("res://core/phone/handheld.gd")`.
 
@@ -27,27 +29,8 @@ const GRIP_ACROSS := 0.16
 const GRIP_RAKE := -0.3
 
 const CASE_COLOR := Color(0.12, 0.122, 0.13)
-## The holo panel the device projects its screen onto (Caleb's call, so the
-## screen reads in third person as in first): its size (m), how far over the
-## device's top edge it floats, and how far its top tips back to the eyes.
-## It is part of the device, so every view shows the same one.
-const HOLO_SIZE := Vector2(0.24, 0.4)
-## How solid the holo of a readable screen is.
-const HOLO_OPACITY := 0.94
-const HOLO_GAP := 0.035
-const HOLO_TIP := 0.22
-## How far out to the right (m) the panel floats, and how far it turns back
-## in to face the eyes: it clears the head, so it shows from over the
-## shoulder in third person too.
-const HOLO_OUT := 0.09
-const HOLO_TURN := 0.3
-
-
 ## Builds the handheld with `screen` on its face (a plain lit glass if null).
 ## The face is the node "Body", surface 0.
-const MirrorScript := preload("res://core/visual/mirror.gd")
-
-
 static func build(screen: Material = null) -> Node3D:
 	var root := Node3D.new()
 	root.name = "Handheld"
@@ -87,102 +70,9 @@ static func build(screen: Material = null) -> Node3D:
 	var cap := _box(root, "GripCap", Vector3(GRIP_SIZE.x * 1.15, 0.01, GRIP_SIZE.z * 1.2), Vector3.ZERO, armour)
 	cap.basis = handle.basis
 	cap.position = handle.basis * Vector3(0.0, -GRIP_SIZE.y * 0.5, 0.0)
-	var holo := MeshInstance3D.new()
-	holo.name = "Holo"
-	var panel := QuadMesh.new()
-	panel.size = HOLO_SIZE
-	holo.mesh = panel
-	holo.transform = holo_in_body()
-	holo.material_override = holo_material(null)
-	body.add_child(holo)
-	var beam := MeshInstance3D.new()
-	beam.name = "Beam"
-	beam.mesh = _beam_mesh(size)
-	beam.material_override = _beam_material()
-	body.add_child(beam)
-	# The holo is for reading from outside: your own first-person camera
-	# leaves it out with the head (Caleb's call) and reads the screen itself.
-	holo.layers = 1 << (MirrorScript.HEAD_LAYER - 1)
-	beam.layers = holo.layers
 	for node in root.find_children("*", "MeshInstance3D", true, false):
 		(node as MeshInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	return root
-
-
-## Where the holo panel sits in the body's frame: centred over the top edge,
-## a gap above it, its top tipped back toward the eyes.
-static func holo_in_body() -> Transform3D:
-	var top := body_size().y * 0.5
-	var tip := Basis(Vector3.UP, HOLO_TURN) * Basis(Vector3.RIGHT, HOLO_TIP)
-	var bottom := Vector3(HOLO_OUT, top + HOLO_GAP, DEPTH * 0.5)
-	return Transform3D(tip, bottom + tip * Vector3(0.0, HOLO_SIZE.y * 0.5, 0.0))
-
-
-## The holo panel of a built handheld, or null.
-static func holo_of(handheld: Node3D) -> MeshInstance3D:
-	var face := face_of(handheld)
-	return face.get_node_or_null("Holo") as MeshInstance3D if face != null else null
-
-
-## The light the screen is projected in: `texture` (your own phone's screen)
-## added onto the world, so its dark glass is see-through and its lines and
-## text glow; null for a phone you cannot read, a faint unreadable sheen.
-static func holo_material(texture: Texture2D) -> StandardMaterial3D:
-	var mat := StandardMaterial3D.new()
-	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
-	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-	mat.disable_receive_shadows = true
-	mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
-	if texture != null:
-		# A readable screen is near solid (playtest feedback: the world bled
-		# through), and drawn after the scene's other see-through things so a
-		# sign behind it never prints over it.
-		mat.blend_mode = BaseMaterial3D.BLEND_MODE_MIX
-		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-		mat.albedo_texture = texture
-		mat.albedo_color = Color(1.0, 0.97, 0.94, HOLO_OPACITY)
-		mat.render_priority = Material.RENDER_PRIORITY_MAX
-	else:
-		var sheen := GradientTexture2D.new()
-		sheen.fill_from = Vector2(0.5, 0.0)
-		sheen.fill_to = Vector2(0.5, 1.0)
-		sheen.gradient = Gradient.new()
-		sheen.gradient.colors = PackedColorArray([_dim(UiTheme.ACCENT, 0.14), _dim(UiTheme.ACCENT, 0.03)])
-		mat.albedo_texture = sheen
-	return mat
-
-
-## `color` scaled down for additive light, kept opaque so it adds only that much.
-static func _dim(color: Color, amount: float) -> Color:
-	return Color(color.r * amount, color.g * amount, color.b * amount, 1.0)
-
-
-## A faint fan of light from the device's top edge up to the panel.
-static func _beam_mesh(size: Vector2) -> ArrayMesh:
-	var holo := holo_in_body()
-	var top := size.y * 0.5
-	var base := [Vector3(-size.x * 0.32, top, DEPTH * 0.5), Vector3(size.x * 0.32, top, DEPTH * 0.5)]
-	var lift := [holo * Vector3(-HOLO_SIZE.x * 0.5, -HOLO_SIZE.y * 0.5, 0.0), holo * Vector3(HOLO_SIZE.x * 0.5, -HOLO_SIZE.y * 0.5, 0.0)]
-	var st := SurfaceTool.new()
-	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var low := Color(UiTheme.ACCENT, 0.3)
-	var high := Color(UiTheme.ACCENT, 0.04)
-	for tri: Array in [[base[0], base[1], lift[1]], [base[0], lift[1], lift[0]]]:
-		for point: Vector3 in tri:
-			st.set_color(low if point.y <= top + 0.001 else high)
-			st.add_vertex(point)
-	return st.commit()
-
-
-static func _beam_material() -> StandardMaterial3D:
-	var mat := StandardMaterial3D.new()
-	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
-	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-	mat.vertex_color_use_as_albedo = true
-	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	return mat
 
 
 ## The body's width and height (m).

@@ -169,6 +169,37 @@ var ads_cup := Vector3(-0.03, -0.035, -0.01)
 ## squares up and leans in so the arms reach out.
 var ads_stance_long := Vector2(-0.35, -0.06)
 var ads_stance_sidearm := Vector2(0.3, -0.06)
+## Inspecting what is in the hand (`ActorCommand.inspect`, the inspect key):
+## the hand brings it in closer, a little up and toward the middle of the
+## body, and turns it through `INSPECT_TURNS` so each side shows, then it
+## goes back to the ready hold. The same body in both views, and everyone
+## sees it, since the flag travels with the held keys. Offsets are in the
+## aim frame like the rest, so it comes up wherever you look.
+## `inspect_from_eyes` is where the wrist comes to (metres right, up and
+## ahead of the eyes along the aim, the pitch clamped to `inspect_pitch`),
+## whatever is in hand; `inspect_rate` is how fast it comes up and goes
+## back (per second).
+var inspect_from_eyes := Vector3(0.05, -0.18, -0.45)
+var inspect_pitch := Vector2(-0.7, 0.5)
+var inspect_rate := 3.5
+## How long a look over takes, in seconds. The controller holds the flag
+## this long (`PlayerController.inspect_left`); every view times the turns
+## from when it saw the flag go on.
+const INSPECT_SECONDS := 3.4
+## The turns the item goes through, as [seconds in, Vector3(pitch, yaw,
+## roll)] in radians, eased from one to the next (yaw positive to the left,
+## roll about the item's own length): a gun's muzzle swung left across the
+## body to show its right side, then out to the right and rolled to show
+## its left side and top, then tipped up, and back.
+const INSPECT_TURNS := [
+	[0.0, Vector3.ZERO],
+	[0.55, Vector3(0.15, 1.15, 0.35)],
+	[1.25, Vector3(0.15, 1.25, 0.45)],
+	[1.95, Vector3(-0.1, -0.35, -1.1)],
+	[2.5, Vector3(-0.1, -0.45, -1.2)],
+	[3.0, Vector3(0.55, 0.3, 0.0)],
+	[3.4, Vector3.ZERO],
+]
 
 ## Carrying a gun on the move (Caleb's "running with a weapon" pass). Out of
 ## a fight a gun is carried, not pointed: jogging it sits at a low ready
@@ -241,6 +272,13 @@ var toy_throw_t := -1.0
 var toy_hand_free := true
 var _toy_throws_seen := -1
 var _toy_thrown := ""
+## How far the item in hand is brought in to be looked over (0..1, eased),
+## and how long this look has been going (seconds), from
+## `ActorCommand.inspect`.
+var inspect := 0.0
+var inspect_clock := 0.0
+var _inspect_raise := 0.0
+var _inspect_was := false
 
 ## The melee hand offset, smoothed, and how much it has the arm (0..1).
 var reach := Vector3.ZERO
@@ -309,6 +347,18 @@ func advance(delta: float) -> void:
 	_frame = frame
 	if actor == null or not is_instance_valid(actor):
 		return
+	var inspect_wanted := actor.cmd != null and actor.cmd.inspect and not actor.is_dead \
+			and actor.vehicle == null and not actor.cmd.phone
+	if inspect_wanted and not _inspect_was:
+		inspect_clock = 0.0
+	_inspect_was = inspect_wanted
+	if inspect_wanted or _inspect_raise > 0.0:
+		inspect_clock += delta
+	else:
+		inspect_clock = 0.0
+	_inspect_raise = move_toward(_inspect_raise, 1.0 if inspect_wanted else 0.0, inspect_rate * delta)
+	inspect = smoothstep(0.0, 1.0, _inspect_raise)
+
 	var weapon := actor.get_active_weapon()
 	var melee := weapon as MeleeWeapon
 	var holding := melee != null and melee.visual != null and not actor.is_dead
@@ -339,11 +389,13 @@ func advance(delta: float) -> void:
 
 	var gun := weapon as Gun
 	reload = reload_depth(gun) if gun != null and not actor.is_dead else 0.0
-	var lowered := low_wanted and gun != null and not gun.is_aiming() and reload <= 0.0
+	var lowered := low_wanted and gun != null and not gun.is_aiming() and reload <= 0.0 \
+			and inspecting() != "gun"
 	low = move_toward(low, 1.0 if lowered else 0.0, delta * (lower_rate if lowered else raise_rate))
 	_ads_raise = move_toward(_ads_raise, 1.0 if ads_wanted(gun) else 0.0, delta * ads_rate)
 	ads = ease(_ads_raise, -2.0)
-	var carried := carry_wanted and gun != null and not actor.is_dead and reload <= 0.0 and not gun.is_aiming()
+	var carried := carry_wanted and gun != null and not actor.is_dead and reload <= 0.0 and not gun.is_aiming() \
+			and inspecting() != "gun"
 	carry = move_toward(carry, 1.0 if carried else 0.0, delta * (carry_in_rate if carried else carry_out_rate))
 	sprint = move_toward(sprint, clampf(sprint_wanted, 0.0, 1.0), delta * sprint_rate)
 	_update_sway(delta)
@@ -665,6 +717,12 @@ func arm_reach(melee: MeleeWeapon) -> Variant:
 	var back := recover_left(melee)
 	if back > 0.0:
 		return rest.lerp(follow_reach(melee, melee.attack_dir), back)
+	if inspect_for("melee") > 0.0:
+		# The resting hand's offset (from `Actor.HAND_REST`, in the aim
+		# frame) that puts it on the inspect point, eased from the hold.
+		var aim := actor.global_basis.orthonormalized() * Basis(Vector3.RIGHT, actor.cmd.pitch)
+		var at := actor.global_transform * Actor.HAND_REST
+		return rest.lerp(aim.inverse() * (inspect_point() - at), inspect)
 	return hold
 
 
@@ -720,7 +778,8 @@ func ready_amount(melee: MeleeWeapon) -> float:
 	var charge := charge_amount(melee)
 	if charge > 0.0:
 		return 1.0 - charge
-	return 1.0 - recover_left(melee)
+	# Looked over, the weapon turns in the hand as the inspect says.
+	return (1.0 - recover_left(melee)) * (1.0 - inspect_for("melee"))
 
 
 ## The shoulder turn and lean that go with `arm_reach`: heavier for a
@@ -875,6 +934,64 @@ func reload_depth(gun: Gun) -> float:
 	return minf(ease_in, ease_out)
 
 
-## The gun's offset from its usual hold, in the aim frame: the reload motion.
+## The gun's offset from its usual hold, in the aim frame: the reload
+## motion, and the gun brought in and turned while it is looked over.
 func gun_offset() -> Transform3D:
-	return Transform3D(Basis.from_euler(reload_tilt * reload), reload_reach * reload)
+	var reloading := Transform3D(Basis.from_euler(reload_tilt * reload), reload_reach * reload)
+	if inspecting() != "gun":
+		return reloading
+	return Transform3D(inspect_basis(), Vector3.ZERO) * reloading
+
+
+## Where the wrist goes to look the item in hand over, in the world: in
+## front of the chest, under the eyes along the aim (`inspect_from_eyes`).
+func inspect_point() -> Vector3:
+	var pitch := clampf(actor.cmd.pitch, inspect_pitch.x, inspect_pitch.y)
+	var aim := actor.global_basis.orthonormalized() * Basis(Vector3.RIGHT, pitch)
+	return actor.get_eye_position() + aim * inspect_from_eyes
+
+
+## What is being looked over: "gun", "melee", "hand" (a toy vehicle held
+## up, `Actor.toy_in_hand`), or "" when nothing is.
+func inspecting() -> String:
+	if inspect <= 0.0 or actor == null or actor.is_dead:
+		return ""
+	if toy_busy():
+		return "hand"
+	var weapon := actor.get_active_weapon()
+	if weapon == null or weapon.visual == null or not weapon.visual.visible:
+		return "hand"
+	if weapon is Gun:
+		return "gun"
+	if weapon is MeleeWeapon:
+		return "melee"
+	return "hand"
+
+
+## How much of the hand's (or gun's) own reach and turn the look over has,
+## for what `inspecting` says is in hand: 0 when something else is.
+func inspect_for(what: String) -> float:
+	return inspect if inspecting() == what else 0.0
+
+
+## How the item in hand is turned now while looked over, in the aim frame
+## (identity when it is not).
+func inspect_basis() -> Basis:
+	if inspect <= 0.0:
+		return Basis.IDENTITY
+	return Basis.from_euler(inspect_turn(inspect_clock) * inspect)
+
+
+## The turn `seconds` into a look over (`INSPECT_TURNS`), eased between
+## the steps, back to none once it is done.
+static func inspect_turn(seconds: float) -> Vector3:
+	var last: Array = INSPECT_TURNS[INSPECT_TURNS.size() - 1]
+	if seconds <= 0.0 or seconds >= float(last[0]):
+		return Vector3.ZERO
+	for i in range(1, INSPECT_TURNS.size()):
+		var to: Array = INSPECT_TURNS[i]
+		if seconds <= float(to[0]):
+			var from: Array = INSPECT_TURNS[i - 1]
+			var done := (seconds - float(from[0])) / maxf(float(to[0]) - float(from[0]), 0.001)
+			return (from[1] as Vector3).lerp(to[1], smoothstep(0.0, 1.0, done))
+	return Vector3.ZERO
