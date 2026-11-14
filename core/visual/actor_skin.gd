@@ -1995,7 +1995,8 @@ func _update_glide(delta: float) -> void:
 ## in it (holster with Z to ride with both hands). The head turns to the aim.
 func _update_ride() -> void:
 	var vehicle: Node3D = actor.vehicle if not actor.is_dead else null
-	locomotion.ride = vehicle
+	# A passenger's pose is fitted to the pillion seat, the rider's to the vehicle.
+	locomotion.ride = vehicle.call("ride_anchor", actor) if vehicle != null else null
 	if arm:
 		# The right hand's fingers wrap the phone while it is up.
 		var phone_grip := Vector2(0.0, 0.6 * smoothstep(0.0, 1.0, locomotion.phone_weight))

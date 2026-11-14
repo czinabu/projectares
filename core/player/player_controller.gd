@@ -339,7 +339,7 @@ func pack_target() -> Node3D:
 		return null
 	var seat := actor.find_interactable()
 	var found: Variant = seat.get("vehicle") if seat != null else null
-	return found if found is Node3D and found.get("rider") == null else null
+	return found if found is Node3D and not found.call("is_occupied") else null
 
 
 ## True while the watch is up with toy vehicles on it to pick from.

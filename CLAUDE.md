@@ -685,7 +685,17 @@ without Caleb, and update the gap list when a PR closes a row.
   another vehicle). Every vehicle is that one class, picked by data: the
   `model` stat picks the greybox body ("bike", "rover", "mech", "jet"),
   `body_size` its collision box, `pivot_turn` lets a walker turn on the
-  spot, `jump_speed` gives it a jump-jet hop, and the "aircraft" tag flies
+  spot, `jump_speed` gives it a jump-jet hop, the "hover" tag floats it on
+  a cushion ("hoverbike", the Raider: it drifts through turns by `slip`,
+  which travels in the ride state and is corrected like `speed`, holds
+  level over a gap for `hang_time` and hugs the ground off a ramp, never
+  flying), `passenger_seat` adds a pillion seat behind the rider
+  (`Vehicle.passenger`, `mount(actor, true)`; the seat's interact puts a
+  second player there; a passenger is seated by the same riding pose from
+  the pillion anchors, `Vehicle.ride_anchor`, makes it heavier, the
+  `laden_*` shares, and only the server decides who sits there, sent in the
+  ride state; check anything that asks whether a vehicle is free with
+  `is_occupied`, never `rider` alone), and the "aircraft" tag flies
   it (`Vehicle._fly`: takes off past `takeoff_speed` with jump, never
   hovers, drops below `stall_speed` or with nobody at the stick, climbs no
   higher than `ceiling` over the world's ground). Every vehicle, the jet
