@@ -1101,6 +1101,24 @@ void fragment() {
 	ALPHA = clamp(a + back * (1.0 - a), 0.0, 1.0) * mix(1.0, 0.6, settle);
 }
 """
+	## The light thrown from the watch face up to the card: bright where it
+	## leaves the face (UV.y 0) and thinning towards the card (UV.y 1), with
+	## faint bands of light running out along it from the watch to the card,
+	## so it reads as projected outwards, never drawn in (Caleb's feedback).
+	## `open` fades it while the card unfolds.
+	const BEAM_SHADER := """
+shader_type spatial;
+render_mode unshaded, blend_add, cull_disabled, depth_draw_never, shadows_disabled;
+uniform vec3 color : source_color = vec3(0.35, 0.95, 1.0);
+uniform float open = 1.0;
+void fragment() {
+	float out_along = UV.y;
+	float bands = 0.5 + 0.5 * sin((out_along * 6.0 - TIME * 2.8) * 6.2832);
+	bands = pow(bands, 3.0);
+	ALBEDO = color;
+	ALPHA = clamp((mix(0.22, 0.04, out_along) + 0.08 * bands) * open, 0.0, 1.0);
+}
+"""
 	## The bone the watch is worn on in third person.
 	const WRIST_BONE := "Wrist.L"
 	## The back of the wrist in that bone's space, where the watch face looks
@@ -1145,6 +1163,11 @@ void fragment() {
 	## How far, in metres at the head, the card keeps clear of the head and
 	## helmet from the camera's view.
 	var head_clearance := 0.05
+	## Third person: how far over the watch, as the camera sees it (a share
+	## of the view's height), the card's lower edge stays, so the light
+	## opens upwards from the wrist into the card rather than slanting down
+	## to it (Caleb's feedback).
+	var tp_over_wrist := 0.1
 	## The glow on the arm while the card is up: how bright, and how far it
 	## reaches.
 	var glow_energy := 0.7
@@ -1219,14 +1242,11 @@ void fragment() {
 		_beam.top_level = true
 		_beam.mesh = ImmediateMesh.new()
 		_beam.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		var beam_mat := StandardMaterial3D.new()
-		beam_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		beam_mat.vertex_color_use_as_albedo = true
-		beam_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-		beam_mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
-		# Depth tested: in third person the body hides the light where it
-		# would pass behind it.
-		beam_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+		var beam_mat := ShaderMaterial.new()
+		var beam_shader := Shader.new()
+		beam_shader.code = BEAM_SHADER
+		beam_mat.shader = beam_shader
+		beam_mat.set_shader_parameter("color", GLOW_COLOR)
 		beam_mat.render_priority = 9
 		_beam.material_override = beam_mat
 		add_child(_beam)
@@ -1365,6 +1385,7 @@ void fragment() {
 					size = _tp_size(cam, depth)
 					spot = _clear_of_head(p, cam, _tp_spot(p, cam, depth), face_size.x * size * 0.5)
 					spot = _keep_on_screen(cam, spot, face_size.x * size * 0.5)
+					spot = _over_wrist(cam, spot, wrist, face_size.y * size * 0.5)
 				var at := wrist.lerp(spot, ease(open, -2.0))
 				_holo.global_transform = Transform3D(facing.scaled(Vector3(size, size * maxf(open, 0.001), size)), at)
 				_glow.global_position = wrist
@@ -1412,6 +1433,22 @@ void fragment() {
 			y += head.y * depth / -head.z
 		return cam.global_transform * Vector3(0.0, y, -depth)
 
+	## Third person: lifts the card's centre `spot` until its lower edge
+	## (`half_height` below it) stands `tp_over_wrist` over the watch as the
+	## camera sees it, so the projected light runs up into the card.
+	func _over_wrist(cam: Camera3D, spot: Vector3, wrist: Vector3, half_height: float) -> Vector3:
+		var to_cam := cam.global_transform.affine_inverse()
+		var card := to_cam * spot
+		var watch := to_cam * wrist
+		if card.z >= -0.01 or watch.z >= -0.01:
+			return spot
+		var watch_y := watch.y * card.z / watch.z
+		var view_tall := -2.0 * card.z * tan(deg_to_rad(cam.fov) * 0.5)
+		var short := watch_y + tp_over_wrist * view_tall - (card.y - half_height)
+		if short <= 0.0:
+			return spot
+		return cam.global_transform * (card + Vector3(0.0, short, 0.0))
+
 	## Keeps a card `half_width` wide whole on screen: slid back right if its
 	## left edge would leave the view.
 	func _keep_on_screen(cam: Camera3D, spot: Vector3, half_width: float) -> Vector3:
@@ -1455,9 +1492,10 @@ void fragment() {
 			return face.global_position
 		return _holo.global_position - _holo.global_basis.y.normalized() * 0.1
 
-	## Light thrown out from the watch face to the card's lower edge, bright
-	## at the face and thinning out towards the card, so the card reads as
-	## projected rather than floating.
+	## Light thrown out from the watch face up to the card's lower edge,
+	## bright at the face and thinning out towards the card, with bands of
+	## light running out along it, so the card reads as projected rather
+	## than floating. Nothing crosses the card's face, so it stays readable.
 	func _draw_beam(third: bool, open: float) -> void:
 		var mesh := _beam.mesh as ImmediateMesh
 		mesh.clear_surfaces()
@@ -1465,27 +1503,26 @@ void fragment() {
 		if not _beam.visible:
 			return
 		_beam.global_transform = Transform3D.IDENTITY
+		(_beam.material_override as ShaderMaterial).set_shader_parameter("open", open)
 		var apex := _face_position(third)
 		var half := face_size * 0.5
-		var corners: Array[Vector3] = []
-		for c: Vector2 in [Vector2(-half.x, -half.y), Vector2(half.x, -half.y), Vector2(half.x, half.y), Vector2(-half.x, half.y)]:
-			corners.append(_holo.global_transform * Vector3(c.x, c.y, 0.0))
-		var bright := Color(GLOW_COLOR, 0.22 * open)
-		# A fan of light up to the card's lower edge, and two fine rays at
-		# its sides. Nothing crosses the card's face, so it stays readable.
+		var left := _holo.global_transform * Vector3(-half.x, -half.y, 0.0)
+		var right := _holo.global_transform * Vector3(half.x, -half.y, 0.0)
+		# A fan of light up to the card's lower edge (UV.y runs out from the
+		# face, 0, to the card, 1) and two fine rays at its sides.
 		mesh.surface_begin(Mesh.PRIMITIVE_TRIANGLES)
-		mesh.surface_set_color(bright)
+		mesh.surface_set_uv(Vector2(0.5, 0.0))
 		mesh.surface_add_vertex(apex)
-		mesh.surface_set_color(Color(GLOW_COLOR, 0.04 * open))
-		mesh.surface_add_vertex(corners[0])
-		mesh.surface_set_color(Color(GLOW_COLOR, 0.04 * open))
-		mesh.surface_add_vertex(corners[1])
+		mesh.surface_set_uv(Vector2(0.0, 1.0))
+		mesh.surface_add_vertex(left)
+		mesh.surface_set_uv(Vector2(1.0, 1.0))
+		mesh.surface_add_vertex(right)
 		mesh.surface_end()
 		mesh.surface_begin(Mesh.PRIMITIVE_LINES)
-		for corner in [corners[0], corners[1]]:
-			mesh.surface_set_color(Color(GLOW_COLOR, 0.55 * open))
+		for corner in [left, right]:
+			mesh.surface_set_uv(Vector2(0.0, 0.0))
 			mesh.surface_add_vertex(apex)
-			mesh.surface_set_color(Color(GLOW_COLOR, 0.15 * open))
+			mesh.surface_set_uv(Vector2(0.0, 1.0))
 			mesh.surface_add_vertex(corner)
 		mesh.surface_end()
 

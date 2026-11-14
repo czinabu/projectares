@@ -47,7 +47,7 @@ rows marked **pre-playtest** come before the friends playtest.
 | Map and pings page | Partly | Squad ping built: a click on the ping icon marks where you look for your side (`Raid.ping`, sent only to the pinger's side by `NetSession`, drawn as a column of light by `Hud.ping_mark`). The map is still a line of text on the Status tab. |
 | Banking readout on the watch | Missing | Banking happens at depots; the watch should show what is banked. Comes with banking. |
 | Landing choices | Built | |
-| Vehicle carousel (toys) | Built | Pick, throw, unpack, pack back; holds two. |
+| Vehicle carousel (toys) | Built | Pick, throw, unpack, pack back; holds two. The toy digitizes into the hand, is thrown overarm (windup, release, follow-through) and flips once in the air before coming down level to unpack, the same body for everyone (`ActionPose.toy_hand_point`, `Actor.toy_in_hand`). |
 | Heavy weapon chamber | Partly | A heavy weapon is scanned into the watch and summoned from its weapon carousel; key 4 is gone. Missing: banking it and dropping it in the bag (see Heavy weapons below). |
 | Per-rig readouts (stall line, boosts left, dash charges) | Partly | The visor's rig cue (`Hud.rig_text`) shows the wings' airspeed, stall and boosts and the boots' charges and skim. Missing on the rig itself (part of the flight HUD, see Flight). **Pre-playtest.** |
 | Sign-out from the watch, with its countdown | Partly | Sign-out exists on L; not on the watch. |
