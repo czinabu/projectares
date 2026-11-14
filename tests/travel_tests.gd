@@ -61,7 +61,7 @@ static func check_stranger(t: Node, service: Accounts) -> void:
 	other.host_profile = service.host_profile.duplicate(true)
 	var stranger := other.sign_in("Wren", Accounts.new_secret())
 	var theirs := other.snapshot(str(stranger.get("account_id", "")))
-	t.check(stranger.get("ok", false) and theirs.loadout == StashRules.starter_loadout()
+	t.check(stranger.get("ok", false) and theirs.loadout == StashRules.new_player_loadout()
 			and not other.host_profile.is_empty(),
 			"a stranger signing in with the host's name does not get the host's gear")
 
