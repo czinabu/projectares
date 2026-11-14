@@ -128,7 +128,9 @@ func tick(cmd: ActorCommand, delta: float) -> void:
 		thermal_on = false
 		_end_threat_sense()
 		return
-	var usable := actor.stagger_left <= 0.0 and not actor.weapons_locked
+	# A helmet only shows its wearer things, so it works everywhere, safe
+	# zones and the home base included, where weapons are locked.
+	var usable := actor.stagger_left <= 0.0
 	match mode:
 		"zoom":
 			var steady := actor.vehicle != null or actor.airborne_time <= zoom_air_grace
@@ -185,6 +187,7 @@ func scan() -> bool:
 	if not Combat.authoritative or not actor.is_inside_tree():
 		return true
 	var found: Array[Dictionary] = []
+	var quiet := peaceful(actor)
 	for node in actor.get_tree().get_nodes_in_group("actors"):
 		var other := node as Actor
 		if other == null or other == actor or other.is_dead or not Raid.together(actor, other):
@@ -192,9 +195,11 @@ func scan() -> bool:
 		if other.global_position.distance_to(actor.global_position) > reach_to(other, scan_radius) or allied(actor, other):
 			continue
 		found.append({"at": other.global_position, "yaw": other.cmd.yaw, "left": ghost_time})
-		# Every reveal is felt: the target hears it and learns where it came from.
-		other.visor.felt_scan.emit(origin)
-		other.notice.emit("Scanned")
+		# Every reveal is felt: the target hears it and learns where it came
+		# from. Not where nobody can fight, where it would only be noise.
+		if not quiet:
+			other.visor.felt_scan.emit(origin)
+			other.notice.emit("Scanned")
 	show_ghosts(found)
 	return true
 
@@ -299,7 +304,8 @@ func _tick_threat_sense(delta: float) -> void:
 			continue
 		found.append(other)
 		# Every reveal is felt: the first time it shows someone, they are told.
-		if other not in _sensed:
+		# Not where nobody can fight (see `peaceful`).
+		if other not in _sensed and not peaceful(actor):
 			_sensed.append(other)
 			other.notice.emit("Sensed")
 	if found != threats:
@@ -331,6 +337,14 @@ func _tick_thermal(wanted: bool, delta: float) -> void:
 		_ran_flat = true
 	elif not wanted:
 		_ran_flat = false
+
+
+## True where `actor` cannot be fought: a safe zone (the plaza, a hub) or
+## outside any world (the home base). A helmet still works there, but the
+## people it reads are not told, since a warning would mean nothing.
+static func peaceful(actor: Actor) -> bool:
+	var raid := Raid.of(actor)
+	return raid == null or raid.world == null or raid.world.safe_zone
 
 
 ## True when `a` and `b` fight on the same side (see `Raid.side_of`). Outside
