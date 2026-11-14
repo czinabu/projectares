@@ -659,7 +659,8 @@ func in_fight(weapon: Weapon) -> bool:
 
 ## Tells the shared pose how the gun in hand is carried on the move: out of
 ## a fight, moving on foot (or sliding, or in a running jump), a gun goes to
-## its carry, the low ready at a jog and the sprint carry at a sprint, and
+## its carry, the low ready at a jog (and crouched, even standing still,
+## so the gun never hangs between the knees) and the sprint carry at a sprint, and
 ## bobs with the stride. View only, from velocity, so remote players match.
 func _update_carry(weapon: Weapon, gait: Dictionary, airborne: bool) -> void:
 	var pose := ActionPose.of(actor)
@@ -668,7 +669,7 @@ func _update_carry(weapon: Weapon, gait: Dictionary, airborne: bool) -> void:
 	var moving: bool = flat.length() > locomotion.move_threshold
 	var on_foot := actor.vehicle == null and _glide <= 0.0 and not actor.is_dead and not phone_up()
 	pose.carry_wanted = gun != null and gun.visual != null and on_foot and not in_fight(gun) \
-			and (actor.is_sliding() or (moving and (airborne or not gait.is_empty())))
+			and (actor.is_sliding() or (actor.crouched and not airborne) or (moving and (airborne or not gait.is_empty())))
 	var pace := actor.walk_speed * gun.move_speed_mult() if gun != null else actor.walk_speed
 	if actor.flight.enabled:
 		pace *= actor.flight.ground_speed_mult

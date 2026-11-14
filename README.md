@@ -27,6 +27,7 @@ skies, animated models and effects (see "How it looks" below).
 | Use your ability | G |
 | Use your helmet's visor (zoom or scan) | T |
 | Dash (stamina) | Left Alt |
+| Crouch / stand up (toggle) | C |
 | Slide (while sprinting) | C |
 | Fire, or melee: tap for the combo, hold for a heavy (dive slam in the air) | Left mouse |
 | Aim down sights, or block with the blade (tap just before a hit to parry) | Right mouse |

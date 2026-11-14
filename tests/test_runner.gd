@@ -587,6 +587,7 @@ func _test_raid_setup_and_movement() -> void:
 			break
 	check(p.is_on_floor(), "player comes back down")
 	await _check_slide(p)
+	await _check_crouch(p)
 	await _end_raid(raid)
 
 
@@ -624,7 +625,7 @@ func _check_slide(p: Actor) -> void:
 	p.cmd.slide = false
 	for i in 120:
 		p._simulate_slide(Vector3.ZERO, true, false, dt)
-	check(is_zero_approx(p.crouch) and is_equal_approx(p.get_eye_position().y, stand_eyes), "the actor stands back up")
+	check(is_zero_approx(p.slide_low) and is_equal_approx(p.get_eye_position().y, stand_eyes), "the actor stands back up")
 
 	# Through the physics loop, as the server and every client run it.
 	p.velocity = p.global_basis * Vector3(0, 0, -p.sprint_speed)
@@ -644,6 +645,154 @@ func _check_slide(p: Actor) -> void:
 	check(not copy.slide, "a slide press lasts one tick")
 	for i in 90:
 		await get_tree().physics_frame
+
+
+## Crouching: the crouch key toggles it (and slides from a sprint), it walks
+## slow, drops the eyes and the body so low cover hides it, keeps you down
+## under a low ceiling, steadies the aim, lets you creep up on a bot, and
+## travels with the command as a held key.
+func _check_crouch(p: Actor) -> void:
+	for i in 60:
+		await get_tree().physics_frame
+		if p.is_on_floor() and not p.is_sliding() and p.slide_low <= 0.0:
+			break
+	p.cmd.move = Vector2.ZERO
+	p.velocity = Vector3.ZERO
+	await frames(2)
+	var stand_eyes := p.get_eye_position().y
+
+	# The key, as the controller reads it (not in the tree, so it never reads Input).
+	var keys := PlayerController.new()
+	keys.setup(p)
+	p.cmd.sprint = false
+	p.cmd.move = Vector2(0, 1)
+	keys.crouch_key(true)
+	check(p.cmd.crouch and not p.cmd.slide, "the crouch key crouches when not sprinting")
+	keys.crouch_key(false)
+	check(p.cmd.crouch, "the crouch stays on after the key comes up (a toggle)")
+	keys.crouch_key(true)
+	check(not p.cmd.crouch, "pressing it again stands you up")
+	keys.crouch_key(true)
+	p.cmd.sprint = true
+	p.cmd.sprint_pressed = true
+	keys.crouch_key(false)
+	check(not p.cmd.crouch, "sprinting stands you up")
+	p.cmd.sprint_pressed = false
+	keys.crouch_key(true)
+	check(p.cmd.slide and not p.cmd.crouch, "the crouch key while sprinting forward is a slide")
+	p.cmd.slide = false
+	p.cmd.sprint = false
+	keys.crouch_key(true)
+	p.cmd.jump_pressed = true
+	keys.crouch_key(false)
+	check(not p.cmd.crouch, "jumping stands you up")
+	p.cmd.jump_pressed = false
+	keys.free()
+
+	# Crouched: lower eyes, a shorter body, a slow walk.
+	p.cmd.move = Vector2.ZERO
+	p.cmd.crouch = true
+	await frames(20)
+	check(p.crouched and is_equal_approx(p.crouch, 1.0), "the actor crouches")
+	check(absf(p.get_eye_position().y - (stand_eyes - p.crouch_eye_drop)) < 0.01, "crouching drops the eyes")
+	check(is_equal_approx(p.body_height(), Actor.CROUCH_HEIGHT) and is_equal_approx(p._body_shape.height, Actor.CROUCH_HEIGHT),
+			"crouching lowers the body's collision")
+	var steady := p.aim_steadiness()
+	check(steady < 1.0, "crouched on the ground the aim is steadier")
+	var gun := p.weapons[0] as Gun
+	if gun:
+		p.cmd.crouch = false
+		await frames(20)
+		var standing_spread := gun.current_spread_deg()
+		p.cmd.crouch = true
+		await frames(20)
+		check(gun.current_spread_deg() < standing_spread, "a crouched gun spreads less")
+	p.cmd.yaw = 0.0
+	p.cmd.move = Vector2(0, 1)
+	p.cmd.sprint = true
+	await frames(30)
+	var speed := Vector2(p.velocity.x, p.velocity.z).length()
+	check(speed <= p.crouch_speed + 0.01 and speed > 1.0, "crouched you walk slowly, sprint held or not (%.1f m/s)" % speed)
+	p.cmd.sprint = false
+	p.cmd.move = Vector2.ZERO
+	p.velocity = Vector3.ZERO
+	await frames(10)
+
+	# Low cover: a shot over a wall too low to hide behind standing up hits
+	# the standing head and passes over the crouched one.
+	var from := p.global_position + Vector3(0, 1.5, -10)
+	var to := p.global_position + Vector3(0, 1.5, 10)
+	check(Combat.capsule_entry(from, to, p.global_position, p.body_height()).is_empty(),
+			"a shot at standing head height passes over a crouched body")
+	check(not Combat.capsule_entry(from, to, p.global_position).is_empty(), "and hits a standing one")
+	var head_hit := {"position": p.global_position + Vector3(0, Actor.CROUCH_HEIGHT - 0.1, 0), "collider": p,
+			"feet": p.global_position}
+	check(Combat.is_headshot(head_hit), "a crouched head is lower down")
+
+	# Under a low ceiling there is no room to stand: you stay down.
+	var roof := StaticBody3D.new()
+	roof.collision_layer = Actor.LAYER_WORLD
+	var shape := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = Vector3(4, 0.2, 4)
+	shape.shape = box
+	roof.add_child(shape)
+	p.get_parent().add_child(roof)
+	roof.global_position = p.global_position + Vector3(0, Actor.CROUCH_HEIGHT + 0.2, 0)
+	await frames(2)
+	check(not p.room_to_stand(), "a low ceiling leaves no room to stand")
+	p.cmd.crouch = false
+	await frames(20)
+	check(p.crouched and p.body_height() < Actor.BODY_HEIGHT - 0.3, "under it you stay crouched")
+	roof.queue_free()
+	await frames(20)
+	check(not p.crouched and is_zero_approx(p.crouch) and is_equal_approx(p.body_height(), Actor.BODY_HEIGHT),
+			"out from under it you stand up")
+	check(is_equal_approx(p.get_eye_position().y - p.global_position.y, p.eye_height), "standing puts the eyes back")
+
+	# Bots sense a crouched actor behind them only closer in.
+	var bot: Actor = null
+	for other in get_tree().get_nodes_in_group("actors"):
+		if other is Actor and other != p and other.get_node_or_null("Brain") is BotBrain and not other.is_dead:
+			bot = other
+			break
+	check(bot != null, "a bot to sneak up on")
+	if bot:
+		var brain := bot.get_node("Brain") as BotBrain
+		var bot_was := bot.global_position
+		var bot_yaw := bot.cmd.yaw
+		# The bot faces away (-Z is forward at yaw 0), the player behind it.
+		bot.global_position = p.global_position + Vector3(0, 0, -brain.close_sense_range * 0.6)
+		bot.cmd.yaw = 0.0
+		bot.velocity = Vector3.ZERO
+		bot.process_mode = Node.PROCESS_MODE_DISABLED
+		brain.target = null
+		p.cmd.crouch = false
+		await frames(20)
+		var heard_standing := brain._find_target() == p
+		p.cmd.crouch = true
+		await frames(20)
+		var heard_crouched := brain._find_target() == p
+		check(heard_standing and not heard_crouched, "a bot senses someone behind it standing, not crouched (%s, %s)"
+				% [heard_standing, heard_crouched])
+		bot.global_position = bot_was
+		bot.cmd.yaw = bot_yaw
+		bot.process_mode = Node.PROCESS_MODE_INHERIT
+
+	# It travels with the command as a held key, so everyone sees the crouch.
+	var cmd := ActorCommand.new()
+	cmd.crouch = true
+	var copy := ActorCommand.new()
+	copy.apply_array(cmd.to_array())
+	copy.clear_one_shots()
+	check(copy.crouch and cmd.flags() & ActorCommand.HELD_MASK & ActorCommand.FLAG_CROUCH != 0,
+			"a crouch travels with the command as a held key")
+	var packed := NetSession.unpack_inputs(NetSession.pack_inputs([[1, cmd.to_array(), 0]]))
+	var unpacked := ActorCommand.new()
+	unpacked.apply_array(packed[0][1])
+	check(unpacked.crouch, "and survives the packed input")
+	p.cmd.crouch = false
+	await frames(20)
 
 
 func _test_combat_and_loot() -> void:
