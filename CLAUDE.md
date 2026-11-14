@@ -250,8 +250,22 @@ without Caleb, and update the gap list when a PR closes a row.
   Standing still is a relaxed stand (`idle`); a gun is held low (`idle_gun`)
   over the relaxed stand's legs and raised (`aim_gun`) only while shooting
   or aiming and briefly after.
-  Check leg changes by eye: `visual_check.tscn -- <dir> --gait-only`, and
-  the stand with `--idle-only`.
+  On the move a gun is carried, not pointed (Caleb's running pass, after
+  real carries and well-liked shooters): out of a fight (`ActorSkin.in_fight`:
+  shooting, aiming or reloading now, or within `aim_hold`) it sits at a
+  compressed low ready at a jog, strafe or slide, both hands on a rifle,
+  goes across the chest at port in a sprint (a pistol tucked muzzle down in
+  one hand while the other arm pumps), bobs with the stride and lags on a
+  spring as the body speeds up, stops or turns (`ActionPose.carry`,
+  `sprint`, `carry_point`, `carry_turn`, `sway`; placed from the chest by
+  `WeaponArm._reach_carry` and `carry_frame`), and the legs run the plain
+  run. In a fight the run-and-shoot arms come back and the gun points where
+  it shoots; a shot, aim or reload takes it out of the carry at once
+  (`carry_out_rate`). All of it is read from velocity and the command, so
+  remote players match, and it is the same body in both views.
+  Check leg changes by eye: `visual_check.tscn -- <dir> --gait-only`, the
+  stand with `--idle-only`, and a rifle and a pistol carried on the move
+  with `--carry-only`.
   Holstered weapons are worn, not hidden (`ActorSkin.stow_place`): a primary
   gun or two-handed weapon slung across the back, outside a worn back rig
   (on a jetpack or wing pack, clamped to the weapon rail down its side
