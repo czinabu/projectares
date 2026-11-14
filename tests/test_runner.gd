@@ -260,6 +260,7 @@ func _run() -> void:
 	await _test_vehicle_roster()
 	await _test_vehicle_raids()
 	await _test_vehicle_toys()
+	await _test_toy_throw_pose()
 	await _test_vehicle_toys_online()
 	await _test_lag_compensation()
 	await _test_extraction()
@@ -1008,6 +1009,13 @@ func _test_main_flow() -> void:
 	check(card_right.x < head_on_screen.x and card_right.x < screen.x * 0.5,
 			"and beside the character, clear of the head and the crosshair (card to %d, head at %d, of %d)"
 			% [roundi(card_right.x), roundi(head_on_screen.x), roundi(screen.x)])
+	# The light rises from the watch up into the card's lower edge (Caleb's
+	# feedback: never slanting down to it), and runs outwards along it.
+	var card_low := cam.unproject_position(holo.global_position - holo.global_basis.y * wrist.face_size.y * 0.5)
+	var watch_seen := cam.unproject_position(wrist.watch_position(p))
+	check(card_low.y < watch_seen.y and wrist.BEAM_SHADER.contains("TIME"),
+			"the light rises from the watch up into the card, with bands running out along it (card edge at %d, watch at %d)"
+			% [roundi(card_low.y), roundi(watch_seen.y)])
 	get_tree().root.size = window_was
 	await frames(2)
 	var holo_mat := holo.material_override as ShaderMaterial
@@ -4622,9 +4630,27 @@ func _test_vehicle_toys() -> void:
 	raid.watch_changed.connect(func(_a: Actor) -> void: events.watch += 1)
 	check(raid.throw_toy(p, "bike_raider") != "" and events.thrown == 0, "a toy that is not on your watch cannot be thrown")
 	_aim_at(p, p.global_position + Vector3(0, 1.6, -10))
-	check(raid.throw_toy(p, "bike_scrapper") == "" and events.thrown == 1 and raid.toys.size() == 1
-			and raid.stowed_for(p).is_empty(), "throwing takes the toy off the watch and into the air")
+	var throws_before := p.toy_throws
+	check(raid.throw_toy(p, "bike_scrapper") == "" and events.thrown == 0 and raid.toys.size() == 1
+			and raid.stowed_for(p).is_empty() and p.toy_in_hand == "bike_scrapper" and p.toy_throws == throws_before + 1,
+			"throwing takes the toy off the watch and starts the throw with it in the hand")
+	check(raid.hold_toy(p, "bike_scrapper") != "" and raid.throw_toy(p, "bike_scrapper") != "",
+			"nothing else goes in the hand or is thrown while the arm comes through")
+	await frames(int(raid.toy_windup * 60.0) - 6)
+	check(events.thrown == 0 and p.toy_in_hand == "bike_scrapper", "the toy stays in the hand through the windup")
+	await _wait_until(func() -> bool: return events.thrown == 1, 30)
+	var flying: Dictionary = raid.toys[0] if not raid.toys.is_empty() else {}
+	check(events.thrown == 1 and p.toy_in_hand == "" and flying.get("node") != null,
+			"then it leaves the hand and flies")
+	check(is_equal_approx(raid.toy_windup, ActionPose.of(p).toy_release),
+			"the toy leaves the hand when the throw shown lets go of it")
 	check(raid.vehicles.size() == before, "nothing unpacks while the toy is in the air")
+	var last_basis := Basis()
+	while not raid.toys.is_empty() and raid.toys[0].get("node") != null:
+		last_basis = (raid.toys[0].node as Node3D).basis.orthonormalized()
+		await get_tree().physics_frame
+	check(last_basis.y.dot(Vector3.UP) > 0.95 and absf(last_basis.z.dot(Basis(Vector3.UP, p.cmd.yaw).z)) > 0.95,
+			"the toy turns its flip and comes down level, facing the way it unpacks")
 	await _wait_until(func() -> bool: return not events.landed.is_empty(), 240)
 	var bike: Node3D = raid.vehicles[raid.vehicles.size() - 1] if raid.vehicles.size() > before else null
 	check(events.landed == [true] and bike != null and bike.get("item_id") == "bike_scrapper",
@@ -4655,11 +4681,30 @@ func _test_vehicle_toys() -> void:
 	_aim_at(p, Vector3(29.4, 200.0, 2501.3))
 	events.landed.clear()
 	check(raid.throw_toy(p, "bike_scrapper") == "", "the toy can be thrown at a wall")
+	await frames(int(raid.toy_windup * 60.0) + 4)
+	_aim_at(p, Vector3(29.4, 200.0, 2501.3))
 	await _wait_until(func() -> bool: return not events.landed.is_empty(), 240)
 	check(events.landed == [false] and raid.vehicles.size() == before and raid.stowed_for(p).size() == 1
 			and raid.toy_wait(p) == 0.0, "with no room to unpack, the toy jumps back onto the watch")
 	check(not raid.has_room_to_unpack(p.global_position, 0.0) and raid.has_room_to_unpack(Vector3(-20, 200.0, 2500), 0.0),
 			"room means clear of walls, people and other vehicles")
+
+	# Holding a toy up is only the look: it stays on the watch.
+	check(raid.hold_toy(p, "bike_scrapper") == "" and p.toy_in_hand == "bike_scrapper"
+			and raid.stowed_for(p).size() == 1, "a toy taken in hand shows there and stays on the watch")
+	check(raid.hold_toy(p, "bike_raider") != "" and p.toy_in_hand == "", "only a toy on the watch can be held")
+	# Knocked out of the throw: on a vehicle before it leaves the hand.
+	p.global_position = Vector3(0, 200.05, 2500)
+	var saddle: Node3D = raid.spawn_vehicle("bike_raider", Vector3(3, 200.3, 2500), 0.0)
+	await frames(10)
+	events.thrown = 0
+	check(raid.throw_toy(p, "bike_scrapper") == "", "a throw starts")
+	saddle.call("mount", p)
+	await frames(int(raid.toy_windup * 60.0) + 4)
+	check(events.thrown == 0 and raid.stowed_for(p).size() == 1 and raid.toy_wait(p) == 0.0 and p.toy_in_hand == "",
+			"a throw cut short before it leaves the hand puts the toy back on the watch")
+	saddle.call("dismount")
+	raid.remove_vehicle(saddle)
 
 	# Limits.
 	p.global_position = Vector3(0, 200.05, 2500)
@@ -4756,23 +4801,29 @@ func _test_vehicle_toys() -> void:
 	controller.wrist_raised = false
 	check(controller.pack_target() == null and not controller.click_watch(), "with the watch down a click is an ordinary shot")
 	hud.queue_free()
+	var held_asked: Array[String] = []
+	controller.toy_hold_requested.connect(func(id: String) -> void:
+		held_asked.append(id)
+		raid.hold_toy(p, id))
 	controller.hold_toy("bike_scrapper")
-	check(controller.held_toy == "bike_scrapper", "a toy off the watch goes into the hand")
-	await get_tree().process_frame
-	await get_tree().process_frame
-	check(p.hand.get_node_or_null("Toy") != null and p.weapons.all(func(w: Weapon) -> bool:
-			return w.visual == null or not w.visual.visible), "the toy sits in the hand in place of the weapon")
+	check(controller.held_toy == "bike_scrapper" and held_asked == (["bike_scrapper"] as Array[String])
+			and p.toy_in_hand == "bike_scrapper", "a toy off the watch goes into the hand, for everyone to see")
 	p.cmd.primary_pressed = true
 	controller._use_toy_hand(p.cmd)
 	check(asked == (["bike_scrapper"] as Array[String]) and controller.held_toy == "" and not p.cmd.primary_pressed,
 			"fire throws the toy instead of shooting")
+	p.cmd.primary_pressed = true
+	p.cmd.primary = true
+	controller._use_toy_hand(p.cmd)
+	check(not p.cmd.primary_pressed and not p.cmd.primary, "the weapon takes no fire while the arm comes through the throw")
+	controller.hold_toy("bike_scrapper")
+	check(controller.held_toy == "", "nor does another toy come into the hand mid-throw")
+	controller._toy_busy_left = 0.0
 	controller.hold_toy("bike_scrapper")
 	p.cmd.secondary_pressed = true
 	controller._use_toy_hand(p.cmd)
-	check(controller.held_toy == "" and asked.size() == 1, "aim puts the toy back on the watch")
-	await get_tree().process_frame
-	await get_tree().process_frame
-	check(p.hand.get_node_or_null("Toy") == null and p.get_active_weapon().visual.visible, "and the weapon comes back to the hand")
+	check(controller.held_toy == "" and asked.size() == 1 and held_asked.back() == "" and p.toy_in_hand == "",
+			"aim puts the toy back on the watch")
 	controller.queue_free()
 
 	# Leaving with toys on the watch takes them home; dying loses them.
@@ -4797,6 +4848,62 @@ func _test_vehicle_toys() -> void:
 	check(results2.size() == 1 and "bike_scrapper" in results2[0].lost and "bike_scrapper" not in results2[0].get("brought_home", []),
 			"dying loses the toy on your watch")
 	await _end_raid(raid2)
+
+
+## The toy in the hand and the throw are one shared pose (`ActionPose`), so
+## first and third person and everyone around see the same arm.
+func _test_toy_throw_pose() -> void:
+	print("Vehicles: holding and throwing a toy")
+	var arena := _vehicle_arena()
+	var p := Actor.new()
+	arena.add_child(p)
+	await frames(2)
+	var pose := ActionPose.of(p)
+	check(pose.toy == 0.0 and pose.toy_shown() == "" and not pose.toy_busy(), "an empty hand shows no toy")
+	p.toy_in_hand = "bike_scrapper"
+	pose.toy_hand_free = false
+	pose.advance_toy(0.5)
+	check(pose.toy == 0.0 and pose.toy_busy(), "the toy waits for the weapon to be put away, keeping it away meanwhile")
+	pose.toy_hand_free = true
+	pose.advance_toy(0.1)
+	check(pose.toy > 0.0 and pose.toy < 1.0, "then the hand comes up for it, eased")
+	pose.advance_toy(1.0)
+	var held := pose.toy_hand_point()
+	check(pose.toy == 1.0 and pose.toy_shown() == "bike_scrapper" and held.z < -0.3 and held.y > 1.2,
+			"held up in front, in view of the eyes")
+	p.toy_throws += 1
+	var path: Array[Vector3] = []
+	var shown_at_release := ""
+	var turned := 0.0
+	var t := 0.0
+	pose.advance_toy(0.0)
+	while pose.toy_throw_t >= 0.0 and t < 2.0:
+		path.append(pose.toy_hand_point())
+		turned = minf(turned, pose.toy_turn().x)
+		if pose.toy_throw_t < pose.toy_release - 0.02:
+			shown_at_release = pose.toy_shown()
+		if pose.toy_throw_t >= pose.toy_release:
+			p.toy_in_hand = ""
+		pose.advance_toy(1.0 / 60.0)
+		t += 1.0 / 60.0
+	var back: Vector3 = path.reduce(func(a: Vector3, b: Vector3) -> Vector3: return b if b.z > a.z else a, path[0])
+	var low: Vector3 = path.reduce(func(a: Vector3, b: Vector3) -> Vector3: return b if b.y < a.y else a, path[0])
+	check(back.z > 0.0 and back.y > pose.shoulder.y, "the throw draws the toy back over the shoulder (%.2f, %.2f)" % [back.y, back.z])
+	check(turned < -0.3, "the shoulders turn back into it")
+	check(low.y < held.y - 0.2 and low.z < 0.0, "and follows through down across the body")
+	check(shown_at_release == "bike_scrapper", "the toy is in the hand until the release")
+	check(absf(t - pose.toy_throw_time) < 0.05 and pose.toy == 0.0 and not pose.toy_busy(),
+			"the hand is given back once the throw is through")
+	# A toy that stays on record a moment after it flew (online, until the
+	# server says so) is not held up again.
+	p.toy_in_hand = "bike_scrapper"
+	p.toy_throws += 1
+	pose.advance_toy(0.0)
+	for i in 60:
+		pose.advance_toy(1.0 / 60.0)
+	check(pose.toy_shown() == "" and pose.toy == 0.0, "a thrown toy does not come back to the hand while the world catches up")
+	arena.queue_free()
+	await frames(2)
 
 
 ## Has an online client throw the bike on its watch, turning until it finds
@@ -4867,6 +4974,16 @@ func _test_vehicle_toys_online() -> void:
 		ivy.throw_toy("bike_raider")
 		await frames(30)
 		check(ivy.vehicles().size() == before and ivy.raid.stowed_for(me).size() == 1, "the server refuses a toy the player does not have")
+		# The toy in the hand shows to the other player too.
+		var ivy_there: Actor = jon._actors.get(ivy.my_actor_id)
+		ivy.hold_toy("bike_scrapper")
+		check(me.toy_in_hand == "bike_scrapper", "your own hand shows the toy at once")
+		await _wait_until(func() -> bool: return ivy_there != null and ivy_there.toy_in_hand == "bike_scrapper", 120)
+		check(ivy_there != null and ivy_there.toy_in_hand == "bike_scrapper", "the other player sees the toy in your hand")
+		ivy.hold_toy("")
+		await _wait_until(func() -> bool: return ivy_there != null and ivy_there.toy_in_hand == "", 120)
+		check(ivy_there != null and ivy_there.toy_in_hand == "", "and sees it put back")
+		var throws_seen := ivy_there.toy_throws if ivy_there != null else 0
 		# Thrown where there is room: the other player may be standing in the way.
 		var seen_flying := false
 		for turn in 4:
@@ -4883,6 +5000,8 @@ func _test_vehicle_toys_online() -> void:
 				return ivy.vehicles().size() > before or (jon.raid.toys.is_empty() and not ivy.raid.stowed_for(me).is_empty()), 300)
 			await frames(20)
 		check(seen_flying, "the other player sees the toy fly")
+		check(ivy_there != null and ivy_there.toy_throws > throws_seen and ivy_there.toy_in_hand == "",
+				"and sees the arm throw it, the hand empty once it flies")
 		await _wait_until(func() -> bool: return ivy.vehicles().size() > before and jon.vehicles().size() > before_there, 300)
 		check(ivy.vehicles().size() == before + 1 and jon.vehicles().size() == before_there + 1,
 				"it unpacks on the server and both clients get the bike")

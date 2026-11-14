@@ -11,6 +11,7 @@ const RigModel := preload("res://core/visual/rig_model.gd")
 const Locomotion := preload("res://core/visual/locomotion.gd")
 const Handheld := preload("res://core/phone/handheld.gd")
 const UiTheme := preload("res://core/visual/ui_theme.gd")
+const VehicleScript := preload("res://core/vehicle/vehicle.gd")
 ## Clips that loop and are cut between in step, keeping the stride's phase.
 const GAITS: Array[String] = ["walk", "run", "run_back", "run_left", "run_right", "move_gun"]
 ## Standing clips. Cuts into and out of them blend for longer, so stopping
@@ -22,6 +23,17 @@ var _cloaked := false
 ## The weapon model being drawn as it materializes (a watch summon), if any.
 var _materializing: Node3D
 var _materialize_mat: ShaderMaterial
+## The toy vehicle shown in the hand (`Actor.toy_in_hand`), how far it has
+## digitized in (0 to 1), and the light it digitizes under.
+var _toy_prop: Node3D
+var _toy_in := 0.0
+var _toy_mat: ShaderMaterial
+## Seconds a toy takes to digitize into the hand off the watch.
+var toy_summon_time := 0.35
+## How the toy sits on the hand: a little ahead of the palm, upright and
+## facing the way the actor faces, as it flies off.
+var toy_on_palm := Vector3(0.0, 0.05, -0.06)
+var _toy_released := false
 static var _materialize_shader: Shader
 static var _cloak_mat: Material
 
@@ -556,10 +568,11 @@ func _update(delta: float) -> void:
 	_update_watch_glow(delta)
 	_update_cloak()
 	_update_materialize()
+	_update_toy(delta)
 	_aim_left = maxf(_aim_left - delta, 0.0)
 	var weapon := actor.get_active_weapon()
-	if phone_up():
-		# Hands on the phone: stand as if empty-handed.
+	if phone_up() or toy_up():
+		# Hands on the phone or a toy: stand as if empty-handed.
 		weapon = null
 	var melee := weapon as MeleeWeapon
 	if locomotion == null:
@@ -888,7 +901,7 @@ func _update_switch(delta: float) -> void:
 	var active := actor.get_active_weapon()
 	# Flying flat with the arms at the sides, the weapon is worn, not left
 	# hanging in the air where the hands were. Shooting or aiming draws it.
-	if flies_stowed() or phone_up():
+	if flies_stowed() or phone_up() or toy_up():
 		active = null
 	if _in_hand != null and (not is_instance_valid(_in_hand) or not _in_hand in actor.weapons):
 		_in_hand = null
@@ -918,6 +931,8 @@ func _update_switch(delta: float) -> void:
 			arm.override_point = _hand_at_holster(_moving)
 	var pose := ActionPose.of(actor)
 	pose.low_wanted = _current == "idle_gun"
+	# A toy comes up only once the weapon is put away.
+	pose.toy_hand_free = _in_hand == null
 	for weapon in actor.weapons:
 		if weapon.visual:
 			weapon.visual.visible = weapon == _in_hand
@@ -1531,6 +1546,74 @@ void fragment() {
 		_materialize_mat = ShaderMaterial.new()
 		_materialize_mat.shader = _materialize_shader
 	return _materialize_mat
+
+
+## True while the right hand is on a toy vehicle (held up or mid-throw):
+## the weapon is put away meanwhile and drawn again after.
+func toy_up() -> bool:
+	return ActionPose.of(actor).toy_busy()
+
+
+## A toy vehicle off the watch (`Actor.toy_in_hand`) digitizes into the
+## right hand like a summoned weapon, is held up and thrown overarm
+## (`ActionPose.toy_hand_point`), and leaves the hand at the release, where
+## the toy the world flies takes over. It is the one toy in the one hand,
+## facing the way the actor faces, so both views and everyone around see the
+## same thing.
+func _update_toy(delta: float) -> void:
+	var pose := ActionPose.of(actor)
+	pose.advance(delta)
+	var id := pose.toy_shown()
+	var shown: String = _toy_prop.get_meta("display_item", "") if _toy_prop != null else ""
+	if shown != id and _toy_prop != null:
+		_toy_prop.queue_free()
+		_toy_prop = null
+	# The whoosh of the throw, once, as it leaves the hand.
+	var released := pose.toy_throw_t >= pose.toy_release
+	if released and not _toy_released and pose.toy_throw_t < pose.toy_throw_time:
+		Sfx.play("swing", actor.hand.global_position, -4.0)
+	_toy_released = released
+	if id == "":
+		_toy_in = 0.0
+		return
+	if _toy_prop == null:
+		_toy_prop = VehicleScript.toy_model(id)
+		_toy_prop.name = "Toy"
+		actor.hand.add_child(_toy_prop)
+		_toy_in = 0.0
+		Sfx.play("loot", actor.hand.global_position, -10.0)
+	# It digitizes in once the hand is up for it.
+	if pose.toy >= 0.5 or pose.toy_throw_t >= 0.0:
+		_toy_in = move_toward(_toy_in, 1.0, delta / maxf(toy_summon_time, 0.01))
+	var grown := ease(_toy_in, 0.5)
+	var size := Vector3.ONE * VehicleScript.TOY_SCALE * lerpf(0.4, 1.0, grown)
+	# Kept in the hand's own frame, so it moves with the hand wherever the
+	# hand is put this frame, turned to face the way the actor faces.
+	var turn := actor.hand.global_basis.orthonormalized().inverse() * actor.global_basis.orthonormalized()
+	_toy_prop.transform = Transform3D(turn * Basis.from_scale(size), turn * toy_on_palm)
+	_set_toy_digitized(grown if _toy_in < 1.0 else 1.0)
+
+
+## How far the toy in the hand has digitized in, 0 to 1 (for checks).
+func toy_digitized() -> float:
+	return _toy_in if _toy_prop != null else 0.0
+
+
+## The toy in the hand, or null (for checks).
+func toy_prop() -> Node3D:
+	return _toy_prop
+
+
+func _set_toy_digitized(done: float) -> void:
+	if _toy_mat == null:
+		materialize_material()
+		_toy_mat = ShaderMaterial.new()
+		_toy_mat.shader = _materialize_shader
+	for node in _toy_prop.find_children("*", "GeometryInstance3D", true, false):
+		var geometry := node as GeometryInstance3D
+		geometry.transparency = clampf(1.0 - done, 0.0, 1.0) * 0.9
+		geometry.material_overlay = _toy_mat if done < 1.0 else null
+	_toy_mat.set_shader_parameter("done", done)
 
 
 ## A raised watch (`ActorCommand.watch_up`) glows on the left wrist, so

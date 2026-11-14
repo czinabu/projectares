@@ -272,6 +272,7 @@ func _attach_base_view() -> void:
 	# The watch's summon works at home too: vehicles unpack in the base and
 	# a weapon picked is equipped.
 	controller.toy_throw_requested.connect(_on_toy_throw_requested)
+	controller.toy_hold_requested.connect(_on_toy_hold_requested)
 	controller.pack_requested.connect(_on_pack_requested)
 	controller.summon_requested.connect(_on_summon_requested)
 	controller.store_requested.connect(_on_store_requested)
@@ -612,6 +613,7 @@ func _attach_player_view() -> void:
 	controller.redeploy_requested.connect(func() -> void: _on_redeploy_requested.call_deferred())
 	controller.drop_requested.connect(func(index: int) -> void: _on_drop_requested.call_deferred(index))
 	controller.toy_throw_requested.connect(_on_toy_throw_requested)
+	controller.toy_hold_requested.connect(_on_toy_hold_requested)
 	controller.pack_requested.connect(_on_pack_requested)
 	controller.summon_requested.connect(_on_summon_requested)
 	controller.store_requested.connect(_on_store_requested)
@@ -715,6 +717,19 @@ func _on_toy_throw_requested(item_id: String) -> void:
 		net.throw_toy(item_id)
 	else:
 		raid.throw_toy(raid.player, item_id)
+
+
+## The player took a toy into their hand or put it back. The world shows it.
+func _on_toy_hold_requested(item_id: String) -> void:
+	if base != null and raid == null:
+		base.hold_toy(base.player, item_id)
+		return
+	if raid == null or raid.player == null or not is_instance_valid(raid.player):
+		return
+	if net:
+		net.hold_toy(item_id)
+	else:
+		raid.hold_toy(raid.player, item_id)
 
 
 ## The player picked a weapon in their pack on the watch. The world decides
