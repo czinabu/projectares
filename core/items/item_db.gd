@@ -151,7 +151,8 @@ func _ready() -> void:
 	# one-handers move faster, two-handers slower but stagger and break armor
 	# (`MeleeWeapon`), and the hands hold it that way (`Look.is_two_handed`).
 	register("blade_arc", "Arc Blade", Rarity.RARE, 800, ["weapon", "melee", "one_handed", "blade"],
-			{"light_damage": 34.0, "heavy_damage": 72.0, "light_recover": 0.22, "parry_window": 0.26},
+			{"light_damage": 34.0, "heavy_damage": 72.0, "light_recover": 0.22, "parry_window": 0.26,
+			"swing_style": "cut"},
 			"Faster swings and a more forgiving parry.")
 	register("hammer_breaker", "Breaker Hammer", Rarity.UNCOMMON, 500, ["weapon", "melee", "two_handed", "hammer", "vendor"],
 			{"light_damage": 42.0, "heavy_damage": 95.0, "light_windup": 0.22, "light_recover": 0.45,

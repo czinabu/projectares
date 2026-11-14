@@ -191,7 +191,11 @@ without Caleb, and update the gap list when a PR closes a row.
   Each weapon swings its own way, from item stats (view only):
   `swing_style` "slash" (swords' arcs), "thrust" (straight out along the
   aim: the spear), "chop" (down from over the shoulder: the axe, the
-  hammer), `heavy_style` for a heavy of its own (the knife's stab) and
+  hammer), "cut" (the katana's two-handed kenjutsu cuts, `ActionPose.cuts`:
+  kesa-giri, gyaku-kesa and shomen through a contact key in front of the
+  body, a tsuki for the heavy from the middle stance, the off hand on the
+  handle throughout and the edge leading, `ActionPose.cut_blade`; view
+  only, so the katana keeps its one-handed stats), `heavy_style` for a heavy of its own (the knife's stab) and
   `swing_scale` for its size. `ActionPose.windup_reach`/`follow_reach` and
   `MeleeWeapon._animate` read `style_now()`. The shown swing starts
   `SWING_LEAD` before the strike and speeds into it, half its arc at the

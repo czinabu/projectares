@@ -389,10 +389,15 @@ func _process(delta: float) -> void:
 	_off_weight = move_toward(_off_weight, 1.0 if two_handed else 0.0, delta * 8.0)
 	var off_hold := shared.ready_off(melee) if holding else ""
 	_guard = shared.held_ready if off_hold == "guard" else move_toward(_guard, 0.0, delta * 8.0)
-	_hilt = shared.held_ready if off_hold == "hilt" and not two_handed else move_toward(_hilt, 0.0, delta * 8.0)
+	# A katana's cuts keep the off hand on the handle all the way through
+	# (`ActionPose.cut_grip`); held ready it is there too.
+	var hilt_to := maxf(shared.held_ready if off_hold == "hilt" else 0.0, shared.cut_grip if holding else 0.0)
+	_hilt = hilt_to if not two_handed else move_toward(_hilt, 0.0, delta * 8.0)
 	_carry = move_toward(_carry, 1.0 if two_handed else 0.0, delta * 6.0)
 	if reaching:
-		_reach = shared.reach + melee.visual.position
+		# A two-handed cut says exactly where the hands go; a one-handed
+		# swing's greybox pose also shifts the blade off the hand.
+		_reach = shared.reach + melee.visual.position * (1.0 - shared.cut_grip)
 	_turn = shared.turn if holding else _turn.lerp(Vector2.ZERO, 1.0 - exp(-26.0 * delta))
 	if shared.toy_throw_t >= 0.0:
 		_turn = shared.toy_turn()
@@ -938,6 +943,12 @@ func _blade_turn(aimed: Basis) -> Basis:
 	# Held ready, the weapon stands in the fist the way its hold says.
 	var shared := _pose()
 	var melee := actor.get_active_weapon() as MeleeWeapon
+	# A two-handed cut turns the blade the way the cut has it, whatever the
+	# weapon's own greybox pose is doing (that is taken back out).
+	var cut: Variant = shared.cut_blade(melee) if melee != null and melee.visual != null else null
+	if cut != null:
+		turn = turn.slerp(aimed * (cut as Basis) * melee.visual.transform.basis.orthonormalized().inverse(),
+				clampf(shared.reach_weight, 0.0, 1.0))
 	if shared.held_ready > 0.0:
 		var stood: Variant = shared.ready_turn(melee)
 		if stood != null:

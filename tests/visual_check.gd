@@ -54,9 +54,13 @@ func _ready() -> void:
 		return
 
 	# `-- <output_dir> --swing-only` films melee attacks frame by frame, one
-	# row per move, so the motion (not one pose) can be judged.
+	# row per move, so the motion (not one pose) can be judged. Naming an
+	# item after it (`--swing-only blade_arc`) films only that weapon's
+	# moves, from the front three-quarter and from the eyes (first person).
 	if "--swing-only" in args:
-		await _swing_strips(out_dir)
+		var at := args.find("--swing-only")
+		var only: String = args[at + 1] if at + 1 < args.size() and ItemDB.has_item(args[at + 1]) else ""
+		await _swing_strips(out_dir, only)
 		get_tree().quit()
 		return
 
@@ -1625,7 +1629,14 @@ func _melee_shots(out_dir: String, only := "") -> void:
 ## Run with `--fixed-fps 60` so each frame is one tick.
 const SWING_STEP := 3
 const SWING_FRAMES := 12
-func _swing_strips(out_dir: String) -> void:
+func _swing_strips(out_dir: String, only := "") -> void:
+	if only != "":
+		for view: String in ["face", "side", "first"]:
+			var picked: Array = []
+			for move: String in ["light_right", "light_left", "light_overhead", "heavy_right", "heavy", "combo", "guard_left", "guard_overhead"]:
+				picked.append([only, move])
+			await _film_swings(out_dir.path_join("swings_%s_%s.png" % [only, view]), picked, view)
+		return
 	var moves := [
 		["blade_scrap", "light_right"], ["blade_scrap", "light_overhead"], ["blade_scrap", "heavy"],
 		["knife_gutter", "light_left"], ["knife_gutter", "heavy"], ["axe_splitter", "light_right"],
@@ -1633,6 +1644,13 @@ func _swing_strips(out_dir: String) -> void:
 		["spear_lancer", "light_overhead"], ["spear_lancer", "heavy"], ["blade_scrap", "back"],
 		["blade_scrap", "deflect"],
 	]
+	await _film_swings(out_dir.path_join("swings.png"), moves, "front")
+
+
+## Films `moves` ([item id, move] rows) into one sheet at `path`, from the
+## front three-quarter or from the eyes ("first": the head left out, as the
+## first-person camera does).
+func _film_swings(path: String, moves: Array, view: String) -> void:
 	var cell := 240
 	var sheet := Image.create(SWING_FRAMES * cell, moves.size() * cell, false, Image.FORMAT_RGBA8)
 	for row in moves.size():
@@ -1652,6 +1670,9 @@ func _swing_strips(out_dir: String) -> void:
 		var blade := player.get_active_weapon() as MeleeWeapon
 		blade.light_stamina = 0.0
 		blade.heavy_stamina = 0.0
+		# The spawn may be inside a gate outpost, where weapons are locked.
+		raid.zone_rules = false
+		player.weapons_locked = false
 		var cam := Camera3D.new()
 		raid.add_child(cam)
 		cam.current = true
@@ -1659,12 +1680,34 @@ func _swing_strips(out_dir: String) -> void:
 		var at := player.global_position
 		cam.global_position = at + player.global_basis.x * 1.6 - player.global_basis.z * 2.0 + Vector3(0, 1.5, 0)
 		cam.look_at(at + Vector3(0, 1.25, 0))
-		var stances := {"light_right": MeleeWeapon.Dir.RIGHT, "light_left": MeleeWeapon.Dir.LEFT}
+		var skin: Node = player.get_node_or_null("Skin")
+		if view in ["face", "side"]:
+			# Close up on the body from its front three-quarter, or side on
+			# from its right, lit from the camera so the blade reads.
+			var ahead := -player.global_basis.z
+			var right := player.global_basis.x
+			var spot := ahead * 2.2 + right * 1.3 if view == "face" else right * 2.8 + ahead * 0.4
+			cam.global_position = at + spot + Vector3(0, 1.45, 0)
+			cam.look_at(at + Vector3(0, 1.3, 0))
+			var lamp := OmniLight3D.new()
+			lamp.omni_range = 8.0
+			lamp.light_energy = 2.0
+			raid.add_child(lamp)
+			lamp.global_position = cam.global_position + Vector3(0, 0.6, 0)
+		if view == "first" and skin != null:
+			cam.fov = 75.0
+			cam.near = 0.02
+			cam.cull_mask &= ~(1 << (16 - 1))  # Mirror.HEAD_LAYER
+			skin.hide_head(true)
+		var stances := {"light_right": MeleeWeapon.Dir.RIGHT, "light_left": MeleeWeapon.Dir.LEFT,
+				"heavy_right": MeleeWeapon.Dir.RIGHT, "guard_left": MeleeWeapon.Dir.LEFT}
 		player.cmd.stance = stances.get(move, MeleeWeapon.Dir.OVERHEAD)
 		await _settle(2)
 		match move:
-			"heavy":
+			"heavy", "heavy_right":
 				player.cmd.tertiary_pressed = true
+			"guard_left", "guard_overhead":
+				player.cmd.secondary = true
 			"back":
 				blade._light_attack(0.0)
 				blade._back_strike = true
@@ -1682,6 +1725,10 @@ func _swing_strips(out_dir: String) -> void:
 			# A press is read in the tick after it is set.
 			await get_tree().physics_frame
 			await get_tree().physics_frame
+			if view == "first" and skin != null:
+				var aimed: Basis = player.global_basis.orthonormalized() * Basis(Vector3.RIGHT, player.cmd.pitch)
+				var eye: Variant = skin.eye_point(aimed)
+				cam.global_transform = Transform3D(aimed, eye if eye != null else player.get_eye_position())
 			player.cmd.primary_pressed = false
 			player.cmd.tertiary_pressed = false
 			for k in SWING_STEP - 2:
@@ -1698,8 +1745,8 @@ func _swing_strips(out_dir: String) -> void:
 		print("filmed %s %s" % [id, move])
 		raid.queue_free()
 		await _settle(2)
-	sheet.save_png(out_dir.path_join("swings.png"))
-	print("saved swings.png")
+	sheet.save_png(path)
+	print("saved %s" % path)
 
 
 ## Contact sheets of the player's legs, side on and from the front, holding

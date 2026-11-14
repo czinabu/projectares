@@ -105,6 +105,70 @@ var thrust_turn_follow := Vector2(0.3, -0.15)
 var chop_raise := Vector3(0.0, 0.28, 0.15)
 var chop_drop := Vector3(0.0, -0.2, 0.0)
 var chop_lean := 0.15
+## A "cut" (the katana) is swung in both hands the whole way, the off hand
+## kept on the handle under the weapon hand (kenjutsu and kendo: the left
+## hand drives, the right steers). Each cut has three keys, in the aim
+## frame: the windup, the moment of contact and the end of the
+## follow-through. Hands are offsets from `Actor.HAND_REST`, blades the way
+## the point goes. The hands pass through the contact key on a curve and
+## the blade turns through it, so the cut sweeps out in front of the body
+## and never through it.
+##   RIGHT     kesa-giri: from hasso by the right shoulder, diagonally down
+##             through the line to the left hip.
+##   LEFT      gyaku-kesa: the mirror, from by the left shoulder.
+##   OVERHEAD  shomen: from jodan over the head straight down the middle,
+##             stopped at the chest with the point still forward.
+##   "tsuki"   the heavy from the middle stance: a two-handed thrust,
+##             drawn back to the hip and driven out along the aim.
+## Each key is [hand, blade]; `cut_turns` are the shoulder turn and lean
+## (as `turn_windup`) at the windup and at the end, the hips driving it.
+var cuts := {
+	MeleeWeapon.Dir.RIGHT: [
+		[Vector3(-0.16, 0.37, 0.2), Vector3(0.25, 0.8, 0.55)],
+		[Vector3(-0.28, 0.07, -0.33), Vector3(-0.55, 0.3, -0.8)],
+		[Vector3(-0.48, -0.23, -0.1), Vector3(-0.8, -0.35, 0.3)],
+	],
+	MeleeWeapon.Dir.LEFT: [
+		[Vector3(-0.4, 0.27, 0.06), Vector3(-0.35, 0.8, 0.45)],
+		[Vector3(-0.26, 0.05, -0.33), Vector3(0.55, 0.3, -0.8)],
+		[Vector3(0.04, -0.23, -0.03), Vector3(0.8, -0.35, 0.3)],
+	],
+	MeleeWeapon.Dir.OVERHEAD: [
+		[Vector3(-0.26, 0.6, 0.2), Vector3(0.0, 0.55, 0.85)],
+		[Vector3(-0.26, 0.25, -0.35), Vector3(0.0, 0.3, -0.95)],
+		[Vector3(-0.26, -0.1, -0.23), Vector3(0.0, -0.35, -0.95)],
+	],
+	"tsuki": [
+		[Vector3(-0.2, -0.1, 0.13), Vector3(-0.05, 0.15, -1.0)],
+		[Vector3(-0.26, 0.05, -0.33), Vector3(0.0, 0.05, -1.0)],
+		[Vector3(-0.26, 0.05, -0.37), Vector3(0.0, 0.0, -1.0)],
+	],
+}
+var cut_turns := {
+	MeleeWeapon.Dir.RIGHT: [Vector2(-0.35, 0.05), Vector2(0.4, -0.15)],
+	MeleeWeapon.Dir.LEFT: [Vector2(0.35, 0.05), Vector2(-0.4, -0.15)],
+	MeleeWeapon.Dir.OVERHEAD: [Vector2(0.0, 0.18), Vector2(0.0, -0.3)],
+	"tsuki": [Vector2(-0.2, 0.05), Vector2(0.05, -0.35)],
+}
+## A heavy cut is raised higher and further back, and the hips coil more.
+var cut_heavy_raise := Vector3(0.0, 0.06, 0.06)
+var cut_heavy_coil := 1.25
+## The guards of a cut, both hands on the handle: [hand, blade] for each
+## side, the blade up across that side, or over the head edge up.
+var cut_guards := {
+	MeleeWeapon.Dir.RIGHT: [Vector3(0.02, 0.15, -0.12), Vector3(0.25, 1.0, -0.15)],
+	MeleeWeapon.Dir.LEFT: [Vector3(-0.32, 0.15, -0.1), Vector3(-0.3, 1.0, -0.15)],
+	MeleeWeapon.Dir.OVERHEAD: [Vector3(-0.38, 0.5, -0.05), Vector3(1.0, 0.15, -0.2)],
+}
+## Where the weapon elbow points through a cut (actor frame), cocked and
+## thrown: down and out, never winged up, since both hands share the handle.
+var cut_elbow_cocked := Vector3(0.75, 1.25, 0.2)
+var cut_elbow_thrown := Vector3(0.55, 0.7, 0.0)
+## Which way the blade's edge faces in the weapon's own frame (the blade
+## runs along +Y): a cut leads with it.
+var cut_edge := Vector3(0.0, 0.0, -1.0)
+## How far the current weapon is held in both hands for its cuts (0..1).
+var cut_grip := 0.0
 ## A reload: at its deepest the gun is brought down and in toward the off
 ## hand (`reload_reach`), and tipped (`reload_tilt`: pitch, yaw, roll in
 ## radians, roll positive to the left) to bring the magazine well round.
@@ -379,6 +443,8 @@ func advance(delta: float) -> void:
 	turn = turn.lerp(body_turn(melee) if holding else Vector2.ZERO, follow)
 	held_ready = lerpf(held_ready, ready_amount(melee) if holding else 0.0, follow)
 	elbow_raise = lerpf(elbow_raise, elbow_wanted(melee) if holding else 0.0, follow)
+	var both := holding and melee.style_now() == "cut" and not melee.showing_back_strike()
+	cut_grip = move_toward(cut_grip, 1.0 if both else 0.0, delta * 8.0)
 
 	var watch_wanted := actor.cmd != null and actor.cmd.watch_up and not actor.is_dead
 	_watch_raise = move_toward(_watch_raise, 1.0 if watch_wanted else 0.0, delta / maxf(watch_time, 0.001))
@@ -699,6 +765,8 @@ func arm_reach(melee: MeleeWeapon) -> Variant:
 		return arm_back * (0.4 + 0.6 * maxf(melee.swing_arc(), 0.0))
 	var arc := melee.swing_arc()
 	if arc >= 0.0:
+		if melee.style_now() == "cut":
+			return cut_reach(melee, melee.attack_dir, arc)
 		if melee.style_now() == "thrust":
 			# Straight out along the aim, not round the shoulder.
 			return windup_reach(melee, melee.attack_dir).lerp(follow_reach(melee, melee.attack_dir), arc)
@@ -708,6 +776,8 @@ func arm_reach(melee: MeleeWeapon) -> Variant:
 	if _follow_left > 0.0:
 		return follow_reach(melee, _follow_dir)
 	if melee.is_blocking():
+		if melee.style_now() == "cut":
+			return cut_guards[melee.guard_dir][0]
 		return arm_guard
 	var hold: Variant = ready_reach(melee)
 	var rest: Vector3 = hold if hold != null else Vector3.ZERO
@@ -827,6 +897,11 @@ func windup_reach(melee: MeleeWeapon, dir: int) -> Vector3:
 			at = thrust_windup + Vector3(-MeleeWeapon._side(dir) * 0.1, 0.0, 0.0)
 		"chop":
 			at = (arm_windup[dir] as Vector3) + chop_raise
+		"cut":
+			var key: Variant = cut_key(melee, dir)
+			at = cuts[key][0][0]
+			if key is int and is_heavy(melee):
+				at += cut_heavy_raise
 		_:
 			at = arm_windup[dir]
 	return at * melee.swing_scale
@@ -840,6 +915,8 @@ func follow_reach(melee: MeleeWeapon, dir: int) -> Vector3:
 			at = thrust_follow
 		"chop":
 			at = (arm_follow[dir] as Vector3) + chop_drop
+		"cut":
+			at = cuts[cut_key(melee, dir)][2][0]
 		_:
 			at = arm_follow[dir]
 	return at * melee.swing_scale
@@ -852,6 +929,9 @@ func windup_turn(melee: MeleeWeapon, dir: int) -> Vector2:
 			return thrust_turn_windup
 		"chop":
 			return (turn_windup[dir] as Vector2) + Vector2(0.0, chop_lean)
+		"cut":
+			var turned: Vector2 = cut_turns[cut_key(melee, dir)][0]
+			return turned * (cut_heavy_coil if is_heavy(melee) else 1.0)
 	return turn_windup[dir]
 
 
@@ -862,6 +942,8 @@ func follow_turn(melee: MeleeWeapon, dir: int) -> Vector2:
 			return thrust_turn_follow
 		"chop":
 			return (turn_follow[dir] as Vector2) - Vector2(0.0, chop_lean * 1.5)
+		"cut":
+			return cut_turns[cut_key(melee, dir)][1]
 	return turn_follow[dir]
 
 
@@ -890,9 +972,108 @@ func elbow_wanted(melee: MeleeWeapon) -> float:
 	return maxf(charge_amount(melee), 0.0)
 
 
-## The weapon elbow's pole in the actor's frame, between cocked and thrown.
+## The weapon elbow's pole in the actor's frame, between cocked and thrown
+## (lower through a two-handed cut).
 func elbow_pole() -> Vector3:
-	return elbow_thrown.lerp(elbow_cocked, elbow_raise)
+	var pole := elbow_thrown.lerp(elbow_cocked, elbow_raise)
+	return pole.lerp(cut_elbow_thrown.lerp(cut_elbow_cocked, elbow_raise), cut_grip)
+
+
+## Which cut `melee` shows from `dir` (a key of `cuts`): the side's own, or
+## the tsuki for a heavy from the middle stance (the dive slam is still
+## jodan to shomen).
+func cut_key(melee: MeleeWeapon, dir: int) -> Variant:
+	if dir == MeleeWeapon.Dir.OVERHEAD and not melee._slamming and is_heavy(melee):
+		return "tsuki"
+	return dir
+
+
+## True while `melee` is showing, winding up or drawing back toward a heavy.
+static func is_heavy(melee: MeleeWeapon) -> bool:
+	if melee.is_winding_up():
+		return melee._windup_kind == "heavy"
+	if charge_amount(melee) > 0.0:
+		return true
+	return melee._shown_kind == "heavy"
+
+
+## The hand offset `done` (0..1) of the way through the cut from `dir`: on a
+## curve from the windup through the contact key (at the hit, half way) to
+## the end of the follow-through.
+func cut_reach(melee: MeleeWeapon, dir: int, done: float) -> Vector3:
+	var from := windup_reach(melee, dir)
+	var to := follow_reach(melee, dir)
+	var hit: Vector3 = cuts[cut_key(melee, dir)][1][0] * melee.swing_scale
+	var bend := hit * 2.0 - (from + to) * 0.5
+	var t := clampf(done, 0.0, 1.0)
+	return from * (1.0 - t) * (1.0 - t) + bend * 2.0 * t * (1.0 - t) + to * t * t
+
+
+## How a cut has the blade this frame, in the aim frame (the weapon's own
+## frame turned so its blade runs the way the cut says and its edge leads),
+## or null when no cut has it (at rest the ready hold does). Both views
+## turn the weapon hand by it (`WeaponArm._blade_turn`).
+func cut_blade(melee: MeleeWeapon) -> Variant:
+	if melee == null or actor.is_dead or melee.style_now() != "cut" or melee.showing_back_strike():
+		return null
+	if melee._slamming:
+		return _cut_blade_at(cut_key(melee, MeleeWeapon.Dir.OVERHEAD), 0.0)
+	var arc := melee.swing_arc()
+	if arc >= 0.0:
+		return _cut_blade_at(cut_key(melee, melee.attack_dir), arc)
+	if melee.is_winding_up():
+		return _cut_blade_at(cut_key(melee, melee.attack_dir), 0.0)
+	if _follow_left > 0.0:
+		return _cut_blade_at(cut_key(melee, _follow_dir), 1.0)
+	if melee.is_blocking():
+		var guard: Array = cut_guards[melee.guard_dir]
+		var edge := Vector3.UP if melee.guard_dir == MeleeWeapon.Dir.OVERHEAD else Vector3.FORWARD
+		return blade_basis(guard[1], edge)
+	var hold := ready_hold(melee)
+	var rest := Basis(Quaternion(Vector3.UP, (hold[1] as Vector3).normalized())) if not hold.is_empty() else Basis.IDENTITY
+	var charge := charge_amount(melee)
+	if charge > 0.0:
+		return _blend(rest, _cut_blade_at(cut_key(melee, MeleeWeapon.swing_from(melee.stance)), 0.0), charge)
+	var back := recover_left(melee)
+	if back > 0.0:
+		return _blend(rest, _cut_blade_at(cut_key(melee, melee.attack_dir), 1.0), back)
+	return null
+
+
+## The blade `done` of the way through the cut `key`: turned from the
+## windup through the contact key to the follow-through, the edge leading
+## the way it turns (down, for the tsuki).
+func _cut_blade_at(key: Variant, done: float) -> Basis:
+	var keys: Array = cuts[key]
+	var a := (keys[0][1] as Vector3).normalized()
+	var b := (keys[1][1] as Vector3).normalized()
+	var c := (keys[2][1] as Vector3).normalized()
+	var t := clampf(done, 0.0, 1.0)
+	var dir := a.slerp(b, t * 2.0) if t < 0.5 else b.slerp(c, t * 2.0 - 1.0)
+	var lead := b - a if t < 0.5 else c - b
+	if key is String:
+		lead = Vector3.DOWN
+	return blade_basis(dir, lead)
+
+
+## The weapon's frame with its blade along `dir` and its edge (`cut_edge`)
+## turned as near `edge` as it can face, both in the aim frame.
+func blade_basis(dir: Vector3, edge: Vector3) -> Basis:
+	var up := dir.normalized()
+	var face := edge - up * edge.dot(up)
+	if face.length() < 0.05:
+		face = Vector3.DOWN - up * up.y
+		if face.length() < 0.05:
+			face = Vector3.FORWARD
+	face = face.normalized()
+	var own_face := (cut_edge - Vector3.UP * cut_edge.y).normalized()
+	var wanted := Basis(up, face, up.cross(face))
+	var own := Basis(Vector3.UP, own_face, Vector3.UP.cross(own_face))
+	return (wanted * own.inverse()).orthonormalized()
+
+
+static func _blend(from: Basis, to: Basis, weight: float) -> Basis:
+	return Basis(from.get_rotation_quaternion().slerp(to.get_rotation_quaternion(), clampf(weight, 0.0, 1.0)))
 
 
 ## How far the arm is drawn back while the button is held toward a heavy
