@@ -998,14 +998,38 @@ func _test_main_flow() -> void:
 	var card_left := cam.unproject_position(holo.global_position - cam.global_basis.x * card_width * 0.5)
 	var card_right := cam.unproject_position(holo.global_position + cam.global_basis.x * card_width * 0.5)
 	var screen := cam.get_viewport().get_visible_rect().size
-	check(cam.global_position.distance_to(holo.global_position) > cam.global_position.distance_to(p.get_eye_position())
-			and (card_right.x - card_left.x) > screen.x * 0.25 and card_left.x >= 0.0,
-			"the third-person card stands past the character, big enough to read and whole on screen (%d px wide)"
-			% roundi(card_right.x - card_left.x))
+	var card_px := card_right.x - card_left.x
+	check(card_px > screen.x * 0.08 and card_px < screen.x * 0.25 and card_left.x >= 0.0,
+			"the third-person card is card-sized, not a panel, and whole on screen (%d px wide of %d)"
+			% [roundi(card_px), roundi(screen.x)])
+	var worn_at := wrist.watch_position(p)
+	var card_bottom := holo.global_position - holo.global_basis.y * wrist.face_size.y * 0.5
+	check(card_bottom.distance_to(worn_at) < 0.35 and holo.global_position.y > worn_at.y,
+			"it is anchored just over the raised wrist (%.2f m from the watch)" % card_bottom.distance_to(worn_at))
 	var head_on_screen := cam.unproject_position(p.get_eye_position())
-	check(card_right.x < head_on_screen.x and card_right.x < screen.x * 0.5,
-			"and beside the character, clear of the head and the crosshair (card to %d, head at %d, of %d)"
-			% [roundi(card_right.x), roundi(head_on_screen.x), roundi(screen.x)])
+	check(card_right.x < head_on_screen.x,
+			"and stands clear of the head (card to %d, head at %d)" % [roundi(card_right.x), roundi(head_on_screen.x)])
+	var cam_back := cam.global_position.distance_to(p.get_eye_position())
+	check(controller.watch_read > 0.99 and cam_back > 0.7 and cam_back < controller.third_person_distance
+			and controller.is_third_person(),
+			"the camera eases in over the shoulder while the watch is up, still third person (%.2f m back)" % cam_back)
+	# The light opens out of the watch face into the card: narrow where it
+	# leaves the face, the card's corners at its open end.
+	var beam_mesh := (wrist.get_node("Beam") as MeshInstance3D).mesh
+	var cone: Array = beam_mesh.surface_get_arrays(0)
+	var face_at := wrist._face_position(true)
+	var mouth_ok := true
+	var open_ok := true
+	var card_corner := wrist.face_size.length() * holo.global_basis.get_scale().x * 0.5
+	for i in (cone[Mesh.ARRAY_VERTEX] as PackedVector3Array).size():
+		var v: Vector3 = cone[Mesh.ARRAY_VERTEX][i]
+		var uv: Vector2 = cone[Mesh.ARRAY_TEX_UV][i]
+		if uv.y < 0.5:
+			mouth_ok = mouth_ok and v.distance_to(face_at) <= wrist.beam_mouth
+		else:
+			open_ok = open_ok and absf(v.distance_to(holo.global_position) - card_corner) < 0.01
+	check(mouth_ok and open_ok and wrist.BEAM_SHADER.contains("TIME"),
+			"the light widens outwards from the watch face to the card's edges, with bands running out along it")
 	get_tree().root.size = window_was
 	await frames(2)
 	var holo_mat := holo.material_override as ShaderMaterial
@@ -1069,7 +1093,7 @@ func _test_main_flow() -> void:
 			"the watch face glows red when you are low and cyan when you are well")
 	controller._unhandled_input(x_key)
 	await frames(30)
-	check(not controller.wrist_raised and not holo.visible, "X again puts it away")
+	check(not controller.wrist_raised and not holo.visible and controller.watch_read == 0.0, "X again puts it away, and the view is back where it was")
 	var leaving := Hud.watch_slots(main.raid, p, 0, "", 0.5)
 	var leave_at := Hud.Wrist.SLOTS.find("leave")
 	check(is_equal_approx(float(leaving[leave_at].progress), 0.5) and Hud.default_focus(leaving) == leave_at,
