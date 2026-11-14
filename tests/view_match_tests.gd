@@ -296,6 +296,24 @@ static func _check_with_skin(t: Node) -> void:
 	controller.pitch = level_pitch
 	p.cmd.pitch = level_pitch
 	await t.frames(30)
+	# Crouched, the first-person eyes go down with the body: the same sunk
+	# pose third person shows, about as far as the actor's eyes drop.
+	var stand_cam := controller.camera.global_position.y - p.global_position.y
+	# The actor's physics is off here, so set the crouch it would simulate.
+	p.cmd.crouch = true
+	p.crouched = true
+	p.crouch = 1.0
+	await t.frames(40)
+	var low_cam := controller.camera.global_position.y - p.global_position.y
+	t.check(p.crouched and absf((stand_cam - low_cam) - p.crouch_eye_drop) < 0.15,
+			"first person crouches with the body (the eyes drop %.2f m, the actor's %.2f m)"
+			% [stand_cam - low_cam, p.crouch_eye_drop])
+	p.cmd.crouch = false
+	p.crouched = false
+	p.crouch = 0.0
+	await t.frames(40)
+	t.check(absf(controller.camera.global_position.y - p.global_position.y - stand_cam) < 0.05,
+			"standing up, first person comes back up")
 	var cam: Camera3D = controller.camera
 	t.check(cam != null and cam.cull_mask & head_bit == 0, "first person, the camera leaves out the head")
 	var drawn := {}

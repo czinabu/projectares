@@ -765,6 +765,13 @@ func eye_point(look: Basis) -> Variant:
 		# stands at the actor's feet, which put the eyes in a seated rider's
 		# neck, looking out through their own collar and pack.
 		local = _posed_head
+	elif _posed_head.is_finite():
+		# Crouched or sliding, the body sinks only in the posed skeleton too
+		# (`Locomotion._crouch_pose`, `_slide_pose`): follow it in as the
+		# body goes down, so first person crouches with the body.
+		var low := smoothstep(0.0, 1.0, maxf(actor.crouch, actor.slide_low))
+		if low > 0.0:
+			local = local.lerp(_posed_head, low)
 	var head: Vector3 = _skeleton.global_transform * local
 	return head + Vector3.UP * eye_up + look * Vector3(0.0, 0.0, -eye_ahead)
 
