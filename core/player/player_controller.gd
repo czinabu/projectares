@@ -64,11 +64,11 @@ var phone_out := false
 ## and eases back out when the phone is put away. It looks at the same device
 ## first person reads; nothing floats in front of the view.
 var phone_read_distance := 0.75
-var phone_read_side := 0.55
+var phone_read_side := 0.65
 var phone_read_lift := 0.35
-var phone_read_fov := 26.0
+var phone_read_fov := 21.0
 ## How far (m) to aim left of the phone, so it sits right of the crosshair.
-var phone_read_offset := 0.05
+var phone_read_offset := 0.08
 var phone_read_rate := 6.0
 ## With the Mirror app up the view widens and aims this far (0..1) from the
 ## phone toward the mirror's glass, so the reflection shows past the phone.

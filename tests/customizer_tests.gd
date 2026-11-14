@@ -311,6 +311,21 @@ static func _run_mirror(t: Node) -> void:
 	phone._mirror_mouse(wheel)
 	t.check(phone.mirror_row == rows.size() - 1 and looks.size() == 3, "closed, the wheel stops at the last row")
 	t.check(not phone._mirror_mouse(right_click), "a right click with no row open is left alone")
+	# The page follows the chosen row (Caleb's feedback: the highlight moved
+	# but the screen stayed at the bottom). The page lays out on drawn
+	# frames, so these wait for those, not physics ticks.
+	await _drawn(t, 3)
+	t.check(_row_shown(phone, rows.size() - 1), "the page scrolls down to show the last row")
+	for i in rows.size():
+		var up := InputEventMouseButton.new()
+		up.button_index = MOUSE_BUTTON_WHEEL_UP
+		up.pressed = true
+		phone._mirror_mouse(up)
+		await _drawn(t, 1)
+	await _drawn(t, 3)
+	t.check(phone.mirror_row == 0 and _row_shown(phone, 0), "wheeling back up scrolls the page up to the first row")
+	t.check(phone._scroll.get_v_scroll_bar().max_value > phone._scroll.size.y + 1.0,
+			"the rows are longer than the screen, so the scrolling is really tested")
 	await t.frames(1)
 	phone.open_app("news")
 	t.check(ups == [true, false], "leaving the app puts the mirror away")
@@ -416,3 +431,19 @@ static func _run_mirror(t: Node) -> void:
 	Look.enabled = was_enabled
 	main.queue_free()
 	await t.frames(3)
+
+
+## Whether the Mirror app's row `index` lies inside the phone's scrolled view.
+static func _row_shown(phone: CanvasLayer, index: int) -> bool:
+	var rows: Array = phone._body.get_children().filter(func(child: Node) -> bool: return child is PanelContainer)
+	if index >= rows.size():
+		return false
+	var row: Control = rows[index]
+	var view: Rect2 = phone._scroll.get_global_rect()
+	var box: Rect2 = row.get_global_rect()
+	return box.size.y > 0.0 and box.position.y >= view.position.y - 1.0 and box.end.y <= view.end.y + 1.0
+
+
+static func _drawn(t: Node, count: int) -> void:
+	for i in count:
+		await t.get_tree().process_frame

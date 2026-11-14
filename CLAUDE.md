@@ -777,7 +777,11 @@ without Caleb, and update the gap list when a PR closes a row.
   keep the Mirror app's mirror in frame (`phone_mirror`). That mirror
   stands square in front of the body, never along the camera. The Mirror
   app's wheel works like a watch icon: it moves between rows, a click opens
-  one for the wheel to turn, a right click closes it (`Phone._mirror_mouse`).
+  one for the wheel to turn, a right click closes it (`Phone._mirror_mouse`),
+  and the page scrolls to keep the chosen row in view (`Phone._keep_in_view`,
+  once the redrawn rows are laid out). The device and its text are sized to
+  be read at that hold (`Handheld.HEIGHT`, `Phone.text_scale`, Caleb's
+  feedback); make it readable by size, never by bringing it to the face.
   The other hand hangs at the side while the phone is out
   (`Locomotion.phone_rest`). A new app is an entry in `Phone.APPS` with a line glyph in
   `Phone.AppIcon`. Going online is the Servers app (Caleb's call: no Uplink

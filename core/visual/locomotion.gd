@@ -107,8 +107,8 @@ var stand_legs_rate := 4.0
 ## same hold every view sees, never up at the eyes), so the face, the mirror
 ## and the world ahead stay clear. The left arm hangs by the side
 ## (`phone_rest`), out of the way of the screen.
-var phone_at := Vector3(0.08, 1.32, -0.52)
-var phone_wrist := Vector3(0.09, 1.27, -0.45)
+var phone_at := Vector3(0.08, 1.35, -0.45)
+var phone_wrist := Vector3(0.09, 1.30, -0.38)
 var phone_elbow := Vector3(0.45, -1.0, 0.3)
 var phone_rest := Vector3(-0.24, 0.92, -0.02)
 var phone_rest_elbow := Vector3(-0.3, 0.0, 1.0)
