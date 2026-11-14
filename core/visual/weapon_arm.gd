@@ -389,8 +389,8 @@ func _process(delta: float) -> void:
 	if shared.toy_throw_t >= 0.0:
 		_turn = shared.toy_turn()
 	var gun := actor.get_active_weapon() as Gun
-	_gun_weight = shared.reload if gun != null and gun.visual != null and gun.visual.visible \
-			and not actor.is_dead else 0.0
+	_gun_weight = maxf(shared.reload, shared.inspect_for("gun")) if gun != null and gun.visual != null \
+			and gun.visual.visible and not actor.is_dead else 0.0
 	# The watch takes the left hand off any two-handed hold while it is up.
 	_watch = shared.watch if not actor.is_dead else 0.0
 	_ads = shared.ads if gun != null and gun.visual != null and gun.visual.visible \
@@ -400,7 +400,7 @@ func _process(delta: float) -> void:
 	var raised := 0.0
 	_gun_carry = 0.0
 	if gun != null and gun.visual != null and gun.visual.visible and not actor.is_dead and override_weight <= 0.001:
-		raised = (1.0 - shared.low) * (1.0 - shared.reload)
+		raised = (1.0 - shared.low) * (1.0 - shared.reload) * (1.0 - shared.inspect_for("gun"))
 		_gun_carry = shared.carry if _weight <= 0.001 else 0.0
 		raised = lerpf(raised, shared.carry_support(gun), _gun_carry)
 	_support = maxf(_ads, raised)
@@ -432,6 +432,12 @@ func _process(delta: float) -> void:
 		_target.global_position = toy_spot if held_by <= 0.0 else _target.global_position.lerp(toy_spot, shared.toy)
 		reach_ik.influence = maxf(held_by, shared.toy)
 		_pole.global_position = _pole.global_position.lerp(actor.global_transform * shared.toy_elbow, shared.toy_elbow_raise())
+	# Looking over a toy vehicle held up: the hand brings it in front of
+	# the chest, and the wrist turns it (`_inspect_wrist`).
+	var hand_look := shared.inspect_for("hand")
+	if hand_look > 0.0 and _weight <= 0.001 and override_weight <= 0.001:
+		_target.global_position = _target.global_position.lerp(shared.inspect_point(), hand_look)
+		reach_ik.influence = maxf(reach_ik.influence, hand_look)
 	if off_ik:
 		off_ik.influence = maxf(maxf(_off_weight, _support) * (1.0 - _watch), _watch)
 		var off_pole := off_elbow.lerp(ads_off_elbow, _support) if _off_weight <= 0.0 else off_elbow
@@ -487,12 +493,18 @@ func _reach_gun() -> void:
 		_reach_sight()
 		return
 	if _gun_carry > 0.0 and _wrist >= 0 and _weight <= 0.001:
+		# Coming out of the carry into a look over.
+		if pose.inspect_for("gun") > 0.0:
+			_target.global_position = _target.global_position.lerp(pose.inspect_point(), pose.inspect_for("gun"))
 		return
 	if _gun_weight <= 0.0 or _wrist < 0 or override_weight > 0.001 or _weight > 0.001:
 		return
 	var wrist := skeleton.global_transform * skeleton.get_bone_global_pose(_wrist).origin
 	var aim := actor.global_basis.orthonormalized() * Basis(Vector3.RIGHT, actor.cmd.pitch)
 	_target.global_position = wrist + aim * pose.gun_offset().origin
+	var looking := pose.inspect_for("gun")
+	if looking > 0.0:
+		_target.global_position = _target.global_position.lerp(pose.inspect_point(), looking)
 	reach_ik.influence = 1.0
 
 
@@ -637,6 +649,7 @@ func _place_weapon() -> void:
 	_off_spot = Vector3.INF
 	if _off_weight <= 0.0:
 		_off_fix = Vector3.ZERO
+	_inspect_wrist()
 	_bend_to_grip()
 	_turn_to_carry()
 	if _support > 0.0:
@@ -684,6 +697,19 @@ func _place_weapon() -> void:
 		handle -= skeleton.global_basis * (skeleton.get_bone_global_pose(_off_wrist).basis * (_off_hold_point as Vector3))
 		handle += actor.global_basis.orthonormalized() * _off_fix
 	_off_target.global_position = handle.lerp(watch_point(), _watch)
+
+
+## Looking over what is in the hand (`ActionPose.inspect`): once the arm
+## has reached, the wrist turns the way the item is turned, so the hand
+## turns it rather than the item turning in a still hand.
+func _inspect_wrist() -> void:
+	var shared := _pose()
+	if _wrist < 0 or shared.inspecting() == "":
+		return
+	var aimed := actor.global_basis.orthonormalized() * Basis(Vector3.RIGHT, actor.cmd.pitch)
+	var world := aimed * shared.inspect_basis() * aimed.inverse()
+	var to_skeleton := skeleton.global_basis.orthonormalized()
+	_rotate_bone(_wrist, (to_skeleton.inverse() * world * to_skeleton).orthonormalized())
 
 
 ## Aiming down sights the off hand comes onto the gun: the fore grip of a
@@ -899,7 +925,20 @@ func _blade_turn(aimed: Basis) -> Basis:
 		var side := up.cross(body.z).normalized()
 		var across := Basis(side, up, side.cross(up).normalized())
 		turn = turn.slerp(across, _carry * hang)
+	if _pose().inspecting() == "melee":
+		turn = turn * _pose().inspect_basis()
 	return turn
+
+
+## Between poses of a body posed every few frames (`ActorSkin.detail_step`):
+## the hand node back where `hold_weapon` last showed it, in the actor's
+## frame, since the skeleton's bones only hold what the arm reached inside
+## its update.
+func hold_shown() -> void:
+	if actor.is_dead or not actor.hand.has_meta("shown_local"):
+		hold_weapon()
+		return
+	actor.hand.global_transform = actor.global_transform * (actor.hand.get_meta("shown_local") as Transform3D)
 
 
 ## Puts the actor's hand node, which carries the weapon, on the model's hand.
