@@ -6171,7 +6171,8 @@ func _test_phone_view() -> void:
 	await frames(2)
 	check(not raid.player.cmd.phone, "putting it away lowers it")
 
-	# Third person eases the camera in to read the holo; first person never moves.
+	# Third person eases the camera in over the shoulder to read the phone in
+	# the hand; first person only drops the eyes to it.
 	var reader := HandSkin.new()
 	reader.name = "Skin"
 	reader.held = Handheld.build()
@@ -6181,34 +6182,40 @@ func _test_phone_view() -> void:
 		raid.player.add_child(reader.held)
 		reader.held.position = Vector3(0.15, 1.4, -0.4)
 		await frames(1)
-		var holo := controller.phone_panel()
-		check(holo != null, "the controller finds the holo of the phone in the hand")
+		var face := controller.phone_panel()
+		check(face != null and face == Handheld.face_of(reader.held), "the controller finds the phone in the hand")
+		check(reader.held.find_child("Holo", true, false) == null and reader.held.find_child("Beam", true, false) == null,
+				"nothing floats off the phone: its screen is read in the hand, in every view")
 		controller.view_mode = PlayerController.ViewMode.THIRD
 		controller.input_blocked = true
 		controller.phone_out = true
 		for i in 40:
 			await frames(1)
 		check(controller.phone_read > 0.99, "with the phone out in third person the camera eases in to read it")
-		check(controller.camera.global_position.distance_to(holo.global_position) < 1.8 and is_equal_approx(controller.camera.global_basis.x.y, 0.0),
+		check(controller.camera.global_position.distance_to(face.global_position) < 1.5 and is_equal_approx(controller.camera.global_basis.x.y, 0.0),
 				"and frames it level from over the shoulder")
-		var to_holo := controller.camera.global_transform.affine_inverse() * holo.global_position
-		check(to_holo.x > 0.02, "the holo sits off the centre of the screen, clear of the crosshair")
-		var holo_mat := Handheld.holo_material(ImageTexture.new())
-		check(holo_mat.blend_mode == BaseMaterial3D.BLEND_MODE_MIX and holo_mat.albedo_color.a > 0.9
-				and holo_mat.render_priority == Material.RENDER_PRIORITY_MAX,
-				"a readable holo is solid and drawn over signs behind it")
+		var to_face := controller.camera.global_transform.affine_inverse() * face.global_position
+		check(to_face.z < 0.0 and to_face.x > 0.0, "the phone sits in view, right of the crosshair")
 		controller.phone_out = false
 		controller.input_blocked = false
 		for i in 40:
 			await frames(1)
 		check(controller.phone_read == 0.0, "putting it away eases the camera back out")
 		controller.view_mode = PlayerController.ViewMode.FIRST
+		var pitch_before := controller.pitch
 		controller.input_blocked = true
 		controller.phone_out = true
-		await frames(5)
-		check(controller.phone_read == 0.0, "first person reads the phone from the eyes, without moving the camera")
+		for i in 40:
+			await frames(1)
+		check(controller.phone_read == 0.0, "first person reads the phone from the eyes, with no reading camera")
+		check(absf(controller.camera.global_rotation.x - controller.phone_view_pitch) < 0.02
+				and is_equal_approx(controller.pitch, pitch_before),
+				"the eyes drop to the phone in the hand, while the aim stays where it was")
 		controller.phone_out = false
 		controller.input_blocked = false
+		for i in 40:
+			await frames(1)
+		check(absf(controller.camera.global_rotation.x - pitch_before) < 0.02, "and come back up when it is put away")
 	else:
 		reader.held.free()
 		reader.free()
@@ -6287,23 +6294,13 @@ func _test_phone_home(phone: CanvasLayer) -> void:
 	skin.held = in_hand
 	phone.set_holder(holder)
 	await _drawn_frames(2)
-	check(phone._device == Handheld.holo_of(in_hand) and not phone._flat.visible,
+	check(phone._device == Handheld.face_of(in_hand) and not phone._flat.visible,
 			"with a hand to hold it, the phone is the handheld in that hand, not a flat screen")
 	check(Handheld.face_of(in_hand).get_surface_override_material(0) == phone._face_mat,
 			"and its face shows this phone's screen")
-	var mouse := camera.unproject_position(phone._device.global_position)
-	check(phone.screen_point(mouse).distance_to(Vector2(phone.screen_size) * 0.5) < 4.0,
-			"the mouse on the holo panel lands on the screen")
-	check(Handheld.holo_of(in_hand).global_position.y > Handheld.face_of(in_hand).global_position.y,
-			"the device projects its screen as a holo panel above it")
-	var head_bit := 1 << (MirrorScript.HEAD_LAYER - 1)
-	check(Handheld.holo_of(in_hand).layers == head_bit,
-			"the holo goes with the head, so your own first-person camera leaves it out")
-	camera.cull_mask = 0xFFFFF & ~head_bit
 	var on_face := camera.unproject_position(Handheld.face_of(in_hand).global_transform * Vector3(0.0, 0.0, Handheld.DEPTH * 0.5))
 	check(phone.screen_point(on_face).distance_to(Vector2(phone.screen_size) * 0.5) < 4.0,
-			"in first person the mouse on the handheld's own screen lands on the screen")
-	camera.cull_mask = 0xFFFFF
+			"the mouse on the handheld's own screen lands on the screen, in every view")
 	check(phone.screen_point(Vector2(1, 1)).x < 0.0, "the mouse off the handheld misses it")
 	check((phone._face_mat as StandardMaterial3D).albedo_texture == phone._screen.get_texture(),
 			"the handheld's face shows the phone's screen")

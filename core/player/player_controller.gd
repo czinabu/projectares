@@ -57,17 +57,34 @@ var input_blocked := false
 var phone_out := false
 ## Reading the phone in third person (Caleb's call, like the riding view: an
 ## exception to the camera never moving on its own, made by opening the
-## phone): the camera eases in over the right shoulder to the holo panel, this
-## far back from it (m) and this far out to the right, and eases back out when
-## the phone is put away. First person needs nothing: the panel is in view.
-var phone_read_distance := 0.9
-var phone_read_side := 0.72
-var phone_read_lift := 0.2
-var phone_read_fov := 32.0
-var phone_read_offset := 0.1
+## phone): the camera eases in over the right shoulder to the handheld in the
+## hand, this far back from the eyes (m), this far out to the right and up,
+## and eases back out when the phone is put away. It looks at the same device
+## first person reads; nothing floats in front of the view.
+var phone_read_distance := 0.75
+var phone_read_side := 0.55
+var phone_read_lift := 0.35
+var phone_read_fov := 26.0
+## How far (m) to aim left of the phone, so it sits right of the crosshair.
+var phone_read_offset := 0.05
 var phone_read_rate := 6.0
+## With the Mirror app up the view widens and aims this far (0..1) from the
+## phone toward the mirror's glass, so the reflection shows past the phone.
+var phone_mirror_fov := 62.0
+var phone_mirror_aim := 0.55
 ## How far in to the phone the third-person camera is now (0..1).
 var phone_read := 0.0
+## The eyes drop to the phone in the hand while it is out (radians of view
+## pitch), in both views, the same way the model's head bows to it. Only the
+## view moves: `pitch`, and so the aim, is left where it was.
+var phone_view_pitch := -0.4
+## With the Mirror app's mirror up the eyes drop less, to see yourself in it
+## over the phone.
+var phone_mirror_pitch := -0.2
+var _phone_look := 0.0
+## The mirror standing in front of you for the phone's Mirror app (`Main`),
+## or null; the third-person reading view keeps it in frame.
+var phone_mirror: Node3D
 ## How far behind the eyes the third-person camera sits, in meters: a view
 ## over the right shoulder (the phone's "Camera distance" setting). Aiming
 ## moves in to `aim_distance_ratio` of it.
@@ -740,7 +757,10 @@ func _process(delta: float) -> void:
 	_update_recoil(delta)
 	_update_dip(delta)
 	_update_shake(delta)
-	var look := Basis.from_euler(Vector3(pitch + _shake.y, yaw + _shake.x, 0.0))
+	_phone_look = move_toward(_phone_look, 1.0 if phone_out and not actor.is_dead else 0.0, phone_read_rate * delta)
+	var reading_pitch := phone_mirror_pitch if mirror_in_view() else phone_view_pitch
+	var view_pitch := lerpf(pitch, reading_pitch, smoothstep(0.0, 1.0, _phone_look))
+	var look := Basis.from_euler(Vector3(view_pitch + _shake.y, yaw + _shake.x, 0.0))
 	var pivot := actor.get_eye_position() - Vector3(0.0, _dip, 0.0)
 	var t := minf(_cam_dist / third_person_distance, 1.0)
 	var desired := pivot + look * Vector3(0.6 * t, 0.3 * t, _cam_dist)
@@ -758,7 +778,7 @@ func _process(delta: float) -> void:
 	if _zoom() > 1.0:
 		fov = zoomed_fov(wanted_base_fov(), _zoom())
 	if phone_read > 0.0:
-		fov = lerpf(fov, phone_read_fov, smoothstep(0.0, 1.0, phone_read))
+		fov = lerpf(fov, phone_fov(), smoothstep(0.0, 1.0, phone_read))
 	camera.fov = lerpf(camera.fov, fov, 1.0 - exp(-14.0 * delta))
 	if _thrust_audio:
 		var thrusting := actor.flight.is_thrusting and not actor.is_dead
@@ -775,7 +795,7 @@ func _process(delta: float) -> void:
 	var offset: Vector3 = eyes - actor.get_eye_position() if eyes != null else Vector3.ZERO
 	if eyes != null:
 		var ahead := Basis(Vector3.UP, yaw) * Vector3.FORWARD
-		var down := clampf(-sin(pitch), 0.0, 1.0)
+		var down := clampf(-sin(view_pitch), 0.0, 1.0)
 		var pull := eye_pullback * (1.0 - smoothstep(0.0, sin(pullback_fade_pitch), down))
 		offset += ahead * (down * look_down_lean - pull)
 	_eye_offset = _eye_offset.lerp(offset, 1.0 - exp(-18.0 * delta)) if first_person else offset
@@ -1029,32 +1049,48 @@ func is_third_person() -> bool:
 	return _cam_dist > 0.5
 
 
-## Eases the third-person camera in to read the phone's holo panel while it
-## is out, and back out after. The view is only moved, never switched.
+## Eases the third-person camera in over the shoulder to read the phone in
+## the hand while it is out, and back out after. The view is only moved,
+## never switched. With the Mirror app's mirror up it widens to keep the
+## reflection in frame past the phone.
 func _read_phone(delta: float) -> void:
-	var holo := phone_panel()
-	var wanted := 1.0 if phone_out and holo != null and _wants_third_person() and not actor.is_dead else 0.0
+	var face := phone_panel()
+	var wanted := 1.0 if phone_out and face != null and _wants_third_person() and not actor.is_dead else 0.0
 	phone_read = move_toward(phone_read, wanted, phone_read_rate * delta)
-	if phone_read <= 0.0 or holo == null:
+	if phone_read <= 0.0 or face == null:
 		return
 	var w := smoothstep(0.0, 1.0, phone_read)
-	var centre := holo.global_position
+	var centre := face.global_position
 	var heading := Basis.from_euler(Vector3(0.0, yaw, 0.0))
 	var spot := actor.get_eye_position() + heading * Vector3(phone_read_side, phone_read_lift, phone_read_distance)
-	# Aim a little past its left edge so the panel sits right of the
-	# crosshair, off the middle of the scene and away from the head.
+	# Aim a little past its left edge so the phone sits right of the
+	# crosshair, off the middle of the scene.
 	var aim_at := centre - heading * Vector3(phone_read_offset, 0.0, 0.0)
+	if mirror_in_view():
+		aim_at = aim_at.lerp(phone_mirror.glass_centre(), phone_mirror_aim)
 	var reading := Transform3D(Basis.looking_at(aim_at - spot, Vector3.UP), spot)
 	camera.global_transform = camera.global_transform.interpolate_with(reading, w)
 
 
-## The holo panel of the phone in your hand, or null while it is away.
+## The fov the reading view eases to: close on the phone, wider with the
+## Mirror app's mirror up.
+func phone_fov() -> float:
+	return phone_mirror_fov if mirror_in_view() else phone_read_fov
+
+
+## True while the Mirror app's mirror stands in front of you.
+func mirror_in_view() -> bool:
+	return phone_mirror != null and is_instance_valid(phone_mirror) and phone_mirror.is_inside_tree() \
+			and phone_mirror.has_method("glass_centre")
+
+
+## The face of the phone in your hand, or null while it is away.
 func phone_panel() -> Node3D:
 	var skin := actor.get_node_or_null("Skin")
 	if skin == null or not skin.has_method("handheld"):
 		return null
-	var holo := Handheld.holo_of(skin.handheld())
-	return holo if holo != null and holo.is_visible_in_tree() else null
+	var face := Handheld.face_of(skin.handheld())
+	return face if face != null and face.is_visible_in_tree() else null
 
 
 func _wants_third_person() -> bool:
