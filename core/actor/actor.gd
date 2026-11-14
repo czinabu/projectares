@@ -60,6 +60,14 @@ var air_spread_deg := 1.5
 var air_bloom_mult := 1.5
 var dash_time := 0.18
 var dash_cooldown := 2.0
+## Landing faster than this (m/s, about a 6 m drop) hurts: `fall_damage`
+## health for every m/s over it, scaled by the rig (`FlightRig.fall_damage_mult`).
+## Landing out of a glide never hurts.
+var fall_safe_speed := 16.0
+var fall_damage := 4.0
+## How far over the head a roof counts as being indoors, for flight
+## (`FlightRig.indoors`).
+var roof_reach := 8.0
 
 var eye_height := 1.6
 var interact_range := 3.5
@@ -183,6 +191,8 @@ var _slide_cd := 0.0
 ## `air_dash_side` how much of it runs sideways (-1 left to 1 right), for
 ## the skin's barrel roll.
 var air_dash_left := 0.0
+## Boots: seconds left in a dash's graze window (`FlightRig.graze_window`).
+var graze_left := 0.0
 var air_dash_side := 0.0
 var _air_dash_vel := Vector3.ZERO
 var _air_dash_dir := Vector3.ZERO
@@ -327,6 +337,7 @@ func _simulate_timers(delta: float) -> void:
 	riposte_left = maxf(0.0, riposte_left - delta)
 	protected_left = maxf(0.0, protected_left - delta)
 	flight.jam_left = maxf(0.0, flight.jam_left - delta)
+	graze_left = maxf(0.0, graze_left - delta)
 	_stamina_wait = maxf(0.0, _stamina_wait - delta)
 	if _stamina_wait <= 0.0:
 		stamina = minf(max_stamina, stamina + stamina_regen * delta)
@@ -362,6 +373,9 @@ func modify_incoming(info: DamageInfo) -> void:
 	if weapon and not is_dead and stagger_left <= 0.0:
 		weapon.modify_incoming(info)
 	ability.modify_incoming(info)
+	# Boots: a round that lands in a dash's graze window only grazes.
+	if graze_left > 0.0 and info.kind == "bullet":
+		info.amount *= flight.graze_mult
 
 
 func _simulate_movement(delta: float) -> void:
@@ -378,6 +392,8 @@ func _simulate_movement(delta: float) -> void:
 	var held := get_active_weapon()
 	if held:
 		speed *= held.move_speed_mult()
+	if flight.enabled:
+		speed *= flight.ground_speed_mult
 	var staggered := stagger_left > 0.0
 	if staggered:
 		speed *= stagger_speed_mult
@@ -390,13 +406,14 @@ func _simulate_movement(delta: float) -> void:
 		_air_dash_vel = Vector3.ZERO
 	if on_floor:
 		flight.launched = false
+	flight.refill(delta, on_floor)
 	_measure_altitude(on_floor)
+	_measure_indoors(on_floor)
 	# Gliding: holding jump while falling with wings carries you forward.
 	# Once gliding you stay gliding while you climb on your speed.
 	flight.is_gliding = flight.can_glide() and cmd.jump and not on_floor and not staggered \
 			and (velocity.y < 0.0 or flight.is_gliding)
-	flight.is_skimming = flight.can_skim() and cmd.jump and not on_floor and not staggered \
-			and not flight.overheated
+	flight.is_skimming = flight.skim_ready() and cmd.jump and not on_floor and not staggered
 	if not flight.is_gliding:
 		_bank = 0.0
 		_glide_launch = true
@@ -420,6 +437,7 @@ func _simulate_movement(delta: float) -> void:
 		_dash_left = dash_time
 		_dash_cd = dash_cooldown
 		_dash_speed_now = dash_speed
+		graze_left = flight.graze_window if flight.working() else 0.0
 	if _dash_left > 0.0:
 		_dash_left -= delta
 		horizontal = _dash_dir * _dash_speed_now
@@ -458,14 +476,14 @@ func _simulate_movement(delta: float) -> void:
 	elif flight.is_skimming:
 		_simulate_skim(delta)
 	else:
-		# Boots cool only near a surface: the street, or the roof they reached.
-		flight.aloft = flight.can_skim() and not on_floor \
-				and height_above_ground(flight.skim_probe) >= flight.skim_low
-		var thrust := flight.tick(cmd.jump and not on_floor and not staggered, delta)
+		# Wings cool only on the ground; boots only near a surface.
+		flight.aloft = not on_floor and (flight.ground_cool_only or (flight.can_skim()
+				and height_above_ground(flight.skim_probe) >= flight.skim_low))
+		var thrust := flight.tick(cmd.jump and not on_floor and not staggered, delta, flight.climb_heat_mult)
 		velocity.y += (thrust - gravity) * delta
 		if thrust > 0.0:
 			# Under the ceiling the climb eases off and stops on it.
-			velocity.y = minf(velocity.y, flight.max_rise_speed * flight.climb_room())
+			velocity.y = minf(velocity.y, flight.max_rise_speed * flight.climb_room() * flight.indoor_factor())
 		if flight.is_gliding:
 			# The wings catch a fall or a dive over a moment, never in one
 			# tick: sinking faster than the glide allows eases back to it.
@@ -488,6 +506,7 @@ func _simulate_movement(delta: float) -> void:
 	velocity.y = maxf(velocity.y, -max_fall_speed)
 
 	var fall_speed := -velocity.y
+	var gliding := flight.is_gliding
 	if tick_every > 1:
 		# One longer step: the engine moves a body by one tick of velocity.
 		velocity *= tick_every
@@ -501,6 +520,7 @@ func _simulate_movement(delta: float) -> void:
 	if now_on_floor and not _was_on_floor:
 		_slide_landing()
 		landed.emit(maxf(fall_speed, 0.0))
+		_hurt_by_fall(fall_speed, gliding)
 	_was_on_floor = now_on_floor
 
 
@@ -536,19 +556,22 @@ func _simulate_hover(delta: float) -> void:
 	if flight.is_boosting:
 		# Along the view's heading, level: jump and descend climb and sink.
 		# The mouse's pitch only aims (Caleb's call: keys fly).
-		var want := Basis(Vector3.UP, cmd.yaw) * Vector3(cmd.move.x * flight.fly_speed * 0.5, 0.0, -flight.boost_speed)
-		want.y += flight.max_rise_speed * flight.climb_room() if climb > 0.0 else climb * flight.descend_speed
+		var clumsy := flight.indoor_factor()
+		var want := Basis(Vector3.UP, cmd.yaw) * Vector3(cmd.move.x * flight.fly_speed * 0.5, 0.0, -flight.boost_speed) * clumsy
+		want.y += flight.max_rise_speed * flight.climb_room() * clumsy if climb > 0.0 else climb * flight.descend_speed
 		velocity = velocity.move_toward(want, flight.boost_accel * delta)
 		flight.tick(true, delta, flight.boost_heat_mult)
 		return
-	var rise := flight.max_rise_speed * flight.climb_room() if climb > 0.0 else climb * flight.descend_speed
+	var rise := flight.max_rise_speed * flight.climb_room() * flight.indoor_factor() if climb > 0.0 \
+			else climb * flight.descend_speed
 	velocity.y = move_toward(velocity.y, rise, flight.hover_accel * delta)
 	if flight.is_coasting:
 		# Jets idle: sink, keep the speed, and cool off.
 		flight.coast(delta)
 		return
 	var cruising := Vector2(velocity.x, velocity.z).length() > flight.fly_speed * 0.5
-	flight.tick(true, delta, 1.0 if climb > 0.0 else (flight.cruise_heat_mult if cruising else flight.hover_heat_mult))
+	flight.tick(true, delta, flight.climb_heat_mult if climb > 0.0
+			else (flight.cruise_heat_mult if cruising else flight.hover_heat_mult))
 
 
 ## Boots skimming: a kick rises as usual, then the boots hold your height
@@ -602,20 +625,50 @@ func height_above_ground(reach: float) -> float:
 	return reach if hit.is_empty() else maxf(0.0, global_position.y - (hit["position"] as Vector3).y)
 
 
+## Tells the flight rig whether a roof is close overhead (`roof_reach`),
+## for rigs that fly worse indoors. Only in the air, and only for a rig that
+## cares (`FlightRig.indoor_mult` under 1).
+func _measure_indoors(on_floor: bool) -> void:
+	flight.indoors = false
+	if on_floor or not flight.enabled or flight.indoor_mult >= 1.0 or not is_inside_tree():
+		return
+	var from := global_position + Vector3(0.0, BODY_HEIGHT, 0.0)
+	var query := PhysicsRayQueryParameters3D.create(from, from + Vector3(0.0, roof_reach, 0.0), LAYER_WORLD)
+	flight.indoors = not get_world_3d().direct_space_state.intersect_ray(query).is_empty()
+
+
+## A hard landing in a world hurts, through `Combat.deal` like any damage
+## (so a safe zone refuses it). A glide lands softly, and the rig scales the
+## rest (`FlightRig.fall_damage_mult`).
+func _hurt_by_fall(fall_speed: float, gliding: bool) -> void:
+	var mult := flight.fall_damage_mult if flight.enabled else 1.0
+	var amount := (fall_speed - fall_safe_speed) * fall_damage * mult
+	# Only out in a world: the home base and other test rooms cost nothing.
+	if amount <= 0.0 or gliding or vehicle != null or is_dead or Raid.of(self) == null:
+		return
+	var info := DamageInfo.new()
+	info.amount = amount
+	info.kind = "fall"
+	info.position = global_position
+	info.armor_pierce = 1.0
+	Combat.deal(self, info)
+
+
 ## Jets lit: the move keys cruise you about. Slow, you go where you steer;
 ## at speed the heading only turns at `FlightRig.cruise_turn_rate`, and
 ## letting go of the keys (or pulling the other way) brakes to a stop.
 func _cruise_velocity(horizontal: Vector3, wish: Vector3, delta: float) -> Vector3:
 	var speed := horizontal.length()
-	if wish.length() < 0.1 or speed < flight.fly_speed * 0.6:
-		return horizontal.move_toward(wish * flight.fly_speed, flight.fly_accel * delta)
+	var fly_speed := flight.fly_speed * flight.indoor_factor()
+	if wish.length() < 0.1 or speed < fly_speed * 0.6:
+		return horizontal.move_toward(wish * fly_speed, flight.fly_accel * delta)
 	var heading := horizontal / speed
 	var angle := heading.signed_angle_to(wish.normalized(), Vector3.UP)
 	if absf(angle) > 2.0:
 		return horizontal.move_toward(Vector3.ZERO, flight.fly_accel * delta)
 	var step := flight.cruise_turn_rate * delta
 	heading = heading.rotated(Vector3.UP, clampf(angle, -step, step))
-	return heading * move_toward(speed, wish.length() * flight.fly_speed, flight.fly_accel * delta)
+	return heading * move_toward(speed, wish.length() * fly_speed, flight.fly_accel * delta)
 
 
 ## Every rig: sprint pressed in the air dashes the way the move keys point,
@@ -647,6 +700,7 @@ func _air_dash(wish: Vector3, yaw_basis: Basis, on_floor: bool, staggered: bool,
 		_air_dash_dir = wish.normalized() if wish.length() > 0.1 else yaw_basis * Vector3.FORWARD
 		air_dash_side = (yaw_basis.inverse() * _air_dash_dir).x
 		air_dash_left = flight.air_dash_time
+		graze_left = flight.graze_window
 	if air_dash_left <= 0.0:
 		return Vector3.ZERO
 	air_dash_left -= delta
@@ -675,16 +729,19 @@ func _slide_landing() -> void:
 	_slide_cd = slide_time + slide_cooldown
 
 
-## How much the air spoils aim, 0 to 1: none on the ground, riding, with
-## jets lit and holding still or cruising (not boosting), skimming low on
-## boots, and full otherwise.
+## How much the air spoils aim: none on the ground or riding, 1 in a
+## plain fall, and the rig's `FlightRig.flight_aim` while it flies its own
+## way: jets lit and not boosting (jetpack, a little), dashing or skimming
+## low (boots, none) or gliding (wings, worse than a fall).
 func air_aim() -> float:
 	if vehicle != null or airborne_time < 0.15:
 		return 0.0
 	if flight.is_hovering and not flight.is_boosting:
-		return 0.0
-	if flight.is_skimming and flight.skim_band() == 0:
-		return 0.0
+		return flight.flight_aim
+	if (flight.is_skimming and flight.skim_band() == 0) or (air_dash_left > 0.0 and flight.graze_window > 0.0):
+		return flight.flight_aim
+	if flight.is_gliding:
+		return flight.flight_aim
 	return 1.0
 
 
@@ -733,7 +790,7 @@ func _glide_velocity(horizontal: Vector3, _wish: Vector3, yaw_basis: Basis, delt
 	var air_speed := horizontal.length()
 	var cruise := flight.glide_speed
 	var stall := cruise * flight.glide_stall
-	if air_speed >= stall:
+	if air_speed >= stall - 0.01:
 		_glide_launch = false
 	var trim := glide_trim()
 	var pull := maxf(0.0, -trim)
@@ -794,7 +851,7 @@ func _simulate_slide(horizontal: Vector3, on_floor: bool, staggered: bool, delta
 	if cmd.slide and on_floor and slide_left <= 0.0 and _slide_cd <= 0.0 and _dash_left <= 0.0 \
 			and not staggered and horizontal.length() >= slide_min_speed and spend_stamina(slide_stamina):
 		_slide_dir = horizontal.normalized()
-		_slide_from = maxf(horizontal.length(), slide_speed)
+		_slide_from = maxf(horizontal.length(), slide_speed * (flight.ground_speed_mult if flight.enabled else 1.0))
 		slide_left = slide_time
 		_slide_cd = slide_time + slide_cooldown
 	if slide_left > 0.0:

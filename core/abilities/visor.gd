@@ -189,7 +189,7 @@ func scan() -> bool:
 		var other := node as Actor
 		if other == null or other == actor or other.is_dead or not Raid.together(actor, other):
 			continue
-		if other.global_position.distance_to(actor.global_position) > scan_radius or allied(actor, other):
+		if other.global_position.distance_to(actor.global_position) > reach_to(other, scan_radius) or allied(actor, other):
 			continue
 		found.append({"at": other.global_position, "yaw": other.cmd.yaw, "left": ghost_time})
 		# Every reveal is felt: the target hears it and learns where it came from.
@@ -256,6 +256,15 @@ func is_aimed_at_by(other: Actor) -> bool:
 func note_hit_from(origin: Vector3) -> void:
 	if enabled and mode == "threat" and actor != null and not actor.is_dead:
 		threatened.emit(origin)
+
+
+## How far a scan or a thermal visor picks `other` up: its flight rig's
+## `FlightRig.scan_range` while one is worn (a jetpack carries far, boots
+## hardly at all), else `base`.
+static func reach_to(other: Actor, base: float) -> float:
+	if other.flight.enabled and other.flight.scan_range > 0.0:
+		return other.flight.scan_range
+	return base
 
 
 ## How warm `other` looks through a thermal visor, about 0.4 to 2: a body's

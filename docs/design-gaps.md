@@ -48,7 +48,7 @@ rows marked **pre-playtest** come before the friends playtest.
 | Landing choices | Built | |
 | Vehicle carousel (toys) | Built | Pick, throw, unpack, pack back; holds two. |
 | Heavy weapon chamber | Partly | A heavy weapon is scanned into the watch and summoned from its weapon carousel; key 4 is gone. Missing: banking it and dropping it in the bag (see Heavy weapons below). |
-| Per-rig readouts (stall line, height band, dash pips) | Missing | Now part of the flight HUD (see Flight): at the visor edge and on the rig, not the watch. Comes with the aerial rig rework. **Pre-playtest.** |
+| Per-rig readouts (stall line, boosts left, dash charges) | Partly | The visor's rig cue (`Hud.rig_text`) shows the wings' airspeed, stall and boosts and the boots' charges and skim. Missing on the rig itself (part of the flight HUD, see Flight). **Pre-playtest.** |
 | Sign-out from the watch, with its countdown | Partly | Sign-out exists on L; not on the watch. |
 | Loadout swapping from the watch in the PvE world | Missing, deferred | With the PvE world. Today loadouts change only in a lobby or base. |
 | Raising the watch with the character's own left arm, first and third person | Partly | The left arm lifts the wrist up in front of the eyes along the aim (`WeaponArm.watch_point`, from `ActionPose.watch`, which `ActorCommand.watch_up` drives so others see it too) and the forearm rolls so the watch face, worn on the back of the wrist (`Hud.Wrist.FACE_AXIS`), looks at the eyes (`WeaponArm._face_watch`). The watch and its card work in the home base too (`BaseHud.wrist`, `Hud.base_watch_slots`). First person is the same body seen from the eyes, and the card opens just over the real watch face there. |
@@ -62,21 +62,23 @@ rows marked **pre-playtest** come before the friends playtest.
 | Melee weapon | Built | Six types, directional, block and parry. |
 | Melee against guns: dash-strike, back strike, timed bullet deflect, armor-piercing blades, silent kills, one/two-handed classes | Built | `MeleeWeapon` (`dash_range`, `back_strike_mult`, `deflect_window`, `guard_rearm`, `armor_pierce`, the hold tags), `Combat.noise`. Still to come: interiors that favour blades, more gun ammo pressure, bots using the dash-strike. |
 | Melee magnetic air-lunge | Built | A heavy in the air at an airborne foe within `air_lunge_range` and the aim cone homes on them through its windup; otherwise the dive slam. Ground heavies lunge to striking distance too. |
-| Flight rig | Partly | Three rigs exist, but not the agreed identities (next section). |
+| Flight rig | Built | Three rigs with their own jobs and weaknesses (next section). |
 | Gadget slot | Partly | The `ability` slot exists with Phase Step, Kinetic Barrier and Shock Pulse. The gadget list (DESIGN.md section 4) needs Caleb's pick before more are built. |
 | Goggles: helmet-slot visor with no protection, lighter, more fragile glass | Missing | Shows the customizer's face and hair. Needs the weight system for its trade. |
-| Weight tiers (light, medium, heavy) from headgear, frame and heavy weapon | Partly | Changes acceleration, turning, flight heat and a little ground speed, never cruise speed. Shown on the watch and the base locker. Partly there already: armor frames carry `speed_mult` and `heat_mult` stats, which the tiers would replace. |
+| Weight tiers (light, medium, heavy) from headgear, frame and heavy weapon | Partly | Changes acceleration, turning, flight heat and a little ground speed, never top flight speed. Shown on the watch and the base locker. Partly there already: armor frames carry `speed_mult` and `heat_mult` stats, which the tiers would replace. |
 
-## Flight (see the aerial rig proposal)
+## Flight (DESIGN.md section 5)
 
 | Item | State | Notes |
 | --- | --- | --- |
-| One 15 m/s cruise for every rig | Missing | Jetpack hovers at 10 m/s and boosts at 22; wings glide at 16; boots have no sustained flight. **Pre-playtest**, PR 1 of the proposal. |
-| Jetpack cruise and coast loop | Missing | PR 1. |
-| Wings: pulse, stall, barrel roll, sidearm-only while spread, slide landing | Missing | PR 1. The barrel roll is now a sideways air dash (Shift + A / D); Q/E are gone. |
-| Boots as a skimming rig with height bands and air dashes | Missing | Today three quick kicks. PR 2. |
-| Air aim penalty, waived in each rig's steady state | Missing | No airborne spread in `Gun`. PR 1. |
-| Rig tiers Mk1 to Mk3, each with a ceiling (25, 60, 100 m over the ground) | Built | `FlightRig.ceiling`, `ItemDB.RIG_CEILINGS`. Only Mk1 drops; Mk2 and Mk3 are crafted at the fabricator from the rig's blueprint and upgrade data (DESIGN.md section 10). No readout yet when you reach the ceiling (the jets just stop climbing); add one to the watch once the watch rework lands. |
+| Each rig has one job and one weakness, tuned to the Mk1 table (DESIGN.md section 5) | Built | Caleb's balance pass: `ItemDB.JETPACK_MK1`, `BOOTS_MK1`, `WINGS_MK1`, measured by `tests/rig_balance_tests.gd` (hover, heat, glide stamina, cross-map times). Unplaytested. |
+| Jetpack cruise and coast loop, hover 1x, climb 1.5x, boost 2.5x heat | Built | `FlightRig.hover_heat_mult`, `climb_heat_mult`, `boost_heat_mult`. |
+| Wings: glide stamina, two boosts a flight, stall, barrel roll, sidearm-only while spread, slide landing | Built | `glide_heat` refilled on the ground only, boosts on `max_charges`. Pulses are gone: wings cannot climb on their own. |
+| Boots: charges for kicks and dashes, a short skim, +15% ground speed, no fall damage, a graze window on every dash | Built | `max_charges`, `skim_time`, `ground_speed_mult`, `graze_window`. |
+| Air aim penalty by rig | Built | `Actor.air_aim` and `FlightRig.flight_aim`: +10% jetpack, none for boots mid-dash, +50% wings. |
+| Scan and thermal reach by rig, indoor limits, fall damage | Built | Simple first versions: `Visor.reach_to`, `FlightRig.indoor_mult` with a roof probe (`Actor.roof_reach`), `Actor._hurt_by_fall`. Missing: rig noise for bots to hear (only guns make noise today). |
+| Rig tiers Mk1 to Mk3, each about 15% stronger in the rig's strength only | Built | `ItemDB.RIG_STRENGTH`, `_rig_tier`. Ceilings per rig: jetpack 40, 46, 53 m; boots 10 m; wings 40 m (they only reach it by launching off something high). Only Mk1 drops; Mk2 and Mk3 are crafted. No readout yet when you reach the ceiling. |
+| Flight course in the base: timed climb, gap and sprint | Built | `HomeBase._build_course`, past the far end of the range, with a board of stage times and each rig's best. |
 | Ring races with a leaderboard per tier as well as per rig | Missing | With the hub's ring courses. |
 | Overheat cuts the rig out until heat is back to 35 | Built | `recover_heat` 35. |
 | Flight HUD, first person: heat gauge, rig cue, squad markers and landing warning at the visor edges | Partly | Heat gauge, rig cue (`VisorHud._draw_heat`) and squad markers on the visor's heading strip (`VisorHud.compass_marks`, clan or all-allied world) built; landing warning missing. | New in DESIGN.md section 5. Extends `VisorHud`; the squad markers use the clan or team side. **Pre-playtest**, with the rig rework. |
@@ -111,7 +113,7 @@ rows marked **pre-playtest** come before the friends playtest.
 | Item | State | Notes |
 | --- | --- | --- |
 | Motorbikes on the watch, no heat cost | Built | Scrapper 22 m/s (boost 29), Raider 27 m/s (boost 37). |
-| Clearly faster than flight | Partly | On paper both bikes beat the 15 m/s cruise, but the jetpack boost (22) and the wing dive (26) match or beat the Scrapper. Tune after the rig rework, and check on real terrain. **Pre-playtest.** |
+| Clearly faster than flight | Partly | On paper both bikes beat the jetpack's 14 m/s cruise, but the jetpack boost (18), the wing glide (22) and dive (30) match or beat the Scrapper. Tune after the rig rework, and check on real terrain. **Pre-playtest.** |
 | Throw a toy from mid-air onto the road below | Partly | Throwing works off the ground in code; not checked as a planned move (throw, fall, land on the bike). |
 | Eject upward off a speeding bike into flight | Partly | Getting off in mid-air keeps the bike's speed and the rig takes over; there is no upward eject. |
 | Passenger seats | Missing | Bike rear seat, rover's four. After the playtest. |

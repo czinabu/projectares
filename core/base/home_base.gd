@@ -75,6 +75,20 @@ var garage_opening := 10.0
 ## length (z), entered through a door `range_door` wide and high.
 var range_size := Vector3(12.0, 10.0, 50.0)
 var range_door := Vector2(1.6, 3.0)
+## The flight course (Caleb's balance pass): an open-topped yard past the
+## far end of the range, entered through a door `course_door` (x offset,
+## width, height) in the range's end wall, to time each rig on a climb, a
+## gap and a sprint. Its size is width (x), wall height (y) and length (z);
+## the walls stand taller than any rig's ceiling, so nothing flies out.
+## The climb is a tower `course_tower` (width, height, depth) with a ramp up
+## its side for rigs that cannot climb, the gap is `course_gap` meters of
+## open air to a second tower, and the sprint `course_sprint` meters on to
+## the finish line. Touching the floor in the gap ends the run.
+var course_size := Vector3(30.0, 56.0, 88.0)
+var course_door := Vector3(-4.0, 2.4, 3.0)
+var course_tower := Vector3(6.0, 8.0, 6.0)
+var course_gap := 14.0
+var course_sprint := 40.0
 ## How far past the back wall the firing line stands: a clear lobby between
 ## the door and the line.
 var firing_line := 8.0
@@ -184,6 +198,18 @@ var range_shots := 0
 var range_hits := 0
 var range_last := ""
 var range_board: Label3D
+## The flight course's run: -1 waiting at the start line, then 0 climbing,
+## 1 crossing the gap, 2 sprinting. Seconds since the start, the time at
+## each stage's end, the rig flown, the last result and each rig's best
+## time (rig name -> seconds), written on `course_board`.
+var course_stage := -1
+var course_time := 0.0
+var course_splits: Array[float] = []
+var course_rig := ""
+var course_last := ""
+var course_best := {}
+var course_board: Label3D
+var _course_prev_z := INF
 var _range_time := 0.0
 var stash: Array = []
 var loadout := {}
@@ -409,6 +435,7 @@ func _ready() -> void:
 	_build_armory()
 	_build_garage()
 	_build_range()
+	_build_course()
 	_display_root.name = "Displays"
 	add_child(_display_root)
 	_build_door()
@@ -614,6 +641,7 @@ func _physics_process(delta: float) -> void:
 		target.cool(delta)
 	if not suited or player == null or not is_instance_valid(player):
 		return
+	_tick_course(delta)
 	# Weapons are free only past the firing line, and never run dry there.
 	var on_range := in_range(to_local(player.global_position))
 	player.weapons_locked = not on_range
@@ -671,7 +699,7 @@ func inside(point: Vector3) -> bool:
 	var half := room_size * 0.5
 	if absf(point.x) < half.x and absf(point.z) < half.z:
 		return true
-	return in_armory(point) or in_garage(point) or in_range(point)
+	return in_armory(point) or in_garage(point) or in_range(point) or in_course(point)
 
 
 ## True if `point` (local to the base) is inside the garage.
@@ -684,6 +712,106 @@ func in_garage(point: Vector3) -> bool:
 func in_range(point: Vector3) -> bool:
 	var wall_z := room_size.z * 0.5
 	return point.z < -wall_z and point.z > -wall_z - range_size.z and absf(point.x) < range_size.x * 0.5
+
+
+## True if `point` (local to the base) is inside the flight course's yard.
+func in_course(point: Vector3) -> bool:
+	var start := _course_z()
+	return point.z < start and point.z > start - course_size.z and absf(point.x) < course_size.x * 0.5
+
+
+## Where the flight course's yard begins: the range's end wall.
+func _course_z() -> float:
+	return -room_size.z * 0.5 - range_size.z - 0.5
+
+
+## The course's marks along the yard, as z (local to the base): the start
+## line, each tower's centre and the finish line.
+func course_marks() -> Dictionary:
+	var start := _course_z() - 4.0
+	var tower_a := start - 14.0
+	var tower_b := tower_a - course_tower.z - course_gap
+	return {"start": start, "tower_a": tower_a, "tower_b": tower_b,
+			"finish": tower_b - course_tower.z * 0.5 - course_sprint}
+
+
+## True if `lp` (local) stands on top of the tower centred at z `at`.
+func _on_tower(lp: Vector3, at: float) -> bool:
+	return absf(lp.x - _tower_x()) < course_tower.x * 0.5 + 0.2 and absf(lp.z - at) < course_tower.z * 0.5 + 0.2 \
+			and lp.y > course_tower.y - 0.5 and player.is_on_floor()
+
+
+func _tower_x() -> float:
+	return course_size.x * 0.5 - course_tower.x * 0.5 - 4.0
+
+
+## Times a run of the flight course: crossing the start line starts it,
+## standing on the first tower ends the climb, landing on the second without
+## touching the floor ends the gap, and crossing the finish line ends the
+## sprint. Going back over the start line or leaving the yard cancels it.
+func _tick_course(delta: float) -> void:
+	var lp := to_local(player.global_position)
+	var marks := course_marks()
+	var crossed: bool = _course_prev_z >= marks.start and lp.z < marks.start and in_course(lp)
+	_course_prev_z = lp.z
+	if course_stage < 0:
+		if crossed:
+			course_stage = 0
+			course_time = 0.0
+			course_splits.clear()
+			course_rig = player.flight.display_name if player.flight.enabled else "On foot"
+			_update_course_board()
+		return
+	course_time += delta
+	if not in_course(lp) or lp.z > marks.start:
+		_end_course("Run cancelled. Cross the start line to go again.")
+		return
+	match course_stage:
+		0:
+			if _on_tower(lp, marks.tower_a):
+				_course_split()
+		1:
+			if _on_tower(lp, marks.tower_b):
+				_course_split()
+			elif player.is_on_floor() and lp.y < 0.5:
+				_end_course("%s fell in the gap. Back to the start line." % course_rig)
+		2:
+			if lp.z < marks.finish:
+				_course_split()
+				var total := course_time
+				var best: float = course_best.get(course_rig, INF)
+				course_best[course_rig] = minf(best, total)
+				_end_course("%s: %.1f s   (climb %.1f, gap %.1f, sprint %.1f)%s" % [course_rig, total,
+						course_splits[0], course_splits[1] - course_splits[0], course_splits[2] - course_splits[1],
+						"   BEST" if total < best else ""])
+
+
+func _course_split() -> void:
+	course_splits.append(course_time)
+	course_stage += 1
+	_update_course_board()
+
+
+func _end_course(result: String) -> void:
+	course_stage = -1
+	course_last = result
+	_update_course_board()
+
+
+func _update_course_board() -> void:
+	if course_board == null:
+		return
+	var lines: Array[String] = ["CLIMB  >  GAP  >  SPRINT"]
+	if course_stage >= 0 and course_stage < 3:
+		lines.append("%s   %s" % [course_rig, ["climb", "gap", "sprint"][course_stage]])
+	else:
+		lines.append(course_last if course_last != "" else "Cross the start line with any rig. Nothing here is lost.")
+	var bests: Array[String] = []
+	for rig: String in course_best:
+		bests.append("%s %.1f s" % [rig, course_best[rig]])
+	if not bests.is_empty():
+		lines.append("Best: " + "   ".join(bests))
+	course_board.text = "\n".join(lines)
 
 
 ## True if `point` (local to the base) is inside the armory alcove or its
@@ -924,7 +1052,15 @@ func _build_range() -> void:
 	var mid_z := -wall_z - length * 0.5
 	_floor(Vector2(width, length), Vector3(0, 0, mid_z))
 	_ceiling(Vector2(width, length), Vector3(0, 0, mid_z), y)
-	_wall(Vector3(width + 1.0, y, 0.5), Vector3(0, y * 0.5, -wall_z - length - 0.25), Vector3.BACK)
+	# The end wall, with the door out to the flight course near its left end.
+	var end_z := -wall_z - length - 0.25
+	var door_x := course_door.x
+	var door_w := course_door.y
+	var left := (door_x - door_w * 0.5) - (-width * 0.5 - 0.5)
+	var right := (width * 0.5 + 0.5) - (door_x + door_w * 0.5)
+	_wall(Vector3(left, y, 0.5), Vector3(-width * 0.5 - 0.5 + left * 0.5, y * 0.5, end_z), Vector3.BACK)
+	_wall(Vector3(right, y, 0.5), Vector3(width * 0.5 + 0.5 - right * 0.5, y * 0.5, end_z), Vector3.BACK)
+	_wall(Vector3(door_w, y - course_door.z, 0.5), Vector3(door_x, (y + course_door.z) * 0.5, end_z), Vector3.ZERO)
 	for side: float in [-1.0, 1.0]:
 		_wall(Vector3(0.5, y, length), Vector3(side * (width * 0.5 + 0.25), y * 0.5, mid_z), Vector3(-side, 0, 0))
 	# Above the room's own ceiling the range's end of the back wall goes on up.
@@ -973,6 +1109,77 @@ func _build_range() -> void:
 		for at_z: float in [-wall_z - 3.0, line_z, line_z - 12.0, line_z - 24.0, line_z - 36.0]:
 			var light := Look.lamp(Color(1.0, 0.94, 0.85), 3.5, 14.0)
 			light.position = Vector3(0, y - 1.0, at_z)
+			add_child(light)
+
+
+## The flight course's yard past the range: open to the sky, low walls,
+## the climb tower with its ramp, the gap to the second tower, the sprint
+## to the finish, and the board at the start that times each run.
+func _build_course() -> void:
+	var start := _course_z()
+	var w := course_size.x
+	var h := course_size.y
+	var length := course_size.z
+	var mid := start - length * 0.5
+	var accent := Color(0.45, 0.85, 1.0)
+	_floor(Vector2(w, length), Vector3(0, 0, mid))
+	_wall(Vector3(w + 1.0, h, 0.5), Vector3(0, h * 0.5, start - length - 0.25), Vector3.BACK)
+	for side: float in [-1.0, 1.0]:
+		_wall(Vector3(0.5, h, length), Vector3(side * (w * 0.5 + 0.25), h * 0.5, mid), Vector3(-side, 0, 0))
+	# The range's end wall closes the yard's near end either side of the door;
+	# past the range's width the yard is closed by a wall of its own.
+	var reach := (w - range_size.x) * 0.5
+	for side: float in [-1.0, 1.0]:
+		_wall(Vector3(reach, h, 0.5), Vector3(side * (range_size.x * 0.5 + 0.5 + reach * 0.5), h * 0.5, start + 0.25), Vector3.FORWARD)
+	var marks := course_marks()
+	var tx := _tower_x()
+	var tower := _shell("wall")
+	for at: float in [marks.tower_a, marks.tower_b]:
+		var block := _box(course_tower, Vector3(tx, course_tower.y * 0.5, at), tower)
+		block.name = "CourseTower"
+		add_child(_part(Vector3(course_tower.x, 0.04, course_tower.z), Vector3(tx, course_tower.y + 0.02, at), accent.darkened(0.5), true))
+	# The ramp up the first tower's side, for rigs that cannot climb.
+	var rise := course_tower.y
+	var run := rise / tan(deg_to_rad(34.0))
+	var slope := sqrt(rise * rise + run * run)
+	var ramp := _box(Vector3(slope, 0.4, 3.0), Vector3(tx - course_tower.x * 0.5 - run * 0.5, rise * 0.5 - 0.2, marks.tower_a), tower)
+	ramp.name = "CourseRamp"
+	ramp.rotation.z = atan2(rise, run)
+	for line: Array in [["START", marks.start], ["FINISH", marks.finish]]:
+		add_child(_part(Vector3(w, 0.03, 0.2), Vector3(0, 0.02, line[1]), accent, true))
+		var word := _label(line[0], accent, 0.5)
+		word.position = Vector3(0, 0.05, line[1] + 0.8)
+		word.rotation.x = -PI / 2.0
+		add_child(word)
+	for stage: Array in [["CLIMB", marks.tower_a], ["GAP", (marks.tower_a + marks.tower_b) * 0.5],
+			["SPRINT", marks.tower_b - course_tower.z * 0.5 - course_sprint * 0.5]]:
+		var word := _label(stage[0], accent, 0.4)
+		word.position = Vector3(-w * 0.5 + 0.06, 3.0, stage[1])
+		word.rotation.y = PI / 2.0
+		add_child(word)
+	var title := _label("FLIGHT COURSE", accent, 0.36)
+	# Over the door, on the range's side of its end wall.
+	title.position = Vector3(course_door.x, course_door.z + 0.5, start + 0.56)
+	add_child(title)
+	# The board: hung over the yard just past the start, facing the way in.
+	var board := Node3D.new()
+	board.name = "CourseBoard"
+	board.position = Vector3(-w * 0.25, 3.4, marks.start - 3.0)
+	add_child(board)
+	board.add_child(_part(Vector3(6.2, 1.3, 0.12), Vector3(0, 0, -0.08), Color(0.1, 0.11, 0.12)))
+	board.add_child(_part(Vector3(6.0, 1.12, 0.02), Vector3(0, 0, -0.01), Color(0.02, 0.05, 0.07), true))
+	for x: float in [-2.6, 2.6]:
+		board.add_child(_part(Vector3(0.05, 3.4, 0.05), Vector3(x, -1.7, -0.08), Color(0.3, 0.31, 0.33)))
+	course_board = _label("", Color(0.6, 0.95, 1.0), 0.16)
+	course_board.name = "CourseText"
+	course_board.outline_size = 0
+	course_board.position = Vector3(0, 0, 0.02)
+	board.add_child(course_board)
+	_update_course_board()
+	if Look.enabled:
+		for at_z: float in [marks.start, marks.tower_a, marks.tower_b, marks.finish]:
+			var light := Look.lamp(Color(0.85, 0.92, 1.0), 4.0, 22.0)
+			light.position = Vector3(0, 9.0, at_z)
 			add_child(light)
 
 
@@ -1457,6 +1664,8 @@ func _new_player(at: Vector3) -> Actor:
 	actor.is_player = true
 	actor.display_name = "You"
 	actor.position = at
+	# Flight ceilings count from the base's own floor.
+	actor.ground_map = self
 	return actor
 
 
