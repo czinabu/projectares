@@ -639,7 +639,12 @@ without Caleb, and update the gap list when a PR closes a row.
   right takes its grip only with nothing in it, holds a gun out toward the
   aim, and leaves a blade to its usual hold, so melee windups still show.
   Back-slung weapons ride higher up the back (`ride_sling_lift`); weapons
-  clamped to a back rig's rails stay in their clamps. A new
+  clamped to a back rig's rails stay in their clamps. Riding, the
+  first-person eyes follow the seated head as posed (`ActorSkin._note_head`,
+  since the ride pose exists only inside the skeleton's update), so a new
+  vehicle's `seat_offset` keeps the actor's eyes (aim, head hitbox) near that
+  head, and anything the rider looks through is see-through glass
+  (`Vehicle._clear_glass`, a material override `Look` leaves alone). A new
   vehicle type sets those anchor points for its model. Check by eye:
   `visual_check.tscn -- <dir> --ride-only` (`RIDE_VEHICLE=<item id>` for
   another vehicle). Every vehicle is that one class, picked by data: the

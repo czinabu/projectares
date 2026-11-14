@@ -287,56 +287,114 @@ func _palette() -> Dictionary:
 			"glass": _mat(Color(0.2, 0.25, 0.3))}
 
 
-## Greybox armored squad rover: a long low hull on four big wheels, an open
-## cab behind a sloped glacis with the driver on the left, a roll cage, a
-## roof ring where a turret will go, and a cargo bed at the back.
+## Greybox armored squad rover: an open-topped scout buggy on four big
+## wheels with glowing hubs. A sloped hood runs down to a bumper and twin
+## lamps; the cab is open over low door sills, so the crew shows from
+## outside, behind a see-through windscreen (`_clear_glass`) that starts at
+## the dash, under the driver's eye line. Low bucket seats (driver on the
+## left, at the wheel), a roll bar over them, and a low cargo tray at the
+## back with tail lamps and a whip antenna.
 func _build_rover() -> Node3D:
 	var root := Node3D.new()
 	root.name = "Model"
 	var c := _palette()
+	var tail := _mat(Color(0.9, 0.15, 0.1))
+	tail.emission_enabled = true
+	tail.emission = Color(1.0, 0.1, 0.05)
+	tail.emission_energy_multiplier = 2.0
+	var screen := _mat(Color(0.35, 0.9, 1.0))
+	screen.emission_enabled = true
+	screen.emission = Color(0.3, 0.85, 1.0)
+	screen.emission_energy_multiplier = 1.2
+	var ring_mesh := TorusMesh.new()
+	ring_mesh.inner_radius = 0.3
+	ring_mesh.outer_radius = 0.34
 	for x: float in [-1.0, 1.0]:
 		for z: float in [-1.35, 1.35]:
 			var tyre := _wheel(0.52, 0.4, c.dark)
 			tyre.position = Vector3(x * 1.0, 0.52, z)
 			root.add_child(tyre)
-			var hub := _wheel(0.2, 0.44, c.steel)
+			var hub := _wheel(0.22, 0.44, c.steel)
 			hub.position = tyre.position
 			root.add_child(hub)
-			root.add_child(_part(Vector3(0.5, 0.1, 1.2), Vector3(x * 1.0, 1.08, z), c.paint))  # fender
-	root.add_child(_part(Vector3(1.7, 0.45, 4.0), Vector3(0, 0.7, 0), c.dark))                 # chassis
-	root.add_child(_part(Vector3(1.9, 0.12, 4.2), Vector3(0, 0.95, 0), c.paint))               # deck
-	root.add_child(_part(Vector3(1.9, 0.5, 1.0), Vector3(0, 1.12, -1.6), c.paint, -0.35))      # glacis
-	root.add_child(_part(Vector3(0.08, 0.5, 2.2), Vector3(-0.95, 1.25, 0.2), c.paint))         # cab side L
-	root.add_child(_part(Vector3(0.08, 0.5, 2.2), Vector3(0.95, 1.25, 0.2), c.paint))          # cab side R
-	root.add_child(_part(Vector3(1.9, 0.5, 0.1), Vector3(0, 1.25, 1.3), c.paint))              # cab back
-	root.add_child(_part(Vector3(1.6, 0.4, 0.04), Vector3(0, 1.6, -0.75), c.glass, 0.35))      # windscreen
-	for x: float in [-0.92, 0.92]:
-		root.add_child(_part(Vector3(0.07, 1.0, 0.07), Vector3(x, 1.85, -0.6), c.steel))       # cage post
-		root.add_child(_part(Vector3(0.07, 1.0, 0.07), Vector3(x, 1.85, 1.2), c.steel))
-		root.add_child(_part(Vector3(0.07, 0.07, 1.9), Vector3(x, 2.35, 0.3), c.steel))        # cage rail
-		root.add_child(_part(Vector3(0.03, 0.08, 1.6), Vector3(x * 1.06, 0.95, 0.0), null, 0.0, c.glow))  # strip
-	root.add_child(_part(Vector3(1.9, 0.07, 0.07), Vector3(0, 2.35, -0.6), c.steel))
-	root.add_child(_part(Vector3(1.9, 0.07, 0.07), Vector3(0, 2.35, 1.2), c.steel))
-	var ring := MeshInstance3D.new()                                                            # turret ring
-	var ring_mesh := TorusMesh.new()
-	ring_mesh.inner_radius = 0.35
-	ring_mesh.outer_radius = 0.45
-	ring_mesh.material = c.steel
-	ring.mesh = ring_mesh
-	ring.position = Vector3(0.35, 2.4, 0.4)
-	root.add_child(ring)
-	# Driver's seat, wheel and pedals, on the left.
-	root.add_child(_part(Vector3(0.5, 0.12, 0.5), Vector3(-0.4, 0.89, 0.25), c.dark))          # seat
-	root.add_child(_part(Vector3(0.5, 0.6, 0.1), Vector3(-0.4, 1.2, 0.52), c.dark, -0.2))      # seat back
-	root.add_child(_part(Vector3(0.5, 0.12, 0.5), Vector3(0.4, 0.89, 0.25), c.dark))           # second seat
-	root.add_child(_part(Vector3(0.5, 0.6, 0.1), Vector3(0.4, 1.2, 0.52), c.dark, -0.2))
-	root.add_child(_part(Vector3(0.44, 0.05, 0.05), Vector3(-0.4, 1.25, -0.25), c.dark))       # wheel bar
-	root.add_child(_part(Vector3(0.06, 0.06, 0.4), Vector3(-0.4, 1.15, -0.45), c.steel, 0.5))  # column
-	root.add_child(_part(Vector3(0.5, 0.06, 0.2), Vector3(-0.4, 0.84, -0.55), c.steel))        # pedals
-	root.add_child(_part(Vector3(1.8, 0.3, 1.0), Vector3(0, 1.15, 1.75), c.dark))              # cargo bed
-	for x: float in [-0.6, 0.6]:
-		root.add_child(_part(Vector3(0.3, 0.12, 0.06), Vector3(x, 1.1, -2.12), c.lamp))        # headlight
+			var ring := MeshInstance3D.new()
+			ring.mesh = ring_mesh
+			ring.material_override = c.glow
+			ring.rotation.z = PI / 2.0
+			ring.position = tyre.position + Vector3(x * 0.21, 0, 0)
+			root.add_child(ring)
+			# A wheel arch: a flat top with its ends angled down fore and aft.
+			root.add_child(_part(Vector3(0.58, 0.07, 0.8), Vector3(x * 1.0, 1.12, z), c.paint))
+			root.add_child(_part(Vector3(0.58, 0.07, 0.42), Vector3(x * 1.0, 1.02, z - 0.55), c.paint, -0.55))
+			root.add_child(_part(Vector3(0.58, 0.07, 0.42), Vector3(x * 1.0, 1.02, z + 0.55), c.paint, 0.55))
+		root.add_child(_part(Vector3(0.12, 0.42, 1.55), Vector3(x * 0.86, 0.97, 0.0), c.paint))       # door sill
+		root.add_child(_part(Vector3(0.03, 0.06, 1.3), Vector3(x * 0.93, 1.02, 0.0), null, 0.0, c.glow))  # strip
+		root.add_child(_part(Vector3(0.22, 0.05, 1.0), Vector3(x * 0.98, 0.64, 0.0), c.steel))        # side step
+		root.add_child(_part(Vector3(0.22, 0.08, 0.04), Vector3(x * 0.6, 1.0, -2.13), c.lamp))        # headlight
+		root.add_child(_part(Vector3(0.2, 0.08, 0.03), Vector3(x * 0.68, 1.0, 2.13), null, 0.0, tail))  # tail lamp
+		# The windscreen's frame and the roll bar behind the seats, joined by a rail.
+		root.add_child(_part(Vector3(0.06, 0.66, 0.06), Vector3(x * 0.8, 1.63, -0.64), c.steel, 0.25))  # pillar
+		root.add_child(_part(Vector3(0.07, 0.95, 0.07), Vector3(x * 0.8, 1.6, 0.78), c.steel))         # roll bar
+		root.add_child(_part(Vector3(0.06, 0.06, 1.36), Vector3(x * 0.8, 2.0, 0.1), c.steel, -0.11))    # roof rail
+		root.add_child(_part(Vector3(0.06, 0.22, 1.2), Vector3(x * 0.82, 1.22, 1.55), c.paint))         # tray side
+	root.add_child(_part(Vector3(1.5, 0.3, 3.8), Vector3(0, 0.62, 0), c.dark))                  # chassis
+	root.add_child(_part(Vector3(1.6, 0.06, 1.9), Vector3(0, 0.82, 0.05), c.dark))              # cab floor
+	# The hood, sloping down to the nose, over the engine bay.
+	root.add_child(_part(Vector3(1.6, 0.38, 1.3), Vector3(0, 0.9, -1.45), c.paint))
+	root.add_child(_part(Vector3(1.62, 0.08, 1.42), Vector3(0, 1.12, -1.42), c.paint, -0.12))
+	root.add_child(_part(Vector3(0.5, 0.05, 0.7), Vector3(0, 1.18, -1.3), c.dark, -0.12))      # hood vent
+	root.add_child(_part(Vector3(1.4, 0.24, 0.06), Vector3(0, 0.82, -2.12), c.dark))            # grille
+	root.add_child(_part(Vector3(1.9, 0.12, 0.14), Vector3(0, 0.62, -2.2), c.steel))            # bumper
+	# The dash: a low cowl under the windscreen, with the driver's screens lit.
+	root.add_child(_part(Vector3(1.62, 0.2, 0.34), Vector3(0, 1.21, -0.62), c.dark))
+	root.add_child(_part(Vector3(0.3, 0.13, 0.02), Vector3(-0.4, 1.36, -0.55), null, -0.5, screen))
+	root.add_child(_part(Vector3(0.22, 0.1, 0.02), Vector3(0.35, 1.35, -0.55), null, -0.5, screen))
+	root.add_child(_part(Vector3(1.66, 0.06, 0.06), Vector3(0, 1.32, -0.73), c.steel))          # screen foot
+	root.add_child(_part(Vector3(1.66, 0.06, 0.06), Vector3(0, 1.94, -0.56), c.steel))          # screen top
+	var glass := _part(Vector3(1.54, 0.62, 0.02), Vector3(0, 1.63, -0.64), null, 0.25, _clear_glass())
+	glass.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	root.add_child(glass)
+	root.add_child(_part(Vector3(1.66, 0.07, 0.07), Vector3(0, 2.08, 0.78), c.steel))           # roll bar top
+	# Low bucket seats, so the crew's shoulders and heads show over them.
+	for x: float in [-0.4, 0.4]:
+		root.add_child(_part(Vector3(0.48, 0.1, 0.48), Vector3(x, 0.9, 0.25), c.dark))        # seat
+		root.add_child(_part(Vector3(0.46, 0.42, 0.08), Vector3(x, 1.14, 0.52), c.dark, 0.15))  # seat back
+		for side: float in [-1.0, 1.0]:
+			root.add_child(_part(Vector3(0.05, 0.12, 0.4), Vector3(x + side * 0.24, 0.98, 0.28), c.dark))  # bolster
+	# The wheel faces the driver, its rim through the grips (`grip_points`).
+	var wheel := MeshInstance3D.new()
+	var wheel_mesh := TorusMesh.new()
+	wheel_mesh.inner_radius = 0.16
+	wheel_mesh.outer_radius = 0.2
+	wheel_mesh.material = c.dark
+	wheel.mesh = wheel_mesh
+	wheel.position = Vector3(-0.4, 1.27, -0.25)
+	wheel.rotation.x = PI / 2.0 - 0.45
+	root.add_child(wheel)
+	root.add_child(_part(Vector3(0.05, 0.05, 0.4), Vector3(-0.4, 1.2, -0.45), c.steel, 0.45))  # column
+	for x: float in [-0.52, -0.28]:
+		root.add_child(_part(Vector3(0.1, 0.04, 0.16), Vector3(x, 0.86, -0.5), c.steel))       # pedal
+	# The back: a body under a low cargo tray, a bumper and a whip antenna.
+	root.add_child(_part(Vector3(1.6, 0.34, 0.9), Vector3(0, 0.9, 1.68), c.paint))
+	root.add_child(_part(Vector3(1.7, 0.1, 1.3), Vector3(0, 1.1, 1.55), c.paint))               # tray floor
+	root.add_child(_part(Vector3(1.7, 0.22, 0.06), Vector3(0, 1.22, 2.17), c.paint))            # tailgate
+	root.add_child(_part(Vector3(0.55, 0.3, 0.42), Vector3(0.38, 1.3, 1.45), c.steel))          # crate
+	root.add_child(_part(Vector3(0.4, 0.22, 0.36), Vector3(-0.3, 1.26, 1.7), c.dark))           # crate
+	root.add_child(_part(Vector3(1.8, 0.18, 0.16), Vector3(0, 0.72, 2.15), c.dark))             # rear bumper
+	root.add_child(_part(Vector3(0.02, 1.1, 0.02), Vector3(0.78, 1.75, 2.05), c.steel, 0.12))  # antenna
 	return root
+
+
+## Tinted glass you can see through. It is a material override, so `Look`
+## leaves it as it is instead of weathering it opaque.
+func _clear_glass() -> StandardMaterial3D:
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(0.55, 0.78, 0.9, 0.16)
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	mat.metallic = 0.4
+	mat.roughness = 0.05
+	return mat
 
 
 ## Greybox compact mech: a cockpit pod with twin cannons on its flanks and a

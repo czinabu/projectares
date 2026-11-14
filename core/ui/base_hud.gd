@@ -91,7 +91,8 @@ func describe(target: Interactable) -> Array[String]:
 func _process(delta: float) -> void:
 	if base == null or not is_instance_valid(base) or base.player == null:
 		return
-	var target := base.player.find_interactable()
+	# On a vehicle, F gets you off, so nothing else is offered (as in `Hud`).
+	var target := base.player.find_interactable() if base.player.vehicle == null else null
 	var lines := describe(target)
 	_prompt.text = lines[0]
 	_show_tag(target as HomeBase.Display, lines[1])
