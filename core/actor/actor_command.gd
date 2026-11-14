@@ -176,7 +176,12 @@ func to_array() -> Array:
 func apply_array(data: Array) -> void:
 	if data.size() != ARRAY_SIZE:
 		return
-	move = Vector2(_number(data[0]), _number(data[1])).limit_length(1.0)
+	# Each axis on its own, as `move` promises and as the player's keys give
+	# it: a diagonal is (1, 1). Shortening it here would leave the server
+	# playing a different command from the one the client predicted with, and
+	# a vehicle or a glide reads each axis apart. On foot `Actor` shortens the
+	# wish itself, so a long move is no faster.
+	move = Vector2(clampf(_number(data[0]), -1.0, 1.0), clampf(_number(data[1]), -1.0, 1.0))
 	yaw = _number(data[2])
 	pitch = clampf(_number(data[3]), -1.5, 1.5)
 	var aim := Vector3(_number(data[4]), _number(data[5]), _number(data[6]))
