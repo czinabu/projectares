@@ -21,14 +21,19 @@ const BaseUpgrades := preload("res://core/base/base_upgrades.gd")
 ## The same blueprint and crafting rules the server's StashService uses.
 const Crafting := preload("res://core/progression/crafting.gd")
 const Human := preload("res://core/visual/human.gd")
-## Given once to every profile so there is gear to try loadouts with.
-const WELCOME_CRATE: Array[String] = ["rifle_carbine", "frame_trooper", "medkit", "medkit"]
-## Later one-time crates, by name, so existing profiles get new kinds of gear
-## to try as features land.
-const GEAR_CRATES := {
-	"flight_and_abilities": ["boots_thruster", "wings_glide", "chip_barrier", "chip_blink"],
-	"first_vehicle": ["bike_scrapper"],
-}
+## Given once to every new player: a first gun, a frame, some healing and the
+## starter motorbike (DESIGN.md section 8).
+const WELCOME_CRATE: Array[String] = ["rifle_carbine", "frame_trooper", "medkit", "medkit", "bike_scrapper"]
+## Later one-time crates, by name, granted to existing profiles. None for
+## now: gear to test new features with comes from dev mode, never from a
+## crate every player gets (Caleb's call, before the friends playtest).
+const GEAR_CRATES := {}
+## A save older than this is set back to a fresh player once, keeping who
+## you are (name, look, online secret, controls), with the old save kept
+## beside it at `FRESH_START_BACKUP`. 1: clears the free test gear, base
+## upgrades and anything dev mode leaked in before the playtest.
+const FRESH_START := 1
+const FRESH_START_BACKUP := "user://profile_before_fresh_start.json"
 
 ## Tests turn this off so they never touch a real save.
 var persist := true
@@ -38,6 +43,8 @@ var stash: Array[String] = []
 ## Slot name (see Loadout.SLOTS) -> item id. A missing slot is bare.
 var loadout := {}
 var welcome_granted := false
+## The `FRESH_START` this save has had.
+var fresh_start := FRESH_START
 var crates_granted: Array[String] = []
 ## Weapon, ability and frame mastery. Never lost on death.
 var mastery := MasteryBook.new()
@@ -72,6 +79,10 @@ var blueprints: Array[String] = []
 
 
 func _ready() -> void:
+	# A dedicated server never uses the solo profile, so it never writes one
+	# (it would race the game that started it for the same files).
+	if "--server" in OS.get_cmdline_user_args():
+		persist = false
 	# A new player starts in the free scrap kit; a save replaces it.
 	loadout = StashRules.starter_loadout()
 	load_profile()
@@ -124,6 +135,7 @@ func reset() -> void:
 	stash.clear()
 	loadout = StashRules.starter_loadout()
 	welcome_granted = false
+	fresh_start = FRESH_START
 	raids_played = 0
 	raids_extracted = 0
 	kills = 0
@@ -310,6 +322,7 @@ func to_dict() -> Dictionary:
 		"loadout": loadout,
 		StashRules.BARE_KEY: true,
 		"welcome_granted": welcome_granted,
+		"fresh_start": fresh_start,
 		"crates_granted": crates_granted,
 		"mastery": mastery.to_dict(),
 		"melee_control": melee_control,
@@ -338,6 +351,23 @@ func load_profile() -> void:
 		push_warning("Profile: save file is unreadable, starting fresh")
 		return
 	load_dict(data)
+	if save_path == SAVE_PATH and fresh_start < FRESH_START:
+		DirAccess.copy_absolute(save_path, FRESH_START_BACKUP)
+		start_fresh()
+
+
+## Sets this profile back to a fresh player (see `FRESH_START`), keeping who
+## you are. The welcome crate follows (`grant_welcome_crate`).
+func start_fresh() -> void:
+	var keep := {"player_name": player_name, "last_server": last_server, "home_server": home_server,
+			"online_secret": online_secret, "melee_control": melee_control, "appearance": appearance}
+	reset()
+	for key: String in keep:
+		set(key, keep[key])
+	# Clothing bought before is gone with the stash.
+	appearance = Human.player_look(appearance, owned_outfits())
+	fresh_start = FRESH_START
+	save()
 
 
 ## Takes on a save's data, checked as it goes.
@@ -354,6 +384,7 @@ func load_dict(data: Dictionary) -> void:
 				loadout[slot] = saved_loadout[slot]
 	StashRules.upgrade_loadout(data, loadout)
 	welcome_granted = bool(data.get("welcome_granted", false))
+	fresh_start = int(data.get("fresh_start", 0))
 	crates_granted.clear()
 	for crate: Variant in data.get("crates_granted", []):
 		if typeof(crate) == TYPE_STRING:

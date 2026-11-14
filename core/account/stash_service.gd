@@ -50,10 +50,13 @@ var day_override := -1
 ## Account id -> Account. Loaded lazily from disk.
 var _accounts := {}
 ## DEV MODE: account ids kept topped up with the dev stash (every piece of
-## gear, max scrip) on this server. Only a server started from the editor
-## with `--dev-host` sets it, and that server keeps its accounts in a
-## separate folder, so real online accounts are never touched.
+## gear, max scrip) on this server. Only the host's own account joins it, and
+## only on a server started from the editor with `--dev-host` (`dev_host`):
+## it is the account that claims `host_profile` with the host's own secret,
+## so nobody else gets in by signing in with the host's name. That server
+## keeps its accounts in a separate folder, so real ones are never touched.
 var dev_accounts: Array[String] = []
+var dev_host := false
 ## The solo profile (`Profile.to_dict`) of the player hosting this server on
 ## their own computer, handed over when it starts (`main.gd host_and_join`).
 ## On their own server they are the same player as at home: the first time
@@ -239,6 +242,8 @@ func _adopt_host_profile(account: Account, secret: String) -> void:
 	data["deployed_world"] = ""
 	account.load_dict(data)
 	host_profile = {}
+	if dev_host and account.id not in dev_accounts:  # DEV MODE
+		dev_accounts.append(account.id)
 	_save(account)
 
 

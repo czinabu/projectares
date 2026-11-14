@@ -737,9 +737,16 @@ without Caleb, and update the gap list when a PR closes a row.
   hands a solo `Raid` its cheats (`Raid.dev_cheats`: god mode, endless heat
   and ammo, no cooldowns); a server or client raid ignores them. Online, only
   a server hosted from the editor in dev mode (`main.gd host_and_join`
-  passes `--dev-host <name>`) tops that one account up
-  (`StashService.dev_accounts`), and such a server keeps its accounts in
-  `Main.DEV_ACCOUNTS`, apart from real ones. No cheats online. Every line
+  passes `--dev-host`) tops up one account: the one that claims the handed
+  profile with the host's secret (`StashService.dev_host`, `dev_accounts`),
+  never anyone just using the host's name. Such a server keeps its accounts
+  in `Main.DEV_ACCOUNTS`, apart from real ones, and its snapshots only go
+  back into the save it was hosted from (`Main._hosted_save`), so dev gear
+  never leaks into the real profile; the save never swaps while online.
+  Free test gear is never handed to every player (`Profile.GEAR_CRATES`
+  stays empty): new gear to try comes from dev mode. `Profile.FRESH_START`
+  sets an older real save back to a fresh player once, keeping who you
+  are. No cheats online. Every line
   it touches is marked "DEV MODE". Never build a feature on it; to remove it,
   delete `core/dev/` and every "DEV MODE" line or block, plus
   `_test_dev_mode` in the tests. Dev mode also knows every blueprint

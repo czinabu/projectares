@@ -88,6 +88,10 @@ var sessions: Array[NetSession] = []
 var _plaza_address := ""
 var _plaza_port := -1
 var _server_pid := -1
+## The `Profile` save the server we host was handed (the dev save in dev
+## mode). Its snapshots go back into that save only, so a dev server never
+## writes into the real profile, nor a real server into the dev one.
+var _hosted_save := ""
 var _join_attempts := 0
 var _join_address := ""
 var _join_port := NetSession.DEFAULT_PORT
@@ -889,7 +893,10 @@ func _show_aim(on: bool) -> void:
 ## and the stash follows on the next drop or the trip home.
 func _on_dev_mode_changed() -> void:
 	if net != null:
+		# The save swaps once you are home, never while a server you host is
+		# still sending your account back (that is how dev gear would leak).
 		phone.show_notice("Online, dev mode comes with a server you host from here. Leave and host again to pick this up.")
+		return
 	if raid != null:
 		if net == null:
 			raid.set_dev_cheats(DevMode.raid_cheats())
@@ -948,10 +955,11 @@ func _on_base_visit_requested(owner_name: String, owner_stash: Array, owner_load
 
 func _run_dedicated_server(args: PackedStringArray) -> void:
 	var port := int(_arg(args, "--port", str(NetSession.DEFAULT_PORT)))
-	# DEV MODE: `--dev-host <name>` gives that player the dev stash, only on a
-	# server run from the editor, and keeps this server's accounts apart.
-	var dev_host := _arg(args, "--dev-host", "") if DevMode.available() else ""
-	var accounts := _arg(args, "--accounts", DEV_ACCOUNTS if dev_host != "" else "")
+	# DEV MODE: `--dev-host` gives the host (whoever claims `--host-profile`
+	# with its secret) the dev stash, only on a server run from the editor,
+	# and keeps this server's accounts apart.
+	var dev_host := "--dev-host" in args and DevMode.available()
+	var accounts := _arg(args, "--accounts", DEV_ACCOUNTS if dev_host else "")
 	# `--no-zone-rules`: no gate shelter and no hazards (the test suite's servers).
 	if "--no-zone-rules" in args:
 		Raid.zone_rules = false
@@ -969,9 +977,9 @@ func _run_dedicated_server(args: PackedStringArray) -> void:
 		DirAccess.remove_absolute(handed)
 		if data is Dictionary:
 			net.stash.host_profile = data
-	if dev_host != "":  # DEV MODE
-		net.stash.dev_accounts.append(net.stash.id_for_name(dev_host))
-		print("Server: dev mode for %s (accounts in %s)" % [dev_host, accounts])
+	if dev_host and not net.stash.host_profile.is_empty():  # DEV MODE
+		net.stash.dev_host = true
+		print("Server: dev mode for the host (accounts in %s)" % accounts)
 
 
 ## Starts every session of a server. With a plaza it listens on `port`, and
@@ -1064,7 +1072,9 @@ func host_and_join(world_id := "") -> void:
 	if world_id != "":
 		args.append_array(["--world", world_id])
 	if DevMode.active():  # DEV MODE: your account gets everything on your own server
-		args.append_array(["--dev-host", Profile.player_name])
+		args.append("--dev-host")
+	# The save this server's snapshots may go back into (see `_keep_profile_in_step`).
+	_hosted_save = Profile.save_path
 	# On your own server you are the player you are at home: it takes on your
 	# profile (loadout, stash, scrip...), and hands it back as you play.
 	Profile.get_online_secret()
@@ -1531,7 +1541,7 @@ func leave_server() -> void:
 ## a stash of its own.
 func _keep_profile_in_step(account: Dictionary) -> void:
 	if _server_pid > 0 and _join_address == "127.0.0.1" and account.get("ok", false) \
-			and not account.get("deployed", false):
+			and not account.get("deployed", false) and Profile.save_path == _hosted_save:
 		Profile.adopt_account(account)
 
 
