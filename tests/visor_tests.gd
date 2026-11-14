@@ -192,12 +192,24 @@ static func _frames(t: Node) -> void:
 	await t._end_raid(raid)
 
 	var built := true
+	var fitted := true
+	var coverage := []
 	for weight: String in ["light", "medium", "heavy"]:
 		var model := SkinScript.build_frame(weight, Color.GRAY)
 		built = built and model.get_node_or_null("Chest") != null \
 				and (model.get_node_or_null("Belly") != null) == (weight != "light") \
 				and (model.get_node_or_null("Collar") != null) == (weight == "heavy")
+		# Fitted, not blocky: every plate rides within a few centimetres of
+		# the torso (about 0.13 m to each side and 0.1 m in front of the bone).
+		var plates := 0
+		for part: MeshInstance3D in model.find_children("*", "MeshInstance3D", false, false):
+			var box := part.transform * part.get_aabb()
+			fitted = fitted and box.position.z > -0.15 and absf(box.position.x) < 0.175 and box.end.x < 0.175
+			plates += 1
+		coverage.append(plates)
 		model.free()
+	t.check(fitted, "the plates are curved to the body and ride close to it")
+	t.check(coverage[0] < coverage[1] and coverage[1] < coverage[2], "each heavier frame covers more")
 	t.check(built and SkinScript.frame_weight("frame_bulwark") == "heavy"
 			and SkinScript.frame_weight("plate_light") == "light", "each frame weight has its own plates")
 
