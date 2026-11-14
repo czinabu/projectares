@@ -35,6 +35,9 @@ const BODY_RADIUS := 0.4
 const BODY_HEIGHT := 1.8
 ## How far down from the top of the body a hit counts as a headshot.
 const HEAD_SIZE := 0.3
+## How tall the body is crouched (`crouched`) or down in a slide: low cover
+## of about this height hides it, collision, hitbox and all.
+const CROUCH_HEIGHT := 1.3
 ## Where the hand sits on the body when a controller is not posing it.
 const HAND_REST := Vector3(0.38, 1.25, -0.35)
 
@@ -97,6 +100,15 @@ var slide_stamina := 10.0
 ## How far the eyes drop while sliding, and how fast they get there (per second).
 var slide_eye_drop := 0.75
 var crouch_rate := 8.0
+## Crouching (`ActorCommand.crouch`, a held flag the controller toggles with
+## the crouch key): a slow, quiet walk with the eyes `crouch_eye_drop` lower,
+## the body `CROUCH_HEIGHT` tall, and guns `crouch_spread_mult` as wide.
+## Bots notice a crouched actor outside their view only this much as close
+## (`BotBrain.close_sense_range`), so sneaking up behind one works.
+var crouch_speed := 3.0
+var crouch_eye_drop := 0.4
+var crouch_spread_mult := 0.75
+var crouch_sense_mult := 0.4
 
 ## How often the actor is simulated: every tick (1), or every nth tick with
 ## the time made up in one longer step. The authority thins out bots that no
@@ -166,7 +178,14 @@ var airborne_time := 0.0
 var stagger_left := 0.0
 ## Seconds left of the current slide; above zero while sliding.
 var slide_left := 0.0
-## How low the actor is crouched, 0 standing to 1 down in a slide.
+## How far down into a slide the actor is, 0 standing to 1 down.
+var slide_low := 0.0
+## Crouched now. Follows `ActorCommand.crouch`, except that the actor stays
+## down while there is no room overhead to stand (`room_to_stand`), and a
+## slide that ends under something low ends crouched.
+var crouched := false
+## How far down into the crouch the actor is, 0 standing to 1 crouched. The
+## eyes, the body's height and the skin's crouch pose follow it.
 var crouch := 0.0
 ## After a parry, the next melee hit inside this window hits harder.
 var riposte_left := 0.0
@@ -231,6 +250,8 @@ var _stamina_wait := 0.0
 var _flash_left := 0.0
 var _healing_with := ""
 var _base_material: Material
+var _body_shape: CapsuleShape3D
+var _body_col: CollisionShape3D
 
 
 func _init() -> void:
@@ -272,6 +293,8 @@ func _build_body() -> void:
 	col.shape = shape
 	col.position.y = BODY_HEIGHT * 0.5
 	add_child(col)
+	_body_shape = shape
+	_body_col = col
 
 	var mesh := CapsuleMesh.new()
 	mesh.radius = 0.4
@@ -332,6 +355,12 @@ func _physics_process(delta: float) -> void:
 	_simulate_timers(delta)
 	if vehicle == null:
 		_simulate_movement(delta)
+	elif crouched or crouch > 0.0 or slide_low > 0.0:
+		# Seated: the vehicle carries the body; nobody rides crouched.
+		crouched = false
+		crouch = 0.0
+		slide_low = 0.0
+		_fit_body()
 	_simulate_weapons(delta)
 	ability.tick(delta)
 	if cmd.ability_pressed and stagger_left <= 0.0 and not weapons_locked:
@@ -408,6 +437,8 @@ func _simulate_movement(delta: float) -> void:
 	# Looking through binoculars: no running, and a slow walk.
 	if visor.is_zoomed():
 		speed = walk_speed * visor.move_mult()
+	if crouched and on_floor:
+		speed = minf(speed, crouch_speed)
 	var held := get_active_weapon()
 	if held:
 		speed *= held.move_speed_mult()
@@ -462,6 +493,7 @@ func _simulate_movement(delta: float) -> void:
 		horizontal = _dash_dir * _dash_speed_now
 		slide_left = 0.0
 	horizontal = _simulate_slide(horizontal, on_floor, staggered, delta)
+	_simulate_crouch(delta)
 
 	horizontal += _air_dash(wish, yaw_basis, on_floor, staggered, delta)
 	velocity.x = horizontal.x
@@ -882,12 +914,74 @@ func _simulate_slide(horizontal: Vector3, on_floor: bool, staggered: bool, delta
 			slide_left = maxf(0.0, slide_left - delta)
 			var done := 1.0 - slide_left / slide_time
 			horizontal = _slide_dir * lerpf(_slide_from, slide_end_speed, done)
-	crouch = move_toward(crouch, 1.0 if slide_left > 0.0 else 0.0, crouch_rate * delta)
+	slide_low = move_toward(slide_low, 1.0 if slide_left > 0.0 else 0.0, crouch_rate * delta)
 	return horizontal
 
 
 func is_sliding() -> bool:
 	return slide_left > 0.0
+
+
+## Crouches or stands from the command, staying down while there is no room
+## to stand, and sets the body's height to match.
+func _simulate_crouch(delta: float) -> void:
+	var want := cmd.crouch and slide_left <= 0.0
+	if want:
+		if not crouched and slide_low > crouch:
+			# Out of a slide into the crouch: no pop up in between.
+			crouch = slide_low
+		crouched = true
+	elif crouched or (slide_left <= 0.0 and slide_low > 0.0):
+		if room_to_stand():
+			crouched = false
+		elif not crouched:
+			# A slide that ends under something low ends crouched.
+			crouched = true
+			crouch = maxf(crouch, slide_low)
+	crouch = move_toward(crouch, 1.0 if crouched else 0.0, crouch_rate * delta)
+	_fit_body()
+
+
+## How tall the body stands now: `BODY_HEIGHT` up, `CROUCH_HEIGHT` crouched
+## or down in a slide. Hit tests (`Combat.trace`) use the same height.
+func body_height() -> float:
+	return lerpf(BODY_HEIGHT, CROUCH_HEIGHT, maxf(crouch, slide_low))
+
+
+## Whether the full standing body fits where the actor is: nothing of the
+## world in the way overhead.
+func room_to_stand() -> bool:
+	if not is_inside_tree():
+		return true
+	var lift := 0.05
+	var shape := CapsuleShape3D.new()
+	shape.radius = BODY_RADIUS * 0.9
+	shape.height = BODY_HEIGHT - lift
+	var query := PhysicsShapeQueryParameters3D.new()
+	query.shape = shape
+	query.transform = Transform3D(Basis.IDENTITY, global_position + Vector3.UP * (lift + shape.height * 0.5))
+	query.collision_mask = LAYER_WORLD
+	query.exclude = [get_rid()]
+	return get_world_3d().direct_space_state.intersect_shape(query, 1).is_empty()
+
+
+## Steadier aim while crouched on the ground: guns spread this many times
+## as wide (`Gun.current_spread_deg`).
+func aim_steadiness() -> float:
+	if not crouched or not is_on_floor():
+		return 1.0
+	return lerpf(1.0, crouch_spread_mult, crouch)
+
+
+## Keeps the collision capsule as tall as `body_height`, feet on the ground.
+func _fit_body() -> void:
+	if _body_shape == null:
+		return
+	var height := body_height()
+	if is_equal_approx(_body_shape.height, height):
+		return
+	_body_shape.height = height
+	_body_col.position.y = height * 0.5
 
 
 func _simulate_weapons(delta: float) -> void:
@@ -1009,7 +1103,7 @@ func _simulate_heal(delta: float) -> void:
 
 
 func get_eye_position() -> Vector3:
-	return global_position + Vector3(0.0, eye_height - slide_eye_drop * crouch, 0.0)
+	return global_position + Vector3(0.0, eye_height - maxf(slide_eye_drop * slide_low, crouch_eye_drop * crouch), 0.0)
 
 
 func get_aim_dir() -> Vector3:
