@@ -589,7 +589,9 @@ without Caleb, and update the gap list when a PR closes a row.
   a scan is a snapshot, never live tracking, Threat Sense only shows people
   aiming at the wearer, thermal never sees through walls, and every reveal
   is felt by its target (the ping, the "Sensed" notice, the lens glint, the
-  ember of a thermal visor). How warm someone looks on thermal is
+  ember of a thermal visor), except where nobody can be fought
+  (`Visor.peaceful`: a safe zone or the home base), where the ping and the
+  "Sensed" notice are left out as noise. How warm someone looks on thermal is
   `Visor.heat_of`: `Actor.heat_signature` (frames set it with a
   `heat_signature` stat) plus flight rig heat. The picture is `VisorHud`
   (`core/ui/visor_hud.gd`), a view: its glass is drawn in first person only
@@ -868,7 +870,7 @@ without Caleb, and update the gap list when a PR closes a row.
 - Safe zones: a world with `WorldDef.safe_zone` (the plaza, `worlds/plaza`)
   is a social space run by the same `Raid` and `NetSession`. `Combat.deal`
   refuses every hit there, `Actor.weapons_locked` stops attacks, abilities
-  and healing, and `NetSession` shows the loadout with `StashService.showcase`
+  and healing (not helmets: a visor works everywhere, Caleb's call), and `NetSession` shows the loadout with `StashService.showcase`
   instead of `deploy`, so nothing leaves the stash and nothing is settled.
   Doorways are "portal" markers (see `WorldDef`); `core/social/plaza_view.gd`
   offers them and `main.gd use_portal` decides where each destination leads.
