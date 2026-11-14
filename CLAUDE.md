@@ -609,6 +609,10 @@ without Caleb, and update the gap list when a PR closes a row.
   helmet's name, role and system beside it; the contracts held and the
   tour's step are an objective block top right (`objective_lines`, from
   `hud.contracts` and `hud.objective`); faint pitch ticks run up both edges.
+  Bottom right, mirroring the vitals, a quiet weapon readout (Caleb's pick):
+  the weapon in hand, the mag over a tick a round and the pack's rounds,
+  resting dim and lit only on a reload, a low mag or just after a switch
+  (`VisorHud.weapon_awake`); ammo is still read off the gun's own counter.
   Each helmet has a role it names as it comes on (`role_name`) and its own
   reticle; an Ember also reads its wearer's own heat signature. A scrap
   visor manages only a bearing. Do not put the map or standing there, they

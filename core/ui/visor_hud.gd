@@ -94,6 +94,13 @@ var vitals_low := 0.9
 var vitals_lift := 0.07
 ## Pitch ticks: pixels per degree, as a share of the view's height.
 var pitch_scale := 0.009
+## The weapon readout, bottom right: how long it stays lit after a switch,
+## below what share of a mag it counts as low, how bright it rests, and how
+## fast it wakes and settles.
+var weapon_show_time := 2.5
+var weapon_low_share := 0.25
+var weapon_rest := 0.22
+var weapon_fade := 2.5
 ## The war must be at least this hot before a tactical visor marks its centre.
 var hot_from := 0.25
 ## How long the helmet's name stays up after the display comes on.
@@ -127,6 +134,8 @@ var alert := 0.0
 ## brackets have closed on them (0 to 1).
 var aim_target: Actor
 var lock := 0.0
+## How lit the weapon readout is, 0 resting to 1 (`weapon_awake`).
+var weapon_lit := 0.0
 ## How far the binocular scale has opened, 0 to 1.
 var zoom_shown := 0.0
 ## Height above the ground while off it, below zero when standing on it.
@@ -160,6 +169,9 @@ var _look_known := false
 ## The actor whose signals the glass listens to. The home base swaps its
 ## actor out when it has to, so this is followed rather than set once.
 var _wired: Actor
+## The weapon in hand last frame, and seconds since it changed.
+var _last_weapon: Weapon
+var _since_switch := 99.0
 
 
 func setup(p_raid: Raid, p_controller: PlayerController) -> void:
@@ -356,6 +368,12 @@ func _animate(p: Actor, delta: float) -> void:
 	var locked := aim_target != null and is_instance_valid(aim_target) and not aim_target.is_dead
 	lock = move_toward(lock, 1.0 if locked else 0.0, lock_rate * delta)
 	zoom_shown = move_toward(zoom_shown, 1.0 if p.visor.is_zoomed() else 0.0, 5.0 * delta)
+	var held := p.get_active_weapon()
+	if held != _last_weapon:
+		_last_weapon = held
+		_since_switch = 0.0
+	_since_switch += delta
+	weapon_lit = move_toward(weapon_lit, 1.0 if weapon_awake(held) else 0.0, weapon_fade * delta)
 
 
 func _on_felt_scan(origin: Vector3) -> void:
@@ -721,6 +739,7 @@ func _draw() -> void:
 		_draw_cracks(ink)
 	_draw_glass(ink)
 	_draw_vitals(p, ink)
+	_draw_weapon(p, ink)
 	_draw_ident(v, ink)
 	if v.mode == "":
 		_draw_heading(p, ink)
@@ -1467,3 +1486,69 @@ func _draw_objectives(p: Actor, ink: Color) -> void:
 			if float(line.share) > 0.0:
 				draw_line(bar, bar + Vector2(long * float(line.share), 0.0), _lit(SQUAD_INK if done else ink, 0.85), 2.0)
 		y += row
+
+
+## True while the weapon readout should be lit: reloading, the mag low or
+## empty, or just after a switch. Otherwise it rests dim: the gun's own
+## counter is where ammo is read.
+func weapon_awake(held: Weapon) -> bool:
+	if held == null:
+		return false
+	if _since_switch < weapon_show_time:
+		return true
+	var gun := held as Gun
+	if gun == null:
+		return false
+	return gun.is_reloading() or gun.ammo_in_mag <= floori(gun.mag_size * weapon_low_share)
+
+
+## The weapon readout, bottom right, mirroring the vitals: the weapon in hand,
+## and for a gun the rounds in the mag over a row of ticks, the rounds in the
+## pack beside it and a bar while reloading. It rests dim and lights up when
+## it matters (`weapon_awake`). Ammo still lives on the gun's own counter.
+func _draw_weapon(p: Actor, ink: Color) -> void:
+	var held := p.get_active_weapon()
+	if held == null:
+		return
+	var level := lerpf(weapon_rest, 1.0, weapon_lit) * _swept()
+	var radius := cell_radius()
+	var right := size.x - size.y * vitals_left + sway.x
+	var base := size.y * vitals_low + sway.y + radius * 0.3
+	var gun := held as Gun
+	var low := gun != null and not gun.is_reloading() and gun.ammo_in_mag <= floori(gun.mag_size * weapon_low_share)
+	var tint := Color(1.0, 0.3, 0.2) if low else ink
+	_text(Vector2(right, base - radius * 2.2), held.display_name.to_upper(), _lit(ink, 0.8 * level, false),
+			HORIZONTAL_ALIGNMENT_RIGHT, 260.0, 13)
+	draw_line(Vector2(right - 150.0 * _swept(), base - radius * 1.9), Vector2(right, base - radius * 1.9),
+			_lit(ink, 0.4 * level, false), 1.0, true)
+	draw_line(Vector2(right, base - radius * 1.9), Vector2(right, base - radius * 1.5),
+			_lit(ink, 0.4 * level, false), 1.0, true)
+	if gun == null:
+		return
+	if gun.is_reloading():
+		var done := 1.0 - gun.reload_left() / maxf(gun.reload_time, 0.01)
+		_text(Vector2(right, base - 4.0), "RELOADING", _lit(ink, 0.95 * level, false), HORIZONTAL_ALIGNMENT_RIGHT, 200.0, 18)
+		draw_line(Vector2(right - 150.0, base + 8.0), Vector2(right, base + 8.0), _lit(ink, 0.2 * level, false), 3.0)
+		draw_line(Vector2(right - 150.0, base + 8.0), Vector2(right - 150.0 + 150.0 * done, base + 8.0),
+				_lit(ink, 0.9 * level, false), 3.0)
+		return
+	# The mag count large, the pack's rounds small beside it.
+	var reserve := "/ %d" % gun.reserve_ammo
+	_text(Vector2(right, base - 4.0), reserve, _lit(ink, 0.6 * level, false), HORIZONTAL_ALIGNMENT_RIGHT, 90.0, 14)
+	var font := ThemeDB.fallback_font
+	var reserve_w := font.get_string_size(reserve, HORIZONTAL_ALIGNMENT_LEFT, -1, 14).x
+	_text(Vector2(right - reserve_w - 8.0, base - 4.0), str(gun.ammo_in_mag), _lit(tint, 0.95 * level, false),
+			HORIZONTAL_ALIGNMENT_RIGHT, 90.0, roundi(radius * 0.9))
+	# A tick a round, up to a mag of 40; beyond that, one bar.
+	var row := Vector2(right, base + 8.0)
+	if gun.mag_size <= 40:
+		var step := minf(5.0, 150.0 / maxf(gun.mag_size, 1.0))
+		for i in gun.mag_size:
+			var x := row.x - i * step
+			var full := i < gun.ammo_in_mag
+			draw_line(Vector2(x, row.y), Vector2(x, row.y + 6.0), _lit(tint if full else ink, (0.85 if full else 0.15) * level,
+					false), 2.0)
+	else:
+		var share := clampf(float(gun.ammo_in_mag) / maxf(gun.mag_size, 1.0), 0.0, 1.0)
+		draw_line(row, row + Vector2(-150.0, 0.0), _lit(ink, 0.2 * level, false), 3.0)
+		draw_line(row, row + Vector2(-150.0 * share, 0.0), _lit(tint, 0.9 * level, false), 3.0)

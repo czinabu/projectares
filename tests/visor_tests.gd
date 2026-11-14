@@ -859,6 +859,23 @@ static func _layout(t: Node, raid: Raid, glass: VisorHud) -> void:
 	lines = glass.objective_lines(held, {"rides": 1}, "")
 	t.check(lines.size() == 2 and lines[0].done and lines[0].share == 1.0, "a finished contract is marked done")
 	t.check(glass.objective_lines([] as Array[Dictionary], {}, "").is_empty(), "with nothing to do the block is empty")
+	# The weapon readout, bottom right: dim at rest, lit when it matters.
+	var gun := p.get_active_weapon() as Gun
+	if gun != null:
+		gun.ammo_in_mag = gun.mag_size
+		for i in 240:
+			glass._process(1.0 / 60.0)
+		t.check(not glass.weapon_awake(gun) and glass.weapon_lit < 0.05,
+				"with a full mag and no switch, the weapon readout rests dim (ammo is read off the gun)")
+		gun.ammo_in_mag = 1
+		for i in 30:
+			glass._process(1.0 / 60.0)
+		t.check(glass.weapon_awake(gun) and glass.weapon_lit > 0.9, "a low mag lights it up")
+		gun.ammo_in_mag = gun.mag_size
+		gun.ammo_in_mag -= 5
+		gun.start_reload()
+		t.check(gun.is_reloading() and glass.weapon_awake(gun), "so does a reload")
+		gun.ammo_in_mag = gun.mag_size
 
 
 static func _strip(t: Node) -> void:

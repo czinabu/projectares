@@ -1423,6 +1423,10 @@ func _visor_shots(out_dir: String) -> void:
 		hud.objective = "Bank your loot at a depot"
 		p.flight.heat = p.flight.max_heat * 0.45
 		p.tally["kills"] = 2
+		# A low mag, so the weapon readout bottom right wakes up.
+		var held_gun := p.get_active_weapon() as Gun
+		if held_gun != null:
+			held_gun.ammo_in_mag = 4
 		await _settle(20)
 		await _shot(out_dir.path_join("visor_%s.png" % helmet))
 		if helmet == "helm_spotter":
