@@ -59,25 +59,36 @@ var input_blocked := false
 var phone_out := false
 ## Reading the phone in third person (Caleb's call, like the riding view: an
 ## exception to the camera never moving on its own, made by opening the
-## phone): the camera eases in over the right shoulder to the handheld in the
-## hand, this far back from the eyes (m), this far out to the right and up,
-## and eases back out when the phone is put away. It looks at the same device
-## first person reads; nothing floats in front of the view.
-var phone_read_distance := 0.75
+## phone): the camera eases in beside the head and looks square onto the
+## handheld's screen in the hand (Caleb's pick, so it reads), and eases back
+## out when the phone is put away. It stands this far (m) out from the
+## screen, along the screen's facing turned this much toward the right
+## shoulder and up, so the head stays out of the way. It looks at the same
+## device first person reads; nothing floats in front of the view.
+var phone_read_distance := 0.55
 var phone_read_side := 0.65
-var phone_read_lift := 0.35
-var phone_read_fov := 21.0
+var phone_read_lift := 0.25
+## How far (0..1) the reading view tips with the phone so its lines read level.
+var phone_read_tilt := 1.0
+## With the Mirror app up it reads from over the shoulder instead, this far
+## back from the eyes (m), out to the right and up, to keep the mirror in view.
+var phone_mirror_spot := Vector3(0.65, 0.35, 0.75)
 ## How far (m) to aim left of the phone, so it sits right of the crosshair.
-var phone_read_offset := 0.08
+var phone_read_offset := 0.03
 var phone_read_rate := 6.0
 ## With the Mirror app up the view widens and aims this far (0..1) from the
 ## phone toward the mirror's glass, so the reflection shows past the phone.
 var phone_mirror_fov := 62.0
-## While the phone is out the view zooms in on it this many times (Caleb's
-## pick over a bigger screen layout), in both views, like aiming down sights:
-## only the field of view narrows, the hold and the camera stay put. Not with
-## the Mirror app's mirror up, which needs the wide view.
-var phone_zoom := 1.7
+## While the phone is out the view zooms in on it (Caleb's pick over a
+## bigger screen layout), in both views, like aiming down sights: only the
+## field of view narrows, the hold and the camera stay put. It zooms until
+## the phone stands this share of the view's height, whatever the player's
+## field of view setting (Caleb's feedback: at a wide one a fixed zoom left it
+## tiny), and never so far that the phone leaves the frame. Not with the
+## Mirror app's mirror up, which needs the wide view.
+var phone_zoom := 0.6
+## How much of the view's half height and width the phone may reach out to.
+var phone_zoom_edge := 0.94
 var phone_mirror_aim := 0.55
 ## How far in to the phone the third-person camera is now (0..1).
 var phone_read := 0.0
@@ -813,16 +824,6 @@ func _process(delta: float) -> void:
 			desired = pivot + (hit.position - pivot) * 0.85
 	camera.global_transform = Transform3D(look, desired)
 	_read_phone(delta)
-	var speeding := 0.0 if aiming or _zoom() > 1.0 else speed_fov_for(_view_speed())
-	_speed_fov_now = lerpf(_speed_fov_now, speeding, 1.0 - exp(-4.0 * delta))
-	var fov := aim_fov(weapon) if aiming else wanted_base_fov() + _speed_fov_now
-	if _zoom() > 1.0:
-		fov = zoomed_fov(wanted_base_fov(), _zoom())
-	if phone_read > 0.0:
-		fov = lerpf(fov, phone_fov(), smoothstep(0.0, 1.0, phone_read))
-	if phone_zoomed():
-		fov = zoomed_fov(fov, phone_zoom)
-	camera.fov = lerpf(camera.fov, fov, 1.0 - exp(-14.0 * delta))
 	if _thrust_audio:
 		var thrusting := actor.flight.is_thrusting and not actor.is_dead
 		if thrusting and not _thrust_audio.playing:
@@ -844,6 +845,18 @@ func _process(delta: float) -> void:
 	_eye_offset = _eye_offset.lerp(offset, 1.0 - exp(-18.0 * delta)) if first_person else offset
 	if first_person:
 		camera.global_position += _eye_offset * (1.0 - minf(_cam_dist / 0.7, 1.0))
+	# The field of view, from where the camera has ended up (the phone's zoom
+	# measures the phone from there).
+	var speeding := 0.0 if aiming or _zoom() > 1.0 else speed_fov_for(_view_speed())
+	_speed_fov_now = lerpf(_speed_fov_now, speeding, 1.0 - exp(-4.0 * delta))
+	var fov := aim_fov(weapon) if aiming else wanted_base_fov() + _speed_fov_now
+	if _zoom() > 1.0:
+		fov = zoomed_fov(wanted_base_fov(), _zoom())
+	if phone_read > 0.0 and mirror_in_view():
+		fov = lerpf(fov, phone_mirror_fov, smoothstep(0.0, 1.0, phone_read))
+	if phone_zoomed():
+		fov = minf(fov, phone_fit_fov())
+	camera.fov = lerpf(camera.fov, fov, 1.0 - exp(-14.0 * delta))
 	# First and third person differ only in where the camera is (Caleb's
 	# rule): your own body is drawn and posed the same in both, holding the
 	# same weapon in the same hand. First person only leaves your head out of
@@ -1092,10 +1105,10 @@ func is_third_person() -> bool:
 	return _cam_dist > 0.5
 
 
-## Eases the third-person camera in over the shoulder to read the phone in
-## the hand while it is out, and back out after. The view is only moved,
-## never switched. With the Mirror app's mirror up it widens to keep the
-## reflection in frame past the phone.
+## Eases the third-person camera in beside the head, square onto the
+## phone's screen in the hand, while it is out, and back out after. The view
+## is only moved, never switched. With the Mirror app's mirror up it reads
+## from over the shoulder and widens to keep the reflection in frame.
 func _read_phone(delta: float) -> void:
 	var face := phone_panel()
 	var wanted := 1.0 if phone_out and face != null and _wants_third_person() and not actor.is_dead else 0.0
@@ -1105,13 +1118,22 @@ func _read_phone(delta: float) -> void:
 	var w := smoothstep(0.0, 1.0, phone_read)
 	var centre := face.global_position
 	var heading := Basis.from_euler(Vector3(0.0, yaw, 0.0))
-	var spot := actor.get_eye_position() + heading * Vector3(phone_read_side, phone_read_lift, phone_read_distance)
 	# Aim a little past its left edge so the phone sits right of the
 	# crosshair, off the middle of the scene.
 	var aim_at := centre - heading * Vector3(phone_read_offset, 0.0, 0.0)
+	var spot: Vector3
+	var up := Vector3.UP
 	if mirror_in_view():
+		spot = actor.get_eye_position() + heading * phone_mirror_spot
 		aim_at = aim_at.lerp(phone_mirror.glass_centre(), phone_mirror_aim)
-	var reading := Transform3D(Basis.looking_at(aim_at - spot, Vector3.UP), spot)
+	else:
+		var facing := face.global_basis.z.normalized()
+		var along := (facing + heading * Vector3.RIGHT * phone_read_side + Vector3.UP * phone_read_lift).normalized()
+		spot = centre + along * phone_read_distance
+		# The view tips with the phone so its lines read level, as a head
+		# tilts to read one.
+		up = face.global_basis.y.normalized().lerp(Vector3.UP, 1.0 - phone_read_tilt).normalized()
+	var reading := Transform3D(Basis.looking_at(aim_at - spot, up), spot)
 	camera.global_transform = camera.global_transform.interpolate_with(reading, w)
 
 
@@ -1120,10 +1142,34 @@ func phone_zoomed() -> bool:
 	return phone_out and phone_panel() != null and not actor.is_dead and not mirror_in_view()
 
 
-## The fov the reading view eases to: close on the phone, wider with the
-## Mirror app's mirror up.
-func phone_fov() -> float:
-	return phone_mirror_fov if mirror_in_view() else phone_read_fov
+## The field of view (degrees) from where the camera is now at which the
+## phone in the hand stands `phone_zoom` of the view's height, widened as
+## needed to keep all of it in frame. Works from the device's corners as the
+## camera sees them, so it holds for any view, distance or setting.
+func phone_fit_fov() -> float:
+	var face := phone_panel() as VisualInstance3D
+	if face == null:
+		return 179.0
+	var view := camera.global_transform.affine_inverse() * face.global_transform
+	var box := face.get_aabb()
+	var aspect := 16.0 / 9.0
+	var shown := camera.get_viewport().get_visible_rect().size if camera.get_viewport() else Vector2.ZERO
+	if shown.y > 0.0:
+		aspect = shown.x / shown.y
+	var low := INF
+	var high := -INF
+	var reach := 0.0
+	for i in 8:
+		var corner := view * box.get_endpoint(i)
+		var ahead := maxf(-corner.z, 0.01)
+		var up := corner.y / ahead
+		low = minf(low, up)
+		high = maxf(high, up)
+		reach = maxf(reach, maxf(absf(up), absf(corner.x / ahead) / aspect))
+	var half := maxf((high - low) * 0.5 / phone_zoom, reach / phone_zoom_edge)
+	return rad_to_deg(2.0 * atan(half))
+
+
 
 
 ## True while the Mirror app's mirror stands in front of you.

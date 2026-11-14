@@ -2660,6 +2660,11 @@ func _phone_shots(out_dir: String) -> void:
 	await _settle(10)
 	await _shot(out_dir.path_join("phone_settings.png"))
 	phone._screen.get_texture().get_image().save_png(out_dir.path_join("phone_settings_screen.png"))
+	# A wide field of view setting reads the phone just as well.
+	controller.base_fov = 110.0
+	await _settle(30)
+	await _shot(out_dir.path_join("phone_settings_wide.png"))
+	controller.base_fov = 80.0
 	phone.open_settings_tab("view")
 	await _settle(10)
 	phone._screen.get_texture().get_image().save_png(out_dir.path_join("phone_settings_view_screen.png"))

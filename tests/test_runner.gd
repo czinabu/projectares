@@ -6387,10 +6387,14 @@ func _test_phone_view() -> void:
 		for i in 40:
 			await frames(1)
 		check(controller.phone_read > 0.99, "with the phone out in third person the camera eases in to read it")
-		check(controller.camera.global_position.distance_to(face.global_position) < 1.5 and is_equal_approx(controller.camera.global_basis.x.y, 0.0),
-				"and frames it level from over the shoulder")
+		check(controller.camera.global_position.distance_to(face.global_position) < 1.5
+				and absf(controller.camera.global_basis.x.normalized().dot(face.global_basis.y.normalized())) < 0.1,
+				"and frames it beside the head with its lines level")
 		var to_face := controller.camera.global_transform.affine_inverse() * face.global_position
 		check(to_face.z < 0.0 and to_face.x > 0.0, "the phone sits in view, right of the crosshair")
+		var square := -(controller.camera.global_basis.z.normalized()).dot(face.global_basis.z.normalized())
+		check(square < -0.7, "the camera looks nearly square onto the screen, so it reads")
+		check(_phone_share(controller) > 0.3, "and the phone stands large in the view")
 		controller.phone_out = false
 		controller.input_blocked = false
 		for i in 40:
@@ -6406,9 +6410,18 @@ func _test_phone_view() -> void:
 		check(absf(controller.camera.global_rotation.x - controller.phone_view_pitch) < 0.02
 				and is_equal_approx(controller.pitch, pitch_before),
 				"the eyes drop to the phone in the hand, while the aim stays where it was")
-		var wide := PlayerController.zoomed_fov(controller.wanted_base_fov(), controller.phone_zoom)
-		check(controller.phone_zoomed() and absf(controller.camera.fov - wide) < 1.0,
+		check(controller.phone_zoomed() and controller.camera.fov < controller.wanted_base_fov() - 10.0
+				and absf(controller.camera.fov - controller.phone_fit_fov()) < 1.0,
 				"the view zooms in on the phone in the hand so it can be read (Caleb's pick)")
+		check(_phone_share(controller) > 0.3 and _phone_share(controller) <= controller.phone_zoom + 0.02,
+				"the phone stands a good share of the view's height, all of it in frame")
+		# Wide or narrow, the field of view setting ends at the same phone.
+		var share := _phone_share(controller)
+		controller.base_fov = 110.0
+		for i in 40:
+			await frames(1)
+		check(absf(_phone_share(controller) - share) < 0.05, "a wide field of view zooms just as far in on the phone")
+		controller.base_fov = 80.0
 		controller.phone_out = false
 		controller.input_blocked = false
 		for i in 40:
@@ -6423,6 +6436,19 @@ func _test_phone_view() -> void:
 	GameSettings.reset()
 	phone.queue_free()
 	await frames(1)
+
+
+## How much of the view's height the phone in the hand fills, from its corners.
+func _phone_share(controller: PlayerController) -> float:
+	var face := controller.phone_panel() as VisualInstance3D
+	var box := face.get_aabb()
+	var low := INF
+	var high := -INF
+	for i in 8:
+		var at := controller.camera.unproject_position(face.global_transform * box.get_endpoint(i))
+		low = minf(low, at.y)
+		high = maxf(high, at.y)
+	return (high - low) / controller.camera.get_viewport().get_visible_rect().size.y
 
 
 ## The home screen, its icons and badges, going back, and the phone held up
