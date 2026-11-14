@@ -57,6 +57,9 @@ var input_blocked := false
 ## everyone else sees (`ActorCommand.phone`), and the weapon is put away in
 ## the view until the phone is.
 var phone_out := false
+## Crouched by the crouch key: a toggle, sent as the held `ActorCommand.crouch`.
+## Sprinting, jumping or getting on a vehicle stands you back up.
+var crouch_toggled := false
 ## Reading the phone in third person (Caleb's call, like the riding view: an
 ## exception to the camera never moving on its own, made by opening the
 ## phone): the camera eases in beside the head and looks square onto the
@@ -639,8 +642,29 @@ func toggle_stance_control() -> void:
 	actor.notice.emit("Melee side: %s" % STANCE_CONTROL_NAMES[stance_control])
 
 
+## The crouch key (C), after the move, sprint and jump keys are in `cmd`:
+## pressed while sprinting forward it is a slide (`ActorCommand.slide`);
+## otherwise it toggles the crouch. In the air with a flight rig it only
+## coasts the jets down (`ActorCommand.descend`). A sprint or a jump stands
+## you up, and nobody rides crouched.
+func crouch_key(pressed: bool) -> void:
+	var cmd := actor.cmd
+	var on_floor := actor.is_on_floor()
+	if pressed and cmd.sprint and cmd.move.y > 0.0 and on_floor:
+		cmd.slide = true
+		crouch_toggled = false
+	elif pressed and (on_floor or not actor.flight.enabled):
+		crouch_toggled = not crouch_toggled
+	elif (cmd.sprint_pressed and on_floor) or (cmd.jump_pressed and on_floor):
+		crouch_toggled = false
+	if actor.vehicle != null:
+		crouch_toggled = false
+	cmd.crouch = crouch_toggled
+
+
 func _physics_process(delta: float) -> void:
 	if actor == null or not is_instance_valid(actor) or actor.is_dead:
+		crouch_toggled = false
 		return
 	var cmd := actor.cmd
 	cmd.clear_one_shots()
@@ -677,8 +701,8 @@ func _physics_process(delta: float) -> void:
 	cmd.jump = Input.is_action_pressed("jump")
 	cmd.jump_pressed = Input.is_action_just_pressed("jump")
 	cmd.dash = Input.is_action_just_pressed("dash")
-	cmd.slide = Input.is_action_just_pressed("slide")
-	cmd.descend = Input.is_action_pressed("slide")
+	cmd.descend = Input.is_action_pressed("crouch")
+	crouch_key(Input.is_action_just_pressed("crouch"))
 	cmd.free_look = Input.is_action_pressed("free_look")
 	if cmd.dash and actor.stamina >= actor.dash_stamina:
 		Sfx.play("dash", null, -6.0)

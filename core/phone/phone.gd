@@ -86,7 +86,8 @@ const CONTROLS := [
 		["Sprint", "Hold {sprint}"],
 		["Jump", "{jump}"],
 		["Dash", "{dash}"],
-		["Slide (while sprinting)", "{slide}"],
+		["Crouch or stand up (slower, quieter, steadier aim)", "{crouch}"],
+		["Slide (while sprinting)", "{crouch}"],
 		["First or third person", "{toggle_view}"],
 	]],
 	["FLYING: EVERY RIG", [
@@ -97,7 +98,7 @@ const CONTROLS := [
 		["Climb (in the air)", "Hold {jump}"],
 		["Hover (in the air)", "Hold {alt_fire}"],
 		["Cruise while hovering", "{move_forward} {move_left} {move_back} {move_right}"],
-		["Coast down with the jets idle to cool", "Hold {slide} while hovering"],
+		["Coast down with the jets idle to cool", "Hold {crouch} while hovering"],
 		["Boost head first, prone (Mk2)", "{sprint} in the air, hold to keep going"],
 	]],
 	["FLYING: THRUSTER BOOTS", [

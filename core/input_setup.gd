@@ -10,7 +10,7 @@ const KEY_ACTIONS := {
 	"jump": KEY_SPACE,
 	"sprint": KEY_SHIFT,
 	"dash": KEY_ALT,
-	"slide": KEY_C,
+	"crouch": KEY_C,
 	"interact": KEY_F,
 	"reload": KEY_R,
 	"heal": KEY_H,

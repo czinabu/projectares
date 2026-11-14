@@ -491,13 +491,13 @@ static func _check_carry(t: Node, tag: String, player: Actor, skin: Node) -> voi
 	skin._aim_left = 0.0
 
 	player.slide_left = 0.5
-	player.crouch = 1.0
+	player.slide_low = 1.0
 	player.velocity = player.global_basis * Vector3(0, 0, -player.slide_speed)
 	step.call(1.0)
 	t.check(pose.carry_wanted and pose.carry > 0.99 and pose.sprint < 0.05,
 			tag + "a slide carries the gun at a low ready")
 	player.slide_left = 0.0
-	player.crouch = 0.0
+	player.slide_low = 0.0
 
 	if pistol != null:
 		var was_sprint := pose.sprint
@@ -650,7 +650,7 @@ static func _check_legs(t: Node, tag: String, player: Actor, skin: Node, skeleto
 
 	# A slide bends the model: hips down, lead leg out in front.
 	player.slide_left = 0.5
-	player.crouch = 1.0
+	player.slide_low = 1.0
 	player.velocity = player.global_basis * Vector3(0, 0, -player.slide_speed)
 	skin._process(1.0)
 	t.check(skin._current in skin.STANDS, tag + "a sliding model stops running its legs")
@@ -670,7 +670,37 @@ static func _check_legs(t: Node, tag: String, player: Actor, skin: Node, skeleto
 			skeleton.set_bone_pose_position(bone, saved_slide[bone][0])
 			skeleton.set_bone_pose_rotation(bone, saved_slide[bone][1])
 	player.slide_left = 0.0
-	player.crouch = 0.0
+	player.slide_low = 0.0
+
+	# A crouch sinks the model onto bent knees, feet still on the ground, the
+	# head down about as far as the eyes go (the same body in both views).
+	player.velocity = player.global_basis * Vector3(0, 0, -player.crouch_speed)
+	skin._process(1.0)
+	t.check(skin._current not in skin.STANDS, tag + "a crouched walk still walks its legs")
+	if skeleton and loco._lead.size() == 3 and skeleton.find_bone("Head") >= 0:
+		var saved_crouch := {}
+		for bone in skeleton.get_bone_count():
+			saved_crouch[bone] = [skeleton.get_bone_pose_position(bone), skeleton.get_bone_pose_rotation(bone)]
+		var to_actor := player.global_transform.affine_inverse() * skeleton.global_transform
+		var head := skeleton.find_bone("Head")
+		var head_before := (to_actor * skeleton.get_bone_global_pose(head).origin).y
+		var low_foot := func() -> float:
+			return minf((to_actor * skeleton.get_bone_global_pose(loco._lead[2]).origin).y,
+					(to_actor * skeleton.get_bone_global_pose(loco._trail[2]).origin).y)
+		var feet_before: float = low_foot.call()
+		player.crouch = 1.0
+		loco._crouch_pose()
+		var head_after := (to_actor * skeleton.get_bone_global_pose(head).origin).y
+		var feet_after: float = low_foot.call()
+		t.check(absf(head_before - head_after - player.crouch_eye_drop) < 0.12,
+				tag + "a crouched model's head drops with the eyes (%.2f m)" % (head_before - head_after))
+		# The heel comes up a little (onto the ball of the foot); it never sinks.
+		t.check(feet_after > feet_before - 0.03 and feet_after < feet_before + 0.1,
+				tag + "a crouched model keeps its planted foot on the ground (%.2f m)" % (feet_after - feet_before))
+		player.crouch = 0.0
+		for bone: int in saved_crouch:
+			skeleton.set_bone_pose_position(bone, saved_crouch[bone][0])
+			skeleton.set_bone_pose_rotation(bone, saved_crouch[bone][1])
 
 	# Standing still: a relaxed stand, not a gun pointed at nothing.
 	player.velocity = Vector3.ZERO
