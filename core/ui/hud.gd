@@ -1156,18 +1156,22 @@ void fragment() {
 	## the world still shows through (`tp_backing`; it is a hologram, Caleb's
 	## call). The device, the arm and its pose are the same as in first
 	## person; only where the light lands differs.
-	var tp_behind := 0.5
+	var tp_behind := 0.25
 	var tp_screen := 0.34
 	var tp_lift := 0.06
 	var tp_backing := 0.6
 	## How far, in metres at the head, the card keeps clear of the head and
 	## helmet from the camera's view.
 	var head_clearance := 0.05
+	## Third person: the share of the card's width, at its right edge (only
+	## frame and margin there, never text), that may sit behind the head, so
+	## the card stays close to the body (Caleb's feedback).
+	var tp_tuck := 0.08
 	## Third person: how far over the watch, as the camera sees it (a share
 	## of the view's height), the card's lower edge stays, so the light
 	## opens upwards from the wrist into the card rather than slanting down
 	## to it (Caleb's feedback).
-	var tp_over_wrist := 0.1
+	var tp_over_wrist := 0.05
 	## The glow on the arm while the card is up: how bright, and how far it
 	## reaches.
 	var glow_energy := 0.7
@@ -1445,8 +1449,6 @@ void fragment() {
 		var watch_y := watch.y * card.z / watch.z
 		var view_tall := -2.0 * card.z * tan(deg_to_rad(cam.fov) * 0.5)
 		var short := watch_y + tp_over_wrist * view_tall - (card.y - half_height)
-		if short <= 0.0:
-			return spot
 		return cam.global_transform * (card + Vector3(0.0, short, 0.0))
 
 	## Keeps a card `half_width` wide whole on screen: slid back right if its
@@ -1478,7 +1480,7 @@ void fragment() {
 		# The head's side and its edge, brought to the card's depth.
 		var at_depth := card.z / head.z
 		var head_left := head.x * at_depth - head_clearance * at_depth
-		var overlap := card.x + half_width - head_left
+		var overlap := card.x + half_width * (1.0 - tp_tuck) - head_left
 		if overlap <= 0.0:
 			return spot
 		return cam.global_transform * (card - Vector3(overlap, 0.0, 0.0))

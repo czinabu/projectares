@@ -1029,9 +1029,11 @@ without Caleb, and update the gap list when a PR closes a row.
   body passes in front of it and it reads as coming from the watch, beside
   the head clear of the crosshair, a third of the view tall, backed but still see-through (a hologram, Caleb's call)
   (`_tp_spot`, `_tp_size`, `tp_backing`); the arm and its
-  pose stay the same, only where the light lands differs. The card's lower edge
-  stays over the watch as the camera sees it (`_over_wrist`,
-  `tp_over_wrist`), so the light rises from the wrist up into the card,
+  pose stay the same, only where the light lands differs. It stays close to the body
+  (Caleb's feedback): its lower edge sits just over the watch as the camera
+  sees it (`_over_wrist`, `tp_over_wrist`), level with the shoulder, and
+  only its bare right margin may tuck behind the head (`tp_tuck`), never
+  its text, so the light rises from the wrist up into the card,
   with bands running out along it (`Wrist.BEAM_SHADER`, `_draw_beam`),
   never slanting down into it (Caleb's feedback). Vitals go on the card only where the visor cannot
   show them (no helmet, or third person). The watch works in the home base
