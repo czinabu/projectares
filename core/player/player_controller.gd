@@ -19,6 +19,8 @@ signal drop_requested(index: int)
 signal toy_throw_requested(item_id: String)
 ## The player picked a weapon in their pack on the watch: materialize it.
 signal summon_requested(item_id: String)
+## The watch's store: put weapon `item_id`, the one in hand, back into the pack.
+signal store_requested(item_id: String)
 ## The player pinged where they are looking from the watch.
 signal ping_requested
 ## The watch's portal icon was clicked: open a squad portal to `destination`.
@@ -394,14 +396,19 @@ func watch_takes_fire() -> bool:
 			or is_watch_on("ping") or is_watch_on("portal")
 
 
-## Draws the weapon picked on the carousel if it is worn, or asks the world
-## to materialize it out of the pack, and lowers the wrist.
+## Draws the weapon picked on the carousel if it is worn, stores it back
+## into the pack if it is the one in hand, or asks the world to materialize
+## it out of the pack, and lowers the wrist.
 func take_picked_weapon() -> void:
 	var entries := watch_weapons()
 	if entries.is_empty():
 		return
 	var entry := entries[clampi(weapon_pick, 0, entries.size() - 1)]
-	if int(entry.index) >= 0:
+	if int(entry.index) >= 0 and int(entry.index) == actor.active_weapon_index \
+			and actor.get_active_weapon() != null and Loadout.summonable(entry.id):
+		# The one in hand: put it back into the pack (the summon in reverse).
+		store_requested.emit(entry.id)
+	elif int(entry.index) >= 0:
 		_pending_switch = int(entry.index)
 	else:
 		summon_requested.emit(entry.id)
