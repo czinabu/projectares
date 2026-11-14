@@ -1772,13 +1772,18 @@ func _gait_shots(out_dir: String) -> void:
 		["diagonal", Vector3(-4.2, 0, -4.2), 0.0],
 		["backpedal", Vector3(0, 0, player.walk_speed), 0.0],
 		["slide", Vector3(0, 0, -player.slide_speed), 1.0],
+		["crouch", Vector3.ZERO, -1.0],
+		["crouch_walk", Vector3(0, 0, -player.crouch_speed), -1.0],
 	]
 	for view: String in ["side", "front"]:
 		var sheet := Image.create(6 * 320, moves.size() * 360, false, Image.FORMAT_RGBA8)
 		for row in moves.size():
 			var move: Array = moves[row]
 			player.slide_left = 0.5 if move[2] > 0.0 else 0.0
-			player.crouch = move[2]
+			player.slide_low = maxf(move[2], 0.0)
+			# A negative weight is the crouch.
+			player.crouch = 1.0 if move[2] < 0.0 else 0.0
+			player.crouched = move[2] < 0.0
 			player.velocity = player.global_basis * move[1]
 			for i in 6:
 				for k in 5:
@@ -2576,6 +2581,8 @@ func _carry_shots(out_dir: String) -> void:
 		["strafe", Vector3(-p.walk_speed, 0, 0), false],
 		["slide", Vector3(0, 0, -p.slide_speed), false],
 		["shoot_run", Vector3(0, 0, -p.walk_speed), true],
+		["crouch_walk", Vector3(0, 0, -p.crouch_speed), false],
+		["crouch_aim", Vector3.ZERO, true],
 	]
 	var size := Vector2i(320, 360)
 	DirAccess.make_dir_recursive_absolute(out_dir.path_join("carry"))
@@ -2591,7 +2598,12 @@ func _carry_shots(out_dir: String) -> void:
 			var hold := func() -> void:
 				p.velocity = p.global_basis * (move[1] as Vector3)
 				p.slide_left = 0.5 if sliding else 0.0
-				p.crouch = 1.0 if sliding else 0.0
+				p.slide_low = 1.0 if sliding else 0.0
+				var low: bool = (move[0] as String).begins_with("crouch")
+				p.cmd.crouch = low
+				p.crouched = low
+				p.crouch = 1.0 if low else 0.0
+				p.cmd.secondary = move[0] == "crouch_aim"
 				p.cmd.primary = move[2]
 			for col in 5:
 				var first := col == 4

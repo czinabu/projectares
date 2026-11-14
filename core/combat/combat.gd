@@ -70,12 +70,14 @@ static func noise(source: Actor, at: Vector3, radius: float) -> void:
 
 
 ## True when a hit from `trace` landed on an actor's head: within
-## `Actor.HEAD_SIZE` of the top of the body, where the shooter saw it.
+## `Actor.HEAD_SIZE` of the top of the body (lower while crouched), where
+## the shooter saw it.
 static func is_headshot(hit: Dictionary) -> bool:
 	if hit.is_empty() or not hit.collider is Actor:
 		return false
-	var feet: Vector3 = hit.get("feet", (hit.collider as Actor).global_position)
-	return hit.position.y >= feet.y + Actor.BODY_HEIGHT - Actor.HEAD_SIZE
+	var target := hit.collider as Actor
+	var feet: Vector3 = hit.get("feet", target.global_position)
+	return hit.position.y >= feet.y + target.body_height() - Actor.HEAD_SIZE
 
 
 ## Where `attacker` saw the other actors, as {Actor: Vector3}. Attacks look up
@@ -123,7 +125,7 @@ static func trace(shooter: Actor, from: Vector3, to: Vector3) -> Dictionary:
 		if other == null or other == shooter or other.is_dead or not Raid.together(shooter, other):
 			continue
 		var at: Vector3 = seen.get(other, other.global_position)
-		var entry := capsule_entry(from, to, at)
+		var entry := capsule_entry(from, to, at, other.body_height())
 		if entry.is_empty():
 			continue
 		var dist := from.distance_to(entry[0])
@@ -133,11 +135,12 @@ static func trace(shooter: Actor, from: Vector3, to: Vector3) -> Dictionary:
 	return result
 
 
-## Where the segment `from`-`to` enters an actor body standing at `feet`, as
-## [point], or [] if it misses.
-static func capsule_entry(from: Vector3, to: Vector3, feet: Vector3) -> Array:
-	var half := Actor.BODY_HEIGHT * 0.5 - Actor.BODY_RADIUS
-	var center := feet + Vector3(0.0, Actor.BODY_HEIGHT * 0.5, 0.0)
+## Where the segment `from`-`to` enters an actor body standing at `feet`,
+## `height` tall (`Actor.body_height`: lower while crouched), as [point], or
+## [] if it misses.
+static func capsule_entry(from: Vector3, to: Vector3, feet: Vector3, height := Actor.BODY_HEIGHT) -> Array:
+	var half := height * 0.5 - Actor.BODY_RADIUS
+	var center := feet + Vector3(0.0, height * 0.5, 0.0)
 	var closest := Geometry3D.get_closest_points_between_segments(from, to,
 			center - Vector3(0.0, half, 0.0), center + Vector3(0.0, half, 0.0))
 	if closest[0].distance_to(closest[1]) > Actor.BODY_RADIUS:

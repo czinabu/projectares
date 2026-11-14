@@ -259,9 +259,22 @@ without Caleb, and update the gap list when a PR closes a row.
   aim. Remote players work the same way from their replicated velocity.
   Past a relaxed cadence a run lengthens its stride (feet stretched about
   their average spot, legs solved to reach them) rather than only spinning
-  faster: that is the sprint. A slide (`Actor.slide_left`, `Actor.crouch`)
+  faster: that is the sprint. A slide (`Actor.slide_left`, `Actor.slide_low`)
   is simulated from `ActorCommand.slide` like a dash, so it predicts and
-  replicates; the skin bends the model into a slide pose from `crouch`.
+  replicates; the skin bends the model into a slide pose from `slide_low`.
+  The crouch key (C) slides from a sprint and otherwise toggles the crouch
+  (`PlayerController.crouch_key`), sent as the held `ActorCommand.crouch` so
+  it predicts and every view sees it. `Actor.crouched` follows it but stays
+  down while `room_to_stand` finds no headroom (a slide that ends under
+  something low ends crouched); crouched you walk at `crouch_speed`, the
+  eyes drop `crouch_eye_drop`, guns spread less (`aim_steadiness`) and bots
+  sense you behind them only closer in (`crouch_sense_mult`). The body is
+  `Actor.body_height()` tall (`CROUCH_HEIGHT` crouched or sliding): the
+  collision capsule, `Combat.capsule_entry`, headshots and anything aiming
+  at a chest use it, so low cover hides a crouched body. The skin sinks the
+  model onto bent knees from `Actor.crouch` (`Locomotion._crouch_pose`, the
+  landing squat's `_sink`) under the stand or walk, so gun carries, ADS and
+  melee holds come down with the chest, in both views.
   Standing still is a relaxed stand (`idle`); a gun is held low (`idle_gun`)
   over the relaxed stand's legs and raised (`aim_gun`) only while shooting
   or aiming and briefly after.

@@ -368,7 +368,7 @@ func _find_target() -> Actor:
 		if other == null or other == actor or other.is_dead or other.faction == actor.faction:
 			continue
 		# Distance first: it is the cheapest way to rule most of a big field out.
-		var chest := other.global_position + Vector3(0, 1.1, 0)
+		var chest := other.global_position + Vector3(0, other.body_height() * 0.6, 0)
 		var dist := eye.distance_to(chest)
 		if dist >= best_dist:
 			continue
@@ -380,7 +380,9 @@ func _find_target() -> Actor:
 		if world and not world.can_damage(actor, other, null):
 			continue
 		var in_view := forward.angle_to((chest - eye).normalized()) < deg_to_rad(fov_deg) * 0.5
-		if not in_view and dist > close_sense_range and other != target:
+		# Someone crouched creeps up quieter: sensed only closer in.
+		var sense := close_sense_range * (other.crouch_sense_mult if other.crouched else 1.0)
+		if not in_view and dist > sense and other != target:
 			continue
 		var query := PhysicsRayQueryParameters3D.create(eye, chest, Actor.LAYER_WORLD)
 		if not get_world_3d().direct_space_state.intersect_ray(query).is_empty():

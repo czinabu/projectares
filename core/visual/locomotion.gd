@@ -13,8 +13,10 @@ extends Node
 ##
 ## Faster than a relaxed run, the stride lengthens instead of the legs only
 ## spinning quicker: the leg swing is stretched about its average pose and the
-## body leans in, which is the sprint. A slide (`Actor.crouch`) bends the model
-## into a slide pose over whatever clip is playing.
+## body leans in, which is the sprint. A slide (`Actor.slide_low`) bends the model
+## into a slide pose over whatever clip is playing, and a crouch
+## (`Actor.crouch`) sinks it onto bent knees the same way a landing squat
+## does, over the stand or the walk, feet where the clip puts them.
 ##
 ## Standing still with a gun held low, the legs and hips take their pose from
 ## a relaxed stand (`stand_legs`) instead of the gun clip's own wide stance,
@@ -75,6 +77,14 @@ var stride_rate := 3.0
 var squat_drop := 0.3
 var squat_lean := 0.22
 var squat := 0.0
+## The crouch (`Actor.crouch`): how far the hips drop (m) at a full crouch,
+## about the eyes' drop (`Actor.crouch_eye_drop`), and how far the body tips
+## forward over the knees (radians).
+var crouch_drop := 0.38
+var crouch_lean := 0.12
+## Crouched, the walk's feet stay this much as far from their average spot
+## (a short, careful step), so the bent legs reach them without splaying.
+var crouch_step := 0.55
 var slide_drop := 0.5
 var slide_lean := 0.18
 var slide_lead_thigh := Vector3(0.05, -0.45, -0.9)
@@ -272,6 +282,10 @@ func setup(def: Dictionary, player: AnimationPlayer, anims: Dictionary) -> void:
 	slide.name = "SlidePose"
 	slide.run = _slide_pose
 	skeleton.add_child(slide)
+	var low := WeaponArm.Hook.new()
+	low.name = "CrouchPose"
+	low.run = _crouch_pose
+	skeleton.add_child(low)
 	var land := WeaponArm.Hook.new()
 	land.name = "SquatPose"
 	land.run = _squat_pose
@@ -534,7 +548,7 @@ func _stretch_stride() -> void:
 ## back, the lead leg reaches forward along the slide, the trailing leg folds
 ## under, and each foot is put back on the end of its shin.
 func _slide_pose() -> void:
-	var weight := actor.crouch if actor else 0.0
+	var weight := actor.slide_low if actor else 0.0
 	if weight <= 0.001:
 		return
 	var to_skeleton := skeleton.global_basis.orthonormalized().inverse() * actor.global_basis.orthonormalized()
@@ -558,10 +572,42 @@ func _slide_pose() -> void:
 		skeleton.set_bone_global_pose(leg[2], foot.interpolate_with(on_shin, weight))
 
 
-## Sinks the body onto bent knees, feet planted where they were: the hips
-## drop and tip forward and each leg is bent to still reach its foot.
+## A landing squat: see `_sink`.
 func _squat_pose() -> void:
-	var weight := clampf(squat, 0.0, 1.0)
+	_sink(squat_drop, squat_lean, clampf(squat, 0.0, 1.0))
+
+
+## The crouch, over the stand or the walk: see `_sink`. Not while sliding,
+## which has its own pose.
+func _crouch_pose() -> void:
+	if actor == null or actor.slide_low > 0.001:
+		return
+	var weight := smoothstep(0.0, 1.0, actor.crouch)
+	if weight <= 0.001:
+		return
+	if _means.has(current_anim):
+		# Shorter steps: each foot comes in toward its average spot.
+		# Along the ground only: a foot's height stays the clip's.
+		var means: Dictionary = _means[current_anim]
+		var keep := lerpf(1.0, crouch_step, weight)
+		var up := (skeleton.global_basis.orthonormalized().inverse() * actor.global_basis.orthonormalized() * Vector3.UP).normalized()
+		for bone in _feet:
+			if not means.has(bone):
+				continue
+			var parent := skeleton.get_bone_parent(bone)
+			var local_up := up if parent < 0 else (skeleton.get_bone_global_pose(parent).basis.inverse() * up).normalized()
+			var mean: Vector3 = means[bone]
+			var off := skeleton.get_bone_pose_position(bone) - mean
+			var lift := local_up * local_up.dot(off)
+			skeleton.set_bone_pose_position(bone, mean + (off - lift) * keep + lift)
+	_sink(crouch_drop, crouch_lean, weight)
+
+
+## Sinks the body onto bent knees, feet planted where they were: the hips
+## drop `drop` meters and tip forward `lean` radians at a full `weight`, and
+## each leg is bent to still reach its foot. Everything above the hips (the
+## arms, the gun and its sights, a held blade) comes down with them.
+func _sink(drop_m: float, lean: float, weight: float) -> void:
 	if weight <= 0.001 or actor == null or _lead.size() != 3 or _trail.size() != 3:
 		return
 	var to_skeleton := skeleton.global_basis.orthonormalized().inverse() * actor.global_basis.orthonormalized()
@@ -570,8 +616,8 @@ func _squat_pose() -> void:
 	var meter := 1.0 / skeleton.global_basis.get_scale().y
 	var pivot := skeleton.global_transform.affine_inverse() * actor.global_position
 	var feet: Array[Transform3D] = [skeleton.get_bone_global_pose(_lead[2]), skeleton.get_bone_global_pose(_trail[2])]
-	var drop := Transform3D(Basis.IDENTITY, pivot - up * squat_drop * meter * weight) \
-			* Transform3D(Basis(right, -squat_lean * weight), Vector3.ZERO) * Transform3D(Basis.IDENTITY, -pivot)
+	var drop := Transform3D(Basis.IDENTITY, pivot - up * drop_m * meter * weight) \
+			* Transform3D(Basis(right, -lean * weight), Vector3.ZERO) * Transform3D(Basis.IDENTITY, -pivot)
 	for bone in _roots:
 		skeleton.set_bone_global_pose(bone, drop * skeleton.get_bone_global_pose(bone))
 	var legs := [_lead, _trail]

@@ -485,7 +485,12 @@ func start_reload() -> void:
 
 
 func current_spread_deg() -> float:
-	return (spread_deg + _bloom + _air_spread()) * (ads_spread_mult if _aiming else 1.0)
+	return (spread_deg + _bloom + _air_spread()) * (ads_spread_mult if _aiming else 1.0) * _steadiness()
+
+
+## Crouched on the ground the aim is steadier (`Actor.aim_steadiness`).
+func _steadiness() -> float:
+	return actor.aim_steadiness() if actor else 1.0
 
 
 ## Extra spread from shooting in the air (`Actor.air_aim`).
@@ -517,7 +522,7 @@ func _fire() -> void:
 		visual.rotation.x = kick.y
 	var from := actor.get_eye_position()
 	var aim := actor.get_aim_dir()
-	var spread := deg_to_rad(spread_deg + _bloom + _air_spread()) * (ads_spread_mult if _aiming else 1.0)
+	var spread := deg_to_rad(current_spread_deg())
 	var air_bloom := lerpf(1.0, actor.air_bloom_mult, actor.air_aim())
 	_bloom = minf(max_bloom * air_bloom, _bloom + bloom_per_shot * air_bloom)
 	var to := from + aim * max_range
@@ -649,7 +654,7 @@ static func heat_target(shooter: Actor, dir: Vector3, cone_deg: float, reach: fl
 			continue
 		if world and not world.can_damage(shooter, other, DamageInfo.make(0.0, shooter, "plasma")):
 			continue
-		var chest := other.global_position + Vector3(0.0, Actor.BODY_HEIGHT * 0.6, 0.0)
+		var chest := other.global_position + Vector3(0.0, other.body_height() * 0.6, 0.0)
 		var to := chest - eye
 		if to.length() > reach:
 			continue
@@ -679,7 +684,7 @@ static func splash(source: Actor, at: Vector3, radius: float, amount: float, kin
 			continue
 		if source != null and is_instance_valid(source) and not Raid.together(source, other):
 			continue
-		var chest := other.global_position + Vector3(0.0, Actor.BODY_HEIGHT * 0.5, 0.0)
+		var chest := other.global_position + Vector3(0.0, other.body_height() * 0.5, 0.0)
 		var dist := at.distance_to(chest)
 		if dist > radius:
 			continue
@@ -734,7 +739,7 @@ class Round extends Node3D:
 			return
 		_age += delta
 		if target != null and is_instance_valid(target) and not target.is_dead:
-			var chest := target.global_position + Vector3(0.0, Actor.BODY_HEIGHT * 0.6, 0.0)
+			var chest := target.global_position + Vector3(0.0, target.body_height() * 0.6, 0.0)
 			var want := (chest - global_position).normalized() * velocity.length()
 			velocity = velocity.slerp(want, clampf(turn_rate * delta, 0.0, 1.0)) if velocity.length() > 0.01 else want
 		velocity.y -= gravity * delta
