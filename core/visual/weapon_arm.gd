@@ -145,6 +145,12 @@ var ads_fore := Vector3(0.0, -0.07, -0.3)
 var ads_off_elbow := Vector3(-0.6, 0.6, -0.1)
 var _reach := Vector3.ZERO
 var _turn := Vector2.ZERO
+## How far a gun is in its carry on the move (`ActionPose.carry`), where
+## the carry puts the gun hand's wrist this frame and how it turns the gun
+## (both in the world, worked out from the chest once the body is posed).
+var _gun_carry := 0.0
+var _carry_wrist := Vector3.ZERO
+var _carry_basis := Basis.IDENTITY
 ## The actor's shared pose: what both views show the weapon hand doing.
 var pose: ActionPose
 
@@ -390,8 +396,11 @@ func _process(delta: float) -> void:
 	if _ads <= 0.0:
 		_ads_fix = Vector3.ZERO
 	var raised := 0.0
+	_gun_carry = 0.0
 	if gun != null and gun.visual != null and gun.visual.visible and not actor.is_dead and override_weight <= 0.001:
 		raised = (1.0 - shared.low) * (1.0 - shared.reload)
+		_gun_carry = shared.carry if _weight <= 0.001 else 0.0
+		raised = lerpf(raised, shared.carry_support(gun), _gun_carry)
 	_support = maxf(_ads, raised)
 	_ads_turn = shared.ads_stance(gun) * _ads if _ads > 0.0 else Vector2.ZERO
 
@@ -462,8 +471,12 @@ func _face_watch() -> void:
 ## animation holds it by the shared reload offset; aiming down sights, move
 ## it so the gun's sight comes up onto the line of the eyes.
 func _reach_gun() -> void:
+	if _gun_carry > 0.0 and _wrist >= 0 and _weight <= 0.001:
+		_reach_carry()
 	if _ads > 0.0 and _wrist >= 0 and _weight <= 0.001:
 		_reach_sight()
+		return
+	if _gun_carry > 0.0 and _wrist >= 0 and _weight <= 0.001:
 		return
 	if _gun_weight <= 0.0 or _wrist < 0 or override_weight > 0.001 or _weight > 0.001:
 		return
@@ -471,6 +484,45 @@ func _reach_gun() -> void:
 	var aim := actor.global_basis.orthonormalized() * Basis(Vector3.RIGHT, actor.cmd.pitch)
 	_target.global_position = wrist + aim * pose.gun_offset().origin
 	reach_ik.influence = 1.0
+
+
+## Carrying a gun on the move: the wrist goes where the carry puts it
+## (`ActionPose.carry_point`, from the chest), eased in by `_gun_carry`, and
+## the gun's turn for this frame is worked out for `hold_weapon`.
+func _reach_carry() -> void:
+	var gun := actor.get_active_weapon() as Gun
+	if gun == null:
+		return
+	var frame := carry_frame()
+	var wrist := skeleton.global_transform * skeleton.get_bone_global_pose(_wrist).origin
+	_carry_wrist = wrist.lerp(frame * _pose().carry_point(gun), _gun_carry)
+	_carry_basis = (frame.basis * ActionPose.turn_basis(_pose().carry_turn(gun))).orthonormalized()
+	_target.global_position = _carry_wrist
+	reach_ik.influence = 1.0
+
+
+## The frame a carried gun is placed in: the actor's, riding the chest. Its
+## origin moves with the chest (the run's bounce, a sprint's lean, a slide's
+## drop) and it tips forward and back with `ActionPose.carry_body_follow` of
+## the chest's lean, so a point given in the actor's frame at chest height
+## stays at the same place on the body. The chest's twist with each stride is
+## left out: a gun held in both hands stays steady on the line of the run.
+func carry_frame() -> Transform3D:
+	var body := actor.global_transform.orthonormalized()
+	if _spine.is_empty():
+		return body
+	var chest := _spine[_spine.size() - 1]
+	var to_world := skeleton.global_transform
+	var now := skeleton.get_bone_global_pose(chest)
+	var rest := skeleton.get_bone_global_rest(chest)
+	var to_actor := body.basis.inverse() * to_world.basis.orthonormalized()
+	var up_skeleton := (to_actor.inverse() * Vector3.UP).normalized()
+	var bone_up := rest.basis.orthonormalized().inverse() * up_skeleton
+	var up := (to_actor * (now.basis.orthonormalized() * bone_up)).normalized()
+	var lean := atan2(-up.z, maxf(up.y, 0.05))
+	var basis := body.basis * Basis(Vector3.RIGHT, -lean * _pose().carry_body_follow)
+	var chest_rest := body.affine_inverse() * (to_world * rest.origin)
+	return Transform3D(basis, to_world * now.origin - basis * chest_rest)
 
 
 ## Aiming down sights: where the hand would put the sight this frame (from
@@ -527,7 +579,9 @@ func _reach_sight() -> void:
 			_relief_now -= back
 			reach -= ahead * back
 	_pose().relief_now = _relief_now
-	_target.global_position = wrist + (reach - wrist) * _ads
+	# Out of a carry the gun comes up from where it was carried.
+	var from := _carry_wrist if _gun_carry > 0.0 else wrist
+	_target.global_position = from + (reach - from) * _ads
 	reach_ik.influence = 1.0
 
 
@@ -574,6 +628,7 @@ func _place_weapon() -> void:
 	if _off_weight <= 0.0:
 		_off_fix = Vector3.ZERO
 	_bend_to_grip()
+	_turn_to_carry()
 	if _support > 0.0:
 		_steady_gun()
 	if _grip_weight <= 0.0:
@@ -724,6 +779,25 @@ func _support_turn(gun: Gun) -> Variant:
 	return (wanted * own.inverse()).orthonormalized()
 
 
+## Carrying, the wrist turns with the carried gun, so the fist stays round
+## its grip however the gun is carried (low, across the chest, tucked).
+func _turn_to_carry() -> void:
+	if _gun_carry <= 0.0 or _aim_wrist == null or _wrist < 0:
+		return
+	var gun := actor.get_active_weapon() as Gun
+	if gun == null or gun.visual == null:
+		return
+	var weight := _gun_carry * (1.0 - _ads)
+	if weight <= 0.0:
+		return
+	var wanted := _turned_basis(_carry_basis, _held_wrist(gun))
+	var pose := skeleton.get_bone_global_pose(_wrist)
+	var now := pose.basis.orthonormalized()
+	pose.basis = Basis(now.get_rotation_quaternion().slerp(wanted.get_rotation_quaternion(), weight)) \
+			* Basis.from_scale(pose.basis.get_scale())
+	skeleton.set_bone_global_pose(_wrist, pose)
+
+
 ## Sets `bone` (a wrist) to how it sits in `calibrated` (the aim clip, gun
 ## straight ahead), turned to the current aim, by `weight`: the inverse of
 ## `_follow_turn`.
@@ -741,10 +815,15 @@ func _turn_to_aim(bone: int, calibrated: Basis, weight: float) -> void:
 ## A wrist's turn in the skeleton's space as it sits in `calibrated` (the
 ## aim clip, gun straight ahead), turned to the current aim.
 func _aim_basis(calibrated: Basis) -> Basis:
+	return _turned_basis(actor.global_basis.orthonormalized() * Basis(Vector3.RIGHT, actor.cmd.pitch), calibrated)
+
+
+## A wrist's turn in the skeleton's space as it sits in `calibrated` (the
+## aim clip, gun straight ahead), with the gun turned to `gun_turn` (world).
+func _turned_basis(gun_turn: Basis, calibrated: Basis) -> Basis:
 	var to_world := skeleton.global_basis.orthonormalized()
-	var aimed := actor.global_basis.orthonormalized() * Basis(Vector3.RIGHT, actor.cmd.pitch)
 	var ahead := actor.global_basis.orthonormalized()
-	return (to_world.inverse() * aimed * ahead.inverse() * to_world * calibrated.orthonormalized()).orthonormalized()
+	return (to_world.inverse() * gun_turn * ahead.inverse() * to_world * calibrated.orthonormalized()).orthonormalized()
 
 
 ## How the gun hand's wrist sits holding `gun` aimed straight ahead: the
@@ -828,6 +907,9 @@ func hold_weapon() -> void:
 		var turn := aimed
 		if _aim_wrist != null and pose.low > 0.0:
 			turn = aimed.slerp(_follow_turn(_wrist, _held_wrist(gun)), pose.low)
+		# Carried on the move, it turns the way the carry holds it.
+		if _gun_carry > 0.0:
+			turn = turn.orthonormalized().slerp(_carry_basis, _gun_carry)
 		actor.hand.global_basis = turn * pose.gun_offset().basis
 	elif melee != null and shared and _ready_forearm != null:
 		actor.hand.global_basis = _blade_turn(aimed)

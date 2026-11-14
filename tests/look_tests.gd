@@ -129,6 +129,7 @@ static func run(t: Node) -> void:
 			sword.visual.position = Vector3.ZERO
 			raid.player.active_weapon_index = was_active
 		_check_legs(t, tag, raid.player, skin, skeleton)
+		await _check_carry(t, tag, raid.player, skin)
 		_check_holster(t, tag, raid.player, skin)
 		var dressed := 0
 		var skins := {}
@@ -383,6 +384,139 @@ static func _check_holster(t: Node, tag: String, player: Actor, skin: Node) -> v
 	settle.call()
 
 
+## A gun on the move is carried, not pointed (Caleb's running-with-a-weapon
+## pass): a low ready at a jog, across the chest at a sprint, two hands on a
+## rifle, and straight back up to shoot, aim or reload. Read from velocity
+## and the command alone, so a remote player's gun is carried the same.
+static func _check_carry(t: Node, tag: String, player: Actor, skin: Node) -> void:
+	var rifle_at := -1
+	var pistol: Gun = null
+	for i in player.weapons.size():
+		var g := player.weapons[i] as Gun
+		if g != null and g.is_sidearm:
+			pistol = g
+		elif g != null and rifle_at < 0:
+			rifle_at = i
+	if rifle_at < 0 or skin.arm == null:
+		return
+	var pose := ActionPose.of(player)
+	var was_index := player.active_weapon_index
+	var was_velocity := player.velocity
+	player.set_physics_process(false)
+	player.active_weapon_index = rifle_at
+	var rifle := player.weapons[rifle_at] as Gun
+	var step := func(seconds: float) -> void:
+		var left := seconds
+		while left > 0.0:
+			pose._frame = -1
+			skin._process(minf(left, 0.05))
+			left -= 0.05
+	var muzzle := func() -> Vector3:
+		return player.global_basis.orthonormalized().inverse() * -player.hand.global_basis.z.normalized()
+	skin._aim_left = 0.0
+	player.cmd.primary = false
+	player.velocity = Vector3.ZERO
+	step.call(1.0)
+	t.check(not pose.carry_wanted and pose.carry < 0.01, tag + "standing still the gun is held low, not carried")
+
+	player.velocity = player.global_basis * Vector3(0, 0, -player.walk_speed)
+	step.call(1.0)
+	t.check(pose.carry_wanted and pose.carry > 0.99 and pose.sprint < 0.05,
+			tag + "jogging out of a fight the gun goes to its low ready")
+	t.check(skin._current != "move_gun" and not skin.locomotion.overlay,
+			tag + "a carried gun runs with the plain run, not the run-and-shoot arms")
+	await t.frames(2)
+	var low: Vector3 = muzzle.call()
+	t.check(low.y < -0.1 and low.z < -0.6, tag + "at a low ready the muzzle points down ahead of the feet (%s)" % low)
+	t.check(skin.arm._support > 0.99, tag + "both hands stay on a carried rifle")
+
+	player.velocity = player.global_basis * Vector3(0, 0, -player.sprint_speed)
+	step.call(1.0)
+	t.check(pose.sprint > 0.99, tag + "a sprint takes the gun to its sprint carry")
+	await t.frames(2)
+	var port: Vector3 = muzzle.call()
+	t.check(port.y > 0.3 and port.x < -0.3, tag + "sprinting, a rifle goes across the chest, muzzle up to the off side (%s)" % port)
+
+	player.velocity = player.global_basis * Vector3(-player.walk_speed, 0, 0)
+	step.call(1.0)
+	t.check(pose.carry > 0.99 and pose.sprint < 0.05, tag + "a strafe keeps the low ready, never the sprint carry")
+
+	player.velocity = player.global_basis * Vector3(0, 0, -player.sprint_speed)
+	step.call(1.0)
+	player.cmd.primary = true
+	step.call(0.2)
+	t.check(pose.carry < 0.01 and skin._current == "move_gun",
+			tag + "shooting takes the gun out of its carry within a fifth of a second")
+	player.cmd.primary = false
+	step.call(skin.aim_hold * 0.5)
+	t.check(pose.carry < 0.01, tag + "the gun stays up for a moment after the last shot")
+	step.call(skin.aim_hold + 1.0)
+	t.check(pose.carry > 0.99, tag + "and goes back to its carry once the shooting stops")
+
+	rifle._aiming = true
+	step.call(0.2)
+	t.check(pose.carry < 0.01, tag + "aiming down sights brings a carried gun straight up")
+	rifle._aiming = false
+	skin._aim_left = 0.0
+	step.call(1.0)
+	rifle._reload_left = rifle.reload_time * 0.6
+	step.call(0.2)
+	t.check(pose.carry < 0.01, tag + "a reload on the move brings the gun up to work on it")
+	rifle._reload_left = 0.0
+	skin._aim_left = 0.0
+
+	player.slide_left = 0.5
+	player.crouch = 1.0
+	player.velocity = player.global_basis * Vector3(0, 0, -player.slide_speed)
+	step.call(1.0)
+	t.check(pose.carry_wanted and pose.carry > 0.99 and pose.sprint < 0.05,
+			tag + "a slide carries the gun at a low ready")
+	player.slide_left = 0.0
+	player.crouch = 0.0
+
+	if pistol != null:
+		var was_sprint := pose.sprint
+		pose.sprint = 1.0
+		t.check(pose.carry_support(pistol) < 0.01 and pose.carry_support(rifle) > 0.99,
+				tag + "a sprinting pistol is held in one hand so the other arm pumps; a rifle keeps both")
+		pose.sprint = 0.0
+		t.check(pose.carry_support(pistol) > 0.99, tag + "jogging a pistol is held in both hands")
+		var tucked := ActionPose.turn_basis(pose.carry_port_sidearm_turn) * Vector3.FORWARD
+		t.check(tucked.y < -0.5, tag + "a sprinting pistol is tucked muzzle down")
+		pose.sprint = was_sprint
+
+	# The stride bobs the carried gun, and it lags as the body speeds up.
+	pose.stride_amount = 1.0
+	pose.stride_phase = 0.0
+	var bob_a := pose.carry_bob()
+	pose.stride_phase = 0.25
+	var bob_b := pose.carry_bob()
+	t.check(bob_a.y < 0.0 and absf(bob_b.x) > 0.005 and bob_a.length() < 0.05,
+			tag + "a carried gun drops at each footfall and swings side to side, a little")
+	pose.stride_amount = 0.0
+	t.check(pose.carry_bob() == Vector3.ZERO, tag + "standing still, a gun does not bob")
+	player.velocity = Vector3.ZERO
+	pose._update_sway(1.0 / 60.0)
+	pose.sway = Vector3.ZERO
+	pose._sway_speed = Vector3.ZERO
+	player.velocity = player.global_basis * Vector3(0, 0, -player.sprint_speed)
+	var deepest := 0.0
+	for i in 6:
+		pose._update_sway(1.0 / 60.0)
+		deepest = maxf(deepest, pose.sway.z)
+	t.check(deepest > 0.005 and pose.sway.length() <= pose.sway_limit + 0.0001,
+			tag + "speeding up, a carried gun lags back a little (%.3f m)" % deepest)
+	for i in 120:
+		pose._update_sway(1.0 / 60.0)
+	t.check(pose.sway.length() < 0.002, tag + "at a steady run the lag settles out")
+
+	player.velocity = was_velocity
+	player.active_weapon_index = was_index
+	player.set_physics_process(true)
+	skin._aim_left = 0.0
+	step.call(0.5)
+
+
 ## The legs follow how the actor really moves: strides match speed, and the
 ## clip and the lower body follow the direction of travel.
 static func _check_legs(t: Node, tag: String, player: Actor, skin: Node, skeleton: Skeleton3D) -> void:
@@ -451,8 +585,16 @@ static func _check_legs(t: Node, tag: String, player: Actor, skin: Node, skeleto
 	skin._process(1.0)
 	skin._process(1.0)
 	t.check(skin._current == "run_left", tag + "a strafing actor's model runs sideways")
-	t.check(loco.overlay == (player.get_active_weapon() is Gun),
-			tag + "the gun stays raised over the strafing legs")
+	if player.get_active_weapon() is Gun:
+		t.check(not loco.overlay and ActionPose.of(player).carry_wanted,
+				tag + "out of a fight a strafing actor carries the gun, not points it")
+		player.cmd.primary = true
+		skin._process(0.1)
+		t.check(loco.overlay and not ActionPose.of(player).carry_wanted,
+				tag + "shooting on the move raises the gun over the strafing legs")
+		player.cmd.primary = false
+		skin._aim_left = 0.0
+		skin._process(0.1)
 	player.velocity = player.global_basis * Vector3(-4, 0, -4)
 	skin._process(1.0)
 	skin._process(1.0)
@@ -486,7 +628,7 @@ static func _check_legs(t: Node, tag: String, player: Actor, skin: Node, skeleto
 	player.crouch = 1.0
 	player.velocity = player.global_basis * Vector3(0, 0, -player.slide_speed)
 	skin._process(1.0)
-	t.check(skin._current in ["idle", "idle_melee"], tag + "a sliding model stops running its legs")
+	t.check(skin._current in skin.STANDS, tag + "a sliding model stops running its legs")
 	if skeleton and loco._lead.size() == 3:
 		var saved_slide := {}
 		for bone in skeleton.get_bone_count():
