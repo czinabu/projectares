@@ -181,3 +181,11 @@ runs the server on any x86 Linux machine:
 godot --headless --path . --export-release "Linux Server" build/server/ares_server.x86_64
 ./build/server/ares_server.x86_64 --headless -- --server --world ashfront --port 24565
 ```
+
+## Windows build for friends
+
+The **Windows client build** workflow (Actions tab) exports the "Windows Client"
+preset on Godot 4.7 and zips it. Run it by hand with **release** ticked to put
+the zip on a draft GitHub release; publish the draft when you are ready, and
+re-run it after later merges for a fresh build. Hosts and friends must all run
+the same build.

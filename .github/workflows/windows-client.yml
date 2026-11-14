@@ -1,0 +1,77 @@
+name: Windows client build
+
+# Exports the "Windows Client" preset on Godot 4.7 and zips it for playtesters.
+#   Pull requests that touch the preset or this file: build only, so a broken
+#   export is caught before it matters.
+#   Run by hand (Actions > Windows client build > Run workflow): builds main (or
+#   the branch picked) and, if "release" is ticked, attaches the zip to a DRAFT
+#   GitHub release. A draft is private until you press Publish on GitHub.
+
+on:
+  pull_request:
+    paths:
+      - export_presets.cfg
+      - .github/workflows/windows-client.yml
+      - .github/playtest/**
+  workflow_dispatch:
+    inputs:
+      release:
+        description: Attach the zip to a draft GitHub release
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+env:
+  GODOT_VERSION: "4.7"
+
+jobs:
+  windows:
+    name: Export Windows client
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-godot
+      - name: Cache the Windows export template
+        id: templates
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/godot/export_templates
+          key: godot-templates-windows-${{ env.GODOT_VERSION }}
+      - name: Download the Windows export template
+        if: steps.templates.outputs.cache-hit != 'true'
+        run: |
+          base="https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable"
+          curl -sSL --retry 4 -o "$RUNNER_TEMP/templates.tpz" "${base}/Godot_v${GODOT_VERSION}-stable_export_templates.tpz"
+          dest="$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.stable"
+          mkdir -p "$dest"
+          unzip -q -j "$RUNNER_TEMP/templates.tpz" templates/windows_release_x86_64.exe templates/windows_debug_x86_64.exe templates/version.txt -d "$dest"
+      - name: Export
+        run: |
+          mkdir -p build/windows
+          "$GODOT" --headless --path . --export-release "Windows Client" build/windows/ProjectAres.exe
+          test -s build/windows/ProjectAres.exe
+      - name: Zip
+        id: zip
+        run: |
+          name="ProjectAres-windows-$(git rev-parse --short HEAD)"
+          mkdir -p "dist/$name"
+          cp build/windows/ProjectAres.exe "dist/$name/"
+          cp .github/playtest/PLAYTEST-README.txt "dist/$name/"
+          (cd dist && zip -qr "$name.zip" "$name")
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.zip.outputs.name }}
+          path: dist/*.zip
+      - name: Draft release
+        if: github.event_name == 'workflow_dispatch' && inputs.release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "playtest-${{ steps.zip.outputs.name }}" "dist/${{ steps.zip.outputs.name }}.zip" \
+            --draft --prerelease --target "$GITHUB_SHA" \
+            --title "Playtest build $(git rev-parse --short HEAD)" \
+            --notes "Windows client for playtests. Unzip, run ProjectAres.exe, join the host from the Uplink console. Everyone, host included, must be on this same build."
