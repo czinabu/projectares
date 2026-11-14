@@ -414,7 +414,17 @@ static func _at_home(t: Node) -> void:
 	await t.frames(5)
 	var unpacked: Array[String] = []
 	for id in vehicles:
-		if base.throw_toy(p, id) == "" and is_instance_valid(base.out_vehicles.get(id)):
+		if base.throw_toy(p, id) == "":
+			if id == vehicles[0]:
+				t.check(p.toy_in_hand == id and not base.watch_vehicles().has(id) and base.out_vehicles.is_empty(),
+						"at home too the arm throws first: the toy is in the hand and nothing has unpacked yet")
+				t.check(base.throw_toy(p, vehicles[1]) != "", "and nothing else is thrown while it comes through")
+				await t._wait_until(func() -> bool: return p.toy_in_hand == "", 60)
+				t.check(base.find_child("Toy", false, false) != null and base.out_vehicles.is_empty(),
+						"then the toy leaves the hand and flies to where it unpacks")
+			await t._wait_until(func() -> bool: return is_instance_valid(base.out_vehicles.get(id)), 120)
+			if not is_instance_valid(base.out_vehicles.get(id)):
+				continue
 			unpacked.append(id)
 			await t.frames(50)
 			var vehicle: Node3D = base.out_vehicles[id]

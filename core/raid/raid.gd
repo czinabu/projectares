@@ -39,6 +39,9 @@ signal toy_thrown(actor: Actor, item_id: String, from: Vector3, toy_velocity: Ve
 signal toy_landed(actor: Actor, item_id: String, at: Vector3, unpacked: bool)
 ## What a player's watch holds, or when they can throw again, changed.
 signal watch_changed(actor: Actor)
+## The toy in a player's hand (`Actor.toy_in_hand`) changed, or they started
+## a throw (`Actor.toy_throws`).
+signal toy_hand_changed(actor: Actor)
 ## A player pinged a spot for their side (`ping`). On a client it is only
 ## ever heard for pings the server chose to tell this player about.
 signal pinged(actor: Actor, at: Vector3)
@@ -101,6 +104,9 @@ var toy_gravity := 20.0
 var toy_max_flight := 5.0
 ## How much speed a toy keeps when it bounces off a wall.
 var toy_bounce := 0.35
+## Seconds from the throw to the toy leaving the hand: the arm draws back and
+## comes through first (`ActionPose.toy_release` shows the same wait).
+var toy_windup := 0.3
 ## Seconds between one throw and the next, for a vehicle with no
 ## `watch_recharge` stat of its own (heavier vehicles take longer).
 var toy_cooldown := 12.0
@@ -120,7 +126,9 @@ var squads := {}
 ## The clear box a vehicle needs to unpack: width, height, length. A vehicle
 ## with a `footprint` stat needs that instead.
 var unpack_room := Vector3(1.3, 1.2, 2.6)
-## Toys in the air: { state, id, at, velocity, age, heading, node }.
+## Toys in the air: { state, id, at, velocity, age, heading, node }. A
+## throw still winding up is here too, with `windup` above zero and no node
+## yet (the authority's only).
 var toys: Array[Dictionary] = []
 ## Seconds this world has been running.
 var clock := 0.0
@@ -1470,14 +1478,73 @@ func throw_toy(actor: Actor, item_id: String) -> String:
 		return why
 	state.stowed.erase(item_id)
 	state.toy_ready_at = clock + toy_recharge(item_id)
+	# The arm draws back and comes through; the toy flies at the release.
+	actor.toy_in_hand = item_id
+	actor.toy_throws += 1
+	toys.append({"state": state, "id": item_id, "windup": maxf(toy_windup, 0.0), "node": null})
+	toy_hand_changed.emit(actor)
+	watch_changed.emit(actor)
+	if toy_windup <= 0.0:
+		_tick_toys(0.0)
+	return ""
+
+
+## Takes the toy `item_id` off a player's watch into their hand to throw, or
+## puts it back with "". Only the look: the toy stays on the watch until it
+## is thrown. Returns "" if it is in hand (or put back), or why not.
+func hold_toy(actor: Actor, item_id: String) -> String:
+	var state := state_for(actor)
+	if mode == Mode.CLIENT or state == null or state.finished or actor.is_dead:
+		return "not now"
+	if _throwing(state):
+		return "Throwing"
+	var why := ""
+	if item_id != "" and item_id not in state.stowed:
+		why = "That is not on your watch"
+	elif item_id != "" and actor.vehicle != null:
+		why = "Get off first"
+	if why != "":
+		item_id = ""
+	if actor.toy_in_hand != item_id:
+		actor.toy_in_hand = item_id
+		toy_hand_changed.emit(actor)
+	return why
+
+
+## True while a player's throw is winding up.
+func _throwing(state: PlayerState) -> bool:
+	for toy in toys:
+		if toy.state == state and toy.get("windup", 0.0) > 0.0:
+			return true
+	return false
+
+
+## The thrown toy leaves the hand: it flies from in front of the thrower's
+## eyes along their aim as it is now.
+func _release_toy(toy: Dictionary) -> void:
+	var state: PlayerState = toy.state
+	var actor := state.actor
+	toy.erase("windup")
+	if state.finished or not is_instance_valid(actor) or actor.is_dead or actor.vehicle != null:
+		# Knocked out of the throw: the toy jumps back onto the watch.
+		toys.erase(toy)
+		if is_instance_valid(actor):
+			actor.toy_in_hand = ""
+			toy_hand_changed.emit(actor)
+		if not state.finished and is_instance_valid(actor) and not actor.is_dead:
+			state.stowed.append(toy.id)
+			state.toy_ready_at = clock
+			watch_changed.emit(actor)
+		return
 	var aim := actor.get_aim_dir()
 	var from := actor.get_eye_position() + aim * 0.6 - Vector3(0.0, 0.25, 0.0)
 	var toy_velocity := (aim + Vector3.UP * toy_lift).normalized() * toy_speed \
 			+ Vector3(actor.velocity.x, 0.0, actor.velocity.z)
-	fly_toy(item_id, from, toy_velocity, actor.cmd.yaw, state)
-	toy_thrown.emit(actor, item_id, from, toy_velocity)
-	watch_changed.emit(actor)
-	return ""
+	toys.erase(toy)
+	fly_toy(toy.id, from, toy_velocity, actor.cmd.yaw, state)
+	actor.toy_in_hand = ""
+	toy_hand_changed.emit(actor)
+	toy_thrown.emit(actor, toy.id, from, toy_velocity)
 
 
 ## Seconds until a player's watch can materialize a weapon again, or 0.
@@ -1714,6 +1781,7 @@ func fly_toy(item_id: String, from: Vector3, toy_velocity: Vector3, heading := 0
 	var node := VehicleScript.toy_model(item_id)
 	add_child(node)
 	node.global_position = from
+	node.basis = VehicleScript.toy_flight_basis(heading, 0.0).scaled(node.scale)
 	toys.append({"state": state, "id": item_id, "at": from, "velocity": toy_velocity, "age": 0.0,
 			"heading": heading, "node": node})
 
@@ -1725,6 +1793,11 @@ func _tick_toys(delta: float) -> void:
 		return
 	var space := get_world_3d().direct_space_state
 	for toy in toys.duplicate():
+		if toy.has("windup"):
+			toy.windup -= delta
+			if toy.windup <= 0.0:
+				_release_toy(toy)
+			continue
 		toy.age += delta
 		var toy_velocity: Vector3 = toy.velocity
 		toy_velocity.y -= toy_gravity * delta
@@ -1743,7 +1816,8 @@ func _tick_toys(delta: float) -> void:
 		toy.velocity = toy_velocity
 		var node: Node3D = toy.node
 		node.global_position = next
-		node.rotation += Vector3(7.0, 3.0, 0.0) * delta
+		# One flip, then level and facing the way it unpacks.
+		node.basis = VehicleScript.toy_flight_basis(toy.heading, toy.age).scaled(Vector3.ONE * VehicleScript.TOY_SCALE)
 		if landed or toy.age >= toy_max_flight or next.y < -30.0:
 			toys.erase(toy)
 			node.queue_free()
@@ -2133,6 +2207,15 @@ func _finish_player(state: PlayerState, outcome: String, cause: String, killed_b
 	state.finished = true
 	state.sign_out_left = -1.0
 	var actor := state.actor
+	# A toy still in the hand mid-throw is on the watch, as far as what is
+	# carried goes.
+	for toy in toys.duplicate():
+		if toy.state == state and toy.has("windup"):
+			toys.erase(toy)
+			state.stowed.append(toy.id)
+	if is_instance_valid(actor) and actor.toy_in_hand != "":
+		actor.toy_in_hand = ""
+		toy_hand_changed.emit(actor)
 	var left := outcome == "left"
 	var loot: Array[String] = []
 	var kept: Array[String] = []

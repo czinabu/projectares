@@ -667,6 +667,7 @@ func _tick_portal(delta: float) -> void:
 
 func _physics_process(delta: float) -> void:
 	_tick_portal(delta)
+	_tick_toy_throws(delta)
 	_range_time += delta
 	for target in targets:
 		target.place(_range_time)
@@ -2510,6 +2511,12 @@ var toy_reach := 7.0
 var toy_room := Vector3(1.3, 1.2, 2.6)
 ## The vehicles out in the base, item id -> vehicle.
 var out_vehicles := {}
+## Seconds from a throw to the toy leaving the hand (as `Raid.toy_windup`),
+## and how fast it flies to where it unpacks, in m/s along the ground.
+var toy_windup := 0.3
+var toy_fly_speed := 11.0
+## Throws on their way: { id, at, heading, windup, from, age, time, node }.
+var _toy_throws: Array[Dictionary] = []
 
 
 ## The base a node is in, or null.
@@ -2528,7 +2535,8 @@ func watch_vehicles() -> Array[String]:
 	if read_only:
 		return ids
 	for id: String in stash + [str(loadout.get("vehicle", ""))]:
-		if ItemDB.has_tag(id, "vehicle") and id not in ids and not is_instance_valid(out_vehicles.get(id)):
+		if ItemDB.has_tag(id, "vehicle") and id not in ids and not is_instance_valid(out_vehicles.get(id)) \
+				and not _toy_throws.any(func(t: Dictionary) -> bool: return t.id == id):
 			ids.append(id)
 	return ids
 
@@ -2560,6 +2568,8 @@ func throw_toy(actor: Actor, item_id: String) -> String:
 		why = "That is not on your watch"
 	elif actor.vehicle != null:
 		why = "Get off first"
+	elif not _toy_throws.is_empty():
+		why = "Throwing"
 	else:
 		at = toy_spot(actor, room)
 		if at == Vector3.INF:
@@ -2568,16 +2578,75 @@ func throw_toy(actor: Actor, item_id: String) -> String:
 		if actor != null:
 			actor.notice.emit(why)
 		return why
-	var vehicle: Node3D = VehicleScript.new()
-	vehicle.name = "Out_%s" % item_id
-	vehicle.setup(item_id)
-	vehicle.set("local_only", true)
-	vehicle.rotation.y = heading
-	add_child(vehicle)
-	vehicle.global_position = at + Vector3(0.0, 0.25, 0.0)
-	vehicle.call("unpack")
-	out_vehicles[item_id] = vehicle
+	# The arm draws back and comes through; the toy flies at the release and
+	# unpacks where it comes down (`_tick_toy_throws`).
+	actor.toy_in_hand = item_id
+	actor.toy_throws += 1
+	_toy_throws.append({"id": item_id, "at": at, "heading": heading, "windup": toy_windup})
+	if toy_windup <= 0.0:
+		_tick_toy_throws(0.0)
 	return ""
+
+
+## Takes vehicle `item_id` off the watch into the player's hand to throw,
+## or puts it back with "". Only the look. "" if it is in hand, or why not.
+func hold_toy(actor: Actor, item_id: String) -> String:
+	if actor == null or actor != player or actor.is_dead or not _toy_throws.is_empty():
+		return "not now"
+	var why := ""
+	if item_id != "" and item_id not in watch_vehicles():
+		why = "That is not on your watch"
+	elif item_id != "" and actor.vehicle != null:
+		why = "Get off first"
+	actor.toy_in_hand = item_id if why == "" else ""
+	return why
+
+
+## Thrown toys at home: each leaves the hand after the windup, flies an arc
+## to the spot picked when it was thrown, and unpacks there.
+func _tick_toy_throws(delta: float) -> void:
+	for toy in _toy_throws.duplicate():
+		if toy.has("windup"):
+			toy.windup -= delta
+			if toy.windup > 0.0:
+				continue
+			toy.erase("windup")
+			if player == null or not is_instance_valid(player) or player.is_dead or player.vehicle != null:
+				_toy_throws.erase(toy)
+				if player != null and is_instance_valid(player):
+					player.toy_in_hand = ""
+				continue
+			var aim := player.get_aim_dir()
+			toy.from = player.get_eye_position() + aim * 0.6 - Vector3(0.0, 0.25, 0.0)
+			var flat: float = Vector2(toy.at.x - toy.from.x, toy.at.z - toy.from.z).length()
+			toy.time = clampf(flat / maxf(toy_fly_speed, 0.1), 0.25, 0.9)
+			toy.age = 0.0
+			var node: Node3D = VehicleScript.toy_model(toy.id)
+			add_child(node)
+			node.global_position = toy.from
+			toy.node = node
+			player.toy_in_hand = ""
+			continue
+		toy.age += delta
+		var u := clampf(toy.age / toy.time, 0.0, 1.0)
+		var node: Node3D = toy.node
+		# A lob: along the line to the spot, with an arc over it.
+		var lift: float = toy.time * toy.time * 2.5
+		node.global_position = (toy.from as Vector3).lerp(toy.at, u) + Vector3.UP * 4.0 * lift * u * (1.0 - u)
+		node.basis = VehicleScript.toy_flight_basis(toy.heading, VehicleScript.TOY_FLIP_TIME * u / 0.8).scaled(Vector3.ONE * VehicleScript.TOY_SCALE)
+		if u < 1.0:
+			continue
+		_toy_throws.erase(toy)
+		node.queue_free()
+		var vehicle: Node3D = VehicleScript.new()
+		vehicle.name = "Out_%s" % toy.id
+		vehicle.setup(toy.id)
+		vehicle.set("local_only", true)
+		vehicle.rotation.y = toy.heading
+		add_child(vehicle)
+		vehicle.global_position = toy.at + Vector3(0.0, 0.25, 0.0)
+		vehicle.call("unpack")
+		out_vehicles[toy.id] = vehicle
 
 
 ## Where a vehicle needing `room` unpacks for `actor`: on the floor along

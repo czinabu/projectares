@@ -142,6 +142,15 @@ var materialize_time := 0.0
 ## Rounds left in guns put away in the pack by a summon: item id ->
 ## [magazine, reserve]. A gun summoned back comes as it was put away.
 var stowed_rounds := {}
+## The toy vehicle in the right hand (an item id off the watch), or "".
+## Set only by whoever runs the world (`Raid.hold_toy`, `HomeBase.hold_toy`)
+## and copied to clients by `NetSession`; nothing in the simulation reads
+## it. Every view draws the toy in the one hand (`ActorSkin._update_toy`).
+var toy_in_hand := ""
+## How many toy throws this actor has started. A view that sees it go up
+## plays the throw (`ActionPose.toy_throw_t`); a count, not a flag, so a
+## repeated or late copy plays it once.
+var toy_throws := 0
 var airborne_time := 0.0
 ## While staggered the actor cannot attack, block, dash or jump.
 var stagger_left := 0.0
