@@ -82,7 +82,7 @@ signal base_visit_requested(owner_name: String, stash: Array, loadout: Dictionar
 signal portal_travel(destination: String)
 
 const DEFAULT_PORT := 24565
-const PROTOCOL := 25
+const PROTOCOL := 26
 ## Every packet is compressed, both ways. State updates are mostly repeated
 ## numbers, and a big battle sends a player hundreds of them a second. Server
 ## and client must agree, so a change here needs a new PROTOCOL.
@@ -489,6 +489,10 @@ func _on_server_actor_spawned(actor: Actor) -> void:
 	actor.weapon_swapped.connect(func(item_id: String, mag: int, reserve: int) -> void:
 		for peer in _joined_peers:
 			_weapon_swapped.rpc_id(peer, id, item_id, mag, reserve))
+	# So is one stored back into the pack.
+	actor.weapon_stored.connect(func(item_id: String, _mag: int, _reserve: int) -> void:
+		for peer in _joined_peers:
+			_weapon_stored.rpc_id(peer, id, item_id))
 	for peer in _joined_peers:
 		_send_spawn(peer, actor)
 
@@ -1448,6 +1452,17 @@ func _request_summon(item_id: String) -> void:
 		raid.summon(actor, item_id)
 
 
+## In the world: store the weapon in hand back into the pack (the watch's
+## store). The server checks the hand of the actor it simulates.
+@rpc("any_peer", "call_remote", "reliable")
+func _request_store(item_id: String) -> void:
+	if not is_server or raid == null:
+		return
+	var actor: Actor = _peer_actor.get(_api.get_remote_sender_id())
+	if actor != null and is_instance_valid(actor):
+		raid.store(actor, item_id)
+
+
 ## In the world: ping the spot being looked at for your side. The server
 ## reads the aim from the actor it simulates.
 @rpc("any_peer", "call_remote", "reliable")
@@ -1555,6 +1570,12 @@ func summon(item_id: String) -> void:
 		_request_summon.rpc_id(1, item_id)
 
 
+## In the world: ask the server to store the weapon in your hand.
+func store(item_id: String) -> void:
+	if _is_connected() and my_actor_id >= 0 and not _can_redeploy and item_id != "":
+		_request_store.rpc_id(1, item_id)
+
+
 ## In the world: ask the server to ping where you are looking for your side.
 func ping() -> void:
 	if _is_connected() and my_actor_id >= 0 and not _can_redeploy:
@@ -1631,6 +1652,16 @@ func _weapon_swapped(id: int, item_id: String, mag: int, reserve: int) -> void:
 	var actor: Actor = _actors.get(id)
 	if actor != null and is_instance_valid(actor) and Loadout.summonable(item_id):
 		Loadout.swap_weapon(actor, item_id, mag, reserve)
+
+
+## Client: someone stored the weapon they held back into their pack (the
+## watch's store). The server decided it and keeps the packs; this only
+## starts the same dematerialize here.
+@rpc("authority", "call_remote", "reliable")
+func _weapon_stored(id: int, item_id: String) -> void:
+	var actor: Actor = _actors.get(id)
+	if actor != null and is_instance_valid(actor) and Loadout.summonable(item_id):
+		Loadout.store_weapon(actor, item_id)
 
 
 ## Client: someone on your side (or you) pinged a spot.
