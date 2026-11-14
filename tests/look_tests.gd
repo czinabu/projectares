@@ -185,6 +185,28 @@ static func run(t: Node) -> void:
 		t.check(blade_model.find_children("*", "CollisionObject3D", true, false).is_empty(), "the blade model has no collision")
 		blade_model.free()
 	t.check(not Look.is_two_handed(blade), "a plain blade is one-handed")
+	# The scrap kit's blade is a sword made from scrap: patch plates, rivets,
+	# a wired grip and a nut for a pommel, on the plain sword model. The
+	# plates on the blade fold away with it when holstered.
+	blade.item_id = "blade_scrap"
+	var scrap_model := Look.weapon_model(blade)
+	var bits := scrap_model.get_node_or_null("Scrap") if scrap_model != null else null
+	t.check(bits != null and bits.get_child_count() >= 10, "the scrap blade is patched together from scrap")
+	if bits != null:
+		var folding := 0
+		for part in bits.get_children():
+			var mat := (part as MeshInstance3D).get_surface_override_material(0)
+			if mat != null and mat.has_meta("tech_fold"):
+				folding += 1
+		t.check(folding >= 6, "its patch plates fold away with the blade")
+	if scrap_model:
+		scrap_model.free()
+	blade.item_id = "blade_arc"
+	var arc_model := Look.weapon_model(blade)
+	t.check(arc_model != null and arc_model.get_node_or_null("Scrap") == null, "a crafted blade is left clean")
+	if arc_model:
+		arc_model.free()
+	blade.item_id = ""
 	blade.item_id = "hammer_breaker"
 	t.check(Look.is_two_handed(blade), "a hammer takes both hands")
 	# No pack has a spear, so Look builds one: long, standing along +Y, held

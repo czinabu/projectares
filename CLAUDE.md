@@ -198,7 +198,11 @@ without Caleb, and update the gap list when a PR closes a row.
   which films each move frame by frame. Every melee
   model is dressed as tech by `Look._tech_melee` (`assets/shaders/melee.gdshader`):
   bare metal becomes alloy with an energy edge in the weapon's rarity color,
-  wood and wraps black polymer with glowing seams. A holstered blade is worn
+  wood and wraps black polymer with glowing seams. The scrap kit's blade
+  (`starter`) is a sword made from scrap (Caleb's call): `Look._scrap_bits`
+  welds crooked patch plates and rivets on the blade, winds wire round the
+  grip and threads a nut on for a pommel, and it runs dim and worn
+  (`scrap_energy`, `scrap_wear`). A holstered blade is worn
   folded away (the last field of its `MELEE_MODELS` entry: "blade" draws the
   blade into the hilt, "telescope" slides a spear shaft into itself) and
   slides out once drawn (`Look.set_extend`, timed by `ActorSkin._update_fold`).
