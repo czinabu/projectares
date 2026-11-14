@@ -81,11 +81,14 @@ func _ready() -> void:
 ## Stands the mirror on the floor in front of the viewer, facing them, closer
 ## if a wall is in the way.
 func place() -> void:
+	# Square in front of the body, not the camera: a third-person camera
+	# over the shoulder (or eased in to read the phone) looks off to one
+	# side, and a mirror stood along it would show the room, not you.
 	var forward := Vector3.FORWARD
-	if eye != null and is_instance_valid(eye):
-		forward = -eye.global_basis.z
-	elif viewer.is_inside_tree():
+	if viewer.is_inside_tree():
 		forward = -viewer.global_basis.z
+	elif eye != null and is_instance_valid(eye):
+		forward = -eye.global_basis.z
 	forward.y = 0.0
 	forward = forward.normalized() if forward.length() > 0.01 else Vector3.FORWARD
 	var at := distance

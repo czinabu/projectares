@@ -100,21 +100,23 @@ var ride_rate := 5.0
 ## How quickly the relaxed-stand legs blend in and out (per second).
 var stand_legs_rate := 4.0
 ## Holding the phone up (`ActorCommand.phone`), one-handed in the right hand
-## as in life, in the actor's frame: where the phone sits, where the right
-## wrist goes (just under it), which way the elbow bows, and how far the head
-## and chest bow to look at it. The wrist is near enough that the elbow
-## bends, as in life, never locked out. The left arm hangs by the side
+## as in life, in the actor's frame: where the phone's grip sits, where the
+## right wrist goes (just behind it), which way the elbow bows, and how far
+## the head and chest bow to look at it. It is held at the chest, a forearm
+## out and a little right of the middle, below the face (Caleb's call: the
+## same hold every view sees, never up at the eyes), so the face, the mirror
+## and the world ahead stay clear. The left arm hangs by the side
 ## (`phone_rest`), out of the way of the screen.
-var phone_at := Vector3(0.06, 1.62, -0.23)
-var phone_wrist := Vector3(0.08, 1.46, -0.25)
-var phone_elbow := Vector3(0.45, -1.0, 0.15)
+var phone_at := Vector3(0.08, 1.32, -0.52)
+var phone_wrist := Vector3(0.09, 1.27, -0.45)
+var phone_elbow := Vector3(0.45, -1.0, 0.3)
 var phone_rest := Vector3(-0.24, 0.92, -0.02)
 var phone_rest_elbow := Vector3(-0.3, 0.0, 1.0)
 ## How far past the wrist (m) the middle of the fist is, where the phone's
 ## grip passes through it (`core/phone/handheld.gd`).
 var phone_palm := 0.085
-var phone_look_down := 0.85
-var phone_chest := 0.16
+var phone_look_down := 0.42
+var phone_chest := 0.06
 
 ## Clip key -> how the clip moves the body at playback speed 1, in the
 ## actor's space (x right, z back), m/s.

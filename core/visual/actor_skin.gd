@@ -803,8 +803,8 @@ func handheld() -> Node3D:
 	return _phone_prop if _phone_prop != null and _phone_prop.visible else null
 
 
-## Sets what the phone shows on its face and its holo panel: your own
-## phone's screen, or null for lit glass and an unreadable sheen.
+## Sets what the phone shows on its face: your own phone's screen, or null
+## for lit glass.
 func set_phone_screen(screen: Material) -> void:
 	phone_screen = screen
 	_dress_phone_screen()
@@ -814,10 +814,6 @@ func _dress_phone_screen() -> void:
 	var face := Handheld.face_of(_phone_prop)
 	if face != null:
 		face.set_surface_override_material(0, phone_screen if phone_screen != null else Handheld.glass_material())
-	var holo := Handheld.holo_of(_phone_prop)
-	if holo != null:
-		var picture: Texture2D = (phone_screen as StandardMaterial3D).albedo_texture if phone_screen is StandardMaterial3D else null
-		holo.material_override = Handheld.holo_material(picture)
 
 
 ## True once the actor has been off the ground long enough to show it.
