@@ -20,6 +20,7 @@ static func run(t: Node) -> void:
 	await _scan(t)
 	await _glass(t)
 	await _base_glass(t)
+	await _safe_zones(t)
 	await _strip(t)
 	await _threat(t)
 	await _thermal(t)
@@ -449,6 +450,49 @@ static func _base_glass(t: Node) -> void:
 	t.check(not glass.glass_shown(), "taking the helmet off at home takes the glass away")
 	hud.queue_free()
 	base.queue_free()
+	await t.frames(2)
+
+
+## Helmets work in safe zones and at home, where weapons are locked
+## (Caleb: "let helmets abilities work everywhere"). Nobody can fight there,
+## so the people a helmet reads are not told.
+static func _safe_zones(t: Node) -> void:
+	print("Visors: safe zones and home")
+	var base := HomeBase.new()
+	base.show_gear(["helm_spotter"] as Array[String], {"helmet": "helm_spotter"})
+	t.add_child(base)
+	await t.frames(10)
+	var p := base.player
+	t.check(p.weapons_locked and p.visor.mode == "zoom", "at home the helmet is worn and weapons are locked")
+	p.cmd.visor_level = 1
+	await t.frames(2)
+	t.check(p.visor.is_zoomed(), "binoculars zoom at home")
+	p.cmd.visor_level = 0
+	await t.frames(2)
+	t.check(not p.visor.is_zoomed(), "and come back down")
+	base.queue_free()
+	await t.frames(2)
+
+	var server := Raid.new()
+	t.add_child(server)
+	server.start_server(Worlds.get_world("plaza"), 341)
+	var a := server.add_player(_kit("helm_seeker"), {}, "Alpha", "acct-a")
+	var b := server.add_player(_kit("helm_warden"), {}, "Bravo", "acct-b")
+	await t.frames(20)
+	b.global_position = a.global_position + Vector3(6, 0.2, 0)
+	await t.frames(2)
+	var felt: Array = []
+	var notices: Array[String] = []
+	b.visor.felt_scan.connect(func(origin: Vector3) -> void: felt.append(origin))
+	b.notice.connect(func(text: String) -> void: notices.append(text))
+	a.cmd.visor_pressed = true
+	await t.frames(1)
+	a.cmd.visor_pressed = false
+	t.check(a.weapons_locked and a.visor.cooldown_left > 0.0 and a.visor.ghosts.size() == 1,
+			"in the plaza a scan goes out with weapons locked, and shows who is around")
+	t.check(felt.is_empty() and "Scanned" not in notices, "nobody in a safe zone is told they were scanned")
+	t.check(Visor.peaceful(a), "the plaza counts as peaceful")
+	server.queue_free()
 	await t.frames(2)
 
 
