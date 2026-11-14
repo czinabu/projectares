@@ -931,7 +931,16 @@ without Caleb, and update the gap list when a PR closes a row.
   takes `Loadout.summon_time` by weight, during which the weapon cannot be
   used (`Actor.materialize_left`) and is drawn digitizing in on the one
   body (`ActorSkin._update_materialize`), then the watch rests
-  (`Loadout.summon_cooldown`). The squad ping (`Raid.ping`, `pinged`) goes
+  (`Loadout.summon_cooldown`). Storing is the summon in reverse: a click
+  on the weapon in hand asks `Raid.store` (`NetSession.store` online),
+  which puts it in the pack with its rounds at once and starts
+  `Loadout.store_weapon` (clients copy it from `Actor.weapon_stored`): the
+  weapon fades out of the hand over `Loadout.store_time`
+  (`Actor.dematerialize_left`, the same `_update_materialize` light run
+  backwards), unusable and with no switching, then `Actor._tick_store`
+  takes it off and leaves the hands empty. It needs room in the pack,
+  never stores a heavy weapon, and does not rest the watch. At home it
+  unequips the slot. The squad ping (`Raid.ping`, `pinged`) goes
   only to the pinger's side, like a visor tag. In third person the
   card rises off the worn watch with a glow on the arm (Caleb's feedback):
   it stands just past the character (`Wrist.tp_depth`, `tp_behind`), so the

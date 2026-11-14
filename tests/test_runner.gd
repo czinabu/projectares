@@ -4090,6 +4090,22 @@ func _test_online() -> void:
 						or not there.weapons.any(func(w: Weapon) -> bool: return w.item_id == worn_before))
 			await _wait_until(seen_swap, 180)
 			check(seen_swap.call(), "the other client sees the summoned weapon on them")
+			# The watch's store, online: the summoned weapon goes back into the pack.
+			await _wait_until(func() -> bool: return me.materialize_left <= 0.0, 180)
+			var stores := [0]
+			me.weapon_stored.connect(func(_id: String, _m: int, _r: int) -> void: stores[0] += 1)
+			var pack_now := me.inventory.items.size()
+			alpha.store(looted_weapon)
+			var put_away := func() -> bool:
+				return stores[0] > 0 and Loadout.worn_index(me, slot) < 0 and me.inventory.items.size() == pack_now + 1
+			await _wait_until(put_away, 240)
+			check(put_away.call() and looted_weapon not in me.gear_items,
+					"the server stores the weapon in hand: it fades out and is in the pack")
+			var seen_store := func() -> bool:
+				var there := bravo.actor_for(alpha.my_actor_id)
+				return there != null and Loadout.worn_index(there, slot) < 0
+			await _wait_until(seen_store, 180)
+			check(seen_store.call(), "the other client sees it put away")
 			# A ping reaches the pinger; a stranger on another side hears nothing.
 			var ping_heard := [0, 0]
 			alpha.raid.pinged.connect(func(_a: Actor, _at: Vector3) -> void: ping_heard[0] += 1)

@@ -1546,6 +1546,43 @@ func summon(actor: Actor, item_id: String) -> String:
 	return ""
 
 
+## The watch's store, the summon in reverse: the weapon in a player's hand
+## dematerializes back into their pack, with the rounds it had, leaving its
+## slot empty. It takes `Loadout.store_time`, during which it cannot be used,
+## and the hands are empty after. Storing does not rest the watch. Returns ""
+## if it is being stored, or why not (also sent as a notice).
+func store(actor: Actor, item_id: String) -> String:
+	var state := state_for(actor)
+	if mode == Mode.CLIENT or state == null or state.finished or actor.is_dead:
+		return "not now"
+	var held := actor.get_active_weapon()
+	var why := ""
+	if held == null or held.item_id != item_id:
+		why = "Hold the weapon to store it"
+	elif not Loadout.summonable(item_id):
+		why = "The watch cannot store that"
+	elif actor.storing_weapon() != null or actor.materialize_left > 0.0:
+		why = "The watch is busy"
+	elif actor.stagger_left > 0.0:
+		why = "Not while staggered"
+	elif state.sign_out_left >= 0.0:
+		why = "Not while signing out"
+	elif actor.inventory.is_full():
+		why = "Your pack is full"
+	if why != "":
+		actor.notice.emit(why)
+		return why
+	var given := Loadout.store_weapon(actor, item_id)
+	if given.id == "":
+		return "not now"
+	actor.inventory.add_item(item_id)
+	if int(given.mag) >= 0:
+		actor.stowed_rounds[item_id] = [given.mag, given.reserve]
+	state.kit.erase(item_id)
+	watch_changed.emit(actor)
+	return ""
+
+
 ## The watch's squad ping: marks the spot a player is looking at for their
 ## side for `ping_time` seconds. Returns "" if it went out, or why not.
 func ping(actor: Actor) -> String:
