@@ -6406,11 +6406,16 @@ func _test_phone_view() -> void:
 		check(absf(controller.camera.global_rotation.x - controller.phone_view_pitch) < 0.02
 				and is_equal_approx(controller.pitch, pitch_before),
 				"the eyes drop to the phone in the hand, while the aim stays where it was")
+		var wide := PlayerController.zoomed_fov(controller.wanted_base_fov(), controller.phone_zoom)
+		check(controller.phone_zoomed() and absf(controller.camera.fov - wide) < 1.0,
+				"the view zooms in on the phone in the hand so it can be read (Caleb's pick)")
 		controller.phone_out = false
 		controller.input_blocked = false
 		for i in 40:
 			await frames(1)
 		check(absf(controller.camera.global_rotation.x - pitch_before) < 0.02, "and come back up when it is put away")
+		check(not controller.phone_zoomed() and absf(controller.camera.fov - controller.wanted_base_fov()) < 1.0,
+				"and the zoom eases back out")
 	else:
 		reader.held.free()
 		reader.free()

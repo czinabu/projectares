@@ -2623,6 +2623,10 @@ func _phone_shots(out_dir: String) -> void:
 	controller.toggle_view()
 	await _settle(40)
 	await _shot(out_dir.path_join("phone_third_person.png"))
+	phone.open_app("settings")
+	await _settle(20)
+	await _shot(out_dir.path_join("phone_settings_third.png"))
+	phone.go_home()
 	# The Mirror app's mirror, in third person and then first: you should see
 	# yourself in it past the phone in your hand.
 	var mirror: Node3D = load("res://core/visual/mirror.gd").new()

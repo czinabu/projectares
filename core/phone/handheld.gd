@@ -17,7 +17,7 @@ const UiTheme := preload("res://core/visual/ui_theme.gd")
 
 ## The body's size (m): high, deep, and how round its corners are. Its width
 ## follows the screen's shape (`SCREEN_ASPECT`).
-const HEIGHT := 0.16
+const HEIGHT := 0.21
 const DEPTH := 0.018
 const CORNER := 0.013
 ## Width over height of the screen picture (`Phone.screen_size`).

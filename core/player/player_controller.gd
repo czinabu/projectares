@@ -64,15 +64,20 @@ var phone_out := false
 ## and eases back out when the phone is put away. It looks at the same device
 ## first person reads; nothing floats in front of the view.
 var phone_read_distance := 0.75
-var phone_read_side := 0.55
+var phone_read_side := 0.65
 var phone_read_lift := 0.35
-var phone_read_fov := 26.0
+var phone_read_fov := 21.0
 ## How far (m) to aim left of the phone, so it sits right of the crosshair.
-var phone_read_offset := 0.05
+var phone_read_offset := 0.08
 var phone_read_rate := 6.0
 ## With the Mirror app up the view widens and aims this far (0..1) from the
 ## phone toward the mirror's glass, so the reflection shows past the phone.
 var phone_mirror_fov := 62.0
+## While the phone is out the view zooms in on it this many times (Caleb's
+## pick over a bigger screen layout), in both views, like aiming down sights:
+## only the field of view narrows, the hold and the camera stay put. Not with
+## the Mirror app's mirror up, which needs the wide view.
+var phone_zoom := 1.7
 var phone_mirror_aim := 0.55
 ## How far in to the phone the third-person camera is now (0..1).
 var phone_read := 0.0
@@ -815,6 +820,8 @@ func _process(delta: float) -> void:
 		fov = zoomed_fov(wanted_base_fov(), _zoom())
 	if phone_read > 0.0:
 		fov = lerpf(fov, phone_fov(), smoothstep(0.0, 1.0, phone_read))
+	if phone_zoomed():
+		fov = zoomed_fov(fov, phone_zoom)
 	camera.fov = lerpf(camera.fov, fov, 1.0 - exp(-14.0 * delta))
 	if _thrust_audio:
 		var thrusting := actor.flight.is_thrusting and not actor.is_dead
@@ -1106,6 +1113,11 @@ func _read_phone(delta: float) -> void:
 		aim_at = aim_at.lerp(phone_mirror.glass_centre(), phone_mirror_aim)
 	var reading := Transform3D(Basis.looking_at(aim_at - spot, Vector3.UP), spot)
 	camera.global_transform = camera.global_transform.interpolate_with(reading, w)
+
+
+## Whether the view is zoomed in on the phone in the hand (`phone_zoom`).
+func phone_zoomed() -> bool:
+	return phone_out and phone_panel() != null and not actor.is_dead and not mirror_in_view()
 
 
 ## The fov the reading view eases to: close on the phone, wider with the

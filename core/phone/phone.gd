@@ -175,7 +175,7 @@ const CONTROLS := [
 var screen_size := Vector2i(480, 800)
 ## Text on the screen is drawn this much bigger than the sizes the apps ask
 ## for, so it still reads with the device held small and low.
-var text_scale := 1.6
+var text_scale := 1.8
 ## Where the glass sits inside the frame (left, top, right, bottom, pixels).
 var glass_inset := Vector4(22, 44, 22, 104)
 ## Seconds a pop-up stays on screen.
@@ -226,6 +226,10 @@ var _page: Control
 var _title: Label
 var _body: VBoxContainer
 var _scroll: ScrollContainer
+## The row the page scrolls to once laid out (`_keep_in_view`).
+var _follow: Control
+## How much of the rows round the followed one stays in view, in pixels.
+const FOLLOW_MARGIN := 40.0
 var _icons := {}
 ## The home screen's live readings ("link", "inbox", "news").
 var _readouts := {}
@@ -385,6 +389,7 @@ func _process(delta: float) -> void:
 		_notice_panel.visible = _notice_left > 0.0
 	if is_open:
 		_update_status()
+		_keep_in_view()
 	_hold(get_viewport().get_camera_3d())
 
 
@@ -1464,7 +1469,7 @@ func _draw_mirror() -> void:
 		var row := _mirror_row(keys[i], i == mirror_row)
 		_body.add_child(row)
 		if i == mirror_row:
-			_keep_in_view.call_deferred(row)
+			_follow = row
 	_body.add_child(_label("Wheel: move between rows. Click a row, then the wheel turns it. Right click: back.",
 			13, Color(0.6, 0.6, 0.6)))
 	var shuffle := _button("Surprise me", func() -> void: wardrobe.randomize_look())
@@ -1472,10 +1477,30 @@ func _draw_mirror() -> void:
 	_body.add_child(shuffle)
 
 
-## Scrolls the phone so the chosen row shows, unless a redraw replaced it.
-func _keep_in_view(row: Control) -> void:
-	if is_instance_valid(row) and _body.is_ancestor_of(row):
-		_scroll.ensure_control_visible(row)
+## Scrolls the page so the row `_follow` names shows whole, with a little
+## of its neighbours. It waits for the page's layout: a redraw rebuilds the
+## rows, and until they are sorted their places (and how far the page can
+## scroll) are not known, which left the page where it was (Caleb's
+## feedback: the highlight moved, the screen stayed at the bottom).
+func _keep_in_view() -> void:
+	if _follow == null:
+		return
+	if not is_instance_valid(_follow) or not _body.is_ancestor_of(_follow):
+		_follow = null
+		return
+	var view := _scroll.size.y
+	var bar := _scroll.get_v_scroll_bar()
+	if _follow.size.y <= 0.0 or view <= 0.0 or bar.max_value < _body.size.y - 1.0:
+		return
+	var top := _follow.position.y - FOLLOW_MARGIN
+	var bottom := _follow.position.y + _follow.size.y + FOLLOW_MARGIN
+	var at := float(_scroll.scroll_vertical)
+	if top < at:
+		at = top
+	elif bottom > at + view:
+		at = bottom - view
+	_scroll.scroll_vertical = int(clampf(at, 0.0, maxf(_body.size.y - view, 0.0)))
+	_follow = null
 
 
 func _mirror_row(key: String, selected: bool) -> PanelContainer:
