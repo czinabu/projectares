@@ -1295,7 +1295,7 @@ func _on_server_disconnected() -> void:
 @rpc("authority", "call_remote", "reliable")
 func _hello(protocol: int, p_world_id: String) -> void:
 	if protocol != PROTOCOL:
-		failed.emit("The server runs a different version of the game.")
+		failed.emit("The server runs a different version of the game. Download the latest playtest build and try again.")
 		close()
 		return
 	var world := world_for(p_world_id)

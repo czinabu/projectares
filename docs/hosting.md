@@ -181,3 +181,14 @@ runs the server on any x86 Linux machine:
 godot --headless --path . --export-release "Linux Server" build/server/ares_server.x86_64
 ./build/server/ares_server.x86_64 --headless -- --server --world ashfront --port 24565
 ```
+
+## Windows build for friends
+
+The **Windows client build** workflow exports the "Windows Client" preset on
+Godot 4.7 and zips it. It runs on every push to `main` and replaces the zip on
+the rolling **latest** pre-release on GitHub, so the newest merge is always one
+download away. The zip's name ends in the commit (`ProjectAres-windows-<sha>`):
+the host and every friend must have the same one. If someone sees "The server
+runs a different version of the game", they download the latest zip again (and
+a host on their own PC pulls and relaunches). For a milestone, run the workflow
+by hand with **release** ticked to get a draft release you can name and publish.
