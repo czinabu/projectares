@@ -1195,6 +1195,12 @@ void fragment() {
 	## drawn, in metres (the others are two thirds of it).
 	var weapon_spacing := 0.034
 	var weapon_length := 0.05
+	## Third person: the toy and weapon rows over the card are drawn this much
+	## smaller than from the eyes (the card keeps its size), and smaller still
+	## if that is what it takes to keep them in the view under its top edge
+	## (`rows_tall` is how much room, in card units, a row needs over the card).
+	var tp_rows := 0.5
+	var rows_tall := 0.06
 
 	var viewport: SubViewport
 	var card: Card
@@ -1212,6 +1218,8 @@ void fragment() {
 	## it hides what it covers.
 	var _holo_behind: ShaderMaterial
 	var _third := false
+	## How big the rows over the card are drawn now (see `tp_rows`).
+	var _row_scale := 1.0
 	## The light thrown up from the watch face to the card.
 	var _beam: MeshInstance3D
 	## The watch worn on the character's wrist bone, third person.
@@ -1391,6 +1399,9 @@ void fragment() {
 					spot = _keep_on_screen(cam, spot, face_size.x * size * 0.5)
 					spot = _over_wrist(cam, spot, wrist, face_size.y * size * 0.5)
 				var at := wrist.lerp(spot, ease(open, -2.0))
+				_row_scale = 1.0
+				if cam and not from_eyes:
+					_row_scale = _tp_row_scale(cam, spot, size)
 				_holo.global_transform = Transform3D(facing.scaled(Vector3(size, size * maxf(open, 0.001), size)), at)
 				_glow.global_position = wrist
 		_third = third
@@ -1414,6 +1425,17 @@ void fragment() {
 		mat.set_shader_parameter("tint", HOLO_TINT)
 		mat.render_priority = 10
 		return mat
+
+	## Third person: how big the rows over the card centred at `spot` (drawn
+	## at `size`) can be: `tp_rows`, or less where the top of the view is
+	## nearer than `rows_tall` over the card.
+	func _tp_row_scale(cam: Camera3D, spot: Vector3, size: float) -> float:
+		var card := cam.global_transform.affine_inverse() * spot
+		if card.z >= -0.01:
+			return tp_rows
+		var top := -card.z * tan(deg_to_rad(cam.fov) * 0.5) * 0.97
+		var room := (top - card.y) / maxf(size, 0.0001) - face_size.y * 0.5
+		return clampf(room / rows_tall, 0.2, tp_rows)
 
 	## Third person: how far out along the view the card stands, `tp_behind`
 	## past the character's head.
@@ -1578,7 +1600,8 @@ void fragment() {
 				for mesh in toy.find_children("*", "MeshInstance3D", true, false):
 					(mesh as MeshInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 				_toys.add_child(toy)
-		_toys.position = Vector3(0.0, face_size.y * 0.5 + toy_lift, 0.0)
+		_toys.position = Vector3(0.0, face_size.y * 0.5 + toy_lift * _row_scale, 0.0)
+		_toys.scale = Vector3.ONE * _row_scale
 		# They stand up only while the card is on the vehicles.
 		_toys.visible = card != null and card.focused_id() == "vehicle" and card.death == ""
 		picked = clampi(picked, 0, maxi(ids.size() - 1, 0))
@@ -1618,7 +1641,8 @@ void fragment() {
 				old.queue_free()
 			for id in ids:
 				_weapons.add_child(_weapon_holo(id))
-		_weapons.position = Vector3(0.0, face_size.y * 0.5 + toy_lift + 0.012, 0.0)
+		_weapons.position = Vector3(0.0, face_size.y * 0.5 + (toy_lift + 0.012) * _row_scale, 0.0)
+		_weapons.scale = Vector3.ONE * _row_scale
 		_weapons.visible = card != null and card.focused_id() == "weapon" and card.death == ""
 		if not _weapons.visible:
 			return
