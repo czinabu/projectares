@@ -526,42 +526,59 @@ func _toy_shots(out_dir: String) -> void:
 	var controller := PlayerController.new()
 	controller.setup(raid.player)
 	raid.add_child(controller)
+	controller.toy_hold_requested.connect(func(id: String) -> void: raid.hold_toy(raid.player, id))
+	controller.toy_throw_requested.connect(func(id: String) -> void: raid.throw_toy(raid.player, id))
 	var hud := Hud.new()
 	hud.setup(raid, controller)
 	raid.add_child(hud)
 	await _settle(90)
-	controller.wrist_raised = true
-	controller.click_watch()
-	await _settle(40)
-	await _shot(out_dir.path_join("toys_watch_first.png"))
-	controller.watch_index = 1
-	await _settle(20)
-	await _shot(out_dir.path_join("toys_watch_picked_second.png"))
-	controller.watch_index = 0
-	controller.take_picked_toy()
-	await _settle(30)
-	await _shot(out_dir.path_join("toys_in_hand.png"))
-	controller.pitch = -0.1
-	await _settle(5)
-	controller.throw_held_toy()
-	raid.throw_toy(raid.player, "bike_scrapper")
-	await _settle(3)
-	await _shot(out_dir.path_join("toys_in_air.png"))
-	for i in 200:
-		if raid.toys.is_empty():
-			break
-		await _settle(1)
-	await _settle(1)
-	await _shot(out_dir.path_join("toys_unpacking.png"))
-	await _settle(60)
-	await _shot(out_dir.path_join("toys_unpacked.png"))
-	controller.toggle_view()
-	controller.wrist_raised = true
-	await _settle(60)
-	await _shot(out_dir.path_join("toys_watch_third.png"))
-	controller.take_picked_toy()
-	await _settle(30)
-	await _shot(out_dir.path_join("toys_in_hand_third.png"))
+	for view in ["first", "third"]:
+		if view == "third":
+			controller.toggle_view()
+			await _settle(30)
+		var state := raid.state_for(raid.player)
+		state.toy_ready_at = raid.clock
+		controller.pitch = 0.0
+		controller.wrist_raised = true
+		controller.watch_focus_moved = false
+		controller.click_watch()
+		await _settle(40)
+		await _shot(out_dir.path_join("toys_watch_%s.png" % view))
+		if view == "first":
+			controller.watch_index = 1
+			await _settle(20)
+			await _shot(out_dir.path_join("toys_watch_picked_second.png"))
+		controller.watch_index = 0
+		controller.take_picked_toy()
+		# The weapon goes away, then the toy digitizes into the hand.
+		await _settle(24)
+		await _shot(out_dir.path_join("toys_%s_1_digitizing.png" % view))
+		await _settle(30)
+		await _shot(out_dir.path_join("toys_%s_2_in_hand.png" % view))
+		controller.pitch = -0.1
+		await _settle(5)
+		controller.throw_held_toy()
+		# The throw, frame by frame at 60 fps: drawn back, coming through,
+		# let go, the follow-through.
+		var frames := [7, 5, 4, 4, 6]
+		var names := ["3_drawn_back", "4_coming_through", "5_let_go", "6_follow_through", "7_toy_away"]
+		for i in frames.size():
+			await _settle(frames[i])
+			await _shot(out_dir.path_join("toys_%s_%s.png" % [view, names[i]]))
+		for i in 200:
+			if raid.toys.is_empty():
+				break
+			await _settle(1)
+		await _settle(4)
+		await _shot(out_dir.path_join("toys_%s_8_unpacking.png" % view))
+		await _settle(60)
+		await _shot(out_dir.path_join("toys_%s_9_unpacked.png" % view))
+		# Pack it again for the next view.
+		var bike: Node3D = raid.vehicles[raid.vehicles.size() - 1]
+		raid.remove_vehicle(bike)
+		state.parked.erase(bike)
+		state.stowed.insert(0, "bike_scrapper")
+		await _settle(10)
 	raid.queue_free()
 	await _settle(2)
 

@@ -631,8 +631,24 @@ without Caleb, and update the gap list when a PR closes a row.
   `WorldDef.vehicle_toys`. Only the authority throws, lands and packs: a
   client sends `NetSession.throw_toy` / `pack_vehicle`, the server reads the
   aim from the actor it simulates, and clients get `_watch` (their own watch)
-  and `_toy` (a toy to draw in flight). The toy in the hand and the picker on
-  the watch (`PlayerController.held_toy`, `Hud.Wrist.show_toys`) are views.
+  and `_toy` (a toy to draw in flight, with who threw it). The toy in the
+  hand is the one body's, seen by everyone (Caleb's call): taking one off
+  the watch is `Raid.hold_toy` (online `NetSession.hold_toy`, the home base
+  `HomeBase.hold_toy`), which sets `Actor.toy_in_hand`, and a throw bumps
+  `Actor.toy_throws`; `NetSession._toy_hand` copies both to everyone else
+  (the thrower's own game shows its hand at once). Nothing in the simulation
+  reads them. The throw winds up before the toy flies: the `Raid` keeps it
+  in `toys` with a `windup` (`Raid.toy_windup`, the same as
+  `ActionPose.toy_release`) and lets it go along the aim as it is then; cut
+  short (on a vehicle, dead) it goes back on the watch. The shown hold and
+  overarm throw are `ActionPose.toy_hand_point` / `toy_turn`, reached by
+  `WeaponArm`; the skin puts the weapon away meanwhile, digitizes the toy
+  into the hand (`ActorSkin._update_toy`) and lets it go at the release. In
+  the air a toy turns one flip and comes down level facing the way it
+  unpacks (`Vehicle.toy_flight_basis`), so the vehicle grows out of it
+  without a jump, with a ring of light (`Vehicle.unpack`). Check by eye with
+  `visual_check.tscn -- <dir> --toys-only`. The picker on the watch
+  (`PlayerController.held_toy`, `Hud.Wrist.show_toys`) is a view.
   A new vehicle is a new `vehicle` item; its toy is `toy_model(id)`.
 - Mastery (`core/progression/`) is keyed by gear type tags ("rifle", "blink",
   "frame_heavy"), never by item id. Variants are sidegrades: every one trades a
