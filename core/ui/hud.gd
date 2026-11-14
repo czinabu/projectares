@@ -220,8 +220,11 @@ static func mark_open(slots: Array[Dictionary], opened: String) -> void:
 ## Only what is carried is ever here, never the stash.
 static func weapon_entries(p: Actor) -> Array[Dictionary]:
 	var entries: Array[Dictionary] = []
+	var storing := p.storing_weapon()
 	for index in p.slot_order():
-		entries.append({"id": p.weapons[index].item_id, "index": index})
+		# One dematerializing back into the pack is already listed there.
+		if p.weapons[index] != storing:
+			entries.append({"id": p.weapons[index].item_id, "index": index})
 	# The heavy chamber's weapon: drawn only from here, never by a key.
 	var heavy := Loadout.power_index(p)
 	if heavy >= 0:
@@ -351,7 +354,8 @@ static func watch_slots(p_raid: Raid, p: Actor, picked_toy := 0, pack_name := ""
 
 
 ## The weapon carousel's icon: the weapon picked out of what is carried.
-## One worn is drawn with a click (a heavy weapon shows its shots); one in
+## One worn is drawn with a click (a heavy weapon shows its shots), and the
+## one in hand is stored back into the pack with a click; one in
 ## the pack is materialized into the hand in place of the one worn in its
 ## slot, which takes `Loadout.summon_time` and then rests the watch.
 static func weapon_slot(p_raid: Raid, p: Actor, picked := 0) -> Dictionary:
@@ -370,6 +374,10 @@ static func weapon_slot(p_raid: Raid, p: Actor, picked := 0) -> Dictionary:
 		if gun and gun.is_power():
 			detail = "%s · %d" % [name, gun.ammo_in_mag + gun.reserve_ammo] if not gun.is_spent() else "%s · spent" % name
 		if int(entry.index) == p.active_weapon_index:
+			# The one in hand is stored back into the pack with a click (the
+			# summon in reverse); a heavy weapon never goes in a pack.
+			if Loadout.summonable(entry.id) and not p.inventory.is_full() and p.materialize_left <= 0.0:
+				return _slot("weapon", value, "%s · store" % detail, hints + ["click"], -1.0, false, false, entries.size(), at)
 			return _slot("weapon", value, "%s · in hand" % detail, hints, -1.0, false, false, entries.size(), at)
 		return _slot("weapon", value, detail, hints + ["click"], -1.0, false, false, entries.size(), at)
 	if ItemDB.has_tag(entry.id, "helmet"):
@@ -393,7 +401,8 @@ static func base_weapon_slot(p: Actor, entries: Array[Dictionary], picked := 0) 
 	var value := "%d/%d" % [at + 1, entries.size()]
 	var name := ItemDB.item_name(entry.id)
 	if int(entry.index) >= 0 and int(entry.index) == p.active_weapon_index:
-		return _slot("weapon", value, "%s · in hand" % name, hints, -1.0, false, false, entries.size(), at)
+		# At home, storing the one in hand takes it off the loadout.
+		return _slot("weapon", value, "%s · store" % name, hints + ["click"], -1.0, false, false, entries.size(), at)
 	if int(entry.index) >= 0:
 		return _slot("weapon", value, name, hints + ["click"], -1.0, false, false, entries.size(), at)
 	return _slot("weapon", value, "%s · equip" % name, hints + ["click"], -1.0, false, false, entries.size(), at)
