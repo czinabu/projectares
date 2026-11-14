@@ -244,6 +244,9 @@ var _flash_left := 0.0
 var _materials: Array[ShaderMaterial] = []
 var _skeleton: Skeleton3D
 var _head_bone := -2
+## The head bone where the last skeleton update left it, all poses applied
+## (`_note_head`), in the skeleton's frame.
+var _posed_head := Vector3.INF
 ## The eyes, from the head bone (`eye_point`): metres up, and ahead along the
 ## view.
 var eye_up := 0.08
@@ -417,6 +420,7 @@ func _ready() -> void:
 		locomotion.add_phone_hook()
 	if skeleton:
 		_setup_glide_pose(skeleton, def)
+		skeleton.skeleton_updated.connect(_note_head)
 
 	# The greybox capsule stays as the actor's body node, but draws nothing.
 	if actor.body_mesh:
@@ -733,6 +737,15 @@ func hide_head(on: bool) -> void:
 					_head_hidden.append(visual)
 
 
+## Keeps the head bone as posed, which is only final inside the skeleton's
+## update (see `eye_point`).
+func _note_head() -> void:
+	if _head_bone == -2:
+		_head_bone = _skeleton.find_bone("Head") if _skeleton else -1
+	if _head_bone >= 0:
+		_posed_head = _skeleton.get_bone_global_pose(_head_bone).origin
+
+
 ## Where the model's eyes are, for a first-person camera: in front of the
 ## head bone along the view (`look`), so the camera looks out of the face
 ## rather than from inside the skull or the collar, and moves with the head
@@ -744,7 +757,14 @@ func eye_point(look: Basis) -> Variant:
 		_head_bone = _skeleton.find_bone("Head")
 	if _head_bone < 0:
 		return null
-	var head: Vector3 = _skeleton.global_transform * _skeleton.get_bone_global_pose(_head_bone).origin
+	var local := _skeleton.get_bone_global_pose(_head_bone).origin
+	if actor.vehicle != null and _posed_head.is_finite():
+		# Seated, the ride pose moves the whole body onto the seat, and that
+		# only shows in the posed skeleton: outside its update the bone still
+		# stands at the actor's feet, which put the eyes in a seated rider's
+		# neck, looking out through their own collar and pack.
+		local = _posed_head
+	var head: Vector3 = _skeleton.global_transform * local
 	return head + Vector3.UP * eye_up + look * Vector3(0.0, 0.0, -eye_ahead)
 
 
