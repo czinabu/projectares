@@ -1063,7 +1063,11 @@ without Caleb, and update the gap list when a PR closes a row.
   only its bare right margin may tuck behind the head (`tp_tuck`), never
   its text, so the light rises from the wrist up into the card,
   with bands running out along it (`Wrist.BEAM_SHADER`, `_draw_beam`),
-  never slanting down into it (Caleb's feedback). Vitals go on the card only where the visor cannot
+  never slanting down into it (Caleb's feedback). The weapon and toy
+  holograms over the card are drawn at `tp_rows` of their first-person size
+  and lifted by as little, smaller still where the top of the view is near
+  (`_tp_row_scale`), so they stay in frame while the card keeps its size
+  (Caleb's feedback). Vitals go on the card only where the visor cannot
   show them (no helmet, or third person). The watch works in the home base
   too (`BaseHud.wrist`), its card saying what each icon holds for the next
   deploy (`Hud.base_watch_slots`), and there its Summon tab is the whole
