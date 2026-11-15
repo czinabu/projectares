@@ -25,6 +25,24 @@ extends Node
 const JOIN_TIMEOUT := 12.0
 ## A server started here runs every world, and needs a while before it listens.
 const HOST_JOIN_ATTEMPTS := 12
+## However many attempts are left, a server of your own that has not let you
+## in by then is given up on (and started once more, `HOST_RESTARTS`), so the
+## travel screen never waits forever.
+const HOST_JOIN_DEADLINE := 45.0
+const HOST_RESTARTS := 1
+## Signed in, asked to walk in (a plaza, a gate, the arena): the server has
+## this long to put you there before the trip counts as failed.
+const DEPLOY_TIMEOUT := 20.0
+## A server of your own moves up by this many ports when its own are taken
+## (by a server an earlier game left running), at most `HOST_PORT_TRIES` times.
+const HOST_PORT_STEP := 100
+const HOST_PORT_TRIES := 5
+## While a server of your own runs, this game touches this file every
+## `HEARTBEAT_EVERY` seconds; the server stops once it is `HEARTBEAT_STALE`
+## seconds old (long enough for a slow load to never stop it mid-play).
+const HOST_HEARTBEAT := "user://host_heartbeat"
+const HEARTBEAT_EVERY := 1.0
+const HEARTBEAT_STALE := 60
 ## The solo player's renown key in a raid, so it carries across their lives.
 const LOCAL_OWNER := "local"
 const StashRules := preload("res://core/account/stash_rules.gd")
@@ -96,6 +114,13 @@ var _server_pid := -1
 ## writes into the real profile, nor a real server into the dev one.
 var _hosted_save := ""
 var _join_attempts := 0
+## A trip to a server of your own: when it is given up on (msec ticks, 0 for
+## no limit), how many more times the server may be started again, and the
+## world it runs.
+var _join_deadline := 0
+var _beat_left := 0.0
+var _host_restarts_left := 0
+var _host_world := ""
 var _join_address := ""
 var _join_port := NetSession.DEFAULT_PORT
 ## Online: the raid lobby's port, while visiting that server's arena.
@@ -184,7 +209,12 @@ func _ready() -> void:
 
 ## Between places the hub's travel screen fills the window; anywhere else it
 ## is only ever seen on a station's screen.
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
+	if _server_pid > 0:
+		_beat_left -= delta
+		if _beat_left <= 0.0:
+			_beat()
+			_watch_host_trip()
 	if _travel != null:
 		_travel.visible = hub.visible and hub.station == ""
 	if controller != null and is_instance_valid(controller) and controller.wrist_raised:
@@ -355,6 +385,14 @@ func head_out() -> void:
 		join_online(Profile.home_server, false)
 	else:
 		host_and_join()
+	if net == null and raid == null:
+		# It never got going (no server could start): back to the base, with
+		# the reason on the travel line.
+		_arrive_from = ""
+		var reason := hub.online_status()
+		go_home()
+		if base_hud and reason != "":
+			base_hud.show_notice(reason)
 
 
 ## The phone's Servers app: host a server here (`address` "") or join one,
@@ -1214,6 +1252,21 @@ func _run_dedicated_server(args: PackedStringArray) -> void:
 		push_error("Server: could not listen from port %d (%s)" % [port, error_string(err)])
 		get_tree().quit(1)
 		return
+	# A server started by a game (`host_and_join`) stops with that game, so a
+	# game stopped from the editor or crashed never leaves one holding the
+	# ports for the next: the game keeps touching its heartbeat file, and once
+	# that goes stale the server quits.
+	var heartbeat := _arg(args, "--heartbeat", "")
+	if heartbeat != "":
+		var watch := Timer.new()
+		watch.name = "HeartbeatWatch"
+		watch.wait_time = 2.0
+		watch.autostart = true
+		watch.timeout.connect(func() -> void:
+			if heartbeat_stale(heartbeat):
+				print("Server: the game that started this server is gone; stopping")
+				get_tree().quit())
+		add_child(watch)
 	var handed := _arg(args, "--host-profile", "")
 	if handed != "" and FileAccess.file_exists(handed):
 		var data: Variant = JSON.parse_string(FileAccess.get_file_as_string(handed))
@@ -1308,9 +1361,26 @@ func host_and_join(world_id := "") -> void:
 		return
 	_door_fallback = false
 	_remember_address = ""
+	_host_restarts_left = HOST_RESTARTS
+	_start_local_server(world_id)
+
+
+## Starts the server for `host_and_join` (again, on a retry) and joins it.
+func _start_local_server(world_id: String) -> void:
+	_host_world = world_id
 	_stop_local_server()
+	# A server an earlier game left running (stopped from the editor, or a
+	# crash) may still hold the ports: joining it would wait on a server that
+	# is not ours, so this one moves to free ports instead.
+	var port := free_host_port(host_port, _ports_needed(world_id))
+	if port < 0:
+		hub.set_online_status("Could not start a server: its ports are in use on this computer.")
+		return
 	var args := PackedStringArray(["--headless", "--path", ProjectSettings.globalize_path("res://"),
-			"--", "--server", "--port", str(host_port)])
+			"--", "--server", "--port", str(port),
+			# The server stops when this game does, however this game ends.
+			"--heartbeat", ProjectSettings.globalize_path(HOST_HEARTBEAT)])
+	_beat()
 	args.append_array(host_args)
 	if world_id != "":
 		args.append_array(["--world", world_id])
@@ -1331,7 +1401,42 @@ func host_and_join(world_id := "") -> void:
 		hub.set_online_status("Could not start a server on this computer.")
 		return
 	hub.set_online_status("Starting a server...")
-	_begin_join("127.0.0.1", host_port, HOST_JOIN_ATTEMPTS)
+	_join_deadline = Time.get_ticks_msec() + int(HOST_JOIN_DEADLINE * 1000.0)
+	_begin_join("127.0.0.1", port, HOST_JOIN_ATTEMPTS)
+
+
+## The ports a server of your own listens on from `port`: the plaza, every
+## raid world after it (just one with `world_id`) and the arena.
+func _ports_needed(world_id: String) -> Array[int]:
+	var count := 1 if world_id != "" else Worlds.raid_worlds().size()
+	var offsets: Array[int] = []
+	for i in count + 1:
+		offsets.append(i)
+	offsets.append(ARENA_PORT_OFFSET)
+	return offsets
+
+
+## The first base port from `port`, stepping by `HOST_PORT_STEP`, whose
+## `offsets` are all free to listen on here; -1 if none is.
+static func free_host_port(port: int, offsets: Array[int]) -> int:
+	for attempt in HOST_PORT_TRIES:
+		var base := port + attempt * HOST_PORT_STEP
+		var free := true
+		for offset in offsets:
+			if not port_free(base + offset):
+				free = false
+				break
+		if free:
+			return base
+	return -1
+
+
+## Whether a server could listen on this UDP port here.
+static func port_free(port: int) -> bool:
+	var udp := PacketPeerUDP.new()
+	var ok := udp.bind(port) == OK
+	udp.close()
+	return ok
 
 
 ## `address` is "host" or "host:port". With `remember` the base's door leads
@@ -1350,6 +1455,7 @@ func join_online(address: String, remember := true) -> void:
 		hub.set_online_status("Type the server's address first.")
 		return
 	hub.set_online_status("Connecting to %s..." % host)
+	_join_deadline = 0
 	_begin_join(host, port, 1)
 
 
@@ -1412,6 +1518,8 @@ func _try_join() -> void:
 func _on_online_signed_in(account: Dictionary) -> void:
 	_tour_stash_size = (account.get("stash", []) as Array).size()
 	_join_attempts = 0
+	_join_deadline = 0
+	_host_restarts_left = 0
 	_door_fallback = false
 	_keep_profile_in_step(account)
 	if _remember_address != "":
@@ -1422,6 +1530,7 @@ func _on_online_signed_in(account: Dictionary) -> void:
 		# Signed in to the arena: walk straight into the stands.
 		hub.update_account(account)
 		net.deploy()
+		_expect_arrival()
 		return
 	var world := Worlds.get_world(net.world_id)
 	if world.safe_zone:
@@ -1432,6 +1541,7 @@ func _on_online_signed_in(account: Dictionary) -> void:
 		# Back through a doorway: you arrive in front of it.
 		net.deploy("from:" + _arrive_from if _arrive_from != "" else "")
 		_arrive_from = ""
+		_expect_arrival()
 		return
 	# A world's lobby is your home base, showing what this server keeps for
 	# you. A portal from the watch deploys into this world; its door leads back.
@@ -1444,10 +1554,20 @@ func _on_online_signed_in(account: Dictionary) -> void:
 		hub.set_online_status("Deploying to %s..." % world.display_name)
 		net.deploy(Raid.PORTAL_DROP if _portal_deploy else "")
 		_portal_deploy = false
+		_expect_arrival()
 		return
 	go_home()
 	if base_hud:
 		base_hud.show_notice("Connected to %s. Open a portal from your watch to deploy." % world.display_name, 6.0)
+
+
+## Asked to walk in: a server that never puts you there should not leave
+## the travel screen up forever. By id, like the join timeout.
+func _expect_arrival() -> void:
+	var session := net.get_instance_id()
+	get_tree().create_timer(DEPLOY_TIMEOUT).timeout.connect(func() -> void:
+		if net != null and net.get_instance_id() == session and raid == null and base == null:
+			_on_online_failed("The server did not let you in."))
 
 
 func _on_online_account_changed(account: Dictionary) -> void:
@@ -1667,12 +1787,27 @@ func _on_online_failed(reason: String) -> void:
 			_join_attempts = 0
 		net.queue_free()
 		net = null
+	if _join_attempts > 0 and _hosted_server_stopped():
+		_join_attempts = 0
+		reason = "Your server stopped before it was ready."
+	if _join_attempts > 0 and _join_deadline > 0 and Time.get_ticks_msec() > _join_deadline:
+		_join_attempts = 0
+		reason = "Your server took too long to start."
 	if _join_attempts > 0:
 		# A server we just started needs a moment before it listens.
 		await get_tree().create_timer(1.0).timeout
 		if net == null and raid == null:
 			_try_join()
 		return
+	_join_deadline = 0
+	if _host_restarts_left > 0 and _server_pid > 0 and raid == null and _plaza_port < 0 and _lobby_port < 0:
+		# A server of your own that never let you in: start it once more.
+		_host_restarts_left -= 1
+		_start_local_server(_host_world)
+		if net != null:
+			hub.set_online_status("%s Starting it again..." % reason)
+			return
+	_host_restarts_left = 0
 	_remember_address = ""
 	_portal_deploy = false
 	_gate_deploy = false
@@ -1798,6 +1933,45 @@ func _keep_profile_in_step(account: Dictionary) -> void:
 	if _server_pid > 0 and _join_address == "127.0.0.1" and account.get("ok", false) \
 			and not account.get("deployed", false) and Profile.save_path == _hosted_save:
 		Profile.adopt_account(account)
+
+
+## Tells a server of our own this game is still here (see `HOST_HEARTBEAT`).
+func _beat() -> void:
+	_beat_left = HEARTBEAT_EVERY
+	var file := FileAccess.open(HOST_HEARTBEAT, FileAccess.WRITE)
+	if file != null:
+		file.store_string(str(Time.get_unix_time_from_system()))
+		file.close()
+
+
+## Whether the game that started a server has stopped touching `path`.
+static func heartbeat_stale(path: String, now := -1.0) -> bool:
+	if not FileAccess.file_exists(path):
+		return true
+	if now < 0.0:
+		now = Time.get_unix_time_from_system()
+	return now - float(FileAccess.get_modified_time(path)) > HEARTBEAT_STALE
+
+
+## On the way to a server of your own, not let in yet: a server that has
+## stopped, or the trip's deadline passing, ends this try now rather than
+## after the join's own timeout (`_on_online_failed` starts it again once).
+func _watch_host_trip() -> void:
+	if _join_deadline <= 0 or net == null or not net.account.is_empty():
+		return
+	var reason := ""
+	if _hosted_server_stopped():
+		reason = "Your server stopped before it was ready."
+	elif Time.get_ticks_msec() > _join_deadline:
+		reason = "Your server took too long to start."
+	if reason != "":
+		_join_attempts = 0
+		_on_online_failed(reason)
+
+
+## The server this game started is no longer running.
+func _hosted_server_stopped() -> bool:
+	return _server_pid > 0 and _join_address == "127.0.0.1" and not OS.is_process_running(_server_pid)
 
 
 func _stop_local_server() -> void:
