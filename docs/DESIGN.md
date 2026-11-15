@@ -269,6 +269,35 @@ raider from its kit (`spawn_bot`'s `kit`). Still to come: rooftop caches
 their own, picking up bags, flight across the map (wings and long
 jetpack trips), and a grudge against whoever killed them.
 
+### Enemy balance (targets proposed, for Caleb to confirm)
+
+Every enemy type has a role, and a target for how often a player in a mid
+kit wins a straight duel with it. The duel bench measures it
+(`tests/duel_bench.tscn`): a reference player (a bot with a carbine, a
+sidearm, a knife, a medium frame and a medkit, aiming at 0.5) fights each
+type many times on open ground and the bench prints the win rate, time to
+kill and health left beside the target. Tune the world's numbers (health,
+damage, aim skill) until each type sits in its band, then check by playing.
+
+| Enemy | Role | Reference player wins |
+| --- | --- | --- |
+| Outer soldier | Fodder: teaches the basics | 85-97% |
+| Core soldier | Pressure, deadly in numbers | 65-85% |
+| Outer heavy | Parry practice | 75-95% |
+| Core heavy | Punishes panic | 55-80% |
+| Rival raider | An equal | 40-60% |
+| Warlord | A squad fight | 10-35% |
+
+A bot at 0.5 is not a person: a good player aims better, uses cover and
+parries on purpose. The reference skill should be set so the bench agrees
+with how fights feel in play, and the bands moved only on Caleb's call.
+
+**First measurement (40 duels each, 12 m and 25 m).** Every army type
+loses every duel (soldiers in 7-10 s, heavies in 4-6 s, the reference
+keeping about 90% health); warlords lose 93%; raiders win about 70%. Time
+to kill is long all round, which points at weapon feel and hit rates as
+much as at enemy numbers.
+
 ### World events
 
 The warzone already runs one event at a time (supply pods and warlords,
