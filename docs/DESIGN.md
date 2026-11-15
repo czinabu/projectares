@@ -229,6 +229,75 @@ where players drop in, each with a depot. Still to come: more hotspots (a
 volcano, a storm core), a drawn map on the watch with the rings on it,
 squad regrouping at the gates, and tuning.
 
+### Rival raiders (Caleb's call)
+
+Caleb mostly plays solo, so the warzone has to feel full of people even
+when he is the only one there. Rival raiders are bots that play the way a
+player does, so full loot, bounties and the war feed mean something solo
+and the field never feels like it is only soldiers.
+
+- **They come in like players.** Each drops in at a player spawn (the
+  gate outposts in Ashfront) with a real kit: a primary, a sidearm, a
+  blade, a flight rig, a frame and often a helmet, all base level. They
+  look like people, not soldiers, and go by a name nobody else in the
+  world is using.
+- **They want the loot.** A raider goes from cache to cache and loots each
+  one the way a player does.
+- **They fight everyone.** Each is a side of its own: the armies, the
+  players and the other raiders are all fair game.
+- **They fly.** A raider uses its rig: it lifts off over whatever it is
+  stuck on, and a jetpack wearer takes to the air in a gunfight, hovering
+  on held aim. This settles "should bots fly?" for raiders only; the armies
+  stay on foot.
+- **They look after their kit.** A raider aims like a seasoned player
+  (`WorldDef.raider_skill`), not like the rim's rookies; runs a dry
+  primary onto its sidearm and goes back to the primary and a fresh mag
+  between fights; draws its blade once every gun is dry; and heals from its
+  pack when hurt and clear of trouble.
+- **They get out, or die trying.** After a few minutes, or with a full
+  pack, a raider stops and signs out, and a fight starts the countdown
+  over. Killed, it drops its whole kit and haul in a bag, like a player.
+- **Everyone hears about them.** The war feed says when one drops in, who
+  killed it, and when one gets out with its haul.
+
+**What is built (MVP).** `WorldDef.raider_count` (4 in Ashfront, 0
+elsewhere), `raider_gap`, `raider_stay`, `raider_kit` and `raider_names`;
+`Raid._tick_raiders`, `spawn_raider` and `raiders`; the brain's errands,
+hold, flight and kit care (`BotBrain.go_to`, `holding`, `flies`, `uses_kit`). Clients build each
+raider from its kit (`spawn_bot`'s `kit`). Still to come: rooftop caches
+(only ground caches today), banking at depots, renown and bounties of
+their own, picking up bags, flight across the map (wings and long
+jetpack trips), and a grudge against whoever killed them.
+
+### Enemy balance (targets proposed, for Caleb to confirm)
+
+Every enemy type has a role, and a target for how often a player in a mid
+kit wins a straight duel with it. The duel bench measures it
+(`tests/duel_bench.tscn`): a reference player (a bot with a carbine, a
+sidearm, a knife, a medium frame and a medkit, aiming at 0.5) fights each
+type many times on open ground and the bench prints the win rate, time to
+kill and health left beside the target. Tune the world's numbers (health,
+damage, aim skill) until each type sits in its band, then check by playing.
+
+| Enemy | Role | Reference player wins |
+| --- | --- | --- |
+| Outer soldier | Fodder: teaches the basics | 85-97% |
+| Core soldier | Pressure, deadly in numbers | 65-85% |
+| Outer heavy | Parry practice | 75-95% |
+| Core heavy | Punishes panic | 55-80% |
+| Rival raider | An equal | 40-60% |
+| Warlord | A squad fight | 10-35% |
+
+A bot at 0.5 is not a person: a good player aims better, uses cover and
+parries on purpose. The reference skill should be set so the bench agrees
+with how fights feel in play, and the bands moved only on Caleb's call.
+
+**First measurement (40 duels each, 12 m and 25 m).** Every army type
+loses every duel (soldiers in 7-10 s, heavies in 4-6 s, the reference
+keeping about 90% health); warlords lose 93%; raiders win about 70%. Time
+to kill is long all round, which points at weapon feel and hit rates as
+much as at enemy numbers.
+
 ### World events
 
 The warzone already runs one event at a time (supply pods and warlords,
@@ -1231,7 +1300,7 @@ Caleb's calls, still open:
 
 - Are the balance pass's Mk1 numbers (section 5) right? To tune by feel in
   the playtest, on the base's flight course.
-- Should bots fly?
+- Should the armies' bots fly? (Rival raiders do, section 2.)
 - The airborne sign-out: 25 seconds and a beacon column, or must you land?
 - Which gadgets to build first from the list in section 4.
 - Can a heavy weapon from the armory wall be taken into the PvP world, or

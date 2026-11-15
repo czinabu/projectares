@@ -111,6 +111,46 @@ const BOT_SKILL := [Vector2(0.15, 0.45), Vector2(0.3, 0.65), Vector2(0.5, 0.85)]
 ## Damage a second the Foundry's molten ground does to whoever stands in it.
 const CORE_BURN := 2.0
 
+## Rival raiders' kits, a pick from each list. Base-level gear only (no Mk2
+## rigs or helmets: those are crafted), so killing one pays like a player
+## who came in geared, not like a warlord.
+const RAIDER_PRIMARY := [
+	{"id": "rifle_carbine", "weight": 35.0},
+	{"id": "smg_stinger", "weight": 30.0},
+	{"id": "shotgun_breacher", "weight": 15.0},
+	{"id": "dmr_longshot", "weight": 10.0},
+]
+const RAIDER_SIDEARM := [
+	{"id": "pistol_machine", "weight": 70.0},
+	{"id": "pistol_hand_cannon", "weight": 30.0},
+]
+const RAIDER_MELEE := [
+	{"id": "knife_gutter", "weight": 30.0},
+	{"id": "axe_splitter", "weight": 30.0},
+	{"id": "hammer_breaker", "weight": 15.0},
+	{"id": "blade_arc", "weight": 15.0},
+	{"id": "spear_lancer", "weight": 10.0},
+]
+## Raiders fly: most wear a jetpack, some thruster boots, a few wings.
+const RAIDER_RIG := [
+	{"id": "jetpack_mk1", "weight": 60.0},
+	{"id": "boots_thruster", "weight": 30.0},
+	{"id": "wings_glide", "weight": 10.0},
+]
+const RAIDER_FRAME := [
+	{"id": "frame_runner", "weight": 45.0},
+	{"id": "frame_trooper", "weight": 40.0},
+	{"id": "frame_bulwark", "weight": 15.0},
+]
+const RAIDER_HELMET := [
+	{"id": "helm_spotter", "weight": 25.0},
+	{"id": "helm_seeker", "weight": 25.0},
+	{"id": "helm_warden", "weight": 25.0},
+	{"id": "helm_ember", "weight": 25.0},
+]
+## How likely a raider wears a helmet.
+const RAIDER_HELMET_CHANCE := 0.6
+
 const BOT_TABLE := [
 	{"id": "scrap_metal", "weight": 45.0},
 	{"id": "circuit_board", "weight": 25.0},
@@ -136,6 +176,8 @@ func _init() -> void:
 	pod_blueprint_chance = 0.25
 	warlord_upgrade_data = 2
 	pod_upgrade_data = 1
+	# Rival raiders, so the field never feels empty of people.
+	raider_count = 4
 
 
 func create_map() -> Node3D:
@@ -177,6 +219,19 @@ func roll_loot(source: String, rng: RandomNumberGenerator) -> Array[String]:
 	for i in count:
 		out.append(ItemDB.roll(table, rng))
 	return out
+
+
+## A rival raider comes in geared like a player who has been here before:
+## a gun, a sidearm, a blade, a rig and a frame, often a helmet, and a
+## medkit or two.
+func raider_kit(rng: RandomNumberGenerator) -> Array[String]:
+	var kit: Array[String] = [ItemDB.roll(RAIDER_PRIMARY, rng), ItemDB.roll(RAIDER_SIDEARM, rng),
+			ItemDB.roll(RAIDER_MELEE, rng), ItemDB.roll(RAIDER_RIG, rng), ItemDB.roll(RAIDER_FRAME, rng)]
+	if rng.randf() < RAIDER_HELMET_CHANCE:
+		kit.append(ItemDB.roll(RAIDER_HELMET, rng))
+	for i in rng.randi_range(1, 2):
+		kit.append("medkit")
+	return kit
 
 
 ## Bots further in aim better; a warlord keeps the default veteran's aim.

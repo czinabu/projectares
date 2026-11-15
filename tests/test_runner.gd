@@ -46,6 +46,7 @@ const OnboardingTests := preload("res://tests/onboarding_tests.gd")
 const TravelOnlineTests := preload("res://tests/travel_online_tests.gd")
 const HostRecoveryTests := preload("res://tests/host_recovery_tests.gd")
 const RiskZoneTests := preload("res://tests/risk_zone_tests.gd")
+const RaiderTests := preload("res://tests/raider_tests.gd")
 const InspectTests := preload("res://tests/inspect_tests.gd")
 
 var _passed := 0
@@ -322,6 +323,7 @@ func _run() -> void:
 	await _test_power_weapons()
 	await _test_artifacts()
 	await _test_risk_zones()
+	await _test_raiders()
 	await _test_watch()
 	await _test_portals()
 	await _test_feel()
@@ -414,6 +416,10 @@ func _test_artifacts() -> void:
 
 func _test_risk_zones() -> void:
 	await RiskZoneTests.run(self)
+
+
+func _test_raiders() -> void:
+	await RaiderTests.run(self)
 
 
 func _test_watch() -> void:

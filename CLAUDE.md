@@ -139,7 +139,13 @@ without Caleb, and update the gap list when a PR closes a row.
   with the fewest alive, and extra bots are not replaced once it cools. Bots
   killing bots only simmer the meter (`WarDirector.report_battle`, capped at
   `battle_ceiling`); only players take it higher. World-event bots
-  (`Raid._event_bots`) are outside all of this.
+  (`Raid._event_bots`) are outside all of this, and so are rival raiders
+  (`Raid.raiders`, `WorldDef.raider_count`, DESIGN.md "Rival raiders"):
+  bots that play like players, each a side of its own ("raider:<name>"),
+  wearing a real kit from `WorldDef.raider_kit` put on with `Loadout.equip`
+  (never `equip_bot`). A client builds one from that kit (`spawn_bot`'s
+  `kit`), not from the seed. The `Raid` sends them on errands
+  (`BotBrain.go_to`) and signs them out; armies never order them.
 - Big battles must stay affordable; measure with
   `godot --headless --path . res://tests/battle_bench.tscn -- --bots 150 --players 32`
   (processor time a tick, against the 16.7 ms budget). Three things keep
@@ -1215,6 +1221,7 @@ godot --headless --fixed-fps 60 --path . res://tests/test_runner.tscn -- --tier 
 godot --headless --path . res://tests/test_runner.tscn -- --tier net --shard 1/3   # a third of the online groups
 godot --headless --path . res://tests/battle_bench.tscn -- --bots 150 --players 32   # server cost of a big battle
 godot --headless --fixed-fps 60 --path . res://tests/feel_bench.tscn   # how each rig answers, in numbers
+godot --headless --fixed-fps 60 --path . res://tests/duel_bench.tscn   # how each enemy type fights a reference player (DESIGN.md "Enemy balance")
 godot --path . res://tests/equip_bench.tscn -- --walk   # what an equip costs in the base, and whether you keep moving
 ```
 

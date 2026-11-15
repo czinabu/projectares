@@ -145,6 +145,23 @@ var pod_upgrade_data := 0
 ## sign-out time while sheltered in a gate outpost (it is the way out there).
 var boss_respawn_time := 360.0
 var outpost_sign_out_time := 3.0
+## Rival raiders: bots that play the way a player does (DESIGN.md section 2,
+## "Rival raiders"). Each drops in at a player spawn with a real kit
+## (`raider_kit`), loots caches, fights everyone, and after a while signs
+## out with what it carries. Killed, it drops its whole kit in a bag. This
+## many are kept in the world; 0 keeps them out. One arrives every
+## `raider_gap` seconds until the count is met, and one that dies or signs
+## out is replaced the same way.
+var raider_count := 0
+var raider_gap := 45.0
+## Seconds a raider stays before it heads out: a random time in this range.
+var raider_stay := Vector2(240.0, 540.0)
+## A raider's gun aim (`BotBrain.skill`): the range each one rolls from. They
+## drop in at the rim, but they aim like players who have been here before,
+## not like the outer ring's rookies.
+var raider_skill := Vector2(0.5, 0.8)
+
+
 ## Seconds between dying and being allowed to drop in again.
 var redeploy_delay := 3.0
 ## False for a venue where nobody loses gear (the arena). The server then
@@ -264,6 +281,21 @@ func can_damage(attacker: Node, target: Node, _info: DamageInfo) -> bool:
 ## Set up a bot's faction, gear and stats.
 func equip_bot(_bot: Actor, _rng: RandomNumberGenerator) -> void:
 	pass
+
+
+## A rival raider's kit: item ids exactly as a player's loadout, put on
+## with `Loadout.equip`, so what it drops is real gear. Called on the
+## authority only; the kit itself is sent to clients. The default is the
+## world's starter kit.
+func raider_kit(_rng: RandomNumberGenerator) -> Array[String]:
+	return starter_loadout()
+
+
+## Names rival raiders go by. A raider takes one nobody in the world is
+## using, so a name in the war feed means one person.
+func raider_names() -> Array[String]:
+	return ["Vex", "Kestrel", "Juno", "Ashby", "Rook", "Sable", "Mercer", "Wren", "Talon", "Nyx",
+			"Brandt", "Cinder", "Halloway", "Ixa", "Locke", "Moss", "Petra", "Quill", "Strand", "Voss"]
 
 
 ## Turns a freshly equipped bot into a warlord, the boss of a world event.
