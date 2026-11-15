@@ -54,6 +54,36 @@ var self_move_error_deg := 1.0
 ## Fires only when its aim is within this of where it means to aim, degrees.
 var fire_cone_deg := 6.0
 
+## Rival raiders (see `Raid._tick_raiders`). The `Raid` sends one on errands
+## with `go_to` (a cache to loot) and has it `holding` still while it signs
+## out; fights come first either way. `flies` lets it use its flight rig:
+## jets or a kick over whatever it is stuck on, and a jetpack wearer takes
+## to the air in a gunfight, hovering on held aim like a player.
+var flies := false
+## Seconds between a flier's hops in a gunfight, and how long one lasts, the
+## first `combat_climb` of it climbing.
+var combat_hop_every := Vector2(5.0, 10.0)
+var combat_hop_time := 2.4
+var combat_climb := 0.8
+## A flier stuck this long, pushing against something, lifts off for
+## `unstick_lift` seconds.
+var stuck_time := 0.8
+var unstick_lift := 1.2
+## Below this heat (of the rig's 100) a flier starts a hop.
+var hop_heat := 40.0
+## A bot that wears a player's kit (a raider) looks after it the way a
+## player does: back to the primary and a fresh mag between fights, the
+## blade once every gun is dry, and a heal from its pack when hurt.
+var uses_kit := false
+## Below this share of its health it heals between fights...
+var heal_below := 0.7
+## ...and in a fight too, once this low and with nobody close.
+var heal_desperate := 0.3
+var heal_clear_range := 12.0
+var holding := false
+var errand := Vector3.ZERO
+var has_errand := false
+
 var state := State.PATROL
 var actor: Actor
 var target: Actor
@@ -91,6 +121,10 @@ var _wander_goal := Vector2.ZERO
 var _wander_left := 0.0
 var _lag := 0.0
 var _on_target := false
+var _stuck_for := 0.0
+var _lift_left := 0.0
+var _hop_in := 3.0
+var _hop_left := 0.0
 
 
 func _ready() -> void:
@@ -125,6 +159,25 @@ func home() -> Vector3:
 	return _home
 
 
+## Sends the bot to a place (a raider to a cache). It runs there whenever
+## it is not fighting, and stays once it arrives (`at_errand`).
+func go_to(point: Vector3) -> void:
+	errand = point
+	has_errand = true
+	holding = false
+
+
+## Done with its errand: it patrols where it stands until given another.
+func clear_errand() -> void:
+	has_errand = false
+	_home = actor.global_position
+	_has_dest = false
+
+
+func at_errand() -> bool:
+	return has_errand and _flat_dist(errand) < 2.2 and absf(errand.y - actor.global_position.y) < 2.5
+
+
 func _physics_process(delta: float) -> void:
 	if actor.is_dead:
 		return
@@ -137,6 +190,7 @@ func _physics_process(delta: float) -> void:
 	cmd.primary = false
 	cmd.secondary = false
 	cmd.sprint = false
+	cmd.jump = false
 	cmd.move = Vector2.ZERO
 	cmd.aim_dir = Vector3.ZERO
 
@@ -162,8 +216,75 @@ func _physics_process(delta: float) -> void:
 		else:
 			cmd.sprint = true
 			_move_toward(cmd, _last_seen, delta, true)
+	elif holding:
+		_stuck_for = 0.0
+	elif has_errand:
+		if not at_errand():
+			cmd.sprint = true
+			_move_toward(cmd, errand, delta, true)
 	else:
 		_patrol(cmd, delta)
+	if uses_kit:
+		_tend_kit(cmd)
+
+
+## Looks after a player's kit (`uses_kit`): heal when hurt and safe enough,
+## put the primary back in hand and reload it between fights, and in a fight
+## swap off a gun with nothing left for one with rounds, or the blade.
+## Only presses, the same keys a player would use.
+func _tend_kit(cmd: ActorCommand) -> void:
+	var share := actor.health.health / maxf(actor.health.max_health, 1.0)
+	var near := target != null and is_instance_valid(target) \
+			and actor.global_position.distance_to(target.global_position) < heal_clear_range
+	if actor.heal_time_left <= 0.0 and actor.inventory.first_with_tag("heal") != "" \
+			and ((state == State.PATROL and share < heal_below) or (share < heal_desperate and not near)):
+		cmd.heal_pressed = true
+		return
+	if actor.heal_time_left > 0.0:
+		return
+	var held := actor.get_active_weapon()
+	var gun := held as Gun
+	if state == State.ATTACK:
+		# Dry with nothing to reload from: the other gun if it has rounds,
+		# else the blade.
+		if held == null or (gun != null and gun.is_spent()):
+			var next := _loaded_gun()
+			cmd.switch_weapon = next if next >= 0 else _blade_index()
+		return
+	if state != State.PATROL:
+		return
+	var primary := _primary_index()
+	if primary >= 0 and actor.active_weapon_index != primary and not (actor.weapons[primary] as Gun).is_spent():
+		cmd.switch_weapon = primary
+	elif gun != null and not gun.is_reloading() and gun.ammo_in_mag < gun.mag_size and gun.reserve_ammo > 0:
+		cmd.reload_pressed = true
+	elif held == null:
+		var any := _loaded_gun()
+		cmd.switch_weapon = any if any >= 0 else _blade_index()
+
+
+func _primary_index() -> int:
+	for i in actor.weapons.size():
+		var gun := actor.weapons[i] as Gun
+		if gun != null and not gun.is_sidearm and not gun.is_power():
+			return i
+	return -1
+
+
+## A gun that can still shoot, the primary first, or -1.
+func _loaded_gun() -> int:
+	for i in actor.slot_order():
+		var gun := actor.weapons[i] as Gun
+		if gun != null and not gun.is_spent():
+			return i
+	return -1
+
+
+func _blade_index() -> int:
+	for i in actor.weapons.size():
+		if actor.weapons[i] is MeleeWeapon:
+			return i
+	return -1
 
 
 func _attack(cmd: ActorCommand, delta: float) -> void:
@@ -184,6 +305,7 @@ func _attack(cmd: ActorCommand, delta: float) -> void:
 		_attack_melee(cmd, blade, delta)
 		return
 	_aim_gun(cmd, eye, chest, dist, delta)
+	_combat_hop(cmd, delta)
 
 	# Keep a comfortable distance: close in, back off, or strafe.
 	if dist > preferred_range * 1.4:
@@ -347,6 +469,50 @@ func _move_toward(cmd: ActorCommand, dest: Vector3, delta: float, face_travel: b
 		_look_along(cmd, dir)
 	var local := Basis(Vector3.UP, cmd.yaw).inverse() * dir
 	cmd.move = Vector2(local.x, -local.z)
+	if flies:
+		_unstick(cmd, delta)
+
+
+## A flier pushing against something it cannot walk over lifts off: a jump
+## held into the rig's own lift (a jetpack's jets on held aim, the boots'
+## skim, the wings' glide), the same keys a player would hold.
+func _unstick(cmd: ActorCommand, delta: float) -> void:
+	if not actor.flight.enabled:
+		return
+	if actor.is_on_floor() and actor.get_real_velocity().length() < 0.6:
+		_stuck_for += delta
+	else:
+		_stuck_for = 0.0
+	if _stuck_for > stuck_time and not actor.flight.overheated:
+		_stuck_for = 0.0
+		_lift_left = unstick_lift
+	if _lift_left <= 0.0:
+		return
+	_lift_left -= delta
+	if actor.is_on_floor():
+		cmd.jump_pressed = true
+	cmd.jump = true
+	if actor.flight.can_hover():
+		cmd.secondary = true
+
+
+## A jetpack wearer in a gunfight takes to the air now and then: up off the
+## ground, a climb, then a hover on held aim while it shoots, and down again
+## when it lets go. It costs heat like anyone's, so it waits for a cool rig.
+func _combat_hop(cmd: ActorCommand, delta: float) -> void:
+	if not flies or not actor.flight.enabled or not actor.flight.can_hover():
+		return
+	if _hop_left > 0.0:
+		_hop_left -= delta
+		cmd.secondary = true
+		cmd.jump = _hop_left > combat_hop_time - combat_climb
+		return
+	_hop_in -= delta
+	if _hop_in <= 0.0 and actor.is_on_floor() and actor.flight.heat < hop_heat and not actor.flight.overheated:
+		_hop_in = _rng.randf_range(combat_hop_every.x, combat_hop_every.y)
+		_hop_left = combat_hop_time
+		cmd.jump_pressed = true
+		cmd.jump = true
 
 
 func _look_along(cmd: ActorCommand, dir: Vector3) -> void:

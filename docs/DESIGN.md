@@ -229,6 +229,46 @@ where players drop in, each with a depot. Still to come: more hotspots (a
 volcano, a storm core), a drawn map on the watch with the rings on it,
 squad regrouping at the gates, and tuning.
 
+### Rival raiders (Caleb's call)
+
+Caleb mostly plays solo, so the warzone has to feel full of people even
+when he is the only one there. Rival raiders are bots that play the way a
+player does, so full loot, bounties and the war feed mean something solo
+and the field never feels like it is only soldiers.
+
+- **They come in like players.** Each drops in at a player spawn (the
+  gate outposts in Ashfront) with a real kit: a primary, a sidearm, a
+  blade, a flight rig, a frame and often a helmet, all base level. They
+  look like people, not soldiers, and go by a name nobody else in the
+  world is using.
+- **They want the loot.** A raider goes from cache to cache and loots each
+  one the way a player does.
+- **They fight everyone.** Each is a side of its own: the armies, the
+  players and the other raiders are all fair game.
+- **They fly.** A raider uses its rig: it lifts off over whatever it is
+  stuck on, and a jetpack wearer takes to the air in a gunfight, hovering
+  on held aim. This settles "should bots fly?" for raiders only; the armies
+  stay on foot.
+- **They look after their kit.** A raider aims like a seasoned player
+  (`WorldDef.raider_skill`), not like the rim's rookies; runs a dry
+  primary onto its sidearm and goes back to the primary and a fresh mag
+  between fights; draws its blade once every gun is dry; and heals from its
+  pack when hurt and clear of trouble.
+- **They get out, or die trying.** After a few minutes, or with a full
+  pack, a raider stops and signs out, and a fight starts the countdown
+  over. Killed, it drops its whole kit and haul in a bag, like a player.
+- **Everyone hears about them.** The war feed says when one drops in, who
+  killed it, and when one gets out with its haul.
+
+**What is built (MVP).** `WorldDef.raider_count` (4 in Ashfront, 0
+elsewhere), `raider_gap`, `raider_stay`, `raider_kit` and `raider_names`;
+`Raid._tick_raiders`, `spawn_raider` and `raiders`; the brain's errands,
+hold, flight and kit care (`BotBrain.go_to`, `holding`, `flies`, `uses_kit`). Clients build each
+raider from its kit (`spawn_bot`'s `kit`). Still to come: rooftop caches
+(only ground caches today), banking at depots, renown and bounties of
+their own, picking up bags, flight across the map (wings and long
+jetpack trips), and a grudge against whoever killed them.
+
 ### World events
 
 The warzone already runs one event at a time (supply pods and warlords,
@@ -1231,7 +1271,7 @@ Caleb's calls, still open:
 
 - Are the balance pass's Mk1 numbers (section 5) right? To tune by feel in
   the playtest, on the base's flight course.
-- Should bots fly?
+- Should the armies' bots fly? (Rival raiders do, section 2.)
 - The airborne sign-out: 25 seconds and a beacon column, or must you land?
 - Which gadgets to build first from the list in section 4.
 - Can a heavy weapon from the armory wall be taken into the PvP world, or

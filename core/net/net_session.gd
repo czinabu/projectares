@@ -879,6 +879,12 @@ func _send_spawn(peer: int, actor: Actor) -> void:
 	else:
 		data = {"seed": raid.bot_seeds.get(actor, 0), "warlord": raid.warlords.has(actor),
 				"faction": actor.faction, "zone": int(actor.get_meta("zone", -1))}
+		# A rival raider wears a player's kit and look, so a client builds the
+		# same person rather than a soldier from the seed.
+		if actor.has_meta("raider_kit"):
+			data["kit"] = actor.get_meta("raider_kit")
+			if actor.has_meta("appearance"):
+				data["look"] = actor.get_meta("appearance")
 	_spawn.rpc_id(peer, _ids[actor], "player" if state != null else "bot", actor.display_name,
 			String(actor.name), actor.global_position, actor.cmd.yaw, data)
 
@@ -1756,8 +1762,15 @@ func _spawn(id: int, kind: String, shown_name: String, node_name: String, at: Ve
 		state.picks = data.get("picks", {})
 		raid.players.append(state)
 	else:
+		var kit: Array = []
+		if data.get("kit") is Array:
+			kit = (data["kit"] as Array).filter(func(id: Variant) -> bool: return ItemDB.has_item(str(id)))
 		actor = raid.spawn_bot(node_name, at, data.get("seed", 0), data.get("warlord", false),
-				data.get("faction", ""), clampi(int(data.get("zone", -1)), -1, 2))
+				data.get("faction", ""), clampi(int(data.get("zone", -1)), -1, 2), kit)
+		if not kit.is_empty():
+			actor.display_name = shown_name
+			if data.has("look"):
+				Look.set_appearance(actor, data["look"])
 		raid.world.on_spawn(actor)
 	actor.cmd.yaw = yaw
 	_actors[id] = actor

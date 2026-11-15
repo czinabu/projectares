@@ -76,6 +76,7 @@ const Economy := preload("res://core/economy/economy.gd")
 const WarDirector := preload("res://core/war/war_director.gd")
 const Strongpoint := preload("res://core/war/strongpoint.gd")
 const PowerArmory := preload("res://core/war/power_armory.gd")
+const Human := preload("res://core/visual/human.gd")
 
 ## How this raid runs.
 ##   SOLO   - one local player, everything simulated here.
@@ -163,6 +164,17 @@ var teams := {}
 var warlords := {}
 var _event_in := 0.0
 var _event_bots: Array[Actor] = []
+## Rival raiders in the world (`WorldDef.raider_count`, authority only), one
+## entry each: {"bot": Actor, "leaves_at": clock time it heads out,
+## "sign_out_left": seconds, below 0 when not signing out, "cache": the
+## LootContainer it is going for or null, "visited": caches it has emptied}.
+var raiders: Array[Dictionary] = []
+## How close (metres) a raider must be to a cache to loot it.
+var raider_loot_reach := 2.5
+## A raider only goes for caches it can walk to: no higher than this over
+## the ground (rooftops are for players, for now).
+var raider_climb := 2.0
+var _raider_in := 0.0
 var _event_pod: LootContainer
 ## Risk zones (DESIGN.md section 2): the map's gate outposts (Marker3D, metas
 ## "name" and "radius") and its core bosses, { marker, bot, back_in }.
@@ -304,6 +316,7 @@ func _setup(p_world: WorldDef, p_seed: int) -> void:
 	outposts = _map_nodes("outpost")
 	_assault_in = world.assault_interval
 	_event_in = world.event_interval
+	_raider_in = world.raider_gap
 
 
 func _spawn_caches() -> void:
@@ -340,6 +353,7 @@ func _physics_process(delta: float) -> void:
 	_tick_caches(delta)
 	armory.tick(delta)
 	_tick_bots(delta)
+	_tick_raiders(delta)
 	_tick_detail(delta)
 	_tick_vehicles(delta)
 
@@ -529,7 +543,7 @@ func _tick_assaults(delta: float) -> void:
 	var point: Strongpoint = targets[rng.randi() % targets.size()]
 	var nearest: Array[Actor] = []
 	for bot in bots:
-		if is_instance_valid(bot) and not bot.is_dead and bot.has_node("Brain"):
+		if is_instance_valid(bot) and not bot.is_dead and bot.has_node("Brain") and not is_raider(bot):
 			nearest.append(bot)
 	nearest.sort_custom(func(a: Actor, b: Actor) -> bool:
 		return a.global_position.distance_squared_to(point.global_position) \
@@ -1207,15 +1221,165 @@ func _tick_bosses(delta: float) -> void:
 			war_feed.emit("A warlord has taken %s again" % _whereabouts(boss.marker.global_position))
 
 
-## Bots outside the world's own army: an event's, and the core bosses. They
-## are never ordered about by the war, and nobody replaces them.
+## Bots outside the world's own army: an event's, the core bosses and the
+## rival raiders. They are never ordered about by the war, and the army
+## never replaces them.
 func _is_extra(bot: Actor) -> bool:
-	if _event_bots.has(bot):
+	if _event_bots.has(bot) or is_raider(bot):
 		return true
 	for boss in _bosses:
 		if boss.bot == bot:
 			return true
 	return false
+
+
+## Whether a bot is one of the world's rival raiders.
+func is_raider(bot: Actor) -> bool:
+	for entry in raiders:
+		if entry.bot == bot:
+			return true
+	return false
+
+
+## Rival raiders (`WorldDef.raider_count`): bots that play the way a player
+## does. They arrive one at a time, go from cache to cache, fight whoever
+## they meet (the armies, players and each other), and once their stay is
+## up or their pack is full they sign out, standing still for the world's
+## sign-out time; a fight starts it over. Authority only.
+func _tick_raiders(delta: float) -> void:
+	if world.raider_count <= 0 or world.safe_zone:
+		return
+	_raider_in -= delta
+	if _raider_in <= 0.0:
+		_raider_in = world.raider_gap
+		if raiders.size() < world.raider_count:
+			spawn_raider()
+	for entry in raiders.duplicate():
+		var bot: Actor = entry.bot
+		if not is_instance_valid(bot) or bot.is_dead:
+			continue
+		var brain := bot.get_node_or_null("Brain") as BotBrain
+		if brain == null:
+			continue
+		var fighting := brain.state != BotBrain.State.PATROL
+		if float(entry.sign_out_left) >= 0.0:
+			if fighting:
+				entry.sign_out_left = world.sign_out_time
+				continue
+			entry.sign_out_left = float(entry.sign_out_left) - delta
+			if float(entry.sign_out_left) <= 0.0:
+				_raider_leaves(entry)
+			continue
+		if clock >= float(entry.leaves_at) or bot.inventory.is_full():
+			entry.sign_out_left = world.sign_out_time
+			entry.cache = null
+			brain.clear_errand()
+			brain.holding = true
+			continue
+		if fighting:
+			continue
+		var cache: Variant = entry.cache
+		if cache != null and (not is_instance_valid(cache) or (cache as LootContainer).items.is_empty()):
+			cache = null
+		if cache == null:
+			cache = _raider_cache(entry)
+			entry.cache = cache
+			if cache == null:
+				if brain.has_errand:
+					brain.clear_errand()
+			else:
+				brain.go_to((cache as LootContainer).global_position)
+		elif bot.global_position.distance_to((cache as LootContainer).global_position) <= raider_loot_reach:
+			(cache as LootContainer).interact(bot)
+			entry.visited.append(cache)
+			entry.cache = null
+			brain.clear_errand()
+
+
+## Drops a rival raider in at a player spawn, away from the players, with a
+## kit from `WorldDef.raider_kit` and a name nobody here is using. Returns
+## null when there is nowhere to put one or no name left.
+func spawn_raider() -> Actor:
+	if mode == Mode.CLIENT:
+		return null
+	var spawns := _map_nodes("spawn_player")
+	if spawns.is_empty():
+		spawns = _map_nodes("spawn_bot")
+	var callsign := _raider_name()
+	if spawns.is_empty() or callsign == "":
+		return null
+	var marker := spawns[_farthest_from_players(spawns) if not active_players().is_empty()
+			else rng.randi() % spawns.size()]
+	var at := _stand(marker.global_position + Vector3(rng.randf_range(-1, 1), 0, rng.randf_range(-1, 1)))
+	# A side of its own: the armies, the players and the other raiders are
+	# all fair game, as they are for a player.
+	var bot := spawn_bot("Raider%d" % _bot_count, at, rng.randi(), false, "raider:" + callsign, -2,
+			world.raider_kit(rng))
+	bot.display_name = callsign
+	Look.set_appearance(bot, Human.for_name(callsign))
+	_bot_count += 1
+	var brain := BotBrain.new()
+	brain.name = "Brain"
+	brain.seed_value = rng.randi()
+	brain.skill_range = world.raider_skill
+	brain.flies = bot.flight.enabled
+	brain.uses_kit = true
+	bot.add_child(brain)
+	bot.died.connect(_on_actor_died)
+	world.on_spawn(bot)
+	raiders.append({"bot": bot, "sign_out_left": -1.0, "cache": null, "visited": [],
+			"leaves_at": clock + rng.randf_range(world.raider_stay.x, world.raider_stay.y)})
+	war_feed.emit("%s dropped in %s" % [callsign, _whereabouts(at)])
+	actor_spawned.emit(bot)
+	return bot
+
+
+func _raider_name() -> String:
+	var taken := {}
+	for actor in bots:
+		if is_instance_valid(actor):
+			taken[actor.display_name] = true
+	for state in players:
+		if is_instance_valid(state.actor):
+			taken[state.actor.display_name] = true
+	var free := world.raider_names().filter(func(n: String) -> bool: return not taken.has(n))
+	return free[rng.randi() % free.size()] if not free.is_empty() else ""
+
+
+## The cache a raider goes for next: one of the nearest it has not emptied
+## that holds something, stands low enough to walk to, and no other raider
+## is already heading for.
+func _raider_cache(entry: Dictionary) -> LootContainer:
+	var bot: Actor = entry.bot
+	var claimed := raiders.map(func(other: Dictionary) -> Variant: return other.cache)
+	var options: Array[LootContainer] = []
+	for cache in _caches:
+		var container := cache.container as LootContainer
+		if not is_instance_valid(container) or container.items.is_empty() or container.is_rack() \
+				or entry.visited.has(container) or claimed.has(container):
+			continue
+		var at := container.global_position
+		var ground := float(map.call("ground_height", at.x, at.z)) if map.has_method("ground_height") else 0.0
+		if at.y - ground > raider_climb:
+			continue
+		options.append(container)
+	if options.is_empty():
+		return null
+	options.sort_custom(func(a: LootContainer, b: LootContainer) -> bool:
+		return a.global_position.distance_squared_to(bot.global_position) \
+				< b.global_position.distance_squared_to(bot.global_position))
+	return options[rng.randi() % mini(3, options.size())]
+
+
+## A raider's sign-out ends: it leaves with everything it carried, as a
+## player would, and another takes its place in time.
+func _raider_leaves(entry: Dictionary) -> void:
+	var bot: Actor = entry.bot
+	raiders.erase(entry)
+	war_feed.emit("%s signed out with %s" % [bot.display_name, "nothing" if bot.inventory.items.is_empty()
+			else "%d items" % bot.inventory.items.size()])
+	_raider_in = maxf(_raider_in, world.raider_gap)
+	_remove_actor(bot)
 
 
 ## The gate outpost a point is inside, or null.
@@ -1379,9 +1543,11 @@ func _farthest_from_players(markers: Array[Node3D]) -> int:
 
 
 ## Creates a bot equipped from `equip_seed`, with no brain. A client calls this
-## with the server's seed to get the same bot.
+## with the server's seed to get the same bot. A rival raider is given its
+## `kit` instead (item ids, put on like a player's) and is not passed
+## through `WorldDef.equip_bot`.
 func spawn_bot(bot_name: String, at: Vector3, equip_seed: int, warlord := false, faction := "",
-		zone := -2) -> Actor:
+		zone := -2, kit: Array = []) -> Actor:
 	var bot := Actor.new()
 	bot.name = bot_name
 	if faction != "":
@@ -1393,7 +1559,11 @@ func spawn_bot(bot_name: String, at: Vector3, equip_seed: int, warlord := false,
 	bot.global_position = at
 	var equip_rng := RandomNumberGenerator.new()
 	equip_rng.seed = equip_seed
-	world.equip_bot(bot, equip_rng)
+	if kit.is_empty():
+		world.equip_bot(bot, equip_rng)
+	else:
+		bot.set_meta("raider_kit", kit.duplicate())
+		Loadout.equip(bot, kit)
 	if warlord:
 		world.make_warlord(bot)
 		warlords[bot] = true
@@ -2056,11 +2226,21 @@ func _on_actor_died(actor: Actor, info: DamageInfo) -> void:
 		if mode == Mode.SOLO and actor == player:
 			return
 	else:
+		var extra := _is_extra(actor)
+		if mode != Mode.CLIENT and is_raider(actor):
+			# A raider is somebody: everyone hears who got them. Another
+			# drops in after the usual gap.
+			war_feed.emit("%s killed %s" % [_feed_name(info.source as Actor), actor.display_name]
+					if info.source is Actor and info.source != actor else "%s died" % actor.display_name)
+			for entry in raiders.duplicate():
+				if entry.bot == actor:
+					raiders.erase(entry)
+			_raider_in = maxf(_raider_in, world.raider_gap)
 		bots.erase(actor)
 		warlords.erase(actor)
 		# A world event's bots are extra: nobody takes their place. Neither
 		# are reinforcements replaced once the war has cooled.
-		if mode != Mode.CLIENT and not _is_extra(actor):
+		if mode != Mode.CLIENT and not extra:
 			if _standing_bots() + _bot_respawns.size() < bot_target():
 				_bot_respawns.append(world.bot_respawn_time)
 			# Bots killing bots keep the war simmering.
@@ -2155,6 +2335,9 @@ func _remove_actor(actor: Actor) -> void:
 	bots.erase(actor)
 	bot_seeds.erase(actor)
 	warlords.erase(actor)
+	for entry in raiders.duplicate():
+		if entry.bot == actor:
+			raiders.erase(entry)
 	_orders.erase(actor)
 	_busy_until.erase(actor)
 	actor_removed.emit(actor)
