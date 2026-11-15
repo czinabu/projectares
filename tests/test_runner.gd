@@ -47,6 +47,7 @@ const TravelOnlineTests := preload("res://tests/travel_online_tests.gd")
 const HostRecoveryTests := preload("res://tests/host_recovery_tests.gd")
 const RiskZoneTests := preload("res://tests/risk_zone_tests.gd")
 const RaiderTests := preload("res://tests/raider_tests.gd")
+const PlaytestFixTests := preload("res://tests/playtest_fix_tests.gd")
 const InspectTests := preload("res://tests/inspect_tests.gd")
 
 var _passed := 0
@@ -324,6 +325,7 @@ func _run() -> void:
 	await _test_artifacts()
 	await _test_risk_zones()
 	await _test_raiders()
+	await _test_playtest_fixes()
 	await _test_watch()
 	await _test_portals()
 	await _test_feel()
@@ -420,6 +422,10 @@ func _test_risk_zones() -> void:
 
 func _test_raiders() -> void:
 	await RaiderTests.run(self)
+
+
+func _test_playtest_fixes() -> void:
+	await PlaytestFixTests.run(self)
 
 
 func _test_watch() -> void:
@@ -1212,7 +1218,8 @@ func _test_main_flow() -> void:
 	for slot in wrist.card.slots:
 		icons.append(slot.id)
 	check(icons == Hud.Wrist.SLOTS, "the card is a row of icons: %s" % ", ".join(icons))
-	check(wrist.card.bars.size() >= 3, "in third person the card carries the vitals strip, since there is no glass")
+	check((wrist.card.bars.is_empty()) if p.visor.enabled else (wrist.card.bars.size() >= 3),
+			"in third person the card carries the vitals strip only with no helmet: a visor shows them flat in either view")
 	# The mouse wheel steps across the card; the mouse only looks.
 	var yaw_before := controller.yaw
 	var weapon_before := p.active_weapon_index
@@ -1242,8 +1249,8 @@ func _test_main_flow() -> void:
 		controller.scroll(1)
 		await frames(2)
 	check(wrist.card.focused_tab() == "status" and wrist.focused_id() == "map"
-			and wrist.text().begins_with(main.raid.world.display_name) and wrist.card.bars.size() >= 3,
-			"past the Summon tab the wheel steps on to Status: the map and your standing, under the vitals strip")
+			and wrist.text().begins_with(main.raid.world.display_name),
+			"past the Summon tab the wheel steps on to Status: the map and your standing")
 	for i in 20:
 		controller.scroll(1)
 	await frames(2)

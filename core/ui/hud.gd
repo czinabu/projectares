@@ -50,6 +50,9 @@ var wrist: Wrist
 var visor: VisorHud
 
 var _hit_marker: HitMarker
+## Fills round the crosshair while you bank at a depot or sign out, so the
+## progress is in view without raising the watch (playtest feedback).
+var progress_ring: ProgressRing
 var _hurt_flash: ColorRect
 var _stance: StanceIndicator
 ## The aiming cross in the middle of the screen.
@@ -90,6 +93,10 @@ func _ready() -> void:
 	_hit_marker.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(_hit_marker)
 	_place(_hit_marker, 0.5, 0.5, Vector2(-20, -20), Vector2(40, 40))
+	progress_ring = ProgressRing.new()
+	progress_ring.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(progress_ring)
+	_place(progress_ring, 0.5, 0.5, Vector2(-32, -32), Vector2(64, 64))
 
 	_stance = StanceIndicator.new()
 	_stance.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -149,9 +156,11 @@ func _process(delta: float) -> void:
 		if _death_result.is_empty():
 			_prompt.text = ""
 	elif leaving >= 0.0:
-		_prompt.text = "Signing out...   L to cancel"
+		var state := raid.state_for(p)
+		var left := ceili(state.sign_out_left) if state != null and state.sign_out_left >= 0.0 else 0
+		_prompt.text = ("Signing out  %d s   L to cancel" % left) if left > 0 else "Signing out...   L to cancel"
 	elif banking > 0.0:
-		_prompt.text = "Banking your backpack..."
+		_prompt.text = "Banking your backpack  %d%%" % roundi(banking * 100.0)
 	elif p.heal_time_left > 0.0:
 		_prompt.text = "Healing %.1f" % p.heal_time_left
 	else:
@@ -159,6 +168,9 @@ func _process(delta: float) -> void:
 		var target := p.find_interactable() if p.vehicle == null else null
 		_prompt.text = target.get_prompt() if target else ""
 
+	if progress_ring:
+		progress_ring.show_progress(-1.0 if p.is_dead else (leaving if leaving >= 0.0 else (banking if banking > 0.0 else -1.0)),
+				ProgressRing.LEAVING if leaving >= 0.0 else ProgressRing.BANKING)
 	for m in _messages:
 		m.time -= delta
 	_messages = _messages.filter(func(m: Dictionary) -> bool: return m.time > 0.0)
@@ -187,9 +199,9 @@ func _process(delta: float) -> void:
 			controller.watch_focus = focus
 	var death := death_text(_death_result, _redeploy_wait, drop_choices(raid, p)) \
 			if p.is_dead and not _death_result.is_empty() else ""
-	# Your vitals are on the visor's edges while you look through it; with
-	# no helmet, or in third person, the card carries them in a thin strip.
-	var on_glass := visor != null and visor.glass_shown()
+	# Your vitals are on the visor's edges in either view (drawn flat in
+	# third person); with no helmet the card carries them in a thin strip.
+	var on_glass := visor != null and (visor.glass_shown() or visor.flat_shown())
 	wrist.objective = objective
 	wrist.show_card(slots, focus, death, p.health.health / maxf(p.health.max_health, 1.0),
 			wrist_bars(p) if not on_glass else ([] as Array[float]),
@@ -946,6 +958,35 @@ func _place(control: Control, ax: float, ay: float, offset: Vector2, size: Vecto
 	control.offset_top = offset.y
 	control.offset_right = offset.x + size.x
 	control.offset_bottom = offset.y + size.y
+
+
+## A thin ring round the crosshair that fills clockwise from the top as a
+## bank or sign-out goes on, over a faint full ring. Hidden below 0.
+class ProgressRing:
+	extends Control
+
+	const BANKING := Color(0.45, 0.9, 1.0)
+	const LEAVING := Color(0.55, 1.0, 0.55)
+	var value := -1.0
+	var color := BANKING
+
+	func show_progress(p_value: float, p_color: Color) -> void:
+		if is_equal_approx(p_value, value) and p_color == color:
+			return
+		value = p_value
+		color = p_color
+		queue_redraw()
+
+	func _draw() -> void:
+		if value < 0.0:
+			return
+		var c := size * 0.5
+		var radius := minf(size.x, size.y) * 0.5 - 3.0
+		var faint := color
+		faint.a = 0.18
+		draw_arc(c, radius, 0.0, TAU, 64, faint, 2.0, true)
+		if value > 0.0:
+			draw_arc(c, radius, -PI / 2.0, -PI / 2.0 + TAU * clampf(value, 0.0, 1.0), 64, color, 3.0, true)
 
 
 ## Four diagonal ticks around the crosshair that flash when your attack lands.

@@ -80,6 +80,10 @@ var heat_seek_turn := 2.2
 var spin_up := 0.0
 ## Walk speed multiplier with the barrels fully spun.
 var spin_move_mult := 1.0
+## Aiming down sights you walk, never run: this share of the walk speed
+## (and no sprint, see `Actor._simulate_movement`), so the sight holds still
+## enough to use on the move.
+var ads_move_mult := 0.55
 ## How far the view magnifies while aiming: 1 is the plain sights. Optics raise it.
 var ads_zoom := 1.0
 ## A scope magnifies only inside its lens (picture in picture): aiming shows
@@ -449,7 +453,8 @@ func spin_fraction() -> float:
 
 
 func move_speed_mult() -> float:
-	return lerpf(1.0, spin_move_mult, _spin) if spin_up > 0.0 else 1.0
+	var mult := lerpf(1.0, spin_move_mult, _spin) if spin_up > 0.0 else 1.0
+	return mult * (ads_move_mult if _aiming else 1.0)
 
 
 ## True for a raid-only power weapon (see `PowerArmory`).

@@ -144,6 +144,10 @@ var _ads := 0.0
 ## in the actor's frame, added to the next reach so the sight settles on
 ## the eye line (the hand turns a little as the arm reaches).
 var _ads_fix := Vector3.ZERO
+## How much of that miss is taken back each frame.
+## (More does not keep up with a stride any better: the walk itself is held
+## still while aimed, `Locomotion.aim_still_time`.)
+var ads_fix_gain := 0.5
 ## Where the off hand holds a long gun with no fore grip marker, and the
 ## off elbow's pole while aiming down sights (actor frame).
 var ads_fore := Vector3(0.0, -0.07, -0.3)
@@ -747,7 +751,7 @@ func _steady_gun() -> void:
 	if _ads > 0.99:
 		var aimed := actor.global_basis.orthonormalized() * Basis(Vector3.RIGHT, actor.cmd.pitch)
 		var miss := sight_target(gun, aimed) - actor.hand.global_transform * (gun.visual.transform * ActionPose.sight_local(gun))
-		_ads_fix = (_ads_fix + actor.global_basis.orthonormalized().inverse() * miss * 0.5).limit_length(0.1)
+		_ads_fix = (_ads_fix + actor.global_basis.orthonormalized().inverse() * miss * ads_fix_gain).limit_length(0.1)
 	var at: Vector3
 	var fore := gun.visual.get_node_or_null("ForeGrip") as Node3D
 	if fore == null:

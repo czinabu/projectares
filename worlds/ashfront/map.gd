@@ -168,17 +168,18 @@ func _build_environment() -> void:
 		"contrast": 1.12,
 	}, {
 		# The same plain in the middle of a battle: the smoke closes in, the sun
-		# goes to a dull red and the light drains away. It stops well short of
-		# black, so a fight stays readable.
+		# goes to a dull red and the colour drains away. Playtest feedback:
+		# enemies were hard to see in a hot war, so the light and the distance
+		# you can see stay close to the calm's; the mood is in the colour.
 		"sky_tint": Color(0.55, 0.3, 0.24),
 		"sky_saturation": 0.4,
-		"sky_energy": 0.42,
-		"fog_color": Color(0.2, 0.13, 0.11),
-		"fog_density": 0.0135,
+		"sky_energy": 0.58,
+		"fog_color": Color(0.3, 0.21, 0.17),
+		"fog_density": 0.0098,
 		"sun_color": Color(1.0, 0.6, 0.45),
-		"sun_energy": 1.05,
-		"ambient_color": Color(0.42, 0.36, 0.38),
-		"ambient_energy": 1.15,
+		"sun_energy": 1.5,
+		"ambient_color": Color(0.44, 0.38, 0.4),
+		"ambient_energy": 1.3,
 		"saturation": 0.72,
 		"contrast": 1.16,
 		"glow": 0.95,

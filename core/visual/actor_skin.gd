@@ -251,6 +251,16 @@ var _posed_head := Vector3.INF
 ## view.
 var eye_up := 0.08
 var eye_ahead := 0.12
+## The eyes (where first person looks from, and what an aimed gun is
+## brought up to) are steadied on the move: the stride's bob of the head is
+## smoothed away over `aim_steady_time` seconds, as a person's eyes stay level
+## while they run. Fully while aimed (`ActionPose.ads`), so the gun holds still
+## and the body bobs under it, and `eye_steady` of it otherwise, so a run
+## still reads in the view without throwing it about (playtest feedback: the
+## head bobbed several centimetres a stride).
+var aim_steady_time := 0.3
+var eye_steady := 0.9
+var _steady_head := Vector3.INF
 ## The raised watch's glow on the left wrist, and how far it is up (0..1).
 var _watch_glow: Node3D
 var _watch_up := 0.0
@@ -469,6 +479,7 @@ func _play(key: String, speed := 1.0) -> void:
 func _process(delta: float) -> void:
 	if actor == null or not is_instance_valid(actor):
 		return
+	_steady_eyes(delta)
 	_detail_delta += delta
 	_detail_wait += 1
 	if _detail_wait < _detail_every:
@@ -758,6 +769,33 @@ func eye_point(look: Basis) -> Variant:
 		_head_bone = _skeleton.find_bone("Head")
 	if _head_bone < 0:
 		return null
+	var local := _head_local()
+	var steady := lerpf(eye_steady, 1.0, ActionPose.of(actor).ads) if _steady_head.is_finite() else 0.0
+	if steady > 0.0:
+		local = local.lerp(_steady_head, steady)
+	var head: Vector3 = _skeleton.global_transform * local
+	return head + Vector3.UP * eye_up + look * Vector3(0.0, 0.0, -eye_ahead)
+
+
+## Follows the head (`_head_local`) with a lag of `aim_steady_time`, which
+## smooths the stride's bob out of it while keeping crouches and the like.
+func _steady_eyes(delta: float) -> void:
+	if _skeleton == null or _head_bone < 0:
+		return
+	# The head as it was last shown (`_note_head`): with the shoulders' aim
+	# stance and every other turn in. Read outside the skeleton's update the
+	# bone is only the clip's, and the arm (which reaches inside it) and the
+	# camera would follow two different heads.
+	var local := _posed_head if _posed_head.is_finite() else _head_local()
+	if not _steady_head.is_finite() or _steady_head.distance_to(local) > 0.5:
+		# First frame, or a jump (a teleport, getting on a bike): no lag.
+		_steady_head = local
+		return
+	_steady_head = _steady_head.lerp(local, 1.0 - exp(-delta / maxf(aim_steady_time, 0.01)))
+
+
+## The head, in the skeleton's space, as the body is posed.
+func _head_local() -> Vector3:
 	var local := _skeleton.get_bone_global_pose(_head_bone).origin
 	if actor.vehicle != null and _posed_head.is_finite():
 		# Seated, the ride pose moves the whole body onto the seat, and that
@@ -772,8 +810,7 @@ func eye_point(look: Basis) -> Variant:
 		var low := smoothstep(0.0, 1.0, maxf(actor.crouch, actor.slide_low))
 		if low > 0.0:
 			local = local.lerp(_posed_head, low)
-	var head: Vector3 = _skeleton.global_transform * local
-	return head + Vector3.UP * eye_up + look * Vector3(0.0, 0.0, -eye_ahead)
+	return local
 
 
 ## True while the actor holds their phone up (`ActorCommand.phone`, which

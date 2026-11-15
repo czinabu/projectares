@@ -452,6 +452,14 @@ func take_picked_weapon() -> void:
 			and actor.get_active_weapon() != null and Loadout.summonable(entry.id):
 		# The one in hand: put it back into the pack (the summon in reverse).
 		store_requested.emit(entry.id)
+	elif int(entry.index) >= 0 and int(entry.index) == actor.active_weapon_index \
+			and int(entry.index) == Loadout.power_index(actor):
+		# The heavy weapon in hand goes back into the watch's chamber (never
+		# the pack): back to the weapon drawn before it, or empty hands.
+		var back := actor.last_drawn
+		if back < 0 or back >= actor.weapons.size() or back == int(entry.index):
+			back = actor.weapon_for_key(1)
+		_pending_switch = back if back >= 0 else ActorCommand.HOLSTER
 	elif int(entry.index) >= 0:
 		_pending_switch = int(entry.index)
 	else:
@@ -745,6 +753,10 @@ func _physics_process(delta: float) -> void:
 	for n in range(1, 4):
 		if Input.is_action_just_pressed("weapon_%d" % n):
 			key_slot = actor.weapon_for_key(n)
+	# 4 draws the heavy weapon waiting in the watch's chamber (Caleb's call,
+	# replacing "from the watch only"); it materializes as from the watch.
+	if Input.is_action_just_pressed("weapon_4"):
+		key_slot = Loadout.power_index(actor)
 	if key_slot >= 0:
 		cmd.switch_weapon = key_slot
 	elif Input.is_action_just_pressed("holster"):
@@ -754,7 +766,7 @@ func _physics_process(delta: float) -> void:
 			cmd.switch_weapon = ActorCommand.HOLSTER
 		elif not actor.weapons.is_empty():
 			cmd.switch_weapon = clampi(actor.last_drawn, 0, actor.weapons.size() - 1)
-	elif _pending_switch >= 0:
+	elif _pending_switch != -1:
 		cmd.switch_weapon = _pending_switch
 	_pending_switch = -1
 	cmd.aim_dir = _compute_aim_dir()

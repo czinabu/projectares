@@ -49,7 +49,7 @@ rows marked **pre-playtest** come before the friends playtest.
 | Banking readout on the watch | Missing | Banking happens at depots; the watch should show what is banked. Comes with banking. |
 | Landing choices | Built | |
 | Vehicle carousel (toys) | Built | Pick, throw, unpack, pack back; holds two. The toy digitizes into the hand, is thrown overarm (windup, release, follow-through) and flips once in the air before coming down level to unpack, the same body for everyone (`ActionPose.toy_hand_point`, `Actor.toy_in_hand`). |
-| Heavy weapon chamber | Partly | A heavy weapon is scanned into the watch and summoned from its weapon carousel; key 4 is gone. Missing: banking it and dropping it in the bag (see Heavy weapons below). |
+| Heavy weapon chamber | Partly | A heavy weapon is scanned into the watch and drawn from its weapon carousel or with key 4; picked on the watch in hand, it goes back into the chamber. Missing: banking it and dropping it in the bag (see Heavy weapons below). |
 | Per-rig readouts (stall line, boosts left, dash charges) | Partly | The visor's rig cue (`Hud.rig_text`) shows the wings' airspeed, stall and boosts and the boots' charges and skim. Missing on the rig itself (part of the flight HUD, see Flight). **Pre-playtest.** |
 | Sign-out from the watch, with its countdown | Partly | Sign-out exists on L; not on the watch. |
 | Loadout swapping from the watch in the PvE world | Missing, deferred | With the PvE world. Today loadouts change only in a lobby or base. |
@@ -93,7 +93,7 @@ rows marked **pre-playtest** come before the friends playtest.
 | Heavy weapons as data, splash through `Combat.deal` | Built | Rail Lance, Helion, Arc Mortar, Storm Cannon. |
 | Found at strongpoints, by pods, more as the war heats | Built | `PowerArmory`. Today they sit on swap racks. |
 | Scanned into the watch chamber instead of swapped at a rack | Partly | Using the spot where one lies scans it into the chamber (`LootContainer._rack_swap` with `Loadout.set_power(..., draw = false)`); a second swaps, leaving the old one there with its shots. Missing: the spot still looks like a rack. |
-| Summon without dropping the primary; auto-return when spent | Built | Drawn only from the watch's weapon carousel (no key 4), materializing over `Loadout.summon_time` like any summon; the primary is kept, and a spent one is thrown away with your own weapon back in hand. |
+| Summon without dropping the primary; auto-return when spent | Built | Drawn from the watch's weapon carousel or key 4, materializing over `Loadout.summon_time` like any summon; the primary is kept, and a spent one is thrown away with your own weapon back in hand. |
 | Banked by depot or sign-out to the armory wall | Missing | Needs `StashRules.storable` to accept `power`, and the `CLAUDE.md` power weapon rule rewritten. **Pre-playtest.** |
 | Deploy with one from the wall (one per outing) | Missing | **Pre-playtest.** Open decision in DESIGN.md section 13. |
 | Dropped with your bag on death | Partly | Today a dead player's power weapon is left on a rack. |

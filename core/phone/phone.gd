@@ -121,6 +121,7 @@ const CONTROLS := [
 		["Aim down sights", "Hold {alt_fire}"],
 		["Reload", "{reload}"],
 		["Primary / sidearm / melee", "{weapon_1} {weapon_2} {weapon_3}, or the wheel (watch down)"],
+		["Heavy weapon, from the watch's chamber", "{weapon_4}"],
 		["Put away, or draw again", "{holster}"],
 		["Inspect what is in your hand (any key or click stops)", "{inspect}"],
 		["Use a medkit", "{heal}"],
