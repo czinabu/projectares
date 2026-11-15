@@ -1023,7 +1023,15 @@ without Caleb, and update the gap list when a PR closes a row.
   server it remembers (`Profile.home_server`, set by a join from the phone's
   Servers app) or
   starts one here that runs every world, since worlds are chosen at the
-  plaza's gates, never before going online. `Hub` (`core/ui/hub.gd`)
+  plaza's gates, never before going online. Travel never strands you on
+  the travel screen: a server of your own moves to free ports when an old
+  one still holds them (`Main.free_host_port`), stops itself once the game
+  that started it stops touching its heartbeat file (`--heartbeat`,
+  `HEARTBEAT_STALE`), and is given `HOST_JOIN_DEADLINE` to let you in
+  (watched every second, a stopped server noticed at once) before it is
+  started once more and then given up on; a deploy that never arrives
+  fails after `DEPLOY_TIMEOUT`. Every failed trip ends in `go_home` with
+  the reason. `Hub` (`core/ui/hub.gd`)
   is never a main screen: it holds the screens that the base's stations
   (`HomeBase.STATIONS`, sections in `Hub.STATIONS`) show, and the travel
   screen shown while connecting. A new menu feature gets a station (or a

@@ -453,6 +453,11 @@ func equipped(slot: String) -> String:
 	return account.get("loadout", {}).get(slot, "") if in_lobby() else Profile.equipped(slot)
 
 
+## The line `set_online_status` last set.
+func online_status() -> String:
+	return _online_status.text if _online_status else ""
+
+
 func set_online_status(text: String) -> void:
 	if _online_status:
 		_online_status.text = text
