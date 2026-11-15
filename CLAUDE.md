@@ -343,7 +343,12 @@ without Caleb, and update the gap list when a PR closes a row.
   `skeleton_updated`; a check of a posed bone reads it there. Guns tagged in
   `ads_hip_tags` (the minigun) stay at the hip. First person then only
   settles the camera on the sight line as it comes up; never move the gun
-  to the camera. A view that follows the gun reads it where it was drawn
+  to the camera. Aimed on the move the body holds the gun still rather
+  than the view being steadied (playtest feedback: the sight bounced):
+  you walk at `Gun.ads_move_mult` and never sprint, the spine, shoulders
+  and head follow the gait with a lag (`Locomotion.aim_still_time`), and the
+  eyes the gun is brought to are steadied (`ActorSkin.eye_steady`, fully
+  while aimed); measured in `ads_tests.gd` (`_check_on_the_move`). A view that follows the gun reads it where it was drawn
   (`ActionPose.sight_shown`, the hand's "shown_local" meta), never the hand
   node a physics tick parked (that was the range's ADS stutter). A weapon
   that takes no input on a tick stops aiming (`Weapon.drop_aim`). Each
@@ -418,8 +423,9 @@ without Caleb, and update the gap list when a PR closes a row.
 - Gear behavior comes from the item's `stats` in `ItemDB`, applied by
   `Loadout.equip`. Add a new gun or frame as data, not as a new class.
 - A loadout carries one primary, one melee weapon and one sidearm. Keys are by
-  type, not equip order: 1 primary, 2 sidearm, 3 melee, and a power or special
-  weapon from the watch only (`Actor.slot_order`, `weapon_for_key`); the
+  type, not equip order: 1 primary, 2 sidearm, 3 melee, and 4 the heavy weapon
+  in the watch's chamber (`Actor.slot_order`, `weapon_for_key`,
+  `Loadout.power_index`); the
   mouse wheel cycles the same order. Sidearms are firearms also tagged "sidearm";
   `Loadout.fits(slot, id)` decides what goes in a slot (a sidearm never fits
   the primary slot), and `Weapon.is_sidearm` marks one once equipped. Running
@@ -459,10 +465,16 @@ without Caleb, and update the gap list when a PR closes a row.
   scaled by `WorldDef.power_weapon_rate` (0 in Frostline and the arena).
   Using a rack scans its weapon into the watch's heavy chamber, a fourth
   weapon slot filled through `Loadout.set_power` with `draw` false; one
-  already carried goes on the rack with its shots. No key draws it and the
-  wheel skips it (`Actor.slot_order`, Caleb's call): it is summoned from the
-  watch's weapon carousel and materializes over `Loadout.summon_time`
-  (`Actor._draw_weapon`). A spent one is thrown
+  already carried goes on the rack with its shots. Key 4 draws it, as does
+  the watch's weapon carousel (Caleb's call after a playtest, replacing
+  "from the watch only"), and the wheel skips it (`Actor.slot_order`); it
+  materializes over `Loadout.summon_time` (`Actor._draw_weapon`). Picked on
+  the watch while in hand it goes back into the chamber, never the pack
+  (`PlayerController.take_picked_weapon`). It takes the primary's place
+  (Caleb's call): while it is out the primary waits in the watch
+  (`Actor.primary_in_watch`) and materializes again whenever it next comes
+  into the hand, by any path (`Actor._swap_primary_and_heavy`); the sidearm
+  and blade stay instant. A spent one is thrown
   away, a dead player's is left on a rack, and `StashRules.storable` refuses
   them, so they never reach a stash, a bag or a result. Online the swap
   reaches clients as `Actor.power_changed` through `NetSession`. Their art is
@@ -609,8 +621,10 @@ without Caleb, and update the gap list when a PR closes a row.
   projected light, never a frame, a tint or a mask over the view (playtest
   feedback: the first visors were in the way): it rests dim, trails the
   head, wakes on trouble (`VisorHud.alert`) and closes on what is aimed at
-  (`VisorHud.lock`). In third person the glass is gone but the ring and
-  the lock brackets stay (`VisorHud.reticle_shown`), and the helmet wears
+  (`VisorHud.lock`). Neither view is better informed (Caleb's call): in
+  third person the glass itself (its rim, a scrap visor's cracks, the trail
+  behind your turns) is gone, but every readout it carries is drawn flat
+  in the same places (`VisorHud.flat_shown`), thermal included, and the helmet wears
   its health strip and system light on the back of the head
   (`ActorSkin._update_vitals`, `helmet_light`), where a pack or a slung gun
   never covers them. The glass hugs
@@ -1111,8 +1125,8 @@ without Caleb, and update the gap list when a PR closes a row.
   holograms over the card are drawn at `tp_rows` of their first-person size
   and lifted by as little, smaller still where the top of the view is near
   (`_tp_row_scale`), so they stay in frame while the card keeps its size
-  (Caleb's feedback). Vitals go on the card only where the visor cannot
-  show them (no helmet, or third person). The watch works in the home base
+  (Caleb's feedback). Vitals go on the card only where there is no visor
+  to show them (no helmet). The watch works in the home base
   too (`BaseHud.wrist`), its card saying what each icon holds for the next
   deploy (`Hud.base_watch_slots`), and there its Summon tab is the whole
   collection (Caleb's call): every weapon and vehicle owned

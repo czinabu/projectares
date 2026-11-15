@@ -15,6 +15,7 @@ static func run(t: Node) -> void:
 			["pistol_service", "a sidearm"],
 			["power_rail_lance", "a power weapon"]]:
 		await _check_with_skin(t, (kit[0] as String).split(","), kit[1])
+	await _check_on_the_move(t)
 
 
 static func _aim(p: Actor, gun: Gun, on: bool) -> void:
@@ -201,3 +202,54 @@ static func _check_with_skin(t: Node, kit: Array, what: String) -> void:
 	Look.enabled = false
 	raid.queue_free()
 	await t.frames(2)
+
+
+## Playtest feedback: aimed on the move, the sight bounced all over the view.
+## Walking aimed (at the aiming walk, never a run), the first-person view
+## must hold within a couple of centimetres of the eyes' steady line, and a
+## run unaimed must not bob the view much more.
+static func _check_on_the_move(t: Node) -> void:
+	Look.enabled = true
+	for aim: bool in [true, false]:
+		var raid := Raid.new()
+		t.add_child(raid)
+		raid.start(Worlds.get_world("ashfront"), 42, ["rifle_carbine", "optic_reflex", "blade_scrap", "plate_light"])
+		await t.frames(10)
+		var p := raid.player
+		for i in p.weapons.size():
+			if p.weapons[i] is Gun:
+				p.active_weapon_index = i
+				break
+		var controller := PlayerController.new()
+		controller.setup(p)
+		raid.add_child(controller)
+		controller.set_physics_process(false)
+		controller.view_mode = PlayerController.ViewMode.FIRST
+		var cam: Camera3D = controller.camera
+		var lo := Vector3.INF
+		var hi := -Vector3.INF
+		for i in 150:
+			p.cmd.secondary = aim
+			p.cmd.move = Vector2(0, 1)
+			await t.get_tree().process_frame
+			if i < 50:
+				continue
+			var aimed := p.global_basis.orthonormalized() * Basis(Vector3.RIGHT, p.cmd.pitch)
+			# The camera is placed after the physics step.
+			var eye := p.get_eye_position() - p.velocity / Engine.physics_ticks_per_second
+			var offset := aimed.inverse() * (cam.global_position - eye)
+			lo = lo.min(offset)
+			hi = hi.max(offset)
+		var swing := (hi - lo) * 1000.0
+		var speed := Vector2(p.velocity.x, p.velocity.z).length()
+		if aim:
+			t.check(speed < p.walk_speed * 0.7, "aimed, you walk rather than run (%.1f m/s)" % speed)
+			t.check(swing.x < 30.0 and swing.y < 30.0,
+					"aimed on the move, the view holds steady (%.0f mm side, %.0f mm up and down)" % [swing.x, swing.y])
+		else:
+			t.check(swing.x < 30.0 and swing.y < 50.0,
+					"running, the view bobs only a little (%.0f mm side, %.0f mm up and down)" % [swing.x, swing.y])
+		controller.queue_free()
+		raid.queue_free()
+		await t.frames(3)
+	Look.enabled = false

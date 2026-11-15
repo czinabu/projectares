@@ -154,6 +154,11 @@ var heal_time_left := 0.0
 ## in the hand (it cannot be used until then), and how long that one takes.
 var materialize_left := 0.0
 var materialize_time := 0.0
+## The heavy weapon takes the primary's place (Caleb's call): while it is
+## out the primary waits in the watch, and whenever the primary next comes
+## into the hand (a key, the watch, a spent heavy) it materializes over its
+## summon time. The sidearm and blade stay instant from either.
+var primary_in_watch := false
 ## Seconds until a weapon being stored through the watch has dematerialized
 ## out of the hand (`Loadout.store_weapon`), and how long that one takes.
 ## It cannot be used or switched from meanwhile, and is gone after.
@@ -440,6 +445,9 @@ func _simulate_movement(delta: float) -> void:
 	if crouched and on_floor:
 		speed = minf(speed, crouch_speed)
 	var held := get_active_weapon()
+	if held is Gun and (held as Gun).is_aiming():
+		# Aimed, a sprint is only a walk.
+		speed = minf(speed, walk_speed)
 	if held:
 		speed *= held.move_speed_mult()
 	if flight.enabled:
@@ -998,6 +1006,7 @@ func _simulate_weapons(delta: float) -> void:
 	if cmd.switch_weapon != -1 and switch_to >= -1 and switch_to < weapons.size() \
 			and switch_to != active_weapon_index and _storing == null:
 		_draw_weapon(switch_to)
+	_swap_primary_and_heavy()
 	materialize_left = maxf(0.0, materialize_left - delta)
 	var weapon := get_active_weapon()
 	if weapon and heal_time_left <= 0.0 and stagger_left <= 0.0 and not weapons_locked \
@@ -1022,6 +1031,19 @@ func _simulate_weapons(delta: float) -> void:
 			Loadout.set_power(self, "")
 	elif weapon:
 		weapon.drop_aim()
+
+
+## See `primary_in_watch`.
+func _swap_primary_and_heavy() -> void:
+	var held := get_active_weapon() as Gun
+	if held == null:
+		return
+	if held.is_power():
+		primary_in_watch = true
+	elif primary_in_watch and not held.is_sidearm:
+		primary_in_watch = false
+		materialize_time = Loadout.summon_time(held.item_id)
+		materialize_left = materialize_time
 
 
 ## Index of a sidearm with rounds in its magazine, or -1.
@@ -1079,6 +1101,10 @@ func _draw_weapon(index: int) -> void:
 		old.on_holster()
 		last_drawn = active_weapon_index
 	active_weapon_index = index
+	# What was still materializing stays behind with its hand: the weapon
+	# drawn instead is ready at once, unless it materializes itself below.
+	if get_active_weapon() != old:
+		materialize_left = 0.0
 	# A heavy weapon drawn out of the watch's chamber materializes first, the
 	# same on every machine, since it follows the switch in the command.
 	var heavy := get_active_weapon()

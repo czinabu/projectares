@@ -62,8 +62,8 @@ static func run(t: Node) -> void:
 	t.check(Loadout.power_index(p) >= 0 and p.weapons.size() == weapon_count + 1 and p.get_active_weapon() == in_hand,
 			"scanning it fills the watch's heavy chamber, and what you held stays in hand")
 	t.check(p.weapon_for_key(1) != Loadout.power_index(p) and not p.slot_order().has(Loadout.power_index(p))
-			and p.weapon_for_key(4) == -1 and not InputMap.has_action("weapon_4"),
-			"no key and no wheel turn draws it: only the watch")
+			and p.weapon_for_key(4) == -1 and InputMap.has_action("weapon_4"),
+			"no number slot and no wheel turn draws it: key 4 asks for the chamber itself (Caleb's call)")
 	var carousel: Array = Hud.weapon_entries(p).map(func(e: Dictionary) -> String: return e.id)
 	t.check(carousel.has("power_rail_lance"), "it is on the watch's weapon carousel: %s" % ", ".join(carousel))
 	await _summon_heavy(t, p)

@@ -57,6 +57,14 @@ var max_twist := deg_to_rad(80.0)
 ## body blends in and out (per second).
 var twist_rate := 10.0
 var overlay_rate := 8.0
+## Aiming down sights on the move the spine, shoulders and head hold still:
+## their turn follows the gait only over `aim_still_time` seconds, smoothing
+## out the stride's swing (by how far the gun is up, `ActionPose.ads`). A
+## shouldered gun's arm is near full stretch, and a swinging shoulder left
+## the sight short and off the eye line on every back-swing.
+var aim_still_time := 0.3
+var _still := {}
+var _still_delta := 0.0
 ## How quickly the velocity the legs follow catches up with the actor's. Online
 ## states land a few times a second; this hides the steps between them.
 var velocity_follow := 14.0
@@ -485,6 +493,7 @@ func update(delta: float) -> void:
 		return
 	var local := actor.global_basis.orthonormalized().inverse() * actor.velocity
 	velocity = velocity.lerp(local, 1.0 - exp(-velocity_follow * delta))
+	_still_delta += delta
 	twist = move_toward(twist, twist_target, twist_rate * delta * maxf(absf(twist_target - twist), 0.15))
 	overlay_weight = move_toward(overlay_weight, 1.0 if overlay and not _overlay_tracks.is_empty() else 0.0,
 			overlay_rate * delta)
@@ -861,12 +870,31 @@ func _point_bone(bone: int, dir: Vector3, weight: float, axis := Vector3.UP) -> 
 ## Holds the gun up while the legs run some other way: the spine and arms
 ## take their pose from the gun-holding run at the same point in the stride.
 func _overlay_upper() -> void:
-	if overlay_weight <= 0.0 or _overlay_anim == null:
+	if overlay_weight > 0.0 and _overlay_anim != null:
+		var time := fposmod(overlay_phase, 1.0) * _overlay_anim.length
+		for bone: int in _overlay_tracks:
+			var pose: Quaternion = _overlay_anim.rotation_track_interpolate(_overlay_tracks[bone], time)
+			skeleton.set_bone_pose_rotation(bone, skeleton.get_bone_pose_rotation(bone).slerp(pose, overlay_weight))
+	_hold_upper_still()
+
+
+## While aimed, the upper body follows the gait with a lag (`aim_still_time`).
+func _hold_upper_still() -> void:
+	var delta := _still_delta
+	_still_delta = 0.0
+	var steady := ActionPose.of(actor).ads if actor != null else 0.0
+	if steady <= 0.0:
+		_still.clear()
 		return
-	var time := fposmod(overlay_phase, 1.0) * _overlay_anim.length
-	for bone: int in _overlay_tracks:
-		var pose: Quaternion = _overlay_anim.rotation_track_interpolate(_overlay_tracks[bone], time)
-		skeleton.set_bone_pose_rotation(bone, skeleton.get_bone_pose_rotation(bone).slerp(pose, overlay_weight))
+	var follow := 1.0 - exp(-delta / maxf(aim_still_time, 0.01))
+	for bone: int in _spine + _overlay_tracks.keys():
+		var now := skeleton.get_bone_pose_rotation(bone)
+		var kept: Quaternion = _still.get(bone, now)
+		if kept.dot(now) < 0.0:
+			kept = -kept
+		kept = kept.slerp(now, follow)
+		_still[bone] = kept
+		skeleton.set_bone_pose_rotation(bone, now.slerp(kept, steady))
 
 
 ## Turns the whole model about the actor's middle toward where it is going,

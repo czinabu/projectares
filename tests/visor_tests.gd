@@ -563,9 +563,10 @@ static func _glass(t: Node) -> void:
 	t.check(glass.aim_target == null and glass.lock < 0.1, "and lets go when they leave it")
 	controller.view_mode = PlayerController.ViewMode.THIRD
 	await t.frames(40)
-	t.check(not glass.glass_shown(), "in third person the visor's readouts are gone")
-	t.check(glass.boot == 0.0, "and the display is off, so it starts up again next time")
-	t.check(glass.reticle_shown(), "but the ring at the crosshair stays in third person")
+	t.check(not glass.glass_shown() and glass.flat_shown(),
+			"in third person the glass itself is gone but its readouts are drawn flat (Caleb's call: neither view better informed)")
+	t.check(glass.boot > 0.9 and glass.sway == Vector2.ZERO, "the display stays on, with no glass to trail the view")
+	t.check(glass.reticle_shown(), "and the ring at the crosshair stays in third person")
 	mark.global_position = p.get_eye_position() + p.get_aim_dir() * 12.0 - Vector3(0, 1.0, 0)
 	await t.frames(4)
 	mark.global_position = p.get_eye_position() + p.get_aim_dir() * 12.0 - Vector3(0, 1.0, 0)
@@ -839,7 +840,8 @@ static func _thermal(t: Node) -> void:
 	t.check(not glass._heat.has(cold), "the dead go cold")
 	controller.view_mode = PlayerController.ViewMode.THIRD
 	await t.frames(40)
-	t.check(not glass.thermal_shown and glass._heat.is_empty(), "in third person there is no heat picture")
+	t.check(glass.thermal_shown and not glass._heat.is_empty(),
+			"in third person the heat picture stays: the same information in both views (Caleb's call)")
 	controller.view_mode = PlayerController.ViewMode.FIRST
 	controller._visor_level = 0
 	await t.frames(40)

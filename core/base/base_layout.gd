@@ -190,4 +190,15 @@ static func _sorted_by_kind(stash: Array) -> Dictionary:
 			if ItemDB.item_value(a) != ItemDB.item_value(b):
 				return ItemDB.item_value(a) > ItemDB.item_value(b)
 			return a < b)
+		if KINDS[kind]["per_copy"]:
+			# One of each type first, so the garage shows every vehicle owned
+			# before a second copy of any takes a bay.
+			var firsts: Array = []
+			var extras: Array = []
+			for id: String in out[kind]:
+				if id in firsts:
+					extras.append(id)
+				else:
+					firsts.append(id)
+			out[kind] = firsts + extras
 	return out

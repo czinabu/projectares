@@ -778,8 +778,13 @@ world**.
   chamber**. This replaces the swap racks: there is no rack to trade at.
 - The chamber holds **one** heavy weapon. Finding another while full offers a
   swap: the old one is left where the new one was.
-- **Summoning** it from the watch's weapon carousel materialises it in your
-  hands (no key draws it, Caleb's call).
+- **Summoning** it from the watch's weapon carousel, or key 4, materialises it
+  in your hands (key 4 added after Caleb's playtest; it was watch only).
+  Picking it on the watch while in hand puts it back into the chamber.
+- **It takes the primary's place** (Caleb's call): while it is out the
+  primary waits in the watch, and getting it back (a key, the watch, or the
+  heavy running dry) materializes it over its summon time. The sidearm and
+  blade stay instant, so a bad moment to swap still has an answer.
   Your primary is not dropped or deleted; it is put away.
 - When its ammo is spent it dissolves and your previous weapon comes back by
   itself. Putting it away early returns it to the chamber with the shots it
