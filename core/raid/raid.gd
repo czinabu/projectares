@@ -19,6 +19,9 @@ signal player_finished(actor: Actor, result: Dictionary)
 ## A player banked `items` at a depot. They are out of the backpack and belong
 ## in the stash.
 signal player_banked(actor: Actor, items: Array)
+## What a player has banked this life changed (`Actor.banked_count`,
+## `banked_value`, `banked_scrip`): items or scrip went home through a depot.
+signal banked_changed(actor: Actor)
 ## A player's sign-out started, with `seconds_left` to go, or stopped (below zero).
 signal sign_out_changed(actor: Actor, seconds_left: float)
 ## A line for everyone in the world: a player kill, a new bounty, the Marked.
@@ -886,7 +889,7 @@ func _tick_vehicles(delta: float) -> void:
 			spot.empty_for = 0.0
 			continue
 		spot.empty_for += delta
-		if spot.empty_for >= world.vehicle_respawn_time:
+		if spot.empty_for >= float((spot.marker as Node3D).get_meta("respawn", world.vehicle_respawn_time)):
 			spot.empty_for = 0.0
 			spot.vehicle = _park_vehicle(spot.marker, spot.source)
 
@@ -2243,9 +2246,9 @@ func pack_vehicle(actor: Actor) -> String:
 ## watch's summon carousel, through `summon`), and the one worn goes into the
 ## pack in its place (a frame with the armor it had left). Authority only;
 ## returns why not, or "" when done. What is worn is gear and drops on death,
-## and what is in the pack drops as loot. A helmet goes on at once; a frame
-## takes the watch's rest after it, like a weapon, so spare plates are no
-## instant refill.
+## and what is in the pack drops as loot. Either goes on at once and then
+## the watch rests, like after a weapon: briefly for a helmet, longer for a
+## frame, so spare plates are no instant refill.
 func swap_worn(actor: Actor, item_id: String) -> String:
 	var state := state_for(actor)
 	if mode == Mode.CLIENT or state == null or state.finished or actor.is_dead:
@@ -2256,7 +2259,7 @@ func swap_worn(actor: Actor, item_id: String) -> String:
 		why = "That is not in your pack"
 	elif state.sign_out_left >= 0.0:
 		why = "Not while signing out"
-	elif not helmet and summon_wait(actor) > 0.0:
+	elif summon_wait(actor) > 0.0:
 		why = "Watch recharging: %d s" % ceili(summon_wait(actor))
 	if why != "":
 		actor.notice.emit(why)
@@ -2272,10 +2275,13 @@ func swap_worn(actor: Actor, item_id: String) -> String:
 		actor.stowed_armor.erase(item_id)
 		if worn != "":
 			actor.stowed_armor[worn] = left
-		state.summon_wait_total = Loadout.summon_cooldown(item_id)
-		state.summon_ready_at = clock + state.summon_wait_total
-		if dev_cheats.get("cooldowns", false):  # DEV MODE
-			state.summon_ready_at = clock
+	# Either goes on at once, and then the watch rests like after any summon:
+	# a helmet's rest is short (`Loadout.SUMMON_TIMES` "helmet"), a frame's
+	# long, so neither can be swapped back and forth in a fight.
+	state.summon_wait_total = Loadout.summon_cooldown(item_id)
+	state.summon_ready_at = clock + state.summon_wait_total
+	if dev_cheats.get("cooldowns", false):  # DEV MODE
+		state.summon_ready_at = clock
 	if worn != "":
 		# One out, one in: the pack is no fuller than it was.
 		actor.inventory.add_item(worn)
@@ -2498,7 +2504,9 @@ func _on_actor_banked(actor: Actor) -> void:
 		state.scrip_banked += state.scrip
 		state.scrip = 0
 		actor.scrip = 0
+		actor.banked_scrip = state.scrip_banked
 	if items.is_empty():
+		banked_changed.emit(actor)
 		return
 	var heavy := ""
 	var heavy_at := Loadout.power_index(actor)
@@ -2512,6 +2520,9 @@ func _on_actor_banked(actor: Actor) -> void:
 		else:
 			actor.inventory.remove_item(id)
 	state.banked.append_array(items)
+	actor.banked_count = state.banked.size()
+	actor.banked_value = ItemDB.total_value(state.banked)
+	banked_changed.emit(actor)
 	actor.notice.emit("Banked %s (worth %d)" % [ItemDB.summarize(items), ItemDB.total_value(items)])
 	if apply_to_profile:
 		Profile.add_to_stash(items)

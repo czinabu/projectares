@@ -10,8 +10,8 @@ you gear up where you stand. Online, the door leads to the Concourse, a
 safe plaza shared by everyone on the server, with gates into the raid
 worlds, shops, a clan hall and the arena. Two worlds plug in today.
 Ashfront is the full-loot war, one open battlefield where two bot armies
-fight over the landmarks. Frostline is the smaller, gentler world on the
-ice: players cannot hurt each other there, and dying drops only your
+fight over the landmarks. Frostline is the gentler co-op world, a frozen
+valley: players cannot hurt each other there, and dying drops only your
 backpack. You fly a jetpack, thruster boots or glide wings, and you throw
 vehicles off your watch: a motorbike, a two-seat hoverbike, a rover, a
 mech and a jet. Shops, mastery and crafting are in, and on a server the
@@ -578,18 +578,26 @@ The watch's portal icon finds it automatically and offers it, and the
 
 ### Frostline
 
-A dead listening station on a glacier shelf, in whiteout fog. The layout is
-round: a relay mast in the middle (its top cache is the richest on the map and
-only flight reaches it), a ring of six outposts, and two rings of ice ridges for
-cover. Two enemy factions share the ice and fight each other as well as you:
-Wardens (slow, armored, long-range rifles) and Feral stalkers (fast, fragile,
-melee). It is a PvE world: players cannot hurt each other there, so it is the
-place to learn and gear up before Ashfront. It is also the gentle one. Dying
-there only drops your backpack; the gear you deployed with goes home with you
-(`WorldDef.keep_gear_on_death`). In return its caches hold basic gear and
-materials, and the rare and powerful gear is only found on Ashfront. Depots
-take longer to hold. It adds three items of its own: Cryo Cell, Signal Core and
-the Ice Axe.
+A frozen river valley where the war ended long ago, the co-op expedition
+world (DESIGN.md section 2). It runs about 600 m from the river mouth, where
+you arrive, through the Narrows and across a frozen lake to the glacier head,
+where the Stilled Engine lies half buried: the terraforming drum that once kept
+the world warm, with one teal light still blinking over its hatch. Its zones
+run up the valley (river mouth, mid-valley, glacier head). Both walls step up
+in two tiers: a shelf about 14 m up, reached by ramps, with heater huts and
+the three strongpoints, and a rim about 40 m up that only flight reaches, with
+old listening posts and the rooftop caches. The richest cache is on the
+Engine's back. Two enemy factions share the ice and fight each other as well
+as you: Wardens (slow, armored, long-range rifles), who hold the posts, the
+rims and the Engine, and Feral stalkers (fast, fragile, melee) denning on the
+floor. It is co-op: players cannot hurt each other there. It is also the
+gentle one. Dying there only drops your backpack; the gear you deployed with
+goes home with you (`WorldDef.keep_gear_on_death`). In return its caches hold
+basic gear and materials, and the rare and powerful gear is only found on
+Ashfront. Depots take longer to hold. It adds three items of its own: Cryo
+Cell, Signal Core and the Ice Axe. The rest of its redesign (the cold,
+whiteouts, tracks, warm beacons and its crafting parts) is planned in
+DESIGN.md section 2, "Frostline".
 
 ## Run the tests
 
