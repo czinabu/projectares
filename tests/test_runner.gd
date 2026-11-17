@@ -855,7 +855,13 @@ func _test_combat_and_loot() -> void:
 		p.cmd.interact_pressed = false
 		check(p.inventory.items.size() > before, "looting moves items to the backpack")
 
+	# A rifleman, not a blade-carrying heavy: which one comes first depends on
+	# how the seed falls, and a heavy takes more than this combo.
 	var bot_b := raid.bots[0]
+	for other in raid.bots:
+		if not other.is_dead and not other.weapons.any(func(w: Weapon) -> bool: return w is MeleeWeapon):
+			bot_b = other
+			break
 	p.global_position = arena + Vector3(0, 0, 3)
 	bot_b.global_position = p.global_position + Vector3(0, 0, -1.8)
 	p.cmd.aim_dir = Vector3.FORWARD
