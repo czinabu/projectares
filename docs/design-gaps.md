@@ -165,7 +165,7 @@ rows marked **pre-playtest** come before the friends playtest.
 | Reconnect to your body after a drop | Missing | A disconnect starts a sign-out on the standing body (`Raid.remove_player`) and a new sign-in waits it out. **pre-playtest** |
 | Whole-server bench and health log | Missing | `battle_bench` measures one world; nothing measures the plaza, worlds and arena together. **pre-playtest** |
 | Encrypted connections | Missing | ENet traffic, including the sign-in secret, is plain. |
-| Accounts on SQLite with all-or-nothing changes | Missing | One JSON file per account (`StashService._save`). Needed before the marketplace. |
+| Accounts on SQLite with all-or-nothing changes | Built | `AccountStore` keeps accounts in `accounts.sqlite` (godot-sqlite, `addons/godot-sqlite`), one transaction per save; `StashService.transaction` runs the market's ledger calls as one all-or-nothing change. Old account files are imported once and renamed `.json.imported`. Builds without the library (only Windows, macOS and Linux x86_64 ship one) fall back to JSON files. |
 | Account service as its own program | Missing | `StashService`, `SocialService` and `ClanService` live in the server's memory, shared by sessions in one process. |
 | One program per world, routes with an address | Partly | `--world` runs one world alone, but routes carry only a port and world status is gathered in memory (`NetSession._gather_status`). |
 | Official versus friends' servers | Missing | Every server keeps its own accounts; your own server takes on your solo profile. |

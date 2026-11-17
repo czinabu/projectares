@@ -830,7 +830,14 @@ without Caleb, and update the gap list when a PR closes a row.
   `StashService.settle`. `NetSession` does both. A client only signs in
   (name plus `Profile.online_secret`) and sends requests (equip, pick, deploy)
   from the lobby; it never sends a kit, and online play never reads or writes
-  the local `Profile` stash, with one exception: one player state. On a
+  the local `Profile` stash, with one exception: one player state.
+  The service keeps accounts in SQLite (`core/account/account_store.gd`,
+  `accounts.sqlite` in its `save_dir`, through `addons/godot-sqlite`): every
+  `_save` is one transaction, and changes to several accounts that must
+  happen together (a trade) go through `StashService.transaction`, never one
+  ledger call after another. Never read or write account files directly;
+  old ones are imported once by `AccountStore.open`. A build without the
+  library falls back to JSON files. On a
   server you host yourself (`main.gd host_and_join`, the base's door) you
   are the player you are at home: the client hands the server your profile
   (`--host-profile`, read once into `StashService.host_profile`, claimed only

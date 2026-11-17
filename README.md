@@ -253,7 +253,8 @@ Walk into a glowing pad and press **E** to use it:
 - **Arena** (south-east): the gate to the arena.
 - **Exit** (south): leaves the server.
 
-Add `--accounts <folder>` to choose where the server saves player stashes.
+Add `--accounts <folder>` to choose where the server saves player stashes (an
+SQLite database, `accounts.sqlite`, plus the clan and phone records).
 
 To feel what a bad connection is like without leaving your desk, start the
 game (not the server) with `-- --lag 120 --loss 10`. That adds 120 ms of delay

@@ -120,7 +120,9 @@ The server saves every player's stash. A player is known by their name plus a
 private key their game creates the first time, so each of you needs a
 different name, and nobody else can use yours. The stashes are kept in a
 Docker volume called `ares-data`, so updating or restarting the server does
-not lose them.
+not lose them. They live in one database, `accounts.sqlite`; a server that
+still has the older one-file-per-player saves imports them into it the first
+time it starts and renames each old file to `.json.imported`.
 
 Everyone must run the same version of the game as the server. If someone sees
 "The server runs a different version of the game", they need to update.
@@ -135,7 +137,7 @@ Log in with `ssh root@<address>` and `cd projectares` first.
 | See the log | `docker compose logs -f` |
 | Restart the server | `docker compose restart` |
 | Stop the server | `docker compose down` |
-| Back up everyone's stash | `docker compose cp ares:/data/accounts ./accounts-backup` |
+| Back up everyone's stash | `docker compose stop && docker compose cp ares:/data/accounts ./accounts-backup && docker compose start` (stop first: the stashes are a live database) |
 | Wipe every stash and start over | `docker compose down -v` |
 | Start it again | `docker compose up -d` |
 
