@@ -82,7 +82,7 @@ signal base_visit_requested(owner_name: String, stash: Array, loadout: Dictionar
 signal portal_travel(destination: String)
 
 const DEFAULT_PORT := 24565
-const PROTOCOL := 32
+const PROTOCOL := 33
 ## Every packet is compressed, both ways. State updates are mostly repeated
 ## numbers, and a big battle sends a player hundreds of them a second. Server
 ## and client must agree, so a change here needs a new PROTOCOL.
@@ -92,6 +92,8 @@ const PROTOCOL := 32
 ## world unfolds over its opener's sign-out).
 ## 32: a depot banking tells its owner what this life has sent home
 ## (`_banked`), for the watch's banking readout.
+## 33: hit feedback says whether it was a head, plates soaked it, or it
+## broke them, for the hit marker.
 const COMPRESSION := ENetConnection.COMPRESS_RANGE_CODER
 const StashService := preload("res://core/account/stash_service.gd")
 const Economy := preload("res://core/economy/economy.gd")
@@ -1050,7 +1052,8 @@ func _send_boards() -> void:
 
 func _on_server_hit_confirmed(target: Actor, info: DamageInfo, lethal: bool, peer: int) -> void:
 	if peer in _api.get_peers() and _ids.has(target):
-		_hit_feedback.rpc_id(peer, _ids[target], info.amount, info.kind, lethal, info.blocked, info.parried)
+		_hit_feedback.rpc_id(peer, _ids[target], info.amount, info.kind, lethal, info.blocked, info.parried,
+				info.headshot, info.armored, info.armor_broke)
 
 
 ## In the world: start signing out, or call it off.
@@ -2052,7 +2055,7 @@ func _blend_ride(vehicle: Node3D) -> void:
 
 @rpc("authority", "call_remote", "reliable")
 func _hit_feedback(target_id: int, amount: float, kind: String, lethal: bool, blocked: bool,
-		parried: bool) -> void:
+		parried: bool, headshot: bool, armored: bool, armor_broke: bool) -> void:
 	var me: Actor = _actors.get(my_actor_id)
 	var target: Actor = _actors.get(target_id)
 	if me == null or target == null or not is_instance_valid(target):
@@ -2060,6 +2063,9 @@ func _hit_feedback(target_id: int, amount: float, kind: String, lethal: bool, bl
 	var info := DamageInfo.make(amount, me, kind, target.global_position)
 	info.blocked = blocked
 	info.parried = parried
+	info.headshot = headshot
+	info.armored = armored
+	info.armor_broke = armor_broke
 	me.hit_confirmed.emit(target, info, lethal)
 
 

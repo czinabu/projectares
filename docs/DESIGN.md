@@ -683,6 +683,28 @@ to the eye:
 Re-measured on the duel bench over three seeds: every enemy type wins and
 loses about as often as before (all rows within the bench's noise).
 
+### Feedback
+
+A fight should be read by ear and at a glance, the same in both views:
+
+- Every kind of gun has its own voice: a sharp pistol crack, a fast light
+  SMG, a deep shotgun boom, a long marksman report and the hand cannon's
+  thump. Gunfire carries about 220 m, a suppressed gun about 45 m, and far
+  shots sound duller.
+- A round that passes within a couple of metres of you is heard hissing
+  by, so you know you are being shot at even when it misses.
+- Rounds kick up a puff where they land, a hot spark off a body, and leave
+  a mark on a wall for a few seconds.
+- The hit marker says what the hit did: white for flesh, steel blue when
+  plates soaked it, a wide cyan when the plates broke, gold for a head and
+  red for a kill, each with its own sound.
+- Being shot jolts your view a little, more for a harder round. The aim
+  stays put, so it never costs you a shot.
+
+Who is shooting you is not marked on screen: reading that is the tactical
+visor's strength (section on helmets), so plain helmets get only the sound
+of the shots and their whizz.
+
 ### Goggles
 
 Goggles are the light alternative to a helmet in the same `helmet` slot, and

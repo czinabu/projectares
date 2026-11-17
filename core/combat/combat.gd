@@ -108,7 +108,7 @@ static func trace(shooter: Actor, from: Vector3, to: Vector3) -> Dictionary:
 		var hit := space.intersect_ray(query)
 		if hit.is_empty():
 			return {}
-		var out := {"position": hit.position, "collider": hit.collider}
+		var out := {"position": hit.position, "collider": hit.collider, "normal": hit.normal}
 		if hit.collider is Actor:
 			out["feet"] = (hit.collider as Actor).global_position
 		return out
@@ -118,7 +118,7 @@ static func trace(shooter: Actor, from: Vector3, to: Vector3) -> Dictionary:
 	var wall := space.intersect_ray(PhysicsRayQueryParameters3D.create(from, to, Actor.LAYER_WORLD))
 	if not wall.is_empty():
 		to = wall.position
-		result = {"position": wall.position, "collider": wall.collider}
+		result = {"position": wall.position, "collider": wall.collider, "normal": wall.normal}
 	var nearest := from.distance_to(to)
 	for node in shooter.get_tree().get_nodes_in_group("actors"):
 		var other := node as Actor

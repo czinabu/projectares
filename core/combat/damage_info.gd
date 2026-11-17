@@ -28,6 +28,10 @@ var blocked := false
 ## The hit landed on the target's head.
 var headshot := false
 var parried := false
+## Set by the target's health: plates soaked part of this hit, and this hit
+## was the one that left them empty. The hit marker reads both.
+var armored := false
+var armor_broke := false
 
 
 static func make(p_amount: float, p_source: Node, p_kind: String, p_position := Vector3.ZERO) -> DamageInfo:

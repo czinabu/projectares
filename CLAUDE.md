@@ -622,6 +622,17 @@ without Caleb, and update the gap list when a PR closes a row.
   `Actor.sprint_out_time` after the sprint ends (`Actor.sprint_recover`),
   keeping a pull made meanwhile. Light guns are quick and steady on the
   move; a DMR is slow to aim and wild on the run.
+  Feedback is view only (DESIGN.md "Feedback"): each kind of gun has its own
+  voice (the item's `shot_sound`) heard out to `Gun.SHOT_REACH`, a round
+  passing close is heard going by (`Sfx.pass_by`), a round leaves a puff
+  and a wall a mark for a few seconds (`Fx.impact`, at most `Fx.MAX_MARKS`;
+  `Combat.trace` gives the face's `normal`), the hit marker and its sound
+  tell a head, plates soaking it (`DamageInfo.armored`, set by
+  `HealthComponent`), plates breaking (`armor_broke`) and a kill apart
+  (`Hud.HitMarker.kind_of`; online they ride `NetSession._hit_feedback`),
+  and a round jolts the view (`PlayerController.bullet_flinch`), never the
+  aim. Who shot you is not shown: that is the tactical visor's job.
+  Check by eye with `visual_check.tscn -- <dir> --impacts-only`.
 - Helmets are items tagged `helmet` in the `helmet` loadout slot, and data
   like abilities: `Visor` (`core/abilities/visor.gd`, `Actor.visor`) is one
   class whose `mode` stat picks what the visor does ("" plain, "zoom"
