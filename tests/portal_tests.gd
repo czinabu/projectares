@@ -12,7 +12,8 @@ const KIT: Array[String] = ["rifle_scrap", "blade_scrap"]
 static func run(t: Node) -> void:
 	_rules(t)
 	await _in_plaza(t)
-	await _not_in_a_fight(t)
+	await _home_from_a_world(t)
+	_not_in_the_arena(t)
 	await _outpost_drop(t)
 	await _outpost_home(t)
 
@@ -25,6 +26,12 @@ static func _rules(t: Node) -> void:
 		every = every and world.id in where
 	t.check(every and Arena.ArenaVenue.ID in where and Worlds.social_world().id not in where,
 			"a portal leads to every world and the arena, never to the plaza: %s" % [where])
+	var base := Portal.from_base()
+	t.check(base.slice(0, where.size()) == where and base.back() == Portal.PLAZA and Portal.HOME not in base,
+			"from your base a portal also leads out to the plaza: %s" % [base])
+	t.check(Portal.is_place(Portal.HOME) and Portal.is_place(Portal.PLAZA) and Portal.is_place("ashfront")
+			and not Portal.is_place("nowhere"), "the network accepts only real places")
+	t.check(Portal.title_of(Portal.PLAZA) == Worlds.social_world().display_name, "the plaza goes by its own name")
 	t.check(Hud.Wrist.TAB_SLOTS["mission"][0] == "portal" and "portal" in Hud.Wrist.SLOTS,
 			"the portal is the first icon on the watch's Mission tab")
 	var icon := Hud.portal_slot(where, 1)
@@ -54,6 +61,9 @@ static func _in_plaza(t: Node) -> void:
 	var entered: Array = []
 	raid.portal_entered.connect(func(a: Actor, d: String) -> void: entered.append([a, d]))
 	t.check(raid.open_portal(ada, "plaza") != "", "a portal never leads back to the plaza")
+	var here := Portal.choices_for(raid, ada)
+	t.check(here.slice(0, Portal.destinations().size()) == Portal.destinations() and here.back() == Portal.HOME,
+			"in the plaza a portal leads to every world, the arena and home: %s" % [here])
 	t.check(raid.open_portal(ada, "ashfront") == "" and opened.size() == 1, "a player in the plaza opens a portal")
 	var portal: Portal = opened[0] if not opened.is_empty() else null
 	if portal == null:
@@ -89,23 +99,103 @@ static func _in_plaza(t: Node) -> void:
 	await t.frames(6)
 	t.check(closed == [portal] and raid.portals.is_empty() and not is_instance_valid(portal),
 			"once its time is up the portal folds away")
+	# Home from the plaza: a trip, not a sign-out.
+	raid.state_for(ada).portal_ready_at = -INF
+	entered.clear()
+	t.check(raid.open_portal(ada, Portal.HOME) == "" and raid.state_for(ada).sign_out_left < 0.0,
+			"a portal home opens in the plaza, and starts no sign-out")
+	var home: Portal = raid.portals.back() if not raid.portals.is_empty() else null
+	if home != null:
+		t.check(not home.signs_out and home.unfold_time < 1.0, "it opens as quickly as any other")
+		await t.frames(int(home.unfold_time * 60.0) + 4)
+		bo.global_position = home.global_position
+		await t.frames(4)
+		t.check(entered.size() == 1 and entered[0][0] == bo and entered[0][1] == Portal.HOME,
+				"a squadmate walks through it home")
 	raid.queue_free()
 	await t.frames(2)
 
 
-static func _not_in_a_fight(t: Node) -> void:
-	print("Portals: never out of a fight")
+static func _home_from_a_world(t: Node) -> void:
+	print("Portals: home from out in a world, as a sign-out")
 	var raid := Raid.new()
 	t.add_child(raid)
 	raid.start_server(Worlds.get_world("ashfront"), 6)
+	raid.set_squad("ada", "crew")
+	raid.set_squad("bo", "crew")
 	var ada := raid.add_player(KIT, {}, "Ada", "ada")
+	var bo := raid.add_player(KIT, {}, "Bo", "bo")
+	await t.frames(3)
+	var state := raid.state_for(ada)
+	t.check(not state.sheltered and Portal.choices_for(raid, ada) == [Portal.HOME],
+			"out in a world the watch offers one portal, home")
+	t.check(Hud.watch_slots(raid, ada)[Hud.Wrist.SLOTS.find("portal")].detail == "Portal home · signs you out",
+			"and the icon says it signs you out")
+	t.check(raid.open_portal(ada, "frostline") == "Out here a portal only leads home" and raid.portals.is_empty(),
+			"no portal leads from one world into another")
+	# In a fight it does not open: the sign-out refuses it.
+	state.last_combat = raid.clock
+	t.check(raid.open_portal(ada, Portal.HOME) == "You cannot sign out now" and raid.portals.is_empty(),
+			"no portal home opens in a fight")
+	state.last_combat = -INF
+	var finished: Array = []
+	raid.player_finished.connect(func(a: Actor, result: Dictionary) -> void: finished.append([a, result]))
+	t.check(raid.open_portal(ada, Portal.HOME) == "" and state.sign_out_left > 0.0,
+			"opening it starts the sign-out")
+	t.check(is_equal_approx(state.sign_out_total, raid.world.sign_out_time),
+			"at the full sign-out time on the ground (%.0f s), not the gate's" % state.sign_out_total)
+	var portal: Portal = raid.portals[0] if not raid.portals.is_empty() else null
+	if portal == null:
+		raid.queue_free()
+		return
+	t.check(portal.signs_out and is_equal_approx(portal.unfold_time, state.sign_out_total)
+			and portal.open_time > portal.unfold_time + 10.0,
+			"the ring unfolds over the countdown, then stays open for the squad")
+	# A hit cancels the sign-out, and the ring folds away with it.
+	var closed: Array[Portal] = []
+	raid.portal_closed.connect(func(p: Portal) -> void: closed.append(p))
+	await t.frames(30)
+	raid._mark_combat(state)
 	await t.frames(2)
-	t.check(not raid.may_open_portal(ada) and raid.open_portal(ada, "frostline") == "Portals open only in safe zones and gate outposts"
-			and raid.portals.is_empty(), "no portal opens in a world: getting out still means signing out")
-	var slots := Hud.watch_slots(raid, ada)
-	t.check(slots[Hud.Wrist.SLOTS.find("portal")].empty, "and the watch's portal icon is shut there")
+	t.check(state.sign_out_left < 0.0 and closed == [portal] and raid.portals.is_empty(),
+			"a fight cancels it and the ring folds away")
+	state.last_combat = -INF
+	state.portal_ready_at = -INF
+	t.check(raid.open_portal(ada, Portal.HOME) == "", "out of the fight it opens again")
+	portal = raid.portals[0] if not raid.portals.is_empty() else null
+	if portal == null:
+		raid.queue_free()
+		return
+	t.check(raid.open_portal(ada, Portal.HOME) != "" and raid.portals.size() == 1,
+			"one at a time while signing out")
+	# Skip most of the countdown; the ring keeps in step.
+	state.sign_out_left = 0.5
+	await t.frames(3)
+	t.check(portal.age > portal.unfold_time - 1.0, "the ring follows the countdown (%.1f of %.1f s)"
+			% [portal.age, portal.unfold_time])
+	await t.frames(45)
+	t.check(finished.size() == 1 and finished[0][0] == ada and finished[0][1].get("outcome", "") == "left"
+			and finished[0][1].get("door", "") == Portal.HOME,
+			"when it ends they go home with their gear, through the portal's door")
+	t.check(raid.portals.size() == 1 and is_instance_valid(portal) and portal.openness() == 1.0,
+			"and the ring stays open for the squad")
+	bo.global_position = portal.global_position
+	await t.frames(3)
+	var bo_state := raid.state_for(bo)
+	t.check(bo_state.sign_out_left > 0.0 and bo_state.sign_out_door
+			and is_equal_approx(bo_state.sign_out_total, raid.world.sign_out_time),
+			"a squadmate stepping in starts their own full sign-out")
 	raid.queue_free()
 	await t.frames(2)
+
+
+static func _not_in_the_arena(t: Node) -> void:
+	var raid := Raid.new()
+	raid.world = Arena.ArenaVenue.new()
+	var actor := Actor.new()
+	t.check(Portal.choices_for(raid, actor).is_empty(), "no portal opens in the arena: leaving it has its own way")
+	actor.free()
+	raid.free()
 
 
 static func _outpost_drop(t: Node) -> void:
@@ -149,8 +239,8 @@ static func _outpost_home(t: Node) -> void:
 			"and the icon says it signs you out")
 	t.check(raid.open_portal(bo, "frostline") != "", "no portal leads from an outpost to another world")
 	if raid.outpost_at(outside.global_position) == null:
-		t.check(Portal.choices_for(raid, outside).is_empty() and raid.open_portal(outside, Portal.HOME) != "",
-				"outside the outpost walls no portal opens")
+		t.check(Portal.choices_for(raid, outside) == [Portal.HOME] and not raid.state_for(outside).sheltered,
+				"outside the outpost walls the portal home is there too, at the full sign-out time")
 	var finished: Array = []
 	raid.player_finished.connect(func(a: Actor, result: Dictionary) -> void: finished.append([a, result.get("outcome", "")]))
 	t.check(raid.open_portal(bo, Portal.HOME) == "" and raid.state_for(bo).sign_out_left > 0.0,
@@ -185,7 +275,7 @@ static func through_base(t: Node, main: Node) -> void:
 	print("Portals: out of the home base")
 	var controller: PlayerController = main.controller
 	var base: HomeBase = main.base
-	t.check(controller.portal_choices() == Portal.destinations(), "in your base the watch can open a portal")
+	t.check(controller.portal_choices() == Portal.from_base(), "in your base the watch can open a portal")
 	var to := Portal.destinations().find("ashfront")
 	controller.wrist_raised = true
 	controller.watch_focus = Hud.Wrist.SLOTS.find("portal")

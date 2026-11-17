@@ -463,7 +463,7 @@ static func base_watch_slots(base_name: String, loadout: Dictionary, held: Array
 		slots.append(_slot("artifact", "", "No artifact", [], -1.0, true, false))
 	slots.append(_slot("map", "", base_name, [], -1.0, false, false))
 	slots.append(_slot("standing", "", "At home", [], -1.0, true, false))
-	slots.append(portal_slot(Portal.destinations(), portal_pick))
+	slots.append(portal_slot(Portal.from_base(), portal_pick))
 	slots.append(contract_slot(held, {}))
 	slots.append(_slot("ping", "", "No squad here", [], -1.0, true, false))
 	slots.append(_slot("leave", "", "Home", [], -1.0, true, false))
@@ -471,13 +471,13 @@ static func base_watch_slots(base_name: String, loadout: Dictionary, held: Array
 
 
 ## The squad portal icon: a carousel of where a portal can lead from here
-## (`choices`, none outside a safe space), the one `picked` out on its line.
+## (`choices`, `Portal.choices_for`), the one `picked` out on its line.
 ## A click opens it in front of you for your squad to walk through.
 static func portal_slot(choices: Array[String], picked := 0) -> Dictionary:
 	if choices.is_empty():
-		return _slot("portal", "", "Portals open in safe zones and gate outposts", [], -1.0, true, false)
+		return _slot("portal", "", "No portal opens here", [], -1.0, true, false)
 	if choices == [Portal.HOME]:
-		# A gate outpost's portal: a sign-out with a door.
+		# Out in a world: a sign-out with a door.
 		return _slot("portal", "", "Portal home · signs you out", ["click"], -1.0, false, false, 1, 0)
 	var at := clampi(picked, 0, choices.size() - 1)
 	return _slot("portal", "", "Portal to %s" % Portal.title_of(choices[at]), ["wheel", "click"], -1.0, false, false,

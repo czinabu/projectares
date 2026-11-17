@@ -912,26 +912,33 @@ without Caleb, and update the gap list when a PR closes a row.
   Use `Worlds.raid_worlds()` for anything you deploy into.
 - Squad portals (Caleb's call) replace the base's launch pad, arena gate and
   teleporter pad: no station deploys you. The watch's portal icon (first on
-  the Mission tab, `Hud.portal_slot`, a carousel of `Portal.destinations()`:
-  every raid world and the arena) opens a `Portal` (`core/world/portal.gd`)
-  in front of you, open `Portal.open_time` (about 15 s) for your squad to
-  walk through. Portals open only in safe spaces: your base
-  (`HomeBase.open_portal`, which emits `portal_entered`) and safe-zone
-  worlds (`Raid.open_portal`, authority only; `Raid.may_open_portal`). Never
-  let one open where gear is at stake: it would leave a world without
-  `begin_sign_out`. A squad is `Raid.squad_of`: the key `Raid.set_squad`
-  gave the owner (`NetSession` sets the clan, in every world), else their
-  side. Only the authority decides who walks through (`portal_entered`);
-  online `NetSession` shows each portal to everyone (`_portal`, with whether
-  the viewer's squad may use it; the squad key never leaves the server) and
-  tells the walker (`portal_travel`). `main.gd go_through_portal` takes the
-  trip, and arrival is `add_player`'s drop `Raid.PORTAL_DROP`: the same
-  "outpost" marker for a whole squad, else a quiet drop. The one portal
-  inside a world is `Portal.HOME` at a gate outpost (Caleb's call):
-  `Portal.choices_for` offers it only while sheltered, and opening it is
-  `begin_sign_out` with a door. The ring unfolds over the gate countdown, a
-  squadmate stepping in starts their own sign-out (`_tick_portals`), and
-  everyone leaves through `_leave` as "left". It never emits
+  the Mission tab, `Hud.portal_slot`, a carousel of `Portal.choices_for`)
+  opens a `Portal` (`core/world/portal.gd`) in front of you, open
+  `Portal.open_time` (about 15 s) for your squad to walk through. Where it
+  can lead depends on where you are (Caleb's call: home and other places
+  too): from your base every world, the arena and the plaza
+  (`Portal.from_base`, `Portal.PLAZA` goes the way the base's door does);
+  from a safe-zone world every world, the arena and `Portal.HOME` (the way
+  the quarters door goes); out in a world where gear is at stake only
+  `Portal.HOME`; none in the arena. A squad is `Raid.squad_of`: the key
+  `Raid.set_squad` gave the owner (`NetSession` sets the clan, in every
+  world), else their side. Only the authority opens one in a world
+  (`Raid.open_portal`, `may_open_portal`) and decides who walks through
+  (`portal_entered`); online `NetSession` shows each portal to everyone
+  (`_portal`, with whether the viewer's squad may use it and how long it
+  unfolds; the squad key never leaves the server) and tells the walker
+  (`portal_travel`). `main.gd go_through_portal` takes the trip, and arrival
+  in a world is `add_player`'s drop `Raid.PORTAL_DROP`: the same "outpost"
+  marker for a whole squad, else a quiet drop. Out in a world the portal
+  home is a sign-out with a door, never a way round one (`Portal.signs_out`):
+  opening it is `begin_sign_out` (so a fight or a bounty refuses it, and it
+  takes the sign-out's own time: the gate's in an outpost, 15 s on the
+  ground, 25 s and a beacon in the air), the ring unfolds over that
+  countdown where everyone can see it and folds away if it is cancelled
+  (`Raid._keep_sign_out_portal`), a squadmate stepping in starts their own
+  sign-out (`_tick_portals`), and everyone leaves through `_leave` as "left"
+  with the result's "door" set to "home", which online takes you to your
+  base rather than the plaza (`main.gd _return_to_lobby`). It never emits
   `portal_entered`, and no portal leads from one world into another.
 - Risk zones (DESIGN.md section 2): a world tiers its map with
   `WorldDef.zone_at` (0 outer, 1 middle, 2 core) and burns with
