@@ -82,6 +82,16 @@ var fall_damage := 4.0
 var roof_reach := 8.0
 
 var eye_height := 1.6
+## How tall the body stands: `BODY_HEIGHT` for a person. A world may make a
+## big body taller (Ashfront's walkers) when it equips the bot; the capsule,
+## `Combat.trace` and headshots all follow `body_height()`.
+var stand_height := BODY_HEIGHT
+## A weak spot: hits from behind (and from steeply above) are multiplied by
+## this, in `modify_incoming`. 1 for no weak spot. Set by the world when it
+## equips a bot, so it is the same on every machine.
+var rear_damage_mult := 1.0
+## How far round from straight behind a hit still counts as in the back.
+var rear_arc_deg := 60.0
 var interact_range := 3.5
 var heal_duration := 3.0
 var heal_amount := 50.0
@@ -449,7 +459,28 @@ func modify_incoming(info: DamageInfo) -> void:
 	# Boots: a round that lands in a dash's graze window only grazes.
 	if graze_left > 0.0 and info.kind == "bullet":
 		info.amount *= flight.graze_mult
+	if rear_damage_mult != 1.0 and hit_from_behind(info):
+		info.amount *= rear_damage_mult
 
+
+## Whether a hit comes at the body's back (within `rear_arc_deg` of straight
+## behind the way it faces) or from steeply above, judged from where the
+## attacker stands, else from where the hit landed.
+func hit_from_behind(info: DamageInfo) -> bool:
+	var from := info.position
+	if info.source is Node3D and is_instance_valid(info.source):
+		from = (info.source as Node3D).global_position
+	var to := from - (global_position + Vector3(0.0, stand_height * 0.5, 0.0))
+	if to.length_squared() < 0.0001:
+		return false
+	to = to.normalized()
+	if to.y > 0.8:
+		return true
+	var flat := Vector3(to.x, 0.0, to.z)
+	if flat.length_squared() < 0.0001:
+		return false
+	var facing := Basis(Vector3.UP, cmd.yaw) * Vector3.FORWARD
+	return facing.angle_to(flat.normalized()) >= PI - deg_to_rad(rear_arc_deg)
 
 func _simulate_movement(delta: float) -> void:
 	var on_floor := is_on_floor()
@@ -975,7 +1006,14 @@ func _simulate_crouch(delta: float) -> void:
 ## How tall the body stands now: `BODY_HEIGHT` up, `CROUCH_HEIGHT` crouched
 ## or down in a slide. Hit tests (`Combat.trace`) use the same height.
 func body_height() -> float:
-	return lerpf(BODY_HEIGHT, CROUCH_HEIGHT, maxf(crouch, slide_low))
+	return lerpf(stand_height, CROUCH_HEIGHT, maxf(crouch, slide_low))
+
+
+## Makes the body `height` tall standing, eyes `eye_drop` under the top.
+func set_stand_height(height: float, eye_drop := 0.2) -> void:
+	stand_height = height
+	eye_height = height - eye_drop
+	_fit_body()
 
 
 ## Whether the full standing body fits where the actor is: nothing of the
