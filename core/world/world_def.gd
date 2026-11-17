@@ -15,8 +15,10 @@ extends RefCounted
 ##   - Marker3D nodes in group "spawn_cache" (optional meta "loot_source")
 ##   - Depot nodes in group "depot": where players bank what they carry
 ##   - optionally Marker3D nodes in group "spawn_vehicle" (optional meta
-##     "loot_source", default "vehicle"). The Raid parks the first
-##     vehicle-tagged item from `roll_loot` there, facing the marker's yaw.
+##     "loot_source", default "vehicle", and "respawn", seconds before an
+##     emptied spot gets a new vehicle, default `vehicle_respawn_time`). The
+##     Raid parks the first vehicle-tagged item from `roll_loot` there,
+##     facing the marker's yaw.
 ##   - optionally a `bake_navigation()` method for bot pathfinding
 ##   - optionally a `ground_height(x, z)` method, on a map with open ground
 ##     that is not level (see `core/world/terrain.gd`). The Raid stands
