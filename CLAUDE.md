@@ -136,7 +136,15 @@ without Caleb, and update the gap list when a PR closes a row.
   everyone else against the nearest site it does not. Reinforcements follow
   the war: `Raid.bot_target()` is `bot_count` plus a share of
   `WorldDef.war_reinforcements` by `war.intensity`, new bots join the faction
-  with the fewest alive, and extra bots are not replaced once it cools. Bots
+  with the fewest alive, and extra bots are not replaced once it cools.
+  A world caps rare kinds with `WorldDef.bot_allowed` (authority only: the
+  `Raid` rolls a turned-away bot again from a new seed, so clients only hear
+  of the kept seed). Ashfront's kinds (meta "kind": soldier, heavy, exo,
+  walker; DESIGN.md "Heavy units") come from the seed in `equip_bot`; a big
+  body is `Actor.set_stand_height` (capsule, hit tests and eyes follow
+  `body_height()`), a weak spot `Actor.rear_damage_mult`, and a gun that
+  must hold a lock first `BotBrain.lock_time` (meta "lock_time"), whose
+  tracking beam every view draws from the held aim (`ActorSkin._update_beam`). Bots
   killing bots only simmer the meter (`WarDirector.report_battle`, capped at
   `battle_ceiling`); only players take it higher. World-event bots
   (`Raid._event_bots`) are outside all of this, and so are rival raiders
@@ -438,6 +446,13 @@ without Caleb, and update the gap list when a PR closes a row.
   the primary dry with the trigger held draws a loaded sidearm instead of
   reloading (`Actor._simulate_weapons`). Headshots come from
   `Combat.is_headshot` on a `Combat.trace` hit; a gun's `headshot_mult` scales them.
+  Every gun has a range and a target it wins against (DESIGN.md "Gun
+  roles"): each sets its own `headshot_mult` (more than 1 on every gun but
+  a shotgun), close-range guns fall off with distance (`falloff_start`,
+  `falloff_end`, `falloff_min`, `Gun.range_mult`) and marksman rounds go
+  partly past armor (`Gun.armor_pierce`). Measure a change with
+  `godot --headless --path . res://tests/gun_bench.tscn`, which prints
+  every gun's time to kill by range and armor.
 - Attachments are items tagged "attachment" plus their slot tag ("optic",
   "muzzle", "grip", "magazine"), each an optional loadout slot
   (`Loadout.ATTACHMENT_SLOTS`). They fit every primary and never a sidearm
@@ -606,7 +621,15 @@ without Caleb, and update the gap list when a PR closes a row.
   (`PlayerController._update_recoil`), the view widening with speed
   (`speed_fov`) and dipping on a landing (`land_dip`). A semi-auto keeps a
   pull made just before it is ready (`Gun.press_buffer`); that is simulated,
-  so it is in `Gun`, from the command.
+  so it is in `Gun`, from the command. Handling is simulated the same way
+  (DESIGN.md "Handling"): moving widens a gun's spread by its
+  `move_spread_deg` times the share of sprint speed on the ground
+  (`Gun.move_share`), aiming tightens it over the gun's `ads_time`
+  (`Gun.aim_in`), not at once, and you never shoot while sprinting: a held
+  trigger or aim slows you to a walk, and a gun fires only
+  `Actor.sprint_out_time` after the sprint ends (`Actor.sprint_recover`),
+  keeping a pull made meanwhile. Light guns are quick and steady on the
+  move; a DMR is slow to aim and wild on the run.
 - Helmets are items tagged `helmet` in the `helmet` loadout slot, and data
   like abilities: `Visor` (`core/abilities/visor.gd`, `Actor.visor`) is one
   class whose `mode` stat picks what the visor does ("" plain, "zoom"
@@ -793,6 +816,20 @@ without Caleb, and update the gap list when a PR closes a row.
   `Combat.authoritative` is false there, so a client never deals damage, loots,
   or decides an outcome. Anything that changes a result must run on the server
   and reach clients through `NetSession`.
+- Signing in is part of the connection (DESIGN.md section 14): a client
+  sends its version and sign-in through `SceneMultiplayer.auth_callback`
+  (`NetSession._server_auth`, `_client_auth`) and counts as connected only
+  once the server accepts, so an old game or a wrong secret never reaches
+  the session. Both sides' messages always carry "protocol", so any two
+  versions can say which one needs the update; an older game is pointed at
+  `NetSession.UPDATE_URL` from the phone's Servers app. `server_relay` is
+  off: clients only talk to the server. Every `any_peer` RPC starts with
+  `_allow(kind)` (`NetSession.RequestLimits`, per player, refilled by server
+  tick), and a new one must too. Server saves go through
+  `core/account/safe_file.gd` (written whole, then swapped in), and the
+  `StashService` keeps rolling backups of the whole save folder
+  (`backup_if_due`, `backup_dir`). An account file that cannot be read is
+  never replaced by a new account.
 - Online movement: a client numbers every input and each packet repeats
   every input the server has not received yet (up to
   `NetSession.MAX_INPUTS_PER_PACKET`, packed small by `pack_inputs` so a
@@ -1300,6 +1337,7 @@ godot --headless --path . res://tests/test_runner.tscn -- --tier net --shard 1/3
 godot --headless --path . res://tests/battle_bench.tscn -- --bots 150 --players 32   # server cost of a big battle
 godot --headless --fixed-fps 60 --path . res://tests/feel_bench.tscn   # how each rig answers, in numbers
 godot --headless --fixed-fps 60 --path . res://tests/duel_bench.tscn   # how each enemy type fights a reference player (DESIGN.md "Enemy balance")
+godot --headless --path . res://tests/gun_bench.tscn   # every gun's time to kill by range and armor (DESIGN.md "Gun roles")
 godot --path . res://tests/equip_bench.tscn -- --walk   # what an equip costs in the base, and whether you keep moving
 godot --headless --fixed-fps 60 --path . res://tests/race_bench.tscn   # lap times per race machine, flags any 3% off its class
 ```

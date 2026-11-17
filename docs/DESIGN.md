@@ -48,7 +48,7 @@ new planet is a new folder under `worlds/`.
 | --- | --- | --- |
 | Main hub | The Concourse (`worlds/plaza`) | Social space. Show off cosmetics, rigs and watch skins. Doors to every world, the shops, the clan hall and the arena. Nobody can be hurt. |
 | Home base | `core/base` | Your private staging ground. The armory wall, the garage, the trophy shelf and the consoles. Loadouts are prepared here. |
-| PvE world | Frostline (partly) | Exploration, quests, dungeons and bosses. Learn the game, test builds, earn basic gear and materials. Gentle death. |
+| PvE world | Frostline (partly) | The co-op expedition world: cold, whiteouts and tracking instead of a war. Learn the game, test builds, earn basic gear and the crafting parts every Mk2 and Mk3 needs (planned). No PvP, gentle death. |
 | PvP world | Ashfront | The high-stakes warzone. Full loot, the only source of heavy weapons and the best loot, bank spots, sign-out tension. |
 | Gladiator arena | The Pit (`core/arena`) | Duels, bouts and tournaments. Loadouts are locked once a fight begins. Nobody loses gear. |
 
@@ -183,6 +183,62 @@ headquarters, in the order they are built:
   wait until after the friends playtest. Until then Frostline stands in as the
   PvE world (no PvP, gentle death, basic loot).
 
+### Frostline (Caleb's call)
+
+Frostline is Ashfront's opposite on every axis, so each world has its own
+job in the loop, not just its own palette. Ashfront is where rare gear, gear
+blueprints, upgrade data and heavy weapons come from; Frostline is where the
+parts that make gear better come from, so a hardcore player needs both
+worlds and a casual or solo one has a steady home.
+
+- **Co-op, no PvP (Caleb's call).** Many players dislike PvP but still want
+  to meet and work with others, so Frostline is where that happens:
+  everyone is on one side, and the world rewards working together (shared
+  warmth, joining someone's beacon, warming up a downed stranger, following
+  each other's tracks).
+- **Solo works too (Caleb's call).** Everything can be done alone; company
+  makes it easier, never possible. Beacons can be held alone, fights at the
+  core scale to the players near them, contracts never need a group.
+- **The place.** One long frozen river valley, about 600 m, climbing from
+  the river mouth (where you arrive) through the Narrows and across a
+  frozen lake to the glacier head, where the Stilled Engine lies half
+  buried: the terraforming drum that once kept the world warm. When it
+  froze, the war here stopped. The walls step up to a shelf (14 m, reached
+  by ramps) and a rim (40 m, flight only), so fights are about holding the
+  high side. Cold and quiet: a low sun, blue shadows, the only warm colours
+  are heaters, beacons and the Engine's one teal light.
+- **Threats (planned).** Body heat as a vital, drained in the open and
+  refilled at heater huts, vents and vehicle engines, hurting through
+  `Combat.deal` when empty; whiteouts that cut sight to about 30 m and wipe
+  tracks, and feel like a real blizzard (Caleb's call): wind you see and
+  hear, snow driven sideways in gusts, drifts streaming off the rims, bodies
+  leaning into it and the wind pushing flight rigs off course; footprints and vehicle tracks the server keeps and sends only
+  nearby; gunshots that carry twice as far; thin ice that breaks under
+  heavy vehicles; the Wardens as the Engine's defence grid, still running.
+- **What you bring home (planned).** New parts (Cryo Core, Glacial Alloy,
+  Engine Coil) that Mk2 and Mk3 recipes need, and Frostline blueprints for
+  new options only (attachments, cold-weather gear), never a higher Mk of
+  existing gear. Later the inside of the Engine is its deep-loot dungeon and
+  the home of the missing artifacts. Expedition contracts.
+- **Getting out (planned).** Sign-out only at warm beacons, held while they
+  power up (still `begin_sign_out`). Depots stay for banking.
+
+**Order of work**, one PR each: (1) the valley map, (2) the cold, (3) the
+loot role and recipes, (4) warm beacons, (5) whiteouts, after the Ashfront
+weather work, (6) tracks and louder gunshots, (7) thin ice, the defence
+grid and expedition contracts, (8) later, with the PvE dungeons, the
+Engine's inside. Every number is a placeholder for the playtest.
+
+**What is built.** The valley (step 1): `worlds/frostline/map.gd`, a
+`Terrain` shared between copies like Ashfront's, with the zones running up
+the valley (`zone_at`: river mouth, mid-valley, glacier head; no hazard
+yet), two-tier walls with ramps to the shelf, six heater huts (the heaters
+do nothing yet), three strongpoints held by the Wardens (Echo Post and
+Vigil Post on the shelves, Drift Post at the lake's north shore), six rim
+listening posts with the rooftop caches, the Stilled Engine with the relay
+cache on its back and the core's caches at its hatch, and Feral dens on the
+floor. Bot markers name their faction, and `equip_bot` follows them.
+
 ### PvP world
 
 - The endless warzone (see `CLAUDE.md`): armies, strongpoints, war intensity,
@@ -283,6 +339,42 @@ raider from its kit (`spawn_bot`'s `kit`). Still to come: rooftop caches
 their own, picking up bags, flight across the map (wings and long
 jetpack trips), and a grudge against whoever killed them.
 
+### Heavy units (Caleb's call)
+
+Ashfront is a war of machines, but most fights stay against people. The
+armies' spider walkers are gone; two original heavy units take their place,
+both in the game's own low-poly style, neither a copy of any film's machine.
+
+- **Exo Trooper.** An ordinary soldier strapped into a mechanical
+  exoskeleton, not an enhanced super-soldier (Caleb's call): the person is
+  normal size and the suit gives the bulk, a gunmetal frame down the
+  outside of each limb with drums at the hips, knees, shoulders and
+  elbows, actuator housings and rams, armored boots, a spine and shoulder
+  yoke with a roll cage over the head, and a power pack. The shoulder
+  guards, cage bar and the slit of the closed helmet carry the army's
+  colour, so it reads apart from a soldier at 50 m in a storm. Armor
+  45-70 by ring, more health, a little slower, a support rifle and no
+  blade. One in eight carries a spare Trooper or Bulwark frame.
+- **Kiln Walker.** A rare 3 m war machine on two legs, a body of its own
+  built in code: a low, wide armored hull carried level on two heavy
+  reverse-jointed legs with broad splayed feet, the cannon built into its
+  glacis, the heat vent let into its rear armor, gunmetal with the army's
+  paint on its hip sponsons, thighs and gun mantlet, and a sensor slit lit
+  in the army's colour. Slow on its feet and slow to turn (its aim comes round at 70
+  degrees a second, a soldier's at 200), but its hitscan cannon leads
+  fliers well. Its tell is a thin tracking beam: the cannon fires only
+  after the beam has held a target in sight for a second, so a flier who
+  sees it can break the line. Its heat vent glows the Foundry's molten
+  orange on its back, and hits from behind or from steeply above do double.
+  Beaten by circling it, going over the top, or two players. Middle ring
+  and core only, at most one at each landmark (`WorldDef.bot_allowed`),
+  never a warlord. It drops power cells and alloy, and a core walker has
+  a 15% chance of upgrade data.
+
+Spawn mix by ring (outer, middle, core): exo troopers 9%, 18%, 22%;
+walkers 0%, 4%, 8%; the rest the armies' people, soldiers and blade heavies
+as before. A client builds the same kind from the bot's seed.
+
 ### Enemy balance (targets proposed, for Caleb to confirm)
 
 Every enemy type has a role, and a target for how often a player in a mid
@@ -301,6 +393,10 @@ damage, aim skill) until each type sits in its band, then check by playing.
 | Core heavy | Punishes panic | 55-80% |
 | Rival raider | An equal | 40-60% |
 | Warlord | A squad fight | 10-35% |
+| Outer exo trooper | The tougher soldier | 70-90% |
+| Core exo trooper | Armor that needs a plan | 45-70% |
+| Middle walker | A fight for two players | 15-40% |
+| Core walker | A fight for two players | 10-30% |
 
 A bot at 0.5 is not a person: a good player aims better, uses cover and
 parries on purpose. The reference skill should be set so the bench agrees
@@ -342,6 +438,20 @@ rate, time to kill on a win, and health left. Every row is inside its band.
 | Core heavy | 70% in 5.2 s | 72% in 6.6 s | 28-44% |
 | Rival raider | 52% in 10.2 s | 50% in 14.3 s | 63-66% |
 | Warlord | 20% in 5.8 s | 32% in 7.1 s | 32-36% |
+
+**Heavy units (120 duels, seed 7, 12 m and 25 m).** A solo reference
+player stands in front of a walker and trades shots, so these rows are the
+worst case: circling it or hitting the vent from behind does better.
+
+| Enemy | 12 m | 25 m | Health left |
+| --- | --- | --- | --- |
+| Outer exo trooper | 82% in 6.2 s | 74% in 8.5 s | 58-61% |
+| Core exo trooper | 57% in 6.6 s | 51% in 8.1 s | 54-58% |
+| Middle walker | 28% in 8.1 s | 32% in 10.0 s | 56-59% |
+| Core walker | 15% in 6.8 s | 13% in 9.1 s | 45-65% |
+
+At 40 duels these rows swing by about ten points either way, so they were
+tuned at 120.
 
 Raider fights run longer than the others because both sides wear plates and
 stop to use a medkit. A warlord's loss, when the player does win, takes
@@ -583,6 +693,49 @@ Every player brings a modular loadout. Five slots define the combat role:
 Alongside those five: an armor frame, headgear (a helmet or goggles, each
 with a visor), a vehicle on the watch, and the heavy weapon chamber, which is
 filled in the field.
+
+### Gun roles
+
+Every gun has a range and a target it wins against, so the pick is a
+choice and not one best gun. Headshots pay on every gun, close-range guns
+lose damage past their reach, and marksman rounds punch partly through
+plates. The gun bench (`tests/gun_bench.tscn`) prints each gun's time to
+kill by range and armor with every round landing. Against a mid kit
+(Trooper Frame, 85 armor):
+
+| Gun | Role | Body | All head | Falls off |
+| --- | --- | --- | --- | --- |
+| Ashfront Carbine | The all-rounder | 8 rounds, 0.70 s | 6, 0.50 s | 50 to 100 m, to 80% |
+| Scrap Rifle | Starter all-rounder | 10, 0.99 s | 7, 0.66 s | 40 to 90 m, to 75% |
+| Stinger SMG | Wins inside about 15 m | 10, 0.58 s | 8, 0.46 s | 12 to 30 m, to 55% |
+| Longshot DMR | Precision at any range, through plates | 3, 0.84 s | 2, 0.42 s | Never |
+| Breacher Shotgun | Two blasts at blade range | 2, 0.75 s | (pellets) | 8 to 22 m, to 35% |
+| Service Pistol | Accurate backup | 9, 1.28 s | 5, 0.64 s | 25 to 60 m, to 70% |
+| Hornet Machine Pistol | Close spray backup | 19, 0.99 s | 15, 0.77 s | 10 to 28 m, to 50% |
+| Warden Hand Cannon | Head and any second hit drops a bare target | 4, 1.65 s | 2, 0.55 s | 35 to 80 m, to 75% |
+
+Army soldiers aim at the chest and get no headshot bonus, so the enemy
+balance bands above hold (re-measured after this pass: every row still in
+band).
+
+### Handling
+
+How a gun handles is the second half of its role. Every gun pays for
+moving, but not the same amount, and every gun takes a moment to come up
+to the eye:
+
+- Spread grows with speed on the ground, by the gun's `move_spread_deg` at
+  a full sprint (rifles 2 degrees, the DMR 3, pistols and the SMG about 1).
+  Standing still or crouched is how you shoot straight.
+- Aiming down sights tightens spread over the gun's `ads_time` (pistols and
+  the SMG about 0.16 s, rifles 0.25 s, the DMR 0.35 s), so a snap aim is
+  not yet a steady one.
+- You cannot shoot while sprinting. Pulling the trigger or aiming drops you
+  to a walk, and the gun fires 0.2 s after the sprint ends. A click made
+  in that moment is kept, so it never feels eaten.
+
+Re-measured on the duel bench over three seeds: every enemy type wins and
+loses about as often as before (all rows within the bench's noise).
 
 ### Goggles
 
@@ -1433,6 +1586,11 @@ dash-strike range, player kill scrip (60), sell-back rate (40%).
 4. **The PvE world:** quests, dungeons and bosses.
 5. **More worlds** as plug-ins.
 
+The online and server work runs alongside this, in its own order (section 14):
+hardening and reconnecting before the friends playtest, encryption before
+strangers play, accounts on SQLite before the marketplace, and official
+servers after that.
+
 ## 13. Open decisions
 
 Caleb's calls, still open:
@@ -1454,3 +1612,97 @@ Caleb's calls, still open:
   - How much salvage a lost crafted item pays back.
   - Contract and bounty payouts, and how a bounty's size grows.
   - Which prestige vehicles and rigs come from which feats.
+
+## 14. Online and servers
+
+Caleb's calls (17 November 2026), after a review of the online code. The
+model stays as it is: one authoritative Godot server per world on ENet,
+clients sending only their input, the server deciding every result. What
+changes is what goes around it.
+
+**Two kinds of server.**
+
+- **Official servers** share one account per player: stash, progression,
+  contracts, clans and the marketplace are the same in every world and every
+  instance. Accounts there are never fed from a local save: the solo profile
+  and an account on your own server stay apart from your official account,
+  because anyone can edit a local file.
+- **Friends' servers** (the Docker server in `docs/hosting.md`, and the one
+  the base's door starts) keep their own accounts, as today. Nothing moves
+  between them and official servers. They keep running every world in one
+  program.
+
+**Accounts.** One account service, written in Godot: a headless Godot
+program that runs the same GDScript rules as today (`StashRules`, `Economy`,
+`Crafting`, `Contracts`, `StashService`), so every rule exists once and solo
+play keeps sharing it. It keeps accounts in SQLite (the godot-sqlite plugin,
+MIT), where every stash change and every trade is all or nothing, so items
+are never duplicated or lost. Postgres only if one machine stops being
+enough. Not a ready-made backend such as Nakama: it would need a second copy
+of the rules in another language.
+
+**Sign-in.** Official servers move to Steam (or Epic) login through
+GodotSteam (MIT), checked on the server with the store's web service. That
+brings account recovery, bans and protection against stolen accounts.
+Friends' servers can keep the name and secret.
+
+Official servers open before the game is on Steam (Caleb's call), once
+connections are encrypted, signing in with the name and secret. A recovery
+code on the phone (Settings) moves an account to another computer. When
+Steam login arrives, the game ties the account it already holds to the
+player's Steam account once, so nobody loses progress.
+
+**Scaling.** On official servers each world runs as its own program, since
+Godot runs a game loop on one thread and separate programs are how a server
+uses more cores, and one crash then takes down one world. Routes name an
+address as well as a port. Growth goes by measurement: one bigger machine
+first, a matchmaker and plaza shards when worlds or the plaza fill, a hosting
+service such as Edgegap only when several machines are needed. Server
+meshing (one world split across servers) is not planned.
+
+**Built with Godot's own tools.** Sign-in and the version check happen in
+`SceneMultiplayer.auth_callback`, before a player counts as connected.
+`server_relay` is off. Connections are encrypted with ENet's DTLS: a
+server makes its own certificate on first start and the game remembers it
+per address, warning if it changes (as ssh does), so no domain or paid
+certificate is needed. Game servers talk to the account service over
+`WebSocketPeer`. Our own snapshots with prediction stay; Godot's
+`MultiplayerSynchronizer` and `MultiplayerSpawner` are not a fit for fast
+PvP.
+
+**Order of work.**
+
+1. Before the friends playtest: a hardening pass (sign-in in
+   `auth_callback`, relay off, per-player request limits, safe clan saves,
+   account backups), reconnecting to your body after a drop, and a bench of
+   the whole server with a health line in its log.
+2. Before strangers play: encrypted connections.
+3. Before the marketplace: accounts on SQLite, still in one program. The
+   marketplace builds on this and does not wait for official servers. It
+   keeps the `StashService` calls the market uses (`count_of`, `scrip_of`,
+   `take_items`, `give_items`, `change_scrip`) and adds one that runs several
+   of them as a single all-or-nothing transaction, which wraps each trade.
+4. Official servers: the account service as its own program (the deploy,
+   bank and settle calls must cope with an answer that comes late or never),
+   one program per world, and one Docker Compose setup for all of it. Steam
+   login once the game is on Steam.
+5. Only when the numbers call for it: a matchmaker, plaza shards, a hosting
+   service, and not sending players enemies they cannot see.
+
+**Smooth for the player.** Every step is held to these:
+
+- **Reconnect on its own.** After a drop the game quietly reconnects and
+  puts you back in your body; no button (part of reconnecting, step 1).
+- **Official servers by default.** The base's door and the Servers app go to
+  them with no address to type; an address is only for a friend's server.
+- **Always say which account you are on.** The phone and the base name it
+  (solo, a friend's server, official), so separate stashes never look like
+  lost gear.
+- **No dead end when a world is full.** Send the player to another instance,
+  or say how long the wait is.
+- **A version mismatch points to the update**, not just an error.
+- **Certificate warnings never show on official servers**; they use a real
+  certificate.
+- **Travel between worlds within about 3 s**, measured by the whole-server
+  bench.
+- **A taken name asks for another one** on the phone, never just a refusal.
