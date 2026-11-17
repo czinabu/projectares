@@ -83,7 +83,7 @@ signal base_visit_requested(owner_name: String, stash: Array, loadout: Dictionar
 signal portal_travel(destination: String)
 
 const DEFAULT_PORT := 24565
-const PROTOCOL := 33
+const PROTOCOL := 34
 ## Every packet is compressed, both ways. State updates are mostly repeated
 ## numbers, and a big battle sends a player hundreds of them a second. Server
 ## and client must agree, so a change here needs a new PROTOCOL.
@@ -96,6 +96,8 @@ const PROTOCOL := 33
 ## 33: the version check and sign-in moved into the connection handshake
 ## (`SceneMultiplayer.auth_callback`, see "Signing in" below); the old
 ## `_hello`, `_sign_in` and `_refused` calls are gone.
+## 34: hit feedback says whether it was a head, plates soaked it, or it
+## broke them, for the hit marker.
 ## Where an out-of-date game gets the latest build: the rolling "latest"
 ## release the Windows client workflow publishes (docs/hosting.md).
 const UPDATE_URL := "https://github.com/czinabu/projectares/releases/tag/latest"
@@ -1168,7 +1170,8 @@ func _send_boards() -> void:
 
 func _on_server_hit_confirmed(target: Actor, info: DamageInfo, lethal: bool, peer: int) -> void:
 	if peer in _api.get_peers() and _ids.has(target):
-		_hit_feedback.rpc_id(peer, _ids[target], info.amount, info.kind, lethal, info.blocked, info.parried)
+		_hit_feedback.rpc_id(peer, _ids[target], info.amount, info.kind, lethal, info.blocked, info.parried,
+				info.headshot, info.armored, info.armor_broke)
 
 
 ## In the world: start signing out, or call it off.
@@ -2214,7 +2217,7 @@ func _blend_ride(vehicle: Node3D) -> void:
 
 @rpc("authority", "call_remote", "reliable")
 func _hit_feedback(target_id: int, amount: float, kind: String, lethal: bool, blocked: bool,
-		parried: bool) -> void:
+		parried: bool, headshot: bool, armored: bool, armor_broke: bool) -> void:
 	var me: Actor = _actors.get(my_actor_id)
 	var target: Actor = _actors.get(target_id)
 	if me == null or target == null or not is_instance_valid(target):
@@ -2222,6 +2225,9 @@ func _hit_feedback(target_id: int, amount: float, kind: String, lethal: bool, bl
 	var info := DamageInfo.make(amount, me, kind, target.global_position)
 	info.blocked = blocked
 	info.parried = parried
+	info.headshot = headshot
+	info.armored = armored
+	info.armor_broke = armor_broke
 	me.hit_confirmed.emit(target, info, lethal)
 
 

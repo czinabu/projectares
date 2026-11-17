@@ -34,7 +34,7 @@ func _ready() -> void:
 			"A sharpened strip of plating.")
 	register("pistol_service", "Service Pistol", Rarity.COMMON, 0,
 			["weapon", "firearm", "sidearm", "pistol", "starter"],
-			{"semi_auto": true, "damage": 22.0, "headshot_mult": 1.75, "ads_time": 0.16, "move_spread_deg": 1.0, "fire_interval": 0.16, "mag_size": 12, "ammo_in_mag": 12,
+			{"shot_sound": "shot_pistol", "semi_auto": true, "damage": 22.0, "headshot_mult": 1.75, "ads_time": 0.16, "move_spread_deg": 1.0, "fire_interval": 0.16, "mag_size": 12, "ammo_in_mag": 12,
 			"reserve_ammo": 60, "reload_time": 1.1, "spread_deg": 0.6, "bloom_per_shot": 0.5,
 			"recoil_kick_deg": 0.7, "max_range": 90.0, "falloff_start": 25.0, "falloff_end": 60.0, "falloff_min": 0.7},
 			"Reliable semi-auto sidearm. Accurate, and quick to reload.")
@@ -51,17 +51,17 @@ func _ready() -> void:
 			"falloff_start": 50.0, "falloff_end": 100.0, "falloff_min": 0.8},
 			"Reliable automatic. Harder hitting and tighter than the scrap rifle.")
 	register("smg_stinger", "Stinger SMG", Rarity.UNCOMMON, 420, ["weapon", "firearm", "smg", "vendor"],
-			{"damage": 19.0, "headshot_mult": 1.3, "ads_time": 0.18, "move_spread_deg": 1.2, "fire_interval": 0.065, "mag_size": 40, "ammo_in_mag": 40,
+			{"shot_sound": "shot_smg", "damage": 19.0, "headshot_mult": 1.3, "ads_time": 0.18, "move_spread_deg": 1.2, "fire_interval": 0.065, "mag_size": 40, "ammo_in_mag": 40,
 			"reserve_ammo": 200, "spread_deg": 1.9, "recoil_kick_deg": 0.3, "max_range": 80.0,
 			"falloff_start": 12.0, "falloff_end": 30.0, "falloff_min": 0.55},
 			"Very fast fire and light recoil. Out-kills a rifle up close, falls off past 12 m.")
 	register("dmr_longshot", "Longshot DMR", Rarity.RARE, 900, ["weapon", "firearm", "marksman"],
-			{"damage": 60.0, "headshot_mult": 2.0, "ads_time": 0.35, "move_spread_deg": 3.0, "armor_pierce": 0.35, "fire_interval": 0.42, "mag_size": 12,
+			{"shot_sound": "shot_dmr", "damage": 60.0, "headshot_mult": 2.0, "ads_time": 0.35, "move_spread_deg": 3.0, "armor_pierce": 0.35, "fire_interval": 0.42, "mag_size": 12,
 			"ammo_in_mag": 12, "reserve_ammo": 60, "spread_deg": 0.25, "recoil_kick_deg": 1.7, "bloom_per_shot": 0.9,
 			"max_range": 220.0},
 			"Slow, precise, and heavy hitting. Its rounds punch through plates: two headshots drop a mid kit.")
 	register("shotgun_breacher", "Breacher Shotgun", Rarity.RARE, 850, ["weapon", "firearm", "shotgun"],
-			{"damage": 14.0, "pellets": 8, "headshot_mult": 1.0, "move_spread_deg": 0.8, "fire_interval": 0.75, "mag_size": 6, "ammo_in_mag": 6,
+			{"shot_sound": "shot_shotgun", "damage": 14.0, "pellets": 8, "headshot_mult": 1.0, "move_spread_deg": 0.8, "fire_interval": 0.75, "mag_size": 6, "ammo_in_mag": 6,
 			"reserve_ammo": 36, "spread_deg": 4.5, "recoil_kick_deg": 2.4, "reload_time": 2.4,
 			"max_range": 40.0, "falloff_start": 8.0, "falloff_end": 22.0, "falloff_min": 0.35},
 			"Eight pellets a shot. Devastating in reach of a blade.")
@@ -69,13 +69,13 @@ func _ready() -> void:
 	# Sidearms: worn on the hip and drawn when the primary runs dry.
 	register("pistol_machine", "Hornet Machine Pistol", Rarity.UNCOMMON, 380,
 			["weapon", "firearm", "sidearm", "machine_pistol", "vendor"],
-			{"damage": 10.0, "headshot_mult": 1.3, "ads_time": 0.16, "move_spread_deg": 1.0, "fire_interval": 0.055, "mag_size": 20, "ammo_in_mag": 20, "reserve_ammo": 100,
+			{"shot_sound": "shot_smg", "damage": 10.0, "headshot_mult": 1.3, "ads_time": 0.16, "move_spread_deg": 1.0, "fire_interval": 0.055, "mag_size": 20, "ammo_in_mag": 20, "reserve_ammo": 100,
 			"reload_time": 1.4, "spread_deg": 2.6, "bloom_per_shot": 0.45, "max_bloom": 4.0,
 			"recoil_kick_deg": 0.35, "max_range": 45.0, "falloff_start": 10.0, "falloff_end": 28.0, "falloff_min": 0.5},
 			"Full-auto spray. Deadly up close, useless at range.")
 	register("pistol_hand_cannon", "Warden Hand Cannon", Rarity.RARE, 750,
 			["weapon", "firearm", "sidearm", "hand_cannon"],
-			{"semi_auto": true, "damage": 55.0, "headshot_mult": 1.8, "ads_time": 0.2, "move_spread_deg": 1.6, "armor_pierce": 0.25, "fire_interval": 0.55, "mag_size": 6,
+			{"shot_sound": "shot_cannon", "semi_auto": true, "damage": 55.0, "headshot_mult": 1.8, "ads_time": 0.2, "move_spread_deg": 1.6, "armor_pierce": 0.25, "fire_interval": 0.55, "mag_size": 6,
 			"ammo_in_mag": 6, "reserve_ammo": 30, "reload_time": 2.2, "spread_deg": 0.4,
 			"bloom_per_shot": 1.2, "recoil_kick_deg": 2.6, "max_range": 110.0,
 			"falloff_start": 35.0, "falloff_end": 80.0, "falloff_min": 0.75},
