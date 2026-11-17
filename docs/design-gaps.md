@@ -130,7 +130,7 @@ rows marked **pre-playtest** come before the friends playtest.
 | Cargo space while riding | Missing | After the playtest. |
 | Mobile cover | Missing | Rover and mech; the bike gives none by design. |
 | Per-vehicle watch recharge (heavier is slower) | Built | `Raid.toy_recharge` reads the item's `watch_recharge`, or `toy_cooldown` (12 s) when it has none. Scrapper 12 s, Raider hoverbike 10 s, Warden Rover 30 s, Bulwark Mech 60 s, Kestrel Jet 60 s. |
-| Rover, mech and jet | Partly | Drivable first versions on the one `Vehicle` class: Warden Rover (23 m/s, slow to turn, driver's seat on the left), Bulwark Mech (9 m/s, turns on the spot, jump-jet hop) and Kestrel Jet (takes off past 24 m/s, cannot hover, 120 m ceiling, thrown in any world). Greybox models. Missing: their weapons, passengers, armor and weak spots, vehicle health, The rover can be found parked in Ashfront; the mech and the jet are built at the fabricator from their blueprints, which warlords and supply pods carry. |
+| Rover, mech and jet | Partly | Drivable first versions on the one `Vehicle` class: Warden Rover (23 m/s, slow to turn, driver's seat on the left), Bulwark Mech (9 m/s, turns on the spot, jump-jet hop) and Kestrel Jet (takes off past 24 m/s, cannot hover, 120 m ceiling, thrown in any world). Greybox models. Missing: their weapons, passengers, armor and weak spots, vehicle health, The rover can be found parked at Ashfront's strongpoints (parked vehicles are tiered by risk: Scrappers at the rim and camps, a chance of a Raider by the ramps, the best odds at strongpoints, which refill slower); the mech and the jet are built at the fabricator from their blueprints, which warlords and supply pods carry. |
 
 ## Racing
 
@@ -154,3 +154,22 @@ rows marked **pre-playtest** come before the friends playtest.
 | Bounties on hot players, paid on extract, tied to the most-wanted board | Partly | Renown, bounties and the Marked exist in the PvP world; payouts in upgrade data and the board are missing. |
 | Safety nets: free Mk1 kit, one insured item, salvage on loss | Partly | The free `starter` scrap kit exists. Insurance and salvage are missing. |
 | Prestige vehicles and rigs from hard feats | Missing | List TBD. |
+
+## Online and servers (DESIGN.md section 14)
+
+| Item | State | Notes |
+| --- | --- | --- |
+| Authoritative server, input-only clients, prediction, lag compensation | Built | `NetSession`, `ActorCommand.apply_array` clamps every input. |
+| Sign-in and version check before a player gets in | Partly | Sign-in is an ordinary call after connecting, and only the client acts on a `PROTOCOL` mismatch. Missing: `SceneMultiplayer.auth_callback`. **pre-playtest** |
+| Hardening: relay off, request limits, safe saves, backups | Missing | `server_relay` is Godot's default (on); no per-player request limits; `ClanService` writes its file in place; no account backups. **pre-playtest** |
+| Reconnect to your body after a drop | Missing | A disconnect starts a sign-out on the standing body (`Raid.remove_player`) and a new sign-in waits it out. **pre-playtest** |
+| Whole-server bench and health log | Missing | `battle_bench` measures one world; nothing measures the plaza, worlds and arena together. **pre-playtest** |
+| Encrypted connections | Missing | ENet traffic, including the sign-in secret, is plain. |
+| Accounts on SQLite with all-or-nothing changes | Missing | One JSON file per account (`StashService._save`). Needed before the marketplace. |
+| Account service as its own program | Missing | `StashService`, `SocialService` and `ClanService` live in the server's memory, shared by sessions in one process. |
+| One program per world, routes with an address | Partly | `--world` runs one world alone, but routes carry only a port and world status is gathered in memory (`NetSession._gather_status`). |
+| Official versus friends' servers | Missing | Every server keeps its own accounts; your own server takes on your solo profile. |
+| Steam login | Missing | Name plus a secret the game makes. |
+| Matchmaker, plaza shards, hiding unseen enemies | Missing | Later, when numbers call for it. |
+| Official servers before Steam: recovery code, one-time Steam link | Missing | Accounts are tied to the computer whose game made the secret. |
+| Smooth travel: auto-reconnect, official servers by default, account shown, no full-world dead end, update link on a version mismatch | Missing | See DESIGN.md section 14, "Smooth for the player". |

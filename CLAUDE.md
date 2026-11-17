@@ -627,7 +627,15 @@ without Caleb, and update the gap list when a PR closes a row.
   (`PlayerController._update_recoil`), the view widening with speed
   (`speed_fov`) and dipping on a landing (`land_dip`). A semi-auto keeps a
   pull made just before it is ready (`Gun.press_buffer`); that is simulated,
-  so it is in `Gun`, from the command.
+  so it is in `Gun`, from the command. Handling is simulated the same way
+  (DESIGN.md "Handling"): moving widens a gun's spread by its
+  `move_spread_deg` times the share of sprint speed on the ground
+  (`Gun.move_share`), aiming tightens it over the gun's `ads_time`
+  (`Gun.aim_in`), not at once, and you never shoot while sprinting: a held
+  trigger or aim slows you to a walk, and a gun fires only
+  `Actor.sprint_out_time` after the sprint ends (`Actor.sprint_recover`),
+  keeping a pull made meanwhile. Light guns are quick and steady on the
+  move; a DMR is slow to aim and wild on the run.
 - Helmets are items tagged `helmet` in the `helmet` loadout slot, and data
   like abilities: `Visor` (`core/abilities/visor.gd`, `Actor.visor`) is one
   class whose `mode` stat picks what the visor does ("" plain, "zoom"

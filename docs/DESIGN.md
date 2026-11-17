@@ -680,6 +680,25 @@ Army soldiers aim at the chest and get no headshot bonus, so the enemy
 balance bands above hold (re-measured after this pass: every row still in
 band).
 
+### Handling
+
+How a gun handles is the second half of its role. Every gun pays for
+moving, but not the same amount, and every gun takes a moment to come up
+to the eye:
+
+- Spread grows with speed on the ground, by the gun's `move_spread_deg` at
+  a full sprint (rifles 2 degrees, the DMR 3, pistols and the SMG about 1).
+  Standing still or crouched is how you shoot straight.
+- Aiming down sights tightens spread over the gun's `ads_time` (pistols and
+  the SMG about 0.16 s, rifles 0.25 s, the DMR 0.35 s), so a snap aim is
+  not yet a steady one.
+- You cannot shoot while sprinting. Pulling the trigger or aiming drops you
+  to a walk, and the gun fires 0.2 s after the sprint ends. A click made
+  in that moment is kept, so it never feels eaten.
+
+Re-measured on the duel bench over three seeds: every enemy type wins and
+loses about as often as before (all rows within the bench's noise).
+
 ### Goggles
 
 Goggles are the light alternative to a helmet in the same `helmet` slot, and
@@ -1492,6 +1511,11 @@ dash-strike range, player kill scrip (60), sell-back rate (40%).
 4. **The PvE world:** quests, dungeons and bosses.
 5. **More worlds** as plug-ins.
 
+The online and server work runs alongside this, in its own order (section 14):
+hardening and reconnecting before the friends playtest, encryption before
+strangers play, accounts on SQLite before the marketplace, and official
+servers after that.
+
 ## 13. Open decisions
 
 Caleb's calls, still open:
@@ -1513,3 +1537,97 @@ Caleb's calls, still open:
   - How much salvage a lost crafted item pays back.
   - Contract and bounty payouts, and how a bounty's size grows.
   - Which prestige vehicles and rigs come from which feats.
+
+## 14. Online and servers
+
+Caleb's calls (17 November 2026), after a review of the online code. The
+model stays as it is: one authoritative Godot server per world on ENet,
+clients sending only their input, the server deciding every result. What
+changes is what goes around it.
+
+**Two kinds of server.**
+
+- **Official servers** share one account per player: stash, progression,
+  contracts, clans and the marketplace are the same in every world and every
+  instance. Accounts there are never fed from a local save: the solo profile
+  and an account on your own server stay apart from your official account,
+  because anyone can edit a local file.
+- **Friends' servers** (the Docker server in `docs/hosting.md`, and the one
+  the base's door starts) keep their own accounts, as today. Nothing moves
+  between them and official servers. They keep running every world in one
+  program.
+
+**Accounts.** One account service, written in Godot: a headless Godot
+program that runs the same GDScript rules as today (`StashRules`, `Economy`,
+`Crafting`, `Contracts`, `StashService`), so every rule exists once and solo
+play keeps sharing it. It keeps accounts in SQLite (the godot-sqlite plugin,
+MIT), where every stash change and every trade is all or nothing, so items
+are never duplicated or lost. Postgres only if one machine stops being
+enough. Not a ready-made backend such as Nakama: it would need a second copy
+of the rules in another language.
+
+**Sign-in.** Official servers move to Steam (or Epic) login through
+GodotSteam (MIT), checked on the server with the store's web service. That
+brings account recovery, bans and protection against stolen accounts.
+Friends' servers can keep the name and secret.
+
+Official servers open before the game is on Steam (Caleb's call), once
+connections are encrypted, signing in with the name and secret. A recovery
+code on the phone (Settings) moves an account to another computer. When
+Steam login arrives, the game ties the account it already holds to the
+player's Steam account once, so nobody loses progress.
+
+**Scaling.** On official servers each world runs as its own program, since
+Godot runs a game loop on one thread and separate programs are how a server
+uses more cores, and one crash then takes down one world. Routes name an
+address as well as a port. Growth goes by measurement: one bigger machine
+first, a matchmaker and plaza shards when worlds or the plaza fill, a hosting
+service such as Edgegap only when several machines are needed. Server
+meshing (one world split across servers) is not planned.
+
+**Built with Godot's own tools.** Sign-in and the version check happen in
+`SceneMultiplayer.auth_callback`, before a player counts as connected.
+`server_relay` is off. Connections are encrypted with ENet's DTLS: a
+server makes its own certificate on first start and the game remembers it
+per address, warning if it changes (as ssh does), so no domain or paid
+certificate is needed. Game servers talk to the account service over
+`WebSocketPeer`. Our own snapshots with prediction stay; Godot's
+`MultiplayerSynchronizer` and `MultiplayerSpawner` are not a fit for fast
+PvP.
+
+**Order of work.**
+
+1. Before the friends playtest: a hardening pass (sign-in in
+   `auth_callback`, relay off, per-player request limits, safe clan saves,
+   account backups), reconnecting to your body after a drop, and a bench of
+   the whole server with a health line in its log.
+2. Before strangers play: encrypted connections.
+3. Before the marketplace: accounts on SQLite, still in one program. The
+   marketplace builds on this and does not wait for official servers. It
+   keeps the `StashService` calls the market uses (`count_of`, `scrip_of`,
+   `take_items`, `give_items`, `change_scrip`) and adds one that runs several
+   of them as a single all-or-nothing transaction, which wraps each trade.
+4. Official servers: the account service as its own program (the deploy,
+   bank and settle calls must cope with an answer that comes late or never),
+   one program per world, and one Docker Compose setup for all of it. Steam
+   login once the game is on Steam.
+5. Only when the numbers call for it: a matchmaker, plaza shards, a hosting
+   service, and not sending players enemies they cannot see.
+
+**Smooth for the player.** Every step is held to these:
+
+- **Reconnect on its own.** After a drop the game quietly reconnects and
+  puts you back in your body; no button (part of reconnecting, step 1).
+- **Official servers by default.** The base's door and the Servers app go to
+  them with no address to type; an address is only for a friend's server.
+- **Always say which account you are on.** The phone and the base name it
+  (solo, a friend's server, official), so separate stashes never look like
+  lost gear.
+- **No dead end when a world is full.** Send the player to another instance,
+  or say how long the wait is.
+- **A version mismatch points to the update**, not just an error.
+- **Certificate warnings never show on official servers**; they use a real
+  certificate.
+- **Travel between worlds within about 3 s**, measured by the whole-server
+  bench.
+- **A taken name asks for another one** on the phone, never just a refusal.
