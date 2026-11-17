@@ -81,6 +81,9 @@ const TRAP_OFFSET := 13.0
 const TRAP_EVERY := 6.5
 ## How far the Forge's beacon is drawn: the whole map and past it.
 const FAR_SIGHT := 2000.0
+## Flashes on the horizon a second: when quiet, and in all-out war.
+const FLASH_RATE := Vector2(0.25, 3.0)
+const FLASH_TIME := 0.45
 ## Molten cracks running in to the core.
 const CRACKS := 5
 ## What a cover lot is built from: concrete jersey barriers, sandbag walls and
@@ -116,8 +119,13 @@ var _solids: Array[Dictionary] = []
 var _weather: Node3D
 var _beacon: MeshInstance3D
 var _beacon_light: OmniLight3D
+## The war seen from far off: flashes past the rim, more as it heats up, and
+## searchlights sweeping from the Forge. View only, timed by `_art_rng`.
+var _flashes: Array[MeshInstance3D] = []
+var _flash_left: Array[float] = []
+var _searchlights: Array[Node3D] = []
 
-@onready var GROUND := Look.surface("ground", {"tint": Color(0.31, 0.26, 0.24), "blend": "asphalt",
+@onready var GROUND := Look.surface("ground", {"tint": Color(0.36, 0.29, 0.26), "blend": "asphalt",
 		"blend_amount": 0.45, "grime": 0.6, "saturation": 0.3, "scale": 0.16})
 @onready var WALL := Look.surface("concrete", {"tint": Color(0.45, 0.4, 0.38), "grime": 0.8, "scale": 0.12})
 @onready var COVER_METAL := Look.surface("metal", {"tint": Color(0.7, 0.42, 0.28), "scale": 0.45})
@@ -171,12 +179,13 @@ func ground_height(x: float, z: float) -> float:
 	return terrain.height_at(x, z)
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	# The embers drift around whoever is looking, not over the whole field.
 	var camera := get_viewport().get_camera_3d()
 	if camera != null and is_instance_valid(_weather):
 		_weather.global_position = Vector3(camera.global_position.x, camera.global_position.y + 6.0,
 				camera.global_position.z)
+	_tick_distant_war(delta)
 	# The beacon breathes, slowly, like a warning light.
 	if is_instance_valid(_beacon_light):
 		var pulse := 0.5 + 0.5 * sin(Time.get_ticks_msec() * 0.0021)
@@ -185,40 +194,43 @@ func _process(_delta: float) -> void:
 
 
 func _build_environment() -> void:
-	# A scorched plain under smoke: low orange sun, haze only toward the
-	# horizon. Depth fog (fog_density here is how opaque the far end gets,
-	# not an exponential haze) leaves engagement range clear.
+	# Smouldering, even when it is quiet: a rust-red sky choked with smoke
+	# and a low, dull sun, so the Forge, the cracks and the fires are what
+	# light the field. Haze only toward the horizon; depth fog (fog_density
+	# here is how opaque the far end gets, not an exponential haze) leaves
+	# engagement range clear.
 	Look.atmosphere(self, {
-		"sky_tint": Color(0.82, 0.6, 0.48),
-		"sky_saturation": 0.3,
-		"sky_energy": 0.75,
+		"sky_tint": Color(0.62, 0.3, 0.22),
+		"sky_saturation": 0.5,
+		"sky_energy": 0.5,
 		"sky_rotation": 0.2,
-		"fog_color": Color(0.36, 0.27, 0.22),
-		"fog_density": 0.62,
+		"fog_color": Color(0.3, 0.15, 0.11),
+		"fog_density": 0.66,
 		"fog_depth_begin": 64.0,
-		"fog_depth_end": 360.0,
+		"fog_depth_end": 340.0,
 		"fog_depth_curve": 1.3,
 		"fog_height": 1.1,
 		"fog_height_density": 0.05,
-		"haze_height": 0.28,
-		"sun_scatter": 0.35,
-		"sun_color": Color(1.0, 0.74, 0.52),
-		"sun_energy": 1.9,
-		"sun_angles": Vector3(-30, 38, 0),
-		"ambient_color": Color(0.4, 0.42, 0.5),
-		"ambient_energy": 1.2,
-		"saturation": 0.85,
-		"contrast": 1.16,
+		"haze_height": 0.3,
+		"sun_scatter": 0.3,
+		"sun_color": Color(1.0, 0.55, 0.36),
+		"sun_energy": 1.6,
+		"sun_angles": Vector3(-28, 38, 0),
+		"ambient_color": Color(0.55, 0.43, 0.42),
+		"ambient_energy": 1.65,
+		"exposure": 1.4,
+		"saturation": 0.88,
+		"contrast": 1.18,
 	}, {
-		# All-out war: the horizon closes in and the sun goes dull red, but
-		# fog does not start inside 28 m and is not solid before 120 m, so a
-		# fight at 30–50 m stays readable. Look.soften_storm enforces that
-		# floor even if these numbers are pushed. The column of smoke is
-		# overhead, not a wall at eye level.
-		"sky_tint": Color(0.55, 0.3, 0.24),
-		"sky_saturation": 0.45,
-		"sky_energy": 0.62,
-		"fog_color": Color(0.5, 0.34, 0.24),
+		# All-out war: a blood-red and black sky, the horizon closing in and
+		# the sun all but gone, but fog does not start inside 28 m and is not
+		# solid before 120 m, so a fight at 30–50 m stays readable.
+		# Look.soften_storm enforces that floor even if these numbers are
+		# pushed. The column of smoke is overhead, not a wall at eye level.
+		"sky_tint": Color(0.4, 0.16, 0.12),
+		"sky_saturation": 0.38,
+		"sky_energy": 0.38,
+		"fog_color": Color(0.27, 0.13, 0.1),
 		"fog_density": 0.86,
 		"fog_depth_begin": 28.0,
 		"fog_depth_end": 120.0,
@@ -226,13 +238,14 @@ func _build_environment() -> void:
 		"fog_height": 1.1,
 		"fog_height_density": 0.12,
 		"haze_height": 0.4,
-		"sun_color": Color(1.0, 0.58, 0.4),
-		"sun_energy": 1.55,
-		"ambient_color": Color(0.46, 0.4, 0.4),
-		"ambient_energy": 1.35,
-		"saturation": 0.78,
-		"contrast": 1.12,
-		"glow": 0.8,
+		"sun_color": Color(1.0, 0.4, 0.25),
+		"sun_energy": 1.35,
+		"ambient_color": Color(0.55, 0.42, 0.4),
+		"ambient_energy": 1.75,
+		"exposure": 1.35,
+		"saturation": 0.72,
+		"contrast": 1.16,
+		"glow": 0.9,
 	})
 	Look.weather(self, "embers", 45.0)
 	_weather = get_node_or_null("Weather")
@@ -1219,9 +1232,74 @@ func _dress_forge(art: Node3D) -> void:
 	var heat := Look.lamp(Color(1.0, 0.42, 0.14), 2.2, 70.0)
 	heat.position = base + Vector3(0, 14.0, 0)
 	art.add_child(heat)
+	# Two searchlights on opposite corner towers, sweeping the sky slowly.
+	var reach := plinth.x * 0.5 - FORGE_TOWER.x * 0.5
+	for sign: float in [-1.0, 1.0]:
+		var pivot := Node3D.new()
+		pivot.position = base + Vector3(sign * reach, FORGE_TOWER.y + 0.5, sign * reach)
+		pivot.rotation = Vector3(0.38, 0.0 if sign > 0.0 else PI, 0.0)
+		var cone := MeshInstance3D.new()
+		var shape := CylinderMesh.new()
+		shape.top_radius = 10.0
+		shape.bottom_radius = 0.5
+		shape.height = 180.0
+		shape.cap_top = false
+		shape.cap_bottom = false
+		shape.material = Look.trim("beam")
+		cone.mesh = shape
+		cone.rotation.x = -PI * 0.5
+		cone.position = Vector3(0, 0, -90.0)
+		cone.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		cone.visibility_range_end = FAR_SIGHT
+		pivot.add_child(cone)
+		art.add_child(pivot)
+		_searchlights.append(pivot)
 	_beacon_light = Look.lamp(Color(1.0, 0.12, 0.08), 6.0, 40.0)
 	_beacon_light.position = _beacon.position
 	art.add_child(_beacon_light)
+
+
+## The war past the rim: gun flashes and blasts flaring and fading on the
+## horizon, rare when the field is quiet and constant in all-out war (the
+## map's `war_intensity`), and the Forge's searchlights turning.
+func _tick_distant_war(delta: float) -> void:
+	if _searchlights.is_empty():
+		return
+	var heat := clampf(float(get_meta("war_intensity", 0.0)), 0.0, 1.0)
+	for i in _searchlights.size():
+		_searchlights[i].rotation.y += delta * (0.12 + 0.05 * i) * (1.0 + heat)
+	if _flashes.is_empty():
+		for i in 6:
+			var flash := MeshInstance3D.new()
+			var quad := QuadMesh.new()
+			quad.size = Vector2(1, 1)
+			quad.material = Look.trim("flash")
+			flash.mesh = quad
+			flash.visible = false
+			flash.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			flash.visibility_range_end = FAR_SIGHT
+			add_child(flash)
+			_flashes.append(flash)
+			_flash_left.append(0.0)
+	for i in _flashes.size():
+		if _flash_left[i] <= 0.0:
+			continue
+		_flash_left[i] -= delta
+		var t := clampf(_flash_left[i] / FLASH_TIME, 0.0, 1.0)
+		_flashes[i].transparency = 1.0 - t * t
+		_flashes[i].visible = _flash_left[i] > 0.0
+	if _art_rng.randf() < lerpf(FLASH_RATE.x, FLASH_RATE.y, heat) * delta:
+		for i in _flashes.size():
+			if _flash_left[i] > 0.0:
+				continue
+			var angle := _art_rng.randf() * TAU
+			var reach := _art_rng.randf_range(360.0, 500.0)
+			var size := _art_rng.randf_range(30.0, 70.0)
+			_flashes[i].scale = Vector3.ONE * size
+			_flashes[i].position = Vector3(cos(angle) * reach, RIM_HEIGHT + _art_rng.randf_range(0.0, 25.0), sin(angle) * reach)
+			_flashes[i].visible = true
+			_flash_left[i] = FLASH_TIME
+			break
 
 
 ## A plain dressed box with no collision and no shadow.

@@ -1709,6 +1709,19 @@ func _ashfront_shots(out_dir: String) -> void:
 		camera.look_at_from_position(eye, aim)
 		await _settle(40)
 		await _shot(out_dir.path_join("ashfront_%s.png" % view[0]))
+	# The same view from the field toward the Forge, quiet, in a battle and
+	# in all-out war, with the fighting just ahead.
+	raid.war.cooling = 0.0
+	var mood := raid.map.get_node("WarMood")
+	var from := Vector2(-150, 30)
+	var eye := Vector3(from.x, ground.call(from.x, from.y) + 2.0, from.y)
+	camera.look_at_from_position(eye, Vector3(0, ground.call(0.0, 0.0) + 20.0, 0))
+	for step: Array in [[0.0, "quiet"], [0.55, "battle"], [1.0, "all_out"]]:
+		raid.war.intensity = step[0]
+		raid.war.centre = Vector3(-80, 0, 15)
+		mood.follow = 100.0
+		await _settle(200 if step[0] > 0.0 else 60)
+		await _shot(out_dir.path_join("ashfront_war_%s.png" % step[1]))
 	raid.queue_free()
 
 

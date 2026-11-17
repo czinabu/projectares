@@ -896,8 +896,8 @@ func interior(parent: Node3D, ambient: Color, energy: float) -> void:
 ## light, "beacon" (a red light that cuts through the haze, never fogged),
 ## "slag" (molten metal), "crack" (a dimmer glow for cracks in the ground),
 ## "scorch" (charred ground), "hazard" (orange and black stripes),
-## "sandbag", "halo" (a glow round a far light) and "distant" (skyline
-## silhouettes). Cached, so every piece shares one material.
+## "sandbag", "halo" (a glow round a far light), "flash" (a far blast),
+## "beam" (a searchlight) and "distant" (skyline silhouettes). Cached, so every piece shares one material.
 func trim(kind: String) -> Material:
 	var key := "trim:" + kind
 	if _materials.has(key):
@@ -928,6 +928,23 @@ func trim(kind: String) -> Material:
 			mat.albedo_texture = _soft_dot()
 			mat.albedo_color = Color(1.0, 0.16, 0.08, 0.9)
 			mat.disable_fog = true
+		"flash":
+			# A far gun flash or blast on the horizon: a bright soft glow the
+			# haze never hides. Fade it with the instance's transparency.
+			mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+			mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+			mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+			mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+			mat.albedo_texture = _soft_dot()
+			mat.albedo_color = Color(1.0, 0.62, 0.3)
+			mat.disable_fog = true
+		"beam":
+			# A searchlight's beam: faint light in the smoke.
+			mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+			mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+			mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+			mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+			mat.albedo_color = Color(0.9, 0.85, 0.72, 0.05)
 		"distant":
 			# Skyline shapes past the rim: only a silhouette in the haze, so a
 			# plain material, which costs nothing per piece.
