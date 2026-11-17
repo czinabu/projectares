@@ -1331,8 +1331,12 @@ func _server_late_tick(_delta: float) -> void:
 		var status := _gather_status()
 		if status != _sent_status:
 			_sent_status = status
+			# Only peers that finished signing in: one still in the handshake
+			# is not connected yet, and gets the status once it is.
+			var connected := _api.get_peers()
 			for peer: int in _peer_account:
-				_world_status.rpc_id(peer, status)
+				if peer in connected:
+					_world_status.rpc_id(peer, status)
 	# The meter moves slowly, so a few times a second is plenty.
 	if _tick % 20 == 0 and not is_equal_approx(_sent_war, raid.war.intensity):
 		_sent_war = raid.war.intensity
