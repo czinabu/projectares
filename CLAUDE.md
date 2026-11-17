@@ -438,6 +438,13 @@ without Caleb, and update the gap list when a PR closes a row.
   the primary dry with the trigger held draws a loaded sidearm instead of
   reloading (`Actor._simulate_weapons`). Headshots come from
   `Combat.is_headshot` on a `Combat.trace` hit; a gun's `headshot_mult` scales them.
+  Every gun has a range and a target it wins against (DESIGN.md "Gun
+  roles"): each sets its own `headshot_mult` (more than 1 on every gun but
+  a shotgun), close-range guns fall off with distance (`falloff_start`,
+  `falloff_end`, `falloff_min`, `Gun.range_mult`) and marksman rounds go
+  partly past armor (`Gun.armor_pierce`). Measure a change with
+  `godot --headless --path . res://tests/gun_bench.tscn`, which prints
+  every gun's time to kill by range and armor.
 - Attachments are items tagged "attachment" plus their slot tag ("optic",
   "muzzle", "grip", "magazine"), each an optional loadout slot
   (`Loadout.ATTACHMENT_SLOTS`). They fit every primary and never a sidearm
@@ -1276,6 +1283,7 @@ godot --headless --path . res://tests/test_runner.tscn -- --tier net --shard 1/3
 godot --headless --path . res://tests/battle_bench.tscn -- --bots 150 --players 32   # server cost of a big battle
 godot --headless --fixed-fps 60 --path . res://tests/feel_bench.tscn   # how each rig answers, in numbers
 godot --headless --fixed-fps 60 --path . res://tests/duel_bench.tscn   # how each enemy type fights a reference player (DESIGN.md "Enemy balance")
+godot --headless --path . res://tests/gun_bench.tscn   # every gun's time to kill by range and armor (DESIGN.md "Gun roles")
 godot --path . res://tests/equip_bench.tscn -- --walk   # what an equip costs in the base, and whether you keep moving
 ```
 

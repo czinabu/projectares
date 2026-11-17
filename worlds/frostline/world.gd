@@ -173,6 +173,7 @@ func _make_warden(bot: Actor, rng: RandomNumberGenerator) -> void:
 	gun.fire_interval = 0.45
 	gun.max_range = 160.0
 	gun.reserve_ammo = 400
+	gun.headshot_mult = 1.0
 	bot.equip_weapon(gun)
 
 

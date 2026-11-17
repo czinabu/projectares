@@ -353,6 +353,8 @@ func equip_bot(bot: Actor, rng: RandomNumberGenerator) -> void:
 	gun.spread_deg = GUN_SPREAD[tier]
 	gun.fire_interval = GUN_INTERVAL[tier]
 	gun.reserve_ammo = 600
+	# Soldiers aim at the chest; a stray round on the head is no bonus.
+	gun.headshot_mult = 1.0
 	bot.equip_weapon(gun)
 
 
