@@ -584,6 +584,30 @@ Alongside those five: an armor frame, headgear (a helmet or goggles, each
 with a visor), a vehicle on the watch, and the heavy weapon chamber, which is
 filled in the field.
 
+### Gun roles
+
+Every gun has a range and a target it wins against, so the pick is a
+choice and not one best gun. Headshots pay on every gun, close-range guns
+lose damage past their reach, and marksman rounds punch partly through
+plates. The gun bench (`tests/gun_bench.tscn`) prints each gun's time to
+kill by range and armor with every round landing. Against a mid kit
+(Trooper Frame, 85 armor):
+
+| Gun | Role | Body | All head | Falls off |
+| --- | --- | --- | --- | --- |
+| Ashfront Carbine | The all-rounder | 8 rounds, 0.70 s | 6, 0.50 s | 50 to 100 m, to 80% |
+| Scrap Rifle | Starter all-rounder | 10, 0.99 s | 7, 0.66 s | 40 to 90 m, to 75% |
+| Stinger SMG | Wins inside about 15 m | 10, 0.58 s | 8, 0.46 s | 12 to 30 m, to 55% |
+| Longshot DMR | Precision at any range, through plates | 3, 0.84 s | 2, 0.42 s | Never |
+| Breacher Shotgun | Two blasts at blade range | 2, 0.75 s | (pellets) | 8 to 22 m, to 35% |
+| Service Pistol | Accurate backup | 9, 1.28 s | 5, 0.64 s | 25 to 60 m, to 70% |
+| Hornet Machine Pistol | Close spray backup | 19, 0.99 s | 15, 0.77 s | 10 to 28 m, to 50% |
+| Warden Hand Cannon | Head and any second hit drops a bare target | 4, 1.65 s | 2, 0.55 s | 35 to 80 m, to 75% |
+
+Army soldiers aim at the chest and get no headshot bonus, so the enemy
+balance bands above hold (re-measured after this pass: every row still in
+band).
+
 ### Goggles
 
 Goggles are the light alternative to a helmet in the same `helmet` slot, and

@@ -19,8 +19,20 @@ var semi_auto := false
 ## shots, or as a reload ends) and fires then, so a click a moment early is
 ## not swallowed.
 var press_buffer := 0.12
-## Damage multiplier for a shot that lands on an actor's head.
-var headshot_mult := 1.0
+## Damage multiplier for a shot that lands on an actor's head. Every gun
+## sets its own in `ItemDB` (rifles about 1.5, marksman guns 2); 1.5 by
+## default, so aim pays.
+var headshot_mult := 1.5
+## Damage falls off with range: full out to `falloff_start` metres, easing
+## down to `falloff_min` of it at `falloff_end` and beyond. A start of 0
+## keeps full damage at every range. Close-range guns fall off early, so
+## each gun has a range it wins at.
+var falloff_start := 0.0
+var falloff_end := 0.0
+var falloff_min := 1.0
+## Share of each round that goes past armor (`DamageInfo.armor_pierce`):
+## heavy marksman rounds punch through some of the plates.
+var armor_pierce := 0.0
 ## Projectiles per shot. Each one deals `damage` and gets its own spread.
 var pellets := 1
 var fire_interval := 0.11
@@ -575,6 +587,15 @@ func model_kick() -> Vector2:
 			* (MODEL_KICK_AIMED if _aiming else 1.0)
 
 
+## The share of `damage` a round keeps after flying `dist` metres
+## (`falloff_start`, `falloff_end`, `falloff_min`).
+func range_mult(dist: float) -> float:
+	if falloff_start <= 0.0 or dist <= falloff_start:
+		return 1.0
+	var span := maxf(falloff_end - falloff_start, 0.001)
+	return lerpf(1.0, falloff_min, smoothstep(0.0, 1.0, clampf((dist - falloff_start) / span, 0.0, 1.0)))
+
+
 ## A direction within `spread` radians of `aim`, spread evenly over a round
 ## cone (never a square one), picked by `turn` and `out`, each 0 to 1.
 static func spread_dir(aim: Vector3, spread: float, turn: float, out: float) -> Vector3:
@@ -604,8 +625,9 @@ func _trace_shot(from: Vector3, dir: Vector3) -> Vector3:
 		if body != null:
 			if not body in struck:
 				struck.append(body)
-				var info := DamageInfo.make(amount, actor, damage_kind, at)
+				var info := DamageInfo.make(amount * range_mult(from.distance_to(at)), actor, damage_kind, at)
 				info.weapon_id = item_id
+				info.armor_pierce = armor_pierce
 				if Combat.is_headshot(hit):
 					info.headshot = true
 					info.amount *= headshot_mult
