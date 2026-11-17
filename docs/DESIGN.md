@@ -355,9 +355,12 @@ both in the game's own low-poly style, neither a copy of any film's machine.
   colour, so it reads apart from a soldier at 50 m in a storm. Armor
   45-70 by ring, more health, a little slower, a support rifle and no
   blade. One in eight carries a spare Trooper or Bulwark frame.
-- **Kiln Walker.** A rare 3 m war machine on two legs (the Animated Mech
-  Pack's Leela, in gunmetal with the army's paint) with a cannon
-  on top. Slow on its feet and slow to turn (its aim comes round at 70
+- **Kiln Walker.** A rare 3 m war machine on two legs, a body of its own
+  built in code: a low, wide armored hull carried level on two heavy
+  reverse-jointed legs with broad splayed feet, the cannon built into its
+  glacis, the heat vent let into its rear armor, gunmetal with the army's
+  paint on its hip sponsons, thighs and gun mantlet, and a sensor slit lit
+  in the army's colour. Slow on its feet and slow to turn (its aim comes round at 70
   degrees a second, a soldier's at 200), but its hitscan cannon leads
   fliers well. Its tell is a thin tracking beam: the cannon fires only
   after the beam has held a target in sight for a second, so a flier who
@@ -733,6 +736,28 @@ to the eye:
 
 Re-measured on the duel bench over three seeds: every enemy type wins and
 loses about as often as before (all rows within the bench's noise).
+
+### Feedback
+
+A fight should be read by ear and at a glance, the same in both views:
+
+- Every kind of gun has its own voice: a sharp pistol crack, a fast light
+  SMG, a deep shotgun boom, a long marksman report and the hand cannon's
+  thump. Gunfire carries about 220 m, a suppressed gun about 45 m, and far
+  shots sound duller.
+- A round that passes within a couple of metres of you is heard hissing
+  by, so you know you are being shot at even when it misses.
+- Rounds kick up a puff where they land, a hot spark off a body, and leave
+  a mark on a wall for a few seconds.
+- The hit marker says what the hit did: white for flesh, steel blue when
+  plates soaked it, a wide cyan when the plates broke, gold for a head and
+  red for a kill, each with its own sound.
+- Being shot jolts your view a little, more for a harder round. The aim
+  stays put, so it never costs you a shot.
+
+Who is shooting you is not marked on screen: reading that is the tactical
+visor's strength (section on helmets), so plain helmets get only the sound
+of the shots and their whizz.
 
 ### Goggles
 

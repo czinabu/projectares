@@ -260,6 +260,10 @@ var _dip_speed := 0.0
 var melee_kick_deg := 1.4
 var parry_kick_deg := 3.0
 var flinch_deg := 1.2
+## A round's jolt to the view: this much for a 20 damage hit, and never more
+## than the max (`bullet_flinch`).
+var bullet_flinch_deg := 0.5
+var bullet_flinch_max_deg := 1.4
 var _shake := Vector2.ZERO
 var _shake_speed := Vector2.ZERO
 var _speed_fov_now := 0.0
@@ -1184,6 +1188,12 @@ func _on_hit_confirmed(_target: Actor, info: DamageInfo, lethal: bool) -> void:
 		pass  # The blade's contact already answered.
 	elif info.parried or info.blocked:
 		Sfx.play("block", null, -6.0)
+	elif info.headshot:
+		Sfx.play("headshot")
+	elif info.armor_broke:
+		Sfx.play("armor_break", null, -2.0)
+	elif info.armored:
+		Sfx.play("armor_hit")
 	else:
 		Sfx.play("hit")
 
@@ -1192,6 +1202,17 @@ func _on_damaged(info: DamageInfo) -> void:
 	Sfx.play("hurt")
 	if info.kind in ["melee", "slam"]:
 		kick_view(Vector2(_rng.randf_range(-0.5, 0.5), -1.0) * deg_to_rad(flinch_deg))
+	elif info.kind == "bullet":
+		kick_view(bullet_flinch(info.amount, _rng.randf_range(-1.0, 1.0)))
+
+
+## How far a round of `amount` damage jolts the view (yaw, pitch in radians),
+## `side` from -1 to 1 picking which way it tips. View only: the aim stays
+## where it was, so being shot shakes your picture but never moves your
+## shots. It grows with the hit, up to `bullet_flinch_max_deg`.
+func bullet_flinch(amount: float, side: float) -> Vector2:
+	var deg := minf(bullet_flinch_deg * amount / 20.0, bullet_flinch_max_deg)
+	return Vector2(side * 0.6, 1.0) * deg_to_rad(deg)
 
 
 ## The visor level the visor key moves to from `level`: up through the

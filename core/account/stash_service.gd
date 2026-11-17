@@ -22,6 +22,11 @@ extends RefCounted
 ## A deploy that was never settled survives a server restart: `load_account`
 ## returns its gear to the stash, because a crash is not the player's fault.
 ##
+## Accounts are kept in SQLite (`AccountStore`, `accounts.sqlite` in
+## `save_dir`), where every save is one transaction. Several changes that must
+## happen together (a trade between two players) go through `transaction`,
+## which saves them all at once or changes nothing.
+##
 ## Every call that can fail returns a Dictionary with "ok" (bool) and, when
 ## false, "error" (a short reason a client can show).
 
@@ -33,6 +38,7 @@ const BaseUpgrades := preload("res://core/base/base_upgrades.gd")
 const Contracts := preload("res://core/economy/contracts.gd")
 const Crafting := preload("res://core/progression/crafting.gd")
 const DevMode := preload("res://core/dev/dev_mode.gd")  # DEV MODE
+const AccountStore := preload("res://core/account/account_store.gd")
 const SafeFile := preload("res://core/account/safe_file.gd")
 
 const SAVE_VERSION := 1
@@ -40,16 +46,28 @@ const MIN_NAME := 3
 const MAX_NAME := 20
 const MIN_SECRET := 16
 
-## Where account files live. One JSON file per account.
+## The folder accounts live in: the SQLite database `accounts.sqlite`
+## (`AccountStore`), beside the clan and phone records. Old one-file-per-account
+## saves found here are imported into it once, the first time it opens.
 var save_dir := "user://accounts"
 ## Tests turn this off so they never touch real saves.
 var persist := true
+## Keeps the old one-JSON-file-per-account format instead of SQLite (tests of
+## the fallback; a build without the SQLite library falls back by itself).
+var force_json := false
 ## The day contracts are counted on (`Contracts.today`). Below zero is the
 ## real date; tests set it to move time.
 var day_override := -1
 
 ## Account id -> Account. Loaded lazily from disk.
 var _accounts := {}
+## The open store, made on first use (`_store_ready`).
+var _store: RefCounted = null
+## While a `transaction` runs: account id -> its save from before it, and the
+## ids it changed, which are saved together when it ends.
+var _tx_before := {}
+var _tx_dirty: Array[String] = []
+var _in_tx := false
 ## DEV MODE: account ids kept topped up with the dev stash (every piece of
 ## gear, max scrip) on this server. Only the host's own account joins it, and
 ## only on a server started from the editor with `--dev-host` (`dev_host`):
@@ -221,8 +239,8 @@ func sign_in(shown_name: String, secret: String) -> Dictionary:
 		_adopt_host_profile(account, secret)
 		_dev_top_up(account)  # DEV MODE
 		return {"ok": true, "account_id": id, "created": false}
-	if persist and SafeFile.exists(_path_for(id)):
-		# The file is there but could not be read: never start a new account
+	if _is_saved(id):
+		# The account is saved but could not be read: never start a new account
 		# over it. The host can put one back from a backup.
 		return _fail("This account could not be loaded. Ask the server's host to restore it from a backup.")
 	account = Account.new()
@@ -265,19 +283,15 @@ func _adopt_host_profile(account: Account, secret: String) -> void:
 func load_account(id: String) -> Account:
 	if _accounts.has(id):
 		return _accounts[id]
-	if not persist or id_for_name(id) != id:
+	if not persist or id_for_name(id) != id or not _store_ready():
 		return null
-	var path := _path_for(id)
-	if not SafeFile.exists(path):
-		return null
-	var data: Variant = SafeFile.read_json(path)
-	if typeof(data) != TYPE_DICTIONARY:
-		push_warning("StashService: %s is unreadable" % path)
+	var data: Dictionary = _store.read(id)
+	if data.is_empty():
 		return null
 	var account := Account.new()
 	account.load_dict(data)
 	if account.id != id:
-		push_warning("StashService: %s holds another account" % path)
+		push_warning("StashService: the save for %s holds another account" % id)
 		return null
 	_accounts[id] = account
 	if account.is_deployed():
@@ -293,7 +307,7 @@ func grant_gear_crates(account: Account) -> void:
 			account.crates_granted.append(crate)
 			StashRules.add_items(account.stash, ProfileScript.GEAR_CRATES[crate])
 			changed = true
-	if changed or not SafeFile.exists(_path_for(account.id)):
+	if changed or not _is_saved(account.id):
 		_save(account)
 
 
@@ -462,6 +476,114 @@ func change_scrip(account_id: String, delta: int) -> bool:
 	return true
 
 
+# --- Market ledger -----------------------------------------------------------
+# The five calls `MarketService` moves goods with. Server code only: the item
+# and amount always come from the board's own listing, never from a client.
+
+## How many of `item_id` the account's stash holds.
+func count_of(account_id: String, item_id: String) -> int:
+	var account := load_account(account_id)
+	return account.stash.count(item_id) if account != null else 0
+
+
+## Takes `count` of `item_id` out of the stash (unequipping it if the last
+## one is worn). Refuses, changing nothing, while deployed or if there are
+## not that many.
+func take_items(account_id: String, item_id: String, count: int) -> bool:
+	var account := load_account(account_id)
+	if account == null or account.is_deployed() or count < 1 or account.stash.count(item_id) < count:
+		return false
+	for i in count:
+		account.stash.erase(item_id)
+	StashRules.validate_loadout(account.stash, account.loadout)
+	_save(account)
+	return true
+
+
+## Puts items into the stash (a blueprint not known yet is learned).
+func give_items(account_id: String, items: Array) -> bool:
+	var account := load_account(account_id)
+	if account == null:
+		return false
+	account.add_items(items)
+	_save(account)
+	return true
+
+
+# --- Transactions -------------------------------------------------------------
+
+## Runs several ledger calls as one all-or-nothing change, the way a trade
+## must: either every step happens and every account it touched is saved in
+## one write, or nothing changes, in memory or on disk. Each step is an Array
+## naming one of the market's calls and its arguments:
+##   ["take_items", account_id, item_id, count]
+##   ["give_items", account_id, items]
+##   ["change_scrip", account_id, delta]
+## Steps run in order, so a step sees what the ones before it did (the money
+## a sale just paid can pay the next step). Returns {"ok": true} or
+## {"ok": false, "error", "step"} with the index of the step that refused.
+## Server code only: build the steps from server data, never from a client.
+func transaction(steps: Array) -> Dictionary:
+	if _in_tx:
+		return _fail("A transaction is already running.")
+	if steps.is_empty():
+		return {"ok": true}
+	_in_tx = true
+	_tx_before.clear()
+	_tx_dirty.clear()
+	for i in steps.size():
+		if not _run_step(steps[i]):
+			_rollback()
+			var refused := _fail("The trade could not go through.")
+			refused["step"] = i
+			return refused
+	var saves: Array = []
+	for id in _tx_dirty:
+		saves.append(_accounts[id].to_dict())
+	if persist and _store_ready() and not _store.write(saves):
+		_rollback()
+		var unsaved := _fail("The trade could not be saved.")
+		unsaved["step"] = -1
+		return unsaved
+	_end_tx()
+	return {"ok": true}
+
+
+func _run_step(step: Variant) -> bool:
+	if typeof(step) != TYPE_ARRAY or step.size() < 3 or typeof(step[1]) != TYPE_STRING:
+		return false
+	var id: String = step[1]
+	var account := load_account(id)
+	if account == null:
+		return false
+	if not _tx_before.has(id):
+		_tx_before[id] = account.to_dict().duplicate(true)
+	match str(step[0]):
+		"take_items":
+			return step.size() == 4 and typeof(step[2]) == TYPE_STRING and typeof(step[3]) == TYPE_INT \
+					and take_items(id, step[2], step[3])
+		"give_items":
+			return typeof(step[2]) == TYPE_ARRAY and give_items(id, step[2])
+		"change_scrip":
+			return typeof(step[2]) == TYPE_INT and change_scrip(id, step[2])
+	return false
+
+
+## Puts every account a failed transaction touched back as it was.
+func _rollback() -> void:
+	for id: String in _tx_before:
+		var account: Account = _accounts.get(id)
+		if account != null:
+			account.load_dict(_tx_before[id])
+	_end_tx()
+
+
+func _end_tx() -> void:
+	_in_tx = false
+	_tx_before.clear()
+	_tx_dirty.clear()
+
+
 func _bank(account: Account, result: Dictionary) -> Dictionary:
 	account.scrip = result.scrip
 	if result.ok:
@@ -617,13 +739,44 @@ func _dev_top_up(account: Account) -> void:
 		_save(account)
 
 
-func _path_for(id: String) -> String:
-	return save_dir.path_join(id + ".json")
+## Opens the store in `save_dir` the first time it is needed (importing any
+## old account files there once). False if it cannot be opened.
+func _store_ready() -> bool:
+	if _store != null and _store.is_open() and _store.dir == save_dir:
+		return true
+	if _store == null:
+		_store = AccountStore.new()
+	return _store.open(save_dir, force_json)
 
 
+## The store in use, opened if needed: "sqlite" or "json" (null if `persist`
+## is off or it cannot be opened). For tests and the server's log.
+func store() -> RefCounted:
+	return _store if persist and _store_ready() else null
+
+
+## Closes the database. Safe to call more than once; the next save opens it
+## again.
+func close() -> void:
+	if _store != null:
+		_store.close()
+
+
+func _is_saved(id: String) -> bool:
+	return persist and _store_ready() and _store.has(id)
+
+
+## Saves one account, at once, or with the rest of a running `transaction`
+## when it ends.
 func _save(account: Account) -> void:
-	if persist:
-		SafeFile.write(_path_for(account.id), JSON.stringify(account.to_dict(), "\t"))
+	if _in_tx:
+		if account.id not in _tx_dirty:
+			_tx_dirty.append(account.id)
+		return
+	if not persist or not _store_ready():
+		return
+	if not _store.write([account.to_dict()]):
+		push_warning("StashService: could not save %s" % account.id)
 
 
 ## Where the rolling backups go: beside the save folder, never inside it.
@@ -633,7 +786,9 @@ func backup_dir() -> String:
 
 ## Backs up the save folder if one is due (see `backup_every`). Cheap to call
 ## often: every session sharing this service may call it, and only one copy
-## is made. Returns the new backup's folder, or "".
+## is made. Returns the new backup's folder, or "". The clan and phone
+## records are copied as files; the accounts database is copied by
+## `AccountStore.backup_to`, never as the live file, which may be mid-write.
 func backup_if_due() -> String:
 	if not persist or backup_every <= 0.0:
 		return ""
@@ -642,6 +797,11 @@ func backup_if_due() -> String:
 		return ""
 	_last_backup = now
 	var made := SafeFile.backup(save_dir, backup_dir(), backups_kept)
+	if made != "" and _store_ready() and _store.kind == "sqlite":
+		for suffix: String in ["", "-wal", "-shm"]:
+			DirAccess.remove_absolute(made.path_join(AccountStore.FILE_NAME + suffix))
+		if not _store.backup_to(made):
+			push_warning("StashService: the accounts database could not be backed up to %s" % made)
 	if made != "":
 		print("Server: backed up accounts to %s" % ProjectSettings.globalize_path(made))
 	return made

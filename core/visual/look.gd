@@ -124,14 +124,14 @@ const SKINS := {
 		"saturation": 0.45, "brightness": 0.72, "metal": 0.0, "rough": 0.8,
 		"anims": HUMAN_ANIMS, "frame": "light", "helmet": "slit", "suit": true,
 	},
-	# The Kiln Walker: a war machine on two legs in gunmetal with its army's
-	# paint ("army_paint", how much of the body colour), its heat vent glowing
-	# on its back ("vent": bone, height share, size; the weak spot), a cannon
-	# on top ("cannon": bone) that draws a tracking beam while it aims ("beam").
+	# The Kiln Walker: a war machine of its own, built in code
+	# ("chassis": `ActorSkin._build_walker`: a low, wide hull with the cannon
+	# in its glacis and the heat vent, the weak spot, in its rear armor, on
+	# two heavy legs) round the scene's walking skeleton, whose own mesh is
+	# hidden ("hide"). Its cannon draws a tracking beam while it aims ("beam").
 	"walker": {
-		"scenes": ["Leela.glb"], "height": 2.75, "tint": Color(0.5, 0.5, 0.52),
-		"saturation": 0.6, "army_paint": 0.35,
-		"vent": ["Chest", 0.62, Vector2(0.55, 0.46)], "cannon": "Chest", "beam": true,
+		"scenes": ["Leela.glb"], "height": 2.75, "hide": ["Leela"],
+		"chassis": "walker", "beam": true,
 		"anims": {"idle": "Idle", "walk": "Walk", "run": "Run", "death": "Death", "attack": "Shoot"},
 	},
 	"stalker": {
