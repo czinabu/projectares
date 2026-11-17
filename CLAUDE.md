@@ -1281,6 +1281,7 @@ godot --headless --path . res://tests/test_runner.tscn -- --only online   # one 
 godot --headless --fixed-fps 60 --path . res://tests/test_runner.tscn -- --tier offline   # fast, ~1 min
 godot --headless --path . res://tests/test_runner.tscn -- --tier net --shard 1/3   # a third of the online groups
 godot --headless --path . res://tests/battle_bench.tscn -- --bots 150 --players 32   # server cost of a big battle
+godot --headless --path . res://tests/server_bench.tscn -- --plaza 10 --per-world 7 --arena 4   # the whole server at once: tick time per session, travel against 3 s
 godot --headless --fixed-fps 60 --path . res://tests/feel_bench.tscn   # how each rig answers, in numbers
 godot --headless --fixed-fps 60 --path . res://tests/duel_bench.tscn   # how each enemy type fights a reference player (DESIGN.md "Enemy balance")
 godot --headless --path . res://tests/gun_bench.tscn   # every gun's time to kill by range and armor (DESIGN.md "Gun roles")

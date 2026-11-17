@@ -163,7 +163,7 @@ rows marked **pre-playtest** come before the friends playtest.
 | Sign-in and version check before a player gets in | Partly | Sign-in is an ordinary call after connecting, and only the client acts on a `PROTOCOL` mismatch. Missing: `SceneMultiplayer.auth_callback`. **pre-playtest** |
 | Hardening: relay off, request limits, safe saves, backups | Missing | `server_relay` is Godot's default (on); no per-player request limits; `ClanService` writes its file in place; no account backups. **pre-playtest** |
 | Reconnect to your body after a drop | Missing | A disconnect starts a sign-out on the standing body (`Raid.remove_player`) and a new sign-in waits it out. **pre-playtest** |
-| Whole-server bench and health log | Missing | `battle_bench` measures one world; nothing measures the plaza, worlds and arena together. **pre-playtest** |
+| Whole-server bench and health log | Built | `ServerHealth` (`--health-log <secs>`, a minute by default) prints a line with tick time and players and bots per session; `tests/server_bench.tscn` runs the plaza, both worlds and the arena busy at once and times travel. Measured on 4 shared cores with 31 players: tick 10.3 ms of 16.7, travel 2.1 s (target 3 s). |
 | Encrypted connections | Missing | ENet traffic, including the sign-in secret, is plain. |
 | Accounts on SQLite with all-or-nothing changes | Missing | One JSON file per account (`StashService._save`). Needed before the marketplace. |
 | Account service as its own program | Missing | `StashService`, `SocialService` and `ClanService` live in the server's memory, shared by sessions in one process. |
