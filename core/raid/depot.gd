@@ -50,12 +50,18 @@ func _ready() -> void:
 
 
 ## What an actor would bank here: everything in the backpack except healing,
-## which stays with them for the fight.
+## which stays with them for the fight, and the heavy weapon in the chamber
+## (DESIGN.md section 7). Healing stays. A spent heavy is already gone.
 static func bankable(actor: Actor) -> Array[String]:
 	var out: Array[String] = []
 	for id in actor.inventory.items:
 		if not ItemDB.has_tag(id, "heal"):
 			out.append(id)
+	var index := Loadout.power_index(actor)
+	if index >= 0:
+		var gun := actor.weapons[index] as Gun
+		if gun != null and gun.item_id != "" and not gun.is_spent():
+			out.append(gun.item_id)
 	return out
 
 

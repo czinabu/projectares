@@ -14,6 +14,7 @@ func _init() -> void:
 	bot_count = 0
 	# Nothing to protect and nothing to wait for.
 	sign_out_time = 1.0
+	sign_out_air_time = 1.0
 	spawn_protection = 0.0
 
 

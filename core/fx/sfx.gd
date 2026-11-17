@@ -33,6 +33,8 @@ func _ready() -> void:
 	_streams["arc_shot"] = _tones([480.0, 960.0, 1210.0], 0.22, 14.0, 0.4)
 	_streams["pulse"] = _tones([620.0, 1240.0], 0.07, 45.0, 0.3)
 	_streams["plasma_burst"] = _noise_burst(0.7, 6.0, 0.95, 42.0)
+	# Airborne sign-out: a rising tone played from the beacon column.
+	_streams["beacon"] = _tones([520.0, 780.0, 1040.0], 0.55, 3.5, 0.5)
 
 
 ## Plays a sound. With a position it is 3D and fades with distance; without

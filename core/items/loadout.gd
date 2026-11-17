@@ -8,6 +8,9 @@ const SLOTS := {
 	"primary": "firearm",
 	"melee": "melee",
 	"sidearm": "sidearm",
+	# One heavy weapon from the armory wall, carried in the chamber on a
+	# PvP deploy. Empty everywhere else (DESIGN.md section 6).
+	"power": "power",
 	"rig": "flight_rig",
 	"frame": "armor",
 	"helmet": "helmet",
@@ -26,6 +29,7 @@ const SLOT_NAMES := {
 	"primary": "Primary weapon",
 	"melee": "Melee weapon",
 	"sidearm": "Sidearm",
+	"power": "Heavy weapon",
 	"rig": "Flight rig",
 	"frame": "Armor frame",
 	"helmet": "Helmet",
@@ -41,7 +45,7 @@ const SLOT_NAMES := {
 const ATTACHMENT_SLOTS := ["optic", "muzzle", "grip", "magazine"]
 ## Slots with no free scrap item (`StashRules.free_items`). Any slot can be
 ## left empty, and an empty slot deploys with nothing in it.
-const OPTIONAL_SLOTS := ["ability", "vehicle", "artifact", "optic", "muzzle", "grip", "magazine"]
+const OPTIONAL_SLOTS := ["power", "ability", "vehicle", "artifact", "optic", "muzzle", "grip", "magazine"]
 ## How many healing items are taken from the stash on deploy.
 const MAX_HEAL_ITEMS := 2
 ## Seconds a weapon takes to materialize out of the pack through the watch,
@@ -78,6 +82,9 @@ static func fits(slot: String, id: String) -> bool:
 	# "optic" too, but it is a helmet.
 	if slot in ATTACHMENT_SLOTS and not ItemDB.has_tag(id, "attachment"):
 		return false
+	# A heavy weapon is a firearm too, but it only ever takes the power slot.
+	if slot == "primary" and ItemDB.has_tag(id, "power"):
+		return false
 	return slot != "primary" or not ItemDB.has_tag(id, "sidearm")
 
 
@@ -99,6 +106,10 @@ static func equip(actor: Actor, item_ids: Array) -> void:
 				actor.gear_items.append(id)
 			else:
 				actor.inventory.add_item(id)
+		elif ItemDB.has_tag(id, "power"):
+			# One per outing, waiting in the chamber. A second is not carried.
+			if power_index(actor) < 0:
+				set_power(actor, id, -1, -1, false)
 		elif ItemDB.has_tag(id, "firearm"):
 			var gun := Gun.new()
 			gun.is_sidearm = ItemDB.has_tag(id, "sidearm")
@@ -154,6 +165,13 @@ static func equip(actor: Actor, item_ids: Array) -> void:
 			wear_frame(actor, id)
 		else:
 			actor.inventory.add_item(id)
+	# The heavy waits in the chamber. If putting it there emptied the hand,
+	# the primary (or the first worn weapon) comes back out.
+	var held := actor.get_active_weapon()
+	if held == null or ItemDB.has_tag(held.item_id, "power"):
+		var worn := actor.weapon_for_key(1)
+		if worn >= 0 and worn != actor.active_weapon_index:
+			actor.draw_weapon(worn)
 
 
 ## Changes what `actor` wears to `kit` (item ids, as for `equip`) in place,
@@ -185,6 +203,8 @@ static func refit(actor: Actor, kit: Array) -> void:
 	var wanted: Array[String] = []
 	var taken := {}
 	for id: String in kit:
+		if ItemDB.has_tag(id, "power"):
+			continue
 		if ItemDB.has_tag(id, "firearm") or ItemDB.has_tag(id, "melee"):
 			var slot := weapon_slot(id)
 			if not taken.has(slot):
@@ -194,6 +214,10 @@ static func refit(actor: Actor, kit: Array) -> void:
 	var kept: Array[Weapon] = []
 	for i in range(actor.weapons.size() - 1, -1, -1):
 		var weapon := actor.weapons[i]
+		# The heavy chamber is settled after the worn weapons, so a heavy
+		# stays in place until then.
+		if weapon.item_id != "" and ItemDB.has_tag(weapon.item_id, "power"):
+			continue
 		var stays := weapon.item_id in wanted and not kept.any(func(w: Weapon) -> bool: return w.item_id == weapon.item_id) \
 				and not (refit_primary and weapon is Gun and is_primary(weapon.item_id))
 		if stays:
@@ -239,6 +263,17 @@ static func refit(actor: Actor, kit: Array) -> void:
 		actor.active_weapon_index = 0 if not ordered.is_empty() else -1
 	actor.last_drawn = clampi(actor.last_drawn, 0, maxi(ordered.size() - 1, 0))
 	actor._refresh_weapon_visuals()
+	var heavy := ""
+	for id: String in kit:
+		if ItemDB.has_tag(id, "power"):
+			heavy = id
+			break
+	var have := ""
+	var heavy_at := power_index(actor)
+	if heavy_at >= 0:
+		have = actor.weapons[heavy_at].item_id
+	if heavy != have:
+		set_power(actor, heavy, -1, -1, false)
 	# The frame scales what the rig set up, so it comes off first whenever
 	# either changes, and goes back on last.
 	var rig := _first_tagged(kit, "flight_rig")
@@ -394,7 +429,8 @@ static func attachment_slot(id: String) -> String:
 
 ## Index in `actor.weapons` of the power weapon (an item tagged "power"),
 ## or -1 if the actor carries none. It is a fourth weapon next to the
-## primary, sidearm and melee weapon, and only ever comes from a power rack.
+## primary, sidearm and melee weapon. It comes from a power rack, or from
+## the armory wall on a PvP deploy.
 static func power_index(actor: Actor) -> int:
 	for i in actor.weapons.size():
 		var gun := actor.weapons[i] as Gun
@@ -473,6 +509,8 @@ static func summon_cooldown(id: String) -> float:
 
 ## The weapon slot a summonable item takes: "primary", "sidearm" or "melee".
 static func weapon_slot(id: String) -> String:
+	if ItemDB.has_tag(id, "power"):
+		return "power"
 	if ItemDB.has_tag(id, "melee"):
 		return "melee"
 	return "sidearm" if ItemDB.has_tag(id, "sidearm") else "primary"

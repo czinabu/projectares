@@ -139,7 +139,7 @@ has. Prices are placeholders until a playtest measures scrip per life.
 | Track | Upgrade | Scrip | Needs | Adds |
 | --- | --- | --- | --- | --- |
 | Armory | Armory alcove | 1,200 | | The full rack: 12 long guns, 8 sidearms, 6 melee |
-| Armory | Heavy weapon wall | 4,000 | Armory alcove | Banked heavy weapons (section 6). Not built yet |
+| Armory | Heavy weapon wall | 4,000 | Armory alcove | Banked heavy weapons hang above the long guns (section 6) |
 | Garage | Second bay | 600 | | 2 vehicles on show |
 | Garage | Full garage | 2,000 | Second bay | 4 bays and a lift that turns the first bike |
 | Gunsmith | Workshop bench | 3,000 | Armory alcove | A bigger bench: a parts cabinet and a second lamp (looks only) |
@@ -797,12 +797,18 @@ world**.
 - A heavy weapon in the chamber is banked by a bank spot upload or by signing
   out, and goes to the **home base armory wall**, where extras stack.
 - You may deploy into the PvP world with one heavy weapon from the wall in
-  the chamber. That still counts as your one per outing.
+  the chamber. That still counts as your one per outing. Decided: yes, one
+  from the wall may be taken in. It is a loadout slot, and it leaves the
+  stash only for a world that carries heavy weapons. The arena, the PvE
+  world and safe zones leave the chamber empty and the weapon on the wall.
 - Heavy weapons can only be used in the PvP world. The arena and the PvE
   world leave the chamber empty.
 - Death drops it like the rest of your gear: it lies with your bag for
-  whoever gets there first.
+  whoever gets there first. In the game that is a rack beside the bag, so
+  the finder scans it into their chamber; a heavy never sits in a pack.
 - Never sold in shops. Can be sold back at the trader at the usual 40%.
+  No price was set for that, so each heavy is valued at 2,500 scrip (sells
+  back for 1,000) until a playtest prices them.
 
 ### Rig synergy
 
@@ -899,9 +905,20 @@ Two complementary ways to secure loot.
   column rises from you that everyone in the world can see, with a sound.
   Landing drops the timer back to the ground rate (time already spent counts).
 - Quitting or disconnecting leaves your body standing for the sign-out time
-  (30 seconds after a fight), as today.
+  (30 seconds after a fight), as today. That wait does not grow for being
+  in the air, and it raises no beacon.
+- A gate outpost keeps its short sign-out. It does not switch to the air time.
 
-The exact air time is a tuning value on `WorldDef`.
+Decided: the airborne sign-out is 25 seconds and a beacon column, not a rule
+that you must land. Time already spent is progress. The countdown fills at
+1/15 a second on the ground and 1/25 in the air, and landing or lifting off
+keeps that progress, so the seconds left are whatever the rate you are on
+still needs. A hop shorter than the air grace stays on the ground rate. The
+ground time and the air time are tuning values on `WorldDef` (`sign_out_time`,
+`sign_out_air_time`). The beacon is the server's decision and is carried on
+the actor state, so every client draws the same column. Its sound is loud
+enough that a bot on patrol comes to look. A Phase Cloak pauses the countdown
+and does not hide the column.
 
 ## 8. Vehicles and flight
 
@@ -1306,11 +1323,7 @@ Caleb's calls, still open:
 - Are the balance pass's Mk1 numbers (section 5) right? To tune by feel in
   the playtest, on the base's flight course.
 - Should the armies' bots fly? (Rival raiders do, section 2.)
-- The airborne sign-out: 25 seconds and a beacon column, or must you land?
 - Which gadgets to build first from the list in section 4.
-- Can a heavy weapon from the armory wall be taken into the PvP world, or
-  only ones found there in the same outing? (This doc assumes yes, one per
-  outing.)
 - Progression numbers (section 10), all TBD:
   - What a weapon gains per Mk, and how small the gap must stay. Rigs gain
     height and range, never speed; should weapons gain any damage at all, or

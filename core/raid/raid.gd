@@ -1075,10 +1075,40 @@ func remove_player(actor: Actor) -> void:
 	players.erase(state)
 
 
-## Starts a player's sign-out. It takes `WorldDef.sign_out_time` seconds and
-## taking or dealing damage cancels it, so it cannot be started in a fight.
-## `forced` is for a player who is gone: it cannot be cancelled, and the body
-## stands still until it ends. Returns false if it did not start.
+## How long a hop or a step off a ledge can be before a sign-out counts as
+## airborne. Below this, the ground rate keeps running.
+const SIGN_OUT_AIR_GRACE := 0.35
+## How far the airborne sign-out's sound carries. Bots on patrol hear it
+## through `Combat.noise` and come to look; the column itself is the thing
+## players see.
+const SIGN_OUT_BEACON_HEAR := 120.0
+
+
+## True while `actor` is in the air for a sign-out: on foot above the ground,
+## or riding a vehicle that has left it. A bike on the road is the ground rate.
+func _sign_out_in_air(actor: Actor) -> bool:
+	if actor == null or not is_instance_valid(actor):
+		return false
+	var ride := actor.vehicle
+	if ride != null:
+		return float(ride.get("airborne_time")) > SIGN_OUT_AIR_GRACE
+	return actor.airborne_time > SIGN_OUT_AIR_GRACE
+
+
+## The sign-out length for where `actor` is now: ground, or the air time.
+func _sign_out_span(actor: Actor) -> float:
+	if _sign_out_in_air(actor):
+		return world.sign_out_air_time
+	return world.sign_out_time
+
+
+## Starts a player's sign-out. On the ground it takes `WorldDef.sign_out_time`
+## (15 s); in the air, `sign_out_air_time` (25 s), with a beacon. Taking or
+## dealing damage cancels it, so it cannot be started in a fight. A gate
+## outpost keeps its short sign-out. `forced` is for a player who is gone: it
+## cannot be cancelled, the body stands for the ground time (or the combat
+## log), and it does not grow for being in the air. Returns false if it did
+## not start.
 func begin_sign_out(actor: Actor, forced := false) -> bool:
 	var state := state_for(actor)
 	if state == null or state.finished or actor.is_dead or mode == Mode.CLIENT:
@@ -1092,19 +1122,28 @@ func begin_sign_out(actor: Actor, forced := false) -> bool:
 		actor.cmd.apply_array(ActorCommand.new().to_array())
 		actor.cmd.yaw = yaw
 		state.sign_out_forced = true
+		state.sign_out_fixed = true
 		state.sign_out_left = wait
+		actor.set_sign_out_beacon(false)
 	elif state.sign_out_left >= 0.0:
 		return true
 	elif fighting:
 		actor.notice.emit("You cannot sign out in a fight")
 		return false
 	elif state.sheltered:
-		# A gate outpost is the way out: a quick sign-out, nobody can interrupt it.
+		# A gate outpost is the way out: a quick sign-out, and it stays that
+		# long even if they are off the floor inside the bubble.
+		state.sign_out_fixed = true
 		state.sign_out_left = world.outpost_sign_out_time
 		actor.notice.emit("Signing out at the gate")
 	else:
-		state.sign_out_left = world.sign_out_time
-		actor.notice.emit("Signing out. Stay out of trouble for %d seconds" % ceili(world.sign_out_time))
+		state.sign_out_fixed = false
+		var span := _sign_out_span(actor)
+		state.sign_out_left = span
+		if _sign_out_in_air(actor):
+			actor.notice.emit("Signing out in the air. The beacon stays up for %d seconds" % ceili(span))
+		else:
+			actor.notice.emit("Signing out. Stay out of trouble for %d seconds" % ceili(span))
 	state.sign_out_total = state.sign_out_left
 	sign_out_changed.emit(actor, state.sign_out_left)
 	return true
@@ -1115,6 +1154,8 @@ func cancel_sign_out(actor: Actor) -> void:
 	if state == null or state.sign_out_left < 0.0 or state.sign_out_forced or mode == Mode.CLIENT:
 		return
 	state.sign_out_left = -1.0
+	state.sign_out_fixed = false
+	actor.set_sign_out_beacon(false)
 	actor.notice.emit("Sign-out cancelled")
 	sign_out_changed.emit(actor, -1.0)
 
@@ -1131,13 +1172,59 @@ func _tick_sign_outs(delta: float) -> void:
 	for state in players.duplicate():
 		if state.finished or state.sign_out_left < 0.0:
 			continue
-		# A Phase Cloak never hides a sign-out: the countdown waits for it.
-		if state.actor != null and is_instance_valid(state.actor) and state.actor.is_cloaked():
+		var actor: Actor = state.actor
+		# The authority retargets when they leave or touch the ground. A
+		# client only counts down what it was last told.
+		if mode != Mode.CLIENT and is_instance_valid(actor) and not state.sign_out_fixed:
+			_retarget_sign_out(state)
+		if mode != Mode.CLIENT and is_instance_valid(actor):
+			_update_sign_out_beacon(state, delta)
+		# A Phase Cloak never hides a sign-out: the countdown waits for it,
+		# and the beacon (if they are in the air) stays up.
+		if is_instance_valid(actor) and actor.is_cloaked():
 			continue
 		state.sign_out_left = maxf(0.0, state.sign_out_left - delta)
 		# A client only shows the countdown. The server decides when it ends.
 		if state.sign_out_left <= 0.0 and mode != Mode.CLIENT:
 			_leave(state)
+
+
+## Switches the countdown between the ground rate and the air rate. Time
+## already spent is progress, so landing shortens the seconds left and
+## lifting off lengthens them, without starting over.
+func _retarget_sign_out(state: PlayerState) -> void:
+	var span := _sign_out_span(state.actor)
+	if state.sign_out_total <= 0.0 or is_equal_approx(span, state.sign_out_total):
+		return
+	var progress := clampf(1.0 - state.sign_out_left / state.sign_out_total, 0.0, 1.0)
+	state.sign_out_total = span
+	state.sign_out_left = (1.0 - progress) * span
+	sign_out_changed.emit(state.actor, state.sign_out_left)
+
+
+## The beacon column for an airborne sign-out, and a sound bots can hear.
+## A gate sign-out and a body left by a disconnect do not raise one.
+func _update_sign_out_beacon(state: PlayerState, delta: float) -> void:
+	var actor := state.actor
+	var show := state.sign_out_left >= 0.0 and not state.finished and not state.sign_out_fixed \
+			and _sign_out_in_air(actor)
+	if show and not actor.sign_out_beacon:
+		state.beacon_hum = 0.0
+		var progress := 0.0
+		if state.sign_out_total > 0.0:
+			progress = 1.0 - state.sign_out_left / state.sign_out_total
+		# Starting in the air already said so. Lifting off mid-count gets a line.
+		if progress > 0.02:
+			actor.notice.emit("Beacon up. The sign-out is longer in the air")
+	if actor.sign_out_beacon != show:
+		actor.set_sign_out_beacon(show)
+	if not show:
+		return
+	state.beacon_hum -= delta
+	if state.beacon_hum > 0.0:
+		return
+	state.beacon_hum = 2.0
+	Combat.noise(actor, actor.global_position, SIGN_OUT_BEACON_HEAR)
 
 
 func _mark_combat(state: PlayerState) -> void:
@@ -2359,8 +2446,17 @@ func _on_actor_banked(actor: Actor) -> void:
 		actor.scrip = 0
 	if items.is_empty():
 		return
+	var heavy := ""
+	var heavy_at := Loadout.power_index(actor)
+	if heavy_at >= 0:
+		heavy = (actor.weapons[heavy_at] as Gun).item_id
 	for id in items:
-		actor.inventory.remove_item(id)
+		if id == heavy:
+			# The chambered heavy goes home. It is not in the backpack.
+			Loadout.set_power(actor, "")
+			heavy = ""
+		else:
+			actor.inventory.remove_item(id)
 	state.banked.append_array(items)
 	actor.notice.emit("Banked %s (worth %d)" % [ItemDB.summarize(items), ItemDB.total_value(items)])
 	if apply_to_profile:
@@ -2425,6 +2521,8 @@ func _finish_player(state: PlayerState, outcome: String, cause: String, killed_b
 	state.finished = true
 	state.sign_out_left = -1.0
 	var actor := state.actor
+	if is_instance_valid(actor):
+		actor.set_sign_out_beacon(false)
 	# A toy still in the hand mid-throw is on the watch, as far as what is
 	# carried goes.
 	for toy in toys.duplicate():
@@ -2470,10 +2568,9 @@ func _finish_player(state: PlayerState, outcome: String, cause: String, killed_b
 	else:
 		lost.append_array(found)
 	lost.append_array(left_behind)
-	# Power weapons are raid-only: they never come home and are never counted
-	# as lost. The gun left on a rack for one is what was risked.
-	for list: Array[String] in [kept, brought_home, lost]:
-		list.assign(list.filter(func(id: String) -> bool: return not ItemDB.has_tag(id, "power")))
+	# A heavy weapon in the chamber comes home on a sign-out (and counts as
+	# lost on a death). One that was banked is already in `state.banked` and
+	# off the body. Death still leaves the gun on a rack beside the bag.
 	var result := {
 		"outcome": outcome,
 		"cause": cause,
@@ -2575,6 +2672,11 @@ class PlayerState:
 	var sign_out_total := 0.0
 	## The player is gone and the body is waiting out the sign-out.
 	var sign_out_forced := false
+	## The length does not follow the air: a gate sign-out, or a body left
+	## behind by a disconnect.
+	var sign_out_fixed := false
+	## Seconds until the airborne beacon makes another noise.
+	var beacon_hum := 0.0
 	## `Raid.clock` when they last gave or took a hit.
 	var last_combat := -INF
 	## Inside a gate outpost, under its shelter (`Raid._tick_outposts`).

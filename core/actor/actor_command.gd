@@ -130,6 +130,9 @@ const STATE_HOVERING := 1048576
 ## Not an input either: the actor is sheltered in a gate outpost, weapons
 ## locked (`Raid._tick_outposts`).
 const STATE_SHELTERED := 16777216
+## Not an input either: an airborne sign-out's beacon is up. The server sets
+## it in the states it sends, and clients draw the column from it.
+const STATE_SIGN_OUT_BEACON := 1 << 27
 const FLAG_FREE_LOOK := 2097152
 const FLAG_ARTIFACT_PRESSED := 8388608
 const FLAG_INSPECT := 33554432

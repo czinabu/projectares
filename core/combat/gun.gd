@@ -457,7 +457,8 @@ func move_speed_mult() -> float:
 	return mult * (ads_move_mult if _aiming else 1.0)
 
 
-## True for a raid-only power weapon (see `PowerArmory`).
+## True for a heavy weapon (tag "power", see `PowerArmory`). Found in a PvP
+## world, banked home from the chamber, left on a rack when the carrier dies.
 func is_power() -> bool:
 	return item_id != "" and ItemDB.has_tag(item_id, "power")
 
