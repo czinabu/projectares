@@ -27,8 +27,12 @@ static func _zones(t: Node) -> void:
 			and world.zone_at(Vector3(248, 0, 0)) == 0, "Ashfront is a core, a middle and an outer ring")
 	t.check(world.hazard_at(Vector3(10, 0, 5)) > 0.0 and world.hazard_at(Vector3(120, 0, 0)) == 0.0,
 			"only the core burns")
-	t.check(Worlds.get_world("frostline").zone_at(Vector3.ZERO) == -1
-			and Worlds.get_world("frostline").hazard_at(Vector3.ZERO) == 0.0, "a world without zones has none")
+	t.check(Worlds.get_world("plaza").zone_at(Vector3.ZERO) == -1
+			and Worlds.get_world("plaza").hazard_at(Vector3.ZERO) == 0.0, "a world without zones has none")
+	var frost := Worlds.get_world("frostline")
+	t.check(frost.zone_at(Vector3(0, 0, 260)) == 0 and frost.zone_at(Vector3(0, 0, -95)) == 1
+			and frost.zone_at(Vector3(0, 0, -230)) == 2 and frost.hazard_at(Vector3(0, 0, -230)) == 0.0,
+			"Frostline's zones run up the valley, from the river mouth to the glacier head, and nothing burns")
 	t.check(world.zone_name(0) != "" and world.zone_name(2) != "" and world.zone_name(-1) == "",
 			"each tier has a name for the watch")
 	var rng := RandomNumberGenerator.new()
