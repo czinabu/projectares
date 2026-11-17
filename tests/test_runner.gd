@@ -38,6 +38,7 @@ const PortalTests := preload("res://tests/portal_tests.gd")
 const ContractTests := preload("res://tests/contract_tests.gd")
 const FeelTests := preload("res://tests/feel_tests.gd")
 const ViewMatchTests := preload("res://tests/view_match_tests.gd")
+const GunRoleTests := preload("res://tests/gun_role_tests.gd")
 const PeekTests := preload("res://tests/peek_tests.gd")
 const AdsTests := preload("res://tests/ads_tests.gd")
 const GripTests := preload("res://tests/grip_tests.gd")
@@ -333,6 +334,7 @@ func _run() -> void:
 	await _test_portals()
 	await _test_feel()
 	await _test_view_match()
+	await _test_gun_roles()
 	await _test_peek()
 	await _test_ads()
 	await _test_grips()
@@ -341,6 +343,10 @@ func _run() -> void:
 
 func _test_view_match() -> void:
 	await ViewMatchTests.run(self)
+
+
+func _test_gun_roles() -> void:
+	await GunRoleTests.run(self)
 
 
 func _test_peek() -> void:
