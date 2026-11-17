@@ -1703,6 +1703,11 @@ func _ashfront_shots(out_dir: String) -> void:
 		["tide_push", Vector2(140, 22), Vector2(70, -4), 4.0],
 		["air_assault", Vector2(-190, -60), Vector2(-90, -12), 6.0],
 		["breach_striders", Vector2(-50, 175), Vector2(-100, 125), 4.0],
+		# Driving: down the Legion's runway, along the east road through
+		# the tank column, and up the road to Signal Hill.
+		["runway", Vector2(-205, 4.4), Vector2(-60, 2), 2.5],
+		["east_road", Vector2(150, -9), Vector2(60, -2), 2.0],
+		["hill_road", Vector2(-198, -24), Vector2(-150, -118), 2.5],
 	]
 	for view: Array in views:
 		var from: Vector2 = view[1]

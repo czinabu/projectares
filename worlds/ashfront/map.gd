@@ -70,6 +70,20 @@ const TITAN_SPOTS := [Vector2(-104, -46), Vector2(30, -118), Vector2(110, 56), V
 ## Cover hops along every way in from the rim: a lot this far out on each
 ## drop point's spoke, swung a little to one side and the other.
 const HOPS := [232.0, 180.0, 128.0, 82.0]
+## The roads are for driving: nothing solid stands within this of a road's
+## middle, the ground under them is graded (craters filled, trenches bridged)
+## and the tank traps leave them a gap. A rover is 2 m wide.
+const ROAD_CLEAR := 6.0
+## The road from each muster to the middle starts straight: the first stretch
+## past the camp is a runway, long enough for a jet to reach take-off speed
+## (about 30 m) with room to spare, lit along its edges.
+const RUNWAY_FROM := 16.0
+const RUNWAY := 60.0
+## Jump ramps sit on the shoulder of the flank roads (these indices into
+## `ROADS`), pointing along them, so a bike at speed swerves onto one.
+const RAMP_ROADS := [0, 1, 3, 4]
+## Each army's motor pool: parked bikes beside its runway.
+const MOTOR_POOL := 3
 const FIELD_PATROLS := 8
 ## Risk zones (DESIGN.md section 2): the core is the molten Foundry, the
 ## middle reaches past the four landmarks, the outer ring is the rest.
@@ -84,8 +98,6 @@ const OUTPOSTS := [
 	{"spawn": 11, "name": "Ash Gate"},
 ]
 const OUTPOST_RADIUS := 13.0
-## Jump ramps need level ground, so each gets a pad by the old front.
-const RAMP_SPOTS := [Vector2(-52, -40), Vector2(58, -44), Vector2(-56, 44), Vector2(52, 40)]
 
 ## The landmarks: name, where, how wide, and how far the site is lifted above
 ## the ground around it.
@@ -302,7 +314,9 @@ func _plan() -> void:
 	for army: String in ARMIES:
 		var muster: Vector2 = ARMIES[army]["muster"]
 		_pads.append({"at": muster, "radius": 13.0, "height": _rolling(muster.x, muster.y)})
-	for at: Vector2 in RAMP_SPOTS:
+	# Jump ramps need level ground.
+	for ramp in _ramp_spots():
+		var at: Vector2 = ramp["at"]
 		_pads.append({"at": at, "radius": 10.0, "height": _rolling(at.x, at.y)})
 	_trenches = [
 		# The Breach: two lines facing the middle, and a communication trench.
@@ -395,12 +409,19 @@ func _shape_ground() -> void:
 	for line in _trenches:
 		for i in line.size() - 1:
 			_stamp_trench(line[i], line[i + 1])
+	for road: Array in ROADS:
+		for i in road.size() - 1:
+			_stamp_road(road[i], road[i + 1])
 	for pad in _pads:
 		if pad.get("soft", false):
 			continue
 		var radius: float = pad["radius"]
 		_stamp(pad["at"], radius * 1.9, func(h: float, d: float) -> float:
 			return lerpf(float(pad["height"]), h, smoothstep(radius, radius * 1.9, d)))
+	# Last, each road is eased along its length, so a climb (up Signal Hill,
+	# off a levelled camp) is a long even grade a bike can take.
+	for road: Array in ROADS:
+		_ease_road(road)
 
 
 ## Runs `change(height, distance)` over every ground sample within `reach` of `at`.
@@ -435,6 +456,110 @@ func _stamp_trench(a: Vector2, b: Vector2) -> void:
 				var dug := _rolling(p.x, p.y) - 1.9 * (1.0 - smoothstep(1.5, 4.5, d)) \
 						+ 0.5 * smoothstep(4.5, 5.0, d) * (1.0 - smoothstep(5.0, 6.0, d))
 				terrain.heights[i] = minf(terrain.heights[i], dug) if d < 4.5 else maxf(terrain.heights[i], dug)
+
+
+## A road between two points: the lie of the land with the scars taken out
+## (craters filled, trenches bridged), blended back into the field at its
+## shoulders, so a rover can drive it end to end.
+func _stamp_road(a: Vector2, b: Vector2) -> void:
+	var half := (SIDE - 1) * CELL * 0.5
+	var reach := ROAD_CLEAR + 3.0
+	var x0 := maxi(int((minf(a.x, b.x) - reach + half) / CELL), 0)
+	var x1 := mini(int((maxf(a.x, b.x) + reach + half) / CELL) + 1, SIDE - 1)
+	var z0 := maxi(int((minf(a.y, b.y) - reach + half) / CELL), 0)
+	var z1 := mini(int((maxf(a.y, b.y) + reach + half) / CELL) + 1, SIDE - 1)
+	for iz in range(z0, z1 + 1):
+		for ix in range(x0, x1 + 1):
+			var p := Vector2(ix * CELL - half, iz * CELL - half)
+			var d := p.distance_to(Geometry2D.get_closest_point_to_segment(p, a, b))
+			if d < reach:
+				var i := iz * SIDE + ix
+				terrain.heights[i] = lerpf(_rolling(p.x, p.y), terrain.heights[i], smoothstep(ROAD_CLEAR - 1.5, reach, d))
+
+
+## Smooths the ground along a road: its height profile is averaged over a
+## stretch either way, so no pad's edge or rise is steeper than a bike can
+## climb, and laid back down blended into the shoulders. Inside a site the
+## site's own ground is left alone.
+func _ease_road(road: Array) -> void:
+	var points := PackedVector2Array()
+	for i in road.size() - 1:
+		var a: Vector2 = road[i]
+		var b: Vector2 = road[i + 1]
+		var steps := maxi(int(a.distance_to(b) / CELL), 1)
+		for k in steps:
+			points.append(a.lerp(b, float(k) / steps))
+	points.append(road[road.size() - 1])
+	var profile := PackedFloat32Array()
+	for at in points:
+		profile.append(terrain.height_at(at.x, at.y))
+	for pass_index in 4:
+		var eased := profile.duplicate()
+		for i in profile.size():
+			var total := 0.0
+			var count := 0
+			for j in range(maxi(i - 6, 0), mini(i + 7, profile.size())):
+				total += profile[j]
+				count += 1
+			eased[i] = total / count
+		profile = eased
+	var half := (SIDE - 1) * CELL * 0.5
+	var reach := ROAD_CLEAR + 3.0
+	var best := {}
+	for i in points.size() - 1:
+		var a := points[i]
+		var b := points[i + 1]
+		for iz in range(maxi(int((minf(a.y, b.y) - reach + half) / CELL), 0), mini(int((maxf(a.y, b.y) + reach + half) / CELL) + 1, SIDE - 1) + 1):
+			for ix in range(maxi(int((minf(a.x, b.x) - reach + half) / CELL), 0), mini(int((maxf(a.x, b.x) + reach + half) / CELL) + 1, SIDE - 1) + 1):
+				var p := Vector2(ix * CELL - half, iz * CELL - half)
+				var near := Geometry2D.get_closest_point_to_segment(p, a, b)
+				var d := p.distance_to(near)
+				var cell := iz * SIDE + ix
+				if d < reach and (not best.has(cell) or d < float(best[cell][0])):
+					var along := clampf(a.distance_to(near) / maxf(a.distance_to(b), 0.001), 0.0, 1.0)
+					best[cell] = [d, lerpf(profile[i], profile[i + 1], along)]
+	for cell: int in best:
+		var p := Vector2((cell % SIDE) * CELL - half, (cell / SIDE) * CELL - half)
+		if _site_at(p, -10.0):
+			continue
+		var d: float = best[cell][0]
+		terrain.heights[cell] = lerpf(float(best[cell][1]), terrain.heights[cell], smoothstep(ROAD_CLEAR - 1.5, reach, d))
+
+
+## How far `at` is from the middle of the nearest road.
+func _road_distance(at: Vector2) -> float:
+	var best := INF
+	for road: Array in ROADS:
+		for i in road.size() - 1:
+			best = minf(best, at.distance_to(Geometry2D.get_closest_point_to_segment(at, road[i], road[i + 1])))
+	return best
+
+
+## Where each jump ramp stands: on the shoulder of a flank road on its first
+## straight out of the camp (well clear of a raised site's slope), on the
+## side away from the middle, its high end pointing the way the road runs.
+func _ramp_spots() -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	for index: int in RAMP_ROADS:
+		var road: Array = ROADS[index]
+		var a: Vector2 = road[0]
+		var b: Vector2 = road[1]
+		var dir := (b - a).normalized()
+		var mid := a.lerp(b, 0.62)
+		var side := dir.orthogonal()
+		if (mid + side).length() < mid.length():
+			side = -side
+		out.append({"at": mid + side * 7.0, "dir": dir, "side": side})
+	return out
+
+
+## The straight first stretch of the road from a muster to the middle.
+func _runway(army: String) -> Dictionary:
+	var muster: Vector2 = ARMIES[army]["muster"]
+	for road: Array in ROADS:
+		if road[0] == muster and (road[2] as Vector2).length() < 100.0:
+			return {"from": road[0], "dir": ((road[1] as Vector2) - (road[0] as Vector2)).normalized()}
+	return {"from": muster, "dir": -muster.normalized()}
 
 
 func _ground(at: Vector2) -> Vector3:
@@ -661,10 +786,22 @@ func _build_field() -> void:
 		for i in MUSTER_SPOTS:
 			var spot := muster + inward.orthogonal() * (i % 3 - 1) * 5.0 + inward * (i / 3) * 5.0
 			_add_marker("spawn_bot", _open(spot)).set_meta("faction", army)
-		_add_wall(_ground(muster + inward * 13.0), Vector3(9.0, 1.4, 1.0), -inward.angle() + PI * 0.5)
+		# The camp's wall, split where the runway goes out through it.
+		var runway := _runway(army)
+		var out: Vector2 = runway["dir"]
+		for side: float in [-1.0, 1.0]:
+			var post := muster + out * 13.0 + out.orthogonal() * side * (ROAD_CLEAR + 2.5)
+			_add_wall(_ground(post), Vector3(4.5, 1.4, 1.0), -out.angle() + PI * 0.5)
 		_add_cover(_ground(muster - inward * 7.0))
-	for i in RAMP_SPOTS.size():
-		_add_ramp_lot(_ground(RAMP_SPOTS[i]), i * PI * 0.5)
+		# The motor pool: bikes parked nose out along the runway's side.
+		for k in MOTOR_POOL:
+			var spot := muster + out * (RUNWAY_FROM + 8.0 + k * 7.0) + out.orthogonal() * (ROAD_CLEAR + 3.5)
+			_add_marker("spawn_vehicle", _ground(spot)).rotation.y = _facing(out)
+	for ramp in _ramp_spots():
+		var dir: Vector2 = ramp["dir"]
+		var side: Vector2 = ramp["side"]
+		var at: Vector2 = ramp["at"]
+		_add_ramp_lot(_ground(at), _facing(dir), _ground(at + side * 4.0 - dir * 6.0))
 	_fortify_front()
 
 
@@ -808,24 +945,30 @@ func _build_battles() -> void:
 
 
 ## Cover hops on the ways in: along each drop point's spoke toward the core,
-## and a checkpoint halfway along each supply road. A third of them keep a
-## cache, as cover lots always have.
+## and a checkpoint beside each supply road where it bends. The first hop in
+## from each drop point and a third of the rest keep a cache.
 func _build_routes() -> void:
 	var lots: Array[Vector2] = []
+	var outer: Array[bool] = []
 	for i in PLAYER_SPAWNS:
 		var dir := Vector2.from_angle(TAU * (i + 0.5) / PLAYER_SPAWNS)
 		for k in HOPS.size():
 			var swing := 0.09 * (1.0 if (i + k) % 2 == 0 else -1.0)
 			lots.append(dir.rotated(swing) * float(HOPS[k]))
+			outer.append(k == 0)
 	for road: Array in ROADS:
-		lots.append((road[1] as Vector2).lerp(road[2], 0.5))
+		lots.append(road[1])
+		outer.append(false)
 	var n := 0
-	for at in lots:
+	for index in lots.size():
+		var at := lots[index]
 		if _site_at(at, 8.0):
 			continue
 		var spot := _clear_spot(at, 6.0)
 		_add_cover(_ground(spot))
-		if n % 3 == 0:
+		# The first hop in from every drop point has something to pick over,
+		# so a fresh arrival is never long without a find.
+		if outer[index] or n % 3 == 0:
 			_add_marker("spawn_cache", _open(spot + Vector2(_rng.randf_range(-3, 3), _rng.randf_range(-3, 3))))
 		n += 1
 
@@ -863,6 +1006,8 @@ func _clear_spot(at: Vector2, radius: float) -> Vector2:
 func _spot_clear(at: Vector2, radius: float) -> bool:
 	if maxf(absf(at.x), absf(at.y)) > FIELD - 20.0:
 		return false
+	if _road_distance(at) < radius * 0.7 + ROAD_CLEAR:
+		return false
 	for pad in _pads:
 		if at.distance_to(pad["at"]) < float(pad["radius"]) * (1.0 if pad.get("soft", false) else 1.5) + radius:
 			return false
@@ -883,6 +1028,8 @@ func _fortify_front() -> void:
 		if node is Marker3D or node is Depot:
 			keep_clear.append(Vector2(node.position.x, node.position.z))
 	var clear := func(spot: Vector2, room: float) -> bool:
+		if _road_distance(spot) < ROAD_CLEAR + room:
+			return false
 		for site: Dictionary in SITES:
 			if spot.distance_to(site["at"]) < float(site["radius"]) * 0.8:
 				return false
@@ -935,8 +1082,8 @@ func _fortify_front() -> void:
 				t += TRAP_EVERY
 
 
-## A jump ramp facing `yaw`, with a bike marker parked off to one side.
-func _add_ramp_lot(center: Vector3, yaw: float) -> void:
+## A jump ramp facing `yaw`, with a bike marker parked at `park`.
+func _add_ramp_lot(center: Vector3, yaw: float, park: Vector3) -> void:
 	var angle := deg_to_rad(RAMP_ANGLE_DEG)
 	var thickness := 0.4
 	var body := StaticBody3D.new()
@@ -958,9 +1105,8 @@ func _add_ramp_lot(center: Vector3, yaw: float) -> void:
 	mesh_node.mesh = mesh
 	body.add_child(mesh_node)
 	nav_region.add_child(body)
-	# Parked back from the low end and to the side, pointing up the ramp.
-	var spot := center + Basis(Vector3.UP, yaw) * Vector3(3.5, 0, 5.0)
-	var marker := _add_marker("spawn_vehicle", terrain.on_ground(spot.x, spot.z))
+	# Parked off the road behind the low end, pointing up the ramp.
+	var marker := _add_marker("spawn_vehicle", park)
 	marker.rotation.y = yaw
 
 
@@ -1593,6 +1739,26 @@ func _dress_roads(art: Node3D) -> void:
 		line.append(road[road.size() - 1])
 		lines.append(line)
 	_ground_strips(art, lines, 5.0, Look.trim("track"), 0.03)
+	# Each muster's runway: edge lamps down both sides and a hazard bar
+	# across each end, so a pilot can find it and line up on it.
+	for army: String in ARMIES:
+		var runway := _runway(army)
+		var from: Vector2 = runway["from"]
+		var dir: Vector2 = runway["dir"]
+		var yaw := atan2(dir.x, dir.y)
+		for end: float in [RUNWAY_FROM, RUNWAY_FROM + RUNWAY]:
+			var at := from + dir * end
+			var bar := _slab(Vector3(5.6, 0.08, 0.9), terrain.on_ground(at.x, at.y) + Vector3(0, 0.05, 0), Look.trim("hazard"))
+			bar.rotation.y = yaw
+			art.add_child(bar)
+		var d := RUNWAY_FROM + 4.0
+		while d < RUNWAY_FROM + RUNWAY:
+			for side: float in [-1.0, 1.0]:
+				var at := from + dir * d + dir.orthogonal() * side * 3.4
+				var lamp := _slab(Vector3(0.25, 0.18, 0.5), terrain.on_ground(at.x, at.y) + Vector3(0, 0.09, 0), Look.trim("orange"))
+				lamp.rotation.y = yaw
+				art.add_child(lamp)
+			d += 8.0
 
 
 ## Draws each polyline as short boxes laid on the ground and tipped with it,
@@ -1635,6 +1801,15 @@ func _ground_strips(art: Node3D, lines: Array[PackedVector2Array], width: float,
 func _crack_blocked(at: Vector2, room := 0.5) -> bool:
 	for solid in _solids:
 		if at.distance_to(solid["at"]) < float(solid["reach"]) + room:
+			return true
+	# The runways are kept for take-off, so the cracks flow round them.
+	for army: String in ARMIES:
+		var runway := _runway(army)
+		var from: Vector2 = runway["from"]
+		var dir: Vector2 = runway["dir"]
+		var a := from + dir * (RUNWAY_FROM - 4.0)
+		var b := from + dir * (RUNWAY_FROM + RUNWAY + 4.0)
+		if at.distance_to(Geometry2D.get_closest_point_to_segment(at, a, b)) < ROAD_CLEAR + room:
 			return true
 	return false
 

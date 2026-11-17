@@ -111,6 +111,73 @@ static func run(t: Node) -> void:
 		await t.frames(60)
 		t.check(absf(lifted.global_position.y - rest_y) < 0.3, "a resting bike lifted off the ground falls back down")
 
+	# The supply roads can be driven end to end (DESIGN.md section 8): nothing
+	# solid stands on them, the ground under them is graded and the tank traps
+	# leave them a gap. Inside a strongpoint the site's own layout rules.
+	var consts: Dictionary = map.get_script().get_script_constant_map()
+	var space := p.get_world_3d().direct_space_state
+	var probe := PhysicsShapeQueryParameters3D.new()
+	var lane := BoxShape3D.new()
+	lane.size = Vector3(2.6, 1.4, 2.6)
+	probe.shape = lane
+	probe.collision_mask = Actor.LAYER_WORLD
+	probe.exclude = [field.get_rid()]
+	var samples := 0
+	var blocked: Array[String] = []
+	var steep := 0
+	for road: Array in consts["ROADS"]:
+		for i in road.size() - 1:
+			var a: Vector2 = road[i]
+			var b: Vector2 = road[i + 1]
+			var d := 0.0
+			while d < a.distance_to(b):
+				var at := a.lerp(b, d / a.distance_to(b))
+				d += 2.0
+				var in_site := false
+				for site: Dictionary in consts["SITES"]:
+					in_site = in_site or at.distance_to(site["at"]) < float(site["radius"]) + 4.0
+				if in_site or at.distance_to(Vector2.ZERO) < 60.0:
+					continue
+				samples += 1
+				if field.slope_at(at.x, at.y) > 0.5:
+					steep += 1
+					print("    steep road at (%.0f, %.0f): %.2f" % [at.x, at.y, field.slope_at(at.x, at.y)])
+				probe.transform = Transform3D(Basis.IDENTITY, Vector3(at.x, field.height_at(at.x, at.y) + 1.2, at.y))
+				for hit in space.intersect_shape(probe, 4):
+					if not (hit.collider is CharacterBody3D):
+						blocked.append("%s at (%.0f, %.0f)" % [hit.collider.name, at.x, at.y])
+						break
+	t.check(samples > 200 and blocked.is_empty() and steep == 0,
+			"the supply roads are clear and graded to drive (%d samples, %d blocked, %d steep) %s"
+			% [samples, blocked.size(), steep, ", ".join(blocked.slice(0, 4))])
+
+	# Each muster's runway is straight, level enough and clear the width of a
+	# jet's wings for as far as one needs to take off.
+	var jet: Dictionary = ItemDB.get_item("jet_kestrel")["stats"]
+	var takeoff_run := pow(float(jet["takeoff_speed"]), 2.0) / (2.0 * float(jet["accel"]))
+	var wings := BoxShape3D.new()
+	wings.size = Vector3(5.6, 1.6, 2.0)
+	probe.shape = wings
+	var runways_clear := 0
+	for army: String in consts["ARMIES"]:
+		var runway: Dictionary = map._runway(army)
+		var clear_run := true
+		var d: float = consts["RUNWAY_FROM"]
+		while d < float(consts["RUNWAY_FROM"]) + float(consts["RUNWAY"]):
+			var at: Vector2 = runway["from"] + runway["dir"] * d
+			d += 2.0
+			probe.transform = Transform3D(Basis(Vector3.UP, atan2(runway["dir"].x, runway["dir"].y)),
+					Vector3(at.x, field.height_at(at.x, at.y) + 1.3, at.y))
+			for hit in space.intersect_shape(probe, 4):
+				if not (hit.collider is CharacterBody3D):
+					clear_run = false
+			clear_run = clear_run and field.slope_at(at.x, at.y) < 0.2
+		if clear_run:
+			runways_clear += 1
+	t.check(runways_clear == 2 and float(consts["RUNWAY"]) > takeoff_run * 1.5,
+			"each muster has a clear runway for a jet (%d of 2, %.0f m against a %.0f m take-off run)"
+			% [runways_clear, float(consts["RUNWAY"]), takeoff_run])
+
 	# Small props stop being drawn far away; the ground and big wrecks never do.
 	Look._limit_draw_distance(map)
 	var limited_count := 0
