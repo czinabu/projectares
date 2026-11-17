@@ -65,6 +65,7 @@ static func run(t: Node) -> void:
 	if bo != null:
 		var dropped := [false]
 		bo.failed.connect(func(_reason: String) -> void: dropped[0] = true)
+		bo.disconnected.connect(func() -> void: dropped[0] = true)
 		for i in 600:
 			bo._request_ping.rpc_id(1)
 		await t._wait_until(func() -> bool: return dropped[0], 240)

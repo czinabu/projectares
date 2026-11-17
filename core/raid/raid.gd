@@ -1081,6 +1081,42 @@ func remove_player(actor: Actor) -> void:
 	players.erase(state)
 
 
+## Whether `actor` is a body left standing by a dropped connection that its
+## player can still come back to (`reclaim_player`).
+func is_unguarded(actor: Actor) -> bool:
+	var state := state_for(actor)
+	return state != null and state.sign_out_forced and not state.finished \
+			and is_instance_valid(actor) and not actor.is_dead
+
+
+## A player whose connection dropped is back before their body's sign-out ran
+## out: they take over the body where it stands. The forced countdown ends.
+## A sign-out they had started themselves carries on with the time it has
+## left, unless the body was in a fight meanwhile (as a hit would have
+## cancelled it). Returns false if the body is gone, dead or already home.
+func reclaim_player(actor: Actor) -> bool:
+	if mode == Mode.CLIENT or not is_unguarded(actor):
+		return false
+	var state := state_for(actor)
+	var had: Array = state.dropped_sign_out
+	state.dropped_sign_out = []
+	state.sign_out_forced = false
+	var fighting := clock - state.last_combat < world.combat_time
+	if had.size() == 3 and not fighting:
+		state.sign_out_total = maxf(float(had[0]), state.sign_out_left)
+		state.sign_out_fixed = bool(had[1])
+		state.sign_out_door = bool(had[2])
+		actor.notice.emit("Back in your body. Still signing out")
+	else:
+		state.sign_out_left = -1.0
+		state.sign_out_fixed = false
+		state.sign_out_door = false
+		actor.notice.emit("Back in your body")
+	actor.set_sign_out_beacon(false)
+	sign_out_changed.emit(actor, state.sign_out_left)
+	return true
+
+
 ## How long a hop or a step off a ledge can be before a sign-out counts as
 ## airborne. Below this, the ground rate keeps running.
 const SIGN_OUT_AIR_GRACE := 0.35
@@ -1124,6 +1160,10 @@ func begin_sign_out(actor: Actor, forced := false) -> bool:
 		var wait := world.combat_log_time if fighting else world.sign_out_time
 		if state.sign_out_left >= 0.0:
 			wait = minf(wait, state.sign_out_left)
+			# Kept for `reclaim_player`: a player back in time carries on
+			# with the sign-out they had started.
+			if not state.sign_out_forced:
+				state.dropped_sign_out = [state.sign_out_total, state.sign_out_fixed, state.sign_out_door]
 		var yaw := actor.cmd.yaw
 		actor.cmd.apply_array(ActorCommand.new().to_array())
 		actor.cmd.yaw = yaw
@@ -2750,6 +2790,9 @@ class PlayerState:
 	## The length does not follow the air: a gate sign-out, or a body left
 	## behind by a disconnect.
 	var sign_out_fixed := false
+	## The sign-out the player had going when their connection dropped, as
+	## [total, fixed, door], or empty: what `Raid.reclaim_player` restores.
+	var dropped_sign_out: Array = []
 	## The sign-out was started through a portal home (`open_portal`), so
 	## the result says they came home by its door ("door": "home").
 	var sign_out_door := false

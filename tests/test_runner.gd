@@ -59,6 +59,7 @@ const InspectTests := preload("res://tests/inspect_tests.gd")
 const RaceTests := preload("res://tests/race_tests.gd")
 const SaveSafetyTests := preload("res://tests/save_safety_tests.gd")
 const ServerAuthTests := preload("res://tests/server_auth_tests.gd")
+const ReconnectTests := preload("res://tests/reconnect_tests.gd")
 
 var _passed := 0
 var _failed := 0
@@ -328,6 +329,7 @@ func _run() -> void:
 	await HostRecoveryTests.run(self)
 	await SaveSafetyTests.run(self)
 	await ServerAuthTests.run(self)
+	await ReconnectTests.run(self)
 	await _test_look()
 	await _test_rig_models()
 	await _test_customizer()
@@ -4223,6 +4225,27 @@ func _test_online() -> void:
 	var wait_before: float = raid.state_for(b_again).sign_out_left
 	raid.remove_player(b_again)
 	check(raid.state_for(b_again).sign_out_left <= wait_before, "asking twice never makes the wait longer")
+	# Back before it ran out (a reconnect): the body is theirs again.
+	check(raid.is_unguarded(b_again), "a body left by a drop can be taken back")
+	check(raid.reclaim_player(b_again) and raid.sign_out_progress(b_again) < 0.0
+			and not raid.state_for(b_again).sign_out_forced and not raid.is_unguarded(b_again),
+			"a player back in time takes the body over; the forced countdown ends (they were hit, so nothing resumes)")
+	check(not raid.reclaim_player(b_again), "a body someone plays cannot be reclaimed")
+	# A sign-out they had started carries on when they come back.
+	raid.state_for(b_again).last_combat = -INF
+	check(raid.begin_sign_out(b_again), "a quiet player starts signing out")
+	raid.state_for(b_again).sign_out_left -= 4.0
+	var left_before: float = raid.state_for(b_again).sign_out_left
+	raid.remove_player(b_again)
+	raid.state_for(b_again).sign_out_left -= 1.0
+	raid.reclaim_player(b_again)
+	var resumed := raid.state_for(b_again)
+	check(resumed.sign_out_left > 0.0 and resumed.sign_out_left <= left_before - 1.0 + 0.01
+			and not resumed.sign_out_forced and resumed.sign_out_total == raid.world.sign_out_time,
+			"their own sign-out resumes where it stands after a reconnect, the gap counted (%.1f s left)" % resumed.sign_out_left)
+	raid.cancel_sign_out(b_again)
+	check(raid.sign_out_progress(b_again) < 0.0, "and it is theirs to call off again")
+	raid.remove_player(b_again)
 	b_again.kill("bullet", a)
 	await frames(2)
 	check(finished.size() == 2 and finished[1][1].outcome == "died" and raid.state_for(a).kills == 2,
@@ -5737,17 +5760,19 @@ func _test_online_stash() -> void:
 	if cara != null:
 		check(cara.account.deployed and "rifle_carbine" not in cara.account.stash,
 				"the body is still out there, with the gear on it")
-		var refused: Array[String] = []
-		cara.lobby_error.connect(func(reason: String) -> void: refused.append(reason))
-		cara.deploy()
-		await _wait_until(func() -> bool: return not refused.is_empty(), 120)
-		check(refused.size() == 1 and cara.raid == null, "you cannot drop in again while your old body stands")
+		# Back in time: the server puts you in that body (a reconnect), no
+		# second deploy and no second kit.
+		await _wait_until(func() -> bool: return cara.raid != null and cara.raid.player != null, 240)
+		check(cara.resuming and cara.raid != null and cara.raid.player != null
+				and "rifle_carbine" in cara.raid.player.gear_items,
+				"signing back in puts you back in the body you left, gear and all")
+		cara.sign_out()
 		await _wait_until(func() -> bool: return not cara.account.deployed,
 				int(Worlds.get_world("ashfront").sign_out_time * 60.0) + 300)
 		check(not cara.account.deployed and "rifle_carbine" in cara.account.stash
 				and cara.account.loadout.get("primary", "") == "rifle_carbine" and cara.account.raids_played == 1
 				and cara.account.raids_extracted == 1,
-				"the body survived its sign-out: the gear is home and the lobby is told")
+				"the body signed out: the gear is home and the account is told")
 		check("bike_scrapper" in cara.account.stash, "gear that stayed in the stash is safe")
 	await _leave(cara)
 	OS.kill(pid)
@@ -6237,10 +6262,11 @@ func _test_plaza_online() -> void:
 		check(main.raid != null and main.raid.world.id == "ashfront" and main.base == null and not main.hub.visible
 				and main.net != null and main.net.world_id == "ashfront",
 				"using a gate deploys you straight into that world, not into a lobby")
-		# Straight back, as going home while down does (the body stays out
-		# there a moment, so the stall above came first).
-		main._return_to_lobby({})
-		await _wait_until(func() -> bool: return main.raid != null and main.raid.player != null and main.raid.world.safe_zone, 600)
+		# Back by signing out: a body left standing would be yours again on
+		# the next sign-in to this world (a reconnect), so it must come home.
+		main.net.sign_out()
+		await _wait_until(func() -> bool: return main.raid != null and main.raid.player != null and main.raid.world.safe_zone,
+				int(Worlds.get_world("ashfront").sign_out_time * 60.0) + 600)
 		check(main.raid != null and main.raid.world.safe_zone, "leaving the world leads back to the plaza")
 		if main.raid != null and main.raid.player != null:
 			var back_gate: Node3D = null
