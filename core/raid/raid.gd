@@ -65,6 +65,9 @@ const MIN_BOT_SPAWN_DISTANCE := 40.0
 const PARKED_DISTANCE := 6.0
 ## A spawn point this close to open ground, above or below, is stood on it.
 const SPAWN_SNAP := 2.5
+## How many times a bot the world turns away is rolled again before the last
+## roll is kept anyway.
+const BOT_REROLLS := 8
 ## Seconds between rounds of orders to the bot factions.
 const ORDERS_EVERY := 8.0
 const DETAIL_EVERY := 0.25
@@ -886,7 +889,7 @@ func _tick_vehicles(delta: float) -> void:
 			spot.empty_for = 0.0
 			continue
 		spot.empty_for += delta
-		if spot.empty_for >= world.vehicle_respawn_time:
+		if spot.empty_for >= float((spot.marker as Node3D).get_meta("respawn", world.vehicle_respawn_time)):
 			spot.empty_for = 0.0
 			spot.vehicle = _park_vehicle(spot.marker, spot.source)
 
@@ -980,7 +983,7 @@ func add_player(p_kit: Array = [], p_mastery: Dictionary = {}, p_name := "Raider
 		at += Vector3(rng.randf_range(-2.5, 2.5), 0, rng.randf_range(-2.5, 2.5))
 	actor.global_position = _stand(at)
 	Loadout.equip(actor, state.kit)
-	actor.weapons_locked = world.safe_zone
+	actor.weapons_locked = world.safe_zone or not world.weapons_free
 	state.actor = actor
 	state.owner = p_owner if p_owner != "" else "#%d" % actor.get_instance_id()
 	if mode != Mode.CLIENT:
@@ -1582,7 +1585,19 @@ func zone_label(actor: Actor) -> String:
 ## A new bot with a brain, at a spawn marker.
 func _add_bot(marker: Node3D, warlord := false) -> Actor:
 	var at := marker.global_position + Vector3(rng.randf_range(-1, 1), 0, rng.randf_range(-1, 1))
-	var bot := spawn_bot("Bot%d" % _bot_count, _stand(at), rng.randi(), warlord, marker.get_meta("faction", ""))
+	var first_seed := rng.randi()
+	var bot := spawn_bot("Bot%d" % _bot_count, _stand(at), first_seed, warlord, marker.get_meta("faction", ""))
+	# The world may turn a rare kind away (`WorldDef.bot_allowed`): roll again,
+	# from seeds made from the first, so the raid's own dice are not moved.
+	for tries in BOT_REROLLS:
+		if world.bot_allowed(bot, self):
+			break
+		bots.erase(bot)
+		bot_seeds.erase(bot)
+		warlords.erase(bot)
+		bot.free()
+		bot = spawn_bot("Bot%d" % _bot_count, _stand(at), hash([first_seed, tries]), warlord,
+				marker.get_meta("faction", ""))
 	if warlord:
 		# What a warlord carries is worth the fight.
 		for id in world.roll_war_loot("bot", rng, 1.0) + world.roll_war_loot("cache", rng, 1.0):
@@ -2621,6 +2636,13 @@ func _finish_player(state: PlayerState, outcome: String, cause: String, killed_b
 	# A heavy weapon in the chamber comes home on a sign-out (and counts as
 	# lost on a death). One that was banked is already in `state.banked` and
 	# off the body. Death still leaves the gun on a rack beside the bag.
+	if not world.gear_at_risk:
+		# Nothing left the stash, so nothing comes home or is lost (a race
+		# machine ridden out is the track's, not yours).
+		loot.clear()
+		kept.clear()
+		brought_home.clear()
+		lost.clear()
 	var result := {
 		"outcome": outcome,
 		"cause": cause,

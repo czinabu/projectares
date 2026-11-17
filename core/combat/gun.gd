@@ -19,8 +19,20 @@ var semi_auto := false
 ## shots, or as a reload ends) and fires then, so a click a moment early is
 ## not swallowed.
 var press_buffer := 0.12
-## Damage multiplier for a shot that lands on an actor's head.
-var headshot_mult := 1.0
+## Damage multiplier for a shot that lands on an actor's head. Every gun
+## sets its own in `ItemDB` (rifles about 1.5, marksman guns 2); 1.5 by
+## default, so aim pays.
+var headshot_mult := 1.5
+## Damage falls off with range: full out to `falloff_start` metres, easing
+## down to `falloff_min` of it at `falloff_end` and beyond. A start of 0
+## keeps full damage at every range. Close-range guns fall off early, so
+## each gun has a range it wins at.
+var falloff_start := 0.0
+var falloff_end := 0.0
+var falloff_min := 1.0
+## Share of each round that goes past armor (`DamageInfo.armor_pierce`):
+## heavy marksman rounds punch through some of the plates.
+var armor_pierce := 0.0
 ## Projectiles per shot. Each one deals `damage` and gets its own spread.
 var pellets := 1
 var fire_interval := 0.11
@@ -31,6 +43,12 @@ var reload_time := 1.7
 var max_range := 150.0
 var spread_deg := 1.2
 var ads_spread_mult := 0.3
+## Seconds to bring the gun up to the eye: aimed spread comes in over this,
+## so a snap aim is not yet a steady one.
+var ads_time := 0.25
+## Extra spread (degrees) moving at a sprint's speed on the ground, less at a
+## walk, none standing still. Aiming scales it down like the rest.
+var move_spread_deg := 2.0
 ## Sustained fire widens the spread; it settles when you let go.
 var bloom_per_shot := 0.35
 var max_bloom := 2.6
@@ -44,6 +62,9 @@ var recoil_side_deg := 0.22
 const MODEL_KICK := Vector2(0.05, 0.06)
 const MODEL_KICK_AT := 0.55
 const MODEL_KICK_MAX := 3.0
+## How far away a shot is heard, and a suppressed one.
+const SHOT_REACH := 220.0
+const SUPPRESSED_REACH := 45.0
 const MODEL_KICK_AIMED := 0.4
 ## Effects. Power weapons use these to look and sound like what they are.
 var tracer_color := Color(1.0, 0.85, 0.4)
@@ -114,6 +135,8 @@ const MOUNTS := {
 var _cooldown := 0.0
 var _reload_left := 0.0
 var _aiming := false
+## How far the gun has come up to the eye, 0 to 1 (`ads_time`).
+var _aim_in := 0.0
 var _bloom := 0.0
 var _rng := RandomNumberGenerator.new()
 var _charge := 0.0
@@ -386,6 +409,7 @@ func controls_hint() -> String:
 
 func tick(delta: float) -> void:
 	_cooldown = maxf(0.0, _cooldown - delta)
+	_aim_in = minf(1.0, _aim_in + delta / maxf(ads_time, 0.01)) if _aiming else 0.0
 	_noise_left = maxf(0.0, _noise_left - delta)
 	_press_left = maxf(0.0, _press_left - delta)
 	_bloom = maxf(0.0, _bloom - bloom_recovery * delta)
@@ -420,10 +444,12 @@ func handle_input(cmd: ActorCommand, delta: float) -> void:
 		if _charge < charge_time:
 			return
 		_charge = 0.0
+	var recover := actor.sprint_recover if actor else 0.0
 	if cmd.primary_pressed:
-		_press_left = press_buffer
+		# A pull while the gun comes up from a sprint is kept until it is up.
+		_press_left = maxf(press_buffer, recover + 0.02)
 	var trigger := (cmd.primary_pressed or _press_left > 0.0) if semi_auto else cmd.primary
-	if trigger and _cooldown <= 0.0 and _reload_left <= 0.0:
+	if trigger and _cooldown <= 0.0 and _reload_left <= 0.0 and recover <= 0.0:
 		_press_left = 0.0
 		if ammo_in_mag > 0:
 			_fire()
@@ -433,6 +459,7 @@ func handle_input(cmd: ActorCommand, delta: float) -> void:
 
 func drop_aim() -> void:
 	_aiming = false
+	_aim_in = 0.0
 
 
 func on_holster() -> void:
@@ -491,7 +518,21 @@ func start_reload() -> void:
 
 
 func current_spread_deg() -> float:
-	return (spread_deg + _bloom + _air_spread()) * (ads_spread_mult if _aiming else 1.0) * _steadiness()
+	return (spread_deg + _bloom + _air_spread() + move_spread_deg * move_share()) \
+			* lerpf(1.0, ads_spread_mult, _aim_in) * _steadiness()
+
+
+## How fast the shooter moves on the ground, as a share of a sprint (0 to 1).
+## The air has its own spread (`_air_spread`).
+func move_share() -> float:
+	if actor == null or not actor.is_on_floor():
+		return 0.0
+	return clampf(Vector2(actor.velocity.x, actor.velocity.z).length() / maxf(actor.sprint_speed, 0.1), 0.0, 1.0)
+
+
+## How far the gun has come up to the eye, 0 to 1.
+func aim_in() -> float:
+	return _aim_in
 
 
 ## Crouched on the ground the aim is steadier (`Actor.aim_steadiness`).
@@ -546,10 +587,13 @@ func _fire() -> void:
 		elif not quiet:
 			Fx.tracer(actor.get_parent(), drawn_from, to, tracer_color)
 	fired.emit(from, to)
+	if projectile == "":
+		Sfx.pass_by(from, to, actor)
 	if _noise_left <= 0.0:
 		_noise_left = noise_every
 		Combat.noise(actor, from, quiet_noise if quiet else shot_noise)
-	Sfx.play(shot_sound, null if actor.is_player else from, -14.0 if quiet else 0.0)
+	Sfx.play(shot_sound, null if actor.is_player else from, -14.0 if quiet else 0.0,
+			SUPPRESSED_REACH if quiet else SHOT_REACH)
 
 
 ## Where a shot's flash and tracer start: the "Muzzle" marker the art layer
@@ -573,6 +617,15 @@ func muzzle_point(fallback: Vector3) -> Vector3:
 func model_kick() -> Vector2:
 	return MODEL_KICK * clampf(recoil_kick_deg / MODEL_KICK_AT, 0.6, MODEL_KICK_MAX) \
 			* (MODEL_KICK_AIMED if _aiming else 1.0)
+
+
+## The share of `damage` a round keeps after flying `dist` metres
+## (`falloff_start`, `falloff_end`, `falloff_min`).
+func range_mult(dist: float) -> float:
+	if falloff_start <= 0.0 or dist <= falloff_start:
+		return 1.0
+	var span := maxf(falloff_end - falloff_start, 0.001)
+	return lerpf(1.0, falloff_min, smoothstep(0.0, 1.0, clampf((dist - falloff_start) / span, 0.0, 1.0)))
 
 
 ## A direction within `spread` radians of `aim`, spread evenly over a round
@@ -601,11 +654,13 @@ func _trace_shot(from: Vector3, dir: Vector3) -> Vector3:
 			return end
 		var at: Vector3 = hit.position
 		var body := hit.collider as Actor
+		Fx.impact(actor.get_parent(), at, hit.get("normal", Vector3.ZERO), body != null)
 		if body != null:
 			if not body in struck:
 				struck.append(body)
-				var info := DamageInfo.make(amount, actor, damage_kind, at)
+				var info := DamageInfo.make(amount * range_mult(from.distance_to(at)), actor, damage_kind, at)
 				info.weapon_id = item_id
+				info.armor_pierce = armor_pierce
 				if Combat.is_headshot(hit):
 					info.headshot = true
 					info.amount *= headshot_mult

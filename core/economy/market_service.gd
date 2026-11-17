@@ -5,12 +5,16 @@ extends RefCounted
 ## the listings and moves items and scrip between accounts, only ever through
 ## the `StashService` it is handed, so no account is written from here.
 ##
-## The ledger it is handed needs only five calls: `count_of(account, item)`,
+## The ledger it is handed needs only six calls: `count_of(account, item)`,
 ## `scrip_of(account)`, `take_items(account, item, count)`,
-## `give_items(account, items)` and `change_scrip(account, delta)`. Accounts
-## are files on one server today; when they move to a shared account service
-## (the server review's recommendation), that service implements these five
-## and the board moves with it.
+## `give_items(account, items)`, `change_scrip(account, delta)` and
+## `transaction(steps)`, which runs several of the three that change an
+## account as one all-or-nothing change (`StashService.transaction`). A
+## listing's charge and a sale's three moves (buyer pays, buyer gets, seller
+## is paid) each go through one transaction, so no trade is ever half done.
+## Accounts live in one server's SQLite database today; when they move to a
+## shared account service (the server review's recommendation), that service
+## implements these six and the board moves with it.
 ##
 ## Load with `const MarketService := preload("res://core/economy/market_service.gd")`.
 ##
@@ -23,9 +27,8 @@ extends RefCounted
 ## One file, `market.json`, in `save_dir`. Every session of a server shares
 ## one service, like the `StashService` and `ClanService`.
 ##
-## Ordering: the board's file is written before any account is, so a crash
-## part way through a trade can lose a listing's goods but never copy them.
-## When accounts move to a real database this becomes one transaction.
+## Ordering: the board's file is written before the accounts' transaction,
+## so a crash between the two can lose a listing's goods but never copy them.
 
 const Market := preload("res://core/economy/market.gd")
 
@@ -105,9 +108,13 @@ func list(stash: RefCounted, account_id: String, item_id: String, count: int, pr
 	_listings.append(listing)
 	_count_trade(account_id)
 	_save()
-	if not stash.take_items(account_id, item_id, count) or not stash.change_scrip(account_id, -fee):
-		# Checked above, so this only happens if an account vanished.
+	var paid: Dictionary = stash.transaction([["take_items", account_id, item_id, count],
+			["change_scrip", account_id, -fee]])
+	if not paid.ok:
+		# Checked above, so this only happens if an account vanished or its
+		# save failed; the transaction left the account as it was.
 		_listings.erase(listing)
+		_count_trade(account_id, -1)
 		_save()
 		return _fail("That listing did not go up.")
 	return {"ok": true, "id": listing.id, "fee": fee}
@@ -136,17 +143,18 @@ func buy(stash: RefCounted, account_id: String, listing_id: int, count: int = 1)
 	var items: Array[String] = []
 	for i in count:
 		items.append(listing.item)
-	if not stash.change_scrip(account_id, -total):
-		# Checked above, so this only happens if an account vanished: put the
-		# listing back as it was.
+	var paid := Market.seller_gets(total)
+	var done: Dictionary = stash.transaction([["change_scrip", account_id, -total],
+			["give_items", account_id, items], ["change_scrip", str(listing.seller), paid]])
+	if not done.ok:
+		# Checked above, so this only happens if an account vanished or a save
+		# failed: nobody was charged or paid, so put the listing back.
 		listing.count = int(listing.count) + count
 		if listing not in _listings:
 			_listings.append(listing)
+		_count_trade(account_id, -1)
 		_save()
-		return _fail("Not enough scrip.")
-	stash.give_items(account_id, items)
-	var paid := Market.seller_gets(total)
-	stash.change_scrip(str(listing.seller), paid)
+		return _fail("That trade did not go through.")
 	return {"ok": true, "item": listing.item, "count": count, "spent": total, "seller": listing.seller,
 			"seller_paid": paid}
 
@@ -225,9 +233,10 @@ func _listings_of(account_id: String) -> int:
 	return _listings.filter(func(listing: Dictionary) -> bool: return listing.seller == account_id).size()
 
 
-func _count_trade(account_id: String) -> void:
+## Counts one of today's trades, or takes one back (`by` -1) when it failed.
+func _count_trade(account_id: String, by := 1) -> void:
 	var counted := Market.trades_today(_trades.get(account_id), today())
-	counted.count = int(counted.count) + 1
+	counted.count = maxi(0, int(counted.count) + by)
 	_trades[account_id] = counted
 
 

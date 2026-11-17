@@ -29,6 +29,9 @@ signal store_requested(item_id: String)
 signal ping_requested
 ## The watch's portal icon was clicked: open a squad portal to `destination`.
 signal portal_requested(destination: String)
+## On a race track, a pick on the race icon: "restart", "ghost" or "retire"
+## (`Hud.RACE_ACTIONS`). `main.gd` asks the `Race` or flips the ghost.
+signal race_requested(action: String)
 ## The player asked to pack the vehicle they are looking at onto the watch.
 signal pack_requested
 ## A click on the opened map's target `index` (`map_targets`): set it as the
@@ -225,6 +228,10 @@ var portal_pick := 0
 var map_pick := 0
 var standing_pick := 0
 var pack_pick := 0
+## On a race track: the race icon's pick, and whether the best lap's ghost
+## is shown (view only, flipped by `main.gd`).
+var race_pick := 0
+var ghost_on := true
 ## The opened map's targets (`Hud.map_targets`), kept up to date by the HUD
 ## while the watch is up, so the wheel knows how many there are. View only.
 var map_targets: Array[Dictionary] = []
@@ -260,6 +267,10 @@ var _dip_speed := 0.0
 var melee_kick_deg := 1.4
 var parry_kick_deg := 3.0
 var flinch_deg := 1.2
+## A round's jolt to the view: this much for a 20 damage hit, and never more
+## than the max (`bullet_flinch`).
+var bullet_flinch_deg := 0.5
+var bullet_flinch_max_deg := 1.4
 var _shake := Vector2.ZERO
 var _shake_speed := Vector2.ZERO
 var _speed_fov_now := 0.0
@@ -476,6 +487,12 @@ func click_watch() -> bool:
 	if (is_watch_on("standing") or is_watch_on("pack")) and watch_open != "":
 		# Pages to read: a click has nothing more to do, and never shoots.
 		return true
+	if is_on_race() and _is_open("contract"):
+		race_requested.emit(Hud.RACE_ACTIONS[clampi(race_pick, 0, Hud.RACE_ACTIONS.size() - 1)])
+		if Hud.RACE_ACTIONS[clampi(race_pick, 0, Hud.RACE_ACTIONS.size() - 1)] != "ghost":
+			wrist_raised = false
+			watch_open = ""
+		return true
 	if is_watch_on("portal") and not portal_choices().is_empty() and _is_open("portal"):
 		var choices := portal_choices()
 		portal_requested.emit(choices[clampi(portal_pick, 0, choices.size() - 1)])
@@ -490,7 +507,7 @@ func watch_takes_fire() -> bool:
 	return (watch_open == "" and watch_entries(focused_watch_icon()) > 1) or is_picking_toys() or pack_target() != null or is_picking_weapons() or is_on_artifact() \
 			or is_watch_on("ping") or is_watch_on("portal") or is_on_sign_out() \
 			or (is_watch_on("map") and not map_targets.is_empty()) \
-			or (watch_open in ["standing", "pack"] and is_watch_on(watch_open))
+			or (watch_open in ["standing", "pack"] and is_watch_on(watch_open)) or is_on_race()
 
 
 ## True while the raised watch is on the sign-out icon out in a world, where
@@ -498,6 +515,12 @@ func watch_takes_fire() -> bool:
 ## nothing to sign out of.
 func is_on_sign_out() -> bool:
 	return is_watch_on("leave") and Raid.of(actor) != null
+
+
+## True while the raised watch is on the race icon on a race track (the
+## contract's place there, `Hud.race_slot`).
+func is_on_race() -> bool:
+	return is_watch_on("contract") and Raid.of(actor) is Race
 
 
 ## Draws the weapon picked on the carousel if it is worn, stores it back
@@ -572,6 +595,8 @@ func watch_entries(id: String) -> int:
 			return Hud.STANDING_PAGES.size() if Raid.of(actor) != null else 0
 		"pack":
 			return actor.inventory.items.size()
+		"contract":
+			return Hud.RACE_ACTIONS.size() if Raid.of(actor) is Race else 0
 	return 0
 
 
@@ -591,6 +616,8 @@ func _watch_pick(id: String) -> int:
 			return standing_pick
 		"pack":
 			return pack_pick
+		"contract":
+			return race_pick
 	return 0
 
 
@@ -610,6 +637,8 @@ func _set_watch_pick(id: String, pick: int) -> void:
 			standing_pick = pick
 		"pack":
 			pack_pick = pick
+		"contract":
+			race_pick = pick
 
 
 ## Moves the watch card's open icon `step` along (`Hud.Wrist.SLOTS`), tab
@@ -1184,6 +1213,12 @@ func _on_hit_confirmed(_target: Actor, info: DamageInfo, lethal: bool) -> void:
 		pass  # The blade's contact already answered.
 	elif info.parried or info.blocked:
 		Sfx.play("block", null, -6.0)
+	elif info.headshot:
+		Sfx.play("headshot")
+	elif info.armor_broke:
+		Sfx.play("armor_break", null, -2.0)
+	elif info.armored:
+		Sfx.play("armor_hit")
 	else:
 		Sfx.play("hit")
 
@@ -1192,6 +1227,17 @@ func _on_damaged(info: DamageInfo) -> void:
 	Sfx.play("hurt")
 	if info.kind in ["melee", "slam"]:
 		kick_view(Vector2(_rng.randf_range(-0.5, 0.5), -1.0) * deg_to_rad(flinch_deg))
+	elif info.kind == "bullet":
+		kick_view(bullet_flinch(info.amount, _rng.randf_range(-1.0, 1.0)))
+
+
+## How far a round of `amount` damage jolts the view (yaw, pitch in radians),
+## `side` from -1 to 1 picking which way it tips. View only: the aim stays
+## where it was, so being shot shakes your picture but never moves your
+## shots. It grows with the hit, up to `bullet_flinch_max_deg`.
+func bullet_flinch(amount: float, side: float) -> Vector2:
+	var deg := minf(bullet_flinch_deg * amount / 20.0, bullet_flinch_max_deg)
+	return Vector2(side * 0.6, 1.0) * deg_to_rad(deg)
 
 
 ## The visor level the visor key moves to from `level`: up through the

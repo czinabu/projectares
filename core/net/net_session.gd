@@ -47,7 +47,8 @@ extends Node
 signal signed_in(account: Dictionary)
 ## Client: the server sent a fresh copy of your account (after any change).
 signal account_changed(account: Dictionary)
-## Client: the server turned down a lobby request (equip, pick, deploy).
+## Client: the server turned down a lobby request (equip, pick, deploy), or
+## asked you to slow down.
 signal lobby_error(reason: String)
 ## Client: the raid view exists and your actor is in it. Fires again every
 ## time you drop back in after a death.
@@ -84,7 +85,7 @@ signal base_visit_requested(owner_name: String, stash: Array, loadout: Dictionar
 signal portal_travel(destination: String)
 
 const DEFAULT_PORT := 24565
-const PROTOCOL := 33
+const PROTOCOL := 36
 ## Every packet is compressed, both ways. State updates are mostly repeated
 ## numbers, and a big battle sends a player hundreds of them a second. Server
 ## and client must agree, so a change here needs a new PROTOCOL.
@@ -94,13 +95,30 @@ const PROTOCOL := 33
 ## world unfolds over its opener's sign-out).
 ## 32: a depot banking tells its owner what this life has sent home
 ## (`_banked`), for the watch's banking readout.
+## 33: the version check and sign-in moved into the connection handshake
+## (`SceneMultiplayer.auth_callback`, see "Signing in" below); the old
+## `_hello`, `_sign_in` and `_refused` calls are gone.
+## 34: hit feedback says whether it was a head, plates soaked it, or it
+## broke them, for the hit marker.
+## 35: connections are encrypted (ENet DTLS, `ServerTrust`), and the server's
+## sign-in answer carries its certificate.
+## Where an out-of-date game gets the latest build: the rolling "latest"
+## release the Windows client workflow publishes (docs/hosting.md).
+const UPDATE_URL := "https://github.com/czinabu/projectares/releases/tag/latest"
+## Seconds a connection may take to sign in before it is dropped.
+const AUTH_TIMEOUT := 10.0
+## The most bytes a sign-in or its answer may be. Read before anything else.
+const MAX_AUTH_BYTES := 4096
 const COMPRESSION := ENetConnection.COMPRESS_RANGE_CODER
 const StashService := preload("res://core/account/stash_service.gd")
+const ServerTrust := preload("res://core/net/server_trust.gd")
 const Economy := preload("res://core/economy/economy.gd")
 const Human := preload("res://core/visual/human.gd")
 const SocialService := preload("res://core/social/social_service.gd")
 const MarketService := preload("res://core/economy/market_service.gd")
 const ArenaVenue := preload("res://core/arena/arena_venue.gd")
+## Server physics ticks between asking the stash whether a backup is due.
+const BACKUP_CHECK_TICKS := 600
 ## Server physics ticks between arena board updates when nothing changed.
 const BOARD_RESEND_TICKS := 60
 ## Server physics ticks between state updates (2 = 30 a second).
@@ -210,6 +228,16 @@ var secret := ""
 var account := {}
 ## Client: the server answered and said no, so trying again will not help.
 var refused := false
+## Client: why the versions did not match, if they did not: "client" (this
+## game is older than the server, get the update at UPDATE_URL) or "server"
+## (the server is older; its host must update it). "" when they match.
+var outdated := ""
+## Client: the server showed a different certificate from the one this game
+## remembered for it ("this server changed", see `ServerTrust`): {"host",
+## "was", "now" (fingerprints), "certificate" (the new one, PEM)}. The join
+## gives up without signing in; trusting it is the player's call, on the
+## phone's Servers app. Empty otherwise.
+var identity_changed := {}
 ## Client: the id of your own actor, and the kit you joined with.
 var my_actor_id := -1
 ## Client, for testing how the game feels on a bad connection: seconds of delay
@@ -275,6 +303,13 @@ var _sent_war := -1.0    # war intensity last sent (server)
 var _sent_points := {}   # peer id -> strongpoint states last sent to them (server)
 var _tick := 0
 var _sent_status := {}   # world status last sent (server)
+var _limits := RequestLimits.new() # how many requests each player may still make (server)
+var _gave_up := false    # client: `failed` was emitted for this connection
+var _certificate := ""   # server: this server's certificate (PEM), sent with every sign-in answer
+var _join_host := ""     # client: the address joined
+var _join_port := 0
+var _join_modes: Array[String] = [] # client: connection modes still to try (`ServerTrust.attempts_for`)
+var _join_mode := ""     # client: the mode of the connection being made
 ## Every session hosting in this process, so a safe zone can ask the others.
 static var _hosting: Array[NetSession] = []
 var _died_at := {}       # peer id -> msec when their last life ended in a death (server)
@@ -316,6 +351,14 @@ func host(p_world_id: String, port := DEFAULT_PORT, max_players := 8) -> Error:
 	var err := peer.create_server(port, max_players)
 	if err != OK:
 		return err
+	# Every connection is encrypted with this server's own certificate, made
+	# on its first start and kept beside the accounts (`ServerTrust`).
+	var identity_dir := stash.save_dir.trim_suffix("/").path_join("server_identity")
+	err = peer.host.dtls_server_setup(ServerTrust.server_options(identity_dir, stash.persist))
+	if err != OK:
+		peer.close()
+		return err
+	_certificate = ServerTrust.pem_of(ServerTrust.identity(identity_dir, stash.persist)[1])
 	peer.host.compress(COMPRESSION)
 	is_server = true
 	world_id = p_world_id
@@ -325,9 +368,18 @@ func host(p_world_id: String, port := DEFAULT_PORT, max_players := 8) -> Error:
 	social.save_dir = stash.save_dir.path_join("social")
 	social.load_server_news(stash.save_dir.path_join("news.json"))
 	Combat.authoritative = true
+	# A peer signs in during the handshake, before it counts as connected:
+	# an old game or a wrong secret never gets in, and nothing it sends
+	# meanwhile reaches the session. Clients only ever talk to the server, so
+	# it never passes their calls on to each other.
+	_api.auth_callback = _server_auth
+	_api.auth_timeout = AUTH_TIMEOUT
+	_api.server_relay = false
 	_api.multiplayer_peer = peer
 	_api.peer_connected.connect(_on_peer_connected)
 	_api.peer_disconnected.connect(_on_peer_disconnected)
+	_api.peer_authentication_failed.connect(_on_server_auth_failed)
+	stash.backup_if_due()
 	if lag_compensation:
 		Combat.rewind = _seen_positions
 	_start_server_raid()
@@ -411,6 +463,11 @@ func _start_server_raid() -> void:
 			var peer: int = _actor_peer.get(actor, 0)
 			if peer in _api.get_peers():
 				_notice.rpc_id(peer, text))
+	var race := raid as Race
+	if race != null:
+		# Each racer is sent their own run; everyone gets the board.
+		race.run_changed.connect(_on_race_run_changed)
+		race.board_changed.connect(_send_race_board)
 	raid.start_server(world)
 
 
@@ -467,12 +524,116 @@ func _register(actor: Actor) -> int:
 	return id
 
 
+## Signing in. A new connection is held in Godot's handshake
+## (`SceneMultiplayer.auth_callback`) until it has signed in, and only then
+## counts as connected. The client sends one Dictionary (`var_to_bytes`):
+## {"protocol", "name", "secret"}, or {"protocol", "probe": true} to only
+## fetch the certificate (`ServerTrust`); the server answers with one:
+## {"ok": true, "protocol", "world", "certificate"} or {"ok": false,
+## "protocol", "error", "certificate"}. Both always carry "protocol", in
+## every version to come, so any two versions can tell each other apart and
+## say which one needs the update. Keep that shape whatever else changes.
+func _server_auth(peer: int, data: PackedByteArray) -> void:
+	if _peer_account.has(peer):
+		return
+	var hello: Variant = bytes_to_var(data) if data.size() <= MAX_AUTH_BYTES else null
+	if typeof(hello) != TYPE_DICTIONARY:
+		_refuse(peer, "That is not a Project Ares game.")
+		return
+	var protocol := _protocol_in(hello)
+	if protocol != PROTOCOL:
+		_refuse(peer, "Versions differ.", "client" if protocol < PROTOCOL else "server")
+		return
+	if hello.get("probe", false):
+		# Only asking which certificate this server shows (it changed).
+		_refuse(peer, "Certificate only.")
+		return
+	var result := stash.sign_in(str(hello.get("name", "")).left(64), str(hello.get("secret", "")).left(256))
+	if not result.ok:
+		_refuse(peer, result.error)
+		return
+	# The newest sign-in wins. An older connection for the same account (a
+	# crashed game, or one that is still closing) is dropped, and if it was in
+	# the raid that run ends as a death before the new lobby sees the stash.
+	for other: int in _peer_account.keys():
+		if _peer_account[other] != result.account_id:
+			continue
+		if other in _api.get_peers():
+			_on_peer_disconnected(other)
+		_peer_account.erase(other)
+		_api.disconnect_peer(other)
+	_peer_account[peer] = result.account_id
+	_api.send_auth(peer, var_to_bytes({"ok": true, "protocol": PROTOCOL, "world": world_id,
+			"certificate": _certificate}))
+	_api.complete_auth(peer)
+
+
+## Server: turns a connection away during the handshake with a reason its
+## game can show, then drops it once the answer has had time to arrive.
+## `outdated_side` is "client" or "server" when the versions differ.
+func _refuse(peer: int, reason: String, outdated_side := "") -> void:
+	var answer := {"ok": false, "protocol": PROTOCOL, "error": reason, "certificate": _certificate}
+	if outdated_side != "":
+		answer["outdated"] = outdated_side
+	_api.send_auth(peer, var_to_bytes(answer))
+	get_tree().create_timer(1.0).timeout.connect(func() -> void:
+		if _api.multiplayer_peer != null and peer in _api.get_authenticating_peers():
+			_api.disconnect_peer(peer))
+
+
+static func _protocol_in(message: Dictionary) -> int:
+	var value: Variant = message.get("protocol")
+	return int(value) if typeof(value) == TYPE_INT or typeof(value) == TYPE_FLOAT else -1
+
+
+## Server: whether the player who sent the call being handled may make
+## another request of this `kind` now (see `RequestLimits`). A refused one
+## is dropped; a player told to slow down hears it at most now and then; a
+## connection that floods the server is dropped.
+func _allow(kind: String) -> bool:
+	if not is_server:
+		return true
+	var peer := _api.get_remote_sender_id()
+	if _limits.allow(peer, kind, _tick):
+		return true
+	if _limits.flooding(peer):
+		print("Server: dropped peer %d for flooding requests" % peer)
+		_limits.forget(peer)
+		_api.disconnect_peer(peer)
+	elif kind != "input" and _limits.may_warn(peer, _tick) and peer in _api.get_peers():
+		var text := "Too many requests. Slow down a moment."
+		if kind == "social":
+			_social_error.rpc_id(peer, text)
+		elif _peer_actor.has(peer):
+			_notice.rpc_id(peer, text)
+		else:
+			_lobby_error.rpc_id(peer, text)
+	return false
+
+
+## Server: a connection left before it finished signing in.
+func _on_server_auth_failed(peer: int) -> void:
+	_peer_account.erase(peer)
+	_limits.forget(peer)
+
+
+## A peer that signed in is now connected: it is in the lobby.
 func _on_peer_connected(peer: int) -> void:
-	_hello.rpc_id(peer, PROTOCOL, world_id)
+	if not _peer_account.has(peer):
+		_api.disconnect_peer(peer)
+		return
+	if not routes.is_empty():
+		_routes.rpc_id(peer, routes)
+		_sent_status = _gather_status()
+		_world_status.rpc_id(peer, _sent_status)
+	_send_account(peer)
+	_send_clans(peer)
+	_social_joined(peer)
 
 
 func _on_peer_disconnected(peer: int) -> void:
 	_joined_peers.erase(peer)
+	_limits.forget(peer)
 	_social_left(peer)
 	_peer_account.erase(peer)
 	_market_viewers.erase(peer)
@@ -679,36 +840,6 @@ func _send_account(peer: int) -> void:
 	_account.rpc_id(peer, stash.snapshot(_peer_account[peer]))
 
 
-## Lobby: a connected player says who they are.
-@rpc("any_peer", "call_remote", "reliable")
-func _sign_in(p_name: String, p_secret: String) -> void:
-	if not is_server:
-		return
-	var peer := _api.get_remote_sender_id()
-	if _peer_account.has(peer):
-		return
-	var result := stash.sign_in(p_name, p_secret)
-	if not result.ok:
-		_refused.rpc_id(peer, result.error)
-		return
-	# The newest sign-in wins. An older connection for the same account (a
-	# crashed game, or one that is still closing) is dropped, and if it was in
-	# the raid that run ends as a death before the new lobby sees the stash.
-	for other: int in _peer_account.keys():
-		if _peer_account[other] == result.account_id:
-			_on_peer_disconnected(other)
-			if other in _api.get_peers():
-				_api.multiplayer_peer.disconnect_peer(other)
-	_peer_account[peer] = result.account_id
-	if not routes.is_empty():
-		_routes.rpc_id(peer, routes)
-		_sent_status = _gather_status()
-		_world_status.rpc_id(peer, _sent_status)
-	_send_account(peer)
-	_send_clans(peer)
-	_social_joined(peer)
-
-
 func _send_clans(peer: int) -> void:
 	_clan.rpc_id(peer, clans.snapshot(_peer_account[peer], func(account_id: String) -> String:
 		return str(stash.snapshot(account_id).get("name", "?"))))
@@ -719,6 +850,8 @@ func _send_clans(peer: int) -> void:
 ## gear is at stake, so nobody changes sides in the middle of a fight.
 @rpc("any_peer", "call_remote", "reliable")
 func _request_clan(action: String, a := "", b := "") -> void:
+	if not _allow("social"):
+		return
 	var peer := _api.get_remote_sender_id()
 	if not is_server or not _peer_account.has(peer):
 		return
@@ -766,6 +899,8 @@ func _clans_fight_together() -> bool:
 ## Lobby: put a stash item in a loadout slot, or "" to empty the slot.
 @rpc("any_peer", "call_remote", "reliable")
 func _request_equip(slot: String, item_id: String) -> void:
+	if not _allow("lobby"):
+		return
 	var peer := _api.get_remote_sender_id()
 	if not is_server or not _peer_account.has(peer):
 		return
@@ -779,6 +914,8 @@ func _request_equip(slot: String, item_id: String) -> void:
 ## Lobby: pick a mastery variant, or "" for stock.
 @rpc("any_peer", "call_remote", "reliable")
 func _request_pick(track: String, variant_id: String) -> void:
+	if not _allow("lobby"):
+		return
 	var peer := _api.get_remote_sender_id()
 	if not is_server or not _peer_account.has(peer):
 		return
@@ -791,6 +928,8 @@ func _request_pick(track: String, variant_id: String) -> void:
 ## Lobby: buy one item from a hub shop. The server sets the price.
 @rpc("any_peer", "call_remote", "reliable")
 func _request_buy(shop_id: String, item_id: String) -> void:
+	if not _allow("lobby"):
+		return
 	var peer := _api.get_remote_sender_id()
 	if not is_server or not _peer_account.has(peer):
 		return
@@ -804,6 +943,8 @@ func _request_buy(shop_id: String, item_id: String) -> void:
 ## server decides; the answer is a fresh account snapshot.
 @rpc("any_peer", "call_remote", "reliable")
 func _request_contract(action: String, job_id: String) -> void:
+	if not _allow("lobby"):
+		return
 	var peer := _api.get_remote_sender_id()
 	if not is_server or not _peer_account.has(peer):
 		return
@@ -817,6 +958,8 @@ func _request_contract(action: String, job_id: String) -> void:
 ## the price.
 @rpc("any_peer", "call_remote", "reliable")
 func _request_buy_upgrade(upgrade_id: String) -> void:
+	if not _allow("lobby"):
+		return
 	var peer := _api.get_remote_sender_id()
 	if not is_server or not _peer_account.has(peer):
 		return
@@ -893,6 +1036,8 @@ func _resend_account(account_id: String) -> void:
 ## blueprint and takes the parts and the fee.
 @rpc("any_peer", "call_remote", "reliable")
 func _request_craft(item_id: String) -> void:
+	if not _allow("lobby"):
+		return
 	var peer := _api.get_remote_sender_id()
 	if not is_server or not _peer_account.has(peer):
 		return
@@ -905,6 +1050,8 @@ func _request_craft(item_id: String) -> void:
 ## Lobby: sell stash items for scrip. An empty `item_id` sells all loot.
 @rpc("any_peer", "call_remote", "reliable")
 func _request_sell(item_id: String, count: int) -> void:
+	if not _allow("lobby"):
+		return
 	var peer := _api.get_remote_sender_id()
 	if not is_server or not _peer_account.has(peer):
 		return
@@ -919,6 +1066,8 @@ func _request_sell(item_id: String, count: int) -> void:
 ## only name parts and colours that exist.
 @rpc("any_peer", "call_remote", "reliable")
 func _request_look(p_look: Dictionary) -> void:
+	if not _allow("lobby"):
+		return
 	var peer := _api.get_remote_sender_id()
 	if not is_server or not _peer_account.has(peer):
 		return
@@ -993,6 +1142,8 @@ func _send_spawn(peer: int, actor: Actor) -> void:
 ## never from the client.
 @rpc("any_peer", "call_remote", "reliable")
 func _request_join(drop := "") -> void:
+	if not _allow("world"):
+		return
 	if not is_server or raid == null:
 		return
 	var peer := _api.get_remote_sender_id()
@@ -1085,12 +1236,16 @@ func _request_join(drop := "") -> void:
 		_send_portal(peer, portal)
 	_send_watch(actor)
 	_sent_points.erase(peer)
+	if raid is Race:
+		_race_board.rpc_id(peer, (raid as Race).public_board())
 
 
 ## Arena: a player in it asks for something (challenge, accept, bet...).
 ## The server's own `Arena.request` decides, for the sender's own actor.
 @rpc("any_peer", "call_remote", "reliable")
 func _arena_request(action: String, args: Dictionary) -> void:
+	if not _allow("world"):
+		return
 	var peer := _api.get_remote_sender_id()
 	var arena := raid as Arena
 	if not is_server or arena == null or not _peer_actor.has(peer) or action.length() > 32 or args.size() > 4:
@@ -1099,6 +1254,35 @@ func _arena_request(action: String, args: Dictionary) -> void:
 	if not result.ok and peer in _api.get_peers():
 		_notice.rpc_id(peer, result.error)
 	_board_dirty = true
+
+
+## Race: a racer asks for a restart or to stop their run. The server's own
+## `Race.request` decides, for the sender's own actor.
+@rpc("any_peer", "call_remote", "reliable")
+func _race_request(action: String) -> void:
+	var peer := _api.get_remote_sender_id()
+	var race := raid as Race
+	if not is_server or race == null or not _peer_actor.has(peer) or action not in ["restart", "retire"]:
+		return
+	var result := race.request(_peer_actor[peer], action)
+	if not result.ok and peer in _api.get_peers():
+		_notice.rpc_id(peer, result.error)
+
+
+func _on_race_run_changed(actor: Actor) -> void:
+	var peer: int = _actor_peer.get(actor, 0)
+	if peer in _api.get_peers():
+		_race_run.rpc_id(peer, (raid as Race).run_view(actor))
+
+
+func _send_race_board() -> void:
+	var race := raid as Race
+	if race == null:
+		return
+	var rows := race.public_board()
+	for peer: int in _peer_actor:
+		if peer in _joined_peers and peer in _api.get_peers():
+			_race_board.rpc_id(peer, rows)
 
 
 ## Sends each player in the arena their own view of the board, when it
@@ -1125,12 +1309,15 @@ func _send_boards() -> void:
 
 func _on_server_hit_confirmed(target: Actor, info: DamageInfo, lethal: bool, peer: int) -> void:
 	if peer in _api.get_peers() and _ids.has(target):
-		_hit_feedback.rpc_id(peer, _ids[target], info.amount, info.kind, lethal, info.blocked, info.parried)
+		_hit_feedback.rpc_id(peer, _ids[target], info.amount, info.kind, lethal, info.blocked, info.parried,
+				info.headshot, info.armored, info.armor_broke)
 
 
 ## In the world: start signing out, or call it off.
 @rpc("any_peer", "call_remote", "reliable")
 func _request_sign_out(start: bool) -> void:
+	if not _allow("world"):
+		return
 	if not is_server or raid == null:
 		return
 	var actor: Actor = _peer_actor.get(_api.get_remote_sender_id())
@@ -1144,6 +1331,8 @@ func _request_sign_out(start: bool) -> void:
 
 @rpc("any_peer", "call_remote", "unreliable_ordered")
 func _send_input(packet: PackedByteArray) -> void:
+	if not _allow("input"):
+		return
 	if not is_server or packet.size() > MAX_INPUTS_PER_PACKET * INPUT_BYTES:
 		return
 	var peer := _api.get_remote_sender_id()
@@ -1240,6 +1429,8 @@ func _server_late_tick(_delta: float) -> void:
 			if actor.cmd.switch_weapon != -1:
 				_switches[tier][id] = actor.cmd.switch_weapon
 	_tick += 1
+	if _tick % BACKUP_CHECK_TICKS == 0:
+		stash.backup_if_due()
 	if lag_compensation:
 		var now := {}
 		for actor: Actor in _ids:
@@ -1383,49 +1574,131 @@ func _state_entry(id: int, tier: int) -> Array:
 # ---------------------------------------------------------------- client ----
 
 ## Connects to a server and signs in. `signed_in` or `failed` follows; then
-## `deploy` enters the raid.
+## `deploy` enters the raid. The connection is encrypted; `ServerTrust` says
+## how the server's certificate is checked, and the ways tried in turn.
 func join(address: String, port := DEFAULT_PORT) -> Error:
+	is_server = false
+	_join_host = address
+	_join_port = port
+	_join_modes = ServerTrust.attempts_for(address)
+	_api.auth_callback = _client_auth
+	_api.auth_timeout = AUTH_TIMEOUT
+	_api.peer_authenticating.connect(func(id: int) -> void:
+		if id != 1:
+			return
+		var hello := {"protocol": PROTOCOL}
+		if _join_mode == "probe":
+			hello["probe"] = true
+		elif _join_mode != "plain":
+			# The secret only ever goes over an encrypted connection.
+			hello["name"] = player_name
+			hello["secret"] = secret
+		_api.send_auth(1, var_to_bytes(hello)))
+	_api.peer_authentication_failed.connect(func(id: int) -> void:
+		if id == 1:
+			# Dropped without an answer: most likely a server from before
+			# the sign-in moved into the handshake.
+			_give_up("The server did not let you in. It may run an older version of the game; ask its host to update it."))
+	_api.connection_failed.connect(_on_connection_failed)
+	_api.server_disconnected.connect(_on_server_disconnected)
+	return _open_connection()
+
+
+## Client: opens the next connection `join` tries (`_join_modes`).
+func _open_connection() -> Error:
+	_join_mode = _join_modes.pop_front()
 	var peer := ENetMultiplayerPeer.new()
-	var err := peer.create_client(address, port)
+	var err := peer.create_client(_join_host, _join_port)
 	if err != OK:
 		return err
+	err = ServerTrust.setup_client(peer, _join_host, _join_mode)
+	if err != OK:
+		peer.close()
+		return err
 	peer.host.compress(COMPRESSION)
-	is_server = false
 	_api.multiplayer_peer = peer
-	_api.connection_failed.connect(func() -> void: failed.emit("Could not reach the server."))
-	_api.server_disconnected.connect(_on_server_disconnected)
 	return OK
+
+
+## Client: a connection could not be made (or its handshake failed). The
+## next way in `_join_modes` is tried; when none is left, the join fails.
+func _on_connection_failed() -> void:
+	if _gave_up:
+		return
+	if _join_modes.is_empty():
+		_give_up("Could not reach the server.")
+		return
+	_api.multiplayer_peer = OfflineMultiplayerPeer.new()
+	if _open_connection() != OK:
+		_give_up("Could not reach the server.")
+
+
+## Client: the server's answer to signing in (see `_server_auth`).
+func _client_auth(id: int, data: PackedByteArray) -> void:
+	if id != 1 or _gave_up:
+		return
+	var answer: Variant = bytes_to_var(data) if data.size() <= MAX_AUTH_BYTES else null
+	if typeof(answer) != TYPE_DICTIONARY:
+		_give_up("That server is not a Project Ares server.")
+		return
+	var protocol := _protocol_in(answer)
+	var certificate := str(answer.get("certificate", "")).left(MAX_AUTH_BYTES)
+	if _join_mode == "probe" and protocol == PROTOCOL:
+		# The remembered certificate failed: see which one it shows now.
+		var was := ServerTrust.known(_join_host)
+		refused = true
+		if certificate == "" or certificate == was:
+			_give_up("Could not make a secure connection to the server.")
+			return
+		identity_changed = {"host": _join_host, "was": ServerTrust.fingerprint(was),
+				"now": ServerTrust.fingerprint(certificate), "certificate": certificate}
+		_give_up("This server's identity changed since you last joined it. "
+				+ "Check with its host before trusting it (Servers app).")
+		return
+	if _join_mode == "plain" and protocol == PROTOCOL:
+		# Only a server from before encryption answers unencrypted.
+		refused = true
+		_give_up("Could not make a secure connection to the server.")
+		return
+	if protocol != PROTOCOL or str(answer.get("outdated", "")) != "":
+		refused = true
+		outdated = "client" if protocol > PROTOCOL else "server"
+		_give_up("This server runs a newer version of the game. Get the update from the Servers app on your phone."
+				if outdated == "client" else
+				"This server runs an older version of the game. Its host needs to update it to the latest build.")
+		return
+	if not answer.get("ok", false):
+		refused = true
+		_give_up(str(answer.get("error", "The server refused.")).left(200))
+		return
+	var p_world_id := str(answer.get("world", ""))
+	if world_for(p_world_id) == null:
+		refused = true
+		_give_up("The server runs a world this game does not have: %s." % p_world_id.left(32))
+		return
+	world_id = p_world_id
+	if _join_mode == "first":
+		# Trust on first use: from now on this server must show the same one.
+		ServerTrust.remember(_join_host, certificate)
+	_api.complete_auth(1)
+
+
+## Client: this connection failed. Says why once, and closes it.
+func _give_up(reason: String) -> void:
+	if _gave_up:
+		return
+	_gave_up = true
+	failed.emit(reason)
+	close()
 
 
 func _on_server_disconnected() -> void:
 	if _finished:
 		return
 	if my_actor_id < 0:
-		failed.emit("The server closed the connection." if account.is_empty() else "Lost the connection to the server.")
+		_give_up("The server closed the connection." if account.is_empty() else "Lost the connection to the server.")
 	else:
 		disconnected.emit()
-
-
-@rpc("authority", "call_remote", "reliable")
-func _hello(protocol: int, p_world_id: String) -> void:
-	if protocol != PROTOCOL:
-		failed.emit("The server runs a different version of the game. Download the latest playtest build and try again.")
-		close()
-		return
-	var world := world_for(p_world_id)
-	if world == null:
-		failed.emit("The server runs a world this game does not have: %s." % p_world_id)
-		close()
-		return
-	world_id = p_world_id
-	_sign_in.rpc_id(1, player_name, secret)
-
-
-@rpc("authority", "call_remote", "reliable")
-func _refused(reason: String) -> void:
-	refused = true
-	failed.emit(reason)
-	close()
 
 
 @rpc("authority", "call_remote", "reliable")
@@ -1563,6 +1836,8 @@ func sell(item_id: String, count: int = 1) -> void:
 ## being looked at. The server reads the aim from the actor it simulates.
 @rpc("any_peer", "call_remote", "reliable")
 func _request_toy(item_id: String) -> void:
+	if not _allow("world"):
+		return
 	if not is_server or raid == null:
 		return
 	var actor: Actor = _peer_actor.get(_api.get_remote_sender_id())
@@ -1578,6 +1853,8 @@ func _request_toy(item_id: String) -> void:
 ## back (""). Only the look, so everyone sees what is in the hand.
 @rpc("any_peer", "call_remote", "reliable")
 func _request_toy_hold(item_id: String) -> void:
+	if not _allow("world"):
+		return
 	if not is_server or raid == null:
 		return
 	var actor: Actor = _peer_actor.get(_api.get_remote_sender_id())
@@ -1610,6 +1887,8 @@ func _toy_hand(id: int, item_id: String, throws: int) -> void:
 ## The server checks the pack it keeps, never anything the client says it has.
 @rpc("any_peer", "call_remote", "reliable")
 func _request_summon(item_id: String) -> void:
+	if not _allow("world"):
+		return
 	if not is_server or raid == null:
 		return
 	var actor: Actor = _peer_actor.get(_api.get_remote_sender_id())
@@ -1621,6 +1900,8 @@ func _request_summon(item_id: String) -> void:
 ## store). The server checks the hand of the actor it simulates.
 @rpc("any_peer", "call_remote", "reliable")
 func _request_store(item_id: String) -> void:
+	if not _allow("world"):
+		return
 	if not is_server or raid == null:
 		return
 	var actor: Actor = _peer_actor.get(_api.get_remote_sender_id())
@@ -1632,6 +1913,8 @@ func _request_store(item_id: String) -> void:
 ## reads the aim from the actor it simulates.
 @rpc("any_peer", "call_remote", "reliable")
 func _request_ping() -> void:
+	if not _allow("world"):
+		return
 	if not is_server or raid == null:
 		return
 	var actor: Actor = _peer_actor.get(_api.get_remote_sender_id())
@@ -1660,6 +1943,8 @@ func open_portal(destination: String) -> void:
 
 @rpc("any_peer", "call_remote", "reliable")
 func _request_portal(destination: String) -> void:
+	if not _allow("world"):
+		return
 	if not is_server or raid == null:
 		return
 	var peer := _api.get_remote_sender_id()
@@ -1802,6 +2087,8 @@ func _welcome(actor_id: int) -> void:
 	raid.start_client(world)
 	if raid is Arena:
 		raid.send_request = arena_request
+	elif raid is Race:
+		raid.send_request = race_request
 
 
 ## Client: someone's power weapon slot changed (taken off a rack, swapped,
@@ -1880,7 +2167,7 @@ func _spawn(id: int, kind: String, shown_name: String, node_name: String, at: Ve
 		var power: Variant = data.get("power")
 		if power is Array and power.size() == 3 and ItemDB.has_tag(str(power[0]), "power"):
 			Loadout.set_power(actor, power[0], int(power[1]), int(power[2]), false)
-		actor.weapons_locked = raid.world.safe_zone
+		actor.weapons_locked = raid.world.safe_zone or not raid.world.weapons_free
 		Raid.MasteryTracker.apply_variants(actor, data.get("picks", {}))
 		raid.world.on_spawn(actor)
 		# Listed as a player, so the HUD and scoreboard can tell them from bots.
@@ -2150,7 +2437,7 @@ func _blend_ride(vehicle: Node3D) -> void:
 
 @rpc("authority", "call_remote", "reliable")
 func _hit_feedback(target_id: int, amount: float, kind: String, lethal: bool, blocked: bool,
-		parried: bool) -> void:
+		parried: bool, headshot: bool, armored: bool, armor_broke: bool) -> void:
 	var me: Actor = _actors.get(my_actor_id)
 	var target: Actor = _actors.get(target_id)
 	if me == null or target == null or not is_instance_valid(target):
@@ -2158,6 +2445,9 @@ func _hit_feedback(target_id: int, amount: float, kind: String, lethal: bool, bl
 	var info := DamageInfo.make(amount, me, kind, target.global_position)
 	info.blocked = blocked
 	info.parried = parried
+	info.headshot = headshot
+	info.armored = armored
+	info.armor_broke = armor_broke
 	me.hit_confirmed.emit(target, info, lethal)
 
 
@@ -2293,6 +2583,28 @@ func _notice(text: String) -> void:
 func arena_request(action: String, args := {}) -> void:
 	if _is_connected() and my_actor_id >= 0:
 		_arena_request.rpc_id(1, action, args)
+
+
+## Race: ask the server to restart or stop your run (see `Race.request`).
+func race_request(action: String) -> void:
+	if _is_connected() and my_actor_id >= 0:
+		_race_request.rpc_id(1, action)
+
+
+## Race: your own run, as the server judged it.
+@rpc("authority", "call_remote", "reliable")
+func _race_run(view: Dictionary) -> void:
+	var race := raid as Race
+	if race != null:
+		race.set_remote_run(view)
+
+
+## Race: the best laps on the board.
+@rpc("authority", "call_remote", "reliable")
+func _race_board(rows: Array) -> void:
+	var race := raid as Race
+	if race != null:
+		race.set_remote_board(rows)
 
 
 @rpc("authority", "call_remote", "reliable")
@@ -2473,7 +2785,7 @@ func _apply_state(actor: Actor, entry: Array, mine: bool) -> void:
 	if absf(actor.stagger_left - stagger) > 0.15:
 		actor.stagger_left = stagger
 	# A gate outpost's lock is the server's call (`Raid._tick_outposts`).
-	if not raid.world.safe_zone:
+	if not raid.world.safe_zone and raid.world.weapons_free:
 		actor.weapons_locked = typeof(entry[3]) == TYPE_ARRAY and entry[3].size() == ActorCommand.ARRAY_SIZE \
 				and int(ActorCommand._number(entry[3][ActorCommand.FLAGS_INDEX])) & ActorCommand.STATE_SHELTERED != 0
 	var id: int = entry[0]
@@ -2650,6 +2962,8 @@ func _social_result(peer: int, result: Dictionary, others: Array[String] = []) -
 
 @rpc("any_peer", "call_remote", "reliable")
 func _request_message(to: String, text: String) -> void:
+	if not _allow("social"):
+		return
 	var from := _social_sender()
 	if from == "":
 		return
@@ -2667,6 +2981,8 @@ func _request_message(to: String, text: String) -> void:
 
 @rpc("any_peer", "call_remote", "reliable")
 func _request_invite(to: String, kind: String) -> void:
+	if not _allow("social"):
+		return
 	var from := _social_sender()
 	if from == "":
 		return
@@ -2692,6 +3008,8 @@ func _invite_text(invite: Dictionary) -> String:
 
 @rpc("any_peer", "call_remote", "reliable")
 func _request_answer_invite(invite_id: int, accept: bool) -> void:
+	if not _allow("social"):
+		return
 	var account_id := _social_sender()
 	if account_id == "":
 		return
@@ -2719,6 +3037,8 @@ func _request_answer_invite(invite_id: int, accept: bool) -> void:
 ## `action` is "add", "remove", "block" or "unblock".
 @rpc("any_peer", "call_remote", "reliable")
 func _request_contact(action: String, other: String) -> void:
+	if not _allow("social"):
+		return
 	var account_id := _social_sender()
 	if account_id == "":
 		return
@@ -2968,3 +3288,64 @@ class InputBuffer:
 			cmd[ActorCommand.SWITCH_INDEX] = _late_switch
 		_late_flags = 0
 		_late_switch = -1
+
+
+## Server: how many requests each player may make, so one connection can
+## neither flood the server with work nor fill its saves. Each kind of
+## request has a bucket per player that refills at a steady rate (by server
+## tick, so it holds at any frame rate) up to a burst. A request with the
+## bucket empty is dropped. The limits sit well above what the game itself
+## sends: equipping a whole kit at once, a burst of watch clicks, and an
+## input packet every tick with room to catch up.
+class RequestLimits:
+	extends RefCounted
+
+	## kind -> [refill a tick, burst]
+	const KINDS := {
+		"lobby": [0.25, 60.0],   # 15 a second
+		"world": [0.25, 40.0],   # 15 a second
+		"social": [0.05, 12.0],  # 3 a second
+		"input": [1.5, 120.0],   # 90 a second; a game sends 60
+	}
+	## Refused requests within KICK_WINDOW ticks that drop the connection.
+	const KICK_AFTER := 300
+	const KICK_WINDOW := 600
+	## Ticks between "slow down" notices to one player.
+	const WARN_EVERY := 120
+
+	var _buckets := {}  # peer -> {kind: [tokens, tick last refilled]}
+	var _refused := {}  # peer -> [refused in this window, tick it started]
+	var _warned := {}   # peer -> tick of the last notice
+
+	func allow(peer: int, kind: String, tick: int) -> bool:
+		var spec: Array = KINDS.get(kind, KINDS.world)
+		var mine: Dictionary = _buckets.get_or_add(peer, {})
+		var bucket: Array = mine.get_or_add(kind, [float(spec[1]), tick])
+		bucket[0] = minf(float(spec[1]), float(bucket[0]) + float(spec[0]) * maxi(0, tick - int(bucket[1])))
+		bucket[1] = tick
+		if bucket[0] >= 1.0:
+			bucket[0] -= 1.0
+			return true
+		var strikes: Array = _refused.get_or_add(peer, [0, tick])
+		if tick - int(strikes[1]) > KICK_WINDOW:
+			strikes[0] = 0
+			strikes[1] = tick
+		strikes[0] += 1
+		return false
+
+	## True once a player has had so many requests refused that it can only
+	## be a flood.
+	func flooding(peer: int) -> bool:
+		return int(_refused.get(peer, [0, 0])[0]) >= KICK_AFTER
+
+	## True if a player whose request was refused should be told (once in a while).
+	func may_warn(peer: int, tick: int) -> bool:
+		if tick - int(_warned.get(peer, -WARN_EVERY)) < WARN_EVERY:
+			return false
+		_warned[peer] = tick
+		return true
+
+	func forget(peer: int) -> void:
+		_buckets.erase(peer)
+		_refused.erase(peer)
+		_warned.erase(peer)

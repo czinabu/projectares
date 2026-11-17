@@ -33,13 +33,17 @@ COPY . .
 RUN godot --headless --path . --import \
 	&& mkdir -p build/server \
 	&& godot --headless --path . --export-release "Linux Server" build/server/ares_server.x86_64 \
-	&& test -x build/server/ares_server.x86_64
+	&& test -x build/server/ares_server.x86_64 \
+	&& test -f build/server/libgdsqlite.linux.template_release.x86_64.so
 
 # ---- Stage 2: a small image that only runs the server -----------------------
 FROM debian:bookworm-slim
 RUN useradd --create-home --shell /usr/sbin/nologin ares \
 	&& mkdir -p /data/accounts && chown -R ares:ares /data
+# The server and the SQLite library it keeps accounts with, which must sit
+# beside it (without it the server falls back to one JSON file per player).
 COPY --from=build /src/build/server/ares_server.x86_64 /app/ares_server
+COPY --from=build /src/build/server/libgdsqlite.linux.template_release.x86_64.so /app/
 USER ares
 WORKDIR /home/ares
 # The plaza and raid worlds, and the arena ten ports above the plaza.

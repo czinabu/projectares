@@ -19,6 +19,7 @@ static func run(t: Node) -> void:
 	_board(t)
 	_limits(t)
 	_saved(t)
+	_all_or_nothing(t)
 	_views(t)
 
 
@@ -166,6 +167,43 @@ static func _saved(t: Node) -> void:
 			and reopened.trades_left(ada) == Market.DAILY_TRADES - 1, "the board and today's trades survive a restart")
 	var next := reopened.list(stash, ada, "alloy_ingot", 1, Market.board_value("alloy_ingot"))
 	t.check(not next.ok, "and its rules still hold (nothing listed you do not have)")
+
+
+## A ledger whose transactions all refuse, as if a save failed part way.
+class Refusing:
+	extends RefCounted
+	var real: RefCounted
+	func count_of(a: String, i: String) -> int: return real.count_of(a, i)
+	func scrip_of(a: String) -> int: return real.scrip_of(a)
+	func take_items(a: String, i: String, c: int) -> bool: return real.take_items(a, i, c)
+	func give_items(a: String, items: Array) -> bool: return real.give_items(a, items)
+	func change_scrip(a: String, d: int) -> bool: return real.change_scrip(a, d)
+	func transaction(_steps: Array) -> Dictionary: return {"ok": false, "error": "refused", "step": -1}
+
+
+static func _all_or_nothing(t: Node) -> void:
+	var made := _service()
+	var stash: Accounts = made[0]
+	var market: MarketService = made[1]
+	var ada: String = made[2]
+	var bo: String = made[3]
+	stash.give_items(ada, ["alloy_ingot", "alloy_ingot"])
+	var price := Market.board_value("alloy_ingot")
+	var refusing := Refusing.new()
+	refusing.real = stash
+	var ada_scrip := stash.scrip_of(ada)
+	t.check(not market.list(refusing, ada, "alloy_ingot", 1, price).ok and stash.count_of(ada, "alloy_ingot") == 2
+			and stash.scrip_of(ada) == ada_scrip and market.snapshot(ada, func(id: String) -> String: return id).listings.is_empty(),
+			"a listing whose charge fails goes nowhere and costs nothing")
+	var listed := market.list(stash, ada, "alloy_ingot", 1, price)
+	ada_scrip = stash.scrip_of(ada)
+	var bo_scrip := stash.scrip_of(bo)
+	var bo_had := stash.count_of(bo, "alloy_ingot")
+	t.check(listed.ok and not market.buy(refusing, bo, listed.id, 1).ok and stash.scrip_of(bo) == bo_scrip
+			and stash.scrip_of(ada) == ada_scrip and stash.count_of(bo, "alloy_ingot") == bo_had
+			and market.snapshot(bo, func(id: String) -> String: return id).listings[0].count == 1
+			and market.trades_left(bo) == Market.DAILY_TRADES,
+			"a sale that cannot be saved charges nobody, pays nobody and leaves the listing up")
 
 
 static func _views(t: Node) -> void:

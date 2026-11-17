@@ -37,6 +37,91 @@ static func tracer(parent: Node, from: Vector3, to: Vector3, color := Color(1.0,
 	parent.get_tree().create_timer(0.05).timeout.connect(node.queue_free)
 
 
+## The most bullet marks left on walls at once; the oldest goes first.
+const MAX_MARKS := 48
+## How long a bullet mark stays on a wall, in seconds.
+const MARK_LIFE := 8.0
+## Impacts further from the camera than this are not drawn at all.
+const IMPACT_RANGE := 70.0
+
+static var _marks: Array[Node3D] = []
+static var _mark_mesh: QuadMesh
+static var _puff_mesh: SphereMesh
+
+
+## Where a round struck: a quick puff off the surface, dust off the world or
+## a hot spark off a body, and on the world a dark mark that stays a few
+## seconds. `normal` is the face it struck (zero when unknown).
+static func impact(parent: Node, at: Vector3, normal: Vector3, on_body: bool) -> void:
+	if _headless(parent):
+		return
+	# Too far to be seen: a big battle fires thousands of rounds nobody sees land.
+	var camera := parent.get_viewport().get_camera_3d()
+	if camera and camera.global_position.distance_to(at) > IMPACT_RANGE:
+		return
+	if _puff_mesh == null:
+		_puff_mesh = SphereMesh.new()
+		_puff_mesh.radius = 1.0
+		_puff_mesh.height = 2.0
+		_puff_mesh.radial_segments = 8
+		_puff_mesh.rings = 4
+	var color := Color(1.0, 0.55, 0.25, 0.9) if on_body else Color(0.72, 0.68, 0.6, 0.7)
+	var mat := _glow_mat(color)
+	var puff := MeshInstance3D.new()
+	puff.mesh = _puff_mesh
+	puff.material_override = mat
+	puff.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	puff.scale = Vector3.ONE * 0.04
+	parent.add_child(puff)
+	puff.global_position = at + normal * 0.05
+	var tween := puff.create_tween()
+	tween.tween_property(puff, "scale", Vector3.ONE * (0.12 if on_body else 0.2), 0.16).set_ease(Tween.EASE_OUT)
+	tween.parallel().tween_property(mat, "albedo_color:a", 0.0, 0.22)
+	tween.tween_callback(puff.queue_free)
+	if on_body or normal.is_zero_approx():
+		return
+	_leave_mark(parent, at, normal)
+
+
+static func _leave_mark(parent: Node, at: Vector3, normal: Vector3) -> void:
+	if _mark_mesh == null:
+		_mark_mesh = QuadMesh.new()
+		_mark_mesh.size = Vector2(0.1, 0.1)
+		var mat := StandardMaterial3D.new()
+		# A round hole with a scorched rim fading out, not a square.
+		var ramp := Gradient.new()
+		ramp.offsets = PackedFloat32Array([0.0, 0.35, 0.6, 1.0])
+		ramp.colors = PackedColorArray([Color(0, 0, 0, 1), Color(0.05, 0.04, 0.03, 0.95),
+				Color(0.12, 0.1, 0.08, 0.5), Color(0.2, 0.18, 0.15, 0.0)])
+		var tex := GradientTexture2D.new()
+		tex.gradient = ramp
+		tex.fill = GradientTexture2D.FILL_RADIAL
+		tex.fill_from = Vector2(0.5, 0.5)
+		tex.fill_to = Vector2(0.5, 0.0)
+		tex.width = 32
+		tex.height = 32
+		mat.albedo_texture = tex
+		mat.albedo_color = Color(1, 1, 1, 0.9)
+		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		_mark_mesh.material = mat
+	_marks = _marks.filter(func(m: Node3D) -> bool: return is_instance_valid(m))
+	while _marks.size() >= MAX_MARKS:
+		_marks.pop_front().queue_free()
+	var mark := MeshInstance3D.new()
+	mark.mesh = _mark_mesh
+	mark.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	parent.add_child(mark)
+	var up := Vector3.RIGHT if absf(normal.y) > 0.99 else Vector3.UP
+	# A quad faces its +Z: look from behind the face so +Z points out of it.
+	mark.look_at_from_position(at + normal * 0.012, at - normal, up)
+	_marks.append(mark)
+	var tween := mark.create_tween()
+	tween.tween_interval(MARK_LIFE - 2.0)
+	tween.tween_property(mark, "transparency", 1.0, 2.0)
+	tween.tween_callback(mark.queue_free)
+
+
 static func _headless(parent: Node) -> bool:
 	return parent == null or not parent.is_inside_tree() or DisplayServer.get_name() == "headless"
 

@@ -120,6 +120,7 @@ func _init() -> void:
 	warlord_artifact_chance = 0.0
 	pod_artifact_chance = 0.0
 	gear_at_risk = false
+	portal_home = false
 	# Nobody can be hurt outside a bout anyway, and fighters start together.
 	spawn_protection = 0.0
 
