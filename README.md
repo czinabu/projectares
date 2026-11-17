@@ -5,10 +5,23 @@ is a warzone that never ends. Drop in with gear you are willing to lose, fight
 and loot for as long as you like, and bank what you find at a depot. Die and
 everything you carried stays behind, and you drop back in seconds later.
 
-This is the **Phase 0 prototype**: a raid against bots that proves the core
-loop and lays the foundation for online play and more worlds. Gameplay shapes
-are still simple boxes; a first art pass dresses them with real surfaces,
-skies, animated models and effects (see "How it looks" below).
+You start in your home base, which is the menu: the stash is on show, and
+you gear up where you stand. Online, the door leads to the Concourse, a
+safe plaza shared by everyone on the server, with gates into the raid
+worlds, shops, a clan hall and the arena. Two worlds plug in today.
+Ashfront is the full-loot war, one open battlefield where two bot armies
+fight over the landmarks. Frostline is the smaller, gentler world on the
+ice: players cannot hurt each other there, and dying drops only your
+backpack. You fly a jetpack, thruster boots or glide wings, and you throw
+vehicles off your watch: a motorbike, a two-seat hoverbike, a rover, a
+mech and a jet. Shops, mastery and crafting are in, and on a server the
+contract board pays you for work you sign out with. Online play is an
+early dedicated server. It decides every hit, death and pickup, and it
+owns your stash.
+
+Gameplay shapes are still mostly built in code. A first art pass dresses
+them with real surfaces, skies, animated models and effects (see "How it
+looks" below).
 
 ## Play it
 
@@ -20,9 +33,8 @@ skies, animated models and effects (see "How it looks" below).
 | --- | --- |
 | Move / sprint | WASD / Shift |
 | Jump. In the air: hold to climb (jetpack); press to kick the way you steer, hold to skim low (thruster boots); press to launch, hold while falling to glide (glide wings) | Space |
-| Jetpack: hold right mouse (aim) in the air to hover; let go and you fall. Hovering, cruise with the move keys, Space climbs, C coasts down to cool. Shift in the air boosts (Mk2): it speeds you up head first into a prone pose, and holding it keeps boosting. The keys fly every rig; the mouse only looks and aims | |
-| Glide wings gliding: Space again pulses up | |
-| Air dash with any rig, on heat: Shift + a move key dashes that way (Shift alone dashes forward). Sideways while boosting it barrel rolls. Gliding, Shift is a wing boost: it thrusts you the way you face and you keep the speed, and Shift + S boosts upward | Shift + WASD |
+| Jetpack: hold right mouse (aim) in the air to hover; let go and you fall. Hovering, cruise with the move keys, Space climbs, C coasts down to cool. Shift in the air boosts: it speeds you up head first into a prone pose, and holding it keeps boosting. The keys fly every rig; the mouse only looks and aims | |
+| Air dash with any rig: Shift + a move key dashes that way (Shift alone dashes forward). A jetpack pays heat for it; boots and wings do not. Sideways while boosting it barrel rolls. Gliding, Shift is a wing boost: it thrusts you the way you face and you keep the speed, and Shift + S boosts upward | Shift + WASD |
 | Gliding: the wings fly where you look, like a bird. A / D bank round harder, W dives for speed, S pulls up to climb on it. Turns cost speed, and pulling up hard in a turn stalls you. Hold V to free look while the wings fly straight on: the body twists to face where you look, and looking behind flips you onto your back to shoot behind you | |
 | Use your ability | G |
 | Use your helmet's visor (zoom or scan) | T |
@@ -37,8 +49,8 @@ skies, animated models and effects (see "How it looks" below).
 | Reload | R |
 | Inspect what is in your hand (the weapon, or a toy vehicle): it comes up close and turns. Anything else you do stops it | I |
 | Use a medkit | H |
-| Loot, or get on and off a bike | F |
-| Ride a bike: throttle, brake or reverse, steer, boost | W, S, A / D, Shift |
+| Loot, or get on and off a vehicle | F |
+| Ride: throttle, brake or reverse, steer, boost | W, S, A / D, Shift |
 | Switch camera: first-person or third-person | Tab |
 | Scoreboard: who is fighting, who is down, kills | Hold Q |
 | Sign out and go home with what you carry (10 seconds, out of a fight) | L |
@@ -49,20 +61,27 @@ skies, animated models and effects (see "How it looks" below).
 | Use your artifact (watch up, on the artifact icon) | Click |
 | Phone at Settings (also frees the mouse); Esc again closes it | Esc |
 
-The jetpack runs on heat. Overheat it and you fall until it cools. Rooftop
-caches hold the best loot, and only a flight rig gets you there. Every rig
-comes as Mk1, Mk2 and Mk3: the Mk1 lifts you to rooftop height (25 m), the
-Mk2 to the tower tops (60 m) and the Mk3 over everything (100 m), and each
-tier up runs cooler. Rigs drop at Mk1; the better tiers will be crafted
-from blueprints.
+The jetpack runs on heat. Overheat it and you fall until it cools to 35. Rooftop caches hold the best loot, and only a flight rig gets
+you there. A Mk1 jetpack climbs to a 40 m ceiling, thruster boots to 10 m,
+and glide wings to 40 m only by launching from somewhere high. Mk2 and Mk3
+are crafted from blueprints. A tier improves what that rig is already good
+at, about 15% a step, and never fixes its weakness. They are not one
+ladder of height that every rig shares.
 
-Almost nothing is drawn over the screen in a raid: the crosshair, hit marks
-and what E will do. Everything else is on your gear. You wear a holographic
-watch on your left wrist: press **X** to raise it and it throws up health,
-armor, stamina, jetpack heat, your pack, your standing and strongpoints
-(it comes up by itself when you go down). Each gun counts its own rounds,
-the jetpack shows its heat on a screen in its back plate, and war news
-arrives on your phone.
+Almost nothing is drawn over the screen in a raid: the crosshair, hit marks,
+what E will do, and a ring while you are signing out or banking. Everything
+else is on your gear. With a helmet on, the visor carries health, armor,
+stamina, flight heat and your ability. First person draws them on the
+glass; third person draws the same readouts flat. Each gun counts its own
+rounds, and the visor repeats the weapon and its ammo, lit when it matters.
+A jetpack or a wing pack shows its heat on a screen in its back plate. With
+no helmet, the watch card carries the vitals instead.
+
+You wear a holographic watch on your left wrist. Press **X** and it opens
+a card of icons in three tabs. Summon is weapons, vehicles and artifacts,
+with your pack under it. Status is where you are and your standing.
+Mission is the portal, your contract, a squad ping, and sign-out. It comes
+up by itself when you go down. War news arrives on your phone.
 
 ## Your home base is the menu
 
@@ -150,7 +169,8 @@ holds your player name:
   the Concourse (or to the lobby base on a server without one).
 - The server knows you by your name plus a private key your game creates the
   first time. Everyone on a server needs a different name. A new name starts
-  with the same starter crates as a solo profile.
+  the way a new solo profile does: nothing equipped, with the welcome crate
+  and the free scrap pieces waiting in the base.
 - Losing your connection leaves your body standing in the world for 10
   seconds, or 30 if you were in a fight. If nobody kills it, what you carried
   goes back to your stash on that server.
@@ -177,6 +197,7 @@ your character stands still and the mouse is free.
   raid from the lobby. Invites run out after two minutes.
 - **News**: game news, plus anything the server adds. A server operator drops a
   `news.json` (a list of `{"date", "title", "body"}`) in the accounts folder.
+- **Keys**: every control, filled in from the keys you actually have bound.
 - **Mirror**: change how you look, wherever you are. A tall mirror rises in
   front of you and the phone lists your build, each part (head, torso, legs,
   shoes) and each colour. Scroll through them with the arrows, the mouse wheel
@@ -188,7 +209,7 @@ your character stands still and the mouse is free.
 - **Settings**: mouse sensitivity, invert mouse, melee side control, field of
   view, volume, fullscreen and nameplates. Saved in `user://settings.json`.
 
-Players, chat and invites need a server; news, servers, the mirror and settings work solo too.
+Players, chat and invites need a server; news, servers, the mirror, keys and settings work solo too.
 
 A server can also run on its own, with no window:
 
@@ -248,7 +269,7 @@ death and signing out, with the server deciding every hit, death and pickup.
 The server also owns your online stash: your game never tells it what gear
 you have.
 
-## What is in the prototype
+## What is in the game
 
 - First-person and third-person camera that you switch with Tab. Third person
   is a close view over the shoulder; the phone's settings set how far back it
@@ -290,8 +311,10 @@ you have.
   them alone for 20 seconds; more of you is faster, and an enemy inside
   freezes it. Taking one pays renown, and a site your side holds is where you
   drop in next. Bots hold them to begin with and push to take them back.
-  Frostline has three, shared by all players. Ashfront gets its own with the
-  new battlefield map.
+  On Ashfront each of the five landmarks is one: the Legion starts with the
+  two in the west, the Tide the two in the east, and the Foundry in the
+  middle starts unheld. Frostline has three, shared by all players, held by
+  the Wardens to begin with.
 - Choosing where you land. When you are down, the death screen lists where
   you can drop back in and a number key picks one: a quiet drop away from
   everyone, a strongpoint your side holds, or, once a battle is on, right
@@ -316,35 +339,39 @@ you have.
   your next hit. Attacks, blocking and dashing cost stamina.
 - Hit markers, damage flashes, and placeholder sounds generated in code.
 - Health with a degrading armor layer, medkits, and a dash.
-- Jetpack flight limited by heat.
-- Scavenger bots that patrol, chase and shoot, plus melee brutes that rush you.
-  All of them drop loot bags.
+- Flight limited by heat on a jetpack, by charges on the boots, and by glide
+  stamina on the wings.
+- Bots drop loot bags. On Ashfront each army's soldiers shoot, and a share
+  of them are heavies that rush you with a blade. Frostline's Wardens shoot
+  and its Feral stalkers rush. Rival raiders drop in with a real kit, loot,
+  and sign out.
 - Loot caches with five rarity tiers, a backpack, and a stash that persists.
 - A home base you walk around in, where the game opens. Everything in your
   stash is on show: every weapon on one rack in the armory, armor on stands,
   flight rigs, ability chips, bikes parked in the garage, loot on shelves.
-  Look at a piece of gear and press F to equip it for your next run.
-- Loadouts picked in your base from your stash: primary weapon, melee weapon,
-  flight rig and armor frame. Equipped gear is at risk. Sign out alive and it
+  Look at a piece of gear and press F to put it on. In your own base it goes
+  on at once.
+- Loadouts picked in your base from your stash: a primary, a sidearm, a melee
+  weapon, a flight rig, an armor frame, a helmet and an artifact. Equipped
+  gear is at risk. Sign out alive and it
   comes home, die and it drops. The scrap kit is free: one of each piece
   hangs in your base to equip like any other, costs nothing to lose, and is
   what takes the place of gear you lose. Any slot can be left empty, down to
   going fully bare.
-- Three kinds of flight rig, all cruising at the same speed so a squad on
-  mixed rigs keeps together, each staying up its own way. Jetpacks fly high:
-  cruise straight over everything, coast down with the jets idle to cool,
-  stop dead and hover to shoot steady, and carry heavy armor without running
-  hotter; they turn wide and their heat draws seekers. Glide wings never
-  stop: launch once, glide, pulse up to hold height, dive for the fastest
-  speed in the game, turn tightest, cold and quiet, but only
-  a sidearm fires while they are spread. Thruster boots skim low over streets
-  and roofs and stop dead: near a surface they cool, high in the open they
-  never cool and burn out in seconds. Jump kicks you up, and three kicks top
-  a 15 m roof, which is a surface to cool on again. They dash furthest of any rig, and the aim stays
-  steady while skimming low. Shooting from the
-  air spreads wider, except from a hover or a low skim. Each rig comes in
-  three tiers with a higher ceiling and cooler running each time, at the
-  same cruise speed.
+- Three flight rigs, each with one job and one weakness, on the same keys.
+  The jetpack is height and hover: a Mk1 climbs to 40 m, cruises at 14 m/s
+  and boosts at 18, and a full bar hovers for about 8 seconds. Climbing
+  burns 1.5 times the heat and boosting 2.5 times. It aims steadily in the
+  air, carries heavy armor without running hotter, and is slow across the
+  map. Glide wings are distance and speed: one launch, then a 22 m/s glide
+  that dives to 30, on stamina that only refills on the ground, and two
+  boosts a flight. They cannot hover or climb on their own, a turn costs
+  speed, and only a sidearm fires while they are spread. Thruster boots are
+  ground agility and have no heat: four charges pay for kicks and dashes up
+  to a 10 m ceiling, a short skim, faster movement on foot, no fall damage,
+  and a brief graze window on every dash. Shooting from the air spreads
+  wider, except from a hover or a boots dash. Mk2 and Mk3 strengthen what
+  that rig is already good at, about 15% a tier. Only Mk1 is found or sold.
 - An ability slot. Phase Step blinks you forward, Kinetic Barrier cuts damage
   for a few seconds, Shock Pulse staggers everyone near you. Each has a cooldown.
 - Attachments for your primary, in four slots: optic, muzzle, grip and
@@ -382,19 +409,28 @@ you have.
   longest reach, pokes fliers overhead, and staggers with a heavy thrust, but
   hits half as hard up close.
 - More gear to find: carbine, SMG, marksman rifle, shotgun, arc blade, breaker
-  hammer, three armor frames, and a better jetpack.
-- Motorbikes, the first vehicle. Put one in the vehicle slot and it rides on
-  your watch as a toy. Raise the watch (X), turn the wheel across its icons to the vehicle and on through the toys to pick one, and
-  click to take it in your hand, then click again to throw it: it grows into
-  the full-size bike where it lands (right click puts it back). It needs clear
-  ground, or it jumps back to your watch, and the watch recharges for a few
-  seconds between throws. To pack a bike back onto the watch (it holds two), look at
-  one nobody is riding, raise the watch and click. Toys on your watch go home when you sign
-  out. Press E on any bike nobody is riding to take
-  it, including someone else's. Sign out riding a bike and it goes to your
-  stash; die or leave it behind and it is gone. Abandoned bikes wait at the rim,
-  the landmarks and the jump ramps of the battlefield. Riding uses the third-person camera (Tab still
-  switches), and pressing E in mid-air bails out with the bike's speed.
+  hammer, and armor frames from light to heavy. Better flight rigs are
+  crafted, not found.
+- Vehicles ride on your watch as toys, never in the pack. The watch holds
+  two. Raise it (X), turn the wheel to the vehicle icon and on through the
+  toys, and click to take one in your hand, then click again to throw it.
+  It grows into the full-size vehicle where it lands (right click puts it
+  back). It needs clear ground, or it jumps back to your watch. How long
+  the watch waits depends on the vehicle: 12 seconds for the Scrapper bike,
+  10 for the Raider hoverbike, 30 for the Warden Rover, 60 for the Bulwark
+  Mech and the Kestrel jet. To pack one back, look at one nobody is riding,
+  raise the watch and click. Toys on your watch go home when you sign out.
+  Press E on any vehicle nobody is riding to take it, including someone
+  else's. Sign out riding one and it goes to your stash; die or leave it
+  behind and it is gone. The Scrapper is a motorbike (22 m/s, boost 29).
+  The Raider is a two-seat hoverbike (26 m/s, boost 35): it drifts through
+  turns and holds level over a short gap, and a passenger sits behind you.
+  The rover, the mech and the jet are drivable too, still without their
+  weapons or their own armor. The rover can be found parked on Ashfront;
+  the mech and the jet are crafted. Abandoned bikes wait at the rim, the
+  landmarks and the jump ramps of the battlefield. Riding uses the
+  third-person camera (Tab still switches), and pressing E in mid-air bails
+  out with the vehicle's speed.
 - Mastery for every weapon type, ability and armor frame. Using gear earns XP
   for its type, levels unlock variants that trade one strength for another
   (never raw power), and you pick them at the mastery bench in your base. Mastery is kept when you die.
@@ -460,29 +496,36 @@ the same accounts. The server decides every result and pays every wager.
 
 ```
 core/            Shared by every world. Never names a specific world.
+  abilities/     Visor, ability chips, artifacts
   actor/         Actor (the character) and ActorCommand (one tick of intent)
+  ai/            Bot brain
+  account/       Server-owned stashes, and the shared gear rules
+  arena/         The arena venue, its bouts and wagers
+  base/          The home base: a room that puts the stash on show
   combat/        Health, damage, guns, melee
+  dev/           Temporary dev mode, editor and debug runs only
+  economy/       Scrip, shops, contracts
+  fx/            Sounds and effects; no-ops on a headless server
   flight/        Flight rigs
-  vehicle/       Rideable vehicles (the motorbike)
   items/         Item database, inventory, loadouts
   interact/      Loot containers
-  raid/          The running world (Raid) and depots
-  world/         The world contract (WorldDef) and the world registry
-  arena/         The arena venue, its bouts and wagers, and its overlay
-  ai/            Bot brain
+  net/           Online play: the server and client ends of a session
+  phone/         The handheld phone and its apps
   player/        Local input and camera
-  ui/            HUD, and the station screens and travel screen (hub.gd)
-  visual/        The art layer (`Look`): surfaces, atmosphere, models, effects, UI theme
   profile/       Stash and stats that persist between raids (local play)
-  base/          The home base: a room that puts the stash on show
-  account/       Server-owned stashes for online play, and the shared gear rules
-  economy/       Scrip: the money rules, the shop list, and the shop screen
-  progression/   Mastery: tracks and variants, XP tracking in a raid, hub panel
-  net/           Online play: the server and client ends of a raid
+  progression/   Mastery, crafting, renown, the new-player tour
+  raid/          The running world (Raid) and depots
+  settings/      Local settings; a server never reads them
+  social/        Clans, and presence, contacts and messages on a server
+  ui/            HUD, visor glass, station screens and the travel screen
+  vehicle/       Rideable vehicles
+  visual/        The art layer (`Look`): surfaces, atmosphere, models, effects
+  war/           Strongpoints, war intensity, power weapons
+  world/         The world contract (WorldDef), portals, terrain, the registry
 worlds/
-  plaza/         The Concourse: the social safe zone (a world with safe_zone set)
-  ashfront/      The first world: rules, loot tables, and its map
-  frostline/     A second, smaller world that proves the plug-in contract
+  plaza/         The Concourse: the social safe zone
+  ashfront/      The PvP warzone: rules, loot tables, and its map
+  frostline/     A smaller PvE world that proves the plug-in contract
 assets/          Models, textures, sky, font and shaders, with LICENSES.md
 tests/           Headless test suite and a screenshot tool
 ```
@@ -490,7 +533,7 @@ tests/           Headless test suite and a screenshot tool
 Three rules keep the foundation solid:
 
 1. **Worlds are plug-ins.** Core code talks to a world only through `WorldDef`.
-2. **Actors are driven only by commands.** The player, bots, and later remote
+2. **Actors are driven only by commands.** The player, bots and remote
    players all fill in an `ActorCommand`. The simulation never reads the
    keyboard, so it can run on a dedicated server.
 3. **All damage goes through `Combat.deal`**, which asks the world whether the
@@ -513,7 +556,9 @@ autoload in `core/visual/`, so gameplay code stays plain:
 - On a headless server `Look` does nothing, so the simulation never depends
   on art.
 
-Every asset is CC0 or OFL. Sources and licenses are in `assets/LICENSES.md`.
+The models, textures, sky and font in `assets/` are CC0 or OFL. Sources and
+licenses are in `assets/LICENSES.md`. Shaders written for this project, and
+the rest of the game's own work, are not under those terms (see License).
 
 ## Add a world
 
@@ -559,3 +604,9 @@ behavior.
 To run a dedicated server on a cheap cloud machine so friends can join, follow
 [docs/hosting.md](docs/hosting.md). It uses the `Dockerfile` and `compose.yaml`
 in this folder and the **Linux Server** export preset.
+
+## License
+
+The game's own code and original content are proprietary, all rights reserved.
+See [LICENSE](LICENSE). Third-party assets keep the licenses listed in
+[assets/LICENSES.md](assets/LICENSES.md).
