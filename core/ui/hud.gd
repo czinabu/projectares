@@ -2028,7 +2028,7 @@ void fragment() {
 			var count := shown.size()
 			var row_y := top + 54.0
 			# The map stands to the right of the Status icons while it is read.
-			var map_side := minf(h - top - 66.0, w * 0.42) if not map.is_empty() and focused_id() == "map" else 0.0
+			var map_side := minf(h - top - 80.0, w * 0.42) if not map.is_empty() and focused_id() == "map" else 0.0
 			var row_w := w - (map_side + 20.0 if map_side > 0.0 else 0.0)
 			var step := minf((row_w - 40.0) / count, 170.0)
 			var left := (row_w - step * count) * 0.5
@@ -2094,7 +2094,7 @@ void fragment() {
 				for i in zones.size():
 					if zones[i] > 0:
 						draw_rect(Rect2(box.position + Vector2(i % grid, floori(i / float(grid))) * cell, cell),
-								Color(WARM, 0.07 * zones[i]))
+								Color(WARM, 0.11 * zones[i]))
 			# A faint grid and a frame with lit corners.
 			for k in range(1, 4):
 				var x := box.position.x + box.size.x * k / 4.0
