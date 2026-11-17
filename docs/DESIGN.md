@@ -1366,6 +1366,66 @@ tier: the PvP world has the better weapons and the rarer drops, the PvE
 world has basic gear and materials. Stronger versions are crafted from
 blueprints (below), not found.
 
+### Two worlds, one loop (proposed, Caleb to confirm the numbers)
+
+Players who avoid PvP and players who love it should both feel rewarded,
+without either being forced into the other's world. The split:
+
+| | Frostline (expedition, PvE, no PvP) | Ashfront (warzone, PvPvE) |
+| --- | --- | --- |
+| Death | Keep equipped gear, lose the pack | Full loot |
+| Exclusive rewards | Crafting parts, blueprints, Frostline cosmetics and trophies | Rare and Epic gear, heavy weapons, artifacts, most upgrade data, bounties |
+| Shared rewards | Scrip, contracts, mastery, a capped share of upgrade data | Scrip, contracts, mastery, renown |
+
+**Frostline decides what you can make. Ashfront decides what you can carry
+out that nobody can make.** Frostline has no PvP (Caleb's call): players there
+are allies and the interaction is co-op and trade.
+
+**What each axis means.** Rarity (Common to Relic) is how hard something is
+to find and what it sells for, never raw power. Mk tier is how much was
+invested in it. Mastery is how well you know a gear type (sidegrades only).
+Relic is reserved for prestige items from hard feats in either world.
+
+**Weapon Mk cap.** A Mk2 or Mk3 weapon gains handling, never raw damage:
+magazine, recoil, range and reload speed, about +10% effective in total at
+Mk3 over Mk1. Rigs keep their 15% a tier, in strength only.
+
+**Loot split.** Blueprints and most parts come from Frostline. Ashfront keeps
+a light trickle of common parts and pays scrip, upgrade data, rare gear,
+heavy weapons and artifacts. Frostline's deepest sites pay a capped trickle of
+upgrade data: enough for Mk2 comfortably and Mk3 slowly (about a third to a
+half of the total, about three times the time).
+
+**Player marketplace** (a kiosk in the plaza, server-side only). Tradeable:
+parts, upgrade data, spare blueprint copies, Mk1 and Mk2 gear. Never
+tradeable: Mk3 gear, heavy weapons, artifacts, prestige items, learned
+blueprints. A listing fee and a sale fee drain scrip; price bands and a daily
+trade cap per account guard against dumping and farming. It must ship before
+parts leave Ashfront, or PvP crafters are starved.
+
+What is built (first version): the Exchange, a booth in the plaza's
+arcade with the rules above (5% to list, 10% of each sale, a price band of
+half to three times an item's value, 10 listings and 20 trades a day per
+account, listings home after 7 days). Server-only, shared by every world on
+a server, with the board saved beside the accounts. It moves goods through
+the ledger calls of the accounts store, a listing's charge and each sale as
+one all-or-nothing transaction, so it can move onto the shared account
+service later.
+Missing: buying more than one at a time from the screen, search and
+filters, price history, and the shared account service itself.
+
+**Status without a level.** There is no player level. Renown rank (PvP) stays;
+an expedition standing (surveys, sites cleared, bosses) is added beside it,
+with titles and cosmetics. A profile page shows both beside total mastery and
+gates nothing.
+
+**Safety nets.** Salvage pays back about 30 to 50% of a lost crafted item's
+parts, and one insured item comes back after a death in Ashfront (cost and
+cooldown open).
+
+**Contracts** gain a world tag: expedition and warzone versions of dailies and
+weeklies. The existing rules stay (only a sign-out counts, no player kills).
+
 ### Blueprints and upgrade data
 
 > **This replaces the earlier rule** that a blueprint "opens up a new
@@ -1641,6 +1701,12 @@ Caleb's calls, still open:
   - How much salvage a lost crafted item pays back.
   - Contract and bounty payouts, and how a bounty's size grows.
   - Which prestige vehicles and rigs come from which feats.
+- Two worlds, one loop (section 10), proposed numbers to confirm:
+  - Should Ashfront drop any parts at all, or only scrip and upgrade data?
+  - What share of Mk3's upgrade data may Frostline supply?
+  - Marketplace fees, price bands and the daily trade cap.
+  - Insurance cost and the salvage share.
+  - Whether expedition standing earns titles only, or cosmetics too.
 
 ## 14. Online and servers
 

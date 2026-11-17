@@ -63,6 +63,8 @@ signal disconnected
 ## Client: the server said which port each of its worlds runs on.
 ## Client: your clan, or the list of clans, changed (`clan_state`).
 signal clan_changed(state: Dictionary)
+## Client: the player market's board, as the server last sent it (`market_state`).
+signal market_changed(state: Dictionary)
 signal routes_changed(routes: Dictionary)
 ## Client: the server's news of its other worlds changed (`world_status`).
 signal world_status_changed(status: Dictionary)
@@ -117,6 +119,7 @@ const ServerTrust := preload("res://core/net/server_trust.gd")
 const Economy := preload("res://core/economy/economy.gd")
 const Human := preload("res://core/visual/human.gd")
 const SocialService := preload("res://core/social/social_service.gd")
+const MarketService := preload("res://core/economy/market_service.gd")
 const ArenaVenue := preload("res://core/arena/arena_venue.gd")
 ## Server physics ticks between asking the stash whether a backup is due.
 const BACKUP_CHECK_TICKS := 600
@@ -208,6 +211,12 @@ var social := SocialService.new()
 ## Server: who is in which clan. Shared between the sessions of one server,
 ## and saved beside the accounts.
 var clans := ClanService.new()
+## Server: the player market's board. Shared between the sessions of one
+## server, and saved beside the accounts.
+var market := MarketService.new()
+## Client: the market board as the server last sent it: {"listings",
+## "trades_left", "listed"}. See `MarketService.snapshot`.
+var market_state := {}
 ## Client: what the server last said about clans: {"clan": yours or {},
 ## "clans": every clan there is}. See `ClanService.snapshot`.
 var clan_state := {}
@@ -255,6 +264,7 @@ var _actor_peer := {}    # Actor -> peer id (server)
 var _joined_peers: Array[int] = []
 var _peer_account := {}  # peer id -> account id (server)
 var _peer_look := {}  # peer id -> appearance (server). Cosmetic only.
+var _market_viewers: Array[int] = [] # peers with the market kiosk open (server)
 var _joining_look := {}  # the look of the player being added right now (server)
 var _actor_account := {} # Actor -> account id, until the run is settled (server)
 var _inputs := {}        # peer id -> InputBuffer: their inputs not yet played (server)
@@ -367,6 +377,7 @@ func host(p_world_id: String, port := DEFAULT_PORT, max_players := 8) -> Error:
 	is_server = true
 	world_id = p_world_id
 	clans.open(stash.save_dir, stash.persist)
+	market.open(stash.save_dir, stash.persist)
 	social.persist = stash.persist
 	social.save_dir = stash.save_dir.path_join("social")
 	social.load_server_news(stash.save_dir.path_join("news.json"))
@@ -706,6 +717,7 @@ func _on_peer_disconnected(peer: int) -> void:
 	_limits.forget(peer)
 	_social_left(peer)
 	_peer_account.erase(peer)
+	_market_viewers.erase(peer)
 	_peer_look.erase(peer)
 	_inputs.erase(peer)
 	_died_at.erase(peer)
@@ -1043,6 +1055,69 @@ func _request_buy_upgrade(upgrade_id: String) -> void:
 	if not result.ok:
 		_lobby_error.rpc_id(peer, result.error)
 	_send_account(peer)
+
+
+## The market kiosk: "view" opens the board (and keeps it fresh while
+## open), "close" stops that, "list" puts `count` of `item_id` up at `price`
+## each, "buy" takes `count` from listing `listing_id`, "cancel" takes your
+## own listing down. Only in a safe zone and never while deployed; the
+## board's rules (`Market`) and the server decide everything else.
+@rpc("any_peer", "call_remote", "reliable")
+func _request_market(action: String, item_id: String, a: int, b: int) -> void:
+	var peer := _api.get_remote_sender_id()
+	if not is_server or not _peer_account.has(peer):
+		return
+	var account_id: String = _peer_account[peer]
+	var result := {"ok": true}
+	match action:
+		"view":
+			if peer not in _market_viewers:
+				_market_viewers.append(peer)
+		"close":
+			_market_viewers.erase(peer)
+			return
+		"list", "buy", "cancel":
+			if raid == null or not raid.world.safe_zone:
+				result = {"ok": false, "error": "Trade at the market kiosk in the plaza."}
+			elif stash.is_deployed(account_id):
+				result = {"ok": false, "error": "Not while you are in the field."}
+			elif action == "list":
+				result = market.list(stash, account_id, item_id.left(64), a, b)
+			elif action == "buy":
+				result = market.buy(stash, account_id, a, b)
+			else:
+				result = market.cancel(stash, account_id, a)
+		_:
+			return
+	if not result.ok:
+		_lobby_error.rpc_id(peer, result.error)
+	if action != "view":
+		_send_account(peer)
+		# The seller is paid wherever they are on this server.
+		if result.ok and action == "buy":
+			_resend_account(str(result.seller))
+		# Everyone with the kiosk open sees the board change.
+		for viewer in _market_viewers:
+			if viewer != peer:
+				_send_market(viewer)
+	_send_market(peer)
+
+
+func _send_market(peer: int) -> void:
+	if not _peer_account.has(peer):
+		return
+	market.expire(stash)
+	_market.rpc_id(peer, market.snapshot(_peer_account[peer], func(account_id: String) -> String:
+		return str(stash.snapshot(account_id).get("name", "?"))))
+
+
+## Server: sends a fresh account snapshot to whoever is signed in as
+## `account_id` in any session of this server.
+func _resend_account(account_id: String) -> void:
+	for session in _hosting:
+		for peer: int in session._peer_account:
+			if session._peer_account[peer] == account_id:
+				session._send_account(peer)
 
 
 ## Lobby: craft one item at the gunsmith bench. The server checks the
@@ -1847,6 +1922,29 @@ func _clan_tag(id: int, clan_id: String, tag: String) -> void:
 	if actor != null and is_instance_valid(actor):
 		actor.clan = clan_id.left(16)
 		actor.clan_tag = ClanService.clean_tag(tag)
+
+
+@rpc("authority", "call_remote", "reliable")
+func _market(state: Dictionary) -> void:
+	var listings: Array[Dictionary] = []
+	for raw: Variant in state.get("listings", []):
+		if typeof(raw) != TYPE_DICTIONARY or not ItemDB.has_item(str(raw.get("item", ""))):
+			continue
+		listings.append({"id": int(raw.get("id", 0)), "item": str(raw.item), "count": maxi(1, int(raw.get("count", 1))),
+				"price": maxi(0, int(raw.get("price", 0))), "seller": str(raw.get("seller", "?")).left(24),
+				"mine": bool(raw.get("mine", false)), "days_left": maxi(0, int(raw.get("days_left", 0)))})
+	market_state = {"listings": listings, "trades_left": maxi(0, int(state.get("trades_left", 0))),
+			"listed": maxi(0, int(state.get("listed", 0)))}
+	market_changed.emit(market_state)
+
+
+## The market kiosk: "view" (open the board), "close", "list" (`item_id`,
+## `a` how many, `b` the price each), "buy" (`a` the listing, `b` how many) or
+## "cancel" (`a` your listing). The answer comes back as a new
+## `market_state` and account, or as a `lobby_error`.
+func market_ask(action: String, item_id := "", a := 0, b := 0) -> void:
+	if _is_connected() and not account.is_empty():
+		_request_market.rpc_id(1, action, item_id, a, b)
 
 
 ## The clan hall: ask to found a clan ("create", name, tag), join one

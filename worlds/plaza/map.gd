@@ -40,6 +40,9 @@ const ARCADE_WIDTH := 10.0
 const ARCADE_HEIGHT := 8.0
 ## Bearings of the kiosks round the promenade, in the shop list's order.
 const MARKET_SLOTS := [325.0, 35.0, 110.0, 215.0, 145.0, 250.0, 70.0]
+## The player market's booth, built in the next free slot after the shops.
+const EXCHANGE := {"id": "exchange", "name": "Exchange", "destination": "market",
+		"blurb": "The player market. Buy what others brought home, or list your own finds."}
 ## The boulevards: bearings and widths, from the plaza out to the bike loop.
 const SPOKES := [0.0, 45.0, 90.0, 135.0, 180.0, 225.0, 270.0, 315.0]
 const TOWER_RING := 78.0
@@ -419,8 +422,11 @@ static func shops() -> Array:
 
 ## A kiosk for every shop under the arcade roof: an open-fronted booth with a
 ## counter, its name over the front, and a pad at the counter to trade from.
+## The next free booth after the shops is the Exchange, the player market's
+## kiosk (`MarketService`, DESIGN.md section 10).
 func _build_market() -> void:
-	var listed := shops()
+	var listed := shops().duplicate()
+	listed.append(EXCHANGE)
 	for i in mini(listed.size(), MARKET_SLOTS.size()):
 		var entry: Dictionary = listed[i]
 		var bearing: float = MARKET_SLOTS[i]
@@ -441,10 +447,12 @@ func _build_market() -> void:
 		for side: float in [-1.0, 1.0]:
 			_part(self, Vector3(0.1, 5.0, 0.1), at + facing * Vector3(side * 4.78, 2.5, 2.52), color, true, yaw)
 		_part(self, Vector3(10.0, 0.1, 0.1), at + facing * Vector3(0, 5.5, 3.32), color, true, yaw)
-		var portal := _add_portal("shop:%s" % entry.get("id", ""), "Trade at the %s" % entry.get("name", "shop"),
+		var destination: String = entry.get("destination", "shop:%s" % entry.get("id", ""))
+		var portal := _add_portal(destination, "Trade at the %s" % entry.get("name", "shop"),
 				at + facing * Vector3(0, 0, 4.2), 2.4)
-		portal.add_to_group("shop_front")
-		portal.set_meta("shop_id", entry.get("id", ""))
+		if destination.begins_with("shop:"):
+			portal.add_to_group("shop_front")
+			portal.set_meta("shop_id", entry.get("id", ""))
 		# The shop's terminal on the counter, its screen facing the plaza.
 		var screen := Node3D.new()
 		screen.name = "Screen"
