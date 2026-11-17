@@ -143,6 +143,10 @@ var _gate_deploy := false
 var _arrive_from := ""
 ## Where the hand-off of your profile to a server you host waits for it.
 const HOST_PROFILE := "user://host_profile.json"
+## A server of your own writes its log here, not into the game's own
+## `godot.log`: two processes writing one file garble it (and on Windows the
+## second one cannot rotate it), so a slow or failed start left no trace.
+const HOST_LOG := "user://logs/server.log"
 ## The local player's last life, while they are down.
 var _death_result := {}
 ## Joining a world's session through a squad portal: `_gate_deploy` drops
@@ -1325,7 +1329,7 @@ func start_server(world_id: String, port: int, with_plaza := true, bots := -1, s
 		var err := session.host(world.id, next_port, world.max_players)
 		if err != OK:
 			return err
-		print("Server: running %s on port %d" % [world.id, next_port])
+		print("Server: running %s on port %d (%.1f s after launch)" % [world.id, next_port, _uptime()])
 		routes[world.id] = next_port
 		sessions.append(session)
 		next_port += 1
@@ -1340,7 +1344,7 @@ func start_server(world_id: String, port: int, with_plaza := true, bots := -1, s
 		arena.lag_compensation = rewind
 		add_child(arena)
 		if arena.host(Arena.ArenaVenue.ID, arena_port) == OK:
-			print("Server: running the arena on port %d" % arena_port)
+			print("Server: running the arena on port %d (%.1f s after launch)" % [arena_port, _uptime()])
 			routes[Arena.ArenaVenue.ID] = arena_port
 			sessions.append(arena)
 		else:
@@ -1359,7 +1363,7 @@ func start_server(world_id: String, port: int, with_plaza := true, bots := -1, s
 		var err := session.host(plaza.id, port, PLAZA_PLAYERS)
 		if err != OK:
 			return err
-		print("Server: running %s on port %d" % [plaza.id, port])
+		print("Server: running %s on port %d (%.1f s after launch)" % [plaza.id, port, _uptime()])
 		sessions.push_front(session)
 	return OK
 
@@ -1374,6 +1378,11 @@ func host_and_join(world_id := "") -> void:
 	_remember_address = ""
 	_host_restarts_left = HOST_RESTARTS
 	_start_local_server(world_id)
+
+
+## Seconds since this process started, for the server's start-up lines.
+static func _uptime() -> float:
+	return Time.get_ticks_msec() / 1000.0
 
 
 ## Starts the server for `host_and_join` (again, on a retry) and joins it.
@@ -1391,6 +1400,9 @@ func _start_local_server(world_id: String) -> void:
 			"--", "--server", "--port", str(port),
 			# The server stops when this game does, however this game ends.
 			"--heartbeat", ProjectSettings.globalize_path(HOST_HEARTBEAT)])
+	# Its own log (see `HOST_LOG`). An engine option, so it goes before "--".
+	args.insert(0, ProjectSettings.globalize_path(HOST_LOG))
+	args.insert(0, "--log-file")
 	_beat()
 	args.append_array(host_args)
 	if world_id != "":
