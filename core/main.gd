@@ -24,7 +24,9 @@ extends Node
 
 const JOIN_TIMEOUT := 12.0
 ## A server started here runs every world, and needs a while before it listens.
-const HOST_JOIN_ATTEMPTS := 12
+## An encrypted connection to a port nothing listens on yet fails at once, so
+## the tries come about a second apart: enough of them to reach the deadline.
+const HOST_JOIN_ATTEMPTS := 45
 ## However many attempts are left, a server of your own that has not let you
 ## in by then is given up on (and started once more, `HOST_RESTARTS`), so the
 ## travel screen never waits forever.
@@ -85,6 +87,9 @@ var controller: PlayerController
 var hud: Hud
 var nameplates: CanvasLayer
 var scoreboard: CanvasLayer
+## On a race track: the local racer's view of the race (lights, splits,
+## board and ghost).
+var race_view: RaceView
 var net: NetSession
 ## The phone every player carries: the game's menu, in the hub and in a raid.
 var phone: CanvasLayer
@@ -308,6 +313,9 @@ func _attach_base_view() -> void:
 	controller.phone_out = phone != null and phone.is_open
 	controller.setup(base.player)
 	controller.portal_requested.connect(_on_portal_requested)
+	controller.race_requested.connect(_on_race_requested)
+	if race_view != null and is_instance_valid(race_view):
+		controller.ghost_on = race_view.ghost_on
 	if phone != null:
 		# The phone is held by this body's own hand, in every view.
 		phone.set_holder(controller.actor)
@@ -619,7 +627,7 @@ func start_raid(world_id: String, drop := "") -> void:
 	# Through a squad portal: out of the base and into the world.
 	leave_base()
 	hub.close()
-	raid = Raid.new()
+	raid = world.new_raid()
 	raid.name = "Raid"
 	add_child(raid)
 	# DEV MODE
@@ -706,6 +714,23 @@ func _attach_player_view() -> void:
 		arena_hud.leave_requested.connect(leave_arena)
 		arena_hud.booth_changed.connect(_on_booth_changed)
 		raid.add_child(arena_hud)
+	if raid is Race:
+		race_view = RaceView.new()
+		race_view.setup(raid)
+		raid.add_child(race_view)
+
+
+## A pick on the race icon: the ghost is this view's own, the rest are
+## asked of the race (the server's, online).
+func _on_race_requested(action: String) -> void:
+	if not raid is Race:
+		return
+	if action == "ghost":
+		controller.ghost_on = not controller.ghost_on
+		if race_view != null and is_instance_valid(race_view):
+			race_view.ghost_on = controller.ghost_on
+		return
+	(raid as Race).ask(action)
 
 
 ## Took up or put down a bookmaker's booth in the arena: like a station, the
@@ -1533,6 +1558,7 @@ func _try_join() -> void:
 ## Signed in: the hub becomes that server's lobby.
 func _on_online_signed_in(account: Dictionary) -> void:
 	phone.set_update_needed(false)
+	phone.set_server_changed({})
 	_tour_stash_size = (account.get("stash", []) as Array).size()
 	_join_attempts = 0
 	_join_deadline = 0
@@ -1807,6 +1833,14 @@ func _on_online_failed(reason: String) -> void:
 			# our own instead. An older game is pointed at the update.
 			_door_fallback = false
 			phone.set_update_needed(net.outdated == "client")
+		if not net.identity_changed.is_empty():
+			# Not a missing server either: a different one at that address.
+			# The phone's Servers app warns, and trusting it is the player's call.
+			_door_fallback = false
+			var changed := net.identity_changed.duplicate()
+			changed["address"] = "%s:%d" % [_join_address, _join_port] \
+					if _join_port != NetSession.DEFAULT_PORT else _join_address
+			phone.set_server_changed(changed)
 		net.queue_free()
 		net = null
 	if _join_attempts > 0 and _hosted_server_stopped():

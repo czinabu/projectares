@@ -448,6 +448,9 @@ static func _everywhere(t: Node) -> void:
 		if ItemDB.has_tag(id, "vehicle"):
 			vehicles.append(id)
 	for world: WorldDef in Worlds.all():
+		if not world.vehicle_toys:
+			# A race world races the track's stock machines only.
+			continue
 		var raid := Raid.new()
 		t.add_child(raid)
 		raid.start(world, 91, world.starter_loadout() + vehicles)

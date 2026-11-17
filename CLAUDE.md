@@ -781,7 +781,8 @@ without Caleb, and update the gap list when a PR closes a row.
   it (`Vehicle._fly`: takes off past `takeoff_speed` with jump, never
   hovers, drops below `stall_speed` or with nobody at the stick, climbs no
   higher than `ceiling` over the world's ground). Every vehicle, the jet
-  included, can be thrown in every world (Caleb's call). A vehicle's `watch_recharge` and `footprint` stats
+  included, can be thrown in every world (Caleb's call), except a race
+  world (`WorldDef.vehicle_toys` off), which races its own stock machines. A vehicle's `watch_recharge` and `footprint` stats
   set the watch's wait after a throw and the room it needs to unpack.
 - Toy vehicles: a vehicle a player owns in a world rides on their watch as
   a toy (`Raid.PlayerState.stowed`, read with `Raid.stowed_for`), never in
@@ -845,7 +846,14 @@ without Caleb, and update the gap list when a PR closes a row.
   once the server accepts, so an old game or a wrong secret never reaches
   the session. Both sides' messages always carry "protocol", so any two
   versions can say which one needs the update; an older game is pointed at
-  `NetSession.UPDATE_URL` from the phone's Servers app. `server_relay` is
+  `NetSession.UPDATE_URL` from the phone's Servers app. Every connection is
+  encrypted with ENet DTLS (`core/net/server_trust.gd`): a server makes its
+  own certificate on first start, kept beside the accounts, and a game
+  remembers it per address on first use and warns on the Servers app if it
+  changes (never for this computer's own server, nor for official hosts in
+  `ServerTrust.OFFICIAL_HOSTS`, which use real certificates). The secret is
+  only ever sent encrypted; the checks that send none (`probe`, `plain`)
+  are how a game learns a server changed or is from before encryption. `server_relay` is
   off: clients only talk to the server. Every `any_peer` RPC starts with
   `_allow(kind)` (`NetSession.RequestLimits`, per player, refilled by server
   tick), and a new one must too. Server saves that are files (clans, phone
@@ -1319,6 +1327,29 @@ without Caleb, and update the gap list when a PR closes a row.
   the map every tick (`set_stage`) on every machine, so they need no messages
   of their own. Static venue boxes are merged into one mesh per material.
 
+- The race world (`worlds/meridian`, DESIGN.md section 9) is run by `Race`
+  (`core/race/race.gd`, a `Raid` subclass from `WorldDef.new_raid`), on a
+  map that offers `race_track()` (a `RaceTrack`: the centre line, gates,
+  start slots, `keep_to` lines). Nothing is at stake there:
+  `WorldDef.gear_at_risk` off clears every result's loot and kit lists
+  (`Raid._finish_player`) and `Profile.checkout_loadout` takes nothing,
+  `weapons_free` off locks weapons and makes `can_damage` refuse, and
+  `portal_home` keeps the portal home on offer. Racers bring no vehicle:
+  the machines wait in the pit bays and race on their race profile
+  (`Vehicle.race`, `apply_race_profile`, `ItemDB.RACE_*`), never their
+  combat tuning. Only the authority judges a run (grid, lights,
+  `Vehicle.held`, gates by `RaceTrack.cross`, laps, the off-track rule, the
+  board); a client gets its own run (`NetSession._race_run`,
+  `Race.remote_run`) and the board, holds its machine for the lights from
+  that, and asks with `NetSession.race_request`. The lights, splits, board
+  text and ghosts are `RaceView`, a view (ghosts on disk in
+  `RaceView.GHOST_PATH` only while `Profile.persist`). In a race world the
+  watch's contract icon is the race icon (`Hud.race_slot`, `glyph`).
+  Every machine in a class stays within 3% of the class average round
+  every track: check with
+  `godot --headless --fixed-fps 60 --path . res://tests/race_bench.tscn`
+  and tune the race profiles, never the combat stats.
+
 ## Conventions
 
 - A helper used by a single script is an inner class of that script, not a new
@@ -1348,6 +1379,7 @@ godot --headless --fixed-fps 60 --path . res://tests/feel_bench.tscn   # how eac
 godot --headless --fixed-fps 60 --path . res://tests/duel_bench.tscn   # how each enemy type fights a reference player (DESIGN.md "Enemy balance")
 godot --headless --path . res://tests/gun_bench.tscn   # every gun's time to kill by range and armor (DESIGN.md "Gun roles")
 godot --path . res://tests/equip_bench.tscn -- --walk   # what an equip costs in the base, and whether you keep moving
+godot --headless --fixed-fps 60 --path . res://tests/race_bench.tscn   # lap times per race machine, flags any 3% off its class
 ```
 
 CI (`.github/workflows/tests.yml`) runs the suite in two tiers. The offline

@@ -83,7 +83,7 @@ signal base_visit_requested(owner_name: String, stash: Array, loadout: Dictionar
 signal portal_travel(destination: String)
 
 const DEFAULT_PORT := 24565
-const PROTOCOL := 34
+const PROTOCOL := 35
 ## Every packet is compressed, both ways. State updates are mostly repeated
 ## numbers, and a big battle sends a player hundreds of them a second. Server
 ## and client must agree, so a change here needs a new PROTOCOL.
@@ -98,15 +98,18 @@ const PROTOCOL := 34
 ## `_hello`, `_sign_in` and `_refused` calls are gone.
 ## 34: hit feedback says whether it was a head, plates soaked it, or it
 ## broke them, for the hit marker.
+## 35: connections are encrypted (ENet DTLS, `ServerTrust`), and the server's
+## sign-in answer carries its certificate.
 ## Where an out-of-date game gets the latest build: the rolling "latest"
 ## release the Windows client workflow publishes (docs/hosting.md).
 const UPDATE_URL := "https://github.com/czinabu/projectares/releases/tag/latest"
 ## Seconds a connection may take to sign in before it is dropped.
 const AUTH_TIMEOUT := 10.0
 ## The most bytes a sign-in or its answer may be. Read before anything else.
-const MAX_AUTH_BYTES := 2048
+const MAX_AUTH_BYTES := 4096
 const COMPRESSION := ENetConnection.COMPRESS_RANGE_CODER
 const StashService := preload("res://core/account/stash_service.gd")
+const ServerTrust := preload("res://core/net/server_trust.gd")
 const Economy := preload("res://core/economy/economy.gd")
 const Human := preload("res://core/visual/human.gd")
 const SocialService := preload("res://core/social/social_service.gd")
@@ -220,6 +223,12 @@ var refused := false
 ## game is older than the server, get the update at UPDATE_URL) or "server"
 ## (the server is older; its host must update it). "" when they match.
 var outdated := ""
+## Client: the server showed a different certificate from the one this game
+## remembered for it ("this server changed", see `ServerTrust`): {"host",
+## "was", "now" (fingerprints), "certificate" (the new one, PEM)}. The join
+## gives up without signing in; trusting it is the player's call, on the
+## phone's Servers app. Empty otherwise.
+var identity_changed := {}
 ## Client: the id of your own actor, and the kit you joined with.
 var my_actor_id := -1
 ## Client, for testing how the game feels on a bad connection: seconds of delay
@@ -286,6 +295,11 @@ var _tick := 0
 var _sent_status := {}   # world status last sent (server)
 var _limits := RequestLimits.new() # how many requests each player may still make (server)
 var _gave_up := false    # client: `failed` was emitted for this connection
+var _certificate := ""   # server: this server's certificate (PEM), sent with every sign-in answer
+var _join_host := ""     # client: the address joined
+var _join_port := 0
+var _join_modes: Array[String] = [] # client: connection modes still to try (`ServerTrust.attempts_for`)
+var _join_mode := ""     # client: the mode of the connection being made
 ## Every session hosting in this process, so a safe zone can ask the others.
 static var _hosting: Array[NetSession] = []
 var _died_at := {}       # peer id -> msec when their last life ended in a death (server)
@@ -327,6 +341,14 @@ func host(p_world_id: String, port := DEFAULT_PORT, max_players := 8) -> Error:
 	var err := peer.create_server(port, max_players)
 	if err != OK:
 		return err
+	# Every connection is encrypted with this server's own certificate, made
+	# on its first start and kept beside the accounts (`ServerTrust`).
+	var identity_dir := stash.save_dir.trim_suffix("/").path_join("server_identity")
+	err = peer.host.dtls_server_setup(ServerTrust.server_options(identity_dir, stash.persist))
+	if err != OK:
+		peer.close()
+		return err
+	_certificate = ServerTrust.pem_of(ServerTrust.identity(identity_dir, stash.persist)[1])
 	peer.host.compress(COMPRESSION)
 	is_server = true
 	world_id = p_world_id
@@ -430,6 +452,11 @@ func _start_server_raid() -> void:
 			var peer: int = _actor_peer.get(actor, 0)
 			if peer in _api.get_peers():
 				_notice.rpc_id(peer, text))
+	var race := raid as Race
+	if race != null:
+		# Each racer is sent their own run; everyone gets the board.
+		race.run_changed.connect(_on_race_run_changed)
+		race.board_changed.connect(_send_race_board)
 	raid.start_server(world)
 
 
@@ -489,11 +516,12 @@ func _register(actor: Actor) -> int:
 ## Signing in. A new connection is held in Godot's handshake
 ## (`SceneMultiplayer.auth_callback`) until it has signed in, and only then
 ## counts as connected. The client sends one Dictionary (`var_to_bytes`):
-## {"protocol", "name", "secret"}; the server answers with one:
-## {"ok": true, "protocol", "world"} or {"ok": false, "protocol", "error"}.
-## Both always carry "protocol", in every version to come, so any two
-## versions can tell each other apart and say which one needs the update.
-## Keep that shape whatever else changes.
+## {"protocol", "name", "secret"}, or {"protocol", "probe": true} to only
+## fetch the certificate (`ServerTrust`); the server answers with one:
+## {"ok": true, "protocol", "world", "certificate"} or {"ok": false,
+## "protocol", "error", "certificate"}. Both always carry "protocol", in
+## every version to come, so any two versions can tell each other apart and
+## say which one needs the update. Keep that shape whatever else changes.
 func _server_auth(peer: int, data: PackedByteArray) -> void:
 	if _peer_account.has(peer):
 		return
@@ -504,6 +532,10 @@ func _server_auth(peer: int, data: PackedByteArray) -> void:
 	var protocol := _protocol_in(hello)
 	if protocol != PROTOCOL:
 		_refuse(peer, "Versions differ.", "client" if protocol < PROTOCOL else "server")
+		return
+	if hello.get("probe", false):
+		# Only asking which certificate this server shows (it changed).
+		_refuse(peer, "Certificate only.")
 		return
 	var result := stash.sign_in(str(hello.get("name", "")).left(64), str(hello.get("secret", "")).left(256))
 	if not result.ok:
@@ -520,7 +552,8 @@ func _server_auth(peer: int, data: PackedByteArray) -> void:
 		_peer_account.erase(other)
 		_api.disconnect_peer(other)
 	_peer_account[peer] = result.account_id
-	_api.send_auth(peer, var_to_bytes({"ok": true, "protocol": PROTOCOL, "world": world_id}))
+	_api.send_auth(peer, var_to_bytes({"ok": true, "protocol": PROTOCOL, "world": world_id,
+			"certificate": _certificate}))
 	_api.complete_auth(peer)
 
 
@@ -528,7 +561,7 @@ func _server_auth(peer: int, data: PackedByteArray) -> void:
 ## game can show, then drops it once the answer has had time to arrive.
 ## `outdated_side` is "client" or "server" when the versions differ.
 func _refuse(peer: int, reason: String, outdated_side := "") -> void:
-	var answer := {"ok": false, "protocol": PROTOCOL, "error": reason}
+	var answer := {"ok": false, "protocol": PROTOCOL, "error": reason, "certificate": _certificate}
 	if outdated_side != "":
 		answer["outdated"] = outdated_side
 	_api.send_auth(peer, var_to_bytes(answer))
@@ -1128,6 +1161,8 @@ func _request_join(drop := "") -> void:
 		_send_portal(peer, portal)
 	_send_watch(actor)
 	_sent_points.erase(peer)
+	if raid is Race:
+		_race_board.rpc_id(peer, (raid as Race).public_board())
 
 
 ## Arena: a player in it asks for something (challenge, accept, bet...).
@@ -1144,6 +1179,35 @@ func _arena_request(action: String, args: Dictionary) -> void:
 	if not result.ok and peer in _api.get_peers():
 		_notice.rpc_id(peer, result.error)
 	_board_dirty = true
+
+
+## Race: a racer asks for a restart or to stop their run. The server's own
+## `Race.request` decides, for the sender's own actor.
+@rpc("any_peer", "call_remote", "reliable")
+func _race_request(action: String) -> void:
+	var peer := _api.get_remote_sender_id()
+	var race := raid as Race
+	if not is_server or race == null or not _peer_actor.has(peer) or action not in ["restart", "retire"]:
+		return
+	var result := race.request(_peer_actor[peer], action)
+	if not result.ok and peer in _api.get_peers():
+		_notice.rpc_id(peer, result.error)
+
+
+func _on_race_run_changed(actor: Actor) -> void:
+	var peer: int = _actor_peer.get(actor, 0)
+	if peer in _api.get_peers():
+		_race_run.rpc_id(peer, (raid as Race).run_view(actor))
+
+
+func _send_race_board() -> void:
+	var race := raid as Race
+	if race == null:
+		return
+	var rows := race.public_board()
+	for peer: int in _peer_actor:
+		if peer in _joined_peers and peer in _api.get_peers():
+			_race_board.rpc_id(peer, rows)
 
 
 ## Sends each player in the arena their own view of the board, when it
@@ -1435,28 +1499,63 @@ func _state_entry(id: int, tier: int) -> Array:
 # ---------------------------------------------------------------- client ----
 
 ## Connects to a server and signs in. `signed_in` or `failed` follows; then
-## `deploy` enters the raid.
+## `deploy` enters the raid. The connection is encrypted; `ServerTrust` says
+## how the server's certificate is checked, and the ways tried in turn.
 func join(address: String, port := DEFAULT_PORT) -> Error:
-	var peer := ENetMultiplayerPeer.new()
-	var err := peer.create_client(address, port)
-	if err != OK:
-		return err
-	peer.host.compress(COMPRESSION)
 	is_server = false
+	_join_host = address
+	_join_port = port
+	_join_modes = ServerTrust.attempts_for(address)
 	_api.auth_callback = _client_auth
 	_api.auth_timeout = AUTH_TIMEOUT
 	_api.peer_authenticating.connect(func(id: int) -> void:
-		if id == 1:
-			_api.send_auth(1, var_to_bytes({"protocol": PROTOCOL, "name": player_name, "secret": secret})))
+		if id != 1:
+			return
+		var hello := {"protocol": PROTOCOL}
+		if _join_mode == "probe":
+			hello["probe"] = true
+		elif _join_mode != "plain":
+			# The secret only ever goes over an encrypted connection.
+			hello["name"] = player_name
+			hello["secret"] = secret
+		_api.send_auth(1, var_to_bytes(hello)))
 	_api.peer_authentication_failed.connect(func(id: int) -> void:
 		if id == 1:
 			# Dropped without an answer: most likely a server from before
 			# the sign-in moved into the handshake.
 			_give_up("The server did not let you in. It may run an older version of the game; ask its host to update it."))
-	_api.multiplayer_peer = peer
-	_api.connection_failed.connect(func() -> void: _give_up("Could not reach the server."))
+	_api.connection_failed.connect(_on_connection_failed)
 	_api.server_disconnected.connect(_on_server_disconnected)
+	return _open_connection()
+
+
+## Client: opens the next connection `join` tries (`_join_modes`).
+func _open_connection() -> Error:
+	_join_mode = _join_modes.pop_front()
+	var peer := ENetMultiplayerPeer.new()
+	var err := peer.create_client(_join_host, _join_port)
+	if err != OK:
+		return err
+	err = ServerTrust.setup_client(peer, _join_host, _join_mode)
+	if err != OK:
+		peer.close()
+		return err
+	peer.host.compress(COMPRESSION)
+	_api.multiplayer_peer = peer
 	return OK
+
+
+## Client: a connection could not be made (or its handshake failed). The
+## next way in `_join_modes` is tried; when none is left, the join fails.
+func _on_connection_failed() -> void:
+	if _gave_up:
+		return
+	if _join_modes.is_empty():
+		_give_up("Could not reach the server.")
+		return
+	_api.multiplayer_peer = OfflineMultiplayerPeer.new()
+	if _open_connection() != OK:
+		_give_up("Could not reach the server.")
 
 
 ## Client: the server's answer to signing in (see `_server_auth`).
@@ -1468,6 +1567,24 @@ func _client_auth(id: int, data: PackedByteArray) -> void:
 		_give_up("That server is not a Project Ares server.")
 		return
 	var protocol := _protocol_in(answer)
+	var certificate := str(answer.get("certificate", "")).left(MAX_AUTH_BYTES)
+	if _join_mode == "probe" and protocol == PROTOCOL:
+		# The remembered certificate failed: see which one it shows now.
+		var was := ServerTrust.known(_join_host)
+		refused = true
+		if certificate == "" or certificate == was:
+			_give_up("Could not make a secure connection to the server.")
+			return
+		identity_changed = {"host": _join_host, "was": ServerTrust.fingerprint(was),
+				"now": ServerTrust.fingerprint(certificate), "certificate": certificate}
+		_give_up("This server's identity changed since you last joined it. "
+				+ "Check with its host before trusting it (Servers app).")
+		return
+	if _join_mode == "plain" and protocol == PROTOCOL:
+		# Only a server from before encryption answers unencrypted.
+		refused = true
+		_give_up("Could not make a secure connection to the server.")
+		return
 	if protocol != PROTOCOL or str(answer.get("outdated", "")) != "":
 		refused = true
 		outdated = "client" if protocol > PROTOCOL else "server"
@@ -1485,6 +1602,9 @@ func _client_auth(id: int, data: PackedByteArray) -> void:
 		_give_up("The server runs a world this game does not have: %s." % p_world_id.left(32))
 		return
 	world_id = p_world_id
+	if _join_mode == "first":
+		# Trust on first use: from now on this server must show the same one.
+		ServerTrust.remember(_join_host, certificate)
 	_api.complete_auth(1)
 
 
@@ -1869,6 +1989,8 @@ func _welcome(actor_id: int) -> void:
 	raid.start_client(world)
 	if raid is Arena:
 		raid.send_request = arena_request
+	elif raid is Race:
+		raid.send_request = race_request
 
 
 ## Client: someone's power weapon slot changed (taken off a rack, swapped,
@@ -1947,7 +2069,7 @@ func _spawn(id: int, kind: String, shown_name: String, node_name: String, at: Ve
 		var power: Variant = data.get("power")
 		if power is Array and power.size() == 3 and ItemDB.has_tag(str(power[0]), "power"):
 			Loadout.set_power(actor, power[0], int(power[1]), int(power[2]), false)
-		actor.weapons_locked = raid.world.safe_zone
+		actor.weapons_locked = raid.world.safe_zone or not raid.world.weapons_free
 		Raid.MasteryTracker.apply_variants(actor, data.get("picks", {}))
 		raid.world.on_spawn(actor)
 		# Listed as a player, so the HUD and scoreboard can tell them from bots.
@@ -2365,6 +2487,28 @@ func arena_request(action: String, args := {}) -> void:
 		_arena_request.rpc_id(1, action, args)
 
 
+## Race: ask the server to restart or stop your run (see `Race.request`).
+func race_request(action: String) -> void:
+	if _is_connected() and my_actor_id >= 0:
+		_race_request.rpc_id(1, action)
+
+
+## Race: your own run, as the server judged it.
+@rpc("authority", "call_remote", "reliable")
+func _race_run(view: Dictionary) -> void:
+	var race := raid as Race
+	if race != null:
+		race.set_remote_run(view)
+
+
+## Race: the best laps on the board.
+@rpc("authority", "call_remote", "reliable")
+func _race_board(rows: Array) -> void:
+	var race := raid as Race
+	if race != null:
+		race.set_remote_board(rows)
+
+
 @rpc("authority", "call_remote", "reliable")
 func _arena_board(p_board: Dictionary) -> void:
 	_after_lag(_receive_board.bind(p_board))
@@ -2543,7 +2687,7 @@ func _apply_state(actor: Actor, entry: Array, mine: bool) -> void:
 	if absf(actor.stagger_left - stagger) > 0.15:
 		actor.stagger_left = stagger
 	# A gate outpost's lock is the server's call (`Raid._tick_outposts`).
-	if not raid.world.safe_zone:
+	if not raid.world.safe_zone and raid.world.weapons_free:
 		actor.weapons_locked = typeof(entry[3]) == TYPE_ARRAY and entry[3].size() == ActorCommand.ARRAY_SIZE \
 				and int(ActorCommand._number(entry[3][ActorCommand.FLAGS_INDEX])) & ActorCommand.STATE_SHELTERED != 0
 	var id: int = entry[0]

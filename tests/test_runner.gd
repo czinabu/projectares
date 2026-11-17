@@ -57,6 +57,7 @@ const HeavyUnitTests := preload("res://tests/heavy_unit_tests.gd")
 const PlaytestFixTests := preload("res://tests/playtest_fix_tests.gd")
 const ExtractionTests := preload("res://tests/extraction_tests.gd")
 const InspectTests := preload("res://tests/inspect_tests.gd")
+const RaceTests := preload("res://tests/race_tests.gd")
 const SaveSafetyTests := preload("res://tests/save_safety_tests.gd")
 const ServerAuthTests := preload("res://tests/server_auth_tests.gd")
 
@@ -354,6 +355,78 @@ func _run() -> void:
 	await _test_ads()
 	await _test_grips()
 	await _test_inspect()
+	await _test_racing()
+	await _test_racing_online()
+
+
+func _test_racing() -> void:
+	await RaceTests.run(self)
+
+
+## A time trial on a race server: the client gets its own run and the
+## board from the server, is held for the lights like the server holds it,
+## and asks the server to stop the run.
+func _test_racing_online() -> void:
+	print("Racing online: a time trial on a race server")
+	var port := 24921
+	_wipe_dir(NET_ACCOUNTS)
+	var pid := _start_server(port, ["--bots", "0"], "meridian")
+	var rhea := await _join("Rhea", port)
+	check(rhea != null and rhea.raid is Race, "a client joins the race world, run by a Race")
+	if rhea == null or not rhea.raid is Race:
+		OS.kill(pid)
+		return
+	var race := rhea.raid as Race
+	var me := race.player
+	check(me.weapons_locked and race.track != null, "weapons are locked and the client has the track")
+	var bike: Node3D = null
+	for v: Node3D in race.vehicles:
+		if v.get("item_id") == "bike_scrapper" and (bike == null
+				or v.global_position.distance_to(me.global_position) < bike.global_position.distance_to(me.global_position)):
+			bike = v
+	check(bike != null and is_equal_approx(float(bike.get("max_speed")), float(ItemDB.RACE_SCRAPPER.max_speed)),
+			"the client's bay machines run on their race profile too")
+	if bike == null:
+		await _leave(rhea)
+		OS.kill(pid)
+		return
+	for step in 600:
+		var to := bike.global_position - me.global_position
+		to.y = 0.0
+		me.cmd.yaw = atan2(-to.x, -to.z)
+		me.cmd.move = Vector2(0, 1) if to.length() > 1.8 else Vector2.ZERO
+		if to.length() <= 1.8:
+			break
+		await frames(1)
+	me.cmd.move = Vector2.ZERO
+	await frames(10)
+	for attempt in 5:
+		# Look at it, then use it (once on the server's word: a second press
+		# would get off again).
+		me.cmd.aim_dir = (bike.global_position + Vector3(0, 0.6, 0) - me.get_eye_position()).normalized()
+		me.cmd.interact_pressed = true
+		await frames(1)
+		me.cmd.interact_pressed = false
+		if await _wait_until(func() -> bool: return not race.remote_run.is_empty(), 60):
+			break
+	me.cmd.aim_dir = Vector3.ZERO
+	await _wait_until(func() -> bool: return me.vehicle != null, 240)
+	check(str(race.remote_run.get("phase", "")) == "grid" and me.vehicle != null,
+			"getting on sends the client its run, waiting on the grid")
+	me.cmd.move = Vector2(0, 1)
+	await frames(30)
+	check(me.vehicle != null and bool(me.vehicle.get("held")) and absf(float(me.vehicle.get("speed"))) < 0.5,
+			"the client holds its machine for the lights like the server")
+	await _wait_until(func() -> bool: return str(race.remote_run.get("phase", "")) == "racing", 400)
+	await frames(40)
+	check(str(race.remote_run.get("phase", "")) == "racing" and me.vehicle != null
+			and absf(float(me.vehicle.get("speed"))) > 3.0, "at the go it races")
+	me.cmd.move = Vector2.ZERO
+	race.ask("retire")
+	await _wait_until(func() -> bool: return race.remote_run.is_empty() and me.vehicle == null, 240)
+	check(race.remote_run.is_empty() and me.vehicle == null, "asking to stop ends the run on the server and gets off")
+	await _leave(rhea)
+	OS.kill(pid)
 
 
 func _test_view_match() -> void:
@@ -2917,17 +2990,20 @@ func _test_every_world() -> void:
 	check(every, "a squad portal from the watch can lead to every world")
 	for world in Worlds.raid_worlds():
 		var kit := world.starter_loadout()
-		check(not kit.is_empty() and kit.all(func(id: String) -> bool: return ItemDB.has_item(id)),
+		check(not kit.is_empty() and kit.all(func(id: String) -> bool: return id == Loadout.BARE or ItemDB.has_item(id)),
 				"%s: starter loadout is valid items" % world.id)
-		var raid := Raid.new()
+		var raid := world.new_raid()
 		add_child(raid)
 		raid.start(world, 99)
 		await frames(3)
 		check(raid.player != null and not raid.player.is_dead, "%s: player spawns" % world.id)
 		check(raid.bots.size() == world.bot_count + raid._bosses.size(), "%s: all bots spawn" % world.id)
-		check(not raid.depots.is_empty(), "%s: map provides depots" % world.id)
 		var caches := raid.get_children().filter(func(n: Node) -> bool: return n is LootContainer)
-		check(caches.size() >= 4, "%s: loot caches are placed (%d)" % [world.id, caches.size()])
+		if world.gear_at_risk:
+			# Only where gear is at stake is there loot to find and bank (a
+			# race world has none).
+			check(not raid.depots.is_empty(), "%s: map provides depots" % world.id)
+			check(caches.size() >= 4, "%s: loot caches are placed (%d)" % [world.id, caches.size()])
 		var all_valid := true
 		for cache: LootContainer in caches:
 			for id in cache.items:

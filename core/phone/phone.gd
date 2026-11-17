@@ -266,6 +266,11 @@ var link_where := ""
 ## The Servers app: a server turned this game away as out of date, so the
 ## app offers the latest build (`NetSession.UPDATE_URL`).
 var update_needed := false
+## The Servers app: a friend's server showed a different certificate from
+## the one this game remembered (`NetSession.identity_changed`, plus the
+## "address" to join again). The app warns and lets the player trust it.
+## Official servers never get here: they use real certificates.
+var server_changed := {}
 ## The Servers app's address field, and which of its fields had the keys, so
 ## a redraw keeps your typing.
 var _address_edit: LineEdit
@@ -1342,6 +1347,26 @@ func set_update_needed(on: bool) -> void:
 		refresh()
 
 
+## A server's identity changed (see `server_changed`); {} clears the warning.
+func set_server_changed(info: Dictionary) -> void:
+	if info == server_changed:
+		return
+	server_changed = info
+	if is_open and app == "servers":
+		refresh()
+
+
+## Trusts the changed server's new certificate and joins it again.
+func trust_changed_server() -> void:
+	if server_changed.is_empty() or linked():
+		return
+	NetSession.ServerTrust.remember(str(server_changed.get("host", "")),
+			str(server_changed.get("certificate", "")))
+	var address := str(server_changed.get("address", server_changed.get("host", "")))
+	set_server_changed({})
+	join_requested.emit(address)
+
+
 ## Opens the page with the latest build in the player's browser.
 func get_update() -> void:
 	OS.shell_open(NetSession.UPDATE_URL)
@@ -1428,6 +1453,19 @@ func _draw_servers() -> void:
 				+ "start it, and join again.", 13, DIM_INK))
 		update_box.add_child(_button("Get the update", get_update))
 		_body.add_child(update_card)
+	if not server_changed.is_empty():
+		var changed_card := _card()
+		var changed_box: VBoxContainer = changed_card.get_child(0)
+		changed_box.add_child(_label("This server changed", 17, UiTheme.ACCENT))
+		changed_box.add_child(_label("%s shows a different identity from the last time you joined. "
+				% str(server_changed.get("host", "")).left(64)
+				+ "Its host may have reset it, or someone may be pretending to be it. "
+				+ "Ask its host which code it shows before you trust it.", 13, DIM_INK))
+		changed_box.add_child(_label("Was %s   Now %s" % [server_changed.get("was", "?"), server_changed.get("now", "?")],
+				14, UiTheme.INK))
+		changed_box.add_child(_button("Trust it and join", trust_changed_server))
+		changed_box.add_child(_button("Don't trust it", func() -> void: set_server_changed({})))
+		_body.add_child(changed_card)
 	var name_card := _card()
 	var name_box: VBoxContainer = name_card.get_child(0)
 	name_box.add_child(_label("Your name", 14, DIM_INK))

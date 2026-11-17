@@ -138,6 +138,12 @@ rows marked **pre-playtest** come before the friends playtest.
 
 | Item | State | Notes |
 | --- | --- | --- |
+| Race world with a Street circuit and time trials | Built | Meridian (`worlds/meridian`), run by `Race` (`core/race/`): the Coilrun circuit, pit bays of stock Scrapper and Raider machines on race profiles, a grid with five lights, checkpoint arches with splits, a lap that leaves the track not counted, a reset out of the Spillway channel, the pit board, best-lap ghosts saved per machine, the race icon on the watch and the lap on the visor. Solo and online. |
+| Time-trial bench (3% class rule) | Built | `tests/race_bench.tscn`; Street is Scrapper +1.05%, Raider −1.05% of the class average on Coilrun. |
+| Live races: several racers on one grid, positions on the watch | Missing | Next step for the race world. |
+| Ranked races with scrip and cosmetic rewards | Missing | Stock machines only. With live races. |
+| Rough ground that slows wheels (the Capacitor Yard's inside line) | Missing | The rubble there is only scattered dressing for now. |
+| More race classes (rovers, mechs) and more tracks | Missing | |
 | Racing mode: mixed bike-and-flight races, sky ring races, our own hazards and secrets | Missing | A later mode, after the friends playtest (DESIGN.md section 9). |
 
 ## Economy
@@ -166,7 +172,7 @@ rows marked **pre-playtest** come before the friends playtest.
 | Hardening: relay off, request limits, safe saves, backups | Built | `server_relay` off; `NetSession.RequestLimits` on every request call (a flood is dropped); every save goes through `SafeFile`; rolling backups at start and hourly (`StashService.backup_if_due`, docs/hosting.md "Backups"). |
 | Reconnect to your body after a drop | Missing | A disconnect starts a sign-out on the standing body (`Raid.remove_player`) and a new sign-in waits it out. **pre-playtest** |
 | Whole-server bench and health log | Missing | `battle_bench` measures one world; nothing measures the plaza, worlds and arena together. **pre-playtest** |
-| Encrypted connections | Missing | ENet traffic, including the sign-in secret, is plain. |
+| Encrypted connections | Built | ENet DTLS on every connection (`NetSession.host`/`join`, `core/net/server_trust.gd`). Each server makes its own certificate on first start (`server_identity/` beside the accounts) and a game remembers it per address the first time it joins; a different one later is "This server changed" on the phone's Servers app, with both codes and a choice to trust it. Your own computer's server is encrypted but never pinned. `ServerTrust.OFFICIAL_HOSTS` (empty) is where official servers with real certificates go, never warned about. A game from before encryption cannot reach a new server at all (it reports no answer); a new game finds an old server over an unencrypted fallback that sends no secret and says it is out of date. |
 | Accounts on SQLite with all-or-nothing changes | Built | `AccountStore` keeps accounts in `accounts.sqlite` (godot-sqlite, `addons/godot-sqlite`), one transaction per save; `StashService.transaction` runs the market's ledger calls as one all-or-nothing change. Old account files are imported once and renamed `.json.imported`. Builds without the library (only Windows, macOS and Linux x86_64 ship one) fall back to JSON files. |
 | Account service as its own program | Missing | `StashService`, `SocialService` and `ClanService` live in the server's memory, shared by sessions in one process. |
 | One program per world, routes with an address | Partly | `--world` runs one world alone, but routes carry only a port and world status is gathered in memory (`NetSession._gather_status`). |
