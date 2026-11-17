@@ -294,6 +294,14 @@ func equip_bot(_bot: Actor, _rng: RandomNumberGenerator) -> void:
 	pass
 
 
+## Whether a bot just equipped may join the world as it is (authority only).
+## Refused, the `Raid` frees it and spawns another from a new seed, so a
+## client only ever hears of the seed that was kept. A world caps its rare
+## kinds here (Ashfront: one walker at each landmark).
+func bot_allowed(_bot: Actor, _raid: Node) -> bool:
+	return true
+
+
 ## A rival raider's kit: item ids exactly as a player's loadout, put on
 ## with `Loadout.equip`, so what it drops is real gear. Called on the
 ## authority only; the kit itself is sent to clients. The default is the

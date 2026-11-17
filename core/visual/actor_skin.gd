@@ -278,6 +278,10 @@ var _frame_parts: Array[Node3D] = []
 var _frame_id := ""
 ## The helmet `_helmet` was built for; "" while bare-headed.
 var _helmet_id := ""
+## A walker's tracking beam (`_update_beam`) and how long it has held its aim.
+var _beam: MeshInstance3D
+var _beam_mat: StandardMaterial3D
+var _beam_held := 0.0
 var _flames: Array[Node3D] = []
 var _burst_left := 0.0
 var _spread := 0.0
@@ -405,6 +409,8 @@ func _ready() -> void:
 	_def = def
 	var skeleton := model.find_child("Skeleton3D", true, false) as Skeleton3D
 	_skeleton = skeleton
+	if def.has("vent"):
+		_build_vent(model, def["vent"])
 	# Before the arm, so the arm's hooks run after the legs have turned.
 	locomotion = Locomotion.new()
 	locomotion.name = "Locomotion"
@@ -488,6 +494,8 @@ func _process(delta: float) -> void:
 	if actor == null or not is_instance_valid(actor):
 		return
 	_steady_eyes(delta)
+	if _def.get("beam", false):
+		_update_beam(delta)
 	_detail_delta += delta
 	_detail_wait += 1
 	if _detail_wait < _detail_every:
@@ -1208,6 +1216,11 @@ static func helmet_light(v: Visor) -> String:
 ## the head under it. Bare-headed, the head shows again.
 func _update_helmet() -> void:
 	var id := actor.visor.item_id if actor.visor.enabled else ""
+	# A skin that comes with its own helmet (an exo trooper's) wears it when
+	# no helmet is worn: lit in the body's colour, the side it fights for.
+	var own: String = _def.get("helmet", "") if id == "" else ""
+	if own != "":
+		id = "skin:" + own
 	if id == _helmet_id and (id == "" or is_instance_valid(_helmet)):
 		return
 	_helmet_id = id
@@ -1221,7 +1234,9 @@ func _update_helmet() -> void:
 	if id == "":
 		return
 	var bone: String = "Head" if _skeleton and _skeleton.find_bone("Head") >= 0 else _def.get("neck", "")
-	_helmet = _hang(build_helmet(actor.visor.mode, actor.visor.glass_color, helmet_size, helmet_shell_color),
+	var mode := actor.visor.mode if own == "" else own
+	var glass := actor.visor.glass_color if own == "" else actor.body_color.lightened(0.2)
+	_helmet = _hang(build_helmet(mode, glass, helmet_size, helmet_shell_color),
 			"Helmet", bone, helmet_offset, Vector3(0.0, _def.get("height", 1.8) * 0.93, 0.0) + helmet_offset)
 
 
@@ -1246,6 +1261,8 @@ static func build_helmet(mode: String, glass: Color, size: Vector3, shell_color:
 	neck.height = 1.0
 	_piece(root, "Neck", neck, shell, Vector3(0, -size.y * 0.45, size.z * 0.06),
 			Vector3(size.x * 0.55, size.y * 0.2, size.z * 0.55))
+	if mode == "slit":
+		return _closed_helm(root, size, plate, _solid(glass, 1.4))
 	# The faceplate: glass over the eyes, wrapped round the front of the shell.
 	var face := SphereMesh.new()
 	face.radius = 0.5
@@ -1302,6 +1319,162 @@ static func build_helmet(mode: String, glass: Color, size: Vector3, shell_color:
 	return root
 
 
+## An exo trooper's closed helmet: a faceplate over the whole front, one
+## narrow slit lit in `slit` across the eyes, a heavy brow over it, cheek
+## guards and a jaw plate. Added to a shell `build_helmet` has made.
+static func _closed_helm(root: Node3D, size: Vector3, plate: Material, slit: Material) -> Node3D:
+	var face := SphereMesh.new()
+	face.radius = 0.5
+	face.height = 1.0
+	_piece(root, "Faceplate", face, plate, Vector3(0, -size.y * 0.06, -size.z * 0.1),
+			Vector3(size.x * 0.98, size.y * 0.66, size.z * 0.86))
+	_piece(root, "Slit", BoxMesh.new(), slit, Vector3(0, size.y * 0.02, -size.z * 0.52),
+			Vector3(size.x * 0.62, size.y * 0.07, 0.02))
+	_piece(root, "Brow", BoxMesh.new(), plate, Vector3(0, size.y * 0.12, -size.z * 0.46),
+			Vector3(size.x * 0.92, 0.04, 0.07))
+	_piece(root, "Jaw", BoxMesh.new(), plate, Vector3(0, -size.y * 0.3, -size.z * 0.38),
+			Vector3(size.x * 0.6, 0.07, 0.1))
+	for side: float in [-1.0, 1.0]:
+		var cheek := _piece(root, "Cheek", BoxMesh.new(), plate,
+				Vector3(side * size.x * 0.42, -size.y * 0.16, -size.z * 0.26), Vector3(0.035, 0.12, 0.13))
+		cheek.rotation.y = side * 0.45
+	return root
+
+
+## Where an exo trooper's cooling pack rides, from the back bone.
+var cooler_offset := Vector3(0.0, -0.02, 0.2)
+
+
+## An exo trooper's cooling pack, front toward -Z (against the back): a
+## squat housing, two finned radiator stacks standing proud of it and a
+## coolant strip down the middle lit in `lit` (the side it fights for).
+static func build_cooler(color: Color, lit: Color) -> Node3D:
+	var root := Node3D.new()
+	root.name = "CoolerModel"
+	var shell := _solid(color.darkened(0.15), 0.0)
+	var dark := _solid(color.darkened(0.5), 0.0)
+	_piece(root, "Housing", BoxMesh.new(), shell, Vector3(0, 0, 0.02), Vector3(0.34, 0.4, 0.13))
+	_piece(root, "Lid", BoxMesh.new(), shell, Vector3(0, 0.22, 0.0), Vector3(0.3, 0.05, 0.16))
+	for side: float in [-1.0, 1.0]:
+		var stack := CylinderMesh.new()
+		stack.top_radius = 0.5
+		stack.bottom_radius = 0.5
+		stack.height = 1.0
+		_piece(root, "Stack", stack, dark, Vector3(side * 0.12, 0.05, 0.12), Vector3(0.09, 0.44, 0.09))
+		for i in 5:
+			_piece(root, "Fin", stack, shell, Vector3(side * 0.12, -0.12 + i * 0.075, 0.12),
+					Vector3(0.12, 0.012, 0.12))
+	_piece(root, "Coolant", BoxMesh.new(), _solid(lit.lightened(0.25), 1.2), Vector3(0, 0.0, 0.09),
+			Vector3(0.035, 0.28, 0.01))
+	return root
+
+
+## A walker's heat vent, the weak spot on its back, built on the model where
+## its back is: a dark grille with glowing slats in the Foundry's molten
+## orange, and a small light. `spec` is [bone, height share, size].
+const VENT_GLOW := Color(1.0, 0.36, 0.08)
+
+
+func _build_vent(model: Node3D, spec: Array) -> void:
+	var to_actor := actor.global_transform.affine_inverse()
+	var box := AABB()
+	var first := true
+	for node in model.find_children("*", "MeshInstance3D", true, false):
+		var mesh_node := node as MeshInstance3D
+		var aabb := to_actor * mesh_node.global_transform * mesh_node.get_aabb()
+		box = aabb if first else box.merge(aabb)
+		first = false
+	if first:
+		return
+	var height: float = _def.get("height", 2.4)
+	var size: Vector2 = spec[2]
+	# Actors face -Z, so the back is the box's +Z face.
+	var at := Vector3(box.get_center().x, height * float(spec[1]), box.end.z - 0.02)
+	var vent := Node3D.new()
+	vent.name = "VentModel"
+	_piece(vent, "Grille", BoxMesh.new(), _solid(Color(0.12, 0.1, 0.09), 0.0), Vector3(0, 0, 0.01),
+			Vector3(size.x, size.y, 0.05))
+	var glow := _solid(VENT_GLOW, 3.0)
+	for i in 4:
+		_piece(vent, "Slat", BoxMesh.new(), glow,
+				Vector3(0, -size.y * 0.36 + i * size.y * 0.24, 0.04), Vector3(size.x * 0.82, size.y * 0.1, 0.02))
+	var light := OmniLight3D.new()
+	light.light_color = VENT_GLOW
+	light.light_energy = 1.4
+	light.omni_range = 1.8
+	light.shadow_enabled = false
+	light.position = Vector3(0, 0, 0.3)
+	vent.add_child(light)
+	var bone_name: String = spec[0]
+	var bone := _skeleton.find_bone(bone_name) if _skeleton else -1
+	var offset := at
+	if bone >= 0:
+		var bone_at := to_actor * _skeleton.global_transform * _skeleton.get_bone_global_rest(bone)
+		offset = at - bone_at.origin
+	_hang(vent, "Vent", bone_name if bone >= 0 else "", offset, at)
+
+
+## A walker's tracking beam, seen by everyone: while its aim is up (the
+## command's held aim) a thin line runs from its cannon along the aim to
+## whatever it meets, faint at first and hot and wide once it has held
+## `lock_time` (the actor's meta, the same the brain waits for), when the
+## cannon fires. Breaking the line of sight drops the aim and the beam.
+func _update_beam(delta: float) -> void:
+	var on := actor.cmd.secondary and not actor.is_dead
+	_beam_held = _beam_held + delta if on else 0.0
+	if _beam == null:
+		_beam = MeshInstance3D.new()
+		_beam.name = "TrackingBeam"
+		var tube := CylinderMesh.new()
+		tube.top_radius = 0.5
+		tube.bottom_radius = 0.5
+		tube.height = 1.0
+		tube.radial_segments = 6
+		tube.rings = 1
+		_beam.mesh = tube
+		_beam_mat = StandardMaterial3D.new()
+		_beam_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		_beam_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		_beam_mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+		_beam_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+		_beam.material_override = _beam_mat
+		_beam.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		_beam.top_level = true
+		add_child(_beam)
+	_beam.visible = on
+	if not on:
+		return
+	var lock: float = actor.get_meta("lock_time", 1.0)
+	var held := clampf(_beam_held / maxf(lock, 0.01), 0.0, 1.0)
+	var from := actor.get_eye_position()
+	var dir := actor.cmd.aim_dir if actor.cmd.aim_dir.length() > 0.5 \
+			else Basis.from_euler(Vector3(actor.cmd.pitch, actor.cmd.yaw, 0.0)) * Vector3.FORWARD
+	var reach := beam_reach
+	if is_inside_tree():
+		var query := PhysicsRayQueryParameters3D.create(from, from + dir * reach,
+				Actor.LAYER_WORLD | Actor.LAYER_ACTORS)
+		query.exclude = [actor.get_rid()]
+		var hit := get_world_3d().direct_space_state.intersect_ray(query)
+		if not hit.is_empty():
+			reach = from.distance_to(hit.position)
+	var width := lerpf(0.012, 0.035, held)
+	var color := Color(0.9, 0.12, 0.04).lerp(Color(1.0, 0.5, 0.12), held)
+	color.a = lerpf(0.25, 0.85, held)
+	if held >= 1.0:
+		# Locked: it flickers as the cannon fires down it.
+		color.a *= 0.75 + 0.25 * sin(_beam_held * 40.0)
+	_beam_mat.albedo_color = color
+	var mid := from + dir * reach * 0.5
+	var basis := Basis.looking_at(dir, Vector3.UP if absf(dir.y) < 0.99 else Vector3.RIGHT)
+	# The tube stands along Y: lay it along the aim (-Z of `looking_at`).
+	basis = basis * Basis(Vector3.RIGHT, PI * 0.5)
+	_beam.global_transform = Transform3D(basis.scaled_local(Vector3(width, reach, width)), mid)
+
+
+## How far a tracking beam reaches when it meets nothing.
+var beam_reach := 90.0
+
+
 ## The colour every frame's plates are drawn in.
 const FRAME_COLOR := Color(0.46, 0.48, 0.45)
 
@@ -1316,6 +1489,11 @@ static func frame_weight(id: String) -> String:
 ## Puts the worn armor frame's plates on the body, rebuilt when another goes on.
 func _update_frame() -> void:
 	var id := actor.frame_id
+	# A skin that comes in its own armor (an exo trooper's) wears plates of
+	# that weight when no frame is worn.
+	var own: String = _def.get("frame", "") if id == "" else ""
+	if own != "":
+		id = "skin:" + own
 	if id == _frame_id and (id == "" or (not _frame_parts.is_empty() and is_instance_valid(_frame_parts[0]))):
 		return
 	_frame_id = id
@@ -1325,17 +1503,25 @@ func _update_frame() -> void:
 	_frame_parts.clear()
 	if id == "" or _skeleton == null:
 		return
-	var weight := frame_weight(id)
+	var weight := frame_weight(id) if own == "" else own
 	var height: float = _def.get("height", 1.8)
 	_frame_parts.append(_hang(build_frame(weight, FRAME_COLOR), "Frame", _def.get("back_bone", ""), frame_offset,
 			Vector3(0.0, height * 0.72, 0.0) + frame_offset))
 	if weight == "light":
 		return
+	# Powered armor (a skin's own, "pad_scale") wears its shoulder plates big
+	# enough to change the outline, and a cooling pack on its back.
+	var pad_scale: float = _def.get("pad_scale", 1.0) if own != "" else 1.0
 	for side: String in ["L", "R"]:
 		var out := -1.0 if side == "L" else 1.0
-		_frame_parts.append(_hang(build_pad(weight, FRAME_COLOR, out), "Pad" + side, "UpperArm." + side,
-				Vector3(pad_offset.x * out, pad_offset.y, pad_offset.z),
+		var pad := build_pad(weight, FRAME_COLOR, out)
+		pad.scale = Vector3.ONE * pad_scale
+		_frame_parts.append(_hang(pad, "Pad" + side, "UpperArm." + side,
+				Vector3(pad_offset.x * out * pad_scale, pad_offset.y + 0.02 * (pad_scale - 1.0), pad_offset.z),
 				Vector3(0.2 * out, height * 0.8, 0.0)))
+	if own != "" and _def.has("back_pack"):
+		_frame_parts.append(_hang(build_cooler(FRAME_COLOR, actor.body_color), "Cooler", _def.get("back_bone", ""),
+				cooler_offset, Vector3(0.0, height * 0.7, 0.0) + cooler_offset))
 
 
 ## A frame's plates for its `weight`, front toward -Z, built round the chest

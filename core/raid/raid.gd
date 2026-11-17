@@ -62,6 +62,9 @@ const MIN_BOT_SPAWN_DISTANCE := 40.0
 const PARKED_DISTANCE := 6.0
 ## A spawn point this close to open ground, above or below, is stood on it.
 const SPAWN_SNAP := 2.5
+## How many times a bot the world turns away is rolled again before the last
+## roll is kept anyway.
+const BOT_REROLLS := 8
 ## Seconds between rounds of orders to the bot factions.
 const ORDERS_EVERY := 8.0
 const DETAIL_EVERY := 0.25
@@ -1577,6 +1580,15 @@ func zone_label(actor: Actor) -> String:
 func _add_bot(marker: Node3D, warlord := false) -> Actor:
 	var at := marker.global_position + Vector3(rng.randf_range(-1, 1), 0, rng.randf_range(-1, 1))
 	var bot := spawn_bot("Bot%d" % _bot_count, _stand(at), rng.randi(), warlord, marker.get_meta("faction", ""))
+	# The world may turn a rare kind away (`WorldDef.bot_allowed`): roll again.
+	for tries in BOT_REROLLS:
+		if world.bot_allowed(bot, self):
+			break
+		bots.erase(bot)
+		bot_seeds.erase(bot)
+		warlords.erase(bot)
+		bot.free()
+		bot = spawn_bot("Bot%d" % _bot_count, _stand(at), rng.randi(), warlord, marker.get_meta("faction", ""))
 	if warlord:
 		# What a warlord carries is worth the fight.
 		for id in world.roll_war_loot("bot", rng, 1.0) + world.roll_war_loot("cache", rng, 1.0):

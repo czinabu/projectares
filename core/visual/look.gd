@@ -92,6 +92,34 @@ const SKINS := {
 		"scenes": ["Stan.glb"], "height": 2.2, "tint": Color(0.62, 0.68, 0.74),
 		"anims": {"idle": "Idle", "walk": "Walk", "run": "Run", "death": "Death", "attack": "Punch"},
 	},
+	# Ashfront's Legion riflemen: people in the army's kit.
+	"legionary": {
+		"people": {"m": ["Swat", "Adventurer"], "f": ["Soldier", "Adventurer"]},
+		"height": 1.8, "tint": Color(0.66, 0.72, 0.84), "grip_bone": "Middle1.R", "arm": HUMAN_ARM, "off_arm": HUMAN_OFF_ARM,
+		"spine": HUMAN_SPINE, "neck": "Neck", "lead_leg": HUMAN_LEAD_LEG, "trail_leg": HUMAN_TRAIL_LEG,
+		"back_bone": "Chest", "hip_bone": "Hips", "feet": HUMAN_FEET,
+		"saturation": 0.6, "brightness": 0.78, "metal": 0.0, "rough": 0.85,
+		"anims": HUMAN_ANIMS,
+	},
+	# An exo trooper: a person in powered armor. The skin wears heavy plates
+	# ("frame") and a closed helmet with a visor slit ("helmet", a
+	# `build_helmet` mode) lit in the army's colour, whatever is worn.
+	"exo": {
+		"people": {"m": ["Swat", "Spacesuit"], "f": ["Soldier", "SciFi"]},
+		"height": 1.88, "tint": Color(0.52, 0.54, 0.56), "grip_bone": "Middle1.R", "arm": HUMAN_ARM, "off_arm": HUMAN_OFF_ARM,
+		"spine": HUMAN_SPINE, "neck": "Neck", "lead_leg": HUMAN_LEAD_LEG, "trail_leg": HUMAN_TRAIL_LEG,
+		"back_bone": "Chest", "hip_bone": "Hips", "feet": HUMAN_FEET,
+		"saturation": 0.4, "brightness": 0.7, "metal": 0.35, "rough": 0.6,
+		"anims": HUMAN_ANIMS, "frame": "heavy", "helmet": "slit", "pad_scale": 1.75, "back_pack": "cooler",
+	},
+	# The Kiln Walker: a war machine on two legs, its cannon the arm. Its
+	# heat vent glows on its back ("vent": bone, height share, size; the weak
+	# spot) and its cannon draws a tracking beam while it aims ("beam").
+	"walker": {
+		"scenes": ["Leela.glb", "Mike.glb"], "height": 2.4, "tint": Color(0.6, 0.48, 0.4),
+		"vent": ["Chest", 0.66, Vector2(0.5, 0.42)], "beam": true,
+		"anims": {"idle": "Idle", "walk": "Walk", "run": "Run", "death": "Death", "attack": "Shoot"},
+	},
 	"stalker": {
 		"scenes": ["Enemy_2Legs_Gun.glb"], "height": 1.7, "tint": Color(0.3, 0.32, 0.38),
 		"anims": {"idle": "Idle", "walk": "Walk", "run": "Run", "death": "Death", "attack": "Attack"},
