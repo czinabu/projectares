@@ -24,6 +24,10 @@ var march_distance := 12.0
 var repath_distance := 1.5
 ## Chance that a melee bot reads the side of an incoming swing in time.
 var guard_skill := 0.4
+## Scales the pause between swings. A world sets `melee_tempo` on the bot
+## (a heavy that should land more than one swing in the time a gun takes to
+## answer). 1 is the default cadence.
+var melee_tempo := 1.0
 var guard_reaction := 0.22
 
 ## Gun aim. Bots aim like people, not like an aimbot: they turn onto a target
@@ -39,8 +43,9 @@ var skill_range := Vector2(0.25, 0.75)
 var turn_speed_deg := 200.0
 ## Seconds the aim trails a moving target (at skill 0.5).
 var track_lag := 0.22
-## Settled aim wander, degrees (at skill 0.5).
-var aim_error_deg := 2.2
+## Settled aim wander, degrees (at skill 0.5). Wide enough that a rookie
+## misses a runner, tight enough that a settled shot at rifle range can hit.
+var aim_error_deg := 1.55
 ## The wander on first sight is this many times the settled one...
 var settle_mult := 3.0
 ## ...and settles over this long in view.
@@ -50,7 +55,7 @@ var settle_time := 2.5
 var air_error_deg := 3.0
 var far_error_deg := 0.08
 ## Extra wander while the bot itself is moving, degrees.
-var self_move_error_deg := 1.0
+var self_move_error_deg := 0.65
 ## Fires only when its aim is within this of where it means to aim, degrees.
 var fire_cone_deg := 6.0
 
@@ -141,6 +146,8 @@ func _ready() -> void:
 	_think_left = _rng.randf() * 0.2
 	if skill < 0.0:
 		skill = _rng.randf_range(skill_range.x, skill_range.y)
+	if actor.has_meta("melee_tempo"):
+		melee_tempo = float(actor.get_meta("melee_tempo"))
 	actor.health.damaged.connect(_on_damaged)
 	actor.heard.connect(_on_heard)
 
@@ -306,6 +313,10 @@ func _attack(cmd: ActorCommand, delta: float) -> void:
 		return
 	_aim_gun(cmd, eye, chest, dist, delta)
 	_combat_hop(cmd, delta)
+	# Aim down sights on the ground, the way a person fights a duel. In the
+	# air the hop owns the aim button (a jetpack hovers while it is held).
+	if actor.is_on_floor() and _hop_left <= 0.0:
+		cmd.secondary = true
 
 	# Keep a comfortable distance: close in, back off, or strafe.
 	if dist > preferred_range * 1.4:
@@ -405,7 +416,7 @@ func _attack_melee(cmd: ActorCommand, blade: MeleeWeapon, delta: float) -> void:
 	if dist <= blade.reach * 0.9 and _melee_wait <= 0.0 and _seen_time >= reaction_time and not threatened:
 		cmd.stance = _rng.randi_range(0, MeleeWeapon.Dir.size() - 1)
 		cmd.primary_pressed = true
-		_melee_wait = _rng.randf_range(1.0, 1.7)
+		_melee_wait = _rng.randf_range(1.0, 1.7) * melee_tempo
 		_guard_delay = 0.75
 		_guard_dir = _rng.randi_range(0, MeleeWeapon.Dir.size() - 1)
 		return

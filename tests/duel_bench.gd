@@ -48,6 +48,10 @@ func _ready() -> void:
 	field.rows = duels
 	_raid = Raid.new()
 	add_child(_raid)
+	# A duel is the fight a player is standing in, so both bodies simulate
+	# every tick. With no player nearby the raid would thin every bot out to
+	# every fourth tick, and the bench would measure that coarser fight.
+	_raid.far_detail_step = 1
 	_raid.start_server(field, seed_base)
 	print("Duel bench: %s, %d duels a matchup, reference kit %s at skill %.2f" % [_world.id, duels,
 			", ".join(REF_KIT), REF_SKILL])
@@ -125,6 +129,7 @@ func _make_ref(at: Vector3, equip_seed: int) -> Actor:
 	var ref := _raid.spawn_bot("Ref%d" % equip_seed, at, equip_seed, false, "ref", 0, REF_KIT)
 	ref.display_name = "Reference"
 	_brain(ref, equip_seed, Vector2(REF_SKILL, REF_SKILL), true)
+	_seed_guns(ref, equip_seed)
 	return ref
 
 
@@ -154,7 +159,20 @@ func _make_enemy(type: String, at: Vector3, equip_seed: int) -> Actor:
 				_raid._remove_actor(bot)
 				try_seed += 7919
 			_brain(bot, equip_seed, _world.bot_skill_range(bot, false), false)
+	_seed_guns(bot, equip_seed)
 	return bot
+
+
+## Guns draw their spread from an unseeded generator, so the same duel would
+## not repeat. Pin it from the duel seed; the fights stay a sample, and the
+## table can be run again.
+func _seed_guns(actor: Actor, salt: int) -> void:
+	var i := 0
+	for weapon in actor.weapons:
+		var gun := weapon as Gun
+		if gun:
+			gun._rng.seed = hash(salt * 1000 + i)
+		i += 1
 
 
 func _brain(actor: Actor, brain_seed: int, skill_range: Vector2, kit: bool) -> BotBrain:
