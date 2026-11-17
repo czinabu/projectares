@@ -154,3 +154,22 @@ rows marked **pre-playtest** come before the friends playtest.
 | Bounties on hot players, paid on extract, tied to the most-wanted board | Partly | Renown, bounties and the Marked exist in the PvP world; payouts in upgrade data and the board are missing. |
 | Safety nets: free Mk1 kit, one insured item, salvage on loss | Partly | The free `starter` scrap kit exists. Insurance and salvage are missing. |
 | Prestige vehicles and rigs from hard feats | Missing | List TBD. |
+
+## Online and servers (DESIGN.md section 14)
+
+| Item | State | Notes |
+| --- | --- | --- |
+| Authoritative server, input-only clients, prediction, lag compensation | Built | `NetSession`, `ActorCommand.apply_array` clamps every input. |
+| Sign-in and version check before a player gets in | Partly | Sign-in is an ordinary call after connecting, and only the client acts on a `PROTOCOL` mismatch. Missing: `SceneMultiplayer.auth_callback`. **pre-playtest** |
+| Hardening: relay off, request limits, safe saves, backups | Missing | `server_relay` is Godot's default (on); no per-player request limits; `ClanService` writes its file in place; no account backups. **pre-playtest** |
+| Reconnect to your body after a drop | Missing | A disconnect starts a sign-out on the standing body (`Raid.remove_player`) and a new sign-in waits it out. **pre-playtest** |
+| Whole-server bench and health log | Missing | `battle_bench` measures one world; nothing measures the plaza, worlds and arena together. **pre-playtest** |
+| Encrypted connections | Missing | ENet traffic, including the sign-in secret, is plain. |
+| Accounts on SQLite with all-or-nothing changes | Missing | One JSON file per account (`StashService._save`). Needed before the marketplace. |
+| Account service as its own program | Missing | `StashService`, `SocialService` and `ClanService` live in the server's memory, shared by sessions in one process. |
+| One program per world, routes with an address | Partly | `--world` runs one world alone, but routes carry only a port and world status is gathered in memory (`NetSession._gather_status`). |
+| Official versus friends' servers | Missing | Every server keeps its own accounts; your own server takes on your solo profile. |
+| Steam login | Missing | Name plus a secret the game makes. |
+| Matchmaker, plaza shards, hiding unseen enemies | Missing | Later, when numbers call for it. |
+| Official servers before Steam: recovery code, one-time Steam link | Missing | Accounts are tied to the computer whose game made the secret. |
+| Smooth travel: auto-reconnect, official servers by default, account shown, no full-world dead end, update link on a version mismatch | Missing | See DESIGN.md section 14, "Smooth for the player". |
