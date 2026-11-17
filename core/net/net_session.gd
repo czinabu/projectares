@@ -452,6 +452,11 @@ func _start_server_raid() -> void:
 			var peer: int = _actor_peer.get(actor, 0)
 			if peer in _api.get_peers():
 				_notice.rpc_id(peer, text))
+	var race := raid as Race
+	if race != null:
+		# Each racer is sent their own run; everyone gets the board.
+		race.run_changed.connect(_on_race_run_changed)
+		race.board_changed.connect(_send_race_board)
 	raid.start_server(world)
 
 
@@ -1156,6 +1161,8 @@ func _request_join(drop := "") -> void:
 		_send_portal(peer, portal)
 	_send_watch(actor)
 	_sent_points.erase(peer)
+	if raid is Race:
+		_race_board.rpc_id(peer, (raid as Race).public_board())
 
 
 ## Arena: a player in it asks for something (challenge, accept, bet...).
@@ -1172,6 +1179,35 @@ func _arena_request(action: String, args: Dictionary) -> void:
 	if not result.ok and peer in _api.get_peers():
 		_notice.rpc_id(peer, result.error)
 	_board_dirty = true
+
+
+## Race: a racer asks for a restart or to stop their run. The server's own
+## `Race.request` decides, for the sender's own actor.
+@rpc("any_peer", "call_remote", "reliable")
+func _race_request(action: String) -> void:
+	var peer := _api.get_remote_sender_id()
+	var race := raid as Race
+	if not is_server or race == null or not _peer_actor.has(peer) or action not in ["restart", "retire"]:
+		return
+	var result := race.request(_peer_actor[peer], action)
+	if not result.ok and peer in _api.get_peers():
+		_notice.rpc_id(peer, result.error)
+
+
+func _on_race_run_changed(actor: Actor) -> void:
+	var peer: int = _actor_peer.get(actor, 0)
+	if peer in _api.get_peers():
+		_race_run.rpc_id(peer, (raid as Race).run_view(actor))
+
+
+func _send_race_board() -> void:
+	var race := raid as Race
+	if race == null:
+		return
+	var rows := race.public_board()
+	for peer: int in _peer_actor:
+		if peer in _joined_peers and peer in _api.get_peers():
+			_race_board.rpc_id(peer, rows)
 
 
 ## Sends each player in the arena their own view of the board, when it
@@ -1953,6 +1989,8 @@ func _welcome(actor_id: int) -> void:
 	raid.start_client(world)
 	if raid is Arena:
 		raid.send_request = arena_request
+	elif raid is Race:
+		raid.send_request = race_request
 
 
 ## Client: someone's power weapon slot changed (taken off a rack, swapped,
@@ -2031,7 +2069,7 @@ func _spawn(id: int, kind: String, shown_name: String, node_name: String, at: Ve
 		var power: Variant = data.get("power")
 		if power is Array and power.size() == 3 and ItemDB.has_tag(str(power[0]), "power"):
 			Loadout.set_power(actor, power[0], int(power[1]), int(power[2]), false)
-		actor.weapons_locked = raid.world.safe_zone
+		actor.weapons_locked = raid.world.safe_zone or not raid.world.weapons_free
 		Raid.MasteryTracker.apply_variants(actor, data.get("picks", {}))
 		raid.world.on_spawn(actor)
 		# Listed as a player, so the HUD and scoreboard can tell them from bots.
@@ -2449,6 +2487,28 @@ func arena_request(action: String, args := {}) -> void:
 		_arena_request.rpc_id(1, action, args)
 
 
+## Race: ask the server to restart or stop your run (see `Race.request`).
+func race_request(action: String) -> void:
+	if _is_connected() and my_actor_id >= 0:
+		_race_request.rpc_id(1, action)
+
+
+## Race: your own run, as the server judged it.
+@rpc("authority", "call_remote", "reliable")
+func _race_run(view: Dictionary) -> void:
+	var race := raid as Race
+	if race != null:
+		race.set_remote_run(view)
+
+
+## Race: the best laps on the board.
+@rpc("authority", "call_remote", "reliable")
+func _race_board(rows: Array) -> void:
+	var race := raid as Race
+	if race != null:
+		race.set_remote_board(rows)
+
+
 @rpc("authority", "call_remote", "reliable")
 func _arena_board(p_board: Dictionary) -> void:
 	_after_lag(_receive_board.bind(p_board))
@@ -2627,7 +2687,7 @@ func _apply_state(actor: Actor, entry: Array, mine: bool) -> void:
 	if absf(actor.stagger_left - stagger) > 0.15:
 		actor.stagger_left = stagger
 	# A gate outpost's lock is the server's call (`Raid._tick_outposts`).
-	if not raid.world.safe_zone:
+	if not raid.world.safe_zone and raid.world.weapons_free:
 		actor.weapons_locked = typeof(entry[3]) == TYPE_ARRAY and entry[3].size() == ActorCommand.ARRAY_SIZE \
 				and int(ActorCommand._number(entry[3][ActorCommand.FLAGS_INDEX])) & ActorCommand.STATE_SHELTERED != 0
 	var id: int = entry[0]
