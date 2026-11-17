@@ -122,8 +122,11 @@ different name, and nobody else can use yours. The stashes are kept in a
 Docker volume called `ares-data`, so updating or restarting the server does
 not lose them.
 
-Everyone must run the same version of the game as the server. If someone sees
-"The server runs a different version of the game", they need to update.
+Everyone must run the same version of the game as the server. The server
+checks the version before anyone gets in. A player whose game is older is
+told so, and the phone's Servers app gets a **Get the update** button that
+opens the latest build's download page. A player whose game is newer is told
+the server needs updating: pull and rebuild it (see below).
 
 ## Everyday tasks
 
@@ -135,7 +138,8 @@ Log in with `ssh root@<address>` and `cd projectares` first.
 | See the log | `docker compose logs -f` |
 | Restart the server | `docker compose restart` |
 | Stop the server | `docker compose down` |
-| Back up everyone's stash | `docker compose cp ares:/data/accounts ./accounts-backup` |
+| Copy everyone's stash to the machine | `docker compose cp ares:/data/accounts ./accounts-backup` |
+| Copy the server's own backups to the machine | `docker compose cp ares:/data/accounts_backups ./backups` |
 | Wipe every stash and start over | `docker compose down -v` |
 | Start it again | `docker compose up -d` |
 
@@ -152,6 +156,31 @@ To change the world, the bot count, or turn on squad spawns, edit the
 - `--no-plaza` to run one world alone on the port, with no social plaza
 - `--port 24565` to change the first port (then change the `ports:` line and the
   firewall rule to match, and join with `address:port`)
+
+## Backups
+
+The server backs up every account, clan and phone record by itself: once
+when it starts and then every hour, into a dated folder under
+`/data/accounts_backups` (beside `/data/accounts`, in the same volume). It
+keeps the newest 48, about two days. Saves are written whole and swapped in,
+so a crash never leaves half an account; an account file that still cannot
+be read is never replaced by a new account, and its player is asked to have
+the host restore it.
+
+To put a backup back, stop the server, copy the backup's files over the
+accounts folder and start it again:
+
+```
+docker compose down
+docker compose run --rm --entrypoint sh ares -c "ls /data/accounts_backups"
+docker compose run --rm --entrypoint sh ares -c "cp -r /data/accounts_backups/<folder>/. /data/accounts/"
+docker compose up -d
+```
+
+To put back one player only, copy just their `<name>.json` instead.
+
+A volume lives on the one machine, so copy the backups off it now and then
+(the `docker compose cp` lines above).
 
 ## Stop paying
 

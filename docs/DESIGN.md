@@ -48,7 +48,7 @@ new planet is a new folder under `worlds/`.
 | --- | --- | --- |
 | Main hub | The Concourse (`worlds/plaza`) | Social space. Show off cosmetics, rigs and watch skins. Doors to every world, the shops, the clan hall and the arena. Nobody can be hurt. |
 | Home base | `core/base` | Your private staging ground. The armory wall, the garage, the trophy shelf and the consoles. Loadouts are prepared here. |
-| PvE world | Frostline (partly) | Exploration, quests, dungeons and bosses. Learn the game, test builds, earn basic gear and materials. Gentle death. |
+| PvE world | Frostline (partly) | The co-op expedition world: cold, whiteouts and tracking instead of a war. Learn the game, test builds, earn basic gear and the crafting parts every Mk2 and Mk3 needs (planned). No PvP, gentle death. |
 | PvP world | Ashfront | The high-stakes warzone. Full loot, the only source of heavy weapons and the best loot, bank spots, sign-out tension. |
 | Gladiator arena | The Pit (`core/arena`) | Duels, bouts and tournaments. Loadouts are locked once a fight begins. Nobody loses gear. |
 
@@ -182,6 +182,62 @@ headquarters, in the order they are built:
 - **Deferred.** Quests, dungeons and bosses are a large amount of work, so they
   wait until after the friends playtest. Until then Frostline stands in as the
   PvE world (no PvP, gentle death, basic loot).
+
+### Frostline (Caleb's call)
+
+Frostline is Ashfront's opposite on every axis, so each world has its own
+job in the loop, not just its own palette. Ashfront is where rare gear, gear
+blueprints, upgrade data and heavy weapons come from; Frostline is where the
+parts that make gear better come from, so a hardcore player needs both
+worlds and a casual or solo one has a steady home.
+
+- **Co-op, no PvP (Caleb's call).** Many players dislike PvP but still want
+  to meet and work with others, so Frostline is where that happens:
+  everyone is on one side, and the world rewards working together (shared
+  warmth, joining someone's beacon, warming up a downed stranger, following
+  each other's tracks).
+- **Solo works too (Caleb's call).** Everything can be done alone; company
+  makes it easier, never possible. Beacons can be held alone, fights at the
+  core scale to the players near them, contracts never need a group.
+- **The place.** One long frozen river valley, about 600 m, climbing from
+  the river mouth (where you arrive) through the Narrows and across a
+  frozen lake to the glacier head, where the Stilled Engine lies half
+  buried: the terraforming drum that once kept the world warm. When it
+  froze, the war here stopped. The walls step up to a shelf (14 m, reached
+  by ramps) and a rim (40 m, flight only), so fights are about holding the
+  high side. Cold and quiet: a low sun, blue shadows, the only warm colours
+  are heaters, beacons and the Engine's one teal light.
+- **Threats (planned).** Body heat as a vital, drained in the open and
+  refilled at heater huts, vents and vehicle engines, hurting through
+  `Combat.deal` when empty; whiteouts that cut sight to about 30 m and wipe
+  tracks, and feel like a real blizzard (Caleb's call): wind you see and
+  hear, snow driven sideways in gusts, drifts streaming off the rims, bodies
+  leaning into it and the wind pushing flight rigs off course; footprints and vehicle tracks the server keeps and sends only
+  nearby; gunshots that carry twice as far; thin ice that breaks under
+  heavy vehicles; the Wardens as the Engine's defence grid, still running.
+- **What you bring home (planned).** New parts (Cryo Core, Glacial Alloy,
+  Engine Coil) that Mk2 and Mk3 recipes need, and Frostline blueprints for
+  new options only (attachments, cold-weather gear), never a higher Mk of
+  existing gear. Later the inside of the Engine is its deep-loot dungeon and
+  the home of the missing artifacts. Expedition contracts.
+- **Getting out (planned).** Sign-out only at warm beacons, held while they
+  power up (still `begin_sign_out`). Depots stay for banking.
+
+**Order of work**, one PR each: (1) the valley map, (2) the cold, (3) the
+loot role and recipes, (4) warm beacons, (5) whiteouts, after the Ashfront
+weather work, (6) tracks and louder gunshots, (7) thin ice, the defence
+grid and expedition contracts, (8) later, with the PvE dungeons, the
+Engine's inside. Every number is a placeholder for the playtest.
+
+**What is built.** The valley (step 1): `worlds/frostline/map.gd`, a
+`Terrain` shared between copies like Ashfront's, with the zones running up
+the valley (`zone_at`: river mouth, mid-valley, glacier head; no hazard
+yet), two-tier walls with ramps to the shelf, six heater huts (the heaters
+do nothing yet), three strongpoints held by the Wardens (Echo Post and
+Vigil Post on the shelves, Drift Post at the lake's north shore), six rim
+listening posts with the rooftop caches, the Stilled Engine with the relay
+cache on its back and the core's caches at its hatch, and Feral dens on the
+floor. Bot markers name their faction, and `equip_bot` follows them.
 
 ### PvP world
 
@@ -492,9 +548,23 @@ the storage behind it.
     your hand), vehicles (the toy carousel) and
     artifacts (the attuned one is used; others carried are shown but stay
     loot, one per outing). The pack's fill, worth, heals and scrip sit under
-    the tab, so there is no separate pack page.
-  - **Status:** the map and where the war is, your standing and the hunted
-    warning, under the vitals strip where the visor cannot show it.
+    the tab, and the pack's own icon opens (a click) as a list of what you
+    carry, each with its worth, that the wheel turns through.
+  - **Status (Caleb's call: its icons open with a click):** the map and
+    where the war is, and your standing and the hunted warning.
+    - **The map** shows a small map on the card. Opened, a tabletop
+      hologram of the ground rises off the wrist with its relief, the
+      wheel turns through the nearest depot, gate outpost (safe zone) and
+      strongpoint, the war's hot zone, the world event and your squad's
+      pings, each with a line from you, its distance and direction, and a
+      click sets the picked one as your waypoint: a column of light and a
+      mark on the visor's heading strip that only you see, gone once you
+      get there. It shows only what you are already told, never people.
+    - **Standing** opens as "This run", three pages the wheel turns
+      through: at stake (the pack and its worth, scrip carried, session
+      renown, any bounty: what dying now would cost), safe (what this life
+      has banked, lifetime rank) and this life (time alive, kills, streak,
+      the contract nearest done).
   - **Mission:** the squad portal, the contract tracker, a squad ping, and
     sign-out and banking.
 - **Pop-ups only while they matter:** the death report and landing choices
@@ -502,10 +572,15 @@ the storage behind it.
 - **Balance:** a weapon takes time to materialize by weight (a sidearm about
   half a second, a rifle about a second, two-handers and marksman rifles
   longer) and cannot be used until it is solid; then the watch rests for a
-  few seconds before the next. Vehicles keep their own recharge. So nobody
-  swaps for free mid-gunfight.
+  few seconds before the next. A helmet or armor frame from the pack goes
+  on at once, and the watch rests after it too: briefly for a helmet,
+  longer for a frame. While it rests the face breathes amber, the carousel
+  shows the rest running out, a click on the pack is refused with a low
+  buzz, and a soft chime says it is ready. Vehicles keep their own
+  recharge. So nobody swaps for free mid-gunfight.
 - **The same in both views:** a weapon digitizes into the one real hand
-  under a shimmer of light, and the carried weapons stand over the card as
+  under a shimmer of light, with a rising digital sweep everyone near
+  hears (falling as one is stored), and the carried weapons stand over the card as
   small holograms of their real models.
 - **Everywhere (Caleb's call).** Every vehicle, the jet included, can be
   thrown in every world, the plaza too, and a weapon in the pack can be
@@ -516,8 +591,9 @@ the storage behind it.
   the watch, and a weapon picked is equipped. Out in a world it is only what
   you carry.
 - **The heavy chamber.** A heavy weapon found in the world is scanned into
-  the watch and summoned from the weapon carousel, never drawn by a key
-  (section 6).
+  the watch and summoned from the weapon carousel, or drawn with key 4
+  (Caleb's call after a playtest); either way it materializes like any
+  summon (section 6).
 
 ### Squad portals (Caleb's call)
 
@@ -561,11 +637,11 @@ other places, not only to the worlds).
 | Vehicle carousel | The permanent garage: swipe through your vehicles, take one as a toy in your hand, throw it to unpack the full-size vehicle. Packs vehicles back up. |
 | Heavy weapon chamber | Holds one heavy weapon (section 6). |
 | Artifact | Holds and uses your one artifact for the outing (section 6). |
-| Sign-out | Starting a sign-out and its countdown (section 7). |
-| Banking | Banking at a depot and what is banked so far (section 7). |
-| Map and pings | The map, standing, strongpoints, and pings to your squad (the ping marks where you look, for your side only). |
+| Sign-out | Starting or cancelling a sign-out with a click on its icon (or L), and its countdown (section 7). |
+| Banking | Banking at a depot, and what this life has sent home so far, on the sign-out icon (section 7). |
+| Map and pings | A small holographic map on the Status tab (you and where you face, strongpoints and who holds them, depots, gate outposts, the war's hot zone, the risk zones and your side's pings; never other people), standing, and pings to your squad (the ping marks where you look, for your side only). |
 | Contract tracker | Your active contracts, on the Mission tab (section 10). |
-| Landing choices | Where to drop back in after dying. |
+| Landing choices | Where to drop back in after dying: the wheel picks one on the death report and a click drops in (number keys and Enter still work). |
 | Squad portal | Opens a portal to a world, the arena, the plaza or home from your base and the plaza, or home from anywhere in a world as a sign-out (above). |
 | Pack | What you carry, folded into the Summon tab: its fill, worth, heals and scrip, and later your weight tier (section 4). |
 
@@ -582,10 +658,11 @@ your eyes, and the hologram opens off the watch on your actual wrist.
   the watch stays strapped to the real wrist bone. The hologram opens from
   that wrist instead of floating towards the camera. A two-handed hold lets
   go with the left hand while the watch is up.
-- **First person.** Your own left arm, in your outfit and skin tone, comes
-  up into the bottom of the view in the same pose, replacing today's grey
-  box forearm. The body is not drawn in first person, so this is a copy of
-  just the character's left arm.
+- **First person.** The same arm of the same body, seen from the eyes: the
+  wrist comes up in front of them along the aim, so the watch is in view
+  wherever you look, and the card opens just over its face. There is no
+  first-person copy of the arm (the camera rule: first and third person
+  differ only in where the camera is).
 - Other players see your arm come up too, so a raised watch is a tell that
   you are looking at it.
 - The pose is view only: it never changes aim, movement or anything the
@@ -616,6 +693,49 @@ Every player brings a modular loadout. Five slots define the combat role:
 Alongside those five: an armor frame, headgear (a helmet or goggles, each
 with a visor), a vehicle on the watch, and the heavy weapon chamber, which is
 filled in the field.
+
+### Gun roles
+
+Every gun has a range and a target it wins against, so the pick is a
+choice and not one best gun. Headshots pay on every gun, close-range guns
+lose damage past their reach, and marksman rounds punch partly through
+plates. The gun bench (`tests/gun_bench.tscn`) prints each gun's time to
+kill by range and armor with every round landing. Against a mid kit
+(Trooper Frame, 85 armor):
+
+| Gun | Role | Body | All head | Falls off |
+| --- | --- | --- | --- | --- |
+| Ashfront Carbine | The all-rounder | 8 rounds, 0.70 s | 6, 0.50 s | 50 to 100 m, to 80% |
+| Scrap Rifle | Starter all-rounder | 10, 0.99 s | 7, 0.66 s | 40 to 90 m, to 75% |
+| Stinger SMG | Wins inside about 15 m | 10, 0.58 s | 8, 0.46 s | 12 to 30 m, to 55% |
+| Longshot DMR | Precision at any range, through plates | 3, 0.84 s | 2, 0.42 s | Never |
+| Breacher Shotgun | Two blasts at blade range | 2, 0.75 s | (pellets) | 8 to 22 m, to 35% |
+| Service Pistol | Accurate backup | 9, 1.28 s | 5, 0.64 s | 25 to 60 m, to 70% |
+| Hornet Machine Pistol | Close spray backup | 19, 0.99 s | 15, 0.77 s | 10 to 28 m, to 50% |
+| Warden Hand Cannon | Head and any second hit drops a bare target | 4, 1.65 s | 2, 0.55 s | 35 to 80 m, to 75% |
+
+Army soldiers aim at the chest and get no headshot bonus, so the enemy
+balance bands above hold (re-measured after this pass: every row still in
+band).
+
+### Handling
+
+How a gun handles is the second half of its role. Every gun pays for
+moving, but not the same amount, and every gun takes a moment to come up
+to the eye:
+
+- Spread grows with speed on the ground, by the gun's `move_spread_deg` at
+  a full sprint (rifles 2 degrees, the DMR 3, pistols and the SMG about 1).
+  Standing still or crouched is how you shoot straight.
+- Aiming down sights tightens spread over the gun's `ads_time` (pistols and
+  the SMG about 0.16 s, rifles 0.25 s, the DMR 0.35 s), so a snap aim is
+  not yet a steady one.
+- You cannot shoot while sprinting. Pulling the trigger or aiming drops you
+  to a walk, and the gun fires 0.2 s after the sprint ends. A click made
+  in that moment is kept, so it never feels eaten.
+
+Re-measured on the duel bench over three seeds: every enemy type wins and
+loses about as often as before (all rows within the bench's noise).
 
 ### Goggles
 
@@ -1429,6 +1549,11 @@ dash-strike range, player kill scrip (60), sell-back rate (40%).
 4. **The PvE world:** quests, dungeons and bosses.
 5. **More worlds** as plug-ins.
 
+The online and server work runs alongside this, in its own order (section 14):
+hardening and reconnecting before the friends playtest, encryption before
+strangers play, accounts on SQLite before the marketplace, and official
+servers after that.
+
 ## 13. Open decisions
 
 Caleb's calls, still open:
@@ -1450,3 +1575,97 @@ Caleb's calls, still open:
   - How much salvage a lost crafted item pays back.
   - Contract and bounty payouts, and how a bounty's size grows.
   - Which prestige vehicles and rigs come from which feats.
+
+## 14. Online and servers
+
+Caleb's calls (17 November 2026), after a review of the online code. The
+model stays as it is: one authoritative Godot server per world on ENet,
+clients sending only their input, the server deciding every result. What
+changes is what goes around it.
+
+**Two kinds of server.**
+
+- **Official servers** share one account per player: stash, progression,
+  contracts, clans and the marketplace are the same in every world and every
+  instance. Accounts there are never fed from a local save: the solo profile
+  and an account on your own server stay apart from your official account,
+  because anyone can edit a local file.
+- **Friends' servers** (the Docker server in `docs/hosting.md`, and the one
+  the base's door starts) keep their own accounts, as today. Nothing moves
+  between them and official servers. They keep running every world in one
+  program.
+
+**Accounts.** One account service, written in Godot: a headless Godot
+program that runs the same GDScript rules as today (`StashRules`, `Economy`,
+`Crafting`, `Contracts`, `StashService`), so every rule exists once and solo
+play keeps sharing it. It keeps accounts in SQLite (the godot-sqlite plugin,
+MIT), where every stash change and every trade is all or nothing, so items
+are never duplicated or lost. Postgres only if one machine stops being
+enough. Not a ready-made backend such as Nakama: it would need a second copy
+of the rules in another language.
+
+**Sign-in.** Official servers move to Steam (or Epic) login through
+GodotSteam (MIT), checked on the server with the store's web service. That
+brings account recovery, bans and protection against stolen accounts.
+Friends' servers can keep the name and secret.
+
+Official servers open before the game is on Steam (Caleb's call), once
+connections are encrypted, signing in with the name and secret. A recovery
+code on the phone (Settings) moves an account to another computer. When
+Steam login arrives, the game ties the account it already holds to the
+player's Steam account once, so nobody loses progress.
+
+**Scaling.** On official servers each world runs as its own program, since
+Godot runs a game loop on one thread and separate programs are how a server
+uses more cores, and one crash then takes down one world. Routes name an
+address as well as a port. Growth goes by measurement: one bigger machine
+first, a matchmaker and plaza shards when worlds or the plaza fill, a hosting
+service such as Edgegap only when several machines are needed. Server
+meshing (one world split across servers) is not planned.
+
+**Built with Godot's own tools.** Sign-in and the version check happen in
+`SceneMultiplayer.auth_callback`, before a player counts as connected.
+`server_relay` is off. Connections are encrypted with ENet's DTLS: a
+server makes its own certificate on first start and the game remembers it
+per address, warning if it changes (as ssh does), so no domain or paid
+certificate is needed. Game servers talk to the account service over
+`WebSocketPeer`. Our own snapshots with prediction stay; Godot's
+`MultiplayerSynchronizer` and `MultiplayerSpawner` are not a fit for fast
+PvP.
+
+**Order of work.**
+
+1. Before the friends playtest: a hardening pass (sign-in in
+   `auth_callback`, relay off, per-player request limits, safe clan saves,
+   account backups), reconnecting to your body after a drop, and a bench of
+   the whole server with a health line in its log.
+2. Before strangers play: encrypted connections.
+3. Before the marketplace: accounts on SQLite, still in one program. The
+   marketplace builds on this and does not wait for official servers. It
+   keeps the `StashService` calls the market uses (`count_of`, `scrip_of`,
+   `take_items`, `give_items`, `change_scrip`) and adds one that runs several
+   of them as a single all-or-nothing transaction, which wraps each trade.
+4. Official servers: the account service as its own program (the deploy,
+   bank and settle calls must cope with an answer that comes late or never),
+   one program per world, and one Docker Compose setup for all of it. Steam
+   login once the game is on Steam.
+5. Only when the numbers call for it: a matchmaker, plaza shards, a hosting
+   service, and not sending players enemies they cannot see.
+
+**Smooth for the player.** Every step is held to these:
+
+- **Reconnect on its own.** After a drop the game quietly reconnects and
+  puts you back in your body; no button (part of reconnecting, step 1).
+- **Official servers by default.** The base's door and the Servers app go to
+  them with no address to type; an address is only for a friend's server.
+- **Always say which account you are on.** The phone and the base name it
+  (solo, a friend's server, official), so separate stashes never look like
+  lost gear.
+- **No dead end when a world is full.** Send the player to another instance,
+  or say how long the wait is.
+- **A version mismatch points to the update**, not just an error.
+- **Certificate warnings never show on official servers**; they use a real
+  certificate.
+- **Travel between worlds within about 3 s**, measured by the whole-server
+  bench.
+- **A taken name asks for another one** on the phone, never just a refusal.

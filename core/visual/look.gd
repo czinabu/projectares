@@ -933,6 +933,88 @@ func interior(parent: Node3D, ambient: Color, energy: float) -> void:
 	_clear_storm_fog()
 
 
+## The trim every built thing in a warzone shares, so a map's pieces read as
+## one kit instead of loose props: "teal" running lights, "orange" furnace
+## light, "beacon" (a red light that cuts through the haze, never fogged),
+## "slag" (molten metal), "crack" (a dimmer glow for cracks in the ground),
+## "scorch" (charred ground), "track" (a packed road), "hazard" (orange and black stripes),
+## "sandbag", "halo" (a glow round a far light), "flash" (a far blast),
+## "beam" (a searchlight) and "distant" (skyline silhouettes). Cached, so every piece shares one material.
+func trim(kind: String) -> Material:
+	var key := "trim:" + kind
+	if _materials.has(key):
+		return _materials[key]
+	var mat := StandardMaterial3D.new()
+	match kind:
+		"teal", "orange", "beacon", "slag", "crack":
+			var glow: Color = {"teal": Color(0.3, 0.95, 0.88), "orange": Color(1.0, 0.42, 0.1),
+					"beacon": Color(1.0, 0.1, 0.06), "slag": Color(1.0, 0.36, 0.08), "crack": Color(1.0, 0.3, 0.05)}[kind]
+			mat.albedo_color = glow * 0.25 if kind in ["teal", "orange", "beacon"] else Color(0.25, 0.06, 0.02)
+			mat.emission_enabled = true
+			mat.emission = glow
+			mat.emission_energy_multiplier = {"teal": 1.6, "orange": 2.4, "beacon": 7.0, "slag": 2.6, "crack": 1.1}[kind]
+			mat.roughness = 0.4
+			if kind == "beacon":
+				mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+				mat.albedo_color = glow
+				mat.disable_fog = true
+		"scorch":
+			mat.albedo_color = Color(0.06, 0.045, 0.04)
+			mat.roughness = 1.0
+		"track":
+			mat.albedo_color = Color(0.16, 0.12, 0.1)
+			mat.roughness = 1.0
+		"halo":
+			# A soft glow round a far light, drawn over the haze.
+			mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+			mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+			mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+			mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+			mat.albedo_texture = _soft_dot()
+			mat.albedo_color = Color(1.0, 0.16, 0.08, 0.9)
+			mat.disable_fog = true
+		"flash":
+			# A far gun flash or blast on the horizon: a bright soft glow the
+			# haze never hides. Fade it with the instance's transparency.
+			mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+			mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+			mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+			mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+			mat.albedo_texture = _soft_dot()
+			mat.albedo_color = Color(1.0, 0.62, 0.3)
+			mat.disable_fog = true
+		"beam":
+			# A searchlight's beam: faint light in the smoke.
+			mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+			mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+			mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+			mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+			mat.albedo_color = Color(0.9, 0.85, 0.72, 0.05)
+		"distant":
+			# Skyline shapes past the rim: only a silhouette in the haze, so a
+			# plain material, which costs nothing per piece.
+			mat.albedo_color = Color(0.16, 0.13, 0.12)
+			mat.roughness = 1.0
+		"hazard":
+			var stripes := Image.create(32, 32, false, Image.FORMAT_RGB8)
+			for y in 32:
+				for x in 32:
+					stripes.set_pixel(x, y, Color(0.85, 0.42, 0.1) if (x + y) % 32 < 16 else Color(0.07, 0.06, 0.06))
+			stripes.generate_mipmaps()
+			mat.albedo_texture = ImageTexture.create_from_image(stripes)
+			mat.uv1_triplanar = true
+			mat.uv1_world_triplanar = true
+			mat.uv1_scale = Vector3(0.9, 0.9, 0.9)
+			mat.roughness = 0.7
+			mat.metallic = 0.3
+		"sandbag":
+			return surface("ground", {"tint": Color(0.62, 0.52, 0.4), "grime": 0.7, "saturation": 0.5, "scale": 0.9})
+		_:
+			mat.albedo_color = Color(0.3, 0.28, 0.27)
+	_materials[key] = mat
+	return mat
+
+
 ## A small light with no shadow, for lamps and fires.
 func lamp(color: Color, energy: float, reach: float) -> OmniLight3D:
 	var light := OmniLight3D.new()

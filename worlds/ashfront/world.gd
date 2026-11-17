@@ -78,12 +78,23 @@ const ROOFTOP_TABLE := [
 	{"id": "bp_shotgun_breacher", "weight": 2.0},
 ]
 
-## Abandoned vehicles parked around the field. Anyone can ride one out. The
-## mech and the jet are not found lying about.
+## Abandoned vehicles parked around the field. Anyone can ride one out, and
+## signing out on one takes it home, so the rare ones are placed by risk like
+## the loot: a Scrapper at the quiet rim and in the camps (to get moving, not
+## a prize), sometimes a Raider by the ramps, and the best odds of a Raider
+## or a rover at the strongpoints. The mech and the jet are never found lying
+## about: they are crafted from blueprints. The odds are first guesses.
 const VEHICLE_TABLE := [
-	{"id": "bike_scrapper", "weight": 70.0},
-	{"id": "bike_raider", "weight": 22.0},
-	{"id": "rover_warden", "weight": 8.0},
+	{"id": "bike_scrapper", "weight": 80.0},
+	{"id": "bike_raider", "weight": 20.0},
+]
+const VEHICLE_RIM_TABLE := [
+	{"id": "bike_scrapper", "weight": 1.0},
+]
+const VEHICLE_SITE_TABLE := [
+	{"id": "bike_scrapper", "weight": 60.0},
+	{"id": "bike_raider", "weight": 25.0},
+	{"id": "rover_warden", "weight": 15.0},
 ]
 
 ## The two armies that fight over the field, and each other. Most of each
@@ -277,6 +288,12 @@ func roll_loot(source: String, rng: RandomNumberGenerator) -> Array[String]:
 		"vehicle":
 			table = VEHICLE_TABLE
 			count = 1
+		"vehicle_rim":
+			table = VEHICLE_RIM_TABLE
+			count = 1
+		"vehicle_site":
+			table = VEHICLE_SITE_TABLE
+			count = 1
 	var out: Array[String] = []
 	for i in count:
 		out.append(ItemDB.roll(table, rng))
@@ -468,6 +485,8 @@ func _army_gun(gun_name: String, damage: float, spread: float, interval: float) 
 	gun.spread_deg = spread
 	gun.fire_interval = interval
 	gun.reserve_ammo = 600
+	# Soldiers aim at the chest; a stray round on the head is no bonus.
+	gun.headshot_mult = 1.0
 	return gun
 
 

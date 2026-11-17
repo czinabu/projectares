@@ -1,7 +1,9 @@
 extends WorldDef
-## Frostline: a dead listening station on a glacier shelf, buried in whiteout.
-## Two hostile factions share the ice and fight each other as readily as you:
-## the station's Warden automata and packs of Feral stalkers.
+## Frostline: a frozen river valley where the war ended long ago, climbing to
+## the Stilled Engine, the terraforming drum that once kept the world warm.
+## The co-op expedition world (DESIGN.md section 2): no PvP, and two hostile
+## factions that fight each other as readily as you: the Engine's Warden
+## automata, still on guard, and packs of Feral stalkers.
 
 const MapScript := preload("res://worlds/frostline/map.gd")
 
@@ -75,7 +77,7 @@ const FERAL_DROPS := [
 func _init() -> void:
 	id = "frostline"
 	display_name = "Frostline"
-	description = "Whiteout glacier station. Wardens and Ferals fight each other and you. No PvP, you keep your equipped gear when you die, and the loot is basic."
+	description = "A frozen valley climbing to a buried engine. Wardens and Ferals fight each other and you. Co-op, no PvP, you keep your equipped gear when you die."
 	keep_gear_on_death = true
 	# Co-op: the raiders take and hold strongpoints together.
 	players_allied = true
@@ -106,6 +108,20 @@ func create_map() -> Node3D:
 	return MapScript.new()
 
 
+## The zones run along the valley: the river mouth is the outer ring, the
+## Narrows and the lake the middle, the glacier head and the Engine the core.
+func zone_at(pos: Vector3) -> int:
+	if pos.z <= MapScript.CORE_FROM_Z:
+		return 2
+	if pos.z <= MapScript.MIDDLE_FROM_Z:
+		return 1
+	return 0
+
+
+func zone_name(tier: int) -> String:
+	return ["River mouth", "Mid-valley", "Glacier head"][tier] if tier >= 0 and tier <= 2 else ""
+
+
 func starter_loadout() -> Array[String]:
 	return ["rifle_scrap", "blade_scrap", "pistol_service", "jetpack_mk1", "plate_light", "visor_scav",
 			"field_dressing"]
@@ -115,7 +131,9 @@ func roll_loot(source: String, rng: RandomNumberGenerator) -> Array[String]:
 	var table := CACHE_TABLE
 	var count := rng.randi_range(2, 3)
 	match source:
-		"rooftop":
+		"rooftop", "cache_core":
+			# The rims and the glacier head pay the same: both are the hard
+			# places to reach.
 			table = ROOFTOP_TABLE
 			count = rng.randi_range(2, 3)
 		"relay":
@@ -146,8 +164,13 @@ func can_damage(attacker: Node, target: Node, _info: DamageInfo) -> bool:
 	return true
 
 
+## A bot from a marker that names its faction (a Warden post, a Feral den)
+## is one of those; any other is a Warden or a Feral by chance.
 func equip_bot(bot: Actor, rng: RandomNumberGenerator) -> void:
-	if rng.randf() < FERAL_CHANCE:
+	var feral := rng.randf() < FERAL_CHANCE
+	if bot.faction == "warden" or bot.faction == "feral":
+		feral = bot.faction == "feral"
+	if feral:
 		_make_feral(bot, rng)
 	else:
 		_make_warden(bot, rng)
@@ -173,6 +196,7 @@ func _make_warden(bot: Actor, rng: RandomNumberGenerator) -> void:
 	gun.fire_interval = 0.45
 	gun.max_range = 160.0
 	gun.reserve_ammo = 400
+	gun.headshot_mult = 1.0
 	bot.equip_weapon(gun)
 
 

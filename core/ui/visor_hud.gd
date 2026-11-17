@@ -78,6 +78,8 @@ const SQUAD_INK := Color(0.45, 1.0, 0.6)
 const PING_INK := Color(0.35, 0.95, 1.0)
 const HOT_INK := Color(1.0, 0.55, 0.15)
 const TAG_INK := Color(1.0, 0.3, 0.2)
+## The waypoint set on the watch map.
+const WAYPOINT_INK := Color(1.0, 0.9, 0.4)
 ## How many degrees either side of straight ahead the heading strip shows.
 var strip_reach := 45.0
 ## How far the heading strip bows down at its ends, as a share of the
@@ -446,7 +448,7 @@ static func tracker_text(held: Array[Dictionary], tally: Dictionary) -> String:
 
 ## What the heading strip marks, nearest the middle last so it draws on top:
 ## {"kind", "at" (Vector3), "label"}. Kinds: "squad", "ping" and "depot" on
-## every working visor; "tag" (Spotter), "contact" (Seeker's snapshots) and
+## every working visor, with the watch map's "waypoint"; "tag" (Spotter), "contact" (Seeker's snapshots) and
 ## "hot" (the war's centre, Warden). A scrap visor marks nothing.
 func compass_marks(p: Actor) -> Array[Dictionary]:
 	var marks: Array[Dictionary] = []
@@ -470,6 +472,10 @@ func compass_marks(p: Actor) -> Array[Dictionary]:
 			marks.append({"kind": "tag", "at": target.global_position, "label": ""})
 	for ping in pings:
 		marks.append({"kind": "ping", "at": ping.at, "label": "PING"})
+	# The waypoint set on the watch map: only yours.
+	var way: Variant = hud.get("waypoint") if hud != null and is_instance_valid(hud) else null
+	if way is Dictionary and not (way as Dictionary).is_empty():
+		marks.append({"kind": "waypoint", "at": way.at, "label": String(way.title).left(10).to_upper()})
 	for mate in squad:
 		if is_instance_valid(mate):
 			marks.append({"kind": "squad", "at": mate.global_position, "label": mate.display_name.left(8).to_upper()})
@@ -886,7 +892,7 @@ func _draw_strip_mark(p: Actor, ink: Color, mark: Dictionary, off: float, waitin
 	var at := _strip_point(clampf(off, -strip_reach, strip_reach)) + Vector2(0.0, 34.0)
 	at.x -= signf(off) * waiting * 70.0
 	var away := roundi((mark.at as Vector3).distance_to(p.global_position))
-	var tint: Color = {"squad": SQUAD_INK, "ping": PING_INK, "hot": HOT_INK, "tag": TAG_INK}.get(mark.kind, ink)
+	var tint: Color = {"squad": SQUAD_INK, "ping": PING_INK, "hot": HOT_INK, "tag": TAG_INK, "waypoint": WAYPOINT_INK}.get(mark.kind, ink)
 	var urgent: bool = mark.kind in ["tag", "contact", "ping"]
 	var color := _lit(tint, 0.95 if not off_strip else 0.7, not urgent)
 	match mark.kind:
@@ -1350,7 +1356,7 @@ func _draw_scope(p: Actor, ink: Color) -> void:
 			centre + Vector2(-4.5, 5)]), _lit(ink, 0.95))
 	for point in scope_points(p):
 		var mark: Dictionary = point.mark
-		var tint: Color = {"squad": SQUAD_INK, "ping": PING_INK, "hot": HOT_INK, "tag": TAG_INK}.get(mark.kind, ink)
+		var tint: Color = {"squad": SQUAD_INK, "ping": PING_INK, "hot": HOT_INK, "tag": TAG_INK, "waypoint": WAYPOINT_INK}.get(mark.kind, ink)
 		var color := _lit(tint, 0.95 if point.inside else 0.55, mark.kind not in ["tag", "contact", "ping"])
 		var at: Vector2 = point.at
 		if not point.inside:
