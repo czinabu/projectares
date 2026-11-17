@@ -1,10 +1,26 @@
 class_name LootContainer
 extends Interactable
 ## A world cache, or the bag a dead actor drops (`is_bag`).
+##
+## A container labelled `RACK_LABEL` is a power rack (`PowerArmory`): using
+## it scans its heavy (power) weapon into your watch's heavy chamber instead
+## of your pack, to be summoned from the watch.
+
+const RACK_LABEL := "Power rack"
+
+## The contents changed (someone looted it).
+signal changed
+## An actor picked up the scrip that was in here. The `Raid` scrip it.
+signal scrip_taken(actor: Actor, amount: int)
 
 var items: Array[String] = []
 var is_bag := false
 var label := "Cache"
+## Server only: rounds left in guns put down on a rack, as
+## {item id: [[mag, reserve], ...]}, last put down first.
+var ammo := {}
+## Scrip lying in here with the items: what a dead player was carrying.
+var scrip := 0
 
 var _mesh: MeshInstance3D
 
@@ -16,6 +32,7 @@ func setup(p_items: Array, p_is_bag: bool, p_label: String) -> void:
 
 
 func _ready() -> void:
+	add_to_group("loot_containers")
 	var size := Vector3(0.7, 0.5, 0.7) if is_bag else Vector3(1.1, 0.8, 0.8)
 	var shape := BoxShape3D.new()
 	shape.size = size
@@ -33,13 +50,33 @@ func _ready() -> void:
 	_refresh_color()
 
 
+func is_rack() -> bool:
+	return label == RACK_LABEL
+
+
 func get_prompt() -> String:
+	if is_rack():
+		# Prompts are only shown to the local player.
+		var raid := Raid.of(self)
+		var prompt := _rack_prompt(raid.player if raid != null else null)
+		if prompt != "":
+			return prompt
+	# A bag is cleared away once it is emptied, so one that is still here
+	# holds something, if only scrip.
+	if items.is_empty() and is_bag:
+		return "[F] Loot %s" % label
 	if items.is_empty():
 		return "%s (empty)" % label
-	return "[E] Loot %s (%d)" % [label, items.size()]
+	return "[F] Loot %s (%d)" % [label, items.size()]
 
 
 func interact(actor: Actor) -> void:
+	if is_rack() and _rack_swap(actor):
+		return
+	if scrip > 0:
+		var got := scrip
+		scrip = 0
+		scrip_taken.emit(actor, got)
 	var taken: Array[String] = []
 	while not items.is_empty() and not actor.inventory.is_full():
 		var id: String = items.pop_front()
@@ -47,12 +84,70 @@ func interact(actor: Actor) -> void:
 		taken.append(id)
 	if not taken.is_empty():
 		actor.notice.emit("Looted " + ItemDB.summarize(taken))
+		if actor.is_player:
+			Sfx.play("loot")
 	elif not items.is_empty():
 		actor.notice.emit("Backpack full")
+	changed.emit()
 	if items.is_empty() and is_bag:
 		queue_free()
 	else:
 		_refresh_color()
+
+
+## The power weapon a rack would hand you, or "" if it holds none.
+func rack_offer() -> String:
+	for id in items:
+		if ItemDB.has_tag(id, "power"):
+			return id
+	return ""
+
+
+func _rack_prompt(actor: Actor) -> String:
+	var offer := rack_offer()
+	if offer == "":
+		return ""
+	var index := Loadout.power_index(actor) if actor != null else -1
+	if index < 0:
+		return "[F] Scan %s into your watch" % ItemDB.item_name(offer)
+	return "[F] Scan %s into your watch, leave your %s" % [ItemDB.item_name(offer), actor.weapons[index].display_name]
+
+
+## Scans the rack's power weapon into the actor's heavy chamber on the
+## watch, to be summoned from there. A power weapon they already carried goes on the rack with the
+## shots it had. Returns false if the rack had nothing to hand over.
+func _rack_swap(actor: Actor) -> bool:
+	var offer := rack_offer()
+	if offer == "":
+		return false
+	items.erase(offer)
+	var rounds: Array = [-1, -1]
+	var stack: Array = ammo.get(offer, [])
+	if not stack.is_empty():
+		rounds = stack.pop_back()
+		if stack.is_empty():
+			ammo.erase(offer)
+	var given := Loadout.set_power(actor, offer, rounds[0], rounds[1], false)
+	if given.id != "" and not given.spent:
+		items.append(given.id)
+		if not ammo.has(given.id):
+			ammo[given.id] = []
+		ammo[given.id].append([given.mag, given.reserve])
+	actor.notice.emit("Scanned %s into your watch" % ItemDB.item_name(offer))
+	if actor.is_player:
+		Sfx.play("loot")
+	changed.emit()
+	if items.is_empty() and is_bag:
+		queue_free()
+	else:
+		_refresh_color()
+	return true
+
+
+## Replaces the contents, for a client showing what the server reports.
+func set_items(p_items: Array) -> void:
+	items.assign(p_items)
+	_refresh_color()
 
 
 ## Colored by the best item inside, so rare loot is visible from a distance.

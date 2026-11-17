@@ -1,0 +1,26 @@
+# Runs the dedicated server and restarts it if it crashes or the machine reboots.
+#   Start or update:  docker compose up -d --build
+#   Watch the log:    docker compose logs -f
+#   Stop:             docker compose down
+# See docs/hosting.md.
+services:
+  ares:
+    build: .
+    image: ares-server
+    restart: unless-stopped
+    init: true
+    # A terminal makes the game print its log lines at once instead of in batches.
+    tty: true
+    ports:
+      # The plaza is on 24565 and each raid world on the ports after it.
+      - "24565-24569:24565-24569/udp"
+      # The arena runs ten ports above the plaza.
+      - "24575:24575/udp"
+    # Player stashes live in this volume, so they survive updates and restarts.
+    volumes:
+      - ares-data:/data
+    # Change the world or add "--bots", "4" or "--squad-spawn" here.
+    command: ["--server", "--world", "ashfront", "--port", "24565", "--accounts", "/data/accounts"]
+
+volumes:
+  ares-data:

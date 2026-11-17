@@ -29,6 +29,22 @@ func has_item(id: String) -> bool:
 	return id in items
 
 
+## The first carried item with this tag, or "" if there is none.
+func first_with_tag(tag: String) -> String:
+	for id in items:
+		if ItemDB.has_tag(id, tag):
+			return id
+	return ""
+
+
+func count_with_tag(tag: String) -> int:
+	var count := 0
+	for id in items:
+		if ItemDB.has_tag(id, tag):
+			count += 1
+	return count
+
+
 func is_full() -> bool:
 	return items.size() >= capacity
 

@@ -1,30 +1,621 @@
 class_name Loadout
 extends RefCounted
-## Turns a list of item ids into equipped gear on an Actor.
+## Loadout slots, and turning a list of item ids into equipped gear on an Actor.
 ## New weapon and rig types get wired in here.
+
+## Slot name -> the item tag that fits it. Order is the weapon order in a raid.
+const SLOTS := {
+	"primary": "firearm",
+	"melee": "melee",
+	"sidearm": "sidearm",
+	# One heavy weapon from the armory wall, carried in the chamber on a
+	# PvP deploy. Empty everywhere else (DESIGN.md section 6).
+	"power": "power",
+	"rig": "flight_rig",
+	"frame": "armor",
+	"helmet": "helmet",
+	"ability": "ability",
+	"vehicle": "vehicle",
+	# One artifact per outing, carried on the watch (DESIGN.md section 6).
+	"artifact": "artifact",
+	# Attachments for the primary. Each slot's tag is also the attachment's
+	# second tag in ItemDB.
+	"optic": "optic",
+	"muzzle": "muzzle",
+	"grip": "grip",
+	"magazine": "magazine",
+}
+const SLOT_NAMES := {
+	"primary": "Primary weapon",
+	"melee": "Melee weapon",
+	"sidearm": "Sidearm",
+	"power": "Heavy weapon",
+	"rig": "Flight rig",
+	"frame": "Armor frame",
+	"helmet": "Helmet",
+	"ability": "Ability",
+	"vehicle": "Vehicle",
+	"artifact": "Artifact",
+	"optic": "Optic",
+	"muzzle": "Muzzle",
+	"grip": "Grip",
+	"magazine": "Magazine",
+}
+## Slots that hold an attachment for the primary weapon.
+const ATTACHMENT_SLOTS := ["optic", "muzzle", "grip", "magazine"]
+## Slots with no free scrap item (`StashRules.free_items`). Any slot can be
+## left empty, and an empty slot deploys with nothing in it.
+const OPTIONAL_SLOTS := ["power", "ability", "vehicle", "artifact", "optic", "muzzle", "grip", "magazine"]
+## How many healing items are taken from the stash on deploy.
+const MAX_HEAL_ITEMS := 2
+## Seconds a weapon takes to materialize out of the pack through the watch,
+## by the first of these tags it carries (heavier is slower). An item's own
+## `summon_time` stat wins.
+const SUMMON_TIMES := [["armor", 1.5], ["power", 1.6], ["sidearm", 0.5], ["one_handed", 0.6], ["two_handed", 1.1], ["marksman", 1.3],
+		["firearm", 0.9]]
+## The watch's wait after a summon, as a multiple of the materialize time.
+const SUMMON_COOLDOWN_MULT := 6.0
+## How long a weapon stored back through the watch takes to dematerialize,
+## as a multiple of its materialize time (putting away is quicker).
+const STORE_TIME_MULT := 0.6
+
+
+## A kit of only this means "nothing at all": an empty kit means the world's
+## scrap kit to `Raid.add_player`. Not an item; the `Raid` drops it.
+const BARE := "(bare)"
+
+
+## The loadout slot item `id` goes in, or "" if it is not gear.
+static func slot_of(id: String) -> String:
+	for slot: String in SLOTS:
+		if fits(slot, id):
+			return slot
+	return ""
+
+
+## True if item `id` can go in loadout slot `slot`. A sidearm is a firearm
+## too, but only the sidearm slot takes it.
+static func fits(slot: String, id: String) -> bool:
+	if not SLOTS.has(slot) or not ItemDB.has_tag(id, SLOTS[slot]):
+		return false
+	# Attachment slots take attachments only: a Spotter helmet is tagged
+	# "optic" too, but it is a helmet.
+	if slot in ATTACHMENT_SLOTS and not ItemDB.has_tag(id, "attachment"):
+		return false
+	# A heavy weapon is a firearm too, but it only ever takes the power slot.
+	if slot == "primary" and ItemDB.has_tag(id, "power"):
+		return false
+	return slot != "primary" or not ItemDB.has_tag(id, "sidearm")
 
 
 static func equip(actor: Actor, item_ids: Array) -> void:
+	var frames: Array[String] = []
+	# Attachments go on the primary, so they are gathered first: the gun's
+	# model is built with them on when it is equipped.
+	var fittings: Array[String] = []
 	for id: String in item_ids:
-		if ItemDB.has_tag(id, "firearm"):
+		if ItemDB.has_tag(id, "attachment") and fittings.all(func(other: String) -> bool:
+				return attachment_slot(other) != attachment_slot(id)):
+			fittings.append(id)
+	var primary_done := false
+	for id: String in item_ids:
+		var stats := ItemDB.item_stats(id)
+		if ItemDB.has_tag(id, "attachment"):
+			# Carried on the gun: lost with it, home with it.
+			if id in fittings:
+				actor.gear_items.append(id)
+			else:
+				actor.inventory.add_item(id)
+		elif ItemDB.has_tag(id, "power"):
+			# One per outing, waiting in the chamber. A second is not carried.
+			if power_index(actor) < 0:
+				set_power(actor, id, -1, -1, false)
+		elif ItemDB.has_tag(id, "firearm"):
 			var gun := Gun.new()
-			gun.item_id = id
-			gun.display_name = ItemDB.item_name(id)
+			gun.is_sidearm = ItemDB.has_tag(id, "sidearm")
+			_setup_weapon(gun, id, stats)
+			if not primary_done and is_primary(id):
+				primary_done = true
+				gun.fit(fittings)
 			actor.equip_weapon(gun)
 			actor.gear_items.append(id)
 		elif ItemDB.has_tag(id, "melee"):
 			var blade := MeleeWeapon.new()
-			blade.item_id = id
-			blade.display_name = ItemDB.item_name(id)
+			_setup_weapon(blade, id, stats)
 			actor.equip_weapon(blade)
 			actor.gear_items.append(id)
 		elif ItemDB.has_tag(id, "flight_rig"):
 			actor.flight.enabled = true
 			actor.flight.item_id = id
 			actor.flight.display_name = ItemDB.item_name(id)
+			_apply_stats(actor.flight, stats)
+			actor.flight.fill()
 			actor.gear_items.append(id)
+		elif ItemDB.has_tag(id, "ability"):
+			actor.ability.enabled = true
+			actor.ability.item_id = id
+			actor.ability.display_name = ItemDB.item_name(id)
+			_apply_stats(actor.ability, stats)
+			actor.gear_items.append(id)
+		elif ItemDB.has_tag(id, "artifact"):
+			# One per outing: any other is only carried, as loot.
+			if actor.artifact.enabled:
+				actor.inventory.add_item(id)
+			else:
+				_apply_stats(actor.artifact, stats)
+				actor.artifact.attune(id)
+				actor.gear_items.append(id)
+		elif ItemDB.has_tag(id, "helmet"):
+			# One head: a second helmet is only carried, as loot.
+			if actor.visor.enabled:
+				actor.inventory.add_item(id)
+			else:
+				wear_helmet(actor, id)
 		elif ItemDB.has_tag(id, "armor"):
-			actor.health.set_armor(50.0)
-			actor.gear_items.append(id)
+			frames.append(id)
+		elif ItemDB.has_tag(id, "vehicle"):
+			# A vehicle is not carried. The Raid parks it next to its owner.
+			pass
 		else:
 			actor.inventory.add_item(id)
+	# Frames go last because they scale what the other gear set up. One is
+	# worn; another is only carried, as loot.
+	for id in frames:
+		if actor.frame_id == "":
+			wear_frame(actor, id)
+		else:
+			actor.inventory.add_item(id)
+	# The heavy waits in the chamber. If putting it there emptied the hand,
+	# the primary (or the first worn weapon) comes back out.
+	var held := actor.get_active_weapon()
+	if held == null or ItemDB.has_tag(held.item_id, "power"):
+		var worn := actor.weapon_for_key(1)
+		if worn >= 0 and worn != actor.active_weapon_index:
+			actor.draw_weapon(worn)
+
+
+## Changes what `actor` wears to `kit` (item ids, as for `equip`) in place,
+## touching only what differs: a weapon still in the kit keeps its node and
+## model, and the actor keeps moving. The home base dresses its player this
+## way whenever the loadout changes (`HomeBase.suit_up`); building a whole
+## new actor stopped the player dead and rebuilt every model on them, which
+## was the stutter on every equip. One of each kind is worn; the inventory
+## is left as it is.
+static func refit(actor: Actor, kit: Array) -> void:
+	var fittings: Array[String] = []
+	for id: String in kit:
+		if ItemDB.has_tag(id, "attachment") and attachment_slot(id) != "" and fittings.all(func(other: String) -> bool:
+				return attachment_slot(other) != attachment_slot(id)):
+			fittings.append(id)
+	var old_fittings: Array[String] = []
+	for id in actor.gear_items:
+		if ItemDB.has_tag(id, "attachment"):
+			old_fittings.append(id)
+	var fittings_sorted := fittings.duplicate()
+	fittings_sorted.sort()
+	var old_sorted := old_fittings.duplicate()
+	old_sorted.sort()
+	var refit_primary := fittings_sorted != old_sorted
+	for id in old_fittings:
+		actor.gear_items.erase(id)
+	actor.gear_items.append_array(fittings)
+	# Weapons: one per slot, in kit order, keeping the ones still worn.
+	var wanted: Array[String] = []
+	var taken := {}
+	for id: String in kit:
+		if ItemDB.has_tag(id, "power"):
+			continue
+		if ItemDB.has_tag(id, "firearm") or ItemDB.has_tag(id, "melee"):
+			var slot := weapon_slot(id)
+			if not taken.has(slot):
+				taken[slot] = true
+				wanted.append(id)
+	var held := actor.get_active_weapon()
+	var kept: Array[Weapon] = []
+	for i in range(actor.weapons.size() - 1, -1, -1):
+		var weapon := actor.weapons[i]
+		# The heavy chamber is settled after the worn weapons, so a heavy
+		# stays in place until then.
+		if weapon.item_id != "" and ItemDB.has_tag(weapon.item_id, "power"):
+			continue
+		var stays := weapon.item_id in wanted and not kept.any(func(w: Weapon) -> bool: return w.item_id == weapon.item_id) \
+				and not (refit_primary and weapon is Gun and is_primary(weapon.item_id))
+		if stays:
+			kept.append(weapon)
+		else:
+			actor.gear_items.erase(weapon.item_id)
+			actor.remove_weapon(i)
+	var primary_done := false
+	for id in wanted:
+		if kept.any(func(w: Weapon) -> bool: return w.item_id == id):
+			primary_done = primary_done or is_primary(id)
+			continue
+		var stats := ItemDB.item_stats(id)
+		if ItemDB.has_tag(id, "firearm"):
+			var gun := Gun.new()
+			gun.is_sidearm = ItemDB.has_tag(id, "sidearm")
+			_setup_weapon(gun, id, stats)
+			if not primary_done and is_primary(id):
+				primary_done = true
+				gun.fit(fittings)
+			actor.equip_weapon(gun)
+		else:
+			var blade := MeleeWeapon.new()
+			_setup_weapon(blade, id, stats)
+			actor.equip_weapon(blade)
+		actor.gear_items.append(id)
+	# Keep the weapons in kit order, as a fresh `equip` would have them, and
+	# keep the one in hand in hand.
+	var ordered: Array[Weapon] = []
+	for id in wanted:
+		for weapon in actor.weapons:
+			if weapon.item_id == id and weapon not in ordered:
+				ordered.append(weapon)
+				break
+	for weapon in actor.weapons:
+		if weapon not in ordered:
+			ordered.append(weapon)
+	actor.weapons = ordered
+	if held != null and held in ordered:
+		actor.active_weapon_index = ordered.find(held)
+	elif held != null or actor.active_weapon_index >= 0:
+		# What was in hand came off: the first weapon worn takes its place.
+		actor.active_weapon_index = 0 if not ordered.is_empty() else -1
+	actor.last_drawn = clampi(actor.last_drawn, 0, maxi(ordered.size() - 1, 0))
+	actor._refresh_weapon_visuals()
+	var heavy := ""
+	for id: String in kit:
+		if ItemDB.has_tag(id, "power"):
+			heavy = id
+			break
+	var have := ""
+	var heavy_at := power_index(actor)
+	if heavy_at >= 0:
+		have = actor.weapons[heavy_at].item_id
+	if heavy != have:
+		set_power(actor, heavy, -1, -1, false)
+	# The frame scales what the rig set up, so it comes off first whenever
+	# either changes, and goes back on last.
+	var rig := _first_tagged(kit, "flight_rig")
+	var frame := _first_tagged(kit, "armor")
+	var rig_now := actor.flight.item_id if actor.flight.enabled else ""
+	var frame_now := actor.frame_id
+	if rig != rig_now or frame != frame_now:
+		var armor_left := -1.0
+		if frame_now != "":
+			armor_left = wear_frame(actor, "")
+		if rig != rig_now:
+			if rig_now != "":
+				actor.gear_items.erase(rig_now)
+			_reset_to_new(actor.flight)
+			if rig != "":
+				actor.flight.enabled = true
+				actor.flight.item_id = rig
+				actor.flight.display_name = ItemDB.item_name(rig)
+				_apply_stats(actor.flight, ItemDB.item_stats(rig))
+				actor.flight.fill()
+				actor.gear_items.append(rig)
+		if frame != "":
+			wear_frame(actor, frame, armor_left if frame == frame_now else -1.0)
+	var chip := _first_tagged(kit, "ability")
+	var chip_now := actor.ability.item_id if actor.ability.enabled else ""
+	if chip != chip_now:
+		if chip_now != "":
+			actor.gear_items.erase(chip_now)
+		_reset_to_new(actor.ability)
+		if chip != "":
+			actor.ability.enabled = true
+			actor.ability.item_id = chip
+			actor.ability.display_name = ItemDB.item_name(chip)
+			_apply_stats(actor.ability, ItemDB.item_stats(chip))
+			actor.gear_items.append(chip)
+	var relic := _first_tagged(kit, "artifact")
+	var relic_now := actor.artifact.item_id if actor.artifact.enabled else ""
+	if relic != relic_now:
+		if relic_now != "":
+			actor.gear_items.erase(relic_now)
+		_reset_to_new(actor.artifact)
+		if relic != "":
+			_apply_stats(actor.artifact, ItemDB.item_stats(relic))
+			actor.artifact.attune(relic)
+			actor.gear_items.append(relic)
+	var helmet := _first_tagged(kit, "helmet")
+	if helmet != (actor.visor.item_id if actor.visor.enabled else ""):
+		wear_helmet(actor, helmet)
+
+
+static func _first_tagged(kit: Array, tag: String) -> String:
+	for id: String in kit:
+		if ItemDB.has_tag(id, tag):
+			return id
+	return ""
+
+
+## Sets a gear node's script variables back to a new one's, keeping who wears
+## it, its name and whatever is connected to its signals.
+static func _reset_to_new(target: Node) -> void:
+	var fresh: Node = target.get_script().new()
+	for prop in target.get_script().get_script_property_list():
+		if prop.usage & PROPERTY_USAGE_SCRIPT_VARIABLE and prop.name != "actor":
+			target.set(prop.name, fresh.get(prop.name))
+	fresh.free()
+
+
+## Puts armor frame `id` on the actor, or with "" takes the worn one off,
+## undoing what the old one scaled first. `armor_left` below 0 means a whole
+## frame. Returns the armor the frame taken off had left. Like a helmet, the
+## one replaced leaves `gear_items`, and where it goes is the caller's job.
+## Emits `Actor.frame_changed`, which `NetSession` passes on and the skin follows.
+static func wear_frame(actor: Actor, id: String, armor_left := -1.0) -> float:
+	if id != "" and not ItemDB.has_tag(id, "armor"):
+		return -1.0
+	var left := -1.0
+	if actor.frame_id != "":
+		left = actor.health.armor
+		_scale_frame(actor, ItemDB.item_stats(actor.frame_id), true)
+		actor.gear_items.erase(actor.frame_id)
+	actor.frame_id = id
+	actor.frame_name = ItemDB.item_name(id) if id != "" else "No armor"
+	if id == "":
+		actor.health.set_armor(0.0)
+	else:
+		var stats := ItemDB.item_stats(id)
+		actor.health.set_armor(stats.get("armor", 0.0))
+		if armor_left >= 0.0:
+			actor.health.armor = minf(armor_left, actor.health.max_armor)
+		_scale_frame(actor, stats, false)
+		actor.gear_items.append(id)
+	actor.frame_changed.emit(id)
+	return left
+
+
+## Applies a frame's speed and heat scaling, or with `undo` takes it back off.
+static func _scale_frame(actor: Actor, stats: Dictionary, undo: bool) -> void:
+	var speed: float = stats.get("speed_mult", 1.0)
+	var heat_mult: float = stats.get("heat_mult", 1.0)
+	if actor.flight.heavy_lift:
+		# A jetpack carries heavy armor without running hotter.
+		heat_mult = minf(heat_mult, 1.0)
+	var signature: float = stats.get("heat_signature", 1.0)
+	if undo:
+		speed = 1.0 / maxf(speed, 0.01)
+		heat_mult = 1.0 / maxf(heat_mult, 0.01)
+		signature = 1.0 / maxf(signature, 0.01)
+	actor.walk_speed *= speed
+	actor.sprint_speed *= speed
+	actor.flight.heat_per_sec *= heat_mult
+	actor.flight.burst_heat *= heat_mult
+	actor.flight.pulse_heat *= heat_mult
+	actor.flight.air_dash_heat *= heat_mult
+	actor.flight.glide_boost_heat *= heat_mult
+	actor.flight.glide_heat *= heat_mult
+	actor.heat_signature *= signature
+
+
+## Puts helmet `id` on the actor's head, or with "" leaves the head bare.
+## The helmet it replaces leaves `gear_items` (so it no longer drops or goes
+## home as worn gear); where it goes next is the caller's job. Emits
+## `Actor.helmet_changed`, which `NetSession` passes on and the skin follows.
+static func wear_helmet(actor: Actor, id: String) -> void:
+	if id != "" and not ItemDB.has_tag(id, "helmet"):
+		return
+	if actor.visor.enabled:
+		actor.gear_items.erase(actor.visor.item_id)
+	actor.visor.reset()
+	if id != "":
+		actor.visor.enabled = true
+		actor.visor.item_id = id
+		actor.visor.display_name = ItemDB.item_name(id)
+		_apply_stats(actor.visor, ItemDB.item_stats(id))
+		actor.gear_items.append(id)
+	actor.helmet_changed.emit(id)
+
+
+## True for a primary that takes attachments: a firearm in the primary slot
+## (not a sidearm), and not a power weapon, which comes as it is.
+static func is_primary(id: String) -> bool:
+	return fits("primary", id) and not ItemDB.has_tag(id, "power")
+
+
+## The attachment slot an item fits, or "" if it is not an attachment.
+static func attachment_slot(id: String) -> String:
+	if not ItemDB.has_tag(id, "attachment"):
+		return ""
+	for slot: String in ATTACHMENT_SLOTS:
+		if ItemDB.has_tag(id, SLOTS[slot]):
+			return slot
+	return ""
+
+
+## Index in `actor.weapons` of the power weapon (an item tagged "power"),
+## or -1 if the actor carries none. It is a fourth weapon next to the
+## primary, sidearm and melee weapon. It comes from a power rack, or from
+## the armory wall on a PvP deploy.
+static func power_index(actor: Actor) -> int:
+	for i in actor.weapons.size():
+		var gun := actor.weapons[i] as Gun
+		if gun and gun.is_power():
+			return i
+	return -1
+
+
+## Puts power weapon `id` in the actor's power slot mid-raid and in hand, or
+## with "" takes the power weapon away. `mag` and `reserve` restore one that
+## was put down part used (below 0 means full). Returns what was given up,
+## as {"id", "mag", "reserve", "spent"}, with "id" empty if the slot was
+## empty. Emits `Actor.power_changed` so `NetSession` can tell clients.
+static func set_power(actor: Actor, id: String, mag := -1, reserve := -1, draw := true) -> Dictionary:
+	var given := {"id": "", "mag": -1, "reserve": -1, "spent": false}
+	if id != "" and not ItemDB.has_tag(id, "power"):
+		return given
+	var index := power_index(actor)
+	if index >= 0:
+		var old := actor.weapons[index] as Gun
+		given = {"id": old.item_id, "mag": old.ammo_in_mag, "reserve": old.reserve_ammo, "spent": old.is_spent()}
+		actor.gear_items.erase(old.item_id)
+	if id == "":
+		if index >= 0:
+			actor.remove_weapon(index)
+		actor.power_changed.emit("", -1, -1)
+		return given
+	var gun := Gun.new()
+	_setup_weapon(gun, id, ItemDB.item_stats(id))
+	if mag >= 0:
+		gun.ammo_in_mag = mini(mag, gun.mag_size)
+	if reserve >= 0:
+		gun.reserve_ammo = reserve
+	if index >= 0:
+		actor.replace_weapon(index, gun)
+	else:
+		actor.equip_weapon(gun)
+		index = actor.weapons.size() - 1
+	actor.gear_items.append(id)
+	# Scanned into the watch's heavy chamber (`draw` false) it waits there to
+	# be summoned; otherwise what you just picked up is what you hold.
+	if draw:
+		actor.draw_weapon(index)
+	elif index == actor.active_weapon_index:
+		# Swapped into the chamber while the old one was out: the new one
+		# waits there too, and the hand goes back to what it held before.
+		var back := actor.last_drawn if actor.last_drawn >= 0 and actor.last_drawn != index \
+				and actor.last_drawn < actor.weapons.size() else actor.weapon_for_key(1)
+		actor.draw_weapon(back)
+	actor.power_changed.emit(id, gun.ammo_in_mag, gun.reserve_ammo)
+	return given
+
+
+## True if `id` is a weapon the watch can materialize out of the pack: a gun
+## or a melee weapon. Power weapons never sit in a pack.
+static func summonable(id: String) -> bool:
+	return ItemDB.has_item(id) and not ItemDB.has_tag(id, "power") \
+			and (ItemDB.has_tag(id, "firearm") or ItemDB.has_tag(id, "melee"))
+
+
+## Seconds weapon `id` takes to materialize in the hand. Heavier is slower.
+static func summon_time(id: String) -> float:
+	var stats := ItemDB.item_stats(id)
+	if stats.has("summon_time"):
+		return float(stats["summon_time"])
+	for entry: Array in SUMMON_TIMES:
+		if ItemDB.has_tag(id, entry[0]):
+			return entry[1]
+	return 0.9
+
+
+## Seconds the watch waits after materializing weapon `id`.
+static func summon_cooldown(id: String) -> float:
+	return summon_time(id) * SUMMON_COOLDOWN_MULT
+
+
+## The weapon slot a summonable item takes: "primary", "sidearm" or "melee".
+static func weapon_slot(id: String) -> String:
+	if ItemDB.has_tag(id, "power"):
+		return "power"
+	if ItemDB.has_tag(id, "melee"):
+		return "melee"
+	return "sidearm" if ItemDB.has_tag(id, "sidearm") else "primary"
+
+
+## Index in `actor.weapons` of the weapon worn in `slot` ("primary",
+## "sidearm", "melee"), or -1.
+static func worn_index(actor: Actor, slot: String) -> int:
+	for i in actor.weapons.size():
+		var worn := actor.weapons[i]
+		if worn.item_id != "" and not ItemDB.has_tag(worn.item_id, "power") and weapon_slot(worn.item_id) == slot:
+			return i
+	return -1
+
+
+## Materializes weapon `id` in the actor's hand in place of the one worn in
+## its slot (the watch's summon). `mag` and `reserve` restore a gun put away
+## part used (below 0 means as it comes). Only the weapons and the gear list
+## change here: the caller moves the items in and out of the pack. Returns
+## what was put away as {"id", "mag", "reserve"}, "id" empty if the slot was
+## empty or `id` cannot be summoned. Emits `Actor.weapon_swapped`.
+static func swap_weapon(actor: Actor, id: String, mag := -1, reserve := -1) -> Dictionary:
+	var given := {"id": "", "mag": -1, "reserve": -1}
+	if not summonable(id):
+		return given
+	var index := worn_index(actor, weapon_slot(id))
+	var weapon: Weapon
+	if ItemDB.has_tag(id, "melee"):
+		weapon = MeleeWeapon.new()
+	else:
+		var gun := Gun.new()
+		gun.is_sidearm = ItemDB.has_tag(id, "sidearm")
+		weapon = gun
+	_setup_weapon(weapon, id, ItemDB.item_stats(id))
+	var new_gun := weapon as Gun
+	if new_gun:
+		if is_primary(id):
+			# The attachments stay on the watch's rail and fit the new gun.
+			var fittings: Array[String] = []
+			for other in actor.gear_items:
+				if ItemDB.has_tag(other, "attachment"):
+					fittings.append(other)
+			new_gun.fit(fittings)
+		if mag >= 0:
+			new_gun.ammo_in_mag = mini(mag, new_gun.mag_size)
+		if reserve >= 0:
+			new_gun.reserve_ammo = reserve
+	if index >= 0:
+		var old := actor.weapons[index]
+		var old_gun := old as Gun
+		given = {"id": old.item_id, "mag": old_gun.ammo_in_mag if old_gun else -1,
+				"reserve": old_gun.reserve_ammo if old_gun else -1}
+		actor.gear_items.erase(old.item_id)
+		actor.replace_weapon(index, weapon)
+	else:
+		actor.equip_weapon(weapon)
+		index = actor.weapons.size() - 1
+	actor.gear_items.append(id)
+	actor.draw_weapon(index)
+	actor.materialize_time = summon_time(id)
+	actor.materialize_left = actor.materialize_time
+	actor.weapon_swapped.emit(id, new_gun.ammo_in_mag if new_gun else -1, new_gun.reserve_ammo if new_gun else -1)
+	return given
+
+
+## Seconds weapon `id` takes to dematerialize back into the pack.
+static func store_time(id: String) -> float:
+	return summon_time(id) * STORE_TIME_MULT
+
+
+## Starts weapon `id`, worn in its slot, dematerializing back into the pack
+## (the watch's store, the summon in reverse): it leaves the gear list at
+## once and is taken off the actor once `store_time` has run
+## (`Actor.begin_store`). Only the weapons and the gear list change here:
+## the caller puts the item in the pack. Returns {"id", "mag", "reserve"}
+## of what is being put away, "id" empty if `id` is not worn or cannot go
+## in a pack. Emits `Actor.weapon_stored`.
+static func store_weapon(actor: Actor, id: String) -> Dictionary:
+	var given := {"id": "", "mag": -1, "reserve": -1}
+	if not summonable(id) or actor.storing_weapon() != null:
+		return given
+	var index := worn_index(actor, weapon_slot(id))
+	if index < 0 or actor.weapons[index].item_id != id:
+		return given
+	var weapon := actor.weapons[index]
+	var gun := weapon as Gun
+	given = {"id": id, "mag": gun.ammo_in_mag if gun else -1, "reserve": gun.reserve_ammo if gun else -1}
+	actor.gear_items.erase(id)
+	actor.materialize_left = 0.0
+	actor.begin_store(weapon, store_time(id))
+	actor.weapon_stored.emit(id, given.mag, given.reserve)
+	return given
+
+
+static func _setup_weapon(weapon: Weapon, id: String, stats: Dictionary) -> void:
+	weapon.item_id = id
+	weapon.display_name = ItemDB.item_name(id)
+	_apply_stats(weapon, stats)
+
+
+## Copies item stats onto matching properties. A stat with no matching
+## property is a typo in ItemDB, so it is reported.
+static func _apply_stats(target: Object, stats: Dictionary) -> void:
+	for key: String in stats:
+		if key in target:
+			target.set(key, stats[key])
+		else:
+			push_warning("Loadout: %s has no property '%s'" % [target.get_class(), key])
