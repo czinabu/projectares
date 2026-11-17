@@ -174,3 +174,4 @@ rows marked **pre-playtest** come before the friends playtest.
 | Matchmaker, plaza shards, hiding unseen enemies | Missing | Later, when numbers call for it. |
 | Official servers before Steam: recovery code, one-time Steam link | Missing | Accounts are tied to the computer whose game made the secret. |
 | Smooth travel: auto-reconnect, official servers by default, account shown, no full-world dead end, update link on a version mismatch | Partly | The update link on a version mismatch is built (the phone's Servers app); the rest is missing. See DESIGN.md section 14, "Smooth for the player". |
+| Smooth travel: connect early while the gate opens, preload the destination map, a fade through the portal | Missing | See DESIGN.md section 14, "Travel that hides its wait". The bench measures today's trip (0.3 s light, 2.1 s loaded). No handoff without a loading screen is planned. |

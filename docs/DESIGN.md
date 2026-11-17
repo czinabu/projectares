@@ -1665,4 +1665,17 @@ PvP.
   certificate.
 - **Travel between worlds within about 3 s**, measured by the whole-server
   bench.
+- **Travel that hides its wait.** The whole-server bench measures the
+  network and server part of a trip (connect, sign in, deploy): about 0.3 s
+  lightly loaded and 2.1 s with 31 players on a shared 4-core box. Two steps
+  hide it, in this order. First, connect early: the client starts connecting
+  and signing in to the destination while the gate's ring opens (about 15 s),
+  so arriving only waits for the deploy. Second, preload the map: the client
+  builds the destination world's map and art in the background so arrival does
+  not hitch. A short fade through the portal covers what is left. A handoff
+  with no loading screen at all (two live connections, swapping which world is
+  drawn) is not planned: it breaks the client's one-session assumption,
+  prediction and lag compensation, and is the riskiest part where gear is at
+  stake. Revisit only if the first two are not enough. The bench times arrival
+  once the early connect is built.
 - **A taken name asks for another one** on the phone, never just a refusal.
