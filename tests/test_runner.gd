@@ -2883,6 +2883,9 @@ func _test_every_world() -> void:
 		await _end_raid(raid)
 
 
+const MapScript_Frost := preload("res://worlds/frostline/map.gd")
+
+
 func _test_frostline() -> void:
 	print("Frostline")
 	var world := Worlds.get_world("frostline")
@@ -2905,9 +2908,33 @@ func _test_frostline() -> void:
 	for bot in raid.bots:
 		factions[bot.faction] = factions.get(bot.faction, []) + [bot]
 	check(factions.has("warden") and factions.has("feral"), "both enemy factions spawn")
-	var relay_caches := raid.get_children().filter(func(n: Node) -> bool:
-		return n is LootContainer and n.global_position.y > 20.0)
-	check(relay_caches.size() == 1, "a cache sits on top of the relay mast")
+	var relay_caches := raid._caches.filter(func(c: Dictionary) -> bool: return c.source == "relay")
+	check(relay_caches.size() == 1 and (relay_caches[0].container as Node3D).global_position.y
+			> raid.map.call("ground_height", 0.0, MapScript_Frost.ENGINE_Z) + 20.0,
+			"one cache sits on the Stilled Engine's back, where only flight reaches")
+	var rim_caches := raid._caches.filter(func(c: Dictionary) -> bool: return c.source == "rooftop")
+	check(rim_caches.size() >= 4, "the rims' listening posts hold the rooftop caches (%d)" % rim_caches.size())
+	var zones := {}
+	for c: Dictionary in raid._caches:
+		zones[world.zone_at((c.container as Node3D).global_position)] = true
+	check(zones.has(0) and zones.has(1) and zones.has(2), "there are caches in every zone, from the river mouth to the core")
+	var map := raid.map
+	var outside := map.call("ground_height", MapScript_Frost.centre(0.0), 0.0) as float
+	var shelf := MapScript_Frost.shelf_point(0.0, 1.0)
+	check(map.call("ground_height", shelf.x, shelf.y) - outside > 10.0,
+			"the walls step up to a shelf over the valley floor")
+	# The region is built off the main thread: wait until the map has it.
+	var nav_map := raid.map.get_world_3d().navigation_map
+	for i in 600:
+		if NavigationServer3D.map_get_closest_point(nav_map, Vector3(0, 0, 250)) != Vector3.ZERO:
+			break
+		await frames(1)
+	var path := NavigationServer3D.map_get_path(nav_map,
+			Vector3(MapScript_Frost.centre(230.0), map.call("ground_height", MapScript_Frost.centre(230.0), 230.0), 230.0),
+			Vector3(MapScript_Frost.shelf_point(150.0, -1.0).x, 0, 150.0) + Vector3(0, map.call("ground_height",
+					MapScript_Frost.shelf_point(150.0, -1.0).x, 150.0), 0), true)
+	check(path.size() > 1 and path[path.size() - 1].y > outside + 10.0,
+			"a ramp leads up from the floor to the shelf (path ends at %s)" % (path[path.size() - 1] if path.size() > 0 else "nowhere"))
 	if factions.has("warden") and factions.has("feral"):
 		var warden: Actor = factions.warden[0]
 		var feral: Actor = factions.feral[0]
@@ -2925,7 +2952,7 @@ func _test_frostline() -> void:
 	# The gentle world: basic loot, and death only costs the backpack.
 	var gear_tags := ["weapon", "armor", "flight_rig", "ability", "vehicle"]
 	var too_good: Array[String] = []
-	for source: String in ["cache", "rooftop", "relay", "warden", "feral", "vehicle"]:
+	for source: String in ["cache", "cache_core", "rooftop", "relay", "warden", "feral", "vehicle"]:
 		for i in 300:
 			for id in world.roll_loot(source, rng):
 				var is_gear := gear_tags.any(func(tag: String) -> bool: return ItemDB.has_tag(id, tag))
