@@ -227,6 +227,8 @@ var _visor_level := 0
 var _flick := Vector2.ZERO
 var _rng := RandomNumberGenerator.new()
 var _thrust_audio: AudioStreamPlayer
+## Fades hostile bodies the eyes cannot see out of the third-person view.
+var peek_fade := PeekFade.new()
 ## Kick still on its way to the view (x pitch, y yaw, radians), the kick the
 ## view is holding that has yet to settle back, and seconds since a shot.
 var _kick_coming := Vector2.ZERO
@@ -860,6 +862,7 @@ func _process(delta: float) -> void:
 		if not hit.is_empty():
 			desired = pivot + (hit.position - pivot) * 0.85
 	camera.global_transform = Transform3D(look, desired)
+	peek_fade.update(actor, camera, peek_rule_applies() and is_third_person(), delta)
 	_read_phone(delta)
 	if _thrust_audio:
 		var thrusting := actor.flight.is_thrusting and not actor.is_dead
@@ -1224,6 +1227,14 @@ func phone_panel() -> Node3D:
 	return face if face != null and face.is_visible_in_tree() else null
 
 
+## True where third person must not show more than the eyes see: out in a
+## world where gear is at stake (`PeekFade`). Safe zones, the arena and the
+## home base are left alone.
+func peek_rule_applies() -> bool:
+	var raid := Raid.of(actor)
+	return raid != null and raid.world != null and raid.world.gear_at_risk and not raid.world.safe_zone
+
+
 func _wants_third_person() -> bool:
 	return actor.is_dead or active_view() == ViewMode.THIRD
 
@@ -1243,3 +1254,96 @@ func _compute_aim_dir() -> Vector3:
 	if eye.distance_to(point) < 2.0 or forward.dot(point - eye) <= 0.0:
 		return forward
 	return (point - eye).normalized()
+
+
+## Third person never shows more than the eyes see (Caleb's call): where gear
+## is at stake, a hostile body the actor's eyes have no line to fades out of
+## the third-person view, so looking round a corner from over the shoulder
+## shows nothing a first-person player could not see. View only: nothing in
+## the simulation reads it, and first person is left alone.
+class PeekFade:
+	## Seconds between line-of-sight checks.
+	const CHECK_EVERY := 0.1
+	## Drawn opacity lost or gained a second.
+	const FADE_RATE := 7.0
+	## A body stays drawn this long after the eyes lose it, so it does not
+	## flicker at a doorframe.
+	const HOLD := 0.3
+	## Bodies further than this are never checked (left as they are drawn).
+	const REACH := 160.0
+
+	var _check_left := 0.0
+	## Actor -> seconds since the eyes last had a line to it.
+	var _unseen := {}
+	## Actor -> drawn opacity, 0 to 1. Only bodies not fully drawn are kept.
+	var _alpha := {}
+
+	## Steps the fade. `active` is false in first person or wherever the rule
+	## does not apply, which brings every faded body back.
+	func update(viewer: Actor, camera: Camera3D, active: bool, delta: float) -> void:
+		_check_left -= delta
+		var check := _check_left <= 0.0
+		if check:
+			_check_left = CHECK_EVERY
+		if active and check:
+			var raid := Raid.of(viewer)
+			var space := viewer.get_world_3d().direct_space_state
+			var eye := viewer.get_eye_position()
+			for node in viewer.get_tree().get_nodes_in_group("actors"):
+				var other := node as Actor
+				if other == null or other == viewer or not Raid.together(viewer, other):
+					continue
+				if other.is_dead or VisorHud.squadmate(raid, viewer, other) \
+						or eye.distance_to(other.global_position) > REACH:
+					_unseen.erase(other)
+					continue
+				# Off screen it does not matter yet: keep what was decided.
+				if camera != null and not camera.is_position_in_frustum(other.global_position + Vector3(0, 1, 0)):
+					continue
+				if seen_from(space, eye, other):
+					_unseen[other] = 0.0
+				else:
+					_unseen[other] = float(_unseen.get(other, 0.0)) + CHECK_EVERY
+		for other: Actor in _unseen.keys():
+			if not is_instance_valid(other):
+				_unseen.erase(other)
+				_alpha.erase(other)
+				continue
+			var want := 0.0 if active and float(_unseen[other]) > HOLD else 1.0
+			_fade(other, move_toward(float(_alpha.get(other, 1.0)), want, FADE_RATE * delta))
+		for other: Actor in _alpha.keys():
+			if not is_instance_valid(other):
+				_alpha.erase(other)
+			elif not _unseen.has(other):
+				_fade(other, move_toward(float(_alpha[other]), 1.0, FADE_RATE * delta))
+
+	## How much of `other` is drawn now (1 when it is not faded at all).
+	func drawn(other: Actor) -> float:
+		return float(_alpha.get(other, 1.0))
+
+	func _fade(other: Actor, alpha: float) -> void:
+		var was := float(_alpha.get(other, 1.0))
+		if alpha >= 1.0 and was >= 1.0:
+			return
+		for node in other.find_children("*", "GeometryInstance3D", true, false):
+			(node as GeometryInstance3D).transparency = 1.0 - alpha
+		if alpha >= 1.0:
+			_alpha.erase(other)
+		else:
+			_alpha[other] = alpha
+
+	## True if the eyes at `eye` have a clear line to any part of `other`: the
+	## head, the chest, the hips, or either side of the chest, so a body only
+	## fades once all of it is behind something.
+	static func seen_from(space: PhysicsDirectSpaceState3D, eye: Vector3, other: Actor) -> bool:
+		var feet := other.global_position
+		var height := other.body_height()
+		var across := (feet - eye).cross(Vector3.UP)
+		across = across.normalized() * Actor.BODY_RADIUS if across.length_squared() > 0.0001 else Vector3.ZERO
+		var chest := feet + Vector3(0, height * 0.65, 0)
+		for point: Vector3 in [feet + Vector3(0, height - 0.12, 0), chest, feet + Vector3(0, height * 0.4, 0),
+				chest + across, chest - across]:
+			var query := PhysicsRayQueryParameters3D.create(eye, point, Actor.LAYER_WORLD)
+			if space.intersect_ray(query).is_empty():
+				return true
+		return false

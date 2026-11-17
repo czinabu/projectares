@@ -317,6 +317,12 @@ without Caleb, and update the gap list when a PR closes a row.
   again; it is an index, never a toggle, so it replicates safely. Check with
   `--holster-only`.
 - First and third person differ only in where the camera is (Caleb's rule).
+  Third person never shows more than the eyes see (Caleb's call): out in a
+  world where gear is at stake, a hostile body the eyes have no line to
+  (head, chest, hips or either side) fades out of the third-person view
+  (`PlayerController.PeekFade`, `peek_rule_applies`), so peeking round a
+  corner from over the shoulder gives nothing first person lacks. View only;
+  squadmates and the dead are never faded.
   Both look at the one real body, posed by the same code and holding the
   same weapon in the same hand: first person puts the camera at the eyes
   (`ActorSkin.eye_point`, pulled back level by `GameSettings.eye_pullback`,
