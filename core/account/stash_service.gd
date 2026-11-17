@@ -33,6 +33,7 @@ const BaseUpgrades := preload("res://core/base/base_upgrades.gd")
 const Contracts := preload("res://core/economy/contracts.gd")
 const Crafting := preload("res://core/progression/crafting.gd")
 const DevMode := preload("res://core/dev/dev_mode.gd")  # DEV MODE
+const SafeFile := preload("res://core/account/safe_file.gd")
 
 const SAVE_VERSION := 1
 const MIN_NAME := 3
@@ -64,6 +65,13 @@ var dev_host := false
 ## (`StashRules.CARRIED`), so they arrive with the loadout they left with.
 ## Only the profile's own name and secret claim it. Empty for anyone else's server.
 var host_profile := {}
+## Rolling backups of the whole save folder (accounts, clans, phone records)
+## go in `backup_dir()`, one dated folder each: one when the server starts
+## and then every `backup_every` seconds while it runs, keeping the newest
+## `backups_kept`. 0 turns them off.
+var backup_every := 3600.0
+var backups_kept := 48
+var _last_backup := -1.0
 
 
 ## One player's server-side record. Plain data plus its save format.
@@ -213,6 +221,10 @@ func sign_in(shown_name: String, secret: String) -> Dictionary:
 		_adopt_host_profile(account, secret)
 		_dev_top_up(account)  # DEV MODE
 		return {"ok": true, "account_id": id, "created": false}
+	if persist and SafeFile.exists(_path_for(id)):
+		# The file is there but could not be read: never start a new account
+		# over it. The host can put one back from a backup.
+		return _fail("This account could not be loaded. Ask the server's host to restore it from a backup.")
 	account = Account.new()
 	account.id = id
 	account.shown_name = shown_name.strip_edges().left(MAX_NAME)
@@ -256,9 +268,9 @@ func load_account(id: String) -> Account:
 	if not persist or id_for_name(id) != id:
 		return null
 	var path := _path_for(id)
-	if not FileAccess.file_exists(path):
+	if not SafeFile.exists(path):
 		return null
-	var data: Variant = JSON.parse_string(FileAccess.get_file_as_string(path))
+	var data: Variant = SafeFile.read_json(path)
 	if typeof(data) != TYPE_DICTIONARY:
 		push_warning("StashService: %s is unreadable" % path)
 		return null
@@ -281,7 +293,7 @@ func grant_gear_crates(account: Account) -> void:
 			account.crates_granted.append(crate)
 			StashRules.add_items(account.stash, ProfileScript.GEAR_CRATES[crate])
 			changed = true
-	if changed or not FileAccess.file_exists(_path_for(account.id)):
+	if changed or not SafeFile.exists(_path_for(account.id)):
 		_save(account)
 
 
@@ -610,21 +622,29 @@ func _path_for(id: String) -> String:
 
 
 func _save(account: Account) -> void:
-	if not persist:
-		return
-	DirAccess.make_dir_recursive_absolute(save_dir)
-	# Write beside the real file, then swap, so a crash never leaves half a save.
-	var path := _path_for(account.id)
-	var temp := path + ".tmp"
-	var file := FileAccess.open(temp, FileAccess.WRITE)
-	if file == null:
-		push_warning("StashService: could not write %s" % temp)
-		return
-	file.store_string(JSON.stringify(account.to_dict(), "\t"))
-	file.close()
-	if FileAccess.file_exists(path):
-		DirAccess.remove_absolute(path)
-	DirAccess.rename_absolute(temp, path)
+	if persist:
+		SafeFile.write(_path_for(account.id), JSON.stringify(account.to_dict(), "\t"))
+
+
+## Where the rolling backups go: beside the save folder, never inside it.
+func backup_dir() -> String:
+	return save_dir.trim_suffix("/") + "_backups"
+
+
+## Backs up the save folder if one is due (see `backup_every`). Cheap to call
+## often: every session sharing this service may call it, and only one copy
+## is made. Returns the new backup's folder, or "".
+func backup_if_due() -> String:
+	if not persist or backup_every <= 0.0:
+		return ""
+	var now := Time.get_unix_time_from_system()
+	if _last_backup >= 0.0 and now - _last_backup < backup_every:
+		return ""
+	_last_backup = now
+	var made := SafeFile.backup(save_dir, backup_dir(), backups_kept)
+	if made != "":
+		print("Server: backed up accounts to %s" % ProjectSettings.globalize_path(made))
+	return made
 
 
 static func _hash(salt: String, secret: String) -> String:

@@ -53,6 +53,8 @@ const RaiderTests := preload("res://tests/raider_tests.gd")
 const PlaytestFixTests := preload("res://tests/playtest_fix_tests.gd")
 const ExtractionTests := preload("res://tests/extraction_tests.gd")
 const InspectTests := preload("res://tests/inspect_tests.gd")
+const SaveSafetyTests := preload("res://tests/save_safety_tests.gd")
+const ServerAuthTests := preload("res://tests/server_auth_tests.gd")
 
 var _passed := 0
 var _failed := 0
@@ -71,6 +73,7 @@ func _ready() -> void:
 	# Accounts a previous run left behind hold that run's secrets and would
 	# refuse this run's sign-ins, so every run starts with none.
 	_wipe_dir(NET_ACCOUNTS)
+	_wipe_dir(NET_ACCOUNTS + "_backups")
 	var args := OS.get_cmdline_user_args()
 	if "--list" in args:
 		_list_groups()
@@ -318,6 +321,8 @@ func _run() -> void:
 	await OnboardingTests.run(self)
 	await TravelOnlineTests.run(self)
 	await HostRecoveryTests.run(self)
+	await SaveSafetyTests.run(self)
+	await ServerAuthTests.run(self)
 	await _test_look()
 	await _test_rig_models()
 	await _test_customizer()
