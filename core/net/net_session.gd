@@ -83,7 +83,7 @@ signal base_visit_requested(owner_name: String, stash: Array, loadout: Dictionar
 signal portal_travel(destination: String)
 
 const DEFAULT_PORT := 24565
-const PROTOCOL := 34
+const PROTOCOL := 35
 ## Every packet is compressed, both ways. State updates are mostly repeated
 ## numbers, and a big battle sends a player hundreds of them a second. Server
 ## and client must agree, so a change here needs a new PROTOCOL.
@@ -96,13 +96,10 @@ const PROTOCOL := 34
 ## 33: the version check and sign-in moved into the connection handshake
 ## (`SceneMultiplayer.auth_callback`, see "Signing in" below); the old
 ## `_hello`, `_sign_in` and `_refused` calls are gone.
-<<<<<<< HEAD
-## 34: connections are encrypted (ENet DTLS, `ServerTrust`), and the server's
-## sign-in answer carries its certificate.
-=======
 ## 34: hit feedback says whether it was a head, plates soaked it, or it
 ## broke them, for the hit marker.
->>>>>>> origin/main
+## 35: connections are encrypted (ENet DTLS, `ServerTrust`), and the server's
+## sign-in answer carries its certificate.
 ## Where an out-of-date game gets the latest build: the rolling "latest"
 ## release the Windows client workflow publishes (docs/hosting.md).
 const UPDATE_URL := "https://github.com/czinabu/projectares/releases/tag/latest"
