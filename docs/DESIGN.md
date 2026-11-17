@@ -48,7 +48,7 @@ new planet is a new folder under `worlds/`.
 | --- | --- | --- |
 | Main hub | The Concourse (`worlds/plaza`) | Social space. Show off cosmetics, rigs and watch skins. Doors to every world, the shops, the clan hall and the arena. Nobody can be hurt. |
 | Home base | `core/base` | Your private staging ground. The armory wall, the garage, the trophy shelf and the consoles. Loadouts are prepared here. |
-| PvE world | Frostline (partly) | Exploration, quests, dungeons and bosses. Learn the game, test builds, earn basic gear and materials. Gentle death. |
+| PvE world | Frostline (partly) | The co-op expedition world: cold, whiteouts and tracking instead of a war. Learn the game, test builds, earn basic gear and the crafting parts every Mk2 and Mk3 needs (planned). No PvP, gentle death. |
 | PvP world | Ashfront | The high-stakes warzone. Full loot, the only source of heavy weapons and the best loot, bank spots, sign-out tension. |
 | Gladiator arena | The Pit (`core/arena`) | Duels, bouts and tournaments. Loadouts are locked once a fight begins. Nobody loses gear. |
 
@@ -182,6 +182,62 @@ headquarters, in the order they are built:
 - **Deferred.** Quests, dungeons and bosses are a large amount of work, so they
   wait until after the friends playtest. Until then Frostline stands in as the
   PvE world (no PvP, gentle death, basic loot).
+
+### Frostline (Caleb's call)
+
+Frostline is Ashfront's opposite on every axis, so each world has its own
+job in the loop, not just its own palette. Ashfront is where rare gear, gear
+blueprints, upgrade data and heavy weapons come from; Frostline is where the
+parts that make gear better come from, so a hardcore player needs both
+worlds and a casual or solo one has a steady home.
+
+- **Co-op, no PvP (Caleb's call).** Many players dislike PvP but still want
+  to meet and work with others, so Frostline is where that happens:
+  everyone is on one side, and the world rewards working together (shared
+  warmth, joining someone's beacon, warming up a downed stranger, following
+  each other's tracks).
+- **Solo works too (Caleb's call).** Everything can be done alone; company
+  makes it easier, never possible. Beacons can be held alone, fights at the
+  core scale to the players near them, contracts never need a group.
+- **The place.** One long frozen river valley, about 600 m, climbing from
+  the river mouth (where you arrive) through the Narrows and across a
+  frozen lake to the glacier head, where the Stilled Engine lies half
+  buried: the terraforming drum that once kept the world warm. When it
+  froze, the war here stopped. The walls step up to a shelf (14 m, reached
+  by ramps) and a rim (40 m, flight only), so fights are about holding the
+  high side. Cold and quiet: a low sun, blue shadows, the only warm colours
+  are heaters, beacons and the Engine's one teal light.
+- **Threats (planned).** Body heat as a vital, drained in the open and
+  refilled at heater huts, vents and vehicle engines, hurting through
+  `Combat.deal` when empty; whiteouts that cut sight to about 30 m and wipe
+  tracks, and feel like a real blizzard (Caleb's call): wind you see and
+  hear, snow driven sideways in gusts, drifts streaming off the rims, bodies
+  leaning into it and the wind pushing flight rigs off course; footprints and vehicle tracks the server keeps and sends only
+  nearby; gunshots that carry twice as far; thin ice that breaks under
+  heavy vehicles; the Wardens as the Engine's defence grid, still running.
+- **What you bring home (planned).** New parts (Cryo Core, Glacial Alloy,
+  Engine Coil) that Mk2 and Mk3 recipes need, and Frostline blueprints for
+  new options only (attachments, cold-weather gear), never a higher Mk of
+  existing gear. Later the inside of the Engine is its deep-loot dungeon and
+  the home of the missing artifacts. Expedition contracts.
+- **Getting out (planned).** Sign-out only at warm beacons, held while they
+  power up (still `begin_sign_out`). Depots stay for banking.
+
+**Order of work**, one PR each: (1) the valley map, (2) the cold, (3) the
+loot role and recipes, (4) warm beacons, (5) whiteouts, after the Ashfront
+weather work, (6) tracks and louder gunshots, (7) thin ice, the defence
+grid and expedition contracts, (8) later, with the PvE dungeons, the
+Engine's inside. Every number is a placeholder for the playtest.
+
+**What is built.** The valley (step 1): `worlds/frostline/map.gd`, a
+`Terrain` shared between copies like Ashfront's, with the zones running up
+the valley (`zone_at`: river mouth, mid-valley, glacier head; no hazard
+yet), two-tier walls with ramps to the shelf, six heater huts (the heaters
+do nothing yet), three strongpoints held by the Wardens (Echo Post and
+Vigil Post on the shelves, Drift Post at the lake's north shore), six rim
+listening posts with the rooftop caches, the Stilled Engine with the relay
+cache on its back and the core's caches at its hatch, and Feral dens on the
+floor. Bot markers name their faction, and `equip_bot` follows them.
 
 ### PvP world
 
