@@ -44,7 +44,7 @@ signal gear_shown
 signal bench_used
 ## The player walked into the squad portal they opened from the watch
 ## (`open_portal`). Whoever owns the base sends them to `destination` (a
-## `Portal.destinations()` id).
+## `Portal.from_base()` id: a world, the arena or the plaza).
 signal portal_entered(destination: String)
 ## The loadout changed and the player now wears it: `player` is a new actor
 ## in the same spot. Whoever drives the player (a controller, a camera)
@@ -631,7 +631,7 @@ func _suit_locked(actor: Actor) -> void:
 
 
 ## The watch's squad portal: opens a portal to `destination` (a
-## `Portal.destinations()` id) in front of the player, in place of any open
+## `Portal.from_base()` id) in front of the player, in place of any open
 ## one. The base is a safe space, so it always may. Returns "" if it opened,
 ## or why not. Online your squad joins you on the other side; only you are
 ## in your base.
@@ -640,7 +640,7 @@ func open_portal(destination: String) -> String:
 		return "Not your base"
 	if player == null or not is_instance_valid(player):
 		return "not now"
-	if destination not in Portal.destinations():
+	if destination not in Portal.from_base():
 		return "No portal goes there"
 	close_portal()
 	portal = Portal.new()

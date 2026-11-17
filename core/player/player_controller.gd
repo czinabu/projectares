@@ -368,8 +368,9 @@ func is_on_artifact() -> bool:
 
 
 ## Where a squad portal from the watch can lead from here
-## (`Portal.destinations()`), or none where portals cannot open: anywhere but
-## your base or a safe zone.
+## (`Portal.choices_for`): worlds, the arena and the plaza from your base,
+## worlds, the arena and home from a safe zone, only home (a sign-out) out
+## in a world, and none in the arena or while down.
 func portal_choices() -> Array[String]:
 	if actor == null or not is_instance_valid(actor):
 		return []
