@@ -3573,6 +3573,77 @@ func _test_war() -> void:
 	check(is_equal_approx(half.sun_energy, 1.5) and Look.blend_moods(calm, battle, 0.0).sun_energy == 2.0
 			and Look.blend_moods(calm, battle, 7.0).sun_energy == 1.0, "the mood blends with the meter and stops at the war mood")
 
+	# The storm must not white out a fight. Caps, the distance curve, actors
+	# thinning fog as they get near, and shots that ignore fog.
+	var abusive := Look.soften_storm(Look.mood_values({
+		"fog_density": 4.0, "fog_depth_begin": 2.0, "fog_depth_end": 18.0,
+		"fog_height": 40.0, "fog_height_density": 3.0,
+	}))
+	check(abusive.fog_depth_begin >= Look.storm_fog_begin_min
+			and abusive.fog_depth_end >= Look.storm_fog_solid_min
+			and abusive.fog_density <= Look.storm_depth_amount_cap
+			and abusive.fog_height <= Look.storm_fog_height_max
+			and abusive.fog_height_density <= Look.storm_height_density_cap,
+			"a war mood cannot ask for fog inside engagement range")
+	var thin := Look.soften_storm(Look.mood_values({"fog_density": 0.4}))
+	check(thin.fog_density <= Look.storm_fog_density_cap, "exponential war fog stays a light haze")
+	var at_30 := Look.fog_amount_at(30.0, 1.7, Look.storm_depth_amount_cap, Look.storm_fog_begin_min,
+			Look.storm_fog_solid_min, 1.0, true, 1.1, 0.0)
+	var at_50 := Look.fog_amount_at(50.0, 1.7, Look.storm_depth_amount_cap, Look.storm_fog_begin_min,
+			Look.storm_fog_solid_min, 1.0, true, 1.1, 0.0)
+	var at_far := Look.fog_amount_at(Look.storm_fog_solid_min, 1.7, Look.storm_depth_amount_cap,
+			Look.storm_fog_begin_min, Look.storm_fog_solid_min, 1.0, true, 1.1, 0.0)
+	check(at_30 < 0.08 and at_50 < 0.22 and at_far > 0.8,
+			"30 m stays clear, 50 m stays readable, the horizon goes (%.0f%%, %.0f%%, %.0f%%)" % [at_30 * 100.0, at_50 * 100.0, at_far * 100.0])
+	check(is_equal_approx(Look.actor_fog_keep(8.0), Look.actor_fog_min)
+			and Look.actor_fog_keep(50.0) < 0.85 and is_equal_approx(Look.actor_fog_keep(200.0), 1.0),
+			"actors shed fog up close and take the full fog once they are far")
+	var teal := Look.storm_accent(Color(0.25, 0.6, 1.0))
+	var pink := Look.storm_accent(Color(0.85, 0.3, 0.2))
+	check(teal.b > teal.r and teal.g > 0.5, "a cool faction reads as the teal energy glow")
+	check(pink.r > 0.8 and pink.b > pink.g, "a warm faction is pushed toward pink so it clears the orange storm")
+	var flash: StandardMaterial3D = load("res://core/visual/vfx.gd").flash_material()
+	var shot := Fx.shot_material(Color(1.0, 0.8, 0.3))
+	check(flash.disable_fog and shot.disable_fog and shot.emission_enabled,
+			"muzzle flashes and tracers are not swallowed by fog")
+	for path in ["res://assets/shaders/character.gdshader", "res://assets/shaders/gear.gdshader",
+			"res://assets/shaders/melee.gdshader"]:
+		var code := FileAccess.get_file_as_string(path)
+		check("storm_pop" in code and "FOG" in code, "%s thins fog on actors" % path.get_file())
+	# The ramp: a meter that jumps to all-out war eases, it does not snap.
+	var holder := Node3D.new()
+	add_child(holder)
+	holder.set_meta("war_intensity", 1.0)
+	holder.set_meta("war_centre", Vector3.ZERO)
+	var mood := Look.WarMood.new()
+	mood.follow = Look.storm_follow
+	mood.calm = Look.mood_values({
+		"fog_density": 0.5, "fog_depth_begin": 80.0, "fog_depth_end": 400.0, "sun_energy": 2.0,
+	})
+	mood.war = Look.soften_storm(Look.mood_values({
+		"fog_density": 4.0, "fog_depth_begin": 2.0, "fog_depth_end": 18.0, "sun_energy": 1.0,
+	}, mood.calm))
+	mood.env = Environment.new()
+	mood.sky_mat = ShaderMaterial.new()
+	mood.sky_mat.shader = load("res://assets/shaders/sky.gdshader")
+	mood.sun = DirectionalLight3D.new()
+	mood.column = Look._war_column()
+	holder.add_child(mood)
+	mood.add_child(mood.sun)
+	mood.add_child(mood.column)
+	mood._process(0.05)
+	check(mood.shown > 0.0 and mood.shown < 0.05, "the storm eases in (%.3f in one tick)" % mood.shown)
+	check(mood.env.fog_mode == Environment.FOG_MODE_DEPTH
+			and mood.env.fog_depth_begin >= Look.storm_fog_begin_min
+			and mood.env.fog_depth_end >= Look.storm_fog_solid_min
+			and mood.env.fog_density <= Look.storm_depth_amount_cap + 0.001,
+			"the live sky obeys the same cap")
+	mood._process(30.0)
+	check(mood.shown > 0.99 and mood.env.fog_depth_end >= Look.storm_fog_solid_min,
+			"it arrives at the capped storm, not a whiteout")
+	holder.queue_free()
+	await frames(2)
+
 
 func _test_strongpoints() -> void:
 	print("Strongpoints")
