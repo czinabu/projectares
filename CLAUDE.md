@@ -1228,6 +1228,19 @@ without Caleb, and update the gap list when a PR closes a row.
   owner's copy for the watch is `Actor.tally`. Only a sign-out counts, and no
   job may count player kills or reward signing straight out. A new job is a
   `JOBS` entry; a new stat is a `_count` call where the event happens.
+- The player market (DESIGN.md section 10, "Two worlds, one loop"): rules
+  once in `core/economy/market.gd` (static, like `Economy`: what trades, the
+  price band, fees, the daily cap; Mk3, heavy weapons, artifacts and relics
+  never trade), the board in `core/economy/market_service.gd`, shared by
+  every session of a server like the `ClanService` (`NetSession.market`).
+  It moves goods only through five ledger calls on the `StashService`
+  (`count_of`, `scrip_of`, `take_items`, `give_items`, `change_scrip`), so
+  it can move onto a shared account service later; it never writes an
+  account itself. Listed items are held by the board, its file is written
+  before any account so a crash can lose a listing but never copy one, and
+  a client only asks (`NetSession.market_ask`) from the Exchange kiosk in
+  the plaza and shows `market_state`. Trading needs a safe zone and no
+  deploy; there is no solo market.
 - Furniture (`furniture`, small pieces also `decor`) and clothing
   (`cosmetic`, with an `outfits` stat of customizer outfit ids) are ordinary
   stash items that fit no loadout slot, so they never go on a raid.

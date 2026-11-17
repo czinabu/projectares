@@ -450,6 +450,40 @@ func change_scrip(account_id: String, delta: int) -> bool:
 	return true
 
 
+# --- Market ledger -----------------------------------------------------------
+# The five calls `MarketService` moves goods with. Server code only: the item
+# and amount always come from the board's own listing, never from a client.
+
+## How many of `item_id` the account's stash holds.
+func count_of(account_id: String, item_id: String) -> int:
+	var account := load_account(account_id)
+	return account.stash.count(item_id) if account != null else 0
+
+
+## Takes `count` of `item_id` out of the stash (unequipping it if the last
+## one is worn). Refuses, changing nothing, while deployed or if there are
+## not that many.
+func take_items(account_id: String, item_id: String, count: int) -> bool:
+	var account := load_account(account_id)
+	if account == null or account.is_deployed() or count < 1 or account.stash.count(item_id) < count:
+		return false
+	for i in count:
+		account.stash.erase(item_id)
+	StashRules.validate_loadout(account.stash, account.loadout)
+	_save(account)
+	return true
+
+
+## Puts items into the stash (a blueprint not known yet is learned).
+func give_items(account_id: String, items: Array) -> bool:
+	var account := load_account(account_id)
+	if account == null:
+		return false
+	account.add_items(items)
+	_save(account)
+	return true
+
+
 func _bank(account: Account, result: Dictionary) -> Dictionary:
 	account.scrip = result.scrip
 	if result.ok:

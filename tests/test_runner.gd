@@ -36,6 +36,7 @@ const ArtifactTests := preload("res://tests/artifact_tests.gd")
 const WatchTests := preload("res://tests/watch_tests.gd")
 const PortalTests := preload("res://tests/portal_tests.gd")
 const ContractTests := preload("res://tests/contract_tests.gd")
+const MarketTests := preload("res://tests/market_tests.gd")
 const FeelTests := preload("res://tests/feel_tests.gd")
 const ViewMatchTests := preload("res://tests/view_match_tests.gd")
 const PeekTests := preload("res://tests/peek_tests.gd")
@@ -307,6 +308,7 @@ func _run() -> void:
 	_test_refit()
 	await BaseUpgradeTests.run(self)
 	await ContractTests.run(self)
+	await MarketTests.run(self)
 	await CraftingTests.run(self)
 	await _test_arena()
 	await _test_arena_floor()
@@ -5689,6 +5691,7 @@ func _test_plaza() -> void:
 	check(all_worlds, "there is a deploy gate for every raid world")
 	check("home" in destinations, "there is a door to the home base")
 	check("clans" in destinations, "there is a clan hall")
+	check("market" in destinations, "there is a player market kiosk (the Exchange)")
 	check(portals.all(func(n: Node) -> bool: return n.get_meta("label", "") != ""), "every portal says where it goes")
 	# Shops are physical places: a storefront for each one the game has.
 	var shops: Array = raid.map.shops()
@@ -5958,6 +5961,33 @@ func _test_plaza_online() -> void:
 	ada.contract_ask("take", job)
 	await _wait_until(func() -> bool: return ada.account.get("contracts", {}).get("active", []).size() == 1, 240)
 	check(job != "" and ada.account.contracts.active[0].id == job, "the plaza's contract board takes a job on the server")
+	# The player market: Pia lists a medkit at the Exchange, Pax buys it.
+	const Market := preload("res://core/economy/market.gd")
+	var medkits: int = ada.account.stash.count("medkit")
+	var price := Market.board_value("medkit")
+	ada.market_ask("view")
+	ada.market_ask("list", "medkit", 1, price)
+	await _wait_until(func() -> bool: return ada.market_state.get("listings", []).size() == 1, 240)
+	var listing: Dictionary = ada.market_state.get("listings", [{}])[0]
+	check(listing.get("item", "") == "medkit" and listing.get("mine", false), "the Exchange lists an item on the server")
+	await _wait_until(func() -> bool: return ada.account.stash.count("medkit") == medkits - 1, 240)
+	check(ada.account.stash.count("medkit") == medkits - 1, "a listed item leaves the seller's stash")
+	if bo != null:
+		var bo_scrip := int(bo.account.get("scrip", 0))
+		var bo_medkits: int = bo.account.get("stash", []).count("medkit")
+		var ada_scrip := int(ada.account.get("scrip", 0))
+		bo.market_ask("view")
+		await _wait_until(func() -> bool: return bo.market_state.get("listings", []).size() == 1, 240)
+		var seen_listing: Dictionary = bo.market_state.get("listings", [{}])[0]
+		check(seen_listing.get("seller", "") == "Pia" and not seen_listing.get("mine", true),
+				"another player sees it, by the seller's name")
+		bo.market_ask("buy", "", int(seen_listing.get("id", 0)), 1)
+		await _wait_until(func() -> bool: return bo.account.get("stash", []).count("medkit") == bo_medkits + 1 \
+				and int(ada.account.get("scrip", 0)) > ada_scrip, 240)
+		check(bo.account.stash.count("medkit") == bo_medkits + 1 and int(bo.account.scrip) == bo_scrip - price and int(ada.account.scrip) == ada_scrip + Market.seller_gets(price),
+				"the buyer pays, gets the item, and the seller is paid at once (%d, %d)" % [bo.account.scrip, ada.account.scrip])
+		await _wait_until(func() -> bool: return ada.market_state.get("listings", []).is_empty(), 240)
+		check(ada.market_state.get("listings", [1]).is_empty(), "the board updates for everyone with the kiosk open")
 	# The clan hall: Pia founds a clan, Pax joins it, and both wear its tag.
 	ada.clan_ask("create", "Night Shift", "ns")
 	await _wait_until(func() -> bool: return not ada.clan_state.get("clan", {}).is_empty(), 240)

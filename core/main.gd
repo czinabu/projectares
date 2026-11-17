@@ -59,6 +59,7 @@ const ARENA_PORT_OFFSET := 10
 const PlazaViewScript := preload("res://core/social/plaza_view.gd")
 const ClanPanel := preload("res://core/social/clan_panel.gd")
 const ContractPanel := preload("res://core/economy/contract_panel.gd")
+const MarketPanel := preload("res://core/economy/market_panel.gd")
 const Contracts := preload("res://core/economy/contracts.gd")
 ## The plaza holds more people than a raid.
 const PLAZA_PLAYERS := 32
@@ -1321,6 +1322,7 @@ func start_server(world_id: String, port: int, with_plaza := true, bots := -1, s
 			session.stash = sessions[0].stash
 			session.social = sessions[0].social
 			session.clans = sessions[0].clans
+			session.market = sessions[0].market
 		add_child(session)
 		var err := session.host(world.id, next_port, world.max_players)
 		if err != OK:
@@ -1337,6 +1339,7 @@ func start_server(world_id: String, port: int, with_plaza := true, bots := -1, s
 		arena.stash = net.stash
 		arena.social = net.social
 		arena.clans = net.clans
+		arena.market = net.market
 		arena.lag_compensation = rewind
 		add_child(arena)
 		if arena.host(Arena.ArenaVenue.ID, arena_port) == OK:
@@ -1354,6 +1357,7 @@ func start_server(world_id: String, port: int, with_plaza := true, bots := -1, s
 		session.stash = net.stash
 		session.social = net.social
 		session.clans = net.clans
+		session.market = net.market
 		session.routes = routes
 		add_child(session)
 		var err := session.host(plaza.id, port, PLAZA_PLAYERS)
@@ -1503,6 +1507,8 @@ func _try_join() -> void:
 			go_home()
 		if base_hud:
 			base_hud.show_notice(reason)
+		if shop_view != null and is_instance_valid(shop_view) and shop_view.panel.has_method("show_message"):
+			shop_view.panel.call("show_message", reason)
 		if raid != null and hud != null and is_instance_valid(hud):
 			hud.notify(reason))
 	net.joined.connect(_on_online_joined)
@@ -1647,6 +1653,8 @@ func use_portal(destination: String) -> void:
 		open_clans()
 	elif destination == "contracts":
 		open_contracts()
+	elif destination == "market":
+		open_market()
 	else:
 		plaza_view.show_notice("Opening soon.")
 
@@ -1685,6 +1693,35 @@ func open_contracts() -> void:
 	panel.asked.connect(func(action: String, job_id: String) -> void:
 		if net:
 			net.contract_ask(action, job_id))
+	_open_terminal(panel)
+
+
+## The player market's kiosk in the plaza: buy what other players listed,
+## and list your own stash items. The server keeps the board and decides
+## every trade; the screen shows what it sends (`market_state`) and your
+## account, and is kept fresh while open.
+func open_market() -> void:
+	if net == null or raid == null or shop_view != null:
+		return
+	var panel: Control = MarketPanel.new()
+	panel.account = net.account
+	panel.state = net.market_state
+	panel.asked.connect(func(action: String, item_id: String, a: int, b: int) -> void:
+		if net:
+			panel.show_message("")
+			net.market_ask(action, item_id, a, b))
+	var session := net
+	var on_change := func(state: Dictionary) -> void:
+		if is_instance_valid(panel):
+			panel.state = state
+			panel.refresh()
+	session.market_changed.connect(on_change)
+	panel.tree_exited.connect(func() -> void:
+		if is_instance_valid(session):
+			session.market_ask("close")
+			if session.market_changed.is_connected(on_change):
+				session.market_changed.disconnect(on_change))
+	session.market_ask("view")
 	_open_terminal(panel)
 
 

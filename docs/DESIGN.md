@@ -1184,6 +1184,15 @@ blueprints. A listing fee and a sale fee drain scrip; price bands and a daily
 trade cap per account guard against dumping and farming. It must ship before
 parts leave Ashfront, or PvP crafters are starved.
 
+What is built (first version): the Exchange, a booth in the plaza's
+arcade with the rules above (5% to list, 10% of each sale, a price band of
+half to three times an item's value, 10 listings and 20 trades a day per
+account, listings home after 7 days). Server-only, shared by every world on
+a server, with the board saved beside the accounts. It moves goods through
+five ledger calls so it can move onto the shared account service later.
+Missing: buying more than one at a time from the screen, search and
+filters, price history, and the shared account service itself.
+
 **Status without a level.** There is no player level. Renown rank (PvP) stays;
 an expedition standing (surveys, sites cleared, bosses) is added beside it,
 with titles and cosmetics. A profile page shows both beside total mastery and
