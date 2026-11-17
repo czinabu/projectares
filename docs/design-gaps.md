@@ -148,3 +148,8 @@ rows marked **pre-playtest** come before the friends playtest.
 | Bounties on hot players, paid on extract, tied to the most-wanted board | Partly | Renown, bounties and the Marked exist in the PvP world; payouts in upgrade data and the board are missing. |
 | Safety nets: free Mk1 kit, one insured item, salvage on loss | Partly | The free `starter` scrap kit exists. Insurance and salvage are missing. |
 | Prestige vehicles and rigs from hard feats | Missing | List TBD. |
+| Two worlds, one loop: Frostline as the source of parts and blueprints, Ashfront for upgrade data and rare gear | Missing | Proposed in DESIGN.md section 10. Table moves go through the Frostline world thread. |
+| Player marketplace (plaza kiosk, server-side, fees, price bands, daily cap) | Missing | Must ship before parts leave Ashfront. |
+| Weapon Mk gains (handling only, about +10% at Mk3) | Missing | Lands after the combat balance work. |
+| Expedition standing and a profile page (no player level) | Missing | A read-out beside renown rank and mastery. |
+| World-tagged contracts (expedition and warzone) | Missing | After Frostline's sites exist. |
