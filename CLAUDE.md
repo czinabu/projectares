@@ -824,11 +824,13 @@ without Caleb, and update the gap list when a PR closes a row.
   `NetSession.UPDATE_URL` from the phone's Servers app. `server_relay` is
   off: clients only talk to the server. Every `any_peer` RPC starts with
   `_allow(kind)` (`NetSession.RequestLimits`, per player, refilled by server
-  tick), and a new one must too. Server saves go through
-  `core/account/safe_file.gd` (written whole, then swapped in), and the
+  tick), and a new one must too. Server saves that are files (clans, phone
+  records, the JSON fallback) go through `core/account/safe_file.gd`
+  (written whole, then swapped in); accounts are in SQLite (below). The
   `StashService` keeps rolling backups of the whole save folder
-  (`backup_if_due`, `backup_dir`). An account file that cannot be read is
-  never replaced by a new account.
+  (`backup_if_due`, `backup_dir`), the database copied with
+  `AccountStore.backup_to`, never as the live file. An account that cannot
+  be read is never replaced by a new account.
 - Online movement: a client numbers every input and each packet repeats
   every input the server has not received yet (up to
   `NetSession.MAX_INPUTS_PER_PACKET`, packed small by `pack_inputs` so a
@@ -860,7 +862,14 @@ without Caleb, and update the gap list when a PR closes a row.
   `StashService.settle`. `NetSession` does both. A client only signs in
   (name plus `Profile.online_secret`) and sends requests (equip, pick, deploy)
   from the lobby; it never sends a kit, and online play never reads or writes
-  the local `Profile` stash, with one exception: one player state. On a
+  the local `Profile` stash, with one exception: one player state.
+  The service keeps accounts in SQLite (`core/account/account_store.gd`,
+  `accounts.sqlite` in its `save_dir`, through `addons/godot-sqlite`): every
+  `_save` is one transaction, and changes to several accounts that must
+  happen together (a trade) go through `StashService.transaction`, never one
+  ledger call after another. Never read or write account files directly;
+  old ones are imported once by `AccountStore.open`. A build without the
+  library falls back to JSON files. On a
   server you host yourself (`main.gd host_and_join`, the base's door) you
   are the player you are at home: the client hands the server your profile
   (`--host-profile`, read once into `StashService.host_profile`, claimed only

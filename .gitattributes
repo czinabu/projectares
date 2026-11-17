@@ -3,3 +3,5 @@
 *.glb binary
 *.ogg binary
 *.wav binary
+# Vendored libraries are kept byte for byte.
+addons/godot-sqlite/bin/** -text

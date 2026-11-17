@@ -7,6 +7,7 @@ extends RefCounted
 ## runs in the offline tier. `-- --groups SaveSafetyTests` runs just these.
 
 const SafeFile := preload("res://core/account/safe_file.gd")
+const AccountStore := preload("res://core/account/account_store.gd")
 const StashService := preload("res://core/account/stash_service.gd")
 
 
@@ -34,23 +35,24 @@ static func run(t: Node) -> void:
 			"a torn save with nothing beside it, or none at all, reads as nothing")
 	DirAccess.remove_absolute(path)
 
-	# An account file that cannot be read is never written over.
+	# An account that cannot be read is never written over.
 	var service := StashService.new()
 	service.save_dir = dir
 	service.backup_every = 0.0
 	var secret := StashService.new_secret()
 	t.check(service.sign_in("Tamsin", secret).ok, "an account is made and saved")
-	var saved := dir.path_join("tamsin.json")
-	var broken := FileAccess.open(saved, FileAccess.WRITE)
-	broken.store_string("not json")
-	broken.close()
+	var store: RefCounted = service.store()
+	store._bind("UPDATE accounts SET data = ? WHERE id = ?", ["not json", "tamsin"])
 	var later := StashService.new()
 	later.save_dir = dir
 	later.backup_every = 0.0
 	var refused := later.sign_in("Tamsin", secret)
-	t.check(not refused.ok and "backup" in str(refused.get("error", "")) and SafeFile.read(saved) == "not json",
+	store._bind("SELECT data FROM accounts WHERE id = ?", ["tamsin"])
+	t.check(not refused.ok and "backup" in str(refused.get("error", ""))
+			and str(store._db.get("query_result")[0].data) == "not json",
 			"an unreadable account refuses sign-in and is left as it was for the host to restore")
-	SafeFile.write(saved, JSON.stringify(service.load_account("tamsin").to_dict()))
+	store.write([service.load_account("tamsin").to_dict()])
+	later.close()
 
 	# Clans save through the same swap.
 	var clans := ClanService.new()
@@ -70,9 +72,15 @@ static func run(t: Node) -> void:
 	backed.backups_kept = 2
 	t.check(backed.backup_dir() == dir + "_backups", "backups go beside the save folder, never inside it")
 	var first := backed.backup_if_due()
-	t.check(first != "" and FileAccess.file_exists(first.path_join("tamsin.json"))
+	var restored := StashService.new()
+	restored.save_dir = first
+	restored.backup_every = 0.0
+	t.check(first != "" and FileAccess.file_exists(first.path_join(AccountStore.FILE_NAME))
+			and not FileAccess.file_exists(first.path_join(AccountStore.FILE_NAME + "-wal"))
+			and restored.load_account("tamsin") != null
 			and FileAccess.file_exists(first.path_join("clans.json")),
-			"the first backup copies every account and the clans")
+			"the first backup copies every account (a clean copy of the database) and the clans")
+	restored.close()
 	t.check(backed.backup_if_due() == "", "the next backup waits for backup_every")
 	for i in 3:
 		SafeFile.backup(dir, backed.backup_dir(), backed.backups_kept)

@@ -1,0 +1,18 @@
+; godot-sqlite 4.7 (MIT, https://github.com/2shady4u/godot-sqlite, tag v4.7-assetlib).
+; Only the desktop release builds are kept, and debug runs load them too, so
+; the repository carries one library per platform. The account store
+; (core/account/account_store.gd) is the only user; it falls back to JSON
+; files where the class is missing.
+[configuration]
+
+entry_symbol = "sqlite_library_init"
+compatibility_minimum = "4.5"
+
+[libraries]
+
+macos.debug = "res://addons/godot-sqlite/bin/libgdsqlite.macos.template_release.framework"
+macos.release = "res://addons/godot-sqlite/bin/libgdsqlite.macos.template_release.framework"
+windows.debug.x86_64 = "res://addons/godot-sqlite/bin/libgdsqlite.windows.template_release.x86_64.dll"
+windows.release.x86_64 = "res://addons/godot-sqlite/bin/libgdsqlite.windows.template_release.x86_64.dll"
+linux.debug.x86_64 = "res://addons/godot-sqlite/bin/libgdsqlite.linux.template_release.x86_64.so"
+linux.release.x86_64 = "res://addons/godot-sqlite/bin/libgdsqlite.linux.template_release.x86_64.so"
