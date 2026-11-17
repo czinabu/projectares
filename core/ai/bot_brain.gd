@@ -29,6 +29,33 @@ var guard_skill := 0.4
 ## answer). 1 is the default cadence.
 var melee_tempo := 1.0
 var guard_reaction := 0.22
+## Melee bots fight like people (DESIGN.md "Melee bots"): a share of their
+## attacks are held heavies (more against a raised guard, which a heavy
+## breaks), some charges are feints that switch side and release as a quick
+## light, a sprinting bot opens with a dash-strike from out of reach, and a
+## bot strikes at once into a foe's recovery, stagger or its own riposte.
+## Heavies, feints and dash-strikes come with the ring (`RING_HEAVY`,
+## `RING_FEINT`, `RING_DASH`): the outer ring never dash-strikes.
+const RING_FEINT := [0.0, 0.15, 0.3]
+const RING_DASH := [0.0, 0.4, 0.7]
+const RING_HEAVY := [0.05, 0.2, 0.3]
+## A blade in reach beats a rifle (Caleb's call): an army bot cut by a
+## blade flinches, its gun knocked `melee_knock_deg` off and its trigger
+## held for `melee_flinch` seconds, so once a blade reaches a soldier the
+## gun loses. Bots only: a player's aim is never moved.
+var melee_flinch := 0.4
+## An army gunner gives ground from a blade closer than this, from the hip.
+var blade_backoff := 9.0
+var melee_knock_deg := 14.0
+var heavy_share := 0.25
+var heavy_vs_guard := 0.6
+var feint_chance := 0.15
+var dash_chance := 0.6
+## The least time between dash-strike tries, seconds.
+var dash_every := 3.0
+## How long a feint shows its first side before it switches, seconds
+## (under `MeleeWeapon.hold_time`, so the release is a light).
+var feint_show := 0.15
 
 ## Gun aim. Bots aim like people, not like an aimbot: they turn onto a target
 ## at a limited speed, trail it while it moves, and their aim wanders by an
@@ -113,6 +140,15 @@ var _error_left := 0.0
 var _strafe_sign := 1.0
 var _strafe_left := 0.0
 var _melee_wait := 0.0
+## A charge in progress: hold the attack button this much longer, then
+## let go (a heavy turns by itself past `hold_time`). A feint switches to
+## `_feint_to` when `_hold_left` falls to `_feint_at`.
+var _hold_left := 0.0
+var _hold_stance := 0
+var _feint_at := -1.0
+var _feint_to := 0
+var _dash_wait := 0.0
+var _flinch_left := 0.0
 var _guard_delay := 0.0
 var _guard_dir := 0
 var _read_left := 0.0
@@ -198,6 +234,9 @@ func _ready() -> void:
 	lock_time = float(actor.get_meta("lock_time", 0.0))
 	var ring := int(actor.get_meta("zone", 1))
 	attack_slots = RING_SLOTS[clampi(ring, 0, RING_SLOTS.size() - 1)]
+	feint_chance = RING_FEINT[clampi(ring, 0, RING_FEINT.size() - 1)]
+	dash_chance = RING_DASH[clampi(ring, 0, RING_DASH.size() - 1)]
+	heavy_share = RING_HEAVY[clampi(ring, 0, RING_HEAVY.size() - 1)]
 	flanks = ring > 0
 	actor.health.damaged.connect(_on_damaged)
 	actor.heard.connect(_on_heard)
@@ -267,6 +306,7 @@ func _physics_process(delta: float) -> void:
 		_attack(cmd, delta)
 	elif state != State.PATROL:
 		_release()
+		_hold_left = 0.0
 		_seen_time = 0.0
 		_aim_target = null
 		_lock = 0.0
@@ -386,8 +426,13 @@ func _attack(cmd: ActorCommand, delta: float) -> void:
 	if actor.is_on_floor() and _hop_left <= 0.0 and _seen_time >= raise_at:
 		cmd.secondary = true
 
+	# A blade coming in: give ground from the hip at a full walk, angling
+	# off, rather than stand aiming down sights to be cut.
+	if not uses_kit and target.get_active_weapon() is MeleeWeapon and dist < blade_backoff:
+		cmd.secondary = false
+		cmd.move = Vector2(_strafe_sign * 0.6, -1.0).normalized()
 	# Keep a comfortable distance: close in, back off, or strafe.
-	if dist > preferred_range * 1.4:
+	elif dist > preferred_range * 1.4:
 		_move_toward(cmd, target.global_position, delta, false)
 	elif dist < preferred_range * 0.5:
 		cmd.move = Vector2(0, -1)
@@ -398,6 +443,9 @@ func _attack(cmd: ActorCommand, delta: float) -> void:
 			_strafe_sign = -_strafe_sign
 		cmd.move = Vector2(_strafe_sign, 0)
 
+	if _flinch_left > 0.0:
+		_flinch_left -= delta
+		return
 	if _seen_time < _reaction or dist > attack_range or not _on_target:
 		_lock = 0.0 if not _on_target else _lock
 		return
@@ -479,9 +527,20 @@ func _attack_melee(cmd: ActorCommand, blade: MeleeWeapon, delta: float) -> void:
 	var dist := _flat_dist(target.global_position)
 	_melee_wait = maxf(0.0, _melee_wait - delta)
 	_guard_delay = maxf(0.0, _guard_delay - delta)
+	_dash_wait = maxf(0.0, _dash_wait - delta)
+	if _hold_left > 0.0:
+		_carry_charge(cmd, blade, delta, dist)
+		return
 	if dist > blade.reach * 0.7:
 		cmd.sprint = true
 		_move_toward(cmd, target.global_position, delta, false)
+	if _try_dash_strike(cmd, blade, dist):
+		return
+	# Closing on a gunner with a blade, a bot that plays like a person keeps
+	# its guard up (the fresh guard turns rounds aside, then it halves them).
+	if uses_kit and target.get_active_weapon() is Gun and dist > blade.reach * 1.1:
+		cmd.secondary = true
+		return
 
 	var foe_blade := target.get_active_weapon() as MeleeWeapon
 	var threatened := foe_blade != null and foe_blade.threat_dir() >= 0 and dist <= foe_blade.reach * 1.5
@@ -496,17 +555,93 @@ func _attack_melee(cmd: ActorCommand, blade: MeleeWeapon, delta: float) -> void:
 			_guard_dir = _read_dir
 			return
 
-	if dist <= blade.reach * 0.9 and _melee_wait <= 0.0 and _seen_time >= reaction_time and not threatened:
-		cmd.stance = _rng.randi_range(0, MeleeWeapon.Dir.size() - 1)
-		cmd.primary_pressed = true
-		_melee_wait = _rng.randf_range(1.0, 1.7) * melee_tempo
-		_guard_delay = 0.75
-		_guard_dir = _rng.randi_range(0, MeleeWeapon.Dir.size() - 1)
+	# An opening: the foe is recovering from a swing, staggered, or this bot
+	# just parried. Strike now rather than wait out the tempo.
+	var opening := actor.riposte_left > 0.0 or target.stagger_left > 0.0 \
+			or (foe_blade != null and foe_blade.recover_progress() >= 0.0 and foe_blade.recover_progress() < 0.6)
+	var may_swing := _melee_wait <= 0.0 or opening
+	if dist <= blade.reach * 0.9 and may_swing and _seen_time >= reaction_time and not threatened \
+			and not blade.is_busy():
+		_start_attack(cmd, blade, opening)
 		return
 	if dist <= blade.reach * 1.6 and _guard_delay <= 0.0 and _seen_time >= reaction_time \
 			and not blade.is_winding_up():
 		cmd.stance = _guard_dir
 		cmd.secondary = true
+
+
+## Picks the next swing: a light tap, a held heavy (likelier into a raised
+## guard or a stagger), or a feint.
+func _start_attack(cmd: ActorCommand, blade: MeleeWeapon, opening: bool) -> void:
+	var stance := _rng.randi_range(0, MeleeWeapon.Dir.size() - 1)
+	cmd.stance = stance
+	_melee_wait = _rng.randf_range(1.0, 1.7) * melee_tempo
+	if uses_kit:
+		# A person chains the three-hit combo, then breathes.
+		_melee_wait = _rng.randf_range(0.3, 0.45) if blade.combo_step < 2 else _rng.randf_range(0.8, 1.2)
+	_guard_delay = 0.75
+	_guard_dir = _rng.randi_range(0, MeleeWeapon.Dir.size() - 1)
+	var guarded := false
+	var foe_blade := target.get_active_weapon() as MeleeWeapon
+	if foe_blade != null:
+		guarded = foe_blade.is_blocking()
+	var heavy_odds := heavy_vs_guard if guarded or target.stagger_left > 0.0 else heavy_share
+	if opening and actor.riposte_left > 0.0:
+		heavy_odds = maxf(heavy_odds, 0.5)
+	if actor.stamina >= blade.heavy_stamina and _rng.randf() < heavy_odds:
+		# Hold through the turn into a heavy: its charge and windup show.
+		_hold_left = blade.hold_time + 0.05
+		_hold_stance = stance
+		_feint_at = -1.0
+		cmd.primary_pressed = true
+		cmd.primary = true
+		return
+	if not opening and _rng.randf() < feint_chance:
+		# Show one side, then switch and let go as a quick light.
+		_hold_left = feint_show + 0.02
+		_hold_stance = stance
+		_feint_at = 0.02
+		_feint_to = (stance + _rng.randi_range(1, MeleeWeapon.Dir.size() - 1)) % MeleeWeapon.Dir.size()
+		cmd.primary_pressed = true
+		cmd.primary = true
+		return
+	cmd.primary_pressed = true
+
+
+## Keeps a charge held (and switches a feint's side) until it is let go.
+func _carry_charge(cmd: ActorCommand, blade: MeleeWeapon, delta: float, dist: float) -> void:
+	_hold_left -= delta
+	if _feint_at >= 0.0 and _hold_left <= _feint_at:
+		_hold_stance = _feint_to
+		_feint_at = -1.0
+	cmd.stance = _hold_stance
+	if dist > blade.reach * 0.6:
+		_move_toward(cmd, target.global_position, delta, false)
+	if _hold_left > 0.0:
+		cmd.primary = true
+	else:
+		_hold_left = 0.0
+
+
+## A bot running in from out of reach opens with a dash-strike (a heavy
+## started at a sprint closes up to `MeleeWeapon.dash_range`).
+func _try_dash_strike(cmd: ActorCommand, blade: MeleeWeapon, dist: float) -> bool:
+	if blade.dash_range <= 0.0 or _dash_wait > 0.0 or blade.is_busy() or not cmd.sprint:
+		return false
+	if dist < blade.reach * 1.4 or dist > blade.reach + blade.dash_range * 0.8:
+		return false
+	if _seen_time < reaction_time or not actor.is_on_floor():
+		return false
+	if actor.stamina < blade.heavy_stamina + blade.dash_stamina:
+		return false
+	_dash_wait = dash_every
+	if _rng.randf() >= dash_chance:
+		return false
+	cmd.stance = _rng.randi_range(0, MeleeWeapon.Dir.size() - 1)
+	cmd.tertiary_pressed = true
+	_melee_wait = _rng.randf_range(1.0, 1.7) * melee_tempo
+	_guard_delay = 0.75
+	return true
 
 
 func _patrol(cmd: ActorCommand, delta: float) -> void:
@@ -664,6 +799,8 @@ func _on_damaged(info: DamageInfo) -> void:
 	if source and source != actor:
 		_hit_by = source
 		_hit_at = Engine.get_physics_frames()
+	if info.kind == "melee" and info.amount > 0.0 and not uses_kit and actor.get_active_weapon() is Gun:
+		_flinch(melee_flinch, melee_knock_deg)
 	if source and source != actor and state == State.PATROL:
 		_last_seen = source.global_position
 		_lost_time = 0.0
@@ -836,3 +973,15 @@ func _flank_point(dist: float) -> Vector3:
 	var turn := deg_to_rad(50.0) * (1.0 if _rng.randf() < 0.5 else -1.0)
 	var reach := clampf(dist, preferred_range * 0.8, attack_range * 0.8)
 	return target.global_position + off.normalized().rotated(Vector3.UP, turn) * reach
+
+
+## Knocks the gun off its aim and holds the trigger for `time` seconds.
+func _flinch(time: float, knock_deg: float) -> void:
+	_flinch_left = maxf(_flinch_left, time)
+	_burst_left = 0.0
+	if _aim.length_squared() > 0.0:
+		var side := Vector3.UP.cross(_aim).normalized()
+		_aim = _aim.rotated(Vector3.UP, deg_to_rad(knock_deg) * (1.0 if _rng.randf() < 0.5 else -1.0))
+		if side.length_squared() > 0.0:
+			_aim = _aim.rotated(side, deg_to_rad(knock_deg * 0.5) * _rng.randf_range(-1.0, 1.0))
+		_on_target = false
