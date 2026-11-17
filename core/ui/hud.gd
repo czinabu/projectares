@@ -1089,12 +1089,8 @@ static func incoming_side(p: Actor) -> int:
 
 
 func _on_hit_confirmed(_target: Actor, info: DamageInfo, lethal: bool) -> void:
-	if lethal:
-		_hit_marker.flash(Color(1.0, 0.25, 0.2), 0.35)
-	elif info.parried or info.blocked:
-		_hit_marker.flash(Color(0.6, 0.75, 1.0), 0.15)
-	else:
-		_hit_marker.flash(Color.WHITE, 0.15)
+	var kind := HitMarker.kind_of(info, lethal)
+	_hit_marker.flash(kind)
 
 
 func _on_player_damaged(info: DamageInfo) -> void:
@@ -1348,14 +1344,47 @@ class ProgressRing:
 class HitMarker:
 	extends Control
 
+	## Each kind of hit has its own look, so a glance says what a hit did:
+	## [color, how long it shows, how big]. A head is gold and larger, a hit
+	## the plates soaked is steel blue, the hit that broke them a wide
+	## cyan, and a kill red and longest.
+	const KINDS := {
+		"hit": [Color.WHITE, 0.15, 1.0],
+		"armor": [Color(0.62, 0.78, 1.0), 0.15, 0.85],
+		"armor_break": [Color(0.35, 0.95, 1.0), 0.3, 1.35],
+		"head": [Color(1.0, 0.82, 0.25), 0.22, 1.3],
+		"guarded": [Color(0.6, 0.75, 1.0), 0.15, 0.75],
+		"kill": [Color(1.0, 0.25, 0.2), 0.35, 1.45],
+	}
+
+	var kind := ""
 	var _left := 0.0
 	var _duration := 0.15
 	var _color := Color.WHITE
+	var _size := 1.0
 
-	func flash(color: Color, duration: float) -> void:
-		_color = color
-		_duration = duration
-		_left = duration
+	## Which `KINDS` entry a confirmed hit shows. A kill outranks a head, a
+	## head outranks plates breaking, and that outranks plates soaking.
+	static func kind_of(info: DamageInfo, lethal: bool) -> String:
+		if lethal:
+			return "kill"
+		if info.parried or info.blocked:
+			return "guarded"
+		if info.headshot:
+			return "head"
+		if info.armor_broke:
+			return "armor_break"
+		if info.armored:
+			return "armor"
+		return "hit"
+
+	func flash(p_kind: String) -> void:
+		var look: Array = KINDS.get(p_kind, KINDS["hit"])
+		kind = p_kind
+		_color = look[0]
+		_duration = look[1]
+		_size = look[2]
+		_left = _duration
 		queue_redraw()
 
 	func _process(delta: float) -> void:
@@ -1369,8 +1398,10 @@ class HitMarker:
 		var c := size * 0.5
 		var color := _color
 		color.a = clampf(_left / _duration, 0.0, 1.0)
+		# The marks spring out a little as they fade.
+		var grow := _size * (1.0 + 0.25 * (1.0 - color.a))
 		for dir: Vector2 in [Vector2(1, 1), Vector2(1, -1), Vector2(-1, 1), Vector2(-1, -1)]:
-			draw_line(c + dir * 7.0, c + dir * 15.0, color, 2.5)
+			draw_line(c + dir * 7.0 * grow, c + dir * 15.0 * grow, color, 2.5 * _size)
 
 ## Three marks around the crosshair for directional melee: which side you are
 ## set to attack or guard, and which side an enemy swing is coming at.

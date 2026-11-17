@@ -62,6 +62,9 @@ var recoil_side_deg := 0.22
 const MODEL_KICK := Vector2(0.05, 0.06)
 const MODEL_KICK_AT := 0.55
 const MODEL_KICK_MAX := 3.0
+## How far away a shot is heard, and a suppressed one.
+const SHOT_REACH := 220.0
+const SUPPRESSED_REACH := 45.0
 const MODEL_KICK_AIMED := 0.4
 ## Effects. Power weapons use these to look and sound like what they are.
 var tracer_color := Color(1.0, 0.85, 0.4)
@@ -584,10 +587,13 @@ func _fire() -> void:
 		elif not quiet:
 			Fx.tracer(actor.get_parent(), drawn_from, to, tracer_color)
 	fired.emit(from, to)
+	if projectile == "":
+		Sfx.pass_by(from, to, actor)
 	if _noise_left <= 0.0:
 		_noise_left = noise_every
 		Combat.noise(actor, from, quiet_noise if quiet else shot_noise)
-	Sfx.play(shot_sound, null if actor.is_player else from, -14.0 if quiet else 0.0)
+	Sfx.play(shot_sound, null if actor.is_player else from, -14.0 if quiet else 0.0,
+			SUPPRESSED_REACH if quiet else SHOT_REACH)
 
 
 ## Where a shot's flash and tracer start: the "Muzzle" marker the art layer
@@ -648,6 +654,7 @@ func _trace_shot(from: Vector3, dir: Vector3) -> Vector3:
 			return end
 		var at: Vector3 = hit.position
 		var body := hit.collider as Actor
+		Fx.impact(actor.get_parent(), at, hit.get("normal", Vector3.ZERO), body != null)
 		if body != null:
 			if not body in struck:
 				struck.append(body)

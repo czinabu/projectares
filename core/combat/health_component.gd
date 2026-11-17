@@ -23,8 +23,11 @@ func apply_damage(info: DamageInfo) -> float:
 	if is_dead or info.amount <= 0.0:
 		return 0.0
 	var absorbed := minf(armor, info.amount * armor_absorb * (1.0 - clampf(info.armor_pierce, 0.0, 1.0)))
+	var had_armor := armor > 0.0
 	armor -= absorbed
 	armor = maxf(0.0, armor - info.amount * info.armor_break)
+	info.armored = absorbed > 0.0
+	info.armor_broke = had_armor and armor <= 0.0
 	var lost := minf(health - minf(min_health, health), info.amount - absorbed)
 	health -= lost
 	damaged.emit(info)
