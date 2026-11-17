@@ -31,6 +31,9 @@ signal ping_requested
 signal portal_requested(destination: String)
 ## The player asked to pack the vehicle they are looking at onto the watch.
 signal pack_requested
+## A click on the opened map's target `index` (`map_targets`): set it as the
+## waypoint, or clear it if it already is. The HUD keeps the waypoint.
+signal map_target_clicked(index: int)
 
 enum ViewMode { FIRST, THIRD }
 ## How the melee side is picked: by flicking the mouse, or by the movement keys.
@@ -216,6 +219,15 @@ var artifact_pick := 0
 ## Which destination is picked out on the watch's portal icon
 ## (`portal_choices`), counting from 0.
 var portal_pick := 0
+## The opened Status icons and the pack list (Caleb's call: Status icons open
+## with a click): the map target picked out, the Standing page, and the
+## item picked out in the pack. View only.
+var map_pick := 0
+var standing_pick := 0
+var pack_pick := 0
+## The opened map's targets (`Hud.map_targets`), kept up to date by the HUD
+## while the watch is up, so the wheel knows how many there are. View only.
+var map_targets: Array[Dictionary] = []
 ## While down, which place to land is picked out on the watch's death
 ## report (`Hud.drop_choices`), counting from 0. The wheel turns through
 ## them and a click drops in there. View only.
@@ -455,6 +467,12 @@ func click_watch() -> bool:
 	if is_on_sign_out():
 		sign_out_requested.emit()
 		return true
+	if is_watch_on("map") and _is_open("map") and not map_targets.is_empty():
+		map_target_clicked.emit(clampi(map_pick, 0, map_targets.size() - 1))
+		return true
+	if (is_watch_on("standing") or is_watch_on("pack")) and watch_open != "":
+		# Pages to read: a click has nothing more to do, and never shoots.
+		return true
 	if is_watch_on("portal") and not portal_choices().is_empty() and _is_open("portal"):
 		var choices := portal_choices()
 		portal_requested.emit(choices[clampi(portal_pick, 0, choices.size() - 1)])
@@ -467,7 +485,9 @@ func click_watch() -> bool:
 ## True while fire works the raised watch instead of the weapon.
 func watch_takes_fire() -> bool:
 	return (watch_open == "" and watch_entries(focused_watch_icon()) > 1) or is_picking_toys() or pack_target() != null or is_picking_weapons() or is_on_artifact() \
-			or is_watch_on("ping") or is_watch_on("portal") or is_on_sign_out()
+			or is_watch_on("ping") or is_watch_on("portal") or is_on_sign_out() \
+			or (is_watch_on("map") and not map_targets.is_empty()) \
+			or (watch_open in ["standing", "pack"] and is_watch_on(watch_open))
 
 
 ## True while the raised watch is on the sign-out icon out in a world, where
@@ -542,6 +562,13 @@ func watch_entries(id: String) -> int:
 			return Hud.artifact_entries(actor).size()
 		"portal":
 			return portal_choices().size()
+		"map":
+			return map_targets.size()
+		"standing":
+			# Three pages out in a world: at stake, safe, this life.
+			return Hud.STANDING_PAGES.size() if Raid.of(actor) != null else 0
+		"pack":
+			return actor.inventory.items.size()
 	return 0
 
 
@@ -555,6 +582,12 @@ func _watch_pick(id: String) -> int:
 			return artifact_pick
 		"portal":
 			return portal_pick
+		"map":
+			return map_pick
+		"standing":
+			return standing_pick
+		"pack":
+			return pack_pick
 	return 0
 
 
@@ -568,6 +601,12 @@ func _set_watch_pick(id: String, pick: int) -> void:
 			artifact_pick = pick
 		"portal":
 			portal_pick = pick
+		"map":
+			map_pick = pick
+		"standing":
+			standing_pick = pick
+		"pack":
+			pack_pick = pick
 
 
 ## Moves the watch card's open icon `step` along (`Hud.Wrist.SLOTS`), tab

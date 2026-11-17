@@ -1083,11 +1083,21 @@ without Caleb, and update the gap list when a PR closes a row.
   feed). A new in-raid action goes on the watch; a new social or info
   feature is a phone app. The watch is a card-sized hologram of icons in
   three tabs (`Hud.Wrist.TABS`, `TAB_SLOTS`, `SLOTS`; DESIGN.md section 3):
-  Summon (weapons, vehicles, artifacts, with the pack's line under it),
+  Summon (weapons, vehicles, artifacts, the pack, with the pack's line under it),
   Status (map, standing) and Mission (portal, contract, ping, sign-out).
   The map icon, while read, draws a small holographic map beside it
   (`Hud.map_marks`, `Card._draw_map`): only what the player is told, never
-  other people. A click on Sign out starts or cancels it like L
+  other people. The Status icons open with a click like a carousel (Caleb's
+  call): the map rises over the card as a tabletop hologram with the
+  ground's relief (`Wrist.show_table`, `Hud.map_relief`), the wheel turns
+  through the nearest depot, gate outpost and strongpoint, the hot zone,
+  the event and the pings (`Hud.map_targets`), and a click sets the picked
+  one as a waypoint only you see (`Hud.waypoint`: a column of light, a mark
+  on the visor's strip and scope, cleared on arrival); Standing turns
+  through three pages (`Hud.STANDING_PAGES`: at stake, safe, this life).
+  The pack is an icon on the Summon tab (`Hud.pack_slot`) that opens as a
+  list of what is carried with each item's worth. An opened icon's list or
+  page takes the card's right side (`Card._draw_panel`). A click on Sign out starts or cancels it like L
   (`PlayerController.is_on_sign_out`), and its icon carries what this life
   has banked (`Actor.banked_*`, sent to the owner only, `NetSession._banked`).
   Down, the death report's landing choices are picked with the wheel and a

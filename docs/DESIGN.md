@@ -438,9 +438,23 @@ the storage behind it.
     your hand), vehicles (the toy carousel) and
     artifacts (the attuned one is used; others carried are shown but stay
     loot, one per outing). The pack's fill, worth, heals and scrip sit under
-    the tab, so there is no separate pack page.
-  - **Status:** the map and where the war is, your standing and the hunted
-    warning, under the vitals strip where the visor cannot show it.
+    the tab, and the pack's own icon opens (a click) as a list of what you
+    carry, each with its worth, that the wheel turns through.
+  - **Status (Caleb's call: its icons open with a click):** the map and
+    where the war is, and your standing and the hunted warning.
+    - **The map** shows a small map on the card. Opened, a tabletop
+      hologram of the ground rises off the wrist with its relief, the
+      wheel turns through the nearest depot, gate outpost (safe zone) and
+      strongpoint, the war's hot zone, the world event and your squad's
+      pings, each with a line from you, its distance and direction, and a
+      click sets the picked one as your waypoint: a column of light and a
+      mark on the visor's heading strip that only you see, gone once you
+      get there. It shows only what you are already told, never people.
+    - **Standing** opens as "This run", three pages the wheel turns
+      through: at stake (the pack and its worth, scrip carried, session
+      renown, any bounty: what dying now would cost), safe (what this life
+      has banked, lifetime rank) and this life (time alive, kills, streak,
+      the contract nearest done).
   - **Mission:** the squad portal, the contract tracker, a squad ping, and
     sign-out and banking.
 - **Pop-ups only while they matter:** the death report and landing choices

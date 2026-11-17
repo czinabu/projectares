@@ -18,6 +18,7 @@ static func run(t: Node) -> void:
 	await _everywhere(t)
 	await _at_home(t)
 	await _rough_edges(t)
+	await _status_opens(t)
 
 
 static func _rules(t: Node) -> void:
@@ -366,7 +367,8 @@ static func _card(t: Node) -> void:
 	controller.scroll(-1)
 	t.check(controller.artifact_pick == 0 and controller.is_on_artifact(), "on the attuned one it uses it")
 	controller.close_watch_icon()
-	for i in 2:
+	# Past the pack's icon to the map, then Standing.
+	for i in 3:
 		controller.scroll(1)
 	await t.frames(2)
 	t.check(hud.wrist.card.focused_tab() == "status" and hud.wrist.focused_id() == "standing",
@@ -662,6 +664,87 @@ static func _rough_edges(t: Node) -> void:
 		t.check(controller.drop_pick == 0 and redeploys[0] == 1 and drops.is_empty(),
 				"down with one place to land, a click just drops back in")
 	p.is_dead = false
+	hud.queue_free()
+	controller.queue_free()
+	await t._end_raid(raid)
+
+
+## The Status icons open with a click (Caleb's call): the map rises as a
+## tabletop hologram whose targets the wheel turns through and a click sets
+## as a waypoint, Standing turns through three pages, and the pack opens as a
+## list on the Summon tab.
+static func _status_opens(t: Node) -> void:
+	print("Watch: the map, Standing and the pack open")
+	var raid: Raid = await t._kit_raid(84, KIT.duplicate())
+	var p := raid.player
+	p.inventory.add_item("rifle_carbine")
+	p.inventory.add_item("scrap_metal")
+	var controller := PlayerController.new()
+	controller.setup(p)
+	raid.add_child(controller)
+	var hud := Hud.new()
+	hud.setup(raid, controller)
+	raid.add_child(hud)
+	var targets := Hud.map_targets(raid, p, [p.global_position + Vector3(30, 0, 0)] as Array[Vector3])
+	var kinds: Array = targets.map(func(x: Dictionary) -> String: return x.kind)
+	t.check("depot" in kinds and "outpost" in kinds and "site" in kinds and kinds[-1] == "ping",
+			"the map points to the nearest depot, gate outpost and strongpoint, and your pings: %s" % ", ".join(kinds))
+	t.check(Hud.bearing_text(Vector3.ZERO, Vector3(0, 0, -100)) == "100 m N"
+			and Hud.bearing_text(Vector3.ZERO, Vector3(70, 0, 70)) == "99 m SE", "with how far and which way")
+	controller.wrist_raised = true
+	controller.watch_focus_moved = true
+	controller.watch_focus = Hud.Wrist.SLOTS.find("map")
+	await t.frames(3)
+	t.check(controller.map_targets.size() == targets.size() - 1 and controller.watch_takes_fire()
+			and hud.wrist.text().begins_with("Ashfront"), "closed, the Map icon says where you are")
+	t.check(controller.click_watch() and controller.watch_open == "map", "a click opens it")
+	await t.frames(3)
+	t.check(hud.wrist.table_shown() and hud.wrist.text().begins_with(targets[0].title),
+			"opened, a tabletop map rises over the card and the line names the target: %s" % hud.wrist.text().get_slice("\n", 0))
+	t.check(Hud.map_relief(raid, Hud.map_marks(raid, p)).size() == Hud.TABLE_GRID * Hud.TABLE_GRID,
+			"with the ground's relief under it")
+	controller.scroll(1)
+	await t.frames(2)
+	t.check(controller.map_pick == 1 and hud.wrist.text().begins_with(targets[1].title),
+			"the wheel turns through the targets")
+	t.check(controller.click_watch() and not hud.waypoint.is_empty()
+			and (hud.waypoint.at as Vector3).is_equal_approx(targets[1].at) and hud._waypoint_mark != null,
+			"a click sets the picked one as your waypoint, a column of light only you see")
+	p.visor.mode = "zoom" if p.visor.mode == "" else p.visor.mode
+	t.check(hud.visor.compass_marks(p).any(func(m: Dictionary) -> bool: return m.kind == "waypoint"),
+			"and a mark on the visor's heading strip")
+	controller.click_watch()
+	t.check(hud.waypoint.is_empty(), "a second click on it clears it")
+	hud.set_waypoint({"at": p.global_position + Vector3(2, 0, 0), "title": "Here"})
+	await t.frames(2)
+	t.check(hud.waypoint.is_empty(), "and it clears itself once you get there")
+	controller.close_watch_icon()
+	await t.frames(2)
+	t.check(not hud.wrist.table_shown(), "a right click puts the map away")
+
+	controller.watch_focus = Hud.Wrist.SLOTS.find("standing")
+	t.check(controller.watch_entries("standing") == 3 and controller.click_watch() and controller.watch_open == "standing",
+			"Standing opens with a click")
+	var pages: Array[String] = []
+	for page in 3:
+		controller.standing_pick = page
+		var slot := Hud.standing_slot(raid, p, page, [], 75.0)
+		pages.append("%s: %s" % [slot.page, " / ".join(slot.panel)])
+	t.check(pages[0].begins_with("At stake: Pack: 2 items") and pages[1].begins_with("Safe: Sent home")
+			and pages[2].contains("Alive 1:15") and pages[2].contains("Kills"),
+			"its pages: what you would lose, what is safe, and this life (%s)" % " | ".join(pages))
+	t.check(controller.watch_takes_fire() and controller.click_watch(), "a click on a page never shoots")
+	controller.close_watch_icon()
+
+	controller.watch_focus = Hud.Wrist.SLOTS.find("pack")
+	t.check(Hud.Wrist.tab_of("pack") == "summon" and controller.click_watch() and controller.watch_open == "pack",
+			"the pack is an icon on the Summon tab that opens as a list")
+	controller.scroll(1)
+	await t.frames(3)
+	var pack := Hud.pack_slot(p, controller.pack_pick)
+	t.check(controller.pack_pick == 1 and pack.panel.size() == 2 and pack.detail.begins_with(ItemDB.item_name(p.inventory.items[1]))
+			and pack.detail.contains("worth") and hud.wrist.card.opened == "pack",
+			"the wheel turns through what you carry, each with its worth (%s)" % pack.detail)
 	hud.queue_free()
 	controller.queue_free()
 	await t._end_raid(raid)
