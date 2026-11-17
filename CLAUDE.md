@@ -317,6 +317,12 @@ without Caleb, and update the gap list when a PR closes a row.
   again; it is an index, never a toggle, so it replicates safely. Check with
   `--holster-only`.
 - First and third person differ only in where the camera is (Caleb's rule).
+  Third person never shows more than the eyes see (Caleb's call): out in a
+  world where gear is at stake, a hostile body the eyes have no line to
+  (head, chest, hips or either side) fades out of the third-person view
+  (`PlayerController.PeekFade`, `peek_rule_applies`), so peeking round a
+  corner from over the shoulder gives nothing first person lacks. View only;
+  squadmates and the dead are never faded.
   Both look at the one real body, posed by the same code and holding the
   same weapon in the same hand: first person puts the camera at the eyes
   (`ActorSkin.eye_point`, pulled back level by `GameSettings.eye_pullback`,
@@ -669,8 +675,8 @@ without Caleb, and update the gap list when a PR closes a row.
   ride the watch's weapon carousel (`Hud.weapon_entries`, shown as their
   own model), and a click on one goes through the summon
   (`Raid.summon`, online `NetSession.summon`) to `Raid.swap_worn`
-  (authority only, at once, no watch wait): it goes on and the worn one
-  goes in the pack; `_worn_changed` tells every client. The skin wears it on the
+  (authority only, at once, then a short watch rest): it goes on and the
+  worn one goes in the pack; `_worn_changed` tells every client. The skin wears it on the
   head (`ActorSkin._update_helmet`, `build_helmet`: a shell, glass in the
   visor's colour and a fitting per `mode`), hiding the head under it; it
   hangs off the "Head" bone, so first person leaves it out with the head.
@@ -679,10 +685,10 @@ without Caleb, and update the gap list when a PR closes a row.
   or off (`Actor.frame_id`), undoing the old frame's speed and heat scaling
   before applying the new one, and emits `Actor.frame_changed`. One frame is
   worn; another in a kit is carried. A frame in the pack is on the summon
-  carousel too and goes through `Raid.swap_worn`, but unlike a helmet it
-  takes the watch's rest after it (`Loadout.SUMMON_TIMES` "armor"), and
-  one taken off keeps its armor left in `Actor.stowed_armor`, so spare
-  plates are no instant refill. The skin wears its plates
+  carousel too and goes through `Raid.swap_worn`. Both go on at once and
+  then the watch rests (`Loadout.SUMMON_TIMES` "helmet", short, and
+  "armor", long), and a frame taken off keeps its armor left in
+  `Actor.stowed_armor`, so spare plates are no instant refill. The skin wears its plates
   (`ActorSkin._update_frame`, `build_frame`, `build_pad`, by `frame_weight`)
   on the chest and upper arm bones, the same body in both views. Plates are
   fitted, never boxes (Caleb's call): thin curved shells (`_shell`) a
@@ -1090,8 +1096,25 @@ without Caleb, and update the gap list when a PR closes a row.
   feed). A new in-raid action goes on the watch; a new social or info
   feature is a phone app. The watch is a card-sized hologram of icons in
   three tabs (`Hud.Wrist.TABS`, `TAB_SLOTS`, `SLOTS`; DESIGN.md section 3):
-  Summon (weapons, vehicles, artifacts, with the pack's line under it),
-  Status (map, standing) and Mission (portal, contract, ping, sign-out). The open
+  Summon (weapons, vehicles, artifacts, the pack, with the pack's line under it),
+  Status (map, standing) and Mission (portal, contract, ping, sign-out).
+  The map icon, while read, draws a small holographic map beside it
+  (`Hud.map_marks`, `Card._draw_map`): only what the player is told, never
+  other people. The Status icons open with a click like a carousel (Caleb's
+  call): the map rises over the card as a tabletop hologram with the
+  ground's relief (`Wrist.show_table`, `Hud.map_relief`), the wheel turns
+  through the nearest depot, gate outpost and strongpoint, the hot zone,
+  the event and the pings (`Hud.map_targets`), and a click sets the picked
+  one as a waypoint only you see (`Hud.waypoint`: a column of light, a mark
+  on the visor's strip and scope, cleared on arrival); Standing turns
+  through three pages (`Hud.STANDING_PAGES`: at stake, safe, this life).
+  The pack is an icon on the Summon tab (`Hud.pack_slot`) that opens as a
+  list of what is carried with each item's worth. An opened icon's list or
+  page takes the card's right side (`Card._draw_panel`). A click on Sign out starts or cancels it like L
+  (`PlayerController.is_on_sign_out`), and its icon carries what this life
+  has banked (`Actor.banked_*`, sent to the owner only, `NetSession._banked`).
+  Down, the death report's landing choices are picked with the wheel and a
+  click (`drop_pick`, `click_landing`); the number keys and Enter still work. The open
   icon shows one short line, and controls are glyphs (wheel, click, key
   cap), never words. The mouse wheel moves across the card tab after tab
   (`PlayerController.watch_focus`, `step_watch`; Caleb's call) over the
@@ -1113,7 +1136,10 @@ without Caleb, and update the gap list when a PR closes a row.
   takes `Loadout.summon_time` by weight, during which the weapon cannot be
   used (`Actor.materialize_left`) and is drawn digitizing in on the one
   body (`ActorSkin._update_materialize`), then the watch rests
-  (`Loadout.summon_cooldown`). Storing is the summon in reverse: a click
+  (`Loadout.summon_cooldown`). A materialize is heard (`Sfx` "summon" and
+  "store", played by `ActorSkin._update_materialize`); while the watch
+  rests its face breathes amber (`Wrist.resting`), a refused pick buzzes
+  and a chime says it is ready. Storing is the summon in reverse: a click
   on the weapon in hand asks `Raid.store` (`NetSession.store` online),
   which puts it in the pack with its rounds at once and starts
   `Loadout.store_weapon` (clients copy it from `Actor.weapon_stored`): the
