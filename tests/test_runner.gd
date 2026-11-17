@@ -1032,7 +1032,8 @@ func _test_storm() -> void:
 	var bike: Node3D = spot.vehicle
 	check(raid._is_parked(bike), "a bike waits at each parking spot")
 	bike.global_position = p.global_position + Vector3(2.0, 0.5, 0.0)
-	spot.empty_for = world.vehicle_respawn_time - 0.05
+	# A spot can set its own wait (a strongpoint's is longer).
+	spot.empty_for = float(spot.marker.get_meta("respawn", world.vehicle_respawn_time)) - 0.05
 	await frames(10)
 	check(spot.vehicle != bike and raid._is_parked(spot.vehicle), "a bike that left its spot is replaced there")
 	raid._idle[bike] = world.vehicle_respawn_time

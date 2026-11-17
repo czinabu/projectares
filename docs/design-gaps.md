@@ -124,7 +124,7 @@ rows marked **pre-playtest** come before the friends playtest.
 | Cargo space while riding | Missing | After the playtest. |
 | Mobile cover | Missing | Rover and mech; the bike gives none by design. |
 | Per-vehicle watch recharge (heavier is slower) | Built | `Raid.toy_recharge` reads the item's `watch_recharge`, or `toy_cooldown` (12 s) when it has none. Scrapper 12 s, Raider hoverbike 10 s, Warden Rover 30 s, Bulwark Mech 60 s, Kestrel Jet 60 s. |
-| Rover, mech and jet | Partly | Drivable first versions on the one `Vehicle` class: Warden Rover (23 m/s, slow to turn, driver's seat on the left), Bulwark Mech (9 m/s, turns on the spot, jump-jet hop) and Kestrel Jet (takes off past 24 m/s, cannot hover, 120 m ceiling, thrown in any world). Greybox models. Missing: their weapons, passengers, armor and weak spots, vehicle health, The rover can be found parked in Ashfront; the mech and the jet are built at the fabricator from their blueprints, which warlords and supply pods carry. |
+| Rover, mech and jet | Partly | Drivable first versions on the one `Vehicle` class: Warden Rover (23 m/s, slow to turn, driver's seat on the left), Bulwark Mech (9 m/s, turns on the spot, jump-jet hop) and Kestrel Jet (takes off past 24 m/s, cannot hover, 120 m ceiling, thrown in any world). Greybox models. Missing: their weapons, passengers, armor and weak spots, vehicle health, The rover can be found parked at Ashfront's strongpoints (parked vehicles are tiered by risk: Scrappers at the rim and camps, a chance of a Raider by the ramps, the best odds at strongpoints, which refill slower); the mech and the jet are built at the fabricator from their blueprints, which warlords and supply pods carry. |
 
 ## Racing
 

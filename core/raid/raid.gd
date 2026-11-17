@@ -886,7 +886,7 @@ func _tick_vehicles(delta: float) -> void:
 			spot.empty_for = 0.0
 			continue
 		spot.empty_for += delta
-		if spot.empty_for >= world.vehicle_respawn_time:
+		if spot.empty_for >= float((spot.marker as Node3D).get_meta("respawn", world.vehicle_respawn_time)):
 			spot.empty_for = 0.0
 			spot.vehicle = _park_vehicle(spot.marker, spot.source)
 

@@ -84,6 +84,8 @@ const RUNWAY := 60.0
 const RAMP_ROADS := [0, 1, 3, 4]
 ## Each army's motor pool: parked bikes beside its runway.
 const MOTOR_POOL := 3
+## How long an emptied strongpoint's vehicle spot waits for a new one.
+const SITE_VEHICLE_RESPAWN := 600.0
 const FIELD_PATROLS := 8
 ## Risk zones (DESIGN.md section 2): the core is the molten Foundry, the
 ## middle reaches past the four landmarks, the outer ring is the rest.
@@ -601,8 +603,11 @@ func _build_sites() -> void:
 			for i in 4:
 				var post := _add_marker("spawn_bot", _open(at + Vector2.from_angle(TAU * i / 4.0 + 0.6) * radius * 0.45))
 				post.set_meta("faction", army)
+		# Holding a site pays: its spot has the best odds of a rare vehicle.
 		var bike := _add_marker("spawn_vehicle", _open(at - inward.orthogonal() * (radius - 6.0), 2.0))
 		bike.rotation.y = atan2(-inward.x, -inward.y)
+		bike.set_meta("loot_source", "vehicle_site")
+		bike.set_meta("respawn", SITE_VEHICLE_RESPAWN)
 
 
 ## The middle of the map: the shells of a works, tall enough that the best
@@ -721,6 +726,7 @@ func _build_spawns() -> void:
 		if i % 2 == 0:
 			var bike := _add_marker("spawn_vehicle", _ground(at + dir.orthogonal() * 7.0))
 			bike.rotation.y = atan2(dir.x, dir.y)
+			bike.set_meta("loot_source", "vehicle_rim")
 
 
 ## A gate outpost: a walled yard open toward the middle (the gate), with a
@@ -796,7 +802,9 @@ func _build_field() -> void:
 		# The motor pool: bikes parked nose out along the runway's side.
 		for k in MOTOR_POOL:
 			var spot := muster + out * (RUNWAY_FROM + 8.0 + k * 7.0) + out.orthogonal() * (ROAD_CLEAR + 3.5)
-			_add_marker("spawn_vehicle", _ground(spot)).rotation.y = _facing(out)
+			var bike := _add_marker("spawn_vehicle", _ground(spot))
+			bike.rotation.y = _facing(out)
+			bike.set_meta("loot_source", "vehicle_rim")
 	for ramp in _ramp_spots():
 		var dir: Vector2 = ramp["dir"]
 		var side: Vector2 = ramp["side"]

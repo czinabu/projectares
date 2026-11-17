@@ -89,6 +89,25 @@ static func run(t: Node) -> void:
 	t.check(raid.bots.size() == raid.world.bot_count + raid._bosses.size() and raid.bots.size() >= 24,
 			"the field starts with its garrisons and patrols (%d bots)" % raid.bots.size())
 	t.check(grouped.call("spawn_vehicle").size() >= 10, "bikes are parked at the rim and the strongpoints")
+	# Rare vehicles are placed by risk: only Scrappers at the quiet rim and
+	# in the camps, the best odds at the strongpoints, which refill slower.
+	var roll := RandomNumberGenerator.new()
+	roll.seed = 7
+	var found := {"vehicle_rim": {}, "vehicle": {}, "vehicle_site": {}}
+	for source: String in found:
+		for i in 400:
+			for id in raid.world.roll_loot(source, roll):
+				found[source][id] = true
+	t.check(found["vehicle_rim"].keys() == ["bike_scrapper"] and "bike_raider" in found["vehicle"]
+			and not found["vehicle"].has("rover_warden") and found["vehicle_site"].has("rover_warden")
+			and not found["vehicle_site"].has("mech_bulwark") and not found["vehicle_site"].has("jet_kestrel"),
+			"parked vehicles get rarer the riskier the spot: Scrappers at the rim, rovers only at strongpoints")
+	var spots: Array = grouped.call("spawn_vehicle")
+	var at_sites := spots.filter(func(m: Node3D) -> bool: return m.get_meta("loot_source", "") == "vehicle_site")
+	var at_rim := spots.filter(func(m: Node3D) -> bool: return m.get_meta("loot_source", "") == "vehicle_rim")
+	t.check(at_sites.size() == sites.size() and at_rim.size() >= 10
+			and at_sites.all(func(m: Node3D) -> bool: return float(m.get_meta("respawn", 0.0)) > raid.world.vehicle_respawn_time),
+			"every strongpoint has a vehicle spot that refills slower (%d sites, %d at the rim)" % [at_sites.size(), at_rim.size()])
 
 	await t.frames(120)
 	var p := raid.player
