@@ -53,6 +53,13 @@ without Caleb, and update the gap list when a PR closes a row.
   same raid. Loot reaches the stash mid-life only through a `Depot`
   (`player_banked`). Never add a way to leave that skips `begin_sign_out`:
   a disconnect goes through `remove_player`, which leaves the body standing.
+  A player whose connection dropped gets that body back if they sign in
+  before its countdown ends: `NetSession._on_peer_connected` finds it
+  (`Raid.is_unguarded`) and `Raid.reclaim_player` hands it over, with no
+  deploy; the game reconnects on its own (`Main._on_online_disconnected`,
+  `reconnect_window`). Anything the server sends a body's owner asks
+  `NetSession._owner_peer(actor)`, never a peer id kept from the deploy,
+  because a body outlives the connection that deployed it.
 - Drop-in protection is `Actor.protected_left`, checked in `Combat.deal`.
 - How harsh death is belongs to the world, not to `Raid`. With
   `WorldDef.keep_gear_on_death` a dead player drops only the backpack and the

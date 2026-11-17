@@ -55,6 +55,7 @@ const ExtractionTests := preload("res://tests/extraction_tests.gd")
 const InspectTests := preload("res://tests/inspect_tests.gd")
 const SaveSafetyTests := preload("res://tests/save_safety_tests.gd")
 const ServerAuthTests := preload("res://tests/server_auth_tests.gd")
+const ReconnectTests := preload("res://tests/reconnect_tests.gd")
 
 var _passed := 0
 var _failed := 0
@@ -323,6 +324,7 @@ func _run() -> void:
 	await HostRecoveryTests.run(self)
 	await SaveSafetyTests.run(self)
 	await ServerAuthTests.run(self)
+	await ReconnectTests.run(self)
 	await _test_look()
 	await _test_rig_models()
 	await _test_customizer()
@@ -4132,6 +4134,27 @@ func _test_online() -> void:
 	var wait_before: float = raid.state_for(b_again).sign_out_left
 	raid.remove_player(b_again)
 	check(raid.state_for(b_again).sign_out_left <= wait_before, "asking twice never makes the wait longer")
+	# Back before it ran out (a reconnect): the body is theirs again.
+	check(raid.is_unguarded(b_again), "a body left by a drop can be taken back")
+	check(raid.reclaim_player(b_again) and raid.sign_out_progress(b_again) < 0.0
+			and not raid.state_for(b_again).sign_out_forced and not raid.is_unguarded(b_again),
+			"a player back in time takes the body over; the forced countdown ends (they were hit, so nothing resumes)")
+	check(not raid.reclaim_player(b_again), "a body someone plays cannot be reclaimed")
+	# A sign-out they had started carries on when they come back.
+	raid.state_for(b_again).last_combat = -INF
+	check(raid.begin_sign_out(b_again), "a quiet player starts signing out")
+	raid.state_for(b_again).sign_out_left -= 4.0
+	var left_before: float = raid.state_for(b_again).sign_out_left
+	raid.remove_player(b_again)
+	raid.state_for(b_again).sign_out_left -= 1.0
+	raid.reclaim_player(b_again)
+	var resumed := raid.state_for(b_again)
+	check(resumed.sign_out_left > 0.0 and resumed.sign_out_left <= left_before - 1.0 + 0.01
+			and not resumed.sign_out_forced and resumed.sign_out_total == raid.world.sign_out_time,
+			"their own sign-out resumes where it stands after a reconnect, the gap counted (%.1f s left)" % resumed.sign_out_left)
+	raid.cancel_sign_out(b_again)
+	check(raid.sign_out_progress(b_again) < 0.0, "and it is theirs to call off again")
+	raid.remove_player(b_again)
 	b_again.kill("bullet", a)
 	await frames(2)
 	check(finished.size() == 2 and finished[1][1].outcome == "died" and raid.state_for(a).kills == 2,

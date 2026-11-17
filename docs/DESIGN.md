@@ -1085,7 +1085,14 @@ Two complementary ways to secure loot.
   Landing drops the timer back to the ground rate (time already spent counts).
 - Quitting or disconnecting leaves your body standing for the sign-out time
   (30 seconds after a fight), as today. That wait does not grow for being
-  in the air, and it raises no beacon.
+  in the air, and it raises no beacon. Nobody plays the body meanwhile: it
+  stands still, a hit does not end the countdown, and it can be killed.
+- After a dropped connection the game reconnects on its own. Back before the
+  body's countdown runs out, you are in it again where it stands, with no
+  deploy: the forced countdown ends, and a sign-out you had started yourself
+  carries on with the time it has left (the gap counts), unless the body was
+  in a fight meanwhile. Too late, and the game says how that life ended (home
+  or killed).
 - A gate outpost keeps its short sign-out. It does not switch to the air time.
 
 Decided: the airborne sign-out is 25 seconds and a beacon column, not a rule
@@ -1602,6 +1609,9 @@ PvP.
 
 - **Reconnect on its own.** After a drop the game quietly reconnects and
   puts you back in your body; no button (part of reconnecting, step 1).
+  Built: the game retries the same server for 30 s, a sign-in finds the body
+  left standing, and a connection pushed out by a newer sign-in is told so
+  and does not reconnect (section 7, "Sign-out").
 - **Official servers by default.** The base's door and the Servers app go to
   them with no address to type; an address is only for a friend's server.
 - **Always say which account you are on.** The phone and the base name it

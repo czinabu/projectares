@@ -162,7 +162,7 @@ rows marked **pre-playtest** come before the friends playtest.
 | Authoritative server, input-only clients, prediction, lag compensation | Built | `NetSession`, `ActorCommand.apply_array` clamps every input. |
 | Sign-in and version check before a player gets in | Built | `SceneMultiplayer.auth_callback` (`NetSession._server_auth`): an old game or a wrong secret never connects, and both sides name the version, so an older game gets the update button in the phone's Servers app. |
 | Hardening: relay off, request limits, safe saves, backups | Built | `server_relay` off; `NetSession.RequestLimits` on every request call (a flood is dropped); every save goes through `SafeFile`; rolling backups at start and hourly (`StashService.backup_if_due`, docs/hosting.md "Backups"). |
-| Reconnect to your body after a drop | Missing | A disconnect starts a sign-out on the standing body (`Raid.remove_player`) and a new sign-in waits it out. **pre-playtest** |
+| Reconnect to your body after a drop | Built | The game retries on its own for 30 s (`Main._on_online_disconnected`); a sign-in to the account finds the body still standing and the server puts the player back in it (`NetSession._back`, `Raid.reclaim_player`), with no deploy. A sign-out started before the drop carries on. Too late, the game says how that life ended. |
 | Whole-server bench and health log | Missing | `battle_bench` measures one world; nothing measures the plaza, worlds and arena together. **pre-playtest** |
 | Encrypted connections | Missing | ENet traffic, including the sign-in secret, is plain. |
 | Accounts on SQLite with all-or-nothing changes | Missing | One JSON file per account (`StashService._save`). Needed before the marketplace. |
@@ -172,4 +172,4 @@ rows marked **pre-playtest** come before the friends playtest.
 | Steam login | Missing | Name plus a secret the game makes. |
 | Matchmaker, plaza shards, hiding unseen enemies | Missing | Later, when numbers call for it. |
 | Official servers before Steam: recovery code, one-time Steam link | Missing | Accounts are tied to the computer whose game made the secret. |
-| Smooth travel: auto-reconnect, official servers by default, account shown, no full-world dead end, update link on a version mismatch | Partly | The update link on a version mismatch is built (the phone's Servers app); the rest is missing. See DESIGN.md section 14, "Smooth for the player". |
+| Smooth travel: auto-reconnect, official servers by default, account shown, no full-world dead end, update link on a version mismatch | Partly | Auto-reconnect and the update link on a version mismatch (the phone's Servers app) are built; the rest is missing. See DESIGN.md section 14, "Smooth for the player". |

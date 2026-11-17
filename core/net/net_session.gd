@@ -83,7 +83,7 @@ signal base_visit_requested(owner_name: String, stash: Array, loadout: Dictionar
 signal portal_travel(destination: String)
 
 const DEFAULT_PORT := 24565
-const PROTOCOL := 33
+const PROTOCOL := 35
 ## Every packet is compressed, both ways. State updates are mostly repeated
 ## numbers, and a big battle sends a player hundreds of them a second. Server
 ## and client must agree, so a change here needs a new PROTOCOL.
@@ -96,9 +96,13 @@ const PROTOCOL := 33
 ## 33: the version check and sign-in moved into the connection handshake
 ## (`SceneMultiplayer.auth_callback`, see "Signing in" below); the old
 ## `_hello`, `_sign_in` and `_refused` calls are gone.
+## 35: reconnecting to your body after a drop (`_back`, `_rearm`), and a
+## connection let go for a newer sign-in is told so (`_replaced`).
 ## Where an out-of-date game gets the latest build: the rolling "latest"
 ## release the Windows client workflow publishes (docs/hosting.md).
 const UPDATE_URL := "https://github.com/czinabu/projectares/releases/tag/latest"
+## What `_back` says when the server is putting you back in your body.
+const BACK_IN_BODY := "body"
 ## Seconds a connection may take to sign in before it is dropped.
 const AUTH_TIMEOUT := 10.0
 ## The most bytes a sign-in or its answer may be. Read before anything else.
@@ -166,7 +170,7 @@ const FORWARDED_NOTICES := ["Parry!", "Wrong side", "Guard broken", "Staggered",
 		"Backpack full", "Someone is riding it", "Banked ", "Signing out", "Sign-out cancelled",
 		"You cannot sign out", "No room there", "Watch recharging", "Your watch is full",
 		"Look at a vehicle", "Packed ", "Get off first", "Not while signing out", "Vehicles stay on the watch",
-		"Scanned", "Sensed"]
+		"Scanned", "Sensed", "Back in your body"]
 
 var is_server := false
 var raid: Raid
@@ -287,6 +291,16 @@ var _gave_up := false    # client: `failed` was emitted for this connection
 ## Every session hosting in this process, so a safe zone can ask the others.
 static var _hosting: Array[NetSession] = []
 var _died_at := {}       # peer id -> msec when their last life ended in a death (server)
+var _missed := {}        # account id -> outcome of a life that ended while they were away (server)
+## Client: back after a dropped connection, the server is putting you in the
+## body you left standing (`_back`); `joined` follows without a `deploy`.
+var resuming := false
+## Client: how the life you were away from ended ("left" or "died"), when
+## the body was gone by the time you signed in again, else "".
+var missed_outcome := ""
+## Client: the server let this connection go because the account signed in
+## from another game. Not worth reconnecting.
+var replaced := false
 var _finished := false   # client: signed out, so the server closing the connection is expected
 var _can_redeploy := false # client: dead and still connected
 var _space: SubViewport  # the raid's own 3D world when `isolated` (server)
@@ -508,15 +522,23 @@ func _server_auth(peer: int, data: PackedByteArray) -> void:
 		_refuse(peer, result.error)
 		return
 	# The newest sign-in wins. An older connection for the same account (a
-	# crashed game, or one that is still closing) is dropped, and if it was in
-	# the raid that run ends as a death before the new lobby sees the stash.
+	# crashed game, one whose connection dropped and that the server has not
+	# noticed yet, or another game signing in) is let go: its body is left
+	# standing like any dropped player's, so this sign-in can take it back
+	# (`_on_peer_connected`). It is told why first, so a game that is still
+	# running does not try to reconnect and push this one out in turn.
 	for other: int in _peer_account.keys():
 		if _peer_account[other] != result.account_id:
 			continue
 		if other in _api.get_peers():
 			_on_peer_disconnected(other)
+			_replaced.rpc_id(other)
+			get_tree().create_timer(0.5).timeout.connect(func() -> void:
+				if _api.multiplayer_peer != null and other in _api.get_peers():
+					_api.disconnect_peer(other))
+		else:
+			_api.disconnect_peer(other)
 		_peer_account.erase(other)
-		_api.disconnect_peer(other)
 	_peer_account[peer] = result.account_id
 	_api.send_auth(peer, var_to_bytes({"ok": true, "protocol": PROTOCOL, "world": world_id}))
 	_api.complete_auth(peer)
@@ -580,9 +602,68 @@ func _on_peer_connected(peer: int) -> void:
 		_routes.rpc_id(peer, routes)
 		_sent_status = _gather_status()
 		_world_status.rpc_id(peer, _sent_status)
+	# Back after a dropped connection: to the body still standing, or with
+	# word of how the life ended while they were away. Said before the
+	# account, so the game knows not to deploy again.
+	var account_id: String = _peer_account[peer]
+	var body := _unguarded_body(account_id)
+	if body != null:
+		_back.rpc_id(peer, BACK_IN_BODY)
+	elif _missed.has(account_id):
+		_back.rpc_id(peer, str(_missed[account_id]))
+	_missed.erase(account_id)
 	_send_account(peer)
 	_send_clans(peer)
 	_social_joined(peer)
+	if body != null:
+		_reclaim(peer, body)
+
+
+## Server: the body an account's dropped connection left standing, if it is
+## still there to come back to, else null.
+func _unguarded_body(account_id: String) -> Actor:
+	if raid == null:
+		return null
+	for actor: Actor in _actor_account:
+		if _actor_account[actor] == account_id and is_instance_valid(actor) and not _actor_peer.has(actor) \
+				and raid.is_unguarded(actor):
+			return actor
+	return null
+
+
+## Server: puts a player who reconnected back into the body they left
+## standing (`Raid.reclaim_player`), and tells their fresh game everything a
+## new arrival hears, plus what only the owner knows (pack, watch, counters).
+func _reclaim(peer: int, actor: Actor) -> void:
+	if not raid.reclaim_player(actor):
+		return
+	_peer_actor[peer] = actor
+	_actor_peer[actor] = peer
+	# The new game numbers its inputs from the start again.
+	_applied_seq[_ids[actor]] = 0
+	_seen_tick.erase(actor)
+	_joined_peers.append(peer)
+	_social_moved(peer, "hub" if raid.world.safe_zone else "raid")
+	_welcome.rpc_id(peer, _ids[actor])
+	_send_world(peer)
+	var id: int = _ids[actor]
+	if actor.visor.item_id != "":
+		_worn_changed.rpc_id(peer, id, "helmet", actor.visor.item_id)
+	if actor.frame_id != "":
+		_worn_changed.rpc_id(peer, id, "armor", actor.frame_id)
+	var arms: Array = []
+	for weapon in actor.weapons:
+		var gun := weapon as Gun
+		if gun == null or not ItemDB.has_tag(gun.item_id, "power"):
+			arms.append([weapon.item_id, gun.ammo_in_mag if gun else -1, gun.reserve_ammo if gun else -1])
+	_rearm.rpc_id(peer, arms, actor.active_weapon_index)
+	_inventory.rpc_id(peer, actor.inventory.items)
+	_send_watch(actor)
+	_send_tally(actor)
+	_send_banked(actor)
+	var state := raid.state_for(actor)
+	if state != null and state.sign_out_left >= 0.0:
+		_sign_out.rpc_id(peer, state.sign_out_left, state.sign_out_total)
 
 
 func _on_peer_disconnected(peer: int) -> void:
@@ -596,9 +677,12 @@ func _on_peer_disconnected(peer: int) -> void:
 	# Their body stays in the world for a while. The run is settled into the
 	# account when it is killed or its sign-out runs out.
 	var actor: Actor = _peer_actor.get(peer)
+	_peer_actor.erase(peer)
+	if actor != null and _actor_peer.get(actor, 0) == peer:
+		# Nobody plays it now; a new sign-in to the account may take it back.
+		_actor_peer.erase(actor)
 	if actor != null and is_instance_valid(actor) and raid != null:
 		raid.remove_player(actor)
-	_peer_actor.erase(peer)
 
 
 func _on_server_actor_spawned(actor: Actor) -> void:
@@ -758,6 +842,10 @@ func _on_server_player_finished(actor: Actor, result: Dictionary) -> void:
 			_died_at[peer] = Time.get_ticks_msec()
 	if online:
 		_run_finished.rpc_id(peer, result)
+	elif account_id != "" and not raid.world.safe_zone:
+		# Ended while they were away (a body left by a dropped connection):
+		# they hear how when they sign in again.
+		_missed[account_id] = str(result.get("outcome", ""))
 		# A dead player is still in the world, about to drop back in.
 		if result.get("outcome", "") != "died":
 			_social_moved(peer, "lobby")
@@ -1070,39 +1158,7 @@ func _request_join(drop := "") -> void:
 	_send_account(peer)
 	_peer_actor[peer] = actor
 	_actor_peer[actor] = peer
-	actor.hit_confirmed.connect(_on_server_hit_confirmed.bind(peer))
-	actor.health.damaged.connect(func(info: DamageInfo) -> void:
-		if peer in _api.get_peers():
-			_hurt.rpc_id(peer, info.amount, info.kind))
-	actor.notice.connect(func(text: String) -> void:
-		if peer not in _api.get_peers():
-			return
-		for prefix: String in FORWARDED_NOTICES:
-			if text.begins_with(prefix):
-				_notice.rpc_id(peer, text)
-				return)
-	actor.inventory.changed.connect(func() -> void:
-		if peer in _api.get_peers():
-			_inventory.rpc_id(peer, actor.inventory.items))
-	# What a helmet reveals goes only to the players allowed to know it.
-	actor.visor.revealed.connect(func(found: Array) -> void:
-		if peer in _api.get_peers():
-			_visor_ghosts.rpc_id(peer, found))
-	actor.visor.felt_scan.connect(func(origin: Vector3) -> void:
-		if peer in _api.get_peers():
-			_visor_felt.rpc_id(peer, origin))
-	actor.visor.tagged.connect(_on_server_tagged.bind(actor))
-	actor.visor.threatened.connect(func(origin: Vector3) -> void:
-		if peer in _api.get_peers():
-			_visor_threatened.rpc_id(peer, origin))
-	actor.visor.threats_changed.connect(func(found: Array) -> void:
-		if peer not in _api.get_peers():
-			return
-		var ids: Array[int] = []
-		for other: Actor in found:
-			if _ids.has(other):
-				ids.append(_ids[other])
-		_visor_threats.rpc_id(peer, ids))
+	_wire_player(actor)
 	_joined_peers.append(peer)
 	_social_moved(peer, "hub" if safe else "raid")
 	_welcome.rpc_id(peer, _ids[actor])
@@ -1110,6 +1166,13 @@ func _request_join(drop := "") -> void:
 		_send_spawn(peer, actor)
 		_send_watch(actor)
 		return
+	_send_world(peer)
+	_send_watch(actor)
+
+
+## Server: everything in the world a player who has just arrived must hear
+## about: every actor, container, vehicle and portal, and the war.
+func _send_world(peer: int) -> void:
 	for other: Actor in _ids:
 		if not other.is_dead:
 			_send_spawn(peer, other)
@@ -1124,8 +1187,63 @@ func _request_join(drop := "") -> void:
 	_war.rpc_id(peer, raid.war.intensity, raid.war.centre)
 	for portal in raid.portals:
 		_send_portal(peer, portal)
-	_send_watch(actor)
 	_sent_points.erase(peer)
+
+
+## Server: whichever connection plays `actor` now, if it is online, else 0.
+## A body outlives the connection that deployed it (it can be reclaimed by a
+## new one), so anything sent to its owner asks this, never a peer id kept
+## from when it was deployed.
+func _owner_peer(actor: Actor) -> int:
+	var peer: int = _actor_peer.get(actor, 0)
+	return peer if peer != 0 and peer in _api.get_peers() else 0
+
+
+## Server: hooks up what a player's own actor tells only its owner.
+func _wire_player(actor: Actor) -> void:
+	actor.hit_confirmed.connect(func(target: Actor, info: DamageInfo, lethal: bool) -> void:
+		var peer := _owner_peer(actor)
+		if peer != 0:
+			_on_server_hit_confirmed(target, info, lethal, peer))
+	actor.health.damaged.connect(func(info: DamageInfo) -> void:
+		var peer := _owner_peer(actor)
+		if peer != 0:
+			_hurt.rpc_id(peer, info.amount, info.kind))
+	actor.notice.connect(func(text: String) -> void:
+		var peer := _owner_peer(actor)
+		if peer == 0:
+			return
+		for prefix: String in FORWARDED_NOTICES:
+			if text.begins_with(prefix):
+				_notice.rpc_id(peer, text)
+				return)
+	actor.inventory.changed.connect(func() -> void:
+		var peer := _owner_peer(actor)
+		if peer != 0:
+			_inventory.rpc_id(peer, actor.inventory.items))
+	# What a helmet reveals goes only to the players allowed to know it.
+	actor.visor.revealed.connect(func(found: Array) -> void:
+		var peer := _owner_peer(actor)
+		if peer != 0:
+			_visor_ghosts.rpc_id(peer, found))
+	actor.visor.felt_scan.connect(func(origin: Vector3) -> void:
+		var peer := _owner_peer(actor)
+		if peer != 0:
+			_visor_felt.rpc_id(peer, origin))
+	actor.visor.tagged.connect(_on_server_tagged.bind(actor))
+	actor.visor.threatened.connect(func(origin: Vector3) -> void:
+		var peer := _owner_peer(actor)
+		if peer != 0:
+			_visor_threatened.rpc_id(peer, origin))
+	actor.visor.threats_changed.connect(func(found: Array) -> void:
+		var peer := _owner_peer(actor)
+		if peer == 0:
+			return
+		var ids: Array[int] = []
+		for other: Actor in found:
+			if _ids.has(other):
+				ids.append(_ids[other])
+		_visor_threats.rpc_id(peer, ids))
 
 
 ## Arena: a player in it asks for something (challenge, accept, bet...).
@@ -1497,10 +1615,62 @@ func _give_up(reason: String) -> void:
 func _on_server_disconnected() -> void:
 	if _finished:
 		return
-	if my_actor_id < 0:
-		_give_up("The server closed the connection." if account.is_empty() else "Lost the connection to the server.")
+	if account.is_empty():
+		_give_up("The server closed the connection.")
 	else:
+		# Signed in (in a lobby or out in a world): the game reconnects on
+		# its own (`Main._on_online_disconnected`) unless `replaced`.
+		_gave_up = true
 		disconnected.emit()
+
+
+## Client: back after a drop. `what` is `BACK_IN_BODY` when the server is
+## putting you in the body you left standing, else how the life you were
+## away from ended ("left" or "died"). Comes before the account.
+@rpc("authority", "call_remote", "reliable")
+func _back(what: String) -> void:
+	if what == BACK_IN_BODY:
+		resuming = true
+	elif what in ["left", "died"]:
+		missed_outcome = what
+
+
+## Client: this connection is being let go because your account signed in
+## from somewhere else.
+@rpc("authority", "call_remote", "reliable")
+func _replaced() -> void:
+	replaced = true
+
+
+## Client: back in your body after a drop, the weapons you held there as the
+## server has them ([item id, rounds in the mag, rounds in reserve] each, the
+## heavy weapon left out: the spawn carries it) and which is in hand. Your
+## spawn only knows the kit you deployed with.
+@rpc("authority", "call_remote", "reliable")
+func _rearm(arms: Array, drawn: int) -> void:
+	var me: Actor = _actors.get(my_actor_id)
+	if me == null or not is_instance_valid(me) or arms.size() > 8:
+		return
+	for entry: Variant in arms:
+		if typeof(entry) != TYPE_ARRAY or entry.size() != 3 or typeof(entry[0]) != TYPE_STRING:
+			continue
+		var id: String = entry[0]
+		if not Loadout.summonable(id):
+			continue
+		var index := -1
+		for i in me.weapons.size():
+			if me.weapons[i].item_id == id:
+				index = i
+		if index < 0:
+			Loadout.swap_weapon(me, id, int(entry[1]), int(entry[2]))
+			me.materialize_left = 0.0
+			continue
+		var gun := me.weapons[index] as Gun
+		if gun != null and int(entry[1]) >= 0:
+			gun.ammo_in_mag = clampi(int(entry[1]), 0, gun.mag_size)
+			gun.reserve_ammo = maxi(0, int(entry[2]))
+	if drawn >= 0 and drawn < me.weapons.size():
+		me.draw_weapon(drawn)
 
 
 @rpc("authority", "call_remote", "reliable")
