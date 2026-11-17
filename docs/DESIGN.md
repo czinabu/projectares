@@ -608,6 +608,25 @@ Army soldiers aim at the chest and get no headshot bonus, so the enemy
 balance bands above hold (re-measured after this pass: every row still in
 band).
 
+### Handling
+
+How a gun handles is the second half of its role. Every gun pays for
+moving, but not the same amount, and every gun takes a moment to come up
+to the eye:
+
+- Spread grows with speed on the ground, by the gun's `move_spread_deg` at
+  a full sprint (rifles 2 degrees, the DMR 3, pistols and the SMG about 1).
+  Standing still or crouched is how you shoot straight.
+- Aiming down sights tightens spread over the gun's `ads_time` (pistols and
+  the SMG about 0.16 s, rifles 0.25 s, the DMR 0.35 s), so a snap aim is
+  not yet a steady one.
+- You cannot shoot while sprinting. Pulling the trigger or aiming drops you
+  to a walk, and the gun fires 0.2 s after the sprint ends. A click made
+  in that moment is kept, so it never feels eaten.
+
+Re-measured on the duel bench over three seeds: every enemy type wins and
+loses about as often as before (all rows within the bench's noise).
+
 ### Goggles
 
 Goggles are the light alternative to a helmet in the same `helmet` slot, and
