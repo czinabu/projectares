@@ -210,7 +210,9 @@ worlds and a casual or solo one has a steady home.
 - **Threats (planned).** Body heat as a vital, drained in the open and
   refilled at heater huts, vents and vehicle engines, hurting through
   `Combat.deal` when empty; whiteouts that cut sight to about 30 m and wipe
-  tracks; footprints and vehicle tracks the server keeps and sends only
+  tracks, and feel like a real blizzard (Caleb's call): wind you see and
+  hear, snow driven sideways in gusts, drifts streaming off the rims, bodies
+  leaning into it and the wind pushing flight rigs off course; footprints and vehicle tracks the server keeps and sends only
   nearby; gunshots that carry twice as far; thin ice that breaks under
   heavy vehicles; the Wardens as the Engine's defence grid, still running.
 - **What you bring home (planned).** New parts (Cryo Core, Glacial Alloy,
