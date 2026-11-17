@@ -197,6 +197,14 @@ func _ready() -> void:
 		get_tree().quit()
 		return
 
+	# `-- <output_dir> --ashfront-only` shoots Ashfront's look from fixed
+	# spots: a gate looking in, the open field, the middle ring, the core's
+	# edge and from high over a corner, to compare the dressing before and after.
+	if "--ashfront-only" in args:
+		await _ashfront_shots(out_dir)
+		get_tree().quit()
+		return
+
 	# `-- <output_dir> --zones-only` shows Ashfront's risk zones: a gate
 	# outpost from the field, and the burning core from its edge.
 	if "--zones-only" in args:
@@ -1667,6 +1675,40 @@ func _war_shots(out_dir: String) -> void:
 		mood.follow = 100.0
 		await _settle(240 if step[0] > 0.0 else 60)
 		await _shot(out_dir.path_join(step[1] + ".png"))
+	raid.queue_free()
+
+
+func _ashfront_shots(out_dir: String) -> void:
+	var raid := Raid.new()
+	add_child(raid)
+	raid.start(Worlds.get_world("ashfront"), 42)
+	for bot in raid.bots:
+		bot.get_node("Brain").set_physics_process(false)
+	raid.player.visible = false
+	var camera := Camera3D.new()
+	camera.fov = 70.0
+	camera.far = 1500.0
+	raid.add_child(camera)
+	camera.make_current()
+	var ground := func(x: float, z: float) -> float: return raid.map.call("ground_height", x, z)
+	# From, toward, eye height above the ground at each.
+	var views := [
+		["gate", Vector2(-125, -150), Vector2(0, 0), 2.0],
+		["field", Vector2(-150, 30), Vector2(0, 0), 2.0],
+		["middle", Vector2(80, 150), Vector2(0, 0), 2.0],
+		["core_edge", Vector2(30, 80), Vector2(0, 0), 3.0],
+		["rustfall", Vector2(210, -40), Vector2(158, -106), 4.0],
+		["high", Vector2(-230, 230), Vector2(0, 0), 60.0],
+		["skyline", Vector2(60, 20), Vector2(260, -120), 2.0],
+	]
+	for view: Array in views:
+		var from: Vector2 = view[1]
+		var to: Vector2 = view[2]
+		var eye := Vector3(from.x, ground.call(from.x, from.y) + float(view[3]), from.y)
+		var aim := Vector3(to.x, ground.call(to.x, to.y) + 8.0, to.y)
+		camera.look_at_from_position(eye, aim)
+		await _settle(40)
+		await _shot(out_dir.path_join("ashfront_%s.png" % view[0]))
 	raid.queue_free()
 
 

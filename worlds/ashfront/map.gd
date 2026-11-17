@@ -66,6 +66,30 @@ const ARMIES := {
 }
 const MUSTER_SPOTS := 6
 
+## The Forge's tiers from the ground up: width and height of each block. The
+## top is far over every flight rig's ceiling, so its upper tiers are only
+## ever seen, never stood on.
+const FORGE_AT := Vector2(2, -2)
+const FORGE_TIERS := [Vector2(12.0, 8.0), Vector2(9.0, 22.0), Vector2(6.0, 24.0), Vector2(2.6, 20.0)]
+const FORGE_BUTTRESS := Vector2(2.2, 36.0)
+## The old front: which trench lines face across no man's land, so sandbags
+## go on their lips and tank traps out in front of them.
+const FRONT_LINES := [0, 1, 3, 4, 5]
+const SANDBAG_EVERY := 15.0
+const TRAP_OFFSET := 13.0
+const TRAP_EVERY := 6.5
+## How far the Forge's beacon is drawn: the whole map and past it.
+const FAR_SIGHT := 2000.0
+## Molten cracks running in to the core.
+const CRACKS := 7
+## What a cover lot is built from: concrete jersey barriers, sandbag walls and
+## steel plates. `size` is length, height and depth.
+const COVER_PIECES := [
+	{"kind": "jersey", "size": Vector3(3.0, 1.1, 0.7)},
+	{"kind": "sandbag", "size": Vector3(3.0, 1.0, 0.9)},
+	{"kind": "plate", "size": Vector3(2.2, 1.6, 0.25)},
+]
+
 ## Kept from the first map built in this run: { heights, collision, navmesh }.
 static var _shared := {}
 
@@ -83,9 +107,14 @@ var _trenches: Array[PackedVector2Array] = []
 var _buildings: Array[Dictionary] = []
 var _wrecks: Array[Dictionary] = []
 var _cover_spots: Array[Vector3] = []
+## Barricade pieces (jersey barriers, sandbag walls, plates, tank traps): the
+## dressing draws each one by its "cover" meta over its plain collision box.
+var _cover_pieces: Array[StaticBody3D] = []
 ## Everything solid standing on the ground: { at: Vector2, reach }.
 var _solids: Array[Dictionary] = []
 var _weather: Node3D
+var _beacon: MeshInstance3D
+var _beacon_light: OmniLight3D
 
 @onready var GROUND := Look.surface("ground", {"tint": Color(0.4, 0.34, 0.31), "blend": "asphalt",
 		"blend_amount": 0.45, "grime": 0.6, "saturation": 0.3, "scale": 0.16})
@@ -147,6 +176,11 @@ func _process(_delta: float) -> void:
 	if camera != null and is_instance_valid(_weather):
 		_weather.global_position = Vector3(camera.global_position.x, camera.global_position.y + 6.0,
 				camera.global_position.z)
+	# The beacon breathes, slowly, like a warning light.
+	if is_instance_valid(_beacon_light):
+		var pulse := 0.5 + 0.5 * sin(Time.get_ticks_msec() * 0.0021)
+		_beacon_light.light_energy = 2.0 + 6.0 * pulse
+		_beacon.scale = Vector3.ONE * (0.85 + 0.3 * pulse)
 
 
 func _build_environment() -> void:
@@ -398,11 +432,32 @@ func _build_foundry(at: Vector2) -> void:
 	for i in lots.size():
 		var h: float = [16.0, 10.0, 10.0, 6.0, 6.0][i]
 		_add_building(at + lots[i], Vector3(_rng.randf_range(8.0, 11.0), h, _rng.randf_range(8.0, 11.0)), true)
-	# The stack: a landmark you can steer by from anywhere.
-	_add_building(at + Vector2(2, -2), Vector3(3.5, 34.0, 3.5), false)
+	# The Forge: the spire everything on the field points at, and a landmark
+	# you can steer by from anywhere. Solid all the way up.
+	_build_forge(at + FORGE_AT)
+	# The stack it replaced drew one number; keep drawing it so the rest of
+	# the layout stays where it was.
+	_rng.randf()
 	for offset: Vector2 in [Vector2(-4, 4), Vector2(18, -30), Vector2(28, -2), Vector2(-30, 0)]:
 		_add_cover(_ground(at + offset))
 		_add_marker("spawn_cache", _open(at + offset + Vector2(2.5, 1.5)))
+
+
+func _build_forge(at: Vector2) -> void:
+	var base := _ground(at)
+	var dark := Look.surface("metal", {"tint": Color(0.5, 0.45, 0.42), "grime": 1.0, "scale": 0.12})
+	var y := -1.0
+	for tier: Vector2 in FORGE_TIERS:
+		var height := tier.y + (1.0 if y < 0.0 else 0.0)
+		_box(Vector3(tier.x, height, tier.x), base + Vector3(0, y + height * 0.5, 0), dark if y > 0.0 else WALL)
+		y += height
+	# Four buttresses on the plinth's corners, standing proud of the tower.
+	var corner := FORGE_TIERS[0].x * 0.5 - FORGE_BUTTRESS.x * 0.5
+	for sx: float in [-1.0, 1.0]:
+		for sz: float in [-1.0, 1.0]:
+			_box(Vector3(FORGE_BUTTRESS.x, FORGE_BUTTRESS.y, FORGE_BUTTRESS.x),
+					base + Vector3(sx * corner, FORGE_BUTTRESS.y * 0.5 - 1.0, sz * corner), dark)
+	_buildings.append({"center": base, "size": Vector3(FORGE_TIERS[0].x, y, FORGE_TIERS[0].x), "landmark": true})
 
 
 ## A hill with a relay station on top. Whoever holds it sees half the field.
@@ -564,6 +619,7 @@ func _build_field() -> void:
 		_add_cover(_ground(muster - inward * 7.0))
 	for i in RAMP_SPOTS.size():
 		_add_ramp_lot(_ground(RAMP_SPOTS[i]), i * PI * 0.5)
+	_fortify_front()
 
 
 func _add_building(at: Vector2, size: Vector3, lootable: bool) -> void:
@@ -587,40 +643,67 @@ func _add_wall(base: Vector3, size: Vector3, yaw: float) -> void:
 	body.rotation.y = yaw
 
 
+## A barricade facing the middle of the map: a short bowed line of jersey
+## barriers, sandbag walls and steel plates, so a cover lot reads as a
+## position someone held, not boxes dropped at random.
 func _add_cover(center: Vector3) -> void:
-	for i in _rng.randi_range(2, 4):
-		var size := Vector3(_rng.randf_range(1.2, 3.0), _rng.randf_range(1.0, 1.6), _rng.randf_range(1.2, 3.0))
-		var offset := Vector2(_rng.randf_range(-4.5, 4.5), _rng.randf_range(-4.5, 4.5))
-		var base := terrain.on_ground(center.x + offset.x, center.z + offset.y)
-		_box(size + Vector3(0, 0.8, 0), base + Vector3(0, size.y * 0.5 - 0.4, 0), COVER_METAL if i % 2 == 0 else COVER_CONCRETE)
-		_cover_spots.append(terrain.on_ground(base.x + size.x * 0.5 + 0.5, base.z))
+	var flat := Vector2(center.x, center.z)
+	var inward := -flat.normalized() if flat.length() > 1.0 else Vector2(0, -1)
+	var along := inward.orthogonal()
+	var yaw := atan2(along.x, along.y)
+	var count := _rng.randi_range(2, 4)
+	for i in count:
+		# The draws a lot has always made, so the layout after it stays put.
+		var rolled := Vector3(_rng.randf_range(1.2, 3.0), _rng.randf_range(1.0, 1.6), _rng.randf_range(1.2, 3.0))
+		var jitter := Vector2(_rng.randf_range(-4.5, 4.5), _rng.randf_range(-4.5, 4.5))
+		var slot := i - (count - 1) * 0.5
+		var spot := flat + along * (slot * 3.3 + jitter.x * 0.1) - inward * (absf(slot) * 0.8 + jitter.y * 0.08)
+		var base := terrain.on_ground(spot.x, spot.y)
+		var piece: Dictionary = COVER_PIECES[(i + int(rolled.x * 10.0)) % COVER_PIECES.size()]
+		var size: Vector3 = piece["size"]
+		size.x = clampf(rolled.x + rolled.z, 2.6, 3.4) if piece["kind"] != "plate" else size.x
+		var body := _box(size + Vector3(0, 0.8, 0), base + Vector3(0, size.y * 0.5 - 0.4, 0),
+				COVER_CONCRETE if piece["kind"] == "jersey" else COVER_METAL)
+		body.rotation.y = yaw
+		body.set_meta("cover", piece["kind"])
+		_cover_pieces.append(body)
+		_cover_spots.append(terrain.on_ground(spot.x - inward.x * 1.2, spot.y - inward.y * 1.2))
 
 
-## The wreck of a war machine: a crawler hull, a fallen strider, or a downed
-## lifter. Plain boxes that stop bullets; `Look` and the dressing do the rest.
+## The wreck of a war machine: a tank, a fallen strider, a crashed dropship or
+## a titan. Each sits the way it came to rest, not tumbled at random; plain
+## boxes that stop bullets, and the dressing adds the rest.
 func _add_wreck(at: Vector2, kind: int, yaw: float, big: float) -> void:
 	var base := _ground(at)
 	var turn := Basis(Vector3.UP, yaw)
 	var size := Vector3.ZERO
 	match kind:
 		0:
-			# Crawler: a long low hull with a turret knocked askew.
-			size = Vector3(4.4, 2.4, 8.0) * big
-			var hull := _box(size, base + Vector3(0, size.y * 0.5 - 0.5, 0), HULL)
-			hull.rotation = Vector3(_rng.randf_range(-0.08, 0.08), yaw, _rng.randf_range(-0.1, 0.1))
-			var turret := _box(Vector3(2.8, 1.3, 3.2) * big, base + turn * Vector3(0.3, size.y + 0.1, -0.6), HULL_RUST)
-			turret.rotation = Vector3(0.0, yaw + 0.7, 0.12)
-			var barrel := _box(Vector3(0.5, 0.5, 5.5) * big, base + turn * Vector3(1.8, size.y + 0.2, -3.6), HULL)
-			barrel.rotation = Vector3(-0.12, yaw + 0.7, 0.0)
+			# Tank: a low hull on its tracks, the turret knocked round and the
+			# barrel drooping.
+			size = Vector3(4.4, 2.0, 8.0) * big
+			var settle := Vector2(_rng.randf_range(-0.08, 0.08), _rng.randf_range(-0.1, 0.1)) * 0.3
+			var hull := _box(size, base + Vector3(0, size.y * 0.5 - 0.2, 0), HULL)
+			hull.rotation = Vector3(settle.x, yaw, settle.y)
+			for side: float in [-1.0, 1.0]:
+				var track := _box(Vector3(0.9, 1.3, 8.6) * big, base + turn * Vector3(side * (size.x * 0.5 + 0.35 * big), 0.45 * big, 0), HULL_RUST)
+				track.rotation = Vector3(settle.x, yaw, settle.y)
+			var turret := _box(Vector3(2.8, 1.2, 3.2) * big, base + turn * Vector3(0.0, size.y + 0.3 * big, 0.6 * big), HULL)
+			turret.rotation.y = yaw + 0.6
+			var barrel := _box(Vector3(0.45, 0.45, 5.0) * big, base + turn * Vector3(1.4 * big, size.y + 0.1 * big, -2.6 * big), HULL)
+			barrel.rotation = Vector3(-0.1, yaw + 0.6, 0.0)
 		1:
-			# Strider: the body on its side, one leg still reaching up.
+			# Strider: the cockpit on its side, one leg folded up at the knee,
+			# the other lying out straight.
 			size = Vector3(5.0, 3.6, 6.0) * big
 			var body := _box(size, base + Vector3(0, size.y * 0.5 - 0.8, 0), HULL_RUST)
 			body.rotation = Vector3(0.0, yaw, 0.38)
-			var leg := _box(Vector3(1.1, 11.0, 1.1) * big, base + turn * Vector3(-3.2, 4.0 * big, 1.0), HULL)
-			leg.rotation = Vector3(0.3, yaw, -0.42)
+			var thigh := _box(Vector3(1.3, 6.0, 1.3) * big, base + turn * Vector3(-3.4, 3.4, 0.6) * big, HULL)
+			thigh.rotation = Vector3(0.0, yaw, -0.5)
+			var shin := _box(Vector3(1.1, 6.5, 1.1) * big, base + turn * Vector3(-7.4, 4.0, 0.6) * big, HULL)
+			shin.rotation = Vector3(0.0, yaw, 0.55)
 			var fallen := _box(Vector3(1.1, 1.1, 10.0) * big, base + turn * Vector3(4.4, 0.3, -2.0), HULL)
-			fallen.rotation = Vector3(0.06, yaw + 0.5, 0.0)
+			fallen.rotation = Vector3(0.0, yaw + 0.5, 0.0)
 		3:
 			# Titan: a walker the height of a tower block, face down, with
 			# two legs still standing where it stopped.
@@ -637,16 +720,84 @@ func _add_wreck(at: Vector2, kind: int, yaw: float, big: float) -> void:
 			var back := _add_marker("spawn_cache", base + Vector3(0, size.y - 0.9, 0))
 			back.set_meta("loot_source", "rooftop")
 		_:
-			# Lifter: a broken-backed fuselage with one wing slab left.
+			# Dropship: came in low, nose first, broke its back on landing and
+			# left a furrow behind it.
 			size = Vector3(3.6, 3.2, 12.0) * big
-			var front := _box(Vector3(size.x, size.y, size.z * 0.5), base + turn * Vector3(0, size.y * 0.5 - 0.6, -size.z * 0.27), HULL)
-			front.rotation = Vector3(0.14, yaw, 0.06)
-			var back := _box(Vector3(size.x, size.y, size.z * 0.5), base + turn * Vector3(0.6, size.y * 0.5 - 0.3, size.z * 0.27), HULL_RUST)
-			back.rotation = Vector3(-0.2, yaw + 0.16, -0.1)
-			var wing := _box(Vector3(9.0, 0.5, 3.4) * big, base + turn * Vector3(5.4 * big, 1.5, 0.5), HULL)
-			wing.rotation = Vector3(0.0, yaw, -0.26)
-	_wrecks.append({"at": base, "size": size, "burning": _rng.randf() < 0.4})
+			var front := _box(Vector3(size.x, size.y, size.z * 0.55), base + turn * Vector3(0, size.y * 0.5 - 0.9, -size.z * 0.24), HULL)
+			front.rotation = Vector3(0.16, yaw, 0.0)
+			var back := _box(Vector3(size.x * 0.95, size.y * 0.9, size.z * 0.45), base + turn * Vector3(0.3, size.y * 0.45 - 0.2, size.z * 0.28), HULL_RUST)
+			back.rotation = Vector3(-0.05, yaw + 0.12, 0.0)
+			for side: float in [-1.0, 1.0]:
+				# One wing still on, the other snapped and lying in the dirt.
+				var wing := _box(Vector3(4.2, 0.45, 2.8) * big,
+						base + turn * Vector3(side * (size.x * 0.5 + 2.0 * big), size.y * 0.5 if side > 0.0 else 0.3, size.z * 0.12), HULL)
+				wing.rotation = Vector3(0.0, yaw, -0.12 * side if side > 0.0 else 0.08)
+			var fin := _box(Vector3(0.4, 2.6, 2.6) * big, base + turn * Vector3(0.3, size.y + 0.6 * big, size.z * 0.42), HULL_RUST)
+			fin.rotation = Vector3(-0.05, yaw + 0.12, 0.0)
+	_wrecks.append({"at": base, "size": size, "burning": _rng.randf() < 0.4, "kind": kind, "yaw": yaw, "big": big})
 	_cover_spots.append(_ground(at + Vector2.from_angle(yaw) * (size.x * 0.5 + 2.0)))
+
+
+## The front lines, dug in: sandbag walls along the lips of the trenches
+## facing no man's land, with gaps to climb out through, and a row of tank
+## traps out in front. Placed along the trench lines, not drawn at random,
+## and kept clear of every marker and solid already down.
+func _fortify_front() -> void:
+	var keep_clear: Array[Vector2] = []
+	for node in get_children():
+		if node is Marker3D or node is Depot:
+			keep_clear.append(Vector2(node.position.x, node.position.z))
+	var clear := func(spot: Vector2, room: float) -> bool:
+		for site: Dictionary in SITES:
+			if spot.distance_to(site["at"]) < float(site["radius"]) * 0.8:
+				return false
+		for pad in _pads:
+			if not pad.get("soft", false) and spot.distance_to(pad["at"]) < float(pad["radius"]) + room:
+				return false
+		for mark in keep_clear:
+			if spot.distance_to(mark) < room + 2.5:
+				return false
+		for solid in _solids:
+			if spot.distance_to(solid["at"]) < float(solid["reach"]) + room:
+				return false
+		return true
+	for index: int in FRONT_LINES:
+		var line: PackedVector2Array = _trenches[index]
+		var walked := SANDBAG_EVERY * 0.5
+		for i in line.size() - 1:
+			var a := line[i]
+			var b := line[i + 1]
+			var along := (b - a).normalized()
+			var out := along.orthogonal()
+			if out.dot(-(a + b) * 0.5) < 0.0:
+				out = -out
+			var length := a.distance_to(b)
+			var yaw := atan2(along.x, along.y)
+			# Sandbags on the lip toward the enemy.
+			var d := walked
+			while d < length:
+				var spot := a + along * d + out * 5.2
+				if clear.call(spot, 1.8):
+					var base := terrain.on_ground(spot.x, spot.y)
+					var wall := _box(Vector3(3.4, 1.0 + 0.6, 0.9), base + Vector3(0, 0.5 - 0.3, 0), WALL)
+					wall.rotation.y = yaw
+					wall.set_meta("cover", "sandbag")
+					_cover_pieces.append(wall)
+				d += SANDBAG_EVERY
+			walked = d - length
+			# Tank traps out in front, every third one left out for a lane.
+			var k := 0
+			var t := TRAP_EVERY * 0.5
+			while t < length:
+				var spot := a + along * t + out * TRAP_OFFSET
+				if k % 3 != 2 and clear.call(spot, 1.2):
+					var base := terrain.on_ground(spot.x, spot.y)
+					var trap := _box(Vector3(1.5, 1.2, 1.5), base + Vector3(0, 0.5, 0), HULL)
+					trap.rotation.y = yaw + 0.4 * k
+					trap.set_meta("cover", "trap")
+					_cover_pieces.append(trap)
+				k += 1
+				t += TRAP_EVERY
 
 
 ## A jump ramp facing `yaw`, with a bike marker parked off to one side.
@@ -743,13 +894,17 @@ func _dress() -> void:
 	_dress_field(art)
 	_dress_fires(art)
 	_dress_core(art)
+	_dress_forge(art)
+	_dress_wrecks(art)
+	_dress_cover(art)
+	_dress_cracks(art)
 	_dress_outposts(art)
 	_dress_horizon(art)
 
 
 func _dress_rooftops(art: Node3D) -> void:
 	for b in _buildings:
-		if b.get("wreck", false):
+		if b.get("wreck", false) or b.get("landmark", false):
 			continue
 		var size: Vector3 = b["size"]
 		var top: Vector3 = b["center"] + Vector3(0, size.y, 0)
@@ -771,7 +926,8 @@ func _dress_rooftops(art: Node3D) -> void:
 		art.add_child(rim)
 
 
-## Litter of a long war: gun turrets, burnt-out tanks, tents, fences.
+## Litter of a long war, left where people were: kit behind the cover they
+## held, tents at each army's muster, and guns dug in behind the sandbags.
 func _dress_field(art: Node3D) -> void:
 	var litter := ["GasCan.glb", "PropaneTank.glb", "Trashcan.glb", "Backpack.glb", "Computer.glb", "Support.glb"]
 	for spot in _cover_spots:
@@ -782,17 +938,32 @@ func _dress_field(art: Node3D) -> void:
 		p.position = spot
 		p.rotation.y = _art_rng.randf() * TAU
 		art.add_child(p)
-	var big := [["Wreck_Tank.glb", 7.0], ["Turret_Cannon.glb", 3.4], ["Turret_Gun.glb", 2.6], ["Tent.glb", 4.5],
-			["Fence.glb", 4.0], ["Support_Long.glb", 5.0]]
-	for i in 70:
-		var at := Vector2(_art_rng.randf_range(-FIELD, FIELD), _art_rng.randf_range(-FIELD, FIELD))
-		if _blocked(at):
+	for army: String in ARMIES:
+		var muster: Vector2 = ARMIES[army]["muster"]
+		var inward := -muster.normalized()
+		for i in 3:
+			var spot := muster - inward * 9.0 + inward.orthogonal() * (i - 1) * 7.0
+			var tent := Look.prop("Tent.glb", 4.5, 1.0)
+			tent.position = _ground(spot) + Vector3(0, -0.1, 0)
+			tent.rotation.y = atan2(inward.x, inward.y)
+			art.add_child(tent)
+	var count := 0
+	for piece in _cover_pieces:
+		if piece.get_meta("cover", "") != "sandbag":
 			continue
-		var pick: Array = big[_art_rng.randi() % big.size()]
-		var p := Look.prop(pick[0], pick[1], 1.0)
-		p.position = _ground(at) + Vector3(0, -0.15, 0)
-		p.rotation = Vector3(_art_rng.randf_range(-0.12, 0.12), _art_rng.randf() * TAU, _art_rng.randf_range(-0.12, 0.12))
-		art.add_child(p)
+		count += 1
+		if count % 4 != 0:
+			continue
+		# The wall's face, turned to look over it toward the middle.
+		var out := Basis(Vector3.UP, piece.rotation.y).x
+		out = Vector3(-out.z, 0, out.x)
+		if out.dot(-Vector3(piece.position.x, 0, piece.position.z)) < 0.0:
+			out = -out
+		var gun := Look.prop("Turret_Gun.glb", 2.2, 1.0)
+		var spot := piece.position - out * 1.6
+		gun.position = terrain.on_ground(spot.x, spot.z)
+		gun.rotation.y = atan2(out.x, out.z)
+		art.add_child(gun)
 
 
 ## The core reads as dangerous from across the field: molten slag pooled
@@ -967,25 +1138,338 @@ func _blocked(at: Vector2) -> bool:
 	return false
 
 
-## Dead giants on the rim, fading into the smoke: the hulks of machines far
-## bigger than anything left on the field, and the spires they were fighting over.
-func _dress_horizon(art: Node3D) -> void:
-	var half := (SIDE - 1) * CELL * 0.5
-	var hulk := Look.surface("metal", {"tint": Color(0.3, 0.27, 0.26), "grime": 1.0, "scale": 0.08})
-	for i in 40:
-		var angle := TAU * i / 40.0 + _art_rng.randf_range(-0.06, 0.06)
-		var dir := Vector3(cos(angle), 0, sin(angle))
-		var reach := (half + _art_rng.randf_range(10.0, 120.0)) / maxf(absf(dir.x), absf(dir.z))
-		var spire := i % 4 == 0
-		var size := Vector3(_art_rng.randf_range(10, 22), _art_rng.randf_range(70, 150), _art_rng.randf_range(10, 22)) if spire \
-				else Vector3(_art_rng.randf_range(30, 70), _art_rng.randf_range(16, 34), _art_rng.randf_range(18, 30))
-		var node := MeshInstance3D.new()
-		var mesh := BoxMesh.new()
-		mesh.size = size
-		mesh.material = hulk
-		node.mesh = mesh
-		node.position = dir * reach + Vector3(0, RIM_HEIGHT + size.y * 0.5 - 8.0, 0)
-		node.rotation = Vector3(_art_rng.randf_range(-0.05, 0.05), _art_rng.randf() * TAU,
-				_art_rng.randf_range(-0.4, 0.4))
+## The Forge dressed: a teal band at the top of each tier, a furnace mouth
+## glowing on every face of the plinth, molten metal pouring down two faces,
+## smoke from its shoulders and the red beacon on the needle.
+func _dress_forge(art: Node3D) -> void:
+	var base := _ground(FORGE_AT)
+	var y := -1.0
+	var teal := Look.trim("teal")
+	for tier: Vector2 in FORGE_TIERS:
+		var height := tier.y + (1.0 if y < 0.0 else 0.0)
+		y += height
+		art.add_child(_slab(Vector3(tier.x + 0.2, 0.35, tier.x + 0.2), base + Vector3(0, y - 0.9, 0), teal))
+	var plinth: Vector2 = FORGE_TIERS[0]
+	var tower: Vector2 = FORGE_TIERS[1]
+	# Ribs up the tower's faces, so it reads as built, not a plain block.
+	var rib_y := plinth.y - 1.0
+	for t in range(1, 3):
+		var tier: Vector2 = FORGE_TIERS[t]
+		for k in 4:
+			var face := Vector3.FORWARD.rotated(Vector3.UP, k * PI * 0.5)
+			for side: float in [-1.0, 1.0]:
+				var rib := _slab(Vector3(0.7, tier.y, 0.5), base + face * (tier.x * 0.5 + 0.2)
+						+ face.cross(Vector3.UP) * side * (tier.x * 0.5 - 0.9) + Vector3(0, rib_y + tier.y * 0.5, 0), WALL, true)
+				rib.rotation.y = k * PI * 0.5
+				art.add_child(rib)
+		rib_y += tier.y
+	art.add_child(_slab(Vector3(plinth.x + 0.12, 0.7, plinth.x + 0.12), base + Vector3(0, plinth.y - 1.6, 0), Look.trim("hazard")))
+	for k in 4:
+		var face := Vector3.FORWARD.rotated(Vector3.UP, k * PI * 0.5)
+		var mouth := _slab(Vector3(2.6, 4.2, 0.2), base + face * (plinth.x * 0.5 + 0.05) + Vector3(0, 2.1, 0), Look.trim("orange"))
+		mouth.rotation.y = k * PI * 0.5
+		art.add_child(mouth)
+		var glow := Look.lamp(Color(1.0, 0.45, 0.15), 4.0, 24.0)
+		glow.position = base + face * (plinth.x * 0.5 + 3.0) + Vector3(0, 2.5, 0)
+		art.add_child(glow)
+		if k % 2 == 0:
+			# The pour, beside the furnace mouth: down the tower, across the
+			# plinth's roof and over its lip to the ground.
+			var slag := Look.trim("slag")
+			var aside := face.cross(Vector3.UP) * 2.2
+			var parts := [
+				[Vector3(1.5, tower.y - 4.0, 0.3), face * (tower.x * 0.5 + 0.1) + Vector3(0, plinth.y - 1.0 + (tower.y - 4.0) * 0.5, 0)],
+				[Vector3(1.5, 0.25, (plinth.x - tower.x) * 0.5 + 0.3), face * ((plinth.x + tower.x) * 0.25 + 0.1) + Vector3(0, plinth.y - 0.85, 0)],
+				[Vector3(1.6, plinth.y - 1.0, 0.3), face * (plinth.x * 0.5 + 0.2) + Vector3(0, (plinth.y - 1.0) * 0.5, 0)],
+			]
+			for part: Array in parts:
+				var pour := _slab(part[0], base + aside + part[1], slag)
+				pour.rotation.y = k * PI * 0.5
+				art.add_child(pour)
+	for side: float in [-1.0, 1.0]:
+		art.add_child(_smoke(base + Vector3(side * tower.x * 0.4, plinth.y + tower.y - 1.0, -side * tower.x * 0.4), 2.0))
+	_beacon = _slab(Vector3(2.2, 2.2, 2.2), base + Vector3(0, y + 0.8, 0), Look.trim("beacon"))
+	art.add_child(_beacon)
+	# The halo that finds the beacon from the rim, through the smoke.
+	var halo := MeshInstance3D.new()
+	var quad := QuadMesh.new()
+	quad.size = Vector2(16, 16)
+	quad.material = Look.trim("halo")
+	halo.mesh = quad
+	halo.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	# Seen from anywhere on the map: never faded out with the small props.
+	halo.visibility_range_end = FAR_SIGHT
+	_beacon.visibility_range_end = FAR_SIGHT
+	_beacon.add_child(halo)
+	_beacon_light = Look.lamp(Color(1.0, 0.12, 0.08), 6.0, 40.0)
+	_beacon_light.position = _beacon.position
+	art.add_child(_beacon_light)
+
+
+## A plain dressed box with no collision and no shadow.
+func _slab(size: Vector3, at: Vector3, material: Material, shadow := false) -> MeshInstance3D:
+	var node := MeshInstance3D.new()
+	var mesh := BoxMesh.new()
+	mesh.size = size
+	mesh.material = material
+	node.mesh = mesh
+	node.position = at
+	if not shadow:
 		node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	return node
+
+
+## The wrecks finished off by one detail each, the same detail on every one
+## of a kind: a tank's dead teal running light along its hull, a strider's
+## cockpit slit, a dropship's hazard-striped fin and the furrow it ploughed.
+func _dress_wrecks(art: Node3D) -> void:
+	var furrows: Array[PackedVector2Array] = []
+	for wreck in _wrecks:
+		if not wreck.has("kind"):
+			continue
+		var base: Vector3 = wreck["at"]
+		var yaw: float = wreck["yaw"]
+		var big: float = wreck["big"]
+		var size: Vector3 = wreck["size"]
+		var turn := Basis(Vector3.UP, yaw)
+		match int(wreck["kind"]):
+			0:
+				for side: float in [-1.0, 1.0]:
+					var light := _slab(Vector3(0.08, 0.12, size.z * 0.7), base + turn * Vector3(side * (size.x * 0.5 + 0.03), size.y * 0.55, 0), Look.trim("teal"))
+					light.rotation.y = yaw
+					art.add_child(light)
+			1:
+				var slit := _slab(Vector3(size.x * 0.6, 0.25, 0.08), Vector3.ZERO, Look.trim("teal"))
+				slit.transform = Transform3D(Basis.from_euler(Vector3(0.0, yaw, 0.38)),
+						base + Vector3(0, size.y * 0.5 - 0.8, 0)) * Transform3D(Basis.IDENTITY, Vector3(0, size.y * 0.15, -size.z * 0.5 - 0.05))
+				art.add_child(slit)
+			2:
+				var fin := _slab(Vector3(0.45, 1.0 * big, 2.65 * big), base + turn * Vector3(0.3, size.y + 0.6 * big, size.z * 0.42), Look.trim("hazard"))
+				fin.rotation = Vector3(-0.05, yaw + 0.12, 0.0)
+				art.add_child(fin)
+				var behind := Vector2(sin(yaw), cos(yaw))
+				var from := Vector2(base.x, base.z) + behind * size.z * 0.5
+				furrows.append(PackedVector2Array([from, from + behind * size.z * 1.6]))
+	_ground_strips(art, furrows, 2.2, Look.trim("scorch"), 0.04)
+
+
+## Each barricade piece drawn over its plain box: a jersey barrier's sloped
+## concrete, a sandbag wall laid in courses, a steel plate with hazard
+## stripes along its top, and a tank trap of three crossed beams.
+func _dress_cover(art: Node3D) -> void:
+	var bags := MultiMesh.new()
+	bags.transform_format = MultiMesh.TRANSFORM_3D
+	var bag := BoxMesh.new()
+	bag.size = Vector3(0.62, 0.24, 0.42)
+	bag.material = Look.trim("sandbag")
+	bags.mesh = bag
+	var beams := MultiMesh.new()
+	beams.transform_format = MultiMesh.TRANSFORM_3D
+	var beam := BoxMesh.new()
+	beam.size = Vector3(0.22, 0.22, 2.0)
+	beam.material = HULL
+	beams.mesh = beam
+	var bag_at: Array[Transform3D] = []
+	var beam_at: Array[Transform3D] = []
+	for piece in _cover_pieces:
+		var kind: String = piece.get_meta("cover", "")
+		var shown := piece.get_child(1) as MeshInstance3D
+		var size: Vector3 = (shown.mesh as BoxMesh).size
+		var frame := Transform3D(Basis(Vector3.UP, piece.rotation.y), piece.position)
+		var ground_y := -size.y * 0.5 + 0.8 * 0.5
+		match kind:
+			"sandbag":
+				shown.queue_free()
+				var length := size.x
+				for course in 4:
+					var count := int(length / 0.6)
+					for n in count:
+						var x := -length * 0.5 + 0.3 + n * (length - 0.6) / maxf(count - 1, 1) + (0.15 if course % 2 == 1 else 0.0)
+						for row: float in [-0.2, 0.2]:
+							if course == 3 and row > 0.0:
+								continue
+							bag_at.append(frame * Transform3D(Basis(Vector3.UP, 0.04 * ((n + course) % 3 - 1)),
+									Vector3(clampf(x, -length * 0.5 + 0.3, length * 0.5 - 0.3), ground_y - 0.15 + course * 0.24, row)))
+			"trap":
+				shown.queue_free()
+				for axis in 3:
+					var turn := Basis.from_euler([Vector3(0.6, 0.0, 0.0), Vector3(0.0, 0.0, 0.6) * 1.0 + Vector3(0, PI * 0.5, 0), Vector3(PI * 0.5, 0.35, 0.0)][axis])
+					beam_at.append(frame * Transform3D(turn, Vector3(0, ground_y + 0.9, 0)))
+			"plate":
+				art.add_child(_slab(Vector3(size.x + 0.02, 0.3, size.z + 0.02), Vector3.ZERO, Look.trim("hazard")))
+				art.get_child(art.get_child_count() - 1).transform = frame * Transform3D(Basis.IDENTITY, Vector3(0, size.y * 0.5 - 0.55, 0))
+			"jersey":
+				# The barrier's sloped foot, so it reads as a cast barrier.
+				var foot := _slab(Vector3(size.x, 0.45, size.z + 0.5), Vector3.ZERO, COVER_CONCRETE, true)
+				foot.transform = frame * Transform3D(Basis.IDENTITY, Vector3(0, ground_y + 0.2, 0))
+				art.add_child(foot)
+	for set: Array in [[bags, bag_at], [beams, beam_at]]:
+		var mm: MultiMesh = set[0]
+		var list: Array = set[1]
+		mm.instance_count = list.size()
+		for i in list.size():
+			mm.set_instance_transform(i, list[i])
+		var node := MultiMeshInstance3D.new()
+		node.multimesh = mm
 		art.add_child(node)
+
+
+## Cracks of molten metal running in from the field to the core's rim, so
+## the ground itself leads the eye to the Forge. Each is drawn in segments
+## laid on the ground, wider near the core, and stops where something stands.
+func _dress_cracks(art: Node3D) -> void:
+	var lines: Array[PackedVector2Array] = []
+	for k in CRACKS:
+		var angle := TAU * (k + 0.5) / CRACKS + _art_rng.randf_range(-0.15, 0.15)
+		var line := PackedVector2Array()
+		var reach := _art_rng.randf_range(120.0, 175.0)
+		var r := CORE_RADIUS - 2.0
+		var drift := 0.0
+		while r < reach:
+			drift = clampf(drift + _art_rng.randf_range(-0.05, 0.05), -0.12, 0.12)
+			line.append(Vector2.from_angle(angle + drift) * r)
+			r += 2.0
+		lines.append(line)
+	# A charred bed under each crack, then the glow in it.
+	_ground_strips(art, lines, 3.2, Look.trim("scorch"), 0.08, true)
+	_ground_strips(art, lines, 0.6, Look.trim("crack"), 0.12, true)
+
+
+## Draws each polyline as short boxes laid on the ground and tipped with it,
+## in one MultiMesh. `taper` narrows a line toward its far end.
+func _ground_strips(art: Node3D, lines: Array[PackedVector2Array], width: float, material: Material, lift: float, taper := false) -> void:
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	var box := BoxMesh.new()
+	box.size = Vector3(1.0, 0.1, 1.0)
+	box.material = material
+	mm.mesh = box
+	var placed: Array[Transform3D] = []
+	for line in lines:
+		for i in line.size() - 1:
+			var a := line[i]
+			var b := line[i + 1]
+			var mid := (a + b) * 0.5
+			if _crack_blocked(mid):
+				continue
+			var pa := terrain.on_ground(a.x, a.y)
+			var pb := terrain.on_ground(b.x, b.y)
+			var along := pb - pa
+			var t := float(i) / maxf(line.size() - 1, 1)
+			var w := width * (lerpf(1.0, 0.35, t) if taper else 1.0)
+			var forward := along.normalized()
+			var right := forward.cross(Vector3.UP).normalized()
+			var up := right.cross(forward)
+			var basis := Basis(right * w, up, forward * (along.length() + 0.3))
+			placed.append(Transform3D(basis, (pa + pb) * 0.5 + up * lift))
+	mm.instance_count = placed.size()
+	for i in placed.size():
+		mm.set_instance_transform(i, placed[i])
+	var node := MultiMeshInstance3D.new()
+	node.multimesh = mm
+	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	art.add_child(node)
+
+
+func _crack_blocked(at: Vector2) -> bool:
+	for solid in _solids:
+		if at.distance_to(solid["at"]) < float(solid["reach"]) + 0.5:
+			return true
+	return false
+
+
+## The skyline: a few huge, simple shapes past the rim, each placed on
+## purpose so the world reads as enormous. A capital ship that came down
+## nose first in the north, each army's smokestacks behind its muster, a
+## megabridge broken in the southwest, a toppled tower in the northeast,
+## and between them the low line of a ruined city. Built from four pieces
+## (hull, stack, pylon, block) used over and over.
+func _dress_horizon(art: Node3D) -> void:
+	var hulk := Look.trim("distant")
+	var floor_y := RIM_HEIGHT - 8.0
+	var at := func(angle_deg: float, reach: float, up := 0.0) -> Vector3:
+		var a := deg_to_rad(angle_deg)
+		return Vector3(cos(a) * reach, floor_y + up, sin(a) * reach)
+	var put := func(size: Vector3, xform: Transform3D) -> void:
+		var node := _slab(size, Vector3.ZERO, hulk)
+		node.transform = xform
+		art.add_child(node)
+	# The capital ship, nose buried, hull rising away to the east.
+	var ship_at: Vector3 = at.call(-95.0, 520.0)
+	var ship := Transform3D(Basis(Vector3.UP, 0.3) * Basis(Vector3.RIGHT, -0.36), ship_at + Vector3(0, 40, 0))
+	put.call(Vector3(46, 30, 300), ship)
+	put.call(Vector3(30, 22, 60), ship * Transform3D(Basis.IDENTITY, Vector3(0, -2, -170)))
+	put.call(Vector3(22, 36, 34), ship * Transform3D(Basis.IDENTITY, Vector3(0, 30, 95)))
+	for side: float in [-1.0, 1.0]:
+		put.call(Vector3(18, 18, 30), ship * Transform3D(Basis.IDENTITY, Vector3(side * 16, -4, 160)))
+	art.add_child(_plume(ship * Vector3(0, 12, 120), 10.0))
+	# Smokestacks, four to an army, behind each muster, joined by a hall.
+	for angle: float in [184.0, -4.0]:
+		var hall_at: Vector3 = at.call(angle, 440.0)
+		var face := Basis(Vector3.UP, -deg_to_rad(angle))
+		put.call(Vector3(40, 34, 120), Transform3D(face, hall_at + Vector3(0, 17, 0)))
+		for n in 4:
+			var height: float = [150.0, 120.0, 135.0, 105.0][n]
+			var stack: Vector3 = hall_at + face * Vector3(0, 0, (n - 1.5) * 30.0)
+			var node := MeshInstance3D.new()
+			var tube := CylinderMesh.new()
+			tube.top_radius = 4.5
+			tube.bottom_radius = 6.5
+			tube.height = height
+			tube.radial_segments = 8
+			tube.material = hulk
+			node.mesh = tube
+			node.position = stack + Vector3(0, height * 0.5, 0)
+			node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			art.add_child(node)
+			if n % 2 == 0:
+				art.add_child(_plume(stack + Vector3(0, height, 0), 4.0))
+	# The megabridge: two pylons, half the deck still up, half fallen.
+	var bridge_at: Vector3 = at.call(130.0, 470.0)
+	var span := Basis(Vector3.UP, -deg_to_rad(130.0) + PI * 0.5)
+	for side: float in [-1.0, 1.0]:
+		put.call(Vector3(26, 160, 26), Transform3D(span, bridge_at + span * Vector3(side * 85, 80, 0)))
+	put.call(Vector3(80, 10, 30), Transform3D(span, bridge_at + span * Vector3(-45, 150, 0)))
+	put.call(Vector3(96, 10, 30), Transform3D(span * Basis(Vector3.BACK, -1.05), bridge_at + span * Vector3(52, 72, 0)))
+	# The toppled tower, leaning on the rim.
+	var tower_at: Vector3 = at.call(-40.0, 470.0)
+	var lean := Basis(Vector3.UP, -deg_to_rad(-40.0)) * Basis(Vector3.BACK, 0.62)
+	put.call(Vector3(48, 240, 48), Transform3D(lean, tower_at + Vector3(0, 90, 0)))
+	put.call(Vector3(56, 12, 56), Transform3D(lean, tower_at + Vector3(0, 90, 0) + lean * Vector3(0, 60, 0)))
+	# Broken pylons in the south, the bridge's sisters.
+	for n in 3:
+		var pylon_at: Vector3 = at.call(70.0 + n * 14.0, 450.0 + n * 25.0)
+		var height: float = [120.0, 75.0, 95.0][n]
+		put.call(Vector3(26, height, 26), Transform3D(Basis(Vector3.UP, n * 0.4), pylon_at + Vector3(0, height * 0.5, 0)))
+	# The ruined city between the set pieces: square blocks, upright, gapped.
+	var landmarks := [-95.0, 184.0, -4.0, 130.0, -40.0, 84.0]
+	var angle := -180.0
+	while angle < 180.0:
+		var near := false
+		for mark: float in landmarks:
+			if absf(wrapf(angle - mark, -180.0, 180.0)) < 16.0:
+				near = true
+		if not near:
+			var width := _art_rng.randf_range(24.0, 44.0)
+			var height := _art_rng.randf_range(30.0, 70.0)
+			var block_at: Vector3 = at.call(angle, _art_rng.randf_range(400.0, 470.0), height * 0.5)
+			var face := Basis(Vector3.UP, -deg_to_rad(angle))
+			put.call(Vector3(width, height, width * 0.7), Transform3D(face, block_at))
+			# Most blocks were shelled: a narrower broken storey left on one side.
+			if _art_rng.randf() < 0.6:
+				var side := _art_rng.randf_range(-0.3, 0.3) * width
+				var storey := _art_rng.randf_range(10.0, 26.0)
+				put.call(Vector3(width * 0.35, storey, width * 0.5), Transform3D(face, block_at + face * Vector3(side, (height + storey) * 0.5, 0)))
+		angle += _art_rng.randf_range(7.0, 11.0)
+
+
+## A tall smoke plume for the skyline: the fire smoke, scaled up to be read
+## from across the map.
+func _plume(at: Vector3, width: float) -> GPUParticles3D:
+	var plume := _smoke(at, width)
+	(plume.draw_pass_1 as QuadMesh).size = Vector2(40, 40)
+	var mat := plume.process_material as ParticleProcessMaterial
+	mat.initial_velocity_min = 7.0
+	mat.initial_velocity_max = 10.0
+	plume.visibility_aabb = AABB(Vector3(-150, -10, -150), Vector3(300, 260, 300))
+	return plume
