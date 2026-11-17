@@ -1484,7 +1484,10 @@ PvP.
    the whole server with a health line in its log.
 2. Before strangers play: encrypted connections.
 3. Before the marketplace: accounts on SQLite, still in one program. The
-   marketplace builds on this and does not wait for official servers.
+   marketplace builds on this and does not wait for official servers. It
+   keeps the `StashService` calls the market uses (`count_of`, `scrip_of`,
+   `take_items`, `give_items`, `change_scrip`) and adds one that runs several
+   of them as a single all-or-nothing transaction, which wraps each trade.
 4. Official servers: the account service as its own program (the deploy,
    bank and settle calls must cope with an answer that comes late or never),
    one program per world, and one Docker Compose setup for all of it. Steam
