@@ -210,7 +210,7 @@ static func _kit_care(t: Node, raid: Raid) -> void:
 	var brain := bot.get_node("Brain") as BotBrain
 	brain.set_physics_process(false)
 	t.check(brain.uses_kit and brain.skill_range == raid.world.raider_skill,
-			"a raider aims like a seasoned player, not like the rim's rookies")
+			"a raider aims from the world's raider skill and looks after its kit")
 	Loadout.equip(bot, ["smg_stinger", "pistol_machine", "knife_gutter", "medkit"])
 	var primary := brain._primary_index()
 	var sidearm := -1

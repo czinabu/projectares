@@ -103,11 +103,21 @@ const ARMIES := {
 ## How likely a soldier is a heavy, and its health, by the risk zone it
 ## arrived in: outer ring, middle, core.
 const HEAVY_CHANCE := [0.1, 0.25, 0.4]
-const SOLDIER_HEALTH := [65.0, 80.0, 95.0]
-const HEAVY_HEALTH := [100.0, 120.0, 140.0]
+const SOLDIER_HEALTH := [125.0, 135.0, 140.0]
+const HEAVY_HEALTH := [250.0, 260.0, 270.0]
+## Army rifles, one round in every zone. Harder than a carbine so a hit gets
+## through a mid kit's plates, and looser and a little slower. Toward the core
+## the soldier changes (more health, higher aim skill), not the cartridge.
+const GUN_DAMAGE := [28.0, 28.0, 28.0]
+const GUN_SPREAD := [1.32, 1.28, 1.4]
+const GUN_INTERVAL := [0.12, 0.12, 0.12]
+## A heavy's swing. Slow and telegraphed (the parry drill). Two hits leave a
+## mid kit nearly dead, and a third ends it, so missing the parry is the loss.
+const HEAVY_DAMAGE := [48.0, 48.0, 48.0]
 ## Gun aim skill by risk zone (`BotBrain.skill`): the outer ring is where new
-## players learn, the core is where the armies' veterans fight.
-const BOT_SKILL := [Vector2(0.15, 0.45), Vector2(0.3, 0.65), Vector2(0.5, 0.85)]
+## players learn, the core is where the armies' veterans fight. The top of
+## the outer band can match a mid kit, which is where the upset comes from.
+const BOT_SKILL := [Vector2(0.36, 0.56), Vector2(0.42, 0.66), Vector2(0.48, 0.72)]
 ## Damage a second the Foundry's molten ground does to whoever stands in it.
 const CORE_BURN := 2.0
 
@@ -178,6 +188,10 @@ func _init() -> void:
 	pod_upgrade_data = 1
 	# Rival raiders, so the field never feels empty of people.
 	raider_count = 4
+	# An equal to the bench's mid kit (skill 0.5), not a cut above it. Flight
+	# and a real kit already make the fight even; aiming like a veteran on
+	# top of that won them most duels.
+	raider_skill = Vector2(0.26, 0.44)
 
 
 func create_map() -> Node3D:
@@ -234,10 +248,11 @@ func raider_kit(rng: RandomNumberGenerator) -> Array[String]:
 	return kit
 
 
-## Bots further in aim better; a warlord keeps the default veteran's aim.
+## Bots further in aim better. A warlord aims like the core's best, and a
+## little past them: the fight is the weapon and the plates, not an aimbot.
 func bot_skill_range(bot: Actor, warlord: bool) -> Vector2:
 	if warlord:
-		return super(bot, warlord)
+		return Vector2(0.62, 0.85)
 	return BOT_SKILL[clampi(int(bot.get_meta("zone", 1)), 0, 2)]
 
 
@@ -296,13 +311,14 @@ func equip_bot(bot: Actor, rng: RandomNumberGenerator) -> void:
 	if heavy:
 		# A heavy charges with a blade. Its swings are slow and telegraphed,
 		# which makes it the enemy to practice parrying on.
-		bot.walk_speed = 5.0
-		bot.sprint_speed = 8.2
+		bot.walk_speed = 5.2
+		bot.sprint_speed = 9.0
 		bot.health.max_health = HEAVY_HEALTH[tier]
 		bot.health.health = HEAVY_HEALTH[tier]
+		bot.set_meta("melee_tempo", 0.85)
 		var blade := MeleeWeapon.new()
 		blade.display_name = kind["weapon"]
-		blade.light_damage = 22.0
+		blade.light_damage = HEAVY_DAMAGE[tier]
 		blade.light_windup = 0.5
 		blade.light_stamina = 0.0
 		blade.reach = 2.6
@@ -312,11 +328,33 @@ func equip_bot(bot: Actor, rng: RandomNumberGenerator) -> void:
 	bot.sprint_speed = 7.0
 	bot.health.max_health = SOLDIER_HEALTH[tier]
 	bot.health.health = SOLDIER_HEALTH[tier]
-	# Their rifles are worn out: weaker, less accurate, and break when they die.
+	# Harder-hitting than a carbine and looser, and they break when the
+	# soldier dies. A burst through a mid kit's plates can end the fight.
 	var gun := Gun.new()
 	gun.display_name = kind["weapon"]
-	gun.damage = 6.0
-	gun.spread_deg = 3.0
-	gun.fire_interval = 0.16
+	gun.damage = GUN_DAMAGE[tier]
+	gun.spread_deg = GUN_SPREAD[tier]
+	gun.fire_interval = GUN_INTERVAL[tier]
 	gun.reserve_ammo = 600
 	bot.equip_weapon(gun)
+
+
+## A warlord is not a soldier with more health. The same worn rifle could not
+## kill a mid kit before the carbine chewed through the extra plates, so the
+## boss carries a kept gun (or a cleaver that lands) and real armor. Health is
+## a fixed pool: a heavy's and a rifleman's warlord are the same fight's
+## length, and which weapon they rolled still decides how it feels.
+func make_warlord(bot: Actor) -> void:
+	bot.display_name = "Warlord"
+	bot.health.max_health = 280.0
+	bot.health.health = 280.0
+	bot.health.set_armor(48.0)
+	var gun := bot.get_active_weapon() as Gun
+	if gun:
+		gun.damage = 27.0
+		gun.spread_deg = 0.25
+		gun.fire_interval = 0.12
+	var blade := bot.get_active_weapon() as MeleeWeapon
+	if blade:
+		blade.light_damage = 44.0
+		blade.reach = 2.8

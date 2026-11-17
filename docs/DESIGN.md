@@ -249,11 +249,13 @@ and the field never feels like it is only soldiers.
   stuck on, and a jetpack wearer takes to the air in a gunfight, hovering
   on held aim. This settles "should bots fly?" for raiders only; the armies
   stay on foot.
-- **They look after their kit.** A raider aims like a seasoned player
-  (`WorldDef.raider_skill`), not like the rim's rookies; runs a dry
-  primary onto its sidearm and goes back to the primary and a fresh mag
-  between fights; draws its blade once every gun is dry; and heals from its
-  pack when hurt and clear of trouble.
+- **They look after their kit.** A raider aims from `raider_skill`. On
+  Ashfront that sits a little under a mid kit: the real guns, the plates and
+  the jetpack hop already make the duel even, and a veteran's aim on top of
+  that won most of them. A raider runs a dry primary onto its sidearm and
+  goes back to the primary and a fresh mag between fights; draws its blade
+  once every gun is dry; and heals from its pack when hurt and clear of
+  trouble.
 - **They get out, or die trying.** After a few minutes, or with a full
   pack, a raider stops and signs out, and a fight starts the countdown
   over. Killed, it drops its whole kit and haul in a bag, like a player.
@@ -291,12 +293,47 @@ damage, aim skill) until each type sits in its band, then check by playing.
 A bot at 0.5 is not a person: a good player aims better, uses cover and
 parries on purpose. The reference skill should be set so the bench agrees
 with how fights feel in play, and the bands moved only on Caleb's call.
+Duels simulate every tick, the same as a fight a player is standing in.
 
 **First measurement (40 duels each, 12 m and 25 m).** Every army type
-loses every duel (soldiers in 7-10 s, heavies in 4-6 s, the reference
-keeping about 90% health); warlords lose 93%; raiders win about 70%. Time
-to kill is long all round, which points at weapon feel and hit rates as
-much as at enemy numbers.
+lost every duel (soldiers in 7-10 s, heavies in 4-6 s, the reference
+keeping about 90% health); warlords lost about 90%; raiders won about 70%.
+Time to kill was long all round.
+
+The army rifle was the cause for the soldiers and the warlord. It dealt 6
+damage into 85 armor, so a connect took about 2 health, and a soldier died
+having landed one or two shots. A warlord was that same rifle with triple
+health, so the carbine still finished first. Both
+sides also hipfired while strafing, and the aim wandered by more than a body
+is wide at rifle range, which is why a handful of carbine hits took 7-10 s.
+Heavies died on the way in, before the slow swings could land. Raiders stacked
+a higher aim roll, a real kit and a jetpack hop, so they won most duels
+against an equal gun.
+
+The pass does not inflate anyone into a different creature. Gun bots aim
+down sights while they are on the ground, and settled aim is a little
+tighter, so skill still decides who hits and fodder dies in about 5 s.
+Army rifles hit at 28, hard enough to matter through plates, with health and
+aim skill rising toward the core. Heavies have the health to arrive and a
+swing that nearly drops a mid kit in two hits. Raiders aim a little under the
+reference. A warlord carries a kept gun or a cleaver, 280 health and 48
+armor, not a worn rifle with a health multiplier.
+
+**After the pass (40 duels, seed 1, 12 m and 25 m).** Reference-player win
+rate, time to kill on a win, and health left. Every row is inside its band.
+
+| Enemy | 12 m | 25 m | Health left |
+| --- | --- | --- | --- |
+| Outer soldier | 90% in 5.2 s | 88% in 5.8 s | 74-76% |
+| Core soldier | 75% in 5.1 s | 68% in 5.7 s | 64-72% |
+| Outer heavy | 85% in 4.9 s | 80% in 5.4 s | 36-58% |
+| Core heavy | 70% in 5.2 s | 72% in 6.6 s | 28-44% |
+| Rival raider | 52% in 10.2 s | 50% in 14.3 s | 63-66% |
+| Warlord | 20% in 5.8 s | 32% in 7.1 s | 32-36% |
+
+Raider fights run longer than the others because both sides wear plates and
+stop to use a medkit. A warlord's loss, when the player does win, takes
+about 6-7 s and leaves the player around a third health.
 
 ### World events
 
