@@ -141,6 +141,11 @@ static func run(t: Node) -> void:
 				dressed += 1
 				skins[bot.get_meta("look", "")] = true
 		t.check(dressed == raid.bots.size(), tag + "every bot wears a model")
+		if world.bot_count == 0 or not world.weapons_free:
+			# A race world: no bots, no caches and nobody to hurt.
+			raid.queue_free()
+			await t.frames(2)
+			continue
 		t.check(not skins.has("") and not skins.is_empty(), tag + "the world picks its bots' skins")
 		var gun := raid.player.weapons[0] as Gun
 		t.check(gun != null and gun.visual.get_node_or_null("Model") != null, tag + "the rifle has a gun model")

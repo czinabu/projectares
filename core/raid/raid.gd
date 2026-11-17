@@ -980,7 +980,7 @@ func add_player(p_kit: Array = [], p_mastery: Dictionary = {}, p_name := "Raider
 		at += Vector3(rng.randf_range(-2.5, 2.5), 0, rng.randf_range(-2.5, 2.5))
 	actor.global_position = _stand(at)
 	Loadout.equip(actor, state.kit)
-	actor.weapons_locked = world.safe_zone
+	actor.weapons_locked = world.safe_zone or not world.weapons_free
 	state.actor = actor
 	state.owner = p_owner if p_owner != "" else "#%d" % actor.get_instance_id()
 	if mode != Mode.CLIENT:
@@ -2621,6 +2621,13 @@ func _finish_player(state: PlayerState, outcome: String, cause: String, killed_b
 	# A heavy weapon in the chamber comes home on a sign-out (and counts as
 	# lost on a death). One that was banked is already in `state.banked` and
 	# off the body. Death still leaves the gun on a rack beside the bag.
+	if not world.gear_at_risk:
+		# Nothing left the stash, so nothing comes home or is lost (a race
+		# machine ridden out is the track's, not yours).
+		loot.clear()
+		kept.clear()
+		brought_home.clear()
+		lost.clear()
 	var result := {
 		"outcome": outcome,
 		"cause": cause,

@@ -130,6 +130,12 @@ rows marked **pre-playtest** come before the friends playtest.
 
 | Item | State | Notes |
 | --- | --- | --- |
+| Race world with a Street circuit and time trials | Built | Meridian (`worlds/meridian`), run by `Race` (`core/race/`): the Coilrun circuit, pit bays of stock Scrapper and Raider machines on race profiles, a grid with five lights, checkpoint arches with splits, a lap that leaves the track not counted, a reset out of the Spillway channel, the pit board, best-lap ghosts saved per machine, the race icon on the watch and the lap on the visor. Solo and online. |
+| Time-trial bench (3% class rule) | Built | `tests/race_bench.tscn`; Street is Scrapper +1.05%, Raider −1.05% of the class average on Coilrun. |
+| Live races: several racers on one grid, positions on the watch | Missing | Next step for the race world. |
+| Ranked races with scrip and cosmetic rewards | Missing | Stock machines only. With live races. |
+| Rough ground that slows wheels (the Capacitor Yard's inside line) | Missing | The rubble there is only scattered dressing for now. |
+| More race classes (rovers, mechs) and more tracks | Missing | |
 | Racing mode: mixed bike-and-flight races, sky ring races, our own hazards and secrets | Missing | A later mode, after the friends playtest (DESIGN.md section 9). |
 
 ## Economy

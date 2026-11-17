@@ -1108,6 +1108,43 @@ shortcuts are invented for our tracks.
 - Weakness-and-counter applies here too: no rig or vehicle should win every
   course.
 
+### The race world: Meridian (Caleb's go-ahead)
+
+Racing's first home is a world of its own, Meridian: salt flats round an old
+power station, reached through the plaza's gates and portals like any world.
+Nothing is at stake there (`gear_at_risk` and `weapons_free` off): you bring
+nothing of your own and take nothing home, and nobody can hurt anybody.
+
+- **Classes.** Every track names a class, and only that class's machines
+  race it. The first is Street: the Scrapper Bike and the Raider Hoverbike.
+  Rovers and mechs, and sky courses for rigs, are classes still to come.
+- **Stock machines, race profiles.** The machines are the track's, waiting
+  in the pit bays, never the rider's own (toys stay on the watch here). Each
+  vehicle item carries a race profile (`ItemDB.RACE_*`, its `race` stat)
+  that replaces its combat tuning on the track, so changing a bike for the
+  warzone never moves a lap time. Ranked racing will use these same stock
+  machines, so a race is decided by the rider.
+- **Balance is measured.** The time-trial bench (`tests/race_bench.tscn`)
+  drives every machine of a class round every track at its limits and
+  flags any whose best lap is more than 3% off the class average. Each
+  machine keeps its character inside that: the Scrapper corners and brakes
+  harder and must take the Spillway's ramp, the Raider is quicker flat out,
+  drifts, and can float over the gap.
+- **Time trials first.** Getting on a bay machine puts you on the grid under
+  five lights; three laps through the checkpoint arches, a lap that leaves
+  the track is timed but not counted, and a machine that falls into the
+  channel is put back at the last checkpoint. Your split is written on each
+  arch, the best laps on the pit board, and your best lap on each machine
+  runs beside you as a ghost of hard light. The watch's contract icon is the
+  race icon here (restart, ghost on or off, stop), and the visor's
+  objective line carries the lap.
+- **Rewards are cosmetic.** For now only the board's times. Scrip and
+  cosmetic rewards come with live races.
+
+The first track is Coilrun, a Street circuit of about 1.6 km: the long
+straight past the pits, the Crest, the Capacitor Yard's esses, the
+Spillway gap and the sweep round the cooling tower.
+
 ## 10. Economy and progression
 
 ### The core rule (Caleb's call)

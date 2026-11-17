@@ -184,6 +184,13 @@ var local_only := false
 var _model: Node3D
 ## How far the bike leans into a turn, in radians (positive leans right).
 var lean := 0.0
+## Held for a race's lights (`Race`): the rider's throttle, steering and
+## boost do nothing until it is let go. Set on every machine that simulates
+## the ride, from the run, so it predicts online.
+var held := false
+## The race profile: tuning that replaces the stats above in a race world
+## (`apply_race_profile`), so combat tuning never moves a lap time.
+var race := {}
 var _seat: Seat
 ## The pillion seat's anchors, riding on the model (`ride_anchor`).
 var _pillion: Pillion
@@ -202,6 +209,15 @@ func setup(p_item_id: String) -> void:
 			set(key, stats[key])
 		else:
 			push_warning("Vehicle: no property '%s' for %s" % [key, p_item_id])
+
+
+## Puts the race profile's tuning in place of the item's own. Called by a
+## `Race` on every machine it spawns, on every machine that runs the race.
+func apply_race_profile() -> void:
+	for key: String in race:
+		if key in self and key != "race":
+			set(key, race[key])
+	floor_max_angle = deg_to_rad(max_slope)
 
 
 func _ready() -> void:
@@ -859,9 +875,9 @@ func _physics_process(delta: float) -> void:
 		else:
 			# Online, a client predicting its own ride leaves getting off to
 			# the server, and the press still has to reach it.
-			throttle = clampf(cmd.move.y, -1.0, 1.0)
-			steer = clampf(cmd.move.x, -1.0, 1.0)
-			boosting = cmd.sprint
+			throttle = clampf(cmd.move.y, -1.0, 1.0) if not held else 0.0
+			steer = clampf(cmd.move.x, -1.0, 1.0) if not held else 0.0
+			boosting = cmd.sprint and not held
 			lift = (1.0 if cmd.jump else 0.0) - (1.0 if cmd.descend else 0.0)
 			hop = cmd.jump_pressed
 

@@ -279,7 +279,8 @@ func _ready() -> void:
 	# Vehicles. Not carried: the Raid parks one next to you when you deploy, and
 	# whoever signs out riding it takes it home. Stats tune Vehicle.
 	register("bike_scrapper", "Scrapper Bike", Rarity.UNCOMMON, 600, ["vehicle", "vendor"],
-			{"max_speed": 22.0, "boost_speed": 29.0, "body_color": Color(0.6, 0.45, 0.3)},
+			{"max_speed": 22.0, "boost_speed": 29.0, "body_color": Color(0.6, 0.45, 0.3),
+			"race": RACE_SCRAPPER},
 			"Rattly motorbike. Fast, loud, and no cover for the rider.")
 	# The Raider is a hoverbike: the "hover" tag floats it (`Vehicle`, "Hover").
 	# Against the Scrapper it is a little quicker and glides over rough ground
@@ -295,7 +296,7 @@ func _ready() -> void:
 			"grip_points": [Vector3(-0.3, 1.3, -0.42), Vector3(0.3, 1.3, -0.42)] as Array[Vector3],
 			"peg_points": [Vector3(-0.36, 0.74, -0.04), Vector3(0.36, 0.74, -0.04)] as Array[Vector3],
 			"passenger_seat": true, "body_color": Color(0.85, 0.2, 0.15),
-			"footprint": Vector3(1.3, 1.3, 2.8), "watch_recharge": 10.0},
+			"footprint": Vector3(1.3, 1.3, 2.8), "watch_recharge": 10.0, "race": RACE_RAIDER},
 			"Two-seat hoverbike. Floats over rough ground and short gaps and drifts through turns. "
 			+ "Brakes and climbs worse than wheels, and carries a passenger behind you.")
 	# The rest of the agreed roster (DESIGN.md section 8), at a first,
@@ -575,6 +576,21 @@ func summarize(ids: Array) -> String:
 ## 40 m ceiling, cruises at 14 and boosts at 18 m/s. Cools in 4 s on the
 ## ground. Steady in the air (+10% spread), half fall damage, clumsy under a
 ## roof, seen 120 m away on scans and thermal.
+## Race profiles (DESIGN.md section 9): the tuning a vehicle races on in a
+## race world, set on it by `Vehicle.apply_race_profile`, so combat balance
+## never moves a lap time. Every Street machine lands within 3% of its class
+## average round Coilrun; `tests/race_bench.gd` measures it. Each keeps its
+## own character: the Scrapper corners and brakes harder, the Raider is
+## quicker flat out and drifts.
+const RACE_SCRAPPER := {
+	"max_speed": 27.0, "boost_speed": 34.0, "accel": 16.0, "turn_rate": 2.5,
+	"full_turn_speed": 6.0, "brake_decel": 32.0, "coast_decel": 4.0,
+}
+const RACE_RAIDER := {
+	"max_speed": 28.0, "boost_speed": 35.0, "accel": 16.0, "turn_rate": 2.4,
+	"full_turn_speed": 5.0, "brake_decel": 22.0, "coast_decel": 2.5,
+}
+
 const JETPACK_MK1 := {
 	"thrust_accel": 36.0, "max_rise_speed": 8.0, "fly_speed": 14.0, "boost_speed": 18.0,
 	"heat_per_sec": 12.5, "hover_heat_mult": 1.0, "cruise_heat_mult": 1.0, "climb_heat_mult": 1.5,
