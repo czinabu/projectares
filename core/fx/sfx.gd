@@ -34,6 +34,8 @@ func _ready() -> void:
 	# A round striking the world near you, and the hit marker's own voices:
 	# a bright ping for a head, a dull tick for plates soaking it, and a
 	# glassy crack when the plates give out.
+	# A soldier calling out a target: a short rising radio chirp.
+	_streams["alert"] = _tones([740.0, 1110.0, 1480.0], 0.22, 9.0, 0.35)
 	_streams["impact"] = _noise_burst(0.05, 70.0, 0.95, 420.0)
 	_streams["headshot"] = _tones([2250.0, 3380.0], 0.13, 24.0, 0.4)
 	_streams["armor_hit"] = _tones([1050.0, 1580.0], 0.06, 55.0, 0.3)

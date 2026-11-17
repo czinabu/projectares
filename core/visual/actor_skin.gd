@@ -19,6 +19,9 @@ const GAITS: Array[String] = ["walk", "run", "run_back", "run_left", "run_right"
 const STANDS: Array[String] = ["idle", "idle_gun", "aim_gun", "idle_melee"]
 
 ## Drawn cloaked now (see `_update_cloak`), and the shared shimmer material.
+## How long a soldier's gun must have been down before raising it barks.
+var bark_calm := 4.0
+var _calm_for := 0.0
 var _cloaked := false
 ## The weapon model being drawn as it materializes (a watch summon), if any.
 var _materializing: Node3D
@@ -610,6 +613,7 @@ func _update(delta: float) -> void:
 	_update_cloak()
 	_update_materialize()
 	_update_toy(delta)
+	_update_bark(delta)
 	_aim_left = maxf(_aim_left - delta, 0.0)
 	var weapon := actor.get_active_weapon()
 	if phone_up() or toy_up():
@@ -2930,3 +2934,18 @@ func _hang(part: Node3D, holder_name: String, bone_name: String, offset: Vector3
 	holder.set_meta("rest", holder.transform)
 	holder.set_meta("up", bone_at.basis.inverse() * Vector3.UP)
 	return attach
+
+
+## A soldier who brings a gun up after a quiet spell calls it out: the tell
+## that comes before its first shot (`BotBrain` raises the aim halfway
+## through its reaction). Read from the command, so every view hears it;
+## only bots (they carry a "zone") bark. View only.
+func _update_bark(delta: float) -> void:
+	if not actor.has_meta("zone") or actor.is_dead:
+		return
+	if not actor.cmd.secondary:
+		_calm_for += delta
+		return
+	if _calm_for >= bark_calm and actor.get_active_weapon() is Gun:
+		Sfx.play("alert", actor.get_eye_position(), -2.0, 45.0)
+	_calm_for = 0.0
