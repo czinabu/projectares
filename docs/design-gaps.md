@@ -165,4 +165,5 @@ rows marked **pre-playtest** come before the friends playtest.
 | Official versus friends' servers | Missing | Every server keeps its own accounts; your own server takes on your solo profile. |
 | Steam login | Missing | Name plus a secret the game makes. |
 | Matchmaker, plaza shards, hiding unseen enemies | Missing | Later, when numbers call for it. |
-
+| Official servers before Steam: recovery code, one-time Steam link | Missing | Accounts are tied to the computer whose game made the secret. |
+| Smooth travel: auto-reconnect, official servers by default, account shown, no full-world dead end, update link on a version mismatch | Missing | See DESIGN.md section 14, "Smooth for the player". |

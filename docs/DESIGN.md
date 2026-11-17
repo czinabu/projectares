@@ -1405,8 +1405,6 @@ servers after that.
 
 Caleb's calls, still open:
 
-- Do official servers open before the game is on Steam? If so, they sign in
-  with the name and secret, encrypted, until Steam login (section 14).
 - Are the balance pass's Mk1 numbers (section 5) right? To tune by feel in
   the playtest, on the base's flight course.
 - Should the armies' bots fly? (Rival raiders do, section 2.)
@@ -1458,6 +1456,12 @@ GodotSteam (MIT), checked on the server with the store's web service. That
 brings account recovery, bans and protection against stolen accounts.
 Friends' servers can keep the name and secret.
 
+Official servers open before the game is on Steam (Caleb's call), once
+connections are encrypted, signing in with the name and secret. A recovery
+code on the phone (Settings) moves an account to another computer. When
+Steam login arrives, the game ties the account it already holds to the
+player's Steam account once, so nobody loses progress.
+
 **Scaling.** On official servers each world runs as its own program, since
 Godot runs a game loop on one thread and separate programs are how a server
 uses more cores, and one crash then takes down one world. Routes name an
@@ -1494,3 +1498,21 @@ PvP.
    login once the game is on Steam.
 5. Only when the numbers call for it: a matchmaker, plaza shards, a hosting
    service, and not sending players enemies they cannot see.
+
+**Smooth for the player.** Every step is held to these:
+
+- **Reconnect on its own.** After a drop the game quietly reconnects and
+  puts you back in your body; no button (part of reconnecting, step 1).
+- **Official servers by default.** The base's door and the Servers app go to
+  them with no address to type; an address is only for a friend's server.
+- **Always say which account you are on.** The phone and the base name it
+  (solo, a friend's server, official), so separate stashes never look like
+  lost gear.
+- **No dead end when a world is full.** Send the player to another instance,
+  or say how long the wait is.
+- **A version mismatch points to the update**, not just an error.
+- **Certificate warnings never show on official servers**; they use a real
+  certificate.
+- **Travel between worlds within about 3 s**, measured by the whole-server
+  bench.
+- **A taken name asks for another one** on the phone, never just a refusal.
