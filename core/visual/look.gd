@@ -129,7 +129,7 @@ const SKINS := {
 	# on its back ("vent": bone, height share, size; the weak spot), a cannon
 	# on top ("cannon": bone) that draws a tracking beam while it aims ("beam").
 	"walker": {
-		"scenes": ["Leela.glb", "Mike.glb"], "height": 2.75, "tint": Color(0.5, 0.5, 0.52),
+		"scenes": ["Leela.glb"], "height": 2.75, "tint": Color(0.5, 0.5, 0.52),
 		"saturation": 0.6, "army_paint": 0.35,
 		"vent": ["Chest", 0.62, Vector2(0.55, 0.46)], "cannon": "Chest", "beam": true,
 		"anims": {"idle": "Idle", "walk": "Walk", "run": "Run", "death": "Death", "attack": "Shoot"},

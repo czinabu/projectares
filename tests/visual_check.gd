@@ -1656,20 +1656,12 @@ func _heavy_shots(out_dir: String) -> void:
 	var picks := [["soldier", "legion"], ["soldier", "tide"], ["exo", "legion"], ["exo", "tide"],
 			["walker", "legion"], ["walker", "tide"]]
 	var next_seed := 10
-	var used := {}
 	for pick: Array in picks:
 		var bot: Actor = null
 		for i in 600:
 			next_seed += 1
 			var b := raid.spawn_bot("Line%d" % next_seed, origin + Vector3(0, 0, 0), next_seed, false, pick[1], 2)
-			# The two walkers in different models (the skin picks by name).
-			var model := ""
-			if pick[0] == "walker":
-				var scenes: Array = Look.SKINS["walker"]["scenes"]
-				model = scenes[hash(String(b.name)) % scenes.size()]
-			if b.get_meta("kind", "") == pick[0] and not used.has(model):
-				if model != "":
-					used[model] = true
+			if b.get_meta("kind", "") == pick[0]:
 				bot = b
 				break
 			raid.bots.erase(b)
