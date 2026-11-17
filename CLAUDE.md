@@ -816,11 +816,13 @@ without Caleb, and update the gap list when a PR closes a row.
   `NetSession.UPDATE_URL` from the phone's Servers app. `server_relay` is
   off: clients only talk to the server. Every `any_peer` RPC starts with
   `_allow(kind)` (`NetSession.RequestLimits`, per player, refilled by server
-  tick), and a new one must too. Server saves go through
-  `core/account/safe_file.gd` (written whole, then swapped in), and the
+  tick), and a new one must too. Server saves that are files (clans, phone
+  records, the JSON fallback) go through `core/account/safe_file.gd`
+  (written whole, then swapped in); accounts are in SQLite (below). The
   `StashService` keeps rolling backups of the whole save folder
-  (`backup_if_due`, `backup_dir`). An account file that cannot be read is
-  never replaced by a new account.
+  (`backup_if_due`, `backup_dir`), the database copied with
+  `AccountStore.backup_to`, never as the live file. An account that cannot
+  be read is never replaced by a new account.
 - Online movement: a client numbers every input and each packet repeats
   every input the server has not received yet (up to
   `NetSession.MAX_INPUTS_PER_PACKET`, packed small by `pack_inputs` so a
