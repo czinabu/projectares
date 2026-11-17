@@ -442,6 +442,14 @@ func _ready() -> void:
 	actor.hit_confirmed.connect(_on_hit_confirmed)
 	actor.flight.burst_fired.connect(_on_burst)
 	actor.landed.connect(_on_landed)
+	_mark_storm()
+
+
+## Faction rim and a lighter fog on this body, its gear and its weapons.
+func _mark_storm() -> void:
+	if actor == null or look == null:
+		return
+	look.mark_storm_readable(actor, look.storm_accent(actor.body_color))
 
 
 func _find_animation(wanted: String) -> String:
@@ -969,6 +977,7 @@ func _dress_weapons() -> void:
 			look.mount_attachments(weapon.visual)
 		elif weapon is MeleeWeapon:
 			look.restyle_melee(weapon.visual)
+	_mark_storm()
 	if _detail_every > 1:
 		_gear_shadows(false)
 
@@ -992,6 +1001,7 @@ func _update_stowed() -> void:
 		# can start from it.
 		if weapon.visual != null and not actor.is_dead and not _stowed.has(weapon):
 			_stowed[weapon] = _stow(weapon)
+			_mark_storm()
 	# Riding, what is slung on the back moves up it, clear of the seat.
 	var lift := ride_sling_lift * (smoothstep(0.0, 1.0, locomotion.ride_weight) if locomotion else 0.0)
 	for weapon: Variant in _stowed:
@@ -2342,6 +2352,7 @@ func _wear_rig(id: String) -> void:
 			flame.visible = false
 			nozzle.add_child(flame)
 			_flames.append(flame)
+	_mark_storm()
 
 
 ## Hangs a rig part on a bone so it moves with the body (see `_hang`).

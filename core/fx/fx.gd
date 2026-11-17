@@ -3,6 +3,21 @@ extends RefCounted
 ## Throwaway greybox effects. Skipped entirely on a headless server.
 
 
+## A shot, bright enough to bloom and drawn with no fog, so a muzzle line
+## still shows who fired when the storm is up. Walls still hide it.
+static func shot_material(color: Color, alpha := 1.0) -> StandardMaterial3D:
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	if alpha < 0.999:
+		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.albedo_color = Color(color.r * 1.6, color.g * 1.6, color.b * 1.6, alpha)
+	mat.emission_enabled = true
+	mat.emission = color
+	mat.emission_energy_multiplier = 2.0
+	mat.disable_fog = true
+	return mat
+
+
 static func tracer(parent: Node, from: Vector3, to: Vector3, color := Color(1.0, 0.85, 0.4)) -> void:
 	if parent == null or not parent.is_inside_tree() or DisplayServer.get_name() == "headless":
 		return
@@ -11,10 +26,7 @@ static func tracer(parent: Node, from: Vector3, to: Vector3, color := Color(1.0,
 		return
 	var mesh := BoxMesh.new()
 	mesh.size = Vector3(0.03, 0.03, length)
-	var mat := StandardMaterial3D.new()
-	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	mat.albedo_color = color
-	mesh.material = mat
+	mesh.material = shot_material(color)
 	var node := MeshInstance3D.new()
 	node.mesh = mesh
 	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -51,7 +63,7 @@ static func beam(parent: Node, from: Vector3, to: Vector3, color: Color, life :=
 	mesh.height = length
 	mesh.radial_segments = 6
 	mesh.rings = 1
-	var mat := _glow_mat(Color(color.r, color.g, color.b, 0.9))
+	var mat := shot_material(color, 0.9)
 	mesh.material = mat
 	var node := MeshInstance3D.new()
 	node.mesh = mesh
@@ -76,7 +88,7 @@ static func trail(parent: Node, from: Vector3, to: Vector3, color: Color) -> voi
 		return
 	var mesh := BoxMesh.new()
 	mesh.size = Vector3(0.08, 0.08, length)
-	var mat := _glow_mat(Color(color.r, color.g, color.b, 0.7))
+	var mat := shot_material(color, 0.7)
 	mesh.material = mat
 	var node := MeshInstance3D.new()
 	node.mesh = mesh

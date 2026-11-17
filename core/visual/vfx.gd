@@ -3,17 +3,25 @@ extends RefCounted
 ## and the skins call these, and only when there is a screen to draw on.
 
 
-static func muzzle_flash(parent: Node, at: Vector3, dir: Vector3) -> void:
-	var root := Node3D.new()
-	parent.add_child(root)
-	var up := Vector3.RIGHT if absf(dir.y) > 0.99 else Vector3.UP
-	root.look_at_from_position(at, at + dir, up)
+## The flash itself: additive, unshaded, and not swallowed by fog, so a
+## shot still points at who fired. Depth testing stays on.
+static func flash_material() -> StandardMaterial3D:
 	var mat := StandardMaterial3D.new()
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
 	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 	mat.albedo_color = Color(3.0, 1.9, 0.7)
+	mat.disable_fog = true
+	return mat
+
+
+static func muzzle_flash(parent: Node, at: Vector3, dir: Vector3) -> void:
+	var root := Node3D.new()
+	parent.add_child(root)
+	var up := Vector3.RIGHT if absf(dir.y) > 0.99 else Vector3.UP
+	root.look_at_from_position(at, at + dir, up)
+	var mat := flash_material()
 	var roll := randf() * TAU
 	for i in 3:
 		var quad := QuadMesh.new()
@@ -32,8 +40,8 @@ static func muzzle_flash(parent: Node, at: Vector3, dir: Vector3) -> void:
 		root.add_child(node)
 	var light := OmniLight3D.new()
 	light.light_color = Color(1.0, 0.75, 0.4)
-	light.light_energy = 3.0
-	light.omni_range = 7.0
+	light.light_energy = 5.0
+	light.omni_range = 11.0
 	light.shadow_enabled = false
 	root.add_child(light)
 	parent.get_tree().create_timer(0.045).timeout.connect(root.queue_free)

@@ -187,6 +187,18 @@ headquarters, in the order they are built:
 
 - The endless warzone (see `CLAUDE.md`): armies, strongpoints, war intensity,
   events, renown and bounties.
+- **The war's storm stays readable.** Intensity still closes the horizon in
+  (deeper colour, a lower sun, smoke over the fighting) but it must not
+  white out a fight. Depth fog does not start inside engagement range and
+  is not solid there; figures and their gear keep less of that fog up close
+  and take the full fog once they are far, with a faction rim in the same
+  teal / pink energy glow as the guns. Shots ignore the fog so a tracer
+  still shows who fired. The knobs live on `Look` (`storm_fog_begin_min`,
+  `storm_fog_solid_min`, `storm_depth_amount_cap`, `storm_fog_density_cap`,
+  `storm_fog_height_max`, `storm_height_density_cap`, `storm_follow`,
+  `actor_fog_clear`, `actor_fog_full`, `actor_fog_min`, `actor_rim_strength`,
+  `column_clear_near`, `column_clear_far`). Ashfront's own calm and war
+  moods set the distances; `Look.soften_storm` enforces the floor.
 - Full loot on death.
 - The only place heavy weapons are found.
 - Mid-map bank spots and sign-out create the extraction tension (section 7).

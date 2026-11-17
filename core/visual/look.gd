@@ -14,6 +14,7 @@ extends Node
 
 const SURFACE_SHADER := preload("res://assets/shaders/surface.gdshader")
 const SKY_SHADER := preload("res://assets/shaders/sky.gdshader")
+const STORM_COLUMN_SHADER := preload("res://assets/shaders/storm_column.gdshader")
 const GEAR_SHADER := preload("res://assets/shaders/gear.gdshader")
 const MELEE_SHADER := preload("res://assets/shaders/melee.gdshader")
 const ActorSkin := preload("res://core/visual/actor_skin.gd")
@@ -156,6 +157,39 @@ const GUN_LENGTH := 0.72
 ## False on a headless server: nothing is dressed and no art is loaded.
 var enabled := DisplayServer.get_name() != "headless"
 
+## Storm readability. A hot war may close the horizon in; it must not turn
+## the fight into a brown wall. Depth fog (a mood that sets `fog_depth_end`)
+## cannot start closer than `storm_fog_begin_min` and cannot be solid closer
+## than `storm_fog_solid_min`. Godot multiplies that 0–1 curve by
+## `fog_density`, which `storm_depth_amount_cap` keeps under a full wipe.
+## An exponential war mood, which hazes every distance at once, is capped
+## at `storm_fog_density_cap`. Height fog stays a layer on the ground.
+## Distances are meters. Tuned in DESIGN.md, "The war's storm".
+var storm_follow := 0.22
+var storm_fog_begin_min := 28.0
+var storm_fog_solid_min := 110.0
+var storm_depth_amount_cap := 0.9
+var storm_fog_density_cap := 0.0055
+var storm_fog_height_max := 1.6
+var storm_height_density_cap := 0.2
+## Actors keep `actor_fog_min` of the fog inside `actor_fog_clear`, and the
+## world's full fog by `actor_fog_full`. A near fight stays readable and a
+## far figure still disappears, so this is not a wallhack. The faction rim
+## is strongest between those two distances.
+var actor_fog_clear := 16.0
+var actor_fog_full := 72.0
+var actor_fog_min := 0.2
+var actor_rim_strength := 0.75
+## Smoke over a fight fades out this close to the camera. The cards are
+## `column_card` metres across; there are `column_particles` of them.
+var column_clear_near := 14.0
+var column_clear_far := 36.0
+var column_particles := 80
+var column_card := 12.0
+var column_glow := 1.8
+
+var _storm_globals_ready := false
+
 var _materials := {}
 var _noise: NoiseTexture2D
 var _gear_materials := {}
@@ -175,6 +209,7 @@ var draw_distance_cap := 380.0
 
 
 func _ready() -> void:
+	_add_storm_globals()
 	get_tree().node_added.connect(_on_node_added)
 	if enabled:
 		UiTheme.apply()
@@ -310,8 +345,18 @@ func _noise_texture() -> NoiseTexture2D:
 
 ## Sky, fog, sun and post-processing for a map. Keys, all optional:
 ##   sky (hdr file name), sky_tint, sky_energy, sky_saturation, sky_rotation,
-##   fog_color, fog_density, sun_color, sun_energy, sun_angles (degrees),
+##   fog_color, fog_density, fog_depth_begin, fog_depth_end, fog_depth_curve,
+##   fog_height, fog_height_density, haze_height,
+##   sun_color, sun_energy, sun_angles (degrees),
 ##   ambient_color, ambient_energy, exposure, saturation, contrast, glow.
+## `fog_depth_end` above `fog_depth_begin` selects depth fog: nothing until
+## the begin distance, solid (times `fog_density`) at the end. Godot
+## multiplies that curve by `fog_density`, so in depth mode density is an
+## opacity at the far end (about 0.6 to 0.9), not the small exponential
+## number. Without a depth range, `fog_density` is exponential. Height fog
+## is a ground layer under `fog_height` and never replaces the depth falloff
+## above it. The war end of a blend is passed through `soften_storm`, so a
+## mood cannot ask for a whiteout.
 ## `war` holds the same keys for the same place in the middle of a battle.
 ## When it is given, the mood blends from `p` towards it as the map's
 ## "war_intensity" meta climbs from 0 to 1, and a column of smoke stands over
@@ -374,8 +419,9 @@ func atmosphere(parent: Node3D, p := {}, war := {}) -> void:
 		return
 	var mood := WarMood.new()
 	mood.name = "WarMood"
+	mood.follow = storm_follow
 	mood.calm = calm
-	mood.war = mood_values(war, calm)
+	mood.war = soften_storm(mood_values(war, calm))
 	mood.env = env
 	mood.sky_mat = sky_mat
 	mood.sun = sun
@@ -392,6 +438,8 @@ func mood_values(p: Dictionary, fallback := {}) -> Dictionary:
 	var base := {
 		"sky_tint": Color.WHITE, "sky_energy": 1.0, "sky_saturation": 1.0,
 		"fog_color": fog, "fog_density": 0.01,
+		"fog_depth_begin": 0.0, "fog_depth_end": 0.0, "fog_depth_curve": 1.0,
+		"fog_height": 0.0, "fog_height_density": 0.0, "haze_height": 0.22,
 		"sun_color": Color.WHITE, "sun_energy": 1.0,
 		"ambient_color": fog.lerp(Color.WHITE, 0.4), "ambient_energy": 1.0,
 		"exposure": 1.0, "saturation": 0.9, "contrast": 1.08, "glow": 0.7,
@@ -415,8 +463,8 @@ func apply_mood(m: Dictionary, env: Environment, sky_mat: ShaderMaterial, sun: D
 	sky_mat.set_shader_parameter("energy", m.sky_energy)
 	sky_mat.set_shader_parameter("saturation", m.sky_saturation)
 	sky_mat.set_shader_parameter("haze_color", m.fog_color)
-	env.fog_light_color = m.fog_color
-	env.fog_density = m.fog_density
+	sky_mat.set_shader_parameter("haze_height", m.haze_height)
+	apply_fog(env, m)
 	env.ambient_light_color = m.ambient_color
 	env.ambient_light_energy = m.ambient_energy
 	env.tonemap_exposure = m.exposure
@@ -427,24 +475,213 @@ func apply_mood(m: Dictionary, env: Environment, sky_mat: ShaderMaterial, sun: D
 	sun.light_energy = m.sun_energy
 
 
+## Pulls a war mood back inside the readability caps. Depth fog cannot start
+## inside engagement range or turn solid there, and its far opacity stays a
+## veil. Exponential fog, which tints near and far together, is held to a
+## thin haze. Height fog cannot rise over a standing head.
+func soften_storm(m: Dictionary) -> Dictionary:
+	var out := m.duplicate()
+	if float(out.fog_depth_end) > float(out.fog_depth_begin) + 1.0:
+		out.fog_depth_begin = maxf(out.fog_depth_begin, storm_fog_begin_min)
+		out.fog_depth_end = maxf(out.fog_depth_end, storm_fog_solid_min)
+		out.fog_depth_curve = maxf(out.fog_depth_curve, 0.75)
+		out.fog_density = clampf(out.fog_density, 0.0, storm_depth_amount_cap)
+	else:
+		out.fog_density = minf(out.fog_density, storm_fog_density_cap)
+	if absf(out.fog_height_density) > 0.0001:
+		out.fog_height_density = clampf(out.fog_height_density, 0.0, storm_height_density_cap)
+		out.fog_height = minf(out.fog_height, storm_fog_height_max)
+	return out
+
+
+## Writes `m` onto `env`'s fog and onto the globals the character, gear and
+## melee shaders read (they replace the engine fog, so they need the same
+## numbers). Depth mode when the range is real; otherwise exponential.
+func apply_fog(env: Environment, m: Dictionary) -> void:
+	var density: float = m.fog_density
+	var begin: float = m.fog_depth_begin
+	var end: float = m.fog_depth_end
+	var curve: float = m.fog_depth_curve
+	var height: float = m.fog_height
+	var height_density: float = m.fog_height_density
+	var use_depth := end > begin + 1.0
+	if use_depth:
+		begin = maxf(begin, storm_fog_begin_min)
+		end = maxf(end, storm_fog_solid_min)
+		curve = maxf(curve, 0.75)
+		density = clampf(density, 0.0, storm_depth_amount_cap)
+		env.fog_mode = Environment.FOG_MODE_DEPTH
+		env.fog_depth_begin = begin
+		env.fog_depth_end = end
+		env.fog_depth_curve = curve
+	else:
+		env.fog_mode = Environment.FOG_MODE_EXPONENTIAL
+	if absf(height_density) > 0.0001:
+		height_density = clampf(height_density, 0.0, storm_height_density_cap)
+		height = minf(height, storm_fog_height_max)
+	env.fog_light_color = m.fog_color
+	env.fog_density = density
+	env.fog_height = height
+	env.fog_height_density = height_density
+	_push_storm_fog(use_depth, m.fog_color, density, begin, end, curve, height, height_density)
+
+
+## How thick the fog is at `distance` metres from the camera and `world_y`
+## metres up. The same curve as Godot's fog and as the actor shaders, so a
+## test can say what a player would see without a GPU.
+func fog_amount_at(distance: float, world_y: float, density: float, depth_begin: float, depth_end: float,
+		curve: float, use_depth: bool, height: float, height_density: float) -> float:
+	var amount := 0.0
+	if use_depth:
+		var t := smoothstep(depth_begin, depth_end, distance)
+		amount = pow(maxf(t, 0.0), maxf(curve, 0.001)) * density
+	else:
+		amount = 1.0 - exp(-distance * maxf(density, 0.0))
+	if absf(height_density) >= 0.0001:
+		var y_dist := world_y - height
+		var vfog := 1.0 - exp(minf(0.0, y_dist * height_density))
+		amount = maxf(amount, vfog)
+	return clampf(amount, 0.0, 1.0)
+
+
+## Share of the world fog an actor keeps at `distance` metres. 1 is the
+## world's own fog. Near the camera it drops to `actor_fog_min`.
+func actor_fog_keep(distance: float) -> float:
+	var span := maxf(actor_fog_full - actor_fog_clear, 0.001)
+	var far := clampf((distance - actor_fog_clear) / span, 0.0, 1.0)
+	return lerpf(actor_fog_min, 1.0, far)
+
+
+## A faction paint (`Actor.body_color`) pushed into the teal / pink energy
+## glow the guns already use, so a figure separates from orange storm air.
+## Cool paint leans teal, warm paint leans pink. Nothing here names a world.
+func storm_accent(body: Color) -> Color:
+	var accent := body
+	accent.s = clampf(maxf(accent.s, 0.75), 0.0, 1.0)
+	accent.v = clampf(maxf(accent.v, 0.9), 0.0, 1.0)
+	if accent.r > accent.b:
+		accent = accent.lerp(Color(1.0, 0.32, 0.78), 0.55)
+	else:
+		accent = accent.lerp(Color(0.25, 0.9, 1.0), 0.45)
+	accent.s = clampf(maxf(accent.s, 0.7), 0.0, 1.0)
+	accent.v = 1.0
+	return accent
+
+
+## Marks meshes under `root` so they keep less fog up close and take a faction
+## rim. A material shared with props (storm_pop still 0) is copied first, so
+## a crate is not pulled out of the fog with the soldier. No per-instance
+## shader parameters: a battle's worth of props would overflow that buffer.
+func mark_storm_readable(root: Node, accent: Color) -> void:
+	if root == null or not enabled:
+		return
+	var meshes: Array[MeshInstance3D] = []
+	if root is MeshInstance3D:
+		meshes.append(root)
+	for node in root.find_children("*", "MeshInstance3D", true, false):
+		meshes.append(node)
+	for mesh in meshes:
+		if mesh.mesh:
+			for i in mesh.mesh.get_surface_count():
+				var mat := mesh.get_surface_override_material(i) as ShaderMaterial
+				if mat == null:
+					mat = mesh.mesh.surface_get_material(i) as ShaderMaterial
+				var popped := _pop_storm(mat, accent)
+				if popped != null and popped != mat:
+					mesh.set_surface_override_material(i, popped)
+		var over := mesh.material_override as ShaderMaterial
+		var popped_over := _pop_storm(over, accent)
+		if popped_over != null and popped_over != over:
+			mesh.material_override = popped_over
+
+
+## The material to draw, or null when `mat` has no storm uniforms. Copies a
+## shared material the first time so props keep `storm_pop` at 0.
+func _pop_storm(mat: ShaderMaterial, accent: Color) -> ShaderMaterial:
+	if mat == null:
+		return null
+	var pop: Variant = mat.get_shader_parameter("storm_pop")
+	if pop == null:
+		return null
+	var use := mat
+	if float(pop) < 0.5:
+		use = mat.duplicate() as ShaderMaterial
+		use.set_shader_parameter("storm_pop", 1.0)
+	use.set_shader_parameter("storm_rim", Vector3(accent.r, accent.g, accent.b))
+	_bind_storm(use)
+	return use
+
+
+func _bind_storm(mat: ShaderMaterial) -> void:
+	mat.set_shader_parameter("storm_clear", actor_fog_clear)
+	mat.set_shader_parameter("storm_full", actor_fog_full)
+	mat.set_shader_parameter("storm_keep_near", actor_fog_min)
+	mat.set_shader_parameter("storm_rim_strength", actor_rim_strength)
+
+
+func _add_storm_globals() -> void:
+	if _storm_globals_ready:
+		return
+	# Added once, before any storm material compiles. Listing the globals
+	# back (`global_shader_parameter_get_list`) is an editor call and hangs
+	# a running game, so this does not check first.
+	var specs: Array = [
+		["storm_fog_active", RenderingServer.GLOBAL_VAR_TYPE_FLOAT, 0.0],
+		["storm_fog_color", RenderingServer.GLOBAL_VAR_TYPE_VEC3, Vector3(0.5, 0.5, 0.5)],
+		["storm_fog_density", RenderingServer.GLOBAL_VAR_TYPE_FLOAT, 0.01],
+		["storm_fog_depth", RenderingServer.GLOBAL_VAR_TYPE_FLOAT, 0.0],
+		["storm_fog_begin", RenderingServer.GLOBAL_VAR_TYPE_FLOAT, 0.0],
+		["storm_fog_end", RenderingServer.GLOBAL_VAR_TYPE_FLOAT, 0.0],
+		["storm_fog_curve", RenderingServer.GLOBAL_VAR_TYPE_FLOAT, 1.0],
+		["storm_fog_height", RenderingServer.GLOBAL_VAR_TYPE_FLOAT, 0.0],
+		["storm_fog_height_density", RenderingServer.GLOBAL_VAR_TYPE_FLOAT, 0.0],
+	]
+	for spec: Array in specs:
+		RenderingServer.global_shader_parameter_add(spec[0], spec[1], spec[2])
+	_storm_globals_ready = true
+
+
+func _push_storm_fog(use_depth: bool, color: Color, density: float, begin: float, end: float, curve: float,
+		height: float, height_density: float) -> void:
+	if not _storm_globals_ready:
+		return
+	RenderingServer.global_shader_parameter_set("storm_fog_active", 1.0)
+	RenderingServer.global_shader_parameter_set("storm_fog_color", Vector3(color.r, color.g, color.b))
+	RenderingServer.global_shader_parameter_set("storm_fog_density", density)
+	RenderingServer.global_shader_parameter_set("storm_fog_depth", 1.0 if use_depth else 0.0)
+	RenderingServer.global_shader_parameter_set("storm_fog_begin", begin)
+	RenderingServer.global_shader_parameter_set("storm_fog_end", end)
+	RenderingServer.global_shader_parameter_set("storm_fog_curve", curve)
+	RenderingServer.global_shader_parameter_set("storm_fog_height", height)
+	RenderingServer.global_shader_parameter_set("storm_fog_height_density", height_density)
+
+
+func _clear_storm_fog() -> void:
+	if _storm_globals_ready:
+		RenderingServer.global_shader_parameter_set("storm_fog_active", 0.0)
+
+
 ## Smoke, ash and red light standing over the heaviest fighting.
 func _war_column() -> Node3D:
 	var column := Node3D.new()
 	column.name = "WarColumn"
 	var smoke := GPUParticles3D.new()
 	smoke.name = "Smoke"
-	smoke.amount = 260
-	smoke.lifetime = 22.0
+	# Rises above head height. The dense part of the column is overhead,
+	# not a wall at eye level.
+	smoke.position.y = 16.0
+	smoke.amount = column_particles
+	smoke.lifetime = 14.0
 	var mat := ParticleProcessMaterial.new()
 	mat.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
-	mat.emission_sphere_radius = 14.0
+	mat.emission_sphere_radius = 8.0
 	mat.direction = Vector3(0.15, 1, 0.05)
 	mat.spread = 12.0
-	mat.gravity = Vector3(0.5, 0.0, 0.2)
-	mat.initial_velocity_min = 5.0
-	mat.initial_velocity_max = 8.0
-	mat.scale_min = 0.6
-	mat.scale_max = 1.5
+	mat.gravity = Vector3(0.4, 0.2, 0.15)
+	mat.initial_velocity_min = 4.0
+	mat.initial_velocity_max = 7.0
+	mat.scale_min = 0.45
+	mat.scale_max = 1.15
 	mat.turbulence_enabled = true
 	mat.turbulence_noise_scale = 3.0
 	mat.turbulence_influence_min = 0.02
@@ -456,35 +693,33 @@ func _war_column() -> Node3D:
 	grow_tex.curve = grow
 	mat.scale_curve = grow_tex
 	var fade := Gradient.new()
-	fade.set_color(0, Color(0.5, 0.16, 0.07, 0.0))
-	fade.add_point(0.08, Color(0.2, 0.09, 0.06, 0.55))
-	fade.add_point(0.5, Color(0.07, 0.06, 0.06, 0.5))
-	fade.set_color(fade.get_point_count() - 1, Color(0.05, 0.05, 0.05, 0.0))
+	fade.set_color(0, Color(0.55, 0.22, 0.08, 0.0))
+	fade.add_point(0.12, Color(0.42, 0.18, 0.08, 0.22))
+	fade.add_point(0.5, Color(0.14, 0.09, 0.07, 0.16))
+	fade.set_color(fade.get_point_count() - 1, Color(0.06, 0.05, 0.05, 0.0))
 	var fade_tex := GradientTexture1D.new()
 	fade_tex.gradient = fade
 	mat.color_ramp = fade_tex
 	var quad := QuadMesh.new()
-	quad.size = Vector2(46, 46)
-	var draw := StandardMaterial3D.new()
-	draw.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	draw.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
-	draw.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	draw.vertex_color_use_as_albedo = true
-	draw.albedo_texture = _soft_dot()
-	draw.disable_fog = true
+	quad.size = Vector2(column_card, column_card)
+	var draw := ShaderMaterial.new()
+	draw.shader = STORM_COLUMN_SHADER
+	draw.set_shader_parameter("soft_tex", _soft_dot())
+	draw.set_shader_parameter("clear_near", column_clear_near)
+	draw.set_shader_parameter("clear_far", column_clear_far)
 	quad.material = draw
 	smoke.process_material = mat
 	smoke.draw_pass_1 = quad
-	smoke.visibility_aabb = AABB(Vector3(-90, -10, -90), Vector3(180, 260, 180))
+	smoke.visibility_aabb = AABB(Vector3(-50, -20, -50), Vector3(100, 160, 100))
 	smoke.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	smoke.emitting = false
 	column.add_child(smoke)
 	var glow := OmniLight3D.new()
 	glow.name = "Glow"
-	glow.light_color = Color(1.0, 0.25, 0.1)
-	glow.omni_range = 70.0
+	glow.light_color = Color(1.0, 0.35, 0.15)
+	glow.omni_range = 36.0
 	glow.light_energy = 0.0
-	glow.position.y = 14.0
+	glow.position.y = 22.0
 	column.add_child(glow)
 	return column
 
@@ -522,8 +757,8 @@ class WarMood:
 		var glow: OmniLight3D = column.get_node("Glow")
 		var strength := clampf((value - column_from) / maxf(1.0 - column_from, 0.001), 0.0, 1.0)
 		smoke.emitting = strength > 0.0
-		smoke.amount_ratio = maxf(strength, 0.05)
-		glow.light_energy = strength * 6.0
+		smoke.amount_ratio = strength
+		glow.light_energy = strength * Look.column_glow
 		if strength > 0.0:
 			column.global_position = column.global_position.lerp(centre, 0.02) \
 					if column.global_position.distance_to(centre) < 120.0 else centre
@@ -652,6 +887,8 @@ func interior(parent: Node3D, ambient: Color, energy: float) -> void:
 	world_env.name = "Interior"
 	world_env.environment = env
 	parent.add_child(world_env)
+	# An interior has no storm. Characters must not keep the last raid's fog.
+	_clear_storm_fog()
 
 
 ## A small light with no shadow, for lamps and fires.
@@ -739,6 +976,7 @@ func _worn(source: BaseMaterial3D, wear: float, metal: float) -> ShaderMaterial:
 	mat.set_shader_parameter("grime_rough", load(dir + "Roughness.jpg"))
 	mat.set_shader_parameter("wear", wear)
 	mat.set_shader_parameter("metal", metal)
+	_bind_storm(mat)
 	_gear_materials[key] = mat
 	return mat
 
@@ -807,6 +1045,7 @@ func character(skin_name: String, appearance: Dictionary = {}, who := "") -> Dic
 					mat.set_shader_parameter(param, def[param])
 			if source.emission_enabled:
 				mat.set_shader_parameter("emission_color", source.emission * 2.5)
+			_bind_storm(mat)
 			if not chosen.is_empty():
 				var pick := Human.color_for(chosen, mesh_node.get_meta("slot", ""), source.resource_name)
 				if pick.has("color"):
@@ -926,6 +1165,8 @@ func _power_mat(color: Color, metal: float, rough: float, glow := Color.BLACK,
 		mat.emission_enabled = true
 		mat.emission = glow
 		mat.emission_energy_multiplier = glow_energy
+		# The coils stay readable through a storm. The dark body still fogs.
+		mat.disable_fog = true
 	return mat
 
 
@@ -1333,6 +1574,7 @@ func _energize(model: Node3D, holder: Node3D, glow: Color) -> void:
 	mat.emission_enabled = true
 	mat.emission = glow
 	mat.emission_energy_multiplier = 1.6
+	mat.disable_fog = true
 	tube.material = mat
 	ring.mesh = tube
 	ring.name = "Emitter"
@@ -1752,6 +1994,7 @@ func _tech_material(source: BaseMaterial3D, glow: Color, strength: float, wear: 
 	mat.set_shader_parameter("grime_albedo", load(dir + "Color.jpg"))
 	mat.set_shader_parameter("grime_rough", load(dir + "Roughness.jpg"))
 	mat.set_shader_parameter("wear", wear)
+	_bind_storm(mat)
 	if not retract.is_empty():
 		mat.set_shader_parameter("fold_origin", retract["origin"])
 		mat.set_shader_parameter("fold_axis", retract["axis"])

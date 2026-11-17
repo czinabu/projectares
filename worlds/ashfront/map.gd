@@ -150,14 +150,22 @@ func _process(_delta: float) -> void:
 
 
 func _build_environment() -> void:
-	# A scorched plain under smoke: low orange sun, haze to the horizon, embers.
+	# A scorched plain under smoke: low orange sun, haze only toward the
+	# horizon. Depth fog (fog_density here is how opaque the far end gets,
+	# not an exponential haze) leaves engagement range clear.
 	Look.atmosphere(self, {
 		"sky_tint": Color(0.82, 0.6, 0.48),
 		"sky_saturation": 0.3,
 		"sky_energy": 0.75,
 		"sky_rotation": 0.2,
 		"fog_color": Color(0.36, 0.27, 0.22),
-		"fog_density": 0.0085,
+		"fog_density": 0.62,
+		"fog_depth_begin": 64.0,
+		"fog_depth_end": 360.0,
+		"fog_depth_curve": 1.3,
+		"fog_height": 1.1,
+		"fog_height_density": 0.05,
+		"haze_height": 0.28,
 		"sun_scatter": 0.35,
 		"sun_color": Color(1.0, 0.74, 0.52),
 		"sun_energy": 1.9,
@@ -167,22 +175,29 @@ func _build_environment() -> void:
 		"saturation": 0.85,
 		"contrast": 1.12,
 	}, {
-		# The same plain in the middle of a battle: the smoke closes in, the sun
-		# goes to a dull red and the colour drains away. Playtest feedback:
-		# enemies were hard to see in a hot war, so the light and the distance
-		# you can see stay close to the calm's; the mood is in the colour.
+		# All-out war: the horizon closes in and the sun goes dull red, but
+		# fog does not start inside 28 m and is not solid before 120 m, so a
+		# fight at 30–50 m stays readable. Look.soften_storm enforces that
+		# floor even if these numbers are pushed. The column of smoke is
+		# overhead, not a wall at eye level.
 		"sky_tint": Color(0.55, 0.3, 0.24),
-		"sky_saturation": 0.4,
-		"sky_energy": 0.58,
-		"fog_color": Color(0.3, 0.21, 0.17),
-		"fog_density": 0.0098,
-		"sun_color": Color(1.0, 0.6, 0.45),
-		"sun_energy": 1.5,
-		"ambient_color": Color(0.44, 0.38, 0.4),
-		"ambient_energy": 1.3,
-		"saturation": 0.72,
-		"contrast": 1.16,
-		"glow": 0.95,
+		"sky_saturation": 0.45,
+		"sky_energy": 0.62,
+		"fog_color": Color(0.5, 0.34, 0.24),
+		"fog_density": 0.86,
+		"fog_depth_begin": 28.0,
+		"fog_depth_end": 120.0,
+		"fog_depth_curve": 1.0,
+		"fog_height": 1.1,
+		"fog_height_density": 0.12,
+		"haze_height": 0.4,
+		"sun_color": Color(1.0, 0.58, 0.4),
+		"sun_energy": 1.55,
+		"ambient_color": Color(0.46, 0.4, 0.4),
+		"ambient_energy": 1.35,
+		"saturation": 0.78,
+		"contrast": 1.12,
+		"glow": 0.8,
 	})
 	Look.weather(self, "embers", 45.0)
 	_weather = get_node_or_null("Weather")
