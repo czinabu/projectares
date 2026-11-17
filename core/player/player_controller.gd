@@ -12,7 +12,8 @@ extends Node
 signal sign_out_requested
 ## The player, dead, asked to drop back in.
 signal redeploy_requested
-## While down: a number key picked a place to land (0 for the first on offer).
+## While down: a place to land was picked, with a click on the watch's
+## landing list or a number key (0 for the first on offer).
 signal drop_requested(index: int)
 
 ## The player threw the toy vehicle in their hand.
@@ -215,6 +216,10 @@ var artifact_pick := 0
 ## Which destination is picked out on the watch's portal icon
 ## (`portal_choices`), counting from 0.
 var portal_pick := 0
+## While down, which place to land is picked out on the watch's death
+## report (`Hud.drop_choices`), counting from 0. The wheel turns through
+## them and a click drops in there. View only.
+var drop_pick := 0
 ## The artifact icon was clicked; sent as `artifact_pressed` next command.
 var _artifact_click := false
 ## Seconds left of the throw just made: the hand is busy, so the weapon
@@ -301,6 +306,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		_flick += event.relative
 	elif event is InputEventMouseButton and event.pressed and not captured:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	elif event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT \
+			and is_instance_valid(actor) and actor.is_dead:
+		click_landing()
 	elif event is InputEventMouseButton and event.pressed \
 			and event.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN]:
 		scroll(1 if event.button_index == MOUSE_BUTTON_WHEEL_DOWN else -1)
@@ -318,7 +326,26 @@ func _unhandled_input(event: InputEvent) -> void:
 		redeploy_requested.emit()
 	elif event is InputEventKey and event.pressed and not event.echo and is_instance_valid(actor) \
 			and actor.is_dead and event.keycode >= KEY_1 and event.keycode <= KEY_9:
+		drop_pick = event.keycode - KEY_1
 		drop_requested.emit(event.keycode - KEY_1)
+
+
+## How many places to land the watch's death report offers now.
+func landing_count() -> int:
+	var raid := Raid.of(actor) if actor != null and is_instance_valid(actor) else null
+	return Hud.drop_choices(raid, actor).size() if raid != null else 0
+
+
+## A click while down, on the watch's death report: drops in at the place
+## picked out (`drop_pick`), or anywhere when there is no choice to make.
+## The world refuses it until the wait is over.
+func click_landing() -> void:
+	var places := landing_count()
+	if places > 1:
+		drop_pick = clampi(drop_pick, 0, places - 1)
+		drop_requested.emit(drop_pick)
+	else:
+		redeploy_requested.emit()
 
 
 ## The toy vehicles on the player's watch (item ids), as the world last said.
@@ -425,6 +452,9 @@ func click_watch() -> bool:
 	if is_watch_on("ping"):
 		ping_requested.emit()
 		return true
+	if is_on_sign_out():
+		sign_out_requested.emit()
+		return true
 	if is_watch_on("portal") and not portal_choices().is_empty() and _is_open("portal"):
 		var choices := portal_choices()
 		portal_requested.emit(choices[clampi(portal_pick, 0, choices.size() - 1)])
@@ -437,7 +467,14 @@ func click_watch() -> bool:
 ## True while fire works the raised watch instead of the weapon.
 func watch_takes_fire() -> bool:
 	return (watch_open == "" and watch_entries(focused_watch_icon()) > 1) or is_picking_toys() or pack_target() != null or is_picking_weapons() or is_on_artifact() \
-			or is_watch_on("ping") or is_watch_on("portal")
+			or is_watch_on("ping") or is_watch_on("portal") or is_on_sign_out()
+
+
+## True while the raised watch is on the sign-out icon out in a world, where
+## a click starts or cancels the sign-out like the L key. At home there is
+## nothing to sign out of.
+func is_on_sign_out() -> bool:
+	return is_watch_on("leave") and Raid.of(actor) != null
 
 
 ## Draws the weapon picked on the carousel if it is worn, stores it back
@@ -463,6 +500,13 @@ func take_picked_weapon() -> void:
 	elif int(entry.index) >= 0:
 		_pending_switch = int(entry.index)
 	else:
+		var raid := Raid.of(actor)
+		if raid != null and raid.summon_wait(actor) > 0.0:
+			# Still resting: a low buzz says no, and the watch stays up to show
+			# the rest running out. The world refuses it too, with a notice.
+			Sfx.play("watch_refused", null, -6.0)
+			summon_requested.emit(entry.id)
+			return
 		summon_requested.emit(entry.id)
 	wrist_raised = false
 	watch_open = ""
@@ -472,7 +516,10 @@ func take_picked_weapon() -> void:
 ## its card (`step` 1 is down the wheel, to the right). With the watch up the
 ## wheel never switches weapons.
 func scroll(step: int) -> void:
-	if is_watch_up():
+	if actor != null and is_instance_valid(actor) and actor.is_dead:
+		# Down, the wheel turns through the places to land.
+		drop_pick = clampi(drop_pick + signi(step), 0, maxi(landing_count() - 1, 0))
+	elif is_watch_up():
 		step_watch(step)
 	else:
 		_pending_switch = actor.cycle_weapon_index(step)

@@ -26,6 +26,13 @@ extends CanvasLayer
 const RenownLedger := preload("res://core/progression/renown_ledger.gd")
 const Contracts := preload("res://core/economy/contracts.gd")
 const SkinScript := preload("res://core/visual/actor_skin.gd")
+## The watch map's risk-zone grid is this many cells a side, how much room
+## it leaves round what it shows, and the least half width it shows (metres).
+const MAP_GRID := 16
+const MAP_MARGIN := 1.2
+const MAP_MIN_HALF := 40.0
+## Marks the place to land picked out on the death report.
+const DEATH_PICK := "> "
 ## The name of the counter added to each gun's model.
 const AMMO_COUNTER := "AmmoCounter"
 ## The jetpack's screen bay, as the rig model names it.
@@ -64,6 +71,8 @@ var _death_result := {}
 ## Squad pings standing in the world: { node, left }.
 var _pings: Array[Dictionary] = []
 var _redeploy_wait := 0.0
+## Whether the watch was resting last frame, to chime once it is ready.
+var _was_resting := false
 
 
 func setup(p_raid: Raid, p_controller: PlayerController) -> void:
@@ -150,8 +159,8 @@ func _process(delta: float) -> void:
 	var leaving := raid.sign_out_progress(p)
 	if p.is_dead:
 		var places := drop_choices(raid, p).size()
-		var landing := "1-%d: pick where to land      " % places if places > 1 else ""
-		_prompt.text = landing + "Enter: drop back in      L: go home" if _redeploy_wait <= 0.0 \
+		var landing := "Wheel or 1-%d: pick where to land      " % places if places > 1 else ""
+		_prompt.text = landing + "Click or Enter: drop back in      L: go home" if _redeploy_wait <= 0.0 \
 				else "Dropping back in in %d..." % ceili(_redeploy_wait)
 		if _death_result.is_empty():
 			_prompt.text = ""
@@ -197,12 +206,21 @@ func _process(delta: float) -> void:
 			focus = clampi(controller.watch_focus, 0, slots.size() - 1)
 		else:
 			controller.watch_focus = focus
-	var death := death_text(_death_result, _redeploy_wait, drop_choices(raid, p)) \
+	var death := death_text(_death_result, _redeploy_wait, drop_choices(raid, p),
+			controller.drop_pick if controller != null else 0) \
 			if p.is_dead and not _death_result.is_empty() else ""
 	# Your vitals are on the visor's edges in either view (drawn flat in
 	# third person); with no helmet the card carries them in a thin strip.
 	var on_glass := visor != null and (visor.glass_shown() or visor.flat_shown())
 	wrist.objective = objective
+	# The map is only worked out while it is the icon being read.
+	var map_open: bool = wrist.raised and focus < slots.size() and slots[focus].id == "map"
+	wrist.map = map_marks(raid, p, ping_spots()) if map_open and not p.is_dead else {}
+	var resting := not p.is_dead and raid.summon_wait(p) > 0.0
+	if _was_resting and not resting and not p.is_dead:
+		Sfx.play("watch_ready", null, -8.0)
+	_was_resting = resting
+	wrist.resting = resting
 	wrist.show_card(slots, focus, death, p.health.health / maxf(p.health.max_health, 1.0),
 			wrist_bars(p) if not on_glass else ([] as Array[float]),
 			log_lines.slice(maxi(0, log_lines.size() - 1)), {"summon": pack_text(p)},
@@ -360,13 +378,97 @@ static func watch_slots(p_raid: Raid, p: Actor, picked_toy := 0, pack_name := ""
 	slots.append(portal_slot(Portal.choices_for(p_raid, p), int(picks.get("portal", 0))))
 	slots.append(contract_slot(jobs, p.tally))
 	slots.append(_slot("ping", "", "Ping where you look", ["click"], -1.0, false, false))
+	# A click (or L) starts or cancels the sign-out.
 	if leaving >= 0.0:
-		slots.append(_slot("leave", "", "Signing out", ["key:L"], leaving, false, true))
+		slots.append(_slot("leave", "", "Signing out · cancel", ["click", "key:L"], leaving, false, true))
 	elif banking > 0.0:
 		slots.append(_slot("leave", "", "Banking", [], banking, false, true))
 	else:
-		slots.append(_slot("leave", "", "Sign out", ["key:L"], -1.0, false, false))
+		slots.append(_slot("leave", banked_value(p), "Sign out" + banked_line(p), ["click", "key:L"], -1.0, false, false))
 	return slots
+
+
+## The small holographic map on the watch's Map icon (Status tab), as plain
+## data for the card to draw: a square of the world around everything that
+## matters, north up, with every point in it from -1 to 1. Only what the
+## player is already told: where they are and face, the strongpoints (and
+## whether their side holds each), the depots, the gate outposts, where the
+## war is hot, their side's pings, and the risk zones as a coarse grid.
+## Never other people. Empty where there is no world (at home).
+##   "you": Vector2, "facing": Vector2 (a unit direction on the map),
+##   "sites": [{"at", "held", "contested"}], "depots", "outposts", "pings":
+##   [Vector2], "war": Vector2 or null, "zones": PackedByteArray of
+##   `MAP_GRID` x `MAP_GRID` tiers (row by row, north first) or empty when
+##   the world has one zone, "half": the half width shown, in metres.
+static func map_marks(p_raid: Raid, p: Actor, pings: Array[Vector3] = []) -> Dictionary:
+	if p_raid == null or p == null or not is_instance_valid(p) or p_raid.world == null:
+		return {}
+	var points: Array[Vector3] = [p.global_position]
+	for point in p_raid.strongpoints:
+		points.append(point.global_position)
+	for depot in p_raid.depots:
+		points.append(depot.global_position)
+	for outpost in p_raid.outposts:
+		if is_instance_valid(outpost):
+			points.append(outpost.global_position)
+	var lo := Vector2(INF, INF)
+	var hi := Vector2(-INF, -INF)
+	for at in points:
+		lo = Vector2(minf(lo.x, at.x), minf(lo.y, at.z))
+		hi = Vector2(maxf(hi.x, at.x), maxf(hi.y, at.z))
+	var middle := (lo + hi) * 0.5
+	var half := maxf(maxf(hi.x - lo.x, hi.y - lo.y) * 0.5 * MAP_MARGIN, MAP_MIN_HALF)
+	var to_map := func(at: Vector3) -> Vector2:
+		return (Vector2(at.x, at.z) - middle) / half
+	var aim := p.cmd.aim_dir if p.cmd != null and p.cmd.aim_dir.length_squared() > 0.001 else -p.global_basis.z
+	var facing := Vector2(aim.x, aim.z)
+	var marks := {
+		"you": to_map.call(p.global_position),
+		"facing": facing.normalized() if facing.length_squared() > 0.0001 else Vector2.UP,
+		"half": half,
+		"sites": [], "depots": [], "outposts": [], "pings": [], "war": null,
+		"zones": PackedByteArray(),
+	}
+	for point in p_raid.strongpoints:
+		marks.sites.append({"at": to_map.call(point.global_position), "held": p_raid.holds(p, point),
+				"contested": point.contested})
+	for depot in p_raid.depots:
+		marks.depots.append(to_map.call(depot.global_position))
+	for outpost in p_raid.outposts:
+		if is_instance_valid(outpost):
+			marks.outposts.append(to_map.call(outpost.global_position))
+	for at in pings:
+		marks.pings.append(to_map.call(at))
+	if p_raid.war.intensity >= 0.2:
+		marks.war = to_map.call(p_raid.war.centre)
+	var zones := PackedByteArray()
+	var varied := false
+	for row in MAP_GRID:
+		for col in MAP_GRID:
+			var spot := middle + (Vector2(col, row) + Vector2(0.5, 0.5)) / MAP_GRID * 2.0 * half - Vector2(half, half)
+			var tier := clampi(p_raid.world.zone_at(Vector3(spot.x, 0.0, spot.y)), 0, 2)
+			varied = varied or tier != 0
+			zones.append(tier)
+	if varied:
+		marks.zones = zones
+	return marks
+
+
+## The number on the sign-out icon once this life has banked at a depot:
+## the worth sent home ("" before anything was).
+static func banked_value(p: Actor) -> String:
+	return str(p.banked_value) if p.banked_value > 0 else ""
+
+
+## The banking readout after "Sign out": what this life has already sent
+## home through depots, safe whatever happens next ("" before anything was).
+static func banked_line(p: Actor) -> String:
+	var parts: Array[String] = []
+	if p.banked_count > 0:
+		parts.append("%d item%s, worth %d" % [p.banked_count, "" if p.banked_count == 1 else "s", p.banked_value])
+	if p.banked_scrip > 0:
+		parts.append("%d scrip" % p.banked_scrip)
+	return " · home: " + ", ".join(parts) if not parts.is_empty() else ""
 
 
 ## The weapon carousel's icon: the weapon picked out of what is carried.
@@ -396,12 +498,14 @@ static func weapon_slot(p_raid: Raid, p: Actor, picked := 0) -> Dictionary:
 				return _slot("weapon", value, "%s · store" % detail, hints + ["click"], -1.0, false, false, entries.size(), at)
 			return _slot("weapon", value, "%s · in hand" % detail, hints, -1.0, false, false, entries.size(), at)
 		return _slot("weapon", value, detail, hints + ["click"], -1.0, false, false, entries.size(), at)
-	if ItemDB.has_tag(entry.id, "helmet"):
-		return _slot("weapon", value, "%s · wear" % name, hints + ["click"], -1.0, false, false, entries.size(), at)
+	# Resting after a summon or a swap, nothing in the pack comes out: the
+	# ring fills back up as the rest runs out.
 	var wait := p_raid.summon_wait(p) if p_raid != null else 0.0
 	if wait > 0.0:
-		return _slot("weapon", value, "%s · %d s" % [name, ceili(wait)], hints, p_raid.summon_charge(p), false, false,
-				entries.size(), at)
+		return _slot("weapon", value, "%s · resting %d s" % [name, ceili(wait)], hints, p_raid.summon_charge(p),
+				false, false, entries.size(), at)
+	if ItemDB.has_tag(entry.id, "helmet"):
+		return _slot("weapon", value, "%s · wear" % name, hints + ["click"], -1.0, false, false, entries.size(), at)
 	return _slot("weapon", value, "%s · pack · %.1f s" % [name, Loadout.summon_time(entry.id)], hints + ["click"],
 			-1.0, false, false, entries.size(), at)
 
@@ -774,8 +878,10 @@ static func drop_choices(p_raid: Raid, p: Actor) -> Array:
 	return p_raid.drop_choices(state.owner if state != null and p_raid.mode != Raid.Mode.CLIENT else "")
 
 
-## `drops` is where they may land next (`Raid.drop_choices`).
-static func death_text(result: Dictionary, wait: float, drops: Array = []) -> String:
+## `drops` is where they may land next (`Raid.drop_choices`), and `picked`
+## the one picked out with the wheel, marked with a pointer: a click drops
+## in there.
+static func death_text(result: Dictionary, wait: float, drops: Array = [], picked := 0) -> String:
 	var by: String = result.get("killed_by", "")
 	var lost: Array = result.get("lost", [])
 	var lines: Array[String] = ["Killed by %s" % by if by != "" else "You died"]
@@ -796,10 +902,11 @@ static func death_text(result: Dictionary, wait: float, drops: Array = []) -> St
 	else:
 		# One place to land is no choice: Enter is enough.
 		if drops.size() > 1:
+			var at := clampi(picked, 0, drops.size() - 1)
 			for i in drops.size():
-				lines.append("%d: %s, %s" % [i + 1, drops[i].title, drops[i].note])
+				lines.append("%s%d: %s, %s" % [DEATH_PICK if i == at else "    ", i + 1, drops[i].title, drops[i].note])
 			lines.append("")
-		lines.append("Enter: drop back in      L: return to the hub")
+		lines.append("Click or Enter: drop back in      L: return to the hub")
 	return "\n".join(lines)
 
 
@@ -923,6 +1030,16 @@ func _update_pings(delta: float) -> void:
 
 
 ## The pings standing in the world now (for checks).
+## Where the squad pings standing now are, for the watch map.
+func ping_spots() -> Array[Vector3]:
+	var spots: Array[Vector3] = []
+	for ping in _pings:
+		var node: Node3D = ping.node
+		if is_instance_valid(node):
+			spots.append(node.global_position)
+	return spots
+
+
 func pings_shown() -> int:
 	return _pings.size()
 
@@ -1165,6 +1282,14 @@ void fragment() {
 	## The back of the wrist in that bone's space, where the watch face looks
 	## out (the bone's own +Y runs along the arm to the hand).
 	const FACE_AXIS := Vector3.RIGHT
+	## The holographic map drawn on the card while its Map icon is read
+	## (`Hud.map_marks`, set before `show_card`); empty for none.
+	var map := {}
+	## True while the watch rests after a summon or a swap (set before
+	## `show_card`): the face breathes amber, so it shows even with the card
+	## down, and a soft chime sounds once it is ready again (`Hud`).
+	var resting := false
+	var _rest_time := 0.0
 	## The new player's tour objective, drawn as a small line on the card
 	## (set before `show_card`). "" for none.
 	var objective := ""
@@ -1606,12 +1731,19 @@ void fragment() {
 		card.objective = objective
 		card.focus = clampi(focus, 0, maxi(slots.size() - 1, 0))
 		card.death = death
+		card.map = map
 		card.bars = bars
 		card.note = notes[-1] if not notes.is_empty() else ""
 		card.queue_redraw()
 		# The watch face shows health even with the card down: cyan when
 		# well, red when low.
 		face_color = face_tint(clampf(health, 0.0, 1.0))
+		if resting:
+			# Resting after a summon: the face breathes amber until it is ready.
+			_rest_time += get_process_delta_time()
+			face_color = face_color.lerp(Card.WARM, 0.45 + 0.25 * sin(_rest_time * 5.0))
+		else:
+			_rest_time = 0.0
 		for watch: Node in [_worn.get_child(0) if _worn != null and is_instance_valid(_worn) and _worn.get_child_count() > 0 else null]:
 			var face := watch.get_node_or_null("Face") as MeshInstance3D if watch != null else null
 			if face:
@@ -1849,6 +1981,8 @@ void fragment() {
 		var popup := ""
 		## The new player's tour objective, a marked line under the tabs.
 		var objective := ""
+		## The small map shown beside the Map icon (`Hud.map_marks`).
+		var map := {}
 		var _time := 0.0
 
 		func _process(delta: float) -> void:
@@ -1893,8 +2027,13 @@ void fragment() {
 					shown.append(i)
 			var count := shown.size()
 			var row_y := top + 54.0
-			var step := minf((w - 40.0) / count, 170.0)
-			var left := (w - step * count) * 0.5
+			# The map stands to the right of the Status icons while it is read.
+			var map_side := minf(h - top - 66.0, w * 0.42) if not map.is_empty() and focused_id() == "map" else 0.0
+			var row_w := w - (map_side + 20.0 if map_side > 0.0 else 0.0)
+			var step := minf((row_w - 40.0) / count, 170.0)
+			var left := (row_w - step * count) * 0.5
+			if map_side > 0.0:
+				_draw_map(Rect2(Vector2(w - map_side - 24.0, top + 8.0), Vector2(map_side, map_side)))
 			for n in count:
 				var i := shown[n]
 				var slot := slots[i]
@@ -1936,6 +2075,64 @@ void fragment() {
 			if note != "":
 				draw_string(font, Vector2(22, h - 20.0), note, HORIZONTAL_ALIGNMENT_CENTER, w - 44, 16,
 						Color(INK, 0.6))
+
+		## The small holographic map in `box`: the risk zones as faint cells,
+		## the strongpoints as diamonds (filled where your side holds one), the
+		## depots as squares, the gate outposts as small arches, your side's
+		## pings, a warm pulse where the war is hot, and you as an arrow the
+		## way you face. Lines of light, north up, like the rest of the card.
+		func _draw_map(box: Rect2) -> void:
+			var centre := box.get_center()
+			var half := box.size.x * 0.5
+			var at := func(point: Vector2) -> Vector2:
+				return centre + point.clamp(Vector2(-1, -1), Vector2(1, 1)) * half
+			draw_rect(box, Color(0.0, 0.2, 0.25, 0.35))
+			var zones: PackedByteArray = map.get("zones", PackedByteArray())
+			var grid := Hud.MAP_GRID
+			if zones.size() == grid * grid:
+				var cell := box.size / grid
+				for i in zones.size():
+					if zones[i] > 0:
+						draw_rect(Rect2(box.position + Vector2(i % grid, floori(i / float(grid))) * cell, cell),
+								Color(WARM, 0.07 * zones[i]))
+			# A faint grid and a frame with lit corners.
+			for k in range(1, 4):
+				var x := box.position.x + box.size.x * k / 4.0
+				var y := box.position.y + box.size.y * k / 4.0
+				draw_line(Vector2(x, box.position.y), Vector2(x, box.end.y), Color(INK, 0.08), 1.0)
+				draw_line(Vector2(box.position.x, y), Vector2(box.end.x, y), Color(INK, 0.08), 1.0)
+			draw_rect(box, Color(INK, 0.35), false, 1.5)
+			draw_string(ThemeDB.fallback_font, box.position + Vector2(box.size.x * 0.5 - 6.0, -3.0), "N",
+					HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(INK, 0.6))
+			var war: Variant = map.get("war")
+			if war is Vector2:
+				var pulse := 0.5 + 0.5 * sin(_time * 3.0)
+				draw_arc(at.call(war), 10.0 + 6.0 * pulse, 0.0, TAU, 24, Color(WARM, 0.35 + 0.3 * pulse), 2.0, true)
+			for spot: Vector2 in map.get("outposts", []):
+				var c: Vector2 = at.call(spot)
+				draw_arc(c + Vector2(0, 3), 5.0, PI, TAU, 10, Color(INK, 0.7), 1.5, true)
+			for spot: Vector2 in map.get("depots", []):
+				var c: Vector2 = at.call(spot)
+				draw_rect(Rect2(c - Vector2(4, 4), Vector2(8, 8)), Color(INK, 0.85), false, 1.5)
+			for site: Dictionary in map.get("sites", []):
+				var c: Vector2 = at.call(site.at)
+				var color := Color(WARM, 0.95) if site.contested else Color(INK, 0.95)
+				var diamond := PackedVector2Array([c + Vector2(0, -6), c + Vector2(6, 0), c + Vector2(0, 6),
+						c + Vector2(-6, 0)])
+				if site.held:
+					draw_colored_polygon(diamond, Color(color, 0.6))
+				diamond.append(c + Vector2(0, -6))
+				draw_polyline(diamond, color, 1.5, true)
+			for spot: Vector2 in map.get("pings", []):
+				var c: Vector2 = at.call(spot)
+				draw_circle(c, 2.5, Color(WARM, 0.9))
+				draw_arc(c, 6.0, 0.0, TAU, 12, Color(WARM, 0.6), 1.0, true)
+			if map.has("you"):
+				var c: Vector2 = at.call(map.you)
+				var f: Vector2 = map.get("facing", Vector2.UP)
+				var side := Vector2(-f.y, f.x)
+				draw_colored_polygon(PackedVector2Array([c + f * 9.0, c - f * 5.0 + side * 5.0, c - f * 2.0,
+						c - f * 5.0 - side * 5.0]), Color(INK, 0.95 + 0.05 * sin(_time * 6.0)))
 
 		## The tab names along the top, the open one lit and underlined, then
 		## the open tab's line (the pack under Summon) and the pop-up line

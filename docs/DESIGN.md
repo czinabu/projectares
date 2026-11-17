@@ -448,10 +448,15 @@ the storage behind it.
 - **Balance:** a weapon takes time to materialize by weight (a sidearm about
   half a second, a rifle about a second, two-handers and marksman rifles
   longer) and cannot be used until it is solid; then the watch rests for a
-  few seconds before the next. Vehicles keep their own recharge. So nobody
-  swaps for free mid-gunfight.
+  few seconds before the next. A helmet or armor frame from the pack goes
+  on at once, and the watch rests after it too: briefly for a helmet,
+  longer for a frame. While it rests the face breathes amber, the carousel
+  shows the rest running out, a click on the pack is refused with a low
+  buzz, and a soft chime says it is ready. Vehicles keep their own
+  recharge. So nobody swaps for free mid-gunfight.
 - **The same in both views:** a weapon digitizes into the one real hand
-  under a shimmer of light, and the carried weapons stand over the card as
+  under a shimmer of light, with a rising digital sweep everyone near
+  hears (falling as one is stored), and the carried weapons stand over the card as
   small holograms of their real models.
 - **Everywhere (Caleb's call).** Every vehicle, the jet included, can be
   thrown in every world, the plaza too, and a weapon in the pack can be
@@ -462,8 +467,9 @@ the storage behind it.
   the watch, and a weapon picked is equipped. Out in a world it is only what
   you carry.
 - **The heavy chamber.** A heavy weapon found in the world is scanned into
-  the watch and summoned from the weapon carousel, never drawn by a key
-  (section 6).
+  the watch and summoned from the weapon carousel, or drawn with key 4
+  (Caleb's call after a playtest); either way it materializes like any
+  summon (section 6).
 
 ### Squad portals (Caleb's call)
 
@@ -497,11 +503,11 @@ the plaza, replacing the base's launch pad, arena gate and teleporter pad.
 | Vehicle carousel | The permanent garage: swipe through your vehicles, take one as a toy in your hand, throw it to unpack the full-size vehicle. Packs vehicles back up. |
 | Heavy weapon chamber | Holds one heavy weapon (section 6). |
 | Artifact | Holds and uses your one artifact for the outing (section 6). |
-| Sign-out | Starting a sign-out and its countdown (section 7). |
-| Banking | Banking at a depot and what is banked so far (section 7). |
-| Map and pings | The map, standing, strongpoints, and pings to your squad (the ping marks where you look, for your side only). |
+| Sign-out | Starting or cancelling a sign-out with a click on its icon (or L), and its countdown (section 7). |
+| Banking | Banking at a depot, and what this life has sent home so far, on the sign-out icon (section 7). |
+| Map and pings | A small holographic map on the Status tab (you and where you face, strongpoints and who holds them, depots, gate outposts, the war's hot zone, the risk zones and your side's pings; never other people), standing, and pings to your squad (the ping marks where you look, for your side only). |
 | Contract tracker | Your active contracts, on the Mission tab (section 10). |
-| Landing choices | Where to drop back in after dying. |
+| Landing choices | Where to drop back in after dying: the wheel picks one on the death report and a click drops in (number keys and Enter still work). |
 | Squad portal | Opens a portal to a world or the arena in safe spaces, or home from a gate outpost as a sign-out (above). |
 | Pack | What you carry, folded into the Summon tab: its fill, worth, heals and scrip, and later your weight tier (section 4). |
 
@@ -518,10 +524,11 @@ your eyes, and the hologram opens off the watch on your actual wrist.
   the watch stays strapped to the real wrist bone. The hologram opens from
   that wrist instead of floating towards the camera. A two-handed hold lets
   go with the left hand while the watch is up.
-- **First person.** Your own left arm, in your outfit and skin tone, comes
-  up into the bottom of the view in the same pose, replacing today's grey
-  box forearm. The body is not drawn in first person, so this is a copy of
-  just the character's left arm.
+- **First person.** The same arm of the same body, seen from the eyes: the
+  wrist comes up in front of them along the aim, so the watch is in view
+  wherever you look, and the card opens just over its face. There is no
+  first-person copy of the arm (the camera rule: first and third person
+  differ only in where the camera is).
 - Other players see your arm come up too, so a raised watch is a tell that
   you are looking at it.
 - The pose is view only: it never changes aim, movement or anything the
