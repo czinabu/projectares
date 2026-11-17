@@ -735,7 +735,18 @@ func _check_crouch(p: Actor) -> void:
 		p.cmd.crouch = true
 		await frames(20)
 		check(gun.current_spread_deg() < standing_spread, "a crouched gun spreads less")
-	p.cmd.yaw = 0.0
+	# Walk (and later sneak) the way with nothing in front for 10 m, so
+	# cover where the player happened to land cannot get in the way.
+	var open_yaw := 0.0
+	var chest := p.global_position + Vector3(0, 1.0, 0)
+	for k in 8:
+		var yaw := TAU * k / 8.0
+		var ahead := Vector3(-sin(yaw), 0.0, -cos(yaw))
+		var ray := PhysicsRayQueryParameters3D.create(chest, chest + ahead * 10.0, Actor.LAYER_WORLD)
+		if p.get_world_3d().direct_space_state.intersect_ray(ray).is_empty():
+			open_yaw = yaw
+			break
+	p.cmd.yaw = open_yaw
 	p.cmd.move = Vector2(0, 1)
 	p.cmd.sprint = true
 	await frames(30)
@@ -789,9 +800,11 @@ func _check_crouch(p: Actor) -> void:
 		var brain := bot.get_node("Brain") as BotBrain
 		var bot_was := bot.global_position
 		var bot_yaw := bot.cmd.yaw
-		# The bot faces away (-Z is forward at yaw 0), the player behind it.
-		bot.global_position = p.global_position + Vector3(0, 0, -brain.close_sense_range * 0.6)
-		bot.cmd.yaw = 0.0
+		# The bot faces away (-Z is forward at yaw 0), the player behind it,
+		# along the open way found above.
+		var away := Vector3(-sin(open_yaw), 0.0, -cos(open_yaw))
+		bot.global_position = p.global_position + away * brain.close_sense_range * 0.6
+		bot.cmd.yaw = open_yaw
 		bot.velocity = Vector3.ZERO
 		bot.process_mode = Node.PROCESS_MODE_DISABLED
 		brain.target = null
