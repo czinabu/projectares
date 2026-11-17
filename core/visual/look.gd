@@ -92,32 +92,46 @@ const SKINS := {
 		"scenes": ["Stan.glb"], "height": 2.2, "tint": Color(0.62, 0.68, 0.74),
 		"anims": {"idle": "Idle", "walk": "Walk", "run": "Run", "death": "Death", "attack": "Punch"},
 	},
-	# Ashfront's Legion riflemen: people in the army's kit.
+	# Ashfront's Legion riflemen: people in the army's uniform kit.
 	"legionary": {
-		"people": {"m": ["Swat", "Adventurer"], "f": ["Soldier", "Adventurer"]},
-		"height": 1.8, "tint": Color(0.66, 0.72, 0.84), "grip_bone": "Middle1.R", "arm": HUMAN_ARM, "off_arm": HUMAN_OFF_ARM,
+		"people": {"m": ["Swat", "Spacesuit"], "f": ["Soldier", "SciFi"]},
+		"height": 1.8, "tint": Color(0.62, 0.68, 0.8), "grip_bone": "Middle1.R", "arm": HUMAN_ARM, "off_arm": HUMAN_OFF_ARM,
 		"spine": HUMAN_SPINE, "neck": "Neck", "lead_leg": HUMAN_LEAD_LEG, "trail_leg": HUMAN_TRAIL_LEG,
 		"back_bone": "Chest", "hip_bone": "Hips", "feet": HUMAN_FEET,
-		"saturation": 0.6, "brightness": 0.78, "metal": 0.0, "rough": 0.85,
+		"saturation": 0.55, "brightness": 0.78, "metal": 0.0, "rough": 0.85,
 		"anims": HUMAN_ANIMS,
 	},
-	# An exo trooper: a person in powered armor. The skin wears heavy plates
-	# ("frame") and a closed helmet with a visor slit ("helmet", a
-	# `build_helmet` mode) lit in the army's colour, whatever is worn.
-	"exo": {
-		"people": {"m": ["Swat", "Spacesuit"], "f": ["Soldier", "SciFi"]},
-		"height": 1.88, "tint": Color(0.52, 0.54, 0.56), "grip_bone": "Middle1.R", "arm": HUMAN_ARM, "off_arm": HUMAN_OFF_ARM,
+	# Ashfront's Tide riflemen: a rougher militia, still dressed for war.
+	"tide": {
+		"people": {"m": ["Adventurer", "Swat"], "f": ["Adventurer", "Soldier"]},
+		"height": 1.78, "tint": Color(0.86, 0.72, 0.6), "grip_bone": "Middle1.R", "arm": HUMAN_ARM, "off_arm": HUMAN_OFF_ARM,
 		"spine": HUMAN_SPINE, "neck": "Neck", "lead_leg": HUMAN_LEAD_LEG, "trail_leg": HUMAN_TRAIL_LEG,
 		"back_bone": "Chest", "hip_bone": "Hips", "feet": HUMAN_FEET,
-		"saturation": 0.4, "brightness": 0.7, "metal": 0.35, "rough": 0.6,
-		"anims": HUMAN_ANIMS, "frame": "heavy", "helmet": "slit", "pad_scale": 1.75, "back_pack": "cooler",
+		"saturation": 0.6, "brightness": 0.75, "metal": 0.0, "rough": 0.9,
+		"anims": HUMAN_ANIMS,
 	},
-	# The Kiln Walker: a war machine on two legs, its cannon the arm. Its
-	# heat vent glows on its back ("vent": bone, height share, size; the weak
-	# spot) and its cannon draws a tracking beam while it aims ("beam").
+	# An exo trooper: an ordinary soldier strapped into a mechanical
+	# exoskeleton. The person stays person-sized; the bulk is the suit
+	# ("suit": `ActorSkin._build_exo_suit`: struts down the outside of each
+	# limb, joints, actuators, a spine and shoulder yoke with a roll cage
+	# over the head, a power pack), plus a chest rig ("frame") and a closed
+	# helmet with a visor slit ("helmet") lit in the army's colour.
+	"exo": {
+		"people": {"m": ["Swat"], "f": ["Soldier"]},
+		"height": 1.8, "tint": Color(0.5, 0.52, 0.55), "grip_bone": "Middle1.R", "arm": HUMAN_ARM, "off_arm": HUMAN_OFF_ARM,
+		"spine": HUMAN_SPINE, "neck": "Neck", "lead_leg": HUMAN_LEAD_LEG, "trail_leg": HUMAN_TRAIL_LEG,
+		"back_bone": "Chest", "hip_bone": "Hips", "feet": HUMAN_FEET,
+		"saturation": 0.45, "brightness": 0.72, "metal": 0.0, "rough": 0.8,
+		"anims": HUMAN_ANIMS, "frame": "light", "helmet": "slit", "suit": true,
+	},
+	# The Kiln Walker: a war machine on two legs in gunmetal with its army's
+	# paint ("army_paint", how much of the body colour), its heat vent glowing
+	# on its back ("vent": bone, height share, size; the weak spot), a cannon
+	# on top ("cannon": bone) that draws a tracking beam while it aims ("beam").
 	"walker": {
-		"scenes": ["Leela.glb", "Mike.glb"], "height": 2.4, "tint": Color(0.6, 0.48, 0.4),
-		"vent": ["Chest", 0.66, Vector2(0.5, 0.42)], "beam": true,
+		"scenes": ["Leela.glb", "Mike.glb"], "height": 2.75, "tint": Color(0.5, 0.5, 0.52),
+		"saturation": 0.6, "army_paint": 0.35,
+		"vent": ["Chest", 0.62, Vector2(0.55, 0.46)], "cannon": "Chest", "beam": true,
 		"anims": {"idle": "Idle", "walk": "Walk", "run": "Run", "death": "Death", "attack": "Shoot"},
 	},
 	"stalker": {

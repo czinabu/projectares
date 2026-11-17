@@ -100,7 +100,7 @@ const ARMIES := {
 	},
 	"tide": {
 		"name": "the Tide",
-		"soldier": {"name": "Tide Raider", "look": "scavenger", "color": Color(0.85, 0.3, 0.2), "weapon": "Worn Rifle"},
+		"soldier": {"name": "Tide Raider", "look": "tide", "color": Color(0.85, 0.3, 0.2), "weapon": "Worn Rifle"},
 		"heavy": {"name": "Tide Brute", "look": "heavy", "color": Color(0.5, 0.1, 0.12), "weapon": "Rusted Cleaver"},
 		"exo": {"name": "Tide Exo Trooper", "look": "exo", "color": Color(1.0, 0.35, 0.15), "weapon": "Support Rifle"},
 		"walker": {"name": "Kiln Walker", "look": "walker", "color": Color(1.0, 0.35, 0.15), "weapon": "Kiln Cannon"},
@@ -125,7 +125,7 @@ const GUN_INTERVAL := [0.12, 0.12, 0.12]
 ## A heavy's swing. Slow and telegraphed (the parry drill). Two hits leave a
 ## mid kit nearly dead, and a third ends it, so missing the parry is the loss.
 const HEAVY_DAMAGE := [48.0, 48.0, 48.0]
-## Exo troopers: a soldier in powered armor. More health and real plates,
+## Exo troopers: an ordinary soldier in a mechanical exoskeleton suit. More health and real plates,
 ## a little slower, and a support rifle that fires longer bursts. No blade.
 const EXO_HEALTH := [160.0, 165.0, 170.0]
 const EXO_ARMOR := [45.0, 55.0, 70.0]
@@ -138,14 +138,14 @@ const EXO_FRAMES := [
 	{"id": "frame_trooper", "weight": 75.0},
 	{"id": "frame_bulwark", "weight": 25.0},
 ]
-## The Kiln Walker: a 2.4 m war machine, slow on its feet and slow to turn,
+## The Kiln Walker: a 3 m war machine, slow on its feet and slow to turn,
 ## with a hitscan support cannon that leads fliers well. Its power plant is
 ## on its back: hits from behind or above do `WALKER_REAR_MULT` times as
 ## much. Meant for two players, or one who keeps behind it. Middle and core
 ## only, one at each landmark (`bot_allowed`).
 const WALKER_HEALTH := [360.0, 360.0, 400.0]
 const WALKER_ARMOR := [60.0, 60.0, 80.0]
-const WALKER_HEIGHT := 2.4
+const WALKER_HEIGHT := 3.0
 const WALKER_WALK := 3.2
 const WALKER_SPRINT := 3.6
 const WALKER_DAMAGE := [32.0, 32.0, 34.0]
@@ -382,9 +382,9 @@ func equip_bot(bot: Actor, rng: RandomNumberGenerator) -> void:
 			blade.reach = 2.6
 			bot.equip_weapon(blade)
 		"exo":
-			# Powered armor over a soldier: plates that soak a carbine, a
-			# heavier step, and a support rifle. The plates are drawn by the
-			# skin ("exo"); the frame it may carry is loot, not what it wears.
+			# A soldier in a mechanical exoskeleton: armor that soaks a
+			# carbine, a heavier step, and a support rifle. The suit is drawn
+			# by the skin ("exo"); the frame it may carry is loot, not worn.
 			bot.walk_speed = 4.0
 			bot.sprint_speed = 6.2
 			_set_health(bot, EXO_HEALTH[tier], EXO_ARMOR[tier])
@@ -392,7 +392,7 @@ func equip_bot(bot: Actor, rng: RandomNumberGenerator) -> void:
 				bot.inventory.add_item(ItemDB.roll(EXO_FRAMES, rng))
 			bot.equip_weapon(_army_gun(def["weapon"], EXO_DAMAGE[tier], EXO_SPREAD[tier], EXO_INTERVAL[tier]))
 		"walker":
-			# A machine 2.4 m tall: the capsule, hit tests and eyes go with it.
+			# A machine 3 m tall: the capsule, hit tests and eyes (its cannon) go with it.
 			bot.set_stand_height(WALKER_HEIGHT, 0.25)
 			bot.walk_speed = WALKER_WALK
 			bot.sprint_speed = WALKER_SPRINT

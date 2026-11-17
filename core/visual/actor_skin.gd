@@ -411,6 +411,15 @@ func _ready() -> void:
 	_skeleton = skeleton
 	if def.has("vent"):
 		_build_vent(model, def["vent"])
+	if def.has("cannon"):
+		_build_cannon(model, def["cannon"])
+	if def.get("suit", false):
+		_build_exo_suit()
+	if def.has("army_paint"):
+		# Gunmetal, painted in the army's colour.
+		var paint: Color = (def.get("tint", Color.WHITE) as Color).lerp(actor.body_color, def["army_paint"])
+		for mat in _materials:
+			mat.set_shader_parameter("tint", paint)
 	# Before the arm, so the arm's hooks run after the legs have turned.
 	locomotion = Locomotion.new()
 	locomotion.name = "Locomotion"
@@ -1341,10 +1350,6 @@ static func _closed_helm(root: Node3D, size: Vector3, plate: Material, slit: Mat
 	return root
 
 
-## Where an exo trooper's cooling pack rides, from the back bone.
-var cooler_offset := Vector3(0.0, -0.02, 0.2)
-
-
 ## An exo trooper's cooling pack, front toward -Z (against the back): a
 ## squat housing, two finned radiator stacks standing proud of it and a
 ## coolant strip down the middle lit in `lit` (the side it fights for).
@@ -1369,13 +1374,9 @@ static func build_cooler(color: Color, lit: Color) -> Node3D:
 	return root
 
 
-## A walker's heat vent, the weak spot on its back, built on the model where
-## its back is: a dark grille with glowing slats in the Foundry's molten
-## orange, and a small light. `spec` is [bone, height share, size].
-const VENT_GLOW := Color(1.0, 0.36, 0.08)
-
-
-func _build_vent(model: Node3D, spec: Array) -> void:
+## The model's bounds as the actor sees it (skinned meshes give their
+## unposed size, which is what a part fitted at rest wants).
+func _model_box(model: Node3D) -> AABB:
 	var to_actor := actor.global_transform.affine_inverse()
 	var box := AABB()
 	var first := true
@@ -1384,8 +1385,170 @@ func _build_vent(model: Node3D, spec: Array) -> void:
 		var aabb := to_actor * mesh_node.global_transform * mesh_node.get_aabb()
 		box = aabb if first else box.merge(aabb)
 		first = false
-	if first:
+	return box
+
+
+## Hangs `part` on `bone` so that, at rest, it sits at `at` (actor space).
+func _hang_at(part: Node3D, holder_name: String, bone_name: String, at: Vector3) -> Node3D:
+	var bone := _skeleton.find_bone(bone_name) if _skeleton else -1
+	var offset := at
+	if bone >= 0:
+		offset = at - _rest_at(bone_name)
+	return _hang(part, holder_name, bone_name if bone >= 0 else "", offset, at)
+
+
+## Where a bone sits at rest, as the actor sees it.
+func _rest_at(bone_name: String) -> Vector3:
+	var bone := _skeleton.find_bone(bone_name)
+	var to_actor := actor.global_transform.affine_inverse()
+	return (to_actor * _skeleton.global_transform * _skeleton.get_bone_global_rest(bone)).origin
+
+
+## A walker's cannon, on top of the machine and pointing ahead, gunmetal
+## with a stripe of its army's colour. Its muzzle is where its eyes (and the
+## tracking beam) are.
+func _build_cannon(model: Node3D, bone_name: String) -> void:
+	var box := _model_box(model)
+	var gun := _solid(Color(0.22, 0.22, 0.24), 0.0)
+	var paint := _solid(actor.body_color.darkened(0.25), 0.0)
+	var root := Node3D.new()
+	root.name = "CannonModel"
+	_piece(root, "Mount", BoxMesh.new(), gun, Vector3(0, 0.06, 0.05), Vector3(0.3, 0.12, 0.34))
+	_piece(root, "Housing", BoxMesh.new(), gun, Vector3(0, 0.2, -0.05), Vector3(0.36, 0.2, 0.62))
+	_piece(root, "Stripe", BoxMesh.new(), paint, Vector3(0, 0.305, -0.05), Vector3(0.2, 0.012, 0.5))
+	var tube := CylinderMesh.new()
+	tube.top_radius = 0.5
+	tube.bottom_radius = 0.5
+	tube.height = 1.0
+	var barrel := _piece(root, "Barrel", tube, gun, Vector3(0, 0.2, -0.75), Vector3(0.11, 0.8, 0.11))
+	barrel.rotation.x = PI * 0.5
+	var shroud := _piece(root, "Shroud", tube, paint, Vector3(0, 0.2, -1.1), Vector3(0.15, 0.14, 0.15))
+	shroud.rotation.x = PI * 0.5
+	var lens := _piece(root, "Lens", tube, _solid(Color(1.0, 0.3, 0.1), 2.0), Vector3(0.12, 0.27, -0.33),
+			Vector3(0.07, 0.02, 0.07))
+	lens.rotation.x = PI * 0.5
+	# A turret: it rides the body level, not tipped with the model's stoop.
+	var at := Vector3(box.get_center().x, box.end.y - 0.05, box.get_center().z)
+	if bone_name != "" and _skeleton and _skeleton.find_bone(bone_name) >= 0:
+		at.y = maxf(at.y, _rest_at(bone_name).y)
+	_hang(root, "Cannon", "", Vector3.ZERO, at)
+
+
+## An exo trooper's suit, round a person of ordinary size: a gunmetal frame
+## down the outside of each arm and leg with a joint at hip, knee, shoulder
+## and elbow, actuators along the front of the thighs and forearms, boot
+## braces, a spine and a shoulder yoke with a roll cage up over the head,
+## and a power pack on the back. Everything hangs on the bone it moves with.
+func _build_exo_suit() -> void:
+	if _skeleton == null:
 		return
+	var frame := _solid(Color(0.28, 0.29, 0.31), 0.0)
+	var joint := _solid(Color(0.12, 0.12, 0.13), 0.0)
+	var piston := _solid(Color(0.62, 0.63, 0.64), 0.0)
+	var paint := _solid(actor.body_color.darkened(0.3), 0.0)
+	for side: String in ["L", "R"]:
+		var hip := _rest_at("UpperLeg." + side)
+		var out := Vector3(signf(hip.x), 0.0, 0.0)
+		# Legs: thigh and shin struts on the outside, a knee joint, an
+		# actuator down the front of the thigh, a brace round the boot.
+		_strut("UpperLeg." + side, "LowerLeg." + side, out * 0.115, 0.05, frame, 0.0, 1.0)
+		_strut("LowerLeg." + side, "Foot." + side, out * 0.105, 0.045, frame, 0.0, 0.92)
+		_strut("UpperLeg." + side, "LowerLeg." + side, Vector3(0, 0, -0.1), 0.028, piston, 0.2, 0.85, true)
+		_strut("LowerLeg." + side, "Foot." + side, Vector3(0, 0, -0.085), 0.026, piston, 0.1, 0.7, true)
+		_disc("UpperLeg." + side, _rest_at("UpperLeg." + side) + out * 0.13, 0.075, joint)
+		_disc("LowerLeg." + side, _rest_at("LowerLeg." + side) + out * 0.12, 0.068, joint)
+		var foot := _rest_at("Foot." + side)
+		var brace := Node3D.new()
+		_piece(brace, "Brace", BoxMesh.new(), frame, Vector3.ZERO, Vector3(0.05, 0.12, 0.26))
+		_piece(brace, "Stirrup", BoxMesh.new(), joint, Vector3(-out.x * 0.06, -0.05, 0.0), Vector3(0.14, 0.03, 0.22))
+		_hang_at(brace, "Boot" + side, "Foot." + side, foot + out * 0.1 + Vector3(0, 0.08, -0.03))
+		# Arms: upper arm and forearm struts, elbow and shoulder joints, an
+		# actuator along the forearm, and a guard over the shoulder joint in
+		# the army's colour.
+		var shoulder := _rest_at("UpperArm." + side)
+		var arm_out := Vector3(signf(shoulder.x), 0.0, 0.0)
+		_strut("UpperArm." + side, "LowerArm." + side, arm_out * 0.085, 0.04, frame, 0.0, 1.0)
+		_strut("LowerArm." + side, "Wrist." + side, arm_out * 0.075, 0.036, frame, 0.0, 0.95)
+		_strut("LowerArm." + side, "Wrist." + side, Vector3(0, 0.0, -0.06), 0.022, piston, 0.15, 0.85, true)
+		_disc("LowerArm." + side, _rest_at("LowerArm." + side) + arm_out * 0.09, 0.055, joint)
+		_disc("UpperArm." + side, shoulder + arm_out * 0.1, 0.075, joint)
+		var guard := Node3D.new()
+		_piece(guard, "Guard", BoxMesh.new(), paint, Vector3.ZERO, Vector3(0.15, 0.05, 0.2))
+		_piece(guard, "Lip", BoxMesh.new(), frame, Vector3(arm_out.x * 0.07, -0.05, 0), Vector3(0.03, 0.1, 0.2))
+		_hang_at(guard, "Guard" + side, "UpperArm." + side, shoulder + arm_out * 0.08 + Vector3(0, 0.1, 0))
+	# The back: a spine from the hips to a yoke over the shoulders, a roll
+	# cage standing over the head, and the power pack between.
+	var hips := _rest_at("Hips")
+	var chest := _rest_at("Chest")
+	var head := _rest_at("Head")
+	var back := Vector3(0, 0, 0.17)
+	var spine := Node3D.new()
+	_piece(spine, "Spine", BoxMesh.new(), frame, Vector3.ZERO, Vector3(0.06, chest.y - hips.y + 0.1, 0.05))
+	_hang_at(spine, "Spine", "Abdomen", Vector3(0, (hips.y + chest.y) * 0.5, hips.z + back.z))
+	var yoke := Node3D.new()
+	var top := head.y + 0.32 - (chest.y + 0.12)
+	_piece(yoke, "Yoke", BoxMesh.new(), frame, Vector3.ZERO, Vector3(0.5, 0.06, 0.07))
+	for x: float in [-0.17, 0.17]:
+		_piece(yoke, "CagePost", BoxMesh.new(), frame, Vector3(x, top * 0.5, 0.0), Vector3(0.04, top, 0.04))
+	_piece(yoke, "CageBar", BoxMesh.new(), paint, Vector3(0, top, -0.06), Vector3(0.38, 0.045, 0.16))
+	_piece(yoke, "Belt", BoxMesh.new(), frame, Vector3(0, -(chest.y - hips.y) - 0.06, 0.0), Vector3(0.42, 0.06, 0.06))
+	_hang_at(yoke, "Yoke", "Chest", Vector3(0, chest.y + 0.12, chest.z + back.z))
+	_hang_at(build_cooler(Color(0.3, 0.31, 0.33), actor.body_color), "PowerPack", "Chest",
+			Vector3(0, chest.y - 0.08, chest.z + back.z + 0.1))
+
+
+## A bar along a bone, from the bone at `from` of the way to its `child` up
+## to `to`, set off by `aside` (actor space, at rest) and `thick` across. A
+## `round` one is a piston.
+func _strut(bone: String, child: String, aside: Vector3, thick: float, mat: Material, from: float, to: float,
+		round := false) -> void:
+	if _skeleton.find_bone(bone) < 0 or _skeleton.find_bone(child) < 0:
+		return
+	var a := _rest_at(bone)
+	var b := _rest_at(child)
+	var along := b - a
+	var length := along.length() * (to - from)
+	if length < 0.01:
+		return
+	var y := along.normalized()
+	var x := y.cross(Vector3.FORWARD if absf(y.z) < 0.9 else Vector3.UP).normalized()
+	var root := Node3D.new()
+	var mesh: PrimitiveMesh = BoxMesh.new()
+	if round:
+		var tube := CylinderMesh.new()
+		tube.top_radius = 0.5
+		tube.bottom_radius = 0.5
+		tube.height = 1.0
+		tube.radial_segments = 8
+		mesh = tube
+	var bar := _piece(root, "Strut", mesh, mat, Vector3.ZERO, Vector3(thick, length, thick * 1.2))
+	bar.basis = Basis(x, y, x.cross(y)).orthonormalized() * Basis.from_scale(Vector3(thick, length, thick * 1.2))
+	_hang_at(root, "Strut", bone, a + along * ((from + to) * 0.5) + aside)
+
+
+## A joint: a short drum turned across the body, at `at` on `bone`.
+func _disc(bone: String, at: Vector3, radius: float, mat: Material) -> void:
+	if _skeleton.find_bone(bone) < 0:
+		return
+	var drum := CylinderMesh.new()
+	drum.top_radius = 0.5
+	drum.bottom_radius = 0.5
+	drum.height = 1.0
+	drum.radial_segments = 10
+	var root := Node3D.new()
+	var piece := _piece(root, "Joint", drum, mat, Vector3.ZERO, Vector3(radius * 2.0, 0.045, radius * 2.0))
+	piece.rotation.z = PI * 0.5
+	_hang_at(root, "Joint", bone, at)
+
+
+## A walker's heat vent, the weak spot on its back, built on the model where
+## its back is: a dark grille with glowing slats in the Foundry's molten
+## orange, and a small light. `spec` is [bone, height share, size].
+const VENT_GLOW := Color(1.0, 0.36, 0.08)
+
+
+func _build_vent(model: Node3D, spec: Array) -> void:
+	var box := _model_box(model)
 	var height: float = _def.get("height", 2.4)
 	var size: Vector2 = spec[2]
 	# Actors face -Z, so the back is the box's +Z face.
@@ -1405,13 +1568,7 @@ func _build_vent(model: Node3D, spec: Array) -> void:
 	light.shadow_enabled = false
 	light.position = Vector3(0, 0, 0.3)
 	vent.add_child(light)
-	var bone_name: String = spec[0]
-	var bone := _skeleton.find_bone(bone_name) if _skeleton else -1
-	var offset := at
-	if bone >= 0:
-		var bone_at := to_actor * _skeleton.global_transform * _skeleton.get_bone_global_rest(bone)
-		offset = at - bone_at.origin
-	_hang(vent, "Vent", bone_name if bone >= 0 else "", offset, at)
+	_hang_at(vent, "Vent", spec[0], at)
 
 
 ## A walker's tracking beam, seen by everyone: while its aim is up (the
@@ -1509,19 +1666,11 @@ func _update_frame() -> void:
 			Vector3(0.0, height * 0.72, 0.0) + frame_offset))
 	if weight == "light":
 		return
-	# Powered armor (a skin's own, "pad_scale") wears its shoulder plates big
-	# enough to change the outline, and a cooling pack on its back.
-	var pad_scale: float = _def.get("pad_scale", 1.0) if own != "" else 1.0
 	for side: String in ["L", "R"]:
 		var out := -1.0 if side == "L" else 1.0
-		var pad := build_pad(weight, FRAME_COLOR, out)
-		pad.scale = Vector3.ONE * pad_scale
-		_frame_parts.append(_hang(pad, "Pad" + side, "UpperArm." + side,
-				Vector3(pad_offset.x * out * pad_scale, pad_offset.y + 0.02 * (pad_scale - 1.0), pad_offset.z),
+		_frame_parts.append(_hang(build_pad(weight, FRAME_COLOR, out), "Pad" + side, "UpperArm." + side,
+				Vector3(pad_offset.x * out, pad_offset.y, pad_offset.z),
 				Vector3(0.2 * out, height * 0.8, 0.0)))
-	if own != "" and _def.has("back_pack"):
-		_frame_parts.append(_hang(build_cooler(FRAME_COLOR, actor.body_color), "Cooler", _def.get("back_bone", ""),
-				cooler_offset, Vector3(0.0, height * 0.7, 0.0) + cooler_offset))
 
 
 ## A frame's plates for its `weight`, front toward -Z, built round the chest
