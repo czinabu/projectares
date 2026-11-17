@@ -24,7 +24,9 @@ extends Node
 
 const JOIN_TIMEOUT := 12.0
 ## A server started here runs every world, and needs a while before it listens.
-const HOST_JOIN_ATTEMPTS := 12
+## An encrypted connection to a port nothing listens on yet fails at once, so
+## the tries come about a second apart: enough of them to reach the deadline.
+const HOST_JOIN_ATTEMPTS := 45
 ## However many attempts are left, a server of your own that has not let you
 ## in by then is given up on (and started once more, `HOST_RESTARTS`), so the
 ## travel screen never waits forever.
@@ -1533,6 +1535,7 @@ func _try_join() -> void:
 ## Signed in: the hub becomes that server's lobby.
 func _on_online_signed_in(account: Dictionary) -> void:
 	phone.set_update_needed(false)
+	phone.set_server_changed({})
 	_tour_stash_size = (account.get("stash", []) as Array).size()
 	_join_attempts = 0
 	_join_deadline = 0
@@ -1807,6 +1810,14 @@ func _on_online_failed(reason: String) -> void:
 			# our own instead. An older game is pointed at the update.
 			_door_fallback = false
 			phone.set_update_needed(net.outdated == "client")
+		if not net.identity_changed.is_empty():
+			# Not a missing server either: a different one at that address.
+			# The phone's Servers app warns, and trusting it is the player's call.
+			_door_fallback = false
+			var changed := net.identity_changed.duplicate()
+			changed["address"] = "%s:%d" % [_join_address, _join_port] \
+					if _join_port != NetSession.DEFAULT_PORT else _join_address
+			phone.set_server_changed(changed)
 		net.queue_free()
 		net = null
 	if _join_attempts > 0 and _hosted_server_stopped():

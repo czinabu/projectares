@@ -130,6 +130,17 @@ told so, and the phone's Servers app gets a **Get the update** button that
 opens the latest build's download page. A player whose game is newer is told
 the server needs updating: pull and rebuild it (see below).
 
+Every connection is encrypted. The server makes its own certificate the
+first time it starts and keeps it in the same volume
+(`/data/accounts/server_identity`), so no domain name or paid certificate is
+needed. Its short code is in the log: `docker compose logs ares | grep
+certificate`. Each player's game remembers that certificate the first time it
+joins. If it ever changes (the volume was wiped, or someone is pretending to
+be your server), their phone's Servers app says **This server changed** and
+shows the code it had and the one it shows now. Tell your friends the code
+from the log so they can compare before they press **Trust it and join**.
+Keep the volume, and the certificate stays the same.
+
 ## Everyday tasks
 
 Log in with `ssh root@<address>` and `cd projectares` first.

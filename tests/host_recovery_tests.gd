@@ -51,7 +51,9 @@ static func run(t: Node) -> void:
 	var first_pid: int = main._server_pid
 	OS.kill(first_pid)
 	var started := Time.get_ticks_msec()
-	await t._wait_until(func() -> bool: return main._server_pid != first_pid or main.base != null, 1800)
+	# Between tries (a second apart) there is no session, so wait for the next one.
+	await t._wait_until(func() -> bool:
+		return (main._server_pid != first_pid and main.net != null) or main.base != null, 1800)
 	t.check(main._server_pid > 0 and main._server_pid != first_pid and main.net != null,
 			"a server that stops before it lets you in is started again")
 	t.check("again" in main.hub.online_status(), "and the travel line says so (%s)" % main.hub.online_status())

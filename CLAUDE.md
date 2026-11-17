@@ -832,7 +832,14 @@ without Caleb, and update the gap list when a PR closes a row.
   once the server accepts, so an old game or a wrong secret never reaches
   the session. Both sides' messages always carry "protocol", so any two
   versions can say which one needs the update; an older game is pointed at
-  `NetSession.UPDATE_URL` from the phone's Servers app. `server_relay` is
+  `NetSession.UPDATE_URL` from the phone's Servers app. Every connection is
+  encrypted with ENet DTLS (`core/net/server_trust.gd`): a server makes its
+  own certificate on first start, kept beside the accounts, and a game
+  remembers it per address on first use and warns on the Servers app if it
+  changes (never for this computer's own server, nor for official hosts in
+  `ServerTrust.OFFICIAL_HOSTS`, which use real certificates). The secret is
+  only ever sent encrypted; the checks that send none (`probe`, `plain`)
+  are how a game learns a server changed or is from before encryption. `server_relay` is
   off: clients only talk to the server. Every `any_peer` RPC starts with
   `_allow(kind)` (`NetSession.RequestLimits`, per player, refilled by server
   tick), and a new one must too. Server saves that are files (clans, phone
