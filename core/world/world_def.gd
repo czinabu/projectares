@@ -51,6 +51,16 @@ extends RefCounted
 ##     spawns inside them.
 ##   - Marker3D nodes in group "spawn_boss": a boss (a bot made a warlord)
 ##     stands guard there, and comes back `boss_respawn_time` after it dies.
+## The cold (DESIGN.md section 2, "Frostline"): a world with `cold` over 0
+## drains its players' body heat (`Actor.body_heat`) by `cold_at` a second
+## out in the open, and its map may add warmth:
+##   - Marker3D nodes in group "warmth": a heater, a vent, a fire. Metas
+##     "radius" (metres) and "warmth" (body heat a second given back to
+##     anyone within it, and within 3 m up or down).
+## A running vehicle's engine warms its riders and anyone close to it
+## (`engine_warmth`). Body heat gone, the cold hurts by `cold_damage` a
+## second through `Combat.deal`.
+##
 ## The Raid marks each spawned bot with the tier it arrived in (meta "zone")
 ## before `equip_bot`, so a world can make bots tougher further in.
 ##
@@ -80,6 +90,15 @@ var vehicle_toys := true
 var bag_lifetime := 300.0
 ## Seconds to stand in a depot to bank what you carry.
 var depot_hold_time := 4.0
+## Body heat (of 100) a player loses each second out in the open; 0 for a
+## world with no cold. See "The cold" above and `cold_at`.
+var cold := 0.0
+## Damage a second once body heat is gone, through `Combat.deal`.
+var cold_damage := 4.0
+## Body heat a second a running vehicle gives back to its riders and anyone
+## within `engine_warmth_radius` metres of it.
+var engine_warmth := 6.0
+var engine_warmth_radius := 4.0
 ## Seconds a sign-out takes on the ground. Taking or dealing damage cancels it.
 var sign_out_time := 15.0
 ## Seconds a sign-out takes while airborne. Progress already earned is kept
@@ -283,6 +302,12 @@ func zone_name(tier: int) -> String:
 ## (heat, fumes), or 0. The Raid deals it through `Combat.deal`.
 func hazard_at(_pos: Vector3) -> float:
 	return 0.0
+
+
+## Body heat a second a player at a point loses out in the open: `cold` by
+## default. A world may make some places colder (higher, more exposed).
+func cold_at(_pos: Vector3) -> float:
+	return cold
 
 
 func can_damage(attacker: Node, target: Node, _info: DamageInfo) -> bool:

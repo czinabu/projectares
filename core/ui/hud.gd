@@ -936,13 +936,24 @@ static func rig_text(p: Actor) -> String:
 	return ""
 
 
-## The vitals: health, armor and stamina from 0 to 1, and flight heat (-1
-## with no flight rig). On the visor's edges, or the card's strip without one.
+## The vitals: health, armor and stamina from 0 to 1, flight heat (-1 with
+## no flight rig) and body heat (-1 where there is no cold). On the visor's
+## edges, or the card's strip without one.
 static func wrist_bars(p: Actor) -> Array[float]:
 	return [p.health.health / p.health.max_health,
 			p.health.armor / p.health.max_armor if p.health.max_armor > 0.0 else 0.0,
 			p.stamina / p.max_stamina,
-			p.flight.heat_fraction() if p.flight.enabled else -1.0]
+			p.flight.heat_fraction() if p.flight.enabled else -1.0,
+			p.body_heat / maxf(p.max_body_heat, 1.0) if feels_cold(p) else -1.0]
+
+
+## Whether someone is out in a world with cold (`WorldDef.cold`), where body
+## heat is a vital worth showing.
+static func feels_cold(p: Actor) -> bool:
+	if p == null or not p.is_inside_tree():
+		return false
+	var raid := Raid.of(p)
+	return raid != null and raid.world != null and raid.world.cold > 0.0 and not raid.world.safe_zone
 
 
 ## Keeps a counter on each carried gun's model: rounds in the magazine over
@@ -2332,7 +2343,8 @@ void fragment() {
 
 		const INK := Color(0.6, 1.0, 1.0)
 		const WARM := Color(1.0, 0.62, 0.3)
-		const BAR_COLORS := [Color(1.0, 0.35, 0.3), Color(0.45, 0.7, 1.0), Color(0.95, 0.9, 0.4), Color(1.0, 0.6, 0.2)]
+		const BAR_COLORS := [Color(1.0, 0.35, 0.3), Color(0.45, 0.7, 1.0), Color(0.95, 0.9, 0.4), Color(1.0, 0.6, 0.2),
+				Color(0.6, 0.85, 1.0)]
 
 		var slots: Array[Dictionary] = []
 		var focus := 0

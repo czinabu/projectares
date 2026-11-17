@@ -9,6 +9,13 @@ const MapScript := preload("res://worlds/frostline/map.gd")
 
 ## Share of bots that are Feral stalkers; the rest are Wardens.
 const FERAL_CHANCE := 0.45
+## The cold (DESIGN.md "Frostline"): body heat lost a second in the open in
+## each zone, from the river mouth to the glacier head, and how much faster
+## it goes high up in the wind (on a rim or in the air, `EXPOSED_OVER`
+## metres over the valley floor).
+const ZONE_COLD := [0.7, 1.0, 1.4]
+const EXPOSED_OVER := 22.0
+const EXPOSED_MULT := 1.5
 
 ## Frostline is the gentle world, so its gear is the basic tier. Rare and
 ## better gear only drops in the PvP world.
@@ -91,6 +98,10 @@ func _init() -> void:
 	pod_artifact_chance = 0.0
 	bot_count = 9
 	depot_hold_time = 6.0
+	# The cold: about two and a half minutes from warm to empty at the
+	# river mouth, a minute and a quarter at the glacier head.
+	cold = ZONE_COLD[0]
+	cold_damage = 4.0
 
 
 func register_items() -> void:
@@ -116,6 +127,14 @@ func zone_at(pos: Vector3) -> int:
 	if pos.z <= MapScript.MIDDLE_FROM_Z:
 		return 1
 	return 0
+
+
+## Colder further up the valley, and colder still up in the wind.
+func cold_at(pos: Vector3) -> float:
+	var rate: float = ZONE_COLD[clampi(zone_at(pos), 0, 2)]
+	if pos.y - MapScript.floor_at(pos.z) > EXPOSED_OVER:
+		rate *= EXPOSED_MULT
+	return rate
 
 
 func zone_name(tier: int) -> String:

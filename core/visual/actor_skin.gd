@@ -244,6 +244,14 @@ var _flash_left := 0.0
 var _materials: Array[ShaderMaterial] = []
 var _skeleton: Skeleton3D
 var _head_bone := -2
+## Breath in the cold (`_update_breath`): a puff of fog from the mouth every
+## `breath_every` seconds, quicker shivering or out of breath; only within
+## `breath_range` metres of the camera.
+var breath_every := 2.8
+var breath_hard_every := 1.3
+var breath_range := 35.0
+var _breath: CPUParticles3D
+var _breath_in := 0.0
 ## The head bone where the last skeleton update left it, all poses applied
 ## (`_note_head`), in the skeleton's frame.
 var _posed_head := Vector3.INF
@@ -597,6 +605,7 @@ func _update(delta: float) -> void:
 	_update_phone()
 	_update_watch_glow(delta)
 	_update_cloak()
+	_update_breath(delta)
 	_update_materialize()
 	_update_toy(delta)
 	_aim_left = maxf(_aim_left - delta, 0.0)
@@ -1536,6 +1545,88 @@ func _update_vitals() -> void:
 ## drawn as a faint shimmer at its edges instead of solid, casting no shadow.
 ## It is the same body in every view, so first person sees its own arms and
 ## gun go too. Each piece's own material and shadow come back afterwards.
+## In a cold world (`WorldDef.cold`) breath shows: a small puff of fog out
+## of the mouth, quicker when shivering or short of stamina. Everyone sees
+## it, first person included (it drifts out ahead of the eyes), but never
+## from a cloaked or dead body.
+func _update_breath(delta: float) -> void:
+	_breath_in -= delta
+	if _breath_in > 0.0:
+		return
+	var hard := actor.shivering or actor.stamina < actor.max_stamina * 0.5
+	_breath_in = (breath_hard_every if hard else breath_every) * randf_range(0.85, 1.15)
+	# Asked once a breath, not once: a body is dressed before it has a raid.
+	if not Hud.feels_cold(actor) or actor.is_dead or actor.is_cloaked() or _skeleton == null:
+		return
+	var camera := get_viewport().get_camera_3d()
+	if camera == null or camera.global_position.distance_to(global_position) > breath_range:
+		return
+	var look := Basis.from_euler(Vector3(actor.cmd.pitch, actor.cmd.yaw, 0.0))
+	var eyes: Variant = eye_point(look)
+	if eyes == null:
+		return
+	if _breath == null:
+		_breath = _breath_puffs()
+		_breath.set_meta("uncloaked", true)
+		add_child(_breath)
+	var ahead := look * Vector3.FORWARD
+	_breath.global_position = (eyes as Vector3) + Vector3.DOWN * 0.1 + ahead * 0.12
+	_breath.direction = (ahead + Vector3.DOWN * 0.3).normalized()
+	_breath.restart()
+
+
+## The fog of one breath: a few soft puffs out of the mouth that spread and
+## fade within a second and a half.
+static func _breath_puffs() -> CPUParticles3D:
+	var puffs := CPUParticles3D.new()
+	puffs.name = "Breath"
+	puffs.one_shot = true
+	puffs.emitting = false
+	puffs.amount = 6
+	puffs.lifetime = 1.4
+	puffs.explosiveness = 0.7
+	puffs.local_coords = false
+	puffs.spread = 18.0
+	puffs.gravity = Vector3(0.0, 0.15, 0.0)
+	puffs.initial_velocity_min = 0.35
+	puffs.initial_velocity_max = 0.7
+	puffs.damping_min = 0.3
+	puffs.damping_max = 0.5
+	puffs.scale_amount_min = 0.5
+	puffs.scale_amount_max = 0.8
+	var grow := Curve.new()
+	grow.add_point(Vector2(0.0, 0.25))
+	grow.add_point(Vector2(1.0, 1.0))
+	puffs.scale_amount_curve = grow
+	var fade := Gradient.new()
+	fade.set_color(0, Color(1, 1, 1, 0.0))
+	fade.set_color(1, Color(1, 1, 1, 0.0))
+	fade.add_point(0.15, Color(0.92, 0.95, 1.0, 0.4))
+	puffs.color_ramp = fade
+	var quad := QuadMesh.new()
+	quad.size = Vector2(0.3, 0.3)
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.vertex_color_use_as_albedo = true
+	mat.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	var ramp := Gradient.new()
+	ramp.set_color(0, Color(1, 1, 1, 1))
+	ramp.set_color(1, Color(1, 1, 1, 0))
+	var dot := GradientTexture2D.new()
+	dot.gradient = ramp
+	dot.fill = GradientTexture2D.FILL_RADIAL
+	dot.fill_from = Vector2(0.5, 0.5)
+	dot.fill_to = Vector2(0.5, 0.0)
+	dot.width = 32
+	dot.height = 32
+	mat.albedo_texture = dot
+	quad.material = mat
+	puffs.mesh = quad
+	puffs.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	return puffs
+
+
 func _update_cloak() -> void:
 	var on := actor.is_cloaked() and not actor.is_dead
 	if not on and not _cloaked:

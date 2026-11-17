@@ -133,6 +133,9 @@ const STATE_SHELTERED := 16777216
 ## Not an input either: an airborne sign-out's beacon is up. The server sets
 ## it in the states it sends, and clients draw the column from it.
 const STATE_SIGN_OUT_BEACON := 1 << 27
+## Not an input either: the actor is cold enough to shiver (`Actor.shivering`,
+## decided by the authority's `Raid._tick_cold`).
+const STATE_CHILLED := 1 << 28
 const FLAG_FREE_LOOK := 2097152
 const FLAG_ARTIFACT_PRESSED := 8388608
 const FLAG_INSPECT := 33554432
