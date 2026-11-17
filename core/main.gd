@@ -1332,6 +1332,11 @@ func start_server(world_id: String, port: int, with_plaza := true, bots := -1, s
 		sessions.append(session)
 		next_port += 1
 	net = sessions[0]
+	# Open the accounts now (importing old account files once), not at the
+	# first sign-in, so the log says where they are kept.
+	var store: RefCounted = net.stash.store()
+	if store != null:
+		print("Server: accounts in %s (%s)" % [ProjectSettings.globalize_path(store.dir), store.kind])
 	if arena_port >= 0:
 		var arena := NetSession.new()
 		arena.name = "Net_%s" % Arena.ArenaVenue.ID

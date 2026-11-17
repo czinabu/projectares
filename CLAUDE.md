@@ -630,6 +630,17 @@ without Caleb, and update the gap list when a PR closes a row.
   `Actor.sprint_out_time` after the sprint ends (`Actor.sprint_recover`),
   keeping a pull made meanwhile. Light guns are quick and steady on the
   move; a DMR is slow to aim and wild on the run.
+  Feedback is view only (DESIGN.md "Feedback"): each kind of gun has its own
+  voice (the item's `shot_sound`) heard out to `Gun.SHOT_REACH`, a round
+  passing close is heard going by (`Sfx.pass_by`), a round leaves a puff
+  and a wall a mark for a few seconds (`Fx.impact`, at most `Fx.MAX_MARKS`;
+  `Combat.trace` gives the face's `normal`), the hit marker and its sound
+  tell a head, plates soaking it (`DamageInfo.armored`, set by
+  `HealthComponent`), plates breaking (`armor_broke`) and a kill apart
+  (`Hud.HitMarker.kind_of`; online they ride `NetSession._hit_feedback`),
+  and a round jolts the view (`PlayerController.bullet_flinch`), never the
+  aim. Who shot you is not shown: that is the tactical visor's job.
+  Check by eye with `visual_check.tscn -- <dir> --impacts-only`.
 - Helmets are items tagged `helmet` in the `helmet` loadout slot, and data
   like abilities: `Visor` (`core/abilities/visor.gd`, `Actor.visor`) is one
   class whose `mode` stat picks what the visor does ("" plain, "zoom"
@@ -831,11 +842,13 @@ without Caleb, and update the gap list when a PR closes a row.
   are how a game learns a server changed or is from before encryption. `server_relay` is
   off: clients only talk to the server. Every `any_peer` RPC starts with
   `_allow(kind)` (`NetSession.RequestLimits`, per player, refilled by server
-  tick), and a new one must too. Server saves go through
-  `core/account/safe_file.gd` (written whole, then swapped in), and the
+  tick), and a new one must too. Server saves that are files (clans, phone
+  records, the JSON fallback) go through `core/account/safe_file.gd`
+  (written whole, then swapped in); accounts are in SQLite (below). The
   `StashService` keeps rolling backups of the whole save folder
-  (`backup_if_due`, `backup_dir`). An account file that cannot be read is
-  never replaced by a new account.
+  (`backup_if_due`, `backup_dir`), the database copied with
+  `AccountStore.backup_to`, never as the live file. An account that cannot
+  be read is never replaced by a new account.
 - Online movement: a client numbers every input and each packet repeats
   every input the server has not received yet (up to
   `NetSession.MAX_INPUTS_PER_PACKET`, packed small by `pack_inputs` so a
@@ -867,7 +880,14 @@ without Caleb, and update the gap list when a PR closes a row.
   `StashService.settle`. `NetSession` does both. A client only signs in
   (name plus `Profile.online_secret`) and sends requests (equip, pick, deploy)
   from the lobby; it never sends a kit, and online play never reads or writes
-  the local `Profile` stash, with one exception: one player state. On a
+  the local `Profile` stash, with one exception: one player state.
+  The service keeps accounts in SQLite (`core/account/account_store.gd`,
+  `accounts.sqlite` in its `save_dir`, through `addons/godot-sqlite`): every
+  `_save` is one transaction, and changes to several accounts that must
+  happen together (a trade) go through `StashService.transaction`, never one
+  ledger call after another. Never read or write account files directly;
+  old ones are imported once by `AccountStore.open`. A build without the
+  library falls back to JSON files. On a
   server you host yourself (`main.gd host_and_join`, the base's door) you
   are the player you are at home: the client hands the server your profile
   (`--host-profile`, read once into `StashService.host_profile`, claimed only

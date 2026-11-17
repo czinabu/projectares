@@ -28,6 +28,12 @@ and add a row for each new source.
 
 Shaders in `assets/shaders` were written for this project.
 
+## Code libraries
+
+| Folder | What | Author | License | Source |
+| --- | --- | --- | --- | --- |
+| `addons/godot-sqlite` | godot-sqlite 4.7 (GDExtension, release builds for Windows, macOS and Linux x86_64 only), used by the server's account store | Piet Bronders & Jeroen De Geeter | MIT, see `addons/godot-sqlite/LICENSE.md` | https://github.com/2shady4u/godot-sqlite (tag `v4.7-assetlib`) |
+
 ## Where the files were fetched from
 
 The build machine could not reach the authors' sites, so the files were taken
