@@ -24,7 +24,9 @@ extends Node
 
 const JOIN_TIMEOUT := 12.0
 ## A server started here runs every world, and needs a while before it listens.
-const HOST_JOIN_ATTEMPTS := 12
+## An encrypted connection to a port nothing listens on yet fails at once, so
+## the tries come about a second apart: enough of them to reach the deadline.
+const HOST_JOIN_ATTEMPTS := 45
 ## However many attempts are left, a server of your own that has not let you
 ## in by then is given up on (and started once more, `HOST_RESTARTS`), so the
 ## travel screen never waits forever.
