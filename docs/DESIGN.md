@@ -457,6 +457,47 @@ Raider fights run longer than the others because both sides wear plates and
 stop to use a medkit. A warlord's loss, when the player does win, takes
 about 6-7 s and leaves the player around a third health.
 
+### Group fights (Caleb's call)
+
+One soldier is a fair fight; five that all open up at once is a wall of
+damage nobody can read. Group fights take turns, the way good shooters
+stage them, so numbers mean pressure, not a stun-lock:
+
+- Only so many army bots shoot (or swing) at one person at a time: one in
+  the outer ring, two in the middle, three in the core (`BotBrain.RING_SLOTS`).
+- A turn lasts 2.5-4 s, then passes to the next bot after a half-second
+  beat, and the bot that let go rests a little before asking again.
+- A bot waiting its turn keeps its gun on you but holds fire. It gets into
+  cover from your eyes and crouches there; past the outer ring, with no
+  cover near, it works round your flank instead.
+- A bot you shoot always shoots back for two seconds, and a bot within
+  7 m always fights, so nobody can stand next to one that is "waiting".
+- Bots fighting other bots, and rival raiders, are never rationed: they
+  play like people.
+- Spotting takes longer far away (up to 1.6x at the edge of sight) and
+  against a crouched body (1.3x), and quicker against someone who just
+  shot you.
+- Before its first shot a soldier raises its gun (halfway through its
+  reaction) and barks a short radio call, heard about 45 m away, so the
+  shot never comes out of nowhere.
+
+**Measured (group bench, outer soldiers, 40 runs, 20 m).** The reference
+player stands in the open and does not use cover, so these are the worst
+case; a person who breaks line of sight does much better.
+
+| Fight | Every bot shoots | Taking turns |
+| --- | --- | --- |
+| You against 2 | 28% win, dead in 7.4 s | 35% win, dead in 8.7 s |
+| You against 3 | 0% win, dead in 5.9 s | 2% win, dead in 8.1 s |
+| You against 5 | 0% win, dead in 3.8 s | 0% win, dead in 6.8 s |
+
+Taking turns buys between one and three seconds against a group, which is the time to
+reach cover, heal or leave. Targets (Caleb confirmed): an
+outer pair is winnable in the open (about a third), three or more need
+cover or a plan, and five should take at least six seconds to kill
+someone standing still. The duel rows above stay in their bands with this
+on (one attacker always has a slot).
+
 ### World events
 
 The warzone already runs one event at a time (supply pods and warlords,

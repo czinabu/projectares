@@ -161,6 +161,19 @@ without Caleb, and update the gap list when a PR closes a row.
   (never `equip_bot`). A client builds one from that kit (`spawn_bot`'s
   `kit`), not from the seed. The `Raid` sends them on errands
   (`BotBrain.go_to`) and signs them out; armies never order them.
+  Group fights take turns (Caleb's call, DESIGN.md "Group fights"): only
+  `BotBrain.attack_slots` army bots shoot or swing at one person at a time
+  (`BotBrain.RING_SLOTS`: 1 outer, 2 middle, 3 core; `take_slot`, keyed by
+  the target, held `token_hold` and passed on after `token_beat`). A bot
+  without a slot keeps its gun on the target and holds fire, crouched in
+  cover from the target's eyes (`_find_cover`, a few ray probes every
+  1.5 s) or, past the outer ring, working round a flank. Return fire
+  (`return_fire_time`) and anything inside `point_blank` skip the queue,
+  and bots fighting bots are never rationed (`BotBrain.is_person`). Spotting
+  takes longer far off and against a crouch (`notice_mult`), and the gun
+  comes up halfway through the reaction with a bark heard nearby
+  (`ActorSkin._update_bark`) before the first shot. Measure with the duel
+  bench's `--group 2,3,5` (and `--slots off` to compare).
 - Big battles must stay affordable; measure with
   `godot --headless --path . res://tests/battle_bench.tscn -- --bots 150 --players 32`
   (processor time a tick, against the 16.7 ms budget). Three things keep

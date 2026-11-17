@@ -130,6 +130,39 @@ var _on_target := false
 ## the aim has to stay on a target it can see, from the actor's meta
 ## "lock_time" (0 for none). Breaking the line of sight starts it over.
 var lock_time := 0.0
+## Group fights (DESIGN.md "Group fights", Caleb's call): a person (a
+## player, or a bot that plays like one) is shot at by only `attack_slots`
+## army bots at a time. The rest hold off, take cover or work round the
+## flank until a slot comes free; slots are held a few seconds
+## (`token_hold`) and pass along with a beat between (`token_beat`). A bot
+## always shoots back at whoever hit it in the last `return_fire_time`
+## seconds, and at anyone inside `point_blank`. Set from the bot's ring
+## ("zone" meta): `RING_SLOTS`.
+const RING_SLOTS := [1, 2, 3]
+var attack_slots := 2
+var token_hold := Vector2(2.5, 4.0)
+var token_beat := 0.5
+var return_fire_time := 2.0
+var point_blank := 7.0
+## Bots on the outer ring hold their cover; further in they also flank.
+var flanks := true
+## A target further off is spotted more slowly: the reaction time grows
+## to this many times its near value at the edge of sight, and a crouched
+## target takes `crouch_notice_mult` longer still.
+var far_notice_mult := 1.6
+var crouch_notice_mult := 1.3
+
+## Who holds a slot on each person, by the person's instance id:
+## {"holders": {brain id: physics frame it lets go}, "free_at": frame}.
+static var _slots := {}
+## Off lets every bot shoot at once (the group bench's `--slots off`, to
+## compare); always on in play.
+static var ration_attacks := true
+var _rest_until := 0
+var _hit_by: Actor
+var _hit_at := -1000000
+var _cover := Vector3.INF
+var _cover_left := 0.0
 var _lock := 0.0
 var _stuck_for := 0.0
 var _lift_left := 0.0
@@ -163,6 +196,9 @@ func _ready() -> void:
 	if actor.has_meta("air_error"):
 		air_error_deg = float(actor.get_meta("air_error"))
 	lock_time = float(actor.get_meta("lock_time", 0.0))
+	var ring := int(actor.get_meta("zone", 1))
+	attack_slots = RING_SLOTS[clampi(ring, 0, RING_SLOTS.size() - 1)]
+	flanks = ring > 0
 	actor.health.damaged.connect(_on_damaged)
 	actor.heard.connect(_on_heard)
 
@@ -202,6 +238,7 @@ func at_errand() -> bool:
 
 func _physics_process(delta: float) -> void:
 	if actor.is_dead:
+		_release()
 		return
 	# A bot nobody is near thinks only on the ticks its body moves.
 	if not actor.ticks_now():
@@ -213,6 +250,7 @@ func _physics_process(delta: float) -> void:
 	cmd.secondary = false
 	cmd.sprint = false
 	cmd.jump = false
+	cmd.crouch = false
 	cmd.move = Vector2.ZERO
 	cmd.aim_dir = Vector3.ZERO
 
@@ -228,6 +266,7 @@ func _physics_process(delta: float) -> void:
 		state = State.ATTACK
 		_attack(cmd, delta)
 	elif state != State.PATROL:
+		_release()
 		_seen_time = 0.0
 		_aim_target = null
 		_lock = 0.0
@@ -325,15 +364,26 @@ func _attack(cmd: ActorCommand, delta: float) -> void:
 		_look_along(cmd, aim_point - eye)
 		cmd.aim_dir = (aim_point - eye).normalized()
 		_aim = cmd.aim_dir
+		if not _may_attack(dist):
+			_wait_turn_melee(cmd, blade, delta)
+			return
 		_attack_melee(cmd, blade, delta)
 		return
 	_aim_gun(cmd, eye, chest, dist, delta)
 	_combat_hop(cmd, delta)
+	var my_turn := _may_attack(dist)
+	if not my_turn:
+		# Keep the gun on them, ready, but hold fire and get somewhere better.
+		_wait_turn(cmd, delta, dist)
+		return
 	# Aim down sights on the ground, the way a person fights a duel. In the
 	# air the hop owns the aim button (a jetpack hovers while it is held).
 	# A gun that locks on raises its aim (and its tracking beam, which every
 	# view draws from the held aim) only once it has reacted, as the lock starts.
-	if actor.is_on_floor() and _hop_left <= 0.0 and (lock_time <= 0.0 or _seen_time >= _reaction):
+	# The gun comes up halfway through the reaction: the tell before the
+	# first shot (every view sees it, and hears the bark, `ActorSkin`).
+	var raise_at := _reaction if lock_time > 0.0 else _reaction * 0.5
+	if actor.is_on_floor() and _hop_left <= 0.0 and _seen_time >= raise_at:
 		cmd.secondary = true
 
 	# Keep a comfortable distance: close in, back off, or strafe.
@@ -382,7 +432,10 @@ func _aim_gun(cmd: ActorCommand, eye: Vector3, chest: Vector3, dist: float, delt
 		_aim_target = target
 		_seen_time = 0.0
 		_lock = 0.0
-		_reaction = reaction_time * _rng.randf_range(0.8, 1.3) * (1.4 - 0.8 * sharp)
+		_reaction = reaction_time * _rng.randf_range(0.8, 1.3) * (1.4 - 0.8 * sharp) \
+				* notice_mult(dist, sight_range, target.crouched, far_notice_mult, crouch_notice_mult)
+		if _hit_by == target and _since_hit() < return_fire_time:
+			_reaction *= 0.5
 		_wander_left = 0.0
 		# The first look lands off to one side.
 		_wander = Vector2.from_angle(_rng.randf() * TAU)
@@ -608,6 +661,9 @@ func _flat_dist(point: Vector3) -> float:
 ## Getting shot tells the bot where to look, even if it never saw the shooter.
 func _on_damaged(info: DamageInfo) -> void:
 	var source := info.source as Actor
+	if source and source != actor:
+		_hit_by = source
+		_hit_at = Engine.get_physics_frames()
 	if source and source != actor and state == State.PATROL:
 		_last_seen = source.global_position
 		_lost_time = 0.0
@@ -625,3 +681,158 @@ func _on_heard(at: Vector3, source: Actor) -> void:
 	_last_seen = at
 	_lost_time = 0.0
 	state = State.CHASE
+
+
+## How much longer than its near reaction a bot takes to spot someone `dist`
+## away (up to `far` times at `sight`), longer still for a crouched body.
+static func notice_mult(dist: float, sight: float, crouched: bool, far: float, crouch: float) -> float:
+	var mult := lerpf(1.0, far, clampf(dist / maxf(sight, 1.0), 0.0, 1.0))
+	return mult * (crouch if crouched else 1.0)
+
+
+func _since_hit() -> float:
+	return float(Engine.get_physics_frames() - _hit_at) / Engine.physics_ticks_per_second
+
+
+## Someone who takes slots: a player, or a bot that plays like one.
+static func is_person(other: Actor) -> bool:
+	var brain := other.get_node_or_null("Brain") as BotBrain
+	return brain == null or brain.uses_kit
+
+
+## Whether this bot may shoot or swing at its target now (see `attack_slots`).
+func _may_attack(dist: float) -> bool:
+	if uses_kit or not ration_attacks or not is_person(target):
+		return true
+	if dist < point_blank or (_hit_by == target and _since_hit() < return_fire_time):
+		return true
+	return take_slot(target.get_instance_id(), get_instance_id(), attack_slots,
+			Engine.get_physics_frames(), self)
+
+
+## Asks for one of `slots` slots on the person `key` for the brain `me` at
+## physics frame `now`; true while it holds one. Static so it can be checked
+## on its own. `brain` (may be null) times its hold and rest.
+static func take_slot(key: int, me: int, slots: int, now: int, brain: BotBrain) -> bool:
+	var slot: Dictionary = _slots.get(key, {})
+	if slot.is_empty():
+		slot = {"holders": {}, "free_at": 0}
+		_slots[key] = slot
+		if _slots.size() > 512:
+			_prune(now)
+	var holders: Dictionary = slot.holders
+	var tps := Engine.physics_ticks_per_second
+	var beat := int((brain.token_beat if brain else 0.5) * tps)
+	for id: int in holders.keys():
+		if holders[id] <= now:
+			slot.free_at = maxi(slot.free_at, holders[id] + beat)
+			holders.erase(id)
+	if holders.has(me):
+		return true
+	if brain and now < brain._rest_until:
+		return false
+	if holders.size() >= slots or now < slot.free_at:
+		return false
+	var hold := 3.0
+	if brain:
+		hold = brain._rng.randf_range(brain.token_hold.x, brain.token_hold.y)
+	var until := now + int(hold * tps)
+	holders[me] = until
+	slot.free_at = now + beat
+	if brain:
+		# Give the others a turn before taking another.
+		brain._rest_until = until + int(hold * 0.6 * tps)
+	return true
+
+
+## How many hold a slot on the person `key` at frame `now`.
+static func slot_holders(key: int, now: int) -> int:
+	var slot: Dictionary = _slots.get(key, {})
+	if slot.is_empty():
+		return 0
+	var count := 0
+	for id: int in slot.holders:
+		if slot.holders[id] > now:
+			count += 1
+	return count
+
+
+static func _prune(now: int) -> void:
+	for key: int in _slots.keys():
+		var holders: Dictionary = _slots[key].holders
+		if holders.values().all(func(until: int) -> bool: return until <= now):
+			_slots.erase(key)
+
+
+## Lets go of any slot this bot holds.
+func _release() -> void:
+	if target == null or not is_instance_valid(target):
+		return
+	var slot: Dictionary = _slots.get(target.get_instance_id(), {})
+	if not slot.is_empty() and slot.holders.has(get_instance_id()):
+		slot.holders.erase(get_instance_id())
+		slot.free_at = maxi(slot.free_at, Engine.get_physics_frames() + int(token_beat * Engine.physics_ticks_per_second))
+
+
+## Waiting for a slot with a gun: get into cover from the target, or round
+## its flank, and keep the gun on them.
+func _wait_turn(cmd: ActorCommand, delta: float, dist: float) -> void:
+	_cover_left -= delta
+	if _cover_left <= 0.0 or not _cover.is_finite():
+		_cover_left = 1.5
+		_cover = _find_cover()
+		if not _cover.is_finite() and flanks:
+			_cover = _flank_point(dist)
+	if _cover.is_finite() and _flat_dist(_cover) > 1.0:
+		_move_toward(cmd, _cover, delta, false)
+		return
+	if _cover.is_finite():
+		# In cover: get down behind it.
+		cmd.crouch = true
+		return
+	# Nowhere better: keep a respectful distance.
+	if dist < preferred_range:
+		cmd.move = Vector2(0, -1)
+
+
+## Waiting for a slot with a blade: circle just out of reach, guard up.
+func _wait_turn_melee(cmd: ActorCommand, blade: MeleeWeapon, delta: float) -> void:
+	var dist := _flat_dist(target.global_position)
+	if dist > blade.reach * 2.5:
+		_move_toward(cmd, target.global_position, delta, false)
+	elif dist < blade.reach * 1.8:
+		cmd.move = Vector2(0, -1)
+	else:
+		cmd.move = Vector2(_strafe_sign, 0)
+	cmd.stance = _guard_dir
+	cmd.secondary = true
+
+
+## A spot within a few metres where the target's eyes cannot see the bot's
+## chest, still within shooting range; INF when none of the tries finds one.
+func _find_cover() -> Vector3:
+	var space := get_world_3d().direct_space_state
+	var their_eye := target.get_eye_position()
+	var from := actor.global_position
+	var start := _rng.randf() * TAU
+	for i in 6:
+		var angle := start + TAU * i / 6.0
+		var spot := from + Vector3(cos(angle), 0.0, sin(angle)) * _rng.randf_range(3.0, 8.0)
+		var reach := spot.distance_to(target.global_position)
+		if reach > attack_range or reach < preferred_range * 0.5:
+			continue
+		var query := PhysicsRayQueryParameters3D.create(their_eye, spot + Vector3(0, 1.0, 0), Actor.LAYER_WORLD)
+		if not space.intersect_ray(query).is_empty():
+			return spot
+	return Vector3.INF
+
+
+## A point off the target's side, at the bot's preferred range.
+func _flank_point(dist: float) -> Vector3:
+	var off := actor.global_position - target.global_position
+	off.y = 0.0
+	if off.length() < 0.1:
+		off = Vector3.FORWARD
+	var turn := deg_to_rad(50.0) * (1.0 if _rng.randf() < 0.5 else -1.0)
+	var reach := clampf(dist, preferred_range * 0.8, attack_range * 0.8)
+	return target.global_position + off.normalized().rotated(Vector3.UP, turn) * reach

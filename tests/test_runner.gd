@@ -42,6 +42,7 @@ const FeelTests := preload("res://tests/feel_tests.gd")
 const ViewMatchTests := preload("res://tests/view_match_tests.gd")
 const GunRoleTests := preload("res://tests/gun_role_tests.gd")
 const GunHandlingTests := preload("res://tests/gun_handling_tests.gd")
+const BotTacticsTests := preload("res://tests/bot_tactics_tests.gd")
 const HitFeedbackTests := preload("res://tests/hit_feedback_tests.gd")
 const PeekTests := preload("res://tests/peek_tests.gd")
 const AdsTests := preload("res://tests/ads_tests.gd")
@@ -352,6 +353,7 @@ func _run() -> void:
 	await _test_view_match()
 	await _test_gun_roles()
 	await _test_gun_handling()
+	await _test_bot_tactics()
 	await _test_hit_feedback()
 	await _test_peek()
 	await _test_ads()
@@ -441,6 +443,10 @@ func _test_gun_roles() -> void:
 
 func _test_gun_handling() -> void:
 	await GunHandlingTests.run(self)
+
+
+func _test_bot_tactics() -> void:
+	await BotTacticsTests.run(self)
 
 
 func _test_hit_feedback() -> void:

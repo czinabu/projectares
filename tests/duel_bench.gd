@@ -62,6 +62,22 @@ func _ready() -> void:
 			", ".join(REF_KIT), REF_SKILL])
 	print("%-14s %5s  %6s %6s %6s  %8s %8s  %7s  %s" % ["enemy", "range", "win", "loss", "draw",
 			"ttk win", "ttk loss", "hp left", "target"])
+	var groups := _arg(args, "--group", "")
+	if groups != "":
+		BotBrain.ration_attacks = _arg(args, "--slots", "on") != "off"
+		print("Group fights: the reference against several at once (attack slots %s)" % (
+				"on" if BotBrain.ration_attacks else "off"))
+		var g_off := 0
+		for type: String in ["soldier_outer", "soldier_core"]:
+			if only != "" and type != only:
+				continue
+			for size in groups.split(","):
+				for distance in ranges:
+					var r: Dictionary = await _matchup(type, distance, duels, seed_base * 1000 + g_off, int(size))
+					g_off += duels
+					_report("%s x%s" % [type, size], distance, r, type)
+		get_tree().quit()
+		return
 	var off := 0
 	for type: String in TARGETS:
 		if only != "" and type != only:
@@ -75,15 +91,21 @@ func _ready() -> void:
 
 ## Runs `count` duels of the reference player against `type` at once and
 ## returns the tallies.
-func _matchup(type: String, distance: float, count: int, seed_from: int) -> Dictionary:
+func _matchup(type: String, distance: float, count: int, seed_from: int, group := 1) -> Dictionary:
 	var pairs: Array[Dictionary] = []
 	for i in count:
 		var row := Vector3((i % 6) * SPACING, 0.0, (i / 6) * SPACING)
 		var ref := _make_ref(row, seed_from + i)
-		var foe := _make_enemy(type, row + Vector3(distance, 0, 0), seed_from + i)
-		_face(ref, foe)
-		_face(foe, ref)
-		pairs.append({"ref": ref, "foe": foe, "ended": -1.0, "winner": ""})
+		var foes: Array[Actor] = []
+		for g in group:
+			# A group stands in an arc in front of the reference.
+			var angle := (g - (group - 1) * 0.5) * deg_to_rad(18.0)
+			var at := row + Vector3(cos(angle), 0, sin(angle)) * distance
+			var foe := _make_enemy(type, at, seed_from + i + g * 100003)
+			_face(foe, ref)
+			foes.append(foe)
+		_face(ref, foes[0])
+		pairs.append({"ref": ref, "foe": foes[0], "foes": foes, "ended": -1.0, "winner": ""})
 	var clock := 0.0
 	var step := 1.0 / Engine.physics_ticks_per_second
 	var open := count
@@ -94,14 +116,16 @@ func _matchup(type: String, distance: float, count: int, seed_from: int) -> Dict
 			if pair.ended >= 0.0:
 				continue
 			var ref: Actor = pair.ref
-			var foe: Actor = pair.foe
-			if ref.is_dead or foe.is_dead:
+			var foes: Array[Actor] = pair.foes
+			var all_down := foes.all(func(f: Actor) -> bool: return f.is_dead)
+			if ref.is_dead or all_down:
 				pair.ended = clock
-				pair.winner = "ref" if foe.is_dead else "foe"
-				pair.hp = (ref if foe.is_dead else foe).health.health / (ref if foe.is_dead else foe).health.max_health
+				pair.winner = "ref" if all_down else "foe"
+				pair.hp = ref.health.health / ref.health.max_health if all_down else 0.0
 				open -= 1
 				_stop(ref)
-				_stop(foe)
+				for f in foes:
+					_stop(f)
 	var out := {"win": 0, "loss": 0, "draw": 0, "ttk_win": 0.0, "ttk_loss": 0.0, "hp": 0.0}
 	for pair in pairs:
 		if pair.winner == "ref":
@@ -113,15 +137,22 @@ func _matchup(type: String, distance: float, count: int, seed_from: int) -> Dict
 			out.ttk_loss += pair.ended
 		else:
 			out.draw += 1
-		for actor: Actor in [pair.ref, pair.foe]:
+		_raid._remove_actor(pair.ref)
+		for actor: Actor in pair.foes:
 			_raid._remove_actor(actor)
 	await get_tree().physics_frame
 	return out
 
 
-func _report(type: String, distance: float, r: Dictionary) -> void:
+func _report(type: String, distance: float, r: Dictionary, kind := "") -> void:
 	var total := maxf(r.win + r.loss + r.draw, 1)
 	var share: float = r.win / total
+	if kind != "":
+		# Group rows have no agreed band yet: print the numbers only.
+		print("%-18s %4.0fm  %5.0f%% %5.0f%% %5.0f%%  %7.1fs %7.1fs  %6.0f%%" % [type, distance,
+				share * 100.0, r.loss / total * 100.0, r.draw / total * 100.0,
+				r.ttk_win / maxf(r.win, 1), r.ttk_loss / maxf(r.loss, 1), r.hp / maxf(r.win, 1) * 100.0])
+		return
 	var band: Vector2 = TARGETS[type].win
 	var verdict := "ok" if share >= band.x and share <= band.y else ("TOO HARD" if share < band.x else "TOO EASY")
 	print("%-14s %4.0fm  %5.0f%% %5.0f%% %5.0f%%  %7.1fs %7.1fs  %6.0f%%  %.0f-%.0f%% %s (%s)" % [type, distance,
