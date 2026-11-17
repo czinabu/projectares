@@ -1863,6 +1863,12 @@ func _ashfront_shots(out_dir: String) -> void:
 		["runway", Vector2(-205, 4.4), Vector2(-60, 2), 2.5],
 		["east_road", Vector2(150, -9), Vector2(60, -2), 2.0],
 		["hill_road", Vector2(-198, -24), Vector2(-150, -118), 2.5],
+		# The Works: up its street from the mouth, from the first gantry,
+		# over it from the air, and out of a shed onto the street.
+		["works_mouth", Vector2(2, 214), Vector2(0, 0), 1.8],
+		["works_gantry", Vector2(0, 187), Vector2(0, 0), 7.6],
+		["works_air", Vector2(70, 236), Vector2(0, 150), 45.0],
+		["works_shed", Vector2(18, 128), Vector2(-14, 150), 1.8],
 	]
 	for view: Array in views:
 		var from: Vector2 = view[1]

@@ -86,6 +86,39 @@ const RAMP_ROADS := [0, 1, 3, 4]
 const MOTOR_POOL := 3
 ## How long an emptied strongpoint's vehicle spot waits for a new one.
 const SITE_VEHICLE_RESPAWN := 600.0
+## The Works: a ruined factory district in the middle ring, south of the
+## Forge, between the two southern drop points. One street runs north from
+## its mouth straight at the Forge, lined with halls; catwalks along the
+## halls' street faces and gantries across the street make a second storey
+## over it, and the roofs are left to the flight rigs. Close quarters to set
+## against the open field: a jetpack or boots own it, wings are no use in it.
+## Laid along the z axis, so every hall is square to the map.
+const WORKS_FROM := 198.0
+const WORKS_TO := 104.0
+## Half the street's width: a rover and a bike pass, with the catwalks over
+## their outer edges.
+const WORKS_STREET := 9.0
+## How far the district's ground is graded, either side of the street.
+const WORKS_REACH := 24.0
+## The halls: which side of the street (1 east, -1 west), the z of their
+## outer and inner ends, depth back from the street, height, and whether the
+## hall is an open-fronted shed (walls and a roof, open to the street, with a
+## floor to fight on) instead of a solid block. Alleys between the halls are
+## staggered, so no line runs clean across the district.
+const WORKS_HALLS := [
+	{"side": 1.0, "from": 198.0, "to": 174.0, "depth": 13.0, "height": 12.0, "shed": false},
+	{"side": 1.0, "from": 168.0, "to": 140.0, "depth": 13.0, "height": 16.0, "shed": false, "roof_cache": true},
+	{"side": 1.0, "from": 134.0, "to": 110.0, "depth": 12.0, "height": 10.0, "shed": true},
+	{"side": -1.0, "from": 196.0, "to": 178.0, "depth": 12.0, "height": 9.0, "shed": true},
+	{"side": -1.0, "from": 172.0, "to": 152.0, "depth": 14.0, "height": 14.0, "shed": false},
+	{"side": -1.0, "from": 146.0, "to": 116.0, "depth": 13.0, "height": 12.0, "shed": false, "roof_cache": true},
+]
+## The second storey: catwalks this high along every hall's street face, and
+## a gantry across the street at each of these z. Each gantry's catwalks are
+## reached by a stair at the outer end of its east side.
+const WORKS_DECK := 6.0
+const WORKS_GANTRIES := [186.0, 158.0, 124.0]
+const WORKS_WALK := 2.0
 const FIELD_PATROLS := 8
 ## Risk zones (DESIGN.md section 2): the core is the molten Foundry, the
 ## middle reaches past the four landmarks, the outer ring is the rest.
@@ -181,6 +214,7 @@ var _searchlights: Array[Node3D] = []
 		"blend_amount": 0.45, "grime": 0.6, "saturation": 0.3, "scale": 0.16})
 @onready var WALL := Look.surface("concrete", {"tint": Color(0.45, 0.4, 0.38), "grime": 0.8, "scale": 0.12})
 @onready var COVER_METAL := Look.surface("metal", {"tint": Color(0.7, 0.42, 0.28), "scale": 0.45})
+@onready var WORKS_METAL := Look.surface("metal", {"tint": Color(0.52, 0.48, 0.45), "grime": 0.8, "scale": 0.3})
 @onready var COVER_CONCRETE := Look.surface("concrete", {"tint": Color(0.8, 0.74, 0.68), "grime": 0.9, "scale": 0.5})
 @onready var HULL := Look.surface("metal", {"tint": Color(0.62, 0.58, 0.55), "grime": 0.8, "scale": 0.3})
 @onready var HULL_RUST := Look.surface("metal", {"tint": Color(0.8, 0.45, 0.3), "grime": 0.9, "scale": 0.35})
@@ -200,6 +234,7 @@ func _ready() -> void:
 	_build_ground()
 	_build_sites()
 	_build_spawns()
+	_build_works()
 	_build_field()
 	_mark_zones()
 	_art_rng.seed = LAYOUT_SEED
@@ -420,6 +455,7 @@ func _shape_ground() -> void:
 		var radius: float = pad["radius"]
 		_stamp(pad["at"], radius * 1.9, func(h: float, d: float) -> float:
 			return lerpf(float(pad["height"]), h, smoothstep(radius, radius * 1.9, d)))
+	_grade_works()
 	# Last, each road is eased along its length, so a climb (up Signal Hill,
 	# off a levelled camp) is a long even grade a bike can take.
 	for road: Array in ROADS:
@@ -981,6 +1017,116 @@ func _build_routes() -> void:
 		n += 1
 
 
+# --- The Works --------------------------------------------------------------------
+
+## The height the whole district is levelled to: a works is built on flat ground.
+func _works_level() -> float:
+	return (_rolling(0.0, WORKS_FROM) + _rolling(0.0, WORKS_TO)) * 0.5
+
+
+## Whether `at` is within `margin` of the Works' footprint (street and halls).
+func _in_works(at: Vector2, margin: float) -> bool:
+	return absf(at.x) < WORKS_REACH + margin and at.y > WORKS_TO - margin and at.y < WORKS_FROM + margin
+
+
+## The district's ground, levelled (craters filled, rises cut) and blended
+## back into the field round it over a long run, so the street's mouth is a
+## grade a bike takes.
+func _grade_works() -> void:
+	var level := _works_level()
+	var blend := 22.0
+	var half := (SIDE - 1) * CELL * 0.5
+	for iz in SIDE:
+		var z := iz * CELL - half
+		if z < WORKS_TO - blend or z > WORKS_FROM + blend:
+			continue
+		for ix in SIDE:
+			var x := ix * CELL - half
+			if absf(x) > WORKS_REACH + blend:
+				continue
+			var out := maxf(absf(x) - WORKS_REACH, maxf(WORKS_TO - z, z - WORKS_FROM))
+			var i := iz * SIDE + ix
+			terrain.heights[i] = lerpf(level, terrain.heights[i], smoothstep(0.0, blend, out))
+
+
+func _build_works() -> void:
+	var level := _works_level()
+	var deck_y := level + WORKS_DECK - 0.2
+	for i in WORKS_HALLS.size():
+		var hall: Dictionary = WORKS_HALLS[i]
+		var side: float = hall["side"]
+		var depth: float = hall["depth"]
+		var length: float = float(hall["from"]) - float(hall["to"])
+		var mid := Vector2(side * (WORKS_STREET + depth * 0.5), (float(hall["from"]) + float(hall["to"])) * 0.5)
+		var size := Vector3(depth, float(hall["height"]), length)
+		if hall["shed"]:
+			_add_shed(Vector3(mid.x, level, mid.y), size, side)
+		else:
+			_add_hall(Vector3(mid.x, level, mid.y), size, 0.28 + 0.03 * (i % 4), hall.get("roof_cache", false))
+	# The catwalks: one along each side's hall fronts, bridging the alleys.
+	for side: float in [-1.0, 1.0]:
+		var from := -INF
+		var to := INF
+		var alleys: Array[float] = []
+		var ends: Array[Vector2] = []
+		for hall: Dictionary in WORKS_HALLS:
+			if hall["side"] == side:
+				from = maxf(from, hall["from"])
+				to = minf(to, hall["to"])
+				ends.append(Vector2(hall["to"], hall["from"]))
+		ends.sort_custom(func(a: Vector2, b: Vector2) -> bool: return a.x < b.x)
+		for k in ends.size() - 1:
+			alleys.append((ends[k].y + ends[k + 1].x) * 0.5)
+		_box(Vector3(WORKS_WALK, 0.4, from - to), Vector3(side * (WORKS_STREET - WORKS_WALK * 0.5), deck_y, (from + to) * 0.5), WORKS_METAL)
+		# A stair up from the alley nearest the middle of the side, running
+		# out from the street so it never narrows it.
+		var stair_z: float = alleys[alleys.size() / 2] if side > 0.0 else alleys[0]
+		var run := 12.0
+		var stair := _box(Vector3(Vector2(run, WORKS_DECK).length() + 0.6, 0.4, WORKS_WALK),
+				Vector3(side * (WORKS_STREET + run * 0.5), level + WORKS_DECK * 0.5 - 0.1, stair_z), WORKS_METAL)
+		stair.rotation.z = -side * atan2(WORKS_DECK, run)
+		stair.set_meta("works_stair", true)
+	# The gantries across the street, joining the two sides' catwalks.
+	for z: float in WORKS_GANTRIES:
+		var gantry := _box(Vector3(WORKS_STREET * 2.0 - WORKS_WALK * 2.0 + 0.2, 0.4, 3.0), Vector3(0, deck_y, z), WORKS_METAL)
+		gantry.set_meta("works_gantry", true)
+	_add_marker("spawn_cache", Vector3(0, deck_y + 0.2, WORKS_GANTRIES[1]))
+	# The crane that came down across the street: cover, and a break in the
+	# long sight line from the mouth to the Forge.
+	var girder := _box(Vector3(1.8, 1.8, 17.0), Vector3(-1.0, level + 0.6, 141.0), WORKS_METAL)
+	girder.rotation.y = 0.65
+	# Where the district was held: a barricade at each end of the street.
+	_add_cover(Vector3(3.0, level, 178.0))
+	_add_cover(Vector3(-3.0, level, 112.0))
+
+
+## A solid factory hall: a block, its roof for whoever can fly up there.
+func _add_hall(base: Vector3, size: Vector3, shade: float, roof_cache: bool) -> void:
+	var tint := Color(shade, shade * 0.92, shade * 0.88) * 2.4
+	var body := _box(size + Vector3(0, 1.5, 0), base + Vector3(0, size.y * 0.5 - 0.75, 0),
+			Look.surface("concrete", {"tint": tint, "grime": 0.8}))
+	Look.make_building(body.get_child(1), size, shade * 100.0)
+	_buildings.append({"center": base, "size": size, "works": true})
+	if roof_cache:
+		var marker := _add_marker("spawn_cache", base + Vector3(0, size.y, 0))
+		marker.set_meta("loot_source", "rooftop")
+
+
+## An open-fronted shed: back and end walls and a roof, open to the street, so
+## there is a floor under cover to fight across (and no flying in it on wings).
+func _add_shed(base: Vector3, size: Vector3, side: float) -> void:
+	var wall := 0.6
+	var back := base + Vector3(side * (size.x * 0.5 - wall * 0.5), 0, 0)
+	_box(Vector3(wall, size.y + 1.0, size.z), back + Vector3(0, size.y * 0.5 - 0.5, 0), WALL)
+	for end: float in [-1.0, 1.0]:
+		var at := base + Vector3(0, 0, end * (size.z * 0.5 - wall * 0.5))
+		_box(Vector3(size.x, size.y + 1.0, wall), at + Vector3(0, size.y * 0.5 - 0.5, 0), WALL)
+	_box(Vector3(size.x, 0.6, size.z), base + Vector3(0, size.y - 0.3, 0), WALL)
+	_buildings.append({"center": base, "size": size, "works": true, "shed": true})
+	# Its walls are solids too wide for `_open` to find the floor between.
+	_add_marker("spawn_cache", base + Vector3(side * 2.0, 0, 0))
+
+
 ## The heading a wreck has when its nose points along `dir`.
 func _facing(dir: Vector2) -> float:
 	return atan2(-dir.x, -dir.y)
@@ -1013,6 +1159,8 @@ func _clear_spot(at: Vector2, radius: float) -> Vector2:
 
 func _spot_clear(at: Vector2, radius: float) -> bool:
 	if maxf(absf(at.x), absf(at.y)) > FIELD - 20.0:
+		return false
+	if _in_works(at, radius):
 		return false
 	if _road_distance(at) < radius * 0.7 + ROAD_CLEAR:
 		return false
