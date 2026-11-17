@@ -123,8 +123,13 @@ static func _wear(t: Node) -> void:
 			"picked on the carousel, a click puts it on")
 	p.visor.zoom_level = 1
 	t.check(raid.summon(p, "helm_seeker") == "" and p.visor.mode == "scan" and p.visor.item_id == "helm_seeker"
-			and p.visor.cooldown == 25.0 and p.visor.zoom_level == 0 and raid.summon_wait(p) <= 0.0,
-			"the summon puts it on at once, its visor is the new helmet's, and the watch need not rest")
+			and p.visor.cooldown == 25.0 and p.visor.zoom_level == 0,
+			"the summon puts it on at once, and its visor is the new helmet's")
+	var helmet_rest := raid.summon_wait(p)
+	t.check(helmet_rest > 0.0 and helmet_rest < Loadout.summon_cooldown("frame_trooper")
+			and raid.swap_worn(p, "helm_spotter") != "",
+			"then the watch rests briefly (%.0f s, shorter than a frame's), like after any summon" % helmet_rest)
+	raid.state_for(p).summon_ready_at = raid.clock
 	t.check("helm_seeker" in p.gear_items and "helm_spotter" not in p.gear_items
 			and p.inventory.has_item("helm_spotter") and not p.inventory.has_item("helm_seeker"),
 			"the helmet taken off goes into the pack, and the one put on is worn gear")

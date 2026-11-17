@@ -82,7 +82,7 @@ signal base_visit_requested(owner_name: String, stash: Array, loadout: Dictionar
 signal portal_travel(destination: String)
 
 const DEFAULT_PORT := 24565
-const PROTOCOL := 31
+const PROTOCOL := 32
 ## Every packet is compressed, both ways. State updates are mostly repeated
 ## numbers, and a big battle sends a player hundreds of them a second. Server
 ## and client must agree, so a change here needs a new PROTOCOL.
@@ -90,6 +90,8 @@ const PROTOCOL := 31
 ## carries the airborne sign-out beacon bit.
 ## 31: a squad portal carries how long it unfolds (a portal home out in a
 ## world unfolds over its opener's sign-out).
+## 32: a depot banking tells its owner what this life has sent home
+## (`_banked`), for the watch's banking readout.
 const COMPRESSION := ENetConnection.COMPRESS_RANGE_CODER
 const StashService := preload("res://core/account/stash_service.gd")
 const Economy := preload("res://core/economy/economy.gd")
@@ -367,6 +369,7 @@ func _start_server_raid() -> void:
 	raid.vehicle_removed.connect(_on_server_vehicle_removed)
 	raid.watch_changed.connect(_send_watch)
 	raid.tally_changed.connect(_send_tally)
+	raid.banked_changed.connect(_send_banked)
 	raid.toy_thrown.connect(func(actor: Actor, item_id: String, from: Vector3, toy_velocity: Vector3) -> void:
 		var thrower: int = _ids.get(actor, -1)
 		for peer in _joined_peers:
@@ -590,6 +593,14 @@ func _send_tally(actor: Actor) -> void:
 	var peer: int = _actor_peer.get(actor, 0)
 	if peer != 0 and peer in _joined_peers and raid != null:
 		_tally.rpc_id(peer, actor.tally)
+
+
+## Tells a player what this life has sent home through depots, for the
+## watch's banking readout. Only the owner hears it.
+func _send_banked(actor: Actor) -> void:
+	var peer: int = _actor_peer.get(actor, 0)
+	if peer != 0 and peer in _joined_peers:
+		_banked.rpc_id(peer, actor.banked_count, actor.banked_value, actor.banked_scrip)
 
 
 func _on_server_player_finished(actor: Actor, result: Dictionary) -> void:
@@ -2217,6 +2228,17 @@ func _tally(counts: Dictionary) -> void:
 		if typeof(stat) == TYPE_STRING:
 			clean[stat] = maxi(0, int(counts[stat]))
 	me.tally = clean
+
+
+## What this life has sent home through depots, for the watch.
+@rpc("authority", "call_remote", "reliable")
+func _banked(count: int, value: int, scrip: int) -> void:
+	var me: Actor = _actors.get(my_actor_id)
+	if me == null:
+		return
+	me.banked_count = maxi(0, count)
+	me.banked_value = maxi(0, value)
+	me.banked_scrip = maxi(0, scrip)
 
 
 ## What is on your watch, and how long until you can throw again.

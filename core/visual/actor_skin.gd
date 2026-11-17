@@ -1616,6 +1616,10 @@ func _update_materialize() -> void:
 	var fading := storing != null and storing == weapon
 	var model: Node3D = weapon.visual if weapon != null and (actor.materialize_left > 0.0 or fading) \
 			and weapon.visual != null and is_instance_valid(weapon.visual) else null
+	if model != null and model != _materializing:
+		# The watch's sound as it starts, heard by everyone near: up out of
+		# the watch, or back down into it.
+		Sfx.play("store" if fading else "summon", actor.global_position, -4.0)
 	if _materializing != null and (model != _materializing or not is_instance_valid(_materializing)):
 		if is_instance_valid(_materializing):
 			_set_materialize(_materializing, 1.0)
