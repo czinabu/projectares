@@ -43,6 +43,12 @@ var reload_time := 1.7
 var max_range := 150.0
 var spread_deg := 1.2
 var ads_spread_mult := 0.3
+## Seconds to bring the gun up to the eye: aimed spread comes in over this,
+## so a snap aim is not yet a steady one.
+var ads_time := 0.25
+## Extra spread (degrees) moving at a sprint's speed on the ground, less at a
+## walk, none standing still. Aiming scales it down like the rest.
+var move_spread_deg := 2.0
 ## Sustained fire widens the spread; it settles when you let go.
 var bloom_per_shot := 0.35
 var max_bloom := 2.6
@@ -126,6 +132,8 @@ const MOUNTS := {
 var _cooldown := 0.0
 var _reload_left := 0.0
 var _aiming := false
+## How far the gun has come up to the eye, 0 to 1 (`ads_time`).
+var _aim_in := 0.0
 var _bloom := 0.0
 var _rng := RandomNumberGenerator.new()
 var _charge := 0.0
@@ -398,6 +406,7 @@ func controls_hint() -> String:
 
 func tick(delta: float) -> void:
 	_cooldown = maxf(0.0, _cooldown - delta)
+	_aim_in = minf(1.0, _aim_in + delta / maxf(ads_time, 0.01)) if _aiming else 0.0
 	_noise_left = maxf(0.0, _noise_left - delta)
 	_press_left = maxf(0.0, _press_left - delta)
 	_bloom = maxf(0.0, _bloom - bloom_recovery * delta)
@@ -432,10 +441,12 @@ func handle_input(cmd: ActorCommand, delta: float) -> void:
 		if _charge < charge_time:
 			return
 		_charge = 0.0
+	var recover := actor.sprint_recover if actor else 0.0
 	if cmd.primary_pressed:
-		_press_left = press_buffer
+		# A pull while the gun comes up from a sprint is kept until it is up.
+		_press_left = maxf(press_buffer, recover + 0.02)
 	var trigger := (cmd.primary_pressed or _press_left > 0.0) if semi_auto else cmd.primary
-	if trigger and _cooldown <= 0.0 and _reload_left <= 0.0:
+	if trigger and _cooldown <= 0.0 and _reload_left <= 0.0 and recover <= 0.0:
 		_press_left = 0.0
 		if ammo_in_mag > 0:
 			_fire()
@@ -445,6 +456,7 @@ func handle_input(cmd: ActorCommand, delta: float) -> void:
 
 func drop_aim() -> void:
 	_aiming = false
+	_aim_in = 0.0
 
 
 func on_holster() -> void:
@@ -503,7 +515,21 @@ func start_reload() -> void:
 
 
 func current_spread_deg() -> float:
-	return (spread_deg + _bloom + _air_spread()) * (ads_spread_mult if _aiming else 1.0) * _steadiness()
+	return (spread_deg + _bloom + _air_spread() + move_spread_deg * move_share()) \
+			* lerpf(1.0, ads_spread_mult, _aim_in) * _steadiness()
+
+
+## How fast the shooter moves on the ground, as a share of a sprint (0 to 1).
+## The air has its own spread (`_air_spread`).
+func move_share() -> float:
+	if actor == null or not actor.is_on_floor():
+		return 0.0
+	return clampf(Vector2(actor.velocity.x, actor.velocity.z).length() / maxf(actor.sprint_speed, 0.1), 0.0, 1.0)
+
+
+## How far the gun has come up to the eye, 0 to 1.
+func aim_in() -> float:
+	return _aim_in
 
 
 ## Crouched on the ground the aim is steadier (`Actor.aim_steadiness`).
