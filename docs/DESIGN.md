@@ -492,7 +492,7 @@ case; a person who breaks line of sight does much better.
 | You against 5 | 0% win, dead in 3.8 s | 0% win, dead in 6.8 s |
 
 Taking turns buys between one and three seconds against a group, which is the time to
-reach cover, heal or leave. Proposed targets for Caleb to confirm: an
+reach cover, heal or leave. Targets (Caleb confirmed): an
 outer pair is winnable in the open (about a third), three or more need
 cover or a plan, and five should take at least six seconds to kill
 someone standing still. The duel rows above stay in their bands with this
