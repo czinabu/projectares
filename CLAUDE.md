@@ -136,7 +136,15 @@ without Caleb, and update the gap list when a PR closes a row.
   everyone else against the nearest site it does not. Reinforcements follow
   the war: `Raid.bot_target()` is `bot_count` plus a share of
   `WorldDef.war_reinforcements` by `war.intensity`, new bots join the faction
-  with the fewest alive, and extra bots are not replaced once it cools. Bots
+  with the fewest alive, and extra bots are not replaced once it cools.
+  A world caps rare kinds with `WorldDef.bot_allowed` (authority only: the
+  `Raid` rolls a turned-away bot again from a new seed, so clients only hear
+  of the kept seed). Ashfront's kinds (meta "kind": soldier, heavy, exo,
+  walker; DESIGN.md "Heavy units") come from the seed in `equip_bot`; a big
+  body is `Actor.set_stand_height` (capsule, hit tests and eyes follow
+  `body_height()`), a weak spot `Actor.rear_damage_mult`, and a gun that
+  must hold a lock first `BotBrain.lock_time` (meta "lock_time"), whose
+  tracking beam every view draws from the held aim (`ActorSkin._update_beam`). Bots
   killing bots only simmer the meter (`WarDirector.report_battle`, capped at
   `battle_ceiling`); only players take it higher. World-event bots
   (`Raid._event_bots`) are outside all of this, and so are rival raiders

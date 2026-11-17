@@ -24,6 +24,11 @@ const TARGETS := {
 	"heavy_core": {"kind": "heavy", "zone": 2, "win": Vector2(0.55, 0.8), "role": "punishes panic"},
 	"raider": {"kind": "raider", "zone": 0, "win": Vector2(0.4, 0.6), "role": "an equal"},
 	"warlord": {"kind": "warlord", "zone": 2, "win": Vector2(0.1, 0.35), "role": "a squad fight"},
+	# Heavy units (DESIGN.md "Heavy units"), last so the rows above keep their seeds.
+	"exo_outer": {"kind": "exo", "zone": 0, "win": Vector2(0.7, 0.9), "role": "the tougher soldier"},
+	"exo_core": {"kind": "exo", "zone": 2, "win": Vector2(0.45, 0.7), "role": "armor that needs a plan"},
+	"walker_middle": {"kind": "walker", "zone": 1, "win": Vector2(0.15, 0.4), "role": "a fight for two players"},
+	"walker_core": {"kind": "walker", "zone": 2, "win": Vector2(0.1, 0.3), "role": "a fight for two players"},
 }
 ## Seconds before an unfinished duel counts as a draw.
 const TIME_LIMIT := 45.0
@@ -145,16 +150,26 @@ func _make_enemy(type: String, at: Vector3, equip_seed: int) -> Actor:
 			var brain := _brain(bot, equip_seed, _world.raider_skill, true)
 			brain.flies = bot.flight.enabled
 		"warlord":
-			bot = _raid.spawn_bot("Foe%d" % equip_seed, at, equip_seed, true, "", def.zone)
+			# Rolled until the world would let it be a warlord
+			# (`WorldDef.bot_allowed`: never a walker).
+			var try_seed := equip_seed
+			while true:
+				bot = _raid.spawn_bot("Foe%d" % try_seed, at, try_seed, true, "", def.zone)
+				if bot.get_meta("kind", "") != "walker":
+					break
+				_raid._remove_actor(bot)
+				try_seed += 7919
 			_brain(bot, equip_seed, _world.bot_skill_range(bot, true), false)
 		_:
-			# The world rolls soldier or heavy from the seed: try seeds until
+			# The world rolls the kind from the seed (its meta "kind", or for
+			# a world that sets none, a blade means a heavy): try seeds until
 			# it gives the kind asked for.
 			var try_seed := equip_seed
 			while true:
 				bot = _raid.spawn_bot("Foe%d" % try_seed, at, try_seed, false, "", def.zone)
-				var heavy := bot.get_active_weapon() is MeleeWeapon
-				if heavy == (def.kind == "heavy"):
+				var kind: String = bot.get_meta("kind",
+						"heavy" if bot.get_active_weapon() is MeleeWeapon else "soldier")
+				if kind == def.kind:
 					break
 				_raid._remove_actor(bot)
 				try_seed += 7919
