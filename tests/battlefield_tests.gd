@@ -156,8 +156,12 @@ static func run(t: Node) -> void:
 
 	# Walking: uphill and down, the ground holds.
 	var start := p.global_position
-	# Towards the middle, but round the wall the drop point sits behind.
-	p.cmd.yaw = atan2(start.x, start.z) + 0.9
+	# Towards the middle, but round the wall an open drop point sits behind.
+	# A gate outpost's yard is walled except toward the middle, so from a
+	# gate run straight out of it.
+	var at_gate := raid.outposts.any(func(gate: Node3D) -> bool:
+		return Vector2(gate.global_position.x - start.x, gate.global_position.z - start.z).length() < 14.0)
+	p.cmd.yaw = atan2(start.x, start.z) + (0.0 if at_gate else 0.9)
 	p.cmd.move = Vector2(0, 1)
 	p.cmd.sprint = true
 	await t.frames(240)

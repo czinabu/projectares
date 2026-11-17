@@ -1700,6 +1700,9 @@ func _ashfront_shots(out_dir: String) -> void:
 		["rustfall", Vector2(210, -40), Vector2(158, -106), 4.0],
 		["high", Vector2(-230, 230), Vector2(0, 0), 60.0],
 		["skyline", Vector2(60, 20), Vector2(260, -120), 2.0],
+		["tide_push", Vector2(140, 22), Vector2(70, -4), 4.0],
+		["air_assault", Vector2(-190, -60), Vector2(-90, -12), 6.0],
+		["breach_striders", Vector2(-50, 175), Vector2(-100, 125), 4.0],
 	]
 	for view: Array in views:
 		var from: Vector2 = view[1]
@@ -1709,6 +1712,20 @@ func _ashfront_shots(out_dir: String) -> void:
 		camera.look_at_from_position(eye, aim)
 		await _settle(40)
 		await _shot(out_dir.path_join("ashfront_%s.png" % view[0]))
+	# Straight down over the whole field, north up, with the haze off: the
+	# layout as a map. 1.5 px a metre at 1600x900, the middle at the centre.
+	var envs := raid.map.find_children("*", "WorldEnvironment", true, false)
+	for env_node in envs:
+		(env_node as WorldEnvironment).environment.fog_enabled = false
+		(env_node as WorldEnvironment).environment.volumetric_fog_enabled = false
+	camera.projection = Camera3D.PROJECTION_ORTHOGONAL
+	camera.size = 600.0
+	camera.look_at_from_position(Vector3(0, 700, 0), Vector3.ZERO, Vector3(0, 0, -1))
+	await _settle(20)
+	await _shot(out_dir.path_join("ashfront_map.png"))
+	for env_node in envs:
+		(env_node as WorldEnvironment).environment.fog_enabled = true
+	camera.projection = Camera3D.PROJECTION_PERSPECTIVE
 	# The same view from the field toward the Forge, quiet, in a battle and
 	# in all-out war, with the fighting just ahead.
 	raid.war.cooling = 0.0

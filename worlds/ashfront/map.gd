@@ -28,10 +28,48 @@ const HEIGHTS := [3.0, 6.0, 6.0, 10.0, 16.0]
 const RAMP_LENGTH := 8.0
 const RAMP_ANGLE_DEG := 15.0
 const CRATERS := 80
-const WRECKS := 56
-## Fallen giants: the biggest wrecks, each a landmark with loot on its back.
-const TITANS := 5
-const COVER_LOTS := 44
+
+## The battle this field remembers. Everything on it is placed from this
+## story, not dropped at random: each army's supply roads, where each push
+## was stopped, and where the giants fell.
+##
+## Supply roads, from each army's muster through the sites it holds and on
+## toward the Forge.
+const ROADS := [
+	[Vector2(-212, 4), Vector2(-185, -50), Vector2(-150, -118)],
+	[Vector2(-212, 4), Vector2(-190, 70), Vector2(-142, 136)],
+	[Vector2(-212, 4), Vector2(-140, 8), Vector2(-60, 2)],
+	[Vector2(212, -4), Vector2(190, -55), Vector2(158, -106)],
+	[Vector2(212, -4), Vector2(185, 60), Vector2(134, 132)],
+	[Vector2(212, -4), Vector2(140, -8), Vector2(60, -2)],
+]
+## Where the pushes died: wrecks of `kinds` (0 tank, 1 strider, 2 dropship)
+## strung along the line from `from` to `to`, facing the way they were
+## going, staggered `spread` metres either side.
+const BATTLES := [
+	# The Tide's last push: a tank column down the east road, stopped short
+	# of the core.
+	{"from": Vector2(118, -4), "to": Vector2(66, 2), "count": 9, "kinds": [0, 0, 0, 1], "spread": 9.0, "big": 1.3},
+	# The Legion's air assault: dropships shot down coming in from the west,
+	# their furrows all pointing at the Forge.
+	{"from": Vector2(-165, -28), "to": Vector2(-82, -10), "count": 6, "kinds": [2], "spread": 14.0, "big": 1.6},
+	# The Tide's striders broke on the Breach's line.
+	{"from": Vector2(-76, 150), "to": Vector2(-98, 118), "count": 4, "kinds": [1], "spread": 8.0, "big": 1.4},
+	# Tide tanks caught on the slope up to Signal Hill.
+	{"from": Vector2(-88, -128), "to": Vector2(-112, -102), "count": 4, "kinds": [0], "spread": 7.0, "big": 1.2},
+	# A Legion push on Rustfall, stopped in the open.
+	{"from": Vector2(70, -132), "to": Vector2(112, -118), "count": 4, "kinds": [0, 2], "spread": 8.0, "big": 1.3},
+	# A Legion convoy ambushed on the road to the Breach.
+	{"from": Vector2(-198, 40), "to": Vector2(-186, 82), "count": 3, "kinds": [0], "spread": 5.0, "big": 1.0},
+	# A Tide convoy hit on the road to Carrier Grave.
+	{"from": Vector2(196, 30), "to": Vector2(180, 72), "count": 3, "kinds": [0], "spread": 5.0, "big": 1.0},
+]
+## The fallen titans: one guarding each lane into the core, the fifth on the
+## Breach's flank. Each fell facing the Forge.
+const TITAN_SPOTS := [Vector2(-104, -46), Vector2(30, -118), Vector2(110, 56), Vector2(-24, 112), Vector2(-62, 160)]
+## Cover hops along every way in from the rim: a lot this far out on each
+## drop point's spoke, swung a little to one side and the other.
+const HOPS := [232.0, 180.0, 128.0, 82.0]
 const FIELD_PATROLS := 8
 ## Risk zones (DESIGN.md section 2): the core is the molten Foundry, the
 ## middle reaches past the four landmarks, the outer ring is the rest.
@@ -604,17 +642,8 @@ func _mark_zones() -> void:
 
 
 func _build_field() -> void:
-	for i in TITANS:
-		_add_wreck(_free_spot(26.0), 3, _rng.randf_range(0.0, TAU), 1.0)
-	for i in WRECKS:
-		var big := _rng.randf_range(0.9, 2.2)
-		var at := _free_spot(7.0 * big)
-		_add_wreck(at, _rng.randi() % 3, _rng.randf_range(0.0, TAU), big)
-	for i in COVER_LOTS:
-		var at := _free_spot(6.0)
-		_add_cover(_ground(at))
-		if i % 3 == 0:
-			_add_marker("spawn_cache", _open(at + Vector2(_rng.randf_range(-3, 3), _rng.randf_range(-3, 3))))
+	_build_battles()
+	_build_routes()
 	# Patrols start on their own army's half of the field.
 	for i in FIELD_PATROLS:
 		var army := "legion" if i % 2 == 0 else "tide"
@@ -753,6 +782,95 @@ func _add_wreck(at: Vector2, kind: int, yaw: float, big: float) -> void:
 			fin.rotation = Vector3(-0.05, yaw + 0.12, 0.0)
 	_wrecks.append({"at": base, "size": size, "burning": _rng.randf() < 0.4, "kind": kind, "yaw": yaw, "big": big})
 	_cover_spots.append(_ground(at + Vector2.from_angle(yaw) * (size.x * 0.5 + 2.0)))
+
+
+## Wrecks where the story put them. Each spot is nudged clear of anything
+## already placed, and reserved so nothing lands on it later.
+func _build_battles() -> void:
+	for at: Vector2 in TITAN_SPOTS:
+		var spot := _clear_spot(at, 26.0)
+		_add_wreck(spot, 3, _facing(-spot) + _rng.randf_range(-0.3, 0.3), 1.0)
+	for battle: Dictionary in BATTLES:
+		var from: Vector2 = battle["from"]
+		var to: Vector2 = battle["to"]
+		var count: int = battle["count"]
+		var kinds: Array = battle["kinds"]
+		var heading := _facing(to - from)
+		var side := (to - from).normalized().orthogonal()
+		for i in count:
+			var t := (i + 0.5) / count
+			var stagger := float(battle["spread"]) * (1.0 if i % 2 == 0 else -1.0) * _rng.randf_range(0.4, 1.0)
+			var big: float = battle["big"] * _rng.randf_range(0.85, 1.15)
+			var spot := _clear_spot(from.lerp(to, t) + side * stagger, 7.0 * big)
+			# Most kept their heading; a few slewed round as they were hit.
+			var slew := _rng.randf_range(-0.25, 0.25) + (1.2 * signf(stagger) if i % 4 == 3 else 0.0)
+			_add_wreck(spot, kinds[i % kinds.size()], heading + slew, big)
+
+
+## Cover hops on the ways in: along each drop point's spoke toward the core,
+## and a checkpoint halfway along each supply road. A third of them keep a
+## cache, as cover lots always have.
+func _build_routes() -> void:
+	var lots: Array[Vector2] = []
+	for i in PLAYER_SPAWNS:
+		var dir := Vector2.from_angle(TAU * (i + 0.5) / PLAYER_SPAWNS)
+		for k in HOPS.size():
+			var swing := 0.09 * (1.0 if (i + k) % 2 == 0 else -1.0)
+			lots.append(dir.rotated(swing) * float(HOPS[k]))
+	for road: Array in ROADS:
+		lots.append((road[1] as Vector2).lerp(road[2], 0.5))
+	var n := 0
+	for at in lots:
+		if _site_at(at, 8.0):
+			continue
+		var spot := _clear_spot(at, 6.0)
+		_add_cover(_ground(spot))
+		if n % 3 == 0:
+			_add_marker("spawn_cache", _open(spot + Vector2(_rng.randf_range(-3, 3), _rng.randf_range(-3, 3))))
+		n += 1
+
+
+## The heading a wreck has when its nose points along `dir`.
+func _facing(dir: Vector2) -> float:
+	return atan2(-dir.x, -dir.y)
+
+
+func _site_at(at: Vector2, margin: float) -> bool:
+	for site: Dictionary in SITES:
+		if at.distance_to(site["at"]) < float(site["radius"]) + margin:
+			return true
+	return false
+
+
+## The open spot nearest `at` that is clear of every pad, site and trench,
+## reserved as a pad of `radius` so nothing else lands on it.
+func _clear_spot(at: Vector2, radius: float) -> Vector2:
+	var best := at
+	for ring in 16:
+		var found := false
+		for step in maxi(ring * 6, 1):
+			var spot := at + Vector2.from_angle(TAU * step / maxf(ring * 6.0, 1.0)) * ring * 3.0
+			if _spot_clear(spot, radius):
+				best = spot
+				found = true
+				break
+		if found:
+			break
+	_pads.append({"at": best, "radius": radius, "height": _rolling(best.x, best.y), "soft": true})
+	return best
+
+
+func _spot_clear(at: Vector2, radius: float) -> bool:
+	if maxf(absf(at.x), absf(at.y)) > FIELD - 20.0:
+		return false
+	for pad in _pads:
+		if at.distance_to(pad["at"]) < float(pad["radius"]) * (1.0 if pad.get("soft", false) else 1.5) + radius:
+			return false
+	for line in _trenches:
+		for i in line.size() - 1:
+			if at.distance_to(Geometry2D.get_closest_point_to_segment(at, line[i], line[i + 1])) < radius * 0.7 + 5.0:
+				return false
+	return true
 
 
 ## The front lines, dug in: sandbag walls along the lips of the trenches
@@ -915,6 +1033,7 @@ func _dress() -> void:
 	_dress_wrecks(art)
 	_dress_cover(art)
 	_dress_cracks(art)
+	_dress_roads(art)
 	_dress_outposts(art)
 	_dress_horizon(art)
 
@@ -1457,6 +1576,23 @@ func _dress_cracks(art: Node3D) -> void:
 	# A charred bed under each crack, then the glow in it, widest at the core.
 	_ground_strips(art, lines, 3.6, Look.trim("scorch"), 0.06, true)
 	_ground_strips(art, lines, 1.0, Look.trim("crack"), 0.1, true)
+
+
+## The supply roads: packed, rutted tracks, so the way an army came and went
+## reads on the ground.
+func _dress_roads(art: Node3D) -> void:
+	var lines: Array[PackedVector2Array] = []
+	for road: Array in ROADS:
+		var line := PackedVector2Array()
+		for i in road.size() - 1:
+			var a: Vector2 = road[i]
+			var b: Vector2 = road[i + 1]
+			var steps := maxi(int(a.distance_to(b) / 2.5), 1)
+			for k in steps:
+				line.append(a.lerp(b, float(k) / steps))
+		line.append(road[road.size() - 1])
+		lines.append(line)
+	_ground_strips(art, lines, 5.0, Look.trim("track"), 0.03)
 
 
 ## Draws each polyline as short boxes laid on the ground and tipped with it,

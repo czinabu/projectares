@@ -2271,7 +2271,8 @@ func _check_jetpack_cruise(p: Actor) -> void:
 ## Boots skimming, dashing, grazing, the 10 m ceiling and the ground speed.
 ## `p` stands on open ground with thruster boots.
 func _check_boot_skim(p: Actor) -> void:
-	p.global_position = Vector3(0.0, p.global_position.y, 60.0)
+	# Feet on the ground: the open ground is a heightfield, not a solid.
+	p.global_position = Raid.of(p)._stand(Vector3(0.0, 0.0, 60.0))
 	for i in 200:
 		await get_tree().physics_frame
 		if p.is_on_floor():

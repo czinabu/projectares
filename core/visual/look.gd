@@ -895,7 +895,7 @@ func interior(parent: Node3D, ambient: Color, energy: float) -> void:
 ## one kit instead of loose props: "teal" running lights, "orange" furnace
 ## light, "beacon" (a red light that cuts through the haze, never fogged),
 ## "slag" (molten metal), "crack" (a dimmer glow for cracks in the ground),
-## "scorch" (charred ground), "hazard" (orange and black stripes),
+## "scorch" (charred ground), "track" (a packed road), "hazard" (orange and black stripes),
 ## "sandbag", "halo" (a glow round a far light), "flash" (a far blast),
 ## "beam" (a searchlight) and "distant" (skyline silhouettes). Cached, so every piece shares one material.
 func trim(kind: String) -> Material:
@@ -918,6 +918,9 @@ func trim(kind: String) -> Material:
 				mat.disable_fog = true
 		"scorch":
 			mat.albedo_color = Color(0.06, 0.045, 0.04)
+			mat.roughness = 1.0
+		"track":
+			mat.albedo_color = Color(0.16, 0.12, 0.1)
 			mat.roughness = 1.0
 		"halo":
 			# A soft glow round a far light, drawn over the haze.
