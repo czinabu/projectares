@@ -70,8 +70,9 @@ const MUSTER_SPOTS := 6
 ## top is far over every flight rig's ceiling, so its upper tiers are only
 ## ever seen, never stood on.
 const FORGE_AT := Vector2(2, -2)
-const FORGE_TIERS := [Vector2(12.0, 8.0), Vector2(9.0, 22.0), Vector2(6.0, 24.0), Vector2(2.6, 20.0)]
-const FORGE_BUTTRESS := Vector2(2.2, 36.0)
+const FORGE_TIERS := [Vector2(14.0, 10.0), Vector2(10.0, 14.0), Vector2(7.0, 22.0), Vector2(4.5, 18.0), Vector2(2.0, 16.0)]
+## The four towers on the plinth's corners: width and height.
+const FORGE_TOWER := Vector2(3.0, 34.0)
 ## The old front: which trench lines face across no man's land, so sandbags
 ## go on their lips and tank traps out in front of them.
 const FRONT_LINES := [0, 1, 3, 4, 5]
@@ -81,7 +82,7 @@ const TRAP_EVERY := 6.5
 ## How far the Forge's beacon is drawn: the whole map and past it.
 const FAR_SIGHT := 2000.0
 ## Molten cracks running in to the core.
-const CRACKS := 7
+const CRACKS := 5
 ## What a cover lot is built from: concrete jersey barriers, sandbag walls and
 ## steel plates. `size` is length, height and depth.
 const COVER_PIECES := [
@@ -116,7 +117,7 @@ var _weather: Node3D
 var _beacon: MeshInstance3D
 var _beacon_light: OmniLight3D
 
-@onready var GROUND := Look.surface("ground", {"tint": Color(0.4, 0.34, 0.31), "blend": "asphalt",
+@onready var GROUND := Look.surface("ground", {"tint": Color(0.31, 0.26, 0.24), "blend": "asphalt",
 		"blend_amount": 0.45, "grime": 0.6, "saturation": 0.3, "scale": 0.16})
 @onready var WALL := Look.surface("concrete", {"tint": Color(0.45, 0.4, 0.38), "grime": 0.8, "scale": 0.12})
 @onready var COVER_METAL := Look.surface("metal", {"tint": Color(0.7, 0.42, 0.28), "scale": 0.45})
@@ -204,10 +205,10 @@ func _build_environment() -> void:
 		"sun_color": Color(1.0, 0.74, 0.52),
 		"sun_energy": 1.9,
 		"sun_angles": Vector3(-30, 38, 0),
-		"ambient_color": Color(0.42, 0.43, 0.5),
-		"ambient_energy": 1.3,
+		"ambient_color": Color(0.4, 0.42, 0.5),
+		"ambient_energy": 1.2,
 		"saturation": 0.85,
-		"contrast": 1.12,
+		"contrast": 1.16,
 	}, {
 		# All-out war: the horizon closes in and the sun goes dull red, but
 		# fog does not start inside 28 m and is not solid before 120 m, so a
@@ -402,6 +403,9 @@ func _build_sites() -> void:
 		match site["kind"]:
 			"foundry":
 				_build_foundry(at)
+				# The Forge stands on the middle: the point bots are sent to
+				# hold is the open ground at its foot.
+				marker.position = _open(at, 2.0)
 			"hill":
 				_build_hill(at)
 			"graveyard":
@@ -451,12 +455,12 @@ func _build_forge(at: Vector2) -> void:
 		var height := tier.y + (1.0 if y < 0.0 else 0.0)
 		_box(Vector3(tier.x, height, tier.x), base + Vector3(0, y + height * 0.5, 0), dark if y > 0.0 else WALL)
 		y += height
-	# Four buttresses on the plinth's corners, standing proud of the tower.
-	var corner := FORGE_TIERS[0].x * 0.5 - FORGE_BUTTRESS.x * 0.5
+	# A tower on each of the plinth's corners, flanking the keep.
+	var corner := FORGE_TIERS[0].x * 0.5 - FORGE_TOWER.x * 0.5
 	for sx: float in [-1.0, 1.0]:
 		for sz: float in [-1.0, 1.0]:
-			_box(Vector3(FORGE_BUTTRESS.x, FORGE_BUTTRESS.y, FORGE_BUTTRESS.x),
-					base + Vector3(sx * corner, FORGE_BUTTRESS.y * 0.5 - 1.0, sz * corner), dark)
+			_box(Vector3(FORGE_TOWER.x, FORGE_TOWER.y, FORGE_TOWER.x),
+					base + Vector3(sx * corner, FORGE_TOWER.y * 0.5 - 1.0, sz * corner), dark)
 	_buildings.append({"center": base, "size": Vector3(FORGE_TIERS[0].x, y, FORGE_TIERS[0].x), "landmark": true})
 
 
@@ -1153,7 +1157,7 @@ func _dress_forge(art: Node3D) -> void:
 	var tower: Vector2 = FORGE_TIERS[1]
 	# Ribs up the tower's faces, so it reads as built, not a plain block.
 	var rib_y := plinth.y - 1.0
-	for t in range(1, 3):
+	for t in range(1, 4):
 		var tier: Vector2 = FORGE_TIERS[t]
 		for k in 4:
 			var face := Vector3.FORWARD.rotated(Vector3.UP, k * PI * 0.5)
@@ -1166,7 +1170,7 @@ func _dress_forge(art: Node3D) -> void:
 	art.add_child(_slab(Vector3(plinth.x + 0.12, 0.7, plinth.x + 0.12), base + Vector3(0, plinth.y - 1.6, 0), Look.trim("hazard")))
 	for k in 4:
 		var face := Vector3.FORWARD.rotated(Vector3.UP, k * PI * 0.5)
-		var mouth := _slab(Vector3(2.6, 4.2, 0.2), base + face * (plinth.x * 0.5 + 0.05) + Vector3(0, 2.1, 0), Look.trim("orange"))
+		var mouth := _slab(Vector3(3.2, 5.0, 0.2), base + face * (plinth.x * 0.5 + 0.05) + Vector3(0, 2.5, 0), Look.trim("orange"))
 		mouth.rotation.y = k * PI * 0.5
 		art.add_child(mouth)
 		var glow := Look.lamp(Color(1.0, 0.45, 0.15), 4.0, 24.0)
@@ -1176,7 +1180,7 @@ func _dress_forge(art: Node3D) -> void:
 			# The pour, beside the furnace mouth: down the tower, across the
 			# plinth's roof and over its lip to the ground.
 			var slag := Look.trim("slag")
-			var aside := face.cross(Vector3.UP) * 2.2
+			var aside := face.cross(Vector3.UP) * 2.6
 			var parts := [
 				[Vector3(1.5, tower.y - 4.0, 0.3), face * (tower.x * 0.5 + 0.1) + Vector3(0, plinth.y - 1.0 + (tower.y - 4.0) * 0.5, 0)],
 				[Vector3(1.5, 0.25, (plinth.x - tower.x) * 0.5 + 0.3), face * ((plinth.x + tower.x) * 0.25 + 0.1) + Vector3(0, plinth.y - 0.85, 0)],
@@ -1186,6 +1190,16 @@ func _dress_forge(art: Node3D) -> void:
 				var pour := _slab(part[0], base + aside + part[1], slag)
 				pour.rotation.y = k * PI * 0.5
 				art.add_child(pour)
+	# Each corner tower capped, with a furnace slit near the top facing out.
+	var corner := plinth.x * 0.5 - FORGE_TOWER.x * 0.5
+	for sx: float in [-1.0, 1.0]:
+		for sz: float in [-1.0, 1.0]:
+			var top := base + Vector3(sx * corner, FORGE_TOWER.y - 1.0, sz * corner)
+			art.add_child(_slab(Vector3(FORGE_TOWER.x + 0.8, 1.0, FORGE_TOWER.x + 0.8), top + Vector3(0, 0.3, 0), WALL, true))
+			art.add_child(_slab(Vector3(FORGE_TOWER.x + 0.1, 0.3, FORGE_TOWER.x + 0.1), top + Vector3(0, -2.0, 0), teal))
+			for out: Vector3 in [Vector3(sx, 0, 0), Vector3(0, 0, sz)]:
+				var slit := _slab(Vector3(0.5, 3.0, 0.5), top + out * (FORGE_TOWER.x * 0.5) + Vector3(0, -5.0, 0), Look.trim("orange"))
+				art.add_child(slit)
 	for side: float in [-1.0, 1.0]:
 		art.add_child(_smoke(base + Vector3(side * tower.x * 0.4, plinth.y + tower.y - 1.0, -side * tower.x * 0.4), 2.0))
 	_beacon = _slab(Vector3(2.2, 2.2, 2.2), base + Vector3(0, y + 0.8, 0), Look.trim("beacon"))
@@ -1201,6 +1215,10 @@ func _dress_forge(art: Node3D) -> void:
 	halo.visibility_range_end = FAR_SIGHT
 	_beacon.visibility_range_end = FAR_SIGHT
 	_beacon.add_child(halo)
+	# The Forge lights the ground round it, warmest at its foot.
+	var heat := Look.lamp(Color(1.0, 0.42, 0.14), 2.2, 70.0)
+	heat.position = base + Vector3(0, 14.0, 0)
+	art.add_child(heat)
 	_beacon_light = Look.lamp(Color(1.0, 0.12, 0.08), 6.0, 40.0)
 	_beacon_light.position = _beacon.position
 	art.add_child(_beacon_light)
@@ -1247,6 +1265,19 @@ func _dress_wrecks(art: Node3D) -> void:
 				var fin := _slab(Vector3(0.45, 1.0 * big, 2.65 * big), base + turn * Vector3(0.3, size.y + 0.6 * big, size.z * 0.42), Look.trim("hazard"))
 				fin.rotation = Vector3(-0.05, yaw + 0.12, 0.0)
 				art.add_child(fin)
+				# The canopy on the buried nose, and the engines on the broken tail.
+				var front := Transform3D(Basis.from_euler(Vector3(0.16, yaw, 0.0)), base + turn * Vector3(0, size.y * 0.5 - 0.9, -size.z * 0.24))
+				var canopy := _slab(Vector3(size.x * 0.7, 0.5, 1.8 * big), Vector3.ZERO, Look.trim("teal"))
+				canopy.transform = front * Transform3D(Basis.IDENTITY, Vector3(0, size.y * 0.5 + 0.1, -size.z * 0.17))
+				art.add_child(canopy)
+				var tail := Transform3D(Basis.from_euler(Vector3(-0.05, yaw + 0.12, 0.0)), base + turn * Vector3(0.3, size.y * 0.45 - 0.2, size.z * 0.28))
+				for side: float in [-1.0, 1.0]:
+					var engine := _slab(Vector3(1.3, 1.3, 2.6) * big, Vector3.ZERO, HULL_RUST, true)
+					engine.transform = tail * Transform3D(Basis.IDENTITY, Vector3(side * (size.x * 0.5 + 0.5 * big), 0.2, size.z * 0.15))
+					art.add_child(engine)
+					var nozzle := _slab(Vector3(1.0, 1.0, 0.1) * big, Vector3.ZERO, Look.trim("scorch"))
+					nozzle.transform = engine.transform * Transform3D(Basis.IDENTITY, Vector3(0, 0, 1.31 * big))
+					art.add_child(nozzle)
 				var behind := Vector2(sin(yaw), cos(yaw))
 				var from := Vector2(base.x, base.z) + behind * size.z * 0.5
 				furrows.append(PackedVector2Array([from, from + behind * size.z * 1.6]))
@@ -1322,17 +1353,32 @@ func _dress_cracks(art: Node3D) -> void:
 	for k in CRACKS:
 		var angle := TAU * (k + 0.5) / CRACKS + _art_rng.randf_range(-0.15, 0.15)
 		var line := PackedVector2Array()
-		var reach := _art_rng.randf_range(120.0, 175.0)
-		var r := CORE_RADIUS - 2.0
-		var drift := 0.0
+		var reach := _art_rng.randf_range(130.0, 180.0)
+		var r := 12.0
+		var heading := angle
 		while r < reach:
-			drift = clampf(drift + _art_rng.randf_range(-0.05, 0.05), -0.12, 0.12)
-			line.append(Vector2.from_angle(angle + drift) * r)
+			heading += _art_rng.randf_range(-0.012, 0.012)
+			heading = lerpf(heading, angle, 0.04)
+			# Flow round whatever stands in the way instead of stopping.
+			var spot := Vector2.from_angle(heading) * r
+			for bend in 8:
+				if not _crack_blocked(spot, 1.5):
+					break
+				var turn := 0.04 * (bend / 2 + 1) * (1.0 if bend % 2 == 0 else -1.0)
+				spot = Vector2.from_angle(heading + turn) * r
+			if _crack_blocked(spot, 1.5):
+				if line.size() > 1:
+					lines.append(line)
+				line = PackedVector2Array()
+			else:
+				heading = spot.angle()
+				line.append(spot)
 			r += 2.0
-		lines.append(line)
-	# A charred bed under each crack, then the glow in it.
-	_ground_strips(art, lines, 3.2, Look.trim("scorch"), 0.08, true)
-	_ground_strips(art, lines, 0.6, Look.trim("crack"), 0.12, true)
+		if line.size() > 1:
+			lines.append(line)
+	# A charred bed under each crack, then the glow in it, widest at the core.
+	_ground_strips(art, lines, 3.6, Look.trim("scorch"), 0.06, true)
+	_ground_strips(art, lines, 1.0, Look.trim("crack"), 0.1, true)
 
 
 ## Draws each polyline as short boxes laid on the ground and tipped with it,
@@ -1341,7 +1387,8 @@ func _ground_strips(art: Node3D, lines: Array[PackedVector2Array], width: float,
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
 	var box := BoxMesh.new()
-	box.size = Vector3(1.0, 0.1, 1.0)
+	# Thick and sunk, so a bump in the ground between samples never hides it.
+	box.size = Vector3(1.0, 0.6, 1.0)
 	box.material = material
 	mm.mesh = box
 	var placed: Array[Transform3D] = []
@@ -1350,7 +1397,7 @@ func _ground_strips(art: Node3D, lines: Array[PackedVector2Array], width: float,
 			var a := line[i]
 			var b := line[i + 1]
 			var mid := (a + b) * 0.5
-			if _crack_blocked(mid):
+			if _crack_blocked(mid, 0.2):
 				continue
 			var pa := terrain.on_ground(a.x, a.y)
 			var pb := terrain.on_ground(b.x, b.y)
@@ -1361,7 +1408,7 @@ func _ground_strips(art: Node3D, lines: Array[PackedVector2Array], width: float,
 			var right := forward.cross(Vector3.UP).normalized()
 			var up := right.cross(forward)
 			var basis := Basis(right * w, up, forward * (along.length() + 0.3))
-			placed.append(Transform3D(basis, (pa + pb) * 0.5 + up * lift))
+			placed.append(Transform3D(basis, (pa + pb) * 0.5 + up * (lift - 0.3)))
 	mm.instance_count = placed.size()
 	for i in placed.size():
 		mm.set_instance_transform(i, placed[i])
@@ -1371,9 +1418,9 @@ func _ground_strips(art: Node3D, lines: Array[PackedVector2Array], width: float,
 	art.add_child(node)
 
 
-func _crack_blocked(at: Vector2) -> bool:
+func _crack_blocked(at: Vector2, room := 0.5) -> bool:
 	for solid in _solids:
-		if at.distance_to(solid["at"]) < float(solid["reach"]) + 0.5:
+		if at.distance_to(solid["at"]) < float(solid["reach"]) + room:
 			return true
 	return false
 
@@ -1394,10 +1441,11 @@ func _dress_horizon(art: Node3D) -> void:
 		var node := _slab(size, Vector3.ZERO, hulk)
 		node.transform = xform
 		art.add_child(node)
-	# The capital ship, nose buried, hull rising away to the east.
-	var ship_at: Vector3 = at.call(-95.0, 520.0)
-	var ship := Transform3D(Basis(Vector3.UP, 0.3) * Basis(Vector3.RIGHT, -0.36), ship_at + Vector3(0, 40, 0))
-	put.call(Vector3(46, 30, 300), ship)
+	# The capital ship, broadside to the field: nose buried in the west,
+	# hull rising away to the east.
+	var ship_at: Vector3 = at.call(-95.0, 490.0)
+	var ship := Transform3D(Basis(Vector3.UP, PI * 0.5 + 0.1) * Basis(Vector3.RIGHT, -0.3), ship_at + Vector3(0, 40, 0))
+	put.call(Vector3(46, 40, 300), ship)
 	put.call(Vector3(30, 22, 60), ship * Transform3D(Basis.IDENTITY, Vector3(0, -2, -170)))
 	put.call(Vector3(22, 36, 34), ship * Transform3D(Basis.IDENTITY, Vector3(0, 30, 95)))
 	for side: float in [-1.0, 1.0]:
@@ -1450,11 +1498,18 @@ func _dress_horizon(art: Node3D) -> void:
 			if absf(wrapf(angle - mark, -180.0, 180.0)) < 16.0:
 				near = true
 		if not near:
-			var width := _art_rng.randf_range(24.0, 44.0)
-			var height := _art_rng.randf_range(30.0, 70.0)
+			var width := _art_rng.randf_range(20.0, 48.0)
+			var height := _art_rng.randf_range(30.0, 85.0)
 			var block_at: Vector3 = at.call(angle, _art_rng.randf_range(400.0, 470.0), height * 0.5)
 			var face := Basis(Vector3.UP, -deg_to_rad(angle))
-			put.call(Vector3(width, height, width * 0.7), Transform3D(face, block_at))
+			put.call(Vector3(width, height, width * _art_rng.randf_range(0.5, 0.9)), Transform3D(face, block_at))
+			# Some kept a mast or a stepped wing beside them.
+			var extra := _art_rng.randf()
+			if extra < 0.2:
+				put.call(Vector3(2.5, 34.0, 2.5), Transform3D(face, block_at + face * Vector3(width * 0.25, height * 0.5 + 17.0, 0)))
+			elif extra < 0.45:
+				var wing := height * _art_rng.randf_range(0.35, 0.6)
+				put.call(Vector3(width * 0.6, wing, width * 0.6), Transform3D(face, block_at + face * Vector3(width * 0.75, (wing - height) * 0.5, 0)))
 			# Most blocks were shelled: a narrower broken storey left on one side.
 			if _art_rng.randf() < 0.6:
 				var side := _art_rng.randf_range(-0.3, 0.3) * width
