@@ -339,6 +339,39 @@ raider from its kit (`spawn_bot`'s `kit`). Still to come: rooftop caches
 their own, picking up bags, flight across the map (wings and long
 jetpack trips), and a grudge against whoever killed them.
 
+### Heavy units (Caleb's call)
+
+Ashfront is a war of machines, but most fights stay against people. The
+armies' spider walkers are gone; two original heavy units take their place,
+both in the game's own low-poly style, neither a copy of any film's machine.
+
+- **Exo Trooper.** An ordinary soldier strapped into a mechanical
+  exoskeleton, not an enhanced super-soldier (Caleb's call): the person is
+  normal size and the suit gives the bulk, a gunmetal frame down the
+  outside of each limb with drums at the hips, knees, shoulders and
+  elbows, actuator housings and rams, armored boots, a spine and shoulder
+  yoke with a roll cage over the head, and a power pack. The shoulder
+  guards, cage bar and the slit of the closed helmet carry the army's
+  colour, so it reads apart from a soldier at 50 m in a storm. Armor
+  45-70 by ring, more health, a little slower, a support rifle and no
+  blade. One in eight carries a spare Trooper or Bulwark frame.
+- **Kiln Walker.** A rare 3 m war machine on two legs (the Animated Mech
+  Pack's Leela, in gunmetal with the army's paint) with a cannon
+  on top. Slow on its feet and slow to turn (its aim comes round at 70
+  degrees a second, a soldier's at 200), but its hitscan cannon leads
+  fliers well. Its tell is a thin tracking beam: the cannon fires only
+  after the beam has held a target in sight for a second, so a flier who
+  sees it can break the line. Its heat vent glows the Foundry's molten
+  orange on its back, and hits from behind or from steeply above do double.
+  Beaten by circling it, going over the top, or two players. Middle ring
+  and core only, at most one at each landmark (`WorldDef.bot_allowed`),
+  never a warlord. It drops power cells and alloy, and a core walker has
+  a 15% chance of upgrade data.
+
+Spawn mix by ring (outer, middle, core): exo troopers 9%, 18%, 22%;
+walkers 0%, 4%, 8%; the rest the armies' people, soldiers and blade heavies
+as before. A client builds the same kind from the bot's seed.
+
 ### Enemy balance (targets proposed, for Caleb to confirm)
 
 Every enemy type has a role, and a target for how often a player in a mid
@@ -357,6 +390,10 @@ damage, aim skill) until each type sits in its band, then check by playing.
 | Core heavy | Punishes panic | 55-80% |
 | Rival raider | An equal | 40-60% |
 | Warlord | A squad fight | 10-35% |
+| Outer exo trooper | The tougher soldier | 70-90% |
+| Core exo trooper | Armor that needs a plan | 45-70% |
+| Middle walker | A fight for two players | 15-40% |
+| Core walker | A fight for two players | 10-30% |
 
 A bot at 0.5 is not a person: a good player aims better, uses cover and
 parries on purpose. The reference skill should be set so the bench agrees
@@ -398,6 +435,20 @@ rate, time to kill on a win, and health left. Every row is inside its band.
 | Core heavy | 70% in 5.2 s | 72% in 6.6 s | 28-44% |
 | Rival raider | 52% in 10.2 s | 50% in 14.3 s | 63-66% |
 | Warlord | 20% in 5.8 s | 32% in 7.1 s | 32-36% |
+
+**Heavy units (120 duels, seed 7, 12 m and 25 m).** A solo reference
+player stands in front of a walker and trades shots, so these rows are the
+worst case: circling it or hitting the vent from behind does better.
+
+| Enemy | 12 m | 25 m | Health left |
+| --- | --- | --- | --- |
+| Outer exo trooper | 82% in 6.2 s | 74% in 8.5 s | 58-61% |
+| Core exo trooper | 57% in 6.6 s | 51% in 8.1 s | 54-58% |
+| Middle walker | 28% in 8.1 s | 32% in 10.0 s | 56-59% |
+| Core walker | 15% in 6.8 s | 13% in 9.1 s | 45-65% |
+
+At 40 duels these rows swing by about ten points either way, so they were
+tuned at 120.
 
 Raider fights run longer than the others because both sides wear plates and
 stop to use a medkit. A warlord's loss, when the player does win, takes
@@ -663,6 +714,25 @@ kill by range and armor with every round landing. Against a mid kit
 Army soldiers aim at the chest and get no headshot bonus, so the enemy
 balance bands above hold (re-measured after this pass: every row still in
 band).
+
+### Handling
+
+How a gun handles is the second half of its role. Every gun pays for
+moving, but not the same amount, and every gun takes a moment to come up
+to the eye:
+
+- Spread grows with speed on the ground, by the gun's `move_spread_deg` at
+  a full sprint (rifles 2 degrees, the DMR 3, pistols and the SMG about 1).
+  Standing still or crouched is how you shoot straight.
+- Aiming down sights tightens spread over the gun's `ads_time` (pistols and
+  the SMG about 0.16 s, rifles 0.25 s, the DMR 0.35 s), so a snap aim is
+  not yet a steady one.
+- You cannot shoot while sprinting. Pulling the trigger or aiming drops you
+  to a walk, and the gun fires 0.2 s after the sprint ends. A click made
+  in that moment is kept, so it never feels eaten.
+
+Re-measured on the duel bench over three seeds: every enemy type wins and
+loses about as often as before (all rows within the bench's noise).
 
 ### Goggles
 

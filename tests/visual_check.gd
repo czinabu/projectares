@@ -18,6 +18,13 @@ func _ready() -> void:
 		await _storm_shots(out_dir)
 		get_tree().quit()
 		return
+	# `-- <output_dir> --heavies-only` shoots Ashfront's armies side by side
+	# (soldiers, exo troopers, walkers) front and back, the line at 50 m in a
+	# peak storm, and a walker's tracking beam locking on.
+	if "--heavies-only" in args:
+		await _heavy_shots(out_dir)
+		get_tree().quit()
+		return
 	if args.size() > 1 and not args[1].begins_with("--"):
 		await _world_shots(out_dir, args[1])
 		get_tree().quit()
@@ -194,6 +201,14 @@ func _ready() -> void:
 	# Time Rewind trail and the Static Bloom ring.
 	if "--artifacts-only" in args:
 		await _artifact_shots(out_dir)
+		get_tree().quit()
+		return
+
+	# `-- <output_dir> --ashfront-only` shoots Ashfront's look from fixed
+	# spots: a gate looking in, the open field, the middle ring, the core's
+	# edge and from high over a corner, to compare the dressing before and after.
+	if "--ashfront-only" in args:
+		await _ashfront_shots(out_dir)
 		get_tree().quit()
 		return
 
@@ -1634,6 +1649,117 @@ func _storm_shots(out_dir: String) -> void:
 	raid.queue_free()
 
 
+## Ashfront's armies by kind, for judging the heavy units by eye
+## (DESIGN.md "Heavy units").
+func _heavy_shots(out_dir: String) -> void:
+	const HeavyUnitTests := preload("res://tests/heavy_unit_tests.gd")
+	var raid := Raid.new()
+	add_child(raid)
+	raid.start(Worlds.get_world("ashfront"), 42)
+	for bot in raid.bots:
+		bot.get_node("Brain").set_physics_process(false)
+		bot.global_position += Vector3(0, -400, 0)
+		bot.set_physics_process(false)
+	var player := raid.player
+	var gate: Node3D = raid.outposts[0]
+	var forward := -Vector3(gate.global_position.x, 0.0, gate.global_position.z).normalized()
+	var side := Vector3(-forward.z, 0.0, forward.x)
+	var origin := gate.global_position + forward * 24.0
+	var ground := func(at: Vector3) -> Vector3:
+		return Vector3(at.x, raid.map.call("ground_height", at.x, at.z), at.z)
+	origin = ground.call(origin)
+	player.set_physics_process(false)
+	player.global_position = origin
+	player.visible = false
+	# A Legion and a Tide soldier, an exo of each, and both walker models.
+	var line: Array[Actor] = []
+	var picks := [["soldier", "legion"], ["soldier", "tide"], ["exo", "legion"], ["exo", "tide"],
+			["walker", "legion"], ["walker", "tide"]]
+	var next_seed := 10
+	for pick: Array in picks:
+		var bot: Actor = null
+		for i in 600:
+			next_seed += 1
+			var b := raid.spawn_bot("Line%d" % next_seed, origin + Vector3(0, 0, 0), next_seed, false, pick[1], 2)
+			if b.get_meta("kind", "") == pick[0]:
+				bot = b
+				break
+			raid.bots.erase(b)
+			b.free()
+		if bot:
+			line.append(bot)
+	var place := func(distance: float) -> void:
+		for i in line.size():
+			var at: Vector3 = ground.call(origin + forward * distance + side * ((i - (line.size() - 1) * 0.5) * 2.1))
+			line[i].global_position = at
+			line[i].velocity = Vector3.ZERO
+			line[i].cmd.yaw = atan2(forward.x, forward.z)
+			line[i].cmd.secondary = false
+	place.call(7.0)
+	var cam := Camera3D.new()
+	cam.fov = 60.0
+	cam.far = 800.0
+	raid.add_child(cam)
+	cam.current = true
+	await _settle(40)
+	var mid: Vector3 = ground.call(origin + forward * 7.0)
+	cam.look_at_from_position(ground.call(origin) + Vector3(0, 1.8, 0), mid + Vector3(0, 1.2, 0))
+	await _settle(4)
+	await _shot(out_dir.path_join("heavies_front.png"))
+	cam.look_at_from_position(ground.call(mid + forward * 7.0) + Vector3(0, 1.8, 0), mid + Vector3(0, 1.3, 0))
+	await _settle(4)
+	await _shot(out_dir.path_join("heavies_back.png"))
+	# The exo troopers close, three quarters from behind.
+	var exo := line[2] if line.size() > 2 else line[0]
+	cam.look_at_from_position(ground.call(exo.global_position + forward * 2.6 + side * 1.6) + Vector3(0, 1.7, 0),
+			exo.global_position + Vector3(0, 1.3, 0))
+	await _settle(4)
+	await _shot(out_dir.path_join("exo_close.png"))
+	# Peak storm, the line at 50 m.
+	raid.war.intensity = 1.0
+	raid.war.centre = origin
+	raid.map.set_meta("war_intensity", 1.0)
+	raid.map.set_meta("war_centre", origin)
+	var mood: Node = raid.map.get_node("WarMood")
+	mood.follow = 100.0
+	place.call(50.0)
+	await _settle(40)
+	cam.fov = 45.0
+	# From a little up, so a rise in the ground does not hide the line.
+	var far: Vector3 = ground.call(origin + forward * 50.0)
+	cam.look_at_from_position(Vector3(origin.x, maxf(ground.call(origin).y, far.y) + 8.0, origin.z),
+			far + Vector3(0, 1.2, 0))
+	await _settle(4)
+	await _shot(out_dir.path_join("heavies_storm_50m.png"))
+	# A walker's beam on a flier: building, then locked.
+	raid.war.intensity = 0.0
+	raid.map.set_meta("war_intensity", 0.0)
+	place.call(14.0)
+	var walker: Actor = null
+	for bot in line:
+		if bot.get_meta("kind", "") == "walker":
+			walker = bot
+			break
+	if walker:
+		player.visible = true
+		player.global_position = walker.global_position - forward * 16.0 + side * 3.0 + Vector3(0, 7.0, 0)
+		var eye := walker.get_eye_position()
+		var to := (player.global_position + Vector3(0, 1.0, 0) - eye).normalized()
+		walker.cmd.aim_dir = to
+		walker.cmd.yaw = atan2(-to.x, -to.z)
+		walker.cmd.pitch = asin(to.y)
+		walker.cmd.secondary = true
+		cam.fov = 60.0
+		var middle := (eye + player.global_position) * 0.5
+		var view: Vector3 = ground.call(middle + side * 14.0 + forward * 4.0) + Vector3(0, 2.5, 0)
+		cam.look_at_from_position(view, middle)
+		await _settle(2)
+		await _shot(out_dir.path_join("walker_beam_building.png"))
+		await _settle(60)
+		await _shot(out_dir.path_join("walker_beam_locked.png"))
+	raid.queue_free()
+
+
 ## A tracer left in the frame. Uses the same material shots do, so a change
 ## to how tracers survive fog shows up here.
 func _hold_shot(parent: Node, from: Vector3, to: Vector3, color: Color) -> void:
@@ -1679,6 +1805,75 @@ func _war_shots(out_dir: String) -> void:
 		mood.follow = 100.0
 		await _settle(240 if step[0] > 0.0 else 60)
 		await _shot(out_dir.path_join(step[1] + ".png"))
+	raid.queue_free()
+
+
+func _ashfront_shots(out_dir: String) -> void:
+	var raid := Raid.new()
+	add_child(raid)
+	raid.start(Worlds.get_world("ashfront"), 42)
+	for bot in raid.bots:
+		bot.get_node("Brain").set_physics_process(false)
+	raid.player.visible = false
+	var camera := Camera3D.new()
+	camera.fov = 70.0
+	camera.far = 1500.0
+	raid.add_child(camera)
+	camera.make_current()
+	var ground := func(x: float, z: float) -> float: return raid.map.call("ground_height", x, z)
+	# From, toward, eye height above the ground at each.
+	var views := [
+		["gate", Vector2(-125, -150), Vector2(0, 0), 2.0],
+		["field", Vector2(-150, 30), Vector2(0, 0), 2.0],
+		["middle", Vector2(80, 150), Vector2(0, 0), 2.0],
+		["core_edge", Vector2(30, 80), Vector2(0, 0), 3.0],
+		["rustfall", Vector2(210, -40), Vector2(158, -106), 4.0],
+		["high", Vector2(-230, 230), Vector2(0, 0), 60.0],
+		["skyline", Vector2(60, 20), Vector2(260, -120), 2.0],
+		["tide_push", Vector2(140, 22), Vector2(70, -4), 4.0],
+		["air_assault", Vector2(-190, -60), Vector2(-90, -12), 6.0],
+		["breach_striders", Vector2(-50, 175), Vector2(-100, 125), 4.0],
+		# Driving: down the Legion's runway, along the east road through
+		# the tank column, and up the road to Signal Hill.
+		["runway", Vector2(-205, 4.4), Vector2(-60, 2), 2.5],
+		["east_road", Vector2(150, -9), Vector2(60, -2), 2.0],
+		["hill_road", Vector2(-198, -24), Vector2(-150, -118), 2.5],
+	]
+	for view: Array in views:
+		var from: Vector2 = view[1]
+		var to: Vector2 = view[2]
+		var eye := Vector3(from.x, ground.call(from.x, from.y) + float(view[3]), from.y)
+		var aim := Vector3(to.x, ground.call(to.x, to.y) + 8.0, to.y)
+		camera.look_at_from_position(eye, aim)
+		await _settle(40)
+		await _shot(out_dir.path_join("ashfront_%s.png" % view[0]))
+	# Straight down over the whole field, north up, with the haze off: the
+	# layout as a map. 1.5 px a metre at 1600x900, the middle at the centre.
+	var envs := raid.map.find_children("*", "WorldEnvironment", true, false)
+	for env_node in envs:
+		(env_node as WorldEnvironment).environment.fog_enabled = false
+		(env_node as WorldEnvironment).environment.volumetric_fog_enabled = false
+	camera.projection = Camera3D.PROJECTION_ORTHOGONAL
+	camera.size = 600.0
+	camera.look_at_from_position(Vector3(0, 700, 0), Vector3.ZERO, Vector3(0, 0, -1))
+	await _settle(20)
+	await _shot(out_dir.path_join("ashfront_map.png"))
+	for env_node in envs:
+		(env_node as WorldEnvironment).environment.fog_enabled = true
+	camera.projection = Camera3D.PROJECTION_PERSPECTIVE
+	# The same view from the field toward the Forge, quiet, in a battle and
+	# in all-out war, with the fighting just ahead.
+	raid.war.cooling = 0.0
+	var mood := raid.map.get_node("WarMood")
+	var from := Vector2(-150, 30)
+	var eye := Vector3(from.x, ground.call(from.x, from.y) + 2.0, from.y)
+	camera.look_at_from_position(eye, Vector3(0, ground.call(0.0, 0.0) + 20.0, 0))
+	for step: Array in [[0.0, "quiet"], [0.55, "battle"], [1.0, "all_out"]]:
+		raid.war.intensity = step[0]
+		raid.war.centre = Vector3(-80, 0, 15)
+		mood.follow = 100.0
+		await _settle(200 if step[0] > 0.0 else 60)
+		await _shot(out_dir.path_join("ashfront_war_%s.png" % step[1]))
 	raid.queue_free()
 
 

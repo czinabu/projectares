@@ -92,6 +92,48 @@ const SKINS := {
 		"scenes": ["Stan.glb"], "height": 2.2, "tint": Color(0.62, 0.68, 0.74),
 		"anims": {"idle": "Idle", "walk": "Walk", "run": "Run", "death": "Death", "attack": "Punch"},
 	},
+	# Ashfront's Legion riflemen: people in the army's uniform kit.
+	"legionary": {
+		"people": {"m": ["Swat", "Spacesuit"], "f": ["Soldier", "SciFi"]},
+		"height": 1.8, "tint": Color(0.62, 0.68, 0.8), "grip_bone": "Middle1.R", "arm": HUMAN_ARM, "off_arm": HUMAN_OFF_ARM,
+		"spine": HUMAN_SPINE, "neck": "Neck", "lead_leg": HUMAN_LEAD_LEG, "trail_leg": HUMAN_TRAIL_LEG,
+		"back_bone": "Chest", "hip_bone": "Hips", "feet": HUMAN_FEET,
+		"saturation": 0.55, "brightness": 0.78, "metal": 0.0, "rough": 0.85,
+		"anims": HUMAN_ANIMS,
+	},
+	# Ashfront's Tide riflemen: a rougher militia, still dressed for war.
+	"tide": {
+		"people": {"m": ["Adventurer", "Swat"], "f": ["Adventurer", "Soldier"]},
+		"height": 1.78, "tint": Color(0.86, 0.72, 0.6), "grip_bone": "Middle1.R", "arm": HUMAN_ARM, "off_arm": HUMAN_OFF_ARM,
+		"spine": HUMAN_SPINE, "neck": "Neck", "lead_leg": HUMAN_LEAD_LEG, "trail_leg": HUMAN_TRAIL_LEG,
+		"back_bone": "Chest", "hip_bone": "Hips", "feet": HUMAN_FEET,
+		"saturation": 0.6, "brightness": 0.75, "metal": 0.0, "rough": 0.9,
+		"anims": HUMAN_ANIMS,
+	},
+	# An exo trooper: an ordinary soldier strapped into a mechanical
+	# exoskeleton. The person stays person-sized; the bulk is the suit
+	# ("suit": `ActorSkin._build_exo_suit`: struts down the outside of each
+	# limb, joints, actuators, a spine and shoulder yoke with a roll cage
+	# over the head, a power pack), plus a chest rig ("frame") and a closed
+	# helmet with a visor slit ("helmet") lit in the army's colour.
+	"exo": {
+		"people": {"m": ["Swat"], "f": ["Soldier"]},
+		"height": 1.8, "tint": Color(0.5, 0.52, 0.55), "grip_bone": "Middle1.R", "arm": HUMAN_ARM, "off_arm": HUMAN_OFF_ARM,
+		"spine": HUMAN_SPINE, "neck": "Neck", "lead_leg": HUMAN_LEAD_LEG, "trail_leg": HUMAN_TRAIL_LEG,
+		"back_bone": "Chest", "hip_bone": "Hips", "feet": HUMAN_FEET,
+		"saturation": 0.45, "brightness": 0.72, "metal": 0.0, "rough": 0.8,
+		"anims": HUMAN_ANIMS, "frame": "light", "helmet": "slit", "suit": true,
+	},
+	# The Kiln Walker: a war machine on two legs in gunmetal with its army's
+	# paint ("army_paint", how much of the body colour), its heat vent glowing
+	# on its back ("vent": bone, height share, size; the weak spot), a cannon
+	# on top ("cannon": bone) that draws a tracking beam while it aims ("beam").
+	"walker": {
+		"scenes": ["Leela.glb"], "height": 2.75, "tint": Color(0.5, 0.5, 0.52),
+		"saturation": 0.6, "army_paint": 0.35,
+		"vent": ["Chest", 0.62, Vector2(0.55, 0.46)], "cannon": "Chest", "beam": true,
+		"anims": {"idle": "Idle", "walk": "Walk", "run": "Run", "death": "Death", "attack": "Shoot"},
+	},
 	"stalker": {
 		"scenes": ["Enemy_2Legs_Gun.glb"], "height": 1.7, "tint": Color(0.3, 0.32, 0.38),
 		"anims": {"idle": "Idle", "walk": "Walk", "run": "Run", "death": "Death", "attack": "Attack"},
@@ -889,6 +931,88 @@ func interior(parent: Node3D, ambient: Color, energy: float) -> void:
 	parent.add_child(world_env)
 	# An interior has no storm. Characters must not keep the last raid's fog.
 	_clear_storm_fog()
+
+
+## The trim every built thing in a warzone shares, so a map's pieces read as
+## one kit instead of loose props: "teal" running lights, "orange" furnace
+## light, "beacon" (a red light that cuts through the haze, never fogged),
+## "slag" (molten metal), "crack" (a dimmer glow for cracks in the ground),
+## "scorch" (charred ground), "track" (a packed road), "hazard" (orange and black stripes),
+## "sandbag", "halo" (a glow round a far light), "flash" (a far blast),
+## "beam" (a searchlight) and "distant" (skyline silhouettes). Cached, so every piece shares one material.
+func trim(kind: String) -> Material:
+	var key := "trim:" + kind
+	if _materials.has(key):
+		return _materials[key]
+	var mat := StandardMaterial3D.new()
+	match kind:
+		"teal", "orange", "beacon", "slag", "crack":
+			var glow: Color = {"teal": Color(0.3, 0.95, 0.88), "orange": Color(1.0, 0.42, 0.1),
+					"beacon": Color(1.0, 0.1, 0.06), "slag": Color(1.0, 0.36, 0.08), "crack": Color(1.0, 0.3, 0.05)}[kind]
+			mat.albedo_color = glow * 0.25 if kind in ["teal", "orange", "beacon"] else Color(0.25, 0.06, 0.02)
+			mat.emission_enabled = true
+			mat.emission = glow
+			mat.emission_energy_multiplier = {"teal": 1.6, "orange": 2.4, "beacon": 7.0, "slag": 2.6, "crack": 1.1}[kind]
+			mat.roughness = 0.4
+			if kind == "beacon":
+				mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+				mat.albedo_color = glow
+				mat.disable_fog = true
+		"scorch":
+			mat.albedo_color = Color(0.06, 0.045, 0.04)
+			mat.roughness = 1.0
+		"track":
+			mat.albedo_color = Color(0.16, 0.12, 0.1)
+			mat.roughness = 1.0
+		"halo":
+			# A soft glow round a far light, drawn over the haze.
+			mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+			mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+			mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+			mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+			mat.albedo_texture = _soft_dot()
+			mat.albedo_color = Color(1.0, 0.16, 0.08, 0.9)
+			mat.disable_fog = true
+		"flash":
+			# A far gun flash or blast on the horizon: a bright soft glow the
+			# haze never hides. Fade it with the instance's transparency.
+			mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+			mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+			mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+			mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+			mat.albedo_texture = _soft_dot()
+			mat.albedo_color = Color(1.0, 0.62, 0.3)
+			mat.disable_fog = true
+		"beam":
+			# A searchlight's beam: faint light in the smoke.
+			mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+			mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+			mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+			mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+			mat.albedo_color = Color(0.9, 0.85, 0.72, 0.05)
+		"distant":
+			# Skyline shapes past the rim: only a silhouette in the haze, so a
+			# plain material, which costs nothing per piece.
+			mat.albedo_color = Color(0.16, 0.13, 0.12)
+			mat.roughness = 1.0
+		"hazard":
+			var stripes := Image.create(32, 32, false, Image.FORMAT_RGB8)
+			for y in 32:
+				for x in 32:
+					stripes.set_pixel(x, y, Color(0.85, 0.42, 0.1) if (x + y) % 32 < 16 else Color(0.07, 0.06, 0.06))
+			stripes.generate_mipmaps()
+			mat.albedo_texture = ImageTexture.create_from_image(stripes)
+			mat.uv1_triplanar = true
+			mat.uv1_world_triplanar = true
+			mat.uv1_scale = Vector3(0.9, 0.9, 0.9)
+			mat.roughness = 0.7
+			mat.metallic = 0.3
+		"sandbag":
+			return surface("ground", {"tint": Color(0.62, 0.52, 0.4), "grime": 0.7, "saturation": 0.5, "scale": 0.9})
+		_:
+			mat.albedo_color = Color(0.3, 0.28, 0.27)
+	_materials[key] = mat
+	return mat
 
 
 ## A small light with no shadow, for lamps and fires.

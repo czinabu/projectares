@@ -89,6 +89,25 @@ static func run(t: Node) -> void:
 	t.check(raid.bots.size() == raid.world.bot_count + raid._bosses.size() and raid.bots.size() >= 24,
 			"the field starts with its garrisons and patrols (%d bots)" % raid.bots.size())
 	t.check(grouped.call("spawn_vehicle").size() >= 10, "bikes are parked at the rim and the strongpoints")
+	# Rare vehicles are placed by risk: only Scrappers at the quiet rim and
+	# in the camps, the best odds at the strongpoints, which refill slower.
+	var roll := RandomNumberGenerator.new()
+	roll.seed = 7
+	var found := {"vehicle_rim": {}, "vehicle": {}, "vehicle_site": {}}
+	for source: String in found:
+		for i in 400:
+			for id in raid.world.roll_loot(source, roll):
+				found[source][id] = true
+	t.check(found["vehicle_rim"].keys() == ["bike_scrapper"] and "bike_raider" in found["vehicle"]
+			and not found["vehicle"].has("rover_warden") and found["vehicle_site"].has("rover_warden")
+			and not found["vehicle_site"].has("mech_bulwark") and not found["vehicle_site"].has("jet_kestrel"),
+			"parked vehicles get rarer the riskier the spot: Scrappers at the rim, rovers only at strongpoints")
+	var spots: Array = grouped.call("spawn_vehicle")
+	var at_sites := spots.filter(func(m: Node3D) -> bool: return m.get_meta("loot_source", "") == "vehicle_site")
+	var at_rim := spots.filter(func(m: Node3D) -> bool: return m.get_meta("loot_source", "") == "vehicle_rim")
+	t.check(at_sites.size() == sites.size() and at_rim.size() >= 10
+			and at_sites.all(func(m: Node3D) -> bool: return float(m.get_meta("respawn", 0.0)) > raid.world.vehicle_respawn_time),
+			"every strongpoint has a vehicle spot that refills slower (%d sites, %d at the rim)" % [at_sites.size(), at_rim.size()])
 
 	await t.frames(120)
 	var p := raid.player
@@ -110,6 +129,73 @@ static func run(t: Node) -> void:
 		lifted.global_position += Vector3(0.0, 3.0, 0.0)
 		await t.frames(60)
 		t.check(absf(lifted.global_position.y - rest_y) < 0.3, "a resting bike lifted off the ground falls back down")
+
+	# The supply roads can be driven end to end (DESIGN.md section 8): nothing
+	# solid stands on them, the ground under them is graded and the tank traps
+	# leave them a gap. Inside a strongpoint the site's own layout rules.
+	var consts: Dictionary = map.get_script().get_script_constant_map()
+	var space := p.get_world_3d().direct_space_state
+	var probe := PhysicsShapeQueryParameters3D.new()
+	var lane := BoxShape3D.new()
+	lane.size = Vector3(2.6, 1.4, 2.6)
+	probe.shape = lane
+	probe.collision_mask = Actor.LAYER_WORLD
+	probe.exclude = [field.get_rid()]
+	var samples := 0
+	var blocked: Array[String] = []
+	var steep := 0
+	for road: Array in consts["ROADS"]:
+		for i in road.size() - 1:
+			var a: Vector2 = road[i]
+			var b: Vector2 = road[i + 1]
+			var d := 0.0
+			while d < a.distance_to(b):
+				var at := a.lerp(b, d / a.distance_to(b))
+				d += 2.0
+				var in_site := false
+				for site: Dictionary in consts["SITES"]:
+					in_site = in_site or at.distance_to(site["at"]) < float(site["radius"]) + 4.0
+				if in_site or at.distance_to(Vector2.ZERO) < 60.0:
+					continue
+				samples += 1
+				if field.slope_at(at.x, at.y) > 0.5:
+					steep += 1
+					print("    steep road at (%.0f, %.0f): %.2f" % [at.x, at.y, field.slope_at(at.x, at.y)])
+				probe.transform = Transform3D(Basis.IDENTITY, Vector3(at.x, field.height_at(at.x, at.y) + 1.2, at.y))
+				for hit in space.intersect_shape(probe, 4):
+					if not (hit.collider is CharacterBody3D):
+						blocked.append("%s at (%.0f, %.0f)" % [hit.collider.name, at.x, at.y])
+						break
+	t.check(samples > 200 and blocked.is_empty() and steep == 0,
+			"the supply roads are clear and graded to drive (%d samples, %d blocked, %d steep) %s"
+			% [samples, blocked.size(), steep, ", ".join(blocked.slice(0, 4))])
+
+	# Each muster's runway is straight, level enough and clear the width of a
+	# jet's wings for as far as one needs to take off.
+	var jet: Dictionary = ItemDB.get_item("jet_kestrel")["stats"]
+	var takeoff_run := pow(float(jet["takeoff_speed"]), 2.0) / (2.0 * float(jet["accel"]))
+	var wings := BoxShape3D.new()
+	wings.size = Vector3(5.6, 1.6, 2.0)
+	probe.shape = wings
+	var runways_clear := 0
+	for army: String in consts["ARMIES"]:
+		var runway: Dictionary = map._runway(army)
+		var clear_run := true
+		var d: float = consts["RUNWAY_FROM"]
+		while d < float(consts["RUNWAY_FROM"]) + float(consts["RUNWAY"]):
+			var at: Vector2 = runway["from"] + runway["dir"] * d
+			d += 2.0
+			probe.transform = Transform3D(Basis(Vector3.UP, atan2(runway["dir"].x, runway["dir"].y)),
+					Vector3(at.x, field.height_at(at.x, at.y) + 1.3, at.y))
+			for hit in space.intersect_shape(probe, 4):
+				if not (hit.collider is CharacterBody3D):
+					clear_run = false
+			clear_run = clear_run and field.slope_at(at.x, at.y) < 0.2
+		if clear_run:
+			runways_clear += 1
+	t.check(runways_clear == 2 and float(consts["RUNWAY"]) > takeoff_run * 1.5,
+			"each muster has a clear runway for a jet (%d of 2, %.0f m against a %.0f m take-off run)"
+			% [runways_clear, float(consts["RUNWAY"]), takeoff_run])
 
 	# Small props stop being drawn far away; the ground and big wrecks never do.
 	Look._limit_draw_distance(map)
@@ -156,8 +242,12 @@ static func run(t: Node) -> void:
 
 	# Walking: uphill and down, the ground holds.
 	var start := p.global_position
-	# Towards the middle, but round the wall the drop point sits behind.
-	p.cmd.yaw = atan2(start.x, start.z) + 0.9
+	# Towards the middle, but round the wall an open drop point sits behind.
+	# A gate outpost's yard is walled except toward the middle, so from a
+	# gate run straight out of it.
+	var at_gate := raid.outposts.any(func(gate: Node3D) -> bool:
+		return Vector2(gate.global_position.x - start.x, gate.global_position.z - start.z).length() < 14.0)
+	p.cmd.yaw = atan2(start.x, start.z) + (0.0 if at_gate else 0.9)
 	p.cmd.move = Vector2(0, 1)
 	p.cmd.sprint = true
 	await t.frames(240)

@@ -10,6 +10,7 @@ extends RefCounted
 ## service, like the `StashService`.
 
 const SAVE_VERSION := 1
+const SafeFile := preload("res://core/account/safe_file.gd")
 const NAME_MIN := 3
 const NAME_MAX := 24
 const TAG_MIN := 2
@@ -36,9 +37,9 @@ func open(p_dir: String, p_persist: bool) -> void:
 	_opened = true
 	save_dir = p_dir
 	persist = p_persist
-	if not persist or not FileAccess.file_exists(_path()):
+	if not persist or not SafeFile.exists(_path()):
 		return
-	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(_path()))
+	var parsed: Variant = SafeFile.read_json(_path())
 	if typeof(parsed) != TYPE_DICTIONARY or typeof(parsed.get("clans")) != TYPE_DICTIONARY:
 		return
 	_next_id = maxi(1, int(parsed.get("next_id", 1)))
@@ -193,10 +194,7 @@ func _path() -> String:
 	return save_dir.path_join("clans.json")
 
 
+## Written beside the old file and swapped in, so a crash never loses the clans.
 func _save() -> void:
-	if not persist:
-		return
-	DirAccess.make_dir_recursive_absolute(save_dir)
-	var file := FileAccess.open(_path(), FileAccess.WRITE)
-	if file:
-		file.store_string(JSON.stringify({"version": SAVE_VERSION, "next_id": _next_id, "clans": _clans}))
+	if persist:
+		SafeFile.write(_path(), JSON.stringify({"version": SAVE_VERSION, "next_id": _next_id, "clans": _clans}))

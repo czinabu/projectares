@@ -15,8 +15,10 @@ extends RefCounted
 ##   - Marker3D nodes in group "spawn_cache" (optional meta "loot_source")
 ##   - Depot nodes in group "depot": where players bank what they carry
 ##   - optionally Marker3D nodes in group "spawn_vehicle" (optional meta
-##     "loot_source", default "vehicle"). The Raid parks the first
-##     vehicle-tagged item from `roll_loot` there, facing the marker's yaw.
+##     "loot_source", default "vehicle", and "respawn", seconds before an
+##     emptied spot gets a new vehicle, default `vehicle_respawn_time`). The
+##     Raid parks the first vehicle-tagged item from `roll_loot` there,
+##     facing the marker's yaw.
 ##   - optionally a `bake_navigation()` method for bot pathfinding
 ##   - optionally a `ground_height(x, z)` method, on a map with open ground
 ##     that is not level (see `core/world/terrain.gd`). The Raid stands
@@ -292,6 +294,14 @@ func can_damage(attacker: Node, target: Node, _info: DamageInfo) -> bool:
 ## Set up a bot's faction, gear and stats.
 func equip_bot(_bot: Actor, _rng: RandomNumberGenerator) -> void:
 	pass
+
+
+## Whether a bot just equipped may join the world as it is (authority only).
+## Refused, the `Raid` frees it and spawns another from a new seed, so a
+## client only ever hears of the seed that was kept. A world caps its rare
+## kinds here (Ashfront: one walker at each landmark).
+func bot_allowed(_bot: Actor, _raid: Node) -> bool:
+	return true
 
 
 ## A rival raider's kit: item ids exactly as a player's loadout, put on
