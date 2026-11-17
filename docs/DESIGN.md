@@ -48,7 +48,7 @@ new planet is a new folder under `worlds/`.
 | --- | --- | --- |
 | Main hub | The Concourse (`worlds/plaza`) | Social space. Show off cosmetics, rigs and watch skins. Doors to every world, the shops, the clan hall and the arena. Nobody can be hurt. |
 | Home base | `core/base` | Your private staging ground. The armory wall, the garage, the trophy shelf and the consoles. Loadouts are prepared here. |
-| PvE world | Frostline (partly) | Exploration, quests, dungeons and bosses. Learn the game, test builds, earn basic gear and materials. Gentle death. |
+| PvE world | Frostline (partly) | The co-op expedition world: cold, whiteouts and tracking instead of a war. Learn the game, test builds, earn basic gear and the crafting parts every Mk2 and Mk3 needs (planned). No PvP, gentle death. |
 | PvP world | Ashfront | The high-stakes warzone. Full loot, the only source of heavy weapons and the best loot, bank spots, sign-out tension. |
 | Gladiator arena | The Pit (`core/arena`) | Duels, bouts and tournaments. Loadouts are locked once a fight begins. Nobody loses gear. |
 
@@ -182,6 +182,62 @@ headquarters, in the order they are built:
 - **Deferred.** Quests, dungeons and bosses are a large amount of work, so they
   wait until after the friends playtest. Until then Frostline stands in as the
   PvE world (no PvP, gentle death, basic loot).
+
+### Frostline (Caleb's call)
+
+Frostline is Ashfront's opposite on every axis, so each world has its own
+job in the loop, not just its own palette. Ashfront is where rare gear, gear
+blueprints, upgrade data and heavy weapons come from; Frostline is where the
+parts that make gear better come from, so a hardcore player needs both
+worlds and a casual or solo one has a steady home.
+
+- **Co-op, no PvP (Caleb's call).** Many players dislike PvP but still want
+  to meet and work with others, so Frostline is where that happens:
+  everyone is on one side, and the world rewards working together (shared
+  warmth, joining someone's beacon, warming up a downed stranger, following
+  each other's tracks).
+- **Solo works too (Caleb's call).** Everything can be done alone; company
+  makes it easier, never possible. Beacons can be held alone, fights at the
+  core scale to the players near them, contracts never need a group.
+- **The place.** One long frozen river valley, about 600 m, climbing from
+  the river mouth (where you arrive) through the Narrows and across a
+  frozen lake to the glacier head, where the Stilled Engine lies half
+  buried: the terraforming drum that once kept the world warm. When it
+  froze, the war here stopped. The walls step up to a shelf (14 m, reached
+  by ramps) and a rim (40 m, flight only), so fights are about holding the
+  high side. Cold and quiet: a low sun, blue shadows, the only warm colours
+  are heaters, beacons and the Engine's one teal light.
+- **Threats (planned).** Body heat as a vital, drained in the open and
+  refilled at heater huts, vents and vehicle engines, hurting through
+  `Combat.deal` when empty; whiteouts that cut sight to about 30 m and wipe
+  tracks, and feel like a real blizzard (Caleb's call): wind you see and
+  hear, snow driven sideways in gusts, drifts streaming off the rims, bodies
+  leaning into it and the wind pushing flight rigs off course; footprints and vehicle tracks the server keeps and sends only
+  nearby; gunshots that carry twice as far; thin ice that breaks under
+  heavy vehicles; the Wardens as the Engine's defence grid, still running.
+- **What you bring home (planned).** New parts (Cryo Core, Glacial Alloy,
+  Engine Coil) that Mk2 and Mk3 recipes need, and Frostline blueprints for
+  new options only (attachments, cold-weather gear), never a higher Mk of
+  existing gear. Later the inside of the Engine is its deep-loot dungeon and
+  the home of the missing artifacts. Expedition contracts.
+- **Getting out (planned).** Sign-out only at warm beacons, held while they
+  power up (still `begin_sign_out`). Depots stay for banking.
+
+**Order of work**, one PR each: (1) the valley map, (2) the cold, (3) the
+loot role and recipes, (4) warm beacons, (5) whiteouts, after the Ashfront
+weather work, (6) tracks and louder gunshots, (7) thin ice, the defence
+grid and expedition contracts, (8) later, with the PvE dungeons, the
+Engine's inside. Every number is a placeholder for the playtest.
+
+**What is built.** The valley (step 1): `worlds/frostline/map.gd`, a
+`Terrain` shared between copies like Ashfront's, with the zones running up
+the valley (`zone_at`: river mouth, mid-valley, glacier head; no hazard
+yet), two-tier walls with ramps to the shelf, six heater huts (the heaters
+do nothing yet), three strongpoints held by the Wardens (Echo Post and
+Vigil Post on the shelves, Drift Post at the lake's north shore), six rim
+listening posts with the rooftop caches, the Stilled Engine with the relay
+cache on its back and the core's caches at its hatch, and Feral dens on the
+floor. Bot markers name their faction, and `equip_bot` follows them.
 
 ### PvP world
 
@@ -1439,6 +1495,11 @@ dash-strike range, player kill scrip (60), sell-back rate (40%).
 4. **The PvE world:** quests, dungeons and bosses.
 5. **More worlds** as plug-ins.
 
+The online and server work runs alongside this, in its own order (section 14):
+hardening and reconnecting before the friends playtest, encryption before
+strangers play, accounts on SQLite before the marketplace, and official
+servers after that.
+
 ## 13. Open decisions
 
 Caleb's calls, still open:
@@ -1460,3 +1521,97 @@ Caleb's calls, still open:
   - How much salvage a lost crafted item pays back.
   - Contract and bounty payouts, and how a bounty's size grows.
   - Which prestige vehicles and rigs come from which feats.
+
+## 14. Online and servers
+
+Caleb's calls (17 November 2026), after a review of the online code. The
+model stays as it is: one authoritative Godot server per world on ENet,
+clients sending only their input, the server deciding every result. What
+changes is what goes around it.
+
+**Two kinds of server.**
+
+- **Official servers** share one account per player: stash, progression,
+  contracts, clans and the marketplace are the same in every world and every
+  instance. Accounts there are never fed from a local save: the solo profile
+  and an account on your own server stay apart from your official account,
+  because anyone can edit a local file.
+- **Friends' servers** (the Docker server in `docs/hosting.md`, and the one
+  the base's door starts) keep their own accounts, as today. Nothing moves
+  between them and official servers. They keep running every world in one
+  program.
+
+**Accounts.** One account service, written in Godot: a headless Godot
+program that runs the same GDScript rules as today (`StashRules`, `Economy`,
+`Crafting`, `Contracts`, `StashService`), so every rule exists once and solo
+play keeps sharing it. It keeps accounts in SQLite (the godot-sqlite plugin,
+MIT), where every stash change and every trade is all or nothing, so items
+are never duplicated or lost. Postgres only if one machine stops being
+enough. Not a ready-made backend such as Nakama: it would need a second copy
+of the rules in another language.
+
+**Sign-in.** Official servers move to Steam (or Epic) login through
+GodotSteam (MIT), checked on the server with the store's web service. That
+brings account recovery, bans and protection against stolen accounts.
+Friends' servers can keep the name and secret.
+
+Official servers open before the game is on Steam (Caleb's call), once
+connections are encrypted, signing in with the name and secret. A recovery
+code on the phone (Settings) moves an account to another computer. When
+Steam login arrives, the game ties the account it already holds to the
+player's Steam account once, so nobody loses progress.
+
+**Scaling.** On official servers each world runs as its own program, since
+Godot runs a game loop on one thread and separate programs are how a server
+uses more cores, and one crash then takes down one world. Routes name an
+address as well as a port. Growth goes by measurement: one bigger machine
+first, a matchmaker and plaza shards when worlds or the plaza fill, a hosting
+service such as Edgegap only when several machines are needed. Server
+meshing (one world split across servers) is not planned.
+
+**Built with Godot's own tools.** Sign-in and the version check happen in
+`SceneMultiplayer.auth_callback`, before a player counts as connected.
+`server_relay` is off. Connections are encrypted with ENet's DTLS: a
+server makes its own certificate on first start and the game remembers it
+per address, warning if it changes (as ssh does), so no domain or paid
+certificate is needed. Game servers talk to the account service over
+`WebSocketPeer`. Our own snapshots with prediction stay; Godot's
+`MultiplayerSynchronizer` and `MultiplayerSpawner` are not a fit for fast
+PvP.
+
+**Order of work.**
+
+1. Before the friends playtest: a hardening pass (sign-in in
+   `auth_callback`, relay off, per-player request limits, safe clan saves,
+   account backups), reconnecting to your body after a drop, and a bench of
+   the whole server with a health line in its log.
+2. Before strangers play: encrypted connections.
+3. Before the marketplace: accounts on SQLite, still in one program. The
+   marketplace builds on this and does not wait for official servers. It
+   keeps the `StashService` calls the market uses (`count_of`, `scrip_of`,
+   `take_items`, `give_items`, `change_scrip`) and adds one that runs several
+   of them as a single all-or-nothing transaction, which wraps each trade.
+4. Official servers: the account service as its own program (the deploy,
+   bank and settle calls must cope with an answer that comes late or never),
+   one program per world, and one Docker Compose setup for all of it. Steam
+   login once the game is on Steam.
+5. Only when the numbers call for it: a matchmaker, plaza shards, a hosting
+   service, and not sending players enemies they cannot see.
+
+**Smooth for the player.** Every step is held to these:
+
+- **Reconnect on its own.** After a drop the game quietly reconnects and
+  puts you back in your body; no button (part of reconnecting, step 1).
+- **Official servers by default.** The base's door and the Servers app go to
+  them with no address to type; an address is only for a friend's server.
+- **Always say which account you are on.** The phone and the base name it
+  (solo, a friend's server, official), so separate stashes never look like
+  lost gear.
+- **No dead end when a world is full.** Send the player to another instance,
+  or say how long the wait is.
+- **A version mismatch points to the update**, not just an error.
+- **Certificate warnings never show on official servers**; they use a real
+  certificate.
+- **Travel between worlds within about 3 s**, measured by the whole-server
+  bench.
+- **A taken name asks for another one** on the phone, never just a refusal.

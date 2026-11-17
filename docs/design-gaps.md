@@ -26,6 +26,12 @@ rows marked **pre-playtest** come before the friends playtest.
 | Squad visits: squadmates in your base together | Partly | A phone invite already lets a friend visit your base, but alone and read-only (`base_visit_requested`). Needs shared online base visits first. |
 | Trophies and blueprint pedestals from PvE bosses and arena brackets | Partly | A trophy shelf and a Trophy Case furniture item exist; earned trophies need PvE bosses and arena brackets. Later. |
 | PvE world: quests, dungeons, bosses | Missing, deferred | Until after the friends playtest. Frostline stands in (no PvP, gentle death, basic loot). |
+| Frostline: the valley map (DESIGN.md section 2, "Frostline") | Built | `worlds/frostline/map.gd`: river mouth to glacier head, zones along it, shelf and rim, ramps, heater huts, three strongpoints, the Stilled Engine's outside. |
+| Frostline: body heat, heaters and vents | Missing | Planned step 2. |
+| Frostline: crafting parts and its own blueprints | Missing | Planned step 3. Mk2 and Mk3 recipes will need a Frostline part. |
+| Frostline: warm beacon sign-out | Missing | Planned step 4, through `begin_sign_out`. |
+| Frostline: whiteouts, tracks, louder gunshots, thin ice, the defence grid | Missing | Planned steps 5 to 7. Whiteouts wait for the Ashfront weather work. |
+| Frostline: inside the Stilled Engine | Missing | Planned with the PvE dungeons. |
 | PvP world | Built | Ashfront: armies, strongpoints, war intensity, events, renown, full loot. The war's storm is a distance haze (depth fog, capped so 30–50 m stays readable) with actors, gear and shots kept visible; see DESIGN.md "The war's storm". |
 | PvP risk zones and gate outposts | Partly | Ashfront: outer ring, middle and a burning core held by a boss; loot and soldiers by zone; four weapons-locked gate outposts where players arrive, with the entry rules and protection on the way out; the zone named on the watch. Missing: more hotspots (volcano, storm core), a drawn watch map, squad regrouping at the gates. |
 | New player tour | Partly | `core/progression/onboarding.gd`: on a new player's first spawn a handler messages them on the phone (offline too), one step at a time: put on gear, raise the watch, hit a plate on the test lane, head out to the plaza, take a contract, go to the gentle world, bank at a depot, then a full-loot warning for the PvP world. Each step finishes on the action; the objective is a small line on the watch card and the visor. Settings (System) skips or replays it; dev mode never runs it. Missing: the full-loot world is not actually locked until the tour ends (the warning only), and online the tour lives in the local profile, so it does not follow you to another computer. |
@@ -148,3 +154,22 @@ rows marked **pre-playtest** come before the friends playtest.
 | Bounties on hot players, paid on extract, tied to the most-wanted board | Partly | Renown, bounties and the Marked exist in the PvP world; payouts in upgrade data and the board are missing. |
 | Safety nets: free Mk1 kit, one insured item, salvage on loss | Partly | The free `starter` scrap kit exists. Insurance and salvage are missing. |
 | Prestige vehicles and rigs from hard feats | Missing | List TBD. |
+
+## Online and servers (DESIGN.md section 14)
+
+| Item | State | Notes |
+| --- | --- | --- |
+| Authoritative server, input-only clients, prediction, lag compensation | Built | `NetSession`, `ActorCommand.apply_array` clamps every input. |
+| Sign-in and version check before a player gets in | Partly | Sign-in is an ordinary call after connecting, and only the client acts on a `PROTOCOL` mismatch. Missing: `SceneMultiplayer.auth_callback`. **pre-playtest** |
+| Hardening: relay off, request limits, safe saves, backups | Missing | `server_relay` is Godot's default (on); no per-player request limits; `ClanService` writes its file in place; no account backups. **pre-playtest** |
+| Reconnect to your body after a drop | Missing | A disconnect starts a sign-out on the standing body (`Raid.remove_player`) and a new sign-in waits it out. **pre-playtest** |
+| Whole-server bench and health log | Missing | `battle_bench` measures one world; nothing measures the plaza, worlds and arena together. **pre-playtest** |
+| Encrypted connections | Missing | ENet traffic, including the sign-in secret, is plain. |
+| Accounts on SQLite with all-or-nothing changes | Missing | One JSON file per account (`StashService._save`). Needed before the marketplace. |
+| Account service as its own program | Missing | `StashService`, `SocialService` and `ClanService` live in the server's memory, shared by sessions in one process. |
+| One program per world, routes with an address | Partly | `--world` runs one world alone, but routes carry only a port and world status is gathered in memory (`NetSession._gather_status`). |
+| Official versus friends' servers | Missing | Every server keeps its own accounts; your own server takes on your solo profile. |
+| Steam login | Missing | Name plus a secret the game makes. |
+| Matchmaker, plaza shards, hiding unseen enemies | Missing | Later, when numbers call for it. |
+| Official servers before Steam: recovery code, one-time Steam link | Missing | Accounts are tied to the computer whose game made the secret. |
+| Smooth travel: auto-reconnect, official servers by default, account shown, no full-world dead end, update link on a version mismatch | Missing | See DESIGN.md section 14, "Smooth for the player". |
