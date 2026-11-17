@@ -48,8 +48,9 @@ static func _rules(t: Node) -> void:
 	for id in BaseUpgrades.ids():
 		if not BaseUpgrades.is_ready(id):
 			waiting.append(id)
-	t.check(BaseUpgrades.blocked(["armory_alcove"], "heavy_wall") == "Not open yet." and not waiting.is_empty(),
-			"an upgrade whose room is not built yet cannot be bought (%s)" % [waiting])
+	t.check(BaseUpgrades.blocked(["armory_alcove"], "heavy_wall") == ""
+			and BaseUpgrades.blocked([], "lounge") == "Not open yet." and waiting == ["lounge"],
+			"the heavy weapon wall can be bought once the alcove is open, and a room that is not built stays shut")
 	var all: Array[String] = []
 	var in_order := true
 	for id in BaseUpgrades.full():
@@ -391,8 +392,9 @@ static func _buying(t: Node) -> void:
 	t.check(_count(base, "rack_melee") > 2 and base.in_armory(base.bench_transform().origin)
 			and base.bench_transform().origin == HomeBase.BENCH_AT, "the armory alcove opens the full rack and takes the bench in (%d melee)" % _count(base, "rack_melee"))
 	var heavy := base.bulkhead("heavy_wall")
-	t.check(heavy != null and "Not open yet" in heavy.get_prompt() and base.bulkhead("armory_alcove") == null,
-			"once the alcove is open the heavy weapon wall shows as the armory's next step")
+	t.check(heavy != null and heavy.get_prompt() == "[F] Buy Heavy weapon wall: 4,000 scrip"
+			and base.bulkhead("armory_alcove") == null,
+			"once the alcove is open the heavy weapon wall can be bought")
 	t.check(_count(base, "bay") == 2 and base.bulkhead("garage_full") != null and base.bulkhead("bay_second") == null,
 			"the second bay parks a second bike and offers the full garage next")
 	t.check(base.station("mastery") != null and base.station("records") != null and base.also_shows("trader").is_empty()

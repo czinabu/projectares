@@ -11,7 +11,9 @@ extends RefCounted
 ## banked at a depot is added while you are out. Starter (scrap) items
 ## are free and never stored: every player owns one of each, to equip like
 ## any other piece (`free_items`). An empty slot is empty (Caleb's call: you
-## can go bare), and power weapons are raid-only.
+## can go bare). Power weapons can be stored: a bank or a sign-out puts the
+## one in the chamber on the armory wall, and a deploy into a PvP world
+## takes one back (`checkout`).
 
 ## The one player state: what a player takes from place to place. Your solo
 ## profile and your account on a server you host yourself (`main.gd
@@ -89,8 +91,7 @@ static func upgrade_loadout(data: Dictionary, loadout: Dictionary) -> void:
 
 ## True if an item may be stored in a stash at all.
 static func storable(id: Variant) -> bool:
-	return typeof(id) == TYPE_STRING and ItemDB.has_item(id) and not ItemDB.has_tag(id, "starter") \
-			and not ItemDB.has_tag(id, "power")
+	return typeof(id) == TYPE_STRING and ItemDB.has_item(id) and not ItemDB.has_tag(id, "starter")
 
 
 ## Adds the storable items in `ids` to `stash`. Returns how many were added.
@@ -141,6 +142,10 @@ static func checkout(stash: Array[String], loadout: Dictionary, world: WorldDef,
 	for slot: String in Loadout.SLOTS:
 		var id: String = loadout.get(slot, "")
 		if id == "":
+			continue
+		# A heavy from the wall deploys only into a world that carries them.
+		# Anywhere else the chamber stays empty and the weapon stays put.
+		if slot == "power" and not world.carries_power_weapons():
 			continue
 		kit.append(id)
 		if not is_free(id):

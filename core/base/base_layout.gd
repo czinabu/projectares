@@ -20,6 +20,9 @@ extends RefCounted
 ## Every weapon goes on the one armory rack, in the alcove off the room: kinds
 ## with "armory" set are its sections (see `ARMORY`).
 const KINDS := {
+	# Before the long guns: a heavy is a firearm too, and the first tag wins.
+	"heavy_wall": {"tag": "power", "spots": 4, "starter": 0, "steps": {"heavy_wall": 4},
+		"per_copy": false, "title": "Heavy weapons", "armory": true},
 	"rack_sidearms": {"tag": "sidearm", "spots": 8, "starter": 2, "steps": {"armory_alcove": 8},
 		"per_copy": false, "title": "Sidearms", "armory": true},
 	"rack_guns": {"tag": "firearm", "spots": 12, "starter": 4, "steps": {"armory_alcove": 12},
@@ -69,7 +72,7 @@ static func spots(kind: String, upgrades: Array = []) -> int:
 
 
 ## The sections of the armory rack, the one place every weapon is shown.
-const ARMORY: Array[String] = ["rack_guns", "rack_sidearms", "rack_melee"]
+const ARMORY: Array[String] = ["rack_guns", "rack_sidearms", "rack_melee", "heavy_wall"]
 
 
 ## True if this display kind is a section of the armory rack.

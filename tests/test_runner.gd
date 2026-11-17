@@ -48,6 +48,7 @@ const HostRecoveryTests := preload("res://tests/host_recovery_tests.gd")
 const RiskZoneTests := preload("res://tests/risk_zone_tests.gd")
 const RaiderTests := preload("res://tests/raider_tests.gd")
 const PlaytestFixTests := preload("res://tests/playtest_fix_tests.gd")
+const ExtractionTests := preload("res://tests/extraction_tests.gd")
 const InspectTests := preload("res://tests/inspect_tests.gd")
 
 var _passed := 0
@@ -271,6 +272,7 @@ func _run() -> void:
 	await _test_vehicle_toys_online()
 	await _test_lag_compensation()
 	await _test_extraction()
+	await ExtractionTests.run(self)
 	await _test_loadouts()
 	await _test_death()
 	await _test_storm()
@@ -3469,7 +3471,7 @@ func _test_renown() -> void:
 	var avenger_renown := avenger.renown
 	raid.clock += 1000.0
 	raid.begin_sign_out(avenger)
-	for i in 800:
+	for i in int(raid.world.sign_out_time * 60.0) + 40:
 		if results.has("Avenger"):
 			break
 		await frames(1)
@@ -7068,7 +7070,7 @@ func _test_armory(base: HomeBase) -> void:
 		elif kind != "gunsmith":
 			for at: Vector3 in ends:
 				others_out = others_out and not base.in_armory(at)
-	check(in_alcove and BaseLayout.ARMORY.size() == 3, "the rack's sections all hang inside the armory")
+	check(in_alcove and BaseLayout.ARMORY.size() == 4, "the rack's sections all hang inside the armory")
 	check(others_out, "armor, rigs, the garage and the shelves stay in the main room")
 	check(spots > 14, "the rack holds more weapons than the old gun rack and blade wall did (%d spots)" % spots)
 	await _test_suit_up(base)
@@ -7375,7 +7377,7 @@ func _refit_summary(actor: Actor) -> Dictionary:
 func _test_home_base() -> void:
 	print("Home base layout")
 	check(BaseLayout.kind_for("dmr_longshot") == "rack_guns" and BaseLayout.kind_for("hammer_breaker") == "rack_melee"
-			and BaseLayout.kind_for("pistol_machine") == "rack_sidearms" and BaseLayout.kind_for("power_rail_lance") == "rack_guns"
+			and BaseLayout.kind_for("pistol_machine") == "rack_sidearms" and BaseLayout.kind_for("power_rail_lance") == "heavy_wall"
 			and BaseLayout.kind_for("frame_bulwark") == "armor_stand" and BaseLayout.kind_for("wings_glide") == "rig_stand"
 			and BaseLayout.kind_for("chip_blink") == "chip_case" and BaseLayout.kind_for("bike_raider") == "bay"
 			and BaseLayout.kind_for("medkit") == "supplies" and BaseLayout.kind_for("lattice_shard") == "trophy",

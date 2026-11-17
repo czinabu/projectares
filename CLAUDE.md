@@ -458,7 +458,7 @@ without Caleb, and update the gap list when a PR closes a row.
   `charge_time`, `pierce`, `projectile` ("rocket"/"grenade", flown by
   `Gun.Round`), `splash_radius`, `heat_seek_cone` and `spin_up` pick the
   behavior, and `Gun.splash` sends every blast through `Combat.deal`. They
-  are found, never equipped: `PowerArmory` (`core/war/power_armory.gd`,
+  are found in a PvP world, not bought: `PowerArmory` (`core/war/power_armory.gd`,
   `Raid.armory`, authority only) puts them on power racks (a `LootContainer`
   labelled `LootContainer.RACK_LABEL`) at strongpoints, beside supply pods
   and sometimes beside a refilled cache, more often as `Raid.war` heats up,
@@ -475,8 +475,15 @@ without Caleb, and update the gap list when a PR closes a row.
   (`Actor.primary_in_watch`) and materializes again whenever it next comes
   into the hand, by any path (`Actor._swap_primary_and_heavy`); the sidearm
   and blade stay instant. A spent one is thrown
-  away, a dead player's is left on a rack, and `StashRules.storable` refuses
-  them, so they never reach a stash, a bag or a result. Online the swap
+  away. A dead player's is left on a rack beside the bag (never in the pack),
+  and that death counts it as lost. `StashRules.storable` accepts them: a
+  depot upload or a sign-out puts the chambered one in the stash, and it
+  hangs on the home base's heavy weapon wall (`BaseLayout` kind `heavy_wall`,
+  the `heavy_wall` upgrade) where copies stack. One may be equipped in the
+  optional `power` loadout slot and is taken from the stash only when
+  `WorldDef.carries_power_weapons` (a PvP world); the arena, Frostline and
+  safe zones leave the chamber empty. They sell back at the trader for 40%
+  and are never shop stock. Online the swap
   reaches clients as `Actor.power_changed` through `NetSession`. Their art is
   `Look._power_model` and `_dress_power_rack`; check by eye with
   `visual_check.tscn -- <dir> --power-only`.

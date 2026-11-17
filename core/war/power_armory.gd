@@ -4,10 +4,11 @@ extends RefCounted
 ## labelled `LootContainer.RACK_LABEL`, so they reach clients like any
 ## cache.
 ##
-## Power weapons are items tagged "power": a few shots, never stored. Taking
-## one off a rack scans it into the watch's heavy chamber, summoned from there;
-## if you already carry one, it goes on the rack in exchange, so you carry
-## one at a time. One that runs dry is thrown away. They turn up:
+## Power weapons are items tagged "power": a few shots. Taking one off a rack
+## scans it into the watch's heavy chamber, summoned from there; if you
+## already carry one, it goes on the rack in exchange, so you carry one at a
+## time. One that runs dry is thrown away. A bank or a sign-out sends the
+## chambered one home; a death leaves it on a rack here. They turn up:
 ##   - on a rack at every strongpoint, restocked on a timer the war speeds up,
 ##   - on a rack beside every supply pod,
 ##   - now and then on a rack beside a cache that refills, likelier in a hot war,

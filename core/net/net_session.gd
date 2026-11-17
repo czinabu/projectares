@@ -82,10 +82,12 @@ signal base_visit_requested(owner_name: String, stash: Array, loadout: Dictionar
 signal portal_travel(destination: String)
 
 const DEFAULT_PORT := 24565
-const PROTOCOL := 29
+const PROTOCOL := 30
 ## Every packet is compressed, both ways. State updates are mostly repeated
 ## numbers, and a big battle sends a player hundreds of them a second. Server
 ## and client must agree, so a change here needs a new PROTOCOL.
+## 30: a sign-out tells the client the countdown's full span, and actor state
+## carries the airborne sign-out beacon bit.
 const COMPRESSION := ENetConnection.COMPRESS_RANGE_CODER
 const StashService := preload("res://core/account/stash_service.gd")
 const Economy := preload("res://core/economy/economy.gd")
@@ -636,7 +638,9 @@ func _on_server_player_banked(actor: Actor, items: Array) -> void:
 func _on_server_sign_out_changed(actor: Actor, seconds_left: float) -> void:
 	var peer: int = _actor_peer.get(actor, 0)
 	if peer != 0 and peer in _api.get_peers():
-		_sign_out.rpc_id(peer, seconds_left)
+		var state := raid.state_for(actor) if raid != null else null
+		var total := state.sign_out_total if state != null else maxf(seconds_left, 0.0)
+		_sign_out.rpc_id(peer, seconds_left, total)
 
 
 func _send_account(peer: int) -> void:
@@ -1274,7 +1278,8 @@ func _state_entry(id: int, tier: int) -> Array:
 	var cmd := actor.cmd.to_array()
 	cmd[ActorCommand.FLAGS_INDEX] = (int(cmd[ActorCommand.FLAGS_INDEX]) & ActorCommand.HELD_MASK) \
 			| int(_one_shots[tier].get(id, 0)) | (ActorCommand.STATE_HOVERING if actor.flight.is_hovering else 0) \
-			| (ActorCommand.STATE_SHELTERED if actor.weapons_locked else 0)
+			| (ActorCommand.STATE_SHELTERED if actor.weapons_locked else 0) \
+			| (ActorCommand.STATE_SIGN_OUT_BEACON if actor.sign_out_beacon else 0)
 	cmd[ActorCommand.SWITCH_INDEX] = _switches[tier].get(id, -1)
 	return [id, actor.global_position, actor.velocity, cmd, actor.health.health,
 			actor.health.armor, actor.stagger_left, _dead_kind.get(id, ""), _applied_seq.get(id, 0)]
@@ -2231,13 +2236,15 @@ func _toy(thrower: int, item_id: String, from: Vector3, toy_velocity: Vector3, h
 
 
 ## Your sign-out started, with this many seconds to go, or stopped (below zero).
+## `total` is the span the countdown is using now (ground, air or a gate), so
+## the ring keeps its progress when the rate changes.
 @rpc("authority", "call_remote", "reliable")
-func _sign_out(seconds_left: float) -> void:
+func _sign_out(seconds_left: float, total := -1.0) -> void:
 	var me: Actor = _actors.get(my_actor_id)
 	var state := raid.state_for(me) if raid != null and me != null else null
 	if state != null:
 		state.sign_out_left = seconds_left
-		state.sign_out_total = maxf(seconds_left, 0.0)
+		state.sign_out_total = total if total > 0.0 else maxf(seconds_left, 0.0)
 
 
 @rpc("authority", "call_remote", "reliable")
@@ -2321,9 +2328,11 @@ func _apply_state(actor: Actor, entry: Array, mine: bool) -> void:
 		if not actor.is_dead:
 			actor.global_position = at
 			actor.kill(dead_kind)
+		actor.set_sign_out_beacon(false)
 		return
 	if actor.is_dead:
 		return
+	actor.set_sign_out_beacon(_beacon_in(entry[3]))
 	actor.health.health = entry[4]
 	actor.health.armor = entry[5]
 	var stagger: float = entry[6]
@@ -2377,6 +2386,12 @@ func _apply_state(actor: Actor, entry: Array, mine: bool) -> void:
 	else:
 		_corrections[id] = gap
 	actor.velocity = entry[2]
+
+
+## Whether a state's command says this actor's airborne sign-out beacon is up.
+static func _beacon_in(cmd: Variant) -> bool:
+	return typeof(cmd) == TYPE_ARRAY and cmd.size() == ActorCommand.ARRAY_SIZE \
+			and int(ActorCommand._number(cmd[ActorCommand.FLAGS_INDEX])) & ActorCommand.STATE_SIGN_OUT_BEACON != 0
 
 
 ## Whether a state's command says the server has that actor's jets lit.

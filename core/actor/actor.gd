@@ -179,6 +179,11 @@ var toy_in_hand := ""
 ## repeated or late copy plays it once.
 var toy_throws := 0
 var airborne_time := 0.0
+## Airborne sign-out: a column everyone can see (DESIGN.md section 7). The
+## authority sets it; clients copy it from the state snapshot. A Phase Cloak
+## does not hide it.
+var sign_out_beacon := false
+var _beacon_hum := 0.0
 ## While staggered the actor cannot attack, block, dash or jump.
 var stagger_left := 0.0
 ## Seconds left of the current slide; above zero while sliding.
@@ -383,6 +388,7 @@ func _physics_process(delta: float) -> void:
 			target.interact(self)
 	if global_position.y < -30.0:
 		kill("void")
+	_pulse_sign_out_beacon(delta)
 
 
 func _simulate_timers(delta: float) -> void:
@@ -1288,6 +1294,77 @@ func find_interactable() -> Interactable:
 	return hit.collider as Interactable
 
 
+## Shows or removes the airborne sign-out column. The mesh is marked so a
+## Phase Cloak leaves it solid (`ActorSkin._update_cloak`).
+func set_sign_out_beacon(on: bool) -> void:
+	if sign_out_beacon == on:
+		return
+	sign_out_beacon = on
+	var column := get_node_or_null("SignOutBeacon")
+	if not on:
+		if column != null:
+			# Drop it now. queue_free would leave the column up for the rest
+			# of the frame, which is long enough to still be "there".
+			column.free()
+		return
+	_beacon_hum = 0.0
+	column = Node3D.new()
+	column.name = "SignOutBeacon"
+	_add_beacon_beam(column, 0.45, 0.28, Color(1.0, 0.55, 0.12, 0.55), Color(1.0, 0.48, 0.08), 2.0)
+	_add_beacon_beam(column, 0.08, 0.08, Color(1.0, 0.95, 0.8, 0.9), Color(1.0, 0.92, 0.7), 3.0)
+	add_child(column)
+
+
+func _add_beacon_beam(column: Node3D, bottom: float, top: float, color: Color, emission: Color, energy: float) -> void:
+	var mesh := CylinderMesh.new()
+	mesh.top_radius = top
+	mesh.bottom_radius = bottom
+	mesh.height = 80.0
+	mesh.radial_segments = 8
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.albedo_color = color
+	mat.emission_enabled = true
+	mat.emission = emission
+	mat.emission_energy_multiplier = energy
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	mesh.material = mat
+	var beam := MeshInstance3D.new()
+	beam.mesh = mesh
+	beam.position.y = 40.0
+	beam.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	beam.set_meta("uncloaked", true)
+	if column.get_child_count() == 0:
+		column.set_meta("beam_mat", mat)
+	column.add_child(beam)
+
+
+## Pulses the column and plays its tone. Headless play is silent.
+func _pulse_sign_out_beacon(delta: float) -> void:
+	if not sign_out_beacon:
+		return
+	var column := get_node_or_null("SignOutBeacon") as Node3D
+	if column != null and column.has_meta("beam_mat"):
+		var mat: StandardMaterial3D = column.get_meta("beam_mat")
+		mat.albedo_color.a = 0.4 + 0.45 * absf(sin(Time.get_ticks_msec() * 0.006))
+	_beacon_hum -= delta
+	if _beacon_hum > 0.0:
+		return
+	_beacon_hum = 1.6
+	var stream := Sfx.get_stream("beacon")
+	if stream == null:
+		return
+	var tone := AudioStreamPlayer3D.new()
+	tone.stream = stream
+	tone.unit_size = 28.0
+	tone.max_distance = 160.0
+	tone.volume_db = 2.0
+	add_child(tone)
+	tone.finished.connect(tone.queue_free)
+	tone.play()
+
+
 ## Everything this actor would drop on death.
 func get_drop_items() -> Array[String]:
 	var out: Array[String] = []
@@ -1328,6 +1405,7 @@ func _flash() -> void:
 
 func _on_health_died(info: DamageInfo) -> void:
 	is_dead = true
+	set_sign_out_beacon(false)
 	if _flash_left > 0.0 and body_mesh:
 		body_mesh.material_override = _base_material
 	collision_layer = 0

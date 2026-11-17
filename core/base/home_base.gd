@@ -578,13 +578,16 @@ static func commas(amount: int) -> String:
 
 
 ## What you wear in your base: each loadout slot's item, as a deploy would
-## take it. An empty slot is bare. Vehicles stay parked and supplies stay on
-## the shelf: only what is worn or carried in hand.
+## take it. An empty slot is bare. Vehicles stay parked, supplies stay on
+## the shelf, and a heavy stays on the wall: only what is worn or carried
+## in hand. A PvP deploy is what puts the heavy in the chamber.
 func suit_kit() -> Array[String]:
 	var kit: Array[String] = []
 	for slot: String in Loadout.SLOTS:
 		var id: String = loadout.get(slot, "")
-		if id != "" and not ItemDB.has_tag(id, "vehicle"):
+		# A heavy stays on the wall until a PvP deploy puts it in the chamber.
+		# The base is not a world that carries one.
+		if id != "" and slot != "power" and not ItemDB.has_tag(id, "vehicle"):
 			kit.append(id)
 	return kit
 
@@ -920,6 +923,9 @@ func spot_transform(kind: String, index: int) -> Transform3D:
 			var col := float(index % 4)
 			var row := float(index / 4)
 			return _spot(Vector3(back_x + 1.4 + 1.2 * col, 2.3 - 0.95 * row, -side_z + 0.3), 0.0)
+		"heavy_wall":
+			# Above the long guns on the armory's back wall: one row of four.
+			return _spot(Vector3(back_x + 0.3, 4.25, -2.1 + 1.4 * i), PI / 2.0)
 		"rack_melee":
 			# The armory's left-hand wall: one row, standing upright, short of
 			# the workshop's way in. In the nook that wall is the way in, so
@@ -1977,7 +1983,7 @@ func _fill(display: Display) -> void:
 	var plate_at := Vector3(0, -0.55, 0.12)
 	var plate_size := 0.13
 	match display.kind:
-		"rack_guns", "rack_sidearms":
+		"rack_guns", "rack_sidearms", "heavy_wall":
 			var gun := Gun.new()
 			gun.item_id = id
 			var visual := gun.build_visual()
@@ -1985,7 +1991,8 @@ func _fill(display: Display) -> void:
 			# Side-on to the room, hanging on two pegs.
 			visual.rotation.y = PI / 2.0
 			var small := display.kind == "rack_sidearms"
-			visual.scale = Vector3.ONE * (weapon_scale if small else rack_gun_scale)
+			var heavy := display.kind == "heavy_wall"
+			visual.scale = Vector3.ONE * (weapon_scale if small else (1.6 if heavy else rack_gun_scale))
 			model.add_child(visual)
 			model.position.z = 0.15
 			for x: float in ([-0.15, 0.15] if small else [-0.3, 0.3]):

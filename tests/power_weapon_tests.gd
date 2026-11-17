@@ -1,10 +1,11 @@
 extends RefCounted
 ## Checks for power weapons: the four sci-fi guns, power racks and the
 ## watch's heavy chamber they are scanned into and summoned from, where they
-## turn up, and that they never reach a stash. Kept in its own file and called from the test runner.
+## turn up, and that a death leaves one on a rack. Kept in its own file and called from the test runner.
 
 const PowerArmory := preload("res://core/war/power_armory.gd")
 const StashRules := preload("res://core/account/stash_rules.gd")
+const Economy := preload("res://core/economy/economy.gd")
 
 
 static func run(t: Node) -> void:
@@ -14,8 +15,9 @@ static func run(t: Node) -> void:
 	var data_only := true
 	for id in ids:
 		data_only = data_only and ItemDB.has_tag(id, "firearm") and not ItemDB.has_tag(id, "vendor") \
-				and not StashRules.storable(id) and ItemDB.item_rarity(id) == ItemDB.Rarity.EPIC
-	t.check(data_only, "power weapons are epic firearms that are never sold or stored")
+				and StashRules.storable(id) and not Economy.is_shop_item(id) \
+				and Economy.sell_price(id) == 1000 and ItemDB.item_rarity(id) == ItemDB.Rarity.EPIC
+	t.check(data_only, "power weapons are epic firearms that can be stored and sell back at 40%, never in a shop")
 	var kinds := {}
 	for id in ids:
 		kinds[ItemDB.item_stats(id).get("damage_kind", "bullet")] = true
@@ -296,8 +298,9 @@ static func run(t: Node) -> void:
 	if dropped.size() == 1:
 		t.check((dropped[0] as LootContainer).ammo.get("power_storm_cannon", [[0, 0]])[0][0] == 40,
 				"with the shots it had left")
-	t.check(finished.size() == 1 and not "power_storm_cannon" in finished[0].lost
-			and not "power_storm_cannon" in finished[0].brought_home, "a power weapon is never counted as lost or brought home")
+	t.check(finished.size() == 1 and "power_storm_cannon" in finished[0].lost
+			and not "power_storm_cannon" in finished[0].brought_home,
+			"dying loses the heavy weapon: it stays in the world and does not come home")
 
 	raid.queue_free()
 	await t.frames(2)

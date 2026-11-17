@@ -1543,6 +1543,9 @@ func _update_cloak() -> void:
 	_cloaked = on
 	for node in actor.find_children("*", "GeometryInstance3D", true, false):
 		var geometry := node as GeometryInstance3D
+		# An airborne sign-out's beacon stays solid: a cloak never hides it.
+		if geometry.has_meta("uncloaked"):
+			continue
 		var dressed := geometry.has_meta("cloak_saved")
 		if on and not dressed and not _own_display(geometry):
 			geometry.set_meta("cloak_saved", [geometry.material_override, geometry.cast_shadow, geometry.visible])

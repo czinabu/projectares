@@ -80,8 +80,12 @@ var vehicle_toys := true
 var bag_lifetime := 300.0
 ## Seconds to stand in a depot to bank what you carry.
 var depot_hold_time := 4.0
-## Seconds a sign-out takes. Taking or dealing damage cancels it.
-var sign_out_time := 10.0
+## Seconds a sign-out takes on the ground. Taking or dealing damage cancels it.
+var sign_out_time := 15.0
+## Seconds a sign-out takes while airborne. Progress already earned is kept
+## when you land or lift off, so the seconds left are whatever the rate you
+## are on still needs (DESIGN.md section 7). The exact air time is this.
+var sign_out_air_time := 25.0
 ## Seconds the body of a player who quit in a fight stays in the world.
 var combat_log_time := 30.0
 ## Seconds after a hit, given or taken, that a player counts as in a fight.
@@ -168,6 +172,13 @@ var redeploy_delay := 3.0
 ## hands out the loadout without taking it out of the stash, and never settles
 ## a result into the stash (see `StashService.deploy`).
 var gear_at_risk := true
+
+
+## True where a heavy weapon from the armory wall may be carried into the
+## chamber (DESIGN.md section 6): a PvP world, the only place they are found.
+## Safe zones, the arena and a world with no power weapons leave it on the wall.
+func carries_power_weapons() -> bool:
+	return power_weapon_rate > 0.0 and not safe_zone and gear_at_risk
 
 
 func create_map() -> Node3D:

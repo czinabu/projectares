@@ -28,7 +28,7 @@ const UPGRADES := {
 	"armory_alcove": {"title": "Armory alcove", "track": "Armory", "price": 1200,
 		"adds": "The nook opens into the full armory:\n12 long guns, 8 sidearms, 6 melee"},
 	"heavy_wall": {"title": "Heavy weapon wall", "track": "Armory", "price": 4000, "needs": ["armory_alcove"],
-		"adds": "Banked heavy weapons hang here", "ready": false},
+		"adds": "Banked heavy weapons hang above the long guns"},
 	"bay_second": {"title": "Second bay", "track": "Garage", "price": 600,
 		"adds": "Room for 2 vehicles on show"},
 	"garage_full": {"title": "Full garage", "track": "Garage", "price": 2000, "needs": ["bay_second"],
