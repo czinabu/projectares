@@ -130,7 +130,7 @@ rows marked **pre-playtest** come before the friends playtest.
 | Cargo space while riding | Missing | After the playtest. |
 | Mobile cover | Missing | Rover and mech; the bike gives none by design. |
 | Per-vehicle watch recharge (heavier is slower) | Built | `Raid.toy_recharge` reads the item's `watch_recharge`, or `toy_cooldown` (12 s) when it has none. Scrapper 12 s, Raider hoverbike 10 s, Warden Rover 30 s, Bulwark Mech 60 s, Kestrel Jet 60 s. |
-| Rover, mech and jet | Partly | Drivable first versions on the one `Vehicle` class: Warden Rover (23 m/s, slow to turn, driver's seat on the left), Bulwark Mech (9 m/s, turns on the spot, jump-jet hop) and Kestrel Jet (takes off past 24 m/s, cannot hover, 120 m ceiling, thrown in any world). Greybox models. Missing: their weapons, passengers, armor and weak spots, vehicle health, The rover can be found parked in Ashfront; the mech and the jet are built at the fabricator from their blueprints, which warlords and supply pods carry. |
+| Rover, mech and jet | Partly | Drivable first versions on the one `Vehicle` class: Warden Rover (23 m/s, slow to turn, driver's seat on the left), Bulwark Mech (9 m/s, turns on the spot, jump-jet hop) and Kestrel Jet (takes off past 24 m/s, cannot hover, 120 m ceiling, thrown in any world). Greybox models. Missing: their weapons, passengers, armor and weak spots, vehicle health, The rover can be found parked at Ashfront's strongpoints (parked vehicles are tiered by risk: Scrappers at the rim and camps, a chance of a Raider by the ramps, the best odds at strongpoints, which refill slower); the mech and the jet are built at the fabricator from their blueprints, which warlords and supply pods carry. |
 
 ## Racing
 
@@ -160,8 +160,8 @@ rows marked **pre-playtest** come before the friends playtest.
 | Item | State | Notes |
 | --- | --- | --- |
 | Authoritative server, input-only clients, prediction, lag compensation | Built | `NetSession`, `ActorCommand.apply_array` clamps every input. |
-| Sign-in and version check before a player gets in | Partly | Sign-in is an ordinary call after connecting, and only the client acts on a `PROTOCOL` mismatch. Missing: `SceneMultiplayer.auth_callback`. **pre-playtest** |
-| Hardening: relay off, request limits, safe saves, backups | Missing | `server_relay` is Godot's default (on); no per-player request limits; `ClanService` writes its file in place; no account backups. **pre-playtest** |
+| Sign-in and version check before a player gets in | Built | `SceneMultiplayer.auth_callback` (`NetSession._server_auth`): an old game or a wrong secret never connects, and both sides name the version, so an older game gets the update button in the phone's Servers app. |
+| Hardening: relay off, request limits, safe saves, backups | Built | `server_relay` off; `NetSession.RequestLimits` on every request call (a flood is dropped); every save goes through `SafeFile`; rolling backups at start and hourly (`StashService.backup_if_due`, docs/hosting.md "Backups"). |
 | Reconnect to your body after a drop | Missing | A disconnect starts a sign-out on the standing body (`Raid.remove_player`) and a new sign-in waits it out. **pre-playtest** |
 | Whole-server bench and health log | Missing | `battle_bench` measures one world; nothing measures the plaza, worlds and arena together. **pre-playtest** |
 | Encrypted connections | Missing | ENet traffic, including the sign-in secret, is plain. |
@@ -172,4 +172,4 @@ rows marked **pre-playtest** come before the friends playtest.
 | Steam login | Missing | Name plus a secret the game makes. |
 | Matchmaker, plaza shards, hiding unseen enemies | Missing | Later, when numbers call for it. |
 | Official servers before Steam: recovery code, one-time Steam link | Missing | Accounts are tied to the computer whose game made the secret. |
-| Smooth travel: auto-reconnect, official servers by default, account shown, no full-world dead end, update link on a version mismatch | Missing | See DESIGN.md section 14, "Smooth for the player". |
+| Smooth travel: auto-reconnect, official servers by default, account shown, no full-world dead end, update link on a version mismatch | Partly | The update link on a version mismatch is built (the phone's Servers app); the rest is missing. See DESIGN.md section 14, "Smooth for the player". |

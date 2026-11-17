@@ -613,7 +613,15 @@ without Caleb, and update the gap list when a PR closes a row.
   (`PlayerController._update_recoil`), the view widening with speed
   (`speed_fov`) and dipping on a landing (`land_dip`). A semi-auto keeps a
   pull made just before it is ready (`Gun.press_buffer`); that is simulated,
-  so it is in `Gun`, from the command.
+  so it is in `Gun`, from the command. Handling is simulated the same way
+  (DESIGN.md "Handling"): moving widens a gun's spread by its
+  `move_spread_deg` times the share of sprint speed on the ground
+  (`Gun.move_share`), aiming tightens it over the gun's `ads_time`
+  (`Gun.aim_in`), not at once, and you never shoot while sprinting: a held
+  trigger or aim slows you to a walk, and a gun fires only
+  `Actor.sprint_out_time` after the sprint ends (`Actor.sprint_recover`),
+  keeping a pull made meanwhile. Light guns are quick and steady on the
+  move; a DMR is slow to aim and wild on the run.
 - Helmets are items tagged `helmet` in the `helmet` loadout slot, and data
   like abilities: `Visor` (`core/abilities/visor.gd`, `Actor.visor`) is one
   class whose `mode` stat picks what the visor does ("" plain, "zoom"
@@ -799,6 +807,20 @@ without Caleb, and update the gap list when a PR closes a row.
   `Combat.authoritative` is false there, so a client never deals damage, loots,
   or decides an outcome. Anything that changes a result must run on the server
   and reach clients through `NetSession`.
+- Signing in is part of the connection (DESIGN.md section 14): a client
+  sends its version and sign-in through `SceneMultiplayer.auth_callback`
+  (`NetSession._server_auth`, `_client_auth`) and counts as connected only
+  once the server accepts, so an old game or a wrong secret never reaches
+  the session. Both sides' messages always carry "protocol", so any two
+  versions can say which one needs the update; an older game is pointed at
+  `NetSession.UPDATE_URL` from the phone's Servers app. `server_relay` is
+  off: clients only talk to the server. Every `any_peer` RPC starts with
+  `_allow(kind)` (`NetSession.RequestLimits`, per player, refilled by server
+  tick), and a new one must too. Server saves go through
+  `core/account/safe_file.gd` (written whole, then swapped in), and the
+  `StashService` keeps rolling backups of the whole save folder
+  (`backup_if_due`, `backup_dir`). An account file that cannot be read is
+  never replaced by a new account.
 - Online movement: a client numbers every input and each packet repeats
   every input the server has not received yet (up to
   `NetSession.MAX_INPUTS_PER_PACKET`, packed small by `pack_inputs` so a

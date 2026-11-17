@@ -1532,6 +1532,7 @@ func _try_join() -> void:
 
 ## Signed in: the hub becomes that server's lobby.
 func _on_online_signed_in(account: Dictionary) -> void:
+	phone.set_update_needed(false)
 	_tour_stash_size = (account.get("stash", []) as Array).size()
 	_join_attempts = 0
 	_join_deadline = 0
@@ -1801,6 +1802,11 @@ func _on_online_failed(reason: String) -> void:
 	if net:
 		if net.refused:
 			_join_attempts = 0
+		if net.outdated != "":
+			# A version mismatch is not a missing server: no starting one of
+			# our own instead. An older game is pointed at the update.
+			_door_fallback = false
+			phone.set_update_needed(net.outdated == "client")
 		net.queue_free()
 		net = null
 	if _join_attempts > 0 and _hosted_server_stopped():

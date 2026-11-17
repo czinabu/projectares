@@ -39,6 +39,7 @@ const Contracts := preload("res://core/economy/contracts.gd")
 const Crafting := preload("res://core/progression/crafting.gd")
 const DevMode := preload("res://core/dev/dev_mode.gd")  # DEV MODE
 const AccountStore := preload("res://core/account/account_store.gd")
+const SafeFile := preload("res://core/account/safe_file.gd")
 
 const SAVE_VERSION := 1
 const MIN_NAME := 3
@@ -82,6 +83,13 @@ var dev_host := false
 ## (`StashRules.CARRIED`), so they arrive with the loadout they left with.
 ## Only the profile's own name and secret claim it. Empty for anyone else's server.
 var host_profile := {}
+## Rolling backups of the whole save folder (accounts, clans, phone records)
+## go in `backup_dir()`, one dated folder each: one when the server starts
+## and then every `backup_every` seconds while it runs, keeping the newest
+## `backups_kept`. 0 turns them off.
+var backup_every := 3600.0
+var backups_kept := 48
+var _last_backup := -1.0
 
 
 ## One player's server-side record. Plain data plus its save format.
@@ -231,6 +239,10 @@ func sign_in(shown_name: String, secret: String) -> Dictionary:
 		_adopt_host_profile(account, secret)
 		_dev_top_up(account)  # DEV MODE
 		return {"ok": true, "account_id": id, "created": false}
+	if _is_saved(id):
+		# The account is saved but could not be read: never start a new account
+		# over it. The host can put one back from a backup.
+		return _fail("This account could not be loaded. Ask the server's host to restore it from a backup.")
 	account = Account.new()
 	account.id = id
 	account.shown_name = shown_name.strip_edges().left(MAX_NAME)
@@ -765,6 +777,34 @@ func _save(account: Account) -> void:
 		return
 	if not _store.write([account.to_dict()]):
 		push_warning("StashService: could not save %s" % account.id)
+
+
+## Where the rolling backups go: beside the save folder, never inside it.
+func backup_dir() -> String:
+	return save_dir.trim_suffix("/") + "_backups"
+
+
+## Backs up the save folder if one is due (see `backup_every`). Cheap to call
+## often: every session sharing this service may call it, and only one copy
+## is made. Returns the new backup's folder, or "". The clan and phone
+## records are copied as files; the accounts database is copied by
+## `AccountStore.backup_to`, never as the live file, which may be mid-write.
+func backup_if_due() -> String:
+	if not persist or backup_every <= 0.0:
+		return ""
+	var now := Time.get_unix_time_from_system()
+	if _last_backup >= 0.0 and now - _last_backup < backup_every:
+		return ""
+	_last_backup = now
+	var made := SafeFile.backup(save_dir, backup_dir(), backups_kept)
+	if made != "" and _store_ready() and _store.kind == "sqlite":
+		for suffix: String in ["", "-wal", "-shm"]:
+			DirAccess.remove_absolute(made.path_join(AccountStore.FILE_NAME + suffix))
+		if not _store.backup_to(made):
+			push_warning("StashService: the accounts database could not be backed up to %s" % made)
+	if made != "":
+		print("Server: backed up accounts to %s" % ProjectSettings.globalize_path(made))
+	return made
 
 
 static func _hash(salt: String, secret: String) -> String:

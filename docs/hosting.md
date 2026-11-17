@@ -124,8 +124,11 @@ not lose them. They live in one database, `accounts.sqlite`; a server that
 still has the older one-file-per-player saves imports them into it the first
 time it starts and renames each old file to `.json.imported`.
 
-Everyone must run the same version of the game as the server. If someone sees
-"The server runs a different version of the game", they need to update.
+Everyone must run the same version of the game as the server. The server
+checks the version before anyone gets in. A player whose game is older is
+told so, and the phone's Servers app gets a **Get the update** button that
+opens the latest build's download page. A player whose game is newer is told
+the server needs updating: pull and rebuild it (see below).
 
 ## Everyday tasks
 
@@ -137,7 +140,8 @@ Log in with `ssh root@<address>` and `cd projectares` first.
 | See the log | `docker compose logs -f` |
 | Restart the server | `docker compose restart` |
 | Stop the server | `docker compose down` |
-| Back up everyone's stash | `docker compose stop && docker compose cp ares:/data/accounts ./accounts-backup && docker compose start` (stop first: the stashes are a live database) |
+| Copy everyone's stash to the machine | `docker compose stop && docker compose cp ares:/data/accounts ./accounts-backup && docker compose start` (stop first: the stashes are a live database) |
+| Copy the server's own backups to the machine | `docker compose cp ares:/data/accounts_backups ./backups` |
 | Wipe every stash and start over | `docker compose down -v` |
 | Start it again | `docker compose up -d` |
 
@@ -154,6 +158,35 @@ To change the world, the bot count, or turn on squad spawns, edit the
 - `--no-plaza` to run one world alone on the port, with no social plaza
 - `--port 24565` to change the first port (then change the `ports:` line and the
   firewall rule to match, and join with `address:port`)
+
+## Backups
+
+The server backs up every account, clan and phone record by itself: once
+when it starts and then every hour, into a dated folder under
+`/data/accounts_backups` (beside `/data/accounts`, in the same volume). It
+keeps the newest 48, about two days. Accounts live in one SQLite database,
+`accounts.sqlite`, where every save is all or nothing, so a crash never
+leaves half an account or half a trade; each backup holds a clean copy of it
+taken while the server runs. An account that still cannot be read is never
+replaced by a new account, and its player is asked to have the host restore
+it.
+
+To put a backup back, stop the server, copy the backup's files over the
+accounts folder and start it again:
+
+```
+docker compose down
+docker compose run --rm --entrypoint sh ares -c "ls /data/accounts_backups"
+docker compose run --rm --entrypoint sh ares -c "rm -f /data/accounts/accounts.sqlite-wal /data/accounts/accounts.sqlite-shm && cp -r /data/accounts_backups/<folder>/. /data/accounts/"
+docker compose up -d
+```
+
+The `rm` matters: the database's `-wal` and `-shm` files belong to the copy
+being replaced and must not be kept beside the restored one. A backup puts
+back every account at once; there is no one-player restore yet.
+
+A volume lives on the one machine, so copy the backups off it now and then
+(the `docker compose cp` lines above).
 
 ## Stop paying
 

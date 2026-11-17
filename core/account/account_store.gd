@@ -24,6 +24,8 @@ extends RefCounted
 ##
 ## Load with `const AccountStore := preload("res://core/account/account_store.gd")`.
 
+const SafeFile := preload("res://core/account/safe_file.gd")
+
 const FILE_NAME := "accounts.sqlite"
 const SCHEMA_VERSION := 1
 ## How long a write waits for another connection (a second server process on
@@ -95,9 +97,9 @@ func is_open() -> bool:
 func read(id: String) -> Dictionary:
 	if kind == "json":
 		var path := _json_path(id)
-		if not FileAccess.file_exists(path):
+		if not SafeFile.exists(path):
 			return {}
-		var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(path))
+		var parsed: Variant = SafeFile.read_json(path)
 		if typeof(parsed) != TYPE_DICTIONARY:
 			push_warning("AccountStore: %s is unreadable" % path)
 			return {}
@@ -116,7 +118,7 @@ func read(id: String) -> Dictionary:
 
 func has(id: String) -> bool:
 	if kind == "json":
-		return FileAccess.file_exists(_json_path(id))
+		return SafeFile.exists(_json_path(id))
 	if kind != "sqlite" or not _bind("SELECT 1 AS found FROM accounts WHERE id = ?", [id]):
 		return false
 	return not (_db.get("query_result") as Array).is_empty()
@@ -184,16 +186,27 @@ func backup_to(to_dir: String) -> bool:
 func _import_json_files() -> void:
 	var found := {}  # id -> account data, for files whose account is new here
 	var settled: Array[String] = []  # files to rename once the import is in
-	for file in DirAccess.get_files_at(dir):
-		if not file.ends_with(".json"):
+	var files := DirAccess.get_files_at(dir)
+	for file in files:
+		# An old save whose last swap was cut short is only its ".tmp".
+		var torn := file.ends_with(".json" + SafeFile.TEMP)
+		if not file.ends_with(".json") and not torn:
 			continue
-		var id := file.get_basename()
+		var name := file.trim_suffix(SafeFile.TEMP) if torn else file
+		if torn and name in files:
+			continue  # read with its whole file
+		var id := name.get_basename()
 		# A quiet parse: a file that is not JSON is simply not an account.
 		var json := JSON.new()
-		var data: Variant = json.data if json.parse(FileAccess.get_file_as_string(dir.path_join(file))) == OK else null
+		var data: Variant = json.data if json.parse(SafeFile.read(dir.path_join(name))) == OK else null
+		if not _looks_like_account(data, id) and not torn and (name + SafeFile.TEMP) in files:
+			var temp := JSON.new()
+			data = temp.data if temp.parse(FileAccess.get_file_as_string(dir.path_join(name + SafeFile.TEMP))) == OK else null
 		if not _looks_like_account(data, id):
 			continue  # not an account (news, clans), or unreadable: left alone
 		settled.append(file)
+		if not torn and (name + SafeFile.TEMP) in files:
+			settled.append(name + SafeFile.TEMP)
 		if not has(id):
 			found[id] = data
 	if settled.is_empty():
@@ -231,17 +244,6 @@ func _json_path(id: String) -> String:
 	return dir.path_join(id + ".json")
 
 
-## The old format: write beside the real file, then swap, so a crash never
-## leaves half a save.
+## The old format, written whole and swapped in (`SafeFile`).
 func _write_json(data: Dictionary) -> bool:
-	var path := _json_path(str(data.get("id", "")))
-	var temp := path + ".tmp"
-	var file := FileAccess.open(temp, FileAccess.WRITE)
-	if file == null:
-		push_warning("AccountStore: could not write %s" % temp)
-		return false
-	file.store_string(JSON.stringify(data, "\t"))
-	file.close()
-	if FileAccess.file_exists(path):
-		DirAccess.remove_absolute(path)
-	return DirAccess.rename_absolute(temp, path) == OK
+	return SafeFile.write(_json_path(str(data.get("id", ""))), JSON.stringify(data, "\t"))

@@ -40,6 +40,7 @@ const AccountStoreTests := preload("res://tests/account_store_tests.gd")
 const FeelTests := preload("res://tests/feel_tests.gd")
 const ViewMatchTests := preload("res://tests/view_match_tests.gd")
 const GunRoleTests := preload("res://tests/gun_role_tests.gd")
+const GunHandlingTests := preload("res://tests/gun_handling_tests.gd")
 const PeekTests := preload("res://tests/peek_tests.gd")
 const AdsTests := preload("res://tests/ads_tests.gd")
 const GripTests := preload("res://tests/grip_tests.gd")
@@ -53,6 +54,8 @@ const RaiderTests := preload("res://tests/raider_tests.gd")
 const PlaytestFixTests := preload("res://tests/playtest_fix_tests.gd")
 const ExtractionTests := preload("res://tests/extraction_tests.gd")
 const InspectTests := preload("res://tests/inspect_tests.gd")
+const SaveSafetyTests := preload("res://tests/save_safety_tests.gd")
+const ServerAuthTests := preload("res://tests/server_auth_tests.gd")
 
 var _passed := 0
 var _failed := 0
@@ -71,6 +74,7 @@ func _ready() -> void:
 	# Accounts a previous run left behind hold that run's secrets and would
 	# refuse this run's sign-ins, so every run starts with none.
 	_wipe_dir(NET_ACCOUNTS)
+	_wipe_dir(NET_ACCOUNTS + "_backups")
 	var args := OS.get_cmdline_user_args()
 	if "--list" in args:
 		_list_groups()
@@ -319,6 +323,8 @@ func _run() -> void:
 	await OnboardingTests.run(self)
 	await TravelOnlineTests.run(self)
 	await HostRecoveryTests.run(self)
+	await SaveSafetyTests.run(self)
+	await ServerAuthTests.run(self)
 	await _test_look()
 	await _test_rig_models()
 	await _test_customizer()
@@ -337,6 +343,7 @@ func _run() -> void:
 	await _test_feel()
 	await _test_view_match()
 	await _test_gun_roles()
+	await _test_gun_handling()
 	await _test_peek()
 	await _test_ads()
 	await _test_grips()
@@ -349,6 +356,10 @@ func _test_view_match() -> void:
 
 func _test_gun_roles() -> void:
 	await GunRoleTests.run(self)
+
+
+func _test_gun_handling() -> void:
+	await GunHandlingTests.run(self)
 
 
 func _test_peek() -> void:
@@ -737,7 +748,18 @@ func _check_crouch(p: Actor) -> void:
 		p.cmd.crouch = true
 		await frames(20)
 		check(gun.current_spread_deg() < standing_spread, "a crouched gun spreads less")
-	p.cmd.yaw = 0.0
+	# Walk (and later sneak) the way with nothing in front for 10 m, so
+	# cover where the player happened to land cannot get in the way.
+	var open_yaw := 0.0
+	var chest := p.global_position + Vector3(0, 1.0, 0)
+	for k in 8:
+		var yaw := TAU * k / 8.0
+		var ahead := Vector3(-sin(yaw), 0.0, -cos(yaw))
+		var ray := PhysicsRayQueryParameters3D.create(chest, chest + ahead * 10.0, Actor.LAYER_WORLD)
+		if p.get_world_3d().direct_space_state.intersect_ray(ray).is_empty():
+			open_yaw = yaw
+			break
+	p.cmd.yaw = open_yaw
 	p.cmd.move = Vector2(0, 1)
 	p.cmd.sprint = true
 	await frames(30)
@@ -791,9 +813,11 @@ func _check_crouch(p: Actor) -> void:
 		var brain := bot.get_node("Brain") as BotBrain
 		var bot_was := bot.global_position
 		var bot_yaw := bot.cmd.yaw
-		# The bot faces away (-Z is forward at yaw 0), the player behind it.
-		bot.global_position = p.global_position + Vector3(0, 0, -brain.close_sense_range * 0.6)
-		bot.cmd.yaw = 0.0
+		# The bot faces away (-Z is forward at yaw 0), the player behind it,
+		# along the open way found above.
+		var away := Vector3(-sin(open_yaw), 0.0, -cos(open_yaw))
+		bot.global_position = p.global_position + away * brain.close_sense_range * 0.6
+		bot.cmd.yaw = open_yaw
 		bot.velocity = Vector3.ZERO
 		bot.process_mode = Node.PROCESS_MODE_DISABLED
 		brain.target = null
@@ -869,7 +893,13 @@ func _test_combat_and_loot() -> void:
 		p.cmd.interact_pressed = false
 		check(p.inventory.items.size() > before, "looting moves items to the backpack")
 
+	# A rifleman, not a blade-carrying heavy: which one comes first depends on
+	# how the seed falls, and a heavy takes more than this combo.
 	var bot_b := raid.bots[0]
+	for other in raid.bots:
+		if not other.is_dead and not other.weapons.any(func(w: Weapon) -> bool: return w is MeleeWeapon):
+			bot_b = other
+			break
 	p.global_position = arena + Vector3(0, 0, 3)
 	bot_b.global_position = p.global_position + Vector3(0, 0, -1.8)
 	p.cmd.aim_dir = Vector3.FORWARD
@@ -1034,7 +1064,8 @@ func _test_storm() -> void:
 	var bike: Node3D = spot.vehicle
 	check(raid._is_parked(bike), "a bike waits at each parking spot")
 	bike.global_position = p.global_position + Vector3(2.0, 0.5, 0.0)
-	spot.empty_for = world.vehicle_respawn_time - 0.05
+	# A spot can set its own wait (a strongpoint's is longer).
+	spot.empty_for = float(spot.marker.get_meta("respawn", world.vehicle_respawn_time)) - 0.05
 	await frames(10)
 	check(spot.vehicle != bike and raid._is_parked(spot.vehicle), "a bike that left its spot is replaced there")
 	raid._idle[bike] = world.vehicle_respawn_time
@@ -2279,7 +2310,8 @@ func _check_jetpack_cruise(p: Actor) -> void:
 ## Boots skimming, dashing, grazing, the 10 m ceiling and the ground speed.
 ## `p` stands on open ground with thruster boots.
 func _check_boot_skim(p: Actor) -> void:
-	p.global_position = Vector3(0.0, p.global_position.y, 60.0)
+	# Feet on the ground: the open ground is a heightfield, not a solid.
+	p.global_position = Raid.of(p)._stand(Vector3(0.0, 0.0, 60.0))
 	for i in 200:
 		await get_tree().physics_frame
 		if p.is_on_floor():

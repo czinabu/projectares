@@ -171,7 +171,10 @@ static func _import(t: Node) -> void:
 	old.change_scrip(ida, 123)
 	old.deploy(vex, Worlds.get_world("ashfront"))
 	var ida_scrip := old.scrip_of(ida)
+	var quinn: String = old.sign_in("Quinn Ray", Accounts.new_secret()).account_id
 	old.close()
+	# An old save whose last swap was cut short: only its ".tmp" is left.
+	DirAccess.rename_absolute(dir.path_join(quinn + ".json"), dir.path_join(quinn + ".json.tmp"))
 	var news := FileAccess.open(dir.path_join("news.json"), FileAccess.WRITE)
 	news.store_string("[{\"title\": \"hi\"}]")
 	news.close()
@@ -182,7 +185,9 @@ static func _import(t: Node) -> void:
 
 	var service := _service(dir)
 	var store: RefCounted = service.store()
-	t.check(store.kind == "sqlite" and store.imported == 2, "opening the database imports the old account files")
+	t.check(store.kind == "sqlite" and store.imported == 3, "opening the database imports the old account files")
+	t.check(service.snapshot(quinn).ok and not FileAccess.file_exists(dir.path_join(quinn + ".json.tmp")),
+			"an old save left only as its .tmp is imported too")
 	t.check(service.scrip_of(ida) == ida_scrip and service.count_of(ida, "alloy_ingot") == 1
 			and service.sign_in("Ida Moss", secret).ok, "an imported account keeps its stash, money and secret")
 	t.check(service.snapshot(vex).ok and not service.is_deployed(vex),

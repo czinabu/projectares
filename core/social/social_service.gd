@@ -19,6 +19,7 @@ extends RefCounted
 ## false, "error" (a short reason a client can show).
 
 const SAVE_VERSION := 1
+const SafeFile := preload("res://core/account/safe_file.gd")
 const MAX_MESSAGE := 240
 ## Messages kept per account, oldest dropped first.
 const MAX_LOG := 120
@@ -377,8 +378,8 @@ func _record(account_id: String) -> Record:
 	var record := Record.new()
 	record.id = account_id
 	var path := _path_for(account_id)
-	if persist and FileAccess.file_exists(path):
-		var data: Variant = JSON.parse_string(FileAccess.get_file_as_string(path))
+	if persist and SafeFile.exists(path):
+		var data: Variant = SafeFile.read_json(path)
 		if typeof(data) == TYPE_DICTIONARY and str(data.get("id", "")) == account_id:
 			record.load_dict(data)
 		else:
@@ -392,20 +393,8 @@ func _path_for(account_id: String) -> String:
 
 
 func _save(record: Record) -> void:
-	if not persist:
-		return
-	DirAccess.make_dir_recursive_absolute(save_dir)
-	var path := _path_for(record.id)
-	var temp := path + ".tmp"
-	var file := FileAccess.open(temp, FileAccess.WRITE)
-	if file == null:
-		push_warning("SocialService: could not write %s" % temp)
-		return
-	file.store_string(JSON.stringify(record.to_dict(), "\t"))
-	file.close()
-	if FileAccess.file_exists(path):
-		DirAccess.remove_absolute(path)
-	DirAccess.rename_absolute(temp, path)
+	if persist:
+		SafeFile.write(_path_for(record.id), JSON.stringify(record.to_dict(), "\t"))
 
 
 static func _fail(reason: String) -> Dictionary:
