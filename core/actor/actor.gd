@@ -215,6 +215,14 @@ var scrip := 0
 ## watch's contract icon reads it. Set by the authority, and online sent to
 ## the owner only. Counted toward contracts only on a sign-out.
 var tally := {}
+## What this life has sent home through depots so far, for views: the
+## watch's sign-out icon reads it (`Hud.banked_line`). Items, their worth
+## and the scrip banked. Set by the authority (`Raid._on_actor_banked`),
+## and online sent to the owner only (`NetSession._banked`). Already in the
+## stash, so a death never takes it.
+var banked_count := 0
+var banked_value := 0
+var banked_scrip := 0
 var rank := 0
 var streak := 0
 var bounty := 0

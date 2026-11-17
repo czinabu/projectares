@@ -38,6 +38,7 @@ const PortalTests := preload("res://tests/portal_tests.gd")
 const ContractTests := preload("res://tests/contract_tests.gd")
 const FeelTests := preload("res://tests/feel_tests.gd")
 const ViewMatchTests := preload("res://tests/view_match_tests.gd")
+const PeekTests := preload("res://tests/peek_tests.gd")
 const AdsTests := preload("res://tests/ads_tests.gd")
 const GripTests := preload("res://tests/grip_tests.gd")
 const TravelTests := preload("res://tests/travel_tests.gd")
@@ -332,6 +333,7 @@ func _run() -> void:
 	await _test_portals()
 	await _test_feel()
 	await _test_view_match()
+	await _test_peek()
 	await _test_ads()
 	await _test_grips()
 	await _test_inspect()
@@ -339,6 +341,10 @@ func _run() -> void:
 
 func _test_view_match() -> void:
 	await ViewMatchTests.run(self)
+
+
+func _test_peek() -> void:
+	await PeekTests.run(self)
 
 
 func _test_ads() -> void:
@@ -6101,10 +6107,12 @@ func _test_plaza_online() -> void:
 				"the quarters door opens your home base on the server's stash")
 		check(main.base != null and main.base.door.get_prompt().contains("Back to"),
 				"the base's door leads back to the plaza")
-		main.base.leave_requested.emit()
+		# Out the way the door goes, through a squad portal to the plaza.
+		check(Portal.PLAZA in main.controller.portal_choices(), "the watch offers a portal to the plaza too")
+		main.go_through_portal(Portal.PLAZA)
 		await _wait_until(func() -> bool: return main.raid != null and main.raid.player != null, 600)
 		check(main.base == null and main.raid != null and main.raid.world.safe_zone,
-				"the base's door leads back to the plaza")
+				"a portal to the plaza leads back to the plaza")
 		main.use_portal("leave")
 		await frames(5)
 		check(main.net == null and main.raid == null and main.base != null and not main.hub.in_lobby(),

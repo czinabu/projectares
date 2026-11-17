@@ -12,7 +12,8 @@ extends Node
 signal sign_out_requested
 ## The player, dead, asked to drop back in.
 signal redeploy_requested
-## While down: a number key picked a place to land (0 for the first on offer).
+## While down: a place to land was picked, with a click on the watch's
+## landing list or a number key (0 for the first on offer).
 signal drop_requested(index: int)
 
 ## The player threw the toy vehicle in their hand.
@@ -30,6 +31,9 @@ signal ping_requested
 signal portal_requested(destination: String)
 ## The player asked to pack the vehicle they are looking at onto the watch.
 signal pack_requested
+## A click on the opened map's target `index` (`map_targets`): set it as the
+## waypoint, or clear it if it already is. The HUD keeps the waypoint.
+signal map_target_clicked(index: int)
 
 enum ViewMode { FIRST, THIRD }
 ## How the melee side is picked: by flicking the mouse, or by the movement keys.
@@ -215,6 +219,19 @@ var artifact_pick := 0
 ## Which destination is picked out on the watch's portal icon
 ## (`portal_choices`), counting from 0.
 var portal_pick := 0
+## The opened Status icons and the pack list (Caleb's call: Status icons open
+## with a click): the map target picked out, the Standing page, and the
+## item picked out in the pack. View only.
+var map_pick := 0
+var standing_pick := 0
+var pack_pick := 0
+## The opened map's targets (`Hud.map_targets`), kept up to date by the HUD
+## while the watch is up, so the wheel knows how many there are. View only.
+var map_targets: Array[Dictionary] = []
+## While down, which place to land is picked out on the watch's death
+## report (`Hud.drop_choices`), counting from 0. The wheel turns through
+## them and a click drops in there. View only.
+var drop_pick := 0
 ## The artifact icon was clicked; sent as `artifact_pressed` next command.
 var _artifact_click := false
 ## Seconds left of the throw just made: the hand is busy, so the weapon
@@ -227,6 +244,8 @@ var _visor_level := 0
 var _flick := Vector2.ZERO
 var _rng := RandomNumberGenerator.new()
 var _thrust_audio: AudioStreamPlayer
+## Fades hostile bodies the eyes cannot see out of the third-person view.
+var peek_fade := PeekFade.new()
 ## Kick still on its way to the view (x pitch, y yaw, radians), the kick the
 ## view is holding that has yet to settle back, and seconds since a shot.
 var _kick_coming := Vector2.ZERO
@@ -301,6 +320,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		_flick += event.relative
 	elif event is InputEventMouseButton and event.pressed and not captured:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	elif event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT \
+			and is_instance_valid(actor) and actor.is_dead:
+		click_landing()
 	elif event is InputEventMouseButton and event.pressed \
 			and event.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN]:
 		scroll(1 if event.button_index == MOUSE_BUTTON_WHEEL_DOWN else -1)
@@ -318,7 +340,26 @@ func _unhandled_input(event: InputEvent) -> void:
 		redeploy_requested.emit()
 	elif event is InputEventKey and event.pressed and not event.echo and is_instance_valid(actor) \
 			and actor.is_dead and event.keycode >= KEY_1 and event.keycode <= KEY_9:
+		drop_pick = event.keycode - KEY_1
 		drop_requested.emit(event.keycode - KEY_1)
+
+
+## How many places to land the watch's death report offers now.
+func landing_count() -> int:
+	var raid := Raid.of(actor) if actor != null and is_instance_valid(actor) else null
+	return Hud.drop_choices(raid, actor).size() if raid != null else 0
+
+
+## A click while down, on the watch's death report: drops in at the place
+## picked out (`drop_pick`), or anywhere when there is no choice to make.
+## The world refuses it until the wait is over.
+func click_landing() -> void:
+	var places := landing_count()
+	if places > 1:
+		drop_pick = clampi(drop_pick, 0, places - 1)
+		drop_requested.emit(drop_pick)
+	else:
+		redeploy_requested.emit()
 
 
 ## The toy vehicles on the player's watch (item ids), as the world last said.
@@ -368,8 +409,9 @@ func is_on_artifact() -> bool:
 
 
 ## Where a squad portal from the watch can lead from here
-## (`Portal.destinations()`), or none where portals cannot open: anywhere but
-## your base or a safe zone.
+## (`Portal.choices_for`): worlds, the arena and the plaza from your base,
+## worlds, the arena and home from a safe zone, only home (a sign-out) out
+## in a world, and none in the arena or while down.
 func portal_choices() -> Array[String]:
 	if actor == null or not is_instance_valid(actor):
 		return []
@@ -425,6 +467,15 @@ func click_watch() -> bool:
 	if is_watch_on("ping"):
 		ping_requested.emit()
 		return true
+	if is_on_sign_out():
+		sign_out_requested.emit()
+		return true
+	if is_watch_on("map") and _is_open("map") and not map_targets.is_empty():
+		map_target_clicked.emit(clampi(map_pick, 0, map_targets.size() - 1))
+		return true
+	if (is_watch_on("standing") or is_watch_on("pack")) and watch_open != "":
+		# Pages to read: a click has nothing more to do, and never shoots.
+		return true
 	if is_watch_on("portal") and not portal_choices().is_empty() and _is_open("portal"):
 		var choices := portal_choices()
 		portal_requested.emit(choices[clampi(portal_pick, 0, choices.size() - 1)])
@@ -437,7 +488,16 @@ func click_watch() -> bool:
 ## True while fire works the raised watch instead of the weapon.
 func watch_takes_fire() -> bool:
 	return (watch_open == "" and watch_entries(focused_watch_icon()) > 1) or is_picking_toys() or pack_target() != null or is_picking_weapons() or is_on_artifact() \
-			or is_watch_on("ping") or is_watch_on("portal")
+			or is_watch_on("ping") or is_watch_on("portal") or is_on_sign_out() \
+			or (is_watch_on("map") and not map_targets.is_empty()) \
+			or (watch_open in ["standing", "pack"] and is_watch_on(watch_open))
+
+
+## True while the raised watch is on the sign-out icon out in a world, where
+## a click starts or cancels the sign-out like the L key. At home there is
+## nothing to sign out of.
+func is_on_sign_out() -> bool:
+	return is_watch_on("leave") and Raid.of(actor) != null
 
 
 ## Draws the weapon picked on the carousel if it is worn, stores it back
@@ -463,6 +523,13 @@ func take_picked_weapon() -> void:
 	elif int(entry.index) >= 0:
 		_pending_switch = int(entry.index)
 	else:
+		var raid := Raid.of(actor)
+		if raid != null and raid.summon_wait(actor) > 0.0:
+			# Still resting: a low buzz says no, and the watch stays up to show
+			# the rest running out. The world refuses it too, with a notice.
+			Sfx.play("watch_refused", null, -6.0)
+			summon_requested.emit(entry.id)
+			return
 		summon_requested.emit(entry.id)
 	wrist_raised = false
 	watch_open = ""
@@ -472,7 +539,10 @@ func take_picked_weapon() -> void:
 ## its card (`step` 1 is down the wheel, to the right). With the watch up the
 ## wheel never switches weapons.
 func scroll(step: int) -> void:
-	if is_watch_up():
+	if actor != null and is_instance_valid(actor) and actor.is_dead:
+		# Down, the wheel turns through the places to land.
+		drop_pick = clampi(drop_pick + signi(step), 0, maxi(landing_count() - 1, 0))
+	elif is_watch_up():
 		step_watch(step)
 	else:
 		_pending_switch = actor.cycle_weapon_index(step)
@@ -495,6 +565,13 @@ func watch_entries(id: String) -> int:
 			return Hud.artifact_entries(actor).size()
 		"portal":
 			return portal_choices().size()
+		"map":
+			return map_targets.size()
+		"standing":
+			# Three pages out in a world: at stake, safe, this life.
+			return Hud.STANDING_PAGES.size() if Raid.of(actor) != null else 0
+		"pack":
+			return actor.inventory.items.size()
 	return 0
 
 
@@ -508,6 +585,12 @@ func _watch_pick(id: String) -> int:
 			return artifact_pick
 		"portal":
 			return portal_pick
+		"map":
+			return map_pick
+		"standing":
+			return standing_pick
+		"pack":
+			return pack_pick
 	return 0
 
 
@@ -521,6 +604,12 @@ func _set_watch_pick(id: String, pick: int) -> void:
 			artifact_pick = pick
 		"portal":
 			portal_pick = pick
+		"map":
+			map_pick = pick
+		"standing":
+			standing_pick = pick
+		"pack":
+			pack_pick = pick
 
 
 ## Moves the watch card's open icon `step` along (`Hud.Wrist.SLOTS`), tab
@@ -859,6 +948,7 @@ func _process(delta: float) -> void:
 		if not hit.is_empty():
 			desired = pivot + (hit.position - pivot) * 0.85
 	camera.global_transform = Transform3D(look, desired)
+	peek_fade.update(actor, camera, peek_rule_applies() and is_third_person(), delta)
 	_read_phone(delta)
 	if _thrust_audio:
 		var thrusting := actor.flight.is_thrusting and not actor.is_dead
@@ -1223,6 +1313,14 @@ func phone_panel() -> Node3D:
 	return face if face != null and face.is_visible_in_tree() else null
 
 
+## True where third person must not show more than the eyes see: out in a
+## world where gear is at stake (`PeekFade`). Safe zones, the arena and the
+## home base are left alone.
+func peek_rule_applies() -> bool:
+	var raid := Raid.of(actor)
+	return raid != null and raid.world != null and raid.world.gear_at_risk and not raid.world.safe_zone
+
+
 func _wants_third_person() -> bool:
 	return actor.is_dead or active_view() == ViewMode.THIRD
 
@@ -1242,3 +1340,96 @@ func _compute_aim_dir() -> Vector3:
 	if eye.distance_to(point) < 2.0 or forward.dot(point - eye) <= 0.0:
 		return forward
 	return (point - eye).normalized()
+
+
+## Third person never shows more than the eyes see (Caleb's call): where gear
+## is at stake, a hostile body the actor's eyes have no line to fades out of
+## the third-person view, so looking round a corner from over the shoulder
+## shows nothing a first-person player could not see. View only: nothing in
+## the simulation reads it, and first person is left alone.
+class PeekFade:
+	## Seconds between line-of-sight checks.
+	const CHECK_EVERY := 0.1
+	## Drawn opacity lost or gained a second.
+	const FADE_RATE := 7.0
+	## A body stays drawn this long after the eyes lose it, so it does not
+	## flicker at a doorframe.
+	const HOLD := 0.3
+	## Bodies further than this are never checked (left as they are drawn).
+	const REACH := 160.0
+
+	var _check_left := 0.0
+	## Actor -> seconds since the eyes last had a line to it.
+	var _unseen := {}
+	## Actor -> drawn opacity, 0 to 1. Only bodies not fully drawn are kept.
+	var _alpha := {}
+
+	## Steps the fade. `active` is false in first person or wherever the rule
+	## does not apply, which brings every faded body back.
+	func update(viewer: Actor, camera: Camera3D, active: bool, delta: float) -> void:
+		_check_left -= delta
+		var check := _check_left <= 0.0
+		if check:
+			_check_left = CHECK_EVERY
+		if active and check:
+			var raid := Raid.of(viewer)
+			var space := viewer.get_world_3d().direct_space_state
+			var eye := viewer.get_eye_position()
+			for node in viewer.get_tree().get_nodes_in_group("actors"):
+				var other := node as Actor
+				if other == null or other == viewer or not Raid.together(viewer, other):
+					continue
+				if other.is_dead or VisorHud.squadmate(raid, viewer, other) \
+						or eye.distance_to(other.global_position) > REACH:
+					_unseen.erase(other)
+					continue
+				# Off screen it does not matter yet: keep what was decided.
+				if camera != null and not camera.is_position_in_frustum(other.global_position + Vector3(0, 1, 0)):
+					continue
+				if seen_from(space, eye, other):
+					_unseen[other] = 0.0
+				else:
+					_unseen[other] = float(_unseen.get(other, 0.0)) + CHECK_EVERY
+		for other: Actor in _unseen.keys():
+			if not is_instance_valid(other):
+				_unseen.erase(other)
+				_alpha.erase(other)
+				continue
+			var want := 0.0 if active and float(_unseen[other]) > HOLD else 1.0
+			_fade(other, move_toward(float(_alpha.get(other, 1.0)), want, FADE_RATE * delta))
+		for other: Actor in _alpha.keys():
+			if not is_instance_valid(other):
+				_alpha.erase(other)
+			elif not _unseen.has(other):
+				_fade(other, move_toward(float(_alpha[other]), 1.0, FADE_RATE * delta))
+
+	## How much of `other` is drawn now (1 when it is not faded at all).
+	func drawn(other: Actor) -> float:
+		return float(_alpha.get(other, 1.0))
+
+	func _fade(other: Actor, alpha: float) -> void:
+		var was := float(_alpha.get(other, 1.0))
+		if alpha >= 1.0 and was >= 1.0:
+			return
+		for node in other.find_children("*", "GeometryInstance3D", true, false):
+			(node as GeometryInstance3D).transparency = 1.0 - alpha
+		if alpha >= 1.0:
+			_alpha.erase(other)
+		else:
+			_alpha[other] = alpha
+
+	## True if the eyes at `eye` have a clear line to any part of `other`: the
+	## head, the chest, the hips, or either side of the chest, so a body only
+	## fades once all of it is behind something.
+	static func seen_from(space: PhysicsDirectSpaceState3D, eye: Vector3, other: Actor) -> bool:
+		var feet := other.global_position
+		var height := other.body_height()
+		var across := (feet - eye).cross(Vector3.UP)
+		across = across.normalized() * Actor.BODY_RADIUS if across.length_squared() > 0.0001 else Vector3.ZERO
+		var chest := feet + Vector3(0, height * 0.65, 0)
+		for point: Vector3 in [feet + Vector3(0, height - 0.12, 0), chest, feet + Vector3(0, height * 0.4, 0),
+				chest + across, chest - across]:
+			var query := PhysicsRayQueryParameters3D.create(eye, point, Actor.LAYER_WORLD)
+			if space.intersect_ray(query).is_empty():
+				return true
+		return false

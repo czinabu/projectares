@@ -82,12 +82,16 @@ signal base_visit_requested(owner_name: String, stash: Array, loadout: Dictionar
 signal portal_travel(destination: String)
 
 const DEFAULT_PORT := 24565
-const PROTOCOL := 30
+const PROTOCOL := 32
 ## Every packet is compressed, both ways. State updates are mostly repeated
 ## numbers, and a big battle sends a player hundreds of them a second. Server
 ## and client must agree, so a change here needs a new PROTOCOL.
 ## 30: a sign-out tells the client the countdown's full span, and actor state
 ## carries the airborne sign-out beacon bit.
+## 31: a squad portal carries how long it unfolds (a portal home out in a
+## world unfolds over its opener's sign-out).
+## 32: a depot banking tells its owner what this life has sent home
+## (`_banked`), for the watch's banking readout.
 const COMPRESSION := ENetConnection.COMPRESS_RANGE_CODER
 const StashService := preload("res://core/account/stash_service.gd")
 const Economy := preload("res://core/economy/economy.gd")
@@ -365,6 +369,7 @@ func _start_server_raid() -> void:
 	raid.vehicle_removed.connect(_on_server_vehicle_removed)
 	raid.watch_changed.connect(_send_watch)
 	raid.tally_changed.connect(_send_tally)
+	raid.banked_changed.connect(_send_banked)
 	raid.toy_thrown.connect(func(actor: Actor, item_id: String, from: Vector3, toy_velocity: Vector3) -> void:
 		var thrower: int = _ids.get(actor, -1)
 		for peer in _joined_peers:
@@ -590,6 +595,14 @@ func _send_tally(actor: Actor) -> void:
 		_tally.rpc_id(peer, actor.tally)
 
 
+## Tells a player what this life has sent home through depots, for the
+## watch's banking readout. Only the owner hears it.
+func _send_banked(actor: Actor) -> void:
+	var peer: int = _actor_peer.get(actor, 0)
+	if peer != 0 and peer in _joined_peers:
+		_banked.rpc_id(peer, actor.banked_count, actor.banked_value, actor.banked_scrip)
+
+
 func _on_server_player_finished(actor: Actor, result: Dictionary) -> void:
 	var peer: int = _actor_peer.get(actor, 0)
 	var online := peer != 0 and peer in _api.get_peers()
@@ -637,10 +650,17 @@ func _on_server_player_banked(actor: Actor, items: Array) -> void:
 
 func _on_server_sign_out_changed(actor: Actor, seconds_left: float) -> void:
 	var peer: int = _actor_peer.get(actor, 0)
+	var state := raid.state_for(actor) if raid != null else null
 	if peer != 0 and peer in _api.get_peers():
-		var state := raid.state_for(actor) if raid != null else null
 		var total := state.sign_out_total if state != null else maxf(seconds_left, 0.0)
 		_sign_out.rpc_id(peer, seconds_left, total)
+	# A portal home unfolds over its opener's countdown: when that changes
+	# (lifting off or landing), everyone sees the ring in step again.
+	if state != null and seconds_left >= 0.0:
+		for portal in raid.portals:
+			if is_instance_valid(portal) and portal.signs_out and portal.opener == state.owner:
+				for other in _joined_peers:
+					_send_portal(other, portal)
 
 
 func _send_account(peer: int) -> void:
@@ -1562,15 +1582,20 @@ func _send_portal(peer: int, portal: Portal) -> void:
 	var usable: bool = portal.side == "" or (viewer != null and is_instance_valid(viewer)
 			and raid.squad_of(viewer) == portal.side)
 	_portal.rpc_id(peer, portal.get_instance_id(), portal.destination, portal.global_transform, usable,
-			portal.age, portal.opener_name)
+			portal.age, portal.opener_name, portal.unfold_time if portal.signs_out else -1.0)
 
 
-## Client: a squad portal is open here.
+## Client: a squad portal is open here (or, sent again, in step again).
 @rpc("authority", "call_remote", "reliable")
-func _portal(key: int, destination: String, at: Transform3D, usable: bool, age: float, opener_name: String) -> void:
-	if raid == null or destination not in Portal.destinations() or not at.origin.is_finite():
+func _portal(key: int, destination: String, at: Transform3D, usable: bool, age: float, opener_name: String,
+		unfold: float) -> void:
+	if raid == null or not Portal.is_place(destination) or not at.origin.is_finite() \
+			or not is_finite(age) or not is_finite(unfold):
 		return
-	var shown := raid.show_portal(destination, at, usable, age, opener_name.left(32))
+	for old in raid.portals.duplicate():
+		if old.get_meta("net_key", -1) == key:
+			raid.close_portal(old)
+	var shown := raid.show_portal(destination, at, usable, age, opener_name.left(32), minf(unfold, 120.0))
 	shown.set_meta("net_key", key)
 
 
@@ -1587,7 +1612,7 @@ func _portal_closed(key: int) -> void:
 ## Client: you walked through a portal your side may use.
 @rpc("authority", "call_remote", "reliable")
 func _portal_travel(destination: String) -> void:
-	if destination in Portal.destinations():
+	if Portal.is_place(destination):
 		portal_travel.emit(destination)
 
 
@@ -2203,6 +2228,17 @@ func _tally(counts: Dictionary) -> void:
 		if typeof(stat) == TYPE_STRING:
 			clean[stat] = maxi(0, int(counts[stat]))
 	me.tally = clean
+
+
+## What this life has sent home through depots, for the watch.
+@rpc("authority", "call_remote", "reliable")
+func _banked(count: int, value: int, scrip: int) -> void:
+	var me: Actor = _actors.get(my_actor_id)
+	if me == null:
+		return
+	me.banked_count = maxi(0, count)
+	me.banked_value = maxi(0, value)
+	me.banked_scrip = maxi(0, scrip)
 
 
 ## What is on your watch, and how long until you can throw again.

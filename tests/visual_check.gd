@@ -418,6 +418,18 @@ func _watch_shots(out_dir: String) -> void:
 				controller.watch_focus_moved = true
 				await _settle(4)
 				await _shot(out_dir.path_join("watch_look_%s.png" % Hud.Wrist.SLOTS[i]))
+			# The Status icons and the pack opened with a click: the tabletop map
+			# with a waypoint set, Standing's first page, and the pack's list.
+			for opened: String in ["map", "standing", "pack"]:
+				controller.watch_focus = Hud.Wrist.SLOTS.find(opened)
+				controller.watch_open = opened
+				if opened == "map":
+					controller.map_pick = 1
+					await _settle(4)
+					controller.click_watch()
+				await _settle(10)
+				await _shot(out_dir.path_join("watch_open_%s.png" % opened))
+				controller.watch_open = ""
 			# The weapon carousel on a weapon in the pack.
 			controller.watch_focus = Hud.Wrist.SLOTS.find("weapon")
 			controller.watch_open = "weapon"
