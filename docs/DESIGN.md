@@ -468,24 +468,34 @@ the storage behind it.
 ### Squad portals (Caleb's call)
 
 The watch opens portals to the other places: the way out of your base and
-the plaza, replacing the base's launch pad, arena gate and teleporter pad.
+the plaza, replacing the base's launch pad, arena gate and teleporter pad,
+and the way home from anywhere (Caleb's call: portals to your home base and
+other places, not only to the worlds).
 
-- **Where:** only in safe spaces: your home base, the hub and a world's
-  gate outposts. So a portal is a deploy tool, never an escape hatch out of
-  a fight. Coming home still means signing out.
-- **At a gate outpost (Caleb's call):** the only portal leads home, and
-  opening it is the gate's sign-out with a door. It starts your sign-out
-  countdown (so a fight or a bounty still keeps you out of the outpost and
-  the portal), the ring unfolds over it, and when it ends you go home with
-  your gear like any sign-out. A squadmate who steps into the ring starts
-  their own countdown and follows. No portal leads from one world straight
-  into another.
+- **Where they lead, by where you are:**
+  - **Your home base:** every world, the arena, and the plaza (the same
+    trip as the base's door).
+  - **The plaza (a safe zone):** every world, the arena, and home (the same
+    trip as the quarters door).
+  - **Out in a world:** home only. No portal leads from one world straight
+    into another.
+  - **The arena:** none; leaving it has its own way.
+- **Home from a world is a sign-out with a door, never an escape hatch.**
+  Opening it starts your sign-out and takes the sign-out's own time: quick
+  at a gate outpost, 15 seconds on the ground, 25 seconds and the beacon
+  column in the air. A fight or a bounty still refuses it, and a hit
+  cancels it, folding the ring away. The ring unfolds over the countdown
+  where everyone in the world can see it, so it marks you as clearly as the
+  beacon does. When it ends you go home with your gear like any sign-out,
+  and online it lands you in your base rather than the plaza. A squadmate
+  who steps into the ring starts their own sign-out and follows.
 - **Opening one:** raise the watch, go to the portal icon on the Mission
-  tab, click to open its list, wheel through the worlds and the arena, click. A portal unfolds in
+  tab, click to open its list, wheel through the places, click. A portal unfolds in
   front of you and stays open about 15 seconds, then folds away.
 - **Who goes through:** you and your squad (your clan, online). Others see
   it but cannot use it.
-- **Arrival:** at that world's gate outpost, the whole squad together.
+- **Arrival:** at that world's gate outpost, the whole squad together; home
+  and the plaza arrive the way their doors do.
 - **The same in both views:** the portal is a ring of light in the world,
   never a screen.
 
@@ -502,7 +512,7 @@ the plaza, replacing the base's launch pad, arena gate and teleporter pad.
 | Map and pings | The map, standing, strongpoints, and pings to your squad (the ping marks where you look, for your side only). |
 | Contract tracker | Your active contracts, on the Mission tab (section 10). |
 | Landing choices | Where to drop back in after dying. |
-| Squad portal | Opens a portal to a world or the arena in safe spaces, or home from a gate outpost as a sign-out (above). |
+| Squad portal | Opens a portal to a world, the arena, the plaza or home from your base and the plaza, or home from anywhere in a world as a sign-out (above). |
 | Pack | What you carry, folded into the Summon tab: its fill, worth, heals and scrip, and later your weight tier (section 4). |
 
 Watch skins are cosmetics, shown off in the hub.
