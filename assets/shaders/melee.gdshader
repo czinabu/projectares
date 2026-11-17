@@ -113,8 +113,8 @@ void fragment() {
 	EMISSION = glow * energy;
 	float dist = length(VERTEX);
 	float storm_edge = pow(1.0 - clamp(abs(dot(NORMAL, VIEW)), 0.0, 1.0), 2.2);
-	float band = smoothstep(8.0, 22.0, dist) * (1.0 - smoothstep(46.0, 76.0, dist));
-	EMISSION += storm_rim * storm_edge * storm_rim_strength * storm_pop * band;
+	float storm_band = smoothstep(8.0, 22.0, dist) * (1.0 - smoothstep(46.0, 76.0, dist));
+	EMISSION += storm_rim * storm_edge * storm_rim_strength * storm_pop * storm_band;
 	float amount = 0.0;
 	if (storm_fog_active > 0.5) {
 		if (storm_fog_depth > 0.5) {
