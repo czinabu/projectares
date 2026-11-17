@@ -6,28 +6,42 @@ extends Node3D
 ## their squad (`Raid.squad_of`: their clan online) to walk through, then
 ## folds away.
 ##
-## Portals open only in safe spaces: your home base (`HomeBase.open_portal`)
-## and safe-zone worlds such as the plaza (`Raid.open_portal`, where only the
-## authority opens them and `NetSession` shows them to everyone there). They
-## are a way out to a fight, never out of one: leaving a world still means
-## signing out (`Raid.begin_sign_out`). The one portal inside a world is the
-## gate outpost's portal `HOME` (Caleb's call): opening it is a sign-out, the
-## ring is only how a gate sign-out looks, and it leads nowhere else. Walking through lands you with the
-## "portal" drop (`Raid.PORTAL_DROP`), at the world's gate outpost where it
-## has one.
+## Where a portal can lead depends on where it opens (`choices_for`, Caleb's
+## call: home and other places as well as the worlds):
+## - your home base: every world, the arena and the plaza (`PLAZA`);
+## - a safe-zone world such as the plaza: every world, the arena and `HOME`
+##   (`Raid.open_portal`, where only the authority opens them and
+##   `NetSession` shows them to everyone there);
+## - a world where gear is at stake: only `HOME`, and opening it is a
+##   sign-out (`Raid.begin_sign_out`) with a door. It takes the sign-out's own
+##   time (quick at a gate outpost, 15 s on the ground, 25 s and a beacon in
+##   the air), a fight or a bounty still refuses it or cancels it (and the ring
+##   folds away with it), the ring unfolds over the countdown where everyone
+##   can see it, and a squadmate who steps in starts their own sign-out. So a
+##   portal is never an escape hatch out of a fight, and no portal leads from
+##   one world straight into another.
+## Walking through to a world lands you with the "portal" drop
+## (`Raid.PORTAL_DROP`), at the world's gate outpost where it has one.
 ##
 ## The portal decides nothing itself. It knows where it leads, whose side may
 ## use it, how old it is and whether a point is inside it; whoever owns it
 ## (the base or the raid) ticks it, sends walkers through and frees it. The
 ## ring is the same object in every view, built as greybox here.
 
-## The destination of a gate outpost's portal: home, through a sign-out.
+## The destination home: your base. Out in a world it is a sign-out.
 const HOME := "home"
+## The destination out of your base to the social world (the plaza): the
+## base's door, as a portal.
+const PLAZA := "plaza"
 
-## How long a portal stays open, in seconds.
+## How long a portal stays open, in seconds, counting its unfolding.
 var open_time := 15.0
-## How long it takes to unfold, and to fold away at the end.
+## How long it takes to unfold (a sign-out's countdown for a portal home out
+## in a world, see `set_unfold`), and to fold away at the end.
 var unfold_time := 0.6
+var fold_time := 0.6
+## How long a portal home stays open for the squad once it has unfolded.
+var hold_time := 15.0
 ## How far in front of the opener it opens, and how far from a wall it keeps.
 var distance := 2.6
 var wall_gap := 0.7
@@ -44,6 +58,9 @@ var side := ""
 var opener := ""
 ## Shown over the ring.
 var opener_name := ""
+## A portal home out in a world: walking in starts a sign-out rather than
+## sending anyone anywhere, and it unfolds over its opener's countdown.
+var signs_out := false
 ## Seconds since it opened.
 var age := 0.0
 ## On a client: whether the viewer's side may use it (the server says).
@@ -56,7 +73,7 @@ var _veil: MeshInstance3D
 var _label: Label3D
 
 
-## Every place a portal can lead: each raid world, then the arena.
+## Every world a portal can deploy you into: each raid world, then the arena.
 static func destinations() -> Array[String]:
 	var out: Array[String] = []
 	for world in Worlds.raid_worlds():
@@ -65,16 +82,37 @@ static func destinations() -> Array[String]:
 	return out
 
 
+## Where a portal from your own home base can lead: every world, the arena,
+## then out to the plaza.
+static func from_base() -> Array[String]:
+	var out := destinations()
+	out.append(PLAZA)
+	return out
+
+
+## Every destination a portal can have anywhere, for checking one sent over
+## the network.
+static func is_place(id: String) -> bool:
+	return id == HOME or id == PLAZA or id in destinations()
+
+
 ## Where `actor` may open a portal to in `raid` (null for the home base):
-## every destination in a safe space, only `HOME` while sheltered in a gate
-## outpost, and nowhere else. Views read the shelter from the weapon lock
-## the server sends; the authority checks it again in `Raid.open_portal`.
+## from the base every world, the arena and the plaza; in a safe zone every
+## world, the arena and home; in a world where gear is at stake only `HOME`,
+## which is a sign-out; nowhere in the arena (leaving it has its own way)
+## or while down. The authority checks it again in `Raid.open_portal`.
 static func choices_for(raid: Raid, actor: Actor) -> Array[String]:
 	if actor == null or not is_instance_valid(actor) or actor.is_dead:
 		return []
-	if raid == null or (raid.world != null and raid.world.safe_zone):
-		return destinations()
-	if raid.world != null and actor.weapons_locked and raid.outpost_at(actor.global_position) != null:
+	if raid == null:
+		return from_base()
+	if raid.world == null:
+		return []
+	if raid.world.safe_zone:
+		var out := destinations()
+		out.append(HOME)
+		return out
+	if raid.world.gear_at_risk:
 		return [HOME] as Array[String]
 	return []
 
@@ -83,6 +121,9 @@ static func choices_for(raid: Raid, actor: Actor) -> Array[String]:
 static func title_of(id: String) -> String:
 	if id == HOME:
 		return "home"
+	if id == PLAZA:
+		var plaza := Worlds.social_world()
+		return plaza.display_name if plaza != null else "the plaza"
 	if id == Arena.ArenaVenue.ID:
 		return "the arena"
 	var world := Worlds.get_world(id)
@@ -122,10 +163,17 @@ func time_left() -> float:
 	return maxf(open_time - age, 0.0)
 
 
+## Makes it unfold over `seconds` (a sign-out's countdown), then stay open
+## `hold_time` for the squad.
+func set_unfold(seconds: float) -> void:
+	unfold_time = maxf(seconds, 0.1)
+	open_time = unfold_time + hold_time
+
+
 ## How far unfolded the ring is, 0 to 1: it opens, holds, then folds away.
 func openness() -> float:
 	var t := minf(age / maxf(unfold_time, 0.01), 1.0)
-	var closing := minf(time_left() / maxf(unfold_time, 0.01), 1.0)
+	var closing := minf(time_left() / maxf(fold_time, 0.01), 1.0)
 	return clampf(minf(t, closing), 0.0, 1.0)
 
 
@@ -205,6 +253,10 @@ func _update_view() -> void:
 	(_veil.material_override as StandardMaterial3D).albedo_color.a = 0.15 + 0.2 * open * (0.8 + 0.2 * sin(age * 6.0))
 	_label.visible = open > 0.5
 	var who := "" if opener_name == "" else "%s · " % opener_name
-	_label.text = "%sTo %s · %d s" % [who, title_of(destination), ceili(time_left())]
+	if age < unfold_time and unfold_time > fold_time:
+		# A portal home out in a world, still unfolding over a sign-out.
+		_label.text = "%sSigning out · %d s" % [who, ceili(unfold_time - age)]
+	else:
+		_label.text = "%sTo %s · %d s" % [who, title_of(destination), ceili(time_left())]
 	if not usable:
 		_label.text += "\nnot your squad"

@@ -852,8 +852,19 @@ func _on_portal_requested(destination: String) -> void:
 ## Walked through a squad portal: off to `destination` (a world id or the
 ## arena's), landing at its gate outpost (`Raid.PORTAL_DROP`). From your own
 ## base solo that starts the world here; online it deploys on the server,
-## by way of that world's session when it is another one.
+## by way of that world's session when it is another one. `Portal.PLAZA`
+## goes out of your base the way its door does, and `Portal.HOME` from the
+## plaza goes home the way its quarters door does. (A portal home out in a
+## world is a sign-out, which ends in `_return_to_lobby`.)
 func go_through_portal(destination: String) -> void:
+	if destination == Portal.PLAZA:
+		if raid == null and base != null and not base.read_only:
+			_on_base_door()
+		return
+	if destination == Portal.HOME:
+		if net != null and raid != null and raid.world.safe_zone:
+			open_home_base()
+		return
 	if destination == Arena.ArenaVenue.ID:
 		open_arena()
 		return
@@ -1889,13 +1900,15 @@ func _return_to_lobby(result: Dictionary) -> void:
 		# Signing out of the plaza itself leaves the server.
 		leave_server()
 		return
-	# Back to the plaza if the server has one, else to the lobby.
-	if _plaza_port >= 0:
+	# Back to the plaza if the server has one, else to the lobby. Through a
+	# portal home it is your base: this world's lobby, whose door leads back
+	# out to the plaza.
+	if _plaza_port >= 0 and result.get("door", "") != Portal.HOME:
 		_show_travel("Returning to %s..." % Worlds.social_world().display_name)
 		_arrive_from = came_from
 		_begin_join(_plaza_address, _plaza_port, 3)
 		return
-	_show_travel("Returning to your base...")
+	_show_travel("Going home..." if result.get("door", "") == Portal.HOME else "Returning to your base...")
 	_begin_join(_join_address, _join_port, 3)
 
 

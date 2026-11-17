@@ -1137,10 +1137,12 @@ func begin_sign_out(actor: Actor, forced := false) -> bool:
 		# A gate outpost is the way out: a quick sign-out, and it stays that
 		# long even if they are off the floor inside the bubble.
 		state.sign_out_fixed = true
+		state.sign_out_door = false
 		state.sign_out_left = world.outpost_sign_out_time
 		actor.notice.emit("Signing out at the gate")
 	else:
 		state.sign_out_fixed = false
+		state.sign_out_door = false
 		var span := _sign_out_span(actor)
 		state.sign_out_left = span
 		if _sign_out_in_air(actor):
@@ -1158,6 +1160,7 @@ func cancel_sign_out(actor: Actor) -> void:
 		return
 	state.sign_out_left = -1.0
 	state.sign_out_fixed = false
+	state.sign_out_door = false
 	actor.set_sign_out_beacon(false)
 	actor.notice.emit("Sign-out cancelled")
 	sign_out_changed.emit(actor, -1.0)
@@ -1951,44 +1954,49 @@ func squad_of(actor: Actor) -> String:
 	return side_of(actor)[0]
 
 
-## Whether `actor` may open a squad portal where they are: anywhere in a
-## safe zone, so a portal is a way out to a fight, never out of one; and,
-## to `Portal.HOME` only, while sheltered in a gate outpost, where opening
-## it is the gate sign-out (`open_portal`).
+## Whether `actor` may open a squad portal to `destination` where they are
+## (`Portal.choices_for`): in a safe zone to a world, the arena or home, so a
+## portal there is a way out to a fight; in a world where gear is at stake
+## only `Portal.HOME`, where opening it is a sign-out (`open_portal`).
 func may_open_portal(actor: Actor, destination := "") -> bool:
 	if world == null or actor == null or not is_instance_valid(actor) or actor.is_dead:
 		return false
-	if world.safe_zone:
-		return destination != Portal.HOME
-	var state := state_for(actor)
-	return destination == Portal.HOME and state != null and state.sheltered
+	return destination in Portal.choices_for(self, actor)
 
 
 ## The watch's squad portal: opens a portal to `destination` (a
-## `Portal.destinations()` id) in front of `actor`, for their side to walk
+## `Portal.choices_for` id) in front of `actor`, for their side to walk
 ## through for `Portal.open_time`. Their last one folds away. Authority
 ## only. Returns "" if it opened, or why not.
 ##
-## In a gate outpost the only portal is `Portal.HOME`, and opening it is a
-## sign-out (Caleb's call): it starts the opener's gate sign-out
-## (`begin_sign_out`, so a fight or a bounty still refuses it) and the ring
-## unfolds over that countdown. Each squadmate who steps in starts their own
-## (`_tick_portals`). Everyone leaves the usual way, with outcome "left",
-## when their own countdown ends; the ring never sends anyone anywhere.
+## Out in a world the only portal is `Portal.HOME`, and opening it is a
+## sign-out (Caleb's call): it starts the opener's sign-out (`begin_sign_out`,
+## so a fight or a bounty still refuses it, and it takes the sign-out's own
+## time: the gate's in an outpost, else the ground's or the air's) and the
+## ring unfolds over that countdown (`_tick_portals` keeps it in step, and
+## folds it away if the sign-out is cancelled). Each squadmate who steps in
+## starts their own. Everyone leaves the usual way, with outcome "left" and
+## the result's "door" saying they went home through a portal, when their
+## own countdown ends; the ring never sends anyone anywhere.
 func open_portal(actor: Actor, destination: String) -> String:
 	var state := state_for(actor)
 	if mode == Mode.CLIENT or state == null or state.finished:
 		return "not now"
 	if not may_open_portal(actor, destination):
-		if destination == Portal.HOME and world.safe_zone:
-			return "No portal goes there"
-		return "Portals open only in safe zones and gate outposts"
-	if destination != Portal.HOME and destination not in Portal.destinations():
+		if Portal.choices_for(self, actor).is_empty():
+			return "No portal opens here"
+		if not world.safe_zone:
+			return "Out here a portal only leads home"
 		return "No portal goes there"
 	if clock < state.portal_ready_at:
 		return "Portal recharging"
-	if destination == Portal.HOME and not begin_sign_out(actor):
-		return "You cannot sign out now"
+	var signing := destination == Portal.HOME and not world.safe_zone
+	if signing:
+		if state.sign_out_left >= 0.0:
+			return "You are already signing out"
+		if not begin_sign_out(actor):
+			return "You cannot sign out now"
+		state.sign_out_door = true
 	state.portal_ready_at = clock + portal_cooldown
 	for old in portals.duplicate():
 		if old.opener == state.owner:
@@ -1999,9 +2007,10 @@ func open_portal(actor: Actor, destination: String) -> String:
 	portal.side = squad_of(actor)
 	portal.opener = state.owner
 	portal.opener_name = actor.display_name
-	if destination == Portal.HOME:
-		# It opens as the gate sign-out ends.
-		portal.unfold_time = maxf(world.outpost_sign_out_time, 0.1)
+	if signing:
+		# It opens as the sign-out ends.
+		portal.set_unfold(state.sign_out_total)
+		portal.signs_out = true
 	add_child(portal)
 	portal.global_transform = Portal.spot(get_world_3d().direct_space_state, actor.get_eye_position(),
 			actor.get_aim_dir(), actor.global_position.y, portal.distance, portal.wall_gap)
@@ -2012,14 +2021,18 @@ func open_portal(actor: Actor, destination: String) -> String:
 
 ## Shows a portal the server opened, on a client. `p_usable` is whether
 ## the local player's side may walk through it.
-func show_portal(destination: String, at: Transform3D, p_usable: bool, p_age := 0.0, p_name := "") -> Portal:
+## `p_unfold` is how long it takes to unfold (a sign-out's countdown for a
+## portal home out in a world), below zero for the usual.
+func show_portal(destination: String, at: Transform3D, p_usable: bool, p_age := 0.0, p_name := "",
+		p_unfold := -1.0) -> Portal:
 	var portal := Portal.new()
 	portal.destination = destination
 	portal.usable = p_usable
 	portal.age = p_age
 	portal.opener_name = p_name
-	if destination == Portal.HOME:
-		portal.unfold_time = maxf(world.outpost_sign_out_time, 0.1)
+	if p_unfold > 0.0:
+		portal.set_unfold(p_unfold)
+		portal.signs_out = destination == Portal.HOME and not world.safe_zone
 	add_child(portal)
 	portal.global_transform = at
 	portals.append(portal)
@@ -2036,13 +2049,18 @@ func close_portal(portal: Portal) -> void:
 
 ## Ages the open portals and folds away the ones whose time is up. On the
 ## authority, anyone of the opener's side who walks into one is sent
-## through (`portal_entered`), once.
+## through (`portal_entered`), once. A portal home out in a world follows
+## its opener's sign-out: it unfolds as the countdown runs (longer in the
+## air) and folds away if the sign-out is cancelled.
 func _tick_portals(delta: float) -> void:
 	for portal in portals.duplicate():
 		if not is_instance_valid(portal):
 			portals.erase(portal)
 			continue
 		portal.tick(delta)
+		if mode != Mode.CLIENT and portal.signs_out and not _keep_sign_out_portal(portal):
+			close_portal(portal)
+			continue
 		if not portal.is_open():
 			close_portal(portal)
 			continue
@@ -2056,13 +2074,34 @@ func _tick_portals(delta: float) -> void:
 				continue
 			if not portal.contains(actor.global_position):
 				continue
-			if portal.destination == Portal.HOME:
-				# Stepping into a gate portal starts your own gate sign-out.
-				if state.sheltered and state.sign_out_left < 0.0 and begin_sign_out(actor):
+			if portal.signs_out:
+				# Stepping into a portal home starts your own sign-out.
+				if state.sign_out_left < 0.0 and begin_sign_out(actor):
+					state.sign_out_door = true
 					portal.sent.append(actor)
 				continue
 			portal.sent.append(actor)
 			portal_entered.emit(actor, portal.destination)
+
+
+## Keeps a portal home in step with its opener's sign-out. False once the
+## sign-out was cancelled (a fight, or they called it off) or they went down
+## before it ended: then the ring folds away. Once they are through it stays
+## open its time for the squad.
+func _keep_sign_out_portal(portal: Portal) -> bool:
+	for state in players:
+		if state.owner != portal.opener:
+			continue
+		if state.finished:
+			# Through, or down: down takes the ring with them.
+			return not is_instance_valid(state.actor) or not state.actor.is_dead
+		if state.sign_out_left < 0.0:
+			return false
+		if state.sign_out_total > 0.0:
+			portal.set_unfold(state.sign_out_total)
+			portal.age = clampf(state.sign_out_total - state.sign_out_left, 0.0, portal.unfold_time)
+		return true
+	return true
 
 
 ## Seconds the watch waits after the vehicle `item_id` is thrown.
@@ -2604,6 +2643,9 @@ func _finish_player(state: PlayerState, outcome: String, cause: String, killed_b
 		# Contract counters (`_count`). Only a sign-out counts them.
 		"tally": state.tally.duplicate(),
 	}
+	if left and state.sign_out_door:
+		# Through a portal home: online that leads to your base, not the plaza.
+		result["door"] = Portal.HOME
 	var standing := renown.get_standing(state.owner)
 	if standing != null:
 		# What this life added to lifetime renown, what dying took from the
@@ -2686,6 +2728,9 @@ class PlayerState:
 	## The length does not follow the air: a gate sign-out, or a body left
 	## behind by a disconnect.
 	var sign_out_fixed := false
+	## The sign-out was started through a portal home (`open_portal`), so
+	## the result says they came home by its door ("door": "home").
+	var sign_out_door := false
 	## Seconds until the airborne beacon makes another noise.
 	var beacon_hum := 0.0
 	## `Raid.clock` when they last gave or took a hit.
