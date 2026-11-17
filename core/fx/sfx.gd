@@ -33,6 +33,13 @@ func _ready() -> void:
 	_streams["arc_shot"] = _tones([480.0, 960.0, 1210.0], 0.22, 14.0, 0.4)
 	_streams["pulse"] = _tones([620.0, 1240.0], 0.07, 45.0, 0.3)
 	_streams["plasma_burst"] = _noise_burst(0.7, 6.0, 0.95, 42.0)
+	# The watch: a rising digital sweep as something materializes out of it,
+	# the same falling as it goes back in, a soft chime once the watch is
+	# rested, and a low buzz when it is asked for something while resting.
+	_streams["summon"] = _sweep(380.0, 1900.0, 0.42, 0.35)
+	_streams["store"] = _sweep(1600.0, 340.0, 0.3, 0.3)
+	_streams["watch_ready"] = _tones([1320.0, 1980.0], 0.25, 12.0, 0.25)
+	_streams["watch_refused"] = _tones([150.0, 157.0], 0.2, 14.0, 0.45)
 	# Airborne sign-out: a rising tone played from the beacon column.
 	_streams["beacon"] = _tones([520.0, 780.0, 1040.0], 0.55, 3.5, 0.5)
 
@@ -98,6 +105,22 @@ func _tones(freqs: Array, duration: float, decay: float, gain: float) -> AudioSt
 		for f: float in freqs:
 			v += sin(TAU * f * t)
 		samples.append(v / freqs.size() * exp(-t * decay) * gain)
+	return _to_stream(samples, false)
+
+
+## A tone gliding from `from_hz` to `to_hz`, broken into quick steps like
+## something digital, rising then fading.
+func _sweep(from_hz: float, to_hz: float, duration: float, gain: float) -> AudioStreamWAV:
+	var samples := PackedFloat32Array()
+	var count := int(duration * RATE)
+	var phase := 0.0
+	for i in count:
+		var p := float(i) / count
+		var stepped := floorf(p * 14.0) / 14.0
+		var hz := lerpf(from_hz, to_hz, stepped)
+		phase += TAU * hz / RATE
+		var shimmer := 0.75 + 0.25 * sin(TAU * 31.0 * p * duration)
+		samples.append((sin(phase) + 0.35 * sin(phase * 2.0)) * sin(PI * p) * shimmer * gain)
 	return _to_stream(samples, false)
 
 
