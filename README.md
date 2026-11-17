@@ -342,7 +342,10 @@ you have.
 - Flight limited by heat on a jetpack, by charges on the boots, and by glide
   stamina on the wings.
 - Bots drop loot bags. On Ashfront each army's soldiers shoot, and a share
-  of them are heavies that rush you with a blade. Frostline's Wardens shoot
+  of them are heavies that rush you with a blade. Exo troopers (soldiers in
+  mechanical suits) march with them, and toward the core the rare Kiln
+  Walker paints you with a tracking beam before its cannon fires; its weak
+  spot is the glowing vent on its back. Frostline's Wardens shoot
   and its Feral stalkers rush. Rival raiders drop in with a real kit, loot,
   and sign out.
 - Loot caches with five rarity tiers, a backpack, and a stash that persists.

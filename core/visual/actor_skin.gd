@@ -1449,33 +1449,44 @@ func _build_exo_suit() -> void:
 	for side: String in ["L", "R"]:
 		var hip := _rest_at("UpperLeg." + side)
 		var out := Vector3(signf(hip.x), 0.0, 0.0)
-		# Legs: thigh and shin struts on the outside, a knee joint, an
-		# actuator down the front of the thigh, a brace round the boot.
-		_strut("UpperLeg." + side, "LowerLeg." + side, out * 0.115, 0.05, frame, 0.0, 1.0)
-		_strut("LowerLeg." + side, "Foot." + side, out * 0.105, 0.045, frame, 0.0, 0.92)
-		_strut("UpperLeg." + side, "LowerLeg." + side, Vector3(0, 0, -0.1), 0.028, piston, 0.2, 0.85, true)
-		_strut("LowerLeg." + side, "Foot." + side, Vector3(0, 0, -0.085), 0.026, piston, 0.1, 0.7, true)
-		_disc("UpperLeg." + side, _rest_at("UpperLeg." + side) + out * 0.13, 0.075, joint)
-		_disc("LowerLeg." + side, _rest_at("LowerLeg." + side) + out * 0.12, 0.068, joint)
+		var knee := _rest_at("LowerLeg." + side)
 		var foot := _rest_at("Foot." + side)
-		var brace := Node3D.new()
-		_piece(brace, "Brace", BoxMesh.new(), frame, Vector3.ZERO, Vector3(0.05, 0.12, 0.26))
-		_piece(brace, "Stirrup", BoxMesh.new(), joint, Vector3(-out.x * 0.06, -0.05, 0.0), Vector3(0.14, 0.03, 0.22))
-		_hang_at(brace, "Boot" + side, "Foot." + side, foot + out * 0.1 + Vector3(0, 0.08, -0.03))
-		# Arms: upper arm and forearm struts, elbow and shoulder joints, an
-		# actuator along the forearm, and a guard over the shoulder joint in
-		# the army's colour.
+		# Legs: heavy thigh and shin bars on the outside, a hip drum, a knee
+		# drum under an actuator housing, a ram down the front of the thigh
+		# and shin, and an armored boot.
+		_strut("UpperLeg." + side, "LowerLeg." + side, out * 0.14, 0.1, frame, 0.05, 0.95)
+		_strut("LowerLeg." + side, "Foot." + side, out * 0.13, 0.09, frame, 0.05, 0.88)
+		_strut("UpperLeg." + side, "LowerLeg." + side, Vector3(0, 0, -0.12), 0.05, piston, 0.2, 0.85, true)
+		_strut("LowerLeg." + side, "Foot." + side, Vector3(0, 0, -0.1), 0.045, piston, 0.12, 0.7, true)
+		_disc("UpperLeg." + side, hip + out * 0.16, 0.1, joint)
+		_disc("LowerLeg." + side, knee + out * 0.15, 0.09, joint)
+		var housing := Node3D.new()
+		_piece(housing, "KneeHousing", BoxMesh.new(), frame, Vector3.ZERO, Vector3(0.16, 0.16, 0.12))
+		_piece(housing, "KneeCap", BoxMesh.new(), paint, Vector3(0, 0.02, -0.065), Vector3(0.12, 0.1, 0.02))
+		_hang_at(housing, "Knee" + side, "LowerLeg." + side, knee + Vector3(0, 0.02, -0.1))
+		var boot := Node3D.new()
+		_piece(boot, "Boot", BoxMesh.new(), frame, Vector3.ZERO, Vector3(0.19, 0.15, 0.34))
+		_piece(boot, "Toe", BoxMesh.new(), joint, Vector3(0, -0.03, -0.18), Vector3(0.17, 0.09, 0.06))
+		_piece(boot, "Brace", BoxMesh.new(), frame, Vector3(out.x * 0.11, 0.1, 0.02), Vector3(0.05, 0.22, 0.18))
+		_hang_at(boot, "Boot" + side, "Foot." + side, foot + Vector3(0, 0.06, -0.04))
+		# Arms: heavy bars on the upper arm and forearm, shoulder and elbow
+		# drums, an elbow housing, a ram along the forearm, and a guard over
+		# the shoulder in the army's colour.
 		var shoulder := _rest_at("UpperArm." + side)
+		var elbow := _rest_at("LowerArm." + side)
 		var arm_out := Vector3(signf(shoulder.x), 0.0, 0.0)
-		_strut("UpperArm." + side, "LowerArm." + side, arm_out * 0.085, 0.04, frame, 0.0, 1.0)
-		_strut("LowerArm." + side, "Wrist." + side, arm_out * 0.075, 0.036, frame, 0.0, 0.95)
-		_strut("LowerArm." + side, "Wrist." + side, Vector3(0, 0.0, -0.06), 0.022, piston, 0.15, 0.85, true)
-		_disc("LowerArm." + side, _rest_at("LowerArm." + side) + arm_out * 0.09, 0.055, joint)
-		_disc("UpperArm." + side, shoulder + arm_out * 0.1, 0.075, joint)
+		_strut("UpperArm." + side, "LowerArm." + side, arm_out * 0.11, 0.08, frame, 0.05, 0.95)
+		_strut("LowerArm." + side, "Wrist." + side, arm_out * 0.1, 0.075, frame, 0.05, 0.92)
+		_strut("LowerArm." + side, "Wrist." + side, Vector3(0, 0.0, -0.08), 0.04, piston, 0.15, 0.85, true)
+		_disc("LowerArm." + side, elbow + arm_out * 0.12, 0.075, joint)
+		_disc("UpperArm." + side, shoulder + arm_out * 0.13, 0.1, joint)
+		var elbow_box := Node3D.new()
+		_piece(elbow_box, "ElbowHousing", BoxMesh.new(), frame, Vector3.ZERO, Vector3(0.12, 0.12, 0.14))
+		_hang_at(elbow_box, "Elbow" + side, "LowerArm." + side, elbow + Vector3(0, 0, 0.07))
 		var guard := Node3D.new()
-		_piece(guard, "Guard", BoxMesh.new(), paint, Vector3.ZERO, Vector3(0.15, 0.05, 0.2))
-		_piece(guard, "Lip", BoxMesh.new(), frame, Vector3(arm_out.x * 0.07, -0.05, 0), Vector3(0.03, 0.1, 0.2))
-		_hang_at(guard, "Guard" + side, "UpperArm." + side, shoulder + arm_out * 0.08 + Vector3(0, 0.1, 0))
+		_piece(guard, "Guard", BoxMesh.new(), paint, Vector3.ZERO, Vector3(0.22, 0.08, 0.26))
+		_piece(guard, "Lip", BoxMesh.new(), frame, Vector3(arm_out.x * 0.1, -0.07, 0), Vector3(0.04, 0.14, 0.26))
+		_hang_at(guard, "Guard" + side, "UpperArm." + side, shoulder + arm_out * 0.1 + Vector3(0, 0.12, 0))
 	# The back: a spine from the hips to a yoke over the shoulders, a roll
 	# cage standing over the head, and the power pack between.
 	var hips := _rest_at("Hips")
@@ -1483,18 +1494,19 @@ func _build_exo_suit() -> void:
 	var head := _rest_at("Head")
 	var back := Vector3(0, 0, 0.17)
 	var spine := Node3D.new()
-	_piece(spine, "Spine", BoxMesh.new(), frame, Vector3.ZERO, Vector3(0.06, chest.y - hips.y + 0.1, 0.05))
+	_piece(spine, "Spine", BoxMesh.new(), frame, Vector3.ZERO, Vector3(0.11, chest.y - hips.y + 0.1, 0.08))
 	_hang_at(spine, "Spine", "Abdomen", Vector3(0, (hips.y + chest.y) * 0.5, hips.z + back.z))
 	var yoke := Node3D.new()
 	var top := head.y + 0.32 - (chest.y + 0.12)
-	_piece(yoke, "Yoke", BoxMesh.new(), frame, Vector3.ZERO, Vector3(0.5, 0.06, 0.07))
-	for x: float in [-0.17, 0.17]:
-		_piece(yoke, "CagePost", BoxMesh.new(), frame, Vector3(x, top * 0.5, 0.0), Vector3(0.04, top, 0.04))
-	_piece(yoke, "CageBar", BoxMesh.new(), paint, Vector3(0, top, -0.06), Vector3(0.38, 0.045, 0.16))
-	_piece(yoke, "Belt", BoxMesh.new(), frame, Vector3(0, -(chest.y - hips.y) - 0.06, 0.0), Vector3(0.42, 0.06, 0.06))
+	_piece(yoke, "Yoke", BoxMesh.new(), frame, Vector3.ZERO, Vector3(0.62, 0.1, 0.12))
+	for x: float in [-0.19, 0.19]:
+		_piece(yoke, "CagePost", BoxMesh.new(), frame, Vector3(x, top * 0.5, 0.0), Vector3(0.07, top, 0.07))
+	_piece(yoke, "CageBar", BoxMesh.new(), paint, Vector3(0, top, -0.06), Vector3(0.45, 0.07, 0.2))
+	_piece(yoke, "Belt", BoxMesh.new(), frame, Vector3(0, -(chest.y - hips.y) - 0.06, -0.02), Vector3(0.48, 0.1, 0.3))
 	_hang_at(yoke, "Yoke", "Chest", Vector3(0, chest.y + 0.12, chest.z + back.z))
-	_hang_at(build_cooler(Color(0.3, 0.31, 0.33), actor.body_color), "PowerPack", "Chest",
-			Vector3(0, chest.y - 0.08, chest.z + back.z + 0.1))
+	var pack := build_cooler(Color(0.3, 0.31, 0.33), actor.body_color)
+	pack.scale = Vector3(1.5, 1.25, 1.5)
+	_hang_at(pack, "PowerPack", "Chest", Vector3(0, chest.y - 0.1, chest.z + back.z + 0.14))
 
 
 ## A bar along a bone, from the bone at `from` of the way to its `child` up
