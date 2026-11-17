@@ -19,8 +19,9 @@ func _ready() -> void:
 		get_tree().quit()
 		return
 	# `-- <output_dir> --heavies-only` shoots Ashfront's armies side by side
-	# (soldiers, exo troopers, walkers) front and back, the line at 50 m in a
-	# peak storm, and a walker's tracking beam locking on.
+	# (soldiers, exo troopers, walkers) front and back, a walker close from
+	# the front, side and back, the line at 50 m in a peak
+	# storm, and a walker's tracking beam locking on.
 	if "--heavies-only" in args:
 		await _heavy_shots(out_dir)
 		get_tree().quit()
@@ -1671,7 +1672,7 @@ func _heavy_shots(out_dir: String) -> void:
 	player.set_physics_process(false)
 	player.global_position = origin
 	player.visible = false
-	# A Legion and a Tide soldier, an exo of each, and both walker models.
+	# A Legion and a Tide soldier, an exo of each, and a walker of each.
 	var line: Array[Actor] = []
 	var picks := [["soldier", "legion"], ["soldier", "tide"], ["exo", "legion"], ["exo", "tide"],
 			["walker", "legion"], ["walker", "tide"]]
@@ -1695,6 +1696,8 @@ func _heavy_shots(out_dir: String) -> void:
 			line[i].velocity = Vector3.ZERO
 			line[i].cmd.yaw = atan2(forward.x, forward.z)
 			line[i].cmd.secondary = false
+			line[i].cmd.pitch = 0.0
+			line[i].cmd.aim_dir = Vector3.ZERO
 	place.call(7.0)
 	var cam := Camera3D.new()
 	cam.fov = 60.0
@@ -1715,6 +1718,22 @@ func _heavy_shots(out_dir: String) -> void:
 			exo.global_position + Vector3(0, 1.3, 0))
 	await _settle(4)
 	await _shot(out_dir.path_join("exo_close.png"))
+	# A walker close, three quarters from the front, from the side, and three
+	# quarters from behind on its vent.
+	var walker_close: Actor = null
+	for bot in line:
+		if bot.get_meta("kind", "") == "walker":
+			walker_close = bot
+			break
+	if walker_close:
+		var at := walker_close.global_position
+		var views := [["walker_close_front.png", -forward * 5.5 + side * 3.5],
+				["walker_close_side.png", side * 6.5 - forward * 0.5],
+				["walker_close_back.png", forward * 5.0 - side * 3.5]]
+		for view: Array in views:
+			cam.look_at_from_position(ground.call(at + view[1]) + Vector3(0, 1.9, 0), at + Vector3(0, 1.6, 0))
+			await _settle(4)
+			await _shot(out_dir.path_join(view[0]))
 	# Peak storm, the line at 50 m.
 	raid.war.intensity = 1.0
 	raid.war.centre = origin

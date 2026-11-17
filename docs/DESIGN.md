@@ -355,9 +355,12 @@ both in the game's own low-poly style, neither a copy of any film's machine.
   colour, so it reads apart from a soldier at 50 m in a storm. Armor
   45-70 by ring, more health, a little slower, a support rifle and no
   blade. One in eight carries a spare Trooper or Bulwark frame.
-- **Kiln Walker.** A rare 3 m war machine on two legs (the Animated Mech
-  Pack's Leela, in gunmetal with the army's paint) with a cannon
-  on top. Slow on its feet and slow to turn (its aim comes round at 70
+- **Kiln Walker.** A rare 3 m war machine on two legs, a body of its own
+  built in code: a low, wide armored hull carried level on two heavy
+  reverse-jointed legs with broad splayed feet, the cannon built into its
+  glacis, the heat vent let into its rear armor, gunmetal with the army's
+  paint on its hip sponsons, thighs and gun mantlet, and a sensor slit lit
+  in the army's colour. Slow on its feet and slow to turn (its aim comes round at 70
   degrees a second, a soldier's at 200), but its hitscan cannon leads
   fliers well. Its tell is a thin tracking beam: the cannon fires only
   after the beam has held a target in sight for a second, so a flier who

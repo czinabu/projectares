@@ -409,17 +409,10 @@ func _ready() -> void:
 	_def = def
 	var skeleton := model.find_child("Skeleton3D", true, false) as Skeleton3D
 	_skeleton = skeleton
-	if def.has("vent"):
-		_build_vent(model, def["vent"])
-	if def.has("cannon"):
-		_build_cannon(model, def["cannon"])
+	if def.get("chassis", "") == "walker":
+		_build_walker()
 	if def.get("suit", false):
 		_build_exo_suit()
-	if def.has("army_paint"):
-		# Gunmetal, painted in the army's colour.
-		var paint: Color = (def.get("tint", Color.WHITE) as Color).lerp(actor.body_color, def["army_paint"])
-		for mat in _materials:
-			mat.set_shader_parameter("tint", paint)
 	# Before the arm, so the arm's hooks run after the legs have turned.
 	locomotion = Locomotion.new()
 	locomotion.name = "Locomotion"
@@ -505,6 +498,7 @@ func _process(delta: float) -> void:
 	_steady_eyes(delta)
 	if _def.get("beam", false):
 		_update_beam(delta)
+		_aim_cannon()
 	_detail_delta += delta
 	_detail_wait += 1
 	if _detail_wait < _detail_every:
@@ -1374,20 +1368,6 @@ static func build_cooler(color: Color, lit: Color) -> Node3D:
 	return root
 
 
-## The model's bounds as the actor sees it (skinned meshes give their
-## unposed size, which is what a part fitted at rest wants).
-func _model_box(model: Node3D) -> AABB:
-	var to_actor := actor.global_transform.affine_inverse()
-	var box := AABB()
-	var first := true
-	for node in model.find_children("*", "MeshInstance3D", true, false):
-		var mesh_node := node as MeshInstance3D
-		var aabb := to_actor * mesh_node.global_transform * mesh_node.get_aabb()
-		box = aabb if first else box.merge(aabb)
-		first = false
-	return box
-
-
 ## Hangs `part` on `bone` so that, at rest, it sits at `at` (actor space).
 func _hang_at(part: Node3D, holder_name: String, bone_name: String, at: Vector3) -> Node3D:
 	var bone := _skeleton.find_bone(bone_name) if _skeleton else -1
@@ -1404,34 +1384,265 @@ func _rest_at(bone_name: String) -> Vector3:
 	return (to_actor * _skeleton.global_transform * _skeleton.get_bone_global_rest(bone)).origin
 
 
-## A walker's cannon, on top of the machine and pointing ahead, gunmetal
-## with a stripe of its army's colour. Its muzzle is where its eyes (and the
-## tracking beam) are.
-func _build_cannon(model: Node3D, bone_name: String) -> void:
-	var box := _model_box(model)
-	var gun := _solid(Color(0.22, 0.22, 0.24), 0.0)
-	var paint := _solid(actor.body_color.darkened(0.25), 0.0)
-	var root := Node3D.new()
-	root.name = "CannonModel"
-	_piece(root, "Mount", BoxMesh.new(), gun, Vector3(0, 0.06, 0.05), Vector3(0.3, 0.12, 0.34))
-	_piece(root, "Housing", BoxMesh.new(), gun, Vector3(0, 0.2, -0.05), Vector3(0.36, 0.2, 0.62))
-	_piece(root, "Stripe", BoxMesh.new(), paint, Vector3(0, 0.305, -0.05), Vector3(0.2, 0.012, 0.5))
+## The Kiln Walker's own body (Caleb's call: not a stock model), built round
+## the walking skeleton of the skin's scene, whose own mesh is hidden: a low,
+## wide armored hull carried level between two heavy legs, the cannon built
+## into its glacis at the height of the walker's eyes (where the tracking
+## beam starts), the heat vent let into the rear armor (the weak spot: hits
+## from behind or above), hip drums, armored thighs, pistons down the shins
+## and broad splayed feet. Gunmetal, with panels and a lit sensor slit in
+## the army's colour. Faceted low-poly blocks, like the rest of the game.
+## Everything hangs on the bone it moves with, so the walk clip drives it.
+func _build_walker() -> void:
+	if _skeleton == null:
+		return
+	var metal := _solid(Color(0.36, 0.37, 0.39), 0.0)
+	var dark := _solid(Color(0.13, 0.13, 0.14), 0.0)
+	var piston := _solid(Color(0.6, 0.61, 0.62), 0.0)
+	var paint := _solid(actor.body_color.darkened(0.3), 0.0)
+	var lit := _solid(actor.body_color.lightened(0.2), 2.4)
+	var hip := _rest_at("UpperLeg.L")
+	var hull_bone := "Body"
+	var eye := actor.eye_height
+	var top := minf(eye + 0.22, actor.stand_height - 0.02)
+	var low := hip.y - 0.16
+	var mid := hip.y + 0.18
+	var deck := eye - 0.2
+	var hull := Node3D.new()
+	hull.name = "WalkerHull"
+	# Low and wide: the belly flares out to the hull's widest line over the
+	# hips, the casemate slopes in to a deck with a long glacis, and the gun
+	# house on the deck carries the cannon. Each is [left, right, front, back].
+	var belly_lo := [-0.72, 0.72, -0.72, 0.76]
+	var waist := [-0.88, 0.88, -1.05, 0.98]
+	var shoulder := [-0.82, 0.82, -0.5, 0.88]
+	var roof := [-0.62, 0.62, -0.28, 0.7]
+	_block(hull, "Belly", dark, low, belly_lo, mid, waist)
+	_block(hull, "Casemate", metal, mid, waist, deck, shoulder)
+	_block(hull, "GunHouse", metal, deck, shoulder, top, roof)
+	# Where a face is at a height, front or back, on the block it is on.
+	var front_at := func(y: float) -> float:
+		if y < deck:
+			return lerpf(waist[2], shoulder[2], (y - mid) / (deck - mid))
+		return lerpf(shoulder[2], roof[2], (y - deck) / (top - deck))
+	var rake := atan2(shoulder[2] - waist[2], deck - mid)
+	var house_rake := atan2(roof[2] - shoulder[2], top - deck)
+	# A rim round the waist, armored sponsons over the hips and a chin
+	# plate, in the army's colour.
+	_block(hull, "Rim", dark, mid - 0.05, [-0.9, 0.9, -1.07, 1.0], mid + 0.02, [-0.9, 0.9, -1.07, 1.0])
+	for side: float in [-1.0, 1.0]:
+		_block(hull, "Sponson", paint, mid - 0.02, [side * 0.7 - 0.2, side * 0.7 + 0.2, -0.7, 0.75], mid + 0.24,
+				[side * 0.66 - 0.16, side * 0.66 + 0.16, -0.5, 0.62])
+	# Bolt-on armor tiles in rows down the glacis, and side plates down the
+	# casemate's flanks, so its big faces read as armor.
+	var tile := _solid(Color(0.31, 0.32, 0.34), 0.0)
+	for row in 2:
+		var tile_y := lerpf(mid, deck, 0.3 + row * 0.4)
+		var count := 4 - row
+		for i in count:
+			var x := (i - (count - 1) * 0.5) * 0.38
+			var block := _piece(hull, "Tile", BoxMesh.new(), tile,
+					Vector3(x, tile_y, front_at.call(tile_y) - 0.035), Vector3(0.34, 0.2, 0.07))
+			block.rotation.x = rake
+	for side: float in [-1.0, 1.0]:
+		var flank := _piece(hull, "FlankPlate", BoxMesh.new(), tile,
+				Vector3(side * lerpf(waist[1], shoulder[1], 0.5) + side * 0.02, lerpf(mid, deck, 0.5), 0.15),
+				Vector3(0.05, 0.36, 1.1))
+		flank.rotation.z = side * atan2(waist[1] - shoulder[1], deck - mid)
+		_piece(hull, "FlankStripe", BoxMesh.new(), paint,
+				Vector3(side * (lerpf(waist[1], shoulder[1], 0.5) + 0.05), lerpf(mid, deck, 0.5), -0.55),
+				Vector3(0.03, 0.36, 0.18)).rotation.z = side * atan2(waist[1] - shoulder[1], deck - mid)
+	# A sensor slit across the gun house over the cannon, lit in the army's
+	# colour, and a hatch and a stripe of paint on the roof.
+	var slit_y := top - 0.07
+	var slit := _piece(hull, "Slit", BoxMesh.new(), lit, Vector3(0, slit_y, front_at.call(slit_y) - 0.012),
+			Vector3(0.66, 0.045, 0.03))
+	slit.rotation.x = house_rake
+	_piece(hull, "Hatch", BoxMesh.new(), dark, Vector3(0, top + 0.02, 0.22), Vector3(0.44, 0.05, 0.42))
+	_piece(hull, "RoofStripe", BoxMesh.new(), paint, Vector3(0, top + 0.005, -0.12), Vector3(0.96, 0.02, 0.18))
+	# The heat vent, set into the rear armor: an armored frame round a grille
+	# of glowing slats in the Foundry's molten orange, louvers over it, and
+	# two short stacks either side.
+	var vent_y := lerpf(mid, deck, 0.5)
+	var vent_z := lerpf(waist[3], shoulder[3], 0.5)
+	var lean := atan2(shoulder[3] - waist[3], deck - mid)
+	var vent := Node3D.new()
+	vent.name = "Vent"
+	vent.position = Vector3(0, vent_y, vent_z)
+	vent.rotation.x = lean
+	hull.add_child(vent)
+	_piece(vent, "VentFrame", BoxMesh.new(), metal, Vector3(0, 0, 0.01), Vector3(0.96, 0.5, 0.07))
+	_piece(vent, "Grille", BoxMesh.new(), dark, Vector3(0, 0, 0.03), Vector3(0.78, 0.38, 0.05))
+	var glow := _solid(VENT_GLOW, 3.0)
+	for i in 5:
+		_piece(vent, "Slat", BoxMesh.new(), glow, Vector3(0, -0.15 + i * 0.075, 0.06),
+				Vector3(0.7, 0.032, 0.02))
+	_piece(vent, "Louver", BoxMesh.new(), paint, Vector3(0, 0.27, 0.08), Vector3(1.0, 0.06, 0.14))
+	var light := OmniLight3D.new()
+	light.light_color = VENT_GLOW
+	light.light_energy = 1.6
+	light.omni_range = 2.0
+	light.shadow_enabled = false
+	light.position = Vector3(0, 0, 0.35)
+	vent.add_child(light)
 	var tube := CylinderMesh.new()
 	tube.top_radius = 0.5
 	tube.bottom_radius = 0.5
 	tube.height = 1.0
-	var barrel := _piece(root, "Barrel", tube, gun, Vector3(0, 0.2, -0.75), Vector3(0.11, 0.8, 0.11))
+	tube.radial_segments = 8
+	for side: float in [-1.0, 1.0]:
+		var stack := _piece(hull, "Stack", tube, dark, Vector3(side * 0.6, deck + 0.1, shoulder[3] - 0.08),
+				Vector3(0.14, 0.34, 0.14))
+		stack.rotation.x = 0.3
+		_piece(hull, "StackCap", tube, glow, Vector3(side * 0.6, deck + 0.26, shoulder[3] - 0.03),
+				Vector3(0.11, 0.02, 0.11)).rotation.x = 0.3
+	# The cannon, through the glacis on the line of the walker's eyes: a
+	# mantlet let into the armor, a sleeve, the long barrel and a muzzle
+	# brake. It pitches with the aim (`_aim_cannon`).
+	var gun := Node3D.new()
+	gun.name = "Cannon"
+	gun.position = Vector3(0, eye, front_at.call(eye))
+	hull.add_child(gun)
+	var mantlet := _piece(gun, "Mantlet", BoxMesh.new(), metal, Vector3(0, 0, 0.04), Vector3(0.5, 0.36, 0.34))
+	mantlet.rotation.x = house_rake * 0.5
+	_piece(gun, "MantletPaint", BoxMesh.new(), paint, Vector3(0, 0.0, -0.13), Vector3(0.36, 0.26, 0.04))
+	var sleeve := _piece(gun, "Sleeve", tube, dark, Vector3(0, 0, -0.38), Vector3(0.24, 0.46, 0.24))
+	sleeve.rotation.x = PI * 0.5
+	var barrel := _piece(gun, "Barrel", tube, metal, Vector3(0, 0, -1.0), Vector3(0.17, 1.1, 0.17))
 	barrel.rotation.x = PI * 0.5
-	var shroud := _piece(root, "Shroud", tube, paint, Vector3(0, 0.2, -1.1), Vector3(0.15, 0.14, 0.15))
-	shroud.rotation.x = PI * 0.5
-	var lens := _piece(root, "Lens", tube, _solid(Color(1.0, 0.3, 0.1), 2.0), Vector3(0.12, 0.27, -0.33),
-			Vector3(0.07, 0.02, 0.07))
-	lens.rotation.x = PI * 0.5
-	# A turret: it rides the body level, not tipped with the model's stoop.
-	var at := Vector3(box.get_center().x, box.end.y - 0.05, box.get_center().z)
-	if bone_name != "" and _skeleton and _skeleton.find_bone(bone_name) >= 0:
-		at.y = maxf(at.y, _rest_at(bone_name).y)
-	_hang(root, "Cannon", "", Vector3.ZERO, at)
+	_piece(gun, "Brake", BoxMesh.new(), dark, Vector3(0, 0, -1.6), Vector3(0.3, 0.2, 0.24))
+	var bore := _piece(gun, "Bore", tube, glow, Vector3(0, 0, -1.725), Vector3(0.09, 0.01, 0.09))
+	bore.rotation.x = PI * 0.5
+	_cannon = gun
+	# Hip drums on the hull's flanks, where the legs hang.
+	var drum := CylinderMesh.new()
+	drum.top_radius = 0.5
+	drum.bottom_radius = 0.5
+	drum.height = 1.0
+	drum.radial_segments = 10
+	for side: float in [-1.0, 1.0]:
+		var x := absf(hip.x) * side
+		var hub := _piece(hull, "HipDrum", drum, dark, Vector3(x + side * 0.14, hip.y, hip.z), Vector3(0.5, 0.3, 0.5))
+		hub.rotation.z = PI * 0.5
+		var cap := _piece(hull, "HipCap", drum, metal, Vector3(x + side * 0.3, hip.y, hip.z), Vector3(0.36, 0.04, 0.36))
+		cap.rotation.z = PI * 0.5
+	_hang_at(hull, "WalkerHull", hull_bone, Vector3.ZERO)
+	# The legs: an armored thigh, a knee drum, a shin with a ram down its
+	# front, a hock drum, a shank and a broad foot with splayed toes.
+	for side: String in ["L", "R"]:
+		var out := Vector3(signf(_rest_at("UpperLeg." + side).x), 0.0, 0.0)
+		_limb("UpperLeg." + side, "MidLeg." + side, Vector3.ZERO, Vector2(0.26, 0.36), metal, 0.0, 1.0)
+		_limb("UpperLeg." + side, "MidLeg." + side, out * 0.15, Vector2(0.06, 0.4), paint, 0.12, 0.85)
+		_limb("MidLeg." + side, "LowerLeg." + side, Vector3.ZERO, Vector2(0.22, 0.26), metal, 0.05, 0.95)
+		_limb("MidLeg." + side, "LowerLeg." + side, Vector3.ZERO, Vector2(0.07, 0.07), piston, 0.1, 0.9, true,
+				Vector3(0, 0, -0.17))
+		_limb("LowerLeg." + side, "FootBack." + side, Vector3.ZERO, Vector2(0.18, 0.2), dark, 0.0, 0.9)
+		_limb("LowerLeg." + side, "FootBack." + side, out * 0.12, Vector2(0.05, 0.05), piston, 0.1, 0.8, true)
+		var knee := _rest_at("MidLeg." + side)
+		var knee_hub := Node3D.new()
+		_piece(knee_hub, "KneeDrum", drum, dark, Vector3.ZERO, Vector3(0.36, 0.34, 0.36)).rotation.z = PI * 0.5
+		_piece(knee_hub, "KneePlate", BoxMesh.new(), paint, Vector3(0, 0.04, -0.17), Vector3(0.26, 0.24, 0.06))
+		_hang_at(knee_hub, "Knee" + side, "MidLeg." + side, knee)
+		var hock := Node3D.new()
+		_piece(hock, "HockDrum", drum, dark, Vector3.ZERO, Vector3(0.26, 0.28, 0.26)).rotation.z = PI * 0.5
+		_hang_at(hock, "Hock" + side, "LowerLeg." + side, _rest_at("LowerLeg." + side))
+		var ankle := _rest_at("FootBack." + side)
+		var foot := Node3D.new()
+		_piece(foot, "Sole", BoxMesh.new(), dark, Vector3(0, 0.05, 0.0), Vector3(0.46, 0.1, 0.62))
+		_piece(foot, "Ankle", BoxMesh.new(), metal, Vector3(0, 0.17, 0.04), Vector3(0.26, 0.18, 0.26))
+		for toe: float in [-1.0, 0.0, 1.0]:
+			var claw := _piece(foot, "Toe", BoxMesh.new(), metal, Vector3(toe * 0.16, 0.06, -0.38),
+					Vector3(0.13, 0.11, 0.28))
+			claw.rotation.y = -toe * 0.3
+		_piece(foot, "Heel", BoxMesh.new(), metal, Vector3(0, 0.06, 0.36), Vector3(0.18, 0.1, 0.2))
+		_hang_at(foot, "Foot" + side, "FootBack." + side, Vector3(ankle.x, 0.0, ankle.z))
+
+
+## The walker's cannon, raised and lowered with the aim (view only).
+var _cannon: Node3D
+
+
+## Pitches the walker's cannon in its mantlet toward where it aims.
+func _aim_cannon() -> void:
+	if _cannon == null or actor.is_dead:
+		return
+	var dir := actor.get_aim_dir()
+	_cannon.rotation.x = clampf(asin(clampf(dir.y, -1.0, 1.0)), -0.25, 0.35)
+
+
+## A faceted block, flat shaded: a bottom face at `y0` and a top face at
+## `y1`, each [left, right, front, back] (actor space, front toward -Z).
+static func _block(root: Node3D, block_name: String, mat: Material, y0: float, lower: Array, y1: float,
+		upper: Array) -> MeshInstance3D:
+	var corners := func(y: float, r: Array) -> Array[Vector3]:
+		return [Vector3(r[0], y, r[2]), Vector3(r[1], y, r[2]), Vector3(r[1], y, r[3]), Vector3(r[0], y, r[3])]
+	var b: Array[Vector3] = corners.call(y0, lower)
+	var t: Array[Vector3] = corners.call(y1, upper)
+	var faces := [[b[0], b[1], b[2], b[3]], [t[3], t[2], t[1], t[0]]]
+	for i in 4:
+		var j := (i + 1) % 4
+		faces.append([b[i], t[i], t[j], b[j]])
+	var centre := Vector3.ZERO
+	for p in b + t:
+		centre += p / 8.0
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for face: Array in faces:
+		var a: Vector3 = face[0]
+		var b1: Vector3 = face[1]
+		var c: Vector3 = face[2]
+		var d: Vector3 = face[3]
+		var normal := (b1 - a).cross(c - a)
+		if normal.length_squared() < 0.000001:
+			normal = (c - a).cross(d - a)
+		var outward := (a + b1 + c + d) * 0.25 - centre
+		var order := [0, 1, 2, 0, 2, 3]
+		# Godot draws clockwise faces as the front.
+		if normal.dot(outward) > 0.0:
+			order = [0, 2, 1, 0, 3, 2]
+		normal = normal.normalized() * signf(normal.dot(outward))
+		for k: int in order:
+			st.set_normal(normal)
+			st.add_vertex(face[k])
+	var mesh := st.commit()
+	mesh.surface_set_material(0, mat)
+	var part := MeshInstance3D.new()
+	part.name = block_name
+	part.mesh = mesh
+	root.add_child(part)
+	return part
+
+
+## A limb segment along a bone, from `from` of the way to its `child` up to
+## `to`, set off by `aside` (actor space, at rest), `size` across (x) and
+## deep (along the leg's swing). A `round` one is a piston, pushed `ahead`.
+func _limb(bone: String, child: String, aside: Vector3, size: Vector2, mat: Material, from: float, to: float,
+		round := false, ahead := Vector3.ZERO) -> void:
+	if _skeleton.find_bone(bone) < 0 or _skeleton.find_bone(child) < 0:
+		return
+	var a := _rest_at(bone)
+	var b := _rest_at(child)
+	var along := b - a
+	var length := along.length() * (to - from)
+	if length < 0.01:
+		return
+	var y := along.normalized()
+	var x := Vector3.RIGHT
+	var z := x.cross(y).normalized()
+	x = y.cross(z).normalized()
+	var root := Node3D.new()
+	var mesh: PrimitiveMesh = BoxMesh.new()
+	if round:
+		var tube := CylinderMesh.new()
+		tube.top_radius = 0.5
+		tube.bottom_radius = 0.5
+		tube.height = 1.0
+		tube.radial_segments = 8
+		mesh = tube
+	var bar := _piece(root, "Limb", mesh, mat, Vector3.ZERO, Vector3.ONE)
+	bar.basis = Basis(x, y, z) * Basis.from_scale(Vector3(size.x, length, size.y))
+	# `ahead` is in the limb's own frame: toward -z is the leg's front.
+	_hang_at(root, "Limb", bone, a + along * ((from + to) * 0.5) + aside + Basis(x, y, z) * ahead)
 
 
 ## An exo trooper's suit, round a person of ordinary size: a gunmetal frame
@@ -1553,34 +1764,9 @@ func _disc(bone: String, at: Vector3, radius: float, mat: Material) -> void:
 	_hang_at(root, "Joint", bone, at)
 
 
-## A walker's heat vent, the weak spot on its back, built on the model where
-## its back is: a dark grille with glowing slats in the Foundry's molten
-## orange, and a small light. `spec` is [bone, height share, size].
+## The glow of a walker's heat vent, the weak spot on its back: the Foundry's
+## molten orange.
 const VENT_GLOW := Color(1.0, 0.36, 0.08)
-
-
-func _build_vent(model: Node3D, spec: Array) -> void:
-	var box := _model_box(model)
-	var height: float = _def.get("height", 2.4)
-	var size: Vector2 = spec[2]
-	# Actors face -Z, so the back is the box's +Z face.
-	var at := Vector3(box.get_center().x, height * float(spec[1]), box.end.z - 0.02)
-	var vent := Node3D.new()
-	vent.name = "VentModel"
-	_piece(vent, "Grille", BoxMesh.new(), _solid(Color(0.12, 0.1, 0.09), 0.0), Vector3(0, 0, 0.01),
-			Vector3(size.x, size.y, 0.05))
-	var glow := _solid(VENT_GLOW, 3.0)
-	for i in 4:
-		_piece(vent, "Slat", BoxMesh.new(), glow,
-				Vector3(0, -size.y * 0.36 + i * size.y * 0.24, 0.04), Vector3(size.x * 0.82, size.y * 0.1, 0.02))
-	var light := OmniLight3D.new()
-	light.light_color = VENT_GLOW
-	light.light_energy = 1.4
-	light.omni_range = 1.8
-	light.shadow_enabled = false
-	light.position = Vector3(0, 0, 0.3)
-	vent.add_child(light)
-	_hang_at(vent, "Vent", spec[0], at)
 
 
 ## A walker's tracking beam, seen by everyone: while its aim is up (the
