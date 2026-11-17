@@ -136,7 +136,15 @@ without Caleb, and update the gap list when a PR closes a row.
   everyone else against the nearest site it does not. Reinforcements follow
   the war: `Raid.bot_target()` is `bot_count` plus a share of
   `WorldDef.war_reinforcements` by `war.intensity`, new bots join the faction
-  with the fewest alive, and extra bots are not replaced once it cools. Bots
+  with the fewest alive, and extra bots are not replaced once it cools.
+  A world caps rare kinds with `WorldDef.bot_allowed` (authority only: the
+  `Raid` rolls a turned-away bot again from a new seed, so clients only hear
+  of the kept seed). Ashfront's kinds (meta "kind": soldier, heavy, exo,
+  walker; DESIGN.md "Heavy units") come from the seed in `equip_bot`; a big
+  body is `Actor.set_stand_height` (capsule, hit tests and eyes follow
+  `body_height()`), a weak spot `Actor.rear_damage_mult`, and a gun that
+  must hold a lock first `BotBrain.lock_time` (meta "lock_time"), whose
+  tracking beam every view draws from the held aim (`ActorSkin._update_beam`). Bots
   killing bots only simmer the meter (`WarDirector.report_battle`, capped at
   `battle_ceiling`); only players take it higher. World-event bots
   (`Raid._event_bots`) are outside all of this, and so are rival raiders
@@ -818,6 +826,20 @@ without Caleb, and update the gap list when a PR closes a row.
   `Combat.authoritative` is false there, so a client never deals damage, loots,
   or decides an outcome. Anything that changes a result must run on the server
   and reach clients through `NetSession`.
+- Signing in is part of the connection (DESIGN.md section 14): a client
+  sends its version and sign-in through `SceneMultiplayer.auth_callback`
+  (`NetSession._server_auth`, `_client_auth`) and counts as connected only
+  once the server accepts, so an old game or a wrong secret never reaches
+  the session. Both sides' messages always carry "protocol", so any two
+  versions can say which one needs the update; an older game is pointed at
+  `NetSession.UPDATE_URL` from the phone's Servers app. `server_relay` is
+  off: clients only talk to the server. Every `any_peer` RPC starts with
+  `_allow(kind)` (`NetSession.RequestLimits`, per player, refilled by server
+  tick), and a new one must too. Server saves go through
+  `core/account/safe_file.gd` (written whole, then swapped in), and the
+  `StashService` keeps rolling backups of the whole save folder
+  (`backup_if_due`, `backup_dir`). An account file that cannot be read is
+  never replaced by a new account.
 - Online movement: a client numbers every input and each packet repeats
   every input the server has not received yet (up to
   `NetSession.MAX_INPUTS_PER_PACKET`, packed small by `pack_inputs` so a

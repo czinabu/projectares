@@ -126,6 +126,11 @@ var _wander_goal := Vector2.ZERO
 var _wander_left := 0.0
 var _lag := 0.0
 var _on_target := false
+## A gun that must hold a lock before it fires (a walker's cannon): seconds
+## the aim has to stay on a target it can see, from the actor's meta
+## "lock_time" (0 for none). Breaking the line of sight starts it over.
+var lock_time := 0.0
+var _lock := 0.0
 var _stuck_for := 0.0
 var _lift_left := 0.0
 var _hop_in := 3.0
@@ -148,6 +153,16 @@ func _ready() -> void:
 		skill = _rng.randf_range(skill_range.x, skill_range.y)
 	if actor.has_meta("melee_tempo"):
 		melee_tempo = float(actor.get_meta("melee_tempo"))
+	# A world may give a body its own aim: a heavy machine that comes round
+	# slowly ("aim_turn", degrees a second) but leads a moving or flying
+	# target well ("track_lag", "air_error", see the aim tuning above).
+	if actor.has_meta("aim_turn"):
+		turn_speed_deg = float(actor.get_meta("aim_turn"))
+	if actor.has_meta("track_lag"):
+		track_lag = float(actor.get_meta("track_lag"))
+	if actor.has_meta("air_error"):
+		air_error_deg = float(actor.get_meta("air_error"))
+	lock_time = float(actor.get_meta("lock_time", 0.0))
 	actor.health.damaged.connect(_on_damaged)
 	actor.heard.connect(_on_heard)
 
@@ -215,6 +230,7 @@ func _physics_process(delta: float) -> void:
 	elif state != State.PATROL:
 		_seen_time = 0.0
 		_aim_target = null
+		_lock = 0.0
 		_lost_time += delta
 		state = State.CHASE
 		if _lost_time > give_up_time or _flat_dist(_last_seen) < 2.0:
@@ -315,7 +331,9 @@ func _attack(cmd: ActorCommand, delta: float) -> void:
 	_combat_hop(cmd, delta)
 	# Aim down sights on the ground, the way a person fights a duel. In the
 	# air the hop owns the aim button (a jetpack hovers while it is held).
-	if actor.is_on_floor() and _hop_left <= 0.0:
+	# A gun that locks on raises its aim (and its tracking beam, which every
+	# view draws from the held aim) only once it has reacted, as the lock starts.
+	if actor.is_on_floor() and _hop_left <= 0.0 and (lock_time <= 0.0 or _seen_time >= _reaction):
 		cmd.secondary = true
 
 	# Keep a comfortable distance: close in, back off, or strafe.
@@ -331,7 +349,18 @@ func _attack(cmd: ActorCommand, delta: float) -> void:
 		cmd.move = Vector2(_strafe_sign, 0)
 
 	if _seen_time < _reaction or dist > attack_range or not _on_target:
+		_lock = 0.0 if not _on_target else _lock
 		return
+	if lock_time > 0.0:
+		# The tracking beam: a lock builds while the target stays in sight,
+		# and a wall (or a flier ducking behind one) breaks it.
+		var query := PhysicsRayQueryParameters3D.create(eye, chest, Actor.LAYER_WORLD)
+		if not get_world_3d().direct_space_state.intersect_ray(query).is_empty():
+			_lock = 0.0
+			return
+		_lock += delta
+		if _lock < lock_time:
+			return
 	if _burst_left > 0.0:
 		_burst_left -= delta
 		cmd.primary = true
@@ -352,6 +381,7 @@ func _aim_gun(cmd: ActorCommand, eye: Vector3, chest: Vector3, dist: float, delt
 	if target != _aim_target:
 		_aim_target = target
 		_seen_time = 0.0
+		_lock = 0.0
 		_reaction = reaction_time * _rng.randf_range(0.8, 1.3) * (1.4 - 0.8 * sharp)
 		_wander_left = 0.0
 		# The first look lands off to one side.

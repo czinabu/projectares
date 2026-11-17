@@ -51,9 +51,12 @@ const TravelOnlineTests := preload("res://tests/travel_online_tests.gd")
 const HostRecoveryTests := preload("res://tests/host_recovery_tests.gd")
 const RiskZoneTests := preload("res://tests/risk_zone_tests.gd")
 const RaiderTests := preload("res://tests/raider_tests.gd")
+const HeavyUnitTests := preload("res://tests/heavy_unit_tests.gd")
 const PlaytestFixTests := preload("res://tests/playtest_fix_tests.gd")
 const ExtractionTests := preload("res://tests/extraction_tests.gd")
 const InspectTests := preload("res://tests/inspect_tests.gd")
+const SaveSafetyTests := preload("res://tests/save_safety_tests.gd")
+const ServerAuthTests := preload("res://tests/server_auth_tests.gd")
 
 var _passed := 0
 var _failed := 0
@@ -72,6 +75,7 @@ func _ready() -> void:
 	# Accounts a previous run left behind hold that run's secrets and would
 	# refuse this run's sign-ins, so every run starts with none.
 	_wipe_dir(NET_ACCOUNTS)
+	_wipe_dir(NET_ACCOUNTS + "_backups")
 	var args := OS.get_cmdline_user_args()
 	if "--list" in args:
 		_list_groups()
@@ -319,6 +323,8 @@ func _run() -> void:
 	await OnboardingTests.run(self)
 	await TravelOnlineTests.run(self)
 	await HostRecoveryTests.run(self)
+	await SaveSafetyTests.run(self)
+	await ServerAuthTests.run(self)
 	await _test_look()
 	await _test_rig_models()
 	await _test_customizer()
@@ -331,6 +337,7 @@ func _run() -> void:
 	await _test_artifacts()
 	await _test_risk_zones()
 	await _test_raiders()
+	await _test_heavy_units()
 	await _test_playtest_fixes()
 	await _test_watch()
 	await _test_portals()
@@ -448,6 +455,10 @@ func _test_risk_zones() -> void:
 
 func _test_raiders() -> void:
 	await RaiderTests.run(self)
+
+
+func _test_heavy_units() -> void:
+	await HeavyUnitTests.run(self)
 
 
 func _test_playtest_fixes() -> void:
@@ -892,11 +903,12 @@ func _test_combat_and_loot() -> void:
 		p.cmd.interact_pressed = false
 		check(p.inventory.items.size() > before, "looting moves items to the backpack")
 
-	# A rifleman, not a blade-carrying heavy: which one comes first depends on
-	# how the seed falls, and a heavy takes more than this combo.
+	# A rifleman, not a blade-carrying heavy, an exo or a walker: which one
+	# comes first depends on how the seed falls, and they take more than this combo.
 	var bot_b := raid.bots[0]
 	for other in raid.bots:
-		if not other.is_dead and not other.weapons.any(func(w: Weapon) -> bool: return w is MeleeWeapon):
+		if not other.is_dead and other.get_meta("kind", "soldier") == "soldier" \
+				and not other.weapons.any(func(w: Weapon) -> bool: return w is MeleeWeapon):
 			bot_b = other
 			break
 	p.global_position = arena + Vector3(0, 0, 3)
