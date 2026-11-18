@@ -46,6 +46,8 @@ var enabled := false
 var mode := ""
 ## The colour of everything the visor draws on its glass.
 var glass_color := Color(0.55, 0.85, 1.0)
+## The helmet's Mk, for how it looks only: Mk2 wears a lit trim (`helmet_model.gd`).
+var tier := 1
 
 ## Zoom: the magnification of each level, weakest first.
 var zoom_levels: Array = [4.0, 8.0]

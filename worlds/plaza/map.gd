@@ -10,7 +10,8 @@ extends Node3D
 ##   west    the quarters: the door to your home base
 ##   east    the clan hall
 ##   south-east  the arena gate
-##   south   the arrival pad, the way out, and the screens amphitheatre
+##   south   the arrival pad, the way out, and the screens amphitheatre,
+##           between the contract board and the most-wanted board
 ##   south-west  a pad kept clear for the RC arena (later)
 ##   edge    a ground loop for bikes, then the balcony rail
 ##
@@ -34,6 +35,17 @@ const SHOP_DB := "res://core/economy/shop_db.gd"
 const CONTRACTS := "res://core/economy/contracts.gd"
 ## The contract board stands beside the big screen, facing the plaza.
 const CONTRACT_BOARD_AT := Vector3(32, 0, 96)
+## The most-wanted board, the contract board's twin on the other side of the
+## big screen (DESIGN.md section 2, "Hub activities").
+const WANTED_BOARD_AT := Vector3(-32, 0, 96)
+## The people of the Concourse you can talk to (`core/social/plaza_locals.gd`
+## stands them there): id -> [where, facing yaw, name, role]. Yaw 0 faces
+## north (-Z); PI faces south.
+const TALKERS := {
+	"kade": [Vector3(-29.4, 0, 93.9), 0.15, "Kade", "Bounty broker"],
+	"dusk": [Vector3(19.5, 0, 12.0), 2.45, "Dusk", "Hears things"],
+	"rook": [Vector3(18.0, 0, -85.5), PI, "Rook", "Odd jobs"],
+}
 ## The arcade's middle line, its width and its roof height.
 const MARKET_RING := 55.0
 const ARCADE_WIDTH := 10.0
@@ -122,6 +134,8 @@ func _ready() -> void:
 	_build_arrival()
 	_build_screens()
 	_build_contract_board()
+	_build_wanted_board()
+	_build_talkers()
 	_build_show_floor()
 	_build_fill()
 	_build_city_below()
@@ -558,6 +572,92 @@ func _build_contract_board() -> void:
 	_part(screen, Vector3(1.6, 0.9, 0.01), Vector3.ZERO, amber.darkened(0.75), true)
 
 
+## Across the big screen from the contracts: the most-wanted board, a red lit
+## wall listing the top bounties out in the worlds. What it says is written
+## by `PlazaView` from the server's news (`world_status`'s "wanted"); the
+## map only builds the wall and the label, in group "wanted_board".
+func _build_wanted_board() -> void:
+	var at := WANTED_BOARD_AT
+	var yaw := PI
+	var facing := Basis(Vector3.UP, yaw)
+	var red := Color(1.0, 0.32, 0.26)
+	_box(Vector3(12, 7, 0.8), at + facing * Vector3(0, 3.5, -0.4), WALL, yaw)
+	for side: float in [-1.0, 1.0]:
+		_part(self, Vector3(0.1, 7.0, 0.1), at + facing * Vector3(side * 6.02, 3.5, 0.02), red, true, yaw)
+	_part(self, Vector3(10.5, 4.6, 0.05), at + facing * Vector3(0, 3.6, 0.02), Color(0.07, 0.03, 0.03), true, yaw)
+	for y: float in [1.25, 5.95]:
+		_part(self, Vector3(10.7, 0.1, 0.08), at + facing * Vector3(0, y, 0.05), red, true, yaw)
+	_sign("MOST WANTED", at + facing * Vector3(0, 6.6, 0.1), yaw, 1.0, red)
+	var list := Label3D.new()
+	list.name = "WantedList"
+	list.add_to_group("wanted_board")
+	list.text = "No bounties out right now."
+	list.font_size = 64
+	list.pixel_size = 0.005
+	list.outline_size = 0
+	list.modulate = Color(1.0, 0.9, 0.86)
+	list.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	list.width = 10.0 / list.pixel_size
+	list.position = at + facing * Vector3(0, 3.6, 0.1)
+	list.rotation.y = yaw
+	add_child(list)
+	# A low plinth in front, where the broker stands his ground.
+	_box(Vector3(2.4, 0.3, 1.4), at + facing * Vector3(0, 0.15, 1.3), STEEL, yaw)
+	_part(self, Vector3(2.5, 0.05, 1.5), at + facing * Vector3(0, 0.02, 1.3), red.darkened(0.4), true, yaw)
+
+
+## Where the Concourse's locals spend their day, as plain data for
+## `core/social/plaza_locals.gd` (a view that walks them on every client):
+##   centre     what the rings go round
+##   rings      [inner, outer] radius bands of open floor to stroll round
+##   promenade  the radius of the walk under the arcade
+##   browse     [stand point, yaw] in front of each kiosk's counter
+##   watch      tiers facing the big screen: {centre, width, depth, yaw}
+##   gather     open spots where a few stand and talk
+##   routes     polylines a wanderer walks out along and back
+## Kept clear of the benches, podiums, stages, planters and pillars.
+func locals_layout() -> Dictionary:
+	var browse: Array = []
+	for stall: Dictionary in _stalls:
+		var facing := Basis(Vector3.UP, float(stall.yaw))
+		browse.append([(stall.at as Vector3) + facing * Vector3(0, 0, 3.2), float(stall.yaw)])
+	var watch: Array = []
+	for row in 4:
+		watch.append({"centre": Vector3(0, 0.4 + row * 0.4, SCREENS_AT.z - 14.0 - row * 3.0),
+				"width": 30.0 + row * 4.0, "depth": 2.6, "yaw": PI})
+	return {
+		"centre": Vector3.ZERO,
+		"rings": [[16.4, 18.2], [26.6, 28.8], [32.0, 35.0]],
+		"promenade": MARKET_RING - ARCADE_WIDTH * 0.5 + 1.4,
+		"browse": browse,
+		"watch": watch,
+		"gather": [_at(23.4, 350.0), _at(30.5, 230.0), _at(46.5, 161.0), _at(24.0, 90.0), _at(47.0, 268.0),
+				ARRIVAL + Vector3(-11.5, 0, 3.0)],
+		"routes": [[_at(28.0, 170.0), Vector3(5, 0, 62), Vector3(23, 0, 62), Vector3(23, 0, 86), Vector3(30, 0, 90)],
+				[_at(28.0, 192.0), Vector3(-6, 0, 61), Vector3(-23, 0, 61), Vector3(-23, 0, 86), Vector3(-29, 0, 90)],
+				[_at(28.0, 355.0), Vector3(-3, 0, -60), Vector3(-14, 0, -79)]],
+	}
+
+
+## Where each person you can talk to stands: a "talker" marker (meta "id",
+## "yaw", "name", "role") and a portal in front of them whose destination is
+## "talk:<id>". `PlazaView` answers those itself.
+func _build_talkers() -> void:
+	for id: String in TALKERS:
+		var entry: Array = TALKERS[id]
+		var at: Vector3 = entry[0]
+		var yaw: float = entry[1]
+		var marker := _add_marker("talker", at)
+		marker.set_meta("id", id)
+		marker.set_meta("yaw", yaw)
+		marker.set_meta("name", entry[2])
+		marker.set_meta("role", entry[3])
+		var front := Basis(Vector3.UP, yaw) * Vector3.FORWARD
+		# No glowing pad: you walk up to a person, not onto a spot.
+		var portal := _add_portal("talk:%s" % id, "Talk to %s" % entry[2], at + front * 1.5, 1.8, false)
+		portal.set_meta("talker", id)
+
+
 ## What the board's wall says: today's jobs and how they pay. The same for
 ## everyone, since the offers follow the date (a reroll only changes your own
 ## screen).
@@ -568,6 +668,9 @@ static func contract_lines() -> Array[String]:
 	var rules := load(CONTRACTS) as Script
 	for id: String in rules.call("offers_for", rules.call("today")):
 		var job: Dictionary = rules.call("job", id)
+		# Favours are Rook's to offer, in person.
+		if str(job.get("kind", "")) == "favor":
+			continue
 		out.append("%s  %s   %s" % [str(job.get("kind", "")).to_upper(), rules.call("title_of", id),
 				rules.call("reward_text", id)])
 	return out
@@ -944,11 +1047,13 @@ func _add_marker(group: String, at: Vector3) -> Marker3D:
 	return marker
 
 
-func _add_portal(destination: String, label: String, at: Vector3, radius: float) -> Marker3D:
+func _add_portal(destination: String, label: String, at: Vector3, radius: float, pad_shown := true) -> Marker3D:
 	var portal := _add_marker("portal", at)
 	portal.set_meta("destination", destination)
 	portal.set_meta("label", label)
 	portal.set_meta("radius", radius)
+	if not pad_shown:
+		return portal
 	# A glowing pad marks where to stand.
 	var pad := MeshInstance3D.new()
 	var mesh := CylinderMesh.new()

@@ -86,9 +86,11 @@ static func run(t: Node) -> void:
 				return part.get_parent() == skeleton and part.skin != null), "the model wears exactly the four chosen parts")
 		var legs_source := (load(Human.outfit_path("f", "Worker")) as PackedScene).instantiate()
 		var legs := model.find_child("PartLegs", true, false) as MeshInstance3D
-		t.check(legs != null and legs.mesh == (legs_source.find_child("PartLegs", true, false) as MeshInstance3D).mesh,
+		var legs_from := legs_source.find_child("PartLegs", true, false) as MeshInstance3D
+		t.check(legs != null and legs.mesh == Human.shaped(legs_from.mesh, legs_from.skin),
 				"each part comes from the outfit that was picked for it")
 		legs_source.free()
+		_check_shaped_body(t, model, built["materials"])
 		t.check(model.find_child("AnimationPlayer", true, false) != null, "the built model keeps the rig's animations")
 		var toned := 0
 		for mat: ShaderMaterial in built["materials"]:
@@ -173,9 +175,21 @@ static func run(t: Node) -> void:
 	var skin := raid.player.get_node_or_null("Skin")
 	var head := skin.find_child("PartHead", true, false) as MeshInstance3D if skin else null
 	var punk_head := (load(Human.outfit_path("f", "Punk")) as PackedScene).instantiate()
-	t.check(head != null and head.mesh == (punk_head.find_child("PartHead", true, false) as MeshInstance3D).mesh,
+	var punk_part := punk_head.find_child("PartHead", true, false) as MeshInstance3D
+	t.check(head != null and head.mesh == Human.shaped(punk_part.mesh, punk_part.skin),
 			"the player wears the chosen look in a raid")
 	punk_head.free()
+	# Under an armor frame the bare skin below the head wears the undersuit.
+	Loadout.wear_frame(raid.player, "frame_trooper")
+	await t.frames(8)
+	var covered: Array = skin._materials.filter(func(mat: ShaderMaterial) -> bool:
+		return mat.get_shader_parameter("surface_kind") == 2)
+	t.check(not covered.is_empty() and covered.all(func(mat: ShaderMaterial) -> bool:
+			return mat.get_shader_parameter("suit") == 1.0), "a frame puts the undersuit on the bare skin below the head")
+	Loadout.wear_frame(raid.player, "")
+	await t.frames(8)
+	t.check(skin._materials.all(func(mat: ShaderMaterial) -> bool: return mat.get_shader_parameter("suit") != 1.0),
+			"taking the frame off takes the undersuit off")
 	var skins := raid.player.get_children().filter(func(child: Node) -> bool: return child.name.begins_with("Skin"))
 	t.check(skins.size() == 1 and skin.arm != null and skin.arm.grip_bone >= 0,
 			"changing the look leaves one model, which still holds its weapon")
@@ -447,3 +461,71 @@ static func _row_shown(phone: CanvasLayer, index: int) -> bool:
 static func _drawn(t: Node, count: int) -> void:
 	for i in count:
 		await t.get_tree().process_frame
+
+
+## The pack bodies as the game draws them (`Human.shaped`): smooth where
+## faces meet gently, the head drawn in about its bone, each vertex marked
+## with its rest place for the shader, and nothing that changes how it
+## poses or what it costs.
+static func _check_shaped_body(t: Node, model: Node3D, materials: Array) -> void:
+	var source_scene := (load(Human.outfit_path("m", "Casual_2")) as PackedScene).instantiate()
+	var same_size := true
+	var shared := true
+	var spread_was := 0
+	var spread_now := 0
+	var marked := true
+	var head_in := false
+	var others_kept := true
+	for slot: String in Human.SLOTS:
+		var part := source_scene.find_child(Human.SLOT_NODES[slot], true, false) as MeshInstance3D
+		var shaped := Human.shaped(part.mesh, part.skin) as ArrayMesh
+		shared = shared and Human.shaped(part.mesh, part.skin) == shaped
+		for i in part.mesh.get_surface_count():
+			var was := part.mesh.surface_get_arrays(i)
+			var now := shaped.surface_get_arrays(i)
+			var verts_was: PackedVector3Array = was[Mesh.ARRAY_VERTEX]
+			var verts_now: PackedVector3Array = now[Mesh.ARRAY_VERTEX]
+			same_size = same_size and verts_was.size() == verts_now.size() \
+					and was[Mesh.ARRAY_BONES] == now[Mesh.ARRAY_BONES] and was[Mesh.ARRAY_WEIGHTS] == now[Mesh.ARRAY_WEIGHTS] \
+					and shaped.surface_get_material(i) == part.mesh.surface_get_material(i)
+			# Smoother: fewer distinct normals at a shared corner.
+			spread_now += _normal_spread(verts_was, now[Mesh.ARRAY_NORMAL])
+			spread_was += _normal_spread(verts_was, was[Mesh.ARRAY_NORMAL])
+			var marks = now[Mesh.ARRAY_CUSTOM0]
+			marked = marked and marks != null and (marks as PackedFloat32Array).size() == verts_now.size() * 4
+			if slot == "head":
+				var pivot := Vector3.ZERO
+				for b in part.skin.get_bind_count():
+					if part.skin.get_bind_name(b) == "Head":
+						pivot = part.skin.get_bind_pose(b).affine_inverse().origin
+				var reach_was := 0.0
+				var reach_now := 0.0
+				for v in verts_was.size():
+					reach_was = maxf(reach_was, verts_was[v].distance_to(pivot))
+					reach_now = maxf(reach_now, verts_now[v].distance_to(pivot))
+				head_in = head_in or reach_now < reach_was * (Human.HEAD_SCALE + 0.02)
+			if slot == "feet":
+				others_kept = others_kept and verts_was == verts_now
+	t.check(same_size, "shaping keeps every vertex, bone weight and material, so a body poses and costs the same")
+	t.check(shared, "a shaped mesh is made once and shared")
+	t.check(spread_now < spread_was * 0.6, "shaping smooths the faceted pack meshes")
+	t.check(marked, "every shaped vertex carries its rest place for the shader")
+	t.check(head_in and others_kept, "the head is drawn in about its bone and nothing else moves")
+	source_scene.free()
+	t.check(Human.surface_kind("body", "Skin") == 2 and Human.surface_kind("head", "Skin") == 1
+			and Human.surface_kind("head", "Eye") == 3 and Human.surface_kind("body", "Swat") == 0,
+			"the shader is told skin, skin the undersuit covers, eyes and cloth apart")
+	var kinds := {}
+	for mat: ShaderMaterial in materials:
+		kinds[mat.get_shader_parameter("surface_kind")] = true
+		if mat.get_shader_parameter("has_rest") != 1.0:
+			kinds["unmarked"] = true
+	t.check(kinds.has(1) and kinds.has(2) and not kinds.has("unmarked"), "a built person's materials know their surfaces")
+
+
+## How many distinct normals there are, counted per shared corner.
+static func _normal_spread(verts: PackedVector3Array, normals: PackedVector3Array) -> int:
+	var seen := {}
+	for v in verts.size():
+		seen[[(verts[v] * 2000.0).round(), (normals[v] * 100.0).round()]] = true
+	return seen.size()

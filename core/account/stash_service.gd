@@ -41,8 +41,10 @@ const MasteryBook := preload("res://core/progression/mastery_book.gd")
 const ProfileScript := preload("res://core/profile/profile.gd")
 const Economy := preload("res://core/economy/economy.gd")
 const BaseUpgrades := preload("res://core/base/base_upgrades.gd")
+const BasePlan := preload("res://core/base/base_plan.gd")
 const Contracts := preload("res://core/economy/contracts.gd")
 const Crafting := preload("res://core/progression/crafting.gd")
+const SafetyNets := preload("res://core/economy/safety_nets.gd")
 const DevMode := preload("res://core/dev/dev_mode.gd")  # DEV MODE
 const AccountStore := preload("res://core/account/account_store.gd")
 const SafeFile := preload("res://core/account/safe_file.gd")
@@ -66,6 +68,8 @@ var force_json := false
 ## The day contracts are counted on (`Contracts.today`). Below zero is the
 ## real date; tests set it to move time.
 var day_override := -1
+## Tests only: the unix time insurance counts on, when 0 or more.
+var time_override := -1.0
 
 ## Account id -> Account. Loaded lazily from disk.
 var _accounts := {}
@@ -149,10 +153,14 @@ class Account:
 	var arena_losses := 0
 	## The home base upgrades owned (ids from `BaseUpgrades`). Never lost.
 	var base_upgrades: Array[String] = []
+	## Which room stands in which socket off the base's hub (`BasePlan`).
+	var base_plan: Dictionary = BasePlan.clean(null)
 	## Contracts taken from the board and their progress (`Contracts.clean`).
 	var contracts := {}
 	## The blueprints known (blueprint item ids, see `Crafting`). Never lost.
 	var blueprints: Array[String] = []
+	## The insurance policy (`SafetyNets`): {"item", "ready_at"}.
+	var insurance := SafetyNets.fresh()
 
 	## Adds the storable items in `ids` to the stash. A blueprint not known
 	## yet is learned instead of stored. Anything that hands this account
@@ -188,8 +196,10 @@ class Account:
 			"arena_wins": arena_wins,
 			"arena_losses": arena_losses,
 			"base_upgrades": base_upgrades,
+			"base_plan": base_plan,
 			"contracts": contracts,
 			"blueprints": blueprints,
+			"insurance": insurance,
 		}
 
 	func load_dict(data: Dictionary) -> void:
@@ -230,11 +240,21 @@ class Account:
 		arena_wins = maxi(0, int(data.get("arena_wins", 0)))
 		arena_losses = maxi(0, int(data.get("arena_losses", 0)))
 		base_upgrades = BaseUpgrades.clean(data.get("base_upgrades"))
+		base_plan = BasePlan.clean(data.get("base_plan"))
 		# Cleaned and brought up to date on first use (`_contracts_of`).
 		var saved_contracts: Variant = data.get("contracts", {})
 		contracts = saved_contracts.duplicate(true) if typeof(saved_contracts) == TYPE_DICTIONARY else {}
 		blueprints = Crafting.clean(data.get("blueprints"))
 		Crafting.learn(stash, blueprints)
+		insurance = SafetyNets.clean(data.get("insurance"))
+
+	## The insurance policy, lapsed first if its item is no longer owned
+	## (the stash, or out on this deploy).
+	func policy() -> Dictionary:
+		var owned := stash.duplicate()
+		owned.append_array(deployed)
+		SafetyNets.lapse(insurance, owned)
+		return insurance
 
 
 # --- Identity ----------------------------------------------------------------
@@ -426,8 +446,10 @@ func snapshot(account_id: String) -> Dictionary:
 		"arena_wins": account.arena_wins,
 		"arena_losses": account.arena_losses,
 		"base_upgrades": account.base_upgrades.duplicate(),
+		"base_plan": account.base_plan.duplicate(),
 		"contracts": _contracts_of(account).duplicate(true),
 		"blueprints": account.blueprints.duplicate(),
+		"insurance": account.policy().duplicate(),
 	}
 
 
@@ -527,6 +549,20 @@ func buy_upgrade(account_id: String, upgrade_id: String) -> Dictionary:
 	return _bank(account, BaseUpgrades.buy(account.base_upgrades, account.scrip, upgrade_id))
 
 
+## Moves a room of the account's home base into a socket (`BasePlan.place`),
+## the room there taking its old socket. Free, and only ever where things
+## stand, so it is allowed while deployed too.
+func place_room(account_id: String, socket: String, room: String) -> Dictionary:
+	var account := load_account(account_id)
+	if account == null:
+		return _fail("No such account.")
+	if socket not in BasePlan.SOCKETS or not BasePlan.ROOMS.has(room):
+		return _fail("No such room or socket.")
+	account.base_plan = BasePlan.place(account.base_plan, socket, room)
+	_save(account)
+	return {"ok": true}
+
+
 ## The contract board: "take" or "drop" job `job_id`, or "reroll" today's
 ## offers. The rules are `Contracts`; the server decides.
 func contract(account_id: String, action: String, job_id: String = "") -> Dictionary:
@@ -569,6 +605,31 @@ func craft(account_id: String, item_id: String) -> Dictionary:
 	if account.is_deployed():
 		return _fail("You are in a raid.")
 	return _bank(account, Crafting.craft(account.stash, account.blueprints, account.scrip, item_id))
+
+
+## Insurance (`SafetyNets`): "insure" item `item_id` or "cancel" the policy.
+## What it costs and whether it may be insured are decided here.
+func insure(account_id: String, action: String, item_id: String = "") -> Dictionary:
+	var account := load_account(account_id)
+	if account == null:
+		return _fail("No such account.")
+	if account.is_deployed():
+		return _fail("You are in a raid.")
+	match action:
+		"insure":
+			return _bank(account, SafetyNets.insure(account.policy(), account.stash, account.scrip,
+					item_id, now()))
+		"cancel":
+			var result := SafetyNets.cancel(account.policy())
+			if result.ok:
+				_save(account)
+			return result
+	return _fail("Unknown request.")
+
+
+## The unix time insurance counts on.
+func now() -> float:
+	return time_override if time_override >= 0.0 else Time.get_unix_time_from_system()
 
 
 ## The account's balance, or 0 if there is no such account.
@@ -774,7 +835,9 @@ func deploy(account_id: String, world: WorldDef, by := "", ref := "") -> Diction
 	account.deployed_by = by
 	account.deploy_ref = ref
 	_save(account)
-	return {"ok": true, "kit": kit, "picks": account.mastery.active_picks()}
+	# The insured item, if this deploy took it: pass it to `Raid.add_player`.
+	return {"ok": true, "kit": kit, "picks": account.mastery.active_picks(),
+			"insured": SafetyNets.covered(account.policy(), taken)}
 
 
 ## The kit an account would deploy with, without taking anything out of the
@@ -813,6 +876,12 @@ func settle(account_id: String, result: Dictionary) -> Dictionary:
 	var home: Variant = result.get("brought_home", [])
 	if typeof(home) == TYPE_ARRAY:
 		account.add_items(home)
+	# The safety nets: salvage for crafted gear lost with the body, and the
+	# insured item's claim (it came home in `brought_home`).
+	var salvage: Variant = result.get("salvage", [])
+	if typeof(salvage) == TYPE_ARRAY:
+		account.add_items(salvage)
+	SafetyNets.claim(account.insurance, str(result.get("recalled", "")), now())
 	account.raids_played += 1
 	if result.get("outcome", "") == "left":
 		account.raids_extracted += 1

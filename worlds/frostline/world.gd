@@ -38,6 +38,14 @@ const SENTINEL_LOCK := 1.2
 const SENTINEL_DAMAGE := 30.0
 const SENTINEL_INTERVAL := 0.6
 const SENTINEL_PARTY := 0.6
+## Whiteouts (DESIGN.md "Frostline", step 5): blizzards that come down the
+## valley one at a time on the shared weather (`WorldDef.weather_*`), most
+## of them off the glacier (a cold wind falls downhill), now and then one
+## up from the frozen sea. `WHITEOUT_DOWN` is the share that come down.
+const WHITEOUT_DOWN := 0.75
+## How far the valley runs, mouth to head, on the map's z.
+const VALLEY_FROM_Z := 300.0
+const VALLEY_TO_Z := -300.0
 ## The slow route to the war's blueprints (DESIGN.md section 10, Caleb's
 ## call): a Frostline warlord (the Sentinel, or an event's) carries one now
 ## and then, rarer than in Ashfront, and a piece of upgrade data.
@@ -189,6 +197,35 @@ func _init() -> void:
 	warlord_upgrade_data = 1
 	# Its own contracts, counted only here.
 	contract_tag = "expedition"
+	# Whiteouts: a blizzard fills the valley wall to wall as it comes
+	# through. Sight closes in, the wind swallows gunshots (the still air's
+	# carry is gone), gusts throw flight rigs about, the cold bites twice
+	# as hard and the snow fills in every trail it passes over.
+	weather_kind = "snow"
+	weather_name = "Whiteout"
+	weather_radius = 120.0
+	weather_speed = 3.5
+	weather_ramp = 45.0
+	weather_gap = Vector2(300.0, 600.0)
+	weather_first = Vector2(90.0, 240.0)
+	weather_sight = 0.5
+	weather_carry = 0.4
+	weather_gust = 8.0
+	weather_cold = 2.0
+	weather_wipes_tracks = true
+	weather_field = 300.0
+
+
+## A whiteout runs the length of the valley, not across it: most come down
+## off the glacier toward the river mouth, some up from the sea, each
+## wandering a little across the floor as it goes.
+func weather_path(rng: RandomNumberGenerator) -> Array:
+	var reach := weather_radius
+	var head := Vector3(rng.randf_range(-20.0, 20.0), 0.0, VALLEY_TO_Z - reach)
+	var mouth := Vector3(rng.randf_range(-30.0, 30.0), 0.0, VALLEY_FROM_Z + reach)
+	if rng.randf() < WHITEOUT_DOWN:
+		return [head, mouth]
+	return [mouth, head]
 
 
 func register_items() -> void:

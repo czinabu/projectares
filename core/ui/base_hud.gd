@@ -4,9 +4,9 @@ extends CanvasLayer
 ## (`wrist`, raised with X as in a raid; its card says what each icon holds
 ## for the next deploy, `Hud.base_watch_slots`), and a worn helmet's glass
 ## (`visor`, the same `VisorHud` as out in a world, set up with
-## `setup_base`). Everything else is in the room: the
-## base's name and how it works hang on the banner, and the gear you look at
-## gets a tag in the world saying what it is (`tag`).
+## `setup_base`). Everything else is in the room: a plate over each
+## doorway names its room, and the gear you look at gets a tag in the world
+## saying what it is (`tag`).
 ##
 ## Load with `preload("res://core/ui/base_hud.gd")`.
 

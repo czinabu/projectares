@@ -8,6 +8,10 @@ extends Node3D
 ## A view only, like `WorldScreen`: the base decides nothing here, it only
 ## changes what the bench shows and asks for equips through its own signal.
 ##
+## The plan table works the same way (`use_plan`): set `target` to "plan" and
+## the view comes in over the table and works it through `plan_scroll`,
+## `plan_select`, `plan_back` and `leave_plan`.
+##
 ## Load with `preload("res://core/ui/bench_view.gd")`. Give it `base`, add it
 ## to the tree and call `focus()`. It frees itself and emits `closed` when the
 ## player leaves the bench.
@@ -23,6 +27,15 @@ var fov := 55.0
 var move_time := 0.35
 
 var base: HomeBase
+## What is being worked: "bench" (the gunsmith bench) or "plan" (the plan
+## table). Each has its calls on `HomeBase` named after it.
+var target := "bench":
+	set(value):
+		target = value
+		if value == "plan":
+			eye = Vector3(0.75, 2.35, 2.4)
+			look_at_point = Vector3(0.75, 1.3, -0.1)
+			fov = 60.0
 
 var _camera: Camera3D
 var _previous: Camera3D
@@ -54,7 +67,7 @@ func focus() -> void:
 
 ## Where the camera ends up, looking at the bench (global).
 func view_transform() -> Transform3D:
-	var bench := base.global_transform * base.bench_transform()
+	var bench: Transform3D = base.global_transform * base.call(target + "_transform")
 	var from := bench * eye
 	return Transform3D(Basis.looking_at(bench * look_at_point - from, Vector3.UP), from)
 
@@ -63,7 +76,7 @@ func view_transform() -> Transform3D:
 ## camera that had it.
 func leave() -> void:
 	if base != null and is_instance_valid(base):
-		base.leave_bench()
+		base.call("leave_" + target)
 	if _previous != null and is_instance_valid(_previous) and _previous.is_inside_tree():
 		_previous.make_current()
 	_previous = null
@@ -92,20 +105,20 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.pressed:
 		match event.button_index:
 			MOUSE_BUTTON_WHEEL_DOWN:
-				base.bench_scroll(1)
+				base.call(target + "_scroll", 1)
 			MOUSE_BUTTON_WHEEL_UP:
-				base.bench_scroll(-1)
+				base.call(target + "_scroll", -1)
 			MOUSE_BUTTON_LEFT:
-				base.bench_select()
+				base.call(target + "_select")
 			MOUSE_BUTTON_RIGHT:
-				if not base.bench_back():
+				if not base.call(target + "_back"):
 					leave()
 			_:
 				handled = false
 	elif event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_ESCAPE:
 		leave()
 	elif event.is_action_pressed("interact"):
-		base.bench_select()
+		base.call(target + "_select")
 	else:
 		handled = false
 	if handled and is_inside_tree():
