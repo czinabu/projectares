@@ -222,6 +222,10 @@ var _tour_stash_size := -1
 
 func _ready() -> void:
 	var args := OS.get_cmdline_user_args()
+	# Every life a raid here finishes goes in the life log (`LifeLog`), to
+	# tune the worlds from: `--life-log <dir>` puts it elsewhere.
+	var log_at := args.find("--life-log")
+	LifeLog.directory = args[log_at + 1] if log_at >= 0 and log_at + 1 < args.size() else "user://life_log"
 	if "--account-service" in args:
 		_run_account_service(args)
 		return

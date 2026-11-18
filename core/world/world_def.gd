@@ -206,6 +206,15 @@ var spawn_protection := 4.0
 ## a gentler world: the gear they had equipped goes back to their stash and
 ## only the backpack drops.
 var keep_gear_on_death := false
+
+## Keeping fresh players from strong ones (DESIGN.md "Challenge and balance
+## data"): a player who brought less than `fresh_gear_value` of gear (by
+## item value) lands at the arrival point furthest from anyone who brought
+## `strong_gear_value` or more, each of whom counts as
+## `strong_player_wariness` times as near (`Raid._safest_spawn`). 0 is off.
+var fresh_gear_value := 0
+var strong_gear_value := 0
+var strong_player_wariness := 3.0
 ## True when every player here is on one side (a co-op world). Strongpoints
 ## then belong to the players together, not to whoever took them.
 var players_allied := false
@@ -421,6 +430,12 @@ func bot_skill_range(_bot: Actor, warlord: bool) -> Vector2:
 
 ## The risk zone at a point: 0 the outer ring, 1 the middle, 2 the core, or
 ## -1 for a world without zones.
+## What a bot faction is called in news ("the Legion"), for the war feed's
+## lines about armies. Plain worlds use the faction's own name.
+func faction_title(faction: String) -> String:
+	return "the " + faction.capitalize()
+
+
 func zone_at(_pos: Vector3) -> int:
 	return -1
 
