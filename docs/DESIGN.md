@@ -207,9 +207,9 @@ worlds and a casual or solo one has a steady home.
   by ramps) and a rim (40 m, flight only), so fights are about holding the
   high side. Cold and quiet: a low sun, blue shadows, the only warm colours
   are heaters, beacons and the Engine's one teal light.
-- **Threats (planned).** Body heat as a vital, drained in the open and
-  refilled at heater huts, vents and vehicle engines, hurting through
-  `Combat.deal` when empty; whiteouts that cut sight to about 30 m and wipe
+- **Threats.** Body heat as a vital, drained in the open and refilled at
+  heater huts, vents and vehicle engines, hurting through `Combat.deal`
+  when empty (built, step 2). Planned: whiteouts that cut sight to about 30 m and wipe
   tracks, and feel like a real blizzard (Caleb's call): wind you see and
   hear, snow driven sideways in gusts, drifts streaming off the rims, bodies
   leaning into it and the wind pushing flight rigs off course; footprints and vehicle tracks the server keeps and sends only
@@ -233,11 +233,27 @@ Engine's inside. Every number is a placeholder for the playtest.
 `Terrain` shared between copies like Ashfront's, with the zones running up
 the valley (`zone_at`: river mouth, mid-valley, glacier head; no hazard
 yet), two-tier walls with ramps to the shelf, six heater huts (the heaters
-do nothing yet), three strongpoints held by the Wardens (Echo Post and
+warm you, see below), three strongpoints held by the Wardens (Echo Post and
 Vigil Post on the shelves, Drift Post at the lake's north shore), six rim
 listening posts with the rooftop caches, the Stilled Engine with the relay
 cache on its back and the core's caches at its hatch, and Feral dens on the
 floor. Bot markers name their faction, and `equip_bot` follows them.
+
+The cold (step 2): `Actor.body_heat` (of 100) drains out in the open by
+`WorldDef.cold_at`, 0.7 a second at the river mouth, 1.0 mid-valley and
+1.4 at the glacier head, half as fast again up on a rim or in the air, so
+a full bar lasts about two and a half minutes at the mouth and a minute
+and a quarter at the head. Warmth fills it again: the map's "warmth"
+markers (a heater in every hut, six vents on the floor, the camp fire at
+the river mouth and the Engine's hatch) and any running vehicle's engine,
+for its riders and anyone within 4 m. Empty, the cold hurts 4 a second
+through `Combat.deal`, past armor. Only the authority decides it
+(`Raid._tick_cold`); the owner is sent the number and everyone sees who
+shivers (`ActorCommand.STATE_CHILLED`). It shows as a body heat cell on the
+visor (and a bar on the watch card without a helmet), the watch's zone
+line saying "warm" in warmth, frost creeping over the visor glass, breath
+fogging out of every mouth and a shivering hunch below a third of the bar.
+The numbers are placeholders for the playtest.
 
 ### PvP world
 
@@ -1974,4 +1990,17 @@ PvP.
   certificate.
 - **Travel between worlds within about 3 s**, measured by the whole-server
   bench.
+- **Travel that hides its wait.** The whole-server bench measures the
+  network and server part of a trip (connect, sign in, deploy): about 0.3 s
+  lightly loaded and 2.1 s with 31 players on a shared 4-core box. Two steps
+  hide it, in this order. First, connect early: the client starts connecting
+  and signing in to the destination while the gate's ring opens (about 15 s),
+  so arriving only waits for the deploy. Second, preload the map: the client
+  builds the destination world's map and art in the background so arrival does
+  not hitch. A short fade through the portal covers what is left. A handoff
+  with no loading screen at all (two live connections, swapping which world is
+  drawn) is not planned: it breaks the client's one-session assumption,
+  prediction and lag compensation, and is the riskiest part where gear is at
+  stake. Revisit only if the first two are not enough. The bench times arrival
+  once the early connect is built.
 - **A taken name asks for another one** on the phone, never just a refusal.

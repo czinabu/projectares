@@ -162,6 +162,20 @@ var stowed_armor := {}
 ## How warm this actor looks through a thermal visor next to a bare body (1).
 ## Armor frames change it (see `Visor.heat_of`).
 var heat_signature := 1.0
+## Body heat, in a world that chills its players (`WorldDef.cold`): drained
+## out in the open, refilled by warmth (`Raid._tick_cold`), and hurting once
+## it is gone. Only the authority changes it; the owner's game is sent it
+## (`NetSession._body_heat`).
+var max_body_heat := 100.0
+var body_heat := 100.0
+## Standing in warmth now (a heater, a vent, a running engine). Authority
+## and owner only.
+var warming := false
+## Cold enough to shiver: body heat under `CHILL_SHARE`. The authority sets
+## it and every client gets it in the state (`ActorCommand.STATE_CHILLED`),
+## so everyone sees the shivering.
+var shivering := false
+const CHILL_SHARE := 0.35
 ## The vehicle this actor is riding, or null. While riding, the vehicle moves
 ## the actor; weapons, healing and abilities still work.
 var vehicle: Node3D = null

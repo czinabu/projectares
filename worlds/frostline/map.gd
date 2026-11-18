@@ -63,6 +63,23 @@ const HUTS := [
 	{"z": -105.0, "side": 1.0},
 	{"z": -205.0, "side": -1.0},
 ]
+## Warm vents on the valley floor, between the huts up on the shelves: the
+## Engine's old heat lines still breathe here (z, and how far off the middle,
+## clear of the frozen river).
+const VENTS := [
+	{"z": 200.0, "off": 18.0},
+	{"z": 120.0, "off": -18.0},
+	{"z": 40.0, "off": 17.0},
+	{"z": -20.0, "off": -17.0},
+	{"z": -70.0, "off": 46.0},
+	{"z": -178.0, "off": -24.0},
+]
+## How much warmth each kind of place gives back, a second, and how far it
+## reaches (see "The cold" in `WorldDef`).
+const HEATER := {"radius": 3.4, "warmth": 10.0}
+const VENT := {"radius": 3.5, "warmth": 6.0}
+const CAMP := {"radius": 7.0, "warmth": 10.0}
+const HATCH := {"radius": 5.0, "warmth": 8.0}
 ## Old listening posts on the rims, reached only by flight.
 const LISTENING := [
 	{"z": 175.0, "side": 1.0},
@@ -85,6 +102,8 @@ var _noise := FastNoiseLite.new()
 var _huts: Array[Dictionary] = []
 var _posts: Array[Vector3] = []
 var _engine_at := Vector3.ZERO
+var _vents: Array[Vector3] = []
+var _camp := Vector3.ZERO
 ## Bot spawn spots, placed last in order of `rank`: the Raid fills the first
 ## `bot_count` markers at the start, so a mix of both factions comes first.
 var _bot_spots: Array[Dictionary] = []
@@ -118,6 +137,7 @@ func _ready() -> void:
 	_build_listening_posts()
 	_build_floor()
 	_build_engine()
+	_build_vents()
 	_place_bot_spots()
 	_art_rng.seed = LAYOUT_SEED
 	_dress()
@@ -331,6 +351,9 @@ func _build_mouth() -> void:
 		var z := 268.0 + (i % 2) * 10.0
 		var x := centre(z) + (floori(i / 2.0) - 1) * 34.0 + (6.0 if i % 2 else -6.0)
 		_add_marker("spawn_player", _ground(Vector2(x, z)))
+	# The camp's fire between the spawns, to set out warm and come back to.
+	_camp = _ground(Vector2(centre(262.0) + 17.0, 262.0))
+	_add_warmth(_camp, CAMP)
 	for side: float in [-1.0, 1.0]:
 		var at := Vector2(centre(250.0) + side * 30.0, 250.0)
 		_add_depot(_ground(at))
@@ -390,6 +413,8 @@ func _add_hut(base: Vector3, facing: float, post: bool) -> void:
 			[Vector3(1.4, 1.4, 0.9), Vector3(0, 0.7, -1.9)]]:
 		_box(part[0], part[1], STEEL, hut)
 	_huts.append({"at": base, "facing": facing, "height": height})
+	# Its heater warms the inside of the hut.
+	_add_warmth(base + hut.basis * Vector3(0, 0, -0.6), HEATER)
 
 
 ## Old listening posts on the rims: a bunker and a mast, with the rooftop
@@ -469,12 +494,30 @@ func _build_engine() -> void:
 	# The hatch at its foot, toward the valley.
 	var hatch := base + Vector3(-6.0, 0, ENGINE_RADIUS + 2.0)
 	_box(Vector3(5, 6, 1), hatch + Vector3(0, 3, 0), HULL_DARK)
+	# The Engine still breathes a little warmth out of its hatch.
+	_add_warmth(_ground(Vector2(hatch.x, hatch.z + 3.0)), HATCH)
 	for x: float in [-14.0, 0.0, 14.0]:
 		_add_marker("spawn_cache", _ground(Vector2(base.x + x, base.z + ENGINE_RADIUS + 7.0))).set_meta("loot_source", "cache_core")
 	for x: float in [-20.0, 20.0]:
 		_bot_spot(_ground(Vector2(base.x + x, base.z + ENGINE_RADIUS + 12.0)), "warden", 4)
 	_add_rocks(Vector2(base.x - 10.0, base.z + ENGINE_RADIUS + 16.0), 3)
 	_add_rocks(Vector2(base.x + 12.0, base.z + ENGINE_RADIUS + 18.0), 2)
+
+
+## The warm vents on the floor: a grate, low enough to walk over.
+func _build_vents() -> void:
+	for vent: Dictionary in VENTS:
+		var z: float = vent["z"]
+		var at := _ground(Vector2(centre(z) + float(vent["off"]), z))
+		_vents.append(at)
+		_add_warmth(at, VENT)
+
+
+## A place that gives body heat back (`WorldDef`'s "The cold").
+func _add_warmth(at: Vector3, kind: Dictionary) -> void:
+	var marker := _add_marker("warmth", at + Vector3(0, 0.1, 0))
+	marker.set_meta("radius", kind["radius"])
+	marker.set_meta("warmth", kind["warmth"])
 
 
 func _bot_spot(at: Vector3, faction: String, rank: int) -> void:
@@ -565,6 +608,7 @@ func _dress() -> void:
 	add_child(art)
 	_dress_ice(art)
 	_dress_huts(art)
+	_dress_warmth(art)
 	_dress_engine(art)
 	_dress_listening_posts(art)
 	_dress_horizon(art)
@@ -648,6 +692,101 @@ func _dress_huts(art: Node3D) -> void:
 		var pipe := Look.prop("Pipe_1.glb", 2.4, 0.6)
 		pipe.position = base + turn * Vector3(2.0, float(hut["height"]) + 0.3, -1.8)
 		art.add_child(pipe)
+
+
+## The vents glow orange under their grates and steam, and the camp at the
+## river mouth has a fire drum: you can see warmth from a way off.
+func _dress_warmth(art: Node3D) -> void:
+	var glow := StandardMaterial3D.new()
+	glow.albedo_color = Color(1.0, 0.45, 0.12)
+	glow.emission_enabled = true
+	glow.emission = Color(1.0, 0.4, 0.1)
+	glow.emission_energy_multiplier = 3.0
+	var grate := StandardMaterial3D.new()
+	grate.albedo_color = Color(0.12, 0.13, 0.15)
+	grate.metallic = 0.6
+	grate.roughness = 0.5
+	for at in _vents:
+		art.add_child(_visual_box(Vector3(2.2, 0.06, 2.2), at + Vector3(0, 0.04, 0), glow))
+		for k in 5:
+			art.add_child(_visual_box(Vector3(2.4, 0.12, 0.14), at + Vector3(0, 0.1, -0.9 + k * 0.45), grate))
+		var lamp := Look.lamp(Color(1.0, 0.5, 0.2), 2.5, 7.0)
+		lamp.position = at + Vector3(0, 0.8, 0)
+		art.add_child(lamp)
+		art.add_child(_steam(at + Vector3(0, 0.2, 0), 1.0))
+	# The camp: a fire drum, glowing through its holes.
+	var drum := MeshInstance3D.new()
+	var body := CylinderMesh.new()
+	body.top_radius = 0.45
+	body.bottom_radius = 0.45
+	body.height = 0.9
+	body.material = grate
+	drum.mesh = body
+	drum.position = _camp + Vector3(0, 0.45, 0)
+	art.add_child(drum)
+	art.add_child(_visual_box(Vector3(0.7, 0.1, 0.7), _camp + Vector3(0, 0.92, 0), glow))
+	var fire := Look.lamp(Color(1.0, 0.5, 0.18), 5.0, 12.0)
+	fire.position = _camp + Vector3(0, 1.6, 0)
+	art.add_child(fire)
+	var flicker := create_tween().set_loops()
+	flicker.tween_property(fire, "light_energy", 3.6, 0.22)
+	flicker.tween_property(fire, "light_energy", 5.2, 0.31)
+	art.add_child(_steam(_camp + Vector3(0, 1.0, 0), 0.6))
+
+
+## Warm air rising off something into the cold: soft white puffs.
+func _steam(at: Vector3, size: float) -> CPUParticles3D:
+	var puffs := CPUParticles3D.new()
+	puffs.position = at
+	puffs.amount = 14
+	puffs.lifetime = 3.2
+	puffs.local_coords = false
+	puffs.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
+	puffs.emission_sphere_radius = 0.6 * size
+	puffs.direction = Vector3.UP
+	puffs.spread = 12.0
+	puffs.gravity = Vector3(0.4, 0.5, 0)
+	puffs.initial_velocity_min = 0.6
+	puffs.initial_velocity_max = 1.1
+	puffs.scale_amount_min = 1.0 * size
+	puffs.scale_amount_max = 2.2 * size
+	var grow := Curve.new()
+	grow.add_point(Vector2(0.0, 0.3))
+	grow.add_point(Vector2(1.0, 1.0))
+	puffs.scale_amount_curve = grow
+	var fade := Gradient.new()
+	fade.set_color(0, Color(1, 1, 1, 0.0))
+	fade.set_color(1, Color(1, 1, 1, 0.0))
+	fade.add_point(0.2, Color(0.95, 0.97, 1.0, 0.32))
+	puffs.color_ramp = fade
+	var quad := QuadMesh.new()
+	quad.size = Vector2(0.8, 0.8)
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.vertex_color_use_as_albedo = true
+	mat.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	mat.albedo_texture = _puff_texture()
+	quad.material = mat
+	puffs.mesh = quad
+	return puffs
+
+
+## A soft round puff, made once.
+func _puff_texture() -> Texture2D:
+	if not _shared.has("puff"):
+		var ramp := Gradient.new()
+		ramp.set_color(0, Color(1, 1, 1, 1))
+		ramp.set_color(1, Color(1, 1, 1, 0))
+		var tex := GradientTexture2D.new()
+		tex.gradient = ramp
+		tex.fill = GradientTexture2D.FILL_RADIAL
+		tex.fill_from = Vector2(0.5, 0.5)
+		tex.fill_to = Vector2(0.5, 0.0)
+		tex.width = 64
+		tex.height = 64
+		_shared["puff"] = tex
+	return _shared["puff"]
 
 
 ## The Engine's one light still blinks over its hatch.

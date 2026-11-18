@@ -73,6 +73,12 @@ var alert_fade := 0.7
 ## How far the brackets lock on to someone, and how fast they close.
 var lock_range := 220.0
 var lock_rate := 6.0
+## The body heat cell's colours: icy out in the cold, a heater's orange
+## while warming up.
+const BODY_HEAT_INK := Color(0.6, 0.85, 1.0)
+const WARMING_INK := Color(1.0, 0.6, 0.25)
+## How far frost has crept in over the glass (0 to 1), from body heat.
+var frost := 0.0
 ## The armor arc's colour (stamina takes the glass's own).
 const ARMOR_INK := Color(0.5, 0.75, 1.0)
 ## Colours of the heading strip's marks that are not the glass's own.
@@ -367,6 +373,11 @@ func _process(delta: float) -> void:
 	crate_shown = minf(1.0, crate_shown + delta / maxf(crate_rise, 0.01)) if looked != null else 0.0
 	thermal_shown = p != null and (glass_shown() or flat_shown()) and p.visor.thermal_on
 	_thermal.visible = thermal_shown
+	# Frost creeps in once body heat is half gone, and melts off when warm.
+	var frosted := 0.0
+	if p != null and Hud.feels_cold(p):
+		frosted = clampf(1.0 - p.body_heat / maxf(p.max_body_heat * 0.5, 1.0), 0.0, 1.0)
+	frost = move_toward(frost, frosted, delta * (0.15 if frosted > frost else 0.5))
 	_animate(p, delta)
 	if p == null or _world == null or not _world.is_inside_tree():
 		queue_redraw()
@@ -799,6 +810,7 @@ func _draw() -> void:
 			_draw_cracks(ink)
 	if not flat:
 		_draw_glass(ink)
+		_draw_frost()
 	_draw_vitals(p, ink)
 	_draw_weapon(p, ink)
 	_draw_ident(v, ink)
@@ -926,6 +938,31 @@ func _draw_cracks(ink: Color) -> void:
 			from + Vector2(3.6, 1.5) * unit]), color, 1.2, true)
 	draw_polyline(PackedVector2Array([from + Vector2(1.7, 2.2) * unit, from + Vector2(0.9, 3.3) * unit]),
 			color, 1.2, true)
+
+
+## Frost on the glass as body heat runs low: fern-like ice creeping in from
+## the corners, the middle always clear. The glass itself, so first person
+## only; the body heat cell says the same in both views.
+func _draw_frost() -> void:
+	if frost <= 0.01:
+		return
+	var color := Color(0.85, 0.95, 1.0, 0.28 * frost)
+	var unit := size.y * 0.24 * frost
+	for corner: Vector2 in [Vector2(0, 0), Vector2(1, 0), Vector2(0, 1), Vector2(1, 1)]:
+		var at := Vector2(corner.x * size.x, corner.y * size.y)
+		var inward := Vector2(1.0 - corner.x * 2.0, 1.0 - corner.y * 2.0)
+		for k in 5:
+			# Each frond grows from the corner's edge, branching as it goes.
+			var start := at + Vector2(inward.x * size.y * 0.03 * k, inward.y * size.y * 0.06 * (4 - k))
+			var dir := (inward.normalized()).rotated(0.5 - k * 0.25)
+			var length := unit * (0.65 + 0.35 * sin(k * 2.3 + corner.x * 3.0 + corner.y * 5.0))
+			var tip := start + dir * length
+			draw_line(start, tip, color, 1.4, true)
+			for b in 3:
+				var on := start + dir * length * (0.3 + b * 0.22)
+				var twig := length * (0.28 - b * 0.06)
+				draw_line(on, on + dir.rotated(0.7) * twig, color, 1.0, true)
+				draw_line(on, on + dir.rotated(-0.7) * twig, color, 1.0, true)
 
 
 ## Where the curved heading strip is at `off` degrees from straight ahead:
@@ -1394,6 +1431,15 @@ func _glyph(kind: String, at: Vector2, unit: float, color: Color) -> void:
 		"heat":
 			draw_polyline(pts.call([Vector2(-0.6, 0.8), Vector2(-0.7, 0.1), Vector2(-0.25, -0.35), Vector2(-0.1, 0.1),
 					Vector2(0.15, -0.95), Vector2(0.65, -0.1), Vector2(0.6, 0.8), Vector2(-0.6, 0.8)]), color, 2.0, true)
+		"body_heat":
+			# A snowflake: three crossed strokes with a tick at each end.
+			for k in 3:
+				var dir := Vector2.from_angle(PI / 2.0 + k * PI / 3.0)
+				draw_line(at - dir * unit * 0.9, at + dir * unit * 0.9, color, 2.0, true)
+				for end: float in [-1.0, 1.0]:
+					var tip := at + dir * unit * 0.6 * end
+					draw_line(tip, tip + dir.rotated(PI * 0.75 * end) * unit * 0.3 * end, color, 1.5, true)
+					draw_line(tip, tip + dir.rotated(-PI * 0.75 * end) * unit * 0.3 * end, color, 1.5, true)
 		"ability":
 			draw_arc(at, unit * 0.8, 0.0, TAU, 20, color, 2.0, true)
 			draw_polyline(pts.call([Vector2(-0.4, 0), Vector2(0.45, 0)]), color, 2.0, true)
@@ -1402,8 +1448,8 @@ func _glyph(kind: String, at: Vector2, unit: float, color: Color) -> void:
 
 ## What the vitals cells show, left to right: {"kind", "share" (0 to 1),
 ## "value" (the number beside it), "label", "ink", "warn"}. Health always;
-## armor with an armor frame; stamina always; flight heat with a rig on;
-## the ability with one fitted. These are your always-in-view readings: the
+## armor with an armor frame; stamina always; body heat in a cold world;
+## flight heat with a rig on; the ability with one fitted. These are your always-in-view readings: the
 ## watch no longer carries them.
 func vital_cells(p: Actor, ink: Color) -> Array[Dictionary]:
 	var cells: Array[Dictionary] = []
@@ -1418,6 +1464,20 @@ func vital_cells(p: Actor, ink: Color) -> Array[Dictionary]:
 	var stamina := clampf(p.stamina / maxf(p.max_stamina, 1.0), 0.0, 1.0)
 	cells.append({"kind": "stamina", "share": stamina, "value": "%d%%" % roundi(stamina * 100.0),
 			"label": "STAMINA", "ink": ink, "warn": false})
+	if Hud.feels_cold(p):
+		var warmth := clampf(p.body_heat / maxf(p.max_body_heat, 1.0), 0.0, 1.0)
+		var label := "BODY HEAT"
+		var tint := BODY_HEAT_INK
+		if p.warming:
+			label = "WARMING"
+			tint = WARMING_INK
+		elif warmth <= 0.0:
+			label = "FREEZING"
+			tint = Color(1.0, 0.25, 0.15)
+		elif p.shivering:
+			label = "COLD"
+		cells.append({"kind": "body_heat", "share": warmth, "value": "%d%%" % roundi(warmth * 100.0),
+				"label": label, "ink": tint, "warn": p.shivering and not p.warming})
 	var rig := p.flight
 	if rig.enabled:
 		var heat := rig.heat_fraction()

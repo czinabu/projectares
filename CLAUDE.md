@@ -61,6 +61,20 @@ without Caleb, and update the gap list when a PR closes a row.
   `NetSession._owner_peer(actor)`, never a peer id kept from the deploy,
   because a body outlives the connection that deployed it.
 - Drop-in protection is `Actor.protected_left`, checked in `Combat.deal`.
+- The cold (DESIGN.md "Frostline"): a world with `WorldDef.cold` over 0
+  drains each player's `Actor.body_heat` by `WorldDef.cold_at` out in the
+  open; warmth fills it again (map markers in group "warmth" with metas
+  "radius" and "warmth", and any occupied vehicle's engine,
+  `WorldDef.engine_warmth`), and once it is empty the cold hurts through
+  `Combat.deal`. Only the authority runs it (`Raid._tick_cold`, which
+  respects `Raid.zone_rules`); the owner hears the number
+  (`NetSession._body_heat`) and every client the shivering bit
+  (`ActorCommand.STATE_CHILLED`, `Actor.shivering`). What it shows is view
+  only and the same in both views: the visor's body heat cell and the
+  watch card's bar (`Hud.feels_cold`), breath (`ActorSkin._update_breath`,
+  never from a cloaked body), the shivering hunch (`Locomotion._shiver_pose`,
+  the neck taking the tremor back so the eyes stay steady) and frost on the
+  visor glass (`VisorHud._draw_frost`, glass only, the middle kept clear).
 - How harsh death is belongs to the world, not to `Raid`. With
   `WorldDef.keep_gear_on_death` a dead player drops only the backpack and the
   equipped gear returns in the result's `kept`. A gentle world pays for that
@@ -1472,6 +1486,7 @@ godot --headless --path . res://tests/test_runner.tscn -- --only online   # one 
 godot --headless --fixed-fps 60 --path . res://tests/test_runner.tscn -- --tier offline   # fast, ~1 min
 godot --headless --path . res://tests/test_runner.tscn -- --tier net --shard 1/3   # a third of the online groups
 godot --headless --path . res://tests/battle_bench.tscn -- --bots 150 --players 32   # server cost of a big battle
+godot --headless --path . res://tests/server_bench.tscn -- --plaza 10 --per-world 7 --arena 4   # the whole server at once: tick time per session, travel against 3 s
 godot --headless --fixed-fps 60 --path . res://tests/feel_bench.tscn   # how each rig answers, in numbers
 godot --headless --fixed-fps 60 --path . res://tests/duel_bench.tscn   # how each enemy type fights a reference player (DESIGN.md "Enemy balance")
 godot --headless --path . res://tests/gun_bench.tscn   # every gun's time to kill by range and armor (DESIGN.md "Gun roles")

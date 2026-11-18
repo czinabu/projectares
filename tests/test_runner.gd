@@ -56,6 +56,7 @@ const OnboardingTests := preload("res://tests/onboarding_tests.gd")
 const TravelOnlineTests := preload("res://tests/travel_online_tests.gd")
 const HostRecoveryTests := preload("res://tests/host_recovery_tests.gd")
 const RiskZoneTests := preload("res://tests/risk_zone_tests.gd")
+const ColdTests := preload("res://tests/cold_tests.gd")
 const RaiderTests := preload("res://tests/raider_tests.gd")
 const HeavyUnitTests := preload("res://tests/heavy_unit_tests.gd")
 const PlaytestFixTests := preload("res://tests/playtest_fix_tests.gd")
@@ -320,6 +321,7 @@ func _run() -> void:
 	await AccountServiceTests.run(self)
 	await _test_phone()
 	await _test_dev_mode()
+	await _test_server_health()
 	await _test_home_base()
 	_test_refit()
 	await BaseUpgradeTests.run(self)
@@ -348,6 +350,7 @@ func _run() -> void:
 	await _test_power_weapons()
 	await _test_artifacts()
 	await _test_risk_zones()
+	await _test_cold()
 	await _test_raiders()
 	await _test_heavy_units()
 	await _test_playtest_fixes()
@@ -550,6 +553,10 @@ func _test_artifacts() -> void:
 
 func _test_risk_zones() -> void:
 	await RiskZoneTests.run(self)
+
+
+func _test_cold() -> void:
+	await ColdTests.run(self)
 
 
 func _test_raiders() -> void:
@@ -3944,7 +3951,9 @@ func _test_strongpoints() -> void:
 	# Online: a client hears who holds each site.
 	_wipe_dir(NET_ACCOUNTS)
 	var port := 24831
-	var pid := _start_server(port, ["--bots", "0"], "frostline")
+	# With the zone rules on, so the cold runs (Frostline has no gates or
+	# burning ground for them to get in the way).
+	var pid := _start_server(port, ["--bots", "0", "--zone-rules"], "frostline")
 	var gale := await _join("Gale", port)
 	check(gale != null, "a client joins a world with strongpoints")
 	if gale != null:
@@ -3954,6 +3963,11 @@ func _test_strongpoints() -> void:
 		await _wait_until(told, 180)
 		check(told.call() and Hud.sites_text(gale.raid, gale.raid.player) == "Held 0/3",
 				"the server tells a client who holds each strongpoint")
+		var heard := func() -> bool:
+			var me := gale.raid.player
+			return me != null and (me.body_heat < me.max_body_heat or me.warming)
+		await _wait_until(heard, 240)
+		check(heard.call(), "in the cold, the server tells a client their body heat")
 		await _leave(gale)
 	OS.kill(pid)
 	await frames(10)
@@ -6523,6 +6537,30 @@ const DevBaseUpgrades := preload("res://core/base/base_upgrades.gd")
 
 ## DEV MODE: the temporary testing mode (`core/dev/dev_mode.gd`). Delete this
 ## group along with it.
+func _test_server_health() -> void:
+	print("Server health line")
+	var raid := Raid.new()
+	add_child(raid)
+	raid.start_server(Worlds.get_world("ashfront"), 71)
+	raid.add_player([], {}, "Pat", "pat")
+	var session := NetSession.new()
+	session.world_id = "ashfront"
+	session.raid = raid
+	var health := ServerHealth.new()
+	health.sessions = [session] as Array[NetSession]
+	health.sink = func(_line: String) -> void: pass
+	add_child(health)
+	await frames(3)
+	var line := health.report()
+	check(line.begins_with("Health: up "), "the health line starts with Health")
+	check("ashfront 1 players %d bots" % raid.bots.size() in line,
+			"the health line counts the players and bots in each session")
+	check(" ms of %.1f" % ServerHealth.budget_ms() in line, "the health line gives the tick budget")
+	health.queue_free()
+	session.free()
+	await _end_raid(raid)
+
+
 func _test_dev_mode() -> void:
 	print("Dev mode (temporary)")
 	DevMode.persist = false
