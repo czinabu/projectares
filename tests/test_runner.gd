@@ -38,6 +38,7 @@ const PortalTests := preload("res://tests/portal_tests.gd")
 const ContractTests := preload("res://tests/contract_tests.gd")
 const MarketTests := preload("res://tests/market_tests.gd")
 const AccountStoreTests := preload("res://tests/account_store_tests.gd")
+const AccountServiceTests := preload("res://tests/account_service_tests.gd")
 const FeelTests := preload("res://tests/feel_tests.gd")
 const ViewMatchTests := preload("res://tests/view_match_tests.gd")
 const GunRoleTests := preload("res://tests/gun_role_tests.gd")
@@ -46,6 +47,7 @@ const BotTacticsTests := preload("res://tests/bot_tactics_tests.gd")
 const MeleeBotTests := preload("res://tests/melee_bot_tests.gd")
 const RecoilTests := preload("res://tests/recoil_tests.gd")
 const HitFeedbackTests := preload("res://tests/hit_feedback_tests.gd")
+const ErrorSpamTests := preload("res://tests/error_spam_tests.gd")
 const PeekTests := preload("res://tests/peek_tests.gd")
 const AdsTests := preload("res://tests/ads_tests.gd")
 const GripTests := preload("res://tests/grip_tests.gd")
@@ -55,6 +57,9 @@ const OnboardingTests := preload("res://tests/onboarding_tests.gd")
 const TravelOnlineTests := preload("res://tests/travel_online_tests.gd")
 const HostRecoveryTests := preload("res://tests/host_recovery_tests.gd")
 const RiskZoneTests := preload("res://tests/risk_zone_tests.gd")
+const ColdTests := preload("res://tests/cold_tests.gd")
+const BeaconTests := preload("res://tests/beacon_tests.gd")
+const TrackTests := preload("res://tests/track_tests.gd")
 const RaiderTests := preload("res://tests/raider_tests.gd")
 const HeavyUnitTests := preload("res://tests/heavy_unit_tests.gd")
 const PlaytestFixTests := preload("res://tests/playtest_fix_tests.gd")
@@ -316,8 +321,10 @@ func _run() -> void:
 	await _test_plaza_online()
 	await _test_stash_service()
 	await AccountStoreTests.run(self)
+	await AccountServiceTests.run(self)
 	await _test_phone()
 	await _test_dev_mode()
+	await _test_server_health()
 	await _test_home_base()
 	_test_refit()
 	await BaseUpgradeTests.run(self)
@@ -346,6 +353,8 @@ func _run() -> void:
 	await _test_power_weapons()
 	await _test_artifacts()
 	await _test_risk_zones()
+	await _test_cold()
+	await _test_tracks()
 	await _test_raiders()
 	await _test_heavy_units()
 	await _test_playtest_fixes()
@@ -359,6 +368,7 @@ func _run() -> void:
 	await _test_melee_bots()
 	await _test_recoil()
 	await _test_hit_feedback()
+	await _test_error_spam()
 	await _test_peek()
 	await _test_ads()
 	await _test_grips()
@@ -465,6 +475,10 @@ func _test_hit_feedback() -> void:
 	await HitFeedbackTests.run(self)
 
 
+func _test_error_spam() -> void:
+	await ErrorSpamTests.run(self)
+
+
 func _test_peek() -> void:
 	await PeekTests.run(self)
 
@@ -548,6 +562,15 @@ func _test_artifacts() -> void:
 
 func _test_risk_zones() -> void:
 	await RiskZoneTests.run(self)
+
+
+func _test_tracks() -> void:
+	await TrackTests.run(self)
+
+
+func _test_cold() -> void:
+	await ColdTests.run(self)
+	await BeaconTests.run(self)
 
 
 func _test_raiders() -> void:
@@ -857,15 +880,7 @@ func _check_crouch(p: Actor) -> void:
 		check(gun.current_spread_deg() < standing_spread, "a crouched gun spreads less")
 	# Walk (and later sneak) the way with nothing in front for 10 m, so
 	# cover where the player happened to land cannot get in the way.
-	var open_yaw := 0.0
-	var chest := p.global_position + Vector3(0, 1.0, 0)
-	for k in 8:
-		var yaw := TAU * k / 8.0
-		var ahead := Vector3(-sin(yaw), 0.0, -cos(yaw))
-		var ray := PhysicsRayQueryParameters3D.create(chest, chest + ahead * 10.0, Actor.LAYER_WORLD)
-		if p.get_world_3d().direct_space_state.intersect_ray(ray).is_empty():
-			open_yaw = yaw
-			break
+	var open_yaw := open_heading(p, 10.0)
 	p.cmd.yaw = open_yaw
 	p.cmd.move = Vector2(0, 1)
 	p.cmd.sprint = true
@@ -1949,6 +1964,20 @@ func _test_directional_melee() -> void:
 
 
 ## A raid whose player carries exactly `kit`, standing in the open.
+## The first of eight headings with nothing solid for `reach` metres ahead
+## of `actor`'s chest, so a check that moves it (or puts someone in front of
+## it) cannot run into whatever cover or building it happened to land by.
+func open_heading(actor: Actor, reach: float) -> float:
+	var chest := actor.global_position + Vector3(0, 1.0, 0)
+	for k in 8:
+		var yaw := TAU * k / 8.0
+		var ahead := Vector3(-sin(yaw), 0.0, -cos(yaw))
+		var ray := PhysicsRayQueryParameters3D.create(chest, chest + ahead * reach, Actor.LAYER_WORLD)
+		if actor.get_world_3d().direct_space_state.intersect_ray(ray).is_empty():
+			return yaw
+	return 0.0
+
+
 func _kit_raid(p_seed: int, kit: Array[String]) -> Raid:
 	var raid := Raid.new()
 	add_child(raid)
@@ -2192,6 +2221,9 @@ func _check_free_flight(p: Actor) -> void:
 	p.flight.heat_per_sec = 4.0
 	p.flight.heat = 0.0
 	p.global_position.y += 25.0
+	# Every move below heads along the view: point it in toward the middle,
+	# not out at the rim (a drop by the rim ran out of heat there).
+	p.cmd.yaw = atan2(p.global_position.x, p.global_position.z)
 	p.velocity = Vector3.ZERO
 	p.cmd.jump_pressed = true
 	await frames(1)
@@ -3942,7 +3974,9 @@ func _test_strongpoints() -> void:
 	# Online: a client hears who holds each site.
 	_wipe_dir(NET_ACCOUNTS)
 	var port := 24831
-	var pid := _start_server(port, ["--bots", "0"], "frostline")
+	# With the zone rules on, so the cold runs (Frostline has no gates or
+	# burning ground for them to get in the way).
+	var pid := _start_server(port, ["--bots", "0", "--zone-rules"], "frostline")
 	var gale := await _join("Gale", port)
 	check(gale != null, "a client joins a world with strongpoints")
 	if gale != null:
@@ -3952,6 +3986,15 @@ func _test_strongpoints() -> void:
 		await _wait_until(told, 180)
 		check(told.call() and Hud.sites_text(gale.raid, gale.raid.player) == "Held 0/3",
 				"the server tells a client who holds each strongpoint")
+		var heard := func() -> bool:
+			var me := gale.raid.player
+			return me != null and (me.body_heat < me.max_body_heat or me.warming)
+		await _wait_until(heard, 240)
+		check(heard.call(), "in the cold, the server tells a client their body heat")
+		var printed := func() -> bool:
+			return gale.raid.tracks.count() > 0
+		await _wait_until(printed, 240)
+		check(printed.call(), "and sends it the footprints near it in the snow")
 		await _leave(gale)
 	OS.kill(pid)
 	await frames(10)
@@ -4368,7 +4411,8 @@ func _test_online() -> void:
 				"each client sees the other player, with their name and gear")
 		check(bravo.raid.players.size() == 2 and bravo.raid.active_players().size() == 2
 				and alpha.raid.bots.size() == world.bot_count + alpha.raid._map_nodes("spawn_boss").size(),
-				"a client's raid lists the players, separate from the bots")
+				"a client's raid lists the players, separate from the bots (%d players, %d bots for %d)"
+				% [bravo.raid.players.size(), alpha.raid.bots.size(), world.bot_count + alpha.raid._map_nodes("spawn_boss").size()])
 		if seen != null:
 			var from := seen.global_position
 			# Walk where there is room, so nothing knocks the two screens apart.
@@ -4383,10 +4427,12 @@ func _test_online() -> void:
 			await frames(30)
 			var moved := from.distance_to(seen.global_position)
 			check(moved > 3.0, "one player's movement reaches the other through the server (%.1f m)" % moved)
-			# The server may still be playing the last inputs on a busy machine.
+			# The server may still be playing the last inputs on a busy machine
+			# (a CI runner has been seen 5 m behind after two seconds), so give
+			# it time to catch up before judging.
 			var agree := func() -> bool:
 				return seen.global_position.distance_to(alpha.raid.player.global_position) < 2.0
-			await _wait_until(agree, 120)
+			await _wait_until(agree, 360)
 			var apart := seen.global_position.distance_to(alpha.raid.player.global_position)
 			check(apart < 2.0, "both clients agree where that player is (%.2f m apart)" % apart)
 		var roster := RaidRoster.new(bravo.raid, bravo.raid.player)
@@ -4475,6 +4521,8 @@ func _test_online() -> void:
 		var notices: Array[String] = []
 		me.hit_confirmed.connect(func(_t: Actor, _i: DamageInfo, _l: bool) -> void: hits[0] += 1)
 		me.notice.connect(func(text: String) -> void: notices.append(text))
+		var picked: Array[String] = []
+		me.looted.connect(func(ids: Array[String]) -> void: picked.append_array(ids))
 		var result := [{}]
 		bravo.run_finished.connect(func(r: Dictionary) -> void: result[0] = r)
 		var before := victim.health.health + victim.health.armor
@@ -4565,6 +4613,9 @@ func _test_online() -> void:
 				return notices.any(func(text: String) -> bool: return text.begins_with("Looted "))
 			await _wait_until(told_loot, 60)
 			check(told_loot.call(), "the looter is told what they picked up")
+			await _wait_until(func() -> bool: return not picked.is_empty(), 60)
+			check(not picked.is_empty() and picked.all(func(id: String) -> bool: return id in me.inventory.items),
+					"and item by item, for the visor's pickup feed (%s)" % ", ".join(picked))
 			var bag_gone := func() -> bool: return not is_instance_id_valid(bag_id)
 			await _wait_until(bag_gone, 90)
 			check(bag_gone.call(), "the emptied bag disappears on the client too")
@@ -6516,6 +6567,30 @@ const DevBaseUpgrades := preload("res://core/base/base_upgrades.gd")
 
 ## DEV MODE: the temporary testing mode (`core/dev/dev_mode.gd`). Delete this
 ## group along with it.
+func _test_server_health() -> void:
+	print("Server health line")
+	var raid := Raid.new()
+	add_child(raid)
+	raid.start_server(Worlds.get_world("ashfront"), 71)
+	raid.add_player([], {}, "Pat", "pat")
+	var session := NetSession.new()
+	session.world_id = "ashfront"
+	session.raid = raid
+	var health := ServerHealth.new()
+	health.sessions = [session] as Array[NetSession]
+	health.sink = func(_line: String) -> void: pass
+	add_child(health)
+	await frames(3)
+	var line := health.report()
+	check(line.begins_with("Health: up "), "the health line starts with Health")
+	check("ashfront 1 players %d bots" % raid.bots.size() in line,
+			"the health line counts the players and bots in each session")
+	check(" ms of %.1f" % ServerHealth.budget_ms() in line, "the health line gives the tick budget")
+	health.queue_free()
+	session.free()
+	await _end_raid(raid)
+
+
 func _test_dev_mode() -> void:
 	print("Dev mode (temporary)")
 	DevMode.persist = false
@@ -6829,8 +6904,38 @@ func _test_game_settings() -> void:
 	check(not GameSettings.to_dict().has("nonsense"), "unknown settings are ignored")
 	var bus := AudioServer.get_bus_index("Master")
 	check(absf(AudioServer.get_bus_volume_db(bus) - linear_to_db(0.5)) < 0.01, "volume reaches the audio bus")
+	GameSettings.set_value("anti_aliasing", 99)
+	check(GameSettings.anti_aliasing == GameSettings.ANTI_ALIASING.size() - 1 and GameSettings.to_dict().has("anti_aliasing"),
+			"edge smoothing is clamped to the modes there are and saved")
+	GameSettings.set_value("anti_aliasing", 0)
+	GameSettings.apply_graphics()
+	var root := get_tree().root
+	var off := root.msaa_3d == Viewport.MSAA_DISABLED and root.screen_space_aa == Viewport.SCREEN_SPACE_AA_DISABLED
+	GameSettings.set_value("anti_aliasing", 4)
+	GameSettings.apply_graphics()
+	check(off and root.msaa_3d == Viewport.MSAA_4X and root.screen_space_aa == Viewport.SCREEN_SPACE_AA_SMAA,
+			"edge smoothing reaches the main view")
+	GameSettings.set_value("anti_aliasing", 2)
+	GameSettings.set_value("edge_ink", true)
+	var ink_smaa := GameSettings.ink_shown()
+	GameSettings.set_value("anti_aliasing", 3)
+	check(ink_smaa and not GameSettings.ink_shown() and GameSettings.to_dict().has("edge_ink"),
+			"the far-shape outline is saved, and left out with MSAA, which gives it no depth to read")
+	# Far ground and walls shimmer without mipmaps, so every world texture
+	# keeps them (and is not re-imported without them when seen in 3D).
+	var bare: Array[String] = []
+	for folder in DirAccess.get_directories_at("res://assets/textures"):
+		for file in DirAccess.get_files_at("res://assets/textures".path_join(folder)):
+			if not file.ends_with(".import"):
+				continue
+			var cfg := ConfigFile.new()
+			cfg.load("res://assets/textures".path_join(folder).path_join(file))
+			if not bool(cfg.get_value("params", "mipmaps/generate", false)):
+				bare.append(folder.path_join(file))
+	check(bare.is_empty(), "world textures have mipmaps (%s)" % ", ".join(bare))
 	GameSettings.reset()
 	GameSettings.apply()
+	GameSettings.apply_graphics()
 
 
 ## The Controls app lists every key from the input map as it is right now.

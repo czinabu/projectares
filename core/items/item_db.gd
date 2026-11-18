@@ -152,6 +152,10 @@ func _ready() -> void:
 	_attachment("mag_drum", "Drum Mag", Rarity.RARE, 750, "magazine", false,
 			{"model": "drum", "mult": {"mag_size": 2.2, "reload_time": 1.45, "spread_deg": 1.1}},
 			"More than twice the rounds. Heavy: slow reloads and a wider spread.")
+	# Crafted only, from a blueprint found on an expedition (see below).
+	_attachment("grip_glacier", "Glacier Grip", Rarity.UNCOMMON, 300, "grip", false,
+			{"model": "angled_grip", "mult": {"move_spread_deg": 0.6, "ads_time": 1.2}},
+			"Wrapped for gloved hands: much steadier on the move, slower to come up to the eye.")
 
 	# Melee. Every melee item is tagged "one_handed" or "two_handed": light
 	# one-handers move faster, two-handers slower but stagger and break armor
@@ -194,6 +198,11 @@ func _ready() -> void:
 	register("frame_bulwark", "Bulwark Frame", Rarity.RARE, 900, ["armor", "frame_heavy"],
 			{"armor": 125.0, "speed_mult": 0.86, "heat_mult": 1.25, "heat_signature": 1.3},
 			"Heavy: 125 armor, 14% slower, wings and boots run hotter (jetpacks carry it). Bright on thermal.")
+	# Crafted only, from a blueprint found on an expedition. "insulation" is
+	# the share of the cold's drain it keeps out (`Raid._tick_cold`).
+	register("frame_thermal", "Thermal Frame", Rarity.UNCOMMON, 500, ["armor", "frame_medium"],
+			{"armor": 65.0, "insulation": 0.4, "heat_signature": 1.3},
+			"Medium: 65 armor over a heated liner that keeps out 40% of the cold. Bright on thermal.")
 
 	# Flight rigs (the Mk1 numbers are `JETPACK_MK1`, `BOOTS_MK1` and
 	# `WINGS_MK1` at the bottom of this file). Each comes in tiers: a higher
@@ -358,6 +367,13 @@ func _ready() -> void:
 			"Plans for the Bulwark Mech. The only way to own one.")
 	_blueprint("bp_jet_kestrel", "Kestrel Jet Blueprint", Rarity.EPIC, 1200,
 			"Plans for the Kestrel Jet. The only way to own one.")
+	# Expedition blueprints (DESIGN.md "Frostline"): new options, never a
+	# higher Mk. Tagged "expedition", they turn up only where a world puts
+	# them in its own loot tables, never from `WorldDef.roll_crafting_loot`.
+	_blueprint("bp_frame_thermal", "Thermal Frame Blueprint", Rarity.RARE, 300,
+			"Plans for a heated armor frame that keeps out the cold.", ["expedition"])
+	_blueprint("bp_grip_glacier", "Glacier Grip Blueprint", Rarity.RARE, 250,
+			"Plans for a grip that holds steady on the move.", ["expedition"])
 	# What a Mk2 or Mk3 craft spends. Worth nothing to a shop, so it is never
 	# sold by accident; it is only kept if you get it home.
 	register("upgrade_data", "Upgrade Data", Rarity.RARE, 0, ["upgrade_data"], {},
@@ -373,6 +389,14 @@ func _ready() -> void:
 	register("alloy_ingot", "Alloy Ingot", Rarity.RARE, 240, ["material"])
 	register("targeting_chip", "Targeting Chip", Rarity.RARE, 320, ["augment"])
 	register("reactor_core", "Reactor Core", Rarity.EPIC, 900, ["material"])
+	# Crafting parts from the expedition world (DESIGN.md "Frostline"): every
+	# Mk2 and Mk3 needs them, so they are what the gentle world is for.
+	register("cryo_core", "Cryo Core", Rarity.UNCOMMON, 150, ["material"], {},
+			"A sealed coolant core from the valley stations. Every Mk2 and Mk3 needs one to run cool.")
+	register("glacial_alloy", "Glacial Alloy", Rarity.RARE, 280, ["material"], {},
+			"Metal tempered in the deep cold. Every Mk3 is built on it.")
+	register("engine_coil", "Engine Coil", Rarity.RARE, 450, ["material"], {},
+			"A winding from the Stilled Engine, still faintly warm. Every Mk3 needs one.")
 	register("lattice_shard", "Lattice Shard", Rarity.RELIC, 2500, ["relic"])
 
 	# Furniture and decorations for a home base. Bought from the Furnisher,
@@ -431,8 +455,9 @@ func _attachment(id: String, display_name: String, rarity: Rarity, value: int, s
 
 
 ## Registers a blueprint (see `core/progression/crafting.gd` for what it makes).
-func _blueprint(id: String, display_name: String, rarity: Rarity, value: int, description: String) -> void:
-	register(id, display_name, rarity, value, ["blueprint"], {}, description)
+func _blueprint(id: String, display_name: String, rarity: Rarity, value: int, description: String,
+		extra_tags: Array = []) -> void:
+	register(id, display_name, rarity, value, ["blueprint"] + extra_tags, {}, description)
 
 
 ## Registers a clothing item that unlocks the customizer outfits `outfits`.

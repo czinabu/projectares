@@ -596,9 +596,22 @@ gentle one. Dying there only drops your backpack; the gear you deployed with
 goes home with you (`WorldDef.keep_gear_on_death`). In return its caches hold
 basic gear and materials, and the rare and powerful gear is only found on
 Ashfront. Depots take longer to hold. It adds three items of its own: Cryo
-Cell, Signal Core and the Ice Axe. The rest of its redesign (the cold,
-whiteouts, tracks, warm beacons and its crafting parts) is planned in
-DESIGN.md section 2, "Frostline".
+Cell, Signal Core and the Ice Axe. It is cold: out in the open your body
+heat (a snowflake cell on the visor) drains, faster up the valley and up in
+the wind, and once it is gone the cold hurts. Heater huts, the warm vents on
+the floor, the camp fire at the river mouth and any running vehicle warm you
+again. You see your breath, and a chilled body shivers. It is where the
+parts for better gear come from: every Mk2 craft needs a Cryo Core and every
+Mk3 Glacial Alloy and an Engine Coil (the coils only on the Engine's back),
+and its own blueprints make new options: the Thermal Frame, which keeps out
+some of the cold, and the Glacier Grip. You leave the valley only at one
+of its four warm beacons: start the sign-out inside a beacon's ring of
+light and stay there while it powers up (20 seconds, quicker with others
+powering it beside you). The snow keeps a trail: everyone on foot leaves
+footprints and every ground vehicle wheel tracks, which fade after a few
+minutes, so you can follow someone (or something) across the valley. In
+the still, cold air a gunshot carries twice as far, to people and to the
+bots alike. Whiteouts are planned in DESIGN.md section 2, "Frostline".
 
 ## Run the tests
 

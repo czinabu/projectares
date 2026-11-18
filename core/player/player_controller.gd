@@ -1197,9 +1197,15 @@ func kick_view(kick: Vector2) -> void:
 func _update_shake(delta: float) -> void:
 	if _shake.is_zero_approx() and _shake_speed.is_zero_approx():
 		return
-	# A stiff, critically damped spring, like the landing dip.
-	_shake_speed += (-400.0 * _shake - 40.0 * _shake_speed) * delta
-	_shake += _shake_speed * delta
+	# A stiff, critically damped spring, like the landing dip, and stepped in
+	# short slices like it: in one long frame (a hitch, a slow machine) the
+	# spring would overshoot further each frame until the view was lost.
+	var left := delta
+	while left > 0.0:
+		var step := minf(left, 1.0 / 120.0)
+		_shake_speed += (-400.0 * _shake - 40.0 * _shake_speed) * step
+		_shake += _shake_speed * step
+		left -= step
 	if _shake.length() < 0.00005 and _shake_speed.length() < 0.0005:
 		_shake = Vector2.ZERO
 		_shake_speed = Vector2.ZERO

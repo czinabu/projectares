@@ -20,6 +20,8 @@ const MELEE_SHADER := preload("res://assets/shaders/melee.gdshader")
 const ActorSkin := preload("res://core/visual/actor_skin.gd")
 const Human := preload("res://core/visual/human.gd")
 const CHARACTER_SHADER := preload("res://assets/shaders/character.gdshader")
+const EDGE_INK_SHADER := preload("res://assets/shaders/edge_ink.gdshader")
+const GameSettings := preload("res://core/settings/game_settings.gd")
 const Vfx := preload("res://core/visual/vfx.gd")
 const RigModel := preload("res://core/visual/rig_model.gd")
 const UiTheme := preload("res://core/visual/ui_theme.gd")
@@ -237,7 +239,9 @@ var _noise: NoiseTexture2D
 var _gear_materials := {}
 ## Mesh surface and placement -> how far up the model it runs (`_surface_span`).
 var _spans := {}
-## A foldable melee material's id -> its folded copy (see `set_extend`).
+## A foldable melee material's id -> a weak reference to its folded copy
+## (see `set_extend`, `_folded_copy`). Weak, so a storm-lit copy made for
+## one soldier (`_pop_storm`) goes when the soldier does.
 var _folded := {}
 var _prop_sizes := {}
 ## Gun model file -> attachment slot -> mount point (see `mount_attachments`).
@@ -275,19 +279,30 @@ func backdrop() -> Texture2D:
 func _on_node_added(node: Node) -> void:
 	if not enabled:
 		return
+	var dress := Callable()
 	if node.has_meta("display_item"):
-		_dress_display.call_deferred(node)
+		dress = _dress_display
 	elif node is Actor:
-		_dress_actor.call_deferred(node)
+		dress = _dress_actor
 	elif node is LootContainer:
-		_dress_cache.call_deferred(node)
+		dress = _dress_cache
 	elif node is Depot:
-		_dress_depot.call_deferred(node)
+		dress = _dress_depot
 	elif node is CharacterBody3D and node.get_script() != null \
 			and node.get_script().resource_path == VEHICLE_SCRIPT:
-		_dress_vehicle.call_deferred(node)
+		dress = _dress_vehicle
 	elif node.name == "Map" and node.get_parent() is Raid:
-		_limit_draw_distance.call_deferred(node)
+		dress = _limit_draw_distance
+	if dress.is_valid():
+		_dress_when_ready.call_deferred(dress, node.get_instance_id())
+
+
+## Dresses a node once the frame it entered is done, if it is still there:
+## one freed in that frame cannot be handed to a typed argument.
+func _dress_when_ready(dress: Callable, id: int) -> void:
+	var node := instance_from_id(id)
+	if node != null:
+		dress.call(node)
 
 
 ## Small things in a map stop being drawn once they are too far away to
@@ -455,6 +470,7 @@ func atmosphere(parent: Node3D, p := {}, war := {}) -> void:
 	world_env.name = "Atmosphere"
 	world_env.environment = env
 	parent.add_child(world_env)
+	parent.add_child(edge_ink())
 	var calm := mood_values(p)
 	apply_mood(calm, env, sky_mat, sun)
 	if war.is_empty():
@@ -470,6 +486,29 @@ func atmosphere(parent: Node3D, p := {}, war := {}) -> void:
 	mood.column = _war_column()
 	parent.add_child(mood)
 	mood.add_child(mood.column)
+
+
+## The edge ink over an outdoor map (`assets/shaders/edge_ink.gdshader`): a
+## quad the shader stretches over whatever camera draws it, so every view of
+## the map gets the same outlines on far shapes. It is in the group
+## "edge_ink", shown while `GameSettings.ink_shown()`. Drawn first of the
+## see-through things, so glass, holograms and effects stay on top of it.
+func edge_ink() -> MeshInstance3D:
+	var quad := QuadMesh.new()
+	quad.size = Vector2(2.0, 2.0)
+	var mat := ShaderMaterial.new()
+	mat.shader = EDGE_INK_SHADER
+	mat.render_priority = Material.RENDER_PRIORITY_MIN
+	quad.material = mat
+	quad.custom_aabb = AABB(Vector3(-1.0, -1.0, -1.0) * 1.0e5, Vector3.ONE * 2.0e5)
+	var ink := MeshInstance3D.new()
+	ink.name = "EdgeInk"
+	ink.mesh = quad
+	ink.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	ink.extra_cull_margin = 16384.0
+	ink.add_to_group("edge_ink")
+	ink.visible = GameSettings.ink_shown()
+	return ink
 
 
 ## The part of an atmosphere that can shift while a world runs, with every
@@ -645,12 +684,33 @@ func _pop_storm(mat: ShaderMaterial, accent: Color) -> ShaderMaterial:
 	var pop: Variant = mat.get_shader_parameter("storm_pop")
 	if pop == null:
 		return null
+	if mat.has_meta("tech_full"):
+		# A folding blade worn folded or half drawn: light its drawn-out
+		# material and fold that copy the same way, so `set_extend` swaps
+		# between lit copies and never back to the unlit pair.
+		var lit := _pop_storm(mat.get_meta("tech_full"), accent)
+		var extend := float(mat.get_shader_parameter("extend"))
+		if extend >= 1.0:
+			return lit
+		if extend <= 0.0:
+			return _folded_copy(lit)
+		var part := lit.duplicate() as ShaderMaterial
+		part.set_meta("tech_full", lit)
+		part.set_shader_parameter("extend", extend)
+		return part
 	var use := mat
 	if float(pop) < 0.5:
 		use = mat.duplicate() as ShaderMaterial
 		use.set_shader_parameter("storm_pop", 1.0)
 	use.set_shader_parameter("storm_rim", Vector3(accent.r, accent.g, accent.b))
 	_bind_storm(use)
+	if use.has_meta("tech_fold"):
+		# A folding blade's drawn-out material: its folded copy is lit the
+		# same (a fresh copy gets one made from it, already lit).
+		var folded := _folded_copy(use)
+		folded.set_shader_parameter("storm_pop", 1.0)
+		folded.set_shader_parameter("storm_rim", Vector3(accent.r, accent.g, accent.b))
+		_bind_storm(folded)
 	return use
 
 
@@ -934,7 +994,8 @@ func interior(parent: Node3D, ambient: Color, energy: float) -> void:
 
 
 ## The trim every built thing in a warzone shares, so a map's pieces read as
-## one kit instead of loose props: "teal" running lights, "orange" furnace
+## one kit instead of loose props: "teal" running lights, "band" (a teal
+## strip turned down low enough to keep its colour on a lit wall), "orange" furnace
 ## light, "beacon" (a red light that cuts through the haze, never fogged),
 ## "slag" (molten metal), "crack" (a dimmer glow for cracks in the ground),
 ## "scorch" (charred ground), "track" (a packed gravel road), "rut" (a dark wheel rut), "hazard" (orange and black stripes),
@@ -946,13 +1007,13 @@ func trim(kind: String) -> Material:
 		return _materials[key]
 	var mat := StandardMaterial3D.new()
 	match kind:
-		"teal", "orange", "beacon", "slag", "crack":
-			var glow: Color = {"teal": Color(0.3, 0.95, 0.88), "orange": Color(1.0, 0.42, 0.1),
+		"teal", "band", "orange", "beacon", "slag", "crack":
+			var glow: Color = {"teal": Color(0.3, 0.95, 0.88), "band": Color(0.18, 0.85, 0.78), "orange": Color(1.0, 0.42, 0.1),
 					"beacon": Color(1.0, 0.1, 0.06), "slag": Color(1.0, 0.36, 0.08), "crack": Color(1.0, 0.3, 0.05)}[kind]
-			mat.albedo_color = glow * 0.25 if kind in ["teal", "orange", "beacon"] else Color(0.25, 0.06, 0.02)
+			mat.albedo_color = glow * 0.25 if kind in ["teal", "band", "orange", "beacon"] else Color(0.25, 0.06, 0.02)
 			mat.emission_enabled = true
 			mat.emission = glow
-			mat.emission_energy_multiplier = {"teal": 1.6, "orange": 2.4, "beacon": 7.0, "slag": 2.6, "crack": 1.1}[kind]
+			mat.emission_energy_multiplier = {"teal": 1.6, "band": 0.55, "orange": 2.4, "beacon": 7.0, "slag": 2.6, "crack": 1.1}[kind]
 			mat.roughness = 0.4
 			if kind == "beacon":
 				mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
@@ -2096,7 +2157,7 @@ func set_extend(model: Node3D, extend: float) -> void:
 					else (mat if mat.has_meta("tech_fold") else null)
 			if full == null:
 				continue
-			var folded: ShaderMaterial = _folded[full.get_instance_id()]
+			var folded := _folded_copy(full)
 			var pick: ShaderMaterial
 			if extend >= 1.0:
 				pick = full
@@ -2162,12 +2223,25 @@ func _tech_material(source: BaseMaterial3D, glow: Color, strength: float, wear: 
 		mat.set_shader_parameter("extend", 1.0)
 		# The copy worn holstered, folded away; `set_extend` swaps between them.
 		mat.set_meta("tech_fold", true)
-		var folded := mat.duplicate() as ShaderMaterial
-		folded.set_shader_parameter("extend", 0.0)
-		folded.set_meta("tech_full", mat)
-		_folded[mat.get_instance_id()] = folded
+		_folded_copy(mat)
 	_gear_materials[key] = mat
 	return mat
+
+
+## The folded copy of the drawn-out material `full` (one marked "tech_fold"),
+## made the first time it is asked for. Every drawn-out material has one,
+## including copies of it (a storm-lit one, `_pop_storm`), so `set_extend`
+## can always fold what it is given.
+func _folded_copy(full: ShaderMaterial) -> ShaderMaterial:
+	var id := full.get_instance_id()
+	var known: WeakRef = _folded.get(id)
+	var folded: ShaderMaterial = known.get_ref() if known != null else null
+	if folded == null:
+		folded = full.duplicate() as ShaderMaterial
+		folded.set_shader_parameter("extend", 0.0)
+		folded.set_meta("tech_full", full)
+		_folded[id] = weakref(folded)
+	return folded
 
 
 ## No pack has a spear, so it is built here: a dark shaft, alloy collars

@@ -53,6 +53,25 @@ extends RefCounted
 ##     spawns inside them.
 ##   - Marker3D nodes in group "spawn_boss": a boss (a bot made a warlord)
 ##     stands guard there, and comes back `boss_respawn_time` after it dies.
+## The cold (DESIGN.md section 2, "Frostline"): a world with `cold` over 0
+## drains its players' body heat (`Actor.body_heat`) by `cold_at` a second
+## out in the open, and its map may add warmth:
+##   - Marker3D nodes in group "warmth": a heater, a vent, a fire. Metas
+##     "radius" (metres) and "warmth" (body heat a second given back to
+##     anyone within it, and within 3 m up or down).
+## A running vehicle's engine warms its riders and anyone close to it
+## (`engine_warmth`). Body heat gone, the cold hurts by `cold_damage` a
+## second through `Combat.deal`.
+##
+## Warm beacons (DESIGN.md "Frostline"): a world with `sign_out_at_beacons`
+## lets players sign out only at a beacon, and its map adds:
+##   - Marker3D nodes in group "beacon". Metas "name" and "radius" (metres).
+##     A sign-out started inside one powers it up for `beacon_sign_out_time`;
+##     the countdown only runs while the player stays inside, and runs
+##     faster for each other player powering the same beacon
+##     (`beacon_join_bonus`, up to `beacon_join_cap` times as fast). It is
+##     still `Raid.begin_sign_out`, so a fight cancels it as anywhere.
+##
 ## The Raid marks each spawned bot with the tier it arrived in (meta "zone")
 ## before `equip_bot`, so a world can make bots tougher further in.
 ##
@@ -82,8 +101,34 @@ var vehicle_toys := true
 var bag_lifetime := 300.0
 ## Seconds to stand in a depot to bank what you carry.
 var depot_hold_time := 4.0
+## Body heat (of 100) a player loses each second out in the open; 0 for a
+## world with no cold. See "The cold" above and `cold_at`.
+var cold := 0.0
+## Damage a second once body heat is gone, through `Combat.deal`.
+var cold_damage := 4.0
+## Body heat a second a running vehicle gives back to its riders and anyone
+## within `engine_warmth_radius` metres of it.
+var engine_warmth := 6.0
+var engine_warmth_radius := 4.0
 ## Seconds a sign-out takes on the ground. Taking or dealing damage cancels it.
 var sign_out_time := 15.0
+## Warm beacons: whether a sign-out must start at a "beacon" marker (see the
+## map contract above), how long one takes to power up, and how much each
+## other player at the same beacon speeds it. Off by default.
+var sign_out_at_beacons := false
+var beacon_sign_out_time := 20.0
+var beacon_join_bonus := 0.5
+var beacon_join_cap := 2.0
+## Tracks (DESIGN.md "Frostline"): with `tracks` on, people on foot leave
+## footprints and ground vehicles wheel tracks in the open ground (the map's
+## `ground_height`, never a roof or a floor), kept by the authority for
+## `track_lifetime` seconds and sent to each player only near them
+## (`Tracks`, `Raid.tracks`). Off by default.
+var tracks := false
+var track_lifetime := 240.0
+## How far a gunshot carries, as a share of the usual: bots hear it that much
+## further off (`Combat.noise`) and so do people (`Gun.SHOT_REACH`).
+var shot_carry := 1.0
 ## Seconds a sign-out takes while airborne. Progress already earned is kept
 ## when you land or lift off, so the seconds left are whatever the rate you
 ## are on still needs (DESIGN.md section 7). The exact air time is this.
@@ -254,12 +299,14 @@ func roll_artifact(rng: RandomNumberGenerator, chance: float) -> String:
 ## PvP rules live here. Called for every hit before damage is applied.
 ## What a world event adds for crafting: a blueprint with chance `chance`,
 ## picked evenly from every item tagged "blueprint", and `data` upgrade data.
+## Expedition blueprints (tag "expedition") are left out: they turn up only
+## where a world lists them in its own loot tables.
 func roll_crafting_loot(rng: RandomNumberGenerator, chance: float, data: int) -> Array[String]:
 	var out: Array[String] = []
 	if chance > 0.0 and rng.randf() < chance:
 		var ids: Array[String] = []
 		for id: String in ItemDB.all_ids():
-			if ItemDB.has_tag(id, "blueprint"):
+			if ItemDB.has_tag(id, "blueprint") and not ItemDB.has_tag(id, "expedition"):
 				ids.append(id)
 		if not ids.is_empty():
 			ids.sort()
@@ -291,6 +338,12 @@ func zone_name(tier: int) -> String:
 ## (heat, fumes), or 0. The Raid deals it through `Combat.deal`.
 func hazard_at(_pos: Vector3) -> float:
 	return 0.0
+
+
+## Body heat a second a player at a point loses out in the open: `cold` by
+## default. A world may make some places colder (higher, more exposed).
+func cold_at(_pos: Vector3) -> float:
+	return cold
 
 
 func can_damage(attacker: Node, target: Node, _info: DamageInfo) -> bool:

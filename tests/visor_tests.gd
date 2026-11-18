@@ -24,6 +24,7 @@ static func run(t: Node) -> void:
 	await _strip(t)
 	await _threat(t)
 	await _thermal(t)
+	await _loot_glance(t)
 
 
 ## Players arrive inside a gate outpost, whose walls would stand between
@@ -736,6 +737,9 @@ static func _threat(t: Node) -> void:
 	raid.add_child(hud)
 	await t.frames(5)
 	var bot: Actor = raid.bots[0]
+	# Face open ground, so no wall stands between the eyes and the bot.
+	controller.yaw = t.open_heading(p, 75.0)
+	await t.frames(2)
 	var ahead := Basis(Vector3.UP, controller.yaw) * Vector3(0, 0, -12)
 	bot.global_position = p.global_position + ahead + Vector3(0, 0.2, 0)
 	bot.velocity = Vector3.ZERO
@@ -989,4 +993,87 @@ static func _strip(t: Node) -> void:
 	await t.frames(2)
 	t.check(glass.compass_marks(raid.player).is_empty(), "a scrap visor marks nothing, only a bearing")
 	glass.queue_free()
+	await t._end_raid(raid)
+
+
+## Loot at a glance (Caleb's call): the container you look at is tagged with
+## everything inside, and what you pick up runs up a feed, on every working
+## helmet and in both views.
+static func _loot_glance(t: Node) -> void:
+	print("Visors: loot at a glance")
+	var worn: Array[String] = SCRAP.duplicate()
+	t.check(VisorHud.versus_worn("rifle_carbine", worn) == "up", "a better gun than the one worn is marked better")
+	t.check(VisorHud.versus_worn("rifle_scrap", worn) == "same", "the one you wear is the same")
+	t.check(VisorHud.versus_worn("helm_warden", worn) == "up", "anything for an empty slot is better than nothing")
+	t.check(VisorHud.versus_worn("scrap_metal", worn) == "" and VisorHud.versus_worn("medkit", worn) == "",
+			"materials and heals are not compared")
+	worn[0] = "rifle_carbine"
+	t.check(VisorHud.versus_worn("rifle_scrap", worn) == "down", "a worse gun than the one worn is marked worse")
+	var rows := VisorHud.loot_rows(["scrap_metal", "medkit", "blade_arc", "scrap_metal"], SCRAP)
+	t.check(rows.size() == 3 and rows[0].id == "blade_arc" and rows[0].verdict == "up",
+			"a container's rows put the rarest first, compared with what you wear")
+	var stacked: Array = rows.filter(func(r: Dictionary) -> bool: return r.id == "scrap_metal")
+	t.check(stacked.size() == 1 and int(stacked[0].count) == 2, "more of one item is one row with a count")
+	var many: Array[String] = []
+	for id: String in ItemDB.all_ids().slice(0, 18):
+		many.append(id)
+	t.check(VisorHud.loot_rows(many, SCRAP).size() == 18, "every item inside is listed, never just the best")
+	t.check(VisorHud.row_text("Arc Blade", 2) == "ARC BLADE  x2" and VisorHud.row_text("Arc Blade", 1) == "ARC BLADE",
+			"a row names the item, with a count only when there is more than one")
+
+	var raid: Raid = await t._kit_raid(372, _kit("visor_scav"))
+	var p := raid.player
+	_out_in_the_open(raid, p)
+	for bot in raid.bots:
+		bot.global_position += Vector3(0, -300, 0)
+	var controller := PlayerController.new()
+	controller.setup(p)
+	raid.add_child(controller)
+	var hud := Hud.new()
+	hud.setup(raid, controller)
+	raid.add_child(hud)
+	await t.frames(5)
+	var cache := LootContainer.new()
+	cache.setup(["scrap_metal", "blade_arc", "scrap_metal", "medkit"], false, "Cache")
+	raid.add_child(cache)
+	cache.global_position = p.global_position + Basis(Vector3.UP, controller.yaw) * Vector3(0, 0, -1.6)
+	await t.frames(3)
+	var to_cache := cache.global_position + Vector3(0, 0.4, 0) - p.get_eye_position()
+	controller.yaw = atan2(-to_cache.x, -to_cache.z)
+	controller.pitch = asin(to_cache.normalized().y)
+	await t.frames(30)
+	var glass := hud.visor
+	t.check(p.find_interactable() == cache and glass.looked == cache and glass.crate_shown > 0.9,
+			"even a scrap visor tags the container you look at")
+	controller.view_mode = PlayerController.ViewMode.THIRD
+	await t.frames(20)
+	t.check(glass.flat_shown() and glass.looked == cache, "and the tag stays in third person, drawn flat")
+	controller.view_mode = PlayerController.ViewMode.FIRST
+	await t.frames(5)
+	cache.interact(p)
+	await t.frames(2)
+	var ids: Array = glass.pickups.map(func(l: Dictionary) -> String: return l.id)
+	t.check(ids.size() == 3 and "blade_arc" in ids, "what you pick up goes on the feed, a line per kind")
+	var scrap_line: Array = glass.pickups.filter(func(l: Dictionary) -> bool: return l.id == "scrap_metal")
+	t.check(not scrap_line.is_empty() and int(scrap_line[0].count) == 2, "two of a kind count up on one line")
+	p.looted.emit(["scrap_metal"] as Array[String])
+	t.check(glass.pickups.size() == 3 and int(scrap_line[0].count) == 3, "and more of it later counts up again")
+	glass._process(glass.pickup_time + 0.1)
+	t.check(glass.pickups.is_empty(), "the feed fades after a few seconds")
+	await t.frames(5)
+	t.check(glass.looked == cache and cache.items.is_empty(), "an emptied cache is still tagged, as empty")
+	for i in glass.pickup_lines + 3:
+		p.looted.emit([ItemDB.all_ids()[i]] as Array[String])
+	t.check(glass.pickups.size() == glass.pickup_lines, "the feed keeps only its last few lines")
+	Loadout.wear_helmet(p, "")
+	await t.frames(5)
+	t.check(glass.looked == null, "with no helmet there is no glass to tag it on")
+	# On the server's side: a looter is told item by item.
+	var told: Array = []
+	p.looted.connect(func(got: Array[String]) -> void: told.append_array(got))
+	var bag := LootContainer.new()
+	bag.setup(["medkit"], true, "Bag")
+	raid.add_child(bag)
+	bag.interact(p)
+	t.check(told == ["medkit"], "looting emits what was taken")
 	await t._end_raid(raid)

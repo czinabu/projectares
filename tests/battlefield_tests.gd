@@ -240,6 +240,38 @@ static func run(t: Node) -> void:
 					path[path.size() - 1].distance_to(to) if path.size() > 0 else -1.0])
 	t.check(reached == sites.size(), "bots can walk from the rim to every strongpoint (%d of %d)" % [reached, sites.size()])
 
+	# The Works' second storey is reached on foot: a path from the street up
+	# a stair onto every gantry.
+	var decks := map.find_children("*", "StaticBody3D", true, false).filter(func(n: Node) -> bool:
+		return n.get_meta("works_gantry", false))
+	var up := 0
+	for deck: Node3D in decks:
+		var street := Vector3(0.0, field.height_at(0.0, deck.global_position.z + 9.0), deck.global_position.z + 9.0)
+		var top := deck.global_position + Vector3(0, 0.3, 0)
+		var path := NavigationServer3D.map_get_path(nav_map, street, top, true)
+		if path.size() >= 2 and path[path.size() - 1].distance_to(top) < 1.5:
+			up += 1
+	# The cross street runs through: from the field on one side to the
+	# other is a short walk straight across the crossroads.
+	var east := Vector3(40.0, field.height_at(40.0, 155.0), 155.0)
+	var west := Vector3(-40.0, field.height_at(-40.0, 155.0), 155.0)
+	var across := NavigationServer3D.map_get_path(nav_map, east, west, true)
+	var walked := 0.0
+	for k in across.size() - 1:
+		walked += across[k].distance_to(across[k + 1])
+	t.check(across.size() >= 2 and across[across.size() - 1].distance_to(west) < 1.5 and walked < 90.0,
+			"in the Works, the cross street runs straight through (%.0f m for 80)" % walked)
+	t.check(decks.size() == 3 and up == decks.size(),
+			"in the Works, every gantry is reached on foot from the street (%d of %d)" % [up, decks.size()])
+	# The street is levelled, and its mouth eases back into the field at a
+	# grade a bike can take.
+	var steepest := Vector2.ZERO
+	for k in 42:
+		var z := 100.0 + k * 3.0
+		if field.slope_at(0.0, z) > steepest.x:
+			steepest = Vector2(field.slope_at(0.0, z), z)
+	t.check(steepest.x < 0.35, "in the Works, the street and its mouth are a grade a bike takes (%.2f at z %.0f)" % [steepest.x, steepest.y])
+
 	# Walking: uphill and down, the ground holds.
 	var start := p.global_position
 	# Towards the middle, but round the wall an open drop point sits behind.

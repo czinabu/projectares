@@ -36,3 +36,8 @@ window/size/viewport_height=900
 
 3d/physics_engine="Jolt Physics"
 common/physics_ticks_per_second=60
+
+[rendering]
+
+textures/default_filters/anisotropic_filtering_level=4
+anti_aliasing/quality/screen_space_aa=2

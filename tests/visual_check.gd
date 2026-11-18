@@ -187,6 +187,12 @@ func _ready() -> void:
 		await _visor_shots(out_dir)
 		get_tree().quit()
 		return
+	# `-- <output_dir> --loot-only`: looking at a bag and a cache through the
+	# visor with the pickup feed running, in first and third person.
+	if "--loot-only" in args:
+		await _loot_shots(out_dir)
+		get_tree().quit()
+		return
 
 	# `-- <output_dir> --sidearms-only` shoots each sidearm model side on.
 	# `-- <output_dir> --impacts-only`: bullet marks and puffs on a wall, a
@@ -221,11 +227,28 @@ func _ready() -> void:
 		get_tree().quit()
 		return
 
+	# `-- <output_dir> --graphics-only` shoots what the graphics settings are
+	# for: a line of soldiers out to 150 m in Ashfront and the home base, with
+	# the settings as saved (`--aa <0-4>` picks the anti-aliasing, `--ink 0|1`
+	# the edge ink on far shapes).
+	if "--graphics-only" in args:
+		await _graphics_shots(out_dir, args)
+		get_tree().quit()
+		return
+
 	# `-- <output_dir> --ashfront-only` shoots Ashfront's look from fixed
 	# spots: a gate looking in, the open field, the middle ring, the core's
 	# edge and from high over a corner, to compare the dressing before and after.
 	if "--ashfront-only" in args:
 		await _ashfront_shots(out_dir)
+		get_tree().quit()
+		return
+
+	# `-- <output_dir> --tracks-only` shows Frostline's snow with a trail of
+	# footprints and a bike's wheel tracks across it, fresh to old, and a
+	# warm beacon.
+	if "--tracks-only" in args:
+		await _track_shots(out_dir)
 		get_tree().quit()
 		return
 
@@ -1539,6 +1562,66 @@ func _visor_shots(out_dir: String) -> void:
 	await _settle(3)
 
 
+## Loot at a glance (DESIGN.md section 3): a full bag looked at, with the
+## pickup feed running from a cache just looted, through a Warden and a
+## scrap visor, first person and third person.
+func _loot_shots(out_dir: String) -> void:
+	for helmet: String in ["helm_warden", "visor_scav"]:
+		var raid := Raid.new()
+		add_child(raid)
+		raid.start(Worlds.get_world("ashfront"), 42, ["rifle_carbine", "blade_scrap", "jetpack_mk1", "plate_light",
+				helmet])
+		for bot in raid.bots:
+			bot.get_node("Brain").set_physics_process(false)
+			bot.global_position += Vector3(0, -300, 0)
+		var p := raid.player
+		var at := Vector2.from_angle(TAU * 0.5 / 12.0) * 248.0
+		p.global_position = raid._stand(Vector3(at.x, raid.map.call("ground_height", at.x, at.y), at.y))
+		var controller := PlayerController.new()
+		controller.setup(p)
+		raid.add_child(controller)
+		var hud := Hud.new()
+		hud.setup(raid, controller)
+		raid.add_child(hud)
+		await _settle(30)
+		var turn := Basis(Vector3.UP, controller.yaw)
+		var cache := LootContainer.new()
+		cache.setup(["scrap_metal", "blade_arc", "medkit"], false, "Cache")
+		raid.add_child(cache)
+		cache.global_position = p.global_position + turn * Vector3(-1.2, 0, -1.4)
+		var bag := LootContainer.new()
+		bag.setup(["rifle_scrap", "blade_arc", "helm_warden", "frame_trooper", "scrap_metal", "scrap_metal",
+				"scrap_metal", "medkit", "medkit", "rifle_carbine", "power_cell", "wings_glide", "chip_blink",
+				"reactor_core"].filter(func(id: String) -> bool: return ItemDB.has_item(id)), true, "Rook's bag")
+		bag.scrip = 140
+		raid.add_child(bag)
+		bag.global_position = p.global_position + turn * Vector3(0.5, 0, -1.8)
+		await _settle(5)
+		var to_bag := bag.global_position + Vector3(0, 0.3, 0) - p.get_eye_position()
+		controller.yaw = atan2(-to_bag.x, -to_bag.z)
+		controller.pitch = asin(to_bag.normalized().y)
+		await _settle(40)
+		cache.interact(p)
+		await _settle(4)
+		await _shot(out_dir.path_join("loot_%s_first.png" % helmet))
+		controller.view_mode = PlayerController.ViewMode.THIRD
+		await _settle(40)
+		# Over the shoulder the aim leaves the eyes at another angle: walk the
+		# pitch down until the bag is what F would loot again.
+		for i in 24:
+			if p.find_interactable() == bag:
+				break
+			controller.pitch -= 0.03
+			await _settle(3)
+		await _settle(20)
+		cache.set_items(["scrap_metal", "chip_blink"])
+		cache.interact(p)
+		await _settle(4)
+		await _shot(out_dir.path_join("loot_%s_third.png" % helmet))
+		raid.queue_free()
+		await _settle(3)
+
+
 ## Every helmet worn, and a bare head, from the front, the side and behind,
 ## one row each, in one sheet. The same model first person leaves out.
 func _helmet_shots(out_dir: String) -> void:
@@ -1873,6 +1956,13 @@ func _ashfront_shots(out_dir: String) -> void:
 		["runway", Vector2(-205, 4.4), Vector2(-60, 2), 2.5],
 		["east_road", Vector2(150, -9), Vector2(60, -2), 2.0],
 		["hill_road", Vector2(-198, -24), Vector2(-150, -118), 2.5],
+		# The Works: up its street from the mouth, from the first gantry,
+		# over it from the air, along the cross street, and from the field.
+		["works_mouth", Vector2(2, 214), Vector2(0, 0), 1.8],
+		["works_gantry", Vector2(0, 187), Vector2(0, 0), 7.6],
+		["works_air", Vector2(70, 236), Vector2(0, 150), 45.0],
+		["works_cross", Vector2(46, 158), Vector2(-20, 152), 1.8],
+		["works_field", Vector2(-95, 205), Vector2(0, 150), 2.0],
 	]
 	for view: Array in views:
 		var from: Vector2 = view[1]
@@ -1909,6 +1999,53 @@ func _ashfront_shots(out_dir: String) -> void:
 		mood.follow = 100.0
 		await _settle(200 if step[0] > 0.0 else 60)
 		await _shot(out_dir.path_join("ashfront_war_%s.png" % step[1]))
+	raid.queue_free()
+
+
+func _track_shots(out_dir: String) -> void:
+	var raid := Raid.new()
+	add_child(raid)
+	raid.start(Worlds.get_world("frostline"), 42)
+	for bot in raid.bots:
+		bot.get_node("Brain").set_physics_process(false)
+		bot.set_physics_process(false)
+		bot.global_position = Vector3(500, 0, 500)
+	raid.player.set_physics_process(false)
+	raid.player.visible = false
+	var x0 := 40.0
+	var z0 := 200.0
+	var ground := func(x: float, z: float) -> Vector3:
+		return Vector3(x, float(raid.map.call("ground_height", x, z)), z)
+	# A walker crossing at an angle, the oldest prints furthest off.
+	for k in 30:
+		var at: Vector3 = ground.call(x0 - 8.0 + k * 0.55, z0 + 6.0 - k * 0.6)
+		var heading := Vector3(0.55, 0, -0.6).normalized()
+		var side := heading.cross(Vector3.UP) * (0.13 if k % 2 else -0.13)
+		var spot: Vector3 = ground.call(at.x + side.x, at.z + side.z)
+		raid.tracks.add(spot, atan2(-heading.x, -heading.z), Tracks.Kind.RIGHT if k % 2 else Tracks.Kind.LEFT,
+				raid.clock - (30 - k) * 6.0)
+	# A bike's wheel tracks across the other way.
+	for k in 14:
+		var at: Vector3 = ground.call(x0 + 6.0 - k * 1.4, z0 - 4.0 + k * 0.2)
+		raid.tracks.add(at, atan2(1.4, -0.2), Tracks.Kind.TREAD, raid.clock - k * 4.0)
+	var camera := Camera3D.new()
+	camera.far = 900.0
+	raid.add_child(camera)
+	camera.make_current()
+	var look: Vector3 = ground.call(x0, z0)
+	camera.global_position = look + Vector3(-1.5, 2.2, 5.0)
+	camera.look_at(look)
+	await _settle(30)
+	await _shot(out_dir.path_join("tracks_close.png"))
+	camera.global_position = look + Vector3(-9.0, 12.0, 20.0)
+	camera.look_at(look)
+	await _settle(10)
+	await _shot(out_dir.path_join("tracks_far.png"))
+	var beacon: Node3D = raid.beacons[0]
+	camera.global_position = beacon.global_position + Vector3(-12.0, 5.0, 12.0)
+	camera.look_at(beacon.global_position + Vector3(0, 2.5, 0))
+	await _settle(20)
+	await _shot(out_dir.path_join("beacon.png"))
 	raid.queue_free()
 
 
@@ -3289,3 +3426,90 @@ func _technique_sheet(out_dir: String, id: String) -> void:
 	var path := out_dir.path_join("technique_%s.png" % id)
 	sheet.save_png(path)
 	print("saved %s" % path)
+
+
+## Ashfront and the home base for judging edges and how far things read: a
+## line of soldiers at 15 to 150 m looking into the field, a wide look over
+## it, and the base's main room and range. Shot with the graphics settings
+## as they are (`--aa <level>` sets the anti-aliasing and `--ink 0|1` the
+## edge ink first, when the game has those settings), so the same command
+## gives before and after.
+func _graphics_shots(out_dir: String, args: PackedStringArray) -> void:
+	var GameSettings: GDScript = load("res://core/settings/game_settings.gd")
+	GameSettings.set("persist", false)
+	var at := args.find("--aa")
+	if at >= 0 and at + 1 < args.size():
+		GameSettings.call("set_value", "anti_aliasing", int(args[at + 1]))
+	at = args.find("--ink")
+	if at >= 0 and at + 1 < args.size():
+		GameSettings.call("set_value", "edge_ink", args[at + 1] != "0")
+	var raid := Raid.new()
+	add_child(raid)
+	raid.start(Worlds.get_world("ashfront"), 42)
+	raid.war.cooling = 0.0
+	for bot in raid.bots:
+		bot.get_node("Brain").set_physics_process(false)
+		bot.set_physics_process(false)
+	raid.player.set_physics_process(false)
+	raid.player.visible = false
+	var gate: Node3D = raid.outposts[0]
+	var forward := -Vector3(gate.global_position.x, 0.0, gate.global_position.z).normalized()
+	var origin := gate.global_position + forward * 22.0
+	origin.y = raid.map.call("ground_height", origin.x, origin.z)
+	var side := Vector3(-forward.z, 0.0, forward.x)
+	var distances: Array[float] = [15.0, 30.0, 50.0, 75.0, 105.0, 150.0]
+	var lateral: Array[float] = [-4.0, 2.5, -2.0, 1.5, -1.0, 0.8]
+	var line: Array[Actor] = []
+	for bot in raid.bots:
+		if line.size() >= distances.size() or bot.is_dead:
+			continue
+		line.append(bot)
+	for i in line.size():
+		var spot := origin + forward * distances[i] + side * lateral[i]
+		line[i].global_position = Vector3(spot.x, raid.map.call("ground_height", spot.x, spot.z), spot.z)
+		line[i].velocity = Vector3.ZERO
+		line[i].rotation.y = atan2(-side.x, -side.z)
+	for bot in raid.bots:
+		if bot not in line:
+			bot.global_position += Vector3(0, -400, 0)
+	var cam := Camera3D.new()
+	cam.fov = 70.0
+	cam.far = 800.0
+	raid.add_child(cam)
+	cam.current = true
+	# Up on a ridge of rubble, so the rise in front of the gate does not hide
+	# the line.
+	var eye := origin + Vector3(0, 7.0, 0)
+	cam.global_position = eye
+	var mid := line[mini(2, line.size() - 1)].global_position if not line.is_empty() else origin + forward * 50.0
+	cam.look_at(mid + Vector3(0, 1.0, 0))
+	await _settle(60)
+	await _shot(out_dir.path_join("ashfront_line.png"))
+	cam.global_position = eye + Vector3(0, 12.0, 0) - forward * 8.0
+	cam.look_at(origin + forward * 120.0)
+	await _settle(10)
+	await _shot(out_dir.path_join("ashfront_wide.png"))
+	raid.queue_free()
+	await _settle(4)
+
+	var base := HomeBase.new()
+	base.show_gear(["rifle_carbine", "smg_stinger", "dmr_longshot", "blade_arc", "frame_trooper", "helm_warden",
+			"jetpack_mk2", "bike_raider"], {"primary": "rifle_carbine", "frame": "frame_trooper", "helmet": "helm_warden"},
+			BaseUpgrades.full())
+	add_child(base)
+	var camera := Camera3D.new()
+	camera.fov = 75.0
+	base.add_child(camera)
+	camera.make_current()
+	base.player.global_position = Vector3(3, 0.1, 2)
+	await _settle(40)
+	var views := {
+		"base_overview.png": [Vector3(0, 3.2, 8.2), Vector3(0, 1.2, -4)],
+		"base_range.png": [Vector3(0.0, 2.2, -14.0), Vector3(0.0, 1.4, -40.0)],
+	}
+	for file: String in views:
+		camera.global_position = views[file][0]
+		camera.look_at(views[file][1])
+		await _settle(6)
+		await _shot(out_dir.path_join(file))
+	base.queue_free()

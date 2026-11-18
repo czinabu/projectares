@@ -61,6 +61,41 @@ without Caleb, and update the gap list when a PR closes a row.
   `NetSession._owner_peer(actor)`, never a peer id kept from the deploy,
   because a body outlives the connection that deployed it.
 - Drop-in protection is `Actor.protected_left`, checked in `Combat.deal`.
+- The cold (DESIGN.md "Frostline"): a world with `WorldDef.cold` over 0
+  drains each player's `Actor.body_heat` by `WorldDef.cold_at` out in the
+  open; warmth fills it again (map markers in group "warmth" with metas
+  "radius" and "warmth", and any occupied vehicle's engine,
+  `WorldDef.engine_warmth`), and once it is empty the cold hurts through
+  `Combat.deal`. Only the authority runs it (`Raid._tick_cold`, which
+  respects `Raid.zone_rules`); the owner hears the number
+  (`NetSession._body_heat`) and every client the shivering bit
+  (`ActorCommand.STATE_CHILLED`, `Actor.shivering`). What it shows is view
+  only and the same in both views: the visor's body heat cell and the
+  watch card's bar (`Hud.feels_cold`), breath (`ActorSkin._update_breath`,
+  never from a cloaked body), the shivering hunch (`Locomotion._shiver_pose`,
+  the neck taking the tremor back so the eyes stay steady) and frost on the
+  visor glass (`VisorHud._draw_frost`, glass only, the middle kept clear).
+- Warm beacons (DESIGN.md "Frostline"): a world with
+  `WorldDef.sign_out_at_beacons` lets `begin_sign_out` start only inside a
+  "beacon" marker's radius (`Raid.beacon_at`; the portal home is a sign-out,
+  so it follows), and the count runs at `Raid._beacon_rate`: nothing while
+  its player is out of the ring, faster for each other player powering the
+  same beacon (`beacon_join_bonus`, `beacon_join_cap`), so a solo player can
+  always get out. It is still the one sign-out, so a fight cancels it and a
+  dropped connection counts down where the body stands. Authority only,
+  respecting `Raid.zone_rules`; the owner gets the pace with the countdown
+  (`NetSession._sign_out`'s rate).
+- Tracks (DESIGN.md "Frostline"): with `WorldDef.tracks` the authority's
+  `Raid._tick_tracks` lays footprints (alternate feet) and ground vehicles'
+  wheel tracks into `Raid.tracks` (a `Tracks` store in cells), only on open
+  ground (`ground_height`, never a roof or a floor), and lets them go after
+  `track_lifetime`. A mark is laid behind someone, never where they are, so
+  it is a trail, not tracking. A client is sent only marks near its player
+  (`NetSession._send_tracks`, by the last id sent per cell, within
+  `TRACK_RANGE`) and draws them with `TrackView` (view only, added by the
+  `Raid` only where `Look` is on). A world's air carrying shots further is
+  `WorldDef.shot_carry`, which scales both `Gun.noise_reach` (bots) and
+  the shot's sound.
 - How harsh death is belongs to the world, not to `Raid`. With
   `WorldDef.keep_gear_on_death` a dead player drops only the backpack and the
   equipped gear returns in the result's `kept`. A gentle world pays for that
@@ -461,6 +496,18 @@ without Caleb, and update the gap list when a PR closes a row.
   `visual_check.tscn -- <dir> --views-only [rows]` (`VIEW_MELEE=<item id>`
   picks the melee weapon), which also saves each shot full size under
   `views/`.
+- Picture quality is settings and light shaders, never new art: edge
+  smoothing is `GameSettings.anti_aliasing` (SMAA by default, MSAA on top
+  as an option; never TAA, it smears motion), set on the main view by
+  `GameSettings.apply_graphics`; world textures keep mipmaps (a test checks
+  their `.import` files) and are filtered 16x. Far shapes out in a world get
+  a thin outline from the depth buffer (`Look.edge_ink`,
+  `assets/shaders/edge_ink.gdshader`, a quad the shader stretches over the
+  camera, the same in both views), which MSAA leaves no depth for, so it is
+  off in those modes (`GameSettings.ink_shown`). Both are on the phone's
+  Settings, View tab. Compare by eye with `visual_check.tscn -- <dir>
+  --graphics-only [--aa 0-4] [--ink 0|1]` and measure with the frame bench's
+  `--aa` and `--ink`.
 - People are built from parts (`core/visual/human.gd`): an "appearance" names
   a build, four parts and colours. It is cosmetic only and never trusted:
   always pass one through `Look.clean_appearance` / `Look.set_appearance`,
@@ -748,6 +795,12 @@ without Caleb, and update the gap list when a PR closes a row.
   helmet's name, role and system beside it; the contracts held and the
   tour's step are an objective block top right (`objective_lines`, from
   `hud.contracts` and `hud.objective`); faint pitch ticks run up both edges.
+  Loot is read off the glass too (Caleb's call, DESIGN.md "Loot at a
+  glance"): the container you look at gets a tag listing every item inside,
+  with rarity and whether it beats what you wear (`VisorHud._draw_crate`,
+  `loot_rows`, `versus_worn`), and what you pick up runs up a fading feed
+  over the weapon readout (`_draw_pickups`), fed by `Actor.looted`, which
+  only the authority emits and `NetSession._looted` repeats to the owner.
   Bottom right, mirroring the vitals, a quiet weapon readout (Caleb's pick):
   the weapon in hand, the mag over a tick a round and the pack's rounds,
   resting dim and lit only on a reload, a low mag or just after a switch
@@ -887,7 +940,14 @@ without Caleb, and update the gap list when a PR closes a row.
   sends its version and sign-in through `SceneMultiplayer.auth_callback`
   (`NetSession._server_auth`, `_client_auth`) and counts as connected only
   once the server accepts, so an old game or a wrong secret never reaches
-  the session. Both sides' messages always carry "protocol", so any two
+  the session. Who a player is gets decided in one place,
+  `StashService.sign_in_with(credentials)`, by "method": the name and
+  secret, or a token. A sign-in with the secret hands back a token
+  (`NetSession.ticket`, kept per address by `main.gd`) that the game shows
+  the next server instead of the secret, and that every server of one
+  account service accepts; one that has run out is answered `"again":
+  "secret"` on the same connection. A store login (Steam) is a new method
+  there that ends in an account id, never a second path into a session. Both sides' messages always carry "protocol", so any two
   versions can say which one needs the update; an older game is pointed at
   `NetSession.UPDATE_URL` from the phone's Servers app. Every connection is
   encrypted with ENet DTLS (`core/net/server_trust.gd`): a server makes its
@@ -931,6 +991,38 @@ without Caleb, and update the gap list when a PR closes a row.
   so a lagging player hits what was on their screen. A vehicle the local
   player rides is predicted and corrected against `NetSession._ride_history`
   like the player's own actor.
+- The account service (DESIGN.md section 14): official servers share one
+  set of accounts, kept by one headless program, `-- --account-service`
+  (`core/account/account_service.gd`: the same `StashService` on SQLite,
+  with the market's board beside it). A game server started with
+  `--account-url` holds an `AccountLink` (`core/account/account_link.gd`) in
+  `NetSession.stash` instead of a `StashService`; any other server keeps
+  its own accounts and nothing moves between the two kinds. The link offers
+  the `StashService` calls, so a session never asks which it holds: every
+  call that asks the accounts for something is made with `await` (free on
+  a `StashService`, which answers at once), and what follows an `await`
+  checks the player is still there (`NetSession._here`). Never read
+  `_api.get_remote_sender_id()` after one. A new account call goes in
+  `StashService`, `AccountLink` and `AccountService.CALLS` together. The
+  link has three kinds of call: read at once from its copy of the accounts
+  signed in on that server (`snapshot`, `scrip_of`, `showcase`; the service
+  keeps the copy fresh and `account_changed` says when); awaited, giving up
+  as "unanswered" after `ANSWER_TIMEOUT` (sign-in, equip, buy, deploy); and
+  sure, kept and sent again until answered, for what the server alone
+  knows (`bank`, `settle`, `cancel_deploy`, `change_scrip`, `record_arena`).
+  The service does every request once: its receipt is written in the same
+  transaction as its changes (`StashService.begin_hold` / `end_hold`,
+  `AccountStore.write`'s `receipt`), so a new call that changes an account
+  goes in `AccountService.HELD`. The market is the exception (the board has
+  its own file), so a market request is sent once and never again. A
+  deploy belongs to the server that made it (`Account.deployed_by`): only
+  that server banks into it or settles it, a deploy never answered is
+  undone by its own request id (`undo_deploy`), and a game server that
+  starts afresh has its deploys returned. The service never returns a
+  deploy just because it restarted (`returns_lost_deploys` off). Game
+  servers prove the service key (`AccountService.load_key`) and players
+  never reach the service. `SocialService` and `ClanService` are still each
+  game server's own.
 - Online, the server owns each player's stash, loadout and mastery
   (`core/account/stash_service.gd`). A client's kit or picks are never trusted;
   the server gets them from `StashService.deploy` and applies results with
@@ -1319,10 +1411,17 @@ without Caleb, and update the gap list when a PR closes a row.
   ordinary gear. Crafting is done at the fabricator on the gunsmith bench
   (`HomeBase.CraftConsole`, the hub's "craft" section, `craft_panel.gd`):
   `Profile.craft` solo, `NetSession.craft` online, where only
-  `StashService.craft` decides. Blueprints and upgrade data come from the
-  PvP world only (`WorldDef.roll_crafting_loot` and its chances, 0 by
-  default; a world's own loot tables). A new craftable is a recipe row and,
-  if it needs one, a `_blueprint` item. Costs are placeholders.
+  `StashService.craft` decides. Each world has its own job (DESIGN.md
+  "Frostline"): the war's blueprints and most upgrade data come from the PvP
+  world (`WorldDef.roll_crafting_loot` and its chances, 0 by default; a
+  world's own loot tables), while the expedition world pays the parts every
+  Mk2 and Mk3 needs (`Crafting.MK2_PARTS`, `MK3_PARTS`: Cryo Core, Glacial
+  Alloy, Engine Coil), a trickle of upgrade data and its own blueprints,
+  tagged "expedition", which make new options only, never a higher Mk, and
+  which `roll_crafting_loot` never hands out. Cold-weather gear is data: a
+  frame's "insulation" stat keeps out that share of the cold
+  (`Raid.insulation_of`). A new craftable is a recipe row and, if it needs
+  one, a `_blueprint` item. Costs are placeholders.
 - Money (`core/economy/`): the rules live once, in `economy.gd` (static, like
   `StashRules`), shared by `Profile` and `StashService`. Online, `scrip`
   lives on the server's account and only changes there: through
@@ -1357,8 +1456,9 @@ without Caleb, and update the gap list when a PR closes a row.
   It moves goods only through six ledger calls on the `StashService`
   (`count_of`, `scrip_of`, `take_items`, `give_items`, `change_scrip`, and
   `transaction`, which every listing charge and every sale goes through so
-  no trade is half done), so it can move onto a shared account service
-  later; it never writes an account itself. Listed items are held by the
+  no trade is half done); it never writes an account itself. On official
+  servers the board runs inside the account service, beside those accounts
+  (`AccountService.market`), and a session only passes the request on. Listed items are held by the
   board, its file is written before the accounts' transaction so a crash
   can lose a listing but never copy one, and
   a client only asks (`NetSession.market_ask`) from the Exchange kiosk in
@@ -1421,6 +1521,13 @@ without Caleb, and update the gap list when a PR closes a row.
 - Gameplay shapes are built in code and dressed by `Look`. Hand-built `.tscn`
   scenes are fine later; keep the map contract.
 - Every gameplay feature gets checks in `tests/test_runner.gd`.
+- A running game logs no errors: one a frame is enough to sink the frame
+  rate. `tests/error_spam_tests.gd` watches an Ashfront session with an
+  `OS.add_logger` counter; fix the cause of anything it catches, never
+  silence it. A spring stepped by `delta` is stepped in short slices (a
+  long frame throws it off), and a deferred call or timer that outlives
+  the node it acts on is bound to that node (`node.queue_free`, an
+  instance id), never a lambda capturing it.
 
 ## Verify before committing
 
@@ -1433,6 +1540,7 @@ godot --headless --path . res://tests/test_runner.tscn -- --only online   # one 
 godot --headless --fixed-fps 60 --path . res://tests/test_runner.tscn -- --tier offline   # fast, ~1 min
 godot --headless --path . res://tests/test_runner.tscn -- --tier net --shard 1/3   # a third of the online groups
 godot --headless --path . res://tests/battle_bench.tscn -- --bots 150 --players 32   # server cost of a big battle
+godot --headless --path . res://tests/server_bench.tscn -- --plaza 10 --per-world 7 --arena 4   # the whole server at once: tick time per session, travel against 3 s
 godot --headless --fixed-fps 60 --path . res://tests/feel_bench.tscn   # how each rig answers, in numbers
 godot --headless --fixed-fps 60 --path . res://tests/duel_bench.tscn   # how each enemy type fights a reference player (DESIGN.md "Enemy balance")
 godot --headless --path . res://tests/gun_bench.tscn   # every gun's time to kill by range and armor (DESIGN.md "Gun roles")

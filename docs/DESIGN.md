@@ -207,20 +207,22 @@ worlds and a casual or solo one has a steady home.
   by ramps) and a rim (40 m, flight only), so fights are about holding the
   high side. Cold and quiet: a low sun, blue shadows, the only warm colours
   are heaters, beacons and the Engine's one teal light.
-- **Threats (planned).** Body heat as a vital, drained in the open and
-  refilled at heater huts, vents and vehicle engines, hurting through
-  `Combat.deal` when empty; whiteouts that cut sight to about 30 m and wipe
+- **Threats.** Body heat as a vital, drained in the open and refilled at
+  heater huts, vents and vehicle engines, hurting through `Combat.deal`
+  when empty (built, step 2). Planned: whiteouts that cut sight to about 30 m and wipe
   tracks, and feel like a real blizzard (Caleb's call): wind you see and
   hear, snow driven sideways in gusts, drifts streaming off the rims, bodies
-  leaning into it and the wind pushing flight rigs off course; footprints and vehicle tracks the server keeps and sends only
-  nearby; gunshots that carry twice as far; thin ice that breaks under
+  leaning into it and the wind pushing flight rigs off course. Built
+  (step 6): footprints and vehicle tracks the server keeps and sends only
+  nearby, and gunshots that carry twice as far. Planned: thin ice that breaks under
   heavy vehicles; the Wardens as the Engine's defence grid, still running.
-- **What you bring home (planned).** New parts (Cryo Core, Glacial Alloy,
+- **What you bring home.** New parts (Cryo Core, Glacial Alloy,
   Engine Coil) that Mk2 and Mk3 recipes need, and Frostline blueprints for
   new options only (attachments, cold-weather gear), never a higher Mk of
-  existing gear. Later the inside of the Engine is its deep-loot dungeon and
-  the home of the missing artifacts. Expedition contracts.
-- **Getting out (planned).** Sign-out only at warm beacons, held while they
+  existing gear (built, step 3, see below). Later the inside of the Engine is
+  its deep-loot dungeon and the home of the missing artifacts. Expedition
+  contracts (planned).
+- **Getting out (built, step 4).** Sign-out only at warm beacons, held while they
   power up (still `begin_sign_out`). Depots stay for banking.
 
 **Order of work**, one PR each: (1) the valley map, (2) the cold, (3) the
@@ -233,11 +235,76 @@ Engine's inside. Every number is a placeholder for the playtest.
 `Terrain` shared between copies like Ashfront's, with the zones running up
 the valley (`zone_at`: river mouth, mid-valley, glacier head; no hazard
 yet), two-tier walls with ramps to the shelf, six heater huts (the heaters
-do nothing yet), three strongpoints held by the Wardens (Echo Post and
+warm you, see below), three strongpoints held by the Wardens (Echo Post and
 Vigil Post on the shelves, Drift Post at the lake's north shore), six rim
 listening posts with the rooftop caches, the Stilled Engine with the relay
 cache on its back and the core's caches at its hatch, and Feral dens on the
 floor. Bot markers name their faction, and `equip_bot` follows them.
+
+The cold (step 2): `Actor.body_heat` (of 100) drains out in the open by
+`WorldDef.cold_at`, 0.7 a second at the river mouth, 1.0 mid-valley and
+1.4 at the glacier head, half as fast again up on a rim or in the air, so
+a full bar lasts about two and a half minutes at the mouth and a minute
+and a quarter at the head. Warmth fills it again: the map's "warmth"
+markers (a heater in every hut, six vents on the floor, the camp fire at
+the river mouth and the Engine's hatch) and any running vehicle's engine,
+for its riders and anyone within 4 m. Empty, the cold hurts 4 a second
+through `Combat.deal`, past armor. Only the authority decides it
+(`Raid._tick_cold`); the owner is sent the number and everyone sees who
+shivers (`ActorCommand.STATE_CHILLED`). It shows as a body heat cell on the
+visor (and a bar on the watch card without a helmet), the watch's zone
+line saying "warm" in warmth, frost creeping over the visor glass, breath
+fogging out of every mouth and a shivering hunch below a third of the bar.
+The numbers are placeholders for the playtest.
+
+The loot role (step 3): three new parts, Cryo Core (on the floor and from
+Wardens), Glacial Alloy (the rims, the glacier head and the relay) and
+Engine Coil (only the relay on the Engine's back). Every Mk2 craft needs a
+Cryo Core and every Mk3 two Glacial Alloy and an Engine Coil, beside the
+war's parts and upgrade data, so a player who only fights in Ashfront
+trades for them at the Exchange. Frostline's own blueprints (tag
+"expedition", found on the rims and the relay, never handed out by
+Ashfront's warlords or pods) make new options only: the Thermal Frame, a
+medium frame (65 armor) whose liner keeps out 40% of the cold but glows on
+thermal, and the Glacier Grip, much steadier on the move and slower to
+aim. The rims and the relay also pay a trickle of upgrade data, so a
+player who stays in Frostline reaches Mk2 slowly; there is no hard cap on
+it yet. Numbers are placeholders.
+
+Warm beacons (step 4): the only way out of the valley. Four masts stand on
+the floor (the Mouth, Narrows, Lakeshore and Glacier beacons, one in every
+zone), each a "beacon" marker with a name and a 6 m radius, a heat lamp and
+a ring of light on the snow round it, and warm like a vent. With
+`WorldDef.sign_out_at_beacons` a sign-out (L, the watch, or the portal
+home, which opens one) is refused away from a beacon. At one it takes
+`beacon_sign_out_time` (20 s) and counts only while you stand in the ring:
+step out and it waits, step back and it carries on, so it is never lost to
+a short dash for cover. Every other player powering the same beacon adds
+`beacon_join_bonus` (half again) to the pace, up to `beacon_join_cap`
+(twice), so company makes it quicker but one player can do it alone. A
+fight still cancels it, and a body left by a dropped connection counts
+down where it stands as anywhere. Only the authority decides it
+(`Raid._beacon_rate`); the owner is sent the pace with the countdown
+(`NetSession._sign_out`), so the client's numbers keep step. The watch's
+zone line names the beacon you stand at. Numbers are placeholders.
+
+Tracks and gunshots (step 6): with `WorldDef.tracks` every body on foot
+leaves footprints, left and right in turn about every 0.8 m, and every
+ground vehicle wheel tracks (a hoverbike and an aircraft leave none). Only
+open ground takes a print: a body more than half a metre off the map's
+`ground_height` (a roof, a hut floor, a ledge) leaves nothing. The
+authority lays them down (`Raid._tick_tracks`, ten times a second) in a
+`Tracks` store kept in 24 m cells, each capped so a trampled spot never
+grows, and lets them go after `track_lifetime` (four minutes). Online a
+player is sent only the new marks within 60 m of them, a few times a
+second, by the last mark id sent for each cell (`NetSession._send_tracks`),
+so tracks are a trail laid behind people, never a live position, and far
+ones never leave the server. The snow shows them (`TrackView`, view only):
+pressed-in prints and pairs of wheel lines that fade as they age, drawn
+within 55 m. Whiteouts (step 5) will wipe them. A shot carries
+`WorldDef.shot_carry` (twice) as far: bots hear it twice as far off
+(`Gun.noise_reach`) and people hear it twice as far too. Numbers are
+placeholders.
 
 ### PvP world
 
@@ -293,7 +360,11 @@ markers); the middle reaches past the four landmarks; the rest is the
 outer ring. Caches pay by zone (`cache_outer`, `cache`, `cache_core`), and
 soldiers arriving further in are more often heavies and tougher. Four gate
 outposts on the rim (`outpost` markers, run by `Raid._tick_outposts`) are
-where players drop in, each with a depot. Still to come: more hotspots (a
+where players drop in, each with a depot. In the middle ring, south of the
+Forge, stands the Works: a ruined factory district built for close quarters
+(one street of halls and open sheds pointing at the Forge, a cross street,
+catwalks and gantries 6 m up, roofs left to flight rigs, so a jetpack or
+boots do well there and wings do not). Still to come: more hotspots (a
 volcano, a storm core), a drawn map on the watch with the rings on it,
 squad regrouping at the gates, and tuning.
 
@@ -564,6 +635,30 @@ These follow the visor rules: thin projected light that rests dim and never
 frames or tints the view, and the same readings with no helmet worn appear
 on the gear alone (the gun and the pack). They show only your own state,
 never an enemy's.
+
+### Loot at a glance (Caleb's call)
+
+What you are about to pick up and what you just picked up are on the visor,
+so the watch is only needed to manage the pack:
+
+- **Looking at a container** (a cache, a bag, a supply pod, a rack: the one
+  F would loot), the visor tags it beside the container, clear of the
+  crosshair: its name, how many things and their worth, then every item
+  inside on its own row (never just the best one), stacked by kind, rarest
+  first. Each row has the item's name (the Mk is part of it), its rarity in
+  its colour, and a mark for whether it beats what you wear in that slot
+  (better, worse or the same; nothing for materials and heals). A long list
+  runs on into a second column rather than being cut short. Scrip in a bag
+  is a row too.
+- **Picking something up** adds a line at the visor's lower right edge, over
+  the weapon readout ("+ ARC BLADE MK3"), in its rarity's colour, marked
+  where it beats what you wear. More of the same counts up on its line.
+  Lines fade after a few seconds.
+
+Every working helmet shows both, the scrap visor included, in both views
+(drawn flat in third person, like the rest of the visor). With no helmet
+there is no glass to show them on; the prompt and the watch still say what
+was looted.
 
 ### The summon carousel (Caleb's call)
 
@@ -1593,7 +1688,10 @@ weeklies. The existing rules stay (only a sign-out counts, no player kills).
 > instead.
 
 **Blueprints drop at Mk1, in the PvP world.** A weapon's or rig's blueprint
-is found in the warzone at its base level. Like everything you carry, it is
+is found in the warzone at its base level. The expedition world (Frostline)
+has blueprints of its own, for new options only (cold-weather gear and
+attachments), never a higher Mk of existing gear, and pays the parts every
+Mk2 and Mk3 needs (section 2, "Frostline"). Like everything you carry, it is
 at stake until you extract (bank it or sign out). Once home it is yours for
 good: a blueprint is knowledge, never lost on death.
 
@@ -1634,20 +1732,31 @@ shared by solo and online play like the money rules.
   screen lists every recipe with what it costs against what you hold;
   recipes whose blueprint you have not found are listed dim, so you know
   what is out there.
-- Where they come from today, in Ashfront only: rig and gun blueprints and
-  upgrade data in rooftop caches; any blueprint, vehicles included, from a
+- Where they come from today: Frostline's own blueprints, its parts and a
+  trickle of upgrade data on its rims and the relay; in Ashfront, rig and
+  gun blueprints and upgrade data in rooftop caches; any blueprint, vehicles included, from a
   warlord (1 in 2) or a supply pod (1 in 4), each with upgrade data
   (2 and 1). Players carry what they found, so killing one pays it too.
   Contracts are the next source.
+- Decided (Caleb's call): the war's blueprints stay mainly in Ashfront, but
+  Frostline gets a slow route to them too, so a player who never fights
+  other players can still reach Mk2 alone: a rare drop at its hardest
+  spots (the relay on the Engine, the defence grid's boss) and from long
+  expedition contracts, rarer than in Ashfront. Mk3 stays the war's: a rig's
+  one blueprint makes both Mks, so Mk3 is held back by its 8 upgrade data,
+  which comes mostly from Ashfront, and Frostline players can buy the rest
+  at the Exchange. Planned with step 7 of Frostline.
 
 | Recipe | Blueprint | Upgrade data | Parts | Scrip |
 | --- | --- | --- | --- | --- |
-| Mk2 jetpack, boots or wings | That rig's | 3 | 2 power cells, 1 alloy ingot | 400 |
-| Mk3 jetpack, boots or wings | That rig's (the same one) | 8 | 2 alloy ingots, 1 reactor core | 1,200 |
+| Mk2 jetpack, boots or wings | That rig's | 3 | 2 power cells, 1 alloy ingot, 1 cryo core | 400 |
+| Mk3 jetpack, boots or wings | That rig's (the same one) | 8 | 2 alloy ingots, 1 reactor core, 2 glacial alloy, 1 engine coil | 1,200 |
 | Longshot DMR | Its own | none | 1 alloy ingot, 2 circuit boards | 300 |
 | Breacher Shotgun | Its own | none | 1 alloy ingot, 3 scrap metal | 300 |
 | Bulwark Mech | Its own | none | 1 reactor core, 3 alloy ingots, 2 power cells | 2,000 |
 | Kestrel Jet | Its own | none | 1 reactor core, 2 alloy ingots, 4 circuit boards | 2,000 |
+| Thermal Frame | Its own (Frostline) | none | 1 glacial alloy, 1 cryo core, 2 scrap metal | 350 |
+| Glacier Grip | Its own (Frostline) | none | 1 glacial alloy, 1 circuit board | 250 |
 
 Every number in the table and every drop chance is a placeholder until the
 playtest. Not built yet: the mastery gate (rigs have no mastery track to
@@ -1894,10 +2003,35 @@ are never duplicated or lost. Postgres only if one machine stops being
 enough. Not a ready-made backend such as Nakama: it would need a second copy
 of the rules in another language.
 
+Built (accounts and the market): the service is `-- --account-service`
+(`core/account/account_service.gd`) and a game server started with
+`--account-url` reaches it through an `AccountLink`
+(`core/account/account_link.gd`), which offers the `StashService` calls, so
+a session does not know which it holds. A game server proves a shared key
+to the service and players never reach it. Each request carries an id and
+the service writes its receipt in the same transaction as its changes, so a
+request sent again after a lost answer is answered, not done twice. What a
+server alone knows (a finished life, banked loot, a wager paid) is kept and
+sent until answered; what a player is waiting on (equip, buy, deploy) gives
+up after 5 s, and a deploy that was never answered is undone by name. The
+server reads the accounts of the players it has from its own copy, which
+the service keeps fresh. Clans and the phone's social records move over
+with one program per world.
+
+**Sign-in tokens.** Signing in with the name and secret hands the game a
+token, good for 12 hours, that stands for that sign-in. The game shows the
+token, not the secret, to the next server it travels to, and every server
+of one account service accepts it by asking the service. One token per
+account: a new sign-in with the secret replaces it. A token that has run
+out falls back to the secret on the same connection. This is what lets each
+world run as its own program without the secret going to every one.
+
 **Sign-in.** Official servers move to Steam (or Epic) login through
 GodotSteam (MIT), checked on the server with the store's web service. That
 brings account recovery, bans and protection against stolen accounts.
-Friends' servers can keep the name and secret.
+Friends' servers can keep the name and secret. A store login is one more
+"method" of `StashService.sign_in_with` that ends in an account id; nothing
+past that call changes, and the token above is handed out the same way.
 
 Official servers open before the game is on Steam (Caleb's call), once
 connections are encrypted, signing in with the name and secret. A recovery
@@ -1961,4 +2095,17 @@ PvP.
   certificate.
 - **Travel between worlds within about 3 s**, measured by the whole-server
   bench.
+- **Travel that hides its wait.** The whole-server bench measures the
+  network and server part of a trip (connect, sign in, deploy): about 0.3 s
+  lightly loaded and 2.1 s with 31 players on a shared 4-core box. Two steps
+  hide it, in this order. First, connect early: the client starts connecting
+  and signing in to the destination while the gate's ring opens (about 15 s),
+  so arriving only waits for the deploy. Second, preload the map: the client
+  builds the destination world's map and art in the background so arrival does
+  not hitch. A short fade through the portal covers what is left. A handoff
+  with no loading screen at all (two live connections, swapping which world is
+  drawn) is not planned: it breaks the client's one-session assumption,
+  prediction and lag compensation, and is the riskiest part where gear is at
+  stake. Revisit only if the first two are not enough. The bench times arrival
+  once the early connect is built.
 - **A taken name asks for another one** on the phone, never just a refusal.

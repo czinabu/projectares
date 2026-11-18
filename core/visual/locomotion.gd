@@ -227,6 +227,18 @@ var _hip_name := ""
 var _stand_anim: Animation
 var _stand_tracks: Array = []
 var _stand_time := 0.0
+## Shivering in the cold (`Actor.shivering`): how far into it the body is
+## (eased, so it comes on and goes off gently), the shoulders hunched in by
+## `shiver_hunch` radians and the chest trembling by `shiver_shake` at
+## `shiver_rate` a second. The neck takes the tremor back, so the head (and
+## first person's eyes on it) barely moves. View only, the same body in
+## every view, and remote players match from the state.
+var shiver := 0.0
+var shiver_ease := 0.8
+var shiver_hunch := 0.09
+var shiver_shake := 0.016
+var shiver_rate := 13.0
+var _shiver_time := 0.0
 
 
 ## `def` is the skin's entry in `Look.SKINS`, `anims` maps keys to the clips
@@ -320,6 +332,10 @@ func setup(def: Dictionary, player: AnimationPlayer, anims: Dictionary) -> void:
 	stance.name = "FightStance"
 	stance.run = _fight_pose
 	skeleton.add_child(stance)
+	var cold := WeaponArm.Hook.new()
+	cold.name = "Shiver"
+	cold.run = _shiver_pose
+	skeleton.add_child(cold)
 	var land := WeaponArm.Hook.new()
 	land.name = "SquatPose"
 	land.run = _squat_pose
@@ -518,6 +534,8 @@ func update(delta: float) -> void:
 	stride = move_toward(stride, stride_target, stride_rate * delta)
 	stand_legs_weight = move_toward(stand_legs_weight, 1.0 if stand_legs and not _stand_tracks.is_empty() else 0.0,
 			stand_legs_rate * delta)
+	shiver = move_toward(shiver, 1.0 if actor.shivering and not actor.is_dead else 0.0, shiver_ease * delta)
+	_shiver_time += delta
 	var shared := ActionPose.of(actor)
 	shared.advance(delta)
 	phone_weight = shared.phone
@@ -608,6 +626,28 @@ func _slide_pose() -> void:
 		var foot := skeleton.get_bone_global_pose(leg[2])
 		var on_shin: Transform3D = skeleton.get_bone_global_pose(leg[1]) * _foot_on_shin[leg[2]]
 		skeleton.set_bone_global_pose(leg[2], foot.interpolate_with(on_shin, weight))
+
+
+## Cold: the chest hunches in and trembles, a fast uneven shake, and the neck
+## takes the tremor back so the head stays steady.
+func _shiver_pose() -> void:
+	if shiver <= 0.001 or _spine.is_empty():
+		return
+	var to_skeleton := skeleton.global_basis.orthonormalized().inverse() * actor.global_basis.orthonormalized()
+	var right := (to_skeleton * Basis(Vector3.UP, twist) * Vector3.RIGHT).normalized()
+	var forward := (to_skeleton * Basis(Vector3.UP, twist) * Vector3.FORWARD).normalized()
+	var t := _shiver_time * shiver_rate
+	var shake := shiver_shake * shiver * (sin(t) * 0.6 + sin(t * 1.73 + 1.1) * 0.4)
+	var sway := shiver_shake * shiver * 0.5 * sin(t * 1.31 + 2.0)
+	var chest := _spine[_spine.size() - 1]
+	var pose := skeleton.get_bone_global_pose(chest)
+	var turn := Basis(right, -shiver_hunch * shiver + shake) * Basis(forward, sway)
+	pose.basis = turn * pose.basis
+	skeleton.set_bone_global_pose(chest, pose)
+	if _neck >= 0 and _is_under(_neck, chest):
+		var neck := skeleton.get_bone_global_pose(_neck)
+		neck.basis = Basis(forward, -sway) * Basis(right, -shake) * neck.basis
+		skeleton.set_bone_global_pose(_neck, neck)
 
 
 ## A landing squat: see `_sink`.
