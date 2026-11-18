@@ -50,6 +50,7 @@ var _move := 1.0
 ## The plan table's screen while in use, and the customizer on it.
 var screen: WorldScreen
 var panel: Control
+var _plan_view: SubViewport
 
 
 ## Moves the view in to the bench and starts taking the mouse.
@@ -78,24 +79,44 @@ func focus() -> void:
 ## The customizer on the plan table's lectern: a 2D panel in a viewport,
 ## shown on the screen there and worked through it.
 func _mount_panel() -> void:
+	if panel == null:
+		var view := SubViewport.new()
+		view.name = "PlanView"
+		view.size = Vector2i(1600, 900)
+		view.disable_3d = true
+		view.gui_embed_subwindows = true
+		panel = PlanPanel.new()
+		panel.base = base
+		view.add_child(panel)
+		add_child(view)
+		_plan_view = view
+	_place_screen()
+
+
+## Puts the customizer's screen on the lectern. A change to the plan rebuilds
+## the table, and the screen with it, so this runs again whenever the screen
+## is gone while the plan table is in use.
+func _place_screen() -> bool:
 	var face: Node3D = base.plan_screen()
-	if face == null:
-		return
-	var view := SubViewport.new()
-	view.name = "PlanView"
-	view.size = Vector2i(1600, 900)
-	view.disable_3d = true
-	view.gui_embed_subwindows = true
-	panel = PlanPanel.new()
-	panel.base = base
-	view.add_child(panel)
-	add_child(view)
+	if face == null or _plan_view == null:
+		return false
 	screen = WorldScreen.new()
 	screen.name = "LiveScreen"
 	screen.size = HomeBase.PLAN_SCREEN
 	screen.glow = 0.9
-	screen.viewport = view
+	screen.viewport = _plan_view
 	face.add_child(screen)
+	return true
+
+
+## Whether the plan table's screen is up, putting it back on a rebuilt table.
+func _screen_up() -> bool:
+	if screen != null and is_instance_valid(screen):
+		if screen.get_parent() == base.plan_screen() and screen.is_inside_tree():
+			return true
+		screen.queue_free()
+	screen = null
+	return _place_screen()
 
 
 ## Where the camera ends up, looking at the bench (global).
@@ -123,22 +144,27 @@ func leave() -> void:
 func _process(delta: float) -> void:
 	if _camera == null or base == null or not is_instance_valid(base):
 		return
-	var target := view_transform()
+	if target == "plan" and panel != null:
+		_screen_up()
+	var goal := view_transform()
 	if _move < 1.0:
 		_move = minf(1.0, _move + delta / maxf(move_time, 0.001))
 		var t := ease(_move, -2.0)
-		_camera.global_transform = _from.interpolate_with(target, t)
+		_camera.global_transform = _from.interpolate_with(goal, t)
 		_camera.fov = lerpf(_from_fov, fov, t)
 	else:
-		_camera.global_transform = target
+		_camera.global_transform = goal
 		_camera.fov = fov
 
 
 func _unhandled_input(event: InputEvent) -> void:
 	if base == null or not is_instance_valid(base):
 		return
-	if screen != null and is_instance_valid(screen):
-		_screen_input(event)
+	if target == "plan":
+		if _screen_up():
+			_screen_input(event)
+		elif event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
+			leave()
 		return
 	var handled := true
 	if event is InputEventMouseButton and event.pressed:
