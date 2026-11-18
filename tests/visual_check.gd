@@ -101,6 +101,13 @@ func _ready() -> void:
 		get_tree().quit()
 		return
 
+	# `-- <output_dir> --camera-only [row,row]` shoots both cameras and the
+	# body from the side, looking level, up and down, aimed and with a blade.
+	if "--camera-only" in args:
+		var at := args.find("--camera-only")
+		await _camera_shots(out_dir, args[at + 1] if args.size() > at + 1 and not args[at + 1].begins_with("--") else "")
+		get_tree().quit()
+		return
 	# `-- <output_dir> --views-only [row,row]` shoots each action in first
 	# person, the third-person camera and from the front, side by side.
 	if "--views-only" in args:
@@ -3602,6 +3609,90 @@ func _ride_shots(out_dir: String) -> void:
 	await _shot(out_dir.path_join("ride_first_down.png"))
 	raid.queue_free()
 
+
+
+## The camera pass: each row held still and shot from the eyes, from the
+## third-person camera and from the right side, where the head and chest show
+## whether they follow the aim. Saves `camera.png` and each shot full size
+## under `camera/`. `CAM_ROWS` or the argument picks rows.
+func _camera_shots(out_dir: String, only := "") -> void:
+	var raid := Raid.new()
+	add_child(raid)
+	raid.start(Worlds.get_world("ashfront"), 42, ["rifle_carbine", "blade_scrap", "pistol_service", "jetpack_mk1",
+			"plate_light", "helm_spotter"])
+	for bot in raid.bots:
+		bot.get_node("Brain").set_physics_process(false)
+		bot.global_position += Vector3(0, -500, 0)
+	var p := raid.player
+	var controller := PlayerController.new()
+	controller.setup(p)
+	raid.add_child(controller)
+	var hud := Hud.new()
+	hud.setup(raid, controller)
+	raid.add_child(hud)
+	await _settle(30)
+	p.set_physics_process(false)
+	controller.set_physics_process(false)
+	var skin: Node = p.get_node("Skin")
+	var slot := {}
+	for i in p.weapons.size():
+		if p.weapons[i] is MeleeWeapon:
+			slot["blade"] = i
+		elif p.weapons[i] is Gun and p.weapons[i].is_sidearm:
+			slot["pistol"] = i
+		elif p.weapons[i] is Gun and not slot.has("rifle"):
+			slot["rifle"] = i
+	var outside := Camera3D.new()
+	outside.fov = 40.0
+	raid.add_child(outside)
+	# [row, weapon, pitch, aimed]
+	var rows := [["level", "rifle", -0.05, false], ["look_up", "rifle", 0.6, false],
+			["look_down", "rifle", -0.6, false], ["ads", "rifle", -0.05, true], ["ads_up", "rifle", 0.5, true],
+			["pistol_ads", "pistol", -0.05, true], ["blade", "blade", -0.05, false], ["blade_down", "blade", -0.6, false]]
+	if only == "" and OS.has_environment("CAM_ROWS"):
+		only = OS.get_environment("CAM_ROWS")
+	if only != "":
+		rows = rows.filter(func(r: Array) -> bool: return r[0] in only.split(","))
+	var size := Vector2i(400, 300)
+	var sheet := Image.create(3 * size.x, rows.size() * size.y, false, Image.FORMAT_RGBA8)
+	DirAccess.make_dir_recursive_absolute(out_dir.path_join("camera"))
+	for row in rows.size():
+		var kind: String = rows[row][0]
+		p.active_weapon_index = slot[rows[row][1]]
+		controller.pitch = rows[row][2]
+		p.cmd.pitch = controller.pitch
+		p.cmd.yaw = controller.yaw
+		p.cmd.aim_dir = Basis.from_euler(Vector3(p.cmd.pitch, p.cmd.yaw, 0.0)) * Vector3.FORWARD
+		var aimed: bool = rows[row][3]
+		for col in 3:
+			controller.view_mode = PlayerController.ViewMode.FIRST if col == 0 else PlayerController.ViewMode.THIRD
+			outside.current = col == 2
+			controller.camera.current = col != 2
+			if col == 2:
+				var at := p.global_position
+				outside.global_position = at + p.global_basis * Vector3(2.6, 1.4, -0.4)
+				outside.look_at(at + Vector3(0, 1.3, 0))
+			for k in 40:
+				p.cmd.secondary = aimed
+				for w in p.weapons:
+					if w is Gun:
+						w._aiming = aimed and w == p.get_active_weapon()
+				skin._aim_left = 1.0 if rows[row][1] != "blade" else 0.0
+				await get_tree().process_frame
+			await RenderingServer.frame_post_draw
+			var frame := get_viewport().get_texture().get_image()
+			frame.save_png(out_dir.path_join("camera/%s_%s.png" % [kind, ["first", "third", "side"][col]]))
+			var w := frame.get_width()
+			var h := frame.get_height()
+			var cut_w := h * size.x / size.y
+			var cut := frame.get_region(Rect2i((w - cut_w) / 2, 0, cut_w, h))
+			cut.resize(size.x, size.y)
+			cut.convert(Image.FORMAT_RGBA8)
+			sheet.blit_rect(cut, Rect2i(Vector2i.ZERO, size), Vector2i(col * size.x, row * size.y))
+		print("shot %s" % kind)
+	sheet.save_png(out_dir.path_join("camera.png"))
+	print("saved camera.png")
+	raid.queue_free()
 
 
 ## One action per row, held still: as you see it in first person, in the

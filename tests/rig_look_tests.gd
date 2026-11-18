@@ -376,13 +376,20 @@ static func run(t: Node) -> void:
 		# facing the way it flies and never swings round with the camera.
 		p.velocity = flying * 16.0 + Vector3(0, -1.8, 0)
 		await t.get_tree().create_timer(0.6).timeout
-		var worst_face := 1.0
+		var worst := [1.0]
+		# Read as drawn: late in the frame, while the body is where it is
+		# shown between ticks (`ShownMotion`).
+		var probe := Probe.new()
+		probe.read = func() -> void:
+			var nose := (skin as Node3D).global_basis.y
+			worst[0] = minf(worst[0], Vector3(nose.x, 0, nose.z).normalized().dot(flying))
+		p.add_child(probe)
 		for i in 40:
 			p.cmd.yaw = wrapf(p.cmd.yaw + 0.2, -PI, PI)
 			p.rotation.y = p.cmd.yaw
 			await t.get_tree().process_frame
-			var nose := (skin as Node3D).global_basis.y
-			worst_face = minf(worst_face, Vector3(nose.x, 0, nose.z).normalized().dot(flying))
+		probe.queue_free()
+		var worst_face: float = worst[0]
 		t.check(worst_face > 0.95, "spinning the view in a glide leaves the body facing the way it flies (worst %.2f)" % worst_face)
 		# Free look: look to the side and the body twists round to face it;
 		# look behind and it lies on its back, a backstroke, flying on.
@@ -519,3 +526,15 @@ static func _in(root: Node3D, node: Node3D) -> Vector3:
 		xform = (up as Node3D).transform * xform
 		up = up.get_parent()
 	return xform.origin
+
+
+## Calls `read` each frame after everything else has processed.
+class Probe extends Node:
+	var read := Callable()
+
+	func _ready() -> void:
+		process_priority = 10000
+
+	func _process(_delta: float) -> void:
+		if read.is_valid():
+			read.call()
