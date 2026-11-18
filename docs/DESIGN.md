@@ -2171,6 +2171,39 @@ summon (1.6 s to materialize, then about 10 s of watch rest), helmets (all
 utility, no armor), deflect window (0.3 s), two-handed stagger, lunge and
 dash-strike range, player kill scrip (60), sell-back rate (40%).
 
+### Challenge and balance data
+
+Ashfront should be engaging and a challenge but always possible to work
+through (Caleb, 18 November 2026). Players choose their own risk: the quiet
+rim, the landmarks or the burning core; danger warns before it lands; there
+is always a way out; fresh players are kept from strong squads; every
+level of player has a goal; and the numbers are tuned from what happens in
+play, not guessed.
+
+The last of those is the life log. The authority's `Raid` writes one line
+for every life a player finishes, died or signed out (`LifeLog`,
+`core/raid/life_log.gd`): the world, the spot and its risk zone, the cause
+and what did the killing (a player, a raider, a warlord, a boss, or an army
+bot as faction and kind), how many bots had the player as their target at
+the end (being converged on), how long the life ran, what was brought,
+carried and banked, the war's intensity, the storm and the bounty. It goes
+to one JSON-lines file a world a day under `user://life_log` (or
+`--life-log <dir>`), never into a save and never back into play. Safe zones
+and clients keep none.
+
+`tests/life_report.tscn` reads a folder of them and prints, by zone, how
+many lives end there, how many die, how long they last and what they carry;
+what does the killing; how many deaths came with three or more bots after
+the player; and deaths by the gear brought (and how many of those were to
+people, the measure for keeping fresh players from strong squads). `--png`
+draws the deaths in red and sign-outs in green over the map.
+
+Targets to read it against (proposed, for Caleb to confirm after the
+playtest): the outer ring gets most people out with something; the core
+kills more than it lets out but pays for those who make it; nobody dies
+with three or more bots on them often; and someone in scrap gear dies to
+players far less than to bots.
+
 ## 11. Social
 
 - The phone: people, chat, invites, news, mirror, settings.

@@ -298,6 +298,12 @@ without Caleb, and update the gap list when a PR closes a row.
   (`BotBrain.melee_flinch`, its aim and trigger only, never a player's)
   and gives ground from one (`blade_backoff`). Measure with the duel
   bench's `--melee <blade id>`.
+- The life log (DESIGN.md "Challenge and balance data"): the authority's
+  `Raid` records every finished life (`Raid._log_life`, `LifeLog`): where,
+  how, what killed them and how many bots were after them, to JSON lines
+  under `LifeLog.directory` (`main.gd` sets it; empty writes nothing, as in
+  the tests). It is read only by `tests/life_report.tscn`, never in play.
+  A new thing worth tuning by is a new field there, not a second log.
 - Big battles must stay affordable; measure with
   `godot --headless --path . res://tests/battle_bench.tscn -- --bots 150 --players 32`
   (processor time a tick, against the 16.7 ms budget). Three things keep

@@ -167,6 +167,9 @@ var _marked_owner := ""
 ## server. The map hears them through its "war_intensity" and "war_centre"
 ## metas, which is all `Look` needs to shift the sky.
 var war := WarDirector.new()
+## Where lives end, one line a finished life (`LifeLog`, DESIGN.md
+## "Challenge and balance data"). Authority only.
+var life_log := LifeLog.new()
 ## The sites worth holding, one per "strongpoint" marker on the map.
 var strongpoints: Array[Strongpoint] = []
 ## A strongpoint at least this deep in a storm is cover for a push, and an
@@ -1042,6 +1045,7 @@ func _can_bank(actor: Actor) -> bool:
 func add_player(p_kit: Array = [], p_mastery: Dictionary = {}, p_name := "Raider",
 		p_owner := "", p_renown := 0, p_drop := "", p_insured := "") -> Actor:
 	var state := PlayerState.new()
+	state.started = clock
 	state.kit.assign((p_kit if not p_kit.is_empty() else world.starter_loadout()).filter(
 			func(id: Variant) -> bool: return id != Loadout.BARE))
 	if p_insured != "" and p_insured in state.kit and world.gear_at_risk:
@@ -2912,6 +2916,8 @@ func _on_actor_died(actor: Actor, info: DamageInfo) -> void:
 	if mode != Mode.CLIENT:
 		# Read before the ledger closes the victim's life.
 		var bounty := renown.bounty_of(state.owner) if state != null else 0
+		if state != null:
+			state.end_note["bounty"] = bounty
 		gained = _settle_renown(state, killer, actor, by)
 		if killer != null:
 			var pay := Economy.KILL_BOUNTY
@@ -2941,6 +2947,10 @@ func _on_actor_died(actor: Actor, info: DamageInfo) -> void:
 		killer.actor.notice.emit("Killed %s" % actor.display_name if gained <= 0
 				else "Killed %s   +%d renown" % [actor.display_name, gained])
 	if state != null:
+		if mode != Mode.CLIENT:
+			# Read now, while the bots that were after them still are.
+			state.end_note["killer"] = LifeLog.killer_kind(self, actor, info)
+			state.end_note["hunters"] = LifeLog.hunters_of(actor)
 		_finish_player(state, "died", info.kind, by)
 		_publish_standing()
 		# The local player's body stays for the camera until they drop in again.
@@ -3302,7 +3312,41 @@ func _finish_player(state: PlayerState, outcome: String, cause: String, killed_b
 		result["renown_now"] = standing.renown
 	if apply_to_profile:
 		apply_result(result)
+	_log_life(state, result)
 	player_finished.emit(actor, result)
+
+
+## One line in the life log for a finished life (`LifeLog`): where and how
+## it ended and what it carried. Authority only, never in a safe zone.
+func _log_life(state: PlayerState, result: Dictionary) -> void:
+	if mode == Mode.CLIENT or world.safe_zone:
+		return
+	var actor := state.actor
+	var at := actor.global_position if is_instance_valid(actor) else Vector3.ZERO
+	var in_storm := weather.strength_at(at) if weather.kind != "" else 0.0
+	var died: bool = result.outcome == "died"
+	life_log.record({
+		"time": int(Time.get_unix_time_from_system()),
+		"world": world.id,
+		"owner": state.owner,
+		"outcome": result.outcome,
+		"cause": result.cause,
+		"killer": str(state.end_note.get("killer", "")) if died else "",
+		"hunters": int(state.end_note.get("hunters", 0)) if died else 0,
+		"zone": world.zone_at(at),
+		"x": snappedf(at.x, 0.1),
+		"z": snappedf(at.z, 0.1),
+		"alive": snappedf(clock - state.started, 0.1),
+		"kills": state.kills,
+		"gear_value": ItemDB.total_value(state.kit),
+		"carried_value": ItemDB.total_value(actor.get_drop_items()) if died and is_instance_valid(actor)
+				else int(result.get("loot_value", 0)),
+		"banked_value": int(result.get("banked_value", 0)),
+		"scrip": int(result.get("scrip", 0)) + int(result.get("scrip_banked", 0)),
+		"war": snappedf(war.intensity, 0.01),
+		"storm": snappedf(in_storm, 0.01),
+		"bounty": int(state.end_note.get("bounty", renown.bounty_of(state.owner))),
+	})
 
 
 ## Writes a finished life into the local profile: what came home, the
@@ -3408,3 +3452,7 @@ class PlayerState:
 	## `Raid.clock` when an outpost last turned them away, so it says so once.
 	var refused_at := -INF
 	var finished := false
+	## `Raid.clock` when this life began, and what ended it (the killer's
+	## kind and how many bots were after them), for the life log.
+	var started := 0.0
+	var end_note := {}

@@ -73,6 +73,7 @@ const RaiderTests := preload("res://tests/raider_tests.gd")
 const HeavyUnitTests := preload("res://tests/heavy_unit_tests.gd")
 const PlaytestFixTests := preload("res://tests/playtest_fix_tests.gd")
 const ExtractionTests := preload("res://tests/extraction_tests.gd")
+const LifeLogTests := preload("res://tests/life_log_tests.gd")
 const InspectTests := preload("res://tests/inspect_tests.gd")
 const RaceTests := preload("res://tests/race_tests.gd")
 const SaveSafetyTests := preload("res://tests/save_safety_tests.gd")
@@ -304,6 +305,7 @@ func _run() -> void:
 	await _test_lag_compensation()
 	await _test_extraction()
 	await ExtractionTests.run(self)
+	await _test_life_log()
 	await _test_loadouts()
 	await _test_death()
 	await _test_storm()
@@ -1097,6 +1099,10 @@ func _test_combat_and_loot() -> void:
 		var hit := Combat.deal(raid.bots[1], DamageInfo.make(10.0, raid.bots[0], "bullet"))
 		check(not hit, "world rules block scav-on-scav damage")
 	await _end_raid(raid)
+
+
+func _test_life_log() -> void:
+	await LifeLogTests.run(self)
 
 
 func _test_extraction() -> void:
