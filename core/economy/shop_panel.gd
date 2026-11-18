@@ -10,10 +10,13 @@ extends VBoxContainer
 
 const Economy := preload("res://core/economy/economy.gd")
 const ShopDB := preload("res://core/economy/shop_db.gd")
+const ItemCard := preload("res://core/ui/item_card.gd")
 
 const SELL_TAB := "sell"
 const TITLE_COLOR := Color(1.0, 0.55, 0.25)
 const SCRIP_COLOR := Color(1.0, 0.85, 0.4)
+## How tall the list is before it scrolls.
+const LIST_HEIGHT := 360.0
 
 ## Online: the server decides, so nothing changes until `account` is updated.
 signal buy_requested(shop_id: String, item_id: String)
@@ -34,6 +37,8 @@ var _tabs: HBoxContainer
 var _blurb: Label
 var _rows: VBoxContainer
 var _message: Label
+## The card beside the list: the item pointed at, its model and what it does.
+var card: ItemCard
 
 
 func _ready() -> void:
@@ -54,12 +59,25 @@ func _ready() -> void:
 	add_child(_tabs)
 	_blurb = _label("", 13, Color(0.65, 0.65, 0.65), true)
 	add_child(_blurb)
-	_rows = VBoxContainer.new()
-	_rows.add_theme_constant_override("separation", 3)
-	add_child(_rows)
 	_message = _label("", 14, Color(1.0, 0.8, 0.4))
 	_message.visible = false
 	add_child(_message)
+	# The list on the left, the card for the item pointed at on the right.
+	var split := HBoxContainer.new()
+	split.add_theme_constant_override("separation", 14)
+	add_child(split)
+	var scroll := ScrollContainer.new()
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.custom_minimum_size = Vector2(0, LIST_HEIGHT)
+	split.add_child(scroll)
+	_rows = VBoxContainer.new()
+	_rows.add_theme_constant_override("separation", 3)
+	_rows.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(_rows)
+	card = ItemCard.new()
+	card.notes = notes_for
+	split.add_child(card)
 	refresh()
 
 
@@ -138,11 +156,34 @@ func refresh() -> void:
 		button.pressed.connect(open_tab.bind(tab))
 		_tabs.add_child(button)
 	for child in _rows.get_children():
+		_rows.remove_child(child)
 		child.queue_free()
+	card.clear_rows()
 	if current == SELL_TAB:
 		_fill_sell()
 	else:
 		_fill_shop(current)
+	card.settle()
+
+
+## What the card says about an item on this tab: what it costs or pays, how
+## many you have, and what stands in the way.
+func notes_for(id: String) -> Array:
+	var out: Array = []
+	var owned := stash_items().count(id)
+	if current == SELL_TAB:
+		out.append(["You have %d. Sells for %d scrip each." % [owned, Economy.sell_price(id)], ItemCard.GOOD])
+		if not Economy.is_trade_good(id):
+			out.append(["Gear sells back for %d%% of what it is worth." % int(Economy.SELL_BACK_RATE * 100),
+					ItemCard.MUTED])
+		return out
+	var price := Economy.buy_price(id)
+	out.append(["Price: %d scrip" % price, ItemCard.GOOD if scrip() >= price else ItemCard.WARN])
+	if scrip() < price:
+		out.append(["You need %d more scrip." % (price - scrip()), ItemCard.WARN])
+	if owned > 0:
+		out.append(["You own %d." % owned, ItemCard.GOOD])
+	return out
 
 
 func _fill_shop(shop_id: String) -> void:
@@ -150,7 +191,7 @@ func _fill_shop(shop_id: String) -> void:
 	for id in Economy.stock(shop_id):
 		var price := Economy.buy_price(id)
 		var owned := stash_items().count(id)
-		var button := _row(id, "%s%s" % [ItemDB.item_description(id), "  (you own %d)" % owned if owned > 0 else ""],
+		var button := _row(id, "%s%s" % [ItemCard.short_kind(id), "   You own %d" % owned if owned > 0 else ""],
 				"Buy  %d" % price)
 		button.disabled = scrip() < price
 		button.pressed.connect(buy.bind(shop_id, id))
@@ -178,16 +219,17 @@ func _fill_sell() -> void:
 func _row(id: String, detail: String, action: String) -> Button:
 	var row := HBoxContainer.new()
 	var name_label := _label(ItemDB.item_name(id), 15, ItemDB.RARITY_COLORS[ItemDB.item_rarity(id)])
-	name_label.custom_minimum_size = Vector2(190, 0)
+	name_label.custom_minimum_size = Vector2(180, 0)
 	row.add_child(name_label)
 	var detail_label := _label(detail, 13, Color(0.7, 0.7, 0.7), true)
 	detail_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(detail_label)
 	var button := Button.new()
 	button.text = action
-	button.custom_minimum_size = Vector2(130, 0)
+	button.custom_minimum_size = Vector2(120, 0)
 	row.add_child(button)
 	_rows.add_child(row)
+	card.track(row, id)
 	return button
 
 

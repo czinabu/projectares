@@ -1599,6 +1599,16 @@ without Caleb, and update the gap list when a PR closes a row.
   add full-screen panels or overlays; information about a thing goes on or
   next to the thing (a `Label3D` tag, a sign) or into the phone. The HUD is
   for the crosshair, prompts, hit feedback and brief notices.
+  A screen that lists items (the trader and the Concourse's storefronts,
+  the locker, the fabricator, insurance, the market kiosk, the records
+  board's stash) puts an `ItemCard` (`core/ui/item_card.gd`, view only)
+  beside its list: the item pointed at, its model in a small lit window
+  that stays still until dragged (`ItemCard.Preview`), its kind, what it
+  is for in plain words (`about_text`), its numbers read off its stats
+  (`facts`) and the screen's own notes (price, what you are short of).
+  A new list hands each row over with `card.track(row, id)`; a new kind
+  of item gets a line in `ItemCard.KINDS` and its facts. Check by eye with
+  `visual_check.tscn -- <dir> --panels-only`.
 - The watch and the phone split the job (Caleb's rule, revised: the watch no
   longer carries vitals, heat and ammo; see DESIGN.md section 3). Vitals,
   flight heat and ammo are always in view on the visor and the gear (health
