@@ -18,15 +18,21 @@ extends Raid
 ## `send_request`. The ghost, the gantry, the splits on the arches and the
 ## board are drawn by `RaceView`, which only reads `view_run` and `board`.
 ##
+## A world may lay out several tracks (Meridian has Coilrun and Skyhook),
+## each with its own pit bays, grid, gantry, gates and board. A run is on
+## the track whose road the machine was nearest when it was got on
+## (`track_near`), so a racer picks a track by walking to its pit row.
+##
 ## Map contract, beyond `WorldDef`'s: a `race_track()` method returning the
-## `RaceTrack`, and "spawn_vehicle" markers for the bays, as in any world
-## (the world's `roll_loot` names the machine each bay holds).
+## first `RaceTrack` and, with more than one, `race_tracks()` returning them
+## all; "spawn_vehicle" markers for the bays, as in any world (the world's
+## `roll_loot` names the machine each bay holds).
 
 ## The lights over the line come on one every `LIGHT_STEP` seconds; when
 ## all `LIGHTS` are lit, they go out and the run goes.
 const LIGHTS := 5
 const LIGHT_STEP := 0.6
-## Best laps kept on the board.
+## Best laps kept on each track's board.
 const BOARD_SIZE := 8
 ## A racing machine resting this far under the track has fallen off it
 ## (into the Spillway's channel) and is put back (`_back_on_track`).
@@ -38,10 +44,14 @@ signal run_changed(actor: Actor)
 signal lap_finished(actor: Actor, lap_time: float, counted: bool)
 signal board_changed
 
+## The first track, and every track the map lays out (`circuits`; `tracks`
+## is the `Raid`'s footprints).
 var track: RaceTrack
+var circuits: Array[RaceTrack] = []
 ## Actor -> Run, on the authority.
 var runs := {}
-## The best laps: [{"name", "machine", "time"}], fastest first.
+## The best laps: [{"name", "machine", "time", "track"}], fastest first,
+## at most `BOARD_SIZE` per track (`board_for`).
 var board: Array[Dictionary] = []
 ## Online client: the local player's run, as the server last sent it, and
 ## the local time it arrived (`Time.get_ticks_msec`).
@@ -55,6 +65,7 @@ class Run:
 	extends RefCounted
 	var actor: Actor
 	var vehicle: Node3D
+	var track: RaceTrack
 	var machine := ""
 	## "grid" (held for the lights), "racing", "done".
 	var phase := "grid"
@@ -83,8 +94,35 @@ class Run:
 
 func _setup(p_world: WorldDef, p_seed: int) -> void:
 	super(p_world, p_seed)
-	if map != null and map.has_method("race_track"):
-		track = map.call("race_track")
+	if map != null and map.has_method("race_tracks"):
+		circuits.assign(map.call("race_tracks"))
+	elif map != null and map.has_method("race_track"):
+		circuits.assign([map.call("race_track")])
+	if not circuits.is_empty():
+		track = circuits[0]
+
+
+## The track with id `id`, or the first.
+func track_by_id(id: String) -> RaceTrack:
+	for t in circuits:
+		if t.id == id:
+			return t
+	return track
+
+
+## The track whose road runs nearest `pos`, height counted.
+func track_near(pos: Vector3) -> RaceTrack:
+	var best := track
+	var best_d := INF
+	for t in circuits:
+		var i := t.locate(pos)
+		if i < 0:
+			continue
+		var d := t.points[i].distance_to(pos)
+		if d < best_d:
+			best_d = d
+			best = t
+	return best
 
 
 ## Every machine here is a stock one: its race profile replaces its tuning.
@@ -141,24 +179,26 @@ func start_run(actor: Actor, vehicle: Node3D) -> void:
 	run.actor = actor
 	run.vehicle = vehicle
 	run.machine = str(vehicle.get("item_id"))
+	run.track = track_near(vehicle.global_position)
 	var old: Run = runs.get(actor)
-	if old != null:
+	if old != null and old.track == run.track and old.machine == run.machine:
 		run.best_lap = old.best_lap
 		run.best_splits = old.best_splits
 	runs[actor] = run
 	_to_grid(run)
-	actor.notice.emit("Time trial · %s · %d laps" % [track.display_name, track.laps])
+	actor.notice.emit("Time trial · %s · %d laps" % [run.track.display_name, run.track.laps])
 
 
 func _to_grid(run: Run) -> void:
+	var rt := run.track
 	var taken := {}
 	for other: Run in runs.values():
-		if other != run and other.phase == "grid":
+		if other != run and other.phase == "grid" and other.track == rt:
 			taken[other.slot] = true
 	run.slot = 0
-	while taken.has(run.slot) and run.slot < track.start_slots.size() - 1:
+	while taken.has(run.slot) and run.slot < rt.start_slots.size() - 1:
 		run.slot += 1
-	var at: Transform3D = track.start_slots[run.slot]
+	var at: Transform3D = rt.start_slots[run.slot]
 	var vehicle := run.vehicle
 	vehicle.global_position = at.origin + Vector3(0, 0.4, 0)
 	vehicle.set("heading", at.basis.get_euler().y)
@@ -177,11 +217,12 @@ func _to_grid(run: Run) -> void:
 	run.last_lap = -1.0
 	run.total = -1.0
 	run.last_pos = vehicle.global_position
-	run.hint = track.locate(run.last_pos)
+	run.hint = rt.locate(run.last_pos)
 	run_changed.emit(run.actor)
 
 
 func _tick_run(run: Run, _delta: float) -> void:
+	var rt := run.track
 	var vehicle := run.vehicle
 	if not is_instance_valid(vehicle) or not is_instance_valid(run.actor) or run.actor.is_dead:
 		retire(run.actor)
@@ -197,14 +238,14 @@ func _tick_run(run: Run, _delta: float) -> void:
 		return
 	var from := run.last_pos
 	run.last_pos = pos
-	run.hint = track.locate(pos, run.hint)
+	run.hint = rt.locate(pos, run.hint)
 	if run.phase != "racing":
 		return
-	if run.clean and track.is_off_track(pos, run.hint):
+	if run.clean and rt.is_off_track(pos, run.hint):
 		run.clean = false
 		run.actor.notice.emit("Off the track: this lap will not count")
 		run_changed.emit(run.actor)
-	var t := track.cross(run.next_gate, from, pos)
+	var t := rt.cross(run.next_gate, from, pos)
 	if t < 0.0:
 		return
 	# The moment it went through, between the last tick and this one.
@@ -214,7 +255,7 @@ func _tick_run(run: Run, _delta: float) -> void:
 		run.last_gate = run.next_gate
 		var i := run.splits.size() - 1
 		run.last_delta = run.splits[i] - run.best_splits[i] if i < run.best_splits.size() else NAN
-		run.next_gate = (run.next_gate + 1) % track.gates.size()
+		run.next_gate = (run.next_gate + 1) % rt.gates.size()
 		run_changed.emit(run.actor)
 		return
 	_finish_lap(run, at)
@@ -232,13 +273,13 @@ func _finish_lap(run: Run, at: float) -> void:
 		run.best_lap = lap_time
 		run.best_splits = run.splits.duplicate()
 		var state := state_for(run.actor)
-		add_record(run.actor.display_name, run.machine, lap_time, state.owner if state != null else "")
+		add_record(run.actor.display_name, run.machine, lap_time, state.owner if state != null else "", run.track.id)
 	lap_finished.emit(run.actor, lap_time, counted)
 	run.splits.clear()
 	run.clean = true
 	run.lap_start = at
 	run.next_gate = 1
-	if run.lap >= track.laps:
+	if run.lap >= run.track.laps:
 		run.phase = "done"
 		run.total = at - run.go_at
 		run.actor.notice.emit("Finished in %s" % format_time(run.total))
@@ -300,26 +341,42 @@ func ask(action: String) -> void:
 		player.notice.emit(str(result.get("error", "")))
 
 
-## Keeps a record on the board: the best lap per racer and machine.
-func add_record(racer: String, machine: String, time: float, key := "") -> void:
+## Keeps a record on a track's board (the first track's when `track_id` is
+## empty): the best lap per racer and machine.
+func add_record(racer: String, machine: String, time: float, key := "", track_id := "") -> void:
 	var who := key if key != "" else racer
+	var on := track_id if track_id != "" else (track.id if track != null else "")
 	for entry in board:
-		if entry.get("key", entry.name) == who and entry.machine == machine:
+		if entry.track == on and entry.get("key", entry.name) == who and entry.machine == machine:
 			if time >= float(entry.time):
 				return
 			board.erase(entry)
 			break
-	board.append({"name": racer, "machine": machine, "time": time, "key": who})
+	board.append({"name": racer, "machine": machine, "time": time, "key": who, "track": on})
 	board.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return float(a.time) < float(b.time))
-	if board.size() > BOARD_SIZE:
-		board.resize(BOARD_SIZE)
+	var kept: Array[Dictionary] = []
+	var counts := {}
+	for entry in board:
+		counts[entry.track] = int(counts.get(entry.track, 0)) + 1
+		if counts[entry.track] <= BOARD_SIZE:
+			kept.append(entry)
+	board = kept
 	board_changed.emit()
+
+
+## One track's best laps, fastest first.
+func board_for(track_id: String) -> Array[Dictionary]:
+	var rows: Array[Dictionary] = []
+	for entry in board:
+		if entry.track == track_id:
+			rows.append(entry)
+	return rows
 
 
 ## The board as sent to clients: no keys.
 func public_board() -> Array:
 	return board.map(func(e: Dictionary) -> Dictionary:
-		return {"name": e.name, "machine": e.machine, "time": e.time})
+		return {"name": e.name, "machine": e.machine, "time": e.time, "track": e.track})
 
 
 ## Nobody here can be hurt or fall out of the world, and weapons stay
@@ -343,7 +400,7 @@ func _keep_racers_safe() -> void:
 		if pos.y < -20.0:
 			# Fell off the world: back to the grid.
 			_to_grid(run)
-		elif run.phase == "racing" and run.hint >= 0 and pos.y < track.points[run.hint].y - FALLEN_DEPTH \
+		elif run.phase == "racing" and run.hint >= 0 and pos.y < run.track.points[run.hint].y - FALLEN_DEPTH \
 				and run.vehicle.get("airborne_time") == 0.0:
 			# Down in a channel or a pit with no way out: back on the track at
 			# the last gate passed, stopped. The clock keeps running.
@@ -353,10 +410,11 @@ func _keep_racers_safe() -> void:
 ## Puts a run's machine back on the track just past the last gate it
 ## passed, facing down the track and stopped.
 func _back_on_track(run: Run) -> void:
-	var g: Dictionary = track.gates[(run.next_gate - 1 + track.gates.size()) % track.gates.size()]
+	var rt := run.track
+	var g: Dictionary = rt.gates[(run.next_gate - 1 + rt.gates.size()) % rt.gates.size()]
 	var at: Vector3 = g.at + g.forward * 3.0 + Vector3(0, 0.5, 0)
 	var vehicle := run.vehicle
-	var yaw := track.heading(int(g.index))
+	var yaw := rt.heading(int(g.index))
 	vehicle.global_position = at
 	vehicle.set("heading", yaw)
 	vehicle.rotation = Vector3(0, yaw, 0)
@@ -390,9 +448,10 @@ func run_view(actor: Actor) -> Dictionary:
 	return {
 		"phase": run.phase,
 		"machine": run.machine,
+		"track": run.track.id,
 		"lap": run.lap,
-		"laps": track.laps,
-		"gates": track.gates.size(),
+		"laps": run.track.laps,
+		"gates": run.track.gates.size(),
 		"next_gate": run.next_gate,
 		"clean": run.clean,
 		"go_in": maxf(run.go_at - clock, 0.0),
@@ -508,5 +567,6 @@ func set_remote_board(rows: Array) -> void:
 	for row: Variant in rows:
 		if row is Dictionary and row.has("time"):
 			board.append({"name": str(row.get("name", "?")), "machine": str(row.get("machine", "")),
-					"time": float(row.time), "key": str(row.get("name", "?"))})
+					"time": float(row.time), "key": str(row.get("name", "?")),
+					"track": str(row.get("track", track.id if track != null else ""))})
 	board_changed.emit()

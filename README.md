@@ -631,7 +631,12 @@ bring down the Sentinel), that count only from a life there; the weeklies
 pay a blueprint. Whiteouts blow through now and then, mostly down the
 valley: sight closes in, the cold bites twice as hard, tracks are wiped and
 gunshots die in the wind. Snow is driven past in gusts, spindrift streams
-off the rims, everyone leans into it, and flying is a fight.
+off the rims, everyone leans into it, and flying is a fight. Past the Sentinel the
+Engine is hollow: the hatch opens on the Drum Hall, a hall big enough for a
+squad to fight across with catwalks up both walls, and in its east end the
+Shaft goes 26 m down two wide ramps. Wardens stand guard inside, the caches
+there pay Engine Coils, no storm or trail gets in and there is a heater on
+each level. The way on from the Shaft's foot is sealed for now.
 
 ## Run the tests
 

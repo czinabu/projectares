@@ -549,16 +549,19 @@ func buy_upgrade(account_id: String, upgrade_id: String) -> Dictionary:
 	return _bank(account, BaseUpgrades.buy(account.base_upgrades, account.scrip, upgrade_id))
 
 
-## Moves a room of the account's home base into a socket (`BasePlan.place`),
-## the room there taking its old socket. Free, and only ever where things
-## stand, so it is allowed while deployed too.
-func place_room(account_id: String, socket: String, room: String) -> Dictionary:
+## Changes the account's home base plan (`BasePlan.change`): a room moved
+## into a socket (the room there taking its old socket), or with `key`
+## "shape" or "style:<room>" a hub shape or room style, which the account's
+## upgrades must unlock. Free, and only ever how things stand, so it is
+## allowed while deployed too.
+func place_room(account_id: String, key: String, value: String) -> Dictionary:
 	var account := load_account(account_id)
 	if account == null:
 		return _fail("No such account.")
-	if socket not in BasePlan.SOCKETS or not BasePlan.ROOMS.has(room):
-		return _fail("No such room or socket.")
-	account.base_plan = BasePlan.place(account.base_plan, socket, room)
+	var result := BasePlan.change(account.base_plan, account.base_upgrades, key, value)
+	if not result.ok:
+		return _fail(str(result.error))
+	account.base_plan = result.plan
 	_save(account)
 	return {"ok": true}
 

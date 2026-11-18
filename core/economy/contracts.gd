@@ -61,6 +61,8 @@ const DAY := 86400
 ##   bosses        core bosses killed (a world's "spawn_boss" guards)
 ##   cache:<source>  caches of that loot source emptied into your pack
 ##                 (each cache once a fill)
+##   banks         times loot was banked at a depot
+##   hold_seconds  seconds stood in a strongpoint your side holds
 ## These jobs count anywhere. A world adds jobs of its own with
 ## `WorldDef.contract_jobs`, tagged with its `WorldDef.contract_tag`
 ## ("expedition" for the co-op world): those count only in a world with the

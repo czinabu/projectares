@@ -185,6 +185,27 @@ const BOT_SKILL := [Vector2(0.36, 0.56), Vector2(0.42, 0.66), Vector2(0.48, 0.72
 ## Damage a second the Foundry's molten ground does to whoever stands in it.
 const CORE_BURN := 2.0
 
+## The warzone's own jobs (DESIGN.md "Challenge and balance data": goals at
+## every level), from grab and go at the rim to holding the line, counted
+## only from Ashfront (`contract_tag` "warzone"). Each daily is one outing
+## at its ring's risk; the weeklies pay upgrade data for the long fights.
+const CONTRACTS := {
+	"war_rim": {"title": "Loot 3 caches in the outer ring", "stat": "cache:cache_outer", "goal": 3,
+			"kind": "daily", "scrip": 120},
+	"war_landmarks": {"title": "Loot 3 caches at the landmarks", "stat": "cache:cache", "goal": 3,
+			"kind": "daily", "scrip": 180},
+	"war_foundry": {"title": "Loot a cache in the burning Foundry", "stat": "cache:cache_core", "goal": 1,
+			"kind": "daily", "scrip": 250},
+	"war_bank": {"title": "Bank loot at a depot twice", "stat": "banks", "goal": 2, "kind": "daily",
+			"scrip": 150},
+	"war_hold": {"title": "Hold a strongpoint for 3 minutes", "stat": "hold_seconds", "goal": 180,
+			"kind": "daily", "scrip": 220},
+	"war_line": {"title": "Hold strongpoints for 15 minutes", "stat": "hold_seconds", "goal": 900,
+			"kind": "weekly", "scrip": 850, "items": ["upgrade_data"]},
+	"war_furnace": {"title": "Loot 5 caches in the Foundry", "stat": "cache:cache_core", "goal": 5,
+			"kind": "weekly", "scrip": 900, "items": ["upgrade_data"]},
+}
+
 ## Rival raiders' kits, a pick from each list. Base-level gear only (no Mk2
 ## rigs or helmets: those are crafted), so killing one pays like a player
 ## who came in geared, not like a warlord.
@@ -259,10 +280,23 @@ func _init() -> void:
 	# Ash storms cross the field now and then (DESIGN.md "Weather: ash
 	# storms"): sight down to half in the thick of it, gone by 70 m, and the
 	# armies push a site a storm covers.
+	contract_tag = "warzone"
+	# The scrap kit and a piece or two is fresh; a full mid kit is about
+	# 2,000, crafted Mk2 and a heavy about 5,000.
+	fresh_gear_value = 1500
+	strong_gear_value = 4500
 	weather_kind = "ash"
 	weather_name = "Ash storm"
 	weather_pushes = true
 	weather_field = 276.0
+
+
+func faction_title(faction: String) -> String:
+	return str(ARMIES[faction].name) if ARMIES.has(faction) else super(faction)
+
+
+func contract_jobs() -> Dictionary:
+	return CONTRACTS
 
 
 func create_map() -> Node3D:

@@ -12,6 +12,14 @@ extends RefCounted
 ## where things stand. The range and flight course always sit behind the hub.
 ## A room starts in its small form; its upgrade (`ROOMS[room]["opens"]`)
 ## opens the rest of it, wherever it stands.
+##
+## A plan also picks the hub's shape (`SHAPES`: the hall, a ring, a spine, a
+## courtyard; the six sockets stand round whichever it is) and each room's
+## style (`STYLES`: how the room lays out what it holds and how it is
+## furnished). The first of each is free; any other is unlocked once, for
+## scrip, by its `BaseUpgrades` entry (track "Designs") and is then free to
+## switch to and back. A plan keeps its choices whatever is owned: only a
+## change is checked (`change`).
 
 ## The hub's sockets, in the order the plan table turns through them.
 const SOCKETS: Array[String] = ["W1", "W2", "N1", "N2", "E1", "E2"]
@@ -36,8 +44,65 @@ const ROOMS := {
 	"stores": {"title": "Stores", "opens": "trophy_hall", "holds": "Supplies and trophies"},
 }
 
+## The hub's shapes, in the order the plan table lists them:
+##   title   its name on the plan table
+##   blurb   one line on what it is like
+##   unlock  the `BaseUpgrades` id that unlocks it ("" if free)
+##   sockets where each socket is, said the way a player reads it
+const SHAPES := {
+	"hall": {"title": "Hall", "blurb": "A square hall, two rooms down each side and two at the back.", "unlock": "",
+		"sockets": SOCKET_NAMES},
+	"ring": {"title": "Ring", "blurb": "An eight-sided rotunda: every room opens onto the table.", "unlock": "hub_ring",
+		"sockets": {"W1": "Left", "W2": "Left, front", "N1": "Left, back", "N2": "Right, back",
+			"E1": "Right", "E2": "Right, front"}},
+	"spine": {"title": "Spine", "blurb": "A long gallery, three rooms down each side.", "unlock": "hub_spine",
+		"sockets": {"W1": "Left, middle", "W2": "Left, front", "N1": "Left, back", "N2": "Right, back",
+			"E1": "Right, middle", "E2": "Right, front"}},
+	"courtyard": {"title": "Courtyard", "blurb": "A big lit court under a skylight, with planters.", "unlock": "hub_courtyard",
+		"sockets": SOCKET_NAMES},
+}
+
+## Each room's styles, the first its free one:
+##   title   its name on the plan table
+##   blurb   one line on what it is like
+##   unlock  the `BaseUpgrades` id that unlocks it ("" if free)
+const STYLES := {
+	"armory": {
+		"rack": {"title": "Wall rack", "blurb": "Every weapon on the walls, long guns at the back.", "unlock": ""},
+		"vault": {"title": "Vault", "blurb": "A double-sided island rack down the middle.", "unlock": "style_armory_vault"},
+		"gallery": {"title": "Gallery", "blurb": "Long guns stood in lit cases round the walls.", "unlock": "style_armory_gallery"},
+	},
+	"workshop": {
+		"bench": {"title": "Back bench", "blurb": "The bench against the back wall.", "unlock": ""},
+		"island": {"title": "Island", "blurb": "The bench in the middle under a lamp rig.", "unlock": "style_workshop_island"},
+		"pit": {"title": "Pit", "blurb": "A side bench by an inspection pit and hoist.", "unlock": "style_workshop_pit"},
+	},
+	"garage": {
+		"bays": {"title": "Bays", "blurb": "Two rows of painted bays.", "unlock": ""},
+		"showroom": {"title": "Showroom", "blurb": "Your best ride on a turntable, the rest round it.", "unlock": "style_garage_showroom"},
+		"lift": {"title": "Lift rack", "blurb": "Two lifts, a vehicle over each one parked.", "unlock": "style_garage_lift"},
+	},
+	"ops": {
+		"consoles": {"title": "Consoles", "blurb": "Two consoles down each side.", "unlock": ""},
+		"war_table": {"title": "War table", "blurb": "Consoles round a lit map table.", "unlock": "style_ops_war_table"},
+		"bridge": {"title": "Bridge", "blurb": "Consoles in a row under a wide screen.", "unlock": "style_ops_bridge"},
+	},
+	"gear": {
+		"stands": {"title": "Stands", "blurb": "Armor along the back, rigs down the side.", "unlock": ""},
+		"ring": {"title": "Ring", "blurb": "Armor and helmets round a lit dais.", "unlock": "style_gear_ring"},
+		"lockers": {"title": "Lockers", "blurb": "Each suit in its own locker.", "unlock": "style_gear_lockers"},
+	},
+	"stores": {
+		"shelves": {"title": "Shelves", "blurb": "Shelving across the back wall.", "unlock": ""},
+		"plinths": {"title": "Plinths", "blurb": "Trophies on lit plinths down an aisle.", "unlock": "style_stores_plinths"},
+		"cargo": {"title": "Cargo", "blurb": "Crate stacks and a pallet rack.", "unlock": "style_stores_cargo"},
+	},
+}
+
 ## A new account's base.
-const DEFAULT := {"W1": "armory", "W2": "workshop", "N1": "gear", "N2": "stores", "E1": "garage", "E2": "ops"}
+const DEFAULT := {"W1": "armory", "W2": "workshop", "N1": "gear", "N2": "stores", "E1": "garage", "E2": "ops",
+	"shape": "hall", "styles": {"armory": "rack", "workshop": "bench", "garage": "bays", "ops": "consoles",
+		"gear": "stands", "stores": "shelves"}}
 
 
 static func rooms() -> Array[String]:
@@ -51,9 +116,97 @@ static func title(room: String) -> String:
 	return str(ROOMS[room]["title"]) if ROOMS.has(room) else room
 
 
+static func shapes() -> Array[String]:
+	var out: Array[String] = []
+	for id: String in SHAPES:
+		out.append(id)
+	return out
+
+
+## A room's style ids, its free one first.
+static func styles(room: String) -> Array[String]:
+	var out: Array[String] = []
+	for id: String in STYLES.get(room, {}):
+		out.append(id)
+	return out
+
+
+## A room's free style.
+static func default_style(room: String) -> String:
+	var all := styles(room)
+	return all[0] if not all.is_empty() else ""
+
+
+static func shape_title(shape: String) -> String:
+	return str(SHAPES[shape]["title"]) if SHAPES.has(shape) else shape
+
+
+static func style_title(room: String, style: String) -> String:
+	return str(STYLES[room][style]["title"]) if STYLES.get(room, {}).has(style) else style
+
+
+## Where a socket is in a hub of this shape, said the way a player reads it.
+static func socket_name(shape: String, socket: String) -> String:
+	return str(SHAPES.get(shape, SHAPES["hall"])["sockets"].get(socket, socket))
+
+
+## The `BaseUpgrades` id that unlocks a change (see `change` for the keys),
+## or "" if it needs none: a room moved, a free shape or a free style.
+static func unlock_for(key: String, value: String) -> String:
+	if key == "shape":
+		return str(SHAPES.get(value, {}).get("unlock", ""))
+	if key.begins_with("style:"):
+		return str(STYLES.get(key.substr(6), {}).get(value, {}).get("unlock", ""))
+	return ""
+
+
+## Every design unlock (`BaseUpgrades` track "Designs"), shapes then styles.
+static func unlocks() -> Array[String]:
+	var out: Array[String] = []
+	for shape: String in SHAPES:
+		if str(SHAPES[shape]["unlock"]) != "":
+			out.append(str(SHAPES[shape]["unlock"]))
+	for room: String in STYLES:
+		for style: String in STYLES[room]:
+			if str(STYLES[room][style]["unlock"]) != "":
+				out.append(str(STYLES[room][style]["unlock"]))
+	return out
+
+
+## One change to `plan` by someone who owns the upgrades `owned`. `key` is a
+## socket (and `value` the room to move there, as `place`), "shape" (and a
+## `SHAPES` id) or "style:<room>" (and one of that room's `STYLES`). Returns
+## {"ok": true, "plan"} with the changed plan, or {"ok": false, "error"}.
+## Never changes `plan` itself.
+static func change(plan: Dictionary, owned: Array, key: String, value: String) -> Dictionary:
+	var out := clean(plan)
+	if key in SOCKETS:
+		if not ROOMS.has(value):
+			return {"ok": false, "error": "No such room."}
+		return {"ok": true, "plan": place(out, key, value)}
+	var unlock := unlock_for(key, value)
+	if key == "shape":
+		if not SHAPES.has(value):
+			return {"ok": false, "error": "No such layout."}
+		if unlock != "" and unlock not in owned:
+			return {"ok": false, "error": "Unlock the %s layout first." % shape_title(value).to_lower()}
+		out["shape"] = value
+		return {"ok": true, "plan": out}
+	if key.begins_with("style:"):
+		var room := key.substr(6)
+		if not STYLES.get(room, {}).has(value):
+			return {"ok": false, "error": "No such style."}
+		if unlock != "" and unlock not in owned:
+			return {"ok": false, "error": "Unlock the %s style first." % style_title(room, value).to_lower()}
+		out["styles"][room] = value
+		return {"ok": true, "plan": out}
+	return {"ok": false, "error": "No such change."}
+
+
 ## A saved or sent plan made safe: every socket holds exactly one known room
 ## and every room stands once. Anything missing, unknown or doubled falls back
-## to the default placing, so a broken save still builds a whole base.
+## to the default placing, so a broken save still builds a whole base. An
+## unknown shape is the hall, and a room's unknown style its free one.
 static func clean(saved: Variant) -> Dictionary:
 	var out := {}
 	var placed := {}
@@ -71,7 +224,7 @@ static func clean(saved: Variant) -> Dictionary:
 			left.append(room)
 	for room: String in left.duplicate():
 		for socket: String in SOCKETS:
-			if DEFAULT[socket] == room and not out.has(socket):
+			if str(DEFAULT[socket]) == room and not out.has(socket):
 				out[socket] = room
 				left.erase(room)
 				break
@@ -83,6 +236,14 @@ static func clean(saved: Variant) -> Dictionary:
 	var ordered := {}
 	for socket: String in SOCKETS:
 		ordered[socket] = out[socket]
+	var shape: Variant = saved.get("shape") if typeof(saved) == TYPE_DICTIONARY else null
+	ordered["shape"] = shape if typeof(shape) == TYPE_STRING and SHAPES.has(shape) else "hall"
+	var picked: Variant = saved.get("styles") if typeof(saved) == TYPE_DICTIONARY else null
+	var styled := {}
+	for room: String in STYLES:
+		var style: Variant = picked.get(room) if typeof(picked) == TYPE_DICTIONARY else null
+		styled[room] = style if typeof(style) == TYPE_STRING and STYLES[room].has(style) else default_style(room)
+	ordered["styles"] = styled
 	return ordered
 
 
