@@ -2626,7 +2626,52 @@ func _engine_shots(out_dir: String) -> void:
 	cam.look_at_from_position(at.call(Vector3(-3, f - 24, -0.5)), at.call(Vector3(2, f - 12, 26)))
 	await _settle(20)
 	await _shot(out_dir.path_join("engine_5_foot.png"))
-	# 6. A whiteout at the hatch, seen from inside.
+	# 6. The north Coil Gallery from the first cross hall, coils glowing in the alcoves.
+	var g := MapScript.GALLERY_FLOOR
+	var bottom := MapScript.DESCENT_FLOOR
+	var step := MapScript.DESCENT_DROP / 3.0
+	place.call(squad, [Vector3(10, g, 44), Vector3(16, g, 47), Vector3(12, g, 54), Vector3(8, g, 41)],
+			Vector3(13, g, 100))
+	place.call(guards, [Vector3(14, g, 76), Vector3(9, g, 86), Vector3(18, g, 96)], Vector3(13, g, 40))
+	cam.look_at_from_position(at.call(Vector3(13, g + 5.5, 39)), at.call(Vector3(14, g + 1.0, 100)))
+	await _settle(20)
+	await _shot(out_dir.path_join("engine_6_galleries.png"))
+	# 6b. The walkway, from the gallery floor under its far ramp.
+	place.call(squad, [Vector3(18, g + MapScript.WALKWAY_UP, 62), Vector3(18, g + MapScript.WALKWAY_UP, 70),
+			Vector3(10, g, 66), Vector3(13, g, 80)], Vector3(13, g, 100))
+	cam.look_at_from_position(at.call(Vector3(9, g + 3.0, 104)), at.call(Vector3(17, g + 3.5, 60)))
+	await _settle(20)
+	await _shot(out_dir.path_join("engine_6b_walkway.png"))
+	# 7. The south gallery's coolant channel, the dry walk beside it.
+	place.call(squad, [Vector3(-8, g, 50), Vector3(-17, g, 46), Vector3(-9, g, 58), Vector3(-13, g, 42)],
+			Vector3(-13, g, 100))
+	place.call(guards, [Vector3(-9, g, 80), Vector3(-17, g, 92), Vector3(-12, g, 104)], Vector3(-13, g, 40))
+	cam.look_at_from_position(at.call(Vector3(-8, g + 5.5, 39)), at.call(Vector3(-14, g, 100)))
+	await _settle(20)
+	await _shot(out_dir.path_join("engine_7_coolant.png"))
+	# 8. The Descent from its top landing, the switchback ramps going down.
+	place.call(squad, [Vector3(4, g, 117), Vector3(7, g - 5, 132), Vector3(-6, g - step, 161), Vector3(-6, g - step * 1.5, 140)],
+			Vector3(0, bottom, 160))
+	place.call(guards, [Vector3(5, g - step * 2.0, 117), Vector3(6, bottom, 167), Vector3(-3, bottom, 163)],
+			Vector3(0, g, 116))
+	cam.look_at_from_position(at.call(Vector3(-9, g + 7, 115)), at.call(Vector3(3, bottom + 4, 165)))
+	await _settle(20)
+	await _shot(out_dir.path_join("engine_8_descent.png"))
+	# 9. The Descent's foot: the lift cage, powered, and the sealed way to the Heart.
+	raid.lifts[MapScript.LIFT_ID].left = 600.0
+	raid._tick_lifts(0.0)
+	place.call(squad, [Vector3(-1, bottom, 174), Vector3(-7, bottom, 168), Vector3(4, bottom, 170), Vector3(8, bottom, 160)],
+			Vector3(0, bottom, 176))
+	cam.look_at_from_position(at.call(Vector3(6, bottom + 5, 148)), at.call(Vector3(-3, bottom + 3, 174)))
+	await _settle(20)
+	await _shot(out_dir.path_join("engine_9_lift_foot.png"))
+	# 10. The lift's top stop in the hall, running.
+	place.call(squad, [Vector3(14, f, -9), Vector3(17, f, -7), Vector3(8, f, -12), Vector3(10, f, -4)],
+			Vector3(15.5, f, -8))
+	cam.look_at_from_position(at.call(Vector3(0, f + 4, -22)), at.call(Vector3(15.5, f + 3, -8)))
+	await _settle(20)
+	await _shot(out_dir.path_join("engine_10_lift_top.png"))
+	# 11. A whiteout at the hatch, seen from inside.
 	var weather := raid.weather
 	weather.start()
 	weather.velocity = Vector3(0, 0, 0.2)
@@ -2640,7 +2685,7 @@ func _engine_shots(out_dir: String) -> void:
 			Vector3(-30, f, -12))
 	cam.look_at_from_position(at.call(Vector3(-4, f + 2.0, -12)), at.call(Vector3(-40, f + 2.0, -12)))
 	await _settle(60)
-	await _shot(out_dir.path_join("engine_6_storm_at_hatch.png"))
+	await _shot(out_dir.path_join("engine_11_storm_at_hatch.png"))
 	Look.weather_follow = 0.35
 	raid.queue_free()
 	await _settle(4)

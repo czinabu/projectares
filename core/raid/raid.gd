@@ -72,6 +72,10 @@ signal grid_called(bot: Actor, source: Actor)
 ## and balance data": danger warns first). `loud` is a new push worth a
 ## horn and a war feed line; a quiet one only moves the watch map's arrow.
 signal army_pushed(site: int, from: Vector3, title: String, loud: bool)
+## A lift (the map's "lift_stop" and "lift_power" markers) was powered, with
+## `seconds_left` to run, or ran down (0). Authority only; a client is told
+## by `NetSession` and keeps `lifts` for the view.
+signal lift_changed(id: String, seconds_left: float)
 
 ## Bots never start closer to the player than this, so a raid does not open with a fight.
 const MIN_BOT_SPAWN_DISTANCE := 40.0
@@ -231,6 +235,11 @@ var _bosses: Array[Dictionary] = []
 ## Guards at the map's "spawn_guard" markers (a dungeon's garrison), each
 ## { marker, bot, back_in }, outside the armies like the bosses.
 var _guards: Array[Dictionary] = []
+## The map's lifts by id: { stops (its two "lift_stop" markers), power (its
+## "lift_power" marker or null), left (seconds it runs on for), charge (how
+## long someone has stood at its switch), wait and arrived (by rider's
+## instance id: seconds waited in a stop, the stop just arrived at) }.
+var lifts := {}
 ## Bosses' toughness is counted this often (`_scale_boss`).
 const BOSS_PARTY_EVERY := 1.0
 var _boss_party_left := 0.0
@@ -410,6 +419,7 @@ func _setup(p_world: WorldDef, p_seed: int) -> void:
 		if faction != "":
 			point.hold("faction:" + faction, marker.get_meta("holder_name", faction.capitalize()), false)
 		strongpoints.append(point)
+	_find_lifts()
 	outposts = _map_nodes("outpost")
 	beacons = _map_nodes("beacon")
 	warmth = _map_nodes("warmth")
@@ -466,6 +476,8 @@ func _physics_process(delta: float) -> void:
 	map.set_meta("war_centre", war.centre)
 	if world.tracks:
 		_tick_tracks(delta)
+	if not lifts.is_empty():
+		_tick_lifts(delta)
 	if mode == Mode.CLIENT:
 		return
 	# DEV MODE
@@ -1698,6 +1710,124 @@ func _tick_guards(delta: float) -> void:
 			guard.bot = _add_guard(guard.marker)
 
 
+func _find_lifts() -> void:
+	lifts.clear()
+	for marker in _map_nodes("lift_stop"):
+		var id := str(marker.get_meta("lift", ""))
+		if not lifts.has(id):
+			lifts[id] = {"stops": [], "power": null, "left": 0.0, "charge": 0.0, "wait": {}, "arrived": {}}
+		(lifts[id].stops as Array).append(marker)
+	for marker in _map_nodes("lift_power"):
+		var id := str(marker.get_meta("lift", ""))
+		if lifts.has(id):
+			lifts[id].power = marker
+	for id: String in lifts.keys():
+		if (lifts[id].stops as Array).size() != 2:
+			lifts.erase(id)
+
+
+## Seconds a lift runs on for (0 while it is dead).
+func lift_left(id: String) -> float:
+	return float(lifts[id].left) if lifts.has(id) else 0.0
+
+
+## A client's copy of a lift's power, from `NetSession`.
+func set_lift(id: String, seconds_left: float) -> void:
+	if lifts.has(id):
+		lifts[id].left = maxf(seconds_left, 0.0)
+
+
+## Lifts run down; the authority powers them from their switches and
+## carries riders. Every machine hands the map what runs ("lift_power":
+## id to seconds left) for the view.
+func _tick_lifts(delta: float) -> void:
+	var powers := {}
+	for id: String in lifts:
+		var lift: Dictionary = lifts[id]
+		var was: float = lift.left
+		lift.left = maxf(was - delta, 0.0)
+		if mode != Mode.CLIENT:
+			if was > 0.0 and lift.left <= 0.0:
+				lift_changed.emit(id, 0.0)
+			_power_lift(id, lift, delta)
+			_ride_lift(lift, delta)
+		powers[id] = lift.left
+	map.set_meta("lift_power", powers)
+
+
+## The living players, not riding anything, within `radius` of `at` (and
+## 2.5 m up or down).
+func _players_at(at: Vector3, radius: float) -> Array[Actor]:
+	var found: Array[Actor] = []
+	for state in players:
+		var actor := state.actor
+		if state.finished or not is_instance_valid(actor) or actor.is_dead or actor.vehicle != null:
+			continue
+		var off := actor.global_position - at
+		if absf(off.y) < 2.5 and Vector2(off.x, off.z).length_squared() <= radius * radius:
+			found.append(actor)
+	return found
+
+
+## A dead lift is powered by anyone who stands at its switch for
+## `WorldDef.lift_power_time`, and then runs `lift_powered_for` for everyone.
+func _power_lift(id: String, lift: Dictionary, delta: float) -> void:
+	var switch: Variant = lift.power
+	if switch == null or not is_instance_valid(switch) or lift.left > 0.0:
+		lift.charge = 0.0
+		return
+	var marker := switch as Node3D
+	var here := _players_at(marker.global_position, float(marker.get_meta("radius", 2.5)))
+	if here.is_empty():
+		lift.charge = 0.0
+		return
+	lift.charge += delta
+	if lift.charge < world.lift_power_time:
+		return
+	lift.charge = 0.0
+	lift.left = world.lift_powered_for
+	lift_changed.emit(id, lift.left)
+	var title := str(marker.get_meta("name", "The lift"))
+	for actor in here:
+		actor.notice.emit("%s is running" % title)
+	war_feed.emit("%s is running for %d minutes" % [title, roundi(world.lift_powered_for / 60.0)])
+
+
+## While a lift runs, a player who stands `WorldDef.lift_wait` in one stop
+## is carried to the same spot in the other, and rides again only once they
+## have stepped out.
+func _ride_lift(lift: Dictionary, delta: float) -> void:
+	var stops: Array = lift.stops
+	var wait: Dictionary = lift.wait
+	var arrived: Dictionary = lift.arrived
+	var seen := {}
+	for k in 2:
+		var stop := stops[k] as Node3D
+		for actor in _players_at(stop.global_position, float(stop.get_meta("radius", 2.5))):
+			var key := actor.get_instance_id()
+			seen[key] = true
+			if int(arrived.get(key, -1)) == k or lift.left <= 0.0:
+				wait.erase(key)
+				continue
+			wait[key] = float(wait.get(key, 0.0)) + delta
+			if float(wait[key]) < world.lift_wait:
+				continue
+			wait.erase(key)
+			var to := stops[1 - k] as Node3D
+			var off := actor.global_position - stop.global_position
+			actor.global_position = to.global_position + Vector3(off.x, 0.1, off.z)
+			actor.velocity = Vector3.ZERO
+			arrived[key] = 1 - k
+			seen[key] = true
+			actor.notice.emit("The lift carries you %s" % ("down" if to.global_position.y < stop.global_position.y else "up"))
+	for key: int in wait.keys():
+		if not seen.has(key):
+			wait.erase(key)
+	for key: int in arrived.keys():
+		if not seen.has(key):
+			arrived.erase(key)
+
+
 ## Whether a bot is one of the map's guards.
 func is_guard(bot: Actor) -> bool:
 	return _guards.any(func(guard: Dictionary) -> bool: return guard.bot == bot)
@@ -2903,7 +3033,7 @@ func _tick_toys(delta: float) -> void:
 		node.global_position = next
 		# One flip, then level and facing the way it unpacks.
 		node.basis = VehicleScript.toy_flight_basis(toy.heading, toy.age).scaled(Vector3.ONE * VehicleScript.TOY_SCALE)
-		if landed or toy.age >= toy_max_flight or next.y < -30.0:
+		if landed or toy.age >= toy_max_flight or next.y < world.void_y:
 			toys.erase(toy)
 			node.queue_free()
 			if toy.state != null:

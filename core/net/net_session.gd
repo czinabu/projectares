@@ -85,7 +85,7 @@ signal base_visit_requested(owner_name: String, stash: Array, loadout: Dictionar
 signal portal_travel(destination: String)
 
 const DEFAULT_PORT := 24565
-const PROTOCOL := 49
+const PROTOCOL := 50
 ## Every packet is compressed, both ways. State updates are mostly repeated
 ## numbers, and a big battle sends a player hundreds of them a second. Server
 ## and client must agree, so a change here needs a new PROTOCOL.
@@ -120,6 +120,7 @@ const PROTOCOL := 49
 ## plan in `_base_visit`.
 ## 48: a vehicle's ride state lists who sits on each passenger seat (the
 ## rover seats four).
+## 50: a lift powered or run down (`_lift`).
 ## Where an out-of-date game gets the latest build: the rolling "latest"
 ## release the Windows client workflow publishes (docs/hosting.md).
 const UPDATE_URL := "https://github.com/czinabu/projectares/releases/tag/latest"
@@ -606,6 +607,9 @@ func _start_server_raid() -> void:
 		for peer in _joined_peers:
 			_ice_holes.rpc_id(peer, holes))
 	raid.grid_called.connect(_on_server_grid_called)
+	raid.lift_changed.connect(func(id: String, left: float) -> void:
+		for peer in _joined_peers:
+			_lift.rpc_id(peer, id, left))
 	raid.army_pushed.connect(func(site: int, from: Vector3, title: String, loud: bool) -> void:
 		for peer in _joined_peers:
 			_army_push.rpc_id(peer, site, from, title, loud))
@@ -1625,6 +1629,9 @@ func _send_world(peer: int) -> void:
 	_sent_tracks.erase(peer)
 	if not raid.ice_holes.is_empty():
 		_ice_holes.rpc_id(peer, raid.pack_ice_holes())
+	for id: String in raid.lifts:
+		if raid.lift_left(id) > 0.0:
+			_lift.rpc_id(peer, id, raid.lift_left(id))
 	if raid is Race:
 		_race_board.rpc_id(peer, (raid as Race).public_board())
 
@@ -3360,6 +3367,14 @@ func _grid_call(id: int) -> void:
 func _ice_crack(at: Vector3, stage: int) -> void:
 	if raid != null and raid.world != null and raid.world.thin_ice:
 		raid.ice_cracked.emit(at, clampi(stage, 1, Raid.ICE_WARNINGS.size() + 1))
+
+
+## A lift was powered with `left` seconds to run, or ran down (0), for the
+## view (`Raid.lifts`).
+@rpc("authority", "call_remote", "reliable")
+func _lift(id: String, left: float) -> void:
+	if raid != null:
+		raid.set_lift(id, left)
 
 
 ## The open holes in the ice (`Raid.pack_ice_holes`).

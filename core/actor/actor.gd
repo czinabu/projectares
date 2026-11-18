@@ -440,9 +440,16 @@ func _physics_process(delta: float) -> void:
 		var target := find_interactable()
 		if target:
 			target.interact(self)
-	if global_position.y < -30.0:
+	if global_position.y < WorldDef.VOID_Y_MAX and _below_world():
 		kill("void")
 	_pulse_sign_out_beacon(delta)
+
+
+## Fallen out of the world: below its `WorldDef.void_y`. Asked only once
+## below the highest any world sets, so the walk up the tree is rare.
+func _below_world() -> bool:
+	var world := Worlds.of(self)
+	return global_position.y < (world.void_y if world != null else WorldDef.VOID_Y_MAX)
 
 
 func _simulate_timers(delta: float) -> void:
