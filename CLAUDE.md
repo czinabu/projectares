@@ -151,7 +151,12 @@ without Caleb, and update the gap list when a PR closes a row.
   (`Visor`), how far shots carry (`Gun.shot_carry`), gusts on a flying rig
   (`Actor._take_gusts`, the rig's `gust_mult`, a function of position only
   so it predicts), the cold (`cold_at`), tracks (`weather_wipes_tracks`)
-  and army pushes (`Raid._army_target`, `weather_pushes`). Thermal already
+  and army pushes (`Raid._army_target`, `weather_pushes`). Frostline's
+  whiteouts (`weather_kind` "snow") add the blizzard: the driven air
+  comes in gusts (`WeatherView.gust_now`, view only), a map that offers
+  `weather_ridges` gets spindrift off those edges where the storm is
+  (`WeatherView._place_drifts`, a kit with "drift"), and bodies on the
+  ground lean into the wind (`Locomotion._wind_pose`). Thermal already
   ignores fog, so it sees through a storm. What it looks like is
   `WeatherView` (view only, the same in both views): the wall, the driven
   air round the camera and the wind, and the map's "weather_here" meta,
@@ -199,12 +204,36 @@ without Caleb, and update the gap list when a PR closes a row.
   `Actor.clan_tag` is for views and is worn everywhere. Nobody changes clan
   while deployed.
 - World heat: `Raid.status()` is what a world shows of itself from outside
-  (players, war level, top bounty, the event running) and never says who or
-  where anyone is. The safe zone's `NetSession` gathers it from the other
+  (players, war level, top bounty, the event running) and never says where
+  anyone is. The one "who" it carries is `wanted` (Caleb's call, for the
+  most-wanted board): up to `Raid.WANTED_SHOWN` players with a bounty or the
+  Marked, by name, clan tag and bounty only, checked again on the client
+  (`NetSession._clean_wanted`). The safe zone's `NetSession` gathers it from the other
   sessions in the process and sends it to everyone standing there
   (`NetSession.world_status`); `PlazaView` writes it on a sign over each
-  world doorway (`heat_signs`). Anything else that advertises a world reads
-  `world_status`, not a second channel.
+  world doorway (`heat_signs`) and the wanted on the most-wanted board
+  (`wanted_text`, the map's "wanted_board" label). Anything else that
+  advertises a world reads `world_status`, not a second channel.
+- The Concourse's people (DESIGN.md section 2, "Locals"):
+  `core/social/plaza_locals.gd`, made by `PlazaView` only where `Look` is
+  on, so a server runs none and sends nothing for them. Every client makes
+  the same crowd from the map's `locals_layout()` and `CROWD_SEED`, scattered
+  in uneven groups (Caleb's call: never spaced evenly), and walks each local
+  along a `Routine` timed by the wall clock. A local is an ordinary `Actor`
+  driven only through its command, but out of the world: taken out of the
+  "actors" group, no collision with people, never a child of the `Raid`
+  (so `RaidRoster` never lists one), thinned when far. They look at people
+  near them and step out of their way. The people you talk to stand at the
+  map's "talker" markers; "talk:<id>" portals make them answer in a speech
+  card over their head (`SpeechPanel`, in the world, never on the screen).
+  What they say comes only from what the client already knows:
+  `world_status` (Dusk's rumours, Kade on the board) and the account's
+  contracts (Rook). Rook's favours are contract jobs of kind "favor"
+  (`Contracts.favor_for`, one a day, never rerolled, left off the board's
+  own lists), taken through the same `NetSession.contract_ask`.
+- A player's bounty pays its killer in scrip (`Economy.bounty_scrip`, one
+  for one, Caleb's call) into the life's carried scrip, so it is at stake
+  until banked or carried out, like the kill's own pay.
 - World events (`Raid.event`, `start_event`, `end_event`): one at a time, on
   a timer the war speeds up, tuned by `WorldDef.event_interval`,
   `event_lifetime` and `warlord_escort`. A supply pod is an ordinary
@@ -573,7 +602,19 @@ without Caleb, and update the gap list when a PR closes a row.
 - People are built from parts (`core/visual/human.gd`): an "appearance" names
   a build, four parts and colours. It is cosmetic only and never trusted:
   always pass one through `Look.clean_appearance` / `Look.set_appearance`,
-  which is safe on a headless server. Online it travels in the spawn data as
+  which is safe on a headless server. The pack meshes are worn as
+  `Human.shaped` copies (made once per mesh, view only): smooth shading
+  where faces meet gently, the head drawn in to `HEAD_SCALE` about its
+  bone (the bone, the eyes and anything worn on it stay put), and each
+  vertex's rest place and hand share in CUSTOM0, so `character.gdshader`
+  draws patterns that stay on the body as it moves. Never change a
+  vertex count, bone or weight there: a body must pose and cost the same.
+  Under an armor frame the bare skin below the head wears a fitted
+  undersuit with gloves and a lit cuff, drawn by the shader (`suit`, set
+  by `ActorSkin._update_frame`; `Human.surface_kind` says which surfaces
+  it covers), never a mesh, so plates fit the same over it. Check by eye
+  with `body_check.tscn -- <dir> [--suit] [--before]`.
+  Online it travels in the spawn data as
   `data["look"]`; the server keeps what each signed-in player sent
   (`NetSession.look_for_peer`). `Raid` and gameplay never read it.
   A look changed while in a world (the phone's Mirror app) is checked by the
@@ -884,10 +925,18 @@ without Caleb, and update the gap list when a PR closes a row.
   (`Raid.summon`, online `NetSession.summon`) to `Raid.swap_worn`
   (authority only, at once, then a short watch rest): it goes on and the
   worn one goes in the pack; `_worn_changed` tells every client. The skin wears it on the
-  head (`ActorSkin._update_helmet`, `build_helmet`: a shell, glass in the
-  visor's colour and a fitting per `mode`), hiding the head under it; it
+  head (`ActorSkin._update_helmet`, `build_helmet`), hiding the head under it; it
   hangs off the "Head" bone, so first person leaves it out with the head.
-  Check by eye with `visual_check.tscn -- <dir> --helmets-only`.
+  Each helmet looks like what it does (Caleb's call; `helmet_model.gd`):
+  a dark hood, a shell with its own outline (`Shape`: the Spotter low and
+  high-cut, the Seeker a swept egg, the Warden faceted with a crest, the
+  Ember broad over its heat sinks), smoked glass glowing in the visor's
+  colour and the mode's fitting (rangefinder pod, emitter crown, sensor
+  eyes all round, thermal lens and heat sinks; the scrap visor patched and
+  cracked); a Mk2 (`Visor.tier`) wears a lit seam over the crown. Keep
+  the back of the head clear for the vitals strip. Goggles will be the
+  same glass and fitting on a strap, no shell. Check by eye with
+  `visual_check.tscn -- <dir> --helmets-only` (helmet_closeups.png).
   Armor frames are worn gear the same way: `Loadout.wear_frame` puts one on
   or off (`Actor.frame_id`), undoing the old frame's speed and heat scaling
   before applying the new one, and emits `Actor.frame_changed`. One frame is
@@ -998,6 +1047,18 @@ without Caleb, and update the gap list when a PR closes a row.
   welcome crate and the scrap pieces wait in the base). A save without
   `StashRules.BARE_KEY` is from before the bare rule and gets its empty
   slots filled once with the scrap kit (`StashRules.starter_loadout`).
+- Safety nets (`core/economy/safety_nets.gd`, static rules like `Economy`,
+  DESIGN.md "Safety nets"): salvage and one insured item, decided by the
+  authority's `Raid` at a death and nowhere else. `add_player`'s
+  `p_insured` (from `StashService.deploy`'s "insured", or
+  `Profile.insured_in` solo, and only if the kit carries it) is recalled
+  from the body before the bag drops (`Raid._recall_insured`), never
+  copied: the killer simply does not get it. Salvage is paid only for
+  crafted gear from the stash lost with the body. Both travel in the
+  result ("recalled", in `brought_home` too, "salvaged", "salvage") and are
+  settled by `StashService.settle` online and `Raid.apply_result` solo; a
+  policy is kept on the account (`Account.insurance`, in the snapshot and
+  `StashRules.CARRIED`) and changed only by `StashService.insure`.
 - `Raid` never touches `Profile` to build a kit. The kit is passed into
   `Raid.start`, so a server can supply it later.
 
@@ -1291,15 +1352,38 @@ without Caleb, and update the gap list when a PR closes a row.
   lobby. `core/base/base_layout.gd` decides what goes where from item tags.
   Whatever is worn is always on show (`BaseLayout.plan` gives it a spot
   even when better gear fills its section), so anything can be taken off
-  in the room. Helmets sit on the helmet shelf over the armor stands.
+  in the room.
+  The base is modular (Caleb's call, DESIGN.md "Home base"): a hub with six
+  doorways of one size (`BasePlan.SOCKETS`, `HomeBase.socket_transform`)
+  and six rooms standing in them, one each (`BasePlan.ROOMS`: armory,
+  workshop, garage, ops, gear hall, stores). Which room stands where is the
+  account's plan (`core/base/base_plan.gd`, static rules like
+  `BaseUpgrades`; `Profile.base_plan` solo, the account's online, in the
+  snapshot and in `StashRules.CARRIED`), always passed through
+  `BasePlan.clean`. `HomeBase.show_gear` takes it as its fourth argument.
+  Everything in a room is laid out in the room's own space
+  (`HomeBase.room_spot`, `STATIONS`' "room", `BENCH_AT`) and placed through
+  `room_transform`, so it moves with its room; a display kind's room is
+  `HomeBase.KIND_ROOMS`. Ask where something is with `room_at` (and
+  `in_armory`, `in_workshop`, `in_garage`), never with coordinates. The
+  plan table in the middle of the hub (`HomeBase.PlanTable`) is the one
+  place to change the plan: using it emits `plan_used` and `main.gd` brings
+  the view in with the bench's view (`BenchView.target` "plan"); the wheel,
+  click and right click work as at the bench (`plan_scroll`, `plan_select`,
+  `plan_back`, `leave_plan`), the hologram over it and its card show the
+  plan as it would be, and only a pick asks for a change
+  (`room_placed`): `Profile.place_room` solo, `NetSession.place_room`
+  online, decided by `StashService.place_room`. A move is free, moves
+  nothing in or out of the stash and is allowed while deployed. A new room
+  needs a socket for it, not a spot in the hub. Room names are a plate over
+  each doorway (`_name_plate`); the base has no banner and no other signs.
+  Helmets sit on the helmet shelf over the armor stands in the gear hall.
   Every weapon goes on the one armory rack (`BaseLayout.ARMORY`, Caleb's
-  call): its sections hang on the walls of the armory alcove
-  (`HomeBase.in_armory`), with the locker at the way in. Each weapon hangs
-  on a lit mount (`HomeBase._build_mount`). The gunsmith bench has a corner
-  of its own, the workshop (`HomeBase.WORKSHOP_X/Z`, `in_workshop`), a
-  recess off the armory's left-hand wall just inside the way in, where it
-  stands with the fabricator beside it, clear of the rack and the walk in
-  (Caleb's call), in the starter bunker too. The bench holds one gun at a
+  call): its sections hang on the armory's walls (`HomeBase.in_armory`).
+  Each weapon hangs on a lit mount (`HomeBase._build_mount`). The gunsmith
+  bench and the fabricator beside it stand in the workshop
+  (`in_workshop`), a room of their own, in the starter bunker too. The
+  locker stands in the hub by the way out. The bench holds one gun at a
   time and nothing else is on show there (Caleb's call: no pegboard of
   attachments). At rest it is the primary (its rack pegs stand empty) with
   its attachments on; using it (`HomeBase.Bench`) emits `bench_used`, and
@@ -1323,16 +1407,17 @@ without Caleb, and update the gap list when a PR closes a row.
   room; measure with `equip_bench.tscn`. A visited base
   never dresses you. Every base has a mirror on its wall
   (`HomeBase.wall_mirror`, the phone's `Mirror` with `wall_mounted`, drawn
-  only while its viewer is in front of it). The room has one job per wall: the deploy area
-  (the wall mirror, with room in front to open a portal) along the front wall
-  right of the exit (`HomeBase.DEPLOY_FROM_X`), the storage wall's shelves
-  (supplies, chips, trophies, `STORAGE_ROWS`) left of it, and gear bays
-  for armor and rig stands along the back wall; the middle of the floor
-  stays clear. The shell is steel, never bare rock: plated floors, ribbed
-  wall panels and a ceiling grid (`HomeBase._floor`, `_wall`, `_ceiling`),
-  so a new space builds with those. Bikes park in the garage off the right wall
-  (`HomeBase.in_garage`). Behind the back wall is the firing range
-  (`HomeBase.in_range`): the player's weapons unlock only there and
+  only while its viewer is in front of it; it shows plain glass until its
+  view has drawn, never the noise of an empty one). The hub keeps the deploy
+  area (the wall mirror, with room in front to open a portal) along the
+  front wall right of the exit (`HomeBase.DEPLOY_FROM_X`), the plan table in
+  the middle (Caleb's pick) and the rest of the floor clear. The shell is
+  steel, never bare rock: plated floors, ribbed wall panels and a ceiling
+  grid (`HomeBase._floor`, `_wall`, `_ceiling`; a trim stands off a wall's
+  face, never on it, or the two shimmer), so a new space builds with
+  those. Bikes park in the garage (`HomeBase.in_garage`). Down the corridor
+  behind the hub, between the back rooms (`in_corridor`, `range_from`), is
+  the firing range (`HomeBase.in_range`), which the plan never moves: the player's weapons unlock only there and
   never run dry, and `HomeBase` scores shots from each gun's `fired` signal
   against its `RangeTarget`s, which stop shots like walls; the score is
   written on a board hung over the lane, never on the screen. Nothing on the
@@ -1353,9 +1438,13 @@ without Caleb, and update the gap list when a PR closes a row.
   stash and scrip (`Profile.base_upgrades` solo, the account's online, sent
   in the snapshot), never in the stash. `HomeBase.show_gear` takes it as its
   third argument; none is the starter bunker. `BaseLayout.spots(kind,
-  upgrades)` is how many spots a display kind has, and `HomeBase` seals what
-  is not owned (`_build_gates`: the armory nook's wall, the garage shutter,
-  the range door) behind a `Bulkhead` with its price on it in the room.
+  upgrades)` is how many spots a display kind has. Every room stands from
+  the start in its small form (`small_depth`, behind a sealed wall) and
+  its upgrade (`BasePlan.ROOMS[room]["opens"]`, `room_open`, `room_depth`)
+  opens the rest of it wherever it stands; `HomeBase` offers what is not
+  owned (`_build_gates`: a post in each small room, the range's slab at the
+  test lane's end, tags on the bench) as a `Bulkhead` with its price on it
+  in the room.
   Using one twice emits `upgrade_requested`; `main.gd` buys through
   `Profile.buy_upgrade` or `NetSession.buy_upgrade`, and only the server
   decides online (`StashService.buy_upgrade`). An upgrade never adds combat

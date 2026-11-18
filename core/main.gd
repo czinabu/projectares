@@ -83,6 +83,10 @@ const Contracts := preload("res://core/economy/contracts.gd")
 const PLAZA_PLAYERS := 32
 const SHOP_PANEL := "res://core/economy/shop_panel.gd"
 const Economy := preload("res://core/economy/economy.gd")
+const SafetyNets := preload("res://core/economy/safety_nets.gd")
+## Who the phone hears salvage and insurance news from (`_safety_net_news`).
+const CLAIMS_ID := "claims"
+const CLAIMS_NAME := "Claims Office"
 const BaseUpgrades := preload("res://core/base/base_upgrades.gd")
 ## DEV MODE: temporary, see `core/dev/dev_mode.gd`.
 const DevMode := preload("res://core/dev/dev_mode.gd")
@@ -274,6 +278,9 @@ func _ready() -> void:
 	hub.online_craft_requested.connect(func(item_id: String) -> void:
 		if net:
 			net.craft(item_id))
+	hub.online_insure_requested.connect(func(action: String, item_id: String) -> void:
+		if net:
+			net.insure(action, item_id))
 	_setup_phone()
 	hub.look_changed.connect(func(appearance: Dictionary) -> void:
 		Profile.set_appearance(appearance, hub.character.owned)
@@ -346,7 +353,7 @@ func go_home(result := {}) -> void:
 	if base != null and base.read_only:
 		leave_base()
 	if base == null:
-		_open_base(hub.stash_items(), hub.current_loadout(), "", hub.base_upgrades())
+		_open_base(hub.stash_items(), hub.current_loadout(), "", hub.base_upgrades(), hub.base_plan())
 	else:
 		_refresh_base()
 	_update_door()
@@ -362,12 +369,12 @@ func enter_base() -> void:
 ## Opens someone else's base to look around. Nothing in it can be equipped.
 ## `stash`, `loadout` and `upgrades` (their base's upgrades, so you see the
 ## base they have built) are that player's, as their server reports them.
-func visit_base(owner_name: String, stash: Array, loadout: Dictionary, upgrades: Array = []) -> void:
-	_open_base(stash, loadout, owner_name if owner_name != "" else "Raider", upgrades)
+func visit_base(owner_name: String, stash: Array, loadout: Dictionary, upgrades: Array = [], plan := {}) -> void:
+	_open_base(stash, loadout, owner_name if owner_name != "" else "Raider", upgrades, plan)
 	_update_door()
 
 
-func _open_base(stash: Array, loadout: Dictionary, owner_name: String, upgrades: Array = []) -> void:
+func _open_base(stash: Array, loadout: Dictionary, owner_name: String, upgrades: Array = [], plan := {}) -> void:
 	if base != null or raid != null:
 		return
 	hub.close()
@@ -375,15 +382,17 @@ func _open_base(stash: Array, loadout: Dictionary, owner_name: String, upgrades:
 	base.name = "HomeBase"
 	base.owner_name = owner_name
 	base.read_only = owner_name != ""
-	base.show_gear(stash, loadout, upgrades)
+	base.show_gear(stash, loadout, upgrades, plan)
 	if not base.read_only:
 		base.set_scrip(hub.scrip())
 	add_child(base)
 	base.equip_requested.connect(_on_base_equip)
 	base.upgrade_requested.connect(_on_base_upgrade)
+	base.room_placed.connect(_on_base_room_placed)
 	base.leave_requested.connect(_on_base_door)
 	base.station_requested.connect(open_station)
 	base.bench_used.connect(open_bench)
+	base.plan_used.connect(open_bench.bind("plan"))
 	base.portal_entered.connect(func(destination: String) -> void: go_through_portal.call_deferred(destination))
 	base.player_replaced.connect(func(_actor: Actor) -> void: _attach_base_view())
 	if not base.read_only:
@@ -546,14 +555,16 @@ func _leave_from_phone() -> void:
 	leave_server()
 
 
-## The gunsmith bench was taken up: the view moves in to it and the mouse
-## works it until the player steps away (`BenchView`).
-func open_bench() -> void:
+## The gunsmith bench (or with `target` "plan", the plan table) was taken
+## up: the view moves in to it and the mouse works it until the player steps
+## away (`BenchView`).
+func open_bench(target := "bench") -> void:
 	if base == null or base.read_only or bench_view != null:
 		return
 	bench_view = BenchViewScript.new()
 	bench_view.name = "BenchView"
 	bench_view.base = base
+	bench_view.target = target
 	bench_view.closed.connect(_on_bench_closed)
 	base.add_child(bench_view)
 	bench_view.focus()
@@ -656,11 +667,24 @@ func _on_base_upgrade(upgrade_id: String) -> void:
 	_refresh_base()
 
 
+## A room moved at the base's plan table: kept in the profile solo, asked of
+## the server online (which answers with a fresh account).
+func _on_base_room_placed(socket: String, room: String) -> void:
+	if base == null or base.read_only:
+		return
+	if hub.in_lobby():
+		if net:
+			net.place_room(socket, room)
+		return
+	Profile.place_room(socket, room)
+	_refresh_base()
+
+
 ## Shows the base whatever the hub would show now.
 func _refresh_base() -> void:
 	if base and not base.read_only:
 		base.set_scrip(hub.scrip())
-		base.show_gear(hub.stash_items(), hub.current_loadout(), hub.base_upgrades())
+		base.show_gear(hub.stash_items(), hub.current_loadout(), hub.base_upgrades(), hub.base_plan())
 		_tour_check()
 
 
@@ -738,8 +762,9 @@ func start_raid(world_id: String, drop := "") -> void:
 	# DEV MODE
 	Profile.apply_dev_mode()
 	raid.dev_cheats = DevMode.raid_cheats()
-	raid.start(world, raid_seed, Profile.checkout_loadout(world), Profile.mastery.active_picks(),
-			LOCAL_OWNER, Profile.renown, drop)
+	var kit := Profile.checkout_loadout(world)
+	raid.start(world, raid_seed, kit, Profile.mastery.active_picks(),
+			LOCAL_OWNER, Profile.renown, drop, Profile.insured_in(kit))
 	_attach_player_view()
 	raid.player_finished.connect(_on_solo_finished)
 	raid.player_banked.connect(func(actor: Actor, _items: Array) -> void:
@@ -850,12 +875,31 @@ func _on_booth_changed(open: bool) -> void:
 ## One solo life ended. A death keeps you in the world; leaving goes home.
 func _on_solo_finished(_actor: Actor, result: Dictionary) -> void:
 	_tour_life_ended(result)
+	_safety_net_news(result)
 	if result.get("outcome", "") == "died":
 		_show_death(result)
 		return
 	# Leave a beat so the player sees what happened before going home.
 	await get_tree().create_timer(1.0).timeout
 	_show_hub(result)
+
+
+## The claims office (`SafetyNets`) messages the phone with what a death's
+## salvage and insurance sent home, so there is a record of it.
+func _safety_net_news(result: Dictionary) -> void:
+	if phone == null:
+		return
+	var lines: Array[String] = []
+	var recalled := str(result.get("recalled", ""))
+	if recalled != "":
+		lines.append("Your insured %s was recalled home. The policy is spent; a new one is ready in %s."
+				% [ItemDB.item_name(recalled), SafetyNets.wait_text(SafetyNets.COOLDOWN)])
+	var salvaged: Array = result.get("salvaged", [])
+	if not salvaged.is_empty():
+		lines.append("Salvage from your %s: %s, in your stash." % [ItemDB.summarize(salvaged),
+				SafetyNets.describe(result.get("salvage", []))])
+	if not lines.is_empty():
+		phone.add_local_message(CLAIMS_ID, CLAIMS_NAME, " ".join(lines))
 
 
 func _show_death(result: Dictionary) -> void:
@@ -888,8 +932,9 @@ func _on_redeploy_requested(drop := "") -> void:
 		net.deploy(drop)
 		return
 	Profile.apply_dev_mode()  # DEV MODE
-	raid.add_player(Profile.checkout_loadout(raid.world), Profile.mastery.active_picks(), "You",
-			LOCAL_OWNER, Profile.renown, drop)
+	var kit := Profile.checkout_loadout(raid.world)
+	raid.add_player(kit, Profile.mastery.active_picks(), "You",
+			LOCAL_OWNER, Profile.renown, drop, Profile.insured_in(kit))
 	_attach_player_view()
 
 
@@ -1363,14 +1408,14 @@ func _on_world_invite_accepted(_invite: Dictionary) -> void:
 
 ## Accepted an invite to someone's home base.
 func _on_base_visit_requested(owner_name: String, owner_stash: Array, owner_loadout: Dictionary,
-		owner_upgrades: Array = []) -> void:
+		owner_upgrades: Array = [], owner_plan := {}) -> void:
 	if raid != null:
 		phone.show_notice("Finish this run first, then visit %s's base." % owner_name)
 		return
 	# In a base (yours or someone else's): walk out and into theirs.
 	leave_base()
 	phone.close()
-	visit_base(owner_name, owner_stash, owner_loadout, owner_upgrades)
+	visit_base(owner_name, owner_stash, owner_loadout, owner_upgrades, owner_plan)
 
 
 # ---------------------------------------------------------------- online ----
@@ -2110,6 +2155,8 @@ func _on_online_account_changed(account: Dictionary) -> void:
 	if shop_view != null and is_instance_valid(shop_view):
 		shop_view.panel.set("account", account)
 		shop_view.panel.call("refresh")
+	if plaza_view != null and is_instance_valid(plaza_view):
+		plaza_view.account = account
 	if raid == null:
 		hub.update_account(account)
 		_refresh_base()
@@ -2132,6 +2179,10 @@ func _on_online_joined(p_raid: Raid) -> void:
 		raid.add_child(plaza_view)
 		net.world_status_changed.connect(plaza_view.refresh_heat.unbind(1))
 		plaza_view.portal_used.connect(use_portal)
+		plaza_view.account = net.account
+		plaza_view.contract_asked.connect(func(action: String, job_id: String) -> void:
+			if net:
+				net.contract_ask(action, job_id))
 	if _back_notice != "" and hud != null and is_instance_valid(hud):
 		hud.notify(_back_notice)
 	_back_notice = ""
@@ -2527,6 +2578,7 @@ func _reconnected_notice() -> String:
 ## the world; a finished sign-out goes back to the lobby.
 func _on_online_finished(result: Dictionary) -> void:
 	_tour_life_ended(result)
+	_safety_net_news(result)
 	# A finished contract buzzes the phone with what it paid.
 	var finished: Array = result.get("contracts_finished", [])
 	if not finished.is_empty() and phone != null:

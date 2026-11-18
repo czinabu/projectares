@@ -5,6 +5,7 @@ extends Node
 ## Add a world id after the folder to shoot only that world.
 
 const BaseUpgrades := preload("res://core/base/base_upgrades.gd")
+const BasePlan := preload("res://core/base/base_plan.gd")
 const Vfx := preload("res://core/visual/vfx.gd")
 
 func _ready() -> void:
@@ -278,6 +279,14 @@ func _ready() -> void:
 	# a target, and a Warden calling the grid.
 	if "--grid-only" in args:
 		await _grid_shots(out_dir)
+		get_tree().quit()
+		return
+	# `-- <output_dir> --whiteout-only` shows a Frostline whiteout: the
+	# valley clear, the blizzard coming down it, the thick of it in first and
+	# third person (the body leaning into the wind, seen from the side) and
+	# spindrift streaming off a rim.
+	if "--whiteout-only" in args:
+		await _whiteout_shots(out_dir)
 		get_tree().quit()
 		return
 
@@ -1041,28 +1050,20 @@ func _base_shots(out_dir: String) -> void:
 	base.player.global_position = Vector3(3, 0.1, 2)
 	await _settle(40)
 	var views := {
-		"base_overview.png": [Vector3(0, 3.2, 8.2), Vector3(0, 1.2, -4)],
-		"base_armory.png": [Vector3(-6.5, 2.6, 1.0), Vector3(-17.0, 1.6, -0.5)],
-		"base_weapons.png": [Vector3(-12.6, 2.0, 2.6), Vector3(-19, 1.9, -1.0)],
-		"base_sidearms.png": [Vector3(-15.0, 1.9, 3.0), Vector3(-15.6, 1.8, -5)],
-		"base_blades.png": [Vector3(-15.0, 1.9, -2.6), Vector3(-15.6, 1.4, 5)],
-		"base_armor.png": [Vector3(-5.5, 2.0, -2.0), Vector3(-5.5, 1.1, -8.5)],
-		"base_helmets.png": [Vector3(-8.2, 2.4, -4.5), Vector3(-8.2, 2.9, -9.0)],
-		"base_rigs.png": [Vector3(5.5, 2.0, -2.0), Vector3(5.5, 1.1, -8.5)],
-		"base_garage.png": [Vector3(5.0, 2.6, 1.0), Vector3(16.0, 0.8, 0.0)],
-		"base_range.png": [Vector3(0.0, 2.2, -14.0), Vector3(0.0, 1.4, -40.0)],
-		"base_range_lane.png": [Vector3(-2.5, 1.8, -18.0), Vector3(1.0, 2.5, -45.0)],
-		"base_shelves.png": [Vector3(-6.8, 2.0, 3.6), Vector3(-6.8, 1.6, 9)],
-		"base_stations_left.png": [Vector3(-3.5, 2.2, 4.0), Vector3(-11.0, 1.0, 1.0)],
-		"base_stations_right.png": [Vector3(4.0, 2.2, 1.0), Vector3(11.1, 1.0, 6.0)],
-		"base_back_wall.png": [Vector3(0.0, 2.6, 4.0), Vector3(0.0, 1.5, -9.0)],
-		"base_deploy.png": [Vector3(4.0, 3.0, -1.0), Vector3(7.0, 1.0, 7.5)],
-		"base_door.png": [Vector3(-1.5, 2.0, 3.0), Vector3(-2.0, 1.4, 9.0)],
-		"base_range_board.png": [Vector3(0.0, 1.7, -10.6), Vector3(0.0, 4.0, -14.0)],
-		"base_course_door.png": [Vector3(-2.0, 2.0, -48.0), Vector3(-4.0, 1.8, -60.0)],
-		"base_course.png": [Vector3(-12.0, 16.0, -61.0), Vector3(6.0, 3.0, -105.0)],
-		"base_course_board.png": [Vector3(-7.5, 2.4, -60.5), Vector3(-7.5, 3.4, -66.5)],
+		"base_overview.png": [Vector3(0, 3.4, 9.2), Vector3(0, 1.2, -6)],
+		"base_hub_back.png": [Vector3(0, 2.4, 6.5), Vector3(0, 1.5, -10)],
+		"base_hub_left.png": [Vector3(5, 2.4, 0), Vector3(-11.5, 1.4, 0)],
+		"base_hub_right.png": [Vector3(-5, 2.4, 0), Vector3(11.5, 1.4, 0)],
+		"base_plan_table.png": [Vector3(1.5, 2.3, 3.6), Vector3(0.3, 1.0, 0)],
+		"base_range.png": [Vector3(0.0, 2.2, -base.range_from() - 4.0), Vector3(0.0, 1.4, -base.range_from() - 30.0)],
+		"base_corridor.png": [Vector3(0.0, 1.8, -7.0), Vector3(0.0, 1.5, -24.0)],
+		"base_door.png": [Vector3(-1.5, 2.0, 3.0), Vector3(-2.0, 1.4, 10.0)],
+		"base_deploy.png": [Vector3(3.0, 2.6, 1.0), Vector3(7.0, 1.2, 10.0)],
 	}
+	# Each room from its doorway, wherever it stands.
+	for room: String in BasePlan.ROOMS:
+		var xf := base.room_transform(room)
+		views["base_room_%s.png" % room] = [xf * Vector3(0.0, 2.6, 3.6), xf * Vector3(0.0, 1.2, -7.5)]
 	for file: String in views:
 		camera.look_at_from_position(views[file][0], views[file][1])
 		await _settle(4)
@@ -1107,21 +1108,40 @@ func _base_shots(out_dir: String) -> void:
 	base.player.global_position = Vector3(3, 0.1, 5)
 	await _settle(10)
 	var bunker := {
-		"bunker_overview.png": [Vector3(0, 3.2, 8.2), Vector3(0, 1.2, -4)],
-		"bunker_nook.png": [Vector3(-5.5, 2.4, 2.5), Vector3(-15.0, 1.6, -0.5)],
-		"bunker_garage.png": [Vector3(5.0, 2.6, 1.0), Vector3(16.0, 1.4, 0.0)],
-		"bunker_range_door.png": [Vector3(0.0, 1.8, -4.5), Vector3(0.0, 1.7, -9.0)],
-		"bunker_test_lane.png": [Vector3(0.0, 1.7, -10.0), Vector3(0.0, 1.5, -24.0)],
-		"bunker_test_lane_side.png": [Vector3(1.2, 2.4, -11.4), Vector3(-0.6, 0.8, -20.0)],
-		"bunker_gear_post.png": [Vector3(-6.0, 1.6, -6.0), Vector3(-6.0, 1.4, -9.0)],
-		"bunker_consoles.png": [Vector3(6.5, 2.0, 5.5), Vector3(11.1, 1.3, 7.0)],
-		"bunker_bench.png": [Vector3(-8.2, 1.8, -0.2), Vector3(-9.2, 1.3, -2.8)],
+		"bunker_overview.png": [Vector3(0, 3.4, 9.2), Vector3(0, 1.2, -6)],
+		"bunker_hub_left.png": [Vector3(5, 2.4, 0), Vector3(-11.5, 1.4, 0)],
+		"bunker_hub_right.png": [Vector3(-5, 2.4, 0), Vector3(11.5, 1.4, 0)],
+		"bunker_test_lane.png": [Vector3(0.0, 1.7, -base.range_from() + 1.5), Vector3(0.0, 1.5, -base.range_from() - 14.0)],
 	}
+	for room: String in BasePlan.ROOMS:
+		var xf := base.room_transform(room)
+		bunker["bunker_room_%s.png" % room] = [xf * Vector3(0.0, 2.6, 3.6), xf * Vector3(0.0, 1.2, -5.0)]
 	for file: String in bunker:
 		camera.make_current()
 		camera.look_at_from_position(bunker[file][0], bunker[file][1])
 		await _settle(4)
 		await _shot(out_dir.path_join(file))
+	# The full base again, rearranged at the plan table, and the table in use.
+	var moved := {"W1": "garage", "W2": "armory", "N1": "ops", "N2": "stores", "E1": "gear", "E2": "workshop"}
+	base.show_gear(gear, worn, BaseUpgrades.full(), moved)
+	await _settle(10)
+	for file: String in {"custom_hub_left.png": 0, "custom_hub_right.png": 0}:
+		var from := Vector3(5, 2.4, 0) if "left" in file else Vector3(-5, 2.4, 0)
+		camera.make_current()
+		camera.look_at_from_position(from, Vector3(-11.5 if "left" in file else 11.5, 1.4, 0))
+		await _settle(4)
+		await _shot(out_dir.path_join(file))
+	base.use_plan()
+	base.plan_scroll(4)
+	base.plan_select()
+	base.plan_scroll(1)
+	var table := base.global_transform * base.plan_transform()
+	camera.look_at_from_position(table * Vector3(0.75, 2.35, 2.4), table * Vector3(0.75, 1.3, -0.1))
+	camera.fov = 60.0
+	await _settle(6)
+	await _shot(out_dir.path_join("plan_table_in_use.png"))
+	base.leave_plan()
+	camera.fov = 75.0
 	base.queue_free()
 	await _settle(2)
 
@@ -1290,7 +1310,7 @@ func _attachment_shots(out_dir: String) -> void:
 		base.player.global_position = Vector3(0, 0.1, 6)
 		await _settle(20)
 		# Views in the bench's own frame (+Z is where you stand to use it).
-		var bench := Transform3D(Basis(Vector3.UP, HomeBase.BENCH_YAW), HomeBase.BENCH_AT)
+		var bench := base.bench_transform()
 		if primary == "rifle_scrap":
 			camera.look_at_from_position(bench * Vector3(-0.6, 1.9, 3.2), bench * Vector3(0, 1.4, 0))
 			await _settle(4)
@@ -1318,10 +1338,11 @@ func _crafting_shots(out_dir: String) -> void:
 		var bench := base.bench_transform()
 		camera.look_at_from_position(bench * Vector3(-0.3, 1.9, 1.7), bench * Vector3(2.0, 1.4, 0.8))
 		await _settle(4)
-		await _shot(out_dir.path_join("fabricator_%s.png" % ("armory" if full else "bunker")))
-		camera.look_at_from_position(Vector3(-13.2, 2.2, 1.0), Vector3(-14.4, 1.3, 7.8))
+		await _shot(out_dir.path_join("fabricator_%s.png" % ("full" if full else "bunker")))
+		var craft := base.station(HomeBase.CRAFT_ID).transform
+		camera.look_at_from_position(craft * Vector3(0, 1.7, 2.2), craft * Vector3(0, 1.1, 0))
 		await _settle(4)
-		await _shot(out_dir.path_join("fabricator_%s_front.png" % ("armory" if full else "bunker")))
+		await _shot(out_dir.path_join("fabricator_%s_front.png" % ("full" if full else "bunker")))
 		base.queue_free()
 		await _settle(2)
 	# The screen in use, as the player sees it, with one recipe ready.
@@ -1359,12 +1380,13 @@ func _bench_shots(out_dir: String) -> void:
 		base.player.global_position = Vector3(0, 0.1, 6)
 		await _settle(20)
 		var tag := "armory" if full else "bunker"
-		# From the room, through the way into the armory.
-		camera.look_at_from_position(Vector3(-6.0, 2.4, 0.0), Vector3(-16.0, 1.4, 2.5))
+		# From the hub, through the way into the workshop.
+		var shop := base.room_transform("workshop")
+		camera.look_at_from_position(shop * Vector3(0, 2.4, 5.0), shop * Vector3(0, 1.4, -6.0))
 		await _settle(4)
 		await _shot(out_dir.path_join("bench_%s_way_in.png" % tag))
-		# Inside the armory, looking across to the workshop.
-		camera.look_at_from_position(Vector3(-12.8 if not full else -17.0, 2.2, -3.5 if not full else -2.0), Vector3(-14.0, 1.3, 7.5))
+		# Inside the workshop, at the bench.
+		camera.look_at_from_position(shop * Vector3(2.5, 2.2, -2.5), base.bench_transform() * Vector3(0, 1.3, 0))
 		await _settle(4)
 		await _shot(out_dir.path_join("bench_%s_workshop.png" % tag))
 		if full:
@@ -1723,6 +1745,47 @@ func _helmet_shots(out_dir: String) -> void:
 			sheet.blit_rect(cut, Rect2i(0, 0, 320, 320), Vector2i(i * 320, row * 320))
 	sheet.save_png(out_dir.path_join("helmets.png"))
 	print("saved helmets.png")
+	# Close up, the head alone: front, three quarters, side and back, each
+	# helmet and its Mk2 in a row (helmet_closeups.png).
+	Loadout.wear_frame(player, "")
+	lamp.light_color = Color(0.95, 0.97, 1.0)
+	lamp.light_energy = 2.5
+	var fill := OmniLight3D.new()
+	fill.omni_range = 6.0
+	fill.light_energy = 1.2
+	fill.light_color = Color(0.8, 0.88, 1.0)
+	cam.add_child(fill)
+	fill.position = Vector3(-0.8, 0.6, 0.2)
+	var close := ["visor_scav", "helm_spotter", "helm_spotter_mk2", "helm_seeker", "helm_seeker_mk2",
+			"helm_warden", "helm_warden_mk2", "helm_ember", "helm_ember_mk2"]
+	var cells := 4
+	var px := 300
+	var closeups := Image.create(cells * px, close.size() * px, false, Image.FORMAT_RGBA8)
+	var back_z: Vector3 = player.global_basis.z
+	var right: Vector3 = player.global_basis.x
+	var angles := [-back_z, (-back_z + right).normalized(), right, (back_z - right * 0.4).normalized()]
+	for row in close.size():
+		Loadout.wear_helmet(player, close[row])
+		for k in 10:
+			skin._process(1.0 / 60.0)
+			await get_tree().process_frame
+		var worn: Node3D = skin.get("_helmet")
+		for i in cells:
+			var head: Vector3 = worn.get_child(0).get_child(0).global_position if worn.get_child(0).get_child_count() > 0 \
+					else player.global_position + Vector3(0, 1.66, 0)
+			head.y -= 0.03
+			cam.global_position = head + (angles[i] as Vector3) * 1.15 + Vector3(0, 0.1, 0)
+			cam.look_at(head)
+			await RenderingServer.frame_post_draw
+			var frame := get_viewport().get_texture().get_image()
+			var h := frame.get_height()
+			var w := frame.get_width()
+			var cut := frame.get_region(Rect2i(w / 2 - h * 3 / 8, h / 8, h * 3 / 4, h * 3 / 4))
+			cut.resize(px, px)
+			cut.convert(Image.FORMAT_RGBA8)
+			closeups.blit_rect(cut, Rect2i(0, 0, px, px), Vector2i(i * px, row * px))
+	closeups.save_png(out_dir.path_join("helmet_closeups.png"))
+	print("saved helmet_closeups.png")
 	raid.queue_free()
 
 
@@ -2205,6 +2268,94 @@ func _ice_shots(out_dir: String) -> void:
 	await _settle(20)
 	await _shot(out_dir.path_join("ice_hole.png"))
 	raid.queue_free()
+
+
+func _whiteout_shots(out_dir: String) -> void:
+	const MapScript := preload("res://worlds/frostline/map.gd")
+	var raid := Raid.new()
+	add_child(raid)
+	raid.start(Worlds.get_world("frostline"), 42)
+	for bot in raid.bots:
+		bot.get_node("Brain").set_physics_process(false)
+		bot.set_physics_process(false)
+	var player := raid.player
+	player.set_physics_process(false)
+	var ground := func(at: Vector3) -> Vector3:
+		return Vector3(at.x, float(raid.map.call("ground_height", at.x, at.z)), at.z)
+	# On the floor below the Narrows, looking up the valley (toward -z).
+	var z0 := 120.0
+	var origin: Vector3 = ground.call(Vector3(MapScript.centre(z0), 0.0, z0))
+	var forward := Vector3(0, 0, -1)
+	var side := Vector3(1, 0, 0)
+	var line: Array[Actor] = [player]
+	for bot in raid.bots:
+		if line.size() < 5 and not bot.is_dead and bot.get_meta("boss", "") == "":
+			line.append(bot)
+		else:
+			bot.global_position += Vector3(0, -400, 0)
+	var distances: Array[float] = [3.0, 15.0, 30.0, 45.0, 70.0]
+	var lateral: Array[float] = [0.6, -3.0, 2.0, -2.5, 3.0]
+	for i in line.size():
+		line[i].global_position = ground.call(origin + forward * distances[i] + side * lateral[i])
+		line[i].rotation.y = PI if i == 0 else 0.0
+	var cam := Camera3D.new()
+	cam.fov = 62.0
+	cam.far = 1500.0
+	raid.add_child(cam)
+	cam.current = true
+	var eye: Vector3 = ground.call(origin + forward * 4.5) + Vector3(0, 1.65, 0)
+	var focus: Vector3 = ground.call(origin + forward * 35.0) + Vector3(0, 1.3, 0)
+	cam.look_at_from_position(eye, focus)
+	await _settle(40)
+	await _shot(out_dir.path_join("whiteout_1_clear.png"))
+	# The blizzard coming down the valley, seen from the shelf.
+	var weather := raid.weather
+	weather.start()
+	weather.velocity = Vector3(0, 0, 0.2)
+	weather.life = 100000.0
+	weather.age = 1000.0
+	weather.strength = 1.0
+	weather.centre = Vector3(MapScript.centre(-120.0), 0.0, -120.0)
+	var perch: Vector3 = origin + Vector3(0, 7.0, 0)
+	cam.look_at_from_position(perch, weather.centre + Vector3(0, 30, 0))
+	await _settle(30)
+	await _shot(out_dir.path_join("whiteout_2_coming.png"))
+	# The thick of it, first person.
+	weather.centre = Vector3(origin.x, 0.0, origin.z) + forward * 20.0
+	Look.weather_follow = 100.0
+	cam.look_at_from_position(eye, focus)
+	await _settle(10)
+	for air: GPUParticles3D in raid.find_children("*", "GPUParticles3D", true, false):
+		if air.get_parent().name == "Air":
+			air.preprocess = 6.0
+			air.restart()
+	await _settle(30)
+	await _shot(out_dir.path_join("whiteout_3_first.png"))
+	# Third person, over the shoulder.
+	cam.look_at_from_position(player.global_position - forward * 3.4 + side * 0.9 + Vector3(0, 2.0, 0), focus)
+	await _settle(10)
+	await _shot(out_dir.path_join("whiteout_4_third.png"))
+	# The body leaning into the wind, in profile: the wind blows down the
+	# valley (+z), the player faces up it into the wind, the camera beside.
+	player.rotation.y = 0.0
+	player.cmd.yaw = 0.0
+	var at := player.global_position
+	cam.look_at_from_position(at + Vector3(-3.5, 1.1, 0.0), at + Vector3(0, 1.0, 0))
+	await _settle(80)
+	await _shot(out_dir.path_join("whiteout_5_lean.png"))
+	# Spindrift streaming off the east rim.
+	# The camera in the storm's soft edge on the east side of the floor, the
+	# rim close by and deeper in.
+	weather.centre = Vector3(MapScript.centre(z0 - 75.0), 0.0, z0 - 75.0)
+	var rim := MapScript.rim_point(z0 - 5.0, 1.0)
+	var rim_at: Vector3 = ground.call(Vector3(rim.x, 0.0, rim.y))
+	var below: Vector3 = ground.call(Vector3(MapScript.centre(z0 + 15.0) + MapScript.half_width(z0 + 15.0) * 0.5, 0.0, z0 + 15.0))
+	cam.look_at_from_position(below + Vector3(0, 1.8, 0), rim_at + Vector3(0, 6, 0))
+	await _settle(80)
+	await _shot(out_dir.path_join("whiteout_6_spindrift.png"))
+	Look.weather_follow = 0.35
+	raid.queue_free()
+	await _settle(4)
 
 
 func _grid_shots(out_dir: String) -> void:

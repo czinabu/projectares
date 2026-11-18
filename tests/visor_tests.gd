@@ -164,6 +164,18 @@ static func _wear(t: Node) -> void:
 				and model.get_node_or_null(fittings[mode]) != null
 		model.free()
 	t.check(built, "every visor mode has a helmet model: a shell, its glass and its own fitting")
+	var plain := SkinScript.build_helmet("scan", Color.WHITE, Vector3(0.27, 0.31, 0.31), Color.GRAY)
+	var mk2 := SkinScript.build_helmet("scan", Color.WHITE, Vector3(0.27, 0.31, 0.31), Color.GRAY, 2)
+	t.check(plain.get_node_or_null("Mk2Trim") == null and mk2.get_node_or_null("Mk2Trim") != null
+			and plain.get_node_or_null("Hood") != null,
+			"a helmet covers the head with a hood, and a Mk2 wears its lit trim")
+	plain.free()
+	mk2.free()
+	var tiers := true
+	for id: String in ItemDB.all_ids().filter(func(i: String) -> bool: return ItemDB.has_tag(i, "helmet")):
+		var want := 2 if id.ends_with("_mk2") else 1
+		tiers = tiers and int(ItemDB.item_stats(id).get("tier", 1)) == want
+	t.check(tiers, "every Mk2 helmet says its tier, so it wears the Mk2 trim")
 
 
 static func _frames(t: Node) -> void:

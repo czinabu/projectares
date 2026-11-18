@@ -264,13 +264,13 @@ func _ready() -> void:
 			{"mode": "zoom", "zoom_levels": [4.0, 8.0], "glass_color": Color(1.0, 0.75, 0.3)},
 			"Binoculars at 4x and 8x with a range finder. Fire while zoomed to tag a target. The lens glints.")
 	register("helm_spotter_mk2", "Spotter Helmet Mk2", Rarity.RARE, 1100, ["helmet", "optic"],
-			{"mode": "zoom", "zoom_levels": [4.0, 10.0], "tag_time": 7.0, "glass_color": Color(1.0, 0.75, 0.3)},
+			{"tier": 2, "mode": "zoom", "zoom_levels": [4.0, 10.0], "tag_time": 7.0, "glass_color": Color(1.0, 0.75, 0.3)},
 			"Binoculars at 4x and 10x. Tags last two seconds longer.")
 	register("helm_seeker", "Seeker Helmet", Rarity.UNCOMMON, 550, ["helmet", "scanner", "vendor"],
 			{"mode": "scan", "cooldown": 25.0, "scan_radius": 40.0, "glass_color": Color(0.4, 1.0, 0.8)},
 			"A scan pulse shows where everyone within 40 meters stood. They hear it and know where it came from.")
 	register("helm_seeker_mk2", "Seeker Helmet Mk2", Rarity.RARE, 1200, ["helmet", "scanner"],
-			{"mode": "scan", "cooldown": 21.0, "scan_radius": 48.0, "glass_color": Color(0.4, 1.0, 0.8)},
+			{"tier": 2, "mode": "scan", "cooldown": 21.0, "scan_radius": 48.0, "glass_color": Color(0.4, 1.0, 0.8)},
 			"A wider scan pulse, 48 meters, that is ready again sooner.")
 
 	register("helm_warden", "Warden Helmet", Rarity.UNCOMMON, 600, ["helmet", "tactical", "vendor"],
@@ -278,7 +278,7 @@ func _ready() -> void:
 			"Shows where a hit came from, the health of who you aim at, and what is in nearby loot. "
 			+ "Threat Sense outlines anyone aiming at you for five seconds.")
 	register("helm_warden_mk2", "Warden Helmet Mk2", Rarity.RARE, 1300, ["helmet", "tactical"],
-			{"mode": "threat", "cooldown": 26.0, "threat_range": 75.0, "read_range": 40.0,
+			{"tier": 2, "mode": "threat", "cooldown": 26.0, "threat_range": 75.0, "read_range": 40.0,
 			"glass_color": Color(0.55, 0.8, 1.0)},
 			"Threat Sense reaches 75 meters and is ready sooner. Reads targets out to 40 meters.")
 	register("helm_ember", "Ember Helmet", Rarity.UNCOMMON, 580, ["helmet", "thermal", "vendor"],
@@ -286,7 +286,7 @@ func _ready() -> void:
 			"Thermal sight on a twelve second battery. Warm bodies stand out through smoke and storm, "
 			+ "never through walls. A hot jetpack shines.")
 	register("helm_ember_mk2", "Ember Helmet Mk2", Rarity.RARE, 1250, ["helmet", "thermal"],
-			{"mode": "thermal", "battery": 16.0, "battery_refill": 16.0, "glass_color": Color(1.0, 0.45, 0.25)},
+			{"tier": 2, "mode": "thermal", "battery": 16.0, "battery_refill": 16.0, "glass_color": Color(1.0, 0.45, 0.25)},
 			"Thermal sight with a sixteen second battery that refills faster.")
 
 	# Vehicles. Not carried: the Raid parks one next to you when you deploy, and

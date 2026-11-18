@@ -8,6 +8,7 @@ const MirrorScript := preload("res://core/visual/mirror.gd")
 const Vfx := preload("res://core/visual/vfx.gd")
 const WeaponArm := preload("res://core/visual/weapon_arm.gd")
 const RigModel := preload("res://core/visual/rig_model.gd")
+const HelmetModel := preload("res://core/visual/helmet_model.gd")
 const Locomotion := preload("res://core/visual/locomotion.gd")
 const Handheld := preload("res://core/phone/handheld.gd")
 const UiTheme := preload("res://core/visual/ui_theme.gd")
@@ -1303,109 +1304,16 @@ func _update_helmet() -> void:
 	var bone: String = "Head" if _skeleton and _skeleton.find_bone("Head") >= 0 else _def.get("neck", "")
 	var mode := actor.visor.mode if own == "" else own
 	var glass := actor.visor.glass_color if own == "" else actor.body_color.lightened(0.2)
-	_helmet = _hang(build_helmet(mode, glass, helmet_size, helmet_shell_color),
+	var tier := actor.visor.tier if own == "" else 1
+	_helmet = _hang(build_helmet(mode, glass, helmet_size, helmet_shell_color, tier),
 			"Helmet", bone, helmet_offset, Vector3(0.0, _def.get("height", 1.8) * 0.93, 0.0) + helmet_offset)
 
 
 ## The helmet model for a visor `mode` (see `Visor`): a shell of `size` round
-## the head, front toward -Z, a faceplate lit in `glass`, and the mode's
-## fitting: twin lenses (zoom), a sensor fin (scan), a brow and cheek plates
-## (threat), one round lens (thermal). A plain visor is a dull, cracked band.
-static func build_helmet(mode: String, glass: Color, size: Vector3, shell_color: Color) -> Node3D:
-	var root := Node3D.new()
-	root.name = "HelmetModel"
-	var shell := _solid(shell_color, 0.0)
-	var plate := _solid(shell_color.lightened(0.12), 0.0)
-	var lit := _solid(glass, 0.9 if mode != "" else 0.25)
-	# The dome and the band round the sides and back.
-	var dome := SphereMesh.new()
-	dome.radius = 0.5
-	dome.height = 1.0
-	_piece(root, "Shell", dome, shell, Vector3(0, 0.0, 0), size)
-	var neck := CylinderMesh.new()
-	neck.top_radius = 0.5
-	neck.bottom_radius = 0.55
-	neck.height = 1.0
-	_piece(root, "Neck", neck, shell, Vector3(0, -size.y * 0.45, size.z * 0.06),
-			Vector3(size.x * 0.55, size.y * 0.2, size.z * 0.55))
-	if mode == "slit":
-		return _closed_helm(root, size, plate, _solid(glass, 1.4))
-	# The faceplate: glass over the eyes, wrapped round the front of the shell.
-	var face := SphereMesh.new()
-	face.radius = 0.5
-	face.height = 1.0
-	_piece(root, "Glass", face, lit, Vector3(0, -size.y * 0.04, -size.z * 0.12),
-			Vector3(size.x * 0.96, size.y * 0.4, size.z * 0.84))
-	if mode == "":
-		# A plain visor's glass is cracked across.
-		var crack := _piece(root, "Crack", BoxMesh.new(), _solid(Color(0.05, 0.05, 0.05), 0.0),
-				Vector3(size.x * 0.12, -size.y * 0.02, -size.z * 0.535), Vector3(size.x * 0.32, 0.006, 0.006))
-		crack.rotation.z = 0.5
-		return root
-	match mode:
-		"zoom":
-			# Twin lens barrels over the right eye, out from the glass.
-			var tube := CylinderMesh.new()
-			tube.top_radius = 0.5
-			tube.bottom_radius = 0.5
-			tube.height = 1.0
-			for i in 2:
-				var barrel := _piece(root, "Lens%d" % i, tube, plate,
-						Vector3(size.x * (0.16 + 0.13 * i), size.y * 0.02, -size.z * 0.5 + 0.03 * i),
-						Vector3(0.05 - 0.01 * i, 0.09, 0.05 - 0.01 * i))
-				barrel.rotation.x = PI * 0.5
-				var cap := _piece(root, "LensGlass%d" % i, tube, lit,
-						barrel.position + Vector3(0, 0, -0.046), Vector3(0.04 - 0.01 * i, 0.004, 0.04 - 0.01 * i))
-				cap.rotation.x = PI * 0.5
-		"scan":
-			# A sensor fin along the crown with a lit edge.
-			_piece(root, "Fin", BoxMesh.new(), plate, Vector3(0, size.y * 0.48, size.z * 0.08),
-					Vector3(0.022, 0.05, size.z * 0.6))
-			_piece(root, "FinEdge", BoxMesh.new(), lit, Vector3(0, size.y * 0.48 + 0.026, size.z * 0.08),
-					Vector3(0.026, 0.006, size.z * 0.5))
-		"threat":
-			# A heavy brow and plates down the cheeks.
-			_piece(root, "Brow", BoxMesh.new(), plate, Vector3(0, size.y * 0.17, -size.z * 0.4),
-					Vector3(size.x * 0.9, 0.035, 0.07))
-			for side: float in [-1.0, 1.0]:
-				var cheek := _piece(root, "Cheek", BoxMesh.new(), plate,
-						Vector3(side * size.x * 0.44, -size.y * 0.2, -size.z * 0.22), Vector3(0.03, 0.1, 0.11))
-				cheek.rotation.y = side * 0.5
-		"thermal":
-			# One round lens in the middle of the glass.
-			var ring := CylinderMesh.new()
-			ring.top_radius = 0.5
-			ring.bottom_radius = 0.5
-			ring.height = 1.0
-			var lens := _piece(root, "Lens", ring, plate, Vector3(0, -size.y * 0.04, -size.z * 0.53),
-					Vector3(0.11, 0.04, 0.11))
-			lens.rotation.x = PI * 0.5
-			var eye := _piece(root, "LensGlass", ring, _solid(glass, 1.6), lens.position + Vector3(0, 0, -0.022),
-					Vector3(0.08, 0.004, 0.08))
-			eye.rotation.x = PI * 0.5
-	return root
-
-
-## An exo trooper's closed helmet: a faceplate over the whole front, one
-## narrow slit lit in `slit` across the eyes, a heavy brow over it, cheek
-## guards and a jaw plate. Added to a shell `build_helmet` has made.
-static func _closed_helm(root: Node3D, size: Vector3, plate: Material, slit: Material) -> Node3D:
-	var face := SphereMesh.new()
-	face.radius = 0.5
-	face.height = 1.0
-	_piece(root, "Faceplate", face, plate, Vector3(0, -size.y * 0.06, -size.z * 0.1),
-			Vector3(size.x * 0.98, size.y * 0.66, size.z * 0.86))
-	_piece(root, "Slit", BoxMesh.new(), slit, Vector3(0, size.y * 0.02, -size.z * 0.52),
-			Vector3(size.x * 0.62, size.y * 0.07, 0.02))
-	_piece(root, "Brow", BoxMesh.new(), plate, Vector3(0, size.y * 0.12, -size.z * 0.46),
-			Vector3(size.x * 0.92, 0.04, 0.07))
-	_piece(root, "Jaw", BoxMesh.new(), plate, Vector3(0, -size.y * 0.3, -size.z * 0.38),
-			Vector3(size.x * 0.6, 0.07, 0.1))
-	for side: float in [-1.0, 1.0]:
-		var cheek := _piece(root, "Cheek", BoxMesh.new(), plate,
-				Vector3(side * size.x * 0.42, -size.y * 0.16, -size.z * 0.26), Vector3(0.035, 0.12, 0.13))
-		cheek.rotation.y = side * 0.45
-	return root
+## the head, front toward -Z, glass lit in `glass` and the mode's fitting,
+## each design its own (`helmet_model.gd`). `tier` 2 adds the Mk2 trim.
+static func build_helmet(mode: String, glass: Color, size: Vector3, shell_color: Color, tier := 1) -> Node3D:
+	return HelmetModel.build(mode, glass, size, shell_color, tier)
 
 
 ## An exo trooper's cooling pack, front toward -Z (against the back): a
@@ -1917,6 +1825,9 @@ func _update_frame() -> void:
 	if id == _frame_id and (id == "" or (not _frame_parts.is_empty() and is_instance_valid(_frame_parts[0]))):
 		return
 	_frame_id = id
+	# Under a frame the body wears its undersuit.
+	for mat in _materials:
+		mat.set_shader_parameter("suit", 1.0 if id != "" else 0.0)
 	for part in _frame_parts:
 		if is_instance_valid(part):
 			part.queue_free()

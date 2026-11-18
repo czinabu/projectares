@@ -79,13 +79,13 @@ signal social_notice(text: String)
 signal world_invite_accepted(invite: Dictionary)
 ## Client: you accepted an invite to someone's home base. The owner's stash
 ## and loadout come from the server, so a base can be shown read-only.
-signal base_visit_requested(owner_name: String, stash: Array, loadout: Dictionary, upgrades: Array)
+signal base_visit_requested(owner_name: String, stash: Array, loadout: Dictionary, upgrades: Array, plan: Dictionary)
 ## Client: you walked through a squad portal your side may use; go to
 ## `destination` (a world id or the arena's). The server decided.
 signal portal_travel(destination: String)
 
 const DEFAULT_PORT := 24565
-const PROTOCOL := 45
+const PROTOCOL := 47
 ## Every packet is compressed, both ways. State updates are mostly repeated
 ## numbers, and a big battle sends a player hundreds of them a second. Server
 ## and client must agree, so a change here needs a new PROTOCOL.
@@ -116,6 +116,8 @@ const PROTOCOL := 45
 ## 43: a core boss's kind in a bot's spawn data ("boss") and a linked
 ## faction's call for help (`_grid_call`).
 ## 45: the weather: a storm cell crossing the map (`_weather`).
+## 47: the home base's plan: `_request_place_room`, and a visited base's
+## plan in `_base_visit`.
 ## Where an out-of-date game gets the latest build: the rolling "latest"
 ## release the Windows client workflow publishes (docs/hosting.md).
 const UPDATE_URL := "https://github.com/czinabu/projectares/releases/tag/latest"
@@ -1300,6 +1302,19 @@ func _request_buy_upgrade(upgrade_id: String) -> void:
 	_lobby_answer(peer, result)
 
 
+## Lobby: move a room of your home base into a socket (`BasePlan`). Free,
+## and the server keeps the plan with the account.
+@rpc("any_peer", "call_remote", "reliable")
+func _request_place_room(socket: String, room: String) -> void:
+	if not _allow("lobby"):
+		return
+	var peer := _api.get_remote_sender_id()
+	if not is_server or not _peer_account.has(peer):
+		return
+	var result: Dictionary = await stash.place_room(_peer_account[peer], socket.left(8), room.left(32))
+	_lobby_answer(peer, result)
+
+
 ## The market kiosk: "view" opens the board (and keeps it fresh while
 ## open), "close" stops that, "list" puts `count` of `item_id` up at `price`
 ## each, "buy" takes `count` from listing `listing_id`, "cancel" takes your
@@ -1385,6 +1400,19 @@ func _request_craft(item_id: String) -> void:
 	if not is_server or not _peer_account.has(peer):
 		return
 	var result: Dictionary = await stash.craft(_peer_account[peer], item_id.left(64))
+	_lobby_answer(peer, result)
+
+
+## Lobby: "insure" one stash item or "cancel" the policy at the fabricator
+## (`StashService.insure`). The server decides what it costs.
+@rpc("any_peer", "call_remote", "reliable")
+func _request_insure(action: String, item_id: String) -> void:
+	if not _allow("lobby"):
+		return
+	var peer := _api.get_remote_sender_id()
+	if not is_server or not _peer_account.has(peer):
+		return
+	var result: Dictionary = await stash.insure(_peer_account[peer], action.left(16), item_id.left(64))
 	_lobby_answer(peer, result)
 
 
@@ -1534,7 +1562,7 @@ func _request_join(drop := "") -> void:
 	raid.set_team(account_id, clan_id if _clans_fight_together() else "", clans.name_of(clan_id))
 	# Renown is kept under the account, never under a name the client chose.
 	var actor := raid.add_player(deployed.kit, deployed.picks, who.name, account_id, int(who.get("renown", 0)),
-			drop.left(48))
+			drop.left(48), str(deployed.get("insured", "")))
 	_joining_look = {}
 	_wear_clan(actor, account_id)
 	if not safe:
@@ -2254,8 +2282,28 @@ func _world_status(p_status: Dictionary) -> void:
 				"level": str(entry.get("level", "")).left(24),
 				"bounty": maxi(0, int(entry.get("bounty", 0))),
 				"event": str(entry.get("event", "")).left(40),
-				"storm": str(entry.get("storm", "")).left(24)}
+				"storm": str(entry.get("storm", "")).left(24),
+				"wanted": _clean_wanted(entry.get("wanted", []))}
 	world_status_changed.emit(world_status)
+
+
+## A world's most wanted as the server sent them (`Raid.wanted`), checked:
+## at most `Raid.WANTED_SHOWN` entries of {name, clan, bounty, marked}.
+static func _clean_wanted(raw: Variant) -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	if typeof(raw) != TYPE_ARRAY:
+		return out
+	for entry: Variant in raw:
+		if out.size() >= Raid.WANTED_SHOWN:
+			break
+		if typeof(entry) != TYPE_DICTIONARY:
+			continue
+		var name := str(entry.get("name", "")).strip_edges().left(24)
+		if name == "":
+			continue
+		out.append({"name": name, "clan": str(entry.get("clan", "")).left(6),
+				"bounty": maxi(0, int(entry.get("bounty", 0))), "marked": typeof(entry.get("marked")) == TYPE_BOOL and entry.marked})
+	return out
 
 
 @rpc("authority", "call_remote", "reliable")
@@ -2342,10 +2390,22 @@ func buy_upgrade(upgrade_id: String) -> void:
 		_request_buy_upgrade.rpc_id(1, upgrade_id)
 
 
+## Lobby: ask the server to move a room of your home base into a socket.
+func place_room(socket: String, room: String) -> void:
+	if _is_connected() and not account.is_empty():
+		_request_place_room.rpc_id(1, socket, room)
+
+
 ## Lobby: ask the server to craft one item at the gunsmith bench.
 func craft(item_id: String) -> void:
 	if _is_connected() and not account.is_empty():
 		_request_craft.rpc_id(1, item_id)
+
+
+## Lobby: ask the server to "insure" a stash item or "cancel" the policy.
+func insure(action: String, item_id: String = "") -> void:
+	if _is_connected() and not account.is_empty():
+		_request_insure.rpc_id(1, action, item_id)
 
 
 ## Lobby: ask the server to sell stash items ("" sells all loot).
@@ -3694,7 +3754,7 @@ func _request_answer_invite(invite_id: int, accept: bool) -> void:
 		if not _here(peer):
 			return
 		_base_visit.rpc_id(peer, str(invite.get("from_name", "")), owner.get("stash", []), owner.get("loadout", {}),
-				owner.get("base_upgrades", []))
+				owner.get("base_upgrades", []), owner.get("base_plan", {}))
 	else:
 		_world_invite_accepted.rpc_id(peer, invite)
 
@@ -3735,8 +3795,9 @@ func _world_invite_accepted(invite: Dictionary) -> void:
 
 
 @rpc("authority", "call_remote", "reliable")
-func _base_visit(owner_name: String, owner_stash: Array, owner_loadout: Dictionary, owner_upgrades: Array) -> void:
-	base_visit_requested.emit(owner_name, owner_stash, owner_loadout, owner_upgrades)
+func _base_visit(owner_name: String, owner_stash: Array, owner_loadout: Dictionary, owner_upgrades: Array,
+		owner_plan: Dictionary) -> void:
+	base_visit_requested.emit(owner_name, owner_stash, owner_loadout, owner_upgrades, owner_plan)
 
 
 ## Phone: message a player on this server, or a saved contact.

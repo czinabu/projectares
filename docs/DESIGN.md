@@ -70,6 +70,11 @@ new planet is a new folder under `worlds/`.
    (the plaza's heat signs already get `world_status`); live video of arena
    bouts comes later. The contract board, where you take contracts
    (section 10), stands next to it.
+   *Built:* the most-wanted board stands across the big screen from the
+   contract board: a red lit wall listing the biggest bounties out in the
+   worlds and the Marked, by name, clan tag and world, never where they are
+   (`Raid.wanted` rides in each world's `world_status`). Kade, the bounty
+   broker, stands at it. Arena results and live video are still to come.
 2. **Ring races and time trials.** Courses of rings through the hub's
    skyline, one per rig plus a bike course. A cheap, small version of the
    racing mode (section 9) and a place for new players to practise each rig.
@@ -90,13 +95,51 @@ walk of the arrival pad. It looks sci-fi, not industrial: dark glass and
 metal with lit seams instead of brick and punched windows, a glass arcade
 canopy, holo signs over every kiosk and floating holo-ads.
 
+### Locals
+
+The Concourse is lived in (Caleb's call): about thirty people go about their
+day there, strolling the rings round the spire, browsing the kiosks under
+the arcade, watching the big screen from the tiers, standing about in small
+groups and wandering out to the boards and the gates. Nothing about them is
+even: who walks with whom, where they stand and how long they stay are all
+rolled from one seed. They look at you as you pass and step out of your way.
+They are a view only: every game makes the same crowd and moves it by the
+clock, so the server spends nothing on them and everyone sees much the same
+people.
+
+Three of them you can talk to. Walk up and press the interact key, and they
+answer in a short line on a card over their head, never a menu:
+
+- **Kade**, the bounty broker at the most-wanted board: how bounties work
+  and who is worth most right now.
+- **Dusk**, by the spire, who hears things: rumours made from the worlds'
+  real news (the war, the event running, a big bounty), never more than the
+  plaza's own signs know.
+- **Rook**, the fixer by the gates: one small favour a day, a contract job
+  of his own (`Contracts.favor_for`) paid a little under a daily. Talk to him
+  again to take it; it is held and paid like any contract.
+
 ### Home base
 
-- The stash on show: every weapon (long guns, sidearms, melee) on one rack
-  in the armory, an alcove off the main room with the locker at its way in
-  and the gunsmith bench in a workshop corner of its own off to the side;
-  armor stands, rigs, ability chips,
-  bikes in the garage, loot on shelves and trophies in the main room.
+- **A hub with rooms off it, laid out by the player** (Caleb's call, the
+  modular base). The hub is a plain steel hall with six doorways of one
+  size: two in each side wall and two in the back wall either side of a
+  corridor that runs back to the firing range and flight course. Six rooms
+  stand in them, one each: the **Armory** (every weapon on one rack: long
+  guns, sidearms, melee, and the heavy weapon wall), the **Workshop**
+  (gunsmith bench and fabricator), the **Garage** (your vehicles), **Ops**
+  (wardrobe, records, mastery bench, trader), the **Gear hall** (armor
+  stands, helmets, rigs, chips) and the **Stores** (supplies and trophies).
+  A plate over each doorway names its room; there are no other signs.
+- **The plan table** stands in the middle of the hub: a round table with
+  the base in miniature over it as a hologram. Walk up and use it and the
+  view moves in, like the bench: the wheel turns through the six doorways,
+  a click turns through the rooms for one (shown in the doorway on the
+  table at once), a second click moves that room there, and the room that
+  stood there takes its old place. Moving rooms is free and moves nothing
+  in or out of the stash; everything on show goes with its room. The plan
+  is kept on the account beside the upgrades, and a visited base stands as
+  its owner laid it out.
 - **Heavy weapons banked from the PvP world hang on the armory wall** and can
   be stacked there (see section 6).
 - Consoles do what menus would: locker, gunsmith bench (crafting from
@@ -119,15 +162,19 @@ canopy, holo signs over every kiosk and floating holo-ads.
 - You are one player everywhere you go: the loadout you leave the base with
   is what you wear in the hub, a world and the arena, and coming back to the
   hub through a door puts you in front of that door.
-- A garage off the room for the bikes you own, and a firing range behind the
-  back wall (the first of the upgrades below, built early as a greybox).
+- The firing range and the flight course are always down the corridor
+  behind the hub, never moved by the plan.
 
 **The base grows with you.** A new player starts in a starter bunker with
 everything it takes to play (deploy, change loadout, trade, mastery picks,
-fit attachments, go online) and little on show: a short weapon rack in an
-armory nook (4 long guns, 2 sidearms, 2 melee), one garage bay, one armor
-stand and one rig stand, a small supplies shelf, the gunsmith's workshop, and the mastery
-bench and records sharing the trader's and the wardrobe's consoles. Each
+fit attachments, go online) and little on show. Every room stands from the
+start in its small form, its front half closed off by a sealed wall: a
+short weapon rack in the armory (4 long guns, 2 sidearms, 2 melee), one
+garage bay, one armor stand and one rig stand, a small supplies shelf, the
+whole workshop, and in Ops the mastery bench and records sharing the
+trader's and the wardrobe's consoles. A room's upgrade opens the rest of
+it, wherever it stands (Armory alcove, Full garage, Ops consoles, Gear
+hall, Trophy hall for the stores). Each
 upgrade is a one-off scrip purchase kept on the account (never in the stash,
 never lost), bought in the room at the sealed bulkhead it opens: look at it
 and press F twice. Upgrades never add combat power or storage, only room to
@@ -146,14 +193,14 @@ has. Prices are placeholders until a playtest measures scrip per life.
 | Gunsmith | Master bench | 8,000 | Workshop bench | Looks only |
 | Halls | Gear hall | 1,000 | | 6 armor stands, 4 rig stands, the chip case |
 | Halls | Trophy hall | 1,500 | | The trophy shelf and a full supplies shelf |
-| Halls | Lounge | 800 | | Room for furniture and decor. Not built yet |
+| Halls | Lounge | 800 | | Room for furniture and decor. Not built yet: a seventh room, and no socket for it yet |
 | Headquarters | Ops consoles | 500 | | The mastery bench and records get their own consoles |
 | Headquarters | Firing range | 2,500 | | The range below |
 | Headquarters | Finish | 1,500 | Any 4 upgrades | Lit trim and light columns |
 
 Crafting tiers are not gated by the bench upgrades: any bench crafts Mk2 and
 Mk3 for a small scrip fee per craft (section 10). The crafting console, the
-fabricator, stands beside the bench in the gunsmith's workshop.
+fabricator, stands beside the bench in the workshop.
 
 The bigger upgrades, which turn the base from a display room into a
 headquarters, in the order they are built:
@@ -209,10 +256,11 @@ worlds and a casual or solo one has a steady home.
   are heaters, beacons and the Engine's one teal light.
 - **Threats.** Body heat as a vital, drained in the open and refilled at
   heater huts, vents and vehicle engines, hurting through `Combat.deal`
-  when empty (built, step 2). Planned: whiteouts that cut sight to about 30 m and wipe
-  tracks, and feel like a real blizzard (Caleb's call): wind you see and
-  hear, snow driven sideways in gusts, drifts streaming off the rims, bodies
-  leaning into it and the wind pushing flight rigs off course. Built
+  when empty (built, step 2). Whiteouts (built, step 5) cut sight to about
+  30 m and wipe tracks, and feel like a real blizzard (Caleb's call): wind
+  you see and hear, snow driven sideways in gusts, drifts streaming off the
+  rims, bodies leaning into it and the wind pushing flight rigs off course
+  (see "Whiteouts" below). Built
   (step 6): footprints and vehicle tracks the server keeps and sends only
   nearby, and gunshots that carry twice as far. Built (step 7): thin ice in
   the lake's middle that breaks under heavy vehicles, and the Wardens as
@@ -237,6 +285,23 @@ weather work, (6) tracks and louder gunshots, (7) thin ice, the defence
 grid and expedition contracts (in three PRs: thin ice, then the grid, then
 contracts), (8) later, with the PvE dungeons, the
 Engine's inside. Every number is a placeholder for the playtest.
+
+**Whiteouts (built, step 5).** Frostline's storms are the shared weather
+(see "Weather: ash storms") with `weather_kind` "snow". They follow the
+valley: most come down it from the Engine's end toward the mouth (three in
+four, `WHITEOUT_DOWN`), the rest up it, a cell 240 m across that fills the
+valley wall to wall at a slow walk (3.5 m/s), building over 45 s, with a
+5 to 10 minute calm between. At the heart sight is cut to half for bots and
+scans and the fog takes bodies by about 30 m, shots carry 40% as far, the
+cold drains twice as fast and tracks are wiped. It is told as a blizzard,
+not only fog: the driven snow comes in gusts (`WeatherView.gust_now`, a
+flurry every few seconds on top of the cell's own push), faster, veering
+across the wind and louder while one passes; spindrift streams off the
+shelf and rim edges nearest you (`weather_ridges` from the map); every body
+on the ground leans into the wind from the bottom of the spine with the head
+ducked, buffeted in the gusts (`Locomotion._wind_pose`, the same in both
+views); and gusts push flight rigs off course (`weather_gust` 8). Check by
+eye: `visual_check.tscn -- <dir> --whiteout-only`. Numbers are placeholders.
 
 **What is built.** The valley (step 1): `worlds/frostline/map.gd`, a
 `Terrain` shared between copies like Ashfront's, with the zones running up
@@ -308,7 +373,7 @@ second, by the last mark id sent for each cell (`NetSession._send_tracks`),
 so tracks are a trail laid behind people, never a live position, and far
 ones never leave the server. The snow shows them (`TrackView`, view only):
 pressed-in prints and pairs of wheel lines that fade as they age, drawn
-within 55 m. Whiteouts (step 5) will wipe them. A shot carries
+within 55 m. Whiteouts wipe them. A shot carries
 `WorldDef.shot_carry` (twice) as far: bots hear it twice as far off
 (`Gun.noise_reach`) and people hear it twice as far too. Numbers are
 placeholders.
@@ -428,7 +493,7 @@ shots: `ares/ash-storms/concept/` in the project files.
 - **Per world.** A world turns storms on with `WorldDef.weather_kind`
   ("ash", "snow"), names them (`weather_name`) and tunes them with
   `weather_*` (gap, radius, speed, sight, carry, gust, cold). It picks their
-  path with `weather_path`. Frostline will add `weather_cold` (body heat
+  path with `weather_path`. Frostline adds `weather_cold` (body heat
   drains faster in a whiteout) and `weather_wipes_tracks`. The map hands
   `Look.atmosphere` a storm mood beside its war mood, and `Look` dresses
   the storm from its kit of that kind. Every number is a placeholder for
@@ -1812,9 +1877,9 @@ an expedition standing (surveys, sites cleared, bosses) is added beside it,
 with titles and cosmetics. A profile page shows both beside total mastery and
 gates nothing.
 
-**Safety nets.** Salvage pays back about 30 to 50% of a lost crafted item's
-parts, and one insured item comes back after a death in Ashfront (cost and
-cooldown open).
+**Safety nets.** Salvage pays back 40% of a lost crafted item's parts, and
+one insured item comes back after a death (see "Safety nets" below for what
+is built).
 
 **Contracts** gain a world tag: expedition and warzone versions of dailies and
 weeklies. The existing rules stay (only a sign-out counts, no player kills).
@@ -2003,7 +2068,10 @@ balance of payouts (placeholders today).
 **Bounties** are about hunting players, and tie into the most-wanted board
 (section 2) and the renown and Marked rules already in the PvP world. When a
 player gets hot, a bounty goes up on them; whoever takes them down and
-extracts gets paid (scrip and upgrade data, amounts TBD).
+extracts gets paid. *Built:* the bounty (50 per player kill in the streak,
+from three kills) pays its killer the same in scrip (Caleb's call), into
+the scrip they carry, so it only counts once banked at a depot or carried
+out alive. Upgrade data on top is still open.
 
 ### Safety nets
 
@@ -2012,9 +2080,29 @@ Losses should sting without making people quit:
 - **Mk1 is always free.** A base-level kit of every slot is always there,
   so nobody is ever locked out of a raid.
 - **One insured item.** Each player can insure one item; if it is lost it
-  comes back. Details TBD (cost, cooldown, which items qualify).
-- **Salvage on loss.** Losing crafted gear pays back salvage toward
-  crafting it again (amount TBD), and the blueprint itself is never lost.
+  comes back. Caleb's picks (18 November 2026), numbers to tune by play:
+  any gear that goes in a loadout slot can be insured, Mk1 to Mk3, but not
+  the free scrap kit, heavy weapons, artifacts or vehicles; a policy costs
+  25% of the item's value, paid up front; one is held at a time. An insured
+  item on the body at a death is recalled home instead of dropping in the
+  bag, so the killer never loots it and the server never makes a second
+  copy of anything (no feeding the market by dying to a friend). A claim
+  spends the policy and the next one waits 12 hours. Selling or trading the
+  item, or losing it some other way, lets the policy lapse. It is taken out
+  on the fabricator's screen in the base, beside the crafting.
+- **Salvage on loss.** Losing crafted gear pays back 40% of its recipe's
+  parts (rounded, at least one, rarest parts first) toward crafting it
+  again, and the blueprint itself is never lost. Never the scrip fee or the
+  upgrade data, and only for gear from your stash lost with the body: not
+  what you dropped or threw first, nor anything picked up in the world.
+
+  What is built: `core/economy/safety_nets.gd` (the rules), decided by the
+  authority's `Raid` at a death (the result's "recalled", "salvaged" and
+  "salvage") and settled by `StashService.settle` online and
+  `Raid.apply_result` solo. The watch's death report and a Claims Office
+  message on the phone say what came home. Still to come: the recall's
+  light on the body for everyone near, a seal on the insured item's display
+  in the base, and its mark on the watch's pack list.
 
 ### Status
 
@@ -2113,15 +2201,12 @@ Caleb's calls, still open:
     table in section 10.)
   - How often blueprints and upgrade data drop, and from what.
   - The mastery level that gates Mk2, and whether Mk3 has a higher gate.
-  - Insurance: its cost, cooldown, and which items can be insured.
-  - How much salvage a lost crafted item pays back.
   - Contract and bounty payouts, and how a bounty's size grows.
   - Which prestige vehicles and rigs come from which feats.
 - Two worlds, one loop (section 10), proposed numbers to confirm:
   - Should Ashfront drop any parts at all, or only scrip and upgrade data?
   - What share of Mk3's upgrade data may Frostline supply?
   - Marketplace fees, price bands and the daily trade cap.
-  - Insurance cost and the salvage share.
   - Whether expedition standing earns titles only, or cosmetics too.
 
 ## 14. Online and servers

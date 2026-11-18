@@ -13,6 +13,7 @@ const WarDirector := preload("res://core/war/war_director.gd")
 const RenownLedger := preload("res://core/progression/renown_ledger.gd")
 const BaseLayout := preload("res://core/base/base_layout.gd")
 const BaseUpgrades := preload("res://core/base/base_upgrades.gd")
+const BasePlan := preload("res://core/base/base_plan.gd")
 const BaseHudScript := preload("res://core/ui/base_hud.gd")
 const LookTests := preload("res://tests/look_tests.gd")
 const RigLookTests := preload("res://tests/rig_look_tests.gd")
@@ -31,12 +32,14 @@ const VisorTests := preload("res://tests/visor_tests.gd")
 const SidearmTests := preload("res://tests/sidearm_tests.gd")
 const BaseUpgradeTests := preload("res://tests/base_upgrade_tests.gd")
 const CraftingTests := preload("res://tests/crafting_tests.gd")
+const SafetyNetTests := preload("res://tests/safety_net_tests.gd")
 const AttachmentTests := preload("res://tests/attachment_tests.gd")
 const PowerWeaponTests := preload("res://tests/power_weapon_tests.gd")
 const ArtifactTests := preload("res://tests/artifact_tests.gd")
 const WatchTests := preload("res://tests/watch_tests.gd")
 const PortalTests := preload("res://tests/portal_tests.gd")
 const ContractTests := preload("res://tests/contract_tests.gd")
+const PlazaLifeTests := preload("res://tests/plaza_life_tests.gd")
 const MarketTests := preload("res://tests/market_tests.gd")
 const AccountStoreTests := preload("res://tests/account_store_tests.gd")
 const AccountServiceTests := preload("res://tests/account_service_tests.gd")
@@ -65,6 +68,7 @@ const TrackTests := preload("res://tests/track_tests.gd")
 const WeatherTests := preload("res://tests/weather_tests.gd")
 const IceTests := preload("res://tests/ice_tests.gd")
 const GridTests := preload("res://tests/grid_tests.gd")
+const WhiteoutTests := preload("res://tests/whiteout_tests.gd")
 const RaiderTests := preload("res://tests/raider_tests.gd")
 const HeavyUnitTests := preload("res://tests/heavy_unit_tests.gd")
 const PlaytestFixTests := preload("res://tests/playtest_fix_tests.gd")
@@ -336,8 +340,10 @@ func _run() -> void:
 	_test_refit()
 	await BaseUpgradeTests.run(self)
 	await ContractTests.run(self)
+	await PlazaLifeTests.run(self)
 	await MarketTests.run(self)
 	await CraftingTests.run(self)
+	await SafetyNetTests.run(self)
 	await _test_arena()
 	await _test_arena_floor()
 	await _test_online_arena()
@@ -365,6 +371,7 @@ func _run() -> void:
 	await WeatherTests.run(self)
 	await _test_ice()
 	await _test_grid()
+	await _test_whiteout()
 	await _test_raiders()
 	await _test_heavy_units()
 	await _test_playtest_fixes()
@@ -584,6 +591,10 @@ func _test_ice() -> void:
 
 func _test_grid() -> void:
 	await GridTests.run(self)
+
+
+func _test_whiteout() -> void:
+	await WhiteoutTests.run(self)
 
 
 func _test_cold() -> void:
@@ -5827,6 +5838,12 @@ func _test_online_stash() -> void:
 	await _wait_until(func() -> bool: return errors.size() == 3, 120)
 	check(errors.size() == 3 and cara.account.get("base_upgrades", []).size() == 1,
 			"the server refuses an upgrade the account cannot pay for")
+	# The base's plan is kept on the server too.
+	check(cara.account.get("base_plan", {}) == BasePlan.DEFAULT, "a new account has the default base plan")
+	cara.place_room("E1", "armory")
+	await _wait_until(func() -> bool: return cara.account.get("base_plan", {}).get("E1", "") == "armory", 120)
+	check(cara.account.get("base_plan", {}).get("E1", "") == "armory" and cara.account.base_plan["W1"] == BasePlan.DEFAULT["E1"],
+			"moving a room is asked of the server, and the snapshot brings the new plan")
 	# Crafting is decided on the server too: no blueprint, no craft.
 	check(cara.account.get("blueprints", ["?"]) == [], "a new account knows no blueprints")
 	cara.craft("jetpack_mk2")
@@ -6121,7 +6138,12 @@ func _test_world_heat() -> void:
 	var busy := raid.status()
 	check(busy.players == 2 and busy.level == "Battle" and busy.bounty == 150 and busy.event != "",
 			"a busy one reports players, war level, top bounty and event: %s" % PlazaView.heat_text(busy))
-	check(not str(busy).contains("Ada") and not busy.has("centre"), "and never who or where anyone is")
+	var outside := busy.duplicate()
+	var wanted: Array = outside.get("wanted", [])
+	outside.erase("wanted")
+	check(not str(outside).contains("Ada") and not busy.has("centre")
+			and wanted.all(func(w: Dictionary) -> bool: return w.keys() == ["name", "clan", "bounty", "marked"]),
+			"and never where anyone is: the only who is the most wanted's name and bounty")
 	check(PlazaView.heat_text({}) == "" and PlazaView.heat_text(empty) == "QUIET   0 players",
 			"the sign is blank until the server speaks, and short when nothing is on")
 	check(PlazaView.heat_text(busy).contains("2 players") and PlazaView.heat_text(busy).contains("Top bounty 150")
@@ -7352,14 +7374,16 @@ func _test_online_phone() -> void:
 
 	# A base invite carries the owner's gear for a read-only visit.
 	var visits: Array = []
-	ben.base_visit_requested.connect(func(owner: String, owner_stash: Array, _loadout: Dictionary, upgrades: Array) -> void:
-		visits.append([owner, owner_stash, upgrades]))
+	ben.base_visit_requested.connect(func(owner: String, owner_stash: Array, _loadout: Dictionary, upgrades: Array,
+			plan: Dictionary) -> void:
+		visits.append([owner, owner_stash, upgrades, plan]))
 	ana.send_invite("ben", "base")
 	await _wait_until(func() -> bool: return phone.invites().size() == 1, 240)
 	phone.answer_invite(int(phone.invites()[0].id), true)
 	await _wait_until(func() -> bool: return not visits.is_empty(), 240)
-	check(visits.size() == 1 and visits[0][0] == "Ana" and "rifle_carbine" in visits[0][1] and visits[0][2] == [],
-			"accepting a base invite brings the owner's stash and base upgrades to show")
+	check(visits.size() == 1 and visits[0][0] == "Ana" and "rifle_carbine" in visits[0][1] and visits[0][2] == []
+			and BasePlan.clean(visits[0][3]) == BasePlan.DEFAULT,
+			"accepting a base invite brings the owner's stash, base upgrades and plan to show")
 
 	# Presence follows the player into the raid.
 	ana.deploy()
@@ -7440,21 +7464,24 @@ func _test_armory(base: HomeBase) -> void:
 	check(others_out, "armor, rigs, the garage and the shelves stay in the main room")
 	check(spots > 14, "the rack holds more weapons than the old gun rack and blade wall did (%d spots)" % spots)
 	await _test_suit_up(base)
-	# The bench has a corner of its own off the armory, clear of the rack
-	# and of the walk in, with the fabricator beside it.
+	# The bench and the fabricator have a room of their own, clear of the
+	# rack.
 	var bench_at := base.bench_transform().origin
 	var craft := base.station(HomeBase.CRAFT_ID)
 	var clear := true
 	for display in base.displays:
 		if BaseLayout.is_armory(display.kind):
 			clear = clear and display.position.distance_to(bench_at) > 2.0 and not base.in_workshop(display.position)
-	check(base.in_armory(bench_at) and base.in_workshop(bench_at) and bench_at.z > base.armory_size.z * 0.5
-			and craft != null and base.in_workshop(craft.position) and clear and base.has_node("WorkshopSign"),
-			"the gunsmith bench and the fabricator stand in a workshop of their own off the armory, clear of the rack")
+	check(base.in_workshop(bench_at) and not base.in_armory(bench_at)
+			and craft != null and base.in_workshop(craft.position) and clear,
+			"the gunsmith bench and the fabricator stand in the workshop, a room of their own clear of the rack")
 	var locker: Vector3 = HomeBase.STATIONS["locker"]["at"]
-	check(not base.in_armory(locker) and absf(locker.x + base.room_size.x * 0.5) < 1.5
-			and absf(locker.z) < base.armory_opening * 0.5 + 2.0, "the locker stands beside the way into the armory")
-	check(base.has_node("ArmorySign") and base.has_node("ArmorySill"), "a sign over the way in names the armory")
+	check(base.room_at(locker) == "" and base.inside(locker) and absf(locker.z - base.room_size.z * 0.5) < 1.0,
+			"the locker stands in the hub by the way out")
+	var plates := 0
+	for room: String in BasePlan.ROOMS:
+		plates += 1 if base.has_node("Plate_" + BasePlan.title(room).to_pascal_case()) else 0
+	check(plates == BasePlan.ROOMS.size(), "a plate over each doorway names its room (%d of %d)" % [plates, BasePlan.ROOMS.size()])
 	# Signage: nothing mirrored from behind, names only up close, one title each.
 	var mirrored := 0
 	var bench_titles := 0
@@ -7475,10 +7502,12 @@ func _test_armory(base: HomeBase) -> void:
 	# The way in is open: walk from the room to the rack.
 	var walker := base.player
 	var was := walker.global_position
-	walker.global_position = base.to_global(Vector3(-9.0, 0.1, -2.5))
+	var armory_door := base.room_transform("armory")
+	walker.global_position = base.to_global(armory_door * Vector3(0, 0.1, 2.5))
 	walker.velocity = Vector3.ZERO
 	await frames(2)
-	walker.cmd.yaw = PI / 2.0
+	var into := -armory_door.basis.z
+	walker.cmd.yaw = atan2(-into.x, -into.z)
 	walker.cmd.move = Vector2(0, 1)
 	await frames(90)
 	walker.cmd.move = Vector2.ZERO
@@ -7506,13 +7535,14 @@ func _test_suit_up(base: HomeBase) -> void:
 	# the room is clear; the shelves and the gear bays line the other walls.
 	var in_deploy := func(at: Vector3) -> bool:
 		return at.x >= HomeBase.DEPLOY_FROM_X and at.x <= HomeBase.DEPLOY_TO_X and at.z > front - HomeBase.DEPLOY_DEPTH
-	check(in_deploy.call(mirror_at) and base.has_node("DeploySign"), "the mirror stands in the deploy area by the front wall")
+	check(in_deploy.call(mirror_at) and not base.has_node("DeploySign"),
+			"the mirror stands in the deploy area by the front wall, with no sign over it")
 	var shelved := true
 	for kind: String in HomeBase.STORAGE_ROWS:
 		for i in int(BaseLayout.KINDS[kind]["spots"]):
 			var at := base.spot_transform(kind, i).origin
-			shelved = shelved and base.inside(at) and at.z > front - 1.0 and at.x < -1.5
-	check(shelved, "supplies, chips and trophies sit on the storage wall left of the door")
+			shelved = shelved and base.room_at(at) == HomeBase.KIND_ROOMS[kind]
+	check(shelved, "supplies and trophies sit on the shelves in the stores, chips in the gear hall")
 	var stands_back := true
 	for kind: String in ["armor_stand", "rig_stand"]:
 		for i in int(BaseLayout.KINDS[kind]["spots"]):
@@ -7610,7 +7640,7 @@ func _test_garage_and_range(base: HomeBase) -> void:
 	var parked := true
 	for i in int(BaseLayout.KINDS["bay"]["spots"]):
 		parked = parked and base.in_garage(base.spot_transform("bay", i).origin)
-	check(parked and base.has_node("GarageSign"), "every garage bay is in the garage off the room")
+	check(parked, "every garage bay is in the garage")
 	var clear := true
 	for id: String in HomeBase.STATIONS:
 		var at: Vector3 = HomeBase.STATIONS[id]["at"]
@@ -7628,8 +7658,8 @@ func _test_garage_and_range(base: HomeBase) -> void:
 			"the range is wide and long, with a clear lobby between the door and the firing line")
 	var p := base.player
 	check(p.weapons_locked, "weapons stay locked in the main room")
-	# Walk through the door in the back wall.
-	p.global_position = base.to_global(Vector3(0, 0.1, -6.5))
+	# Walk down the corridor and through the range door.
+	p.global_position = base.to_global(Vector3(0, 0.1, -base.range_from() + 2.0))
 	p.velocity = Vector3.ZERO
 	p.cmd.yaw = 0.0
 	p.cmd.pitch = 0.0
@@ -7637,13 +7667,13 @@ func _test_garage_and_range(base: HomeBase) -> void:
 	await frames(60)
 	p.cmd.move = Vector2.ZERO
 	await frames(2)
-	check(base.in_range(base.to_local(p.global_position)), "you can walk through the back wall into the range")
+	check(base.in_range(base.to_local(p.global_position)), "you can walk down the corridor into the range")
 	check(not p.weapons_locked, "past the line your weapons are free")
 	var gun := p.get_active_weapon() as Gun
 	check(gun != null and gun.reserve_ammo >= gun.mag_size * 4, "and never run dry")
 	# Shoot the nearest plate.
 	var plate: HomeBase.RangeTarget = base.targets[0]
-	var line_z := -base.room_size.z * 0.5 - base.firing_line
+	var line_z := -base.range_from() - base.firing_line
 	p.global_position = base.to_global(Vector3(plate.home.x, 0.1, line_z - 0.8))
 	p.velocity = Vector3.ZERO
 	await frames(2)
@@ -7909,8 +7939,7 @@ func _test_home_base() -> void:
 			and hud.wrist.card.slots.size() == Hud.Wrist.SLOTS.size(), "the watch still raises after suiting up")
 	suited_keys.queue_free()
 	await frames(2)
-	check(base.get_node("Banner/Title").text == "HOME BASE" and "press F" in base.banner_text(),
-			"the base's name and how it works hang on a banner in the room")
+	check(not base.has_node("Banner"), "no banner hangs in the room: the plates and consoles say what they are")
 	for kind: String in BaseLayout.KINDS:
 		var bike_or_gear: Array = by_kind.get(kind, [])
 		if bike_or_gear.is_empty():
