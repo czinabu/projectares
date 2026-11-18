@@ -292,7 +292,7 @@ func _ready() -> void:
 	# Vehicles. Not carried: the Raid parks one next to you when you deploy, and
 	# whoever signs out riding it takes it home. Stats tune Vehicle.
 	register("bike_scrapper", "Scrapper Bike", Rarity.UNCOMMON, 600, ["vehicle", "vendor"],
-			{"max_speed": 22.0, "boost_speed": 29.0, "body_color": Color(0.6, 0.45, 0.3),
+			{"max_speed": 24.0, "boost_speed": 32.0, "body_color": Color(0.6, 0.45, 0.3),
 			"race": RACE_SCRAPPER},
 			"Rattly motorbike. Fast, loud, and no cover for the rider.")
 	# The Raider is a hoverbike: the "hover" tag floats it (`Vehicle`, "Hover").

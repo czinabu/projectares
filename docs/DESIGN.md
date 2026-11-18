@@ -1304,7 +1304,7 @@ always in view, and the watch is not needed for any of them.
 | Heat gauge | The 100 heat bar, with the 35 recovery mark. It warns before the overheat cut-out. |
 | Rig cue | One cue per rig: the jetpack's coast-and-vent window, the wings' stall line and boosts left, the boots' dash charges and skim time. |
 | Squad markers | Where your squad is, at the visor edge toward them. Squad only; never shows an enemy. |
-| Landing warning | Ground coming up while heat is high, or while the rig is about to cut out, so you can land or pulse before you fall. |
+| Landing warning | Ground coming up while heat is high, or while the rig is about to cut out, so you can land or pulse before you fall. Built: from 75% heat up, overheated, jammed or with a skim's last 0.6 s, and only while a fall from where you are would hurt (so boots, which take no fall damage, never warn). |
 
 - **First person.** The readings sit at the visor edges, as thin projected
   light that rests dim and brightens when it matters (the visor rule in
@@ -1489,7 +1489,7 @@ Vehicles must earn their place next to sustained flight.
   cruise (target: at least 1.5 times the jetpack's 14 m/s cruise, so 22 m/s
   or more), and its boost beats every rig's burst on open ground. Wings
   glide as fast as a bike's top speed, but only downhill from a perch and
-  for 25 s at a time. Bikes cost no heat.
+  for 25 s at a time. Bikes cost no heat. Today the Scrapper runs 24 m/s and boosts to 32 (raised from 22/29 so its boost clears the wings' 30 m/s dive), and the Raider 26/35.
 - **Tactical utility.** Mobile cover, mounted firepower, passenger seats for
   squadmates, heavy cargo (more pack space while riding).
 - **Seamless transitions.** Throw a toy vehicle from mid-air onto the road
@@ -1538,7 +1538,7 @@ More on each:
   little armor and no real climbing or flight, often with a short float
   over gaps and the ability to turn slowly on the spot. The numbers follow
   that, sized against the bike and flight:
-  - Speed 26 m/s, boost 35 (Scrapper 22/29, rover 23/28). A step up from
+  - Speed 26 m/s, boost 35 (Scrapper 24/32, rover 23/28). A step up from
     the Scrapper, not a new class: the old Raider was 27/37, and the
     hoverbike gave a little of that back for its terrain tricks. Still well
     over the jetpack's 14 m/s cruise.
