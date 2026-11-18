@@ -70,6 +70,10 @@ func _ready() -> void:
 	_build_ship(hull)
 	for i in WING_SIZE.y:
 		_wing.append(_build_dropship(hull))
+	# Every part is far off and drawn as far as the sky goes: small parts
+	# would otherwise be cut off close by (`Look._limit_draw_distance`).
+	for part in find_children("*", "MeshInstance3D", true, false):
+		(part as MeshInstance3D).visibility_range_end = 2000.0
 	_place(clock())
 
 
@@ -146,6 +150,15 @@ static func flight_point(from: Vector3, over: Vector3, to: Vector3, p: float) ->
 	var bend := over * 2.0 - (from + to) * 0.5
 	var q := 1.0 - p
 	return from * q * q + bend * 2.0 * q * p + to * p * p
+
+
+## Where the wing's lead ship is now, or INF while no wing is in the sky
+## (what the flak shoots at, `skyfire.gd`).
+func wing_lead() -> Vector3:
+	for ship in _wing:
+		if ship.visible:
+			return ship.global_position
+	return Vector3.INF
 
 
 func _fly_wing(t: float) -> void:

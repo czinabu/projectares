@@ -178,6 +178,7 @@ const FAR_SIGHT := 2000.0
 const VIEW_FAR := 1400.0
 ## The Colossus and the capital ship past the rim (view only).
 const GIANTS := preload("res://worlds/ashfront/giants.gd")
+const SKYFIRE := preload("res://worlds/ashfront/skyfire.gd")
 ## The burning horizon: a ring of fire-glow this far out, behind the
 ## skyline, glowing this much when quiet and in all-out war.
 const GLOW_RING := 560.0
@@ -270,6 +271,11 @@ func _ready() -> void:
 		giants.soundscape = _soundscape
 		giants.plume_maker = _plume
 		add_child(giants)
+		var skyfire: Node3D = SKYFIRE.new()
+		skyfire.floor_y = RIM_HEIGHT - 8.0
+		skyfire.soundscape = _soundscape
+		skyfire.giants = giants
+		add_child(skyfire)
 	set_process(Look.enabled)
 
 

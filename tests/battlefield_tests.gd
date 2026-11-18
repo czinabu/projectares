@@ -396,6 +396,23 @@ static func _skyline(t: Node, raid: Raid) -> void:
 	t.check(giants.flight_point(from, over, to, 0.0).is_equal_approx(from) and giants.flight_point(from, over, to, 0.5).is_equal_approx(over)
 			and giants.flight_point(from, over, to, 1.0).is_equal_approx(to),
 			"a dropship wing flies from the capital ship down over the fighting and away")
+	# Flak and tracer over the far lines: view only, following the war.
+	var sky: Script = map.get_script().get_script_constant_map()["SKYFIRE"]
+	t.check(map.get_node_or_null("Skyfire") == null, "a map without a view fires no flak")
+	t.check(sky.batteries_at(0.0) < sky.batteries_at(1.0) and sky.flak_rate(1.0) > sky.flak_rate(0.0) * 5.0,
+			"more flak guns fire, and far more often, the hotter the war")
+	var muzzle := Vector3(500, 38, 0)
+	var up_dir := Vector3(-0.5, 0.86, 0).normalized()
+	var round_a: Vector3 = sky.tracer_point(muzzle, up_dir, 0.0)
+	var round_b: Vector3 = sky.tracer_point(muzzle, up_dir, 1.0)
+	t.check(round_a.is_equal_approx(muzzle) and round_b.y > muzzle.y + 150.0 and round_b.y < (muzzle + up_dir * sky.TRACER_SPEED).y,
+			"a tracer climbs away from its gun and droops as it goes")
+	var ship := Vector3(0, 200, 0)
+	var closest := INF
+	for n in 12:
+		closest = minf(closest, sky.near_miss(ship, sky.WING_MISS.x, n / 12.0, fmod(n * 0.37, 1.0)).distance_to(ship))
+	t.check(closest > sky.WING_MISS.x - 0.1, "flak bursts round a passing dropship but never on it")
+	t.check(Look.trim("tracer") != null and Look.trim("flak_smoke") != null, "tracers and flak smoke have their own finishes")
 	# The war heard: view only, so a headless map makes no soundscape.
 	t.check(map.get_node_or_null("Soundscape") == null, "a map without a view hears nothing (no soundscape headless)")
 	t.check(is_equal_approx(Soundscape.boom_delay(510.0), 1.5) and is_equal_approx(Soundscape.boom_delay(3000.0), Soundscape.BOOM_DELAY_MAX),

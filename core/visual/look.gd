@@ -1171,6 +1171,26 @@ func trim(kind: String) -> Material:
 			mat.albedo_texture = _soft_dot()
 			mat.albedo_color = Color(1.0, 0.62, 0.3)
 			mat.disable_fog = true
+			# Sized by the instance's scale, which a billboard drops otherwise.
+			mat.billboard_keep_scale = true
+		"tracer":
+			# A far tracer round: a bright streak the haze never hides,
+			# coloured and faded by its instance colour (a MultiMesh's).
+			mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+			mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+			mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+			mat.vertex_color_use_as_albedo = true
+			mat.albedo_color = Color(1.0, 0.55, 0.22)
+			mat.disable_fog = true
+		"flak_smoke":
+			# The puff a flak shell leaves hanging, lit by the fires below: haze softens it like
+			# any far smoke. Fade it with the instance's transparency.
+			mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+			mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+			mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+			mat.albedo_texture = _soft_dot()
+			mat.albedo_color = Color(0.3, 0.22, 0.18, 0.7)
+			mat.billboard_keep_scale = true
 		"beam":
 			# A searchlight's beam: faint light in the smoke.
 			mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
