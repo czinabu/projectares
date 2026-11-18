@@ -2251,7 +2251,7 @@ void fragment() {
 					Vector3(0.27, 0.31, 0.31), Color(0.22, 0.23, 0.25))
 		elif ItemDB.has_tag(id, "armor"):
 			# A frame shows the plates it is worn as.
-			model = SkinScript.build_frame(SkinScript.frame_weight(id), SkinScript.FRAME_COLOR)
+			model = SkinScript.build_frame(id)
 		else:
 			var weapon: Weapon = MeleeWeapon.new() if ItemDB.has_tag(id, "melee") else Gun.new()
 			weapon.item_id = id

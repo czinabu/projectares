@@ -203,24 +203,50 @@ static func _frames(t: Node) -> void:
 	var built := true
 	var fitted := true
 	var coverage := []
+	var reach := []
 	for weight: String in ["light", "medium", "heavy"]:
-		var model := SkinScript.build_frame(weight, Color.GRAY)
+		var model := SkinScript.build_frame(weight)
 		built = built and model.get_node_or_null("Chest") != null \
 				and (model.get_node_or_null("Belly") != null) == (weight != "light") \
 				and (model.get_node_or_null("Collar") != null) == (weight == "heavy")
 		# Fitted, not blocky: every plate rides within a few centimetres of
-		# the torso (about 0.13 m to each side and 0.1 m in front of the bone).
+		# the torso (about 0.13 m to each side and 0.1 m in front of the bone),
+		# a heavy one further out than a light one.
 		var plates := 0
+		var front := 0.0
 		for part: MeshInstance3D in model.find_children("*", "MeshInstance3D", false, false):
 			var box := part.transform * part.get_aabb()
-			fitted = fitted and box.position.z > -0.15 and absf(box.position.x) < 0.175 and box.end.x < 0.175
-			plates += 1
+			fitted = fitted and box.position.z > -0.2 and absf(box.position.x) < 0.21 and box.end.x < 0.21
+			front = minf(front, box.position.z)
+			# Coverage is the plates themselves, not the details on them.
+			if part.name in ["Chest", "Back", "Collar"] or part.name.begins_with("Belly"):
+				plates += 1
 		coverage.append(plates)
+		reach.append(front)
 		model.free()
 	t.check(fitted, "the plates are curved to the body and ride close to it")
 	t.check(coverage[0] < coverage[1] and coverage[1] < coverage[2], "each heavier frame covers more")
+	t.check(reach[0] > reach[1] and reach[1] > reach[2], "each heavier frame stands further off the body")
 	t.check(built and SkinScript.frame_weight("frame_bulwark") == "heavy"
 			and SkinScript.frame_weight("plate_light") == "light", "each frame weight has its own plates")
+	# Every frame wears a look of its own (a new frame gets a `FRAME_LOOKS`
+	# entry), and a skin's own plates wear their weight's.
+	var looks := {}
+	var listed := true
+	for id: String in ItemDB.all_ids():
+		if not ItemDB.has_tag(id, "armor") or ItemDB.has_tag(id, "blueprint"):
+			continue
+		listed = listed and SkinScript.FRAME_LOOKS.has(id)
+		looks[SkinScript.frame_look(id)] = true
+		SkinScript.build_frame(id).free()
+	t.check(listed and looks.size() == SkinScript.FRAME_LOOKS.size() and SkinScript.frame_look("skin:heavy") == "bulwark",
+			"each frame has its own look, and a skin's own plates wear their weight's")
+	var pad := SkinScript.build_pad("frame_bulwark", 1.0)
+	var tasset := SkinScript.build_tasset("frame_trooper", -1.0)
+	t.check(pad.get_node_or_null("Pad2") != null and tasset.get_node_or_null("Tasset") != null,
+			"heavy shoulders are layered and medium frames hang a tasset")
+	pad.free()
+	tasset.free()
 
 
 static func _zoom(t: Node) -> void:
