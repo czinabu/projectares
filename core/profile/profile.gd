@@ -18,6 +18,7 @@ const StashRules := preload("res://core/account/stash_rules.gd")
 const Economy := preload("res://core/economy/economy.gd")
 ## The same home base upgrade rules the server's StashService uses.
 const BaseUpgrades := preload("res://core/base/base_upgrades.gd")
+const BasePlan := preload("res://core/base/base_plan.gd")
 ## The same blueprint and crafting rules the server's StashService uses.
 const Crafting := preload("res://core/progression/crafting.gd")
 const Human := preload("res://core/visual/human.gd")
@@ -76,6 +77,9 @@ var arena_losses := 0
 ## The home base upgrades owned (ids from `BaseUpgrades`). Never lost. A save
 ## from before upgrades existed has none: the starter bunker.
 var base_upgrades: Array[String] = []
+## Which room stands in which socket off the base's hub (`BasePlan`). Only
+## where things stand: never lost, and changed for free at the plan table.
+var base_plan: Dictionary = BasePlan.clean(null)
 ## The blueprints known (blueprint item ids, see `Crafting`). Never lost.
 var blueprints: Array[String] = []
 ## How far through the new player's tour this player is (`Onboarding`). A
@@ -149,6 +153,7 @@ func reset() -> void:
 	arena_wins = 0
 	arena_losses = 0
 	base_upgrades.clear()
+	base_plan = BasePlan.clean(null)
 	blueprints.clear()
 	onboarding = Onboarding.fresh()
 
@@ -238,6 +243,14 @@ func sell_loot() -> Dictionary:
 ## and its price, and takes the scrip. Returns {"ok"} or {"ok": false, "error"}.
 func buy_upgrade(upgrade_id: String) -> Dictionary:
 	return _bank(BaseUpgrades.buy(base_upgrades, scrip, upgrade_id))
+
+
+## Moves a room of the home base into a socket (`BasePlan.place`): the room
+## standing there takes its old socket. Free. Returns {"ok"}.
+func place_room(socket: String, room: String) -> Dictionary:
+	base_plan = BasePlan.place(base_plan, socket, room)
+	save()
+	return {"ok": true}
 
 
 ## Crafts one item (an id from `Crafting.RECIPES`) at the gunsmith bench:
@@ -348,6 +361,7 @@ func to_dict() -> Dictionary:
 		"arena_wins": arena_wins,
 		"arena_losses": arena_losses,
 		"base_upgrades": base_upgrades,
+		"base_plan": base_plan,
 		"blueprints": blueprints,
 		"onboarding": onboarding,
 	}.duplicate(true)
@@ -416,6 +430,7 @@ func load_dict(data: Dictionary) -> void:
 	arena_wins = maxi(0, int(data.get("arena_wins", 0)))
 	arena_losses = maxi(0, int(data.get("arena_losses", 0)))
 	base_upgrades = BaseUpgrades.clean(data.get("base_upgrades"))
+	base_plan = BasePlan.clean(data.get("base_plan"))
 	blueprints = Crafting.clean(data.get("blueprints"))
 	Crafting.learn(stash, blueprints)
 	validate_loadout()

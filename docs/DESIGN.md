@@ -92,11 +92,25 @@ canopy, holo signs over every kiosk and floating holo-ads.
 
 ### Home base
 
-- The stash on show: every weapon (long guns, sidearms, melee) on one rack
-  in the armory, an alcove off the main room with the locker at its way in
-  and the gunsmith bench in a workshop corner of its own off to the side;
-  armor stands, rigs, ability chips,
-  bikes in the garage, loot on shelves and trophies in the main room.
+- **A hub with rooms off it, laid out by the player** (Caleb's call, the
+  modular base). The hub is a plain steel hall with six doorways of one
+  size: two in each side wall and two in the back wall either side of a
+  corridor that runs back to the firing range and flight course. Six rooms
+  stand in them, one each: the **Armory** (every weapon on one rack: long
+  guns, sidearms, melee, and the heavy weapon wall), the **Workshop**
+  (gunsmith bench and fabricator), the **Garage** (your vehicles), **Ops**
+  (wardrobe, records, mastery bench, trader), the **Gear hall** (armor
+  stands, helmets, rigs, chips) and the **Stores** (supplies and trophies).
+  A plate over each doorway names its room; there are no other signs.
+- **The plan table** stands in the middle of the hub: a round table with
+  the base in miniature over it as a hologram. Walk up and use it and the
+  view moves in, like the bench: the wheel turns through the six doorways,
+  a click turns through the rooms for one (shown in the doorway on the
+  table at once), a second click moves that room there, and the room that
+  stood there takes its old place. Moving rooms is free and moves nothing
+  in or out of the stash; everything on show goes with its room. The plan
+  is kept on the account beside the upgrades, and a visited base stands as
+  its owner laid it out.
 - **Heavy weapons banked from the PvP world hang on the armory wall** and can
   be stacked there (see section 6).
 - Consoles do what menus would: locker, gunsmith bench (crafting from
@@ -119,15 +133,19 @@ canopy, holo signs over every kiosk and floating holo-ads.
 - You are one player everywhere you go: the loadout you leave the base with
   is what you wear in the hub, a world and the arena, and coming back to the
   hub through a door puts you in front of that door.
-- A garage off the room for the bikes you own, and a firing range behind the
-  back wall (the first of the upgrades below, built early as a greybox).
+- The firing range and the flight course are always down the corridor
+  behind the hub, never moved by the plan.
 
 **The base grows with you.** A new player starts in a starter bunker with
 everything it takes to play (deploy, change loadout, trade, mastery picks,
-fit attachments, go online) and little on show: a short weapon rack in an
-armory nook (4 long guns, 2 sidearms, 2 melee), one garage bay, one armor
-stand and one rig stand, a small supplies shelf, the gunsmith's workshop, and the mastery
-bench and records sharing the trader's and the wardrobe's consoles. Each
+fit attachments, go online) and little on show. Every room stands from the
+start in its small form, its front half closed off by a sealed wall: a
+short weapon rack in the armory (4 long guns, 2 sidearms, 2 melee), one
+garage bay, one armor stand and one rig stand, a small supplies shelf, the
+whole workshop, and in Ops the mastery bench and records sharing the
+trader's and the wardrobe's consoles. A room's upgrade opens the rest of
+it, wherever it stands (Armory alcove, Full garage, Ops consoles, Gear
+hall, Trophy hall for the stores). Each
 upgrade is a one-off scrip purchase kept on the account (never in the stash,
 never lost), bought in the room at the sealed bulkhead it opens: look at it
 and press F twice. Upgrades never add combat power or storage, only room to
@@ -146,14 +164,14 @@ has. Prices are placeholders until a playtest measures scrip per life.
 | Gunsmith | Master bench | 8,000 | Workshop bench | Looks only |
 | Halls | Gear hall | 1,000 | | 6 armor stands, 4 rig stands, the chip case |
 | Halls | Trophy hall | 1,500 | | The trophy shelf and a full supplies shelf |
-| Halls | Lounge | 800 | | Room for furniture and decor. Not built yet |
+| Halls | Lounge | 800 | | Room for furniture and decor. Not built yet: a seventh room, and no socket for it yet |
 | Headquarters | Ops consoles | 500 | | The mastery bench and records get their own consoles |
 | Headquarters | Firing range | 2,500 | | The range below |
 | Headquarters | Finish | 1,500 | Any 4 upgrades | Lit trim and light columns |
 
 Crafting tiers are not gated by the bench upgrades: any bench crafts Mk2 and
 Mk3 for a small scrip fee per craft (section 10). The crafting console, the
-fabricator, stands beside the bench in the gunsmith's workshop.
+fabricator, stands beside the bench in the workshop.
 
 The bigger upgrades, which turn the base from a display room into a
 headquarters, in the order they are built:

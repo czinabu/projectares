@@ -56,6 +56,14 @@ var _viewport: SubViewport
 var _camera: Camera3D
 var _glass: MeshInstance3D
 var _rise := 0.0
+## How much of the reflection a wall mirror shows (0 dark glass, 1 the
+## reflection), and how many frames it has drawn since it last woke. A
+## reflection that was not drawn holds whatever the texture last had (noise
+## at first), so the glass stays dark until it has drawn, then fades in.
+var _live := 0.0
+var _drawn := 0
+## Seconds a wall mirror takes to fade between dark glass and its reflection.
+var live_fade := 0.2
 
 
 ## Call before adding it to the tree; a wall-mounted one can be told again
@@ -167,6 +175,7 @@ func _build() -> void:
 	var glass_mat := ShaderMaterial.new()
 	glass_mat.shader = _glass_shader()
 	glass_mat.set_shader_parameter("reflection", _viewport.get_texture())
+	glass_mat.set_shader_parameter("live", 0.0 if wall_mounted else 1.0)
 	var quad := QuadMesh.new()
 	quad.size = Vector2(width, height)
 	_glass = MeshInstance3D.new()
@@ -187,9 +196,11 @@ static func _glass_shader() -> Shader:
 	shader.code = """shader_type spatial;
 render_mode unshaded, cull_back;
 uniform sampler2D reflection : source_color, filter_linear;
+uniform float live = 1.0;
 void fragment() {
 	vec2 uv = vec2(1.0 - UV.x, UV.y);
-	vec3 col = texture(reflection, uv).rgb * vec3(0.93, 0.96, 1.0);
+	vec3 dim = vec3(0.07, 0.08, 0.09) + vec3(0.03) * (1.0 - UV.y);
+	vec3 col = mix(dim, texture(reflection, uv).rgb * vec3(0.93, 0.96, 1.0), live);
 	vec2 d = abs(UV - 0.5) * 2.0;
 	float edge = smoothstep(0.82, 1.0, max(d.x, d.y));
 	col *= 1.0 - edge * 0.22;
@@ -251,6 +262,10 @@ func _process(delta: float) -> void:
 		var near := viewer != null and is_instance_valid(viewer) and viewer.is_inside_tree() \
 				and eye != null and is_instance_valid(eye) and _faces(eye.global_position)
 		_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS if near else SubViewport.UPDATE_DISABLED
+		_drawn = mini(_drawn + 1, 3) if near else 0
+		var want := 1.0 if _drawn >= 2 else 0.0
+		_live = move_toward(_live, want, delta / maxf(live_fade, 0.001))
+		(_glass.material_override as ShaderMaterial).set_shader_parameter("live", _live)
 		if near:
 			_aim_reflection()
 		return

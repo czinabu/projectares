@@ -256,6 +256,10 @@ func buy_upgrade(account_id: String, upgrade_id: String) -> Dictionary:
 	return await _ask("buy_upgrade", [account_id, upgrade_id])
 
 
+func place_room(account_id: String, socket: String, room: String) -> Dictionary:
+	return await _ask("place_room", [account_id, socket, room])
+
+
 func contract(account_id: String, action: String, job_id: String = "") -> Dictionary:
 	return await _ask("contract", [account_id, action, job_id])
 

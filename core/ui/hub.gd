@@ -439,6 +439,12 @@ func base_upgrades() -> Array:
 	return account.get("base_upgrades", []) if in_lobby() else Profile.base_upgrades
 
 
+## Which room stands in which socket of the base (`BasePlan`): the server's
+## account in a lobby, the profile otherwise.
+func base_plan() -> Dictionary:
+	return account.get("base_plan", {}) if in_lobby() else Profile.base_plan
+
+
 ## The blueprints known: the server's account's, or the profile's.
 func blueprints() -> Array:
 	return account.get("blueprints", []) if in_lobby() else Profile.blueprints

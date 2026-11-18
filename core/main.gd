@@ -346,7 +346,7 @@ func go_home(result := {}) -> void:
 	if base != null and base.read_only:
 		leave_base()
 	if base == null:
-		_open_base(hub.stash_items(), hub.current_loadout(), "", hub.base_upgrades())
+		_open_base(hub.stash_items(), hub.current_loadout(), "", hub.base_upgrades(), hub.base_plan())
 	else:
 		_refresh_base()
 	_update_door()
@@ -362,12 +362,12 @@ func enter_base() -> void:
 ## Opens someone else's base to look around. Nothing in it can be equipped.
 ## `stash`, `loadout` and `upgrades` (their base's upgrades, so you see the
 ## base they have built) are that player's, as their server reports them.
-func visit_base(owner_name: String, stash: Array, loadout: Dictionary, upgrades: Array = []) -> void:
-	_open_base(stash, loadout, owner_name if owner_name != "" else "Raider", upgrades)
+func visit_base(owner_name: String, stash: Array, loadout: Dictionary, upgrades: Array = [], plan := {}) -> void:
+	_open_base(stash, loadout, owner_name if owner_name != "" else "Raider", upgrades, plan)
 	_update_door()
 
 
-func _open_base(stash: Array, loadout: Dictionary, owner_name: String, upgrades: Array = []) -> void:
+func _open_base(stash: Array, loadout: Dictionary, owner_name: String, upgrades: Array = [], plan := {}) -> void:
 	if base != null or raid != null:
 		return
 	hub.close()
@@ -375,15 +375,17 @@ func _open_base(stash: Array, loadout: Dictionary, owner_name: String, upgrades:
 	base.name = "HomeBase"
 	base.owner_name = owner_name
 	base.read_only = owner_name != ""
-	base.show_gear(stash, loadout, upgrades)
+	base.show_gear(stash, loadout, upgrades, plan)
 	if not base.read_only:
 		base.set_scrip(hub.scrip())
 	add_child(base)
 	base.equip_requested.connect(_on_base_equip)
 	base.upgrade_requested.connect(_on_base_upgrade)
+	base.room_placed.connect(_on_base_room_placed)
 	base.leave_requested.connect(_on_base_door)
 	base.station_requested.connect(open_station)
 	base.bench_used.connect(open_bench)
+	base.plan_used.connect(open_bench.bind("plan"))
 	base.portal_entered.connect(func(destination: String) -> void: go_through_portal.call_deferred(destination))
 	base.player_replaced.connect(func(_actor: Actor) -> void: _attach_base_view())
 	if not base.read_only:
@@ -546,14 +548,16 @@ func _leave_from_phone() -> void:
 	leave_server()
 
 
-## The gunsmith bench was taken up: the view moves in to it and the mouse
-## works it until the player steps away (`BenchView`).
-func open_bench() -> void:
+## The gunsmith bench (or with `target` "plan", the plan table) was taken
+## up: the view moves in to it and the mouse works it until the player steps
+## away (`BenchView`).
+func open_bench(target := "bench") -> void:
 	if base == null or base.read_only or bench_view != null:
 		return
 	bench_view = BenchViewScript.new()
 	bench_view.name = "BenchView"
 	bench_view.base = base
+	bench_view.target = target
 	bench_view.closed.connect(_on_bench_closed)
 	base.add_child(bench_view)
 	bench_view.focus()
@@ -656,11 +660,24 @@ func _on_base_upgrade(upgrade_id: String) -> void:
 	_refresh_base()
 
 
+## A room moved at the base's plan table: kept in the profile solo, asked of
+## the server online (which answers with a fresh account).
+func _on_base_room_placed(socket: String, room: String) -> void:
+	if base == null or base.read_only:
+		return
+	if hub.in_lobby():
+		if net:
+			net.place_room(socket, room)
+		return
+	Profile.place_room(socket, room)
+	_refresh_base()
+
+
 ## Shows the base whatever the hub would show now.
 func _refresh_base() -> void:
 	if base and not base.read_only:
 		base.set_scrip(hub.scrip())
-		base.show_gear(hub.stash_items(), hub.current_loadout(), hub.base_upgrades())
+		base.show_gear(hub.stash_items(), hub.current_loadout(), hub.base_upgrades(), hub.base_plan())
 		_tour_check()
 
 
@@ -1363,14 +1380,14 @@ func _on_world_invite_accepted(_invite: Dictionary) -> void:
 
 ## Accepted an invite to someone's home base.
 func _on_base_visit_requested(owner_name: String, owner_stash: Array, owner_loadout: Dictionary,
-		owner_upgrades: Array = []) -> void:
+		owner_upgrades: Array = [], owner_plan := {}) -> void:
 	if raid != null:
 		phone.show_notice("Finish this run first, then visit %s's base." % owner_name)
 		return
 	# In a base (yours or someone else's): walk out and into theirs.
 	leave_base()
 	phone.close()
-	visit_base(owner_name, owner_stash, owner_loadout, owner_upgrades)
+	visit_base(owner_name, owner_stash, owner_loadout, owner_upgrades, owner_plan)
 
 
 # ---------------------------------------------------------------- online ----
