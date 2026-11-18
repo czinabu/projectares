@@ -595,8 +595,12 @@ blueprints. A new expedition daily: loot two caches inside the Engine.
   with a searchlight sweeping ahead and smoke off its vents, each footfall
   heard after its delay; a capital ship riding at anchor 400 m up over the
   west; and from it a wing of dropships every 75 s (more the hotter the
-  war) diving over where the fighting is (`war_centre`) and away. Planned,
-  in this order: flak and tracers that follow the war, god rays,
+  war) diving over where the fighting is (`war_centre`) and away. Flak in
+  the sky (`worlds/ashfront/skyfire.gd`, view only): guns past the rim
+  hosing tracer up into the smoke, more of them firing the hotter the war,
+  shells bursting high and leaving puffs hanging, and bursts chasing a
+  dropship wing but never hitting it; a storm hides it all. Planned,
+  in this order: god rays,
   a shared moment (the orbital lance brings the Colossus down), and ash on
   the visor glass.
 - Full loot on death.
