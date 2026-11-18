@@ -251,6 +251,16 @@ static func run(t: Node) -> void:
 		var path := NavigationServer3D.map_get_path(nav_map, street, top, true)
 		if path.size() >= 2 and path[path.size() - 1].distance_to(top) < 1.5:
 			up += 1
+	# The cross street runs through: from the field on one side to the
+	# other is a short walk straight across the crossroads.
+	var east := Vector3(40.0, field.height_at(40.0, 155.0), 155.0)
+	var west := Vector3(-40.0, field.height_at(-40.0, 155.0), 155.0)
+	var across := NavigationServer3D.map_get_path(nav_map, east, west, true)
+	var walked := 0.0
+	for k in across.size() - 1:
+		walked += across[k].distance_to(across[k + 1])
+	t.check(across.size() >= 2 and across[across.size() - 1].distance_to(west) < 1.5 and walked < 90.0,
+			"in the Works, the cross street runs straight through (%.0f m for 80)" % walked)
 	t.check(decks.size() == 3 and up == decks.size(),
 			"in the Works, every gantry is reached on foot from the street (%d of %d)" % [up, decks.size()])
 	# The street is levelled, and its mouth eases back into the field at a

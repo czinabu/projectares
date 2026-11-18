@@ -101,23 +101,30 @@ const WORKS_STREET := 9.0
 ## How far the district's ground is graded, either side of the street.
 const WORKS_REACH := 24.0
 ## The halls: which side of the street (1 east, -1 west), the z of their
-## outer and inner ends, depth back from the street, height, and whether the
-## hall is an open-fronted shed (walls and a roof, open to the street, with a
-## floor to fight on) instead of a solid block. Alleys between the halls are
-## staggered, so no line runs clean across the district.
+## outer and inner ends, depth back from the street, height, the roof
+## ("flat", or "saw" for a sawtooth's tilted teeth), and whether the hall is
+## an open-fronted shed (walls and a roof, open to the street, with a floor
+## under cover to fight across) instead of a solid block. One alley on each
+## side, staggered so no line runs clean across, and a cross street through
+## the middle make a crossroads to flank through.
 const WORKS_HALLS := [
-	{"side": 1.0, "from": 198.0, "to": 174.0, "depth": 13.0, "height": 12.0, "shed": false},
-	{"side": 1.0, "from": 168.0, "to": 140.0, "depth": 13.0, "height": 16.0, "shed": false, "roof_cache": true},
-	{"side": 1.0, "from": 134.0, "to": 110.0, "depth": 12.0, "height": 10.0, "shed": true},
-	{"side": -1.0, "from": 196.0, "to": 178.0, "depth": 12.0, "height": 9.0, "shed": true},
-	{"side": -1.0, "from": 172.0, "to": 152.0, "depth": 14.0, "height": 14.0, "shed": false},
-	{"side": -1.0, "from": 146.0, "to": 116.0, "depth": 13.0, "height": 12.0, "shed": false, "roof_cache": true},
+	{"side": 1.0, "from": 198.0, "to": 180.0, "depth": 13.0, "height": 12.0, "roof": "saw"},
+	{"side": 1.0, "from": 174.0, "to": 160.0, "depth": 12.0, "height": 10.0, "roof": "flat", "stacks": 1},
+	{"side": 1.0, "from": 150.0, "to": 124.0, "depth": 13.0, "height": 16.0, "roof": "flat", "roof_cache": true, "stacks": 2},
+	{"side": 1.0, "from": 124.0, "to": 106.0, "depth": 12.0, "height": 10.0, "roof": "flat", "shed": true},
+	{"side": -1.0, "from": 196.0, "to": 176.0, "depth": 12.0, "height": 9.0, "roof": "flat", "shed": true},
+	{"side": -1.0, "from": 176.0, "to": 160.0, "depth": 14.0, "height": 14.0, "roof": "saw"},
+	{"side": -1.0, "from": 150.0, "to": 132.0, "depth": 13.0, "height": 12.0, "roof": "flat", "roof_cache": true},
+	{"side": -1.0, "from": 126.0, "to": 108.0, "depth": 13.0, "height": 10.0, "roof": "saw"},
 ]
-## The second storey: catwalks this high along every hall's street face, and
-## a gantry across the street at each of these z. Each gantry's catwalks are
-## reached by a stair at the outer end of its east side.
+## The cross street, between these z.
+const WORKS_CROSS := Vector2(150.0, 160.0)
+## The second storey: catwalks this high along both sides' hall fronts
+## (bridging the alleys and the cross street), a gantry across the street at
+## each of these z, and a stair up out of each side's alley (side, z).
 const WORKS_DECK := 6.0
-const WORKS_GANTRIES := [186.0, 158.0, 124.0]
+const WORKS_GANTRIES := [188.0, 155.0, 116.0]
+const WORKS_STAIRS := [Vector2(1.0, 177.0), Vector2(-1.0, 129.0)]
 const WORKS_WALK := 2.0
 const FIELD_PATROLS := 8
 ## Risk zones (DESIGN.md section 2): the core is the molten Foundry, the
@@ -1057,47 +1064,75 @@ func _build_works() -> void:
 		var side: float = hall["side"]
 		var depth: float = hall["depth"]
 		var length: float = float(hall["from"]) - float(hall["to"])
-		var mid := Vector2(side * (WORKS_STREET + depth * 0.5), (float(hall["from"]) + float(hall["to"])) * 0.5)
+		var base := Vector3(side * (WORKS_STREET + depth * 0.5), level, (float(hall["from"]) + float(hall["to"])) * 0.5)
 		var size := Vector3(depth, float(hall["height"]), length)
-		if hall["shed"]:
-			_add_shed(Vector3(mid.x, level, mid.y), size, side)
+		if hall.get("shed", false):
+			_add_shed(base, size, side)
 		else:
-			_add_hall(Vector3(mid.x, level, mid.y), size, 0.28 + 0.03 * (i % 4), hall.get("roof_cache", false))
-	# The catwalks: one along each side's hall fronts, bridging the alleys.
+			_add_hall(base, size, 0.28 + 0.03 * (i % 4), hall.get("roof_cache", false))
+		if hall["roof"] == "saw":
+			_add_sawtooth(base + Vector3(0, size.y, 0), size)
+		# Stacks stand on the back corners, away from the street.
+		for k in int(hall.get("stacks", 0)):
+			var corner := base + Vector3(side * (depth * 0.5 - 2.0), size.y, (length * 0.5 - 2.5) * (1.0 if k == 0 else -1.0))
+			_box(Vector3(2.2, 14.0, 2.2), corner + Vector3(0, 7.0, 0), WALL).set_meta("works_stack", true)
+	# The catwalks: one along each side's hall fronts.
 	for side: float in [-1.0, 1.0]:
 		var from := -INF
 		var to := INF
-		var alleys: Array[float] = []
-		var ends: Array[Vector2] = []
 		for hall: Dictionary in WORKS_HALLS:
 			if hall["side"] == side:
 				from = maxf(from, hall["from"])
 				to = minf(to, hall["to"])
-				ends.append(Vector2(hall["to"], hall["from"]))
-		ends.sort_custom(func(a: Vector2, b: Vector2) -> bool: return a.x < b.x)
-		for k in ends.size() - 1:
-			alleys.append((ends[k].y + ends[k + 1].x) * 0.5)
 		_box(Vector3(WORKS_WALK, 0.4, from - to), Vector3(side * (WORKS_STREET - WORKS_WALK * 0.5), deck_y, (from + to) * 0.5), WORKS_METAL)
-		# A stair up from the alley nearest the middle of the side, running
-		# out from the street so it never narrows it.
-		var stair_z: float = alleys[alleys.size() / 2] if side > 0.0 else alleys[0]
+	# The stairs, running out from the street up the alleys so they never
+	# narrow it.
+	for stair_at: Vector2 in WORKS_STAIRS:
 		var run := 12.0
 		var stair := _box(Vector3(Vector2(run, WORKS_DECK).length() + 0.6, 0.4, WORKS_WALK),
-				Vector3(side * (WORKS_STREET + run * 0.5), level + WORKS_DECK * 0.5 - 0.1, stair_z), WORKS_METAL)
-		stair.rotation.z = -side * atan2(WORKS_DECK, run)
+				Vector3(stair_at.x * (WORKS_STREET + run * 0.5), level + WORKS_DECK * 0.5 - 0.1, stair_at.y), WORKS_METAL)
+		stair.rotation.z = -stair_at.x * atan2(WORKS_DECK, run)
 		stair.set_meta("works_stair", true)
 	# The gantries across the street, joining the two sides' catwalks.
 	for z: float in WORKS_GANTRIES:
 		var gantry := _box(Vector3(WORKS_STREET * 2.0 - WORKS_WALK * 2.0 + 0.2, 0.4, 3.0), Vector3(0, deck_y, z), WORKS_METAL)
 		gantry.set_meta("works_gantry", true)
 	_add_marker("spawn_cache", Vector3(0, deck_y + 0.2, WORKS_GANTRIES[1]))
+	# The crossroads' landmark: a gantry crane astride the street, its legs
+	# out in the cross street, seen over the roofs from across the field.
+	var cross_z := (WORKS_CROSS.x + WORKS_CROSS.y) * 0.5
+	var span := WORKS_STREET + 3.0
+	for sx: float in [-1.0, 1.0]:
+		for sz: float in [-1.0, 1.0]:
+			_box(Vector3(1.2, 21.0, 1.2), Vector3(sx * span, level + 10.0, cross_z + sz * 3.5), WORKS_METAL)
+	for sz: float in [-1.0, 1.0]:
+		_box(Vector3(span * 2.0 + 1.2, 1.6, 1.4), Vector3(0, level + 20.4, cross_z + sz * 3.5), WORKS_METAL).set_meta("works_crane", true)
+	_box(Vector3(3.0, 2.2, 8.4), Vector3(-2.5, level + 18.5, cross_z), WORKS_METAL)
 	# The crane that came down across the street: cover, and a break in the
 	# long sight line from the mouth to the Forge.
-	var girder := _box(Vector3(1.8, 1.8, 17.0), Vector3(-1.0, level + 0.6, 141.0), WORKS_METAL)
+	var girder := _box(Vector3(1.8, 1.8, 17.0), Vector3(-1.0, level + 0.6, 138.0), WORKS_METAL)
 	girder.rotation.y = 0.65
 	# Where the district was held: a barricade at each end of the street.
 	_add_cover(Vector3(3.0, level, 178.0))
 	_add_cover(Vector3(-3.0, level, 112.0))
+	# Each army sends soldiers in from here, so the Works never sits empty.
+	_add_marker("spawn_bot", Vector3(-4.0, level, 168.0)).set_meta("faction", "legion")
+	_add_marker("spawn_bot", Vector3(4.0, level, 142.0)).set_meta("faction", "tide")
+
+
+## A sawtooth roof on a hall: teeth across it, each a tilted slab rising
+## toward the street's inner end with a steep face behind it. Solid, so a
+## flyer lands on what they see.
+func _add_sawtooth(top: Vector3, size: Vector3) -> void:
+	var pitch := 6.0
+	var rise := 2.4
+	var teeth := maxi(int(size.z / pitch), 1)
+	var step := size.z / teeth
+	for k in teeth:
+		var z0 := top.z + size.z * 0.5 - k * step
+		var slab := _box(Vector3(size.x, 0.35, Vector2(step, rise).length()), Vector3(top.x, top.y + rise * 0.5, z0 - step * 0.5), WALL)
+		slab.rotation.x = atan2(rise, step)
+		_box(Vector3(size.x, rise, 0.3), Vector3(top.x, top.y + rise * 0.5, z0 - step + 0.15), WORKS_METAL)
 
 
 ## A solid factory hall: a block, its roof for whoever can fly up there.
