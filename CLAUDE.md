@@ -135,7 +135,8 @@ without Caleb, and update the gap list when a PR closes a row.
   way narrower than 9 m. A solo player must get through: nothing needs two
   people. Its levels sit under the valley floor; the heightfield's
   collision is cut open over the Shaft (`_cut_holes`: NaN heights inside
-  `ENGINE_HOLE`, collision only). It gets colder by `engine_depth`, and the
+  `ENGINE_HOLE`, collision only), and the world lowers `WorldDef.void_y`
+  (where `Actor` counts a body fallen out) below them. It gets colder by `engine_depth`, and the
   coolant channel (`on_coolant`) is bitter. Its cable lift is a map's
   "lift_stop" pair and "lift_power" switch (`Raid.lifts`, authority
   only): one player holding the switch for `WorldDef.lift_power_time`
