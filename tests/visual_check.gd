@@ -1717,6 +1717,41 @@ func _helmet_shots(out_dir: String) -> void:
 			sheet.blit_rect(cut, Rect2i(0, 0, 320, 320), Vector2i(i * 320, row * 320))
 	sheet.save_png(out_dir.path_join("helmets.png"))
 	print("saved helmets.png")
+	# Close up, the head alone: front, three quarters, side and back, each
+	# helmet and its Mk2 in a row (helmet_closeups.png).
+	Loadout.wear_frame(player, "")
+	lamp.light_color = Color(0.95, 0.97, 1.0)
+	lamp.light_energy = 2.5
+	var close := ["visor_scav", "helm_spotter", "helm_spotter_mk2", "helm_seeker", "helm_seeker_mk2",
+			"helm_warden", "helm_warden_mk2", "helm_ember", "helm_ember_mk2"]
+	var cells := 4
+	var px := 300
+	var closeups := Image.create(cells * px, close.size() * px, false, Image.FORMAT_RGBA8)
+	var back_z: Vector3 = player.global_basis.z
+	var right: Vector3 = player.global_basis.x
+	var angles := [-back_z, (-back_z + right).normalized(), right, (back_z - right * 0.4).normalized()]
+	for row in close.size():
+		Loadout.wear_helmet(player, close[row])
+		for k in 10:
+			skin._process(1.0 / 60.0)
+			await get_tree().process_frame
+		var worn: Node3D = skin.get("_helmet")
+		for i in cells:
+			var head: Vector3 = worn.get_child(0).get_child(0).global_position if worn.get_child(0).get_child_count() > 0 \
+					else player.global_position + Vector3(0, 1.66, 0)
+			head.y -= 0.03
+			cam.global_position = head + (angles[i] as Vector3) * 1.15 + Vector3(0, 0.1, 0)
+			cam.look_at(head)
+			await RenderingServer.frame_post_draw
+			var frame := get_viewport().get_texture().get_image()
+			var h := frame.get_height()
+			var w := frame.get_width()
+			var cut := frame.get_region(Rect2i(w / 2 - h * 3 / 8, h / 8, h * 3 / 4, h * 3 / 4))
+			cut.resize(px, px)
+			cut.convert(Image.FORMAT_RGBA8)
+			closeups.blit_rect(cut, Rect2i(0, 0, px, px), Vector2i(i * px, row * px))
+	closeups.save_png(out_dir.path_join("helmet_closeups.png"))
+	print("saved helmet_closeups.png")
 	raid.queue_free()
 
 
