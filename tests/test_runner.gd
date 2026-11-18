@@ -35,6 +35,7 @@ const CraftingTests := preload("res://tests/crafting_tests.gd")
 const SafetyNetTests := preload("res://tests/safety_net_tests.gd")
 const AttachmentTests := preload("res://tests/attachment_tests.gd")
 const PowerWeaponTests := preload("res://tests/power_weapon_tests.gd")
+const UpdaterTests := preload("res://tests/updater_tests.gd")
 const ArtifactTests := preload("res://tests/artifact_tests.gd")
 const WatchTests := preload("res://tests/watch_tests.gd")
 const PortalTests := preload("res://tests/portal_tests.gd")
@@ -82,6 +83,7 @@ const RaceTests := preload("res://tests/race_tests.gd")
 const SaveSafetyTests := preload("res://tests/save_safety_tests.gd")
 const ServerAuthTests := preload("res://tests/server_auth_tests.gd")
 const ReconnectTests := preload("res://tests/reconnect_tests.gd")
+const CameraTests := preload("res://tests/camera_tests.gd")
 
 var _passed := 0
 var _failed := 0
@@ -372,6 +374,7 @@ func _run() -> void:
 	await _test_sidearms()
 	await _test_attachments()
 	await _test_power_weapons()
+	_test_updater()
 	await _test_artifacts()
 	await _test_risk_zones()
 	await _test_cold()
@@ -389,6 +392,7 @@ func _run() -> void:
 	await _test_portals()
 	await _test_feel()
 	await _test_view_match()
+	await CameraTests.run(self)
 	await _test_gun_roles()
 	await _test_gun_handling()
 	await _test_bot_tactics()
@@ -586,6 +590,10 @@ func _test_visors() -> void:
 
 func _test_power_weapons() -> void:
 	await PowerWeaponTests.run(self)
+
+
+func _test_updater() -> void:
+	UpdaterTests.run(self)
 
 
 func _test_artifacts() -> void:

@@ -472,9 +472,9 @@ const INSPECT_TURNS := [
 ## gun turns from straight ahead (pitch up, yaw toward the off side, roll
 ## toward the off side, radians). The chest carries it, so the run's own lean
 ## and bounce move the gun with the body.
-var carry_low_long := Vector3(0.15, 1.15, -0.32)
+var carry_low_long := Vector3(0.15, 1.19, -0.27)
 var carry_low_long_turn := Vector3(-0.3, 0.15, 0.08)
-var carry_port_long := Vector3(0.14, 1.12, -0.28)
+var carry_port_long := Vector3(0.13, 1.16, -0.24)
 var carry_port_long_turn := Vector3(0.75, 1.0, 0.6)
 var carry_low_sidearm := Vector3(0.05, 1.24, -0.3)
 var carry_low_sidearm_turn := Vector3(-0.5, 0.1, 0.0)
@@ -496,9 +496,9 @@ var carry_body_follow := 0.8
 ## The bob of a carried gun with each stride: the run's footfalls drop it
 ## twice a cycle and it swings side to side once, metres at a jog and at a
 ## sprint, and a little tip of the muzzle with the drop (radians).
-var bob_drop := Vector2(0.008, 0.016)
-var bob_swing := Vector2(0.01, 0.025)
-var bob_tip := 0.04
+var bob_drop := Vector2(0.004, 0.008)
+var bob_swing := Vector2(0.006, 0.015)
+var bob_tip := 0.006
 ## Inertia: a carried gun lags behind the body as it speeds up, stops or
 ## turns, on a damped spring. `sway_gain` is metres per m/s² of the body's
 ## change of speed, `sway_turn` metres per radian a second of turning,

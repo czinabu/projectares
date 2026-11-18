@@ -26,9 +26,21 @@ func _ready() -> void:
 	screen.leave_time = backdrop.jump_time * 0.45
 	layer.add_child(screen)
 	screen.start_pressed.connect(_go)
+	# The game updates itself (`core/update/updater.gd`): its state shows in
+	# the corner, and a build that finishes downloading while this screen is
+	# up goes in at once.
+	Updater.on_start_screen = true
+	Updater.changed.connect(_show_update)
+	_show_update()
+
+
+func _show_update() -> void:
+	screen.set_status(Updater.status_line())
 
 
 func _go() -> void:
+	Updater.on_start_screen = false
+	Updater.changed.disconnect(_show_update)
 	backdrop.jump()
 	await screen.leave()
 	get_tree().change_scene_to_file.call_deferred(GAME_SCENE)

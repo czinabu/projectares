@@ -42,6 +42,29 @@ without Caleb, and update the gap list when a PR closes a row.
   until the phone stands `phone_zoom` of the view's height, whatever the
   field of view setting, with all of it kept in frame (`phone_fit_fov`,
   Caleb's pick so the screen reads; not with the mirror up).
+  The third-person camera stands over the right shoulder
+  (`PlayerController.shoulder`) and, aiming, moves in and further out
+  over it (`shoulder_aim`), so the head never sits on the sight line;
+  both fade in as it leaves the eyes, so a view switch glides. Walls stop
+  it as a swept ball (`camera_radius`, `_third_person_offset`): in at
+  once, back out at `wall_return`. Riding frames a bigger vehicle from
+  further back (`ride_scale`). Check with
+  `visual_check.tscn -- <dir> --camera-only`.
+- The head looks where its owner aims (Caleb's call, so others see where
+  you look): `Locomotion._look_pose` turns the neck and head onto
+  `Actor.get_aim_dir()` from whatever pose the body is in, no further than
+  `look_reach` from the chest, and gives way to the phone. View only, the
+  same body in both views; first person's eyes simply ride the turned head.
+- Bodies are shown between physics ticks (Caleb plays at 144 Hz):
+  `ShownMotion` (`core/visual/shown_motion.gd`, added by `Look` to every
+  actor and vehicle it dresses, so a server has none) puts its parent
+  where it is between its last two ticks for each drawn frame and back
+  before the next tick (`SceneTree.physics_frame`), so the simulation
+  never sees it; a jump (`JUMP`) is shown at once and a thinned body is
+  left alone. The player's own body turns with the mouse every frame
+  (`PlayerController.LiveAim`, `ShownMotion.live_yaw`). A check of what
+  is drawn reads it late in the frame or inside `skeleton_updated`, not
+  after the next tick.
 - `Raid` has no camera, HUD, or input code. It must keep working headless.
 - The endless warzone. A `Raid` is one running world and it never ends: no
   timer, no exits, no restart. It keeps itself alive (`_tick_bots`,
@@ -484,6 +507,25 @@ without Caleb, and update the gap list when a PR closes a row.
   it comes from) is `MeleeWeapon.swing_from(stance)`. A guard covers its
   stance's side, so a left swing meets a left guard. Windup and guard poses
   must show their side; `threat_dir()` is what a defender reads.
+- The game updates itself (`core/update/updater.gd`, the `Updater`
+  autoload, second after `Boot` and, like it, free of project classes). The
+  Windows client keeps its pack beside the exe (`embed_pck` off); the
+  release workflow stamps each build's number into `ares/build/number` and
+  publishes the pack and `update.json` (build, engine, size, SHA-256) on the
+  rolling "latest" release. An exported, stamped game reads it at launch,
+  downloads a newer pack to `user://updates`, checks it and swaps it in
+  beside the exe (on Windows a batch script does it once the game has
+  closed, since an open pack cannot be replaced; release builds refuse
+  `--main-pack`), then restarts. It never runs in the editor, a test, a
+  server or headless, and anything that changes the engine or a native
+  library needs a fresh install. Its state shows on the start screen's
+  corner and the phone's Servers app, nowhere else. The installer
+  (`.github/installer/ProjectAres.nsi`, NSIS, built by the same workflow as
+  `ProjectAres-Setup.exe`) installs per user into
+  `%LOCALAPPDATA%\Programs\Project Ares`, never Program Files, so the game
+  can write its own pack, and adds desktop and Start menu shortcuts. The
+  logo is a placeholder in `assets/branding` (the window, exe and installer
+  icon and the boot splash), made by its `make_logo.py`.
 - Sound and visual effects (`Sfx`, `Fx`) must stay no-ops on a headless server.
 - Art lives in the `Look` autoload (`core/visual/`), not in gameplay scripts.
   Gameplay scripts keep building plain greybox shapes; `Look` dresses them
@@ -528,7 +570,13 @@ without Caleb, and update the gap list when a PR closes a row.
   spring as the body speeds up, stops or turns (`ActionPose.carry`,
   `sprint`, `carry_point`, `carry_turn`, `sway`; placed from the chest by
   `WeaponArm._reach_carry` and `carry_frame`), and the legs run the plain
-  run. In a fight the run-and-shoot arms come back and the gun points where
+  run. The arms take up the run's bounce (playtest feedback: the gun
+  bobbed all over the first-person view): the carry moves with the eyes
+  as they are steadied (`ActorSkin.eye_steadying`, `carry_steady`) and
+  follows the chest's rocking with a lag, so every carry pose must keep
+  the wrist inside the arm's reach through a stride, or the gun bounces
+  with the shoulder; `camera_tests.gd` (`_check_steady_on_the_run`)
+  measures it. In a fight the run-and-shoot arms come back and the gun points where
   it shoots; a shot, aim or reload takes it out of the carry at once
   (`carry_out_rate`). All of it is read from velocity and the command, so
   remote players match, and it is the same body in both views.
@@ -1623,7 +1671,14 @@ without Caleb, and update the gap list when a PR closes a row.
   on the visor's strip and scope, cleared on arrival); Standing turns
   through three pages (`Hud.STANDING_PAGES`: at stake, safe, this life).
   The pack is an icon on the Summon tab (`Hud.pack_slot`) that opens as a
-  list of what is carried with each item's worth. An opened icon's list or
+  list of what is carried with each item's worth; a click on gear in it
+  puts it on through the same summon (`PlayerController.take_picked_from_pack`,
+  `Loadout.wearable_from_pack`: weapons, helmets, frames, flight rigs and
+  ability chips, never an artifact or attachment). `Raid.swap_worn` puts
+  on a rig (`Loadout.wear_rig`, on the ground only, keeping the old rig's
+  heat, the frame's scaling put back round it) or a chip
+  (`Loadout.wear_ability`, starting on its cooldown) as it does a helmet,
+  and clients follow through `NetSession._worn_changed`. An opened icon's list or
   page takes the card's right side (`Card._draw_panel`). A click on Sign out starts or cancels it like L
   (`PlayerController.is_on_sign_out`), and its icon carries what this life
   has banked (`Actor.banked_*`, sent to the owner only, `NetSession._banked`).
@@ -1689,7 +1744,9 @@ without Caleb, and update the gap list when a PR closes a row.
   `Vehicle.local_only`, since no server runs it) and a weapon picked is
   equipped through `equip_requested`. Out in a world summons work
   everywhere, the plaza included. Raised, the wrist comes up in front of
-  the eyes along the aim (`WeaponArm.watch_point`), so it is in view in
+  the model's eyes as the camera has them (`WeaponArm.watch_point`, from
+  `ActorSkin.eye_point`, so it stays put on the run and in view crouched),
+  close enough to stay in the arm's reach, so it is in view in
   first person wherever you look, and the forearm rolls so the face, worn
   on the back of the wrist (`Hud.Wrist.FACE_AXIS`, out on the skin by
   `wrist_skin` and depth tested like anything worn, so a gun or hand in

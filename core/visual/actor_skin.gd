@@ -861,6 +861,19 @@ func eye_point(look: Basis) -> Variant:
 	return head + Vector3.UP * eye_up + look * Vector3(0.0, 0.0, -eye_ahead)
 
 
+## How far, in the world, the eyes are moved off the head as it is posed
+## now by their steadying (`eye_steady`): what takes the stride's bob out
+## of the view. `WeaponArm.carry_frame` moves a carried gun by it too, from
+## inside the skeleton's update, so the arms hold the gun steady in front
+## of the steadied eyes.
+func eye_steadying() -> Vector3:
+	if _skeleton == null or _head_bone < 0 or not _steady_head.is_finite():
+		return Vector3.ZERO
+	var steady := lerpf(eye_steady, 1.0, ActionPose.of(actor).ads)
+	var head := _skeleton.get_bone_global_pose(_head_bone).origin
+	return _skeleton.global_basis * ((_steady_head - head) * steady)
+
+
 ## Follows the head (`_head_local`) with a lag of `aim_steady_time`, which
 ## smooths the stride's bob out of it while keeping crouches and the like.
 func _steady_eyes(delta: float) -> void:

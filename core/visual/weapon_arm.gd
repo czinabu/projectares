@@ -37,9 +37,20 @@ var off_elbow := Vector3(-0.8, 0.8, 0.3)
 ## `watch_pitch`), so it comes up into the line of sight in both views, and
 ## where that elbow points, in the actor's frame. The elbow stays out to the
 ## side and low, so the forearm lies across in front of the chest.
-var watch_from_eyes := Vector3(-0.1, -0.1, -0.37)
+var watch_from_eyes := Vector3(-0.09, -0.1, -0.24)
 var watch_pitch := Vector2(-0.7, 0.5)
 var watch_elbow := Vector3(-1.0, 1.2, -0.15)
+## A gun carried on the move rides the chest, but the arms take up this
+## share of the run's bounce, as a person's do: the gun is moved with the
+## eyes as they are steadied (`ActorSkin.eye_steadying`), and the chest's
+## rocking with each stride is followed with a lag of `carry_steady_time`,
+## so the gun stays put in front of the eyes rather than bouncing with
+## every stride (playtest feedback: it bobbed all over the view). A crouch,
+## a slide or a sprint's lean still comes through, just eased in.
+var carry_steady := 0.9
+var carry_steady_time := 0.25
+var _steady_lean := INF
+var _steady_dt := 0.0
 ## With the watch up the forearm rolls so the back of the wrist, where the
 ## watch face is (`Hud.Wrist.FACE_AXIS` in the wrist bone), looks at the
 ## eyes, and the hand stays straight on from the forearm.
@@ -389,6 +400,7 @@ func step(delta: float) -> void:
 		return
 	var shared := _pose()
 	shared.advance(delta)
+	_steady_dt += delta
 	var melee := actor.get_active_weapon() as MeleeWeapon
 	var holding := melee != null and melee.visual != null and not actor.is_dead
 	var reaching := holding and shared.reach_weight > 0.0
@@ -471,11 +483,17 @@ func step(delta: float) -> void:
 
 
 ## Where the raised watch's wrist goes, in the world: below and ahead of
-## the eyes along the aim, so you look straight at it.
+## the model's eyes (`ActorSkin.eye_point`, steadied on the move, down with
+## a crouch, ahead with a run's lean) along the aim, so you look straight
+## at it however the body is carried.
 func watch_point() -> Vector3:
 	var pitch := clampf(actor.cmd.pitch, watch_pitch.x, watch_pitch.y)
 	var aim := actor.global_basis.orthonormalized() * Basis(Vector3.RIGHT, pitch)
-	return actor.get_eye_position() + aim * watch_from_eyes
+	var skin := get_parent()
+	var eye: Variant = skin.eye_point(aim) if skin != null and skin.has_method("eye_point") else null
+	if eye == null:
+		eye = actor.get_eye_position()
+	return (eye as Vector3) + aim * watch_from_eyes
 
 
 ## Once the off arm has reached for the watch: roll the forearm so the watch
@@ -554,7 +572,8 @@ func _reach_carry() -> void:
 ## drop) and it tips forward and back with `ActionPose.carry_body_follow` of
 ## the chest's lean, so a point given in the actor's frame at chest height
 ## stays at the same place on the body. The chest's twist with each stride is
-## left out: a gun held in both hands stays steady on the line of the run.
+## left out: a gun held in both hands stays steady on the line of the run;
+## and the arms take up most of its bounce (`carry_steady`).
 func carry_frame() -> Transform3D:
 	var body := actor.global_transform.orthonormalized()
 	if _spine.is_empty():
@@ -568,9 +587,19 @@ func carry_frame() -> Transform3D:
 	var bone_up := rest.basis.orthonormalized().inverse() * up_skeleton
 	var up := (to_actor * (now.basis.orthonormalized() * bone_up)).normalized()
 	var lean := atan2(-up.z, maxf(up.y, 0.05))
+	# The chest rocks fore and aft with each stride as well as bouncing;
+	# the gun takes the steadied lean, or its muzzle would nod every step.
+	if not is_finite(_steady_lean) or absf(_steady_lean - lean) > 1.0:
+		_steady_lean = lean
+	else:
+		_steady_lean = lerpf(_steady_lean, lean, 1.0 - exp(-_steady_dt / maxf(carry_steady_time, 0.01)))
+	_steady_dt = 0.0
+	lean = lerpf(lean, _steady_lean, carry_steady)
 	var basis := body.basis * Basis(Vector3.RIGHT, -lean * _pose().carry_body_follow)
 	var chest_rest := body.affine_inverse() * (to_world * rest.origin)
-	return Transform3D(basis, to_world * now.origin - basis * chest_rest)
+	var skin := get_parent()
+	var steadied: Vector3 = skin.eye_steadying() if skin != null and skin.has_method("eye_steadying") else Vector3.ZERO
+	return Transform3D(basis, to_world * now.origin - basis * chest_rest + steadied * carry_steady)
 
 
 ## Aiming down sights: where the hand would put the sight this frame (from

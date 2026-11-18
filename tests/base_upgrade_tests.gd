@@ -885,6 +885,18 @@ static func _customizer(t: Node) -> void:
 	base.show_gear([], {}, ["hub_ring"])
 	await t.frames(3)
 	t.check(placed == [["shape", "ring"]], "once bought, it is put in use")
+	var ringed := BasePlan.clean({})
+	ringed["shape"] = "ring"
+	base.show_gear([], {}, ["hub_ring"], ringed)
+	await t.frames(3)
+	t.check(view.screen != null and is_instance_valid(view.screen) and view.screen.is_inside_tree()
+			and view.screen.get_parent() == base.plan_screen(),
+			"a change that rebuilds the table puts the customizer back on its screen")
+	var click := InputEventMouseButton.new()
+	click.button_index = MOUSE_BUTTON_LEFT
+	click.pressed = true
+	view._unhandled_input(click)
+	t.check(view.is_inside_tree() and view.panel == panel, "a click after the change still goes to the customizer")
 	panel.show_tab("rooms")
 	await t.frames(2)
 	t.check(panel.find_child("Socket_N1", true, false) != null, "the rooms tab draws a doorway for each socket")

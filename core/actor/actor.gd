@@ -20,6 +20,10 @@ signal power_changed(item_id: String, mag: int, reserve: int)
 signal helmet_changed(item_id: String)
 ## The armor frame worn changed (`Loadout.wear_frame`); "" is none.
 signal frame_changed(item_id: String)
+## The flight rig worn changed (`Loadout.wear_rig`); "" is none.
+signal rig_changed(item_id: String)
+## The ability chip in changed (`Loadout.wear_ability`); "" is none.
+signal ability_changed(item_id: String)
 ## A weapon was materialized out of the pack in place of the one worn in its
 ## slot (`Loadout.swap_weapon`, the watch's summon).
 signal weapon_swapped(item_id: String, mag: int, reserve: int)

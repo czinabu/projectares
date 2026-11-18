@@ -1063,7 +1063,13 @@ the storage behind it.
     artifacts (the attuned one is used; others carried are shown but stay
     loot, one per outing). The pack's fill, worth, heals and scrip sit under
     the tab, and the pack's own icon opens (a click) as a list of what you
-    carry, each with its worth, that the wheel turns through.
+    carry, each with its worth, that the wheel turns through. Gear in it
+    says the slot it goes in, and a click puts it on (Caleb's call: loot a
+    rig or a gun and wear it straight away): a weapon materializes, a
+    helmet, frame, flight rig or ability chip goes on, and the worn piece
+    goes into the pack in its place. A rig changes only on the ground and
+    keeps the old one's heat; a chip starts on its cooldown. Artifacts stay
+    loot (one per outing) and attachments wait for the gunsmith bench.
   - **Status (Caleb's call: its icons open with a click):** the map and
     where the war is, and your standing and the hunted warning.
     - **The map** shows a small map on the card. Opened, a tabletop
@@ -2633,6 +2639,11 @@ PvP.
 - **No dead end when a world is full.** Send the player to another instance,
   or say how long the wait is.
 - **A version mismatch points to the update**, not just an error.
+- **Install once.** The game updates itself: at launch it reads the newest
+  build's manifest from the "latest" release, downloads the new game data in
+  the background and restarts into it (on the start screen at once, during
+  play on the next start or from the Servers app). Only a new engine version
+  asks for a fresh install. Built: `core/update/updater.gd`.
 - **Certificate warnings never show on official servers**; they use a real
   certificate.
 - **Travel between worlds within about 3 s**, measured by the whole-server
