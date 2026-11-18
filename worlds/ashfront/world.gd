@@ -281,6 +281,10 @@ func _init() -> void:
 	# storms"): sight down to half in the thick of it, gone by 70 m, and the
 	# armies push a site a storm covers.
 	contract_tag = "warzone"
+	# The scrap kit and a piece or two is fresh; a full mid kit is about
+	# 2,000, crafted Mk2 and a heavy about 5,000.
+	fresh_gear_value = 1500
+	strong_gear_value = 4500
 	weather_kind = "ash"
 	weather_name = "Ash storm"
 	weather_pushes = true

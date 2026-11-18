@@ -101,3 +101,49 @@ static func pushes(t: Node) -> void:
 	t.check(raid.live_pushes().is_empty() and Hud.map_marks(raid, raid.player).pushes.is_empty(),
 			"after a minute the arrow is gone")
 	await t._end_raid(raid)
+
+
+## Fresh players land away from strong ones (DESIGN.md "Challenge and
+## balance data"): someone who brought little gear arrives at the gate
+## furthest from anyone who came in strong.
+static func fresh_drops(t: Node) -> void:
+	print("Fresh players land away from strong ones")
+	var raid := Raid.new()
+	t.add_child(raid)
+	raid.mode = Raid.Mode.SERVER
+	raid.start_server(Worlds.get_world("ashfront"), 49)
+	await t.frames(3)
+	var strong_kit: Array[String] = ["dmr_longshot", "frame_bulwark", "helm_warden", "jetpack_mk2",
+			"pistol_hand_cannon", "blade_arc"]
+	var mid_kit: Array[String] = ["rifle_carbine", "frame_trooper", "helm_spotter", "jetpack_mk1",
+			"pistol_machine", "knife_gutter"]
+	var strong := raid.add_player(strong_kit, {}, "Ace", "ace")
+	var other := raid.add_player(mid_kit, {}, "Bo", "bo")
+	await t.frames(2)
+	t.check(raid.is_strong(raid.state_for(strong)) and not raid.is_strong(raid.state_for(other))
+			and not raid.is_fresh(raid.state_for(other)),
+			"a crafted kit counts as strong, a mid kit as neither")
+	for bot in raid.bots:
+		bot.global_position = Vector3(0, -5000, 0)
+	var spawns := raid._map_nodes("spawn_player")
+	var fresh := Raid.PlayerState.new()
+	t.check(raid.is_fresh(fresh), "the scrap kit counts as fresh")
+	var steady := Raid.PlayerState.new()
+	steady.kit.assign(mid_kit)
+	# The strong player stands at one gate and someone else at the gate
+	# furthest from it: a plain arrival keeps clear of both, a fresh one
+	# keeps further from the strong one.
+	strong.global_position = spawns[0].global_position
+	var far := 0
+	for i in spawns.size():
+		if spawns[i].global_position.distance_to(strong.global_position) \
+				> spawns[far].global_position.distance_to(strong.global_position):
+			far = i
+	other.global_position = spawns[far].global_position
+	var picked_fresh: Vector3 = spawns[raid._safest_spawn(spawns, fresh)].global_position
+	var picked_plain: Vector3 = spawns[raid._safest_spawn(spawns, steady)].global_position
+	var d_fresh := picked_fresh.distance_to(strong.global_position)
+	var d_plain := picked_plain.distance_to(strong.global_position)
+	t.check(d_fresh > d_plain + 1.0, "a fresh player lands further from the strong one (%.0f m against %.0f m)"
+			% [d_fresh, d_plain])
+	await t._end_raid(raid)

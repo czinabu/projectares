@@ -307,6 +307,7 @@ func _run() -> void:
 	await ExtractionTests.run(self)
 	await _test_life_log()
 	await _test_army_pushes()
+	await _test_fresh_drops()
 	await _test_loadouts()
 	await _test_death()
 	await _test_storm()
@@ -1104,6 +1105,10 @@ func _test_combat_and_loot() -> void:
 
 func _test_life_log() -> void:
 	await LifeLogTests.run(self)
+
+
+func _test_fresh_drops() -> void:
+	await LifeLogTests.fresh_drops(self)
 
 
 func _test_army_pushes() -> void:

@@ -1145,7 +1145,7 @@ func add_player(p_kit: Array = [], p_mastery: Dictionary = {}, p_name := "Raider
 	if mode == Mode.SOLO and player != null:
 		_remove_actor(player)
 	if arriving and not spawns.is_empty():
-		marker = _safest_spawn(spawns)
+		marker = _safest_spawn(spawns, state)
 	else:
 		marker = rng.randi() % maxi(spawns.size(), 1)
 	if squad_spawn:
@@ -1246,21 +1246,39 @@ static func arrival_point(doorway: Node3D) -> Vector3:
 
 ## The spawn point farthest from everyone already in the raid, so nobody
 ## joins into the middle of a fight.
-func _safest_spawn(spawns: Array[Node3D]) -> int:
+func _safest_spawn(spawns: Array[Node3D], arriving: PlayerState = null) -> int:
 	var others: Array[Actor] = []
 	others.append_array(bots)
 	others.append_array(active_players())
+	# Someone fresh (little gear brought) lands well away from anyone who
+	# came in strong (DESIGN.md "Challenge and balance data"): a strong
+	# player counts as `strong_player_wariness` times as near.
+	var fresh := arriving != null and world.fresh_gear_value > 0 and is_fresh(arriving)
 	var best := 0
 	var best_distance := -1.0
 	for i in spawns.size():
 		var nearest := INF
 		for other in others:
 			if not other.is_dead:
-				nearest = minf(nearest, spawns[i].global_position.distance_to(other.global_position))
+				var distance := spawns[i].global_position.distance_to(other.global_position)
+				var them := state_for(other)
+				if fresh and them != null and them != arriving and is_strong(them):
+					distance /= world.strong_player_wariness
+				nearest = minf(nearest, distance)
 		if nearest > best_distance:
 			best_distance = nearest
 			best = i
 	return best
+
+
+## Whether a life came in with little gear (`WorldDef.fresh_gear_value`),
+## or strong (`strong_gear_value`), by what it brought from the stash.
+func is_fresh(state: PlayerState) -> bool:
+	return ItemDB.total_value(state.kit) < world.fresh_gear_value
+
+
+func is_strong(state: PlayerState) -> bool:
+	return world.strong_gear_value > 0 and ItemDB.total_value(state.kit) >= world.strong_gear_value
 
 
 ## For a dropped connection. Nobody escapes a fight by quitting: the body

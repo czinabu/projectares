@@ -2209,6 +2209,14 @@ watch map draws an arrow from the army to the site for a minute
 every 30 s an army (`PUSH_EVERY`); a change in between only moves the
 arrow. Only the server decides; clients are told (`NetSession._army_push`).
 
+Fresh players are kept from strong ones without a matchmaker yet: someone
+who brought less than `WorldDef.fresh_gear_value` of gear (1,500 in
+Ashfront: the scrap kit and a piece or two) arrives at the gate furthest
+from anyone who brought `strong_gear_value` or more (4,500: crafted Mk2
+gear), each of whom counts three times as near (`strong_player_wariness`,
+`Raid._safest_spawn`). Separate lobbies or shards by gear are a later call
+for Caleb, once the life log shows how often fresh players die to people.
+
 `tests/life_report.tscn` reads a folder of them and prints, by zone, how
 many lives end there, how many die, how long they last and what they carry;
 what does the killing; how many deaths came with three or more bots after

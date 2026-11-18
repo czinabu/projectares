@@ -190,6 +190,9 @@ without Caleb, and update the gap list when a PR closes a row.
   drop if the choice is no longer on offer. Online the client only sends the
   id with `NetSession.deploy(drop)`; a client lists its choices from what the
   server already told it (`Strongpoint.viewer_holds`, war intensity).
+  An arrival with no choice lands at the spawn furthest from everyone,
+  and a fresh player (`WorldDef.fresh_gear_value`) furthest from strong
+  ones (`strong_gear_value`, `Raid._safest_spawn`).
   Arriving in a safe zone is just as fixed: a `p_drop` of
   "from:<destination>" ("home", "arena", "world:<id>") lands you just
   outside the plaza doorway that leads there (`Raid.arrival_point`), the
