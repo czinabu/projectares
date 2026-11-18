@@ -9,6 +9,7 @@ const BaseLayout := preload("res://core/base/base_layout.gd")
 const StashRules := preload("res://core/account/stash_rules.gd")
 const Accounts := preload("res://core/account/stash_service.gd")
 const DevMode := preload("res://core/dev/dev_mode.gd")
+const BasePlan := preload("res://core/base/base_plan.gd")
 
 
 static func run(t: Node) -> void:
@@ -19,6 +20,8 @@ static func run(t: Node) -> void:
 	await _bunker(t)
 	await _buying(t)
 	await _from_the_base(t)
+	_plan_rules(t)
+	await _plan_table(t)
 
 
 ## The catalog, and what may be bought when.
@@ -70,11 +73,11 @@ static func _test_lane(t: Node, base: HomeBase, p: Actor) -> void:
 	t.check(base.lane_targets.size() == 3 and base.lane_size.x <= 3.0 and base.lane_size.z <= 15.0
 			and base.lane_targets.all(func(target: HomeBase.RangeTarget) -> bool:
 				return base.in_lane(target.home)), "three plates stand in a lane 3 m wide and 15 m long at most")
-	var counter_z := -base.room_size.z * 0.5 - 0.5 - base.lane_counter
+	var counter_z := -base.range_from() - base.lane_counter
 	var metres: Array[int] = []
 	for target in base.lane_targets:
 		metres.append(int(round(counter_z - target.home.z)))
-	t.check(metres == [4, 8, 12] and base.range_sign.text == "TEST LANE", "plates at 4, 8 and 12 m from the counter, under a lane sign")
+	t.check(metres == [4, 8, 12] and (base.range_sign.get_node("Name") as Label3D).text == "TEST LANE", "plates at 4, 8 and 12 m from the counter, under a lane sign")
 	t.check(not p.weapons_locked, "weapons are free in the lane")
 	var plate: HomeBase.RangeTarget = base.lane_targets[0]
 	p.global_position = base.to_global(Vector3(plate.home.x, 0.1, counter_z + 1.0))
@@ -238,40 +241,44 @@ static func _bunker(t: Node) -> void:
 			and _count(base, "chip_case") == 0 and _count(base, "trophy") == 0,
 			"a starter bunker shows a short rack, one bay and one stand of each kind")
 	await _helmet_shelf(t, stash)
-	var nook_wall := -base.room_size.x * 0.5 - base.nook_depth
+	var armory_frame := base.room_transform("armory").affine_inverse()
 	var in_nook := true
 	var all_inside := true
 	for display in base.displays:
 		all_inside = all_inside and base.inside(display.position)
 		if BaseLayout.is_armory(display.kind):
-			in_nook = in_nook and base.in_armory(display.position) and display.position.x > nook_wall
-	t.check(in_nook and all_inside, "the starter rack hangs in the armory nook, in front of its sealed wall")
+			var local := armory_frame * display.position
+			in_nook = in_nook and base.in_armory(display.position) and local.z > -base.small_depth
+	t.check(in_nook and all_inside, "the starter rack hangs in the armory's small form, in front of its sealed wall")
 	t.check(base.in_workshop(base.bench_transform().origin) and base.inside(base.bench_transform().origin)
 			and base.in_workshop(base.station(HomeBase.CRAFT_ID).position),
-			"the starter bunker's bench and fabricator already stand in the workshop off the nook")
-	# The workshop opens off the nook, and only into it: the sealed alcove
-	# behind the nook's wall stays out of reach from the workshop too.
+			"the starter bunker's bench and fabricator already stand in the workshop")
+	# Walk from the hub into the workshop, and into the armory up to its
+	# sealed wall, never past it.
 	var p := base.player
-	for leg: Array in [[Vector3(-13.6, 0.1, 4.0), PI, "workshop"], [Vector3(-15.3, 0.1, 6.95), 0.0, "sealed"]]:
-		p.global_position = base.to_global(leg[0])
+	for room: String in ["workshop", "armory"]:
+		var door := base.room_transform(room)
+		var into := -door.basis.z
+		p.global_position = base.to_global(door * Vector3(0, 0.1, 2.0))
 		p.velocity = Vector3.ZERO
-		p.cmd.yaw = leg[1]
+		p.cmd.yaw = atan2(-into.x, -into.z)
 		p.cmd.move = Vector2(0, 1)
-		await t.frames(50)
+		await t.frames(150)
 		p.cmd.move = Vector2.ZERO
 		await t.frames(2)
 		var at := base.to_local(p.global_position)
-		if leg[2] == "workshop":
-			t.check(base.in_workshop(at), "you can walk from the nook into the workshop (%s)" % at)
+		var deep := -(door.affine_inverse() * at).z
+		if room == "workshop":
+			t.check(base.in_workshop(at), "you can walk from the hub into the workshop (%s)" % at)
 		else:
-			t.check(at.z > base.armory_size.z * 0.5 and at.x > -base.room_size.x * 0.5 - base.armory_size.x,
-					"the workshop does not lead past the nook's sealed wall (%s)" % at)
+			t.check(base.in_armory(at) and deep < base.small_depth,
+					"the armory's sealed wall stops you %.1f m in, short of %.1f m" % [deep, base.small_depth])
 	var shown: Array[String] = []
 	for gate in base.bulkheads:
 		shown.append(gate.id)
 	shown.sort()
 	var expected: Array[String] = ["armory_alcove", "bay_second", "bench_workshop", "finish", "firing_range",
-			"gear_hall", "lounge", "ops_consoles", "trophy_hall"]
+			"garage_full", "gear_hall", "ops_consoles", "trophy_hall"]
 	t.check(shown == expected, "every upgrade still to buy is on show in the room (%s)" % [shown])
 	var priced := true
 	for gate in base.bulkheads:
@@ -288,7 +295,7 @@ static func _bunker(t: Node) -> void:
 			and base.station("trader").get_prompt() == "[F] Trader and mastery bench: Buy and sell, pick mastery variants",
 			"the trader's console doubles as the mastery bench, the wardrobe's as the records")
 	# The firing range is shut.
-	p.global_position = base.to_global(Vector3(0, 0.1, -6.5))
+	p.global_position = base.to_global(Vector3(0, 0.1, -base.range_from() + 2.0))
 	p.velocity = Vector3.ZERO
 	p.cmd.yaw = 0.0
 	p.cmd.pitch = 0.0
@@ -301,17 +308,19 @@ static func _bunker(t: Node) -> void:
 			and base.bulkhead("firing_range").position.z < lane_at.z,
 			"the starter bunker's door leads to a test lane, sealed from the range at its far end")
 	await _test_lane(t, base, p)
-	# The garage beyond the first bay is walled off.
-	p.global_position = base.to_global(base.spot_transform("bay", 0).origin + Vector3(-2.6, 0.1, 0.9))
+	# The garage past its small form is walled off.
+	var garage := base.room_transform("garage")
+	var deeper := -garage.basis.z
+	p.global_position = base.to_global(garage * Vector3(0, 0.1, -1.0))
 	p.velocity = Vector3.ZERO
-	p.cmd.yaw = PI
+	p.cmd.yaw = atan2(-deeper.x, -deeper.z)
 	p.cmd.move = Vector2(0, 1)
-	await t.frames(90)
+	await t.frames(120)
 	p.cmd.move = Vector2.ZERO
 	await t.frames(2)
-	var reached: float = base.to_local(p.global_position).z
-	t.check(reached < base.spot_transform("bay", 1).origin.z - 0.8 and base.bulkhead("bay_second") != null,
-			"the garage past the first bay is closed off (walked to z %.1f)" % reached)
+	var reached := -(garage.affine_inverse() * base.to_local(p.global_position)).z
+	t.check(reached < base.small_depth and base.bulkhead("bay_second") != null and base.bulkhead("garage_full") != null,
+			"the garage past its small form is closed off (walked %.1f m in)" % reached)
 	# With nothing to spend, a bulkhead says why it stays shut.
 	var gate := base.bulkhead("gear_hall")
 	var asked := []
@@ -320,11 +329,7 @@ static func _bunker(t: Node) -> void:
 	gate.interact(p)
 	t.check(asked.is_empty() and "Not enough scrip" in gate.get_prompt() and "Not enough scrip" in gate.status.text,
 			"without the scrip a bulkhead cannot be bought, and says so")
-	var lounge := base.bulkhead("lounge")
-	base.set_scrip(99999)
-	lounge.interact(p)
-	lounge.interact(p)
-	t.check(asked.is_empty() and "Not open yet" in lounge.get_prompt(), "an upgrade that is not built yet stays sealed")
+	t.check(base.bulkhead("lounge") == null, "an upgrade that is not built yet has no panel in the base")
 	base.queue_free()
 	await t.frames(2)
 	# Someone else's bunker: sealed, with nothing for sale.
@@ -389,8 +394,8 @@ static func _buying(t: Node) -> void:
 			"showing the gear again without naming upgrades keeps the base as it is")
 	base.show_gear(stash, {}, ["armory_alcove", "bay_second", "gear_hall", "firing_range", "ops_consoles"])
 	await t.frames(3)
-	t.check(_count(base, "rack_melee") > 2 and base.in_armory(base.bench_transform().origin)
-			and base.bench_transform().origin == HomeBase.BENCH_AT, "the armory alcove opens the full rack and takes the bench in (%d melee)" % _count(base, "rack_melee"))
+	t.check(_count(base, "rack_melee") > 2 and base.in_workshop(base.bench_transform().origin),
+			"the armory alcove opens the full rack, and the bench stays in the workshop (%d melee)" % _count(base, "rack_melee"))
 	var heavy := base.bulkhead("heavy_wall")
 	t.check(heavy != null and heavy.get_prompt() == "[F] Buy Heavy weapon wall: 4,000 scrip"
 			and base.bulkhead("armory_alcove") == null,
@@ -399,7 +404,7 @@ static func _buying(t: Node) -> void:
 			"the second bay parks a second bike and offers the full garage next")
 	t.check(base.station("mastery") != null and base.station("records") != null and base.also_shows("trader").is_empty()
 			and base.station_title("trader") == "Trader", "the ops consoles give the mastery bench and records their own")
-	p.global_position = base.to_global(Vector3(0, 0.1, -6.5))
+	p.global_position = base.to_global(Vector3(0, 0.1, -base.range_from() + 2.0))
 	p.velocity = Vector3.ZERO
 	p.cmd.yaw = 0.0
 	p.cmd.pitch = 0.0
@@ -466,3 +471,114 @@ static func _from_the_base(t: Node) -> void:
 	main.queue_free()
 	await t.frames(2)
 	Profile.reset()
+
+
+## The base's plan: which room stands in which socket, kept on the profile
+## solo and on the account online.
+static func _plan_rules(t: Node) -> void:
+	print("Home base plan")
+	t.check(BasePlan.clean(null) == BasePlan.DEFAULT and BasePlan.clean("junk") == BasePlan.DEFAULT
+			and BasePlan.clean(null).keys() == Array(BasePlan.SOCKETS),
+			"a missing or broken plan is the default one, in socket order")
+	var odd := BasePlan.clean({"W1": "garage", "W2": "garage", "N1": "no_such", "E2": 7})
+	var once := {}
+	for socket: String in BasePlan.SOCKETS:
+		once[odd[socket]] = true
+	t.check(odd["W1"] == "garage" and once.size() == BasePlan.ROOMS.size(),
+			"a doubled, unknown or missing room is put right: every room stands once")
+	var moved := BasePlan.place(BasePlan.DEFAULT, "E1", "armory")
+	t.check(moved["E1"] == "armory" and moved["W1"] == BasePlan.DEFAULT["E1"] and BasePlan.DEFAULT["W1"] == "armory",
+			"moving a room swaps it with the room that stood there, and never changes the plan given")
+	t.check(BasePlan.place(BasePlan.DEFAULT, "X9", "armory") == BasePlan.DEFAULT
+			and BasePlan.place(BasePlan.DEFAULT, "E1", "lounge") == BasePlan.DEFAULT,
+			"an unknown socket or room changes nothing")
+	Profile.reset()
+	t.check(Profile.place_room("N1", "garage").ok and Profile.base_plan["N1"] == "garage"
+			and Profile.to_dict()["base_plan"]["N1"] == "garage", "solo, the profile keeps the plan and saves it")
+	var data := Profile.to_dict()
+	Profile.reset()
+	t.check(Profile.base_plan == BasePlan.DEFAULT, "a fresh profile has the default plan")
+	Profile.load_dict(data)
+	t.check(Profile.base_plan["N1"] == "garage", "the plan survives a save")
+	Profile.reset()
+	var service := Accounts.new()
+	service.persist = false
+	var id: String = service.sign_in("Planner", "a-long-enough-secret-for-tests").account_id
+	t.check(service.snapshot(id).base_plan == BasePlan.DEFAULT, "a new account has the default plan")
+	service.change_scrip(id, 5000)
+	service.deploy(id, Worlds.raid_worlds()[0])
+	t.check(service.place_room(id, "W1", "ops").ok and service.snapshot(id).base_plan["W1"] == "ops",
+			"online, the account keeps the plan, and it may be changed while out in a world: it moves nothing")
+	service.cancel_deploy(id)
+	t.check(not service.place_room(id, "W1", "lounge").ok and not service.place_room(id, "Z1", "ops").ok
+			and not service.place_room("nobody", "W1", "ops").ok, "the server refuses unknown rooms, sockets and accounts")
+	var saved := service.load_account(id).to_dict()
+	var loaded := Accounts.Account.new()
+	loaded.load_dict(saved)
+	t.check(loaded.base_plan["W1"] == "ops", "an account's plan survives a save")
+	saved.erase("base_plan")
+	loaded.load_dict(saved)
+	t.check(loaded.base_plan == BasePlan.DEFAULT, "a save from before the plan opens with the default one")
+	t.check("base_plan" in StashRules.CARRIED, "your own server is handed your plan with the rest of you")
+
+
+## The plan table in the middle of the hub: walk up, turn to a socket, pick a
+## room for it, and the base asks to move it; the rooms follow the plan.
+static func _plan_table(t: Node) -> void:
+	var base := HomeBase.new()
+	base.show_gear(["rifle_carbine"], {"primary": "rifle_carbine"})
+	t.add_child(base)
+	await t.frames(20)
+	var table := base.plan_table
+	t.check(table != null and base.room_at(table.position) == "" and base.inside(table.position)
+			and table.get_prompt().begins_with("[F] Plan table"), "the plan table stands in the hub and offers itself")
+	t._face_display(base.player, table)
+	await t.frames(2)
+	var found := base.player.find_interactable()
+	t.check(found == table, "it can be walked up to and looked at (%s)" % [found.name if found else "nothing"])
+	var used := [0]
+	var placed := []
+	base.plan_used.connect(func() -> void: used[0] += 1)
+	base.room_placed.connect(func(socket: String, room: String) -> void: placed.append([socket, room]))
+	await t._use(base.player)
+	t.check(used[0] == 1 and base.plan_open and not base.plan_picking and base.plan_socket == 0,
+			"using it starts on the first socket")
+	base.plan_scroll(1)
+	base.plan_scroll(1)
+	base.plan_select()
+	t.check(base.plan_picking and base.plan_choice == BasePlan.DEFAULT["N1"] and "‹" in base.plan_card(),
+			"a click on a socket turns through the rooms for it, starting from the one there")
+	base.plan_scroll(1)
+	var choice := base.plan_choice
+	t.check(choice != BasePlan.DEFAULT["N1"] and base.plan_shown()["N1"] == choice and base.base_plan["N1"] == BasePlan.DEFAULT["N1"],
+			"the table shows the room turned to in the socket, without moving anything yet")
+	t.check(base.plan_back() and not base.plan_picking and placed.is_empty(), "a step back drops the choice")
+	base.plan_select()
+	base.plan_scroll(1)
+	base.plan_select()
+	t.check(placed == [["N1", choice]] and not base.plan_picking, "a second click asks to move the room there")
+	var armory_before := base.room_transform("armory")
+	var plan := BasePlan.place(base.base_plan, "N1", choice)
+	base.show_gear(base.stash, base.loadout, null, plan)
+	await t.frames(3)
+	var rack := base.spot_transform("rack_guns", 0).origin
+	t.check(base.base_plan["N1"] == choice
+			and base.room_at(base.room_transform(choice) * Vector3(0, 0.1, -1.0)) == choice and base.in_armory(rack),
+			"the rooms follow the plan, and what is on show goes with its room")
+	var shown := base.display_for("rifle_carbine")
+	t.check(shown != null and base.in_armory(shown.position) and (choice != "armory" or not armory_before.is_equal_approx(base.room_transform("armory"))),
+			"a gun on the rack moves with the armory")
+	base.leave_plan()
+	t.check(not base.plan_open, "stepping away closes the table")
+	base.queue_free()
+	await t.frames(2)
+	var visited := HomeBase.new()
+	visited.read_only = true
+	visited.show_gear([], {}, [], {"W1": "garage", "E1": "armory"})
+	t.add_child(visited)
+	await t.frames(3)
+	visited.use_plan()
+	t.check(visited.room_at(visited.socket_transform("W1") * Vector3(0, 0.1, -1.0)) == "garage" and not visited.plan_open,
+			"a visited base stands as its owner laid it out, and its table cannot be used")
+	visited.queue_free()
+	await t.frames(2)
