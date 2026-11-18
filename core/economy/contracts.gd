@@ -21,6 +21,10 @@ extends RefCounted
 ##     account does not know yet (a blueprint, once those exist).
 ##   - One reroll of the daily offers a day. A daily job expires at the end
 ##     of its day, a weekly one at the end of its week, done or not.
+##   - Rook, a fixer in the Concourse, offers `FAVOR_OFFERS` small "favor"
+##     jobs a day in person (`core/social/plaza_locals.gd`). They are held and
+##     paid like any other job, are never rerolled, and the board's own lists
+##     leave them out: you take one by talking to him.
 ##   - Jobs push variety and never reward camping or farming new players:
 ##     nothing counts player kills, and an extract only counts with real loot.
 
@@ -28,6 +32,8 @@ extends RefCounted
 const MAX_ACTIVE := 3
 const DAILY_OFFERS := 3
 const WEEKLY_OFFERS := 1
+## Rook's favours on offer each day.
+const FAVOR_OFFERS := 1
 ## A sign-out only counts as an extract for a contract with at least this much
 ## loot home (carried out plus banked), so signing straight out farms nothing.
 const EXTRACT_MIN_VALUE := 100
@@ -38,7 +44,8 @@ const TAGGED_WEEKLY_OFFERS := 1
 const DAY := 86400
 
 ## The jobs. Each: "title" (what the board says), "stat" (what counts, see
-## `amount`), "goal", "kind" ("daily" or "weekly"), "scrip" paid on finishing,
+## `amount`), "goal", "kind" ("daily", "weekly" or "favor", which ends with
+## its day like a daily), "scrip" paid on finishing,
 ## and optionally "items" (item ids paid if they exist) and "reward_tag" (one
 ## item with that tag). Stats:
 ##   kills         enemies killed (bots, warlords and players alike)
@@ -79,7 +86,26 @@ const JOBS := {
 			"items": ["upgrade_data"], "reward_tag": "blueprint"},
 	"hoard": {"title": "Bring home 4000 scrip of loot", "stat": "loot_value", "goal": 4000, "kind": "weekly",
 			"scrip": 750, "items": ["upgrade_data"], "reward_tag": "blueprint"},
+	# Rook's favours: small, quick, and paid a little under a daily. "ask" is
+	# how he puts it.
+	"favor_salvage": {"title": "Bring Rook 3 materials", "stat": "carry:material", "goal": 3, "kind": "favor",
+			"scrip": 100, "ask": "My fabricator's starving. Bring home three materials from out there and I'll pay for the trouble."},
+	"favor_ride": {"title": "Ride a vehicle for Rook", "stat": "rides", "goal": 1, "kind": "favor", "scrip": 80,
+			"ask": "A client wants to know the bikes still run out there. Ride one, sign out, tell me it did."},
+	"favor_haul": {"title": "Bring home 400 scrip of loot", "stat": "loot_value", "goal": 400, "kind": "favor",
+			"scrip": 110, "ask": "I've got a buyer and nothing to sell. Bring home four hundred scrip of loot and we both eat."},
+	"favor_extract": {"title": "Sign out with loot for Rook", "stat": "extracts", "goal": 1, "kind": "favor",
+			"scrip": 90, "ask": "Easy one. Go in, grab something worth having, get out alive. That's the whole job."},
+	"favor_cull": {"title": "Kill 5 enemies for Rook", "stat": "kills", "goal": 5, "kind": "favor", "scrip": 100,
+			"ask": "Somebody's patrol keeps shooting at my couriers. Thin them out by five and come back breathing."},
 }
+
+
+## Rook's favour on offer on `day`, or "" if there is none. The same for
+## everyone and never rerolled.
+static func favor_for(day: int) -> String:
+	var picked := _pick(ids("favor"), FAVOR_OFFERS, hash(["favor", day]), [])
+	return picked[0] if not picked.is_empty() else ""
 
 
 ## Today, as a day number (UTC days since the epoch). `unix` is seconds; pass
@@ -155,6 +181,7 @@ static func tags() -> Array[String]:
 static func offers_for(day: int, reroll := 0, avoid: Array = []) -> Array[String]:
 	var out: Array[String] = _pick(ids("daily"), DAILY_OFFERS, hash(["daily", day, reroll]), avoid)
 	out.append_array(_pick(ids("weekly"), WEEKLY_OFFERS, hash(["weekly", week_of(day)]), []))
+	out.append_array(_pick(ids("favor"), FAVOR_OFFERS, hash(["favor", day]), []))
 	for tag in tags():
 		out.append_array(_pick(ids("daily", tag), TAGGED_DAILY_OFFERS, hash(["daily", tag, day, reroll]), avoid))
 		out.append_array(_pick(ids("weekly", tag), TAGGED_WEEKLY_OFFERS, hash(["weekly", tag, week_of(day)]), []))

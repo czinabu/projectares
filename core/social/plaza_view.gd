@@ -9,8 +9,12 @@ extends CanvasLayer
 ## Load with `preload("res://core/social/plaza_view.gd")`.
 
 signal portal_used(destination: String)
+## A talker offered a job and the player took it (Rook's favour): ask the
+## server, through the same contract request as the board.
+signal contract_asked(action: String, job_id: String)
 
 const RaidRoster := preload("res://core/ui/raid_roster.gd")
+const PlazaLocals := preload("res://core/social/plaza_locals.gd")
 
 ## How far away, in metres, another player's gear can be read.
 var inspect_range := 16.0
@@ -30,6 +34,10 @@ var heat_signs := {}
 var heat_sign_height := 6.9
 ## The gear of the player you look at, floating over them.
 var tag: Label3D
+## The people of the place (`PlazaLocals`), made only where `Look` draws.
+var locals: Node3D
+## The player's account snapshot from the server, for what a talker offers.
+var account := {}
 var _prompt: Label
 var _notice: Label
 var _notice_left := 0.0
@@ -62,6 +70,11 @@ func _ready() -> void:
 	tag.top_level = true
 	tag.visible = false
 	add_child(tag)
+	if Look.enabled and raid != null and raid.map != null and raid.map.has_method("locals_layout"):
+		locals = PlazaLocals.new()
+		locals.name = "Locals"
+		locals.setup(raid)
+		add_child(locals)
 	refresh_heat()
 
 
@@ -94,6 +107,39 @@ func refresh_heat() -> void:
 		sign.text = heat_text(status)
 		sign.modulate = heat_color(float(status.get("war", 0.0)))
 		sign.visible = sign.text != ""
+	for node in raid.get_tree().get_nodes_in_group("wanted_board"):
+		var board := node as Label3D
+		if board != null and raid.map.is_ancestor_of(board):
+			board.text = wanted_text(world_status)
+
+
+## What the most-wanted board says: the biggest bounties in every world,
+## with the Marked, by name and never by place (`Raid.wanted`).
+static func wanted_text(status: Dictionary) -> String:
+	var rows: Array[Dictionary] = []
+	for id: Variant in status:
+		var entry: Variant = status[id]
+		if typeof(entry) != TYPE_DICTIONARY:
+			continue
+		for wanted: Variant in entry.get("wanted", []):
+			if typeof(wanted) == TYPE_DICTIONARY:
+				var row: Dictionary = wanted.duplicate()
+				row["world"] = PlazaLocals.world_name(str(id))
+				rows.append(row)
+	if rows.is_empty():
+		return "No bounties out right now.\n\nPlayers on a kill streak get a price on their head.\nTake one down and the bounty is yours, once you get it home."
+	rows.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return int(a.bounty) > int(b.bounty))
+	var lines: Array[String] = []
+	for i in mini(rows.size(), 6):
+		var row: Dictionary = rows[i]
+		var who := str(row.name).to_upper()
+		if str(row.get("clan", "")) != "":
+			who = "[%s] %s" % [row.clan, who]
+		var mark := "   THE MARKED" if bool(row.get("marked", false)) else ""
+		lines.append("%d   %s   %d scrip   %s%s" % [i + 1, who, int(row.bounty), str(row.world).to_upper(), mark])
+	lines.append("")
+	lines.append("Take one down and the bounty is yours, once you get it home.")
+	return "\n".join(lines)
 
 
 ## One line on how a world is doing, or "" when nothing is known.
@@ -126,7 +172,9 @@ func _process(delta: float) -> void:
 	_prompt.text = prompt_for(portal, routes)
 	if portal != null and Input.is_action_just_pressed("interact"):
 		var destination: String = portal.get_meta("destination", "")
-		if is_open(destination, routes):
+		if destination.begins_with("talk:"):
+			_talk(destination.trim_prefix("talk:"))
+		elif is_open(destination, routes):
 			portal_used.emit(destination)
 		else:
 			show_notice("That world is not running on this server.")
@@ -136,6 +184,15 @@ func _process(delta: float) -> void:
 	if target != null:
 		tag.text = gear_tag(target)
 		tag.global_position = target.global_position + Vector3(0, 2.35, 0)
+
+
+## Talks to someone of the place: their line goes up over their head.
+func _talk(id: String) -> void:
+	if locals == null or not is_instance_valid(locals):
+		return
+	var job: String = locals.talk(id, world_status, account)
+	if job != "":
+		contract_asked.emit("take", job)
 
 
 ## A line shown for a few seconds under the prompt.
