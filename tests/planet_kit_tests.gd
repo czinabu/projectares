@@ -15,6 +15,16 @@ static func run(t: Node) -> void:
 		t.check(type != null and type.id == id and type.display_name != "", "%s is a whole type" % id)
 		t.check(not type.calm.is_empty() and not type.storm.is_empty() and not type.terrain.is_empty()
 				and not type.ground.is_empty() and not type.sky.is_empty(), "%s has sky, light, ground and storm" % id)
+		for layer in Planet.LAYERS:
+			var folder := String(type.surfaces.get(layer, "missing"))
+			if folder == "missing":
+				t.check(false, "%s names a surface for its %s layer" % [id, layer])
+				continue
+			if folder != "":
+				for map in ["Color", "NormalGL"]:
+					var path := Planet.surface_path(folder, map)
+					t.check(ResourceLoader.exists(path) and load(path) is Texture2D,
+							"%s's %s surface %s has its %s map" % [id, layer, folder, map])
 		var kinds := ["boulder", "slab", "spire", "shard", "crystal", "stalk"]
 		for entry: Dictionary in type.props:
 			t.check(entry.get("kind", "") in kinds, "%s scatters only kinds the kit makes" % id)

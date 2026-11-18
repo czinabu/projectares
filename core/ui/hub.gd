@@ -40,6 +40,11 @@ const ShopPanel := preload("res://core/economy/shop_panel.gd")
 const Economy := preload("res://core/economy/economy.gd")
 const CraftPanel := preload("res://core/progression/craft_panel.gd")
 const InsurePanel := preload("res://core/economy/insure_panel.gd")
+const ItemCard := preload("res://core/ui/item_card.gd")
+const SafetyNets := preload("res://core/economy/safety_nets.gd")
+
+## How wide a station's screen is laid out: the list and the item card.
+const SCREEN_WIDTH := 1180.0
 
 ## Which sections of this screen each home base station shows. The stations
 ## themselves, with their titles, are `HomeBase.STATIONS`.
@@ -63,7 +68,12 @@ var _result: Label
 var _stash: Label
 var _loadout_box: VBoxContainer
 var _pickers := {}
-var _details := {}
+## The locker's rows by slot, and the card beside them.
+var _slot_rows := {}
+var _locker_card: ItemCard
+## The records board's stash list and its card.
+var _stash_rows: VBoxContainer
+var _stash_card: ItemCard
 var _mastery: MasteryPanel
 var _shop: ShopPanel
 var _craft: CraftPanel
@@ -95,17 +105,22 @@ func _ready() -> void:
 	_shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(_shade)
 
-	# Scrolls when the screen is taller than the window, centered otherwise.
+	# Scrolls when the screen is taller than the window, centered otherwise,
+	# with the way out kept in view under it.
+	var frame := VBoxContainer.new()
+	frame.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	frame.add_theme_constant_override("separation", 8)
+	add_child(frame)
 	var scroll := ScrollContainer.new()
-	scroll.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	add_child(scroll)
+	frame.add_child(scroll)
 	var center := CenterContainer.new()
 	center.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	center.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.add_child(center)
 	var box := VBoxContainer.new()
-	box.custom_minimum_size = Vector2(820, 0)
+	box.custom_minimum_size = Vector2(SCREEN_WIDTH, 0)
 	box.add_theme_constant_override("separation", 10)
 	center.add_child(box)
 
@@ -119,6 +134,11 @@ func _ready() -> void:
 	records.add_child(_stash_title)
 	_stash = _text("", 15, Color(0.85, 0.85, 0.85))
 	records.add_child(_stash)
+	var stash_split := _split(records, 300.0)
+	_stash_rows = stash_split[0]
+	_stash_card = stash_split[1]
+	_stash_card.notes = _stash_notes
+	_stash_card.empty_text = "Your stash is empty. Bring loot home to fill it."
 
 	var locker := _section(box, "loadout")
 	locker.add_child(_text("LOADOUT", 20, Color(1.0, 0.55, 0.25)))
@@ -127,25 +147,37 @@ func _ready() -> void:
 		+ "Bank loot at a depot to send it here without leaving.\n"
 		+ "Scrap gear is free to equip, costs nothing to lose and can never be stashed. An empty slot goes without.",
 		13, Color(0.65, 0.65, 0.65)))
-	_loadout_box = VBoxContainer.new()
-	_loadout_box.add_theme_constant_override("separation", 4)
-	locker.add_child(_loadout_box)
+	var locker_split := _split(locker, 430.0)
+	_loadout_box = locker_split[0]
+	_locker_card = locker_split[1]
+	_locker_card.notes = _locker_notes
+	_locker_card.empty_text = "Nothing in this slot: you go without one."
+	var group := ""
 	for slot: String in Loadout.SLOTS:
+		# The attachments go under their own heading, after the gear.
+		var heading := "ATTACHMENTS FOR THE PRIMARY" if slot in Loadout.ATTACHMENT_SLOTS else "GEAR"
+		if heading != group:
+			group = heading
+			_loadout_box.add_child(_text(heading, 14, Color(1.0, 0.55, 0.25)))
 		var row := HBoxContainer.new()
+		row.name = "Slot_%s" % slot
 		var name_label := _text(Loadout.SLOT_NAMES[slot], 16, Color(0.85, 0.85, 0.85))
 		name_label.custom_minimum_size = Vector2(170, 0)
 		name_label.autowrap_mode = TextServer.AUTOWRAP_OFF
 		row.add_child(name_label)
 		var picker := OptionButton.new()
+		picker.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		picker.custom_minimum_size = Vector2(330, 0)
 		picker.item_selected.connect(_on_picked.bind(slot))
+		# Browsing the list shows each choice on the card before it is picked.
+		picker.get_popup().id_focused.connect(func(option: int) -> void:
+			var index := picker.get_item_index(option)
+			if index >= 0:
+				_locker_card.show_item(str(picker.get_item_metadata(index))))
 		row.add_child(picker)
-		var detail := _text("", 13, Color(0.65, 0.65, 0.65))
-		detail.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		row.add_child(detail)
 		_loadout_box.add_child(row)
 		_pickers[slot] = picker
-		_details[slot] = detail
+		_slot_rows[slot] = row
 
 	_mastery = MasteryPanel.new()
 	_mastery.pick_requested.connect(func(track: String, variant_id: String) -> void:
@@ -183,11 +215,16 @@ func _ready() -> void:
 	_online_status = _text("", 14, Color(1.0, 0.8, 0.4))
 	_section(box, "status").add_child(_online_status)
 
+	var foot := CenterContainer.new()
+	frame.add_child(foot)
 	_close_button = Button.new()
 	_close_button.text = "Step away  (Esc)"
-	_close_button.custom_minimum_size = Vector2(0, 44)
+	_close_button.custom_minimum_size = Vector2(SCREEN_WIDTH, 44)
 	_close_button.pressed.connect(close)
-	box.add_child(_close_button)
+	foot.add_child(_close_button)
+	var under := Control.new()
+	under.custom_minimum_size = Vector2(0, 6)
+	frame.add_child(under)
 	refresh({})
 	close()
 
@@ -200,6 +237,26 @@ func _section(box: VBoxContainer, id: String) -> VBoxContainer:
 	box.add_child(section)
 	_sections[id] = section
 	return section
+
+
+## A list that scrolls on the left of `parent` and an item card on its
+## right: [the list's box, the card].
+func _split(parent: Control, height: float) -> Array:
+	var split := HBoxContainer.new()
+	split.add_theme_constant_override("separation", 14)
+	parent.add_child(split)
+	var scroll := ScrollContainer.new()
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.custom_minimum_size = Vector2(0, height)
+	split.add_child(scroll)
+	var list := VBoxContainer.new()
+	list.add_theme_constant_override("separation", 4)
+	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(list)
+	var card := ItemCard.new()
+	split.add_child(card)
+	return [list, card]
 
 
 ## Opens what a station in the home base offers (a key of `STATIONS`) on
@@ -320,10 +377,11 @@ func _refresh_gear() -> void:
 	_refresh_loadout()
 	var record: Variant = account if in_lobby() else Profile
 	var lifetime := int(record.get("renown")) if record.get("renown") != null else 0
-	_stash.text = "%s\nStash value %d   Drops %d   Left alive %d   Kills %d\n%s" % [
-		ItemDB.summarize(stash_items()), ItemDB.total_value(stash_items()),
+	_stash.text = "Stash value %d   Drops %d   Left alive %d   Kills %d\n%s" % [
+		ItemDB.total_value(stash_items()),
 		record.get("raids_played"), record.get("raids_extracted"), record.get("kills"),
 		renown_text(lifetime)]
+	_refresh_stash_list()
 	_shop.refresh()
 	_craft.refresh()
 	_insure.refresh()
@@ -368,9 +426,84 @@ func _refresh_loadout() -> void:
 			if id == worn:
 				selected = index
 		picker.select(selected)
-		var detail: Label = _details[slot]
-		detail.text = ItemDB.item_description(worn) if worn != "" else "Nothing: you go without one."
+		_locker_card.track(_slot_rows[slot], worn)
+	if _locker_card.item_id == "" or _locker_card.item_id not in current_loadout().values():
+		_locker_card.show_item(equipped("primary"))
+	else:
+		_locker_card.redraw()
 	_mastery.refresh()
+
+
+## What the locker's card says about an item: whether you wear it, how many
+## you have, and what it risks.
+func _locker_notes(id: String) -> Array:
+	var out: Array = []
+	var slot := Loadout.slot_of(id)
+	if slot != "" and equipped(slot) == id:
+		out.append(["Equipped. It goes with you on your next deploy.", ItemCard.GOOD])
+	else:
+		out.append(["Pick it in the %s list to equip it." % str(Loadout.SLOT_NAMES.get(slot, "slot")).to_lower(),
+				ItemCard.MUTED])
+	if StashRules.is_free(id):
+		out.append(["Free scrap kit: you always have one.", ItemCard.MUTED])
+	else:
+		out.append(["In your stash: %d" % stash_items().count(id), ItemCard.GOOD])
+		if str(_insured_item()) == id:
+			out.append(["Insured: it comes home if you die with it.", ItemCard.GOOD])
+		else:
+			out.append(["Die with it and it drops in your bag.", ItemCard.WARN])
+	return out
+
+
+## The item your insurance covers, or "".
+func _insured_item() -> String:
+	var held: Dictionary = SafetyNets.clean(account.get("insurance", {})) if in_lobby() else Profile.insurance_policy()
+	return str(held.get("item", ""))
+
+
+## The records board's stash, one row an item kind, rarest first.
+func _refresh_stash_list() -> void:
+	for child in _stash_rows.get_children():
+		_stash_rows.remove_child(child)
+		child.queue_free()
+	_stash_card.clear_rows()
+	var counts := {}
+	for id: Variant in stash_items():
+		if typeof(id) == TYPE_STRING:
+			counts[id] = int(counts.get(id, 0)) + 1
+	var ids: Array = counts.keys()
+	ids.sort_custom(func(a: String, b: String) -> bool:
+		if ItemDB.item_rarity(a) != ItemDB.item_rarity(b):
+			return ItemDB.item_rarity(a) > ItemDB.item_rarity(b)
+		return ItemDB.item_value(a) > ItemDB.item_value(b) if ItemDB.item_value(a) != ItemDB.item_value(b) else a < b)
+	if ids.is_empty():
+		_stash_rows.add_child(_text("Nothing stashed yet.", 15, Color(0.7, 0.7, 0.7)))
+	for id: String in ids:
+		var row := HBoxContainer.new()
+		row.name = "Stash_%s" % id
+		var name_label := _text(ItemDB.item_name(id), 15, ItemDB.RARITY_COLORS[ItemDB.item_rarity(id)])
+		name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row.add_child(name_label)
+		var count := _text("x%d" % counts[id], 15, Color(0.85, 0.85, 0.85))
+		count.custom_minimum_size = Vector2(60, 0)
+		row.add_child(count)
+		var worth := _text("%d" % (ItemDB.item_value(id) * int(counts[id])), 15, Color(1.0, 0.85, 0.4))
+		worth.custom_minimum_size = Vector2(80, 0)
+		worth.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		row.add_child(worth)
+		_stash_rows.add_child(row)
+		_stash_card.track(row, id)
+	_stash_card.settle()
+
+
+## What the records board's card says about a stashed item.
+func _stash_notes(id: String) -> Array:
+	var have := stash_items().count(id)
+	var out: Array = [["In your stash: %d, worth %d scrip." % [have, ItemDB.item_value(id) * have], ItemCard.GOOD]]
+	var slot := Loadout.slot_of(id)
+	if slot != "" and equipped(slot) == id:
+		out.append(["Equipped in your loadout.", ItemCard.GOOD])
+	return out
 
 
 func _on_picked(index: int, slot: String) -> void:
