@@ -1873,9 +1873,13 @@ func _update_frame() -> void:
 	if id == _frame_id and (id == "" or (not _frame_parts.is_empty() and is_instance_valid(_frame_parts[0]))):
 		return
 	_frame_id = id
-	# Under a frame the body wears its undersuit.
+	# Under a frame the body wears its undersuit, its cuff lights in the
+	# frame's own glow (none on scrap).
+	var cuff: Color = FRAME_STYLES[frame_look(id)]["glow"] if id != "" else Color.BLACK
 	for mat in _materials:
 		mat.set_shader_parameter("suit", 1.0 if id != "" else 0.0)
+		if id != "":
+			mat.set_shader_parameter("suit_trim", cuff)
 	for part in _frame_parts:
 		if is_instance_valid(part):
 			part.queue_free()
