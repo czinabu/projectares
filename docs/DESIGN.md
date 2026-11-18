@@ -1830,9 +1830,9 @@ an expedition standing (surveys, sites cleared, bosses) is added beside it,
 with titles and cosmetics. A profile page shows both beside total mastery and
 gates nothing.
 
-**Safety nets.** Salvage pays back about 30 to 50% of a lost crafted item's
-parts, and one insured item comes back after a death in Ashfront (cost and
-cooldown open).
+**Safety nets.** Salvage pays back 40% of a lost crafted item's parts, and
+one insured item comes back after a death (see "Safety nets" below for what
+is built).
 
 **Contracts** gain a world tag: expedition and warzone versions of dailies and
 weeklies. The existing rules stay (only a sign-out counts, no player kills).
@@ -2030,9 +2030,29 @@ Losses should sting without making people quit:
 - **Mk1 is always free.** A base-level kit of every slot is always there,
   so nobody is ever locked out of a raid.
 - **One insured item.** Each player can insure one item; if it is lost it
-  comes back. Details TBD (cost, cooldown, which items qualify).
-- **Salvage on loss.** Losing crafted gear pays back salvage toward
-  crafting it again (amount TBD), and the blueprint itself is never lost.
+  comes back. Caleb's picks (18 November 2026), numbers to tune by play:
+  any gear that goes in a loadout slot can be insured, Mk1 to Mk3, but not
+  the free scrap kit, heavy weapons, artifacts or vehicles; a policy costs
+  25% of the item's value, paid up front; one is held at a time. An insured
+  item on the body at a death is recalled home instead of dropping in the
+  bag, so the killer never loots it and the server never makes a second
+  copy of anything (no feeding the market by dying to a friend). A claim
+  spends the policy and the next one waits 12 hours. Selling or trading the
+  item, or losing it some other way, lets the policy lapse. It is taken out
+  on the fabricator's screen in the base, beside the crafting.
+- **Salvage on loss.** Losing crafted gear pays back 40% of its recipe's
+  parts (rounded, at least one, rarest parts first) toward crafting it
+  again, and the blueprint itself is never lost. Never the scrip fee or the
+  upgrade data, and only for gear from your stash lost with the body: not
+  what you dropped or threw first, nor anything picked up in the world.
+
+  What is built: `core/economy/safety_nets.gd` (the rules), decided by the
+  authority's `Raid` at a death (the result's "recalled", "salvaged" and
+  "salvage") and settled by `StashService.settle` online and
+  `Raid.apply_result` solo. The watch's death report and a Claims Office
+  message on the phone say what came home. Still to come: the recall's
+  light on the body for everyone near, a seal on the insured item's display
+  in the base, and its mark on the watch's pack list.
 
 ### Status
 
@@ -2131,15 +2151,12 @@ Caleb's calls, still open:
     table in section 10.)
   - How often blueprints and upgrade data drop, and from what.
   - The mastery level that gates Mk2, and whether Mk3 has a higher gate.
-  - Insurance: its cost, cooldown, and which items can be insured.
-  - How much salvage a lost crafted item pays back.
   - Contract and bounty payouts, and how a bounty's size grows.
   - Which prestige vehicles and rigs come from which feats.
 - Two worlds, one loop (section 10), proposed numbers to confirm:
   - Should Ashfront drop any parts at all, or only scrip and upgrade data?
   - What share of Mk3's upgrade data may Frostline supply?
   - Marketplace fees, price bands and the daily trade cap.
-  - Insurance cost and the salvage share.
   - Whether expedition standing earns titles only, or cosmetics too.
 
 ## 14. Online and servers
