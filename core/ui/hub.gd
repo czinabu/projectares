@@ -41,6 +41,7 @@ const Economy := preload("res://core/economy/economy.gd")
 const CraftPanel := preload("res://core/progression/craft_panel.gd")
 const InsurePanel := preload("res://core/economy/insure_panel.gd")
 const ItemCard := preload("res://core/ui/item_card.gd")
+const TerminalStyle := preload("res://core/ui/terminal_style.gd")
 const SafetyNets := preload("res://core/economy/safety_nets.gd")
 
 ## How wide a station's screen is laid out: the list and the item card.
@@ -56,7 +57,7 @@ const STATIONS := {
 	"trader": {"sections": ["shop"]},
 	# The fabricator on the gunsmith bench (`HomeBase.CraftConsole`).
 	# Insurance is taken out there too, beside the crafting (`InsurePanel`).
-	"craft": {"sections": ["craft", "insure"], "title": "Fabricator"},
+	"craft": {"sections": ["craft", "insure"], "title": "Fabricator", "prompt": "Craft from your blueprints"},
 }
 
 ## Your account on the server you are connected to (see
@@ -88,7 +89,9 @@ var station := ""
 var _sections := {}
 var _title: Label
 var _backdrop: TextureRect
-var _shade: ColorRect
+var _shade: Control
+## The small line over the title: where this screen is.
+var _kicker: Label
 var _close_button: Button
 
 
@@ -100,15 +103,17 @@ func _ready() -> void:
 	_backdrop.stretch_mode = TextureRect.STRETCH_SCALE
 	_backdrop.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(_backdrop)
-	_shade = ColorRect.new()
-	_shade.color = Color(0.025, 0.03, 0.035)
-	_shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	# At a station: a lit terminal's glass, in the house style.
+	theme = TerminalStyle.theme()
+	_shade = TerminalStyle.Backdrop.new()
 	add_child(_shade)
 
 	# Scrolls when the screen is taller than the window, centered otherwise,
 	# with the way out kept in view under it.
 	var frame := VBoxContainer.new()
 	frame.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	# Clear of the glass's edge and its corner brackets.
+	frame.offset_top = 18
 	frame.add_theme_constant_override("separation", 8)
 	add_child(frame)
 	var scroll := ScrollContainer.new()
@@ -124,6 +129,9 @@ func _ready() -> void:
 	box.add_theme_constant_override("separation", 10)
 	center.add_child(box)
 
+	_kicker = _text("", 13, TerminalStyle.CYAN)
+	_kicker.visible = false
+	box.add_child(_kicker)
 	_title = _text("PROJECT ARES", 40, Color(1.0, 0.55, 0.25))
 	box.add_child(_title)
 
@@ -226,6 +234,7 @@ func _ready() -> void:
 	under.custom_minimum_size = Vector2(0, 6)
 	frame.add_child(under)
 	refresh({})
+	TerminalStyle.dress(self)
 	close()
 
 
@@ -282,6 +291,9 @@ func open_station(id: String, also: Array = []) -> void:
 	_show_only(sections)
 	_title.text = " AND ".join(names).to_upper()
 	_title.add_theme_font_size_override("font_size", 30)
+	var prompt := str(HomeBase.STATIONS.get(id, STATIONS[id]).get("prompt", STATIONS[id].get("prompt", "")))
+	_kicker.text = "HOME BASE  //  %s" % prompt.to_upper() if prompt != "" else "HOME BASE"
+	_kicker.visible = true
 	_backdrop.visible = false
 	_shade.visible = true
 	_close_button.visible = true
@@ -298,6 +310,7 @@ func show_travel() -> void:
 	_show_only(["status"])
 	_title.text = "PROJECT ARES"
 	_title.add_theme_font_size_override("font_size", 40)
+	_kicker.visible = false
 	_backdrop.visible = true
 	_shade.visible = false
 	_close_button.visible = false

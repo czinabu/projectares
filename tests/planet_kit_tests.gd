@@ -29,6 +29,22 @@ static func run(t: Node) -> void:
 		for entry: Dictionary in type.props:
 			t.check(entry.get("kind", "") in kinds, "%s scatters only kinds the kit makes" % id)
 
+	# A world takes a planet's rule defaults and can still set its own.
+	var world := WorldDef.new()
+	t.check(world.planet == "" and world.planet_type() == null and is_equal_approx(world.surface_grip(Vector3.ZERO), 1.0),
+			"a world stands on no planet by default and keeps dry ground")
+	world.take_planet("glacier")
+	var ice := PlanetTypes.get_type("glacier")
+	t.check(world.planet == "glacier" and world.planet_type() != null and world.planet_type().id == "glacier",
+			"take_planet names the world's planet")
+	t.check(is_equal_approx(world.cold, ice.rules["cold"]) and is_equal_approx(world.shot_carry, ice.rules["shot_carry"])
+			and is_equal_approx(world.surface_grip(Vector3(40.0, 0.0, -12.0)), ice.rules["surface_grip"]),
+			"and gives it the planet's cold, shot carry and grip")
+	world.cold = 3.0
+	t.check(is_equal_approx(world.cold, 3.0), "a world's own setting after it wins")
+	world.take_planet("nowhere")
+	t.check(world.planet == "glacier", "an unknown planet changes nothing")
+
 	# The same ground for the same point, whichever copy asks and on any thread.
 	var recipe: Dictionary = PlanetTypes.get_type("glacier").terrain
 	var a := PlanetTerrain.new(recipe, 7)

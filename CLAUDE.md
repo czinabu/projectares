@@ -211,6 +211,18 @@ without Caleb, and update the gap list when a PR closes a row.
   (`Look.weather_cover`, `soften_weather`: gone by about 70 m at the heart,
   Caleb's pick). Told in the world only: the visor's heading tape
   ("storm"), the watch map's ring and zone line, the plaza's heat signs.
+- The planet kit (DESIGN.md "Planet kit", `core/world/planet/`): a
+  `PlanetType` is a kind of planet as data (sky, calm and storm light,
+  ground shape and surface, horizon, weather, props) and never names a
+  world. A world stands on one with `WorldDef.take_planet(id)` first in
+  its `_init`, which sets `WorldDef.planet` and the type's rule defaults
+  (`PlanetType.rules`: `cold`, `shot_carry`, `planet_grip`, which
+  `surface_grip` falls back to); only those and the ground's shape
+  (`PlanetTerrain`, thread safe) reach the simulation, the rest is view
+  only through `Planet` and a no-op headless. Each ground layer wears a
+  CC0 scan named in `PlanetType.surfaces` (detail only: the recipe's
+  colours keep the hue). Check by eye with `planet_check.tscn -- <dir>
+  [type ids]`.
 - Open ground is a `Terrain` (`core/world/terrain.gd`): a heightfield with
   collision and a mesh that knows nothing about any world. A map on one
   offers `ground_height(x, z)` and the `Raid` stands spawning actors on it
@@ -1668,7 +1680,15 @@ without Caleb, and update the gap list when a PR closes a row.
   (`facts`) and the screen's own notes (price, what you are short of).
   A new list hands each row over with `card.track(row, id)`; a new kind
   of item gets a line in `ItemCard.KINDS` and its facts. Check by eye with
-  `visual_check.tscn -- <dir> --panels-only`.
+  `visual_check.tscn -- <dir> --panels-only`. Those screens wear the
+  terminal style (`core/ui/terminal_style.gd`, view only): the station
+  screens (`Hub`) and the Concourse's terminals (`Main.ShopView`) set its
+  `theme()` on their root, stand on its `Backdrop` (a lit terminal's
+  glass: grid, scanlines, a slow sweep, amber corner brackets) and call
+  `dress(root)` once built, which lights every title as a heading. Plates
+  have cut corners (`TerminalStyle.plate`), amber where you can act, cyan
+  where something is shown; a new screen of this kind uses them, never
+  plain boxes.
 - The watch and the phone split the job (Caleb's rule, revised: the watch no
   longer carries vitals, heat and ammo; see DESIGN.md section 3). Vitals,
   flight heat and ammo are always in view on the visor and the gear (health

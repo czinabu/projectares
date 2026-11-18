@@ -1008,7 +1008,12 @@ and the rocks and growth scattered on it (`PlanetProps`, made in code, one
 `MultiMesh` per variant). A world names a type and keeps its own places and
 rules; two worlds on one type look like one planet. Only the ground's
 shape and a type's rule defaults (cold, grip, shot carry) reach the
-simulation; the rest is view only. Six types are drafted: Ashland
+simulation; the rest is view only. A world stands on one with
+`WorldDef.take_planet(id)` at the top of its `_init`, which names it
+(`WorldDef.planet`) and gives the world the type's rule defaults (`cold`,
+`shot_carry`, and the ground's grip, `planet_grip`, which a world's own
+`surface_grip` falls back to); whatever the world sets after that is its
+own. Six types are drafted: Ashland
 (Ashfront), Glacier (Frostline), Salt Flat (Meridian), and three new ones,
 Basalt Rift, Dune Sea and Spore Marsh. Check by eye with
 `planet_check.tscn -- <dir> [type ids]`. No world uses it yet: each moves in
