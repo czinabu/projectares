@@ -101,7 +101,8 @@ without Caleb, and update the gap list when a PR closes a row.
   tonnes (its `weight` stat; hovering never counts). Only the authority's
   `Raid._tick_ice` strains it, cracks it (`Raid.ice_cracked`, stages 1 and
   2 a warning, 3 the break), sinks the vehicle through `remove_vehicle`
-  and opens a hole (`Raid.ice_holes`) that takes the body heat of anyone in
+  (with `ice_keeps_vehicle`, Frostline's, back onto the thrower's or the
+  driver's watch as a toy) and opens a hole (`Raid.ice_holes`) that takes the body heat of anyone in
   it, sinks anything driven into it and freezes over after
   `ice_refreeze`. Clients get the cracks and holes from `NetSession`
   (`_ice_crack`, `_ice_holes`) and draw them with `IceView` (view only).

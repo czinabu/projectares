@@ -317,9 +317,11 @@ goes through after about three and a half seconds, a mech (6 t) after under
 two, so a rover can cross the middle at speed but never stop on it. The ice
 cracks out loud twice on the way (at 40% and 70%), white cracks spreading
 under the wheels, and strain eases off again on sound ice. When it gives
-way the vehicle sinks (lost, like any vehicle left behind) and its riders
-are in the water: a hole of open water 3.5 m across, ringed with broken
-plates, that takes all the body heat of anyone standing in it and sinks
+way the vehicle sinks and its riders are in the water. In Frostline the
+vehicle is not lost (Caleb's call, `ice_keeps_vehicle`): the watch of
+whoever threw it, else its driver's, pulls it back out as a toy, so the
+price is the soaking and the walk. The hole is open water 3.5 m across,
+ringed with broken plates, that takes all the body heat of anyone standing in it and sinks
 anything driven into it, until it freezes over after `ice_refreeze` (two
 and a half minutes). Only the authority decides it (`Raid._tick_ice`);
 clients are sent the cracks and the open holes (`NetSession._ice_crack`,

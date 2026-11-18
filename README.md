@@ -614,7 +614,7 @@ the still, cold air a gunshot carries twice as far, to people and to the
 bots alike. The middle of the frozen lake is thin, darker ice: on foot or
 on a bike it holds, but a rover or a mech that lingers on it cracks it
 (you hear it twice) and goes through, and whoever rode it lands in the
-freezing water. Whiteouts are planned in DESIGN.md section 2, "Frostline".
+freezing water (your watch pulls the vehicle back out). Whiteouts are planned in DESIGN.md section 2, "Frostline".
 
 ## Run the tests
 
