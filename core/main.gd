@@ -2729,7 +2729,7 @@ class ShopView:
 		var margin := MarginContainer.new()
 		margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 		for side: String in ["left", "right"]:
-			margin.add_theme_constant_override("margin_" + side, 190)
+			margin.add_theme_constant_override("margin_" + side, 50)
 		for side: String in ["top", "bottom"]:
 			margin.add_theme_constant_override("margin_" + side, 40)
 		add_child(margin)
