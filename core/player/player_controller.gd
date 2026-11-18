@@ -510,7 +510,11 @@ func click_watch() -> bool:
 	if is_watch_on("map") and _is_open("map") and not map_targets.is_empty():
 		map_target_clicked.emit(clampi(map_pick, 0, map_targets.size() - 1))
 		return true
-	if (is_watch_on("standing") or is_watch_on("pack")) and watch_open != "":
+	if is_watch_on("pack") and _is_open("pack"):
+		# The pack list: a click puts on the picked piece of gear.
+		take_picked_from_pack()
+		return true
+	if is_watch_on("standing") and watch_open != "":
 		# Pages to read: a click has nothing more to do, and never shoots.
 		return true
 	if is_on_race() and _is_open("contract"):
@@ -533,7 +537,8 @@ func watch_takes_fire() -> bool:
 	return (watch_open == "" and watch_entries(focused_watch_icon()) > 1) or is_picking_toys() or pack_target() != null or is_picking_weapons() or is_on_artifact() \
 			or is_watch_on("ping") or is_watch_on("portal") or is_on_sign_out() \
 			or (is_watch_on("map") and not map_targets.is_empty()) \
-			or (watch_open in ["standing", "pack"] and is_watch_on(watch_open)) or is_on_race()
+			or (watch_open == "standing" and is_watch_on(watch_open)) \
+			or (is_watch_on("pack") and _is_open("pack") and not actor.inventory.items.is_empty()) or is_on_race()
 
 
 ## True while the raised watch is on the sign-out icon out in a world, where
@@ -580,6 +585,31 @@ func take_picked_weapon() -> void:
 			summon_requested.emit(entry.id)
 			return
 		summon_requested.emit(entry.id)
+	wrist_raised = false
+	watch_open = ""
+
+
+## The pack list's click (Caleb's call: loot it, then put it on in the
+## field): asks the world to put on the picked item if it is gear the watch
+## can put on (`Loadout.wearable_from_pack`), the worn one going into the
+## pack in its place, and lowers the wrist. Anything else in the pack (loot,
+## heals, an artifact or attachment) is only read here. The world decides
+## and refuses with a notice (`Raid.summon`).
+func take_picked_from_pack() -> void:
+	var items := actor.inventory.items
+	if items.is_empty():
+		return
+	var id: String = items[clampi(pack_pick, 0, items.size() - 1)]
+	if not Loadout.wearable_from_pack(id):
+		Sfx.play("watch_refused", null, -6.0)
+		return
+	var raid := Raid.of(actor)
+	if raid != null and raid.summon_wait(actor) > 0.0:
+		# Still resting: a low buzz, and the watch stays up to show it.
+		Sfx.play("watch_refused", null, -6.0)
+		summon_requested.emit(id)
+		return
+	summon_requested.emit(id)
 	wrist_raised = false
 	watch_open = ""
 

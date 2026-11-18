@@ -11,9 +11,12 @@ extends VBoxContainer
 ## Load with `const CraftPanel := preload("res://core/progression/craft_panel.gd")`.
 
 const Crafting := preload("res://core/progression/crafting.gd")
+const ItemCard := preload("res://core/ui/item_card.gd")
 
 const TITLE_COLOR := Color(1.0, 0.55, 0.25)
 const SCRIP_COLOR := Color(1.0, 0.85, 0.4)
+## How tall the list is before it scrolls.
+const LIST_HEIGHT := 300.0
 
 ## Online: the server decides, so nothing changes until `account` is updated.
 signal craft_requested(item_id: String)
@@ -27,6 +30,8 @@ var _scrip: Label
 var _known: Label
 var _rows: VBoxContainer
 var _message: Label
+## The card beside the list: what the recipe makes and what it takes.
+var card: ItemCard
 
 
 func _ready() -> void:
@@ -44,12 +49,24 @@ func _ready() -> void:
 		13, Color(0.65, 0.65, 0.65), true))
 	_known = _label("", 14, Color(0.85, 0.85, 0.85), true)
 	add_child(_known)
-	_rows = VBoxContainer.new()
-	_rows.add_theme_constant_override("separation", 3)
-	add_child(_rows)
 	_message = _label("", 14, Color(1.0, 0.8, 0.4))
 	_message.visible = false
 	add_child(_message)
+	var split := HBoxContainer.new()
+	split.add_theme_constant_override("separation", 14)
+	add_child(split)
+	var scroll := ScrollContainer.new()
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.custom_minimum_size = Vector2(0, LIST_HEIGHT)
+	split.add_child(scroll)
+	_rows = VBoxContainer.new()
+	_rows.add_theme_constant_override("separation", 3)
+	_rows.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(_rows)
+	card = ItemCard.new()
+	card.notes = notes_for
+	split.add_child(card)
 	refresh()
 
 
@@ -111,6 +128,7 @@ func refresh() -> void:
 		# Taken out at once, so the new rows can keep their names.
 		_rows.remove_child(child)
 		child.queue_free()
+	card.clear_rows()
 	for id in Crafting.ids():
 		var known: bool = Crafting.blueprint_of(id) in blueprints()
 		var why := blocked(id)
@@ -119,8 +137,8 @@ func refresh() -> void:
 		var name_label := _label(ItemDB.item_name(id), 15, ItemDB.RARITY_COLORS[ItemDB.item_rarity(id)])
 		name_label.custom_minimum_size = Vector2(190, 0)
 		row.add_child(name_label)
-		var detail := _label(cost_text(id) if known else "Blueprint not found yet. It is out there in the war.",
-				13, Color(0.7, 0.7, 0.7), true)
+		var detail := _label(status_text(id), 13, Color(0.7, 0.7, 0.7) if why == "" or not known
+				else ItemCard.WARN, true)
 		detail.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		row.add_child(detail)
 		var button := Button.new()
@@ -133,6 +151,37 @@ func refresh() -> void:
 		row.add_child(button)
 		row.modulate = Color.WHITE if known else Color(1, 1, 1, 0.5)
 		_rows.add_child(row)
+		card.track(row, id)
+	card.settle()
+
+
+## The short line on a recipe's row: ready, what is short, or not known.
+func status_text(item_id: String) -> String:
+	if Crafting.blueprint_of(item_id) not in blueprints():
+		return "Blueprint not found yet."
+	var why := blocked(item_id)
+	return "Ready to craft for %d scrip." % Crafting.fee(item_id) if why == "" else why
+
+
+## What the card says about a recipe: the blueprint, each part against what
+## the stash holds, the fee, and where to find a missing blueprint.
+func notes_for(item_id: String) -> Array:
+	var out: Array = []
+	var blueprint := Crafting.blueprint_of(item_id)
+	if blueprint not in blueprints():
+		out.append(["Needs the %s, not found yet. %s" % [ItemDB.item_name(blueprint),
+				"Expedition blueprints turn up out in the cold." if ItemDB.has_tag(blueprint, "expedition")
+				else "Blueprints turn up out in the war."], ItemCard.WARN])
+		return out
+	out.append(["Blueprint known: %s" % ItemDB.item_name(blueprint), ItemCard.GOOD])
+	var need := Crafting.needs(item_id)
+	for part: String in need:
+		var have := stash_items().count(part)
+		out.append(["%d %s: you have %d" % [need[part], ItemDB.item_name(part), have],
+				ItemCard.GOOD if have >= int(need[part]) else ItemCard.WARN])
+	var fee := Crafting.fee(item_id)
+	out.append(["Fee: %d scrip" % fee, ItemCard.GOOD if scrip() >= fee else ItemCard.WARN])
+	return out
 
 
 func _label(text: String, font_size: int, color: Color, wrap := false) -> Label:

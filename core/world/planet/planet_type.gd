@@ -25,6 +25,11 @@ var storm := {}
 var terrain := {}
 ## `planet_ground.gdshader`'s uniforms.
 var ground := {}
+## The scanned surface each ground layer wears ("base", "rock", "cap",
+## "patch"): a folder under `assets/textures` holding `Color.jpg` and
+## `NormalGL.jpg`, or "" for the layer's procedural look alone (lava, water).
+## The scan only adds detail: the layer's colour still comes from `ground`.
+var surfaces := {"base": "", "rock": "", "cap": "", "patch": ""}
 ## The far ring of land round a map (`Planet.horizon`): how far it reaches
 ## and how high its mountains stand at the far edge.
 var horizon := {"reach": 2600.0, "peaks": 120.0}

@@ -51,7 +51,7 @@ const MAX_HEAL_ITEMS := 2
 ## Seconds a weapon takes to materialize out of the pack through the watch,
 ## by the first of these tags it carries (heavier is slower). An item's own
 ## `summon_time` stat wins.
-const SUMMON_TIMES := [["armor", 1.5], ["helmet", 0.5], ["power", 1.6], ["sidearm", 0.5], ["one_handed", 0.6], ["two_handed", 1.1], ["marksman", 1.3],
+const SUMMON_TIMES := [["armor", 1.5], ["flight_rig", 1.3], ["helmet", 0.5], ["ability", 0.5], ["power", 1.6], ["sidearm", 0.5], ["one_handed", 0.6], ["two_handed", 1.1], ["marksman", 1.3],
 		["firearm", 0.9]]
 ## The watch's wait after a summon, as a multiple of the materialize time.
 const SUMMON_COOLDOWN_MULT := 6.0
@@ -274,41 +274,16 @@ static func refit(actor: Actor, kit: Array) -> void:
 		have = actor.weapons[heavy_at].item_id
 	if heavy != have:
 		set_power(actor, heavy, -1, -1, false)
-	# The frame scales what the rig set up, so it comes off first whenever
-	# either changes, and goes back on last.
+	# The rig goes on round the worn frame (`wear_rig`), then the frame.
 	var rig := _first_tagged(kit, "flight_rig")
 	var frame := _first_tagged(kit, "armor")
-	var rig_now := actor.flight.item_id if actor.flight.enabled else ""
-	var frame_now := actor.frame_id
-	if rig != rig_now or frame != frame_now:
-		var armor_left := -1.0
-		if frame_now != "":
-			armor_left = wear_frame(actor, "")
-		if rig != rig_now:
-			if rig_now != "":
-				actor.gear_items.erase(rig_now)
-			_reset_to_new(actor.flight)
-			if rig != "":
-				actor.flight.enabled = true
-				actor.flight.item_id = rig
-				actor.flight.display_name = ItemDB.item_name(rig)
-				_apply_stats(actor.flight, ItemDB.item_stats(rig))
-				actor.flight.fill()
-				actor.gear_items.append(rig)
-		if frame != "":
-			wear_frame(actor, frame, armor_left if frame == frame_now else -1.0)
+	if rig != (actor.flight.item_id if actor.flight.enabled else ""):
+		wear_rig(actor, rig, false)
+	if frame != actor.frame_id:
+		wear_frame(actor, frame)
 	var chip := _first_tagged(kit, "ability")
-	var chip_now := actor.ability.item_id if actor.ability.enabled else ""
-	if chip != chip_now:
-		if chip_now != "":
-			actor.gear_items.erase(chip_now)
-		_reset_to_new(actor.ability)
-		if chip != "":
-			actor.ability.enabled = true
-			actor.ability.item_id = chip
-			actor.ability.display_name = ItemDB.item_name(chip)
-			_apply_stats(actor.ability, ItemDB.item_stats(chip))
-			actor.gear_items.append(chip)
+	if chip != (actor.ability.item_id if actor.ability.enabled else ""):
+		wear_ability(actor, chip, false)
 	var relic := _first_tagged(kit, "artifact")
 	var relic_now := actor.artifact.item_id if actor.artifact.enabled else ""
 	if relic != relic_now:
@@ -409,6 +384,73 @@ static func wear_helmet(actor: Actor, id: String) -> void:
 		_apply_stats(actor.visor, ItemDB.item_stats(id))
 		actor.gear_items.append(id)
 	actor.helmet_changed.emit(id)
+
+
+## Puts flight rig `id` on the actor, or with "" takes the worn one off. The
+## worn frame scales what a rig sets up, so its scaling comes off first and
+## goes back on round the new rig (its armor untouched). With `in_use` (a
+## swap from the pack mid-life, `Raid.swap_worn`) the heat the old rig had
+## carries over to the new one, so a swap is no free cool-down. The one
+## replaced leaves `gear_items`; where it goes is the caller's job. Emits
+## `Actor.rig_changed`, which `NetSession` passes on; the skin follows the
+## rig by itself.
+static func wear_rig(actor: Actor, id: String, in_use := true) -> void:
+	if id != "" and not ItemDB.has_tag(id, "flight_rig"):
+		return
+	var frame_stats := ItemDB.item_stats(actor.frame_id) if actor.frame_id != "" else {}
+	if not frame_stats.is_empty():
+		_scale_frame(actor, frame_stats, true)
+	var heat := actor.flight.heat if actor.flight.enabled else 0.0
+	var overheated := actor.flight.overheated if actor.flight.enabled else false
+	if actor.flight.enabled:
+		actor.gear_items.erase(actor.flight.item_id)
+	_reset_to_new(actor.flight)
+	if id != "":
+		actor.flight.enabled = true
+		actor.flight.item_id = id
+		actor.flight.display_name = ItemDB.item_name(id)
+		_apply_stats(actor.flight, ItemDB.item_stats(id))
+		actor.flight.fill()
+		if in_use:
+			actor.flight.heat = heat
+			actor.flight.overheated = overheated
+		actor.gear_items.append(id)
+	if not frame_stats.is_empty():
+		_scale_frame(actor, frame_stats, false)
+	actor.rig_changed.emit(id)
+
+
+## Puts ability chip `id` in, or with "" takes the one in out. With `in_use`
+## (a swap from the pack mid-life) the new chip starts on its own full
+## cooldown, so swapping chips never skips one. The one replaced leaves
+## `gear_items`. Emits `Actor.ability_changed`, which `NetSession` passes on.
+static func wear_ability(actor: Actor, id: String, in_use := true) -> void:
+	if id != "" and not ItemDB.has_tag(id, "ability"):
+		return
+	if actor.ability.enabled:
+		actor.gear_items.erase(actor.ability.item_id)
+	_reset_to_new(actor.ability)
+	if id != "":
+		actor.ability.enabled = true
+		actor.ability.item_id = id
+		actor.ability.display_name = ItemDB.item_name(id)
+		_apply_stats(actor.ability, ItemDB.item_stats(id))
+		if in_use:
+			actor.ability.cooldown_left = actor.ability.cooldown
+		actor.gear_items.append(id)
+	actor.ability_changed.emit(id)
+
+
+## True if item `id`, carried in the pack, can be put on from the watch's
+## pack list or weapon carousel mid-life (`Raid.summon`): a weapon, a helmet,
+## an armor frame, a flight rig or an ability chip. Never an artifact (one
+## per outing, DESIGN.md section 6), an attachment (the gunsmith bench's
+## job) or a heavy weapon (it never sits in a pack).
+static func wearable_from_pack(id: String) -> bool:
+	if not ItemDB.has_item(id):
+		return false
+	return summonable(id) or ItemDB.has_tag(id, "helmet") or ItemDB.has_tag(id, "armor") \
+			or ItemDB.has_tag(id, "flight_rig") or ItemDB.has_tag(id, "ability")
 
 
 ## True for a primary that takes attachments: a firearm in the primary slot

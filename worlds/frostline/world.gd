@@ -18,8 +18,12 @@ const EXPOSED_OVER := 22.0
 const EXPOSED_MULT := 1.5
 ## Inside the Engine (DESIGN.md "The Engine's inside") the wind is gone but
 ## the cold is not: the Drum Hall is gentler than the glacier head outside,
-## and it gets colder the deeper you go (the hall, then the Shaft).
-const ENGINE_COLD := [0.8, 1.1]
+## and it gets colder the deeper you go (`MapScript.engine_depth`: the hall,
+## the Shaft and the Coil Galleries, then the Descent).
+const ENGINE_COLD := [0.8, 1.1, 1.3]
+## Wading the Coil Galleries' coolant channel: bitter, so the dry walks round
+## it are worth taking.
+const COOLANT_COLD := 2.6
 ## How much grip a wheel gets on Frostline's snow and on its bare ice
 ## (`WorldDef.surface_grip`): wheels break loose and slide.
 const SNOW_GRIP := 0.75
@@ -192,6 +196,9 @@ func _init() -> void:
 	warlord_artifact_chance = 0.0
 	pod_artifact_chance = 0.0
 	bot_count = 9
+	# The Engine's levels go down under the valley floor: the world ends
+	# below the Descent's foot.
+	void_y = MapScript.engine_bed() + MapScript.ENGINE_AXIS + MapScript.DESCENT_FLOOR - 15.0
 	depot_hold_time = 6.0
 	# The cold: about two and a half minutes from warm to empty at the
 	# river mouth, a minute and a quarter at the glacier head.
@@ -289,8 +296,9 @@ func sheltered_at(pos: Vector3) -> bool:
 ## Engine, out of the wind, colder the deeper you go.
 func cold_at(pos: Vector3) -> float:
 	if MapScript.inside_engine(pos):
-		var below := pos.y < MapScript.engine_bed() - 2.0
-		return ENGINE_COLD[1 if below else 0]
+		if MapScript.on_coolant(pos):
+			return COOLANT_COLD
+		return ENGINE_COLD[clampi(MapScript.engine_depth(pos), 0, 2)]
 	var rate: float = ZONE_COLD[clampi(zone_at(pos), 0, 2)]
 	if pos.y - MapScript.floor_at(pos.z) > EXPOSED_OVER:
 		rate *= EXPOSED_MULT
