@@ -448,7 +448,8 @@ static func watch_slots(p_raid: Raid, p: Actor, picked_toy := 0, pack_name := ""
 ##   "sites": [{"at", "held", "contested"}], "depots", "outposts", "pings":
 ##   [Vector2], "war": Vector2 or null, "zones": PackedByteArray of
 ##   `MAP_GRID` x `MAP_GRID` tiers (row by row, north first) or empty when
-##   the world has one zone, "half": the half width shown, in metres.
+##   the world has one zone, "half": the half width shown, in metres,
+##   "pushes": [{"from", "to"}], an army on its way to a site (`Raid.pushes`).
 static func map_marks(p_raid: Raid, p: Actor, pings: Array[Vector3] = []) -> Dictionary:
 	if p_raid == null or p == null or not is_instance_valid(p) or p_raid.world == null:
 		return {}
@@ -477,8 +478,13 @@ static func map_marks(p_raid: Raid, p: Actor, pings: Array[Vector3] = []) -> Dic
 		"half": half,
 		"middle": middle,
 		"sites": [], "depots": [], "outposts": [], "pings": [], "war": null, "storm": null,
-		"zones": PackedByteArray(),
+		"zones": PackedByteArray(), "pushes": [],
 	}
+	for push in p_raid.live_pushes():
+		var site := int(push.site)
+		if site >= 0 and site < p_raid.strongpoints.size():
+			marks.pushes.append({"from": to_map.call(push.from),
+					"to": to_map.call(p_raid.strongpoints[site].global_position)})
 	for point in p_raid.strongpoints:
 		marks.sites.append({"at": to_map.call(point.global_position), "held": p_raid.holds(p, point),
 				"contested": point.contested})
@@ -2407,6 +2413,14 @@ void fragment() {
 				var b := TAU * (i + 1) / 24.0
 				line.call(middle3 + Vector3(cos(a), 0.03, sin(a)) * r * w * 0.5,
 						middle3 + Vector3(cos(b), 0.03, sin(b)) * r * w * 0.5, Color(0.95, 0.72, 0.55, 0.8))
+		for push: Dictionary in marks.get("pushes", []):
+			var tail: Vector3 = ground.call(push.from) + Vector3(0, 0.03 * w, 0)
+			var head: Vector3 = ground.call(push.to) + Vector3(0, 0.03 * w, 0)
+			line.call(tail, head, Color(warm, 0.9))
+			var back := (tail - head).normalized() * 0.05 * w
+			var side := back.cross(Vector3.UP).normalized() * 0.03 * w
+			line.call(head, head + back + side, Color(warm, 0.9))
+			line.call(head, head + back - side, Color(warm, 0.9))
 		var war: Variant = marks.get("war")
 		if war is Vector2:
 			var centre: Vector3 = ground.call(war)
@@ -2656,6 +2670,18 @@ void fragment() {
 		## depots as squares, the gate outposts as small arches, your side's
 		## pings, a warm pulse where the war is hot, and you as an arrow the
 		## way you face. Lines of light, north up, like the rest of the card.
+		## An army's push on the card's map: a dashed warm line from the army
+		## to the site with a head at the site.
+		func _draw_push_arrow(from: Vector2, to: Vector2) -> void:
+			var along := to - from
+			if along.length() < 4.0:
+				return
+			draw_dashed_line(from, to, Color(WARM, 0.85), 1.5, 4.0)
+			var back := -along.normalized() * 7.0
+			var side := Vector2(-back.y, back.x) * 0.6
+			draw_colored_polygon(PackedVector2Array([to, to + back + side, to + back - side]), Color(WARM, 0.9))
+
+
 		func _draw_map(box: Rect2) -> void:
 			var centre := box.get_center()
 			var half := box.size.x * 0.5
@@ -2697,6 +2723,8 @@ void fragment() {
 			for spot: Vector2 in map.get("depots", []):
 				var c: Vector2 = at.call(spot)
 				draw_rect(Rect2(c - Vector2(4, 4), Vector2(8, 8)), Color(INK, 0.85), false, 1.5)
+			for push: Dictionary in map.get("pushes", []):
+				_draw_push_arrow(at.call(push.from), at.call(push.to))
 			for site: Dictionary in map.get("sites", []):
 				var c: Vector2 = at.call(site.at)
 				var color := Color(WARM, 0.95) if site.contested else Color(INK, 0.95)

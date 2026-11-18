@@ -11,6 +11,8 @@ static func run(t: Node) -> void:
 	_test_track(t)
 	_test_formatting(t)
 	await _test_time_trial(t)
+	await _test_skyhook(t)
+	_test_crowd(t)
 	_test_ghost_data(t)
 
 
@@ -90,8 +92,8 @@ static func _test_formatting(t: Node) -> void:
 ## a few a tick, shifted `aside` meters to the side between `off_from` and
 ## `off_to`.
 static func _drive(t: Node, race: Race, vehicle: Node3D, from: int, count: int, aside := 0.0,
-		off_from := -1, off_to := -1) -> int:
-	var track := race.track
+		off_from := -1, off_to := -1, on: RaceTrack = null) -> int:
+	var track := on if on != null else race.track
 	var n := track.points.size()
 	var i := from
 	for k in count:
@@ -121,7 +123,8 @@ static func _test_time_trial(t: Node) -> void:
 			"a racer brings no vehicle of their own")
 	t.check(race.stowed_for(me).is_empty(), "nor one on the watch")
 	t.check(Portal.choices_for(race, me) == ([Portal.HOME] as Array[String]), "the portal home is on offer")
-	var bays: Array = race.vehicles.filter(func(v: Node3D) -> bool: return v.get("rider") == null)
+	var bays: Array = race.vehicles.filter(func(v: Node3D) -> bool:
+		return v.get("rider") == null and race.track_near(v.global_position) == race.track)
 	var scrappers := bays.filter(func(v: Node3D) -> bool: return v.get("item_id") == "bike_scrapper")
 	var raiders := bays.filter(func(v: Node3D) -> bool: return v.get("item_id") == "bike_raider")
 	t.check(scrappers.size() == 4 and raiders.size() == 4, "the pit bays hold four of each Street machine")
@@ -212,6 +215,81 @@ static func _test_time_trial(t: Node) -> void:
 	t.check(start_i >= 0, "the grid is on the track")
 	race.queue_free()
 	await t.frames(2)
+
+
+## Skyhook, the second track: its own bays, a run on it judged on its own
+## gates, the road over the road told apart by height, and its own board.
+static func _test_skyhook(t: Node) -> void:
+	var world := Worlds.get_world("meridian")
+	var race: Race = world.new_raid()
+	t.add_child(race)
+	race.start(world, 6, [Loadout.BARE] as Array[String])
+	await t.frames(5)
+	t.check(race.circuits.size() == 2 and race.circuits[1].id == "skyhook" and race.track.id == "coilrun",
+			"Meridian lays out Coilrun and Skyhook")
+	var sky: RaceTrack = race.track_by_id("skyhook")
+	t.check(sky != null and sky.gates.size() == 4 and sky.laps == 3, "Skyhook has the line and three checkpoints")
+	t.check(sky.length() > 1200.0 and sky.length() < 2000.0, "Skyhook runs %.0f m a lap" % sky.length())
+	var top := 0.0
+	for p in sky.points:
+		top = maxf(top, p.y)
+	t.check(top > 15.0, "Skyhook climbs onto its deck (%.0f m up)" % top)
+	# Where the road runs over itself, height tells the levels apart.
+	var flyover := sky.points[sky.locate(Vector3(-190, 20, -125), -1)]
+	var under := sky.points[sky.locate(Vector3(-190, 0.5, -125), -1)]
+	t.check(flyover.y > 15.0 and under.y < 1.0, "the flyover and the straight under it are told apart")
+	var g2: Dictionary = sky.gates[2]
+	var f: Vector3 = g2.forward
+	var below: Vector3 = g2.at - Vector3(0, g2.at.y, 0)
+	t.check(sky.cross(2, g2.at - f * 2.0, g2.at + f * 2.0) > 0.0 and sky.cross(2, below - f * 2.0, below + f * 2.0) < 0.0,
+			"a gate up on the deck is not passed by driving under it")
+	var bays: Array = race.vehicles.filter(func(v: Node3D) -> bool:
+		return v.get("rider") == null and race.track_near(v.global_position) == sky)
+	t.check(bays.filter(func(v: Node3D) -> bool: return v.get("item_id") == "bike_scrapper").size() == 4
+			and bays.filter(func(v: Node3D) -> bool: return v.get("item_id") == "bike_raider").size() == 4,
+			"Skyhook's pits hold four of each Street machine")
+	if bays.is_empty():
+		race.queue_free()
+		return
+	var me := race.player
+	var bike: Node3D = bays[0]
+	me.global_position = bike.global_position + Vector3(2.0, 0.2, 0.0)
+	await t.frames(2)
+	bike.call("mount", me)
+	await t.frames(2)
+	var view := race.view_run()
+	t.check(view.get("track") == "skyhook" and view.get("gates") == 4, "a machine from Skyhook's bays races Skyhook")
+	t.check(bike.global_position.distance_to(sky.gates[0].at) < 30.0, "on Skyhook's own grid")
+	await t.frames(int(Race.LIGHTS * Race.LIGHT_STEP * Engine.physics_ticks_per_second) + 5)
+	var laps := []
+	race.lap_finished.connect(func(_a: Actor, time: float, counted: bool) -> void: laps.append([time, counted]))
+	var line_i: int = sky.gates[0].index
+	var from := sky.locate(bike.global_position)
+	var to_line := (line_i - from + sky.points.size()) % sky.points.size()
+	await _drive(t, race, bike, from, to_line + sky.points.size() + 3, 0.0, -1, -1, sky)
+	t.check(laps.size() == 1 and laps[0][1], "a clean lap of Skyhook counts")
+	t.check(race.board_for("skyhook").size() == 1 and race.board_for("coilrun").is_empty(),
+			"and goes on Skyhook's board, not Coilrun's")
+	t.check(race.public_board().all(func(r: Dictionary) -> bool: return r.has("track")),
+			"the board sent to clients says which track each time is on")
+	race.queue_free()
+	await t.frames(2)
+
+
+## The crowd is a view: a figure mesh with a light stick marked for the
+## shader, and people added in blocks.
+static func _test_crowd(t: Node) -> void:
+	var mesh := Crowd.person_mesh()
+	var uvs: PackedVector2Array = mesh.surface_get_arrays(0)[Mesh.ARRAY_TEX_UV]
+	t.check(mesh.get_surface_count() == 1 and uvs.size() > 0 and uvs.size() < 300,
+			"a spectator is one small mesh (%d vertices)" % uvs.size())
+	t.check(Array(uvs).any(func(uv: Vector2) -> bool: return uv.x > 1.0), "with a light stick the shader can fold away")
+	var crowd := Crowd.new()
+	for k in Crowd.CHUNK + 10:
+		crowd.add(Vector3(k, 0, 0), 0.0, Color.GRAY, 0.5, k % 9 == 0, 0.3)
+	crowd.build()
+	t.check(crowd.get_child_count() == 2, "a big crowd is drawn in blocks")
+	crowd.free()
 
 
 static func _test_ghost_data(t: Node) -> void:

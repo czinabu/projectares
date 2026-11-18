@@ -1,10 +1,11 @@
 extends CharacterBody3D
 ## A rideable vehicle: the motorbike, the hoverbike, the squad rover, the mech
 ## and the jet are all this one class, picked by item data. The `model` stat
-## picks the greybox body, and the rest is tuning: `pivot_turn` lets a walker
+## picks the body (`VehicleModel`), and the rest is tuning: `pivot_turn` lets a walker
 ## turn on the spot, `jump_speed` gives it jump-jets, the "hover" tag floats
-## it on a cushion of thrust (see "Hover" below), `passenger_seat` gives it a
-## pillion seat behind the rider, and the "aircraft" tag flies it (`_fly`).
+## it on a cushion of thrust (see "Hover" below), `passenger_seat` gives it
+## seats for passengers (a pillion behind the rider, or a rover's three,
+## `seats`), and the "aircraft" tag flies it (`_fly`).
 ##
 ## Like the Actor, a vehicle is driven only by its rider's ActorCommand, so it
 ## runs the same on a headless server. It reads the rider's command before the
@@ -17,6 +18,8 @@ extends CharacterBody3D
 ##
 ## There is deliberately no `class_name` here: other scripts preload this file,
 ## so it works without the editor rescanning the global class list.
+
+const VehicleModel := preload("res://core/vehicle/vehicle_model.gd")
 
 signal mounted(actor: Actor)
 signal dismounted(actor: Actor)
@@ -150,10 +153,14 @@ var _world: WorldDef
 ## Seconds to the next puff of tyre smoke or spray (view only).
 var _puff_wait := 0.0
 
-# A pillion seat behind the rider (`passenger_seat`). Its anchors work like
-# the rider's (`seat_offset`, `seat_point`, `grip_points`, `peg_points`,
-# `rider_lean`, `exit_offset`); the passenger only sits, and may shoot.
+# Seats for passengers (`passenger_seat`). Each seat's anchors work like the
+# rider's (`seat_offset`, `seat_point`, `grip_points`, `peg_points`,
+# `rider_lean`, `exit_offset`); a passenger only sits, and may shoot. By
+# default it is one pillion seat behind the rider, from the `pillion_*`
+# vars; an item lists more in `seats`, each a dictionary with the keys
+# "offset", "point", "grips", "pegs", "lean" and "exit".
 var passenger_seat := false
+var seats: Array = []
 var pillion_offset := Vector3(0.0, 0.17, 0.76)
 var pillion_point := Vector3(0.0, 1.1, 0.76)
 var pillion_grips: Array[Vector3] = [Vector3(-0.24, 1.1, 0.56), Vector3(0.24, 1.1, 0.56)]
@@ -161,7 +168,8 @@ var pillion_pegs: Array[Vector3] = [Vector3(-0.36, 0.8, 0.5), Vector3(0.36, 0.8,
 var pillion_lean := 0.25
 var pillion_exit := Vector3(-1.4, 0.1, 0.6)
 ## Two up it is heavier: these share of top speed, acceleration, turn rate
-## and gap glide are what is left with a passenger aboard.
+## and gap glide are what is left with a passenger aboard, and again for
+## each more.
 var laden_speed := 0.92
 var laden_accel := 0.85
 var laden_turn := 0.85
@@ -202,8 +210,15 @@ const LEG_HIP := 1.75
 var _turning := 0.0
 
 var rider: Actor
-## Whoever sits on the pillion seat, or null.
-var passenger: Actor
+## Who sits on each of `seats` (null where it is empty), in seat order.
+var passengers: Array = []
+## Whoever sits on the first passenger seat taken, or null.
+var passenger: Actor:
+	get:
+		for actor in passengers:
+			if actor != null:
+				return actor
+		return null
 ## The direction the vehicle points, in radians around up.
 var heading := 0.0
 ## Signed speed along the heading. Negative while reversing.
@@ -235,8 +250,8 @@ var held := false
 ## (`apply_race_profile`), so combat tuning never moves a lap time.
 var race := {}
 var _seat: Seat
-## The pillion seat's anchors, riding on the model (`ride_anchor`).
-var _pillion: Pillion
+## Each passenger seat's anchors, riding on the model (`ride_anchor`).
+var _pillions: Array[Pillion] = []
 ## Seconds of hover bob, for the look only.
 var _bob_time := 0.0
 
@@ -252,6 +267,17 @@ func setup(p_item_id: String) -> void:
 			set(key, stats[key])
 		else:
 			push_warning("Vehicle: no property '%s' for %s" % [key, p_item_id])
+	_fill_seats()
+
+
+## The pillion seat from the `pillion_*` vars, unless the item lists its own.
+func _fill_seats() -> void:
+	if passenger_seat and seats.is_empty():
+		seats = [{"offset": pillion_offset, "point": pillion_point, "grips": pillion_grips,
+				"pegs": pillion_pegs, "lean": pillion_lean, "exit": pillion_exit}]
+	if not passenger_seat:
+		seats = []
+	passengers.resize(seats.size())
 
 
 ## Puts the race profile's tuning in place of the item's own. Called by a
@@ -332,351 +358,30 @@ func _build_body() -> void:
 
 	_model = build_visual()
 	add_child(_model)
-	if passenger_seat:
-		# On the model, so the pillion rider tips with the lean like the rider.
-		_pillion = Pillion.new()
-		_pillion.name = "Pillion"
-		_pillion.vehicle = self
-		_model.add_child(_pillion)
+	if passengers.size() != seats.size():
+		_fill_seats()
+	_pillions.clear()
+	for i in seats.size():
+		# On the model, so a passenger tips with the lean like the rider.
+		var pillion := Pillion.new()
+		pillion.name = "Pillion" if i == 0 else "Pillion%d" % (i + 1)
+		pillion.vehicle = self
+		pillion.index = i
+		_model.add_child(pillion)
+		_pillions.append(pillion)
 
 
-## The greybox body for `model`. Each puts grips and pegs where the rider's
-## pose puts hands and feet (`grip_points`, `peg_points`).
+## The body for `model`, built by `VehicleModel` round this vehicle's seat,
+## grips and pegs (`grip_points`, `peg_points`). A walker's legs are its
+## "LegL" and "LegR".
 func build_visual() -> Node3D:
-	match model:
-		"rover":
-			return _build_rover()
-		"mech":
-			return _build_mech()
-		"jet":
-			return _build_jet()
-		"hoverbike":
-			return _build_hoverbike()
-	return _build_bike()
-
-
-## Greybox sci-fi motorbike: a low spine frame, a raked fairing over the tank,
-## glowing hub rings and side strips, foot pegs and grips.
-func _build_bike() -> Node3D:
-	var root := Node3D.new()
-	root.name = "Model"
-	var paint := _mat(body_color)
-	var dark := _mat(Color(0.08, 0.08, 0.09))
-	var steel := _mat(Color(0.55, 0.55, 0.58))
-	# The glow is a material override, so `Look` leaves it as it is and does
-	# not hang a headlight beam on every strip.
-	var glow := _mat(body_color.lightened(0.35))
-	glow.emission_enabled = true
-	glow.emission = body_color.lightened(0.2)
-	glow.emission_energy_multiplier = 1.5
-	for z: float in [-0.75, 0.75]:
-		var tyre := _wheel(0.36, 0.2, dark)
-		tyre.position = Vector3(0, 0.36, z)
-		root.add_child(tyre)
-		var ring_mesh := TorusMesh.new()
-		ring_mesh.inner_radius = 0.2
-		ring_mesh.outer_radius = 0.235
-		for face: float in [-1.0, 1.0]:
-			var ring := MeshInstance3D.new()
-			ring.mesh = ring_mesh
-			ring.material_override = glow
-			ring.rotation.z = PI / 2.0
-			ring.position = tyre.position + Vector3(face * 0.1, 0, 0)
-			root.add_child(ring)
-		var hub := _wheel(0.1, 0.26, steel)
-		hub.position = tyre.position
-		root.add_child(hub)
-	root.add_child(_part(Vector3(0.16, 0.12, 1.3), Vector3(0, 0.5, 0.0), dark, -0.12))           # spine frame
-	root.add_child(_part(Vector3(0.3, 0.3, 0.42), Vector3(0, 0.5, -0.06), dark))                 # power cell
-	root.add_child(_part(Vector3(0.36, 0.26, 0.56), Vector3(0, 0.82, -0.12), paint, 0.08))       # tank
-	root.add_child(_part(Vector3(0.42, 0.42, 0.26), Vector3(0, 0.86, -0.5), paint, 0.5))         # fairing
-	root.add_child(_part(Vector3(0.28, 0.06, 0.2), Vector3(0, 1.1, -0.52), _mat(Color(0.2, 0.25, 0.3)), 0.9))  # screen
-	root.add_child(_part(Vector3(0.3, 0.1, 0.5), Vector3(0, 0.93, 0.3), dark))                   # seat
-	root.add_child(_part(Vector3(0.24, 0.12, 0.42), Vector3(0, 0.98, 0.68), paint, -0.25))       # tail
-	root.add_child(_part(Vector3(0.12, 0.08, 0.7), Vector3(0, 0.55, 0.45), steel, 0.35))         # swing arm
-	for side: float in [-1.0, 1.0]:
-		root.add_child(_part(Vector3(0.05, 0.75, 0.05), Vector3(side * 0.1, 0.71, -0.62), steel, 0.35))  # fork leg
-		root.add_child(_part(Vector3(0.02, 0.05, 0.5), Vector3(side * 0.185, 0.84, -0.14), null, 0.08, glow))  # side strip
-		root.add_child(_part(Vector3(0.16, 0.04, 0.06), Vector3(side * 0.2, 0.42, 0.04), steel))  # foot peg
-		root.add_child(_part(Vector3(0.12, 0.05, 0.05), Vector3(side * 0.24, 1.2, -0.3), dark))   # grip
-	root.add_child(_part(Vector3(0.4, 0.04, 0.04), Vector3(0, 1.2, -0.3), steel))                # handlebar
-	root.add_child(_part(Vector3(0.06, 0.06, 0.26), Vector3(0, 1.13, -0.39), steel, -0.66))      # bar riser
-	var lamp_mat := _mat(Color(1.0, 0.9, 0.6))
-	lamp_mat.emission_enabled = true
-	lamp_mat.emission = Color(1.0, 0.85, 0.5)
-	root.add_child(_part(Vector3(0.18, 0.08, 0.06), Vector3(0, 0.88, -0.7), lamp_mat))  # headlight
-	return root
-
-
-## Greybox hoverbike: a long, low hull on four downward thruster pods with
-## glowing discs, so it floats on its cushion (`hover_height`) with daylight
-## under it. A raked nose with a low screen, bars over it, a stepped two-up
-## seat with grab rails for a pillion rider, side skirts with glow strips and
-## a glowing rear thruster. No wheels anywhere.
-func _build_hoverbike() -> Node3D:
-	var root := Node3D.new()
-	root.name = "Model"
-	var c := _palette()
-	var thrust := _mat(Color(0.5, 0.9, 1.0))
-	thrust.emission_enabled = true
-	thrust.emission = Color(0.35, 0.85, 1.0)
-	thrust.emission_energy_multiplier = 2.5
-	var base := hover_height
-	for z: float in [-0.72, 0.68]:
-		for x: float in [-0.27, 0.27]:
-			var pod := _wheel(0.2, 0.1, c.dark)
-			pod.rotation = Vector3.ZERO  # standing up: a pod pointing down
-			pod.position = Vector3(x, base + 0.08, z)
-			root.add_child(pod)
-			var disc_mesh := CylinderMesh.new()
-			disc_mesh.top_radius = 0.17
-			disc_mesh.bottom_radius = 0.17
-			disc_mesh.height = 0.03
-			disc_mesh.radial_segments = 20
-			var disc := MeshInstance3D.new()
-			disc.name = "Thruster%d" % root.get_child_count()
-			disc.mesh = disc_mesh
-			disc.material_override = thrust
-			disc.position = Vector3(x, base + 0.015, z)
-			root.add_child(disc)
-		root.add_child(_part(Vector3(0.66, 0.08, 0.3), Vector3(0, base + 0.17, z), c.steel))         # pod beam
-	root.add_child(_part(Vector3(0.5, 0.3, 1.6), Vector3(0, base + 0.42, 0.0), c.paint))              # hull
-	root.add_child(_part(Vector3(0.44, 0.24, 0.5), Vector3(0, base + 0.44, -0.95), c.paint, 0.3))     # nose cowl
-	root.add_child(_part(Vector3(0.3, 0.12, 0.36), Vector3(0, base + 0.32, -1.22), c.dark, 0.15))     # nose tip
-	root.add_child(_part(Vector3(0.36, 0.16, 0.42), Vector3(0, base + 0.62, -0.36), c.paint, 0.12))   # tank
-	var screen := _part(Vector3(0.34, 0.04, 0.28), Vector3(0, base + 0.8, -0.66), null, 0.95, _clear_glass())
-	screen.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	root.add_child(screen)
-	root.add_child(_part(Vector3(0.3, 0.1, 0.5), Vector3(0, base + 0.53, 0.2), c.dark))               # rider's seat
-	root.add_child(_part(Vector3(0.32, 0.12, 0.4), Vector3(0, base + 0.59, 0.74), c.dark))            # pillion seat
-	root.add_child(_part(Vector3(0.36, 0.26, 0.42), Vector3(0, base + 0.4, 0.98), c.paint, -0.2))     # tail
-	root.add_child(_part(Vector3(0.3, 0.14, 0.05), Vector3(0, base + 0.42, 1.2), null, 0.0, thrust))  # rear thruster
-	root.add_child(_part(Vector3(0.6, 0.04, 0.04), Vector3(0, 1.3, -0.42), c.steel))                  # handlebar
-	root.add_child(_part(Vector3(0.06, 0.06, 0.34), Vector3(0, 1.17, -0.52), c.steel, -0.9))          # bar riser
-	for side: float in [-1.0, 1.0]:
-		root.add_child(_part(Vector3(0.04, 0.16, 1.7), Vector3(side * 0.28, base + 0.24, 0.0), c.paint))  # skirt
-		root.add_child(_part(Vector3(0.02, 0.04, 1.3), Vector3(side * 0.3, base + 0.34, -0.05), null, 0.0, c.glow))  # strip
-		root.add_child(_part(Vector3(0.12, 0.05, 0.05), Vector3(side * 0.3, 1.3, -0.42), c.dark))    # grip
-		root.add_child(_part(Vector3(0.14, 0.04, 0.1), Vector3(side * 0.36, 0.72, -0.04), c.steel))  # rider's peg
-		root.add_child(_part(Vector3(0.12, 0.04, 0.1), Vector3(side * 0.36, 0.78, 0.5), c.steel))    # pillion peg
-		root.add_child(_part(Vector3(0.04, 0.04, 0.32), Vector3(side * 0.24, 1.08, 0.64), c.steel))  # grab rail
-		root.add_child(_part(Vector3(0.04, 0.12, 0.04), Vector3(side * 0.24, 1.02, 0.8), c.steel))   # its post
-		root.add_child(_part(Vector3(0.1, 0.06, 0.04), Vector3(side * 0.16, base + 0.36, -1.38), c.lamp))  # headlight
-	return root
-
-
-## The materials every greybox body shares: paint, dark, steel, a glow that
-## `Look` leaves alone (an override), and a lamp it hangs a beam on.
-func _palette() -> Dictionary:
-	var glow := _mat(body_color.lightened(0.35))
-	glow.emission_enabled = true
-	glow.emission = body_color.lightened(0.2)
-	glow.emission_energy_multiplier = 1.5
-	var lamp := _mat(Color(1.0, 0.9, 0.6))
-	lamp.emission_enabled = true
-	lamp.emission = Color(1.0, 0.85, 0.5)
-	return {"paint": _mat(body_color), "dark": _mat(Color(0.08, 0.08, 0.09)),
-			"steel": _mat(Color(0.55, 0.55, 0.58)), "glow": glow, "lamp": lamp,
-			"glass": _mat(Color(0.2, 0.25, 0.3))}
-
-
-## Greybox armored squad rover: an open-topped scout buggy on four big
-## wheels with glowing hubs. A sloped hood runs down to a bumper and twin
-## lamps; the cab is open over low door sills, so the crew shows from
-## outside, behind a see-through windscreen (`_clear_glass`) that starts at
-## the dash, under the driver's eye line. Low bucket seats (driver on the
-## left, at the wheel), a roll bar over them, and a low cargo tray at the
-## back with tail lamps and a whip antenna.
-func _build_rover() -> Node3D:
-	var root := Node3D.new()
-	root.name = "Model"
-	var c := _palette()
-	var tail := _mat(Color(0.9, 0.15, 0.1))
-	tail.emission_enabled = true
-	tail.emission = Color(1.0, 0.1, 0.05)
-	tail.emission_energy_multiplier = 2.0
-	var screen := _mat(Color(0.35, 0.9, 1.0))
-	screen.emission_enabled = true
-	screen.emission = Color(0.3, 0.85, 1.0)
-	screen.emission_energy_multiplier = 1.2
-	var ring_mesh := TorusMesh.new()
-	ring_mesh.inner_radius = 0.3
-	ring_mesh.outer_radius = 0.34
-	for x: float in [-1.0, 1.0]:
-		for z: float in [-1.35, 1.35]:
-			var tyre := _wheel(0.52, 0.4, c.dark)
-			tyre.position = Vector3(x * 1.0, 0.52, z)
-			root.add_child(tyre)
-			var hub := _wheel(0.22, 0.44, c.steel)
-			hub.position = tyre.position
-			root.add_child(hub)
-			var ring := MeshInstance3D.new()
-			ring.mesh = ring_mesh
-			ring.material_override = c.glow
-			ring.rotation.z = PI / 2.0
-			ring.position = tyre.position + Vector3(x * 0.21, 0, 0)
-			root.add_child(ring)
-			# A wheel arch: a flat top with its ends angled down fore and aft.
-			root.add_child(_part(Vector3(0.58, 0.07, 0.8), Vector3(x * 1.0, 1.12, z), c.paint))
-			root.add_child(_part(Vector3(0.58, 0.07, 0.42), Vector3(x * 1.0, 1.02, z - 0.55), c.paint, -0.55))
-			root.add_child(_part(Vector3(0.58, 0.07, 0.42), Vector3(x * 1.0, 1.02, z + 0.55), c.paint, 0.55))
-		root.add_child(_part(Vector3(0.12, 0.42, 1.55), Vector3(x * 0.86, 0.97, 0.0), c.paint))       # door sill
-		root.add_child(_part(Vector3(0.03, 0.06, 1.3), Vector3(x * 0.93, 1.02, 0.0), null, 0.0, c.glow))  # strip
-		root.add_child(_part(Vector3(0.22, 0.05, 1.0), Vector3(x * 0.98, 0.64, 0.0), c.steel))        # side step
-		root.add_child(_part(Vector3(0.22, 0.08, 0.04), Vector3(x * 0.6, 1.0, -2.13), c.lamp))        # headlight
-		root.add_child(_part(Vector3(0.2, 0.08, 0.03), Vector3(x * 0.68, 1.0, 2.13), null, 0.0, tail))  # tail lamp
-		# The windscreen's frame and the roll bar behind the seats, joined by a rail.
-		root.add_child(_part(Vector3(0.06, 0.66, 0.06), Vector3(x * 0.8, 1.63, -0.64), c.steel, 0.25))  # pillar
-		root.add_child(_part(Vector3(0.07, 0.95, 0.07), Vector3(x * 0.8, 1.6, 0.78), c.steel))         # roll bar
-		root.add_child(_part(Vector3(0.06, 0.06, 1.36), Vector3(x * 0.8, 2.0, 0.1), c.steel, -0.11))    # roof rail
-		root.add_child(_part(Vector3(0.06, 0.22, 1.2), Vector3(x * 0.82, 1.22, 1.55), c.paint))         # tray side
-	root.add_child(_part(Vector3(1.5, 0.3, 3.8), Vector3(0, 0.62, 0), c.dark))                  # chassis
-	root.add_child(_part(Vector3(1.6, 0.06, 1.9), Vector3(0, 0.82, 0.05), c.dark))              # cab floor
-	# The hood, sloping down to the nose, over the engine bay.
-	root.add_child(_part(Vector3(1.6, 0.38, 1.3), Vector3(0, 0.9, -1.45), c.paint))
-	root.add_child(_part(Vector3(1.62, 0.08, 1.42), Vector3(0, 1.12, -1.42), c.paint, -0.12))
-	root.add_child(_part(Vector3(0.5, 0.05, 0.7), Vector3(0, 1.18, -1.3), c.dark, -0.12))      # hood vent
-	root.add_child(_part(Vector3(1.4, 0.24, 0.06), Vector3(0, 0.82, -2.12), c.dark))            # grille
-	root.add_child(_part(Vector3(1.9, 0.12, 0.14), Vector3(0, 0.62, -2.2), c.steel))            # bumper
-	# The dash: a low cowl under the windscreen, with the driver's screens lit.
-	root.add_child(_part(Vector3(1.62, 0.2, 0.34), Vector3(0, 1.21, -0.62), c.dark))
-	root.add_child(_part(Vector3(0.3, 0.13, 0.02), Vector3(-0.4, 1.36, -0.55), null, -0.5, screen))
-	root.add_child(_part(Vector3(0.22, 0.1, 0.02), Vector3(0.35, 1.35, -0.55), null, -0.5, screen))
-	root.add_child(_part(Vector3(1.66, 0.06, 0.06), Vector3(0, 1.32, -0.73), c.steel))          # screen foot
-	root.add_child(_part(Vector3(1.66, 0.06, 0.06), Vector3(0, 1.94, -0.56), c.steel))          # screen top
-	var glass := _part(Vector3(1.54, 0.62, 0.02), Vector3(0, 1.63, -0.64), null, 0.25, _clear_glass())
-	glass.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	root.add_child(glass)
-	root.add_child(_part(Vector3(1.66, 0.07, 0.07), Vector3(0, 2.08, 0.78), c.steel))           # roll bar top
-	# Low bucket seats, so the crew's shoulders and heads show over them.
-	for x: float in [-0.4, 0.4]:
-		root.add_child(_part(Vector3(0.48, 0.1, 0.48), Vector3(x, 0.9, 0.25), c.dark))        # seat
-		root.add_child(_part(Vector3(0.46, 0.42, 0.08), Vector3(x, 1.14, 0.52), c.dark, 0.15))  # seat back
-		for side: float in [-1.0, 1.0]:
-			root.add_child(_part(Vector3(0.05, 0.12, 0.4), Vector3(x + side * 0.24, 0.98, 0.28), c.dark))  # bolster
-	# The wheel faces the driver, its rim through the grips (`grip_points`).
-	var wheel := MeshInstance3D.new()
-	var wheel_mesh := TorusMesh.new()
-	wheel_mesh.inner_radius = 0.16
-	wheel_mesh.outer_radius = 0.2
-	wheel_mesh.material = c.dark
-	wheel.mesh = wheel_mesh
-	wheel.position = Vector3(-0.4, 1.27, -0.25)
-	wheel.rotation.x = PI / 2.0 - 0.45
-	root.add_child(wheel)
-	root.add_child(_part(Vector3(0.05, 0.05, 0.4), Vector3(-0.4, 1.2, -0.45), c.steel, 0.45))  # column
-	for x: float in [-0.52, -0.28]:
-		root.add_child(_part(Vector3(0.1, 0.04, 0.16), Vector3(x, 0.86, -0.5), c.steel))       # pedal
-	# The back: a body under a low cargo tray, a bumper and a whip antenna.
-	root.add_child(_part(Vector3(1.6, 0.34, 0.9), Vector3(0, 0.9, 1.68), c.paint))
-	root.add_child(_part(Vector3(1.7, 0.1, 1.3), Vector3(0, 1.1, 1.55), c.paint))               # tray floor
-	root.add_child(_part(Vector3(1.7, 0.22, 0.06), Vector3(0, 1.22, 2.17), c.paint))            # tailgate
-	root.add_child(_part(Vector3(0.55, 0.3, 0.42), Vector3(0.38, 1.3, 1.45), c.steel))          # crate
-	root.add_child(_part(Vector3(0.4, 0.22, 0.36), Vector3(-0.3, 1.26, 1.7), c.dark))           # crate
-	root.add_child(_part(Vector3(1.8, 0.18, 0.16), Vector3(0, 0.72, 2.15), c.dark))             # rear bumper
-	root.add_child(_part(Vector3(0.02, 1.1, 0.02), Vector3(0.78, 1.75, 2.05), c.steel, 0.12))  # antenna
-	return root
-
-
-## Tinted glass you can see through. It is a material override, so `Look`
-## leaves it as it is instead of weathering it opaque.
-func _clear_glass() -> StandardMaterial3D:
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = Color(0.55, 0.78, 0.9, 0.16)
-	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-	mat.metallic = 0.4
-	mat.roughness = 0.05
-	return mat
-
-
-## Greybox compact mech: a cockpit pod with twin cannons on its flanks and a
-## glowing power unit on its back (its weak spot, by design), on two
-## jointed legs that stride with its speed (`_animate_legs`).
-func _build_mech() -> Node3D:
-	var root := Node3D.new()
-	root.name = "Model"
-	var c := _palette()
+	var root: Node3D = VehicleModel.build(self)
 	_legs.clear()
-	for x: float in [-0.62, 0.62]:
-		var leg := Node3D.new()
-		leg.name = "LegL" if x < 0.0 else "LegR"
-		leg.position = Vector3(x, LEG_HIP, 0.1)
-		leg.add_child(_part(Vector3(0.36, 0.95, 0.42), Vector3(0, -0.42, -0.12), c.paint, 0.25))  # thigh
-		leg.add_child(_part(Vector3(0.3, 0.3, 0.3), Vector3(0, -0.86, -0.22), c.steel))            # knee
-		leg.add_child(_part(Vector3(0.28, 0.9, 0.32), Vector3(0, -1.2, -0.08), c.dark, -0.3))      # shin
-		leg.add_child(_part(Vector3(0.5, 0.14, 0.8), Vector3(0, -1.68, -0.05), c.dark))            # foot
-		leg.add_child(_part(Vector3(0.04, 0.5, 0.04), Vector3(x * 0.3, -0.42, 0.05), null, 0.25, c.glow))
-		root.add_child(leg)
-		_legs.append(leg)
-	root.add_child(_part(Vector3(1.1, 0.4, 0.9), Vector3(0, 1.8, 0.1), c.steel))               # hip block
-	root.add_child(_part(Vector3(1.4, 0.3, 1.5), Vector3(0, 2.12, 0.05), c.paint))              # pod floor
-	# An open cockpit: low armor round the pilot, who sits exposed from the chest up.
-	root.add_child(_part(Vector3(1.4, 0.6, 0.12), Vector3(0, 2.45, -0.75), c.paint, -0.3))      # front armor
-	root.add_child(_part(Vector3(0.12, 0.36, 1.4), Vector3(-0.72, 2.4, 0.05), c.paint))         # pod side L
-	root.add_child(_part(Vector3(0.12, 0.36, 1.4), Vector3(0.72, 2.4, 0.05), c.paint))          # pod side R
-	root.add_child(_part(Vector3(1.0, 0.2, 0.04), Vector3(0, 2.82, -0.86), c.glass, 0.5))       # screen
-	root.add_child(_part(Vector3(0.45, 0.12, 0.45), Vector3(0, 2.24, 0.15), c.dark))            # seat
-	root.add_child(_part(Vector3(0.45, 0.6, 0.1), Vector3(0, 2.55, 0.42), c.dark, -0.15))       # seat back
-	root.add_child(_part(Vector3(1.0, 0.9, 0.5), Vector3(0, 2.55, 0.75), c.dark))               # power unit
-	root.add_child(_part(Vector3(0.7, 0.5, 0.06), Vector3(0, 2.6, 1.02), null, 0.0, c.glow))    # its glow
-	for x: float in [-1.0, 1.0]:
-		root.add_child(_part(Vector3(0.3, 0.3, 0.6), Vector3(x * 0.95, 2.45, 0.0), c.dark))     # cannon mount
-		root.add_child(_part(Vector3(0.14, 0.14, 1.3), Vector3(x * 0.95, 2.45, -0.85), c.steel))  # barrel
-		root.add_child(_part(Vector3(0.06, 0.4, 0.06), Vector3(x * 0.25, 2.3, -0.38), c.steel, 0.2))  # stick
-		root.add_child(_part(Vector3(0.18, 0.05, 0.25), Vector3(x * 0.16, 2.05, -0.5), c.steel))  # pedal
-		root.add_child(_part(Vector3(0.25, 0.2, 0.25), Vector3(x * 0.5, 2.1, 0.7), null, 0.0, c.glow))  # jump-jet
-	root.add_child(_part(Vector3(0.3, 0.1, 0.06), Vector3(0, 2.2, -0.82), c.lamp))              # lamp
+	for leg_name: String in ["LegL", "LegR"]:
+		var leg := root.get_node_or_null(leg_name) as Node3D
+		if leg != null:
+			_legs.append(leg)
 	return root
-
-
-## Greybox starfighter: a long fuselage with a bubble canopy over the pilot,
-## swept wings, twin tail fins, glowing engines and short landing gear.
-func _build_jet() -> Node3D:
-	var root := Node3D.new()
-	root.name = "Model"
-	var c := _palette()
-	root.add_child(_part(Vector3(1.1, 0.8, 5.2), Vector3(0, 1.0, 0.3), c.paint))               # fuselage
-	root.add_child(_part(Vector3(0.7, 0.55, 1.4), Vector3(0, 0.95, -2.8), c.paint, 0.12))      # nose
-	root.add_child(_part(Vector3(0.75, 0.04, 1.5), Vector3(0, 1.62, -0.9), c.glass, 0.12))     # canopy glass
-	root.add_child(_part(Vector3(0.05, 0.4, 1.4), Vector3(-0.38, 1.45, -0.9), c.glass))
-	root.add_child(_part(Vector3(0.05, 0.4, 1.4), Vector3(0.38, 1.45, -0.9), c.glass))
-	root.add_child(_part(Vector3(0.5, 0.12, 0.5), Vector3(0, 1.24, -0.55), c.dark))            # seat
-	root.add_child(_part(Vector3(0.5, 0.7, 0.1), Vector3(0, 1.6, -0.25), c.dark, -0.25))       # seat back
-	for x: float in [-1.0, 1.0]:
-		var wing := _part(Vector3(2.0, 0.1, 1.6), Vector3(x * 1.5, 0.95, 0.8), c.paint)
-		wing.rotation.y = x * 0.35
-		root.add_child(wing)
-		root.add_child(_part(Vector3(0.08, 0.04, 1.2), Vector3(x * 2.45, 0.98, 1.3), null, 0.0, c.glow))  # wingtip
-		var fin := _part(Vector3(0.08, 0.9, 0.9), Vector3(x * 0.4, 1.7, 2.4), c.paint, -0.4)
-		fin.rotation.z = x * 0.25
-		root.add_child(fin)
-		root.add_child(_part(Vector3(0.42, 0.42, 0.3), Vector3(x * 0.3, 1.0, 3.0), null, 0.0, c.glow))  # engine
-		root.add_child(_part(Vector3(0.06, 0.06, 0.3), Vector3(x * 0.22, 1.32, -1.15), c.steel, 0.4))  # stick
-		root.add_child(_part(Vector3(0.18, 0.05, 0.25), Vector3(x * 0.15, 0.84, -1.6), c.steel))  # pedal
-		root.add_child(_part(Vector3(0.08, 0.5, 0.08), Vector3(x * 0.9, 0.35, 1.0), c.steel))   # main gear
-		var tyre := _wheel(0.18, 0.14, c.dark)
-		tyre.position = Vector3(x * 0.9, 0.18, 1.0)
-		root.add_child(tyre)
-	root.add_child(_part(Vector3(0.08, 0.5, 0.08), Vector3(0, 0.35, -2.4), c.steel))            # nose gear
-	var nose_tyre := _wheel(0.15, 0.12, c.dark)
-	nose_tyre.position = Vector3(0, 0.15, -2.4)
-	root.add_child(nose_tyre)
-	root.add_child(_part(Vector3(0.2, 0.08, 0.06), Vector3(0, 0.85, -3.5), c.lamp))             # lamp
-	return root
-
-
-func _wheel(radius: float, width: float, mat: Material) -> MeshInstance3D:
-	var mesh := CylinderMesh.new()
-	mesh.top_radius = radius
-	mesh.bottom_radius = radius
-	mesh.height = width
-	mesh.radial_segments = 24
-	mesh.material = mat
-	var node := MeshInstance3D.new()
-	node.mesh = mesh
-	node.rotation.z = PI / 2.0
-	return node
 
 
 ## The vehicle `p_item_id` as a toy: its greybox model, toy-sized, under a
@@ -787,31 +492,11 @@ func _show_unpack() -> void:
 	_model.scale = Vector3.ONE * (size if unpack_left > 0.0 else 1.0)
 
 
-## A box part, tipped `pitch` radians nose up about its middle. `override`
-## is drawn instead of the mesh's own material (see the glow in `build_visual`).
-func _part(size: Vector3, at: Vector3, mat: Material, pitch := 0.0, override: Material = null) -> MeshInstance3D:
-	var box := BoxMesh.new()
-	box.size = size
-	box.material = mat
-	var node := MeshInstance3D.new()
-	node.mesh = box
-	node.position = at
-	node.rotation.x = pitch
-	node.material_override = override
-	return node
-
-
-func _mat(color: Color) -> StandardMaterial3D:
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = color
-	return mat
-
-
 func get_prompt() -> String:
 	if rider == null:
 		return "[F] Ride %s" % display_name
-	if passenger_seat and passenger == null:
-		return "[F] Ride behind on %s" % display_name
+	if free_seat() >= 0:
+		return ("[F] Ride behind on %s" if seats.size() == 1 else "[F] Ride in %s") % display_name
 	return "%s (ridden)" % display_name
 
 
@@ -820,15 +505,50 @@ func is_occupied() -> bool:
 	return rider != null or passenger != null
 
 
-## Puts an actor on the seat, or with `behind` on the pillion seat. Returns
-## false if that seat is taken or they cannot ride.
-func mount(actor: Actor, behind := false) -> bool:
+## How many passengers are aboard.
+func passenger_count() -> int:
+	var count := 0
+	for actor in passengers:
+		if actor != null:
+			count += 1
+	return count
+
+
+## The empty passenger seat nearest `near` (any empty one without it), or -1.
+func free_seat(near := Vector3.INF) -> int:
+	var best := -1
+	var best_d := INF
+	for i in seats.size():
+		if passengers[i] != null:
+			continue
+		if near == Vector3.INF:
+			return i
+		var d := near.distance_to(global_position + Basis(Vector3.UP, heading) * Vector3(seats[i].offset))
+		if d < best_d:
+			best = i
+			best_d = d
+	return best
+
+
+## Which passenger seat `actor` is on, or -1.
+func seat_of(actor: Actor) -> int:
+	return passengers.find(actor) if actor != null else -1
+
+
+## Puts an actor on the seat, or with `behind` on a passenger seat: seat
+## `seat` if given, else the empty one nearest them. Returns false if that
+## seat is taken or they cannot ride.
+func mount(actor: Actor, behind := false, seat := -1) -> bool:
 	if actor == null or actor.is_dead or actor.vehicle != null or unpack_left > 0.0:
 		return false
 	if not behind and rider == null:
 		rider = actor
-	elif behind and passenger_seat and passenger == null:
-		passenger = actor
+	elif behind:
+		if seat < 0:
+			seat = free_seat(actor.global_position)
+		if seat < 0 or seat >= seats.size() or passengers[seat] != null:
+			return false
+		passengers[seat] = actor
 	else:
 		return false
 	actor.vehicle = self
@@ -837,8 +557,9 @@ func mount(actor: Actor, behind := false) -> bool:
 	if not actor.died.is_connected(_on_rider_died):
 		actor.died.connect(_on_rider_died)
 	_place_rider()
-	if actor == passenger:
-		actor.notice.emit("Riding behind on %s. F to get off" % display_name)
+	if seat_of(actor) >= 0:
+		actor.notice.emit(("Riding behind on %s. F to get off" if seats.size() == 1
+				else "Riding in %s. F to get off") % display_name)
 	else:
 		actor.notice.emit("Riding %s. F to get off" % display_name)
 	mounted.emit(actor)
@@ -853,10 +574,11 @@ func dismount() -> void:
 		_let_off(rider)
 
 
-## Drops the passenger off the pillion seat.
+## Drops every passenger off their seats.
 func dismount_passenger() -> void:
-	if passenger != null:
-		_let_off(passenger)
+	for actor in passengers.duplicate():
+		if actor != null:
+			_let_off(actor)
 
 
 ## Everyone off.
@@ -867,14 +589,15 @@ func dismount_all() -> void:
 
 ## Lets `actor` off, whichever seat they are on.
 func get_off(actor: Actor) -> void:
-	if actor != null and (actor == rider or actor == passenger):
+	if actor != null and (actor == rider or seat_of(actor) >= 0):
 		_let_off(actor)
 
 
 func _let_off(actor: Actor) -> void:
-	var behind := actor == passenger
+	var seat := seat_of(actor)
+	var behind := seat >= 0
 	if behind:
-		passenger = null
+		passengers[seat] = null
 	else:
 		rider = null
 	if not is_instance_valid(actor):
@@ -884,7 +607,8 @@ func _let_off(actor: Actor) -> void:
 		actor.died.disconnect(_on_rider_died)
 	if not actor.is_dead:
 		# The exit spot is clear of the bike's body, so they collide again at once.
-		actor.global_position = global_position + Basis(Vector3.UP, heading) * (pillion_exit if behind else exit_offset)
+		var out: Vector3 = seats[seat].exit if behind else exit_offset
+		actor.global_position = global_position + Basis(Vector3.UP, heading) * out
 		actor.velocity = velocity
 	remove_collision_exception_with(actor)
 	actor.remove_collision_exception_with(self)
@@ -892,23 +616,24 @@ func _let_off(actor: Actor) -> void:
 
 
 func _on_rider_died(actor: Actor, _info: DamageInfo) -> void:
-	if actor == passenger:
-		dismount_passenger()
+	if seat_of(actor) >= 0:
+		_let_off(actor)
 	else:
 		dismount()
 
 
 ## What a seated actor's pose is fitted to: the vehicle itself for the rider,
-## the pillion seat's anchors (on the model) for a passenger.
+## their seat's anchors (on the model) for a passenger.
 func ride_anchor(actor: Actor) -> Node3D:
-	if actor != null and actor == passenger and _pillion != null:
-		return _pillion
+	var seat := seat_of(actor)
+	if seat >= 0 and seat < _pillions.size():
+		return _pillions[seat]
 	return self
 
 
-## Share of a stat left with a passenger aboard (1 when ridden alone).
+## Share of a stat left with the passengers aboard (1 when ridden alone).
 func _laden(share: float) -> float:
-	return share if passenger != null else 1.0
+	return pow(share, passenger_count())
 
 
 func _physics_process(delta: float) -> void:
@@ -921,11 +646,17 @@ func _physics_process(delta: float) -> void:
 	_jump_wait = maxf(0.0, _jump_wait - delta)
 	if rider != null and (not is_instance_valid(rider) or rider.is_dead):
 		dismount()
-	if passenger != null and (not is_instance_valid(passenger) or passenger.is_dead):
-		dismount_passenger()
-	if passenger != null and passenger.cmd.interact_pressed and (Combat.authoritative or local_only):
-		passenger.cmd.interact_pressed = false
-		dismount_passenger()
+	for i in passengers.size():
+		var aboard = passengers[i]
+		if aboard == null:
+			continue
+		if not is_instance_valid(aboard):
+			passengers[i] = null
+		elif aboard.is_dead:
+			_let_off(aboard)
+		elif aboard.cmd.interact_pressed and (Combat.authoritative or local_only):
+			aboard.cmd.interact_pressed = false
+			_let_off(aboard)
 	if rider != null:
 		var cmd := rider.cmd
 		if cmd.interact_pressed and (Combat.authoritative or local_only):
@@ -976,15 +707,16 @@ func _physics_process(delta: float) -> void:
 	var rider_layer := rider.collision_layer if carried else 0
 	if carried:
 		rider.collision_layer = 0
-	var pillion := passenger != null and is_instance_valid(passenger)
-	var pillion_layer := passenger.collision_layer if pillion else 0
-	if pillion:
-		passenger.collision_layer = 0
+	var aboard_layers := {}
+	for aboard in passengers:
+		if aboard != null and is_instance_valid(aboard):
+			aboard_layers[aboard] = aboard.collision_layer
+			aboard.collision_layer = 0
 	move_and_slide()
 	if carried:
 		rider.collision_layer = rider_layer
-	if pillion:
-		passenger.collision_layer = pillion_layer
+	for aboard: Actor in aboard_layers:
+		aboard.collision_layer = aboard_layers[aboard]
 
 	# Where it is going: along the heading, or for a hover trailing it by `slip`.
 	var forward := Basis(Vector3.UP, heading + slip) * Vector3.FORWARD
@@ -1203,9 +935,11 @@ func _place_rider() -> void:
 	if rider != null and is_instance_valid(rider):
 		rider.global_position = global_position + Basis(Vector3.UP, heading) * seat_offset
 		rider.velocity = velocity
-	if passenger != null and is_instance_valid(passenger):
-		passenger.global_position = global_position + Basis(Vector3.UP, heading) * pillion_offset
-		passenger.velocity = velocity
+	for i in passengers.size():
+		var aboard = passengers[i]
+		if aboard != null and is_instance_valid(aboard):
+			aboard.global_position = global_position + Basis(Vector3.UP, heading) * Vector3(seats[i].offset)
+			aboard.velocity = velocity
 
 
 func _update_visual(steer: float, delta: float) -> void:
@@ -1232,21 +966,29 @@ func _update_visual(steer: float, delta: float) -> void:
 
 ## The interact target for a vehicle. It rides along on the vehicle and only
 ## exists on the interactables layer, so it never blocks anything.
-## The pillion seat's anchors, for a passenger's pose (`ride_anchor`). It
+## A passenger seat's anchors, for a passenger's pose (`ride_anchor`). It
 ## rides on the model, so it tips with the lean; it has the same anchor
 ## names as a vehicle, so the riding pose reads either.
 class Pillion extends Node3D:
 	var vehicle
+	## Which of the vehicle's `seats` this is.
+	var index := 0
 	var seat_offset: Vector3:
-		get: return vehicle.pillion_offset
+		get: return vehicle.seats[index].offset
 	var seat_point: Vector3:
-		get: return vehicle.pillion_point
+		get: return vehicle.seats[index].point
 	var grip_points: Array[Vector3]:
-		get: return vehicle.pillion_grips
+		get:
+			var out: Array[Vector3] = []
+			out.assign(vehicle.seats[index].grips)
+			return out
 	var peg_points: Array[Vector3]:
-		get: return vehicle.pillion_pegs
+		get:
+			var out: Array[Vector3] = []
+			out.assign(vehicle.seats[index].pegs)
+			return out
 	var rider_lean: float:
-		get: return vehicle.pillion_lean
+		get: return vehicle.seats[index].lean
 
 
 class Seat extends Interactable:

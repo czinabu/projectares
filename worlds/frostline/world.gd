@@ -16,6 +16,10 @@ const FERAL_CHANCE := 0.45
 const ZONE_COLD := [0.7, 1.0, 1.4]
 const EXPOSED_OVER := 22.0
 const EXPOSED_MULT := 1.5
+## Inside the Engine (DESIGN.md "The Engine's inside") the wind is gone but
+## the cold is not: the Drum Hall is gentler than the glacier head outside,
+## and it gets colder the deeper you go (the hall, then the Shaft).
+const ENGINE_COLD := [0.8, 1.1]
 ## How much grip a wheel gets on Frostline's snow and on its bare ice
 ## (`WorldDef.surface_grip`): wheels break loose and slide.
 const SNOW_GRIP := 0.75
@@ -62,6 +66,8 @@ const RELAY_BLUEPRINT := 0.06
 const CONTRACTS := {
 	"frost_relay": {"title": "Loot the relay on the Engine's back", "stat": "cache:relay", "goal": 1,
 			"kind": "daily", "scrip": 220},
+	"frost_engine": {"title": "Loot 2 caches inside the Engine", "stat": "cache:engine", "goal": 2,
+			"kind": "daily", "scrip": 200},
 	"frost_rims": {"title": "Loot 3 caches up on the rims", "stat": "cache:rooftop", "goal": 3,
 			"kind": "daily", "scrip": 180},
 	"frost_grid": {"title": "Bring down 6 Wardens", "stat": "kills:warden", "goal": 6, "kind": "daily",
@@ -137,6 +143,21 @@ const RELAY_TABLE := [
 	{"id": "bp_grip_glacier", "weight": 4.0},
 	{"id": "frame_trooper", "weight": 13.0},
 	{"id": "chip_barrier", "weight": 12.0},
+]
+
+## Inside the Engine: what crafting runs on, Engine Coils most of all, the
+## deeper the better (DESIGN.md "The Engine's inside").
+const ENGINE_TABLE := [
+	{"id": "engine_coil", "weight": 26.0},
+	{"id": "glacial_alloy", "weight": 20.0},
+	{"id": "cryo_core", "weight": 20.0},
+	{"id": "frost_cryo_cell", "weight": 16.0},
+	{"id": "alloy_ingot", "weight": 12.0},
+	{"id": "power_cell", "weight": 10.0},
+	{"id": "medkit", "weight": 8.0},
+	{"id": "upgrade_data", "weight": 3.0},
+	{"id": "bp_frame_thermal", "weight": 1.5},
+	{"id": "bp_grip_glacier", "weight": 1.5},
 ]
 
 const WARDEN_DROPS := [
@@ -259,8 +280,17 @@ func zone_at(pos: Vector3) -> int:
 	return 0
 
 
-## Colder further up the valley, and colder still up in the wind.
+## The Engine's inside is out of the wind and the weather.
+func sheltered_at(pos: Vector3) -> bool:
+	return MapScript.inside_engine(pos)
+
+
+## Colder further up the valley, and colder still up in the wind. Inside the
+## Engine, out of the wind, colder the deeper you go.
 func cold_at(pos: Vector3) -> float:
+	if MapScript.inside_engine(pos):
+		var below := pos.y < MapScript.engine_bed() - 2.0
+		return ENGINE_COLD[1 if below else 0]
 	var rate: float = ZONE_COLD[clampi(zone_at(pos), 0, 2)]
 	if pos.y - MapScript.floor_at(pos.z) > EXPOSED_OVER:
 		rate *= EXPOSED_MULT
@@ -301,6 +331,9 @@ func roll_loot(source: String, rng: RandomNumberGenerator) -> Array[String]:
 			# The rims and the glacier head pay the same: both are the hard
 			# places to reach.
 			table = ROOFTOP_TABLE
+			count = rng.randi_range(2, 3)
+		"engine":
+			table = ENGINE_TABLE
 			count = rng.randi_range(2, 3)
 		"relay":
 			var haul: Array[String] = []
