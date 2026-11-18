@@ -66,19 +66,30 @@ func _ready() -> void:
 	_streams["watch_refused"] = _tones([150.0, 157.0], 0.2, 14.0, 0.45)
 	# Airborne sign-out: a rising tone played from the beacon column.
 	_streams["beacon"] = _tones([520.0, 780.0, 1040.0], 0.55, 3.5, 0.5)
+	# Thin ice: a sharp crack with a low groan under it as it strains, and a
+	# heavy splintering crash as it gives way.
+	_streams["ice_crack"] = _noise_burst(0.45, 9.0, 0.75, 48.0)
+	_streams["ice_break"] = _noise_burst(1.1, 3.5, 0.95, 36.0)
+	# A linked faction's call for help: two quick rising chirps.
+	_streams["grid_call"] = _sweep(700.0, 2600.0, 0.32, 0.4)
 
 
 ## Plays a sound. With a position it is 3D and fades with distance; without
 ## one it plays flat, for the local player's own actions and UI.
 ## `reach` is how far away it can still be heard (gunfire carries further).
-func play(sound: String, at: Variant = null, volume_db := 0.0, reach := 90.0) -> void:
+## How close a sound is at full volume, before it falls away with distance.
+const UNIT_SIZE := 9.0
+
+
+## `unit` is the distance it is heard at full volume: more carries further.
+func play(sound: String, at: Variant = null, volume_db := 0.0, reach := 90.0, unit := UNIT_SIZE) -> void:
 	if not _enabled or not _streams.has(sound):
 		return
 	if at is Vector3:
 		var player := AudioStreamPlayer3D.new()
 		player.stream = _streams[sound]
 		player.volume_db = volume_db
-		player.unit_size = 9.0
+		player.unit_size = unit
 		player.max_distance = reach
 		add_child(player)
 		player.global_position = at

@@ -53,6 +53,10 @@ extends RefCounted
 ##     spawns inside them.
 ##   - Marker3D nodes in group "spawn_boss": a boss (a bot made a warlord)
 ##     stands guard there, and comes back `boss_respawn_time` after it dies.
+##     Optional metas: "faction" (as on "spawn_bot"), "radius" (the ground it
+##     guards) and "boss" (a kind of boss of the world's own, set on the bot
+##     as meta "boss" before `equip_bot` and `make_warlord`, and sent to
+##     clients so they build the same one).
 ## The cold (DESIGN.md section 2, "Frostline"): a world with `cold` over 0
 ## drains its players' body heat (`Actor.body_heat`) by `cold_at` a second
 ## out in the open, and its map may add warmth:
@@ -119,6 +123,29 @@ var sign_out_at_beacons := false
 var beacon_sign_out_time := 20.0
 var beacon_join_bonus := 0.5
 var beacon_join_cap := 2.0
+## Tracks (DESIGN.md "Frostline"): with `tracks` on, people on foot leave
+## footprints and ground vehicles wheel tracks in the open ground (the map's
+## `ground_height`, never a roof or a floor), kept by the authority for
+## `track_lifetime` seconds and sent to each player only near them
+## (`Tracks`, `Raid.tracks`). Off by default.
+var tracks := false
+var track_lifetime := 240.0
+## How far a gunshot carries, as a share of the usual: bots hear it that much
+## further off (`Combat.noise`) and so do people (`Gun.SHOT_REACH`).
+var shot_carry := 1.0
+## Thin ice (DESIGN.md "Frostline"): with `thin_ice` on, the ground where
+## `thin_ice_at` says so bears a ground vehicle up to `ice_holds` tonnes
+## (its "weight" stat). A heavier one strains it by its weight over that a
+## second, cracking audibly on the way, and at `ice_break_strain` it breaks
+## through: the vehicle sinks, its riders go into the water, and the hole
+## stays open for `ice_refreeze` seconds (`Raid._tick_ice`). Off by default.
+## With `ice_keeps_vehicle` the sunk vehicle is not lost: the watch of
+## whoever threw it (else its driver) pulls it back out as a toy.
+var thin_ice := false
+var ice_keeps_vehicle := false
+var ice_holds := 1.0
+var ice_break_strain := 10.0
+var ice_refreeze := 150.0
 ## Seconds a sign-out takes while airborne. Progress already earned is kept
 ## when you land or lift off, so the seconds left are whatever the rate you
 ## are on still needs (DESIGN.md section 7). The exact air time is this.
@@ -186,6 +213,18 @@ var pod_upgrade_data := 0
 ## sign-out time while sheltered in a gate outpost (it is the way out there).
 var boss_respawn_time := 360.0
 var outpost_sign_out_time := 3.0
+## A boss made for one player is a wall for none and a pushover for four,
+## so where this is over 0 it gets tougher with company: each player past
+## the first within `boss_party_range` of it adds this share to its
+## `Actor.toughness` (hits are divided by it). Authority only.
+var boss_party_scale := 0.0
+var boss_party_range := 45.0
+## Linked factions (DESIGN.md "Frostline", the defence grid): faction to
+## range in metres. A bot of one that is hurt and lives calls every other
+## bot of its faction within range to where the hit came from, the way a
+## gunshot is heard (`Actor.heard`), so a drawn-out fight brings the rest.
+## A kill in one blow calls nobody.
+var linked_factions := {}
 ## Rival raiders: bots that play the way a player does (DESIGN.md section 2,
 ## "Rival raiders"). Each drops in at a player spawn with a real kit
 ## (`raider_kit`), loots caches, fights everyone, and after a while signs
@@ -336,6 +375,19 @@ func cold_at(_pos: Vector3) -> float:
 	return cold
 
 
+## How much grip the ground at a point gives a wheel or a foot of a ground
+## vehicle: 1 on dry ground, less on snow and ice, where wheels break loose
+## and slide (`Vehicle._surface_grip`; a hover's cushion ignores it). Run on
+## every machine that simulates a ride, so keep it free of randomness.
+func surface_grip(_pos: Vector3) -> float:
+	return 1.0
+
+
+## Whether the ground at a point is thin ice (see `thin_ice`).
+func thin_ice_at(_pos: Vector3) -> bool:
+	return false
+
+
 func can_damage(attacker: Node, target: Node, _info: DamageInfo) -> bool:
 	return attacker != target and weapons_free
 
@@ -374,6 +426,12 @@ func make_warlord(bot: Actor) -> void:
 	bot.display_name = "Warlord"
 	bot.health.max_health *= 3.0
 	bot.health.health = bot.health.max_health
+
+
+## The war feed's line when a core boss stands guard again, `where` from
+## the Raid ("near Echo Post").
+func boss_back_news(_bot: Actor, where: String) -> String:
+	return "A warlord has taken %s again" % where
 
 
 func on_spawn(_actor: Actor) -> void:

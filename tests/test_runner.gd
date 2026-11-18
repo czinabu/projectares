@@ -19,6 +19,7 @@ const RigLookTests := preload("res://tests/rig_look_tests.gd")
 const RigTierTests := preload("res://tests/rig_tier_tests.gd")
 const RigBalanceTests := preload("res://tests/rig_balance_tests.gd")
 const HoverbikeTests := preload("res://tests/hoverbike_tests.gd")
+const DriftTests := preload("res://tests/drift_tests.gd")
 const EconomyTests := preload("res://tests/economy_tests.gd")
 const MeleeArsenalTests := preload("res://tests/melee_arsenal_tests.gd")
 const MeleeFeelTests := preload("res://tests/melee_feel_tests.gd")
@@ -59,6 +60,9 @@ const HostRecoveryTests := preload("res://tests/host_recovery_tests.gd")
 const RiskZoneTests := preload("res://tests/risk_zone_tests.gd")
 const ColdTests := preload("res://tests/cold_tests.gd")
 const BeaconTests := preload("res://tests/beacon_tests.gd")
+const TrackTests := preload("res://tests/track_tests.gd")
+const IceTests := preload("res://tests/ice_tests.gd")
+const GridTests := preload("res://tests/grid_tests.gd")
 const RaiderTests := preload("res://tests/raider_tests.gd")
 const HeavyUnitTests := preload("res://tests/heavy_unit_tests.gd")
 const PlaytestFixTests := preload("res://tests/playtest_fix_tests.gd")
@@ -285,6 +289,7 @@ func _run() -> void:
 	await _test_vehicle_driving()
 	await _test_vehicle_roster()
 	await _test_hoverbike()
+	await _test_drifting()
 	await _test_vehicle_raids()
 	await _test_vehicle_toys()
 	await _test_toy_throw_pose()
@@ -353,6 +358,9 @@ func _run() -> void:
 	await _test_artifacts()
 	await _test_risk_zones()
 	await _test_cold()
+	await _test_tracks()
+	await _test_ice()
+	await _test_grid()
 	await _test_raiders()
 	await _test_heavy_units()
 	await _test_playtest_fixes()
@@ -560,6 +568,18 @@ func _test_artifacts() -> void:
 
 func _test_risk_zones() -> void:
 	await RiskZoneTests.run(self)
+
+
+func _test_tracks() -> void:
+	await TrackTests.run(self)
+
+
+func _test_ice() -> void:
+	await IceTests.run(self)
+
+
+func _test_grid() -> void:
+	await GridTests.run(self)
 
 
 func _test_cold() -> void:
@@ -2696,7 +2716,7 @@ func _test_vehicle_driving() -> void:
 	arena.add_child(rider)
 	rider.position = Vector3(3, 0.1, 0)
 	await frames(20)
-	check(bike.is_on_floor() and is_equal_approx(bike.max_speed, 22.0), "a bike settles and takes its item stats")
+	check(bike.is_on_floor() and is_equal_approx(bike.max_speed, 24.0), "a bike settles and takes its item stats")
 	var seat: Interactable = bike.get_node("Seat")
 	check(seat.get_prompt().contains("Ride"), "a parked bike offers a ride")
 	# The rider stands 3 m to the bike's +X side; yaw PI/2 faces -X.
@@ -2952,6 +2972,10 @@ func _test_vehicle_roster() -> void:
 
 func _test_hoverbike() -> void:
 	await HoverbikeTests.run(self)
+
+
+func _test_drifting() -> void:
+	await DriftTests.run(self)
 
 
 ## The lowest point of every mesh under `node`, in world height.
@@ -3985,6 +4009,10 @@ func _test_strongpoints() -> void:
 			return me != null and (me.body_heat < me.max_body_heat or me.warming)
 		await _wait_until(heard, 240)
 		check(heard.call(), "in the cold, the server tells a client their body heat")
+		var printed := func() -> bool:
+			return gale.raid.tracks.count() > 0
+		await _wait_until(printed, 240)
+		check(printed.call(), "and sends it the footprints near it in the snow")
 		await _leave(gale)
 	OS.kill(pid)
 	await frames(10)

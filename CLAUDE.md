@@ -85,6 +85,41 @@ without Caleb, and update the gap list when a PR closes a row.
   dropped connection counts down where the body stands. Authority only,
   respecting `Raid.zone_rules`; the owner gets the pace with the countdown
   (`NetSession._sign_out`'s rate).
+- Tracks (DESIGN.md "Frostline"): with `WorldDef.tracks` the authority's
+  `Raid._tick_tracks` lays footprints (alternate feet) and ground vehicles'
+  wheel tracks into `Raid.tracks` (a `Tracks` store in cells), only on open
+  ground (`ground_height`, never a roof or a floor), and lets them go after
+  `track_lifetime`. A mark is laid behind someone, never where they are, so
+  it is a trail, not tracking. A client is sent only marks near its player
+  (`NetSession._send_tracks`, by the last id sent per cell, within
+  `TRACK_RANGE`) and draws them with `TrackView` (view only, added by the
+  `Raid` only where `Look` is on). A world's air carrying shots further is
+  `WorldDef.shot_carry`, which scales both `Gun.noise_reach` (bots) and
+  the shot's sound.
+- Thin ice (DESIGN.md "Frostline"): with `WorldDef.thin_ice` the ground
+  where `thin_ice_at` says so bears a ground vehicle up to `ice_holds`
+  tonnes (its `weight` stat; hovering never counts). Only the authority's
+  `Raid._tick_ice` strains it, cracks it (`Raid.ice_cracked`, stages 1 and
+  2 a warning, 3 the break), sinks the vehicle through `remove_vehicle`
+  (with `ice_keeps_vehicle`, Frostline's, back onto the thrower's or the
+  driver's watch as a toy) and opens a hole (`Raid.ice_holes`) that takes the body heat of anyone in
+  it, sinks anything driven into it and freezes over after
+  `ice_refreeze`. Clients get the cracks and holes from `NetSession`
+  (`_ice_crack`, `_ice_holes`) and draw them with `IceView` (view only).
+- The defence grid (DESIGN.md "Frostline"): a world's
+  `WorldDef.linked_factions` (faction to metres) makes a bot of that
+  faction that is hurt and lives call the rest of it within range, through
+  `Actor.heard` like a gunshot (`Raid._on_linked_hurt`, authority only, at
+  most every `LINK_EVERY`); a blow that kills calls nobody. Everyone near
+  sees the call (`Raid.grid_called`, `NetSession._grid_call`, drawn by
+  `Raid._show_grid_call` where `Look` is on). A "spawn_boss" marker's meta
+  "boss" names a world's own boss kind: the `Raid` sets it on the bot
+  before `equip_bot` and `make_warlord` and `NetSession` sends it, so
+  `make_warlord` builds the same machine everywhere (Frostline's Engine
+  Sentinel). Where `WorldDef.boss_party_scale` is over 0 a boss is made
+  for one player and the authority raises its `Actor.toughness` for each
+  other player within `boss_party_range` (`Raid._scale_boss`); hits are
+  divided by it in `Actor.modify_incoming`.
 - How harsh death is belongs to the world, not to `Raid`. With
   `WorldDef.keep_gear_on_death` a dead player drops only the backpack and the
   equipped gear returns in the result's `kept`. A gentle world pays for that
@@ -262,22 +297,35 @@ without Caleb, and update the gap list when a PR closes a row.
   through any guard. Noise is `Combat.noise`, which only guns call (a person's
   shot, at most every `Gun.noise_every`): patrolling bots hear it through
   `Actor.heard`. Never make a blade call it; melee kills are silent.
-  Each weapon swings its own way, from item stats (view only):
-  `swing_style` "slash" (swords' arcs), "thrust" (straight out along the
-  aim: the spear), "chop" (down from over the shoulder: the axe, the
-  hammer), "cut" (the katana's two-handed kenjutsu cuts, `ActionPose.cuts`:
-  kesa-giri, gyaku-kesa and shomen through a contact key in front of the
-  body, a tsuki for the heavy from the middle stance, the off hand on the
-  handle throughout and the edge leading, `ActionPose.cut_blade`; view
-  only, so the katana keeps its one-handed stats), `heavy_style` for a heavy of its own (the knife's stab) and
-  `swing_scale` for its size. `ActionPose.windup_reach`/`follow_reach` and
+  Each weapon fights its own way (Caleb's call: every attack and guard
+  matches how the weapon is really used; view only). Its `swing_style`
+  ("slash", "thrust", "chop", "cut"), `heavy_style`, hold and hands pick a
+  technique (`ActionPose.technique`): a table in `ActionPose.techniques` of
+  keyed swings per side (and a heavy from the middle) and a guard per side.
+  Each swing is three keys, windup, contact and follow-through, each the
+  weapon hand and the way the blade goes, so the blade turns through the
+  cut edge first (`technique_blade`, `keyed_reach`) and every strike meets
+  the foe in front of the chest where the eyes see it; each guard holds the
+  weapon across its side in front of the body. The sword cuts diagonally
+  and thrusts for its heavy, the axe chops from high behind the shoulder,
+  the knife slashes short in a forward grip and stabs for its heavy, the
+  hammer is hauled over in both hands, the spear thrusts from the hip, and
+  the katana keeps its kenjutsu cuts (kesa-giri, gyaku-kesa, shomen and a
+  tsuki, both hands on the handle; view only, so the katana keeps its
+  one-handed stats). `swing_scale` draws a small weapon's keys in toward
+  the middle (`swing_centre`). A new melee weapon picks a style, or a new
+  technique gets a table; `view_match_tests.gd` (`_check_techniques`)
+  checks that every weapon's strikes are in view and its guards show their
+  side. `ActionPose.windup_reach`/`follow_reach` and
   `MeleeWeapon._animate` read `style_now()`. The shown swing starts
   `SWING_LEAD` before the strike and speeds into it, half its arc at the
   hit, then eases out (`MeleeWeapon.swing_arc`; both views read it); a
   windup keeps coiling back (`windup_coil`); two-handers swing slower and
   turn the body more. A new melee weapon picks a style; check it by eye with
   `visual_check.tscn -- <dir> --swing-only` (run with `--fixed-fps 60`),
-  which films each move frame by frame. Every melee
+  which films each move frame by frame, or quicker, one weapon's stance,
+  swings and guards from the front, the side and the eyes at once with
+  `--technique-only <item id>`. Every melee
   model is dressed as tech by `Look._tech_melee` (`assets/shaders/melee.gdshader`):
   bare metal becomes alloy with an energy edge in the weapon's rarity color,
   wood and wraps black polymer with glowing seams. The scrap kit's blade
@@ -401,8 +449,9 @@ without Caleb, and update the gap list when a PR closes a row.
   first person. Aiming down sights is a body animation, the same in both
   views (`ActionPose.ads`, eased by `ads_rate`): `WeaponArm._reach_sight`
   reaches the gun hand so the sight (`ActionPose.sight_local`: an optic's
-  "Sight" marker, else the model's "IronSight", else the top of the model)
-  sits on the line out of the model's eyes, `ActionPose.relief_for` in front
+  "Sight" marker, else the model's "IronSight", else the top of the model;
+  a gun with no optic wears iron sights there, a rear notch and a lit
+  front post, `Look._iron_sights`) sits on the line out of the model's eyes, `ActionPose.relief_for` in front
   of them (a sidearm out at arm's length, a long gun shouldered), and the
   off hand takes the "ForeGrip" (or cups a sidearm), sliding back along
   the gun where the arm cannot reach. A sight out of the gun arm's reach
@@ -425,7 +474,8 @@ without Caleb, and update the gap list when a PR closes a row.
   that takes no input on a tick stops aiming (`Weapon.drop_aim`). Each
   actor has one `ActionPose`
   (`core/visual/action_pose.gd`, a view-only child made by `ActionPose.of`):
-  the melee reach and shoulder turn, the reload motion, the low ready, the
+  the melee reach and shoulder turn, the reload motion (brought in to the
+  middle, where the eyes see it, `reload_reach`), the low ready, the
   drawing back of a held heavy and the easing back of a recovering blade,
   the gun brought up to the eye,
   the watch raise (from `ActorCommand.watch_up`), the phone hold
@@ -459,12 +509,16 @@ without Caleb, and update the gap list when a PR closes a row.
   held ready, not left to the idle clip (Caleb's references): the arm
   reaches the hand to the lower right of the view and the weapon stands in
   the fist the way its hold says (`ActionPose.ready_holds`, picked by the
-  last field of `Look.MELEE_MODELS`): a straight sword upright, a katana
+  last field of `Look.MELEE_MODELS`): a straight sword with the elbow bent,
+  the fist by the hip and the point up toward a foe's face, a katana
   leaning in with the off hand under the weapon hand, a knife lying flat in
-  a reverse grip with the empty hand up as a guard. Attacks start from the
+  a reverse grip. An empty off hand stays up as a guard
+  (`ActionPose.off_guard`) through every swing and guard, and on the ground
+  the legs take a fighting stance while a blade is out (`Locomotion.fight`:
+  knees bent, feet staggered standing still). Attacks start from the
   hold and ease back into it (`ActionPose.held_ready`). A blade lies along the closed fist
   and a gun held low turns with the wrist (`WeaponArm`); swings turn the
-  arm about the shoulder (`ActionPose.swing_reach`, `elbow_pole`). Shots
+  arm through the technique's keys (`ActionPose.keyed_reach`, `elbow_pole`). Shots
   are judged from the eyes but drawn from the gun's "Muzzle" marker as it
   is shown (`Gun.muzzle_point`). Compare by eye with
   `visual_check.tscn -- <dir> --views-only [rows]` (`VIEW_MELEE=<item id>`
@@ -757,8 +811,10 @@ without Caleb, and update the gap list when a PR closes a row.
   always-in-view readings as a row of hex cells along the lower left curve,
   each filling like a gauge with its number over it (health, armor,
   stamina, with a flight rig its heat and cue, the ability;
-  `VisorHud.vital_cells`; the landing warning is still to come, per
-  DESIGN.md section 5). Every working helmet also has a heading tape across
+  `VisorHud.vital_cells`), and under the middle of the lower rim the
+  landing warning (`Hud.landing_warning`: the rig about to cut out while a
+  fall from there would hurt; `VisorHud._draw_landing`, and the pack
+  screen's word turns to LAND, DESIGN.md section 5). Every working helmet also has a heading tape across
   the top, bowed with the glass, that marks only what the wearer is already
   told (`VisorHud.compass_marks`): squadmates (`VisorHud.squadmate`: a player in
   the same clan, or everyone where `WorldDef.players_allied`; never a bot or
@@ -850,7 +906,13 @@ without Caleb, and update the gap list when a PR closes a row.
   `is_occupied`, never `rider` alone), and the "aircraft" tag flies
   it (`Vehicle._fly`: takes off past `takeoff_speed` with jump, never
   hovers, drops below `stall_speed` or with nobody at the stick, climbs no
-  higher than `ceiling` over the world's ground). Every vehicle, the jet
+  higher than `ceiling` over the world's ground). Jump is the handbrake
+  (`handbrake`, off for the mech and the jet, whose jump key is theirs):
+  at speed it is a drift (`Vehicle.drifting`, the same `slip` a hover
+  keeps, `drift_*` stats) whose clean exit on the throttle is a short
+  burst (`drift_charge`, `_drift_exit`), and a world's slick ground
+  (`WorldDef.surface_grip`, Frostline's snow and ice) lets wheels slide
+  on their own; a hover ignores it. Every vehicle, the jet
   included, can be thrown in every world (Caleb's call), except a race
   world (`WorldDef.vehicle_toys` off), which races its own stock machines. A vehicle's `watch_recharge` and `footprint` stats
   set the watch's wait after a throw and the room it needs to unpack.

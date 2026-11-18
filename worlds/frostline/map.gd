@@ -34,9 +34,19 @@ const CORE_FROM_Z := -150.0
 const ENGINE_Z := -235.0
 const ENGINE_RADIUS := 22.0
 const ENGINE_LENGTH := 76.0
+## How far round the hatch the Engine Sentinel keeps its guard.
+const SENTINEL_GROUND := 16.0
 ## The frozen lake where the valley widens.
 const LAKE_Z := -95.0
 const LAKE_RADIUS := Vector2(44.0, 40.0)
+## The middle of the lake is thin ice (`WorldDef.thin_ice`): within this
+## share of its radius a heavy vehicle breaks through. The shore ice holds.
+const THIN_ICE := 0.7
+
+
+## How far out on the lake a point is: 0 at its middle, 1 at its shore.
+static func lake_reach(x: float, z: float) -> float:
+	return Vector2((x - centre(z)) / LAKE_RADIUS.x, (z - LAKE_Z) / LAKE_RADIUS.y).length()
 ## Ramps cut into the walls up to the shelf: which side, where the top is,
 ## and which way along the valley they run down.
 const RAMPS := [
@@ -508,6 +518,11 @@ func _build_engine() -> void:
 	_box(Vector3(5, 6, 1), hatch + Vector3(0, 3, 0), HULL_DARK)
 	# The Engine still breathes a little warmth out of its hatch.
 	_add_warmth(_ground(Vector2(hatch.x, hatch.z + 3.0)), HATCH)
+	# The defence grid's boss, the Engine Sentinel, guards the hatch.
+	var boss := _add_marker("spawn_boss", _ground(Vector2(hatch.x + 4.0, hatch.z + 7.0)))
+	boss.set_meta("faction", "warden")
+	boss.set_meta("boss", "sentinel")
+	boss.set_meta("radius", SENTINEL_GROUND)
 	for x: float in [-14.0, 0.0, 14.0]:
 		_add_marker("spawn_cache", _ground(Vector2(base.x + x, base.z + ENGINE_RADIUS + 7.0))).set_meta("loot_source", "cache_core")
 	for x: float in [-20.0, 20.0]:
@@ -678,6 +693,20 @@ func _dress_ice(art: Node3D) -> void:
 	lake.scale = Vector3(LAKE_RADIUS.x * 1.02, 1.0, LAKE_RADIUS.y * 1.02)
 	lake.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	art.add_child(lake)
+	# The thin ice in the middle: darker, clearer ice you can see the water
+	# through, so it is read before it is driven onto.
+	var thin := StandardMaterial3D.new()
+	thin.albedo_color = Color(0.13, 0.25, 0.36)
+	thin.roughness = 0.03
+	thin.metallic_specular = 1.0
+	var black := MeshInstance3D.new()
+	black.mesh = disc.duplicate()
+	(black.mesh as CylinderMesh).material = thin
+	(black.mesh as CylinderMesh).radial_segments = 24
+	black.position = lake_at + Vector3(0.0, 0.015, 0.0)
+	black.scale = Vector3(LAKE_RADIUS.x * THIN_ICE, 1.0, LAKE_RADIUS.y * THIN_ICE)
+	black.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	art.add_child(black)
 	for k in 24:
 		var a := _art_rng.randf() * TAU
 		var r := _art_rng.randf_range(0.1, 0.9)

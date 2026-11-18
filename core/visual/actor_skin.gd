@@ -1865,7 +1865,8 @@ func _update_beam(delta: float) -> void:
 		if not hit.is_empty():
 			reach = from.distance_to(hit.position)
 	var width := lerpf(0.012, 0.035, held)
-	var color := Color(0.9, 0.12, 0.04).lerp(Color(1.0, 0.5, 0.12), held)
+	var hot: Color = _def.get("beam_color", Color(1.0, 0.5, 0.12))
+	var color := (hot * Color(0.9, 0.25, 0.3)).lerp(hot, held)
 	color.a = lerpf(0.25, 0.85, held)
 	if held >= 1.0:
 		# Locked: it flickers as the cannon fires down it.

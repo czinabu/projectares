@@ -212,9 +212,11 @@ worlds and a casual or solo one has a steady home.
   when empty (built, step 2). Planned: whiteouts that cut sight to about 30 m and wipe
   tracks, and feel like a real blizzard (Caleb's call): wind you see and
   hear, snow driven sideways in gusts, drifts streaming off the rims, bodies
-  leaning into it and the wind pushing flight rigs off course; footprints and vehicle tracks the server keeps and sends only
-  nearby; gunshots that carry twice as far; thin ice that breaks under
-  heavy vehicles; the Wardens as the Engine's defence grid, still running.
+  leaning into it and the wind pushing flight rigs off course. Built
+  (step 6): footprints and vehicle tracks the server keeps and sends only
+  nearby, and gunshots that carry twice as far. Built (step 7): thin ice in
+  the lake's middle that breaks under heavy vehicles, and the Wardens as
+  the Engine's defence grid, still running, with its boss at the hatch.
 - **What you bring home.** New parts (Cryo Core, Glacial Alloy,
   Engine Coil) that Mk2 and Mk3 recipes need, and Frostline blueprints for
   new options only (attachments, cold-weather gear), never a higher Mk of
@@ -227,7 +229,8 @@ worlds and a casual or solo one has a steady home.
 **Order of work**, one PR each: (1) the valley map, (2) the cold, (3) the
 loot role and recipes, (4) warm beacons, (5) whiteouts, after the Ashfront
 weather work, (6) tracks and louder gunshots, (7) thin ice, the defence
-grid and expedition contracts, (8) later, with the PvE dungeons, the
+grid and expedition contracts (in three PRs: thin ice, then the grid, then
+contracts), (8) later, with the PvE dungeons, the
 Engine's inside. Every number is a placeholder for the playtest.
 
 **What is built.** The valley (step 1): `worlds/frostline/map.gd`, a
@@ -286,6 +289,68 @@ down where it stands as anywhere. Only the authority decides it
 (`Raid._beacon_rate`); the owner is sent the pace with the countdown
 (`NetSession._sign_out`), so the client's numbers keep step. The watch's
 zone line names the beacon you stand at. Numbers are placeholders.
+
+Tracks and gunshots (step 6): with `WorldDef.tracks` every body on foot
+leaves footprints, left and right in turn about every 0.8 m, and every
+ground vehicle wheel tracks (a hoverbike and an aircraft leave none). Only
+open ground takes a print: a body more than half a metre off the map's
+`ground_height` (a roof, a hut floor, a ledge) leaves nothing. The
+authority lays them down (`Raid._tick_tracks`, ten times a second) in a
+`Tracks` store kept in 24 m cells, each capped so a trampled spot never
+grows, and lets them go after `track_lifetime` (four minutes). Online a
+player is sent only the new marks within 60 m of them, a few times a
+second, by the last mark id sent for each cell (`NetSession._send_tracks`),
+so tracks are a trail laid behind people, never a live position, and far
+ones never leave the server. The snow shows them (`TrackView`, view only):
+pressed-in prints and pairs of wheel lines that fade as they age, drawn
+within 55 m. Whiteouts (step 5) will wipe them. A shot carries
+`WorldDef.shot_carry` (twice) as far: bots hear it twice as far off
+(`Gun.noise_reach`) and people hear it twice as far too. Numbers are
+placeholders.
+
+Thin ice (step 7, the first part): with `WorldDef.thin_ice` the ground
+where `thin_ice_at` says so (Frostline: the middle of the lake, within 70%
+of its radius, drawn as darker, clearer ice) bears a ground vehicle up to
+`ice_holds` tonnes, its `weight` stat. People on foot, a bike (0.3 t) and
+anything that hovers or flies cross freely. A heavier one strains it by its
+weight over that a second while it stands or drives there: a rover (3 t)
+goes through after about three and a half seconds, a mech (6 t) after under
+two, so a rover can cross the middle at speed but never stop on it. The ice
+cracks out loud twice on the way (at 40% and 70%), white cracks spreading
+under the wheels, and strain eases off again on sound ice. When it gives
+way the vehicle sinks and its riders are in the water. In Frostline the
+vehicle is not lost (Caleb's call, `ice_keeps_vehicle`): the watch of
+whoever threw it, else its driver's, pulls it back out as a toy, so the
+price is the soaking and the walk. The hole is open water 3.5 m across,
+ringed with broken plates, that takes all the body heat of anyone standing in it and sinks
+anything driven into it, until it freezes over after `ice_refreeze` (two
+and a half minutes). Only the authority decides it (`Raid._tick_ice`);
+clients are sent the cracks and the open holes (`NetSession._ice_crack`,
+`_ice_holes`) and draw them with `IceView` (view only). Numbers are
+placeholders.
+
+The defence grid (step 7, the second part): the Wardens are the Engine's
+defence grid, still running. They are a linked faction
+(`WorldDef.linked_factions`): a Warden hurt in a fight it survives calls
+every Warden within 60 m to where the hit came from, the way a gunshot is
+heard, at most every second and a half, so a drawn-out fight brings the
+rest and a kill in one blow (a backstab, a headshot) calls nobody. The call
+is seen and heard by everyone near (a teal ring running out from its feet
+and a rising chirp; `Raid.grid_called`, online `NetSession._grid_call`).
+The grid's boss is the Engine Sentinel, which stands guard at the hatch (the
+map's "spawn_boss" marker, meta "boss" = "sentinel", sent to clients with
+the spawn so they build the same machine). It is a Warden built three
+metres tall (650 health, 40 armor) whose Grid Lance must hold a teal
+tracking beam on you for 1.2 s before it fires (30 a shot), so breaking the
+line is the answer, and whose back, its heat vent, takes double. It is made
+for one player (Caleb's call: solo works too): each other player within 45 m
+of it makes it 60% tougher (`WorldDef.boss_party_scale`, `Actor.toughness`,
+counted every second by the authority), so a group finishes it quicker but
+not trivially. Like Ashfront's core warlords it comes back
+`boss_respawn_time` after it falls. Any Frostline warlord (the Sentinel or an
+event's) carries a piece of upgrade data and, about one time in seven, one
+of the war's blueprints: the first half of the slow route (section 10).
+Numbers are placeholders.
 
 ### PvP world
 
@@ -1046,6 +1111,42 @@ heavy.
 **Later:** a melee pass on the stances and animations (Caleb), and bands
 for the melee bench once it has been played.
 
+### Melee technique (Caleb's call: each weapon is used the way it really is)
+
+Every attack and guard matches how its weapon is really used, and it reads
+as well from the eyes as from behind: one body, both views.
+
+- **Ready.** A one-handed weapon is held with the elbow bent and the fist
+  low in front of the hip, the point up toward the foe's face, never with
+  the arm locked out at shoulder height. The empty off hand stays up in
+  front of the chest as a guard through every swing and block. A katana is
+  held in both hands; a hammer and a spear rest across the body.
+- **Swings.** Each weapon has its own technique, keyed at the windup, the
+  moment of contact and the end of the follow-through: the hand and the
+  way the blade points, so the blade turns through the cut edge first and
+  the strike lands in front of the chest, where the eyes see it.
+  - Sword: diagonal forehand and backhand cuts from the shoulder to the far
+    hip, a vertical cut from overhead, and a lunging thrust for its heavy.
+  - Axe: raised high behind the shoulder and chopped down steeply, head
+    first.
+  - Knife: it turns over from its reverse-grip rest into a forward grip
+    for short, quick slashes across the chest, and stabs at the ribs from
+    the hip for its heavy.
+  - Hammer: hauled up over the shoulder in both hands and brought down
+    through the body.
+  - Spear: thrusts from the hip along the aim, the front hand guiding the
+    shaft, and a long lunging thrust for its heavy.
+  - Katana: kenjutsu cuts in both hands (kesa-giri, gyaku-kesa, shomen) and
+    a tsuki for its heavy.
+- **Guards.** Each side has its own guard: the weapon held up across that
+  side in front of the body (a spear's or hammer's shaft across it, a
+  knife up by the face), overhead held level above the head. A guard
+  always shows which side it covers, and it is in view from the eyes.
+
+- **Stance.** With a melee weapon out on the ground the legs take a
+  fighting stance: knees bent, the body leant in, and standing still the
+  feet staggered, lead foot forward (`Locomotion.fight`).
+
 ### Gadgets
 
 The slot exists with three chips (Phase Step, Kinetic Barrier, Shock Pulse).
@@ -1203,7 +1304,7 @@ always in view, and the watch is not needed for any of them.
 | Heat gauge | The 100 heat bar, with the 35 recovery mark. It warns before the overheat cut-out. |
 | Rig cue | One cue per rig: the jetpack's coast-and-vent window, the wings' stall line and boosts left, the boots' dash charges and skim time. |
 | Squad markers | Where your squad is, at the visor edge toward them. Squad only; never shows an enemy. |
-| Landing warning | Ground coming up while heat is high, or while the rig is about to cut out, so you can land or pulse before you fall. |
+| Landing warning | Ground coming up while heat is high, or while the rig is about to cut out, so you can land or pulse before you fall. Built: from 75% heat up, overheated, jammed or with a skim's last 0.6 s, and only while a fall from where you are would hurt (so boots, which take no fall damage, never warn). |
 
 - **First person.** The readings sit at the visor edges, as thin projected
   light that rests dim and brightens when it matters (the visor rule in
@@ -1388,7 +1489,7 @@ Vehicles must earn their place next to sustained flight.
   cruise (target: at least 1.5 times the jetpack's 14 m/s cruise, so 22 m/s
   or more), and its boost beats every rig's burst on open ground. Wings
   glide as fast as a bike's top speed, but only downhill from a perch and
-  for 25 s at a time. Bikes cost no heat.
+  for 25 s at a time. Bikes cost no heat. Today the Scrapper runs 24 m/s and boosts to 32 (raised from 22/29 so its boost clears the wings' 30 m/s dive), and the Raider 26/35.
 - **Tactical utility.** Mobile cover, mounted firepower, passenger seats for
   squadmates, heavy cargo (more pack space while riding).
 - **Seamless transitions.** Throw a toy vehicle from mid-air onto the road
@@ -1437,7 +1538,7 @@ More on each:
   little armor and no real climbing or flight, often with a short float
   over gaps and the ability to turn slowly on the spot. The numbers follow
   that, sized against the bike and flight:
-  - Speed 26 m/s, boost 35 (Scrapper 22/29, rover 23/28). A step up from
+  - Speed 26 m/s, boost 35 (Scrapper 24/32, rover 23/28). A step up from
     the Scrapper, not a new class: the old Raider was 27/37, and the
     hoverbike gave a little of that back for its terrain tricks. Still well
     over the jetpack's 14 m/s cruise.
@@ -1467,6 +1568,30 @@ More on each:
 - Every vehicle stays a `vehicle` item tuned by its stats, with a toy on the
   watch. The bike, rover and jet must stay clearly faster than flight cruise
   on their own terrain; the mech trades speed for armor and firepower.
+- **Handbrake drifting (Caleb's call).** Every wheeled machine and the
+  hoverbike have a handbrake on the jump key (the mech's jump key stays its
+  jump-jets, the jet's its climb). Held at speed (8 m/s or more) it locks
+  the back end: the throttle stops pushing and the speed bleeds off slowly
+  (5 m/s² against a brake's 22 to 32), the nose swings round 1.6 times as
+  fast and the course trails it, so the machine slides round a corner nose
+  first, up to about 50 degrees sideways. Held wide for 0.8 s it banks a
+  full charge; letting go on the throttle without hitting anything is a
+  clean exit, a burst of up to 4 m/s over 0.3 s, never past boost speed.
+  Let go on the brake or into a wall and the charge is lost. Slow, the
+  handbrake only brakes. The hoverbike drifts through every turn anyway;
+  its handbrake throws it about twice as wide and earns the same burst.
+  Tyres smoke and a hover throws up spray while they slide, the same seen
+  from the saddle and from across the street. All simulated from the
+  command, so it predicts online. On Coilrun the race profiles turn so
+  tightly at speed that few corners need braking, so a drift is a style
+  there more than a faster line (the race bench's `--drift` run measures
+  it); making corners demand it is a grip limit and a smarter bench driver,
+  still to come.
+- **Slick ground.** A world sets how much grip its ground gives wheels
+  (`WorldDef.surface_grip`, 1 on dry ground). Frostline's packed snow gives
+  75%, and the frozen river, the lake and the frozen sea give 35%: wheels
+  pull away and brake on that share, break loose and slide wide in a plain
+  turn, and grip back slower. A hover's cushion does not care.
 
 ## 9. Racing (a later mode)
 
@@ -1687,7 +1812,9 @@ shared by solo and online play like the money rules.
   Frostline gets a slow route to them too, so a player who never fights
   other players can still reach Mk2 alone: a rare drop at its hardest
   spots (the relay on the Engine, the defence grid's boss) and from long
-  expedition contracts, rarer than in Ashfront. Mk3 stays the war's: a rig's
+  expedition contracts, rarer than in Ashfront. Built for the boss (a
+  Frostline warlord's `warlord_blueprint_chance`, 0.15 against Ashfront's
+  0.5); the relay and the contracts come with step 7's third part. Mk3 stays the war's: a rig's
   one blueprint makes both Mks, so Mk3 is held back by its 8 upgrade data,
   which comes mostly from Ashfront, and Frostline players can buy the rest
   at the Exchange. Planned with step 7 of Frostline.

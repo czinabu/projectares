@@ -71,6 +71,16 @@ func _ready() -> void:
 	# row per move, so the motion (not one pose) can be judged. Naming an
 	# item after it (`--swing-only blade_arc`) films only that weapon's
 	# moves, from the front three-quarter and from the eyes (first person).
+	# `-- <output_dir> --technique-only <item id>` films one melee weapon's
+	# held ready stance, every swing and every guard, from the front
+	# three-quarter and from the eyes side by side, in one raid (quick to
+	# run while tuning `ActionPose.techniques`).
+	if "--technique-only" in args:
+		var at := args.find("--technique-only")
+		await _technique_sheet(out_dir, args[at + 1] if at + 1 < args.size() else "blade_scrap")
+		get_tree().quit()
+		return
+
 	if "--swing-only" in args:
 		var at := args.find("--swing-only")
 		var only: String = args[at + 1] if at + 1 < args.size() and ItemDB.has_item(args[at + 1]) else ""
@@ -231,6 +241,30 @@ func _ready() -> void:
 	# edge and from high over a corner, to compare the dressing before and after.
 	if "--ashfront-only" in args:
 		await _ashfront_shots(out_dir)
+		get_tree().quit()
+		return
+
+	# `-- <output_dir> --tracks-only` shows Frostline's snow with a trail of
+	# footprints and a bike's wheel tracks across it, fresh to old, and a
+	# warm beacon.
+	if "--tracks-only" in args:
+		await _track_shots(out_dir)
+		get_tree().quit()
+		return
+
+	# `-- <output_dir> --ice-only` shows Frostline's lake: the dark thin ice
+	# in its middle from above, and a hole broken through it beside fresh
+	# cracks, close up.
+	if "--ice-only" in args:
+		await _ice_shots(out_dir)
+		get_tree().quit()
+		return
+
+	# `-- <output_dir> --grid-only` shows Frostline's defence grid: the
+	# Engine Sentinel at the hatch beside a Warden, its tracking beam held on
+	# a target, and a Warden calling the grid.
+	if "--grid-only" in args:
+		await _grid_shots(out_dir)
 		get_tree().quit()
 		return
 
@@ -1495,6 +1529,27 @@ func _visor_shots(out_dir: String) -> void:
 			await _settle(6)
 			await _shot(out_dir.path_join("visor_helm_spotter_tag.png"))
 		elif helmet == "helm_warden":
+			# The landing warning: high up, the jetpack overheated, in both views.
+			var held_at := p.global_position
+			p.global_position = held_at + Vector3(0, 32, 0)
+			p.velocity = Vector3.ZERO
+			p.flight.heat = p.flight.max_heat
+			p.flight.overheated = true
+			await _settle(8)
+			await _shot(out_dir.path_join("visor_landing_first.png"))
+			controller.toggle_view()
+			p.global_position = held_at + Vector3(0, 32, 0)
+			p.velocity = Vector3.ZERO
+			controller.yaw += PI
+			await _settle(8)
+			await _shot(out_dir.path_join("visor_landing_third.png"))
+			controller.yaw -= PI
+			controller.toggle_view()
+			p.flight.heat = p.flight.max_heat * 0.45
+			p.flight.overheated = false
+			p.global_position = held_at
+			p.velocity = Vector3.ZERO
+			await _settle(20)
 			var near: Actor = raid.bots[0]
 			var to_near: Vector3 = near.global_position + Vector3(0, 1.1, 0) - p.get_eye_position()
 			controller.yaw = atan2(-to_near.x, -to_near.z)
@@ -1981,6 +2036,133 @@ func _ashfront_shots(out_dir: String) -> void:
 		mood.follow = 100.0
 		await _settle(200 if step[0] > 0.0 else 60)
 		await _shot(out_dir.path_join("ashfront_war_%s.png" % step[1]))
+	raid.queue_free()
+
+
+func _track_shots(out_dir: String) -> void:
+	var raid := Raid.new()
+	add_child(raid)
+	raid.start(Worlds.get_world("frostline"), 42)
+	for bot in raid.bots:
+		bot.get_node("Brain").set_physics_process(false)
+		bot.set_physics_process(false)
+		bot.global_position = Vector3(500, 0, 500)
+	raid.player.set_physics_process(false)
+	raid.player.visible = false
+	var x0 := 40.0
+	var z0 := 200.0
+	var ground := func(x: float, z: float) -> Vector3:
+		return Vector3(x, float(raid.map.call("ground_height", x, z)), z)
+	# A walker crossing at an angle, the oldest prints furthest off.
+	for k in 30:
+		var at: Vector3 = ground.call(x0 - 8.0 + k * 0.55, z0 + 6.0 - k * 0.6)
+		var heading := Vector3(0.55, 0, -0.6).normalized()
+		var side := heading.cross(Vector3.UP) * (0.13 if k % 2 else -0.13)
+		var spot: Vector3 = ground.call(at.x + side.x, at.z + side.z)
+		raid.tracks.add(spot, atan2(-heading.x, -heading.z), Tracks.Kind.RIGHT if k % 2 else Tracks.Kind.LEFT,
+				raid.clock - (30 - k) * 6.0)
+	# A bike's wheel tracks across the other way.
+	for k in 14:
+		var at: Vector3 = ground.call(x0 + 6.0 - k * 1.4, z0 - 4.0 + k * 0.2)
+		raid.tracks.add(at, atan2(1.4, -0.2), Tracks.Kind.TREAD, raid.clock - k * 4.0)
+	var camera := Camera3D.new()
+	camera.far = 900.0
+	raid.add_child(camera)
+	camera.make_current()
+	var look: Vector3 = ground.call(x0, z0)
+	camera.global_position = look + Vector3(-1.5, 2.2, 5.0)
+	camera.look_at(look)
+	await _settle(30)
+	await _shot(out_dir.path_join("tracks_close.png"))
+	camera.global_position = look + Vector3(-9.0, 12.0, 20.0)
+	camera.look_at(look)
+	await _settle(10)
+	await _shot(out_dir.path_join("tracks_far.png"))
+	var beacon: Node3D = raid.beacons[0]
+	camera.global_position = beacon.global_position + Vector3(-12.0, 5.0, 12.0)
+	camera.look_at(beacon.global_position + Vector3(0, 2.5, 0))
+	await _settle(20)
+	await _shot(out_dir.path_join("beacon.png"))
+	raid.queue_free()
+
+
+func _ice_shots(out_dir: String) -> void:
+	const FrostMap := preload("res://worlds/frostline/map.gd")
+	var raid := Raid.new()
+	add_child(raid)
+	raid.start(Worlds.get_world("frostline"), 42)
+	for bot in raid.bots:
+		bot.get_node("Brain").set_physics_process(false)
+		bot.set_physics_process(false)
+		bot.global_position = Vector3(500, 0, 500)
+	raid.player.set_physics_process(false)
+	raid.player.visible = false
+	var x := FrostMap.centre(FrostMap.LAKE_Z)
+	var mid := Vector3(x, float(raid.map.call("ground_height", x, FrostMap.LAKE_Z)), FrostMap.LAKE_Z)
+	var camera := Camera3D.new()
+	camera.far = 900.0
+	raid.add_child(camera)
+	camera.make_current()
+	camera.global_position = mid + Vector3(-30.0, 38.0, 70.0)
+	camera.look_at(mid)
+	await _settle(30)
+	await _shot(out_dir.path_join("ice_lake.png"))
+	var hole := mid + Vector3(4.0, 0.0, 6.0)
+	raid.ice_holes.append([hole, raid.clock])
+	raid.ice_changed.emit()
+	raid.ice_cracked.emit(hole + Vector3(7.0, 0.0, 3.0), 2)
+	camera.global_position = hole + Vector3(-5.0, 6.0, 12.0)
+	camera.look_at(hole + Vector3(2.0, 0.0, 1.0))
+	await _settle(20)
+	await _shot(out_dir.path_join("ice_hole.png"))
+	raid.queue_free()
+
+
+func _grid_shots(out_dir: String) -> void:
+	var raid := Raid.new()
+	add_child(raid)
+	raid.start(Worlds.get_world("frostline"), 42)
+	var boss: Actor = null
+	var warden: Actor = null
+	for bot in raid.bots:
+		bot.get_node("Brain").set_physics_process(false)
+		bot.set_physics_process(false)
+		if bot.get_meta("boss", "") == "sentinel":
+			boss = bot
+		elif warden == null and bot.faction == "warden":
+			warden = bot
+		else:
+			bot.global_position = Vector3(500, 0, 500)
+	raid.player.set_physics_process(false)
+	raid.player.visible = false
+	var at := boss.global_position
+	# Both face down the valley, toward the camera.
+	for bot: Actor in [boss, warden]:
+		bot.cmd.yaw = PI
+		bot.rotation.y = PI
+	warden.global_position = at + Vector3(-3.0, 0.0, 0.0)
+	var camera := Camera3D.new()
+	camera.far = 900.0
+	raid.add_child(camera)
+	camera.make_current()
+	camera.global_position = at + Vector3(-3.0, 3.0, 11.0)
+	camera.look_at(at + Vector3(-1.5, 1.8, 0.0))
+	await _settle(40)
+	await _shot(out_dir.path_join("grid_sentinel.png"))
+	# The beam held on a target down the valley, from the side.
+	boss.cmd.secondary = true
+	boss.cmd.aim_dir = Vector3(0.1, -0.06, 1.0).normalized()
+	camera.global_position = at + Vector3(-12.0, 4.0, 8.0)
+	camera.look_at(at + Vector3(0.0, 2.0, 10.0))
+	await _settle(50)
+	await _shot(out_dir.path_join("grid_beam.png"))
+	boss.cmd.secondary = false
+	camera.global_position = warden.global_position + Vector3(-6.0, 7.0, 14.0)
+	camera.look_at(warden.global_position)
+	await _settle(5)
+	raid.grid_called.emit(warden, null)
+	await _settle(2)
+	await _shot(out_dir.path_join("grid_call.png"))
 	raid.queue_free()
 
 
@@ -3253,6 +3435,114 @@ func _phone_shots(out_dir: String) -> void:
 	phone.queue_free()
 	raid.queue_free()
 	await _settle(3)
+
+
+## One melee weapon's whole technique on one sheet: a row per move (the
+## ready stance, each light, the heavies, each guard), frames every
+## `SWING_STEP` ticks, each frame from the front three-quarter (left) and
+## from the eyes (right), rendered together by two sub-viewports.
+func _technique_sheet(out_dir: String, id: String) -> void:
+	var moves := ["ready", "light_right", "light_left", "light_overhead", "heavy_right", "heavy_left", "heavy",
+			"guard_right", "guard_left", "guard_overhead"]
+	var frames := 10
+	var cell := 200
+	var wide := 356
+	var raid := Raid.new()
+	add_child(raid)
+	raid.start(Worlds.get_world("ashfront"), 42, ["rifle_scrap", id, "plate_light"])
+	for bot in raid.bots:
+		bot.queue_free()
+	var player := raid.player
+	await _settle(10)
+	player.cmd.switch_weapon = player.weapons.size() - 1
+	for i in player.weapons.size():
+		if player.weapons[i] is MeleeWeapon:
+			player.cmd.switch_weapon = i
+	await _settle(5)
+	player.cmd.switch_weapon = -1
+	await _settle(40)
+	raid.zone_rules = false
+	player.weapons_locked = false
+	var blade := player.get_active_weapon() as MeleeWeapon
+	blade.light_stamina = 0.0
+	blade.heavy_stamina = 0.0
+	var skin: Node = player.get_node_or_null("Skin")
+	var views := []
+	for view in ["face", "side", "first"]:
+		var port := SubViewport.new()
+		# The eyes see a 16:9 screen, as the game does.
+		port.size = Vector2i(wide if view == "first" else cell, cell)
+		port.world_3d = get_viewport().world_3d
+		port.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+		add_child(port)
+		var cam := Camera3D.new()
+		port.add_child(cam)
+		cam.current = true
+		if view == "first":
+			cam.fov = 75.0
+			cam.near = 0.02
+			cam.cull_mask &= ~(1 << (16 - 1))  # Mirror.HEAD_LAYER
+		else:
+			cam.fov = 40.0
+		views.append(cam)
+	if skin != null:
+		skin.hide_head(true)
+	var at := player.global_position
+	var ahead := -player.global_basis.z
+	var right := player.global_basis.x
+	views[0].global_position = at + ahead * 2.4 + right * 1.4 + Vector3(0, 1.5, 0)
+	views[0].look_at(at + Vector3(0, 1.2, 0))
+	views[1].global_position = at + right * 2.8 + ahead * 0.4 + Vector3(0, 1.45, 0)
+	views[1].look_at(at + Vector3(0, 1.25, 0))
+	var lamp := OmniLight3D.new()
+	lamp.omni_range = 9.0
+	lamp.light_energy = 2.0
+	raid.add_child(lamp)
+	lamp.global_position = views[0].global_position + Vector3(0, 0.8, 0)
+	var sheet := Image.create(frames * (2 * cell + wide), moves.size() * cell, false, Image.FORMAT_RGBA8)
+	var start := player.global_transform
+	var yaw := player.cmd.yaw
+	var dirs := {"right": MeleeWeapon.Dir.RIGHT, "left": MeleeWeapon.Dir.LEFT, "overhead": MeleeWeapon.Dir.OVERHEAD}
+	for row in moves.size():
+		var move: String = moves[row]
+		var side: String = move.get_slice("_", 1) if "_" in move else "overhead"
+		# A swing goes toward its stance: the side it comes from is the mirror.
+		var dir: int = dirs[side]
+		player.cmd.stance = MeleeWeapon.swing_from(dir) if move.begins_with("light") or move.begins_with("heavy") else dir
+		# A heavy lunges: every move starts from the same spot.
+		player.global_transform = start
+		player.velocity = Vector3.ZERO
+		player.cmd.yaw = yaw
+		await _settle(3)
+		match move.get_slice("_", 0):
+			"heavy":
+				player.cmd.tertiary_pressed = true
+			"guard":
+				player.cmd.secondary = true
+			"light":
+				player.cmd.primary_pressed = true
+		for col in frames:
+			await get_tree().physics_frame
+			await get_tree().physics_frame
+			player.cmd.primary_pressed = false
+			player.cmd.tertiary_pressed = false
+			if skin != null:
+				var aimed: Basis = player.global_basis.orthonormalized() * Basis(Vector3.RIGHT, player.cmd.pitch)
+				var eye: Variant = skin.eye_point(aimed)
+				views[2].global_transform = Transform3D(aimed, eye if eye != null else player.get_eye_position())
+			for k in SWING_STEP - 2:
+				await get_tree().process_frame
+			await RenderingServer.frame_post_draw
+			for v in 3:
+				var img: Image = views[v].get_viewport().get_texture().get_image()
+				img.convert(Image.FORMAT_RGBA8)
+				sheet.blit_rect(img, Rect2i(Vector2i.ZERO, img.get_size()), Vector2i(col * (2 * cell + wide) + v * cell, row * cell))
+		player.cmd.secondary = false
+		await _settle(45)
+		print("filmed %s %s" % [id, move])
+	var path := out_dir.path_join("technique_%s.png" % id)
+	sheet.save_png(path)
+	print("saved %s" % path)
 
 
 ## Ashfront and the home base for judging edges and how far things read: a

@@ -85,7 +85,7 @@ signal base_visit_requested(owner_name: String, stash: Array, loadout: Dictionar
 signal portal_travel(destination: String)
 
 const DEFAULT_PORT := 24565
-const PROTOCOL := 40
+const PROTOCOL := 43
 ## Every packet is compressed, both ways. State updates are mostly repeated
 ## numbers, and a big battle sends a player hundreds of them a second. Server
 ## and client must agree, so a change here needs a new PROTOCOL.
@@ -111,6 +111,10 @@ const PROTOCOL := 40
 ## the visor's pickup feed.
 ## 40: warm beacons: a sign-out carries the rate its countdown runs at
 ## (`_sign_out`'s `rate`: 0 while away from the beacon, faster with company).
+## 41: tracks: footprints and wheel tracks near a player (`_tracks`).
+## 42: thin ice: cracks (`_ice_crack`) and the open holes (`_ice_holes`).
+## 43: a core boss's kind in a bot's spawn data ("boss") and a linked
+## faction's call for help (`_grid_call`).
 ## Where an out-of-date game gets the latest build: the rolling "latest"
 ## release the Windows client workflow publishes (docs/hosting.md).
 const UPDATE_URL := "https://github.com/czinabu/projectares/releases/tag/latest"
@@ -325,6 +329,12 @@ var _sent_standing := {} # actor id -> public renown standing last sent (server)
 var _sent_war := -1.0    # war intensity last sent (server)
 var _sent_points := {}   # peer id -> strongpoint states last sent to them (server)
 var _sent_heat := {}     # peer id -> [body heat, warming] last sent to them (server)
+var _sent_tracks := {}   # peer id -> { track cell: last mark id sent } (server)
+## Tracks: how far round a player new marks are sent, how often, and at most
+## how many in one message (the rest follow next time).
+const TRACK_RANGE := 60.0
+const TRACK_SEND_EVERY := 20
+const TRACK_BATCH := 500
 var _tick := 0
 var _sent_status := {}   # world status last sent (server)
 var _limits := RequestLimits.new() # how many requests each player may still make (server)
@@ -478,6 +488,14 @@ func _start_server_raid() -> void:
 		for peer in _joined_peers:
 			_toy.rpc_id(peer, thrower, item_id, from, toy_velocity, actor.cmd.yaw))
 	raid.toy_hand_changed.connect(_on_server_toy_hand)
+	raid.ice_cracked.connect(func(at: Vector3, stage: int) -> void:
+		for peer in _joined_peers:
+			_ice_crack.rpc_id(peer, at, stage))
+	raid.ice_changed.connect(func() -> void:
+		var holes := raid.pack_ice_holes()
+		for peer in _joined_peers:
+			_ice_holes.rpc_id(peer, holes))
+	raid.grid_called.connect(_on_server_grid_called)
 	raid.pinged.connect(_on_server_pinged)
 	raid.portal_opened.connect(func(portal: Portal) -> void:
 		for peer in _joined_peers:
@@ -553,6 +571,7 @@ func _clear_tables() -> void:
 	_sent_war = -1.0
 	_sent_points.clear()
 	_sent_heat.clear()
+	_sent_tracks.clear()
 	_actor_account.clear()
 	_board_sent.clear()
 
@@ -1315,6 +1334,8 @@ func _send_spawn(peer: int, actor: Actor) -> void:
 	else:
 		data = {"seed": raid.bot_seeds.get(actor, 0), "warlord": raid.warlords.has(actor),
 				"faction": actor.faction, "zone": int(actor.get_meta("zone", -1))}
+		if actor.has_meta("boss"):
+			data["boss"] = String(actor.get_meta("boss"))
 		# A rival raider wears a player's kit and look, so a client builds the
 		# same person rather than a soldier from the seed.
 		if actor.has_meta("raider_kit"):
@@ -1410,6 +1431,9 @@ func _send_world(peer: int) -> void:
 		_send_portal(peer, portal)
 	_sent_points.erase(peer)
 	_sent_heat.erase(peer)
+	_sent_tracks.erase(peer)
+	if not raid.ice_holes.is_empty():
+		_ice_holes.rpc_id(peer, raid.pack_ice_holes())
 	if raid is Race:
 		_race_board.rpc_id(peer, (raid as Race).public_board())
 
@@ -1726,6 +1750,10 @@ func _server_late_tick(_delta: float) -> void:
 			if _sent_heat.get(peer, []) != heat:
 				_sent_heat[peer] = heat
 				_body_heat.rpc_id(peer, heat[0], heat[1])
+	# Tracks: each player is sent the new marks near them, never the whole
+	# world's, a few times a second.
+	if _tick % TRACK_SEND_EVERY == 0 and raid.world.tracks:
+		_send_tracks()
 	# Strongpoints: each player hears who holds what, and which are theirs.
 	if _tick % 10 == 0 and not raid.strongpoints.is_empty():
 		for peer in _joined_peers:
@@ -2495,7 +2523,8 @@ func _spawn(id: int, kind: String, shown_name: String, node_name: String, at: Ve
 		if data.get("kit") is Array:
 			kit = (data["kit"] as Array).filter(func(id: Variant) -> bool: return ItemDB.has_item(str(id)))
 		actor = raid.spawn_bot(node_name, at, data.get("seed", 0), data.get("warlord", false),
-				data.get("faction", ""), clampi(int(data.get("zone", -1)), -1, 2), kit)
+				data.get("faction", ""), clampi(int(data.get("zone", -1)), -1, 2), kit,
+				str(data.get("boss", "")).left(32))
 		if not kit.is_empty():
 			actor.display_name = shown_name
 			if data.has("look"):
@@ -2967,6 +2996,75 @@ func _tally(counts: Dictionary) -> void:
 		if typeof(stat) == TYPE_STRING:
 			clean[stat] = maxi(0, int(counts[stat]))
 	me.tally = clean
+
+
+## Sends each player the footprints and wheel tracks laid near them since
+## they were last sent that patch of ground (`Tracks.since`, by mark id).
+func _send_tracks() -> void:
+	for peer in _joined_peers:
+		var viewer: Actor = _peer_actor.get(peer)
+		if viewer == null or not is_instance_valid(viewer):
+			continue
+		var sent: Dictionary = _sent_tracks.get(peer, {})
+		_sent_tracks[peer] = sent
+		var fresh := []
+		for cell in raid.tracks.cells_near(viewer.global_position, TRACK_RANGE):
+			if fresh.size() >= TRACK_BATCH:
+				break
+			var marks := raid.tracks.since(cell, int(sent.get(cell, 0)))
+			if marks.is_empty():
+				continue
+			marks = marks.slice(0, TRACK_BATCH - fresh.size())
+			sent[cell] = int(marks.back()[0])
+			fresh.append_array(marks)
+		if not fresh.is_empty():
+			_tracks.rpc_id(peer, Tracks.pack(fresh, raid.clock))
+
+
+## Footprints and wheel tracks near you, for the snow to show.
+@rpc("authority", "call_remote", "reliable")
+func _tracks(data: PackedFloat32Array) -> void:
+	if raid != null and raid.world != null and raid.world.tracks:
+		raid.tracks.unpack(data, raid.clock)
+
+
+## A linked faction's bot called the rest of its faction (`Raid.grid_called`):
+## everyone near enough to hear it is told, so the call is seen and heard.
+func _on_server_grid_called(bot: Actor, _source: Actor) -> void:
+	var id: int = _ids.get(bot, -1)
+	if id < 0:
+		return
+	for peer in _joined_peers:
+		var viewer: Actor = _peer_actor.get(peer)
+		if viewer != null and is_instance_valid(viewer) \
+				and viewer.global_position.distance_to(bot.global_position) <= GRID_CALL_RANGE:
+			_grid_call.rpc_id(peer, id)
+
+
+## How far off a grid call is seen and heard.
+const GRID_CALL_RANGE := 90.0
+
+
+@rpc("authority", "call_remote", "unreliable")
+func _grid_call(id: int) -> void:
+	var actor: Actor = _actors.get(id)
+	if raid != null and actor != null and is_instance_valid(actor):
+		raid.grid_called.emit(actor, null)
+
+
+## Thin ice cracking (stages 1 and 2) or giving way (3) at `at`, for the
+## view to show and sound.
+@rpc("authority", "call_remote", "reliable")
+func _ice_crack(at: Vector3, stage: int) -> void:
+	if raid != null and raid.world != null and raid.world.thin_ice:
+		raid.ice_cracked.emit(at, clampi(stage, 1, Raid.ICE_WARNINGS.size() + 1))
+
+
+## The open holes in the ice (`Raid.pack_ice_holes`).
+@rpc("authority", "call_remote", "reliable")
+func _ice_holes(data: PackedFloat32Array) -> void:
+	if raid != null and raid.world != null and raid.world.thin_ice:
+		raid.unpack_ice_holes(data)
 
 
 ## Your body heat and whether you stand in warmth, for the visor and the

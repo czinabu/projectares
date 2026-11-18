@@ -92,10 +92,10 @@ static func run(t: Node) -> void:
 				sword.attack_dir = side
 				reaches[skin.arm.arm_reach(sword)] = true
 			t.check(reaches.size() == 3 and not reaches.has(null), tag + "each attack side cocks the arm differently")
-			var left: Vector3 = pose.arm_windup[MeleeWeapon.Dir.LEFT]
-			var right: Vector3 = pose.arm_windup[MeleeWeapon.Dir.RIGHT]
+			var left: Vector3 = pose.windup_reach(sword, MeleeWeapon.Dir.LEFT)
+			var right: Vector3 = pose.windup_reach(sword, MeleeWeapon.Dir.RIGHT)
 			t.check(left.x < right.x, tag + "a left windup holds the hand further to the actor's left")
-			t.check(pose.arm_windup[MeleeWeapon.Dir.OVERHEAD].y > maxf(left.y, right.y), tag + "an overhead windup raises the hand highest")
+			t.check(pose.windup_reach(sword, MeleeWeapon.Dir.OVERHEAD).y > maxf(left.y, right.y), tag + "an overhead windup raises the hand highest")
 			# The body turns with the arm, opposite ways for opposite sides.
 			sword.attack_dir = MeleeWeapon.Dir.LEFT
 			var turn_left: Vector2 = skin.arm.body_turn(sword)
@@ -106,20 +106,20 @@ static func run(t: Node) -> void:
 			sword._windup_left = 0.0
 			sword._swing_left = MeleeWeapon.SWING_TIME * 0.5
 			var mid: Vector3 = skin.arm.arm_reach(sword)
-			var straight: Vector3 = (pose.arm_windup[MeleeWeapon.Dir.RIGHT] + pose.arm_follow[MeleeWeapon.Dir.RIGHT]) * 0.5
+			var straight: Vector3 = (pose.windup_reach(sword, MeleeWeapon.Dir.RIGHT) + pose.follow_reach(sword, MeleeWeapon.Dir.RIGHT)) * 0.5
 			t.check(mid.z < straight.z - 0.05, tag + "the hand bows forward through a swing")
 			t.check(signf(skin.arm.body_turn(sword).x - turn_right.x) > 0.0, tag + "the shoulders unwind through a swing")
 			sword._swing_left = 0.0
 			pose._follow_left = 0.1
 			pose._follow_dir = MeleeWeapon.Dir.RIGHT
-			t.check(skin.arm.arm_reach(sword) == pose.arm_follow[MeleeWeapon.Dir.RIGHT], tag + "the follow-through is held after the swing lands")
+			t.check(skin.arm.arm_reach(sword) == pose.follow_reach(sword, MeleeWeapon.Dir.RIGHT), tag + "the follow-through is held after the swing lands")
 			pose._follow_left = 0.0
 			sword._windup_left = 1.0
 			t.check(not skin.arm._fist.is_empty() and skin.arm._grip_axis.length() > 0.9, tag + "the model knows how to close its hand on a handle")
 			t.check(skin.arm.off_ik != null and not skin.arm._off_fist.is_empty(), tag + "the model has an off hand for two-handed weapons")
 			sword._windup_left = 0.0
 			sword._blocking = true
-			t.check(skin.arm.arm_reach(sword) == pose.arm_guard, tag + "a guard raises the arm")
+			t.check(skin.arm.arm_reach(sword) == pose.guard_keys(sword, sword.guard_dir)[0], tag + "a guard raises the arm")
 			sword._blocking = false
 			var was_active := raid.player.active_weapon_index
 			raid.player.active_weapon_index = raid.player.weapons.find(sword)

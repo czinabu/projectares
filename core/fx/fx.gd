@@ -192,6 +192,39 @@ static func trail(parent: Node, from: Vector3, to: Vector3, color: Color) -> voi
 	tween.tween_callback(node.queue_free)
 
 
+## A soft puff of smoke, snow or spray that swells to `size` and fades as it
+## rises a little: what a sliding tyre or a drifting hover throws up. Too far
+## from the camera to be seen, it is skipped.
+static func puff(parent: Node, at: Vector3, size: float, color: Color) -> void:
+	if _headless(parent):
+		return
+	var camera := parent.get_viewport().get_camera_3d()
+	if camera and camera.global_position.distance_to(at) > IMPACT_RANGE:
+		return
+	if _puff_mesh == null:
+		_puff_mesh = SphereMesh.new()
+		_puff_mesh.radius = 1.0
+		_puff_mesh.height = 2.0
+		_puff_mesh.radial_segments = 8
+		_puff_mesh.rings = 4
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.albedo_color = color
+	var node := MeshInstance3D.new()
+	node.mesh = _puff_mesh
+	node.material_override = mat
+	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	node.scale = Vector3.ONE * size * 0.3
+	parent.add_child(node)
+	node.global_position = at
+	var tween := node.create_tween()
+	tween.tween_property(node, "scale", Vector3.ONE * size, 0.5).set_ease(Tween.EASE_OUT)
+	tween.parallel().tween_property(node, "global_position", at + Vector3.UP * size * 0.6, 0.5)
+	tween.parallel().tween_property(mat, "albedo_color:a", 0.0, 0.5)
+	tween.tween_callback(node.queue_free)
+
+
 ## A plasma or arc burst: a glowing ball that swells to `radius` and fades.
 static func burst(parent: Node, at: Vector3, radius: float, color: Color) -> void:
 	if _headless(parent) or radius <= 0.0:
@@ -223,7 +256,7 @@ static func burst(parent: Node, at: Vector3, radius: float, color: Color) -> voi
 
 ## A ring of light that sweeps out flat to `radius` and fades: a pulse that
 ## reaches everyone inside it (an artifact's Static Bloom).
-static func ring(parent: Node, at: Vector3, radius: float, color: Color, life := 0.9) -> void:
+static func ring(parent: Node, at: Vector3, radius: float, color: Color, life := 0.9, additive := true) -> void:
 	if _headless(parent) or radius <= 0.0:
 		return
 	var mesh := TorusMesh.new()
@@ -232,7 +265,9 @@ static func ring(parent: Node, at: Vector3, radius: float, color: Color, life :=
 	mesh.rings = 48
 	mesh.ring_segments = 6
 	var mat := _glow_mat(Color(color.r, color.g, color.b, 0.9))
-	mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	# Added light vanishes against bright snow; mixed, it shows on anything.
+	if additive:
+		mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
 	mesh.material = mat
 	var node := MeshInstance3D.new()
 	node.mesh = mesh

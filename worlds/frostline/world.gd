@@ -16,6 +16,32 @@ const FERAL_CHANCE := 0.45
 const ZONE_COLD := [0.7, 1.0, 1.4]
 const EXPOSED_OVER := 22.0
 const EXPOSED_MULT := 1.5
+## How much grip a wheel gets on Frostline's snow and on its bare ice
+## (`WorldDef.surface_grip`): wheels break loose and slide.
+const SNOW_GRIP := 0.75
+const ICE_GRIP := 0.35
+
+## The Wardens are the Engine's defence grid, still running (DESIGN.md
+## "Frostline", step 7): one hurt in a fight it survives calls every Warden
+## within this many metres (`WorldDef.linked_factions`).
+const GRID_LINK := 60.0
+## The grid's boss, the Engine Sentinel, guards the hatch: a Warden three
+## metres tall with a lance that must hold its tracking beam on you before it
+## fires, and its heat vent in its back (hits there do `SENTINEL_REAR`
+## times). Made for one player; each other player near it makes it tougher
+## by `SENTINEL_PARTY` (`WorldDef.boss_party_scale`).
+const SENTINEL_HEIGHT := 3.2
+const SENTINEL_HEALTH := 650.0
+const SENTINEL_ARMOR := 40.0
+const SENTINEL_REAR := 2.0
+const SENTINEL_LOCK := 1.2
+const SENTINEL_DAMAGE := 30.0
+const SENTINEL_INTERVAL := 0.6
+const SENTINEL_PARTY := 0.6
+## The slow route to the war's blueprints (DESIGN.md section 10, Caleb's
+## call): a Frostline warlord (the Sentinel, or an event's) carries one now
+## and then, rarer than in Ashfront, and a piece of upgrade data.
+const WARLORD_BLUEPRINT := 0.15
 
 ## Frostline is the gentle world, so its gear is the basic tier. Rare and
 ## better gear only drops in the PvP world. What it pays instead is parts
@@ -122,6 +148,22 @@ func _init() -> void:
 	# Getting out: only at a warm beacon, which a group powers up faster
 	# (DESIGN.md "Frostline", "Getting out").
 	sign_out_at_beacons = true
+	# The snow keeps a trail: footprints and wheel tracks, for a few minutes.
+	tracks = true
+	# Still, cold air: a shot carries twice as far (DESIGN.md "Frostline").
+	shot_carry = 2.0
+	# The middle of the lake is thin ice: a bike or a person crosses, a
+	# rover or a mech that lingers goes through.
+	thin_ice = true
+	# The gentle world: a vehicle that goes through is pulled back out by
+	# the watch (Caleb's call); the soaking is the price.
+	ice_keeps_vehicle = true
+	# The defence grid: Wardens call each other to a fight, and the Engine
+	# Sentinel at the hatch is made for one player and scales up with more.
+	linked_factions = {"warden": GRID_LINK}
+	boss_party_scale = SENTINEL_PARTY
+	warlord_blueprint_chance = WARLORD_BLUEPRINT
+	warlord_upgrade_data = 1
 
 
 func register_items() -> void:
@@ -155,6 +197,23 @@ func cold_at(pos: Vector3) -> float:
 	if pos.y - MapScript.floor_at(pos.z) > EXPOSED_OVER:
 		rate *= EXPOSED_MULT
 	return rate
+
+
+## The middle of the frozen lake, where the ice is thin.
+func thin_ice_at(pos: Vector3) -> bool:
+	return MapScript.lake_reach(pos.x, pos.z) < MapScript.THIN_ICE and pos.y < MapScript.floor_at(pos.z) + 1.0
+
+
+## Wheels slide on Frostline: packed snow everywhere, and the frozen river,
+## the lake and the frozen sea past the mouth are bare ice.
+func surface_grip(pos: Vector3) -> float:
+	var floor_y := MapScript.floor_at(pos.z)
+	if pos.y > floor_y + 1.5:
+		return SNOW_GRIP
+	var across := absf(pos.x - MapScript.centre(pos.z))
+	if MapScript.lake_reach(pos.x, pos.z) < 1.0 or (pos.z > -40.0 and across < 10.0) or pos.z > 296.0:
+		return ICE_GRIP
+	return SNOW_GRIP
 
 
 func zone_name(tier: int) -> String:
@@ -237,6 +296,47 @@ func _make_warden(bot: Actor, rng: RandomNumberGenerator) -> void:
 	gun.reserve_ammo = 400
 	gun.headshot_mult = 1.0
 	bot.equip_weapon(gun)
+
+
+## A warlord: the Engine Sentinel at the hatch (its "spawn_boss" marker's
+## meta "boss"), else an event's warlord as anywhere. Runs on clients too,
+## so it is free of randomness.
+func make_warlord(bot: Actor) -> void:
+	if bot.get_meta("boss", "") != "sentinel":
+		super(bot)
+		return
+	bot.display_name = "Engine Sentinel"
+	bot.set_meta("look", "colossus")
+	bot.set_stand_height(SENTINEL_HEIGHT, 0.3)
+	bot.walk_speed = 3.0
+	bot.sprint_speed = 3.6
+	bot.health.max_health = SENTINEL_HEALTH
+	bot.health.health = SENTINEL_HEALTH
+	bot.health.set_armor(SENTINEL_ARMOR)
+	bot.rear_damage_mult = SENTINEL_REAR
+	# A heavy machine: it comes round slowly but leads a flier well, and its
+	# beam must hold you before the lance fires, so breaking the line is the
+	# answer (`BotBrain.lock_time`).
+	bot.set_meta("aim_turn", 80.0)
+	bot.set_meta("track_lag", 0.1)
+	bot.set_meta("air_error", 0.6)
+	bot.set_meta("lock_time", SENTINEL_LOCK)
+	var lance := bot.get_active_weapon() as Gun
+	if lance:
+		lance.display_name = "Grid Lance"
+		lance.damage = SENTINEL_DAMAGE
+		lance.spread_deg = 0.35
+		lance.fire_interval = SENTINEL_INTERVAL
+		lance.max_range = 120.0
+		lance.mag_size = 10
+		lance.ammo_in_mag = 10
+		lance.reserve_ammo = 999
+
+
+func boss_back_news(bot: Actor, _where: String) -> String:
+	if bot != null and bot.get_meta("boss", "") == "sentinel":
+		return "The Engine Sentinel stands guard at the hatch again"
+	return super(bot, _where)
 
 
 ## Fast, fragile pack hunters with hooked blades.

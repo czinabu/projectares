@@ -136,6 +136,14 @@ const SKINS := {
 		"chassis": "walker", "beam": true,
 		"anims": {"idle": "Idle", "walk": "Walk", "run": "Run", "death": "Death", "attack": "Shoot"},
 	},
+	# A colossus: the station automaton's frame built three metres tall, a
+	# heavy guard machine. Its weapon draws a tracking beam while it aims
+	# ("beam", in "beam_color").
+	"colossus": {
+		"scenes": ["Stan.glb"], "height": 3.9, "tint": Color(0.5, 0.62, 0.7),
+		"beam": true, "beam_color": Color(0.25, 0.95, 0.9),
+		"anims": {"idle": "Idle", "walk": "Walk", "run": "Run", "death": "Death", "attack": "Punch"},
+	},
 	"stalker": {
 		"scenes": ["Enemy_2Legs_Gun.glb"], "height": 1.7, "tint": Color(0.3, 0.32, 0.38),
 		"anims": {"idle": "Idle", "walk": "Walk", "run": "Run", "death": "Death", "attack": "Attack"},
@@ -1476,6 +1484,8 @@ func _place_muzzle(visual: Node3D, fitted: Node3D, mounts: Dictionary) -> void:
 	# stands highest along the top, a little behind the optic's spot.
 	if mounts.has("optic"):
 		_marker(visual, "IronSight").position = (mounts["optic"] as Vector3) + Vector3(0.0, 0.012, 0.06)
+		var optic := fitted.get_node_or_null("optic") as Node3D if fitted != null else null
+		_iron_sights(visual, optic == null, _marker(visual, "IronSight").position, at)
 	# Where the off hand holds the fore end, first person (the fore grip
 	# mount, or a fitted grip).
 	if mounts.has("grip"):
@@ -1488,6 +1498,35 @@ func _place_muzzle(visual: Node3D, fitted: Node3D, mounts: Dictionary) -> void:
 		hold.position = mounts["hold"]
 		hold.set_meta("up", mounts["hold_up"])
 		_marker(visual, "Trigger").position = mounts["trigger"]
+
+
+## Plain sights on a long gun with no optic (playtest pass: aimed without
+## one there was nothing to line up, only the top of the gun): a rear notch
+## at the "IronSight" marker and a front post near the muzzle standing up to
+## the same line, with a glowing dot on its tip, so aiming lays the dot in
+## the notch on what you look at, in both views. An optic folds them away
+## (real flip-up sights do the same).
+func _iron_sights(visual: Node3D, shown: bool, rear: Vector3, muzzle: Vector3) -> void:
+	var old := visual.get_node_or_null("IronSights")
+	if old != null:
+		old.free()
+	if not shown:
+		return
+	var sights := Node3D.new()
+	sights.name = "IronSights"
+	visual.add_child(sights)
+	var dark := Color(0.08, 0.09, 0.1)
+	# The rear: two ears either side of the sight line over a base.
+	for side in [-1.0, 1.0]:
+		sights.add_child(Weapon.make_part(Vector3(0.006, 0.02, 0.01), rear + Vector3(side * 0.0095, -0.004, 0.0), dark))
+	sights.add_child(Weapon.make_part(Vector3(0.026, 0.008, 0.012), rear + Vector3(0.0, -0.016, 0.0), dark))
+	# The front post, a little behind the muzzle, from the barrel up to the
+	# line, with its dot just under the top.
+	var front_z := lerpf(muzzle.z, rear.z, 0.08)
+	var low := minf(muzzle.y, rear.y - 0.03)
+	var height := rear.y - low
+	sights.add_child(Weapon.make_part(Vector3(0.004, height, 0.008), Vector3(0.0, low + height * 0.5, front_z), dark))
+	sights.add_child(Weapon.make_part(Vector3(0.004, 0.004, 0.004), Vector3(0.0, rear.y - 0.003, front_z - 0.005), GUN_GLOW[GUN_GLOW.size() - 1][1], true))
 
 
 func _marker(visual: Node3D, marker_name: String) -> Marker3D:

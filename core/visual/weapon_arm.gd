@@ -397,16 +397,18 @@ func step(delta: float) -> void:
 	var two_handed: bool = holding and look.is_two_handed(melee)
 	_off_weight = move_toward(_off_weight, 1.0 if two_handed else 0.0, delta * 8.0)
 	var off_hold := shared.ready_off(melee) if holding else ""
-	_guard = shared.held_ready if off_hold == "guard" else move_toward(_guard, 0.0, delta * 8.0)
+	# An empty off hand stays up as a guard through attacks and guards too,
+	# as a fighter's does (it used to drop to the side on every swing).
+	_guard = move_toward(_guard, 1.0 if off_hold == "guard" else 0.0, delta * 8.0)
 	# A katana's cuts keep the off hand on the handle all the way through
 	# (`ActionPose.cut_grip`); held ready it is there too.
 	var hilt_to := maxf(shared.held_ready if off_hold == "hilt" else 0.0, shared.cut_grip if holding else 0.0)
 	_hilt = hilt_to if not two_handed else move_toward(_hilt, 0.0, delta * 8.0)
 	_carry = move_toward(_carry, 1.0 if two_handed else 0.0, delta * 6.0)
 	if reaching:
-		# A two-handed cut says exactly where the hands go; a one-handed
-		# swing's greybox pose also shifts the blade off the hand.
-		_reach = shared.reach + melee.visual.position * (1.0 - shared.cut_grip)
+		# The technique says exactly where the hand goes (`ActionPose.techniques`);
+		# the blade's own greybox shift is taken back out in `hold_weapon`.
+		_reach = shared.reach
 	_turn = shared.turn if holding else _turn.lerp(Vector2.ZERO, 1.0 - exp(-26.0 * delta))
 	if shared.toy_throw_t >= 0.0:
 		_turn = shared.toy_turn()
@@ -524,6 +526,8 @@ func _reach_gun() -> void:
 	var wrist := skeleton.global_transform * skeleton.get_bone_global_pose(_wrist).origin
 	var aim := actor.global_basis.orthonormalized() * Basis(Vector3.RIGHT, actor.cmd.pitch)
 	_target.global_position = wrist + aim * pose.gun_offset().origin
+	if pose.reload > 0.0:
+		_target.global_position = _target.global_position.lerp(pose.reload_point(), pose.reload)
 	var looking := pose.inspect_for("gun")
 	if looking > 0.0:
 		_target.global_position = _target.global_position.lerp(pose.inspect_point(), looking)
@@ -952,9 +956,9 @@ func _blade_turn(aimed: Basis) -> Basis:
 	# Held ready, the weapon stands in the fist the way its hold says.
 	var shared := _pose()
 	var melee := actor.get_active_weapon() as MeleeWeapon
-	# A two-handed cut turns the blade the way the cut has it, whatever the
-	# weapon's own greybox pose is doing (that is taken back out).
-	var cut: Variant = shared.cut_blade(melee) if melee != null and melee.visual != null else null
+	# An attack or guard turns the blade the way its technique has it,
+	# whatever the weapon's own greybox pose is doing (that is taken back out).
+	var cut: Variant = shared.technique_blade(melee) if melee != null and melee.visual != null else null
 	if cut != null:
 		turn = turn.slerp(aimed * (cut as Basis) * melee.visual.transform.basis.orthonormalized().inverse(),
 				clampf(shared.reach_weight, 0.0, 1.0))

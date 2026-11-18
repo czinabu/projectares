@@ -58,6 +58,16 @@ signal portal_entered(actor: Actor, destination: String)
 signal portal_closed(portal: Portal)
 ## A player's contract counters for this life changed (`Actor.tally`).
 signal tally_changed(actor: Actor)
+## Thin ice (`WorldDef.thin_ice`) cracking under a heavy vehicle at `at`:
+## `stage` 1 and 2 are warnings, 3 is the ice giving way. On every machine
+## (a client hears it from `NetSession`), for the view.
+signal ice_cracked(at: Vector3, stage: int)
+## The open holes in the ice changed (`ice_holes`).
+signal ice_changed
+## A bot of a linked faction (`WorldDef.linked_factions`) called the rest of
+## its faction to a fight. On every machine near enough (a client hears it
+## from `NetSession`, with no `source`), for the view.
+signal grid_called(bot: Actor, source: Actor)
 
 ## Bots never start closer to the player than this, so a raid does not open with a fight.
 const MIN_BOT_SPAWN_DISTANCE := 40.0
@@ -194,11 +204,44 @@ var beacons: Array[Node3D] = []
 ## ready to fight where they spawn and unhurt by the ground.
 static var zone_rules := true
 var _bosses: Array[Dictionary] = []
+## Bosses' toughness is counted this often (`_scale_boss`).
+const BOSS_PARTY_EVERY := 1.0
+var _boss_party_left := 0.0
+## Linked factions: a hurt bot calls the rest at most this often, and when
+## each may call again.
+const LINK_EVERY := 1.5
+var _link_next := {}
 var _hazard_in := 0.0
 ## The map's warmth (heaters, vents; Marker3D in group "warmth") and the
 ## clock for the cold's once-a-second hurt.
 var warmth: Array[Node3D] = []
 var _cold_in := 1.0
+## Footprints and wheel tracks in a world with `WorldDef.tracks`: laid down
+## by the authority, copied to clients near them (`NetSession._send_tracks`).
+var tracks := Tracks.new()
+## Metres walked between two footprints, and driven between two wheel marks.
+const FOOT_STEP := 0.8
+const TREAD_STEP := 1.4
+## How often the authority looks for new marks, and how far off the ground a
+## body may be and still print it (a roof or a hut floor leaves none).
+const TRACK_EVERY := 0.1
+const TRACK_GROUND := 0.5
+var _track_in := 0.0
+var _expire_in := 1.0
+## Where each body or vehicle last left a mark, and which foot it was.
+var _last_mark := {}
+## Holes broken through thin ice (`WorldDef.thin_ice`), each [where (on the
+## ground), when it opened (`clock`)]. The authority keeps them and clients
+## are sent them. Anyone standing in one is in the water: their body heat
+## is gone. Anything driven into one sinks.
+var ice_holes: Array = []
+const ICE_HOLE_RADIUS := 3.5
+## Shares of `WorldDef.ice_break_strain` at which the ice cracks out loud
+## before it gives way, and how fast strain eases once off the thin ice.
+const ICE_WARNINGS := [0.4, 0.7]
+const ICE_EASE := 2.0
+## How hard each heavy vehicle has been on the thin ice (authority only).
+var _ice_strain := {}
 ## When false, the raid reports results but leaves the stash alone, so a server
 ## never writes to a profile that is not the player's.
 var apply_to_profile := true
@@ -332,6 +375,21 @@ func _setup(p_world: WorldDef, p_seed: int) -> void:
 	outposts = _map_nodes("outpost")
 	beacons = _map_nodes("beacon")
 	warmth = _map_nodes("warmth")
+	tracks.clear()
+	tracks.lifetime = world.track_lifetime
+	if world.tracks and Look.enabled:
+		var view := TrackView.new()
+		view.raid = self
+		add_child(view)
+	ice_holes.clear()
+	_ice_strain.clear()
+	if world.thin_ice and Look.enabled:
+		var ice := IceView.new()
+		ice.raid = self
+		add_child(ice)
+	_link_next.clear()
+	if not world.linked_factions.is_empty() and Look.enabled and not grid_called.is_connected(_show_grid_call):
+		grid_called.connect(_show_grid_call)
 	_assault_in = world.assault_interval
 	_event_in = world.event_interval
 	_raider_in = world.raider_gap
@@ -355,6 +413,8 @@ func _physics_process(delta: float) -> void:
 		_tick_war(delta)
 	map.set_meta("war_intensity", war.intensity)
 	map.set_meta("war_centre", war.centre)
+	if world.tracks:
+		_tick_tracks(delta)
 	if mode == Mode.CLIENT:
 		return
 	# DEV MODE
@@ -366,6 +426,8 @@ func _physics_process(delta: float) -> void:
 	_tick_outposts()
 	_tick_hazards(delta)
 	_tick_cold(delta)
+	if world.thin_ice:
+		_tick_ice(delta)
 	_tick_bosses(delta)
 	_tick_strongpoints(delta)
 	_tick_events(delta)
@@ -1427,7 +1489,66 @@ func _tick_bosses(delta: float) -> void:
 		boss.back_in -= delta
 		if boss.back_in <= 0.0:
 			boss.bot = _add_boss(boss.marker)
-			war_feed.emit("A warlord has taken %s again" % _whereabouts(boss.marker.global_position))
+			war_feed.emit(world.boss_back_news(boss.bot, _whereabouts(boss.marker.global_position)))
+	if world.boss_party_scale > 0.0:
+		_boss_party_left -= delta
+		if _boss_party_left <= 0.0:
+			_boss_party_left = BOSS_PARTY_EVERY
+			for boss in _bosses:
+				if boss.bot != null and is_instance_valid(boss.bot):
+					_scale_boss(boss.bot)
+
+
+## A boss grows tougher with company (`WorldDef.boss_party_scale`): one
+## player fights it as it is, each other player near it adds a share.
+## Counted every `BOSS_PARTY_EVERY`, so a group arriving mid-fight shows.
+func _scale_boss(bot: Actor) -> void:
+	var near := 0
+	for state in players:
+		var other := state.actor
+		if other == null or not is_instance_valid(other) or other.is_dead or state.finished:
+			continue
+		if other.global_position.distance_to(bot.global_position) <= world.boss_party_range:
+			near += 1
+	bot.toughness = 1.0 + world.boss_party_scale * maxi(near - 1, 0)
+
+
+## The view of a grid call (view only, added where `Look` is on): a ring of
+## the faction's light runs out from the bot's feet with a rising chirp, so
+## whoever hurt it knows the rest are coming.
+func _show_grid_call(bot: Actor, _source: Actor) -> void:
+	if bot == null or not is_instance_valid(bot) or not bot.is_inside_tree():
+		return
+	var at := bot.global_position + Vector3(0, 0.15, 0)
+	Fx.ring(self, at, GRID_CALL_RING, GRID_CALL_COLOR, 1.1, false)
+	Fx.ring(self, at + Vector3(0, bot.body_height() * 0.6, 0), GRID_CALL_RING * 0.35, GRID_CALL_COLOR, 0.7, false)
+	Sfx.play("grid_call", at, 2.0, 90.0)
+
+
+const GRID_CALL_RING := 9.0
+const GRID_CALL_COLOR := Color(0.1, 0.85, 0.8)
+
+
+## A bot of a linked faction (`WorldDef.linked_factions`) was hurt and
+## lived: every other one of its faction within range hears where the hit
+## came from, at most once every `LINK_EVERY` for each bot hurt. A blow
+## that kills calls nobody, so a clean kill stays quiet.
+func _on_linked_hurt(info: DamageInfo, bot: Actor) -> void:
+	var source := info.source as Actor
+	if source == null or not is_instance_valid(bot) or bot.is_dead or bot.health.health <= 0.0:
+		return
+	if info.amount <= 0.0 or source.faction == bot.faction:
+		return
+	if clock < float(_link_next.get(bot, -1.0)):
+		return
+	_link_next[bot] = clock + LINK_EVERY
+	var reach := float(world.linked_factions.get(bot.faction, 0.0))
+	for other in bots:
+		if other == bot or not is_instance_valid(other) or other.is_dead or other.faction != bot.faction:
+			continue
+		if other.global_position.distance_to(bot.global_position) <= reach:
+			other.heard.emit(source.global_position, source)
+	grid_called.emit(bot, source)
 
 
 ## Bots outside the world's own army: an event's, the core bosses and the
@@ -1717,6 +1838,197 @@ func _tick_cold(delta: float) -> void:
 			Combat.deal(actor, info)
 
 
+## Thin ice (`WorldDef.thin_ice`). A ground vehicle heavier than the ice
+## bears strains it while it stands or drives on it, cracking out loud at
+## `ICE_WARNINGS`, and breaks through at `ice_break_strain`. Anything driven
+## into an open hole sinks too, and anyone standing in one is in the water.
+## Holes freeze over again after `ice_refreeze`. Authority only.
+func _tick_ice(delta: float) -> void:
+	var before := ice_holes.size()
+	ice_holes = ice_holes.filter(func(hole: Array) -> bool: return clock - float(hole[1]) < world.ice_refreeze)
+	if ice_holes.size() != before:
+		ice_changed.emit()
+	for key: Variant in _ice_strain.keys():
+		if not is_instance_valid(key) or key not in vehicles:
+			_ice_strain.erase(key)
+	for vehicle in vehicles.duplicate():
+		if not is_instance_valid(vehicle) or vehicle.hovers or not vehicle.is_on_floor():
+			continue
+		var at: Vector3 = vehicle.global_position
+		if ice_hole_at(at) >= 0:
+			_go_through_ice(vehicle, false)
+			continue
+		var strain: float = _ice_strain.get(vehicle, 0.0)
+		var heavy: float = vehicle.weight / maxf(world.ice_holds, 0.01)
+		if heavy > 1.0 and world.thin_ice_at(at):
+			var was := strain
+			strain += heavy * delta
+			for k in ICE_WARNINGS.size():
+				var mark: float = ICE_WARNINGS[k] * world.ice_break_strain
+				if was < mark and strain >= mark:
+					ice_cracked.emit(_on_ground(at), k + 1)
+			if strain >= world.ice_break_strain:
+				_go_through_ice(vehicle, true)
+				continue
+		else:
+			strain = maxf(0.0, strain - ICE_EASE * delta)
+		if strain > 0.0:
+			_ice_strain[vehicle] = strain
+		else:
+			_ice_strain.erase(vehicle)
+	for state in players:
+		var actor := state.actor
+		if state.finished or not is_instance_valid(actor) or actor.is_dead or actor.vehicle != null:
+			continue
+		if ice_hole_at(actor.global_position) >= 0:
+			actor.body_heat = 0.0
+			actor.warming = false
+			actor.shivering = true
+
+
+## The open hole in the ice at a point (flat distance, near the ground), as
+## an index into `ice_holes`, or -1.
+func ice_hole_at(at: Vector3) -> int:
+	for k in ice_holes.size():
+		var hole: Vector3 = ice_holes[k][0]
+		var off := at - hole
+		if Vector2(off.x, off.z).length() <= ICE_HOLE_RADIUS and absf(off.y) < 1.5:
+			return k
+	return -1
+
+
+## A vehicle breaks through the ice (`opens` a new hole where it stands) or
+## drives into an open one: it sinks, and whoever rode it is in the water.
+func _go_through_ice(vehicle: Node3D, opens: bool) -> void:
+	var at := _on_ground(vehicle.global_position)
+	var riders: Array[Actor] = []
+	for seat in ["rider", "passenger"]:
+		var actor: Actor = vehicle.get(seat)
+		if actor != null and is_instance_valid(actor):
+			riders.append(actor)
+	if opens:
+		ice_holes.append([at, clock])
+		ice_changed.emit()
+	ice_cracked.emit(at, ICE_WARNINGS.size() + 1)
+	_ice_strain.erase(vehicle)
+	# Where the world is gentle about it, the watch pulls the vehicle back
+	# out as a toy: onto the watch of whoever threw it, else its driver's.
+	var keeper: PlayerState = null
+	if world.ice_keeps_vehicle:
+		for state in players:
+			if vehicle in state.parked and not state.finished:
+				keeper = state
+		if keeper == null and not riders.is_empty():
+			keeper = state_for(riders[0])
+		if keeper != null and keeper.finished:
+			keeper = null
+	var id: String = vehicle.get("item_id")
+	if keeper != null:
+		keeper.parked.erase(vehicle)
+	remove_vehicle(vehicle)
+	if keeper != null:
+		keeper.stowed.append(id)
+		if is_instance_valid(keeper.actor):
+			keeper.actor.notice.emit("%s went through the ice. Your watch pulled it back out" % ItemDB.item_name(id))
+			watch_changed.emit(keeper.actor)
+	for k in riders.size():
+		var actor := riders[k]
+		actor.global_position = _stand(at + Vector3(0.8 if k == 0 else -0.8, 0.0, 0.0))
+		actor.velocity = Vector3.ZERO
+		actor.notice.emit("Through the ice! Get out of the water")
+
+
+## A point dropped onto the map's open ground, if it has any.
+func _on_ground(at: Vector3) -> Vector3:
+	if map != null and map.has_method("ground_height"):
+		return Vector3(at.x, float(map.call("ground_height", at.x, at.z)), at.z)
+	return at
+
+
+## Open holes packed for the wire: x, y, z and age for each.
+func pack_ice_holes() -> PackedFloat32Array:
+	var out := PackedFloat32Array()
+	for hole: Array in ice_holes:
+		var at: Vector3 = hole[0]
+		out.append_array([at.x, at.y, at.z, clock - float(hole[1])])
+	return out
+
+
+## Takes the open holes the authority sent (see `pack_ice_holes`).
+func unpack_ice_holes(data: PackedFloat32Array) -> void:
+	ice_holes.clear()
+	for k in range(0, data.size() - 3, 4):
+		ice_holes.append([Vector3(data[k], data[k + 1], data[k + 2]), clock - maxf(data[k + 3], 0.0)])
+	ice_changed.emit()
+
+
+## Lays footprints and wheel tracks down behind everyone on open ground, and
+## lets old ones go. Only the authority lays them; a client is sent them.
+func _tick_tracks(delta: float) -> void:
+	_expire_in -= delta
+	if _expire_in <= 0.0:
+		_expire_in = 1.0
+		tracks.expire(clock)
+	if mode == Mode.CLIENT:
+		return
+	_track_in -= delta
+	if _track_in > 0.0:
+		return
+	_track_in = TRACK_EVERY
+	for key: Variant in _last_mark.keys():
+		if not is_instance_valid(key):
+			_last_mark.erase(key)
+	for state in players:
+		_track_foot(state.actor)
+	for bot in bots:
+		_track_foot(bot)
+	for vehicle in vehicles:
+		if is_instance_valid(vehicle) and not vehicle.hovers and not vehicle.flies and vehicle.is_on_floor():
+			_track_mark(vehicle, vehicle.global_position, Tracks.Kind.TREAD, TREAD_STEP)
+
+
+func _track_foot(actor: Actor) -> void:
+	if not is_instance_valid(actor) or actor.is_dead or actor.vehicle != null or not actor.is_on_floor():
+		return
+	var last: Array = _last_mark.get(actor, [])
+	var kind := Tracks.Kind.LEFT if last.is_empty() or last[1] == Tracks.Kind.RIGHT else Tracks.Kind.RIGHT
+	_track_mark(actor, actor.global_position, kind, FOOT_STEP)
+
+
+## A mark for `body` at `at` if it has gone `step` metres since its last one
+## and stands on the open ground.
+func _track_mark(body: Node3D, at: Vector3, kind: int, step: float) -> void:
+	var last: Array = _last_mark.get(body, [])
+	if not last.is_empty():
+		var gone: Vector3 = at - last[0]
+		gone.y = 0.0
+		if gone.length_squared() < step * step:
+			return
+	if not map.has_method("ground_height"):
+		return
+	var ground := float(map.call("ground_height", at.x, at.z))
+	var low := at.y - ground
+	if kind == Tracks.Kind.TREAD:
+		low = 0.0 if at.y >= ground - TRACK_GROUND and at.y - ground < 3.0 else 99.0
+	if absf(low) > TRACK_GROUND:
+		_last_mark[body] = [at, kind]
+		return
+	var heading: Vector3 = (at - last[0]) if not last.is_empty() else -body.global_basis.z
+	heading.y = 0.0
+	if heading.length_squared() < 0.0001:
+		heading = Vector3.FORWARD
+	heading = heading.normalized()
+	var yaw := atan2(-heading.x, -heading.z)
+	var spot := Vector3(at.x, ground, at.z)
+	if kind != Tracks.Kind.TREAD:
+		# Feet fall either side of the line walked.
+		var side := heading.cross(Vector3.UP) * (0.13 if kind == Tracks.Kind.RIGHT else -0.13)
+		spot += side
+		spot.y = float(map.call("ground_height", spot.x, spot.z))
+	tracks.add(spot, yaw, kind, clock)
+	_last_mark[body] = [at, kind]
+
+
 ## Body heat a second that warmth gives back to someone where they stand: the
 ## warmest heater or vent in reach, or a running engine they ride or stand
 ## beside. 0 out in the open.
@@ -1763,7 +2075,9 @@ func zone_label(actor: Actor) -> String:
 func _add_bot(marker: Node3D, warlord := false) -> Actor:
 	var at := marker.global_position + Vector3(rng.randf_range(-1, 1), 0, rng.randf_range(-1, 1))
 	var first_seed := rng.randi()
-	var bot := spawn_bot("Bot%d" % _bot_count, _stand(at), first_seed, warlord, marker.get_meta("faction", ""))
+	var boss: String = marker.get_meta("boss", "") if warlord else ""
+	var bot := spawn_bot("Bot%d" % _bot_count, _stand(at), first_seed, warlord, marker.get_meta("faction", ""),
+			-2, [], boss)
 	# The world may turn a rare kind away (`WorldDef.bot_allowed`): roll again,
 	# from seeds made from the first, so the raid's own dice are not moved.
 	for tries in BOT_REROLLS:
@@ -1774,7 +2088,7 @@ func _add_bot(marker: Node3D, warlord := false) -> Actor:
 		warlords.erase(bot)
 		bot.free()
 		bot = spawn_bot("Bot%d" % _bot_count, _stand(at), hash([first_seed, tries]), warlord,
-				marker.get_meta("faction", ""))
+				marker.get_meta("faction", ""), -2, [], boss)
 	if warlord:
 		# What a warlord carries is worth the fight.
 		for id in world.roll_war_loot("bot", rng, 1.0) + world.roll_war_loot("cache", rng, 1.0):
@@ -1793,6 +2107,8 @@ func _add_bot(marker: Node3D, warlord := false) -> Actor:
 	brain.skill_range = world.bot_skill_range(bot, warlord)
 	bot.add_child(brain)
 	bot.died.connect(_on_actor_died)
+	if world.linked_factions.has(bot.faction):
+		bot.health.damaged.connect(_on_linked_hurt.bind(bot))
 	world.on_spawn(bot)
 	_post_bot(bot)
 	actor_spawned.emit(bot)
@@ -1828,15 +2144,19 @@ func _farthest_from_players(markers: Array[Node3D]) -> int:
 
 
 ## Creates a bot equipped from `equip_seed`, with no brain. A client calls this
-## with the server's seed to get the same bot. A rival raider is given its
+## with the server's seed (and the faction, zone and boss kind it was sent)
+## to get the same bot. A rival raider is given its
 ## `kit` instead (item ids, put on like a player's) and is not passed
 ## through `WorldDef.equip_bot`.
 func spawn_bot(bot_name: String, at: Vector3, equip_seed: int, warlord := false, faction := "",
-		zone := -2, kit: Array = []) -> Actor:
+		zone := -2, kit: Array = [], boss := "") -> Actor:
 	var bot := Actor.new()
 	bot.name = bot_name
 	if faction != "":
 		bot.faction = faction
+	# A core boss of the world's own kind ("spawn_boss" meta "boss").
+	if boss != "":
+		bot.set_meta("boss", boss)
 	# The risk zone it arrived in, for `equip_bot`. A client is told it, since
 	# the bot may have walked elsewhere by the time the client hears of it.
 	bot.set_meta("zone", zone if zone >= -1 else world.zone_at(at))
