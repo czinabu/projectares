@@ -47,6 +47,7 @@ const BotTacticsTests := preload("res://tests/bot_tactics_tests.gd")
 const MeleeBotTests := preload("res://tests/melee_bot_tests.gd")
 const RecoilTests := preload("res://tests/recoil_tests.gd")
 const HitFeedbackTests := preload("res://tests/hit_feedback_tests.gd")
+const ErrorSpamTests := preload("res://tests/error_spam_tests.gd")
 const PeekTests := preload("res://tests/peek_tests.gd")
 const AdsTests := preload("res://tests/ads_tests.gd")
 const GripTests := preload("res://tests/grip_tests.gd")
@@ -365,6 +366,7 @@ func _run() -> void:
 	await _test_melee_bots()
 	await _test_recoil()
 	await _test_hit_feedback()
+	await _test_error_spam()
 	await _test_peek()
 	await _test_ads()
 	await _test_grips()
@@ -469,6 +471,10 @@ func _test_recoil() -> void:
 
 func _test_hit_feedback() -> void:
 	await HitFeedbackTests.run(self)
+
+
+func _test_error_spam() -> void:
+	await ErrorSpamTests.run(self)
 
 
 func _test_peek() -> void:
