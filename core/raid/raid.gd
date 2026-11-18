@@ -199,6 +199,20 @@ var _hazard_in := 0.0
 ## clock for the cold's once-a-second hurt.
 var warmth: Array[Node3D] = []
 var _cold_in := 1.0
+## Footprints and wheel tracks in a world with `WorldDef.tracks`: laid down
+## by the authority, copied to clients near them (`NetSession._send_tracks`).
+var tracks := Tracks.new()
+## Metres walked between two footprints, and driven between two wheel marks.
+const FOOT_STEP := 0.8
+const TREAD_STEP := 1.4
+## How often the authority looks for new marks, and how far off the ground a
+## body may be and still print it (a roof or a hut floor leaves none).
+const TRACK_EVERY := 0.1
+const TRACK_GROUND := 0.5
+var _track_in := 0.0
+var _expire_in := 1.0
+## Where each body or vehicle last left a mark, and which foot it was.
+var _last_mark := {}
 ## When false, the raid reports results but leaves the stash alone, so a server
 ## never writes to a profile that is not the player's.
 var apply_to_profile := true
@@ -330,6 +344,12 @@ func _setup(p_world: WorldDef, p_seed: int) -> void:
 	outposts = _map_nodes("outpost")
 	beacons = _map_nodes("beacon")
 	warmth = _map_nodes("warmth")
+	tracks.clear()
+	tracks.lifetime = world.track_lifetime
+	if world.tracks and Look.enabled:
+		var view := TrackView.new()
+		view.raid = self
+		add_child(view)
 	_assault_in = world.assault_interval
 	_event_in = world.event_interval
 	_raider_in = world.raider_gap
@@ -353,6 +373,8 @@ func _physics_process(delta: float) -> void:
 		_tick_war(delta)
 	map.set_meta("war_intensity", war.intensity)
 	map.set_meta("war_centre", war.centre)
+	if world.tracks:
+		_tick_tracks(delta)
 	if mode == Mode.CLIENT:
 		return
 	# DEV MODE
@@ -1713,6 +1735,73 @@ func _tick_cold(delta: float) -> void:
 			info.position = actor.global_position
 			info.armor_pierce = 1.0
 			Combat.deal(actor, info)
+
+
+## Lays footprints and wheel tracks down behind everyone on open ground, and
+## lets old ones go. Only the authority lays them; a client is sent them.
+func _tick_tracks(delta: float) -> void:
+	_expire_in -= delta
+	if _expire_in <= 0.0:
+		_expire_in = 1.0
+		tracks.expire(clock)
+	if mode == Mode.CLIENT:
+		return
+	_track_in -= delta
+	if _track_in > 0.0:
+		return
+	_track_in = TRACK_EVERY
+	for key: Variant in _last_mark.keys():
+		if not is_instance_valid(key):
+			_last_mark.erase(key)
+	for state in players:
+		_track_foot(state.actor)
+	for bot in bots:
+		_track_foot(bot)
+	for vehicle in vehicles:
+		if is_instance_valid(vehicle) and not vehicle.hovers and not vehicle.flies and vehicle.is_on_floor():
+			_track_mark(vehicle, vehicle.global_position, Tracks.Kind.TREAD, TREAD_STEP)
+
+
+func _track_foot(actor: Actor) -> void:
+	if not is_instance_valid(actor) or actor.is_dead or actor.vehicle != null or not actor.is_on_floor():
+		return
+	var last: Array = _last_mark.get(actor, [])
+	var kind := Tracks.Kind.LEFT if last.is_empty() or last[1] == Tracks.Kind.RIGHT else Tracks.Kind.RIGHT
+	_track_mark(actor, actor.global_position, kind, FOOT_STEP)
+
+
+## A mark for `body` at `at` if it has gone `step` metres since its last one
+## and stands on the open ground.
+func _track_mark(body: Node3D, at: Vector3, kind: int, step: float) -> void:
+	var last: Array = _last_mark.get(body, [])
+	if not last.is_empty():
+		var gone: Vector3 = at - last[0]
+		gone.y = 0.0
+		if gone.length_squared() < step * step:
+			return
+	if not map.has_method("ground_height"):
+		return
+	var ground := float(map.call("ground_height", at.x, at.z))
+	var low := at.y - ground
+	if kind == Tracks.Kind.TREAD:
+		low = 0.0 if at.y >= ground - TRACK_GROUND and at.y - ground < 3.0 else 99.0
+	if absf(low) > TRACK_GROUND:
+		_last_mark[body] = [at, kind]
+		return
+	var heading: Vector3 = (at - last[0]) if not last.is_empty() else -body.global_basis.z
+	heading.y = 0.0
+	if heading.length_squared() < 0.0001:
+		heading = Vector3.FORWARD
+	heading = heading.normalized()
+	var yaw := atan2(-heading.x, -heading.z)
+	var spot := Vector3(at.x, ground, at.z)
+	if kind != Tracks.Kind.TREAD:
+		# Feet fall either side of the line walked.
+		var side := heading.cross(Vector3.UP) * (0.13 if kind == Tracks.Kind.RIGHT else -0.13)
+		spot += side
+		spot.y = float(map.call("ground_height", spot.x, spot.z))
+	tracks.add(spot, yaw, kind, clock)
+	_last_mark[body] = [at, kind]
 
 
 ## Body heat a second that warmth gives back to someone where they stand: the

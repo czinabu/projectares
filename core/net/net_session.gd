@@ -85,7 +85,7 @@ signal base_visit_requested(owner_name: String, stash: Array, loadout: Dictionar
 signal portal_travel(destination: String)
 
 const DEFAULT_PORT := 24565
-const PROTOCOL := 40
+const PROTOCOL := 41
 ## Every packet is compressed, both ways. State updates are mostly repeated
 ## numbers, and a big battle sends a player hundreds of them a second. Server
 ## and client must agree, so a change here needs a new PROTOCOL.
@@ -111,6 +111,7 @@ const PROTOCOL := 40
 ## the visor's pickup feed.
 ## 40: warm beacons: a sign-out carries the rate its countdown runs at
 ## (`_sign_out`'s `rate`: 0 while away from the beacon, faster with company).
+## 41: tracks: footprints and wheel tracks near a player (`_tracks`).
 ## Where an out-of-date game gets the latest build: the rolling "latest"
 ## release the Windows client workflow publishes (docs/hosting.md).
 const UPDATE_URL := "https://github.com/czinabu/projectares/releases/tag/latest"
@@ -325,6 +326,12 @@ var _sent_standing := {} # actor id -> public renown standing last sent (server)
 var _sent_war := -1.0    # war intensity last sent (server)
 var _sent_points := {}   # peer id -> strongpoint states last sent to them (server)
 var _sent_heat := {}     # peer id -> [body heat, warming] last sent to them (server)
+var _sent_tracks := {}   # peer id -> { track cell: last mark id sent } (server)
+## Tracks: how far round a player new marks are sent, how often, and at most
+## how many in one message (the rest follow next time).
+const TRACK_RANGE := 60.0
+const TRACK_SEND_EVERY := 20
+const TRACK_BATCH := 500
 var _tick := 0
 var _sent_status := {}   # world status last sent (server)
 var _limits := RequestLimits.new() # how many requests each player may still make (server)
@@ -553,6 +560,7 @@ func _clear_tables() -> void:
 	_sent_war = -1.0
 	_sent_points.clear()
 	_sent_heat.clear()
+	_sent_tracks.clear()
 	_actor_account.clear()
 	_board_sent.clear()
 
@@ -1410,6 +1418,7 @@ func _send_world(peer: int) -> void:
 		_send_portal(peer, portal)
 	_sent_points.erase(peer)
 	_sent_heat.erase(peer)
+	_sent_tracks.erase(peer)
 	if raid is Race:
 		_race_board.rpc_id(peer, (raid as Race).public_board())
 
@@ -1726,6 +1735,10 @@ func _server_late_tick(_delta: float) -> void:
 			if _sent_heat.get(peer, []) != heat:
 				_sent_heat[peer] = heat
 				_body_heat.rpc_id(peer, heat[0], heat[1])
+	# Tracks: each player is sent the new marks near them, never the whole
+	# world's, a few times a second.
+	if _tick % TRACK_SEND_EVERY == 0 and raid.world.tracks:
+		_send_tracks()
 	# Strongpoints: each player hears who holds what, and which are theirs.
 	if _tick % 10 == 0 and not raid.strongpoints.is_empty():
 		for peer in _joined_peers:
@@ -2967,6 +2980,36 @@ func _tally(counts: Dictionary) -> void:
 		if typeof(stat) == TYPE_STRING:
 			clean[stat] = maxi(0, int(counts[stat]))
 	me.tally = clean
+
+
+## Sends each player the footprints and wheel tracks laid near them since
+## they were last sent that patch of ground (`Tracks.since`, by mark id).
+func _send_tracks() -> void:
+	for peer in _joined_peers:
+		var viewer: Actor = _peer_actor.get(peer)
+		if viewer == null or not is_instance_valid(viewer):
+			continue
+		var sent: Dictionary = _sent_tracks.get(peer, {})
+		_sent_tracks[peer] = sent
+		var fresh := []
+		for cell in raid.tracks.cells_near(viewer.global_position, TRACK_RANGE):
+			if fresh.size() >= TRACK_BATCH:
+				break
+			var marks := raid.tracks.since(cell, int(sent.get(cell, 0)))
+			if marks.is_empty():
+				continue
+			marks = marks.slice(0, TRACK_BATCH - fresh.size())
+			sent[cell] = int(marks.back()[0])
+			fresh.append_array(marks)
+		if not fresh.is_empty():
+			_tracks.rpc_id(peer, Tracks.pack(fresh, raid.clock))
+
+
+## Footprints and wheel tracks near you, for the snow to show.
+@rpc("authority", "call_remote", "reliable")
+func _tracks(data: PackedFloat32Array) -> void:
+	if raid != null and raid.world != null and raid.world.tracks:
+		raid.tracks.unpack(data, raid.clock)
 
 
 ## Your body heat and whether you stand in warmth, for the visor and the

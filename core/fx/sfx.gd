@@ -71,14 +71,19 @@ func _ready() -> void:
 ## Plays a sound. With a position it is 3D and fades with distance; without
 ## one it plays flat, for the local player's own actions and UI.
 ## `reach` is how far away it can still be heard (gunfire carries further).
-func play(sound: String, at: Variant = null, volume_db := 0.0, reach := 90.0) -> void:
+## How close a sound is at full volume, before it falls away with distance.
+const UNIT_SIZE := 9.0
+
+
+## `unit` is the distance it is heard at full volume: more carries further.
+func play(sound: String, at: Variant = null, volume_db := 0.0, reach := 90.0, unit := UNIT_SIZE) -> void:
 	if not _enabled or not _streams.has(sound):
 		return
 	if at is Vector3:
 		var player := AudioStreamPlayer3D.new()
 		player.stream = _streams[sound]
 		player.volume_db = volume_db
-		player.unit_size = 9.0
+		player.unit_size = unit
 		player.max_distance = reach
 		add_child(player)
 		player.global_position = at

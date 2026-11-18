@@ -607,8 +607,11 @@ and its own blueprints make new options: the Thermal Frame, which keeps out
 some of the cold, and the Glacier Grip. You leave the valley only at one
 of its four warm beacons: start the sign-out inside a beacon's ring of
 light and stay there while it powers up (20 seconds, quicker with others
-powering it beside you). The rest of its redesign (whiteouts and tracks)
-is planned in DESIGN.md section 2, "Frostline".
+powering it beside you). The snow keeps a trail: everyone on foot leaves
+footprints and every ground vehicle wheel tracks, which fade after a few
+minutes, so you can follow someone (or something) across the valley. In
+the still, cold air a gunshot carries twice as far, to people and to the
+bots alike. Whiteouts are planned in DESIGN.md section 2, "Frostline".
 
 ## Run the tests
 

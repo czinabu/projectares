@@ -85,6 +85,17 @@ without Caleb, and update the gap list when a PR closes a row.
   dropped connection counts down where the body stands. Authority only,
   respecting `Raid.zone_rules`; the owner gets the pace with the countdown
   (`NetSession._sign_out`'s rate).
+- Tracks (DESIGN.md "Frostline"): with `WorldDef.tracks` the authority's
+  `Raid._tick_tracks` lays footprints (alternate feet) and ground vehicles'
+  wheel tracks into `Raid.tracks` (a `Tracks` store in cells), only on open
+  ground (`ground_height`, never a roof or a floor), and lets them go after
+  `track_lifetime`. A mark is laid behind someone, never where they are, so
+  it is a trail, not tracking. A client is sent only marks near its player
+  (`NetSession._send_tracks`, by the last id sent per cell, within
+  `TRACK_RANGE`) and draws them with `TrackView` (view only, added by the
+  `Raid` only where `Look` is on). A world's air carrying shots further is
+  `WorldDef.shot_carry`, which scales both `Gun.noise_reach` (bots) and
+  the shot's sound.
 - How harsh death is belongs to the world, not to `Raid`. With
   `WorldDef.keep_gear_on_death` a dead player drops only the backpack and the
   equipped gear returns in the result's `kept`. A gentle world pays for that
