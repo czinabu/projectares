@@ -1722,6 +1722,12 @@ func _helmet_shots(out_dir: String) -> void:
 	Loadout.wear_frame(player, "")
 	lamp.light_color = Color(0.95, 0.97, 1.0)
 	lamp.light_energy = 2.5
+	var fill := OmniLight3D.new()
+	fill.omni_range = 6.0
+	fill.light_energy = 1.2
+	fill.light_color = Color(0.8, 0.88, 1.0)
+	cam.add_child(fill)
+	fill.position = Vector3(-0.8, 0.6, 0.2)
 	var close := ["visor_scav", "helm_spotter", "helm_spotter_mk2", "helm_seeker", "helm_seeker_mk2",
 			"helm_warden", "helm_warden_mk2", "helm_ember", "helm_ember_mk2"]
 	var cells := 4

@@ -872,10 +872,18 @@ without Caleb, and update the gap list when a PR closes a row.
   (`Raid.summon`, online `NetSession.summon`) to `Raid.swap_worn`
   (authority only, at once, then a short watch rest): it goes on and the
   worn one goes in the pack; `_worn_changed` tells every client. The skin wears it on the
-  head (`ActorSkin._update_helmet`, `build_helmet`: a shell, glass in the
-  visor's colour and a fitting per `mode`), hiding the head under it; it
+  head (`ActorSkin._update_helmet`, `build_helmet`), hiding the head under it; it
   hangs off the "Head" bone, so first person leaves it out with the head.
-  Check by eye with `visual_check.tscn -- <dir> --helmets-only`.
+  Each helmet looks like what it does (Caleb's call; `helmet_model.gd`):
+  a dark hood, a shell with its own outline (`Shape`: the Spotter low and
+  high-cut, the Seeker a swept egg, the Warden faceted with a crest, the
+  Ember broad over its heat sinks), smoked glass glowing in the visor's
+  colour and the mode's fitting (rangefinder pod, emitter crown, sensor
+  eyes all round, thermal lens and heat sinks; the scrap visor patched and
+  cracked); a Mk2 (`Visor.tier`) wears a lit seam over the crown. Keep
+  the back of the head clear for the vitals strip. Goggles will be the
+  same glass and fitting on a strap, no shell. Check by eye with
+  `visual_check.tscn -- <dir> --helmets-only` (helmet_closeups.png).
   Armor frames are worn gear the same way: `Loadout.wear_frame` puts one on
   or off (`Actor.frame_id`), undoing the old frame's speed and heat scaling
   before applying the new one, and emits `Actor.frame_changed`. One frame is

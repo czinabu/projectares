@@ -23,6 +23,53 @@ extends RefCounted
 const GLASS_GLOW := 0.45
 ## A Mk2 helmet's trim: a lit seam along the crown in the glass colour.
 const TRIM_GLOW := 1.4
+## How much smaller than the head's measure the shell is drawn, so a helmet
+## sits on a head rather than round it like a bowl.
+const FIT := 0.94
+
+## The shape every surface of the helmet being built follows (see `Shape`),
+## set for each design by `build`.
+static var _shape := Shape.new()
+
+
+## How one design bends the ellipsoid its plates lie on, so each helmet has
+## an outline of its own: `flat` flattens the front, `sweep` draws the back
+## out and down, `bulk` widens the sides, `ridge` raises a crest along the
+## middle, `facets` cuts it into that many flat faces round.
+class Shape:
+	var flat := 0.0
+	var sweep := 0.0
+	var bulk := 0.0
+	var ridge := 0.0
+	var crown := 1.0
+	var facets := 0
+
+	static func of(mode: String) -> Shape:
+		var s := Shape.new()
+		match mode:
+			"zoom":
+				# Low and flat: a high-cut recon shell.
+				s.crown = 0.82
+				s.flat = 0.12
+			"scan":
+				# A smooth egg swept back.
+				s.sweep = 0.3
+				s.crown = 1.04
+				s.flat = 0.08
+			"threat":
+				# Angular plates with a crest.
+				s.facets = 10
+				s.ridge = 0.1
+				s.flat = 0.15
+			"thermal":
+				# Broad over the ears, where the heat sinks are.
+				s.bulk = 0.12
+				s.crown = 0.92
+				s.flat = 0.1
+			"":
+				s.crown = 0.9
+				s.flat = 0.06
+		return s
 
 
 ## The helmet for `mode`, its glass lit in `glass`, sized round a head of
@@ -31,8 +78,9 @@ const TRIM_GLOW := 1.4
 static func build(mode: String, glass: Color, size: Vector3, shell_color: Color, tier := 1) -> Node3D:
 	var root := Node3D.new()
 	root.name = "HelmetModel"
-	var r := size * 0.5
+	var r := size * 0.5 * FIT
 	var kit := Kit.new(mode, glass, shell_color)
+	_shape = Shape.of(mode)
 	_hood(root, r, kit)
 	match mode:
 		"slit":
@@ -53,6 +101,7 @@ static func build(mode: String, glass: Color, size: Vector3, shell_color: Color,
 				[[0.0, r.y * 0.55]], [[0.0, r.y * 1.08]], 0.004, 2, 6), kit.trim)
 		_piece_mesh(root, "Mk2TrimBack", _surface(r.x * 1.075, r.y * 1.075, r.z * 1.075, PI - 0.035, PI + 0.035,
 				[[0.0, r.y * 0.35]], [[0.0, r.y * 1.08]], 0.004, 2, 6), kit.trim)
+	_shape = Shape.new()
 	return root
 
 
@@ -106,17 +155,14 @@ class Kit:
 
 ## The hood and the neck under every helmet.
 static func _hood(root: Node3D, r: Vector3, kit: Kit) -> void:
-	var head := SphereMesh.new()
-	head.radius = 0.5
-	head.height = 1.0
-	_piece(root, "Hood", head, kit.hood, Vector3(0, -r.y * 0.08, r.z * 0.02),
-			Vector3(r.x * 1.86, r.y * 1.86, r.z * 1.8))
+	_piece_mesh(root, "Hood", _surface(r.x * 0.93, r.y * 0.95, r.z * 0.92, -PI, PI, [[0.0, -r.y * 0.97]],
+			[[0.0, r.y * 0.98]], 0.004, 24, 10), kit.hood).position = Vector3(0, -r.y * 0.1, r.z * 0.02)
 	var neck := CylinderMesh.new()
 	neck.top_radius = 0.5
 	neck.bottom_radius = 0.55
 	neck.height = 1.0
-	_piece(root, "Neck", neck, kit.hood, Vector3(0, -r.y * 0.9, r.z * 0.12),
-			Vector3(r.x * 1.1, r.y * 0.4, r.z * 1.1))
+	_piece(root, "Neck", neck, kit.hood, Vector3(0, -r.y * 0.98, r.z * 0.12),
+			Vector3(r.x * 1.15, r.y * 0.45, r.z * 1.15))
 
 
 ## The cap of the helmet: the ellipsoid above the rim line `rim` ([angle
@@ -209,13 +255,13 @@ static func _spotter(root: Node3D, r: Vector3, kit: Kit) -> void:
 	antenna.rotation.x = -0.35
 	_stud(root, "AntennaTip", antenna.position + Vector3(0, 0.11, 0.04), 0.007, kit.lit)
 	# The mount on the brow, the arm and the pod over the right eye.
-	var mount := _piece(root, "Mount", BoxMesh.new(), kit.dark, Vector3(0, r.y * 0.38, -r.z * 1.0),
+	var mount := _piece(root, "Mount", BoxMesh.new(), kit.dark, Vector3(0, r.y * 0.38, -r.z * 0.880),
 			Vector3(0.05, 0.035, 0.022))
 	mount.rotation.x = -0.35
-	var arm := _piece(root, "Arm", BoxMesh.new(), kit.plate, Vector3(r.x * 0.22, r.y * 0.2, -r.z * 1.12),
+	var arm := _piece(root, "Arm", BoxMesh.new(), kit.plate, Vector3(r.x * 0.22, r.y * 0.2, -r.z * 0.986),
 			Vector3(0.05, 0.012, 0.02))
 	arm.rotation.z = -0.5
-	var pod := _piece(root, "Pod", BoxMesh.new(), kit.plate, Vector3(r.x * 0.38, -r.y * 0.02, -r.z * 1.17),
+	var pod := _piece(root, "Pod", BoxMesh.new(), kit.plate, Vector3(r.x * 0.38, -r.y * 0.02, -r.z * 1.030),
 			Vector3(0.075, 0.048, 0.06))
 	pod.rotation.y = -0.15
 	_piece(root, "PodTop", BoxMesh.new(), kit.dark, pod.position + Vector3(0, 0.027, 0.005),
@@ -300,7 +346,7 @@ static func _warden(root: Node3D, r: Vector3, kit: Kit) -> void:
 	_piece_mesh(root, "Mandible", _surface(r.x * 1.1, r.y * 1.08, r.z * 1.12, -1.2, 1.2,
 			[[0.0, -r.y * 0.95], [1.2, -r.y * 0.6]], [[0.0, -r.y * 0.24], [1.0, -r.y * 0.1], [1.2, -r.y * 0.1]],
 			0.016, 10, 4), kit.plate)
-	_piece(root, "Chin", BoxMesh.new(), kit.dark, Vector3(0, -r.y * 0.62, -r.z * 1.17), Vector3(0.03, 0.06, 0.02))
+	_piece(root, "Chin", BoxMesh.new(), kit.dark, Vector3(0, -r.y * 0.62, -r.z * 0.994), Vector3(0.03, 0.06, 0.02))
 	for i in 3:
 		_piece(root, "Vent", BoxMesh.new(), kit.dark, Vector3(0, -r.y * (0.42 + 0.11 * i), -r.z * 1.18 + 0.004 * i),
 				Vector3(0.06 - 0.008 * i, 0.006, 0.01))
@@ -340,14 +386,14 @@ static func _ember(root: Node3D, r: Vector3, kit: Kit) -> void:
 	_piece_mesh(root, "Respirator", _surface(r.x * 1.06, r.y * 1.05, r.z * 1.1, -1.0, 1.0,
 			[[0.0, -r.y * 0.98], [1.0, -r.y * 0.65]], [[0.0, -r.y * 0.32], [1.0, -r.y * 0.25]], 0.014, 12, 4),
 			kit.plate)
-	var filter := _round(root, "Filter", Vector3(0, -r.y * 0.72, -r.z * 1.12), 0.032, 0.04, kit.dark)
+	var filter := _round(root, "Filter", Vector3(0, -r.y * 0.72, -r.z * 1.008), 0.032, 0.04, kit.dark)
 	filter.rotation.x = PI * 0.5 - 0.5
 	for i in 3:
 		var slot := _round(root, "FilterRing", filter.position + Vector3(0, -0.008 * i, -0.012 * i) * 0.0
 				+ Vector3(0, 0.01 - 0.01 * i, -0.004), 0.034, 0.004, kit.plate)
 		slot.rotation.x = filter.rotation.x
 	# The lens: a ringed housing out over the visor, the glass deep in it.
-	var at := Vector3(0, -r.y * 0.02, -r.z * 1.12)
+	var at := Vector3(0, -r.y * 0.02, -r.z * 1.008)
 	var housing := _round(root, "Lens", at, 0.04, 0.05, kit.dark)
 	housing.rotation.x = PI * 0.5
 	var torus := TorusMesh.new()
@@ -359,11 +405,11 @@ static func _ember(root: Node3D, r: Vector3, kit: Kit) -> void:
 	eye.rotation.x = PI * 0.5
 	# Heat sinks over the ears: fins stacked up the side, lit at the root.
 	for side: float in [-1.0, 1.0]:
-		_piece(root, "SinkGlow", BoxMesh.new(), kit.lit, Vector3(side * r.x * 1.02, -r.y * 0.05, r.z * 0.1),
+		_piece(root, "SinkGlow", BoxMesh.new(), kit.lit, Vector3(side * r.x * 1.13, -r.y * 0.05, r.z * 0.1),
 				Vector3(0.006, 0.1, 0.075))
 		for i in 5:
 			var fin := _piece(root, "Sink", BoxMesh.new(), kit.dark,
-					Vector3(side * r.x * 1.1, -r.y * 0.3 + i * 0.022, r.z * 0.1), Vector3(0.03, 0.006, 0.09))
+					Vector3(side * r.x * 1.2, -r.y * 0.3 + i * 0.022, r.z * 0.1), Vector3(0.03, 0.006, 0.09))
 			fin.rotation.y = side * 0.1
 	# A vent down the back of the crown.
 	for i in 3:
@@ -400,8 +446,31 @@ static func _closed_helm(root: Node3D, size: Vector3, kit: Kit) -> void:
 ## A point on the ellipsoid of radii `r` at `angle` round from the front
 ## (toward +X) and `height` up.
 static func _on_ellipsoid(r: Vector3, angle: float, height: float) -> Vector3:
+	var f := _shape.facets
+	if f > 0:
+		# Flat faces: the point lies on the chord between the corners either side.
+		var step := TAU / f
+		var a0 := floorf((angle + step * 0.5) / step) * step - step * 0.5
+		var t := (angle - a0) / step
+		return _shaped(r, a0, height).lerp(_shaped(r, a0 + step, height), t)
+	return _shaped(r, angle, height)
+
+
+## A point on the ellipsoid bent by `_shape`.
+static func _shaped(r: Vector3, angle: float, height: float) -> Vector3:
+	var ry := r.y * (_shape.crown if height > 0.0 else 1.0)
 	var lat := asin(clampf(height / r.y, -0.999, 0.999))
-	return Vector3(r.x * cos(lat) * sin(angle), height, -r.z * cos(lat) * cos(angle))
+	var c := cos(lat)
+	var at := Vector3(r.x * c * sin(angle), ry * sin(lat), -r.z * c * cos(angle))
+	var front := maxf(0.0, cos(angle))
+	if at.z < 0.0:
+		at.z *= 1.0 - _shape.flat * front * front
+	else:
+		at.z *= 1.0 + _shape.sweep * (0.4 + 0.6 * maxf(0.0, sin(lat)))
+	at.x *= 1.0 + _shape.bulk * absf(sin(angle)) * c
+	if _shape.ridge > 0.0 and height > 0.0:
+		at.y += _shape.ridge * r.y * exp(-pow(at.x / (r.x * 0.18), 2.0)) * sin(lat)
+	return at
 
 
 ## A height along a rim: `keys` are [angle from the front, height] pairs,
@@ -440,7 +509,7 @@ static func _surface(rx: float, ry: float, rz: float, from: float, to: float, lo
 			var a := lerpf(from, to, u)
 			var h := lerpf(_rim_at(low, a), _rim_at(high, a), v)
 			var at := _on_ellipsoid(r, a, h)
-			var n := Vector3(at.x / (rx * rx), at.y / (ry * ry), at.z / (rz * rz)).normalized()
+			var n := _normal_at(r, a, h, at)
 			var edge := minf(1.0 if full else minf(u, 1.0 - u) * 4.0, minf(v, 1.0 - v) * 3.0)
 			var t := thick * lerpf(0.35, 1.0, clampf(edge, 0.0, 1.0))
 			row_in.append(at)
@@ -468,6 +537,19 @@ static func _surface(rx: float, ry: float, rz: float, from: float, to: float, lo
 						* (1.0 if i == cols else -1.0)
 				_quad(st, [inner[j][i], inner[j + 1][i], outer[j + 1][i], outer[j][i]], [side, side, side, side], 1.0)
 	return st.commit()
+
+
+## The outward normal of the bent ellipsoid at `at` (angle `a`, height `h`).
+static func _normal_at(r: Vector3, a: float, h: float, at: Vector3) -> Vector3:
+	var e := 0.002
+	var hh := clampf(h, -r.y * 0.99 + e, r.y * 0.99 - e)
+	var da := _on_ellipsoid(r, a + e, hh) - _on_ellipsoid(r, a - e, hh)
+	var dh := _on_ellipsoid(r, a, hh + e) - _on_ellipsoid(r, a, hh - e)
+	var n := dh.cross(da)
+	if n.length_squared() < 1e-12:
+		n = Vector3(at.x / (r.x * r.x), at.y / (r.y * r.y), at.z / (r.z * r.z))
+	n = n.normalized()
+	return n if n.dot(at) >= 0.0 else -n
 
 
 static func _quad(st: SurfaceTool, at: Array, n: Array, sign: float) -> void:
