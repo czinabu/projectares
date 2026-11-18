@@ -2708,7 +2708,7 @@ func _test_vehicle_driving() -> void:
 	arena.add_child(rider)
 	rider.position = Vector3(3, 0.1, 0)
 	await frames(20)
-	check(bike.is_on_floor() and is_equal_approx(bike.max_speed, 22.0), "a bike settles and takes its item stats")
+	check(bike.is_on_floor() and is_equal_approx(bike.max_speed, 24.0), "a bike settles and takes its item stats")
 	var seat: Interactable = bike.get_node("Seat")
 	check(seat.get_prompt().contains("Ride"), "a parked bike offers a ride")
 	# The rider stands 3 m to the bike's +X side; yaw PI/2 faces -X.

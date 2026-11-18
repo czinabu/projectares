@@ -793,8 +793,10 @@ without Caleb, and update the gap list when a PR closes a row.
   always-in-view readings as a row of hex cells along the lower left curve,
   each filling like a gauge with its number over it (health, armor,
   stamina, with a flight rig its heat and cue, the ability;
-  `VisorHud.vital_cells`; the landing warning is still to come, per
-  DESIGN.md section 5). Every working helmet also has a heading tape across
+  `VisorHud.vital_cells`), and under the middle of the lower rim the
+  landing warning (`Hud.landing_warning`: the rig about to cut out while a
+  fall from there would hurt; `VisorHud._draw_landing`, and the pack
+  screen's word turns to LAND, DESIGN.md section 5). Every working helmet also has a heading tape across
   the top, bowed with the glass, that marks only what the wearer is already
   told (`VisorHud.compass_marks`): squadmates (`VisorHud.squadmate`: a player in
   the same clan, or everyone where `WorldDef.players_allied`; never a bot or

@@ -102,6 +102,8 @@ var scope_range := 80.0
 var vitals_left := 0.075
 var vitals_low := 0.9
 var vitals_lift := 0.07
+## Where the landing warning sits, as a share of the view's height.
+var landing_low := 0.86
 ## Pitch ticks: pixels per degree, as a share of the view's height.
 var pitch_scale := 0.009
 ## The weapon readout, bottom right: how long it stays lit after a switch,
@@ -160,6 +162,9 @@ var weapon_lit := 0.0
 var zoom_shown := 0.0
 ## Height above the ground while off it, below zero when standing on it.
 var altitude := -1.0
+## The landing warning, 0 to 1 (`Hud.landing_warning`): drawn low in the
+## middle of the glass's lower rim, and flat in third person.
+var landing := 0.0
 ## Everyone on the wearer's squad in this world, alive (see `squadmate`).
 var squad: Array[Actor] = []
 ## Spots the wearer's side pinged: {"at": Vector3, "left": float}.
@@ -378,6 +383,7 @@ func _process(delta: float) -> void:
 	if p != null and Hud.feels_cold(p):
 		frosted = clampf(1.0 - p.body_heat / maxf(p.max_body_heat * 0.5, 1.0), 0.0, 1.0)
 	frost = move_toward(frost, frosted, delta * (0.15 if frosted > frost else 0.5))
+	landing = Hud.landing_warning(p) if p != null and (glass_shown() or flat_shown()) else 0.0
 	_animate(p, delta)
 	if p == null or _world == null or not _world.is_inside_tree():
 		queue_redraw()
@@ -431,7 +437,7 @@ func _animate(p: Actor, delta: float) -> void:
 	sway = sway.limit_length(sway_max) * exp(-sway_settle * delta)
 	var busy := p.visor.is_sensing() or not p.visor.threats.is_empty() or p.visor.is_zoomed() \
 			or p.visor.thermal_on or not felt.is_empty() or not hit_marks.is_empty() \
-			or p.health.health < p.health.max_health * 0.35
+			or p.health.health < p.health.max_health * 0.35 or landing > 0.0
 	alert = 1.0 if busy else maxf(0.0, alert - alert_fade * delta)
 	var locked := aim_target != null and is_instance_valid(aim_target) and not aim_target.is_dead
 	lock = move_toward(lock, 1.0 if locked else 0.0, lock_rate * delta)
@@ -812,6 +818,7 @@ func _draw() -> void:
 		_draw_glass(ink)
 		_draw_frost()
 	_draw_vitals(p, ink)
+	_draw_landing(p)
 	_draw_weapon(p, ink)
 	_draw_ident(v, ink)
 	if v.mode == "":
@@ -1527,6 +1534,29 @@ func _draw_vitals(p: Actor, ink: Color) -> void:
 		_text(top, "ALT %d m" % roundi(altitude), _lit(ink, 0.9, false), HORIZONTAL_ALIGNMENT_LEFT, 140.0, 13)
 		var climb := clampf(p.velocity.y / 12.0, -1.0, 1.0)
 		draw_line(top + Vector2(-8.0, -4.0), top + Vector2(-8.0, -4.0 - 14.0 * climb), _lit(ink, 0.9, false), 2.0, true)
+
+
+## The landing warning (DESIGN.md "Flight HUD"): chevrons pointing down
+## at the bottom of the glass, beating faster the closer the rig is to
+## cutting out, with what is wrong and how far the ground is over them.
+## Kept to the lower rim so the middle of the view stays clear; a scrap
+## visor shows it too, since it only needs the ground under you.
+func _draw_landing(p: Actor) -> void:
+	if landing <= 0.0:
+		return
+	var beat := 0.55 + 0.45 * sin(_time * lerpf(6.0, 14.0, landing))
+	var color := Color(TAG_INK.r, TAG_INK.g, TAG_INK.b, boot * lerpf(0.5, 1.0, beat))
+	var at := Vector2(size.x * 0.5, size.y * landing_low) + sway
+	var wide := clampf(size.y * 0.022, 12.0, 30.0)
+	for i in 3:
+		var tip := at + Vector2(0.0, (i - 1) * wide * 0.6)
+		var shade := Color(color, color.a * (0.45 + 0.275 * i))
+		draw_polyline(PackedVector2Array([tip + Vector2(-wide, -wide * 0.45), tip,
+				tip + Vector2(wide, -wide * 0.45)]), shade, 3.0, true)
+	var words := Hud.landing_reason(p.flight) + "   LAND"
+	if altitude >= 0.0:
+		words += "   GROUND %d m" % roundi(altitude)
+	_text(at + Vector2(0.0, -wide * 1.6), words, color, HORIZONTAL_ALIGNMENT_CENTER, 420.0, 14)
 
 
 ## Faint pitch ticks up both edges of the glass, sliding as the head tips,

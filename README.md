@@ -426,7 +426,7 @@ you have.
   raise the watch and click. Toys on your watch go home when you sign out.
   Press E on any vehicle nobody is riding to take it, including someone
   else's. Sign out riding one and it goes to your stash; die or leave it
-  behind and it is gone. The Scrapper is a motorbike (22 m/s, boost 29).
+  behind and it is gone. The Scrapper is a motorbike (24 m/s, boost 32).
   The Raider is a two-seat hoverbike (26 m/s, boost 35): it drifts through
   turns and holds level over a short gap, and a passenger sits behind you.
   The rover, the mech and the jet are drivable too, still without their
