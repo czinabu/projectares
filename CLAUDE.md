@@ -53,7 +53,10 @@ without Caleb, and update the gap list when a PR closes a row.
 - The head looks where its owner aims (Caleb's call, so others see where
   you look): `Locomotion._look_pose` turns the neck and head onto
   `Actor.get_aim_dir()` from whatever pose the body is in, no further than
-  `look_reach` from the chest, and gives way to the phone. View only, the
+  `look_reach` side to side from the chest and `look_up` back or
+  `look_down` down from it (measured in the chest's frame, so a body laid
+  out in flight lifts its head rather than folding it back), and gives
+  way to the phone. View only, the
   same body in both views; first person's eyes simply ride the turned head.
 - Bodies are shown between physics ticks (Caleb plays at 144 Hz):
   `ShownMotion` (`core/visual/shown_motion.gd`, added by `Look` to every
