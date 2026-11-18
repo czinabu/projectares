@@ -326,8 +326,8 @@ static func _check_detail(t: Node, tag: String, player: Actor, skin: Node) -> vo
 	t.check(skin.detail_step() == skin.offscreen_step and not skin.framed_by(camera),
 			tag + "out of frame, every %d" % skin.offscreen_step)
 	camera.look_at_from_position(body + Vector3(0, 0, 5), body + Vector3(0, 0, 10))
-	t.check(skin.detail_step() == skin.offscreen_near_step,
-			tag + "out of frame close by, where its shadow shows, every %d" % skin.offscreen_near_step)
+	t.check(skin.detail_step() == skin.detail_steps[0],
+			tag + "out of frame close by, where its shadow shows, every %d" % skin.detail_steps[0])
 	camera.look_at_from_position(body + Vector3(0, 0, mid), body + Vector3(0, 0, mid * 2.0))
 	skin._detail_wait = 0
 	skin._process(1.0 / 60.0)
@@ -337,8 +337,10 @@ static func _check_detail(t: Node, tag: String, player: Actor, skin: Node) -> vo
 	t.check(skin._detail_wait == 1, tag + "and then left a frame")
 	camera.look_at_from_position(body + Vector3(0, 0, mid), body)
 	skin._process(1.0 / 60.0)
-	t.check(skin._detail_wait == 0 and skin._detail_every == skin.detail_steps[2],
+	t.check(skin._detail_delta == 0.0 and skin._detail_every == skin.detail_steps[2],
 			tag + "turned into frame, it is posed at once")
+	t.check(skin._detail_wait == int(skin.get_instance_id() % skin._detail_every),
+			tag + "and its next poses spread out from others brought in on the same turn")
 	t.check(not skin.arm.is_processing(), tag + "the arm is placed only with the body's poses")
 	camera.free()
 	skin._set_detail(1)

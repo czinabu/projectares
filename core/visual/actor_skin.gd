@@ -233,11 +233,12 @@ var detail_ranges: Array[float] = [35.0, 80.0, 160.0]
 var detail_steps: Array[int] = [1, 2, 3, 5]
 ## The field of view the ranges are for. A narrower view counts as closer.
 var detail_fov := 80.0
-## A body the camera does not frame is posed this many frames apart, or
-## `offscreen_near_step` inside the first range, where its shadow may well
-## be in view. It is posed at once when it comes into frame. View only.
+## A body the camera does not frame, past the first range, is posed this
+## many frames apart (inside it, where its shadow may well be in view, it
+## keeps the first step, so a body at the frame's edge never flips its
+## animation between running by itself and by hand). It is posed at once
+## when it comes into frame. View only.
 var offscreen_step := 8
-var offscreen_near_step := 2
 
 var look: Node
 var actor: Actor
@@ -519,7 +520,8 @@ func _process(delta: float) -> void:
 		_aim_cannon()
 	_detail_delta += delta
 	_detail_wait += 1
-	if _detail_wait < _detail_every and not (_offscreen and _comes_into_frame()):
+	var arrived := _offscreen and _comes_into_frame()
+	if _detail_wait < _detail_every and not arrived:
 		# The actor puts its hand back every tick; keep the weapon on the
 		# model's hand as it was last posed. The bones read back here are
 		# the clip's, not where the arm reached (an aimed gun, a look over),
@@ -531,6 +533,10 @@ func _process(delta: float) -> void:
 	_detail_delta = 0.0
 	_detail_wait = 0
 	_set_detail(detail_step())
+	if arrived and _detail_every > 1:
+		# Bodies a turn of the view brings in all come in on one frame;
+		# spread their next poses out again, as `_set_detail` does.
+		_detail_wait = int(get_instance_id() % _detail_every)
 	_update(step)
 	if _detail_every > 1:
 		if _player:
@@ -555,7 +561,7 @@ func detail_step() -> int:
 			* tan(deg_to_rad(camera.fov) * 0.5) / tan(deg_to_rad(detail_fov) * 0.5)
 	if not framed_by(camera):
 		_offscreen = true
-		return offscreen_near_step if seen < detail_ranges[0] else offscreen_step
+		return detail_steps[0] if seen < detail_ranges[0] else offscreen_step
 	for i in detail_ranges.size():
 		if seen < detail_ranges[i]:
 			return detail_steps[mini(i, detail_steps.size() - 1)]
