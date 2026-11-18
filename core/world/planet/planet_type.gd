@@ -1,0 +1,40 @@
+class_name PlanetType
+extends RefCounted
+## A kind of planet a world is built on (DESIGN.md "Planet kit"): its sky,
+## its light in calm and in a storm, the shape and surface of its ground,
+## its far horizon, its weather and the rocks and growth scattered over it,
+## all as data. A world names one (`WorldDef.planet`) and builds only its own
+## layout and rules on it; two worlds on one type look like one planet.
+##
+## Nothing here names a world, and nothing here changes the simulation
+## except `rules`, the defaults a world on this planet starts from (it may
+## still set its own). The look is applied by `Planet` and stays a no-op on a
+## headless server, like everything in `Look`.
+
+var id := ""
+var display_name := ""
+## One line on what the place is like, for the design doc and dev tools.
+var blurb := ""
+## `PlanetSky`'s uniforms (see `assets/shaders/planet_sky.gdshader`).
+var sky := {}
+## `Look.atmosphere` moods: the calm and the thick of a storm. The sky keys
+## (tint, energy, saturation, haze) grade the planet's own sky.
+var calm := {}
+var storm := {}
+## `PlanetTerrain`'s recipe.
+var terrain := {}
+## `planet_ground.gdshader`'s uniforms.
+var ground := {}
+## The far ring of land round a map (`Planet.horizon`): how far it reaches
+## and how high its mountains stand at the far edge.
+var horizon := {"reach": 2600.0, "peaks": 120.0}
+## The weather: "air" is what always drifts (`Planet.weather` kinds:
+## "embers", "ash", "snow", "rain", "sand", "spores", ""), "storm" the
+## storm kind a world on this planet uses (`WorldDef.weather_kind`).
+var weather := {"air": "", "storm": ""}
+## What is scattered on the ground (`PlanetProps`): kind, how many per
+## hectare, size range, and where (slope, height).
+var props: Array[Dictionary] = []
+## Simulation defaults for a world on this planet: `cold`, `surface_grip`,
+## `shot_carry`. Read by `WorldDef` when it takes the planet.
+var rules := {}

@@ -17,8 +17,8 @@ const BasePlan := preload("res://core/base/base_plan.gd")
 const BaseUpgrades := preload("res://core/base/base_upgrades.gd")
 
 const SIZE := Vector2(1600, 900)
-const TABS := ["layout", "rooms", "styles"]
-const TAB_TITLES := {"layout": "LAYOUT", "rooms": "ROOMS", "styles": "STYLES"}
+const TABS := ["layout", "rooms", "styles", "finishes"]
+const TAB_TITLES := {"layout": "LAYOUT", "rooms": "ROOMS", "styles": "STYLES", "finishes": "FINISHES"}
 const BG := Color(0.025, 0.05, 0.065)
 const CARD := Color(0.06, 0.1, 0.125)
 const CARD_HOT := Color(0.09, 0.16, 0.2)
@@ -37,6 +37,9 @@ var shape_pick := ""
 var socket_pick := ""
 var room_pick := "armory"
 var style_pick := ""
+## Finishes: the area picked (the hub or a room) and the finish picked for it.
+var area_pick := BasePlan.HUB
+var finish_pick := ""
 ## A buy waiting for its confirming click, as [key, value], or [].
 var confirming: Array = []
 ## A buy asked for, put in use once the unlock is owned, as [key, value].
@@ -108,6 +111,8 @@ func with_change(key: String, value: String) -> Dictionary:
 		plan["shape"] = value
 	elif key.begins_with("style:"):
 		plan["styles"][key.substr(6)] = value
+	elif key.begins_with("finish:"):
+		plan["finishes"][key.substr(7)] = value
 	else:
 		plan = BasePlan.place(plan, key, value)
 	return plan
@@ -121,6 +126,8 @@ func state_of(key: String, value: String) -> String:
 		current = str(plan.get("shape", ""))
 	elif key.begins_with("style:"):
 		current = str(plan.get("styles", {}).get(key.substr(6), ""))
+	elif key.begins_with("finish:"):
+		current = str(plan.get("finishes", {}).get(key.substr(7), ""))
 	if current == value:
 		return "used"
 	return "locked" if base.plan_unlock(key, value) != "" else "owned"
@@ -135,6 +142,9 @@ func act(key: String, value: String) -> void:
 	elif key.begins_with("style:"):
 		room_pick = key.substr(6)
 		style_pick = value
+	elif key.begins_with("finish:"):
+		area_pick = key.substr(7)
+		finish_pick = value
 	match state_of(key, value):
 		"used":
 			return
@@ -195,6 +205,8 @@ func _redraw() -> void:
 			_rooms_tab()
 		"styles":
 			_styles_tab()
+		"finishes":
+			_finishes_tab()
 	var hint := _text("Point to preview on the table   ·   Click to pick   ·   Right click: back   ·   Esc: leave", 24, DIM)
 	hint.position = Vector2(40, 840)
 	add_child(hint)
@@ -207,8 +219,8 @@ func _header() -> void:
 	for i in TABS.size():
 		var id: String = TABS[i]
 		var button := _button(TAB_TITLES[id], 30, id == tab)
-		button.position = Vector2(420 + 250 * i, 30)
-		button.size = Vector2(230, 70)
+		button.position = Vector2(330 + 215 * i, 30)
+		button.size = Vector2(200, 70)
 		button.name = "Tab_%s" % id
 		button.pressed.connect(show_tab.bind(id))
 		add_child(button)
@@ -377,6 +389,103 @@ func _styles_tab() -> void:
 	blurb.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_body.add_child(blurb)
 	_note_at(Vector2(390, 540))
+
+
+## Finishes: the hub and the six rooms down the left, each with the finish
+## it wears, every finish as a card of its colours, and the one picked
+## described. A finish bought once goes on any of them.
+func _finishes_tab() -> void:
+	var areas := BasePlan.areas()
+	for i in areas.size():
+		var area: String = areas[i]
+		var row := _card(Vector2(0, 92 * i), Vector2(360, 82), area == area_pick, "FinishArea_%s" % area)
+		var swatch := ColorRect.new()
+		swatch.color = HomeBase.ROOM_COLORS.get(area, CYAN.darkened(0.2))
+		swatch.position = Vector2(12, 12)
+		swatch.size = Vector2(8, 58)
+		swatch.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		row.add_child(swatch)
+		var name_label := _text(BasePlan.area_title(area), 28, TEXT)
+		name_label.position = Vector2(34, 4)
+		row.add_child(name_label)
+		var worn := _text(BasePlan.finish_title(base.area_finish(area)), 22, DIM)
+		worn.position = Vector2(34, 44)
+		row.add_child(worn)
+		row.pressed.connect(func() -> void:
+			area_pick = area
+			finish_pick = ""
+			confirming = []
+			note = ""
+			if area != BasePlan.HUB:
+				base.plan_mark(area)
+			_refresh())
+	if finish_pick == "" or not BasePlan.FINISHES.has(finish_pick):
+		finish_pick = base.area_finish(area_pick)
+	var finishes := BasePlan.finishes()
+	var key := "finish:" + area_pick
+	for i in finishes.size():
+		var id: String = finishes[i]
+		var card := _card(Vector2(390 + 226 * i, 0), Vector2(210, 330), id == finish_pick, "Finish_%s" % id)
+		_finish_drawing(card, id)
+		_card_footer(card, BasePlan.finish_title(id), key, id)
+		card.pressed.connect(func() -> void:
+			finish_pick = id
+			confirming = []
+			_refresh())
+		if area_pick != BasePlan.HUB:
+			card.mouse_entered.connect(base.plan_mark.bind(area_pick))
+	var info: Dictionary = BasePlan.FINISHES[finish_pick]
+	var action := _action(key, finish_pick)
+	action.position = Vector2(390, 370)
+	_body.add_child(action)
+	var blurb := _text("%s on the %s: %s" % [BasePlan.finish_title(finish_pick),
+			BasePlan.area_title(area_pick).to_lower(), info["blurb"]], 26, TEXT)
+	blurb.position = Vector2(390 + 420, 370)
+	blurb.size = Vector2(720, 120)
+	blurb.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_body.add_child(blurb)
+	var all := _button("Use on every room", 24, false)
+	all.name = "FinishAll"
+	all.position = Vector2(390, 480)
+	all.size = Vector2(400, 60)
+	all.disabled = state_of(key, finish_pick) == "locked"
+	all.pressed.connect(func() -> void:
+		note = ""
+		for area: String in areas:
+			if base.area_finish(area) != finish_pick:
+				var why := base.plan_change("finish:" + area, finish_pick)
+				if why != "":
+					note = why
+					break
+		_refresh())
+	_body.add_child(all)
+	_note_at(Vector2(810, 480))
+
+
+## A finish's card: a corner of a room in it, a wall over a floor with a
+## trim line and a light strip, so the colours read together.
+func _finish_drawing(card: Control, finish: String) -> void:
+	var colors: Array = BasePlan.FINISHES[finish]["swatch"]
+	var parts := [
+		[Vector2(14, 14), Vector2(182, 26), colors[3]],
+		[Vector2(14, 40), Vector2(182, 130), colors[1]],
+		[Vector2(14, 170), Vector2(182, 10), colors[2]],
+		[Vector2(14, 180), Vector2(182, 70), colors[0]],
+	]
+	for part: Array in parts:
+		var rect := ColorRect.new()
+		rect.position = part[0]
+		rect.size = part[1]
+		rect.color = part[2]
+		rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		card.add_child(rect)
+	for x: float in [60.0, 105.0, 150.0]:
+		var rib := ColorRect.new()
+		rib.position = Vector2(x, 44)
+		rib.size = Vector2(8, 122)
+		rib.color = colors[2]
+		rib.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		card.add_child(rib)
 
 
 ## Under a card's picture: its name and whether it is in use, yours or for

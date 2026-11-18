@@ -99,10 +99,35 @@ const STYLES := {
 	},
 }
 
+## The finishes a room or the hub can wear, the first the free one. Bought
+## once (a "Designs" unlock), a finish can go on any room after.
+##   title   its name on the plan table
+##   blurb   one line on what it is like
+##   unlock  the `BaseUpgrades` id that unlocks it ("" if free)
+##   swatch  its colours on the plan table: floor, wall, trim, light
+const FINISHES := {
+	"steel": {"title": "Steel", "blurb": "Bare plated steel and white light.", "unlock": "",
+		"swatch": [Color(0.62, 0.64, 0.68), Color(0.66, 0.69, 0.73), Color(0.3, 0.32, 0.35), Color(0.92, 0.95, 1.0)]},
+	"gunmetal": {"title": "Gunmetal", "blurb": "Dark blued steel lit cold blue.", "unlock": "finish_gunmetal",
+		"swatch": [Color(0.24, 0.27, 0.31), Color(0.3, 0.33, 0.38), Color(0.14, 0.16, 0.19), Color(0.5, 0.78, 1.0)]},
+	"ceramic": {"title": "Ceramic", "blurb": "Clean white panels and grey trim, like a lab.", "unlock": "finish_ceramic",
+		"swatch": [Color(0.82, 0.83, 0.84), Color(0.9, 0.91, 0.92), Color(0.5, 0.53, 0.56), Color(0.96, 0.98, 1.0)]},
+	"brass": {"title": "Brass", "blurb": "Warm bronzed steel with brass trim.", "unlock": "finish_brass",
+		"swatch": [Color(0.45, 0.4, 0.34), Color(0.55, 0.5, 0.43), Color(0.78, 0.6, 0.3), Color(1.0, 0.84, 0.6)]},
+	"blackout": {"title": "Blackout", "blurb": "Matte black with lit strips.", "unlock": "finish_blackout",
+		"swatch": [Color(0.12, 0.12, 0.13), Color(0.15, 0.15, 0.16), Color(0.08, 0.08, 0.09), Color(1.0, 0.35, 0.5)]},
+}
+
+## What can wear a finish: the hub (with the corridor, the range and the
+## course behind it) and every room.
+const HUB := "hub"
+
 ## A new account's base.
 const DEFAULT := {"W1": "armory", "W2": "workshop", "N1": "gear", "N2": "stores", "E1": "garage", "E2": "ops",
 	"shape": "hall", "styles": {"armory": "rack", "workshop": "bench", "garage": "bays", "ops": "consoles",
-		"gear": "stands", "stores": "shelves"}}
+		"gear": "stands", "stores": "shelves"},
+	"finishes": {"hub": "steel", "armory": "steel", "workshop": "steel", "garage": "steel", "ops": "steel",
+		"gear": "steel", "stores": "steel"}}
 
 
 static func rooms() -> Array[String]:
@@ -137,6 +162,30 @@ static func default_style(room: String) -> String:
 	return all[0] if not all.is_empty() else ""
 
 
+## Every finish id, the free one first.
+static func finishes() -> Array[String]:
+	var out: Array[String] = []
+	for id: String in FINISHES:
+		out.append(id)
+	return out
+
+
+## What can wear a finish: the hub, then every room.
+static func areas() -> Array[String]:
+	var out: Array[String] = [HUB]
+	out.append_array(rooms())
+	return out
+
+
+static func finish_title(finish: String) -> String:
+	return str(FINISHES[finish]["title"]) if FINISHES.has(finish) else finish
+
+
+## What an area is called on the plan table.
+static func area_title(area: String) -> String:
+	return "Hub" if area == HUB else title(area)
+
+
 static func shape_title(shape: String) -> String:
 	return str(SHAPES[shape]["title"]) if SHAPES.has(shape) else shape
 
@@ -157,10 +206,13 @@ static func unlock_for(key: String, value: String) -> String:
 		return str(SHAPES.get(value, {}).get("unlock", ""))
 	if key.begins_with("style:"):
 		return str(STYLES.get(key.substr(6), {}).get(value, {}).get("unlock", ""))
+	if key.begins_with("finish:"):
+		return str(FINISHES.get(value, {}).get("unlock", ""))
 	return ""
 
 
-## Every design unlock (`BaseUpgrades` track "Designs"), shapes then styles.
+## Every design unlock (`BaseUpgrades` track "Designs"): shapes, styles,
+## then finishes.
 static func unlocks() -> Array[String]:
 	var out: Array[String] = []
 	for shape: String in SHAPES:
@@ -170,12 +222,16 @@ static func unlocks() -> Array[String]:
 		for style: String in STYLES[room]:
 			if str(STYLES[room][style]["unlock"]) != "":
 				out.append(str(STYLES[room][style]["unlock"]))
+	for finish: String in FINISHES:
+		if str(FINISHES[finish]["unlock"]) != "":
+			out.append(str(FINISHES[finish]["unlock"]))
 	return out
 
 
 ## One change to `plan` by someone who owns the upgrades `owned`. `key` is a
 ## socket (and `value` the room to move there, as `place`), "shape" (and a
-## `SHAPES` id) or "style:<room>" (and one of that room's `STYLES`). Returns
+## `SHAPES` id), "style:<room>" (and one of that room's `STYLES`) or
+## "finish:<area>" (the hub or a room, and a `FINISHES` id). Returns
 ## {"ok": true, "plan"} with the changed plan, or {"ok": false, "error"}.
 ## Never changes `plan` itself.
 static func change(plan: Dictionary, owned: Array, key: String, value: String) -> Dictionary:
@@ -200,13 +256,24 @@ static func change(plan: Dictionary, owned: Array, key: String, value: String) -
 			return {"ok": false, "error": "Unlock the %s style first." % style_title(room, value).to_lower()}
 		out["styles"][room] = value
 		return {"ok": true, "plan": out}
+	if key.begins_with("finish:"):
+		var area := key.substr(7)
+		if area not in areas():
+			return {"ok": false, "error": "No such room."}
+		if not FINISHES.has(value):
+			return {"ok": false, "error": "No such finish."}
+		if unlock != "" and unlock not in owned:
+			return {"ok": false, "error": "Unlock the %s finish first." % finish_title(value).to_lower()}
+		out["finishes"][area] = value
+		return {"ok": true, "plan": out}
 	return {"ok": false, "error": "No such change."}
 
 
 ## A saved or sent plan made safe: every socket holds exactly one known room
 ## and every room stands once. Anything missing, unknown or doubled falls back
 ## to the default placing, so a broken save still builds a whole base. An
-## unknown shape is the hall, and a room's unknown style its free one.
+## unknown shape is the hall, a room's unknown style its free one and an
+## unknown finish steel.
 static func clean(saved: Variant) -> Dictionary:
 	var out := {}
 	var placed := {}
@@ -244,6 +311,12 @@ static func clean(saved: Variant) -> Dictionary:
 		var style: Variant = picked.get(room) if typeof(picked) == TYPE_DICTIONARY else null
 		styled[room] = style if typeof(style) == TYPE_STRING and STYLES[room].has(style) else default_style(room)
 	ordered["styles"] = styled
+	var worn: Variant = saved.get("finishes") if typeof(saved) == TYPE_DICTIONARY else null
+	var finished := {}
+	for area: String in areas():
+		var finish: Variant = worn.get(area) if typeof(worn) == TYPE_DICTIONARY else null
+		finished[area] = finish if typeof(finish) == TYPE_STRING and FINISHES.has(finish) else "steel"
+	ordered["finishes"] = finished
 	return ordered
 
 

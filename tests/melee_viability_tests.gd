@@ -258,6 +258,8 @@ static func _in_raid(t: Node) -> void:
 	var guard: Actor = raid.bots[1]
 	var brain := guard.get_node("Brain") as BotBrain
 	guard.global_position = p.global_position + Vector3(12.0, 0.0, 0.0)
+	# Posted where it stands, so the shot is within its leash.
+	brain.post_to(guard.global_position, 12.0)
 	brain.state = BotBrain.State.PATROL
 	var heard := [0]
 	guard.heard.connect(func(_at: Vector3, _source: Actor) -> void: heard[0] += 1)

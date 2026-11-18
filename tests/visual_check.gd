@@ -1203,6 +1203,13 @@ func _plan_table_shots(base: HomeBase, out_dir: String) -> void:
 	view.panel._refresh()
 	await _settle(6)
 	await _shot(out_dir.path_join("plan_table_styles.png"))
+	view.panel.show_tab("finishes")
+	view.panel.area_pick = "armory"
+	view.panel.finish_pick = "brass"
+	base.plan_mark("armory")
+	view.panel._refresh()
+	await _settle(6)
+	await _shot(out_dir.path_join("plan_table_finishes.png"))
 	view.leave()
 	await _settle(2)
 
@@ -1226,6 +1233,10 @@ func _design_shots(out_dir: String) -> void:
 	await _settle(20)
 	if "--plan-only" in OS.get_cmdline_user_args():
 		await _plan_table_shots(base, out_dir)
+		base.queue_free()
+		return
+	if "--finishes-only" in OS.get_cmdline_user_args():
+		await _finish_shots(base, camera, gear, worn, out_dir)
 		base.queue_free()
 		return
 	for shape: String in BasePlan.SHAPES:
@@ -1259,6 +1270,27 @@ func _design_shots(out_dir: String) -> void:
 				await _shot(out_dir.path_join("style_%s_%s%s.png" % [room, style, "" if whole else "_small"]))
 	base.queue_free()
 	await _settle(2)
+
+
+## Every finish (`BasePlan.FINISHES`) on the hub, from over the door, and on
+## the armory and the garage from their doorways.
+func _finish_shots(base: HomeBase, camera: Camera3D, gear: Array, worn: Dictionary, out_dir: String) -> void:
+	for finish: String in BasePlan.FINISHES:
+		var plan := BasePlan.clean(null)
+		for area: String in BasePlan.areas():
+			plan["finishes"][area] = finish
+		base.show_gear(gear, worn, BaseUpgrades.full(), plan)
+		base.player.global_position = base.to_global(base.spawn_point)
+		await _settle(12)
+		var half := base.room_size * 0.5
+		camera.look_at_from_position(Vector3(0, base.room_size.y - 1.0, half.z - 0.8), Vector3(0, 1.0, -half.z * 0.6))
+		await _settle(4)
+		await _shot(out_dir.path_join("finish_%s_hub.png" % finish))
+		for room: String in ["armory", "garage"]:
+			var xf := base.room_transform(room)
+			camera.look_at_from_position(xf * Vector3(0.0, 3.0, 3.4), xf * Vector3(0.0, 1.0, -6.5))
+			await _settle(4)
+			await _shot(out_dir.path_join("finish_%s_%s.png" % [finish, room]))
 
 
 ## The arena from the stands, during an exhibition bout, with its overlay.

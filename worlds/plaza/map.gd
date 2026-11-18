@@ -17,6 +17,10 @@ extends Node3D
 ##   west        the residences: the lift to your home base, with a concierge
 ##   south-east  the arena gate, with a promoter
 ##   south-west  the RC yard, shuttered until it opens
+##   boulevards stops between the plaza and the districts: a food court
+##               on the way to the civic square, a fountain square on the
+##               way to the gates, a tea cart and bike park by the
+##               residences, trees and light sculptures down the diagonals
 ##   between     gardens on the diagonals, slim towers with landing decks
 ##               and skybridges at DECK_HEIGHT, then a ground loop for bikes
 ##               and the balcony rail
@@ -105,6 +109,16 @@ const RESIDENCES := Vector3(-152, 0, 0)
 const QUARTERS_AT := Vector3(-180, 0, 0)
 const GARDENS := [45.0, 135.0, 225.0, 315.0]
 const GARDEN_RING := 92.0
+## The stops along the boulevards (see `_build_boulevards`), each halfway out
+## to the district it serves, its carts and tables either side of the lane.
+const FOOD_COURT := Vector3(78, 0, 0)
+const FOUNTAIN := Vector3(0, 0, -100)
+const BIKE_CORNER := Vector3(-80, 0, 0)
+## Down the diagonals: trees either side, clear of the stroll ring (r50-56)
+## and the gardens, and a pair of light sculptures where each leaves the plaza.
+const TREE_RINGS := [64.0, 76.0, 116.0, 130.0, 144.0]
+const TREE_SIDE := 6.0
+const SCULPTURE_RING := 44.0
 ## The people of the Concourse you can talk to (`core/social/plaza_locals.gd`
 ## stands them there): id -> [where, facing yaw, name, role, lines, reads].
 ## Yaw 0 faces north (-Z); PI faces south. `lines` are said in turn; `reads`
@@ -189,6 +203,8 @@ var _flushed := false
 ## Where the street lamps and shop lights hang; `_dress` lights each.
 var _lamps: Array[Vector3] = []
 var _shop_lights: Array[Array] = []
+## Each cart's customers, for the locals: see `locals_layout`'s "stops".
+var _stops: Array[Dictionary] = []
 
 ## The deck reads as pale brushed alloy under the twilight: mostly diffuse
 ## (low metal, rougher), so it catches the lamps and the glow strips instead
@@ -231,6 +247,7 @@ func _ready() -> void:
 	_build_arena_gate()
 	_build_rc_yard()
 	_build_gardens()
+	_build_boulevards()
 	_build_talkers()
 	_build_city_below()
 	_flush_seams()
@@ -599,8 +616,10 @@ func _build_shop(entry: Dictionary, at: Vector3, yaw: float) -> void:
 	var keeper: Array = KEEPERS.get(id, ["Keeper", "Shopkeeper", ["Have a look round."]])
 	var keeper_id := "keep_%s" % id
 	portal.set_meta("keeper", keeper_id)
-	_add_talker(keeper_id, f * Vector3(counter_x - 1.2, 0, counter_z - 1.1), yaw + PI, keeper[0], keeper[1],
-			keeper[2], "", color)
+	var keeper_marker := _add_talker(keeper_id, f * Vector3(counter_x - 1.2, 0, counter_z - 1.1), yaw + PI,
+			keeper[0], keeper[1], keeper[2], "", color)
+	if destination.begins_with("shop:"):
+		keeper_marker.set_meta("shop", id)
 	_fronts.append({"id": id, "at": at, "yaw": yaw, "color": color,
 			"door": f * Vector3(0, 0, 2.4)})
 	_fit_out(id, f, color)
@@ -997,6 +1016,269 @@ func _build_gardens() -> void:
 			_solid(Vector3(3.0, 0.45, 0.9), seat + Vector3(0, 0.225, 0), STEEL, -deg_to_rad(turn + 25.0))
 
 
+## The boulevards between the plaza and the districts, dressed as somewhere
+## to stop, never in the lane: each stop is halfway out and serves the people
+## going that way. The food court feeds the civic square's crowd, the
+## fountain is where people wait before the gates, the tea cart and bike
+## park sit by the residences. Carts are staffed; their customers queue,
+## eat at the standing tables beside them and walk on (`locals_layout`).
+## No signs: a cart says what it is by what is on it.
+func _build_boulevards() -> void:
+	_build_food_court()
+	_build_fountain()
+	_build_bike_corner()
+	var green := Color(0.35, 1.0, 0.75)
+	for bearing: float in GARDENS:
+		var yaw := -deg_to_rad(bearing)
+		var across := Basis(Vector3.UP, yaw) * Vector3.RIGHT
+		for side: float in [-1.0, 1.0]:
+			for ring: float in TREE_RINGS:
+				_tree(_at(ring, bearing) + across * side * TREE_SIDE, green)
+			_light_sculpture(_at(SCULPTURE_RING, bearing) + across * side * TREE_SIDE, [CYAN, MAGENTA][int(side > 0.0)])
+		# A bench between each pair of trees, facing the avenue.
+		for ring: float in [70.0, 123.0, 137.0]:
+			var side := 1.0 if int(ring) % 2 == 0 else -1.0
+			_bench(_at(ring, bearing) + across * side * (TREE_SIDE - 0.4), yaw - PI / 2.0 * side)
+
+
+## East, on the way to the civic square: two carts either side of the lane,
+## noodles to the north and a grill to the south, with standing tables.
+func _build_food_court() -> void:
+	var at := FOOD_COURT
+	var amber := Color(1.0, 0.7, 0.35)
+	_slab(Vector3(30, 0.03, 40), at, PAVING, 0.0)
+	for side: float in [-1.0, 1.0]:
+		var edge := at + Vector3(0, 0, side * 20.0)
+		_slab(Vector3(30.0, 0.05, 0.2), edge, _glow(amber.darkened(0.35)), 0.0)
+		# The cart faces the lane.
+		var cart := at + Vector3(0, 0, side * 16.5)
+		var facing := 0.0 if side < 0.0 else PI
+		_cart(cart, facing, amber, "noodles" if side < 0.0 else "grill",
+				[at + Vector3(-8.0, 0, side * 12.5), at + Vector3(8.0, 0, side * 12.5),
+				at + Vector3(-7.0, 0, side * 17.5), at + Vector3(7.5, 0, side * 17.0)],
+				at + Vector3(-4.0, 0, side * 7.0), at + Vector3(-26.0, 0, side * 3.5))
+		for x: float in [-13.0, 13.0]:
+			_tree(at + Vector3(x, 0, side * 18.0), Color(0.35, 1.0, 0.75))
+			_bench(at + Vector3(x, 0, side * 9.0), facing)
+
+
+## North, on the way to the gates: a round square with a fountain in the
+## middle of the boulevard (the lane parts round it), benches round it, and a
+## coffee kiosk on its west side.
+func _build_fountain() -> void:
+	var at := FOUNTAIN
+	var blue := Color(0.45, 0.8, 1.0)
+	_slab_disc(19.0, PAVING, at)
+	_slab_ring(19.0, 0.25, 64, blue.darkened(0.3), 0.05, null, at)
+	# The basin: a low rim you can sit on, glowing water, a stepped centre
+	# with a jet of light rising out of it.
+	var rim: Array[Transform3D] = []
+	var segments := 28
+	for i in segments:
+		var bearing := 360.0 * (i + 0.5) / segments
+		rim.append(Transform3D(Basis(Vector3.UP, -deg_to_rad(bearing)), at + _at(4.6, bearing) + Vector3(0, 0.275, 0)))
+	_batch(Vector3(TAU * 4.6 / segments + 0.08, 0.55, 0.5), rim, STEEL, true)
+	_slab_ring(4.85, 0.06, segments, blue, 0.56, null, at)
+	var water := CylinderMesh.new()
+	water.top_radius = 4.35
+	water.bottom_radius = 4.35
+	water.height = 0.04
+	water.radial_segments = 48
+	water.material = _water()
+	var surface := MeshInstance3D.new()
+	surface.mesh = water
+	surface.position = at + Vector3(0, 0.38, 0)
+	add_child(surface)
+	_solid(Vector3(1.8, 0.7, 1.8), at + Vector3(0, 0.35, 0), DARK, PI / 4.0)
+	_solid(Vector3(1.0, 1.4, 1.0), at + Vector3(0, 0.7, 0), DARK)
+	_part(self, Vector3(2.6, 0.08, 2.6), at + Vector3(0, 1.45, 0), blue, true, PI / 4.0)
+	# The jet: a lit column with rings of spray stepping out as they fall.
+	_part(self, Vector3(0.24, 3.6, 0.24), at + Vector3(0, 3.2, 0), blue, true)
+	for k in 3:
+		var ring := 0.7 + 0.55 * k
+		for turn: float in [0.0, PI / 4.0]:
+			_part(self, Vector3(ring, 0.05, ring), at + Vector3(0, 5.0 - 0.9 * k, 0), blue.darkened(0.15 * k), true,
+					turn + 0.3 * k)
+	_lamps.append(at + Vector3(0, 3.5, 0))
+	# East of the water, benches on the diagonals facing it and trees behind;
+	# west of it the coffee kiosk, its tables at the water's edge where the
+	# benches would be, and trees out past them.
+	for bearing: float in [45.0, 135.0]:
+		_bench(at + _at(12.0, bearing), -deg_to_rad(bearing))
+		_tree(at + _at(16.0, bearing), Color(0.35, 1.0, 0.75))
+	for bearing: float in [235.0, 305.0]:
+		_tree(at + _at(17.0, bearing), Color(0.35, 1.0, 0.75))
+	_cart(at + Vector3(-15.5, 0, 0), PI / 2.0, Color(1.0, 0.75, 0.45), "coffee",
+			[at + _at(12.0, 225.0), at + _at(12.0, 315.0)], at + Vector3(-10.8, 0, 10.0), at + Vector3(-4.0, 0, 28.0))
+	# A long planter on the east side, a bench in front of it.
+	_solid(Vector3(1.6, 0.7, 9.0), at + Vector3(16.0, 0.35, 0), DARK)
+	_part(self, Vector3(1.7, 0.06, 9.1), at + Vector3(16.0, 0.72, 0), Color(0.35, 1.0, 0.75).darkened(0.2), true)
+	for k in 7:
+		var tall := 1.1 + 0.3 * (k * 5 % 4)
+		_part(self, Vector3(0.07, tall, 0.07), at + Vector3(16.0 + 0.3 * (k % 2 * 2 - 1), 0.7 + tall * 0.5,
+				-3.6 + 1.2 * k), Color(0.35, 1.0, 0.75), true)
+	_bench(at + Vector3(13.6, 0, 0), -PI / 2.0)
+
+
+## West, by the residences: the residents' bikes parked in a bay south of the
+## lane, and a tea cart with tables to the north.
+func _build_bike_corner() -> void:
+	var at := BIKE_CORNER
+	var blue := Color(0.5, 0.85, 1.0)
+	_slab(Vector3(30, 0.03, 40), at, PAVING, 0.0)
+	_slab(Vector3(30.0, 0.05, 0.2), at + Vector3(0, 0, -20.0), _glow(blue.darkened(0.35)), 0.0)
+	_cart(at + Vector3(2.0, 0, -16.5), 0.0, Color(0.6, 1.0, 0.7), "tea",
+			[at + Vector3(-6.5, 0, -12.5), at + Vector3(9.5, 0, -13.0), at + Vector3(-6.0, 0, -17.5)],
+			at + Vector3(4.0, 0, -7.0), at + Vector3(26.0, 0, -3.5))
+	# The bay: a dark apron with lit stall lines, a low rail behind, the bikes
+	# nose out to the lane.
+	var bay := at + Vector3(0, 0, 14.5)
+	_slab(Vector3(18.0, 0.035, 6.0), bay, DARK, 0.0)
+	for k in 6:
+		_slab(Vector3(0.1, 0.05, 5.0), bay + Vector3(-7.5 + 3.0 * k, 0, 0), _glow(Color(1.0, 0.65, 0.25).darkened(0.3)), 0.0)
+	_solid(Vector3(18.0, 0.5, 0.25), bay + Vector3(0, 0.25, 3.3), STEEL)
+	_part(self, Vector3(18.0, 0.05, 0.27), bay + Vector3(0, 0.52, 3.3), blue.darkened(0.2), true)
+	var bikes := ["bike_scrapper", "bike_raider", "bike_scrapper", "bike_scrapper"]
+	for k in bikes.size():
+		if k == 2:
+			continue  # an empty stall: someone is out riding
+		_display_vehicle(bikes[k], bay + Vector3(-6.0 + 3.0 * k + (k % 2) * 0.15, 0, 0.4), 0.06 * (k % 3 - 1))
+	_display_vehicle("bike_scrapper", bay + Vector3(6.0, 0, 0.4), -0.05)
+	for x: float in [-13.0, 13.0]:
+		_tree(at + Vector3(x, 0, -18.0), Color(0.35, 1.0, 0.75))
+		_tree(at + Vector3(x, 0, 16.0), Color(0.35, 1.0, 0.75))
+	_bench(at + Vector3(-10.0, 0, -9.0), 0.0)
+	_lamps.append(bay + Vector3(0, 3.6, -1.0))
+
+
+## A street cart facing `yaw` (its customers stand on its local +Z side):
+## counter, canopy on two posts, what it sells laid out on top, a lamp, and
+## its standing `tables`. Its customers' spots go to `_stops`: they come in
+## from `far` (out on the lane) by way of `enter`, and leave the same way.
+func _cart(at: Vector3, yaw: float, color: Color, kind: String, tables: Array, enter: Vector3, far: Vector3) -> void:
+	var turn := Basis(Vector3.UP, yaw)
+	_solid(Vector3(2.8, 1.0, 1.3), at + Vector3(0, 0.5, 0), DARK, yaw)
+	_solid(Vector3(3.0, 0.06, 1.5), at + Vector3(0, 1.03, 0), STEEL, yaw)
+	_part(self, Vector3(2.8, 0.08, 0.04), at + turn * Vector3(0, 0.82, 0.67), color, true, yaw)
+	for x: float in [-1.45, 1.45]:
+		_part(self, Vector3(0.14, 0.56, 0.56), at + turn * Vector3(x, 0.3, -0.1), Color(0.12, 0.12, 0.14), false, yaw)
+		_part(self, Vector3(0.08, 2.3, 0.08), at + turn * Vector3(x * 0.95, 2.18, -0.6), Color(0.3, 0.32, 0.36), false, yaw)
+	# The canopy: a dark sheet with a lit front edge, pitched over the counter.
+	_part(self, Vector3(3.5, 0.07, 2.3), at + turn * Vector3(0, 3.32, 0.2), Color(0.16, 0.18, 0.24), false, yaw)
+	_part(self, Vector3(3.5, 0.08, 0.08), at + turn * Vector3(0, 3.3, 1.35), color, true, yaw)
+	_part(self, Vector3(3.5, 0.3, 0.05), at + turn * Vector3(0, 3.12, 1.35), color.darkened(0.55), true, yaw)
+	match kind:
+		"noodles":
+			# Steaming pots and a stack of bowls.
+			for x: float in [-0.8, 0.0]:
+				_part(self, Vector3(0.5, 0.42, 0.5), at + turn * Vector3(x, 1.27, -0.2), Color(0.55, 0.57, 0.6), false, yaw)
+				_part(self, Vector3(0.42, 0.04, 0.42), at + turn * Vector3(x, 1.49, -0.2), Color(1.0, 0.85, 0.6), true, yaw)
+			for k in 4:
+				_part(self, Vector3(0.3, 0.07, 0.3), at + turn * Vector3(0.9, 1.1 + 0.075 * k, 0.25), Color(0.9, 0.9, 0.92), false, yaw)
+		"grill":
+			# A hot plate glowing orange and skewers along it.
+			_part(self, Vector3(1.6, 0.12, 0.7), at + turn * Vector3(-0.4, 1.12, -0.15), Color(0.15, 0.15, 0.16), false, yaw)
+			_part(self, Vector3(1.5, 0.03, 0.6), at + turn * Vector3(-0.4, 1.19, -0.15), Color(1.0, 0.45, 0.15), true, yaw)
+			for k in 6:
+				_part(self, Vector3(0.05, 0.05, 0.5), at + turn * Vector3(-1.0 + 0.24 * k, 1.23, -0.15), Color(0.55, 0.3, 0.2), false, yaw)
+			_part(self, Vector3(0.5, 0.3, 0.35), at + turn * Vector3(0.95, 1.21, 0.2), Color(0.85, 0.6, 0.3), false, yaw)
+		"coffee", "tea":
+			# Urns with lit taps, cups beside them.
+			for x: float in [-0.9, -0.3]:
+				_part(self, Vector3(0.38, 0.62, 0.38), at + turn * Vector3(x, 1.37, -0.25), Color(0.62, 0.64, 0.68), false, yaw)
+				_part(self, Vector3(0.08, 0.08, 0.1), at + turn * Vector3(x, 1.2, -0.03), color, true, yaw)
+			for k in 3:
+				_part(self, Vector3(0.12, 0.16, 0.12), at + turn * Vector3(0.5 + 0.22 * k, 1.14, 0.3),
+						Color(0.95, 0.95, 0.95) if kind == "coffee" else Color(0.6, 0.85, 0.65), false, yaw)
+	_lamps.append(at + turn * Vector3(0, 2.9, 0.6))
+	for table: Vector3 in tables:
+		_high_table(table, color)
+	# The cook behind the counter; customers in front, queueing back from it.
+	var front := at + turn * Vector3(0, 0, 1.55)
+	# Where a customer steps to with their order, out of the queue's way.
+	var served := front + turn * Vector3(0.8, 0, 1.6)
+	var places: Array = []
+	for table: Vector3 in tables:
+		# Places on the side people reach the table from (the counter) and
+		# leave it by (the way out), so nobody walks through the table.
+		var from := (served - table).normalized() + (enter - table).normalized()
+		var toward := atan2(from.z, from.x)
+		for angle: float in [toward - 1.3, toward, toward + 1.3]:
+			var spot := table + Vector3(cos(angle), 0, sin(angle)) * 0.85
+			places.append([spot, atan2(spot.x - table.x, spot.z - table.z)])
+	# A local faces along -Z at yaw 0 (`PlazaLocals.yaw_of`): customers face
+	# the cart at its own yaw, the cook faces them.
+	_stops.append({"counter": front, "served": served, "yaw": yaw, "queue": turn * Vector3(0, 0, 1),
+			"cook": [at + turn * Vector3(-0.5, 0, -1.15), yaw + PI], "places": places, "enter": enter, "far": far})
+
+
+## A standing table: a post, a round-ish top and a lit ring under it.
+func _high_table(at: Vector3, color: Color) -> void:
+	_solid(Vector3(0.14, 1.05, 0.14), at + Vector3(0, 0.525, 0), STEEL)
+	_part(self, Vector3(0.6, 0.06, 0.6), at + Vector3(0, 0.03, 0), Color(0.3, 0.32, 0.38))
+	for turn: float in [0.0, PI / 4.0]:
+		_part(self, Vector3(0.78, 0.05, 0.78), at + Vector3(0, 1.08, 0), Color(0.62, 0.64, 0.7), false, turn)
+	_part(self, Vector3(0.5, 0.03, 0.5), at + Vector3(0, 1.03, 0), color, true, PI / 8.0)
+
+
+## A bench facing `yaw`: a slatted seat and back on two dark legs.
+func _bench(at: Vector3, yaw: float) -> void:
+	var turn := Basis(Vector3.UP, yaw)
+	for x: float in [-1.2, 1.2]:
+		_solid(Vector3(0.14, 0.42, 0.75), at + turn * Vector3(x, 0.21, -0.05), DARK, yaw)
+		_solid(Vector3(0.12, 0.62, 0.1), at + turn * Vector3(x, 0.72, -0.4), DARK, yaw)
+	for z: float in [-0.28, 0.0, 0.28]:
+		_solid(Vector3(3.0, 0.07, 0.24), at + turn * Vector3(0, 0.46, z), STEEL, yaw)
+	for y: float in [0.68, 0.92]:
+		_solid(Vector3(3.0, 0.16, 0.06), at + turn * Vector3(0, y, -0.44), STEEL, yaw)
+	_part(self, Vector3(2.4, 0.03, 0.04), at + turn * Vector3(0, 0.42, 0.38), CYAN.darkened(0.3), true, yaw)
+
+
+## A tree in a planter: a slim trunk and a crown of tiers, each an
+## eight-sided plate stepping in as it climbs, a faint glow under each.
+func _tree(at: Vector3, color: Color) -> void:
+	_solid(Vector3(1.5, 0.55, 1.5), at + Vector3(0, 0.275, 0), DARK)
+	_part(self, Vector3(1.55, 0.05, 1.55), at + Vector3(0, 0.57, 0), color.darkened(0.3), true)
+	_solid(Vector3(0.22, 3.2, 0.22), at + Vector3(0, 2.1, 0), STEEL)
+	var leaf := Color(0.12, 0.3, 0.24)
+	var tiers := [[2.5, 3.1, 0.55], [2.1, 3.65, 0.5], [1.6, 4.15, 0.45], [1.0, 4.6, 0.4], [0.45, 4.95, 0.3]]
+	for k in tiers.size():
+		var tier: Array = tiers[k]
+		var w: float = tier[0]
+		var y: float = tier[1]
+		var tall: float = tier[2]
+		for turn: float in [0.0, PI / 4.0]:
+			_part(self, Vector3(w, tall, w), at + Vector3(0, y, 0), leaf.lightened(0.04 * k), false, turn + 0.2 * k)
+		if k < 3:
+			_part(self, Vector3(w * 0.8, 0.03, w * 0.8), at + Vector3(0, y - tall * 0.5 - 0.02, 0), color.darkened(0.5),
+					true, PI / 8.0 + 0.2 * k)
+
+
+## A light sculpture: lit slats stacked up a dark spine, each turned a little
+## further, so it twists as it climbs.
+func _light_sculpture(at: Vector3, color: Color) -> void:
+	_solid(Vector3(1.3, 0.4, 1.3), at + Vector3(0, 0.2, 0), DARK, PI / 4.0)
+	_solid(Vector3(0.2, 5.6, 0.2), at + Vector3(0, 3.2, 0), STEEL)
+	for k in 11:
+		var y := 0.9 + 0.48 * k
+		var w := 1.5 - absf(k - 5.0) * 0.13
+		_part(self, Vector3(w, 0.06, 0.22), at + Vector3(0, y, 0), color if k % 2 == 0 else color.darkened(0.35), true,
+				deg_to_rad(17.0 * k))
+
+
+## The fountain's water: lit from below, a little see-through.
+func _water() -> StandardMaterial3D:
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(0.18, 0.45, 0.7, 0.75)
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.emission_enabled = true
+	mat.emission = Color(0.2, 0.55, 0.95)
+	mat.emission_energy_multiplier = 0.9
+	mat.metallic = 0.3
+	mat.roughness = 0.05
+	return mat
+
+
 ## A planter with a light rim and glowing reeds of different heights.
 func _planter(at: Vector3, yaw: float, color: Color) -> void:
 	_solid(Vector3(2.6, 0.8, 2.6), at + Vector3(0, 0.4, 0), DARK, yaw)
@@ -1017,6 +1299,9 @@ func _planter(at: Vector3, yaw: float, color: Color) -> void:
 ##   watch      tiers facing the big screen: {centre, width, depth, yaw}
 ##   gather     open spots where a few stand and talk
 ##   routes     polylines a wanderer walks out along and back
+##   stops      the boulevards' carts: {counter, served, yaw, queue, cook, places,
+##              enter, far}; customers queue back from the counter along
+##              `queue`, eat at a place ([pos, yaw]) and walk on
 ## Kept clear of the benches, podiums, stages, planters and pillars.
 func locals_layout() -> Dictionary:
 	var browse: Array = []
@@ -1038,12 +1323,16 @@ func locals_layout() -> Dictionary:
 				RESIDENCES + Vector3(-2.0, 0, -9.0), RESIDENCES + Vector3(12.0, 0, 8.0),
 				Vector3(14.0, 0, -GATE_LINE + 12.0), Vector3(-20.0, 0, -GATE_LINE + 15.0),
 				_at(GARDEN_RING, 45.0) + Vector3(-3.0, 0, -3.0), _at(GARDEN_RING, 315.0) + Vector3(3.0, 0, 2.0)],
+		"stops": _stops,
 		"routes": [[_at(30.0, 90.0), Vector3(70, 0, -2.5), Vector3(118, 0, -2.5), CIVIC + Vector3(-4.0, 0, -2.0)],
 				[_at(30.0, 270.0), Vector3(-70, 0, 2.5), Vector3(-118, 0, 2.5), RESIDENCES + Vector3(8.0, 0, 3.0)],
-				[_at(30.0, 2.0), Vector3(2.5, 0, -90), Vector3(2.5, 0, -150), Vector3(4.0, 0, -GATE_LINE + 14.0)],
+				[_at(30.0, 2.0), Vector3(2.5, 0, -86), FOUNTAIN + Vector3(7.5, 0, 0), Vector3(2.5, 0, -114),
+						Vector3(2.5, 0, -150), Vector3(4.0, 0, -GATE_LINE + 14.0)],
 				[_at(31.0, 180.0), Vector3(-3.5, 0, 66), Vector3(-3.5, 0, 140), Vector3(-2.0, 0, 192)],
 				[_at(31.0, 45.0), _at(GARDEN_RING - 4.0, 45.0)],
-				[_at(31.0, 225.0), _at(GARDEN_RING - 4.0, 225.0)]],
+				[_at(31.0, 225.0), _at(GARDEN_RING - 4.0, 225.0)],
+				[_at(42.0, 45.0), _at(150.0, 45.0)], [_at(42.0, 135.0), _at(150.0, 135.0)],
+				[_at(42.0, 225.0), _at(150.0, 225.0)], [_at(42.0, 315.0), _at(150.0, 315.0)]],
 	}
 
 

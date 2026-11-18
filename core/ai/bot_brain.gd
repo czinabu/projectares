@@ -199,6 +199,56 @@ var flanks := true
 var far_notice_mult := 1.6
 var crouch_notice_mult := 1.3
 
+## Senses and squads (DESIGN.md "Enemy senses and squads"). A bot reacts
+## only to what it senses: what it sees, a person's noise it hears (shots,
+## `Combat.noise`; footsteps, jets and engines, `noise_of`), a hit, or a
+## squadmate's callout. Whatever it learns is a place and a moment, never
+## live tracking: once it loses sight it searches from there.
+##
+## Only `RING_HUNTERS` army bots (by ring) may leave their ground to close
+## on, chase or search for one person (`SquadBoard.hunt`); the rest fight
+## from where they stand, so a person never pulls a whole army along.
+const RING_HUNTERS := [3, 4, 5]
+var max_hunters := 4
+## How far past its patrol radius a bot follows anything before it turns
+## back to its post (a bot that plays like a person, or on an errand, roams).
+var leash := 35.0
+## How many bots go to look at one person's noise; the rest turn to face it.
+var noise_lookers := 3
+## A person sprinting is heard this far off (through walls too), a jog
+## closer; walking or crouched is silent. Jets and engines carry further.
+const STEP_SPRINT := 16.0
+const STEP_JOG := 7.0
+const JETS_HEARD := 30.0
+const ENGINE_HEARD := 40.0
+## Seconds an alerted bot faces a sound it is not going to look at.
+var alert_time := 4.0
+## A callout: a bot that spots a person tells its faction within this range
+## where the person is now, at most every `callout_every` seconds.
+var callout_range := 30.0
+var callout_every := 4.0
+## The bot's fireteam (`WarCommander`, 0 for none): a callout reaches its
+## own team out to `team_range`.
+var team := 0
+var team_range := 60.0
+## A person seen at the same distance as an enemy soldier is the second
+## choice by this much: an army fights the other army first.
+var person_bias := 1.3
+## Searching: points looked at round the last sighting after reaching it.
+var search_points := 2
+var search_spread := 8.0
+## The bot whose turn it is keeps shooting at the cover a person ducked
+## behind for this long (it pins them; the round still has to reach them).
+var suppress_time := 2.5
+var suppress_spread_deg := 2.5
+## Below this share of its health a soldier falls back to its post and only
+## fights back when pressed (heavier kinds stand their ground).
+var fall_back_below := 0.35
+## Seconds a bot runs from a grenade or rocket about to burst near it, and
+## its chance to notice one, from its lowest skill to its highest.
+var dodge_time := 1.0
+var dodge_chance := Vector2(0.45, 0.9)
+
 ## Who holds a slot on each person, by the person's instance id:
 ## {"holders": {brain id: physics frame it lets go}, "free_at": frame}.
 static var _slots := {}
@@ -215,6 +265,23 @@ var _stuck_for := 0.0
 var _lift_left := 0.0
 var _hop_in := 3.0
 var _hop_left := 0.0
+var _contact_id := 0
+var _contact_person := false
+var _last_vel := Vector3.ZERO
+var _hunting := false
+var _search: Array[Vector3] = []
+var _search_slow := 0.0
+var _suppress_left := 0.0
+var _alert_left := 0.0
+var _alert_at := Vector3.ZERO
+var _heard_at := Vector3.INF
+var _heard_from: Actor
+var _called_at := -1000.0
+var _called := false
+var _falling_back := false
+var _dodge_left := 0.0
+var _dodge_from := Vector3.ZERO
+var _danger_seen := {}
 
 
 func _ready() -> void:
@@ -245,6 +312,7 @@ func _ready() -> void:
 	lock_time = float(actor.get_meta("lock_time", 0.0))
 	var ring := int(actor.get_meta("zone", 1))
 	attack_slots = RING_SLOTS[clampi(ring, 0, RING_SLOTS.size() - 1)]
+	max_hunters = RING_HUNTERS[clampi(ring, 0, RING_HUNTERS.size() - 1)]
 	feint_chance = RING_FEINT[clampi(ring, 0, RING_FEINT.size() - 1)]
 	dash_chance = RING_DASH[clampi(ring, 0, RING_DASH.size() - 1)]
 	heavy_share = RING_HEAVY[clampi(ring, 0, RING_HEAVY.size() - 1)]
@@ -307,28 +375,44 @@ func _physics_process(delta: float) -> void:
 	_think_left -= delta
 	if _think_left <= 0.0:
 		_think_left = 0.2
+		var had := target
 		target = _find_target()
+		if target != had and had != null and is_instance_valid(had) and _hunting:
+			SquadBoard.stop_hunt(had.get_instance_id(), get_instance_id())
+			_hunting = false
+		_think_danger()
+		if target == null and _heard_at.is_finite() and state != State.ATTACK:
+			_on_heard(_heard_at, _heard_from)
+		if not _falling_back and not uses_kit and _stands_ground() == false \
+				and actor.health.health < actor.health.max_health * fall_back_below:
+			_falling_back = true
 
-	if target and is_instance_valid(target) and not target.is_dead:
+	if _dodge_left > 0.0:
+		_dodge_left -= delta
+		if target and is_instance_valid(target) and not target.is_dead:
+			_aim_gun(cmd, actor.get_eye_position(), target.global_position + Vector3(0, 1.1, 0),
+					actor.get_eye_position().distance_to(target.global_position), delta)
+		_dodge(cmd, delta)
+	elif target and is_instance_valid(target) and not target.is_dead:
+		if target.get_instance_id() != _contact_id or state != State.ATTACK:
+			_new_contact()
 		_last_seen = target.global_position
+		_last_vel = target.velocity
 		_lost_time = 0.0
+		_suppress_left = suppress_time
 		_seen_time += delta
 		state = State.ATTACK
 		_attack(cmd, delta)
-	elif state != State.PATROL:
-		_release()
-		_hold_left = 0.0
-		_seen_time = 0.0
-		_aim_target = null
-		_lock = 0.0
-		_lost_time += delta
-		state = State.CHASE
-		if _lost_time > give_up_time or _flat_dist(_last_seen) < 2.0:
-			state = State.PATROL
-			_has_dest = false
-		else:
-			cmd.sprint = true
-			_move_toward(cmd, _last_seen, delta, true)
+		if _contact_person and not _called and _seen_time >= _reaction * 0.5:
+			_called = true
+			_call_out(target)
+	elif state == State.ATTACK or state == State.CHASE:
+		_lost(cmd, delta)
+	elif _alert_left > 0.0:
+		# Heard something it is not going to look at: face it, gun up.
+		_alert_left -= delta
+		_look_along(cmd, _alert_at - actor.get_eye_position())
+		cmd.secondary = actor.get_active_weapon() is Gun and actor.is_on_floor()
 	elif holding:
 		_stuck_for = 0.0
 	elif has_errand:
@@ -401,6 +485,7 @@ func _blade_index() -> int:
 
 
 func _attack(cmd: ActorCommand, delta: float) -> void:
+	_refresh_hunt()
 	_error_left -= delta
 	if _error_left <= 0.0:
 		_error_left = 0.35
@@ -422,6 +507,9 @@ func _attack(cmd: ActorCommand, delta: float) -> void:
 		return
 	_aim_gun(cmd, eye, chest, dist, delta)
 	_combat_hop(cmd, delta)
+	if _falling_back and dist > point_blank and not (_hit_by == target and _since_hit() < return_fire_time):
+		_fall_back(cmd, delta)
+		return
 	var my_turn := _may_attack(dist)
 	if not my_turn:
 		# Keep the gun on them, ready, but hold fire and get somewhere better.
@@ -442,9 +530,16 @@ func _attack(cmd: ActorCommand, delta: float) -> void:
 	if not uses_kit and target.get_active_weapon() is MeleeWeapon and dist < blade_backoff:
 		cmd.secondary = false
 		cmd.move = Vector2(_strafe_sign * 0.6, -1.0).normalized()
-	# Keep a comfortable distance: close in, back off, or strafe.
+	# Keep a comfortable distance: close in from cover to cover, peek from
+	# the cover it is in, back off, or strafe. A bot that may not leave its
+	# ground (not a hunter, or past its leash) fights from where it is.
+	elif dist > preferred_range * 1.4 and _may_close(target.global_position):
+		_advance(cmd, delta)
+	elif _at_cover():
+		# Peek: down behind it between bursts, up to shoot.
+		cmd.crouch = _burst_left <= 0.0 and _pause_left > 0.35
 	elif dist > preferred_range * 1.4:
-		_move_toward(cmd, target.global_position, delta, false)
+		pass
 	elif dist < preferred_range * 0.5:
 		cmd.move = Vector2(0, -1)
 	else:
@@ -470,6 +565,11 @@ func _attack(cmd: ActorCommand, delta: float) -> void:
 		_lock += delta
 		if _lock < lock_time:
 			return
+	_fire_bursts(cmd, delta)
+
+
+## Fires in bursts with a pause between, holding the trigger through a burst.
+func _fire_bursts(cmd: ActorCommand, delta: float) -> void:
 	if _burst_left > 0.0:
 		_burst_left -= delta
 		cmd.primary = true
@@ -544,7 +644,7 @@ func _attack_melee(cmd: ActorCommand, blade: MeleeWeapon, delta: float) -> void:
 	if _hold_left > 0.0:
 		_carry_charge(cmd, blade, delta, dist)
 		return
-	if dist > blade.reach * 0.7:
+	if dist > blade.reach * 0.7 and _may_close(target.global_position):
 		cmd.sprint = true
 		_move_toward(cmd, target.global_position, delta, false)
 	if _try_dash_strike(cmd, blade, dist):
@@ -657,6 +757,263 @@ func _try_dash_strike(cmd: ActorCommand, blade: MeleeWeapon, dist: float) -> boo
 	return true
 
 
+## A target seen for the first time (or again after losing it): note who
+## it is. A person is called out to the squad once the bot has reacted and
+## brings its gun up (`_call_out`, with the bark every view hears).
+func _new_contact() -> void:
+	var id := target.get_instance_id()
+	if id != _contact_id:
+		_release()
+		_stop_hunting()
+	_contact_id = id
+	_contact_person = not uses_kit and is_person(target)
+	_search.clear()
+	_alert_left = 0.0
+	_called = false
+
+
+## Keeps (or asks for) a hunter place on the person in sight.
+func _refresh_hunt() -> void:
+	if not _contact_person or not ration_attacks:
+		_hunting = true
+		return
+	_hunting = SquadBoard.hunt(_contact_id, get_instance_id(), max_hunters, Engine.get_physics_frames(), 3.0)
+
+
+func _stop_hunting() -> void:
+	if _contact_id != 0:
+		SquadBoard.stop_hunt(_contact_id, get_instance_id())
+		SquadBoard.stop_flank(_contact_id, get_instance_id())
+	_hunting = false
+
+
+## Whether the bot may leave its ground to go to `point`: within its leash,
+## and for a person only as one of the hunters.
+func _may_close(point: Vector3) -> bool:
+	if uses_kit or has_errand:
+		return true
+	if not _within_leash(point):
+		return false
+	return _hunting or not _contact_person or not ration_attacks
+
+
+## Within `leash` of the ground the bot holds (its patrol round its post).
+func _within_leash(point: Vector3) -> bool:
+	if uses_kit or has_errand:
+		return true
+	var off := point - _home
+	off.y = 0.0
+	return off.length() <= patrol_radius + leash
+
+
+## Lost sight of its contact: the bot whose turn it was pins the cover they
+## went behind for a moment, the flanker works round, and the hunters
+## search from the last sighting; anyone else, or once the search is done,
+## goes back to its ground.
+func _lost(cmd: ActorCommand, delta: float) -> void:
+	_hold_left = 0.0
+	_lock = 0.0
+	_lost_time += delta
+	state = State.CHASE
+	if _suppress_left > 0.0 and _may_suppress():
+		_suppress_left -= delta
+		_suppress(cmd, delta)
+		return
+	_suppress_left = 0.0
+	_release()
+	_seen_time = 0.0
+	_aim_target = null
+	if _lost_time > give_up_time or not _may_close(_last_seen):
+		_end_search()
+		return
+	if _search.is_empty():
+		_plan_search()
+		if _search.is_empty():
+			_end_search()
+			return
+	var dest: Vector3 = _search[0]
+	if actor.get_real_velocity().length() < 0.3:
+		_search_slow += delta
+	else:
+		_search_slow = 0.0
+	if _flat_dist(dest) < 2.0 or _search_slow > 1.5:
+		_search_slow = 0.0
+		_search.pop_front()
+		if _search.is_empty():
+			_end_search()
+		return
+	# Hurried to where it last saw them, then a careful look round.
+	cmd.sprint = _lost_time < 3.0
+	_move_toward(cmd, dest, delta, true)
+
+
+## Where to look: where the contact was last seen, carried on a little the
+## way it was going, then a few points round that, ahead of its course. The
+## one flanker goes round the side first.
+func _plan_search() -> void:
+	var drift := Vector3(_last_vel.x, 0.0, _last_vel.z).limit_length(6.0)
+	var guess := _last_seen + drift
+	if _contact_person and flanks and SquadBoard.flank(_contact_id, get_instance_id(),
+			Engine.get_physics_frames(), 6.0):
+		var off := actor.global_position - guess
+		off.y = 0.0
+		if off.length() > 0.5:
+			var side := deg_to_rad(75.0) * (1.0 if _rng.randf() < 0.5 else -1.0)
+			var spot := guess + off.normalized().rotated(Vector3.UP, side) * 8.0
+			if _within_leash(spot):
+				_search.append(spot)
+	_search.append(guess)
+	var heading := atan2(drift.z, drift.x) if drift.length() > 0.5 else _rng.randf() * TAU
+	for i in search_points:
+		var angle := heading + _rng.randf_range(-PI * 0.5, PI * 0.5)
+		var spot := guess + Vector3(cos(angle), 0.0, sin(angle)) * search_spread * _rng.randf_range(0.5, 1.0)
+		if _within_leash(spot):
+			_search.append(spot)
+
+
+## Done looking: back to its ground, facing where it lost them for a moment.
+func _end_search() -> void:
+	_release()
+	_stop_hunting()
+	_search.clear()
+	_contact_id = 0
+	state = State.PATROL
+	_has_dest = false
+	_alert_at = _last_seen + Vector3(0, 1.0, 0)
+	_alert_left = alert_time * 0.5
+
+
+## Suppressing: only the bot whose turn it is on that person, with a gun
+## that needs no lock, within range of where they went.
+func _may_suppress() -> bool:
+	if not _contact_person or lock_time > 0.0:
+		return false
+	var gun := actor.get_active_weapon() as Gun
+	if gun == null or gun.is_spent():
+		return false
+	if actor.get_eye_position().distance_to(_last_seen) > attack_range:
+		return false
+	var slot: Dictionary = _slots.get(_contact_id, {})
+	return not slot.is_empty() and int(slot.holders.get(get_instance_id(), 0)) > Engine.get_physics_frames()
+
+
+## Bursts at the cover a person ducked behind, where their chest was, a
+## little wide: it keeps them down. Rounds still have to reach them.
+func _suppress(cmd: ActorCommand, delta: float) -> void:
+	var eye := actor.get_eye_position()
+	var point := _last_seen + Vector3(0, 1.1, 0)
+	var to := (point - eye).normalized()
+	var side := to.cross(Vector3.UP).normalized()
+	var spread := deg_to_rad(suppress_spread_deg)
+	var want := (to + side * tan(_rng.randf_range(-spread, spread))
+			+ Vector3.UP * tan(_rng.randf_range(-spread, spread) * 0.5)).normalized()
+	var gap := _aim.angle_to(want)
+	var step := deg_to_rad(turn_speed_deg) * delta
+	if gap > 0.0001:
+		_aim = _aim.slerp(want, minf(1.0, step / gap)).normalized()
+	_look_along(cmd, _aim)
+	cmd.aim_dir = _aim
+	cmd.secondary = actor.is_on_floor()
+	if _aim.angle_to(to) < deg_to_rad(fire_cone_deg + suppress_spread_deg):
+		_fire_bursts(cmd, delta)
+
+
+## Tells the bot's faction nearby where the person it just saw is: a
+## snapshot, never live tracking.
+func _call_out(person: Actor) -> void:
+	var now := float(Engine.get_physics_frames()) / Engine.physics_ticks_per_second
+	if now - _called_at < callout_every:
+		return
+	_called_at = now
+	var raid := Raid.of(actor)
+	if raid == null:
+		return
+	var at := person.global_position
+	var reach := callout_range * callout_range
+	var team_reach := team_range * team_range
+	for bot: Variant in raid.bots:
+		if not is_instance_valid(bot) or bot == actor:
+			continue
+		var other := bot as Actor
+		if other.is_dead or other.faction != actor.faction:
+			continue
+		var brain := other.get_node_or_null("Brain") as BotBrain
+		if brain == null or brain.uses_kit:
+			continue
+		var apart := other.global_position.distance_squared_to(actor.global_position)
+		if apart <= reach or (team != 0 and brain.team == team and apart <= team_reach):
+			brain.hear_callout(at, person)
+
+
+## Heavier kinds and bosses stand their ground when hurt.
+func _stands_ground() -> bool:
+	return actor.has_meta("boss") or str(actor.get_meta("kind", "soldier")) in ["heavy", "exo", "walker"]
+
+
+## Badly hurt: back to its post, the squad's ground, and down in cover there;
+## it fights back only when pressed (`_attack` lets it then).
+func _fall_back(cmd: ActorCommand, delta: float) -> void:
+	_release()
+	_stop_hunting()
+	if _flat_dist(_home) > 4.0:
+		_move_toward(cmd, _home, delta, false)
+		return
+	_cover_left -= delta
+	if _cover_left <= 0.0:
+		_cover_left = 2.0
+		_cover = _find_cover(false)
+	if _cover.is_finite() and _flat_dist(_cover) > 1.0:
+		_move_toward(cmd, _cover, delta, false)
+	else:
+		cmd.crouch = true
+
+
+## A grenade or rocket about to burst near the bot: it runs (`_dodge`). A
+## bot notices each round once, and only sometimes, by skill.
+func _think_danger() -> void:
+	if Gun.live_rounds.is_empty():
+		return
+	var me := actor.global_position + Vector3(0, 0.9, 0)
+	for node: Variant in Gun.live_rounds:
+		if not is_instance_valid(node):
+			continue
+		var shot := node as Node3D
+		var radius := float(shot.get("splash_radius"))
+		if radius <= 0.0 or shot.get("gun_shooter") == actor or shot.get_world_3d() != get_world_3d():
+			continue
+		var vel: Vector3 = shot.get("velocity")
+		var from := shot.global_position
+		var to := from + vel * (0.4 if str(shot.get("kind")) == "grenade" else 1.0)
+		var near := Geometry3D.get_closest_point_to_segment(me, from, to)
+		if near.distance_to(me) > radius + 1.0:
+			continue
+		var id := shot.get_instance_id()
+		if _danger_seen.has(id):
+			continue
+		if _danger_seen.size() > 32:
+			_danger_seen.clear()
+		_danger_seen[id] = true
+		if _rng.randf() < lerpf(dodge_chance.x, dodge_chance.y, clampf(skill, 0.0, 1.0)):
+			_dodge_from = near
+			_dodge_left = dodge_time
+			return
+
+
+## Running from a burst: straight away from it, or to the side of a rocket.
+func _dodge(cmd: ActorCommand, delta: float) -> void:
+	var away := actor.global_position - _dodge_from
+	away.y = 0.0
+	if away.length() < 0.3:
+		away = Basis(Vector3.UP, cmd.yaw) * Vector3.RIGHT * _strafe_sign
+	if target == null:
+		_look_along(cmd, away)
+	cmd.sprint = true
+	var local := Basis(Vector3.UP, cmd.yaw).inverse() * away.normalized()
+	cmd.move = Vector2(local.x, -local.z)
+	if flies:
+		_unstick(cmd, delta)
+
+
 func _patrol(cmd: ActorCommand, delta: float) -> void:
 	if _wait_left > 0.0:
 		_wait_left -= delta
@@ -767,14 +1124,20 @@ func _look_along(cmd: ActorCommand, dir: Vector3) -> void:
 
 func _find_target() -> Actor:
 	var best: Actor = null
-	var best_dist := sight_range
+	var best_score := INF
 	var eye := actor.get_eye_position()
 	var forward := Basis(Vector3.UP, actor.cmd.yaw) * Vector3.FORWARD
 	var world := Worlds.of(actor)
 	# A storm cuts how far a bot sees (DESIGN.md "Weather: ash storms"), by
-	# the worse of where it stands and where its target does.
+	# the worse of where it stands and where its target does, and muffles
+	# what it hears.
 	var raid := Raid.of(actor)
 	var weather: Weather = raid.weather if raid != null and raid.weather.kind != "" else null
+	var listening := state != State.ATTACK
+	var reach := maxf(sight_range, ENGINE_HEARD) if listening else sight_range
+	var heard_dist := INF
+	_heard_at = Vector3.INF
+	_heard_from = null
 	for node in get_tree().get_nodes_in_group("actors"):
 		var other := node as Actor
 		if other == null or other == actor or other.is_dead or other.faction == actor.faction:
@@ -782,28 +1145,68 @@ func _find_target() -> Actor:
 		# Distance first: it is the cheapest way to rule most of a big field out.
 		var chest := other.global_position + Vector3(0, other.body_height() * 0.6, 0)
 		var dist := eye.distance_to(chest)
-		if dist >= best_dist:
+		if dist >= reach or dist * 0.85 >= best_score and not listening:
+			continue
+		if not Raid.together(actor, other):
+			continue
+		if world and not world.can_damage(actor, other, null):
+			continue
+		var person := not uses_kit and is_person(other)
+		# Heard, not seen: a person's footsteps, jets or engine, through walls.
+		if listening and person and dist < heard_dist:
+			var loud := noise_of(other)
+			if loud > 0.0 and weather != null:
+				loud *= weather.carry_at(other.global_position)
+			if dist < loud:
+				heard_dist = dist
+				_heard_at = other.global_position
+				_heard_from = other
+		var score := dist * (person_bias if person else 1.0) * (0.85 if other == target else 1.0)
+		if dist >= sight_range or score >= best_score:
 			continue
 		if weather != null and dist >= sight_range * weather.sight_between(eye, chest):
 			continue
 		# A Phase Cloak hides all but someone right beside the bot.
 		if other.is_cloaked() and dist > other.artifact.cloak_sense_range:
 			continue
-		if not Raid.together(actor, other):
-			continue
-		if world and not world.can_damage(actor, other, null):
-			continue
 		var in_view := forward.angle_to((chest - eye).normalized()) < deg_to_rad(fov_deg) * 0.5
 		# Someone crouched creeps up quieter: sensed only closer in.
 		var sense := close_sense_range * (other.crouch_sense_mult if other.crouched else 1.0)
 		if not in_view and dist > sense and other != target:
 			continue
+		var space := get_world_3d().direct_space_state
 		var query := PhysicsRayQueryParameters3D.create(eye, chest, Actor.LAYER_WORLD)
-		if not get_world_3d().direct_space_state.intersect_ray(query).is_empty():
-			continue
+		if not space.intersect_ray(query).is_empty():
+			# Ducked in cover, it still knows it can stand up and see its target.
+			if other != target or not actor.crouched:
+				continue
+			query = PhysicsRayQueryParameters3D.create(eye + Vector3(0, 0.6, 0), chest, Actor.LAYER_WORLD)
+			if not space.intersect_ray(query).is_empty():
+				continue
 		best = other
-		best_dist = dist
+		best_score = score
+	if best != null:
+		_heard_at = Vector3.INF
+		_heard_from = null
 	return best
+
+
+## How far off a bot hears `other` move (0: silent): an occupied vehicle's
+## engine, a flight rig's jets, or footsteps by pace. Walking, crouching and
+## gliding make no sound worth turning for.
+static func noise_of(other: Actor) -> float:
+	if other.vehicle != null:
+		return ENGINE_HEARD
+	if other.flight != null and other.flight.is_hovering:
+		return JETS_HEARD
+	if not other.is_on_floor() or other.crouched:
+		return 0.0
+	var pace := Vector2(other.velocity.x, other.velocity.z).length()
+	if pace > other.walk_speed + 1.0:
+		return STEP_SPRINT
+	if pace > 4.0:
+		return STEP_JOG
+	return 0.0
 
 
 func _flat_dist(point: Vector3) -> float:
@@ -821,21 +1224,67 @@ func _on_damaged(info: DamageInfo) -> void:
 	if info.kind == "melee" and info.amount > 0.0 and not uses_kit and actor.get_active_weapon() is Gun:
 		_flinch(melee_flinch, melee_knock_deg)
 	if source and source != actor and state == State.PATROL:
-		_last_seen = source.global_position
-		_lost_time = 0.0
-		state = State.CHASE
+		_sensed(source.global_position, source, false, true)
 
 
-## Gunfire nearby (`Combat.noise`): a bot on patrol goes to look where it came
-## from. A blade makes no noise, so a melee kill leaves the rest on patrol.
+## Gunfire nearby (`Combat.noise`), the defence grid's call or footsteps:
+## the nearest few bots (`noise_lookers`) that may leave their ground go to
+## look where it came from, the rest turn to face it. A blade makes no
+## noise, so a melee kill leaves the rest on patrol.
 func _on_heard(at: Vector3, source: Actor) -> void:
-	if state != State.PATROL or source == null or source.faction == actor.faction:
+	_sensed(at, source, true, false)
+
+
+## A squadmate saw a person at `at` (`_call_out`): a bot that may leave its
+## ground comes to look, the rest face that way.
+func hear_callout(at: Vector3, about: Actor) -> void:
+	_sensed(at, about, false, true)
+
+
+## Something tells the bot about `source` at `at`: it searches from there
+## if it may (a free hunter place and, for a noise, a looker's), else it
+## turns to face it for `alert_time`. Hearing is rough: the place is off by
+## up to a tenth of the distance. `sure` (a hit, a callout) is exact.
+func _sensed(at: Vector3, source: Actor, noise: bool, sure: bool) -> void:
+	if source == null or not is_instance_valid(source) or source.faction == actor.faction:
+		return
+	if state == State.ATTACK:
 		return
 	var world := Worlds.of(actor)
 	if world and not world.can_damage(actor, source, null):
 		return
+	var id := source.get_instance_id()
+	if not sure:
+		var off := actor.global_position.distance_to(at) * 0.1
+		at += Vector3(_rng.randf_range(-off, off), 0.0, _rng.randf_range(-off, off))
+	if state == State.CHASE:
+		if id == _contact_id:
+			# A fresh fix on what it is already looking for.
+			_last_seen = at
+			_lost_time = 0.0
+			_search.clear()
+		return
+	_heard_at = Vector3.INF
+	var person := not uses_kit and is_person(source)
+	var now := Engine.get_physics_frames()
+	var may := _within_leash(at)
+	if may and person and noise:
+		may = SquadBoard.look(id, get_instance_id(), noise_lookers, now, 6.0)
+	if may and person and ration_attacks:
+		may = SquadBoard.hunt(id, get_instance_id(), max_hunters, now, 3.0)
+	if not may:
+		_alert_at = at + Vector3(0, 1.0, 0)
+		_alert_left = alert_time
+		return
+	_hunting = person
+	_contact_id = id
+	_contact_person = person
 	_last_seen = at
+	_last_vel = Vector3.ZERO
 	_lost_time = 0.0
+	_suppress_left = 0.0
+	_search.clear()
+	_alert_left = 0.0
 	state = State.CHASE
 
 
@@ -922,9 +1371,12 @@ static func _prune(now: int) -> void:
 
 ## Lets go of any slot this bot holds.
 func _release() -> void:
-	if target == null or not is_instance_valid(target):
+	var id := _contact_id
+	if id == 0 and target != null and is_instance_valid(target):
+		id = target.get_instance_id()
+	if id == 0:
 		return
-	var slot: Dictionary = _slots.get(target.get_instance_id(), {})
+	var slot: Dictionary = _slots.get(id, {})
 	if not slot.is_empty() and slot.holders.has(get_instance_id()):
 		slot.holders.erase(get_instance_id())
 		slot.free_at = maxi(slot.free_at, Engine.get_physics_frames() + int(token_beat * Engine.physics_ticks_per_second))
@@ -936,8 +1388,10 @@ func _wait_turn(cmd: ActorCommand, delta: float, dist: float) -> void:
 	_cover_left -= delta
 	if _cover_left <= 0.0 or not _cover.is_finite():
 		_cover_left = 1.5
-		_cover = _find_cover()
-		if not _cover.is_finite() and flanks:
+		_cover = _find_cover(false)
+		if not _cover.is_finite() and flanks and _may_close(target.global_position) \
+				and (not _contact_person or SquadBoard.flank(_contact_id, get_instance_id(),
+					Engine.get_physics_frames(), 4.0)):
 			_cover = _flank_point(dist)
 	if _cover.is_finite() and _flat_dist(_cover) > 1.0:
 		_move_toward(cmd, _cover, delta, false)
@@ -946,16 +1400,24 @@ func _wait_turn(cmd: ActorCommand, delta: float, dist: float) -> void:
 		# In cover: get down behind it.
 		cmd.crouch = true
 		return
-	# Nowhere better: keep a respectful distance.
+	# Nowhere better: keep a respectful distance, shifting from side to side
+	# rather than standing still for a clean shot when its turn comes.
 	if dist < preferred_range:
 		cmd.move = Vector2(0, -1)
+		return
+	_strafe_left -= delta
+	if _strafe_left <= 0.0:
+		_strafe_left = _rng.randf_range(0.8, 2.0)
+		_strafe_sign = -_strafe_sign
+	cmd.move = Vector2(_strafe_sign * 0.7, 0)
 
 
 ## Waiting for a slot with a blade: circle just out of reach, guard up.
 func _wait_turn_melee(cmd: ActorCommand, blade: MeleeWeapon, delta: float) -> void:
 	var dist := _flat_dist(target.global_position)
 	if dist > blade.reach * 2.5:
-		_move_toward(cmd, target.global_position, delta, false)
+		if _may_close(target.global_position):
+			_move_toward(cmd, target.global_position, delta, false)
 	elif dist < blade.reach * 1.8:
 		cmd.move = Vector2(0, -1)
 	else:
@@ -964,23 +1426,72 @@ func _wait_turn_melee(cmd: ActorCommand, blade: MeleeWeapon, delta: float) -> vo
 	cmd.secondary = true
 
 
-## A spot within a few metres where the target's eyes cannot see the bot's
-## chest, still within shooting range; INF when none of the tries finds one.
-func _find_cover() -> Vector3:
+## Cover from the target, chosen by the angle it is attacking from: a spot
+## within a few metres where its eyes cannot see the bot crouched, still in
+## shooting range, best where the bot can stand up and see it again (to
+## peek) and that no squadmate already holds. `advance` asks only for spots
+## nearer the target (moving up from cover to cover). INF when none of the
+## tries finds one.
+func _find_cover(advance: bool) -> Vector3:
 	var space := get_world_3d().direct_space_state
 	var their_eye := target.get_eye_position()
+	var their_chest := target.global_position + Vector3(0, target.body_height() * 0.6, 0)
 	var from := actor.global_position
-	var start := _rng.randf() * TAU
-	for i in 6:
-		var angle := start + TAU * i / 6.0
-		var spot := from + Vector3(cos(angle), 0.0, sin(angle)) * _rng.randf_range(3.0, 8.0)
-		var reach := spot.distance_to(target.global_position)
+	var now := Engine.get_physics_frames()
+	var me := get_instance_id()
+	var dist_now := _flat_dist(target.global_position)
+	# Try round the side facing the target first: cover lies between.
+	var toward := target.global_position - from
+	toward.y = 0.0
+	var start := atan2(toward.z, toward.x) if toward.length() > 0.1 else _rng.randf() * TAU
+	var best := Vector3.INF
+	var best_score := -INF
+	for i in 7:
+		var angle := start + (i - 3) * TAU / 10.0 + _rng.randf_range(-0.2, 0.2)
+		var spot := from + Vector3(cos(angle), 0.0, sin(angle)) * _rng.randf_range(2.5, 8.0)
+		var reach := Vector2(spot.x - their_eye.x, spot.z - their_eye.z).length()
 		if reach > attack_range or reach < preferred_range * 0.5:
 			continue
-		var query := PhysicsRayQueryParameters3D.create(their_eye, spot + Vector3(0, 1.0, 0), Actor.LAYER_WORLD)
-		if not space.intersect_ray(query).is_empty():
-			return spot
-	return Vector3.INF
+		if advance and reach > dist_now - 2.0:
+			continue
+		if not SquadBoard.cover_free(spot, me, now):
+			continue
+		var low := PhysicsRayQueryParameters3D.create(their_eye, spot + Vector3(0, 0.9, 0), Actor.LAYER_WORLD)
+		if space.intersect_ray(low).is_empty():
+			continue
+		var score := -spot.distance_to(from) * 0.2
+		if advance:
+			score += (dist_now - reach) * 0.3
+		var peek := PhysicsRayQueryParameters3D.create(spot + Vector3(0, 1.55, 0), their_chest, Actor.LAYER_WORLD)
+		if space.intersect_ray(peek).is_empty():
+			score += 2.0
+		if score > best_score:
+			best_score = score
+			best = spot
+	if best.is_finite():
+		SquadBoard.take_cover(best, me, now, 4.0)
+	return best
+
+
+## True while the bot is at its chosen cover.
+func _at_cover() -> bool:
+	return _cover.is_finite() and _flat_dist(_cover) < 1.2
+
+
+## Closing on the target from cover to cover: a sprint to the next cover
+## nearer it, a moment there, then the next; straight at it when there is
+## none.
+func _advance(cmd: ActorCommand, delta: float) -> void:
+	_cover_left -= delta
+	if _cover_left <= 0.0 or not _cover.is_finite():
+		_cover_left = _rng.randf_range(1.4, 2.2)
+		_cover = _find_cover(true)
+	if not _cover.is_finite():
+		_move_toward(cmd, target.global_position, delta, false)
+	elif _flat_dist(_cover) > 1.0:
+		_move_toward(cmd, _cover, delta, false)
+	else:
+		cmd.crouch = _burst_left <= 0.0 and _pause_left > 0.35
 
 
 ## A point off the target's side, at the bot's preferred range.
