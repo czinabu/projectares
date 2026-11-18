@@ -10,7 +10,8 @@ var screen: StartScreen
 
 
 func _ready() -> void:
-	if "--server" in OS.get_cmdline_user_args():
+	var args := OS.get_cmdline_user_args()
+	if "--server" in args or "--account-service" in args:
 		get_tree().change_scene_to_file.call_deferred(GAME_SCENE)
 		return
 	backdrop = TitleBackdrop.new()

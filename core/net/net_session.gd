@@ -85,7 +85,7 @@ signal base_visit_requested(owner_name: String, stash: Array, loadout: Dictionar
 signal portal_travel(destination: String)
 
 const DEFAULT_PORT := 24565
-const PROTOCOL := 36
+const PROTOCOL := 37
 ## Every packet is compressed, both ways. State updates are mostly repeated
 ## numbers, and a big battle sends a player hundreds of them a second. Server
 ## and client must agree, so a change here needs a new PROTOCOL.
@@ -203,8 +203,14 @@ var world_status := {}
 var status_every := 60
 ## Client: called with the server's world, returns the kit to deploy with.
 ## Server: owns every player's stash, loadout and mastery. Set its
-## `save_dir` or `persist` before `host`.
-var stash := StashService.new()
+## `save_dir` or `persist` before `host`. A server that keeps its own
+## accounts (a friends' server) holds a `StashService`; an official server
+## holds an `AccountLink` to the shared account service instead
+## (`core/account/account_link.gd`), which offers the same calls but may take
+## a moment to answer. So every call that asks the accounts for something
+## is made with `await`, and whatever follows it checks that the player it
+## was for is still there.
+var stash: Object = StashService.new()
 ## Server: presence, contacts, messages, invites and news for the phone. Its
 ## files live in a `social` folder inside the stash's `save_dir`.
 var social := SocialService.new()
@@ -225,6 +231,10 @@ var social_state := {}
 ## Client: the name to sign in with, and the secret that proves the account
 ## is yours (see `StashService.new_secret`).
 var player_name := "Raider"
+## Client: the sign-in token the server handed out (`_server_auth`). Set it
+## before `join` to sign in with it instead of the secret; it is only for
+## the servers that share the accounts of the one that gave it.
+var ticket := ""
 ## Client: how this player's character looks, sent once signed in.
 var look := {}
 var secret := ""
@@ -265,6 +275,8 @@ var _joined_peers: Array[int] = []
 var _peer_account := {}  # peer id -> account id (server)
 var _peer_look := {}  # peer id -> appearance (server). Cosmetic only.
 var _market_viewers: Array[int] = [] # peers with the market kiosk open (server)
+var _signing_in := {}    # peer id -> true while the accounts are asked who they are (server)
+var _deploying := {}     # peer id -> true while the accounts are asked for their kit (server)
 var _joining_look := {}  # the look of the player being added right now (server)
 var _actor_account := {} # Actor -> account id, until the run is settled (server)
 var _inputs := {}        # peer id -> InputBuffer: their inputs not yet played (server)
@@ -344,7 +356,7 @@ func _enter_tree() -> void:
 
 
 func _exit_tree() -> void:
-	if is_server:
+	if is_server and is_instance_valid(stash):
 		# A server that stops mid-raid hands everyone's gear back.
 		stash.cancel_all_deploys()
 	_hosting.erase(self)
@@ -367,7 +379,7 @@ func host(p_world_id: String, port := DEFAULT_PORT, max_players := 8) -> Error:
 		return err
 	# Every connection is encrypted with this server's own certificate, made
 	# on its first start and kept beside the accounts (`ServerTrust`).
-	var identity_dir := stash.save_dir.trim_suffix("/").path_join("server_identity")
+	var identity_dir: String = str(stash.save_dir).trim_suffix("/").path_join("server_identity")
 	err = peer.host.dtls_server_setup(ServerTrust.server_options(identity_dir, stash.persist))
 	if err != OK:
 		peer.close()
@@ -377,7 +389,13 @@ func host(p_world_id: String, port := DEFAULT_PORT, max_players := 8) -> Error:
 	is_server = true
 	world_id = p_world_id
 	clans.open(stash.save_dir, stash.persist)
-	market.open(stash.save_dir, stash.persist)
+	if stash.is_remote():
+		# The account service runs the market and tells this server when an
+		# account or the board changes from somewhere else.
+		stash.account_changed.connect(_on_account_changed)
+		stash.market_changed.connect(_on_market_changed)
+	else:
+		market.open(stash.save_dir, stash.persist)
 	social.persist = stash.persist
 	social.save_dir = stash.save_dir.path_join("social")
 	social.load_server_news(stash.save_dir.path_join("news.json"))
@@ -541,14 +559,22 @@ func _register(actor: Actor) -> int:
 ## Signing in. A new connection is held in Godot's handshake
 ## (`SceneMultiplayer.auth_callback`) until it has signed in, and only then
 ## counts as connected. The client sends one Dictionary (`var_to_bytes`):
-## {"protocol", "name", "secret"}, or {"protocol", "probe": true} to only
-## fetch the certificate (`ServerTrust`); the server answers with one:
-## {"ok": true, "protocol", "world", "certificate"} or {"ok": false,
-## "protocol", "error", "certificate"}. Both always carry "protocol", in
-## every version to come, so any two versions can tell each other apart and
-## say which one needs the update. Keep that shape whatever else changes.
+## {"protocol", "name", "secret"}, or {"protocol", "name", "token"} with the
+## token an earlier sign-in gave it (below), or {"protocol", "probe": true}
+## to only fetch the certificate (`ServerTrust`); the server answers with
+## one: {"ok": true, "protocol", "world", "certificate", "token"} or
+## {"ok": false, "protocol", "error", "certificate"}. Both always carry
+## "protocol", in every version to come, so any two versions can tell each
+## other apart and say which one needs the update. Keep that shape whatever
+## else changes.
+##
+## The token stands for the sign-in (`StashService.sign_in_with`): the game
+## shows it to the next server it travels to instead of its secret, and
+## every server of one account service accepts it. A token that has run out
+## is answered {"ok": false, "again": "secret"} and the connection is kept,
+## for the game to sign in with its secret on it.
 func _server_auth(peer: int, data: PackedByteArray) -> void:
-	if _peer_account.has(peer):
+	if _peer_account.has(peer) or _signing_in.has(peer):
 		return
 	var hello: Variant = bytes_to_var(data) if data.size() <= MAX_AUTH_BYTES else null
 	if typeof(hello) != TYPE_DICTIONARY:
@@ -562,10 +588,25 @@ func _server_auth(peer: int, data: PackedByteArray) -> void:
 		# Only asking which certificate this server shows (it changed).
 		_refuse(peer, "Certificate only.")
 		return
-	var result := stash.sign_in(str(hello.get("name", "")).left(64), str(hello.get("secret", "")).left(256))
+	var token := str(hello.get("token", "")).left(256)
+	var credentials := {"method": "token", "token": token} if token != "" else \
+			{"method": "secret", "name": str(hello.get("name", "")).left(64), "secret": str(hello.get("secret", "")).left(256)}
+	_signing_in[peer] = true
+	var result: Dictionary = await stash.sign_in_with(credentials)
+	_signing_in.erase(peer)
+	if not is_inside_tree() or _api.multiplayer_peer == null or peer not in _api.get_authenticating_peers():
+		# Gone while the accounts were asked.
+		if result.get("ok", false):
+			_release_if_unused(str(result.account_id))
+		return
 	if not result.ok:
+		if result.get("expired", false):
+			_api.send_auth(peer, var_to_bytes({"ok": false, "protocol": PROTOCOL, "again": "secret",
+					"certificate": _certificate}))
+			return
 		_refuse(peer, result.error)
 		return
+	_peer_account[peer] = result.account_id
 	# The newest sign-in wins. An older connection for the same account (a
 	# crashed game, one whose connection dropped and that the server has not
 	# noticed yet, or another game signing in) is let go: its body is left
@@ -573,7 +614,7 @@ func _server_auth(peer: int, data: PackedByteArray) -> void:
 	# (`_on_peer_connected`). It is told why first, so a game that is still
 	# running does not try to reconnect and push this one out in turn.
 	for other: int in _peer_account.keys():
-		if _peer_account[other] != result.account_id:
+		if other == peer or _peer_account[other] != result.account_id:
 			continue
 		if other in _api.get_peers():
 			_on_peer_disconnected(other)
@@ -584,9 +625,10 @@ func _server_auth(peer: int, data: PackedByteArray) -> void:
 		else:
 			_api.disconnect_peer(other)
 		_peer_account.erase(other)
-	_peer_account[peer] = result.account_id
-	_api.send_auth(peer, var_to_bytes({"ok": true, "protocol": PROTOCOL, "world": world_id,
-			"certificate": _certificate}))
+	var welcome := {"ok": true, "protocol": PROTOCOL, "world": world_id, "certificate": _certificate}
+	if result.has("token"):
+		welcome["token"] = result.token
+	_api.send_auth(peer, var_to_bytes(welcome))
 	_api.complete_auth(peer)
 
 
@@ -635,8 +677,40 @@ func _allow(kind: String) -> bool:
 
 ## Server: a connection left before it finished signing in.
 func _on_server_auth_failed(peer: int) -> void:
+	var left: String = _peer_account.get(peer, "")
 	_peer_account.erase(peer)
 	_limits.forget(peer)
+	_release_if_unused(left)
+
+
+## Server: tells the accounts when nobody on this server is signed in to
+## `account_id` any more (an `AccountLink` then stops keeping it up to date).
+func _release_if_unused(account_id: String) -> void:
+	if account_id == "" or not is_instance_valid(stash):
+		return
+	for session in _hosting:
+		if account_id in session._peer_account.values():
+			return
+	stash.release(account_id)
+
+
+## Server: whether `peer` is still connected and signed in, for whatever
+## follows a call to the accounts that may have taken a moment.
+func _here(peer: int) -> bool:
+	return _peer_account.has(peer) and _api.multiplayer_peer != null and peer in _api.get_peers()
+
+
+## Server: an account changed from somewhere else (`AccountLink.account_changed`).
+func _on_account_changed(account_id: String) -> void:
+	for peer: int in _peer_account:
+		if _peer_account[peer] == account_id:
+			_send_account(peer)
+
+
+## Server: the market's board changed (`AccountLink.market_changed`).
+func _on_market_changed() -> void:
+	for viewer in _market_viewers.duplicate():
+		_send_market(viewer)
 
 
 ## A peer that signed in is now connected: it is in the lobby.
@@ -716,7 +790,11 @@ func _on_peer_disconnected(peer: int) -> void:
 	_joined_peers.erase(peer)
 	_limits.forget(peer)
 	_social_left(peer)
+	var left: String = _peer_account.get(peer, "")
 	_peer_account.erase(peer)
+	_signing_in.erase(peer)
+	_deploying.erase(peer)
+	_release_if_unused(left)
 	_market_viewers.erase(peer)
 	_peer_look.erase(peer)
 	_inputs.erase(peer)
@@ -865,11 +943,29 @@ func _on_server_player_finished(actor: Actor, result: Dictionary) -> void:
 	var online := peer != 0 and peer in _api.get_peers()
 	# The stash only ever changes from the server's own result.
 	var account_id: String = _actor_account.get(actor, "")
+	var at_risk := raid.world.gear_at_risk
+	_actor_account.erase(actor)
+	# The session's own books first: settling may take a moment where the
+	# accounts are a service away, and the player is free to drop in again
+	# meanwhile (that deploy is asked after this settle, so it sees it).
+	if _peer_actor.get(peer) == actor:
+		# Free to drop in again, after a short wait if they died.
+		_peer_actor.erase(peer)
+		if _inputs.has(peer):
+			(_inputs[peer] as InputBuffer).rest()
+		if result.get("outcome", "") == "died":
+			_died_at[peer] = Time.get_ticks_msec()
+	if not online and account_id != "" and not raid.world.safe_zone:
+		# Ended while they were away (a body left by a dropped connection):
+		# they hear how when they sign in again.
+		_missed[account_id] = str(result.get("outcome", ""))
+		# A dead player is still in the world, about to drop back in.
+		if result.get("outcome", "") != "died":
+			_social_moved(peer, "lobby")
 	if account_id != "":
-		_actor_account.erase(actor)
 		# Nothing to settle where no gear was at risk (the arena).
-		if raid.world.gear_at_risk:
-			var settled: Dictionary = stash.settle(account_id, result)
+		if at_risk:
+			var settled: Dictionary = await stash.settle(account_id, result)
 			# Contracts this life finished, for the player's own report.
 			var paid: Dictionary = settled.get("contracts", {})
 			if not paid.get("finished", []).is_empty():
@@ -878,24 +974,10 @@ func _on_server_player_finished(actor: Actor, result: Dictionary) -> void:
 		# Everyone signed in to the account hears, including a player back in
 		# the lobby whose old body just finished its sign-out.
 		for other: int in _peer_account:
-			if _peer_account[other] == account_id and other in _api.get_peers():
+			if _peer_account[other] == account_id and _here(other):
 				_account.rpc_id(other, stash.snapshot(account_id))
-	if _peer_actor.get(peer) == actor:
-		# Free to drop in again, after a short wait if they died.
-		_peer_actor.erase(peer)
-		if _inputs.has(peer):
-			(_inputs[peer] as InputBuffer).rest()
-		if result.get("outcome", "") == "died":
-			_died_at[peer] = Time.get_ticks_msec()
-	if online:
+	if online and _api.multiplayer_peer != null and peer in _api.get_peers():
 		_run_finished.rpc_id(peer, result)
-	elif account_id != "" and not raid.world.safe_zone:
-		# Ended while they were away (a body left by a dropped connection):
-		# they hear how when they sign in again.
-		_missed[account_id] = str(result.get("outcome", ""))
-		# A dead player is still in the world, about to drop back in.
-		if result.get("outcome", "") != "died":
-			_social_moved(peer, "lobby")
 
 
 ## Banked loot goes straight into the account's stash.
@@ -903,9 +985,9 @@ func _on_server_player_banked(actor: Actor, items: Array) -> void:
 	var account_id: String = _actor_account.get(actor, "")
 	if account_id == "":
 		return
-	stash.bank(account_id, items)
 	var peer: int = _actor_peer.get(actor, 0)
-	if peer != 0 and peer in _api.get_peers():
+	await stash.bank(account_id, items)
+	if peer != 0 and _here(peer) and _peer_account[peer] == account_id:
 		_account.rpc_id(peer, stash.snapshot(account_id))
 
 
@@ -925,12 +1007,22 @@ func _on_server_sign_out_changed(actor: Actor, seconds_left: float) -> void:
 
 
 func _send_account(peer: int) -> void:
-	_account.rpc_id(peer, stash.snapshot(_peer_account[peer]))
+	if _here(peer):
+		_account.rpc_id(peer, stash.snapshot(_peer_account[peer]))
+
+
+## Server: answers a lobby request: why it was refused, if it was, and the
+## account as it now stands.
+func _lobby_answer(peer: int, result: Dictionary) -> void:
+	if not _here(peer):
+		return
+	if not result.get("ok", false):
+		_lobby_error.rpc_id(peer, str(result.get("error", "That did not work.")))
+	_send_account(peer)
 
 
 func _send_clans(peer: int) -> void:
-	_clan.rpc_id(peer, clans.snapshot(_peer_account[peer], func(account_id: String) -> String:
-		return str(stash.snapshot(account_id).get("name", "?"))))
+	_clan.rpc_id(peer, clans.snapshot(_peer_account[peer], stash.name_of))
 
 
 ## The clan hall: found a clan ("create", name, tag), join one ("join", clan
@@ -993,10 +1085,9 @@ func _request_equip(slot: String, item_id: String) -> void:
 	if not is_server or not _peer_account.has(peer):
 		return
 	var account_id: String = _peer_account[peer]
-	var result: Dictionary = stash.unequip(account_id, slot) if item_id == "" else stash.equip(account_id, slot, item_id)
-	if not result.ok:
-		_lobby_error.rpc_id(peer, result.error)
-	_send_account(peer)
+	var result: Dictionary = await stash.unequip(account_id, slot) if item_id == "" \
+			else await stash.equip(account_id, slot, item_id)
+	_lobby_answer(peer, result)
 
 
 ## Lobby: pick a mastery variant, or "" for stock.
@@ -1007,10 +1098,8 @@ func _request_pick(track: String, variant_id: String) -> void:
 	var peer := _api.get_remote_sender_id()
 	if not is_server or not _peer_account.has(peer):
 		return
-	var result: Dictionary = stash.pick_mastery(_peer_account[peer], track, variant_id)
-	if not result.ok:
-		_lobby_error.rpc_id(peer, result.error)
-	_send_account(peer)
+	var result: Dictionary = await stash.pick_mastery(_peer_account[peer], track, variant_id)
+	_lobby_answer(peer, result)
 
 
 ## Lobby: buy one item from a hub shop. The server sets the price.
@@ -1021,10 +1110,8 @@ func _request_buy(shop_id: String, item_id: String) -> void:
 	var peer := _api.get_remote_sender_id()
 	if not is_server or not _peer_account.has(peer):
 		return
-	var result: Dictionary = stash.buy(_peer_account[peer], shop_id, item_id)
-	if not result.ok:
-		_lobby_error.rpc_id(peer, result.error)
-	_send_account(peer)
+	var result: Dictionary = await stash.buy(_peer_account[peer], shop_id, item_id)
+	_lobby_answer(peer, result)
 
 
 ## Lobby: the contract board. Take or drop a job, or reroll the offers. The
@@ -1036,10 +1123,8 @@ func _request_contract(action: String, job_id: String) -> void:
 	var peer := _api.get_remote_sender_id()
 	if not is_server or not _peer_account.has(peer):
 		return
-	var result: Dictionary = stash.contract(_peer_account[peer], action.left(16), job_id.left(32))
-	if not result.ok:
-		_lobby_error.rpc_id(peer, result.error)
-	_send_account(peer)
+	var result: Dictionary = await stash.contract(_peer_account[peer], action.left(16), job_id.left(32))
+	_lobby_answer(peer, result)
 
 
 ## Lobby: buy a home base upgrade. The server checks what it needs and sets
@@ -1051,10 +1136,8 @@ func _request_buy_upgrade(upgrade_id: String) -> void:
 	var peer := _api.get_remote_sender_id()
 	if not is_server or not _peer_account.has(peer):
 		return
-	var result: Dictionary = stash.buy_upgrade(_peer_account[peer], upgrade_id.left(64))
-	if not result.ok:
-		_lobby_error.rpc_id(peer, result.error)
-	_send_account(peer)
+	var result: Dictionary = await stash.buy_upgrade(_peer_account[peer], upgrade_id.left(64))
+	_lobby_answer(peer, result)
 
 
 ## The market kiosk: "view" opens the board (and keeps it fresh while
@@ -1081,6 +1164,12 @@ func _request_market(action: String, item_id: String, a: int, b: int) -> void:
 				result = {"ok": false, "error": "Trade at the market kiosk in the plaza."}
 			elif stash.is_deployed(account_id):
 				result = {"ok": false, "error": "Not while you are in the field."}
+			elif stash.is_remote():
+				# The board is the account service's: one request, sent once.
+				var asked: Dictionary = await stash.market(action, account_id, item_id.left(64), a, b)
+				result = asked.result if asked.get("ok", false) else asked
+				if not _here(peer):
+					return
 			elif action == "list":
 				result = market.list(stash, account_id, item_id.left(64), a, b)
 			elif action == "buy":
@@ -1096,19 +1185,25 @@ func _request_market(action: String, item_id: String, a: int, b: int) -> void:
 		# The seller is paid wherever they are on this server.
 		if result.ok and action == "buy":
 			_resend_account(str(result.seller))
-		# Everyone with the kiosk open sees the board change.
-		for viewer in _market_viewers:
-			if viewer != peer:
-				_send_market(viewer)
+		# Everyone with the kiosk open sees the board change (the account
+		# service says so itself, to every server).
+		if not stash.is_remote():
+			for viewer in _market_viewers:
+				if viewer != peer:
+					_send_market(viewer)
 	_send_market(peer)
 
 
 func _send_market(peer: int) -> void:
 	if not _peer_account.has(peer):
 		return
+	if stash.is_remote():
+		var board: Dictionary = await stash.board(_peer_account[peer])
+		if not board.is_empty() and _here(peer):
+			_market.rpc_id(peer, board)
+		return
 	market.expire(stash)
-	_market.rpc_id(peer, market.snapshot(_peer_account[peer], func(account_id: String) -> String:
-		return str(stash.snapshot(account_id).get("name", "?"))))
+	_market.rpc_id(peer, market.snapshot(_peer_account[peer], stash.name_of))
 
 
 ## Server: sends a fresh account snapshot to whoever is signed in as
@@ -1129,10 +1224,8 @@ func _request_craft(item_id: String) -> void:
 	var peer := _api.get_remote_sender_id()
 	if not is_server or not _peer_account.has(peer):
 		return
-	var result: Dictionary = stash.craft(_peer_account[peer], item_id.left(64))
-	if not result.ok:
-		_lobby_error.rpc_id(peer, result.error)
-	_send_account(peer)
+	var result: Dictionary = await stash.craft(_peer_account[peer], item_id.left(64))
+	_lobby_answer(peer, result)
 
 
 ## Lobby: sell stash items for scrip. An empty `item_id` sells all loot.
@@ -1143,10 +1236,8 @@ func _request_sell(item_id: String, count: int) -> void:
 	var peer := _api.get_remote_sender_id()
 	if not is_server or not _peer_account.has(peer):
 		return
-	var result: Dictionary = stash.sell(_peer_account[peer], item_id, count)
-	if not result.ok:
-		_lobby_error.rpc_id(peer, result.error)
-	_send_account(peer)
+	var result: Dictionary = await stash.sell(_peer_account[peer], item_id, count)
+	_lobby_answer(peer, result)
 
 
 ## Lobby: how the player's character looks. Looks are cosmetic, so this is
@@ -1244,7 +1335,18 @@ func _request_join(drop := "") -> void:
 	# In a safe zone the loadout is worn, not risked: it never leaves the
 	# stash, and there is no run to settle afterwards.
 	var safe := raid.world.safe_zone
-	var deployed: Dictionary = stash.showcase(account_id, raid.world) if safe else stash.deploy(account_id, raid.world)
+	if _deploying.has(peer):
+		return
+	_deploying[peer] = true
+	var into := raid.world
+	var deployed: Dictionary = stash.showcase(account_id, into) if safe else await stash.deploy(account_id, into)
+	_deploying.erase(peer)
+	if raid == null or raid.world != into or not _here(peer) or _peer_account[peer] != account_id \
+			or _peer_actor.has(peer):
+		# Gone while the accounts were asked for the kit: it goes back.
+		if deployed.get("ok", false) and not safe and into.gear_at_risk and is_instance_valid(stash):
+			stash.cancel_deploy(account_id)
+		return
 	if not deployed.ok:
 		_lobby_error.rpc_id(peer, deployed.error)
 		return
@@ -1704,14 +1806,7 @@ func join(address: String, port := DEFAULT_PORT) -> Error:
 	_api.peer_authenticating.connect(func(id: int) -> void:
 		if id != 1:
 			return
-		var hello := {"protocol": PROTOCOL}
-		if _join_mode == "probe":
-			hello["probe"] = true
-		elif _join_mode != "plain":
-			# The secret only ever goes over an encrypted connection.
-			hello["name"] = player_name
-			hello["secret"] = secret
-		_api.send_auth(1, var_to_bytes(hello)))
+		_api.send_auth(1, var_to_bytes(_hello())))
 	_api.peer_authentication_failed.connect(func(id: int) -> void:
 		if id == 1:
 			# Dropped without an answer: most likely a server from before
@@ -1720,6 +1815,21 @@ func join(address: String, port := DEFAULT_PORT) -> Error:
 	_api.connection_failed.connect(_on_connection_failed)
 	_api.server_disconnected.connect(_on_server_disconnected)
 	return _open_connection()
+
+
+## Client: what this game says to sign in (see `_server_auth`).
+func _hello() -> Dictionary:
+	var hello := {"protocol": PROTOCOL}
+	if _join_mode == "probe":
+		hello["probe"] = true
+	elif _join_mode != "plain":
+		# The secret and the token only ever go over an encrypted connection.
+		hello["name"] = player_name
+		if ticket != "":
+			hello["token"] = ticket
+		else:
+			hello["secret"] = secret
+	return hello
 
 
 ## Client: opens the next connection `join` tries (`_join_modes`).
@@ -1785,10 +1895,17 @@ func _client_auth(id: int, data: PackedByteArray) -> void:
 				if outdated == "client" else
 				"This server runs an older version of the game. Its host needs to update it to the latest build.")
 		return
+	if not answer.get("ok", false) and str(answer.get("again", "")) == "secret" and ticket != "":
+		# The token ran out: sign in with the secret, on this same connection.
+		ticket = ""
+		_api.send_auth(1, var_to_bytes(_hello()))
+		return
 	if not answer.get("ok", false):
 		refused = true
 		_give_up(str(answer.get("error", "The server refused.")).left(200))
 		return
+	if answer.has("token"):
+		ticket = str(answer.token).left(256)
 	var p_world_id := str(answer.get("world", ""))
 	if world_for(p_world_id) == null:
 		refused = true
@@ -3061,7 +3178,7 @@ func _is_connected() -> bool:
 ## Server: a peer finished signing in.
 func _social_joined(peer: int) -> void:
 	var account_id: String = _peer_account[peer]
-	social.player_online(account_id, stash.snapshot(account_id).get("name", account_id), "lobby")
+	social.player_online(account_id, stash.name_of(account_id), "lobby")
 	_broadcast_social()
 
 
@@ -3197,7 +3314,9 @@ func _request_answer_invite(invite_id: int, accept: bool) -> void:
 		return
 	if invite.kind == "base":
 		# A base is a view of the owner's gear and upgrades, so send just that.
-		var owner := stash.snapshot(invite.from)
+		var owner: Dictionary = await stash.fetch(invite.from)
+		if not _here(peer):
+			return
 		_base_visit.rpc_id(peer, invite.from_name, owner.get("stash", []), owner.get("loadout", {}),
 				owner.get("base_upgrades", []))
 	else:
