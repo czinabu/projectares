@@ -10,6 +10,10 @@ extends Node
 ##
 ## Ghosts are kept per track and machine in `GHOST_PATH`, written only while
 ## `Profile.persist` is on; solo, the board starts with the bests they hold.
+##
+## With several tracks each gantry, arch and board carries the meta "track"
+## (a track id; none means the first track), and only the run's own track's
+## gantry and arches answer it.
 
 const GHOST_PATH := "user://race_ghosts.json"
 ## Seconds a split stays on an arch.
@@ -28,8 +32,9 @@ var ghost_on := true
 
 var _lights: Array[MeshInstance3D] = []
 var _light_mats: Array[StandardMaterial3D] = []
-var _splits := {}       # gate index -> Label3D
-var _split_left := {}   # gate index -> seconds still shown
+var _light_tracks: Array[String] = []
+var _splits := {}       # "track:gate" -> Label3D
+var _split_left := {}   # "track:gate" -> seconds still shown
 var _boards: Array[Label3D] = []
 ## Track id -> machine id -> RaceGhost, the best laps on disk.
 var _ghosts := {}
@@ -57,12 +62,13 @@ func _ready() -> void:
 		elif node.is_in_group("race_gate"):
 			var label := node.get_node_or_null("Split") as Label3D
 			if label != null:
-				_splits[int(node.get_meta("gate", 0))] = label
+				_splits[_key(_track_of(node), int(node.get_meta("gate", 0)))] = label
 		elif node.is_in_group("race_board") and node is Label3D:
 			_boards.append(node)
 	_lights.sort_custom(func(a: MeshInstance3D, b: MeshInstance3D) -> bool:
 		return int(a.get_meta("index", 0)) < int(b.get_meta("index", 0)))
 	for light in _lights:
+		_light_tracks.append(_track_of(light))
 		# Each light gets a material of its own to light.
 		var mat: StandardMaterial3D = light.mesh.material.duplicate() if light.mesh.material is StandardMaterial3D \
 				else StandardMaterial3D.new()
@@ -78,12 +84,26 @@ func _ready() -> void:
 	_draw_board()
 
 
+## The track a gantry light, arch or board belongs to.
+func _track_of(node: Node) -> String:
+	return str(node.get_meta("track", race.track.id))
+
+
+static func _key(track_id: String, gate: int) -> String:
+	return "%s:%d" % [track_id, gate]
+
+
+## The track the local racer's run is on (the first track with none).
+func _run_track(view: Dictionary) -> String:
+	return str(view.get("track", race.track.id))
+
+
 func _process(delta: float) -> void:
 	if race == null or race.track == null:
 		return
 	var view := race.view_run()
 	_update_lights(view, delta)
-	for g: int in _split_left.keys():
+	for g: String in _split_left.keys():
 		_split_left[g] -= delta
 		if _split_left[g] <= 0.0:
 			_split_left.erase(g)
@@ -102,14 +122,17 @@ func _update_lights(view: Dictionary, delta: float) -> void:
 	if phase == "racing" and _was_phase == "grid":
 		_go_flash = 1.2
 	_go_flash = maxf(_go_flash - delta, 0.0)
+	var on := _run_track(view)
 	for k in _light_mats.size():
 		var mat := _light_mats[k]
 		var color := LIGHT_OFF
 		var energy := 0.2
-		if _go_flash > 0.0:
+		var index := int(_lights[k].get_meta("index", 0))
+		var mine := _light_tracks[k] == on
+		if mine and _go_flash > 0.0:
 			color = LIGHT_GO
 			energy = 4.0
-		elif k < lit:
+		elif mine and index < lit:
 			color = LIGHT_ON
 			energy = 5.0
 		mat.albedo_color = color
@@ -123,8 +146,8 @@ func _on_run_changed(actor: Actor) -> void:
 	if actor != race.player:
 		return
 	var view := race.view_run()
-	var gate := int(view.get("last_gate", -1))
-	if gate <= 0 or not _splits.has(gate) or str(view.get("phase", "")) != "racing":
+	var gate := _key(_run_track(view), int(view.get("last_gate", -1)))
+	if int(view.get("last_gate", -1)) <= 0 or not _splits.has(gate) or str(view.get("phase", "")) != "racing":
 		return
 	var delta := float(view.get("last_delta", NAN))
 	var label: Label3D = _splits[gate]
@@ -143,15 +166,20 @@ func _split_time(view: Dictionary) -> float:
 
 
 func _draw_board() -> void:
+	for board in _boards:
+		board.text = board_text(race.board_for(_track_of(board)))
+
+
+## A board's rows as its screen shows them.
+static func board_text(rows: Array[Dictionary]) -> String:
 	var text := ""
-	if race.board.is_empty():
+	if rows.is_empty():
 		text = "No times yet\nTake a machine from the pit bays"
-	for i in race.board.size():
-		var row: Dictionary = race.board[i]
+	for i in rows.size():
+		var row: Dictionary = rows[i]
 		text += "%d   %-14s %-8s %s\n" % [i + 1, str(row.name).left(14), _machine_tag(str(row.machine)),
 				Race.format_time(float(row.time))]
-	for board in _boards:
-		board.text = text.strip_edges(false, true)
+	return text.strip_edges(false, true)
 
 
 static func _machine_tag(id: String) -> String:
@@ -191,23 +219,24 @@ func _on_lap_finished(actor: Actor, lap_time: float, counted: bool) -> void:
 	if not counted or ghost.samples() < 10:
 		return
 	ghost.lap_time = lap_time
-	var best := ghost_for(ghost.machine)
+	var on := _run_track(race.view_run())
+	var best := ghost_for(ghost.machine, on)
 	if best != null and best.lap_time <= lap_time:
 		return
-	if not _ghosts.has(race.track.id):
-		_ghosts[race.track.id] = {}
-	_ghosts[race.track.id][ghost.machine] = ghost
+	if not _ghosts.has(on):
+		_ghosts[on] = {}
+	_ghosts[on][ghost.machine] = ghost
 	_save_ghosts()
 
 
-## The best lap kept for `machine` on this track, or null.
-func ghost_for(machine: String) -> RaceGhost:
-	return _ghosts.get(race.track.id, {}).get(machine)
+## The best lap kept for `machine` on a track (the first with none), or null.
+func ghost_for(machine: String, track_id := "") -> RaceGhost:
+	return _ghosts.get(track_id if track_id != "" else race.track.id, {}).get(machine)
 
 
 func _update_ghost(view: Dictionary) -> void:
 	var machine := str(view.get("machine", ""))
-	var ghost := ghost_for(machine) if ghost_on and str(view.get("phase", "")) == "racing" else null
+	var ghost := ghost_for(machine, _run_track(view)) if ghost_on and str(view.get("phase", "")) == "racing" else null
 	if ghost == null:
 		if _ghost_node != null:
 			_ghost_node.visible = false
@@ -263,10 +292,11 @@ static func build_ghost(machine: String) -> Node3D:
 
 func _seed_board() -> void:
 	var name := race.player.display_name if race.player != null and is_instance_valid(race.player) else "You"
-	for machine: String in _ghosts.get(race.track.id, {}):
-		var ghost: RaceGhost = _ghosts[race.track.id][machine]
-		if ghost.lap_time > 0.0:
-			race.add_record(name, machine, ghost.lap_time)
+	for t in race.circuits:
+		for machine: String in _ghosts.get(t.id, {}):
+			var ghost: RaceGhost = _ghosts[t.id][machine]
+			if ghost.lap_time > 0.0:
+				race.add_record(name, machine, ghost.lap_time, "", t.id)
 
 
 func _load_ghosts() -> void:

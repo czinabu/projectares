@@ -1752,7 +1752,11 @@ without Caleb, and update the gap list when a PR closes a row.
 - The race world (`worlds/meridian`, DESIGN.md section 9) is run by `Race`
   (`core/race/race.gd`, a `Raid` subclass from `WorldDef.new_raid`), on a
   map that offers `race_track()` (a `RaceTrack`: the centre line, gates,
-  start slots, `keep_to` lines). Nothing is at stake there:
+  start slots, `keep_to` lines; a map with several offers `race_tracks()`
+  too, read into `Race.circuits`, and a run is on the one nearest the
+  machine got on, `Race.track_near`, with its own grid and gates; each
+  board row carries its "track", and a second track's gantry, arches and
+  board carry the meta "track"). Nothing is at stake there:
   `WorldDef.gear_at_risk` off clears every result's loot and kit lists
   (`Raid._finish_player`) and `Profile.checkout_loadout` takes nothing,
   `weapons_free` off locks weapons and makes `can_damage` refuse, and
@@ -1763,7 +1767,12 @@ without Caleb, and update the gap list when a PR closes a row.
   `Vehicle.held`, gates by `RaceTrack.cross`, laps, the off-track rule, the
   board); a client gets its own run (`NetSession._race_run`,
   `Race.remote_run`) and the board, holds its machine for the lights from
-  that, and asks with `NetSession.race_request`. The lights, splits, board
+  that, and asks with `NetSession.race_request`. Where a road runs over
+  another (Skyhook), `RaceTrack.locate`'s full search counts height and a
+  gate is passed only within `GATE_HEIGHT` of it. The stands, crowd
+  (`Crowd`, `assets/shaders/crowd.gdshader`) and skyline are decoration
+  (`worlds/meridian/stands.gd`, `skyline.gd`), merged into one mesh per
+  material. The lights, splits, board
   text and ghosts are `RaceView`, a view (ghosts on disk in
   `RaceView.GHOST_PATH` only while `Profile.persist`). In a race world the
   watch's contract icon is the race icon (`Hud.race_slot`, `glyph`).

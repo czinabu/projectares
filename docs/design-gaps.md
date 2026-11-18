@@ -150,11 +150,12 @@ rows marked **pre-playtest** come before the friends playtest.
 | Item | State | Notes |
 | --- | --- | --- |
 | Race world with a Street circuit and time trials | Built | Meridian (`worlds/meridian`), run by `Race` (`core/race/`): the Coilrun circuit, pit bays of stock Scrapper and Raider machines on race profiles, a grid with five lights, checkpoint arches with splits, a lap that leaves the track not counted, a reset out of the Spillway channel, the pit board, best-lap ghosts saved per machine, the race icon on the watch and the lap on the visor. Solo and online. |
-| Time-trial bench (3% class rule) | Built | `tests/race_bench.tscn`; Street is Scrapper +1.05%, Raider −1.05% of the class average on Coilrun. |
+| Time-trial bench (3% class rule) | Built | `tests/race_bench.tscn`, every track; Street is Scrapper +1.05%, Raider −1.05% of the class average on Coilrun, and Scrapper −2.27%, Raider +2.27% on Skyhook. |
+| A second track and the race world's spectacle | Built | Skyhook (`worlds/meridian/skyhook.gd`), an elevated figure of eight with a Flyover and the Corkscrew, its own pits, grid and board (`Race.circuits`, `track_near`). Stands, crowds (`Crowd`), barges, race control's tower and big screen, mesas, the launch-works skyline, searchlights and camera drones (`stands.gd`, `skyline.gd`), decoration only. |
 | Live races: several racers on one grid, positions on the watch | Missing | Next step for the race world. |
 | Ranked races with scrip and cosmetic rewards | Missing | Stock machines only. With live races. |
 | Rough ground that slows wheels (the Capacitor Yard's inside line) | Missing | The rubble there is only scattered dressing for now. |
-| More race classes (rovers, mechs) and more tracks | Missing | |
+| More race classes (rovers, mechs) and more tracks | Partly | Skyhook is the second Street track. Missing: rover and mech classes and their tracks. |
 | Racing mode: mixed bike-and-flight races, sky ring races, our own hazards and secrets | Missing | A later mode, after the friends playtest (DESIGN.md section 9). |
 
 ## Economy
