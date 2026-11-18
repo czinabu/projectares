@@ -886,7 +886,13 @@ without Caleb, and update the gap list when a PR closes a row.
   `is_occupied`, never `rider` alone), and the "aircraft" tag flies
   it (`Vehicle._fly`: takes off past `takeoff_speed` with jump, never
   hovers, drops below `stall_speed` or with nobody at the stick, climbs no
-  higher than `ceiling` over the world's ground). Every vehicle, the jet
+  higher than `ceiling` over the world's ground). Jump is the handbrake
+  (`handbrake`, off for the mech and the jet, whose jump key is theirs):
+  at speed it is a drift (`Vehicle.drifting`, the same `slip` a hover
+  keeps, `drift_*` stats) whose clean exit on the throttle is a short
+  burst (`drift_charge`, `_drift_exit`), and a world's slick ground
+  (`WorldDef.surface_grip`, Frostline's snow and ice) lets wheels slide
+  on their own; a hover ignores it. Every vehicle, the jet
   included, can be thrown in every world (Caleb's call), except a race
   world (`WorldDef.vehicle_toys` off), which races its own stock machines. A vehicle's `watch_recharge` and `footprint` stats
   set the watch's wait after a throw and the room it needs to unpack.

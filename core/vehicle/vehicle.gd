@@ -109,6 +109,47 @@ var hover_height := 0.45
 ## Radians the course trails the heading (positive: the course is to the left).
 var slip := 0.0
 
+# The handbrake (`handbrake`: wheels and the hoverbike). Held
+# on the jump key (`ActorCommand.jump`) at speed, it locks the back end: the
+# throttle stops pushing, the speed bleeds off at `handbrake_decel`, the nose
+# swings round `drift_turn` times faster and the course trails it like a
+# hover's (`slip`), held only by `drift_grip`, so the machine slides round a
+# corner nose first. A drift held at `drift_min_slip` or wider builds a
+# charge over `drift_build` seconds; let go of it on the throttle, without
+# hitting anything, and the charge is a burst of up to `drift_boost` m/s,
+# delivered over `drift_boost_time` (a clean exit). All of it is simulated
+# from the command, so it predicts and replicates like the rest of the ride.
+## True for a machine with a handbrake. Every wheeled machine and the
+## hoverbike have one; the walker (whose jump key is its jump-jets) and the
+## jet (whose jump key climbs) set it off in their stats.
+var handbrake := true
+var handbrake_decel := 5.0
+var drift_turn := 1.6
+var drift_grip := 2.5
+var drift_max_slip := 0.85
+## Below this speed (forward, m/s) the handbrake only brakes.
+var drift_min_speed := 8.0
+var drift_min_slip := 0.2
+var drift_build := 0.8
+var drift_boost := 4.0
+var drift_boost_time := 0.3
+## Share of speed a slide scrubs off a second, times the sine of its slip.
+var slide_scrub := 0.25
+## How fast a wheeled machine's course grips back onto its heading, per
+## second, once its wheels break loose (let go of the handbrake, or on a
+## slick surface, see `_surface_grip`).
+var tyre_grip := 7.0
+## True while the handbrake holds a drift this tick.
+var drifting := false
+## Seconds of clean drift banked toward the exit boost (0 to `drift_build`).
+var drift_charge := 0.0
+## m/s of exit boost still to be delivered.
+var _boost_left := 0.0
+## The world this vehicle is in, for its surface (`WorldDef.surface_grip`).
+var _world: WorldDef
+## Seconds to the next puff of tyre smoke or spray (view only).
+var _puff_wait := 0.0
+
 # A pillion seat behind the rider (`passenger_seat`). Its anchors work like
 # the rider's (`seat_offset`, `seat_point`, `grip_points`, `peg_points`,
 # `rider_lean`, `exit_offset`); the passenger only sits, and may shoot.
@@ -685,6 +726,22 @@ func _process(delta: float) -> void:
 		_animate_legs(delta)
 	if hovers and _model != null:
 		_animate_hover(delta)
+	_puff_slide(delta)
+
+
+## Tyre smoke off the back wheels while they slide, or spray off a hover's
+## thrusters (view only, from `slip`, which every machine keeps, so a drift
+## looks the same from the saddle and from across the street).
+func _puff_slide(delta: float) -> void:
+	_puff_wait -= delta
+	if _puff_wait > 0.0 or absf(slip) < 0.15 or absf(speed) < 4.0 or not is_on_floor() or not is_inside_tree():
+		return
+	_puff_wait = 0.07
+	var back := body_size.z * 0.4 if model != "bike" and model != "hoverbike" else 0.75
+	var color := Color(0.75, 0.9, 1.0, 0.45) if hovers else Color(0.82, 0.8, 0.76, 0.55)
+	for side: float in [-1.0, 1.0]:
+		var at := global_position + Basis(Vector3.UP, heading) * Vector3(side * body_size.x * 0.4, 0.15, back)
+		Fx.puff(get_parent(), at, 0.35 + absf(slip) * 0.5, color)
 
 
 ## A hover bobs gently on its cushion and its thrusters burn brighter with
@@ -860,6 +917,7 @@ func _physics_process(delta: float) -> void:
 	var boosting := false
 	var lift := 0.0
 	var hop := false
+	var hand := false
 	_jump_wait = maxf(0.0, _jump_wait - delta)
 	if rider != null and (not is_instance_valid(rider) or rider.is_dead):
 		dismount()
@@ -882,12 +940,13 @@ func _physics_process(delta: float) -> void:
 			boosting = cmd.sprint and not held
 			lift = (1.0 if cmd.jump else 0.0) - (1.0 if cmd.descend else 0.0)
 			hop = cmd.jump_pressed
+			hand = handbrake and cmd.jump and not held
 
 	# A parked bike nobody rides, standing where its last move left it, has
 	# no move to make. A map has a dozen standing about, and the move is the
 	# dearest part of a tick. Anything that moves, turns or pushes it wakes it.
 	if rider == null and is_on_floor() and speed == 0.0 and velocity.is_zero_approx() and slip == 0.0 \
-			and global_position == _rest_at and heading == _rest_heading:
+			and _boost_left == 0.0 and global_position == _rest_at and heading == _rest_heading:
 		_update_visual(0.0, delta)
 		return
 	var on_floor := is_on_floor()
@@ -900,7 +959,7 @@ func _physics_process(delta: float) -> void:
 		_fly(throttle, steer, boosting, lift, delta)
 	else:
 		if on_floor:
-			_drive(throttle, steer, boosting, delta)
+			_drive(throttle, steer, boosting, hand, delta)
 			if hop and jump_speed > 0.0 and _jump_wait <= 0.0:
 				# Jump-jets: a hop that keeps the stride's speed.
 				velocity.y = jump_speed
@@ -931,9 +990,16 @@ func _physics_process(delta: float) -> void:
 	var forward := Basis(Vector3.UP, heading + slip) * Vector3.FORWARD
 	var horizontal := Vector3(velocity.x, 0.0, velocity.z)
 	if is_on_wall():
-		# Hitting something scrubs off the speed that went into it.
+		# Hitting something scrubs off the speed that went into it, and a
+		# drift that hits something is no clean exit.
 		var kept := horizontal.dot(forward)
 		speed = minf(speed, kept) if speed >= 0.0 else maxf(speed, kept)
+		drift_charge = 0.0
+		_boost_left = 0.0
+	if not is_on_floor():
+		# Off the ground the wheels hold nothing: no drift to carry on.
+		drifting = false
+		drift_charge = 0.0
 	if is_on_floor():
 		airborne_time = 0.0
 		if not on_floor:
@@ -952,6 +1018,9 @@ func _physics_process(delta: float) -> void:
 		# At rest: settle exactly, so the next tick can tell nothing changed.
 		speed = 0.0
 		slip = 0.0
+		drifting = false
+		drift_charge = 0.0
+		_boost_left = 0.0
 		velocity = Vector3.ZERO
 	_rest_at = global_position
 	_rest_heading = heading
@@ -1030,40 +1099,104 @@ func _hanging(on_floor: bool) -> bool:
 			and absf(speed) >= hang_min_speed
 
 
-func _drive(throttle: float, steer: float, boosting: bool, delta: float) -> void:
+func _drive(throttle: float, steer: float, boosting: bool, hand: bool, delta: float) -> void:
 	var top := (boost_speed if boosting else max_speed) * _laden(laden_speed)
-	var push := accel * _laden(laden_accel)
-	if throttle > 0.05:
-		var rate := brake_decel if speed < 0.0 else push
+	var surface := _surface_grip()
+	# A slick surface gives the wheels less to push and brake against.
+	var push := accel * _laden(laden_accel) * surface
+	var was_drifting := drifting
+	drifting = hand and speed >= drift_min_speed
+	if drifting:
+		# The back end is locked: the throttle does nothing and it bleeds off.
+		speed = move_toward(speed, 0.0, handbrake_decel * delta)
+	elif hand:
+		# Too slow to drift: the handbrake just brakes.
+		speed = move_toward(speed, 0.0, brake_decel * surface * delta)
+	elif throttle > 0.05:
+		var rate := brake_decel * surface if speed < 0.0 else push
 		speed = move_toward(speed, top * throttle, rate * delta)
 	elif throttle < -0.05:
 		if speed > 0.5:
-			speed = move_toward(speed, 0.0, brake_decel * delta)
+			speed = move_toward(speed, 0.0, brake_decel * surface * delta)
 		else:
 			speed = move_toward(speed, -reverse_speed, push * delta)
 	else:
-		speed = move_toward(speed, 0.0, coast_decel * delta)
+		speed = move_toward(speed, 0.0, coast_decel * surface * delta)
+	_drift_exit(was_drifting, throttle, top, delta)
 
 	var turn_factor := clampf(absf(speed) / full_turn_speed, 0.0, 1.0)
 	var rate := turn_rate * _laden(laden_turn) * turn_factor
 	var way := -1.0 if speed < -0.5 else 1.0
+	if drifting:
+		rate *= drift_turn
 	if pivot_turn > rate:
 		# A walker turns on the spot (a hover too, slowly).
 		rate = pivot_turn
 	var turn := -steer * rate * way * delta
 	heading += turn
-	if hovers:
-		# The course keeps going the old way and swings round after the nose:
-		# a drift, which grip closes and which scrubs a little speed.
-		slip = clampf(slip - turn, -max_slip, max_slip) * exp(-grip * delta)
+	# The course keeps going the old way and swings round after the nose: a
+	# hover always does (a drift through every turn), wheels only where they
+	# break loose, under the handbrake or on a slick surface.
+	var loose := 1.0 if hovers else 1.0 - surface
+	var hold := grip if hovers else tyre_grip * surface
+	var limit := max_slip
+	if drifting:
+		loose = 1.0
+		hold = drift_grip
+		limit = drift_max_slip
+	if loose > 0.0 or slip != 0.0:
+		# The limit only stops a slide opening further, never snaps one shut.
+		limit = maxf(limit, absf(slip))
+		slip = clampf(slip - turn * loose, -limit, limit) * exp(-hold * delta)
 		if absf(slip) < 0.0005:
 			slip = 0.0
-		speed -= speed * absf(sin(slip)) * 0.25 * delta
+		speed -= speed * absf(sin(slip)) * slide_scrub * delta
 	var forward := Basis(Vector3.UP, heading + slip) * Vector3.FORWARD
 	# Follow the ground: up a ramp the bike gains upward speed, which is what
 	# launches it off the top.
 	var along := forward.slide(get_floor_normal()).normalized()
 	velocity = along * speed
+
+
+## The drift's charge and its exit boost. A drift held wide banks charge;
+## letting go on the throttle turns it into a burst, eased in over
+## `drift_boost_time` and never past `boost_speed`. Braking cancels it.
+func _drift_exit(was_drifting: bool, throttle: float, top: float, delta: float) -> void:
+	if drifting:
+		_boost_left = 0.0
+		if absf(slip) >= drift_min_slip:
+			drift_charge = minf(drift_charge + delta, drift_build)
+	elif was_drifting:
+		if throttle > 0.05 and drift_charge >= drift_build * 0.25:
+			_boost_left = drift_boost * drift_charge / maxf(drift_build, 0.01)
+			Sfx.play("dash", global_position, -4.0)
+		drift_charge = 0.0
+	if _boost_left <= 0.0:
+		return
+	if throttle < -0.05:
+		_boost_left = 0.0
+		return
+	var step := minf(_boost_left, drift_boost / maxf(drift_boost_time, 0.01) * delta)
+	_boost_left -= step
+	var cap := maxf(boost_speed * _laden(laden_speed), top)
+	if speed < cap:
+		speed = minf(speed + step, cap)
+	if _boost_left < 0.0005:
+		_boost_left = 0.0
+
+
+## How much grip the ground under the wheels gives, 1 on dry ground, less on
+## snow and ice (`WorldDef.surface_grip`). A hover rides a cushion, so it is
+## the same everywhere.
+func _surface_grip() -> float:
+	if hovers:
+		return 1.0
+	if _world == null:
+		var raid := Raid.of(self)
+		if raid == null or raid.world == null:
+			return 1.0
+		_world = raid.world
+	return clampf(_world.surface_grip(global_position), 0.2, 1.0)
 
 
 func _place_rider() -> void:
