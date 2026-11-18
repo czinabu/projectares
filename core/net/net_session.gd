@@ -85,7 +85,7 @@ signal base_visit_requested(owner_name: String, stash: Array, loadout: Dictionar
 signal portal_travel(destination: String)
 
 const DEFAULT_PORT := 24565
-const PROTOCOL := 37
+const PROTOCOL := 38
 ## Every packet is compressed, both ways. State updates are mostly repeated
 ## numbers, and a big battle sends a player hundreds of them a second. Server
 ## and client must agree, so a change here needs a new PROTOCOL.
@@ -104,6 +104,8 @@ const PROTOCOL := 37
 ## sign-in answer carries its certificate.
 ## 36: reconnecting to your body after a drop (`_back`, `_rearm`), and a
 ## connection let go for a newer sign-in is told so (`_replaced`).
+## 38: the cold: body heat goes to its owner (`_body_heat`) and actor state
+## carries the shivering bit.
 ## Where an out-of-date game gets the latest build: the rolling "latest"
 ## release the Windows client workflow publishes (docs/hosting.md).
 const UPDATE_URL := "https://github.com/czinabu/projectares/releases/tag/latest"
@@ -317,6 +319,7 @@ var _board_dirty := false
 var _sent_standing := {} # actor id -> public renown standing last sent (server)
 var _sent_war := -1.0    # war intensity last sent (server)
 var _sent_points := {}   # peer id -> strongpoint states last sent to them (server)
+var _sent_heat := {}     # peer id -> [body heat, warming] last sent to them (server)
 var _tick := 0
 var _sent_status := {}   # world status last sent (server)
 var _limits := RequestLimits.new() # how many requests each player may still make (server)
@@ -544,6 +547,7 @@ func _clear_tables() -> void:
 	_sent_standing.clear()
 	_sent_war = -1.0
 	_sent_points.clear()
+	_sent_heat.clear()
 	_actor_account.clear()
 	_board_sent.clear()
 
@@ -1400,6 +1404,7 @@ func _send_world(peer: int) -> void:
 	for portal in raid.portals:
 		_send_portal(peer, portal)
 	_sent_points.erase(peer)
+	_sent_heat.erase(peer)
 	if raid is Race:
 		_race_board.rpc_id(peer, (raid as Race).public_board())
 
@@ -1700,6 +1705,18 @@ func _server_late_tick(_delta: float) -> void:
 		_sent_war = raid.war.intensity
 		for peer in _joined_peers:
 			_war.rpc_id(peer, raid.war.intensity, raid.war.centre)
+	# Body heat moves slowly too: its owner hears it a few times a second.
+	if _tick % 15 == 0 and raid.world.cold > 0.0:
+		for state in raid.players:
+			if not is_instance_valid(state.actor):
+				continue
+			var peer := _owner_peer(state.actor)
+			if peer == 0 or peer not in _joined_peers:
+				continue
+			var heat := [snappedf(state.actor.body_heat, 0.1), state.actor.warming]
+			if _sent_heat.get(peer, []) != heat:
+				_sent_heat[peer] = heat
+				_body_heat.rpc_id(peer, heat[0], heat[1])
 	# Strongpoints: each player hears who holds what, and which are theirs.
 	if _tick % 10 == 0 and not raid.strongpoints.is_empty():
 		for peer in _joined_peers:
@@ -1785,7 +1802,8 @@ func _state_entry(id: int, tier: int) -> Array:
 	cmd[ActorCommand.FLAGS_INDEX] = (int(cmd[ActorCommand.FLAGS_INDEX]) & ActorCommand.HELD_MASK) \
 			| int(_one_shots[tier].get(id, 0)) | (ActorCommand.STATE_HOVERING if actor.flight.is_hovering else 0) \
 			| (ActorCommand.STATE_SHELTERED if actor.weapons_locked else 0) \
-			| (ActorCommand.STATE_SIGN_OUT_BEACON if actor.sign_out_beacon else 0)
+			| (ActorCommand.STATE_SIGN_OUT_BEACON if actor.sign_out_beacon else 0) \
+			| (ActorCommand.STATE_CHILLED if actor.shivering else 0)
 	cmd[ActorCommand.SWITCH_INDEX] = _switches[tier].get(id, -1)
 	return [id, actor.global_position, actor.velocity, cmd, actor.health.health,
 			actor.health.armor, actor.stagger_left, _dead_kind.get(id, ""), _applied_seq.get(id, 0)]
@@ -2927,6 +2945,17 @@ func _tally(counts: Dictionary) -> void:
 	me.tally = clean
 
 
+## Your body heat and whether you stand in warmth, for the visor and the
+## watch. Only the owner hears it; everyone else only sees the shivering.
+@rpc("authority", "call_remote", "unreliable_ordered")
+func _body_heat(heat: float, warming: bool) -> void:
+	var me: Actor = _actors.get(my_actor_id)
+	if me == null:
+		return
+	me.body_heat = clampf(heat, 0.0, me.max_body_heat)
+	me.warming = warming
+
+
 ## What this life has sent home through depots, for the watch.
 @rpc("authority", "call_remote", "reliable")
 func _banked(count: int, value: int, scrip: int) -> void:
@@ -3075,6 +3104,9 @@ func _apply_state(actor: Actor, entry: Array, mine: bool) -> void:
 	if not raid.world.safe_zone and raid.world.weapons_free:
 		actor.weapons_locked = typeof(entry[3]) == TYPE_ARRAY and entry[3].size() == ActorCommand.ARRAY_SIZE \
 				and int(ActorCommand._number(entry[3][ActorCommand.FLAGS_INDEX])) & ActorCommand.STATE_SHELTERED != 0
+	# So is the cold (`Raid._tick_cold`): everyone sees who shivers.
+	actor.shivering = typeof(entry[3]) == TYPE_ARRAY and entry[3].size() == ActorCommand.ARRAY_SIZE \
+			and int(ActorCommand._number(entry[3][ActorCommand.FLAGS_INDEX])) & ActorCommand.STATE_CHILLED != 0
 	var id: int = entry[0]
 	if actor.vehicle != null:
 		# A rider goes where their vehicle goes.

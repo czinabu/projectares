@@ -191,6 +191,10 @@ var outposts: Array[Node3D] = []
 static var zone_rules := true
 var _bosses: Array[Dictionary] = []
 var _hazard_in := 0.0
+## The map's warmth (heaters, vents; Marker3D in group "warmth") and the
+## clock for the cold's once-a-second hurt.
+var warmth: Array[Node3D] = []
+var _cold_in := 1.0
 ## When false, the raid reports results but leaves the stash alone, so a server
 ## never writes to a profile that is not the player's.
 var apply_to_profile := true
@@ -320,6 +324,7 @@ func _setup(p_world: WorldDef, p_seed: int) -> void:
 			point.hold("faction:" + faction, marker.get_meta("holder_name", faction.capitalize()), false)
 		strongpoints.append(point)
 	outposts = _map_nodes("outpost")
+	warmth = _map_nodes("warmth")
 	_assault_in = world.assault_interval
 	_event_in = world.event_interval
 	_raider_in = world.raider_gap
@@ -353,6 +358,7 @@ func _physics_process(delta: float) -> void:
 		return
 	_tick_outposts()
 	_tick_hazards(delta)
+	_tick_cold(delta)
 	_tick_bosses(delta)
 	_tick_strongpoints(delta)
 	_tick_events(delta)
@@ -1606,6 +1612,58 @@ func _tick_hazards(delta: float) -> void:
 		Combat.deal(actor, info)
 
 
+## The cold (`WorldDef.cold`): out in the open a player's body heat drains
+## by `cold_at` a second, and warmth (a heater or vent, `warmth_at`) fills
+## it again. Once it is gone the cold hurts, once a second, through
+## `Combat.deal`. Authority only: the owner's game is sent the number and
+## everyone else whether they shiver (`Actor.shivering`).
+func _tick_cold(delta: float) -> void:
+	if world.cold <= 0.0 or not zone_rules:
+		return
+	_cold_in -= delta
+	var hurt := _cold_in <= 0.0
+	if hurt:
+		_cold_in = 1.0
+	for state in players:
+		var actor := state.actor
+		if state.finished or not is_instance_valid(actor) or actor.is_dead:
+			continue
+		var warm := warmth_at(actor)
+		actor.warming = warm > 0.0
+		var change := warm if actor.warming else -world.cold_at(actor.global_position)
+		actor.body_heat = clampf(actor.body_heat + change * delta, 0.0, actor.max_body_heat)
+		actor.shivering = actor.body_heat < actor.max_body_heat * Actor.CHILL_SHARE
+		if hurt and actor.body_heat <= 0.0:
+			var info := DamageInfo.new()
+			info.amount = world.cold_damage
+			info.kind = "cold"
+			info.position = actor.global_position
+			info.armor_pierce = 1.0
+			Combat.deal(actor, info)
+
+
+## Body heat a second that warmth gives back to someone where they stand: the
+## warmest heater or vent in reach, or a running engine they ride or stand
+## beside. 0 out in the open.
+func warmth_at(actor: Actor) -> float:
+	var at := actor.global_position
+	var best := 0.0
+	for source in warmth:
+		var off := at - source.global_position
+		var radius := float(source.get_meta("radius", 4.0))
+		if absf(off.y) < 3.0 and Vector2(off.x, off.z).length_squared() <= radius * radius:
+			best = maxf(best, float(source.get_meta("warmth", 6.0)))
+	if world.engine_warmth > best:
+		if actor.vehicle != null:
+			return world.engine_warmth
+		var reach := world.engine_warmth_radius * world.engine_warmth_radius
+		for vehicle in vehicles:
+			if is_instance_valid(vehicle) and vehicle.call("is_occupied") \
+					and vehicle.global_position.distance_squared_to(at) <= reach:
+				return world.engine_warmth
+	return best
+
+
 ## The risk zone someone is in as the watch says it: the tier's name, or the
 ## outpost sheltering them. Works on clients (from the lock the server sent).
 func zone_label(actor: Actor) -> String:
@@ -1619,6 +1677,8 @@ func zone_label(actor: Actor) -> String:
 	var label := world.zone_name(tier)
 	if label != "" and world.hazard_at(actor.global_position) > 0.0:
 		label += " · burning"
+	elif label != "" and world.cold > 0.0 and actor.warming:
+		label += " · warm"
 	return label
 
 

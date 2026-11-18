@@ -61,6 +61,20 @@ without Caleb, and update the gap list when a PR closes a row.
   `NetSession._owner_peer(actor)`, never a peer id kept from the deploy,
   because a body outlives the connection that deployed it.
 - Drop-in protection is `Actor.protected_left`, checked in `Combat.deal`.
+- The cold (DESIGN.md "Frostline"): a world with `WorldDef.cold` over 0
+  drains each player's `Actor.body_heat` by `WorldDef.cold_at` out in the
+  open; warmth fills it again (map markers in group "warmth" with metas
+  "radius" and "warmth", and any occupied vehicle's engine,
+  `WorldDef.engine_warmth`), and once it is empty the cold hurts through
+  `Combat.deal`. Only the authority runs it (`Raid._tick_cold`, which
+  respects `Raid.zone_rules`); the owner hears the number
+  (`NetSession._body_heat`) and every client the shivering bit
+  (`ActorCommand.STATE_CHILLED`, `Actor.shivering`). What it shows is view
+  only and the same in both views: the visor's body heat cell and the
+  watch card's bar (`Hud.feels_cold`), breath (`ActorSkin._update_breath`,
+  never from a cloaked body), the shivering hunch (`Locomotion._shiver_pose`,
+  the neck taking the tremor back so the eyes stay steady) and frost on the
+  visor glass (`VisorHud._draw_frost`, glass only, the middle kept clear).
 - How harsh death is belongs to the world, not to `Raid`. With
   `WorldDef.keep_gear_on_death` a dead player drops only the backpack and the
   equipped gear returns in the result's `kept`. A gentle world pays for that

@@ -596,9 +596,13 @@ gentle one. Dying there only drops your backpack; the gear you deployed with
 goes home with you (`WorldDef.keep_gear_on_death`). In return its caches hold
 basic gear and materials, and the rare and powerful gear is only found on
 Ashfront. Depots take longer to hold. It adds three items of its own: Cryo
-Cell, Signal Core and the Ice Axe. The rest of its redesign (the cold,
-whiteouts, tracks, warm beacons and its crafting parts) is planned in
-DESIGN.md section 2, "Frostline".
+Cell, Signal Core and the Ice Axe. It is cold: out in the open your body
+heat (a snowflake cell on the visor) drains, faster up the valley and up in
+the wind, and once it is gone the cold hurts. Heater huts, the warm vents on
+the floor, the camp fire at the river mouth and any running vehicle warm you
+again. You see your breath, and a chilled body shivers. The rest of its
+redesign (whiteouts, tracks, warm beacons and its crafting parts) is planned
+in DESIGN.md section 2, "Frostline".
 
 ## Run the tests
 

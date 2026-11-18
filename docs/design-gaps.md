@@ -27,7 +27,7 @@ rows marked **pre-playtest** come before the friends playtest.
 | Trophies and blueprint pedestals from PvE bosses and arena brackets | Partly | A trophy shelf and a Trophy Case furniture item exist; earned trophies need PvE bosses and arena brackets. Later. |
 | PvE world: quests, dungeons, bosses | Missing, deferred | Until after the friends playtest. Frostline stands in (no PvP, gentle death, basic loot). |
 | Frostline: the valley map (DESIGN.md section 2, "Frostline") | Built | `worlds/frostline/map.gd`: river mouth to glacier head, zones along it, shelf and rim, ramps, heater huts, three strongpoints, the Stilled Engine's outside. |
-| Frostline: body heat, heaters and vents | Missing | Planned step 2. |
+| Frostline: body heat, heaters and vents | Built | `Raid._tick_cold`, `WorldDef.cold` and `cold_at`, the map's "warmth" markers and running engines; the visor cell, watch bar, breath, visor frost and shivering. Cold-weather gear that slows the drain is step 3. |
 | Frostline: crafting parts and its own blueprints | Missing | Planned step 3. Mk2 and Mk3 recipes will need a Frostline part. |
 | Frostline: warm beacon sign-out | Missing | Planned step 4, through `begin_sign_out`. |
 | Frostline: whiteouts, tracks, louder gunshots, thin ice, the defence grid | Missing | Planned steps 5 to 7. Whiteouts wait for the Ashfront weather work. |

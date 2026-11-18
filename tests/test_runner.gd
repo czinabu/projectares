@@ -56,6 +56,7 @@ const OnboardingTests := preload("res://tests/onboarding_tests.gd")
 const TravelOnlineTests := preload("res://tests/travel_online_tests.gd")
 const HostRecoveryTests := preload("res://tests/host_recovery_tests.gd")
 const RiskZoneTests := preload("res://tests/risk_zone_tests.gd")
+const ColdTests := preload("res://tests/cold_tests.gd")
 const RaiderTests := preload("res://tests/raider_tests.gd")
 const HeavyUnitTests := preload("res://tests/heavy_unit_tests.gd")
 const PlaytestFixTests := preload("res://tests/playtest_fix_tests.gd")
@@ -349,6 +350,7 @@ func _run() -> void:
 	await _test_power_weapons()
 	await _test_artifacts()
 	await _test_risk_zones()
+	await _test_cold()
 	await _test_raiders()
 	await _test_heavy_units()
 	await _test_playtest_fixes()
@@ -551,6 +553,10 @@ func _test_artifacts() -> void:
 
 func _test_risk_zones() -> void:
 	await RiskZoneTests.run(self)
+
+
+func _test_cold() -> void:
+	await ColdTests.run(self)
 
 
 func _test_raiders() -> void:
@@ -3945,7 +3951,9 @@ func _test_strongpoints() -> void:
 	# Online: a client hears who holds each site.
 	_wipe_dir(NET_ACCOUNTS)
 	var port := 24831
-	var pid := _start_server(port, ["--bots", "0"], "frostline")
+	# With the zone rules on, so the cold runs (Frostline has no gates or
+	# burning ground for them to get in the way).
+	var pid := _start_server(port, ["--bots", "0", "--zone-rules"], "frostline")
 	var gale := await _join("Gale", port)
 	check(gale != null, "a client joins a world with strongpoints")
 	if gale != null:
@@ -3955,6 +3963,11 @@ func _test_strongpoints() -> void:
 		await _wait_until(told, 180)
 		check(told.call() and Hud.sites_text(gale.raid, gale.raid.player) == "Held 0/3",
 				"the server tells a client who holds each strongpoint")
+		var heard := func() -> bool:
+			var me := gale.raid.player
+			return me != null and (me.body_heat < me.max_body_heat or me.warming)
+		await _wait_until(heard, 240)
+		check(heard.call(), "in the cold, the server tells a client their body heat")
 		await _leave(gale)
 	OS.kill(pid)
 	await frames(10)
