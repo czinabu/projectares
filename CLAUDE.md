@@ -1590,8 +1590,9 @@ without Caleb, and update the gap list when a PR closes a row.
   its end wall, sealed at the far end by the firing range's bulkhead.
   Buying the range removes the lane. Nothing there is real damage either.
   Past the range's far end is the flight course (`HomeBase._build_course`,
-  `in_course`): an open-topped yard whose walls stand over every rig's
-  ceiling, with a climb tower (and a ramp for wings), a gap to a second
+  `in_course`): a tall lit hangar, walled and roofed so nobody flies out
+  (Caleb's call), its roof over every rig's ceiling and past
+  `Actor.roof_reach` of it, so it never flies as indoors, with a climb tower (and a ramp for wings), a gap to a second
   tower and a sprint, timed by `_tick_course` from the player's position
   alone and written on its board, never on the screen.
   The base grows with the account's upgrades (`core/base/base_upgrades.gd`,
