@@ -211,6 +211,15 @@ func _ready() -> void:
 		get_tree().quit()
 		return
 
+	# `-- <output_dir> --graphics-only` shoots what the graphics settings are
+	# for: a line of soldiers out to 150 m in Ashfront and the home base, with
+	# the settings as saved (`--aa <0-4>` picks the anti-aliasing, `--ink 0|1`
+	# the edge ink on far shapes).
+	if "--graphics-only" in args:
+		await _graphics_shots(out_dir, args)
+		get_tree().quit()
+		return
+
 	# `-- <output_dir> --ashfront-only` shoots Ashfront's look from fixed
 	# spots: a gate looking in, the open field, the middle ring, the core's
 	# edge and from high over a corner, to compare the dressing before and after.
@@ -3171,3 +3180,90 @@ func _phone_shots(out_dir: String) -> void:
 	phone.queue_free()
 	raid.queue_free()
 	await _settle(3)
+
+
+## Ashfront and the home base for judging edges and how far things read: a
+## line of soldiers at 15 to 150 m looking into the field, a wide look over
+## it, and the base's main room and range. Shot with the graphics settings
+## as they are (`--aa <level>` sets the anti-aliasing and `--ink 0|1` the
+## edge ink first, when the game has those settings), so the same command
+## gives before and after.
+func _graphics_shots(out_dir: String, args: PackedStringArray) -> void:
+	var GameSettings: GDScript = load("res://core/settings/game_settings.gd")
+	GameSettings.set("persist", false)
+	var at := args.find("--aa")
+	if at >= 0 and at + 1 < args.size():
+		GameSettings.call("set_value", "anti_aliasing", int(args[at + 1]))
+	at = args.find("--ink")
+	if at >= 0 and at + 1 < args.size():
+		GameSettings.call("set_value", "edge_ink", args[at + 1] != "0")
+	var raid := Raid.new()
+	add_child(raid)
+	raid.start(Worlds.get_world("ashfront"), 42)
+	raid.war.cooling = 0.0
+	for bot in raid.bots:
+		bot.get_node("Brain").set_physics_process(false)
+		bot.set_physics_process(false)
+	raid.player.set_physics_process(false)
+	raid.player.visible = false
+	var gate: Node3D = raid.outposts[0]
+	var forward := -Vector3(gate.global_position.x, 0.0, gate.global_position.z).normalized()
+	var origin := gate.global_position + forward * 22.0
+	origin.y = raid.map.call("ground_height", origin.x, origin.z)
+	var side := Vector3(-forward.z, 0.0, forward.x)
+	var distances: Array[float] = [15.0, 30.0, 50.0, 75.0, 105.0, 150.0]
+	var lateral: Array[float] = [-4.0, 2.5, -2.0, 1.5, -1.0, 0.8]
+	var line: Array[Actor] = []
+	for bot in raid.bots:
+		if line.size() >= distances.size() or bot.is_dead:
+			continue
+		line.append(bot)
+	for i in line.size():
+		var spot := origin + forward * distances[i] + side * lateral[i]
+		line[i].global_position = Vector3(spot.x, raid.map.call("ground_height", spot.x, spot.z), spot.z)
+		line[i].velocity = Vector3.ZERO
+		line[i].rotation.y = atan2(-side.x, -side.z)
+	for bot in raid.bots:
+		if bot not in line:
+			bot.global_position += Vector3(0, -400, 0)
+	var cam := Camera3D.new()
+	cam.fov = 70.0
+	cam.far = 800.0
+	raid.add_child(cam)
+	cam.current = true
+	# Up on a ridge of rubble, so the rise in front of the gate does not hide
+	# the line.
+	var eye := origin + Vector3(0, 7.0, 0)
+	cam.global_position = eye
+	var mid := line[mini(2, line.size() - 1)].global_position if not line.is_empty() else origin + forward * 50.0
+	cam.look_at(mid + Vector3(0, 1.0, 0))
+	await _settle(60)
+	await _shot(out_dir.path_join("ashfront_line.png"))
+	cam.global_position = eye + Vector3(0, 12.0, 0) - forward * 8.0
+	cam.look_at(origin + forward * 120.0)
+	await _settle(10)
+	await _shot(out_dir.path_join("ashfront_wide.png"))
+	raid.queue_free()
+	await _settle(4)
+
+	var base := HomeBase.new()
+	base.show_gear(["rifle_carbine", "smg_stinger", "dmr_longshot", "blade_arc", "frame_trooper", "helm_warden",
+			"jetpack_mk2", "bike_raider"], {"primary": "rifle_carbine", "frame": "frame_trooper", "helmet": "helm_warden"},
+			BaseUpgrades.full())
+	add_child(base)
+	var camera := Camera3D.new()
+	camera.fov = 75.0
+	base.add_child(camera)
+	camera.make_current()
+	base.player.global_position = Vector3(3, 0.1, 2)
+	await _settle(40)
+	var views := {
+		"base_overview.png": [Vector3(0, 3.2, 8.2), Vector3(0, 1.2, -4)],
+		"base_range.png": [Vector3(0.0, 2.2, -14.0), Vector3(0.0, 1.4, -40.0)],
+	}
+	for file: String in views:
+		camera.global_position = views[file][0]
+		camera.look_at(views[file][1])
+		await _settle(6)
+		await _shot(out_dir.path_join(file))
+	base.queue_free()

@@ -442,6 +442,18 @@ without Caleb, and update the gap list when a PR closes a row.
   `visual_check.tscn -- <dir> --views-only [rows]` (`VIEW_MELEE=<item id>`
   picks the melee weapon), which also saves each shot full size under
   `views/`.
+- Picture quality is settings and light shaders, never new art: edge
+  smoothing is `GameSettings.anti_aliasing` (SMAA by default, MSAA on top
+  as an option; never TAA, it smears motion), set on the main view by
+  `GameSettings.apply_graphics`; world textures keep mipmaps (a test checks
+  their `.import` files) and are filtered 16x. Far shapes out in a world get
+  a thin outline from the depth buffer (`Look.edge_ink`,
+  `assets/shaders/edge_ink.gdshader`, a quad the shader stretches over the
+  camera, the same in both views), which MSAA leaves no depth for, so it is
+  off in those modes (`GameSettings.ink_shown`). Both are on the phone's
+  Settings, View tab. Compare by eye with `visual_check.tscn -- <dir>
+  --graphics-only [--aa 0-4] [--ink 0|1]` and measure with the frame bench's
+  `--aa` and `--ink`.
 - People are built from parts (`core/visual/human.gd`): an "appearance" names
   a build, four parts and colours. It is cosmetic only and never trusted:
   always pass one through `Look.clean_appearance` / `Look.set_appearance`,
