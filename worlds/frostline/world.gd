@@ -18,11 +18,16 @@ const EXPOSED_OVER := 22.0
 const EXPOSED_MULT := 1.5
 
 ## Frostline is the gentle world, so its gear is the basic tier. Rare and
-## better gear only drops in the PvP world.
+## better gear only drops in the PvP world. What it pays instead is parts
+## (DESIGN.md "Frostline"): Cryo Cores on the floor, Glacial Alloy up on the
+## rims and at the glacier head, Engine Coils only at the Engine, which every
+## Mk2 and Mk3 craft needs; its own blueprints for new options (never a
+## higher Mk); and a trickle of upgrade data from the hardest places.
 const CACHE_TABLE := [
 	{"id": "scrap_metal", "weight": 30.0},
 	{"id": "circuit_board", "weight": 24.0},
 	{"id": "frost_cryo_cell", "weight": 18.0},
+	{"id": "cryo_core", "weight": 10.0},
 	{"id": "medkit", "weight": 12.0},
 	{"id": "power_cell", "weight": 10.0},
 	{"id": "smg_stinger", "weight": 3.0},
@@ -41,6 +46,8 @@ const ROOFTOP_TABLE := [
 	{"id": "frost_cryo_cell", "weight": 30.0},
 	{"id": "power_cell", "weight": 22.0},
 	{"id": "alloy_ingot", "weight": 12.0},
+	{"id": "cryo_core", "weight": 12.0},
+	{"id": "glacial_alloy", "weight": 12.0},
 	{"id": "hammer_breaker", "weight": 9.0},
 	{"id": "axe_splitter", "weight": 7.0},
 	{"id": "frame_trooper", "weight": 8.0},
@@ -54,14 +61,23 @@ const ROOFTOP_TABLE := [
 	{"id": "helm_seeker", "weight": 5.0},
 	{"id": "helm_warden", "weight": 5.0},
 	{"id": "helm_ember", "weight": 5.0},
+	{"id": "bp_frame_thermal", "weight": 1.5},
+	{"id": "bp_grip_glacier", "weight": 1.5},
+	{"id": "upgrade_data", "weight": 2.0},
 ]
 
 ## The top of the relay mast: the best and most exposed loot on the map, and
-## the only place Frostline's own Ice Axe and Signal Core turn up.
+## the only place Frostline's own Ice Axe and Signal Core turn up, and the
+## surest place for Engine Coils and the valley's blueprints.
 const RELAY_TABLE := [
 	{"id": "frost_signal_core", "weight": 30.0},
 	{"id": "frost_ice_axe", "weight": 25.0},
+	{"id": "engine_coil", "weight": 18.0},
+	{"id": "glacial_alloy", "weight": 18.0},
 	{"id": "alloy_ingot", "weight": 20.0},
+	{"id": "upgrade_data", "weight": 8.0},
+	{"id": "bp_frame_thermal", "weight": 4.0},
+	{"id": "bp_grip_glacier", "weight": 4.0},
 	{"id": "frame_trooper", "weight": 13.0},
 	{"id": "chip_barrier", "weight": 12.0},
 ]
@@ -70,6 +86,7 @@ const WARDEN_DROPS := [
 	{"id": "circuit_board", "weight": 40.0},
 	{"id": "power_cell", "weight": 30.0},
 	{"id": "frost_cryo_cell", "weight": 20.0},
+	{"id": "cryo_core", "weight": 10.0},
 	{"id": "targeting_chip", "weight": 5.0},
 ]
 

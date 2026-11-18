@@ -9,6 +9,8 @@ extends RefCounted
 ##
 ## How it works:
 ##   - A blueprint is an item tagged "blueprint". It is found out in a world
+##     (the war's in the PvP world; "expedition" ones, for new options only,
+##     in the expedition world)
 ##     and is at stake like anything carried. Once it reaches a stash it is
 ##     learned (`learn`): its id moves to the account's list of known
 ##     blueprints, kept beside the stash and scrip, and is never lost. A
@@ -31,6 +33,13 @@ const UPGRADE_DATA := "upgrade_data"
 const TIER_DATA := {2: 3, 3: 8}
 const TIER_SCRIP := {2: 400, 3: 1200}
 
+## The parts every Mk2 and Mk3 takes beside its upgrade data. A higher Mk
+## needs the expedition world's parts (DESIGN.md "Frostline": Cryo Core,
+## Glacial Alloy, Engine Coil) as well as the war's, so each world has its
+## own job in the loop.
+const MK2_PARTS := {"power_cell": 2, "alloy_ingot": 1, "cryo_core": 1}
+const MK3_PARTS := {"alloy_ingot": 2, "reactor_core": 1, "glacial_alloy": 2, "engine_coil": 1}
+
 ## Result item id -> its recipe:
 ##   blueprint  the blueprint item that must be known
 ##   tier       2 or 3 for a higher Mk (costs `TIER_DATA` and `TIER_SCRIP`)
@@ -38,20 +47,24 @@ const TIER_SCRIP := {2: 400, 3: 1200}
 ##   parts      item id -> how many, taken from the stash
 ## Listed in the order the bench shows them.
 const RECIPES := {
-	"jetpack_mk2": {"blueprint": "bp_jetpack", "tier": 2, "parts": {"power_cell": 2, "alloy_ingot": 1}},
-	"jetpack_mk3": {"blueprint": "bp_jetpack", "tier": 3, "parts": {"alloy_ingot": 2, "reactor_core": 1}},
-	"boots_thruster_mk2": {"blueprint": "bp_boots_thruster", "tier": 2, "parts": {"power_cell": 2, "alloy_ingot": 1}},
-	"boots_thruster_mk3": {"blueprint": "bp_boots_thruster", "tier": 3, "parts": {"alloy_ingot": 2, "reactor_core": 1}},
-	"wings_glide_mk2": {"blueprint": "bp_wings_glide", "tier": 2, "parts": {"power_cell": 2, "alloy_ingot": 1}},
-	"wings_glide_mk3": {"blueprint": "bp_wings_glide", "tier": 3, "parts": {"alloy_ingot": 2, "reactor_core": 1}},
+	"jetpack_mk2": {"blueprint": "bp_jetpack", "tier": 2, "parts": MK2_PARTS},
+	"jetpack_mk3": {"blueprint": "bp_jetpack", "tier": 3, "parts": MK3_PARTS},
+	"boots_thruster_mk2": {"blueprint": "bp_boots_thruster", "tier": 2, "parts": MK2_PARTS},
+	"boots_thruster_mk3": {"blueprint": "bp_boots_thruster", "tier": 3, "parts": MK3_PARTS},
+	"wings_glide_mk2": {"blueprint": "bp_wings_glide", "tier": 2, "parts": MK2_PARTS},
+	"wings_glide_mk3": {"blueprint": "bp_wings_glide", "tier": 3, "parts": MK3_PARTS},
 	"dmr_longshot": {"blueprint": "bp_dmr_longshot", "scrip": 300, "parts": {"alloy_ingot": 1, "circuit_board": 2}},
 	"shotgun_breacher": {"blueprint": "bp_shotgun_breacher", "scrip": 300, "parts": {"alloy_ingot": 1, "scrap_metal": 3}},
 	"mech_bulwark": {"blueprint": "bp_mech_bulwark", "scrip": 2000,
 		"parts": {"reactor_core": 1, "alloy_ingot": 3, "power_cell": 2}},
 	"jet_kestrel": {"blueprint": "bp_jet_kestrel", "scrip": 2000,
 		"parts": {"reactor_core": 1, "alloy_ingot": 2, "circuit_board": 4}},
+	# Expedition blueprints: new options, made from the valley's parts.
+	"frame_thermal": {"blueprint": "bp_frame_thermal", "scrip": 350,
+		"parts": {"glacial_alloy": 1, "cryo_core": 1, "scrap_metal": 2}},
+	"grip_glacier": {"blueprint": "bp_grip_glacier", "scrip": 250,
+		"parts": {"glacial_alloy": 1, "circuit_board": 1}},
 }
-
 
 ## Every craftable item id, in the order the bench shows them.
 static func ids() -> Array[String]:

@@ -9,6 +9,9 @@ const BaseLayout := preload("res://core/base/base_layout.gd")
 const Economy := preload("res://core/economy/economy.gd")
 
 
+const Crafting := preload("res://core/progression/crafting.gd")
+
+
 static func run(t: Node) -> void:
 	print("Attachments")
 	_items(t)
@@ -67,7 +70,10 @@ static func _items(t: Node) -> void:
 		for source: String in ["cache", "rooftop"]:
 			for id in ashfront.roll_loot(source, rng):
 				found[id] = true
-	t.check(all.all(func(id: String) -> bool: return found.has(id)), "every attachment can be found in Ashfront")
+	# Crafted attachments (an expedition blueprint's) are never found.
+	var dropped := all.filter(func(id: String) -> bool: return not Crafting.has_recipe(id))
+	t.check(dropped.all(func(id: String) -> bool: return found.has(id)) and not found.has("grip_glacier"),
+			"every attachment but the crafted ones can be found in Ashfront")
 	var frost := Worlds.get_world("frostline")
 	var rare_in_frost := false
 	var frost_any := false

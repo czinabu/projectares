@@ -85,6 +85,14 @@ static func _drain_and_warm(t: Node, raid: Raid) -> void:
 	var lost := 50.0 - me.body_heat
 	t.check(lost > 0.5 and lost < 2.0 and not me.warming,
 			"out in the open body heat drains (%.2f in a second)" % lost)
+	# A Thermal Frame keeps out part of the cold.
+	Loadout.wear_frame(me, "frame_thermal")
+	me.body_heat = 50.0
+	await t.frames(60)
+	var insulated := 50.0 - me.body_heat
+	t.check(insulated > 0.0 and insulated < lost * 0.75 and is_equal_approx(Raid.insulation_of(me), 0.4),
+			"a Thermal Frame keeps out some of the cold (%.2f against %.2f)" % [insulated, lost])
+	Loadout.wear_frame(me, "")
 	me.body_heat = 30.0
 	await t.frames(2)
 	t.check(me.shivering, "cold enough, you shiver")

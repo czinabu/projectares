@@ -215,11 +215,12 @@ worlds and a casual or solo one has a steady home.
   leaning into it and the wind pushing flight rigs off course; footprints and vehicle tracks the server keeps and sends only
   nearby; gunshots that carry twice as far; thin ice that breaks under
   heavy vehicles; the Wardens as the Engine's defence grid, still running.
-- **What you bring home (planned).** New parts (Cryo Core, Glacial Alloy,
+- **What you bring home.** New parts (Cryo Core, Glacial Alloy,
   Engine Coil) that Mk2 and Mk3 recipes need, and Frostline blueprints for
   new options only (attachments, cold-weather gear), never a higher Mk of
-  existing gear. Later the inside of the Engine is its deep-loot dungeon and
-  the home of the missing artifacts. Expedition contracts.
+  existing gear (built, step 3, see below). Later the inside of the Engine is
+  its deep-loot dungeon and the home of the missing artifacts. Expedition
+  contracts (planned).
 - **Getting out (planned).** Sign-out only at warm beacons, held while they
   power up (still `begin_sign_out`). Depots stay for banking.
 
@@ -254,6 +255,20 @@ visor (and a bar on the watch card without a helmet), the watch's zone
 line saying "warm" in warmth, frost creeping over the visor glass, breath
 fogging out of every mouth and a shivering hunch below a third of the bar.
 The numbers are placeholders for the playtest.
+
+The loot role (step 3): three new parts, Cryo Core (on the floor and from
+Wardens), Glacial Alloy (the rims, the glacier head and the relay) and
+Engine Coil (only the relay on the Engine's back). Every Mk2 craft needs a
+Cryo Core and every Mk3 two Glacial Alloy and an Engine Coil, beside the
+war's parts and upgrade data, so a player who only fights in Ashfront
+trades for them at the Exchange. Frostline's own blueprints (tag
+"expedition", found on the rims and the relay, never handed out by
+Ashfront's warlords or pods) make new options only: the Thermal Frame, a
+medium frame (65 armor) whose liner keeps out 40% of the cold but glows on
+thermal, and the Glacier Grip, much steadier on the move and slower to
+aim. The rims and the relay also pay a trickle of upgrade data, so a
+player who stays in Frostline reaches Mk2 slowly; there is no hard cap on
+it yet. Numbers are placeholders.
 
 ### PvP world
 
@@ -1573,7 +1588,10 @@ weeklies. The existing rules stay (only a sign-out counts, no player kills).
 > instead.
 
 **Blueprints drop at Mk1, in the PvP world.** A weapon's or rig's blueprint
-is found in the warzone at its base level. Like everything you carry, it is
+is found in the warzone at its base level. The expedition world (Frostline)
+has blueprints of its own, for new options only (cold-weather gear and
+attachments), never a higher Mk of existing gear, and pays the parts every
+Mk2 and Mk3 needs (section 2, "Frostline"). Like everything you carry, it is
 at stake until you extract (bank it or sign out). Once home it is yours for
 good: a blueprint is knowledge, never lost on death.
 
@@ -1614,20 +1632,23 @@ shared by solo and online play like the money rules.
   screen lists every recipe with what it costs against what you hold;
   recipes whose blueprint you have not found are listed dim, so you know
   what is out there.
-- Where they come from today, in Ashfront only: rig and gun blueprints and
-  upgrade data in rooftop caches; any blueprint, vehicles included, from a
+- Where they come from today: Frostline's own blueprints, its parts and a
+  trickle of upgrade data on its rims and the relay; in Ashfront, rig and
+  gun blueprints and upgrade data in rooftop caches; any blueprint, vehicles included, from a
   warlord (1 in 2) or a supply pod (1 in 4), each with upgrade data
   (2 and 1). Players carry what they found, so killing one pays it too.
   Contracts are the next source.
 
 | Recipe | Blueprint | Upgrade data | Parts | Scrip |
 | --- | --- | --- | --- | --- |
-| Mk2 jetpack, boots or wings | That rig's | 3 | 2 power cells, 1 alloy ingot | 400 |
-| Mk3 jetpack, boots or wings | That rig's (the same one) | 8 | 2 alloy ingots, 1 reactor core | 1,200 |
+| Mk2 jetpack, boots or wings | That rig's | 3 | 2 power cells, 1 alloy ingot, 1 cryo core | 400 |
+| Mk3 jetpack, boots or wings | That rig's (the same one) | 8 | 2 alloy ingots, 1 reactor core, 2 glacial alloy, 1 engine coil | 1,200 |
 | Longshot DMR | Its own | none | 1 alloy ingot, 2 circuit boards | 300 |
 | Breacher Shotgun | Its own | none | 1 alloy ingot, 3 scrap metal | 300 |
 | Bulwark Mech | Its own | none | 1 reactor core, 3 alloy ingots, 2 power cells | 2,000 |
 | Kestrel Jet | Its own | none | 1 reactor core, 2 alloy ingots, 4 circuit boards | 2,000 |
+| Thermal Frame | Its own (Frostline) | none | 1 glacial alloy, 1 cryo core, 2 scrap metal | 350 |
+| Glacier Grip | Its own (Frostline) | none | 1 glacial alloy, 1 circuit board | 250 |
 
 Every number in the table and every drop chance is a placeholder until the
 playtest. Not built yet: the mastery gate (rigs have no mastery track to

@@ -1617,6 +1617,14 @@ func _tick_hazards(delta: float) -> void:
 ## it again. Once it is gone the cold hurts, once a second, through
 ## `Combat.deal`. Authority only: the owner's game is sent the number and
 ## everyone else whether they shiver (`Actor.shivering`).
+## The share of the cold an actor's worn frame keeps out (its "insulation"
+## stat, 0 for none).
+static func insulation_of(actor: Actor) -> float:
+	if actor.frame_id == "":
+		return 0.0
+	return clampf(float(ItemDB.item_stats(actor.frame_id).get("insulation", 0.0)), 0.0, 1.0)
+
+
 func _tick_cold(delta: float) -> void:
 	if world.cold <= 0.0 or not zone_rules:
 		return
@@ -1630,7 +1638,7 @@ func _tick_cold(delta: float) -> void:
 			continue
 		var warm := warmth_at(actor)
 		actor.warming = warm > 0.0
-		var change := warm if actor.warming else -world.cold_at(actor.global_position)
+		var change := warm if actor.warming else -world.cold_at(actor.global_position) * (1.0 - insulation_of(actor))
 		actor.body_heat = clampf(actor.body_heat + change * delta, 0.0, actor.max_body_heat)
 		actor.shivering = actor.body_heat < actor.max_body_heat * Actor.CHILL_SHARE
 		if hurt and actor.body_heat <= 0.0:
