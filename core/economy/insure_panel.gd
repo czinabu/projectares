@@ -10,9 +10,12 @@ extends VBoxContainer
 ## Load with `const InsurePanel := preload("res://core/economy/insure_panel.gd")`.
 
 const SafetyNets := preload("res://core/economy/safety_nets.gd")
+const ItemCard := preload("res://core/ui/item_card.gd")
 
 const TITLE_COLOR := Color(0.45, 0.85, 1.0)
 const SCRIP_COLOR := Color(1.0, 0.85, 0.4)
+## How tall the list is before it scrolls.
+const LIST_HEIGHT := 220.0
 
 ## Online: the server decides, so nothing changes until `account` is updated.
 ## `action` is "insure" or "cancel".
@@ -27,6 +30,8 @@ var _policy: Label
 var _cancel: Button
 var _rows: VBoxContainer
 var _message: Label
+## The card beside the list: the item, and what a policy on it would cost.
+var card: ItemCard
 
 
 func _ready() -> void:
@@ -49,12 +54,25 @@ func _ready() -> void:
 	_cancel.pressed.connect(cancel)
 	head.add_child(_cancel)
 	add_child(head)
-	_rows = VBoxContainer.new()
-	_rows.add_theme_constant_override("separation", 3)
-	add_child(_rows)
 	_message = _label("", 14, Color(1.0, 0.8, 0.4))
 	_message.visible = false
 	add_child(_message)
+	var split := HBoxContainer.new()
+	split.add_theme_constant_override("separation", 14)
+	add_child(split)
+	var scroll := ScrollContainer.new()
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.custom_minimum_size = Vector2(0, LIST_HEIGHT)
+	split.add_child(scroll)
+	_rows = VBoxContainer.new()
+	_rows.add_theme_constant_override("separation", 3)
+	_rows.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(_rows)
+	card = ItemCard.new()
+	card.notes = notes_for
+	card.empty_text = "Nothing you own can be insured yet."
+	split.add_child(card)
 	refresh()
 
 
@@ -144,6 +162,7 @@ func refresh() -> void:
 	for child in _rows.get_children():
 		_rows.remove_child(child)
 		child.queue_free()
+	card.clear_rows()
 	for id in choices():
 		var why := blocked(id)
 		var row := HBoxContainer.new()
@@ -151,7 +170,8 @@ func refresh() -> void:
 		var name_label := _label(ItemDB.item_name(id), 15, ItemDB.RARITY_COLORS[ItemDB.item_rarity(id)])
 		name_label.custom_minimum_size = Vector2(190, 0)
 		row.add_child(name_label)
-		var detail := _label("%d scrip" % SafetyNets.premium(id), 13, Color(0.7, 0.7, 0.7))
+		var detail := _label("%d scrip" % SafetyNets.premium(id) if why == "" or str(held.get("item", "")) == id
+				else why, 13, Color(0.7, 0.7, 0.7), true)
 		detail.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		row.add_child(detail)
 		var button := Button.new()
@@ -163,6 +183,23 @@ func refresh() -> void:
 		button.pressed.connect(insure.bind(id))
 		row.add_child(button)
 		_rows.add_child(row)
+		card.track(row, id)
+	card.settle()
+
+
+## What the card says about insuring an item: the premium and the cover.
+func notes_for(item_id: String) -> Array:
+	var out: Array = []
+	if str(policy().get("item", "")) == item_id:
+		out.append(["Insured. Die with it on you and it is recalled home.", ItemCard.GOOD])
+		return out
+	var premium := SafetyNets.premium(item_id)
+	out.append(["Premium: %d scrip" % premium, ItemCard.GOOD if scrip() >= premium else ItemCard.WARN])
+	out.append(["If you die with it on you, it comes home instead of dropping in your bag.", ItemCard.MUTED])
+	var why := blocked(item_id)
+	if why != "":
+		out.append([why, ItemCard.WARN])
+	return out
 
 
 func _label(text: String, font_size: int, color: Color, wrap := false) -> Label:
