@@ -361,6 +361,7 @@ static func marsh() -> PlanetType:
 		"cap_color": Color(0.32, 0.42, 0.24), "cap_range": Vector2(20.0, 30.0), "cap_on_slopes": 0.6,
 		"patch_a": Color(0.03, 0.05, 0.05), "patch_b": Color(0.05, 0.08, 0.07), "patch_amount": 0.75,
 		"patch_edge": 0.03, "patch_low": 1.0, "patch_low_at": -0.6, "patch_wet": 1.0,
+		"bank": 0.8, "bank_width": 0.14, "bank_color": Color(0.28, 0.4, 0.13), "photo_chroma": 0.75,
 		"detail_scale": 0.4, "saturation": 1.0,
 	}
 	t.horizon = {"reach": 2400.0, "peaks": 150.0}

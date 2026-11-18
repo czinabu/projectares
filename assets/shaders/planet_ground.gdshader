@@ -77,6 +77,18 @@ uniform float detail_scale = 0.35;
 uniform float detail_strength = 0.8;
 uniform float detail_fade = 70.0;
 uniform float saturation = 1.0;
+// A band of the base's growth along a patch's edge (a marsh's moss banks):
+// how strong, how wide (in the patch field's units) and its colour.
+uniform float bank = 0.0;
+uniform float bank_width = 0.1;
+uniform float bank_rise = 2.5;
+uniform vec3 bank_color : source_color = vec3(0.3, 0.4, 0.15);
+// Rock far off (the horizon's mountains) takes its scan again at
+// `vast_tile` times its tile, so cliffs a kilometre away keep their faces
+// instead of going smooth. It fades in from `vast_from` metres.
+uniform float vast_from = 350.0;
+uniform float vast_tile = 45.0;
+uniform float vast_relief = 1.6;
 
 varying vec3 wpos;
 varying vec3 wnrm;
@@ -166,7 +178,14 @@ void fragment() {
 	if (patch_amount > 0.0) {
 		float field = big * 0.55 + mid * 0.45;
 		float lowness = patch_low > 0.0 ? smoothstep(patch_low_at + 3.0, patch_low_at - 2.0, wpos.y) : 1.0;
-		pmask = smoothstep(1.0 - patch_amount, 1.0 - patch_amount + patch_edge, field) * mix(1.0, lowness, patch_low);
+		float lift = 1.0 - patch_amount;
+		pmask = smoothstep(lift, lift + patch_edge, field) * mix(1.0, lowness, patch_low);
+		if (bank > 0.0) {
+			float wide = patch_low > 0.0 ? smoothstep(patch_low_at + 3.0 + bank_rise, patch_low_at - 2.0, wpos.y) : 1.0;
+			float band = smoothstep(lift - bank_width, lift, field) * mix(1.0, wide, patch_low);
+			band = clamp(band - pmask, 0.0, 1.0);
+			base = mix(base, bank_color * mix(0.85, 1.1, fine), band * bank);
+		}
 		pc = mix(patch_a, patch_b, fine);
 		if (ripples > 0.0) {
 			vec2 rd = normalize(ripple_dir);
@@ -175,8 +194,14 @@ void fragment() {
 		}
 	}
 
+	// Far off, the rock's coarse relief breaks up the slope test too, so
+	// snow and scree lie on ledges of a far cliff, not in smooth blobs.
+	float vast = textured.y > 0.5 ? smoothstep(vast_from * 0.6, vast_from, dist) : 0.0;
+	float vt = tile.y * vast_tile;
+	vec3 vn = vast > 0.001 ? bi_normal(rock_normal, wpos / vt, n, vast_relief) : n;
+	vec3 sn = normalize(mix(n, vn, vast));
 	// Rock on slopes, banded by strata.
-	float rock = smoothstep(slope_range.x, slope_range.y, n.y + (fine - 0.5) * 0.08);
+	float rock = smoothstep(slope_range.x, slope_range.y, sn.y + (fine - 0.5) * 0.08);
 	// Layers of uneven thickness, gently warped, with thin dark seams.
 	float layer = texture(noise_tex, vec2(wpos.y / strata_every * 0.061 + mid * 0.12, 0.71 + big * 0.05)).r;
 	float seam = 1.0 - smoothstep(0.0, 0.035, abs(layer - 0.5));
@@ -185,7 +210,7 @@ void fragment() {
 
 	// The cap on high ground.
 	float cap = smoothstep(cap_range.x, cap_range.y, wpos.y + (mid - 0.5) * 6.0);
-	cap *= mix(cap_on_slopes, 1.0, smoothstep(0.55, 0.8, n.y));
+	cap *= mix(cap_on_slopes, 1.0, smoothstep(0.55, 0.8, sn.y));
 	vec3 cc = cap_color * mix(0.88, 1.0, fine);
 
 	// How much each layer shows, in the order they cover one another.
@@ -207,8 +232,15 @@ void fragment() {
 	}
 	if (w_rock > 0.003) {
 		if (textured.y > 0.5) {
-			rc *= scan_detail(rock_albedo, wpos, n, tile.y, far);
-			nrm += bi_normal(rock_normal, wpos / tile.y, n, s * 1.2) * w_rock;
+			vec3 rd = vast < 0.999 ? scan_detail(rock_albedo, wpos, n, tile.y, far) : vec3(1.0);
+			vec3 rn = vast < 0.999 ? bi_normal(rock_normal, wpos / tile.y, n, s * 1.2) : n;
+			if (vast > 0.001) {
+				vec3 vd = scan_detail(rock_albedo, wpos, n, vt, 0.0);
+				rd = mix(rd, vd * vd, vast);
+				rn = normalize(mix(rn, vn, vast));
+			}
+			rc *= rd;
+			nrm += rn * w_rock;
 		} else {
 			nrm += n * w_rock;
 		}
