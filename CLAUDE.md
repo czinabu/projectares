@@ -398,11 +398,14 @@ without Caleb, and update the gap list when a PR closes a row.
   with `--carry-only`.
   Holstered weapons are worn, not hidden (`ActorSkin.stow_place`): a primary
   gun or two-handed weapon slung across the back, outside a worn back rig
-  (on a jetpack or wing pack, clamped to the weapon rail down its side
-  instead, gun right and long blade left, leaning out in a slight V, so the
-  heat gauge on its back stays in view; a wing pack's rails stand behind
-  its wing slots: the rig model's "MountL/R" markers, and the
-  skin rests the weapon's near side on the clamps), a
+  (on a jetpack or wing pack, clamped to the flush mag-lock rail on the
+  pack's back corner instead, gun right and long blade left, turned back
+  behind the shoulder blade so it never covers the arm (Caleb's call:
+  mounts smooth and out of the way), leaning out in a slight V, so the
+  heat gauge on its back stays in view; a wing pack's rails stand on
+  fairings behind its wing slots: the rig model's "MountL/R" markers, and
+  the skin rests the weapon's near side on the rail; an empty rail has
+  nothing sticking out), a
   sidearm muzzle down on the right hip, and a one-handed blade on the left
   hip. These are view-only copies; the weapon's own node stays on the hand.
   A switch is shown as the hand putting one away and drawing the next

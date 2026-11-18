@@ -69,6 +69,15 @@ var burst_burn := 0.3
 var glide_pitch := 1.4
 var glide_pivot := 1.0
 var glide_blend := 3.0
+## Gliding down onto the ground, the body flares for the landing: from
+## `flare_height` meters over what is below it pitches up toward
+## `flare_pitch` (radians from upright), the legs swing down under it and
+## the wings tip up to brake, all the way at `flare_full` meters. It eases
+## in and out at `flare_rate` a second. View only, read from the actor.
+var flare_height := 3.5
+var flare_full := 0.8
+var flare_pitch := 0.45
+var flare_rate := 5.0
 var glide_arm := Vector3(0.45, -1.0, 0.25)
 var glide_leg := Vector3(0.06, -1.0, -0.06)
 ## How far the head tips back to look ahead while flying flat, and how far
@@ -298,6 +307,9 @@ var _burst_left := 0.0
 var _spread := 0.0
 ## 0 standing, 1 flying flat.
 var _glide := 0.0
+## Wings: how far the body has flared out of the glide for a landing, 0 to 1
+## (see `flare_height`).
+var _flare := 0.0
 ## Bones the glide pose moves: [from, to] pairs to aim, per side.
 var _glide_arms: Array = []
 var _glide_legs: Array = []
@@ -2586,7 +2598,9 @@ func _update_rig(delta: float) -> void:
 		var was := _spread
 		_spread = move_toward(_spread, want, wing_speed * delta)
 		if _spread != was or _spread > 0.0:
-			RigModel.set_wing_spread(_rig_back, _spread, clampf(-_bank / max_bank, -1.0, 1.0), actor.glide_trim())
+			# Flaring for a landing, the wings tip up to brake.
+			var trim := lerpf(actor.glide_trim(), -1.0, smoothstep(0.0, 1.0, _flare))
+			RigModel.set_wing_spread(_rig_back, _spread, clampf(-_bank / max_bank, -1.0, 1.0), trim)
 
 
 ## Sets the whole model's attitude in the air, about the actor's middle.
@@ -2601,6 +2615,13 @@ func _update_glide(delta: float) -> void:
 	var flat := alive and (actor.flight.is_gliding or actor.flight.is_boosting)
 	_glide = move_toward(_glide, 1.0 if flat else 0.0, glide_blend * delta)
 	_boost = move_toward(_boost, 1.0 if alive and actor.flight.is_boosting else 0.0, glide_blend * delta)
+	var flare := 0.0
+	if alive and actor.flight.is_gliding and actor.velocity.y < 0.0:
+		flare = 1.0 - smoothstep(flare_full, flare_height, actor.height_above_ground(flare_height + 0.5))
+	elif not actor.flight.is_gliding and _glide > 0.0 and actor.is_on_floor():
+		# Touched down: stay flared while the glide pose lets go.
+		flare = _flare
+	_flare = move_toward(_flare, flare, flare_rate * delta)
 
 	var local := actor.global_basis.inverse() * actor.velocity
 	var level := Vector3(local.x, 0.0, local.z)
@@ -2611,7 +2632,7 @@ func _update_glide(delta: float) -> void:
 	var bank := 0.0
 	if flat:
 		var path := atan2(actor.velocity.y, maxf(speed, 0.5)) if actor.velocity.length() > 1.0 else 0.0
-		var lie := glide_pitch
+		var lie := lerpf(glide_pitch, flare_pitch, smoothstep(0.0, 1.0, _flare))
 		if not actor.flight.is_gliding:
 			# A jetpack boost speeds you up into a prone, head-first pose:
 			# leaning in as it sets off, flat out at full boost speed.
@@ -2754,7 +2775,7 @@ func _pose_glide() -> void:
 	_pose_air()
 	if _glide <= 0.0:
 		return
-	var w := smoothstep(0.0, 1.0, _glide)
+	var w := smoothstep(0.0, 1.0, _limb_glide())
 
 	# From the body's own frame (before the tip) to the skeleton's.
 	# The skin faces the model's way, turned half round from the actor.
@@ -2781,10 +2802,16 @@ func _pose_glide() -> void:
 		_skeleton.set_bone_global_pose(_glide_neck, pose)
 
 
+## How far the arms and legs are in the flat flying pose: a flare for the
+## landing gives them back to the air pose, legs down under the body.
+func _limb_glide() -> float:
+	return _glide * (1.0 - 0.85 * smoothstep(0.0, 1.0, _flare))
+
+
 ## Bends the legs into the air pose. The flat flying pose, applied after,
 ## takes over as the body lies out.
 func _pose_air() -> void:
-	var w := smoothstep(0.0, 1.0, _air) * (1.0 - smoothstep(0.0, 1.0, _glide))
+	var w := smoothstep(0.0, 1.0, _air) * (1.0 - smoothstep(0.0, 1.0, _limb_glide()))
 	if w <= 0.0:
 		return
 	var to_skeleton := _skeleton.basis.orthonormalized().inverse() * _model_basis_inverse() * Basis(Vector3.UP, PI)

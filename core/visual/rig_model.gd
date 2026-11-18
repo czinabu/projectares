@@ -4,11 +4,13 @@ extends RefCounted
 ## weathers them when the art layer is on.
 ##
 ## The item's stats pick the shape, as they pick how it flies (`FlightRig`):
-##   jetpack - an armored back pack: a faceted core with a screen bay, and a
-##             cowled thruster pod either side with a nozzle under each.
-##   boots   - a cuff and a heel thruster on each foot.
-##   wings   - a slim back pack with two wings that retract into it, and
-##             slide out of slots in its sides to glide.
+##   jetpack - an armored back pack: a rounded, bevelled core with a screen
+##             bay, and a rounded thruster tank either side with a nozzle
+##             under each, canted out so the flames clear the legs, and a
+##             lit pip per tier.
+##   boots   - a slim cuff and a heel thruster faired into it on each foot.
+##   wings   - a slim rounded back pack with two wings that retract into it,
+##             and slide out of slots in its sides to glide.
 ##
 ## Every model is built for a wearer facing -Z, the Actor's forward, so the
 ## back is +Z. Back models put their origin on the spine at chest height;
@@ -19,11 +21,13 @@ extends RefCounted
 ##   "HeatDisplay" Marker3D on a jetpack or wing pack: a clear flat face, looking back (+Z),
 ##                 kept free for an in-world heat readout. Its meta "size"
 ##                 (Vector2, meters) is the room there is.
-##   "MountL/R"    Marker3D on a jetpack or wing pack: the outer face of the weapon rail on
-##                 each side, where a holstered long weapon is clamped. +Y
-##                 runs up the rail (leaning out at the top, so the two
-##                 weapons stand in a slight V) and +X points straight out
-##                 of the clamp faces on the right side, into them on the left.
+##   "MountL/R"    Marker3D on a jetpack or wing pack: the face of the flush
+##                 weapon rail on each back corner, where a holstered long
+##                 weapon is clamped. +Y runs up the rail (leaning out at
+##                 the top, so the two weapons stand in a slight V) and +X
+##                 points straight out of the rail's face on the right side,
+##                 into it on the left; the face is turned `mount_turn` from
+##                 straight out toward the back, behind the shoulder blade.
 
 const Self := preload("res://core/visual/rig_model.gd")
 
@@ -40,11 +44,16 @@ var wing_span := 1.05
 var wing_root_chord := 0.34
 var wing_tip_chord := 0.12
 var wing_sweep := 0.22
-## How far each weapon rail on a jetpack leans out at the top, and its length.
+## How far each weapon rail leans out at the top, how far its face turns
+## from straight out toward the back (all the way: a clamped weapon stands
+## edge on behind the pack, slim from behind and clear of the arm), and its
+## length.
 var mount_lean := deg_to_rad(6.0)
+var mount_turn := deg_to_rad(90.0)
 var rail_length := 0.3
-## How far a clamp's prongs reach out past the rail to grip a weapon.
-var clamp_reach := 0.05
+## How far a jetpack's nozzles cant out (and a little back) from straight
+## down, so the flames clear the legs.
+var nozzle_cant := 0.16
 ## How far behind the wing slots a wing pack's weapon rails stand: spread,
 ## the wings sweep back a little, and a clamped weapon must stay behind them.
 var wing_rail_standoff := 0.11
@@ -123,142 +132,124 @@ static func nozzles(model: Node3D) -> Array[Marker3D]:
 func _jetpack(id: String) -> Node3D:
 	var root := Node3D.new()
 	root.name = "Jetpack"
-	# Stronger packs are bigger, darker and carry stabilizer fins.
+	# Stronger packs are bigger, darker and carry stabilizer fins; every tier
+	# also wears its number of lit pips on each pod.
 	var heavy: bool = ItemDB.item_rarity(id) >= ItemDB.Rarity.RARE
+	var tier := int(ItemDB.item_stats(id).get("tier", 1))
 	var armor := Color(0.27, 0.29, 0.33) if heavy else Color(0.33, 0.35, 0.31)
 	var trim := Color(0.12, 0.12, 0.13)
 	var glow := Color(0.35, 0.8, 1.0) if heavy else Color(0.4, 1.0, 0.75)
 	var pod_r := 0.058 if heavy else 0.05
 	var pod_h := 0.36 if heavy else 0.32
-	var pod_x := 0.175 if heavy else 0.165
-	var pod_z := 0.075
+	var pod_x := 0.155 if heavy else 0.145
+	var pod_z := 0.08
 
-	_harness(root, 0.3, 0.44)
-	# The armored core: a faceted shell with a raised plate on its back.
-	var shell := _slab(PackedVector2Array([Vector2(-0.12, 0.21), Vector2(0.12, 0.21), Vector2(0.155, 0.15),
-			Vector2(0.155, -0.17), Vector2(0.09, -0.25), Vector2(-0.09, -0.25), Vector2(-0.155, -0.17),
-			Vector2(-0.155, 0.15)]), 0.09, _mat(trim))
-	shell.position = Vector3(0, -0.03, 0.08)
-	root.add_child(shell)
-	var plate := _slab(PackedVector2Array([Vector2(-0.1, 0.19), Vector2(0.1, 0.19), Vector2(0.135, 0.13),
-			Vector2(0.135, -0.15), Vector2(0.075, -0.22), Vector2(-0.075, -0.22), Vector2(-0.135, -0.15),
-			Vector2(-0.135, 0.13)]), 0.02, _mat(armor))
-	plate.position = Vector3(0, -0.03, 0.135)
-	root.add_child(plate)
+	_harness(root, 0.28, 0.42)
+	# The armored core: a rounded shell, bevelled at its edges, with a raised
+	# back plate over it.
+	_pillow(root, Vector2(0.27, 0.43), 0.085, 0.06, Vector3(0, -0.03, 0.08), _mat(trim))
+	_pillow(root, Vector2(0.23, 0.38), 0.02, 0.05, Vector3(0, -0.03, 0.13), _mat(armor))
 	# A recessed screen bay in the plate, kept clear for a heat readout.
-	var bay_at := Vector3(0, -0.02, 0.146)
-	root.add_child(_box(Vector3(0.15, 0.17, 0.006), bay_at, _mat(trim)))
+	var bay_at := Vector3(0, -0.02, 0.141)
+	_pillow(root, Vector2(0.155, 0.175), 0.006, 0.02, bay_at, _mat(trim))
 	var display := Marker3D.new()
 	display.name = "HeatDisplay"
 	display.position = bay_at + Vector3(0, 0, 0.004)
 	display.set_meta("size", Vector2(0.13, 0.15))
 	root.add_child(display)
-	# Vents across the top and a lit seam under the bay.
+	# Inset vent slits across the top and a lit seam under the bay.
 	for i in 4:
-		root.add_child(_box(Vector3(0.012, 0.03, 0.03), Vector3(-0.045 + i * 0.03, 0.15, 0.142), _mat(trim)))
-	root.add_child(_box(Vector3(0.11, 0.008, 0.008), Vector3(0, -0.13, 0.147), _mat(glow, 2.0)))
-	# A short sensor mast on one shoulder.
-	root.add_child(_box(Vector3(0.018, 0.12, 0.018), Vector3(-0.1, 0.24, 0.1), _mat(trim)))
-	root.add_child(_box(Vector3(0.012, 0.012, 0.012), Vector3(-0.1, 0.305, 0.1), _mat(glow, 2.5)))
+		root.add_child(_box(Vector3(0.022, 0.006, 0.012), Vector3(-0.036 + i * 0.024, 0.115, 0.141), _mat(DARK)))
+	root.add_child(_box(Vector3(0.11, 0.006, 0.006), Vector3(0, -0.125, 0.141), _mat(glow, 2.0)))
 
 	for side: float in [-1.0, 1.0]:
 		var x := side * pod_x
-		# The thruster pod, faceted, with a lit strip down its outside.
-		root.add_child(_cylinder(pod_r, pod_r, pod_h, Vector3(x, -0.04, pod_z), _mat(armor), Vector3.ZERO, 8))
-		root.add_child(_cylinder(pod_r * 0.8, pod_r, 0.04, Vector3(x, -0.04 + pod_h * 0.5 + 0.02, pod_z), _mat(trim), Vector3.ZERO, 8))
-		for y: float in [pod_h * 0.3, -pod_h * 0.3]:
-			root.add_child(_cylinder(pod_r + 0.006, pod_r + 0.006, 0.018, Vector3(x, -0.04 + y, pod_z), _mat(trim), Vector3.ZERO, 8))
-		root.add_child(_box(Vector3(0.008, pod_h * 0.35, 0.01), Vector3(x + side * (pod_r + 0.002), -0.04, pod_z), _mat(glow, 2.0)))
-		# An armor cowl over the pod's outer face.
-		var cowl := _slab(PackedVector2Array([Vector2(-0.05, 0.16), Vector2(0.03, 0.18), Vector2(0.06, 0.1),
-				Vector2(0.06, -0.12), Vector2(0.0, -0.18), Vector2(-0.05, -0.14)]), 0.014, _mat(armor))
-		cowl.basis = Basis(Vector3(0, 0, 1), Vector3(0, 1, 0), Vector3(-1, 0, 0))
-		cowl.position = Vector3(x + side * (pod_r + 0.012), -0.02, pod_z)
-		root.add_child(cowl)
-		_weapon_rail(root, side, Vector3(x + side * (pod_r + 0.019), -0.02, pod_z), glow)
-		# The nozzle: a faceted bell with a glowing throat.
-		var bottom := -0.04 - pod_h * 0.5
-		root.add_child(_cylinder(pod_r * 0.7, pod_r * 0.8, 0.03, Vector3(x, bottom - 0.015, pod_z), _mat(trim), Vector3.ZERO, 8))
-		root.add_child(_cylinder(pod_r * 0.62, pod_r * 0.95, 0.07, Vector3(x, bottom - 0.065, pod_z), _mat(STEEL), Vector3.ZERO, 8))
-		root.add_child(_cylinder(pod_r * 0.7, pod_r * 0.7, 0.006, Vector3(x, bottom - 0.098, pod_z), _mat(glow, 1.5), Vector3.ZERO, 8))
+		# The thruster pod: a rounded tank, tucked in against the shell, with
+		# a lit strip down its back where the wearer's own arm never covers it.
+		root.add_child(_capsule(pod_r, pod_h + pod_r, Vector3(x, -0.03, pod_z), _mat(armor)))
+		for y: float in [pod_h * 0.28, -pod_h * 0.28]:
+			root.add_child(_cylinder(pod_r + 0.004, pod_r + 0.004, 0.014, Vector3(x, -0.03 + y, pod_z), _mat(trim), Vector3.ZERO, 16))
+		root.add_child(_box(Vector3(0.006, pod_h * 0.32, 0.006), Vector3(x + side * pod_r * 0.5, -0.03, pod_z + pod_r * 0.86), _mat(glow, 2.0)))
+		# Tier pips up the pod's back.
+		for i in tier:
+			root.add_child(_box(Vector3(0.012, 0.008, 0.004), Vector3(x - side * pod_r * 0.3, 0.06 + i * 0.016, pod_z + pod_r * 0.98), _mat(glow, 2.5)))
+		_weapon_rail(root, side, Vector3(x, -0.03, pod_z), pod_r, glow)
+		# The nozzle: a bell with a glowing throat, canted a little out and
+		# back so the flame clears the legs.
+		var nozzle_root := Node3D.new()
+		var bottom := -0.03 - pod_h * 0.5 - pod_r * 0.3
+		nozzle_root.position = Vector3(x, bottom, pod_z)
+		nozzle_root.basis = Basis(Vector3.FORWARD, side * nozzle_cant) * Basis(Vector3.RIGHT, -nozzle_cant * 0.7)
+		root.add_child(nozzle_root)
+		nozzle_root.add_child(_cylinder(pod_r * 0.62, pod_r * 0.75, 0.026, Vector3(0, -0.013, 0), _mat(trim), Vector3.ZERO, 16))
+		nozzle_root.add_child(_cylinder(pod_r * 0.6, pod_r * 0.9, 0.06, Vector3(0, -0.055, 0), _mat(STEEL), Vector3.ZERO, 16))
+		nozzle_root.add_child(_cylinder(pod_r * 0.68, pod_r * 0.68, 0.004, Vector3(0, -0.084, 0), _mat(glow, 1.5), Vector3.ZERO, 16))
 		var nozzle := Marker3D.new()
 		nozzle.name = "Nozzle" + ("L" if side < 0.0 else "R")
-		nozzle.position = Vector3(x, bottom - 0.1, pod_z)
-		nozzle.set_meta("flame", Vector2(pod_r * 0.85, 0.7 if heavy else 0.55))
-		root.add_child(nozzle)
+		nozzle.position = Vector3(0, -0.086, 0)
+		nozzle.set_meta("flame", Vector2(pod_r * 0.8, 0.7 if heavy else 0.55))
+		nozzle_root.add_child(nozzle)
 		if heavy:
-			# A swept stabilizer off each cowl.
-			# Swept back off the pod rather than out to the side, so it never
-			# crosses a weapon clamped to the rail.
-			var fin := _slab(PackedVector2Array([Vector2(0, 0.06), Vector2(0.1, -0.04), Vector2(0.11, -0.12), Vector2(0, -0.08)]),
-					0.012, _mat(armor))
+			# A swept stabilizer back off the pod's outer side, clear of a
+			# weapon on the rail behind it.
+			var fin := _slab(_rounded(PackedVector2Array([Vector2(0, 0.06), Vector2(0.09, -0.03), Vector2(0.1, -0.11), Vector2(0, -0.08)]), 0.012),
+					0.01, _mat(armor))
 			fin.basis = Basis(Vector3(0, 0, 1), Vector3(0, 1, 0), Vector3(-1, 0, 0))
-			fin.position = Vector3(x, -0.1, pod_z + pod_r * 0.6)
+			fin.position = Vector3(x + side * pod_r * 0.85, -0.11, pod_z + pod_r * 0.2)
 			root.add_child(fin)
-			root.add_child(_box(Vector3(0.006, 0.05, 0.006), Vector3(x, -0.18, pod_z + pod_r * 0.6 + 0.11), _mat(glow, 2.0)))
+			root.add_child(_box(Vector3(0.005, 0.045, 0.005), Vector3(x + side * pod_r * 0.85, -0.18, pod_z + pod_r * 0.2 + 0.1), _mat(glow, 2.0)))
 	return root
 
 
-## A weapon rail on the outer face of a back rig's side (`at`; `standoff`
-## further back on brackets, where something slides out of that side): a bar
-## that stands on the cowl at its foot and leans out at the top on a longer
-## post, with a clamp near each end. Holstered long weapons are worn against
-## the clamps ("MountL/R"), so they sit on the pack, not beside it.
-func _weapon_rail(root: Node3D, side: float, at: Vector3, glow: Color, standoff := 0.0) -> void:
+## A weapon rail on the back of a back rig's side, on the curve of whatever
+## stands there (a pod or the shell, `radius` from `at`; `standoff` further
+## back on a fairing, where something slides out of that side): a flush
+## mag-lock strip with two lit lock pads, its face turned `mount_turn` from
+## straight out toward the back, so a clamped weapon stands edge on behind
+## the pack, clear of the arm and the screen, and leaning out at the top.
+## Nothing sticks out of it while it is empty. Holstered long weapons are
+## worn against it ("MountL/R").
+func _weapon_rail(root: Node3D, side: float, at: Vector3, radius: float, glow: Color, standoff := 0.0) -> void:
 	if standoff > 0.0:
-		# Brackets back from the pack's side to where the rail stands.
-		for y: float in [-rail_length * 0.38, rail_length * 0.38]:
-			root.add_child(_box(Vector3(0.02, 0.022, standoff + 0.01), Vector3(at.x - side * 0.008, at.y + y, at.z + standoff * 0.5), _mat(DARK)))
+		# A fairing back from the pack's side to where the rail stands, so
+		# the rail reads as part of the pack, not on a stalk.
+		# It starts behind the side's slot, so nothing sliding out meets it.
+		var fairing := _pillow_mesh(Vector2(standoff + radius - 0.03, rail_length * 0.85), 0.018, 0.02, _mat(DARK))
+		fairing.basis = Basis(Vector3.UP, PI / 2.0)
+		fairing.position = Vector3(at.x, at.y, at.z + (standoff + radius + 0.03) * 0.5)
+		root.add_child(fairing)
 		at.z += standoff
-	var lean := Basis(Vector3.BACK, -side * mount_lean)
-	var out := lean * Vector3(side, 0, 0)
-	var up := lean * Vector3.UP
-	var thick := 0.014
-	var foot := at + Vector3(0, -rail_length * 0.5, 0)
-	var centre := foot + up * rail_length * 0.5 + out * thick * 0.5
-	var bar := _box(Vector3(thick, rail_length, 0.026), Vector3.ZERO, _mat(STEEL))
-	bar.basis = lean
-	bar.position = centre
-	root.add_child(bar)
-	# Posts back to the cowl: a short one at the foot, a longer one up top.
-	for t: float in [0.12, 0.88]:
-		var on_rail := foot + up * rail_length * t
-		var gap := absf(on_rail.x - at.x) + 0.004
-		root.add_child(_box(Vector3(gap, 0.022, 0.02), Vector3(at.x + side * gap * 0.5, on_rail.y, at.z), _mat(DARK)))
-	# The clamps: a jaw block on the rail's face, with a prong reaching out
-	# past the weapon's front and back to grip it, and a lit latch.
-	var jaw := 0.012
-	for t: float in [0.2, 0.8]:
-		var at_t := foot + up * rail_length * t
-		var block := _box(Vector3(jaw, 0.034, 0.09), Vector3.ZERO, _mat(DARK))
-		block.basis = lean
-		block.position = at_t + out * (thick + jaw * 0.5)
-		root.add_child(block)
-		for z: float in [-1.0, 1.0]:
-			var prong := _box(Vector3(clamp_reach, 0.03, 0.01), Vector3.ZERO, _mat(DARK))
-			prong.basis = lean
-			prong.position = at_t + out * (thick + jaw + clamp_reach * 0.5) + Vector3(0, 0, z * 0.04)
-			root.add_child(prong)
-		var latch := _box(Vector3(0.012, 0.008, 0.004), Vector3.ZERO, _mat(glow, 2.0))
-		latch.basis = lean
-		latch.position = at_t + out * (thick + jaw + clamp_reach * 0.6) + Vector3(0, 0, 0.046)
-		root.add_child(latch)
+	var basis := Basis(Vector3.BACK, -side * mount_lean) * Basis(Vector3.UP, -side * mount_turn)
+	var out := basis.x * side
+	var up := basis.y
+	var face := at + Vector3(out.x, 0.0, out.z).normalized() * radius
+	var thick := 0.008
+	var strip := _pillow_mesh(Vector2(0.028, rail_length), thick, 0.012, _mat(DARK))
+	strip.basis = basis * Basis(Vector3.UP, side * PI / 2.0)
+	strip.position = face + out * thick * 0.5
+	root.add_child(strip)
+	# The lock pads: a lit dot near each end of the strip.
+	for t: float in [-0.38, 0.38]:
+		var pad := _cylinder(0.007, 0.007, 0.003, Vector3.ZERO, _mat(glow, 2.0), Vector3.ZERO, 12)
+		pad.basis = basis * Basis(Vector3.BACK, -side * PI / 2.0)
+		pad.position = face + up * rail_length * t + out * (thick + 0.0015)
+		root.add_child(pad)
 	var mount := Marker3D.new()
 	mount.name = "Mount" + ("L" if side < 0.0 else "R")
-	mount.basis = lean
-	mount.position = foot + up * rail_length * 0.5 + out * (thick + jaw)
+	mount.basis = basis
+	mount.position = face + out * thick
 	root.add_child(mount)
 
 
 ## Back plate and shoulder straps, shared by every back-worn rig.
 func _harness(root: Node3D, width: float, height: float) -> void:
-	root.add_child(_box(Vector3(width, height, 0.035), Vector3(0, -0.06, 0.018), _mat(DARK)))
+	_pillow(root, Vector2(width, height), 0.03, 0.05, Vector3(0, -0.06, 0.018), _mat(DARK))
 	for x: float in [-0.1, 0.1]:
-		root.add_child(_box(Vector3(0.05, 0.03, 0.26), Vector3(x, 0.13, -0.1), _mat(STRAP)))
-		root.add_child(_box(Vector3(0.05, 0.24, 0.025), Vector3(x, 0.02, -0.225), _mat(STRAP)))
-		root.add_child(_box(Vector3(0.03, 0.03, 0.03), Vector3(x, -0.08, -0.235), _mat(STEEL)))
+		root.add_child(_box(Vector3(0.05, 0.026, 0.26), Vector3(x, 0.13, -0.1), _mat(STRAP)))
+		root.add_child(_box(Vector3(0.05, 0.24, 0.02), Vector3(x, 0.02, -0.225), _mat(STRAP)))
+		root.add_child(_capsule(0.014, 0.05, Vector3(x, -0.08, -0.237), _mat(STEEL), Vector3(0, 0, PI / 2.0)))
 	# A waist strap clip.
-	root.add_child(_box(Vector3(width * 0.9, 0.04, 0.03), Vector3(0, -0.29, 0.02), _mat(STRAP)))
+	root.add_child(_box(Vector3(width * 0.9, 0.036, 0.026), Vector3(0, -0.29, 0.02), _mat(STRAP)))
 
 
 # --- Wings ----------------------------------------------------------------------
@@ -268,29 +259,31 @@ func _wing_pack(id: String) -> Node3D:
 	root.name = "WingPack"
 	var accent: Color = ItemDB.RARITY_COLORS[ItemDB.item_rarity(id)]
 	var paint := Color(0.34, 0.42, 0.48)
-	_harness(root, 0.28, 0.4)
-	# A slim shell with a ridge down the middle and a wing slot down each side.
-	root.add_child(_box(Vector3(0.28, 0.44, 0.08), Vector3(0, -0.06, 0.075), _mat(paint)))
-	root.add_child(_cylinder(0.04, 0.04, 0.28, Vector3(0, 0.16, 0.075), _mat(paint), Vector3(0, 0, PI / 2.0)))
-	for x: float in [-0.141, 0.141]:
-		root.add_child(_box(Vector3(0.006, 0.38, 0.03), Vector3(x, -0.06, 0.075), _mat(STRAP)))
+	_harness(root, 0.26, 0.4)
+	# A slim rounded shell with a spine ridge, a wing slot down each side
+	# and a rounded cap over the top.
+	_pillow(root, Vector2(0.27, 0.44), 0.075, 0.07, Vector3(0, -0.06, 0.075), _mat(paint))
+	_pillow(root, Vector2(0.21, 0.36), 0.012, 0.05, Vector3(0, -0.07, 0.116), _mat(paint.darkened(0.15)))
+	root.add_child(_capsule(0.036, 0.26, Vector3(0, 0.15, 0.075), _mat(paint), Vector3(0, 0, PI / 2.0)))
+	for x: float in [-0.136, 0.136]:
+		root.add_child(_box(Vector3(0.004, 0.36, 0.026), Vector3(x, -0.06, 0.075), _mat(STRAP)))
 	# A screen bay up top, kept clear for the heat readout as on a jetpack,
 	# and the ridge below it.
-	var bay_at := Vector3(0, 0.03, 0.118)
-	root.add_child(_box(Vector3(0.15, 0.16, 0.006), bay_at, _mat(DARK)))
+	var bay_at := Vector3(0, 0.03, 0.124)
+	_pillow(root, Vector2(0.15, 0.16), 0.006, 0.02, bay_at, _mat(DARK))
 	var display := Marker3D.new()
 	display.name = "HeatDisplay"
 	display.position = bay_at + Vector3(0, 0, 0.004)
 	display.set_meta("size", Vector2(0.13, 0.14))
 	root.add_child(display)
-	root.add_child(_box(Vector3(0.04, 0.2, 0.03), Vector3(0, -0.17, 0.125), _mat(DARK)))
-	root.add_child(_box(Vector3(0.012, 0.16, 0.012), Vector3(0, -0.17, 0.142), _mat(accent, 1.2)))
+	root.add_child(_capsule(0.016, 0.2, Vector3(0, -0.17, 0.124), _mat(DARK)))
+	root.add_child(_box(Vector3(0.008, 0.15, 0.008), Vector3(0, -0.17, 0.14), _mat(accent, 1.2)))
 	# One short launch nozzle at the bottom.
-	root.add_child(_cylinder(0.035, 0.05, 0.07, Vector3(0, -0.305, 0.075), _mat(STEEL)))
-	root.add_child(_cylinder(0.04, 0.04, 0.006, Vector3(0, -0.342, 0.075), _mat(EMBER, 0.8)))
+	root.add_child(_cylinder(0.035, 0.048, 0.06, Vector3(0, -0.3, 0.075), _mat(STEEL)))
+	root.add_child(_cylinder(0.038, 0.038, 0.004, Vector3(0, -0.331, 0.075), _mat(EMBER, 0.8)))
 	var nozzle := Marker3D.new()
 	nozzle.name = "Nozzle"
-	nozzle.position = Vector3(0, -0.345, 0.075)
+	nozzle.position = Vector3(0, -0.334, 0.075)
 	nozzle.set_meta("flame", Vector2(0.045, 0.5))
 	root.add_child(nozzle)
 
@@ -311,7 +304,7 @@ func _wing_pack(id: String) -> Node3D:
 		root.add_child(hinge)
 		# The weapon rail stands off the back corner, behind the wing slot,
 		# so a clamped weapon never meets a wing sliding out.
-		_weapon_rail(root, side, Vector3(side * 0.14, -0.06, 0.075), accent, wing_rail_standoff)
+		_weapon_rail(root, side, Vector3(side * 0.135, -0.08, 0.075), 0.03, accent, wing_rail_standoff)
 	set_wing_spread(root, 0.0)
 	return root
 
@@ -358,27 +351,34 @@ func _boot(id: String, side: float) -> Node3D:
 	var root := Node3D.new()
 	root.name = "BootL" if side < 0.0 else "BootR"
 	var accent: Color = ItemDB.RARITY_COLORS[ItemDB.item_rarity(id)]
+	var tier := int(ItemDB.item_stats(id).get("tier", 1))
 	var paint := Color(0.32, 0.33, 0.36)
-	# A cuff around the ankle, with a lit strip and a strap.
-	root.add_child(_box(Vector3(0.14, 0.11, 0.16), Vector3(0, 0.09, 0.005), _mat(paint)))
-	root.add_child(_box(Vector3(0.145, 0.02, 0.165), Vector3(0, 0.05, 0.005), _mat(STRAP)))
-	root.add_child(_box(Vector3(0.012, 0.06, 0.06), Vector3(side * 0.072, 0.1, -0.02), _mat(accent, 1.3)))
-	# The heel thruster: a pod behind the heel, firing straight down.
-	var pod_z := 0.1
-	root.add_child(_cylinder(0.042, 0.042, 0.13, Vector3(0, 0.06, pod_z), _mat(DARK)))
-	root.add_child(_cylinder(0.046, 0.046, 0.02, Vector3(0, 0.11, pod_z), _mat(STEEL)))
-	root.add_child(_cylinder(0.028, 0.045, 0.05, Vector3(0, -0.03, pod_z), _mat(STEEL)))
-	root.add_child(_cylinder(0.032, 0.032, 0.005, Vector3(0, -0.056, pod_z), _mat(EMBER, 0.8)))
+	# A slim rounded cuff close round the ankle, with a lit strip and a strap.
+	var cuff := _capsule(0.062, 0.16, Vector3(0, 0.09, 0.01), _mat(paint))
+	cuff.scale = Vector3(1.0, 0.75, 1.15)
+	root.add_child(cuff)
+	root.add_child(_cylinder(0.066, 0.066, 0.016, Vector3(0, 0.055, 0.01), _mat(STRAP), Vector3.ZERO, 16))
+	root.add_child(_box(Vector3(0.006, 0.05, 0.03), Vector3(side * 0.063, 0.1, -0.015), _mat(accent, 1.3)))
+	# Tier pips up the outside of the cuff.
+	for i in tier:
+		root.add_child(_box(Vector3(0.004, 0.006, 0.012), Vector3(side * 0.064, 0.13 + i * 0.012, 0.03), _mat(accent, 2.0)))
+	# The heel thruster: a rounded pod faired into the back of the cuff,
+	# firing straight down.
+	var pod_z := 0.085
+	root.add_child(_capsule(0.036, 0.15, Vector3(0, 0.06, pod_z), _mat(DARK)))
+	root.add_child(_cylinder(0.039, 0.039, 0.012, Vector3(0, 0.1, pod_z), _mat(STEEL), Vector3.ZERO, 16))
+	root.add_child(_cylinder(0.026, 0.04, 0.04, Vector3(0, -0.025, pod_z), _mat(STEEL), Vector3.ZERO, 16))
+	root.add_child(_cylinder(0.029, 0.029, 0.004, Vector3(0, -0.046, pod_z), _mat(EMBER, 0.8), Vector3.ZERO, 16))
 	var nozzle := Marker3D.new()
 	nozzle.name = "Nozzle"
-	nozzle.position = Vector3(0, -0.058, pod_z)
-	nozzle.set_meta("flame", Vector2(0.035, 0.32))
+	nozzle.position = Vector3(0, -0.048, pod_z)
+	nozzle.set_meta("flame", Vector2(0.032, 0.32))
 	root.add_child(nozzle)
-	# A small fin running back off the pod.
-	var fin := _slab(PackedVector2Array([Vector2(0, 0.06), Vector2(0.05, -0.02), Vector2(0.05, -0.07), Vector2(0, -0.04)]),
-			0.01, _mat(paint))
+	# A small swept fin running back off the pod.
+	var fin := _slab(_rounded(PackedVector2Array([Vector2(0, 0.06), Vector2(0.045, -0.01), Vector2(0.045, -0.06), Vector2(0, -0.035)]), 0.008),
+			0.008, _mat(paint))
 	fin.basis = Basis(Vector3(0, 0, 1), Vector3(0, 1, 0), Vector3(-1, 0, 0))
-	fin.position = Vector3(0, 0.06, pod_z + 0.04)
+	fin.position = Vector3(0, 0.06, pod_z + 0.032)
 	root.add_child(fin)
 	return root
 
@@ -456,4 +456,68 @@ func _slab(outline: PackedVector2Array, thickness: float, mat: Material) -> Mesh
 	mesh.surface_set_material(0, mat)
 	var part := MeshInstance3D.new()
 	part.mesh = mesh
+	return part
+
+
+## A rounded slab: `size` (x wide, y tall) with corners of `radius`, `depth`
+## deep along Z, and a bevel round its face (a second, thinner-edged slab
+## inset over it), centred on `at`.
+func _pillow(root: Node3D, size: Vector2, depth: float, radius: float, at: Vector3, mat: Material) -> void:
+	var part := _pillow_mesh(size, depth, radius, mat)
+	part.position = at
+	root.add_child(part)
+
+
+func _pillow_mesh(size: Vector2, depth: float, radius: float, mat: Material) -> Node3D:
+	var holder := Node3D.new()
+	var bevel := minf(0.008, minf(size.x, size.y) * 0.12)
+	var back := _slab(_round_rect(size, radius), maxf(depth - bevel * 2.0, depth * 0.4), mat)
+	holder.add_child(back)
+	var inset := Vector2(maxf(size.x - bevel * 2.0, size.x * 0.6), maxf(size.y - bevel * 2.0, size.y * 0.6))
+	holder.add_child(_slab(_round_rect(inset, maxf(radius - bevel, 0.002)), depth, mat))
+	return holder
+
+
+## The outline of a `size` rectangle round its middle with corners of `radius`.
+static func _round_rect(size: Vector2, radius: float) -> PackedVector2Array:
+	var r := minf(radius, minf(size.x, size.y) * 0.5)
+	var hx := size.x * 0.5 - r
+	var hy := size.y * 0.5 - r
+	var out := PackedVector2Array()
+	var steps := 4
+	for corner in 4:
+		var c := Vector2(hx if corner == 0 or corner == 3 else -hx, hy if corner < 2 else -hy)
+		for i in steps + 1:
+			var a := (corner + float(i) / steps) * PI * 0.5
+			out.append(c + Vector2(cos(a), sin(a)) * r)
+	return out
+
+
+## `outline` with each corner cut into a short round of `radius`.
+static func _rounded(outline: PackedVector2Array, radius: float) -> PackedVector2Array:
+	var out := PackedVector2Array()
+	var n := outline.size()
+	for i in n:
+		var p := outline[i]
+		var prev := (outline[(i + n - 1) % n] - p)
+		var next := (outline[(i + 1) % n] - p)
+		var cut := minf(radius, minf(prev.length(), next.length()) * 0.4)
+		out.append(p + prev.normalized() * cut)
+		out.append(p + (prev.normalized() + next.normalized()) * cut * 0.3)
+		out.append(p + next.normalized() * cut)
+	return out
+
+
+## A capsule standing on Y (`height` end to end), turned by `rot` (Euler).
+func _capsule(radius: float, height: float, at: Vector3, mat: Material, rot := Vector3.ZERO) -> MeshInstance3D:
+	var mesh := CapsuleMesh.new()
+	mesh.radius = radius
+	mesh.height = maxf(height, radius * 2.0)
+	mesh.radial_segments = 16
+	mesh.rings = 4
+	mesh.material = mat
+	var part := MeshInstance3D.new()
+	part.mesh = mesh
+	part.position = at
+	part.rotation = rot
 	return part
