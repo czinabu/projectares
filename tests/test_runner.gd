@@ -4393,10 +4393,12 @@ func _test_online() -> void:
 			await frames(30)
 			var moved := from.distance_to(seen.global_position)
 			check(moved > 3.0, "one player's movement reaches the other through the server (%.1f m)" % moved)
-			# The server may still be playing the last inputs on a busy machine.
+			# The server may still be playing the last inputs on a busy machine
+			# (a CI runner has been seen 5 m behind after two seconds), so give
+			# it time to catch up before judging.
 			var agree := func() -> bool:
 				return seen.global_position.distance_to(alpha.raid.player.global_position) < 2.0
-			await _wait_until(agree, 120)
+			await _wait_until(agree, 360)
 			var apart := seen.global_position.distance_to(alpha.raid.player.global_position)
 			check(apart < 2.0, "both clients agree where that player is (%.2f m apart)" % apart)
 		var roster := RaidRoster.new(bravo.raid, bravo.raid.player)
