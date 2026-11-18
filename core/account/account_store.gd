@@ -40,6 +40,7 @@ var dir := ""
 var imported := 0
 
 var _db: Object = null
+var _json_receipts := {}  # request id -> [answer, unix time] (JSON fallback only)
 
 
 ## True when the SQLite extension loaded in this build.
@@ -72,6 +73,7 @@ func open(p_dir: String, force_json := false) -> bool:
 			and _exec("PRAGMA synchronous = FULL") \
 			and _exec("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)") \
 			and _exec("CREATE TABLE IF NOT EXISTS accounts (id TEXT PRIMARY KEY, name TEXT NOT NULL, data TEXT NOT NULL, updated INTEGER NOT NULL)") \
+			and _exec("CREATE TABLE IF NOT EXISTS receipts (id TEXT PRIMARY KEY, answer TEXT NOT NULL, at INTEGER NOT NULL)") \
 			and _bind("INSERT OR IGNORE INTO meta (key, value) VALUES ('schema', ?)", [str(SCHEMA_VERSION)])
 	if not ok:
 		push_error("AccountStore: could not set up %s" % dir.path_join(FILE_NAME))
@@ -140,17 +142,26 @@ func ids() -> Array[String]:
 
 ## Writes the accounts (each a `to_dict` with an "id") as one transaction:
 ## all of them or, if anything fails, none. Returns whether they were written.
-func write(accounts: Array) -> bool:
-	if accounts.is_empty():
+## `receipt` ([request id, answer text], see `receipt`) is written in that
+## same transaction, so a request's changes and the record that it was
+## answered land together or not at all.
+func write(accounts: Array, receipt: Array = []) -> bool:
+	if accounts.is_empty() and receipt.is_empty():
 		return true
 	if kind == "json":
 		var all_ok := true
 		for data: Dictionary in accounts:
 			all_ok = _write_json(data) and all_ok
+		if all_ok and receipt.size() == 2:
+			_json_receipts[str(receipt[0])] = [str(receipt[1]), int(Time.get_unix_time_from_system())]
 		return all_ok
 	if kind != "sqlite" or not _exec("BEGIN IMMEDIATE"):
 		return false
 	var now := int(Time.get_unix_time_from_system())
+	if receipt.size() == 2 and not _bind("INSERT OR REPLACE INTO receipts (id, answer, at) VALUES (?, ?, ?)",
+			[str(receipt[0]), str(receipt[1]), now]):
+		_exec("ROLLBACK")
+		return false
 	for data: Dictionary in accounts:
 		if not _bind("INSERT INTO accounts (id, name, data, updated) VALUES (?, ?, ?, ?) "
 				+ "ON CONFLICT(id) DO UPDATE SET name = excluded.name, data = excluded.data, updated = excluded.updated",
@@ -162,6 +173,46 @@ func write(accounts: Array) -> bool:
 		_exec("ROLLBACK")
 		return false
 	return true
+
+
+## The answer kept for request `id` (see `write`), or "" if that request was
+## never answered here. The account service uses it to answer a request it
+## is sent twice (the first answer was lost on the way) without doing it
+## twice. The JSON fallback only remembers them until the program stops.
+func receipt(id: String) -> String:
+	if kind == "json":
+		return str(_json_receipts[id][0]) if _json_receipts.has(id) else ""
+	if kind != "sqlite" or not _bind("SELECT answer FROM receipts WHERE id = ?", [id]):
+		return ""
+	var rows: Array = _db.get("query_result")
+	return "" if rows.is_empty() else str(rows[0].get("answer", ""))
+
+
+## Forgets receipts older than `seconds`. A request is only ever repeated
+## while its sender still waits for the answer, so they are short-lived.
+func prune_receipts(seconds: float) -> void:
+	var before := int(Time.get_unix_time_from_system() - seconds)
+	if kind == "json":
+		for id: String in _json_receipts.keys():
+			if int(_json_receipts[id][1]) < before:
+				_json_receipts.erase(id)
+	elif kind == "sqlite":
+		_bind("DELETE FROM receipts WHERE at < ?", [before])
+
+
+## The ids of every saved account that has gear out in a world (a deploy
+## that was never settled), sorted.
+func deployed_ids() -> Array[String]:
+	var out: Array[String] = []
+	if kind == "json":
+		for id in ids():
+			if str(read(id).get("deployed_world", "")) != "":
+				out.append(id)
+	elif kind == "sqlite" and _exec("SELECT id FROM accounts WHERE json_extract(data, '$.deployed_world') != ''"):
+		for row: Dictionary in _db.get("query_result"):
+			out.append(str(row.get("id", "")))
+	out.sort()
+	return out
 
 
 ## Copies the whole store into `to_dir` as it stands right now: the database

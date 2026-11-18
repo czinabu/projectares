@@ -16,6 +16,20 @@ const FOV_RANGE := Vector2(60.0, 110.0)
 const CAMERA_DISTANCE_RANGE := Vector2(1.2, 4.5)
 ## How far the first-person camera sits back from the face, in meters.
 const EYE_PULLBACK_RANGE := Vector2(0.0, 0.25)
+## Smoothing of jagged edges, cheapest first: [name on the phone, MSAA,
+## screen-space pass]. SMAA (the default) smooths every edge in one cheap
+## pass after the frame; MSAA on top of it draws the outlines of shapes
+## sharper, at a cost, and leaves no depth for the edge ink to read, so the
+## ink is off in those modes. TAA is left out on purpose: it smears fast
+## motion.
+const ANTI_ALIASING := [
+	["Off", Viewport.MSAA_DISABLED, Viewport.SCREEN_SPACE_AA_DISABLED],
+	["Light (FXAA)", Viewport.MSAA_DISABLED, Viewport.SCREEN_SPACE_AA_FXAA],
+	["Smooth (SMAA)", Viewport.MSAA_DISABLED, Viewport.SCREEN_SPACE_AA_SMAA],
+	["Sharp edges (MSAA 2x + SMAA)", Viewport.MSAA_2X, Viewport.SCREEN_SPACE_AA_SMAA],
+	["Best (MSAA 4x + SMAA)", Viewport.MSAA_4X, Viewport.SCREEN_SPACE_AA_SMAA],
+]
+const ANTI_ALIASING_DEFAULT := 2
 
 ## Tests turn this off so they never touch a real settings file.
 static var persist := true
@@ -31,6 +45,11 @@ static var eye_pullback := 0.15
 static var master_volume := 0.8
 static var fullscreen := false
 static var show_nameplates := true
+## An index into `ANTI_ALIASING`.
+static var anti_aliasing := ANTI_ALIASING_DEFAULT
+## A thin dark outline on far shapes out in a world (`Look.edge_ink`), so
+## they read against the haze. Not drawn in the MSAA modes (`ink_shown`).
+static var edge_ink := true
 static var _loaded := false
 
 
@@ -53,6 +72,8 @@ static func reset() -> void:
 	master_volume = 0.8
 	fullscreen = false
 	show_nameplates = true
+	anti_aliasing = ANTI_ALIASING_DEFAULT
+	edge_ink = true
 
 
 static func set_value(key: String, value: Variant) -> void:
@@ -75,6 +96,10 @@ static func set_value(key: String, value: Variant) -> void:
 			fullscreen = bool(value)
 		"show_nameplates":
 			show_nameplates = bool(value)
+		"anti_aliasing":
+			anti_aliasing = clampi(int(value), 0, ANTI_ALIASING.size() - 1)
+		"edge_ink":
+			edge_ink = bool(value)
 		_:
 			return
 	apply()
@@ -85,11 +110,13 @@ static func to_dict() -> Dictionary:
 	return {"mouse_sensitivity": mouse_sensitivity, "invert_y": invert_y, "field_of_view": field_of_view,
 			"field_of_view_third": field_of_view_third, "camera_distance": camera_distance,
 			"eye_pullback": eye_pullback,
-			"master_volume": master_volume, "fullscreen": fullscreen, "show_nameplates": show_nameplates}
+			"master_volume": master_volume, "fullscreen": fullscreen, "show_nameplates": show_nameplates,
+			"anti_aliasing": anti_aliasing, "edge_ink": edge_ink}
 
 
-## Pushes the settings that live outside the game's own nodes: volume and the
-## window. Does nothing to the window when there is none.
+## Pushes the settings that live outside the game's own nodes: volume, the
+## window and how the main view is drawn. Does nothing to the window when
+## there is none.
 static func apply() -> void:
 	var bus := AudioServer.get_bus_index("Master")
 	if bus >= 0:
@@ -97,11 +124,32 @@ static func apply() -> void:
 		AudioServer.set_bus_mute(bus, master_volume <= 0.001)
 	if DisplayServer.get_name() == "headless":
 		return
+	apply_graphics()
 	var want := DisplayServer.WINDOW_MODE_FULLSCREEN if fullscreen else DisplayServer.WINDOW_MODE_WINDOWED
 	var mode := DisplayServer.window_get_mode()
 	var is_full := mode == DisplayServer.WINDOW_MODE_FULLSCREEN or mode == DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN
 	if is_full != fullscreen:
 		DisplayServer.window_set_mode(want)
+
+
+## Sets the main view's edge smoothing (only the main view: the scope's and
+## the mirror's small pictures keep their own) and shows or hides the edge
+## ink on far shapes.
+static func apply_graphics() -> void:
+	var tree := Engine.get_main_loop() as SceneTree
+	if tree == null or tree.root == null:
+		return
+	var mode: Array = ANTI_ALIASING[anti_aliasing]
+	tree.root.msaa_3d = mode[1]
+	tree.root.screen_space_aa = mode[2]
+	for ink: Node in tree.get_nodes_in_group("edge_ink"):
+		(ink as Node3D).visible = ink_shown()
+
+
+## Whether the edge ink is drawn: switched on, and no MSAA, which leaves the
+## ink no depth to read.
+static func ink_shown() -> bool:
+	return edge_ink and ANTI_ALIASING[anti_aliasing][1] == Viewport.MSAA_DISABLED
 
 
 static func save() -> void:

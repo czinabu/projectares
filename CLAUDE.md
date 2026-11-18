@@ -442,6 +442,18 @@ without Caleb, and update the gap list when a PR closes a row.
   `visual_check.tscn -- <dir> --views-only [rows]` (`VIEW_MELEE=<item id>`
   picks the melee weapon), which also saves each shot full size under
   `views/`.
+- Picture quality is settings and light shaders, never new art: edge
+  smoothing is `GameSettings.anti_aliasing` (SMAA by default, MSAA on top
+  as an option; never TAA, it smears motion), set on the main view by
+  `GameSettings.apply_graphics`; world textures keep mipmaps (a test checks
+  their `.import` files) and are filtered 16x. Far shapes out in a world get
+  a thin outline from the depth buffer (`Look.edge_ink`,
+  `assets/shaders/edge_ink.gdshader`, a quad the shader stretches over the
+  camera, the same in both views), which MSAA leaves no depth for, so it is
+  off in those modes (`GameSettings.ink_shown`). Both are on the phone's
+  Settings, View tab. Compare by eye with `visual_check.tscn -- <dir>
+  --graphics-only [--aa 0-4] [--ink 0|1]` and measure with the frame bench's
+  `--aa` and `--ink`.
 - People are built from parts (`core/visual/human.gd`): an "appearance" names
   a build, four parts and colours. It is cosmetic only and never trusted:
   always pass one through `Look.clean_appearance` / `Look.set_appearance`,
@@ -874,7 +886,14 @@ without Caleb, and update the gap list when a PR closes a row.
   sends its version and sign-in through `SceneMultiplayer.auth_callback`
   (`NetSession._server_auth`, `_client_auth`) and counts as connected only
   once the server accepts, so an old game or a wrong secret never reaches
-  the session. Both sides' messages always carry "protocol", so any two
+  the session. Who a player is gets decided in one place,
+  `StashService.sign_in_with(credentials)`, by "method": the name and
+  secret, or a token. A sign-in with the secret hands back a token
+  (`NetSession.ticket`, kept per address by `main.gd`) that the game shows
+  the next server instead of the secret, and that every server of one
+  account service accepts; one that has run out is answered `"again":
+  "secret"` on the same connection. A store login (Steam) is a new method
+  there that ends in an account id, never a second path into a session. Both sides' messages always carry "protocol", so any two
   versions can say which one needs the update; an older game is pointed at
   `NetSession.UPDATE_URL` from the phone's Servers app. Every connection is
   encrypted with ENet DTLS (`core/net/server_trust.gd`): a server makes its
@@ -918,6 +937,38 @@ without Caleb, and update the gap list when a PR closes a row.
   so a lagging player hits what was on their screen. A vehicle the local
   player rides is predicted and corrected against `NetSession._ride_history`
   like the player's own actor.
+- The account service (DESIGN.md section 14): official servers share one
+  set of accounts, kept by one headless program, `-- --account-service`
+  (`core/account/account_service.gd`: the same `StashService` on SQLite,
+  with the market's board beside it). A game server started with
+  `--account-url` holds an `AccountLink` (`core/account/account_link.gd`) in
+  `NetSession.stash` instead of a `StashService`; any other server keeps
+  its own accounts and nothing moves between the two kinds. The link offers
+  the `StashService` calls, so a session never asks which it holds: every
+  call that asks the accounts for something is made with `await` (free on
+  a `StashService`, which answers at once), and what follows an `await`
+  checks the player is still there (`NetSession._here`). Never read
+  `_api.get_remote_sender_id()` after one. A new account call goes in
+  `StashService`, `AccountLink` and `AccountService.CALLS` together. The
+  link has three kinds of call: read at once from its copy of the accounts
+  signed in on that server (`snapshot`, `scrip_of`, `showcase`; the service
+  keeps the copy fresh and `account_changed` says when); awaited, giving up
+  as "unanswered" after `ANSWER_TIMEOUT` (sign-in, equip, buy, deploy); and
+  sure, kept and sent again until answered, for what the server alone
+  knows (`bank`, `settle`, `cancel_deploy`, `change_scrip`, `record_arena`).
+  The service does every request once: its receipt is written in the same
+  transaction as its changes (`StashService.begin_hold` / `end_hold`,
+  `AccountStore.write`'s `receipt`), so a new call that changes an account
+  goes in `AccountService.HELD`. The market is the exception (the board has
+  its own file), so a market request is sent once and never again. A
+  deploy belongs to the server that made it (`Account.deployed_by`): only
+  that server banks into it or settles it, a deploy never answered is
+  undone by its own request id (`undo_deploy`), and a game server that
+  starts afresh has its deploys returned. The service never returns a
+  deploy just because it restarted (`returns_lost_deploys` off). Game
+  servers prove the service key (`AccountService.load_key`) and players
+  never reach the service. `SocialService` and `ClanService` are still each
+  game server's own.
 - Online, the server owns each player's stash, loadout and mastery
   (`core/account/stash_service.gd`). A client's kit or picks are never trusted;
   the server gets them from `StashService.deploy` and applies results with
@@ -1344,8 +1395,9 @@ without Caleb, and update the gap list when a PR closes a row.
   It moves goods only through six ledger calls on the `StashService`
   (`count_of`, `scrip_of`, `take_items`, `give_items`, `change_scrip`, and
   `transaction`, which every listing charge and every sale goes through so
-  no trade is half done), so it can move onto a shared account service
-  later; it never writes an account itself. Listed items are held by the
+  no trade is half done); it never writes an account itself. On official
+  servers the board runs inside the account service, beside those accounts
+  (`AccountService.market`), and a session only passes the request on. Listed items are held by the
   board, its file is written before the accounts' transaction so a crash
   can lose a listing but never copy one, and
   a client only asks (`NetSession.market_ask`) from the Exchange kiosk in

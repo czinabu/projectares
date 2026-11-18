@@ -1882,10 +1882,35 @@ are never duplicated or lost. Postgres only if one machine stops being
 enough. Not a ready-made backend such as Nakama: it would need a second copy
 of the rules in another language.
 
+Built (accounts and the market): the service is `-- --account-service`
+(`core/account/account_service.gd`) and a game server started with
+`--account-url` reaches it through an `AccountLink`
+(`core/account/account_link.gd`), which offers the `StashService` calls, so
+a session does not know which it holds. A game server proves a shared key
+to the service and players never reach it. Each request carries an id and
+the service writes its receipt in the same transaction as its changes, so a
+request sent again after a lost answer is answered, not done twice. What a
+server alone knows (a finished life, banked loot, a wager paid) is kept and
+sent until answered; what a player is waiting on (equip, buy, deploy) gives
+up after 5 s, and a deploy that was never answered is undone by name. The
+server reads the accounts of the players it has from its own copy, which
+the service keeps fresh. Clans and the phone's social records move over
+with one program per world.
+
+**Sign-in tokens.** Signing in with the name and secret hands the game a
+token, good for 12 hours, that stands for that sign-in. The game shows the
+token, not the secret, to the next server it travels to, and every server
+of one account service accepts it by asking the service. One token per
+account: a new sign-in with the secret replaces it. A token that has run
+out falls back to the secret on the same connection. This is what lets each
+world run as its own program without the secret going to every one.
+
 **Sign-in.** Official servers move to Steam (or Epic) login through
 GodotSteam (MIT), checked on the server with the store's web service. That
 brings account recovery, bans and protection against stolen accounts.
-Friends' servers can keep the name and secret.
+Friends' servers can keep the name and secret. A store login is one more
+"method" of `StashService.sign_in_with` that ends in an account id; nothing
+past that call changes, and the token above is handed out the same way.
 
 Official servers open before the game is on Steam (Caleb's call), once
 connections are encrypted, signing in with the name and secret. A recovery

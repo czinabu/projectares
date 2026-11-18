@@ -38,6 +38,7 @@ const PortalTests := preload("res://tests/portal_tests.gd")
 const ContractTests := preload("res://tests/contract_tests.gd")
 const MarketTests := preload("res://tests/market_tests.gd")
 const AccountStoreTests := preload("res://tests/account_store_tests.gd")
+const AccountServiceTests := preload("res://tests/account_service_tests.gd")
 const FeelTests := preload("res://tests/feel_tests.gd")
 const ViewMatchTests := preload("res://tests/view_match_tests.gd")
 const GunRoleTests := preload("res://tests/gun_role_tests.gd")
@@ -316,6 +317,7 @@ func _run() -> void:
 	await _test_plaza_online()
 	await _test_stash_service()
 	await AccountStoreTests.run(self)
+	await AccountServiceTests.run(self)
 	await _test_phone()
 	await _test_dev_mode()
 	await _test_home_base()
@@ -6834,8 +6836,38 @@ func _test_game_settings() -> void:
 	check(not GameSettings.to_dict().has("nonsense"), "unknown settings are ignored")
 	var bus := AudioServer.get_bus_index("Master")
 	check(absf(AudioServer.get_bus_volume_db(bus) - linear_to_db(0.5)) < 0.01, "volume reaches the audio bus")
+	GameSettings.set_value("anti_aliasing", 99)
+	check(GameSettings.anti_aliasing == GameSettings.ANTI_ALIASING.size() - 1 and GameSettings.to_dict().has("anti_aliasing"),
+			"edge smoothing is clamped to the modes there are and saved")
+	GameSettings.set_value("anti_aliasing", 0)
+	GameSettings.apply_graphics()
+	var root := get_tree().root
+	var off := root.msaa_3d == Viewport.MSAA_DISABLED and root.screen_space_aa == Viewport.SCREEN_SPACE_AA_DISABLED
+	GameSettings.set_value("anti_aliasing", 4)
+	GameSettings.apply_graphics()
+	check(off and root.msaa_3d == Viewport.MSAA_4X and root.screen_space_aa == Viewport.SCREEN_SPACE_AA_SMAA,
+			"edge smoothing reaches the main view")
+	GameSettings.set_value("anti_aliasing", 2)
+	GameSettings.set_value("edge_ink", true)
+	var ink_smaa := GameSettings.ink_shown()
+	GameSettings.set_value("anti_aliasing", 3)
+	check(ink_smaa and not GameSettings.ink_shown() and GameSettings.to_dict().has("edge_ink"),
+			"the far-shape outline is saved, and left out with MSAA, which gives it no depth to read")
+	# Far ground and walls shimmer without mipmaps, so every world texture
+	# keeps them (and is not re-imported without them when seen in 3D).
+	var bare: Array[String] = []
+	for folder in DirAccess.get_directories_at("res://assets/textures"):
+		for file in DirAccess.get_files_at("res://assets/textures".path_join(folder)):
+			if not file.ends_with(".import"):
+				continue
+			var cfg := ConfigFile.new()
+			cfg.load("res://assets/textures".path_join(folder).path_join(file))
+			if not bool(cfg.get_value("params", "mipmaps/generate", false)):
+				bare.append(folder.path_join(file))
+	check(bare.is_empty(), "world textures have mipmaps (%s)" % ", ".join(bare))
 	GameSettings.reset()
 	GameSettings.apply()
+	GameSettings.apply_graphics()
 
 
 ## The Controls app lists every key from the input map as it is right now.
