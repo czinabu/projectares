@@ -85,7 +85,7 @@ signal base_visit_requested(owner_name: String, stash: Array, loadout: Dictionar
 signal portal_travel(destination: String)
 
 const DEFAULT_PORT := 24565
-const PROTOCOL := 41
+const PROTOCOL := 42
 ## Every packet is compressed, both ways. State updates are mostly repeated
 ## numbers, and a big battle sends a player hundreds of them a second. Server
 ## and client must agree, so a change here needs a new PROTOCOL.
@@ -112,6 +112,7 @@ const PROTOCOL := 41
 ## 40: warm beacons: a sign-out carries the rate its countdown runs at
 ## (`_sign_out`'s `rate`: 0 while away from the beacon, faster with company).
 ## 41: tracks: footprints and wheel tracks near a player (`_tracks`).
+## 42: thin ice: cracks (`_ice_crack`) and the open holes (`_ice_holes`).
 ## Where an out-of-date game gets the latest build: the rolling "latest"
 ## release the Windows client workflow publishes (docs/hosting.md).
 const UPDATE_URL := "https://github.com/czinabu/projectares/releases/tag/latest"
@@ -485,6 +486,13 @@ func _start_server_raid() -> void:
 		for peer in _joined_peers:
 			_toy.rpc_id(peer, thrower, item_id, from, toy_velocity, actor.cmd.yaw))
 	raid.toy_hand_changed.connect(_on_server_toy_hand)
+	raid.ice_cracked.connect(func(at: Vector3, stage: int) -> void:
+		for peer in _joined_peers:
+			_ice_crack.rpc_id(peer, at, stage))
+	raid.ice_changed.connect(func() -> void:
+		var holes := raid.pack_ice_holes()
+		for peer in _joined_peers:
+			_ice_holes.rpc_id(peer, holes))
 	raid.pinged.connect(_on_server_pinged)
 	raid.portal_opened.connect(func(portal: Portal) -> void:
 		for peer in _joined_peers:
@@ -1419,6 +1427,8 @@ func _send_world(peer: int) -> void:
 	_sent_points.erase(peer)
 	_sent_heat.erase(peer)
 	_sent_tracks.erase(peer)
+	if not raid.ice_holes.is_empty():
+		_ice_holes.rpc_id(peer, raid.pack_ice_holes())
 	if raid is Race:
 		_race_board.rpc_id(peer, (raid as Race).public_board())
 
@@ -3010,6 +3020,21 @@ func _send_tracks() -> void:
 func _tracks(data: PackedFloat32Array) -> void:
 	if raid != null and raid.world != null and raid.world.tracks:
 		raid.tracks.unpack(data, raid.clock)
+
+
+## Thin ice cracking (stages 1 and 2) or giving way (3) at `at`, for the
+## view to show and sound.
+@rpc("authority", "call_remote", "reliable")
+func _ice_crack(at: Vector3, stage: int) -> void:
+	if raid != null and raid.world != null and raid.world.thin_ice:
+		raid.ice_cracked.emit(at, clampi(stage, 1, Raid.ICE_WARNINGS.size() + 1))
+
+
+## The open holes in the ice (`Raid.pack_ice_holes`).
+@rpc("authority", "call_remote", "reliable")
+func _ice_holes(data: PackedFloat32Array) -> void:
+	if raid != null and raid.world != null and raid.world.thin_ice:
+		raid.unpack_ice_holes(data)
 
 
 ## Your body heat and whether you stand in warmth, for the visor and the

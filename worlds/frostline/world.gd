@@ -126,6 +126,9 @@ func _init() -> void:
 	tracks = true
 	# Still, cold air: a shot carries twice as far (DESIGN.md "Frostline").
 	shot_carry = 2.0
+	# The middle of the lake is thin ice: a bike or a person crosses, a
+	# rover or a mech that lingers goes through.
+	thin_ice = true
 
 
 func register_items() -> void:
@@ -159,6 +162,11 @@ func cold_at(pos: Vector3) -> float:
 	if pos.y - MapScript.floor_at(pos.z) > EXPOSED_OVER:
 		rate *= EXPOSED_MULT
 	return rate
+
+
+## The middle of the frozen lake, where the ice is thin.
+func thin_ice_at(pos: Vector3) -> bool:
+	return MapScript.lake_reach(pos.x, pos.z) < MapScript.THIN_ICE and pos.y < MapScript.floor_at(pos.z) + 1.0
 
 
 func zone_name(tier: int) -> String:

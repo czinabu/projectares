@@ -129,6 +129,16 @@ var track_lifetime := 240.0
 ## How far a gunshot carries, as a share of the usual: bots hear it that much
 ## further off (`Combat.noise`) and so do people (`Gun.SHOT_REACH`).
 var shot_carry := 1.0
+## Thin ice (DESIGN.md "Frostline"): with `thin_ice` on, the ground where
+## `thin_ice_at` says so bears a ground vehicle up to `ice_holds` tonnes
+## (its "weight" stat). A heavier one strains it by its weight over that a
+## second, cracking audibly on the way, and at `ice_break_strain` it breaks
+## through: the vehicle sinks, its riders go into the water, and the hole
+## stays open for `ice_refreeze` seconds (`Raid._tick_ice`). Off by default.
+var thin_ice := false
+var ice_holds := 1.0
+var ice_break_strain := 10.0
+var ice_refreeze := 150.0
 ## Seconds a sign-out takes while airborne. Progress already earned is kept
 ## when you land or lift off, so the seconds left are whatever the rate you
 ## are on still needs (DESIGN.md section 7). The exact air time is this.
@@ -344,6 +354,11 @@ func hazard_at(_pos: Vector3) -> float:
 ## default. A world may make some places colder (higher, more exposed).
 func cold_at(_pos: Vector3) -> float:
 	return cold
+
+
+## Whether the ground at a point is thin ice (see `thin_ice`).
+func thin_ice_at(_pos: Vector3) -> bool:
+	return false
 
 
 func can_damage(attacker: Node, target: Node, _info: DamageInfo) -> bool:
