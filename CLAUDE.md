@@ -180,12 +180,19 @@ without Caleb, and update the gap list when a PR closes a row.
   holds a site; clients get it from `NetSession`, including whether a site is
   theirs (`Strongpoint.viewer_holds`), and never see another player's key.
   Send bots somewhere with `BotBrain.post_to`, not a second mechanism.
+  An army turning for a new site is a push and is told before it lands
+  (`Raid._note_army_target`: a horn and ring at the site and a war feed
+  line at most every `PUSH_EVERY`, an arrow on the watch map from
+  `Raid.pushes`); clients hear of it through `NetSession._army_push`.
 - Where a player lands is the `Raid`'s call. `Raid.drop_choices(owner)` lists
   what is on offer (quiet, a held strongpoint, beside the fighting) and the
   chosen id goes into `add_player`'s `p_drop`, which falls back to a quiet
   drop if the choice is no longer on offer. Online the client only sends the
   id with `NetSession.deploy(drop)`; a client lists its choices from what the
   server already told it (`Strongpoint.viewer_holds`, war intensity).
+  An arrival with no choice lands at the spawn furthest from everyone,
+  and a fresh player (`WorldDef.fresh_gear_value`) furthest from strong
+  ones (`strong_gear_value`, `Raid._safest_spawn`).
   Arriving in a safe zone is just as fixed: a `p_drop` of
   "from:<destination>" ("home", "arena", "world:<id>") lands you just
   outside the plaza doorway that leads there (`Raid.arrival_point`), the
@@ -298,6 +305,12 @@ without Caleb, and update the gap list when a PR closes a row.
   (`BotBrain.melee_flinch`, its aim and trigger only, never a player's)
   and gives ground from one (`blade_backoff`). Measure with the duel
   bench's `--melee <blade id>`.
+- The life log (DESIGN.md "Challenge and balance data"): the authority's
+  `Raid` records every finished life (`Raid._log_life`, `LifeLog`): where,
+  how, what killed them and how many bots were after them, to JSON lines
+  under `LifeLog.directory` (`main.gd` sets it; empty writes nothing, as in
+  the tests). It is read only by `tests/life_report.tscn`, never in play.
+  A new thing worth tuning by is a new field there, not a second log.
 - Big battles must stay affordable; measure with
   `godot --headless --path . res://tests/battle_bench.tscn -- --bots 150 --players 32`
   (processor time a tick, against the 16.7 ms budget). Three things keep
@@ -1698,8 +1711,10 @@ without Caleb, and update the gap list when a PR closes a row.
   through `Contracts.jobs()`, never `JOBS` alone, the board offers one daily
   and one weekly per tag beside the general ones, and a tagged job counts
   only a result whose "contract_tag" matches (`Contracts.counts_in`). Stats
-  include `item:<id>` (brought home), `kills:<faction>`, `bosses` and
-  `cache:<source>` (once per fill, `LootContainer.looted_by`).
+  include `item:<id>` (brought home), `kills:<faction>`, `bosses`,
+  `cache:<source>` (once per fill, `LootContainer.looted_by`), `banks` and
+  `hold_seconds` (stood in a site your side holds, `Raid._count_holding`;
+  Ashfront's "warzone" jobs).
 - The player market (DESIGN.md section 10, "Two worlds, one loop"): rules
   once in `core/economy/market.gd` (static, like `Economy`: what trades, the
   price band, fees, the daily cap; Mk3, heavy weapons, artifacts and relics
