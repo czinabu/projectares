@@ -4377,7 +4377,8 @@ func _test_online() -> void:
 				"each client sees the other player, with their name and gear")
 		check(bravo.raid.players.size() == 2 and bravo.raid.active_players().size() == 2
 				and alpha.raid.bots.size() == world.bot_count + alpha.raid._map_nodes("spawn_boss").size(),
-				"a client's raid lists the players, separate from the bots")
+				"a client's raid lists the players, separate from the bots (%d players, %d bots for %d)"
+				% [bravo.raid.players.size(), alpha.raid.bots.size(), world.bot_count + alpha.raid._map_nodes("spawn_boss").size()])
 		if seen != null:
 			var from := seen.global_position
 			# Walk where there is room, so nothing knocks the two screens apart.

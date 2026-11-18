@@ -1116,9 +1116,11 @@ func _build_works() -> void:
 	# Where the district was held: a barricade at each end of the street.
 	_add_cover(Vector3(3.0, level, 178.0))
 	_add_cover(Vector3(-3.0, level, 112.0))
-	# Each army sends soldiers in from here, so the Works never sits empty.
-	_add_marker("spawn_bot", Vector3(-4.0, level, 168.0)).set_meta("faction", "legion")
-	_add_marker("spawn_bot", Vector3(4.0, level, 142.0)).set_meta("faction", "tide")
+	# Each army sends soldiers in from here, so the Works never sits empty:
+	# one in each shed, at opposite ends and behind walls, so nobody arrives
+	# already in the other army's sights.
+	_add_marker("spawn_bot", Vector3(-WORKS_STREET - 6.0, level, 186.0)).set_meta("faction", "legion")
+	_add_marker("spawn_bot", Vector3(WORKS_STREET + 6.0, level, 115.0)).set_meta("faction", "tide")
 
 
 ## A sawtooth roof on a hall: teeth across it, each a tilted slab rising
