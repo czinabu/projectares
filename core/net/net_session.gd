@@ -85,7 +85,7 @@ signal base_visit_requested(owner_name: String, stash: Array, loadout: Dictionar
 signal portal_travel(destination: String)
 
 const DEFAULT_PORT := 24565
-const PROTOCOL := 37
+const PROTOCOL := 38
 ## Every packet is compressed, both ways. State updates are mostly repeated
 ## numbers, and a big battle sends a player hundreds of them a second. Server
 ## and client must agree, so a change here needs a new PROTOCOL.
@@ -104,7 +104,8 @@ const PROTOCOL := 37
 ## sign-in answer carries its certificate.
 ## 36: reconnecting to your body after a drop (`_back`, `_rearm`), and a
 ## connection let go for a newer sign-in is told so (`_replaced`).
-## 37: what a player picks up is told to them item by item (`_looted`), for
+## 37: the account service (`AccountService`).
+## 38: what a player picks up is told to them item by item (`_looted`), for
 ## the visor's pickup feed.
 ## Where an out-of-date game gets the latest build: the rolling "latest"
 ## release the Windows client workflow publishes (docs/hosting.md).
