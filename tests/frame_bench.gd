@@ -137,11 +137,14 @@ func _start_online(bots: int, warmup: float) -> bool:
 	return true
 
 
-## A body that does not fall over while it is being measured. Solo only:
-## online the server decides.
+## A body that does not fall over while it is being measured: god mode,
+## with drop-in protection that never runs out (it never shoots, so it
+## never ends it) on top of a huge health pool. Solo only: online the
+## server decides.
 func _toughen(actor: Actor) -> void:
 	actor.health.max_health = 1.0e9
 	actor.health.health = 1.0e9
+	actor.protected_left = 1.0e9
 
 
 ## The bot with the most other bots within 50 m.
