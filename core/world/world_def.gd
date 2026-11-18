@@ -50,12 +50,16 @@ extends RefCounted
 ##     "role": where the people you talk to stand
 ##     (`core/social/plaza_locals.gd`), and optionally "lines" (what they
 ##     say, in turn), "reads" ("worlds": the dispatcher reads `world_status`
-##     out), "color" (their speech card's) and "dress" (`Human.random`'s pool,
-##     what they wear for their work).
+##     out), "color" (their speech card's), "dress" (`Human.random`'s pool,
+##     what they wear for their work) and "shop" (a keeper's shop id: they
+##     talk about its real stock and the player's account,
+##     `PlazaLocals.stock_lines`).
 ##   - optionally a `locals_layout()` method: where the place's locals spend
 ##     their day, as plain data (see `worlds/plaza/map.gd`). Without it the
 ##     place has no crowd. A "street" ({from, to, lane}) has shoppers walk
 ##     its lanes and cross only at doors instead of a "promenade" ring.
+##     "stops" (street carts) get a cook each and customers who queue in
+##     turn, eat at the tables and walk on.
 ##   - a Label3D in group "wanted_board": the most-wanted board, written by
 ##     `PlazaView` from `world_status`.
 ##

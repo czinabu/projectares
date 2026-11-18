@@ -18,10 +18,54 @@ const DAY := 20404
 static func run(t: Node) -> void:
 	print("Plaza life")
 	_favours(t)
+	_stock_talk(t)
 	_wanted_text(t)
 	await _bounty_and_wanted(t)
 	await _crowd(t)
 	await _layout(t)
+
+
+## A keeper talks about the shop's real stock and the player's own account:
+## today's piece (the same all day), something they could use and afford, and
+## an offer for their salvage.
+static func _stock_talk(t: Node) -> void:
+	var stock := Economy.stock("armory")
+	var lines := PlazaLocals.stock_lines("armory", {}, DAY)
+	t.check(lines.size() == 1 and lines[0].ends_with("%d scrip." % Economy.buy_price(_featured(lines[0], stock))),
+			"with no account a keeper only names today's piece, at its real price (%s)" % [lines])
+	t.check(PlazaLocals.stock_lines("armory", {}, DAY) == lines, "today's piece is the same all day")
+	var changes := false
+	for day in range(DAY, DAY + 10):
+		changes = changes or PlazaLocals.stock_lines("armory", {}, day) != lines
+	t.check(changes, "the featured piece changes from day to day")
+	t.check(PlazaLocals.stock_lines("", {}, DAY).is_empty(), "someone with no shop says nothing about stock")
+	var bare := {"stash": [], "loadout": {}, "scrip": 1_000_000}
+	var advice := PlazaLocals.stock_lines("armory", bare, DAY)
+	t.check(advice.size() >= 2 and advice[1].begins_with("Nothing worth the name"),
+			"a keeper offers something for an empty slot you can afford (%s)" % [advice])
+	var broke := PlazaLocals.stock_lines("armory", {"stash": [], "loadout": {}, "scrip": 0}, DAY)
+	t.check(broke.size() == 1, "a keeper offers nothing you cannot pay for")
+	var salvage: Array[String] = stock.duplicate()
+	salvage.append_array(["scrap_metal", "power_cell"])
+	var owned := {"stash": salvage, "loadout": {}, "scrip": 1_000_000}
+	var has_all := PlazaLocals.stock_lines("armory", owned, DAY)
+	var offered := false
+	for line: String in has_all:
+		offered = offered or line.begins_with("Nothing worth") or line.begins_with("That ")
+	t.check(not offered, "a keeper never sells you what you already own")
+	t.check(has_all[-1].begins_with("You're sitting on salvage") and
+			Economy.loot_value(salvage) > 0 and has_all[-1].contains("%d" % Economy.loot_value(salvage)),
+			"a keeper offers what your salvage is worth (%s)" % [has_all[-1]])
+	var tailor := PlazaLocals.stock_lines("tailor", bare, DAY)
+	t.check(tailor.size() == 2 and tailor[1].begins_with("You haven't got"),
+			"a shop without a slot offers something you do not own yet (%s)" % [tailor])
+
+
+static func _featured(line: String, stock: Array[String]) -> String:
+	for id: String in stock:
+		if line.begins_with(ItemDB.item_name(id) + " came in today."):
+			return id
+	return ""
 
 
 ## Rook's favour: one a day, the same for everyone, never rerolled, held and
@@ -152,7 +196,7 @@ static func _crowd(t: Node) -> void:
 	var layout: Dictionary = raid.map.call("locals_layout")
 	var sizes := PlazaLocals.new()
 	var counts := {"strollers": sizes.strollers, "shoppers": sizes.shoppers, "watchers": sizes.watchers,
-			"chats": sizes.chats, "wanderers": sizes.wanderers}
+			"chats": sizes.chats, "wanderers": sizes.wanderers, "diners": sizes.diners}
 	sizes.free()
 	var a := RandomNumberGenerator.new()
 	a.seed = PlazaLocals.CROWD_SEED
@@ -204,6 +248,34 @@ static func _crowd(t: Node) -> void:
 				blocked.append("%s" % [pos.snapped(Vector3.ONE * 0.1)])
 			at += 0.8
 	t.check(blocked.is_empty(), "the locals' routines keep to open floor %s" % [blocked])
+	# The boulevard carts: staffed, served in turn (never two on one spot in
+	# the queue or at a table), and their customers stand off the lane.
+	var stops: Array = layout.get("stops", [])
+	t.check(stops.size() >= 4, "the boulevards have carts to stop at (%d)" % stops.size())
+	var diners := plan_a.filter(func(e: Dictionary) -> bool: return e.has("stop"))
+	t.check(diners.size() >= stops.size() * 4, "each cart has customers (%d)" % diners.size())
+	var crowded := 0
+	for step in 60:
+		var now := 7.3 * step
+		var standing: Array[Vector3] = []
+		for diner: Dictionary in diners:
+			var at: Dictionary = diner.routine.sample(now + float(diner.offset))
+			if not at.walking:
+				standing.append(at.pos)
+		for i in standing.size():
+			for j in range(i + 1, standing.size()):
+				if standing[i].distance_to(standing[j]) < 0.6:
+					crowded += 1
+	t.check(crowded == 0, "customers take turns: never two standing in one spot (%d)" % crowded)
+	var on_lane := 0
+	for stop: Dictionary in stops:
+		for spot: Vector3 in [stop.counter, stop.served]:
+			var r := Vector2(spot.x, spot.z).length()
+			var bearing := fposmod(rad_to_deg(atan2(spot.x, -spot.z)), 360.0)
+			var off := absf(wrapf(bearing - snappedf(bearing, 45.0), -180.0, 180.0))
+			if r * sin(deg_to_rad(off)) < 6.5:
+				on_lane += 1
+	t.check(on_lane == 0, "carts serve off the lane, not in it (%d)" % on_lane)
 	# The people you talk to have their spots, each with a way to talk.
 	var talkers := raid.get_tree().get_nodes_in_group("talker").filter(func(n: Node) -> bool:
 		return raid.map.is_ancestor_of(n))
