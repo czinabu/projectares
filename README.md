@@ -649,8 +649,15 @@ side, and on to the Descent, three switchback ramps 40 m down. Wardens stand
 guard inside, the caches there pay Engine Coils, no storm or trail gets in,
 it gets colder the deeper you go and there is a heater on each level. At the
 Descent's foot stand the cable lift (fight off its guards, hold its switch and it runs for
-everyone for ten minutes, back up to the hall in seconds) and the sealed
-door to the Heart.
+everyone for ten minutes, back up to the hall in seconds) and the open
+door to the Heart: a round chamber 68 m across round a frozen core, with a
+balcony, four coolant pylons and its keeper, the Heart Warden. It calls
+Wardens out of the walls while it is strong; below half health the core
+thaws and the pylons vent coolant across the floor (each lane flashes
+first). Hit its back. When it falls, everyone who fought it gets a share of
+its vault of their own (the best parts, Mk3 materials, upgrade data, maybe
+a blueprint, rarely an artifact), the deep beacon lights to sign out by,
+and ten minutes later it wakes again.
 
 ## Run the tests
 
