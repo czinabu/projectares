@@ -7361,14 +7361,16 @@ func _test_online_phone() -> void:
 
 	# A base invite carries the owner's gear for a read-only visit.
 	var visits: Array = []
-	ben.base_visit_requested.connect(func(owner: String, owner_stash: Array, _loadout: Dictionary, upgrades: Array) -> void:
-		visits.append([owner, owner_stash, upgrades]))
+	ben.base_visit_requested.connect(func(owner: String, owner_stash: Array, _loadout: Dictionary, upgrades: Array,
+			plan: Dictionary) -> void:
+		visits.append([owner, owner_stash, upgrades, plan]))
 	ana.send_invite("ben", "base")
 	await _wait_until(func() -> bool: return phone.invites().size() == 1, 240)
 	phone.answer_invite(int(phone.invites()[0].id), true)
 	await _wait_until(func() -> bool: return not visits.is_empty(), 240)
-	check(visits.size() == 1 and visits[0][0] == "Ana" and "rifle_carbine" in visits[0][1] and visits[0][2] == [],
-			"accepting a base invite brings the owner's stash and base upgrades to show")
+	check(visits.size() == 1 and visits[0][0] == "Ana" and "rifle_carbine" in visits[0][1] and visits[0][2] == []
+			and BasePlan.clean(visits[0][3]) == BasePlan.DEFAULT,
+			"accepting a base invite brings the owner's stash, base upgrades and plan to show")
 
 	# Presence follows the player into the raid.
 	ana.deploy()
