@@ -123,6 +123,24 @@ const TALKERS := {
 			"Bring a blade. The crowd likes a blade.",
 			"Wager on yourself. Everyone else is."], ""],
 }
+## What each of them wears for their work (`Human.random`'s pool: build ->
+## outfits), so the armorer looks like an armorer and the tailor dresses
+## well. Anyone missing is dressed at random.
+const DRESS := {
+	"keep_armory": {"m": ["Swat"]},
+	"keep_outfitter": {"f": ["Adventurer"]},
+	"keep_garage": {"m": ["Farmer"]},
+	"keep_furnisher": {"m": ["Casual_2"]},
+	"keep_tailor": {"f": ["Formal"]},
+	"keep_exchange": {"f": ["Suit"]},
+	"clerk": {"m": ["Suit"]},
+	"marlo": {"f": ["Soldier"]},
+	"wren": {"f": ["Formal"]},
+	"sola": {"f": ["Punk"]},
+	"kade": {"m": ["Punk"]},
+	"dusk": {"m": ["Casual_Hoodie"]},
+	"rook": {"m": ["Adventurer"]},
+}
 ## The clan hall's clerk works its terminal like a keeper works a counter.
 const CLERK := ["Ansel", "Clerk", ["Found a clan, or join one. The paperwork's lighter than the fighting.",
 		"A clan shares its sites out there. And its grudges."]]
@@ -191,8 +209,8 @@ var _shop_lights: Array[Array] = []
 @onready var DARK := Look.surface("metal", {"tint": Color(0.4, 0.44, 0.52), "grime": 0.2, "scale": 0.3,
 		"metal": 0.4, "rough_mult": 1.2})
 ## Inside a shop: warm pale panels, so the lights carry the room.
-@onready var INSIDE := Look.surface("metal", {"tint": Color(0.55, 0.54, 0.56), "grime": 0.15, "scale": 0.25,
-		"metal": 0.3, "rough_mult": 1.3})
+@onready var INSIDE := Look.surface("metal", {"tint": Color(0.78, 0.76, 0.74), "grime": 0.1, "scale": 0.25,
+		"metal": 0.2, "rough_mult": 1.4})
 
 
 func _ready() -> void:
@@ -550,7 +568,10 @@ func _build_shop(entry: Dictionary, at: Vector3, yaw: float) -> void:
 	# Warm light strips on the ceiling.
 	for z: float in [-3.0, -7.5]:
 		_part(self, Vector3(w - 4.0, 0.06, 0.4), f * Vector3(0, h - 0.1, z), WARM, true, yaw)
-	_shop_lights.append([f * Vector3(0, h - 1.4, -d * 0.45), color])
+	# Lit like a shop: one light over the floor and one over the counter, so
+	# the goods and the keeper's face both read from the street.
+	_shop_lights.append([f * Vector3(0, h - 1.4, -d * 0.3), color])
+	_shop_lights.append([f * Vector3(0, h - 1.6, -d * 0.72), color])
 	# The counter, the till on it facing the customer, the keeper behind it.
 	var counter_z := -6.4 if id != "garage" else -7.6
 	var counter_w := 6.0 if id != "garage" else 3.6
@@ -571,7 +592,9 @@ func _build_shop(entry: Dictionary, at: Vector3, yaw: float) -> void:
 	screen.basis = Basis(Vector3.UP, yaw) * Basis(Vector3.RIGHT, -0.18)
 	portal.add_child(screen)
 	_part(screen, Vector3(1.2, 0.72, 0.05), Vector3(0, 0, -0.035), DARK_GLASS)
-	_part(screen, Vector3(1.12, 0.64, 0.01), Vector3.ZERO, color.darkened(0.75), true)
+	# Idle, the till shows a dim face in the shop's colour; the shop's own
+	# screen takes it over in use.
+	_part(screen, Vector3(1.12, 0.64, 0.01), Vector3.ZERO, color.darkened(0.88), true)
 	_part(screen, Vector3(0.12, 0.4, 0.12), Vector3(0, -0.5, -0.06), DARK_GLASS)
 	var keeper: Array = KEEPERS.get(id, ["Keeper", "Shopkeeper", ["Have a look round."]])
 	var keeper_id := "keep_%s" % id
@@ -1056,6 +1079,8 @@ func _add_talker(id: String, at: Vector3, yaw: float, who: String, role: String,
 		marker.set_meta("reads", reads)
 	if color.a > 0.0:
 		marker.set_meta("color", color)
+	if DRESS.has(id):
+		marker.set_meta("dress", DRESS[id])
 	return marker
 
 
@@ -1158,7 +1183,7 @@ func _dress() -> void:
 		art.add_child(glow)
 	# Each shop lit warm inside, a touch of its colour.
 	for light: Array in _shop_lights:
-		var lamp := Look.lamp(WARM.lerp(light[1], 0.15), 5.0, 13.0)
+		var lamp := Look.lamp(WARM.lerp(light[1], 0.12), 6.5, 11.0)
 		lamp.position = light[0]
 		art.add_child(lamp)
 	var clan := Look.lamp(Color(0.8, 0.5, 1.0), 4.0, 14.0)

@@ -50,7 +50,8 @@ extends RefCounted
 ##     "role": where the people you talk to stand
 ##     (`core/social/plaza_locals.gd`), and optionally "lines" (what they
 ##     say, in turn), "reads" ("worlds": the dispatcher reads `world_status`
-##     out) and "color" (their speech card's).
+##     out), "color" (their speech card's) and "dress" (`Human.random`'s pool,
+##     what they wear for their work).
 ##   - optionally a `locals_layout()` method: where the place's locals spend
 ##     their day, as plain data (see `worlds/plaza/map.gd`). Without it the
 ##     place has no crowd. A "street" ({from, to, lane}) has shoppers walk

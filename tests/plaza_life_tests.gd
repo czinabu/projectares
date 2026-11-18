@@ -320,6 +320,16 @@ static func _layout(t: Node) -> void:
 	var keeper := str((shops[0] as Node).get_meta("keeper", ""))
 	locals.greet(keeper, {})
 	t.check(locals.speaking == keeper, "a keeper says hello when you trade")
+	var dressed := true
+	for id: String in PlazaMap.DRESS:
+		var entry: Dictionary = locals.talkers.get(id, {})
+		if entry.is_empty():
+			continue
+		var look: Dictionary = (entry.actor as Node).get_meta("appearance", {})
+		var pool: Dictionary = PlazaMap.DRESS[id]
+		var build := str(look.get("build", ""))
+		dressed = dressed and pool.has(build) and str(look.get("body", "")) in pool[build]
+	t.check(dressed, "everyone you talk to is dressed for their work")
 	var marlo := PlazaLocals.own_lines(locals.talkers.get("marlo", {}), {"ashfront": {"players": 3, "level": "Skirmish"}})
 	t.check(marlo.size() >= 2 and "3 in" in marlo[0], "the dispatcher reads the worlds out (%s)" % [marlo[0]])
 	raid.queue_free()

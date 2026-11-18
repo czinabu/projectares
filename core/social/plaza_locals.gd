@@ -14,8 +14,8 @@ extends Node3D
 ## their way. Far ones are thinned like far bots (`Actor.thin`).
 ##
 ## The people you talk to stand at the map's "talker" markers (meta "id",
-## "yaw", "name", "role", and where they have them "lines", "reads" and
-## "color"). `talk` makes them answer in a speech panel over their head: a
+## "yaw", "name", "role", and where they have them "lines", "reads",
+## "color" and "dress", the outfits they wear for their work). `talk` makes them answer in a speech panel over their head: a
 ## lit card in the world, never on the screen. A keeper works a counter (a
 ## shop, the clan hall) and has no spot of their own: `greet` has them say
 ## their piece when someone uses the counter.
@@ -96,7 +96,8 @@ func _ready() -> void:
 		routine.dwell(marker.global_position, float(marker.get_meta("yaw", 0.0)), 60.0)
 		var look_rng := RandomNumberGenerator.new()
 		look_rng.seed = hash(["talker", id])
-		var entry := _spawn({"routine": routine, "offset": 0.0, "speed": 1.2, "side": 0.0}, look_rng)
+		var entry := _spawn({"routine": routine, "offset": 0.0, "speed": 1.2, "side": 0.0,
+				"dress": marker.get_meta("dress", {})}, look_rng)
 		entry["talker"] = id
 		entry["name"] = str(marker.get_meta("name", id.capitalize()))
 		entry["role"] = str(marker.get_meta("role", ""))
@@ -117,7 +118,7 @@ func _spawn(plan: Dictionary, rng: RandomNumberGenerator) -> Dictionary:
 	var actor := Actor.new()
 	actor.name = "Local%d" % locals.size()
 	actor.display_name = "Local"
-	actor.set_meta("appearance", Human.random(rng))
+	actor.set_meta("appearance", Human.random(rng, plan.get("dress", {})))
 	var routine: Routine = plan.routine
 	var start := routine.sample(_now() + float(plan.offset))
 	actor.position = start.pos + Vector3(0, 0.05, 0)
