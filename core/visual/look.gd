@@ -20,6 +20,8 @@ const MELEE_SHADER := preload("res://assets/shaders/melee.gdshader")
 const ActorSkin := preload("res://core/visual/actor_skin.gd")
 const Human := preload("res://core/visual/human.gd")
 const CHARACTER_SHADER := preload("res://assets/shaders/character.gdshader")
+const EDGE_INK_SHADER := preload("res://assets/shaders/edge_ink.gdshader")
+const GameSettings := preload("res://core/settings/game_settings.gd")
 const Vfx := preload("res://core/visual/vfx.gd")
 const RigModel := preload("res://core/visual/rig_model.gd")
 const UiTheme := preload("res://core/visual/ui_theme.gd")
@@ -455,6 +457,7 @@ func atmosphere(parent: Node3D, p := {}, war := {}) -> void:
 	world_env.name = "Atmosphere"
 	world_env.environment = env
 	parent.add_child(world_env)
+	parent.add_child(edge_ink())
 	var calm := mood_values(p)
 	apply_mood(calm, env, sky_mat, sun)
 	if war.is_empty():
@@ -470,6 +473,29 @@ func atmosphere(parent: Node3D, p := {}, war := {}) -> void:
 	mood.column = _war_column()
 	parent.add_child(mood)
 	mood.add_child(mood.column)
+
+
+## The edge ink over an outdoor map (`assets/shaders/edge_ink.gdshader`): a
+## quad the shader stretches over whatever camera draws it, so every view of
+## the map gets the same outlines on far shapes. It is in the group
+## "edge_ink", shown while `GameSettings.ink_shown()`. Drawn first of the
+## see-through things, so glass, holograms and effects stay on top of it.
+func edge_ink() -> MeshInstance3D:
+	var quad := QuadMesh.new()
+	quad.size = Vector2(2.0, 2.0)
+	var mat := ShaderMaterial.new()
+	mat.shader = EDGE_INK_SHADER
+	mat.render_priority = Material.RENDER_PRIORITY_MIN
+	quad.material = mat
+	quad.custom_aabb = AABB(Vector3(-1.0, -1.0, -1.0) * 1.0e5, Vector3.ONE * 2.0e5)
+	var ink := MeshInstance3D.new()
+	ink.name = "EdgeInk"
+	ink.mesh = quad
+	ink.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	ink.extra_cull_margin = 16384.0
+	ink.add_to_group("edge_ink")
+	ink.visible = GameSettings.ink_shown()
+	return ink
 
 
 ## The part of an atmosphere that can shift while a world runs, with every

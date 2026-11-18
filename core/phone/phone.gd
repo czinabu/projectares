@@ -1747,7 +1747,7 @@ func open_settings_tab(tab: String) -> void:
 
 
 ## Settings, grouped in tabs: Input (mouse, melee, the key list), View
-## (fields of view, camera, names, fullscreen), System (sound, quit) and,
+## (fields of view, camera, names, fullscreen, smooth edges), System (sound, quit) and,
 ## in a debug run, Dev.
 func _draw_settings() -> void:
 	match settings_tab:
@@ -1777,6 +1777,14 @@ func _draw_settings() -> void:
 					GameSettings.eye_pullback, func(v: float) -> String: return "%d cm" % roundi(v * 100.0))
 			_toggle("Names over other players", "show_nameplates", GameSettings.show_nameplates)
 			_toggle("Fullscreen", "fullscreen", GameSettings.fullscreen)
+			_body.add_child(_section("SMOOTH EDGES"))
+			var smoothing := OptionButton.new()
+			for mode: Array in GameSettings.ANTI_ALIASING:
+				smoothing.add_item(mode[0])
+			smoothing.select(GameSettings.anti_aliasing)
+			smoothing.item_selected.connect(func(index: int) -> void: change_setting("anti_aliasing", index))
+			_body.add_child(smoothing)
+			_toggle("Outline far shapes (not with MSAA)", "edge_ink", GameSettings.edge_ink)
 		"system":
 			_slider("Volume", "master_volume", Vector2(0.0, 1.0), 0.05, GameSettings.master_volume,
 					func(v: float) -> String: return "%d%%" % roundi(v * 100.0))

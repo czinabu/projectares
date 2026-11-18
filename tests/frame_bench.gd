@@ -12,7 +12,10 @@ extends Node
 ## client's frame rate and what the server sends it. Needs a display (or xvfb) to see rendering costs; it still
 ## runs headless, where only the game's own processing is measured.
 ## `--view third` measures third person; `--seconds` and `--warmup` set how
-## long it measures and how long the armies march first.
+## long it measures and how long the armies march first. `--aa <0-4>` and
+## `--ink 0|1` pick the edge smoothing and the far-shape outline
+## (`GameSettings.ANTI_ALIASING`, `edge_ink`) for this run only, to measure
+## what each costs.
 
 const PORT := 25790
 const MainScene := "res://scenes/main.tscn"
@@ -50,6 +53,15 @@ func _ready() -> void:
 		print("Frame bench: could not start (%s)" % mode)
 		_finish(1)
 		return
+	var GameSettings: GDScript = load("res://core/settings/game_settings.gd")
+	GameSettings.set("persist", false)
+	if _arg(args, "--aa", "") != "":
+		GameSettings.call("set_value", "anti_aliasing", int(_arg(args, "--aa", "")))
+	if _arg(args, "--ink", "") != "":
+		GameSettings.call("set_value", "edge_ink", _arg(args, "--ink", "") != "0")
+	GameSettings.call("apply_graphics")
+	print("Frame bench: edge smoothing %s, outline %s" % [GameSettings.ANTI_ALIASING[GameSettings.get("anti_aliasing")][0],
+			"on" if GameSettings.call("ink_shown") else "off"])
 	if third and not _main.controller.is_third_person():
 		_main.controller.toggle_view()
 	if "--probe" in args:
