@@ -934,7 +934,8 @@ func interior(parent: Node3D, ambient: Color, energy: float) -> void:
 
 
 ## The trim every built thing in a warzone shares, so a map's pieces read as
-## one kit instead of loose props: "teal" running lights, "orange" furnace
+## one kit instead of loose props: "teal" running lights, "band" (a teal
+## strip turned down low enough to keep its colour on a lit wall), "orange" furnace
 ## light, "beacon" (a red light that cuts through the haze, never fogged),
 ## "slag" (molten metal), "crack" (a dimmer glow for cracks in the ground),
 ## "scorch" (charred ground), "track" (a packed gravel road), "rut" (a dark wheel rut), "hazard" (orange and black stripes),
@@ -946,13 +947,13 @@ func trim(kind: String) -> Material:
 		return _materials[key]
 	var mat := StandardMaterial3D.new()
 	match kind:
-		"teal", "orange", "beacon", "slag", "crack":
-			var glow: Color = {"teal": Color(0.3, 0.95, 0.88), "orange": Color(1.0, 0.42, 0.1),
+		"teal", "band", "orange", "beacon", "slag", "crack":
+			var glow: Color = {"teal": Color(0.3, 0.95, 0.88), "band": Color(0.18, 0.85, 0.78), "orange": Color(1.0, 0.42, 0.1),
 					"beacon": Color(1.0, 0.1, 0.06), "slag": Color(1.0, 0.36, 0.08), "crack": Color(1.0, 0.3, 0.05)}[kind]
-			mat.albedo_color = glow * 0.25 if kind in ["teal", "orange", "beacon"] else Color(0.25, 0.06, 0.02)
+			mat.albedo_color = glow * 0.25 if kind in ["teal", "band", "orange", "beacon"] else Color(0.25, 0.06, 0.02)
 			mat.emission_enabled = true
 			mat.emission = glow
-			mat.emission_energy_multiplier = {"teal": 1.6, "orange": 2.4, "beacon": 7.0, "slag": 2.6, "crack": 1.1}[kind]
+			mat.emission_energy_multiplier = {"teal": 1.6, "band": 0.55, "orange": 2.4, "beacon": 7.0, "slag": 2.6, "crack": 1.1}[kind]
 			mat.roughness = 0.4
 			if kind == "beacon":
 				mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED

@@ -835,15 +835,7 @@ func _check_crouch(p: Actor) -> void:
 		check(gun.current_spread_deg() < standing_spread, "a crouched gun spreads less")
 	# Walk (and later sneak) the way with nothing in front for 10 m, so
 	# cover where the player happened to land cannot get in the way.
-	var open_yaw := 0.0
-	var chest := p.global_position + Vector3(0, 1.0, 0)
-	for k in 8:
-		var yaw := TAU * k / 8.0
-		var ahead := Vector3(-sin(yaw), 0.0, -cos(yaw))
-		var ray := PhysicsRayQueryParameters3D.create(chest, chest + ahead * 10.0, Actor.LAYER_WORLD)
-		if p.get_world_3d().direct_space_state.intersect_ray(ray).is_empty():
-			open_yaw = yaw
-			break
+	var open_yaw := open_heading(p, 10.0)
 	p.cmd.yaw = open_yaw
 	p.cmd.move = Vector2(0, 1)
 	p.cmd.sprint = true
@@ -1927,6 +1919,20 @@ func _test_directional_melee() -> void:
 
 
 ## A raid whose player carries exactly `kit`, standing in the open.
+## The first of eight headings with nothing solid for `reach` metres ahead
+## of `actor`'s chest, so a check that moves it (or puts someone in front of
+## it) cannot run into whatever cover or building it happened to land by.
+func open_heading(actor: Actor, reach: float) -> float:
+	var chest := actor.global_position + Vector3(0, 1.0, 0)
+	for k in 8:
+		var yaw := TAU * k / 8.0
+		var ahead := Vector3(-sin(yaw), 0.0, -cos(yaw))
+		var ray := PhysicsRayQueryParameters3D.create(chest, chest + ahead * reach, Actor.LAYER_WORLD)
+		if actor.get_world_3d().direct_space_state.intersect_ray(ray).is_empty():
+			return yaw
+	return 0.0
+
+
 func _kit_raid(p_seed: int, kit: Array[String]) -> Raid:
 	var raid := Raid.new()
 	add_child(raid)
@@ -2170,6 +2176,9 @@ func _check_free_flight(p: Actor) -> void:
 	p.flight.heat_per_sec = 4.0
 	p.flight.heat = 0.0
 	p.global_position.y += 25.0
+	# Every move below heads along the view: point it in toward the middle,
+	# not out at the rim (a drop by the rim ran out of heat there).
+	p.cmd.yaw = atan2(p.global_position.x, p.global_position.z)
 	p.velocity = Vector3.ZERO
 	p.cmd.jump_pressed = true
 	await frames(1)

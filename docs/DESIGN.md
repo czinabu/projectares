@@ -293,7 +293,11 @@ markers); the middle reaches past the four landmarks; the rest is the
 outer ring. Caches pay by zone (`cache_outer`, `cache`, `cache_core`), and
 soldiers arriving further in are more often heavies and tougher. Four gate
 outposts on the rim (`outpost` markers, run by `Raid._tick_outposts`) are
-where players drop in, each with a depot. Still to come: more hotspots (a
+where players drop in, each with a depot. In the middle ring, south of the
+Forge, stands the Works: a ruined factory district built for close quarters
+(one street of halls and open sheds pointing at the Forge, a cross street,
+catwalks and gantries 6 m up, roofs left to flight rigs, so a jetpack or
+boots do well there and wings do not). Still to come: more hotspots (a
 volcano, a storm core), a drawn map on the watch with the rings on it,
 squad regrouping at the gates, and tuning.
 

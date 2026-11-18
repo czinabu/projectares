@@ -1072,6 +1072,7 @@ func _build_works() -> void:
 			_add_hall(base, size, 0.28 + 0.03 * (i % 4), hall.get("roof_cache", false))
 		if hall["roof"] == "saw":
 			_add_sawtooth(base + Vector3(0, size.y, 0), size)
+			_buildings[_buildings.size() - 1]["saw"] = true
 		# Stacks stand on the back corners, away from the street.
 		for k in int(hall.get("stacks", 0)):
 			var corner := base + Vector3(side * (depth * 0.5 - 2.0), size.y, (length * 0.5 - 2.5) * (1.0 if k == 0 else -1.0))
@@ -1372,12 +1373,115 @@ func _dress() -> void:
 	_dress_cracks(art)
 	_dress_roads(art)
 	_dress_outposts(art)
+	_dress_works(art)
 	_dress_horizon(art)
+
+
+## The Works dressed as a working district gone dark: a teal band under each
+## roof, a few windows still lit over the street, glazing in the sawtooth
+## teeth, hazard-striped kick plates and railings on the catwalks and
+## gantries, work lights in the sheds, smoke from the stacks, and the crane
+## striped with a warning lamp on top.
+func _dress_works(art: Node3D) -> void:
+	var level := _works_level()
+	var teal := Look.trim("band")
+	var hazard := Look.trim("hazard")
+	var lit := Look.trim("orange")
+	for hall: Dictionary in WORKS_HALLS:
+		var side: float = hall["side"]
+		var depth: float = hall["depth"]
+		var height: float = hall["height"]
+		var length: float = float(hall["from"]) - float(hall["to"])
+		var base := Vector3(side * (WORKS_STREET + depth * 0.5), level, (float(hall["from"]) + float(hall["to"])) * 0.5)
+		if hall.get("shed", false):
+			# Work lights under the roof, and the open front's edge striped.
+			var lamp := OmniLight3D.new()
+			lamp.light_color = Color(1.0, 0.62, 0.32)
+			lamp.light_energy = 2.2
+			lamp.omni_range = maxf(depth, length) * 0.8
+			lamp.position = base + Vector3(0, height - 1.6, 0)
+			art.add_child(lamp)
+			for k in 3:
+				var at := base + Vector3(0, height - 0.9, (k - 1) * length * 0.3)
+				art.add_child(_slab(Vector3(depth * 0.5, 0.12, 0.35), at, lit))
+			art.add_child(_slab(Vector3(0.1, 0.5, length), base + Vector3(-side * depth * 0.5, height - 0.85, 0), hazard))
+			continue
+		art.add_child(_slab(Vector3(depth + 0.12, 0.3, length + 0.12), base + Vector3(0, height - 1.0, 0), teal))
+		# Windows over the street, above the catwalk; most are dark now.
+		var face := side * (WORKS_STREET - 0.03)
+		var rows := int((height - WORKS_DECK - 2.5) / 3.0)
+		for row in rows:
+			var y := level + WORKS_DECK + 2.4 + row * 3.0
+			var count := int(length / 4.0)
+			for k in count:
+				if _art_rng.randf() < 0.7:
+					continue
+				var z := base.z - length * 0.5 + (k + 0.5) * length / count
+				art.add_child(_slab(Vector3(0.06, 0.9, 1.8), Vector3(face, y, z), lit))
+		if hall["roof"] == "saw":
+			var teeth := maxi(int(length / 6.0), 1)
+			var step := length / teeth
+			for k in teeth:
+				var z0 := base.z + length * 0.5 - k * step
+				art.add_child(_slab(Vector3(depth - 1.2, 1.3, 0.06), Vector3(base.x, level + height + 1.2, z0 - step - 0.03), teal))
+		for k in int(hall.get("stacks", 0)):
+			var corner := base + Vector3(side * (depth * 0.5 - 2.0), height, (length * 0.5 - 2.5) * (1.0 if k == 0 else -1.0))
+			art.add_child(_slab(Vector3(2.4, 0.4, 2.4), corner + Vector3(0, 11.5, 0), teal))
+			art.add_child(_smoke(corner + Vector3(0, 14.5, 0), 0.8))
+	# Kick plates and railings: down the street edge of both catwalks and
+	# along both sides of each gantry.
+	var deck := level + WORKS_DECK
+	var rails: Array[PackedVector3Array] = []
+	for side: float in [-1.0, 1.0]:
+		var from := -INF
+		var to := INF
+		for hall: Dictionary in WORKS_HALLS:
+			if hall["side"] == side:
+				from = maxf(from, hall["from"])
+				to = minf(to, hall["to"])
+		var x := side * (WORKS_STREET - WORKS_WALK) - side * 0.05
+		# The rail breaks where a gantry joins.
+		var cuts: Array[float] = [to]
+		for z: float in WORKS_GANTRIES:
+			cuts.append(z - 1.5)
+			cuts.append(z + 1.5)
+		cuts.append(from)
+		for k in range(0, cuts.size(), 2):
+			rails.append(PackedVector3Array([Vector3(x, deck, cuts[k]), Vector3(x, deck, cuts[k + 1])]))
+	for z: float in WORKS_GANTRIES:
+		for sz: float in [-1.0, 1.0]:
+			var w := WORKS_STREET - WORKS_WALK
+			rails.append(PackedVector3Array([Vector3(-w, deck, z + sz * 1.45), Vector3(w, deck, z + sz * 1.45)]))
+	for rail in rails:
+		var a := rail[0]
+		var b := rail[1]
+		var along := b - a
+		var mid := (a + b) * 0.5
+		var span := Vector3(absf(along.x), 0, absf(along.z))
+		var thin := Vector3(0.06, 0, 0.06)
+		art.add_child(_slab(Vector3(maxf(span.x, 0.06), 0.3, maxf(span.z, 0.06)), mid + Vector3(0, 0.15, 0), hazard))
+		art.add_child(_slab(Vector3(maxf(span.x, thin.x), 0.07, maxf(span.z, thin.z)), mid + Vector3(0, 1.05, 0), WORKS_METAL))
+		var posts := maxi(int(along.length() / 2.5), 1)
+		for k in posts + 1:
+			art.add_child(_slab(Vector3(0.07, 1.05, 0.07), a.lerp(b, float(k) / posts) + Vector3(0, 0.52, 0), WORKS_METAL))
+	# The crane: striped beams, a band round each leg, a hook hanging over
+	# the crossroads and a warning lamp that can be seen across the field.
+	var cross_z := (WORKS_CROSS.x + WORKS_CROSS.y) * 0.5
+	var span_x := WORKS_STREET + 3.0
+	for sz: float in [-1.0, 1.0]:
+		art.add_child(_slab(Vector3(span_x * 2.0, 0.5, 1.45), Vector3(0, level + 21.0, cross_z + sz * 3.5), hazard))
+		for sx: float in [-1.0, 1.0]:
+			art.add_child(_slab(Vector3(1.35, 0.3, 1.35), Vector3(sx * span_x, level + 7.0, cross_z + sz * 3.5), teal))
+	art.add_child(_slab(Vector3(0.08, 9.0, 0.08), Vector3(-2.5, level + 13.0, cross_z), WORKS_METAL))
+	art.add_child(_slab(Vector3(1.0, 0.9, 0.7), Vector3(-2.5, level + 8.2, cross_z), hazard, true))
+	var warn := _slab(Vector3(0.5, 0.5, 0.5), Vector3(span_x, level + 21.6, cross_z), Look.trim("beacon"))
+	art.add_child(warn)
+
 
 
 func _dress_rooftops(art: Node3D) -> void:
 	for b in _buildings:
-		if b.get("wreck", false) or b.get("landmark", false):
+		if b.get("wreck", false) or b.get("landmark", false) or b.get("saw", false):
 			continue
 		var size: Vector3 = b["size"]
 		var top: Vector3 = b["center"] + Vector3(0, size.y, 0)
