@@ -64,6 +64,10 @@ signal tally_changed(actor: Actor)
 signal ice_cracked(at: Vector3, stage: int)
 ## The open holes in the ice changed (`ice_holes`).
 signal ice_changed
+## A bot of a linked faction (`WorldDef.linked_factions`) called the rest of
+## its faction to a fight. On every machine near enough (a client hears it
+## from `NetSession`, with no `source`), for the view.
+signal grid_called(bot: Actor, source: Actor)
 
 ## Bots never start closer to the player than this, so a raid does not open with a fight.
 const MIN_BOT_SPAWN_DISTANCE := 40.0
@@ -200,6 +204,13 @@ var beacons: Array[Node3D] = []
 ## ready to fight where they spawn and unhurt by the ground.
 static var zone_rules := true
 var _bosses: Array[Dictionary] = []
+## Bosses' toughness is counted this often (`_scale_boss`).
+const BOSS_PARTY_EVERY := 1.0
+var _boss_party_left := 0.0
+## Linked factions: a hurt bot calls the rest at most this often, and when
+## each may call again.
+const LINK_EVERY := 1.5
+var _link_next := {}
 var _hazard_in := 0.0
 ## The map's warmth (heaters, vents; Marker3D in group "warmth") and the
 ## clock for the cold's once-a-second hurt.
@@ -374,6 +385,9 @@ func _setup(p_world: WorldDef, p_seed: int) -> void:
 		var ice := IceView.new()
 		ice.raid = self
 		add_child(ice)
+	_link_next.clear()
+	if not world.linked_factions.is_empty() and Look.enabled and not grid_called.is_connected(_show_grid_call):
+		grid_called.connect(_show_grid_call)
 	_assault_in = world.assault_interval
 	_event_in = world.event_interval
 	_raider_in = world.raider_gap
@@ -1473,7 +1487,66 @@ func _tick_bosses(delta: float) -> void:
 		boss.back_in -= delta
 		if boss.back_in <= 0.0:
 			boss.bot = _add_boss(boss.marker)
-			war_feed.emit("A warlord has taken %s again" % _whereabouts(boss.marker.global_position))
+			war_feed.emit(world.boss_back_news(boss.bot, _whereabouts(boss.marker.global_position)))
+	if world.boss_party_scale > 0.0:
+		_boss_party_left -= delta
+		if _boss_party_left <= 0.0:
+			_boss_party_left = BOSS_PARTY_EVERY
+			for boss in _bosses:
+				if boss.bot != null and is_instance_valid(boss.bot):
+					_scale_boss(boss.bot)
+
+
+## A boss grows tougher with company (`WorldDef.boss_party_scale`): one
+## player fights it as it is, each other player near it adds a share.
+## Counted every `BOSS_PARTY_EVERY`, so a group arriving mid-fight shows.
+func _scale_boss(bot: Actor) -> void:
+	var near := 0
+	for state in players:
+		var other := state.actor
+		if other == null or not is_instance_valid(other) or other.is_dead or state.finished:
+			continue
+		if other.global_position.distance_to(bot.global_position) <= world.boss_party_range:
+			near += 1
+	bot.toughness = 1.0 + world.boss_party_scale * maxi(near - 1, 0)
+
+
+## The view of a grid call (view only, added where `Look` is on): a ring of
+## the faction's light runs out from the bot's feet with a rising chirp, so
+## whoever hurt it knows the rest are coming.
+func _show_grid_call(bot: Actor, _source: Actor) -> void:
+	if bot == null or not is_instance_valid(bot) or not bot.is_inside_tree():
+		return
+	var at := bot.global_position + Vector3(0, 0.15, 0)
+	Fx.ring(self, at, GRID_CALL_RING, GRID_CALL_COLOR, 1.1, false)
+	Fx.ring(self, at + Vector3(0, bot.body_height() * 0.6, 0), GRID_CALL_RING * 0.35, GRID_CALL_COLOR, 0.7, false)
+	Sfx.play("grid_call", at, 2.0, 90.0)
+
+
+const GRID_CALL_RING := 9.0
+const GRID_CALL_COLOR := Color(0.1, 0.85, 0.8)
+
+
+## A bot of a linked faction (`WorldDef.linked_factions`) was hurt and
+## lived: every other one of its faction within range hears where the hit
+## came from, at most once every `LINK_EVERY` for each bot hurt. A blow
+## that kills calls nobody, so a clean kill stays quiet.
+func _on_linked_hurt(info: DamageInfo, bot: Actor) -> void:
+	var source := info.source as Actor
+	if source == null or not is_instance_valid(bot) or bot.is_dead or bot.health.health <= 0.0:
+		return
+	if info.amount <= 0.0 or source.faction == bot.faction:
+		return
+	if clock < float(_link_next.get(bot, -1.0)):
+		return
+	_link_next[bot] = clock + LINK_EVERY
+	var reach := float(world.linked_factions.get(bot.faction, 0.0))
+	for other in bots:
+		if other == bot or not is_instance_valid(other) or other.is_dead or other.faction != bot.faction:
+			continue
+		if other.global_position.distance_to(bot.global_position) <= reach:
+			other.heard.emit(source.global_position, source)
+	grid_called.emit(bot, source)
 
 
 ## Bots outside the world's own army: an event's, the core bosses and the
@@ -2000,7 +2073,9 @@ func zone_label(actor: Actor) -> String:
 func _add_bot(marker: Node3D, warlord := false) -> Actor:
 	var at := marker.global_position + Vector3(rng.randf_range(-1, 1), 0, rng.randf_range(-1, 1))
 	var first_seed := rng.randi()
-	var bot := spawn_bot("Bot%d" % _bot_count, _stand(at), first_seed, warlord, marker.get_meta("faction", ""))
+	var boss: String = marker.get_meta("boss", "") if warlord else ""
+	var bot := spawn_bot("Bot%d" % _bot_count, _stand(at), first_seed, warlord, marker.get_meta("faction", ""),
+			-2, [], boss)
 	# The world may turn a rare kind away (`WorldDef.bot_allowed`): roll again,
 	# from seeds made from the first, so the raid's own dice are not moved.
 	for tries in BOT_REROLLS:
@@ -2011,7 +2086,7 @@ func _add_bot(marker: Node3D, warlord := false) -> Actor:
 		warlords.erase(bot)
 		bot.free()
 		bot = spawn_bot("Bot%d" % _bot_count, _stand(at), hash([first_seed, tries]), warlord,
-				marker.get_meta("faction", ""))
+				marker.get_meta("faction", ""), -2, [], boss)
 	if warlord:
 		# What a warlord carries is worth the fight.
 		for id in world.roll_war_loot("bot", rng, 1.0) + world.roll_war_loot("cache", rng, 1.0):
@@ -2030,6 +2105,8 @@ func _add_bot(marker: Node3D, warlord := false) -> Actor:
 	brain.skill_range = world.bot_skill_range(bot, warlord)
 	bot.add_child(brain)
 	bot.died.connect(_on_actor_died)
+	if world.linked_factions.has(bot.faction):
+		bot.health.damaged.connect(_on_linked_hurt.bind(bot))
 	world.on_spawn(bot)
 	_post_bot(bot)
 	actor_spawned.emit(bot)
@@ -2065,15 +2142,19 @@ func _farthest_from_players(markers: Array[Node3D]) -> int:
 
 
 ## Creates a bot equipped from `equip_seed`, with no brain. A client calls this
-## with the server's seed to get the same bot. A rival raider is given its
+## with the server's seed (and the faction, zone and boss kind it was sent)
+## to get the same bot. A rival raider is given its
 ## `kit` instead (item ids, put on like a player's) and is not passed
 ## through `WorldDef.equip_bot`.
 func spawn_bot(bot_name: String, at: Vector3, equip_seed: int, warlord := false, faction := "",
-		zone := -2, kit: Array = []) -> Actor:
+		zone := -2, kit: Array = [], boss := "") -> Actor:
 	var bot := Actor.new()
 	bot.name = bot_name
 	if faction != "":
 		bot.faction = faction
+	# A core boss of the world's own kind ("spawn_boss" meta "boss").
+	if boss != "":
+		bot.set_meta("boss", boss)
 	# The risk zone it arrived in, for `equip_bot`. A client is told it, since
 	# the bot may have walked elsewhere by the time the client hears of it.
 	bot.set_meta("zone", zone if zone >= -1 else world.zone_at(at))

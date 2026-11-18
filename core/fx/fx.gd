@@ -223,7 +223,7 @@ static func burst(parent: Node, at: Vector3, radius: float, color: Color) -> voi
 
 ## A ring of light that sweeps out flat to `radius` and fades: a pulse that
 ## reaches everyone inside it (an artifact's Static Bloom).
-static func ring(parent: Node, at: Vector3, radius: float, color: Color, life := 0.9) -> void:
+static func ring(parent: Node, at: Vector3, radius: float, color: Color, life := 0.9, additive := true) -> void:
 	if _headless(parent) or radius <= 0.0:
 		return
 	var mesh := TorusMesh.new()
@@ -232,7 +232,9 @@ static func ring(parent: Node, at: Vector3, radius: float, color: Color, life :=
 	mesh.rings = 48
 	mesh.ring_segments = 6
 	var mat := _glow_mat(Color(color.r, color.g, color.b, 0.9))
-	mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	# Added light vanishes against bright snow; mixed, it shows on anything.
+	if additive:
+		mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
 	mesh.material = mat
 	var node := MeshInstance3D.new()
 	node.mesh = mesh

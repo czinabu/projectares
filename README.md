@@ -347,6 +347,7 @@ you have.
   mechanical suits) march with them, and toward the core the rare Kiln
   Walker paints you with a tracking beam before its cannon fires; its weak
   spot is the glowing vent on its back. Frostline's Wardens shoot
+  and call each other to a fight, the Engine Sentinel guards the hatch,
   and its Feral stalkers rush. Rival raiders drop in with a real kit, loot,
   and sign out.
 - Loot caches with five rarity tiers, a backpack, and a stash that persists.
@@ -614,7 +615,17 @@ the still, cold air a gunshot carries twice as far, to people and to the
 bots alike. The middle of the frozen lake is thin, darker ice: on foot or
 on a bike it holds, but a rover or a mech that lingers on it cracks it
 (you hear it twice) and goes through, and whoever rode it lands in the
-freezing water (your watch pulls the vehicle back out). Whiteouts are planned in DESIGN.md section 2, "Frostline".
+freezing water (your watch pulls the vehicle back out). The Wardens are
+the Engine's defence grid, still running: one you hurt and leave standing
+calls every Warden within 60 m (a teal ring runs out from its feet with a
+chirp), so a clean kill in one blow stays quiet. At the Engine's hatch
+stands the grid's boss, the Engine Sentinel: a Warden three metres tall
+whose lance holds a teal tracking beam on you before it fires (break the
+line to reset it) and whose back takes double damage. It is made for one
+player and grows tougher with each other player near it, comes back a
+few minutes after it falls, and like any Frostline warlord now and then
+carries one of the war's blueprints. Whiteouts are planned in DESIGN.md
+section 2, "Frostline".
 
 ## Run the tests
 

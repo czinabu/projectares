@@ -106,6 +106,20 @@ without Caleb, and update the gap list when a PR closes a row.
   it, sinks anything driven into it and freezes over after
   `ice_refreeze`. Clients get the cracks and holes from `NetSession`
   (`_ice_crack`, `_ice_holes`) and draw them with `IceView` (view only).
+- The defence grid (DESIGN.md "Frostline"): a world's
+  `WorldDef.linked_factions` (faction to metres) makes a bot of that
+  faction that is hurt and lives call the rest of it within range, through
+  `Actor.heard` like a gunshot (`Raid._on_linked_hurt`, authority only, at
+  most every `LINK_EVERY`); a blow that kills calls nobody. Everyone near
+  sees the call (`Raid.grid_called`, `NetSession._grid_call`, drawn by
+  `Raid._show_grid_call` where `Look` is on). A "spawn_boss" marker's meta
+  "boss" names a world's own boss kind: the `Raid` sets it on the bot
+  before `equip_bot` and `make_warlord` and `NetSession` sends it, so
+  `make_warlord` builds the same machine everywhere (Frostline's Engine
+  Sentinel). Where `WorldDef.boss_party_scale` is over 0 a boss is made
+  for one player and the authority raises its `Actor.toughness` for each
+  other player within `boss_party_range` (`Raid._scale_boss`); hits are
+  divided by it in `Actor.modify_incoming`.
 - How harsh death is belongs to the world, not to `Raid`. With
   `WorldDef.keep_gear_on_death` a dead player drops only the backpack and the
   equipped gear returns in the result's `kept`. A gentle world pays for that
