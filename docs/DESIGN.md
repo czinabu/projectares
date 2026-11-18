@@ -347,7 +347,7 @@ loot role and recipes, (4) warm beacons, (5) whiteouts, after the Ashfront
 weather work, (6) tracks and louder gunshots, (7) thin ice, the defence
 grid and expedition contracts (in three PRs: thin ice, then the grid, then
 contracts), (8) the Engine's inside, in three PRs: the Drum Hall
-and the Shaft (built), the Coil Galleries and the Descent (built), then the Heart. Every number is a placeholder for the playtest.
+and the Shaft (built), the Coil Galleries and the Descent (built), then the Heart (built). Every number is a placeholder for the playtest.
 
 **Whiteouts (built, step 5).** Frostline's storms are the shared weather
 (see "Weather: ash storms") with `weather_kind` "snow". They follow the
@@ -485,7 +485,7 @@ event's) carries a piece of upgrade data and, about one time in seven, one
 of the war's blueprints: the first half of the slow route (section 10).
 Numbers are placeholders.
 
-**The Engine's inside (step 8, Caleb's calls; the first two parts built).** The
+**The Engine's inside (step 8, Caleb's calls; built).** The
 Stilled Engine is hollow: through its hatch is Frostline's deep-loot
 dungeon, worked down tier by tier to its frozen Heart. It is part of the one
 running world, not an instance (Caleb's call): squads meet down there, and
@@ -525,7 +525,8 @@ boss is made for one and scales with company. Its tiers:
   galleries' east end: three 10 m ramps switch back down it from landing to
   landing to its foot, each ramp railed on its open side, the last solid
   underneath. At its foot a heater, a cache (another on the middle landing),
-  cover, five Wardens and the sealed door to the Heart.
+  cover, five Wardens and the door to the Heart, 10 m wide, its seal
+  drawn back.
 - **The cable lift (built).** A cage at the Descent's foot and another in
   the Drum Hall beside the Shaft. It starts dead: one player standing at
   the switch by the lower cage for four seconds powers it (two Wardens
@@ -534,19 +535,31 @@ boss is made for one and scales with company. Its tiers:
   While it runs, whoever stands two and a half seconds in one cage is
   carried to the other: the way home after a delve, and a quick way back
   down for everyone after. Its lights show red dead, teal running.
-- **The Heart (last).** A round chamber 68 m across and 34 m high, the
-  frozen core hung in the middle, a balcony, coolant pylons and the vault.
+- **The Heart (built).** A round chamber 68 m across and 34 m high past a
+  short way on from the Descent's door (with a heater), the frozen core
+  hung in the middle, a balcony 9 m up round the wall reached by a ramp up
+  each side, four coolant pylons floor to roof round the middle, cover off
+  it and the vault's round door in the far wall.
   Its keeper is the Heart Warden (Caleb's call): in its first phase it
   calls Wardens out of sockets in the walls, so a squad splits between it
   and them; below half health the core thaws and the pylons vent coolant
   purges across the floor, each flashing before it fires; its back is the
-  weak spot (a squad flanks it, a solo player dashes round the pylons). It
-  comes back on a timer, and everyone who helped gets their own roll from
-  the vault (Caleb's call: nobody takes anyone's loot and nobody arrives
+  weak spot (a squad flanks it, a solo player dashes round the pylons).
+  Phase one calls a Warden every 14 s from the next of four sockets, up to
+  three at once and one more for each other player there; phase two vents
+  two lanes every 5.5 s, the two diagonals (an X over the middle) then the
+  two rows either side, each flashing 1.6 s before it hurts whoever stands
+  in it. It is 4.2 m tall, made for one player and tougher with company
+  like the Sentinel, carries nothing itself, and comes back ten minutes
+  after it falls (the vault closes again then). Everyone who helped (who
+  hurt it, or was in the Heart when it fell) gets their own share, kept for
+  them alone, from the vault (Caleb's call: nobody takes anyone's loot and nobody arrives
   too late). The vault pays the best parts, Mk3 materials and upgrade
   data, a chance at an expedition blueprint and, rarely, an artifact
   (Caleb's call: below Ashfront's rate, so the war stays the faster
-  route). A deep warm beacon lights there once the keeper falls.
+  route: 5% a share). A deep warm beacon lights there once the keeper
+  falls, the way out after the fight (or the lift back up). Heart cold is
+  1.5 a second.
 
 Inside is out of the weather: no storm reaches it and no trail is laid
 (`WorldDef.sheltered_at`), and the cold is its own (gentler in the hall

@@ -120,6 +120,12 @@ static func _wiring(t: Node) -> void:
 	t.check(installer == "" or ("RequestExecutionLevel user" in installer
 			and "$LOCALAPPDATA\\Programs" in installer and "$DESKTOP" in installer),
 			"the installer installs per user, where the game can update itself, with a desktop shortcut")
+	var main_script: Script = load("res://core/main.gd")
+	var installed: PackedStringArray = main_script.server_process_args(PackedStringArray(["--server"]), true)
+	var checkout: PackedStringArray = main_script.server_process_args(PackedStringArray(["--server"]), false)
+	t.check(installed == PackedStringArray(["--headless", "--", "--server"])
+			and "--path" in checkout and checkout[checkout.size() - 1] == "--server",
+			"an installed game starts its own server without --path, which release builds refuse")
 	var screen := StartScreen.new()
 	t.add_child(screen)
 	screen.set_status("Downloading build 20: 40%")

@@ -23,6 +23,11 @@ var label := "Cache"
 var ammo := {}
 ## Scrip lying in here with the items: what a dead player was carrying.
 var scrip := 0
+## Server only: a share kept for one player (a keeper's vault, `Raid`), by
+## their owner key, and their name for whoever else tries it. Empty for a
+## cache anyone may loot. A share goes once it is emptied.
+var reserved := ""
+var reserved_name := ""
 
 var _mesh: MeshInstance3D
 
@@ -73,6 +78,12 @@ func get_prompt() -> String:
 
 
 func interact(actor: Actor) -> void:
+	if reserved != "":
+		var raid := Raid.of(self)
+		var state := raid.state_for(actor) if raid != null else null
+		if state == null or state.owner != reserved:
+			actor.notice.emit("This share is %s's" % reserved_name)
+			return
 	if is_rack() and _rack_swap(actor):
 		return
 	if scrip > 0:
@@ -93,7 +104,7 @@ func interact(actor: Actor) -> void:
 	elif not items.is_empty():
 		actor.notice.emit("Backpack full")
 	changed.emit()
-	if items.is_empty() and is_bag:
+	if items.is_empty() and (is_bag or reserved != ""):
 		queue_free()
 	else:
 		_refresh_color()
@@ -142,7 +153,7 @@ func _rack_swap(actor: Actor) -> bool:
 	if actor.is_player:
 		Sfx.play("loot")
 	changed.emit()
-	if items.is_empty() and is_bag:
+	if items.is_empty() and (is_bag or reserved != ""):
 		queue_free()
 	else:
 		_refresh_color()

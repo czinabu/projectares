@@ -76,6 +76,14 @@ signal army_pushed(site: int, from: Vector3, title: String, loud: bool)
 ## `seconds_left` to run, or ran down (0). Authority only; a client is told
 ## by `NetSession` and keeps `lifts` for the view.
 signal lift_changed(id: String, seconds_left: float)
+## A keeper (a boss whose "spawn_boss" marker has the meta "keeper", a
+## dungeon's last fight) changed phase: 1 standing, 2 below its split, 0
+## fallen. Authority only; a client is told by `NetSession` (`set_keeper`).
+signal keeper_changed(kind: String, phase: int)
+## A keeper's purge lane (the map's "purge" markers, by their place in
+## `purges`) warns (1), vents (2) or goes quiet (0). Every machine emits it
+## (a client from `NetSession`), for the view.
+signal purge_changed(index: int, state: int)
 
 ## Bots never start closer to the player than this, so a raid does not open with a fight.
 const MIN_BOT_SPAWN_DISTANCE := 40.0
@@ -240,6 +248,19 @@ var _guards: Array[Dictionary] = []
 ## long someone has stood at its switch), wait and arrived (by rider's
 ## instance id: seconds waited in a stop, the stop just arrived at) }.
 var lifts := {}
+## Keepers by kind: their phase (1 standing, 2 below their split, 0 fallen),
+## kept on every machine (a client's from `NetSession`) and handed to the map
+## as the meta "keepers" for the view. While a keeper stands, the markers
+## that wait on it ("beacon", "warmth" with its kind as meta "keeper") are
+## dark.
+var keepers := {}
+## The map's "purge" markers, in tree order (the same on every machine), and
+## its "boss_socket" and "vault" markers.
+var purges: Array[Node3D] = []
+var _sockets: Array[Node3D] = []
+var _vaults: Array[Node3D] = []
+## How long a purge lane vents after its warning.
+const PURGE_VENT := 0.8
 ## Bosses' toughness is counted this often (`_scale_boss`).
 const BOSS_PARTY_EVERY := 1.0
 var _boss_party_left := 0.0
@@ -423,6 +444,7 @@ func _setup(p_world: WorldDef, p_seed: int) -> void:
 	outposts = _map_nodes("outpost")
 	beacons = _map_nodes("beacon")
 	warmth = _map_nodes("warmth")
+	_find_keepers()
 	tracks.clear()
 	tracks.lifetime = world.track_lifetime
 	if world.tracks and Look.enabled:
@@ -1567,6 +1589,8 @@ func _beacons_only() -> bool:
 ## The warm beacon an actor stands at, or null.
 func beacon_at(at: Vector3) -> Node3D:
 	for marker in beacons:
+		if waits_on_keeper(marker):
+			continue
 		var flat := Vector2(at.x - marker.global_position.x, at.z - marker.global_position.z)
 		if flat.length() <= float(marker.get_meta("radius", 6.0)) and absf(at.y - marker.global_position.y) < 4.0:
 			return marker
@@ -1666,14 +1690,19 @@ func _spawn_bosses() -> void:
 	if world.bot_count <= 0:
 		return
 	for marker in _map_nodes("spawn_boss"):
-		_bosses.append({"marker": marker, "bot": _add_boss(marker), "back_in": 0.0})
+		var boss := {"marker": marker, "bot": null, "back_in": 0.0, "helpers": {}, "adds": [], "shares": [],
+				"socket_in": 0.0, "socket_next": 0, "purge_in": 0.0, "purge_next": 0, "venting": []}
+		boss.bot = _add_boss(marker, boss)
+		_bosses.append(boss)
 
 
-func _add_boss(marker: Node3D) -> Actor:
+func _add_boss(marker: Node3D, boss: Dictionary) -> Actor:
 	var bot := _add_bot(marker, true)
 	var brain := bot.get_node_or_null("Brain") as BotBrain
 	if brain != null:
 		brain.post_to(marker.global_position, float(marker.get_meta("radius", 12.0)))
+	if marker.get_meta("keeper", false):
+		bot.health.damaged.connect(_on_keeper_hurt.bind(boss))
 	return bot
 
 
@@ -1840,13 +1869,20 @@ func _tick_bosses(delta: float) -> void:
 		if bot != null and is_instance_valid(bot) and not (bot as Actor).is_dead:
 			continue
 		if boss.back_in <= 0.0:
-			boss.back_in = world.boss_respawn_time
+			boss.back_in = float((boss.marker as Node3D).get_meta("respawn", world.boss_respawn_time))
+			if (boss.marker as Node3D).get_meta("keeper", false):
+				_keeper_fell(boss)
 			boss.bot = null
 			continue
 		boss.back_in -= delta
 		if boss.back_in <= 0.0:
-			boss.bot = _add_boss(boss.marker)
+			boss.bot = _add_boss(boss.marker, boss)
+			if (boss.marker as Node3D).get_meta("keeper", false):
+				_keeper_back(boss)
 			war_feed.emit(world.boss_back_news(boss.bot, _whereabouts(boss.marker.global_position)))
+	for boss in _bosses:
+		if (boss.marker as Node3D).get_meta("keeper", false):
+			_tick_keeper(boss, delta)
 	if world.boss_party_scale > 0.0:
 		_boss_party_left -= delta
 		if _boss_party_left <= 0.0:
@@ -1868,6 +1904,283 @@ func _scale_boss(bot: Actor) -> void:
 		if other.global_position.distance_to(bot.global_position) <= world.boss_party_range:
 			near += 1
 	bot.toughness = 1.0 + world.boss_party_scale * maxi(near - 1, 0)
+
+
+# --- Keepers ---------------------------------------------------------------------
+
+## A keeper is a dungeon's last fight (DESIGN.md "The Engine's inside"): a
+## boss whose "spawn_boss" marker has the meta "keeper", with the fight its
+## map lays out round it ("boss_socket", "purge" and "vault" markers naming
+## its kind). Every keeper starts standing; a client is told otherwise when
+## it joins.
+func _find_keepers() -> void:
+	keepers.clear()
+	for marker in _map_nodes("spawn_boss"):
+		if marker.get_meta("keeper", false):
+			keepers[str(marker.get_meta("boss", ""))] = 1
+	purges = _map_nodes("purge")
+	_sockets = _map_nodes("boss_socket")
+	_vaults = _map_nodes("vault")
+	map.set_meta("keepers", keepers.duplicate())
+	if Look.enabled and map.has_method("show_purge"):
+		var show := Callable(map, "show_purge")
+		if not purge_changed.is_connected(show):
+			purge_changed.connect(show)
+
+
+## Whether a marker that waits on a keeper (one with its kind as meta
+## "keeper": a deep beacon, its warmth) is still dark, its keeper standing.
+func waits_on_keeper(marker: Node) -> bool:
+	if not marker.has_meta("keeper"):
+		return false
+	return int(keepers.get(str(marker.get_meta("keeper")), 0)) != 0
+
+
+## A client's copy of a keeper's phase, from `NetSession`.
+func set_keeper(kind: String, phase: int) -> void:
+	if not keepers.has(kind):
+		return
+	keepers[kind] = clampi(phase, 0, 2)
+	map.set_meta("keepers", keepers.duplicate())
+
+
+func _set_keeper_phase(kind: String, phase: int) -> void:
+	if int(keepers.get(kind, -1)) == phase:
+		return
+	keepers[kind] = phase
+	map.set_meta("keepers", keepers.duplicate())
+	keeper_changed.emit(kind, phase)
+
+
+## Everyone who hurts a keeper has helped, and gets a share of its vault.
+func _on_keeper_hurt(info: DamageInfo, boss: Dictionary) -> void:
+	if info.amount <= 0.0 or not info.source is Actor:
+		return
+	var state := state_for(info.source as Actor)
+	if state != null:
+		(boss.helpers as Dictionary)[state.owner] = state.actor.display_name
+
+
+## The living players in a keeper's arena (its marker's meta "arena").
+func _arena_players(marker: Node3D) -> Array[Actor]:
+	var reach := float(marker.get_meta("arena", 30.0))
+	var found: Array[Actor] = []
+	for state in players:
+		var actor := state.actor
+		if state.finished or not is_instance_valid(actor) or actor.is_dead:
+			continue
+		if actor.global_position.distance_to(marker.global_position) <= reach:
+			found.append(actor)
+	return found
+
+
+## A keeper's fight, run by the authority while someone is in its arena. In
+## its first phase it calls its faction out of its wall sockets, one every
+## `WorldDef.keeper_socket_every`, up to `keeper_socket_max` at once and one
+## more for each other player there (a squad splits between it and them).
+## Below `keeper_split` of its health it turns to its purges: every
+## `keeper_purge_every` the next `keeper_purges_at_once` lanes warn for
+## `keeper_purge_warn` and then vent (`_tick_venting`).
+func _tick_keeper(boss: Dictionary, delta: float) -> void:
+	var marker := boss.marker as Node3D
+	var kind := str(marker.get_meta("boss", ""))
+	_tick_venting(boss, delta)
+	var bot: Variant = boss.bot
+	if bot == null or not is_instance_valid(bot) or (bot as Actor).is_dead:
+		return
+	var keeper := bot as Actor
+	var near := _arena_players(marker)
+	var phase := 2 if keeper.health.health < keeper.health.max_health * world.keeper_split else 1
+	if phase != int(keepers.get(kind, 1)):
+		_set_keeper_phase(kind, phase)
+		var news := world.keeper_news(keeper, phase)
+		for actor in near:
+			if news != "":
+				actor.notice.emit(news)
+	if near.is_empty():
+		boss.socket_in = world.keeper_socket_first
+		boss.purge_in = world.keeper_purge_first
+		return
+	if phase == 1:
+		boss.socket_in -= delta
+		if boss.socket_in <= 0.0:
+			boss.socket_in = world.keeper_socket_every
+			_call_from_socket(boss, kind, near)
+	else:
+		boss.purge_in -= delta
+		if boss.purge_in <= 0.0:
+			boss.purge_in = world.keeper_purge_every
+			_start_purges(boss, kind)
+
+
+## A keeper calls one of its faction out of its next wall socket, posted to
+## its arena and told where the nearest player is. The grid's ring shows it.
+func _call_from_socket(boss: Dictionary, kind: String, near: Array[Actor]) -> void:
+	var adds: Array = boss.adds
+	for k in range(adds.size() - 1, -1, -1):
+		var add: Variant = adds[k]
+		if add == null or not is_instance_valid(add) or (add as Actor).is_dead:
+			adds.remove_at(k)
+	if adds.size() >= world.keeper_socket_max + near.size() - 1:
+		return
+	var sockets := _sockets.filter(func(socket: Node3D) -> bool: return str(socket.get_meta("keeper", "")) == kind)
+	if sockets.is_empty():
+		return
+	var socket := sockets[int(boss.socket_next) % sockets.size()] as Node3D
+	boss.socket_next = int(boss.socket_next) + 1
+	var bot := _add_bot(socket)
+	adds.append(bot)
+	var marker := boss.marker as Node3D
+	var brain := bot.get_node_or_null("Brain") as BotBrain
+	if brain != null:
+		brain.post_to(marker.global_position, float(marker.get_meta("arena", 30.0)) * 0.8)
+	var target := near[0]
+	for actor in near:
+		if actor.global_position.distance_to(socket.global_position) < target.global_position.distance_to(socket.global_position):
+			target = actor
+	bot.heard.emit(target.global_position, target)
+	grid_called.emit(bot, target)
+
+
+## The next of a keeper's purge lanes warn.
+func _start_purges(boss: Dictionary, kind: String) -> void:
+	var lanes: Array[int] = []
+	for i in purges.size():
+		if str(purges[i].get_meta("keeper", "")) == kind:
+			lanes.append(i)
+	if lanes.is_empty():
+		return
+	for k in mini(world.keeper_purges_at_once, lanes.size()):
+		var index := lanes[int(boss.purge_next) % lanes.size()]
+		boss.purge_next = int(boss.purge_next) + 1
+		(boss.venting as Array).append({"index": index, "left": world.keeper_purge_warn, "vented": false})
+		purge_changed.emit(index, 1)
+
+
+## Warned lanes vent once their warning is up, then go quiet. Lanes that
+## vent together hurt anyone once, however many of them they stand in.
+func _tick_venting(boss: Dictionary, delta: float) -> void:
+	var venting: Array = boss.venting
+	if venting.is_empty():
+		return
+	var hit := {}
+	for k in range(venting.size() - 1, -1, -1):
+		var vent: Dictionary = venting[k]
+		vent.left = float(vent.left) - delta
+		if float(vent.left) > 0.0:
+			continue
+		var index := int(vent.index)
+		if not vent.vented:
+			vent.vented = true
+			vent.left = PURGE_VENT
+			_vent(purges[index], boss, hit)
+			purge_changed.emit(index, 2)
+		else:
+			venting.remove_at(k)
+			purge_changed.emit(index, 0)
+
+
+## A purge lane vents: everyone standing in it (on its floor, not over it)
+## takes its "damage" through `Combat.deal`, from the keeper, so the world's
+## rules decide who (the keeper's own faction is spared in Frostline).
+func _vent(lane: Node3D, boss: Dictionary, hit: Dictionary) -> void:
+	var from := lane.global_position
+	var to: Vector3 = lane.get_meta("toward", from)
+	var keeper: Variant = boss.bot
+	var source: Actor = keeper as Actor if keeper != null and is_instance_valid(keeper) else null
+	var targets: Array = []
+	for state in players:
+		if not state.finished:
+			targets.append(state.actor)
+	targets.append_array(bots)
+	for target: Variant in targets:
+		if target == null or not is_instance_valid(target) or (target as Actor).is_dead or hit.has(target):
+			continue
+		var actor := target as Actor
+		if not in_lane(actor.global_position, from, to, float(lane.get_meta("width", 4.0))):
+			continue
+		hit[actor] = true
+		var info := DamageInfo.new()
+		info.amount = float(lane.get_meta("damage", 20.0))
+		info.kind = "purge"
+		info.position = actor.global_position
+		info.armor_pierce = 0.5
+		info.source = source
+		Combat.deal(actor, info)
+
+
+## Whether a point stands in a lane `width` across from `from` to `to`, on
+## its floor (within 2.5 m up or down).
+static func in_lane(at: Vector3, from: Vector3, to: Vector3, width: float) -> bool:
+	if absf(at.y - from.y) > 2.5:
+		return false
+	var run := Vector2(to.x - from.x, to.z - from.z)
+	var off := Vector2(at.x - from.x, at.z - from.z)
+	var length := run.length()
+	if length < 0.01:
+		return false
+	var along := off.dot(run / length)
+	if along < -0.5 or along > length + 0.5:
+		return false
+	return absf(off.cross(run / length)) <= width * 0.5 + 0.4
+
+
+## A keeper fell: its deep markers light, and its vault opens a share for
+## everyone who hurt it and everyone in its arena, each kept for them alone
+## (`LootContainer.reserved`) until the keeper comes back.
+func _keeper_fell(boss: Dictionary) -> void:
+	var marker := boss.marker as Node3D
+	var kind := str(marker.get_meta("boss", ""))
+	_set_keeper_phase(kind, 0)
+	_open_vault(boss, kind)
+	boss.helpers = {}
+	boss.socket_next = 0
+	boss.purge_next = 0
+	var news := world.keeper_news(boss.bot as Actor if boss.bot != null and is_instance_valid(boss.bot) else null, 0)
+	if news != "":
+		war_feed.emit(news)
+
+
+func _keeper_back(boss: Dictionary) -> void:
+	for share: Variant in boss.shares:
+		if share != null and is_instance_valid(share):
+			(share as Node).queue_free()
+	boss.shares = []
+	boss.helpers = {}
+	_set_keeper_phase(str((boss.marker as Node3D).get_meta("boss", "")), 1)
+
+
+## How far apart the vault's shares stand.
+const VAULT_SPACING := 1.6
+
+
+func _open_vault(boss: Dictionary, kind: String) -> void:
+	var vault: Node3D = null
+	for marker in _vaults:
+		if str(marker.get_meta("keeper", "")) == kind:
+			vault = marker
+			break
+	if vault == null:
+		return
+	var helpers: Dictionary = (boss.helpers as Dictionary).duplicate()
+	for actor in _arena_players(boss.marker as Node3D):
+		var state := state_for(actor)
+		if state != null and not helpers.has(state.owner):
+			helpers[state.owner] = actor.display_name
+	var across := vault.global_transform.basis.x.normalized()
+	var owners := helpers.keys()
+	var shares: Array = boss.shares
+	for i in owners.size():
+		var owner: String = owners[i]
+		var title: String = helpers[owner]
+		var at := vault.global_position + across * (float(i) - (owners.size() - 1) * 0.5) * VAULT_SPACING
+		var share := spawn_container(world.roll_vault(kind, rng), false, "%s's share" % title, at)
+		share.reserved = owner
+		share.reserved_name = title
+		shares.append(share)
+		for state in players:
+			if state.owner == owner and not state.finished and is_instance_valid(state.actor):
+				state.actor.notice.emit("The vault is open: your share waits for you there")
 
 
 ## The view of a grid call (view only, added where `Look` is on): a ring of
@@ -1915,7 +2228,7 @@ func _is_extra(bot: Actor) -> bool:
 	if _event_bots.has(bot) or is_raider(bot) or is_guard(bot):
 		return true
 	for boss in _bosses:
-		if boss.bot == bot:
+		if boss.bot == bot or (boss.adds as Array).has(bot):
 			return true
 	return false
 
@@ -2401,6 +2714,8 @@ func warmth_at(actor: Actor) -> float:
 	var at := actor.global_position
 	var best := 0.0
 	for source in warmth:
+		if waits_on_keeper(source):
+			continue
 		var off := at - source.global_position
 		var radius := float(source.get_meta("radius", 4.0))
 		if absf(off.y) < 3.0 and Vector2(off.x, off.z).length_squared() <= radius * radius:
@@ -2456,7 +2771,10 @@ func _add_bot(marker: Node3D, warlord := false) -> Actor:
 		bot.free()
 		bot = spawn_bot("Bot%d" % _bot_count, _stand(at), hash([first_seed, tries]), warlord,
 				marker.get_meta("faction", ""), -2, [], boss)
-	if warlord:
+	if warlord and marker.get_meta("keeper", false):
+		# A keeper carries nothing: its vault pays everyone who fought it.
+		bot.inventory.items.clear()
+	elif warlord:
 		# What a warlord carries is worth the fight.
 		for id in world.roll_war_loot("bot", rng, 1.0) + world.roll_war_loot("cache", rng, 1.0):
 			bot.inventory.add_item(id)
