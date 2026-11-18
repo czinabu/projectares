@@ -387,6 +387,14 @@ func cold_at(_pos: Vector3) -> float:
 	return cold
 
 
+## How much grip the ground at a point gives a wheel or a foot of a ground
+## vehicle: 1 on dry ground, less on snow and ice, where wheels break loose
+## and slide (`Vehicle._surface_grip`; a hover's cushion ignores it). Run on
+## every machine that simulates a ride, so keep it free of randomness.
+func surface_grip(_pos: Vector3) -> float:
+	return 1.0
+
+
 ## Whether the ground at a point is thin ice (see `thin_ice`).
 func thin_ice_at(_pos: Vector3) -> bool:
 	return false

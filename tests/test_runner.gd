@@ -19,6 +19,7 @@ const RigLookTests := preload("res://tests/rig_look_tests.gd")
 const RigTierTests := preload("res://tests/rig_tier_tests.gd")
 const RigBalanceTests := preload("res://tests/rig_balance_tests.gd")
 const HoverbikeTests := preload("res://tests/hoverbike_tests.gd")
+const DriftTests := preload("res://tests/drift_tests.gd")
 const EconomyTests := preload("res://tests/economy_tests.gd")
 const MeleeArsenalTests := preload("res://tests/melee_arsenal_tests.gd")
 const MeleeFeelTests := preload("res://tests/melee_feel_tests.gd")
@@ -288,6 +289,7 @@ func _run() -> void:
 	await _test_vehicle_driving()
 	await _test_vehicle_roster()
 	await _test_hoverbike()
+	await _test_drifting()
 	await _test_vehicle_raids()
 	await _test_vehicle_toys()
 	await _test_toy_throw_pose()
@@ -2714,7 +2716,7 @@ func _test_vehicle_driving() -> void:
 	arena.add_child(rider)
 	rider.position = Vector3(3, 0.1, 0)
 	await frames(20)
-	check(bike.is_on_floor() and is_equal_approx(bike.max_speed, 22.0), "a bike settles and takes its item stats")
+	check(bike.is_on_floor() and is_equal_approx(bike.max_speed, 24.0), "a bike settles and takes its item stats")
 	var seat: Interactable = bike.get_node("Seat")
 	check(seat.get_prompt().contains("Ride"), "a parked bike offers a ride")
 	# The rider stands 3 m to the bike's +X side; yaw PI/2 faces -X.
@@ -2970,6 +2972,10 @@ func _test_vehicle_roster() -> void:
 
 func _test_hoverbike() -> void:
 	await HoverbikeTests.run(self)
+
+
+func _test_drifting() -> void:
+	await DriftTests.run(self)
 
 
 ## The lowest point of every mesh under `node`, in world height.

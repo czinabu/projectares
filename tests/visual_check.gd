@@ -1529,6 +1529,27 @@ func _visor_shots(out_dir: String) -> void:
 			await _settle(6)
 			await _shot(out_dir.path_join("visor_helm_spotter_tag.png"))
 		elif helmet == "helm_warden":
+			# The landing warning: high up, the jetpack overheated, in both views.
+			var held_at := p.global_position
+			p.global_position = held_at + Vector3(0, 32, 0)
+			p.velocity = Vector3.ZERO
+			p.flight.heat = p.flight.max_heat
+			p.flight.overheated = true
+			await _settle(8)
+			await _shot(out_dir.path_join("visor_landing_first.png"))
+			controller.toggle_view()
+			p.global_position = held_at + Vector3(0, 32, 0)
+			p.velocity = Vector3.ZERO
+			controller.yaw += PI
+			await _settle(8)
+			await _shot(out_dir.path_join("visor_landing_third.png"))
+			controller.yaw -= PI
+			controller.toggle_view()
+			p.flight.heat = p.flight.max_heat * 0.45
+			p.flight.overheated = false
+			p.global_position = held_at
+			p.velocity = Vector3.ZERO
+			await _settle(20)
 			var near: Actor = raid.bots[0]
 			var to_near: Vector3 = near.global_position + Vector3(0, 1.1, 0) - p.get_eye_position()
 			controller.yaw = atan2(-to_near.x, -to_near.z)

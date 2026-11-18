@@ -807,8 +807,10 @@ without Caleb, and update the gap list when a PR closes a row.
   always-in-view readings as a row of hex cells along the lower left curve,
   each filling like a gauge with its number over it (health, armor,
   stamina, with a flight rig its heat and cue, the ability;
-  `VisorHud.vital_cells`; the landing warning is still to come, per
-  DESIGN.md section 5). Every working helmet also has a heading tape across
+  `VisorHud.vital_cells`), and under the middle of the lower rim the
+  landing warning (`Hud.landing_warning`: the rig about to cut out while a
+  fall from there would hurt; `VisorHud._draw_landing`, and the pack
+  screen's word turns to LAND, DESIGN.md section 5). Every working helmet also has a heading tape across
   the top, bowed with the glass, that marks only what the wearer is already
   told (`VisorHud.compass_marks`): squadmates (`VisorHud.squadmate`: a player in
   the same clan, or everyone where `WorldDef.players_allied`; never a bot or
@@ -900,7 +902,13 @@ without Caleb, and update the gap list when a PR closes a row.
   `is_occupied`, never `rider` alone), and the "aircraft" tag flies
   it (`Vehicle._fly`: takes off past `takeoff_speed` with jump, never
   hovers, drops below `stall_speed` or with nobody at the stick, climbs no
-  higher than `ceiling` over the world's ground). Every vehicle, the jet
+  higher than `ceiling` over the world's ground). Jump is the handbrake
+  (`handbrake`, off for the mech and the jet, whose jump key is theirs):
+  at speed it is a drift (`Vehicle.drifting`, the same `slip` a hover
+  keeps, `drift_*` stats) whose clean exit on the throttle is a short
+  burst (`drift_charge`, `_drift_exit`), and a world's slick ground
+  (`WorldDef.surface_grip`, Frostline's snow and ice) lets wheels slide
+  on their own; a hover ignores it. Every vehicle, the jet
   included, can be thrown in every world (Caleb's call), except a race
   world (`WorldDef.vehicle_toys` off), which races its own stock machines. A vehicle's `watch_recharge` and `footprint` stats
   set the watch's wait after a throw and the room it needs to unpack.

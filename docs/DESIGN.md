@@ -1309,7 +1309,7 @@ always in view, and the watch is not needed for any of them.
 | Heat gauge | The 100 heat bar, with the 35 recovery mark. It warns before the overheat cut-out. |
 | Rig cue | One cue per rig: the jetpack's coast-and-vent window, the wings' stall line and boosts left, the boots' dash charges and skim time. |
 | Squad markers | Where your squad is, at the visor edge toward them. Squad only; never shows an enemy. |
-| Landing warning | Ground coming up while heat is high, or while the rig is about to cut out, so you can land or pulse before you fall. |
+| Landing warning | Ground coming up while heat is high, or while the rig is about to cut out, so you can land or pulse before you fall. Built: from 75% heat up, overheated, jammed or with a skim's last 0.6 s, and only while a fall from where you are would hurt (so boots, which take no fall damage, never warn). |
 
 - **First person.** The readings sit at the visor edges, as thin projected
   light that rests dim and brightens when it matters (the visor rule in
@@ -1494,7 +1494,7 @@ Vehicles must earn their place next to sustained flight.
   cruise (target: at least 1.5 times the jetpack's 14 m/s cruise, so 22 m/s
   or more), and its boost beats every rig's burst on open ground. Wings
   glide as fast as a bike's top speed, but only downhill from a perch and
-  for 25 s at a time. Bikes cost no heat.
+  for 25 s at a time. Bikes cost no heat. Today the Scrapper runs 24 m/s and boosts to 32 (raised from 22/29 so its boost clears the wings' 30 m/s dive), and the Raider 26/35.
 - **Tactical utility.** Mobile cover, mounted firepower, passenger seats for
   squadmates, heavy cargo (more pack space while riding).
 - **Seamless transitions.** Throw a toy vehicle from mid-air onto the road
@@ -1543,7 +1543,7 @@ More on each:
   little armor and no real climbing or flight, often with a short float
   over gaps and the ability to turn slowly on the spot. The numbers follow
   that, sized against the bike and flight:
-  - Speed 26 m/s, boost 35 (Scrapper 22/29, rover 23/28). A step up from
+  - Speed 26 m/s, boost 35 (Scrapper 24/32, rover 23/28). A step up from
     the Scrapper, not a new class: the old Raider was 27/37, and the
     hoverbike gave a little of that back for its terrain tricks. Still well
     over the jetpack's 14 m/s cruise.
@@ -1573,6 +1573,30 @@ More on each:
 - Every vehicle stays a `vehicle` item tuned by its stats, with a toy on the
   watch. The bike, rover and jet must stay clearly faster than flight cruise
   on their own terrain; the mech trades speed for armor and firepower.
+- **Handbrake drifting (Caleb's call).** Every wheeled machine and the
+  hoverbike have a handbrake on the jump key (the mech's jump key stays its
+  jump-jets, the jet's its climb). Held at speed (8 m/s or more) it locks
+  the back end: the throttle stops pushing and the speed bleeds off slowly
+  (5 m/s² against a brake's 22 to 32), the nose swings round 1.6 times as
+  fast and the course trails it, so the machine slides round a corner nose
+  first, up to about 50 degrees sideways. Held wide for 0.8 s it banks a
+  full charge; letting go on the throttle without hitting anything is a
+  clean exit, a burst of up to 4 m/s over 0.3 s, never past boost speed.
+  Let go on the brake or into a wall and the charge is lost. Slow, the
+  handbrake only brakes. The hoverbike drifts through every turn anyway;
+  its handbrake throws it about twice as wide and earns the same burst.
+  Tyres smoke and a hover throws up spray while they slide, the same seen
+  from the saddle and from across the street. All simulated from the
+  command, so it predicts online. On Coilrun the race profiles turn so
+  tightly at speed that few corners need braking, so a drift is a style
+  there more than a faster line (the race bench's `--drift` run measures
+  it); making corners demand it is a grip limit and a smarter bench driver,
+  still to come.
+- **Slick ground.** A world sets how much grip its ground gives wheels
+  (`WorldDef.surface_grip`, 1 on dry ground). Frostline's packed snow gives
+  75%, and the frozen river, the lake and the frozen sea give 35%: wheels
+  pull away and brake on that share, break loose and slide wide in a plain
+  turn, and grip back slower. A hover's cushion does not care.
 
 ## 9. Racing (a later mode)
 
