@@ -9,7 +9,9 @@ name: Windows client build
 #   The same release carries the game's own update: ProjectAres.pck (the zip
 #   ships it beside the exe, not embedded) and update.json, which an installed
 #   game reads at launch to download the new pack and restart into it
-#   (core/update/updater.gd). Each build is stamped with its number (the
+#   (core/update/updater.gd). ProjectAres-Setup.exe installs the same files
+#   for the current user, with desktop and Start menu shortcuts
+#   (.github/installer/ProjectAres.nsi). Each build is stamped with its number (the
 #   workflow's run number) so a game knows which is newer.
 #   Run by hand (Actions > Windows client build > Run workflow): builds the
 #   branch picked and, if "release" is ticked, attaches the zip to a DRAFT
@@ -23,6 +25,7 @@ on:
       - export_presets.cfg
       - .github/workflows/windows-client.yml
       - .github/playtest/**
+      - .github/installer/**
   workflow_dispatch:
     inputs:
       release:
@@ -84,6 +87,14 @@ jobs:
           echo "$name (commit $(git rev-parse HEAD))" > "dist/$name/BUILD.txt"
           (cd dist && zip -qr "$name.zip" "$name")
           echo "name=$name" >> "$GITHUB_OUTPUT"
+      - name: Installer
+        # A per-user install with desktop and Start menu shortcuts
+        # (.github/installer/ProjectAres.nsi), built with NSIS.
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq nsis > /dev/null
+          makensis -V2 -DSRC="$PWD/dist/${{ steps.zip.outputs.name }}" -DICON="$PWD/assets/branding/icon.ico" \
+            -DBUILD="$GITHUB_RUN_NUMBER" -DOUTFILE="$PWD/dist/ProjectAres-Setup.exe" .github/installer/ProjectAres.nsi
+          test -s dist/ProjectAres-Setup.exe
       - name: Update manifest
         run: |
           pck=build/windows/ProjectAres.pck
@@ -99,6 +110,7 @@ jobs:
           name: ${{ steps.zip.outputs.name }}
           path: |
             dist/*.zip
+            dist/ProjectAres-Setup.exe
             dist/update.json
       - name: Update the rolling latest release
         if: github.event_name == 'push'
@@ -106,11 +118,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           zip="dist/${{ steps.zip.outputs.name }}.zip"
-          notes="Newest main, built automatically on every merge: ${{ steps.zip.outputs.name }} (build $GITHUB_RUN_NUMBER). Unzip once and run ProjectAres.exe: it keeps itself up to date from here (ProjectAres.pck and update.json are what it downloads). Then join the host from the phone's Servers app (P). Everyone, host included, must be on the same build (the name of the zip)."
+          notes="Newest main, built automatically on every merge: ${{ steps.zip.outputs.name }} (build $GITHUB_RUN_NUMBER). Run ProjectAres-Setup.exe once (or unzip the zip somewhere you can write to): it keeps itself up to date from here (ProjectAres.pck and update.json are what it downloads). Then join the host from the phone's Servers app (P). Everyone, host included, must be on the same build (the name of the zip)."
           # Recreate the release every time: editing it in place keeps the
           # original publish date, so the page would look hours out of date.
           gh release delete latest --cleanup-tag -y || true
-          gh release create latest "$zip" dist/ProjectAres.pck dist/update.json --prerelease --target "$GITHUB_SHA" \
+          gh release create latest dist/ProjectAres-Setup.exe "$zip" dist/ProjectAres.pck dist/update.json --prerelease --target "$GITHUB_SHA" \
             --title "Latest build ($(git rev-parse --short HEAD), $(date -u '+%Y-%m-%d %H:%M UTC'))" --notes "$notes"
       - name: Draft release
         if: github.event_name == 'workflow_dispatch' && inputs.release

@@ -496,7 +496,13 @@ without Caleb, and update the gap list when a PR closes a row.
   `--main-pack`), then restarts. It never runs in the editor, a test, a
   server or headless, and anything that changes the engine or a native
   library needs a fresh install. Its state shows on the start screen's
-  corner and the phone's Servers app, nowhere else.
+  corner and the phone's Servers app, nowhere else. The installer
+  (`.github/installer/ProjectAres.nsi`, NSIS, built by the same workflow as
+  `ProjectAres-Setup.exe`) installs per user into
+  `%LOCALAPPDATA%\Programs\Project Ares`, never Program Files, so the game
+  can write its own pack, and adds desktop and Start menu shortcuts. The
+  logo is a placeholder in `assets/branding` (the window, exe and installer
+  icon and the boot splash), made by its `make_logo.py`.
 - Sound and visual effects (`Sfx`, `Fx`) must stay no-ops on a headless server.
 - Art lives in the `Look` autoload (`core/visual/`), not in gameplay scripts.
   Gameplay scripts keep building plain greybox shapes; `Look` dresses them

@@ -111,6 +111,15 @@ static func _wiring(t: Node) -> void:
 	t.check(workflow == "" or (UpdaterScript.BUILD_SETTING.get_slice("/", 2) in workflow
 			and UpdaterScript.MANIFEST in workflow and "ProjectAres.pck" in workflow),
 			"the release workflow stamps the build and publishes the pack and its manifest")
+	t.check(str(ProjectSettings.get_setting("application/config/icon", "")).begins_with("res://assets/branding/")
+			and str(ProjectSettings.get_setting("application/boot_splash/image", "")).begins_with("res://assets/branding/")
+			and str(presets.get_value(client + ".options", "application/icon", "")).ends_with(".ico")
+			and FileAccess.file_exists("res://assets/branding/icon.ico"),
+			"the game wears its own logo: window, boot splash and the exe's icon")
+	var installer := FileAccess.get_file_as_string("res://.github/installer/ProjectAres.nsi")
+	t.check(installer == "" or ("RequestExecutionLevel user" in installer
+			and "$LOCALAPPDATA\\Programs" in installer and "$DESKTOP" in installer),
+			"the installer installs per user, where the game can update itself, with a desktop shortcut")
 	var screen := StartScreen.new()
 	t.add_child(screen)
 	screen.set_status("Downloading build 20: 40%")
