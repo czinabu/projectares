@@ -228,6 +228,50 @@ godot --headless --path . --export-release "Linux Server" build/server/ares_serv
 ./build/server/ares_server.x86_64 --headless -- --server --world ashfront --port 24565
 ```
 
+## The account service (official servers only)
+
+A friends' server needs none of this: it keeps its own accounts, as above.
+
+Official servers share one set of accounts, so a player has the same stash
+in every world. Those accounts live in one extra program, the account
+service, and each game server is pointed at it instead of keeping accounts
+itself (`docs/DESIGN.md` section 14). Players never connect to the service;
+only game servers do.
+
+```
+# The service: no world, no players, just the accounts (and the market board).
+./ares_server --headless -- --account-service --port 24700 --accounts /data/accounts
+
+# A game server that uses it. Give each server its own --server-id and keep
+# it the same every time that server starts.
+./ares_server --headless -- --server --world ashfront --port 24565 \
+    --account-url ws://127.0.0.1:24700 --server-id ashfront-1 \
+    --accounts /data/ashfront-1 --service-key /data/accounts/service_key
+```
+
+- **The key.** On its first start the service writes a random key to
+  `service_key` in its accounts folder. Every game server must hold the same
+  key: point `--service-key` at that file, or put the key in the
+  `ARES_SERVICE_KEY` environment variable on both sides. Neither side ever
+  sends the key itself. Anyone with the key can change any account, so treat
+  it like a password.
+- **Where it listens.** Only on its own computer unless started with
+  `--bind "*"`. Players' sign-ins pass over this connection, so across
+  machines keep it on a private network, or put a TLS proxy in front and use
+  a `wss://` address.
+- **`--accounts` on a game server** is then only its own folder for its
+  certificate, clans and phone records. The accounts, their backups
+  (`accounts_backups` beside the service's folder) and the market board are
+  the service's.
+- **If the service stops**, game servers keep running. Lives being played
+  carry on; what they earn is kept and delivered when the service is back.
+  Signing in, equipping and deploying wait until then. If a game server
+  itself stops, the lives it was running are handed their gear back the next
+  time it starts, as on a friends' server.
+
+Clans and the phone's contacts and messages are still kept by each game
+server for now; they move to the service with one program per world.
+
 ## Windows build for friends
 
 The **Windows client build** workflow exports the "Windows Client" preset on

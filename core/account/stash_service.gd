@@ -29,6 +29,12 @@ extends RefCounted
 ##
 ## Every call that can fail returns a Dictionary with "ok" (bool) and, when
 ## false, "error" (a short reason a client can show).
+##
+## Official servers do not hold one of these themselves: they share the one
+## inside the account service (`core/account/account_service.gd`) and reach
+## it through an `AccountLink` (`core/account/account_link.gd`), which offers
+## these same calls. So a session calls its accounts with `await`, which
+## costs nothing here, where every call answers at once.
 
 const StashRules := preload("res://core/account/stash_rules.gd")
 const MasteryBook := preload("res://core/progression/mastery_book.gd")
@@ -45,6 +51,8 @@ const SAVE_VERSION := 1
 const MIN_NAME := 3
 const MAX_NAME := 20
 const MIN_SECRET := 16
+## How long a sign-in token is good for, in seconds (see `sign_in_with`).
+const TOKEN_LIFE := 12.0 * 3600.0
 
 ## The folder accounts live in: the SQLite database `accounts.sqlite`
 ## (`AccountStore`), beside the clan and phone records. Old one-file-per-account
@@ -68,6 +76,26 @@ var _store: RefCounted = null
 var _tx_before := {}
 var _tx_dirty: Array[String] = []
 var _in_tx := false
+## While a hold runs (`begin_hold`): the ids of the accounts saved in it,
+## written together when it ends.
+var _holding := false
+var _held: Array[String] = []
+## Sign-in tokens: the hash of each token -> {"account", "until" (unix time)},
+## and each account's current one. Kept in memory only: a token that is gone
+## just means signing in with the secret again.
+var _tokens := {}
+var _token_of := {}
+## Whether an account found deployed when it is loaded gets its gear back
+## (the server that held the deploy stopped, so the life is gone). The
+## account service turns this off: its game servers outlive it, and it
+## returns a server's deploys when that server says it started afresh
+## (`release_deploys`).
+var returns_lost_deploys := true
+## With `track_touched`, the id of every account saved goes in `touched`,
+## for whoever clears it to see what a call changed (the account service,
+## which then tells the game servers those players are on).
+var track_touched := false
+var touched: Array[String] = []
 ## DEV MODE: account ids kept topped up with the dev stash (every piece of
 ## gear, max scrip) on this server. Only the host's own account joins it, and
 ## only on a server started from the editor with `--dev-host` (`dev_host`):
@@ -106,6 +134,10 @@ class Account:
 	## Items taken out of the stash for a raid that has not been settled.
 	var deployed: Array[String] = []
 	var deployed_world := ""
+	## Which game server holds the deploy and the request that made it (the
+	## account service only; "" on a server that keeps its own accounts).
+	var deployed_by := ""
+	var deploy_ref := ""
 	var raids_played := 0
 	var raids_extracted := 0
 	var kills := 0
@@ -146,6 +178,8 @@ class Account:
 			"crates_granted": crates_granted,
 			"deployed": deployed,
 			"deployed_world": deployed_world,
+			"deployed_by": deployed_by,
+			"deploy_ref": deploy_ref,
 			"raids_played": raids_played,
 			"raids_extracted": raids_extracted,
 			"kills": kills,
@@ -182,6 +216,8 @@ class Account:
 		if typeof(saved_deployed) == TYPE_ARRAY:
 			StashRules.add_items(deployed, saved_deployed)
 		deployed_world = str(data.get("deployed_world", ""))
+		deployed_by = str(data.get("deployed_by", ""))
+		deploy_ref = str(data.get("deploy_ref", ""))
 		# Gear that is out in a raid still counts as owned until it settles.
 		var owned := stash.duplicate()
 		owned.append_array(deployed)
@@ -221,6 +257,59 @@ static func id_for_name(shown_name: String) -> String:
 	if id.length() < MIN_NAME or id.length() > MAX_NAME:
 		return ""
 	return id
+
+
+## Signing in, however the player proves who they are. `credentials` names a
+## "method":
+##   "secret"  {"name", "secret"}: the name and the secret the game made
+##             (`sign_in`). The account is made the first time a name is seen.
+##   "token"   {"token"}: a token an earlier sign-in handed out (below).
+## A new way to sign in (a store login such as Steam, checked with the
+## store's web service) is a new method here that ends in an account id, and
+## nothing past this call changes: everything else is keyed by that id.
+##
+## Returns {"ok", "account_id", "created"} and, after a "secret" sign-in,
+## "token": a random string good for `TOKEN_LIFE` that stands for this
+## sign-in. The game keeps it and shows it to the next server it travels to
+## instead of its secret; that server asks `verify`. An account has one
+## token at a time: signing in with the secret again replaces it. A refused
+## token answers {"ok": false, "error", "expired": true}: sign in with the
+## secret.
+func sign_in_with(credentials: Dictionary) -> Dictionary:
+	match str(credentials.get("method", "secret")):
+		"secret":
+			var result := sign_in(str(credentials.get("name", "")).left(64), str(credentials.get("secret", "")).left(256))
+			if result.ok:
+				result["token"] = _issue_token(result.account_id)
+			return result
+		"token":
+			return verify(str(credentials.get("token", "")).left(256))
+	return _fail("This server does not know that way of signing in.")
+
+
+## Whose sign-in `token` stands for: {"ok", "account_id", "created": false},
+## or a refusal with "expired" set.
+func verify(token: String) -> Dictionary:
+	var entry: Variant = _tokens.get(token.sha256_text())
+	if token == "" or entry == null or float(entry.until) < Time.get_unix_time_from_system() \
+			or load_account(str(entry.account)) == null:
+		var refused := _fail("Sign in again.")
+		refused["expired"] = true
+		return refused
+	return {"ok": true, "account_id": str(entry.account), "created": false}
+
+
+func _issue_token(account_id: String) -> String:
+	_tokens.erase(_token_of.get(account_id, ""))
+	var now := Time.get_unix_time_from_system()
+	for hash: String in _tokens.keys():
+		if float(_tokens[hash].until) < now:
+			_token_of.erase(_tokens[hash].account)
+			_tokens.erase(hash)
+	var token := Crypto.new().generate_random_bytes(32).hex_encode()
+	_tokens[token.sha256_text()] = {"account": account_id, "until": now + TOKEN_LIFE}
+	_token_of[account_id] = token.sha256_text()
+	return token
 
 
 ## Signs in, creating the account (with the starter crates) the first time a
@@ -294,7 +383,7 @@ func load_account(id: String) -> Account:
 		push_warning("StashService: the save for %s holds another account" % id)
 		return null
 	_accounts[id] = account
-	if account.is_deployed():
+	if account.is_deployed() and returns_lost_deploys:
 		_return_deployed(account)
 	return account
 
@@ -340,6 +429,30 @@ func snapshot(account_id: String) -> Dictionary:
 		"contracts": _contracts_of(account).duplicate(true),
 		"blueprints": account.blueprints.duplicate(),
 	}
+
+
+## The same as `snapshot`. An `AccountLink` answers `snapshot` at once from
+## what it holds and only for accounts signed in on its server; `fetch` asks
+## for any account and is awaited.
+func fetch(account_id: String) -> Dictionary:
+	return snapshot(account_id)
+
+
+## The name an account shows, or its id if there is no such account.
+func name_of(account_id: String) -> String:
+	var account := load_account(account_id)
+	return account.shown_name if account != null else account_id
+
+
+## Nobody is signed in to this account on this server any more. Only an
+## `AccountLink` cares (it stops keeping the account up to date).
+func release(_account_id: String) -> void:
+	pass
+
+
+## False: this server keeps its own accounts (see `AccountLink.is_remote`).
+func is_remote() -> bool:
+	return false
 
 
 func equip(account_id: String, slot: String, item_id: String) -> Dictionary:
@@ -537,6 +650,13 @@ func transaction(steps: Array) -> Dictionary:
 			var refused := _fail("The trade could not go through.")
 			refused["step"] = i
 			return refused
+	if _holding:
+		# Written with the rest of the hold, when it ends.
+		for id in _tx_dirty:
+			if id not in _held:
+				_held.append(id)
+		_end_tx()
+		return {"ok": true}
 	var saves: Array = []
 	for id in _tx_dirty:
 		saves.append(_accounts[id].to_dict())
@@ -584,6 +704,38 @@ func _end_tx() -> void:
 	_tx_dirty.clear()
 
 
+# --- Holds ---------------------------------------------------------------------
+# How the account service does one request exactly once: every save the
+# request makes is held back and written in one go together with the
+# request's receipt (its id and answer). A request sent again because its
+# answer was lost finds the receipt and is answered from it.
+
+## Starts holding saves back (see `end_hold`).
+func begin_hold() -> void:
+	_holding = true
+	_held.clear()
+
+
+## Ends the hold `begin_hold` started and writes every account saved in it,
+## with `receipt` ([request id, answer text], or [] for none), all or
+## nothing. Returns {"ok", "changed": the account ids}. If the write fails
+## those accounts are dropped from memory, so they are read again as they
+## were saved, and the caller must not say the request worked.
+func end_hold(receipt: Array = []) -> Dictionary:
+	_holding = false
+	var changed := _held.duplicate()
+	_held.clear()
+	var saves: Array = []
+	for id in changed:
+		if _accounts.has(id):
+			saves.append(_accounts[id].to_dict())
+	if persist and _store_ready() and not _store.write(saves, receipt):
+		for id in changed:
+			_accounts.erase(id)
+		return {"ok": false, "changed": changed}
+	return {"ok": true, "changed": changed}
+
+
 func _bank(account: Account, result: Dictionary) -> Dictionary:
 	account.scrip = result.scrip
 	if result.ok:
@@ -600,7 +752,11 @@ func _bank(account: Account, result: Dictionary) -> Dictionary:
 ## A world with `gear_at_risk` off (the arena) gets the same kit, but nothing
 ## leaves the stash and the account is not marked as deployed: there is
 ## nothing to settle afterwards.
-func deploy(account_id: String, world: WorldDef) -> Dictionary:
+##
+## `by` and `ref` are the account service's: the game server that asked and
+## the request it asked with, kept on the account so only that server can
+## bank into, settle or call off the deploy.
+func deploy(account_id: String, world: WorldDef, by := "", ref := "") -> Dictionary:
 	var account := load_account(account_id)
 	if account == null:
 		return _fail("No such account.")
@@ -615,6 +771,8 @@ func deploy(account_id: String, world: WorldDef) -> Dictionary:
 	var kit := StashRules.checkout(account.stash, account.loadout, world, taken)
 	account.deployed = taken
 	account.deployed_world = world.id
+	account.deployed_by = by
+	account.deploy_ref = ref
 	_save(account)
 	return {"ok": true, "kit": kit, "picks": account.mastery.active_picks()}
 
@@ -673,6 +831,8 @@ func settle(account_id: String, result: Dictionary) -> Dictionary:
 				account.mastery.add_xp(track, int(gained[track]))
 	account.deployed.clear()
 	account.deployed_world = ""
+	account.deployed_by = ""
+	account.deploy_ref = ""
 	StashRules.validate_loadout(account.stash, account.loadout)
 	_save(account)
 	return {"ok": true, "contracts": paid}
@@ -703,6 +863,41 @@ func cancel_deploy(account_id: String) -> Dictionary:
 	return {"ok": true}
 
 
+## Calls off the deploy that request `ref` made, if it is still the one out.
+## For a server that asked to deploy and never heard the answer: it cannot
+## know whether the gear left the stash, and it must not call off a deploy
+## made before or after. Always {"ok": true}.
+func undo_deploy(account_id: String, ref: String) -> Dictionary:
+	var account := load_account(account_id)
+	if account != null and account.is_deployed() and ref != "" and account.deploy_ref == ref:
+		_return_deployed(account)
+	return {"ok": true}
+
+
+## True while game server `by` holds this account's deploy.
+func holds_deploy(account_id: String, by: String) -> bool:
+	var account := load_account(account_id)
+	return account != null and account.is_deployed() and account.deployed_by == by
+
+
+## Returns every deploy game server `by` holds, in memory or saved: it has
+## started afresh, so those lives are gone. Returns how many.
+func release_deploys(by: String) -> int:
+	var ids: Array[String] = []
+	if persist and _store_ready():
+		ids = _store.deployed_ids()
+	for id: String in _accounts:
+		if id not in ids:
+			ids.append(id)
+	var count := 0
+	for id in ids:
+		var account := load_account(id)
+		if account != null and account.is_deployed() and account.deployed_by == by:
+			_return_deployed(account)
+			count += 1
+	return count
+
+
 ## True while the account has gear out in a raid.
 func is_deployed(account_id: String) -> bool:
 	var account := load_account(account_id)
@@ -722,6 +917,8 @@ func _return_deployed(account: Account) -> void:
 	StashRules.add_items(account.stash, account.deployed)
 	account.deployed.clear()
 	account.deployed_world = ""
+	account.deployed_by = ""
+	account.deploy_ref = ""
 	StashRules.validate_loadout(account.stash, account.loadout)
 	_save(account)
 
@@ -769,9 +966,15 @@ func _is_saved(id: String) -> bool:
 ## Saves one account, at once, or with the rest of a running `transaction`
 ## when it ends.
 func _save(account: Account) -> void:
+	if track_touched and account.id not in touched:
+		touched.append(account.id)
 	if _in_tx:
 		if account.id not in _tx_dirty:
 			_tx_dirty.append(account.id)
+		return
+	if _holding:
+		if account.id not in _held:
+			_held.append(account.id)
 		return
 	if not persist or not _store_ready():
 		return

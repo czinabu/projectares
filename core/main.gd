@@ -53,6 +53,8 @@ const HEARTBEAT_STALE := 60
 ## The solo player's renown key in a raid, so it carries across their lives.
 const LOCAL_OWNER := "local"
 const StashRules := preload("res://core/account/stash_rules.gd")
+const AccountService := preload("res://core/account/account_service.gd")
+const AccountLink := preload("res://core/account/account_link.gd")
 const NameplatesScript := preload("res://core/ui/nameplates.gd")
 const ScoreboardScript := preload("res://core/ui/scoreboard.gd")
 const PhoneScript := preload("res://core/phone/phone.gd")
@@ -115,6 +117,12 @@ var shop_screen: WorldScreen
 var _shop_viewport: SubViewport
 ## Server: every session it runs (the plaza first, then the raid worlds).
 var sessions: Array[NetSession] = []
+## Server: the line to the account service, on a server that shares its
+## accounts (`--account-url`); null on one that keeps its own.
+var account_link: AccountLink
+## Client: the sign-in token each server address last handed out
+## (`NetSession.ticket`), shown instead of the secret on the next trip there.
+var _tickets := {}
 ## Client: where this server's plaza is, once you have been in it. Leaving a
 ## world's lobby or finishing a run leads back there. Port -1 means no plaza.
 var _plaza_address := ""
@@ -175,6 +183,9 @@ var _tour_stash_size := -1
 
 func _ready() -> void:
 	var args := OS.get_cmdline_user_args()
+	if "--account-service" in args:
+		_run_account_service(args)
+		return
 	if "--server" in args:
 		_run_dedicated_server(args)
 		return
@@ -1293,6 +1304,25 @@ func _run_dedicated_server(args: PackedStringArray) -> void:
 	# `--no-zone-rules`: no gate shelter and no hazards (the test suite's servers).
 	if "--no-zone-rules" in args:
 		Raid.zone_rules = false
+	# An official server keeps no accounts of its own: `--account-url` names
+	# the account service it shares them through (DESIGN.md section 14).
+	var service_url := _arg(args, "--account-url", "")
+	if service_url != "":
+		var folder := accounts if accounts != "" else "user://accounts"
+		account_link = AccountLink.new()
+		account_link.name = "AccountLink"
+		account_link.url = service_url
+		account_link.save_dir = folder
+		account_link.server_id = _arg(args, "--server-id", "server-%d" % port)
+		account_link.key = AccountService.load_key(_arg(args, "--service-key", folder.path_join(AccountService.KEY_FILE)))
+		if account_link.key == "":
+			push_error("Server: no service key for the account service (set %s or pass --service-key <file>)"
+					% AccountService.KEY_ENV)
+			get_tree().quit(1)
+			return
+		add_child(account_link)
+		print("Server: accounts are kept by the account service at %s (this server is %s)"
+				% [service_url, account_link.server_id])
 	var err := start_server(_arg(args, "--world", ""), port, "--no-plaza" not in args,
 			int(_arg(args, "--bots", "-1")), "--squad-spawn" in args, accounts,
 			"--no-rewind" not in args,
@@ -1320,11 +1350,41 @@ func _run_dedicated_server(args: PackedStringArray) -> void:
 	if handed != "" and FileAccess.file_exists(handed):
 		var data: Variant = JSON.parse_string(FileAccess.get_file_as_string(handed))
 		DirAccess.remove_absolute(handed)
-		if data is Dictionary:
+		# Only a server with accounts of its own takes on its host's profile:
+		# the shared accounts are never fed from a local save.
+		if data is Dictionary and not net.stash.is_remote():
 			net.stash.host_profile = data
-	if dev_host and not net.stash.host_profile.is_empty():  # DEV MODE
+	if dev_host and not net.stash.is_remote() and not net.stash.host_profile.is_empty():  # DEV MODE
 		net.stash.dev_host = true
 		print("Server: dev mode for the host (accounts in %s)" % accounts)
+
+
+## Runs the account service, the program official servers share their
+## accounts through (`core/account/account_service.gd`): `-- --account-service`
+## with `--port`, `--accounts <folder>` and `--bind <address>` ("*" to listen
+## beyond this computer). No world runs here and no player connects.
+func _run_account_service(args: PackedStringArray) -> void:
+	var service := AccountService.new()
+	service.name = "AccountService"
+	var folder := _arg(args, "--accounts", "")
+	if folder != "":
+		service.stash.save_dir = folder
+	service.bind = _arg(args, "--bind", service.bind)
+	var key_file := _arg(args, "--service-key", "")
+	if key_file != "":
+		service.key = AccountService.load_key(key_file, true)
+	add_child(service)
+	var port := int(_arg(args, "--port", str(AccountService.DEFAULT_PORT)))
+	var err := service.start(port)
+	if err != OK:
+		push_error("AccountService: could not start on port %d (%s)" % [port, error_string(err)])
+		get_tree().quit(1)
+		return
+	var store: RefCounted = service.stash.store()
+	print("AccountService: listening on %s:%d, accounts in %s (%s)" % [service.bind, port,
+			ProjectSettings.globalize_path(service.stash.save_dir), store.kind if store != null else "not saved"])
+	print("AccountService: game servers need the key in %s" % ProjectSettings.globalize_path(
+			key_file if key_file != "" else service.stash.save_dir.path_join(AccountService.KEY_FILE)))
 
 
 ## Starts every session of a server. With a plaza it listens on `port`, and
@@ -1353,7 +1413,9 @@ func start_server(world_id: String, port: int, with_plaza := true, bots := -1, s
 		session.lag_compensation = rewind
 		session.isolated = plaza != null or worlds.size() > 1
 		if sessions.is_empty():
-			if accounts != "":
+			if account_link != null:
+				session.stash = account_link
+			elif accounts != "":
 				session.stash.save_dir = accounts
 		else:
 			session.stash = sessions[0].stash
@@ -1531,6 +1593,8 @@ func _try_join() -> void:
 	net.name = "Net"
 	net.player_name = Profile.player_name
 	net.secret = Profile.get_online_secret()
+	# Travelling on within the same servers: the token the last one gave.
+	net.ticket = str(_tickets.get(_join_address, ""))
 	net.look = Profile.appearance
 	# `-- --lag 120 --loss 10` fakes a bad connection: milliseconds of delay
 	# each way, and the percent of input packets lost.
@@ -1575,6 +1639,8 @@ func _try_join() -> void:
 
 ## Signed in: the hub becomes that server's lobby.
 func _on_online_signed_in(account: Dictionary) -> void:
+	if net.ticket != "":
+		_tickets[_join_address] = net.ticket
 	phone.set_update_needed(false)
 	phone.set_server_changed({})
 	_tour_stash_size = (account.get("stash", []) as Array).size()
