@@ -180,15 +180,22 @@ residences and Sola at the arena, besides:
   table or bridge; the gear hall's stands, ring (round a dais) or lockers;
   the stores' shelves, plinths or cargo. The first of each is free; any
   other is bought once with scrip at the plan table and is then free to
-  switch to and back. Designs change how the base looks, never what it
-  holds.
+  switch to and back. The hub and every room also wear a **finish**, the
+  material of their floors, walls, ceilings and trim, each picked on its
+  own: **Steel** (free), **Gunmetal** (dark blued steel, cold light),
+  **Ceramic** (clean white lab panels), **Brass** (bronzed steel with brass
+  trim) and **Blackout** (matte black with lit strips). A finish is bought
+  once and then goes on any room. Designs change how the base looks, never
+  what it holds.
 - **The plan table** stands in the middle of the hub: a round table with
   the base in miniature over it as a hologram and a screen on a lectern at
   its near edge. Walk up and use it and the view moves in over the screen,
-  the hologram beyond it: three tabs, **Layout** (the four shapes with
+  the hologram beyond it: four tabs, **Layout** (the four shapes with
   their floor plans), **Rooms** (the hub's plan: click a doorway, then the
   room to stand there; the room that stood there takes its old place) and
-  **Styles** (each room's three styles, sketched from above). Whatever the
+  **Styles** (each room's three styles, sketched from above) and
+  **Finishes** (the hub and each room with the finish it wears, every
+  finish as a swatch, and a button to put one on every room at once). Whatever the
   mouse points at shows on the hologram at once; a click picks it, and a
   locked one shows its price and asks once more to confirm before it is
   bought and put in use. Moving rooms is free and moves nothing in or out
@@ -988,6 +995,26 @@ vehicle has a job:
   the stands and a ring of stadium floodlight towers (Caleb's call) whose
   white beams spread out over the floor to its edges, never meeting at one
   point, so the fighters stand out.
+
+### Planet kit (proposed, Caleb to confirm)
+
+Worlds are built on planet types. A `PlanetType`
+(`core/world/planet/`) is one kind of planet as data: its sky (worked out,
+not photographed: gradient, sun, moons, a ringed giant, clouds, stars), its
+calm and storm light (the moods `Look.atmosphere` already takes), its
+ground's shape (`PlanetTerrain`, a thread-safe height recipe a map builds
+its `Terrain` from and stamps its own layout on), its ground's surface (one
+material, `planet_ground.gdshader`, whose base, rock, cap and patch layers
+are picked by slope, height and noise), the far horizon ring, its weather
+and the rocks and growth scattered on it (`PlanetProps`, made in code, one
+`MultiMesh` per variant). A world names a type and keeps its own places and
+rules; two worlds on one type look like one planet. Only the ground's
+shape and a type's rule defaults (cold, grip, shot carry) reach the
+simulation; the rest is view only. Six types are drafted: Ashland
+(Ashfront), Glacier (Frostline), Salt Flat (Meridian), and three new ones,
+Basalt Rift, Dune Sea and Spore Marsh. Check by eye with
+`planet_check.tscn -- <dir> [type ids]`. No world uses it yet: each moves in
+its own PR once the threads working in it have merged.
 
 ## 3. The watch
 

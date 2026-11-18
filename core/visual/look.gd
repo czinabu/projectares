@@ -1298,6 +1298,15 @@ func _dress_actor(actor: Actor) -> void:
 	skin.look = self
 	skin.actor = actor
 	actor.add_child(skin)
+	_show_between_ticks(actor)
+
+
+## Shows `body` smoothly between physics ticks (`ShownMotion`).
+func _show_between_ticks(body: Node3D) -> void:
+	if is_instance_valid(body) and not body.has_node("ShownMotion"):
+		var motion := ShownMotion.new()
+		motion.name = "ShownMotion"
+		body.add_child(motion)
 
 
 ## Gives an actor a chosen appearance (see `human.gd`), now or before it is
@@ -2895,6 +2904,7 @@ func _dress_vehicle(vehicle: Node3D) -> void:
 	if model == null or model.has_meta("dressed"):
 		return
 	model.set_meta("dressed", true)
+	_show_between_ticks(vehicle)
 	# How grimy the model asks to be (`VehicleModel.WEAR`).
 	var wear := float(model.get_meta("wear", 0.7))
 	for node in model.find_children("*", "MeshInstance3D", true, false):
