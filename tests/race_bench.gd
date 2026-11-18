@@ -12,6 +12,11 @@ extends Node
 ## braking where the corner ahead is tighter than the machine can turn at
 ## its speed (its radius is speed over `turn_rate`), so it drives every
 ## machine to its own limits the same way.
+##
+## With `-- --drift` the driver also uses the handbrake: it throws the
+## machine into a drift where the bend it is in is tighter than it can turn
+## at its speed, and lets go on the throttle for the exit boost. Comparing
+## the two runs shows what drifting is worth on each track.
 
 const WORLDS: Array[String] = ["meridian"]
 const CLASSES := {"street": ["bike_scrapper", "bike_raider"]}
@@ -20,9 +25,11 @@ const TOLERANCE := 0.03
 const RUN_LIMIT := 420.0
 
 var _failed := false
+static var _drift := false
 
 
 func _ready() -> void:
+	_drift = OS.get_cmdline_user_args().has("--drift")
 	for world_id in WORLDS:
 		var world := Worlds.get_world(world_id)
 		for race_class: String in CLASSES:
@@ -34,6 +41,8 @@ func _ready() -> void:
 						", ".join(result.laps.map(func(l: Array) -> String:
 							return Race.format_time(l[0]) + ("" if l[1] else " (off)"))),
 						Race.format_time(result.best), "" if result.finished else "  DID NOT FINISH"])
+				if _drift:
+					print("  drifting %.1f s of the run" % (int(result.get("drift_ticks", 0)) / float(Engine.physics_ticks_per_second)))
 				if not result.finished:
 					_failed = true
 			var times: Array = bests.values().filter(func(b: float) -> bool: return b > 0.0)
@@ -85,6 +94,9 @@ static func drive(host: Node, world: WorldDef, machine: String) -> Dictionary:
 		var drive := steer_for(bike, track, hint)
 		me.cmd.move = Vector2(drive.x, drive.y)
 		me.cmd.sprint = true
+		me.cmd.jump = _drift and drift_for(bike, track, hint)
+		if bool(bike.get("drifting")):
+			out["drift_ticks"] = int(out.get("drift_ticks", 0)) + 1
 		if view.phase == "racing" and absf(float(bike.get("speed"))) < 1.0:
 			stuck += 1
 			if stuck > 5 * Engine.physics_ticks_per_second:
@@ -108,7 +120,8 @@ static func drive(host: Node, world: WorldDef, machine: String) -> Dictionary:
 static func steer_for(bike: Node3D, track: RaceTrack, hint: int) -> Vector2:
 	var n := track.points.size()
 	var speed := absf(float(bike.get("speed")))
-	var rate := float(bike.get("turn_rate"))
+	# A drift turns tighter than the grip does, so it brakes later.
+	var drift_mult := float(bike.get("drift_turn")) if _drift and bool(bike.get("handbrake")) else 1.0
 	var brake := float(bike.get("brake_decel"))
 	var at: Vector3 = bike.global_position
 	# Aim a little ahead on the line, further at speed.
@@ -126,12 +139,36 @@ static func steer_for(bike: Node3D, track: RaceTrack, hint: int) -> Vector2:
 	for j in range(2, reach, 2):
 		var i := (hint + j) % n
 		var radius := _radius(track, i)
-		var allowed := radius * rate * 0.9
+		var allowed := corner_speed(bike, radius, drift_mult) * 0.9
 		var dist := j * RaceTrack.STEP
 		if speed * speed - allowed * allowed > 2.0 * brake * dist:
 			throttle = -1.0
 			break
 	return Vector2(steer, throttle)
+
+
+## The drifting driver's handbrake: held through a bend tighter than the
+## machine can turn at its speed, and through the drift until the course has
+## come round onto the line ahead.
+static func drift_for(bike: Node3D, track: RaceTrack, hint: int) -> bool:
+	var speed := float(bike.get("speed"))
+	if speed < float(bike.get("drift_min_speed")) + 2.0:
+		return false
+	var n := track.points.size()
+	var tightest := INF
+	for j in range(0, 8, 2):
+		tightest = minf(tightest, _radius(track, (hint + j) % n))
+	var grip := corner_speed(bike, tightest, 1.0)
+	if bool(bike.get("drifting")):
+		# Hold it until the line ahead is open enough to drive.
+		return grip < speed * 0.9
+	return grip < speed * 0.95
+
+
+## The fastest a machine takes a bend of `radius` at its turn rate; `mult`
+## widens it for a drift.
+static func corner_speed(bike: Node3D, radius: float, mult: float) -> float:
+	return radius * float(bike.get("turn_rate")) * mult
 
 
 ## The track's turning radius about point `i`, from the bend over 10 m.
