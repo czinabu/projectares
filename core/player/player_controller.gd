@@ -1446,18 +1446,22 @@ class PeekFade:
 					_unseen[other] = 0.0
 				else:
 					_unseen[other] = float(_unseen.get(other, 0.0)) + CHECK_EVERY
-		for other: Actor in _unseen.keys():
-			if not is_instance_valid(other):
-				_unseen.erase(other)
-				_alpha.erase(other)
+		# Keys are checked before they are typed: a body freed since (a dead
+		# bot cleared away, a world left) cannot be assigned to an `Actor`,
+		# and that error stopped the game in the editor's debugger.
+		for key: Variant in _unseen.keys():
+			if not is_instance_valid(key):
+				_unseen.erase(key)
+				_alpha.erase(key)
 				continue
+			var other := key as Actor
 			var want := 0.0 if active and float(_unseen[other]) > HOLD else 1.0
 			_fade(other, move_toward(float(_alpha.get(other, 1.0)), want, FADE_RATE * delta))
-		for other: Actor in _alpha.keys():
-			if not is_instance_valid(other):
-				_alpha.erase(other)
-			elif not _unseen.has(other):
-				_fade(other, move_toward(float(_alpha[other]), 1.0, FADE_RATE * delta))
+		for key: Variant in _alpha.keys():
+			if not is_instance_valid(key):
+				_alpha.erase(key)
+			elif not _unseen.has(key):
+				_fade(key as Actor, move_toward(float(_alpha[key]), 1.0, FADE_RATE * delta))
 
 	## How much of `other` is drawn now (1 when it is not faded at all).
 	func drawn(other: Actor) -> float:
