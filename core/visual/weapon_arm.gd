@@ -379,7 +379,12 @@ func _pose() -> ActionPose:
 	return pose
 
 
-func _process(delta: float) -> void:
+## Places the reach targets and eases the holds for a pose `delta` after the
+## last one. Only the body's skin steps the arm, with each of its poses (a
+## far body is posed every few frames, `ActorSkin.detail_step`), so the holds
+## ease by the time since the last pose and nothing is placed for a frame
+## the skeleton is not posed in.
+func step(delta: float) -> void:
 	if reach_ik == null or actor == null or not is_instance_valid(actor):
 		return
 	var shared := _pose()

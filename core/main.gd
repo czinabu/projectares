@@ -27,6 +27,9 @@ const JOIN_TIMEOUT := 12.0
 ## this long (a body left standing waits out the sign-out time, 30 s after a
 ## fight, from when the server notices), each try given `RECONNECT_TIMEOUT`.
 var reconnect_window := 30.0
+## The seed a solo world starts from; -1 (always, in play) for a random one.
+## A bench sets it to compare builds on the same battle.
+var raid_seed := -1
 const RECONNECT_TIMEOUT := 5.0
 ## A server started here runs every world, and needs a while before it listens.
 ## An encrypted connection to a port nothing listens on yet fails at once, so
@@ -657,7 +660,7 @@ func start_raid(world_id: String, drop := "") -> void:
 	# DEV MODE
 	Profile.apply_dev_mode()
 	raid.dev_cheats = DevMode.raid_cheats()
-	raid.start(world, -1, Profile.checkout_loadout(world), Profile.mastery.active_picks(),
+	raid.start(world, raid_seed, Profile.checkout_loadout(world), Profile.mastery.active_picks(),
 			LOCAL_OWNER, Profile.renown, drop)
 	_attach_player_view()
 	raid.player_finished.connect(_on_solo_finished)

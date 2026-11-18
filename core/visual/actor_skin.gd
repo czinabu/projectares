@@ -233,6 +233,11 @@ var detail_ranges: Array[float] = [35.0, 80.0, 160.0]
 var detail_steps: Array[int] = [1, 2, 3, 5]
 ## The field of view the ranges are for. A narrower view counts as closer.
 var detail_fov := 80.0
+## A body the camera does not frame is posed this many frames apart, or
+## `offscreen_near_step` inside the first range, where its shadow may well
+## be in view. It is posed at once when it comes into frame. View only.
+var offscreen_step := 8
+var offscreen_near_step := 2
 
 var look: Node
 var actor: Actor
@@ -388,6 +393,8 @@ var locomotion: Node
 var _detail_every := 1
 var _detail_wait := 0
 var _detail_delta := 0.0
+## Out of the camera's frame when last posed (`detail_step`).
+var _offscreen := false
 ## Weapon meshes whose shadows are off while the body is far (`_gear_shadows`).
 var _unshadowed: Array[GeometryInstance3D] = []
 ## How the animation and skeleton ran on their own, to go back to.
@@ -512,7 +519,7 @@ func _process(delta: float) -> void:
 		_aim_cannon()
 	_detail_delta += delta
 	_detail_wait += 1
-	if _detail_wait < _detail_every:
+	if _detail_wait < _detail_every and not (_offscreen and _comes_into_frame()):
 		# The actor puts its hand back every tick; keep the weapon on the
 		# model's hand as it was last posed. The bones read back here are
 		# the clip's, not where the arm reached (an aimed gun, a look over),
@@ -530,11 +537,15 @@ func _process(delta: float) -> void:
 			_player.advance(step)
 		if _skeleton:
 			_skeleton.advance(step)
+	if arm != null:
+		arm.step(step)
 
 
 ## How many frames apart this body is posed, from how far it is from the
-## camera and how far the camera is zoomed in. Every frame without a camera.
+## camera, how far the camera is zoomed in and whether it frames the body at
+## all. Every frame without a camera.
 func detail_step() -> int:
+	_offscreen = false
 	if not is_inside_tree():
 		return 1
 	var camera := get_viewport().get_camera_3d()
@@ -542,10 +553,32 @@ func detail_step() -> int:
 		return 1
 	var seen := camera.global_position.distance_to(global_position) \
 			* tan(deg_to_rad(camera.fov) * 0.5) / tan(deg_to_rad(detail_fov) * 0.5)
+	if not framed_by(camera):
+		_offscreen = true
+		return offscreen_near_step if seen < detail_ranges[0] else offscreen_step
 	for i in detail_ranges.size():
 		if seen < detail_ranges[i]:
 			return detail_steps[mini(i, detail_steps.size() - 1)]
 	return detail_steps[-1]
+
+
+## Whether any of the body is inside `camera`'s view: a ball round it as
+## tall as it stands, with room for what it holds or wears.
+func framed_by(camera: Camera3D) -> bool:
+	var height := actor.body_height() if actor != null and is_instance_valid(actor) else 1.8
+	var centre := global_position + Vector3.UP * height * 0.5
+	var radius := height * 0.5 + 1.0
+	for plane in camera.get_frustum():
+		if plane.distance_to(centre) > radius:
+			return false
+	return true
+
+
+## A body posed less often for being out of frame, now in it: posed at once,
+## so a turn of the view never finds it standing still.
+func _comes_into_frame() -> bool:
+	var camera := get_viewport().get_camera_3d()
+	return camera != null and framed_by(camera)
 
 
 ## Posed every frame, the model's animation and skeleton run on their own as
