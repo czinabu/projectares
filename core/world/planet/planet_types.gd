@@ -57,6 +57,7 @@ static func ashland() -> PlanetType:
 		"field": 280.0, "field_calm": 0.8, "rim": 34.0, "rim_ramp": 140.0,
 		"craters": 70, "crater_radius": Vector2(4.0, 16.0), "crater_depth": 2.5,
 	}
+	t.surfaces = {"base": "Ground031", "rock": "Rock051", "cap": "Ground110", "patch": "Ground110"}
 	t.ground = {
 		"base_a": Color(0.3, 0.25, 0.22), "base_b": Color(0.2, 0.17, 0.15), "base_rough": 0.95,
 		"rock_a": Color(0.3, 0.26, 0.24), "rock_b": Color(0.16, 0.13, 0.12), "rock_rough": 0.85,
@@ -114,6 +115,7 @@ static func glacier() -> PlanetType:
 		"field": 220.0, "field_calm": 0.6, "rim": 30.0, "rim_ramp": 140.0,
 		"floor": -4.0, "floor_soft": 3.0,
 	}
+	t.surfaces = {"base": "Snow008A", "rock": "Rock060", "cap": "Snow008C", "patch": "Ice001"}
 	t.ground = {
 		"base_a": Color(0.88, 0.91, 0.96), "base_b": Color(0.78, 0.83, 0.92), "base_rough": 0.75,
 		"rock_a": Color(0.22, 0.24, 0.29), "rock_b": Color(0.12, 0.13, 0.16), "rock_rough": 0.7,
@@ -173,6 +175,7 @@ static func saltflat() -> PlanetType:
 		"field": 380.0, "field_calm": 0.25, "rim": 10.0, "rim_ramp": 400.0,
 		"floor": 0.0, "floor_soft": 1.5,
 	}
+	t.surfaces = {"base": "Ground031", "rock": "Rock051", "cap": "Ground079L", "patch": "Ground079L"}
 	t.ground = {
 		"base_a": Color(0.95, 0.92, 0.86), "base_b": Color(0.88, 0.84, 0.78), "base_rough": 0.6,
 		"rock_a": Color(0.62, 0.3, 0.2), "rock_b": Color(0.42, 0.2, 0.14), "rock_rough": 0.85,
@@ -231,6 +234,7 @@ static func basalt() -> PlanetType:
 		"field": 260.0, "field_calm": 0.7, "rim": 40.0, "rim_ramp": 120.0,
 		"floor": -5.0, "floor_soft": 1.0,
 	}
+	t.surfaces = {"base": "Ground110", "rock": "Rock051", "cap": "Ground110", "patch": ""}
 	t.ground = {
 		"base_a": Color(0.16, 0.15, 0.16), "base_b": Color(0.09, 0.085, 0.09), "base_rough": 0.75,
 		"rock_a": Color(0.12, 0.11, 0.115), "rock_b": Color(0.06, 0.055, 0.06), "rock_rough": 0.6,
@@ -291,6 +295,7 @@ static func dunes() -> PlanetType:
 		"terrace": 7.0, "terrace_sharp": 0.3,
 		"field": 300.0, "field_calm": 0.9, "rim": 20.0, "rim_ramp": 200.0,
 	}
+	t.surfaces = {"base": "Ground098", "rock": "Rock051", "cap": "Ground079L", "patch": "Ground079L"}
 	t.ground = {
 		"base_a": Color(0.86, 0.66, 0.44), "base_b": Color(0.78, 0.56, 0.36), "base_rough": 0.95,
 		"rock_a": Color(0.7, 0.42, 0.26), "rock_b": Color(0.52, 0.3, 0.2), "rock_rough": 0.9,
@@ -348,6 +353,7 @@ static func marsh() -> PlanetType:
 		"field": 260.0, "field_calm": 0.7, "rim": 25.0, "rim_ramp": 150.0,
 		"floor": -1.5, "floor_soft": 0.8,
 	}
+	t.surfaces = {"base": "Grass007", "rock": "Rock060", "cap": "Ground037", "patch": ""}
 	t.ground = {
 		"base_a": Color(0.2, 0.26, 0.15), "base_b": Color(0.12, 0.16, 0.12), "base_rough": 0.9,
 		"rock_a": Color(0.2, 0.2, 0.19), "rock_b": Color(0.1, 0.11, 0.1), "rock_rough": 0.55,
