@@ -97,6 +97,20 @@ var crouch_lean := 0.05
 ## ankle never folds flat over the foot; `foot_reach` is how far ahead of the
 ## ankle bone (m) the ball of the foot is.
 var crouch_heel := 0.45
+## A fighting stance while a melee weapon is out on the ground (DESIGN.md
+## "Melee technique"): the knees bend (the hips drop `fight_drop` m and tip
+## `fight_lean` radians forward) and, standing still, the feet stagger,
+## the lead foot `fight_stagger` m forward and the trailing one as far
+## back, a little apart (`fight_width`), so the body stands ready to move
+## rather than at ease. `fight` is how far into it the body is (0..1),
+## eased at `fight_rate` a second. View only, from the actor and the weapon
+## in hand, so every view agrees.
+var fight_drop := 0.07
+var fight_lean := 0.07
+var fight_stagger := 0.13
+var fight_width := 0.04
+var fight_rate := 4.0
+var fight := 0.0
 var foot_reach := 0.13
 ## Crouched, the walk's feet stay this much as far from their average spot
 ## (a short, careful step), so the bent legs reach them without splaying.
@@ -302,6 +316,10 @@ func setup(def: Dictionary, player: AnimationPlayer, anims: Dictionary) -> void:
 	low.name = "CrouchPose"
 	low.run = _crouch_pose
 	skeleton.add_child(low)
+	var stance := WeaponArm.Hook.new()
+	stance.name = "FightStance"
+	stance.run = _fight_pose
+	skeleton.add_child(stance)
 	var land := WeaponArm.Hook.new()
 	land.name = "SquatPose"
 	land.run = _squat_pose
@@ -503,6 +521,9 @@ func update(delta: float) -> void:
 	var shared := ActionPose.of(actor)
 	shared.advance(delta)
 	phone_weight = shared.phone
+	var fighting := actor.get_active_weapon() is MeleeWeapon and not actor.is_dead and actor.vehicle == null \
+			and actor.airborne_time <= 0.0 and actor.slide_low <= 0.001 and not (actor.cmd != null and actor.cmd.phone)
+	fight = move_toward(fight, 1.0 if fighting else 0.0, fight_rate * delta)
 	if _stand_anim and _stand_anim.length > 0.0:
 		_stand_time = fposmod(_stand_time + delta, _stand_anim.length)
 	if ride != null and is_instance_valid(ride):
@@ -627,6 +648,31 @@ func _crouch_pose() -> void:
 		var pose := skeleton.get_bone_global_pose(_spine[0])
 		pose.basis = Basis(right, -crouch_spine_lean * weight) * pose.basis
 		skeleton.set_bone_global_pose(_spine[0], pose)
+
+
+## The fighting stance (`fight`): feet staggered while standing still, the
+## knees bent under the stand or the walk. Less of it in a crouch, which
+## bends the knees already.
+func _fight_pose() -> void:
+	var weight := smoothstep(0.0, 1.0, fight) * (1.0 - smoothstep(0.0, 1.0, actor.crouch))
+	if weight <= 0.001 or _lead.size() != 3 or _trail.size() != 3:
+		return
+	var still := 1.0 - clampf(Vector2(velocity.x, velocity.z).length() / 1.5, 0.0, 1.0)
+	if still > 0.001:
+		var to_skeleton := skeleton.global_basis.orthonormalized().inverse() * actor.global_basis.orthonormalized()
+		var meter := 1.0 / skeleton.global_basis.get_scale().y
+		var forward := (to_skeleton * Vector3.FORWARD).normalized() * meter
+		var side := (to_skeleton * Vector3.RIGHT).normalized() * meter
+		var amount := weight * still
+		for i in 2:
+			var foot: int = _lead[2] if i == 0 else _trail[2]
+			var pose := skeleton.get_bone_global_pose(foot)
+			var way := 1.0 if i == 0 else -1.0
+			# The lead (left) foot steps forward and a touch out to its side,
+			# the trailing (right) one back and out to its own.
+			pose.origin += (forward * fight_stagger * way - side * fight_width * way) * amount
+			skeleton.set_bone_global_pose(foot, pose)
+	_sink(fight_drop, fight_lean, weight)
 
 
 ## Sinks the body onto bent knees, feet planted where they were: the hips

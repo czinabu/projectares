@@ -234,22 +234,35 @@ without Caleb, and update the gap list when a PR closes a row.
   through any guard. Noise is `Combat.noise`, which only guns call (a person's
   shot, at most every `Gun.noise_every`): patrolling bots hear it through
   `Actor.heard`. Never make a blade call it; melee kills are silent.
-  Each weapon swings its own way, from item stats (view only):
-  `swing_style` "slash" (swords' arcs), "thrust" (straight out along the
-  aim: the spear), "chop" (down from over the shoulder: the axe, the
-  hammer), "cut" (the katana's two-handed kenjutsu cuts, `ActionPose.cuts`:
-  kesa-giri, gyaku-kesa and shomen through a contact key in front of the
-  body, a tsuki for the heavy from the middle stance, the off hand on the
-  handle throughout and the edge leading, `ActionPose.cut_blade`; view
-  only, so the katana keeps its one-handed stats), `heavy_style` for a heavy of its own (the knife's stab) and
-  `swing_scale` for its size. `ActionPose.windup_reach`/`follow_reach` and
+  Each weapon fights its own way (Caleb's call: every attack and guard
+  matches how the weapon is really used; view only). Its `swing_style`
+  ("slash", "thrust", "chop", "cut"), `heavy_style`, hold and hands pick a
+  technique (`ActionPose.technique`): a table in `ActionPose.techniques` of
+  keyed swings per side (and a heavy from the middle) and a guard per side.
+  Each swing is three keys, windup, contact and follow-through, each the
+  weapon hand and the way the blade goes, so the blade turns through the
+  cut edge first (`technique_blade`, `keyed_reach`) and every strike meets
+  the foe in front of the chest where the eyes see it; each guard holds the
+  weapon across its side in front of the body. The sword cuts diagonally
+  and thrusts for its heavy, the axe chops from high behind the shoulder,
+  the knife slashes short in a forward grip and stabs for its heavy, the
+  hammer is hauled over in both hands, the spear thrusts from the hip, and
+  the katana keeps its kenjutsu cuts (kesa-giri, gyaku-kesa, shomen and a
+  tsuki, both hands on the handle; view only, so the katana keeps its
+  one-handed stats). `swing_scale` draws a small weapon's keys in toward
+  the middle (`swing_centre`). A new melee weapon picks a style, or a new
+  technique gets a table; `view_match_tests.gd` (`_check_techniques`)
+  checks that every weapon's strikes are in view and its guards show their
+  side. `ActionPose.windup_reach`/`follow_reach` and
   `MeleeWeapon._animate` read `style_now()`. The shown swing starts
   `SWING_LEAD` before the strike and speeds into it, half its arc at the
   hit, then eases out (`MeleeWeapon.swing_arc`; both views read it); a
   windup keeps coiling back (`windup_coil`); two-handers swing slower and
   turn the body more. A new melee weapon picks a style; check it by eye with
   `visual_check.tscn -- <dir> --swing-only` (run with `--fixed-fps 60`),
-  which films each move frame by frame. Every melee
+  which films each move frame by frame, or quicker, one weapon's stance,
+  swings and guards from the front, the side and the eyes at once with
+  `--technique-only <item id>`. Every melee
   model is dressed as tech by `Look._tech_melee` (`assets/shaders/melee.gdshader`):
   bare metal becomes alloy with an energy edge in the weapon's rarity color,
   wood and wraps black polymer with glowing seams. The scrap kit's blade
@@ -373,8 +386,9 @@ without Caleb, and update the gap list when a PR closes a row.
   first person. Aiming down sights is a body animation, the same in both
   views (`ActionPose.ads`, eased by `ads_rate`): `WeaponArm._reach_sight`
   reaches the gun hand so the sight (`ActionPose.sight_local`: an optic's
-  "Sight" marker, else the model's "IronSight", else the top of the model)
-  sits on the line out of the model's eyes, `ActionPose.relief_for` in front
+  "Sight" marker, else the model's "IronSight", else the top of the model;
+  a gun with no optic wears iron sights there, a rear notch and a lit
+  front post, `Look._iron_sights`) sits on the line out of the model's eyes, `ActionPose.relief_for` in front
   of them (a sidearm out at arm's length, a long gun shouldered), and the
   off hand takes the "ForeGrip" (or cups a sidearm), sliding back along
   the gun where the arm cannot reach. A sight out of the gun arm's reach
@@ -397,7 +411,8 @@ without Caleb, and update the gap list when a PR closes a row.
   that takes no input on a tick stops aiming (`Weapon.drop_aim`). Each
   actor has one `ActionPose`
   (`core/visual/action_pose.gd`, a view-only child made by `ActionPose.of`):
-  the melee reach and shoulder turn, the reload motion, the low ready, the
+  the melee reach and shoulder turn, the reload motion (brought in to the
+  middle, where the eyes see it, `reload_reach`), the low ready, the
   drawing back of a held heavy and the easing back of a recovering blade,
   the gun brought up to the eye,
   the watch raise (from `ActorCommand.watch_up`), the phone hold
@@ -431,12 +446,16 @@ without Caleb, and update the gap list when a PR closes a row.
   held ready, not left to the idle clip (Caleb's references): the arm
   reaches the hand to the lower right of the view and the weapon stands in
   the fist the way its hold says (`ActionPose.ready_holds`, picked by the
-  last field of `Look.MELEE_MODELS`): a straight sword upright, a katana
+  last field of `Look.MELEE_MODELS`): a straight sword with the elbow bent,
+  the fist by the hip and the point up toward a foe's face, a katana
   leaning in with the off hand under the weapon hand, a knife lying flat in
-  a reverse grip with the empty hand up as a guard. Attacks start from the
+  a reverse grip. An empty off hand stays up as a guard
+  (`ActionPose.off_guard`) through every swing and guard, and on the ground
+  the legs take a fighting stance while a blade is out (`Locomotion.fight`:
+  knees bent, feet staggered standing still). Attacks start from the
   hold and ease back into it (`ActionPose.held_ready`). A blade lies along the closed fist
   and a gun held low turns with the wrist (`WeaponArm`); swings turn the
-  arm about the shoulder (`ActionPose.swing_reach`, `elbow_pole`). Shots
+  arm through the technique's keys (`ActionPose.keyed_reach`, `elbow_pole`). Shots
   are judged from the eyes but drawn from the gun's "Muzzle" marker as it
   is shown (`Gun.muzzle_point`). Compare by eye with
   `visual_check.tscn -- <dir> --views-only [rows]` (`VIEW_MELEE=<item id>`

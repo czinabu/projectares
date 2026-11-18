@@ -125,7 +125,7 @@ static func _motion(t: Node) -> void:
 	var right := MeleeWeapon.Dir.RIGHT
 	t.check(pose.follow_reach(spear, right).z < -0.3 and pose.windup_reach(spear, right).z > 0.2,
 			"a thrust draws the hand back, then drives it out ahead")
-	t.check(pose.windup_reach(axe, right).y > pose.windup_reach(plain, right).y + 0.15,
+	t.check(pose.windup_reach(axe, right).y > pose.windup_reach(plain, right).y + 0.04,
 			"a chop is raised higher than a slash")
 	t.check(pose.follow_reach(axe, right).y < pose.follow_reach(plain, right).y, "and ends lower")
 	t.check(pose.windup_reach(knife, MeleeWeapon.Dir.LEFT).length() < pose.windup_reach(plain, MeleeWeapon.Dir.LEFT).length(),
