@@ -25,7 +25,7 @@ static func run(t: Node) -> void:
 ## How many jobs the board offers: the ones that count anywhere, and each
 ## world tag's own.
 static func _board_size() -> int:
-	return Contracts.DAILY_OFFERS + Contracts.WEEKLY_OFFERS \
+	return Contracts.DAILY_OFFERS + Contracts.WEEKLY_OFFERS + Contracts.FAVOR_OFFERS \
 			+ Contracts.tags().size() * (Contracts.TAGGED_DAILY_OFFERS + Contracts.TAGGED_WEEKLY_OFFERS)
 
 
@@ -35,7 +35,7 @@ static func _rules(t: Node) -> void:
 		return Contracts.job(id).kind == "daily" and not Contracts.job(id).has("world_tag"))
 	t.check(offers.size() == _board_size() and dailies.size() == Contracts.DAILY_OFFERS
 			and Contracts.offers_for(DAY) == offers,
-			"the board offers 3 dailies and a weekly, then each world's own, the same all day (%s)" % [offers])
+			"the board offers 3 dailies and a weekly, Rook's favour, then each world's own, the same all day (%s)" % [offers])
 	var changes := false
 	for i in range(1, 6):
 		changes = changes or Contracts.offers_for(DAY + i).slice(0, 3) != dailies
@@ -44,7 +44,7 @@ static func _rules(t: Node) -> void:
 	var fair := true
 	for id: String in Contracts.jobs():
 		var job := Contracts.job(id)
-		fair = fair and int(job.goal) > 0 and int(job.scrip) > 0 and job.kind in ["daily", "weekly"] \
+		fair = fair and int(job.goal) > 0 and int(job.scrip) > 0 and job.kind in ["daily", "weekly", "favor"] \
 				and not str(job.stat).contains("player")
 	t.check(fair, "every job has a goal and pays scrip, and none counts player kills")
 
@@ -170,10 +170,10 @@ static func _views(t: Node) -> void:
 	var rows := ContractPanel.rows(state)
 	var takes := rows.filter(func(r: Dictionary) -> bool: return r.action == "take")
 	var drops := rows.filter(func(r: Dictionary) -> bool: return r.action == "drop")
-	t.check(takes.size() == _board_size() and drops.size() == 1 and not takes[0].enabled and takes[1].enabled,
-			"the board's screen lists the offers to take and the held job to drop")
+	t.check(takes.size() == _board_size() - Contracts.FAVOR_OFFERS and drops.size() == 1 and not takes[0].enabled and takes[1].enabled,
+			"the board's screen lists the offers to take (Rook's favour aside) and the held job to drop")
 	var lines := PlazaMap.contract_lines()
-	t.check(lines.size() == 2 + _board_size() and lines[2].contains(Contracts.job(Contracts.offers_for(Contracts.today())[0]).title),
+	t.check(lines.size() == 2 + _board_size() - Contracts.FAVOR_OFFERS and lines[2].contains(Contracts.job(Contracts.offers_for(Contracts.today())[0]).title),
 			"the board's wall in the plaza lists today's jobs")
 
 

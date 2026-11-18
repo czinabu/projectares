@@ -50,8 +50,9 @@ static func _favours(t: Node) -> void:
 	t.check(not lines.any(func(line: String) -> bool: return line.begins_with("FAVOR")),
 			"the board's wall leaves the favour to Rook")
 	var rows := ContractPanel.rows(Contracts.clean({}, Contracts.today()))
-	t.check(not rows.any(func(row: Dictionary) -> bool: return row.action == "take"
-			and Contracts.job(row.id).kind == "favor"), "the board's screen does not offer it either")
+	var offered := rows.filter(func(row: Dictionary) -> bool: return row.action == "take")
+	t.check(not offered.any(func(row: Dictionary) -> bool: return Contracts.job(row.id).kind == "favor"),
+			"the board's screen does not offer it either")
 	# What Rook says, from the account's contracts.
 	var account := {"contracts": Contracts.clean({}, DAY)}
 	var offer := PlazaLocals.rook_line(account, DAY)
@@ -89,7 +90,9 @@ static func _wanted_text(t: Node) -> void:
 			and heard.any(func(line: String) -> bool: return line.contains("300 bounty")),
 			"Dusk's rumours come from the worlds' real news")
 	t.check(PlazaLocals.rumours({}).size() >= 3, "and she always has something to say")
-	var junk := NetSession._clean_wanted([{"name": "x".repeat(80), "bounty": -5, "marked": "yes"}, "junk", {"name": ""},
+	# The session script by path, so this group stays offline (it starts no server).
+	var session_script: Script = load("res://core/net/net_session.gd")
+	var junk: Array = session_script.call("_clean_wanted", [{"name": "x".repeat(80), "bounty": -5, "marked": "yes"}, "junk", {"name": ""},
 			{"name": "a"}, {"name": "b"}, {"name": "c"}, {"name": "d"}, {"name": "e"}])
 	t.check(junk.size() == Raid.WANTED_SHOWN and junk[0].name.length() == 24 and junk[0].bounty == 0,
 			"a client checks the wanted list it is sent")
@@ -126,7 +129,8 @@ static func _bounty_and_wanted(t: Node) -> void:
 	await t.frames(2)
 	t.check(avenger.scrip - before == Economy.PLAYER_KILL_SCRIP + Economy.bounty_scrip(bounty),
 			"the bounty goes into the killer's carried scrip (%d)" % (avenger.scrip - before))
-	t.check(raid.wanted().is_empty(), "and the name comes off the list")
+	t.check(not raid.wanted().any(func(w: Dictionary) -> bool: return w.name == "Hunter"),
+			"and the name comes off the list")
 	raid.queue_free()
 	var plaza := Raid.new()
 	t.add_child(plaza)

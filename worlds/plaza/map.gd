@@ -633,8 +633,8 @@ func locals_layout() -> Dictionary:
 		"watch": watch,
 		"gather": [_at(23.4, 350.0), _at(30.5, 230.0), _at(46.5, 161.0), _at(24.0, 90.0), _at(47.0, 268.0),
 				ARRIVAL + Vector3(-11.5, 0, 3.0)],
-		"routes": [[_at(28.0, 170.0), Vector3(5, 0, 62), Vector3(25, 0, 64), Vector3(30, 0, 90)],
-				[_at(28.0, 192.0), Vector3(-6, 0, 61), Vector3(-25.5, 0, 65), Vector3(-29, 0, 90)],
+		"routes": [[_at(28.0, 170.0), Vector3(5, 0, 62), Vector3(23, 0, 62), Vector3(23, 0, 86), Vector3(30, 0, 90)],
+				[_at(28.0, 192.0), Vector3(-6, 0, 61), Vector3(-23, 0, 61), Vector3(-23, 0, 86), Vector3(-29, 0, 90)],
 				[_at(28.0, 355.0), Vector3(-3, 0, -60), Vector3(-14, 0, -79)]],
 	}
 
@@ -653,7 +653,8 @@ func _build_talkers() -> void:
 		marker.set_meta("name", entry[2])
 		marker.set_meta("role", entry[3])
 		var front := Basis(Vector3.UP, yaw) * Vector3.FORWARD
-		var portal := _add_portal("talk:%s" % id, "Talk to %s" % entry[2], at + front * 1.7, 1.5)
+		# No glowing pad: you walk up to a person, not onto a spot.
+		var portal := _add_portal("talk:%s" % id, "Talk to %s" % entry[2], at + front * 1.5, 1.8, false)
 		portal.set_meta("talker", id)
 
 
@@ -1046,11 +1047,13 @@ func _add_marker(group: String, at: Vector3) -> Marker3D:
 	return marker
 
 
-func _add_portal(destination: String, label: String, at: Vector3, radius: float) -> Marker3D:
+func _add_portal(destination: String, label: String, at: Vector3, radius: float, pad_shown := true) -> Marker3D:
 	var portal := _add_marker("portal", at)
 	portal.set_meta("destination", destination)
 	portal.set_meta("label", label)
 	portal.set_meta("radius", radius)
+	if not pad_shown:
+		return portal
 	# A glowing pad marks where to stand.
 	var pad := MeshInstance3D.new()
 	var mesh := CylinderMesh.new()

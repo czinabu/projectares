@@ -103,7 +103,7 @@ func _ready() -> void:
 		var panel := SpeechPanel.new()
 		panel.name = "Speech_%s" % id
 		add_child(panel)
-		panel.global_position = marker.global_position + Vector3(0, 2.2, 0)
+		panel.global_position = marker.global_position + Vector3(0, 2.15, 0)
 		panels[id] = panel
 
 
@@ -274,7 +274,7 @@ func talk(id: String, world_status: Dictionary, account: Dictionary) -> String:
 		_say(id, "Good. It's on your board now. Get it done and get out breathing.")
 		return job
 	var line := ""
-	offered_job = ""
+	var job_offered := ""
 	match id:
 		"kade":
 			var lines := kade_lines(world_status)
@@ -285,10 +285,11 @@ func talk(id: String, world_status: Dictionary, account: Dictionary) -> String:
 		"rook":
 			var said := rook_line(account, Contracts.today())
 			line = said.text
-			offered_job = said.job
+			job_offered = said.job
 		_:
 			line = "..."
 	_say(id, line)
+	offered_job = job_offered
 	return ""
 
 
@@ -296,6 +297,7 @@ func talk(id: String, world_status: Dictionary, account: Dictionary) -> String:
 func hush() -> void:
 	if panels.has(speaking):
 		(panels[speaking] as SpeechPanel).close()
+		_show_name(speaking, true)
 	speaking = ""
 	offered_job = ""
 
@@ -307,6 +309,17 @@ func _say(id: String, text: String) -> void:
 	_speech_left = SPEECH_TIME
 	var entry: Dictionary = talkers[id]
 	(panels[id] as SpeechPanel).say(entry.name, talker_color(id), text)
+	# The card carries their name while it is up.
+	_show_name(id, false)
+
+
+func _show_name(id: String, shown: bool) -> void:
+	var entry: Dictionary = talkers.get(id, {})
+	if entry.is_empty() or not is_instance_valid(entry.actor):
+		return
+	var tag := (entry.actor as Node).get_node_or_null("NameTag") as Node3D
+	if tag != null:
+		tag.visible = shown
 
 
 func _next_line(id: String, count: int) -> int:
@@ -631,9 +644,9 @@ class Routine:
 class SpeechPanel:
 	extends Node3D
 	## The card's width, and the text's size on it.
-	const WIDTH := 2.5
-	const PAD := 0.12
-	const PIXEL := 0.0024
+	const WIDTH := 2.8
+	const PAD := 0.13
+	const PIXEL := 0.0028
 	const BODY_SIZE := 48
 	const NAME_SIZE := 40
 	var _back: MeshInstance3D
@@ -646,7 +659,7 @@ class SpeechPanel:
 	var _target := 0.0
 
 	func _ready() -> void:
-		_back_mat = _flat(Color(0.03, 0.05, 0.08, 0.86), false)
+		_back_mat = _flat(Color(0.03, 0.05, 0.08, 0.94), false)
 		_edge_mat = _flat(Color(1, 1, 1), true)
 		_back = _quad(_back_mat)
 		_edge = _quad(_edge_mat)
@@ -687,7 +700,7 @@ class SpeechPanel:
 		if camera != null:
 			var to := camera.global_position - global_position
 			rotation.y = atan2(to.x, to.z)
-		_back_mat.albedo_color.a = 0.86 * _alpha
+		_back_mat.albedo_color.a = 0.94 * _alpha
 		_edge_mat.albedo_color.a = _alpha
 		_name.modulate.a = _alpha
 		_body.modulate.a = _alpha

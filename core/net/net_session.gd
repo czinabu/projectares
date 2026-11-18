@@ -2260,7 +2260,7 @@ static func _clean_wanted(raw: Variant) -> Array[Dictionary]:
 		if name == "":
 			continue
 		out.append({"name": name, "clan": str(entry.get("clan", "")).left(6),
-				"bounty": maxi(0, int(entry.get("bounty", 0))), "marked": bool(entry.get("marked", false))})
+				"bounty": maxi(0, int(entry.get("bounty", 0))), "marked": typeof(entry.get("marked")) == TYPE_BOOL and entry.marked})
 	return out
 
 

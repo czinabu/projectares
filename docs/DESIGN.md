@@ -70,6 +70,11 @@ new planet is a new folder under `worlds/`.
    (the plaza's heat signs already get `world_status`); live video of arena
    bouts comes later. The contract board, where you take contracts
    (section 10), stands next to it.
+   *Built:* the most-wanted board stands across the big screen from the
+   contract board: a red lit wall listing the biggest bounties out in the
+   worlds and the Marked, by name, clan tag and world, never where they are
+   (`Raid.wanted` rides in each world's `world_status`). Kade, the bounty
+   broker, stands at it. Arena results and live video are still to come.
 2. **Ring races and time trials.** Courses of rings through the hub's
    skyline, one per rig plus a bike course. A cheap, small version of the
    racing mode (section 9) and a place for new players to practise each rig.
@@ -89,6 +94,30 @@ a pad kept clear for the RC arena. Everything is within about 25 seconds'
 walk of the arrival pad. It looks sci-fi, not industrial: dark glass and
 metal with lit seams instead of brick and punched windows, a glass arcade
 canopy, holo signs over every kiosk and floating holo-ads.
+
+### Locals
+
+The Concourse is lived in (Caleb's call): about thirty people go about their
+day there, strolling the rings round the spire, browsing the kiosks under
+the arcade, watching the big screen from the tiers, standing about in small
+groups and wandering out to the boards and the gates. Nothing about them is
+even: who walks with whom, where they stand and how long they stay are all
+rolled from one seed. They look at you as you pass and step out of your way.
+They are a view only: every game makes the same crowd and moves it by the
+clock, so the server spends nothing on them and everyone sees much the same
+people.
+
+Three of them you can talk to. Walk up and press the interact key, and they
+answer in a short line on a card over their head, never a menu:
+
+- **Kade**, the bounty broker at the most-wanted board: how bounties work
+  and who is worth most right now.
+- **Dusk**, by the spire, who hears things: rumours made from the worlds'
+  real news (the war, the event running, a big bounty), never more than the
+  plaza's own signs know.
+- **Rook**, the fixer by the gates: one small favour a day, a contract job
+  of his own (`Contracts.favor_for`) paid a little under a daily. Talk to him
+  again to take it; it is held and paid like any contract.
 
 ### Home base
 
@@ -1942,7 +1971,10 @@ balance of payouts (placeholders today).
 **Bounties** are about hunting players, and tie into the most-wanted board
 (section 2) and the renown and Marked rules already in the PvP world. When a
 player gets hot, a bounty goes up on them; whoever takes them down and
-extracts gets paid (scrip and upgrade data, amounts TBD).
+extracts gets paid. *Built:* the bounty (50 per player kill in the streak,
+from three kills) pays its killer the same in scrip (Caleb's call), into
+the scrip they carry, so it only counts once banked at a depot or carried
+out alive. Upgrade data on top is still open.
 
 ### Safety nets
 

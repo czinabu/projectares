@@ -40,7 +40,16 @@ extends RefCounted
 ##     standing in one is offered the trip; see `core/social/plaza_view.gd`.
 ##     A portal that opens a screen (a shop) may have a child Node3D named
 ##     "Screen": a terminal's face, centred on it and facing its +Z, 1.6 by
-##     0.9 metres. The screen is shown there (`WorldScreen`).
+##     0.9 metres. The screen is shown there (`WorldScreen`). A destination
+##     "talk:<id>" is a person to talk to, answered by the view itself.
+##   - Marker3D nodes in group "talker" with meta "id", "yaw", "name" and
+##     "role": where the people you talk to stand
+##     (`core/social/plaza_locals.gd`).
+##   - optionally a `locals_layout()` method: where the place's locals spend
+##     their day, as plain data (see `worlds/plaza/map.gd`). Without it the
+##     place has no crowd.
+##   - a Label3D in group "wanted_board": the most-wanted board, written by
+##     `PlazaView` from `world_status`.
 ##
 ## Risk zones (DESIGN.md section 2, "Risk zones"): a world may split its map
 ## into tiers by overriding `zone_at` (0 the outer ring, 1 the middle, 2 the

@@ -180,12 +180,36 @@ without Caleb, and update the gap list when a PR closes a row.
   `Actor.clan_tag` is for views and is worn everywhere. Nobody changes clan
   while deployed.
 - World heat: `Raid.status()` is what a world shows of itself from outside
-  (players, war level, top bounty, the event running) and never says who or
-  where anyone is. The safe zone's `NetSession` gathers it from the other
+  (players, war level, top bounty, the event running) and never says where
+  anyone is. The one "who" it carries is `wanted` (Caleb's call, for the
+  most-wanted board): up to `Raid.WANTED_SHOWN` players with a bounty or the
+  Marked, by name, clan tag and bounty only, checked again on the client
+  (`NetSession._clean_wanted`). The safe zone's `NetSession` gathers it from the other
   sessions in the process and sends it to everyone standing there
   (`NetSession.world_status`); `PlazaView` writes it on a sign over each
-  world doorway (`heat_signs`). Anything else that advertises a world reads
-  `world_status`, not a second channel.
+  world doorway (`heat_signs`) and the wanted on the most-wanted board
+  (`wanted_text`, the map's "wanted_board" label). Anything else that
+  advertises a world reads `world_status`, not a second channel.
+- The Concourse's people (DESIGN.md section 2, "Locals"):
+  `core/social/plaza_locals.gd`, made by `PlazaView` only where `Look` is
+  on, so a server runs none and sends nothing for them. Every client makes
+  the same crowd from the map's `locals_layout()` and `CROWD_SEED`, scattered
+  in uneven groups (Caleb's call: never spaced evenly), and walks each local
+  along a `Routine` timed by the wall clock. A local is an ordinary `Actor`
+  driven only through its command, but out of the world: taken out of the
+  "actors" group, no collision with people, never a child of the `Raid`
+  (so `RaidRoster` never lists one), thinned when far. They look at people
+  near them and step out of their way. The people you talk to stand at the
+  map's "talker" markers; "talk:<id>" portals make them answer in a speech
+  card over their head (`SpeechPanel`, in the world, never on the screen).
+  What they say comes only from what the client already knows:
+  `world_status` (Dusk's rumours, Kade on the board) and the account's
+  contracts (Rook). Rook's favours are contract jobs of kind "favor"
+  (`Contracts.favor_for`, one a day, never rerolled, left off the board's
+  own lists), taken through the same `NetSession.contract_ask`.
+- A player's bounty pays its killer in scrip (`Economy.bounty_scrip`, one
+  for one, Caleb's call) into the life's carried scrip, so it is at stake
+  until banked or carried out, like the kill's own pay.
 - World events (`Raid.event`, `start_event`, `end_event`): one at a time, on
   a timer the war speeds up, tuned by `WorldDef.event_interval`,
   `event_lifetime` and `warlord_escort`. A supply pod is an ordinary
