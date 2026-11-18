@@ -145,6 +145,12 @@ world, or dying and pressing L, brings you back here.
 After you pull new code, the first launch may show "Updating the project" for a
 few seconds and restart on its own. That is Godot learning about new scripts.
 
+The Windows build (the zip on the "latest" release) is installed once and keeps
+itself up to date: at launch it checks for a newer build, downloads it in the
+background and restarts into it. The start screen's corner and the phone's
+Servers app say which build you run. Only a new Godot version needs a fresh
+download. Pass `-- --no-update` to stop it.
+
 ## Play online (early test)
 
 Walk out of your home base's **door** and you are in the plaza. The first time,

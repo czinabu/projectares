@@ -2633,6 +2633,11 @@ PvP.
 - **No dead end when a world is full.** Send the player to another instance,
   or say how long the wait is.
 - **A version mismatch points to the update**, not just an error.
+- **Install once.** The game updates itself: at launch it reads the newest
+  build's manifest from the "latest" release, downloads the new game data in
+  the background and restarts into it (on the start screen at once, during
+  play on the next start or from the Servers app). Only a new engine version
+  asks for a fresh install. Built: `core/update/updater.gd`.
 - **Certificate warnings never show on official servers**; they use a real
   certificate.
 - **Travel between worlds within about 3 s**, measured by the whole-server

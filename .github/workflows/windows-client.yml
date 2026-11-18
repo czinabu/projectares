@@ -6,6 +6,11 @@ name: Windows client build
 #   Every push to main: builds and replaces the zip on the rolling "latest"
 #   pre-release, so the newest merge is always one download away. The zip's name
 #   carries the commit, which is how testers and the host check they match.
+#   The same release carries the game's own update: ProjectAres.pck (the zip
+#   ships it beside the exe, not embedded) and update.json, which an installed
+#   game reads at launch to download the new pack and restart into it
+#   (core/update/updater.gd). Each build is stamped with its number (the
+#   workflow's run number) so a game knows which is newer.
 #   Run by hand (Actions > Windows client build > Run workflow): builds the
 #   branch picked and, if "release" is ticked, attaches the zip to a DRAFT
 #   milestone release. A draft is private until you press Publish on GitHub.
@@ -58,36 +63,54 @@ jobs:
           dest="$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.stable"
           mkdir -p "$dest"
           unzip -q -j "$RUNNER_TEMP/templates.tpz" templates/windows_release_x86_64.exe templates/windows_debug_x86_64.exe templates/version.txt -d "$dest"
+      - name: Stamp the build number
+        # Read by the game's updater (Updater.BUILD_SETTING); never committed.
+        run: |
+          printf '\n[ares]\n\nbuild/number=%s\nbuild/commit="%s"\n' \
+            "$GITHUB_RUN_NUMBER" "$(git rev-parse --short HEAD)" >> project.godot
       - name: Export
         run: |
           mkdir -p build/windows
           "$GODOT" --headless --path . --export-release "Windows Client" build/windows/ProjectAres.exe
           test -s build/windows/ProjectAres.exe
+          test -s build/windows/ProjectAres.pck
       - name: Zip
         id: zip
         run: |
           name="ProjectAres-windows-$(git rev-parse --short HEAD)"
           mkdir -p "dist/$name"
-          cp build/windows/ProjectAres.exe "dist/$name/"
+          cp build/windows/ProjectAres.exe build/windows/ProjectAres.pck "dist/$name/"
           cp .github/playtest/PLAYTEST-README.txt "dist/$name/"
           echo "$name (commit $(git rev-parse HEAD))" > "dist/$name/BUILD.txt"
           (cd dist && zip -qr "$name.zip" "$name")
           echo "name=$name" >> "$GITHUB_OUTPUT"
+      - name: Update manifest
+        run: |
+          pck=build/windows/ProjectAres.pck
+          cp "$pck" dist/ProjectAres.pck
+          cat > dist/update.json <<EOF
+          {"build": $GITHUB_RUN_NUMBER, "commit": "$(git rev-parse --short HEAD)", "godot": "$GODOT_VERSION",
+           "platform": "windows", "pack": "ProjectAres.pck",
+           "size": $(stat -c %s "$pck"), "sha256": "$(sha256sum "$pck" | cut -d ' ' -f 1)"}
+          EOF
+          python3 -c 'import json; print(json.load(open("dist/update.json")))'
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.zip.outputs.name }}
-          path: dist/*.zip
+          path: |
+            dist/*.zip
+            dist/update.json
       - name: Update the rolling latest release
         if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           zip="dist/${{ steps.zip.outputs.name }}.zip"
-          notes="Newest main, built automatically on every merge: ${{ steps.zip.outputs.name }}. Unzip, run ProjectAres.exe, join the host from the phone's Servers app (P). Everyone, host included, must be on the same build (the name of the zip)."
+          notes="Newest main, built automatically on every merge: ${{ steps.zip.outputs.name }} (build $GITHUB_RUN_NUMBER). Unzip once and run ProjectAres.exe: it keeps itself up to date from here (ProjectAres.pck and update.json are what it downloads). Then join the host from the phone's Servers app (P). Everyone, host included, must be on the same build (the name of the zip)."
           # Recreate the release every time: editing it in place keeps the
           # original publish date, so the page would look hours out of date.
           gh release delete latest --cleanup-tag -y || true
-          gh release create latest "$zip" --prerelease --target "$GITHUB_SHA" \
+          gh release create latest "$zip" dist/ProjectAres.pck dist/update.json --prerelease --target "$GITHUB_SHA" \
             --title "Latest build ($(git rev-parse --short HEAD), $(date -u '+%Y-%m-%d %H:%M UTC'))" --notes "$notes"
       - name: Draft release
         if: github.event_name == 'workflow_dispatch' && inputs.release
