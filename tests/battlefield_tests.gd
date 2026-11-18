@@ -389,6 +389,13 @@ static func _skyline(t: Node, raid: Raid) -> void:
 		if giants.lift(giants.stride(n * giants.STRIDE_TIME / 20.0, 0.0)) > 0.02:
 			lifted += 1
 	t.check(lifted >= 8 and lifted <= 11, "each leg is in the air for half a stride and on the ground for the other half")
+	t.check(giants.wing_size(0.0) < giants.wing_size(1.0), "more dropships fly to the fighting the hotter the war")
+	var from := Vector3(-800, 360, 0)
+	var over := Vector3(20, 150, 30)
+	var to := Vector3(700, 400, 50)
+	t.check(giants.flight_point(from, over, to, 0.0).is_equal_approx(from) and giants.flight_point(from, over, to, 0.5).is_equal_approx(over)
+			and giants.flight_point(from, over, to, 1.0).is_equal_approx(to),
+			"a dropship wing flies from the capital ship down over the fighting and away")
 	# The war heard: view only, so a headless map makes no soundscape.
 	t.check(map.get_node_or_null("Soundscape") == null, "a map without a view hears nothing (no soundscape headless)")
 	t.check(is_equal_approx(Soundscape.boom_delay(510.0), 1.5) and is_equal_approx(Soundscape.boom_delay(3000.0), Soundscape.BOOM_DELAY_MAX),

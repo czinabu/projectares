@@ -268,6 +268,7 @@ func _ready() -> void:
 		var giants: Node3D = GIANTS.new()
 		giants.floor_y = RIM_HEIGHT - 8.0
 		giants.soundscape = _soundscape
+		giants.plume_maker = _plume
 		add_child(giants)
 	set_process(Look.enabled)
 

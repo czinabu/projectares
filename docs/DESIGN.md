@@ -560,10 +560,13 @@ blueprints. A new expedition daily: loot two caches inside the Engine.
   public repository, `assets/sounds/README.md`) replace the made-up wind,
   rumble and booms where the files are there (`Sfx.recorded`). The giants
   (`worlds/ashfront/giants.gd`, view only, timed by the wall clock so
-  everyone sees them in one place): the Colossus, a four-legged walker near
-  270 m tall striding round 640 m out, each footfall heard after its delay,
-  and a capital ship riding at anchor 400 m up over the west. Planned, in
-  this order: dropship wings, flak and tracers that follow the war, god rays,
+  everyone sees them in one place): the Colossus, a hunched four-legged walker
+  near 270 m tall, its legs arching over its back, striding round 750 m out
+  with a searchlight sweeping ahead and smoke off its vents, each footfall
+  heard after its delay; a capital ship riding at anchor 400 m up over the
+  west; and from it a wing of dropships every 75 s (more the hotter the
+  war) diving over where the fighting is (`war_centre`) and away. Planned,
+  in this order: flak and tracers that follow the war, god rays,
   a shared moment (the orbital lance brings the Colossus down), and ash on
   the visor glass.
 - Full loot on death.
