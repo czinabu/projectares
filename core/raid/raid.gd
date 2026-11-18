@@ -2375,11 +2375,11 @@ func _on_actor_died(actor: Actor, info: DamageInfo) -> void:
 			dead.scrip_lost = carried
 			dead.scrip = 0
 			actor.scrip = 0
-		# Bags do not pile up forever in a world that never ends.
+		# Bags do not pile up forever in a world that never ends. Connected
+		# to the bag itself, so a bag emptied and gone (or a raid closed)
+		# before then drops the call with it.
 		if mode != Mode.CLIENT:
-			get_tree().create_timer(world.bag_lifetime, false, true).timeout.connect(func() -> void:
-				if is_instance_valid(bag):
-					bag.queue_free())
+			get_tree().create_timer(world.bag_lifetime, false, true).timeout.connect(bag.queue_free)
 	var killer := state_for(info.source as Actor) if info.source is Actor else null
 	var state := state_for(actor)
 	if killer != null and killer.actor == actor:

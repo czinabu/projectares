@@ -1454,6 +1454,13 @@ without Caleb, and update the gap list when a PR closes a row.
 - Gameplay shapes are built in code and dressed by `Look`. Hand-built `.tscn`
   scenes are fine later; keep the map contract.
 - Every gameplay feature gets checks in `tests/test_runner.gd`.
+- A running game logs no errors: one a frame is enough to sink the frame
+  rate. `tests/error_spam_tests.gd` watches an Ashfront session with an
+  `OS.add_logger` counter; fix the cause of anything it catches, never
+  silence it. A spring stepped by `delta` is stepped in short slices (a
+  long frame throws it off), and a deferred call or timer that outlives
+  the node it acts on is bound to that node (`node.queue_free`, an
+  instance id), never a lambda capturing it.
 
 ## Verify before committing
 

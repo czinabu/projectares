@@ -44,7 +44,9 @@ const MARK_LIFE := 8.0
 ## Impacts further from the camera than this are not drawn at all.
 const IMPACT_RANGE := 70.0
 
-static var _marks: Array[Node3D] = []
+## The marks left on walls, oldest first. Untyped, since it holds freed ones
+## until `_leave_mark` sweeps them out.
+static var _marks: Array = []
 static var _mark_mesh: QuadMesh
 static var _puff_mesh: SphereMesh
 
@@ -105,9 +107,12 @@ static func _leave_mark(parent: Node, at: Vector3, normal: Vector3) -> void:
 		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 		_mark_mesh.material = mat
-	_marks = _marks.filter(func(m: Node3D) -> bool: return is_instance_valid(m))
+	# Marks fade and free themselves, and a scene change frees the rest, so
+	# the list holds freed ones: test each as a plain value (a freed object
+	# cannot be passed as a Node3D).
+	_marks = _marks.filter(func(m: Variant) -> bool: return is_instance_valid(m))
 	while _marks.size() >= MAX_MARKS:
-		_marks.pop_front().queue_free()
+		(_marks.pop_front() as Node3D).queue_free()
 	var mark := MeshInstance3D.new()
 	mark.mesh = _mark_mesh
 	mark.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
