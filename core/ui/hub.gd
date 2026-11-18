@@ -21,6 +21,8 @@ signal online_buy_requested(shop_id: String, item_id: String)
 signal online_sell_requested(item_id: String, count: int)
 ## In a server's lobby: craft one item at the gunsmith bench.
 signal online_craft_requested(item_id: String)
+## In a server's lobby: "insure" a stash item or "cancel" the policy.
+signal online_insure_requested(action: String, item_id: String)
 ## The line on going online changed (`set_online_status`). The phone's
 ## Servers app shows it too.
 signal online_status_changed(text: String)
@@ -37,6 +39,7 @@ const RenownLedger := preload("res://core/progression/renown_ledger.gd")
 const ShopPanel := preload("res://core/economy/shop_panel.gd")
 const Economy := preload("res://core/economy/economy.gd")
 const CraftPanel := preload("res://core/progression/craft_panel.gd")
+const InsurePanel := preload("res://core/economy/insure_panel.gd")
 
 ## Which sections of this screen each home base station shows. The stations
 ## themselves, with their titles, are `HomeBase.STATIONS`.
@@ -47,7 +50,8 @@ const STATIONS := {
 	"records": {"sections": ["records"]},
 	"trader": {"sections": ["shop"]},
 	# The fabricator on the gunsmith bench (`HomeBase.CraftConsole`).
-	"craft": {"sections": ["craft"], "title": "Fabricator"},
+	# Insurance is taken out there too, beside the crafting (`InsurePanel`).
+	"craft": {"sections": ["craft", "insure"], "title": "Fabricator"},
 }
 
 ## Your account on the server you are connected to (see
@@ -63,6 +67,7 @@ var _details := {}
 var _mastery: MasteryPanel
 var _shop: ShopPanel
 var _craft: CraftPanel
+var _insure: InsurePanel
 var character: CharacterPanel
 var _online_status: Label
 var _stash_title: Label
@@ -169,6 +174,12 @@ func _ready() -> void:
 	_craft.changed.connect(_refresh_gear)
 	_section(box, "craft").add_child(_craft)
 
+	_insure = InsurePanel.new()
+	_insure.insure_requested.connect(func(action: String, item_id: String) -> void:
+		online_insure_requested.emit(action, item_id))
+	_insure.changed.connect(_refresh_gear)
+	_section(box, "insure").add_child(_insure)
+
 	_online_status = _text("", 14, Color(1.0, 0.8, 0.4))
 	_section(box, "status").add_child(_online_status)
 
@@ -200,6 +211,7 @@ func open_station(id: String, also: Array = []) -> void:
 		return
 	station = id
 	_craft.show_message("")
+	_insure.show_message("")
 	var sections: Array = STATIONS[id]["sections"].duplicate()
 	var names: Array[String] = [str(HomeBase.STATIONS[id]["title"]) if HomeBase.STATIONS.has(id)
 			else str(STATIONS[id].get("title", id))]
@@ -314,6 +326,7 @@ func _refresh_gear() -> void:
 		renown_text(lifetime)]
 	_shop.refresh()
 	_craft.refresh()
+	_insure.refresh()
 	# Clothing in the stash unlocks its outfits in the customizer.
 	character.owned = Economy.unlocked_outfits(stash_items())
 	character.set_appearance(Profile.appearance)
@@ -411,6 +424,7 @@ func update_account(p_account: Dictionary) -> void:
 	_mastery.loadout = account.get("loadout", {})
 	_shop.account = account
 	_craft.account = account
+	_insure.account = account
 	_show_sections()
 	_refresh_gear()
 
@@ -422,6 +436,7 @@ func leave_lobby() -> void:
 	_mastery.loadout = null
 	_shop.account = null
 	_craft.account = null
+	_insure.account = null
 	_show_sections()
 	_refresh_gear()
 

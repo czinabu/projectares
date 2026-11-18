@@ -21,6 +21,7 @@ const BaseUpgrades := preload("res://core/base/base_upgrades.gd")
 const BasePlan := preload("res://core/base/base_plan.gd")
 ## The same blueprint and crafting rules the server's StashService uses.
 const Crafting := preload("res://core/progression/crafting.gd")
+const SafetyNets := preload("res://core/economy/safety_nets.gd")
 const Human := preload("res://core/visual/human.gd")
 ## The new player's tour (the handler on the phone).
 const Onboarding := preload("res://core/progression/onboarding.gd")
@@ -82,6 +83,8 @@ var base_upgrades: Array[String] = []
 var base_plan: Dictionary = BasePlan.clean(null)
 ## The blueprints known (blueprint item ids, see `Crafting`). Never lost.
 var blueprints: Array[String] = []
+## The insurance policy (`SafetyNets`): {"item", "ready_at"}.
+var insurance := SafetyNets.fresh()
 ## How far through the new player's tour this player is (`Onboarding`). A
 ## view of their own progress, kept only here: a server never reads it.
 var onboarding := Onboarding.fresh()
@@ -155,6 +158,7 @@ func reset() -> void:
 	base_upgrades.clear()
 	base_plan = BasePlan.clean(null)
 	blueprints.clear()
+	insurance = SafetyNets.fresh()
 	onboarding = Onboarding.fresh()
 
 
@@ -260,6 +264,40 @@ func craft(item_id: String) -> Dictionary:
 	return _bank(Crafting.craft(stash, blueprints, scrip, item_id))
 
 
+## The insurance policy, lapsed first if its item is no longer in the stash.
+## Read only at home, never while a deploy has the item out.
+func insurance_policy() -> Dictionary:
+	if SafetyNets.lapse(insurance, stash):
+		save()
+	return insurance
+
+
+## Insures one stash item (`SafetyNets.insure`). Returns {"ok"} or
+## {"ok": false, "error"}.
+func insure(item_id: String) -> Dictionary:
+	return _bank(SafetyNets.insure(insurance_policy(), stash, scrip, item_id, Time.get_unix_time_from_system()))
+
+
+## Ends the policy, with no refund.
+func cancel_insurance() -> Dictionary:
+	var result := SafetyNets.cancel(insurance)
+	if result.ok:
+		save()
+	return result
+
+
+## The insured item if `kit` (just checked out for a deploy) carries it.
+func insured_in(kit: Array) -> String:
+	return SafetyNets.covered(insurance, kit)
+
+
+## A finished life recalled `recalled` home: the policy pays out if it was
+## the insured item.
+func claim_insurance(recalled: String) -> void:
+	if SafetyNets.claim(insurance, recalled, Time.get_unix_time_from_system()):
+		save()
+
+
 ## Adds `delta` scrip (a cost when negative) for anything outside the
 ## shops, such as a wager. Refuses, changing nothing, if it would go below zero.
 func change_scrip(delta: int) -> bool:
@@ -363,6 +401,7 @@ func to_dict() -> Dictionary:
 		"base_upgrades": base_upgrades,
 		"base_plan": base_plan,
 		"blueprints": blueprints,
+		"insurance": insurance,
 		"onboarding": onboarding,
 	}.duplicate(true)
 
@@ -433,6 +472,7 @@ func load_dict(data: Dictionary) -> void:
 	base_plan = BasePlan.clean(data.get("base_plan"))
 	blueprints = Crafting.clean(data.get("blueprints"))
 	Crafting.learn(stash, blueprints)
+	insurance = SafetyNets.clean(data.get("insurance"))
 	validate_loadout()
 	# A save from before the tour existed gets it only if it is a brand new
 	# player's (nothing played, nothing on); anyone else already knows the way.

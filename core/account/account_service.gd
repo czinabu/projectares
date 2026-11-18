@@ -102,6 +102,7 @@ const CALLS := {
 	"place_room": [TYPE_STRING, TYPE_STRING, TYPE_STRING],
 	"contract": [TYPE_STRING, TYPE_STRING, TYPE_STRING],
 	"craft": [TYPE_STRING, TYPE_STRING],
+	"insure": [TYPE_STRING, TYPE_STRING, TYPE_STRING],
 	"deploy": [TYPE_STRING, TYPE_STRING],
 	"undo_deploy": [TYPE_STRING, TYPE_STRING],
 	"bank": [TYPE_STRING, TYPE_ARRAY],
@@ -118,7 +119,7 @@ const CALLS := {
 	"announce": [TYPE_DICTIONARY],
 }
 const HELD: Array[String] = ["equip", "unequip", "pick_mastery", "buy", "sell", "buy_upgrade", "place_room", "contract",
-		"craft", "deploy", "undo_deploy", "bank", "settle", "cancel_deploy", "release_deploys", "change_scrip",
+		"craft", "insure", "deploy", "undo_deploy", "bank", "settle", "cancel_deploy", "release_deploys", "change_scrip",
 		"record_arena"]
 
 ## The accounts. Set its `save_dir` or `persist` before `start`.
