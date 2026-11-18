@@ -7,6 +7,8 @@ extends Node
 ##
 ##   godot --headless --fixed-fps 60 --path . res://tests/duel_bench.tscn
 ##   ... -- --duels 40 --ranges 12,25 --only raider --world ashfront --seed 1
+##   ... -- --melee blade_scrap   (the melee bench: the reference fights with
+##   that blade only, against each type; DESIGN.md "Melee bots")
 ##
 ## Enemies are built the way the world builds them (`equip_bot`,
 ## `raider_kit`, `make_warlord`), so tuning the world's numbers moves these.
@@ -37,6 +39,10 @@ const SPACING := 160.0
 
 var _world: WorldDef
 var _raid: Raid
+## The reference's kit: `REF_KIT`, or a blade, the frame and the medkit for
+## the melee bench.
+var _ref_kit: Array[String] = REF_KIT.duplicate()
+var _melee := false
 
 
 func _ready() -> void:
@@ -48,6 +54,10 @@ func _ready() -> void:
 	var only := _arg(args, "--only", "")
 	var seed_base := int(_arg(args, "--seed", "1"))
 	_world = Worlds.get_world(_arg(args, "--world", "ashfront"))
+	var blade := _arg(args, "--melee", "")
+	if blade != "":
+		_melee = true
+		_ref_kit.assign([blade, "frame_trooper", "medkit"])
 	var field := Field.new()
 	field.source = _world
 	field.rows = duels
@@ -59,7 +69,7 @@ func _ready() -> void:
 	_raid.far_detail_step = 1
 	_raid.start_server(field, seed_base)
 	print("Duel bench: %s, %d duels a matchup, reference kit %s at skill %.2f" % [_world.id, duels,
-			", ".join(REF_KIT), REF_SKILL])
+			", ".join(_ref_kit), REF_SKILL])
 	print("%-14s %5s  %6s %6s %6s  %8s %8s  %7s  %s" % ["enemy", "range", "win", "loss", "draw",
 			"ttk win", "ttk loss", "hp left", "target"])
 	var groups := _arg(args, "--group", "")
@@ -153,6 +163,13 @@ func _report(type: String, distance: float, r: Dictionary, kind := "") -> void:
 				share * 100.0, r.loss / total * 100.0, r.draw / total * 100.0,
 				r.ttk_win / maxf(r.win, 1), r.ttk_loss / maxf(r.loss, 1), r.hp / maxf(r.win, 1) * 100.0])
 		return
+	if _melee:
+		# Melee rows have no agreed band yet: the numbers and the role only.
+		print("%-14s %4.0fm  %5.0f%% %5.0f%% %5.0f%%  %7.1fs %7.1fs  %6.0f%%  melee (%s)" % [type, distance,
+				share * 100.0, r.loss / total * 100.0, r.draw / total * 100.0,
+				r.ttk_win / maxf(r.win, 1), r.ttk_loss / maxf(r.loss, 1), r.hp / maxf(r.win, 1) * 100.0,
+				TARGETS[type].role])
+		return
 	var band: Vector2 = TARGETS[type].win
 	var verdict := "ok" if share >= band.x and share <= band.y else ("TOO HARD" if share < band.x else "TOO EASY")
 	print("%-14s %4.0fm  %5.0f%% %5.0f%% %5.0f%%  %7.1fs %7.1fs  %6.0f%%  %.0f-%.0f%% %s (%s)" % [type, distance,
@@ -162,7 +179,7 @@ func _report(type: String, distance: float, r: Dictionary, kind := "") -> void:
 
 
 func _make_ref(at: Vector3, equip_seed: int) -> Actor:
-	var ref := _raid.spawn_bot("Ref%d" % equip_seed, at, equip_seed, false, "ref", 0, REF_KIT)
+	var ref := _raid.spawn_bot("Ref%d" % equip_seed, at, equip_seed, false, "ref", 0, _ref_kit)
 	ref.display_name = "Reference"
 	_brain(ref, equip_seed, Vector2(REF_SKILL, REF_SKILL), true)
 	_seed_guns(ref, equip_seed)
