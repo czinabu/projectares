@@ -16,6 +16,10 @@ const FERAL_CHANCE := 0.45
 const ZONE_COLD := [0.7, 1.0, 1.4]
 const EXPOSED_OVER := 22.0
 const EXPOSED_MULT := 1.5
+## How much grip a wheel gets on Frostline's snow and on its bare ice
+## (`WorldDef.surface_grip`): wheels break loose and slide.
+const SNOW_GRIP := 0.75
+const ICE_GRIP := 0.35
 
 ## The Wardens are the Engine's defence grid, still running (DESIGN.md
 ## "Frostline", step 7): one hurt in a fight it survives calls every Warden
@@ -198,6 +202,18 @@ func cold_at(pos: Vector3) -> float:
 ## The middle of the frozen lake, where the ice is thin.
 func thin_ice_at(pos: Vector3) -> bool:
 	return MapScript.lake_reach(pos.x, pos.z) < MapScript.THIN_ICE and pos.y < MapScript.floor_at(pos.z) + 1.0
+
+
+## Wheels slide on Frostline: packed snow everywhere, and the frozen river,
+## the lake and the frozen sea past the mouth are bare ice.
+func surface_grip(pos: Vector3) -> float:
+	var floor_y := MapScript.floor_at(pos.z)
+	if pos.y > floor_y + 1.5:
+		return SNOW_GRIP
+	var across := absf(pos.x - MapScript.centre(pos.z))
+	if MapScript.lake_reach(pos.x, pos.z) < 1.0 or (pos.z > -40.0 and across < 10.0) or pos.z > 296.0:
+		return ICE_GRIP
+	return SNOW_GRIP
 
 
 func zone_name(tier: int) -> String:

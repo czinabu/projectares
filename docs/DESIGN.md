@@ -1572,6 +1572,30 @@ More on each:
 - Every vehicle stays a `vehicle` item tuned by its stats, with a toy on the
   watch. The bike, rover and jet must stay clearly faster than flight cruise
   on their own terrain; the mech trades speed for armor and firepower.
+- **Handbrake drifting (Caleb's call).** Every wheeled machine and the
+  hoverbike have a handbrake on the jump key (the mech's jump key stays its
+  jump-jets, the jet's its climb). Held at speed (8 m/s or more) it locks
+  the back end: the throttle stops pushing and the speed bleeds off slowly
+  (5 m/s² against a brake's 22 to 32), the nose swings round 1.6 times as
+  fast and the course trails it, so the machine slides round a corner nose
+  first, up to about 50 degrees sideways. Held wide for 0.8 s it banks a
+  full charge; letting go on the throttle without hitting anything is a
+  clean exit, a burst of up to 4 m/s over 0.3 s, never past boost speed.
+  Let go on the brake or into a wall and the charge is lost. Slow, the
+  handbrake only brakes. The hoverbike drifts through every turn anyway;
+  its handbrake throws it about twice as wide and earns the same burst.
+  Tyres smoke and a hover throws up spray while they slide, the same seen
+  from the saddle and from across the street. All simulated from the
+  command, so it predicts online. On Coilrun the race profiles turn so
+  tightly at speed that few corners need braking, so a drift is a style
+  there more than a faster line (the race bench's `--drift` run measures
+  it); making corners demand it is a grip limit and a smarter bench driver,
+  still to come.
+- **Slick ground.** A world sets how much grip its ground gives wheels
+  (`WorldDef.surface_grip`, 1 on dry ground). Frostline's packed snow gives
+  75%, and the frozen river, the lake and the frozen sea give 35%: wheels
+  pull away and brake on that share, break loose and slide wide in a plain
+  turn, and grip back slower. A hover's cushion does not care.
 
 ## 9. Racing (a later mode)
 

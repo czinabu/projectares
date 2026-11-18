@@ -154,6 +154,7 @@ const CONTROLS := [
 		["Throttle / brake or reverse", "{move_forward} / {move_back}"],
 		["Steer", "{move_left} / {move_right}"],
 		["Boost", "{sprint}"],
+		["Handbrake: drift a corner (let go on the throttle for a burst)", "Hold {jump}"],
 	]],
 	["IN THE WORLD", [
 		["Loot, use a console or a doorway", "{interact}"],
