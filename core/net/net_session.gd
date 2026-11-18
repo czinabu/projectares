@@ -85,7 +85,7 @@ signal base_visit_requested(owner_name: String, stash: Array, loadout: Dictionar
 signal portal_travel(destination: String)
 
 const DEFAULT_PORT := 24565
-const PROTOCOL := 45
+const PROTOCOL := 46
 ## Every packet is compressed, both ways. State updates are mostly repeated
 ## numbers, and a big battle sends a player hundreds of them a second. Server
 ## and client must agree, so a change here needs a new PROTOCOL.
@@ -1388,6 +1388,19 @@ func _request_craft(item_id: String) -> void:
 	_lobby_answer(peer, result)
 
 
+## Lobby: "insure" one stash item or "cancel" the policy at the fabricator
+## (`StashService.insure`). The server decides what it costs.
+@rpc("any_peer", "call_remote", "reliable")
+func _request_insure(action: String, item_id: String) -> void:
+	if not _allow("lobby"):
+		return
+	var peer := _api.get_remote_sender_id()
+	if not is_server or not _peer_account.has(peer):
+		return
+	var result: Dictionary = await stash.insure(_peer_account[peer], action.left(16), item_id.left(64))
+	_lobby_answer(peer, result)
+
+
 ## Lobby: sell stash items for scrip. An empty `item_id` sells all loot.
 @rpc("any_peer", "call_remote", "reliable")
 func _request_sell(item_id: String, count: int) -> void:
@@ -1534,7 +1547,7 @@ func _request_join(drop := "") -> void:
 	raid.set_team(account_id, clan_id if _clans_fight_together() else "", clans.name_of(clan_id))
 	# Renown is kept under the account, never under a name the client chose.
 	var actor := raid.add_player(deployed.kit, deployed.picks, who.name, account_id, int(who.get("renown", 0)),
-			drop.left(48))
+			drop.left(48), str(deployed.get("insured", "")))
 	_joining_look = {}
 	_wear_clan(actor, account_id)
 	if not safe:
@@ -2346,6 +2359,12 @@ func buy_upgrade(upgrade_id: String) -> void:
 func craft(item_id: String) -> void:
 	if _is_connected() and not account.is_empty():
 		_request_craft.rpc_id(1, item_id)
+
+
+## Lobby: ask the server to "insure" a stash item or "cancel" the policy.
+func insure(action: String, item_id: String = "") -> void:
+	if _is_connected() and not account.is_empty():
+		_request_insure.rpc_id(1, action, item_id)
 
 
 ## Lobby: ask the server to sell stash items ("" sells all loot).

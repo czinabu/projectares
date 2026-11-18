@@ -986,6 +986,18 @@ without Caleb, and update the gap list when a PR closes a row.
   welcome crate and the scrap pieces wait in the base). A save without
   `StashRules.BARE_KEY` is from before the bare rule and gets its empty
   slots filled once with the scrap kit (`StashRules.starter_loadout`).
+- Safety nets (`core/economy/safety_nets.gd`, static rules like `Economy`,
+  DESIGN.md "Safety nets"): salvage and one insured item, decided by the
+  authority's `Raid` at a death and nowhere else. `add_player`'s
+  `p_insured` (from `StashService.deploy`'s "insured", or
+  `Profile.insured_in` solo, and only if the kit carries it) is recalled
+  from the body before the bag drops (`Raid._recall_insured`), never
+  copied: the killer simply does not get it. Salvage is paid only for
+  crafted gear from the stash lost with the body. Both travel in the
+  result ("recalled", in `brought_home` too, "salvaged", "salvage") and are
+  settled by `StashService.settle` online and `Raid.apply_result` solo; a
+  policy is kept on the account (`Account.insurance`, in the snapshot and
+  `StashRules.CARRIED`) and changed only by `StashService.insure`.
 - `Raid` never touches `Profile` to build a kit. The kit is passed into
   `Raid.start`, so a server can supply it later.
 
