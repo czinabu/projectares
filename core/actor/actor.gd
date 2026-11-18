@@ -26,6 +26,11 @@ signal weapon_swapped(item_id: String, mag: int, reserve: int)
 ## The weapon in hand started dematerializing back into the pack
 ## (`Loadout.store_weapon`, the watch's store), with the rounds it had.
 signal weapon_stored(item_id: String, mag: int, reserve: int)
+## Items this actor just took out of a container (`LootContainer.interact`),
+## or a heavy weapon scanned off a rack, on the machine that decided it.
+## Online `NetSession._looted` repeats it to the owner. Drives the visor's
+## pickup feed; nothing in the simulation reads it.
+signal looted(ids: Array[String])
 
 const LAYER_WORLD := 1
 const LAYER_ACTORS := 2

@@ -755,6 +755,12 @@ without Caleb, and update the gap list when a PR closes a row.
   helmet's name, role and system beside it; the contracts held and the
   tour's step are an objective block top right (`objective_lines`, from
   `hud.contracts` and `hud.objective`); faint pitch ticks run up both edges.
+  Loot is read off the glass too (Caleb's call, DESIGN.md "Loot at a
+  glance"): the container you look at gets a tag listing every item inside,
+  with rarity and whether it beats what you wear (`VisorHud._draw_crate`,
+  `loot_rows`, `versus_worn`), and what you pick up runs up a fading feed
+  over the weapon readout (`_draw_pickups`), fed by `Actor.looted`, which
+  only the authority emits and `NetSession._looted` repeats to the owner.
   Bottom right, mirroring the vitals, a quiet weapon readout (Caleb's pick):
   the weapon in hand, the mag over a tick a round and the pack's rounds,
   resting dim and lit only on a reload, a low mag or just after a switch

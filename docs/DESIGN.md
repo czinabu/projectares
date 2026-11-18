@@ -585,6 +585,30 @@ frames or tints the view, and the same readings with no helmet worn appear
 on the gear alone (the gun and the pack). They show only your own state,
 never an enemy's.
 
+### Loot at a glance (Caleb's call)
+
+What you are about to pick up and what you just picked up are on the visor,
+so the watch is only needed to manage the pack:
+
+- **Looking at a container** (a cache, a bag, a supply pod, a rack: the one
+  F would loot), the visor tags it beside the container, clear of the
+  crosshair: its name, how many things and their worth, then every item
+  inside on its own row (never just the best one), stacked by kind, rarest
+  first. Each row has the item's name (the Mk is part of it), its rarity in
+  its colour, and a mark for whether it beats what you wear in that slot
+  (better, worse or the same; nothing for materials and heals). A long list
+  runs on into a second column rather than being cut short. Scrip in a bag
+  is a row too.
+- **Picking something up** adds a line at the visor's lower right edge, over
+  the weapon readout ("+ ARC BLADE MK3"), in its rarity's colour, marked
+  where it beats what you wear. More of the same counts up on its line.
+  Lines fade after a few seconds.
+
+Every working helmet shows both, the scrap visor included, in both views
+(drawn flat in third person, like the rest of the visor). With no helmet
+there is no glass to show them on; the prompt and the watch still say what
+was looted.
+
 ### The summon carousel (Caleb's call)
 
 Raising the watch opens a holo carousel, like pulling gear out of thin air:

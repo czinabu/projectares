@@ -4503,6 +4503,8 @@ func _test_online() -> void:
 		var notices: Array[String] = []
 		me.hit_confirmed.connect(func(_t: Actor, _i: DamageInfo, _l: bool) -> void: hits[0] += 1)
 		me.notice.connect(func(text: String) -> void: notices.append(text))
+		var picked: Array[String] = []
+		me.looted.connect(func(ids: Array[String]) -> void: picked.append_array(ids))
 		var result := [{}]
 		bravo.run_finished.connect(func(r: Dictionary) -> void: result[0] = r)
 		var before := victim.health.health + victim.health.armor
@@ -4593,6 +4595,9 @@ func _test_online() -> void:
 				return notices.any(func(text: String) -> bool: return text.begins_with("Looted "))
 			await _wait_until(told_loot, 60)
 			check(told_loot.call(), "the looter is told what they picked up")
+			await _wait_until(func() -> bool: return not picked.is_empty(), 60)
+			check(not picked.is_empty() and picked.all(func(id: String) -> bool: return id in me.inventory.items),
+					"and item by item, for the visor's pickup feed (%s)" % ", ".join(picked))
 			var bag_gone := func() -> bool: return not is_instance_id_valid(bag_id)
 			await _wait_until(bag_gone, 90)
 			check(bag_gone.call(), "the emptied bag disappears on the client too")
