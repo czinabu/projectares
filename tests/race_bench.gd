@@ -32,48 +32,69 @@ func _ready() -> void:
 	_drift = OS.get_cmdline_user_args().has("--drift")
 	for world_id in WORLDS:
 		var world := Worlds.get_world(world_id)
-		for race_class: String in CLASSES:
-			var bests := {}
-			for machine: String in CLASSES[race_class]:
-				var result := await drive(self, world, machine)
-				bests[machine] = result.best
-				print("%-10s %-14s laps %s  best %s%s" % [world_id, machine,
-						", ".join(result.laps.map(func(l: Array) -> String:
-							return Race.format_time(l[0]) + ("" if l[1] else " (off)"))),
-						Race.format_time(result.best), "" if result.finished else "  DID NOT FINISH"])
-				if _drift:
-					print("  drifting %.1f s of the run" % (int(result.get("drift_ticks", 0)) / float(Engine.physics_ticks_per_second)))
-				if not result.finished:
-					_failed = true
-			var times: Array = bests.values().filter(func(b: float) -> bool: return b > 0.0)
-			if times.is_empty():
-				continue
-			var average: float = times.reduce(func(a: float, b: float) -> float: return a + b, 0.0) / times.size()
-			print("%-10s %s class average %s" % [world_id, race_class, Race.format_time(average)])
-			for machine: String in bests:
-				var off: float = (float(bests[machine]) - average) / average
-				var flag := absf(off) > TOLERANCE
-				_failed = _failed or flag
-				print("  %-14s %+.2f%%%s" % [machine, off * 100.0, "   OUT OF CLASS" if flag else ""])
+		for track_index in _track_count(world):
+			for race_class: String in CLASSES:
+				await _bench_class(world, track_index, race_class)
 	print("Race bench: %s" % ("a machine is out of its class" if _failed else "every machine is in its class"))
 	get_tree().quit(1 if _failed else 0)
 
 
-## Drives `machine` round `world`'s track for a full run. Returns
-## {"laps": [[time, counted]], "best": seconds or -1, "finished": bool}.
-static func drive(host: Node, world: WorldDef, machine: String) -> Dictionary:
+## How many tracks `world`'s map lays out.
+static func _track_count(world: WorldDef) -> int:
+	var map: Node3D = world.create_map()
+	var count := 1
+	if map.has_method("race_tracks"):
+		count = (map.call("race_tracks") as Array).size()
+	map.free()
+	return count
+
+
+## Every machine of `race_class` round track `track_index`, against the
+## class average.
+func _bench_class(world: WorldDef, track_index: int, race_class: String) -> void:
+	var bests := {}
+	var where := world.id
+	for machine: String in CLASSES[race_class]:
+		var result := await drive(self, world, machine, track_index)
+		bests[machine] = result.best
+		where = str(result.get("track", where))
+		print("%-10s %-14s laps %s  best %s%s" % [where, machine,
+				", ".join(result.laps.map(func(l: Array) -> String:
+					return Race.format_time(l[0]) + ("" if l[1] else " (off)"))),
+				Race.format_time(result.best), "" if result.finished else "  DID NOT FINISH"])
+		if _drift:
+			print("  drifting %.1f s of the run" % (int(result.get("drift_ticks", 0)) / float(Engine.physics_ticks_per_second)))
+		if not result.finished:
+			_failed = true
+	var times: Array = bests.values().filter(func(b: float) -> bool: return b > 0.0)
+	if times.is_empty():
+		return
+	var average: float = times.reduce(func(a: float, b: float) -> float: return a + b, 0.0) / times.size()
+	print("%-10s %s class average %s" % [where, race_class, Race.format_time(average)])
+	for machine: String in bests:
+		var off: float = (float(bests[machine]) - average) / average
+		var flag := absf(off) > TOLERANCE
+		_failed = _failed or flag
+		print("  %-14s %+.2f%%%s" % [machine, off * 100.0, "   OUT OF CLASS" if flag else ""])
+
+
+## Drives `machine` round `world`'s track `track_index` for a full run, from
+## a bay of that track. Returns {"laps": [[time, counted]], "best": seconds
+## or -1, "finished": bool, "track": its id}.
+static func drive(host: Node, world: WorldDef, machine: String, track_index := 0) -> Dictionary:
 	var race: Race = world.new_raid()
 	host.add_child(race)
 	race.start(world, 1, [Loadout.BARE] as Array[String])
 	await host.get_tree().physics_frame
 	await host.get_tree().physics_frame
 	var me := race.player
+	var track := race.circuits[track_index]
 	var bike: Node3D = null
 	for v: Node3D in race.vehicles:
-		if v.get("item_id") == machine and v.get("rider") == null:
+		if v.get("item_id") == machine and v.get("rider") == null and race.track_near(v.global_position) == track:
 			bike = v
 			break
-	var out := {"laps": [], "best": -1.0, "finished": false}
+	var out := {"laps": [], "best": -1.0, "finished": false, "track": track.id}
 	if bike == null:
 		race.queue_free()
 		return out
@@ -82,7 +103,6 @@ static func drive(host: Node, world: WorldDef, machine: String) -> Dictionary:
 	bike.call("mount", me)
 	race.lap_finished.connect(func(_a: Actor, time: float, counted: bool) -> void:
 		out.laps.append([time, counted]))
-	var track := race.track
 	var ticks := int(RUN_LIMIT * Engine.physics_ticks_per_second)
 	var hint := -1
 	var stuck := 0

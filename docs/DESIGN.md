@@ -1785,6 +1785,30 @@ The first track is Coilrun, a Street circuit of about 1.6 km: the long
 straight past the pits, the Crest, the Capacitor Yard's esses, the
 Spillway gap and the sweep round the cooling tower.
 
+The second is Skyhook (Caleb's pick), a Street figure of eight on stilts
+north of Coilrun's pits, about 1.2 km: off the line it climbs onto the
+deck, turns back over its own start straight on the Flyover, winds a turn
+and a half down the Corkscrew round a lit pylon and dives through a ring
+back onto the flats. The deck has low walls and banks a little into its
+bends; the race only reads the centre line. Each track keeps its own pit
+bays, grid, gantry, arches and board, and a racer picks one by walking from
+race control to its pit row: a run is on the track nearest the machine
+they got on. The Scrapper is quicker round Skyhook's tight turns, the
+Raider down Coilrun's straights.
+
+**The spectacle (Caleb's go-ahead: grand and epic).** A race is an event,
+so the world round the tracks is packed, all of it decoration: the
+two-tier Meridian Grandstand along the Rail with sky boxes, a lit canopy
+and floodlights, stands round Breech Hairpin, at the Spillway's landing and
+by Skyhook's line, terraces round the cooling tower, a footbridge of people
+over the run to the chicane, viewing barges hanging over the infield, and
+race control's tower with a big screen of the best laps. The crowd is solid
+low-poly figures (`Crowd`, one multimesh a block) who sway, hold up light
+sticks and jump as a racer goes past. Round it all, eroded mesas, the dead
+launch works on the skyline (leaning launch towers with holo-ads, gantry
+cranes, a crashed booster stage, power pylons), searchlights sweeping the
+haze and camera drones pacing the racers.
+
 ## 10. Economy and progression
 
 ### The core rule (Caleb's call)
