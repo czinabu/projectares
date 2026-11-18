@@ -2138,6 +2138,8 @@ func _on_online_account_changed(account: Dictionary) -> void:
 	if shop_view != null and is_instance_valid(shop_view):
 		shop_view.panel.set("account", account)
 		shop_view.panel.call("refresh")
+	if plaza_view != null and is_instance_valid(plaza_view):
+		plaza_view.account = account
 	if raid == null:
 		hub.update_account(account)
 		_refresh_base()
@@ -2160,6 +2162,10 @@ func _on_online_joined(p_raid: Raid) -> void:
 		raid.add_child(plaza_view)
 		net.world_status_changed.connect(plaza_view.refresh_heat.unbind(1))
 		plaza_view.portal_used.connect(use_portal)
+		plaza_view.account = net.account
+		plaza_view.contract_asked.connect(func(action: String, job_id: String) -> void:
+			if net:
+				net.contract_ask(action, job_id))
 	if _back_notice != "" and hud != null and is_instance_valid(hud):
 		hud.notify(_back_notice)
 	_back_notice = ""

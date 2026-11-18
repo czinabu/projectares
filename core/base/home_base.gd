@@ -2029,7 +2029,7 @@ func _fill(display: Display) -> void:
 			model.add_child(_part(Vector3(0.6, 0.05, 0.45), Vector3(0, -0.2, 0.1), Color(0.2, 0.2, 0.22)))
 			var stats := ItemDB.item_stats(id)
 			var helmet := SkinScript.build_helmet(str(stats.get("mode", "")), stats.get("glass_color", Color.WHITE),
-					Vector3(0.27, 0.31, 0.31), Color(0.22, 0.23, 0.25))
+					Vector3(0.27, 0.31, 0.31), Color(0.22, 0.23, 0.25), int(stats.get("tier", 1)))
 			helmet.position = Vector3(0, -0.02, 0.12)
 			model.add_child(helmet)
 			box = Vector3(0.7, 0.55, 0.55)

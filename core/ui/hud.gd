@@ -2254,7 +2254,7 @@ void fragment() {
 			# A helmet shows the model it is worn as.
 			var stats := ItemDB.item_stats(id)
 			model = SkinScript.build_helmet(str(stats.get("mode", "")), stats.get("glass_color", Color.WHITE),
-					Vector3(0.27, 0.31, 0.31), Color(0.22, 0.23, 0.25))
+					Vector3(0.27, 0.31, 0.31), Color(0.22, 0.23, 0.25), int(stats.get("tier", 1)))
 		elif ItemDB.has_tag(id, "armor"):
 			# A frame shows the plates it is worn as.
 			model = SkinScript.build_frame(id)

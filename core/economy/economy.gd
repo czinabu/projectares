@@ -43,6 +43,15 @@ const KILL_BOUNTY := 10
 const PLAYER_KILL_SCRIP := 60
 const WARLORD_SCRIP := 150
 const STRONGPOINT_SCRIP := 75
+
+
+## What a player's bounty pays whoever takes them down (Caleb's call: one
+## scrip per point of bounty). It goes into the killer's carried scrip, so it
+## is at stake until banked or carried out (DESIGN.md "Contracts and
+## bounties").
+static func bounty_scrip(bounty: int) -> int:
+	return maxi(0, bounty)
+
 ## The most of one item sold in a single request.
 const MAX_SELL_COUNT := 99
 

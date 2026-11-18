@@ -952,6 +952,8 @@ const WEATHER_KITS := {
 		"wall_tint": Color(0.66, 0.72, 0.8), "wall_lit": Color(0.95, 0.97, 1.0),
 		"streak": Color(1.0, 1.0, 1.0, 0.8), "streak_size": Vector2(0.04, 0.4),
 		"billow": Color(0.92, 0.94, 0.98, 0.28), "fall": -0.22, "wall_height": 70.0,
+		# Spindrift off the edges a map offers (`WeatherView`).
+		"drift": true,
 	},
 }
 
@@ -1329,7 +1331,10 @@ func character(skin_name: String, appearance: Dictionary = {}, who := "") -> Dic
 			if source.emission_enabled:
 				mat.set_shader_parameter("emission_color", source.emission * 2.5)
 			_bind_storm(mat)
-			if not chosen.is_empty():
+			if not chosen.is_empty() and Human.reshape:
+				mat.set_shader_parameter("has_rest", 1.0)
+				mat.set_shader_parameter("surface_kind",
+						Human.surface_kind(mesh_node.get_meta("slot", ""), source.resource_name))
 				var pick := Human.color_for(chosen, mesh_node.get_meta("slot", ""), source.resource_name)
 				if pick.has("color"):
 					mat.set_shader_parameter("recolor", pick["color"])

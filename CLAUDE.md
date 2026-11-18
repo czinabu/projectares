@@ -151,7 +151,12 @@ without Caleb, and update the gap list when a PR closes a row.
   (`Visor`), how far shots carry (`Gun.shot_carry`), gusts on a flying rig
   (`Actor._take_gusts`, the rig's `gust_mult`, a function of position only
   so it predicts), the cold (`cold_at`), tracks (`weather_wipes_tracks`)
-  and army pushes (`Raid._army_target`, `weather_pushes`). Thermal already
+  and army pushes (`Raid._army_target`, `weather_pushes`). Frostline's
+  whiteouts (`weather_kind` "snow") add the blizzard: the driven air
+  comes in gusts (`WeatherView.gust_now`, view only), a map that offers
+  `weather_ridges` gets spindrift off those edges where the storm is
+  (`WeatherView._place_drifts`, a kit with "drift"), and bodies on the
+  ground lean into the wind (`Locomotion._wind_pose`). Thermal already
   ignores fog, so it sees through a storm. What it looks like is
   `WeatherView` (view only, the same in both views): the wall, the driven
   air round the camera and the wind, and the map's "weather_here" meta,
@@ -199,12 +204,36 @@ without Caleb, and update the gap list when a PR closes a row.
   `Actor.clan_tag` is for views and is worn everywhere. Nobody changes clan
   while deployed.
 - World heat: `Raid.status()` is what a world shows of itself from outside
-  (players, war level, top bounty, the event running) and never says who or
-  where anyone is. The safe zone's `NetSession` gathers it from the other
+  (players, war level, top bounty, the event running) and never says where
+  anyone is. The one "who" it carries is `wanted` (Caleb's call, for the
+  most-wanted board): up to `Raid.WANTED_SHOWN` players with a bounty or the
+  Marked, by name, clan tag and bounty only, checked again on the client
+  (`NetSession._clean_wanted`). The safe zone's `NetSession` gathers it from the other
   sessions in the process and sends it to everyone standing there
   (`NetSession.world_status`); `PlazaView` writes it on a sign over each
-  world doorway (`heat_signs`). Anything else that advertises a world reads
-  `world_status`, not a second channel.
+  world doorway (`heat_signs`) and the wanted on the most-wanted board
+  (`wanted_text`, the map's "wanted_board" label). Anything else that
+  advertises a world reads `world_status`, not a second channel.
+- The Concourse's people (DESIGN.md section 2, "Locals"):
+  `core/social/plaza_locals.gd`, made by `PlazaView` only where `Look` is
+  on, so a server runs none and sends nothing for them. Every client makes
+  the same crowd from the map's `locals_layout()` and `CROWD_SEED`, scattered
+  in uneven groups (Caleb's call: never spaced evenly), and walks each local
+  along a `Routine` timed by the wall clock. A local is an ordinary `Actor`
+  driven only through its command, but out of the world: taken out of the
+  "actors" group, no collision with people, never a child of the `Raid`
+  (so `RaidRoster` never lists one), thinned when far. They look at people
+  near them and step out of their way. The people you talk to stand at the
+  map's "talker" markers; "talk:<id>" portals make them answer in a speech
+  card over their head (`SpeechPanel`, in the world, never on the screen).
+  What they say comes only from what the client already knows:
+  `world_status` (Dusk's rumours, Kade on the board) and the account's
+  contracts (Rook). Rook's favours are contract jobs of kind "favor"
+  (`Contracts.favor_for`, one a day, never rerolled, left off the board's
+  own lists), taken through the same `NetSession.contract_ask`.
+- A player's bounty pays its killer in scrip (`Economy.bounty_scrip`, one
+  for one, Caleb's call) into the life's carried scrip, so it is at stake
+  until banked or carried out, like the kill's own pay.
 - World events (`Raid.event`, `start_event`, `end_event`): one at a time, on
   a timer the war speeds up, tuned by `WorldDef.event_interval`,
   `event_lifetime` and `warlord_escort`. A supply pod is an ordinary
@@ -561,7 +590,19 @@ without Caleb, and update the gap list when a PR closes a row.
 - People are built from parts (`core/visual/human.gd`): an "appearance" names
   a build, four parts and colours. It is cosmetic only and never trusted:
   always pass one through `Look.clean_appearance` / `Look.set_appearance`,
-  which is safe on a headless server. Online it travels in the spawn data as
+  which is safe on a headless server. The pack meshes are worn as
+  `Human.shaped` copies (made once per mesh, view only): smooth shading
+  where faces meet gently, the head drawn in to `HEAD_SCALE` about its
+  bone (the bone, the eyes and anything worn on it stay put), and each
+  vertex's rest place and hand share in CUSTOM0, so `character.gdshader`
+  draws patterns that stay on the body as it moves. Never change a
+  vertex count, bone or weight there: a body must pose and cost the same.
+  Under an armor frame the bare skin below the head wears a fitted
+  undersuit with gloves and a lit cuff, drawn by the shader (`suit`, set
+  by `ActorSkin._update_frame`; `Human.surface_kind` says which surfaces
+  it covers), never a mesh, so plates fit the same over it. Check by eye
+  with `body_check.tscn -- <dir> [--suit] [--before]`.
+  Online it travels in the spawn data as
   `data["look"]`; the server keeps what each signed-in player sent
   (`NetSession.look_for_peer`). `Raid` and gameplay never read it.
   A look changed while in a world (the phone's Mirror app) is checked by the
@@ -872,10 +913,18 @@ without Caleb, and update the gap list when a PR closes a row.
   (`Raid.summon`, online `NetSession.summon`) to `Raid.swap_worn`
   (authority only, at once, then a short watch rest): it goes on and the
   worn one goes in the pack; `_worn_changed` tells every client. The skin wears it on the
-  head (`ActorSkin._update_helmet`, `build_helmet`: a shell, glass in the
-  visor's colour and a fitting per `mode`), hiding the head under it; it
+  head (`ActorSkin._update_helmet`, `build_helmet`), hiding the head under it; it
   hangs off the "Head" bone, so first person leaves it out with the head.
-  Check by eye with `visual_check.tscn -- <dir> --helmets-only`.
+  Each helmet looks like what it does (Caleb's call; `helmet_model.gd`):
+  a dark hood, a shell with its own outline (`Shape`: the Spotter low and
+  high-cut, the Seeker a swept egg, the Warden faceted with a crest, the
+  Ember broad over its heat sinks), smoked glass glowing in the visor's
+  colour and the mode's fitting (rangefinder pod, emitter crown, sensor
+  eyes all round, thermal lens and heat sinks; the scrap visor patched and
+  cracked); a Mk2 (`Visor.tier`) wears a lit seam over the crown. Keep
+  the back of the head clear for the vitals strip. Goggles will be the
+  same glass and fitting on a strap, no shell. Check by eye with
+  `visual_check.tscn -- <dir> --helmets-only` (helmet_closeups.png).
   Armor frames are worn gear the same way: `Loadout.wear_frame` puts one on
   or off (`Actor.frame_id`), undoing the old frame's speed and heat scaling
   before applying the new one, and emits `Actor.frame_changed`. One frame is
