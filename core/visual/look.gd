@@ -21,6 +21,8 @@ const ActorSkin := preload("res://core/visual/actor_skin.gd")
 const Human := preload("res://core/visual/human.gd")
 const CHARACTER_SHADER := preload("res://assets/shaders/character.gdshader")
 const EDGE_INK_SHADER := preload("res://assets/shaders/edge_ink.gdshader")
+const SKYLINE_SHADER := preload("res://assets/shaders/skyline.gdshader")
+const HORIZON_GLOW_SHADER := preload("res://assets/shaders/horizon_glow.gdshader")
 const GameSettings := preload("res://core/settings/game_settings.gd")
 const Vfx := preload("res://core/visual/vfx.gd")
 const RigModel := preload("res://core/visual/rig_model.gd")
@@ -251,6 +253,11 @@ var weather_fog_solid_min := 50.0
 var weather_depth_amount_cap := 0.985
 var weather_follow := 0.35
 var weather_cover := 0.0
+## The far skyline's haze (`skyline_haze`): how much it wears at a far fog
+## of `skyline_haze_from` or less, rising to all of it at `skyline_haze_gone`.
+var skyline_haze_clear := 0.42
+var skyline_haze_from := 0.66
+var skyline_haze_gone := 0.98
 
 var _materials := {}
 var _noise: NoiseTexture2D
@@ -581,6 +588,17 @@ func apply_mood(m: Dictionary, env: Environment, sky_mat: ShaderMaterial, sun: D
 	env.adjustment_contrast = m.contrast
 	sun.light_color = m.sun_color
 	sun.light_energy = m.sun_energy
+	if _materials.has("trim:distant"):
+		var skyline := _materials["trim:distant"] as ShaderMaterial
+		skyline.set_shader_parameter("haze", m.fog_color)
+		skyline.set_shader_parameter("haze_amount", skyline_haze(float(m.fog_density)))
+
+
+## How much haze the far skyline wears for a mood's far fog: a veil on a
+## clear day, more as war closes the horizon in, gone in the thick of a storm.
+func skyline_haze(fog_density: float) -> float:
+	var t := clampf(inverse_lerp(skyline_haze_from, skyline_haze_gone, fog_density), 0.0, 1.0)
+	return lerpf(skyline_haze_clear, 1.0, t * t)
 
 
 ## Pulls a war mood back inside the readability caps. Depth fog cannot start
@@ -1096,11 +1114,20 @@ func interior(parent: Node3D, ambient: Color, energy: float) -> void:
 ## "slag" (molten metal), "crack" (a dimmer glow for cracks in the ground),
 ## "scorch" (charred ground), "track" (a packed gravel road), "rut" (a dark wheel rut), "hazard" (orange and black stripes),
 ## "sandbag", "halo" (a glow round a far light), "flash" (a far blast),
-## "beam" (a searchlight) and "distant" (skyline silhouettes). Cached, so every piece shares one material.
+## "beam" (a searchlight), "distant" (skyline silhouettes) and
+## "horizon_glow" (fires past the rim, on a ring). Cached, so every piece
+## shares one material.
 func trim(kind: String) -> Material:
 	var key := "trim:" + kind
 	if _materials.has(key):
 		return _materials[key]
+	if kind == "distant" or kind == "horizon_glow":
+		# Shaded by hand, so they hold their own against the haze:
+		# `apply_mood` sets the silhouettes' haze from the mood.
+		var shaded := ShaderMaterial.new()
+		shaded.shader = SKYLINE_SHADER if kind == "distant" else HORIZON_GLOW_SHADER
+		_materials[key] = shaded
+		return shaded
 	var mat := StandardMaterial3D.new()
 	match kind:
 		"teal", "band", "orange", "beacon", "slag", "crack":
@@ -1151,11 +1178,6 @@ func trim(kind: String) -> Material:
 			mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
 			mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 			mat.albedo_color = Color(0.9, 0.85, 0.72, 0.05)
-		"distant":
-			# Skyline shapes past the rim: only a silhouette in the haze, so a
-			# plain material, which costs nothing per piece.
-			mat.albedo_color = Color(0.16, 0.13, 0.12)
-			mat.roughness = 1.0
 		"hazard":
 			var stripes := Image.create(32, 32, false, Image.FORMAT_RGB8)
 			for y in 32:

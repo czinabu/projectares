@@ -329,6 +329,7 @@ static func run(t: Node) -> void:
 
 	await _armies(t)
 	await _big_battles(t)
+	_skyline(t, raid)
 
 	# Built once, shared after: a second copy of the map is ready at once.
 	var before := Time.get_ticks_msec()
@@ -342,6 +343,33 @@ static func run(t: Node) -> void:
 	again.queue_free()
 	raid.queue_free()
 	await t.frames(2)
+
+
+## The far skyline (DESIGN.md "PvP world", "Scale you can see"): drawn from
+## anywhere in the field, dark against the sky in the clear and swallowed by
+## a storm.
+static func _skyline(t: Node, raid: Raid) -> void:
+	print("Battlefield: skyline")
+	var map := raid.map
+	# The skyline stands 400 to 490 m from the middle; a player can be at
+	# the spawn ring on the far side.
+	var far_side := float(map.get_script().get_script_constant_map()["SPAWN_RING"]) + 490.0
+	t.check(float(map.get_meta("view_far", 0.0)) > far_side,
+			"Ashfront asks the view to draw past the skyline on the far side of the field (%.0f m)" % float(map.get_meta("view_far", 0.0)))
+	var view := PlayerController.new()
+	view.actor = raid.player
+	t.check(is_equal_approx(view._view_far(), float(map.get_meta("view_far"))), "the player's view draws as far as the map asks")
+	view.actor = Actor.new()
+	t.check(is_equal_approx(view._view_far(), view.view_far), "away from a map the view keeps its own reach")
+	view.actor.free()
+	view.free()
+	var calm := Look.skyline_haze(0.66)
+	var war := Look.skyline_haze(0.86)
+	var storm := Look.skyline_haze(0.985)
+	t.check(calm < 0.5 and calm < war and war < storm and storm >= 0.99,
+			"the skyline is a dark veiled shape when clear, hazier in war and gone in a storm (%.2f, %.2f, %.2f)" % [calm, war, storm])
+	t.check(Look.trim("distant") is ShaderMaterial and Look.trim("horizon_glow") is ShaderMaterial,
+			"the skyline and the burning horizon shade themselves against the haze")
 
 
 ## What keeps a big battle affordable: bots nobody is near run in longer

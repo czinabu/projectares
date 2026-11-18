@@ -438,6 +438,19 @@ Numbers are placeholders.
   `actor_fog_clear`, `actor_fog_full`, `actor_fog_min`, `actor_rim_strength`,
   `column_clear_near`, `column_clear_far`). Ashfront's own calm and war
   moods set the distances; `Look.soften_storm` enforces the floor.
+- **Scale you can see (Caleb's go-ahead, concepts in `ares/ashfront-grand/`
+  in the project files).** Something huge is always in view and the war goes
+  on past the rim without you, all view only and timed from what every
+  client already gets. Built: the far skyline is drawn dark against the sky
+  with its own haze (`Look.trim("distant")`, `skyline.gdshader`, the haze
+  set from the mood by `Look.skyline_haze`, so a storm still swallows it),
+  fires glow behind it (`horizon_glow.gdshader`, brighter with the war,
+  hidden by a storm), and the map's "view_far" meta lets the player's view
+  draw that far (`PlayerController._view_far`). Planned, in this order: a
+  sound bed of the distant war, the Colossus walking the rim and a carrier
+  in the sky, dropship wings, flak and tracers that follow the war, god rays,
+  a shared moment (the orbital lance brings the Colossus down), and ash on
+  the visor glass.
 - Full loot on death.
 - The only place heavy weapons are found.
 - Mid-map bank spots and sign-out create the extraction tension (section 7).

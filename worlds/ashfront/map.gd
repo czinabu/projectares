@@ -173,6 +173,13 @@ const TRAP_OFFSET := 13.0
 const TRAP_EVERY := 6.5
 ## How far the Forge's beacon is drawn: the whole map and past it.
 const FAR_SIGHT := 2000.0
+## How far the player's view draws here (the map's "view_far" meta): the
+## skyline on the far side of the field from anywhere in it.
+const VIEW_FAR := 1100.0
+## The burning horizon: a ring of fire-glow this far out, behind the
+## skyline, glowing this much when quiet and in all-out war.
+const GLOW_RING := 560.0
+const GLOW_STRENGTH := Vector2(0.35, 0.75)
 ## Flashes on the horizon a second: when quiet, and in all-out war.
 const FLASH_RATE := Vector2(0.25, 3.0)
 const FLASH_TIME := 0.45
@@ -222,6 +229,7 @@ var _beacon_light: OmniLight3D
 var _flashes: Array[MeshInstance3D] = []
 var _flash_left: Array[float] = []
 var _searchlights: Array[Node3D] = []
+var _horizon_glow: ShaderMaterial
 
 @onready var GROUND := Look.surface("ground", {"tint": Color(0.36, 0.29, 0.26), "blend": "asphalt",
 		"blend_amount": 0.45, "grime": 0.6, "saturation": 0.3, "scale": 0.16})
@@ -248,6 +256,7 @@ func _ready() -> void:
 	_mark_zones()
 	_art_rng.seed = LAYOUT_SEED
 	_dress()
+	set_meta("view_far", VIEW_FAR)
 	set_process(Look.enabled)
 
 
@@ -1879,6 +1888,10 @@ func _tick_distant_war(delta: float) -> void:
 	if _searchlights.is_empty():
 		return
 	var heat := clampf(float(get_meta("war_intensity", 0.0)), 0.0, 1.0)
+	if _horizon_glow != null:
+		# The fires burn higher with the war; a storm's ash hides them.
+		_horizon_glow.set_shader_parameter("strength",
+				lerpf(GLOW_STRENGTH.x, GLOW_STRENGTH.y, heat) * (1.0 - Look.weather_cover))
 	for i in _searchlights.size():
 		_searchlights[i].rotation.y += delta * (0.12 + 0.05 * i) * (1.0 + heat)
 	if _flashes.is_empty():
@@ -2185,6 +2198,24 @@ func _crack_blocked(at: Vector2, room := 0.5, keep_off_runways := true) -> bool:
 ## (hull, stack, pylon, block) used over and over.
 func _dress_horizon(art: Node3D) -> void:
 	var hulk := Look.trim("distant")
+	# The burning horizon: fires past the city, so the skyline stands dark
+	# against red. One open ring, no shadow.
+	var ring := MeshInstance3D.new()
+	var band := CylinderMesh.new()
+	band.top_radius = GLOW_RING
+	band.bottom_radius = GLOW_RING
+	band.height = 220.0
+	band.cap_top = false
+	band.cap_bottom = false
+	band.radial_segments = 64
+	band.rings = 1
+	_horizon_glow = Look.trim("horizon_glow") as ShaderMaterial
+	band.material = _horizon_glow
+	ring.mesh = band
+	ring.name = "HorizonGlow"
+	ring.position = Vector3(0, 110.0, 0)
+	ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	art.add_child(ring)
 	var floor_y := RIM_HEIGHT - 8.0
 	var at := func(angle_deg: float, reach: float, up := 0.0) -> Vector3:
 		var a := deg_to_rad(angle_deg)

@@ -124,6 +124,8 @@ var ride_extra_distance := 1.6
 ## separately from the on-foot view, which comes back when you get off.
 var ride_view := ViewMode.THIRD
 var base_fov := 80.0
+## How far the view draws, in metres, unless the map asks for more (`_view_far`).
+var view_far := 400.0
 ## Speed widens the view a little, so a boost, a dive or a bike reads as
 ## fast: up to `speed_fov` degrees more, from a sprint's speed up to
 ## `speed_fov_at` m/s. Never while aiming or zoomed.
@@ -286,7 +288,7 @@ func _ready() -> void:
 	process_physics_priority = -10
 	camera = Camera3D.new()
 	camera.fov = base_fov
-	camera.far = 400.0
+	camera.far = view_far
 	add_child(camera)
 	camera.make_current()
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
@@ -945,6 +947,15 @@ func _use_toy_hand(cmd: ActorCommand) -> void:
 	_pending_switch = -1
 
 
+## How far the view draws: a map with things to see past its rim (a
+## skyline, giants on the horizon) asks for more with its "view_far" meta.
+func _view_far() -> float:
+	var raid := Raid.of(actor)
+	if raid != null and is_instance_valid(raid.map):
+		return maxf(view_far, float(raid.map.get_meta("view_far", view_far)))
+	return view_far
+
+
 func _process(delta: float) -> void:
 	if actor == null or not is_instance_valid(actor):
 		return
@@ -960,6 +971,7 @@ func _process(delta: float) -> void:
 	if absf(_cam_dist - target_dist) < 0.01:
 		_cam_dist = target_dist
 
+	camera.far = _view_far()
 	_update_recoil(delta)
 	_update_dip(delta)
 	_update_shake(delta)
