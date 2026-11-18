@@ -21,9 +21,9 @@ const AccountLink := preload("res://core/account/account_link.gd")
 const Accounts := preload("res://core/account/stash_service.gd")
 const Market := preload("res://core/economy/market.gd")
 
-const PORT := 25340          # the in-process service
-const SERVICE_PORT := 25341  # the service as its own program
-const GAME_PORT := 25343     # two game servers, here and 2 above
+const PORT := 25460          # the in-process service
+const SERVICE_PORT := 25461  # the service as its own program
+const GAME_PORT := 25463     # two game servers, here and 2 above
 const KEY := "0123456789abcdef0123456789abcdef"
 
 
