@@ -10,7 +10,15 @@ extends RefCounted
 const SKY_SHADER := preload("res://assets/shaders/planet_sky.gdshader")
 const GROUND_SHADER := preload("res://assets/shaders/planet_ground.gdshader")
 
+## The ground's layers, in the order of the shader's `textured` and `tile`.
+const LAYERS: Array[String] = ["base", "rock", "cap", "patch"]
+
 static var _grounds := {}
+
+
+## Where a scanned surface's map lives (`PlanetType.surfaces`).
+static func surface_path(folder: String, map: String) -> String:
+	return "res://assets/textures/%s/%s.jpg" % [folder, map]
 
 
 ## The sky, light and air of `type` on `parent`. `war` is a world's own war
@@ -60,9 +68,15 @@ static func ground_material(type: PlanetType) -> Material:
 		var sm := ShaderMaterial.new()
 		sm.shader = GROUND_SHADER
 		sm.set_shader_parameter("noise_tex", Look._noise_texture())
-		sm.set_shader_parameter("detail_normal", load("res://assets/textures/Ground037/NormalGL.jpg"))
-		sm.set_shader_parameter("detail_albedo", load("res://assets/textures/Ground037/Color.jpg"))
-		sm.set_shader_parameter("rock_normal", load("res://assets/textures/Concrete012/NormalGL.jpg"))
+		var textured := Vector4.ZERO
+		for i in LAYERS.size():
+			var folder := String(type.surfaces.get(LAYERS[i], ""))
+			if folder == "":
+				continue
+			sm.set_shader_parameter(LAYERS[i] + "_albedo", load(surface_path(folder, "Color")))
+			sm.set_shader_parameter(LAYERS[i] + "_normal", load(surface_path(folder, "NormalGL")))
+			textured[i] = 1.0
+		sm.set_shader_parameter("textured", textured)
 		for key: String in type.ground:
 			sm.set_shader_parameter(key, type.ground[key])
 		mat = sm
