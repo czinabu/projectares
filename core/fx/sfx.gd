@@ -74,6 +74,8 @@ func _ready() -> void:
 	_streams["ice_break"] = _noise_burst(1.1, 3.5, 0.95, 36.0)
 	# A linked faction's call for help: two quick rising chirps.
 	_streams["grid_call"] = _sweep(700.0, 2600.0, 0.32, 0.4)
+	# An army's push on a strongpoint: a long low war horn, heard far off.
+	_streams["war_horn"] = _tones([98.0, 147.0, 196.0], 1.8, 1.4, 0.6)
 
 
 ## Plays a sound. With a position it is 3D and fades with distance; without

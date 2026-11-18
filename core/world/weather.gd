@@ -111,6 +111,9 @@ func strength_at(at: Vector3) -> float:
 	var away := Vector2(at.x - centre.x, at.z - centre.z).length()
 	if away >= radius:
 		return 0.0
+	# No storm reaches inside (`WorldDef.sheltered_at`).
+	if _world != null and _world.sheltered_at(at):
+		return 0.0
 	return strength * (1.0 - smoothstep(radius * core_share, radius, away))
 
 

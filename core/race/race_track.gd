@@ -9,6 +9,9 @@ extends RefCounted
 ## Everything here is deterministic geometry, so the server, a client and a
 ## headless test all judge a lap the same way.
 
+## How far above or below a gate a crossing still counts, in metres, so a
+## road running over another never passes the gate under it.
+const GATE_HEIGHT := 8.0
 ## Distance between centre line samples, in metres.
 const STEP := 2.0
 ## How far past a gate's edge a crossing still counts, in metres.
@@ -110,7 +113,8 @@ func heading(i: int) -> float:
 	return atan2(-f.x, -f.z)
 
 
-## The centre line sample nearest `pos` (level distance). With a `hint` (the
+## The centre line sample nearest `pos` (level distance; a full search also
+## weighs height). With a `hint` (the
 ## sample found last time) it looks near there first.
 func locate(pos: Vector3, hint := -1) -> int:
 	var n := points.size()
@@ -127,8 +131,12 @@ func locate(pos: Vector3, hint := -1) -> int:
 				best = i
 		if best_d < width * width:
 			return best
+	# A full search counts height too, so where a road runs over another
+	# (Skyhook's flyover and Corkscrew) the level you are on wins.
+	best_d = INF
 	for i in n:
-		var d := _flat(points[i] - pos)
+		var dy := points[i].y - pos.y
+		var d := _flat(points[i] - pos) + dy * dy * 4.0
 		if d < best_d:
 			best_d = d
 			best = i
@@ -177,7 +185,7 @@ func cross(g: int, from: Vector3, to: Vector3) -> float:
 	var t := before / (before - after)
 	var through := from.lerp(to, t)
 	var across := fwd.cross(Vector3.UP).normalized()
-	if absf((through - at).dot(across)) > float(gate.half) + GATE_MARGIN:
+	if absf((through - at).dot(across)) > float(gate.half) + GATE_MARGIN or absf(through.y - at.y) > GATE_HEIGHT:
 		return -1.0
 	return t
 
