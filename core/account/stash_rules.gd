@@ -20,7 +20,7 @@ extends RefCounted
 ## host_and_join`) are the same player, so these keys are handed whole between
 ## them (`Profile.adopt_account`, `StashService.host_profile`), never merged.
 const CARRIED: Array[String] = ["stash", "loadout", "mastery", "raids_played", "raids_extracted", "kills",
-		"renown", "scrip", "arena_wins", "arena_losses", "base_upgrades", "blueprints", "insurance"]
+		"renown", "scrip", "arena_wins", "arena_losses", "base_upgrades", "base_plan", "blueprints", "insurance"]
 
 
 ## Set on a save once its loadout follows the bare rule: from then on an
