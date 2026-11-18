@@ -634,9 +634,14 @@ gunshots die in the wind. Snow is driven past in gusts, spindrift streams
 off the rims, everyone leans into it, and flying is a fight. Past the Sentinel the
 Engine is hollow: the hatch opens on the Drum Hall, a hall big enough for a
 squad to fight across with catwalks up both walls, and in its east end the
-Shaft goes 26 m down two wide ramps. Wardens stand guard inside, the caches
-there pay Engine Coils, no storm or trail gets in and there is a heater on
-each level. The way on from the Shaft's foot is sealed for now.
+Shaft goes 26 m down two wide ramps to the Coil Galleries, a loop of wide
+halls round dead Engine Coils with a channel of bitter coolant down one
+side, and on to the Descent, three switchback ramps 40 m down. Wardens stand
+guard inside, the caches there pay Engine Coils, no storm or trail gets in,
+it gets colder the deeper you go and there is a heater on each level. At the
+Descent's foot stand the cable lift (hold its switch and it runs for
+everyone for ten minutes, back up to the hall in seconds) and the sealed
+door to the Heart.
 
 ## Run the tests
 

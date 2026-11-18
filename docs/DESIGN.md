@@ -332,7 +332,7 @@ worlds and a casual or solo one has a steady home.
   new options only (attachments, cold-weather gear), never a higher Mk of
   existing gear (built, step 3, see below). The inside of the Engine is
   its deep-loot dungeon (step 8, see "The Engine's inside" below; its
-  first part built), and its vault the PvE home of the artifacts. Expedition
+  first two parts built), and its vault the PvE home of the artifacts. Expedition
   contracts (built, step 7c): the board keeps one Frostline daily and one
   Frostline weekly beside the general jobs (search the relay, clear the
   rim posts, break Warden patrols, bring home Cryo Cores; bring down the
@@ -347,7 +347,7 @@ loot role and recipes, (4) warm beacons, (5) whiteouts, after the Ashfront
 weather work, (6) tracks and louder gunshots, (7) thin ice, the defence
 grid and expedition contracts (in three PRs: thin ice, then the grid, then
 contracts), (8) the Engine's inside, in three PRs: the Drum Hall
-and the Shaft (built), the Coil Galleries and the Descent, then the Heart. Every number is a placeholder for the playtest.
+and the Shaft (built), the Coil Galleries and the Descent (built), then the Heart. Every number is a placeholder for the playtest.
 
 **Whiteouts (built, step 5).** Frostline's storms are the shared weather
 (see "Weather: ash storms") with `weather_kind` "snow". They follow the
@@ -485,7 +485,7 @@ event's) carries a piece of upgrade data and, about one time in seven, one
 of the war's blueprints: the first half of the slow route (section 10).
 Numbers are placeholders.
 
-**The Engine's inside (step 8, Caleb's calls; the first part built).** The
+**The Engine's inside (step 8, Caleb's calls; the first two parts built).** The
 Stilled Engine is hollow: through its hatch is Frostline's deep-loot
 dungeon, worked down tier by tier to its frozen Heart. It is part of the one
 running world, not an instance (Caleb's call): squads meet down there, and
@@ -505,13 +505,29 @@ boss is made for one and scales with company. Its tiers:
 - **The Shaft (built).** A well in the hall's east end, 22 m across and
   26 m deep: one 9 m ramp down along the back wall to a landing, a second
   back along the front wall to its foot, which runs on under the hall's
-  floor. Its foot has a heater, a cache (another on the landing) and the
-  sealed way on to the Coil Galleries. Missing: the cable lift, the quick
-  way down once someone powers it, which then stays on a while for every
-  player in the world.
-- **The Coil Galleries and the Descent (next).** Two long halls 14 m wide
-  joined by three cross halls, a loop to fight round, coil alcoves with
-  Engine Coils, a slick coolant channel, then three ramps down.
+  floor. Its foot has a heater, a cache (another on the landing), and its
+  east wall opens on the Coil Galleries.
+- **The Coil Galleries (built).** On the Shaft's floor, under the valley:
+  two long halls 14 m wide and 72 m long joined by three cross halls 12 m
+  across, a loop to fight round and flank through, with crates and fallen
+  coil housings for cover. Off each long hall's outer wall two alcoves hold
+  a pair of dead Engine Coils, glowing at their bands, with a cache in each
+  (and one by the way on). Down the south hall runs a channel of frozen
+  coolant: it is not slick, it is bitter (2.6 a second against the
+  galleries' 1.1), so the dry walk beside it is worth keeping to. A heater
+  in the middle cross hall, and six Wardens.
+- **The Descent (built).** A well 22 m across and 40 m deep at the
+  galleries' east end: three 10 m ramps switch back down it from landing to
+  landing to its foot, each ramp railed on its open side, the last solid
+  underneath. At its foot a heater, a cache (another on the middle landing),
+  cover, five Wardens and the sealed door to the Heart.
+- **The cable lift (built).** A cage at the Descent's foot and another in
+  the Drum Hall beside the Shaft. It starts dead: one player standing at
+  the switch by the lower cage for four seconds powers it, and then it runs
+  for ten minutes for every player in the world (told on the war feed).
+  While it runs, whoever stands two and a half seconds in one cage is
+  carried to the other: the way home after a delve, and a quick way back
+  down for everyone after. Its lights show red dead, teal running.
 - **The Heart (last).** A round chamber 68 m across and 34 m high, the
   frozen core hung in the middle, a balcony, coolant pylons and the vault.
   Its keeper is the Heart Warden (Caleb's call): in its first phase it
@@ -528,7 +544,8 @@ boss is made for one and scales with company. Its tiers:
 
 Inside is out of the weather: no storm reaches it and no trail is laid
 (`WorldDef.sheltered_at`), and the cold is its own (gentler in the hall
-than at the glacier head outside, colder down the Shaft). Its garrison is
+than at the glacier head outside, colder at the Shaft's foot and the
+galleries, colder again down the Descent, bitter on the coolant). Its garrison is
 Wardens at the map's "spawn_guard" markers, outside the valley's armies and
 back four minutes after they fall; they are on the defence grid like any
 Warden. Its caches pay the "engine" table: Engine Coils most of all, then

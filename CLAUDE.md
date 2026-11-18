@@ -133,7 +133,16 @@ without Caleb, and update the gap list when a PR closes a row.
   a storm changes reaches in, and `Raid._track_mark` lays no trail; the
   world's own `cold_at` sets its cold. Squads need room (Caleb's ask): no
   way narrower than 9 m. A solo player must get through: nothing needs two
-  people. Check by eye with `visual_check.tscn -- <dir> --engine-only`.
+  people. Its levels sit under the valley floor; the heightfield's
+  collision is cut open over the Shaft (`_cut_holes`: NaN heights inside
+  `ENGINE_HOLE`, collision only). It gets colder by `engine_depth`, and the
+  coolant channel (`on_coolant`) is bitter. Its cable lift is a map's
+  "lift_stop" pair and "lift_power" switch (`Raid.lifts`, authority
+  only): one player holding the switch for `WorldDef.lift_power_time`
+  powers it for everyone for `lift_powered_for`, and a player who stands
+  `lift_wait` in one stop is set down in the other; clients hear the power
+  (`Raid.lift_changed`, `NetSession._lift`) and the map lights it from the
+  "lift_power" meta. Check by eye with `visual_check.tscn -- <dir> --engine-only`.
 - How harsh death is belongs to the world, not to `Raid`. With
   `WorldDef.keep_gear_on_death` a dead player drops only the backpack and the
   equipped gear returns in the result's `kept`. A gentle world pays for that

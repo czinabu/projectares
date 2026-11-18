@@ -72,6 +72,55 @@ const SHAFT_FOOT := 7.0
 ## The valley's ground is dropped out of the way under the Shaft this far
 ## past its walls, so the heightfield's slope stays under the hall's floor.
 const SHAFT_CLEAR := 3.0
+## The Coil Galleries, on the Shaft's floor east of it, under the valley
+## floor: two long halls 14 m across joined by three cross halls (a loop to
+## fight round), coil alcoves off their outer walls and a channel of frozen
+## coolant down the south hall. Each room is [x0, x1, z0, z1] in the drum's
+## frame, all `GALLERY_UP` high.
+const GALLERY_FLOOR := HALL_FLOOR - SHAFT_DEPTH
+const GALLERY_UP := 9.0
+const GALLERY_ROOMS := [
+	[-5.0, 5.0, 31.0, 38.0],
+	[-6.0, 6.0, 38.0, 48.0],
+	[-6.0, 6.0, 69.0, 79.0],
+	[-6.0, 6.0, 100.0, 110.0],
+	[6.0, 20.0, 38.0, 110.0],
+	[-20.0, -6.0, 38.0, 110.0],
+	[20.0, 26.0, 52.0, 60.0],
+	[20.0, 26.0, 84.0, 92.0],
+	[-26.0, -20.0, 52.0, 60.0],
+	[-26.0, -20.0, 84.0, 92.0],
+	[-5.0, 5.0, 110.0, 114.0],
+]
+## The frozen coolant down the south gallery: the cold bites hardest there.
+const GALLERY_COOLANT := [-15.0, -11.0, 40.0, 108.0]
+## The Descent: a well past the galleries' east end, three ramps
+## (`DESCENT_LANE` wide, each down a third of `DESCENT_DROP`) switching back
+## along it between landings, to its foot, where the cable lift stops and the
+## sealed door to the Heart waits in the east wall.
+const DESCENT_FROM_Z := 114.0
+const DESCENT_TO_Z := 176.0
+const DESCENT_HALF := 11.0
+const DESCENT_LANE := 10.0
+const DESCENT_DROP := 40.0
+const DESCENT_LANDING := 6.0
+const DESCENT_FOOT := 18.0
+const DESCENT_FLOOR := GALLERY_FLOOR - DESCENT_DROP
+## How far the well's roof stands over the galleries' roof.
+const DESCENT_ROOF := 3.0
+## Where the collision ground is cut away ([x0, x1, z0, z1]) so the way on
+## from the Shaft's foot passes the edge of the ground dropped under it. It is
+## all under the hall's floor, so nobody can reach the hole from above.
+const ENGINE_HOLE := [-6.5, 6.5, 32.5, 36.3]
+## The cable lift (`WorldDef`'s "lift_stop"): its stop in the hall, its stop
+## at the Descent's foot, and the switch beside that one that powers it
+## (x, z in the drum's frame).
+const LIFT_ID := "engine"
+const LIFT_TOP := Vector2(15.5, -8.0)
+const LIFT_FOOT := Vector2(-7.0, 169.0)
+const LIFT_SWITCH := Vector2(-1.0, 174.0)
+const LIFT_STOP := 2.6
+const LIFT_CAGE := 6.0
 ## How far round the hatch the Engine Sentinel keeps its guard.
 const SENTINEL_GROUND := 16.0
 ## The valley's end: the glacier climbs behind it (and the pack ice at the
@@ -107,14 +156,41 @@ static var _engine_inverse := Transform3D.IDENTITY
 static var _engine_known := false
 
 
-## Whether a point is inside the Engine: in the Drum Hall or down the Shaft.
+## Whether a point is inside the Engine: in the Drum Hall, down the Shaft,
+## in the Coil Galleries or down the Descent.
 static func inside_engine(pos: Vector3) -> bool:
 	var p := engine_local(pos)
 	var inner := ENGINE_RADIUS - ENGINE_HULL
 	if absf(p.z) < ENGINE_LENGTH * 0.5 and p.x * p.x + p.y * p.y < inner * inner and p.y > HALL_FLOOR - 0.5:
 		return true
-	return absf(p.x) < SHAFT_HALF and p.z > SHAFT_FROM_Z - SHAFT_FOOT and p.z < SHAFT_TO_Z \
-			and p.y > HALL_FLOOR - SHAFT_DEPTH - 0.5 and p.y <= HALL_FLOOR - 0.5
+	if absf(p.x) < SHAFT_HALF and p.z > SHAFT_FROM_Z - SHAFT_FOOT and p.z < SHAFT_TO_Z \
+			and p.y > GALLERY_FLOOR - 0.5 and p.y <= HALL_FLOOR - 0.5:
+		return true
+	if p.y > GALLERY_FLOOR - 0.5 and p.y <= GALLERY_FLOOR + GALLERY_UP:
+		for room: Array in GALLERY_ROOMS:
+			if p.x > room[0] and p.x < room[1] and p.z > room[2] and p.z < room[3]:
+				return true
+	return absf(p.x) < DESCENT_HALF and p.z > DESCENT_FROM_Z and p.z < DESCENT_TO_Z \
+			and p.y > DESCENT_FLOOR - 0.5 and p.y < GALLERY_FLOOR + GALLERY_UP + DESCENT_ROOF
+
+
+## Whether a point stands on the galleries' frozen coolant.
+static func on_coolant(pos: Vector3) -> bool:
+	var p := engine_local(pos)
+	var c: Array = GALLERY_COOLANT
+	return p.x > c[0] and p.x < c[1] and p.z > c[2] and p.z < c[3] \
+			and p.y > GALLERY_FLOOR - 0.5 and p.y < GALLERY_FLOOR + 3.0
+
+
+## How far down the Engine a point is: 0 in the hall, 1 at the Shaft's foot
+## and in the galleries, 2 down the Descent.
+static func engine_depth(pos: Vector3) -> int:
+	var p := engine_local(pos)
+	if p.y > HALL_FLOOR - 2.0:
+		return 0
+	if p.y > GALLERY_FLOOR - 2.0:
+		return 1
+	return 2
 
 
 ## How far out on the lake a point is: 0 at its middle, 1 at its shore.
@@ -219,6 +295,8 @@ var _weather: Node3D
 @onready var HULL := Look.surface("metal", {"tint": Color(0.34, 0.38, 0.44), "snow": 0.45, "grime": 0.6, "scale": 0.08})
 @onready var HULL_DARK := Look.surface("metal", {"tint": Color(0.22, 0.25, 0.3), "snow": 0.4, "grime": 0.7, "scale": 0.1})
 @onready var DECK := Look.surface("metal", {"tint": Color(0.3, 0.33, 0.38), "snow": 0.25, "grime": 0.55, "scale": 0.15})
+@onready var COOLANT := Look.surface("metal", {"tint": Color(0.5, 0.78, 0.92), "snow": 0.6, "grime": 0.0, "scale": 0.2,
+		"rough_mult": 0.15})
 
 
 func _ready() -> void:
@@ -260,7 +338,7 @@ func prepare_shared() -> void:
 		terrain.cell = CELL
 		terrain.side = SIDE
 		terrain.shape(_height)
-		_ground_shared["collision"] = terrain.collision_data()
+		_ground_shared["collision"] = _cut_holes(terrain.collision_data(), int(terrain.extent()) + 1)
 		_ground_shared["heights"] = terrain.heights
 		terrain.free()
 		terrain = null
@@ -310,6 +388,7 @@ func weather_ridges() -> PackedVector3Array:
 
 
 func _process(_delta: float) -> void:
+	_light_lift()
 	# The snow blows round whoever is looking, not over the whole valley.
 	var camera := get_viewport().get_camera_3d()
 	if camera != null and is_instance_valid(_weather):
@@ -467,7 +546,7 @@ func _build_ground() -> void:
 	_ground_lock.lock()
 	if not _ground_shared.has("heights"):
 		terrain.shape(_height)
-		_ground_shared["collision"] = terrain.collision_data()
+		_ground_shared["collision"] = _cut_holes(terrain.collision_data(), int(terrain.extent()) + 1)
 		_ground_shared["heights"] = terrain.heights
 	var collision: PackedFloat32Array = _ground_shared["collision"]
 	terrain.heights = _ground_shared["heights"]
@@ -488,6 +567,29 @@ func _build_ground() -> void:
 		wall.position = side + Vector3(0, 250.0, 0)
 		wall.add_to_group("map_edge")
 		add_child(wall)
+
+
+## Cuts the collision ground away over `ENGINE_HOLE` (a heightfield's hole
+## is a NaN height), so the way on from the Shaft's foot to the galleries
+## passes the edge of the ground dropped under the Shaft. Only the collision:
+## the drawn ground there is under the hall's floor.
+static func _cut_holes(collision: PackedFloat32Array, width: int) -> PackedFloat32Array:
+	var half := (width - 1) * 0.5
+	var hole: Array = ENGINE_HOLE
+	var frame := engine_frame()
+	var low := Vector2(INF, INF)
+	var high := Vector2(-INF, -INF)
+	for corner: Vector2 in [Vector2(hole[0], hole[2]), Vector2(hole[1], hole[2]), Vector2(hole[0], hole[3]),
+			Vector2(hole[1], hole[3])]:
+		var at := frame * Vector3(corner.x, 0.0, corner.y)
+		low = Vector2(minf(low.x, at.x), minf(low.y, at.z))
+		high = Vector2(maxf(high.x, at.x), maxf(high.y, at.z))
+	for iz in range(maxi(int(floorf(low.y + half)), 0), mini(int(ceilf(high.y + half)) + 1, width)):
+		for ix in range(maxi(int(floorf(low.x + half)), 0), mini(int(ceilf(high.x + half)) + 1, width)):
+			var p := engine_local(Vector3(ix - half, 0.0, iz - half))
+			if p.x > hole[0] and p.x < hole[1] and p.z > hole[2] and p.z < hole[3]:
+				collision[iz * width + ix] = NAN
+	return collision
 
 
 func _ground(at: Vector2) -> Vector3:
@@ -666,7 +768,14 @@ func _build_engine() -> void:
 	nav_region.add_child(engine)
 	_build_hull(engine)
 	_build_hall(engine)
+	_build_lift_top(engine)
 	_build_shaft(engine)
+	_flush_parts(engine)
+	# Each level is its own mesh, so the lamps of one light it alone (a
+	# mesh takes only so many lights).
+	_build_galleries(engine)
+	_flush_parts(engine)
+	_build_descent(engine)
 	_flush_parts(engine)
 	# The intake rings at its east end and the cooling fins along its back.
 	for k in 3:
@@ -849,7 +958,7 @@ func _build_hall(engine: StaticBody3D) -> void:
 ## Where the hall's fallen vanes lie (x, z in the drum's frame; a turn).
 const HALL_VANES := [
 	[Vector2(-8.0, -28.0), 0.4], [Vector2(6.0, -20.0), -0.9], [Vector2(-10.0, -4.0), 1.2],
-	[Vector2(10.0, -4.0), 0.2], [Vector2(0.0, -14.0), -0.3], [Vector2(-3.0, 2.0), 0.8],
+	[Vector2(7.0, -2.0), 0.2], [Vector2(0.0, -14.0), -0.3], [Vector2(-3.0, 2.0), 0.8],
 ]
 const HALL_CRATES := [Vector2(-12.0, -20.0), Vector2(14.0, -32.0), Vector2(4.0, -28.0), Vector2(-14.0, 2.0)]
 const HALL_TANKS := [Vector2(-17.5, -33.0), Vector2(17.5, -33.0), Vector2(-17.5, -2.0), Vector2(17.5, 2.0)]
@@ -862,20 +971,20 @@ const ENGINE_BAY := {"radius": 4.0, "warmth": 9.0}
 
 
 ## A coolant tank standing on the floor: something solid to hide behind.
-func _tank(engine: StaticBody3D, at: Vector3) -> void:
+func _tank(engine: StaticBody3D, at: Vector3, radius := 1.6, height := 5.0, material: Material = null) -> void:
 	var shape := CylinderShape3D.new()
-	shape.radius = 1.6
-	shape.height = 5.0
+	shape.radius = radius
+	shape.height = height
 	var col := CollisionShape3D.new()
 	col.shape = shape
-	col.position = at + Vector3(0, 2.5, 0)
+	col.position = at + Vector3(0, height * 0.5, 0)
 	engine.add_child(col)
 	var mesh := CylinderMesh.new()
-	mesh.top_radius = 1.6
-	mesh.bottom_radius = 1.6
-	mesh.height = 5.0
+	mesh.top_radius = radius
+	mesh.bottom_radius = radius
+	mesh.height = height
 	mesh.radial_segments = 14
-	_batch(HULL_DARK).append_from(mesh, 0, col.transform)
+	_batch(material if material != null else HULL_DARK).append_from(mesh, 0, col.transform)
 
 
 ## The Shaft: walls down to its floor, a railing round its lip, the first
@@ -894,8 +1003,19 @@ func _build_shaft(engine: StaticBody3D) -> void:
 	for side: float in [-1.0, 1.0]:
 		_part(engine, Vector3(1.0, SHAFT_DEPTH + 1.0, deep + 2.0), Vector3(side * (SHAFT_HALF + 0.5), mid_y - 0.5, deep_z), ICE_WALL)
 		_part(engine, Vector3(0.3, 1.1, length), Vector3(side * (SHAFT_HALF + 0.15), f + 0.55, mid_z), HULL_DARK)
-	for z: float in [foot - 0.5, SHAFT_TO_Z + 0.5]:
-		_part(engine, Vector3(SHAFT_HALF * 2.0 + 2.0, SHAFT_DEPTH + 1.0, 1.0), Vector3(0, mid_y - 0.5, z), ICE_WALL)
+	_part(engine, Vector3(SHAFT_HALF * 2.0 + 2.0, SHAFT_DEPTH + 1.0, 1.0), Vector3(0, mid_y - 0.5, foot - 0.5), ICE_WALL)
+	# The east wall, cut by the way on to the Coil Galleries.
+	var door := GALLERY_ROOMS[0] as Array
+	var door_top := low + GALLERY_UP
+	# The way on's own walls and roof (`_build_galleries`) stand in the
+	# doorway's first metre, so these leave room for them.
+	var jamb := float(door[1]) + 1.0
+	var beside := SHAFT_HALF + 1.0 - jamb
+	for side: float in [-1.0, 1.0]:
+		_part(engine, Vector3(beside, SHAFT_DEPTH + 1.0, 1.0),
+				Vector3(side * (jamb + beside * 0.5), mid_y - 0.5, SHAFT_TO_Z + 0.5), ICE_WALL)
+	_part(engine, Vector3(jamb * 2.0, f - door_top - 1.0, 1.0),
+			Vector3(0, (f + door_top + 1.0) * 0.5, SHAFT_TO_Z + 0.5), ICE_WALL)
 	_part(engine, Vector3(SHAFT_HALF * 2.0, 1.1, 0.3), Vector3(0, f + 0.55, SHAFT_TO_Z - 0.15), HULL_DARK)
 	var gap := SHAFT_HALF - SHAFT_RAMP
 	_part(engine, Vector3(SHAFT_HALF + gap, 1.1, 0.3), Vector3((-SHAFT_HALF + gap) * 0.5, f + 0.55, SHAFT_FROM_Z + 0.15), HULL_DARK)
@@ -915,6 +1035,227 @@ func _build_shaft(engine: StaticBody3D) -> void:
 	for at: Vector3 in [Vector3(-4.0, mid_y, turn + 2.0), Vector3(4.0, low, 18.0), Vector3(-1.0, low, turn),
 			Vector3(-4.0, low, foot + 2.5)]:
 		_guard(frame * (at + Vector3(0, 0.1, 0)), SHAFT_GUARD)
+
+
+## The Coil Galleries: the rooms floored, roofed and walled, cover down
+## both long halls, coil stacks in the alcoves, the coolant channel, a
+## heater in the middle cross hall, caches and the galleries' guards.
+func _build_galleries(engine: StaticBody3D) -> void:
+	var g := GALLERY_FLOOR
+	var shaft := [-SHAFT_HALF, SHAFT_HALF, SHAFT_FROM_Z - SHAFT_FOOT, SHAFT_TO_Z]
+	var well := [-DESCENT_HALF, DESCENT_HALF, DESCENT_FROM_Z, DESCENT_TO_Z]
+	_room_walls(engine, GALLERY_ROOMS, [shaft, well], g, GALLERY_UP, HULL)
+	for room: Array in GALLERY_ROOMS:
+		var size := Vector2(room[1] - room[0], room[3] - room[2])
+		var mid := Vector2(room[0] + room[1], room[2] + room[3]) * 0.5
+		_part(engine, Vector3(size.x, 1.0, size.y), Vector3(mid.x, g + GALLERY_UP + 0.5, mid.y), HULL_DARK)
+		_floor_round(engine, room, GALLERY_COOLANT, g)
+	var c: Array = GALLERY_COOLANT
+	_part(engine, Vector3(c[1] - c[0], 1.0, c[3] - c[2]),
+			Vector3((c[0] + c[1]) * 0.5, g - 0.48, (c[2] + c[3]) * 0.5), COOLANT)
+	for at: Vector2 in GALLERY_CRATES:
+		_part(engine, Vector3(3.0, 2.6, 3.0), Vector3(at.x, g + 1.3, at.y), HULL_DARK)
+	for spot: Array in GALLERY_HOUSINGS:
+		var at: Vector2 = spot[0]
+		_part(engine, Vector3(5.0, 1.6, 2.4), Vector3(at.x, g + 0.8, at.y), STEEL, Basis(Vector3.UP, spot[1]))
+	for at: Vector2 in coil_spots():
+		_tank(engine, Vector3(at.x, g, at.y), COIL_RADIUS, 5.0, STEEL)
+	var frame := engine_frame()
+	_add_warmth(frame * Vector3(0.0, g, 74.0), ENGINE_BAY)
+	for at: Vector2 in [Vector2(21.6, 56.0), Vector2(21.6, 88.0), Vector2(-21.6, 88.0), Vector2(0.0, 106.0)]:
+		_add_marker("spawn_cache", frame * Vector3(at.x, g + 0.1, at.y)).set_meta("loot_source", "engine")
+	for at: Vector2 in [Vector2(13.0, 46.0), Vector2(14.0, 90.0), Vector2(12.0, 72.0), Vector2(-17.5, 58.0),
+			Vector2(-8.5, 96.0), Vector2(3.0, 103.0)]:
+		_guard(frame * Vector3(at.x, g + 0.1, at.y), HALL_GUARD)
+
+
+## Low cover down the galleries: crates, and fallen coil housings (x, z;
+## a turn), clear of the coolant.
+const GALLERY_CRATES := [Vector2(10.0, 58.0), Vector2(16.5, 66.0), Vector2(9.5, 84.0), Vector2(16.0, 100.0),
+		Vector2(-18.0, 48.0), Vector2(-8.5, 66.0), Vector2(-18.0, 80.0), Vector2(-8.5, 90.0)]
+const GALLERY_HOUSINGS := [[Vector2(13.0, 78.0), 0.3], [Vector2(-8.5, 52.0), 1.4], [Vector2(-17.5, 100.0), -0.2],
+		[Vector2(12.0, 42.0), -0.5]]
+const COIL_RADIUS := 1.3
+
+
+## Where the Engine Coils stand: two in each alcove, against its back wall.
+static func coil_spots() -> Array[Vector2]:
+	var spots: Array[Vector2] = []
+	for room: Array in GALLERY_ROOMS.slice(6, 10):
+		var out := 1.0 if room[0] > 0.0 else -1.0
+		var back: float = room[1] if out > 0.0 else room[0]
+		var mid := (float(room[2]) + float(room[3])) * 0.5
+		for k: float in [-2.2, 2.2]:
+			spots.append(Vector2(back - out * (COIL_RADIUS + 0.4), mid + k))
+	return spots
+
+
+## A room's floor at `y`, round a `hole` that some other floor fills.
+func _floor_round(engine: StaticBody3D, room: Array, hole: Array, y: float) -> void:
+	var x0 := maxf(room[0], hole[0])
+	var x1 := minf(room[1], hole[1])
+	var z0 := maxf(room[2], hole[2])
+	var z1 := minf(room[3], hole[3])
+	var pieces: Array = [room]
+	if x0 < x1 and z0 < z1:
+		pieces = [[room[0], x0, room[2], room[3]], [x1, room[1], room[2], room[3]],
+				[x0, x1, room[2], z0], [x0, x1, z1, room[3]]]
+	for piece: Array in pieces:
+		var size := Vector2(piece[1] - piece[0], piece[3] - piece[2])
+		if size.x <= 0.0 or size.y <= 0.0:
+			continue
+		_part(engine, Vector3(size.x, 1.0, size.y),
+				Vector3((piece[0] + piece[1]) * 0.5, y - 0.48, (piece[2] + piece[3]) * 0.5), DECK)
+
+
+## Walls round a set of rooms on a metre grid ([x0, x1, z0, z1], whole
+## metres), from under their floor at `y` to over their roof `up` higher:
+## along every edge with rock beyond, none where another room or one of the
+## `open` spaces (built on their own) carries on. Runs along one line are
+## one wall, stretched to close the corners.
+func _room_walls(engine: StaticBody3D, rooms: Array, open: Array, y: float, up: float, material: Material) -> void:
+	var inside := {}
+	for room: Array in rooms:
+		for ix in range(int(room[0]), int(room[1])):
+			for iz in range(int(room[2]), int(room[3])):
+				inside[Vector2i(ix, iz)] = true
+	var near := inside.duplicate()
+	for room: Array in open:
+		for ix in range(int(room[0]), int(room[1])):
+			for iz in range(int(room[2]), int(room[3])):
+				near[Vector2i(ix, iz)] = true
+	# Faces by side (+x, -x, +z, -z) and line: the cells along it.
+	var faces := [{}, {}, {}, {}]
+	var steps := [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]
+	for cell: Vector2i in inside:
+		for k in 4:
+			var beyond: Vector2i = cell + steps[k]
+			if near.has(beyond):
+				continue
+			var line := beyond.x if k < 2 else beyond.y
+			var along := cell.y if k < 2 else cell.x
+			var lines: Dictionary = faces[k]
+			if not lines.has(line):
+				lines[line] = []
+			(lines[line] as Array).append(along)
+	var tall := up + 2.0
+	var mid_y := y + up * 0.5
+	for k in 4:
+		var lines: Dictionary = faces[k]
+		for line: int in lines:
+			var cells: Array = lines[line]
+			cells.sort()
+			var start: int = cells[0]
+			for i in cells.size():
+				var last: int = cells[i]
+				if i + 1 < cells.size() and int(cells[i + 1]) == last + 1:
+					continue
+				var a := start
+				var b := last + 1
+				# Close a corner with rock beyond it.
+				var before := Vector2i(line, a - 1) if k < 2 else Vector2i(a - 1, line)
+				var after := Vector2i(line, b) if k < 2 else Vector2i(b, line)
+				var from := float(a) - (0.0 if near.has(before) else 1.0)
+				var to := float(b) + (0.0 if near.has(after) else 1.0)
+				var out := float(line) + 0.5
+				if k < 2:
+					_part(engine, Vector3(1.0, tall, to - from), Vector3(out, mid_y, (from + to) * 0.5), material)
+				else:
+					_part(engine, Vector3(to - from, tall, 1.0), Vector3((from + to) * 0.5, mid_y, out), material)
+				if i + 1 < cells.size():
+					start = cells[i + 1]
+
+
+## The Descent: the well's walls and roof, its floor, three ramps switching
+## back between a landing at each end (the first and the third along the
+## north lane, the second along the south), rails on every open edge, the
+## foot's heater, caches and guards, the cable lift's lower stop and its
+## switch, and the sealed door to the Heart in the east wall.
+func _build_descent(engine: StaticBody3D) -> void:
+	var g := GALLERY_FLOOR
+	var step := DESCENT_DROP / 3.0
+	var bottom := DESCENT_FLOOR
+	var top := g + GALLERY_UP + DESCENT_ROOF
+	var h := DESCENT_HALF
+	var from := DESCENT_FROM_Z
+	var to := DESCENT_TO_Z
+	var west := from + DESCENT_LANDING
+	var east := to - DESCENT_FOOT
+	var length := to - from
+	var mid_z := (from + to) * 0.5
+	var base := bottom - 1.0
+	for side: float in [-1.0, 1.0]:
+		_part(engine, Vector3(1.0, top - base, length + 2.0), Vector3(side * (h + 0.5), (top + base) * 0.5, mid_z), ICE_WALL)
+	_part(engine, Vector3(h * 2.0 + 2.0, top - base, 1.0), Vector3(0, (top + base) * 0.5, to + 0.5), ICE_WALL)
+	# The west wall, open where the way from the galleries comes in. The way
+	# on's own walls and roof stand in its last metre.
+	var door := GALLERY_ROOMS[GALLERY_ROOMS.size() - 1] as Array
+	var jamb := float(door[1]) + 1.0
+	_part(engine, Vector3(h * 2.0 + 2.0, g - 1.0 - base, 1.0), Vector3(0, (g - 1.0 + base) * 0.5, from - 0.5), ICE_WALL)
+	for side: float in [-1.0, 1.0]:
+		_part(engine, Vector3(h + 1.0 - jamb, GALLERY_UP + 2.0, 1.0),
+				Vector3(side * (jamb + (h + 1.0 - jamb) * 0.5), g + GALLERY_UP * 0.5, from - 0.5), ICE_WALL)
+	_part(engine, Vector3(h * 2.0 + 2.0, top - g - GALLERY_UP - 1.0, 1.0),
+			Vector3(0, (top + g + GALLERY_UP + 1.0) * 0.5, from - 0.5), ICE_WALL)
+	_part(engine, Vector3(h * 2.0 + 2.0, 1.0, length + 2.0), Vector3(0, top + 0.5, mid_z), HULL_DARK)
+	_part(engine, Vector3(h * 2.0, 1.0, length), Vector3(0, bottom - 0.48, mid_z), DECK)
+	# The landings: the top one level with the galleries, the east one under
+	# the first ramp's foot, the west one under the top.
+	_part(engine, Vector3(h * 2.0, 1.0, DESCENT_LANDING), Vector3(0, g - 0.48, from + DESCENT_LANDING * 0.5), DECK)
+	_part(engine, Vector3(h * 2.0, 0.8, DESCENT_LANDING), Vector3(0, g - step - 0.4, east + DESCENT_LANDING * 0.5), DECK)
+	_part(engine, Vector3(h * 2.0, 0.8, DESCENT_LANDING), Vector3(0, g - step * 2.0 - 0.4, from + DESCENT_LANDING * 0.5), DECK)
+	# The ramps. The third is solid down to the floor, so nothing gets under it.
+	var lane := h - DESCENT_LANE
+	_slope(engine, lane, h, Vector2(west, g), Vector2(east, g - step), DECK)
+	_slope(engine, -h, -lane, Vector2(west, g - step * 2.0), Vector2(east, g - step), DECK)
+	_slope(engine, lane, h, Vector2(west, g - step * 2.0), Vector2(east, bottom), DECK, 14.0)
+	# Rails along the ramps' inner edges and across the landings' open edges.
+	_slope(engine, lane, lane + 0.3, Vector2(west, g + 1.1), Vector2(east, g - step + 1.1), HULL_DARK, 1.1)
+	_slope(engine, -lane - 0.3, -lane, Vector2(west, g - step * 2.0 + 1.1), Vector2(east, g - step + 1.1), HULL_DARK, 1.1)
+	_slope(engine, lane, lane + 0.3, Vector2(west, g - step * 2.0 + 1.1), Vector2(east, bottom + 1.1), HULL_DARK, 1.1)
+	_part(engine, Vector3(h + lane, 1.1, 0.3), Vector3((lane - h) * 0.5, g + 0.55, west - 0.15), HULL_DARK)
+	_part(engine, Vector3(lane * 2.0, 1.1, 0.3), Vector3(0, g - step + 0.55, east + 0.15), HULL_DARK)
+	_part(engine, Vector3(h * 2.0, 1.1, 0.3), Vector3(0, g - step + 0.55, east + DESCENT_LANDING - 0.15), HULL_DARK)
+	_part(engine, Vector3(lane * 2.0, 1.1, 0.3), Vector3(0, g - step * 2.0 + 0.55, west - 0.15), HULL_DARK)
+	# Cover at the foot and on the east landing.
+	for at: Vector3 in [Vector3(-6.0, g - step, east + 3.0), Vector3(3.0, bottom, 165.0), Vector3(-2.0, bottom, 161.0)]:
+		_part(engine, Vector3(3.0, 2.6, 3.0), at + Vector3(0, 1.3, 0), HULL_DARK)
+	# The cable lift's lower stop and its switch.
+	_lift_cage(engine, Vector3(LIFT_FOOT.x, bottom, LIFT_FOOT.y), bottom + GALLERY_UP)
+	_part(engine, Vector3(1.4, 1.3, 0.8), Vector3(LIFT_SWITCH.x, bottom + 0.65, LIFT_SWITCH.y + 1.2), STEEL)
+	var frame := engine_frame()
+	var lift_stop := _add_marker("lift_stop", frame * Vector3(LIFT_FOOT.x, bottom + 0.1, LIFT_FOOT.y))
+	lift_stop.set_meta("lift", LIFT_ID)
+	lift_stop.set_meta("radius", LIFT_STOP)
+	var switch := _add_marker("lift_power", frame * Vector3(LIFT_SWITCH.x, bottom + 0.1, LIFT_SWITCH.y))
+	switch.set_meta("lift", LIFT_ID)
+	switch.set_meta("radius", LIFT_STOP)
+	switch.set_meta("name", "Cable lift")
+	_add_warmth(frame * Vector3(5.0, bottom, 172.0), ENGINE_BAY)
+	for at: Vector3 in [Vector3(8.0, g - step, east + 3.0), Vector3(9.0, bottom, 174.0)]:
+		_add_marker("spawn_cache", frame * (at + Vector3(0, 0.1, 0))).set_meta("loot_source", "engine")
+	for at: Vector3 in [Vector3(4.0, g, from + 3.0), Vector3(-6.0, g - step, east + 1.5),
+			Vector3(5.0, g - step * 2.0, from + 3.0), Vector3(6.0, bottom, 167.0), Vector3(-3.0, bottom, 163.5)]:
+		_guard(frame * (at + Vector3(0, 0.1, 0)), SHAFT_GUARD)
+
+
+## The cable lift's upper stop, in the hall beside the Shaft.
+func _build_lift_top(engine: StaticBody3D) -> void:
+	var f := HALL_FLOOR
+	_lift_cage(engine, Vector3(LIFT_TOP.x, f, LIFT_TOP.y), f + CATWALK_UP - 1.0)
+	var stop := _add_marker("lift_stop", engine_frame() * Vector3(LIFT_TOP.x, f + 0.1, LIFT_TOP.y))
+	stop.set_meta("lift", LIFT_ID)
+	stop.set_meta("radius", LIFT_STOP)
+
+
+## A lift cage standing on the floor at `at`: a post at each corner up to
+## its head at `head`, something to stand behind while it is called.
+func _lift_cage(engine: StaticBody3D, at: Vector3, head: float) -> void:
+	var half := LIFT_CAGE * 0.5
+	for corner: Vector2 in [Vector2(-1, -1), Vector2(1, -1), Vector2(-1, 1), Vector2(1, 1)]:
+		_part(engine, Vector3(0.4, head - at.y, 0.4),
+				Vector3(at.x + corner.x * (half - 0.2), (at.y + head) * 0.5, at.z + corner.y * (half - 0.2)), STEEL)
+	_part(engine, Vector3(LIFT_CAGE, 0.5, LIFT_CAGE), Vector3(at.x, head + 0.25, at.z), HULL_DARK)
 
 
 ## A Warden of the Engine's garrison (`WorldDef`'s "spawn_guard").
@@ -1298,11 +1639,122 @@ func _dress_engine(art: Node3D) -> void:
 	var mid := (SHAFT_FROM_Z + SHAFT_TO_Z) * 0.5
 	_lamp_at(art, frame * Vector3(0, HALL_FLOOR - 6.0, mid), Color(1.0, 0.6, 0.3), 5.0, 26.0)
 	_lamp_at(art, frame * Vector3(0, HALL_FLOOR - SHAFT_DEPTH + 6.0, mid), Color(0.3, 0.9, 1.0), 5.0, 26.0)
-	# The sealed way on: a door-sized stripe on the Shaft's east wall.
-	var low := HALL_FLOOR - SHAFT_DEPTH
-	_glow_box(art, frame, Vector3(10.0, 0.4, 0.2), Vector3(0, low + 8.2, SHAFT_TO_Z - 0.05), amber)
+	# The way on to the galleries: a lit frame round the Shaft's east door.
+	var low := GALLERY_FLOOR
+	_glow_box(art, frame, Vector3(10.0, 0.3, 0.2), Vector3(0, low + GALLERY_UP - 0.2, SHAFT_TO_Z - 0.05), strip)
 	for x: float in [-5.0, 5.0]:
-		_glow_box(art, frame, Vector3(0.4, 8.0, 0.2), Vector3(x, low + 4.0, SHAFT_TO_Z - 0.05), amber)
+		_glow_box(art, frame, Vector3(0.3, GALLERY_UP, 0.2), Vector3(x, low + GALLERY_UP * 0.5, SHAFT_TO_Z - 0.05), strip)
+	_dress_galleries(art, frame, strip, amber)
+	_dress_descent(art, frame, strip, amber)
+	_dress_lift(art, frame)
+
+
+## The galleries: lamps down both halls (cold blue over the coolant), a lit
+## strip along every long wall, glowing bands round the Engine Coils and a
+## faint light off the coolant.
+func _dress_galleries(art: Node3D, frame: Transform3D, strip: Material, amber: Material) -> void:
+	var g := GALLERY_FLOOR
+	for z: float in [50.0, 74.0, 98.0]:
+		_lamp_at(art, frame * Vector3(13.0, g + GALLERY_UP - 1.2, z), Color(0.35, 0.95, 1.0), 4.5, 24.0)
+		_lamp_at(art, frame * Vector3(-13.0, g + GALLERY_UP - 1.2, z), Color(0.45, 0.7, 1.0), 4.0, 24.0)
+	for z: float in [43.0, 105.0]:
+		_lamp_at(art, frame * Vector3(0.0, g + GALLERY_UP - 2.0, z), Color(1.0, 0.6, 0.3), 3.5, 16.0)
+	# Strips along the long halls' walls, broken where a cross hall or an
+	# alcove opens in them.
+	for run: Array in [[6.15, 48.0, 69.0], [6.15, 79.0, 100.0], [19.85, 38.5, 52.0], [19.85, 60.0, 84.0],
+			[19.85, 92.0, 109.5]]:
+		for side: float in [-1.0, 1.0]:
+			var length: float = float(run[2]) - float(run[1])
+			_glow_box(art, frame, Vector3(0.2, 0.12, length),
+					Vector3(side * float(run[0]), g + 2.6, (float(run[1]) + float(run[2])) * 0.5), strip)
+	var coil := _glow(Color(1.0, 0.55, 0.2), 4.0)
+	var band := CylinderMesh.new()
+	band.top_radius = COIL_RADIUS + 0.06
+	band.bottom_radius = COIL_RADIUS + 0.06
+	band.height = 0.25
+	band.radial_segments = 14
+	band.material = coil
+	for at: Vector2 in coil_spots():
+		for up: float in [1.2, 2.5, 3.8]:
+			var ring := MeshInstance3D.new()
+			ring.mesh = band
+			ring.position = frame * Vector3(at.x, g + up, at.y)
+			art.add_child(ring)
+	var c: Array = GALLERY_COOLANT
+	var cold := _glow(Color(0.5, 0.85, 1.0), 1.2)
+	for x: float in [c[0] + 0.1, c[1] - 0.1]:
+		_glow_box(art, frame, Vector3(0.12, 0.05, c[3] - c[2]), Vector3(x, g + 0.03, (c[2] + c[3]) * 0.5), cold)
+	_glow_box(art, frame, Vector3(0.3, 0.3, 0.2), Vector3(0, g + GALLERY_UP - 0.4, 110.1), amber)
+
+
+## The Descent: a lamp over each landing and the foot, strips down the
+## lanes, and the sealed door to the Heart, marked out in amber.
+func _dress_descent(art: Node3D, frame: Transform3D, strip: Material, amber: Material) -> void:
+	var g := GALLERY_FLOOR
+	var step := DESCENT_DROP / 3.0
+	var mid := (DESCENT_FROM_Z + DESCENT_TO_Z) * 0.5
+	_lamp_at(art, frame * Vector3(0, g + GALLERY_UP, DESCENT_FROM_Z + 3.0), Color(0.35, 0.95, 1.0), 4.5, 26.0)
+	_lamp_at(art, frame * Vector3(0, g - step + 6.0, DESCENT_TO_Z - DESCENT_FOOT + 3.0), Color(1.0, 0.6, 0.3), 4.5, 26.0)
+	_lamp_at(art, frame * Vector3(0, g - step * 2.0 + 6.0, DESCENT_FROM_Z + 3.0), Color(0.35, 0.95, 1.0), 4.5, 26.0)
+	_lamp_at(art, frame * Vector3(0, DESCENT_FLOOR + 7.0, DESCENT_TO_Z - 8.0), Color(1.0, 0.6, 0.3), 5.0, 28.0)
+	_lamp_at(art, frame * Vector3(0, g - step * 1.5, mid), Color(0.45, 0.7, 1.0), 4.0, 30.0)
+	for side: float in [-1.0, 1.0]:
+		_glow_box(art, frame, Vector3(0.2, 0.12, DESCENT_TO_Z - DESCENT_FROM_Z - 2.0),
+				Vector3(side * (DESCENT_HALF - 0.1), g - step, mid), strip)
+	var low := DESCENT_FLOOR
+	var face := DESCENT_TO_Z - 0.05
+	_glow_box(art, frame, Vector3(10.0, 0.4, 0.2), Vector3(0, low + 8.2, face), amber)
+	for x: float in [-5.0, 5.0]:
+		_glow_box(art, frame, Vector3(0.4, 8.0, 0.2), Vector3(x, low + 4.0, face), amber)
+	var seal := _visual_box(Vector3(9.6, 7.8, 0.3), frame * Vector3(0, low + 3.9, face - 0.1), HULL_DARK)
+	seal.basis = frame.basis
+	art.add_child(seal)
+
+
+## The cable lift: cables up from each cage's head, a light ring on its
+## floor and a lamp, red while the lift is dead and teal while it runs
+## (`_light_lift`, from the map's "lift_power" meta the `Raid` sets).
+func _dress_lift(art: Node3D, frame: Transform3D) -> void:
+	_lift_glow = _glow(LIFT_DEAD, 2.0)
+	var cable := _glow(Color(0.5, 0.55, 0.6), 0.2)
+	for stop: Vector3 in [Vector3(LIFT_TOP.x, HALL_FLOOR, LIFT_TOP.y), Vector3(LIFT_FOOT.x, DESCENT_FLOOR, LIFT_FOOT.y)]:
+		var head := HALL_FLOOR + CATWALK_UP - 1.0 if stop.y == HALL_FLOOR else DESCENT_FLOOR + GALLERY_UP
+		var roof := HALL_FLOOR + 22.0 if stop.y == HALL_FLOOR else GALLERY_FLOOR + GALLERY_UP + DESCENT_ROOF
+		for k: float in [-1.0, 1.0]:
+			_glow_box(art, frame, Vector3(0.12, roof - head, 0.12),
+					Vector3(stop.x + k * 0.8, (roof + head) * 0.5, stop.z), cable)
+		var half := LIFT_CAGE * 0.5 - 0.3
+		for k: float in [-1.0, 1.0]:
+			_glow_box(art, frame, Vector3(LIFT_CAGE - 0.6, 0.06, 0.15), Vector3(stop.x, stop.y + 0.04, stop.z + k * half), _lift_glow)
+			_glow_box(art, frame, Vector3(0.15, 0.06, LIFT_CAGE - 0.6), Vector3(stop.x + k * half, stop.y + 0.04, stop.z), _lift_glow)
+		var light := Look.lamp(LIFT_DEAD, 2.0, 9.0)
+		light.position = frame * Vector3(stop.x, head - 0.6, stop.z)
+		art.add_child(light)
+		_lift_lights.append(light)
+	_glow_box(art, frame, Vector3(1.0, 0.5, 0.1), Vector3(LIFT_SWITCH.x, DESCENT_FLOOR + 1.2, LIFT_SWITCH.y + 0.75), _lift_glow)
+
+
+const LIFT_DEAD := Color(1.0, 0.25, 0.15)
+const LIFT_LIVE := Color(0.2, 1.0, 0.85)
+var _lift_glow: StandardMaterial3D
+var _lift_lights: Array[OmniLight3D] = []
+var _lift_live := false
+
+
+## Lights the lift while it runs (view only).
+func _light_lift() -> void:
+	if _lift_glow == null:
+		return
+	var powers: Dictionary = get_meta("lift_power", {})
+	var live := float(powers.get(LIFT_ID, 0.0)) > 0.0
+	if live == _lift_live:
+		return
+	_lift_live = live
+	var color := LIFT_LIVE if live else LIFT_DEAD
+	_lift_glow.albedo_color = color
+	_lift_glow.emission = color
+	for light in _lift_lights:
+		light.light_color = color
 
 
 func _glow(color: Color, energy: float) -> StandardMaterial3D:
