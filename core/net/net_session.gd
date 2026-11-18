@@ -85,7 +85,7 @@ signal base_visit_requested(owner_name: String, stash: Array, loadout: Dictionar
 signal portal_travel(destination: String)
 
 const DEFAULT_PORT := 24565
-const PROTOCOL := 47
+const PROTOCOL := 48
 ## Every packet is compressed, both ways. State updates are mostly repeated
 ## numbers, and a big battle sends a player hundreds of them a second. Server
 ## and client must agree, so a change here needs a new PROTOCOL.
@@ -118,6 +118,8 @@ const PROTOCOL := 47
 ## 45: the weather: a storm cell crossing the map (`_weather`).
 ## 47: the home base's plan: `_request_place_room`, and a visited base's
 ## plan in `_base_visit`.
+## 48: a vehicle's ride state lists who sits on each passenger seat (the
+## rover seats four).
 ## Where an out-of-date game gets the latest build: the rolling "latest"
 ## release the Windows client workflow publishes (docs/hosting.md).
 const UPDATE_URL := "https://github.com/czinabu/projectares/releases/tag/latest"
@@ -1880,10 +1882,12 @@ func _server_late_tick(_delta: float) -> void:
 				var vehicle: Node3D = _vehicles[id]
 				var rider: Actor = vehicle.get("rider")
 				var rider_id: int = _ids.get(rider, -1) if rider != null else -1
-				var passenger: Actor = vehicle.get("passenger")
+				# Who sits on each passenger seat, in seat order (-1 for empty).
+				var aboard: Array = []
+				for passenger in vehicle.get("passengers"):
+					aboard.append(_ids.get(passenger, -1) if passenger != null else -1)
 				rides.append([id, vehicle.global_position, vehicle.get("heading"), vehicle.get("speed"),
-						rider_id, _applied_seq.get(rider_id, 0),
-						_ids.get(passenger, -1) if passenger != null else -1, vehicle.get("slip")])
+						rider_id, _applied_seq.get(rider_id, 0), aboard, vehicle.get("slip")])
 			for peer in _joined_peers:
 				_vehicle_state.rpc_id(peer, rides)
 	_send_boards()
@@ -2928,7 +2932,7 @@ func _client_move_vehicles() -> void:
 				_ride_entry = entry
 				_correct_ride(vehicle, entry)
 				# Who sits behind is the server's call, like the rider.
-				_seat_from_state(vehicle, "passenger", int(entry[6]), true)
+				_passengers_from_state(vehicle, entry[6])
 			continue
 		var at: Vector3 = entry[1]
 		if vehicle.global_position.distance_to(at) > SNAP_DISTANCE:
@@ -2944,7 +2948,7 @@ func _client_move_vehicles() -> void:
 			_ride_history.clear()
 			_ride_fix = Vector3.ZERO
 			_ride_turn = 0.0
-		_seat_from_state(vehicle, "passenger", int(entry[6]), true)
+		_passengers_from_state(vehicle, entry[6])
 		vehicle.call("_place_rider")
 
 
@@ -2964,6 +2968,26 @@ func _seat_from_state(vehicle: Node3D, seat: String, actor_id: int, behind: bool
 			want.vehicle.call("get_off", want)
 		vehicle.call("mount", want, behind)
 	return true
+
+
+## Puts whoever the server says is on each passenger seat there (`ids`, in
+## seat order, -1 for an empty seat).
+func _passengers_from_state(vehicle: Node3D, ids: Array) -> void:
+	var seated: Array = vehicle.get("passengers")
+	for i in mini(ids.size(), seated.size()):
+		var want: Actor = _actors.get(int(ids[i])) if int(ids[i]) >= 0 else null
+		if want != null and not is_instance_valid(want):
+			want = null
+		var current = seated[i]
+		if current == want:
+			continue
+		if current != null and is_instance_valid(current):
+			vehicle.call("get_off", current)
+		seated[i] = null
+		if want != null:
+			if want.vehicle != null:
+				want.vehicle.call("get_off", want)
+			vehicle.call("mount", want, true, i)
 
 
 ## Compares the server's position for your ride with where this game predicted

@@ -84,22 +84,42 @@ new planet is a new folder under `worlds/`.
    it waits.
 
 **Expanding the hub comes first.** The Concourse was a walled courtyard with
-no room for these. It is now an open district on a high deck with no wall
-(Caleb's call: grand, open and sci-fi, not industrial): a lit beacon spire
-at the centre, a kiosk arcade round it, slim towers with landing decks and
-skybridges at 15 m so the boots can hop the skyline while the tower tops are
-for wings and jetpacks, a gate terrace with spare arches for new worlds, a
-bike loop round the edge, a big-screen amphitheatre to gather and watch, and
-a pad kept clear for the RC arena. Everything is within about 25 seconds'
-walk of the arrival pad. It looks sci-fi, not industrial: dark glass and
-metal with lit seams instead of brick and punched windows, a glass arcade
-canopy, holo signs over every kiosk and floating holo-ads.
+no room for these. It is now an open deck 480 m across with no wall
+(Caleb's call: grand, open and sci-fi, not industrial), laid out in
+districts round a lit beacon spire, each a place with one job and its name
+on the building that holds it (Caleb's call, the layout pass: no signs that
+do not match where they stand, no glowing pads, no floating ads):
+
+- **Spire plaza** in the middle, where you arrive: stages, benches, Dusk.
+- **Gate Terrace** to the north: an arch for each world, lit while you
+  stand in it, and Marlo the dispatcher at a desk, who reads out how each
+  world is doing.
+- **Market Row** to the south: a covered street of real shopfronts facing
+  each other (armory, outfitter, garage, tailor, furnisher, exchange), each
+  fitted out for its trade with its goods on show and a keeper behind the
+  counter who greets you when you trade. Transit (leaving the server)
+  stands at its far end.
+- **Civic square** to the east: the clan hall with its clerk, the contract
+  board with Rook, the most-wanted board with Kade, and the big screen with
+  its tiers.
+- **Residences** to the west: the way home, with Wren the concierge.
+- **The arena** to the southeast with Sola the promoter, and the shuttered
+  RC yard to the southwest, kept for the toy arena.
+- Gardens on the diagonals, slim towers with landing decks and skybridges at
+  15 m (boot reach; the tops are for wings and jetpacks), rim lookouts and
+  the bike loop round the edge, there to roam.
+
+The spire to the gates is about 180 m and to the far shops about 140 m:
+about 25 seconds on foot, the price of the space. It looks sci-fi, not
+industrial: dark glass and metal with lit seams, a glass canopy over the
+street, a tiled floor.
 
 ### Locals
 
-The Concourse is lived in (Caleb's call): about thirty people go about their
-day there, strolling the rings round the spire, browsing the kiosks under
-the arcade, watching the big screen from the tiers, standing about in small
+The Concourse is lived in (Caleb's call): about fifty people go about their
+day there, strolling the rings round the spire, window shopping down Market
+Row (along the street, crossing at the doors), watching the big screen from
+the tiers, standing about in small
 groups and wandering out to the boards and the gates. Nothing about them is
 even: who walks with whom, where they stand and how long they stay are all
 rolled from one seed. They look at you as you pass and step out of your way.
@@ -107,15 +127,18 @@ They are a view only: every game makes the same crowd and moves it by the
 clock, so the server spends nothing on them and everyone sees much the same
 people.
 
-Three of them you can talk to. Walk up and press the interact key, and they
-answer in a short line on a card over their head, never a menu:
+Some of them you can talk to. Walk up and press the interact key, and they
+answer in a short line on a card over their head, never a menu. Every
+counter has someone behind it (the shop keepers, the clan hall's clerk) who
+greets you as you trade, and there are Marlo at the gates, Wren at the
+residences and Sola at the arena, besides:
 
 - **Kade**, the bounty broker at the most-wanted board: how bounties work
   and who is worth most right now.
-- **Dusk**, by the spire, who hears things: rumours made from the worlds'
+- **Dusk**, in the spire plaza, who hears things: rumours made from the worlds'
   real news (the war, the event running, a big bounty), never more than the
   plaza's own signs know.
-- **Rook**, the fixer by the gates: one small favour a day, a contract job
+- **Rook**, the fixer at the contract board: one small favour a day, a contract job
   of his own (`Contracts.favor_for`) paid a little under a daily. Talk to him
   again to take it; it is held and paid like any contract.
 

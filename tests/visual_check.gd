@@ -183,6 +183,13 @@ func _ready() -> void:
 		get_tree().quit()
 		return
 
+	# `-- <output_dir> --vehicles-only` shoots every vehicle parked, alone
+	# from three sides and in a row from far off, to compare their looks.
+	if "--vehicles-only" in args:
+		await _vehicle_shots(out_dir)
+		get_tree().quit()
+		return
+
 	# `-- <output_dir> --ride-only` shoots the rider seated on a bike
 	# (`RIDE_VEHICLE=<item id>` seats them on another vehicle).
 	if "--ride-only" in args:
@@ -1005,8 +1012,9 @@ func _world_shots(out_dir: String, only := "") -> void:
 		await _settle(2)
 
 
-## The Concourse from the spots people stand: arriving, under the arcade, at
-## the gates, up on a tower deck, and from high above. Prints the draw calls
+## The Concourse from the spots people stand: arriving, at the gates, down
+## Market Row, in the civic square and the residences, from a rim lookout,
+## and from high above. Prints the draw calls
 ## and objects of each view, the frame cost that grows with the map.
 func _hub_shots(out_dir: String) -> void:
 	var plaza := Worlds.social_world()
@@ -1021,15 +1029,14 @@ func _hub_shots(out_dir: String) -> void:
 	camera.make_current()
 	var arrival: Vector3 = map.get("ARRIVAL") if map.get("ARRIVAL") != null else Vector3.ZERO
 	var views := [
-		["arrival", arrival + Vector3(0, 1.7, 0), Vector3(0, 12, 0)],
+		["arrival", arrival + Vector3(0, 1.7, 6), Vector3(0, 12, -10)],
 		["plaza", Vector3(9, 1.7, 22), Vector3(-2, 2.5, -8)],
-		["arrival_high", arrival + Vector3(0, 6, 9), Vector3(0, 6, -20)],
-		["gates", Vector3(0, 2.5, -60), Vector3(0, 7, -100)],
-		["market", Vector3(-14, 1.7, -46), Vector3(-40, 4, -42)],
-		["deck", Vector3(26.5, 16.7, -64), Vector3(-30, 8, 40)],
-		["screens", Vector3(0, 3, 62), Vector3(0, 7, 106)],
-		["contracts", Vector3(30, 2.2, 86), Vector3(32, 3.2, 96)],
-		["overview", Vector3(150, 120, 150), Vector3(0, 0, 0)],
+		["gates", Vector3(0, 2.2, -150), Vector3(0, 6, -190)],
+		["market", Vector3(0, 1.8, 64), Vector3(0, 3, 140)],
+		["civic", Vector3(108, 2.0, 4), Vector3(160, 4, 0)],
+		["residences", Vector3(-108, 2.0, -4), Vector3(-160, 4, 0)],
+		["lookout", Vector3(161, 1.7, -161), Vector3(0, 8, 0)],
+		["overview", Vector3(260, 220, 260), Vector3(0, 0, 0)],
 	]
 	for v: Array in views:
 		camera.look_at_from_position(v[1], v[2])
@@ -3303,12 +3310,13 @@ func _ride_shots(out_dir: String) -> void:
 	await _settle(20)
 	bike.mount(player)
 	player.set_physics_process(false)
-	if bike.passenger_seat:
-		# A passenger behind the rider, to see the two-up seating.
+	for seat_index in bike.seats.size():
+		# A passenger on every seat, to see the seating two up (or four up).
 		# A plain soldier, not a heavy in a walker frame.
 		var pillion: Actor = null
 		for tries in 20:
-			pillion = raid.spawn_bot("Pillion%d" % tries, at + Vector3(-2.0, 0.3, 0.0), 7 + tries, false, "tide", 0)
+			pillion = raid.spawn_bot("Pillion%d_%d" % [seat_index, tries], at + Vector3(-2.0 - seat_index, 0.3, 0.0),
+					7 + tries + seat_index * 31, false, "tide", 0)
 			if pillion.display_name == "Tide Raider":
 				break
 			raid.bots.erase(pillion)
@@ -3316,7 +3324,7 @@ func _ride_shots(out_dir: String) -> void:
 		if pillion.has_node("Brain"):
 			pillion.get_node("Brain").set_physics_process(false)
 		await _settle(5)
-		bike.mount(pillion, true)
+		bike.mount(pillion, true, seat_index)
 		pillion.set_physics_process(false)
 	player.rotation.y = 0.6
 	var skin: Node = player.get_node("Skin")
@@ -4018,6 +4026,87 @@ func _graphics_shots(out_dir: String, args: PackedStringArray) -> void:
 		await _settle(6)
 		await _shot(out_dir.path_join(file))
 	base.queue_free()
+
+
+## Every vehicle parked in a row on a deck over Ashfront, dressed as in a
+## raid: each one alone from the front quarter, the side and the back
+## quarter (`vehicles.png`), and the row from 45 m (`vehicles_far.png`), to
+## see that each reads as itself from far off.
+func _vehicle_shots(out_dir: String) -> void:
+	var raid := Raid.new()
+	add_child(raid)
+	raid.start(Worlds.get_world("ashfront"), 42)
+	for bot in raid.bots:
+		bot.queue_free()
+	raid.bots.clear()
+	raid.player.global_position += Vector3(0, -300, 0)
+	raid.player.set_physics_process(false)
+	await _settle(10)
+	var at := raid.player.global_position + Vector3(0, 340, 0)
+	var deck := StaticBody3D.new()
+	var deck_shape := CollisionShape3D.new()
+	deck_shape.shape = BoxShape3D.new()
+	deck_shape.shape.size = Vector3(120, 1, 120)
+	deck.add_child(deck_shape)
+	var deck_mesh := MeshInstance3D.new()
+	deck_mesh.mesh = BoxMesh.new()
+	deck_mesh.mesh.size = Vector3(120, 1, 120)
+	var deck_mat := StandardMaterial3D.new()
+	deck_mat.albedo_color = Color(0.32, 0.3, 0.29)
+	deck_mesh.mesh.material = deck_mat
+	deck.add_child(deck_mesh)
+	raid.add_child(deck)
+	deck.global_position = at - Vector3(0, 0.5, 0)
+	var ids := ["bike_scrapper", "bike_raider", "rover_warden", "mech_bulwark", "jet_kestrel"]
+	var spaced := [-11.0, -6.5, -1.5, 4.0, 10.5]
+	var parked: Array[Node3D] = []
+	for i in ids.size():
+		var v: Node3D = raid.spawn_vehicle(ids[i], at + Vector3(spaced[i], 0.4, 0), 0.0)
+		parked.append(v)
+	await _settle(60)
+	var cam := Camera3D.new()
+	raid.add_child(cam)
+	cam.current = true
+	cam.fov = 40.0
+	var size := Vector2i(400, 300)
+	var sheet := Image.create(3 * size.x, ids.size() * size.y, false, Image.FORMAT_RGBA8)
+	for row in parked.size():
+		var v: Node3D = parked[row]
+		var reach: float = maxf(maxf(v.body_size.z, v.body_size.y * 1.3), 2.4) * 1.45
+		var focus: Vector3 = v.global_position + Vector3(0, v.seat_point.y * 0.7, 0)
+		# Hide the others, so each stands alone.
+		for other in parked:
+			other.visible = other == v
+		var sides: Array[Vector3] = [Vector3(-0.8, 0.3, -1.0), Vector3(-1.0, 0.18, 0.0), Vector3(0.75, 0.45, 1.0)]
+		for c in sides.size():
+			cam.global_position = focus + sides[c].normalized() * reach
+			cam.look_at(focus)
+			await _settle(2)
+			await RenderingServer.frame_post_draw
+			var frame := get_viewport().get_texture().get_image()
+			var h := frame.get_height()
+			var w := frame.get_width()
+			var cut_w := h * size.x / size.y
+			var cut := frame.get_region(Rect2i((w - cut_w) / 2, 0, cut_w, h))
+			cut.resize(size.x, size.y)
+			cut.convert(Image.FORMAT_RGBA8)
+			sheet.blit_rect(cut, Rect2i(Vector2i.ZERO, size), Vector2i(c * size.x, row * size.y))
+	sheet.save_png(out_dir.path_join("vehicles.png"))
+	print("saved vehicles.png")
+	for other in parked:
+		other.visible = true
+	cam.fov = 30.0
+	var middle := at + Vector3(0, 1.2, 0)
+	cam.global_position = middle + Vector3(-18, 9, -40)
+	cam.look_at(middle)
+	await _settle(4)
+	await _shot(out_dir.path_join("vehicles_far.png"))
+	cam.global_position = middle + Vector3(0, 2.5, -14)
+	cam.fov = 60.0
+	cam.look_at(middle)
+	await _settle(4)
+	await _shot(out_dir.path_join("vehicles_row.png"))
+	raid.queue_free()
 
 
 ## Every weapon side on and from a three-quarter view, one row each, guns
