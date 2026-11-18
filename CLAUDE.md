@@ -42,6 +42,19 @@ without Caleb, and update the gap list when a PR closes a row.
   until the phone stands `phone_zoom` of the view's height, whatever the
   field of view setting, with all of it kept in frame (`phone_fit_fov`,
   Caleb's pick so the screen reads; not with the mirror up).
+  The third-person camera stands over the right shoulder
+  (`PlayerController.shoulder`) and, aiming, moves in and further out
+  over it (`shoulder_aim`), so the head never sits on the sight line;
+  both fade in as it leaves the eyes, so a view switch glides. Walls stop
+  it as a swept ball (`camera_radius`, `_third_person_offset`): in at
+  once, back out at `wall_return`. Riding frames a bigger vehicle from
+  further back (`ride_scale`). Check with
+  `visual_check.tscn -- <dir> --camera-only`.
+- The head looks where its owner aims (Caleb's call, so others see where
+  you look): `Locomotion._look_pose` turns the neck and head onto
+  `Actor.get_aim_dir()` from whatever pose the body is in, no further than
+  `look_reach` from the chest, and gives way to the phone. View only, the
+  same body in both views; first person's eyes simply ride the turned head.
 - `Raid` has no camera, HUD, or input code. It must keep working headless.
 - The endless warzone. A `Raid` is one running world and it never ends: no
   timer, no exits, no restart. It keeps itself alive (`_tick_bots`,

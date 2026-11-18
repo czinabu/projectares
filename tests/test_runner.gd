@@ -78,6 +78,7 @@ const RaceTests := preload("res://tests/race_tests.gd")
 const SaveSafetyTests := preload("res://tests/save_safety_tests.gd")
 const ServerAuthTests := preload("res://tests/server_auth_tests.gd")
 const ReconnectTests := preload("res://tests/reconnect_tests.gd")
+const CameraTests := preload("res://tests/camera_tests.gd")
 
 var _passed := 0
 var _failed := 0
@@ -379,6 +380,7 @@ func _run() -> void:
 	await _test_portals()
 	await _test_feel()
 	await _test_view_match()
+	await CameraTests.run(self)
 	await _test_gun_roles()
 	await _test_gun_handling()
 	await _test_bot_tactics()

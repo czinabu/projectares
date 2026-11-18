@@ -1299,7 +1299,11 @@ func ride_scale() -> float:
 	if vehicle == null or not is_instance_valid(vehicle):
 		return 1.0
 	var size: Variant = vehicle.get("body_size")
-	return clampf((size as Vector3).z / 2.6, 1.0, 3.0) if size is Vector3 else 1.0
+	if not size is Vector3:
+		return 1.0
+	var v := size as Vector3
+	# A bike's body is 2 m long; framed by its biggest side.
+	return clampf(maxf(v.x, maxf(v.y, v.z)) / 2.0, 1.0, 2.5)
 
 
 ## Where the third-person camera stands from the eyes (`pivot`), looking
