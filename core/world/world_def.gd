@@ -136,6 +136,14 @@ var vehicle_toys := true
 var bag_lifetime := 300.0
 ## Seconds to stand in a depot to bank what you carry.
 var depot_hold_time := 4.0
+## The planet this world stands on (DESIGN.md "Planet kit"): a
+## `PlanetTypes` id, or "" for a world that builds its own look. Set it with
+## `take_planet` at the top of `_init`, which also gives the world the
+## planet's rule defaults (`PlanetType.rules`: `cold`, `shot_carry` and
+## `planet_grip`); anything the world sets after that is its own.
+var planet := ""
+## The ground's grip where the world's own `surface_grip` does not say.
+var planet_grip := 1.0
 ## Body heat (of 100) a player loses each second out in the open; 0 for a
 ## world with no cold. See "The cold" above and `cold_at`.
 var cold := 0.0
@@ -358,6 +366,24 @@ func carries_power_weapons() -> bool:
 	return power_weapon_rate > 0.0 and not safe_zone and gear_at_risk
 
 
+## Stands the world on planet type `id` and takes its rule defaults. Call
+## it first in `_init`, before the world's own settings. An unknown id
+## leaves the world as it was.
+func take_planet(id: String) -> void:
+	var type := PlanetTypes.get_type(id)
+	if type == null:
+		return
+	planet = id
+	cold = float(type.rules.get("cold", cold))
+	shot_carry = float(type.rules.get("shot_carry", shot_carry))
+	planet_grip = float(type.rules.get("surface_grip", planet_grip))
+
+
+## The planet type this world stands on, or null.
+func planet_type() -> PlanetType:
+	return PlanetTypes.get_type(planet) if planet != "" else null
+
+
 func create_map() -> Node3D:
 	return null
 
@@ -496,8 +522,9 @@ func cold_at(_pos: Vector3) -> float:
 ## vehicle: 1 on dry ground, less on snow and ice, where wheels break loose
 ## and slide (`Vehicle._surface_grip`; a hover's cushion ignores it). Run on
 ## every machine that simulates a ride, so keep it free of randomness.
+## By default the planet's grip (`take_planet`), the same everywhere.
 func surface_grip(_pos: Vector3) -> float:
-	return 1.0
+	return planet_grip
 
 
 ## Whether the ground at a point is thin ice (see `thin_ice`).
