@@ -25,6 +25,7 @@ extends CanvasLayer
 
 const RenownLedger := preload("res://core/progression/renown_ledger.gd")
 const Contracts := preload("res://core/economy/contracts.gd")
+const SafetyNets := preload("res://core/economy/safety_nets.gd")
 const SkinScript := preload("res://core/visual/actor_skin.gd")
 ## The watch map's risk-zone grid is this many cells a side, how much room
 ## it leaves round what it shows, and the least half width it shows (metres).
@@ -1252,6 +1253,11 @@ static func death_text(result: Dictionary, wait: float, drops: Array = [], picke
 	var kept: Array = result.get("kept_gear", [])
 	if not kept.is_empty():
 		lines.append("Kept: %s" % ItemDB.summarize(kept))
+	if str(result.get("recalled", "")) != "":
+		lines.append("Insured, recalled home: %s" % ItemDB.item_name(result.recalled))
+	var salvage: Array = result.get("salvage", [])
+	if not salvage.is_empty():
+		lines.append("Salvaged: %s" % SafetyNets.describe(salvage))
 	var banked: Array = result.get("banked", [])
 	if not banked.is_empty():
 		lines.append("Banked before you fell: worth %d" % int(result.get("banked_value", 0)))

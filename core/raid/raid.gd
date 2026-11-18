@@ -89,6 +89,8 @@ const VehicleScript := preload("res://core/vehicle/vehicle.gd")
 const MasteryTracker := preload("res://core/progression/mastery_tracker.gd")
 const RenownLedger := preload("res://core/progression/renown_ledger.gd")
 const Economy := preload("res://core/economy/economy.gd")
+const SafetyNets := preload("res://core/economy/safety_nets.gd")
+const StashRules := preload("res://core/account/stash_rules.gd")
 const WarDirector := preload("res://core/war/war_director.gd")
 const Strongpoint := preload("res://core/war/strongpoint.gd")
 const PowerArmory := preload("res://core/war/power_armory.gd")
@@ -311,12 +313,12 @@ static func together(a: Node, b: Node) -> bool:
 ## `p_mastery` maps mastery track -> picked variant id (see MasteryBook.active_picks).
 ## `p_owner` and `p_renown` are the player's renown key and lifetime renown (see `add_player`).
 func start(p_world: WorldDef, p_seed: int = -1, p_kit: Array = [], p_mastery: Dictionary = {},
-		p_owner := "", p_renown := 0, p_drop := "") -> void:
+		p_owner := "", p_renown := 0, p_drop := "", p_insured := "") -> void:
 	mode = Mode.SOLO
 	_setup(p_world, p_seed)
 	_spawn_caches()
 	armory.setup(self)
-	add_player(p_kit, p_mastery, "You", p_owner, p_renown, p_drop)
+	add_player(p_kit, p_mastery, "You", p_owner, p_renown, p_drop, p_insured)
 	_spawn_bots()
 	_spawn_bosses()
 	_spawn_map_vehicles()
@@ -1032,11 +1034,16 @@ func _can_bank(actor: Actor) -> bool:
 ## `p_owner` says whose life this is (an account id), so renown carries over
 ## from their earlier lives here; without it every life is a stranger's.
 ## `p_renown` is their lifetime renown, which sets the rank others see.
+## `p_insured` is their insured item (`SafetyNets`), recalled home instead
+## of dropping in the bag if it is on the body at the death. Only an item
+## in this kit counts: the owner of the stash decides, never a client.
 func add_player(p_kit: Array = [], p_mastery: Dictionary = {}, p_name := "Raider",
-		p_owner := "", p_renown := 0, p_drop := "") -> Actor:
+		p_owner := "", p_renown := 0, p_drop := "", p_insured := "") -> Actor:
 	var state := PlayerState.new()
 	state.kit.assign((p_kit if not p_kit.is_empty() else world.starter_loadout()).filter(
 			func(id: Variant) -> bool: return id != Loadout.BARE))
+	if p_insured != "" and p_insured in state.kit and world.gear_at_risk:
+		state.insured = p_insured
 	state.picks = p_mastery
 	var spawns := _map_nodes("spawn_player")
 	var marker := 0
@@ -2857,6 +2864,7 @@ func _on_actor_died(actor: Actor, info: DamageInfo) -> void:
 	if state_for(actor) != null and world.keep_gear_on_death:
 		# A gentler world: a player's equipped gear goes home, not in the bag.
 		drops.assign(actor.inventory.items)
+	_recall_insured(state_for(actor), drops)
 	# Power weapons never go in a bag: they are left on a rack, shots and all.
 	armory.on_death(actor, drops)
 	var dead := state_for(actor)
@@ -3130,6 +3138,20 @@ func _leave(state: PlayerState) -> void:
 		_remove_actor(actor)
 
 
+## A player died: their insured item, if it is on the body, is recalled home
+## instead of dropping in `drops` (the bag). Authority only; a client never
+## knows what is insured. One copy, once a life.
+func _recall_insured(state: PlayerState, drops: Array[String]) -> void:
+	if state == null or mode == Mode.CLIENT or state.insured == "" or state.recalled != "":
+		return
+	if state.insured not in drops:
+		return
+	drops.erase(state.insured)
+	state.recalled = state.insured
+	if is_instance_valid(state.actor):
+		state.actor.notice.emit("%s recalled home by your insurance" % ItemDB.item_name(state.recalled))
+
+
 func _finish_player(state: PlayerState, outcome: String, cause: String, killed_by: String) -> void:
 	if state.finished:
 		return
@@ -3170,6 +3192,12 @@ func _finish_player(state: PlayerState, outcome: String, cause: String, killed_b
 		brought_home.assign(kept)
 	else:
 		lost.assign(actor.get_drop_items())
+	if not left and state.recalled != "":
+		# The insured item went home instead of into the bag.
+		lost.erase(state.recalled)
+		brought_home.append(state.recalled)
+	# What was lost with the body: dropped in the bag, or a toy on the watch.
+	var with_body := lost.duplicate()
 	# A vehicle you brought is lost unless you left with it on your watch or
 	# rode it (or another) back out. Dying loses the watch's toys as well.
 	var left_behind := state.deployed_vehicles.duplicate()
@@ -3183,6 +3211,18 @@ func _finish_player(state: PlayerState, outcome: String, cause: String, killed_b
 	else:
 		lost.append_array(found)
 	lost.append_array(left_behind)
+	# Salvage (`SafetyNets`): crafted gear this life brought from the stash
+	# and lost with the body. Not what was dropped or thrown before the death
+	# (someone else may have it), nor anything picked up in the world.
+	var salvaged: Array[String] = []
+	if not left:
+		with_body.append_array(state.stowed)
+		var from_stash := state.kit.filter(func(id: String) -> bool: return not StashRules.is_free(id))
+		for id: String in with_body:
+			if id in from_stash:
+				from_stash.erase(id)
+				if SafetyNets.salvages(id):
+					salvaged.append(id)
 	# A heavy weapon in the chamber comes home on a sign-out (and counts as
 	# lost on a death). One that was banked is already in `state.banked` and
 	# off the body. Death still leaves the gun on a rack beside the bag.
@@ -3193,6 +3233,7 @@ func _finish_player(state: PlayerState, outcome: String, cause: String, killed_b
 		kept.clear()
 		brought_home.clear()
 		lost.clear()
+		salvaged.clear()
 	var result := {
 		"outcome": outcome,
 		"cause": cause,
@@ -3205,6 +3246,12 @@ func _finish_player(state: PlayerState, outcome: String, cause: String, killed_b
 		"brought_home": brought_home,
 		"loot_value": ItemDB.total_value(loot),
 		"lost": lost,
+		# The safety nets: the insured item recalled home (it is in
+		# `brought_home` too), and the crafted gear lost with the body with
+		# the parts it pays back.
+		"recalled": state.recalled if world.gear_at_risk else "",
+		"salvaged": salvaged,
+		"salvage": SafetyNets.salvage_all(salvaged),
 		"banked": state.banked.duplicate(),
 		"banked_value": ItemDB.total_value(state.banked),
 		"kills": state.kills,
@@ -3232,11 +3279,16 @@ func _finish_player(state: PlayerState, outcome: String, cause: String, killed_b
 	player_finished.emit(actor, result)
 
 
-## Writes a finished life into the local profile: what came home, and the record.
+## Writes a finished life into the local profile: what came home, the
+## salvage and an insurance claim, and the record.
 static func apply_result(result: Dictionary) -> void:
 	var home: Array = result.get("brought_home", [])
 	if not home.is_empty():
 		Profile.add_to_stash(home)
+	var salvage: Array = result.get("salvage", [])
+	if not salvage.is_empty():
+		Profile.add_to_stash(salvage)
+	Profile.claim_insurance(str(result.get("recalled", "")))
 	Profile.record_raid(result)
 
 
@@ -3274,6 +3326,10 @@ class PlayerState:
 	var tally := {}
 	## The vehicles ridden this life, so each counts once.
 	var ridden: Array[int] = []
+	## Their insured item, if this kit carries it (`SafetyNets`), and the
+	## item recalled home at their death.
+	var insured := ""
+	var recalled := ""
 	## Vehicle items the player deployed with. Lost unless they leave riding one.
 	var deployed_vehicles: Array[String] = []
 	## The toy vehicles on their watch: ones they brought and have not thrown,
