@@ -9,6 +9,10 @@ const MapScript := preload("res://worlds/meridian/map.gd")
 
 
 func _init() -> void:
+	take_planet("saltflat")
+	# The pan's crust is slick, but the circuits are paved and the race
+	# profiles are tuned on full grip (DESIGN.md section 9).
+	planet_grip = 1.0
 	id = "meridian"
 	display_name = "Meridian"
 	description = "The racing world. Time trials on Coilrun and Skyhook in stock street machines. Nobody fights, nobody loses gear."
@@ -31,7 +35,9 @@ func _init() -> void:
 
 
 func create_map() -> Node3D:
-	return MapScript.new()
+	var map := MapScript.new()
+	map.planet = planet_type()
+	return map
 
 
 func new_raid() -> Raid:

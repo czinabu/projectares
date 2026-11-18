@@ -1016,8 +1016,11 @@ simulation; the rest is view only. A world stands on one with
 own. Six types are drafted: Ashland
 (Ashfront), Glacier (Frostline), Salt Flat (Meridian), and three new ones,
 Basalt Rift, Dune Sea and Spore Marsh. Check by eye with
-`planet_check.tscn -- <dir> [type ids]`. No world uses it yet: each moves in
-its own PR once the threads working in it have merged.
+`planet_check.tscn -- <dir> [type ids]`. Meridian stands on the Salt Flat:
+its sky, light, salt pan, horizon and rocks (kept clear of the circuits),
+with the pan's grip set back to full, since the race profiles are tuned on
+it. Frostline and Ashfront move in their own PRs once the threads working
+in them have merged.
 
 ## 3. The watch
 

@@ -45,6 +45,15 @@ static func run(t: Node) -> void:
 	world.take_planet("nowhere")
 	t.check(world.planet == "glacier", "an unknown planet changes nothing")
 
+	# Meridian stands on the Salt Flat but races at full grip.
+	var meridian: WorldDef = load("res://worlds/meridian/world.gd").new()
+	t.check(meridian.planet == "saltflat" and is_equal_approx(meridian.surface_grip(Vector3(30.0, 0.0, 40.0)), 1.0),
+			"Meridian stands on the Salt Flat and keeps full grip for its race profiles")
+	var meridian_map: Node3D = meridian.create_map()
+	var handed: PlanetType = meridian_map.get("planet")
+	t.check(handed != null and handed.id == "saltflat", "and hands its map the planet")
+	meridian_map.free()
+
 	# The same ground for the same point, whichever copy asks and on any thread.
 	var recipe: Dictionary = PlanetTypes.get_type("glacier").terrain
 	var a := PlanetTerrain.new(recipe, 7)
