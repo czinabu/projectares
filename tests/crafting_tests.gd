@@ -175,7 +175,8 @@ static func _accounts(t: Node) -> void:
 
 
 ## Where blueprints and upgrade data come from: the war's from the PvP world,
-## the expedition's (and a trickle of data) from the gentle one.
+## the expedition's (and a trickle of data) from the gentle one, whose
+## warlords carry a war blueprint only now and then.
 static func _drops(t: Node) -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 7
@@ -184,17 +185,25 @@ static func _drops(t: Node) -> void:
 	var gentle_prints := {}
 	var gentle_data := 0
 	var gentle_parts := {}
+	var relay_war := 0
 	for world: WorldDef in Worlds.raid_worlds():
 		var hands_out := world.warlord_blueprint_chance > 0.0 or world.pod_blueprint_chance > 0.0 \
 				or world.warlord_upgrade_data > 0 or world.pod_upgrade_data > 0
 		if world.keep_gear_on_death:
-			gentle = gentle and not hands_out
+			# The slow route (Caleb's call): a gentle world's warlords may
+			# carry a war blueprint, rarer than the war's, and its pods none.
+			gentle = gentle and world.pod_blueprint_chance == 0.0 and world.warlord_blueprint_chance <= 0.2
 			for i in 600:
 				for source: String in ["cache", "rooftop", "relay", "bot"]:
 					for id in world.roll_loot(source, rng):
 						if ItemDB.has_tag(id, "blueprint"):
+							# The relay alone may hold one of the war's now
+							# and then: the slow route's other half.
+							if not ItemDB.has_tag(id, "expedition"):
+								relay_war += 1 if source == "relay" else 0
+								gentle = gentle and source == "relay"
+								continue
 							gentle_prints[id] = true
-							gentle = gentle and ItemDB.has_tag(id, "expedition")
 						elif id == Crafting.UPGRADE_DATA:
 							gentle_data += 1
 						elif id in ["cryo_core", "glacial_alloy", "engine_coil"]:
@@ -202,7 +211,9 @@ static func _drops(t: Node) -> void:
 		elif hands_out:
 			pvp = world
 	t.check(pvp != null and gentle and gentle_prints.size() == 2,
-			"the war's blueprints come from the full-loot world, and the gentle one finds only its own (%d)" % gentle_prints.size())
+			"the war's blueprints come from the full-loot world; the gentle one's caches hold only its own (%d)" % gentle_prints.size())
+	t.check(relay_war > 0 and relay_war < 600 * 0.12,
+			"but its relay holds one of the war's now and then (%d in 600)" % relay_war)
 	t.check(gentle_data > 0 and gentle_parts.size() == 3,
 			"the gentle world pays the parts every Mk2 and Mk3 needs, and a trickle of upgrade data (%d)" % gentle_data)
 	if pvp == null:

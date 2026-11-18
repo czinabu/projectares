@@ -95,6 +95,10 @@ var stand_height := BODY_HEIGHT
 ## this, in `modify_incoming`. 1 for no weak spot. Set by the world when it
 ## equips a bot, so it is the same on every machine.
 var rear_damage_mult := 1.0
+## Every hit is divided by this, in `modify_incoming`: a boss that grows
+## tougher with the players round it (`WorldDef.boss_party_scale`). Only the
+## authority sets it, since only the authority deals damage.
+var toughness := 1.0
 ## How far round from straight behind a hit still counts as in the back.
 var rear_arc_deg := 60.0
 var interact_range := 3.5
@@ -483,6 +487,8 @@ func modify_incoming(info: DamageInfo) -> void:
 		info.amount *= flight.graze_mult
 	if rear_damage_mult != 1.0 and hit_from_behind(info):
 		info.amount *= rear_damage_mult
+	if toughness > 1.0:
+		info.amount /= toughness
 
 
 ## Whether a hit comes at the body's back (within `rear_arc_deg` of straight

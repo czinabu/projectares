@@ -17,6 +17,11 @@ const CROSS_DISTANCE := 550.0
 ## Where the wings start a crossing: off a perch this high, since they
 ## cannot climb on their own.
 const WING_PERCH := 30.0
+## The bikes (DESIGN.md section 8, "Clearly faster"): each must cross the
+## same ground in under this share of the fastest rig's design time, boosting.
+const BIKE_CROSS_SHARE := 0.8
+const BIKES := ["bike_scrapper", "bike_raider"]
+const VehicleScript := preload("res://core/vehicle/vehicle.gd")
 
 
 static func run(t: Node) -> void:
@@ -27,6 +32,8 @@ static func run(t: Node) -> void:
 	await _test_roofs(t)
 	await _test_fall_damage(t)
 	await _test_cross(t)
+	await _test_bikes_beat_flight(t)
+	await _test_landing_warning(t)
 	await _test_course(t)
 
 
@@ -445,3 +452,99 @@ static func _fly_course(t: Node, base: HomeBase, id: String) -> float:
 	if base.course_last.contains(" s "):
 		return base.course_best.get(f.display_name, INF)
 	return INF
+
+
+## Bikes must earn their place next to flight (DESIGN.md section 8): a top
+## speed of at least 1.5 times the jetpack's cruise, a boost over every Mk1
+## rig's level burst (the jetpack's boost, a wing glide plus its boost, a
+## boot dash), and across the map, driven flat out, well ahead of the
+## fastest rig's crossing.
+static func _test_bikes_beat_flight(t: Node) -> void:
+	var jet: Dictionary = ItemDB.item_stats("jetpack_mk1")
+	var wings: Dictionary = ItemDB.item_stats("wings_glide")
+	var boots: Dictionary = ItemDB.item_stats("boots_thruster")
+	var glide := float(wings.glide_speed)
+	var dive := glide * (1.0 + float(wings.glide_dive_gain))
+	var burst := maxf(float(jet.boost_speed), maxf(glide + float(wings.glide_boost),
+			maxf(dive, float(boots.air_dash_speed))))
+	var fastest_rig := 1.0e9
+	for id: String in RIGS:
+		fastest_rig = minf(fastest_rig, float(CROSS_TARGET[id]))
+	var index := 0
+	for id: String in BIKES:
+		var stats := ItemDB.item_stats(id)
+		t.check(float(stats.max_speed) >= FlightRig.CRUISE_SPEED * 1.5 and float(stats.max_speed) > glide,
+				"%s tops %.0f m/s, over 1.5x the jetpack's cruise and the wings' glide" % [id, float(stats.max_speed)])
+		t.check(float(stats.boost_speed) > burst,
+				"%s boosts to %.0f m/s, past every Mk1 rig's burst (%.0f)" % [id, float(stats.boost_speed), burst])
+		var arena := _arena(t, Vector3(-9000.0 + index * 200.0, 0, 9000), Vector3(60, 1, CROSS_DISTANCE + 80.0))
+		index += 1
+		var bike = VehicleScript.new()
+		bike.setup(id)
+		arena.add_child(bike)
+		bike.position = Vector3(0, 0.6, 0)
+		var rider := _actor(arena, [])
+		rider.position = Vector3(3, 0.05, 0)
+		await t.frames(20)
+		(bike.get_node("Seat") as Interactable).interact(rider)
+		await t.frames(2)
+		var start: float = bike.global_position.z
+		rider.cmd.move = Vector2(0, 1)
+		rider.cmd.sprint = true
+		var took := await _until(t, func() -> bool: return start - bike.global_position.z >= CROSS_DISTANCE, 60.0)
+		t.check(rider.vehicle == bike and took < fastest_rig * BIKE_CROSS_SHARE,
+				"%s crosses %d m in %.1f s, ahead of the fastest rig's %.0f s" % [id, int(CROSS_DISTANCE), took, fastest_rig])
+		rider.cmd = ActorCommand.new()
+		arena.queue_free()
+	await t.frames(2)
+
+
+## The landing warning (DESIGN.md "Flight HUD"): up high with the rig about
+## to cut out, it warns; cool, low, landed, or on boots that take no fall
+## damage, it stays quiet. It is read by the visor and the pack screen.
+static func _test_landing_warning(t: Node) -> void:
+	var arena := _arena(t, Vector3(9000, 0, 9000))
+	var p := _actor(arena, ["jetpack_mk1"])
+	var f := p.flight
+	await t.frames(5)
+	t.check(Hud.landing_warning(p) == 0.0, "no landing warning standing on the ground")
+	p.global_position.y = 30.0
+	p.velocity = Vector3.ZERO
+	await t.frames(1)
+	f.heat = 0.2 * f.max_heat
+	t.check(Hud.landing_warning(p) == 0.0, "none up high on a cool jetpack")
+	f.heat = 0.9 * f.max_heat
+	var hot := Hud.landing_warning(p)
+	t.check(hot > 0.3 and hot < 1.0 and Hud.landing_reason(f) == "RIG HOT",
+			"up high with the heat near the top it warns (%.2f)" % hot)
+	f.overheated = true
+	t.check(Hud.landing_warning(p) == 1.0 and Hud.landing_reason(f) == "RIG OVERHEATED", "overheated it warns at full")
+	f.overheated = false
+	f.heat = 0.0
+	f.jam(2.0)
+	t.check(Hud.landing_warning(p) == 1.0 and Hud.landing_reason(f) == "RIG JAMMED", "a jammed rig warns at full")
+	f.jam_left = 0.0
+	f.heat_free = true
+	f.heat = 0.95 * f.max_heat
+	t.check(Hud.landing_warning(p) == 0.0, "an overclocked rig makes no heat, so it does not warn")
+	f.heat_free = false
+	# A short hop: a fall from 3 m does not hurt, so nothing to warn about.
+	p.global_position.y = 3.0
+	p.velocity = Vector3.ZERO
+	await t.frames(1)
+	f.overheated = true
+	t.check(Hud.landing_warning(p) == 0.0, "low enough that a fall would not hurt, it stays quiet")
+	t.check(Hud.fall_would_hurt(p, 3.0, 20.0), "already falling fast, even a short drop hurts")
+	f.overheated = false
+	f.heat = 0.0
+	arena.queue_free()
+	# Boots take no fall damage: they never warn.
+	var arena2 := _arena(t, Vector3(9200, 0, 9000))
+	var b := _actor(arena2, ["boots_thruster"])
+	await t.frames(5)
+	b.global_position.y = 9.0
+	await t.frames(1)
+	b.flight.jam(2.0)
+	t.check(Hud.landing_warning(b) == 0.0, "boots never warn: they take no fall damage")
+	arena2.queue_free()
+	await t.frames(2)

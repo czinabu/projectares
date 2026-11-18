@@ -34,6 +34,8 @@ const CORE_FROM_Z := -150.0
 const ENGINE_Z := -235.0
 const ENGINE_RADIUS := 22.0
 const ENGINE_LENGTH := 76.0
+## How far round the hatch the Engine Sentinel keeps its guard.
+const SENTINEL_GROUND := 16.0
 ## The frozen lake where the valley widens.
 const LAKE_Z := -95.0
 const LAKE_RADIUS := Vector2(44.0, 40.0)
@@ -516,6 +518,11 @@ func _build_engine() -> void:
 	_box(Vector3(5, 6, 1), hatch + Vector3(0, 3, 0), HULL_DARK)
 	# The Engine still breathes a little warmth out of its hatch.
 	_add_warmth(_ground(Vector2(hatch.x, hatch.z + 3.0)), HATCH)
+	# The defence grid's boss, the Engine Sentinel, guards the hatch.
+	var boss := _add_marker("spawn_boss", _ground(Vector2(hatch.x + 4.0, hatch.z + 7.0)))
+	boss.set_meta("faction", "warden")
+	boss.set_meta("boss", "sentinel")
+	boss.set_meta("radius", SENTINEL_GROUND)
 	for x: float in [-14.0, 0.0, 14.0]:
 		_add_marker("spawn_cache", _ground(Vector2(base.x + x, base.z + ENGINE_RADIUS + 7.0))).set_meta("loot_source", "cache_core")
 	for x: float in [-20.0, 20.0]:

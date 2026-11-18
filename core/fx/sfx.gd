@@ -70,6 +70,8 @@ func _ready() -> void:
 	# heavy splintering crash as it gives way.
 	_streams["ice_crack"] = _noise_burst(0.45, 9.0, 0.75, 48.0)
 	_streams["ice_break"] = _noise_burst(1.1, 3.5, 0.95, 36.0)
+	# A linked faction's call for help: two quick rising chirps.
+	_streams["grid_call"] = _sweep(700.0, 2600.0, 0.32, 0.4)
 
 
 ## Plays a sound. With a position it is 3D and fades with distance; without
