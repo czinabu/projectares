@@ -645,6 +645,14 @@ without Caleb, and update the gap list when a PR closes a row.
   may change an actor's velocity by more than its own accelerations in one
   tick (wings catch a fall at `FlightRig.glide_catch_accel` and roll into a
   bank at `glide_bank_rate`; never clamp a velocity straight to its target).
+  Recoil is a pattern you can learn (Caleb's call, DESIGN.md "Recoil"):
+  each gun's `recoil_pattern` ("climb", "climb_right", "climb_left",
+  "sway", "kick") and a kick that builds through a spray
+  (`Gun.recoil_for`, `spray_shot`, counted in `Gun._fire`, so simulated),
+  with only `recoil_jitter` of the side kick left to chance; a new gun
+  names a pattern in its stats. Bots take the same kick into their aim
+  and pull against a share of it by skill (`BotBrain._take_recoil`,
+  `RECOIL_CONTROL`); measure with `gun_bench.tscn -- --recoil`.
   What only the player sees is the controller's job and view only: recoil
   reaching the view over a few frames and settling back
   (`PlayerController._update_recoil`), the view widening with speed

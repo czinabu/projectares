@@ -778,6 +778,36 @@ to the eye:
 Re-measured on the duel bench over three seeds: every enemy type wins and
 loses about as often as before (all rows within the bench's noise).
 
+### Recoil (Caleb's call: learnable patterns)
+
+Recoil rewards learning a gun. Each gun climbs and drifts its own fixed way,
+so holding a spray on target is a skill you can practise on the range, and
+only a little is left to chance.
+
+- **The kick builds through a spray.** Shots no more than 0.3 s apart are one
+  spray. Its first shot kicks 65% of the gun's kick, rising to 125% by the
+  ninth, so a short burst is tight and a long one climbs.
+- **Each gun drifts its own way** (`recoil_pattern` in its stats): the
+  carbine climbs and pulls right after a few rounds, the machine pistol
+  pulls left, the scrap rifle and the SMG sway side to side, and every
+  single-shot gun (pistol, hand cannon, DMR, shotgun, power weapons) kicks the
+  same jump every shot. The Storm Cannon climbs straight.
+- **A little chance on top.** 30% of a gun's side kick is random each shot.
+- **Aimed is gentler.** Aiming down sights takes 60% of the kick, as before.
+- **Same in both views.** The aim moves, not the camera; the gun model
+  already jumps in the hand.
+- **Bots feel it too.** The kick goes into their aim and they pull against
+  55% (rookie) to 90% (veteran) of it, settling once they stop firing, so a
+  rookie's long burst climbs off you and a veteran's holds. Their short
+  bursts keep the enemy duel rows in their bands.
+
+`gun_bench.tscn -- --recoil` prints each gun's pattern: the kick of the
+1st, 5th and 10th shot, and how far a 5- and 10-round spray climbs and
+drifts from the hip with no pull against it. With the starting numbers, a
+carbine's 10 rounds climb 5.4 degrees and drift 1.8 degrees right (about
+2 m off at 20 m); an SMG's climb 2.9 degrees, swaying; a hand cannon jumps
+2.6 degrees a shot.
+
 ### Feedback
 
 A fight should be read by ear and at a glance, the same in both views:

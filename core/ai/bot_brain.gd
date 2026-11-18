@@ -149,6 +149,17 @@ var _feint_at := -1.0
 var _feint_to := 0
 var _dash_wait := 0.0
 var _flinch_left := 0.0
+## Recoil reaches a bot's aim too (`Gun.recoil_for`): it pulls against
+## `recoil_control` of each kick, from `RECOIL_CONTROL` by skill, so a
+## rookie's long burst climbs off target and a veteran's holds.
+const RECOIL_CONTROL := Vector2(0.55, 0.9)
+const RECOIL_SETTLE_DELAY := 0.1
+const RECOIL_SETTLE := 9.0
+var _recoil_gun: Gun
+var _recoil_seen := 0
+## The climb (up, right; degrees) the bot's aim is off by from recoil.
+var _recoil := Vector2.ZERO
+var _recoil_rest := 0.0
 var _guard_delay := 0.0
 var _guard_dir := 0
 var _read_left := 0.0
@@ -476,6 +487,7 @@ func _attack(cmd: ActorCommand, delta: float) -> void:
 ## shoot. A new target means a fresh reaction time and a wide first aim.
 func _aim_gun(cmd: ActorCommand, eye: Vector3, chest: Vector3, dist: float, delta: float) -> void:
 	var sharp := clampf(skill, 0.0, 1.0)
+	_take_recoil(delta)
 	if target != _aim_target:
 		_aim_target = target
 		_seen_time = 0.0
@@ -508,7 +520,8 @@ func _aim_gun(cmd: ActorCommand, eye: Vector3, chest: Vector3, dist: float, delt
 	var side := to.cross(Vector3.UP).normalized()
 	var up := side.cross(to).normalized()
 	var off := deg_to_rad(error)
-	var want := (to + side * tan(_wander.x * off) + up * tan(_wander.y * off)).normalized()
+	var want := (to + side * tan(_wander.x * off + deg_to_rad(_recoil.y))
+			+ up * tan(_wander.y * off + deg_to_rad(_recoil.x))).normalized()
 	# Turn at a limited speed: no snap.
 	var gap := _aim.angle_to(want)
 	var step := deg_to_rad(turn_speed_deg * (0.6 + 0.8 * sharp)) * delta
@@ -985,3 +998,23 @@ func _flinch(time: float, knock_deg: float) -> void:
 		if side.length_squared() > 0.0:
 			_aim = _aim.rotated(side, deg_to_rad(knock_deg * 0.5) * _rng.randf_range(-1.0, 1.0))
 		_on_target = false
+
+
+## Adds the kick of any shot the held gun fired since the last tick to the
+## climb the bot is fighting, less what it pulls against, and lets the climb
+## settle once it stops firing (as a player's view settles).
+func _take_recoil(delta: float) -> void:
+	var gun := actor.get_active_weapon() as Gun
+	if gun != _recoil_gun:
+		_recoil_gun = gun
+		_recoil_seen = gun.shots_fired if gun else 0
+	if gun != null and gun.shots_fired != _recoil_seen:
+		var shots := gun.shots_fired - _recoil_seen
+		_recoil_seen = gun.shots_fired
+		var left := 1.0 - lerpf(RECOIL_CONTROL.x, RECOIL_CONTROL.y, skill)
+		_recoil += gun.last_recoil * shots * left * (0.6 if gun.is_aiming() else 1.0)
+		_recoil_rest = 0.0
+		return
+	_recoil_rest += delta
+	if _recoil_rest >= RECOIL_SETTLE_DELAY:
+		_recoil *= exp(-RECOIL_SETTLE * delta)

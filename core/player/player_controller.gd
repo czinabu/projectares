@@ -1103,12 +1103,16 @@ func _zoom_scale() -> float:
 	return clampf(scale, 0.05, 1.0)
 
 
-## Each shot kicks the view up and a little sideways. The player pulls down to
-## hold a spray on target. The kick arrives and settles in `_update_recoil`.
+## Each shot kicks the view along the gun's pattern (`Gun.recoil_for`: a
+## climb that builds through a spray and the gun's own drift), with a little
+## left to chance. The player learns to pull against it to hold a spray on
+## target. The kick arrives and settles in `_update_recoil`.
 func _on_gun_fired(_from: Vector3, _to: Vector3, gun: Gun) -> void:
 	var scale := 0.6 if gun.is_aiming() else 1.0
-	_kick_coming.x += deg_to_rad(gun.recoil_kick_deg) * scale
-	_kick_coming.y += deg_to_rad(_rng.randf_range(-gun.recoil_side_deg, gun.recoil_side_deg)) * scale
+	var jitter := gun.recoil_side_deg * gun.recoil_jitter
+	_kick_coming.x += deg_to_rad(gun.last_recoil.x) * scale
+	# The view's yaw grows to the left, so a kick to the right takes it down.
+	_kick_coming.y += deg_to_rad(-gun.last_recoil.y + _rng.randf_range(-jitter, jitter)) * scale
 	_since_shot = 0.0
 
 
