@@ -80,6 +80,16 @@ const HEATER := {"radius": 3.4, "warmth": 10.0}
 const VENT := {"radius": 3.5, "warmth": 6.0}
 const CAMP := {"radius": 7.0, "warmth": 10.0}
 const HATCH := {"radius": 5.0, "warmth": 8.0}
+## The warm beacons: the only way out of the valley (`WorldDef.sign_out_at_beacons`).
+## A beacon is a mast on the floor whose heat lamp powers up the lift home
+## while someone holds it, so each one is also somewhere warm to stand.
+const BEACONS := [
+	{"name": "Mouth Beacon", "z": 232.0, "off": -22.0},
+	{"name": "Narrows Beacon", "z": -2.0, "off": 24.0},
+	{"name": "Lakeshore Beacon", "z": -60.0, "off": -40.0},
+	{"name": "Glacier Beacon", "z": -180.0, "off": 24.0},
+]
+const BEACON := {"radius": 6.0, "warmth": 8.0}
 ## Old listening posts on the rims, reached only by flight.
 const LISTENING := [
 	{"z": 175.0, "side": 1.0},
@@ -103,6 +113,7 @@ var _huts: Array[Dictionary] = []
 var _posts: Array[Vector3] = []
 var _engine_at := Vector3.ZERO
 var _vents: Array[Vector3] = []
+var _beacons: Array[Vector3] = []
 var _camp := Vector3.ZERO
 ## Bot spawn spots, placed last in order of `rank`: the Raid fills the first
 ## `bot_count` markers at the start, so a mix of both factions comes first.
@@ -138,6 +149,7 @@ func _ready() -> void:
 	_build_floor()
 	_build_engine()
 	_build_vents()
+	_build_beacons()
 	_place_bot_spots()
 	_art_rng.seed = LAYOUT_SEED
 	_dress()
@@ -513,6 +525,20 @@ func _build_vents() -> void:
 		_add_warmth(at, VENT)
 
 
+## The warm beacons: a mast to stand by (no random numbers, so the layout
+## around them is the same as without them).
+func _build_beacons() -> void:
+	for beacon: Dictionary in BEACONS:
+		var z: float = beacon["z"]
+		var at := _ground(Vector2(centre(z) + float(beacon["off"]), z))
+		_beacons.append(at)
+		var marker := _add_marker("beacon", at + Vector3(0, 0.1, 0))
+		marker.set_meta("name", beacon["name"])
+		marker.set_meta("radius", BEACON["radius"])
+		_add_warmth(at, BEACON)
+		_box(Vector3(0.5, 5.0, 0.5), at + Vector3(0, 2.5, 0), STEEL)
+
+
 ## A place that gives body heat back (`WorldDef`'s "The cold").
 func _add_warmth(at: Vector3, kind: Dictionary) -> void:
 	var marker := _add_marker("warmth", at + Vector3(0, 0.1, 0))
@@ -609,6 +635,7 @@ func _dress() -> void:
 	_dress_ice(art)
 	_dress_huts(art)
 	_dress_warmth(art)
+	_dress_beacons(art)
 	_dress_engine(art)
 	_dress_listening_posts(art)
 	_dress_horizon(art)
@@ -732,6 +759,29 @@ func _dress_warmth(art: Node3D) -> void:
 	flicker.tween_property(fire, "light_energy", 3.6, 0.22)
 	flicker.tween_property(fire, "light_energy", 5.2, 0.31)
 	art.add_child(_steam(_camp + Vector3(0, 1.0, 0), 0.6))
+
+
+## Each beacon wears a heat lamp at the top of its mast and a ring of light
+## on the snow round it, the size of the ground you hold to power it up.
+func _dress_beacons(art: Node3D) -> void:
+	var glow := StandardMaterial3D.new()
+	glow.albedo_color = Color(1.0, 0.62, 0.25)
+	glow.emission_enabled = true
+	glow.emission = Color(1.0, 0.55, 0.2)
+	glow.emission_energy_multiplier = 2.5
+	var radius: float = BEACON["radius"]
+	for at in _beacons:
+		art.add_child(_visual_box(Vector3(1.1, 0.5, 1.1), at + Vector3(0, 5.2, 0), glow))
+		var lamp := Look.lamp(Color(1.0, 0.6, 0.25), 4.0, radius * 2.0)
+		lamp.position = at + Vector3(0, 5.6, 0)
+		art.add_child(lamp)
+		for k in 16:
+			var a := TAU * k / 16.0
+			var dash := _visual_box(Vector3(0.3, 0.05, radius * TAU / 32.0),
+					at + Vector3(cos(a) * radius, 0.08, sin(a) * radius), glow)
+			dash.rotation.y = -a
+			art.add_child(dash)
+		art.add_child(_steam(at + Vector3(0, 5.6, 0), 0.5))
 
 
 ## Warm air rising off something into the cold: soft white puffs.

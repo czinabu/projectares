@@ -85,7 +85,7 @@ signal base_visit_requested(owner_name: String, stash: Array, loadout: Dictionar
 signal portal_travel(destination: String)
 
 const DEFAULT_PORT := 24565
-const PROTOCOL := 39
+const PROTOCOL := 40
 ## Every packet is compressed, both ways. State updates are mostly repeated
 ## numbers, and a big battle sends a player hundreds of them a second. Server
 ## and client must agree, so a change here needs a new PROTOCOL.
@@ -109,6 +109,8 @@ const PROTOCOL := 39
 ## carries the shivering bit.
 ## 39: what a player picks up is told to them item by item (`_looted`), for
 ## the visor's pickup feed.
+## 40: warm beacons: a sign-out carries the rate its countdown runs at
+## (`_sign_out`'s `rate`: 0 while away from the beacon, faster with company).
 ## Where an out-of-date game gets the latest build: the rolling "latest"
 ## release the Windows client workflow publishes (docs/hosting.md).
 const UPDATE_URL := "https://github.com/czinabu/projectares/releases/tag/latest"
@@ -790,7 +792,7 @@ func _reclaim(peer: int, actor: Actor) -> void:
 	_send_banked(actor)
 	var state := raid.state_for(actor)
 	if state != null and state.sign_out_left >= 0.0:
-		_sign_out.rpc_id(peer, state.sign_out_left, state.sign_out_total)
+		_sign_out.rpc_id(peer, state.sign_out_left, state.sign_out_total, state.count_rate)
 
 
 func _on_peer_disconnected(peer: int) -> void:
@@ -1003,7 +1005,7 @@ func _on_server_sign_out_changed(actor: Actor, seconds_left: float) -> void:
 	var state := raid.state_for(actor) if raid != null else null
 	if peer != 0 and peer in _api.get_peers():
 		var total := state.sign_out_total if state != null else maxf(seconds_left, 0.0)
-		_sign_out.rpc_id(peer, seconds_left, total)
+		_sign_out.rpc_id(peer, seconds_left, total, state.count_rate if state != null else 1.0)
 	# A portal home unfolds over its opener's countdown: when that changes
 	# (lifting off or landing), everyone sees the ring in step again.
 	if state != null and seconds_left >= 0.0:
@@ -3021,14 +3023,16 @@ func _toy(thrower: int, item_id: String, from: Vector3, toy_velocity: Vector3, h
 
 ## Your sign-out started, with this many seconds to go, or stopped (below zero).
 ## `total` is the span the countdown is using now (ground, air or a gate), so
-## the ring keeps its progress when the rate changes.
+## the ring keeps its progress when the rate changes. `rate` is how fast it
+## counts down now: 0 while away from a warm beacon, more with company there.
 @rpc("authority", "call_remote", "reliable")
-func _sign_out(seconds_left: float, total := -1.0) -> void:
+func _sign_out(seconds_left: float, total := -1.0, rate := 1.0) -> void:
 	var me: Actor = _actors.get(my_actor_id)
 	var state := raid.state_for(me) if raid != null and me != null else null
 	if state != null:
 		state.sign_out_left = seconds_left
 		state.sign_out_total = total if total > 0.0 else maxf(seconds_left, 0.0)
+		state.count_rate = clampf(rate, 0.0, 4.0)
 
 
 @rpc("authority", "call_remote", "reliable")

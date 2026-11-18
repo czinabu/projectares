@@ -119,6 +119,9 @@ func _init() -> void:
 	# river mouth, a minute and a quarter at the glacier head.
 	cold = ZONE_COLD[0]
 	cold_damage = 4.0
+	# Getting out: only at a warm beacon, which a group powers up faster
+	# (DESIGN.md "Frostline", "Getting out").
+	sign_out_at_beacons = true
 
 
 func register_items() -> void:

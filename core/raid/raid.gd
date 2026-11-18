@@ -185,6 +185,10 @@ var _event_pod: LootContainer
 ## Risk zones (DESIGN.md section 2): the map's gate outposts (Marker3D, metas
 ## "name" and "radius") and its core bosses, { marker, bot, back_in }.
 var outposts: Array[Node3D] = []
+## Warm beacons (DESIGN.md "Frostline"): where a world with
+## `WorldDef.sign_out_at_beacons` lets players sign out (Marker3D, metas
+## "name" and "radius").
+var beacons: Array[Node3D] = []
 ## Whether gate outposts shelter anyone and hazards burn. Only the test suite
 ## turns it off, for the checks written before risk zones that need a player
 ## ready to fight where they spawn and unhurt by the ground.
@@ -324,6 +328,7 @@ func _setup(p_world: WorldDef, p_seed: int) -> void:
 			point.hold("faction:" + faction, marker.get_meta("holder_name", faction.capitalize()), false)
 		strongpoints.append(point)
 	outposts = _map_nodes("outpost")
+	beacons = _map_nodes("beacon")
 	warmth = _map_nodes("warmth")
 	_assault_in = world.assault_interval
 	_event_in = world.event_interval
@@ -1117,6 +1122,7 @@ func reclaim_player(actor: Actor) -> bool:
 		state.sign_out_left = -1.0
 		state.sign_out_fixed = false
 		state.sign_out_door = false
+		state.at_beacon = null
 		actor.notice.emit("Back in your body")
 	actor.set_sign_out_beacon(false)
 	sign_out_changed.emit(actor, state.sign_out_left)
@@ -1176,12 +1182,26 @@ func begin_sign_out(actor: Actor, forced := false) -> bool:
 		state.sign_out_forced = true
 		state.sign_out_fixed = true
 		state.sign_out_left = wait
+		# A body left behind counts down where it stands, beacon or not.
+		state.at_beacon = null
 		actor.set_sign_out_beacon(false)
 	elif state.sign_out_left >= 0.0:
 		return true
 	elif fighting:
 		actor.notice.emit("You cannot sign out in a fight")
 		return false
+	elif _beacons_only():
+		var beacon := beacon_at(actor.global_position)
+		if beacon == null:
+			actor.notice.emit("Sign out at a warm beacon")
+			return false
+		# A beacon powers up while you hold it; the count runs only inside.
+		state.at_beacon = beacon
+		state.sign_out_fixed = true
+		state.sign_out_door = false
+		state.sign_out_left = world.beacon_sign_out_time
+		actor.notice.emit("Powering up %s. Stay close for %d seconds"
+				% [beacon.get_meta("name", "the beacon"), ceili(world.beacon_sign_out_time)])
 	elif state.sheltered:
 		# A gate outpost is the way out: a quick sign-out, and it stays that
 		# long even if they are off the floor inside the bubble.
@@ -1210,6 +1230,8 @@ func cancel_sign_out(actor: Actor) -> void:
 	state.sign_out_left = -1.0
 	state.sign_out_fixed = false
 	state.sign_out_door = false
+	state.at_beacon = null
+	state.count_rate = 1.0
 	actor.set_sign_out_beacon(false)
 	actor.notice.emit("Sign-out cancelled")
 	sign_out_changed.emit(actor, -1.0)
@@ -1238,7 +1260,15 @@ func _tick_sign_outs(delta: float) -> void:
 		# and the beacon (if they are in the air) stays up.
 		if is_instance_valid(actor) and actor.is_cloaked():
 			continue
-		state.sign_out_left = maxf(0.0, state.sign_out_left - delta)
+		if state.at_beacon != null and mode != Mode.CLIENT and is_instance_valid(actor):
+			var rate := _beacon_rate(state)
+			if not is_equal_approx(rate, state.count_rate):
+				state.count_rate = rate
+				# The owner's countdown follows the beacon's pace.
+				sign_out_changed.emit(actor, state.sign_out_left)
+		elif mode != Mode.CLIENT:
+			state.count_rate = 1.0
+		state.sign_out_left = maxf(0.0, state.sign_out_left - delta * state.count_rate)
 		# A client only shows the countdown. The server decides when it ends.
 		if state.sign_out_left <= 0.0 and mode != Mode.CLIENT:
 			_leave(state)
@@ -1280,6 +1310,41 @@ func _update_sign_out_beacon(state: PlayerState, delta: float) -> void:
 		return
 	state.beacon_hum = 2.0
 	Combat.noise(actor, actor.global_position, SIGN_OUT_BEACON_HEAR)
+
+
+## Whether this world signs out only at warm beacons. Like gate outposts, a
+## zone rule: the test suite's older checks turn it off.
+func _beacons_only() -> bool:
+	return world.sign_out_at_beacons and zone_rules and not beacons.is_empty()
+
+
+## The warm beacon an actor stands at, or null.
+func beacon_at(at: Vector3) -> Node3D:
+	for marker in beacons:
+		var flat := Vector2(at.x - marker.global_position.x, at.z - marker.global_position.z)
+		if flat.length() <= float(marker.get_meta("radius", 6.0)) and absf(at.y - marker.global_position.y) < 4.0:
+			return marker
+	return null
+
+
+## How fast a beacon sign-out counts down: nothing while its player is away
+## from the beacon (it waits, held), and faster for each other player
+## powering the same one, so company helps but one can do it alone.
+func _beacon_rate(state: PlayerState) -> float:
+	var actor := state.actor
+	if beacon_at(actor.global_position) != state.at_beacon:
+		if not state.beacon_left:
+			state.beacon_left = true
+			actor.notice.emit("Back to the beacon: it only powers up while you hold it")
+		return 0.0
+	state.beacon_left = false
+	var others := 0
+	for other in players:
+		if other != state and not other.finished and other.at_beacon == state.at_beacon \
+				and other.sign_out_left >= 0.0 and is_instance_valid(other.actor) \
+				and beacon_at(other.actor.global_position) == state.at_beacon:
+			others += 1
+	return minf(1.0 + world.beacon_join_bonus * others, world.beacon_join_cap)
 
 
 func _mark_combat(state: PlayerState) -> void:
@@ -1685,6 +1750,8 @@ func zone_label(actor: Actor) -> String:
 	var label := world.zone_name(tier)
 	if label != "" and world.hazard_at(actor.global_position) > 0.0:
 		label += " · burning"
+	elif label != "" and _beacons_only() and beacon_at(actor.global_position) != null:
+		label = "%s · beacon" % beacon_at(actor.global_position).get_meta("name", "Beacon")
 	elif label != "" and world.cold > 0.0 and actor.warming:
 		label += " · warm"
 	return label
@@ -2864,6 +2931,13 @@ class PlayerState:
 	## The sign-out was started through a portal home (`open_portal`), so
 	## the result says they came home by its door ("door": "home").
 	var sign_out_door := false
+	## The warm beacon this sign-out is powering, or null (DESIGN.md
+	## "Frostline"), and whether they have stepped away from it.
+	var at_beacon: Node3D = null
+	var beacon_left := false
+	## How fast the sign-out counts down now: 1, 0 while away from the
+	## beacon, more with company there. A client is told it.
+	var count_rate := 1.0
 	## Seconds until the airborne beacon makes another noise.
 	var beacon_hum := 0.0
 	## `Raid.clock` when they last gave or took a hit.
