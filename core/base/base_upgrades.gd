@@ -49,7 +49,7 @@ const UPGRADES := {
 		"adds": "Targets to shoot at with endless ammo.\nNothing there is lost"},
 	"finish": {"title": "Finish", "track": "Headquarters", "price": 1500, "needs_count": 4,
 		"adds": "Wall panels, lighting and trim"},
-	# Designs (`BasePlan.SHAPES` and `STYLES`): another hub shape or another
+	# Designs (`BasePlan.SHAPES`, `STYLES` and `FINISHES`): another hub shape or another
 	# style for a room, bought at the plan table and free to switch to after.
 	"hub_ring": {"title": "Ring hub", "track": "Designs", "price": 4000,
 		"adds": "An eight-sided rotunda round the plan table"},
@@ -81,6 +81,15 @@ const UPGRADES := {
 		"adds": "Trophies on lit plinths"},
 	"style_stores_cargo": {"title": "Cargo stores", "track": "Designs", "price": 800,
 		"adds": "Crate stacks and a pallet rack"},
+	# Finishes (`BasePlan.FINISHES`): bought once, worn by any room after.
+	"finish_gunmetal": {"title": "Gunmetal finish", "track": "Designs", "price": 1200,
+		"adds": "Dark blued steel lit cold blue"},
+	"finish_ceramic": {"title": "Ceramic finish", "track": "Designs", "price": 1500,
+		"adds": "Clean white lab panels"},
+	"finish_brass": {"title": "Brass finish", "track": "Designs", "price": 2000,
+		"adds": "Warm bronzed steel with brass trim"},
+	"finish_blackout": {"title": "Blackout finish", "track": "Designs", "price": 2500,
+		"adds": "Matte black with lit strips"},
 }
 
 ## The track of the design unlocks: they change how the base looks, never

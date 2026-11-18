@@ -1423,9 +1423,15 @@ without Caleb, and update the gap list when a PR closes a row.
   numbers) and each room's style (`BasePlan.STYLES`, three a room: where
   its displays, stations and bench stand, `_style_spot`,
   `style_station_spot`, and what furnishes it, `_furnish_style`; every
-  style lays out every spot its room has, whole and small). A shape change
-  rebuilds the shell (`_build_static`; the wall mirror only moves). The
-  first shape and each room's first style are free; any other is a design
+  style lays out every spot its room has, whole and small) and the finish
+  the hub and each room wear (`BasePlan.FINISHES`, the plan's "finishes":
+  steel free, then gunmetal, ceramic, brass, blackout), built through the
+  shell's builders (`HomeBase.FINISH_LOOKS`: `_shell`'s surfaces, the
+  seams, ribs, kick plates, ceiling light and lamps, `_lit`, set per area
+  by `_finish`), never by a second set of builders. A shape or hub finish
+  change rebuilds the shell (`_build_static`; the wall mirror only moves).
+  The first shape, each room's first style and steel are free; any other
+  (a finish bought once goes on any room) is a design
   unlock (`BaseUpgrades` track "Designs", `is_design`, never counted by
   `needs_count`), bought once with scrip and free to switch after (Caleb's
   call). The plan table in the middle of the hub (`HomeBase.PlanTable`) is
@@ -1434,10 +1440,10 @@ without Caleb, and update the gap list when a PR closes a row.
   "plan"), which mounts the customizer (`core/ui/plan_panel.gd`, a view)
   on the lectern's screen as a `WorldScreen` (`HomeBase.plan_screen`,
   forwarded with `WorldScreen.forward_mouse`): tabs for the layout, the
-  rooms and the styles, with whatever it points at shown on the hologram
+  rooms, the styles and the finishes, with whatever it points at shown on the hologram
   over the table (`plan_preview`, `plan_mark`). Only a pick asks for a
   change (`plan_change`, `room_placed`; `BasePlan.change` with a socket,
-  "shape" or "style:<room>"): `Profile.place_room` solo,
+  "shape", "style:<room>" or "finish:<hub or room>"): `Profile.place_room` solo,
   `NetSession.place_room` online, decided by `StashService.place_room`,
   which checks the unlock is owned. An unlock is bought from the screen
   with a confirming click (`plan_buy`, `upgrade_requested`) and put in use

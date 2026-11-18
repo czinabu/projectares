@@ -330,6 +330,9 @@ var plan_table: PlanTable
 var _display_root := Node3D.new()
 ## The room `_build_rooms` is building into (see `_target`), or null.
 var _into: Node3D
+## The finish (`BasePlan.FINISHES`) the shell's builders are building in: the
+## hub's while the hub is built, each room's while it is.
+var _finish := "steel"
 
 
 ## Something on show. Looking at it gives its name; using it equips it.
@@ -586,16 +589,18 @@ func show_gear(p_stash: Array, p_loadout: Dictionary, p_upgrades: Variant = null
 			upgrades = fresh
 			changed = true
 	var reshaped := false
+	var refinished := false
 	if p_plan != null:
 		var placed := BasePlan.clean(p_plan)
 		if placed != base_plan:
 			reshaped = str(placed["shape"]) != hub_shape()
+			refinished = str(placed["finishes"][BasePlan.HUB]) != area_finish(BasePlan.HUB)
 			base_plan = placed
 			changed = true
 	if reshaped:
 		_apply_shape()
 	if changed and is_inside_tree():
-		if reshaped:
+		if reshaped or refinished:
 			_build_static()
 		_build_upgrades()
 		_keep_player_inside()
@@ -627,6 +632,7 @@ func _build_static() -> void:
 	var before := {}
 	for child in get_children():
 		before[child] = true
+	_finish = area_finish(BasePlan.HUB)
 	_build_room()
 	_build_range()
 	_build_course()
@@ -1528,7 +1534,7 @@ func _build_rect() -> void:
 			lamps.assign([Vector3(-6, 4.8, -4), Vector3(6, 4.8, -4), Vector3(-6, 4.8, 5), Vector3(6, 4.8, 5), Vector3(0, 4.8, 0.5)])
 	if Look.enabled:
 		for at in lamps:
-			var light := Look.lamp(Color(1.0, 0.9, 0.76), 3.2, 16.0)
+			var light := Look.lamp(_lit(Color(1.0, 0.9, 0.76)), 3.2, 16.0)
 			light.position = at
 			add_child(light)
 
@@ -1587,7 +1593,7 @@ func _build_courtyard() -> void:
 	ring.position = Vector3(0, 0.0, 0)
 	add_child(ring)
 	if Look.enabled:
-		var sun := Look.lamp(Color(0.85, 0.92, 1.0), 4.0, 14.0)
+		var sun := Look.lamp(_lit(Color(0.85, 0.92, 1.0)), 4.0, 14.0)
 		sun.position = Vector3(0, y - 1.0, 0)
 		add_child(sun)
 
@@ -1662,10 +1668,10 @@ func _build_ring() -> void:
 	if Look.enabled:
 		for i in 6:
 			var angle := TAU * i / 6.0
-			var light := Look.lamp(Color(1.0, 0.9, 0.76), 2.6, 13.0)
+			var light := Look.lamp(_lit(Color(1.0, 0.9, 0.76)), 2.6, 13.0)
 			light.position = Vector3(sin(angle) * 6.5, y - 1.4, cos(angle) * 6.5)
 			add_child(light)
-		var middle := Look.lamp(Color(0.9, 0.95, 1.0), 2.4, 10.0)
+		var middle := Look.lamp(_lit(Color(0.9, 0.95, 1.0)), 2.4, 10.0)
 		middle.position = Vector3(0, y - 1.2, 0)
 		add_child(middle)
 
@@ -1739,7 +1745,7 @@ func _build_corridor() -> void:
 			_box(Vector3(0.25, corridor.y, length - 0.5), wall_at, _shell("wall"))
 		_trim(Vector3(0.25, corridor.y, length - 0.5), wall_at, Vector3(-side, 0, 0))
 	if Look.enabled:
-		var light := Look.lamp(Color(1.0, 0.94, 0.85), 2.0, 7.0)
+		var light := Look.lamp(_lit(Color(1.0, 0.94, 0.85)), 2.0, 7.0)
 		light.position = mid + Vector3(0, corridor.y - 0.5, 0)
 		add_child(light)
 
@@ -1777,6 +1783,7 @@ func _build_rooms() -> void:
 		node.transform = socket_transform(socket)
 		_keep(node)
 		_into = node
+		_finish = area_finish(room)
 		_build_shell(room)
 		match room_style(room):
 			"rack":
@@ -1790,6 +1797,7 @@ func _build_rooms() -> void:
 			var style:
 				_furnish_style(room, style)
 		_into = null
+		_finish = area_finish(BasePlan.HUB)
 		_keep(_name_plate(BasePlan.title(room), socket_transform(socket), ROOM_COLORS.get(room, Color.WHITE), room_door.y))
 
 
@@ -1821,7 +1829,7 @@ func _build_shell(room: String) -> void:
 		_trim(Vector3(piece, y, 0.5), Vector3(side * (room_door.x * 0.5 + piece * 0.5), y * 0.5, 0.25), Vector3.FORWARD)
 	if Look.enabled:
 		for at_z: float in ([-depth * 0.3, -depth * 0.75] if room_open(room) else [-depth * 0.5]):
-			var light := Look.lamp(Color(1.0, 0.92, 0.8), 2.8, 9.0)
+			var light := Look.lamp(_lit(Color(1.0, 0.92, 0.8)), 2.8, 9.0)
 			light.position = Vector3(0, y - 1.3, at_z)
 			_target().add_child(light)
 
@@ -2228,7 +2236,7 @@ func _build_range() -> void:
 	_build_targets(line_z)
 	if Look.enabled:
 		for at_z: float in [-wall_z - 3.0, line_z, line_z - 12.0, line_z - 24.0, line_z - 36.0]:
-			var light := Look.lamp(Color(1.0, 0.94, 0.85), 3.5, 14.0)
+			var light := Look.lamp(_lit(Color(1.0, 0.94, 0.85)), 3.5, 14.0)
 			light.position = Vector3(0, y - 1.0, at_z)
 			add_child(light)
 
@@ -2283,7 +2291,7 @@ func _build_test_lane() -> void:
 	add_child(board)
 	_update_lane_board()
 	if Look.enabled:
-		var light := Look.lamp(Color(1.0, 0.94, 0.85), 3.0, 10.0)
+		var light := Look.lamp(_lit(Color(1.0, 0.94, 0.85)), 3.0, 10.0)
 		light.position = Vector3(0, height - 0.4, mid)
 		add_child(light)
 	# All of it goes with the upgrade: one node to clear.
@@ -2449,24 +2457,79 @@ func _target() -> Node3D:
 	return _into if _into != null else self
 
 
-## The base's shell is steel, not rock: dark plated floors, panelled walls
-## between ribs and a ceiling grid. One material for each part.
+## How each finish (`BasePlan.FINISHES`) dresses the shell: the surface of
+## each part, the colours of its seams, beams, ribs and kick plates, the
+## ceiling panels' light and the lamps' (null keeps each lamp its own).
+## "strip" lights the kick plate in that colour, and "accent" is the lit
+## trim the hub's "finish" upgrade runs round it.
+const FINISH_LOOKS := {
+	"steel": {
+		"floor": {"tint": Color(0.62, 0.64, 0.68), "grime": 0.3, "scale": 0.5, "metal": 0.1, "rough_mult": 1.5},
+		"ceiling": {"tint": Color(0.42, 0.44, 0.47), "grime": 0.2, "scale": 0.5, "metal": 0.1, "rough_mult": 1.4},
+		"seal": {"tint": Color(0.42, 0.43, 0.46), "grime": 0.3, "scale": 0.4, "metal": 0.15, "rough_mult": 1.3},
+		"wall": {"tint": Color(0.66, 0.69, 0.73), "grime": 0.15, "scale": 0.4, "metal": 0.15, "rough_mult": 1.3},
+		"seam": Color(0.14, 0.15, 0.17), "beam": Color(0.2, 0.21, 0.23), "rib": Color(0.3, 0.32, 0.35),
+		"kick": Color(0.18, 0.19, 0.21), "glow": Color(0.92, 0.95, 1.0), "lamp": null, "strip": null, "accent": Color(0.45, 0.9, 1.0)},
+	"gunmetal": {
+		"floor": {"tint": Color(0.26, 0.29, 0.33), "grime": 0.2, "scale": 0.5, "metal": 0.35, "rough_mult": 1.1},
+		"ceiling": {"tint": Color(0.17, 0.19, 0.22), "grime": 0.1, "scale": 0.5, "metal": 0.3, "rough_mult": 1.1},
+		"seal": {"tint": Color(0.2, 0.22, 0.26), "grime": 0.2, "scale": 0.4, "metal": 0.35, "rough_mult": 1.0},
+		"wall": {"tint": Color(0.32, 0.35, 0.4), "grime": 0.1, "scale": 0.4, "metal": 0.35, "rough_mult": 1.0},
+		"seam": Color(0.07, 0.08, 0.1), "beam": Color(0.11, 0.12, 0.14), "rib": Color(0.16, 0.18, 0.21),
+		"kick": Color(0.09, 0.1, 0.12), "glow": Color(0.62, 0.84, 1.0), "lamp": Color(0.72, 0.86, 1.0), "strip": null, "accent": Color(0.45, 0.8, 1.0)},
+	"ceramic": {
+		"floor": {"tint": Color(0.8, 0.81, 0.82), "grime": 0.05, "scale": 0.5, "metal": 0.0, "rough_mult": 0.9},
+		"ceiling": {"tint": Color(0.86, 0.87, 0.88), "grime": 0.0, "scale": 0.5, "metal": 0.0, "rough_mult": 1.0},
+		"seal": {"tint": Color(0.7, 0.72, 0.74), "grime": 0.05, "scale": 0.4, "metal": 0.0, "rough_mult": 0.9},
+		"wall": {"tint": Color(0.92, 0.93, 0.94), "grime": 0.0, "scale": 0.4, "metal": 0.0, "rough_mult": 0.9},
+		"seam": Color(0.4, 0.42, 0.45), "beam": Color(0.7, 0.72, 0.74), "rib": Color(0.6, 0.63, 0.66),
+		"kick": Color(0.36, 0.38, 0.41), "glow": Color(0.97, 0.99, 1.0), "lamp": Color(0.95, 0.98, 1.0), "strip": null, "accent": Color(0.45, 0.9, 1.0)},
+	"brass": {
+		"floor": {"tint": Color(0.42, 0.37, 0.31), "grime": 0.3, "scale": 0.5, "metal": 0.25, "rough_mult": 1.3},
+		"ceiling": {"tint": Color(0.3, 0.27, 0.23), "grime": 0.2, "scale": 0.5, "metal": 0.2, "rough_mult": 1.3},
+		"seal": {"tint": Color(0.36, 0.32, 0.27), "grime": 0.3, "scale": 0.4, "metal": 0.25, "rough_mult": 1.2},
+		"wall": {"tint": Color(0.53, 0.48, 0.41), "grime": 0.2, "scale": 0.4, "metal": 0.25, "rough_mult": 1.2},
+		"seam": Color(0.2, 0.16, 0.11), "beam": Color(0.24, 0.2, 0.15), "rib": Color(0.72, 0.55, 0.27),
+		"kick": Color(0.55, 0.41, 0.2), "glow": Color(1.0, 0.88, 0.68), "lamp": Color(1.0, 0.82, 0.58), "strip": null, "accent": Color(1.0, 0.72, 0.35)},
+	"blackout": {
+		"floor": {"tint": Color(0.11, 0.11, 0.12), "grime": 0.1, "scale": 0.5, "metal": 0.05, "rough_mult": 1.6},
+		"ceiling": {"tint": Color(0.08, 0.08, 0.09), "grime": 0.0, "scale": 0.5, "metal": 0.05, "rough_mult": 1.6},
+		"seal": {"tint": Color(0.1, 0.1, 0.11), "grime": 0.1, "scale": 0.4, "metal": 0.05, "rough_mult": 1.5},
+		"wall": {"tint": Color(0.14, 0.14, 0.15), "grime": 0.05, "scale": 0.4, "metal": 0.05, "rough_mult": 1.5},
+		"seam": Color(0.04, 0.04, 0.05), "beam": Color(0.06, 0.06, 0.07), "rib": Color(0.08, 0.08, 0.09),
+		"kick": Color(1.0, 0.32, 0.48), "glow": Color(1.0, 0.55, 0.66), "lamp": Color(1.0, 0.78, 0.84), "strip": Color(1.0, 0.32, 0.48), "accent": Color(1.0, 0.35, 0.5)},
+}
+
+
+## The look of the finish being built in.
+func _finish_look() -> Dictionary:
+	return FINISH_LOOKS.get(_finish, FINISH_LOOKS["steel"])
+
+
+## The finish an area (`BasePlan.areas`: the hub or a room) wears.
+func area_finish(area: String) -> String:
+	return str(base_plan.get("finishes", {}).get(area, "steel"))
+
+
+## A lamp's colour in the finish being built in: its own, or the finish's.
+func _lit(own: Color) -> Color:
+	var tint: Variant = _finish_look()["lamp"]
+	return own if tint == null else tint
+
+
+## The base's shell is steel, not rock, in the finish being built in: plated
+## floors, panelled walls between ribs and a ceiling grid. One material for
+## each part.
 func _shell(part: String) -> Material:
-	match part:
-		"floor":
-			return Look.surface("metal", {"tint": Color(0.62, 0.64, 0.68), "grime": 0.3, "scale": 0.5, "metal": 0.1, "rough_mult": 1.5})
-		"ceiling":
-			return Look.surface("metal", {"tint": Color(0.42, 0.44, 0.47), "grime": 0.2, "scale": 0.5, "metal": 0.1, "rough_mult": 1.4})
-		"seal":
-			return Look.surface("metal", {"tint": Color(0.42, 0.43, 0.46), "grime": 0.3, "scale": 0.4, "metal": 0.15, "rough_mult": 1.3})
-	return Look.surface("metal", {"tint": Color(0.66, 0.69, 0.73), "grime": 0.15, "scale": 0.4, "metal": 0.15, "rough_mult": 1.3})
+	var look := _finish_look()
+	return Look.surface("metal", look.get(part, look["wall"]))
 
 
 ## A plated floor `size` across (x, z) centred on `at`, its top at y 0, with a
 ## seam every `plate_size` metres.
 func _floor(size: Vector2, at: Vector3) -> void:
 	_box(Vector3(size.x, 0.5, size.y), at + Vector3(0, -0.25, 0), _shell("floor"))
-	var seam := Color(0.14, 0.15, 0.17)
+	var seam: Color = _finish_look()["seam"]
 	var x := -size.x * 0.5 + plate_size
 	while x < size.x * 0.5 - 0.1:
 		_target().add_child(_part(Vector3(0.035, 0.008, size.y), at + Vector3(x, 0.004, 0), seam))
@@ -2481,8 +2544,8 @@ func _floor(size: Vector2, at: Vector3) -> void:
 ## beams with a light panel in every other bay of it.
 func _ceiling(size: Vector2, at: Vector3, height: float) -> void:
 	_box(Vector3(size.x, 0.5, size.y), at + Vector3(0, height + 0.25, 0), _shell("ceiling"))
-	var beam := Color(0.2, 0.21, 0.23)
-	var glow := Color(0.92, 0.95, 1.0)
+	var beam: Color = _finish_look()["beam"]
+	var glow: Color = _finish_look()["glow"]
 	var cols := maxi(1, int(round(size.x / beam_spacing)))
 	var rows := maxi(1, int(round(size.y / beam_spacing)))
 	var step := Vector2(size.x / cols, size.y / rows)
@@ -2518,11 +2581,12 @@ func _trim(size: Vector3, at: Vector3, inward: Vector3) -> void:
 	var depth := (size.z if along_x else size.x) * 0.5
 	var face := at + inward * depth
 	var bottom := at.y - size.y * 0.5
-	var rib := Color(0.3, 0.32, 0.35)
-	var kick := Color(0.18, 0.19, 0.21)
+	var rib: Color = _finish_look()["rib"]
+	var kick: Color = _finish_look()["kick"]
+	var strip: Variant = _finish_look()["strip"]
 	var span := func(long: float, high: float, thick: float) -> Vector3:
 		return Vector3(long, high, thick) if along_x else Vector3(thick, high, long)
-	_target().add_child(_part(span.call(length, 0.25, 0.06), face + inward * 0.03 + Vector3(0, bottom + 0.125 - at.y, 0), kick))
+	_target().add_child(_part(span.call(length, 0.25 if strip == null else 0.06, 0.06), face + inward * 0.03 + Vector3(0, bottom + (0.125 if strip == null else 0.2) - at.y, 0), kick, strip != null))
 	_target().add_child(_part(span.call(length, 0.12, 0.06), face + inward * 0.03 + Vector3(0, bottom + size.y - 0.3 - at.y, 0), rib))
 	var count := int(floor(length / rib_spacing))
 	if count < 1:
@@ -2697,7 +2761,7 @@ func _build_gates() -> void:
 	elif hub_shape() == "ring":
 		# Lit trim along the top of each face and a light column in each
 		# corner of the rotunda.
-		var trim := Color(0.45, 0.9, 1.0)
+		var trim: Color = FINISH_LOOKS[area_finish(BasePlan.HUB)]["accent"]
 		var a := room_size.x * 0.5
 		var corner := a / cos(PI / 8.0) - 0.2
 		for i in 8:
@@ -2710,7 +2774,7 @@ func _build_gates() -> void:
 			_keep(_part(Vector3(0.12, room_size.y, 0.12), Vector3(sin(angle) * corner, room_size.y * 0.5, cos(angle) * corner), trim, true))
 	else:
 		# Lit trim round the top of the hub and a light column in each corner.
-		var trim := Color(0.45, 0.9, 1.0)
+		var trim: Color = FINISH_LOOKS[area_finish(BasePlan.HUB)]["accent"]
 		var top := room_size.y - 0.2
 		var wall_x := room_size.x * 0.5
 		var wall_z := room_size.z * 0.5
