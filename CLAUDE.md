@@ -61,6 +61,20 @@ without Caleb, and update the gap list when a PR closes a row.
   `NetSession._owner_peer(actor)`, never a peer id kept from the deploy,
   because a body outlives the connection that deployed it.
 - Drop-in protection is `Actor.protected_left`, checked in `Combat.deal`.
+- The cold (DESIGN.md "Frostline"): a world with `WorldDef.cold` over 0
+  drains each player's `Actor.body_heat` by `WorldDef.cold_at` out in the
+  open; warmth fills it again (map markers in group "warmth" with metas
+  "radius" and "warmth", and any occupied vehicle's engine,
+  `WorldDef.engine_warmth`), and once it is empty the cold hurts through
+  `Combat.deal`. Only the authority runs it (`Raid._tick_cold`, which
+  respects `Raid.zone_rules`); the owner hears the number
+  (`NetSession._body_heat`) and every client the shivering bit
+  (`ActorCommand.STATE_CHILLED`, `Actor.shivering`). What it shows is view
+  only and the same in both views: the visor's body heat cell and the
+  watch card's bar (`Hud.feels_cold`), breath (`ActorSkin._update_breath`,
+  never from a cloaked body), the shivering hunch (`Locomotion._shiver_pose`,
+  the neck taking the tremor back so the eyes stay steady) and frost on the
+  visor glass (`VisorHud._draw_frost`, glass only, the middle kept clear).
 - How harsh death is belongs to the world, not to `Raid`. With
   `WorldDef.keep_gear_on_death` a dead player drops only the backpack and the
   equipped gear returns in the result's `kept`. A gentle world pays for that
@@ -741,6 +755,12 @@ without Caleb, and update the gap list when a PR closes a row.
   helmet's name, role and system beside it; the contracts held and the
   tour's step are an objective block top right (`objective_lines`, from
   `hud.contracts` and `hud.objective`); faint pitch ticks run up both edges.
+  Loot is read off the glass too (Caleb's call, DESIGN.md "Loot at a
+  glance"): the container you look at gets a tag listing every item inside,
+  with rarity and whether it beats what you wear (`VisorHud._draw_crate`,
+  `loot_rows`, `versus_worn`), and what you pick up runs up a fading feed
+  over the weapon readout (`_draw_pickups`), fed by `Actor.looted`, which
+  only the authority emits and `NetSession._looted` repeats to the owner.
   Bottom right, mirroring the vitals, a quiet weapon readout (Caleb's pick):
   the weapon in hand, the mag over a tick a round and the pack's rounds,
   resting dim and lit only on a reload, a low mag or just after a switch
@@ -1351,10 +1371,17 @@ without Caleb, and update the gap list when a PR closes a row.
   ordinary gear. Crafting is done at the fabricator on the gunsmith bench
   (`HomeBase.CraftConsole`, the hub's "craft" section, `craft_panel.gd`):
   `Profile.craft` solo, `NetSession.craft` online, where only
-  `StashService.craft` decides. Blueprints and upgrade data come from the
-  PvP world only (`WorldDef.roll_crafting_loot` and its chances, 0 by
-  default; a world's own loot tables). A new craftable is a recipe row and,
-  if it needs one, a `_blueprint` item. Costs are placeholders.
+  `StashService.craft` decides. Each world has its own job (DESIGN.md
+  "Frostline"): the war's blueprints and most upgrade data come from the PvP
+  world (`WorldDef.roll_crafting_loot` and its chances, 0 by default; a
+  world's own loot tables), while the expedition world pays the parts every
+  Mk2 and Mk3 needs (`Crafting.MK2_PARTS`, `MK3_PARTS`: Cryo Core, Glacial
+  Alloy, Engine Coil), a trickle of upgrade data and its own blueprints,
+  tagged "expedition", which make new options only, never a higher Mk, and
+  which `roll_crafting_loot` never hands out. Cold-weather gear is data: a
+  frame's "insulation" stat keeps out that share of the cold
+  (`Raid.insulation_of`). A new craftable is a recipe row and, if it needs
+  one, a `_blueprint` item. Costs are placeholders.
 - Money (`core/economy/`): the rules live once, in `economy.gd` (static, like
   `StashRules`), shared by `Profile` and `StashService`. Online, `scrip`
   lives on the server's account and only changes there: through
@@ -1473,6 +1500,7 @@ godot --headless --path . res://tests/test_runner.tscn -- --only online   # one 
 godot --headless --fixed-fps 60 --path . res://tests/test_runner.tscn -- --tier offline   # fast, ~1 min
 godot --headless --path . res://tests/test_runner.tscn -- --tier net --shard 1/3   # a third of the online groups
 godot --headless --path . res://tests/battle_bench.tscn -- --bots 150 --players 32   # server cost of a big battle
+godot --headless --path . res://tests/server_bench.tscn -- --plaza 10 --per-world 7 --arena 4   # the whole server at once: tick time per session, travel against 3 s
 godot --headless --fixed-fps 60 --path . res://tests/feel_bench.tscn   # how each rig answers, in numbers
 godot --headless --fixed-fps 60 --path . res://tests/duel_bench.tscn   # how each enemy type fights a reference player (DESIGN.md "Enemy balance")
 godot --headless --path . res://tests/gun_bench.tscn   # every gun's time to kill by range and armor (DESIGN.md "Gun roles")

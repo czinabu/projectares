@@ -14,7 +14,7 @@ extends Node
 ## loadout can still supply. You go home by signing out (L).
 ##
 ## Run with `-- --server [--world <id>] [--port <n>] [--bots <n>] [--squad-spawn]
-## [--accounts <folder>] [--no-rewind] [--no-plaza]` for a dedicated server: no hub, no
+## [--accounts <folder>] [--no-rewind] [--no-plaza] [--health-log <secs>]` for a dedicated server: no hub, no
 ## window needed. It runs the plaza (the social safe zone) on the port, and
 ## each raid world on the ports after it; `--world` runs just that one world,
 ## and `--no-plaza` runs it alone on the port. Player stashes are saved in the
@@ -1331,6 +1331,12 @@ func _run_dedicated_server(args: PackedStringArray) -> void:
 		push_error("Server: could not listen from port %d (%s)" % [port, error_string(err)])
 		get_tree().quit(1)
 		return
+	var health_every := float(_arg(args, "--health-log", "60"))
+	if health_every > 0.0:
+		var health := ServerHealth.new()
+		health.interval = health_every
+		health.sessions = sessions
+		add_child(health)
 	# A server started by a game (`host_and_join`) stops with that game, so a
 	# game stopped from the editor or crashed never leaves one holding the
 	# ports for the next: the game keeps touching its heartbeat file, and once

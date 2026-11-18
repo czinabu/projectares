@@ -83,6 +83,7 @@ func interact(actor: Actor) -> void:
 		actor.inventory.add_item(id)
 		taken.append(id)
 	if not taken.is_empty():
+		actor.looted.emit(taken)
 		actor.notice.emit("Looted " + ItemDB.summarize(taken))
 		if actor.is_player:
 			Sfx.play("loot")
@@ -133,6 +134,7 @@ func _rack_swap(actor: Actor) -> bool:
 		if not ammo.has(given.id):
 			ammo[given.id] = []
 		ammo[given.id].append([given.mag, given.reserve])
+	actor.looted.emit([offer] as Array[String])
 	actor.notice.emit("Scanned %s into your watch" % ItemDB.item_name(offer))
 	if actor.is_player:
 		Sfx.play("loot")
