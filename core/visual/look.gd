@@ -136,6 +136,14 @@ const SKINS := {
 		"chassis": "walker", "beam": true,
 		"anims": {"idle": "Idle", "walk": "Walk", "run": "Run", "death": "Death", "attack": "Shoot"},
 	},
+	# A colossus: the station automaton's frame built three metres tall, a
+	# heavy guard machine. Its weapon draws a tracking beam while it aims
+	# ("beam", in "beam_color").
+	"colossus": {
+		"scenes": ["Stan.glb"], "height": 3.9, "tint": Color(0.5, 0.62, 0.7),
+		"beam": true, "beam_color": Color(0.25, 0.95, 0.9),
+		"anims": {"idle": "Idle", "walk": "Walk", "run": "Run", "death": "Death", "attack": "Punch"},
+	},
 	"stalker": {
 		"scenes": ["Enemy_2Legs_Gun.glb"], "height": 1.7, "tint": Color(0.3, 0.32, 0.38),
 		"anims": {"idle": "Idle", "walk": "Walk", "run": "Run", "death": "Death", "attack": "Attack"},

@@ -215,8 +215,8 @@ worlds and a casual or solo one has a steady home.
   leaning into it and the wind pushing flight rigs off course. Built
   (step 6): footprints and vehicle tracks the server keeps and sends only
   nearby, and gunshots that carry twice as far. Built (step 7): thin ice in
-  the lake's middle that breaks under heavy vehicles. Planned: the Wardens
-  as the Engine's defence grid, still running.
+  the lake's middle that breaks under heavy vehicles, and the Wardens as
+  the Engine's defence grid, still running, with its boss at the hatch.
 - **What you bring home.** New parts (Cryo Core, Glacial Alloy,
   Engine Coil) that Mk2 and Mk3 recipes need, and Frostline blueprints for
   new options only (attachments, cold-weather gear), never a higher Mk of
@@ -229,7 +229,8 @@ worlds and a casual or solo one has a steady home.
 **Order of work**, one PR each: (1) the valley map, (2) the cold, (3) the
 loot role and recipes, (4) warm beacons, (5) whiteouts, after the Ashfront
 weather work, (6) tracks and louder gunshots, (7) thin ice, the defence
-grid and expedition contracts (in three PRs, thin ice first), (8) later, with the PvE dungeons, the
+grid and expedition contracts (in three PRs: thin ice, then the grid, then
+contracts), (8) later, with the PvE dungeons, the
 Engine's inside. Every number is a placeholder for the playtest.
 
 **What is built.** The valley (step 1): `worlds/frostline/map.gd`, a
@@ -327,6 +328,29 @@ and a half minutes). Only the authority decides it (`Raid._tick_ice`);
 clients are sent the cracks and the open holes (`NetSession._ice_crack`,
 `_ice_holes`) and draw them with `IceView` (view only). Numbers are
 placeholders.
+
+The defence grid (step 7, the second part): the Wardens are the Engine's
+defence grid, still running. They are a linked faction
+(`WorldDef.linked_factions`): a Warden hurt in a fight it survives calls
+every Warden within 60 m to where the hit came from, the way a gunshot is
+heard, at most every second and a half, so a drawn-out fight brings the
+rest and a kill in one blow (a backstab, a headshot) calls nobody. The call
+is seen and heard by everyone near (a teal ring running out from its feet
+and a rising chirp; `Raid.grid_called`, online `NetSession._grid_call`).
+The grid's boss is the Engine Sentinel, which stands guard at the hatch (the
+map's "spawn_boss" marker, meta "boss" = "sentinel", sent to clients with
+the spawn so they build the same machine). It is a Warden built three
+metres tall (650 health, 40 armor) whose Grid Lance must hold a teal
+tracking beam on you for 1.2 s before it fires (30 a shot), so breaking the
+line is the answer, and whose back, its heat vent, takes double. It is made
+for one player (Caleb's call: solo works too): each other player within 45 m
+of it makes it 60% tougher (`WorldDef.boss_party_scale`, `Actor.toughness`,
+counted every second by the authority), so a group finishes it quicker but
+not trivially. Like Ashfront's core warlords it comes back
+`boss_respawn_time` after it falls. Any Frostline warlord (the Sentinel or an
+event's) carries a piece of upgrade data and, about one time in seven, one
+of the war's blueprints: the first half of the slow route (section 10).
+Numbers are placeholders.
 
 ### PvP world
 
@@ -1764,7 +1788,9 @@ shared by solo and online play like the money rules.
   Frostline gets a slow route to them too, so a player who never fights
   other players can still reach Mk2 alone: a rare drop at its hardest
   spots (the relay on the Engine, the defence grid's boss) and from long
-  expedition contracts, rarer than in Ashfront. Mk3 stays the war's: a rig's
+  expedition contracts, rarer than in Ashfront. Built for the boss (a
+  Frostline warlord's `warlord_blueprint_chance`, 0.15 against Ashfront's
+  0.5); the relay and the contracts come with step 7's third part. Mk3 stays the war's: a rig's
   one blueprint makes both Mks, so Mk3 is held back by its 8 upgrade data,
   which comes mostly from Ashfront, and Frostline players can buy the rest
   at the Exchange. Planned with step 7 of Frostline.
