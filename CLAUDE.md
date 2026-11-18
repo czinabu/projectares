@@ -553,7 +553,9 @@ without Caleb, and update the gap list when a PR closes a row.
   closed, since an open pack cannot be replaced; release builds refuse
   `--main-pack`), then restarts. It never runs in the editor, a test, a
   server or headless, and anything that changes the engine or a native
-  library needs a fresh install. Its state shows on the start screen's
+  library needs a fresh install. Release builds also refuse `--path`, so a
+  game starts its own server with `Main.server_process_args`, which leaves
+  it out of an exported game. Its state shows on the start screen's
   corner and the phone's Servers app, nowhere else. The installer
   (`.github/installer/ProjectAres.nsi`, NSIS, built by the same workflow as
   `ProjectAres-Setup.exe`) installs per user into
