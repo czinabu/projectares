@@ -264,6 +264,10 @@ func craft(account_id: String, item_id: String) -> Dictionary:
 	return await _ask("craft", [account_id, item_id])
 
 
+func insure(account_id: String, action: String, item_id: String = "") -> Dictionary:
+	return await _ask("insure", [account_id, action, item_id])
+
+
 ## Takes the loadout out of the stash for a life in `world`
 ## (`StashService.deploy`). Where no gear is at risk nothing leaves the
 ## stash, so the kit is read here.

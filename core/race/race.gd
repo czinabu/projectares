@@ -97,7 +97,7 @@ func spawn_vehicle(id: String, at: Vector3, heading: float, unpacking := false) 
 
 
 func add_player(p_kit: Array = [], p_mastery: Dictionary = {}, p_name := "Raider",
-		p_owner := "", p_renown := 0, p_drop := "") -> Actor:
+		p_owner := "", p_renown := 0, p_drop := "", _p_insured := "") -> Actor:
 	# Nothing of your own rides here: the machines are the track's.
 	var kit: Array[String] = []
 	for id: String in (p_kit if not p_kit.is_empty() else world.starter_loadout()):
