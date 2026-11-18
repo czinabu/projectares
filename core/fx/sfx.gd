@@ -1,7 +1,8 @@
 extends Node
 ## Autoload `Sfx`: placeholder sounds synthesized in code, so the game has audio
 ## feedback before any real sound assets exist. Does nothing on a headless
-## server. Swap `_streams` entries for recorded sounds later.
+## server. A recorded sound in `RECORDED_DIR` replaces its synthesized one
+## when the file is there (`recorded`); without it the synth plays.
 
 const RATE := 22050
 
@@ -9,6 +10,18 @@ const RATE := 22050
 ## far from its shooter it must be (your own shots never whizz).
 const PASS_RADIUS := 2.5
 const PASS_CLEAR := 4.0
+
+## Recorded sounds (Sonniss GDC bundle clips, see `assets/LICENSES.md`).
+## They are kept out of the public repository, so each one is optional: a
+## checkout without the files keeps the synthesized voice. Several takes of
+## one sound are played in turn at random.
+const RECORDED_DIR := "res://assets/sounds/"
+const RECORDED := {
+	"wind": ["wind_storm"],
+	"war_rumble": ["war_rumble"],
+	"far_boom": ["far_boom_1", "far_boom_2", "far_boom_3"],
+}
+const RECORDED_LOOPS := ["wind", "war_rumble"]
 
 var _streams := {}
 var _enabled := false
@@ -80,6 +93,10 @@ func _ready() -> void:
 	_streams["war_rumble"] = _rumble_loop(4.0)
 	_streams["far_boom"] = _far_boom(2.6)
 	_streams["far_fire"] = _far_fire(9)
+	for sound: String in RECORDED:
+		var stream := recorded(sound)
+		if stream != null:
+			_streams[sound] = stream
 
 
 ## Plays a sound. With a position it is 3D and fades with distance; without
@@ -146,6 +163,31 @@ static func near_miss(from: Vector3, to: Vector3, ear: Vector3) -> Vector3:
 ## The raw stream, for callers that manage their own looping player.
 func get_stream(sound: String) -> AudioStream:
 	return _streams.get(sound)
+
+
+## The recorded stream for `sound`, or null when none of its files are here:
+## one take as it is, several in a randomizer, a loop set to loop.
+static func recorded(sound: String) -> AudioStream:
+	var takes: Array[AudioStream] = []
+	for take: String in RECORDED.get(sound, []):
+		var path := RECORDED_DIR + take + ".ogg"
+		if ResourceLoader.exists(path):
+			var stream := load(path) as AudioStream
+			if stream != null:
+				takes.append(stream)
+	if takes.is_empty():
+		return null
+	if sound in RECORDED_LOOPS:
+		for stream in takes:
+			if stream is AudioStreamOggVorbis:
+				(stream as AudioStreamOggVorbis).loop = true
+	if takes.size() == 1:
+		return takes[0]
+	var pick := AudioStreamRandomizer.new()
+	pick.random_pitch = 1.06
+	for stream in takes:
+		pick.add_stream(-1, stream)
+	return pick
 
 
 func _noise_burst(duration: float, decay: float, noise_mix: float, thump_hz: float) -> AudioStreamWAV:

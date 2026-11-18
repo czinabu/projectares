@@ -381,6 +381,15 @@ static func _skyline(t: Node, raid: Raid) -> void:
 	var around := Soundscape.burst_from(Vector3.ZERO, Vector3(20, 0, 0), 45.0, 0.5)
 	t.check(heard.x > 40.0 and absf(heard.z) < 1.0 and is_equal_approx(Vector2(around.x, around.z).length(), 45.0),
 			"far gunfire is heard from the way the fighting is, and from all around inside it")
+	# Recorded sounds are optional (kept out of the public repository): with
+	# the files they load as loops and a set of takes, without them nothing.
+	t.check(Sfx.recorded("no_such_sound") == null, "a sound with no recording keeps its synthesized voice")
+	if ResourceLoader.exists(Sfx.RECORDED_DIR + "far_boom_1.ogg"):
+		var wind: AudioStream = Sfx.recorded("wind")
+		var booms: AudioStream = Sfx.recorded("far_boom")
+		t.check(wind is AudioStreamOggVorbis and (wind as AudioStreamOggVorbis).loop, "the recorded wind loops")
+		t.check(booms is AudioStreamRandomizer and (booms as AudioStreamRandomizer).streams_count == 3,
+				"far booms are taken at random from three recordings")
 
 
 ## What keeps a big battle affordable: bots nobody is near run in longer

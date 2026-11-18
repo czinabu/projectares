@@ -26,6 +26,12 @@ and add a row for each new source.
 | `assets/sky` | kloppenheim_06_puresky (2K HDRI) | Poly Haven | CC0 1.0 | https://polyhaven.com/a/kloppenheim_06_puresky |
 | `assets/fonts` | Rajdhani SemiBold | Indian Type Foundry | SIL OFL 1.1, see `assets/fonts/OFL.txt` | https://github.com/google/fonts/tree/main/ofl/rajdhani |
 
+## Sounds
+
+| Folder | What | Author | License | Source |
+| --- | --- | --- | --- | --- |
+| `assets/sounds` (not in this repository, see its `README.md`) | Clips from Extreme Winds Vol. 1 (344 Audio), Sci-Fi Drones (Cinematic Sound Design) and Effective Trailer Booms Vol. 2 (Federico Soler), cut, filtered and looped | Sonniss #GameAudioGDC 2026 bundle | Sonniss GDC bundle license: royalty-free, commercial use, no attribution; may ship inside the game but not be sold or handed out as they come | https://gdc.sonniss.com |
+
 Shaders in `assets/shaders` were written for this project.
 
 ## Code libraries
