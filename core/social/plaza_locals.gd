@@ -14,8 +14,11 @@ extends Node3D
 ## their way. Far ones are thinned like far bots (`Actor.thin`).
 ##
 ## The people you talk to stand at the map's "talker" markers (meta "id",
-## "yaw", "name", "role"). `talk` makes them answer in a speech panel over
-## their head: a lit card in the world, never on the screen.
+## "yaw", "name", "role", and where they have them "lines", "reads" and
+## "color"). `talk` makes them answer in a speech panel over their head: a
+## lit card in the world, never on the screen. A keeper works a counter (a
+## shop, the clan hall) and has no spot of their own: `greet` has them say
+## their piece when someone uses the counter.
 ##
 ## Load with `preload("res://core/social/plaza_locals.gd")`.
 
@@ -43,11 +46,11 @@ const SPEECH_RANGE := 8.0
 
 ## How many of each kind make up the crowd. Not one to a spot: the counts and
 ## who goes together are rolled from the seed.
-var strollers := 6
-var shoppers := 5
-var watchers := 7
-var chats := 2
-var wanderers := 3
+var strollers := 8
+var shoppers := 8
+var watchers := 8
+var chats := 5
+var wanderers := 6
 
 var raid: Raid
 ## The map's layout (see `worlds/plaza/map.gd locals_layout`).
@@ -97,6 +100,9 @@ func _ready() -> void:
 		entry["talker"] = id
 		entry["name"] = str(marker.get_meta("name", id.capitalize()))
 		entry["role"] = str(marker.get_meta("role", ""))
+		entry["lines"] = marker.get_meta("lines", [])
+		entry["reads"] = str(marker.get_meta("reads", ""))
+		entry["color"] = marker.get_meta("color", talker_color(id))
 		entry.actor.display_name = entry.name
 		talkers[id] = entry
 		_add_name_tag(entry)
@@ -287,10 +293,54 @@ func talk(id: String, world_status: Dictionary, account: Dictionary) -> String:
 			line = said.text
 			job_offered = said.job
 		_:
-			line = "..."
+			var lines := own_lines(talkers[id], world_status)
+			line = lines[_next_line(id, lines.size())]
 	_say(id, line)
 	offered_job = job_offered
 	return ""
+
+
+## A keeper's hello when someone uses their counter: their next line, unless
+## they are already talking.
+func greet(id: String, world_status := {}) -> void:
+	if not talkers.has(id) or speaking == id:
+		return
+	var lines := own_lines(talkers[id], world_status)
+	_say(id, lines[_next_line(id, lines.size())])
+
+
+## What a talker without lines of their own in code says: the dispatcher reads
+## the worlds out, anyone else their marker's lines.
+static func own_lines(entry: Dictionary, world_status: Dictionary) -> Array[String]:
+	var out: Array[String] = []
+	if str(entry.get("reads", "")) == "worlds":
+		out = dispatch_lines(world_status)
+	for line: Variant in entry.get("lines", []):
+		out.append(str(line))
+	if out.is_empty():
+		out.append("...")
+	return out
+
+
+## The dispatcher's board read aloud: how each world is doing, from
+## `world_status` only (players, war level, the event), never who is where.
+static func dispatch_lines(world_status: Dictionary) -> Array[String]:
+	var out: Array[String] = []
+	var ids: Array = world_status.keys()
+	ids.sort()
+	for id: Variant in ids:
+		var status: Variant = world_status[id]
+		if typeof(status) != TYPE_DICTIONARY:
+			continue
+		var players := int(status.get("players", 0))
+		var line := "%s: %s in, war %s." % [world_name(str(id)), "nobody" if players == 0 else str(players),
+				str(status.get("level", "quiet")).to_lower()]
+		var event := str(status.get("event", ""))
+		if event != "":
+			line += " There's a %s on." % event.to_lower()
+		out.append(line)
+	out.append("Pick an arch and walk through it. It lights when you're in it. Your kit goes with you.")
+	return out
 
 
 ## Takes the line down.
@@ -308,7 +358,7 @@ func _say(id: String, text: String) -> void:
 	speaking = id
 	_speech_left = SPEECH_TIME
 	var entry: Dictionary = talkers[id]
-	(panels[id] as SpeechPanel).say(entry.name, talker_color(id), text)
+	(panels[id] as SpeechPanel).say(entry.name, entry.get("color", talker_color(id)), text)
 	# The card carries their name while it is up.
 	_show_name(id, false)
 
@@ -450,7 +500,7 @@ static func plan_crowd(p_layout: Dictionary, rng: RandomNumberGenerator, counts:
 	for i in int(counts.get("shoppers", 0)):
 		if browse.is_empty():
 			break
-		var routine := shop(centre, float(p_layout.get("promenade", 50.0)), browse, rng)
+		var routine := shop(centre, float(p_layout.get("promenade", 50.0)), browse, rng, p_layout.get("street", {}))
 		out.append({"routine": routine, "offset": rng.randf() * routine.length, "speed": rng.randf_range(1.0, 1.4)})
 	var watch: Array = p_layout.get("watch", [])
 	var taken: Array[Vector3] = []
@@ -526,17 +576,26 @@ static func stroll(centre: Vector3, radius: float, rng: RandomNumberGenerator) -
 	return routine
 
 
-## Window shopping: two or three kiosks next to each other, a while at each
-## counter, walking between them under the arcade, then back.
-static func shop(centre: Vector3, promenade: float, browse: Array, rng: RandomNumberGenerator) -> Routine:
+## Window shopping: two or three shops next to each other, a while at each
+## door, walking between them, then back. With a `street` ({from, to, lane})
+## the shops face each other down it: they walk its lane on their own side
+## and cross only at the next door. Otherwise round the `promenade` ring.
+static func shop(centre: Vector3, promenade: float, browse: Array, rng: RandomNumberGenerator,
+		street := {}) -> Routine:
 	var sorted := browse.duplicate()
-	sorted.sort_custom(func(a: Array, b: Array) -> bool:
-		return _angle(centre, a[0]) < _angle(centre, b[0]))
+	if not street.is_empty():
+		var from: Vector3 = street.from
+		var axis: Vector3 = (Vector3(street.to) - from).normalized()
+		sorted.sort_custom(func(a: Array, b: Array) -> bool:
+			return (Vector3(a[0]) - from).dot(axis) < (Vector3(b[0]) - from).dot(axis))
 	var count := mini(rng.randi_range(2, 3), sorted.size())
 	var first := rng.randi() % sorted.size()
 	var stops: Array = []
 	for k in count:
-		stops.append(sorted[(first + k) % sorted.size()])
+		var stop: Array = sorted[(first + k) % sorted.size()]
+		# Not all on the one spot: a step either way along the front.
+		var along := Basis(Vector3.UP, float(stop[1])) * Vector3.RIGHT
+		stops.append([Vector3(stop[0]) + along * rng.randf_range(-1.2, 1.2), stop[1]])
 	var routine := Routine.new()
 	var speed := 1.2
 	var order := stops.duplicate()
@@ -547,6 +606,9 @@ static func shop(centre: Vector3, promenade: float, browse: Array, rng: RandomNu
 		var here: Array = order[k]
 		var next: Array = order[(k + 1) % order.size()]
 		routine.dwell(here[0], float(here[1]) + rng.randf_range(-0.3, 0.3), rng.randf_range(8.0, 30.0))
+		if not street.is_empty():
+			routine.walk(street_path(street, here[0], next[0]), speed)
+			continue
 		var from_angle := _angle(centre, here[0])
 		var to_angle := _angle(centre, next[0])
 		var turn := wrapf(to_angle - from_angle, -PI, PI)
@@ -555,6 +617,21 @@ static func shop(centre: Vector3, promenade: float, browse: Array, rng: RandomNu
 		path.append(next[0])
 		routine.walk(path, speed)
 	return routine
+
+
+## From one door to the next down a street: out to the lane on this side,
+## along it to level with the next door, then across to it.
+static func street_path(street: Dictionary, here: Vector3, next: Vector3) -> Array:
+	var from: Vector3 = street.from
+	var axis: Vector3 = (Vector3(street.to) - from).normalized()
+	var across := axis.cross(Vector3.UP)
+	var side := signf((here - from).dot(across))
+	if side == 0.0:
+		side = 1.0
+	var lane := float(street.get("lane", 3.0)) * side
+	var at_here := from + axis * (here - from).dot(axis) + across * lane
+	var at_next := from + axis * (next - from).dot(axis) + across * lane
+	return [here, at_here, at_next, next]
 
 
 ## Standing in one place: a few dwells facing about `yaw`, glancing up to
