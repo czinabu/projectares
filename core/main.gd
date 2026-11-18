@@ -78,6 +78,7 @@ const PlazaViewScript := preload("res://core/social/plaza_view.gd")
 const ClanPanel := preload("res://core/social/clan_panel.gd")
 const ContractPanel := preload("res://core/economy/contract_panel.gd")
 const MarketPanel := preload("res://core/economy/market_panel.gd")
+const TerminalStyle := preload("res://core/ui/terminal_style.gd")
 const Contracts := preload("res://core/economy/contracts.gd")
 ## The plaza holds more people than a raid.
 const PLAZA_PLAYERS := 32
@@ -2722,10 +2723,9 @@ class ShopView:
 
 	func _ready() -> void:
 		set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-		var glass := ColorRect.new()
-		glass.color = Color(0.025, 0.03, 0.035)
-		glass.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-		add_child(glass)
+		# A lit terminal's glass, in the house style, like the base's stations.
+		theme = TerminalStyle.theme()
+		add_child(TerminalStyle.Backdrop.new())
 		var margin := MarginContainer.new()
 		margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 		for side: String in ["left", "right"]:
@@ -2740,6 +2740,12 @@ class ShopView:
 		scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 		scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 		box.add_child(scroll)
+		var kicker := Label.new()
+		kicker.text = "THE CONCOURSE  //  TERMINAL"
+		kicker.add_theme_font_size_override("font_size", 13)
+		kicker.add_theme_color_override("font_color", TerminalStyle.CYAN)
+		box.add_child(kicker)
+		box.move_child(kicker, 0)
 		panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		scroll.add_child(panel)
 		var leave := Button.new()
@@ -2747,6 +2753,7 @@ class ShopView:
 		leave.custom_minimum_size = Vector2(0, 44)
 		leave.pressed.connect(func() -> void: closed.emit())
 		box.add_child(leave)
+		TerminalStyle.dress(self)
 
 	func _unhandled_input(event: InputEvent) -> void:
 		if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
