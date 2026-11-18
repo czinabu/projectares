@@ -142,6 +142,35 @@ var track_lifetime := 240.0
 ## How far a gunshot carries, as a share of the usual: bots hear it that much
 ## further off (`Combat.noise`) and so do people (`Gun.SHOT_REACH`).
 var shot_carry := 1.0
+## Weather (DESIGN.md "Weather: ash storms"): with a `weather_kind` ("ash",
+## "snow"; "" for none) storms cross the map one at a time (`Weather`,
+## `Raid.weather`), named `weather_name` on the watch and the plaza's signs.
+## Each is a cell `weather_radius` across its middle, moving at
+## `weather_speed` along `weather_path`, building and dying away over
+## `weather_ramp` seconds, with a quiet spell of `weather_gap` seconds
+## between (the first after `weather_first`). In the thick of it sight
+## and scan reach drop to `weather_sight` of usual, shots carry
+## `weather_carry` as far, flight rigs are pushed by gusts up to
+## `weather_gust` m/s² (times the rig's `gust_mult`), body heat drains
+## `weather_cold` times as fast, and with `weather_wipes_tracks` the
+## storm wipes the tracks it passes over. With `weather_pushes` the armies
+## go for a strongpoint a storm covers. Off by default.
+var weather_kind := ""
+var weather_name := "Storm"
+var weather_radius := 150.0
+var weather_speed := 2.5
+var weather_ramp := 40.0
+var weather_gap := Vector2(360.0, 720.0)
+var weather_first := Vector2(120.0, 360.0)
+var weather_sight := 0.5
+var weather_carry := 0.6
+var weather_gust := 6.0
+var weather_cold := 1.0
+var weather_wipes_tracks := false
+var weather_pushes := false
+## How far from the map's middle storms cross (metres), for the default
+## `weather_path`.
+var weather_field := 280.0
 ## Thin ice (DESIGN.md "Frostline"): with `thin_ice` on, the ground where
 ## `thin_ice_at` says so bears a ground vehicle up to `ice_holds` tonnes
 ## (its "weight" stat). A heavier one strains it by its weight over that a
@@ -471,6 +500,17 @@ func on_spawn(_actor: Actor) -> void:
 func on_death(_actor: Actor, _info: DamageInfo) -> void:
 	pass
 
+
+## Where the next storm comes in and where it leaves, as [from, to] on the
+## ground plane. By default it comes in from beyond the rim on a random
+## side, crosses near the middle (within 40% of `weather_field`) and leaves
+## on the far side. A world whose map is not round (a valley) overrides it.
+func weather_path(rng: RandomNumberGenerator) -> Array:
+	var angle := rng.randf() * TAU
+	var wind := Vector3(cos(angle), 0.0, sin(angle))
+	var through := Vector3(rng.randf_range(-1.0, 1.0), 0.0, rng.randf_range(-1.0, 1.0)) * weather_field * 0.4
+	var reach := weather_field + weather_radius
+	return [through - wind * reach, through + wind * reach]
 
 ## A player left the world alive, taking what they carried home.
 func on_leave(_actor: Actor) -> void:

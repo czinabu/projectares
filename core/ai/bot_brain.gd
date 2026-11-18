@@ -771,6 +771,10 @@ func _find_target() -> Actor:
 	var eye := actor.get_eye_position()
 	var forward := Basis(Vector3.UP, actor.cmd.yaw) * Vector3.FORWARD
 	var world := Worlds.of(actor)
+	# A storm cuts how far a bot sees (DESIGN.md "Weather: ash storms"), by
+	# the worse of where it stands and where its target does.
+	var raid := Raid.of(actor)
+	var weather: Weather = raid.weather if raid != null and raid.weather.kind != "" else null
 	for node in get_tree().get_nodes_in_group("actors"):
 		var other := node as Actor
 		if other == null or other == actor or other.is_dead or other.faction == actor.faction:
@@ -779,6 +783,8 @@ func _find_target() -> Actor:
 		var chest := other.global_position + Vector3(0, other.body_height() * 0.6, 0)
 		var dist := eye.distance_to(chest)
 		if dist >= best_dist:
+			continue
+		if weather != null and dist >= sight_range * weather.sight_between(eye, chest):
 			continue
 		# A Phase Cloak hides all but someone right beside the bot.
 		if other.is_cloaked() and dist > other.artifact.cloak_sense_range:

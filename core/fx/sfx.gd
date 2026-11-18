@@ -51,6 +51,8 @@ func _ready() -> void:
 	_streams["ability"] = _tones([520.0, 1040.0, 1560.0], 0.3, 9.0, 0.4)
 	_streams["loot"] = _tones([660.0, 990.0], 0.14, 20.0, 0.3)
 	_streams["thrust"] = _thrust_loop(0.6)
+	# A storm's wind around you (`WeatherView`): a low, slow howl.
+	_streams["wind"] = _wind_loop(3.0)
 	# Power weapons: sci-fi placeholders, picked by each gun's `shot_sound`.
 	_streams["rail"] = _tones([140.0, 2300.0, 3450.0], 0.6, 6.0, 0.55)
 	_streams["plasma_shot"] = _tones([220.0, 330.0, 95.0], 0.35, 8.0, 0.5)
@@ -216,6 +218,26 @@ func _thrust_loop(duration: float) -> AudioStreamWAV:
 		samples.append(low * 0.5 + sin(TAU * 70.0 * t) * 0.12)
 	# Crossfade the tail into the head so the loop has no click.
 	var fade := int(0.05 * RATE)
+	for i in fade:
+		var k := float(i) / fade
+		samples[i] = samples[i] * k + samples[count - fade + i] * (1.0 - k)
+	samples.resize(count - fade)
+	return _to_stream(samples, true)
+
+
+func _wind_loop(duration: float) -> AudioStreamWAV:
+	var samples := PackedFloat32Array()
+	var count := int(duration * RATE)
+	var low := 0.0
+	var band := 0.0
+	for i in count:
+		var t := float(i) / RATE
+		low = lerpf(low, _rng.randf_range(-1.0, 1.0), 0.02)
+		band = lerpf(band, _rng.randf_range(-1.0, 1.0), 0.18)
+		# Gusts: the howl swells and eases twice a loop.
+		var swell := 0.55 + 0.45 * sin(TAU * t / duration * 2.0)
+		samples.append((low * 1.6 + band * 0.25 * swell) * (0.5 + 0.5 * swell) * 0.6)
+	var fade := int(0.2 * RATE)
 	for i in fade:
 		var k := float(i) / fade
 		samples[i] = samples[i] * k + samples[count - fade + i] * (1.0 - k)

@@ -31,6 +31,9 @@ const CEILING_EASE := 4.0
 ## A kick, pulse or launch that could lift you less than this (m/s) under the
 ## ceiling is refused rather than spent.
 const MIN_LIFT := 3.0
+## The glide speed `glide_accel` is tuned for (the Mk1 wings): a faster
+## glide launches harder in step, so every tier bites in the same time.
+const GLIDE_REFERENCE := 22.0
 
 var item_id := ""
 var display_name := "No rig"
@@ -93,7 +96,8 @@ var glide_accel := 22.0
 ## sinking only on jump and descend (0: no boost). The keys fly every rig; the mouse only looks.
 ## Holding still costs `hover_heat_mult` of `heat_per_sec`, cruising
 ## `cruise_heat_mult`, climbing `climb_heat_mult` and boosting
-## `boost_heat_mult` (Caleb's call: 1x, 1x, 1.5x, 2.5x).
+## `boost_heat_mult` (Caleb's call: 1x, 1x, 1.5x, 2.5x; the climb
+## trimmed to 1.3x so a cool Mk1 reaches its ceiling in one climb).
 ## At cruise speed the heading turns at most `cruise_turn_rate` rad/s: a
 ## jetpack makes wide turns but stops dead. Landing or overheating puts the
 ## jets out.
@@ -106,7 +110,7 @@ var descend_speed := 6.0
 var hover_accel := 30.0
 var hover_heat_mult := 1.0
 var cruise_heat_mult := 1.0
-var climb_heat_mult := 1.5
+var climb_heat_mult := 1.3
 var boost_heat_mult := 2.5
 var coast_cool := 25.0
 var cruise_turn_rate := 1.2
@@ -129,10 +133,10 @@ var glide_drag := 2.0
 var glide_stall := 0.6
 var glide_climb_cost := 14.0
 var glide_recover := 6.0
-var glide_lift_accel := 60.0
+var glide_lift_accel := 36.0
 ## How hard the wings catch a fall or a dive back to the glide's own sink, in
 ## m/s². It is never instant: a snap in one tick reads as a hitch.
-var glide_catch_accel := 45.0
+var glide_catch_accel := 30.0
 ## How fast the bank rolls in and out on the strafe keys, per second: full
 ## bank after 1 / `glide_bank_rate` seconds. A tap only nudges the heading.
 var glide_bank_rate := 8.0
@@ -234,6 +238,9 @@ var scan_range := 0.0
 ## Under a roof (`indoors`): the share of flying speed and climb left. 1
 ## works fully, 0 cannot fly at all (wings cannot open).
 var indoor_mult := 1.0
+## How hard a storm's gusts push this rig in the air (`Weather.gust_at`):
+## wings catch the wind worst, boots barely.
+var gust_mult := 0.6
 
 var heat := 0.0
 var overheated := false

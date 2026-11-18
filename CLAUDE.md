@@ -140,6 +140,25 @@ without Caleb, and update the gap list when a PR closes a row.
   `Look.atmosphere` a second, war mood has its sky blend towards it. A world
   scales the meter with `WorldDef.war_scale` (0 keeps it quiet). New stakes
   that follow the war (reinforcements, events, loot) read `Raid.war`.
+- Weather (DESIGN.md "Weather: ash storms"): a world with
+  `WorldDef.weather_kind` ("ash" Ashfront, "snow" for Frostline's
+  whiteouts) has storms crossing its map one at a time, a `Weather` cell
+  (`Raid.weather`) on `weather_path`, tuned by `WorldDef.weather_*`. Only
+  the authority ticks it; a client is sent the cell
+  (`NetSession._weather`) and only carries it on (`Weather.advance`).
+  Anything a storm changes asks the cell where it happens, never a flag:
+  bot sight (`BotBrain._find_target`, `sight_between`), scan reach
+  (`Visor`), how far shots carry (`Gun.shot_carry`), gusts on a flying rig
+  (`Actor._take_gusts`, the rig's `gust_mult`, a function of position only
+  so it predicts), the cold (`cold_at`), tracks (`weather_wipes_tracks`)
+  and army pushes (`Raid._army_target`, `weather_pushes`). Thermal already
+  ignores fog, so it sees through a storm. What it looks like is
+  `WeatherView` (view only, the same in both views): the wall, the driven
+  air round the camera and the wind, and the map's "weather_here" meta,
+  which blends `Look.atmosphere`'s storm mood in and lowers the fog floor
+  (`Look.weather_cover`, `soften_weather`: gone by about 70 m at the heart,
+  Caleb's pick). Told in the world only: the visor's heading tape
+  ("storm"), the watch map's ring and zone line, the plaza's heat signs.
 - Open ground is a `Terrain` (`core/world/terrain.gd`): a heightfield with
   collision and a mesh that knows nothing about any world. A map on one
   offers `ground_height(x, z)` and the `Raid` stands spawning actors on it
@@ -440,11 +459,14 @@ without Caleb, and update the gap list when a PR closes a row.
   with `--carry-only`.
   Holstered weapons are worn, not hidden (`ActorSkin.stow_place`): a primary
   gun or two-handed weapon slung across the back, outside a worn back rig
-  (on a jetpack or wing pack, clamped to the weapon rail down its side
-  instead, gun right and long blade left, leaning out in a slight V, so the
-  heat gauge on its back stays in view; a wing pack's rails stand behind
-  its wing slots: the rig model's "MountL/R" markers, and the
-  skin rests the weapon's near side on the clamps), a
+  (on a jetpack or wing pack, clamped to the flush mag-lock rail on the
+  pack's back corner instead, gun right and long blade left, turned back
+  behind the shoulder blade so it never covers the arm (Caleb's call:
+  mounts smooth and out of the way), leaning out in a slight V, so the
+  heat gauge on its back stays in view; a wing pack's rails stand on
+  fairings behind its wing slots: the rig model's "MountL/R" markers, and
+  the skin rests the weapon's near side on the rail; an empty rail has
+  nothing sticking out), a
   sidearm muzzle down on the right hip, and a one-handed blade on the left
   hip. These are view-only copies; the weapon's own node stays on the hand.
   A switch is shown as the hand putting one away and drawing the next
@@ -688,7 +710,7 @@ without Caleb, and update the gap list when a PR closes a row.
   (Caleb's balance pass, DESIGN.md section 5; the Mk1 numbers are
   `ItemDB.JETPACK_MK1`, `BOOTS_MK1` and `WINGS_MK1`, measured by
   `tests/rig_balance_tests.gd`): the jetpack is height and hover (8 s on a
-  full bar, climbing 1.5x and boosting 2.5x the heat, a 40 m ceiling,
+  full bar, climbing 1.3x and boosting 2.5x the heat, a 40 m ceiling,
   steady aim), but slow across the map, loud and clumsy under a roof;
   the boots are ground agility and stealth: no heat, `max_charges` pay for
   kicks and dashes, a short skim (`skim_time`), faster on foot
@@ -1639,7 +1661,12 @@ without Caleb, and update the gap list when a PR closes a row.
   silence it. A spring stepped by `delta` is stepped in short slices (a
   long frame throws it off), and a deferred call or timer that outlives
   the node it acts on is bound to that node (`node.queue_free`, an
-  instance id), never a lambda capturing it.
+  instance id), never a lambda capturing it A loop over a
+  dictionary or list that can still hold a freed node (bodies a view
+  tracks, bots given orders) types its variable `Variant` and checks
+  `is_instance_valid` first: assigning a freed node to a typed variable is
+  an error that stops the game in the editor's debugger (the third-person
+  peek fade's "freeze").
 
 ## Verify before committing
 

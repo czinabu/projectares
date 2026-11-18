@@ -77,8 +77,9 @@ func _physics_process(delta: float) -> void:
 		if _progress[actor] >= hold_time:
 			_progress.erase(actor)
 			actor_banked.emit(actor)
-	for actor: Actor in _progress.keys():
-		if not inside.has(actor):
+	# Untyped: someone freed meanwhile cannot be assigned to an `Actor`.
+	for actor: Variant in _progress.keys():
+		if not is_instance_valid(actor) or not inside.has(actor):
 			_progress.erase(actor)
 
 

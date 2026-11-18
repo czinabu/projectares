@@ -298,6 +298,9 @@ var _air_dash_cd := 0.0
 var _bank := 0.0
 ## Wings: the glide is still being launched (see `_glide_velocity`).
 var _glide_launch := true
+## Wings: the first spread since leaving the ground has not happened yet, so
+## the launch carries the glide all the way to cruise (see `_glide_velocity`).
+var _first_spread := true
 ## Wings: seconds until a main gun can fire again after the wings fold.
 var _wing_stow := 0.0
 var _slide_dir := Vector3.ZERO
@@ -542,6 +545,7 @@ func _simulate_movement(delta: float) -> void:
 		_air_dash_vel = Vector3.ZERO
 	if on_floor:
 		flight.launched = false
+		_first_spread = true
 	flight.refill(delta, on_floor)
 	_measure_altitude(on_floor)
 	_measure_indoors(on_floor)
@@ -551,6 +555,8 @@ func _simulate_movement(delta: float) -> void:
 			and (velocity.y < 0.0 or flight.is_gliding)
 	flight.is_skimming = flight.skim_ready() and cmd.jump and not on_floor and not staggered
 	if not flight.is_gliding:
+		if not _glide_launch:
+			_first_spread = false
 		_bank = 0.0
 		_glide_launch = true
 	if on_floor:
@@ -640,6 +646,7 @@ func _simulate_movement(delta: float) -> void:
 				lift = minf(lift, flight.lift_cap(gravity))
 				caught = maxf(caught, minf(lift, velocity.y + (gravity + flight.glide_lift_accel) * delta))
 			velocity.y = caught
+	_take_gusts(on_floor, delta)
 	velocity.y = maxf(velocity.y, -max_fall_speed)
 
 	var fall_speed := -velocity.y
@@ -659,6 +666,18 @@ func _simulate_movement(delta: float) -> void:
 		landed.emit(maxf(fall_speed, 0.0))
 		_hurt_by_fall(fall_speed, gliding)
 	_was_on_floor = now_on_floor
+
+
+## A storm's gusts push a flight rig in the air (DESIGN.md "Weather: ash
+## storms"), by its `gust_mult`. An acceleration, never a jolt, and a matter
+## of where the actor is in the storm only, so a client predicts it.
+func _take_gusts(on_floor: bool, delta: float) -> void:
+	if on_floor or not flight.enabled or flight.gust_mult <= 0.0 or vehicle != null:
+		return
+	var raid := Raid.of(self)
+	if raid == null or raid.weather.kind == "":
+		return
+	velocity += raid.weather.gust_at(global_position) * flight.gust_mult * delta
 
 
 ## A jetpack hovers in the air only while aim (`ActorCommand.secondary`,
@@ -707,8 +726,10 @@ func _simulate_hover(delta: float) -> void:
 		flight.coast(delta)
 		return
 	var cruising := Vector2(velocity.x, velocity.z).length() > flight.fly_speed * 0.5
-	flight.tick(true, delta, flight.climb_heat_mult if climb > 0.0
-			else (flight.cruise_heat_mult if cruising else flight.hover_heat_mult))
+	var level := flight.cruise_heat_mult if cruising else flight.hover_heat_mult
+	# Under the ceiling the climb eases off, and so does what it costs: held
+	# on the ceiling, the jets only hold you there.
+	flight.tick(true, delta, lerpf(level, flight.climb_heat_mult, flight.climb_room()) if climb > 0.0 else level)
 
 
 ## Boots skimming: a kick rises as usual, then the boots hold your height
@@ -927,7 +948,11 @@ func _glide_velocity(horizontal: Vector3, _wish: Vector3, yaw_basis: Basis, delt
 	var air_speed := horizontal.length()
 	var cruise := flight.glide_speed
 	var stall := cruise * flight.glide_stall
-	if air_speed >= stall - 0.01:
+	# The first spread after leaving the ground is carried all the way to
+	# cruise, so the wings bite at once at every tier; a later spread, wings
+	# folded and opened again in the air, only up to the stall speed.
+	var carry := cruise if _first_spread else stall
+	if air_speed >= carry - 0.01:
 		_glide_launch = false
 	var trim := glide_trim()
 	var pull := maxf(0.0, -trim)
@@ -938,7 +963,7 @@ func _glide_velocity(horizontal: Vector3, _wish: Vector3, yaw_basis: Basis, delt
 			-_bank * flight.glide_turn_rate * authority * (1.0 + flight.glide_pull_turn * pull) * delta)
 	if _glide_launch:
 		# The launch: the wings bite and carry you off.
-		air_speed = move_toward(air_speed, stall, flight.glide_accel * delta)
+		air_speed = move_toward(air_speed, carry, flight.glide_accel * cruise / FlightRig.GLIDE_REFERENCE * delta)
 	elif trim > 0.0:
 		var top := cruise * (1.0 + flight.glide_dive_gain * trim)
 		air_speed = move_toward(air_speed, top, (flight.glide_dive_accel * trim if air_speed < top else flight.glide_drag) * delta)
