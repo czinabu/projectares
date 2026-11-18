@@ -279,6 +279,15 @@ func create_map() -> Node3D:
 	return null
 
 
+## Works out, ahead of a visit, whatever every copy of this world's map
+## shares (its ground), so the first arrival does not wait for it: a game
+## calls this while it connects ahead of a trip (DESIGN.md section 14,
+## "Travel that hides its wait"). It may run on a worker thread, so it must
+## touch nothing in the scene tree. Nothing by default.
+func prepare_map() -> void:
+	pass
+
+
 ## The node that runs this world: a plain `Raid` for every world. A venue with
 ## its own rules (the arena) returns its own `Raid` subclass. Called on servers,
 ## clients and solo alike, so the same class runs everywhere.

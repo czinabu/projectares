@@ -249,10 +249,12 @@ var apply_to_profile := true
 var squad_spawn := false
 ## Bots within this many metres of a player are simulated every tick, bots
 ## within `half_detail_range` every second tick, and the rest every
-## `far_detail_step` ticks.
+## `far_detail_step` ticks. Past 100 m a bot is out of sight in most of
+## Ashfront, and its few-tick steps cost the least feel (Caleb's call, to
+## keep a big battle's tick inside its budget).
 var full_detail_range := 70.0
-var half_detail_range := 160.0
-var far_detail_step := 4
+var half_detail_range := 100.0
+var far_detail_step := 6
 var _squad_marker := -1
 var _player_count := 0
 var _bot_count := 0

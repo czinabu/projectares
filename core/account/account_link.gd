@@ -35,6 +35,18 @@ extends Node
 ## so the link follows it with a sure `undo_deploy` naming that very
 ## request: the gear goes back if it left, and no other deploy is touched.
 ##
+## Besides accounts, the service keeps what every world shares, and the link
+## holds this server's view of it:
+## - `clans`: a copy of every clan, read at once (`clan_of`, `tag_of`); a
+##   change is asked with `clan` and comes back to every server
+##   (`clans_changed`).
+## - The phone: `social` runs one request (`SocialService.run`) for a player
+##   here; their phone as the service last sent it is `social_snapshot`, and
+##   `social_changed` / `social_noticed` say when there is something new for
+##   them, whichever world it came from.
+## - `worlds`: every world a game server runs, where to reach it and how it
+##   is doing. `announce` puts this server's own world on it.
+##
 ## The queue is kept in memory. If this server stops with results still
 ## queued, those lives are lost with it and the service hands their gear
 ## back when the server next starts (its hello says "fresh"), the same as a
@@ -52,6 +64,14 @@ signal account_changed(account_id: String)
 signal market_changed
 ## The link is up (again).
 signal linked
+## The copy of the clans (`clans`) changed.
+signal clans_changed
+## A player here has a new phone snapshot (`social_snapshot`).
+signal social_changed(account_id: String)
+## A line for a player here to be shown now (a message came, an invite).
+signal social_noticed(account_id: String, text: String)
+## The directory of worlds (`worlds`) changed.
+signal worlds_changed
 
 ## Seconds an awaited call waits for its answer.
 const ANSWER_TIMEOUT := 5.0
@@ -68,8 +88,8 @@ var key := ""
 ## of this server and differ from every other server's, since the service
 ## keeps each deploy under the name of the server that holds it.
 var server_id := "server"
-## This server's own folder, for what it still keeps itself (its
-## certificate, clans, phone records). Accounts are not in it.
+## This server's own folder, for the one thing it still keeps itself: its
+## certificate. Accounts, clans and phone records are the service's.
 var save_dir := "user://accounts"
 var persist := true
 ## Seconds an awaited call waits (`ANSWER_TIMEOUT`); tests shorten it.
@@ -78,6 +98,16 @@ var retry_every := RETRY_EVERY
 var backup_every := 3600.0
 var backups_kept := 48
 
+## A copy of the service's clans (`ClanService.load_state`). Read only:
+## changes go through `clan`.
+var clans := ClanService.new()
+## Every world a game server of this service runs: world id -> {"host" (""
+## for the address players already use), "port", "max", "status"
+## (`Raid.status()`)}.
+var worlds := {}
+
+var _phones := {}      # account id -> phone snapshot, for accounts signed in here
+var _announced := {}   # world id -> what this server last said about its own world
 var _socket: WebSocketPeer = null
 var _state := "down"   # "down", "connecting", "hello", "up"
 var _nonce := ""
@@ -90,7 +120,6 @@ var _queue: Array[Request] = []
 var _mirror := {}      # account id -> its snapshot, for accounts signed in here
 var _names := {}       # account id -> shown name, for anyone asked about
 var _owed := {}        # account id -> scrip changes sent and not answered yet
-var _last_backup := -1.0
 var _said_down := false
 
 
@@ -197,6 +226,7 @@ func fetch(account_id: String) -> Dictionary:
 
 ## Nobody is signed in to this account on this server any more.
 func release(account_id: String) -> void:
+	_phones.erase(account_id)
 	if _mirror.has(account_id):
 		_mirror.erase(account_id)
 		_ask("release", [account_id])
@@ -256,6 +286,59 @@ func board(account_id: String) -> Dictionary:
 	return {} if answer.has("unanswered") or answer.get("ok", true) == false else answer
 
 
+# --- Clans, the phone and the directory of worlds ----------------------------
+
+## One request at the clan hall: "create" (name, tag), "join" (clan id) or
+## "leave" (`ClanService.ask`). The copy here is up to date when it returns.
+func clan(action: String, account_id: String, a := "", b := "") -> Dictionary:
+	var answer: Dictionary = await _ask("clan", [action, account_id, a, b], false, true)
+	if answer.get("ok", false) and typeof(answer.get("state")) == TYPE_DICTIONARY:
+		clans.load_state(answer.state)
+		clans_changed.emit()
+	return answer
+
+
+## One request of the phone's for a player here (`SocialService.run`).
+## Whatever it changes for other players reaches them through their own
+## servers; this player's phone is fresh when it returns.
+func social(action: String, account_id: String, args: Array = []) -> Dictionary:
+	var answer: Dictionary = await _ask("social", [action, account_id, args], false, true)
+	if typeof(answer.get("snapshot")) == TYPE_DICTIONARY and _mirror.has(account_id):
+		_phones[account_id] = answer.snapshot
+	return answer
+
+
+## The phone of a player here as the service last sent it, or {}.
+func social_snapshot(account_id: String) -> Dictionary:
+	return _phones.get(account_id, {})
+
+
+## Puts this server's world on the directory, or says how it is doing now:
+## {"world", "host", "port", "max", "status"}. Said again by itself whenever
+## the link comes back.
+func announce(info: Dictionary) -> void:
+	_announced[str(info.get("world", ""))] = info
+	if _state != "up":
+		return
+	var answer: Dictionary = await _ask("announce", [info], false, true)
+	if answer.get("ok", false):
+		_take_worlds(answer.get("worlds"))
+
+
+func _take_worlds(sent: Variant) -> void:
+	if typeof(sent) != TYPE_DICTIONARY or sent == worlds:
+		return
+	worlds = sent
+	worlds_changed.emit()
+
+
+func _fetch_clans() -> void:
+	var answer: Dictionary = await _ask("clans", [])
+	if answer.get("ok", false) and typeof(answer.get("state")) == TYPE_DICTIONARY:
+		clans.load_state(answer.state)
+		clans_changed.emit()
+
+
 # --- Sure ---------------------------------------------------------------------
 
 func bank(account_id: String, items: Array) -> Dictionary:
@@ -308,16 +391,10 @@ func backup_dir() -> String:
 	return save_dir.trim_suffix("/") + "_backups"
 
 
-## Backs up this server's own folder (clans, phone records) if one is due.
-## The accounts are the service's to back up.
+## Nothing to back up here: accounts, clans and phone records are the
+## service's, which backs them up itself.
 func backup_if_due() -> String:
-	if not persist or backup_every <= 0.0:
-		return ""
-	var now := Time.get_unix_time_from_system()
-	if _last_backup >= 0.0 and now - _last_backup < backup_every:
-		return ""
-	_last_backup = now
-	return SafeFile.backup(save_dir, backup_dir(), backups_kept)
+	return ""
 
 
 func close() -> void:
@@ -399,6 +476,25 @@ func _receive(message: Dictionary) -> void:
 			account_changed.emit(account_id)
 	elif _state == "up" and message.get("push", "") == "market":
 		market_changed.emit()
+	elif _state == "up" and message.get("push", "") == "clans":
+		if typeof(message.get("state")) == TYPE_DICTIONARY:
+			clans.load_state(message.state)
+			clans_changed.emit()
+	elif _state == "up" and message.get("push", "") == "worlds":
+		_take_worlds(message.get("worlds"))
+	elif _state == "up" and message.get("push", "") == "social":
+		var snapshots: Variant = message.get("snapshots")
+		if typeof(snapshots) == TYPE_DICTIONARY:
+			for account_id: Variant in snapshots:
+				if _mirror.has(account_id) and typeof(snapshots[account_id]) == TYPE_DICTIONARY:
+					_phones[account_id] = snapshots[account_id]
+					social_changed.emit(account_id)
+		var notices: Variant = message.get("notices")
+		if typeof(notices) == TYPE_DICTIONARY:
+			for account_id: Variant in notices:
+				if _mirror.has(account_id) and typeof(notices[account_id]) == TYPE_ARRAY:
+					for text: Variant in notices[account_id]:
+						social_noticed.emit(account_id, str(text))
 
 
 func _up() -> void:
@@ -411,6 +507,9 @@ func _up() -> void:
 	_fresh = false
 	for request in _queue:
 		_send(request)
+	_fetch_clans()
+	for world_id: String in _announced:
+		announce(_announced[world_id])
 	linked.emit()
 
 

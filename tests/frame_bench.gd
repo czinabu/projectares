@@ -15,12 +15,18 @@ extends Node
 ## long it measures and how long the armies march first. `--aa <0-4>` and
 ## `--ink 0|1` pick the edge smoothing and the far-shape outline
 ## (`GameSettings.ANTI_ALIASING`, `edge_ink`) for this run only, to measure
-## what each costs.
+## what each costs. `--look` dresses the bodies headless too (the art layer
+## is off without a screen), to measure what posing them costs the game's
+## own processing; `--seed <n>` starts the world from a fixed seed, so two
+## builds can be compared on the same battle (with `--fixed-fps 60` the
+## steadiest).
 
 const PORT := 25790
 const MainScene := "res://scenes/main.tscn"
 
 var _main: Node
+## The world's seed for a solo run (`--seed`), -1 for a random one.
+var _main_seed := -1
 var _server_pid := -1
 
 
@@ -32,6 +38,12 @@ func _ready() -> void:
 	var warmup := float(_arg(args, "--warmup", "20"))
 	var third := _arg(args, "--view", "first") == "third"
 	Profile.persist = false
+	if "--look" in args:
+		Look.enabled = true
+	var fixed_seed := int(_arg(args, "--seed", "-1"))
+	if fixed_seed >= 0:
+		seed(fixed_seed)
+		_main_seed = fixed_seed
 	Engine.max_fps = 0
 	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
 	if DisplayServer.get_name() != "headless":
@@ -77,6 +89,7 @@ func _ready() -> void:
 
 
 func _start_solo(warmup: float) -> bool:
+	_main.raid_seed = _main_seed
 	_main.start_raid("ashfront")
 	await _frames(5)
 	var raid: Raid = _main.raid

@@ -262,6 +262,12 @@ func create_map() -> Node3D:
 	return MapScript.new()
 
 
+func prepare_map() -> void:
+	var map: Node3D = MapScript.new()
+	map.call("prepare_shared")
+	map.free()
+
+
 func starter_loadout() -> Array[String]:
 	return ["rifle_scrap", "blade_scrap", "pistol_service", "jetpack_mk1", "plate_light", "visor_scav",
 			"field_dressing"]

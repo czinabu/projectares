@@ -470,6 +470,19 @@ static func _test_bikes_beat_flight(t: Node) -> void:
 	var fastest_rig := 1.0e9
 	for id: String in RIGS:
 		fastest_rig = minf(fastest_rig, float(CROSS_TARGET[id]))
+	# Wings never glide faster by tier (Caleb's call): every tier cruises
+	# under the slowest bike, and only a Mk3's boost reaches the Scrapper's.
+	var slowest_bike := 1.0e9
+	for id: String in BIKES:
+		slowest_bike = minf(slowest_bike, float(ItemDB.item_stats(id).max_speed))
+	for wing: String in ["wings_glide", "wings_glide_mk2", "wings_glide_mk3"]:
+		var tier: Dictionary = ItemDB.item_stats(wing)
+		t.check(is_equal_approx(float(tier.glide_speed), glide) and float(tier.glide_speed) < slowest_bike,
+				"%s glides at %.0f m/s like every tier, under every bike's top speed" % [wing, float(tier.glide_speed)])
+	var mk3: Dictionary = ItemDB.item_stats("wings_glide_mk3")
+	var mk3_burst := float(mk3.glide_speed) + float(mk3.glide_boost)
+	t.check(absf(mk3_burst - float(ItemDB.item_stats("bike_scrapper").boost_speed)) < 2.0,
+			"a Mk3 wing boost (%.1f m/s) keeps pace with the Scrapper's boost for a moment" % mk3_burst)
 	var index := 0
 	for id: String in BIKES:
 		var stats := ItemDB.item_stats(id)

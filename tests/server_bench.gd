@@ -4,9 +4,15 @@ extends Node
 ## with players (idle clients that wander), and prints
 ##   - the server's own health lines (tick time and players per session), and
 ##   - how long travel between worlds takes with all of it running, against
-##     `TRAVEL_TARGET` (the game's trip: connect, sign in, deploy).
+##     `TRAVEL_TARGET`: the whole trip (connect, sign in, deploy), and the
+##     arrival alone, which is all a player waits for when the game connected
+##     ahead while the gate opened (DESIGN.md "Travel that hides its wait").
 ##
 ##   godot --headless --path . res://tests/server_bench.tscn -- --plaza 6 --per-world 6 --arena 2 --seconds 60
+##
+## `--cluster` runs every world as a program of its own (`-- --server
+## --cluster`, DESIGN.md section 14 "Scaling") instead of all in one, to
+## compare the two: each program then has the tick budget to itself.
 ##
 ## `--strict` exits 1 when the tick average is over budget or a trip is over
 ## the target. `--bots <n>` sets the bots per world; the default is each
@@ -14,6 +20,7 @@ extends Node
 ## server is the only thing whose time is reported as the server's.
 
 const PORT := 25830
+const SERVICE_PORT := 25890
 ## DESIGN.md section 14: travel between worlds within about 3 s.
 const TRAVEL_TARGET := 3.0
 const _stash := preload("res://core/account/stash_service.gd")
@@ -25,6 +32,7 @@ var _clients: Array[NetSession] = []
 var _secrets := {}
 var _count := 0
 var _routes := {}
+var _cluster := false
 
 
 func _ready() -> void:
@@ -36,6 +44,7 @@ func _ready() -> void:
 	var trips := int(_arg(args, "--trips", "6"))
 	var bots := _arg(args, "--bots", "-1")
 	var strict := "--strict" in args
+	_cluster = "--cluster" in args
 	Profile.persist = false
 	if not await _start_server(bots):
 		print("Server bench: the server did not start")
@@ -51,11 +60,18 @@ func _ready() -> void:
 		print("Server bench: nobody could sign in at the plaza")
 		_finish(1)
 		return
-	_routes = plaza[0].routes.duplicate()
-	print("Server bench: plaza %d, routes %s" % [plaza.size(), _routes])
 	var worlds: Array[String] = []
 	for world in Worlds.raid_worlds():
 		worlds.append(world.id)
+	# A cluster's worlds come onto the plaza's routes as each one starts.
+	for i in 240:
+		if worlds.all(func(id: String) -> bool: return plaza[0].routes.has(id)) \
+				and plaza[0].routes.has(Arena.ArenaVenue.ID):
+			break
+		await get_tree().create_timer(0.25).timeout
+	_routes = plaza[0].routes.duplicate()
+	print("Server bench: plaza %d, routes %s%s" % [plaza.size(), _routes,
+			", every world its own program" if _cluster else ""])
 	var in_world := {}
 	for id in worlds:
 		in_world[id] = []
@@ -79,6 +95,7 @@ func _ready() -> void:
 	for id in worlds:
 		walking.append_array(in_world[id])
 	var travel: Array[float] = []
+	var arrivals: Array[float] = []
 	var began := Time.get_ticks_msec()
 	var next_trip := 5.0
 	var trip := 0
@@ -90,7 +107,9 @@ func _ready() -> void:
 			var id := worlds[trip % worlds.size()]
 			var took := await _travel(int(_routes.get(id, 0)))
 			travel.append(took)
-			print("  trip %d to %s: %.2f s" % [trip + 1, id, took])
+			var arrival := await _travel(int(_routes.get(id, 0)), true)
+			arrivals.append(arrival)
+			print("  trip %d to %s: %.2f s whole, %.2f s to arrive when connected ahead" % [trip + 1, id, took, arrival])
 			trip += 1
 			next_trip = elapsed + 3.0
 		await get_tree().create_timer(0.5).timeout
@@ -110,13 +129,21 @@ func _ready() -> void:
 		for t: Vector2 in ticks:
 			avg += t.x / ticks.size()
 			worst = maxf(worst, t.y)
-		print("Server tick: %.2f ms average, %.1f ms worst, %.0f%% of the %.1f ms budget" % [
-				avg, worst, avg / budget * 100.0, budget])
+		print("Server tick%s: %.2f ms average, %.1f ms worst, %.0f%% of the %.1f ms budget" % [
+				" (each program)" if _cluster else "", avg, worst, avg / budget * 100.0, budget])
 		fine = avg <= budget
 	if not travel.is_empty():
 		print("Travel between worlds: %.2f s average, %.2f s slowest, target %.1f s" % [
 				total / travel.size(), slowest, TRAVEL_TARGET])
 		fine = fine and slowest <= TRAVEL_TARGET
+	if not arrivals.is_empty():
+		var arrive_total := 0.0
+		var arrive_slowest := 0.0
+		for took in arrivals:
+			arrive_total += took
+			arrive_slowest = maxf(arrive_slowest, took)
+		print("Arrival when connected ahead: %.2f s average, %.2f s slowest" % [
+				arrive_total / arrivals.size(), arrive_slowest])
 	print("Server bench: %s" % ("within budget" if fine else "OVER BUDGET"))
 	_finish(0 if fine or not strict else 1)
 
@@ -131,6 +158,8 @@ func _start_server(bots: String) -> bool:
 			"--health-log", str(HEALTH_EVERY), "--no-zone-rules"])
 	if bots != "-1":
 		args.append_array(["--bots", bots])
+	if _cluster:
+		args.append_array(["--cluster", "--account-port", str(SERVICE_PORT)])
 	# Its output goes to a file this reads back, so no pipe can fill and stall it.
 	_log_path = OS.get_user_data_dir().path_join("server_bench.log")
 	var shell := "exec \"%s\" %s > \"%s\" 2>&1" % [OS.get_executable_path(),
@@ -217,15 +246,20 @@ func _enter(port: int) -> NetSession:
 
 
 ## One trip as the game makes it: connect to the world, sign in, deploy, and
-## stand in it. Seconds, or the wait given up on.
-func _travel(port: int) -> float:
+## stand in it. Seconds, or the wait given up on. With `ahead` the clock
+## starts once the game is signed in, as when it connected while the gate
+## opened: only the deploy is waited for.
+func _travel(port: int, ahead := false) -> float:
 	var began := Time.get_ticks_msec()
 	var session := _new_client()
+	session.ahead = ahead
 	session.join("127.0.0.1", port)
 	var waited := 0.0
 	while session.account.is_empty() and waited < 20.0:
 		await get_tree().create_timer(0.02).timeout
 		waited += 0.02
+	if ahead:
+		began = Time.get_ticks_msec()
 	session.deploy()
 	while (session.raid == null or session.raid.player == null) and waited < 20.0:
 		await get_tree().create_timer(0.02).timeout
@@ -271,6 +305,9 @@ func _finish(code: int) -> void:
 			s.close()
 	if _server_pid > 0:
 		OS.kill(_server_pid)
+	if _cluster and OS.get_name() == "Linux":
+		# A cluster's worlds stop by themselves a little later; do not wait.
+		OS.execute("pkill", PackedStringArray(["-f", "--", "--account-url ws://127.0.0.1:%d" % SERVICE_PORT]))
 	get_tree().quit(code)
 
 

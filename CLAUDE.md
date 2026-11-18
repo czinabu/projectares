@@ -261,11 +261,15 @@ without Caleb, and update the gap list when a PR closes a row.
   The player's frame rate is measured with
   `godot --path . res://tests/frame_bench.tscn -- --mode solo --bots 120`
   (or `--mode online`, which starts a server and drops in beside the
-  fighting; `--probe` shows what the draw calls go to). What keeps the
+  fighting; `--probe` shows what the draw calls go to). To compare two
+  builds, run it headless with `--fixed-fps 60 --look --seed 7`: the same
+  battle each time, with the bodies dressed and posed. What keeps the
   frame affordable, all view only: a far body is posed every few frames
   (`ActorSkin.detail_step`, scaled by the camera's zoom, which steps its
-  animation and skeleton by hand while it is far) and its weapons cast no
-  shadow; open ground is drawn in tiles (`Terrain.tile_cells`) so only the
+  animation and skeleton by hand while it is far), a body out of frame
+  every `offscreen_step` frames (posed at once when it comes into view),
+  its arm placed only with its poses (`WeaponArm.step`), and its weapons
+  cast no shadow; open ground is drawn in tiles (`Terrain.tile_cells`) so only the
   ones in view and in shadow range are drawn; small map props fade out
   with distance by their size (`Look._limit_draw_distance`); a parked
   vehicle nobody rides rests instead of moving every tick. Every ENet
@@ -695,7 +699,7 @@ without Caleb, and update the gap list when a PR closes a row.
   bird's (Caleb's call, so you never fly sideways to your view). They bank
   round onto the view's heading (`Actor.glide_steer`), the strafe keys roll
   a harder turn, and forward and back dive or pull up (`Actor.glide_trim`),
-  never the view's pitch. Holding free look (V, `ActorCommand.free_look`,
+  never the view's pitch. Holding free look (E, `ActorCommand.free_look`,
   Caleb's call) the wings fly straight on and the view looks and aims
   anywhere; let go and they come round onto the view. In free look the
   body twists round its length to face the view, so looking behind lays it
@@ -715,7 +719,7 @@ without Caleb, and update the gap list when a PR closes a row.
   Every rig air dashes on Shift + a move key (`ActorCommand.sprint_pressed`,
   `Actor._air_dash`, tuned by the rig's `air_dash_*` stats): the dash is
   added on top of the rig's own flight and taken back off, so a glide or a
-  cruise carries on after it. Q and E fly nothing (Caleb's call).
+  cruise carries on after it. Q and E fly nothing (Caleb's call); E holds free look.
   The body's attitude in the air (flat, banked, leaning, barrel rolled by a
   sideways air dash) is the skin's job (`ActorSkin._update_glide`), read
   from velocity and the simulated actor only, so remote players match. Boots
@@ -1056,8 +1060,19 @@ without Caleb, and update the gap list when a PR closes a row.
   starts afresh has its deploys returned. The service never returns a
   deploy just because it restarted (`returns_lost_deploys` off). Game
   servers prove the service key (`AccountService.load_key`) and players
-  never reach the service. `SocialService` and `ClanService` are still each
-  game server's own.
+  never reach the service. Where servers share the service it also keeps
+  the clans, the phone's records and presence, so every world's program
+  agrees: `NetSession` asks through `AccountLink.clan` and `social` (the
+  service runs `ClanService.ask` and `SocialService.run`), reads clans
+  from the link's copy (`AccountLink.clans`, a `ClanService` loaded with
+  `load_state`, never written there) and is pushed its own players' phone
+  snapshots. A server with its own accounts keeps its own `ClanService`
+  and `SocialService` and makes the same two calls on them, so a new clan
+  or phone request is a new action in `ClanService.ask` or
+  `SocialService.run`, never a branch in `NetSession`. Presence is by
+  seat (`SocialService.player_online`'s `seat`): travel signs a player in
+  to two worlds for a moment, and they go offline only when the last seat
+  goes.
 - Online, the server owns each player's stash, loadout and mastery
   (`core/account/stash_service.gd`). A client's kit or picks are never trusted;
   the server gets them from `StashService.deploy` and applies results with
@@ -1200,11 +1215,42 @@ without Caleb, and update the gap list when a PR closes a row.
   get the lock from `ActorCommand.STATE_SHELTERED` in the state. Hazards
   and zones are shown in the world and on the watch (`Raid.zone_label`),
   never as an overlay.
-- A server runs several `NetSession`s in one process (plaza on the port, raid
-  worlds after it, `main.gd start_server`), each raid in its own 3D world
-  (`NetSession.isolated`) and all sharing one `StashService`. Never use
-  `Worlds.current` for rules: ask `Worlds.of(node)` or `Raid.of(node)`, and
-  filter any scan of the "actors" group with `Raid.together`.
+- A friends' server runs several `NetSession`s in one process (plaza on
+  the port, raid worlds after it, `main.gd start_server`), each raid in its
+  own 3D world (`NetSession.isolated`) and all sharing one `StashService`.
+  Never use `Worlds.current` for rules: ask `Worlds.of(node)` or
+  `Raid.of(node)`, and filter any scan of the "actors" group with
+  `Raid.together`.
+- One program per world (DESIGN.md section 14, "Scaling"): on servers that
+  share an account service each world is its own program, `--server --only
+  <world id>` (`main.gd start_one`), and `--server --cluster` runs the set
+  on one machine, starting again any that stops (`Main._run_cluster`). So
+  nothing may assume the other worlds are in the same process: a program
+  tells the service where it is and how it is doing
+  (`NetSession._announce`, `AccountLink.announce`) and learns the others
+  from the service's directory (`AccountLink.worlds`, `worlds_changed`).
+  Routes (`NetSession.routes`: world id to a port on the same host, or
+  "host:port"; read on a client with `Main._route`) and `world_status`
+  both come from that directory, or from the sessions in the process on a
+  friends' server (`NetSession._gather_status`, `_routes_out`); anything
+  else one world needs to know of another goes the same way, never
+  through a reference to its session. Every program of a set shares one
+  certificate (`ServerTrust.identity`, made once, safely when several
+  start together), so a game trusts them all after the first.
+- Travel hides its wait (DESIGN.md section 14): the game connects and
+  signs in ahead with a second `NetSession` (`ahead`, `Main._tick_ahead`,
+  `_trip_ahead` says where a doorway, an open portal or a sign-out leads)
+  and the trip adopts it (`Main._take_ahead` in `_try_join`). A session
+  that is ahead never shows anything, never deploys and is never given a
+  body: the server reclaims a body left standing only at the join
+  (`NetSession._request_join`), keeps `lobby_room` connections spare for
+  them and refuses a full world there, by name. A world whose ground is
+  slow to work out offers `WorldDef.prepare_map`, run on a worker thread:
+  it may only compute plain data kept under a lock (heights, collision),
+  never touch the scene tree. The view goes dark at once and fades in
+  when the world stands (`Main._fade_travel`, the one cover allowed over
+  the view); the travel screen's text is only for a trip slower than
+  `travel_quiet`.
 - `Raid` never writes to `Profile` on a server. Results travel in the
   `player_finished` dictionary. Online the server settles them into the
   account; `Raid.apply_result` is only for the local solo profile.
@@ -1586,6 +1632,7 @@ godot --headless --fixed-fps 60 --path . res://tests/test_runner.tscn -- --tier 
 godot --headless --path . res://tests/test_runner.tscn -- --tier net --shard 1/3   # a third of the online groups
 godot --headless --path . res://tests/battle_bench.tscn -- --bots 150 --players 32   # server cost of a big battle
 godot --headless --path . res://tests/server_bench.tscn -- --plaza 10 --per-world 7 --arena 4   # the whole server at once: tick time per session, travel against 3 s
+godot --headless --path . res://tests/server_bench.tscn -- --cluster --plaza 10 --per-world 7 --arena 4   # the same with one program per world; times a trip made on a connection opened ahead
 godot --headless --fixed-fps 60 --path . res://tests/feel_bench.tscn   # how each rig answers, in numbers
 godot --headless --fixed-fps 60 --path . res://tests/duel_bench.tscn   # how each enemy type fights a reference player (DESIGN.md "Enemy balance")
 godot --headless --path . res://tests/gun_bench.tscn   # every gun's time to kill by range and armor (DESIGN.md "Gun roles")
