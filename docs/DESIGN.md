@@ -1683,6 +1683,14 @@ shared by solo and online play like the money rules.
   warlord (1 in 2) or a supply pod (1 in 4), each with upgrade data
   (2 and 1). Players carry what they found, so killing one pays it too.
   Contracts are the next source.
+- Decided (Caleb's call): the war's blueprints stay mainly in Ashfront, but
+  Frostline gets a slow route to them too, so a player who never fights
+  other players can still reach Mk2 alone: a rare drop at its hardest
+  spots (the relay on the Engine, the defence grid's boss) and from long
+  expedition contracts, rarer than in Ashfront. Mk3 stays the war's: a rig's
+  one blueprint makes both Mks, so Mk3 is held back by its 8 upgrade data,
+  which comes mostly from Ashfront, and Frostline players can buy the rest
+  at the Exchange. Planned with step 7 of Frostline.
 
 | Recipe | Blueprint | Upgrade data | Parts | Scrip |
 | --- | --- | --- | --- | --- |
