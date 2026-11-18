@@ -118,8 +118,28 @@ var phone_mirror: Node3D
 ## moves in to `aim_distance_ratio` of it.
 var third_person_distance := 2.0
 var aim_distance_ratio := 0.6
-## A vehicle is bigger than a person: riding sits this much further back.
+## A vehicle is bigger than a person: riding sits this much further back,
+## more for a vehicle longer than a bike (`ride_scale`).
 var ride_extra_distance := 1.6
+## Where the third-person camera stands beside the eyes before it moves back,
+## in metres right and up of them: over the right shoulder, so the body sits
+## left of the crosshair and never covers it. Aiming moves it in
+## (`aim_distance_ratio`) and out over the shoulder (`shoulder_aim`), so the
+## head clears the sight line. Both fade out as the camera comes in to the
+## eyes, so switching views glides between them.
+var shoulder := Vector3(0.55, 0.22, 0.0)
+var shoulder_aim := Vector3(0.62, 0.1, 0.0)
+## How fast the shoulder moves between rest and aim, a second.
+var shoulder_rate := 9.0
+## The camera is a ball this wide (metres) when it backs into walls, so it
+## stops short of them instead of looking through their edges.
+var camera_radius := 0.2
+## Pulled in by a wall the camera comes in at once; it backs out again at
+## this many metres a second, so it never pops back and forth along a wall.
+var wall_return := 3.0
+var _shoulder_aim := 0.0
+## How much of `_cam_dist` a wall is taking away now (metres).
+var _wall_pull := 0.0
 ## The view used while riding. It starts in third-person and V switches it,
 ## separately from the on-foot view, which comes back when you get off.
 var ride_view := ViewMode.THIRD
@@ -284,6 +304,10 @@ func setup(p_actor: Actor) -> void:
 
 func _ready() -> void:
 	process_physics_priority = -10
+	var live := LiveAim.new()
+	live.name = "LiveAim"
+	live.run = _live_aim
+	add_child(live)
 	camera = Camera3D.new()
 	camera.fov = base_fov
 	camera.far = 400.0
@@ -945,6 +969,23 @@ func _use_toy_hand(cmd: ActorCommand) -> void:
 	_pending_switch = -1
 
 
+## Each drawn frame, before anything is posed or shown from the body: the
+## look the next tick will send, given to the body now, so on a screen faster
+## than the ticks the body, its arms and the gun turn with the mouse every
+## frame (`ShownMotion.live_yaw`). The next tick sets the same values again
+## before simulating, so nothing simulated reads them early.
+func _live_aim() -> void:
+	if actor == null or not is_instance_valid(actor) or actor.is_dead or input_blocked:
+		return
+	actor.cmd.yaw = yaw
+	actor.cmd.pitch = pitch
+	actor.cmd.aim_dir = _compute_aim_dir()
+	actor.hand.rotation = Vector3(pitch, 0.0, 0.0)
+	var motion := ShownMotion.of(actor)
+	if motion != null:
+		motion.live_yaw = yaw
+
+
 func _process(delta: float) -> void:
 	if actor == null or not is_instance_valid(actor):
 		return
@@ -968,14 +1009,8 @@ func _process(delta: float) -> void:
 	var view_pitch := lerpf(pitch, reading_pitch, smoothstep(0.0, 1.0, _phone_look))
 	var look := Basis.from_euler(Vector3(view_pitch + _shake.y, yaw + _shake.x, 0.0))
 	var pivot := actor.get_eye_position() - Vector3(0.0, _dip, 0.0)
-	var t := minf(_cam_dist / third_person_distance, 1.0)
-	var desired := pivot + look * Vector3(0.6 * t, 0.3 * t, _cam_dist)
-	if _cam_dist > 0.05:
-		# Pull the camera in when a wall is in the way.
-		var query := PhysicsRayQueryParameters3D.create(pivot, desired, Actor.LAYER_WORLD)
-		var hit := actor.get_world_3d().direct_space_state.intersect_ray(query)
-		if not hit.is_empty():
-			desired = pivot + (hit.position - pivot) * 0.85
+	_shoulder_aim = move_toward(_shoulder_aim, 1.0 if aiming else 0.0, shoulder_rate * delta)
+	var desired := pivot + _third_person_offset(look, pivot, delta)
 	camera.global_transform = Transform3D(look, desired)
 	peek_fade.update(actor, camera, peek_rule_applies() and is_third_person(), delta)
 	_read_phone(delta)
@@ -1271,12 +1306,59 @@ func _zoom() -> float:
 	return actor.visor.zoom_factor()
 
 
-## The resting field of view for the view in use.
 ## How far back the third-person camera wants to be.
 func view_distance(aiming: bool) -> float:
 	if aiming:
 		return third_person_distance * aim_distance_ratio
-	return third_person_distance + (ride_extra_distance if is_riding() else 0.0)
+	return third_person_distance + (ride_extra_distance * ride_scale() if is_riding() else 0.0)
+
+
+## How much bigger than a bike the vehicle being ridden is, for framing it:
+## 1 for a bike, more for a rover, a walker or a jet.
+func ride_scale() -> float:
+	var vehicle: Node3D = actor.vehicle if actor != null else null
+	if vehicle == null or not is_instance_valid(vehicle):
+		return 1.0
+	var size: Variant = vehicle.get("body_size")
+	if not size is Vector3:
+		return 1.0
+	var v := size as Vector3
+	# A bike's body is 2 m long; framed by its biggest side.
+	return clampf(maxf(v.x, maxf(v.y, v.z)) / 2.0, 1.0, 2.5)
+
+
+## Where the third-person camera stands from the eyes (`pivot`), looking
+## along `look`: out over the shoulder (`shoulder`, `shoulder_aim`), then back
+## `_cam_dist`, both fading in together as the camera leaves the eyes. A wall
+## in the way stops it short, swept as a ball (`camera_radius`) so it never
+## looks through an edge, and it eases back out (`wall_return`).
+func _third_person_offset(look: Basis, pivot: Vector3, delta: float) -> Vector3:
+	var out := clampf(_cam_dist / maxf(third_person_distance * aim_distance_ratio, 0.1), 0.0, 1.0)
+	out = smoothstep(0.0, 1.0, out)
+	var side := shoulder.lerp(shoulder_aim, smoothstep(0.0, 1.0, _shoulder_aim)) * out
+	var offset := look * Vector3(side.x, side.y, _cam_dist)
+	if _cam_dist <= 0.05 or not actor.is_inside_tree():
+		_wall_pull = 0.0
+		return offset
+	var space := actor.get_world_3d().direct_space_state
+	var ball := SphereShape3D.new()
+	ball.radius = camera_radius
+	var query := PhysicsShapeQueryParameters3D.new()
+	query.shape = ball
+	query.collision_mask = Actor.LAYER_WORLD
+	# Out to the shoulder first, then back from it: the camera never ends up
+	# on the far side of a wall the shoulder is pressed against.
+	var shoulder_at := look * Vector3(side.x, side.y, 0.0)
+	query.transform = Transform3D(Basis.IDENTITY, pivot)
+	query.motion = shoulder_at
+	var free_side: float = space.cast_motion(query)[0]
+	shoulder_at *= free_side
+	var back := look * Vector3(0.0, 0.0, _cam_dist)
+	query.transform = Transform3D(Basis.IDENTITY, pivot + shoulder_at)
+	query.motion = back
+	var pull: float = (1.0 - space.cast_motion(query)[0]) * _cam_dist
+	_wall_pull = pull if pull > _wall_pull else move_toward(_wall_pull, pull, wall_return * delta)
+	return shoulder_at + back.normalized() * maxf(_cam_dist - _wall_pull, 0.0)
 
 
 func wanted_base_fov() -> float:
@@ -1396,6 +1478,20 @@ func _compute_aim_dir() -> Vector3:
 	if eye.distance_to(point) < 2.0 or forward.dot(point - eye) <= 0.0:
 		return forward
 	return (point - eye).normalized()
+
+
+## Runs `_live_aim` first thing each drawn frame, before the body is shown
+## between ticks (`ShownMotion`) and posed.
+class LiveAim:
+	extends Node
+	var run: Callable
+
+	func _ready() -> void:
+		process_priority = -200
+
+	func _process(_delta: float) -> void:
+		if run.is_valid():
+			run.call()
 
 
 ## Third person never shows more than the eyes see (Caleb's call): where gear
