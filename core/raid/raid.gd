@@ -68,6 +68,10 @@ signal ice_changed
 ## its faction to a fight. On every machine near enough (a client hears it
 ## from `NetSession`, with no `source`), for the view.
 signal grid_called(bot: Actor, source: Actor)
+## An army set off for a strongpoint (`Raid.pushes`, DESIGN.md "Challenge
+## and balance data": danger warns first). `loud` is a new push worth a
+## horn and a war feed line; a quiet one only moves the watch map's arrow.
+signal army_pushed(site: int, from: Vector3, title: String, loud: bool)
 
 ## Bots never start closer to the player than this, so a raid does not open with a fight.
 const MIN_BOT_SPAWN_DISTANCE := 40.0
@@ -82,6 +86,12 @@ const BOT_REROLLS := 8
 const WANTED_SHOWN := 5
 ## Seconds between rounds of orders to the bot factions.
 const ORDERS_EVERY := 8.0
+## An army's push is announced (horn, war feed) at most this often, and
+## shown on the watch map for `PUSH_SHOWN` seconds. Fewer bots than
+## `PUSH_MIN` going for a site is not a push.
+const PUSH_EVERY := 30.0
+const PUSH_SHOWN := 60.0
+const PUSH_MIN := 3
 const DETAIL_EVERY := 0.25
 ## The drop id (`add_player`'s `p_drop`) for arriving through a squad portal:
 ## at the world's gate outpost (a map marker in the group "outpost", the
@@ -282,6 +292,13 @@ var _orders_in := 0.0
 var _detail_in := 0.0
 ## Bot -> the strongpoint its faction last sent it to.
 var _orders := {}
+## The armies' pushes, newest last, as {"site", "from", "title", "at"}
+## (`at` is `clock`): what the watch map draws as an arrow. The server
+## decides them in `_tick_orders`; a client is told (`note_push`).
+var pushes: Array[Dictionary] = []
+## Each faction's last push target and when it was last announced.
+var _push_target := {}
+var _push_loud_at := {}
 ## Bot -> `clock` until which something else (an assault) has the say over it.
 var _busy_until := {}
 ## One per vehicle marker: { marker, source, vehicle, empty_for }.
@@ -411,6 +428,8 @@ func _setup(p_world: WorldDef, p_seed: int) -> void:
 	_link_next.clear()
 	if not world.linked_factions.is_empty() and Look.enabled and not grid_called.is_connected(_show_grid_call):
 		grid_called.connect(_show_grid_call)
+	if Look.enabled and not army_pushed.is_connected(_show_push):
+		army_pushed.connect(_show_push)
 	_assault_in = world.assault_interval
 	_event_in = world.event_interval
 	_raider_in = world.raider_gap
@@ -966,6 +985,56 @@ func _tick_orders(delta: float) -> void:
 		if target != null:
 			for bot: Actor in spare:
 				_order(bot, target)
+			_note_army_target(faction, target, spare)
+
+
+## A faction's army has a new site to go for: a push, told before it lands
+## (a horn at the site, a war feed line, an arrow on the watch map). The
+## first orders of a raid set the targets quietly.
+func _note_army_target(faction: String, target: Strongpoint, army: Array) -> void:
+	var first := not _push_target.has(faction)
+	if _push_target.get(faction) == target or army.size() < PUSH_MIN:
+		return
+	_push_target[faction] = target
+	if first:
+		return
+	var from := Vector3.ZERO
+	for bot: Actor in army:
+		from += bot.global_position
+	from /= army.size()
+	var loud := clock - float(_push_loud_at.get(faction, -INF)) >= PUSH_EVERY
+	if loud:
+		_push_loud_at[faction] = clock
+	var title := world.faction_title(faction)
+	note_push(target.index, from, title, loud)
+	if loud:
+		var line := "%s is pushing on %s" % [title, target.title]
+		war_feed.emit(line.left(1).to_upper() + line.substr(1))
+
+
+## Records an army's push on site `site` (its `Strongpoint.index`) for the
+## views, and lets them know. The server calls it from its orders; a
+## client from what `NetSession` was told.
+func note_push(site: int, from: Vector3, title: String, loud: bool) -> void:
+	pushes = pushes.filter(func(p: Dictionary) -> bool:
+		return p.title != title and clock - float(p.at) < PUSH_SHOWN)
+	pushes.append({"site": site, "from": from, "title": title, "at": clock})
+	army_pushed.emit(site, from, title, loud)
+
+
+## The pushes still worth showing.
+func live_pushes() -> Array[Dictionary]:
+	return pushes.filter(func(p: Dictionary) -> bool: return clock - float(p.at) < PUSH_SHOWN)
+
+
+## A loud push is heard: a war horn at the site, carried far, and a ring
+## of light where it stands. View only.
+func _show_push(site: int, _from: Vector3, _title: String, loud: bool) -> void:
+	if not loud or site < 0 or site >= strongpoints.size():
+		return
+	var at := strongpoints[site].global_position + Vector3(0, 0.2, 0)
+	Fx.ring(self, at, strongpoints[site].radius, Color(1.0, 0.45, 0.2), 1.6, false)
+	Sfx.play("war_horn", at, 6.0, 420.0, 40.0)
 
 
 ## The site a faction goes for next: of those it does not hold, the one

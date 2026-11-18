@@ -287,6 +287,10 @@ func _init() -> void:
 	weather_field = 276.0
 
 
+func faction_title(faction: String) -> String:
+	return str(ARMIES[faction].name) if ARMIES.has(faction) else super(faction)
+
+
 func contract_jobs() -> Dictionary:
 	return CONTRACTS
 

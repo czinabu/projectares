@@ -2198,6 +2198,17 @@ banking at a depot and a Foundry cache, to holding the line (stand in a
 strongpoint your side holds for three minutes, `hold_seconds`); weeklies
 pay upgrade data for fifteen minutes holding sites or five Foundry caches.
 
+Danger warns before it lands. Storms are a wall you see coming, a walker's
+beam locks before it fires and soldiers bark before their first shot. An
+army's push does the same: when a faction's army turns for a new site
+(`Raid._note_army_target`, from its orders), a war horn sounds at the site,
+carried across the field, a ring of light marks it, the war feed says
+"The Legion is pushing on Signal Hill" (`WorldDef.faction_title`), and the
+watch map draws an arrow from the army to the site for a minute
+(`Raid.pushes`, `Hud.map_marks`' "pushes"). A push is told loudly at most
+every 30 s an army (`PUSH_EVERY`); a change in between only moves the
+arrow. Only the server decides; clients are told (`NetSession._army_push`).
+
 `tests/life_report.tscn` reads a folder of them and prints, by zone, how
 many lives end there, how many die, how long they last and what they carry;
 what does the killing; how many deaths came with three or more bots after

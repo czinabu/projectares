@@ -70,3 +70,34 @@ static func _clear(dir: String) -> void:
 		return
 	for name in listing.get_files():
 		listing.remove(name)
+
+
+## An army's push warns first (DESIGN.md "Challenge and balance data"): a
+## horn and a war feed line, and an arrow on the watch map.
+static func pushes(t: Node) -> void:
+	print("Army pushes: told before they land")
+	var raid: Raid = await t._new_raid(48, false)
+	var feed: Array[String] = []
+	raid.war_feed.connect(func(text: String) -> void: feed.append(text))
+	var heard: Array[bool] = []
+	raid.army_pushed.connect(func(_s: int, _f: Vector3, _t: String, loud: bool) -> void: heard.append(loud))
+	var army: Array = raid.bots.filter(func(b: Actor) -> bool: return b.faction == "legion")
+	t.check(army.size() >= Raid.PUSH_MIN, "the Legion has enough bots to push")
+	raid._note_army_target("legion", raid.strongpoints[0], army)
+	t.check(heard.is_empty() and feed.is_empty(), "the first orders of a world are set quietly")
+	raid._note_army_target("legion", raid.strongpoints[1], army)
+	t.check(heard == [true] and feed.size() == 1 and feed[0].begins_with("The Legion is pushing on ")
+			and feed[0].contains(raid.strongpoints[1].title),
+			"a new push is announced, by the army's name: %s" % [feed])
+	var marks := Hud.map_marks(raid, raid.player)
+	t.check(marks.pushes.size() == 1, "the watch map draws the push as an arrow")
+	raid._note_army_target("legion", raid.strongpoints[2], army)
+	t.check(heard == [true, false] and feed.size() == 1 and raid.live_pushes().size() == 1
+			and int(raid.live_pushes()[0].site) == 2,
+			"a change soon after only moves the arrow, without another horn")
+	raid._note_army_target("legion", raid.strongpoints[2], army.slice(0, 1))
+	t.check(heard.size() == 2, "the same target again is no news")
+	raid.clock += Raid.PUSH_SHOWN + 1.0
+	t.check(raid.live_pushes().is_empty() and Hud.map_marks(raid, raid.player).pushes.is_empty(),
+			"after a minute the arrow is gone")
+	await t._end_raid(raid)

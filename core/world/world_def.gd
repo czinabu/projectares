@@ -421,6 +421,12 @@ func bot_skill_range(_bot: Actor, warlord: bool) -> Vector2:
 
 ## The risk zone at a point: 0 the outer ring, 1 the middle, 2 the core, or
 ## -1 for a world without zones.
+## What a bot faction is called in news ("the Legion"), for the war feed's
+## lines about armies. Plain worlds use the faction's own name.
+func faction_title(faction: String) -> String:
+	return "the " + faction.capitalize()
+
+
 func zone_at(_pos: Vector3) -> int:
 	return -1
 

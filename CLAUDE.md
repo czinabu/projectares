@@ -180,6 +180,10 @@ without Caleb, and update the gap list when a PR closes a row.
   holds a site; clients get it from `NetSession`, including whether a site is
   theirs (`Strongpoint.viewer_holds`), and never see another player's key.
   Send bots somewhere with `BotBrain.post_to`, not a second mechanism.
+  An army turning for a new site is a push and is told before it lands
+  (`Raid._note_army_target`: a horn and ring at the site and a war feed
+  line at most every `PUSH_EVERY`, an arrow on the watch map from
+  `Raid.pushes`); clients hear of it through `NetSession._army_push`.
 - Where a player lands is the `Raid`'s call. `Raid.drop_choices(owner)` lists
   what is on offer (quiet, a held strongpoint, beside the fighting) and the
   chosen id goes into `add_player`'s `p_drop`, which falls back to a quiet

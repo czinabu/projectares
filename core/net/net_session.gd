@@ -85,7 +85,7 @@ signal base_visit_requested(owner_name: String, stash: Array, loadout: Dictionar
 signal portal_travel(destination: String)
 
 const DEFAULT_PORT := 24565
-const PROTOCOL := 48
+const PROTOCOL := 49
 ## Every packet is compressed, both ways. State updates are mostly repeated
 ## numbers, and a big battle sends a player hundreds of them a second. Server
 ## and client must agree, so a change here needs a new PROTOCOL.
@@ -606,6 +606,9 @@ func _start_server_raid() -> void:
 		for peer in _joined_peers:
 			_ice_holes.rpc_id(peer, holes))
 	raid.grid_called.connect(_on_server_grid_called)
+	raid.army_pushed.connect(func(site: int, from: Vector3, title: String, loud: bool) -> void:
+		for peer in _joined_peers:
+			_army_push.rpc_id(peer, site, from, title, loud))
 	raid.pinged.connect(_on_server_pinged)
 	raid.portal_opened.connect(func(portal: Portal) -> void:
 		for peer in _joined_peers:
@@ -3176,6 +3179,14 @@ func _visor_tag(tagger_id: int, target_id: int, seconds: float) -> void:
 	var target: Actor = _actors.get(target_id)
 	if tagger != null and is_instance_valid(tagger) and target != null and is_instance_valid(target):
 		tagger.visor.add_tag(target, clampf(seconds, 0.0, 30.0))
+
+
+## An army's push on a strongpoint (`Raid.army_pushed`): public news, so
+## every player in the world hears the horn and sees the arrow.
+@rpc("authority", "call_remote", "reliable")
+func _army_push(site: int, from: Vector3, title: String, loud: bool) -> void:
+	if raid != null:
+		raid.note_push(site, from, title.left(40), loud)
 
 
 @rpc("authority", "call_remote", "reliable")
