@@ -304,6 +304,10 @@ func setup(p_actor: Actor) -> void:
 
 func _ready() -> void:
 	process_physics_priority = -10
+	var live := LiveAim.new()
+	live.name = "LiveAim"
+	live.run = _live_aim
+	add_child(live)
 	camera = Camera3D.new()
 	camera.fov = base_fov
 	camera.far = 400.0
@@ -965,6 +969,23 @@ func _use_toy_hand(cmd: ActorCommand) -> void:
 	_pending_switch = -1
 
 
+## Each drawn frame, before anything is posed or shown from the body: the
+## look the next tick will send, given to the body now, so on a screen faster
+## than the ticks the body, its arms and the gun turn with the mouse every
+## frame (`ShownMotion.live_yaw`). The next tick sets the same values again
+## before simulating, so nothing simulated reads them early.
+func _live_aim() -> void:
+	if actor == null or not is_instance_valid(actor) or actor.is_dead or input_blocked:
+		return
+	actor.cmd.yaw = yaw
+	actor.cmd.pitch = pitch
+	actor.cmd.aim_dir = _compute_aim_dir()
+	actor.hand.rotation = Vector3(pitch, 0.0, 0.0)
+	var motion := ShownMotion.of(actor)
+	if motion != null:
+		motion.live_yaw = yaw
+
+
 func _process(delta: float) -> void:
 	if actor == null or not is_instance_valid(actor):
 		return
@@ -1457,6 +1478,20 @@ func _compute_aim_dir() -> Vector3:
 	if eye.distance_to(point) < 2.0 or forward.dot(point - eye) <= 0.0:
 		return forward
 	return (point - eye).normalized()
+
+
+## Runs `_live_aim` first thing each drawn frame, before the body is shown
+## between ticks (`ShownMotion`) and posed.
+class LiveAim:
+	extends Node
+	var run: Callable
+
+	func _ready() -> void:
+		process_priority = -200
+
+	func _process(_delta: float) -> void:
+		if run.is_valid():
+			run.call()
 
 
 ## Third person never shows more than the eyes see (Caleb's call): where gear

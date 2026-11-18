@@ -226,21 +226,26 @@ static func _check_on_the_move(t: Node) -> void:
 		controller.set_physics_process(false)
 		controller.view_mode = PlayerController.ViewMode.FIRST
 		var cam: Camera3D = controller.camera
-		var lo := Vector3.INF
-		var hi := -Vector3.INF
+		var span := [Vector3.INF, -Vector3.INF]
+		var seen := [0]
+		# Read within the frame, after the camera is placed and while the body
+		# is still where it is shown (`ShownMotion`), so only the bob is left.
+		var probe := Probe.new()
+		probe.read = func() -> void:
+			seen[0] += 1
+			if seen[0] < 50:
+				return
+			var aimed := p.global_basis.orthonormalized() * Basis(Vector3.RIGHT, p.cmd.pitch)
+			var offset := aimed.inverse() * (cam.global_position - p.get_eye_position())
+			span[0] = (span[0] as Vector3).min(offset)
+			span[1] = (span[1] as Vector3).max(offset)
+		raid.add_child(probe)
 		for i in 150:
 			p.cmd.secondary = aim
 			p.cmd.move = Vector2(0, 1)
 			await t.get_tree().process_frame
-			if i < 50:
-				continue
-			var aimed := p.global_basis.orthonormalized() * Basis(Vector3.RIGHT, p.cmd.pitch)
-			# The camera is placed after the physics step.
-			var eye := p.get_eye_position() - p.velocity / Engine.physics_ticks_per_second
-			var offset := aimed.inverse() * (cam.global_position - eye)
-			lo = lo.min(offset)
-			hi = hi.max(offset)
-		var swing := (hi - lo) * 1000.0
+		probe.queue_free()
+		var swing: Vector3 = (span[1] - span[0]) * 1000.0
 		var speed := Vector2(p.velocity.x, p.velocity.z).length()
 		if aim:
 			t.check(speed < p.walk_speed * 0.7, "aimed, you walk rather than run (%.1f m/s)" % speed)
@@ -253,3 +258,15 @@ static func _check_on_the_move(t: Node) -> void:
 		raid.queue_free()
 		await t.frames(3)
 	Look.enabled = false
+
+
+## Calls `read` each frame after everything else has processed.
+class Probe extends Node:
+	var read := Callable()
+
+	func _ready() -> void:
+		process_priority = 10000
+
+	func _process(_delta: float) -> void:
+		if read.is_valid():
+			read.call()
