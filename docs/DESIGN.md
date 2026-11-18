@@ -105,6 +105,15 @@ do not match where they stand, no glowing pads, no floating ads):
 - **Residences** to the west: the way home, with Wren the concierge.
 - **The arena** to the southeast with Sola the promoter, and the shuttered
   RC yard to the southwest, kept for the toy arena.
+- **The boulevards** between them are somewhere to stop, never only a
+  walk: halfway out to each district, off the lane, a stop that serves the
+  people going that way. A food court on the way to the civic square (a
+  noodle cart and a grill facing each other across the lane, standing
+  tables), a fountain square on the way to the gates (benches round the
+  water, a coffee kiosk with its tables at the water's edge), and by the
+  residences a tea cart and the residents' bike bay. The diagonals are
+  lined with trees and benches, with a pair of light sculptures where each
+  leaves the plaza. No signs: a cart says what it is by what is on it.
 - Gardens on the diagonals, slim towers with landing decks and skybridges at
   15 m (boot reach; the tops are for wings and jetpacks), rim lookouts and
   the bike loop round the edge, there to roam.
@@ -116,7 +125,7 @@ street, a tiled floor.
 
 ### Locals
 
-The Concourse is lived in (Caleb's call): about fifty people go about their
+The Concourse is lived in (Caleb's call): about ninety people go about their
 day there, strolling the rings round the spire, window shopping down Market
 Row (along the street, crossing at the doors), watching the big screen from
 the tiers, standing about in small
@@ -130,7 +139,12 @@ people.
 Some of them you can talk to. Walk up and press the interact key, and they
 answer in a short line on a card over their head, never a menu. Every
 counter has someone behind it (the shop keepers, the clan hall's clerk) who
-greets you as you trade, and there are Marlo at the gates, Wren at the
+greets you as you trade. A keeper talks about what is really on the
+shelves and what you really have: today's piece (the same for everyone all
+day), something on sale that beats what you wear in a slot and that you can
+pay for, and what your salvage would fetch. Every cart on the boulevards
+has a cook, and its customers queue, order, eat at the tables and walk on,
+taking turns so nobody stands in anyone's place. There are Marlo at the gates, Wren at the
 residences and Sola at the arena, besides:
 
 - **Kade**, the bounty broker at the most-wanted board: how bounties work
@@ -842,6 +856,76 @@ outer pair is winnable in the open (about a third), three or more need
 cover or a plan, and five should take at least six seconds to kill
 someone standing still. The duel rows above stay in their bands with this
 on (one attacker always has a slot).
+
+### Enemy senses and squads (Caleb's call)
+
+Playtest: "sometimes it seems like every AI converges on me like I'm the
+biggest bounty on the planet." It did: every shot a player fired reached
+every patrolling bot of both armies within earshot, each one left its post
+and came, nothing capped how many followed one person, and bot battles made
+no noise, so a player was the only thing on the map that pulled bots about.
+Bots now react only to what they sense, and only a few act on it:
+
+- **Senses.** A bot sees (shorter in a storm, `sight_between`), hears a
+  person's shots (`Combat.noise`, carried further by a world's air and
+  muffled by a storm), a sprint up to 16 m and a jog up to 7 m, through
+  walls (walking, crouching and gliding are silent), a flight rig's jets
+  (30 m) and an engine (40 m) (`BotBrain.noise_of`), feels a hit, and hears
+  a squadmate's callout. A heard place is rough (off by up to a tenth of the
+  distance); a hit or a callout is exact. Nothing is live tracking.
+- **Only a few act.** Only the nearest three go to look at one person's
+  noise (`noise_lookers`, `SquadBoard.look`); the rest turn to face it with
+  the gun up for a few seconds. Only three to five army bots, by ring, may
+  leave their ground to hunt one person (`RING_HUNTERS`, `SquadBoard.hunt`);
+  the rest fight from where they stand. Every chase is leashed: nobody
+  follows anything past 35 m beyond its patrol (`leash`).
+- **An army fights the other army first.** A person at the same distance as
+  an enemy soldier is the second choice (`person_bias`).
+- **Search.** Losing sight is not knowing: a bot hurries to where it last
+  saw you, carried on the way you were going, looks round a few points
+  ahead of your course, then gives up and goes back to its ground.
+- **Callouts.** A soldier who spots a person and brings its gun up (the
+  bark everyone hears) tells its faction within 30 m, and its own fireteam
+  within 60 m, where the person is at that moment, at most every four
+  seconds. Those who may come do; the rest face that way.
+- **Squad tactics.** When a person ducks into cover, the bot whose turn it
+  was keeps shooting at that cover for a couple of seconds to pin them, one
+  bot (only ever one, `SquadBoard.flank`, so a solo player is never boxed
+  in) works round the flank, and the rest search. A soldier below a third of
+  its health falls back to its post and fights only when pressed; heavies,
+  exos, walkers and bosses stand their ground.
+- **Smart cover.** Cover is picked by the angle the person is attacking
+  from, preferring spots where the bot can stand up and see them again
+  (to peek), never on top of a squadmate's (`SquadBoard.cover_free`). In
+  cover a bot ducks between bursts and stands to shoot; closing in, it
+  moves from cover to cover (`_advance`). It runs from a grenade or rocket
+  about to burst beside it, if it notices (45% to 90% by skill).
+
+Group fights keep taking turns (the attack slots above are unchanged).
+**Measured.** A lone player firing every half second beside a site, three
+seeds, 90 s: bots within 30 m fell from 8.0, 14.7 and 9.2 on average to
+7.0, 6.3 and 6.8, and the most targeting them at once from 8, 13 and 10 to
+4, 8 and 6 (much of what is left is the site's own garrison). Duels stay in
+their bands (100 duels a row). Outer-ring groups kill as fast as before
+(five take 5.8 s at 12 m and 7.0 s at 25 m); groups of core soldiers, who
+now react together after a callout, kill about a second faster at 25 m,
+which is still "three or more need cover or a plan". The battle bench is
+7% cheaper (12.1 ms a tick against 13.0), since fewer bots run about.
+
+### Army commanders
+
+Each army in a world where `bots_contest_sites` is on has a commander
+(`WarCommander`, run by `Raid._tick_orders` every 8 s on the authority). It
+keeps a garrison on every site its army holds, splits the rest into
+fireteams of about five that stand together, and sends each team at the
+objective worth most: one of its own sites being taken (2.5 times), open
+ground (1.5 times), then the other army's, less for each soldier holding
+it, twice as much under a storm, and a fifth as much where its soldiers are
+outnumbered more than two to one, so a losing fight stops drawing teams and
+they go elsewhere. No objective takes more than 60% of the teams, so the
+war has more than one front. Players are never an objective: an army
+fights the other army for ground and a player meets it on the way. A
+fireteam is also a squad for callouts (`BotBrain.team`).
 
 ### World events
 

@@ -65,6 +65,8 @@ static func run(t: Node) -> void:
 	brain.feint_chance = 0.0
 	brain.dash_chance = 1.0
 	brain._dash_wait = 0.0
+	# Posted where it stands, so closing in is within its leash.
+	brain.post_to(fighter.global_position, 12.0)
 	foe.global_position = fighter.global_position + Vector3(0, 0, -7.0)
 	_face(fighter, foe)
 	fighter.stamina = fighter.max_stamina
