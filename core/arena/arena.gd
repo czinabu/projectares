@@ -41,7 +41,6 @@ signal bout_finished(summary: Dictionary)
 enum Phase { IDLE, CALLING, COUNTDOWN, FIGHT, RESULT }
 const PHASE_NAMES := ["idle", "calling", "countdown", "fight", "result"]
 const ArenaVenue := preload("res://core/arena/arena_venue.gd")
-const StashServiceScript := preload("res://core/account/stash_service.gd")
 
 # Tuning.
 var call_time := 15.0
@@ -172,9 +171,10 @@ class ProfileBank:
 class StashBank:
 	extends Bank
 
-	var service: StashServiceScript
+	## A `StashService`, or an official server's `AccountLink`.
+	var service: Object
 
-	func _init(p_service: StashServiceScript) -> void:
+	func _init(p_service: Object) -> void:
 		service = p_service
 
 	func scrip(key: String) -> int:

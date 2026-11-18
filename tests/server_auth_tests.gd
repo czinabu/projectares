@@ -4,17 +4,23 @@ extends RefCounted
 ## (`SceneMultiplayer.auth_callback`), so an old, unknown or wrongly signed
 ## game never connects; the server never relays one client's calls to
 ## another; and each player's requests are limited (`NetSession.RequestLimits`).
+## Connections are encrypted (ENet DTLS), and a game remembers each server's
+## own certificate the first time it joins and warns if it changes
+## (`NetSession.ServerTrust`).
 ## Starts a server, so it runs in the online tier.
 ## `-- --groups ServerAuthTests` runs just these.
 
 const PORT := 25311
 const StashService := preload("res://core/account/stash_service.gd")
+const ServerTrust := preload("res://core/net/server_trust.gd")
+const KNOWN := "user://test_known_servers.cfg"
 
 
 static func run(t: Node) -> void:
 	print("Server hardening: sign-in in the handshake, no relay, request limits")
 	_limits(t)
 	_client_answers(t)
+	_trust_rules(t)
 
 	var pid: int = t._start_server(PORT, ["--bots", "0"] as Array[String])
 	var ada: NetSession = await t._sign_in("Ada", PORT)
@@ -22,6 +28,8 @@ static func run(t: Node) -> void:
 	if ada == null:
 		OS.kill(pid)
 		return
+
+	await _trust_on_first_use(t)
 
 	# Another version, or not a game at all, is answered and turned away.
 	var older: Dictionary = await _raw_sign_in(t, {"protocol": NetSession.PROTOCOL - 1, "name": "Olde",
@@ -57,6 +65,7 @@ static func run(t: Node) -> void:
 	if bo != null:
 		var dropped := [false]
 		bo.failed.connect(func(_reason: String) -> void: dropped[0] = true)
+		bo.disconnected.connect(func() -> void: dropped[0] = true)
 		for i in 600:
 			bo._request_ping.rpc_id(1)
 		await t._wait_until(func() -> bool: return dropped[0], 240)
@@ -149,6 +158,7 @@ static func _raw_sign_in(t: Node, hello: Variant) -> Dictionary:
 	api.peer_connected.connect(func(_id: int) -> void: out.connected = true)
 	var peer := ENetMultiplayerPeer.new()
 	peer.create_client("127.0.0.1", PORT)
+	peer.host.dtls_client_setup("127.0.0.1", TLSOptions.client_unsafe())
 	peer.host.compress(NetSession.COMPRESSION)
 	api.multiplayer_peer = peer
 	await t._wait_until(func() -> bool: return not (out.answer as Dictionary).is_empty(), 240)
@@ -161,3 +171,91 @@ static func _raw_sign_in(t: Node, hello: Variant) -> Dictionary:
 	t.get_tree().set_multiplayer(null, holder.get_path())
 	holder.queue_free()
 	return out
+
+
+## The certificate rules on their own: a server's identity is made once and
+## read back the same, what a game tries for each kind of address, and how a
+## game takes an old server's answer over the unencrypted fallback.
+static func _trust_rules(t: Node) -> void:
+	var dir := "user://test_server_identity"
+	for file in [ServerTrust.KEY_FILE, ServerTrust.CERT_FILE]:
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(dir.path_join(file)))
+	ServerTrust._identities.erase(dir)
+	var made: X509Certificate = ServerTrust.identity(dir)[1]
+	ServerTrust._identities.erase(dir)
+	var read: X509Certificate = ServerTrust.identity(dir)[1]
+	t.check(ServerTrust.pem_of(made) == ServerTrust.pem_of(read),
+			"a server makes its certificate once and shows the same one after a restart")
+	var other: X509Certificate = ServerTrust.identity("user://test_other_identity", false)[1]
+	var print_made := ServerTrust.fingerprint(ServerTrust.pem_of(made))
+	t.check(print_made.length() == 19 and print_made == ServerTrust.fingerprint(ServerTrust.pem_of(read))
+			and print_made != ServerTrust.fingerprint(ServerTrust.pem_of(other)),
+			"each certificate has a short code to compare (%s)" % print_made)
+
+	var was_path := ServerTrust.known_path
+	ServerTrust.known_path = KNOWN
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(KNOWN))
+	t.check(Array(ServerTrust.attempts_for("127.0.0.1")) == ["first"],
+			"this computer's own server is encrypted but never pinned")
+	t.check(Array(ServerTrust.attempts_for("203.0.113.9")) == ["first", "plain"],
+			"a friend's server met for the first time is trusted on first use")
+	ServerTrust.remember("203.0.113.9", ServerTrust.pem_of(made))
+	t.check(Array(ServerTrust.attempts_for("203.0.113.9")) == ["pinned", "probe", "plain"],
+			"one met before must show the same certificate, and a failure asks which one it shows now")
+	ServerTrust.forget("203.0.113.9")
+	t.check(ServerTrust.known("203.0.113.9") == "", "a remembered server can be forgotten")
+	ServerTrust.known_path = was_path
+
+	var old := NetSession.new()
+	t.add_child(old)
+	old._join_mode = "plain"
+	old._client_auth(1, var_to_bytes({"ok": false, "protocol": NetSession.PROTOCOL - 1,
+			"outdated": "server", "error": "Versions differ."}))
+	t.check(old.refused and old.outdated == "server",
+			"a server from before encryption is found out over the plain fallback and called out of date")
+	old.queue_free()
+
+
+## Against a real server: the first join remembers its certificate, the next
+## one is checked against it, and a different one is "this server changed",
+## with nothing signed in and nothing trusted until the player says so.
+static func _trust_on_first_use(t: Node) -> void:
+	var was_path := ServerTrust.known_path
+	ServerTrust.known_path = KNOWN
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(KNOWN))
+	ServerTrust.trust_loopback = false
+	var server_cert := X509Certificate.new()
+	server_cert.load(t.NET_ACCOUNTS.path_join("server_identity").path_join(ServerTrust.CERT_FILE))
+	var server_pem := ServerTrust.pem_of(server_cert)
+	t.check(server_pem.begins_with("-----BEGIN CERTIFICATE"),
+			"the server made a certificate of its own and keeps it beside the accounts")
+
+	var first: NetSession = await t._sign_in("Tofu", PORT)
+	t.check(first != null and ServerTrust.known("127.0.0.1") == server_pem,
+			"a server met for the first time is remembered once it lets you in")
+	await t._leave(first)
+	var again: NetSession = await t._sign_in("Tofu", PORT)
+	t.check(again != null and again._join_mode == "pinned",
+			"the next join is checked against the certificate it showed then")
+	await t._leave(again)
+
+	var fake: X509Certificate = ServerTrust.identity("user://test_other_identity", false)[1]
+	ServerTrust.remember("127.0.0.1", ServerTrust.pem_of(fake))
+	var wary: NetSession = t._new_client("Tofu")
+	var said := [""]
+	wary.failed.connect(func(reason: String) -> void: said[0] = reason)
+	wary.join("127.0.0.1", PORT)
+	await t._wait_until(func() -> bool: return said[0] != "", 600)
+	t.check(wary.account.is_empty() and wary.identity_changed.get("now", "") == ServerTrust.fingerprint(server_pem)
+			and wary.identity_changed.get("was", "") == ServerTrust.fingerprint(ServerTrust.pem_of(fake))
+			and "changed" in said[0],
+			"a server showing a different certificate is \"this server changed\", with both codes, and never signed in to")
+	t.check(ServerTrust.known("127.0.0.1") == ServerTrust.pem_of(fake), "nothing new is trusted until the player says so")
+	ServerTrust.remember("127.0.0.1", str(wary.identity_changed.get("certificate", "")))
+	await t._leave(wary)
+	var trusted: NetSession = await t._sign_in("Tofu", PORT)
+	t.check(trusted != null and trusted._join_mode == "pinned", "once trusted, it signs in again")
+	await t._leave(trusted)
+
+	ServerTrust.trust_loopback = true
+	ServerTrust.known_path = was_path

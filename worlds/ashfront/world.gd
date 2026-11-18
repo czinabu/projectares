@@ -136,6 +136,11 @@ const GUN_INTERVAL := [0.12, 0.12, 0.12]
 ## A heavy's swing. Slow and telegraphed (the parry drill). Two hits leave a
 ## mid kit nearly dead, and a third ends it, so missing the parry is the loss.
 const HEAVY_DAMAGE := [48.0, 48.0, 48.0]
+## A heavy's own heavy (bots hold one now and then, DESIGN.md "Melee bots"):
+## slower to come still, so it is the easiest swing of all to parry or step
+## away from, and a quarter harder when it lands.
+const HEAVY_HEAVY_WINDUP := 0.9
+const HEAVY_HEAVY_MULT := 1.25
 ## Exo troopers: an ordinary soldier in a mechanical exoskeleton suit. More health and real plates,
 ## a little slower, and a support rifle that fires longer bursts. No blade.
 const EXO_HEALTH := [160.0, 165.0, 170.0]
@@ -395,6 +400,8 @@ func equip_bot(bot: Actor, rng: RandomNumberGenerator) -> void:
 			blade.display_name = def["weapon"]
 			blade.light_damage = HEAVY_DAMAGE[tier]
 			blade.light_windup = 0.5
+			blade.heavy_windup = HEAVY_HEAVY_WINDUP
+			blade.heavy_damage = HEAVY_DAMAGE[tier] * HEAVY_HEAVY_MULT
 			blade.light_stamina = 0.0
 			blade.reach = 2.6
 			bot.equip_weapon(blade)

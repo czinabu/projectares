@@ -36,10 +36,17 @@ const ArtifactTests := preload("res://tests/artifact_tests.gd")
 const WatchTests := preload("res://tests/watch_tests.gd")
 const PortalTests := preload("res://tests/portal_tests.gd")
 const ContractTests := preload("res://tests/contract_tests.gd")
+const MarketTests := preload("res://tests/market_tests.gd")
+const AccountStoreTests := preload("res://tests/account_store_tests.gd")
+const AccountServiceTests := preload("res://tests/account_service_tests.gd")
 const FeelTests := preload("res://tests/feel_tests.gd")
 const ViewMatchTests := preload("res://tests/view_match_tests.gd")
 const GunRoleTests := preload("res://tests/gun_role_tests.gd")
 const GunHandlingTests := preload("res://tests/gun_handling_tests.gd")
+const BotTacticsTests := preload("res://tests/bot_tactics_tests.gd")
+const MeleeBotTests := preload("res://tests/melee_bot_tests.gd")
+const RecoilTests := preload("res://tests/recoil_tests.gd")
+const HitFeedbackTests := preload("res://tests/hit_feedback_tests.gd")
 const PeekTests := preload("res://tests/peek_tests.gd")
 const AdsTests := preload("res://tests/ads_tests.gd")
 const GripTests := preload("res://tests/grip_tests.gd")
@@ -54,8 +61,10 @@ const HeavyUnitTests := preload("res://tests/heavy_unit_tests.gd")
 const PlaytestFixTests := preload("res://tests/playtest_fix_tests.gd")
 const ExtractionTests := preload("res://tests/extraction_tests.gd")
 const InspectTests := preload("res://tests/inspect_tests.gd")
+const RaceTests := preload("res://tests/race_tests.gd")
 const SaveSafetyTests := preload("res://tests/save_safety_tests.gd")
 const ServerAuthTests := preload("res://tests/server_auth_tests.gd")
+const ReconnectTests := preload("res://tests/reconnect_tests.gd")
 
 var _passed := 0
 var _failed := 0
@@ -307,6 +316,8 @@ func _run() -> void:
 	await _test_plaza()
 	await _test_plaza_online()
 	await _test_stash_service()
+	await AccountStoreTests.run(self)
+	await AccountServiceTests.run(self)
 	await _test_phone()
 	await _test_dev_mode()
 	await _test_server_health()
@@ -314,6 +325,7 @@ func _run() -> void:
 	_test_refit()
 	await BaseUpgradeTests.run(self)
 	await ContractTests.run(self)
+	await MarketTests.run(self)
 	await CraftingTests.run(self)
 	await _test_arena()
 	await _test_arena_floor()
@@ -325,6 +337,7 @@ func _run() -> void:
 	await HostRecoveryTests.run(self)
 	await SaveSafetyTests.run(self)
 	await ServerAuthTests.run(self)
+	await ReconnectTests.run(self)
 	await _test_look()
 	await _test_rig_models()
 	await _test_customizer()
@@ -345,10 +358,86 @@ func _run() -> void:
 	await _test_view_match()
 	await _test_gun_roles()
 	await _test_gun_handling()
+	await _test_bot_tactics()
+	await _test_melee_bots()
+	await _test_recoil()
+	await _test_hit_feedback()
 	await _test_peek()
 	await _test_ads()
 	await _test_grips()
 	await _test_inspect()
+	await _test_racing()
+	await _test_racing_online()
+
+
+func _test_racing() -> void:
+	await RaceTests.run(self)
+
+
+## A time trial on a race server: the client gets its own run and the
+## board from the server, is held for the lights like the server holds it,
+## and asks the server to stop the run.
+func _test_racing_online() -> void:
+	print("Racing online: a time trial on a race server")
+	var port := 24921
+	_wipe_dir(NET_ACCOUNTS)
+	var pid := _start_server(port, ["--bots", "0"], "meridian")
+	var rhea := await _join("Rhea", port)
+	check(rhea != null and rhea.raid is Race, "a client joins the race world, run by a Race")
+	if rhea == null or not rhea.raid is Race:
+		OS.kill(pid)
+		return
+	var race := rhea.raid as Race
+	var me := race.player
+	check(me.weapons_locked and race.track != null, "weapons are locked and the client has the track")
+	var bike: Node3D = null
+	for v: Node3D in race.vehicles:
+		if v.get("item_id") == "bike_scrapper" and (bike == null
+				or v.global_position.distance_to(me.global_position) < bike.global_position.distance_to(me.global_position)):
+			bike = v
+	check(bike != null and is_equal_approx(float(bike.get("max_speed")), float(ItemDB.RACE_SCRAPPER.max_speed)),
+			"the client's bay machines run on their race profile too")
+	if bike == null:
+		await _leave(rhea)
+		OS.kill(pid)
+		return
+	for step in 600:
+		var to := bike.global_position - me.global_position
+		to.y = 0.0
+		me.cmd.yaw = atan2(-to.x, -to.z)
+		me.cmd.move = Vector2(0, 1) if to.length() > 1.8 else Vector2.ZERO
+		if to.length() <= 1.8:
+			break
+		await frames(1)
+	me.cmd.move = Vector2.ZERO
+	await frames(10)
+	for attempt in 5:
+		# Look at it, then use it (once on the server's word: a second press
+		# would get off again).
+		me.cmd.aim_dir = (bike.global_position + Vector3(0, 0.6, 0) - me.get_eye_position()).normalized()
+		me.cmd.interact_pressed = true
+		await frames(1)
+		me.cmd.interact_pressed = false
+		if await _wait_until(func() -> bool: return not race.remote_run.is_empty(), 60):
+			break
+	me.cmd.aim_dir = Vector3.ZERO
+	await _wait_until(func() -> bool: return me.vehicle != null, 240)
+	check(str(race.remote_run.get("phase", "")) == "grid" and me.vehicle != null,
+			"getting on sends the client its run, waiting on the grid")
+	me.cmd.move = Vector2(0, 1)
+	await frames(30)
+	check(me.vehicle != null and bool(me.vehicle.get("held")) and absf(float(me.vehicle.get("speed"))) < 0.5,
+			"the client holds its machine for the lights like the server")
+	await _wait_until(func() -> bool: return str(race.remote_run.get("phase", "")) == "racing", 400)
+	await frames(40)
+	check(str(race.remote_run.get("phase", "")) == "racing" and me.vehicle != null
+			and absf(float(me.vehicle.get("speed"))) > 3.0, "at the go it races")
+	me.cmd.move = Vector2.ZERO
+	race.ask("retire")
+	await _wait_until(func() -> bool: return race.remote_run.is_empty() and me.vehicle == null, 240)
+	check(race.remote_run.is_empty() and me.vehicle == null, "asking to stop ends the run on the server and gets off")
+	await _leave(rhea)
+	OS.kill(pid)
 
 
 func _test_view_match() -> void:
@@ -361,6 +450,22 @@ func _test_gun_roles() -> void:
 
 func _test_gun_handling() -> void:
 	await GunHandlingTests.run(self)
+
+
+func _test_bot_tactics() -> void:
+	await BotTacticsTests.run(self)
+
+
+func _test_melee_bots() -> void:
+	await MeleeBotTests.run(self)
+
+
+func _test_recoil() -> void:
+	await RecoilTests.run(self)
+
+
+func _test_hit_feedback() -> void:
+	await HitFeedbackTests.run(self)
 
 
 func _test_peek() -> void:
@@ -2904,17 +3009,20 @@ func _test_every_world() -> void:
 	check(every, "a squad portal from the watch can lead to every world")
 	for world in Worlds.raid_worlds():
 		var kit := world.starter_loadout()
-		check(not kit.is_empty() and kit.all(func(id: String) -> bool: return ItemDB.has_item(id)),
+		check(not kit.is_empty() and kit.all(func(id: String) -> bool: return id == Loadout.BARE or ItemDB.has_item(id)),
 				"%s: starter loadout is valid items" % world.id)
-		var raid := Raid.new()
+		var raid := world.new_raid()
 		add_child(raid)
 		raid.start(world, 99)
 		await frames(3)
 		check(raid.player != null and not raid.player.is_dead, "%s: player spawns" % world.id)
 		check(raid.bots.size() == world.bot_count + raid._bosses.size(), "%s: all bots spawn" % world.id)
-		check(not raid.depots.is_empty(), "%s: map provides depots" % world.id)
 		var caches := raid.get_children().filter(func(n: Node) -> bool: return n is LootContainer)
-		check(caches.size() >= 4, "%s: loot caches are placed (%d)" % [world.id, caches.size()])
+		if world.gear_at_risk:
+			# Only where gear is at stake is there loot to find and bank (a
+			# race world has none).
+			check(not raid.depots.is_empty(), "%s: map provides depots" % world.id)
+			check(caches.size() >= 4, "%s: loot caches are placed (%d)" % [world.id, caches.size()])
 		var all_valid := true
 		for cache: LootContainer in caches:
 			for id in cache.items:
@@ -4140,6 +4248,27 @@ func _test_online() -> void:
 	var wait_before: float = raid.state_for(b_again).sign_out_left
 	raid.remove_player(b_again)
 	check(raid.state_for(b_again).sign_out_left <= wait_before, "asking twice never makes the wait longer")
+	# Back before it ran out (a reconnect): the body is theirs again.
+	check(raid.is_unguarded(b_again), "a body left by a drop can be taken back")
+	check(raid.reclaim_player(b_again) and raid.sign_out_progress(b_again) < 0.0
+			and not raid.state_for(b_again).sign_out_forced and not raid.is_unguarded(b_again),
+			"a player back in time takes the body over; the forced countdown ends (they were hit, so nothing resumes)")
+	check(not raid.reclaim_player(b_again), "a body someone plays cannot be reclaimed")
+	# A sign-out they had started carries on when they come back.
+	raid.state_for(b_again).last_combat = -INF
+	check(raid.begin_sign_out(b_again), "a quiet player starts signing out")
+	raid.state_for(b_again).sign_out_left -= 4.0
+	var left_before: float = raid.state_for(b_again).sign_out_left
+	raid.remove_player(b_again)
+	raid.state_for(b_again).sign_out_left -= 1.0
+	raid.reclaim_player(b_again)
+	var resumed := raid.state_for(b_again)
+	check(resumed.sign_out_left > 0.0 and resumed.sign_out_left <= left_before - 1.0 + 0.01
+			and not resumed.sign_out_forced and resumed.sign_out_total == raid.world.sign_out_time,
+			"their own sign-out resumes where it stands after a reconnect, the gap counted (%.1f s left)" % resumed.sign_out_left)
+	raid.cancel_sign_out(b_again)
+	check(raid.sign_out_progress(b_again) < 0.0, "and it is theirs to call off again")
+	raid.remove_player(b_again)
 	b_again.kill("bullet", a)
 	await frames(2)
 	check(finished.size() == 2 and finished[1][1].outcome == "died" and raid.state_for(a).kills == 2,
@@ -5654,17 +5783,19 @@ func _test_online_stash() -> void:
 	if cara != null:
 		check(cara.account.deployed and "rifle_carbine" not in cara.account.stash,
 				"the body is still out there, with the gear on it")
-		var refused: Array[String] = []
-		cara.lobby_error.connect(func(reason: String) -> void: refused.append(reason))
-		cara.deploy()
-		await _wait_until(func() -> bool: return not refused.is_empty(), 120)
-		check(refused.size() == 1 and cara.raid == null, "you cannot drop in again while your old body stands")
+		# Back in time: the server puts you in that body (a reconnect), no
+		# second deploy and no second kit.
+		await _wait_until(func() -> bool: return cara.raid != null and cara.raid.player != null, 240)
+		check(cara.resuming and cara.raid != null and cara.raid.player != null
+				and "rifle_carbine" in cara.raid.player.gear_items,
+				"signing back in puts you back in the body you left, gear and all")
+		cara.sign_out()
 		await _wait_until(func() -> bool: return not cara.account.deployed,
 				int(Worlds.get_world("ashfront").sign_out_time * 60.0) + 300)
 		check(not cara.account.deployed and "rifle_carbine" in cara.account.stash
 				and cara.account.loadout.get("primary", "") == "rifle_carbine" and cara.account.raids_played == 1
 				and cara.account.raids_extracted == 1,
-				"the body survived its sign-out: the gear is home and the lobby is told")
+				"the body signed out: the gear is home and the account is told")
 		check("bike_scrapper" in cara.account.stash, "gear that stayed in the stash is safe")
 	await _leave(cara)
 	OS.kill(pid)
@@ -5762,6 +5893,7 @@ func _test_plaza() -> void:
 	check(all_worlds, "there is a deploy gate for every raid world")
 	check("home" in destinations, "there is a door to the home base")
 	check("clans" in destinations, "there is a clan hall")
+	check("market" in destinations, "there is a player market kiosk (the Exchange)")
 	check(portals.all(func(n: Node) -> bool: return n.get_meta("label", "") != ""), "every portal says where it goes")
 	# Shops are physical places: a storefront for each one the game has.
 	var shops: Array = raid.map.shops()
@@ -6031,6 +6163,33 @@ func _test_plaza_online() -> void:
 	ada.contract_ask("take", job)
 	await _wait_until(func() -> bool: return ada.account.get("contracts", {}).get("active", []).size() == 1, 240)
 	check(job != "" and ada.account.contracts.active[0].id == job, "the plaza's contract board takes a job on the server")
+	# The player market: Pia lists a medkit at the Exchange, Pax buys it.
+	const Market := preload("res://core/economy/market.gd")
+	var medkits: int = ada.account.stash.count("medkit")
+	var price := Market.board_value("medkit")
+	ada.market_ask("view")
+	ada.market_ask("list", "medkit", 1, price)
+	await _wait_until(func() -> bool: return ada.market_state.get("listings", []).size() == 1, 240)
+	var listing: Dictionary = ada.market_state.get("listings", [{}])[0]
+	check(listing.get("item", "") == "medkit" and listing.get("mine", false), "the Exchange lists an item on the server")
+	await _wait_until(func() -> bool: return ada.account.stash.count("medkit") == medkits - 1, 240)
+	check(ada.account.stash.count("medkit") == medkits - 1, "a listed item leaves the seller's stash")
+	if bo != null:
+		var bo_scrip := int(bo.account.get("scrip", 0))
+		var bo_medkits: int = bo.account.get("stash", []).count("medkit")
+		var ada_scrip := int(ada.account.get("scrip", 0))
+		bo.market_ask("view")
+		await _wait_until(func() -> bool: return bo.market_state.get("listings", []).size() == 1, 240)
+		var seen_listing: Dictionary = bo.market_state.get("listings", [{}])[0]
+		check(seen_listing.get("seller", "") == "Pia" and not seen_listing.get("mine", true),
+				"another player sees it, by the seller's name")
+		bo.market_ask("buy", "", int(seen_listing.get("id", 0)), 1)
+		await _wait_until(func() -> bool: return bo.account.get("stash", []).count("medkit") == bo_medkits + 1 \
+				and int(ada.account.get("scrip", 0)) > ada_scrip, 240)
+		check(bo.account.stash.count("medkit") == bo_medkits + 1 and int(bo.account.scrip) == bo_scrip - price and int(ada.account.scrip) == ada_scrip + Market.seller_gets(price),
+				"the buyer pays, gets the item, and the seller is paid at once (%d, %d)" % [bo.account.scrip, ada.account.scrip])
+		await _wait_until(func() -> bool: return ada.market_state.get("listings", []).is_empty(), 240)
+		check(ada.market_state.get("listings", [1]).is_empty(), "the board updates for everyone with the kiosk open")
 	# The clan hall: Pia founds a clan, Pax joins it, and both wear its tag.
 	ada.clan_ask("create", "Night Shift", "ns")
 	await _wait_until(func() -> bool: return not ada.clan_state.get("clan", {}).is_empty(), 240)
@@ -6154,10 +6313,11 @@ func _test_plaza_online() -> void:
 		check(main.raid != null and main.raid.world.id == "ashfront" and main.base == null and not main.hub.visible
 				and main.net != null and main.net.world_id == "ashfront",
 				"using a gate deploys you straight into that world, not into a lobby")
-		# Straight back, as going home while down does (the body stays out
-		# there a moment, so the stall above came first).
-		main._return_to_lobby({})
-		await _wait_until(func() -> bool: return main.raid != null and main.raid.player != null and main.raid.world.safe_zone, 600)
+		# Back by signing out: a body left standing would be yours again on
+		# the next sign-in to this world (a reconnect), so it must come home.
+		main.net.sign_out()
+		await _wait_until(func() -> bool: return main.raid != null and main.raid.player != null and main.raid.world.safe_zone,
+				int(Worlds.get_world("ashfront").sign_out_time * 60.0) + 600)
 		check(main.raid != null and main.raid.world.safe_zone, "leaving the world leads back to the plaza")
 		if main.raid != null and main.raid.player != null:
 			var back_gate: Node3D = null

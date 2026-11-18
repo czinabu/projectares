@@ -23,8 +23,15 @@ extends Node
 ## unless given); `--no-arena` leaves it out.
 
 const JOIN_TIMEOUT := 12.0
+## After a dropped connection the game tries to get back in on its own for
+## this long (a body left standing waits out the sign-out time, 30 s after a
+## fight, from when the server notices), each try given `RECONNECT_TIMEOUT`.
+var reconnect_window := 30.0
+const RECONNECT_TIMEOUT := 5.0
 ## A server started here runs every world, and needs a while before it listens.
-const HOST_JOIN_ATTEMPTS := 12
+## An encrypted connection to a port nothing listens on yet fails at once, so
+## the tries come about a second apart: enough of them to reach the deadline.
+const HOST_JOIN_ATTEMPTS := 45
 ## However many attempts are left, a server of your own that has not let you
 ## in by then is given up on (and started once more, `HOST_RESTARTS`), so the
 ## travel screen never waits forever.
@@ -46,6 +53,8 @@ const HEARTBEAT_STALE := 60
 ## The solo player's renown key in a raid, so it carries across their lives.
 const LOCAL_OWNER := "local"
 const StashRules := preload("res://core/account/stash_rules.gd")
+const AccountService := preload("res://core/account/account_service.gd")
+const AccountLink := preload("res://core/account/account_link.gd")
 const NameplatesScript := preload("res://core/ui/nameplates.gd")
 const ScoreboardScript := preload("res://core/ui/scoreboard.gd")
 const PhoneScript := preload("res://core/phone/phone.gd")
@@ -59,6 +68,7 @@ const ARENA_PORT_OFFSET := 10
 const PlazaViewScript := preload("res://core/social/plaza_view.gd")
 const ClanPanel := preload("res://core/social/clan_panel.gd")
 const ContractPanel := preload("res://core/economy/contract_panel.gd")
+const MarketPanel := preload("res://core/economy/market_panel.gd")
 const Contracts := preload("res://core/economy/contracts.gd")
 ## The plaza holds more people than a raid.
 const PLAZA_PLAYERS := 32
@@ -85,6 +95,9 @@ var controller: PlayerController
 var hud: Hud
 var nameplates: CanvasLayer
 var scoreboard: CanvasLayer
+## On a race track: the local racer's view of the race (lights, splits,
+## board and ghost).
+var race_view: RaceView
 var net: NetSession
 ## The phone every player carries: the game's menu, in the hub and in a raid.
 var phone: CanvasLayer
@@ -104,6 +117,12 @@ var shop_screen: WorldScreen
 var _shop_viewport: SubViewport
 ## Server: every session it runs (the plaza first, then the raid worlds).
 var sessions: Array[NetSession] = []
+## Server: the line to the account service, on a server that shares its
+## accounts (`--account-url`); null on one that keeps its own.
+var account_link: AccountLink
+## Client: the sign-in token each server address last handed out
+## (`NetSession.ticket`), shown instead of the secret on the next trip there.
+var _tickets := {}
 ## Client: where this server's plaza is, once you have been in it. Leaving a
 ## world's lobby or finishing a run leads back there. Port -1 means no plaza.
 var _plaza_address := ""
@@ -123,6 +142,13 @@ var _host_restarts_left := 0
 var _host_world := ""
 var _join_address := ""
 var _join_port := NetSession.DEFAULT_PORT
+## Reconnecting after a drop: when it is given up on (msec ticks, 0 when not
+## reconnecting), what to say then, and whether a body was left out in a world.
+var _reconnect_until := 0
+var _reconnect_note := ""
+var _reconnect_body := false
+## Word for the player about a reconnect, shown where the trip lands them.
+var _back_notice := ""
 ## Online: the raid lobby's port, while visiting that server's arena.
 var _lobby_port := -1
 ## Heading out by the base's door to a remembered server: if it cannot be
@@ -157,6 +183,9 @@ var _tour_stash_size := -1
 
 func _ready() -> void:
 	var args := OS.get_cmdline_user_args()
+	if "--account-service" in args:
+		_run_account_service(args)
+		return
 	if "--server" in args:
 		_run_dedicated_server(args)
 		return
@@ -308,6 +337,9 @@ func _attach_base_view() -> void:
 	controller.phone_out = phone != null and phone.is_open
 	controller.setup(base.player)
 	controller.portal_requested.connect(_on_portal_requested)
+	controller.race_requested.connect(_on_race_requested)
+	if race_view != null and is_instance_valid(race_view):
+		controller.ghost_on = race_view.ghost_on
 	if phone != null:
 		# The phone is held by this body's own hand, in every view.
 		phone.set_holder(controller.actor)
@@ -619,7 +651,7 @@ func start_raid(world_id: String, drop := "") -> void:
 	# Through a squad portal: out of the base and into the world.
 	leave_base()
 	hub.close()
-	raid = Raid.new()
+	raid = world.new_raid()
 	raid.name = "Raid"
 	add_child(raid)
 	# DEV MODE
@@ -706,6 +738,23 @@ func _attach_player_view() -> void:
 		arena_hud.leave_requested.connect(leave_arena)
 		arena_hud.booth_changed.connect(_on_booth_changed)
 		raid.add_child(arena_hud)
+	if raid is Race:
+		race_view = RaceView.new()
+		race_view.setup(raid)
+		raid.add_child(race_view)
+
+
+## A pick on the race icon: the ghost is this view's own, the rest are
+## asked of the race (the server's, online).
+func _on_race_requested(action: String) -> void:
+	if not raid is Race:
+		return
+	if action == "ghost":
+		controller.ghost_on = not controller.ghost_on
+		if race_view != null and is_instance_valid(race_view):
+			race_view.ghost_on = controller.ghost_on
+		return
+	(raid as Race).ask(action)
 
 
 ## Took up or put down a bookmaker's booth in the arena: like a station, the
@@ -1255,6 +1304,25 @@ func _run_dedicated_server(args: PackedStringArray) -> void:
 	# `--no-zone-rules`: no gate shelter and no hazards (the test suite's servers).
 	if "--no-zone-rules" in args:
 		Raid.zone_rules = false
+	# An official server keeps no accounts of its own: `--account-url` names
+	# the account service it shares them through (DESIGN.md section 14).
+	var service_url := _arg(args, "--account-url", "")
+	if service_url != "":
+		var folder := accounts if accounts != "" else "user://accounts"
+		account_link = AccountLink.new()
+		account_link.name = "AccountLink"
+		account_link.url = service_url
+		account_link.save_dir = folder
+		account_link.server_id = _arg(args, "--server-id", "server-%d" % port)
+		account_link.key = AccountService.load_key(_arg(args, "--service-key", folder.path_join(AccountService.KEY_FILE)))
+		if account_link.key == "":
+			push_error("Server: no service key for the account service (set %s or pass --service-key <file>)"
+					% AccountService.KEY_ENV)
+			get_tree().quit(1)
+			return
+		add_child(account_link)
+		print("Server: accounts are kept by the account service at %s (this server is %s)"
+				% [service_url, account_link.server_id])
 	var err := start_server(_arg(args, "--world", ""), port, "--no-plaza" not in args,
 			int(_arg(args, "--bots", "-1")), "--squad-spawn" in args, accounts,
 			"--no-rewind" not in args,
@@ -1288,11 +1356,41 @@ func _run_dedicated_server(args: PackedStringArray) -> void:
 	if handed != "" and FileAccess.file_exists(handed):
 		var data: Variant = JSON.parse_string(FileAccess.get_file_as_string(handed))
 		DirAccess.remove_absolute(handed)
-		if data is Dictionary:
+		# Only a server with accounts of its own takes on its host's profile:
+		# the shared accounts are never fed from a local save.
+		if data is Dictionary and not net.stash.is_remote():
 			net.stash.host_profile = data
-	if dev_host and not net.stash.host_profile.is_empty():  # DEV MODE
+	if dev_host and not net.stash.is_remote() and not net.stash.host_profile.is_empty():  # DEV MODE
 		net.stash.dev_host = true
 		print("Server: dev mode for the host (accounts in %s)" % accounts)
+
+
+## Runs the account service, the program official servers share their
+## accounts through (`core/account/account_service.gd`): `-- --account-service`
+## with `--port`, `--accounts <folder>` and `--bind <address>` ("*" to listen
+## beyond this computer). No world runs here and no player connects.
+func _run_account_service(args: PackedStringArray) -> void:
+	var service := AccountService.new()
+	service.name = "AccountService"
+	var folder := _arg(args, "--accounts", "")
+	if folder != "":
+		service.stash.save_dir = folder
+	service.bind = _arg(args, "--bind", service.bind)
+	var key_file := _arg(args, "--service-key", "")
+	if key_file != "":
+		service.key = AccountService.load_key(key_file, true)
+	add_child(service)
+	var port := int(_arg(args, "--port", str(AccountService.DEFAULT_PORT)))
+	var err := service.start(port)
+	if err != OK:
+		push_error("AccountService: could not start on port %d (%s)" % [port, error_string(err)])
+		get_tree().quit(1)
+		return
+	var store: RefCounted = service.stash.store()
+	print("AccountService: listening on %s:%d, accounts in %s (%s)" % [service.bind, port,
+			ProjectSettings.globalize_path(service.stash.save_dir), store.kind if store != null else "not saved"])
+	print("AccountService: game servers need the key in %s" % ProjectSettings.globalize_path(
+			key_file if key_file != "" else service.stash.save_dir.path_join(AccountService.KEY_FILE)))
 
 
 ## Starts every session of a server. With a plaza it listens on `port`, and
@@ -1321,12 +1419,15 @@ func start_server(world_id: String, port: int, with_plaza := true, bots := -1, s
 		session.lag_compensation = rewind
 		session.isolated = plaza != null or worlds.size() > 1
 		if sessions.is_empty():
-			if accounts != "":
+			if account_link != null:
+				session.stash = account_link
+			elif accounts != "":
 				session.stash.save_dir = accounts
 		else:
 			session.stash = sessions[0].stash
 			session.social = sessions[0].social
 			session.clans = sessions[0].clans
+			session.market = sessions[0].market
 		add_child(session)
 		var err := session.host(world.id, next_port, world.max_players)
 		if err != OK:
@@ -1336,6 +1437,11 @@ func start_server(world_id: String, port: int, with_plaza := true, bots := -1, s
 		sessions.append(session)
 		next_port += 1
 	net = sessions[0]
+	# Open the accounts now (importing old account files once), not at the
+	# first sign-in, so the log says where they are kept.
+	var store: RefCounted = net.stash.store()
+	if store != null:
+		print("Server: accounts in %s (%s)" % [ProjectSettings.globalize_path(store.dir), store.kind])
 	if arena_port >= 0:
 		var arena := NetSession.new()
 		arena.name = "Net_%s" % Arena.ArenaVenue.ID
@@ -1343,6 +1449,7 @@ func start_server(world_id: String, port: int, with_plaza := true, bots := -1, s
 		arena.stash = net.stash
 		arena.social = net.social
 		arena.clans = net.clans
+		arena.market = net.market
 		arena.lag_compensation = rewind
 		add_child(arena)
 		if arena.host(Arena.ArenaVenue.ID, arena_port) == OK:
@@ -1360,6 +1467,7 @@ func start_server(world_id: String, port: int, with_plaza := true, bots := -1, s
 		session.stash = net.stash
 		session.social = net.social
 		session.clans = net.clans
+		session.market = net.market
 		session.routes = routes
 		add_child(session)
 		var err := session.host(plaza.id, port, PLAZA_PLAYERS)
@@ -1491,6 +1599,8 @@ func _try_join() -> void:
 	net.name = "Net"
 	net.player_name = Profile.player_name
 	net.secret = Profile.get_online_secret()
+	# Travelling on within the same servers: the token the last one gave.
+	net.ticket = str(_tickets.get(_join_address, ""))
 	net.look = Profile.appearance
 	# `-- --lag 120 --loss 10` fakes a bad connection: milliseconds of delay
 	# each way, and the percent of input packets lost.
@@ -1509,6 +1619,8 @@ func _try_join() -> void:
 			go_home()
 		if base_hud:
 			base_hud.show_notice(reason)
+		if shop_view != null and is_instance_valid(shop_view) and shop_view.panel.has_method("show_message"):
+			shop_view.panel.call("show_message", reason)
 		if raid != null and hud != null and is_instance_valid(hud):
 			hud.notify(reason))
 	net.joined.connect(_on_online_joined)
@@ -1526,24 +1638,39 @@ func _try_join() -> void:
 	# A server that never answers should not leave the hub waiting forever.
 	# By id: the session may be gone by then (a trip through a gate frees it).
 	var session := net.get_instance_id()
-	get_tree().create_timer(JOIN_TIMEOUT).timeout.connect(func() -> void:
+	get_tree().create_timer(RECONNECT_TIMEOUT if _reconnect_until > 0 else JOIN_TIMEOUT).timeout.connect(func() -> void:
 		if net != null and net.get_instance_id() == session and net.account.is_empty():
 			_on_online_failed("The server did not answer."))
 
 
 ## Signed in: the hub becomes that server's lobby.
 func _on_online_signed_in(account: Dictionary) -> void:
+	if net.ticket != "":
+		_tickets[_join_address] = net.ticket
 	phone.set_update_needed(false)
+	phone.set_server_changed({})
 	_tour_stash_size = (account.get("stash", []) as Array).size()
 	_join_attempts = 0
 	_join_deadline = 0
 	_host_restarts_left = 0
 	_door_fallback = false
+	var back_notice := _reconnected_notice()
 	_keep_profile_in_step(account)
 	if _remember_address != "":
 		Profile.home_server = _remember_address
 		Profile.save()
 		_remember_address = ""
+	if net.resuming:
+		# Back after a drop to the body still standing: the server puts you
+		# in it (`joined` follows), so nothing is deployed.
+		var resumed := Worlds.get_world(net.world_id)
+		if resumed != null and not resumed.safe_zone and _lobby_port < 0:
+			hub.enter_lobby(account, resumed)
+			hub.set_leave_text("Back to %s" % Worlds.social_world().display_name if _plaza_port >= 0 else "Leave the server")
+		hub.set_online_status("Back in your body...")
+		_expect_arrival()
+		return
+	_back_notice = back_notice
 	if _lobby_port > 0:
 		# Signed in to the arena: walk straight into the stands.
 		hub.update_account(account)
@@ -1576,7 +1703,10 @@ func _on_online_signed_in(account: Dictionary) -> void:
 		return
 	go_home()
 	if base_hud:
-		base_hud.show_notice("Connected to %s. Open a portal from your watch to deploy." % world.display_name, 6.0)
+		var text := _back_notice if _back_notice != "" else \
+				"Connected to %s. Open a portal from your watch to deploy." % world.display_name
+		base_hud.show_notice(text, 8.0 if _back_notice != "" else 6.0)
+	_back_notice = ""
 
 
 ## Asked to walk in: a server that never puts you there should not leave
@@ -1623,6 +1753,9 @@ func _on_online_joined(p_raid: Raid) -> void:
 		raid.add_child(plaza_view)
 		net.world_status_changed.connect(plaza_view.refresh_heat.unbind(1))
 		plaza_view.portal_used.connect(use_portal)
+	if _back_notice != "" and hud != null and is_instance_valid(hud):
+		hud.notify(_back_notice)
+	_back_notice = ""
 	_tour_check()
 
 
@@ -1654,6 +1787,8 @@ func use_portal(destination: String) -> void:
 		open_clans()
 	elif destination == "contracts":
 		open_contracts()
+	elif destination == "market":
+		open_market()
 	else:
 		plaza_view.show_notice("Opening soon.")
 
@@ -1692,6 +1827,35 @@ func open_contracts() -> void:
 	panel.asked.connect(func(action: String, job_id: String) -> void:
 		if net:
 			net.contract_ask(action, job_id))
+	_open_terminal(panel)
+
+
+## The player market's kiosk in the plaza: buy what other players listed,
+## and list your own stash items. The server keeps the board and decides
+## every trade; the screen shows what it sends (`market_state`) and your
+## account, and is kept fresh while open.
+func open_market() -> void:
+	if net == null or raid == null or shop_view != null:
+		return
+	var panel: Control = MarketPanel.new()
+	panel.account = net.account
+	panel.state = net.market_state
+	panel.asked.connect(func(action: String, item_id: String, a: int, b: int) -> void:
+		if net:
+			panel.show_message("")
+			net.market_ask(action, item_id, a, b))
+	var session := net
+	var on_change := func(state: Dictionary) -> void:
+		if is_instance_valid(panel):
+			panel.state = state
+			panel.refresh()
+	session.market_changed.connect(on_change)
+	panel.tree_exited.connect(func() -> void:
+		if is_instance_valid(session):
+			session.market_ask("close")
+			if session.market_changed.is_connected(on_change):
+				session.market_changed.disconnect(on_change))
+	session.market_ask("view")
 	_open_terminal(panel)
 
 
@@ -1800,6 +1964,7 @@ func open_home_base() -> void:
 
 ## Could not connect or sign in, or the connection dropped in the lobby.
 func _on_online_failed(reason: String) -> void:
+	var was_refused := net != null and (net.refused or net.outdated != "" or not net.identity_changed.is_empty())
 	if net:
 		if net.refused:
 			_join_attempts = 0
@@ -1808,8 +1973,28 @@ func _on_online_failed(reason: String) -> void:
 			# our own instead. An older game is pointed at the update.
 			_door_fallback = false
 			phone.set_update_needed(net.outdated == "client")
+		if not net.identity_changed.is_empty():
+			# Not a missing server either: a different one at that address.
+			# The phone's Servers app warns, and trusting it is the player's call.
+			_door_fallback = false
+			var changed := net.identity_changed.duplicate()
+			changed["address"] = "%s:%d" % [_join_address, _join_port] \
+					if _join_port != NetSession.DEFAULT_PORT else _join_address
+			phone.set_server_changed(changed)
 		net.queue_free()
 		net = null
+	if _reconnect_until > 0:
+		# Reconnecting after a drop: keep trying until the window closes,
+		# unless the server said no or our own server has stopped.
+		if not was_refused and Time.get_ticks_msec() < _reconnect_until and not _hosted_server_stopped():
+			hub.set_online_status("Connection lost. Reconnecting...")
+			await get_tree().create_timer(1.0).timeout
+			if net == null and raid == null and _reconnect_until > 0:
+				_join_attempts = 1
+				_try_join()
+			return
+		_end_reconnect(reason if was_refused else _reconnect_note)
+		return
 	if _join_attempts > 0 and _hosted_server_stopped():
 		_join_attempts = 0
 		reason = "Your server stopped before it was ready."
@@ -1861,26 +2046,66 @@ func _on_online_failed(reason: String) -> void:
 		base_hud.show_notice(reason)
 
 
-## The connection dropped while in the world. Your body stays there for a
-## short while. If nobody kills it, what you carried goes back to your stash.
+## The connection dropped after signing in: in a lobby, in the plaza or out
+## in a world. The game quietly tries to get back in (DESIGN.md section 14,
+## "Reconnect on its own"): the same server, the same sign-in, for
+## `reconnect_window`. Out in a world your body stands where you left it for
+## its sign-out time (`Raid.remove_player`), and getting back before that
+## ends puts you in it again (`NetSession._back`). Only if every try fails
+## do you go home, with word of what happens to the body.
 func _on_online_disconnected() -> void:
 	var in_arena := raid is Arena
 	var was_safe := raid != null and raid.world.safe_zone
+	var at_stake := raid != null and not was_safe and not in_arena
+	var replaced := net != null and net.replaced
 	_leave_raid()
-	_stop_local_server()
-	_plaza_port = -1
-	hub.leave_lobby()
-	hub.refresh({})
-	var reason := ("Lost the connection to the server." if was_safe
+	_reconnect_note = ("Lost the connection to the server." if not at_stake
 			else "Lost the connection to the server. Your body stays in the world for a moment. "
 			+ "If it survives, what you carried goes back to your stash there.")
 	if in_arena:
+		_reconnect_note = "Lost the connection to the arena. Your gear is safe."
+	if replaced:
+		_end_reconnect("Your account signed in from another game, so this one left the server.")
+		return
+	_reconnect_body = at_stake
+	_reconnect_until = Time.get_ticks_msec() + int(reconnect_window * 1000.0)
+	_show_travel("Connection lost. Reconnecting...")
+	_begin_join(_join_address, _join_port, 1)
+
+
+## Reconnecting failed: home on the local stash, saying why.
+func _end_reconnect(reason: String) -> void:
+	_reconnect_until = 0
+	_reconnect_body = false
+	_join_attempts = 0
+	_stop_local_server()
+	_plaza_port = -1
+	if _lobby_port > 0:
+		_join_port = _lobby_port
 		_lobby_port = -1
-		reason = "Lost the connection to the arena. Your gear is safe."
+	hub.leave_lobby()
+	hub.refresh({})
 	hub.set_online_status(reason)
 	go_home()
 	if base_hud:
 		base_hud.show_notice(reason, 8.0)
+
+
+## Signed in again after a drop: what to tell the player about the body
+## they left, if anything. Ends the reconnecting.
+func _reconnected_notice() -> String:
+	if _reconnect_until <= 0:
+		return ""
+	var had_body := _reconnect_body
+	_reconnect_until = 0
+	_reconnect_body = false
+	if net == null or net.resuming:
+		return ""
+	if net.missed_outcome == "left":
+		return "Back online. Your body signed out while you were away: what it carried is in your stash."
+	if net.missed_outcome == "died":
+		return "Back online. Your body was killed while you were away."
+	return "Back online." if not had_body else "Back online. Your body was no longer out there."
 
 
 ## One online life ended. The server has already settled it into your account

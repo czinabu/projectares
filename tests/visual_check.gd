@@ -19,8 +19,9 @@ func _ready() -> void:
 		get_tree().quit()
 		return
 	# `-- <output_dir> --heavies-only` shoots Ashfront's armies side by side
-	# (soldiers, exo troopers, walkers) front and back, the line at 50 m in a
-	# peak storm, and a walker's tracking beam locking on.
+	# (soldiers, exo troopers, walkers) front and back, a walker close from
+	# the front, side and back, the line at 50 m in a peak
+	# storm, and a walker's tracking beam locking on.
 	if "--heavies-only" in args:
 		await _heavy_shots(out_dir)
 		get_tree().quit()
@@ -178,6 +179,12 @@ func _ready() -> void:
 		return
 
 	# `-- <output_dir> --sidearms-only` shoots each sidearm model side on.
+	# `-- <output_dir> --impacts-only`: bullet marks and puffs on a wall, a
+	# spark off a body, and every hit marker kind in a row (impacts.png).
+	if "--impacts-only" in args:
+		await _impact_shots(out_dir)
+		get_tree().quit()
+		return
 	if "--sidearms-only" in args:
 		await _sidearm_shots(out_dir)
 		get_tree().quit()
@@ -1671,7 +1678,7 @@ func _heavy_shots(out_dir: String) -> void:
 	player.set_physics_process(false)
 	player.global_position = origin
 	player.visible = false
-	# A Legion and a Tide soldier, an exo of each, and both walker models.
+	# A Legion and a Tide soldier, an exo of each, and a walker of each.
 	var line: Array[Actor] = []
 	var picks := [["soldier", "legion"], ["soldier", "tide"], ["exo", "legion"], ["exo", "tide"],
 			["walker", "legion"], ["walker", "tide"]]
@@ -1695,6 +1702,8 @@ func _heavy_shots(out_dir: String) -> void:
 			line[i].velocity = Vector3.ZERO
 			line[i].cmd.yaw = atan2(forward.x, forward.z)
 			line[i].cmd.secondary = false
+			line[i].cmd.pitch = 0.0
+			line[i].cmd.aim_dir = Vector3.ZERO
 	place.call(7.0)
 	var cam := Camera3D.new()
 	cam.fov = 60.0
@@ -1715,6 +1724,22 @@ func _heavy_shots(out_dir: String) -> void:
 			exo.global_position + Vector3(0, 1.3, 0))
 	await _settle(4)
 	await _shot(out_dir.path_join("exo_close.png"))
+	# A walker close, three quarters from the front, from the side, and three
+	# quarters from behind on its vent.
+	var walker_close: Actor = null
+	for bot in line:
+		if bot.get_meta("kind", "") == "walker":
+			walker_close = bot
+			break
+	if walker_close:
+		var at := walker_close.global_position
+		var views := [["walker_close_front.png", -forward * 5.5 + side * 3.5],
+				["walker_close_side.png", side * 6.5 - forward * 0.5],
+				["walker_close_back.png", forward * 5.0 - side * 3.5]]
+		for view: Array in views:
+			cam.look_at_from_position(ground.call(at + view[1]) + Vector3(0, 1.9, 0), at + Vector3(0, 1.6, 0))
+			await _settle(4)
+			await _shot(out_dir.path_join(view[0]))
 	# Peak storm, the line at 50 m.
 	raid.war.intensity = 1.0
 	raid.war.centre = origin
@@ -2194,6 +2219,57 @@ func _idle_shots(out_dir: String) -> void:
 
 
 ## A contact sheet of each sidearm's model, side on and from three quarters.
+func _impact_shots(out_dir: String) -> void:
+	var stage := Node3D.new()
+	add_child(stage)
+	var env := WorldEnvironment.new()
+	env.environment = Environment.new()
+	env.environment.background_mode = Environment.BG_COLOR
+	env.environment.background_color = Color(0.13, 0.14, 0.16)
+	env.environment.ambient_light_color = Color(0.6, 0.6, 0.65)
+	env.environment.ambient_light_energy = 0.6
+	env.environment.glow_enabled = true
+	stage.add_child(env)
+	var sun := DirectionalLight3D.new()
+	sun.rotation = Vector3(-0.8, 0.6, 0.0)
+	stage.add_child(sun)
+	var wall := MeshInstance3D.new()
+	var box := BoxMesh.new()
+	box.size = Vector3(4, 2.5, 0.3)
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(0.55, 0.55, 0.52)
+	box.material = mat
+	wall.mesh = box
+	stage.add_child(wall)
+	wall.position = Vector3(0, 1.25, -0.15)
+	var cam := Camera3D.new()
+	stage.add_child(cam)
+	cam.current = true
+	cam.position = Vector3(0.6, 1.4, 3.0)
+	cam.look_at(Vector3(0, 1.2, 0))
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 3
+	for i in 14:
+		Fx.impact(stage, Vector3(rng.randf_range(-1.2, 1.2), rng.randf_range(0.6, 2.0), 0.0), Vector3.BACK, false)
+		await _settle(1)
+	Fx.impact(stage, Vector3(-0.8, 1.0, 1.2), Vector3.ZERO, true)
+	var layer := CanvasLayer.new()
+	stage.add_child(layer)
+	var kinds := ["hit", "armor", "armor_break", "head", "guarded", "kill"]
+	for i in kinds.size():
+		var marker := Hud.HitMarker.new()
+		layer.add_child(marker)
+		marker.position = Vector2(60 + i * 90, 40)
+		marker.size = Vector2(40, 40)
+		marker.flash(kinds[i])
+		marker.set_process(false)
+	await _settle(2)
+	await RenderingServer.frame_post_draw
+	get_viewport().get_texture().get_image().save_png(out_dir.path_join("impacts.png"))
+	print("saved impacts.png")
+	stage.queue_free()
+
+
 func _sidearm_shots(out_dir: String) -> void:
 	var stage := Node3D.new()
 	add_child(stage)

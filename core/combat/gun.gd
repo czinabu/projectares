@@ -56,12 +56,37 @@ var bloom_recovery := 5.0
 ## How far each shot kicks the shooter's view, in degrees.
 var recoil_kick_deg := 0.55
 var recoil_side_deg := 0.22
+## Recoil is a pattern you can learn (DESIGN.md "Recoil"): within a spray
+## (shots no more than `spray_reset` apart) the kick ramps from
+## `RAMP_FROM` to `RAMP_TO` of `recoil_kick_deg` over `RAMP_SHOTS`, and the
+## sideways part follows the gun's `recoil_pattern` ("climb" straight up,
+## "climb_right", "climb_left", "sway" side to side, "kick" the same jump
+## every shot), in units of `recoil_side_deg`. `recoil_jitter` is the share
+## of `recoil_side_deg` left to chance on top. Simulated: the shot count
+## and the pattern come from the command on every machine; the view and a
+## bot's aim take the kick (`last_recoil`).
+var recoil_pattern := "climb"
+var recoil_jitter := 0.3
+var spray_reset := 0.3
+const RAMP_FROM := 0.65
+const RAMP_TO := 1.25
+const RAMP_SHOTS := 8
+const PATTERNS := ["climb", "climb_right", "climb_left", "sway", "kick"]
+## Shots in the spray so far, and the kick (up, side; degrees) of the last.
+var spray_shot := 0
+var last_recoil := Vector2.ZERO
+## Every shot this gun has fired, so a bot's brain can tell a new one.
+var shots_fired := 0
+var _since_fire := 99.0
 ## How far the held model jumps back and tips up at a shot from a gun that
 ## kicks `MODEL_KICK_AT` degrees. Harder kicking guns jump further (up to
 ## `MODEL_KICK_MAX` times), and less while aimed, so a scope stays off the eye.
 const MODEL_KICK := Vector2(0.05, 0.06)
 const MODEL_KICK_AT := 0.55
 const MODEL_KICK_MAX := 3.0
+## How far away a shot is heard, and a suppressed one.
+const SHOT_REACH := 220.0
+const SUPPRESSED_REACH := 45.0
 const MODEL_KICK_AIMED := 0.4
 ## Effects. Power weapons use these to look and sound like what they are.
 var tracer_color := Color(1.0, 0.85, 0.4)
@@ -410,6 +435,7 @@ func tick(delta: float) -> void:
 	_noise_left = maxf(0.0, _noise_left - delta)
 	_press_left = maxf(0.0, _press_left - delta)
 	_bloom = maxf(0.0, _bloom - bloom_recovery * delta)
+	_since_fire += delta
 	if visual:
 		# Recoil kick settles back to rest.
 		visual.position.z = move_toward(visual.position.z, 0.0, delta * 0.6)
@@ -560,6 +586,10 @@ func status_text() -> String:
 func _fire() -> void:
 	ammo_in_mag -= 1
 	_cooldown = fire_interval
+	spray_shot = spray_shot + 1 if _since_fire <= spray_reset else 1
+	_since_fire = 0.0
+	last_recoil = recoil_for(spray_shot)
+	shots_fired += 1
 	if visual:
 		var kick := model_kick()
 		visual.position.z = kick.x
@@ -584,10 +614,13 @@ func _fire() -> void:
 		elif not quiet:
 			Fx.tracer(actor.get_parent(), drawn_from, to, tracer_color)
 	fired.emit(from, to)
+	if projectile == "":
+		Sfx.pass_by(from, to, actor)
 	if _noise_left <= 0.0:
 		_noise_left = noise_every
 		Combat.noise(actor, from, quiet_noise if quiet else shot_noise)
-	Sfx.play(shot_sound, null if actor.is_player else from, -14.0 if quiet else 0.0)
+	Sfx.play(shot_sound, null if actor.is_player else from, -14.0 if quiet else 0.0,
+			SUPPRESSED_REACH if quiet else SHOT_REACH)
 
 
 ## Where a shot's flash and tracer start: the "Muzzle" marker the art layer
@@ -605,6 +638,28 @@ func muzzle_point(fallback: Vector3) -> Vector3:
 	if hand != null and hand.has_meta("shown"):
 		at = (hand.get_meta("shown") as Transform3D) * (hand.global_transform.affine_inverse() * at)
 	return at
+
+
+## The patterned kick (up, side; degrees) of the `shot`th shot of a spray,
+## before the jitter.
+func recoil_for(shot: int) -> Vector2:
+	var up := recoil_kick_deg
+	if recoil_pattern != "kick":
+		up *= lerpf(RAMP_FROM, RAMP_TO, clampf(float(shot - 1) / RAMP_SHOTS, 0.0, 1.0))
+	return Vector2(up, recoil_side_deg * pattern_side(recoil_pattern, shot))
+
+
+## The sideways part of a pattern at the `shot`th shot, in units of
+## `recoil_side_deg` (positive is to the right).
+static func pattern_side(pattern: String, shot: int) -> float:
+	match pattern:
+		"climb_right":
+			return clampf((shot - 3) / 4.0, 0.0, 1.0) * 1.5
+		"climb_left":
+			return -clampf((shot - 3) / 4.0, 0.0, 1.0) * 1.5
+		"sway":
+			return sin(shot * 0.9) * 1.4 if shot > 2 else 0.0
+	return 0.0
 
 
 ## How far back (m) and up (radians) the held model jumps at a shot.
@@ -648,6 +703,7 @@ func _trace_shot(from: Vector3, dir: Vector3) -> Vector3:
 			return end
 		var at: Vector3 = hit.position
 		var body := hit.collider as Actor
+		Fx.impact(actor.get_parent(), at, hit.get("normal", Vector3.ZERO), body != null)
 		if body != null:
 			if not body in struck:
 				struck.append(body)
