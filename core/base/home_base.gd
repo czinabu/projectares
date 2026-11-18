@@ -2302,7 +2302,7 @@ func _build_test_lane() -> void:
 	_add_bulkhead("firing_range", _spot(Vector3(0, 0, end - 0.25), 0.0), "slab", Vector2(width, height))
 
 
-## The flight course's yard past the range: open to the sky, low walls,
+## The flight course's yard past the range: a tall hangar, walls and roof,
 ## the climb tower with its ramp, the gap to the second tower, the sprint
 ## to the finish, and the board at the start that times each run.
 func _build_course() -> void:
@@ -2321,6 +2321,13 @@ func _build_course() -> void:
 	var reach := (w - range_size.x) * 0.5
 	for side: float in [-1.0, 1.0]:
 		_wall(Vector3(reach, h, 0.5), Vector3(side * (range_size.x * 0.5 + 0.5 + reach * 0.5), h * 0.5, start + 0.25), Vector3.FORWARD)
+	# Over the range's roof the yard's own wall goes on up, and a hangar roof
+	# closes the top (Caleb's call: contained, never open onto the dark).
+	# It stands well over every rig's ceiling, so flying in the yard never
+	# counts as under a roof (`Actor.roof_reach`).
+	var over := h - range_size.y
+	_wall(Vector3(range_size.x + 1.0, over, 0.5), Vector3(0, range_size.y + over * 0.5, start + 0.25), Vector3.FORWARD)
+	_ceiling(Vector2(w + 1.0, length + 0.5), Vector3(0, 0, mid), h)
 	var marks := course_marks()
 	var tx := _tower_x()
 	var tower := _shell("wall")
@@ -2371,6 +2378,9 @@ func _build_course() -> void:
 			var light := Look.lamp(Color(0.85, 0.92, 1.0), 4.0, 22.0)
 			light.position = Vector3(0, 9.0, at_z)
 			add_child(light)
+			var high := Look.lamp(Color(0.8, 0.9, 1.0), 3.0, h + 10.0)
+			high.position = Vector3(0, h - 3.0, at_z)
+			add_child(high)
 
 
 ## Standing plates at 10, 20, 30 and 40 m, sliders at 15 and 35 m, and drones

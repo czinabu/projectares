@@ -104,7 +104,7 @@ const GALLERY_COOLANT := [-15.0, -11.0, 40.0, 108.0]
 ## The Descent: a well past the galleries' east end, three ramps
 ## (`DESCENT_LANE` wide, each down a third of `DESCENT_DROP`) switching back
 ## along it between landings, to its foot, where the cable lift stops and the
-## sealed door to the Heart waits in the east wall.
+## door to the Heart stands open in the east wall.
 const DESCENT_FROM_Z := 114.0
 const DESCENT_TO_Z := 176.0
 const DESCENT_HALF := 11.0
@@ -125,9 +125,40 @@ const ENGINE_HOLE := [-6.5, 6.5, 32.5, 36.3]
 const LIFT_ID := "engine"
 const LIFT_TOP := Vector2(15.5, -8.0)
 const LIFT_FOOT := Vector2(-7.0, 169.0)
-const LIFT_SWITCH := Vector2(-1.0, 174.0)
+const LIFT_SWITCH := Vector2(-9.0, 174.0)
 const LIFT_STOP := 2.6
 const LIFT_CAGE := 6.0
+## The Heart (DESIGN.md "The Engine's inside"): through a door
+## `HEART_DOOR` wide in the Descent's east wall, a short way on
+## (`HEART_WAY` long) to a round chamber `HEART_RADIUS` round its middle at
+## `HEART_Z` and `HEART_UP` high, on the Descent's floor. A balcony runs
+## round it `HEART_BALCONY` up (`HEART_LEDGE` deep), reached by a ramp up
+## each side; four coolant pylons stand round the middle, the frozen core
+## hangs over it, and the vault is in the far wall.
+const HEART_KEEPER := "heart_warden"
+const HEART_DOOR := 10.0
+const HEART_DOOR_UP := 8.0
+const HEART_WAY := 6.0
+const HEART_RADIUS := 34.0
+const HEART_Z := DESCENT_TO_Z + 1.0 + HEART_WAY + HEART_RADIUS
+const HEART_UP := 34.0
+const HEART_SEGMENTS := 40
+const HEART_BALCONY := 9.0
+const HEART_LEDGE := 3.5
+## The pylons, at (+-`HEART_PYLON`, +-`HEART_PYLON`) off the middle, and
+## the purge lanes they vent across the floor (`WorldDef`'s "purge"): the
+## two diagonals together, then the two rows together.
+const HEART_PYLON := 12.0
+const PYLON_RADIUS := 1.8
+const PURGE_WIDTH := 5.0
+const PURGE_DAMAGE := 26.0
+## The wall sockets the Heart Warden calls Wardens out of, by their angle
+## from the far wall (the door is at 180).
+const HEART_SOCKETS := [45.0, -45.0, 135.0, -135.0]
+## How far round its middle the Heart Warden keeps its ground, and seconds
+## before it wakes again after it falls.
+const HEART_GROUND := 22.0
+const HEART_RESPAWN := 600.0
 ## How far round the hatch the Engine Sentinel keeps its guard.
 const SENTINEL_GROUND := 16.0
 ## The valley's end: the glacier climbs behind it (and the pack ice at the
@@ -177,8 +208,20 @@ static func inside_engine(pos: Vector3) -> bool:
 		for room: Array in GALLERY_ROOMS:
 			if p.x > room[0] and p.x < room[1] and p.z > room[2] and p.z < room[3]:
 				return true
-	return absf(p.x) < DESCENT_HALF and p.z > DESCENT_FROM_Z and p.z < DESCENT_TO_Z \
-			and p.y > DESCENT_FLOOR - 0.5 and p.y < GALLERY_FLOOR + GALLERY_UP + DESCENT_ROOF
+	if absf(p.x) < DESCENT_HALF and p.z > DESCENT_FROM_Z and p.z < DESCENT_TO_Z \
+			and p.y > DESCENT_FLOOR - 0.5 and p.y < GALLERY_FLOOR + GALLERY_UP + DESCENT_ROOF:
+		return true
+	return in_heart(pos)
+
+
+## Whether a point is in the Heart or the way on to it from the Descent.
+static func in_heart(pos: Vector3) -> bool:
+	var p := engine_local(pos)
+	if p.y <= DESCENT_FLOOR - 0.5 or p.y >= DESCENT_FLOOR + HEART_UP:
+		return false
+	if Vector2(p.x, p.z - HEART_Z).length() < HEART_RADIUS:
+		return true
+	return absf(p.x) < HEART_DOOR * 0.5 and p.z >= DESCENT_TO_Z - 0.5 and p.z <= HEART_Z
 
 
 ## Whether a point stands on the galleries' frozen coolant.
@@ -190,13 +233,15 @@ static func on_coolant(pos: Vector3) -> bool:
 
 
 ## How far down the Engine a point is: 0 in the hall, 1 at the Shaft's foot
-## and in the galleries, 2 down the Descent.
+## and in the galleries, 2 down the Descent, 3 in the Heart.
 static func engine_depth(pos: Vector3) -> int:
 	var p := engine_local(pos)
 	if p.y > HALL_FLOOR - 2.0:
 		return 0
 	if p.y > GALLERY_FLOOR - 2.0:
 		return 1
+	if p.z > DESCENT_TO_Z:
+		return 3
 	return 2
 
 
@@ -323,6 +368,7 @@ func _ready() -> void:
 	_build_engine()
 	_build_vents()
 	_build_beacons()
+	_build_deep_beacon()
 	_place_bot_spots()
 	_art_rng.seed = LAYOUT_SEED
 	_dress()
@@ -397,6 +443,7 @@ func weather_ridges() -> PackedVector3Array:
 
 func _process(_delta: float) -> void:
 	_light_lift()
+	_light_heart()
 	# The snow blows round whoever is looking, not over the whole valley.
 	var camera := get_viewport().get_camera_3d()
 	if camera != null and is_instance_valid(_weather):
@@ -785,6 +832,8 @@ func _build_engine() -> void:
 	_flush_parts(engine)
 	_build_descent(engine)
 	_flush_parts(engine)
+	_build_heart(engine)
+	_flush_parts(engine)
 	# The intake rings at its east end and the cooling fins along its back.
 	for k in 3:
 		_cylinder(engine, ENGINE_RADIUS - 4.0 - k * 5.0, 1.2, Vector3(0, 0, ENGINE_LENGTH * 0.5 + 0.4 + k * 0.4),
@@ -973,7 +1022,7 @@ const HALL_TANKS := [Vector2(-17.5, -33.0), Vector2(17.5, -33.0), Vector2(-17.5,
 ## How far each guard keeps from its post.
 const HALL_GUARD := 12.0
 ## The lift switch's own guards stay close by it.
-const SWITCH_GUARDS := [Vector2(3.0, 172.5), Vector2(-4.0, 174.5)]
+const SWITCH_GUARDS := [Vector2(-4.0, 173.5), Vector2(-6.5, 175.0)]
 const SWITCH_GUARD := 5.0
 const SHAFT_GUARD := 9.0
 ## The Engine's warm pockets inside: the hall's engine bay and the
@@ -1225,7 +1274,12 @@ func _build_descent(engine: StaticBody3D) -> void:
 	var base := bottom - 1.0
 	for side: float in [-1.0, 1.0]:
 		_part(engine, Vector3(1.0, top - base, length + 2.0), Vector3(side * (h + 0.5), (top + base) * 0.5, mid_z), ICE_WALL)
-	_part(engine, Vector3(h * 2.0 + 2.0, top - base, 1.0), Vector3(0, (top + base) * 0.5, to + 0.5), ICE_WALL)
+	# The east wall, open where the door to the Heart stands.
+	var post := h + 1.0 - HEART_DOOR * 0.5
+	for side: float in [-1.0, 1.0]:
+		_part(engine, Vector3(post, top - base, 1.0), Vector3(side * (HEART_DOOR * 0.5 + post * 0.5), (top + base) * 0.5, to + 0.5), ICE_WALL)
+	_part(engine, Vector3(HEART_DOOR, top - bottom - HEART_DOOR_UP, 1.0),
+			Vector3(0, (top + bottom + HEART_DOOR_UP) * 0.5, to + 0.5), ICE_WALL)
 	# The west wall, open where the way from the galleries comes in. The way
 	# on's own walls and roof stand in its last metre.
 	var door := GALLERY_ROOMS[GALLERY_ROOMS.size() - 1] as Array
@@ -1298,6 +1352,133 @@ func _lift_cage(engine: StaticBody3D, at: Vector3, head: float) -> void:
 		_part(engine, Vector3(0.4, head - at.y, 0.4),
 				Vector3(at.x + corner.x * (half - 0.2), (at.y + head) * 0.5, at.z + corner.y * (half - 0.2)), STEEL)
 	_part(engine, Vector3(LIFT_CAGE, 0.5, LIFT_CAGE), Vector3(at.x, head + 0.25, at.z), HULL_DARK)
+
+
+## The Heart: the way on from the Descent's door, the round chamber with its
+## balcony, ramps, pylons and cover, and everything its keeper's fight is
+## made of, as map markers (`WorldDef`'s "spawn_boss", "boss_socket",
+## "purge" and "vault"; the deep beacon is `_build_deep_beacon`).
+func _build_heart(engine: StaticBody3D) -> void:
+	var bottom := DESCENT_FLOOR
+	var c := HEART_Z
+	var r := HEART_RADIUS
+	var up := HEART_UP
+	var frame := engine_frame()
+	# The way on: a floor, walls (deep enough to close the chamber's wall on
+	# each side of its doorway) and a roof.
+	var way_from := DESCENT_TO_Z
+	var way_to := c - r + 2.5
+	var way_mid := (way_from + way_to) * 0.5
+	_part(engine, Vector3(HEART_DOOR + 4.0, 1.0, way_to - way_from), Vector3(0, bottom - 0.48, way_mid), DECK)
+	for side: float in [-1.0, 1.0]:
+		_part(engine, Vector3(2.0, HEART_DOOR_UP + 1.0, way_to - way_from + 1.0),
+				Vector3(side * (HEART_DOOR * 0.5 + 1.0), bottom + (HEART_DOOR_UP + 1.0) * 0.5, way_mid), ICE_WALL)
+	_part(engine, Vector3(HEART_DOOR + 4.0, 1.0, way_to - way_from + 1.0), Vector3(0, bottom + HEART_DOOR_UP + 0.5, way_mid), HULL_DARK)
+	_add_warmth(frame * Vector3(0, bottom, way_from + 3.0), ENGINE_BAY)
+	# The chamber: floor and roof, and its wall round in segments, open at the
+	# door. A segment's inner face stands at the radius.
+	_part(engine, Vector3(r * 2.0 + 4.0, 1.0, r * 2.0 + 4.0), Vector3(0, bottom - 0.48, c), DECK)
+	_part(engine, Vector3(r * 2.0 + 4.0, 1.0, r * 2.0 + 4.0), Vector3(0, bottom + up + 0.5, c), HULL_DARK)
+	var step := TAU / HEART_SEGMENTS
+	var wide := r * step + 0.3
+	for i in HEART_SEGMENTS:
+		var a := (float(i) + 0.5) * step
+		var turn := Basis(Vector3.UP, a)
+		var out := Vector3(sin(a), 0, cos(a))
+		if absf(wrapf(a - PI, -PI, PI)) > step * 0.6:
+			_part(engine, Vector3(wide, up + 1.0, 1.2), out * (r + 0.6) + Vector3(0, bottom + up * 0.5, c), ICE_WALL, turn)
+		else:
+			var over := up - HEART_DOOR_UP
+			_part(engine, Vector3(wide, over + 0.5, 1.2), out * (r + 0.6) + Vector3(0, bottom + HEART_DOOR_UP + over * 0.5 + 0.25, c),
+					ICE_WALL, turn)
+		# The balcony round it, and its rail but where the ramps come up.
+		var ledge := r - HEART_LEDGE * 0.5
+		_part(engine, Vector3((r - HEART_LEDGE * 0.5) * step + 0.4, 0.8, HEART_LEDGE + 0.2),
+				out * ledge + Vector3(0, bottom + HEART_BALCONY - 0.4, c), DECK, turn)
+		if absf(absf(wrapf(a, -PI, PI)) - deg_to_rad(70.0)) > deg_to_rad(12.0):
+			_part(engine, Vector3((r - HEART_LEDGE) * step + 0.2, 1.1, 0.3),
+					out * (r - HEART_LEDGE + 0.15) + Vector3(0, bottom + HEART_BALCONY + 0.55, c), HULL_DARK, turn)
+	# A ramp up each side to a landing on the balcony.
+	for side: float in [-1.0, 1.0]:
+		var near := 24.0
+		var far := 28.5
+		var xs := [near, far] if side > 0.0 else [-far, -near]
+		_slope(engine, xs[0], xs[1], Vector2(c - 12.0, bottom), Vector2(c + 8.0, bottom + HEART_BALCONY), DECK, 1.0)
+		var rail_x := side * near
+		_slope(engine, rail_x - 0.15, rail_x + 0.15, Vector2(c - 12.0, bottom + 1.1), Vector2(c + 8.0, bottom + HEART_BALCONY + 1.1), HULL_DARK, 1.1)
+		_part(engine, Vector3(r - 22.5, 0.8, 6.0), Vector3(side * (22.5 + (r - 22.5) * 0.5), bottom + HEART_BALCONY - 0.4, c + 11.0), DECK)
+	# The pylons, floor to roof: cover a solo player dashes round.
+	for spot: Vector2 in heart_pylons():
+		_tank(engine, Vector3(spot.x, bottom, spot.y), PYLON_RADIUS, up, HULL_DARK)
+	# Cover: fallen housings and crates off the middle.
+	for spot: Array in [[Vector2(-19.0, c - 17.0), 0.4], [Vector2(18.0, c - 19.0), -0.3], [Vector2(-21.0, c + 15.0), 1.2],
+			[Vector2(20.0, c + 16.0), -1.0], [Vector2(0.0, c - 22.0), 0.0]]:
+		var at: Vector2 = spot[0]
+		_part(engine, Vector3(5.0, 1.6, 2.2), Vector3(at.x, bottom + 0.8, at.y), HULL_DARK, Basis(Vector3.UP, float(spot[1])))
+	for at: Vector2 in [Vector2(-8.0, c - 25.0), Vector2(9.0, c + 22.0)]:
+		_part(engine, Vector3(3.0, 2.6, 3.0), Vector3(at.x, bottom + 1.3, at.y), HULL_DARK)
+	# The keeper, in the middle under the core.
+	var boss := _add_marker("spawn_boss", frame * Vector3(0, bottom + 0.1, c + 2.0))
+	boss.set_meta("faction", "warden")
+	boss.set_meta("boss", HEART_KEEPER)
+	boss.set_meta("keeper", true)
+	boss.set_meta("radius", HEART_GROUND)
+	boss.set_meta("arena", r)
+	boss.set_meta("respawn", HEART_RESPAWN)
+	boss.set_meta("name", "The Heart")
+	# Its wall sockets, its purge lanes, its vault and the deep beacon.
+	for angle: float in HEART_SOCKETS:
+		var a := deg_to_rad(angle)
+		var socket := _add_marker("boss_socket", frame * Vector3(sin(a) * (r - 2.5), bottom + 0.1, c + cos(a) * (r - 2.5)))
+		socket.set_meta("keeper", HEART_KEEPER)
+		socket.set_meta("faction", "warden")
+	for lane: Array in heart_purges():
+		var from: Vector2 = lane[0]
+		var to: Vector2 = lane[1]
+		var purge := _add_marker("purge", frame * Vector3(from.x, bottom + 0.1, from.y))
+		purge.set_meta("keeper", HEART_KEEPER)
+		purge.set_meta("toward", frame * Vector3(to.x, bottom + 0.1, to.y))
+		purge.set_meta("width", PURGE_WIDTH)
+		purge.set_meta("damage", PURGE_DAMAGE)
+	var vault := _add_marker("vault", frame * Vector3(0, bottom + 0.1, c + r - 4.0))
+	vault.basis = frame.basis
+	vault.set_meta("keeper", HEART_KEEPER)
+
+
+## The deep beacon in the Heart and its warmth, both dark while the Heart
+## Warden stands. Placed after the valley's beacons, so theirs come first.
+func _build_deep_beacon() -> void:
+	var at := engine_frame() * Vector3(0, DESCENT_FLOOR + 0.1, HEART_Z + 20.0)
+	var beacon := _add_marker("beacon", at)
+	beacon.set_meta("name", "The deep beacon")
+	beacon.set_meta("radius", BEACON["radius"])
+	beacon.set_meta("keeper", HEART_KEEPER)
+	var warm := _add_marker("warmth", at)
+	warm.set_meta("radius", BEACON["radius"])
+	warm.set_meta("warmth", BEACON["warmth"])
+	warm.set_meta("keeper", HEART_KEEPER)
+
+
+## The pylons round the Heart's middle (x, z in the drum's frame).
+static func heart_pylons() -> Array[Vector2]:
+	var out: Array[Vector2] = []
+	for k: Vector2 in [Vector2(1, 1), Vector2(-1, 1), Vector2(-1, -1), Vector2(1, -1)]:
+		out.append(Vector2(k.x * HEART_PYLON, HEART_Z + k.y * HEART_PYLON))
+	return out
+
+
+## The purge lanes, each from a pylon's foot to the next one's ([from, to],
+## x, z in the drum's frame), in the order they are vented: the two
+## diagonals (an X over the middle), then the two rows (either side of it).
+static func heart_purges() -> Array:
+	var p := heart_pylons()
+	var out := []
+	for pair: Array in [[0, 2], [1, 3], [0, 1], [3, 2]]:
+		var a: Vector2 = p[pair[0]]
+		var b: Vector2 = p[pair[1]]
+		var along := (b - a).normalized() * (PYLON_RADIUS + 0.4)
+		out.append([a + along, b - along])
+	return out
 
 
 ## A Warden of the Engine's garrison (`WorldDef`'s "spawn_guard").
@@ -1689,6 +1870,7 @@ func _dress_engine(art: Node3D) -> void:
 	_dress_galleries(art, frame, strip, amber)
 	_dress_descent(art, frame, strip, amber)
 	_dress_lift(art, frame)
+	_dress_heart(art, frame, amber)
 
 
 ## The galleries: lamps down both halls (cold blue over the coolant), a lit
@@ -1790,7 +1972,7 @@ const GALLERY_WALL_RUNS := [[6.0, 48.0, 69.0], [6.0, 79.0, 100.0], [20.0, 38.0, 
 
 
 ## The Descent: a lamp over each landing and the foot, strips down the
-## lanes, and the sealed door to the Heart, marked out in amber.
+## lanes, and the open door to the Heart, marked out in amber.
 func _dress_descent(art: Node3D, frame: Transform3D, strip: Material, amber: Material) -> void:
 	var g := GALLERY_FLOOR
 	var step := DESCENT_DROP / 3.0
@@ -1822,13 +2004,9 @@ func _dress_descent(art: Node3D, frame: Transform3D, strip: Material, amber: Mat
 	_glow_box(art, frame, Vector3(10.0, 0.4, 0.2), Vector3(0, low + 8.2, face), amber)
 	for x: float in [-5.0, 5.0]:
 		_glow_box(art, frame, Vector3(0.4, 8.0, 0.2), Vector3(x, low + 4.0, face), amber)
-	var seal := _visual_box(Vector3(9.6, 7.8, 0.3), frame * Vector3(0, low + 3.9, face - 0.1), HULL_DARK)
-	seal.basis = frame.basis
-	art.add_child(seal)
-	# The seal's two leaves and the bolts holding them shut.
-	_deco(Vector3(0.12, 7.6, 0.1), Vector3(0, low + 3.9, face - 0.3), STEEL)
-	for y: float in [1.5, 3.9, 6.3]:
-		_deco(Vector3(2.2, 0.5, 0.25), Vector3(0, low + y, face - 0.35), STEEL)
+	# The seal's two leaves, drawn back into the wall either side.
+	for side: float in [-1.0, 1.0]:
+		_deco(Vector3(0.6, HEART_DOOR_UP - 0.2, 1.4), Vector3(side * (HEART_DOOR * 0.5 + 0.3), low + HEART_DOOR_UP * 0.5, face + 0.5), STEEL)
 	_flush_deco(art, frame)
 
 
@@ -1878,6 +2056,195 @@ func _dress_cage(stop: Vector3, head: float, roof: float) -> void:
 	_deco(Vector3(3.0, 1.2, 2.2), Vector3(stop.x, roof - 0.6, stop.z), HULL_DARK)
 	_deco_cyl(0.8, 0.3, Vector3(stop.x, roof - 2.0, stop.z - 0.15), STEEL, Basis(Vector3.RIGHT, PI / 2.0))
 	_deco(Vector3(0.3, 1.0, 0.6), Vector3(stop.x, roof - 1.6, stop.z), HULL_DARK)
+
+
+## The Heart: ribs up its wall, lamps under its roof, the frozen core hung
+## over the middle (`_core_glow`, lit by the keeper's phase), coolant
+## strips up the pylons, the sockets lit in the wall, the vault's door, the
+## deep beacon's mast (dark until the keeper falls) and the purge lanes,
+## hidden until one warns (`show_purge`).
+func _dress_heart(art: Node3D, frame: Transform3D, amber: Material) -> void:
+	var bottom := DESCENT_FLOOR
+	var c := HEART_Z
+	var r := HEART_RADIUS
+	var roof := bottom + HEART_UP
+	var cool := _glow(Color(0.7, 0.95, 1.0), 4.0)
+	var coolant := _glow(Color(0.3, 0.9, 1.0), 3.0)
+	for spot: Vector2 in [Vector2(0, c + 24.0), Vector2(24.0, c), Vector2(-24.0, c), Vector2(0, c - 24.0)]:
+		_hung_lamp(art, frame, Vector3(spot.x, roof - 8.0, spot.y), roof, cool, Color(0.4, 0.8, 1.0), 4.5, 34.0)
+	var step := TAU / HEART_SEGMENTS
+	for i in HEART_SEGMENTS:
+		var a := float(i) * step
+		var out := Vector3(sin(a), 0, cos(a))
+		var turn := Basis(Vector3.UP, a)
+		var from := bottom + (HEART_DOOR_UP + 1.0 if absf(wrapf(a - PI, -PI, PI)) < step * 1.2 else 0.0)
+		_deco(Vector3(0.5, roof - from, 0.8), out * (r - 0.3) + Vector3(0, (roof + from) * 0.5, c), HULL_DARK, turn)
+		# Roof beams out from the middle.
+		if i % 4 == 0:
+			_deco(Vector3(0.7, 0.9, r - 6.0), out * (r * 0.5 + 3.0) + Vector3(0, roof - 0.45, c), HULL_DARK, turn)
+	# The core: a frozen sphere banded in frost, hung on cables from the roof.
+	var core_at := Vector3(0, bottom + 19.0, c)
+	_core_glow = _glow(CORE_COLD, 2.5)
+	var sphere := SphereMesh.new()
+	sphere.radius = 4.5
+	sphere.height = 9.0
+	sphere.material = _core_glow
+	var core := MeshInstance3D.new()
+	core.mesh = sphere
+	core.position = frame * core_at
+	core.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	art.add_child(core)
+	for k in 3:
+		var band := Basis(Vector3.RIGHT, PI * 0.5).rotated(Vector3.UP, float(k) * PI / 3.0)
+		_deco_cyl(4.8, 0.6, core_at - band.y * 0.3, FROST, band)
+	for k: Vector2 in [Vector2(1, 1), Vector2(-1, 1), Vector2(-1, -1), Vector2(1, -1)]:
+		var top := Vector3(k.x * 6.0, roof, c + k.y * 6.0)
+		var low := core_at + Vector3(k.x * 2.6, 2.6, k.y * 2.6)
+		var run := top - low
+		var basis := Basis(Quaternion(Vector3.UP, run.normalized()))
+		_deco_cyl(0.15, run.length(), low, STEEL, basis)
+	_core_light = Look.lamp(CORE_COLD, 3.0, 40.0)
+	_core_light.position = frame * core_at
+	art.add_child(_core_light)
+	# The pylons: frost bands and coolant strips up each.
+	for spot: Vector2 in heart_pylons():
+		var y := bottom + 3.0
+		while y < roof - 1.0:
+			_deco_cyl(PYLON_RADIUS + 0.2, 0.45, Vector3(spot.x, y, spot.y), FROST)
+			y += 6.0
+		for k: Vector2 in [Vector2(1, 0), Vector2(-1, 0), Vector2(0, 1), Vector2(0, -1)]:
+			_glow_box(art, frame, Vector3(0.18, HEART_UP - 2.0, 0.18),
+					Vector3(spot.x + k.x * (PYLON_RADIUS + 0.05), bottom + HEART_UP * 0.5, spot.y + k.y * (PYLON_RADIUS + 0.05)), coolant)
+		_deco_cyl(PYLON_RADIUS + 0.6, 1.2, Vector3(spot.x, bottom, spot.y), HULL_DARK)
+	# The sockets: a dark recess framed in light, under the balcony.
+	for angle: float in HEART_SOCKETS:
+		var a := deg_to_rad(angle)
+		var out := Vector3(sin(a), 0, cos(a))
+		var turn := Basis(Vector3.UP, a)
+		var at := out * (r - 0.25) + Vector3(0, bottom, c)
+		_deco(Vector3(3.4, 4.6, 0.3), at + Vector3(0, 2.3, 0), HULL_DARK, turn)
+		var side := turn.x
+		for k: float in [-1.0, 1.0]:
+			_glow_box(art, frame, Vector3(0.25, 4.8, 0.25), at - out * 0.2 + side * k * 1.8 + Vector3(0, 2.4, 0), coolant)
+		_glow_box(art, frame, Vector3(3.8, 0.25, 0.25), at - out * 0.2 + Vector3(0, 4.8, 0), coolant)
+	# The vault's door in the far wall: a round door ringed in amber, bolted.
+	var door_at := Vector3(0, bottom + 5.5, c + r - 0.5)
+	var face := Basis(Vector3.RIGHT, PI * 0.5)
+	_deco_cyl(5.2, 0.5, door_at - face.y * 0.25, HULL_DARK, face)
+	_deco_cyl(4.4, 0.6, door_at - face.y * 0.6, STEEL, face)
+	for k in 8:
+		var a := float(k) * TAU / 8.0
+		_deco(Vector3(0.6, 0.6, 0.4), door_at + Vector3(cos(a) * 3.6, sin(a) * 3.6, -0.9), HULL_DARK)
+	for k in 16:
+		var a := float(k) * TAU / 16.0
+		_glow_box(art, frame, Vector3(1.9, 0.25, 0.2), door_at + Vector3(cos(a) * 5.05, sin(a) * 5.05, -0.55), amber)
+	_lamp_at(art, frame * (door_at + Vector3(0, 4.0, -4.0)), Color(1.0, 0.65, 0.3), 3.0, 20.0)
+	# The deep beacon: a mast, its head dark until the keeper falls.
+	var mast := Vector3(0, bottom, c + 20.0)
+	_deco(Vector3(0.5, 5.0, 0.5), mast + Vector3(0, 2.5, 0), STEEL)
+	_deep_glow = _glow(BEACON_DARK, 0.5)
+	_glow_box(art, frame, Vector3(1.0, 0.8, 1.0), mast + Vector3(0, 5.4, 0), _deep_glow)
+	for k: float in [-1.0, 1.0]:
+		_glow_box(art, frame, Vector3(BEACON["radius"] * 2.0, 0.05, 0.2), mast + Vector3(0, 0.06, k * BEACON["radius"]), _deep_glow)
+		_glow_box(art, frame, Vector3(0.2, 0.05, BEACON["radius"] * 2.0), mast + Vector3(k * BEACON["radius"], 0.06, 0), _deep_glow)
+	_deep_light = Look.lamp(BEACON_LIT, 0.0, 14.0)
+	_deep_light.position = frame * (mast + Vector3(0, 5.0, 0))
+	art.add_child(_deep_light)
+	_flush_deco(art, frame)
+	# The purge lanes: a sheet over the floor that flashes while it warns
+	# and a wall of coolant while it vents.
+	for lane: Array in heart_purges():
+		var from: Vector2 = lane[0]
+		var to: Vector2 = lane[1]
+		var run := to - from
+		var mid := Vector3((from.x + to.x) * 0.5, bottom, (from.y + to.y) * 0.5)
+		var turn := Basis(Vector3.UP, atan2(run.x, run.y))
+		var sheet_mat := _purge_material()
+		var sheet := _visual_box(Vector3(PURGE_WIDTH, 0.04, run.length()), Vector3.ZERO, sheet_mat)
+		sheet.transform = frame * Transform3D(turn, mid + Vector3(0, 0.08, 0))
+		sheet.visible = false
+		art.add_child(sheet)
+		var wall_mat := _purge_material()
+		var wall := _visual_box(Vector3(PURGE_WIDTH, 2.8, run.length()), Vector3.ZERO, wall_mat)
+		wall.transform = frame * Transform3D(turn, mid + Vector3(0, 1.4, 0))
+		wall.visible = false
+		art.add_child(wall)
+		_purge_views.append({"sheet": sheet, "wall": wall, "sheet_mat": sheet_mat, "wall_mat": wall_mat,
+				"state": 0, "since": 0.0})
+
+
+func _purge_material() -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.cull_mode = BaseMaterial3D.CULL_DISABLED
+	m.albedo_color = Color(PURGE_WARN, 0.0)
+	return m
+
+
+const CORE_COLD := Color(0.45, 0.78, 1.0)
+const CORE_THAW := Color(1.0, 0.5, 0.2)
+const CORE_DEAD := Color(0.12, 0.16, 0.2)
+const BEACON_DARK := Color(0.15, 0.2, 0.24)
+const BEACON_LIT := Color(1.0, 0.7, 0.35)
+const PURGE_WARN := Color(1.0, 0.6, 0.15)
+const PURGE_VENT := Color(0.75, 0.95, 1.0)
+var _core_glow: StandardMaterial3D
+var _core_light: OmniLight3D
+var _deep_glow: StandardMaterial3D
+var _deep_light: OmniLight3D
+var _purge_views: Array[Dictionary] = []
+var _heart_phase := 1
+
+
+## One of the Heart's purge lanes warns (1), vents (2) or goes quiet (0)
+## (`Raid.purge_changed`, by its place among the map's "purge" markers;
+## view only).
+func show_purge(index: int, state: int) -> void:
+	if index < 0 or index >= _purge_views.size():
+		return
+	var view: Dictionary = _purge_views[index]
+	view.state = state
+	view.since = Time.get_ticks_msec() * 0.001
+
+
+## Lights the Heart from its keeper's phase (the map's "keepers" meta, set
+## by the `Raid`) and plays the purge lanes (view only).
+func _light_heart() -> void:
+	if _core_glow == null:
+		return
+	var phase := int((get_meta("keepers", {}) as Dictionary).get(HEART_KEEPER, 1))
+	var now := Time.get_ticks_msec() * 0.001
+	if phase != _heart_phase:
+		_heart_phase = phase
+		var lit := phase == 0
+		_deep_glow.albedo_color = BEACON_LIT if lit else BEACON_DARK
+		_deep_glow.emission = _deep_glow.albedo_color
+		_deep_glow.emission_energy_multiplier = 4.0 if lit else 0.5
+		_deep_light.light_energy = 5.0 if lit else 0.0
+		var color := CORE_COLD if phase == 1 else (CORE_THAW if phase == 2 else CORE_DEAD)
+		_core_glow.albedo_color = color
+		_core_glow.emission = color
+		_core_glow.emission_energy_multiplier = 0.2 if phase == 0 else 2.5
+		_core_light.light_color = color
+		_core_light.light_energy = 0.3 if phase == 0 else 3.0
+	if phase == 2:
+		# The thawing core throbs.
+		var throb := 0.5 + 0.5 * sin(now * 5.0)
+		_core_glow.emission_energy_multiplier = 2.0 + throb * 3.0
+		_core_light.light_energy = 2.5 + throb * 2.5
+	for view: Dictionary in _purge_views:
+		var state := int(view.state)
+		var age := now - float(view.since)
+		(view.sheet as Node3D).visible = state != 0
+		(view.wall as Node3D).visible = state == 2
+		if state == 1:
+			# Flashing faster as the vent comes.
+			var flash := 0.5 + 0.5 * sin(age * (10.0 + age * 14.0))
+			(view.sheet_mat as StandardMaterial3D).albedo_color = Color(PURGE_WARN, 0.2 + 0.55 * flash)
+		elif state == 2:
+			(view.sheet_mat as StandardMaterial3D).albedo_color = Color(PURGE_VENT, 0.85)
+			(view.wall_mat as StandardMaterial3D).albedo_color = Color(PURGE_VENT, clampf(0.55 - age * 0.5, 0.1, 0.55))
 
 
 const LIFT_DEAD := Color(1.0, 0.25, 0.15)

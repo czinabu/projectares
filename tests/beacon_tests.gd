@@ -41,17 +41,21 @@ static func run(t: Node) -> void:
 
 
 static func _on_the_map(t: Node, raid: Raid) -> void:
-	t.check(raid.beacons.size() == MapScript.BEACONS.size(), "the valley has its beacons (%d)" % raid.beacons.size())
+	# The valley's own beacons; the deep one in the Engine's Heart waits on
+	# its keeper (engine_tests.gd).
+	var valley := raid.beacons.filter(func(b: Node3D) -> bool: return not b.has_meta("keeper"))
+	t.check(valley.size() == MapScript.BEACONS.size() and raid.beacons.size() == valley.size() + 1,
+			"the valley has its beacons (%d), and the Engine's Heart one more" % valley.size())
 	var zones := {}
-	for b in raid.beacons:
+	for b in valley:
 		zones[raid.world.zone_at(b.global_position)] = true
 		t.check(String(b.get_meta("name", "")) != "" and raid.beacon_at(b.global_position) == b,
 				"%s has a name and is its own beacon" % b.get_meta("name", "?"))
 	t.check(zones.size() == 3, "there is a beacon in every zone of the valley")
-	var on_ground := raid.beacons.all(func(b: Node3D) -> bool:
+	var on_ground := valley.all(func(b: Node3D) -> bool:
 		return absf(b.global_position.y - raid.map.call("ground_height", b.global_position.x, b.global_position.z)) < 0.5)
 	t.check(on_ground, "every beacon stands on the floor, where anyone can walk to it")
-	var warm := raid.beacons.all(func(b: Node3D) -> bool:
+	var warm := valley.all(func(b: Node3D) -> bool:
 		return raid.warmth.any(func(w: Node3D) -> bool:
 			return w.global_position.distance_to(b.global_position) < 1.0))
 	t.check(warm, "and every beacon is somewhere warm to stand")

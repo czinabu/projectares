@@ -19,8 +19,8 @@ const EXPOSED_MULT := 1.5
 ## Inside the Engine (DESIGN.md "The Engine's inside") the wind is gone but
 ## the cold is not: the Drum Hall is gentler than the glacier head outside,
 ## and it gets colder the deeper you go (`MapScript.engine_depth`: the hall,
-## the Shaft and the Coil Galleries, then the Descent).
-const ENGINE_COLD := [0.8, 1.1, 1.3]
+## the Shaft and the Coil Galleries, the Descent, then the Heart).
+const ENGINE_COLD := [0.8, 1.1, 1.3, 1.5]
 ## Wading the Coil Galleries' coolant channel: bitter, so the dry walks round
 ## it are worth taking.
 const COOLANT_COLD := 2.6
@@ -46,6 +46,38 @@ const SENTINEL_LOCK := 1.2
 const SENTINEL_DAMAGE := 30.0
 const SENTINEL_INTERVAL := 0.6
 const SENTINEL_PARTY := 0.6
+## The Heart Warden (DESIGN.md "The Engine's inside", Caleb's call), the
+## keeper of the Engine's Heart: taller than the Sentinel and far tougher,
+## its back the weak spot (`HEART_REAR`). While it is above half health it
+## calls Wardens out of the wall sockets; below, the core thaws and the
+## pylons vent coolant across the floor (`WorldDef.keeper_*`, the map's
+## "boss_socket" and "purge" markers). Made for one player, it scales with
+## company like the Sentinel.
+const HEART_HEIGHT := 4.2
+const HEART_HEALTH := 1400.0
+const HEART_ARMOR := 50.0
+const HEART_REAR := 2.5
+const HEART_LOCK := 0.9
+const HEART_DAMAGE := 24.0
+const HEART_INTERVAL := 0.55
+## Its vault (Caleb's call): every player who fought it gets a share of its
+## own, the best parts, the Mk3 materials, upgrade data, a chance at an
+## expedition blueprint and, rarely, an artifact: rarer than an Ashfront
+## warlord's (`WorldDef.warlord_artifact_chance`), so the war stays the
+## faster route.
+const VAULT_TABLE := [
+	{"id": "engine_coil", "weight": 30.0},
+	{"id": "glacial_alloy", "weight": 24.0},
+	{"id": "cryo_core", "weight": 20.0},
+	{"id": "reactor_core", "weight": 8.0},
+	{"id": "alloy_ingot", "weight": 10.0},
+	{"id": "medkit", "weight": 8.0},
+]
+const VAULT_ITEMS := Vector2i(3, 4)
+const VAULT_DATA := Vector2i(1, 2)
+const VAULT_BLUEPRINT := 0.3
+const VAULT_BLUEPRINTS := ["bp_frame_thermal", "bp_grip_glacier"]
+const VAULT_ARTIFACT := 0.05
 ## Whiteouts (DESIGN.md "Frostline", step 5): blizzards that come down the
 ## valley one at a time on the shared weather (`WorldDef.weather_*`), most
 ## of them off the glacier (a cold wind falls downhill), now and then one
@@ -298,7 +330,7 @@ func cold_at(pos: Vector3) -> float:
 	if MapScript.inside_engine(pos):
 		if MapScript.on_coolant(pos):
 			return COOLANT_COLD
-		return ENGINE_COLD[clampi(MapScript.engine_depth(pos), 0, 2)]
+		return ENGINE_COLD[clampi(MapScript.engine_depth(pos), 0, ENGINE_COLD.size() - 1)]
 	var rate: float = ZONE_COLD[clampi(zone_at(pos), 0, 2)]
 	if pos.y - MapScript.floor_at(pos.z) > EXPOSED_OVER:
 		rate *= EXPOSED_MULT
@@ -418,6 +450,9 @@ func _make_warden(bot: Actor, rng: RandomNumberGenerator) -> void:
 ## meta "boss"), else an event's warlord as anywhere. Runs on clients too,
 ## so it is free of randomness.
 func make_warlord(bot: Actor) -> void:
+	if bot.get_meta("boss", "") == MapScript.HEART_KEEPER:
+		_make_heart_warden(bot)
+		return
 	if bot.get_meta("boss", "") != "sentinel":
 		super(bot)
 		return
@@ -452,7 +487,60 @@ func make_warlord(bot: Actor) -> void:
 func boss_back_news(bot: Actor, _where: String) -> String:
 	if bot != null and bot.get_meta("boss", "") == "sentinel":
 		return "The Engine Sentinel stands guard at the hatch again"
+	if bot != null and bot.get_meta("boss", "") == MapScript.HEART_KEEPER:
+		return "The Heart Warden wakes in the Engine's Heart again"
 	return super(bot, _where)
+
+
+## The Heart Warden, from the Sentinel's machine. Runs on clients too, so it
+## is free of randomness.
+func _make_heart_warden(bot: Actor) -> void:
+	bot.display_name = "Heart Warden"
+	bot.set_meta("look", "colossus")
+	_paint(bot, Color(0.75, 0.9, 1.0))
+	bot.set_stand_height(HEART_HEIGHT, 0.35)
+	bot.walk_speed = 2.6
+	bot.sprint_speed = 3.2
+	bot.health.max_health = HEART_HEALTH
+	bot.health.health = HEART_HEALTH
+	bot.health.set_armor(HEART_ARMOR)
+	bot.rear_damage_mult = HEART_REAR
+	bot.set_meta("aim_turn", 70.0)
+	bot.set_meta("track_lag", 0.12)
+	bot.set_meta("air_error", 0.7)
+	bot.set_meta("lock_time", HEART_LOCK)
+	var lance := bot.get_active_weapon() as Gun
+	if lance:
+		lance.display_name = "Core Lance"
+		lance.damage = HEART_DAMAGE
+		lance.spread_deg = 0.4
+		lance.fire_interval = HEART_INTERVAL
+		lance.max_range = 80.0
+		lance.mag_size = 12
+		lance.ammo_in_mag = 12
+		lance.reserve_ammo = 999
+
+
+func roll_vault(_kind: String, rng: RandomNumberGenerator) -> Array[String]:
+	var out: Array[String] = []
+	for i in rng.randi_range(VAULT_ITEMS.x, VAULT_ITEMS.y):
+		out.append(ItemDB.roll(VAULT_TABLE, rng))
+	for i in rng.randi_range(VAULT_DATA.x, VAULT_DATA.y):
+		out.append("upgrade_data")
+	if rng.randf() < VAULT_BLUEPRINT:
+		out.append(VAULT_BLUEPRINTS[rng.randi() % VAULT_BLUEPRINTS.size()])
+	var relic := roll_artifact(rng, VAULT_ARTIFACT)
+	if relic != "":
+		out.append(relic)
+	return out
+
+
+func keeper_news(_bot: Actor, phase: int) -> String:
+	if phase == 2:
+		return "The core thaws: the pylons are venting coolant, watch the floor"
+	if phase == 0:
+		return "The Heart Warden has fallen: its vault is open to all who fought it, and the deep beacon is lit"
+	return ""
 
 
 ## Fast, fragile pack hunters with hooked blades.

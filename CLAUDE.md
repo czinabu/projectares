@@ -53,7 +53,10 @@ without Caleb, and update the gap list when a PR closes a row.
 - The head looks where its owner aims (Caleb's call, so others see where
   you look): `Locomotion._look_pose` turns the neck and head onto
   `Actor.get_aim_dir()` from whatever pose the body is in, no further than
-  `look_reach` from the chest, and gives way to the phone. View only, the
+  `look_reach` side to side from the chest and `look_up` back or
+  `look_down` down from it (measured in the chest's frame, so a body laid
+  out in flight lifts its head rather than folding it back), and gives
+  way to the phone. View only, the
   same body in both views; first person's eyes simply ride the turned head.
 - Bodies are shown between physics ticks (Caleb plays at 144 Hz):
   `ShownMotion` (`core/visual/shown_motion.gd`, added by `Look` to every
@@ -166,7 +169,20 @@ without Caleb, and update the gap list when a PR closes a row.
   powers it for everyone for `lift_powered_for`, and a player who stands
   `lift_wait` in one stop is set down in the other; clients hear the power
   (`Raid.lift_changed`, `NetSession._lift`) and the map lights it from the
-  "lift_power" meta. Check by eye with `visual_check.tscn -- <dir> --engine-only`.
+  "lift_power" meta. Its last fight is a keeper (the Heart Warden): a
+  "spawn_boss" marker with the meta "keeper" (and "arena", "respawn"),
+  run by the authority's `Raid._tick_keeper` from `WorldDef.keeper_*`:
+  above `keeper_split` it calls its faction out of the map's "boss_socket"
+  markers (outside the armies, `_is_extra`), below it vents the "purge"
+  lanes, each warning before it hurts through `Combat.deal`. It carries
+  nothing; when it falls (`_keeper_fell`) everyone who hurt it or stood in
+  its arena gets a share from its "vault" (`WorldDef.roll_vault`), a
+  `LootContainer` only its owner may loot (`reserved`), cleared when it
+  wakes again, and markers that wait on it (a "beacon" or "warmth" with
+  its kind as meta "keeper", `Raid.waits_on_keeper`) light. Clients get
+  the phase (`Raid.keepers`, `NetSession._keeper`, the map's "keepers"
+  meta) and the lanes (`Raid.purge_changed`, `NetSession._purge`, drawn
+  by the map's `show_purge`). Check by eye with `visual_check.tscn -- <dir> --engine-only`.
 - How harsh death is belongs to the world, not to `Raid`. With
   `WorldDef.keep_gear_on_death` a dead player drops only the backpack and the
   equipped gear returns in the result's `kept`. A gentle world pays for that
@@ -540,7 +556,9 @@ without Caleb, and update the gap list when a PR closes a row.
   closed, since an open pack cannot be replaced; release builds refuse
   `--main-pack`), then restarts. It never runs in the editor, a test, a
   server or headless, and anything that changes the engine or a native
-  library needs a fresh install. Its state shows on the start screen's
+  library needs a fresh install. Release builds also refuse `--path`, so a
+  game starts its own server with `Main.server_process_args`, which leaves
+  it out of an exported game. Its state shows on the start screen's
   corner and the phone's Servers app, nowhere else. The installer
   (`.github/installer/ProjectAres.nsi`, NSIS, built by the same workflow as
   `ProjectAres-Setup.exe`) installs per user into
@@ -1599,8 +1617,9 @@ without Caleb, and update the gap list when a PR closes a row.
   its end wall, sealed at the far end by the firing range's bulkhead.
   Buying the range removes the lane. Nothing there is real damage either.
   Past the range's far end is the flight course (`HomeBase._build_course`,
-  `in_course`): an open-topped yard whose walls stand over every rig's
-  ceiling, with a climb tower (and a ramp for wings), a gap to a second
+  `in_course`): a tall lit hangar, walled and roofed so nobody flies out
+  (Caleb's call), its roof over every rig's ceiling and past
+  `Actor.roof_reach` of it, so it never flies as indoors, with a climb tower (and a ramp for wings), a gap to a second
   tower and a sprint, timed by `_tick_course` from the player's position
   alone and written on its board, never on the screen.
   The base grows with the account's upgrades (`core/base/base_upgrades.gd`,
