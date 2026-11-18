@@ -6985,6 +6985,7 @@ func _test_phone_controls(phone: CanvasLayer) -> void:
 	InputMap.erase_action("test_twice")
 	check(not InputMap.has_action("roll_left") and not InputMap.has_action("roll_right"),
 			"Q and E fly nothing: the air dash is Shift + a move key")
+	check(PhoneScript.key_name("free_look") == "E", "free look is held on E, clear of the space bar")
 	check(PhoneScript.controls_text("Hold {jump}") == "Hold Space", "a key spec reads from the input map")
 	phone.open_app("controls")
 	check(phone.app == "controls" and phone._title.text == "Controls" and phone._body.get_child_count() > 20,

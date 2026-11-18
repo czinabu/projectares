@@ -1242,7 +1242,11 @@ tier adds about 15% to the rig's **strength only**, never its weakness
 | --- | --- | --- |
 | Jetpack | 15% longer hover (heat), faster cooling, 46 m ceiling | 32% longer hover, 53 m ceiling |
 | Boots | 5 charges, one back every 1.3 s | 6 charges, one back every 1.13 s |
-| Wings | 25.3 m/s glide (34.5 dive), 15% longer glide, a stronger boost | 29.1 m/s glide (39.7 dive), 32% longer glide |
+| Wings | 15% longer glide, a 9.2 m/s boost | 32% longer glide, a 10.6 m/s boost |
+
+Wings never glide faster by tier (Caleb's call): every tier cruises at 22 m/s
+and dives at 30, so a bike stays faster over a long run, and only a Mk3's
+boost (22 + 10.6) keeps pace with the Scrapper's for a moment.
 
 The ceiling is measured from the world's ground (a roof under you does not
 count, so roof-hopping never stacks it): the jets stop climbing there, and a
@@ -1276,11 +1280,11 @@ with a boost (Shift or Shift + W) boosts with no hover first: it speeds you
 up head first along the view's heading and the body lies out prone as the
 speed builds, the same body in first and third person; holding Shift keeps
 boosting. Wings are the exception to the mouse only looking: they fly
-where you look, like a bird, with momentum (hold V to free look while
+where you look, like a bird, with momentum (hold E to free look while
 they fly straight on). Turns cost speed and pulling up
 hard in a turn stalls them. Gliding, Shift is a wing boost that thrusts you
 the way you face and keeps the speed, and Shift + S boosts upward; wings
-never dash sideways. Q and E fly nothing. Every rig dashes, so the dash is not an
+never dash sideways. Q and E fly nothing (E holds free look). Every rig dashes, so the dash is not an
 edge by itself: boots dash furthest (14 m/s for 0.3 s, on a charge, with
 the graze window), jetpacks middling (16 m/s for 0.25 s, 15 heat), wings
 shortest (12 m/s for 0.25 s, on a boost charge, a barrel roll sideways).
@@ -1644,7 +1648,7 @@ something different:
 **Tier gaps stay small.** A higher Mk is a real step up but never a big one,
 so a skilled player in Mk1 can still beat a Mk3. Rigs gain about 15% a
 tier in their own strength only (section 5): jetpacks hover and climb
-further, boots get a charge, wings glide faster and longer. What a weapon
+further, boots get a charge, wings boost harder and glide longer. What a weapon
 gains per Mk is TBD (section 13), and kept small either way.
 
 ### Currency: scrip

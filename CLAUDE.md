@@ -692,7 +692,7 @@ without Caleb, and update the gap list when a PR closes a row.
   bird's (Caleb's call, so you never fly sideways to your view). They bank
   round onto the view's heading (`Actor.glide_steer`), the strafe keys roll
   a harder turn, and forward and back dive or pull up (`Actor.glide_trim`),
-  never the view's pitch. Holding free look (V, `ActorCommand.free_look`,
+  never the view's pitch. Holding free look (E, `ActorCommand.free_look`,
   Caleb's call) the wings fly straight on and the view looks and aims
   anywhere; let go and they come round onto the view. In free look the
   body twists round its length to face the view, so looking behind lays it
@@ -712,7 +712,7 @@ without Caleb, and update the gap list when a PR closes a row.
   Every rig air dashes on Shift + a move key (`ActorCommand.sprint_pressed`,
   `Actor._air_dash`, tuned by the rig's `air_dash_*` stats): the dash is
   added on top of the rig's own flight and taken back off, so a glide or a
-  cruise carries on after it. Q and E fly nothing (Caleb's call).
+  cruise carries on after it. Q and E fly nothing (Caleb's call); E holds free look.
   The body's attitude in the air (flat, banked, leaning, barrel rolled by a
   sideways air dash) is the skin's job (`ActorSkin._update_glide`), read
   from velocity and the simulated actor only, so remote players match. Boots

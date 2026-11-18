@@ -2,7 +2,7 @@ extends RefCounted
 ## Checks for flight rig tiers: each rig comes as Mk1, Mk2 and Mk3, and a
 ## higher tier adds about 15% to the rig's strength only (Caleb's call):
 ## jetpacks hover longer and climb higher, boots get a charge and a faster
-## refill, wings glide faster and longer. Their weaknesses never improve.
+## refill, wings boost harder and glide longer (never faster). Their weaknesses never improve.
 ## Only Mk1 drops; Mk2 and up are crafted.
 ## Run from the main test runner. Nothing here starts a server.
 
