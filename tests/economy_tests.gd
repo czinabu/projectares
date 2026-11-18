@@ -7,6 +7,7 @@ const ShopDB := preload("res://core/economy/shop_db.gd")
 const ShopPanel := preload("res://core/economy/shop_panel.gd")
 const StashService := preload("res://core/account/stash_service.gd")
 const StashRules := preload("res://core/account/stash_rules.gd")
+const ItemCard := preload("res://core/ui/item_card.gd")
 
 
 static func run(t: Node) -> void:
@@ -14,7 +15,46 @@ static func run(t: Node) -> void:
 	_solo_profile(t)
 	_service(t)
 	await _hub(t)
+	await _item_cards(t)
 	await _online(t)
+
+
+## The card beside every list of items: a plain account of each item, and
+## the row pointed at shown on it with what the screen adds.
+static func _item_cards(t: Node) -> void:
+	print("Economy: item cards")
+	var bare: Array[String] = []
+	for id: String in ItemDB.all_ids():
+		if ItemCard.about_text(id) == "" or ItemCard.short_kind(id) == ItemDB.rarity_name(id) + " item" or ItemCard.facts(id).is_empty():
+			bare.append(id)
+	t.check(bare.is_empty(), "every item has a kind, a plain description and at least one fact: %s" % [bare])
+	t.check("Damage: 19 a hit" in ItemCard.facts("smg_stinger") and "Armor: 85" in ItemCard.facts("frame_trooper")
+			and ItemCard.kind_text("dmr_longshot") == "Rare marksman rifle, for the primary weapon slot.",
+			"the card reads a gun's and a frame's numbers off their stats")
+	t.check(ItemCard.facts("power_cell").any(func(line: String) -> bool: return line.begins_with("Used to craft:"))
+			and "crafting" in ItemCard.about_text("power_cell"), "a part says what it crafts")
+	Profile.reset()
+	Profile.scrip = 100
+	var hub := Hub.new()
+	t.add_child(hub)
+	await t.frames(1)
+	var shop: ShopPanel = hub._shop
+	shop.open_tab("armory")
+	await t.frames(1)
+	var card: ItemCard = shop.card
+	t.check(card.item_id == Economy.stock("armory")[0], "the shop's card starts on the first item for sale")
+	shop._rows.get_child(1).mouse_entered.emit()
+	var second: String = Economy.stock("armory")[1]
+	t.check(card.item_id == second and card.lines().any(func(line: String) -> bool:
+			return line == "You need %d more scrip." % (Economy.buy_price(second) - 100)),
+			"pointing at a row shows that item, with what it costs you")
+	shop.open_tab("garage")
+	t.check(card.item_id == Economy.stock("garage")[0], "a new tab shows its own first item")
+	t.check(hub._locker_card != null and hub._stash_card != null and hub._craft.card != null
+			and hub._insure.card != null, "the locker, the stash, the fabricator and insurance each have a card")
+	hub.queue_free()
+	await t.frames(1)
+	Profile.reset()
 
 
 static func _rules(t: Node) -> void:

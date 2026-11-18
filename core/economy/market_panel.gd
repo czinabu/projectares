@@ -8,11 +8,14 @@ extends VBoxContainer
 ## Load with `const MarketPanel := preload("res://core/economy/market_panel.gd")`.
 
 const Market := preload("res://core/economy/market.gd")
+const ItemCard := preload("res://core/ui/item_card.gd")
 
 const TITLE_COLOR := Color(0.45, 0.9, 0.85)
 const SCRIP_COLOR := Color(1.0, 0.85, 0.4)
 const BUY_TAB := "buy"
 const SELL_TAB := "sell"
+## How tall the list is before it scrolls.
+const LIST_HEIGHT := 400.0
 
 ## "buy" (`a` listing id, `b` how many), "cancel" (`a` listing id) or "list"
 ## (`item_id`, `a` how many, `b` the price each).
@@ -29,6 +32,8 @@ var _scrip: Label
 var _tabs: HBoxContainer
 var _rows: VBoxContainer
 var _message: Label
+## The card beside the list: the item pointed at and what it fetches here.
+var card: ItemCard
 
 
 func _ready() -> void:
@@ -47,12 +52,25 @@ func _ready() -> void:
 	_tabs = HBoxContainer.new()
 	_tabs.add_theme_constant_override("separation", 6)
 	add_child(_tabs)
-	_rows = VBoxContainer.new()
-	_rows.add_theme_constant_override("separation", 3)
-	add_child(_rows)
 	_message = _label("", 14, Color(1.0, 0.8, 0.4))
 	_message.visible = false
 	add_child(_message)
+	var split := HBoxContainer.new()
+	split.add_theme_constant_override("separation", 14)
+	add_child(split)
+	var scroll := ScrollContainer.new()
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.custom_minimum_size = Vector2(0, LIST_HEIGHT)
+	split.add_child(scroll)
+	_rows = VBoxContainer.new()
+	_rows.add_theme_constant_override("separation", 3)
+	_rows.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(_rows)
+	card = ItemCard.new()
+	card.notes = notes_for
+	card.empty_text = "Point at a listing or an item to see it here."
+	split.add_child(card)
 	refresh()
 
 
@@ -78,7 +96,7 @@ static func sellable(stash: Variant) -> Array[Dictionary]:
 
 
 ## The board's lines as text, what `refresh` builds from and tests read:
-## {"text", "action" ("buy", "cancel" or ""), "id", "enabled"}.
+## {"text", "action" ("buy", "cancel" or ""), "id", "enabled", "item"}.
 static func listing_rows(p_state: Variant, scrip: int) -> Array[Dictionary]:
 	var out: Array[Dictionary] = []
 	if typeof(p_state) != TYPE_DICTIONARY or not p_state.has("listings"):
@@ -93,9 +111,9 @@ static func listing_rows(p_state: Variant, scrip: int) -> Array[Dictionary]:
 		var text := "%s x%d   %d each   %s" % [ItemDB.item_name(entry.item), entry.count, entry.price,
 				"yours, %d days left" % entry.days_left if entry.mine else "from " + str(entry.seller)]
 		if entry.mine:
-			out.append({"text": text, "action": "cancel", "id": entry.id, "enabled": true})
+			out.append({"text": text, "action": "cancel", "id": entry.id, "enabled": true, "item": str(entry.item)})
 		else:
-			out.append({"text": text, "action": "buy", "id": entry.id,
+			out.append({"text": text, "action": "buy", "id": entry.id, "item": str(entry.item),
 					"enabled": trades_left > 0 and scrip >= int(entry.price)})
 	return out
 
@@ -114,11 +132,32 @@ func refresh() -> void:
 		button.disabled = tab == current
 		_tabs.add_child(button)
 	for child in _rows.get_children():
+		_rows.remove_child(child)
 		child.queue_free()
+	card.clear_rows()
 	if current == BUY_TAB:
 		_show_board()
 	else:
 		_show_stash()
+	card.settle()
+
+
+## What the card says about an item at the kiosk: what the board thinks it
+## is worth, the price band, and how many of it you have.
+func notes_for(item_id: String) -> Array:
+	var out: Array = []
+	out.append(["Board value: about %d scrip. Prices from %d to %d." % [Market.board_value(item_id),
+			Market.min_price(item_id), Market.max_price(item_id)], ItemCard.GOOD])
+	var have := 0
+	for id: Variant in account.get("stash", []):
+		if id == item_id:
+			have += 1
+	if have > 0:
+		out.append(["You have %d in your stash." % have, ItemCard.GOOD])
+	if current == SELL_TAB:
+		out.append(["Listing costs %d%% of the price; the board keeps %d%% of a sale." % [
+				roundi(Market.LISTING_FEE_RATE * 100), roundi(Market.SALE_FEE_RATE * 100)], ItemCard.MUTED])
+	return out
 
 
 func _show_board() -> void:
@@ -137,6 +176,8 @@ func _show_board() -> void:
 			button.disabled = not row.enabled
 			line.add_child(button)
 		_rows.add_child(line)
+		if str(row.get("item", "")) != "":
+			card.track(line, str(row.item))
 
 
 func _show_stash() -> void:
@@ -149,7 +190,8 @@ func _show_stash() -> void:
 		var id: String = entry.id
 		var line := HBoxContainer.new()
 		line.add_theme_constant_override("separation", 6)
-		var text := _label("%s x%d" % [ItemDB.item_name(id), entry.have], 15, Color(0.9, 0.9, 0.9))
+		var text := _label("%s x%d" % [ItemDB.item_name(id), entry.have], 15,
+				ItemDB.RARITY_COLORS[ItemDB.item_rarity(id)])
 		text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		line.add_child(text)
 		var count := _spin(1, mini(int(entry.have), Market.MAX_STACK), 1)
@@ -168,6 +210,7 @@ func _show_stash() -> void:
 		button.disabled = listed >= Market.MAX_LISTINGS or int(state.get("trades_left", 0)) <= 0
 		line.add_child(button)
 		_rows.add_child(line)
+		card.track(line, id)
 
 
 func _spin(low: int, high: int, start: int) -> SpinBox:

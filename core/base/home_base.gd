@@ -131,8 +131,6 @@ var spawn_point := Vector3(0.0, 0.1, 6.0)
 var weapon_scale := 1.5
 ## How long a first press on a bulkhead waits for the second that confirms.
 var confirm_time := 4.0
-## How long the full garage's lift takes to turn the bike on it once.
-var lift_turn_time := 16.0
 ## How big the gun in the gunsmith bench's vise is shown.
 var bench_scale := 1.4
 ## Long guns on the armory's back wall hang bigger still, so they read from
@@ -2737,7 +2735,7 @@ func _build_gates() -> void:
 		var bay := room_spot("bay", 1).origin * Vector3(1, 0, 1)
 		_add_bulkhead("bay_second", garage * _spot(bay + Vector3(0, 0, -1.4), 0.0), "hatch")
 	if owns("garage_full") and room_style("garage") == "bays":
-		# The lift: a turntable under the first bay (the bike on it turns, see `_rebuild`).
+		# The lift: a turntable under the first bay (the bike on it stays still like every other display).
 		var lift := Node3D.new()
 		lift.name = "Lift"
 		lift.transform = spot_transform("bay", 0)
@@ -2955,11 +2953,6 @@ func _rebuild() -> void:
 		_fill(display)
 		_display_root.add_child(display)
 		displays.append(display)
-		if display.kind == "bay" and display.index == 0 and (owns("garage_full") and room_style("garage") == "bays"
-				or room_style("garage") == "showroom"):
-			# The lift turns the bike parked on it. View only.
-			var turn := display.create_tween().set_loops()
-			turn.tween_property(display.get_node("Model"), "rotation:y", PI + TAU, lift_turn_time).from(PI)
 	if not keep_bench:
 		_build_bench_gun()
 	gear_shown.emit()
