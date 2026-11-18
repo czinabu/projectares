@@ -1904,11 +1904,11 @@ var beam_reach := 90.0
 ## that broadens the shoulders. A frame's tag picks the row, so a frame
 ## moved to another weight tier changes bulk with it.
 const FRAME_BULK := {
-	"light": {"thick": 0.01, "gap": 0.024, "wrap": 1.05, "low": -0.085, "high": 0.11, "bulge": 0.018,
-			"lames": 0, "back": 0.0, "pads": 0, "pad_r": 0.06, "tassets": 0, "collar": 0.0},
-	"medium": {"thick": 0.014, "gap": 0.02, "wrap": 1.4, "low": -0.1, "high": 0.115, "bulge": 0.014,
+	"light": {"thick": 0.01, "gap": 0.024, "wrap": 1.05, "low": -0.16, "high": 0.11, "bulge": 0.018,
+			"lames": 0, "back": 0.6, "pads": 0, "pad_r": 0.06, "tassets": 0, "collar": 0.0},
+	"medium": {"thick": 0.014, "gap": 0.02, "wrap": 1.4, "low": -0.17, "high": 0.115, "bulge": 0.014,
 			"lames": 1, "back": 1.05, "pads": 1, "pad_r": 0.066, "tassets": 1, "collar": 0.0},
-	"heavy": {"thick": 0.022, "gap": 0.026, "wrap": 1.75, "low": -0.13, "high": 0.13, "bulge": 0.02,
+	"heavy": {"thick": 0.022, "gap": 0.026, "wrap": 1.75, "low": -0.19, "high": 0.13, "bulge": 0.02,
 			"lames": 2, "back": 1.35, "pads": 3, "pad_r": 0.088, "tassets": 2, "collar": 0.065},
 }
 
@@ -2072,10 +2072,11 @@ static func build_frame(id: String) -> Node3D:
 		# A segmented spine plate, each segment with a cool vent slit.
 		for i in 4:
 			var top := 0.11 - i * 0.055
-			_plate(root, "Spine", _shell(rx, rz + 0.004, PI - 0.32, PI + 0.32, top - 0.045, top, thick, 0.006),
-					shell, mid)
-			_piece(root, "Vent", BoxMesh.new(), glow, Vector3(0.0, top - 0.022, mid.z + rz + 0.004 + 0.006 * (rz + 0.004) / rx + thick),
-					Vector3(0.05, 0.006, 0.004))
+			_plate(root, "Spine", _shell(rx + thick, rz + thick + 0.006, PI - 0.3, PI + 0.3, top - 0.045, top, thick, 0.006),
+					trim, mid)
+			var spine_z := mid.z + (rz + thick + 0.006) * (1.0 + 0.006 / (rx + thick)) + thick
+			_piece(root, "Vent", BoxMesh.new(), glow, Vector3(0.0, top - 0.022, spine_z),
+					Vector3(0.05, 0.006, 0.003))
 	if "pouches" in details:
 		# Magazine pouches across the belly, flaps down.
 		var pz := mid.z - belly_r.y - thick - 0.018
@@ -2162,6 +2163,13 @@ static func build_pad(id: String, out: float) -> Node3D:
 		cap.basis = Basis(Vector3.RIGHT, PI * 0.5)
 		if out < 0.0:
 			cap.basis = Basis(Vector3.UP, PI) * cap.basis
+	if "keel" in style["details"]:
+		# A raised crest along the top of the cap: heavy even in silhouette.
+		var crest := _plate(root, "Crest", _shell(r + thick, r + thick, 0.12, 0.42, -length * 0.55, length * 0.55,
+				thick * 1.6, 0.0), _frame_mat(style, "trim"), Vector3.ZERO)
+		crest.basis = Basis(Vector3.RIGHT, PI * 0.5)
+		if out < 0.0:
+			crest.basis = Basis(Vector3.UP, PI) * crest.basis
 	if "stripe" in style["details"] or "keel" in style["details"]:
 		# A unit stripe (the Trooper) or a hazard band (the Bulwark) round the cap.
 		var band := _plate(root, "Band", _shell(r + thick + 0.001, r + thick + 0.001, 0.15, 1.2, -0.008, 0.008, 0.003),
@@ -2182,11 +2190,12 @@ static func build_tasset(id: String, out: float) -> Node3D:
 	var thick: float = bulk["thick"]
 	var r := 0.088 + float(bulk["gap"])
 	for i in int(bulk["tassets"]):
-		var top := 0.09 - i * 0.075
-		var from := -0.25 if out > 0.0 else -1.75
-		var to := 1.75 if out > 0.0 else 0.25
+		# Narrow and long, down the front and outside of the thigh.
+		var top := 0.07 - i * 0.1
+		var from := -0.1 if out > 0.0 else -1.3
+		var to := 1.3 if out > 0.0 else 0.1
 		_plate(root, "Tasset" if i == 0 else "Tasset%d" % i,
-				_shell(r + i * (thick + 0.003), r * 0.95 + i * (thick + 0.003), from, to, top - 0.1, top, thick, 0.006, -0.12),
+				_shell(r + i * (thick + 0.003), r * 0.95 + i * (thick + 0.003), from, to, top - 0.15, top, thick, 0.006, -0.1),
 				_frame_mat(style, "shell" if i == 0 else "trim"), Vector3.ZERO)
 	return root
 
