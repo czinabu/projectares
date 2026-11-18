@@ -561,7 +561,19 @@ without Caleb, and update the gap list when a PR closes a row.
 - People are built from parts (`core/visual/human.gd`): an "appearance" names
   a build, four parts and colours. It is cosmetic only and never trusted:
   always pass one through `Look.clean_appearance` / `Look.set_appearance`,
-  which is safe on a headless server. Online it travels in the spawn data as
+  which is safe on a headless server. The pack meshes are worn as
+  `Human.shaped` copies (made once per mesh, view only): smooth shading
+  where faces meet gently, the head drawn in to `HEAD_SCALE` about its
+  bone (the bone, the eyes and anything worn on it stay put), and each
+  vertex's rest place and hand share in CUSTOM0, so `character.gdshader`
+  draws patterns that stay on the body as it moves. Never change a
+  vertex count, bone or weight there: a body must pose and cost the same.
+  Under an armor frame the bare skin below the head wears a fitted
+  undersuit with gloves and a lit cuff, drawn by the shader (`suit`, set
+  by `ActorSkin._update_frame`; `Human.surface_kind` says which surfaces
+  it covers), never a mesh, so plates fit the same over it. Check by eye
+  with `body_check.tscn -- <dir> [--suit] [--before]`.
+  Online it travels in the spawn data as
   `data["look"]`; the server keeps what each signed-in player sent
   (`NetSession.look_for_peer`). `Raid` and gameplay never read it.
   A look changed while in a world (the phone's Mirror app) is checked by the

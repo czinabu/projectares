@@ -1917,6 +1917,9 @@ func _update_frame() -> void:
 	if id == _frame_id and (id == "" or (not _frame_parts.is_empty() and is_instance_valid(_frame_parts[0]))):
 		return
 	_frame_id = id
+	# Under a frame the body wears its undersuit.
+	for mat in _materials:
+		mat.set_shader_parameter("suit", 1.0 if id != "" else 0.0)
 	for part in _frame_parts:
 		if is_instance_valid(part):
 			part.queue_free()
