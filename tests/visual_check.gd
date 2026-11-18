@@ -2657,7 +2657,7 @@ func _engine_shots(out_dir: String) -> void:
 	cam.look_at_from_position(at.call(Vector3(-9, g + 7, 115)), at.call(Vector3(3, bottom + 4, 165)))
 	await _settle(20)
 	await _shot(out_dir.path_join("engine_8_descent.png"))
-	# 9. The Descent's foot: the lift cage, powered, and the sealed way to the Heart.
+	# 9. The Descent's foot: the lift cage, powered, and the open way to the Heart.
 	raid.lifts[MapScript.LIFT_ID].left = 600.0
 	raid._tick_lifts(0.0)
 	place.call(squad, [Vector3(-1, bottom, 174), Vector3(-7, bottom, 168), Vector3(4, bottom, 170), Vector3(8, bottom, 160)],
@@ -2671,6 +2671,57 @@ func _engine_shots(out_dir: String) -> void:
 	cam.look_at_from_position(at.call(Vector3(0, f + 4, -22)), at.call(Vector3(15.5, f + 3, -8)))
 	await _settle(20)
 	await _shot(out_dir.path_join("engine_10_lift_top.png"))
+	# 12. The Heart from its door: the keeper under the frozen core, Wardens
+	# coming out of the wall sockets, a squad fanning out.
+	var c := MapScript.HEART_Z
+	var kind := MapScript.HEART_KEEPER
+	var heart: Dictionary = {}
+	for entry: Dictionary in raid._bosses:
+		if (entry.marker as Node3D).get_meta("boss", "") == kind:
+			heart = entry
+	var keeper: Actor = heart.bot if not heart.is_empty() else null
+	var calls: Array[Actor] = []
+	calls.assign(squad)
+	for i in 3:
+		raid._call_from_socket(heart, kind, calls)
+	for add: Actor in heart.adds:
+		add.set_physics_process(false)
+		var add_brain := add.get_node_or_null("Brain")
+		if add_brain != null:
+			add_brain.set_physics_process(false)
+	place.call(squad, [Vector3(-4, bottom, c - 28), Vector3(5, bottom, c - 26), Vector3(-12, bottom, c - 22),
+			Vector3(26, bottom + 3, c - 6)], Vector3(0, bottom, c))
+	if keeper != null:
+		place.call([keeper], [Vector3(0, bottom, c + 2)], Vector3(0, bottom, c - 30))
+	cam.look_at_from_position(at.call(Vector3(0, bottom + 4.5, c - 36)), at.call(Vector3(0, bottom + 9, c + 4)))
+	await _settle(30)
+	await _shot(out_dir.path_join("engine_12_heart.png"))
+	# 13. From the balcony, looking down on the second phase: the core
+	# thawing, one pair of lanes warning and the other venting.
+	raid._set_keeper_phase(kind, 2)
+	raid.purge_changed.emit(0, 1)
+	raid.purge_changed.emit(1, 1)
+	raid.purge_changed.emit(2, 2)
+	raid.purge_changed.emit(3, 2)
+	cam.look_at_from_position(at.call(Vector3(-22, bottom + 13, c - 22)), at.call(Vector3(4, bottom, c + 6)))
+	await _settle(20)
+	await _shot(out_dir.path_join("engine_13_purges.png"))
+	# 14. After the fall: a share for each who fought, the deep beacon lit.
+	for i in 4:
+		raid.purge_changed.emit(i, 0)
+	if keeper != null:
+		keeper.visible = false
+	raid._set_keeper_phase(kind, 0)
+	var vault: Node3D = raid._vaults[0] if not raid._vaults.is_empty() else null
+	if vault != null:
+		for i in 4:
+			raid.spawn_container(["engine_coil"], false, "Delver%d's share" % i,
+					vault.global_position + vault.global_transform.basis.x * (float(i) - 1.5) * Raid.VAULT_SPACING)
+	place.call(squad, [Vector3(-2, bottom, c + 26), Vector3(3, bottom, c + 27), Vector3(0, bottom, c + 20), Vector3(-6, bottom, c + 18)],
+			Vector3(0, bottom, c + 34))
+	cam.look_at_from_position(at.call(Vector3(6, bottom + 6, c + 4)), at.call(Vector3(0, bottom + 3, c + 32)))
+	await _settle(20)
+	await _shot(out_dir.path_join("engine_14_vault.png"))
 	# 11. A whiteout at the hatch, seen from inside.
 	var weather := raid.weather
 	weather.start()

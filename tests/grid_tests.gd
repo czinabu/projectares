@@ -48,9 +48,11 @@ static func _sentinel(t: Node) -> void:
 	_hold_still(raid)
 	var boss := _sentinel_of(raid)
 	var markers := raid._map_nodes("spawn_boss")
-	t.check(markers.size() == 1 and markers[0].get_meta("boss", "") == "sentinel"
-			and markers[0].get_meta("faction", "") == "warden",
-			"the map has one boss marker: the Sentinel, a Warden, at the Engine")
+	var sentinels := markers.filter(func(m: Node3D) -> bool: return m.get_meta("boss", "") == "sentinel")
+	var keepers := markers.filter(func(m: Node3D) -> bool: return m.get_meta("keeper", false))
+	t.check(sentinels.size() == 1 and sentinels[0].get_meta("faction", "") == "warden"
+			and keepers.size() == 1 and markers.size() == 2,
+			"the map has two boss markers: the Sentinel, a Warden, at the Engine, and the Heart's keeper inside")
 	t.check(boss != null and raid.warlords.has(boss), "a Sentinel stands guard as the world's core boss")
 	if boss == null:
 		raid.queue_free()

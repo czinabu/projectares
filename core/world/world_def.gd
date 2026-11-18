@@ -77,7 +77,18 @@ extends RefCounted
 ##     Optional metas: "faction" (as on "spawn_bot"), "radius" (the ground it
 ##     guards) and "boss" (a kind of boss of the world's own, set on the bot
 ##     as meta "boss" before `equip_bot` and `make_warlord`, and sent to
-##     clients so they build the same one).
+##     clients so they build the same one), "respawn" (seconds before it
+##     comes back, in place of `boss_respawn_time`), and "keeper" (true: a
+##     dungeon's last fight, see below; it carries no loot of its own) with
+##     "arena" (metres round the marker its fight runs in).
+##   - A keeper's fight, markers naming its kind (the "boss" meta) in meta
+##     "keeper": "boss_socket" markers in its walls that it calls its
+##     "faction" out of while it is above `keeper_split` of its health;
+##     "purge" lanes (meta "toward", the lane's far end; "width", "damage")
+##     that warn and then vent across the floor once it is below; a "vault"
+##     where a share for each player who fought it (`roll_vault`) is laid
+##     out along the marker's x when it falls; and a "beacon" or "warmth"
+##     with the meta stays dark while it stands.
 ##   - Marker3D nodes in group "spawn_guard": a dungeon's garrison. A bot of
 ##     the marker's "faction" stands guard over "radius" metres (10 by
 ##     default) round it, outside the armies, and another comes back
@@ -302,6 +313,20 @@ var outpost_sign_out_time := 3.0
 ## `Actor.toughness` (hits are divided by it). Authority only.
 var boss_party_scale := 0.0
 var boss_party_range := 45.0
+## A keeper's fight (see "spawn_boss" above): seconds between Wardens called
+## from its sockets and how many may be out at once (one more for each
+## other player in its arena), the share of its health below which it turns
+## to its purges, seconds between volleys, how many lanes a volley vents and
+## how long each warns first, and the first wait of each once someone comes
+## in.
+var keeper_socket_every := 14.0
+var keeper_socket_max := 3
+var keeper_socket_first := 4.0
+var keeper_split := 0.5
+var keeper_purge_every := 5.5
+var keeper_purges_at_once := 2
+var keeper_purge_warn := 1.6
+var keeper_purge_first := 2.0
 ## Linked factions (DESIGN.md "Frostline", the defence grid): faction to
 ## range in metres. A bot of one that is hurt and lives calls every other
 ## bot of its faction within range to where the hit came from, the way a
@@ -549,6 +574,18 @@ func make_warlord(bot: Actor) -> void:
 ## the Raid ("near Echo Post").
 func boss_back_news(_bot: Actor, where: String) -> String:
 	return "A warlord has taken %s again" % where
+
+
+## One player's share of a fallen keeper's vault (`kind`, its "boss" meta).
+func roll_vault(_kind: String, rng: RandomNumberGenerator) -> Array[String]:
+	return roll_war_loot("cache", rng, 1.0)
+
+
+## What the world hears of a keeper: everyone in its arena when it turns to
+## its second phase (`phase` 2), the war feed when it falls (0, `bot` may be
+## gone). "" says nothing.
+func keeper_news(_bot: Actor, phase: int) -> String:
+	return "A keeper has fallen" if phase == 0 else ""
 
 
 func on_spawn(_actor: Actor) -> void:

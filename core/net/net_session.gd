@@ -85,7 +85,7 @@ signal base_visit_requested(owner_name: String, stash: Array, loadout: Dictionar
 signal portal_travel(destination: String)
 
 const DEFAULT_PORT := 24565
-const PROTOCOL := 50
+const PROTOCOL := 51
 ## Every packet is compressed, both ways. State updates are mostly repeated
 ## numbers, and a big battle sends a player hundreds of them a second. Server
 ## and client must agree, so a change here needs a new PROTOCOL.
@@ -121,6 +121,7 @@ const PROTOCOL := 50
 ## 48: a vehicle's ride state lists who sits on each passenger seat (the
 ## rover seats four).
 ## 50: a lift powered or run down (`_lift`).
+## 51: a keeper's phase (`_keeper`) and its purge lanes (`_purge`).
 ## Where an out-of-date game gets the latest build: the rolling "latest"
 ## release the Windows client workflow publishes (docs/hosting.md).
 const UPDATE_URL := "https://github.com/czinabu/projectares/releases/tag/latest"
@@ -610,6 +611,12 @@ func _start_server_raid() -> void:
 	raid.lift_changed.connect(func(id: String, left: float) -> void:
 		for peer in _joined_peers:
 			_lift.rpc_id(peer, id, left))
+	raid.keeper_changed.connect(func(kind: String, phase: int) -> void:
+		for peer in _joined_peers:
+			_keeper.rpc_id(peer, kind, phase))
+	raid.purge_changed.connect(func(index: int, state: int) -> void:
+		for peer in _joined_peers:
+			_purge.rpc_id(peer, index, state))
 	raid.army_pushed.connect(func(site: int, from: Vector3, title: String, loud: bool) -> void:
 		for peer in _joined_peers:
 			_army_push.rpc_id(peer, site, from, title, loud))
@@ -1632,6 +1639,9 @@ func _send_world(peer: int) -> void:
 	for id: String in raid.lifts:
 		if raid.lift_left(id) > 0.0:
 			_lift.rpc_id(peer, id, raid.lift_left(id))
+	for kind: String in raid.keepers:
+		if int(raid.keepers[kind]) != 1:
+			_keeper.rpc_id(peer, kind, int(raid.keepers[kind]))
 	if raid is Race:
 		_race_board.rpc_id(peer, (raid as Race).public_board())
 
@@ -3375,6 +3385,22 @@ func _ice_crack(at: Vector3, stage: int) -> void:
 func _lift(id: String, left: float) -> void:
 	if raid != null:
 		raid.set_lift(id, left)
+
+
+## A keeper's phase (`Raid.keepers`): 1 standing, 2 below its split, 0
+## fallen, for the deep beacon and the view.
+@rpc("authority", "call_remote", "reliable")
+func _keeper(kind: String, phase: int) -> void:
+	if raid != null:
+		raid.set_keeper(kind, phase)
+
+
+## One of a keeper's purge lanes warns (1), vents (2) or goes quiet (0),
+## for the view (`Raid.purge_changed`).
+@rpc("authority", "call_remote", "reliable")
+func _purge(index: int, state: int) -> void:
+	if raid != null and index >= 0 and index < raid.purges.size():
+		raid.purge_changed.emit(index, clampi(state, 0, 2))
 
 
 ## The open holes in the ice (`Raid.pack_ice_holes`).

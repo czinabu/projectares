@@ -166,7 +166,20 @@ without Caleb, and update the gap list when a PR closes a row.
   powers it for everyone for `lift_powered_for`, and a player who stands
   `lift_wait` in one stop is set down in the other; clients hear the power
   (`Raid.lift_changed`, `NetSession._lift`) and the map lights it from the
-  "lift_power" meta. Check by eye with `visual_check.tscn -- <dir> --engine-only`.
+  "lift_power" meta. Its last fight is a keeper (the Heart Warden): a
+  "spawn_boss" marker with the meta "keeper" (and "arena", "respawn"),
+  run by the authority's `Raid._tick_keeper` from `WorldDef.keeper_*`:
+  above `keeper_split` it calls its faction out of the map's "boss_socket"
+  markers (outside the armies, `_is_extra`), below it vents the "purge"
+  lanes, each warning before it hurts through `Combat.deal`. It carries
+  nothing; when it falls (`_keeper_fell`) everyone who hurt it or stood in
+  its arena gets a share from its "vault" (`WorldDef.roll_vault`), a
+  `LootContainer` only its owner may loot (`reserved`), cleared when it
+  wakes again, and markers that wait on it (a "beacon" or "warmth" with
+  its kind as meta "keeper", `Raid.waits_on_keeper`) light. Clients get
+  the phase (`Raid.keepers`, `NetSession._keeper`, the map's "keepers"
+  meta) and the lanes (`Raid.purge_changed`, `NetSession._purge`, drawn
+  by the map's `show_purge`). Check by eye with `visual_check.tscn -- <dir> --engine-only`.
 - How harsh death is belongs to the world, not to `Raid`. With
   `WorldDef.keep_gear_on_death` a dead player drops only the backpack and the
   equipped gear returns in the result's `kept`. A gentle world pays for that
