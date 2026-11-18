@@ -1623,7 +1623,14 @@ without Caleb, and update the gap list when a PR closes a row.
   on the visor's strip and scope, cleared on arrival); Standing turns
   through three pages (`Hud.STANDING_PAGES`: at stake, safe, this life).
   The pack is an icon on the Summon tab (`Hud.pack_slot`) that opens as a
-  list of what is carried with each item's worth. An opened icon's list or
+  list of what is carried with each item's worth; a click on gear in it
+  puts it on through the same summon (`PlayerController.take_picked_from_pack`,
+  `Loadout.wearable_from_pack`: weapons, helmets, frames, flight rigs and
+  ability chips, never an artifact or attachment). `Raid.swap_worn` puts
+  on a rig (`Loadout.wear_rig`, on the ground only, keeping the old rig's
+  heat, the frame's scaling put back round it) or a chip
+  (`Loadout.wear_ability`, starting on its cooldown) as it does a helmet,
+  and clients follow through `NetSession._worn_changed`. An opened icon's list or
   page takes the card's right side (`Card._draw_panel`). A click on Sign out starts or cancels it like L
   (`PlayerController.is_on_sign_out`), and its icon carries what this life
   has banked (`Actor.banked_*`, sent to the owner only, `NetSession._banked`).

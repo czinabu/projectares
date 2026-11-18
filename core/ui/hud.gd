@@ -634,15 +634,28 @@ static func pack_slot(p: Actor, picked := 0) -> Dictionary:
 		return _slot("pack", fill, "Pack empty", [], -1.0, true, false)
 	var at := clampi(picked, 0, items.size() - 1)
 	var id: String = items[at]
+	# Gear the watch can put on takes a click (`Loadout.wearable_from_pack`);
+	# its line says the slot it goes in.
 	var slot := _slot("pack", fill, "%s · worth %d" % [ItemDB.item_name(id), ItemDB.total_value([id])],
-			["wheel"], -1.0, false, false, items.size(), at)
+			["wheel", "click"] if Loadout.wearable_from_pack(id) else ["wheel"], -1.0, false, false,
+			items.size(), at)
 	slot["where"] = pack_text(p)
 	var lines: Array[String] = []
 	for item: String in items:
-		lines.append("%s  %d" % [ItemDB.item_name(item), ItemDB.total_value([item])])
+		lines.append(pack_line(item))
 	slot["panel"] = lines
 	slot["panel_at"] = at
 	return slot
+
+
+## One line of the opened pack list: the item and its worth, and for gear
+## the watch can put on, the slot it goes in.
+static func pack_line(item: String) -> String:
+	var line := "%s  %d" % [ItemDB.item_name(item), ItemDB.total_value([item])]
+	if Loadout.wearable_from_pack(item):
+		var slot := Loadout.weapon_slot(item) if Loadout.summonable(item) else Loadout.slot_of(item)
+		line += "  · %s" % Loadout.SLOT_NAMES.get(slot, slot)
+	return line
 
 
 ## The relief under the watch's tabletop map: the ground's height on a
