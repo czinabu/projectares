@@ -1307,8 +1307,10 @@ func _request_buy_upgrade(upgrade_id: String) -> void:
 	_lobby_answer(peer, result)
 
 
-## Lobby: move a room of your home base into a socket (`BasePlan`). Free,
-## and the server keeps the plan with the account.
+## Lobby: change your home base's plan (`BasePlan.change`): move a room into
+## a socket, or with "shape" or "style:<room>" pick a hub shape or a room
+## style your upgrades unlock. Free, and the server keeps the plan with the
+## account.
 @rpc("any_peer", "call_remote", "reliable")
 func _request_place_room(socket: String, room: String) -> void:
 	if not _allow("lobby"):
@@ -1316,7 +1318,7 @@ func _request_place_room(socket: String, room: String) -> void:
 	var peer := _api.get_remote_sender_id()
 	if not is_server or not _peer_account.has(peer):
 		return
-	var result: Dictionary = await stash.place_room(_peer_account[peer], socket.left(8), room.left(32))
+	var result: Dictionary = await stash.place_room(_peer_account[peer], socket.left(24), room.left(32))
 	_lobby_answer(peer, result)
 
 
@@ -2397,7 +2399,8 @@ func buy_upgrade(upgrade_id: String) -> void:
 		_request_buy_upgrade.rpc_id(1, upgrade_id)
 
 
-## Lobby: ask the server to move a room of your home base into a socket.
+## Lobby: ask the server to change your home base's plan (see
+## `_request_place_room`).
 func place_room(socket: String, room: String) -> void:
 	if _is_connected() and not account.is_empty():
 		_request_place_room.rpc_id(1, socket, room)
