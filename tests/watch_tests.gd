@@ -19,6 +19,7 @@ static func run(t: Node) -> void:
 	await _at_home(t)
 	await _rough_edges(t)
 	await _status_opens(t)
+	await _pack_equips(t)
 
 
 static func _rules(t: Node) -> void:
@@ -749,5 +750,93 @@ static func _status_opens(t: Node) -> void:
 			and pack.detail.contains("worth") and hud.wrist.card.opened == "pack",
 			"the wheel turns through what you carry, each with its worth (%s)" % pack.detail)
 	hud.queue_free()
+	controller.queue_free()
+	await t._end_raid(raid)
+
+
+static func _pack_equips(t: Node) -> void:
+	print("Watch: gear looted in the field is put on from the pack list")
+	t.check(Loadout.wearable_from_pack("wings_glide") and Loadout.wearable_from_pack("chip_pulse")
+			and Loadout.wearable_from_pack("frame_runner") and Loadout.wearable_from_pack("helm_seeker")
+			and Loadout.wearable_from_pack("rifle_carbine") and not Loadout.wearable_from_pack("artifact_cloak")
+			and not Loadout.wearable_from_pack("scrap_metal") and not Loadout.wearable_from_pack("bike_scrapper"),
+			"the pack list puts on weapons, helmets, frames, rigs and chips; never an artifact (one per outing) or loot")
+	var kit: Array[String] = ["rifle_scrap", "blade_scrap", "jetpack_mk1", "frame_bulwark", "chip_blink"]
+	var raid: Raid = await t._kit_raid(331, kit)
+	var p := raid.player
+	var walk := p.walk_speed
+	var bulwark_heat: float = ItemDB.item_stats("frame_bulwark").get("heat_mult", 1.0)
+	var rigs: Array[String] = []
+	var chips: Array[String] = []
+	p.rig_changed.connect(func(id: String) -> void: rigs.append(id))
+	p.ability_changed.connect(func(id: String) -> void: chips.append(id))
+	p.inventory.add_item("wings_glide")
+	p.inventory.add_item("chip_pulse")
+	p.inventory.add_item("scrap_metal")
+
+	var controller := PlayerController.new()
+	controller.setup(p)
+	raid.add_child(controller)
+	var asked: Array[String] = []
+	controller.summon_requested.connect(func(id: String) -> void: asked.append(id))
+	controller.wrist_raised = true
+	controller.watch_focus = Hud.Wrist.SLOTS.find("pack")
+	controller.watch_focus_moved = true
+	t.check(controller.click_watch() and controller.watch_open == "pack", "a click opens the pack list")
+	var boots_at := p.inventory.items.find("wings_glide")
+	controller.pack_pick = boots_at
+	var slot := Hud.pack_slot(p, boots_at)
+	t.check("click" in slot.hints and str(slot.panel[boots_at]).contains("Flight rig")
+			and not str(slot.panel[p.inventory.items.find("scrap_metal")]).contains("·"),
+			"a rig in the pack offers a click and says where it goes; plain loot does not (%s)" % slot.panel[boots_at])
+	p.flight.heat = 30.0
+	t.check(controller.watch_takes_fire() and controller.click_watch() and asked == ["wings_glide"]
+			and not controller.wrist_raised,
+			"a click on it asks the world to put it on, and the wrist comes down")
+	t.check(raid.summon(p, asked[0]) == "" and p.flight.item_id == "wings_glide"
+			and p.inventory.has_item("jetpack_mk1") and not p.inventory.has_item("wings_glide")
+			and "wings_glide" in p.gear_items and "jetpack_mk1" not in p.gear_items,
+			"the wings go on and the jetpack goes into the pack in their place")
+	t.check(is_equal_approx(p.flight.heat, 30.0) and p.flight.charges == p.flight.max_charges,
+			"the new rig takes over the old one's heat, so a swap is no free cool-down")
+	t.check(is_equal_approx(p.walk_speed, walk) and is_equal_approx(p.flight.glide_heat,
+			float(ItemDB.item_stats("wings_glide").glide_heat) * bulwark_heat)
+			and p.frame_id == "frame_bulwark" and is_equal_approx(p.health.armor, p.health.max_armor),
+			"the frame stays on, its scaling put back round the new rig")
+	t.check("wings_glide" in raid.state_for(p).kit and "jetpack_mk1" not in raid.state_for(p).kit,
+			"the kit others are told about follows")
+	t.check(raid.summon_wait(p) > 0.0 and raid.summon(p, "jetpack_mk1") != "",
+			"then the watch rests, like after any summon")
+	raid.state_for(p).summon_ready_at = raid.clock
+	p.airborne_time = 1.0
+	t.check(raid.summon(p, "jetpack_mk1") == "Land first" and p.flight.item_id == "wings_glide",
+			"a rig is only changed on the ground")
+	p.airborne_time = 0.0
+
+	p.ability.cooldown_left = 0.0
+	t.check(raid.summon(p, "chip_pulse") == "" and p.ability.item_id == "chip_pulse" and p.ability.effect == "pulse"
+			and p.inventory.has_item("chip_blink") and "chip_pulse" in p.gear_items and "chip_blink" not in p.gear_items,
+			"an ability chip goes in the same way, the old one into the pack")
+	t.check(p.ability.cooldown_left > 0.0 and is_equal_approx(p.ability.cooldown_left, p.ability.cooldown),
+			"a chip put in starts on its cooldown, so swapping never skips one")
+	raid.state_for(p).summon_ready_at = raid.clock
+	t.check(raid.summon(p, "scrap_metal") != "" and raid.summon(p, "chip_barrier") != "",
+			"loot cannot be put on, nor gear that is not in the pack")
+	t.check(rigs == ["wings_glide"] and chips == ["chip_pulse"],
+			"each change is announced for the network to pass on")
+	t.check("jetpack_mk1" in p.get_drop_items() and "wings_glide" in p.get_drop_items()
+			and "chip_blink" in p.get_drop_items(),
+			"worn or carried, it all still drops on death")
+
+	# What every other machine does with the news (`NetSession._worn_changed`).
+	var copy := Actor.new()
+	raid.add_child(copy)
+	Loadout.equip(copy, kit)
+	Loadout.wear_rig(copy, "wings_glide")
+	Loadout.wear_ability(copy, "chip_pulse")
+	t.check(copy.flight.item_id == "wings_glide" and copy.ability.item_id == "chip_pulse"
+			and is_equal_approx(copy.flight.glide_heat, p.flight.glide_heat) and is_equal_approx(copy.walk_speed, p.walk_speed),
+			"a copy told of the swap wears the same rig and chip, scaled the same")
+	copy.queue_free()
 	controller.queue_free()
 	await t._end_raid(raid)

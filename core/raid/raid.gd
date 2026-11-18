@@ -2584,8 +2584,9 @@ func summon(actor: Actor, item_id: String) -> String:
 	var state := state_for(actor)
 	if mode == Mode.CLIENT or state == null or state.finished or actor.is_dead:
 		return "not now"
-	# A helmet or armor frame from the pack is put on (`swap_worn`).
-	if ItemDB.has_tag(item_id, "helmet") or ItemDB.has_tag(item_id, "armor"):
+	# A helmet, armor frame, flight rig or ability chip from the pack is put
+	# on (`swap_worn`).
+	if Loadout.wearable_from_pack(item_id) and not Loadout.summonable(item_id):
 		return swap_worn(actor, item_id)
 	var why := ""
 	if not actor.inventory.has_item(item_id):
@@ -2976,21 +2977,29 @@ func pack_vehicle(actor: Actor) -> String:
 	return ""
 
 
-## Puts on helmet or armor frame `item_id` out of a player's pack (the
-## watch's summon carousel, through `summon`), and the one worn goes into the
-## pack in its place (a frame with the armor it had left). Authority only;
-## returns why not, or "" when done. What is worn is gear and drops on death,
-## and what is in the pack drops as loot. Either goes on at once and then
-## the watch rests, like after a weapon: briefly for a helmet, longer for a
-## frame, so spare plates are no instant refill.
+## Puts on helmet, armor frame, flight rig or ability chip `item_id` out of
+## a player's pack (the watch's pack list or summon carousel, through
+## `summon`), and the one worn goes into the pack in its place (a frame with
+## the armor it had left). Authority only; returns why not, or "" when done.
+## What is worn is gear and drops on death, and what is in the pack drops as
+## loot. Each goes on at once and then the watch rests, like after a weapon:
+## briefly for a helmet or chip, longer for a rig or frame, so spare plates
+## are no instant refill. A rig takes over the old one's heat and a chip
+## starts on its cooldown (`Loadout.wear_rig`, `wear_ability`), and a rig is
+## only changed on the ground.
 func swap_worn(actor: Actor, item_id: String) -> String:
 	var state := state_for(actor)
 	if mode == Mode.CLIENT or state == null or state.finished or actor.is_dead:
 		return "not now"
 	var helmet := ItemDB.has_tag(item_id, "helmet")
+	var rig := ItemDB.has_tag(item_id, "flight_rig")
+	var chip := ItemDB.has_tag(item_id, "ability")
 	var why := ""
-	if not (helmet or ItemDB.has_tag(item_id, "armor")) or not actor.inventory.has_item(item_id):
+	if not Loadout.wearable_from_pack(item_id) or Loadout.summonable(item_id) \
+			or not actor.inventory.has_item(item_id):
 		why = "That is not in your pack"
+	elif rig and (actor.airborne_time > 0.15 or actor.vehicle != null):
+		why = "Land first"
 	elif state.sign_out_left >= 0.0:
 		why = "Not while signing out"
 	elif summon_wait(actor) > 0.0:
@@ -3003,6 +3012,12 @@ func swap_worn(actor: Actor, item_id: String) -> String:
 	if helmet:
 		worn = actor.visor.item_id if actor.visor.enabled else ""
 		Loadout.wear_helmet(actor, item_id)
+	elif rig:
+		worn = actor.flight.item_id if actor.flight.enabled else ""
+		Loadout.wear_rig(actor, item_id)
+	elif chip:
+		worn = actor.ability.item_id if actor.ability.enabled else ""
+		Loadout.wear_ability(actor, item_id)
 	else:
 		worn = actor.frame_id
 		var left := Loadout.wear_frame(actor, item_id, float(actor.stowed_armor.get(item_id, -1.0)))
