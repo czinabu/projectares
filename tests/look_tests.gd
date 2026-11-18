@@ -134,6 +134,7 @@ static func run(t: Node) -> void:
 		_check_legs(t, tag, raid.player, skin, skeleton)
 		await _check_carry(t, tag, raid.player, skin)
 		_check_holster(t, tag, raid.player, skin)
+		_check_detail(t, tag, raid.player, skin)
 		var dressed := 0
 		var skins := {}
 		for bot in raid.bots:
@@ -308,6 +309,43 @@ static func run(t: Node) -> void:
 
 ## A holstered weapon is worn on the body, not hidden: a gun slung across
 ## the back (or clamped down a worn jetpack's side), a one-handed blade on the hip.
+## A body is posed less often far off and out of frame (`ActorSkin.detail_step`),
+## and posed at once when it comes into frame. Its arm is placed only with
+## its poses, never on frames the skeleton is not posed in.
+static func _check_detail(t: Node, tag: String, player: Actor, skin: Node) -> void:
+	var camera := Camera3D.new()
+	camera.fov = skin.detail_fov
+	player.add_sibling(camera)
+	camera.make_current()
+	var body: Vector3 = player.global_position + Vector3.UP
+	var mid: float = (skin.detail_ranges[1] + skin.detail_ranges[2]) * 0.5
+	camera.look_at_from_position(body + Vector3(0, 0, mid), body)
+	t.check(skin.detail_step() == skin.detail_steps[2] and skin.framed_by(camera),
+			tag + "a body framed %.0f m off is posed every %d frames" % [mid, skin.detail_steps[2]])
+	camera.look_at_from_position(body + Vector3(0, 0, mid), body + Vector3(0, 0, mid * 2.0))
+	t.check(skin.detail_step() == skin.offscreen_step and not skin.framed_by(camera),
+			tag + "out of frame, every %d" % skin.offscreen_step)
+	camera.look_at_from_position(body + Vector3(0, 0, 5), body + Vector3(0, 0, 10))
+	t.check(skin.detail_step() == skin.detail_steps[0],
+			tag + "out of frame close by, where its shadow shows, every %d" % skin.detail_steps[0])
+	camera.look_at_from_position(body + Vector3(0, 0, mid), body + Vector3(0, 0, mid * 2.0))
+	skin._detail_wait = 0
+	skin._process(1.0 / 60.0)
+	t.check(skin._detail_every == skin.offscreen_step, tag + "posed out of frame")
+	skin._detail_wait = 0
+	skin._process(1.0 / 60.0)
+	t.check(skin._detail_wait == 1, tag + "and then left a frame")
+	camera.look_at_from_position(body + Vector3(0, 0, mid), body)
+	skin._process(1.0 / 60.0)
+	t.check(skin._detail_delta == 0.0 and skin._detail_every == skin.detail_steps[2],
+			tag + "turned into frame, it is posed at once")
+	t.check(skin._detail_wait == int(skin.get_instance_id() % skin._detail_every),
+			tag + "and its next poses spread out from others brought in on the same turn")
+	t.check(not skin.arm.is_processing(), tag + "the arm is placed only with the body's poses")
+	camera.free()
+	skin._set_detail(1)
+
+
 static func _check_holster(t: Node, tag: String, player: Actor, skin: Node) -> void:
 	var gun_at := -1
 	var blade_at := -1

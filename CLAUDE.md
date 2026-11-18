@@ -261,11 +261,15 @@ without Caleb, and update the gap list when a PR closes a row.
   The player's frame rate is measured with
   `godot --path . res://tests/frame_bench.tscn -- --mode solo --bots 120`
   (or `--mode online`, which starts a server and drops in beside the
-  fighting; `--probe` shows what the draw calls go to). What keeps the
+  fighting; `--probe` shows what the draw calls go to). To compare two
+  builds, run it headless with `--fixed-fps 60 --look --seed 7`: the same
+  battle each time, with the bodies dressed and posed. What keeps the
   frame affordable, all view only: a far body is posed every few frames
   (`ActorSkin.detail_step`, scaled by the camera's zoom, which steps its
-  animation and skeleton by hand while it is far) and its weapons cast no
-  shadow; open ground is drawn in tiles (`Terrain.tile_cells`) so only the
+  animation and skeleton by hand while it is far), a body out of frame
+  every `offscreen_step` frames (posed at once when it comes into view),
+  its arm placed only with its poses (`WeaponArm.step`), and its weapons
+  cast no shadow; open ground is drawn in tiles (`Terrain.tile_cells`) so only the
   ones in view and in shadow range are drawn; small map props fade out
   with distance by their size (`Look._limit_draw_distance`); a parked
   vehicle nobody rides rests instead of moving every tick. Every ENet
