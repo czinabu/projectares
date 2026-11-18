@@ -12,7 +12,8 @@ extends RefCounted
 ##   hoverbike  the Raider: a long dart of a hull between two thruster
 ##              pontoons, each with a fin, and no wheels anywhere.
 ##   rover      a wide, low wedge on four wheels in armored pods, open-topped
-##              under one big roll hoop with a light bar on it.
+##              for four (two up front, two raised behind) under a roll cage
+##              with a light bar on it.
 ##   mech       a cockpit pod on two bird-like legs (knees forward, heels
 ##              back), cannons on its shoulders and its power unit glowing on
 ##              its back.
@@ -295,6 +296,10 @@ func _rover() -> Node3D:
 	root.add_child(_strut(Vector3(-0.55, 1.31, -0.58), Vector3(-0.25, 1.31, -0.58), Vector2(0.12, 0.02), screen))
 	root.add_child(_strut(Vector3(0.25, 1.31, -0.58), Vector3(0.45, 1.31, -0.58), Vector2(0.1, 0.02), screen))
 	root.add_child(_strut(Vector3(-0.8, 1.98, -0.5), Vector3(0.8, 1.98, -0.5), Vector2(0.06, 0.06), steel))
+	# The front passenger's grab rail over the dash, on two posts.
+	root.add_child(_strut(Vector3(0.18, 1.32, -0.32), Vector3(0.62, 1.32, -0.32), Vector2(0.04, 0.04), steel))
+	for x: float in [0.18, 0.62]:
+		root.add_child(_strut(Vector3(x, 1.3, -0.48), Vector3(x, 1.32, -0.32), Vector2(0.035, 0.035), steel))
 	var glass_pane := _strut(Vector3(0, 1.32, -0.7), Vector3(0, 1.96, -0.52), Vector2(1.54, 0.02), glass)
 	glass_pane.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	root.add_child(glass_pane)
@@ -325,16 +330,28 @@ func _rover() -> Node3D:
 	root.add_child(_strut(Vector3(-0.4, 1.12, -0.6), Vector3(-0.4, 1.27, -0.25), Vector2(0.05, 0.05), steel))  # column
 	for x: float in [-0.52, -0.28]:
 		root.add_child(_box(Vector3(0.1, 0.04, 0.16), Vector3(x, 0.86, -0.5), steel))  # pedal
-	# The back: a deck over the rear pods with the cargo and a power cell
-	# lashed on, and a whip antenna.
-	var deck := PackedVector2Array([Vector2(0.8, 0.62), Vector2(0.8, 1.16), Vector2(2.08, 1.16),
+	# The back: two raised seats for the passengers behind, between the rear
+	# pods, a bar across the roll hoop for them to hold, a second, lower
+	# hoop behind them, and a low cargo bay with a power cell at the tail.
+	root.add_child(_box(Vector3(1.4, 0.06, 1.2), Vector3(0, 0.86, 1.4), trim))  # rear floor
+	root.add_child(_strut(Vector3(-0.84, 1.42, 0.84), Vector3(0.84, 1.42, 0.84), Vector2(0.05, 0.05), steel))  # grab bar
+	for x: float in [-0.4, 0.4]:
+		_add(root, _extrude(RoundedPath.of([Vector2(1.17, 0.85), Vector2(1.17, 1.05), Vector2(1.63, 1.05),
+				Vector2(1.73, 1.5), Vector2(1.81, 1.5), Vector2(1.73, 0.85)], 0.03), 0.46, "x", trim), Vector3(x, 0, 0))
+		for side: float in [-1.0, 1.0]:
+			root.add_child(_box(Vector3(0.05, 0.12, 0.4), Vector3(x + side * 0.24, 1.08, 1.43), trim))  # bolster
+	var rear_hoop := [Vector3(-0.8, 1.15, 1.88), Vector3(-0.8, 1.62, 1.88), Vector3(-0.6, 1.82, 1.88),
+			Vector3(0.6, 1.82, 1.88), Vector3(0.8, 1.62, 1.88), Vector3(0.8, 1.15, 1.88)]
+	for i in rear_hoop.size() - 1:
+		root.add_child(_strut(rear_hoop[i], rear_hoop[i + 1], Vector2(0.08, 0.08), steel))
+	for x: float in [-0.62, 0.62]:
+		root.add_child(_strut(Vector3(x, 2.06, 0.78), Vector3(x, 1.82, 1.88), Vector2(0.06, 0.06), steel))  # cage rail
+	var bay := PackedVector2Array([Vector2(1.9, 0.62), Vector2(1.9, 1.12), Vector2(2.1, 1.12),
 			Vector2(2.22, 1.0), Vector2(2.22, 0.62)])
-	_paneled(root, deck, 1.6, 0.0, paint, [1.5], 0.016)
-	root.add_child(_box(Vector3(0.5, 0.3, 0.42), Vector3(0.4, 1.31, 1.45), steel))
-	root.add_child(_box(Vector3(0.4, 0.22, 0.36), Vector3(-0.3, 1.27, 1.75), trim))
-	root.add_child(_cyl(0.13, 0.13, 0.5, Vector3(-0.3, 1.29, 1.3), trim, Vector3(0, 0, PI / 2.0), 16))
-	for x: float in [-0.5, -0.1]:
-		root.add_child(_cyl(0.135, 0.135, 0.03, Vector3(x, 1.29, 1.3), energy, Vector3(0, 0, PI / 2.0), 16))
+	_paneled(root, bay, 1.6, 0.0, paint, [], 0.016)
+	root.add_child(_cyl(0.1, 0.1, 0.6, Vector3(0, 1.2, 2.04), trim, Vector3(0, 0, PI / 2.0), 16))
+	for x: float in [-0.22, 0.22]:
+		root.add_child(_cyl(0.105, 0.105, 0.03, Vector3(x, 1.2, 2.04), energy, Vector3(0, 0, PI / 2.0), 16))
 	root.add_child(_strut(Vector3(-0.95, 0.72, 2.25), Vector3(0.95, 0.72, 2.25), Vector2(0.18, 0.16), trim))  # bumper
 	root.add_child(_strut(Vector3(0.78, 1.16, 2.0), Vector3(0.84, 2.3, 2.12), Vector2(0.02, 0.02), steel))  # antenna
 	return root

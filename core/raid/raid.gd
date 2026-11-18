@@ -1935,8 +1935,7 @@ func ice_hole_at(at: Vector3) -> int:
 func _go_through_ice(vehicle: Node3D, opens: bool) -> void:
 	var at := _on_ground(vehicle.global_position)
 	var riders: Array[Actor] = []
-	for seat in ["rider", "passenger"]:
-		var actor: Actor = vehicle.get(seat)
+	for actor in [vehicle.get("rider")] + vehicle.get("passengers"):
 		if actor != null and is_instance_valid(actor):
 			riders.append(actor)
 	if opens:

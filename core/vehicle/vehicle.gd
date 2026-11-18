@@ -3,8 +3,9 @@ extends CharacterBody3D
 ## and the jet are all this one class, picked by item data. The `model` stat
 ## picks the body (`VehicleModel`), and the rest is tuning: `pivot_turn` lets a walker
 ## turn on the spot, `jump_speed` gives it jump-jets, the "hover" tag floats
-## it on a cushion of thrust (see "Hover" below), `passenger_seat` gives it a
-## pillion seat behind the rider, and the "aircraft" tag flies it (`_fly`).
+## it on a cushion of thrust (see "Hover" below), `passenger_seat` gives it
+## seats for passengers (a pillion behind the rider, or a rover's three,
+## `seats`), and the "aircraft" tag flies it (`_fly`).
 ##
 ## Like the Actor, a vehicle is driven only by its rider's ActorCommand, so it
 ## runs the same on a headless server. It reads the rider's command before the
@@ -152,10 +153,14 @@ var _world: WorldDef
 ## Seconds to the next puff of tyre smoke or spray (view only).
 var _puff_wait := 0.0
 
-# A pillion seat behind the rider (`passenger_seat`). Its anchors work like
-# the rider's (`seat_offset`, `seat_point`, `grip_points`, `peg_points`,
-# `rider_lean`, `exit_offset`); the passenger only sits, and may shoot.
+# Seats for passengers (`passenger_seat`). Each seat's anchors work like the
+# rider's (`seat_offset`, `seat_point`, `grip_points`, `peg_points`,
+# `rider_lean`, `exit_offset`); a passenger only sits, and may shoot. By
+# default it is one pillion seat behind the rider, from the `pillion_*`
+# vars; an item lists more in `seats`, each a dictionary with the keys
+# "offset", "point", "grips", "pegs", "lean" and "exit".
 var passenger_seat := false
+var seats: Array = []
 var pillion_offset := Vector3(0.0, 0.17, 0.76)
 var pillion_point := Vector3(0.0, 1.1, 0.76)
 var pillion_grips: Array[Vector3] = [Vector3(-0.24, 1.1, 0.56), Vector3(0.24, 1.1, 0.56)]
@@ -163,7 +168,8 @@ var pillion_pegs: Array[Vector3] = [Vector3(-0.36, 0.8, 0.5), Vector3(0.36, 0.8,
 var pillion_lean := 0.25
 var pillion_exit := Vector3(-1.4, 0.1, 0.6)
 ## Two up it is heavier: these share of top speed, acceleration, turn rate
-## and gap glide are what is left with a passenger aboard.
+## and gap glide are what is left with a passenger aboard, and again for
+## each more.
 var laden_speed := 0.92
 var laden_accel := 0.85
 var laden_turn := 0.85
@@ -204,8 +210,15 @@ const LEG_HIP := 1.75
 var _turning := 0.0
 
 var rider: Actor
-## Whoever sits on the pillion seat, or null.
-var passenger: Actor
+## Who sits on each of `seats` (null where it is empty), in seat order.
+var passengers: Array = []
+## Whoever sits on the first passenger seat taken, or null.
+var passenger: Actor:
+	get:
+		for actor in passengers:
+			if actor != null:
+				return actor
+		return null
 ## The direction the vehicle points, in radians around up.
 var heading := 0.0
 ## Signed speed along the heading. Negative while reversing.
@@ -237,8 +250,8 @@ var held := false
 ## (`apply_race_profile`), so combat tuning never moves a lap time.
 var race := {}
 var _seat: Seat
-## The pillion seat's anchors, riding on the model (`ride_anchor`).
-var _pillion: Pillion
+## Each passenger seat's anchors, riding on the model (`ride_anchor`).
+var _pillions: Array[Pillion] = []
 ## Seconds of hover bob, for the look only.
 var _bob_time := 0.0
 
@@ -254,6 +267,17 @@ func setup(p_item_id: String) -> void:
 			set(key, stats[key])
 		else:
 			push_warning("Vehicle: no property '%s' for %s" % [key, p_item_id])
+	_fill_seats()
+
+
+## The pillion seat from the `pillion_*` vars, unless the item lists its own.
+func _fill_seats() -> void:
+	if passenger_seat and seats.is_empty():
+		seats = [{"offset": pillion_offset, "point": pillion_point, "grips": pillion_grips,
+				"pegs": pillion_pegs, "lean": pillion_lean, "exit": pillion_exit}]
+	if not passenger_seat:
+		seats = []
+	passengers.resize(seats.size())
 
 
 ## Puts the race profile's tuning in place of the item's own. Called by a
@@ -334,12 +358,17 @@ func _build_body() -> void:
 
 	_model = build_visual()
 	add_child(_model)
-	if passenger_seat:
-		# On the model, so the pillion rider tips with the lean like the rider.
-		_pillion = Pillion.new()
-		_pillion.name = "Pillion"
-		_pillion.vehicle = self
-		_model.add_child(_pillion)
+	if passengers.size() != seats.size():
+		_fill_seats()
+	_pillions.clear()
+	for i in seats.size():
+		# On the model, so a passenger tips with the lean like the rider.
+		var pillion := Pillion.new()
+		pillion.name = "Pillion" if i == 0 else "Pillion%d" % (i + 1)
+		pillion.vehicle = self
+		pillion.index = i
+		_model.add_child(pillion)
+		_pillions.append(pillion)
 
 
 ## The body for `model`, built by `VehicleModel` round this vehicle's seat,
@@ -466,8 +495,8 @@ func _show_unpack() -> void:
 func get_prompt() -> String:
 	if rider == null:
 		return "[F] Ride %s" % display_name
-	if passenger_seat and passenger == null:
-		return "[F] Ride behind on %s" % display_name
+	if free_seat() >= 0:
+		return ("[F] Ride behind on %s" if seats.size() == 1 else "[F] Ride in %s") % display_name
 	return "%s (ridden)" % display_name
 
 
@@ -476,15 +505,50 @@ func is_occupied() -> bool:
 	return rider != null or passenger != null
 
 
-## Puts an actor on the seat, or with `behind` on the pillion seat. Returns
-## false if that seat is taken or they cannot ride.
-func mount(actor: Actor, behind := false) -> bool:
+## How many passengers are aboard.
+func passenger_count() -> int:
+	var count := 0
+	for actor in passengers:
+		if actor != null:
+			count += 1
+	return count
+
+
+## The empty passenger seat nearest `near` (any empty one without it), or -1.
+func free_seat(near := Vector3.INF) -> int:
+	var best := -1
+	var best_d := INF
+	for i in seats.size():
+		if passengers[i] != null:
+			continue
+		if near == Vector3.INF:
+			return i
+		var d := near.distance_to(global_position + Basis(Vector3.UP, heading) * Vector3(seats[i].offset))
+		if d < best_d:
+			best = i
+			best_d = d
+	return best
+
+
+## Which passenger seat `actor` is on, or -1.
+func seat_of(actor: Actor) -> int:
+	return passengers.find(actor) if actor != null else -1
+
+
+## Puts an actor on the seat, or with `behind` on a passenger seat: seat
+## `seat` if given, else the empty one nearest them. Returns false if that
+## seat is taken or they cannot ride.
+func mount(actor: Actor, behind := false, seat := -1) -> bool:
 	if actor == null or actor.is_dead or actor.vehicle != null or unpack_left > 0.0:
 		return false
 	if not behind and rider == null:
 		rider = actor
-	elif behind and passenger_seat and passenger == null:
-		passenger = actor
+	elif behind:
+		if seat < 0:
+			seat = free_seat(actor.global_position)
+		if seat < 0 or seat >= seats.size() or passengers[seat] != null:
+			return false
+		passengers[seat] = actor
 	else:
 		return false
 	actor.vehicle = self
@@ -493,8 +557,9 @@ func mount(actor: Actor, behind := false) -> bool:
 	if not actor.died.is_connected(_on_rider_died):
 		actor.died.connect(_on_rider_died)
 	_place_rider()
-	if actor == passenger:
-		actor.notice.emit("Riding behind on %s. F to get off" % display_name)
+	if seat_of(actor) >= 0:
+		actor.notice.emit(("Riding behind on %s. F to get off" if seats.size() == 1
+				else "Riding in %s. F to get off") % display_name)
 	else:
 		actor.notice.emit("Riding %s. F to get off" % display_name)
 	mounted.emit(actor)
@@ -509,10 +574,11 @@ func dismount() -> void:
 		_let_off(rider)
 
 
-## Drops the passenger off the pillion seat.
+## Drops every passenger off their seats.
 func dismount_passenger() -> void:
-	if passenger != null:
-		_let_off(passenger)
+	for actor in passengers.duplicate():
+		if actor != null:
+			_let_off(actor)
 
 
 ## Everyone off.
@@ -523,14 +589,15 @@ func dismount_all() -> void:
 
 ## Lets `actor` off, whichever seat they are on.
 func get_off(actor: Actor) -> void:
-	if actor != null and (actor == rider or actor == passenger):
+	if actor != null and (actor == rider or seat_of(actor) >= 0):
 		_let_off(actor)
 
 
 func _let_off(actor: Actor) -> void:
-	var behind := actor == passenger
+	var seat := seat_of(actor)
+	var behind := seat >= 0
 	if behind:
-		passenger = null
+		passengers[seat] = null
 	else:
 		rider = null
 	if not is_instance_valid(actor):
@@ -540,7 +607,8 @@ func _let_off(actor: Actor) -> void:
 		actor.died.disconnect(_on_rider_died)
 	if not actor.is_dead:
 		# The exit spot is clear of the bike's body, so they collide again at once.
-		actor.global_position = global_position + Basis(Vector3.UP, heading) * (pillion_exit if behind else exit_offset)
+		var out: Vector3 = seats[seat].exit if behind else exit_offset
+		actor.global_position = global_position + Basis(Vector3.UP, heading) * out
 		actor.velocity = velocity
 	remove_collision_exception_with(actor)
 	actor.remove_collision_exception_with(self)
@@ -548,23 +616,24 @@ func _let_off(actor: Actor) -> void:
 
 
 func _on_rider_died(actor: Actor, _info: DamageInfo) -> void:
-	if actor == passenger:
-		dismount_passenger()
+	if seat_of(actor) >= 0:
+		_let_off(actor)
 	else:
 		dismount()
 
 
 ## What a seated actor's pose is fitted to: the vehicle itself for the rider,
-## the pillion seat's anchors (on the model) for a passenger.
+## their seat's anchors (on the model) for a passenger.
 func ride_anchor(actor: Actor) -> Node3D:
-	if actor != null and actor == passenger and _pillion != null:
-		return _pillion
+	var seat := seat_of(actor)
+	if seat >= 0 and seat < _pillions.size():
+		return _pillions[seat]
 	return self
 
 
-## Share of a stat left with a passenger aboard (1 when ridden alone).
+## Share of a stat left with the passengers aboard (1 when ridden alone).
 func _laden(share: float) -> float:
-	return share if passenger != null else 1.0
+	return pow(share, passenger_count())
 
 
 func _physics_process(delta: float) -> void:
@@ -577,11 +646,17 @@ func _physics_process(delta: float) -> void:
 	_jump_wait = maxf(0.0, _jump_wait - delta)
 	if rider != null and (not is_instance_valid(rider) or rider.is_dead):
 		dismount()
-	if passenger != null and (not is_instance_valid(passenger) or passenger.is_dead):
-		dismount_passenger()
-	if passenger != null and passenger.cmd.interact_pressed and (Combat.authoritative or local_only):
-		passenger.cmd.interact_pressed = false
-		dismount_passenger()
+	for i in passengers.size():
+		var aboard = passengers[i]
+		if aboard == null:
+			continue
+		if not is_instance_valid(aboard):
+			passengers[i] = null
+		elif aboard.is_dead:
+			_let_off(aboard)
+		elif aboard.cmd.interact_pressed and (Combat.authoritative or local_only):
+			aboard.cmd.interact_pressed = false
+			_let_off(aboard)
 	if rider != null:
 		var cmd := rider.cmd
 		if cmd.interact_pressed and (Combat.authoritative or local_only):
@@ -632,15 +707,16 @@ func _physics_process(delta: float) -> void:
 	var rider_layer := rider.collision_layer if carried else 0
 	if carried:
 		rider.collision_layer = 0
-	var pillion := passenger != null and is_instance_valid(passenger)
-	var pillion_layer := passenger.collision_layer if pillion else 0
-	if pillion:
-		passenger.collision_layer = 0
+	var aboard_layers := {}
+	for aboard in passengers:
+		if aboard != null and is_instance_valid(aboard):
+			aboard_layers[aboard] = aboard.collision_layer
+			aboard.collision_layer = 0
 	move_and_slide()
 	if carried:
 		rider.collision_layer = rider_layer
-	if pillion:
-		passenger.collision_layer = pillion_layer
+	for aboard: Actor in aboard_layers:
+		aboard.collision_layer = aboard_layers[aboard]
 
 	# Where it is going: along the heading, or for a hover trailing it by `slip`.
 	var forward := Basis(Vector3.UP, heading + slip) * Vector3.FORWARD
@@ -859,9 +935,11 @@ func _place_rider() -> void:
 	if rider != null and is_instance_valid(rider):
 		rider.global_position = global_position + Basis(Vector3.UP, heading) * seat_offset
 		rider.velocity = velocity
-	if passenger != null and is_instance_valid(passenger):
-		passenger.global_position = global_position + Basis(Vector3.UP, heading) * pillion_offset
-		passenger.velocity = velocity
+	for i in passengers.size():
+		var aboard = passengers[i]
+		if aboard != null and is_instance_valid(aboard):
+			aboard.global_position = global_position + Basis(Vector3.UP, heading) * Vector3(seats[i].offset)
+			aboard.velocity = velocity
 
 
 func _update_visual(steer: float, delta: float) -> void:
@@ -888,21 +966,29 @@ func _update_visual(steer: float, delta: float) -> void:
 
 ## The interact target for a vehicle. It rides along on the vehicle and only
 ## exists on the interactables layer, so it never blocks anything.
-## The pillion seat's anchors, for a passenger's pose (`ride_anchor`). It
+## A passenger seat's anchors, for a passenger's pose (`ride_anchor`). It
 ## rides on the model, so it tips with the lean; it has the same anchor
 ## names as a vehicle, so the riding pose reads either.
 class Pillion extends Node3D:
 	var vehicle
+	## Which of the vehicle's `seats` this is.
+	var index := 0
 	var seat_offset: Vector3:
-		get: return vehicle.pillion_offset
+		get: return vehicle.seats[index].offset
 	var seat_point: Vector3:
-		get: return vehicle.pillion_point
+		get: return vehicle.seats[index].point
 	var grip_points: Array[Vector3]:
-		get: return vehicle.pillion_grips
+		get:
+			var out: Array[Vector3] = []
+			out.assign(vehicle.seats[index].grips)
+			return out
 	var peg_points: Array[Vector3]:
-		get: return vehicle.pillion_pegs
+		get:
+			var out: Array[Vector3] = []
+			out.assign(vehicle.seats[index].pegs)
+			return out
 	var rider_lean: float:
-		get: return vehicle.pillion_lean
+		get: return vehicle.seats[index].lean
 
 
 class Seat extends Interactable:
