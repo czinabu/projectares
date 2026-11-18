@@ -75,6 +75,16 @@ without Caleb, and update the gap list when a PR closes a row.
   never from a cloaked body), the shivering hunch (`Locomotion._shiver_pose`,
   the neck taking the tremor back so the eyes stay steady) and frost on the
   visor glass (`VisorHud._draw_frost`, glass only, the middle kept clear).
+- Warm beacons (DESIGN.md "Frostline"): a world with
+  `WorldDef.sign_out_at_beacons` lets `begin_sign_out` start only inside a
+  "beacon" marker's radius (`Raid.beacon_at`; the portal home is a sign-out,
+  so it follows), and the count runs at `Raid._beacon_rate`: nothing while
+  its player is out of the ring, faster for each other player powering the
+  same beacon (`beacon_join_bonus`, `beacon_join_cap`), so a solo player can
+  always get out. It is still the one sign-out, so a fight cancels it and a
+  dropped connection counts down where the body stands. Authority only,
+  respecting `Raid.zone_rules`; the owner gets the pace with the countdown
+  (`NetSession._sign_out`'s rate).
 - How harsh death is belongs to the world, not to `Raid`. With
   `WorldDef.keep_gear_on_death` a dead player drops only the backpack and the
   equipped gear returns in the result's `kept`. A gentle world pays for that

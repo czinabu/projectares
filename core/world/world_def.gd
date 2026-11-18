@@ -63,6 +63,15 @@ extends RefCounted
 ## (`engine_warmth`). Body heat gone, the cold hurts by `cold_damage` a
 ## second through `Combat.deal`.
 ##
+## Warm beacons (DESIGN.md "Frostline"): a world with `sign_out_at_beacons`
+## lets players sign out only at a beacon, and its map adds:
+##   - Marker3D nodes in group "beacon". Metas "name" and "radius" (metres).
+##     A sign-out started inside one powers it up for `beacon_sign_out_time`;
+##     the countdown only runs while the player stays inside, and runs
+##     faster for each other player powering the same beacon
+##     (`beacon_join_bonus`, up to `beacon_join_cap` times as fast). It is
+##     still `Raid.begin_sign_out`, so a fight cancels it as anywhere.
+##
 ## The Raid marks each spawned bot with the tier it arrived in (meta "zone")
 ## before `equip_bot`, so a world can make bots tougher further in.
 ##
@@ -103,6 +112,13 @@ var engine_warmth := 6.0
 var engine_warmth_radius := 4.0
 ## Seconds a sign-out takes on the ground. Taking or dealing damage cancels it.
 var sign_out_time := 15.0
+## Warm beacons: whether a sign-out must start at a "beacon" marker (see the
+## map contract above), how long one takes to power up, and how much each
+## other player at the same beacon speeds it. Off by default.
+var sign_out_at_beacons := false
+var beacon_sign_out_time := 20.0
+var beacon_join_bonus := 0.5
+var beacon_join_cap := 2.0
 ## Seconds a sign-out takes while airborne. Progress already earned is kept
 ## when you land or lift off, so the seconds left are whatever the rate you
 ## are on still needs (DESIGN.md section 7). The exact air time is this.

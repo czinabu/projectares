@@ -604,9 +604,11 @@ again. You see your breath, and a chilled body shivers. It is where the
 parts for better gear come from: every Mk2 craft needs a Cryo Core and every
 Mk3 Glacial Alloy and an Engine Coil (the coils only on the Engine's back),
 and its own blueprints make new options: the Thermal Frame, which keeps out
-some of the cold, and the Glacier Grip. The rest of its redesign
-(whiteouts, tracks and warm beacons) is planned in DESIGN.md section 2,
-"Frostline".
+some of the cold, and the Glacier Grip. You leave the valley only at one
+of its four warm beacons: start the sign-out inside a beacon's ring of
+light and stay there while it powers up (20 seconds, quicker with others
+powering it beside you). The rest of its redesign (whiteouts and tracks)
+is planned in DESIGN.md section 2, "Frostline".
 
 ## Run the tests
 

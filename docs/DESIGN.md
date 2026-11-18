@@ -221,7 +221,7 @@ worlds and a casual or solo one has a steady home.
   existing gear (built, step 3, see below). Later the inside of the Engine is
   its deep-loot dungeon and the home of the missing artifacts. Expedition
   contracts (planned).
-- **Getting out (planned).** Sign-out only at warm beacons, held while they
+- **Getting out (built, step 4).** Sign-out only at warm beacons, held while they
   power up (still `begin_sign_out`). Depots stay for banking.
 
 **Order of work**, one PR each: (1) the valley map, (2) the cold, (3) the
@@ -269,6 +269,23 @@ thermal, and the Glacier Grip, much steadier on the move and slower to
 aim. The rims and the relay also pay a trickle of upgrade data, so a
 player who stays in Frostline reaches Mk2 slowly; there is no hard cap on
 it yet. Numbers are placeholders.
+
+Warm beacons (step 4): the only way out of the valley. Four masts stand on
+the floor (the Mouth, Narrows, Lakeshore and Glacier beacons, one in every
+zone), each a "beacon" marker with a name and a 6 m radius, a heat lamp and
+a ring of light on the snow round it, and warm like a vent. With
+`WorldDef.sign_out_at_beacons` a sign-out (L, the watch, or the portal
+home, which opens one) is refused away from a beacon. At one it takes
+`beacon_sign_out_time` (20 s) and counts only while you stand in the ring:
+step out and it waits, step back and it carries on, so it is never lost to
+a short dash for cover. Every other player powering the same beacon adds
+`beacon_join_bonus` (half again) to the pace, up to `beacon_join_cap`
+(twice), so company makes it quicker but one player can do it alone. A
+fight still cancels it, and a body left by a dropped connection counts
+down where it stands as anywhere. Only the authority decides it
+(`Raid._beacon_rate`); the owner is sent the pace with the countdown
+(`NetSession._sign_out`), so the client's numbers keep step. The watch's
+zone line names the beacon you stand at. Numbers are placeholders.
 
 ### PvP world
 
@@ -1666,6 +1683,14 @@ shared by solo and online play like the money rules.
   warlord (1 in 2) or a supply pod (1 in 4), each with upgrade data
   (2 and 1). Players carry what they found, so killing one pays it too.
   Contracts are the next source.
+- Decided (Caleb's call): the war's blueprints stay mainly in Ashfront, but
+  Frostline gets a slow route to them too, so a player who never fights
+  other players can still reach Mk2 alone: a rare drop at its hardest
+  spots (the relay on the Engine, the defence grid's boss) and from long
+  expedition contracts, rarer than in Ashfront. Mk3 stays the war's: a rig's
+  one blueprint makes both Mks, so Mk3 is held back by its 8 upgrade data,
+  which comes mostly from Ashfront, and Frostline players can buy the rest
+  at the Exchange. Planned with step 7 of Frostline.
 
 | Recipe | Blueprint | Upgrade data | Parts | Scrip |
 | --- | --- | --- | --- | --- |

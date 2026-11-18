@@ -57,6 +57,7 @@ const TravelOnlineTests := preload("res://tests/travel_online_tests.gd")
 const HostRecoveryTests := preload("res://tests/host_recovery_tests.gd")
 const RiskZoneTests := preload("res://tests/risk_zone_tests.gd")
 const ColdTests := preload("res://tests/cold_tests.gd")
+const BeaconTests := preload("res://tests/beacon_tests.gd")
 const RaiderTests := preload("res://tests/raider_tests.gd")
 const HeavyUnitTests := preload("res://tests/heavy_unit_tests.gd")
 const PlaytestFixTests := preload("res://tests/playtest_fix_tests.gd")
@@ -557,6 +558,7 @@ func _test_risk_zones() -> void:
 
 func _test_cold() -> void:
 	await ColdTests.run(self)
+	await BeaconTests.run(self)
 
 
 func _test_raiders() -> void:
