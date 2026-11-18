@@ -59,6 +59,7 @@ const HostRecoveryTests := preload("res://tests/host_recovery_tests.gd")
 const RiskZoneTests := preload("res://tests/risk_zone_tests.gd")
 const ColdTests := preload("res://tests/cold_tests.gd")
 const BeaconTests := preload("res://tests/beacon_tests.gd")
+const TrackTests := preload("res://tests/track_tests.gd")
 const RaiderTests := preload("res://tests/raider_tests.gd")
 const HeavyUnitTests := preload("res://tests/heavy_unit_tests.gd")
 const PlaytestFixTests := preload("res://tests/playtest_fix_tests.gd")
@@ -353,6 +354,7 @@ func _run() -> void:
 	await _test_artifacts()
 	await _test_risk_zones()
 	await _test_cold()
+	await _test_tracks()
 	await _test_raiders()
 	await _test_heavy_units()
 	await _test_playtest_fixes()
@@ -560,6 +562,10 @@ func _test_artifacts() -> void:
 
 func _test_risk_zones() -> void:
 	await RiskZoneTests.run(self)
+
+
+func _test_tracks() -> void:
+	await TrackTests.run(self)
 
 
 func _test_cold() -> void:
@@ -3985,6 +3991,10 @@ func _test_strongpoints() -> void:
 			return me != null and (me.body_heat < me.max_body_heat or me.warming)
 		await _wait_until(heard, 240)
 		check(heard.call(), "in the cold, the server tells a client their body heat")
+		var printed := func() -> bool:
+			return gale.raid.tracks.count() > 0
+		await _wait_until(printed, 240)
+		check(printed.call(), "and sends it the footprints near it in the snow")
 		await _leave(gale)
 	OS.kill(pid)
 	await frames(10)

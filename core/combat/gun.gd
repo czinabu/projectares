@@ -616,11 +616,24 @@ func _fire() -> void:
 	fired.emit(from, to)
 	if projectile == "":
 		Sfx.pass_by(from, to, actor)
+	var carry := shot_carry()
 	if _noise_left <= 0.0:
 		_noise_left = noise_every
-		Combat.noise(actor, from, quiet_noise if quiet else shot_noise)
+		Combat.noise(actor, from, noise_reach())
 	Sfx.play(shot_sound, null if actor.is_player else from, -14.0 if quiet else 0.0,
-			SUPPRESSED_REACH if quiet else SHOT_REACH)
+			(SUPPRESSED_REACH if quiet else SHOT_REACH) * carry, Sfx.UNIT_SIZE * carry)
+
+
+## How much further than usual a shot carries where this gun is: some worlds'
+## air carries it further (`WorldDef.shot_carry`, Frostline's still cold).
+func shot_carry() -> float:
+	var world := Worlds.of(actor) if actor != null else null
+	return world.shot_carry if world != null else 1.0
+
+
+## How far off bots hear this gun's shot (`Combat.noise`).
+func noise_reach() -> float:
+	return (quiet_noise if quiet else shot_noise) * shot_carry()
 
 
 ## Where a shot's flash and tracer start: the "Muzzle" marker the art layer

@@ -122,6 +122,10 @@ func _init() -> void:
 	# Getting out: only at a warm beacon, which a group powers up faster
 	# (DESIGN.md "Frostline", "Getting out").
 	sign_out_at_beacons = true
+	# The snow keeps a trail: footprints and wheel tracks, for a few minutes.
+	tracks = true
+	# Still, cold air: a shot carries twice as far (DESIGN.md "Frostline").
+	shot_carry = 2.0
 
 
 func register_items() -> void:

@@ -212,8 +212,9 @@ worlds and a casual or solo one has a steady home.
   when empty (built, step 2). Planned: whiteouts that cut sight to about 30 m and wipe
   tracks, and feel like a real blizzard (Caleb's call): wind you see and
   hear, snow driven sideways in gusts, drifts streaming off the rims, bodies
-  leaning into it and the wind pushing flight rigs off course; footprints and vehicle tracks the server keeps and sends only
-  nearby; gunshots that carry twice as far; thin ice that breaks under
+  leaning into it and the wind pushing flight rigs off course. Built
+  (step 6): footprints and vehicle tracks the server keeps and sends only
+  nearby, and gunshots that carry twice as far. Planned: thin ice that breaks under
   heavy vehicles; the Wardens as the Engine's defence grid, still running.
 - **What you bring home.** New parts (Cryo Core, Glacial Alloy,
   Engine Coil) that Mk2 and Mk3 recipes need, and Frostline blueprints for
@@ -286,6 +287,24 @@ down where it stands as anywhere. Only the authority decides it
 (`Raid._beacon_rate`); the owner is sent the pace with the countdown
 (`NetSession._sign_out`), so the client's numbers keep step. The watch's
 zone line names the beacon you stand at. Numbers are placeholders.
+
+Tracks and gunshots (step 6): with `WorldDef.tracks` every body on foot
+leaves footprints, left and right in turn about every 0.8 m, and every
+ground vehicle wheel tracks (a hoverbike and an aircraft leave none). Only
+open ground takes a print: a body more than half a metre off the map's
+`ground_height` (a roof, a hut floor, a ledge) leaves nothing. The
+authority lays them down (`Raid._tick_tracks`, ten times a second) in a
+`Tracks` store kept in 24 m cells, each capped so a trampled spot never
+grows, and lets them go after `track_lifetime` (four minutes). Online a
+player is sent only the new marks within 60 m of them, a few times a
+second, by the last mark id sent for each cell (`NetSession._send_tracks`),
+so tracks are a trail laid behind people, never a live position, and far
+ones never leave the server. The snow shows them (`TrackView`, view only):
+pressed-in prints and pairs of wheel lines that fade as they age, drawn
+within 55 m. Whiteouts (step 5) will wipe them. A shot carries
+`WorldDef.shot_carry` (twice) as far: bots hear it twice as far off
+(`Gun.noise_reach`) and people hear it twice as far too. Numbers are
+placeholders.
 
 ### PvP world
 

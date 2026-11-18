@@ -119,6 +119,16 @@ var sign_out_at_beacons := false
 var beacon_sign_out_time := 20.0
 var beacon_join_bonus := 0.5
 var beacon_join_cap := 2.0
+## Tracks (DESIGN.md "Frostline"): with `tracks` on, people on foot leave
+## footprints and ground vehicles wheel tracks in the open ground (the map's
+## `ground_height`, never a roof or a floor), kept by the authority for
+## `track_lifetime` seconds and sent to each player only near them
+## (`Tracks`, `Raid.tracks`). Off by default.
+var tracks := false
+var track_lifetime := 240.0
+## How far a gunshot carries, as a share of the usual: bots hear it that much
+## further off (`Combat.noise`) and so do people (`Gun.SHOT_REACH`).
+var shot_carry := 1.0
 ## Seconds a sign-out takes while airborne. Progress already earned is kept
 ## when you land or lift off, so the seconds left are whatever the rate you
 ## are on still needs (DESIGN.md section 7). The exact air time is this.
