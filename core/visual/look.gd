@@ -952,6 +952,8 @@ const WEATHER_KITS := {
 		"wall_tint": Color(0.66, 0.72, 0.8), "wall_lit": Color(0.95, 0.97, 1.0),
 		"streak": Color(1.0, 1.0, 1.0, 0.8), "streak_size": Vector2(0.04, 0.4),
 		"billow": Color(0.92, 0.94, 0.98, 0.28), "fall": -0.22, "wall_height": 70.0,
+		# Spindrift off the edges a map offers (`WeatherView`).
+		"drift": true,
 	},
 }
 

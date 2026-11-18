@@ -239,6 +239,21 @@ var shiver_hunch := 0.09
 var shiver_shake := 0.016
 var shiver_rate := 13.0
 var _shiver_time := 0.0
+## Leaning into a storm's wind (`Raid.weather`, DESIGN.md "Frostline"
+## whiteouts): on the ground in a storm the chest leans upwind by up to
+## `wind_lean` radians, by how strong the storm is where the body stands,
+## and is buffeted by `wind_buffet` as the gusts come and go
+## (`WeatherView.gust_now`). The neck takes the buffet back, so the eyes
+## stay steady. View only, the same body in every view: everyone works it
+## out from the same storm cell and where the body stands.
+var windward := 0.0
+var wind_lean := 0.24
+var wind_buffet := 0.05
+var wind_ease := 0.6
+var _wind_dir := Vector3.FORWARD
+var _wind_gust := 0.0
+var _wind_time := 0.0
+var _raid: Raid
 
 
 ## `def` is the skin's entry in `Look.SKINS`, `anims` maps keys to the clips
@@ -336,6 +351,10 @@ func setup(def: Dictionary, player: AnimationPlayer, anims: Dictionary) -> void:
 	cold.name = "Shiver"
 	cold.run = _shiver_pose
 	skeleton.add_child(cold)
+	var windy := WeaponArm.Hook.new()
+	windy.name = "WindLean"
+	windy.run = _wind_pose
+	skeleton.add_child(windy)
 	var land := WeaponArm.Hook.new()
 	land.name = "SquatPose"
 	land.run = _squat_pose
@@ -536,6 +555,7 @@ func update(delta: float) -> void:
 			stand_legs_rate * delta)
 	shiver = move_toward(shiver, 1.0 if actor.shivering and not actor.is_dead else 0.0, shiver_ease * delta)
 	_shiver_time += delta
+	_update_wind(delta)
 	var shared := ActionPose.of(actor)
 	shared.advance(delta)
 	phone_weight = shared.phone
@@ -647,6 +667,59 @@ func _shiver_pose() -> void:
 	if _neck >= 0 and _is_under(_neck, chest):
 		var neck := skeleton.get_bone_global_pose(_neck)
 		neck.basis = Basis(forward, -sway) * Basis(right, -shake) * neck.basis
+		skeleton.set_bone_global_pose(_neck, neck)
+
+
+## How far into a storm's wind the body stands, and which way it blows.
+func _update_wind(delta: float) -> void:
+	_wind_time += delta
+	if _raid == null or not is_instance_valid(_raid):
+		_raid = Raid.of(actor)
+	var into := 0.0
+	if _raid != null and _raid.weather != null and _raid.weather.kind != "" and not actor.is_dead \
+			and actor.vehicle == null and actor.airborne_time <= 0.0:
+		var weather := _raid.weather
+		into = weather.strength_at(actor.global_position)
+		if into > 0.0:
+			var wind := Vector3(weather.velocity.x, 0.0, weather.velocity.z)
+			if wind.length_squared() > 0.0001:
+				_wind_dir = wind.normalized()
+			_wind_gust = WeatherView.gust_now(weather, actor.global_position, _wind_time)
+	windward = move_toward(windward, into, wind_ease * delta)
+	if windward <= 0.0:
+		_wind_gust = 0.0
+
+
+func _wind_pose() -> void:
+	if windward <= 0.001 or _spine.is_empty():
+		return
+	var to_skeleton := skeleton.global_basis.orthonormalized().inverse()
+	var upwind := (to_skeleton * -_wind_dir).normalized()
+	var up := (to_skeleton * Vector3.UP).normalized()
+	var axis := up.cross(upwind)
+	if axis.length_squared() < 0.0001:
+		return
+	axis = axis.normalized()
+	var buffet := wind_buffet * windward * _wind_gust * sin(_wind_time * 7.0) \
+			+ wind_buffet * 0.5 * windward * sin(_wind_time * 2.1 + 0.6)
+	var lean := wind_lean * windward * (0.75 + 0.25 * _wind_gust)
+	# Bent from the bottom of the spine, more at each bone up, so the whole
+	# upper body leans in rather than the chest alone.
+	var chest := _spine[_spine.size() - 1]
+	var shares := 0.0
+	for i in _spine.size():
+		shares += float(i + 1)
+	for i in _spine.size():
+		var bone: int = _spine[i]
+		var pose := skeleton.get_bone_global_pose(bone)
+		var share := float(i + 1) / shares
+		pose.basis = Basis(axis, (lean + buffet) * share) * pose.basis
+		skeleton.set_bone_global_pose(bone, pose)
+	if _neck >= 0 and _is_under(_neck, chest):
+		# The head ducks into the wind a little, but keeps its line: the
+		# neck takes back the buffet and some of the lean.
+		var neck := skeleton.get_bone_global_pose(_neck)
+		neck.basis = Basis(axis, -buffet - lean * 0.45) * neck.basis
 		skeleton.set_bone_global_pose(_neck, neck)
 
 

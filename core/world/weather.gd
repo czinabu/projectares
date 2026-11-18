@@ -160,6 +160,12 @@ func gust_at(at: Vector3) -> Vector3:
 	return (wind * surge + across * 0.5 * veer + Vector3.UP * 0.35 * lift) * _world.weather_gust * s
 
 
+## The world's strongest gust, m/s² (`WorldDef.weather_gust`), 0 with no
+## weather.
+func gust_most() -> float:
+	return _world.weather_gust if _world != null else 0.0
+
+
 ## What clients are sent: [kind, centre x, centre z, velocity x, velocity z,
 ## radius, strength].
 func pack() -> Array:

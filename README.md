@@ -628,8 +628,10 @@ carries one of the war's blueprints, as the relay on the Engine's back
 rarely does. The contract board has Frostline jobs of its own, one daily
 and one weekly, all doable alone (search the relay, break Warden patrols,
 bring down the Sentinel), that count only from a life there; the weeklies
-pay a blueprint. Whiteouts are planned in DESIGN.md
-section 2, "Frostline".
+pay a blueprint. Whiteouts blow through now and then, mostly down the
+valley: sight closes in, the cold bites twice as hard, tracks are wiped and
+gunshots die in the wind. Snow is driven past in gusts, spindrift streams
+off the rims, everyone leans into it, and flying is a fight.
 
 ## Run the tests
 

@@ -67,6 +67,7 @@ const TrackTests := preload("res://tests/track_tests.gd")
 const WeatherTests := preload("res://tests/weather_tests.gd")
 const IceTests := preload("res://tests/ice_tests.gd")
 const GridTests := preload("res://tests/grid_tests.gd")
+const WhiteoutTests := preload("res://tests/whiteout_tests.gd")
 const RaiderTests := preload("res://tests/raider_tests.gd")
 const HeavyUnitTests := preload("res://tests/heavy_unit_tests.gd")
 const PlaytestFixTests := preload("res://tests/playtest_fix_tests.gd")
@@ -369,6 +370,7 @@ func _run() -> void:
 	await WeatherTests.run(self)
 	await _test_ice()
 	await _test_grid()
+	await _test_whiteout()
 	await _test_raiders()
 	await _test_heavy_units()
 	await _test_playtest_fixes()
@@ -588,6 +590,10 @@ func _test_ice() -> void:
 
 func _test_grid() -> void:
 	await GridTests.run(self)
+
+
+func _test_whiteout() -> void:
+	await WhiteoutTests.run(self)
 
 
 func _test_cold() -> void:

@@ -151,7 +151,12 @@ without Caleb, and update the gap list when a PR closes a row.
   (`Visor`), how far shots carry (`Gun.shot_carry`), gusts on a flying rig
   (`Actor._take_gusts`, the rig's `gust_mult`, a function of position only
   so it predicts), the cold (`cold_at`), tracks (`weather_wipes_tracks`)
-  and army pushes (`Raid._army_target`, `weather_pushes`). Thermal already
+  and army pushes (`Raid._army_target`, `weather_pushes`). Frostline's
+  whiteouts (`weather_kind` "snow") add the blizzard: the driven air
+  comes in gusts (`WeatherView.gust_now`, view only), a map that offers
+  `weather_ridges` gets spindrift off those edges where the storm is
+  (`WeatherView._place_drifts`, a kit with "drift"), and bodies on the
+  ground lean into the wind (`Locomotion._wind_pose`). Thermal already
   ignores fog, so it sees through a storm. What it looks like is
   `WeatherView` (view only, the same in both views): the wall, the driven
   air round the camera and the wind, and the map's "weather_here" meta,
