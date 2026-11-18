@@ -457,14 +457,8 @@ func atmosphere(parent: Node3D, p := {}, war := {}, storm := {}) -> void:
 	if not enabled:
 		return
 
-	var sky_mat := ShaderMaterial.new()
-	sky_mat.shader = SKY_SHADER
-	sky_mat.set_shader_parameter("panorama", load("res://assets/sky/" + p.get("sky", "kloppenheim_06_puresky_2k.hdr")))
-	sky_mat.set_shader_parameter("rotation", p.get("sky_rotation", 0.0))
-	sky_mat.set_shader_parameter("haze_height", p.get("haze_height", 0.22))
-	var sky := Sky.new()
-	sky.sky_material = sky_mat
-	sky.radiance_size = Sky.RADIANCE_SIZE_128
+	var sky := sky_for(p)
+	var sky_mat := sky.sky_material as ShaderMaterial
 
 	var env := Environment.new()
 	env.background_mode = Environment.BG_SKY
@@ -513,6 +507,20 @@ func atmosphere(parent: Node3D, p := {}, war := {}, storm := {}) -> void:
 	if not war.is_empty():
 		mood.column = _war_column()
 		mood.add_child(mood.column)
+
+
+## The sky a map's mood names (`p`'s "sky", "sky_rotation", "haze_height"):
+## the panorama drawn by `SKY_SHADER`.
+func sky_for(p := {}) -> Sky:
+	var sky_mat := ShaderMaterial.new()
+	sky_mat.shader = SKY_SHADER
+	sky_mat.set_shader_parameter("panorama", load("res://assets/sky/" + p.get("sky", "kloppenheim_06_puresky_2k.hdr")))
+	sky_mat.set_shader_parameter("rotation", p.get("sky_rotation", 0.0))
+	sky_mat.set_shader_parameter("haze_height", p.get("haze_height", 0.22))
+	var sky := Sky.new()
+	sky.sky_material = sky_mat
+	sky.radiance_size = Sky.RADIANCE_SIZE_128
+	return sky
 
 
 ## The edge ink over an outdoor map (`assets/shaders/edge_ink.gdshader`): a
@@ -1068,13 +1076,21 @@ func prop(file: String, size: float, wear := 0.6) -> Node3D:
 
 
 ## Lighting for a closed room: a flat ambient fill and a dark backdrop, so an
-## interior is readable without a sun. Does nothing on a headless server.
-func interior(parent: Node3D, ambient: Color, energy: float) -> void:
+## interior is readable without a sun. With `open_sky` the backdrop is the
+## sky instead, for an interior with a yard open overhead (the base's flight
+## course; a dark backdrop there read as a void), seen only where there is
+## no roof: it lights nothing and nothing reflects it, so the rooms look
+## the same. Does nothing on a headless server.
+func interior(parent: Node3D, ambient: Color, energy: float, open_sky := false) -> void:
 	if not enabled:
 		return
 	var env := Environment.new()
 	env.background_mode = Environment.BG_COLOR
 	env.background_color = Color(0.02, 0.02, 0.025)
+	if open_sky:
+		env.background_mode = Environment.BG_SKY
+		env.sky = sky_for()
+		env.reflected_light_source = Environment.REFLECTION_SOURCE_DISABLED
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	env.ambient_light_color = ambient
 	env.ambient_light_energy = energy

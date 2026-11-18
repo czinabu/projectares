@@ -1748,13 +1748,27 @@ func _run_cluster(args: PackedStringArray) -> void:
 
 ## Starts (again) one world's program of a cluster.
 func _cluster_start(program: Dictionary) -> void:
-	var args := PackedStringArray(["--headless", "--path", ProjectSettings.globalize_path("res://"),
-			"--", "--server", "--only", str(program.id), "--port", str(program.port),
-			"--server-id", str(program.id)])
+	var args := server_process_args(PackedStringArray(["--server", "--only", str(program.id),
+			"--port", str(program.port), "--server-id", str(program.id)]))
 	args.append_array(program.args)
 	program["pid"] = OS.create_process(OS.get_executable_path(), args)
 	program["started"] = Time.get_ticks_msec()
 	print("Cluster: %s on port %d (process %d)" % [program.id, program.port, program.pid])
+
+
+## The command line that starts this program again as a headless server
+## with the game's own arguments `user_args`. From the editor or a checkout
+## it names the project with `--path`; an exported game never does, because
+## release templates refuse `--path` and stop at once (the installed game's
+## "server stopped before it was ready"), and it finds its pack beside the
+## exe without one.
+static func server_process_args(user_args: PackedStringArray, exported := OS.has_feature("template")) -> PackedStringArray:
+	var args := PackedStringArray(["--headless"])
+	if not exported:
+		args.append_array(["--path", ProjectSettings.globalize_path("res://")])
+	args.append("--")
+	args.append_array(user_args)
+	return args
 
 
 ## Starts a server on this machine as a second process, then joins it.
@@ -1780,10 +1794,9 @@ func _start_local_server(world_id: String) -> void:
 	if port < 0:
 		hub.set_online_status("Could not start a server: its ports are in use on this computer.")
 		return
-	var args := PackedStringArray(["--headless", "--path", ProjectSettings.globalize_path("res://"),
-			"--", "--server", "--port", str(port),
+	var args := server_process_args(PackedStringArray(["--server", "--port", str(port),
 			# The server stops when this game does, however this game ends.
-			"--heartbeat", ProjectSettings.globalize_path(HOST_HEARTBEAT)])
+			"--heartbeat", ProjectSettings.globalize_path(HOST_HEARTBEAT)]))
 	_beat()
 	args.append_array(host_args)
 	if world_id != "":

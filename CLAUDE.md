@@ -53,7 +53,9 @@ without Caleb, and update the gap list when a PR closes a row.
 - The head looks where its owner aims (Caleb's call, so others see where
   you look): `Locomotion._look_pose` turns the neck and head onto
   `Actor.get_aim_dir()` from whatever pose the body is in, no further than
-  `look_reach` from the chest, and gives way to the phone. View only, the
+  `look_reach` from the chest and tipped up or down no further than a neck
+  bends (`look_up_reach`, `look_down_reach`, `tip_within`; a body laid out
+  in flight looking ahead keeps its head on), and gives way to the phone. View only, the
   same body in both views; first person's eyes simply ride the turned head.
 - Bodies are shown between physics ticks (Caleb plays at 144 Hz):
   `ShownMotion` (`core/visual/shown_motion.gd`, added by `Look` to every
@@ -528,7 +530,9 @@ without Caleb, and update the gap list when a PR closes a row.
   closed, since an open pack cannot be replaced; release builds refuse
   `--main-pack`), then restarts. It never runs in the editor, a test, a
   server or headless, and anything that changes the engine or a native
-  library needs a fresh install. Its state shows on the start screen's
+  library needs a fresh install. Release builds also refuse `--path`, so a
+  game starts its own server with `Main.server_process_args`, which leaves
+  it out of an exported game. Its state shows on the start screen's
   corner and the phone's Servers app, nowhere else. The installer
   (`.github/installer/ProjectAres.nsi`, NSIS, built by the same workflow as
   `ProjectAres-Setup.exe`) installs per user into
@@ -1587,7 +1591,8 @@ without Caleb, and update the gap list when a PR closes a row.
   its end wall, sealed at the far end by the firing range's bulkhead.
   Buying the range removes the lane. Nothing there is real damage either.
   Past the range's far end is the flight course (`HomeBase._build_course`,
-  `in_course`): an open-topped yard whose walls stand over every rig's
+  `in_course`): an open-topped yard, the sky over it (the base's backdrop,
+  `Look.interior`'s `open_sky`, lighting nothing indoors), whose walls stand over every rig's
   ceiling, with a climb tower (and a ramp for wings), a gap to a second
   tower and a sprint, timed by `_tick_course` from the player's position
   alone and written on its board, never on the screen.
