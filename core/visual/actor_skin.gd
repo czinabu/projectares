@@ -1803,15 +1803,63 @@ func _update_beam(delta: float) -> void:
 var beam_reach := 90.0
 
 
-## The colour every frame's plates are drawn in.
-const FRAME_COLOR := Color(0.46, 0.48, 0.45)
+## How heavy a frame looks, from its weight: plate thickness and how far it
+## rides off the body, how far the breastplate wraps and how low it reaches,
+## the belly lames, a back plate (its half-width round the back), shoulder
+## lames and their size, thigh tassets and a gorget's height. Weight reads
+## at a glance (Caleb's armor pass): light is a thin breastplate and nothing
+## more, medium a carrier with caps and a tasset, heavy thick layered plate
+## that broadens the shoulders. A frame's tag picks the row, so a frame
+## moved to another weight tier changes bulk with it.
+const FRAME_BULK := {
+	"light": {"thick": 0.01, "gap": 0.024, "wrap": 1.05, "low": -0.16, "high": 0.11, "bulge": 0.018,
+			"lames": 0, "back": 0.6, "pads": 0, "pad_r": 0.06, "tassets": 0, "collar": 0.0},
+	"medium": {"thick": 0.014, "gap": 0.02, "wrap": 1.4, "low": -0.17, "high": 0.115, "bulge": 0.014,
+			"lames": 1, "back": 1.05, "pads": 1, "pad_r": 0.066, "tassets": 1, "collar": 0.0},
+	"heavy": {"thick": 0.022, "gap": 0.026, "wrap": 1.75, "low": -0.19, "high": 0.13, "bulge": 0.02,
+			"lames": 2, "back": 1.35, "pads": 3, "pad_r": 0.088, "tassets": 2, "collar": 0.065},
+}
+
+## Each frame's own look on top of its weight: colours, finish and the
+## details that say what it does. Scrap is a rusted plate strapped on with
+## patches bolted over it; the Runner a slim matte plate with cool vents down
+## the spine (it runs cool, dim on thermal); the Trooper an olive carrier
+## with pouches; the Thermal a white shell over a quilted liner with heat
+## coils and a heater pack (bright on thermal); the Bulwark thick gunmetal
+## with a keel, rivets and glowing vents on the back (it runs hot).
+const FRAME_STYLES := {
+	"scrap": {"shell": Color(0.5, 0.3, 0.17), "trim": Color(0.12, 0.11, 0.1), "accent": Color(0.55, 0.56, 0.54),
+			"glow": Color(0.0, 0.0, 0.0), "metal": 0.45, "rough": 0.9, "details": ["patches", "straps"], "tilt": 0.07},
+	"runner": {"shell": Color(0.34, 0.41, 0.5), "trim": Color(0.1, 0.12, 0.15), "accent": Color(0.2, 0.24, 0.3),
+			"glow": Color(0.3, 0.85, 1.0), "metal": 0.25, "rough": 0.7, "details": ["chevron", "spine"]},
+	"trooper": {"shell": Color(0.35, 0.38, 0.27), "trim": Color(0.18, 0.19, 0.14), "accent": Color(0.27, 0.29, 0.21),
+			"glow": Color(1.0, 0.72, 0.3), "metal": 0.2, "rough": 0.75, "details": ["pouches", "stripe"]},
+	"thermal": {"shell": Color(0.8, 0.82, 0.84), "trim": Color(0.3, 0.33, 0.37), "accent": Color(0.52, 0.56, 0.62),
+			"glow": Color(1.0, 0.45, 0.12), "metal": 0.15, "rough": 0.6, "details": ["quilt", "coils", "heater"]},
+	"bulwark": {"shell": Color(0.4, 0.41, 0.44), "trim": Color(0.11, 0.11, 0.12), "accent": Color(0.85, 0.62, 0.15),
+			"glow": Color(1.0, 0.3, 0.1), "metal": 0.3, "rough": 0.6, "details": ["keel", "rivets", "vents"]},
+}
+
+## Which look each frame wears; a frame not listed wears its weight's.
+const FRAME_LOOKS := {"plate_light": "scrap", "frame_runner": "runner", "frame_trooper": "trooper",
+		"frame_thermal": "thermal", "frame_bulwark": "bulwark"}
+const WEIGHT_LOOKS := {"light": "runner", "medium": "trooper", "heavy": "bulwark"}
 
 
-## How heavy a frame looks: "light", "medium" or "heavy", from its tags.
+## How heavy a frame looks: "light", "medium" or "heavy", from its tags. A
+## weight itself ("heavy") or a skin's own plates ("skin:light") answer as is.
 static func frame_weight(id: String) -> String:
+	var bare := id.trim_prefix("skin:")
+	if FRAME_BULK.has(bare):
+		return bare
 	if ItemDB.has_tag(id, "frame_heavy"):
 		return "heavy"
 	return "medium" if ItemDB.has_tag(id, "frame_medium") else "light"
+
+
+## The look a frame wears (a `FRAME_STYLES` key).
+static func frame_look(id: String) -> String:
+	return FRAME_LOOKS.get(id, WEIGHT_LOOKS[frame_weight(id)])
 
 
 ## Puts the worn armor frame's plates on the body, rebuilt when another goes on.
@@ -1825,94 +1873,255 @@ func _update_frame() -> void:
 	if id == _frame_id and (id == "" or (not _frame_parts.is_empty() and is_instance_valid(_frame_parts[0]))):
 		return
 	_frame_id = id
-	# Under a frame the body wears its undersuit.
+	# Under a frame the body wears its undersuit, its cuff lights in the
+	# frame's own glow (none on scrap).
+	var cuff: Color = FRAME_STYLES[frame_look(id)]["glow"] if id != "" else Color.BLACK
 	for mat in _materials:
 		mat.set_shader_parameter("suit", 1.0 if id != "" else 0.0)
+		if id != "":
+			mat.set_shader_parameter("suit_trim", cuff)
 	for part in _frame_parts:
 		if is_instance_valid(part):
 			part.queue_free()
 	_frame_parts.clear()
 	if id == "" or _skeleton == null:
 		return
-	var weight := frame_weight(id) if own == "" else own
+	var bulk: Dictionary = FRAME_BULK[frame_weight(id)]
 	var height: float = _def.get("height", 1.8)
-	_frame_parts.append(_hang(build_frame(weight, FRAME_COLOR), "Frame", _def.get("back_bone", ""), frame_offset,
+	_frame_parts.append(_hang(build_frame(id), "Frame", _def.get("back_bone", ""), frame_offset,
 			Vector3(0.0, height * 0.72, 0.0) + frame_offset))
-	if weight == "light":
-		return
 	for side: String in ["L", "R"]:
 		var out := -1.0 if side == "L" else 1.0
-		_frame_parts.append(_hang(build_pad(weight, FRAME_COLOR, out), "Pad" + side, "UpperArm." + side,
-				Vector3(pad_offset.x * out, pad_offset.y, pad_offset.z),
-				Vector3(0.2 * out, height * 0.8, 0.0)))
+		if int(bulk["pads"]) > 0:
+			_frame_parts.append(_hang(build_pad(id, out), "Pad" + side, "UpperArm." + side,
+					Vector3(pad_offset.x * out, pad_offset.y, pad_offset.z),
+					Vector3(0.2 * out, height * 0.8, 0.0)))
+		if int(bulk["tassets"]) > 0 and _skeleton.find_bone("UpperLeg." + side) >= 0:
+			# Which way is out for this leg, from where its bone stands.
+			var leg_out := signf(_rest_at("UpperLeg." + side).x)
+			_frame_parts.append(_hang(build_tasset(id, leg_out), "Tasset" + side, "UpperLeg." + side,
+					Vector3.ZERO, Vector3(0.1 * out, height * 0.52, 0.0)))
 
 
-## A frame's plates for its `weight`, front toward -Z, built round the chest
-## bone and shaped to the torso (thin curved shells, bevelled at the edges,
-## a finger's width off the body), so they never stand out like boxes. The
-## tier shows in coverage, not bulk: light is a breastplate, medium wraps it
-## round the ribs and adds a belly lame, heavy closes it into a cuirass with
-## a back plate, a second lame and a collar.
-static func build_frame(weight: String, color: Color) -> Node3D:
+## A frame's plates, front toward -Z, built round the chest bone and shaped
+## to the torso (curved shells bevelled at the edges, never boxes). Its
+## weight (`FRAME_BULK`) sets the bulk and coverage, its look
+## (`FRAME_STYLES`) the colours and the details. `id` is a frame's item id,
+## a weight or "skin:<weight>".
+static func build_frame(id: String) -> Node3D:
 	var root := Node3D.new()
 	root.name = "FrameModel"
-	var shell := _solid(color, 0.0)
-	var trim := _solid(color.darkened(0.45), 0.0)
-	# The torso round the chest bone, with the plates' gap off it.
-	var rx := 0.128 + FRAME_GAP
-	var rz := 0.108 + FRAME_GAP
+	var bulk: Dictionary = FRAME_BULK[frame_weight(id)]
+	var style: Dictionary = FRAME_STYLES[frame_look(id)]
+	var details: Array = style["details"]
+	var shell := _frame_mat(style, "shell")
+	var trim := _frame_mat(style, "trim")
+	var accent := _frame_mat(style, "accent")
+	var glow := _solid(style["glow"], 1.4)
+	var thick: float = bulk["thick"]
+	var rx := 0.128 + float(bulk["gap"])
+	var rz := 0.108 + float(bulk["gap"])
 	var mid := Vector3(0.0, 0.0, 0.005)
-	var wrap := {"light": 0.95, "medium": 1.35, "heavy": 1.7}[weight] as float
-	var low := {"light": -0.06, "medium": -0.1, "heavy": -0.12}[weight] as float
-	_plate(root, "Chest", _shell(rx, rz, -wrap, wrap, low, 0.11, FRAME_THICK, 0.012, 0.08), shell, mid)
-	# A lit seam down the middle of the breastplate.
-	_plate(root, "Seam", _shell(rx + FRAME_THICK, rz + FRAME_THICK, -0.03, 0.03, low + 0.03, 0.08, 0.004, 0.012),
-			_solid(Color(0.4, 0.85, 0.9), 0.8), mid)
+	var wrap: float = bulk["wrap"]
+	var low: float = bulk["low"]
+	var high: float = bulk["high"]
+	var bulge: float = bulk["bulge"]
+	var span := Vector2(-wrap, wrap)
+	var chest := _plate(root, "Chest", _shell(rx, rz, -wrap, wrap, low, high, thick, bulge, 0.08), shell, mid)
+	# Scrap is strapped on crooked.
+	chest.rotation.z = style.get("tilt", 0.0)
+	# Where the front of the breastplate is, at its middle.
+	var front := mid.z - rz * (1.0 + bulge / rx) - thick
 	# The lower edge of the breastplate, a darker band.
-	_plate(root, "Trim", _shell(rx + 0.002, rz + 0.002, -wrap * 0.92, wrap * 0.92, low - 0.008, low + 0.01,
-			FRAME_THICK + 0.004), trim, mid)
-	if weight != "light":
+	_plate(root, "Trim", _shell(rx + 0.002, rz + 0.002, -wrap * 0.92, wrap * 0.92, low - 0.008, low + 0.012,
+			thick + 0.004), trim, mid).rotation.z = chest.rotation.z
+	var belly_r := Vector2(0.114, 0.1) + Vector2.ONE * float(bulk["gap"])
+	if "quilt" in details:
+		# A quilted liner under the plate: puffy rings down the belly.
+		for i in 3:
+			var top := low - 0.004 - i * 0.034
+			_plate(root, "Belly" if i == 0 else "Belly%d" % i,
+					_shell(belly_r.x - 0.004, belly_r.y - 0.004, -PI, PI, top - 0.036, top, 0.012, 0.01), accent, mid)
+	else:
 		# Lames over the belly, narrower than the chest, each just under the last.
-		var lames := 2 if weight == "heavy" else 1
-		for i in lames:
+		for i in int(bulk["lames"]):
 			var top := low - 0.02 - i * 0.07
 			_plate(root, "Belly" if i == 0 else "Belly%d" % i,
-					_shell(0.114 + FRAME_GAP, 0.1 + FRAME_GAP, -1.0, 1.0, top - 0.06, top, FRAME_THICK, 0.004), shell, mid)
-	if weight == "heavy":
-		_plate(root, "Back", _shell(rx, rz, PI - 1.2, PI + 1.2, low, 0.11, FRAME_THICK, 0.008, 0.08), shell, mid)
-		# A low collar round the base of the neck, under the chin.
-		_plate(root, "Collar", _shell(0.1, 0.09, -2.3, 2.3, 0.115, 0.15, FRAME_THICK, 0.0, -0.3), trim,
-				Vector3(0.0, 0.0, -0.01))
+					_shell(belly_r.x, belly_r.y, -1.0 - 0.2 * i, 1.0 + 0.2 * i, top - 0.065, top, thick, 0.004), shell, mid)
+	var back: float = bulk["back"]
+	var back_z := mid.z + rz * (1.0 + bulge * 0.6 / rx) + thick
+	if back > 0.0:
+		_plate(root, "Back", _shell(rx, rz, PI - back, PI + back, low, high, thick, bulge * 0.6, 0.08), shell, mid)
+	if float(bulk["collar"]) > 0.0:
+		# A gorget standing round the base of the neck, under the chin.
+		_plate(root, "Collar", _shell(0.1, 0.09, -2.4, 2.4, high - 0.015, high + float(bulk["collar"]), thick, 0.0, -0.3),
+				trim, Vector3(0.0, 0.0, -0.01))
+	# What says which frame it is.
+	if "patches" in details:
+		# Patch plates bolted on over the rust, and rivets at their corners.
+		for p: Array in [[Vector3(0.045, 0.055, 0.0), Vector2(0.075, 0.055), 0.25],
+				[Vector3(-0.055, 0.0, 0.0), Vector2(0.06, 0.05), -0.18]]:
+			var at: Vector3 = p[0] + Vector3(0.0, 0.0, front - 0.004)
+			var size: Vector2 = p[1]
+			var patch := _piece(root, "Patch", BoxMesh.new(), accent, at, Vector3(size.x, size.y, 0.007))
+			patch.rotation.z = p[2]
+			for c: Vector2 in [Vector2(-1, -1), Vector2(1, -1), Vector2(-1, 1), Vector2(1, 1)]:
+				var off := Vector3(c.x * size.x * 0.38, c.y * size.y * 0.36, -0.004).rotated(Vector3.BACK, p[2])
+				_piece(root, "Rivet", SphereMesh.new(), trim, at + off, Vector3.ONE * 0.011)
+	if "straps" in details:
+		# Webbing over the shoulders and round the ribs holds it on.
+		for x: float in [-0.07, 0.07]:
+			var strap := _piece(root, "Strap", BoxMesh.new(), trim, Vector3(x, high + 0.03, front * 0.55),
+					Vector3(0.032, 0.007, 0.13))
+			strap.rotation.x = -0.5
+		_plate(root, "Belt", _shell(rx - 0.004, rz - 0.004, -PI, PI, low + 0.015, low + 0.04, 0.006), trim, mid)
+	if "chevron" in details:
+		# A lit chevron under the breastplate and a seam up its middle.
+		for x: float in [-1.0, 1.0]:
+			var bar := _piece(root, "Chevron", BoxMesh.new(), glow, Vector3(x * 0.032, low + 0.03, front - 0.001),
+					Vector3(0.075, 0.007, 0.005))
+			bar.rotation.z = x * 0.45
+		_plate(root, "Seam", _on_plate(rx, rz, thick, bulge, low, high, span, -0.025, 0.025, low + 0.05, high - 0.02),
+				glow, mid)
+	if "spine" in details:
+		# A segmented spine plate, each segment with a cool vent slit.
+		for i in 4:
+			var top := 0.11 - i * 0.055
+			_plate(root, "Spine", _shell(rx + thick, rz + thick + 0.006, PI - 0.3, PI + 0.3, top - 0.045, top, thick, 0.006),
+					trim, mid)
+			var spine_z := mid.z + (rz + thick + 0.006) * (1.0 + 0.006 / (rx + thick)) + thick
+			_piece(root, "Vent", BoxMesh.new(), glow, Vector3(0.0, top - 0.022, spine_z),
+					Vector3(0.05, 0.006, 0.003))
+	if "pouches" in details:
+		# Magazine pouches across the belly, flaps down.
+		var pz := mid.z - belly_r.y - thick - 0.018
+		for x: float in [-0.068, 0.0, 0.068]:
+			var y := low - 0.06
+			_piece(root, "Pouch", BoxMesh.new(), accent, Vector3(x, y, pz), Vector3(0.056, 0.07, 0.034))
+			_piece(root, "Flap", BoxMesh.new(), trim, Vector3(x, y + 0.03, pz - 0.006), Vector3(0.06, 0.018, 0.03))
+	if "stripe" in details:
+		# A unit stripe on the left of the chest.
+		_plate(root, "Stripe", _on_plate(rx, rz, thick, bulge, low, high, span, -0.75, -0.3, 0.06, 0.075), glow, mid)
+	if "quilt" in details:
+		# A padded collar.
+		_plate(root, "Collar", _shell(0.098, 0.088, -PI, PI, high - 0.01, high + 0.035, 0.016, 0.012, -0.2),
+				accent, Vector3(0.0, 0.0, -0.005))
+	if "coils" in details:
+		# Heat coils glowing across the chest.
+		for i in 3:
+			var y := low + 0.035 + i * 0.03
+			_plate(root, "Coil", _on_plate(rx, rz, thick, bulge, low, high, span, -0.85, 0.85, y, y + 0.007),
+					glow, mid)
+	if "heater" in details:
+		# A heater pack low on the back, its grille lit.
+		_piece(root, "Heater", BoxMesh.new(), shell, Vector3(0.0, low - 0.02, back_z + 0.025),
+				Vector3(0.15, 0.1, 0.05))
+		for i in 3:
+			_piece(root, "Grille", BoxMesh.new(), glow, Vector3(0.0, low - 0.045 + i * 0.025, back_z + 0.051),
+					Vector3(0.11, 0.009, 0.004))
+	if "keel" in details:
+		# A raised ridge down the middle of the breastplate.
+		_plate(root, "Keel", _on_plate(rx, rz, thick + 0.012, bulge, low, high, span, -0.07, 0.07, low + 0.01, high - 0.005),
+				trim, mid)
+	if "rivets" in details:
+		# Rivets along the breastplate's lower edge.
+		for i in 7:
+			var a := lerpf(-wrap * 0.8, wrap * 0.8, i / 6.0)
+			_piece(root, "Rivet", SphereMesh.new(), accent,
+					mid + Vector3((rx + thick + 0.004) * sin(a), low + 0.002, -(rz + thick + 0.004) * cos(a)),
+					Vector3.ONE * 0.014)
+	if "vents" in details and back > 0.0:
+		# Heat vents in the back plate, glowing: it runs hot.
+		for x: float in [-0.045, 0.045]:
+			_piece(root, "VentFrame", BoxMesh.new(), trim, Vector3(x, 0.035, back_z + 0.002), Vector3(0.05, 0.09, 0.008))
+			for i in 4:
+				_piece(root, "Vent", BoxMesh.new(), glow, Vector3(x, 0.0 + i * 0.022, back_z + 0.006),
+						Vector3(0.036, 0.007, 0.004))
 	return root
 
 
+## A strip laid on the breastplate (built by `build_frame` with these
+## numbers): angles `from` to `to` and heights `y0` to `y1`, following the
+## plate's swell, just proud of it.
+static func _on_plate(rx: float, rz: float, thick: float, bulge: float, low: float, high: float, span: Vector2,
+		from: float, to: float, y0: float, y1: float) -> ArrayMesh:
+	var u := Vector2(inverse_lerp(span.x, span.y, from), inverse_lerp(span.x, span.y, to))
+	var v := Vector2(inverse_lerp(low, high, y0), inverse_lerp(low, high, y1))
+	# The plate's flare (0.08) widens it toward its top: follow that too.
+	var widen := 1.0 + 0.08 * ((v.x + v.y) * 0.5 - 0.5)
+	return _shell((rx + thick) * widen, (rz + thick) * widen, from, to, y0, y1, 0.004, bulge, 0.08 * (v.y - v.x), u, v)
+
+
 ## A shoulder cap for the side `out` (-1 left, 1 right), curved over the top
-## of the arm from the collarbone to the outside of the shoulder; heavy adds
-## a second lame under it.
-static func build_pad(weight: String, color: Color, out: float) -> Node3D:
+## of the arm from the collarbone to the outside of the shoulder, with more
+## and bigger lames the heavier the frame.
+static func build_pad(id: String, out: float) -> Node3D:
 	var root := Node3D.new()
 	root.name = "PadModel"
-	var heavy := weight == "heavy"
-	var r := 0.07 if heavy else 0.062
-	var length := 0.12 if heavy else 0.1
-	var lames := 2 if heavy else 1
+	var bulk: Dictionary = FRAME_BULK[frame_weight(id)]
+	var style: Dictionary = FRAME_STYLES[frame_look(id)]
+	var r: float = bulk["pad_r"]
+	var thick: float = bulk["thick"]
+	var lames: int = maxi(1, bulk["pads"])
+	var length := r * 1.6
 	for i in lames:
+		var mat := _frame_mat(style, "shell" if i == 0 else "trim")
+		if "quilt" in style["details"] and i == 0:
+			mat = _frame_mat(style, "shell")
 		# A band round the arm's front-to-back line: built round Y, then laid on Z.
+		var grow := i * (thick + 0.004)
 		var cap := _plate(root, "Pad" if i == 0 else "Pad%d" % i,
-				_shell(r + i * 0.008, r + i * 0.008, -0.35, 1.45 - i * 0.3, -length * 0.5, length * 0.5,
-				FRAME_THICK, 0.006), _solid(color if i == 0 else color.darkened(0.25), 0.0),
-				Vector3(0.0, -i * 0.03, 0.0))
+				_shell(r + grow, r + grow, -0.35, 1.45 - i * 0.25, -length * 0.5, length * 0.5,
+				thick, 0.006), mat, Vector3(0.0, -i * r * 0.45, 0.0))
 		# Round Y the shell runs from -Z; turned so it runs from up, over the
 		# top and down the outside of this shoulder.
 		cap.basis = Basis(Vector3.RIGHT, PI * 0.5)
 		if out < 0.0:
 			cap.basis = Basis(Vector3.UP, PI) * cap.basis
+	if "keel" in style["details"]:
+		# A raised crest along the top of the cap: heavy even in silhouette.
+		var crest := _plate(root, "Crest", _shell(r + thick, r + thick, 0.12, 0.42, -length * 0.55, length * 0.55,
+				thick * 1.6, 0.0), _frame_mat(style, "trim"), Vector3.ZERO)
+		crest.basis = Basis(Vector3.RIGHT, PI * 0.5)
+		if out < 0.0:
+			crest.basis = Basis(Vector3.UP, PI) * crest.basis
+	if "stripe" in style["details"] or "keel" in style["details"]:
+		# A unit stripe (the Trooper) or a hazard band (the Bulwark) round the cap.
+		var band := _plate(root, "Band", _shell(r + thick + 0.001, r + thick + 0.001, 0.15, 1.2, -0.008, 0.008, 0.003),
+				_solid(style["glow"], 1.0) if "stripe" in style["details"] else _frame_mat(style, "accent"), Vector3.ZERO)
+		band.basis = Basis(Vector3.RIGHT, PI * 0.5)
+		if out < 0.0:
+			band.basis = Basis(Vector3.UP, PI) * band.basis
 	return root
 
 
-## How thick a plate is, and how far off the body it rides.
-const FRAME_THICK := 0.011
-const FRAME_GAP := 0.012
+## Thigh tassets for the side `out`, hung from the hip down the front and
+## outside of the thigh, one lame for medium and two overlapping for heavy.
+static func build_tasset(id: String, out: float) -> Node3D:
+	var root := Node3D.new()
+	root.name = "TassetModel"
+	var bulk: Dictionary = FRAME_BULK[frame_weight(id)]
+	var style: Dictionary = FRAME_STYLES[frame_look(id)]
+	var thick: float = bulk["thick"]
+	var r := 0.088 + float(bulk["gap"])
+	for i in int(bulk["tassets"]):
+		# Narrow and long, down the front and outside of the thigh.
+		var top := 0.07 - i * 0.1
+		var from := -0.1 if out > 0.0 else -1.3
+		var to := 1.3 if out > 0.0 else 0.1
+		_plate(root, "Tasset" if i == 0 else "Tasset%d" % i,
+				_shell(r + i * (thick + 0.003), r * 0.95 + i * (thick + 0.003), from, to, top - 0.15, top, thick, 0.006, -0.1),
+				_frame_mat(style, "shell" if i == 0 else "trim"), Vector3.ZERO)
+	return root
+
+
+## A frame material: a style's "shell", "trim" or "accent", in its finish.
+static func _frame_mat(style: Dictionary, part: String) -> StandardMaterial3D:
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = style[part]
+	mat.metallic = style["metal"] if part != "accent" or not "quilt" in style["details"] else 0.0
+	mat.roughness = style["rough"] if part != "accent" else minf(1.0, float(style["rough"]) + 0.15)
+	return mat
 
 
 static func _plate(root: Node3D, piece_name: String, mesh: Mesh, mat: Material, at: Vector3) -> MeshInstance3D:
@@ -1931,9 +2140,11 @@ static func _plate(root: Node3D, piece_name: String, mesh: Mesh, mat: Material, 
 ## and `rz`, from angle `from` to `to` (0 at -Z, growing toward +X) and
 ## height `low` to `high`, `thick` thick and thinning to a bevel at its
 ## edges. `bulge` swells its middle out and `flare` widens its top (a
-## negative flare narrows it, for a collar).
+## negative flare narrows it, for a collar). A strip laid on a bigger plate
+## takes that plate's swell with `u_span` and `v_span`: where its ends fall
+## across the plate and up it, from 0 to 1.
 static func _shell(rx: float, rz: float, from: float, to: float, low: float, high: float, thick: float,
-		bulge := 0.0, flare := 0.0) -> ArrayMesh:
+		bulge := 0.0, flare := 0.0, u_span := Vector2(0.0, 1.0), v_span := Vector2(0.0, 1.0)) -> ArrayMesh:
 	var cols := maxi(4, ceili((to - from) / 0.12))
 	var rows := 5
 	# The bevel runs in this far from each edge, less on a narrow band.
@@ -1949,7 +2160,8 @@ static func _shell(rx: float, rz: float, from: float, to: float, low: float, hig
 		for i in cols + 1:
 			var u := float(i) / cols
 			var a := lerpf(from, to, u)
-			var grow := 1.0 + flare * (v - 0.5) + bulge * sin(PI * v) * sin(PI * u) / maxf(rx, 0.01)
+			var grow := 1.0 + flare * (v - 0.5) + bulge * sin(PI * lerpf(v_span.x, v_span.y, v)) \
+					* sin(PI * lerpf(u_span.x, u_span.y, u)) / maxf(rx, 0.01)
 			var at := Vector3(rx * grow * sin(a), lerpf(low, high, v), -rz * grow * cos(a))
 			var n := Vector3(sin(a) / rx, 0.0, -cos(a) / rz).normalized()
 			var edge := minf(minf(u, 1.0 - u) * (to - from) * rx, minf(v, 1.0 - v) * (high - low))

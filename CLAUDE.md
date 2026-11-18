@@ -384,7 +384,19 @@ without Caleb, and update the gap list when a PR closes a row.
   `--technique-only <item id>`. Every melee
   model is dressed as tech by `Look._tech_melee` (`assets/shaders/melee.gdshader`):
   bare metal becomes alloy with an energy edge in the weapon's rarity color,
-  wood and wraps black polymer with glowing seams. The scrap kit's blade
+  wood and wraps black polymer with glowing seams. The edge runs across the
+  length the mesh actually lies along (`Look.blade_axes`, `_up_axis`; a
+  pack mesh may lie along Z), the flat of a blade stays alloy, and a hammer
+  has no edge. Guns wear the same house finish (the weapon pass, to sit with
+  the sci-fi armor, helmets and vehicles): `Look._dress_gun` turns a pack
+  model's dark parts graphite (`GUN_FRAME`), its light parts ceramic
+  (`GUN_SHELL`; worn tan on the scrap rifle) and its warm parts the gun's
+  `GUN_GLOW` colour, lit softly, never a whole part aglow; each gun then
+  wears its own kit (`Look._gun_kit`: coils, cells, a drum, a shell carrier),
+  under a "Kit" node that `_measure_mounts` skips, so a kit never moves a
+  grip, a sight or the muzzle. Power weapons are built in the same finish
+  (`_power_model`). Compare every weapon side on with
+  `visual_check.tscn -- <dir> --arsenal-only` (`ARSENAL_IDS` picks rows). The scrap kit's blade
   (`starter`) is a sword made from scrap (Caleb's call): `Look._scrap_bits`
   welds crooked patch plates and rivets on the blade, winds wire round the
   grip and threads a nut on for a pommel, and it runs dim and worn
@@ -941,13 +953,21 @@ without Caleb, and update the gap list when a PR closes a row.
   then the watch rests (`Loadout.SUMMON_TIMES` "helmet", short, and
   "armor", long), and a frame taken off keeps its armor left in
   `Actor.stowed_armor`, so spare plates are no instant refill. The skin wears its plates
-  (`ActorSkin._update_frame`, `build_frame`, `build_pad`, by `frame_weight`)
-  on the chest and upper arm bones, the same body in both views. Plates are
-  fitted, never boxes (Caleb's call): thin curved shells (`_shell`) a
-  finger's width off the torso, bevelled at the edges, and the tier shows
-  in coverage, not bulk: light a breastplate, medium wrapped round the ribs
-  with a belly lame and shoulder caps, heavy a cuirass with a back plate,
-  two lames, double caps and a low collar.
+  (`ActorSkin._update_frame`, `build_frame`, `build_pad`, `build_tasset`)
+  on the chest, upper arm and thigh bones, the same body in both views and
+  on the base's armor stands (`HomeBase._build_armor`). Plates are fitted,
+  never boxes (Caleb's call): curved shells (`_shell`) off the torso,
+  bevelled at the edges. Weight reads at a glance (Caleb's armor pass):
+  the frame's weight tag picks its bulk (`ActorSkin.FRAME_BULK`: plate
+  thickness, how far off the body, coverage, shoulder lames, tassets, a
+  gorget), light a thin breastplate and back plate, medium a carrier with
+  caps and a tasset, heavy thick layered plate that widens the shoulders,
+  so a frame moved to another weight tier changes bulk with it. Each frame
+  also has a look of its own that fits what it does (`FRAME_LOOKS` to
+  `FRAME_STYLES`: colours, a matte finish matching the helmets, and
+  details such as the Runner's cool spine vents or the Bulwark's hot back
+  vents); a new frame gets a `FRAME_LOOKS` entry (a test checks it). Check
+  by eye with `visual_check.tscn -- <dir> --armor-only`.
 - Vehicles are items tagged `vehicle`, tuned by their stats, and spawned by
   `Raid` (never carried). `core/vehicle/vehicle.gd` reads its rider's
   `ActorCommand` and moves the rider; `Actor` skips its own movement while
