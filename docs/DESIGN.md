@@ -887,7 +887,58 @@ combinations are the special moves.
   and turn the whole body, a dash-strike leans in, and a back strike turns
   the blade back past the hip. Same motion in first and third person.
 - **Later:** tight interiors and corners in the worlds where guns are clumsy,
-  and more ammo and reload pressure on guns. Melee bots using the dash-strike.
+  and more ammo and reload pressure on guns.
+
+### Melee bots (Caleb's call: a blade in reach beats a rifle)
+
+The balance is one rule: range belongs to the gun, reach to the blade, and
+the ground between is won by skill (cover, corners, the dash-strike, a timed
+deflect). Bots fight to that rule, and like people:
+
+- **Heavies.** A share of a melee bot's attacks are held heavies, with the
+  charge and windup on show: 5% in the outer ring, 20% in the middle, 30% in
+  the core (`BotBrain.RING_HEAVY`), and 60% into a raised guard or a
+  stagger. An Ashfront heavy's own heavy winds up for 0.9 s and hits a
+  quarter harder, so it is the easiest swing of all to read.
+- **Feints.** In the middle and core rings (15% and 30% of swings,
+  `RING_FEINT`), a bot starts a charge showing one side, switches, and lets
+  go as a quick light from another.
+- **Dash-strikes.** A bot sprinting in from out of reach opens with one
+  (never in the outer ring; 40% of chances in the middle, 70% in the core,
+  at most one try every 3 s, `RING_DASH`).
+- **Openings.** A bot strikes at once into a foe's recovery, a stagger, or
+  its own riposte after a parry, rather than waiting out its tempo.
+- **Cut soldiers flinch.** An army gunner cut by a blade has its gun knocked
+  about 14 degrees off and holds fire for 0.4 s (`BotBrain.melee_flinch`).
+  That is what a cut at arm's length does, and it is what lets a blade win
+  once it arrives. Bots only: a player's aim is never moved, and rival
+  raiders, who play like players, never flinch.
+- **Soldiers give ground.** An army gunner with a blade inside 9 m drops its
+  sights and backs off at a walk, angling away, so reaching it is the
+  challenge.
+
+**Measured (melee bench, `duel_bench.tscn -- --melee blade_scrap`, 40
+fights, seed 11).** The reference fights with the scrap blade only: a
+three-hit combo then a breath, its guard up while it closes on a gunner, and
+the same heavies, feints and dash-strikes. It parries only by reading
+swings at 40%, so a person who parries on purpose does better against the
+heavies.
+
+| Scrap blade against | Start 3 m away | Start 12 m away |
+| --- | --- | --- |
+| Outer soldier | 90% win in 2.9 s | 78% win in 4.4 s |
+| Core soldier | 68% win in 3.3 s | 57% win in 4.4 s |
+| Outer heavy | 35% win | 55% win |
+| Rival raider (gun, no flinch) | 32% win | 20% win |
+
+Before the pass a blade won none of these against soldiers, even from 3 m:
+a rifle killed in 2.6 s while the bot reference swung about once a second.
+The gun duel rows stay in their bands; the outer heavy at 12 m now sits at
+the bottom of its band (72% over 120 duels), the price of its occasional
+heavy.
+
+**Later:** a melee pass on the stances and animations (Caleb), and bands
+for the melee bench once it has been played.
 
 ### Gadgets
 
