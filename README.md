@@ -635,11 +635,11 @@ off the rims, everyone leans into it, and flying is a fight. Past the Sentinel t
 Engine is hollow: the hatch opens on the Drum Hall, a hall big enough for a
 squad to fight across with catwalks up both walls, and in its east end the
 Shaft goes 26 m down two wide ramps to the Coil Galleries, a loop of wide
-halls round dead Engine Coils with a channel of bitter coolant down one
+halls with a raised walkway round dead Engine Coils with a channel of bitter coolant down one
 side, and on to the Descent, three switchback ramps 40 m down. Wardens stand
 guard inside, the caches there pay Engine Coils, no storm or trail gets in,
 it gets colder the deeper you go and there is a heater on each level. At the
-Descent's foot stand the cable lift (hold its switch and it runs for
+Descent's foot stand the cable lift (fight off its guards, hold its switch and it runs for
 everyone for ten minutes, back up to the hall in seconds) and the sealed
 door to the Heart.
 

@@ -93,6 +93,13 @@ const GALLERY_ROOMS := [
 	[-5.0, 5.0, 110.0, 114.0],
 ]
 ## The frozen coolant down the south gallery: the cold bites hardest there.
+## A raised walkway along the north gallery's outer wall ([x0, x1, z0, z1]
+## of its deck), `WALKWAY_UP` over the floor and reached by a ramp at each
+## end, the galleries' high ground (like the hall's catwalks, a way round,
+## not the way through).
+const WALKWAY := [16.0, 20.0, 47.0, 101.0]
+const WALKWAY_UP := 4.5
+const WALKWAY_RAMP := 8.0
 const GALLERY_COOLANT := [-15.0, -11.0, 40.0, 108.0]
 ## The Descent: a well past the galleries' east end, three ramps
 ## (`DESCENT_LANE` wide, each down a third of `DESCENT_DROP`) switching back
@@ -295,6 +302,7 @@ var _weather: Node3D
 @onready var HULL := Look.surface("metal", {"tint": Color(0.34, 0.38, 0.44), "snow": 0.45, "grime": 0.6, "scale": 0.08})
 @onready var HULL_DARK := Look.surface("metal", {"tint": Color(0.22, 0.25, 0.3), "snow": 0.4, "grime": 0.7, "scale": 0.1})
 @onready var DECK := Look.surface("metal", {"tint": Color(0.3, 0.33, 0.38), "snow": 0.25, "grime": 0.55, "scale": 0.15})
+@onready var FROST := Look.surface("metal", {"tint": Color(0.78, 0.86, 0.95), "snow": 1.0, "grime": 0.0, "scale": 0.3})
 @onready var COOLANT := Look.surface("metal", {"tint": Color(0.5, 0.78, 0.92), "snow": 0.6, "grime": 0.0, "scale": 0.2,
 		"rough_mult": 0.15})
 
@@ -964,6 +972,9 @@ const HALL_CRATES := [Vector2(-12.0, -20.0), Vector2(14.0, -32.0), Vector2(4.0, 
 const HALL_TANKS := [Vector2(-17.5, -33.0), Vector2(17.5, -33.0), Vector2(-17.5, -2.0), Vector2(17.5, 2.0)]
 ## How far each guard keeps from its post.
 const HALL_GUARD := 12.0
+## The lift switch's own guards stay close by it.
+const SWITCH_GUARDS := [Vector2(3.0, 172.5), Vector2(-4.0, 174.5)]
+const SWITCH_GUARD := 5.0
 const SHAFT_GUARD := 9.0
 ## The Engine's warm pockets inside: the hall's engine bay and the
 ## Shaft's foot. Somewhere to get warm again on the way down.
@@ -1060,6 +1071,7 @@ func _build_galleries(engine: StaticBody3D) -> void:
 		_part(engine, Vector3(5.0, 1.6, 2.4), Vector3(at.x, g + 0.8, at.y), STEEL, Basis(Vector3.UP, spot[1]))
 	for at: Vector2 in coil_spots():
 		_tank(engine, Vector3(at.x, g, at.y), COIL_RADIUS, 5.0, STEEL)
+	_build_walkway(engine)
 	var frame := engine_frame()
 	_add_warmth(frame * Vector3(0.0, g, 74.0), ENGINE_BAY)
 	for at: Vector2 in [Vector2(21.6, 56.0), Vector2(21.6, 88.0), Vector2(-21.6, 88.0), Vector2(0.0, 106.0)]:
@@ -1067,6 +1079,33 @@ func _build_galleries(engine: StaticBody3D) -> void:
 	for at: Vector2 in [Vector2(13.0, 46.0), Vector2(14.0, 90.0), Vector2(12.0, 72.0), Vector2(-17.5, 58.0),
 			Vector2(-8.5, 96.0), Vector2(3.0, 103.0)]:
 		_guard(frame * Vector3(at.x, g + 0.1, at.y), HALL_GUARD)
+	_guard(frame * Vector3(18.0, g + WALKWAY_UP + 0.1, 70.0), HALL_GUARD)
+
+
+## The north gallery's walkway: a deck on posts along the outer wall, a
+## ramp up at each end and a rail on its open side.
+func _build_walkway(engine: StaticBody3D) -> void:
+	var g := GALLERY_FLOOR
+	var w: Array = WALKWAY
+	var top := g + WALKWAY_UP
+	var x0: float = w[0]
+	var x1: float = w[1]
+	var z0: float = w[2]
+	var z1: float = w[3]
+	_part(engine, Vector3(x1 - x0, 0.5, z1 - z0), Vector3((x0 + x1) * 0.5, top - 0.25, (z0 + z1) * 0.5), DECK)
+	_slope(engine, x0, x1, Vector2(z0 - WALKWAY_RAMP, g), Vector2(z0, top), DECK)
+	_slope(engine, x0, x1, Vector2(z1, top), Vector2(z1 + WALKWAY_RAMP, g), DECK)
+	# The rail on the open side, up the ramps too.
+	_part(engine, Vector3(0.3, 1.1, z1 - z0), Vector3(x0 + 0.15, top + 0.55, (z0 + z1) * 0.5), HULL_DARK)
+	_slope(engine, x0, x0 + 0.3, Vector2(z0 - WALKWAY_RAMP + 2.0, g + 1.1 + WALKWAY_UP * 2.0 / WALKWAY_RAMP),
+			Vector2(z0, top + 1.1), HULL_DARK, 1.1)
+	_slope(engine, x0, x0 + 0.3, Vector2(z1, top + 1.1),
+			Vector2(z1 + WALKWAY_RAMP - 2.0, g + 1.1 + WALKWAY_UP * 2.0 / WALKWAY_RAMP), HULL_DARK, 1.1)
+	# Posts under its open edge.
+	var z := z0 + 4.0
+	while z < z1 - 2.0:
+		_part(engine, Vector3(0.5, WALKWAY_UP - 0.5, 0.5), Vector3(x0 + 0.4, g + (WALKWAY_UP - 0.5) * 0.5, z), STEEL)
+		z += 9.0
 
 
 ## Low cover down the galleries: crates, and fallen coil housings (x, z;
@@ -1237,6 +1276,9 @@ func _build_descent(engine: StaticBody3D) -> void:
 	for at: Vector3 in [Vector3(4.0, g, from + 3.0), Vector3(-6.0, g - step, east + 1.5),
 			Vector3(5.0, g - step * 2.0, from + 3.0), Vector3(6.0, bottom, 167.0), Vector3(-3.0, bottom, 163.5)]:
 		_guard(frame * (at + Vector3(0, 0.1, 0)), SHAFT_GUARD)
+	# Two more keep the lift's switch: powering it is a fight, never free.
+	for at: Vector2 in SWITCH_GUARDS:
+		_guard(frame * Vector3(at.x, bottom + 0.1, at.y), SWITCH_GUARD)
 
 
 ## The cable lift's upper stop, in the hall beside the Shaft.
@@ -1654,19 +1696,24 @@ func _dress_engine(art: Node3D) -> void:
 ## faint light off the coolant.
 func _dress_galleries(art: Node3D, frame: Transform3D, strip: Material, amber: Material) -> void:
 	var g := GALLERY_FLOOR
+	var roof := g + GALLERY_UP
+	var cool := _glow(Color(0.7, 0.95, 1.0), 4.0)
+	var warm := _glow(Color(1.0, 0.75, 0.45), 4.0)
 	for z: float in [50.0, 74.0, 98.0]:
-		_lamp_at(art, frame * Vector3(13.0, g + GALLERY_UP - 1.2, z), Color(0.35, 0.95, 1.0), 4.5, 24.0)
-		_lamp_at(art, frame * Vector3(-13.0, g + GALLERY_UP - 1.2, z), Color(0.45, 0.7, 1.0), 4.0, 24.0)
+		_hung_lamp(art, frame, Vector3(11.0, roof - 1.0, z), roof, cool, Color(0.35, 0.95, 1.0), 4.5, 24.0)
+		_hung_lamp(art, frame, Vector3(-13.0, roof - 1.0, z), roof, cool, Color(0.45, 0.7, 1.0), 4.0, 24.0)
 	for z: float in [43.0, 105.0]:
-		_lamp_at(art, frame * Vector3(0.0, g + GALLERY_UP - 2.0, z), Color(1.0, 0.6, 0.3), 3.5, 16.0)
+		_hung_lamp(art, frame, Vector3(0.0, roof - 1.6, z), roof, warm, Color(1.0, 0.6, 0.3), 3.5, 16.0)
+	_dress_gallery_shell(g)
 	# Strips along the long halls' walls, broken where a cross hall or an
 	# alcove opens in them.
-	for run: Array in [[6.15, 48.0, 69.0], [6.15, 79.0, 100.0], [19.85, 38.5, 52.0], [19.85, 60.0, 84.0],
-			[19.85, 92.0, 109.5]]:
+	for run: Array in GALLERY_WALL_RUNS:
+		var face: float = run[0]
+		var into := 0.55 if face < 10.0 else -0.55
 		for side: float in [-1.0, 1.0]:
-			var length: float = float(run[2]) - float(run[1])
+			var length: float = float(run[2]) - float(run[1]) - 1.0
 			_glow_box(art, frame, Vector3(0.2, 0.12, length),
-					Vector3(side * float(run[0]), g + 2.6, (float(run[1]) + float(run[2])) * 0.5), strip)
+					Vector3(side * (face + into), g + 2.6, (float(run[1]) + float(run[2])) * 0.5), strip)
 	var coil := _glow(Color(1.0, 0.55, 0.2), 4.0)
 	var band := CylinderMesh.new()
 	band.top_radius = COIL_RADIUS + 0.06
@@ -1685,6 +1732,61 @@ func _dress_galleries(art: Node3D, frame: Transform3D, strip: Material, amber: M
 	for x: float in [c[0] + 0.1, c[1] - 0.1]:
 		_glow_box(art, frame, Vector3(0.12, 0.05, c[3] - c[2]), Vector3(x, g + 0.03, (c[2] + c[3]) * 0.5), cold)
 	_glow_box(art, frame, Vector3(0.3, 0.3, 0.2), Vector3(0, g + GALLERY_UP - 0.4, 110.1), amber)
+	var mist := StandardMaterial3D.new()
+	mist.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mist.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mist.albedo_color = Color(0.75, 0.9, 1.0, 0.09)
+	mist.cull_mode = BaseMaterial3D.CULL_DISABLED
+	for up: float in [0.25, 0.6, 1.0]:
+		_glow_box(art, frame, Vector3(c[1] - c[0] + 0.6, 0.01, c[3] - c[2] - 1.0),
+				Vector3((c[0] + c[1]) * 0.5, g + up, (c[2] + c[3]) * 0.5), mist)
+	# The walkway's edge, lit like the hall's catwalks.
+	var w: Array = WALKWAY
+	_glow_box(art, frame, Vector3(0.2, 0.12, float(w[3]) - float(w[2])),
+			Vector3(float(w[0]) + 0.1, g + WALKWAY_UP - 0.4, (float(w[2]) + float(w[3])) * 0.5), strip)
+	_flush_deco(art, frame)
+
+
+## The galleries' shell, so they read as the inside of a machine: ribs up
+## the long walls, beams across the roof, pipes and cable trays along the
+## walls, the coils' plinths, frosted caps and conduits, kerbs along the
+## coolant. All of it decoration, merged.
+func _dress_gallery_shell(g: float) -> void:
+	var roof := g + GALLERY_UP
+	for run: Array in GALLERY_WALL_RUNS:
+		var face: float = run[0]
+		var into := 1.0 if face < 10.0 else -1.0
+		for side: float in [-1.0, 1.0]:
+			var z: float = float(run[1]) + 1.0
+			while z < float(run[2]) - 0.5:
+				_deco(Vector3(0.4, GALLERY_UP, 0.7), Vector3(side * (face + into * 0.25), g + GALLERY_UP * 0.5, z), HULL_DARK)
+				z += 4.0
+			var length: float = float(run[2]) - float(run[1])
+			var mid := (float(run[1]) + float(run[2])) * 0.5
+			if into < 0.0:
+				for up: float in [7.0, 7.7]:
+					_deco_cyl(0.22, length, Vector3(side * (face - 0.6), g + up, run[1]), STEEL, Basis(Vector3.RIGHT, PI / 2.0))
+			else:
+				_deco(Vector3(0.7, 0.15, length), Vector3(side * (face + 0.55), g + 7.4, mid), STEEL)
+				_deco(Vector3(0.7, 0.4, 0.05), Vector3(side * (face + 0.55), g + 7.55, mid), HULL_DARK)
+	var z := 41.0
+	while z < 109.0:
+		for x: float in [-13.0, 13.0]:
+			_deco(Vector3(14.0, 0.7, 0.6), Vector3(x, roof - 0.35, z), HULL_DARK)
+		z += 6.0
+	for at: Vector2 in coil_spots():
+		_deco_cyl(COIL_RADIUS + 0.3, 0.4, Vector3(at.x, g, at.y), HULL_DARK)
+		_deco_cyl(COIL_RADIUS + 0.05, 0.35, Vector3(at.x, g + 5.0, at.y), FROST)
+		_deco_cyl(0.45, GALLERY_UP - 5.2, Vector3(at.x, g + 5.2, at.y), STEEL)
+	var c: Array = GALLERY_COOLANT
+	for x: float in [c[0] - 0.15, c[1] + 0.15]:
+		_deco(Vector3(0.3, 0.2, c[3] - c[2]), Vector3(x, g + 0.1, (c[2] + c[3]) * 0.5), STEEL)
+
+
+## The long halls' walls ([x of the face, z from, z to]), broken where a
+## cross hall or an alcove opens in them.
+const GALLERY_WALL_RUNS := [[6.0, 48.0, 69.0], [6.0, 79.0, 100.0], [20.0, 38.0, 52.0], [20.0, 60.0, 84.0],
+		[20.0, 92.0, 110.0]]
 
 
 ## The Descent: a lamp over each landing and the foot, strips down the
@@ -1693,11 +1795,25 @@ func _dress_descent(art: Node3D, frame: Transform3D, strip: Material, amber: Mat
 	var g := GALLERY_FLOOR
 	var step := DESCENT_DROP / 3.0
 	var mid := (DESCENT_FROM_Z + DESCENT_TO_Z) * 0.5
-	_lamp_at(art, frame * Vector3(0, g + GALLERY_UP, DESCENT_FROM_Z + 3.0), Color(0.35, 0.95, 1.0), 4.5, 26.0)
-	_lamp_at(art, frame * Vector3(0, g - step + 6.0, DESCENT_TO_Z - DESCENT_FOOT + 3.0), Color(1.0, 0.6, 0.3), 4.5, 26.0)
-	_lamp_at(art, frame * Vector3(0, g - step * 2.0 + 6.0, DESCENT_FROM_Z + 3.0), Color(0.35, 0.95, 1.0), 4.5, 26.0)
-	_lamp_at(art, frame * Vector3(0, DESCENT_FLOOR + 7.0, DESCENT_TO_Z - 8.0), Color(1.0, 0.6, 0.3), 5.0, 28.0)
-	_lamp_at(art, frame * Vector3(0, g - step * 1.5, mid), Color(0.45, 0.7, 1.0), 4.0, 30.0)
+	var top := g + GALLERY_UP + DESCENT_ROOF
+	var cool := _glow(Color(0.7, 0.95, 1.0), 4.0)
+	var warm := _glow(Color(1.0, 0.75, 0.45), 4.0)
+	_hung_lamp(art, frame, Vector3(0, g + GALLERY_UP, DESCENT_FROM_Z + 3.0), top, cool, Color(0.35, 0.95, 1.0), 4.5, 26.0)
+	_hung_lamp(art, frame, Vector3(0, g - step + 6.0, DESCENT_TO_Z - DESCENT_FOOT + 3.0), top, warm, Color(1.0, 0.6, 0.3), 4.5, 26.0)
+	_hung_lamp(art, frame, Vector3(0, g - step * 2.0 + 6.0, DESCENT_FROM_Z + 3.0), top, cool, Color(0.35, 0.95, 1.0), 4.5, 26.0)
+	_hung_lamp(art, frame, Vector3(0, DESCENT_FLOOR + 7.0, DESCENT_TO_Z - 8.0), top, warm, Color(1.0, 0.6, 0.3), 5.0, 28.0)
+	_hung_lamp(art, frame, Vector3(0, g - step * 1.5, mid), top, cool, Color(0.45, 0.7, 1.0), 4.0, 30.0)
+	# The well's lining: ribs up its long walls, girders under its roof and
+	# pipes down either side of the Heart's door.
+	var base := DESCENT_FLOOR
+	var z := DESCENT_FROM_Z + 2.0
+	while z < DESCENT_TO_Z - 1.0:
+		for side: float in [-1.0, 1.0]:
+			_deco(Vector3(0.4, top - base, 0.8), Vector3(side * (DESCENT_HALF - 0.2), (top + base) * 0.5, z), HULL_DARK)
+		_deco(Vector3(DESCENT_HALF * 2.0, 0.8, 0.6), Vector3(0, top - 0.4, z), HULL_DARK)
+		z += 6.0
+	for x: float in [-8.0, -7.2, 7.2, 8.0]:
+		_deco_cyl(0.3, top - base, Vector3(x, base, DESCENT_TO_Z - 0.4), STEEL)
 	for side: float in [-1.0, 1.0]:
 		_glow_box(art, frame, Vector3(0.2, 0.12, DESCENT_TO_Z - DESCENT_FROM_Z - 2.0),
 				Vector3(side * (DESCENT_HALF - 0.1), g - step, mid), strip)
@@ -1709,6 +1825,11 @@ func _dress_descent(art: Node3D, frame: Transform3D, strip: Material, amber: Mat
 	var seal := _visual_box(Vector3(9.6, 7.8, 0.3), frame * Vector3(0, low + 3.9, face - 0.1), HULL_DARK)
 	seal.basis = frame.basis
 	art.add_child(seal)
+	# The seal's two leaves and the bolts holding them shut.
+	_deco(Vector3(0.12, 7.6, 0.1), Vector3(0, low + 3.9, face - 0.3), STEEL)
+	for y: float in [1.5, 3.9, 6.3]:
+		_deco(Vector3(2.2, 0.5, 0.25), Vector3(0, low + y, face - 0.35), STEEL)
+	_flush_deco(art, frame)
 
 
 ## The cable lift: cables up from each cage's head, a light ring on its
@@ -1725,13 +1846,38 @@ func _dress_lift(art: Node3D, frame: Transform3D) -> void:
 					Vector3(stop.x + k * 0.8, (roof + head) * 0.5, stop.z), cable)
 		var half := LIFT_CAGE * 0.5 - 0.3
 		for k: float in [-1.0, 1.0]:
-			_glow_box(art, frame, Vector3(LIFT_CAGE - 0.6, 0.06, 0.15), Vector3(stop.x, stop.y + 0.04, stop.z + k * half), _lift_glow)
-			_glow_box(art, frame, Vector3(0.15, 0.06, LIFT_CAGE - 0.6), Vector3(stop.x + k * half, stop.y + 0.04, stop.z), _lift_glow)
+			_glow_box(art, frame, Vector3(LIFT_CAGE - 0.6, 0.06, 0.15), Vector3(stop.x, stop.y + 0.07, stop.z + k * half), _lift_glow)
+			_glow_box(art, frame, Vector3(0.15, 0.06, LIFT_CAGE - 0.6), Vector3(stop.x + k * half, stop.y + 0.07, stop.z), _lift_glow)
 		var light := Look.lamp(LIFT_DEAD, 2.0, 9.0)
 		light.position = frame * Vector3(stop.x, head - 0.6, stop.z)
 		art.add_child(light)
 		_lift_lights.append(light)
+		_dress_cage(stop, head, roof)
+		_flush_deco(art, frame)
 	_glow_box(art, frame, Vector3(1.0, 0.5, 0.1), Vector3(LIFT_SWITCH.x, DESCENT_FLOOR + 1.2, LIFT_SWITCH.y + 0.75), _lift_glow)
+
+
+## A lift cage that reads as one: a deck plate, a frame round its head, a
+## barred back to the wall and bars along its sides, and the headgear its
+## cables run over, up under the roof.
+func _dress_cage(stop: Vector3, head: float, roof: float) -> void:
+	var half := LIFT_CAGE * 0.5
+	var wall := 1.0 if stop.x > 0.0 else -1.0
+	_deco(Vector3(LIFT_CAGE - 0.5, 0.06, LIFT_CAGE - 0.5), stop + Vector3(0, 0.03, 0), STEEL)
+	for k: float in [-1.0, 1.0]:
+		_deco(Vector3(LIFT_CAGE, 0.3, 0.3), Vector3(stop.x, head - 0.15, stop.z + k * (half - 0.2)), HULL_DARK)
+		_deco(Vector3(0.3, 0.3, LIFT_CAGE), Vector3(stop.x + k * (half - 0.2), head - 0.15, stop.z), HULL_DARK)
+		# Bars along the sides, above head height and at the waist.
+		for up: float in [1.1, head - stop.y - 1.2]:
+			_deco(Vector3(LIFT_CAGE - 0.4, 0.1, 0.1), Vector3(stop.x, stop.y + up, stop.z + k * (half - 0.2)), STEEL)
+	var bar_x := stop.x + wall * (half - 0.2)
+	var z := -half + 0.7
+	while z < half - 0.5:
+		_deco(Vector3(0.08, head - stop.y - 0.4, 0.08), Vector3(bar_x, (head + stop.y) * 0.5, stop.z + z), STEEL)
+		z += 0.5
+	_deco(Vector3(3.0, 1.2, 2.2), Vector3(stop.x, roof - 0.6, stop.z), HULL_DARK)
+	_deco_cyl(0.8, 0.3, Vector3(stop.x, roof - 2.0, stop.z - 0.15), STEEL, Basis(Vector3.RIGHT, PI / 2.0))
+	_deco(Vector3(0.3, 1.0, 0.6), Vector3(stop.x, roof - 1.6, stop.z), HULL_DARK)
 
 
 const LIFT_DEAD := Color(1.0, 0.25, 0.15)
@@ -1775,6 +1921,59 @@ func _glow_box(art: Node3D, frame: Transform3D, size: Vector3, at: Vector3, mate
 	node.mesh = mesh
 	node.transform = frame * Transform3D(Basis.IDENTITY, at)
 	art.add_child(node)
+
+
+## Decoration merged like `_part` but with no collision: boxes and
+## cylinders in the drum's frame, one mesh per material per `_flush_deco`.
+var _deco_batches := {}
+
+
+func _deco(size: Vector3, at: Vector3, material: Material, basis := Basis.IDENTITY) -> void:
+	var mesh := BoxMesh.new()
+	mesh.size = size
+	_deco_batch(material).append_from(mesh, 0, Transform3D(basis, at))
+
+
+## A cylinder standing on `at` (its axis up, or turned by `basis`).
+func _deco_cyl(radius: float, height: float, at: Vector3, material: Material, basis := Basis.IDENTITY) -> void:
+	var mesh := CylinderMesh.new()
+	mesh.top_radius = radius
+	mesh.bottom_radius = radius
+	mesh.height = height
+	mesh.radial_segments = 12
+	mesh.rings = 1
+	_deco_batch(material).append_from(mesh, 0, Transform3D(basis, at + basis.y * height * 0.5))
+
+
+func _deco_batch(material: Material) -> SurfaceTool:
+	if not _deco_batches.has(material):
+		var tool := SurfaceTool.new()
+		tool.begin(Mesh.PRIMITIVE_TRIANGLES)
+		_deco_batches[material] = tool
+	return _deco_batches[material]
+
+
+func _flush_deco(art: Node3D, frame: Transform3D) -> void:
+	for material: Material in _deco_batches:
+		var mesh := (_deco_batches[material] as SurfaceTool).commit()
+		mesh.surface_set_material(0, material)
+		var node := MeshInstance3D.new()
+		node.mesh = mesh
+		node.transform = frame
+		node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		art.add_child(node)
+	_deco_batches.clear()
+
+
+## A lamp hung from the roof at `roof`: a rod, a housing and a lit panel
+## under it, so the light comes from something.
+func _hung_lamp(art: Node3D, frame: Transform3D, at: Vector3, roof: float, panel: Material, color: Color,
+		energy: float, reach: float) -> void:
+	if roof - at.y > 0.6:
+		_deco(Vector3(0.1, roof - at.y, 0.1), Vector3(at.x, (roof + at.y) * 0.5, at.z), STEEL)
+	_deco(Vector3(1.6, 0.35, 0.9), at + Vector3(0, 0.15, 0), HULL_DARK)
+	_deco(Vector3(1.4, 0.05, 0.7), at - Vector3(0, 0.05, 0), panel)
+	_lamp_at(art, frame * (at - Vector3(0, 0.5, 0)), color, energy, reach)
 
 
 func _lamp_at(art: Node3D, at: Vector3, color: Color, energy: float, reach: float) -> void:

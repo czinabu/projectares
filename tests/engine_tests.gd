@@ -184,7 +184,8 @@ static func _deeper(t: Node) -> void:
 	for spot: Array in [[Vector3(0, g, 72.0), "a cross hall"], [Vector3(13.0, g, 70.0), "the north gallery"],
 			[Vector3(-8.0, g, 72.0), "the south gallery's dry walk"], [Vector3(21.5, g, 56.0), "a coil alcove"],
 			[Vector3(0, g, 116.0), "the Descent's top"], [Vector3(-3.0, g - step, 160.0), "the Descent's east landing"],
-			[Vector3(-4.0, g - step * 2.0, 117.0), "the Descent's west landing"], [Vector3(8.0, bottom, 168.0), "the Descent's foot"]]:
+			[Vector3(-4.0, g - step * 2.0, 117.0), "the Descent's west landing"], [Vector3(8.0, bottom, 168.0), "the Descent's foot"],
+			[Vector3(18.0, g + MapScript.WALKWAY_UP, 76.0), "the north gallery's walkway"]]:
 		var top: Vector3 = frame * ((spot[0] as Vector3) + Vector3(0, 3.0, 0))
 		var hit := _ray(space, top, top + Vector3(0, -6.0, 0))
 		var floor_y: float = (frame * (spot[0] as Vector3)).y
@@ -203,7 +204,22 @@ static func _deeper(t: Node) -> void:
 	t.check(path.size() > 1 and path[path.size() - 1].distance_to(goal) < 2.0,
 			"a path runs from the Shaft's foot through the galleries and down the Descent (%d points, ends %.1f m off)"
 			% [path.size(), path[path.size() - 1].distance_to(goal) if path.size() > 0 else -1.0])
+	var deck := frame * Vector3(18.0, g + MapScript.WALKWAY_UP, 76.0)
+	var up_path := NavigationServer3D.map_get_path(nav, NavigationServer3D.map_get_closest_point(nav, frame * Vector3(12.0, g, 60.0)), deck, true)
+	t.check(up_path.size() > 1 and up_path[up_path.size() - 1].distance_to(deck) < 1.5,
+			"the walkway can be walked up to from the gallery floor")
 	var guards: Array = raid._guards
+	var switch_at := frame * Vector3(MapScript.LIFT_SWITCH.x, bottom, MapScript.LIFT_SWITCH.y)
+	var keepers := guards.filter(func(guard: Dictionary) -> bool:
+		return (guard.marker as Node3D).global_position.distance_to(switch_at) < 6.0)
+	t.check(keepers.size() >= 2, "Wardens keep the lift's switch (%d)" % keepers.size())
+	var high := 0
+	var deck_y := (frame * Vector3(0, g + 3.0, 0)).y
+	for guard: Dictionary in guards:
+		var at := (guard.marker as Node3D).global_position
+		if at.y > deck_y and MapScript.engine_depth(at) == 1:
+			high += 1
+	t.check(high >= 1, "and one up on the walkway")
 	var per_depth := [0, 0, 0]
 	for guard: Dictionary in guards:
 		per_depth[MapScript.engine_depth((guard.marker as Node3D).global_position)] += 1

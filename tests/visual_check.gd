@@ -2629,6 +2629,12 @@ func _engine_shots(out_dir: String) -> void:
 	cam.look_at_from_position(at.call(Vector3(13, g + 5.5, 39)), at.call(Vector3(14, g + 1.0, 100)))
 	await _settle(20)
 	await _shot(out_dir.path_join("engine_6_galleries.png"))
+	# 6b. The walkway, from the gallery floor under its far ramp.
+	place.call(squad, [Vector3(18, g + MapScript.WALKWAY_UP, 62), Vector3(18, g + MapScript.WALKWAY_UP, 70),
+			Vector3(10, g, 66), Vector3(13, g, 80)], Vector3(13, g, 100))
+	cam.look_at_from_position(at.call(Vector3(9, g + 3.0, 104)), at.call(Vector3(17, g + 3.5, 60)))
+	await _settle(20)
+	await _shot(out_dir.path_join("engine_6b_walkway.png"))
 	# 7. The south gallery's coolant channel, the dry walk beside it.
 	place.call(squad, [Vector3(-8, g, 50), Vector3(-17, g, 46), Vector3(-9, g, 58), Vector3(-13, g, 42)],
 			Vector3(-13, g, 100))

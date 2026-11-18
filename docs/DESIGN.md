@@ -510,12 +510,17 @@ boss is made for one and scales with company. Its tiers:
 - **The Coil Galleries (built).** On the Shaft's floor, under the valley:
   two long halls 14 m wide and 72 m long joined by three cross halls 12 m
   across, a loop to fight round and flank through, with crates and fallen
-  coil housings for cover. Off each long hall's outer wall two alcoves hold
+  coil housings for cover, and a raised walkway 4.5 m up along the north
+  hall's outer wall (a ramp at each end), the galleries' high ground like
+  the hall's catwalks. Off each long hall's outer wall two alcoves hold
   a pair of dead Engine Coils, glowing at their bands, with a cache in each
   (and one by the way on). Down the south hall runs a channel of frozen
   coolant: it is not slick, it is bitter (2.6 a second against the
   galleries' 1.1), so the dry walk beside it is worth keeping to. A heater
-  in the middle cross hall, and six Wardens.
+  in the middle cross hall, and seven Wardens, one up on the walkway. The
+  halls are dressed as the machine's inside: ribbed walls, roof beams,
+  pipes and cable trays, hung lamps, frosted coil caps and mist over the
+  coolant.
 - **The Descent (built).** A well 22 m across and 40 m deep at the
   galleries' east end: three 10 m ramps switch back down it from landing to
   landing to its foot, each ramp railed on its open side, the last solid
@@ -523,7 +528,8 @@ boss is made for one and scales with company. Its tiers:
   cover, five Wardens and the sealed door to the Heart.
 - **The cable lift (built).** A cage at the Descent's foot and another in
   the Drum Hall beside the Shaft. It starts dead: one player standing at
-  the switch by the lower cage for four seconds powers it, and then it runs
+  the switch by the lower cage for four seconds powers it (two Wardens
+  keep the switch, so powering it is a fight), and then it runs
   for ten minutes for every player in the world (told on the war feed).
   While it runs, whoever stands two and a half seconds in one cage is
   carried to the other: the way home after a delve, and a quick way back
