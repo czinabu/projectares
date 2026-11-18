@@ -234,6 +234,9 @@ var scan_range := 0.0
 ## Under a roof (`indoors`): the share of flying speed and climb left. 1
 ## works fully, 0 cannot fly at all (wings cannot open).
 var indoor_mult := 1.0
+## How hard a storm's gusts push this rig in the air (`Weather.gust_at`):
+## wings catch the wind worst, boots barely.
+var gust_mult := 0.6
 
 var heat := 0.0
 var overheated := false

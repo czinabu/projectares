@@ -625,10 +625,15 @@ func _fire() -> void:
 
 
 ## How much further than usual a shot carries where this gun is: some worlds'
-## air carries it further (`WorldDef.shot_carry`, Frostline's still cold).
+## air carries it further (`WorldDef.shot_carry`, Frostline's still cold),
+## and a storm's carries it less (`Weather.carry_at`).
 func shot_carry() -> float:
 	var world := Worlds.of(actor) if actor != null else null
-	return world.shot_carry if world != null else 1.0
+	var carry := world.shot_carry if world != null else 1.0
+	var raid := Raid.of(actor) if actor != null else null
+	if raid != null and raid.weather.kind != "":
+		carry *= raid.weather.carry_at(actor.global_position)
+	return carry
 
 
 ## How far off bots hear this gun's shot (`Combat.noise`).

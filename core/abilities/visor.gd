@@ -188,11 +188,16 @@ func scan() -> bool:
 		return true
 	var found: Array[Dictionary] = []
 	var quiet := peaceful(actor)
+	# A storm halves a pulse's reach in its thick (DESIGN.md "Weather: ash
+	# storms"), by the worse of where the scanner and the other stand.
+	var raid := Raid.of(actor)
 	for node in actor.get_tree().get_nodes_in_group("actors"):
 		var other := node as Actor
 		if other == null or other == actor or other.is_dead or not Raid.together(actor, other):
 			continue
-		if other.global_position.distance_to(actor.global_position) > reach_to(other, scan_radius) or allied(actor, other):
+		var storm := raid.weather.sight_between(actor.global_position, other.global_position) if raid != null else 1.0
+		if other.global_position.distance_to(actor.global_position) > reach_to(other, scan_radius) * storm \
+				or allied(actor, other):
 			continue
 		found.append({"at": other.global_position, "yaw": other.cmd.yaw, "left": ghost_time})
 		# Every reveal is felt: the target hears it and learns where it came

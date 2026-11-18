@@ -107,6 +107,8 @@ static func heat_text(status: Dictionary) -> String:
 		parts.append("Top bounty %d" % int(status.bounty))
 	if str(status.get("event", "")) != "":
 		parts.append(str(status.event))
+	if str(status.get("storm", "")) != "":
+		parts.append(str(status.storm))
 	return "   ".join(parts)
 
 

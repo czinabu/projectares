@@ -368,6 +368,26 @@ func _build_environment() -> void:
 		"saturation": 0.72,
 		"contrast": 1.16,
 		"glow": 0.9,
+	}, {
+		# The thick of an ash storm (DESIGN.md "Weather: ash storms"): a body
+		# is a shape at 30 m, faint at 45 m and gone by 70 m (Caleb's pick).
+		# Look.soften_weather keeps it from closing in further.
+		"sky_tint": Color(0.35, 0.18, 0.13),
+		"sky_energy": 0.35,
+		"fog_color": Color(0.36, 0.2, 0.14),
+		"fog_density": 0.985,
+		"fog_depth_begin": 4.0,
+		"fog_depth_end": 55.0,
+		"fog_depth_curve": 0.8,
+		"haze_height": 0.9,
+		"sun_color": Color(1.0, 0.55, 0.35),
+		"sun_energy": 0.5,
+		"ambient_color": Color(0.6, 0.42, 0.36),
+		"ambient_energy": 1.6,
+		"exposure": 1.3,
+		"saturation": 0.75,
+		"contrast": 1.05,
+		"glow": 0.9,
 	})
 	Look.weather(self, "embers", 45.0)
 	_weather = get_node_or_null("Weather")

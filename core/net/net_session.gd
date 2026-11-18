@@ -85,7 +85,7 @@ signal base_visit_requested(owner_name: String, stash: Array, loadout: Dictionar
 signal portal_travel(destination: String)
 
 const DEFAULT_PORT := 24565
-const PROTOCOL := 44
+const PROTOCOL := 45
 ## Every packet is compressed, both ways. State updates are mostly repeated
 ## numbers, and a big battle sends a player hundreds of them a second. Server
 ## and client must agree, so a change here needs a new PROTOCOL.
@@ -115,6 +115,7 @@ const PROTOCOL := 44
 ## 42: thin ice: cracks (`_ice_crack`) and the open holes (`_ice_holes`).
 ## 43: a core boss's kind in a bot's spawn data ("boss") and a linked
 ## faction's call for help (`_grid_call`).
+## 45: the weather: a storm cell crossing the map (`_weather`).
 ## Where an out-of-date game gets the latest build: the rolling "latest"
 ## release the Windows client workflow publishes (docs/hosting.md).
 const UPDATE_URL := "https://github.com/czinabu/projectares/releases/tag/latest"
@@ -342,6 +343,7 @@ var _board_sent := {}    # peer id -> [board text, tick sent] (server, arena)
 var _board_dirty := false
 var _sent_standing := {} # actor id -> public renown standing last sent (server)
 var _sent_war := -1.0    # war intensity last sent (server)
+var _sent_weather := ""   # the storm kind last sent (server), "" for none
 var _sent_points := {}   # peer id -> strongpoint states last sent to them (server)
 var _sent_heat := {}     # peer id -> [body heat, warming] last sent to them (server)
 var _sent_tracks := {}   # peer id -> { track cell: last mark id sent } (server)
@@ -1568,6 +1570,8 @@ func _send_world(peer: int) -> void:
 	for id: int in _sent_standing:
 		_standing.rpc_id(peer, id, _sent_standing[id])
 	_war.rpc_id(peer, raid.war.intensity, raid.war.centre)
+	if raid.world.weather_kind != "":
+		_weather.rpc_id(peer, raid.weather.pack())
 	for portal in raid.portals:
 		_send_portal(peer, portal)
 	_sent_points.erase(peer)
@@ -1875,6 +1879,14 @@ func _server_late_tick(_delta: float) -> void:
 		_sent_war = raid.war.intensity
 		for peer in _joined_peers:
 			_war.rpc_id(peer, raid.war.intensity, raid.war.centre)
+	# The weather: a running storm a few times a second (a client carries the
+	# cell on in between), and once more when it ends.
+	if _tick % 20 == 0 and raid.world.weather_kind != "" \
+			and (raid.weather.kind != "" or _sent_weather != ""):
+		_sent_weather = raid.weather.kind
+		var cell := raid.weather.pack()
+		for peer in _joined_peers:
+			_weather.rpc_id(peer, cell)
 	# Body heat moves slowly too: its owner hears it a few times a second.
 	if _tick % 15 == 0 and raid.world.cold > 0.0:
 		for state in raid.players:
@@ -2240,7 +2252,8 @@ func _world_status(p_status: Dictionary) -> void:
 				"war": clampf(float(entry.get("war", 0.0)), 0.0, 1.0),
 				"level": str(entry.get("level", "")).left(24),
 				"bounty": maxi(0, int(entry.get("bounty", 0))),
-				"event": str(entry.get("event", "")).left(40)}
+				"event": str(entry.get("event", "")).left(40),
+				"storm": str(entry.get("storm", "")).left(24)}
 	world_status_changed.emit(world_status)
 
 
@@ -2995,6 +3008,14 @@ func _war(intensity: float, centre: Vector3) -> void:
 	if raid != null:
 		raid.war.intensity = clampf(intensity, 0.0, 1.0)
 		raid.war.centre = centre
+
+
+## The storm crossing the map (`Weather.pack`), for the sky, the visor and
+## the gusts a client predicts.
+@rpc("authority", "call_remote", "unreliable_ordered")
+func _weather(cell: Array) -> void:
+	if raid != null and cell.size() == 7 and typeof(cell[0]) == TYPE_STRING:
+		raid.weather.unpack(cell)
 
 
 ## A player's public standing: [renown, rank, streak, bounty, exposed, marked,

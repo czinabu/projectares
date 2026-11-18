@@ -377,6 +377,65 @@ Numbers are placeholders.
 - The only place heavy weapons are found.
 - Mid-map bank spots and sign-out create the extraction tension (section 7).
 
+### Weather: ash storms (Caleb's call)
+
+Ashfront has storms of ash that cross the map, one at a time, so the war
+has a rhythm you can read and play: you see a storm coming, and you choose
+to fight in it, wait it out or use it. The same system gives Frostline its
+whiteouts (Frostline step 5), and any later world can turn it on. Concept
+shots: `ares/ash-storms/concept/` in the project files.
+
+- **A storm is a moving cell.** It is about 300 m across (`WorldDef.weather_radius`). It
+  comes in from the rim on the wind side, crosses the field at walking pace
+  and leaves on the far side, building up over its first 40 s and dying
+  away over its last 40 s. A quiet spell of 6 to 12 minutes comes between
+  storms. Its edge is soft, about the outer 40% of its radius, so you can
+  walk out of the thick of it. From outside it is a towering wall of
+  dust, seen across the map, so nobody is caught by surprise.
+- **Sight (Caleb's pick: 70 m gone).** At the heart of a storm a body
+  is a shape at 30 m, faint at 45 m and gone by 70 m. Close fights stay
+  readable: bodies keep less of the fog up close, as in the war's storm.
+  Outside storms, the war's haze keeps its floor.
+- **Spotting and scans.** Bots see half as far in the thick of it
+  (`WorldDef.weather_sight`, measured where the bot and its target stand,
+  the worse of the two). A visor's scan pulse also reaches half as far for
+  anyone inside a storm. Thermal sees through ash (it already ignores
+  fog), which gives the Ember its storm job. Thermal still never sees
+  through walls.
+- **Sound.** Shots carry less inside a storm (`weather_carry`, 60%): bots
+  and people hear them nearer. The wind howls around you while you are in
+  it.
+- **Rough flying.** Gusts push anyone flying a rig, along the wind and
+  across it, rising and falling as you move through the storm. Wings get it
+  worst (`gust_mult` 1), the jetpack less (0.6) and boots barely (0.25).
+  A gust is an acceleration, never a jolt: it stays inside the feel rule.
+  It depends only on where you are in the storm, so it predicts online.
+- **Cover for a push.** While a storm covers a strongpoint the armies go
+  for it (`weather_pushes`): a faction picks a storm-covered site it does
+  not hold over a nearer clear one, unless the clear one is much nearer.
+- **Told in the world, never on the screen.** The wall is seen, and the
+  wind is heard. Every working helmet's heading tape marks the storm's
+  centre (`VisorHud.compass_marks`, kind "storm"). The watch map draws the
+  cell as a ring, and the zone line adds "ash storm" while you are in it.
+  The plaza's heat signs say when a world has a storm on.
+- **Authority.** Only the server runs the weather (`Raid.weather`, a
+  `Weather`). Clients are sent the cell (where it is, how it moves, how big
+  and how strong it is) a few times a second (`NetSession._weather`), and
+  they move it on between updates. What it looks like is `WeatherView`
+  (view only): the wall, the driven ash around the camera and the fog,
+  which deepens with how far into the storm the camera is. Both views are
+  the same.
+- **Per world.** A world turns storms on with `WorldDef.weather_kind`
+  ("ash", "snow"), names them (`weather_name`) and tunes them with
+  `weather_*` (gap, radius, speed, sight, carry, gust, cold). It picks their
+  path with `weather_path`. Frostline will add `weather_cold` (body heat
+  drains faster in a whiteout) and `weather_wipes_tracks`. The map hands
+  `Look.atmosphere` a storm mood beside its war mood, and `Look` dresses
+  the storm from its kit of that kind. Every number is a placeholder for
+  the playtest.
+- **Checks.** By eye: `visual_check.tscn -- <dir> --weather-only`. Its
+  cost: the frame bench's `--storm` puts the player in the thick of one.
+
 ### Risk zones (Caleb's call)
 
 The PvP world is split into rings of risk, so every outing is a choice of

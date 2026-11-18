@@ -241,6 +241,16 @@ var column_card := 12.0
 var column_glow := 1.8
 
 var _storm_globals_ready := false
+## A storm crossing the map (DESIGN.md "Weather: ash storms") lowers those
+## floors while the camera is in it, by `weather_cover` (0 clear air, 1 the
+## thick of it): at the heart depth fog may start at `weather_fog_begin_min`
+## and be solid by `weather_fog_solid_min`, about 70 m gone (Caleb's pick).
+## The map's storm mood eases in at `weather_follow` a second.
+var weather_fog_begin_min := 4.0
+var weather_fog_solid_min := 50.0
+var weather_depth_amount_cap := 0.985
+var weather_follow := 0.35
+var weather_cover := 0.0
 
 var _materials := {}
 var _noise: NoiseTexture2D
@@ -427,8 +437,13 @@ func _noise_texture() -> NoiseTexture2D:
 ## "war_intensity" meta climbs from 0 to 1, and a column of smoke stands over
 ## its "war_centre" meta. Whoever runs the world sets those metas; nothing
 ## here knows who.
+## `storm` holds the same keys for the thick of a storm crossing the map
+## (DESIGN.md "Weather: ash storms"). The mood blends towards it by the
+## map's "weather_here" meta (set by `WeatherView`: how far into a storm the
+## camera is), through `soften_weather`, which lets it close in to about
+## 70 m but no closer.
 ## On a headless server this only adds a plain sun, which nothing sees.
-func atmosphere(parent: Node3D, p := {}, war := {}) -> void:
+func atmosphere(parent: Node3D, p := {}, war := {}, storm := {}) -> void:
 	var sun := DirectionalLight3D.new()
 	sun.name = "Sun"
 	sun.rotation_degrees = p.get("sun_angles", Vector3(-45, 30, 0))
@@ -480,20 +495,24 @@ func atmosphere(parent: Node3D, p := {}, war := {}) -> void:
 	parent.add_child(world_env)
 	parent.add_child(edge_ink())
 	var calm := mood_values(p)
+	weather_cover = 0.0
 	apply_mood(calm, env, sky_mat, sun)
-	if war.is_empty():
+	if war.is_empty() and storm.is_empty():
 		return
 	var mood := WarMood.new()
 	mood.name = "WarMood"
 	mood.follow = storm_follow
 	mood.calm = calm
-	mood.war = soften_storm(mood_values(war, calm))
+	mood.war = soften_storm(mood_values(war, calm)) if not war.is_empty() else calm
+	mood.storm = soften_weather(mood_values(storm, calm)) if not storm.is_empty() else {}
 	mood.env = env
 	mood.sky_mat = sky_mat
 	mood.sun = sun
-	mood.column = _war_column()
+	mood.ink = parent.get_node_or_null("EdgeInk") as MeshInstance3D
 	parent.add_child(mood)
-	mood.add_child(mood.column)
+	if not war.is_empty():
+		mood.column = _war_column()
+		mood.add_child(mood.column)
 
 
 ## The edge ink over an outdoor map (`assets/shaders/edge_ink.gdshader`): a
@@ -583,6 +602,24 @@ func soften_storm(m: Dictionary) -> Dictionary:
 	return out
 
 
+## Pulls a storm mood back inside its own floor: depth fog may close in
+## further than the war's (`weather_fog_begin_min`, `weather_fog_solid_min`)
+## but never into the face, and never to a full wipe.
+func soften_weather(m: Dictionary) -> Dictionary:
+	var out := m.duplicate()
+	if float(out.fog_depth_end) > float(out.fog_depth_begin) + 1.0:
+		out.fog_depth_begin = maxf(out.fog_depth_begin, weather_fog_begin_min)
+		out.fog_depth_end = maxf(out.fog_depth_end, weather_fog_solid_min)
+		out.fog_depth_curve = maxf(out.fog_depth_curve, 0.75)
+		out.fog_density = clampf(out.fog_density, 0.0, weather_depth_amount_cap)
+	else:
+		out.fog_density = minf(out.fog_density, storm_fog_density_cap * 4.0)
+	if absf(out.fog_height_density) > 0.0001:
+		out.fog_height_density = clampf(out.fog_height_density, 0.0, storm_height_density_cap)
+		out.fog_height = minf(out.fog_height, storm_fog_height_max)
+	return out
+
+
 ## Writes `m` onto `env`'s fog and onto the globals the character, gear and
 ## melee shaders read (they replace the engine fog, so they need the same
 ## numbers). Depth mode when the range is real; otherwise exponential.
@@ -595,10 +632,12 @@ func apply_fog(env: Environment, m: Dictionary) -> void:
 	var height_density: float = m.fog_height_density
 	var use_depth := end > begin + 1.0
 	if use_depth:
-		begin = maxf(begin, storm_fog_begin_min)
-		end = maxf(end, storm_fog_solid_min)
+		# In a storm the floor comes down with how far in the camera is.
+		var cover := clampf(weather_cover, 0.0, 1.0)
+		begin = maxf(begin, lerpf(storm_fog_begin_min, weather_fog_begin_min, cover))
+		end = maxf(end, lerpf(storm_fog_solid_min, weather_fog_solid_min, cover))
 		curve = maxf(curve, 0.75)
-		density = clampf(density, 0.0, storm_depth_amount_cap)
+		density = clampf(density, 0.0, lerpf(storm_depth_amount_cap, weather_depth_amount_cap, cover))
 		env.fog_mode = Environment.FOG_MODE_DEPTH
 		env.fog_depth_begin = begin
 		env.fog_depth_end = end
@@ -846,23 +885,49 @@ class WarMood:
 	var column_from := 0.3
 	var calm := {}
 	var war := {}
+	## The thick of a storm (`Look.atmosphere`'s `storm`), or empty.
+	var storm := {}
 	var env: Environment
 	var sky_mat: ShaderMaterial
 	var sun: DirectionalLight3D
 	var column: Node3D
+	## The map's edge ink, which a storm fades out: outlines would draw the
+	## shapes the ash hides.
+	var ink: MeshInstance3D
 	## The intensity shown right now.
 	var shown := 0.0
+	## How far into a storm the view is shown to be, 0 to 1.
+	var storm_shown := 0.0
+	var _ink_strength := -1.0
 
 	func _process(delta: float) -> void:
 		var parent := get_parent()
 		var target := clampf(float(parent.get_meta("war_intensity", 0.0)), 0.0, 1.0)
 		shown = move_toward(shown, target, follow * delta)
+		if not storm.is_empty():
+			var here := clampf(float(parent.get_meta("weather_here", 0.0)), 0.0, 1.0)
+			storm_shown = move_toward(storm_shown, here, Look.weather_follow * delta)
 		show_intensity(shown, parent.get_meta("war_centre", Vector3.ZERO))
 
 	## Sets the mood for an intensity at once. `_process` calls this with the eased value.
 	func show_intensity(value: float, centre: Vector3) -> void:
 		shown = value
-		Look.apply_mood(Look.blend_moods(calm, war, value), env, sky_mat, sun)
+		var mood := Look.blend_moods(calm, war, value)
+		if not storm.is_empty():
+			mood = Look.blend_moods(mood, storm, storm_shown)
+		Look.weather_cover = storm_shown if not storm.is_empty() else 0.0
+		Look.apply_mood(mood, env, sky_mat, sun)
+		# In a storm the air hides the sky too, and outlines fade with it.
+		env.fog_sky_affect = Look.weather_cover
+		if ink != null and is_instance_valid(ink):
+			var mat := (ink.mesh as QuadMesh).material as ShaderMaterial if ink.mesh is QuadMesh else null
+			if mat != null:
+				if _ink_strength < 0.0:
+					var base: Variant = mat.get_shader_parameter("strength")
+					_ink_strength = float(base) if base != null else 0.8
+				mat.set_shader_parameter("strength", _ink_strength * (1.0 - Look.weather_cover))
+		if column == null:
+			return
 		var smoke: GPUParticles3D = column.get_node("Smoke")
 		var glow: OmniLight3D = column.get_node("Glow")
 		var strength := clampf((value - column_from) / maxf(1.0 - column_from, 0.001), 0.0, 1.0)
@@ -872,6 +937,27 @@ class WarMood:
 		if strength > 0.0:
 			column.global_position = column.global_position.lerp(centre, 0.02) \
 					if column.global_position.distance_to(centre) < 120.0 else centre
+
+
+## How each kind of storm looks (`WeatherView`): the wall's dark and lit
+## colour, the driven streaks and the billows around the viewer, and how
+## steeply the streaks fall. A world picks a kind; nothing here names one.
+const WEATHER_KITS := {
+	"ash": {
+		"wall_tint": Color(0.18, 0.09, 0.07), "wall_lit": Color(0.55, 0.28, 0.16),
+		"streak": Color(0.55, 0.32, 0.22, 0.55), "streak_size": Vector2(0.025, 0.55),
+		"billow": Color(0.42, 0.24, 0.17, 0.22), "fall": -0.06, "wall_height": 95.0,
+	},
+	"snow": {
+		"wall_tint": Color(0.66, 0.72, 0.8), "wall_lit": Color(0.95, 0.97, 1.0),
+		"streak": Color(1.0, 1.0, 1.0, 0.8), "streak_size": Vector2(0.04, 0.4),
+		"billow": Color(0.92, 0.94, 0.98, 0.28), "fall": -0.22, "wall_height": 70.0,
+	},
+}
+
+
+func weather_kit(kind: String) -> Dictionary:
+	return WEATHER_KITS.get(kind, WEATHER_KITS["ash"])
 
 
 ## Drifting particles that fill the air over the whole map: "embers", "snow"

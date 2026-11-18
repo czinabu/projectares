@@ -640,6 +640,7 @@ func _simulate_movement(delta: float) -> void:
 				lift = minf(lift, flight.lift_cap(gravity))
 				caught = maxf(caught, minf(lift, velocity.y + (gravity + flight.glide_lift_accel) * delta))
 			velocity.y = caught
+	_take_gusts(on_floor, delta)
 	velocity.y = maxf(velocity.y, -max_fall_speed)
 
 	var fall_speed := -velocity.y
@@ -659,6 +660,18 @@ func _simulate_movement(delta: float) -> void:
 		landed.emit(maxf(fall_speed, 0.0))
 		_hurt_by_fall(fall_speed, gliding)
 	_was_on_floor = now_on_floor
+
+
+## A storm's gusts push a flight rig in the air (DESIGN.md "Weather: ash
+## storms"), by its `gust_mult`. An acceleration, never a jolt, and a matter
+## of where the actor is in the storm only, so a client predicts it.
+func _take_gusts(on_floor: bool, delta: float) -> void:
+	if on_floor or not flight.enabled or flight.gust_mult <= 0.0 or vehicle != null:
+		return
+	var raid := Raid.of(self)
+	if raid == null or raid.weather.kind == "":
+		return
+	velocity += raid.weather.gust_at(global_position) * flight.gust_mult * delta
 
 
 ## A jetpack hovers in the air only while aim (`ActorCommand.secondary`,

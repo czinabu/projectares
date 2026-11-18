@@ -475,7 +475,7 @@ static func map_marks(p_raid: Raid, p: Actor, pings: Array[Vector3] = []) -> Dic
 		"facing": facing.normalized() if facing.length_squared() > 0.0001 else Vector2.UP,
 		"half": half,
 		"middle": middle,
-		"sites": [], "depots": [], "outposts": [], "pings": [], "war": null,
+		"sites": [], "depots": [], "outposts": [], "pings": [], "war": null, "storm": null,
 		"zones": PackedByteArray(),
 	}
 	for point in p_raid.strongpoints:
@@ -490,6 +490,8 @@ static func map_marks(p_raid: Raid, p: Actor, pings: Array[Vector3] = []) -> Dic
 		marks.pings.append(to_map.call(at))
 	if p_raid.war.intensity >= 0.2:
 		marks.war = to_map.call(p_raid.war.centre)
+	if p_raid.weather.active():
+		marks.storm = {"at": to_map.call(p_raid.weather.centre), "radius": p_raid.weather.radius / half}
 	var zones := PackedByteArray()
 	var varied := false
 	for row in MAP_GRID:
@@ -2388,6 +2390,17 @@ void fragment() {
 			pillar.call(at, 0.06, Color(0.45, 1.0, 0.6, 0.9))
 		for at: Vector2 in marks.get("pings", []):
 			pillar.call(at, 0.12, Color(warm, 0.9))
+		var storm: Variant = marks.get("storm")
+		if storm is Dictionary:
+			var middle3: Vector3 = ground.call(storm.at)
+			var r := float(storm.radius)
+			for i in 24:
+				if i % 2 == 1:
+					continue
+				var a := TAU * i / 24.0
+				var b := TAU * (i + 1) / 24.0
+				line.call(middle3 + Vector3(cos(a), 0.03, sin(a)) * r * w * 0.5,
+						middle3 + Vector3(cos(b), 0.03, sin(b)) * r * w * 0.5, Color(0.95, 0.72, 0.55, 0.8))
 		var war: Variant = marks.get("war")
 		if war is Vector2:
 			var centre: Vector3 = ground.call(war)
@@ -2660,6 +2673,14 @@ void fragment() {
 			draw_rect(box, Color(INK, 0.35), false, 1.5)
 			draw_string(ThemeDB.fallback_font, box.position + Vector2(box.size.x * 0.5 - 6.0, -3.0), "N",
 					HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(INK, 0.6))
+			var storm: Variant = map.get("storm")
+			if storm is Dictionary:
+				# A storm crossing the map: a slowly turning broken ring its size.
+				var spin := _time * 0.6
+				var r := float(storm.radius) * half
+				for k in 6:
+					var a := spin + TAU * k / 6.0
+					draw_arc(at.call(storm.at), r, a, a + TAU / 10.0, 8, Color(0.95, 0.72, 0.55, 0.7), 1.5, true)
 			var war: Variant = map.get("war")
 			if war is Vector2:
 				var pulse := 0.5 + 0.5 * sin(_time * 3.0)
