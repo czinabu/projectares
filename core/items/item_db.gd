@@ -326,6 +326,11 @@ func _ready() -> void:
 			"grip_points": [Vector3(-0.58, 1.27, -0.25), Vector3(-0.22, 1.27, -0.25)] as Array[Vector3],
 			"peg_points": [Vector3(-0.52, 0.86, -0.5), Vector3(-0.28, 0.86, -0.5)] as Array[Vector3],
 			"exit_offset": Vector3(-1.9, 0.1, 0.0), "body_color": Color(0.42, 0.48, 0.32),
+			# Four up (Caleb's call): the driver, a front passenger holding the
+			# dash rail and two behind, a little higher, holding the roll hoop's
+			# bar. Each passenger makes it only a little slower.
+			"passenger_seat": true, "seats": _rover_seats(),
+			"laden_speed": 0.97, "laden_accel": 0.94, "laden_turn": 0.97, "laden_hang": 1.0,
 			"footprint": Vector3(2.3, 1.4, 4.4), "watch_recharge": 30.0, "bay_scale": 0.6, "weight": 3.0},
 			"Armored four-wheeler. Slow to turn and needs open ground, but it shrugs off rough terrain.")
 	register("mech_bulwark", "Bulwark Mech", Rarity.EPIC, 4200, ["vehicle", "walker"],
@@ -453,6 +458,22 @@ func _attachment(id: String, display_name: String, rarity: Rarity, value: int, s
 	if vendor:
 		tags.append("vendor")
 	register(id, display_name, rarity, value, tags, stats, description)
+
+
+## The Warden Rover's three passenger seats (`Vehicle.seats`): the front
+## passenger beside the driver, and two behind on raised seats.
+func _rover_seats() -> Array:
+	var out: Array = [{"offset": Vector3(0.4, 0.13, 0.25), "point": Vector3(0.4, 0.95, 0.25),
+			"grips": [Vector3(0.24, 1.32, -0.32), Vector3(0.56, 1.32, -0.32)] as Array[Vector3],
+			"pegs": [Vector3(0.28, 0.86, -0.5), Vector3(0.52, 0.86, -0.5)] as Array[Vector3],
+			"lean": 0.15, "exit": Vector3(1.9, 0.1, 0.0)}]
+	for side: float in [-1.0, 1.0]:
+		var x := side * 0.4
+		out.append({"offset": Vector3(x, 0.23, 1.4), "point": Vector3(x, 1.05, 1.4),
+				"grips": [Vector3(x - 0.18, 1.42, 0.84), Vector3(x + 0.18, 1.42, 0.84)] as Array[Vector3],
+				"pegs": [Vector3(x - 0.12, 0.9, 0.9), Vector3(x + 0.12, 0.9, 0.9)] as Array[Vector3],
+				"lean": 0.15, "exit": Vector3(side * 1.9, 0.1, 1.4)})
+	return out
 
 
 ## Registers a blueprint (see `core/progression/crafting.gd` for what it makes).
