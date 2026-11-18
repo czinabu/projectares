@@ -36,6 +36,9 @@ const ENGINE_RADIUS := 22.0
 const ENGINE_LENGTH := 76.0
 ## How far round the hatch the Engine Sentinel keeps its guard.
 const SENTINEL_GROUND := 16.0
+## The valley's end: the glacier climbs behind it (and the pack ice at the
+## mouth past its mirror), so nothing on the ground lies further out.
+const VALLEY_HEAD_Z := 262.0
 ## The frozen lake where the valley widens.
 const LAKE_Z := -95.0
 const LAKE_RADIUS := Vector2(44.0, 40.0)
@@ -215,6 +218,26 @@ func ground_height(x: float, z: float) -> float:
 	return terrain.height_at(x, z)
 
 
+## Where the wind lifts snow off an edge in a storm (`WeatherView`'s
+## spindrift): along both rims' crests and the shelves' lips, every
+## `RIDGE_STEP` metres down the valley.
+const RIDGE_STEP := 14.0
+var _ridges := PackedVector3Array()
+
+
+func weather_ridges() -> PackedVector3Array:
+	if not _ridges.is_empty():
+		return _ridges
+	var z := VALLEY_HEAD_Z
+	while z > -VALLEY_HEAD_Z:
+		for side: float in [-1.0, 1.0]:
+			for out: float in [RIM_TO, SHELF_FROM]:
+				var x := centre(z) + side * (half_width(z) + out)
+				_ridges.append(Vector3(x, ground_height(x, z), z))
+		z -= RIDGE_STEP
+	return _ridges
+
+
 func _process(_delta: float) -> void:
 	# The snow blows round whoever is looking, not over the whole valley.
 	var camera := get_viewport().get_camera_3d()
@@ -241,6 +264,26 @@ func _build_environment() -> void:
 		"ambient_energy": 0.7,
 		"saturation": 0.85,
 		"contrast": 1.12,
+	}, {}, {
+		# The heart of a whiteout (DESIGN.md "Frostline"): the sun gone to a
+		# pale smear, everything the same blue-white, a body a shape at
+		# 30 m and gone by 70 m (Look.soften_weather keeps it from closing
+		# in further). Flat light, so the snow and the sky run together.
+		"sky_tint": Color(0.86, 0.9, 0.96),
+		"sky_saturation": 0.15,
+		"sky_energy": 0.9,
+		"fog_color": Color(0.8, 0.85, 0.92),
+		"fog_density": 0.985,
+		"fog_depth_begin": 4.0,
+		"fog_depth_end": 55.0,
+		"fog_depth_curve": 0.8,
+		"haze_height": 1.0,
+		"sun_color": Color(0.9, 0.93, 1.0),
+		"sun_energy": 0.45,
+		"ambient_color": Color(0.7, 0.76, 0.86),
+		"ambient_energy": 1.3,
+		"saturation": 0.6,
+		"contrast": 0.95,
 	})
 	var sun := get_node_or_null("Sun") as DirectionalLight3D
 	if sun != null:
