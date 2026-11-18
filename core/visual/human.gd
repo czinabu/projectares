@@ -158,7 +158,7 @@ static func build(look: Node, appearance: Dictionary) -> Node3D:
 		if source:
 			var part := MeshInstance3D.new()
 			part.name = SLOT_NODES[slot]
-			part.mesh = source.mesh
+			part.mesh = shaped(source.mesh, source.skin) if reshape else source.mesh
 			# Outfit files bind their meshes to bones by name, and every file
 			# names its bones the same, so a part fits any rig of its build.
 			part.skin = source.skin
@@ -167,6 +167,16 @@ static func build(look: Node, appearance: Dictionary) -> Node3D:
 			part.skeleton = part.get_path_to(skeleton)
 		donor.free()
 	return rig
+
+
+## How `character.gdshader` treats a surface: 1 skin, 2 skin the undersuit
+## covers (anywhere below the head), 3 eyes, 0 anything else.
+static func surface_kind(slot: String, material_name: String) -> int:
+	if material_name.begins_with("Skin"):
+		return 1 if slot == "head" else 2
+	if material_name == "Eye" or material_name == "Eyes":
+		return 3
+	return 0
 
 
 ## What a surface should be coloured, given the part it is on and the name of
@@ -188,3 +198,133 @@ static func color_for(appearance: Dictionary, slot: String, material_name: Strin
 		return {"color": CLOTH_COLORS[appearance[key]], "keep_shading": true}
 	return {}
 
+
+
+## Off only to compare against the packs' own meshes (`tests/body_check`).
+static var reshape := true
+## Reshaped copies of the packs' meshes, one per source mesh.
+static var _shape_cache := {}
+## Faces meeting at a sharper angle than this keep their edge.
+const SMOOTH_ANGLE := 62.0
+## The packs' heads are cartoon-large; this brings them toward an adult's
+## proportions. The Head bone (and with it the eyes and anything worn on
+## it) stays where it is: only the mesh weighted to it shrinks about it.
+const HEAD_SCALE := 0.9
+## Bones whose skin the undersuit covers with a glove.
+const HAND_BONES: Array[String] = ["Wrist", "Thumb", "Index", "Middle", "Ring", "Pinky"]
+
+
+## `mesh` as the game wears it: normals averaged across faces that meet at
+## a shallow angle, so the faceted pack bodies shade as rounded forms while
+## a crease (a cuff, a sole, a collar) keeps its edge, and the head drawn
+## in to `HEAD_SCALE`. Same vertex count, bones and weights, so it poses
+## and costs exactly as the original. Cached per mesh.
+static func shaped(mesh: Mesh, skin: Skin = null) -> Mesh:
+	var source := mesh as ArrayMesh
+	if source == null:
+		return mesh
+	if _shape_cache.has(source):
+		return _shape_cache[source]
+	# Where the head pivots, in the mesh's space, and its bone's index.
+	var head := -1
+	var pivot := Vector3.ZERO
+	if skin:
+		for b in skin.get_bind_count():
+			if skin.get_bind_name(b) == "Head":
+				# Mesh bone indices count the skin's binds.
+				head = b
+				pivot = skin.get_bind_pose(b).affine_inverse().origin
+				break
+	# The hand's bones, for the undersuit's gloves.
+	var hand_binds := {}
+	if skin:
+		for b in skin.get_bind_count():
+			var bone_name := String(skin.get_bind_name(b))
+			for prefix: String in HAND_BONES:
+				if bone_name.begins_with(prefix):
+					hand_binds[b] = true
+	var out := ArrayMesh.new()
+	out.resource_name = source.resource_name
+	var limit := cos(deg_to_rad(SMOOTH_ANGLE))
+	for i in source.get_surface_count():
+		var arrays := source.surface_get_arrays(i)
+		var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+		var normals: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+		if normals.size() == verts.size() and verts.size() > 0:
+			# Gather every vertex sharing a position.
+			var groups := {}
+			for v in verts.size():
+				var at := (verts[v] * 2000.0).round()
+				if groups.has(at):
+					(groups[at] as Array).append(v)
+				else:
+					groups[at] = [v]
+			var smooth := normals.duplicate()
+			for at: Vector3 in groups:
+				var members: Array = groups[at]
+				if members.size() < 2:
+					continue
+				for v: int in members:
+					var sum := Vector3.ZERO
+					for u: int in members:
+						if normals[v].dot(normals[u]) >= limit:
+							sum += normals[u]
+					if sum.length_squared() > 0.000001:
+						smooth[v] = sum.normalized()
+			arrays[Mesh.ARRAY_NORMAL] = smooth
+			arrays[Mesh.ARRAY_TANGENT] = null
+			arrays[Mesh.ARRAY_CUSTOM0] = _rest_marks(arrays, hand_binds)
+			if head >= 0 and not is_equal_approx(HEAD_SCALE, 1.0):
+				arrays[Mesh.ARRAY_VERTEX] = _draw_in_head(arrays, head, pivot)
+		var format := source.surface_get_format(i)
+		var flags := format & (Mesh.ARRAY_FLAG_USE_8_BONE_WEIGHTS | Mesh.ARRAY_FLAG_USE_DYNAMIC_UPDATE)
+		if arrays[Mesh.ARRAY_CUSTOM0] != null:
+			flags |= Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT
+		out.add_surface_from_arrays(source.surface_get_primitive_type(i), arrays,
+			source.surface_get_blend_shape_arrays(i), {}, flags)
+		out.surface_set_material(i, source.surface_get_material(i))
+		out.surface_set_name(i, source.surface_get_name(i))
+	_shape_cache[source] = out
+	return out
+
+
+## Each vertex's place on the body at rest (xyz) and how much it belongs to
+## a hand (w), as CUSTOM0 for `character.gdshader`: patterns drawn from the
+## rest position stay on the body as it moves, so cloth weave and the
+## undersuit's seams never swim.
+static func _rest_marks(arrays: Array, hand_binds: Dictionary) -> PackedFloat32Array:
+	var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	var bones = arrays[Mesh.ARRAY_BONES]
+	var weights = arrays[Mesh.ARRAY_WEIGHTS]
+	var per: int = bones.size() / verts.size() if bones != null and weights != null else 0
+	var out := PackedFloat32Array()
+	out.resize(verts.size() * 4)
+	for v in verts.size():
+		var hand := 0.0
+		for k in per:
+			if hand_binds.has(int(bones[v * per + k])):
+				hand += float(weights[v * per + k])
+		out[v * 4] = verts[v].x
+		out[v * 4 + 1] = verts[v].y
+		out[v * 4 + 2] = verts[v].z
+		out[v * 4 + 3] = clampf(hand, 0.0, 1.0)
+	return out
+
+
+## Vertex positions with whatever is weighted to bone `head` drawn in
+## toward `pivot`, by as much as it is weighted there.
+static func _draw_in_head(arrays: Array, head: int, pivot: Vector3) -> PackedVector3Array:
+	var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	var bones = arrays[Mesh.ARRAY_BONES]
+	var weights = arrays[Mesh.ARRAY_WEIGHTS]
+	if bones == null or weights == null or verts.is_empty():
+		return verts
+	var per: int = bones.size() / verts.size()
+	for v in verts.size():
+		var w := 0.0
+		for k in per:
+			if int(bones[v * per + k]) == head:
+				w += float(weights[v * per + k])
+		if w > 0.0:
+			verts[v] = verts[v].lerp(pivot + (verts[v] - pivot) * HEAD_SCALE, w)
+	return verts

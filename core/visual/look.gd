@@ -1331,7 +1331,10 @@ func character(skin_name: String, appearance: Dictionary = {}, who := "") -> Dic
 			if source.emission_enabled:
 				mat.set_shader_parameter("emission_color", source.emission * 2.5)
 			_bind_storm(mat)
-			if not chosen.is_empty():
+			if not chosen.is_empty() and Human.reshape:
+				mat.set_shader_parameter("has_rest", 1.0)
+				mat.set_shader_parameter("surface_kind",
+						Human.surface_kind(mesh_node.get_meta("slot", ""), source.resource_name))
 				var pick := Human.color_for(chosen, mesh_node.get_meta("slot", ""), source.resource_name)
 				if pick.has("color"):
 					mat.set_shader_parameter("recolor", pick["color"])
