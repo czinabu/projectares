@@ -253,6 +253,67 @@ static func run(t: Node) -> void:
 			and Look.edge_axis(AABB(Vector3.ZERO, Vector3(0.3, 2.0, 0.05))) == 0
 			and Look.edge_axis(AABB(Vector3.ZERO, Vector3(0.4, 0.4, 0.4))) == -1,
 			"bare metal is the edge, wood the grip, and only flat parts get a cutting edge")
+	# A pack model may lie along any axis in its mesh: the edge is found
+	# across the length it is given, and a blunt hammer has no edge at all.
+	t.check(Look.blade_axes(AABB(Vector3.ZERO, Vector3(0.3, 0.05, 2.0)), 2) == Vector2i(0, 1)
+			and Look.blade_axes(AABB(Vector3.ZERO, Vector3(0.05, 0.3, 2.0)), 2) == Vector2i(1, 0),
+			"a blade's cutting edge runs across the length it lies along, whichever axis that is")
+	var edges := {}
+	for id: String in ["hammer_breaker", "knife_gutter"]:
+		blade.item_id = id
+		var model := Look.weapon_model(blade)
+		for node in model.find_children("*", "MeshInstance3D", true, false):
+			var mesh_node := node as MeshInstance3D
+			for i in mesh_node.mesh.get_surface_count():
+				var mat := mesh_node.get_active_material(i) as ShaderMaterial
+				if mat != null and mat.get_shader_parameter("part") == 1.0 and int(mat.get_shader_parameter("edge_axis")) >= 0:
+					edges[id] = true
+					t.check(int(mat.get_shader_parameter("flat_axis")) != int(mat.get_shader_parameter("length_axis")),
+							"%s: a blade's flat is never across its length" % id)
+		model.free()
+	t.check(edges.has("knife_gutter") and not edges.has("hammer_breaker"), "a knife has a cutting edge and a hammer none")
+	# Guns share one finish (graphite frame, ceramic shells, lit trim in
+	# the gun's colour) and each wears its own kit, which never moves a grip,
+	# a sight or the muzzle.
+	var kits := true
+	var still := true
+	var two_tone := true
+	for id: String in ["rifle_scrap", "rifle_carbine", "smg_stinger", "dmr_longshot", "shotgun_breacher",
+			"pistol_service", "pistol_machine", "pistol_hand_cannon"]:
+		var gun := Gun.new()
+		gun.item_id = id
+		var model := Look.weapon_model(gun)
+		gun.free()
+		var kit := model.get_node_or_null("Kit")
+		kits = kits and kit != null and kit.get_child_count() > 0
+		var colors := {}
+		for node in model.find_children("*", "MeshInstance3D", true, false):
+			if node.get_parent() == kit:
+				continue
+			var mesh_node := node as MeshInstance3D
+			for i in mesh_node.mesh.get_surface_count():
+				var mat := mesh_node.get_surface_override_material(i)
+				if mat is ShaderMaterial:
+					colors[(mat as ShaderMaterial).get_shader_parameter("base_color")] = true
+		two_tone = two_tone and colors.size() >= 2
+		var with_kit := Look._measure_mounts(model, {})
+		if kit != null:
+			model.remove_child(kit)
+			kit.free()
+		var without := Look._measure_mounts(model, {})
+		still = still and with_kit.get("muzzle") == without.get("muzzle") and with_kit.get("hold") == without.get("hold") \
+				and with_kit.get("optic") == without.get("optic")
+		model.free()
+	t.check(kits, "every gun wears a kit of its own")
+	t.check(two_tone, "guns are dressed in more than one tone, frame and shell")
+	t.check(still, "a gun's kit never moves its grip, sights or muzzle")
+	var breacher := Gun.new()
+	breacher.item_id = "shotgun_breacher"
+	var breacher_model := Look.weapon_model(breacher)
+	breacher.free()
+	var breacher_mounts := Look._measure_mounts(breacher_model, {})
+	t.check(breacher_mounts.has("hold") and breacher_mounts.has("trigger"), "the Breacher's grip and trigger are found on its model")
+	breacher_model.free()
 	# Swords and knives fold their blade into the hilt when holstered, the
 	# spear telescopes; the hammer and axe keep their shape.
 	var folding := {}
