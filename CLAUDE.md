@@ -174,6 +174,15 @@ without Caleb, and update the gap list when a PR closes a row.
   comes up halfway through the reaction with a bark heard nearby
   (`ActorSkin._update_bark`) before the first shot. Measure with the duel
   bench's `--group 2,3,5` (and `--slots off` to compare).
+  Melee bots fight like people (DESIGN.md "Melee bots"): held heavies,
+  feints (a charge that switches side and lets go as a light) and
+  dash-strikes by ring (`BotBrain.RING_HEAVY`, `RING_FEINT`, `RING_DASH`),
+  and a strike into any opening; they press the same buttons a player
+  does (`_start_attack`, `_carry_charge`). A blade in reach beats a rifle
+  (Caleb's call): an army gunner cut by a blade flinches
+  (`BotBrain.melee_flinch`, its aim and trigger only, never a player's)
+  and gives ground from one (`blade_backoff`). Measure with the duel
+  bench's `--melee <blade id>`.
 - Big battles must stay affordable; measure with
   `godot --headless --path . res://tests/battle_bench.tscn -- --bots 150 --players 32`
   (processor time a tick, against the 16.7 ms budget). Three things keep
@@ -636,6 +645,14 @@ without Caleb, and update the gap list when a PR closes a row.
   may change an actor's velocity by more than its own accelerations in one
   tick (wings catch a fall at `FlightRig.glide_catch_accel` and roll into a
   bank at `glide_bank_rate`; never clamp a velocity straight to its target).
+  Recoil is a pattern you can learn (Caleb's call, DESIGN.md "Recoil"):
+  each gun's `recoil_pattern` ("climb", "climb_right", "climb_left",
+  "sway", "kick") and a kick that builds through a spray
+  (`Gun.recoil_for`, `spray_shot`, counted in `Gun._fire`, so simulated),
+  with only `recoil_jitter` of the side kick left to chance; a new gun
+  names a pattern in its stats. Bots take the same kick into their aim
+  and pull against a share of it by skill (`BotBrain._take_recoil`,
+  `RECOIL_CONTROL`); measure with `gun_bench.tscn -- --recoil`.
   What only the player sees is the controller's job and view only: recoil
   reaching the view over a few frames and settling back
   (`PlayerController._update_recoil`), the view widening with speed

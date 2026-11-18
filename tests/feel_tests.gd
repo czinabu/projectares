@@ -259,6 +259,9 @@ static func _test_view(t: Node) -> void:
 	var gun := Gun.new()
 	gun.recoil_kick_deg = 2.0
 	gun.recoil_side_deg = 0.0
+	# The view takes the kick of the shot just fired (`Gun.last_recoil`).
+	gun.recoil_pattern = "kick"
+	gun.last_recoil = gun.recoil_for(1)
 	var kick := deg_to_rad(gun.recoil_kick_deg)
 	# A shot's kick reaches the view over a few frames, then settles back.
 	controller._on_gun_fired(Vector3.ZERO, Vector3.ZERO, gun)
