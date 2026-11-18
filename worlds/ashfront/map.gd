@@ -175,7 +175,9 @@ const TRAP_EVERY := 6.5
 const FAR_SIGHT := 2000.0
 ## How far the player's view draws here (the map's "view_far" meta): the
 ## skyline on the far side of the field from anywhere in it.
-const VIEW_FAR := 1100.0
+const VIEW_FAR := 1400.0
+## The Colossus and the capital ship past the rim (view only).
+const GIANTS := preload("res://worlds/ashfront/giants.gd")
 ## The burning horizon: a ring of fire-glow this far out, behind the
 ## skyline, glowing this much when quiet and in all-out war.
 const GLOW_RING := 560.0
@@ -263,6 +265,10 @@ func _ready() -> void:
 		_soundscape = Soundscape.new()
 		_soundscape.name = "Soundscape"
 		add_child(_soundscape)
+		var giants: Node3D = GIANTS.new()
+		giants.floor_y = RIM_HEIGHT - 8.0
+		giants.soundscape = _soundscape
+		add_child(giants)
 	set_process(Look.enabled)
 
 

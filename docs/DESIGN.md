@@ -556,9 +556,14 @@ blueprints. A new expedition daily: loot two caches inside the Engine.
   (`Soundscape`, made by the map where `Look` is on): a rumble that rises
   with the war, far gunfire from the way the fighting is, each horizon
   flash's boom arriving after it by its distance, and a quiet wind; all of
-  it ducks under a storm's wind. Planned, in this order: real recordings
-  for the sound bed, the Colossus walking the rim and a carrier
-  in the sky, dropship wings, flak and tracers that follow the war, god rays,
+  it ducks under a storm's wind; recorded clips (Sonniss, kept out of the
+  public repository, `assets/sounds/README.md`) replace the made-up wind,
+  rumble and booms where the files are there (`Sfx.recorded`). The giants
+  (`worlds/ashfront/giants.gd`, view only, timed by the wall clock so
+  everyone sees them in one place): the Colossus, a four-legged walker near
+  270 m tall striding round 640 m out, each footfall heard after its delay,
+  and a capital ship riding at anchor 400 m up over the west. Planned, in
+  this order: dropship wings, flak and tracers that follow the war, god rays,
   a shared moment (the orbital lance brings the Colossus down), and ash on
   the visor glass.
 - Full loot on death.

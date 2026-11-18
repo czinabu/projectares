@@ -370,6 +370,25 @@ static func _skyline(t: Node, raid: Raid) -> void:
 			"the skyline is a dark veiled shape when clear, hazier in war and gone in a storm (%.2f, %.2f, %.2f)" % [calm, war, storm])
 	t.check(Look.trim("distant") is ShaderMaterial and Look.trim("horizon_glow") is ShaderMaterial,
 			"the skyline and the burning horizon shade themselves against the haze")
+	# The giants: view only, timed by the wall clock so every player sees
+	# them in one place, walking past the rim and always within the view.
+	var giants: Script = map.get_script().get_script_constant_map()["GIANTS"]
+	t.check(map.get_node_or_null("Giants") == null, "a map without a view builds no giants")
+	var walk_a: Transform3D = giants.walker_at(100.0)
+	var walk_b: Transform3D = giants.walker_at(110.0)
+	var walk_r: float = giants.WALK_RADIUS
+	t.check(absf(Vector2(walk_a.origin.x, walk_a.origin.z).length() - walk_r) < 0.1
+			and walk_r > 490.0 and walk_r + float(map.get_script().get_script_constant_map()["SPAWN_RING"]) < float(map.get_meta("view_far")),
+			"the Colossus walks past the skyline and stays in view from anywhere on the field")
+	var moved := walk_b.origin - walk_a.origin
+	t.check(is_equal_approx(moved.length(), giants.WALK_SPEED * 10.0) or absf(moved.length() - giants.WALK_SPEED * 10.0) < 0.5,
+			"the Colossus walks at its own pace")
+	t.check(moved.normalized().dot(walk_a.basis.z) > 0.95, "the Colossus faces the way it walks")
+	var lifted := 0
+	for n in 20:
+		if giants.lift(giants.stride(n * giants.STRIDE_TIME / 20.0, 0.0)) > 0.02:
+			lifted += 1
+	t.check(lifted >= 8 and lifted <= 11, "each leg is in the air for half a stride and on the ground for the other half")
 	# The war heard: view only, so a headless map makes no soundscape.
 	t.check(map.get_node_or_null("Soundscape") == null, "a map without a view hears nothing (no soundscape headless)")
 	t.check(is_equal_approx(Soundscape.boom_delay(510.0), 1.5) and is_equal_approx(Soundscape.boom_delay(3000.0), Soundscape.BOOM_DELAY_MAX),
