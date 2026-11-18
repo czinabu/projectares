@@ -27,7 +27,9 @@ extends Control
 ## the crosshair, what nearby loot holds, the war's hot zone on the strip
 ## and where a hit came from; for "thermal" a heat picture of the whole view
 ## and how warm you look yourself. A scrap visor only manages a bearing and
-## the vitals.
+## the vitals. Every helmet, scrap included, also reads loot: the container
+## you look at is tagged with everything inside it (`_draw_crate`), and what
+## you pick up runs up a short feed over the weapon readout (`_draw_pickups`).
 ## The display is alive: it sweeps in when it comes on (`boot`),
 ## trails the view a little as you turn (`sway`), sits dim until something
 ## happens (`alert`) and closes on what you aim at (`lock`). With no helmet,
@@ -109,6 +111,16 @@ var hot_from := 0.25
 var ident_time := 2.4
 ## Seconds the glass's scan line takes to run down the view.
 var scanline_time := 5.5
+## The pickup feed (`pickups`): how long a line stays, how long it takes to
+## fade at the end, how long it slides in, and how many lines at most.
+var pickup_time := 4.5
+var pickup_fade := 1.2
+var pickup_slide := 0.18
+var pickup_lines := 6
+## The container tag (`_draw_crate`): rows a column before a second column
+## starts, and seconds it takes to come up once you look at one.
+var crate_rows := 12
+var crate_rise := 0.15
 
 ## Where the wearer is: a `Raid` (a world, the plaza, the arena) or, with
 ## `setup_base`, a `HomeBase`. The glass works the same in both, so a helmet
@@ -149,6 +161,13 @@ var pings: Array[Dictionary] = []
 ## The HUD this glass belongs to (`Hud`, or the home base's), for the
 ## contracts held and the tour's objective. May be null.
 var hud: Node
+## The pickup feed: what you just picked up, newest last, one line an item
+## kind ({"id", "count", "left", "age"}), fed by `Actor.looted`.
+var pickups: Array[Dictionary] = []
+## The container you are looking at (the one F would loot), or null, and
+## how far its tag has come up (0 to 1).
+var looked: LootContainer
+var crate_shown := 0.0
 
 var _world: Node3D
 var _ghosts: Array[MeshInstance3D] = []
@@ -221,15 +240,34 @@ func _wire(p: Actor) -> void:
 		_wired.visor.felt_scan.disconnect(_on_felt_scan)
 		_wired.visor.threatened.disconnect(_on_threatened)
 		_wired.health.damaged.disconnect(_on_damaged)
+		_wired.looted.disconnect(_on_looted)
 	_wired = p
 	if p != null:
 		p.visor.felt_scan.connect(_on_felt_scan)
 		p.visor.threatened.connect(_on_threatened)
 		p.health.damaged.connect(_on_damaged)
+		p.looted.connect(_on_looted)
 
 
 func _on_damaged(_info: DamageInfo) -> void:
 	alert = 1.0
+
+
+## Something was picked up: a line on the feed for each kind of item. One
+## already on the feed counts up and stays longer instead.
+func _on_looted(ids: Array[String]) -> void:
+	for id in ids:
+		var line := {}
+		for entry in pickups:
+			if entry.id == id:
+				line = entry
+		if line.is_empty():
+			pickups.append({"id": id, "count": 1, "left": pickup_time, "age": 0.0})
+		else:
+			line.count += 1
+			line.left = pickup_time
+	while pickups.size() > pickup_lines:
+		pickups.pop_front()
 
 
 func _exit_tree() -> void:
@@ -318,6 +356,15 @@ func _process(delta: float) -> void:
 	for mark in pings:
 		mark.left -= delta
 	pings = pings.filter(func(m: Dictionary) -> bool: return m.left > 0.0)
+	for line in pickups:
+		line.left -= delta
+		line.age += delta
+	pickups = pickups.filter(func(m: Dictionary) -> bool: return m.left > 0.0)
+	var seen := looked_container(p)
+	if seen != looked:
+		crate_shown = 0.0
+	looked = seen
+	crate_shown = minf(1.0, crate_shown + delta / maxf(crate_rise, 0.01)) if looked != null else 0.0
 	thermal_shown = p != null and (glass_shown() or flat_shown()) and p.visor.thermal_on
 	_thermal.visible = thermal_shown
 	_animate(p, delta)
@@ -791,6 +838,8 @@ func _draw() -> void:
 			_draw_system(ink, v.charge_fraction(), "THERMAL ON" if v.thermal_on else "CELL %d%%" %
 					roundi(v.charge_fraction() * 100.0), v.thermal_on)
 			_draw_signature(p, ink)
+	_draw_crate(p, ink)
+	_draw_pickups(p, ink)
 	_draw_slivers(p, centre, felt, felt_time, Color(1.0, 0.2, 0.12), 0.4)
 	_draw_slivers(p, centre, hit_marks, hit_mark_time, Color(1.0, 0.6, 0.1), 0.34)
 
@@ -1077,7 +1126,8 @@ func _draw_loot(p: Actor, ink: Color) -> void:
 		return
 	for node in get_tree().get_nodes_in_group("loot_containers"):
 		var container := node as LootContainer
-		if container == null or not Raid.together(container, p):
+		# The one you are looking at has its full tag (`_draw_crate`).
+		if container == null or container == looked or not Raid.together(container, p):
 			continue
 		var spot := container.global_position + Vector3(0.0, 0.9, 0.0)
 		if spot.distance_to(p.global_position) > p.visor.loot_range or camera.is_position_behind(spot):
@@ -1091,6 +1141,194 @@ func _draw_loot(p: Actor, ink: Color) -> void:
 		draw_line(at, elbow, _lit(ink, 0.6, false), 1.0, true)
 		draw_line(elbow, elbow + Vector2(120.0, 0.0), _lit(ink, 0.6, false), 1.0, true)
 		_text(elbow + Vector2(4.0, -5.0), text.to_upper(), _lit(ink, 0.95, false), HORIZONTAL_ALIGNMENT_LEFT, 300.0)
+
+
+# --- Loot: the container you look at and what you pick up -------------------------
+# Every working helmet shows these, scrap visor included, in both views (Caleb's
+# call: what you are about to pick up and what you just did, without the watch).
+# The watch's pack is still where the pack is managed.
+
+## The container the wearer is looking at, the one F would loot, or null.
+## On a vehicle F gets you off, so nothing is looked at.
+func looked_container(p: Actor) -> LootContainer:
+	if p == null or p.is_dead or p.vehicle != null or not (glass_shown() or flat_shown()):
+		return null
+	var container := p.find_interactable() as LootContainer
+	if container == null or not is_instance_valid(container) or container.is_queued_for_deletion():
+		return null
+	return container
+
+
+## How item `id` compares with what is worn in the slot it would go in
+## (`worn`, the wearer's `Actor.gear_items`): "up" if it is better or the
+## slot is empty, "down" if worse, "same" for the same item or an equal one,
+## and "" for anything that is not gear (materials, heals). Better is rarer,
+## then worth more.
+static func versus_worn(id: String, worn: Array) -> String:
+	var slot := Loadout.slot_of(id)
+	if slot == "":
+		return ""
+	var current := ""
+	for other: String in worn:
+		if Loadout.fits(slot, other):
+			current = other
+			break
+	if current == "":
+		return "up"
+	if current == id:
+		return "same"
+	var ours := Vector2i(ItemDB.item_rarity(id), ItemDB.item_value(id))
+	var theirs := Vector2i(ItemDB.item_rarity(current), ItemDB.item_value(current))
+	if ours == theirs:
+		return "same"
+	return "up" if ours > theirs else "down"
+
+
+## What a container holds, every item, stacked by kind: rarest first, then
+## the most valuable. Each row is {"id", "name", "count", "rarity",
+## "verdict"} (see `versus_worn`).
+static func loot_rows(items: Array, worn: Array) -> Array[Dictionary]:
+	var counts := {}
+	var order: Array[String] = []
+	for id: String in items:
+		if not counts.has(id):
+			order.append(id)
+		counts[id] = counts.get(id, 0) + 1
+	order.sort_custom(func(a: String, b: String) -> bool:
+		var ra := ItemDB.item_rarity(a)
+		var rb := ItemDB.item_rarity(b)
+		if ra != rb:
+			return ra > rb
+		return ItemDB.item_value(a) > ItemDB.item_value(b))
+	var rows: Array[Dictionary] = []
+	for id in order:
+		rows.append({"id": id, "name": ItemDB.item_name(id), "count": counts[id], "rarity": ItemDB.item_rarity(id),
+				"verdict": versus_worn(id, worn)})
+	return rows
+
+
+## A row's text: its name in capitals, and how many when more than one.
+static func row_text(name: String, count: int) -> String:
+	return name.to_upper() if count <= 1 else "%s  x%d" % [name.to_upper(), count]
+
+
+## The colour a rarity is drawn in on the glass.
+static func rarity_ink(rarity: int) -> Color:
+	return ItemDB.RARITY_COLORS[clampi(rarity, 0, ItemDB.RARITY_COLORS.size() - 1)]
+
+
+## A small mark for how an item compares with what is worn: a green chevron
+## up, a dim one down, a short bar for the same. Nothing for non-gear.
+func _draw_verdict(verdict: String, at: Vector2, alpha: float) -> void:
+	match verdict:
+		"up":
+			draw_colored_polygon(PackedVector2Array([at + Vector2(-5.0, 3.0), at + Vector2(0.0, -4.0),
+					at + Vector2(5.0, 3.0)]), Color(SQUAD_INK, alpha))
+		"down":
+			draw_colored_polygon(PackedVector2Array([at + Vector2(-4.0, -3.0), at + Vector2(4.0, -3.0),
+					at + Vector2(0.0, 3.0)]), Color(1.0, 0.45, 0.35, alpha * 0.8))
+		"same":
+			draw_line(at + Vector2(-4.0, 0.0), at + Vector2(4.0, 0.0), Color(1.0, 1.0, 1.0, alpha * 0.6), 2.0)
+
+
+## The tag on the container you are looking at: a dot on it and a thin
+## leader out to the side, clear of the crosshair, then its name, how many
+## things and their worth, and every item inside on a row of its own (Caleb's
+## call: all of them), each with a hex bullet in its rarity's colour, its
+## name (the Mk is in the name), its rarity and whether it beats what you
+## wear. A long list runs on into a second column rather than being cut.
+func _draw_crate(p: Actor, ink: Color) -> void:
+	if looked == null or not is_instance_valid(looked) or crate_shown <= 0.0:
+		return
+	var camera := get_viewport().get_camera_3d()
+	if camera == null:
+		return
+	var spot := looked.global_position + Vector3(0.0, 0.85, 0.0)
+	if camera.is_position_behind(spot):
+		return
+	var rows := loot_rows(looked.items, p.gear_items)
+	var shown := ease(crate_shown, 0.5) * _swept()
+	var row_h := 19.0
+	var col_w := 250.0
+	var columns := 1 if rows.size() <= crate_rows else 2
+	var per_column := ceili(rows.size() / float(columns))
+	var listed := mini(rows.size(), maxi(per_column, 1))
+	var tall := 30.0 + row_h * maxi(listed, 1) + (row_h if looked.scrip > 0 else 0.0)
+	var wide := col_w * columns
+	var anchor := camera.unproject_position(spot)
+	var middle := size * 0.5
+	# Out to whichever side the container is on, never over the middle.
+	var right_side := anchor.x >= middle.x - 30.0
+	# Far enough out to clear the loot prompt under the crosshair too.
+	var x := maxf(anchor.x + 60.0, middle.x + 170.0) if right_side else minf(anchor.x - 60.0, middle.x - 170.0) - wide
+	x = clampf(x, size.y * 0.06, size.x - size.y * 0.06 - wide)
+	var top := clampf(anchor.y - 40.0, size.y * 0.16, size.y * 0.8 - tall)
+	var near := Vector2(x if right_side else x + wide, top + 8.0)
+	var line := _lit(ink, 0.6 * shown, false)
+	draw_circle(anchor, 2.5, _lit(ink, 0.9 * shown, false))
+	draw_line(anchor, near, line, 1.0, true)
+	draw_line(Vector2(x, top + 8.0), Vector2(x + wide * shown, top + 8.0), line, 1.0, true)
+	var title := looked.label.to_upper()
+	var count := looked.items.size()
+	var note := "EMPTY" if count == 0 and looked.scrip <= 0 else "%d ITEM%s  ·  WORTH %d" % [count,
+			"" if count == 1 else "S", ItemDB.total_value(looked.items)]
+	_text(Vector2(x + 2.0, top + 3.0), title, _lit(ink, 0.95 * shown, false), HORIZONTAL_ALIGNMENT_LEFT, col_w, 14)
+	_text(Vector2(x + wide - 2.0, top + 3.0), note, _lit(ink, 0.6 * shown, false), HORIZONTAL_ALIGNMENT_RIGHT,
+			col_w, 12)
+	var y0 := top + 28.0
+	for i in rows.size():
+		var row: Dictionary = rows[i]
+		var column := floori(i / float(per_column))
+		var cx := x + column * col_w
+		var y := y0 + (i % per_column) * row_h
+		# Each row comes up a moment after the one above it.
+		var rise := clampf(crate_shown * 3.0 - float(i % per_column) / maxf(listed, 1.0), 0.0, 1.0) * _swept()
+		if rise <= 0.0:
+			continue
+		var tint := rarity_ink(int(row.rarity))
+		draw_colored_polygon(hex_points(Vector2(cx + 7.0, y - 4.0), 5.0), Color(tint, 0.9 * rise * boot))
+		_text(Vector2(cx + 18.0, y), row_text(str(row.name), int(row.count)), Color(Color.WHITE.lerp(tint, 0.35),
+				0.95 * rise * boot), HORIZONTAL_ALIGNMENT_LEFT, col_w - 92.0, 13)
+		_text(Vector2(cx + col_w - 22.0, y), ItemDB.RARITY_NAMES[int(row.rarity)].to_upper(),
+				Color(tint, 0.75 * rise * boot), HORIZONTAL_ALIGNMENT_RIGHT, 70.0, 10)
+		_draw_verdict(str(row.verdict), Vector2(cx + col_w - 10.0, y - 4.0), rise * boot)
+	if looked.scrip > 0:
+		var y := y0 + listed * row_h
+		draw_circle(Vector2(x + 7.0, y - 4.0), 3.0, Color(HOT_INK, 0.9 * shown * boot))
+		_text(Vector2(x + 18.0, y), "%d SCRIP" % looked.scrip, Color(HOT_INK, 0.95 * shown * boot),
+				HORIZONTAL_ALIGNMENT_LEFT, col_w - 30.0, 13)
+
+
+## The pickup feed, bottom right over the weapon readout: a line for each
+## kind of thing just picked up ("+ ARC BLADE MK3  x2") in its rarity's
+## colour, a chevron where it beats what you wear, newest at the bottom,
+## sliding in and fading after a few seconds.
+func _draw_pickups(p: Actor, ink: Color) -> void:
+	if pickups.is_empty():
+		return
+	var radius := cell_radius()
+	var right := size.x - size.y * vitals_left + sway.x
+	var bottom := size.y * vitals_low + sway.y + radius * 0.3 - radius * 2.2 - 30.0
+	var row_h := 21.0
+	var font := ThemeDB.fallback_font
+	for i in pickups.size():
+		var line: Dictionary = pickups[pickups.size() - 1 - i]
+		var alpha := clampf(float(line.left) / maxf(pickup_fade, 0.01), 0.0, 1.0) * _swept()
+		var slide := 1.0 - ease(clampf(float(line.age) / maxf(pickup_slide, 0.01), 0.0, 1.0), 0.4)
+		var y := bottom - i * row_h
+		var x := right + slide * 40.0
+		var rarity := ItemDB.item_rarity(line.id)
+		var tint := rarity_ink(rarity)
+		var text := "+ " + row_text(ItemDB.item_name(line.id), int(line.count))
+		var verdict := versus_worn(line.id, p.gear_items)
+		var mark_room := 16.0 if verdict == "up" else 0.0
+		_text(Vector2(x - mark_room, y), text, Color(Color.WHITE.lerp(tint, 0.45), 0.95 * alpha),
+				HORIZONTAL_ALIGNMENT_RIGHT, 320.0, 15)
+		if verdict == "up":
+			_draw_verdict("up", Vector2(x - 5.0, y - 5.0), alpha)
+		var text_w := minf(font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, 15).x, 320.0)
+		draw_line(Vector2(x - mark_room - text_w, y + 5.0), Vector2(x, y + 5.0), Color(tint, 0.35 * alpha), 1.0)
+		draw_colored_polygon(hex_points(Vector2(x - mark_room - text_w - 10.0, y - 5.0), 4.0), Color(tint, 0.9 * alpha))
 
 
 # --- The layout around the edges --------------------------------------------------
