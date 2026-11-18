@@ -27,6 +27,9 @@ const JOIN_TIMEOUT := 12.0
 ## this long (a body left standing waits out the sign-out time, 30 s after a
 ## fight, from when the server notices), each try given `RECONNECT_TIMEOUT`.
 var reconnect_window := 30.0
+## The seed a solo world starts from; -1 (always, in play) for a random one.
+## A bench sets it to compare builds on the same battle.
+var raid_seed := -1
 const RECONNECT_TIMEOUT := 5.0
 ## A server started here runs every world, and needs a while before it listens.
 ## An encrypted connection to a port nothing listens on yet fails at once, so
@@ -51,10 +54,16 @@ const HOST_HEARTBEAT := "user://host_heartbeat"
 const HEARTBEAT_EVERY := 1.0
 const HEARTBEAT_STALE := 60
 ## The solo player's renown key in a raid, so it carries across their lives.
+## A cluster's worlds stop this many seconds after the program that started
+## them stops touching their heartbeat, and a world that stopped by itself
+## is started again once it has been this long since its last start.
+const CLUSTER_HEARTBEAT_STALE := 15
+const CLUSTER_RESTART_AFTER := 5.0
 const LOCAL_OWNER := "local"
 const StashRules := preload("res://core/account/stash_rules.gd")
 const AccountService := preload("res://core/account/account_service.gd")
 const AccountLink := preload("res://core/account/account_link.gd")
+const ServerTrust := preload("res://core/net/server_trust.gd")
 const NameplatesScript := preload("res://core/ui/nameplates.gd")
 const ScoreboardScript := preload("res://core/ui/scoreboard.gd")
 const PhoneScript := preload("res://core/phone/phone.gd")
@@ -120,6 +129,9 @@ var sessions: Array[NetSession] = []
 ## Server: the line to the account service, on a server that shares its
 ## accounts (`--account-url`); null on one that keeps its own.
 var account_link: AccountLink
+## Server: the programs a cluster started (`_run_cluster`), each {"id",
+## "port", "args", "pid", "started"}.
+var _cluster: Array[Dictionary] = []
 ## Client: the sign-in token each server address last handed out
 ## (`NetSession.ticket`), shown instead of the secret on the next trip there.
 var _tickets := {}
@@ -151,6 +163,7 @@ var _reconnect_body := false
 var _back_notice := ""
 ## Online: the raid lobby's port, while visiting that server's arena.
 var _lobby_port := -1
+var _lobby_address := ""
 ## Heading out by the base's door to a remembered server: if it cannot be
 ## reached, a server of your own is started instead.
 var _door_fallback := false
@@ -167,6 +180,28 @@ var _gate_deploy := false
 ## Where you are coming back to the plaza from (a doorway's destination:
 ## "home", "arena", "world:<id>"), so you arrive in front of that door.
 var _arrive_from := ""
+## The session connected ahead of a trip (see "travel ahead"), where it
+## leads, and how long it has gone unused.
+var _ahead: NetSession
+var _ahead_host := ""
+var _ahead_port := -1
+var _ahead_unused := 0.0
+var _ahead_check := 0.0
+var _ahead_retry := {}   # "host:port" -> msec before which it is not tried again
+var _prepared := {}      # world id -> true once its ground was worked out ahead
+## How near a plaza doorway (in metres) the game connects ahead to where it
+## leads, how long an unused connection is kept once you walk away, and how
+## long a server that would not take one is left alone.
+var ahead_range := 16.0
+var ahead_linger := 20.0
+var ahead_retry := 30.0
+## Seconds a trip stays dark before the travel screen says what is taking
+## so long, and how long the new place takes to fade in.
+var travel_quiet := 1.2
+var arrival_fade := 0.4
+var _cover: ColorRect
+var _travelling := false
+var _travel_began := 0
 ## Where the hand-off of your profile to a server you host waits for it.
 const HOST_PROFILE := "user://host_profile.json"
 ## The local player's last life, while they are down.
@@ -187,7 +222,10 @@ func _ready() -> void:
 		_run_account_service(args)
 		return
 	if "--server" in args:
-		_run_dedicated_server(args)
+		if "--cluster" in args:
+			_run_cluster(args)
+		else:
+			_run_dedicated_server(args)
 		return
 	hub_screen = SubViewport.new()
 	hub_screen.name = "HubScreen"
@@ -209,6 +247,17 @@ func _ready() -> void:
 	_travel.add_child(picture)
 	_travel.visible = false
 	add_child(_travel)
+	# The fade through a portal: dark the moment you step in, the new place
+	# fading in when you stand in it.
+	var fade := CanvasLayer.new()
+	fade.name = "TravelFade"
+	fade.layer = 90
+	_cover = ColorRect.new()
+	_cover.color = Color(0.0, 0.0, 0.0, 0.0)
+	_cover.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_cover.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	fade.add_child(_cover)
+	add_child(fade)
 	hub.closed.connect(_on_station_closed)
 	hub.online_equip_requested.connect(func(slot: String, item_id: String) -> void:
 		if net:
@@ -246,13 +295,41 @@ func _process(delta: float) -> void:
 			_watch_host_trip()
 	if _travel != null:
 		_travel.visible = hub.visible and hub.station == ""
+		_fade_travel(_travel.visible, delta)
+		_ahead_check -= delta
+		if _ahead_check <= 0.0:
+			_ahead_check = 0.5
+			_tick_ahead(0.5)
 	if controller != null and is_instance_valid(controller) and controller.wrist_raised:
 		_tour_event("watch")
+
+
+## Between places the view goes dark at once and the next place fades in
+## (the fade through a portal). Only a trip that drags on shows the travel
+## screen, which says what it is waiting for.
+func _fade_travel(travelling: bool, delta: float) -> void:
+	if _cover == null:
+		return
+	if travelling and not _travelling:
+		_travel_began = Time.get_ticks_msec()
+		_cover.color.a = 1.0
+	elif travelling:
+		if (Time.get_ticks_msec() - _travel_began) / 1000.0 > travel_quiet:
+			_cover.color.a = move_toward(_cover.color.a, 0.0, delta / 0.2)
+	elif _travelling:
+		_cover.color.a = 1.0
+	else:
+		_cover.color.a = move_toward(_cover.color.a, 0.0, delta / maxf(arrival_fade, 0.01))
+	_travelling = travelling
 
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_WM_CLOSE_REQUEST or what == NOTIFICATION_PREDELETE:
 		_stop_local_server()
+		for program in _cluster:
+			if int(program.get("pid", -1)) > 0:
+				OS.kill(int(program.pid))
+		_cluster.clear()
 
 
 # ------------------------------------------------------------- home base ----
@@ -601,15 +678,18 @@ func open_arena() -> void:
 		leave_base()
 		# Leave the lobby (or the plaza or world you are in) for the arena
 		# session on the same server. Leaving the arena comes back here.
-		var arena_port: int = net.routes.get(Arena.ArenaVenue.ID, _join_port + ARENA_PORT_OFFSET)
+		var arena := _route(Arena.ArenaVenue.ID)
+		if arena.is_empty():
+			arena = [_join_address, _join_port + ARENA_PORT_OFFSET]
 		_lobby_port = _join_port
+		_lobby_address = _join_address
 		if raid != null:
 			_leave_raid()
 		else:
 			net.queue_free()
 			net = null
 		_show_travel("Entering the arena...")
-		_begin_join(_join_address, arena_port, 3)
+		_begin_join(arena[0], arena[1], 3)
 		return
 	if raid != null:
 		_leave_raid()
@@ -633,9 +713,10 @@ func leave_arena() -> void:
 	hub.refresh_gear()
 	if back_online:
 		_join_port = _lobby_port
+		_join_address = _lobby_address
 		_lobby_port = -1
 		_show_travel("Leaving the arena...")
-		if _join_port == _plaza_port:
+		if _at_plaza():
 			_arrive_from = Arena.ArenaVenue.ID
 		_begin_join(_join_address, _join_port, 3)
 		return
@@ -657,7 +738,7 @@ func start_raid(world_id: String, drop := "") -> void:
 	# DEV MODE
 	Profile.apply_dev_mode()
 	raid.dev_cheats = DevMode.raid_cheats()
-	raid.start(world, -1, Profile.checkout_loadout(world), Profile.mastery.active_picks(),
+	raid.start(world, raid_seed, Profile.checkout_loadout(world), Profile.mastery.active_picks(),
 			LOCAL_OWNER, Profile.renown, drop)
 	_attach_player_view()
 	raid.player_finished.connect(_on_solo_finished)
@@ -928,8 +1009,8 @@ func go_through_portal(destination: String) -> void:
 		hub.set_online_status("Deploying...")
 		net.deploy(Raid.PORTAL_DROP)
 		return
-	var port: int = net.routes.get(destination, -1)
-	if port < 0:
+	var way := _route(destination)
+	if way.is_empty():
 		var why := "%s is not running on this server." % world.display_name
 		if base_hud:
 			base_hud.show_notice(why)
@@ -944,7 +1025,7 @@ func go_through_portal(destination: String) -> void:
 		net.queue_free()
 		net = null
 	_show_travel("Travelling to %s..." % world.display_name)
-	_begin_join(_join_address, port, 3)
+	_begin_join(way[0], way[1], 3)
 
 
 ## The player asked to pack the vehicle they are looking at onto their watch.
@@ -1313,7 +1394,7 @@ func _run_dedicated_server(args: PackedStringArray) -> void:
 		account_link.name = "AccountLink"
 		account_link.url = service_url
 		account_link.save_dir = folder
-		account_link.server_id = _arg(args, "--server-id", "server-%d" % port)
+		account_link.server_id = _arg(args, "--server-id", _arg(args, "--only", "server-%d" % port))
 		account_link.key = AccountService.load_key(_arg(args, "--service-key", folder.path_join(AccountService.KEY_FILE)))
 		if account_link.key == "":
 			push_error("Server: no service key for the account service (set %s or pass --service-key <file>)"
@@ -1323,10 +1404,18 @@ func _run_dedicated_server(args: PackedStringArray) -> void:
 		add_child(account_link)
 		print("Server: accounts are kept by the account service at %s (this server is %s)"
 				% [service_url, account_link.server_id])
-	var err := start_server(_arg(args, "--world", ""), port, "--no-plaza" not in args,
-			int(_arg(args, "--bots", "-1")), "--squad-spawn" in args, accounts,
-			"--no-rewind" not in args,
-			-1 if "--no-arena" in args else int(_arg(args, "--arena-port", str(port + ARENA_PORT_OFFSET))))
+	var err: Error
+	var only := _arg(args, "--only", "")
+	if only != "":
+		# One world and nothing else in this program (DESIGN.md section 14,
+		# "Scaling"): the plaza, a raid world or the arena, by its id.
+		err = start_one(only, port, int(_arg(args, "--bots", "-1")), "--squad-spawn" in args, accounts,
+				"--no-rewind" not in args, _arg(args, "--public-host", ""))
+	else:
+		err = start_server(_arg(args, "--world", ""), port, "--no-plaza" not in args,
+				int(_arg(args, "--bots", "-1")), "--squad-spawn" in args, accounts,
+				"--no-rewind" not in args,
+				-1 if "--no-arena" in args else int(_arg(args, "--arena-port", str(port + ARENA_PORT_OFFSET))))
 	if err != OK:
 		push_error("Server: could not listen from port %d (%s)" % [port, error_string(err)])
 		get_tree().quit(1)
@@ -1347,8 +1436,9 @@ func _run_dedicated_server(args: PackedStringArray) -> void:
 		watch.name = "HeartbeatWatch"
 		watch.wait_time = 2.0
 		watch.autostart = true
+		var stale_after := float(_arg(args, "--heartbeat-stale", str(HEARTBEAT_STALE)))
 		watch.timeout.connect(func() -> void:
-			if heartbeat_stale(heartbeat):
+			if heartbeat_stale(heartbeat, -1.0, stale_after):
 				print("Server: the game that started this server is gone; stopping")
 				get_tree().quit())
 		add_child(watch)
@@ -1398,7 +1488,8 @@ func _run_account_service(args: PackedStringArray) -> void:
 ## on `port`. `world_id` "" runs every raid world (the first one only when
 ## there is no plaza to reach the others from). All sessions share one stash
 ## service, so an account is the same wherever it shows up. The arena runs on
-## `arena_port` (below zero: no arena), listed in the plaza's routes.
+## `arena_port` (below zero: no arena). Every session knows the way to the
+## others (`NetSession.routes`), so a portal opened anywhere can lead on.
 func start_server(world_id: String, port: int, with_plaza := true, bots := -1, squad := false,
 		accounts := "", rewind := true, arena_port := -1) -> Error:
 	var plaza := Worlds.social_world() if with_plaza else null
@@ -1418,6 +1509,7 @@ func start_server(world_id: String, port: int, with_plaza := true, bots := -1, s
 		session.squad_spawn = squad
 		session.lag_compensation = rewind
 		session.isolated = plaza != null or worlds.size() > 1
+		session.routes = routes
 		if sessions.is_empty():
 			if account_link != null:
 				session.stash = account_link
@@ -1451,6 +1543,7 @@ func start_server(world_id: String, port: int, with_plaza := true, bots := -1, s
 		arena.clans = net.clans
 		arena.market = net.market
 		arena.lag_compensation = rewind
+		arena.routes = routes
 		add_child(arena)
 		if arena.host(Arena.ArenaVenue.ID, arena_port) == OK:
 			print("Server: running the arena on port %d" % arena_port)
@@ -1474,8 +1567,142 @@ func start_server(world_id: String, port: int, with_plaza := true, bots := -1, s
 		if err != OK:
 			return err
 		print("Server: running %s on port %d" % [plaza.id, port])
+		routes[plaza.id] = port
 		sessions.push_front(session)
 	return OK
+
+
+## Starts the one session of a program that runs a single world: the plaza,
+## a raid world or the arena, by its id, on `port`. With an account service
+## (`--account-url`) it finds the other worlds through the service's
+## directory and they find it, each a program of its own; without one it is
+## a world alone. `public_host` is the address players reach it at when
+## that is not the one the other worlds are on.
+func start_one(world_id: String, port: int, bots := -1, squad := false, accounts := "", rewind := true,
+		public_host := "") -> Error:
+	var world := NetSession.world_for(world_id)
+	if world == null:
+		push_error("Server: there is no world called %s" % world_id)
+		return ERR_DOES_NOT_EXIST
+	var session := NetSession.new()
+	session.name = "Net"
+	session.bot_count = bots
+	session.squad_spawn = squad
+	session.lag_compensation = rewind
+	session.public_host = public_host
+	if account_link != null:
+		session.stash = account_link
+	elif accounts != "":
+		session.stash.save_dir = accounts
+	add_child(session)
+	var err := session.host(world.id, port, PLAZA_PLAYERS if world.safe_zone else world.max_players)
+	if err != OK:
+		return err
+	print("Server: running %s on port %d" % [world.id, port])
+	sessions.append(session)
+	net = session
+	var store: RefCounted = net.stash.store()
+	if store != null:
+		print("Server: accounts in %s (%s)" % [ProjectSettings.globalize_path(store.dir), store.kind])
+	return OK
+
+
+## `-- --server --cluster`: every world as a program of its own on this
+## machine (DESIGN.md section 14, "Scaling"), so each uses a processor core
+## of its own and a crash takes down one world, not all of them. This
+## program is the account service (accounts, clans, phone records, the
+## market and the directory of worlds) and starts the rest: the plaza on
+## `--port`, each raid world on the ports after it and the arena ten above,
+## the same ports a server that runs everything in one program uses. A world
+## that stops is started again. `--world <id>` runs only that raid world
+## behind the plaza; `--bots`, `--squad-spawn`, `--no-zone-rules`,
+## `--no-rewind`, `--health-log`, `--public-host` and `--no-arena` go to the
+## worlds. The service listens on `--account-port`, on this machine only.
+func _run_cluster(args: PackedStringArray) -> void:
+	var port := int(_arg(args, "--port", str(NetSession.DEFAULT_PORT)))
+	var folder := _arg(args, "--accounts", "user://accounts")
+	var service_port := int(_arg(args, "--account-port", str(AccountService.DEFAULT_PORT)))
+	var service := AccountService.new()
+	service.name = "AccountService"
+	service.stash.save_dir = folder
+	add_child(service)
+	var err := service.start(service_port)
+	if err != OK:
+		push_error("Cluster: the account service could not start on port %d (%s)" % [service_port, error_string(err)])
+		get_tree().quit(1)
+		return
+	print("Cluster: account service on port %d, accounts in %s" % [service_port,
+			ProjectSettings.globalize_path(folder)])
+	# The worlds share one certificate, made here before any of them starts,
+	# so a game that travels between them meets the server it remembers.
+	var servers := ProjectSettings.globalize_path(folder.path_join("servers"))
+	DirAccess.make_dir_recursive_absolute(servers)
+	ServerTrust.identity(servers.path_join("server_identity"))
+	var heartbeat := servers.path_join("cluster_heartbeat")
+	var shared := PackedStringArray(["--accounts", servers,
+			"--account-url", "ws://127.0.0.1:%d" % service_port,
+			"--service-key", ProjectSettings.globalize_path(folder.path_join(AccountService.KEY_FILE)),
+			"--heartbeat", heartbeat, "--heartbeat-stale", str(CLUSTER_HEARTBEAT_STALE)])
+	for flag in ["--squad-spawn", "--no-zone-rules", "--no-rewind"]:
+		if flag in args:
+			shared.append(flag)
+	for flag in ["--health-log", "--public-host"]:
+		if _arg(args, flag, "") != "":
+			shared.append_array([flag, _arg(args, flag, "")])
+	var plaza := Worlds.social_world()
+	var worlds: Array[WorldDef] = []
+	var named := Worlds.get_world(_arg(args, "--world", ""))
+	if named != null and not named.safe_zone:
+		worlds.append(named)
+	else:
+		worlds = Worlds.raid_worlds()
+	var programs: Array[Dictionary] = []
+	if plaza != null:
+		programs.append({"id": plaza.id, "port": port, "args": shared})
+	var next_port := port + 1
+	for world in worlds:
+		var world_args := shared.duplicate()
+		if _arg(args, "--bots", "") != "":
+			world_args.append_array(["--bots", _arg(args, "--bots", "")])
+		programs.append({"id": world.id, "port": next_port, "args": world_args})
+		next_port += 1
+	if "--no-arena" not in args:
+		programs.append({"id": Arena.ArenaVenue.ID, "port": int(_arg(args, "--arena-port",
+				str(port + ARENA_PORT_OFFSET))), "args": shared})
+	var beat := func() -> void:
+		var file := FileAccess.open(heartbeat, FileAccess.WRITE)
+		if file != null:
+			file.store_string(str(Time.get_unix_time_from_system()))
+			file.close()
+	beat.call()
+	for program in programs:
+		_cluster_start(program)
+	# The worlds stop when this program does (their heartbeat), and one that
+	# stops by itself is started again.
+	var watch := Timer.new()
+	watch.name = "ClusterWatch"
+	watch.wait_time = 1.0
+	watch.autostart = true
+	watch.timeout.connect(func() -> void:
+		beat.call()
+		for program in programs:
+			if (int(program.pid) <= 0 or not OS.is_process_running(int(program.pid))) \
+					and Time.get_ticks_msec() - int(program.started) > CLUSTER_RESTART_AFTER * 1000.0:
+				print("Cluster: %s stopped; starting it again" % program.id)
+				_cluster_start(program))
+	add_child(watch)
+	_cluster = programs
+
+
+## Starts (again) one world's program of a cluster.
+func _cluster_start(program: Dictionary) -> void:
+	var args := PackedStringArray(["--headless", "--path", ProjectSettings.globalize_path("res://"),
+			"--", "--server", "--only", str(program.id), "--port", str(program.port),
+			"--server-id", str(program.id)])
+	args.append_array(program.args)
+	program["pid"] = OS.create_process(OS.get_executable_path(), args)
+	program["started"] = Time.get_ticks_msec()
+	print("Cluster: %s on port %d (process %d)" % [program.id, program.port, program.pid])
 
 
 ## Starts a server on this machine as a second process, then joins it.
@@ -1595,19 +1822,12 @@ func _begin_join(host: String, port: int, attempts: int) -> void:
 
 func _try_join() -> void:
 	_join_attempts -= 1
-	net = NetSession.new()
-	net.name = "Net"
-	net.player_name = Profile.player_name
-	net.secret = Profile.get_online_secret()
-	# Travelling on within the same servers: the token the last one gave.
-	net.ticket = str(_tickets.get(_join_address, ""))
-	net.look = Profile.appearance
-	# `-- --lag 120 --loss 10` fakes a bad connection: milliseconds of delay
-	# each way, and the percent of input packets lost.
-	var args := OS.get_cmdline_user_args()
-	net.simulated_lag = float(_arg(args, "--lag", "0")) / 1000.0
-	net.simulated_loss = float(_arg(args, "--loss", "0")) / 100.0
-	add_child(net)
+	# Already connected ahead of this trip (`_connect_ahead`): that session
+	# carries on as this one, signed in or about to be.
+	var ahead := _take_ahead(_join_address, _join_port)
+	net = ahead if ahead != null else _new_session(_join_address)
+	if ahead == null:
+		add_child(net)
 	net.signed_in.connect(_on_online_signed_in)
 	net.account_changed.connect(_on_online_account_changed)
 	net.lobby_error.connect(func(reason: String) -> void:
@@ -1631,16 +1851,175 @@ func _try_join() -> void:
 	net.base_visit_requested.connect(_on_base_visit_requested)
 	net.portal_travel.connect(func(destination: String) -> void: go_through_portal.call_deferred(destination))
 	phone.set_session(net)
-	var err := net.join(_join_address, _join_port)
-	if err != OK:
-		_on_online_failed("Could not open a connection (%s)." % error_string(err))
-		return
+	if ahead == null:
+		var err := net.join(_join_address, _join_port)
+		if err != OK:
+			_on_online_failed("Could not open a connection (%s)." % error_string(err))
+			return
+	elif not net.account.is_empty():
+		# It signed in while you were still on your way.
+		_on_online_signed_in.call_deferred(net.account)
 	# A server that never answers should not leave the hub waiting forever.
 	# By id: the session may be gone by then (a trip through a gate frees it).
 	var session := net.get_instance_id()
 	get_tree().create_timer(RECONNECT_TIMEOUT if _reconnect_until > 0 else JOIN_TIMEOUT).timeout.connect(func() -> void:
 		if net != null and net.get_instance_id() == session and net.account.is_empty():
 			_on_online_failed("The server did not answer."))
+
+
+## A session for the server at `host`, signing in as this player. Not in
+## the tree and not connecting yet.
+func _new_session(host: String) -> NetSession:
+	var session := NetSession.new()
+	session.name = "Net"
+	session.player_name = Profile.player_name
+	session.secret = Profile.get_online_secret()
+	# Travelling on within the same servers: the token the last one gave.
+	session.ticket = str(_tickets.get(host, ""))
+	session.look = Profile.appearance
+	# `-- --lag 120 --loss 10` fakes a bad connection: milliseconds of delay
+	# each way, and the percent of input packets lost.
+	var args := OS.get_cmdline_user_args()
+	session.simulated_lag = float(_arg(args, "--lag", "0")) / 1000.0
+	session.simulated_loss = float(_arg(args, "--loss", "0")) / 100.0
+	return session
+
+
+# ------------------------------------------------------- travel ahead ----
+# Travel that hides its wait (DESIGN.md section 14). While you stand at a
+# gate, or a portal you may use is open, or your sign-out is counting down,
+# the game already connects and signs in to where that leads, on a second
+# session that does nothing else, and has the destination's ground worked
+# out on another thread. Stepping through then only waits for the deploy,
+# behind a short fade. The session is dropped again if you never go.
+
+## Where the player looks about to travel: [host, port, world id], or [].
+func _trip_ahead() -> Array:
+	if net == null or net.account.is_empty() or _reconnect_until > 0 or _join_attempts > 0:
+		return []
+	var destination := ""
+	if raid != null and raid.player != null and is_instance_valid(raid.player) and not raid.player.is_dead:
+		var me := raid.player
+		for portal in raid.portals:
+			if is_instance_valid(portal) and portal.usable and portal.is_open() and not portal.signs_out \
+					and portal.global_position.distance_to(me.global_position) < ahead_range * 2.0:
+				destination = portal.destination
+		if destination == "" and raid.world.safe_zone:
+			# The nearest doorway that leads to another server (not a shop).
+			var nearest := ahead_range
+			for node in get_tree().get_nodes_in_group("portal"):
+				var gate := node as Node3D
+				if gate == null or raid.map == null or not raid.map.is_ancestor_of(gate):
+					continue
+				var gap := gate.global_position.distance_to(me.global_position)
+				var leads := str(gate.get_meta("destination", ""))
+				if gap < nearest and not _where_leads(leads).is_empty():
+					nearest = gap
+					destination = leads
+		var state := raid.state_for(me)
+		if destination == "" and state != null and state.sign_out_left >= 0.0 and not raid.world.safe_zone \
+				and not raid is Arena:
+			# Signing out: back to the plaza, unless a portal home leads to your base.
+			destination = Portal.PLAZA
+	elif raid == null and base != null and hub.in_lobby() and base.portal != null and is_instance_valid(base.portal):
+		destination = base.portal.destination
+	return _where_leads(destination)
+
+
+## Where a doorway's or a portal's `destination` is served: [host, port,
+## world id], or [] when it leads nowhere else (a shop, the world you are
+## already signed in to).
+func _where_leads(destination: String) -> Array:
+	var way: Array = []
+	var world_id := destination.trim_prefix("world:")
+	if destination == "":
+		return []
+	elif destination == Portal.PLAZA:
+		if _plaza_port >= 0 and not _at_plaza():
+			way = [_plaza_address, _plaza_port]
+			world_id = Worlds.social_world().id if Worlds.social_world() != null else ""
+	elif destination == Portal.HOME or destination == "home":
+		way = _home_route()
+		world_id = ""
+	elif world_id == Arena.ArenaVenue.ID or (Worlds.get_world(world_id) != null and world_id != net.world_id):
+		way = _route(world_id)
+	if way.is_empty() or (way[0] == _join_address and way[1] == _join_port):
+		return []
+	return [way[0], way[1], world_id]
+
+
+func _tick_ahead(delta: float) -> void:
+	var want := _trip_ahead()
+	if _ahead != null:
+		if not is_instance_valid(_ahead):
+			_ahead = null
+		elif not want.is_empty() and want[0] == _ahead_host and want[1] == _ahead_port:
+			_ahead_unused = 0.0
+		else:
+			_ahead_unused += delta
+			if not want.is_empty() or _ahead_unused > ahead_linger:
+				_drop_ahead()
+	if _ahead == null and not want.is_empty():
+		_connect_ahead(want[0], want[1], want[2])
+
+
+## Connects and signs in to `host`:`port` without going there, and has the
+## ground of `world_id` worked out meanwhile.
+func _connect_ahead(host: String, port: int, world_id := "") -> void:
+	var world := Worlds.get_world(world_id)
+	if world != null and not _prepared.has(world_id):
+		_prepared[world_id] = true
+		WorkerThreadPool.add_task(world.prepare_map, false, "Preparing %s" % world_id)
+	var key := "%s:%d" % [host, port]
+	if Time.get_ticks_msec() < int(_ahead_retry.get(key, 0)):
+		return
+	var session := _new_session(host)
+	session.name = "NetAhead"
+	session.ahead = true
+	add_child(session)
+	session.failed.connect(_on_ahead_lost.bind(session.get_instance_id()))
+	session.disconnected.connect(_on_ahead_lost.bind("", session.get_instance_id()))
+	_ahead = session
+	_ahead_host = host
+	_ahead_port = port
+	_ahead_unused = 0.0
+	if session.join(host, port) != OK:
+		_on_ahead_lost("", session.get_instance_id())
+
+
+## The session connected ahead could not get in, or lost its connection:
+## nothing is shown, the trip is made the plain way if it comes to it, and
+## that server is left alone for a while.
+func _on_ahead_lost(_reason: String, session: int) -> void:
+	if _ahead == null or not is_instance_valid(_ahead) or _ahead.get_instance_id() != session:
+		return
+	_ahead_retry["%s:%d" % [_ahead_host, _ahead_port]] = Time.get_ticks_msec() + int(ahead_retry * 1000.0)
+	_drop_ahead()
+
+
+func _drop_ahead() -> void:
+	if _ahead != null and is_instance_valid(_ahead):
+		_ahead.queue_free()
+	_ahead = null
+	_ahead_port = -1
+
+
+## The session connected ahead to `host`:`port`, handed over to become the
+## game's own; null if there is none there that is still good.
+func _take_ahead(host: String, port: int) -> NetSession:
+	if _ahead == null or not is_instance_valid(_ahead):
+		_ahead = null
+		return null
+	if _ahead_host != host or _ahead_port != port or not _ahead.is_live():
+		_drop_ahead()
+		return null
+	var session := _ahead
+	_ahead = null
+	_ahead_port = -1
+	for handler: Dictionary in session.failed.get_connections() + session.disconnected.get_connections():
+		(handler["signal"] as Signal).disconnect(handler["callable"])
+	session.ahead = false
+	return session
 
 
 ## Signed in: the hub becomes that server's lobby.
@@ -1765,14 +2144,14 @@ func use_portal(destination: String) -> void:
 		return
 	if destination.begins_with("world:"):
 		var world := Worlds.get_world(destination.trim_prefix("world:"))
-		var port: int = net.routes.get(destination.trim_prefix("world:"), -1)
-		if world == null or port < 0:
+		var way := _route(destination.trim_prefix("world:"))
+		if world == null or way.is_empty():
 			plaza_view.show_notice("That world is not running on this server.")
 			return
 		_leave_raid()
 		_show_travel("Travelling to %s..." % world.display_name)
 		_gate_deploy = true
-		_begin_join(_plaza_address, port, 3)
+		_begin_join(way[0], way[1], 3)
 	elif destination.begins_with("shop:"):
 		open_shop(destination.trim_prefix("shop:"))
 	elif destination == Arena.ArenaVenue.ID:
@@ -1954,12 +2333,45 @@ func close_shop() -> void:
 ## of the first world's lobby (every lobby is your base); the base's own door
 ## leads back to the plaza.
 func open_home_base() -> void:
-	if net == null or raid == null or net.routes.is_empty():
+	if net == null or raid == null:
 		return
-	var port: int = net.routes.values()[0]
+	var way := _home_route()
+	if way.is_empty():
+		return
 	_leave_raid()
 	_show_travel("Going home...")
-	_begin_join(_plaza_address, port, 3)
+	_begin_join(way[0], way[1], 3)
+
+
+## Where the world `id` (or the arena) runs, as the server you are on told
+## it: [host, port], or [] if it does not run there. A route on another
+## machine belongs to the same servers, so the sign-in token goes with you.
+func _route(id: String) -> Array:
+	if net == null:
+		return []
+	var where: Variant = net.routes.get(id)
+	if typeof(where) == TYPE_INT:
+		return [_join_address, where]
+	if typeof(where) == TYPE_STRING:
+		var way := NetSession.split_address(where)
+		if not way.is_empty() and not _tickets.has(way[0]) and _tickets.has(_join_address):
+			_tickets[way[0]] = _tickets[_join_address]
+		return way
+	return []
+
+
+## Where your base on this server is kept: the lobby of its first raid world.
+func _home_route() -> Array:
+	for world in Worlds.raid_worlds():
+		var way := _route(world.id)
+		if not way.is_empty():
+			return way
+	return []
+
+
+## Whether the server you are on (or were last on) is the plaza's.
+func _at_plaza() -> bool:
+	return _plaza_port >= 0 and _join_port == _plaza_port and _join_address == _plaza_address
 
 
 ## Could not connect or sign in, or the connection dropped in the lobby.
@@ -2034,6 +2446,7 @@ func _on_online_failed(reason: String) -> void:
 	if _lobby_port > 0:
 		reason = "Could not enter the arena: %s" % reason
 		_join_port = _lobby_port
+		_join_address = _lobby_address
 		_lobby_port = -1
 	hub.set_online_status(reason)
 	# Back home on the local stash, with a word on what went wrong. A base
@@ -2082,6 +2495,7 @@ func _end_reconnect(reason: String) -> void:
 	_plaza_port = -1
 	if _lobby_port > 0:
 		_join_port = _lobby_port
+		_join_address = _lobby_address
 		_lobby_port = -1
 	hub.leave_lobby()
 	hub.refresh({})
@@ -2160,7 +2574,7 @@ func leave_server() -> void:
 		net.queue_free()
 		net = null
 	hub.leave_lobby()
-	if _plaza_port >= 0 and _join_port != _plaza_port:
+	if _plaza_port >= 0 and not _at_plaza():
 		# Leaving a world's lobby (your base on this server) leads back to the
 		# plaza, out of the quarters door, not off the server.
 		_show_travel("Returning to %s..." % Worlds.social_world().display_name)
@@ -2168,6 +2582,7 @@ func leave_server() -> void:
 		_begin_join(_plaza_address, _plaza_port, 3)
 		return
 	_plaza_port = -1
+	_drop_ahead()
 	_stop_local_server()
 	hub.set_online_status("")
 	go_home()
@@ -2195,12 +2610,12 @@ func _beat() -> void:
 
 
 ## Whether the game that started a server has stopped touching `path`.
-static func heartbeat_stale(path: String, now := -1.0) -> bool:
+static func heartbeat_stale(path: String, now := -1.0, stale_after := float(HEARTBEAT_STALE)) -> bool:
 	if not FileAccess.file_exists(path):
 		return true
 	if now < 0.0:
 		now = Time.get_unix_time_from_system()
-	return now - float(FileAccess.get_modified_time(path)) > HEARTBEAT_STALE
+	return now - float(FileAccess.get_modified_time(path)) > stale_after
 
 
 ## On the way to a server of your own, not let in yet: a server that has

@@ -568,7 +568,8 @@ static func contract_lines() -> Array[String]:
 	var rules := load(CONTRACTS) as Script
 	for id: String in rules.call("offers_for", rules.call("today")):
 		var job: Dictionary = rules.call("job", id)
-		out.append("%s  %s   %s" % [str(job.get("kind", "")).to_upper(), job.get("title", ""), rules.call("reward_text", id)])
+		out.append("%s  %s   %s" % [str(job.get("kind", "")).to_upper(), rules.call("title_of", id),
+				rules.call("reward_text", id)])
 	return out
 
 

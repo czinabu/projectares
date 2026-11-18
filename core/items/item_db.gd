@@ -222,9 +222,9 @@ func _ready() -> void:
 	register("wings_glide", "Mk1 Glide Wings", Rarity.RARE, 1000, ["flight_rig"], WINGS_MK1.duplicate(),
 			"Distance and speed. Launch, then glide at 22 m/s and dive at 30, for 25 s of glide stamina that refills on the ground, with two boosts a flight. Twice as fast across the map, but no hover or climb, poor aim, sidearm only while spread, and they cannot open indoors.")
 	_rig_tier("wings_glide_mk2", "Mk2 Glide Wings", Rarity.RARE, 1400, "wings_glide", 2,
-			"Faster glides, dives and boosts, and longer glide stamina. Still no hover or climb.")
+			"Stronger boosts and longer glide stamina. Still no hover or climb.")
 	_rig_tier("wings_glide_mk3", "Mk3 Glide Wings", Rarity.EPIC, 2200, "wings_glide", 3,
-			"The fastest rig there is, with the longest glide. Still no hover or climb.")
+			"The strongest boosts and the longest glide of any wings. Still no hover or climb.")
 
 	# Abilities
 	register("chip_blink", "Phase Step", Rarity.RARE, 900, ["ability", "blink"],
@@ -663,10 +663,12 @@ const WINGS_MK1 := {
 
 ## What a higher tier improves on each rig: its strength only (see
 ## `_rig_tier`; "-" lowers a cost or a wait). Jetpacks get more hover, heat
-## and height; boots one more charge and a faster refill; wings more speed
-## and glide time.
+## and height; boots one more charge and a faster refill; wings a stronger
+## boost and more glide time, but never a faster glide (Caleb's call): every
+## tier cruises at 22 m/s, so over a long run a bike stays faster, and only
+## a Mk3's boost keeps pace with one for a moment.
 const RIG_STRENGTH := {
 	"jetpack_mk1": ["-heat_per_sec", "cool_per_sec", "coast_cool", "ceiling"],
 	"boots_thruster": ["max_charges", "-charge_time"],
-	"wings_glide": ["glide_speed", "glide_boost", "-glide_heat"],
+	"wings_glide": ["glide_boost", "-glide_heat"],
 }

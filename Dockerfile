@@ -39,7 +39,7 @@ RUN godot --headless --path . --import \
 # ---- Stage 2: a small image that only runs the server -----------------------
 FROM debian:bookworm-slim
 RUN useradd --create-home --shell /usr/sbin/nologin ares \
-	&& mkdir -p /data/accounts && chown -R ares:ares /data
+	&& mkdir -p /data/accounts /data/servers && chown -R ares:ares /data
 # The server and the SQLite library it keeps accounts with, which must sit
 # beside it (without it the server falls back to one JSON file per player).
 COPY --from=build /src/build/server/ares_server.x86_64 /app/ares_server

@@ -100,27 +100,68 @@ class Record:
 
 # --- Presence ----------------------------------------------------------------
 
-## A player signed in. `where` is a key of PLACE_NAMES.
-func player_online(account_id: String, shown_name: String, where := "lobby") -> void:
-	_online[account_id] = {"name": shown_name, "where": where}
+## A player signed in. `where` is a key of PLACE_NAMES. `seat` names the
+## connection: a player on the way from one world to the next is signed in
+## to both for a moment (the game connects ahead, DESIGN.md section 14), and
+## is online until the last seat is given up.
+func player_online(account_id: String, shown_name: String, where := "lobby", seat := "") -> void:
+	var entry: Dictionary = _online.get(account_id, {"seats": {}})
+	entry["name"] = shown_name
+	entry.seats.erase(seat)
+	entry.seats[seat] = where
+	entry["where"] = _where_of(entry.seats)
+	_online[account_id] = entry
 	var record := _record(account_id)
 	if record.shown_name != shown_name:
 		record.shown_name = shown_name
 		_save(record)
 
 
-## A player left the server. Their invites go with them.
-func player_offline(account_id: String) -> void:
+## A player's connection (`seat`) left. With their last one they are
+## offline, and their invites go with them. Returns whether they are.
+func player_offline(account_id: String, seat := "") -> bool:
+	if not _online.has(account_id):
+		return false
+	var entry: Dictionary = _online[account_id]
+	entry.seats.erase(seat)
+	if not entry.seats.is_empty():
+		entry["where"] = _where_of(entry.seats)
+		return false
 	_online.erase(account_id)
 	for invite_id: int in _invites.keys():
 		var invite: Dictionary = _invites[invite_id]
 		if invite.from == account_id or invite.to == account_id:
 			_invites.erase(invite_id)
+	return true
 
 
-func set_where(account_id: String, where: String) -> void:
+func set_where(account_id: String, where: String, seat := "") -> void:
 	if _online.has(account_id):
-		_online[account_id].where = where
+		var entry: Dictionary = _online[account_id]
+		entry.seats[seat] = where
+		entry["where"] = _where_of(entry.seats)
+
+
+## Every seat whose name starts with `prefix` is given up (a game server
+## went away with everyone on it). Returns whether anyone's presence changed.
+func drop_seats(prefix: String) -> bool:
+	var changed := false
+	for account_id: String in _online.keys():
+		for seat: String in _online[account_id].seats.keys():
+			if seat.begins_with(prefix):
+				player_offline(account_id, seat)
+				changed = true
+	return changed
+
+
+## Where someone with these seats is: wherever they are playing, rather than
+## a lobby they are only signed in to; the newest of those.
+static func _where_of(seats: Dictionary) -> String:
+	var where := "lobby"
+	for seat: Variant in seats:
+		if str(seats[seat]) != "lobby" or seats.size() == 1:
+			where = str(seats[seat])
+	return where
 
 
 func is_online(account_id: String) -> bool:
@@ -368,6 +409,88 @@ func _contact_entry(record: Record, other: String) -> Dictionary:
 	var shown: String = _online[other].name if online else str(record.names.get(other, other))
 	return {"id": other, "name": shown, "online": online, "where": where(other),
 			"saved": other in record.contacts, "blocked": other in record.blocked}
+
+
+# --- Requests ----------------------------------------------------------------
+
+## In `run`'s "tell": everyone online sees something new (who is online).
+const EVERYONE := "*"
+
+## One request, as a session passes it on, so a server that keeps its own
+## records and the account service run the very same thing. `action` and its
+## `args`:
+##   "online" [shown name, where, seat], "offline" [seat], "where" [where, seat]
+##   "message" [to, text]
+##   "invite" [to, kind, world id]
+##   "answer" [invite id, accept]
+##   "contact" ["add" / "remove" / "block" / "unblock", other]
+## Returns the call's own answer ("ok", "error", and what it made) plus
+##   "tell": the account ids whose `snapshot` changed (`EVERYONE` for all), and
+##   "notices": account id -> lines to show them now.
+func run(action: String, account_id: String, args: Array) -> Dictionary:
+	var result := _fail("That did not work.")
+	var tell: Array[String] = [account_id]
+	var notices := {}
+	if account_id == "":
+		pass
+	elif action == "online" and _are(args, [TYPE_STRING, TYPE_STRING, TYPE_STRING]):
+		player_online(account_id, str(args[0]).left(64), str(args[1]).left(16), str(args[2]).left(96))
+		result = {"ok": true}
+		tell = [EVERYONE]
+	elif action == "offline" and _are(args, [TYPE_STRING]):
+		result = {"ok": true}
+		tell.clear()
+		if player_offline(account_id, str(args[0]).left(96)):
+			tell = [EVERYONE]
+	elif action == "where" and _are(args, [TYPE_STRING, TYPE_STRING]):
+		set_where(account_id, str(args[0]).left(16), str(args[1]).left(96))
+		result = {"ok": true}
+		tell = [EVERYONE]
+	elif action == "message" and _are(args, [TYPE_STRING, TYPE_STRING]):
+		var to := str(args[0]).left(64)
+		result = send_message(account_id, to, str(args[1]).left(MAX_MESSAGE * 2))
+		if result.ok:
+			tell.append(to)
+			notices[to] = ["%s: %s" % [result.message.from_name, result.message.text]]
+	elif action == "invite" and _are(args, [TYPE_STRING, TYPE_STRING, TYPE_STRING]):
+		var to := str(args[0]).left(64)
+		result = invite(account_id, to, str(args[1]).left(16), str(args[2]).left(32))
+		if result.ok:
+			tell.append(to)
+			notices[account_id] = ["Invite sent to %s." % name_of(to)]
+			notices[to] = [invite_text(result.invite)]
+	elif action == "answer" and _are(args, [TYPE_INT, TYPE_BOOL]):
+		result = answer_invite(account_id, int(args[0]), bool(args[1]))
+		if result.ok:
+			notices[str(result.invite.from)] = ["%s %s your invite." % [name_of(account_id),
+					"accepted" if args[1] else "declined"]]
+	elif action == "contact" and _are(args, [TYPE_STRING, TYPE_STRING]):
+		var other := str(args[1]).left(64)
+		match str(args[0]):
+			"add": result = add_contact(account_id, other)
+			"remove": result = remove_contact(account_id, other)
+			"block": result = block(account_id, other)
+			"unblock": result = unblock(account_id, other)
+	result["tell"] = tell
+	result["notices"] = notices
+	return result
+
+
+## What an invite says to whoever gets it.
+static func invite_text(made: Dictionary) -> String:
+	if made.get("kind", "") == "base":
+		return "%s invites you to their home base." % made.get("from_name", "Someone")
+	var world := Worlds.get_world(str(made.get("world_id", "")))
+	return "%s invites you to %s." % [made.get("from_name", "Someone"), world.display_name if world else "their raid"]
+
+
+static func _are(args: Array, types: Array) -> bool:
+	if args.size() != types.size():
+		return false
+	for i in types.size():
+		if typeof(args[i]) != types[i]:
+			return false
+	return true
 
 
 # --- Storage -----------------------------------------------------------------

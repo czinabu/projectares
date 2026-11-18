@@ -61,7 +61,7 @@ static func rows(state: Variant) -> Array[Dictionary]:
 				continue
 			var holding := held.any(func(entry: Dictionary) -> bool: return entry.id == id)
 			var done: bool = id in state.get("done", [])
-			var text := "%s   (%s)" % [Contracts.job(id).title, Contracts.reward_text(id)]
+			var text := "%s   (%s)" % [Contracts.title_of(id), Contracts.reward_text(id)]
 			if done:
 				text += "   done"
 			out.append({"text": text, "action": "take", "id": id,

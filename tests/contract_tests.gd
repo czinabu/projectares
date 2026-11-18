@@ -19,20 +19,30 @@ static func run(t: Node) -> void:
 	_server(t)
 	_views(t)
 	await _raid_tally(t)
+	await _expedition(t)
+
+
+## How many jobs the board offers: the ones that count anywhere, and each
+## world tag's own.
+static func _board_size() -> int:
+	return Contracts.DAILY_OFFERS + Contracts.WEEKLY_OFFERS \
+			+ Contracts.tags().size() * (Contracts.TAGGED_DAILY_OFFERS + Contracts.TAGGED_WEEKLY_OFFERS)
 
 
 static func _rules(t: Node) -> void:
 	var offers := Contracts.offers_for(DAY)
-	var dailies := offers.filter(func(id: String) -> bool: return Contracts.job(id).kind == "daily")
-	t.check(offers.size() == Contracts.DAILY_OFFERS + Contracts.WEEKLY_OFFERS and dailies.size() == Contracts.DAILY_OFFERS
-			and Contracts.offers_for(DAY) == offers, "the board offers 3 dailies and a weekly, the same all day (%s)" % [offers])
+	var dailies := offers.slice(0, Contracts.DAILY_OFFERS).filter(func(id: String) -> bool:
+		return Contracts.job(id).kind == "daily" and not Contracts.job(id).has("world_tag"))
+	t.check(offers.size() == _board_size() and dailies.size() == Contracts.DAILY_OFFERS
+			and Contracts.offers_for(DAY) == offers,
+			"the board offers 3 dailies and a weekly, then each world's own, the same all day (%s)" % [offers])
 	var changes := false
 	for i in range(1, 6):
 		changes = changes or Contracts.offers_for(DAY + i).slice(0, 3) != dailies
 	t.check(changes and Contracts.offers_for(DAY + 1)[3] == offers[3] and Contracts.week_of(DAY) != Contracts.week_of(DAY + 7),
 			"the dailies change with the day and the weekly with the week")
 	var fair := true
-	for id: String in Contracts.JOBS:
+	for id: String in Contracts.jobs():
 		var job := Contracts.job(id)
 		fair = fair and int(job.goal) > 0 and int(job.scrip) > 0 and job.kind in ["daily", "weekly"] \
 				and not str(job.stat).contains("player")
@@ -49,7 +59,7 @@ static func _rules(t: Node) -> void:
 	t.check(Contracts.drop(state, offers[1], DAY).ok and not Contracts.drop(state, offers[1], DAY).ok
 			and state.active.size() == 2, "a job can be dropped")
 	var held_daily: String = offers[0]
-	t.check(Contracts.reroll(state, DAY).ok and not Contracts.reroll(state, DAY).ok and state.offers.size() == 4
+	t.check(Contracts.reroll(state, DAY).ok and not Contracts.reroll(state, DAY).ok and state.offers.size() == _board_size()
 			and state.active.size() == 2, "the dailies reroll once a day, and jobs held stay held")
 	var saved: Variant = JSON.parse_string(JSON.stringify(state))
 	var loaded := Contracts.clean(saved, DAY)
@@ -116,7 +126,7 @@ static func _server(t: Node) -> void:
 	t.check(service.contract(id, "take", "no_such").ok == false and not service.contract(id, "steal", "").ok
 			and not service.contract("nobody", "take", board.offers[0]).ok, "the server refuses bad requests")
 	board.offers.clear()
-	t.check(service.snapshot(id).contracts.offers.size() == 4, "a snapshot is a copy: a client cannot edit the board")
+	t.check(service.snapshot(id).contracts.offers.size() == _board_size(), "a snapshot is a copy: a client cannot edit the board")
 	var account: Accounts.Account = service.load_account(id)
 	account.contracts.offers = ["cull", "warlord", "sites", "tyrant"]
 	t.check(service.contract(id, "take", "cull").ok and service.snapshot(id).contracts.active.size() == 1,
@@ -160,10 +170,10 @@ static func _views(t: Node) -> void:
 	var rows := ContractPanel.rows(state)
 	var takes := rows.filter(func(r: Dictionary) -> bool: return r.action == "take")
 	var drops := rows.filter(func(r: Dictionary) -> bool: return r.action == "drop")
-	t.check(takes.size() == 4 and drops.size() == 1 and not takes[0].enabled and takes[1].enabled,
+	t.check(takes.size() == _board_size() and drops.size() == 1 and not takes[0].enabled and takes[1].enabled,
 			"the board's screen lists the offers to take and the held job to drop")
 	var lines := PlazaMap.contract_lines()
-	t.check(lines.size() == 2 + 4 and lines[2].contains(Contracts.job(Contracts.offers_for(Contracts.today())[0]).title),
+	t.check(lines.size() == 2 + _board_size() and lines[2].contains(Contracts.job(Contracts.offers_for(Contracts.today())[0]).title),
 			"the board's wall in the plaza lists today's jobs")
 
 
@@ -208,3 +218,82 @@ static func _raid_tally(t: Node) -> void:
 	t.check(results.size() == 1 and results[0].outcome == "left" and results[0].tally.get("kills", 0) == 2
 			and results[0].tally.get("rides", 0) == 1, "the life's counts travel home in the result")
 	await t._end_raid(raid)
+
+
+## A world's own contracts (DESIGN.md section 10, "World-tagged contracts"):
+## Frostline's expedition jobs are on the board beside the rest, count only
+## there, and the raid counts what they need.
+static func _expedition(t: Node) -> void:
+	print("Contracts: the expedition's own")
+	var frost := Worlds.get_world("frostline")
+	t.check(frost.contract_tag == "expedition" and Worlds.get_world("ashfront").contract_tag != "expedition"
+			and "expedition" in Contracts.tags(), "Frostline tags its own contracts as the expedition's")
+	var own := Contracts.ids("daily", "expedition") + Contracts.ids("weekly", "expedition")
+	t.check(own.size() == frost.contract_jobs().size() and own.all(func(id: String) -> bool:
+			return Contracts.job(id).get("world_tag", "") == "expedition"), "every one of its jobs is on the list, tagged")
+	var offers := Contracts.offers_for(DAY)
+	var on_board := offers.filter(func(id: String) -> bool: return Contracts.job(id).get("world_tag", "") == "expedition")
+	t.check(on_board.size() == Contracts.TAGGED_DAILY_OFFERS + Contracts.TAGGED_WEEKLY_OFFERS
+			and offers.slice(0, Contracts.DAILY_OFFERS + Contracts.WEEKLY_OFFERS).all(func(id: String) -> bool:
+				return not Contracts.job(id).has("world_tag")),
+			"the board offers an expedition daily and weekly after the jobs that count anywhere (%s)" % [on_board])
+	t.check(Contracts.title_of("frost_relay").begins_with("Expedition: ") and Contracts.title_of("cull") == Contracts.job("cull").title,
+			"its jobs are marked as the expedition's on the board")
+	var weekly_bp := Contracts.ids("weekly", "expedition").all(func(id: String) -> bool:
+			return Contracts.job(id).get("reward_tag", "") == "blueprint")
+	t.check(weekly_bp, "its long expeditions pay a blueprint the account does not know yet: the slow route")
+	# Counted only in a world with the tag.
+	var state := Contracts.clean(null, DAY)
+	state.offers = ["frost_cores", "cull"]
+	Contracts.take(state, "frost_cores", DAY)
+	var cores: Array = ["cryo_core", "cryo_core", "scrap_metal"]
+	Contracts.settle(state, {"outcome": "left", "tally": {}, "loot": cores, "banked": ["cryo_core"],
+			"contract_tag": ""}, DAY)
+	t.check(state.active[0].have == 0, "an expedition job counts nothing in another world")
+	var paid := Contracts.settle(state, {"outcome": "left", "tally": {}, "loot": cores, "banked": ["cryo_core"],
+			"contract_tag": "expedition"}, DAY)
+	t.check(state.active.is_empty() and paid.scrip == int(Contracts.job("frost_cores").scrip),
+			"and counts there: three Cryo Cores home finish it")
+	# The raid counts what they need.
+	var raid := Raid.new()
+	t.add_child(raid)
+	raid.start_server(frost, 83)
+	for bot in raid.bots:
+		bot.get_node("Brain").set_physics_process(false)
+		bot.set_physics_process(false)
+	var p := raid.add_player(["rifle_scrap", "blade_scrap"], {}, "Expeditioner", "expeditioner")
+	await t.frames(3)
+	p.protected_left = 0.0
+	var warden: Actor = null
+	var boss: Actor = null
+	for bot in raid.bots:
+		if bot.get_meta("boss", "") != "":
+			boss = bot
+		elif warden == null and bot.faction == "warden":
+			warden = bot
+	Combat.deal(warden, DamageInfo.make(9999.0, p, "bullet"))
+	if boss != null:
+		Combat.deal(boss, DamageInfo.make(99999.0, p, "bullet"))
+	await t.frames(2)
+	t.check(int(p.tally.get("kills:warden", 0)) == 1 + (1 if boss != null else 0) and int(p.tally.get("bosses", 0)) == (1 if boss != null else 0),
+			"Wardens killed and the Sentinel brought down count (%s)" % [p.tally])
+	var relay: Dictionary = {}
+	for cache: Dictionary in raid._caches:
+		if cache.source == "relay":
+			relay = cache
+	t.check(not relay.is_empty(), "the relay is a cache the raid keeps")
+	if not relay.is_empty():
+		var box: LootContainer = relay.container
+		box.set_items(["scrap_metal"])
+		box.interact(p)
+		box.set_items(["scrap_metal"])
+		box.interact(p)
+		t.check(int(p.tally.get("cache:relay", 0)) == 1, "looting the relay counts once a fill (%s)" % [p.tally])
+	var results: Array[Dictionary] = []
+	raid.player_finished.connect(func(_a: Actor, r: Dictionary) -> void: results.append(r))
+	p.health.apply_damage(DamageInfo.make(9999.0, null, "test"))
+	await t.frames(3)
+	t.check(not results.is_empty() and results[0].get("contract_tag", "") == "expedition",
+			"a Frostline life's result says which contracts it counts for")
+	raid.queue_free()
+	await t.frames(2)

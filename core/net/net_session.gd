@@ -85,7 +85,7 @@ signal base_visit_requested(owner_name: String, stash: Array, loadout: Dictionar
 signal portal_travel(destination: String)
 
 const DEFAULT_PORT := 24565
-const PROTOCOL := 43
+const PROTOCOL := 44
 ## Every packet is compressed, both ways. State updates are mostly repeated
 ## numbers, and a big battle sends a player hundreds of them a second. Server
 ## and client must agree, so a change here needs a new PROTOCOL.
@@ -202,10 +202,21 @@ var squad_spawn := false
 ## sessions (a plaza and a warzone) can run in one process without their maps
 ## colliding.
 var isolated := false
-## Where to find the other worlds on this server: world id -> port. A server
-## hosting a safe zone fills this in before `host`, and clients receive it
-## when they sign in, so a plaza gate knows where to send you.
+## Where to find the other worlds of this server: world id -> where it
+## listens, a port on the address you are already on (an int) or
+## "host:port" when that world runs on another machine. A server that runs
+## every world in one program fills this in before `host`; one that runs a
+## single world reads it from the account service's directory
+## (`AccountLink.worlds`). Clients receive it when they sign in and whenever
+## it changes, so a gate or a portal knows where to send you.
 var routes := {}
+## Server, set before `host`: the address players reach this world at, when
+## it is not the one the other worlds of this server are on ("" for the same).
+var public_host := ""
+## Server: how many connections a world keeps free on top of its players,
+## for games signed in and not in the world: a lobby (your base on this
+## server), and a game that connected ahead of its trip here.
+var lobby_room := 24
 ## How the other worlds on this server are doing: world id -> `Raid.status()`.
 ## The safe zone's session gathers it and sends it to everyone standing
 ## there, so a doorway can say what is on the other side.
@@ -242,6 +253,10 @@ var social_state := {}
 ## Client: the name to sign in with, and the secret that proves the account
 ## is yours (see `StashService.new_secret`).
 var player_name := "Raider"
+## Client, set before `join`: this connection is made ahead of a trip, while
+## the player is still somewhere else (`Main._connect_ahead`). The server
+## signs it in and leaves everything else until `deploy`.
+var ahead := false
 ## Client: the sign-in token the server handed out (`_server_auth`). Set it
 ## before `join` to sign in with it instead of the secret; it is only for
 ## the servers that share the accounts of the one that gave it.
@@ -337,6 +352,12 @@ const TRACK_SEND_EVERY := 20
 const TRACK_BATCH := 500
 var _tick := 0
 var _sent_status := {}   # world status last sent (server)
+var _sent_routes := {}   # routes last sent (server)
+var _told_status := {}   # this world's status as last told to the account service (server)
+var _port := 0           # the port this server listens on
+var _max_players := 0    # how many players this world takes (server)
+var _ahead := {}         # peer id -> true: signed in ahead of a trip here, not here yet (server)
+var _leaving := 0        # the peer whose leaving is being handled (server)
 var _limits := RequestLimits.new() # how many requests each player may still make (server)
 var _gave_up := false    # client: `failed` was emitted for this connection
 var _certificate := ""   # server: this server's certificate (PEM), sent with every sign-in answer
@@ -379,7 +400,9 @@ func _exit_tree() -> void:
 		stash.cancel_all_deploys()
 	_hosting.erase(self)
 	close()
-	if not is_server:
+	if not is_server and my_actor_id >= 0:
+		# Only a game that was in a world took the authority away; one that
+		# was only signed in (ahead of a trip) leaves it alone.
 		Combat.authoritative = true
 	elif Combat.rewind == _seen_positions:
 		Combat.rewind = Callable()
@@ -392,9 +415,12 @@ func host(p_world_id: String, port := DEFAULT_PORT, max_players := 8) -> Error:
 	if world_for(p_world_id) == null:
 		return ERR_DOES_NOT_EXIST
 	var peer := ENetMultiplayerPeer.new()
-	var err := peer.create_server(port, max_players)
+	# Room for the players and for games that are only signed in (`lobby_room`).
+	var err := peer.create_server(port, max_players + lobby_room)
 	if err != OK:
 		return err
+	_port = port
+	_max_players = max_players
 	# Every connection is encrypted with this server's own certificate, made
 	# on its first start and kept beside the accounts (`ServerTrust`).
 	var identity_dir: String = str(stash.save_dir).trim_suffix("/").path_join("server_identity")
@@ -406,17 +432,25 @@ func host(p_world_id: String, port := DEFAULT_PORT, max_players := 8) -> Error:
 	peer.host.compress(COMPRESSION)
 	is_server = true
 	world_id = p_world_id
-	clans.open(stash.save_dir, stash.persist)
 	if stash.is_remote():
 		# The account service runs the market and tells this server when an
-		# account or the board changes from somewhere else.
+		# account or the board changes from somewhere else. It keeps the
+		# clans (this server reads a copy), the phone's records and the
+		# directory of worlds too, since each world is a program of its own.
+		clans = stash.clans
 		stash.account_changed.connect(_on_account_changed)
 		stash.market_changed.connect(_on_market_changed)
+		stash.clans_changed.connect(_on_clans_changed)
+		stash.social_changed.connect(_send_social_to)
+		stash.social_noticed.connect(_on_social_noticed)
+		stash.worlds_changed.connect(_share_worlds)
+		stash.linked.connect(_on_linked)
 	else:
+		clans.open(stash.save_dir, stash.persist)
 		market.open(stash.save_dir, stash.persist)
-	social.persist = stash.persist
-	social.save_dir = stash.save_dir.path_join("social")
-	social.load_server_news(stash.save_dir.path_join("news.json"))
+		social.persist = stash.persist
+		social.save_dir = stash.save_dir.path_join("social")
+		social.load_server_news(stash.save_dir.path_join("news.json"))
 	Combat.authoritative = true
 	# A peer signs in during the handshake, before it counts as connected:
 	# an old game or a wrong secret never gets in, and nothing it sends
@@ -434,18 +468,88 @@ func host(p_world_id: String, port := DEFAULT_PORT, max_players := 8) -> Error:
 		Combat.rewind = _seen_positions
 	_start_server_raid()
 	_hosting.append(self)
+	_announce()
 	return OK
 
 
-## Server: `Raid.status()` of every world in `routes` that runs in this process.
+## Server: how the other worlds of this server are doing, world id ->
+## `Raid.status()`: asked of the sessions in this process, or read off the
+## account service's directory when each world is its own program.
 func _gather_status() -> Dictionary:
 	var out := {}
+	if stash.is_remote():
+		for id: String in stash.worlds:
+			if id != world_id:
+				out[id] = stash.worlds[id].get("status", {})
+		return out
 	for session in _hosting:
 		if session == self or not is_instance_valid(session) or session.raid == null:
 			continue
 		if routes.has(session.world_id):
 			out[session.world_id] = session.raid.status()
 	return out
+
+
+## Server: where the other worlds of this server are, as clients are told
+## (see `routes`).
+func _routes_out() -> Dictionary:
+	var out := {}
+	if stash.is_remote():
+		for id: String in stash.worlds:
+			if id == world_id:
+				continue
+			var host := str(stash.worlds[id].get("host", ""))
+			var port := int(stash.worlds[id].get("port", 0))
+			out[id] = port if host == "" or host == public_host else "%s:%d" % [host, port]
+		return out
+	for id: String in routes:
+		if id != world_id:
+			out[id] = routes[id]
+	return out
+
+
+## Server: puts this world on the account service's directory, with how it
+## is doing now. Nothing to do on a server that runs every world itself.
+func _announce() -> void:
+	if not stash.is_remote() or raid == null:
+		return
+	_told_status = raid.status()
+	stash.announce({"world": world_id, "host": public_host, "port": _port, "max": _max_players,
+			"status": _told_status})
+
+
+## Server: keeps the directory current and tells everyone signed in here
+## when a route or another world's news changed.
+func _share_worlds() -> void:
+	if not is_server or raid == null:
+		return
+	if stash.is_remote() and raid.status() != _told_status:
+		_announce()
+	if _peer_account.is_empty():
+		return
+	var peers := _api.get_peers()
+	var out := _routes_out()
+	if out != _sent_routes:
+		_sent_routes = out
+		for peer: int in _peer_account:
+			if peer in peers:
+				_routes.rpc_id(peer, out)
+	var status := _gather_status()
+	if status != _sent_status:
+		_sent_status = status
+		for peer: int in _peer_account:
+			if peer in peers:
+				_world_status.rpc_id(peer, status)
+
+
+## Server: the link to the account service is up (again). It forgot this
+## server when the link dropped, so everyone here is signed on with it again.
+func _on_linked() -> void:
+	_announce()
+	for peer: int in _peer_account:
+		if _here(peer):
+			_social_do("online", _peer_account[peer], [stash.name_of(_peer_account[peer]),
+					_place_of(peer), world_id])
 
 
 func close() -> void:
@@ -635,6 +739,8 @@ func _server_auth(peer: int, data: PackedByteArray) -> void:
 		_refuse(peer, result.error)
 		return
 	_peer_account[peer] = result.account_id
+	if hello.get("ahead", false):
+		_ahead[peer] = true
 	# The newest sign-in wins. An older connection for the same account (a
 	# crashed game, one whose connection dropped and that the server has not
 	# noticed yet, or another game signing in) is let go: its body is left
@@ -707,6 +813,7 @@ func _allow(kind: String) -> bool:
 func _on_server_auth_failed(peer: int) -> void:
 	var left: String = _peer_account.get(peer, "")
 	_peer_account.erase(peer)
+	_ahead.erase(peer)
 	_limits.forget(peer)
 	_release_if_unused(left)
 
@@ -746,15 +853,17 @@ func _on_peer_connected(peer: int) -> void:
 	if not _peer_account.has(peer):
 		_api.disconnect_peer(peer)
 		return
-	if not routes.is_empty():
-		_routes.rpc_id(peer, routes)
-		_sent_status = _gather_status()
-		_world_status.rpc_id(peer, _sent_status)
+	var out := _routes_out()
+	if not out.is_empty():
+		_routes.rpc_id(peer, out)
+		_world_status.rpc_id(peer, _gather_status())
 	# Back after a dropped connection: to the body still standing, or with
 	# word of how the life ended while they were away. Said before the
-	# account, so the game knows not to deploy again.
+	# account, so the game knows not to deploy again. A game that only
+	# connected ahead of a trip here is not here yet: its body waits until
+	# it asks to come in (`_request_join`).
 	var account_id: String = _peer_account[peer]
-	var body := _unguarded_body(account_id)
+	var body: Actor = null if _ahead.has(peer) else _unguarded_body(account_id)
 	if body != null:
 		_back.rpc_id(peer, BACK_IN_BODY)
 	elif _missed.has(account_id):
@@ -818,7 +927,10 @@ func _reclaim(peer: int, actor: Actor) -> void:
 func _on_peer_disconnected(peer: int) -> void:
 	_joined_peers.erase(peer)
 	_limits.forget(peer)
+	_ahead.erase(peer)
+	_leaving = peer
 	_social_left(peer)
+	_leaving = 0
 	var left: String = _peer_account.get(peer, "")
 	_peer_account.erase(peer)
 	_signing_in.erase(peer)
@@ -1065,29 +1177,46 @@ func _request_clan(action: String, a := "", b := "") -> void:
 	if not is_server or not _peer_account.has(peer):
 		return
 	var account_id: String = _peer_account[peer]
+	if action not in ["create", "join", "leave"]:
+		return
 	var result: Dictionary
 	if stash.snapshot(account_id).get("deployed", false):
 		result = {"ok": false, "error": "Not while you are in the field."}
-	elif action == "create":
-		result = clans.create(account_id, a.left(64), b.left(16))
-	elif action == "join":
-		result = clans.join(account_id, a.left(16))
-	elif action == "leave":
-		result = clans.leave(account_id)
+	elif stash.is_remote():
+		# The account service keeps the clans; every server hears the change
+		# (`_on_clans_changed`), this one before the answer is back.
+		result = await stash.clan(action, account_id, a.left(64), b.left(16))
+		if not _here(peer):
+			return
 	else:
-		return
+		result = clans.ask(action, account_id, a.left(64), b.left(16))
+		if result.ok:
+			for session in _hosting:
+				if is_instance_valid(session) and session.clans == clans:
+					session._on_clans_changed()
 	if not result.ok:
-		_lobby_error.rpc_id(peer, result.error)
+		_lobby_error.rpc_id(peer, str(result.get("error", "That did not work.")))
+
+
+## Server: the clans changed (here, in another session of this server, or
+## on another server of the same account service). Everyone signed in here
+## sees the new list, and the tag over a player's head changes for everyone
+## standing with them.
+func _on_clans_changed() -> void:
+	if not is_server or raid == null:
 		return
-	# Everyone signed in here sees the new list, and the tag over their head
-	# changes for everyone standing with them.
-	for other: int in _peer_account:
-		_send_clans(other)
-	var actor: Actor = _peer_actor.get(peer)
-	if actor != null and is_instance_valid(actor):
-		_wear_clan(actor, account_id)
-		for other in _joined_peers:
-			_clan_tag.rpc_id(other, _ids[actor], actor.clan, actor.clan_tag)
+	for peer: int in _peer_account:
+		if _here(peer):
+			_send_clans(peer)
+	for peer: int in _peer_actor:
+		var actor: Actor = _peer_actor[peer]
+		if not is_instance_valid(actor) or not _peer_account.has(peer) or not _ids.has(actor):
+			continue
+		var before := [actor.clan, actor.clan_tag]
+		_wear_clan(actor, _peer_account[peer])
+		if before != [actor.clan, actor.clan_tag]:
+			for other in _joined_peers:
+				_clan_tag.rpc_id(other, _ids[actor], actor.clan, actor.clan_tag)
 
 
 ## Server: marks an actor with its account's clan. Only where gear is at
@@ -1363,10 +1492,22 @@ func _request_join(drop := "") -> void:
 		_lobby_error.rpc_id(peer, "Not yet. You can drop in again in a moment.")
 		return
 	var account_id: String = _peer_account[peer]
+	_ahead.erase(peer)
+	# The body they left standing here when their connection dropped: back
+	# into it, not a second life (a game that connected ahead of its trip
+	# was not put in it when it signed in).
+	var body := _unguarded_body(account_id)
+	if body != null:
+		_back.rpc_id(peer, BACK_IN_BODY)
+		_reclaim(peer, body)
+		return
 	# In a safe zone the loadout is worn, not risked: it never leaves the
 	# stash, and there is no run to settle afterwards.
 	var safe := raid.world.safe_zone
 	if _deploying.has(peer):
+		return
+	if _max_players > 0 and _peer_actor.size() + _deploying.size() >= _max_players:
+		_lobby_error.rpc_id(peer, "%s is full right now. Try again in a moment." % raid.world.display_name)
 		return
 	_deploying[peer] = true
 	var into := raid.world
@@ -1727,13 +1868,9 @@ func _server_late_tick(_delta: float) -> void:
 			_sent_standing[id] = standing
 			for peer in _joined_peers:
 				_standing.rpc_id(peer, id, standing)
-	# A safe zone tells its visitors how the worlds behind its doors are doing.
-	if _tick % status_every == 0 and not routes.is_empty() and not _peer_account.is_empty():
-		var status := _gather_status()
-		if status != _sent_status:
-			_sent_status = status
-			for peer: int in _peer_account:
-				_world_status.rpc_id(peer, status)
+	# Everyone signed in hears where the other worlds are and how they are doing.
+	if _tick % status_every == 0:
+		_share_worlds()
 	# The meter moves slowly, so a few times a second is plenty.
 	if _tick % 20 == 0 and not is_equal_approx(_sent_war, raid.war.intensity):
 		_sent_war = raid.war.intensity
@@ -1873,9 +2010,22 @@ func join(address: String, port := DEFAULT_PORT) -> Error:
 	return _open_connection()
 
 
+## "host:port" as [host, port], or [] if it is not one.
+static func split_address(address: String) -> Array:
+	var at := address.rfind(":")
+	if at <= 0:
+		return []
+	var port := address.substr(at + 1)
+	if not port.is_valid_int() or int(port) <= 0 or int(port) > 65535:
+		return []
+	return [address.left(at), int(port)]
+
+
 ## Client: what this game says to sign in (see `_server_auth`).
 func _hello() -> Dictionary:
 	var hello := {"protocol": PROTOCOL}
+	if ahead:
+		hello["ahead"] = true
 	if _join_mode == "probe":
 		hello["probe"] = true
 	elif _join_mode != "plain":
@@ -1974,6 +2124,17 @@ func _client_auth(id: int, data: PackedByteArray) -> void:
 	_api.complete_auth(1)
 
 
+## Client: connecting, or connected, and not given up on.
+func is_live() -> bool:
+	return not is_server and not _gave_up and not _finished and _is_connected_or_connecting()
+
+
+func _is_connected_or_connecting() -> bool:
+	var peer := _api.multiplayer_peer if _api != null else null
+	return peer != null and not peer is OfflineMultiplayerPeer \
+			and peer.get_connection_status() != MultiplayerPeer.CONNECTION_DISCONNECTED
+
+
 ## Client: this connection failed. Says why once, and closes it.
 func _give_up(reason: String) -> void:
 	if _gave_up:
@@ -2059,8 +2220,13 @@ func _account(snapshot: Dictionary) -> void:
 func _routes(p_routes: Dictionary) -> void:
 	routes.clear()
 	for id: Variant in p_routes:
-		if typeof(id) == TYPE_STRING and typeof(p_routes[id]) == TYPE_INT:
-			routes[id] = p_routes[id]
+		var where: Variant = p_routes[id]
+		if typeof(id) != TYPE_STRING or id.length() > 32:
+			continue
+		if typeof(where) == TYPE_INT and where > 0 and where < 65536:
+			routes[id] = where
+		elif typeof(where) == TYPE_STRING and where.length() <= 262 and not split_address(where).is_empty():
+			routes[id] = where
 	routes_changed.emit(routes)
 
 
@@ -3332,11 +3498,46 @@ func _is_connected() -> bool:
 # snapshot whenever something they can see changes. A client only sends
 # requests; the server always knows who sent them from the peer's sign-in.
 
+## Server: one request of the phone's (`SocialService.run`), run by this
+## server's own service or by the account service, which then reaches the
+## players it concerns wherever they are.
+func _social_do(action: String, account_id: String, args: Array = []) -> Dictionary:
+	if stash.is_remote():
+		return await stash.social(action, account_id, args)
+	var result := social.run(action, account_id, args)
+	# Every session of this server shares the one service, so someone in the
+	# plaza hears from someone out in a world.
+	var told := false
+	for session in _hosting:
+		if is_instance_valid(session) and session.social == social:
+			session._social_deliver(result)
+			told = told or session == self
+	if not told:
+		_social_deliver(result)
+	return result
+
+
+## Server: sends the players here what a phone request changed for them.
+func _social_deliver(result: Dictionary) -> void:
+	var tell: Array = result.get("tell", [])
+	if SocialService.EVERYONE in tell:
+		_broadcast_social()
+	else:
+		for account_id: String in tell:
+			_send_social_to(account_id)
+	var notices: Dictionary = result.get("notices", {})
+	for account_id: String in notices:
+		for text: Variant in notices[account_id]:
+			_on_social_noticed(account_id, str(text))
+
+
 ## Server: a peer finished signing in.
 func _social_joined(peer: int) -> void:
 	var account_id: String = _peer_account[peer]
-	social.player_online(account_id, stash.name_of(account_id), "lobby")
-	_broadcast_social()
+	await _social_do("online", account_id, [stash.name_of(account_id), "lobby", world_id])
+	if stash.is_remote():
+		# The others hear within a moment; their own phone is here now.
+		_send_social(peer)
 
 
 ## Server: a signed-in peer is going away.
@@ -3348,8 +3549,7 @@ func _social_left(peer: int) -> void:
 	for other: int in _peer_account:
 		if other != peer and _peer_account[other] == account_id:
 			return
-	social.player_offline(account_id)
-	_broadcast_social(peer)
+	_social_do("offline", account_id, [world_id])
 
 
 ## Server: a player moved somewhere else ("lobby", "raid", or a place another
@@ -3361,26 +3561,54 @@ func _social_moved(peer: int, where: String) -> void:
 func _set_presence(peer: int, where: String) -> void:
 	if not _peer_account.has(peer):
 		return
-	social.set_where(_peer_account[peer], where)
-	_broadcast_social()
+	_social_do("where", _peer_account[peer], [where, world_id])
 
 
-## Server: sends every signed-in player their phone snapshot. `skip` is a peer
+## Server: where a signed-in peer is, for the phone.
+func _place_of(peer: int) -> String:
+	if not _peer_actor.has(peer) or raid == null:
+		return "lobby"
+	return "hub" if raid.world.safe_zone else "raid"
+
+
+## Server: sends every signed-in player their phone snapshot, but for a peer
 ## that is on its way out.
-func _broadcast_social(skip := 0) -> void:
+func _broadcast_social() -> void:
+	if _api.multiplayer_peer == null:
+		return
 	var peers := _api.get_peers()
 	for peer: int in _peer_account:
-		if peer != skip and peer in peers:
+		if peer != _leaving and peer in peers:
 			_send_social(peer)
 
 
 func _send_social(peer: int) -> void:
-	if _peer_account.has(peer) and peer in _api.get_peers():
-		_social.rpc_id(peer, social.snapshot(_peer_account[peer]))
+	if not _peer_account.has(peer) or peer == _leaving or peer not in _api.get_peers():
+		return
+	var account_id: String = _peer_account[peer]
+	var snapshot: Dictionary = stash.social_snapshot(account_id) if stash.is_remote() else social.snapshot(account_id)
+	if not snapshot.is_empty():
+		_social.rpc_id(peer, snapshot)
+
+
+## Server: sends `account_id` their phone snapshot, if they are here.
+func _send_social_to(account_id: String) -> void:
+	var peer := _peer_for_account(account_id)
+	if peer > 0:
+		_send_social(peer)
+
+
+## Server: a line for `account_id` to be shown now, if they are here.
+func _on_social_noticed(account_id: String, text: String) -> void:
+	var peer := _peer_for_account(account_id)
+	if peer > 0 and peer != _leaving:
+		_social_notice.rpc_id(peer, text.left(400))
 
 
 ## Server: the peer signed in as `account_id`, or -1.
 func _peer_for_account(account_id: String) -> int:
+	if _api.multiplayer_peer == null:
+		return -1
 	for peer: int in _peer_account:
 		if _peer_account[peer] == account_id and peer in _api.get_peers():
 			return peer
@@ -3394,14 +3622,15 @@ func _social_sender() -> String:
 	return _peer_account.get(_api.get_remote_sender_id(), "")
 
 
-func _social_result(peer: int, result: Dictionary, others: Array[String] = []) -> void:
-	if not result.ok:
-		_social_error.rpc_id(peer, result.error)
+## Server: what a phone request ends with for whoever asked: the reason it
+## failed, and their phone as it now stands.
+func _social_answer(peer: int, result: Dictionary) -> bool:
+	if not _here(peer):
+		return false
+	if not result.get("ok", false):
+		_social_error.rpc_id(peer, str(result.get("error", "That did not work.")))
 	_send_social(peer)
-	for other in others:
-		var other_peer := _peer_for_account(other)
-		if other_peer > 0 and other_peer != peer:
-			_send_social(other_peer)
+	return result.get("ok", false)
 
 
 @rpc("any_peer", "call_remote", "reliable")
@@ -3412,15 +3641,7 @@ func _request_message(to: String, text: String) -> void:
 	if from == "":
 		return
 	var peer := _api.get_remote_sender_id()
-	var result := social.send_message(from, to.left(64), text.left(SocialService.MAX_MESSAGE * 2))
-	var others: Array[String] = []
-	if result.ok:
-		others.append(to)
-	_social_result(peer, result, others)
-	if result.ok:
-		var to_peer := _peer_for_account(to)
-		if to_peer > 0:
-			_social_notice.rpc_id(to_peer, "%s: %s" % [result.message.from_name, result.message.text])
+	_social_answer(peer, await _social_do("message", from, [to.left(64), text.left(SocialService.MAX_MESSAGE * 2)]))
 
 
 @rpc("any_peer", "call_remote", "reliable")
@@ -3431,23 +3652,7 @@ func _request_invite(to: String, kind: String) -> void:
 	if from == "":
 		return
 	var peer := _api.get_remote_sender_id()
-	var result := social.invite(from, to.left(64), kind.left(16), world_id)
-	var others: Array[String] = []
-	if result.ok:
-		others.append(to)
-	_social_result(peer, result, others)
-	if result.ok:
-		_social_notice.rpc_id(peer, "Invite sent to %s." % social.name_of(to))
-		var to_peer := _peer_for_account(to)
-		if to_peer > 0:
-			_social_notice.rpc_id(to_peer, _invite_text(result.invite))
-
-
-func _invite_text(invite: Dictionary) -> String:
-	if invite.kind == "base":
-		return "%s invites you to their home base." % invite.from_name
-	var world := Worlds.get_world(invite.get("world_id", ""))
-	return "%s invites you to %s." % [invite.from_name, world.display_name if world else "their raid"]
+	_social_answer(peer, await _social_do("invite", from, [to.left(64), kind.left(16), world_id]))
 
 
 @rpc("any_peer", "call_remote", "reliable")
@@ -3458,23 +3663,16 @@ func _request_answer_invite(invite_id: int, accept: bool) -> void:
 	if account_id == "":
 		return
 	var peer := _api.get_remote_sender_id()
-	var result := social.answer_invite(account_id, invite_id, accept)
-	_social_result(peer, result)
-	if not result.ok:
+	var result: Dictionary = await _social_do("answer", account_id, [invite_id, accept])
+	if not _social_answer(peer, result) or not accept or typeof(result.get("invite")) != TYPE_DICTIONARY:
 		return
 	var invite: Dictionary = result.invite
-	var from_peer := _peer_for_account(invite.from)
-	if from_peer > 0:
-		_social_notice.rpc_id(from_peer, "%s %s your invite." % [
-				social.name_of(account_id), "accepted" if accept else "declined"])
-	if not accept:
-		return
-	if invite.kind == "base":
+	if invite.get("kind", "") == "base":
 		# A base is a view of the owner's gear and upgrades, so send just that.
-		var owner: Dictionary = await stash.fetch(invite.from)
+		var owner: Dictionary = await stash.fetch(str(invite.get("from", "")))
 		if not _here(peer):
 			return
-		_base_visit.rpc_id(peer, invite.from_name, owner.get("stash", []), owner.get("loadout", {}),
+		_base_visit.rpc_id(peer, str(invite.get("from_name", "")), owner.get("stash", []), owner.get("loadout", {}),
 				owner.get("base_upgrades", []))
 	else:
 		_world_invite_accepted.rpc_id(peer, invite)
@@ -3488,16 +3686,10 @@ func _request_contact(action: String, other: String) -> void:
 	var account_id := _social_sender()
 	if account_id == "":
 		return
+	if action not in ["add", "remove", "block", "unblock"]:
+		return
 	var peer := _api.get_remote_sender_id()
-	other = other.left(64)
-	var result: Dictionary
-	match action:
-		"add": result = social.add_contact(account_id, other)
-		"remove": result = social.remove_contact(account_id, other)
-		"block": result = social.block(account_id, other)
-		"unblock": result = social.unblock(account_id, other)
-		_: return
-	_social_result(peer, result)
+	_social_answer(peer, await _social_do("contact", account_id, [action, other.left(64)]))
 
 
 @rpc("authority", "call_remote", "reliable")

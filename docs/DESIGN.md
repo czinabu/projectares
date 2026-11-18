@@ -222,7 +222,12 @@ worlds and a casual or solo one has a steady home.
   new options only (attachments, cold-weather gear), never a higher Mk of
   existing gear (built, step 3, see below). Later the inside of the Engine is
   its deep-loot dungeon and the home of the missing artifacts. Expedition
-  contracts (planned).
+  contracts (built, step 7c): the board keeps one Frostline daily and one
+  Frostline weekly beside the general jobs (search the relay, clear the
+  rim posts, break Warden patrols, bring home Cryo Cores; bring down the
+  Sentinel twice, bring home Engine Coils), counted only on a sign-out from
+  Frostline. Every one can be done alone, and the weeklies pay upgrade data
+  and a blueprint, the war's included, the slowest route to them.
 - **Getting out (built, step 4).** Sign-out only at warm beacons, held while they
   power up (still `begin_sign_out`). Depots stay for banking.
 
@@ -1242,7 +1247,11 @@ tier adds about 15% to the rig's **strength only**, never its weakness
 | --- | --- | --- |
 | Jetpack | 15% longer hover (heat), faster cooling, 46 m ceiling | 32% longer hover, 53 m ceiling |
 | Boots | 5 charges, one back every 1.3 s | 6 charges, one back every 1.13 s |
-| Wings | 25.3 m/s glide (34.5 dive), 15% longer glide, a stronger boost | 29.1 m/s glide (39.7 dive), 32% longer glide |
+| Wings | 15% longer glide, a 9.2 m/s boost | 32% longer glide, a 10.6 m/s boost |
+
+Wings never glide faster by tier (Caleb's call): every tier cruises at 22 m/s
+and dives at 30, so a bike stays faster over a long run, and only a Mk3's
+boost (22 + 10.6) keeps pace with the Scrapper's for a moment.
 
 The ceiling is measured from the world's ground (a roof under you does not
 count, so roof-hopping never stacks it): the jets stop climbing there, and a
@@ -1276,11 +1285,11 @@ with a boost (Shift or Shift + W) boosts with no hover first: it speeds you
 up head first along the view's heading and the body lies out prone as the
 speed builds, the same body in first and third person; holding Shift keeps
 boosting. Wings are the exception to the mouse only looking: they fly
-where you look, like a bird, with momentum (hold V to free look while
+where you look, like a bird, with momentum (hold E to free look while
 they fly straight on). Turns cost speed and pulling up
 hard in a turn stalls them. Gliding, Shift is a wing boost that thrusts you
 the way you face and keeps the speed, and Shift + S boosts upward; wings
-never dash sideways. Q and E fly nothing. Every rig dashes, so the dash is not an
+never dash sideways. Q and E fly nothing (E holds free look). Every rig dashes, so the dash is not an
 edge by itself: boots dash furthest (14 m/s for 0.3 s, on a charge, with
 the graze window), jetpacks middling (16 m/s for 0.25 s, 15 heat), wings
 shortest (12 m/s for 0.25 s, on a boost charge, a barrel roll sideways).
@@ -1668,7 +1677,7 @@ something different:
 **Tier gaps stay small.** A higher Mk is a real step up but never a big one,
 so a skilled player in Mk1 can still beat a Mk3. Rigs gain about 15% a
 tier in their own strength only (section 5): jetpacks hover and climb
-further, boots get a charge, wings glide faster and longer. What a weapon
+further, boots get a charge, wings boost harder and glide longer. What a weapon
 gains per Mk is TBD (section 13), and kept small either way.
 
 ### Currency: scrip
@@ -1748,6 +1757,8 @@ cooldown open).
 
 **Contracts** gain a world tag: expedition and warzone versions of dailies and
 weeklies. The existing rules stay (only a sign-out counts, no player kills).
+Built for the expedition (a world's `contract_jobs`, tagged by its
+`contract_tag`); warzone-only jobs are still to come.
 
 ### Blueprints and upgrade data
 
@@ -1807,14 +1818,15 @@ shared by solo and online play like the money rules.
   gun blueprints and upgrade data in rooftop caches; any blueprint, vehicles included, from a
   warlord (1 in 2) or a supply pod (1 in 4), each with upgrade data
   (2 and 1). Players carry what they found, so killing one pays it too.
-  Contracts are the next source.
+  Expedition contracts pay upgrade data, and their weeklies a blueprint.
 - Decided (Caleb's call): the war's blueprints stay mainly in Ashfront, but
   Frostline gets a slow route to them too, so a player who never fights
   other players can still reach Mk2 alone: a rare drop at its hardest
   spots (the relay on the Engine, the defence grid's boss) and from long
   expedition contracts, rarer than in Ashfront. Built for the boss (a
   Frostline warlord's `warlord_blueprint_chance`, 0.15 against Ashfront's
-  0.5); the relay and the contracts come with step 7's third part. Mk3 stays the war's: a rig's
+  0.5), the relay (a 6% chance of a war blueprint with upgrade data) and
+  the expedition weeklies (a blueprint you do not know). Mk3 stays the war's: a rig's
   one blueprint makes both Mks, so Mk3 is held back by its 8 upgrade data,
   which comes mostly from Ashfront, and Frostline players can buy the rest
   at the Exchange. Planned with step 7 of Frostline.
@@ -1919,8 +1931,12 @@ so signing straight out farms nothing. Nothing counts player kills. A finished
 job pays at once into the account: scrip, upgrade data where it exists, and
 on weeklies a blueprint you do not know yet once blueprints exist. The watch
 has a contract icon showing the job nearest done, with this life's progress
-on top; the phone buzzes when a job is paid. Still to come: per-world and
-per-rig jobs, ring-race jobs, the visor tracker, high-risk jobs, and the
+on top; the phone buzzes when a job is paid. A world can add its own jobs
+(`WorldDef.contract_jobs`, tagged by `contract_tag`): the board then also
+offers one daily and one weekly per tag, and they count only from a life in
+that world (the result's "contract_tag"). Frostline's are built; their new
+counters are an item by id brought home, kills by faction, bosses and caches
+searched by kind. Still to come: warzone jobs, per-rig jobs, ring-race jobs, the visor tracker, high-risk jobs, and the
 balance of payouts (placeholders today).
 
 **Bounties** are about hunting players, and tie into the most-wanted board
@@ -2087,8 +2103,13 @@ server alone knows (a finished life, banked loot, a wager paid) is kept and
 sent until answered; what a player is waiting on (equip, buy, deploy) gives
 up after 5 s, and a deploy that was never answered is undone by name. The
 server reads the accounts of the players it has from its own copy, which
-the service keeps fresh. Clans and the phone's social records move over
-with one program per world.
+the service keeps fresh. Clans, the phone's records (contacts, messages,
+invites) and who is where are kept by the service too once servers share
+it, so they are the same in every world's program: a server asks
+(`AccountLink.clan`, `social`), keeps a copy of the clans to read at once,
+and is pushed the phone snapshots of its own players. A player signed in
+to two worlds for a moment (travel) is one presence with two seats
+(`SocialService.player_online`'s `seat`).
 
 **Sign-in tokens.** Signing in with the name and secret hands the game a
 token, good for 12 hours, that stands for that sign-in. The game shows the
@@ -2114,7 +2135,24 @@ player's Steam account once, so nobody loses progress.
 **Scaling.** On official servers each world runs as its own program, since
 Godot runs a game loop on one thread and separate programs are how a server
 uses more cores, and one crash then takes down one world. Routes name an
-address as well as a port. Growth goes by measurement: one bigger machine
+address as well as a port.
+
+Built: `-- --server --only <world id>` runs one world's program (the
+plaza, a raid world or the arena), and `-- --server --cluster` runs the
+whole set on one machine: the account service, then one program a world,
+each started again if it stops (`Main._run_cluster`). Each program tells
+the account service where it is and how it is doing
+(`AccountLink.announce`), and the service keeps the directory of worlds
+(`AccountService.directory`) that every program is pushed: a gate's route
+(`NetSession.routes`, a port on the same host or "host:port") and the
+signs over the plaza's doorways (`world_status`) come from it, so a world
+that stops is off the gates within a second and back on them when it
+returns. `compose.official.yaml` is the same set as one container a world.
+The home-base lobby of a world still rides in that world's program. Not
+built: a sign-in on one server pushing out the same account's connection
+on another.
+
+Growth goes by measurement: one bigger machine
 first, a matchmaker and plaza shards when worlds or the plaza fill, a hosting
 service such as Edgegap only when several machines are needed. Server
 meshing (one world split across servers) is not planned.
@@ -2178,6 +2216,19 @@ PvP.
   with no loading screen at all (two live connections, swapping which world is
   drawn) is not planned: it breaks the client's one-session assumption,
   prediction and lag compensation, and is the riskiest part where gear is at
-  stake. Revisit only if the first two are not enough. The bench times arrival
-  once the early connect is built.
+  stake. Revisit only if the first two are not enough.
+  Built: the game opens a second connection ahead (`NetSession.ahead`,
+  `Main._tick_ahead`) and signs in while you stand near a plaza doorway,
+  while a portal your squad may use is open, or while a sign-out counts
+  down, and the trip carries on with that connection (`Main._take_ahead`);
+  one that is never used is dropped after 20 s, and one that cannot get in
+  costs nothing. A server keeps room for these beside its players
+  (`NetSession.lobby_room`) and says "full" only at the deploy. Meanwhile
+  the destination's ground is worked out on a background thread
+  (`WorldDef.prepare_map`: the heights and collision, the slow part of a
+  map). The rest of the map and its art are still built on arrival, under
+  the fade: building them ahead would freeze the place you are leaving.
+  The view goes dark at once and fades back in over 0.4 s when the world
+  stands (`Main._fade_travel`); the travel screen's text shows only if a
+  trip takes longer than 1.2 s. The bench's `--cluster` times it.
 - **A taken name asks for another one** on the phone, never just a refusal.

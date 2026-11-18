@@ -39,6 +39,23 @@ extends Node
 ## the two. Market requests are the exception: the board keeps its own file,
 ## so a server sends each of those once and never again.
 ##
+## What every world shares besides accounts lives here too, since each world
+## is its own program (DESIGN.md section 14, "Scaling"):
+## - Clans (`ClanService`). "clan" asks for a change; every server holds a
+##   copy of the whole list ("clans", and {"push": "clans", "state"} when it
+##   changes), so who is in which clan is read at once.
+## - The phone (`SocialService`): who is online, contacts, messages and
+##   invites, across every world. "social" runs one request
+##   (`SocialService.run`); each server is then sent the phone snapshots and
+##   notices of its own players ({"push": "social", "snapshots", "notices"}).
+##   A player is online while any server has them signed in (a seat each).
+## - The directory of worlds. Each server says which world it runs, where
+##   players reach it and how it is doing ("announce"); every server is sent
+##   the lot ({"push": "worlds", "worlds"}), which is where a gate's route
+##   and the sign over it come from. A server that goes away is taken out.
+## Who is online and the directory change all the time, so those two are
+## sent at most once every `PUSH_EVERY` seconds.
+##
 ## Sign-in. "sign_in" takes the credentials a player gave their server
 ## (`StashService.sign_in_with`) and answers with the account id and a
 ## token. Any other server of this service can then let that player in on
@@ -47,10 +64,11 @@ extends Node
 const StashService := preload("res://core/account/stash_service.gd")
 const MarketService := preload("res://core/economy/market_service.gd")
 const SafeFile := preload("res://core/account/safe_file.gd")
+const SocialService := preload("res://core/social/social_service.gd")
 
 ## The version of the messages between a game server and this service. Both
 ## must agree; it is not the game's `NetSession.PROTOCOL`.
-const PROTOCOL := 1
+const PROTOCOL := 2
 const DEFAULT_PORT := 24700
 ## The file the service key is kept in, inside the accounts folder.
 const KEY_FILE := "service_key"
@@ -63,6 +81,9 @@ const HELLO_TIMEOUT := 10.0
 ## Seconds a receipt is kept, and how often old ones are cleared out.
 const RECEIPT_LIFE := 3600.0
 const PRUNE_EVERY := 600.0
+## Seconds between pushes of what changes all the time: who is online and
+## how each world is doing.
+const PUSH_EVERY := 1.0
 
 ## Each call a game server may make and the types of its arguments. Calls in
 ## `HELD` change accounts and are done exactly once.
@@ -90,6 +111,10 @@ const CALLS := {
 	"record_arena": [TYPE_STRING, TYPE_BOOL],
 	"market": [TYPE_STRING, TYPE_STRING, TYPE_STRING, TYPE_INT, TYPE_INT],
 	"board": [TYPE_STRING],
+	"clan": [TYPE_STRING, TYPE_STRING, TYPE_STRING, TYPE_STRING],
+	"clans": [],
+	"social": [TYPE_STRING, TYPE_STRING, TYPE_ARRAY],
+	"announce": [TYPE_DICTIONARY],
 }
 const HELD: Array[String] = ["equip", "unequip", "pick_mastery", "buy", "sell", "buy_upgrade", "contract",
 		"craft", "deploy", "undo_deploy", "bank", "settle", "cancel_deploy", "release_deploys", "change_scrip",
@@ -99,6 +124,11 @@ const HELD: Array[String] = ["equip", "unequip", "pick_mastery", "buy", "sell", 
 var stash := StashService.new()
 ## The player market's board, saved beside the accounts.
 var market := MarketService.new()
+## Who is in which clan, saved beside the accounts.
+var clans := ClanService.new()
+## The phone's records (contacts, messages) and who is online, in a `social`
+## folder beside the accounts.
+var social := SocialService.new()
 ## What every game server must prove it holds. Set by `start` from
 ## `load_key` unless already set.
 var key := ""
@@ -112,6 +142,12 @@ var answered := 0
 var _tcp := TCPServer.new()
 var _links: Array[Link] = []
 var _since_prune := 0.0
+var _since_push := 0.0
+## World id -> {"host", "port", "max", "status", "server"}: the world each
+## connected game server runs.
+var _worlds := {}
+var _worlds_dirty := false
+var _presence_dirty := false
 
 
 ## One game server's connection.
@@ -195,6 +231,10 @@ func start(port := DEFAULT_PORT) -> Error:
 	if stash.persist and stash.store() == null:
 		return ERR_CANT_OPEN
 	market.open(stash.save_dir, stash.persist)
+	clans.open(stash.save_dir, stash.persist)
+	social.persist = stash.persist
+	social.save_dir = stash.save_dir.path_join("social")
+	social.load_server_news(stash.save_dir.path_join("news.json"))
 	stash.backup_if_due()
 	return _tcp.listen(port, bind)
 
@@ -234,6 +274,7 @@ func poll(delta := 0.0) -> void:
 		if state == WebSocketPeer.STATE_CLOSED or (not link.ready and link.age > HELLO_TIMEOUT):
 			if link.ready:
 				print("AccountService: %s disconnected" % link.server_id)
+				_forget_server(link.server_id)
 			link.socket.close()
 			_links.erase(link)
 			continue
@@ -249,6 +290,10 @@ func poll(delta := 0.0) -> void:
 				_answer(link, message)
 			else:
 				_greet(link, message)
+	_since_push += delta
+	if _since_push >= PUSH_EVERY:
+		_since_push = 0.0
+		_push_what_changed()
 	_since_prune += delta
 	if _since_prune >= PRUNE_EVERY:
 		_since_prune = 0.0
@@ -280,6 +325,8 @@ func _greet(link: Link, message: Dictionary) -> void:
 	link.ready = true
 	var returned := 0
 	if message.get("fresh", false):
+		# Whatever an earlier run of this server left behind is gone with it.
+		_forget_server(server_id)
 		stash.touched.clear()
 		stash.begin_hold()
 		returned = stash.release_deploys(server_id)
@@ -407,6 +454,14 @@ func _run(link: Link, id: String, what: String, args: Array) -> Variant:
 		"board":
 			market.expire(stash)
 			return _board(args[0])
+		"clan":
+			return _clan(args[0], args[1], args[2], args[3])
+		"clans":
+			return {"ok": true, "state": clans.state()}
+		"social":
+			return _social(link, args[0], args[1], args[2])
+		"announce":
+			return _announce(link, args[0])
 	# Everything else is the `StashService` call of the same name.
 	return stash.callv(what, args)
 
@@ -435,6 +490,115 @@ func _market(action: String, account_id: String, item_id: String, a: int, b: int
 
 func _board(account_id: String) -> Dictionary:
 	return market.snapshot(account_id, stash.name_of)
+
+
+# --- Clans, the phone and the directory of worlds ----------------------------
+
+## One request at the clan hall (`ClanService.ask`). A change goes to every
+## server, and comes back with the answer so the asker has it first.
+func _clan(action: String, account_id: String, a: String, b: String) -> Dictionary:
+	if stash.is_deployed(account_id):
+		return _fail("Not while you are in the field.")
+	var result := clans.ask(action, account_id, a.left(64), b.left(16))
+	if result.ok:
+		result["state"] = clans.state()
+		for link in _links:
+			if link.ready:
+				link.socket.put_packet(pack({"push": "clans", "state": result.state}))
+	return result
+
+
+## One request of the phone's (`SocialService.run`). A seat is named by the
+## server that holds it, so one server can never give up another's.
+func _social(link: Link, action: String, account_id: String, args: Array) -> Dictionary:
+	if action in ["online", "offline", "where"] and not args.is_empty() and typeof(args.back()) == TYPE_STRING:
+		args = args.duplicate()
+		args[args.size() - 1] = _seat(link.server_id, args.back())
+	var result := social.run(action, account_id, args)
+	var tell: Array = result.tell
+	if SocialService.EVERYONE in tell:
+		_presence_dirty = true
+	for other: Link in _links:
+		if not other.ready:
+			continue
+		var snapshots := {}
+		var notices := {}
+		for told: String in tell:
+			if told != SocialService.EVERYONE and other.watching.has(told) and (other != link or told != account_id):
+				snapshots[told] = social.snapshot(told)
+		for told: String in result.notices:
+			if other.watching.has(told):
+				notices[told] = result.notices[told]
+		if not snapshots.is_empty() or not notices.is_empty():
+			other.socket.put_packet(pack({"push": "social", "snapshots": snapshots, "notices": notices}))
+	# The asker's own phone comes back with the answer.
+	result["snapshot"] = social.snapshot(account_id)
+	return result
+
+
+static func _seat(server_id: String, seat: String) -> String:
+	return "%s/%s" % [server_id, seat.left(64)]
+
+
+## A game server says which world it runs: {"world", "host" ("" for the
+## address its players already use), "port", "max", "status"
+## (`Raid.status()`)}. Answers with the whole directory.
+func _announce(link: Link, info: Dictionary) -> Dictionary:
+	var world_id := str(info.get("world", "")).left(32)
+	var port := int(info.get("port", 0))
+	if NetSession.world_for(world_id) == null or port <= 0 or port > 65535:
+		return _fail("The account service does not know that world.")
+	var status: Variant = info.get("status")
+	var entry := {"host": str(info.get("host", "")).left(255), "port": port, "max": maxi(0, int(info.get("max", 0))),
+			"status": status if typeof(status) == TYPE_DICTIONARY else {}, "server": link.server_id}
+	if _worlds.get(world_id, {}) != entry:
+		_worlds[world_id] = entry
+		_worlds_dirty = true
+	return {"ok": true, "worlds": directory()}
+
+
+## Every world a connected game server runs: world id -> {"host", "port",
+## "max", "status"}.
+func directory() -> Dictionary:
+	var out := {}
+	for world_id: String in _worlds:
+		var entry: Dictionary = _worlds[world_id].duplicate(true)
+		entry.erase("server")
+		out[world_id] = entry
+	return out
+
+
+## A game server went away: its world is off the directory and everyone it
+## had signed in is off it.
+func _forget_server(server_id: String) -> void:
+	for world_id: String in _worlds.keys():
+		if _worlds[world_id].server == server_id:
+			_worlds.erase(world_id)
+			_worlds_dirty = true
+	if social.drop_seats(_seat(server_id, "")):
+		_presence_dirty = true
+
+
+## Sends every server what changed since the last time: the directory, and
+## the phones of its players when who is online did.
+func _push_what_changed() -> void:
+	if _worlds_dirty:
+		_worlds_dirty = false
+		var worlds := directory()
+		for link in _links:
+			if link.ready:
+				link.socket.put_packet(pack({"push": "worlds", "worlds": worlds}))
+	if _presence_dirty:
+		_presence_dirty = false
+		for link in _links:
+			if not link.ready:
+				continue
+			var snapshots := {}
+			for account_id: String in link.watching:
+				if social.is_online(account_id):
+					snapshots[account_id] = social.snapshot(account_id)
+			if not snapshots.is_empty():
+				link.socket.put_packet(pack({"push": "social", "snapshots": snapshots, "notices": {}}))
 
 
 ## The answer kept for a request already done, or {}.

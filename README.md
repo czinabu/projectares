@@ -35,7 +35,7 @@ looks" below).
 | Jump. In the air: hold to climb (jetpack); press to kick the way you steer, hold to skim low (thruster boots); press to launch, hold while falling to glide (glide wings) | Space |
 | Jetpack: hold right mouse (aim) in the air to hover; let go and you fall. Hovering, cruise with the move keys, Space climbs, C coasts down to cool. Shift in the air boosts: it speeds you up head first into a prone pose, and holding it keeps boosting. The keys fly every rig; the mouse only looks and aims | |
 | Air dash with any rig: Shift + a move key dashes that way (Shift alone dashes forward). A jetpack pays heat for it; boots and wings do not. Sideways while boosting it barrel rolls. Gliding, Shift is a wing boost: it thrusts you the way you face and you keep the speed, and Shift + S boosts upward | Shift + WASD |
-| Gliding: the wings fly where you look, like a bird. A / D bank round harder, W dives for speed, S pulls up to climb on it. Turns cost speed, and pulling up hard in a turn stalls you. Hold V to free look while the wings fly straight on: the body twists to face where you look, and looking behind flips you onto your back to shoot behind you | |
+| Gliding: the wings fly where you look, like a bird. A / D bank round harder, W dives for speed, S pulls up to climb on it. Turns cost speed, and pulling up hard in a turn stalls you. Hold E to free look while the wings fly straight on: the body twists to face where you look, and looking behind flips you onto your back to shoot behind you | |
 | Use your ability | G |
 | Use your helmet's visor (zoom or scan) | T |
 | Dash (stamina) | Left Alt |
@@ -624,7 +624,11 @@ whose lance holds a teal tracking beam on you before it fires (break the
 line to reset it) and whose back takes double damage. It is made for one
 player and grows tougher with each other player near it, comes back a
 few minutes after it falls, and like any Frostline warlord now and then
-carries one of the war's blueprints. Whiteouts are planned in DESIGN.md
+carries one of the war's blueprints, as the relay on the Engine's back
+rarely does. The contract board has Frostline jobs of its own, one daily
+and one weekly, all doable alone (search the relay, break Warden patrols,
+bring down the Sentinel), that count only from a life there; the weeklies
+pay a blueprint. Whiteouts are planned in DESIGN.md
 section 2, "Frostline".
 
 ## Run the tests

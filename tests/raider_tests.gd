@@ -189,11 +189,13 @@ static func _on_its_own(t: Node, raid: Raid) -> void:
 	print("Rival raiders: on their own")
 	var bot := raid.spawn_raider()
 	var entry: Dictionary = raid.raiders.filter(func(e: Dictionary) -> bool: return e.bot == bot)[0]
-	# Only the walk and the looting are checked here: nobody picks a fight.
-	for other in raid.bots:
-		other.faction = bot.faction
+	# Only the walk and the looting are checked here: nobody picks a fight,
+	# reinforcements and bosses that turn up on the way included.
 	var start := bot.global_position
 	for i in 60 * 60:
+		for other in raid.get_tree().get_nodes_in_group("actors"):
+			if other is Actor and other != raid.player and Raid.together(bot, other):
+				(other as Actor).faction = bot.faction
 		await t.frames(1)
 		if not is_instance_valid(bot) or bot.is_dead or not entry.visited.is_empty():
 			break

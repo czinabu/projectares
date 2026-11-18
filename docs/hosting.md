@@ -169,6 +169,47 @@ To change the world, the bot count, or turn on squad spawns, edit the
 - `--no-plaza` to run one world alone on the port, with no social plaza
 - `--port 24565` to change the first port (then change the `ports:` line and the
   firewall rule to match, and join with `address:port`)
+- `--only ashfront` (or `plaza`, `arena`, any world) to run just that one in
+  this program; see "Every world as its own program" below
+
+## Every world as its own program
+
+`compose.yaml` runs every world in one program, which is all a server for
+friends needs. A busy server can instead run each world as a program of its
+own: each then has a processor core to itself, so a crowded Ashfront does
+not slow the plaza, and a world that crashes is started again without the
+others noticing. This is how official servers will run. It needs a machine
+with about as many cores as worlds (four or more).
+
+The worlds then share one set of accounts through the account service,
+which also keeps the clans, the phone's records, the market and the list of
+which world runs where. Two ways to start it:
+
+- **With Docker**, one container per world:
+
+  ```
+  echo "ARES_SERVICE_KEY=$(openssl rand -hex 32)" > .env
+  docker compose -f compose.official.yaml up -d --build
+  ```
+
+  The ports are the same as before (plaza 24565, the worlds after it, the
+  arena on 24575), so the firewall rules stay as they are.
+
+- **Without Docker**, one command that starts the account service and every
+  world and restarts any world that stops:
+
+  ```
+  ares_server --headless -- --server --cluster --port 24565 --accounts /data/accounts
+  ```
+
+  It takes `--world`, `--bots`, `--squad-spawn`, `--no-arena` and
+  `--health-log` like the single program does.
+
+Accounts made on a one-program server are not carried over by themselves:
+the account service reads the same `accounts.sqlite`, so point its
+`--accounts` at the old folder to keep them. A world on another machine
+adds `--public-host <its address>` so the plaza can send players there, and
+needs a private network to the account service (`--account-url`).
 
 ## Backups
 
