@@ -225,6 +225,18 @@ var boss_party_range := 45.0
 ## gunshot is heard (`Actor.heard`), so a drawn-out fight brings the rest.
 ## A kill in one blow calls nobody.
 var linked_factions := {}
+## Contracts of its own (DESIGN.md section 10, "World-tagged contracts"):
+## a world with a `contract_tag` ("expedition") puts `contract_jobs` on the
+## board beside the jobs that count anywhere, and they count only in a world
+## with the same tag (the result's "contract_tag"). Jobs as in
+## `Contracts.JOBS`; give them ids no other world uses.
+var contract_tag := ""
+
+
+func contract_jobs() -> Dictionary:
+	return {}
+
+
 ## Rival raiders: bots that play the way a player does (DESIGN.md section 2,
 ## "Rival raiders"). Each drops in at a player spawn with a real kit
 ## (`raider_kit`), loots caches, fights everyone, and after a while signs

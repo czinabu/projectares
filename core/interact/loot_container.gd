@@ -12,6 +12,8 @@ const RACK_LABEL := "Power rack"
 signal changed
 ## An actor picked up the scrip that was in here. The `Raid` scrip it.
 signal scrip_taken(actor: Actor, amount: int)
+## An actor took items out of here (the `Raid` counts it for contracts).
+signal looted_by(actor: Actor)
 
 var items: Array[String] = []
 var is_bag := false
@@ -84,6 +86,7 @@ func interact(actor: Actor) -> void:
 		taken.append(id)
 	if not taken.is_empty():
 		actor.looted.emit(taken)
+		looted_by.emit(actor)
 		actor.notice.emit("Looted " + ItemDB.summarize(taken))
 		if actor.is_player:
 			Sfx.play("loot")

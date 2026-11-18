@@ -31,6 +31,9 @@ const WEEKLY_OFFERS := 1
 ## A sign-out only counts as an extract for a contract with at least this much
 ## loot home (carried out plus banked), so signing straight out farms nothing.
 const EXTRACT_MIN_VALUE := 100
+## A world's own jobs on the board each day and each week, for each tag.
+const TAGGED_DAILY_OFFERS := 1
+const TAGGED_WEEKLY_OFFERS := 1
 ## Seconds in a day. Days are counted from the Unix epoch, in UTC.
 const DAY := 86400
 
@@ -46,6 +49,17 @@ const DAY := 86400
 ##   extracts      sign-outs with at least EXTRACT_MIN_VALUE of loot home
 ##   loot_value    the value of loot carried out and banked
 ##   carry:<tag>   items with that tag carried out and banked
+##   item:<id>     that item carried out and banked
+##   kills:<faction>  enemies of that faction killed (never "player")
+##   bosses        core bosses killed (a world's "spawn_boss" guards)
+##   cache:<source>  caches of that loot source emptied into your pack
+##                 (each cache once a fill)
+## These jobs count anywhere. A world adds jobs of its own with
+## `WorldDef.contract_jobs`, tagged with its `WorldDef.contract_tag`
+## ("expedition" for the co-op world): those count only in a world with the
+## same tag (the result's "contract_tag"), and the board offers
+## `TAGGED_DAILY_OFFERS` and `TAGGED_WEEKLY_OFFERS` of each tag beside the
+## rest (see `jobs`).
 const JOBS := {
 	"cull": {"title": "Kill 8 enemies", "stat": "kills", "goal": 8, "kind": "daily", "scrip": 150},
 	"warlord": {"title": "Take down a warlord", "stat": "warlords", "goal": 1, "kind": "daily", "scrip": 300,
@@ -82,23 +96,76 @@ static func week_of(day: int) -> int:
 
 
 static func job(id: String) -> Dictionary:
-	return JOBS.get(id, {})
+	return jobs().get(id, {})
 
 
-static func ids(kind: String) -> Array[String]:
+## Every job: `JOBS` and each world's own (`WorldDef.contract_jobs`), a
+## world's marked with its "world_tag". Gathered once from the registered
+## worlds.
+static func jobs() -> Dictionary:
+	if _jobs.is_empty():
+		var worlds := Worlds.all()
+		if worlds.is_empty():
+			# Too early: the worlds are not registered yet. Ask again later.
+			return JOBS
+		_jobs = JOBS.duplicate(true)
+		for world: WorldDef in worlds:
+			if world.contract_tag == "":
+				continue
+			var own: Dictionary = world.contract_jobs()
+			for id: String in own:
+				if _jobs.has(id):
+					continue
+				var entry: Dictionary = own[id].duplicate(true)
+				entry["world_tag"] = world.contract_tag
+				_jobs[id] = entry
+	return _jobs
+
+
+static var _jobs := {}
+
+
+
+## The jobs of a kind ("daily", "weekly") with a world tag ("" for the jobs
+## that count anywhere).
+static func ids(kind: String, tag := "") -> Array[String]:
 	var out: Array[String] = []
-	for id: String in JOBS:
-		if JOBS[id].kind == kind:
+	var all := jobs()
+	for id: String in all:
+		if all[id].kind == kind and str(all[id].get("world_tag", "")) == tag:
 			out.append(id)
 	return out
 
 
-## The jobs on offer on `day`: the dailies then the weeklies. `reroll` > 0
-## picks a fresh set of dailies, avoiding `avoid` where it can.
+## The world tags that have jobs of their own, in order.
+static func tags() -> Array[String]:
+	var out: Array[String] = []
+	var all := jobs()
+	for id: String in all:
+		var tag := str(all[id].get("world_tag", ""))
+		if tag != "" and tag not in out:
+			out.append(tag)
+	out.sort()
+	return out
+
+
+## The jobs on offer on `day`: the dailies then the weekly that count
+## anywhere, then each world tag's daily and weekly. `reroll` > 0 picks a
+## fresh set of dailies, avoiding `avoid` where it can.
 static func offers_for(day: int, reroll := 0, avoid: Array = []) -> Array[String]:
 	var out: Array[String] = _pick(ids("daily"), DAILY_OFFERS, hash(["daily", day, reroll]), avoid)
 	out.append_array(_pick(ids("weekly"), WEEKLY_OFFERS, hash(["weekly", week_of(day)]), []))
+	for tag in tags():
+		out.append_array(_pick(ids("daily", tag), TAGGED_DAILY_OFFERS, hash(["daily", tag, day, reroll]), avoid))
+		out.append_array(_pick(ids("weekly", tag), TAGGED_WEEKLY_OFFERS, hash(["weekly", tag, week_of(day)]), []))
 	return out
+
+
+## Whether a finished life counts toward a job at all: a world's own job
+## only in a world with its tag.
+static func counts_in(info: Dictionary, result: Dictionary) -> bool:
+	var tag := str(info.get("world_tag", ""))
+	return tag == "" or str(result.get("contract_tag", "")) == tag
 
 
 static func _pick(pool: Array[String], count: int, seed_value: int, avoid: Array) -> Array[String]:
@@ -123,20 +190,20 @@ static func clean(saved: Variant, day: int) -> Dictionary:
 		return state
 	var old_day := int(saved.get("day", day))
 	for entry: Variant in saved.get("active", []):
-		if typeof(entry) != TYPE_DICTIONARY or not JOBS.has(str(entry.get("id", ""))):
+		if typeof(entry) != TYPE_DICTIONARY or not jobs().has(str(entry.get("id", ""))):
 			continue
 		var id := str(entry.id)
 		if state.active.size() < MAX_ACTIVE and not state.active.any(func(a: Dictionary) -> bool: return a.id == id):
 			state.active.append({"id": id, "have": maxi(0, int(entry.get("have", 0))),
 					"day": int(entry.get("day", old_day))})
 	for id: Variant in saved.get("done", []):
-		if typeof(id) == TYPE_STRING and JOBS.has(id) and id not in state.done:
+		if typeof(id) == TYPE_STRING and jobs().has(id) and id not in state.done:
 			state.done.append(id)
 	if old_day == day:
 		state.rerolled = bool(saved.get("rerolled", false))
 		var offers: Array[String] = []
 		for id: Variant in saved.get("offers", []):
-			if typeof(id) == TYPE_STRING and JOBS.has(id) and id not in offers:
+			if typeof(id) == TYPE_STRING and jobs().has(id) and id not in offers:
 				offers.append(id)
 		if not offers.is_empty():
 			state.offers = offers
@@ -218,6 +285,9 @@ static func amount(stat: String, result: Dictionary) -> int:
 			return 1 if ItemDB.total_value(home) >= EXTRACT_MIN_VALUE else 0
 		"loot_value":
 			return maxi(0, ItemDB.total_value(home))
+	if stat.begins_with("item:"):
+		var want := stat.trim_prefix("item:")
+		return home.filter(func(id: Variant) -> bool: return typeof(id) == TYPE_STRING and id == want).size()
 	if stat.begins_with("carry:"):
 		var tag := stat.trim_prefix("carry:")
 		return home.filter(func(id: Variant) -> bool:
@@ -244,7 +314,8 @@ static func settle(state: Dictionary, result: Dictionary, day: int, known: Array
 	var still: Array = []
 	for entry: Dictionary in state.active:
 		var info := job(entry.id)
-		entry.have = mini(int(entry.have) + amount(info.stat, result), int(info.goal))
+		var add := amount(info.stat, result) if counts_in(info, result) else 0
+		entry.have = mini(int(entry.have) + add, int(info.goal))
 		if entry.have < int(info.goal):
 			still.append(entry)
 			continue
@@ -275,6 +346,15 @@ static func reward_for(tag: String, seed_value: int, known: Array = []) -> Strin
 	return pool[posmod(seed_value, pool.size())]
 
 
+## A job's title as the board and the watch show it: a world's own job is
+## marked with its tag ("Expedition: Loot the relay").
+static func title_of(id: String) -> String:
+	var info := job(id)
+	var tag := str(info.get("world_tag", ""))
+	var title := str(info.get("title", ""))
+	return "%s: %s" % [tag.capitalize(), title] if tag != "" else title
+
+
 ## What the reward of a job reads as: "300 scrip + Upgrade data".
 static func reward_text(id: String) -> String:
 	var info := job(id)
@@ -294,11 +374,11 @@ static func held(state: Variant) -> Array[Dictionary]:
 	if typeof(state) != TYPE_DICTIONARY:
 		return out
 	for entry: Variant in state.get("active", []):
-		if typeof(entry) != TYPE_DICTIONARY or not JOBS.has(str(entry.get("id", ""))):
+		if typeof(entry) != TYPE_DICTIONARY or not jobs().has(str(entry.get("id", ""))):
 			continue
 		var info := job(entry.id)
-		out.append({"id": entry.id, "title": info.title, "have": int(entry.get("have", 0)),
-				"goal": int(info.goal), "stat": info.stat})
+		out.append({"id": entry.id, "title": title_of(entry.id), "have": int(entry.get("have", 0)),
+				"goal": int(info.goal), "stat": info.stat, "world_tag": str(info.get("world_tag", ""))})
 	return out
 
 
