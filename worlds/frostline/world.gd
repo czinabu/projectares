@@ -206,6 +206,12 @@ func create_map() -> Node3D:
 	return MapScript.new()
 
 
+func prepare_map() -> void:
+	var map: Node3D = MapScript.new()
+	map.call("prepare_shared")
+	map.free()
+
+
 ## The zones run along the valley: the river mouth is the outer ring, the
 ## Narrows and the lake the middle, the glacier head and the Engine the core.
 func zone_at(pos: Vector3) -> int:

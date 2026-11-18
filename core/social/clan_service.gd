@@ -186,6 +186,53 @@ func snapshot(account_id: String, shown_name: Callable) -> Dictionary:
 	return {"clan": mine, "clans": listed}
 
 
+## Everything the service holds, for a game server's copy of it: on official
+## servers the account service keeps the clans and each game server reads a
+## copy (`AccountLink.clans`), so `clan_of` and `tag_of` answer at once.
+func state() -> Dictionary:
+	return {"next_id": _next_id, "clans": _clans.duplicate(true)}
+
+
+## Makes this a copy of another service's `state`. A copy saves nothing and
+## is never changed here: changes are asked of the service that owns it.
+func load_state(p_state: Dictionary) -> void:
+	_opened = true
+	persist = false
+	_clans.clear()
+	_member.clear()
+	_next_id = maxi(1, int(p_state.get("next_id", 1)))
+	var listed: Variant = p_state.get("clans")
+	if typeof(listed) != TYPE_DICTIONARY:
+		return
+	for id: Variant in listed:
+		var clan: Variant = listed[id]
+		if typeof(clan) != TYPE_DICTIONARY or typeof(clan.get("members")) != TYPE_ARRAY:
+			continue
+		var members: Array[String] = []
+		for account: Variant in clan.members:
+			if typeof(account) == TYPE_STRING and not _member.has(account):
+				members.append(account)
+		if members.is_empty():
+			continue
+		_clans[str(id)] = {"name": str(clan.get("name", "")), "tag": str(clan.get("tag", "")),
+				"leader": str(clan.get("leader", members[0])), "members": members}
+		for account in members:
+			_member[account] = str(id)
+
+
+## One request at the clan hall, as `NetSession._request_clan` asks it:
+## "create" (name, tag), "join" (clan id) or "leave".
+func ask(action: String, account_id: String, a := "", b := "") -> Dictionary:
+	match action:
+		"create":
+			return create(account_id, a, b)
+		"join":
+			return join(account_id, a)
+		"leave":
+			return leave(account_id)
+	return _fail("That did not work.")
+
+
 func _fail(reason: String) -> Dictionary:
 	return {"ok": false, "error": reason}
 

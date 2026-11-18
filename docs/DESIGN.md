@@ -2103,8 +2103,13 @@ server alone knows (a finished life, banked loot, a wager paid) is kept and
 sent until answered; what a player is waiting on (equip, buy, deploy) gives
 up after 5 s, and a deploy that was never answered is undone by name. The
 server reads the accounts of the players it has from its own copy, which
-the service keeps fresh. Clans and the phone's social records move over
-with one program per world.
+the service keeps fresh. Clans, the phone's records (contacts, messages,
+invites) and who is where are kept by the service too once servers share
+it, so they are the same in every world's program: a server asks
+(`AccountLink.clan`, `social`), keeps a copy of the clans to read at once,
+and is pushed the phone snapshots of its own players. A player signed in
+to two worlds for a moment (travel) is one presence with two seats
+(`SocialService.player_online`'s `seat`).
 
 **Sign-in tokens.** Signing in with the name and secret hands the game a
 token, good for 12 hours, that stands for that sign-in. The game shows the
@@ -2130,7 +2135,24 @@ player's Steam account once, so nobody loses progress.
 **Scaling.** On official servers each world runs as its own program, since
 Godot runs a game loop on one thread and separate programs are how a server
 uses more cores, and one crash then takes down one world. Routes name an
-address as well as a port. Growth goes by measurement: one bigger machine
+address as well as a port.
+
+Built: `-- --server --only <world id>` runs one world's program (the
+plaza, a raid world or the arena), and `-- --server --cluster` runs the
+whole set on one machine: the account service, then one program a world,
+each started again if it stops (`Main._run_cluster`). Each program tells
+the account service where it is and how it is doing
+(`AccountLink.announce`), and the service keeps the directory of worlds
+(`AccountService.directory`) that every program is pushed: a gate's route
+(`NetSession.routes`, a port on the same host or "host:port") and the
+signs over the plaza's doorways (`world_status`) come from it, so a world
+that stops is off the gates within a second and back on them when it
+returns. `compose.official.yaml` is the same set as one container a world.
+The home-base lobby of a world still rides in that world's program. Not
+built: a sign-in on one server pushing out the same account's connection
+on another.
+
+Growth goes by measurement: one bigger machine
 first, a matchmaker and plaza shards when worlds or the plaza fill, a hosting
 service such as Edgegap only when several machines are needed. Server
 meshing (one world split across servers) is not planned.
@@ -2194,6 +2216,19 @@ PvP.
   with no loading screen at all (two live connections, swapping which world is
   drawn) is not planned: it breaks the client's one-session assumption,
   prediction and lag compensation, and is the riskiest part where gear is at
-  stake. Revisit only if the first two are not enough. The bench times arrival
-  once the early connect is built.
+  stake. Revisit only if the first two are not enough.
+  Built: the game opens a second connection ahead (`NetSession.ahead`,
+  `Main._tick_ahead`) and signs in while you stand near a plaza doorway,
+  while a portal your squad may use is open, or while a sign-out counts
+  down, and the trip carries on with that connection (`Main._take_ahead`);
+  one that is never used is dropped after 20 s, and one that cannot get in
+  costs nothing. A server keeps room for these beside its players
+  (`NetSession.lobby_room`) and says "full" only at the deploy. Meanwhile
+  the destination's ground is worked out on a background thread
+  (`WorldDef.prepare_map`: the heights and collision, the slow part of a
+  map). The rest of the map and its art are still built on arrival, under
+  the fade: building them ahead would freeze the place you are leaving.
+  The view goes dark at once and fades back in over 0.4 s when the world
+  stands (`Main._fade_travel`); the travel screen's text shows only if a
+  trip takes longer than 1.2 s. The bench's `--cluster` times it.
 - **A taken name asks for another one** on the phone, never just a refusal.

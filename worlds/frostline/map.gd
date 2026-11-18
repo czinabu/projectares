@@ -110,8 +110,14 @@ const LISTENING := [
 	{"z": -190.0, "side": 1.0},
 ]
 
-## Kept from the first map built in this run: { heights, collision, navmesh }.
+## Kept from the first map built in this run: { navmesh }.
 static var _shared := {}
+## The ground may be worked out on another thread ahead of a visit
+## (`prepare_shared`); whoever comes second waits for the first.
+static var _ground_lock := Mutex.new()
+## The shared ground, { heights, collision }, kept apart from `_shared` so
+## only this is ever touched from two threads, and only under the lock.
+static var _ground_shared := {}
 
 var nav_region: NavigationRegion3D
 var terrain: Terrain
@@ -142,10 +148,7 @@ var _weather: Node3D
 
 
 func _ready() -> void:
-	_rng.seed = LAYOUT_SEED
-	_noise.seed = LAYOUT_SEED
-	_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
-	_noise.frequency = 0.02
+	_seed_layout()
 	_build_environment()
 	nav_region = NavigationRegion3D.new()
 	nav_region.name = "Geometry"
@@ -164,6 +167,30 @@ func _ready() -> void:
 	_art_rng.seed = LAYOUT_SEED
 	_dress()
 	set_process(Look.enabled)
+
+
+func _seed_layout() -> void:
+	_rng.seed = LAYOUT_SEED
+	_noise.seed = LAYOUT_SEED
+	_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	_noise.frequency = 0.02
+
+
+## Works out the ground every copy of this map shares, on a map that is
+## never added to the tree (`WorldDef.prepare_map`, off the main thread).
+func prepare_shared() -> void:
+	_ground_lock.lock()
+	if not _ground_shared.has("heights"):
+		_seed_layout()
+		terrain = Terrain.new()
+		terrain.cell = CELL
+		terrain.side = SIDE
+		terrain.shape(_height)
+		_ground_shared["collision"] = terrain.collision_data()
+		_ground_shared["heights"] = terrain.heights
+		terrain.free()
+		terrain = null
+	_ground_lock.unlock()
 
 
 func bake_navigation() -> void:
@@ -308,12 +335,15 @@ func _build_ground() -> void:
 	terrain.name = "Ground"
 	terrain.cell = CELL
 	terrain.side = SIDE
-	if not _shared.has("heights"):
+	_ground_lock.lock()
+	if not _ground_shared.has("heights"):
 		terrain.shape(_height)
-		_shared["heights"] = terrain.heights
-		_shared["collision"] = terrain.collision_data()
-	terrain.heights = _shared["heights"]
-	terrain.build(SNOW, _shared["collision"])
+		_ground_shared["collision"] = terrain.collision_data()
+		_ground_shared["heights"] = terrain.heights
+	var collision: PackedFloat32Array = _ground_shared["collision"]
+	terrain.heights = _ground_shared["heights"]
+	_ground_lock.unlock()
+	terrain.build(SNOW, collision)
 	nav_region.add_child(terrain)
 	# Nobody leaves over the mountains.
 	var edge := terrain.extent() * 0.5 - 6.0

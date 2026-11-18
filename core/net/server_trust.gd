@@ -48,32 +48,67 @@ static var _identities := {} # dir -> [CryptoKey, X509Certificate]
 
 ## Server: this server's key and certificate, made and saved in `dir` on the
 ## first start. With `persist` false they are made in memory only.
+##
+## Several programs may share `dir` (one program per world shows one
+## certificate, so a game that travels between them meets the server it
+## remembers) and start at the same moment. So a new pair is written to a
+## folder of its own and moved into place in one step: whichever program
+## gets there first wins, and the others read what it wrote.
 static func identity(dir: String, persist := true) -> Array:
 	if _identities.has(dir):
 		return _identities[dir]
+	var pair := _load_identity(dir) if persist else []
+	if not pair.is_empty():
+		print("Server: certificate %s" % fingerprint(pem_of(pair[1])))
+		_identities[dir] = pair
+		return pair
+	var crypto := Crypto.new()
+	var key := crypto.generate_rsa(2048)
+	var now := Time.get_datetime_dict_from_system(true)
+	var from := "%04d0101000000" % (int(now.year) - 1)
+	var to := "%04d0101000000" % (int(now.year) + CERT_YEARS)
+	var cert := crypto.generate_self_signed_certificate(key, "CN=%s,O=Project Ares,C=US" % COMMON_NAME, from, to)
+	pair = [key, cert]
+	if persist:
+		var clean := dir.trim_suffix("/")
+		var made := "%s.new-%d-%d" % [clean, OS.get_process_id(), randi()]
+		DirAccess.make_dir_recursive_absolute(made)
+		if key.save(made.path_join(KEY_FILE)) != OK or cert.save(made.path_join(CERT_FILE)) != OK:
+			push_warning("ServerTrust: could not save the server's certificate in %s" % dir)
+		elif DirAccess.rename_absolute(made, clean) == OK:
+			print("Server: made a new certificate %s" % fingerprint(pem_of(cert)))
+		else:
+			# Another program put its pair there first: that one is this
+			# server's certificate.
+			var theirs := _load_identity(dir)
+			if theirs.is_empty():
+				# No pair there after all (an empty folder in the way): save into it.
+				DirAccess.make_dir_recursive_absolute(clean)
+				if key.save(clean.path_join(KEY_FILE)) != OK or cert.save(clean.path_join(CERT_FILE)) != OK:
+					push_warning("ServerTrust: could not save the server's certificate in %s" % dir)
+				else:
+					print("Server: made a new certificate %s" % fingerprint(pem_of(cert)))
+			else:
+				pair = theirs
+				print("Server: certificate %s" % fingerprint(pem_of(pair[1])))
+		if DirAccess.dir_exists_absolute(made):
+			for file in DirAccess.get_files_at(made):
+				DirAccess.remove_absolute(made.path_join(file))
+			DirAccess.remove_absolute(made)
+	_identities[dir] = pair
+	return pair
+
+
+## The pair saved in `dir`, or [] if there is none to read.
+static func _load_identity(dir: String) -> Array:
 	var key := CryptoKey.new()
 	var cert := X509Certificate.new()
 	var key_path := dir.path_join(KEY_FILE)
 	var cert_path := dir.path_join(CERT_FILE)
-	if persist and FileAccess.file_exists(key_path) and FileAccess.file_exists(cert_path) \
+	if FileAccess.file_exists(key_path) and FileAccess.file_exists(cert_path) \
 			and key.load(key_path) == OK and cert.load(cert_path) == OK:
-		print("Server: certificate %s" % fingerprint(pem_of(cert)))
-		_identities[dir] = [key, cert]
-		return _identities[dir]
-	var crypto := Crypto.new()
-	key = crypto.generate_rsa(2048)
-	var now := Time.get_datetime_dict_from_system(true)
-	var from := "%04d0101000000" % (int(now.year) - 1)
-	var to := "%04d0101000000" % (int(now.year) + CERT_YEARS)
-	cert = crypto.generate_self_signed_certificate(key, "CN=%s,O=Project Ares,C=US" % COMMON_NAME, from, to)
-	if persist:
-		DirAccess.make_dir_recursive_absolute(dir)
-		if key.save(key_path) != OK or cert.save(cert_path) != OK:
-			push_warning("ServerTrust: could not save the server's certificate in %s" % dir)
-		else:
-			print("Server: made a new certificate %s" % fingerprint(pem_of(cert)))
-	_identities[dir] = [key, cert]
-	return _identities[dir]
+		return [key, cert]
+	return []
 
 
 ## A certificate as PEM text. Written out and read back, since
