@@ -881,10 +881,11 @@ func _on_peer_connected(peer: int) -> void:
 func _unguarded_body(account_id: String) -> Actor:
 	if raid == null:
 		return null
-	for actor: Actor in _actor_account:
+	# Untyped: a body freed meanwhile cannot be assigned to an `Actor`.
+	for actor: Variant in _actor_account:
 		if _actor_account[actor] == account_id and is_instance_valid(actor) and not _actor_peer.has(actor) \
 				and raid.is_unguarded(actor):
-			return actor
+			return actor as Actor
 	return null
 
 

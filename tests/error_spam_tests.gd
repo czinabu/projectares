@@ -43,6 +43,7 @@ static func run(t: Node) -> void:
 	_check_shake_on_long_frames(t)
 	await _check_marks_after_one_fades(t)
 	_check_storm_lit_blade_folds(t)
+	_check_peek_fade_after_body_freed(t)
 	await _check_ashfront_session(t)
 
 
@@ -134,6 +135,31 @@ static func _fold_mats(model: Node3D) -> Array[ShaderMaterial]:
 	return out
 
 
+## The third-person peek fade keeps the bodies it has faded. One freed
+## since (a dead bot cleared away, a world left) used to be assigned to a
+## typed `Actor` loop variable, an error that stopped the game in the
+## editor's debugger: the "freeze" while aiming or joining a world.
+static func _check_peek_fade_after_body_freed(t: Node) -> void:
+	var fade := PlayerController.PeekFade.new()
+	var errors := watch()
+	for active: bool in [true, false]:
+		var gone := Actor.new()
+		var kept := Actor.new()
+		fade._unseen[gone] = 1.0
+		fade._alpha[gone] = 0.4
+		fade._alpha[kept] = 0.5
+		gone.free()
+		# Inactive needs no viewer; active with nothing to check this tick.
+		fade._check_left = 1.0
+		fade.update(null, null, active, 0.016)
+		t.check(not fade._unseen.has(gone) and not fade._alpha.has(gone),
+				"the peek fade lets go of a freed body (%s)" % ("third person" if active else "first person"))
+		kept.free()
+		fade.update(null, null, active, 0.016)
+	OS.remove_logger(errors)
+	t.check(errors.count == 0, "and logs no error over it (errors: %s)" % errors.said())
+
+
 ## The real game on Ashfront for a few seconds, in both views, watch up and
 ## down, being shot, with a hitch on the way: not one error may be logged.
 static func _check_ashfront_session(t: Node) -> void:
@@ -164,6 +190,14 @@ static func _check_ashfront_session(t: Node) -> void:
 			await t.frames(1)
 		controller.toggle_view()
 		await t.frames(3)
+	# A bot that had orders and was freed since: the next orders sweep it out.
+	var raid: Raid = main.raid
+	var gone := Actor.new()
+	raid._orders[gone] = "freed"
+	gone.free()
+	raid._orders_in = 0.0
+	raid._tick_orders(0.016)
+	t.check(not raid._orders.has(gone), "the armies' orders let go of a freed bot")
 	OS.remove_logger(errors)
 	t.check(errors.count == 0 and main.controller.camera.global_transform.is_finite(),
 			"an Ashfront session in both views logs no errors and keeps its view (errors: %s)" % errors.said())

@@ -908,8 +908,9 @@ func _tick_orders(delta: float) -> void:
 			if not armies.has(bot.faction):
 				armies[bot.faction] = []
 			armies[bot.faction].append(bot)
-	for bot: Actor in _orders.keys():
-		if not is_instance_valid(bot) or bot.is_dead:
+	# Untyped: a freed bot cannot be assigned to an `Actor` to be checked.
+	for bot: Variant in _orders.keys():
+		if not is_instance_valid(bot) or (bot as Actor).is_dead:
 			_orders.erase(bot)
 	for faction: String in armies:
 		var spare: Array = armies[faction]

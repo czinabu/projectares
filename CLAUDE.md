@@ -1618,7 +1618,12 @@ without Caleb, and update the gap list when a PR closes a row.
   silence it. A spring stepped by `delta` is stepped in short slices (a
   long frame throws it off), and a deferred call or timer that outlives
   the node it acts on is bound to that node (`node.queue_free`, an
-  instance id), never a lambda capturing it.
+  instance id), never a lambda capturing it A loop over a
+  dictionary or list that can still hold a freed node (bodies a view
+  tracks, bots given orders) types its variable `Variant` and checks
+  `is_instance_valid` first: assigning a freed node to a typed variable is
+  an error that stops the game in the editor's debugger (the third-person
+  peek fade's "freeze").
 
 ## Verify before committing
 
