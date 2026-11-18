@@ -73,7 +73,7 @@ static func _until(t: Node, done: Callable, limit: float) -> float:
 	return INF
 
 
-## Jetpack: hover 8 s on a full bar, climb at 8 m/s on 1.5x heat, a boost
+## Jetpack: hover 8 s on a full bar, climb at 8 m/s on 1.3x heat, a boost
 ## burns out in about 3 s on 2.5x, and the ground cools it in 4 s.
 static func _test_jetpack(t: Node) -> void:
 	var arena := _arena(t, Vector3(0, 0, 9000))
@@ -91,7 +91,8 @@ static func _test_jetpack(t: Node) -> void:
 	await _until(t, func() -> bool: return p.is_on_floor(), 10.0)
 	var cool := await _until(t, func() -> bool: return f.heat <= 0.0, 10.0)
 	t.check(cool <= 4.6, "the ground cools a full bar in about 4 s (%.1f s)" % cool)
-	# Climbing: 8 m/s for 1.5x the hover's heat.
+	# Climbing: 8 m/s for 1.3x the hover's heat, so a cool Mk1 reaches its
+	# 40 m ceiling in one climb.
 	f.heat = 0.0
 	f.overheated = false
 	p.cmd.jump_pressed = true
@@ -104,8 +105,8 @@ static func _test_jetpack(t: Node) -> void:
 	var heat := f.heat
 	await t.frames(60)
 	var climb_rate := (f.heat - heat)
-	t.check(absf(rise - 8.0) < 0.3 and absf(climb_rate - f.heat_per_sec * 1.5) < 0.5,
-			"climbing rises at %.1f m/s for 1.5x the heat (%.1f a second)" % [rise, climb_rate])
+	t.check(absf(rise - 8.0) < 0.3 and absf(climb_rate - f.heat_per_sec * 1.3) < 0.5,
+			"climbing rises at %.1f m/s for 1.3x the heat (%.1f a second)" % [rise, climb_rate])
 	# Boosting: 2.5x, so a long boost overheats in about 3 s.
 	p.cmd.jump = false
 	f.heat = 0.0

@@ -167,6 +167,7 @@ func _fly(rig: String) -> void:
 			a.cmd.move = Vector2(0, 1)
 			await _ticks(60, "cruise")
 			f.heat = 0.0
+			f.overheated = false
 			a.cmd.sprint = true
 			var boost := await _until(func() -> bool: return _flat_speed() > f.boost_speed * 0.95, 300, "boost")
 			a.cmd.sprint = false
@@ -273,6 +274,7 @@ static func climb(a: Actor, limit: float, step: Callable, stop := INF) -> Vector
 	var tps := Engine.physics_ticks_per_second
 	var top := 0.0
 	var top_at := 0.0
+	var mark := 0.0
 	var cooling := false
 	a.cmd.jump_pressed = true
 	await step.call(1, "!jump")
@@ -283,10 +285,11 @@ static func climb(a: Actor, limit: float, step: Callable, stop := INF) -> Vector
 		a.cmd.jump_pressed = false
 		if f.can_hover():
 			# Jump off the ground, hold aim to keep the jets lit, climb, and
-			# coast down a little to cool.
+			# coast down a little to cool only when the bar is nearly full
+			# (a cool Mk1 reaches its ceiling in one climb).
 			a.cmd.secondary = true
 			a.cmd.jump_pressed = a.is_on_floor() and i < 10
-			if f.heat > f.max_heat * 0.85:
+			if f.heat > f.max_heat * 0.95:
 				cooling = true
 			elif f.heat < f.max_heat * 0.2:
 				cooling = false
@@ -313,8 +316,12 @@ static func climb(a: Actor, limit: float, step: Callable, stop := INF) -> Vector
 		await step.call(1, "!kick" if a.cmd.jump_pressed or a.cmd.sprint_pressed else "climb")
 		var height := a.global_position.y - a.ground_level() if not is_nan(a.ground_level()) else a.global_position.y
 		if height > top + 0.05:
+			# The time is when it got there, not the last creep up under
+			# the ceiling as the climb eases off.
 			top = height
-			top_at = t
+			if height > mark + 0.5:
+				mark = height
+				top_at = t
 		if top >= stop or (a.is_on_floor() and t > 2.0) or (t > top_at + 2.0 and a.velocity.y < -f.descend_speed - 1.0):
 			# Done: back down, or falling from the top (a landing is no jolt).
 			break
