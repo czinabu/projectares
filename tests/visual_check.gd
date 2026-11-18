@@ -304,6 +304,15 @@ func _ready() -> void:
 		get_tree().quit()
 		return
 
+	# `-- <output_dir> --engine-only` shows the Engine's inside: the drum and
+	# its open hatch, the hatch from close, the Drum Hall with a squad in it,
+	# the Shaft from its lip and from its foot, and a whiteout at the hatch
+	# seen from inside.
+	if "--engine-only" in args:
+		await _engine_shots(out_dir)
+		get_tree().quit()
+		return
+
 	# `-- <output_dir> --zones-only` shows Ashfront's risk zones: a gate
 	# outpost from the field, and the burning core from its edge.
 	if "--zones-only" in args:
@@ -2423,6 +2432,91 @@ func _whiteout_shots(out_dir: String) -> void:
 	cam.look_at_from_position(below + Vector3(0, 1.8, 0), rim_at + Vector3(0, 6, 0))
 	await _settle(80)
 	await _shot(out_dir.path_join("whiteout_6_spindrift.png"))
+	Look.weather_follow = 0.35
+	raid.queue_free()
+	await _settle(4)
+
+
+func _engine_shots(out_dir: String) -> void:
+	const MapScript := preload("res://worlds/frostline/map.gd")
+	var raid := Raid.new()
+	add_child(raid)
+	raid.start_server(Worlds.get_world("frostline"), 42)
+	var frame := MapScript.engine_frame()
+	var f := MapScript.HALL_FLOOR
+	var at := func(local: Vector3) -> Vector3: return frame * local
+	var squad: Array[Actor] = []
+	var kits := [["rifle_carbine", "pistol_service", "jetpack_mk1", "frame_trooper", "helm_spotter"],
+			["smg_stinger", "pistol_machine", "boots_thruster", "frame_runner", "helm_seeker"],
+			["rifle_carbine", "blade_scrap", "jetpack_mk1", "frame_trooper", "helm_warden"],
+			["smg_stinger", "pistol_service", "boots_thruster", "frame_runner", "helm_ember"]]
+	for i in kits.size():
+		squad.append(raid.add_player(kits[i], {}, "Delver%d" % i, "delver%d" % i))
+	for actor in squad + raid.bots:
+		var brain := actor.get_node_or_null("Brain")
+		if brain != null:
+			brain.set_physics_process(false)
+		actor.set_physics_process(false)
+	var place := func(actors: Array, spots: Array, face: Vector3) -> void:
+		for i in mini(actors.size(), spots.size()):
+			var a: Actor = actors[i]
+			a.global_position = at.call(spots[i])
+			var look: Vector3 = at.call(face) - a.global_position
+			a.rotation.y = atan2(-look.x, -look.z)
+	var guards: Array = raid._guards.map(func(g: Dictionary) -> Variant: return g.bot)
+	var cam := Camera3D.new()
+	cam.fov = 64.0
+	cam.far = 1500.0
+	raid.add_child(cam)
+	cam.current = true
+	# 1. The drum from the valley, its hatch open.
+	place.call(squad, [Vector3(-38, f, -14), Vector3(-40, f, -10), Vector3(-42, f, -16), Vector3(-36, f, -8)],
+			Vector3(-22, f, -12))
+	cam.look_at_from_position(at.call(Vector3(-75, 9, -2)), at.call(Vector3(-10, 2, -6)))
+	await _settle(40)
+	await _shot(out_dir.path_join("engine_1_drum.png"))
+	# 2. The hatch from close, looking into the hall.
+	place.call(squad, [Vector3(-26, f, -14), Vector3(-27, f, -10), Vector3(-20, f, -13), Vector3(-17, f, -9)],
+			Vector3(0, f, -12))
+	cam.look_at_from_position(at.call(Vector3(-34, f + 2.2, -12)), at.call(Vector3(0, f + 2.5, -12)))
+	await _settle(20)
+	await _shot(out_dir.path_join("engine_2_hatch.png"))
+	# 3. The Drum Hall from its west end, a squad moving up through the cover.
+	place.call(squad, [Vector3(-6, f, -26), Vector3(4, f, -24), Vector3(-12, f, -16), Vector3(16, f + 8, -24)],
+			Vector3(0, f, 10))
+	place.call(guards, [Vector3(6, f, -6), Vector3(-8, f, 0), Vector3(-17, f + 8, 4), Vector3(14, f, 4)],
+			Vector3(0, f, -30))
+	cam.look_at_from_position(at.call(Vector3(0, f + 4.5, -34)), at.call(Vector3(0, f + 2, 10)))
+	await _settle(30)
+	await _shot(out_dir.path_join("engine_3_hall.png"))
+	# 4. The Shaft from its lip.
+	place.call(squad, [Vector3(6, f, 2), Vector3(-6, f, 3), Vector3(14, f, 8), Vector3(7, f - 4, 12)],
+			Vector3(0, f - 26, 20))
+	cam.look_at_from_position(at.call(Vector3(-4, f + 12, -4)), at.call(Vector3(0, f - 24, 24)))
+	await _settle(20)
+	await _shot(out_dir.path_join("engine_4_shaft.png"))
+	# 5. The Shaft's foot, looking up the ramps.
+	place.call(squad, [Vector3(2, f - 26, 14), Vector3(-6, f - 26, 2), Vector3(-6, f - 20, 16), Vector3(0, f - 13, 29)],
+			Vector3(0, f - 26, 30))
+	place.call(guards, [Vector3(4, f - 26, 26), Vector3(-2, f - 26, 28)], Vector3(0, f - 26, 0))
+	cam.look_at_from_position(at.call(Vector3(-3, f - 24, -0.5)), at.call(Vector3(2, f - 12, 26)))
+	await _settle(20)
+	await _shot(out_dir.path_join("engine_5_foot.png"))
+	# 6. A whiteout at the hatch, seen from inside.
+	var weather := raid.weather
+	weather.start()
+	weather.velocity = Vector3(0, 0, 0.2)
+	weather.life = 100000.0
+	weather.age = 1000.0
+	weather.strength = 1.0
+	var outside: Vector3 = at.call(Vector3(-60, 0, -12))
+	weather.centre = Vector3(outside.x, 0.0, outside.z)
+	Look.weather_follow = 100.0
+	place.call(squad, [Vector3(-16, f, -14), Vector3(-14, f, -9), Vector3(-10, f, -12), Vector3(-30, f, -11)],
+			Vector3(-30, f, -12))
+	cam.look_at_from_position(at.call(Vector3(-4, f + 2.0, -12)), at.call(Vector3(-40, f + 2.0, -12)))
+	await _settle(60)
+	await _shot(out_dir.path_join("engine_6_storm_at_hatch.png"))
 	Look.weather_follow = 0.35
 	raid.queue_free()
 	await _settle(4)

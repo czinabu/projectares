@@ -69,6 +69,7 @@ const WeatherTests := preload("res://tests/weather_tests.gd")
 const IceTests := preload("res://tests/ice_tests.gd")
 const GridTests := preload("res://tests/grid_tests.gd")
 const WhiteoutTests := preload("res://tests/whiteout_tests.gd")
+const EngineTests := preload("res://tests/engine_tests.gd")
 const RaiderTests := preload("res://tests/raider_tests.gd")
 const HeavyUnitTests := preload("res://tests/heavy_unit_tests.gd")
 const PlaytestFixTests := preload("res://tests/playtest_fix_tests.gd")
@@ -373,6 +374,7 @@ func _run() -> void:
 	await _test_ice()
 	await _test_grid()
 	await _test_whiteout()
+	await _test_engine()
 	await _test_raiders()
 	await _test_heavy_units()
 	await _test_playtest_fixes()
@@ -598,6 +600,10 @@ func _test_whiteout() -> void:
 	await WhiteoutTests.run(self)
 
 
+func _test_engine() -> void:
+	await EngineTests.run(self)
+
+
 func _test_cold() -> void:
 	await ColdTests.run(self)
 	await BeaconTests.run(self)
@@ -756,7 +762,7 @@ func _test_raid_setup_and_movement() -> void:
 	var raid := await _new_raid(42, false)
 	var p := raid.player
 	check(p != null and p.is_player, "player spawns")
-	check(raid.bots.size() == raid.world.bot_count + raid._bosses.size(), "all bots spawn")
+	check(raid.bots.size() == raid.world.bot_count + raid._bosses.size() + raid._guards.size(), "all bots spawn")
 	check(raid.depots.size() >= 2, "map provides depots to bank at")
 	var caches := raid.get_children().filter(func(n: Node) -> bool: return n is LootContainer)
 	check(caches.size() >= 8, "loot caches are placed (%d)" % caches.size())
@@ -3151,7 +3157,7 @@ func _test_every_world() -> void:
 		raid.start(world, 99)
 		await frames(3)
 		check(raid.player != null and not raid.player.is_dead, "%s: player spawns" % world.id)
-		check(raid.bots.size() == world.bot_count + raid._bosses.size(), "%s: all bots spawn" % world.id)
+		check(raid.bots.size() == world.bot_count + raid._bosses.size() + raid._guards.size(), "%s: all bots spawn" % world.id)
 		var caches := raid.get_children().filter(func(n: Node) -> bool: return n is LootContainer)
 		if world.gear_at_risk:
 			# Only where gear is at stake is there loot to find and bank (a
@@ -3173,7 +3179,7 @@ func _test_every_world() -> void:
 					"%s: %s is armed and hostile" % [world.id, bot.display_name])
 			break
 		await frames(120)
-		check(raid.clock > 1.0 and raid.bots.size() + raid._bot_respawns.size() == world.bot_count + raid._bosses.size(),
+		check(raid.clock > 1.0 and raid.bots.size() + raid._bot_respawns.size() == world.bot_count + raid._bosses.size() + raid._guards.size(),
 				"%s: the world runs with bots thinking" % world.id)
 		await _end_raid(raid)
 
@@ -4355,7 +4361,7 @@ func _test_online() -> void:
 	raid.start_server(Worlds.get_world("ashfront"), 70)
 	for bot in raid.bots:
 		bot.get_node("Brain").set_physics_process(false)
-	check(raid.player == null and raid.players.is_empty() and raid.bots.size() == raid.world.bot_count + raid._bosses.size(),
+	check(raid.player == null and raid.players.is_empty() and raid.bots.size() == raid.world.bot_count + raid._bosses.size() + raid._guards.size(),
 			"a server raid starts with bots and no players")
 	var a := raid.add_player([], {}, "Alpha")
 	var b := raid.add_player(["rifle_carbine", "blade_scrap", "jetpack_mk1", "plate_light"], {}, "Bravo")

@@ -268,8 +268,9 @@ worlds and a casual or solo one has a steady home.
 - **What you bring home.** New parts (Cryo Core, Glacial Alloy,
   Engine Coil) that Mk2 and Mk3 recipes need, and Frostline blueprints for
   new options only (attachments, cold-weather gear), never a higher Mk of
-  existing gear (built, step 3, see below). Later the inside of the Engine is
-  its deep-loot dungeon and the home of the missing artifacts. Expedition
+  existing gear (built, step 3, see below). The inside of the Engine is
+  its deep-loot dungeon (step 8, see "The Engine's inside" below; its
+  first part built), and its vault the PvE home of the artifacts. Expedition
   contracts (built, step 7c): the board keeps one Frostline daily and one
   Frostline weekly beside the general jobs (search the relay, clear the
   rim posts, break Warden patrols, bring home Cryo Cores; bring down the
@@ -283,8 +284,8 @@ worlds and a casual or solo one has a steady home.
 loot role and recipes, (4) warm beacons, (5) whiteouts, after the Ashfront
 weather work, (6) tracks and louder gunshots, (7) thin ice, the defence
 grid and expedition contracts (in three PRs: thin ice, then the grid, then
-contracts), (8) later, with the PvE dungeons, the
-Engine's inside. Every number is a placeholder for the playtest.
+contracts), (8) the Engine's inside, in three PRs: the Drum Hall
+and the Shaft (built), the Coil Galleries and the Descent, then the Heart. Every number is a placeholder for the playtest.
 
 **Whiteouts (built, step 5).** Frostline's storms are the shared weather
 (see "Weather: ash storms") with `weather_kind` "snow". They follow the
@@ -421,6 +422,56 @@ not trivially. Like Ashfront's core warlords it comes back
 event's) carries a piece of upgrade data and, about one time in seven, one
 of the war's blueprints: the first half of the slow route (section 10).
 Numbers are placeholders.
+
+**The Engine's inside (step 8, Caleb's calls; the first part built).** The
+Stilled Engine is hollow: through its hatch is Frostline's deep-loot
+dungeon, worked down tier by tier to its frozen Heart. It is part of the one
+running world, not an instance (Caleb's call): squads meet down there, and
+like everywhere in Frostline they are allies. It is built for squads to
+fight in (Caleb's ask): no way narrower than 9 m, two arena-sized rooms and
+loops to flank round. A solo player can get all the way through: nothing
+needs two people, warm pockets on the way down refill body heat, and the
+boss is made for one and scales with company. Its tiers:
+
+- **The Drum Hall (built).** The drum's inside, 41 m across and 76 m long,
+  floored over the bed it lies on, with catwalks 8 m up both walls and a
+  ramp up at each end, the stator rings' frozen vanes overhead, fallen
+  vanes, crates and coolant tanks for cover, the engine bay's heater and
+  two caches (one up on a catwalk). The hatch is a doorway 9 m wide and
+  7.6 m high on the valley side; the Engine Sentinel still guards it
+  outside.
+- **The Shaft (built).** A well in the hall's east end, 22 m across and
+  26 m deep: one 9 m ramp down along the back wall to a landing, a second
+  back along the front wall to its foot, which runs on under the hall's
+  floor. Its foot has a heater, a cache (another on the landing) and the
+  sealed way on to the Coil Galleries. Missing: the cable lift, the quick
+  way down once someone powers it, which then stays on a while for every
+  player in the world.
+- **The Coil Galleries and the Descent (next).** Two long halls 14 m wide
+  joined by three cross halls, a loop to fight round, coil alcoves with
+  Engine Coils, a slick coolant channel, then three ramps down.
+- **The Heart (last).** A round chamber 68 m across and 34 m high, the
+  frozen core hung in the middle, a balcony, coolant pylons and the vault.
+  Its keeper is the Heart Warden (Caleb's call): in its first phase it
+  calls Wardens out of sockets in the walls, so a squad splits between it
+  and them; below half health the core thaws and the pylons vent coolant
+  purges across the floor, each flashing before it fires; its back is the
+  weak spot (a squad flanks it, a solo player dashes round the pylons). It
+  comes back on a timer, and everyone who helped gets their own roll from
+  the vault (Caleb's call: nobody takes anyone's loot and nobody arrives
+  too late). The vault pays the best parts, Mk3 materials and upgrade
+  data, a chance at an expedition blueprint and, rarely, an artifact
+  (Caleb's call: below Ashfront's rate, so the war stays the faster
+  route). A deep warm beacon lights there once the keeper falls.
+
+Inside is out of the weather: no storm reaches it and no trail is laid
+(`WorldDef.sheltered_at`), and the cold is its own (gentler in the hall
+than at the glacier head outside, colder down the Shaft). Its garrison is
+Wardens at the map's "spawn_guard" markers, outside the valley's armies and
+back four minutes after they fall; they are on the defence grid like any
+Warden. Its caches pay the "engine" table: Engine Coils most of all, then
+Glacial Alloy and Cryo Cores, a little upgrade data and the expedition
+blueprints. A new expedition daily: loot two caches inside the Engine.
 
 ### PvP world
 

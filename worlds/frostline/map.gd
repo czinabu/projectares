@@ -30,10 +30,48 @@ const RIM_TO := 26.0
 ## the Narrows and the lake the middle, the glacier head the core.
 const MIDDLE_FROM_Z := 40.0
 const CORE_FROM_Z := -150.0
-## Where the Stilled Engine lies across the valley head.
+## Where the Stilled Engine lies across the valley head, turned a little
+## off square, on a bed of ground levelled for it (`engine_bed`).
 const ENGINE_Z := -235.0
 const ENGINE_RADIUS := 22.0
 const ENGINE_LENGTH := 76.0
+const ENGINE_YAW := PI / 2.0 + 0.12
+## How far its axis stands over the bed: most of the drum is out of the ice.
+const ENGINE_AXIS := ENGINE_RADIUS * 0.2
+## The bed reaches this far past the drum, then blends back into the valley
+## over the skirt.
+const ENGINE_PAD := 6.0
+const ENGINE_SKIRT := 18.0
+## The Engine's inside (DESIGN.md "The Engine's inside"), measured in the
+## drum's own frame (`engine_frame`): x across it (+ toward the glacier, the
+## hatch on -x), y up from its axis, z along it (+ east). The hull is
+## `ENGINE_HULL` thick, its outside where the old solid drum's was.
+const ENGINE_HULL := 1.2
+const ENGINE_SEGMENTS := 40
+## The Drum Hall's floor is the bed, about 40 m across and 75 m long.
+const HALL_FLOOR := -ENGINE_AXIS
+## The hatch: a doorway through the hull on the valley side, floor to lintel.
+const HATCH_Z := -12.0
+const HATCH_WIDTH := 9.0
+const HATCH_HEIGHT := 7.6
+## Catwalks along both walls, this high over the floor, and how wide.
+const CATWALK_UP := 8.0
+const CATWALK_WIDTH := 3.2
+## The Shaft: a well in the hall's east end with two switchback ramps
+## (`SHAFT_RAMP` wide) down `SHAFT_DEPTH` metres, a landing halfway, to a
+## floor where the way on to the Coil Galleries waits, sealed for now.
+const SHAFT_FROM_Z := 6.0
+const SHAFT_TO_Z := 31.0
+const SHAFT_HALF := 11.0
+const SHAFT_DEPTH := 26.0
+const SHAFT_RAMP := 9.0
+const SHAFT_LANDING := 4.0
+## The Shaft's foot runs on west under the hall's floor, so the second ramp
+## comes down into open floor rather than at a wall.
+const SHAFT_FOOT := 7.0
+## The valley's ground is dropped out of the way under the Shaft this far
+## past its walls, so the heightfield's slope stays under the hall's floor.
+const SHAFT_CLEAR := 3.0
 ## How far round the hatch the Engine Sentinel keeps its guard.
 const SENTINEL_GROUND := 16.0
 ## The valley's end: the glacier climbs behind it (and the pack ice at the
@@ -45,6 +83,38 @@ const LAKE_RADIUS := Vector2(44.0, 40.0)
 ## The middle of the lake is thin ice (`WorldDef.thin_ice`): within this
 ## share of its radius a heavy vehicle breaks through. The shore ice holds.
 const THIN_ICE := 0.7
+
+
+## The ground the Engine lies on, levelled flat.
+static func engine_bed() -> float:
+	return floor_at(ENGINE_Z)
+
+
+## The drum's own frame: its axis along local z, at `ENGINE_AXIS` over the bed.
+static func engine_frame() -> Transform3D:
+	return Transform3D(Basis(Vector3.UP, ENGINE_YAW), Vector3(centre(ENGINE_Z), engine_bed() + ENGINE_AXIS, ENGINE_Z))
+
+
+## A point in the drum's own frame.
+static func engine_local(pos: Vector3) -> Vector3:
+	if not _engine_known:
+		_engine_inverse = engine_frame().affine_inverse()
+		_engine_known = true
+	return _engine_inverse * pos
+
+
+static var _engine_inverse := Transform3D.IDENTITY
+static var _engine_known := false
+
+
+## Whether a point is inside the Engine: in the Drum Hall or down the Shaft.
+static func inside_engine(pos: Vector3) -> bool:
+	var p := engine_local(pos)
+	var inner := ENGINE_RADIUS - ENGINE_HULL
+	if absf(p.z) < ENGINE_LENGTH * 0.5 and p.x * p.x + p.y * p.y < inner * inner and p.y > HALL_FLOOR - 0.5:
+		return true
+	return absf(p.x) < SHAFT_HALF and p.z > SHAFT_FROM_Z - SHAFT_FOOT and p.z < SHAFT_TO_Z \
+			and p.y > HALL_FLOOR - SHAFT_DEPTH - 0.5 and p.y <= HALL_FLOOR - 0.5
 
 
 ## How far out on the lake a point is: 0 at its middle, 1 at its shore.
@@ -148,6 +218,7 @@ var _weather: Node3D
 		"window_glow": Color(1.0, 0.6, 0.3), "lit_windows": 0.15})
 @onready var HULL := Look.surface("metal", {"tint": Color(0.34, 0.38, 0.44), "snow": 0.45, "grime": 0.6, "scale": 0.08})
 @onready var HULL_DARK := Look.surface("metal", {"tint": Color(0.22, 0.25, 0.3), "snow": 0.4, "grime": 0.7, "scale": 0.1})
+@onready var DECK := Look.surface("metal", {"tint": Color(0.3, 0.33, 0.38), "snow": 0.25, "grime": 0.55, "scale": 0.15})
 
 
 func _ready() -> void:
@@ -242,6 +313,8 @@ func _process(_delta: float) -> void:
 	# The snow blows round whoever is looking, not over the whole valley.
 	var camera := get_viewport().get_camera_3d()
 	if camera != null and is_instance_valid(_weather):
+		# None falls inside the Engine.
+		_weather.visible = not inside_engine(camera.global_position)
 		_weather.global_position = Vector3(camera.global_position.x, camera.global_position.y - 8.0,
 				camera.global_position.z)
 
@@ -370,7 +443,20 @@ func _height(x: float, z: float) -> float:
 	h += smoothstep(-262.0, -310.0, z) * 60.0
 	# The river mouth runs out onto a frozen sea that rises into pack ice.
 	h += smoothstep(296.0, 318.0, z) * 30.0
-	return h
+	return _engine_ground(x, z, h)
+
+
+## The Engine's bed: flat under the drum and round it, blending back into
+## the valley over the skirt, and dropped away under the Shaft (its floor
+## and walls are the Engine's own; the drop stays under the hall's floor).
+static func _engine_ground(x: float, z: float, h: float) -> float:
+	var p := engine_local(Vector3(x, 0.0, z))
+	if absf(p.x) < SHAFT_HALF + SHAFT_CLEAR and p.z > SHAFT_FROM_Z - SHAFT_FOOT - SHAFT_CLEAR \
+			and p.z < SHAFT_TO_Z + SHAFT_CLEAR:
+		return engine_bed() - SHAFT_DEPTH
+	var across := maxf(absf(p.x) - ENGINE_RADIUS - ENGINE_PAD, 0.0)
+	var along := maxf(absf(p.z) - ENGINE_LENGTH * 0.5 - ENGINE_PAD, 0.0)
+	return lerpf(engine_bed(), h, smoothstep(0.0, ENGINE_SKIRT, Vector2(across, along).length()))
 
 
 func _build_ground() -> void:
@@ -562,37 +648,37 @@ func _add_rocks(at: Vector2, count: int) -> void:
 		rock.rotation = Vector3(0, _rng.randf() * TAU, _rng.randf_range(-0.08, 0.08))
 
 
-## The Stilled Engine: a colossal drum sunk into the glacier across the
-## valley head, ribbed and finned. Its back is the relay's old perch, the
-## richest cache on the map, reached only by flight; the foot of it is the
-## core, with the core's caches round its hatch.
+## The Stilled Engine: a colossal drum lying across the valley head, ribbed
+## and finned, and hollow (DESIGN.md "The Engine's inside"). Its back is the
+## relay's old perch, the richest cache outside, reached only by flight; the
+## foot of it is the core, with the core's caches round its hatch and the
+## Engine Sentinel on guard. Through the hatch is the Drum Hall, and in the
+## hall's east end the Shaft goes down.
 func _build_engine() -> void:
-	var base := _ground(Vector2(centre(ENGINE_Z), ENGINE_Z))
+	var frame := engine_frame()
+	var base := Vector3(frame.origin.x, engine_bed(), frame.origin.z)
 	_engine_at = base
 	var engine := StaticBody3D.new()
+	engine.name = "Engine"
 	engine.collision_layer = Actor.LAYER_WORLD
 	engine.collision_mask = 0
-	engine.position = base + Vector3(0, ENGINE_RADIUS * 0.2, 0)
-	engine.rotation = Vector3(0.0, PI / 2.0 + 0.12, 0.0)
+	engine.transform = frame
 	nav_region.add_child(engine)
-	_cylinder(engine, ENGINE_RADIUS, ENGINE_LENGTH, Vector3.ZERO, HULL)
-	for k in 6:
-		_cylinder(engine, ENGINE_RADIUS + 1.4, 2.4, Vector3(0, 0, -ENGINE_LENGTH * 0.4 + k * ENGINE_LENGTH * 0.16), HULL_DARK)
-	# The intake rings at its end and the cooling fins along its back.
+	_build_hull(engine)
+	_build_hall(engine)
+	_build_shaft(engine)
+	_flush_parts(engine)
+	# The intake rings at its east end and the cooling fins along its back.
 	for k in 3:
 		_cylinder(engine, ENGINE_RADIUS - 4.0 - k * 5.0, 1.2, Vector3(0, 0, ENGINE_LENGTH * 0.5 + 0.4 + k * 0.4),
 				HULL_DARK if k % 2 == 0 else HULL)
-	var top := ENGINE_RADIUS * 1.2
 	for k in 7:
 		_box(Vector3(8.0, 7.0, 1.2), Vector3(-6.0, ENGINE_RADIUS + 2.5, -18.0 + k * 6.0), HULL_DARK, engine)
-	_add_marker("spawn_cache", base + Vector3(4.0, top + 0.2, 0)).set_meta("loot_source", "relay")
-	# The hatch at its foot, toward the valley.
-	var hatch := base + Vector3(-6.0, 0, ENGINE_RADIUS + 2.0)
-	_box(Vector3(5, 6, 1), hatch + Vector3(0, 3, 0), HULL_DARK)
+	_add_marker("spawn_cache", base + Vector3(4.0, ENGINE_RADIUS * 1.2 + 0.2, 0)).set_meta("loot_source", "relay")
 	# The Engine still breathes a little warmth out of its hatch.
-	_add_warmth(_ground(Vector2(hatch.x, hatch.z + 3.0)), HATCH)
+	_add_warmth(_ground(_flat(frame * Vector3(-ENGINE_RADIUS - 3.0, HALL_FLOOR, HATCH_Z))), HATCH)
 	# The defence grid's boss, the Engine Sentinel, guards the hatch.
-	var boss := _add_marker("spawn_boss", _ground(Vector2(hatch.x + 4.0, hatch.z + 7.0)))
+	var boss := _add_marker("spawn_boss", _ground(_flat(frame * Vector3(-ENGINE_RADIUS - 9.0, HALL_FLOOR, HATCH_Z + 4.0))))
 	boss.set_meta("faction", "warden")
 	boss.set_meta("boss", "sentinel")
 	boss.set_meta("radius", SENTINEL_GROUND)
@@ -602,6 +688,240 @@ func _build_engine() -> void:
 		_bot_spot(_ground(Vector2(base.x + x, base.z + ENGINE_RADIUS + 12.0)), "warden", 4)
 	_add_rocks(Vector2(base.x - 10.0, base.z + ENGINE_RADIUS + 16.0), 3)
 	_add_rocks(Vector2(base.x + 12.0, base.z + ENGINE_RADIUS + 18.0), 2)
+
+
+static func _flat(at: Vector3) -> Vector2:
+	return Vector2(at.x, at.z)
+
+
+## A solid part of a body, in the body's own space, turned by `basis`. Its
+## shape is drawn with every other part of the same material as one mesh
+## (`_flush_parts`): the Engine is hundreds of parts.
+func _part(body: StaticBody3D, size: Vector3, at: Vector3, material: Material, basis := Basis.IDENTITY) -> void:
+	var shape := BoxShape3D.new()
+	shape.size = size
+	var col := CollisionShape3D.new()
+	col.shape = shape
+	col.transform = Transform3D(basis, at)
+	body.add_child(col)
+	var mesh := BoxMesh.new()
+	mesh.size = size
+	_batch(material).append_from(mesh, 0, Transform3D(basis, at))
+
+
+## Material -> SurfaceTool, filled by `_part` and `_tank`.
+var _batches := {}
+
+
+func _batch(material: Material) -> SurfaceTool:
+	if not _batches.has(material):
+		var tool := SurfaceTool.new()
+		tool.begin(Mesh.PRIMITIVE_TRIANGLES)
+		_batches[material] = tool
+	return _batches[material]
+
+
+## Turns every batch into one mesh on `body`.
+func _flush_parts(body: Node3D) -> void:
+	for material: Material in _batches:
+		var mesh := (_batches[material] as SurfaceTool).commit()
+		mesh.surface_set_material(0, material)
+		var node := MeshInstance3D.new()
+		node.mesh = mesh
+		body.add_child(node)
+	_batches.clear()
+
+
+## A slab from `low` to `high` (each (z, y) in the drum's frame, its top
+## along that line) between `x_from` and `x_to`: a ramp.
+func _slope(body: StaticBody3D, x_from: float, x_to: float, a: Vector2, b: Vector2, material: Material,
+		thick := 0.8) -> void:
+	var run := b - a
+	var tilt := atan2(-run.y, run.x)
+	var basis := Basis(Vector3.RIGHT, tilt)
+	var mid := Vector3((x_from + x_to) * 0.5, (a.y + b.y) * 0.5, (a.x + b.x) * 0.5)
+	_part(body, Vector3(x_to - x_from, thick, run.length()), mid - basis.y * thick * 0.5, material, basis)
+
+
+## The hull: a ring of panels round the axis (none under the bed), cut by
+## the hatch, the six bands round it and the two end walls.
+func _build_hull(engine: StaticBody3D) -> void:
+	var step := TAU / ENGINE_SEGMENTS
+	var mid := ENGINE_RADIUS - ENGINE_HULL * 0.5
+	var width := step * ENGINE_RADIUS + 0.3
+	for i in ENGINE_SEGMENTS:
+		var a := -PI + (float(i) + 0.5) * step
+		var up := cos(a) * mid
+		if up < HALL_FLOOR - 2.5:
+			continue
+		var basis := Basis(Vector3.BACK, -a)
+		var at := Vector3(sin(a), cos(a), 0.0) * mid
+		if sin(a) < -0.5 and up < HALL_FLOOR + HATCH_HEIGHT - 2.0:
+			# The hatch's opening, floor to lintel, on the valley side.
+			var west := HATCH_Z - HATCH_WIDTH * 0.5 + ENGINE_LENGTH * 0.5
+			var east := ENGINE_LENGTH * 0.5 - HATCH_Z - HATCH_WIDTH * 0.5
+			_part(engine, Vector3(width, ENGINE_HULL, west), at + Vector3(0, 0, -ENGINE_LENGTH * 0.5 + west * 0.5), HULL, basis)
+			_part(engine, Vector3(width, ENGINE_HULL, east), at + Vector3(0, 0, ENGINE_LENGTH * 0.5 - east * 0.5), HULL, basis)
+		else:
+			_part(engine, Vector3(width, ENGINE_HULL, ENGINE_LENGTH), at, HULL, basis)
+		for k in 6:
+			var z := -ENGINE_LENGTH * 0.4 + k * ENGINE_LENGTH * 0.16
+			if up > HALL_FLOOR - 2.5:
+				_part(engine, Vector3(width + 0.2, 1.4, 2.4), Vector3(sin(a), cos(a), 0.0) * (ENGINE_RADIUS + 0.7)
+						+ Vector3(0, 0, z), HULL_DARK, basis)
+	# The hatch's frame: a post either side and the lintel over it.
+	var face := -(ENGINE_RADIUS - ENGINE_HULL * 0.5)
+	for side: float in [-1.0, 1.0]:
+		_part(engine, Vector3(1.8, HATCH_HEIGHT + 1.0, 1.0),
+				Vector3(face, HALL_FLOOR + (HATCH_HEIGHT + 1.0) * 0.5, HATCH_Z + side * (HATCH_WIDTH * 0.5 + 0.5)), HULL_DARK)
+	_part(engine, Vector3(1.8, 1.0, HATCH_WIDTH + 2.0), Vector3(face, HALL_FLOOR + HATCH_HEIGHT + 0.5, HATCH_Z), HULL_DARK)
+	# The end walls, laid in strips across the drum's round.
+	var y := HALL_FLOOR - 1.0
+	while y < ENGINE_RADIUS:
+		var strip := minf(1.6, ENGINE_RADIUS - y)
+		var level := y + strip * 0.5
+		var rim := ENGINE_RADIUS - 0.3
+		var half := sqrt(maxf(rim * rim - level * level, 0.0))
+		for end: float in [-1.0, 1.0]:
+			_part(engine, Vector3(half * 2.0, strip, ENGINE_HULL),
+					Vector3(0, level, end * (ENGINE_LENGTH * 0.5 - ENGINE_HULL * 0.5)), HULL_DARK)
+		y += strip
+
+
+## How far across the hall is at a height `up` over its axis.
+static func _hall_half(up: float) -> float:
+	var inner := ENGINE_RADIUS - ENGINE_HULL
+	return sqrt(maxf(inner * inner - up * up, 0.0))
+
+
+## The Drum Hall: the bed floored over, catwalks along both walls with a
+## ramp up at each end, the stator rings' frozen vanes overhead, fallen
+## vanes and crates for cover, coolant tanks, the engine bay's heater, two
+## caches and the hall's guards.
+func _build_hall(engine: StaticBody3D) -> void:
+	var f := HALL_FLOOR
+	var half := _hall_half(f)
+	var west := -ENGINE_LENGTH * 0.5
+	var east := ENGINE_LENGTH * 0.5
+	# The floor, round the Shaft's well.
+	_part(engine, Vector3(half * 2.0, 1.0, SHAFT_FROM_Z - west), Vector3(0, f - 0.48, (west + SHAFT_FROM_Z) * 0.5), DECK)
+	_part(engine, Vector3(half * 2.0, 1.0, east - SHAFT_TO_Z), Vector3(0, f - 0.48, (east + SHAFT_TO_Z) * 0.5), DECK)
+	for side: float in [-1.0, 1.0]:
+		_part(engine, Vector3(half - SHAFT_HALF, 1.0, SHAFT_TO_Z - SHAFT_FROM_Z),
+				Vector3(side * (half + SHAFT_HALF) * 0.5, f - 0.48, (SHAFT_FROM_Z + SHAFT_TO_Z) * 0.5), DECK)
+	# Catwalks along both walls, a railing on the open side, ramps up.
+	var walk := f + CATWALK_UP
+	var out := _hall_half(walk + 2.0) - 0.4
+	var inner := out - CATWALK_WIDTH
+	for side: float in [-1.0, 1.0]:
+		_part(engine, Vector3(CATWALK_WIDTH, 0.4, ENGINE_LENGTH - 2.4), Vector3(side * (out - CATWALK_WIDTH * 0.5), walk - 0.2, 0), STEEL)
+		for span: Vector2 in [Vector2(west + 1.2, -27.0), Vector2(-11.0, 7.0), Vector2(23.0, east - 1.2)]:
+			_part(engine, Vector3(0.2, 1.1, span.y - span.x), Vector3(side * inner, walk + 0.55, (span.x + span.y) * 0.5), HULL_DARK)
+		var lane := Vector2(side * (inner - 3.4), side * inner)
+		_slope(engine, minf(lane.x, lane.y), maxf(lane.x, lane.y), Vector2(-26.0, walk), Vector2(-12.0, f), STEEL, 0.5)
+		_slope(engine, minf(lane.x, lane.y), maxf(lane.x, lane.y), Vector2(8.0, f), Vector2(22.0, walk), STEEL, 0.5)
+	# The stator rings: frozen vanes standing in from the hull overhead.
+	for z: float in [-24.0, 0.0, 22.0]:
+		for k in 9:
+			var a := (float(k) - 4.0) * 0.3
+			if cos(a) < 0.5:
+				continue
+			var vane_mid := ENGINE_RADIUS - ENGINE_HULL - 4.0
+			_part(engine, Vector3(1.2, 8.0, 2.4), Vector3(sin(a), cos(a), 0.0) * vane_mid + Vector3(0, 0, z), STEEL,
+					Basis(Vector3.BACK, -a))
+	# Fallen vanes, low cover; crates and coolant tanks to stand behind.
+	for spot: Array in HALL_VANES:
+		var at: Vector2 = spot[0]
+		_part(engine, Vector3(9.0, 1.4, 2.4), Vector3(at.x, f + 0.7, at.y), STEEL, Basis(Vector3.UP, spot[1]))
+	for at: Vector2 in HALL_CRATES:
+		_part(engine, Vector3(3.0, 2.6, 3.0), Vector3(at.x, f + 1.3, at.y), HULL_DARK)
+	for at: Vector2 in HALL_TANKS:
+		_tank(engine, Vector3(at.x, f, at.y))
+	var frame := engine_frame()
+	_add_warmth(frame * Vector3(-6.0, f, west + 4.0), ENGINE_BAY)
+	_add_marker("spawn_cache", frame * Vector3(12.0, f + 0.1, west + 4.0)).set_meta("loot_source", "engine")
+	_add_marker("spawn_cache", frame * Vector3(-(out - CATWALK_WIDTH * 0.5), walk + 0.1, east - 4.0)).set_meta("loot_source", "engine")
+	for at: Vector3 in [Vector3(-4.0, f, -22.0), Vector3(8.0, f, -12.0), Vector3(2.0, f, -32.0),
+			Vector3(out - CATWALK_WIDTH * 0.5, walk, 0.0)]:
+		_guard(frame * (at + Vector3(0, 0.1, 0)), HALL_GUARD)
+
+
+## Where the hall's fallen vanes lie (x, z in the drum's frame; a turn).
+const HALL_VANES := [
+	[Vector2(-8.0, -28.0), 0.4], [Vector2(6.0, -20.0), -0.9], [Vector2(-10.0, -4.0), 1.2],
+	[Vector2(10.0, -4.0), 0.2], [Vector2(0.0, -14.0), -0.3], [Vector2(-3.0, 2.0), 0.8],
+]
+const HALL_CRATES := [Vector2(-12.0, -20.0), Vector2(14.0, -32.0), Vector2(4.0, -28.0), Vector2(-14.0, 2.0)]
+const HALL_TANKS := [Vector2(-17.5, -33.0), Vector2(17.5, -33.0), Vector2(-17.5, -2.0), Vector2(17.5, 2.0)]
+## How far each guard keeps from its post.
+const HALL_GUARD := 12.0
+const SHAFT_GUARD := 9.0
+## The Engine's warm pockets inside: the hall's engine bay and the
+## Shaft's foot. Somewhere to get warm again on the way down.
+const ENGINE_BAY := {"radius": 4.0, "warmth": 9.0}
+
+
+## A coolant tank standing on the floor: something solid to hide behind.
+func _tank(engine: StaticBody3D, at: Vector3) -> void:
+	var shape := CylinderShape3D.new()
+	shape.radius = 1.6
+	shape.height = 5.0
+	var col := CollisionShape3D.new()
+	col.shape = shape
+	col.position = at + Vector3(0, 2.5, 0)
+	engine.add_child(col)
+	var mesh := CylinderMesh.new()
+	mesh.top_radius = 1.6
+	mesh.bottom_radius = 1.6
+	mesh.height = 5.0
+	mesh.radial_segments = 14
+	_batch(HULL_DARK).append_from(mesh, 0, col.transform)
+
+
+## The Shaft: walls down to its floor, a railing round its lip, the first
+## ramp down along the back wall to the landing at the east end, the second
+## back along the front wall to the floor. At the foot, the Shaft's heater,
+## its caches, its guards and the sealed way on to the Coil Galleries.
+func _build_shaft(engine: StaticBody3D) -> void:
+	var f := HALL_FLOOR
+	var low := f - SHAFT_DEPTH
+	var mid_y := f - SHAFT_DEPTH * 0.5
+	var length := SHAFT_TO_Z - SHAFT_FROM_Z
+	var mid_z := (SHAFT_FROM_Z + SHAFT_TO_Z) * 0.5
+	var foot := SHAFT_FROM_Z - SHAFT_FOOT
+	var deep := SHAFT_TO_Z - foot
+	var deep_z := (foot + SHAFT_TO_Z) * 0.5
+	for side: float in [-1.0, 1.0]:
+		_part(engine, Vector3(1.0, SHAFT_DEPTH + 1.0, deep + 2.0), Vector3(side * (SHAFT_HALF + 0.5), mid_y - 0.5, deep_z), ICE_WALL)
+		_part(engine, Vector3(0.3, 1.1, length), Vector3(side * (SHAFT_HALF + 0.15), f + 0.55, mid_z), HULL_DARK)
+	for z: float in [foot - 0.5, SHAFT_TO_Z + 0.5]:
+		_part(engine, Vector3(SHAFT_HALF * 2.0 + 2.0, SHAFT_DEPTH + 1.0, 1.0), Vector3(0, mid_y - 0.5, z), ICE_WALL)
+	_part(engine, Vector3(SHAFT_HALF * 2.0, 1.1, 0.3), Vector3(0, f + 0.55, SHAFT_TO_Z - 0.15), HULL_DARK)
+	var gap := SHAFT_HALF - SHAFT_RAMP
+	_part(engine, Vector3(SHAFT_HALF + gap, 1.1, 0.3), Vector3((-SHAFT_HALF + gap) * 0.5, f + 0.55, SHAFT_FROM_Z + 0.15), HULL_DARK)
+	# Down: the first ramp along the back (+x), the landing, the second along the front.
+	var turn := SHAFT_TO_Z - SHAFT_LANDING
+	_slope(engine, gap, SHAFT_HALF, Vector2(SHAFT_FROM_Z, f), Vector2(turn, mid_y), DECK)
+	_part(engine, Vector3(SHAFT_HALF * 2.0, 0.8, SHAFT_LANDING), Vector3(0, mid_y - 0.4, turn + SHAFT_LANDING * 0.5), DECK)
+	_slope(engine, -SHAFT_HALF, -gap, Vector2(SHAFT_FROM_Z, low), Vector2(turn, mid_y), DECK)
+	_part(engine, Vector3(SHAFT_HALF * 2.0, 1.0, deep), Vector3(0, low - 0.48, deep_z), DECK)
+	# Rails along the ramps' open sides.
+	_slope(engine, gap - 0.3, gap, Vector2(SHAFT_FROM_Z, f + 1.1), Vector2(turn, mid_y + 1.1), HULL_DARK, 1.1)
+	_slope(engine, -gap, -gap + 0.3, Vector2(SHAFT_FROM_Z, low + 1.1), Vector2(turn, mid_y + 1.1), HULL_DARK, 1.1)
+	var frame := engine_frame()
+	_add_warmth(frame * Vector3(4.0, low, turn), ENGINE_BAY)
+	for at: Vector3 in [Vector3(7.0, low, SHAFT_TO_Z - 2.5), Vector3(0.0, mid_y, SHAFT_TO_Z - 2.0)]:
+		_add_marker("spawn_cache", frame * (at + Vector3(0, 0.1, 0))).set_meta("loot_source", "engine")
+	for at: Vector3 in [Vector3(-4.0, mid_y, turn + 2.0), Vector3(4.0, low, 18.0), Vector3(-1.0, low, turn),
+			Vector3(-4.0, low, foot + 2.5)]:
+		_guard(frame * (at + Vector3(0, 0.1, 0)), SHAFT_GUARD)
+
+
+## A Warden of the Engine's garrison (`WorldDef`'s "spawn_guard").
+func _guard(at: Vector3, radius: float) -> void:
+	var marker := _add_marker("spawn_guard", at)
+	marker.set_meta("faction", "warden")
+	marker.set_meta("radius", radius)
 
 
 ## The warm vents on the floor: a grate, low enough to walk over.
@@ -941,27 +1261,74 @@ func _puff_texture() -> Texture2D:
 	return _shared["puff"]
 
 
-## The Engine's one light still blinks over its hatch.
+## The Engine's one light still blinks over its hatch. Inside, the grid's
+## teal still glows along the catwalks and round the stator rings, a few
+## amber work lamps burn, and the sealed way on at the Shaft's foot shows
+## its warning stripe.
 func _dress_engine(art: Node3D) -> void:
-	var teal := StandardMaterial3D.new()
-	teal.albedo_color = Color(0.3, 1.0, 0.9)
-	teal.emission_enabled = true
-	teal.emission = Color(0.2, 1.0, 0.85)
-	teal.emission_energy_multiplier = 6.0
+	var frame := engine_frame()
+	var teal := _glow(Color(0.2, 1.0, 0.85), 6.0)
 	var bulb := MeshInstance3D.new()
 	var sphere := SphereMesh.new()
 	sphere.radius = 0.5
 	sphere.height = 1.0
 	sphere.material = teal
 	bulb.mesh = sphere
-	bulb.position = _engine_at + Vector3(-6.0, 6.8, ENGINE_RADIUS + 2.6)
+	bulb.position = frame * Vector3(-ENGINE_RADIUS - 0.6, HALL_FLOOR + HATCH_HEIGHT + 1.4, HATCH_Z)
 	art.add_child(bulb)
 	var light := Look.lamp(Color(0.2, 1.0, 0.85), 5.0, 22.0)
-	light.position = bulb.position + Vector3(0, -0.3, 1.5)
+	light.position = frame * Vector3(-ENGINE_RADIUS - 2.0, HALL_FLOOR + HATCH_HEIGHT + 1.0, HATCH_Z)
 	art.add_child(light)
 	var blink := create_tween().set_loops()
 	blink.tween_property(light, "light_energy", 0.3, 0.15).set_delay(1.6)
 	blink.tween_property(light, "light_energy", 5.0, 0.15)
+	var strip := _glow(Color(0.2, 1.0, 0.85), 3.0)
+	var amber := _glow(Color(1.0, 0.55, 0.2), 3.0)
+	var walk := HALL_FLOOR + CATWALK_UP
+	var inner := _hall_half(walk + 2.0) - 0.4 - CATWALK_WIDTH
+	for side: float in [-1.0, 1.0]:
+		_glow_box(art, frame, Vector3(0.3, 0.15, ENGINE_LENGTH - 4.0), Vector3(side * (inner + 0.4), walk - 0.5, 0), strip)
+		_glow_box(art, frame, Vector3(0.3, 0.12, SHAFT_TO_Z - SHAFT_FROM_Z), Vector3(side * (SHAFT_HALF - 0.3),
+				HALL_FLOOR - SHAFT_DEPTH * 0.5 + 3.0, (SHAFT_FROM_Z + SHAFT_TO_Z) * 0.5), strip)
+	for z: float in [-24.0, 0.0, 22.0]:
+		_lamp_at(art, frame * Vector3(0, 9.0, z), Color(0.45, 0.85, 1.0), 6.0, 36.0)
+	for spot: Vector3 in [Vector3(-12.0, 6.0, -32.0), Vector3(12.0, 6.0, -8.0), Vector3(-12.0, 6.0, 16.0)]:
+		_lamp_at(art, frame * (spot + Vector3(0, HALL_FLOOR, 0)), Color(1.0, 0.6, 0.3), 4.0, 18.0)
+	# Down the Shaft.
+	var mid := (SHAFT_FROM_Z + SHAFT_TO_Z) * 0.5
+	_lamp_at(art, frame * Vector3(0, HALL_FLOOR - 6.0, mid), Color(1.0, 0.6, 0.3), 5.0, 26.0)
+	_lamp_at(art, frame * Vector3(0, HALL_FLOOR - SHAFT_DEPTH + 6.0, mid), Color(0.3, 0.9, 1.0), 5.0, 26.0)
+	# The sealed way on: a door-sized stripe on the Shaft's east wall.
+	var low := HALL_FLOOR - SHAFT_DEPTH
+	_glow_box(art, frame, Vector3(10.0, 0.4, 0.2), Vector3(0, low + 8.2, SHAFT_TO_Z - 0.05), amber)
+	for x: float in [-5.0, 5.0]:
+		_glow_box(art, frame, Vector3(0.4, 8.0, 0.2), Vector3(x, low + 4.0, SHAFT_TO_Z - 0.05), amber)
+
+
+func _glow(color: Color, energy: float) -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	m.albedo_color = color
+	m.emission_enabled = true
+	m.emission = color
+	m.emission_energy_multiplier = energy
+	return m
+
+
+## A lit strip with no collision, in the drum's frame.
+func _glow_box(art: Node3D, frame: Transform3D, size: Vector3, at: Vector3, material: Material) -> void:
+	var mesh := BoxMesh.new()
+	mesh.size = size
+	mesh.material = material
+	var node := MeshInstance3D.new()
+	node.mesh = mesh
+	node.transform = frame * Transform3D(Basis.IDENTITY, at)
+	art.add_child(node)
+
+
+func _lamp_at(art: Node3D, at: Vector3, color: Color, energy: float, reach: float) -> void:
+	var light := Look.lamp(color, energy, reach)
+	light.position = at
+	art.add_child(light)
 
 
 func _dress_listening_posts(art: Node3D) -> void:

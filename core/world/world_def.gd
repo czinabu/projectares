@@ -66,6 +66,10 @@ extends RefCounted
 ##     guards) and "boss" (a kind of boss of the world's own, set on the bot
 ##     as meta "boss" before `equip_bot` and `make_warlord`, and sent to
 ##     clients so they build the same one).
+##   - Marker3D nodes in group "spawn_guard": a dungeon's garrison. A bot of
+##     the marker's "faction" stands guard over "radius" metres (10 by
+##     default) round it, outside the armies, and another comes back
+##     `guard_respawn_time` after it dies.
 ## The cold (DESIGN.md section 2, "Frostline"): a world with `cold` over 0
 ## drains its players' body heat (`Actor.body_heat`) by `cold_at` a second
 ## out in the open, and its map may add warmth:
@@ -250,6 +254,8 @@ var pod_upgrade_data := 0
 ## Risk zones: seconds before a core boss comes back after it dies, and the
 ## sign-out time while sheltered in a gate outpost (it is the way out there).
 var boss_respawn_time := 360.0
+## Seconds before a guard at a "spawn_guard" marker comes back after it dies.
+var guard_respawn_time := 240.0
 var outpost_sign_out_time := 3.0
 ## A boss made for one player is a wall for none and a pushover for four,
 ## so where this is over 0 it gets tougher with company: each player past
@@ -426,6 +432,13 @@ func zone_name(tier: int) -> String:
 ## (heat, fumes), or 0. The Raid deals it through `Combat.deal`.
 func hazard_at(_pos: Vector3) -> float:
 	return 0.0
+
+
+## Whether a point is sheltered: inside a building or underground, where no
+## storm reaches (`Weather.strength_at` is 0 there) and no trail is laid
+## (`Raid._track_mark`). A world's own `cold_at` decides the cold there.
+func sheltered_at(_pos: Vector3) -> bool:
+	return false
 
 
 ## Body heat a second a player at a point loses out in the open: `cold` by

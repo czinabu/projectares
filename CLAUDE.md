@@ -120,6 +120,20 @@ without Caleb, and update the gap list when a PR closes a row.
   for one player and the authority raises its `Actor.toughness` for each
   other player within `boss_party_range` (`Raid._scale_boss`); hits are
   divided by it in `Actor.modify_incoming`.
+- The Engine's inside (DESIGN.md "The Engine's inside"): Frostline's
+  dungeon is part of the one running world, never an instance (Caleb's
+  call), built in the map's drum frame (`engine_frame`, `engine_local`) on
+  a levelled bed whose ground drops away under the Shaft (`_engine_ground`,
+  kept under the hall's floor). Its parts are drawn merged, one mesh per
+  material (`_part`, `_flush_parts`). A dungeon's garrison is "spawn_guard"
+  markers: the `Raid` keeps a bot of the marker's faction posted there
+  (`_spawn_guards`, `_tick_guards`, `is_guard`), outside the armies like a
+  boss, back after `WorldDef.guard_respawn_time`. Inside is sheltered
+  (`WorldDef.sheltered_at`): `Weather.strength_at` is 0 there, so nothing
+  a storm changes reaches in, and `Raid._track_mark` lays no trail; the
+  world's own `cold_at` sets its cold. Squads need room (Caleb's ask): no
+  way narrower than 9 m. A solo player must get through: nothing needs two
+  people. Check by eye with `visual_check.tscn -- <dir> --engine-only`.
 - How harsh death is belongs to the world, not to `Raid`. With
   `WorldDef.keep_gear_on_death` a dead player drops only the backpack and the
   equipped gear returns in the result's `kept`. A gentle world pays for that
