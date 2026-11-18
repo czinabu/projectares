@@ -832,6 +832,11 @@ static func splash(source: Actor, at: Vector3, radius: float, amount: float, kin
 ## A round in flight: a plasma rocket or a bouncing arc grenade. Moves itself
 ## each physics tick, so it runs the same on a headless server. On a client
 ## it flies for show: `Combat.deal` refuses there, the server decides.
+## Rounds in flight that burst (rockets, grenades), for bots to run from
+## (`BotBrain._think_danger`). Each round adds itself and leaves when gone.
+static var live_rounds: Array[Node3D] = []
+
+
 class Round extends Node3D:
 	var gun_shooter: Actor
 	var kind := "rocket"
@@ -850,6 +855,8 @@ class Round extends Node3D:
 	var _done := false
 
 	func _ready() -> void:
+		if splash_radius > 0.0:
+			Gun.live_rounds.append(self)
 		var mesh := SphereMesh.new()
 		mesh.radius = 0.14 if kind == "grenade" else 0.18
 		mesh.height = mesh.radius * 2.0
@@ -861,6 +868,9 @@ class Round extends Node3D:
 		body.mesh = mesh
 		body.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		add_child(body)
+
+	func _exit_tree() -> void:
+		Gun.live_rounds.erase(self)
 
 	func _physics_process(delta: float) -> void:
 		if _done:

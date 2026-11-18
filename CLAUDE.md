@@ -253,9 +253,11 @@ without Caleb, and update the gap list when a PR closes a row.
 - Bot armies. A "spawn_bot" marker may name a faction (meta "faction");
   the `Raid` sets it on the bot before `WorldDef.equip_bot`, and `NetSession`
   sends it so a client builds the same soldier. Where
-  `WorldDef.bots_contest_sites` is on, `Raid._tick_orders` gives each faction
-  its orders through `BotBrain.post_to`: a garrison on every site it holds,
-  everyone else against the nearest site it does not. Reinforcements follow
+  `WorldDef.bots_contest_sites` is on, `Raid._tick_orders` has each
+  faction's commander (`WarCommander`, DESIGN.md "Army commanders") give its
+  orders through `BotBrain.post_to`: a garrison on every site it holds and
+  fireteams (`BotBrain.team`) spread over the objectives worth most, never
+  all one way and never a player. Reinforcements follow
   the war: `Raid.bot_target()` is `bot_count` plus a share of
   `WorldDef.war_reinforcements` by `war.intensity`, new bots join the faction
   with the fewest alive, and extra bots are not replaced once it cools.
@@ -289,6 +291,22 @@ without Caleb, and update the gap list when a PR closes a row.
   comes up halfway through the reaction with a bark heard nearby
   (`ActorSkin._update_bark`) before the first shot. Measure with the duel
   bench's `--group 2,3,5` (and `--slots off` to compare).
+  Bots react only to what they sense (DESIGN.md "Enemy senses and squads",
+  Caleb's "everyone converges on me"): sight, a person's noise (shots,
+  `Combat.noise`, told nearest first; footsteps, jets and engines,
+  `BotBrain.noise_of`), a hit and a squadmate's callout (`_call_out`, a
+  snapshot when the spotter raises its gun). What they learn is a place,
+  never live tracking: a lost contact is searched for (`_lost`) and let go.
+  Only a few act on it, through `SquadBoard` claims (static, with an
+  expiry, like the slots): `noise_lookers` go to look at one person's
+  noise, `RING_HUNTERS` army bots may leave their ground to hunt one person
+  (`_may_close`), one bot flanks them, and no two take the same cover. A
+  chase never goes past `leash` beyond a bot's post. A new way to send a bot
+  after a person goes through `_sensed`, never by setting its state.
+  Cover is chosen by the attacker's angle (`_find_cover`), bots peek and
+  move up cover to cover (`_advance`), the slot holder pins a person who
+  ducks (`_suppress`), a badly hurt soldier falls back (`_fall_back`), and
+  a bot runs from a round about to burst (`Gun.live_rounds`, `_think_danger`).
   Melee bots fight like people (DESIGN.md "Melee bots"): held heavies,
   feints (a charge that switches side and lets go as a light) and
   dash-strikes by ring (`BotBrain.RING_HEAVY`, `RING_FEINT`, `RING_DASH`),

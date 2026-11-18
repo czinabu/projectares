@@ -155,6 +155,8 @@ static func _linked(t: Node) -> void:
 	me.global_position = at + Vector3(0, 0, -30)
 	for w in wardens:
 		(w.get_node("Brain") as BotBrain).state = BotBrain.State.PATROL
+		# Posted where they stand, so the call is within their leash.
+		(w.get_node("Brain") as BotBrain).post_to(w.global_position, 12.0)
 		w.health.health = w.health.max_health
 		w.health.armor = 0.0
 	var calls: Array[Actor] = []

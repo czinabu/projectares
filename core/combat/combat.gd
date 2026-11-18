@@ -60,12 +60,18 @@ static func noise(source: Actor, at: Vector3, radius: float) -> void:
 	if source.get_node_or_null("Brain") is BotBrain:
 		return
 	var reach := radius * radius
+	# Nearest first: only the nearest few bots go to look (`BotBrain.noise_lookers`).
+	var near: Array[Actor] = []
 	for node in source.get_tree().get_nodes_in_group("actors"):
 		var other := node as Actor
 		if other == null or other == source or other.is_dead:
 			continue
 		if other.global_position.distance_squared_to(at) > reach or not Raid.together(source, other):
 			continue
+		near.append(other)
+	near.sort_custom(func(a: Actor, b: Actor) -> bool:
+		return a.global_position.distance_squared_to(at) < b.global_position.distance_squared_to(at))
+	for other in near:
 		other.heard.emit(at, source)
 
 

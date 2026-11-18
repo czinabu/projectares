@@ -169,10 +169,9 @@ var _marked_owner := ""
 var war := WarDirector.new()
 ## The sites worth holding, one per "strongpoint" marker on the map.
 var strongpoints: Array[Strongpoint] = []
-## A strongpoint at least this deep in a storm is cover for a push, and an
-## army goes for one up to this many times as far as the nearest clear site.
+## A strongpoint at least this deep in a storm is cover for a push: an
+## army's commander weighs it up (`WarCommander.storm_weight`).
 const STORM_COVER := 0.5
-const STORM_PUSH_REACH := 2.0
 ## Where power weapons turn up (racks at strongpoints, pods, caches). Runs on
 ## the authority only.
 var armory := PowerArmory.new()
@@ -276,6 +275,8 @@ var _caches: Array[Dictionary] = []
 var _bot_respawns: Array[float] = []
 var _reinforce_in := 0.0
 var _orders_in := 0.0
+## Each army's commander (`_tick_orders`).
+var commander := WarCommander.new()
 var _detail_in := 0.0
 ## Bot -> the strongpoint its faction last sent it to.
 var _orders := {}
@@ -912,9 +913,11 @@ func _reinforcement_spawns() -> Array[Node3D]:
 
 
 ## The bot factions' war over the strongpoints (`WorldDef.bots_contest_sites`).
-## Every few seconds each faction is given its orders: a garrison for every
-## site it holds, nearest bots first, and everyone else against the site
-## nearest to its own that it does not hold. Massed, so the armies meet.
+## Every few seconds each army's commander (`WarCommander`, `commander`)
+## gives its orders: a garrison for every site it holds, nearest bots first,
+## and fireteams for the rest, spread over the objectives worth most (a site
+## of its own under attack, open ground, the other army's, a storm-covered
+## push), never all one way, and away from fights it is losing.
 func _tick_orders(delta: float) -> void:
 	if not world.bots_contest_sites or strongpoints.is_empty():
 		return
@@ -923,9 +926,18 @@ func _tick_orders(delta: float) -> void:
 		return
 	_orders_in = ORDERS_EVERY
 	var armies := {}
+	var strength := {}
 	for bot in bots:
-		if is_instance_valid(bot) and not bot.is_dead and bot.has_node("Brain") and not _is_extra(bot) \
-				and float(_busy_until.get(bot, 0.0)) <= clock:
+		if is_instance_valid(bot) and not bot.is_dead and bot.has_node("Brain") and not _is_extra(bot):
+			for point in strongpoints:
+				if bot.global_position.distance_squared_to(point.global_position) <= pow(point.radius * 2.5, 2):
+					if not strength.has(point):
+						strength[point] = {}
+					strength[point][bot.faction] = int(strength[point].get(bot.faction, 0)) + 1
+			# A soldier falling back to its post is left to it.
+			var brain := bot.get_node("Brain") as BotBrain
+			if float(_busy_until.get(bot, 0.0)) > clock or brain._falling_back:
+				continue
 			if not armies.has(bot.faction):
 				armies[bot.faction] = []
 			armies[bot.faction].append(bot)
@@ -933,23 +945,23 @@ func _tick_orders(delta: float) -> void:
 	for bot: Variant in _orders.keys():
 		if not is_instance_valid(bot) or (bot as Actor).is_dead:
 			_orders.erase(bot)
+	var storm: Array = []
+	if world.weather_pushes:
+		storm = strongpoints.filter(func(p: Strongpoint) -> bool:
+			return weather.strength_at(p.global_position) >= STORM_COVER)
+	var teams := {}
+	var first := 1
 	for faction: String in armies:
-		var spare: Array = armies[faction]
-		var held := strongpoints.filter(func(p: Strongpoint) -> bool: return p.holder == "faction:" + faction)
-		for point: Strongpoint in held:
-			spare.sort_custom(func(a: Actor, b: Actor) -> bool:
-				return a.global_position.distance_squared_to(point.global_position) \
-						< b.global_position.distance_squared_to(point.global_position))
-			for i in mini(world.garrison_size, spare.size()):
-				_order(spare.pop_front(), point)
-		var target := _army_target(faction, held, spare)
-		if target != null:
-			for bot: Actor in spare:
-				_order(bot, target)
+		var orders := commander.plan(faction, armies[faction], strongpoints, strength, storm,
+				world.garrison_size, teams, first)
+		first += 100
+		for bot: Actor in orders:
+			_order(bot, orders[bot])
+			(bot.get_node("Brain") as BotBrain).team = int(teams.get(bot, 0))
 
 
-## The site a faction goes for next: of those it does not hold, the one
-## nearest to the ground it already has (or to its bots, if it has none).
+## The site a faction goes for next, by the commander's worth of each site
+## from the middle of the ground it holds (or of its bots, if it holds none).
 func _army_target(faction: String, held: Array, army: Array) -> Strongpoint:
 	var from := Vector3.ZERO
 	var anchors: Array = held if not held.is_empty() else army
@@ -959,22 +971,15 @@ func _army_target(faction: String, held: Array, army: Array) -> Strongpoint:
 		from += node.global_position
 	from /= anchors.size()
 	var best: Strongpoint = null
-	var covered: Strongpoint = null
+	var best_score := 0.0
 	for point in strongpoints:
 		if point.holder == "faction:" + faction:
 			continue
-		if best == null or point.global_position.distance_squared_to(from) \
-				< best.global_position.distance_squared_to(from):
+		var storm := world.weather_pushes and weather.strength_at(point.global_position) >= STORM_COVER
+		var score := commander.worth(faction, point, from, {}, storm)
+		if score > best_score:
+			best_score = score
 			best = point
-		if world.weather_pushes and weather.strength_at(point.global_position) >= STORM_COVER \
-				and (covered == null or point.global_position.distance_squared_to(from)
-					< covered.global_position.distance_squared_to(from)):
-			covered = point
-	# A storm over a site is cover for a push (DESIGN.md "Weather: ash
-	# storms"): the army goes for it unless a clear site is much nearer.
-	if covered != null and best != null and covered.global_position.distance_to(from) \
-			<= best.global_position.distance_to(from) * STORM_PUSH_REACH:
-		return covered
 	return best
 
 
