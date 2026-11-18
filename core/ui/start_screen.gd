@@ -37,6 +37,9 @@ var leave_delay := 0.0
 var margin := Vector2(96, 36)
 
 var start_button: Button
+## The bottom left corner's line: what the game's updater is doing
+## (`set_status`, from `core/start.gd`).
+var status_label: Label
 var _curtain: ColorRect
 var _rule: ColorRect
 var _reveal: Array[Control] = []
@@ -69,6 +72,15 @@ func _ready() -> void:
 		corner.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 		add_child(corner)
 		_reveal.append(corner)
+	status_label = _label("", 16, FAINT, 3)
+	status_label.anchor_top = 1.0
+	status_label.anchor_bottom = 1.0
+	status_label.offset_left = margin.x
+	status_label.offset_right = margin.x + 760
+	status_label.offset_top = -margin.y - 22
+	status_label.offset_bottom = -margin.y
+	add_child(status_label)
+	_reveal.append(status_label)
 	_curtain = ColorRect.new()
 	_curtain.color = Color.BLACK
 	_curtain.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -92,6 +104,11 @@ func press_start() -> void:
 	_started = true
 	start_button.disabled = true
 	start_pressed.emit()
+
+
+## The corner line under everything else: the updater's state. Empty hides it.
+func set_status(text: String) -> void:
+	status_label.text = text.to_upper()
 
 
 ## Fades the screen to black. Returns once it is black.

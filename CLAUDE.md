@@ -507,6 +507,25 @@ without Caleb, and update the gap list when a PR closes a row.
   it comes from) is `MeleeWeapon.swing_from(stance)`. A guard covers its
   stance's side, so a left swing meets a left guard. Windup and guard poses
   must show their side; `threat_dir()` is what a defender reads.
+- The game updates itself (`core/update/updater.gd`, the `Updater`
+  autoload, second after `Boot` and, like it, free of project classes). The
+  Windows client keeps its pack beside the exe (`embed_pck` off); the
+  release workflow stamps each build's number into `ares/build/number` and
+  publishes the pack and `update.json` (build, engine, size, SHA-256) on the
+  rolling "latest" release. An exported, stamped game reads it at launch,
+  downloads a newer pack to `user://updates`, checks it and swaps it in
+  beside the exe (on Windows a batch script does it once the game has
+  closed, since an open pack cannot be replaced; release builds refuse
+  `--main-pack`), then restarts. It never runs in the editor, a test, a
+  server or headless, and anything that changes the engine or a native
+  library needs a fresh install. Its state shows on the start screen's
+  corner and the phone's Servers app, nowhere else. The installer
+  (`.github/installer/ProjectAres.nsi`, NSIS, built by the same workflow as
+  `ProjectAres-Setup.exe`) installs per user into
+  `%LOCALAPPDATA%\Programs\Project Ares`, never Program Files, so the game
+  can write its own pack, and adds desktop and Start menu shortcuts. The
+  logo is a placeholder in `assets/branding` (the window, exe and installer
+  icon and the boot splash), made by its `make_logo.py`.
 - Sound and visual effects (`Sfx`, `Fx`) must stay no-ops on a headless server.
 - Art lives in the `Look` autoload (`core/visual/`), not in gameplay scripts.
   Gameplay scripts keep building plain greybox shapes; `Look` dresses them
