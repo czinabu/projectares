@@ -964,6 +964,26 @@ vehicle has a job:
   white beams spread out over the floor to its edges, never meeting at one
   point, so the fighters stand out.
 
+### Planet kit (proposed, Caleb to confirm)
+
+Worlds are built on planet types. A `PlanetType`
+(`core/world/planet/`) is one kind of planet as data: its sky (worked out,
+not photographed: gradient, sun, moons, a ringed giant, clouds, stars), its
+calm and storm light (the moods `Look.atmosphere` already takes), its
+ground's shape (`PlanetTerrain`, a thread-safe height recipe a map builds
+its `Terrain` from and stamps its own layout on), its ground's surface (one
+material, `planet_ground.gdshader`, whose base, rock, cap and patch layers
+are picked by slope, height and noise), the far horizon ring, its weather
+and the rocks and growth scattered on it (`PlanetProps`, made in code, one
+`MultiMesh` per variant). A world names a type and keeps its own places and
+rules; two worlds on one type look like one planet. Only the ground's
+shape and a type's rule defaults (cold, grip, shot carry) reach the
+simulation; the rest is view only. Six types are drafted: Ashland
+(Ashfront), Glacier (Frostline), Salt Flat (Meridian), and three new ones,
+Basalt Rift, Dune Sea and Spore Marsh. Check by eye with
+`planet_check.tscn -- <dir> [type ids]`. No world uses it yet: each moves in
+its own PR once the threads working in it have merged.
+
 ## 3. The watch
 
 The wrist-mounted holographic watch is the interface for the things you do
