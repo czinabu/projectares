@@ -145,6 +145,15 @@ world, or dying and pressing L, brings you back here.
 After you pull new code, the first launch may show "Updating the project" for a
 few seconds and restart on its own. That is Godot learning about new scripts.
 
+The Windows build is installed once with `ProjectAres-Setup.exe` from the
+"latest" release (or the zip, unzipped anywhere you can write to). The installer
+puts the game in `%LOCALAPPDATA%\Programs\Project Ares`, where Windows keeps
+per-user games, with no admin prompt, adds desktop and Start menu shortcuts, and
+lists it in Settings > Apps to uninstall. It keeps itself up to date: at launch it checks for a newer build, downloads it in the
+background and restarts into it. The start screen's corner and the phone's
+Servers app say which build you run. Only a new Godot version needs a fresh
+download. Pass `-- --no-update` to stop it.
+
 ## Play online (early test)
 
 Walk out of your home base's **door** and you are in the plaza. The first time,
@@ -634,9 +643,14 @@ gunshots die in the wind. Snow is driven past in gusts, spindrift streams
 off the rims, everyone leans into it, and flying is a fight. Past the Sentinel the
 Engine is hollow: the hatch opens on the Drum Hall, a hall big enough for a
 squad to fight across with catwalks up both walls, and in its east end the
-Shaft goes 26 m down two wide ramps. Wardens stand guard inside, the caches
-there pay Engine Coils, no storm or trail gets in and there is a heater on
-each level. The way on from the Shaft's foot is sealed for now.
+Shaft goes 26 m down two wide ramps to the Coil Galleries, a loop of wide
+halls with a raised walkway round dead Engine Coils with a channel of bitter coolant down one
+side, and on to the Descent, three switchback ramps 40 m down. Wardens stand
+guard inside, the caches there pay Engine Coils, no storm or trail gets in,
+it gets colder the deeper you go and there is a heater on each level. At the
+Descent's foot stand the cable lift (fight off its guards, hold its switch and it runs for
+everyone for ten minutes, back up to the hall in seconds) and the sealed
+door to the Heart.
 
 ## Run the tests
 

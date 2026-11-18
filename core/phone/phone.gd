@@ -267,6 +267,7 @@ var link_where := ""
 ## The Servers app: a server turned this game away as out of date, so the
 ## app offers the latest build (`NetSession.UPDATE_URL`).
 var update_needed := false
+var _told_update_ready := false
 ## The Servers app: a friend's server showed a different certificate from
 ## the one this game remembered (`NetSession.identity_changed`, plus the
 ## "address" to join again). The app warns and lets the player trust it.
@@ -288,6 +289,17 @@ func _ready() -> void:
 	for entry: Dictionary in SocialService.GAME_NEWS:
 		news_seen[entry.title] = false
 	_set_open(false)
+	Updater.changed.connect(_on_update_changed)
+
+
+## The game's updater moved on: the Servers app shows it, and a build that
+## finished downloading during play is told once.
+func _on_update_changed() -> void:
+	if Updater.state == "ready" and not _told_update_ready:
+		_told_update_ready = true
+		show_notice("A game update is downloaded. It goes in next time you start, or restart from the Servers app.")
+	if is_open and app == "servers":
+		refresh()
 
 
 ## While the phone is out it has the mouse: a click on its screen lands on the
@@ -1368,9 +1380,27 @@ func trust_changed_server() -> void:
 	join_requested.emit(address)
 
 
-## Opens the page with the latest build in the player's browser.
+## Gets the latest build: the game's own updater where it runs (an installed
+## game), else the download page in the player's browser.
 func get_update() -> void:
-	OS.shell_open(NetSession.UPDATE_URL)
+	match Updater.state:
+		"off":
+			OS.shell_open(NetSession.UPDATE_URL)
+		"reinstall", "stuck":
+			Updater.open_downloads()
+		"ready":
+			restart_for_update()
+		_:
+			Updater.check()
+
+
+## Restarts the game into the downloaded build, saving first. Only offered
+## while offline, so nothing is in flight.
+func restart_for_update() -> void:
+	if linked() or Updater.state != "ready":
+		return
+	Profile.save()
+	Updater.restart_now()
 
 
 ## Starts a server on this computer and heads out to it. The base's door
@@ -1450,10 +1480,14 @@ func _draw_servers() -> void:
 		var update_card := _card()
 		var update_box: VBoxContainer = update_card.get_child(0)
 		update_box.add_child(_label("Update needed", 17, UiTheme.ACCENT))
-		update_box.add_child(_label("That server runs a newer version of the game. Download the latest build, "
+		update_box.add_child(_label("That server runs a newer version of the game. Get the latest build, "
 				+ "start it, and join again.", 13, DIM_INK))
+		if Updater.state != "off":
+			update_box.add_child(_label(Updater.status_line(), 14, UiTheme.INK))
 		update_box.add_child(_button("Get the update", get_update))
 		_body.add_child(update_card)
+	elif Updater.state != "off":
+		_draw_game_updates()
 	if not server_changed.is_empty():
 		var changed_card := _card()
 		var changed_box: VBoxContainer = changed_card.get_child(0)
@@ -1517,6 +1551,24 @@ func _draw_servers() -> void:
 	match _link_focus:
 		"name": name_edit.grab_focus.call_deferred()
 		"address": _address_edit.grab_focus.call_deferred()
+
+
+## The Servers app's card on the game's own updates (`Updater`): the build
+## running, a download under way, and what to press when there is something
+## to do.
+func _draw_game_updates() -> void:
+	var card := _card()
+	var box: VBoxContainer = card.get_child(0)
+	box.add_child(_label("Game updates", 17, UiTheme.INK))
+	box.add_child(_label(Updater.status_line(), 13, DIM_INK))
+	match Updater.state:
+		"ready":
+			box.add_child(_button("Restart and update", restart_for_update))
+		"reinstall", "stuck":
+			box.add_child(_button("Get the new version", Updater.open_downloads))
+		"current", "failed", "idle":
+			box.add_child(_button("Check now", Updater.check))
+	_body.add_child(card)
 
 
 ## Each choice of the look as a row to scroll through: arrows, the mouse

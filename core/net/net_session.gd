@@ -85,7 +85,7 @@ signal base_visit_requested(owner_name: String, stash: Array, loadout: Dictionar
 signal portal_travel(destination: String)
 
 const DEFAULT_PORT := 24565
-const PROTOCOL := 49
+const PROTOCOL := 50
 ## Every packet is compressed, both ways. State updates are mostly repeated
 ## numbers, and a big battle sends a player hundreds of them a second. Server
 ## and client must agree, so a change here needs a new PROTOCOL.
@@ -120,6 +120,7 @@ const PROTOCOL := 49
 ## plan in `_base_visit`.
 ## 48: a vehicle's ride state lists who sits on each passenger seat (the
 ## rover seats four).
+## 50: a lift powered or run down (`_lift`).
 ## Where an out-of-date game gets the latest build: the rolling "latest"
 ## release the Windows client workflow publishes (docs/hosting.md).
 const UPDATE_URL := "https://github.com/czinabu/projectares/releases/tag/latest"
@@ -606,6 +607,9 @@ func _start_server_raid() -> void:
 		for peer in _joined_peers:
 			_ice_holes.rpc_id(peer, holes))
 	raid.grid_called.connect(_on_server_grid_called)
+	raid.lift_changed.connect(func(id: String, left: float) -> void:
+		for peer in _joined_peers:
+			_lift.rpc_id(peer, id, left))
 	raid.army_pushed.connect(func(site: int, from: Vector3, title: String, loud: bool) -> void:
 		for peer in _joined_peers:
 			_army_push.rpc_id(peer, site, from, title, loud))
@@ -918,6 +922,9 @@ func _reclaim(peer: int, actor: Actor) -> void:
 		_worn_changed.rpc_id(peer, id, "helmet", actor.visor.item_id)
 	if actor.frame_id != "":
 		_worn_changed.rpc_id(peer, id, "armor", actor.frame_id)
+	# A rig or chip swapped from the pack since the deploy.
+	_worn_changed.rpc_id(peer, id, "flight_rig", actor.flight.item_id if actor.flight.enabled else "")
+	_worn_changed.rpc_id(peer, id, "ability", actor.ability.item_id if actor.ability.enabled else "")
 	var arms: Array = []
 	for weapon in actor.weapons:
 		var gun := weapon as Gun
@@ -979,6 +986,13 @@ func _on_server_actor_spawned(actor: Actor) -> void:
 	actor.frame_changed.connect(func(item_id: String) -> void:
 		for peer in _joined_peers:
 			_worn_changed.rpc_id(peer, id, "armor", item_id))
+	# So is a flight rig or ability chip swapped in from the pack.
+	actor.rig_changed.connect(func(item_id: String) -> void:
+		for peer in _joined_peers:
+			_worn_changed.rpc_id(peer, id, "flight_rig", item_id))
+	actor.ability_changed.connect(func(item_id: String) -> void:
+		for peer in _joined_peers:
+			_worn_changed.rpc_id(peer, id, "ability", item_id))
 	# A weapon summoned from the watch is shown to all.
 	actor.weapon_swapped.connect(func(item_id: String, mag: int, reserve: int) -> void:
 		for peer in _joined_peers:
@@ -1615,6 +1629,9 @@ func _send_world(peer: int) -> void:
 	_sent_tracks.erase(peer)
 	if not raid.ice_holes.is_empty():
 		_ice_holes.rpc_id(peer, raid.pack_ice_holes())
+	for id: String in raid.lifts:
+		if raid.lift_left(id) > 0.0:
+			_lift.rpc_id(peer, id, raid.lift_left(id))
 	if raid is Race:
 		_race_board.rpc_id(peer, (raid as Race).public_board())
 
@@ -2693,17 +2710,23 @@ func _power_changed(id: int, item_id: String, mag: int, reserve: int) -> void:
 	Loadout.set_power(actor, item_id, mag, reserve, false)
 
 
-## Client: someone put on a helmet or armor frame (`kind` "helmet" or
-## "armor"), or took one off. The server decided it; armor left follows in
-## the state.
+## Client: someone put on a helmet, armor frame, flight rig or ability chip
+## (`kind` "helmet", "armor", "flight_rig" or "ability"), or took one off.
+## The server decided it; armor left follows in the state.
 @rpc("authority", "call_remote", "reliable")
 func _worn_changed(id: int, kind: String, item_id: String) -> void:
 	var actor: Actor = _actors.get(id)
-	if actor == null or not is_instance_valid(actor) or kind not in ["helmet", "armor"] \
+	if actor == null or not is_instance_valid(actor) or kind not in ["helmet", "armor", "flight_rig", "ability"] \
 			or (item_id != "" and not ItemDB.has_tag(item_id, kind)):
 		return
 	if kind == "helmet":
 		Loadout.wear_helmet(actor, item_id)
+	elif kind == "flight_rig":
+		if item_id != (actor.flight.item_id if actor.flight.enabled else ""):
+			Loadout.wear_rig(actor, item_id)
+	elif kind == "ability":
+		if item_id != (actor.ability.item_id if actor.ability.enabled else ""):
+			Loadout.wear_ability(actor, item_id)
 	elif item_id != actor.frame_id:
 		Loadout.wear_frame(actor, item_id)
 
@@ -3344,6 +3367,14 @@ func _grid_call(id: int) -> void:
 func _ice_crack(at: Vector3, stage: int) -> void:
 	if raid != null and raid.world != null and raid.world.thin_ice:
 		raid.ice_cracked.emit(at, clampi(stage, 1, Raid.ICE_WARNINGS.size() + 1))
+
+
+## A lift was powered with `left` seconds to run, or ran down (0), for the
+## view (`Raid.lifts`).
+@rpc("authority", "call_remote", "reliable")
+func _lift(id: String, left: float) -> void:
+	if raid != null:
+		raid.set_lift(id, left)
 
 
 ## The open holes in the ice (`Raid.pack_ice_holes`).
