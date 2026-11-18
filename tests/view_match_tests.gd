@@ -3,12 +3,15 @@ extends RefCounted
 ## the same body, posed from one `ActionPose` per actor, holding the same
 ## weapon in the same hand.
 
+const Arsenal := preload("res://tests/melee_arsenal_tests.gd")
+
 
 static func run(t: Node) -> void:
 	print("First and third person match")
 	await _check_without_skin(t)
 	await _check_with_skin(t)
 	await _check_katana_cuts(t)
+	_check_techniques(t)
 
 
 ## The shared state works with no model at all (headless, or a skin without
@@ -34,8 +37,8 @@ static func _check_without_skin(t: Node) -> void:
 	pose.advance(0.016)
 	t.check(is_equal_approx(pose.reload, 1.0), "halfway through a reload the gun is at its deepest")
 	var mid := pose.gun_offset()
-	t.check(mid.origin.y < -0.05 and mid.basis.get_euler().z > 0.3,
-			"a reload brings the gun down and tips it over")
+	t.check(mid.origin.x < -0.05 and mid.origin.y > -0.05 and mid.basis.get_euler().z > 0.3,
+			"a reload brings the gun in to the middle, where the eyes see it, and tips it over")
 	gun._reload_left = gun.reload_time * 0.97
 	await t.frames(1)
 	pose.advance(0.016)
@@ -57,7 +60,7 @@ static func _check_without_skin(t: Node) -> void:
 			await t.frames(1)
 			pose.advance(1.0 / 30.0)
 		held[side] = pose.reach
-		t.check(pose.reach.distance_to(pose.arm_windup[side]) < 0.02 and pose.reach_weight > 0.99,
+		t.check(pose.reach.distance_to(pose.windup_reach(blade, side)) < 0.02 and pose.reach_weight > 0.99,
 				"the shared pose reaches for the %s windup" % ["left", "right", "overhead"][side])
 	t.check(held[MeleeWeapon.Dir.LEFT].x < held[MeleeWeapon.Dir.RIGHT].x - 0.2,
 			"a left windup holds the blade further left")
@@ -92,7 +95,7 @@ static func _check_without_skin(t: Node) -> void:
 		await t.frames(1)
 		pose.advance(1.0 / 30.0)
 	var from := MeleeWeapon.swing_from(blade.stance)
-	t.check(pose.reach.distance_to(pose.arm_windup[from]) < 0.02 and pose.elbow_raise > 0.9,
+	t.check(pose.reach.distance_to(pose.windup_reach(blade, from)) < 0.02 and pose.elbow_raise > 0.9,
 			"holding toward a heavy draws the arm back to the side the swing comes from")
 	blade._charge = -1.0
 	blade.attack_dir = MeleeWeapon.Dir.RIGHT
@@ -134,7 +137,7 @@ static func _check_ready_holds(t: Node, pose: ActionPose, blade: MeleeWeapon) ->
 		probe.item_id = id
 		holds[id] = pose.ready_hold(probe)
 	t.check(Look.ready_hold(blade) == "upright" and holds["blade_scrap"] == pose.ready_holds["upright"],
-			"the scrap blade, a straight sword, is held upright")
+			"the scrap blade, a straight sword, has the sword hold")
 	t.check(holds["blade_arc"] == pose.ready_holds["katana"], "the arc blade, a katana, has the katana hold")
 	t.check(holds["knife_gutter"] == pose.ready_holds["knife"], "a knife has the knife hold")
 	t.check(not holds["axe_splitter"].is_empty(), "every one-handed weapon has a ready hold")
@@ -142,13 +145,15 @@ static func _check_ready_holds(t: Node, pose: ActionPose, blade: MeleeWeapon) ->
 			"two-handed weapons are carried, not held ready")
 	var up := func(hold: Array) -> Vector3:
 		return (hold[1] as Vector3).normalized()
-	t.check(up.call(holds["blade_scrap"]).y > 0.98, "the sword stands nearly straight up")
+	var sword: Vector3 = up.call(holds["blade_scrap"])
+	t.check(sword.y > 0.6 and sword.z < -0.4, "the sword's point is up and forward, toward a foe's face")
+	t.check((holds["blade_scrap"][0] as Vector3).z > 0.0, "with the elbow bent, the fist drawn in from the old arm's length hold")
 	var katana: Vector3 = up.call(holds["blade_arc"])
 	t.check(katana.y > 0.8 and katana.x < -0.2 and katana.z < -0.2, "the katana leans in toward the middle and forward")
 	var knife: Vector3 = up.call(holds["knife_gutter"])
 	t.check(absf(knife.y) < 0.2 and knife.x > 0.6 and knife.z < 0.0, "the knife lies flat, its point out to the right and ahead")
-	t.check(holds["blade_arc"][2] == "hilt" and holds["knife_gutter"][2] == "guard" and holds["blade_scrap"][2] == "",
-			"the off hand holds the katana's handle, guards behind the knife and hangs free with the sword")
+	t.check(holds["blade_arc"][2] == "hilt" and holds["knife_gutter"][2] == "guard" and holds["blade_scrap"][2] == "guard",
+			"the off hand holds the katana's handle and is up as a guard beside the knife and the sword")
 	t.check(holds["knife_gutter"][3] and not holds["blade_scrap"][3] and not holds["blade_arc"][3],
 			"only the knife is held in a reverse grip")
 	# The hand node is turned so the blade, with its own rest pitch, points
@@ -167,7 +172,7 @@ static func _check_ready_holds(t: Node, pose: ActionPose, blade: MeleeWeapon) ->
 	blade._charge = blade.hold_time * 0.5
 	var drawn: float = pose.ready_amount(blade)
 	t.check(drawn > 0.3 and drawn < 0.7, "drawing back for a heavy eases out of the hold")
-	t.check(pose.arm_reach(blade).distance_to(pose.ready_reach(blade).lerp(pose.arm_windup[MeleeWeapon.swing_from(blade.stance)], 0.5)) < 0.01,
+	t.check(pose.arm_reach(blade).distance_to(pose.ready_reach(blade).lerp(pose.windup_reach(blade, MeleeWeapon.swing_from(blade.stance)), 0.5)) < 0.01,
 			"and the hand moves from the hold toward the windup")
 	blade._charge = -1.0
 
@@ -343,7 +348,7 @@ static func _check_with_skin(t: Node) -> void:
 	await t.frames(2)
 
 
-## The katana cuts in both hands (kenjutsu and kendo, `ActionPose.cuts`):
+## The katana cuts in both hands (kenjutsu and kendo, `ActionPose.techniques` "cut"):
 ## kesa-giri from the right, gyaku-kesa from the left, shomen from over
 ## the head and a tsuki for the heavy from the middle. The cut sweeps out
 ## in front of the body edge first, and the off hand stays on the handle
@@ -379,11 +384,11 @@ static func _check_katana_cuts(t: Node) -> void:
 	# pointing out ahead there, edge leading the way the cut goes.
 	blade._shown_kind = "light"
 	for dir: int in [D.RIGHT, D.LEFT, D.OVERHEAD]:
-		var hit: Vector3 = pose.cuts[dir][1][0]
-		t.check(pose.cut_reach(blade, dir, 0.5).distance_to(hit) < 0.001, "cut %d passes through its contact key" % dir)
-		var at_hit: Basis = pose._cut_blade_at(dir, 0.5)
+		var hit: Vector3 = pose.techniques["cut"]["swings"][dir][1][0]
+		t.check(pose.keyed_reach(blade, dir, 0.5).distance_to(hit) < 0.001, "cut %d passes through its contact key" % dir)
+		var at_hit: Basis = pose._blade_at(blade, dir, 0.5)
 		t.check((at_hit * Vector3.UP).z < -0.6, "cut %d: at the hit the blade points out in front" % dir)
-		t.check((pose._cut_blade_at(dir, 0.0) * Vector3.UP).y > 0.5, "cut %d: wound up the blade is raised" % dir)
+		t.check((pose._blade_at(blade, dir, 0.0) * Vector3.UP).y > 0.5, "cut %d: wound up the blade is raised" % dir)
 		var edge := at_hit * pose.cut_edge
 		var leads := edge.x < -0.3 if dir == D.RIGHT else (edge.x > 0.3 if dir == D.LEFT else edge.y < -0.3)
 		t.check(leads, "cut %d: the edge leads the cut (%s)" % [dir, edge])
@@ -391,17 +396,17 @@ static func _check_katana_cuts(t: Node) -> void:
 		# or out to the side, not back into the chest.
 		var through := false
 		for k in 11:
-			var way: Vector3 = pose._cut_blade_at(dir, k / 10.0) * Vector3.UP
+			var way: Vector3 = pose._blade_at(blade, dir, k / 10.0) * Vector3.UP
 			through = through or (way.z > 0.5 and absf(way.x) < 0.2 and way.y < 0.0)
 		t.check(not through, "cut %d never swings back through the body" % dir)
 	t.check(pose.windup_reach(blade, D.RIGHT).x > pose.windup_reach(blade, D.LEFT).x
 			and pose.windup_reach(blade, D.OVERHEAD).y > pose.windup_reach(blade, D.RIGHT).y,
 			"windups show their side: by the right shoulder, the left, and over the head")
-	t.check(str(pose.cut_key(blade, D.OVERHEAD)) == str(D.OVERHEAD), "a light from the middle is a shomen cut")
+	t.check(str(pose.technique_key(blade, D.OVERHEAD)) == str(D.OVERHEAD), "a light from the middle is a shomen cut")
 	blade._shown_kind = "heavy"
-	t.check(str(pose.cut_key(blade, D.OVERHEAD)) == "tsuki" and str(pose.cut_key(blade, D.RIGHT)) == str(D.RIGHT),
+	t.check(str(pose.technique_key(blade, D.OVERHEAD)) == "heavy" and str(pose.technique_key(blade, D.RIGHT)) == str(D.RIGHT),
 			"a heavy from the middle is a two-handed thrust, from a side a heavy kesa cut")
-	t.check(pose.windup_reach(blade, D.RIGHT).y > pose.cuts[D.RIGHT][0][0].y, "a heavy cut is raised higher")
+	t.check(pose.windup_reach(blade, D.RIGHT).y > (pose.techniques["cut"]["swings"][D.RIGHT][0][0] as Vector3).y, "a heavy cut is raised higher")
 	blade._shown_kind = "light"
 	# Held mid-swing (a light from the right): both hands on the handle,
 	# the blade turned the way the cut has it.
@@ -425,7 +430,7 @@ static func _check_katana_cuts(t: Node) -> void:
 	skel.skeleton_updated.disconnect(read)
 	t.check(gap[0] < Look.HAND_WIDTH * 1.25, "the off fist is on the handle mid-cut (%.3f m off)" % gap[0])
 	var aim := p.global_basis.orthonormalized() * Basis(Vector3.RIGHT, p.cmd.pitch)
-	var wanted: Vector3 = (aim * (pose.cut_blade(blade) as Basis) * Vector3.UP).normalized()
+	var wanted: Vector3 = (aim * (pose.technique_blade(blade) as Basis) * Vector3.UP).normalized()
 	var shown := (blade.visual.global_basis.orthonormalized() * Vector3.UP).normalized()
 	t.check(shown.angle_to(wanted) < 0.4, "the blade is shown the way the cut has it (%.2f rad off)" % shown.angle_to(wanted))
 	# Done: at rest it is back in the ready hold, both hands on.
@@ -433,8 +438,51 @@ static func _check_katana_cuts(t: Node) -> void:
 	blade._cooldown = 0.0
 	pose._follow_left = 0.0
 	await t.frames(40)
-	t.check(pose.cut_blade(blade) == null and pose.held_ready > 0.95 and arm._hilt > 0.95,
+	t.check(pose.technique_blade(blade) == null and pose.held_ready > 0.95 and arm._hilt > 0.95,
 			"after the cut the katana is back in its two-handed ready hold")
 	Look.enabled = false
 	raid.queue_free()
 	await t.frames(2)
+
+
+## Every melee weapon fights its own way (`ActionPose.techniques`, Caleb's
+## call): each has a technique with all three sides, its strikes meet the
+## foe in front of the chest where the eyes see them, its guards show their
+## side, and the knife, the axe, the hammer and the spear each have their
+## own rather than the sword's.
+static func _check_techniques(t: Node) -> void:
+	var pose := ActionPose.new()
+	var D := MeleeWeapon.Dir
+	var eye := Vector3(0.0, 1.6, 0.0) - Actor.HAND_REST
+	var picked := {}
+	for id: String in ItemDB.all_ids():
+		if not ItemDB.has_tag(id, "melee"):
+			continue
+		var melee := Arsenal._make(id) as MeleeWeapon
+		if melee == null:
+			continue
+		var tech := pose.technique(melee)
+		picked[id] = tech
+		var table: Dictionary = pose.techniques[tech]
+		t.check((table["swings"] as Dictionary).has(D.RIGHT) and table["swings"].has(D.LEFT) and table["swings"].has(D.OVERHEAD),
+				"%s (%s) swings from every side" % [id, tech])
+		var in_view := true
+		for dir: int in [D.RIGHT, D.LEFT, D.OVERHEAD]:
+			# The contact key, seen from the eyes: ahead of them, and inside
+			# a 75 degree high view looking level.
+			var hit := pose.keyed_reach(melee, dir, 0.5) - eye
+			in_view = in_view and hit.z < -0.2 and absf(hit.y) / -hit.z < tan(deg_to_rad(37.5)) \
+					and absf(hit.x) / -hit.z < tan(deg_to_rad(37.5)) * 16.0 / 9.0
+		t.check(in_view, "%s strikes in front of the eyes" % id)
+		var right: Vector3 = pose.guard_keys(melee, D.RIGHT)[0]
+		var left: Vector3 = pose.guard_keys(melee, D.LEFT)[0]
+		var high: Vector3 = pose.guard_keys(melee, D.OVERHEAD)[0]
+		t.check(left.x < right.x - 0.2 and high.y > maxf(left.y, right.y) + 0.1,
+				"%s's guards show their side (left further left, overhead highest)" % id)
+		t.check(right.z - eye.z < -0.2 and left.z - eye.z < -0.2, "%s guards in front of the body" % id)
+		melee.free()
+	t.check(picked.get("knife_gutter", "") == "knife" and picked.get("axe_splitter", "") == "chop"
+			and picked.get("hammer_breaker", "") == "chop2" and picked.get("spear_lancer", "") == "thrust2"
+			and picked.get("blade_arc", "") == "cut" and picked.get("blade_scrap", "") == "slash",
+			"each kind of weapon has its own technique (%s)" % str(picked))
+	pose.free()

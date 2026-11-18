@@ -1085,6 +1085,42 @@ heavy.
 **Later:** a melee pass on the stances and animations (Caleb), and bands
 for the melee bench once it has been played.
 
+### Melee technique (Caleb's call: each weapon is used the way it really is)
+
+Every attack and guard matches how its weapon is really used, and it reads
+as well from the eyes as from behind: one body, both views.
+
+- **Ready.** A one-handed weapon is held with the elbow bent and the fist
+  low in front of the hip, the point up toward the foe's face, never with
+  the arm locked out at shoulder height. The empty off hand stays up in
+  front of the chest as a guard through every swing and block. A katana is
+  held in both hands; a hammer and a spear rest across the body.
+- **Swings.** Each weapon has its own technique, keyed at the windup, the
+  moment of contact and the end of the follow-through: the hand and the
+  way the blade points, so the blade turns through the cut edge first and
+  the strike lands in front of the chest, where the eyes see it.
+  - Sword: diagonal forehand and backhand cuts from the shoulder to the far
+    hip, a vertical cut from overhead, and a lunging thrust for its heavy.
+  - Axe: raised high behind the shoulder and chopped down steeply, head
+    first.
+  - Knife: it turns over from its reverse-grip rest into a forward grip
+    for short, quick slashes across the chest, and stabs at the ribs from
+    the hip for its heavy.
+  - Hammer: hauled up over the shoulder in both hands and brought down
+    through the body.
+  - Spear: thrusts from the hip along the aim, the front hand guiding the
+    shaft, and a long lunging thrust for its heavy.
+  - Katana: kenjutsu cuts in both hands (kesa-giri, gyaku-kesa, shomen) and
+    a tsuki for its heavy.
+- **Guards.** Each side has its own guard: the weapon held up across that
+  side in front of the body (a spear's or hammer's shaft across it, a
+  knife up by the face), overhead held level above the head. A guard
+  always shows which side it covers, and it is in view from the eyes.
+
+- **Stance.** With a melee weapon out on the ground the legs take a
+  fighting stance: knees bent, the body leant in, and standing still the
+  feet staggered, lead foot forward (`Locomotion.fight`).
+
 ### Gadgets
 
 The slot exists with three chips (Phase Step, Kinetic Barrier, Shock Pulse).

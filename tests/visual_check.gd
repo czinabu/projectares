@@ -71,6 +71,16 @@ func _ready() -> void:
 	# row per move, so the motion (not one pose) can be judged. Naming an
 	# item after it (`--swing-only blade_arc`) films only that weapon's
 	# moves, from the front three-quarter and from the eyes (first person).
+	# `-- <output_dir> --technique-only <item id>` films one melee weapon's
+	# held ready stance, every swing and every guard, from the front
+	# three-quarter and from the eyes side by side, in one raid (quick to
+	# run while tuning `ActionPose.techniques`).
+	if "--technique-only" in args:
+		var at := args.find("--technique-only")
+		await _technique_sheet(out_dir, args[at + 1] if at + 1 < args.size() else "blade_scrap")
+		get_tree().quit()
+		return
+
 	if "--swing-only" in args:
 		var at := args.find("--swing-only")
 		var only: String = args[at + 1] if at + 1 < args.size() and ItemDB.has_item(args[at + 1]) else ""
@@ -3348,6 +3358,114 @@ func _phone_shots(out_dir: String) -> void:
 	phone.queue_free()
 	raid.queue_free()
 	await _settle(3)
+
+
+## One melee weapon's whole technique on one sheet: a row per move (the
+## ready stance, each light, the heavies, each guard), frames every
+## `SWING_STEP` ticks, each frame from the front three-quarter (left) and
+## from the eyes (right), rendered together by two sub-viewports.
+func _technique_sheet(out_dir: String, id: String) -> void:
+	var moves := ["ready", "light_right", "light_left", "light_overhead", "heavy_right", "heavy_left", "heavy",
+			"guard_right", "guard_left", "guard_overhead"]
+	var frames := 10
+	var cell := 200
+	var wide := 356
+	var raid := Raid.new()
+	add_child(raid)
+	raid.start(Worlds.get_world("ashfront"), 42, ["rifle_scrap", id, "plate_light"])
+	for bot in raid.bots:
+		bot.queue_free()
+	var player := raid.player
+	await _settle(10)
+	player.cmd.switch_weapon = player.weapons.size() - 1
+	for i in player.weapons.size():
+		if player.weapons[i] is MeleeWeapon:
+			player.cmd.switch_weapon = i
+	await _settle(5)
+	player.cmd.switch_weapon = -1
+	await _settle(40)
+	raid.zone_rules = false
+	player.weapons_locked = false
+	var blade := player.get_active_weapon() as MeleeWeapon
+	blade.light_stamina = 0.0
+	blade.heavy_stamina = 0.0
+	var skin: Node = player.get_node_or_null("Skin")
+	var views := []
+	for view in ["face", "side", "first"]:
+		var port := SubViewport.new()
+		# The eyes see a 16:9 screen, as the game does.
+		port.size = Vector2i(wide if view == "first" else cell, cell)
+		port.world_3d = get_viewport().world_3d
+		port.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+		add_child(port)
+		var cam := Camera3D.new()
+		port.add_child(cam)
+		cam.current = true
+		if view == "first":
+			cam.fov = 75.0
+			cam.near = 0.02
+			cam.cull_mask &= ~(1 << (16 - 1))  # Mirror.HEAD_LAYER
+		else:
+			cam.fov = 40.0
+		views.append(cam)
+	if skin != null:
+		skin.hide_head(true)
+	var at := player.global_position
+	var ahead := -player.global_basis.z
+	var right := player.global_basis.x
+	views[0].global_position = at + ahead * 2.4 + right * 1.4 + Vector3(0, 1.5, 0)
+	views[0].look_at(at + Vector3(0, 1.2, 0))
+	views[1].global_position = at + right * 2.8 + ahead * 0.4 + Vector3(0, 1.45, 0)
+	views[1].look_at(at + Vector3(0, 1.25, 0))
+	var lamp := OmniLight3D.new()
+	lamp.omni_range = 9.0
+	lamp.light_energy = 2.0
+	raid.add_child(lamp)
+	lamp.global_position = views[0].global_position + Vector3(0, 0.8, 0)
+	var sheet := Image.create(frames * (2 * cell + wide), moves.size() * cell, false, Image.FORMAT_RGBA8)
+	var start := player.global_transform
+	var yaw := player.cmd.yaw
+	var dirs := {"right": MeleeWeapon.Dir.RIGHT, "left": MeleeWeapon.Dir.LEFT, "overhead": MeleeWeapon.Dir.OVERHEAD}
+	for row in moves.size():
+		var move: String = moves[row]
+		var side: String = move.get_slice("_", 1) if "_" in move else "overhead"
+		# A swing goes toward its stance: the side it comes from is the mirror.
+		var dir: int = dirs[side]
+		player.cmd.stance = MeleeWeapon.swing_from(dir) if move.begins_with("light") or move.begins_with("heavy") else dir
+		# A heavy lunges: every move starts from the same spot.
+		player.global_transform = start
+		player.velocity = Vector3.ZERO
+		player.cmd.yaw = yaw
+		await _settle(3)
+		match move.get_slice("_", 0):
+			"heavy":
+				player.cmd.tertiary_pressed = true
+			"guard":
+				player.cmd.secondary = true
+			"light":
+				player.cmd.primary_pressed = true
+		for col in frames:
+			await get_tree().physics_frame
+			await get_tree().physics_frame
+			player.cmd.primary_pressed = false
+			player.cmd.tertiary_pressed = false
+			if skin != null:
+				var aimed: Basis = player.global_basis.orthonormalized() * Basis(Vector3.RIGHT, player.cmd.pitch)
+				var eye: Variant = skin.eye_point(aimed)
+				views[2].global_transform = Transform3D(aimed, eye if eye != null else player.get_eye_position())
+			for k in SWING_STEP - 2:
+				await get_tree().process_frame
+			await RenderingServer.frame_post_draw
+			for v in 3:
+				var img: Image = views[v].get_viewport().get_texture().get_image()
+				img.convert(Image.FORMAT_RGBA8)
+				sheet.blit_rect(img, Rect2i(Vector2i.ZERO, img.get_size()), Vector2i(col * (2 * cell + wide) + v * cell, row * cell))
+		player.cmd.secondary = false
+		await _settle(45)
+		print("filmed %s %s" % [id, move])
+	var path := out_dir.path_join("technique_%s.png" % id)
+	sheet.save_png(path)
+	print("saved %s" % path)
 
 
 ## Ashfront and the home base for judging edges and how far things read: a
