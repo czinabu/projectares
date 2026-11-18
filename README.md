@@ -347,6 +347,7 @@ you have.
   mechanical suits) march with them, and toward the core the rare Kiln
   Walker paints you with a tracking beam before its cannon fires; its weak
   spot is the glowing vent on its back. Frostline's Wardens shoot
+  and call each other to a fight, the Engine Sentinel guards the hatch,
   and its Feral stalkers rush. Rival raiders drop in with a real kit, loot,
   and sign out.
 - Loot caches with five rarity tiers, a backpack, and a stash that persists.
@@ -426,7 +427,7 @@ you have.
   raise the watch and click. Toys on your watch go home when you sign out.
   Press E on any vehicle nobody is riding to take it, including someone
   else's. Sign out riding one and it goes to your stash; die or leave it
-  behind and it is gone. The Scrapper is a motorbike (22 m/s, boost 29).
+  behind and it is gone. The Scrapper is a motorbike (24 m/s, boost 32).
   The Raider is a two-seat hoverbike (26 m/s, boost 35): it drifts through
   turns and holds level over a short gap, and a passenger sits behind you.
   The rover, the mech and the jet are drivable too, still without their
@@ -614,7 +615,21 @@ the still, cold air a gunshot carries twice as far, to people and to the
 bots alike. The middle of the frozen lake is thin, darker ice: on foot or
 on a bike it holds, but a rover or a mech that lingers on it cracks it
 (you hear it twice) and goes through, and whoever rode it lands in the
-freezing water (your watch pulls the vehicle back out). Whiteouts are planned in DESIGN.md section 2, "Frostline".
+freezing water (your watch pulls the vehicle back out). The Wardens are
+the Engine's defence grid, still running: one you hurt and leave standing
+calls every Warden within 60 m (a teal ring runs out from its feet with a
+chirp), so a clean kill in one blow stays quiet. At the Engine's hatch
+stands the grid's boss, the Engine Sentinel: a Warden three metres tall
+whose lance holds a teal tracking beam on you before it fires (break the
+line to reset it) and whose back takes double damage. It is made for one
+player and grows tougher with each other player near it, comes back a
+few minutes after it falls, and like any Frostline warlord now and then
+carries one of the war's blueprints, as the relay on the Engine's back
+rarely does. The contract board has Frostline jobs of its own, one daily
+and one weekly, all doable alone (search the relay, break Warden patrols,
+bring down the Sentinel), that count only from a life there; the weeklies
+pay a blueprint. Whiteouts are planned in DESIGN.md
+section 2, "Frostline".
 
 ## Run the tests
 

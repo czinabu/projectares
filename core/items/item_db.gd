@@ -292,7 +292,7 @@ func _ready() -> void:
 	# Vehicles. Not carried: the Raid parks one next to you when you deploy, and
 	# whoever signs out riding it takes it home. Stats tune Vehicle.
 	register("bike_scrapper", "Scrapper Bike", Rarity.UNCOMMON, 600, ["vehicle", "vendor"],
-			{"max_speed": 22.0, "boost_speed": 29.0, "body_color": Color(0.6, 0.45, 0.3),
+			{"max_speed": 24.0, "boost_speed": 32.0, "body_color": Color(0.6, 0.45, 0.3),
 			"race": RACE_SCRAPPER},
 			"Rattly motorbike. Fast, loud, and no cover for the rider.")
 	# The Raider is a hoverbike: the "hover" tag floats it (`Vehicle`, "Hover").
@@ -330,7 +330,7 @@ func _ready() -> void:
 			"Armored four-wheeler. Slow to turn and needs open ground, but it shrugs off rough terrain.")
 	register("mech_bulwark", "Bulwark Mech", Rarity.EPIC, 4200, ["vehicle", "walker"],
 			{"model": "mech", "max_speed": 9.0, "boost_speed": 13.0, "accel": 8.0, "turn_rate": 1.2,
-			"pivot_turn": 1.0, "full_turn_speed": 3.0, "jump_speed": 9.0, "lean_amount": -0.03,
+			"pivot_turn": 1.0, "full_turn_speed": 3.0, "jump_speed": 9.0, "handbrake": false, "lean_amount": -0.03,
 			"rider_lean": 0.2, "body_size": Vector3(1.9, 3.3, 1.9), "seat_offset": Vector3(0.0, 1.52, 0.15),
 			"seat_point": Vector3(0.0, 2.3, 0.15),
 			"grip_points": [Vector3(-0.25, 2.5, -0.38), Vector3(0.25, 2.5, -0.38)] as Array[Vector3],
@@ -341,7 +341,7 @@ func _ready() -> void:
 			+ "sits exposed on its back.")
 	register("jet_kestrel", "Kestrel Jet", Rarity.EPIC, 4600, ["vehicle", "aircraft"],
 			{"model": "jet", "max_speed": 45.0, "boost_speed": 60.0, "accel": 10.0, "turn_rate": 1.3,
-			"full_turn_speed": 8.0, "takeoff_speed": 24.0, "stall_speed": 22.0, "climb_rate": 10.0,
+			"full_turn_speed": 8.0, "takeoff_speed": 24.0, "stall_speed": 22.0, "climb_rate": 10.0, "handbrake": false,
 			"lean_amount": 0.0, "rider_lean": 0.1, "body_size": Vector3(1.3, 1.5, 6.4),
 			"seat_offset": Vector3(0.0, 0.52, -0.55), "seat_point": Vector3(0.0, 1.3, -0.55),
 			"grip_points": [Vector3(-0.22, 1.47, -1.05), Vector3(0.22, 1.47, -1.05)] as Array[Vector3],

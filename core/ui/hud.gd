@@ -943,6 +943,66 @@ static func wrist_text(p_raid: Raid, p: Actor, death: Dictionary, wait: float, p
 	return "\n".join(lines)
 
 
+## The landing warning (DESIGN.md "Flight HUD"): heat this far up the bar
+## starts it, and a skim with this many seconds left.
+const LANDING_HEAT := 0.75
+const LANDING_SKIM := 0.6
+## How far down the warning looks for ground (m).
+const LANDING_REACH := 200.0
+
+
+## How close the rig is to cutting out, 0 to 1: shut off (a jam) or
+## overheated is 1; heat climbing past `LANDING_HEAT` and a boot skim
+## running out build toward it. Overclocked, heat never counts.
+static func landing_risk(rig: FlightRig) -> float:
+	if not rig.enabled:
+		return 0.0
+	if rig.jam_left > 0.0 or rig.overheated:
+		return 1.0
+	var risk := 0.0
+	if not rig.heat_free and rig.max_heat > 0.0:
+		risk = clampf((rig.heat_fraction() - LANDING_HEAT) / (1.0 - LANDING_HEAT), 0.0, 1.0)
+	if rig.is_skimming and rig.skim_time > 0.0:
+		risk = maxf(risk, clampf(1.0 - rig.skim_left / LANDING_SKIM, 0.0, 1.0))
+	return risk
+
+
+## True if dropping from `height` meters, already falling at `fall_speed`,
+## would land hard enough to hurt (`Actor.fall_safe_speed`, scaled by the
+## rig: boots take none, so they never warn).
+static func fall_would_hurt(p: Actor, height: float, fall_speed: float) -> bool:
+	var mult := p.flight.fall_damage_mult if p.flight.enabled else 1.0
+	if mult <= 0.0 or height <= 0.0:
+		return false
+	var impact := sqrt(fall_speed * fall_speed + 2.0 * p.gravity * height)
+	return impact > p.fall_safe_speed
+
+
+## The landing warning for `p`, 0 to 1: ground below that a fall would hurt
+## on, while the rig is about to cut out, so you land or pulse before you
+## drop. View only, read each frame for the player's own visor and pack
+## screen; the ray is only cast once the rig is at risk.
+static func landing_warning(p: Actor) -> float:
+	if p == null or p.is_dead or p.vehicle != null or not p.flight.enabled or p.is_on_floor():
+		return 0.0
+	var risk := landing_risk(p.flight)
+	if risk <= 0.0:
+		return 0.0
+	var height := p.height_above_ground(LANDING_REACH)
+	return risk if fall_would_hurt(p, height, maxf(0.0, -p.velocity.y)) else 0.0
+
+
+## What the landing warning says is wrong, in the visor's capitals.
+static func landing_reason(rig: FlightRig) -> String:
+	if rig.jam_left > 0.0:
+		return "RIG JAMMED"
+	if rig.overheated:
+		return "RIG OVERHEATED"
+	if rig.is_skimming and rig.skim_time > 0.0 and rig.skim_left < LANDING_SKIM:
+		return "SKIM ENDING"
+	return "RIG HOT"
+
+
 ## The flight rig's cue, at the visor's edge under the heat gauge (or on the
 ## card's vitals strip without the glass): overheating, then what the rig
 ## needs you to know in the air. A jetpack warns when a heat seeker could lock on
@@ -1039,10 +1099,20 @@ func _update_heat_display(p: Actor) -> void:
 	fill.scale.y = maxf(0.001, heat)
 	fill.position.y = readout.get_meta("bar_bottom") + room * heat * 0.5
 	var color := heat_color(heat, p.flight.overheated)
-	(fill.material_override as StandardMaterial3D).albedo_color = color
-	(fill.material_override as StandardMaterial3D).emission = color
 	var word := readout.get_node("Word") as Label3D
 	word.text = heat_text(p.flight)
+	# The landing warning pulses the screen: the word flashes LAND and the
+	# bar beats (DESIGN.md "Flight HUD", third person).
+	var landing := landing_warning(p)
+	if landing > 0.0:
+		var beat := 0.5 + 0.5 * sin(Time.get_ticks_msec() * 0.001 * lerpf(6.0, 14.0, landing))
+		word.text = "LAND"
+		color = color.lerp(Color(1.0, 0.2, 0.1), 0.6).lerp(Color(0.25, 0.04, 0.02), 1.0 - beat)
+		(fill.material_override as StandardMaterial3D).emission_energy_multiplier = lerpf(1.6, 4.0, beat)
+	else:
+		(fill.material_override as StandardMaterial3D).emission_energy_multiplier = 1.6
+	(fill.material_override as StandardMaterial3D).albedo_color = color
+	(fill.material_override as StandardMaterial3D).emission = color
 	word.modulate = color
 
 

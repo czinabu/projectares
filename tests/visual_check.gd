@@ -260,6 +260,14 @@ func _ready() -> void:
 		get_tree().quit()
 		return
 
+	# `-- <output_dir> --grid-only` shows Frostline's defence grid: the
+	# Engine Sentinel at the hatch beside a Warden, its tracking beam held on
+	# a target, and a Warden calling the grid.
+	if "--grid-only" in args:
+		await _grid_shots(out_dir)
+		get_tree().quit()
+		return
+
 	# `-- <output_dir> --zones-only` shows Ashfront's risk zones: a gate
 	# outpost from the field, and the burning core from its edge.
 	if "--zones-only" in args:
@@ -1521,6 +1529,27 @@ func _visor_shots(out_dir: String) -> void:
 			await _settle(6)
 			await _shot(out_dir.path_join("visor_helm_spotter_tag.png"))
 		elif helmet == "helm_warden":
+			# The landing warning: high up, the jetpack overheated, in both views.
+			var held_at := p.global_position
+			p.global_position = held_at + Vector3(0, 32, 0)
+			p.velocity = Vector3.ZERO
+			p.flight.heat = p.flight.max_heat
+			p.flight.overheated = true
+			await _settle(8)
+			await _shot(out_dir.path_join("visor_landing_first.png"))
+			controller.toggle_view()
+			p.global_position = held_at + Vector3(0, 32, 0)
+			p.velocity = Vector3.ZERO
+			controller.yaw += PI
+			await _settle(8)
+			await _shot(out_dir.path_join("visor_landing_third.png"))
+			controller.yaw -= PI
+			controller.toggle_view()
+			p.flight.heat = p.flight.max_heat * 0.45
+			p.flight.overheated = false
+			p.global_position = held_at
+			p.velocity = Vector3.ZERO
+			await _settle(20)
 			var near: Actor = raid.bots[0]
 			var to_near: Vector3 = near.global_position + Vector3(0, 1.1, 0) - p.get_eye_position()
 			controller.yaw = atan2(-to_near.x, -to_near.z)
@@ -2086,6 +2115,54 @@ func _ice_shots(out_dir: String) -> void:
 	camera.look_at(hole + Vector3(2.0, 0.0, 1.0))
 	await _settle(20)
 	await _shot(out_dir.path_join("ice_hole.png"))
+	raid.queue_free()
+
+
+func _grid_shots(out_dir: String) -> void:
+	var raid := Raid.new()
+	add_child(raid)
+	raid.start(Worlds.get_world("frostline"), 42)
+	var boss: Actor = null
+	var warden: Actor = null
+	for bot in raid.bots:
+		bot.get_node("Brain").set_physics_process(false)
+		bot.set_physics_process(false)
+		if bot.get_meta("boss", "") == "sentinel":
+			boss = bot
+		elif warden == null and bot.faction == "warden":
+			warden = bot
+		else:
+			bot.global_position = Vector3(500, 0, 500)
+	raid.player.set_physics_process(false)
+	raid.player.visible = false
+	var at := boss.global_position
+	# Both face down the valley, toward the camera.
+	for bot: Actor in [boss, warden]:
+		bot.cmd.yaw = PI
+		bot.rotation.y = PI
+	warden.global_position = at + Vector3(-3.0, 0.0, 0.0)
+	var camera := Camera3D.new()
+	camera.far = 900.0
+	raid.add_child(camera)
+	camera.make_current()
+	camera.global_position = at + Vector3(-3.0, 3.0, 11.0)
+	camera.look_at(at + Vector3(-1.5, 1.8, 0.0))
+	await _settle(40)
+	await _shot(out_dir.path_join("grid_sentinel.png"))
+	# The beam held on a target down the valley, from the side.
+	boss.cmd.secondary = true
+	boss.cmd.aim_dir = Vector3(0.1, -0.06, 1.0).normalized()
+	camera.global_position = at + Vector3(-12.0, 4.0, 8.0)
+	camera.look_at(at + Vector3(0.0, 2.0, 10.0))
+	await _settle(50)
+	await _shot(out_dir.path_join("grid_beam.png"))
+	boss.cmd.secondary = false
+	camera.global_position = warden.global_position + Vector3(-6.0, 7.0, 14.0)
+	camera.look_at(warden.global_position)
+	await _settle(5)
+	raid.grid_called.emit(warden, null)
+	await _settle(2)
+	await _shot(out_dir.path_join("grid_call.png"))
 	raid.queue_free()
 
 

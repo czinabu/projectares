@@ -113,6 +113,8 @@ const PROTOCOL := 43
 ## (`_sign_out`'s `rate`: 0 while away from the beacon, faster with company).
 ## 41: tracks: footprints and wheel tracks near a player (`_tracks`).
 ## 42: thin ice: cracks (`_ice_crack`) and the open holes (`_ice_holes`).
+## 43: a core boss's kind in a bot's spawn data ("boss") and a linked
+## faction's call for help (`_grid_call`).
 ## Where an out-of-date game gets the latest build: the rolling "latest"
 ## release the Windows client workflow publishes (docs/hosting.md).
 const UPDATE_URL := "https://github.com/czinabu/projectares/releases/tag/latest"
@@ -597,6 +599,7 @@ func _start_server_raid() -> void:
 		var holes := raid.pack_ice_holes()
 		for peer in _joined_peers:
 			_ice_holes.rpc_id(peer, holes))
+	raid.grid_called.connect(_on_server_grid_called)
 	raid.pinged.connect(_on_server_pinged)
 	raid.portal_opened.connect(func(portal: Portal) -> void:
 		for peer in _joined_peers:
@@ -1460,6 +1463,8 @@ func _send_spawn(peer: int, actor: Actor) -> void:
 	else:
 		data = {"seed": raid.bot_seeds.get(actor, 0), "warlord": raid.warlords.has(actor),
 				"faction": actor.faction, "zone": int(actor.get_meta("zone", -1))}
+		if actor.has_meta("boss"):
+			data["boss"] = String(actor.get_meta("boss"))
 		# A rival raider wears a player's kit and look, so a client builds the
 		# same person rather than a soldier from the seed.
 		if actor.has_meta("raider_kit"):
@@ -2684,7 +2689,8 @@ func _spawn(id: int, kind: String, shown_name: String, node_name: String, at: Ve
 		if data.get("kit") is Array:
 			kit = (data["kit"] as Array).filter(func(id: Variant) -> bool: return ItemDB.has_item(str(id)))
 		actor = raid.spawn_bot(node_name, at, data.get("seed", 0), data.get("warlord", false),
-				data.get("faction", ""), clampi(int(data.get("zone", -1)), -1, 2), kit)
+				data.get("faction", ""), clampi(int(data.get("zone", -1)), -1, 2), kit,
+				str(data.get("boss", "")).left(32))
 		if not kit.is_empty():
 			actor.display_name = shown_name
 			if data.has("look"):
@@ -3186,6 +3192,30 @@ func _send_tracks() -> void:
 func _tracks(data: PackedFloat32Array) -> void:
 	if raid != null and raid.world != null and raid.world.tracks:
 		raid.tracks.unpack(data, raid.clock)
+
+
+## A linked faction's bot called the rest of its faction (`Raid.grid_called`):
+## everyone near enough to hear it is told, so the call is seen and heard.
+func _on_server_grid_called(bot: Actor, _source: Actor) -> void:
+	var id: int = _ids.get(bot, -1)
+	if id < 0:
+		return
+	for peer in _joined_peers:
+		var viewer: Actor = _peer_actor.get(peer)
+		if viewer != null and is_instance_valid(viewer) \
+				and viewer.global_position.distance_to(bot.global_position) <= GRID_CALL_RANGE:
+			_grid_call.rpc_id(peer, id)
+
+
+## How far off a grid call is seen and heard.
+const GRID_CALL_RANGE := 90.0
+
+
+@rpc("authority", "call_remote", "unreliable")
+func _grid_call(id: int) -> void:
+	var actor: Actor = _actors.get(id)
+	if raid != null and actor != null and is_instance_valid(actor):
+		raid.grid_called.emit(actor, null)
 
 
 ## Thin ice cracking (stages 1 and 2) or giving way (3) at `at`, for the

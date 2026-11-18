@@ -106,6 +106,20 @@ without Caleb, and update the gap list when a PR closes a row.
   it, sinks anything driven into it and freezes over after
   `ice_refreeze`. Clients get the cracks and holes from `NetSession`
   (`_ice_crack`, `_ice_holes`) and draw them with `IceView` (view only).
+- The defence grid (DESIGN.md "Frostline"): a world's
+  `WorldDef.linked_factions` (faction to metres) makes a bot of that
+  faction that is hurt and lives call the rest of it within range, through
+  `Actor.heard` like a gunshot (`Raid._on_linked_hurt`, authority only, at
+  most every `LINK_EVERY`); a blow that kills calls nobody. Everyone near
+  sees the call (`Raid.grid_called`, `NetSession._grid_call`, drawn by
+  `Raid._show_grid_call` where `Look` is on). A "spawn_boss" marker's meta
+  "boss" names a world's own boss kind: the `Raid` sets it on the bot
+  before `equip_bot` and `make_warlord` and `NetSession` sends it, so
+  `make_warlord` builds the same machine everywhere (Frostline's Engine
+  Sentinel). Where `WorldDef.boss_party_scale` is over 0 a boss is made
+  for one player and the authority raises its `Actor.toughness` for each
+  other player within `boss_party_range` (`Raid._scale_boss`); hits are
+  divided by it in `Actor.modify_incoming`.
 - How harsh death is belongs to the world, not to `Raid`. With
   `WorldDef.keep_gear_on_death` a dead player drops only the backpack and the
   equipped gear returns in the result's `kept`. A gentle world pays for that
@@ -793,8 +807,10 @@ without Caleb, and update the gap list when a PR closes a row.
   always-in-view readings as a row of hex cells along the lower left curve,
   each filling like a gauge with its number over it (health, armor,
   stamina, with a flight rig its heat and cue, the ability;
-  `VisorHud.vital_cells`; the landing warning is still to come, per
-  DESIGN.md section 5). Every working helmet also has a heading tape across
+  `VisorHud.vital_cells`), and under the middle of the lower rim the
+  landing warning (`Hud.landing_warning`: the rig about to cut out while a
+  fall from there would hurt; `VisorHud._draw_landing`, and the pack
+  screen's word turns to LAND, DESIGN.md section 5). Every working helmet also has a heading tape across
   the top, bowed with the glass, that marks only what the wearer is already
   told (`VisorHud.compass_marks`): squadmates (`VisorHud.squadmate`: a player in
   the same clan, or everyone where `WorldDef.players_allied`; never a bot or
@@ -886,7 +902,13 @@ without Caleb, and update the gap list when a PR closes a row.
   `is_occupied`, never `rider` alone), and the "aircraft" tag flies
   it (`Vehicle._fly`: takes off past `takeoff_speed` with jump, never
   hovers, drops below `stall_speed` or with nobody at the stick, climbs no
-  higher than `ceiling` over the world's ground). Every vehicle, the jet
+  higher than `ceiling` over the world's ground). Jump is the handbrake
+  (`handbrake`, off for the mech and the jet, whose jump key is theirs):
+  at speed it is a drift (`Vehicle.drifting`, the same `slip` a hover
+  keeps, `drift_*` stats) whose clean exit on the throttle is a short
+  burst (`drift_charge`, `_drift_exit`), and a world's slick ground
+  (`WorldDef.surface_grip`, Frostline's snow and ice) lets wheels slide
+  on their own; a hover ignores it. Every vehicle, the jet
   included, can be thrown in every world (Caleb's call), except a race
   world (`WorldDef.vehicle_toys` off), which races its own stock machines. A vehicle's `watch_recharge` and `footprint` stats
   set the watch's wait after a throw and the room it needs to unpack.
@@ -1470,7 +1492,10 @@ without Caleb, and update the gap list when a PR closes a row.
   Mk2 and Mk3 needs (`Crafting.MK2_PARTS`, `MK3_PARTS`: Cryo Core, Glacial
   Alloy, Engine Coil), a trickle of upgrade data and its own blueprints,
   tagged "expedition", which make new options only, never a higher Mk, and
-  which `roll_crafting_loot` never hands out. Cold-weather gear is data: a
+  which `roll_crafting_loot` never hands out. Its slow route to the war's
+  blueprints (Caleb's call) is rare: the relay's `roll_crafting_loot` at a
+  low chance, its warlords' `warlord_blueprint_chance` and the expedition
+  weeklies' blueprint. Cold-weather gear is data: a
   frame's "insulation" stat keeps out that share of the cold
   (`Raid.insulation_of`). A new craftable is a recipe row and, if it needs
   one, a `_blueprint` item. Costs are placeholders.
@@ -1500,6 +1525,13 @@ without Caleb, and update the gap list when a PR closes a row.
   owner's copy for the watch is `Actor.tally`. Only a sign-out counts, and no
   job may count player kills or reward signing straight out. A new job is a
   `JOBS` entry; a new stat is a `_count` call where the event happens.
+  A world adds jobs of its own with `WorldDef.contract_jobs` under its
+  `WorldDef.contract_tag` (Frostline's "expedition"): every lookup goes
+  through `Contracts.jobs()`, never `JOBS` alone, the board offers one daily
+  and one weekly per tag beside the general ones, and a tagged job counts
+  only a result whose "contract_tag" matches (`Contracts.counts_in`). Stats
+  include `item:<id>` (brought home), `kills:<faction>`, `bosses` and
+  `cache:<source>` (once per fill, `LootContainer.looted_by`).
 - The player market (DESIGN.md section 10, "Two worlds, one loop"): rules
   once in `core/economy/market.gd` (static, like `Economy`: what trades, the
   price band, fees, the daily cap; Mk3, heavy weapons, artifacts and relics

@@ -53,6 +53,10 @@ extends RefCounted
 ##     spawns inside them.
 ##   - Marker3D nodes in group "spawn_boss": a boss (a bot made a warlord)
 ##     stands guard there, and comes back `boss_respawn_time` after it dies.
+##     Optional metas: "faction" (as on "spawn_bot"), "radius" (the ground it
+##     guards) and "boss" (a kind of boss of the world's own, set on the bot
+##     as meta "boss" before `equip_bot` and `make_warlord`, and sent to
+##     clients so they build the same one).
 ## The cold (DESIGN.md section 2, "Frostline"): a world with `cold` over 0
 ## drains its players' body heat (`Actor.body_heat`) by `cold_at` a second
 ## out in the open, and its map may add warmth:
@@ -209,6 +213,30 @@ var pod_upgrade_data := 0
 ## sign-out time while sheltered in a gate outpost (it is the way out there).
 var boss_respawn_time := 360.0
 var outpost_sign_out_time := 3.0
+## A boss made for one player is a wall for none and a pushover for four,
+## so where this is over 0 it gets tougher with company: each player past
+## the first within `boss_party_range` of it adds this share to its
+## `Actor.toughness` (hits are divided by it). Authority only.
+var boss_party_scale := 0.0
+var boss_party_range := 45.0
+## Linked factions (DESIGN.md "Frostline", the defence grid): faction to
+## range in metres. A bot of one that is hurt and lives calls every other
+## bot of its faction within range to where the hit came from, the way a
+## gunshot is heard (`Actor.heard`), so a drawn-out fight brings the rest.
+## A kill in one blow calls nobody.
+var linked_factions := {}
+## Contracts of its own (DESIGN.md section 10, "World-tagged contracts"):
+## a world with a `contract_tag` ("expedition") puts `contract_jobs` on the
+## board beside the jobs that count anywhere, and they count only in a world
+## with the same tag (the result's "contract_tag"). Jobs as in
+## `Contracts.JOBS`; give them ids no other world uses.
+var contract_tag := ""
+
+
+func contract_jobs() -> Dictionary:
+	return {}
+
+
 ## Rival raiders: bots that play the way a player does (DESIGN.md section 2,
 ## "Rival raiders"). Each drops in at a player spawn with a real kit
 ## (`raider_kit`), loots caches, fights everyone, and after a while signs
@@ -368,6 +396,14 @@ func cold_at(_pos: Vector3) -> float:
 	return cold
 
 
+## How much grip the ground at a point gives a wheel or a foot of a ground
+## vehicle: 1 on dry ground, less on snow and ice, where wheels break loose
+## and slide (`Vehicle._surface_grip`; a hover's cushion ignores it). Run on
+## every machine that simulates a ride, so keep it free of randomness.
+func surface_grip(_pos: Vector3) -> float:
+	return 1.0
+
+
 ## Whether the ground at a point is thin ice (see `thin_ice`).
 func thin_ice_at(_pos: Vector3) -> bool:
 	return false
@@ -411,6 +447,12 @@ func make_warlord(bot: Actor) -> void:
 	bot.display_name = "Warlord"
 	bot.health.max_health *= 3.0
 	bot.health.health = bot.health.max_health
+
+
+## The war feed's line when a core boss stands guard again, `where` from
+## the Raid ("near Echo Post").
+func boss_back_news(_bot: Actor, where: String) -> String:
+	return "A warlord has taken %s again" % where
 
 
 func on_spawn(_actor: Actor) -> void:
