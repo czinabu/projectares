@@ -1929,7 +1929,7 @@ const FRAME_STYLES := {
 	"thermal": {"shell": Color(0.8, 0.82, 0.84), "trim": Color(0.3, 0.33, 0.37), "accent": Color(0.52, 0.56, 0.62),
 			"glow": Color(1.0, 0.45, 0.12), "metal": 0.15, "rough": 0.6, "details": ["quilt", "coils", "heater"]},
 	"bulwark": {"shell": Color(0.4, 0.41, 0.44), "trim": Color(0.11, 0.11, 0.12), "accent": Color(0.85, 0.62, 0.15),
-			"glow": Color(1.0, 0.3, 0.1), "metal": 0.45, "rough": 0.55, "details": ["keel", "rivets", "vents"]},
+			"glow": Color(1.0, 0.3, 0.1), "metal": 0.3, "rough": 0.6, "details": ["keel", "rivets", "vents"]},
 }
 
 ## Which look each frame wears; a frame not listed wears its weight's.
