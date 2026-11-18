@@ -28,13 +28,13 @@ func _ready() -> void:
 	# equip (`StashRules.free_items`), and it can never be stashed, so it
 	# cannot be farmed.
 	register("rifle_scrap", "Scrap Rifle", Rarity.COMMON, 0, ["weapon", "firearm", "rifle", "starter"],
-			{"headshot_mult": 1.5, "falloff_start": 40.0, "falloff_end": 90.0, "falloff_min": 0.75},
+			{"recoil_pattern": "sway", "headshot_mult": 1.5, "falloff_start": 40.0, "falloff_end": 90.0, "falloff_min": 0.75},
 			"Worn automatic rifle.")
 	register("blade_scrap", "Scrap Blade", Rarity.COMMON, 0, ["weapon", "melee", "one_handed", "blade", "starter"], {},
 			"A sharpened strip of plating.")
 	register("pistol_service", "Service Pistol", Rarity.COMMON, 0,
 			["weapon", "firearm", "sidearm", "pistol", "starter"],
-			{"shot_sound": "shot_pistol", "semi_auto": true, "damage": 22.0, "headshot_mult": 1.75, "ads_time": 0.16, "move_spread_deg": 1.0, "fire_interval": 0.16, "mag_size": 12, "ammo_in_mag": 12,
+			{"recoil_pattern": "kick", "shot_sound": "shot_pistol", "semi_auto": true, "damage": 22.0, "headshot_mult": 1.75, "ads_time": 0.16, "move_spread_deg": 1.0, "fire_interval": 0.16, "mag_size": 12, "ammo_in_mag": 12,
 			"reserve_ammo": 60, "reload_time": 1.1, "spread_deg": 0.6, "bloom_per_shot": 0.5,
 			"recoil_kick_deg": 0.7, "max_range": 90.0, "falloff_start": 25.0, "falloff_end": 60.0, "falloff_min": 0.7},
 			"Reliable semi-auto sidearm. Accurate, and quick to reload.")
@@ -47,21 +47,21 @@ func _ready() -> void:
 
 	# Firearms
 	register("rifle_carbine", "Ashfront Carbine", Rarity.UNCOMMON, 450, ["weapon", "firearm", "rifle", "vendor"],
-			{"damage": 24.0, "headshot_mult": 1.5, "fire_interval": 0.1, "spread_deg": 0.9, "reserve_ammo": 150,
+			{"recoil_pattern": "climb_right", "damage": 24.0, "headshot_mult": 1.5, "fire_interval": 0.1, "spread_deg": 0.9, "reserve_ammo": 150,
 			"falloff_start": 50.0, "falloff_end": 100.0, "falloff_min": 0.8},
 			"Reliable automatic. Harder hitting and tighter than the scrap rifle.")
 	register("smg_stinger", "Stinger SMG", Rarity.UNCOMMON, 420, ["weapon", "firearm", "smg", "vendor"],
-			{"shot_sound": "shot_smg", "damage": 19.0, "headshot_mult": 1.3, "ads_time": 0.18, "move_spread_deg": 1.2, "fire_interval": 0.065, "mag_size": 40, "ammo_in_mag": 40,
+			{"recoil_pattern": "sway", "shot_sound": "shot_smg", "damage": 19.0, "headshot_mult": 1.3, "ads_time": 0.18, "move_spread_deg": 1.2, "fire_interval": 0.065, "mag_size": 40, "ammo_in_mag": 40,
 			"reserve_ammo": 200, "spread_deg": 1.9, "recoil_kick_deg": 0.3, "max_range": 80.0,
 			"falloff_start": 12.0, "falloff_end": 30.0, "falloff_min": 0.55},
 			"Very fast fire and light recoil. Out-kills a rifle up close, falls off past 12 m.")
 	register("dmr_longshot", "Longshot DMR", Rarity.RARE, 900, ["weapon", "firearm", "marksman"],
-			{"shot_sound": "shot_dmr", "damage": 60.0, "headshot_mult": 2.0, "ads_time": 0.35, "move_spread_deg": 3.0, "armor_pierce": 0.35, "fire_interval": 0.42, "mag_size": 12,
+			{"recoil_pattern": "kick", "shot_sound": "shot_dmr", "damage": 60.0, "headshot_mult": 2.0, "ads_time": 0.35, "move_spread_deg": 3.0, "armor_pierce": 0.35, "fire_interval": 0.42, "mag_size": 12,
 			"ammo_in_mag": 12, "reserve_ammo": 60, "spread_deg": 0.25, "recoil_kick_deg": 1.7, "bloom_per_shot": 0.9,
 			"max_range": 220.0},
 			"Slow, precise, and heavy hitting. Its rounds punch through plates: two headshots drop a mid kit.")
 	register("shotgun_breacher", "Breacher Shotgun", Rarity.RARE, 850, ["weapon", "firearm", "shotgun"],
-			{"shot_sound": "shot_shotgun", "damage": 14.0, "pellets": 8, "headshot_mult": 1.0, "move_spread_deg": 0.8, "fire_interval": 0.75, "mag_size": 6, "ammo_in_mag": 6,
+			{"recoil_pattern": "kick", "shot_sound": "shot_shotgun", "damage": 14.0, "pellets": 8, "headshot_mult": 1.0, "move_spread_deg": 0.8, "fire_interval": 0.75, "mag_size": 6, "ammo_in_mag": 6,
 			"reserve_ammo": 36, "spread_deg": 4.5, "recoil_kick_deg": 2.4, "reload_time": 2.4,
 			"max_range": 40.0, "falloff_start": 8.0, "falloff_end": 22.0, "falloff_min": 0.35},
 			"Eight pellets a shot. Devastating in reach of a blade.")
@@ -69,13 +69,13 @@ func _ready() -> void:
 	# Sidearms: worn on the hip and drawn when the primary runs dry.
 	register("pistol_machine", "Hornet Machine Pistol", Rarity.UNCOMMON, 380,
 			["weapon", "firearm", "sidearm", "machine_pistol", "vendor"],
-			{"shot_sound": "shot_smg", "damage": 10.0, "headshot_mult": 1.3, "ads_time": 0.16, "move_spread_deg": 1.0, "fire_interval": 0.055, "mag_size": 20, "ammo_in_mag": 20, "reserve_ammo": 100,
+			{"recoil_pattern": "climb_left", "shot_sound": "shot_smg", "damage": 10.0, "headshot_mult": 1.3, "ads_time": 0.16, "move_spread_deg": 1.0, "fire_interval": 0.055, "mag_size": 20, "ammo_in_mag": 20, "reserve_ammo": 100,
 			"reload_time": 1.4, "spread_deg": 2.6, "bloom_per_shot": 0.45, "max_bloom": 4.0,
 			"recoil_kick_deg": 0.35, "max_range": 45.0, "falloff_start": 10.0, "falloff_end": 28.0, "falloff_min": 0.5},
 			"Full-auto spray. Deadly up close, useless at range.")
 	register("pistol_hand_cannon", "Warden Hand Cannon", Rarity.RARE, 750,
 			["weapon", "firearm", "sidearm", "hand_cannon"],
-			{"shot_sound": "shot_cannon", "semi_auto": true, "damage": 55.0, "headshot_mult": 1.8, "ads_time": 0.2, "move_spread_deg": 1.6, "armor_pierce": 0.25, "fire_interval": 0.55, "mag_size": 6,
+			{"recoil_pattern": "kick", "shot_sound": "shot_cannon", "semi_auto": true, "damage": 55.0, "headshot_mult": 1.8, "ads_time": 0.2, "move_spread_deg": 1.6, "armor_pierce": 0.25, "fire_interval": 0.55, "mag_size": 6,
 			"ammo_in_mag": 6, "reserve_ammo": 30, "reload_time": 2.2, "spread_deg": 0.4,
 			"bloom_per_shot": 1.2, "recoil_kick_deg": 2.6, "max_range": 110.0,
 			"falloff_start": 35.0, "falloff_end": 80.0, "falloff_min": 0.75},
@@ -88,27 +88,27 @@ func _ready() -> void:
 	# them). A few shots each; one that runs dry is thrown away. Death leaves
 	# the gun on a rack beside the bag, never in the pack.
 	register("power_rail_lance", "Rail Lance", Rarity.EPIC, 2500, ["weapon", "firearm", "power", "railgun"],
-			{"damage": 120.0, "charge_time": 0.85, "fire_interval": 0.6, "mag_size": 4, "ammo_in_mag": 4,
+			{"recoil_pattern": "kick", "damage": 120.0, "charge_time": 0.85, "fire_interval": 0.6, "mag_size": 4, "ammo_in_mag": 4,
 			"reserve_ammo": 0, "spread_deg": 0.0, "bloom_per_shot": 0.0, "pierce": 3, "wall_pierce": 2, "headshot_mult": 1.0,
 			"max_range": 300.0, "recoil_kick_deg": 4.0, "beam_time": 1.4, "damage_kind": "rail",
 			"tracer_color": Color(0.35, 0.95, 1.0), "shot_sound": "rail"},
 			"Mag-rail. Hold to charge: the slug goes through three bodies and two walls, and its beam hangs in the air and gives you away. 4 shots.")
 	register("power_helion", "Helion Plasma Launcher", Rarity.EPIC, 2500, ["weapon", "firearm", "power", "launcher"],
-			{"projectile": "rocket", "projectile_speed": 34.0, "damage": 40.0, "splash_radius": 5.5,
+			{"recoil_pattern": "kick", "projectile": "rocket", "projectile_speed": 34.0, "damage": 40.0, "splash_radius": 5.5,
 			"splash_damage": 110.0, "fire_interval": 1.0, "mag_size": 1, "ammo_in_mag": 1, "reserve_ammo": 3,
 			"reload_time": 1.8, "spread_deg": 0.3, "bloom_per_shot": 0.0, "recoil_kick_deg": 3.0,
 			"heat_seek_cone": 22.0, "damage_kind": "plasma", "tracer_color": Color(1.0, 0.45, 0.15),
 			"shot_sound": "plasma_shot"},
 			"Plasma rockets that burst over a wide area. Aimed near a thrusting jetpack, they lock onto its heat. 4 shots.")
 	register("power_arc_mortar", "Arc Mortar", Rarity.EPIC, 2500, ["weapon", "firearm", "power", "grenade_launcher"],
-			{"projectile": "grenade", "projectile_speed": 18.0, "projectile_gravity": 1.0, "bounces": 3,
+			{"recoil_pattern": "kick", "projectile": "grenade", "projectile_speed": 18.0, "projectile_gravity": 1.0, "bounces": 3,
 			"fuse_time": 1.8, "damage": 30.0, "splash_radius": 5.0, "splash_damage": 85.0, "fire_interval": 0.55,
 			"mag_size": 6, "ammo_in_mag": 6, "reserve_ammo": 0, "spread_deg": 0.4, "bloom_per_shot": 0.0,
 			"recoil_kick_deg": 2.0, "damage_kind": "arc", "tracer_color": Color(0.7, 0.45, 1.0),
 			"shot_sound": "arc_shot"},
 			"Lobs bouncing arc charges over cover. They burst on a body or when the fuse runs out. 6 shots.")
 	register("power_storm_cannon", "Storm Cannon", Rarity.EPIC, 2500, ["weapon", "firearm", "power", "minigun"],
-			{"spin_up": 0.9, "spin_move_mult": 0.55, "damage": 13.0, "headshot_mult": 1.0, "fire_interval": 0.045, "mag_size": 180,
+			{"recoil_pattern": "climb", "spin_up": 0.9, "spin_move_mult": 0.55, "damage": 13.0, "headshot_mult": 1.0, "fire_interval": 0.045, "mag_size": 180,
 			"ammo_in_mag": 180, "reserve_ammo": 0, "spread_deg": 2.2, "bloom_per_shot": 0.05, "max_bloom": 1.5,
 			"recoil_kick_deg": 0.15, "max_range": 110.0, "damage_kind": "plasma",
 			"tracer_color": Color(1.0, 0.3, 0.85), "shot_sound": "pulse"},
