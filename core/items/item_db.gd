@@ -623,7 +623,7 @@ const RACE_RAIDER := {
 
 const JETPACK_MK1 := {
 	"thrust_accel": 36.0, "max_rise_speed": 8.0, "fly_speed": 14.0, "boost_speed": 18.0,
-	"heat_per_sec": 12.5, "hover_heat_mult": 1.0, "cruise_heat_mult": 1.0, "climb_heat_mult": 1.5,
+	"heat_per_sec": 12.5, "hover_heat_mult": 1.0, "cruise_heat_mult": 1.0, "climb_heat_mult": 1.3,
 	"boost_heat_mult": 2.5, "cool_per_sec": 25.0, "coast_cool": 25.0, "ceiling": 40.0,
 	"flight_aim": 0.1, "fall_damage_mult": 0.5, "scan_range": 120.0, "indoor_mult": 0.5,
 	"heavy_lift": true, "tier": 1,

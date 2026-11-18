@@ -646,7 +646,7 @@ without Caleb, and update the gap list when a PR closes a row.
   (Caleb's balance pass, DESIGN.md section 5; the Mk1 numbers are
   `ItemDB.JETPACK_MK1`, `BOOTS_MK1` and `WINGS_MK1`, measured by
   `tests/rig_balance_tests.gd`): the jetpack is height and hover (8 s on a
-  full bar, climbing 1.5x and boosting 2.5x the heat, a 40 m ceiling,
+  full bar, climbing 1.3x and boosting 2.5x the heat, a 40 m ceiling,
   steady aim), but slow across the map, loud and clumsy under a roof;
   the boots are ground agility and stealth: no heat, `max_charges` pay for
   kicks and dashes, a short skim (`skim_time`), faster on foot
