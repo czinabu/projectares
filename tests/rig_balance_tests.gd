@@ -329,18 +329,6 @@ static func _cross_one(t: Node, p: Actor, id: String, results: Dictionary) -> vo
 ## The flight course in the base's yard: every rig flies it, the board times
 ## it in stages, and falling into the gap ends the run.
 static func _test_course(t: Node) -> void:
-	# The yard is open overhead: the base's backdrop is the sky, not a void.
-	var was := Look.enabled
-	Look.enabled = true
-	var room := Node3D.new()
-	t.add_child(room)
-	Look.interior(room, Color.GRAY, 1.0, true)
-	var env := (room.get_node("Interior") as WorldEnvironment).environment
-	t.check(env.background_mode == Environment.BG_SKY and env.sky != null
-			and env.reflected_light_source == Environment.REFLECTION_SOURCE_DISABLED,
-			"over the flight course's open yard the sky shows, lighting nothing indoors")
-	room.queue_free()
-	Look.enabled = was
 	var times := {}
 	for id: String in RIGS:
 		var base := HomeBase.new()

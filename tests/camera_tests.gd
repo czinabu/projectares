@@ -31,14 +31,13 @@ static func _check_head_follows_aim(t: Node) -> void:
 	p.set_physics_process(false)
 	var loco = skin.locomotion
 	var skel: Skeleton3D = loco.skeleton
-	var face := [Vector3.ZERO, Vector3.ZERO, Vector3.ZERO]
+	var face := [Vector3.ZERO, Vector3.ZERO]
 	# Bone poses are only final inside the skeleton's update.
 	var read := func() -> void:
 		if loco._head_ahead != Vector3.ZERO:
 			face[0] = (skel.global_basis.orthonormalized() * loco._facing(loco._head, loco._head_ahead)).normalized()
 			var chest: int = loco._spine[loco._spine.size() - 1]
 			face[1] = (skel.global_basis.orthonormalized() * loco._facing(chest, loco._chest_ahead)).normalized()
-			face[2] = (skel.global_basis.orthonormalized() * loco._facing(chest, loco._chest_up)).normalized()
 	skel.skeleton_updated.connect(read)
 	for pitch: float in [0.6, -0.6, 0.0]:
 		p.cmd.pitch = pitch
@@ -51,20 +50,6 @@ static func _check_head_follows_aim(t: Node) -> void:
 	await t.frames(40)
 	t.check(face[0].angle_to(face[1]) < loco.look_reach + 0.1 and face[0].angle_to(face[1]) > loco.look_reach * 0.7,
 			"aimed behind, the head turns as far as it can and no further (%.2f rad)" % face[0].angle_to(face[1]))
-	# Aimed nearly straight up (as in flight, laid out): a neck bends back
-	# less than it turns, so the face tips up only so far from the chest.
-	p.cmd.aim_dir = (p.global_basis.orthonormalized() * Basis(Vector3.RIGHT, 1.45) * Vector3.FORWARD)
-	await t.frames(40)
-	var top: Vector3 = (face[2] - face[1] * face[2].dot(face[1])).normalized()
-	var tipped := asin(clampf(face[0].dot(top), -1.0, 1.0))
-	t.check(tipped < loco.look_up_reach + 0.1 and tipped > loco.look_up_reach * 0.6,
-			"aimed straight up, the head tips back only as far as a neck goes (%.2f rad)" % tipped)
-	var ahead := Vector3.FORWARD
-	var capped: Vector3 = loco.tip_within(Vector3.UP, ahead, Vector3.UP, deg_to_rad(40.0), deg_to_rad(55.0))
-	var level: Vector3 = loco.tip_within(Vector3(1, 0.1, -1).normalized(), ahead, Vector3.UP, deg_to_rad(40.0), deg_to_rad(55.0))
-	t.check(absf(capped.angle_to(ahead) - deg_to_rad(40.0)) < 0.01 and level.is_equal_approx(Vector3(1, 0.1, -1).normalized())
-			and loco.tip_within(Vector3.DOWN, ahead, Vector3.UP, 0.7, 0.9).angle_to(ahead) < 0.91,
-			"a look is held within the neck's tip up and down, and left alone inside it")
 	p.cmd.aim_dir = p.global_basis.orthonormalized() * Vector3.FORWARD
 	await t.frames(20)
 	skel.skeleton_updated.disconnect(read)

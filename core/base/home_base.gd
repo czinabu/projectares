@@ -1488,8 +1488,7 @@ func _build_room() -> void:
 	_build_corridor()
 	_build_deploy_area()
 	var ambient := Color(0.62, 0.66, 0.7) if hub_shape() == "courtyard" else Color(0.56, 0.6, 0.66)
-	# The flight course's yard is open overhead: the sky shows there.
-	Look.interior(self, ambient, 1.3, true)
+	Look.interior(self, ambient, 1.3)
 
 
 ## A rectangular hub (the hall, the spine, the courtyard): its side walls

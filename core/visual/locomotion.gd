@@ -72,13 +72,6 @@ var _still_delta := 0.0
 ## (radians) from the way the chest faces. `look_follow` smooths the aim a
 ## little, mostly for remote players whose aim arrives in steps.
 var look_reach := deg_to_rad(70.0)
-## A neck bends back less far than it turns: the face tips up no more than
-## `look_up_reach` above the way the chest faces, and down no more than
-## `look_down_reach` below it, so a body laid out in flight looking ahead
-## (or up) keeps its head on its shoulders (Caleb's playtest: the head
-## tipped back onto the back in the flight course).
-var look_up_reach := deg_to_rad(40.0)
-var look_down_reach := deg_to_rad(55.0)
 var look_neck := 0.45
 var look_follow := 30.0
 var look_rate := 5.0
@@ -91,8 +84,6 @@ var _head := -1
 var _model_ahead := Vector3.ZERO
 var _head_ahead := Vector3.ZERO
 var _chest_ahead := Vector3.ZERO
-## The way the chest's top (toward the head) points in its own bone's space at rest.
-var _chest_up := Vector3.ZERO
 ## How quickly the velocity the legs follow catches up with the actor's. Online
 ## states land a few times a second; this hides the steps between them.
 var velocity_follow := 14.0
@@ -796,12 +787,9 @@ func _look_pose() -> void:
 		_model_ahead = (skeleton_in_skin.inverse() * (skin.basis.orthonormalized().inverse() * Vector3.FORWARD)).normalized()
 		_head_ahead = (skeleton.get_bone_global_rest(_head).basis.orthonormalized().inverse() * _model_ahead).normalized()
 		_chest_ahead = (skeleton.get_bone_global_rest(chest).basis.orthonormalized().inverse() * _model_ahead).normalized()
-		var model_up := (skeleton_in_skin.inverse() * (skin.basis.orthonormalized().inverse() * Vector3.UP)).normalized()
-		_chest_up = (skeleton.get_bone_global_rest(chest).basis.orthonormalized().inverse() * model_up).normalized()
 	var to_skeleton := skeleton.global_basis.orthonormalized().inverse() * actor.global_basis.orthonormalized()
 	var want := (to_skeleton * _look_dir).normalized()
 	var chest_ahead := _facing(chest, _chest_ahead)
-	want = tip_within(want, chest_ahead, _facing(chest, _chest_up), look_up_reach, look_down_reach)
 	var off := chest_ahead.angle_to(want)
 	if off > look_reach and off < PI - 0.01:
 		want = Quaternion(chest_ahead, want).slerp(Quaternion.IDENTITY, 1.0 - look_reach / off) * chest_ahead
@@ -817,23 +805,6 @@ func _look_pose() -> void:
 	var head := skeleton.get_bone_global_pose(_head)
 	head.basis = Basis(Quaternion.IDENTITY.slerp(Quaternion(now, want), w)) * head.basis
 	skeleton.set_bone_global_pose(_head, head)
-
-
-## `want` with its tip toward `up` (the chest's top, squared off against
-## `ahead`) kept between `down_reach` below and `up_reach` above the plane
-## the chest faces across; its turn across that plane is kept.
-static func tip_within(want: Vector3, ahead: Vector3, up: Vector3, up_reach: float, down_reach: float) -> Vector3:
-	var top := (up - ahead * up.dot(ahead)).normalized()
-	if not top.is_normalized():
-		return want
-	var tip := asin(clampf(want.dot(top), -1.0, 1.0))
-	var capped := clampf(tip, -down_reach, up_reach)
-	if is_equal_approx(capped, tip):
-		return want
-	var across := want - top * want.dot(top)
-	if across.length() < 0.001:
-		across = ahead
-	return (across.normalized() * cos(capped) + top * sin(capped)).normalized()
 
 
 ## A landing squat: see `_sink`.
