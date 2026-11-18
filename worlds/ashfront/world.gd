@@ -256,6 +256,13 @@ func _init() -> void:
 	# and a real kit already make the fight even; aiming like a veteran on
 	# top of that won them most duels.
 	raider_skill = Vector2(0.26, 0.44)
+	# Ash storms cross the field now and then (DESIGN.md "Weather: ash
+	# storms"): sight down to half in the thick of it, gone by 70 m, and the
+	# armies push a site a storm covers.
+	weather_kind = "ash"
+	weather_name = "Ash storm"
+	weather_pushes = true
+	weather_field = 276.0
 
 
 func create_map() -> Node3D:

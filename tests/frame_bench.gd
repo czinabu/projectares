@@ -76,6 +76,18 @@ func _ready() -> void:
 			"on" if GameSettings.call("ink_shown") else "off"])
 	if third and not _main.controller.is_third_person():
 		_main.controller.toggle_view()
+	# `--storm` puts the player in the thick of an ash storm (solo), to
+	# measure what the weather costs (DESIGN.md "Weather: ash storms").
+	if "--storm" in args and mode != "online":
+		var raid: Raid = _main.raid
+		raid.weather.start()
+		raid.weather.centre = Vector3(raid.player.global_position.x, 0.0, raid.player.global_position.z)
+		raid.weather.velocity = Vector3(0.01, 0.0, 0.0)
+		raid.weather.life = 100000.0
+		raid.weather.age = 1000.0
+		raid.weather.strength = 1.0
+		print("Frame bench: in the thick of an ash storm")
+		await _seconds(3.0)
 	if "--probe" in args:
 		await _probe()
 	else:

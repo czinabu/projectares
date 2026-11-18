@@ -140,6 +140,25 @@ without Caleb, and update the gap list when a PR closes a row.
   `Look.atmosphere` a second, war mood has its sky blend towards it. A world
   scales the meter with `WorldDef.war_scale` (0 keeps it quiet). New stakes
   that follow the war (reinforcements, events, loot) read `Raid.war`.
+- Weather (DESIGN.md "Weather: ash storms"): a world with
+  `WorldDef.weather_kind` ("ash" Ashfront, "snow" for Frostline's
+  whiteouts) has storms crossing its map one at a time, a `Weather` cell
+  (`Raid.weather`) on `weather_path`, tuned by `WorldDef.weather_*`. Only
+  the authority ticks it; a client is sent the cell
+  (`NetSession._weather`) and only carries it on (`Weather.advance`).
+  Anything a storm changes asks the cell where it happens, never a flag:
+  bot sight (`BotBrain._find_target`, `sight_between`), scan reach
+  (`Visor`), how far shots carry (`Gun.shot_carry`), gusts on a flying rig
+  (`Actor._take_gusts`, the rig's `gust_mult`, a function of position only
+  so it predicts), the cold (`cold_at`), tracks (`weather_wipes_tracks`)
+  and army pushes (`Raid._army_target`, `weather_pushes`). Thermal already
+  ignores fog, so it sees through a storm. What it looks like is
+  `WeatherView` (view only, the same in both views): the wall, the driven
+  air round the camera and the wind, and the map's "weather_here" meta,
+  which blends `Look.atmosphere`'s storm mood in and lowers the fog floor
+  (`Look.weather_cover`, `soften_weather`: gone by about 70 m at the heart,
+  Caleb's pick). Told in the world only: the visor's heading tape
+  ("storm"), the watch map's ring and zone line, the plaza's heat signs.
 - Open ground is a `Terrain` (`core/world/terrain.gd`): a heightfield with
   collision and a mesh that knows nothing about any world. A map on one
   offers `ground_height(x, z)` and the `Raid` stands spawning actors on it

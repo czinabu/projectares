@@ -165,9 +165,17 @@ var _marked_owner := ""
 var war := WarDirector.new()
 ## The sites worth holding, one per "strongpoint" marker on the map.
 var strongpoints: Array[Strongpoint] = []
+## A strongpoint at least this deep in a storm is cover for a push, and an
+## army goes for one up to this many times as far as the nearest clear site.
+const STORM_COVER := 0.5
+const STORM_PUSH_REACH := 2.0
 ## Where power weapons turn up (racks at strongpoints, pods, caches). Runs on
 ## the authority only.
 var armory := PowerArmory.new()
+## The weather (DESIGN.md "Weather: ash storms"): at most one storm crossing
+## the map, on `WorldDef.weather_kind`. Only the authority runs it; a client's
+## copy comes from `NetSession` and is only carried on between updates.
+var weather := Weather.new()
 var _assault_in := 0.0
 ## War intensity from which a player may choose to land beside the fighting.
 var hot_drop_from := 0.2
@@ -387,6 +395,12 @@ func _setup(p_world: WorldDef, p_seed: int) -> void:
 		var ice := IceView.new()
 		ice.raid = self
 		add_child(ice)
+	weather = Weather.new()
+	weather.setup(world, int(rng.seed) + 7919)
+	if world.weather_kind != "" and not world.safe_zone and Look.enabled:
+		var sky := WeatherView.new()
+		sky.raid = self
+		add_child(sky)
 	_link_next.clear()
 	if not world.linked_factions.is_empty() and Look.enabled and not grid_called.is_connected(_show_grid_call):
 		grid_called.connect(_show_grid_call)
@@ -413,6 +427,9 @@ func _physics_process(delta: float) -> void:
 	_tick_portals(delta)
 	if mode != Mode.CLIENT:
 		_tick_war(delta)
+		weather.tick(delta)
+	else:
+		weather.advance(delta)
 	map.set_meta("war_intensity", war.intensity)
 	map.set_meta("war_centre", war.centre)
 	if world.tracks:
@@ -938,12 +955,22 @@ func _army_target(faction: String, held: Array, army: Array) -> Strongpoint:
 		from += node.global_position
 	from /= anchors.size()
 	var best: Strongpoint = null
+	var covered: Strongpoint = null
 	for point in strongpoints:
 		if point.holder == "faction:" + faction:
 			continue
 		if best == null or point.global_position.distance_squared_to(from) \
 				< best.global_position.distance_squared_to(from):
 			best = point
+		if world.weather_pushes and weather.strength_at(point.global_position) >= STORM_COVER \
+				and (covered == null or point.global_position.distance_squared_to(from)
+					< covered.global_position.distance_squared_to(from)):
+			covered = point
+	# A storm over a site is cover for a push (DESIGN.md "Weather: ash
+	# storms"): the army goes for it unless a clear site is much nearer.
+	if covered != null and best != null and covered.global_position.distance_to(from) \
+			<= best.global_position.distance_to(from) * STORM_PUSH_REACH:
+		return covered
 	return best
 
 
@@ -1439,7 +1466,8 @@ func status() -> Dictionary:
 		if is_instance_valid(actor):
 			bounty = maxi(bounty, actor.bounty)
 	return {"players": fighting.size(), "war": snappedf(war.intensity, 0.05), "level": war.level_name(),
-			"bounty": bounty, "event": str(event.get("title", ""))}
+			"bounty": bounty, "event": str(event.get("title", "")),
+			"storm": world.weather_name if weather.active() else ""}
 
 
 func active_players() -> Array[Actor]:
@@ -1830,7 +1858,8 @@ func _tick_cold(delta: float) -> void:
 			continue
 		var warm := warmth_at(actor)
 		actor.warming = warm > 0.0
-		var change := warm if actor.warming else -world.cold_at(actor.global_position) * (1.0 - insulation_of(actor))
+		var change := warm if actor.warming else -world.cold_at(actor.global_position) * (1.0 - insulation_of(actor)) \
+				* weather.cold_at(actor.global_position)
 		actor.body_heat = clampf(actor.body_heat + change * delta, 0.0, actor.max_body_heat)
 		actor.shivering = actor.body_heat < actor.max_body_heat * Actor.CHILL_SHARE
 		if hurt and actor.body_heat <= 0.0:
@@ -1973,6 +2002,10 @@ func _tick_tracks(delta: float) -> void:
 	if _expire_in <= 0.0:
 		_expire_in = 1.0
 		tracks.expire(clock)
+		# A storm that wipes tracks takes them as its thick middle passes
+		# over, on every machine (a client moves its own copy of the cell).
+		if world.weather_wipes_tracks and weather.strength >= 0.5:
+			tracks.wipe(weather.centre, weather.radius * weather.core_share)
 	if mode == Mode.CLIENT:
 		return
 	_track_in -= delta
@@ -2072,6 +2105,8 @@ func zone_label(actor: Actor) -> String:
 		label = "%s · beacon" % beacon_at(actor.global_position).get_meta("name", "Beacon")
 	elif label != "" and world.cold > 0.0 and actor.warming:
 		label += " · warm"
+	if label != "" and weather.strength_at(actor.global_position) >= 0.3:
+		label += " · " + world.weather_name.to_lower()
 	return label
 
 

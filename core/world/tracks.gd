@@ -99,6 +99,20 @@ func expire(now: float) -> void:
 			_cells.erase(cell)
 
 
+## Every mark within `radius` of `at` gone (a storm's fresh snow passing).
+func wipe(at: Vector3, radius: float) -> void:
+	var reach := radius * radius
+	for cell in cells_near(at, radius):
+		var marks: Array = _cells[cell]
+		marks = marks.filter(func(mark: Array) -> bool:
+			var off: Vector3 = mark[1] - at
+			return off.x * off.x + off.z * off.z > reach)
+		if marks.is_empty():
+			_cells.erase(cell)
+		else:
+			_cells[cell] = marks
+
+
 ## Every mark gone at once (a whiteout's fresh snow, later).
 func clear() -> void:
 	_cells.clear()
