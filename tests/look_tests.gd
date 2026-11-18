@@ -346,11 +346,11 @@ static func _check_holster(t: Node, tag: String, player: Actor, skin: Node) -> v
 		var chest := to_actor * skeleton.global_transform * skeleton.get_bone_global_pose(skeleton.find_bone("Chest")).origin
 		var railed: bool = skin._rig_back != null and skin._rig_back.has_node("MountR")
 		if railed:
-			# A jetpack clamps it to the rail down its right side instead
-			# (rig_look_tests checks the fit).
+			# A jetpack clamps it edge on to the rail on the back of its right
+			# side instead, behind the pack (rig_look_tests checks the fit).
 			var rail: Vector3 = to_actor * (skin._rig_back.get_node("MountR") as Node3D).global_position
-			t.check(at.x > rail.x and at.x < rail.x + 0.3 and at.z > chest.z + 0.05 and at.y > 0.9 and at.y < 1.6,
-					tag + "a holstered gun is clamped down the jetpack's right side (%.2f m out from its rail)" % (at.x - rail.x))
+			t.check(absf(at.x - rail.x) < 0.1 and at.z > rail.z and at.z < rail.z + 0.3 and at.y > 0.9 and at.y < 1.6,
+					tag + "a holstered gun is clamped behind the jetpack's right side (%.2f m back from its rail)" % (at.z - rail.z))
 		else:
 			t.check(at.z > chest.z + 0.12 and at.y > 0.9 and at.y < 1.6 and absf(at.x) < 0.3,
 					tag + "a holstered gun is slung across the back%s (%.2f m behind the chest bone)" % [label, at.z - chest.z])
