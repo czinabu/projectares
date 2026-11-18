@@ -626,7 +626,11 @@ without Caleb, and update the gap list when a PR closes a row.
   `Human.player_look(raw, owned)` enforces it on the profile, in the
   customizer and on the server. Better outfits are bought or earned, never
   added to the starter list. Bots use `Human.sanitize` and can wear anything.
-- Only CC0 or similarly permissive assets, each recorded in `assets/LICENSES.md`.
+- Only assets that are free, may be used in a game that makes money, and need
+  no credit (Caleb's call): CC0, or a royalty-free license like Sonniss's
+  GDC bundles (shipped inside the game, never as loose files). Nothing that
+  needs attribution (CC BY) or forbids selling. Each one recorded in
+  `assets/LICENSES.md`.
 - Load assets that need importing (models, textures, fonts) with `load()` at
   runtime, not `preload`: a preload fails to parse on a fresh checkout before
   Godot has imported the file.

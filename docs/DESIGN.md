@@ -446,8 +446,12 @@ Numbers are placeholders.
   set from the mood by `Look.skyline_haze`, so a storm still swallows it),
   fires glow behind it (`horizon_glow.gdshader`, brighter with the war,
   hidden by a storm), and the map's "view_far" meta lets the player's view
-  draw that far (`PlayerController._view_far`). Planned, in this order: a
-  sound bed of the distant war, the Colossus walking the rim and a carrier
+  draw that far (`PlayerController._view_far`). The distant war is heard
+  (`Soundscape`, made by the map where `Look` is on): a rumble that rises
+  with the war, far gunfire from the way the fighting is, each horizon
+  flash's boom arriving after it by its distance, and a quiet wind; all of
+  it ducks under a storm's wind. Planned, in this order: real recordings
+  for the sound bed, the Colossus walking the rim and a carrier
   in the sky, dropship wings, flak and tracers that follow the war, god rays,
   a shared moment (the orbital lance brings the Colossus down), and ash on
   the visor glass.

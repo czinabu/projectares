@@ -370,6 +370,17 @@ static func _skyline(t: Node, raid: Raid) -> void:
 			"the skyline is a dark veiled shape when clear, hazier in war and gone in a storm (%.2f, %.2f, %.2f)" % [calm, war, storm])
 	t.check(Look.trim("distant") is ShaderMaterial and Look.trim("horizon_glow") is ShaderMaterial,
 			"the skyline and the burning horizon shade themselves against the haze")
+	# The war heard: view only, so a headless map makes no soundscape.
+	t.check(map.get_node_or_null("Soundscape") == null, "a map without a view hears nothing (no soundscape headless)")
+	t.check(is_equal_approx(Soundscape.boom_delay(510.0), 1.5) and is_equal_approx(Soundscape.boom_delay(3000.0), Soundscape.BOOM_DELAY_MAX),
+			"a far gun's boom comes after its flash, by its distance, but never long after")
+	var ears := Soundscape.new()
+	t.check(ears.bursts_per_second(1.0) > ears.bursts_per_second(0.0) * 5.0, "far gunfire rattles far more often in all-out war")
+	ears.free()
+	var heard := Soundscape.burst_from(Vector3.ZERO, Vector3(200, 0, 0), 45.0, 0.0)
+	var around := Soundscape.burst_from(Vector3.ZERO, Vector3(20, 0, 0), 45.0, 0.5)
+	t.check(heard.x > 40.0 and absf(heard.z) < 1.0 and is_equal_approx(Vector2(around.x, around.z).length(), 45.0),
+			"far gunfire is heard from the way the fighting is, and from all around inside it")
 
 
 ## What keeps a big battle affordable: bots nobody is near run in longer

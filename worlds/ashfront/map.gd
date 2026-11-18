@@ -230,6 +230,8 @@ var _flashes: Array[MeshInstance3D] = []
 var _flash_left: Array[float] = []
 var _searchlights: Array[Node3D] = []
 var _horizon_glow: ShaderMaterial
+## The distant war heard (view only; null where `Look` is off).
+var _soundscape: Soundscape
 
 @onready var GROUND := Look.surface("ground", {"tint": Color(0.36, 0.29, 0.26), "blend": "asphalt",
 		"blend_amount": 0.45, "grime": 0.6, "saturation": 0.3, "scale": 0.16})
@@ -257,6 +259,10 @@ func _ready() -> void:
 	_art_rng.seed = LAYOUT_SEED
 	_dress()
 	set_meta("view_far", VIEW_FAR)
+	if Look.enabled:
+		_soundscape = Soundscape.new()
+		_soundscape.name = "Soundscape"
+		add_child(_soundscape)
 	set_process(Look.enabled)
 
 
@@ -1925,6 +1931,8 @@ func _tick_distant_war(delta: float) -> void:
 			_flashes[i].position = Vector3(cos(angle) * reach, RIM_HEIGHT + _art_rng.randf_range(0.0, 25.0), sin(angle) * reach)
 			_flashes[i].visible = true
 			_flash_left[i] = FLASH_TIME
+			if _soundscape != null:
+				_soundscape.boom(_flashes[i].global_position)
 			break
 
 
