@@ -240,6 +240,14 @@ without Caleb, and update the gap list when a PR closes a row.
   near them and step out of their way. The people you talk to stand at the
   map's "talker" markers; "talk:<id>" portals make them answer in a speech
   card over their head (`SpeechPanel`, in the world, never on the screen).
+  Every counter (a shop, the clan hall) has a keeper, a talker the
+  counter's portal names in its "keeper" meta, who greets whoever uses it
+  (`PlazaLocals.greet`); a talker's own lines are the marker's "lines" meta
+  (or "reads" "worlds", the dispatcher reading `world_status`). Nothing
+  marks a portal on the floor (Caleb's call: no glowing pads, no floating
+  ads or signs that do not match where they stand): an arch lights its
+  "Lit" child while you stand in it (`PlazaView._light_arch`), and each
+  district names itself on the building that holds it.
   What they say comes only from what the client already knows:
   `world_status` (Dusk's rumours, Kade on the board) and the account's
   contracts (Rook). Rook's favours are contract jobs of kind "favor"

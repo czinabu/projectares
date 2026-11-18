@@ -21,6 +21,7 @@ static func run(t: Node) -> void:
 	_wanted_text(t)
 	await _bounty_and_wanted(t)
 	await _crowd(t)
+	await _layout(t)
 
 
 ## Rook's favour: one a day, the same for everyone, never rerolled, held and
@@ -149,7 +150,10 @@ static func _crowd(t: Node) -> void:
 	t.add_child(raid)
 	raid.start_server(Worlds.social_world(), 5)
 	var layout: Dictionary = raid.map.call("locals_layout")
-	var counts := {"strollers": 6, "shoppers": 5, "watchers": 7, "chats": 2, "wanderers": 3}
+	var sizes := PlazaLocals.new()
+	var counts := {"strollers": sizes.strollers, "shoppers": sizes.shoppers, "watchers": sizes.watchers,
+			"chats": sizes.chats, "wanderers": sizes.wanderers}
+	sizes.free()
 	var a := RandomNumberGenerator.new()
 	a.seed = PlazaLocals.CROWD_SEED
 	var b := RandomNumberGenerator.new()
@@ -205,7 +209,10 @@ static func _crowd(t: Node) -> void:
 		return raid.map.is_ancestor_of(n))
 	var talk_portals := raid.get_tree().get_nodes_in_group("portal").filter(func(n: Node) -> bool:
 		return raid.map.is_ancestor_of(n) and str(n.get_meta("destination", "")).begins_with("talk:"))
-	t.check(talkers.size() == 3 and talk_portals.size() == 3, "Kade, Dusk and Rook have their spots")
+	var keepers := raid.get_tree().get_nodes_in_group("portal").filter(func(n: Node) -> bool:
+		return raid.map.is_ancestor_of(n) and str(n.get_meta("keeper", "")) != "")
+	t.check(talk_portals.size() == PlazaMap.TALKERS.size() and talkers.size() == talk_portals.size() + keepers.size(),
+			"everyone you talk to has a spot: %d to walk up to, %d behind counters" % [talk_portals.size(), keepers.size()])
 	t.check(raid.get_tree().get_nodes_in_group("wanted_board").size() == 1, "the most-wanted board stands in the plaza")
 
 	# The view itself, as a client would make it.
@@ -215,7 +222,7 @@ static func _crowd(t: Node) -> void:
 	locals.setup(raid)
 	raid.add_child(locals)
 	await t.frames(3)
-	t.check(locals.locals.size() == plan_a.size() + 3, "the view stands up the crowd and the talkers")
+	t.check(locals.locals.size() == plan_a.size() + talkers.size(), "the view stands up the crowd and the talkers")
 	var outside := true
 	for entry in locals.locals:
 		var actor: Actor = entry.actor
@@ -255,5 +262,75 @@ static func _crowd(t: Node) -> void:
 	t.check(locals.talk("rook", status, account) == favor, "talking to him again takes it")
 	locals.hush()
 	t.check(locals.speaking == "", "a line can be taken down")
+	raid.queue_free()
+	await t.frames(2)
+
+
+## The layout (DESIGN.md section 2, "The Concourse"): a big deck in
+## districts, a person behind every counter, arches that light while you
+## stand in them, and none of the old floating ads, mast signs or pads.
+static func _layout(t: Node) -> void:
+	t.check(PlazaMap.RADIUS >= 200.0, "the deck is big enough to roam (%d m across)" % int(PlazaMap.RADIUS * 2.0))
+	var raid := Raid.new()
+	t.add_child(raid)
+	raid.start_server(Worlds.social_world(), 5)
+	var in_map := func(n: Node) -> bool: return raid.map.is_ancestor_of(n)
+	var portals: Array = raid.get_tree().get_nodes_in_group("portal").filter(in_map)
+	var talker_ids := {}
+	for marker: Node in raid.get_tree().get_nodes_in_group("talker").filter(in_map):
+		talker_ids[str(marker.get_meta("id", ""))] = true
+	var shops: Array = raid.get_tree().get_nodes_in_group("shop_front").filter(in_map)
+	t.check(not shops.is_empty() and shops.all(func(p: Node) -> bool:
+		return talker_ids.has(str(p.get_meta("keeper", "")))), "every shop has someone behind its counter")
+	var spread := true
+	for i in shops.size():
+		for k in range(i + 1, shops.size()):
+			spread = spread and (shops[i] as Node3D).global_position.distance_to((shops[k] as Node3D).global_position) > 8.0
+	t.check(spread, "each shop has a front of its own")
+	var bare := true
+	for portal: Node in portals:
+		for child in portal.get_children():
+			bare = bare and child.name in [&"Lit", &"Screen"]
+	t.check(bare, "no portal has a glowing pad on the floor")
+	var arches: Array = portals.filter(func(p: Node) -> bool:
+		var to := str(p.get_meta("destination", ""))
+		return to.begins_with("world:") or to == "arena")
+	t.check(not arches.is_empty() and arches.all(func(p: Node) -> bool:
+		var lit := p.get_node_or_null("Lit") as Node3D
+		return lit != null and not lit.visible), "every arch has a light, off until you stand in it")
+	var stale: Array[String] = []
+	for label: Node in raid.map.find_children("*", "Label3D", true, false):
+		var text := (label as Label3D).text.to_lower()
+		if "coming soon" in text:
+			stale.append(text)
+	t.check(stale.is_empty(), "no sign promises what is not there %s" % [stale])
+	# Arrival lands you out of everyone's way, and every doorway is apart.
+	var close := 0
+	for i in portals.size():
+		for k in range(i + 1, portals.size()):
+			if (portals[i] as Node3D).global_position.distance_to((portals[k] as Node3D).global_position) < 4.5:
+				close += 1
+	t.check(close == 0, "no two doorways overlap (%d too close)" % close)
+	# A keeper greets you when you use their counter.
+	var locals := PlazaLocals.new()
+	locals.clock_override = 1000.0
+	locals.setup(raid)
+	raid.add_child(locals)
+	await t.frames(2)
+	var keeper := str((shops[0] as Node).get_meta("keeper", ""))
+	locals.greet(keeper, {})
+	t.check(locals.speaking == keeper, "a keeper says hello when you trade")
+	var dressed := true
+	for id: String in PlazaMap.DRESS:
+		var entry: Dictionary = locals.talkers.get(id, {})
+		if entry.is_empty():
+			continue
+		var look: Dictionary = (entry.actor as Node).get_meta("appearance", {})
+		var pool: Dictionary = PlazaMap.DRESS[id]
+		var build := str(look.get("build", ""))
+		dressed = dressed and pool.has(build) and str(look.get("body", "")) in pool[build]
+	t.check(dressed, "everyone you talk to is dressed for their work")
+	var marlo := PlazaLocals.own_lines(locals.talkers.get("marlo", {}), {"ashfront": {"players": 3, "level": "Skirmish"}})
+	t.check(marlo.size() >= 2 and "3 in" in marlo[0], "the dispatcher reads the worlds out (%s)" % [marlo[0]])
 	raid.queue_free()
 	await t.frames(2)

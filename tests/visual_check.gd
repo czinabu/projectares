@@ -1016,8 +1016,9 @@ func _world_shots(out_dir: String, only := "") -> void:
 		await _settle(2)
 
 
-## The Concourse from the spots people stand: arriving, under the arcade, at
-## the gates, up on a tower deck, and from high above. Prints the draw calls
+## The Concourse from the spots people stand: arriving, at the gates, down
+## Market Row, in the civic square and the residences, from a rim lookout,
+## and from high above. Prints the draw calls
 ## and objects of each view, the frame cost that grows with the map.
 func _hub_shots(out_dir: String) -> void:
 	var plaza := Worlds.social_world()
@@ -1032,15 +1033,14 @@ func _hub_shots(out_dir: String) -> void:
 	camera.make_current()
 	var arrival: Vector3 = map.get("ARRIVAL") if map.get("ARRIVAL") != null else Vector3.ZERO
 	var views := [
-		["arrival", arrival + Vector3(0, 1.7, 0), Vector3(0, 12, 0)],
+		["arrival", arrival + Vector3(0, 1.7, 6), Vector3(0, 12, -10)],
 		["plaza", Vector3(9, 1.7, 22), Vector3(-2, 2.5, -8)],
-		["arrival_high", arrival + Vector3(0, 6, 9), Vector3(0, 6, -20)],
-		["gates", Vector3(0, 2.5, -60), Vector3(0, 7, -100)],
-		["market", Vector3(-14, 1.7, -46), Vector3(-40, 4, -42)],
-		["deck", Vector3(26.5, 16.7, -64), Vector3(-30, 8, 40)],
-		["screens", Vector3(0, 3, 62), Vector3(0, 7, 106)],
-		["contracts", Vector3(30, 2.2, 86), Vector3(32, 3.2, 96)],
-		["overview", Vector3(150, 120, 150), Vector3(0, 0, 0)],
+		["gates", Vector3(0, 2.2, -150), Vector3(0, 6, -190)],
+		["market", Vector3(0, 1.8, 64), Vector3(0, 3, 140)],
+		["civic", Vector3(108, 2.0, 4), Vector3(160, 4, 0)],
+		["residences", Vector3(-108, 2.0, -4), Vector3(-160, 4, 0)],
+		["lookout", Vector3(161, 1.7, -161), Vector3(0, 8, 0)],
+		["overview", Vector3(260, 220, 260), Vector3(0, 0, 0)],
 	]
 	for v: Array in views:
 		camera.look_at_from_position(v[1], v[2])
