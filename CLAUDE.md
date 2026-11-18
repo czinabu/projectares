@@ -347,7 +347,19 @@ without Caleb, and update the gap list when a PR closes a row.
   `--technique-only <item id>`. Every melee
   model is dressed as tech by `Look._tech_melee` (`assets/shaders/melee.gdshader`):
   bare metal becomes alloy with an energy edge in the weapon's rarity color,
-  wood and wraps black polymer with glowing seams. The scrap kit's blade
+  wood and wraps black polymer with glowing seams. The edge runs across the
+  length the mesh actually lies along (`Look.blade_axes`, `_up_axis`; a
+  pack mesh may lie along Z), the flat of a blade stays alloy, and a hammer
+  has no edge. Guns wear the same house finish (the weapon pass, to sit with
+  the sci-fi armor, helmets and vehicles): `Look._dress_gun` turns a pack
+  model's dark parts graphite (`GUN_FRAME`), its light parts ceramic
+  (`GUN_SHELL`; worn tan on the scrap rifle) and its warm parts the gun's
+  `GUN_GLOW` colour, lit softly, never a whole part aglow; each gun then
+  wears its own kit (`Look._gun_kit`: coils, cells, a drum, a shell carrier),
+  under a "Kit" node that `_measure_mounts` skips, so a kit never moves a
+  grip, a sight or the muzzle. Power weapons are built in the same finish
+  (`_power_model`). Compare every weapon side on with
+  `visual_check.tscn -- <dir> --arsenal-only` (`ARSENAL_IDS` picks rows). The scrap kit's blade
   (`starter`) is a sword made from scrap (Caleb's call): `Look._scrap_bits`
   welds crooked patch plates and rivets on the blade, winds wire round the
   grip and threads a nut on for a pommel, and it runs dim and worn

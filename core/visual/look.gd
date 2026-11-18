@@ -159,7 +159,7 @@ const GUN_MODELS := [
 	["sidearm", "Pistol_1.glb", 0.24],
 	["smg", "SMG_1.glb"],
 	["marksman", "Sniper_2.glb"],
-	["shotgun", "Shotgun_1.glb"],
+	["shotgun", "AR_6.glb"],
 	["starter", "AR_5.glb"],
 	["rifle", "AR_2.glb"],
 ]
@@ -173,7 +173,7 @@ const GUN_MOUNTS := {
 	"AR_2.glb": {"optic": 0.5, "grip": [0.82, 0.62], "magazine": [0.6, 0.5]},
 	"SMG_1.glb": {"optic": 0.62, "grip": [0.66, 0.62], "magazine": [0.84, 0.55]},
 	"Sniper_2.glb": {"optic": 0.5, "grip": [0.72, 0.4], "magazine": [0.45, 0.32]},
-	"Shotgun_1.glb": {"optic": 0.3, "grip": [0.62, 0.4], "magazine": [0.36, 0.45]},
+	"AR_6.glb": {"optic": 0.45, "grip": [0.8, 0.35], "magazine": [0.4, 0.3]},
 	"AR_3.glb": {"optic": 0.5, "grip": [0.8, 0.5], "magazine": [0.55, 0.45]},
 }
 ## Energy colour for a gun's glowing parts, picked by item tag, first match
@@ -1373,47 +1373,81 @@ func clean_appearance(raw: Variant, owned: Array = []) -> Dictionary:
 ## with glowing coils, cells and vents in the weapon's own colour
 ## (`Gun.tracer_color`). Built from shapes, picked by tag, pointing along -Z.
 func _power_model(gun: Gun) -> Node3D:
+	# The house finish the guns share (`_dress_gun`): graphite frames,
+	# ceramic shells and the weapon's own light in coils and cells.
 	var glow: Color = gun.tracer_color
-	var body := _power_mat(Color(0.24, 0.26, 0.31), 0.45, 0.45)
-	var trim := _power_mat(Color(0.5, 0.53, 0.58), 0.6, 0.35)
+	var body := _power_mat(GUN_FRAME, 0.55, 0.4)
+	var shell := _power_mat(GUN_SHELL.darkened(0.08), 0.1, 0.45)
+	var trim := _power_mat(Color(0.42, 0.45, 0.5), 0.75, 0.3)
 	var lit := _power_mat(glow, 0.0, 0.4, glow, 1.4)
 	var holder := Node3D.new()
 	holder.name = "Model"
 	var tags: Array = ItemDB.get_item(gun.item_id).get("tags", [])
 	if "railgun" in tags:
-		# Two long rails with charge coils between them.
+		# Rail Lance: a ceramic-shelled receiver, a capacitor bank on top,
+		# and two long rails with charge coils and a lit spine between them.
 		_power_box(holder, Vector3(0.09, 0.12, 0.5), Vector3(0, -0.02, 0.0), body)
+		_power_box(holder, Vector3(0.1, 0.05, 0.4), Vector3(0, 0.055, -0.02), shell)
+		_power_box(holder, Vector3(0.06, 0.1, 0.2), Vector3(0, -0.03, 0.33), body)
+		_power_box(holder, Vector3(0.064, 0.04, 0.16), Vector3(0, 0.03, 0.33), shell)
+		for i in 3:
+			_power_box(holder, Vector3(0.03, 0.022, 0.05), Vector3(0, 0.09, -0.12 + i * 0.07), lit)
 		for side in [-1.0, 1.0]:
-			_power_box(holder, Vector3(0.025, 0.05, 0.85), Vector3(0.045 * side, 0.02, -0.55), trim)
-		for i in 5:
-			_power_box(holder, Vector3(0.07, 0.07, 0.03), Vector3(0, 0.02, -0.2 - i * 0.15), lit)
+			_power_box(holder, Vector3(0.025, 0.06, 0.85), Vector3(0.045 * side, 0.02, -0.55), trim)
+			_power_box(holder, Vector3(0.028, 0.02, 0.8), Vector3(0.045 * side, 0.058, -0.53), shell)
+			_power_box(holder, Vector3(0.03, 0.03, 0.04), Vector3(0.045 * side, 0.02, -0.99), lit)
+			_power_box(holder, Vector3(0.004, 0.012, 0.3), Vector3(0.052 * side, -0.01, 0.02), lit)
+		for i in 6:
+			_power_box(holder, Vector3(0.07, 0.07, 0.022), Vector3(0, 0.02, -0.28 - i * 0.12), lit)
+		_power_cyl(holder, 0.008, 0.72, Vector3(0, 0.02, -0.6), lit)
 		_power_grip(holder, Vector3(0.05, 0.14, 0.08), Vector3(0, -0.14, 0.08), body, Vector3(0, -0.075, -0.2))
-		_power_box(holder, Vector3(0.1, 0.05, 0.12), Vector3(0, 0.1, -0.05), lit)
+		_power_box(holder, Vector3(0.05, 0.03, 0.14), Vector3(0, -0.095, -0.2), shell)
 	elif "launcher" in tags:
-		# A wide plasma tube on the shoulder, glowing at both ends.
-		_power_cyl(holder, 0.085, 0.85, Vector3(0, 0.02, -0.25), body)
-		_power_cyl(holder, 0.095, 0.08, Vector3(0, 0.02, -0.66), lit)
-		_power_cyl(holder, 0.095, 0.06, Vector3(0, 0.02, 0.17), trim)
-		_power_box(holder, Vector3(0.04, 0.03, 0.5), Vector3(0, 0.11, -0.25), lit)
+		# Helion: a ceramic plasma tube banded in graphite, a lit vent at the
+		# mouth and the exhaust, a sight box and a battery along its side.
+		_power_cyl(holder, 0.085, 0.85, Vector3(0, 0.02, -0.25), shell)
+		for z: float in [-0.6, -0.25, 0.1]:
+			_power_cyl(holder, 0.092, 0.05, Vector3(0, 0.02, z), body)
+		_power_cyl(holder, 0.075, 0.03, Vector3(0, 0.02, -0.675), lit)
+		_power_cyl(holder, 0.07, 0.03, Vector3(0, 0.02, 0.17), lit)
+		_power_box(holder, Vector3(0.05, 0.05, 0.14), Vector3(-0.06, 0.12, -0.05), body)
+		_power_box(holder, Vector3(0.03, 0.02, 0.02), Vector3(-0.06, 0.12, -0.125), lit)
+		_power_box(holder, Vector3(0.03, 0.06, 0.4), Vector3(0.095, 0.0, -0.25), body)
+		_power_box(holder, Vector3(0.006, 0.02, 0.34), Vector3(0.112, 0.0, -0.25), lit)
 		_power_grip(holder, Vector3(0.05, 0.14, 0.07), Vector3(0, -0.12, -0.05), body, Vector3(0, -0.06, -0.38))
-		_power_box(holder, Vector3(0.12, 0.08, 0.12), Vector3(0.07, 0.05, -0.05), trim)
+		_power_box(holder, Vector3(0.04, 0.09, 0.05), Vector3(0, -0.09, -0.38), body)
 	elif "grenade_launcher" in tags:
-		# Short barrel over a fat glowing drum of arc charges.
+		# Arc Mortar: a short fat barrel ringed with coils over a lit drum of
+		# arc charges half sheathed in ceramic, and a stub stock.
 		_power_box(holder, Vector3(0.08, 0.1, 0.45), Vector3(0, 0.0, -0.15), body)
+		_power_box(holder, Vector3(0.09, 0.04, 0.32), Vector3(0, 0.06, -0.1), shell)
 		_power_cyl(holder, 0.05, 0.35, Vector3(0, 0.05, -0.45), trim)
-		var drum := _power_cyl(holder, 0.1, 0.12, Vector3(0, -0.06, -0.12), lit)
+		_power_cyl(holder, 0.06, 0.04, Vector3(0, 0.05, -0.62), body)
+		for i in 3:
+			_power_cyl(holder, 0.056, 0.012, Vector3(0, 0.05, -0.36 - i * 0.07), lit)
+		var drum := _power_cyl(holder, 0.1, 0.12, Vector3(0, -0.06, -0.12), _power_mat(glow.darkened(0.3), 0.0, 0.4, glow, 0.7))
 		drum.rotation = Vector3(0, 0, PI / 2.0)
+		for side in [-1.0, 1.0]:
+			var cover := _power_cyl(holder, 0.075, 0.01, Vector3(0.062 * side, -0.06, -0.12), shell)
+			cover.rotation = Vector3(0, 0, PI / 2.0)
+		_power_box(holder, Vector3(0.06, 0.08, 0.16), Vector3(0, -0.01, 0.15), body)
+		_power_box(holder, Vector3(0.065, 0.03, 0.12), Vector3(0, 0.04, 0.16), shell)
 		_power_grip(holder, Vector3(0.05, 0.14, 0.07), Vector3(0, -0.13, 0.08), body, Vector3(0, -0.045, -0.3))
-		_power_box(holder, Vector3(0.09, 0.02, 0.3), Vector3(0, 0.07, -0.15), lit)
 	else:
-		# Rotary pulse cannon: a ring of barrels around a glowing core.
+		# Storm Cannon: a ring of barrels round a lit core, clamped by
+		# ceramic collars, a motor housing behind and a cell on its side.
 		_power_box(holder, Vector3(0.16, 0.16, 0.36), Vector3(0, 0, 0.0), body)
+		_power_box(holder, Vector3(0.17, 0.08, 0.3), Vector3(0, 0.05, 0.02), shell)
 		for i in 6:
 			var a := TAU * i / 6.0
 			_power_cyl(holder, 0.022, 0.7, Vector3(cos(a) * 0.065, sin(a) * 0.065, -0.5), trim)
 		_power_cyl(holder, 0.03, 0.72, Vector3(0, 0, -0.5), lit)
 		_power_cyl(holder, 0.11, 0.05, Vector3(0, 0, -0.25), lit)
+		_power_cyl(holder, 0.105, 0.04, Vector3(0, 0, -0.55), shell)
+		_power_cyl(holder, 0.1, 0.03, Vector3(0, 0, -0.84), body)
 		_power_box(holder, Vector3(0.18, 0.06, 0.2), Vector3(0, 0.12, 0.05), trim)
+		_power_box(holder, Vector3(0.06, 0.12, 0.16), Vector3(0.11, -0.02, 0.0), body)
+		_power_box(holder, Vector3(0.006, 0.08, 0.12), Vector3(0.143, -0.02, 0.0), lit)
 		_power_grip(holder, Vector3(0.05, 0.14, 0.07), Vector3(0, -0.14, 0.1), body, Vector3(0, -0.085, -0.12))
 	return holder
 
@@ -1506,7 +1540,10 @@ func weapon_model(weapon: Weapon) -> Node3D:
 	_fit(model, WEAPONS + file, length, false)
 	for entry: Array in GUN_GLOW:
 		if weapon.item_id != "" and ItemDB.has_tag(weapon.item_id, entry[0]):
+			var scrap := ItemDB.has_tag(weapon.item_id, "starter") and not ItemDB.has_tag(weapon.item_id, "sidearm")
+			_dress_gun(model, entry[1], scrap)
 			_energize(model, holder, entry[1])
+			_gun_kit(holder, model, weapon.item_id, entry[1], scrap)
 			break
 	_weather_model(model, 0.8 if weapon.item_id == "" else 0.5, 0.75)
 	# The packs point guns along +X. Hands hold them pointing along -Z.
@@ -1629,7 +1666,7 @@ func _measure_mounts(model: Node3D, along: Dictionary) -> Dictionary:
 	var points := PackedVector3Array()
 	for node in model.find_children("*", "MeshInstance3D", true, false):
 		var mesh_node := node as MeshInstance3D
-		if mesh_node.mesh == null:
+		if mesh_node.mesh == null or mesh_node.get_parent().name == "Kit":
 			continue
 		var xform := mesh_node.transform
 		var up := mesh_node.get_parent()
@@ -1854,10 +1891,39 @@ func _flood(solid: PackedByteArray, mark: PackedInt32Array, todo: Array, nz: int
 	return region
 
 
-## Gives a gun model a sci-fi energy look in `glow`: warm parts become glowing
-## cells, the dark body gets a cool gunmetal sheen, and an emitter ring sits on
-## the muzzle. `holder` is the model's parent; guns point along +X in it.
+## The glowing emitter ring in `glow` on a gun's muzzle. `holder` is the
+## model's parent; guns point along +X in it.
 func _energize(model: Node3D, holder: Node3D, glow: Color) -> void:
+	var box := model_bounds(model)
+	var ring := MeshInstance3D.new()
+	var tube := CylinderMesh.new()
+	var radius := box.size.y * 0.07
+	tube.top_radius = radius
+	tube.bottom_radius = radius
+	tube.height = box.size.x * 0.035
+	tube.material = _gun_lit(glow, 1.6)
+	ring.mesh = tube
+	ring.name = "Emitter"
+	ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	ring.rotation.z = PI / 2.0
+	ring.position = Vector3(box.end.x, box.position.y + box.size.y * 0.78, box.get_center().z)
+	holder.add_child(ring)
+
+
+## The house finish every gun shares (the weapon pass, to sit with the
+## sci-fi armor, helmets and vehicles): a graphite frame, light ceramic
+## shells over it, and the gun's role colour only in lit accent panels and
+## trim, never a whole surface aglow. The scrap rifle's shells are worn tan
+## and its light runs dim.
+const GUN_FRAME := Color(0.1, 0.11, 0.125)
+const GUN_SHELL := Color(0.92, 0.93, 0.9)
+const SCRAP_SHELL := Color(0.47, 0.41, 0.33)
+var gun_accent_glow := 0.5
+var _gun_finishes := {}
+var _gun_slices := {}
+
+
+func _dress_gun(model: Node3D, glow: Color, scrap: bool) -> void:
 	for node in model.find_children("*", "MeshInstance3D", true, false):
 		var mesh_node := node as MeshInstance3D
 		if mesh_node.mesh == null:
@@ -1866,36 +1932,174 @@ func _energize(model: Node3D, holder: Node3D, glow: Color) -> void:
 			var source := mesh_node.get_active_material(i) as BaseMaterial3D
 			if source == null:
 				continue
-			var c := source.albedo_color
-			var mat := source.duplicate() as BaseMaterial3D
-			if c.r - c.b > 0.08 and c.r > 0.15:
-				mat.albedo_color = glow.darkened(0.3)
-				mat.emission_enabled = true
-				mat.emission = glow
-				mat.emission_energy_multiplier = 2.2
-			else:
-				mat.albedo_color = c.lerp(Color(0.32, 0.36, 0.42), 0.35)
-			mesh_node.set_surface_override_material(i, mat)
+			var key := "%d/%s/%s" % [source.get_instance_id(), glow.to_html(), scrap]
+			if not _gun_finishes.has(key):
+				_gun_finishes[key] = _gun_finish(source, glow, scrap)
+			mesh_node.set_surface_override_material(i, _gun_finishes[key])
+
+
+func _gun_finish(source: BaseMaterial3D, glow: Color, scrap: bool) -> BaseMaterial3D:
+	var c := source.albedo_color
+	var mat := source.duplicate() as BaseMaterial3D
+	if c.r - c.b > 0.08 and c.r > 0.15:
+		mat.albedo_color = glow.darkened(0.6 if scrap else 0.35)
+		mat.emission_enabled = true
+		mat.emission = glow
+		mat.emission_energy_multiplier = gun_accent_glow * (0.3 if scrap else 1.0)
+	elif c.get_luminance() > 0.4:
+		mat.albedo_color = SCRAP_SHELL if scrap else GUN_SHELL
+	else:
+		mat.albedo_color = GUN_FRAME.lerp(c, 0.3)
+	return mat
+
+
+## A lit trim material in `glow`, kept readable through a storm.
+func _gun_lit(glow: Color, energy: float) -> StandardMaterial3D:
+	var key := "lit/%s/%.2f" % [glow.to_html(), energy]
+	if not _gun_finishes.has(key):
+		_gun_finishes[key] = _power_mat(glow.darkened(0.2), 0.0, 0.4, glow, energy)
+	return _gun_finishes[key]
+
+
+func _gun_plain(color: Color, metal: float, rough: float) -> StandardMaterial3D:
+	var key := "plain/%s/%.2f/%.2f" % [color.to_html(), metal, rough]
+	if not _gun_finishes.has(key):
+		_gun_finishes[key] = _power_mat(color, metal, rough)
+	return _gun_finishes[key]
+
+
+## The gun's outline sliced along its length (in the holder's space, the gun
+## lying along +X): for each of 40 slices the bottom, top, and the widest
+## reach either side, read off its triangles. Kit parts stand on it.
+func _gun_outline(model: Node3D, key: String) -> Array:
+	if _gun_slices.has(key):
+		return _gun_slices[key]
 	var box := model_bounds(model)
-	var ring := MeshInstance3D.new()
-	var tube := CylinderMesh.new()
-	var radius := box.size.y * 0.07
-	tube.top_radius = radius
-	tube.bottom_radius = radius
-	tube.height = box.size.x * 0.035
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = glow
-	mat.emission_enabled = true
-	mat.emission = glow
-	mat.emission_energy_multiplier = 1.6
-	mat.disable_fog = true
-	tube.material = mat
-	ring.mesh = tube
-	ring.name = "Emitter"
-	ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	ring.rotation.z = PI / 2.0
-	ring.position = Vector3(box.end.x, box.position.y + box.size.y * 0.78, box.get_center().z)
-	holder.add_child(ring)
+	var n := 40
+	var out := []
+	for i in n:
+		out.append(Vector4(INF, -INF, INF, -INF))
+	for node in model.find_children("*", "MeshInstance3D", true, false):
+		var mesh_node := node as MeshInstance3D
+		if mesh_node.mesh == null:
+			continue
+		var xform := mesh_node.transform
+		var up := mesh_node.get_parent()
+		while up != null and up != model.get_parent():
+			if up is Node3D:
+				xform = (up as Node3D).transform * xform
+			up = up.get_parent()
+		var faces := mesh_node.mesh.get_faces()
+		for f in range(0, faces.size(), 3):
+			var a := xform * faces[f]
+			var b := xform * faces[f + 1]
+			var c := xform * faces[f + 2]
+			var lo := mini(n - 1, maxi(0, int((minf(a.x, minf(b.x, c.x)) - box.position.x) / box.size.x * n)))
+			var hi := mini(n - 1, maxi(0, int((maxf(a.x, maxf(b.x, c.x)) - box.position.x) / box.size.x * n)))
+			for s in range(lo, hi + 1):
+				var v: Vector4 = out[s]
+				out[s] = Vector4(minf(v.x, minf(a.y, minf(b.y, c.y))), maxf(v.y, maxf(a.y, maxf(b.y, c.y))),
+						minf(v.z, minf(a.z, minf(b.z, c.z))), maxf(v.w, maxf(a.z, maxf(b.z, c.z))))
+	_gun_slices[key] = out
+	return out
+
+
+## What makes each gun its own on top of the finish: parts that hang under a
+## "Kit" node, which measuring skips (`_measure_mounts`), so they never move
+## a grip, a sight or the muzzle. Placed on the gun's outline
+## (`_gun_outline`) by how far along it they go, 0 at the stock and 1 at the
+## muzzle. View only.
+func _gun_kit(holder: Node3D, model: Node3D, item_id: String, glow: Color, scrap: bool) -> void:
+	var kit := Node3D.new()
+	kit.name = "Kit"
+	holder.add_child(kit)
+	var box := model_bounds(model)
+	var outline := _gun_outline(model, "%s@%.3f" % [model.scene_file_path, box.size.x])
+	var length := box.size.x
+	var x_at := func(along: float) -> float:
+		return box.position.x + length * along
+	var slice := func(along: float) -> Vector4:
+		return outline[clampi(int(along * outline.size()), 0, outline.size() - 1)]
+	var frame := _gun_plain(GUN_FRAME, 0.6, 0.4)
+	var shell := _gun_plain(SCRAP_SHELL if scrap else GUN_SHELL, 0.1, 0.5)
+	var lit := _gun_lit(glow, 0.3 if scrap else 1.5)
+	var tags: Array = ItemDB.get_item(item_id).get("tags", [])
+	var mid_z := box.get_center().z
+	# The barrel's line, from the front slice.
+	var front: Vector4 = slice.call(0.99)
+	var bore := Vector3(box.end.x, (front.x + front.y) * 0.5, (front.z + front.w) * 0.5)
+	var bore_r := maxf((front.y - front.x) * 0.5, 0.006)
+	if scrap:
+		# Scrap: tape wound round the fore end and a patch plate riveted on
+		# the side, the same make-do as the scrap blade.
+		var tape := _gun_plain(Color(0.16, 0.15, 0.13), 0.0, 0.9)
+		for along: float in [0.66, 0.7]:
+			var s: Vector4 = slice.call(along)
+			_power_box(kit, Vector3(0.012, s.y - s.x + 0.004, s.w - s.z + 0.004),
+					Vector3(x_at.call(along), (s.x + s.y) * 0.5, (s.z + s.w) * 0.5), tape)
+		var s2: Vector4 = slice.call(0.45)
+		var patch := _power_box(kit, Vector3(0.07, (s2.y - s2.x) * 0.35, 0.004),
+				Vector3(x_at.call(0.45), s2.x + (s2.y - s2.x) * 0.62, s2.w + 0.002), _gun_plain(Color(0.5, 0.5, 0.52), 0.7, 0.6))
+		patch.rotation.z = 0.12
+		for dx: float in [-0.026, 0.026]:
+			_power_box(kit, Vector3(0.007, 0.007, 0.004), patch.position + Vector3(dx, dx * 0.12, 0.003), frame)
+		return
+	if "shotgun" in tags:
+		# Breacher: a wide choke round the bore with a lit ring inside, and a
+		# side carrier of four lit shells.
+		_kit_cyl(kit, bore_r * 1.5, 0.03, bore + Vector3(-0.02, 0, 0), frame)
+		_kit_cyl(kit, bore_r * 1.18, 0.032, bore + Vector3(-0.02, 0, 0), lit)
+		var s: Vector4 = slice.call(0.42)
+		for i in 4:
+			var shell_at := Vector3(x_at.call(0.36) + i * 0.028, s.x + (s.y - s.x) * 0.55, s.w + 0.009)
+			var round_part := _kit_cyl(kit, 0.009, 0.05, shell_at, lit)
+			round_part.rotation = Vector3(0, 0, 0)
+		_power_box(kit, Vector3(0.13, 0.016, 0.006), Vector3(x_at.call(0.36) + 0.042, s.x + (s.y - s.x) * 0.55 - 0.03, s.w + 0.004), shell)
+	elif "marksman" in tags:
+		# Longshot: charge coils round the barrel ahead of the fore end.
+		for i in 4:
+			_kit_cyl(kit, bore_r + 0.006, 0.008, bore - Vector3(length * (0.07 + i * 0.03), 0, 0), lit)
+	elif "smg" in tags:
+		# Stinger: a vented shroud over the barrel, lit through its slots.
+		_kit_cyl(kit, bore_r + 0.01, length * 0.1, bore - Vector3(length * 0.08, 0, 0), frame)
+		for i in 3:
+			_kit_cyl(kit, bore_r + 0.012, 0.006, bore - Vector3(length * (0.05 + i * 0.025), 0, 0), lit)
+	elif "hand_cannon" in tags:
+		# Warden: a heavy cell drum in the frame and a lit slot down the
+		# barrel's top.
+		var s: Vector4 = slice.call(0.5)
+		var drum_at := Vector3(x_at.call(0.5), s.x + (s.y - s.x) * 0.7, mid_z)
+		var drum := _kit_cyl(kit, (s.y - s.x) * 0.24, 0.05, drum_at, frame)
+		drum.rotation = Vector3.ZERO
+		drum.rotation.x = PI / 2.0
+		for side in [-1.0, 1.0]:
+			var face := _kit_cyl(kit, (s.y - s.x) * 0.15, 0.004, drum_at + Vector3(0, 0, side * 0.026), lit)
+			face.rotation = Vector3(PI / 2.0, 0, 0)
+		var t: Vector4 = slice.call(0.8)
+		_power_box(kit, Vector3(length * 0.3, 0.004, 0.012), Vector3(x_at.call(0.78), t.y + 0.001, mid_z), lit)
+	elif "machine_pistol" in tags:
+		_kit_cyl(kit, bore_r + 0.006, 0.008, bore - Vector3(length * 0.06, 0, 0), lit)
+	elif "rifle" in tags:
+		# Carbine: a lit power cell set in a ceramic housing on each side.
+		var s: Vector4 = slice.call(0.6)
+		for side in [-1.0, 1.0]:
+			var face := s.w if side > 0.0 else s.z
+			var y := s.x + (s.y - s.x) * 0.55
+			_power_box(kit, Vector3(length * 0.16, (s.y - s.x) * 0.26, 0.006), Vector3(x_at.call(0.6), y, face + side * 0.002), shell)
+			_power_box(kit, Vector3(length * 0.12, 0.007, 0.008), Vector3(x_at.call(0.6), y, face + side * 0.003), lit)
+	elif "sidearm" in tags:
+		# Service pistol: a lit status strip on each side of the slide.
+		var s: Vector4 = slice.call(0.7)
+		for side in [-1.0, 1.0]:
+			var face := s.w if side > 0.0 else s.z
+			_power_box(kit, Vector3(length * 0.25, 0.004, 0.003), Vector3(x_at.call(0.7), s.y - (s.y - s.x) * 0.25, face + side * 0.001), lit)
+
+
+## A cylinder lying along the gun (+X in the holder's space).
+func _kit_cyl(parent: Node3D, radius: float, length: float, at: Vector3, mat: Material) -> MeshInstance3D:
+	var part := _power_cyl(parent, radius, length, at, mat)
+	part.rotation = Vector3(0, 0, PI / 2.0)
+	return part
 
 
 ## Melee models stand along +Y with the handle down, the way the greybox
@@ -1922,7 +2126,8 @@ func _melee_model(weapon: Weapon) -> Node3D:
 		_scrap_bits(holder, _handles.get(key, {}))
 	# Scrap runs dim and worn: a faint edge on beaten metal.
 	_tech_melee(holder, energy_color(weapon.item_id), energy_strength(weapon.item_id) * (scrap_energy if scrap else 1.0),
-			scrap_wear if scrap else (0.7 if weapon.item_id == "" else 0.3), {"mode": pick[4]})
+			scrap_wear if scrap else (0.7 if weapon.item_id == "" else 0.3), {"mode": pick[4]},
+			not ItemDB.has_tag(weapon.item_id, "hammer"))
 	return holder
 
 
@@ -2135,8 +2340,9 @@ func energy_strength(item_id: String) -> float:
 ## holstered: {"mode": "blade"} finds the blade (the parts that start highest
 ## up the model) and draws it into the hilt; {"hilt", "slide", "keep"} in
 ## meters up the model slides `slide` meters above `hilt` down to `keep` of
-## its length, and carries everything above along with it.
-func _tech_melee(root: Node3D, glow: Color, strength: float, wear: float, fold := {}) -> void:
+## its length, and carries everything above along with it. `edged` false
+## (a hammer) gives no part a cutting edge.
+func _tech_melee(root: Node3D, glow: Color, strength: float, wear: float, fold := {}, edged := true) -> void:
 	var surfaces: Array[Dictionary] = []
 	for node in root.find_children("*", "MeshInstance3D", true, false):
 		var mesh_node := node as MeshInstance3D
@@ -2189,10 +2395,20 @@ func _tech_melee(root: Node3D, glow: Color, strength: float, wear: float, fold :
 			retract = {"origin": inv * Vector3(0, hilt, 0), "axis": axis.normalized(),
 				"slide": slide * axis.length(), "keep": keep}
 		mesh_node.set_surface_override_material(s["index"],
-				_tech_material(s["source"], glow, strength, wear, xform.basis.get_scale().y,
-					mesh_node.mesh.get_aabb(), retract))
+				_tech_material(s["source"], glow, strength, wear, xform.basis.get_scale()[_up_axis(xform)],
+					_surface_box(mesh_node.mesh, s["index"]) if edged else AABB(), retract, _up_axis(xform)))
 	if hilt < INF:
 		root.set_meta("fold", {"hilt": hilt, "slide": slide, "keep": keep})
+
+
+## Which of a mesh's own axes stands up the weapon once placed by `xform`.
+static func _up_axis(xform: Transform3D) -> int:
+	var up := xform.basis.inverse() * Vector3.UP
+	var best := 0
+	for a in 3:
+		if absf(up[a]) > absf(up[best]):
+			best = a
+	return best
 
 
 ## How high up a melee model a point `y` meters from its pommel sits once
@@ -2278,18 +2494,45 @@ static func tech_part(color: Color) -> float:
 
 ## Which axis a flat blade is wide along (0 for X, 2 for Z), or -1 when the
 ## part is not flat enough to have a cutting edge.
-static func edge_axis(box: AABB) -> int:
-	var wide := maxf(box.size.x, box.size.z)
-	var thin := minf(box.size.x, box.size.z)
-	if wide <= 0.0 or thin > wide * 0.5:
-		return -1
-	return 0 if box.size.x >= box.size.z else 2
+static func edge_axis(box: AABB, length_axis := 1) -> int:
+	return blade_axes(box, length_axis).x
+
+
+## A flat part's axes in its mesh's own space, given the axis its length
+## runs along (the one that stands up the weapon): x the axis it is wide
+## along, where its cutting edges are, and y the thin one, the flat's
+## normal; both -1 when it is not flat enough to have an edge. A pack model
+## may lie along any axis in its own mesh, so the length is asked for, never
+## assumed (assuming Y lit the whole flat of a blade lying along Z).
+static func blade_axes(box: AABB, length_axis := 1) -> Vector2i:
+	var across: Array[int] = []
+	for a in 3:
+		if a != length_axis:
+			across.append(a)
+	var wide := across[0] if box.size[across[0]] >= box.size[across[1]] else across[1]
+	var thin := across[1] if wide == across[0] else across[0]
+	if box.size[wide] <= 0.0 or box.size[thin] > box.size[wide] * 0.5:
+		return Vector2i(-1, -1)
+	return Vector2i(wide, thin)
+
+
+## The bounds of one surface of `mesh`, in the mesh's own space.
+func _surface_box(mesh: Mesh, surface: int) -> AABB:
+	var key := "box/%d/%d" % [mesh.get_instance_id(), surface]
+	if _spans.has(key):
+		return _spans[key]
+	var verts: PackedVector3Array = mesh.surface_get_arrays(surface)[Mesh.ARRAY_VERTEX]
+	var box := AABB(verts[0], Vector3.ZERO) if not verts.is_empty() else mesh.get_aabb()
+	for v in verts:
+		box = box.expand(v)
+	_spans[key] = box
+	return box
 
 
 func _tech_material(source: BaseMaterial3D, glow: Color, strength: float, wear: float, meters: float,
-		box: AABB, retract := {}) -> ShaderMaterial:
-	var key := "tech/%d/%s/%.2f/%.2f/%.4f/%s/%s" % [source.get_instance_id(), glow.to_html(), strength, wear, meters,
-		box, retract]
+		box: AABB, retract := {}, length_axis := 1) -> ShaderMaterial:
+	var key := "tech/%d/%s/%.2f/%.2f/%.4f/%s/%s/%d" % [source.get_instance_id(), glow.to_html(), strength, wear, meters,
+		box, retract, length_axis]
 	if _gear_materials.has(key):
 		return _gear_materials[key]
 	var mat := ShaderMaterial.new()
@@ -2301,7 +2544,10 @@ func _tech_material(source: BaseMaterial3D, glow: Color, strength: float, wear: 
 	mat.set_shader_parameter("energy", strength)
 	mat.set_shader_parameter("box_min", box.position)
 	mat.set_shader_parameter("box_max", box.end)
-	mat.set_shader_parameter("edge_axis", edge_axis(box))
+	var axes := blade_axes(box, length_axis)
+	mat.set_shader_parameter("edge_axis", axes.x)
+	mat.set_shader_parameter("flat_axis", axes.y)
+	mat.set_shader_parameter("length_axis", length_axis)
 	mat.set_shader_parameter("seam_scale", 6.0 * meters)
 	mat.set_shader_parameter("part", tech_part(source.albedo_color))
 	var dir := TEXTURES + "Metal063/"
