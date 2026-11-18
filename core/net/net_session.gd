@@ -2267,8 +2267,28 @@ func _world_status(p_status: Dictionary) -> void:
 				"level": str(entry.get("level", "")).left(24),
 				"bounty": maxi(0, int(entry.get("bounty", 0))),
 				"event": str(entry.get("event", "")).left(40),
-				"storm": str(entry.get("storm", "")).left(24)}
+				"storm": str(entry.get("storm", "")).left(24),
+				"wanted": _clean_wanted(entry.get("wanted", []))}
 	world_status_changed.emit(world_status)
+
+
+## A world's most wanted as the server sent them (`Raid.wanted`), checked:
+## at most `Raid.WANTED_SHOWN` entries of {name, clan, bounty, marked}.
+static func _clean_wanted(raw: Variant) -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	if typeof(raw) != TYPE_ARRAY:
+		return out
+	for entry: Variant in raw:
+		if out.size() >= Raid.WANTED_SHOWN:
+			break
+		if typeof(entry) != TYPE_DICTIONARY:
+			continue
+		var name := str(entry.get("name", "")).strip_edges().left(24)
+		if name == "":
+			continue
+		out.append({"name": name, "clan": str(entry.get("clan", "")).left(6),
+				"bounty": maxi(0, int(entry.get("bounty", 0))), "marked": typeof(entry.get("marked")) == TYPE_BOOL and entry.marked})
+	return out
 
 
 @rpc("authority", "call_remote", "reliable")

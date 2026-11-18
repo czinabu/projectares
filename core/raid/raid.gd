@@ -78,6 +78,8 @@ const SPAWN_SNAP := 2.5
 ## How many times a bot the world turns away is rolled again before the last
 ## roll is kept anyway.
 const BOT_REROLLS := 8
+## How many of the most wanted a world tells the plaza about (`wanted`).
+const WANTED_SHOWN := 5
 ## Seconds between rounds of orders to the bot factions.
 const ORDERS_EVERY := 8.0
 const DETAIL_EVERY := 0.25
@@ -1465,7 +1467,8 @@ func state_for(actor: Actor) -> PlayerState:
 ## Players still in the raid.
 ## What this world looks like from outside, for a doorway or a travel screen:
 ## how many are fighting, how hot the war is, the biggest bounty and the
-## event running. Nothing here says who or where anyone is.
+## event running, and the most wanted (`wanted`): their names and bounties,
+## which the plaza's board shows, but never where anyone is.
 func status() -> Dictionary:
 	var bounty := 0
 	var fighting := active_players()
@@ -1474,7 +1477,24 @@ func status() -> Dictionary:
 			bounty = maxi(bounty, actor.bounty)
 	return {"players": fighting.size(), "war": snappedf(war.intensity, 0.05), "level": war.level_name(),
 			"bounty": bounty, "event": str(event.get("title", "")),
-			"storm": world.weather_name if weather.active() else ""}
+			"storm": world.weather_name if weather.active() else "", "wanted": wanted()}
+
+
+## The most wanted here, for the plaza's board: up to `WANTED_SHOWN` players
+## with a bounty or the Marked, biggest bounty first, each {name, clan,
+## bounty, marked}. Who, never where (see `status`).
+func wanted() -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	if world.safe_zone or not world.gear_at_risk:
+		return out
+	for actor in active_players():
+		if not is_instance_valid(actor) or actor.is_dead or (actor.bounty <= 0 and not actor.marked):
+			continue
+		out.append({"name": actor.display_name.left(24), "clan": actor.clan_tag.left(6), "bounty": actor.bounty,
+				"marked": actor.marked})
+	out.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return a.bounty > b.bounty if a.bounty != b.bounty else (a.marked and not b.marked))
+	return out.slice(0, WANTED_SHOWN)
 
 
 func active_players() -> Array[Actor]:
@@ -2891,6 +2911,8 @@ func _on_actor_died(actor: Actor, info: DamageInfo) -> void:
 	var by: String = (info.source as Actor).display_name if info.source is Actor else ""
 	var gained := 0
 	if mode != Mode.CLIENT:
+		# Read before the ledger closes the victim's life.
+		var bounty := renown.bounty_of(state.owner) if state != null else 0
 		gained = _settle_renown(state, killer, actor, by)
 		if killer != null:
 			var pay := Economy.KILL_BOUNTY
@@ -2904,6 +2926,11 @@ func _on_actor_died(actor: Actor, info: DamageInfo) -> void:
 				_count(killer, "warlords")
 			elif state != null and not _wears_scrap(actor):
 				pay = Economy.PLAYER_KILL_SCRIP
+			# A bounty on the victim is the killer's, carried like any scrip:
+			# it only counts once they bank it or sign out alive.
+			if bounty > 0 and killer.owner != state.owner:
+				pay += Economy.bounty_scrip(bounty)
+				killer.actor.notice.emit("Bounty claimed: +%d scrip, yours once you get it home" % Economy.bounty_scrip(bounty))
 			_pay_scrip(killer, pay)
 		# Only kills that players are part of count as the war.
 		if state != null or killer != null:

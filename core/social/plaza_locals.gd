@@ -1,0 +1,740 @@
+extends Node3D
+## The people of a safe zone: locals who live their day in it, and a few you
+## can talk to (DESIGN.md section 2, "Locals"). A view only, like the rest of
+## `PlazaView`: every client makes the same crowd from the map's
+## `locals_layout()` and a fixed seed, and walks each local along a routine
+## timed by the wall clock, so everyone sees much the same people in much the
+## same places and the server sends nothing and runs nothing for them.
+##
+## Locals are ordinary `Actor`s, dressed by `Look` and driven only through
+## their `ActorCommand` (legs follow velocity as for anyone), but they are not
+## part of the world: not in the "actors" group, no collision with people,
+## never a child of the `Raid`, so nothing in the simulation, the roster or
+## the network sees them. They look at people who come near and step out of
+## their way. Far ones are thinned like far bots (`Actor.thin`).
+##
+## The people you talk to stand at the map's "talker" markers (meta "id",
+## "yaw", "name", "role"). `talk` makes them answer in a speech panel over
+## their head: a lit card in the world, never on the screen.
+##
+## Load with `preload("res://core/social/plaza_locals.gd")`.
+
+const Human := preload("res://core/visual/human.gd")
+const Contracts := preload("res://core/economy/contracts.gd")
+const RaidRoster := preload("res://core/ui/raid_roster.gd")
+
+## The crowd's seed: the same everywhere, so every client agrees.
+const CROWD_SEED := 52_731
+## A local further than this from where their routine says is put back there.
+const SNAP := 6.0
+## Close enough to where they should be to stand still.
+const ARRIVED := 0.3
+## People nearer than this are looked at, and nearer than `GIVE_WAY` in their
+## path are stepped round.
+const NOTICE := 7.0
+const GIVE_WAY := 1.9
+## A talker turns to face anyone this close.
+const FACE_RANGE := 4.5
+## Past this from the camera a local takes a step every few ticks.
+const THIN_RANGE := 45.0
+## How long a line stays up, and how far you can walk off before it closes.
+const SPEECH_TIME := 9.0
+const SPEECH_RANGE := 8.0
+
+## How many of each kind make up the crowd. Not one to a spot: the counts and
+## who goes together are rolled from the seed.
+var strollers := 6
+var shoppers := 5
+var watchers := 7
+var chats := 2
+var wanderers := 3
+
+var raid: Raid
+## The map's layout (see `worlds/plaza/map.gd locals_layout`).
+var layout := {}
+## Each local: {actor, routine, offset, speed, side, talker}.
+var locals: Array[Dictionary] = []
+## Talker id -> its entry in `locals`.
+var talkers := {}
+## Talker id -> SpeechPanel.
+var panels := {}
+## The talker whose line is up, and how long it has left.
+var speaking := ""
+var _speech_left := 0.0
+## Each talker's next line, so talking again moves on.
+var _line_index := {}
+## What Rook offered in the line now up: a job id to take, or "".
+var offered_job := ""
+## Seconds since the crowd last checked who is far from the camera.
+var _thin_wait := 0.0
+## For tests: a clock to use instead of the wall clock (< 0 for the wall).
+var clock_override := -1.0
+
+
+func setup(p_raid: Raid) -> void:
+	raid = p_raid
+
+
+func _ready() -> void:
+	if raid == null or raid.map == null or not raid.map.has_method("locals_layout"):
+		return
+	layout = raid.map.call("locals_layout")
+	var rng := RandomNumberGenerator.new()
+	rng.seed = CROWD_SEED
+	for plan in plan_crowd(layout, rng, {"strollers": strollers, "shoppers": shoppers, "watchers": watchers,
+			"chats": chats, "wanderers": wanderers}):
+		_spawn(plan, rng)
+	for node in raid.get_tree().get_nodes_in_group("talker"):
+		var marker := node as Node3D
+		if marker == null or not raid.map.is_ancestor_of(marker):
+			continue
+		var id := str(marker.get_meta("id", ""))
+		var routine := Routine.new()
+		routine.dwell(marker.global_position, float(marker.get_meta("yaw", 0.0)), 60.0)
+		var look_rng := RandomNumberGenerator.new()
+		look_rng.seed = hash(["talker", id])
+		var entry := _spawn({"routine": routine, "offset": 0.0, "speed": 1.2, "side": 0.0}, look_rng)
+		entry["talker"] = id
+		entry["name"] = str(marker.get_meta("name", id.capitalize()))
+		entry["role"] = str(marker.get_meta("role", ""))
+		entry.actor.display_name = entry.name
+		talkers[id] = entry
+		_add_name_tag(entry)
+		var panel := SpeechPanel.new()
+		panel.name = "Speech_%s" % id
+		add_child(panel)
+		panel.global_position = marker.global_position + Vector3(0, 2.15, 0)
+		panels[id] = panel
+
+
+func _spawn(plan: Dictionary, rng: RandomNumberGenerator) -> Dictionary:
+	var actor := Actor.new()
+	actor.name = "Local%d" % locals.size()
+	actor.display_name = "Local"
+	actor.set_meta("appearance", Human.random(rng))
+	var routine: Routine = plan.routine
+	var start := routine.sample(_now() + float(plan.offset))
+	actor.position = start.pos + Vector3(0, 0.05, 0)
+	add_child(actor)
+	# Not part of the world: nothing scans for them and nobody bumps them.
+	actor.remove_from_group("actors")
+	actor.collision_layer = 0
+	actor.collision_mask = Actor.LAYER_WORLD
+	Loadout.equip(actor, [])
+	actor.weapons_locked = true
+	actor.cmd.yaw = float(start.yaw)
+	var entry := {"actor": actor, "routine": routine, "offset": float(plan.offset),
+			"speed": float(plan.speed), "side": float(plan.get("side", 0.0)), "talker": ""}
+	locals.append(entry)
+	return entry
+
+
+func _add_name_tag(entry: Dictionary) -> void:
+	var tag := Label3D.new()
+	tag.name = "NameTag"
+	tag.text = "%s\n%s" % [entry.name, entry.role] if entry.role != "" else entry.name
+	tag.font_size = 40
+	tag.pixel_size = 0.0035
+	tag.outline_size = 0
+	tag.modulate = Color(0.92, 0.97, 1.0, 0.92)
+	tag.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
+	tag.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
+	tag.visibility_range_end = 14.0
+	tag.position = Vector3(0, 2.05, 0)
+	(entry.actor as Actor).add_child(tag)
+
+
+func _now() -> float:
+	return clock_override if clock_override >= 0.0 else Time.get_unix_time_from_system()
+
+
+func _physics_process(delta: float) -> void:
+	if locals.is_empty():
+		return
+	var people := RaidRoster.players_in(raid) if raid != null and is_instance_valid(raid) else [] as Array[Actor]
+	var now := _now()
+	for entry in locals:
+		var actor: Actor = entry.actor
+		if not is_instance_valid(actor) or not actor.ticks_now():
+			continue
+		_steer(entry, now, people, delta * actor.tick_every)
+	_thin_wait -= delta
+	if _thin_wait <= 0.0:
+		_thin_wait = 0.5
+		_thin_far()
+
+
+func _process(delta: float) -> void:
+	if speaking == "":
+		return
+	_speech_left -= delta
+	var me := raid.player if raid != null and is_instance_valid(raid) else null
+	var entry: Dictionary = talkers.get(speaking, {})
+	var walked_off := me != null and is_instance_valid(me) and not entry.is_empty() \
+			and me.global_position.distance_to((entry.actor as Actor).global_position) > SPEECH_RANGE
+	if _speech_left <= 0.0 or walked_off:
+		hush()
+
+
+## Steers one local toward where its routine has it now, looking at people
+## nearby and stepping out of their way.
+func _steer(entry: Dictionary, now: float, people: Array[Actor], delta: float) -> void:
+	var actor: Actor = entry.actor
+	var routine: Routine = entry.routine
+	var want := routine.sample(now + float(entry.offset))
+	var target: Vector3 = want.pos
+	if float(entry.side) != 0.0 and want.walking:
+		var dir: Vector3 = want.dir
+		target += Vector3(-dir.z, 0.0, dir.x) * float(entry.side)
+	var here := actor.global_position
+	var to := Vector3(target.x - here.x, 0.0, target.z - here.z)
+	if to.length() > SNAP:
+		actor.global_position = Vector3(target.x, target.y + 0.05, target.z)
+		actor.velocity = Vector3.ZERO
+		to = Vector3.ZERO
+	var walk := Vector3.ZERO
+	var face := float(want.yaw)
+	if to.length() > ARRIVED:
+		walk = to.normalized()
+		face = yaw_of(walk)
+		# Catch up a little when behind, so the crowd keeps to the clock.
+		actor.walk_speed = float(entry.speed) * clampf(0.85 + to.length() * 0.25, 0.85, 1.5)
+	var near := nearest_person(here, people)
+	var look_yaw := face
+	var pitch := 0.0
+	if near != null:
+		var head := near.get_eye_position()
+		var off := head - actor.get_eye_position()
+		var flat := Vector3(off.x, 0.0, off.z)
+		var gap := flat.length()
+		if walk != Vector3.ZERO and gap < GIVE_WAY and walk.angle_to(flat) < deg_to_rad(60.0):
+			# Someone in the way: step round them, on the side away from them.
+			var side := Vector3(-walk.z, 0.0, walk.x)
+			if side.dot(flat) > 0.0:
+				side = -side
+			walk = (walk + side * 0.9).normalized()
+		if entry.talker != "" and walk == Vector3.ZERO and gap < FACE_RANGE:
+			face = yaw_of(flat)
+			look_yaw = face
+			pitch = atan2(off.y, maxf(gap, 0.01))
+		elif gap < NOTICE:
+			var turn := wrapf(yaw_of(flat) - face, -PI, PI)
+			if absf(turn) < deg_to_rad(110.0):
+				look_yaw = face + clampf(turn, -1.2, 1.2)
+				pitch = clampf(atan2(off.y, maxf(gap, 0.01)), -0.5, 0.5)
+	var rate := minf(1.0, delta * 5.0)
+	actor.cmd.yaw = lerp_angle(actor.cmd.yaw, look_yaw, rate)
+	actor.cmd.pitch = lerpf(actor.cmd.pitch, pitch, rate)
+	var local := Basis(Vector3.UP, -actor.cmd.yaw) * walk
+	actor.cmd.move = Vector2(local.x, -local.z)
+
+
+func _thin_far() -> void:
+	var camera := get_viewport().get_camera_3d() if is_inside_tree() else null
+	if camera == null:
+		return
+	var eye := camera.global_position
+	for i in locals.size():
+		var actor: Actor = locals[i].actor
+		if is_instance_valid(actor):
+			actor.thin(3 if actor.global_position.distance_to(eye) > THIN_RANGE else 1, i % 3)
+
+
+## The person nearest `at`, or null.
+static func nearest_person(at: Vector3, people: Array[Actor]) -> Actor:
+	var best: Actor = null
+	var best_gap := NOTICE
+	for person in people:
+		if not is_instance_valid(person) or person.is_dead:
+			continue
+		var gap := person.global_position.distance_to(at)
+		if gap < best_gap:
+			best = person
+			best_gap = gap
+	return best
+
+
+## The yaw that faces along `dir` (yaw 0 faces -Z, as `Actor` has it).
+static func yaw_of(dir: Vector3) -> float:
+	return atan2(-dir.x, -dir.z)
+
+
+# --- Talking -----------------------------------------------------------------
+
+## Someone used a talker's spot. Puts their next line up over their head.
+## `world_status` is the server's news of the worlds and `account` the
+## player's snapshot (for Rook's favour). Returns the job id to take when the
+## player answers Rook's offer by talking to him again, else "".
+func talk(id: String, world_status: Dictionary, account: Dictionary) -> String:
+	if not talkers.has(id):
+		return ""
+	if id == "rook" and speaking == "rook" and offered_job != "":
+		var job := offered_job
+		offered_job = ""
+		_say(id, "Good. It's on your board now. Get it done and get out breathing.")
+		return job
+	var line := ""
+	var job_offered := ""
+	match id:
+		"kade":
+			var lines := kade_lines(world_status)
+			line = lines[_next_line(id, lines.size())]
+		"dusk":
+			var lines := rumours(world_status)
+			line = lines[_next_line(id, lines.size())]
+		"rook":
+			var said := rook_line(account, Contracts.today())
+			line = said.text
+			job_offered = said.job
+		_:
+			line = "..."
+	_say(id, line)
+	offered_job = job_offered
+	return ""
+
+
+## Takes the line down.
+func hush() -> void:
+	if panels.has(speaking):
+		(panels[speaking] as SpeechPanel).close()
+		_show_name(speaking, true)
+	speaking = ""
+	offered_job = ""
+
+
+func _say(id: String, text: String) -> void:
+	if speaking != "" and speaking != id:
+		hush()
+	speaking = id
+	_speech_left = SPEECH_TIME
+	var entry: Dictionary = talkers[id]
+	(panels[id] as SpeechPanel).say(entry.name, talker_color(id), text)
+	# The card carries their name while it is up.
+	_show_name(id, false)
+
+
+func _show_name(id: String, shown: bool) -> void:
+	var entry: Dictionary = talkers.get(id, {})
+	if entry.is_empty() or not is_instance_valid(entry.actor):
+		return
+	var tag := (entry.actor as Node).get_node_or_null("NameTag") as Node3D
+	if tag != null:
+		tag.visible = shown
+
+
+func _next_line(id: String, count: int) -> int:
+	var at := int(_line_index.get(id, 0)) % maxi(count, 1)
+	_line_index[id] = at + 1
+	return at
+
+
+static func talker_color(id: String) -> Color:
+	match id:
+		"kade":
+			return Color(1.0, 0.42, 0.35)
+		"dusk":
+			return Color(0.45, 0.85, 1.0)
+		"rook":
+			return Color(0.55, 1.0, 0.65)
+	return Color(0.9, 0.9, 0.9)
+
+
+## Kade, by the most-wanted board: how bounties work, and who is up there.
+static func kade_lines(world_status: Dictionary) -> Array[String]:
+	var out: Array[String] = []
+	var top := top_wanted(world_status)
+	if not top.is_empty():
+		out.append("%s is worth %d right now, out in %s. Take them down and it's in your pocket." %
+				[top.name, top.bounty, world_name(top.world)])
+	out.append("Every name on that board pays what's on their head, in scrip. You carry it, so you can lose it. Get it home and it's yours.")
+	out.append("Rack up kills against other players and your own name goes up there. Then everyone's hunting you.")
+	if top.is_empty():
+		out.append("Board's empty. Nobody's hot enough yet. Give it time.")
+	return out
+
+
+## The biggest bounty across the worlds, with its world: {name, bounty,
+## world}, or {}.
+static func top_wanted(world_status: Dictionary) -> Dictionary:
+	var best := {}
+	for world: Variant in world_status:
+		var entry: Variant = world_status[world]
+		if typeof(entry) != TYPE_DICTIONARY:
+			continue
+		for wanted: Variant in entry.get("wanted", []):
+			if typeof(wanted) != TYPE_DICTIONARY:
+				continue
+			if best.is_empty() or int(wanted.get("bounty", 0)) > int(best.bounty):
+				best = {"name": str(wanted.get("name", "")), "bounty": int(wanted.get("bounty", 0)), "world": str(world)}
+	return best
+
+
+## What Dusk has heard: lines made from what the server says of each world
+## (war level, players, the event, the top bounty), then a few that are
+## always true. Never more than the plaza's own signs already know.
+static func rumours(world_status: Dictionary) -> Array[String]:
+	var out: Array[String] = []
+	var ids: Array = world_status.keys()
+	ids.sort()
+	for id: Variant in ids:
+		var status: Variant = world_status[id]
+		if typeof(status) != TYPE_DICTIONARY:
+			continue
+		var name := world_name(str(id))
+		var event := str(status.get("event", ""))
+		var war := float(status.get("war", 0.0))
+		var players := int(status.get("players", 0))
+		if event != "":
+			out.append("Word is there's a %s going on in %s. If you hurry, you might see it end." % [event.to_lower(), name])
+		if war >= 0.6:
+			out.append("%s is burning. %s in there and the war's at %s. Don't take in what you can't stand to lose." %
+					[name, "One poor soul" if players == 1 else "%d people" % players, str(status.get("level", "")).to_lower()])
+		elif players == 0:
+			out.append("Nobody's in %s right now. Quiet is when the careful ones go in." % name)
+		if int(status.get("bounty", 0)) > 0:
+			out.append("Someone in %s is carrying a %d bounty. Kade's got the name." % [name, int(status.bounty)])
+	out.append_array(["The Pit runs bouts all day. Nobody loses their gear in there, only their pride.",
+			"Bank at a depot before you get greedy. I've watched a lot of people get greedy.",
+			"You hear the guns before you see them. If it's gone quiet out there, something big is walking."])
+	return out
+
+
+## Rook's line: today's favour and whether you hold it already. {text, job}
+## where `job` is the favour on offer (empty once taken or done).
+static func rook_line(account: Dictionary, day: int) -> Dictionary:
+	var job := Contracts.favor_for(day)
+	if job == "":
+		return {"text": "Nothing today. Check back tomorrow.", "job": ""}
+	var state: Variant = account.get("contracts", null)
+	if typeof(state) != TYPE_DICTIONARY:
+		return {"text": "Come back when you're signed in properly. I don't deal with strangers.", "job": ""}
+	if job in state.get("done", []):
+		return {"text": "That's all I had today. You did good. Come back tomorrow.", "job": ""}
+	for entry: Variant in state.get("active", []):
+		if typeof(entry) == TYPE_DICTIONARY and str(entry.get("id", "")) == job:
+			return {"text": "You're on it: %s. Sign out alive and I'll know." % Contracts.title_of(job), "job": ""}
+	var info := Contracts.job(job)
+	return {"text": "%s\n%d scrip in it for you. Talk to me again to take it." %
+			[str(info.get("ask", Contracts.title_of(job))), int(info.get("scrip", 0))], "job": job}
+
+
+static func world_name(id: String) -> String:
+	var world := Worlds.get_world(id)
+	return world.display_name if world != null else id.capitalize()
+
+
+# --- The crowd ---------------------------------------------------------------
+
+## Plans the crowd from a map's layout: one entry per local, each {routine,
+## offset, speed, side}. `counts` names how many of each kind. Everything
+## comes from `rng`, so a seed makes the same crowd anywhere, and nothing is
+## spaced evenly: groups, gaps and timings are all rolled.
+static func plan_crowd(p_layout: Dictionary, rng: RandomNumberGenerator, counts: Dictionary) -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	var centre: Vector3 = p_layout.get("centre", Vector3.ZERO)
+	var rings: Array = p_layout.get("rings", [])
+	for i in int(counts.get("strollers", 0)):
+		if rings.is_empty():
+			break
+		var band: Array = rings[rng.randi() % rings.size()]
+		var r := rng.randf_range(float(band[0]), float(band[1]))
+		var routine := stroll(centre, r, rng)
+		var speed := rng.randf_range(1.1, 1.55)
+		var offset := rng.randf() * routine.length
+		out.append({"routine": routine, "offset": offset, "speed": speed, "side": 0.0})
+		# Now and then they walk as a pair.
+		if rng.randf() < 0.4:
+			out.append({"routine": routine, "offset": offset + rng.randf_range(-0.4, 0.4), "speed": speed,
+					"side": rng.randf_range(0.75, 1.05) * (1.0 if rng.randf() < 0.5 else -1.0)})
+	var browse: Array = p_layout.get("browse", [])
+	for i in int(counts.get("shoppers", 0)):
+		if browse.is_empty():
+			break
+		var routine := shop(centre, float(p_layout.get("promenade", 50.0)), browse, rng)
+		out.append({"routine": routine, "offset": rng.randf() * routine.length, "speed": rng.randf_range(1.0, 1.4)})
+	var watch: Array = p_layout.get("watch", [])
+	var taken: Array[Vector3] = []
+	for i in int(counts.get("watchers", 0)):
+		if watch.is_empty():
+			break
+		var spot := _watch_spot(watch, taken, rng)
+		taken.append(spot.pos)
+		out.append({"routine": stand_about(spot.pos, float(spot.yaw), 0.35, rng), "offset": 0.0, "speed": 1.0})
+		# Some came with a friend, close but not lined up.
+		if rng.randf() < 0.35:
+			var beside: Vector3 = spot.pos + Vector3(rng.randf_range(0.7, 1.0) * (1.0 if rng.randf() < 0.5 else -1.0),
+					0.0, rng.randf_range(-0.25, 0.25))
+			taken.append(beside)
+			out.append({"routine": stand_about(beside, float(spot.yaw), 0.4, rng), "offset": 0.0, "speed": 1.0})
+	var gather: Array = p_layout.get("gather", []).duplicate()
+	for i in int(counts.get("chats", 0)):
+		if gather.is_empty():
+			break
+		var at: Vector3 = gather.pop_at(rng.randi() % gather.size())
+		var size := rng.randi_range(2, 3)
+		var angle := rng.randf() * TAU
+		for k in size:
+			angle += rng.randf_range(1.6, 2.6)
+			var spot := at + Vector3(cos(angle), 0.0, sin(angle)) * rng.randf_range(0.65, 1.05)
+			var inward := at - spot
+			out.append({"routine": stand_about(spot, yaw_of(inward), 0.6, rng), "offset": 0.0, "speed": 1.0})
+	var routes: Array = p_layout.get("routes", [])
+	for i in int(counts.get("wanderers", 0)):
+		if routes.is_empty():
+			break
+		var routine := wander(routes[i % routes.size()], rng)
+		out.append({"routine": routine, "offset": rng.randf() * routine.length, "speed": rng.randf_range(1.15, 1.5)})
+	return out
+
+
+## A free spot on one of the watching tiers, not too near anyone already
+## there: {pos, yaw}.
+static func _watch_spot(watch: Array, taken: Array[Vector3], rng: RandomNumberGenerator) -> Dictionary:
+	var spot := {}
+	for attempt in 12:
+		var tier: Dictionary = watch[rng.randi() % watch.size()]
+		var half := float(tier.width) * 0.5 - 1.0
+		var depth := float(tier.depth) * 0.5 - 0.5
+		var centre: Vector3 = tier.centre
+		var pos := centre + Vector3(rng.randf_range(-half, half), 0.0, rng.randf_range(-depth, depth))
+		spot = {"pos": pos, "yaw": float(tier.yaw) + rng.randf_range(-0.2, 0.2)}
+		if taken.all(func(other: Vector3) -> bool: return other.distance_to(pos) > 1.3):
+			break
+	return spot
+
+
+## Strolling part way round a ring and back, stopping at each end (and
+## sometimes on the way) to look about.
+static func stroll(centre: Vector3, radius: float, rng: RandomNumberGenerator) -> Routine:
+	var routine := Routine.new()
+	var start := rng.randf() * TAU
+	var sweep := rng.randf_range(0.9, 3.2) * (1.0 if rng.randf() < 0.5 else -1.0)
+	var out_points := arc(centre, radius, start, start + sweep)
+	var speed := 1.3
+	routine.walk(out_points, speed)
+	routine.dwell(out_points[-1], rng.randf() * TAU, rng.randf_range(4.0, 22.0))
+	var back := out_points.duplicate()
+	back.reverse()
+	if rng.randf() < 0.5 and back.size() > 4:
+		var mid := back.size() / 2
+		routine.walk(back.slice(0, mid + 1), speed)
+		routine.dwell(back[mid], yaw_of(centre - back[mid]), rng.randf_range(3.0, 12.0))
+		routine.walk(back.slice(mid), speed)
+	else:
+		routine.walk(back, speed)
+	routine.dwell(back[-1], rng.randf() * TAU, rng.randf_range(5.0, 25.0))
+	return routine
+
+
+## Window shopping: two or three kiosks next to each other, a while at each
+## counter, walking between them under the arcade, then back.
+static func shop(centre: Vector3, promenade: float, browse: Array, rng: RandomNumberGenerator) -> Routine:
+	var sorted := browse.duplicate()
+	sorted.sort_custom(func(a: Array, b: Array) -> bool:
+		return _angle(centre, a[0]) < _angle(centre, b[0]))
+	var count := mini(rng.randi_range(2, 3), sorted.size())
+	var first := rng.randi() % sorted.size()
+	var stops: Array = []
+	for k in count:
+		stops.append(sorted[(first + k) % sorted.size()])
+	var routine := Routine.new()
+	var speed := 1.2
+	var order := stops.duplicate()
+	var back := stops.duplicate()
+	back.reverse()
+	order.append_array(back.slice(1, back.size() - 1))
+	for k in order.size():
+		var here: Array = order[k]
+		var next: Array = order[(k + 1) % order.size()]
+		routine.dwell(here[0], float(here[1]) + rng.randf_range(-0.3, 0.3), rng.randf_range(8.0, 30.0))
+		var from_angle := _angle(centre, here[0])
+		var to_angle := _angle(centre, next[0])
+		var turn := wrapf(to_angle - from_angle, -PI, PI)
+		var path: Array = [here[0]]
+		path.append_array(arc(centre, promenade, from_angle, from_angle + turn))
+		path.append(next[0])
+		routine.walk(path, speed)
+	return routine
+
+
+## Standing in one place: a few dwells facing about `yaw`, glancing up to
+## `spread` radians either way, shifting their weight now and then.
+static func stand_about(at: Vector3, yaw: float, spread: float, rng: RandomNumberGenerator) -> Routine:
+	var routine := Routine.new()
+	for k in rng.randi_range(3, 5):
+		routine.dwell(at, yaw + rng.randf_range(-spread, spread), rng.randf_range(5.0, 18.0))
+	return routine
+
+
+## Out along a route and back, a while at the far end.
+static func wander(route: Array, rng: RandomNumberGenerator) -> Routine:
+	var routine := Routine.new()
+	var points: Array = route.duplicate()
+	routine.walk(points, 1.3)
+	var end: Vector3 = points[-1]
+	routine.dwell(end, yaw_of(end - points[-2]) + rng.randf_range(-0.5, 0.5), rng.randf_range(12.0, 40.0))
+	var back := points.duplicate()
+	back.reverse()
+	routine.walk(back, 1.3)
+	routine.dwell(back[-1], rng.randf() * TAU, rng.randf_range(6.0, 20.0))
+	return routine
+
+
+## Points round a circle from one angle to another, a step of about 3 m.
+## Angles here are plain math angles round `centre` (x = cos, z = sin).
+static func arc(centre: Vector3, radius: float, from_angle: float, to_angle: float) -> Array:
+	var steps := maxi(1, int(ceil(absf(to_angle - from_angle) * radius / 3.0)))
+	var out: Array = []
+	for k in steps + 1:
+		var a := lerpf(from_angle, to_angle, float(k) / steps)
+		out.append(centre + Vector3(cos(a), 0.0, sin(a)) * radius)
+	return out
+
+
+static func _angle(centre: Vector3, at: Vector3) -> float:
+	return atan2(at.z - centre.z, at.x - centre.x)
+
+
+## A loop of walks and waits, timed so it can be read at any moment: where
+## the local is, which way they face, and whether they are walking.
+class Routine:
+	extends RefCounted
+	## Each leg: {a, b, time, yaw, walking}.
+	var legs: Array[Dictionary] = []
+	## Seconds round the loop.
+	var length := 0.0
+
+	func walk(points: Array, speed: float) -> void:
+		for k in points.size() - 1:
+			var a: Vector3 = points[k]
+			var b: Vector3 = points[k + 1]
+			var gap := Vector3(b.x - a.x, 0.0, b.z - a.z)
+			if gap.length() < 0.01:
+				continue
+			var time := gap.length() / maxf(speed, 0.1)
+			legs.append({"a": a, "b": b, "time": time, "yaw": atan2(-gap.x, -gap.z), "walking": true})
+			length += time
+
+	func dwell(at: Vector3, yaw: float, time: float) -> void:
+		legs.append({"a": at, "b": at, "time": time, "yaw": yaw, "walking": false})
+		length += time
+
+	## Where the routine has them at `t` seconds (any number: it loops):
+	## {pos, yaw, walking, dir}.
+	func sample(t: float) -> Dictionary:
+		if legs.is_empty():
+			return {"pos": Vector3.ZERO, "yaw": 0.0, "walking": false, "dir": Vector3.FORWARD}
+		var left := fposmod(t, maxf(length, 0.001))
+		for leg in legs:
+			if left <= float(leg.time):
+				var a: Vector3 = leg.a
+				var b: Vector3 = leg.b
+				var share := left / maxf(float(leg.time), 0.001)
+				var dir := Vector3(b.x - a.x, 0.0, b.z - a.z)
+				return {"pos": a.lerp(b, share), "yaw": float(leg.yaw), "walking": bool(leg.walking),
+						"dir": dir.normalized() if dir.length() > 0.001 else Vector3.FORWARD}
+			left -= float(leg.time)
+		var last: Dictionary = legs[-1]
+		return {"pos": last.b, "yaw": float(last.yaw), "walking": false, "dir": Vector3.FORWARD}
+
+
+## A line said over someone's head: a dark card with a lit edge in the
+## speaker's colour, their name small on top and the line under it in clean
+## text, turned to the viewer and faded in and out. Lives in the world.
+class SpeechPanel:
+	extends Node3D
+	## The card's width, and the text's size on it.
+	const WIDTH := 2.8
+	const PAD := 0.13
+	const PIXEL := 0.0028
+	const BODY_SIZE := 48
+	const NAME_SIZE := 40
+	var _back: MeshInstance3D
+	var _edge: MeshInstance3D
+	var _name: Label3D
+	var _body: Label3D
+	var _back_mat: StandardMaterial3D
+	var _edge_mat: StandardMaterial3D
+	var _alpha := 0.0
+	var _target := 0.0
+
+	func _ready() -> void:
+		_back_mat = _flat(Color(0.03, 0.05, 0.08, 0.94), false)
+		_edge_mat = _flat(Color(1, 1, 1), true)
+		_back = _quad(_back_mat)
+		_edge = _quad(_edge_mat)
+		_name = _label(NAME_SIZE)
+		_body = _label(BODY_SIZE)
+		visible = false
+
+	func say(who: String, color: Color, text: String) -> void:
+		_name.text = who.to_upper()
+		_name.modulate = color
+		_body.text = text
+		_edge_mat.albedo_color = color
+		var font: Font = _body.font if _body.font != null else ThemeDB.fallback_font
+		var inner := WIDTH - PAD * 2.0
+		var body_px := font.get_multiline_string_size(text, HORIZONTAL_ALIGNMENT_CENTER, inner / PIXEL, BODY_SIZE)
+		var name_h := font.get_height(NAME_SIZE) * PIXEL
+		var body_h := body_px.y * PIXEL
+		var height := PAD * 2.0 + name_h + 0.04 + body_h
+		(_back.mesh as QuadMesh).size = Vector2(WIDTH, height)
+		_back.position = Vector3(0, height * 0.5, 0)
+		(_edge.mesh as QuadMesh).size = Vector2(WIDTH, 0.025)
+		_edge.position = Vector3(0, height, 0.002)
+		_name.position = Vector3(0, height - PAD, 0.004)
+		_body.position = Vector3(0, height - PAD - name_h - 0.04, 0.004)
+		_body.width = inner / PIXEL
+		_target = 1.0
+		visible = true
+
+	func close() -> void:
+		_target = 0.0
+
+	func _process(delta: float) -> void:
+		_alpha = move_toward(_alpha, _target, delta * 5.0)
+		visible = _alpha > 0.0
+		if not visible:
+			return
+		var camera := get_viewport().get_camera_3d()
+		if camera != null:
+			var to := camera.global_position - global_position
+			rotation.y = atan2(to.x, to.z)
+		_back_mat.albedo_color.a = 0.94 * _alpha
+		_edge_mat.albedo_color.a = _alpha
+		_name.modulate.a = _alpha
+		_body.modulate.a = _alpha
+
+	func _flat(color: Color, glow: bool) -> StandardMaterial3D:
+		var mat := StandardMaterial3D.new()
+		mat.albedo_color = color
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+		if glow:
+			mat.emission_enabled = true
+			mat.emission = color
+		return mat
+
+	func _quad(mat: Material) -> MeshInstance3D:
+		var mesh := MeshInstance3D.new()
+		var quad := QuadMesh.new()
+		quad.material = mat
+		mesh.mesh = quad
+		mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(mesh)
+		return mesh
+
+	func _label(size: int) -> Label3D:
+		var label := Label3D.new()
+		label.font_size = size
+		label.pixel_size = PIXEL
+		label.outline_size = 0
+		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		label.vertical_alignment = VERTICAL_ALIGNMENT_TOP
+		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		label.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
+		label.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		label.render_priority = 2
+		add_child(label)
+		return label
