@@ -90,7 +90,7 @@ rows marked **pre-playtest** come before the friends playtest.
 | Item | State | Notes |
 | --- | --- | --- |
 | Each rig has one job and one weakness, tuned to the Mk1 table (DESIGN.md section 5) | Built | Caleb's balance pass: `ItemDB.JETPACK_MK1`, `BOOTS_MK1`, `WINGS_MK1`, measured by `tests/rig_balance_tests.gd` (hover, heat, glide stamina, cross-map times). Unplaytested. |
-| Jetpack cruise and coast loop, hover 1x, climb 1.5x, boost 2.5x heat | Built | `FlightRig.hover_heat_mult`, `climb_heat_mult`, `boost_heat_mult`. |
+| Jetpack cruise and coast loop, hover 1x, climb 1.3x, boost 2.5x heat | Built | `FlightRig.hover_heat_mult`, `climb_heat_mult`, `boost_heat_mult`. |
 | Wings: glide stamina, two boosts a flight, stall, barrel roll, sidearm-only while spread, slide landing | Built | `glide_heat` refilled on the ground only, boosts on `max_charges`. Pulses are gone: wings cannot climb on their own. |
 | Boots: charges for kicks and dashes, a short skim, +15% ground speed, no fall damage, a graze window on every dash | Built | `max_charges`, `skim_time`, `ground_speed_mult`, `graze_window`. |
 | Air aim penalty by rig | Built | `Actor.air_aim` and `FlightRig.flight_aim`: +10% jetpack, none for boots mid-dash, +50% wings. |

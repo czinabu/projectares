@@ -1201,7 +1201,7 @@ measures them.
 | Climb | 8 m/s | kicks (about 6 m/s on average) | none of their own |
 | Max height | 40 m | 10 m | their launch height |
 | Hover | 8 s | 1.5 s skim per jump | none |
-| Fuel | Heat: hover 1x (12.5 a second), climb 1.5x, boost 2.5x | 4 charges for kicks and dashes | 25 s of glide stamina |
+| Fuel | Heat: hover 1x (12.5 a second), climb 1.3x, boost 2.5x | 4 charges for kicks and dashes | 25 s of glide stamina |
 | Recharge | 4 s on the ground (coasting cools too) | 1 charge per 1.5 s, anywhere | 5 s, on the ground only |
 | Cross Ashfront (550 m) | about 45 s (measured 40) | about 60 s (measured 51) | about 25 s from a 30 m perch (measured 26) |
 | Air aim spread | +10% with the jets lit | +0% mid-dash or skimming low | +50% gliding |
@@ -1262,9 +1262,11 @@ they are ordinary gear, at stake in the PvP world. Mastery never hands out
 a tier.
 
 Measured from the street (`feel_bench.tscn`): the jetpack reaches its
-ceiling, cooling by coasting on the way (Mk1 about 17 s, Mk2 and Mk3 about
-11 s); boots kick to their 10 m ceiling in about 2 s; wings launch to about
-5 m and go no higher on their own.
+ceiling in one climb from cool (Mk1 about 6 s, Mk2 about 6 s, Mk3 about
+7 s; held on the ceiling the jets cost only the hover's heat); boots kick
+to their 10 m ceiling in about 2 s; wings launch to about 5 m and go no
+higher on their own, and the first spread after a launch bites in about
+1 s at every tier.
 
 **The flight course.** Past the far end of the base's firing range is an
 open-topped yard (`HomeBase._build_course`) to time any rig on a climb (an

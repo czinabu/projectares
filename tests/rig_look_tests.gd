@@ -32,26 +32,30 @@ static func run(t: Node) -> void:
 	var mk2 := RigModel.build_back("jetpack_mk2")
 	t.check(Look.model_bounds(mk2).size.length() > mk1_size.length(), "the Mk2 jetpack is the bigger pack")
 	mk2.free()
-	# A rail down each side clamps the holstered long weapons, leaning out at
-	# the top so they stand in a V; nothing else on the pack sticks out past it.
+	# A rail on the back of each side clamps the holstered long weapons edge
+	# on behind the pack, clear of the arms, leaning out at the top so they
+	# stand in a V; nothing else on the pack sticks out behind it.
 	for id: String in ["jetpack_mk1", "jetpack_mk2", "wings_glide"]:
 		var jet_model := RigModel.build_back(id)
 		var mount_l := jet_model.get_node_or_null("MountL") as Marker3D
 		var mount_r := jet_model.get_node_or_null("MountR") as Marker3D
 		t.check(mount_l != null and mount_r != null, "%s has a weapon rail on each side" % id)
 		if mount_l and mount_r:
-			t.check(mount_r.position.x > 0.15 and mount_l.position.x < -0.15
-					and absf(mount_r.position.x + mount_l.position.x) < 0.001, "%s's rails are on its sides" % id)
+			t.check(mount_r.position.x > 0.1 and mount_l.position.x < -0.1
+					and absf(mount_r.position.x + mount_l.position.x) < 0.001, "%s's rails are on its two sides" % id)
+			t.check(mount_r.basis.x.z > 0.95 and mount_l.basis.x.z < -0.95 and mount_r.position.x < 0.2,
+					"%s's rails face back, so a clamped weapon stands behind the pack, not by the arm" % id)
 			t.check(mount_r.basis.y.x > 0.05 and mount_l.basis.y.x < -0.05 and mount_r.basis.y.y > 0.98,
 					"%s's rails lean out at the top, a slight V" % id)
 			var past := 0.0
 			for node in jet_model.find_children("*", "MeshInstance3D", true, false):
 				var box: AABB = _in_xform(jet_model, node as Node3D) * (node as MeshInstance3D).get_aabb()
-				# Only what is level with the rail could hold a weapon off it.
-				if box.end.y > mount_r.position.y - 0.4 and box.position.y < mount_r.position.y + 0.4:
-					var rail_x := mount_r.position.x + (box.get_center().y - mount_r.position.y) * mount_r.basis.y.x
-					past = maxf(past, maxf(box.end.x, -box.position.x) - rail_x)
-			t.check(past < 0.06, "%s has nothing past its rails but the clamps (%.3f m)" % [id, past])
+				# Only what is level with the rail and in line with it could
+				# hold a weapon off it.
+				if box.end.y > mount_r.position.y - 0.2 and box.position.y < mount_r.position.y + 0.2 \
+						and box.end.x > mount_r.position.x - 0.03 and box.position.x < mount_r.position.x + 0.03:
+					past = maxf(past, box.end.z - mount_r.position.z)
+			t.check(past < 0.01, "%s has nothing behind its rails to hold a weapon off them (%.3f m)" % [id, past])
 		t.check(jet_model.get_node_or_null("HeatDisplay") != null, "%s has a heat screen on its back" % id)
 		if jet_model.has_node("WingR"):
 			# Spread, a wing passes in front of the rail, never through a
@@ -339,6 +343,9 @@ static func run(t: Node) -> void:
 		var wing_tip := pack_node.get_node("WingR/Panel/TipLight") as Node3D
 		var stowed_at := p.to_local(wing_tip.global_position)
 		t.check(absf(stowed_at.x) < 0.2 and not wing_tip.is_visible_in_tree(), "the wings stay retracted on the ground")
+		# Well up, so the glide is not flaring for a landing.
+		var ground_y := p.global_position.y
+		p.global_position.y += 40.0
 		p.flight.is_gliding = true
 		await t.get_tree().create_timer(0.5).timeout
 		var spread_at := p.to_local(wing_tip.global_position)
@@ -406,6 +413,17 @@ static func run(t: Node) -> void:
 		await t.get_tree().create_timer(0.6).timeout
 		t.check((skin as Node3D).global_basis.y.y < -0.2, "a dive points the nose down")
 		t.check(absf(port_tip.global_position.y - wing_tip.global_position.y) < 0.2, "flying straight levels the wings")
+		# Gliding down onto the ground, the body flares for the landing:
+		# nearer upright, the legs down under it.
+		p.velocity = flying * 16.0 + Vector3(0, -1.8, 0)
+		await t.get_tree().create_timer(0.6).timeout
+		var lying := (skin as Node3D).global_basis.y.y
+		p.global_position.y = ground_y + 0.6
+		await t.get_tree().create_timer(0.6).timeout
+		var flared := (skin as Node3D).global_basis.y.y
+		t.check(skin._flare > 0.9 and flared > lying + 0.4,
+				"gliding in to land, the body flares up out of the glide (%.2f to %.2f up)" % [lying, flared])
+		p.global_position.y = ground_y
 		p.velocity = Vector3.ZERO
 		p.flight.is_gliding = false
 		await t.get_tree().create_timer(0.5).timeout
