@@ -42,6 +42,29 @@ const SENTINEL_PARTY := 0.6
 ## call): a Frostline warlord (the Sentinel, or an event's) carries one now
 ## and then, rarer than in Ashfront, and a piece of upgrade data.
 const WARLORD_BLUEPRINT := 0.15
+## And the relay on the Engine's back, the hardest cache to reach: now and
+## then one of the war's blueprints too (`roll_crafting_loot` leaves the
+## expedition's own out: those are in its table already).
+const RELAY_BLUEPRINT := 0.06
+## The expedition's own contracts (DESIGN.md "Frostline", step 7): on the
+## board beside the jobs that count anywhere, counted only here. Every one
+## can be done alone. The weeklies are the long expeditions, and like every
+## weekly they pay a blueprint the account does not know yet: the contract
+## half of the slow route to the war's blueprints.
+const CONTRACTS := {
+	"frost_relay": {"title": "Loot the relay on the Engine's back", "stat": "cache:relay", "goal": 1,
+			"kind": "daily", "scrip": 220},
+	"frost_rims": {"title": "Loot 3 caches up on the rims", "stat": "cache:rooftop", "goal": 3,
+			"kind": "daily", "scrip": 180},
+	"frost_grid": {"title": "Bring down 6 Wardens", "stat": "kills:warden", "goal": 6, "kind": "daily",
+			"scrip": 160},
+	"frost_cores": {"title": "Bring home 3 Cryo Cores", "stat": "item:cryo_core", "goal": 3, "kind": "daily",
+			"scrip": 170},
+	"frost_sentinel": {"title": "Bring down the Engine Sentinel twice", "stat": "bosses", "goal": 2,
+			"kind": "weekly", "scrip": 900, "items": ["upgrade_data"], "reward_tag": "blueprint"},
+	"frost_coils": {"title": "Bring home 3 Engine Coils", "stat": "item:engine_coil", "goal": 3,
+			"kind": "weekly", "scrip": 850, "items": ["upgrade_data"], "reward_tag": "blueprint"},
+}
 
 ## Frostline is the gentle world, so its gear is the basic tier. Rare and
 ## better gear only drops in the PvP world. What it pays instead is parts
@@ -164,6 +187,8 @@ func _init() -> void:
 	boss_party_scale = SENTINEL_PARTY
 	warlord_blueprint_chance = WARLORD_BLUEPRINT
 	warlord_upgrade_data = 1
+	# Its own contracts, counted only here.
+	contract_tag = "expedition"
 
 
 func register_items() -> void:
@@ -235,8 +260,11 @@ func roll_loot(source: String, rng: RandomNumberGenerator) -> Array[String]:
 			table = ROOFTOP_TABLE
 			count = rng.randi_range(2, 3)
 		"relay":
-			table = RELAY_TABLE
-			count = rng.randi_range(3, 4)
+			var haul: Array[String] = []
+			for i in rng.randi_range(3, 4):
+				haul.append(ItemDB.roll(RELAY_TABLE, rng))
+			haul.append_array(roll_crafting_loot(rng, RELAY_BLUEPRINT, 0))
+			return haul
 		"warden", "bot":
 			table = WARDEN_DROPS
 			count = rng.randi_range(1, 3)
@@ -247,6 +275,10 @@ func roll_loot(source: String, rng: RandomNumberGenerator) -> Array[String]:
 	for i in count:
 		out.append(ItemDB.roll(table, rng))
 	return out
+
+
+func contract_jobs() -> Dictionary:
+	return CONTRACTS
 
 
 ## A PvE world: nobody can hurt their own faction, and every player is in the

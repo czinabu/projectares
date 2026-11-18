@@ -624,7 +624,11 @@ whose lance holds a teal tracking beam on you before it fires (break the
 line to reset it) and whose back takes double damage. It is made for one
 player and grows tougher with each other player near it, comes back a
 few minutes after it falls, and like any Frostline warlord now and then
-carries one of the war's blueprints. Whiteouts are planned in DESIGN.md
+carries one of the war's blueprints, as the relay on the Engine's back
+rarely does. The contract board has Frostline jobs of its own, one daily
+and one weekly, all doable alone (search the relay, break Warden patrols,
+bring down the Sentinel), that count only from a life there; the weeklies
+pay a blueprint. Whiteouts are planned in DESIGN.md
 section 2, "Frostline".
 
 ## Run the tests

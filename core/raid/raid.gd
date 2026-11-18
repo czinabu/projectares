@@ -397,7 +397,9 @@ func _spawn_caches() -> void:
 	for marker in _map_nodes("spawn_cache"):
 		var source: String = marker.get_meta("loot_source", "cache")
 		var cache := spawn_container(world.roll_loot(source, rng), false, "cache", marker.global_position)
-		_caches.append({"container": cache, "source": source, "refill_in": -1.0})
+		var entry := {"container": cache, "source": source, "refill_in": -1.0, "looted": {}}
+		_caches.append(entry)
+		cache.looted_by.connect(_on_cache_looted.bind(entry))
 
 
 func _physics_process(delta: float) -> void:
@@ -788,6 +790,7 @@ func _tick_caches(delta: float) -> void:
 			cache.refill_in = -1.0
 			# A cache that refills in the middle of a war holds better things.
 			container.set_items(world.roll_war_loot(cache.source, rng, war.intensity))
+			cache.looted.clear()
 			container.changed.emit()
 			armory.on_cache_refilled(container.global_position)
 
@@ -2846,6 +2849,10 @@ func _on_actor_died(actor: Actor, info: DamageInfo) -> void:
 		if killer != null:
 			var pay := Economy.KILL_BOUNTY
 			_count(killer, "kills")
+			if state == null and actor.faction != "":
+				_count(killer, "kills:" + actor.faction)
+			if _bosses.any(func(boss: Dictionary) -> bool: return boss.bot == actor):
+				_count(killer, "bosses")
 			if warlords.has(actor):
 				pay += Economy.WARLORD_SCRIP
 				_count(killer, "warlords")
@@ -3024,6 +3031,16 @@ func _on_actor_banked(actor: Actor) -> void:
 	player_banked.emit(actor, items)
 
 
+## Someone took items out of a world cache: a contract's "cache:<source>",
+## counted once for each player each time the cache is filled.
+func _on_cache_looted(actor: Actor, entry: Dictionary) -> void:
+	var state := state_for(actor)
+	if state == null or entry.looted.has(state.owner):
+		return
+	entry.looted[state.owner] = true
+	_count(state, "cache:" + str(entry.source))
+
+
 ## Adds to a living player's contract counters for this life (see
 ## `Contracts.JOBS` for the stats). Only the authority counts, and only where
 ## gear is at stake, so the arena and the safe zone count nothing. They reach
@@ -3143,6 +3160,8 @@ func _finish_player(state: PlayerState, outcome: String, cause: String, killed_b
 		"cause": cause,
 		"killed_by": killed_by,
 		"world_id": world.id,
+		# Which of a world's own contracts count (`WorldDef.contract_tag`).
+		"contract_tag": world.contract_tag,
 		"loot": loot,
 		"kept_gear": kept,
 		"brought_home": brought_home,
