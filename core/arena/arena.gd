@@ -220,7 +220,7 @@ func key_of(actor: Actor) -> String:
 
 ## The arena's own kit rules: no healing and no vehicles in the pit.
 func add_player(p_kit: Array = [], p_mastery: Dictionary = {}, p_name := "Raider",
-		p_owner := "", p_renown := 0, p_drop := "") -> Actor:
+		p_owner := "", p_renown := 0, p_drop := "", _p_insured := "") -> Actor:
 	var kit: Array[String] = []
 	for id: String in (p_kit if not p_kit.is_empty() else world.starter_loadout()):
 		if id == Loadout.BARE or (not ItemDB.has_tag(id, "heal") and not ItemDB.has_tag(id, "vehicle")):

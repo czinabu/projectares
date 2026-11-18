@@ -83,6 +83,10 @@ const Contracts := preload("res://core/economy/contracts.gd")
 const PLAZA_PLAYERS := 32
 const SHOP_PANEL := "res://core/economy/shop_panel.gd"
 const Economy := preload("res://core/economy/economy.gd")
+const SafetyNets := preload("res://core/economy/safety_nets.gd")
+## Who the phone hears salvage and insurance news from (`_safety_net_news`).
+const CLAIMS_ID := "claims"
+const CLAIMS_NAME := "Claims Office"
 const BaseUpgrades := preload("res://core/base/base_upgrades.gd")
 ## DEV MODE: temporary, see `core/dev/dev_mode.gd`.
 const DevMode := preload("res://core/dev/dev_mode.gd")
@@ -274,6 +278,9 @@ func _ready() -> void:
 	hub.online_craft_requested.connect(func(item_id: String) -> void:
 		if net:
 			net.craft(item_id))
+	hub.online_insure_requested.connect(func(action: String, item_id: String) -> void:
+		if net:
+			net.insure(action, item_id))
 	_setup_phone()
 	hub.look_changed.connect(func(appearance: Dictionary) -> void:
 		Profile.set_appearance(appearance, hub.character.owned)
@@ -738,8 +745,9 @@ func start_raid(world_id: String, drop := "") -> void:
 	# DEV MODE
 	Profile.apply_dev_mode()
 	raid.dev_cheats = DevMode.raid_cheats()
-	raid.start(world, raid_seed, Profile.checkout_loadout(world), Profile.mastery.active_picks(),
-			LOCAL_OWNER, Profile.renown, drop)
+	var kit := Profile.checkout_loadout(world)
+	raid.start(world, raid_seed, kit, Profile.mastery.active_picks(),
+			LOCAL_OWNER, Profile.renown, drop, Profile.insured_in(kit))
 	_attach_player_view()
 	raid.player_finished.connect(_on_solo_finished)
 	raid.player_banked.connect(func(actor: Actor, _items: Array) -> void:
@@ -850,12 +858,31 @@ func _on_booth_changed(open: bool) -> void:
 ## One solo life ended. A death keeps you in the world; leaving goes home.
 func _on_solo_finished(_actor: Actor, result: Dictionary) -> void:
 	_tour_life_ended(result)
+	_safety_net_news(result)
 	if result.get("outcome", "") == "died":
 		_show_death(result)
 		return
 	# Leave a beat so the player sees what happened before going home.
 	await get_tree().create_timer(1.0).timeout
 	_show_hub(result)
+
+
+## The claims office (`SafetyNets`) messages the phone with what a death's
+## salvage and insurance sent home, so there is a record of it.
+func _safety_net_news(result: Dictionary) -> void:
+	if phone == null:
+		return
+	var lines: Array[String] = []
+	var recalled := str(result.get("recalled", ""))
+	if recalled != "":
+		lines.append("Your insured %s was recalled home. The policy is spent; a new one is ready in %s."
+				% [ItemDB.item_name(recalled), SafetyNets.wait_text(SafetyNets.COOLDOWN)])
+	var salvaged: Array = result.get("salvaged", [])
+	if not salvaged.is_empty():
+		lines.append("Salvage from your %s: %s, in your stash." % [ItemDB.summarize(salvaged),
+				SafetyNets.describe(result.get("salvage", []))])
+	if not lines.is_empty():
+		phone.add_local_message(CLAIMS_ID, CLAIMS_NAME, " ".join(lines))
 
 
 func _show_death(result: Dictionary) -> void:
@@ -888,8 +915,9 @@ func _on_redeploy_requested(drop := "") -> void:
 		net.deploy(drop)
 		return
 	Profile.apply_dev_mode()  # DEV MODE
-	raid.add_player(Profile.checkout_loadout(raid.world), Profile.mastery.active_picks(), "You",
-			LOCAL_OWNER, Profile.renown, drop)
+	var kit := Profile.checkout_loadout(raid.world)
+	raid.add_player(kit, Profile.mastery.active_picks(), "You",
+			LOCAL_OWNER, Profile.renown, drop, Profile.insured_in(kit))
 	_attach_player_view()
 
 
@@ -2527,6 +2555,7 @@ func _reconnected_notice() -> String:
 ## the world; a finished sign-out goes back to the lobby.
 func _on_online_finished(result: Dictionary) -> void:
 	_tour_life_ended(result)
+	_safety_net_news(result)
 	# A finished contract buzzes the phone with what it paid.
 	var finished: Array = result.get("contracts_finished", [])
 	if not finished.is_empty() and phone != null:
