@@ -68,6 +68,10 @@ signal ice_changed
 ## its faction to a fight. On every machine near enough (a client hears it
 ## from `NetSession`, with no `source`), for the view.
 signal grid_called(bot: Actor, source: Actor)
+## An army set off for a strongpoint (`Raid.pushes`, DESIGN.md "Challenge
+## and balance data": danger warns first). `loud` is a new push worth a
+## horn and a war feed line; a quiet one only moves the watch map's arrow.
+signal army_pushed(site: int, from: Vector3, title: String, loud: bool)
 
 ## Bots never start closer to the player than this, so a raid does not open with a fight.
 const MIN_BOT_SPAWN_DISTANCE := 40.0
@@ -82,6 +86,12 @@ const BOT_REROLLS := 8
 const WANTED_SHOWN := 5
 ## Seconds between rounds of orders to the bot factions.
 const ORDERS_EVERY := 8.0
+## An army's push is announced (horn, war feed) at most this often, and
+## shown on the watch map for `PUSH_SHOWN` seconds. Fewer bots than
+## `PUSH_MIN` going for a site is not a push.
+const PUSH_EVERY := 30.0
+const PUSH_SHOWN := 60.0
+const PUSH_MIN := 3
 const DETAIL_EVERY := 0.25
 ## The drop id (`add_player`'s `p_drop`) for arriving through a squad portal:
 ## at the world's gate outpost (a map marker in the group "outpost", the
@@ -167,6 +177,9 @@ var _marked_owner := ""
 ## server. The map hears them through its "war_intensity" and "war_centre"
 ## metas, which is all `Look` needs to shift the sky.
 var war := WarDirector.new()
+## Where lives end, one line a finished life (`LifeLog`, DESIGN.md
+## "Challenge and balance data"). Authority only.
+var life_log := LifeLog.new()
 ## The sites worth holding, one per "strongpoint" marker on the map.
 var strongpoints: Array[Strongpoint] = []
 ## A strongpoint at least this deep in a storm is cover for a push: an
@@ -215,6 +228,9 @@ var beacons: Array[Node3D] = []
 ## ready to fight where they spawn and unhurt by the ground.
 static var zone_rules := true
 var _bosses: Array[Dictionary] = []
+## Guards at the map's "spawn_guard" markers (a dungeon's garrison), each
+## { marker, bot, back_in }, outside the armies like the bosses.
+var _guards: Array[Dictionary] = []
 ## Bosses' toughness is counted this often (`_scale_boss`).
 const BOSS_PARTY_EVERY := 1.0
 var _boss_party_left := 0.0
@@ -280,6 +296,13 @@ var commander := WarCommander.new()
 var _detail_in := 0.0
 ## Bot -> the strongpoint its faction last sent it to.
 var _orders := {}
+## The armies' pushes, newest last, as {"site", "from", "title", "at"}
+## (`at` is `clock`): what the watch map draws as an arrow. The server
+## decides them in `_tick_orders`; a client is told (`note_push`).
+var pushes: Array[Dictionary] = []
+## Each faction's last push target and when it was last announced.
+var _push_target := {}
+var _push_loud_at := {}
 ## Bot -> `clock` until which something else (an assault) has the say over it.
 var _busy_until := {}
 ## One per vehicle marker: { marker, source, vehicle, empty_for }.
@@ -324,6 +347,7 @@ func start(p_world: WorldDef, p_seed: int = -1, p_kit: Array = [], p_mastery: Di
 	add_player(p_kit, p_mastery, "You", p_owner, p_renown, p_drop, p_insured)
 	_spawn_bots()
 	_spawn_bosses()
+	_spawn_guards()
 	_spawn_map_vehicles()
 
 
@@ -337,6 +361,7 @@ func start_server(p_world: WorldDef, p_seed: int = -1) -> void:
 	armory.setup(self)
 	_spawn_bots()
 	_spawn_bosses()
+	_spawn_guards()
 	_spawn_map_vehicles()
 
 
@@ -409,6 +434,8 @@ func _setup(p_world: WorldDef, p_seed: int) -> void:
 	_link_next.clear()
 	if not world.linked_factions.is_empty() and Look.enabled and not grid_called.is_connected(_show_grid_call):
 		grid_called.connect(_show_grid_call)
+	if Look.enabled and not army_pushed.is_connected(_show_push):
+		army_pushed.connect(_show_push)
 	_assault_in = world.assault_interval
 	_event_in = world.event_interval
 	_raider_in = world.raider_gap
@@ -453,6 +480,7 @@ func _physics_process(delta: float) -> void:
 	if world.thin_ice:
 		_tick_ice(delta)
 	_tick_bosses(delta)
+	_tick_guards(delta)
 	_tick_strongpoints(delta)
 	_tick_events(delta)
 	_tick_caches(delta)
@@ -602,6 +630,7 @@ func _tick_strongpoints(delta: float) -> void:
 		var was_contested := point.contested
 		var loser := point.holder_name
 		var lost_by_player := point.holder_is_player
+		_count_holding(point, inside, delta)
 		if point.tick(delta, present):
 			_on_strongpoint_taken(point, inside, loser, lost_by_player)
 		elif point.contested != was_contested:
@@ -610,6 +639,22 @@ func _tick_strongpoints(delta: float) -> void:
 		if point.contested and present.values().any(func(who: Dictionary) -> bool: return who.player):
 			war.report_clash(point.global_position, delta)
 	_tick_assaults(delta)
+
+
+## Players standing in a site their side holds are holding the line: whole
+## seconds of it count toward "hold_seconds" (Ashfront's hold contracts).
+func _count_holding(point: Strongpoint, inside: Array[Actor], delta: float) -> void:
+	if point.holder == "":
+		return
+	for actor in inside:
+		var state := state_for(actor)
+		if state == null or side_of(actor)[0] != point.holder:
+			continue
+		state.held_for += delta
+		var whole := int(state.held_for)
+		if whole > 0:
+			state.held_for -= whole
+			_count(state, "hold_seconds", whole)
 
 
 func _on_strongpoint_taken(point: Strongpoint, inside: Array[Actor], loser: String, lost_by_player: bool) -> void:
@@ -955,9 +1000,70 @@ func _tick_orders(delta: float) -> void:
 		var orders := commander.plan(faction, armies[faction], strongpoints, strength, storm,
 				world.garrison_size, teams, first)
 		first += 100
+		var pushing := {}
 		for bot: Actor in orders:
 			_order(bot, orders[bot])
 			(bot.get_node("Brain") as BotBrain).team = int(teams.get(bot, 0))
+			if teams.has(bot):
+				if not pushing.has(orders[bot]):
+					pushing[orders[bot]] = []
+				pushing[orders[bot]].append(bot)
+		# The army's main push is the objective most of its teams go for.
+		var main: Strongpoint = null
+		for point: Strongpoint in pushing:
+			if main == null or pushing[point].size() > pushing[main].size():
+				main = point
+		if main != null:
+			_note_army_target(faction, main, pushing[main])
+
+
+## A faction's army has a new site to go for: a push, told before it lands
+## (a horn at the site, a war feed line, an arrow on the watch map). The
+## first orders of a raid set the targets quietly.
+func _note_army_target(faction: String, target: Strongpoint, army: Array) -> void:
+	var first := not _push_target.has(faction)
+	if _push_target.get(faction) == target or army.size() < PUSH_MIN:
+		return
+	_push_target[faction] = target
+	if first:
+		return
+	var from := Vector3.ZERO
+	for bot: Actor in army:
+		from += bot.global_position
+	from /= army.size()
+	var loud := clock - float(_push_loud_at.get(faction, -INF)) >= PUSH_EVERY
+	if loud:
+		_push_loud_at[faction] = clock
+	var title := world.faction_title(faction)
+	note_push(target.index, from, title, loud)
+	if loud:
+		var line := "%s is pushing on %s" % [title, target.title]
+		war_feed.emit(line.left(1).to_upper() + line.substr(1))
+
+
+## Records an army's push on site `site` (its `Strongpoint.index`) for the
+## views, and lets them know. The server calls it from its orders; a
+## client from what `NetSession` was told.
+func note_push(site: int, from: Vector3, title: String, loud: bool) -> void:
+	pushes = pushes.filter(func(p: Dictionary) -> bool:
+		return p.title != title and clock - float(p.at) < PUSH_SHOWN)
+	pushes.append({"site": site, "from": from, "title": title, "at": clock})
+	army_pushed.emit(site, from, title, loud)
+
+
+## The pushes still worth showing.
+func live_pushes() -> Array[Dictionary]:
+	return pushes.filter(func(p: Dictionary) -> bool: return clock - float(p.at) < PUSH_SHOWN)
+
+
+## A loud push is heard: a war horn at the site, carried far, and a ring
+## of light where it stands. View only.
+func _show_push(site: int, _from: Vector3, _title: String, loud: bool) -> void:
+	if not loud or site < 0 or site >= strongpoints.size():
+		return
+	var at := strongpoints[site].global_position + Vector3(0, 0.2, 0)
+	Fx.ring(self, at, strongpoints[site].radius, Color(1.0, 0.45, 0.2), 1.6, false)
+	Sfx.play("war_horn", at, 6.0, 420.0, 40.0)
 
 
 ## The site a faction goes for next, by the commander's worth of each site
@@ -1047,6 +1153,7 @@ func _can_bank(actor: Actor) -> bool:
 func add_player(p_kit: Array = [], p_mastery: Dictionary = {}, p_name := "Raider",
 		p_owner := "", p_renown := 0, p_drop := "", p_insured := "") -> Actor:
 	var state := PlayerState.new()
+	state.started = clock
 	state.kit.assign((p_kit if not p_kit.is_empty() else world.starter_loadout()).filter(
 			func(id: Variant) -> bool: return id != Loadout.BARE))
 	if p_insured != "" and p_insured in state.kit and world.gear_at_risk:
@@ -1060,7 +1167,7 @@ func add_player(p_kit: Array = [], p_mastery: Dictionary = {}, p_name := "Raider
 	if mode == Mode.SOLO and player != null:
 		_remove_actor(player)
 	if arriving and not spawns.is_empty():
-		marker = _safest_spawn(spawns)
+		marker = _safest_spawn(spawns, state)
 	else:
 		marker = rng.randi() % maxi(spawns.size(), 1)
 	if squad_spawn:
@@ -1161,21 +1268,39 @@ static func arrival_point(doorway: Node3D) -> Vector3:
 
 ## The spawn point farthest from everyone already in the raid, so nobody
 ## joins into the middle of a fight.
-func _safest_spawn(spawns: Array[Node3D]) -> int:
+func _safest_spawn(spawns: Array[Node3D], arriving: PlayerState = null) -> int:
 	var others: Array[Actor] = []
 	others.append_array(bots)
 	others.append_array(active_players())
+	# Someone fresh (little gear brought) lands well away from anyone who
+	# came in strong (DESIGN.md "Challenge and balance data"): a strong
+	# player counts as `strong_player_wariness` times as near.
+	var fresh := arriving != null and world.fresh_gear_value > 0 and is_fresh(arriving)
 	var best := 0
 	var best_distance := -1.0
 	for i in spawns.size():
 		var nearest := INF
 		for other in others:
 			if not other.is_dead:
-				nearest = minf(nearest, spawns[i].global_position.distance_to(other.global_position))
+				var distance := spawns[i].global_position.distance_to(other.global_position)
+				var them := state_for(other)
+				if fresh and them != null and them != arriving and is_strong(them):
+					distance /= world.strong_player_wariness
+				nearest = minf(nearest, distance)
 		if nearest > best_distance:
 			best_distance = nearest
 			best = i
 	return best
+
+
+## Whether a life came in with little gear (`WorldDef.fresh_gear_value`),
+## or strong (`strong_gear_value`), by what it brought from the stash.
+func is_fresh(state: PlayerState) -> bool:
+	return ItemDB.total_value(state.kit) < world.fresh_gear_value
+
+
+func is_strong(state: PlayerState) -> bool:
+	return world.strong_gear_value > 0 and ItemDB.total_value(state.kit) >= world.strong_gear_value
 
 
 ## For a dropped connection. Nobody escapes a fight by quitting: the body
@@ -1540,6 +1665,44 @@ func _add_boss(marker: Node3D) -> Actor:
 	return bot
 
 
+## A dungeon's garrison: a guard stands at each of the map's "spawn_guard"
+## markers, kept to the ground round it, and comes back
+## `WorldDef.guard_respawn_time` after it dies. Guards are ordinary bots of
+## their marker's faction, outside the armies (`_is_extra`).
+func _spawn_guards() -> void:
+	if world.bot_count <= 0:
+		return
+	for marker in _map_nodes("spawn_guard"):
+		_guards.append({"marker": marker, "bot": _add_guard(marker), "back_in": 0.0})
+
+
+func _add_guard(marker: Node3D) -> Actor:
+	var bot := _add_bot(marker)
+	var brain := bot.get_node_or_null("Brain") as BotBrain
+	if brain != null:
+		brain.post_to(marker.global_position, float(marker.get_meta("radius", 10.0)))
+	return bot
+
+
+func _tick_guards(delta: float) -> void:
+	for guard in _guards:
+		var bot: Variant = guard.bot
+		if bot != null and is_instance_valid(bot) and not (bot as Actor).is_dead:
+			continue
+		if guard.back_in <= 0.0:
+			guard.back_in = world.guard_respawn_time
+			guard.bot = null
+			continue
+		guard.back_in -= delta
+		if guard.back_in <= 0.0:
+			guard.bot = _add_guard(guard.marker)
+
+
+## Whether a bot is one of the map's guards.
+func is_guard(bot: Actor) -> bool:
+	return _guards.any(func(guard: Dictionary) -> bool: return guard.bot == bot)
+
+
 ## A dead boss comes back after `WorldDef.boss_respawn_time`.
 func _tick_bosses(delta: float) -> void:
 	for boss in _bosses:
@@ -1619,7 +1782,7 @@ func _on_linked_hurt(info: DamageInfo, bot: Actor) -> void:
 ## rival raiders. They are never ordered about by the war, and the army
 ## never replaces them.
 func _is_extra(bot: Actor) -> bool:
-	if _event_bots.has(bot) or is_raider(bot):
+	if _event_bots.has(bot) or is_raider(bot) or is_guard(bot):
 		return true
 	for boss in _bosses:
 		if boss.bot == bot:
@@ -2073,6 +2236,10 @@ func _track_mark(body: Node3D, at: Vector3, kind: int, step: float) -> void:
 		if gone.length_squared() < step * step:
 			return
 	if not map.has_method("ground_height"):
+		return
+	# Nothing is laid where the world is sheltered (inside, underground).
+	if world.sheltered_at(at):
+		_last_mark[body] = [at, kind]
 		return
 	var ground := float(map.call("ground_height", at.x, at.z))
 	var low := at.y - ground
@@ -2917,6 +3084,8 @@ func _on_actor_died(actor: Actor, info: DamageInfo) -> void:
 	if mode != Mode.CLIENT:
 		# Read before the ledger closes the victim's life.
 		var bounty := renown.bounty_of(state.owner) if state != null else 0
+		if state != null:
+			state.end_note["bounty"] = bounty
 		gained = _settle_renown(state, killer, actor, by)
 		if killer != null:
 			var pay := Economy.KILL_BOUNTY
@@ -2946,6 +3115,10 @@ func _on_actor_died(actor: Actor, info: DamageInfo) -> void:
 		killer.actor.notice.emit("Killed %s" % actor.display_name if gained <= 0
 				else "Killed %s   +%d renown" % [actor.display_name, gained])
 	if state != null:
+		if mode != Mode.CLIENT:
+			# Read now, while the bots that were after them still are.
+			state.end_note["killer"] = LifeLog.killer_kind(self, actor, info)
+			state.end_note["hunters"] = LifeLog.hunters_of(actor)
 		_finish_player(state, "died", info.kind, by)
 		_publish_standing()
 		# The local player's body stays for the camera until they drop in again.
@@ -3099,6 +3272,7 @@ func _on_actor_banked(actor: Actor) -> void:
 		else:
 			actor.inventory.remove_item(id)
 	state.banked.append_array(items)
+	_count(state, "banks")
 	actor.banked_count = state.banked.size()
 	actor.banked_value = ItemDB.total_value(state.banked)
 	banked_changed.emit(actor)
@@ -3307,7 +3481,41 @@ func _finish_player(state: PlayerState, outcome: String, cause: String, killed_b
 		result["renown_now"] = standing.renown
 	if apply_to_profile:
 		apply_result(result)
+	_log_life(state, result)
 	player_finished.emit(actor, result)
+
+
+## One line in the life log for a finished life (`LifeLog`): where and how
+## it ended and what it carried. Authority only, never in a safe zone.
+func _log_life(state: PlayerState, result: Dictionary) -> void:
+	if mode == Mode.CLIENT or world.safe_zone:
+		return
+	var actor := state.actor
+	var at := actor.global_position if is_instance_valid(actor) else Vector3.ZERO
+	var in_storm := weather.strength_at(at) if weather.kind != "" else 0.0
+	var died: bool = result.outcome == "died"
+	life_log.record({
+		"time": int(Time.get_unix_time_from_system()),
+		"world": world.id,
+		"owner": state.owner,
+		"outcome": result.outcome,
+		"cause": result.cause,
+		"killer": str(state.end_note.get("killer", "")) if died else "",
+		"hunters": int(state.end_note.get("hunters", 0)) if died else 0,
+		"zone": world.zone_at(at),
+		"x": snappedf(at.x, 0.1),
+		"z": snappedf(at.z, 0.1),
+		"alive": snappedf(clock - state.started, 0.1),
+		"kills": state.kills,
+		"gear_value": ItemDB.total_value(state.kit),
+		"carried_value": ItemDB.total_value(actor.get_drop_items()) if died and is_instance_valid(actor)
+				else int(result.get("loot_value", 0)),
+		"banked_value": int(result.get("banked_value", 0)),
+		"scrip": int(result.get("scrip", 0)) + int(result.get("scrip_banked", 0)),
+		"war": snappedf(war.intensity, 0.01),
+		"storm": snappedf(in_storm, 0.01),
+		"bounty": int(state.end_note.get("bounty", renown.bounty_of(state.owner))),
+	})
 
 
 ## Writes a finished life into the local profile: what came home, the
@@ -3413,3 +3621,9 @@ class PlayerState:
 	## `Raid.clock` when an outpost last turned them away, so it says so once.
 	var refused_at := -INF
 	var finished := false
+	## `Raid.clock` when this life began, and what ended it (the killer's
+	## kind and how many bots were after them), for the life log.
+	var started := 0.0
+	var end_note := {}
+	## Seconds held in a strongpoint of their side not yet counted.
+	var held_for := 0.0

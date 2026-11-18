@@ -15,6 +15,11 @@ func _ready() -> void:
 		out_dir = args[0]
 	Profile.persist = false
 	# Before the home-base pass: that pass is most of the runtime.
+	# `--designs-only`: every hub shape and every room style.
+	if "--designs-only" in args:
+		await _design_shots(out_dir)
+		get_tree().quit()
+		return
 	if "--storm-only" in args:
 		await _storm_shots(out_dir)
 		get_tree().quit()
@@ -301,6 +306,15 @@ func _ready() -> void:
 	# spindrift streaming off a rim.
 	if "--whiteout-only" in args:
 		await _whiteout_shots(out_dir)
+		get_tree().quit()
+		return
+
+	# `-- <output_dir> --engine-only` shows the Engine's inside: the drum and
+	# its open hatch, the hatch from close, the Drum Hall with a squad in it,
+	# the Shaft from its lip and from its foot, and a whiteout at the hatch
+	# seen from inside.
+	if "--engine-only" in args:
+		await _engine_shots(out_dir)
 		get_tree().quit()
 		return
 
@@ -1145,17 +1159,97 @@ func _base_shots(out_dir: String) -> void:
 		camera.look_at_from_position(from, Vector3(-11.5 if "left" in file else 11.5, 1.4, 0))
 		await _settle(4)
 		await _shot(out_dir.path_join(file))
-	base.use_plan()
-	base.plan_scroll(4)
-	base.plan_select()
-	base.plan_scroll(1)
-	var table := base.global_transform * base.plan_transform()
-	camera.look_at_from_position(table * Vector3(0.75, 2.35, 2.4), table * Vector3(0.75, 1.3, -0.1))
-	camera.fov = 60.0
-	await _settle(6)
-	await _shot(out_dir.path_join("plan_table_in_use.png"))
-	base.leave_plan()
+	await _plan_table_shots(base, out_dir)
+	camera.make_current()
 	camera.fov = 75.0
+	base.queue_free()
+	await _settle(2)
+
+
+## The plan table in use, as the player sees it: the customizer on its
+## screen, with the hologram beyond, on each tab.
+func _plan_table_shots(base: HomeBase, out_dir: String) -> void:
+	base.set_scrip(5200)
+	base.use_plan()
+	var view: Node3D = load("res://core/ui/bench_view.gd").new()
+	view.base = base
+	view.target = "plan"
+	base.add_child(view)
+	view.focus()
+	await _settle(40)
+	await _shot(out_dir.path_join("plan_table_layout.png"))
+	view.panel.shape_pick = "ring"
+	view.panel.base.plan_preview(view.panel.with_change("shape", "ring"))
+	view.panel._refresh()
+	await _settle(6)
+	await _shot(out_dir.path_join("plan_table_layout_ring.png"))
+	view.panel.show_tab("rooms")
+	view.panel.socket_pick = "N1"
+	view.panel._refresh()
+	await _settle(6)
+	await _shot(out_dir.path_join("plan_table_rooms.png"))
+	view.panel.show_tab("styles")
+	view.panel.room_pick = "gear"
+	view.panel.style_pick = "ring"
+	base.plan_preview(view.panel.with_change("style:gear", "ring"))
+	base.plan_mark("gear")
+	view.panel._refresh()
+	await _settle(6)
+	await _shot(out_dir.path_join("plan_table_styles.png"))
+	view.leave()
+	await _settle(2)
+
+
+## Every hub shape (`BasePlan.SHAPES`) from over the door and from above, and
+## every room in every style (`BasePlan.STYLES`), whole and in its small form.
+func _design_shots(out_dir: String) -> void:
+	var base := HomeBase.new()
+	var gear := ["rifle_carbine", "smg_stinger", "dmr_longshot", "shotgun_breacher", "rifle_scrap", "blade_arc",
+			"hammer_breaker", "knife_gutter", "axe_splitter", "spear_lancer", "pistol_machine", "pistol_hand_cannon",
+			"frame_runner", "frame_trooper", "frame_bulwark", "helm_warden", "helm_seeker", "helm_ember", "helm_spotter",
+			"jetpack_mk2", "boots_thruster", "wings_glide", "chip_blink", "chip_barrier", "chip_pulse", "bike_scrapper",
+			"bike_raider", "medkit", "medkit", "scrap_metal", "alloy_ingot", "reactor_core", "lattice_shard"]
+	var worn := {"primary": "dmr_longshot", "frame": "frame_bulwark", "helmet": "helm_warden", "vehicle": "bike_raider"}
+	base.show_gear(gear, worn, BaseUpgrades.full())
+	add_child(base)
+	var camera := Camera3D.new()
+	camera.fov = 75.0
+	base.add_child(camera)
+	camera.make_current()
+	await _settle(20)
+	if "--plan-only" in OS.get_cmdline_user_args():
+		await _plan_table_shots(base, out_dir)
+		base.queue_free()
+		return
+	for shape: String in BasePlan.SHAPES:
+		var plan := BasePlan.clean(null)
+		plan["shape"] = shape
+		base.show_gear(gear, worn, BaseUpgrades.full(), plan)
+		base.player.global_position = base.to_global(base.spawn_point)
+		await _settle(12)
+		var half := base.room_size * 0.5
+		camera.look_at_from_position(Vector3(0, base.room_size.y - 1.0, half.z - 0.8), Vector3(0, 1.0, -half.z * 0.6))
+		await _settle(4)
+		await _shot(out_dir.path_join("shape_%s.png" % shape))
+		camera.look_at_from_position(Vector3(0.01, 42.0, -4.0), Vector3(0, 0, -4.0))
+		await _settle(4)
+		await _shot(out_dir.path_join("shape_%s_top.png" % shape))
+	for room: String in BasePlan.STYLES:
+		for style: String in BasePlan.STYLES[room]:
+			var plan := BasePlan.clean(null)
+			plan["styles"][room] = style
+			for whole: bool in [true, false]:
+				var owned := BaseUpgrades.full()
+				if not whole:
+					owned.erase(str(BasePlan.ROOMS[room]["opens"]))
+				if not whole and str(BasePlan.ROOMS[room]["opens"]) == "":
+					continue
+				base.show_gear(gear, worn, owned, plan)
+				await _settle(10)
+				var xf := base.room_transform(room)
+				camera.look_at_from_position(xf * Vector3(0.0, 3.0, 3.4), xf * Vector3(0.0, 1.0, -6.5 if whole else -4.0))
+				await _settle(4)
+				await _shot(out_dir.path_join("style_%s_%s%s.png" % [room, style, "" if whole else "_small"]))
 	base.queue_free()
 	await _settle(2)
 
@@ -2423,6 +2517,91 @@ func _whiteout_shots(out_dir: String) -> void:
 	cam.look_at_from_position(below + Vector3(0, 1.8, 0), rim_at + Vector3(0, 6, 0))
 	await _settle(80)
 	await _shot(out_dir.path_join("whiteout_6_spindrift.png"))
+	Look.weather_follow = 0.35
+	raid.queue_free()
+	await _settle(4)
+
+
+func _engine_shots(out_dir: String) -> void:
+	const MapScript := preload("res://worlds/frostline/map.gd")
+	var raid := Raid.new()
+	add_child(raid)
+	raid.start_server(Worlds.get_world("frostline"), 42)
+	var frame := MapScript.engine_frame()
+	var f := MapScript.HALL_FLOOR
+	var at := func(local: Vector3) -> Vector3: return frame * local
+	var squad: Array[Actor] = []
+	var kits := [["rifle_carbine", "pistol_service", "jetpack_mk1", "frame_trooper", "helm_spotter"],
+			["smg_stinger", "pistol_machine", "boots_thruster", "frame_runner", "helm_seeker"],
+			["rifle_carbine", "blade_scrap", "jetpack_mk1", "frame_trooper", "helm_warden"],
+			["smg_stinger", "pistol_service", "boots_thruster", "frame_runner", "helm_ember"]]
+	for i in kits.size():
+		squad.append(raid.add_player(kits[i], {}, "Delver%d" % i, "delver%d" % i))
+	for actor in squad + raid.bots:
+		var brain := actor.get_node_or_null("Brain")
+		if brain != null:
+			brain.set_physics_process(false)
+		actor.set_physics_process(false)
+	var place := func(actors: Array, spots: Array, face: Vector3) -> void:
+		for i in mini(actors.size(), spots.size()):
+			var a: Actor = actors[i]
+			a.global_position = at.call(spots[i])
+			var look: Vector3 = at.call(face) - a.global_position
+			a.rotation.y = atan2(-look.x, -look.z)
+	var guards: Array = raid._guards.map(func(g: Dictionary) -> Variant: return g.bot)
+	var cam := Camera3D.new()
+	cam.fov = 64.0
+	cam.far = 1500.0
+	raid.add_child(cam)
+	cam.current = true
+	# 1. The drum from the valley, its hatch open.
+	place.call(squad, [Vector3(-38, f, -14), Vector3(-40, f, -10), Vector3(-42, f, -16), Vector3(-36, f, -8)],
+			Vector3(-22, f, -12))
+	cam.look_at_from_position(at.call(Vector3(-75, 9, -2)), at.call(Vector3(-10, 2, -6)))
+	await _settle(40)
+	await _shot(out_dir.path_join("engine_1_drum.png"))
+	# 2. The hatch from close, looking into the hall.
+	place.call(squad, [Vector3(-26, f, -14), Vector3(-27, f, -10), Vector3(-20, f, -13), Vector3(-17, f, -9)],
+			Vector3(0, f, -12))
+	cam.look_at_from_position(at.call(Vector3(-34, f + 2.2, -12)), at.call(Vector3(0, f + 2.5, -12)))
+	await _settle(20)
+	await _shot(out_dir.path_join("engine_2_hatch.png"))
+	# 3. The Drum Hall from its west end, a squad moving up through the cover.
+	place.call(squad, [Vector3(-6, f, -26), Vector3(4, f, -24), Vector3(-12, f, -16), Vector3(16, f + 8, -24)],
+			Vector3(0, f, 10))
+	place.call(guards, [Vector3(6, f, -6), Vector3(-8, f, 0), Vector3(-17, f + 8, 4), Vector3(14, f, 4)],
+			Vector3(0, f, -30))
+	cam.look_at_from_position(at.call(Vector3(0, f + 4.5, -34)), at.call(Vector3(0, f + 2, 10)))
+	await _settle(30)
+	await _shot(out_dir.path_join("engine_3_hall.png"))
+	# 4. The Shaft from its lip.
+	place.call(squad, [Vector3(6, f, 2), Vector3(-6, f, 3), Vector3(14, f, 8), Vector3(7, f - 4, 12)],
+			Vector3(0, f - 26, 20))
+	cam.look_at_from_position(at.call(Vector3(-4, f + 12, -4)), at.call(Vector3(0, f - 24, 24)))
+	await _settle(20)
+	await _shot(out_dir.path_join("engine_4_shaft.png"))
+	# 5. The Shaft's foot, looking up the ramps.
+	place.call(squad, [Vector3(2, f - 26, 14), Vector3(-6, f - 26, 2), Vector3(-6, f - 20, 16), Vector3(0, f - 13, 29)],
+			Vector3(0, f - 26, 30))
+	place.call(guards, [Vector3(4, f - 26, 26), Vector3(-2, f - 26, 28)], Vector3(0, f - 26, 0))
+	cam.look_at_from_position(at.call(Vector3(-3, f - 24, -0.5)), at.call(Vector3(2, f - 12, 26)))
+	await _settle(20)
+	await _shot(out_dir.path_join("engine_5_foot.png"))
+	# 6. A whiteout at the hatch, seen from inside.
+	var weather := raid.weather
+	weather.start()
+	weather.velocity = Vector3(0, 0, 0.2)
+	weather.life = 100000.0
+	weather.age = 1000.0
+	weather.strength = 1.0
+	var outside: Vector3 = at.call(Vector3(-60, 0, -12))
+	weather.centre = Vector3(outside.x, 0.0, outside.z)
+	Look.weather_follow = 100.0
+	place.call(squad, [Vector3(-16, f, -14), Vector3(-14, f, -9), Vector3(-10, f, -12), Vector3(-30, f, -11)],
+			Vector3(-30, f, -12))
+	cam.look_at_from_position(at.call(Vector3(-4, f + 2.0, -12)), at.call(Vector3(-40, f + 2.0, -12)))
+	await _settle(60)
+	await _shot(out_dir.path_join("engine_6_storm_at_hatch.png"))
 	Look.weather_follow = 0.35
 	raid.queue_free()
 	await _settle(4)

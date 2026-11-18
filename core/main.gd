@@ -222,6 +222,10 @@ var _tour_stash_size := -1
 
 func _ready() -> void:
 	var args := OS.get_cmdline_user_args()
+	# Every life a raid here finishes goes in the life log (`LifeLog`), to
+	# tune the worlds from: `--life-log <dir>` puts it elsewhere.
+	var log_at := args.find("--life-log")
+	LifeLog.directory = args[log_at + 1] if log_at >= 0 and log_at + 1 < args.size() else "user://life_log"
 	if "--account-service" in args:
 		_run_account_service(args)
 		return
@@ -667,16 +671,19 @@ func _on_base_upgrade(upgrade_id: String) -> void:
 	_refresh_base()
 
 
-## A room moved at the base's plan table: kept in the profile solo, asked of
-## the server online (which answers with a fresh account).
-func _on_base_room_placed(socket: String, room: String) -> void:
+## A change picked at the base's plan table (a room moved, a hub shape, a
+## room style; `BasePlan.change`): kept in the profile solo, asked of the
+## server online (which answers with a fresh account).
+func _on_base_room_placed(key: String, value: String) -> void:
 	if base == null or base.read_only:
 		return
 	if hub.in_lobby():
 		if net:
-			net.place_room(socket, room)
+			net.place_room(key, value)
 		return
-	Profile.place_room(socket, room)
+	var result := Profile.place_room(key, value)
+	if not result.ok and base_hud:
+		base_hud.show_notice(str(result.get("error", "")))
 	_refresh_base()
 
 

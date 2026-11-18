@@ -20,6 +20,7 @@ static func run(t: Node) -> void:
 	_views(t)
 	await _raid_tally(t)
 	await _expedition(t)
+	await _warzone(t)
 
 
 ## How many jobs the board offers: the ones that count anywhere, and each
@@ -297,3 +298,48 @@ static func _expedition(t: Node) -> void:
 			"a Frostline life's result says which contracts it counts for")
 	raid.queue_free()
 	await t.frames(2)
+
+
+## Ashfront's own jobs (DESIGN.md "Challenge and balance data"): from grab
+## and go at the rim to holding the line, counted only there.
+static func _warzone(t: Node) -> void:
+	print("Contracts: the warzone's own")
+	var ash := Worlds.get_world("ashfront")
+	var own := Contracts.ids("daily", "warzone") + Contracts.ids("weekly", "warzone")
+	t.check(ash.contract_tag == "warzone" and own.size() == ash.contract_jobs().size()
+			and Contracts.title_of("war_hold").begins_with("Warzone: "),
+			"Ashfront tags its own jobs as the warzone's")
+	var stats := own.map(func(id: String) -> String: return Contracts.job(id).stat)
+	t.check("cache:cache_outer" in stats and "cache:cache" in stats and "cache:cache_core" in stats
+			and "hold_seconds" in stats and "banks" in stats,
+			"they run from the rim's caches through the landmarks to the Foundry, banking and holding the line")
+	var on_board := Contracts.offers_for(DAY).filter(func(id: String) -> bool:
+		return Contracts.job(id).get("world_tag", "") == "warzone")
+	t.check(on_board.size() == Contracts.TAGGED_DAILY_OFFERS + Contracts.TAGGED_WEEKLY_OFFERS,
+			"the board offers a warzone daily and weekly")
+	t.check(Contracts.amount("hold_seconds", {"outcome": "left", "tally": {"hold_seconds": 200}}) == 200
+			and not Contracts.counts_in(Contracts.job("war_hold"), {"contract_tag": "expedition"}),
+			"held seconds count from a sign-out, and never in another world")
+
+	var raid: Raid = await t._new_raid(83, false)
+	var p := raid.player
+	var point: Node3D = raid.strongpoints[0]
+	var side: Array = raid.side_of(p)
+	point.holder = side[0]
+	point.holder_name = side[1]
+	point.holder_is_player = true
+	for bot in raid.bots:
+		bot.global_position = point.global_position + Vector3(400, 0, 400)
+	p.global_position = point.global_position
+	raid._tick_strongpoints(0.75)
+	raid._tick_strongpoints(0.75)
+	raid._tick_strongpoints(0.75)
+	t.check(int(p.tally.get("hold_seconds", 0)) == 2,
+			"standing in a site your side holds counts whole seconds held (%s)" % [p.tally])
+	point.holder = "legion"
+	raid._tick_strongpoints(2.0)
+	t.check(int(p.tally.get("hold_seconds", 0)) == 2, "a site someone else holds counts nothing")
+	p.inventory.add_item("scrap_metal")
+	raid._on_actor_banked(p)
+	t.check(int(p.tally.get("banks", 0)) == 1, "banking loot at a depot counts")
+	await t._end_raid(raid)

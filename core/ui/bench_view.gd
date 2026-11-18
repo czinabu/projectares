@@ -8,15 +8,20 @@ extends Node3D
 ## A view only, like `WorldScreen`: the base decides nothing here, it only
 ## changes what the bench shows and asks for equips through its own signal.
 ##
-## The plan table works the same way (`use_plan`): set `target` to "plan" and
-## the view comes in over the table and works it through `plan_scroll`,
-## `plan_select`, `plan_back` and `leave_plan`.
+## The plan table (`use_plan`): set `target` to "plan" and the view comes in
+## over the table's lectern, with the base's hologram beyond it, and mounts
+## the customizer (`plan_panel.gd`) on the lectern's screen as a
+## `WorldScreen`. The mouse works the screen; a right click steps back on it
+## (or leaves when there is nothing to step back from) and Esc leaves
+## (`leave_plan`).
 ##
 ## Load with `preload("res://core/ui/bench_view.gd")`. Give it `base`, add it
 ## to the tree and call `focus()`. It frees itself and emits `closed` when the
 ## player leaves the bench.
 
 signal closed
+
+const PlanPanel := preload("res://core/ui/plan_panel.gd")
 
 ## Where the camera sits and what it looks at, in the bench's own space (local
 ## +Z is where you stand to use it).
@@ -33,15 +38,18 @@ var target := "bench":
 	set(value):
 		target = value
 		if value == "plan":
-			eye = Vector3(0.75, 2.35, 2.4)
-			look_at_point = Vector3(0.75, 1.3, -0.1)
-			fov = 60.0
+			eye = Vector3(0.0, 2.09, 2.7)
+			look_at_point = Vector3(0.0, 1.03, 1.0)
+			fov = 70.0
 
 var _camera: Camera3D
 var _previous: Camera3D
 var _from := Transform3D.IDENTITY
 var _from_fov := 70.0
 var _move := 1.0
+## The plan table's screen while in use, and the customizer on it.
+var screen: WorldScreen
+var panel: Control
 
 
 ## Moves the view in to the bench and starts taking the mouse.
@@ -63,6 +71,31 @@ func focus() -> void:
 	_camera.global_transform = _from if _previous else view_transform()
 	_camera.fov = _from_fov if _previous else fov
 	_camera.make_current()
+	if target == "plan":
+		_mount_panel()
+
+
+## The customizer on the plan table's lectern: a 2D panel in a viewport,
+## shown on the screen there and worked through it.
+func _mount_panel() -> void:
+	var face: Node3D = base.plan_screen()
+	if face == null:
+		return
+	var view := SubViewport.new()
+	view.name = "PlanView"
+	view.size = Vector2i(1600, 900)
+	view.disable_3d = true
+	view.gui_embed_subwindows = true
+	panel = PlanPanel.new()
+	panel.base = base
+	view.add_child(panel)
+	add_child(view)
+	screen = WorldScreen.new()
+	screen.name = "LiveScreen"
+	screen.size = HomeBase.PLAN_SCREEN
+	screen.glow = 0.9
+	screen.viewport = view
+	face.add_child(screen)
 
 
 ## Where the camera ends up, looking at the bench (global).
@@ -75,6 +108,9 @@ func view_transform() -> Transform3D:
 ## Steps away: the base drops anything not picked, the view goes back to the
 ## camera that had it.
 func leave() -> void:
+	if screen != null and is_instance_valid(screen):
+		screen.queue_free()
+	screen = null
 	if base != null and is_instance_valid(base):
 		base.call("leave_" + target)
 	if _previous != null and is_instance_valid(_previous) and _previous.is_inside_tree():
@@ -101,6 +137,9 @@ func _process(delta: float) -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if base == null or not is_instance_valid(base):
 		return
+	if screen != null and is_instance_valid(screen):
+		_screen_input(event)
+		return
 	var handled := true
 	if event is InputEventMouseButton and event.pressed:
 		match event.button_index:
@@ -122,4 +161,20 @@ func _unhandled_input(event: InputEvent) -> void:
 	else:
 		handled = false
 	if handled and is_inside_tree():
+		get_viewport().set_input_as_handled()
+
+
+## The plan table's input: the mouse goes to the screen where it points, a
+## right click steps back on it (or leaves), Esc leaves.
+func _screen_input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_ESCAPE:
+		leave()
+	elif event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_RIGHT:
+		if not panel.back():
+			leave()
+	elif event is InputEventMouse:
+		screen.forward_mouse(event, _camera)
+	else:
+		return
+	if is_inside_tree():
 		get_viewport().set_input_as_handled()
