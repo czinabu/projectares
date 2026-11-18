@@ -53,6 +53,13 @@ without Caleb, and update the gap list when a PR closes a row.
   same raid. Loot reaches the stash mid-life only through a `Depot`
   (`player_banked`). Never add a way to leave that skips `begin_sign_out`:
   a disconnect goes through `remove_player`, which leaves the body standing.
+  A player whose connection dropped gets that body back if they sign in
+  before its countdown ends: `NetSession._on_peer_connected` finds it
+  (`Raid.is_unguarded`) and `Raid.reclaim_player` hands it over, with no
+  deploy; the game reconnects on its own (`Main._on_online_disconnected`,
+  `reconnect_window`). Anything the server sends a body's owner asks
+  `NetSession._owner_peer(actor)`, never a peer id kept from the deploy,
+  because a body outlives the connection that deployed it.
 - Drop-in protection is `Actor.protected_left`, checked in `Combat.deal`.
 - How harsh death is belongs to the world, not to `Raid`. With
   `WorldDef.keep_gear_on_death` a dead player drops only the backpack and the
@@ -154,6 +161,28 @@ without Caleb, and update the gap list when a PR closes a row.
   (never `equip_bot`). A client builds one from that kit (`spawn_bot`'s
   `kit`), not from the seed. The `Raid` sends them on errands
   (`BotBrain.go_to`) and signs them out; armies never order them.
+  Group fights take turns (Caleb's call, DESIGN.md "Group fights"): only
+  `BotBrain.attack_slots` army bots shoot or swing at one person at a time
+  (`BotBrain.RING_SLOTS`: 1 outer, 2 middle, 3 core; `take_slot`, keyed by
+  the target, held `token_hold` and passed on after `token_beat`). A bot
+  without a slot keeps its gun on the target and holds fire, crouched in
+  cover from the target's eyes (`_find_cover`, a few ray probes every
+  1.5 s) or, past the outer ring, working round a flank. Return fire
+  (`return_fire_time`) and anything inside `point_blank` skip the queue,
+  and bots fighting bots are never rationed (`BotBrain.is_person`). Spotting
+  takes longer far off and against a crouch (`notice_mult`), and the gun
+  comes up halfway through the reaction with a bark heard nearby
+  (`ActorSkin._update_bark`) before the first shot. Measure with the duel
+  bench's `--group 2,3,5` (and `--slots off` to compare).
+  Melee bots fight like people (DESIGN.md "Melee bots"): held heavies,
+  feints (a charge that switches side and lets go as a light) and
+  dash-strikes by ring (`BotBrain.RING_HEAVY`, `RING_FEINT`, `RING_DASH`),
+  and a strike into any opening; they press the same buttons a player
+  does (`_start_attack`, `_carry_charge`). A blade in reach beats a rifle
+  (Caleb's call): an army gunner cut by a blade flinches
+  (`BotBrain.melee_flinch`, its aim and trigger only, never a player's)
+  and gives ground from one (`blade_backoff`). Measure with the duel
+  bench's `--melee <blade id>`.
 - Big battles must stay affordable; measure with
   `godot --headless --path . res://tests/battle_bench.tscn -- --bots 150 --players 32`
   (processor time a tick, against the 16.7 ms budget). Three things keep
@@ -616,6 +645,14 @@ without Caleb, and update the gap list when a PR closes a row.
   may change an actor's velocity by more than its own accelerations in one
   tick (wings catch a fall at `FlightRig.glide_catch_accel` and roll into a
   bank at `glide_bank_rate`; never clamp a velocity straight to its target).
+  Recoil is a pattern you can learn (Caleb's call, DESIGN.md "Recoil"):
+  each gun's `recoil_pattern` ("climb", "climb_right", "climb_left",
+  "sway", "kick") and a kick that builds through a spray
+  (`Gun.recoil_for`, `spray_shot`, counted in `Gun._fire`, so simulated),
+  with only `recoil_jitter` of the side kick left to chance; a new gun
+  names a pattern in its stats. Bots take the same kick into their aim
+  and pull against a share of it by skill (`BotBrain._take_recoil`,
+  `RECOIL_CONTROL`); measure with `gun_bench.tscn -- --recoil`.
   What only the player sees is the controller's job and view only: recoil
   reaching the view over a few frames and settling back
   (`PlayerController._update_recoil`), the view widening with speed
@@ -1293,6 +1330,21 @@ without Caleb, and update the gap list when a PR closes a row.
   owner's copy for the watch is `Actor.tally`. Only a sign-out counts, and no
   job may count player kills or reward signing straight out. A new job is a
   `JOBS` entry; a new stat is a `_count` call where the event happens.
+- The player market (DESIGN.md section 10, "Two worlds, one loop"): rules
+  once in `core/economy/market.gd` (static, like `Economy`: what trades, the
+  price band, fees, the daily cap; Mk3, heavy weapons, artifacts and relics
+  never trade), the board in `core/economy/market_service.gd`, shared by
+  every session of a server like the `ClanService` (`NetSession.market`).
+  It moves goods only through six ledger calls on the `StashService`
+  (`count_of`, `scrip_of`, `take_items`, `give_items`, `change_scrip`, and
+  `transaction`, which every listing charge and every sale goes through so
+  no trade is half done), so it can move onto a shared account service
+  later; it never writes an account itself. Listed items are held by the
+  board, its file is written before the accounts' transaction so a crash
+  can lose a listing but never copy one, and
+  a client only asks (`NetSession.market_ask`) from the Exchange kiosk in
+  the plaza and shows `market_state`. Trading needs a safe zone and no
+  deploy; there is no solo market.
 - Furniture (`furniture`, small pieces also `decor`) and clothing
   (`cosmetic`, with an `outfits` stat of customizer outfit ids) are ordinary
   stash items that fit no loadout slot, so they never go on a raid.

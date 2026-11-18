@@ -23,6 +23,11 @@ extends Node
 ## unless given); `--no-arena` leaves it out.
 
 const JOIN_TIMEOUT := 12.0
+## After a dropped connection the game tries to get back in on its own for
+## this long (a body left standing waits out the sign-out time, 30 s after a
+## fight, from when the server notices), each try given `RECONNECT_TIMEOUT`.
+var reconnect_window := 30.0
+const RECONNECT_TIMEOUT := 5.0
 ## A server started here runs every world, and needs a while before it listens.
 ## An encrypted connection to a port nothing listens on yet fails at once, so
 ## the tries come about a second apart: enough of them to reach the deadline.
@@ -61,6 +66,7 @@ const ARENA_PORT_OFFSET := 10
 const PlazaViewScript := preload("res://core/social/plaza_view.gd")
 const ClanPanel := preload("res://core/social/clan_panel.gd")
 const ContractPanel := preload("res://core/economy/contract_panel.gd")
+const MarketPanel := preload("res://core/economy/market_panel.gd")
 const Contracts := preload("res://core/economy/contracts.gd")
 ## The plaza holds more people than a raid.
 const PLAZA_PLAYERS := 32
@@ -128,6 +134,13 @@ var _host_restarts_left := 0
 var _host_world := ""
 var _join_address := ""
 var _join_port := NetSession.DEFAULT_PORT
+## Reconnecting after a drop: when it is given up on (msec ticks, 0 when not
+## reconnecting), what to say then, and whether a body was left out in a world.
+var _reconnect_until := 0
+var _reconnect_note := ""
+var _reconnect_body := false
+## Word for the player about a reconnect, shown where the trip lands them.
+var _back_notice := ""
 ## Online: the raid lobby's port, while visiting that server's arena.
 var _lobby_port := -1
 ## Heading out by the base's door to a remembered server: if it cannot be
@@ -1346,6 +1359,7 @@ func start_server(world_id: String, port: int, with_plaza := true, bots := -1, s
 			session.stash = sessions[0].stash
 			session.social = sessions[0].social
 			session.clans = sessions[0].clans
+			session.market = sessions[0].market
 		add_child(session)
 		var err := session.host(world.id, next_port, world.max_players)
 		if err != OK:
@@ -1367,6 +1381,7 @@ func start_server(world_id: String, port: int, with_plaza := true, bots := -1, s
 		arena.stash = net.stash
 		arena.social = net.social
 		arena.clans = net.clans
+		arena.market = net.market
 		arena.lag_compensation = rewind
 		add_child(arena)
 		if arena.host(Arena.ArenaVenue.ID, arena_port) == OK:
@@ -1384,6 +1399,7 @@ func start_server(world_id: String, port: int, with_plaza := true, bots := -1, s
 		session.stash = net.stash
 		session.social = net.social
 		session.clans = net.clans
+		session.market = net.market
 		session.routes = routes
 		add_child(session)
 		var err := session.host(plaza.id, port, PLAZA_PLAYERS)
@@ -1533,6 +1549,8 @@ func _try_join() -> void:
 			go_home()
 		if base_hud:
 			base_hud.show_notice(reason)
+		if shop_view != null and is_instance_valid(shop_view) and shop_view.panel.has_method("show_message"):
+			shop_view.panel.call("show_message", reason)
 		if raid != null and hud != null and is_instance_valid(hud):
 			hud.notify(reason))
 	net.joined.connect(_on_online_joined)
@@ -1550,7 +1568,7 @@ func _try_join() -> void:
 	# A server that never answers should not leave the hub waiting forever.
 	# By id: the session may be gone by then (a trip through a gate frees it).
 	var session := net.get_instance_id()
-	get_tree().create_timer(JOIN_TIMEOUT).timeout.connect(func() -> void:
+	get_tree().create_timer(RECONNECT_TIMEOUT if _reconnect_until > 0 else JOIN_TIMEOUT).timeout.connect(func() -> void:
 		if net != null and net.get_instance_id() == session and net.account.is_empty():
 			_on_online_failed("The server did not answer."))
 
@@ -1564,11 +1582,23 @@ func _on_online_signed_in(account: Dictionary) -> void:
 	_join_deadline = 0
 	_host_restarts_left = 0
 	_door_fallback = false
+	var back_notice := _reconnected_notice()
 	_keep_profile_in_step(account)
 	if _remember_address != "":
 		Profile.home_server = _remember_address
 		Profile.save()
 		_remember_address = ""
+	if net.resuming:
+		# Back after a drop to the body still standing: the server puts you
+		# in it (`joined` follows), so nothing is deployed.
+		var resumed := Worlds.get_world(net.world_id)
+		if resumed != null and not resumed.safe_zone and _lobby_port < 0:
+			hub.enter_lobby(account, resumed)
+			hub.set_leave_text("Back to %s" % Worlds.social_world().display_name if _plaza_port >= 0 else "Leave the server")
+		hub.set_online_status("Back in your body...")
+		_expect_arrival()
+		return
+	_back_notice = back_notice
 	if _lobby_port > 0:
 		# Signed in to the arena: walk straight into the stands.
 		hub.update_account(account)
@@ -1601,7 +1631,10 @@ func _on_online_signed_in(account: Dictionary) -> void:
 		return
 	go_home()
 	if base_hud:
-		base_hud.show_notice("Connected to %s. Open a portal from your watch to deploy." % world.display_name, 6.0)
+		var text := _back_notice if _back_notice != "" else \
+				"Connected to %s. Open a portal from your watch to deploy." % world.display_name
+		base_hud.show_notice(text, 8.0 if _back_notice != "" else 6.0)
+	_back_notice = ""
 
 
 ## Asked to walk in: a server that never puts you there should not leave
@@ -1648,6 +1681,9 @@ func _on_online_joined(p_raid: Raid) -> void:
 		raid.add_child(plaza_view)
 		net.world_status_changed.connect(plaza_view.refresh_heat.unbind(1))
 		plaza_view.portal_used.connect(use_portal)
+	if _back_notice != "" and hud != null and is_instance_valid(hud):
+		hud.notify(_back_notice)
+	_back_notice = ""
 	_tour_check()
 
 
@@ -1679,6 +1715,8 @@ func use_portal(destination: String) -> void:
 		open_clans()
 	elif destination == "contracts":
 		open_contracts()
+	elif destination == "market":
+		open_market()
 	else:
 		plaza_view.show_notice("Opening soon.")
 
@@ -1717,6 +1755,35 @@ func open_contracts() -> void:
 	panel.asked.connect(func(action: String, job_id: String) -> void:
 		if net:
 			net.contract_ask(action, job_id))
+	_open_terminal(panel)
+
+
+## The player market's kiosk in the plaza: buy what other players listed,
+## and list your own stash items. The server keeps the board and decides
+## every trade; the screen shows what it sends (`market_state`) and your
+## account, and is kept fresh while open.
+func open_market() -> void:
+	if net == null or raid == null or shop_view != null:
+		return
+	var panel: Control = MarketPanel.new()
+	panel.account = net.account
+	panel.state = net.market_state
+	panel.asked.connect(func(action: String, item_id: String, a: int, b: int) -> void:
+		if net:
+			panel.show_message("")
+			net.market_ask(action, item_id, a, b))
+	var session := net
+	var on_change := func(state: Dictionary) -> void:
+		if is_instance_valid(panel):
+			panel.state = state
+			panel.refresh()
+	session.market_changed.connect(on_change)
+	panel.tree_exited.connect(func() -> void:
+		if is_instance_valid(session):
+			session.market_ask("close")
+			if session.market_changed.is_connected(on_change):
+				session.market_changed.disconnect(on_change))
+	session.market_ask("view")
 	_open_terminal(panel)
 
 
@@ -1825,6 +1892,7 @@ func open_home_base() -> void:
 
 ## Could not connect or sign in, or the connection dropped in the lobby.
 func _on_online_failed(reason: String) -> void:
+	var was_refused := net != null and (net.refused or net.outdated != "" or not net.identity_changed.is_empty())
 	if net:
 		if net.refused:
 			_join_attempts = 0
@@ -1843,6 +1911,18 @@ func _on_online_failed(reason: String) -> void:
 			phone.set_server_changed(changed)
 		net.queue_free()
 		net = null
+	if _reconnect_until > 0:
+		# Reconnecting after a drop: keep trying until the window closes,
+		# unless the server said no or our own server has stopped.
+		if not was_refused and Time.get_ticks_msec() < _reconnect_until and not _hosted_server_stopped():
+			hub.set_online_status("Connection lost. Reconnecting...")
+			await get_tree().create_timer(1.0).timeout
+			if net == null and raid == null and _reconnect_until > 0:
+				_join_attempts = 1
+				_try_join()
+			return
+		_end_reconnect(reason if was_refused else _reconnect_note)
+		return
 	if _join_attempts > 0 and _hosted_server_stopped():
 		_join_attempts = 0
 		reason = "Your server stopped before it was ready."
@@ -1894,26 +1974,66 @@ func _on_online_failed(reason: String) -> void:
 		base_hud.show_notice(reason)
 
 
-## The connection dropped while in the world. Your body stays there for a
-## short while. If nobody kills it, what you carried goes back to your stash.
+## The connection dropped after signing in: in a lobby, in the plaza or out
+## in a world. The game quietly tries to get back in (DESIGN.md section 14,
+## "Reconnect on its own"): the same server, the same sign-in, for
+## `reconnect_window`. Out in a world your body stands where you left it for
+## its sign-out time (`Raid.remove_player`), and getting back before that
+## ends puts you in it again (`NetSession._back`). Only if every try fails
+## do you go home, with word of what happens to the body.
 func _on_online_disconnected() -> void:
 	var in_arena := raid is Arena
 	var was_safe := raid != null and raid.world.safe_zone
+	var at_stake := raid != null and not was_safe and not in_arena
+	var replaced := net != null and net.replaced
 	_leave_raid()
-	_stop_local_server()
-	_plaza_port = -1
-	hub.leave_lobby()
-	hub.refresh({})
-	var reason := ("Lost the connection to the server." if was_safe
+	_reconnect_note = ("Lost the connection to the server." if not at_stake
 			else "Lost the connection to the server. Your body stays in the world for a moment. "
 			+ "If it survives, what you carried goes back to your stash there.")
 	if in_arena:
+		_reconnect_note = "Lost the connection to the arena. Your gear is safe."
+	if replaced:
+		_end_reconnect("Your account signed in from another game, so this one left the server.")
+		return
+	_reconnect_body = at_stake
+	_reconnect_until = Time.get_ticks_msec() + int(reconnect_window * 1000.0)
+	_show_travel("Connection lost. Reconnecting...")
+	_begin_join(_join_address, _join_port, 1)
+
+
+## Reconnecting failed: home on the local stash, saying why.
+func _end_reconnect(reason: String) -> void:
+	_reconnect_until = 0
+	_reconnect_body = false
+	_join_attempts = 0
+	_stop_local_server()
+	_plaza_port = -1
+	if _lobby_port > 0:
+		_join_port = _lobby_port
 		_lobby_port = -1
-		reason = "Lost the connection to the arena. Your gear is safe."
+	hub.leave_lobby()
+	hub.refresh({})
 	hub.set_online_status(reason)
 	go_home()
 	if base_hud:
 		base_hud.show_notice(reason, 8.0)
+
+
+## Signed in again after a drop: what to tell the player about the body
+## they left, if anything. Ends the reconnecting.
+func _reconnected_notice() -> String:
+	if _reconnect_until <= 0:
+		return ""
+	var had_body := _reconnect_body
+	_reconnect_until = 0
+	_reconnect_body = false
+	if net == null or net.resuming:
+		return ""
+	if net.missed_outcome == "left":
+		return "Back online. Your body signed out while you were away: what it carried is in your stash."
+	if net.missed_outcome == "died":
+		return "Back online. Your body was killed while you were away."
+	return "Back online." if not had_body else "Back online. Your body was no longer out there."
 
 
 ## One online life ended. The server has already settled it into your account
