@@ -84,22 +84,51 @@ new planet is a new folder under `worlds/`.
    it waits.
 
 **Expanding the hub comes first.** The Concourse was a walled courtyard with
-no room for these. It is now an open district on a high deck with no wall
-(Caleb's call: grand, open and sci-fi, not industrial): a lit beacon spire
-at the centre, a kiosk arcade round it, slim towers with landing decks and
-skybridges at 15 m so the boots can hop the skyline while the tower tops are
-for wings and jetpacks, a gate terrace with spare arches for new worlds, a
-bike loop round the edge, a big-screen amphitheatre to gather and watch, and
-a pad kept clear for the RC arena. Everything is within about 25 seconds'
-walk of the arrival pad. It looks sci-fi, not industrial: dark glass and
-metal with lit seams instead of brick and punched windows, a glass arcade
-canopy, holo signs over every kiosk and floating holo-ads.
+no room for these. It is now an open deck 480 m across with no wall
+(Caleb's call: grand, open and sci-fi, not industrial), laid out in
+districts round a lit beacon spire, each a place with one job and its name
+on the building that holds it (Caleb's call, the layout pass: no signs that
+do not match where they stand, no glowing pads, no floating ads):
+
+- **Spire plaza** in the middle, where you arrive: stages, benches, Dusk.
+- **Gate Terrace** to the north: an arch for each world, lit while you
+  stand in it, and Marlo the dispatcher at a desk, who reads out how each
+  world is doing.
+- **Market Row** to the south: a covered street of real shopfronts facing
+  each other (armory, outfitter, garage, tailor, furnisher, exchange), each
+  fitted out for its trade with its goods on show and a keeper behind the
+  counter who greets you when you trade. Transit (leaving the server)
+  stands at its far end.
+- **Civic square** to the east: the clan hall with its clerk, the contract
+  board with Rook, the most-wanted board with Kade, and the big screen with
+  its tiers.
+- **Residences** to the west: the way home, with Wren the concierge.
+- **The arena** to the southeast with Sola the promoter, and the shuttered
+  RC yard to the southwest, kept for the toy arena.
+- **The boulevards** between them are somewhere to stop, never only a
+  walk: halfway out to each district, off the lane, a stop that serves the
+  people going that way. A food court on the way to the civic square (a
+  noodle cart and a grill facing each other across the lane, standing
+  tables), a fountain square on the way to the gates (benches round the
+  water, a coffee kiosk with its tables at the water's edge), and by the
+  residences a tea cart and the residents' bike bay. The diagonals are
+  lined with trees and benches, with a pair of light sculptures where each
+  leaves the plaza. No signs: a cart says what it is by what is on it.
+- Gardens on the diagonals, slim towers with landing decks and skybridges at
+  15 m (boot reach; the tops are for wings and jetpacks), rim lookouts and
+  the bike loop round the edge, there to roam.
+
+The spire to the gates is about 180 m and to the far shops about 140 m:
+about 25 seconds on foot, the price of the space. It looks sci-fi, not
+industrial: dark glass and metal with lit seams, a glass canopy over the
+street, a tiled floor.
 
 ### Locals
 
-The Concourse is lived in (Caleb's call): about thirty people go about their
-day there, strolling the rings round the spire, browsing the kiosks under
-the arcade, watching the big screen from the tiers, standing about in small
+The Concourse is lived in (Caleb's call): about ninety people go about their
+day there, strolling the rings round the spire, window shopping down Market
+Row (along the street, crossing at the doors), watching the big screen from
+the tiers, standing about in small
 groups and wandering out to the boards and the gates. Nothing about them is
 even: who walks with whom, where they stand and how long they stay are all
 rolled from one seed. They look at you as you pass and step out of your way.
@@ -107,15 +136,23 @@ They are a view only: every game makes the same crowd and moves it by the
 clock, so the server spends nothing on them and everyone sees much the same
 people.
 
-Three of them you can talk to. Walk up and press the interact key, and they
-answer in a short line on a card over their head, never a menu:
+Some of them you can talk to. Walk up and press the interact key, and they
+answer in a short line on a card over their head, never a menu. Every
+counter has someone behind it (the shop keepers, the clan hall's clerk) who
+greets you as you trade. A keeper talks about what is really on the
+shelves and what you really have: today's piece (the same for everyone all
+day), something on sale that beats what you wear in a slot and that you can
+pay for, and what your salvage would fetch. Every cart on the boulevards
+has a cook, and its customers queue, order, eat at the tables and walk on,
+taking turns so nobody stands in anyone's place. There are Marlo at the gates, Wren at the
+residences and Sola at the arena, besides:
 
 - **Kade**, the bounty broker at the most-wanted board: how bounties work
   and who is worth most right now.
-- **Dusk**, by the spire, who hears things: rumours made from the worlds'
+- **Dusk**, in the spire plaza, who hears things: rumours made from the worlds'
   real news (the war, the event running, a big bounty), never more than the
   plaza's own signs know.
-- **Rook**, the fixer by the gates: one small favour a day, a contract job
+- **Rook**, the fixer at the contract board: one small favour a day, a contract job
   of his own (`Contracts.favor_for`) paid a little under a daily. Talk to him
   again to take it; it is held and paid like any contract.
 
@@ -131,15 +168,33 @@ answer in a short line on a card over their head, never a menu:
   (wardrobe, records, mastery bench, trader), the **Gear hall** (armor
   stands, helmets, rigs, chips) and the **Stores** (supplies and trophies).
   A plate over each doorway names its room; there are no other signs.
+- **Designs** (Caleb's call): beyond moving rooms, the hub itself comes in
+  four shapes, each with the same six doorways: the **Hall** (the square
+  hall above, free), the **Ring** (an eight-sided rotunda, every room
+  opening onto the table), the **Spine** (a long gallery, three rooms down
+  each side) and the **Courtyard** (a big court under a skylight, with
+  planters). Each room has three styles that lay out what it holds
+  differently: the armory's wall rack, vault (an island rack) or gallery
+  (long guns in lit cases); the workshop's back bench, island or pit; the
+  garage's bays, showroom (a turntable) or lift rack; ops' consoles, war
+  table or bridge; the gear hall's stands, ring (round a dais) or lockers;
+  the stores' shelves, plinths or cargo. The first of each is free; any
+  other is bought once with scrip at the plan table and is then free to
+  switch to and back. Designs change how the base looks, never what it
+  holds.
 - **The plan table** stands in the middle of the hub: a round table with
-  the base in miniature over it as a hologram. Walk up and use it and the
-  view moves in, like the bench: the wheel turns through the six doorways,
-  a click turns through the rooms for one (shown in the doorway on the
-  table at once), a second click moves that room there, and the room that
-  stood there takes its old place. Moving rooms is free and moves nothing
-  in or out of the stash; everything on show goes with its room. The plan
-  is kept on the account beside the upgrades, and a visited base stands as
-  its owner laid it out.
+  the base in miniature over it as a hologram and a screen on a lectern at
+  its near edge. Walk up and use it and the view moves in over the screen,
+  the hologram beyond it: three tabs, **Layout** (the four shapes with
+  their floor plans), **Rooms** (the hub's plan: click a doorway, then the
+  room to stand there; the room that stood there takes its old place) and
+  **Styles** (each room's three styles, sketched from above). Whatever the
+  mouse points at shows on the hologram at once; a click picks it, and a
+  locked one shows its price and asks once more to confirm before it is
+  bought and put in use. Moving rooms is free and moves nothing in or out
+  of the stash; everything on show goes with its room. The plan is kept on
+  the account beside the upgrades, and a visited base stands as its owner
+  laid it out.
 - **Heavy weapons banked from the PvP world hang on the armory wall** and can
   be stacked there (see section 6).
 - Consoles do what menus would: locker, gunsmith bench (crafting from
@@ -268,8 +323,9 @@ worlds and a casual or solo one has a steady home.
 - **What you bring home.** New parts (Cryo Core, Glacial Alloy,
   Engine Coil) that Mk2 and Mk3 recipes need, and Frostline blueprints for
   new options only (attachments, cold-weather gear), never a higher Mk of
-  existing gear (built, step 3, see below). Later the inside of the Engine is
-  its deep-loot dungeon and the home of the missing artifacts. Expedition
+  existing gear (built, step 3, see below). The inside of the Engine is
+  its deep-loot dungeon (step 8, see "The Engine's inside" below; its
+  first part built), and its vault the PvE home of the artifacts. Expedition
   contracts (built, step 7c): the board keeps one Frostline daily and one
   Frostline weekly beside the general jobs (search the relay, clear the
   rim posts, break Warden patrols, bring home Cryo Cores; bring down the
@@ -283,8 +339,8 @@ worlds and a casual or solo one has a steady home.
 loot role and recipes, (4) warm beacons, (5) whiteouts, after the Ashfront
 weather work, (6) tracks and louder gunshots, (7) thin ice, the defence
 grid and expedition contracts (in three PRs: thin ice, then the grid, then
-contracts), (8) later, with the PvE dungeons, the
-Engine's inside. Every number is a placeholder for the playtest.
+contracts), (8) the Engine's inside, in three PRs: the Drum Hall
+and the Shaft (built), the Coil Galleries and the Descent, then the Heart. Every number is a placeholder for the playtest.
 
 **Whiteouts (built, step 5).** Frostline's storms are the shared weather
 (see "Weather: ash storms") with `weather_kind` "snow". They follow the
@@ -421,6 +477,56 @@ not trivially. Like Ashfront's core warlords it comes back
 event's) carries a piece of upgrade data and, about one time in seven, one
 of the war's blueprints: the first half of the slow route (section 10).
 Numbers are placeholders.
+
+**The Engine's inside (step 8, Caleb's calls; the first part built).** The
+Stilled Engine is hollow: through its hatch is Frostline's deep-loot
+dungeon, worked down tier by tier to its frozen Heart. It is part of the one
+running world, not an instance (Caleb's call): squads meet down there, and
+like everywhere in Frostline they are allies. It is built for squads to
+fight in (Caleb's ask): no way narrower than 9 m, two arena-sized rooms and
+loops to flank round. A solo player can get all the way through: nothing
+needs two people, warm pockets on the way down refill body heat, and the
+boss is made for one and scales with company. Its tiers:
+
+- **The Drum Hall (built).** The drum's inside, 41 m across and 76 m long,
+  floored over the bed it lies on, with catwalks 8 m up both walls and a
+  ramp up at each end, the stator rings' frozen vanes overhead, fallen
+  vanes, crates and coolant tanks for cover, the engine bay's heater and
+  two caches (one up on a catwalk). The hatch is a doorway 9 m wide and
+  7.6 m high on the valley side; the Engine Sentinel still guards it
+  outside.
+- **The Shaft (built).** A well in the hall's east end, 22 m across and
+  26 m deep: one 9 m ramp down along the back wall to a landing, a second
+  back along the front wall to its foot, which runs on under the hall's
+  floor. Its foot has a heater, a cache (another on the landing) and the
+  sealed way on to the Coil Galleries. Missing: the cable lift, the quick
+  way down once someone powers it, which then stays on a while for every
+  player in the world.
+- **The Coil Galleries and the Descent (next).** Two long halls 14 m wide
+  joined by three cross halls, a loop to fight round, coil alcoves with
+  Engine Coils, a slick coolant channel, then three ramps down.
+- **The Heart (last).** A round chamber 68 m across and 34 m high, the
+  frozen core hung in the middle, a balcony, coolant pylons and the vault.
+  Its keeper is the Heart Warden (Caleb's call): in its first phase it
+  calls Wardens out of sockets in the walls, so a squad splits between it
+  and them; below half health the core thaws and the pylons vent coolant
+  purges across the floor, each flashing before it fires; its back is the
+  weak spot (a squad flanks it, a solo player dashes round the pylons). It
+  comes back on a timer, and everyone who helped gets their own roll from
+  the vault (Caleb's call: nobody takes anyone's loot and nobody arrives
+  too late). The vault pays the best parts, Mk3 materials and upgrade
+  data, a chance at an expedition blueprint and, rarely, an artifact
+  (Caleb's call: below Ashfront's rate, so the war stays the faster
+  route). A deep warm beacon lights there once the keeper falls.
+
+Inside is out of the weather: no storm reaches it and no trail is laid
+(`WorldDef.sheltered_at`), and the cold is its own (gentler in the hall
+than at the glacier head outside, colder down the Shaft). Its garrison is
+Wardens at the map's "spawn_guard" markers, outside the valley's armies and
+back four minutes after they fall; they are on the defence grid like any
+Warden. Its caches pay the "engine" table: Engine Coils most of all, then
+Glacial Alloy and Cryo Cores, a little upgrade data and the expedition
+blueprints. A new expedition daily: loot two caches inside the Engine.
 
 ### PvP world
 
@@ -760,6 +866,76 @@ outer pair is winnable in the open (about a third), three or more need
 cover or a plan, and five should take at least six seconds to kill
 someone standing still. The duel rows above stay in their bands with this
 on (one attacker always has a slot).
+
+### Enemy senses and squads (Caleb's call)
+
+Playtest: "sometimes it seems like every AI converges on me like I'm the
+biggest bounty on the planet." It did: every shot a player fired reached
+every patrolling bot of both armies within earshot, each one left its post
+and came, nothing capped how many followed one person, and bot battles made
+no noise, so a player was the only thing on the map that pulled bots about.
+Bots now react only to what they sense, and only a few act on it:
+
+- **Senses.** A bot sees (shorter in a storm, `sight_between`), hears a
+  person's shots (`Combat.noise`, carried further by a world's air and
+  muffled by a storm), a sprint up to 16 m and a jog up to 7 m, through
+  walls (walking, crouching and gliding are silent), a flight rig's jets
+  (30 m) and an engine (40 m) (`BotBrain.noise_of`), feels a hit, and hears
+  a squadmate's callout. A heard place is rough (off by up to a tenth of the
+  distance); a hit or a callout is exact. Nothing is live tracking.
+- **Only a few act.** Only the nearest three go to look at one person's
+  noise (`noise_lookers`, `SquadBoard.look`); the rest turn to face it with
+  the gun up for a few seconds. Only three to five army bots, by ring, may
+  leave their ground to hunt one person (`RING_HUNTERS`, `SquadBoard.hunt`);
+  the rest fight from where they stand. Every chase is leashed: nobody
+  follows anything past 35 m beyond its patrol (`leash`).
+- **An army fights the other army first.** A person at the same distance as
+  an enemy soldier is the second choice (`person_bias`).
+- **Search.** Losing sight is not knowing: a bot hurries to where it last
+  saw you, carried on the way you were going, looks round a few points
+  ahead of your course, then gives up and goes back to its ground.
+- **Callouts.** A soldier who spots a person and brings its gun up (the
+  bark everyone hears) tells its faction within 30 m, and its own fireteam
+  within 60 m, where the person is at that moment, at most every four
+  seconds. Those who may come do; the rest face that way.
+- **Squad tactics.** When a person ducks into cover, the bot whose turn it
+  was keeps shooting at that cover for a couple of seconds to pin them, one
+  bot (only ever one, `SquadBoard.flank`, so a solo player is never boxed
+  in) works round the flank, and the rest search. A soldier below a third of
+  its health falls back to its post and fights only when pressed; heavies,
+  exos, walkers and bosses stand their ground.
+- **Smart cover.** Cover is picked by the angle the person is attacking
+  from, preferring spots where the bot can stand up and see them again
+  (to peek), never on top of a squadmate's (`SquadBoard.cover_free`). In
+  cover a bot ducks between bursts and stands to shoot; closing in, it
+  moves from cover to cover (`_advance`). It runs from a grenade or rocket
+  about to burst beside it, if it notices (45% to 90% by skill).
+
+Group fights keep taking turns (the attack slots above are unchanged).
+**Measured.** A lone player firing every half second beside a site, three
+seeds, 90 s: bots within 30 m fell from 8.0, 14.7 and 9.2 on average to
+7.0, 6.3 and 6.8, and the most targeting them at once from 8, 13 and 10 to
+4, 8 and 6 (much of what is left is the site's own garrison). Duels stay in
+their bands (100 duels a row). Outer-ring groups kill as fast as before
+(five take 5.8 s at 12 m and 7.0 s at 25 m); groups of core soldiers, who
+now react together after a callout, kill about a second faster at 25 m,
+which is still "three or more need cover or a plan". The battle bench is
+7% cheaper (12.1 ms a tick against 13.0), since fewer bots run about.
+
+### Army commanders
+
+Each army in a world where `bots_contest_sites` is on has a commander
+(`WarCommander`, run by `Raid._tick_orders` every 8 s on the authority). It
+keeps a garrison on every site its army holds, splits the rest into
+fireteams of about five that stand together, and sends each team at the
+objective worth most: one of its own sites being taken (2.5 times), open
+ground (1.5 times), then the other army's, less for each soldier holding
+it, twice as much under a storm, and a fifth as much where its soldiers are
+outnumbered more than two to one, so a losing fight stops drawing teams and
+they go elsewhere. No objective takes more than 60% of the teams, so the
+war has more than one front. Players are never an objective: an army
+fights the other army for ground and a player meets it on the way. A
+fireteam is also a squad for callouts (`BotBrain.team`).
 
 ### World events
 
@@ -1802,6 +1978,30 @@ The first track is Coilrun, a Street circuit of about 1.6 km: the long
 straight past the pits, the Crest, the Capacitor Yard's esses, the
 Spillway gap and the sweep round the cooling tower.
 
+The second is Skyhook (Caleb's pick), a Street figure of eight on stilts
+north of Coilrun's pits, about 1.2 km: off the line it climbs onto the
+deck, turns back over its own start straight on the Flyover, winds a turn
+and a half down the Corkscrew round a lit pylon and dives through a ring
+back onto the flats. The deck has low walls and banks a little into its
+bends; the race only reads the centre line. Each track keeps its own pit
+bays, grid, gantry, arches and board, and a racer picks one by walking from
+race control to its pit row: a run is on the track nearest the machine
+they got on. The Scrapper is quicker round Skyhook's tight turns, the
+Raider down Coilrun's straights.
+
+**The spectacle (Caleb's go-ahead: grand and epic).** A race is an event,
+so the world round the tracks is packed, all of it decoration: the
+two-tier Meridian Grandstand along the Rail with sky boxes, a lit canopy
+and floodlights, stands round Breech Hairpin, at the Spillway's landing and
+by Skyhook's line, terraces round the cooling tower, a footbridge of people
+over the run to the chicane, viewing barges hanging over the infield, and
+race control's tower with a big screen of the best laps. The crowd is solid
+low-poly figures (`Crowd`, one multimesh a block) who sway, hold up light
+sticks and jump as a racer goes past. Round it all, eroded mesas, the dead
+launch works on the skyline (leaning launch towers with holo-ads, gantry
+cranes, a crashed booster stage, power pylons), searchlights sweeping the
+haze and camera drones pacing the racers.
+
 ## 10. Economy and progression
 
 ### The core rule (Caleb's call)
@@ -2164,6 +2364,65 @@ to 300 scrip, weeklies 700 to 900, kept small next to loot), heavy weapon
 summon (1.6 s to materialize, then about 10 s of watch rest), helmets (all
 utility, no armor), deflect window (0.3 s), two-handed stagger, lunge and
 dash-strike range, player kill scrip (60), sell-back rate (40%).
+
+### Challenge and balance data
+
+Ashfront should be engaging and a challenge but always possible to work
+through (Caleb, 18 November 2026). Players choose their own risk: the quiet
+rim, the landmarks or the burning core; danger warns before it lands; there
+is always a way out; fresh players are kept from strong squads; every
+level of player has a goal; and the numbers are tuned from what happens in
+play, not guessed.
+
+The last of those is the life log. The authority's `Raid` writes one line
+for every life a player finishes, died or signed out (`LifeLog`,
+`core/raid/life_log.gd`): the world, the spot and its risk zone, the cause
+and what did the killing (a player, a raider, a warlord, a boss, or an army
+bot as faction and kind), how many bots had the player as their target at
+the end (being converged on), how long the life ran, what was brought,
+carried and banked, the war's intensity, the storm and the bounty. It goes
+to one JSON-lines file a world a day under `user://life_log` (or
+`--life-log <dir>`), never into a save and never back into play. Safe zones
+and clients keep none.
+
+Goals at every level are the warzone's own contracts (`WorldDef.contract_jobs`
+under the tag "warzone", counted only from Ashfront): dailies from grab and
+go (loot three caches in the outer ring) through the landmarks' caches,
+banking at a depot and a Foundry cache, to holding the line (stand in a
+strongpoint your side holds for three minutes, `hold_seconds`); weeklies
+pay upgrade data for fifteen minutes holding sites or five Foundry caches.
+
+Danger warns before it lands. Storms are a wall you see coming, a walker's
+beam locks before it fires and soldiers bark before their first shot. An
+army's push does the same: when a faction's army turns for a new site
+(`Raid._note_army_target`, from its orders), a war horn sounds at the site,
+carried across the field, a ring of light marks it, the war feed says
+"The Legion is pushing on Signal Hill" (`WorldDef.faction_title`), and the
+watch map draws an arrow from the army to the site for a minute
+(`Raid.pushes`, `Hud.map_marks`' "pushes"). A push is told loudly at most
+every 30 s an army (`PUSH_EVERY`); a change in between only moves the
+arrow. Only the server decides; clients are told (`NetSession._army_push`).
+
+Fresh players are kept from strong ones without a matchmaker yet: someone
+who brought less than `WorldDef.fresh_gear_value` of gear (1,500 in
+Ashfront: the scrap kit and a piece or two) arrives at the gate furthest
+from anyone who brought `strong_gear_value` or more (4,500: crafted Mk2
+gear), each of whom counts three times as near (`strong_player_wariness`,
+`Raid._safest_spawn`). Separate lobbies or shards by gear are a later call
+for Caleb, once the life log shows how often fresh players die to people.
+
+`tests/life_report.tscn` reads a folder of them and prints, by zone, how
+many lives end there, how many die, how long they last and what they carry;
+what does the killing; how many deaths came with three or more bots after
+the player; and deaths by the gear brought (and how many of those were to
+people, the measure for keeping fresh players from strong squads). `--png`
+draws the deaths in red and sign-outs in green over the map.
+
+Targets to read it against (proposed, for Caleb to confirm after the
+playtest): the outer ring gets most people out with something; the core
+kills more than it lets out but pays for those who make it; nobody dies
+with three or more bots on them often; and someone in scrap gear dies to
+players far less than to bots.
 
 ## 11. Social
 

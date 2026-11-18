@@ -93,6 +93,8 @@ func _ready() -> void:
 	_streams["war_rumble"] = _rumble_loop(4.0)
 	_streams["far_boom"] = _far_boom(2.6)
 	_streams["far_fire"] = _far_fire(9)
+	# An army's push on a strongpoint: a long low war horn, heard far off.
+	_streams["war_horn"] = _tones([98.0, 147.0, 196.0], 1.8, 1.4, 0.6)
 	for sound: String in RECORDED:
 		var stream := recorded(sound)
 		if stream != null:

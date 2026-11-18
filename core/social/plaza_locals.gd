@@ -14,14 +14,24 @@ extends Node3D
 ## their way. Far ones are thinned like far bots (`Actor.thin`).
 ##
 ## The people you talk to stand at the map's "talker" markers (meta "id",
-## "yaw", "name", "role"). `talk` makes them answer in a speech panel over
-## their head: a lit card in the world, never on the screen.
+## "yaw", "name", "role", and where they have them "lines", "reads",
+## "color" and "dress", the outfits they wear for their work). `talk` makes them answer in a speech panel over their head: a
+## lit card in the world, never on the screen. A keeper works a counter (a
+## shop, the clan hall) and has no spot of their own: `greet` has them say
+## their piece when someone uses the counter.
 ##
 ## Load with `preload("res://core/social/plaza_locals.gd")`.
 
 const Human := preload("res://core/visual/human.gd")
 const Contracts := preload("res://core/economy/contracts.gd")
 const RaidRoster := preload("res://core/ui/raid_roster.gd")
+const Economy := preload("res://core/economy/economy.gd")
+## The loadout slots each shop's keeper looks you over for.
+const SHOP_SLOTS := {
+	"armory": ["primary", "sidearm", "melee"],
+	"outfitter": ["frame", "helmet", "rig"],
+	"garage": ["vehicle"],
+}
 
 ## The crowd's seed: the same everywhere, so every client agrees.
 const CROWD_SEED := 52_731
@@ -40,14 +50,26 @@ const THIN_RANGE := 45.0
 ## How long a line stays up, and how far you can walk off before it closes.
 const SPEECH_TIME := 9.0
 const SPEECH_RANGE := 8.0
+## A cart's customers keep to one beat: each step of their round (joining
+## the queue, moving up, ordering, eating, walking off) takes whole beats, and
+## no two are on the same step, so two never stand in the same place in the
+## queue. SNACK_STEPS is the round in beats: arriving, two in the queue,
+## eating, leaving.
+const SNACK_BEAT := 9.0
+const SNACK_ARRIVE := 4
+const SNACK_EAT := 6
+const SNACK_LEAVE := 4
+const SNACK_STEPS := SNACK_ARRIVE + 2 + SNACK_EAT + SNACK_LEAVE
 
 ## How many of each kind make up the crowd. Not one to a spot: the counts and
 ## who goes together are rolled from the seed.
-var strollers := 6
-var shoppers := 5
-var watchers := 7
-var chats := 2
-var wanderers := 3
+var strollers := 8
+var shoppers := 8
+var watchers := 8
+var chats := 5
+var wanderers := 10
+## Customers at each boulevard cart (and its cook).
+var diners := 7
 
 var raid: Raid
 ## The map's layout (see `worlds/plaza/map.gd locals_layout`).
@@ -82,7 +104,7 @@ func _ready() -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = CROWD_SEED
 	for plan in plan_crowd(layout, rng, {"strollers": strollers, "shoppers": shoppers, "watchers": watchers,
-			"chats": chats, "wanderers": wanderers}):
+			"chats": chats, "wanderers": wanderers, "diners": diners}):
 		_spawn(plan, rng)
 	for node in raid.get_tree().get_nodes_in_group("talker"):
 		var marker := node as Node3D
@@ -93,10 +115,15 @@ func _ready() -> void:
 		routine.dwell(marker.global_position, float(marker.get_meta("yaw", 0.0)), 60.0)
 		var look_rng := RandomNumberGenerator.new()
 		look_rng.seed = hash(["talker", id])
-		var entry := _spawn({"routine": routine, "offset": 0.0, "speed": 1.2, "side": 0.0}, look_rng)
+		var entry := _spawn({"routine": routine, "offset": 0.0, "speed": 1.2, "side": 0.0,
+				"dress": marker.get_meta("dress", {})}, look_rng)
 		entry["talker"] = id
 		entry["name"] = str(marker.get_meta("name", id.capitalize()))
 		entry["role"] = str(marker.get_meta("role", ""))
+		entry["lines"] = marker.get_meta("lines", [])
+		entry["reads"] = str(marker.get_meta("reads", ""))
+		entry["color"] = marker.get_meta("color", talker_color(id))
+		entry["shop"] = str(marker.get_meta("shop", ""))
 		entry.actor.display_name = entry.name
 		talkers[id] = entry
 		_add_name_tag(entry)
@@ -111,7 +138,7 @@ func _spawn(plan: Dictionary, rng: RandomNumberGenerator) -> Dictionary:
 	var actor := Actor.new()
 	actor.name = "Local%d" % locals.size()
 	actor.display_name = "Local"
-	actor.set_meta("appearance", Human.random(rng))
+	actor.set_meta("appearance", Human.random(rng, plan.get("dress", {})))
 	var routine: Routine = plan.routine
 	var start := routine.sample(_now() + float(plan.offset))
 	actor.position = start.pos + Vector3(0, 0.05, 0)
@@ -287,10 +314,108 @@ func talk(id: String, world_status: Dictionary, account: Dictionary) -> String:
 			line = said.text
 			job_offered = said.job
 		_:
-			line = "..."
+			var lines := own_lines(talkers[id], world_status)
+			line = lines[_next_line(id, lines.size())]
 	_say(id, line)
 	offered_job = job_offered
 	return ""
+
+
+## A keeper's hello when someone uses their counter: their next line, unless
+## they are already talking.
+func greet(id: String, world_status := {}, account := {}) -> void:
+	if not talkers.has(id) or speaking == id:
+		return
+	var entry: Dictionary = talkers[id]
+	var lines := stock_lines(str(entry.get("shop", "")), account, Contracts.today())
+	lines.append_array(own_lines(entry, world_status))
+	_say(id, lines[_next_line(id, lines.size())])
+
+
+## What a keeper says about the shop's real stock and the player's own
+## account (the snapshot the client already holds): today's featured piece
+## (picked by the date, the same for everyone all day), something they could
+## use and afford, and what they could sell. Never a price the shop does not
+## charge.
+static func stock_lines(shop_id: String, account: Dictionary, day: int) -> Array[String]:
+	var out: Array[String] = []
+	if shop_id == "":
+		return out
+	var stock := Economy.stock(shop_id)
+	var stash: Array = account.get("stash", [])
+	if not stock.is_empty():
+		var featured: String = stock[absi(hash([shop_id, day])) % stock.size()]
+		out.append("%s came in today. %d scrip." % [ItemDB.item_name(featured), Economy.buy_price(featured)])
+	var advice := _advice(shop_id, stock, account)
+	if advice != "":
+		out.append(advice)
+	if shop_id in SHOP_SLOTS:
+		var worth := Economy.loot_value(stash)
+		if worth > 0:
+			out.append("You're sitting on salvage. I'll give you %d scrip for the lot." % worth)
+	return out
+
+
+## Something on the shelf that beats what the player wears (or fills an
+## empty slot), that they do not own yet and can pay for. "" if nothing fits.
+static func _advice(shop_id: String, stock: Array[String], account: Dictionary) -> String:
+	if not account.has("scrip"):
+		return ""
+	var scrip := int(account.get("scrip", 0))
+	var stash: Array = account.get("stash", [])
+	var loadout: Dictionary = account.get("loadout", {})
+	if shop_id in SHOP_SLOTS:
+		for slot: String in SHOP_SLOTS[shop_id]:
+			var worn := str(loadout.get(slot, ""))
+			var worn_value := ItemDB.item_value(worn) if worn != "" else 0
+			for id: String in stock:
+				if not Loadout.fits(slot, id) or id in stash or Economy.buy_price(id) > scrip \
+						or ItemDB.item_value(id) <= worn_value:
+					continue
+				if worn == "" or ItemDB.has_tag(worn, "starter"):
+					return "Nothing worth the name in your %s slot. A %s is %d, and you can cover it." % \
+							[str(Loadout.SLOT_NAMES.get(slot, slot)).to_lower(), ItemDB.item_name(id), Economy.buy_price(id)]
+				return "That %s has done its time. A %s is %d, and you can cover it." % \
+						[ItemDB.item_name(worn), ItemDB.item_name(id), Economy.buy_price(id)]
+		return ""
+	for id: String in stock:
+		if id not in stash and Economy.buy_price(id) <= scrip:
+			return "You haven't got the %s yet. %d, and it's yours for good." % [ItemDB.item_name(id), Economy.buy_price(id)]
+	return ""
+
+
+## What a talker without lines of their own in code says: the dispatcher reads
+## the worlds out, anyone else their marker's lines.
+static func own_lines(entry: Dictionary, world_status: Dictionary) -> Array[String]:
+	var out: Array[String] = []
+	if str(entry.get("reads", "")) == "worlds":
+		out = dispatch_lines(world_status)
+	for line: Variant in entry.get("lines", []):
+		out.append(str(line))
+	if out.is_empty():
+		out.append("...")
+	return out
+
+
+## The dispatcher's board read aloud: how each world is doing, from
+## `world_status` only (players, war level, the event), never who is where.
+static func dispatch_lines(world_status: Dictionary) -> Array[String]:
+	var out: Array[String] = []
+	var ids: Array = world_status.keys()
+	ids.sort()
+	for id: Variant in ids:
+		var status: Variant = world_status[id]
+		if typeof(status) != TYPE_DICTIONARY:
+			continue
+		var players := int(status.get("players", 0))
+		var line := "%s: %s in, war %s." % [world_name(str(id)), "nobody" if players == 0 else str(players),
+				str(status.get("level", "quiet")).to_lower()]
+		var event := str(status.get("event", ""))
+		if event != "":
+			line += " There's a %s on." % event.to_lower()
+		out.append(line)
+	out.append("Pick an arch and walk through it. It lights when you're in it. Your kit goes with you.")
+	return out
 
 
 ## Takes the line down.
@@ -308,7 +433,7 @@ func _say(id: String, text: String) -> void:
 	speaking = id
 	_speech_left = SPEECH_TIME
 	var entry: Dictionary = talkers[id]
-	(panels[id] as SpeechPanel).say(entry.name, talker_color(id), text)
+	(panels[id] as SpeechPanel).say(entry.name, entry.get("color", talker_color(id)), text)
 	# The card carries their name while it is up.
 	_show_name(id, false)
 
@@ -450,7 +575,7 @@ static func plan_crowd(p_layout: Dictionary, rng: RandomNumberGenerator, counts:
 	for i in int(counts.get("shoppers", 0)):
 		if browse.is_empty():
 			break
-		var routine := shop(centre, float(p_layout.get("promenade", 50.0)), browse, rng)
+		var routine := shop(centre, float(p_layout.get("promenade", 50.0)), browse, rng, p_layout.get("street", {}))
 		out.append({"routine": routine, "offset": rng.randf() * routine.length, "speed": rng.randf_range(1.0, 1.4)})
 	var watch: Array = p_layout.get("watch", [])
 	var taken: Array[Vector3] = []
@@ -478,6 +603,28 @@ static func plan_crowd(p_layout: Dictionary, rng: RandomNumberGenerator, counts:
 			var spot := at + Vector3(cos(angle), 0.0, sin(angle)) * rng.randf_range(0.65, 1.05)
 			var inward := at - spot
 			out.append({"routine": stand_about(spot, yaw_of(inward), 0.6, rng), "offset": 0.0, "speed": 1.0})
+	for stop: Dictionary in p_layout.get("stops", []):
+		var cook: Array = stop.cook
+		out.append({"routine": stand_about(cook[0], float(cook[1]), 0.5, rng), "offset": 0.0, "speed": 1.0})
+		# The queue: a step back from the counter each, not quite in line.
+		var queue: Vector3 = stop.queue
+		var aside := queue.cross(Vector3.UP)
+		var slots: Array = [stop.counter]
+		for k in 2:
+			slots.append(Vector3(slots[-1]) + queue * rng.randf_range(0.9, 1.15) + aside * rng.randf_range(-0.2, 0.2))
+		var places: Array = stop.places.duplicate()
+		var steps: Array = range(SNACK_STEPS)
+		for k in range(steps.size() - 1, 0, -1):
+			var j := rng.randi() % (k + 1)
+			var swap: int = steps[k]
+			steps[k] = steps[j]
+			steps[j] = swap
+		for k in mini(int(counts.get("diners", 0)), places.size()):
+			var place: Array = places.pop_at(rng.randi() % places.size())
+			# Each waits out on the lane in a spot of their own.
+			var wait := Vector3(stop.far) + Vector3(cos(TAU * k / 7.0), 0.0, sin(TAU * k / 7.0)) * 2.4
+			out.append({"routine": snack(stop, slots, place, wait, rng), "offset": float(steps[k]) * SNACK_BEAT,
+					"speed": 1.4, "stop": stop.counter})
 	var routes: Array = p_layout.get("routes", [])
 	for i in int(counts.get("wanderers", 0)):
 		if routes.is_empty():
@@ -526,17 +673,26 @@ static func stroll(centre: Vector3, radius: float, rng: RandomNumberGenerator) -
 	return routine
 
 
-## Window shopping: two or three kiosks next to each other, a while at each
-## counter, walking between them under the arcade, then back.
-static func shop(centre: Vector3, promenade: float, browse: Array, rng: RandomNumberGenerator) -> Routine:
+## Window shopping: two or three shops next to each other, a while at each
+## door, walking between them, then back. With a `street` ({from, to, lane})
+## the shops face each other down it: they walk its lane on their own side
+## and cross only at the next door. Otherwise round the `promenade` ring.
+static func shop(centre: Vector3, promenade: float, browse: Array, rng: RandomNumberGenerator,
+		street := {}) -> Routine:
 	var sorted := browse.duplicate()
-	sorted.sort_custom(func(a: Array, b: Array) -> bool:
-		return _angle(centre, a[0]) < _angle(centre, b[0]))
+	if not street.is_empty():
+		var from: Vector3 = street.from
+		var axis: Vector3 = (Vector3(street.to) - from).normalized()
+		sorted.sort_custom(func(a: Array, b: Array) -> bool:
+			return (Vector3(a[0]) - from).dot(axis) < (Vector3(b[0]) - from).dot(axis))
 	var count := mini(rng.randi_range(2, 3), sorted.size())
 	var first := rng.randi() % sorted.size()
 	var stops: Array = []
 	for k in count:
-		stops.append(sorted[(first + k) % sorted.size()])
+		var stop: Array = sorted[(first + k) % sorted.size()]
+		# Not all on the one spot: a step either way along the front.
+		var along := Basis(Vector3.UP, float(stop[1])) * Vector3.RIGHT
+		stops.append([Vector3(stop[0]) + along * rng.randf_range(-1.2, 1.2), stop[1]])
 	var routine := Routine.new()
 	var speed := 1.2
 	var order := stops.duplicate()
@@ -547,6 +703,9 @@ static func shop(centre: Vector3, promenade: float, browse: Array, rng: RandomNu
 		var here: Array = order[k]
 		var next: Array = order[(k + 1) % order.size()]
 		routine.dwell(here[0], float(here[1]) + rng.randf_range(-0.3, 0.3), rng.randf_range(8.0, 30.0))
+		if not street.is_empty():
+			routine.walk(street_path(street, here[0], next[0]), speed)
+			continue
 		var from_angle := _angle(centre, here[0])
 		var to_angle := _angle(centre, next[0])
 		var turn := wrapf(to_angle - from_angle, -PI, PI)
@@ -557,6 +716,21 @@ static func shop(centre: Vector3, promenade: float, browse: Array, rng: RandomNu
 	return routine
 
 
+## From one door to the next down a street: out to the lane on this side,
+## along it to level with the next door, then across to it.
+static func street_path(street: Dictionary, here: Vector3, next: Vector3) -> Array:
+	var from: Vector3 = street.from
+	var axis: Vector3 = (Vector3(street.to) - from).normalized()
+	var across := axis.cross(Vector3.UP)
+	var side := signf((here - from).dot(across))
+	if side == 0.0:
+		side = 1.0
+	var lane := float(street.get("lane", 3.0)) * side
+	var at_here := from + axis * (here - from).dot(axis) + across * lane
+	var at_next := from + axis * (next - from).dot(axis) + across * lane
+	return [here, at_here, at_next, next]
+
+
 ## Standing in one place: a few dwells facing about `yaw`, glancing up to
 ## `spread` radians either way, shifting their weight now and then.
 static func stand_about(at: Vector3, yaw: float, spread: float, rng: RandomNumberGenerator) -> Routine:
@@ -564,6 +738,44 @@ static func stand_about(at: Vector3, yaw: float, spread: float, rng: RandomNumbe
 	for k in rng.randi_range(3, 5):
 		routine.dwell(at, yaw + rng.randf_range(-spread, spread), rng.randf_range(5.0, 18.0))
 	return routine
+
+
+## A customer's round at a cart, SNACK_STEPS beats long: in from the lane to
+## the back of the queue, up a place, ordering at the counter, eating at
+## their `place` ([pos, yaw]) at a table, then off the way they came and a
+## while out on the lane at `far`. Every step ends on its beat (see
+## SNACK_BEAT).
+static func snack(stop: Dictionary, slots: Array, place: Array, far: Vector3, rng: RandomNumberGenerator) -> Routine:
+	var routine := Routine.new()
+	var beat := SNACK_BEAT
+	var yaw := float(stop.yaw)
+	# They set off in time to reach the back of the queue as its last beat
+	# starts, never sooner, or they would share it with the one before.
+	var walk := far.distance_to(stop.enter) + Vector3(stop.enter).distance_to(slots[2])
+	var budget := beat * (SNACK_ARRIVE - 1)
+	var speed := maxf(1.25, walk / (budget * 0.9))
+	routine.dwell(far, yaw_of(Vector3(stop.enter) - far), budget - walk / speed)
+	routine.walk([far, stop.enter, slots[2]], speed)
+	routine.dwell(slots[2], yaw, beat)
+	_step(routine, [slots[2], slots[1]], yaw, beat)
+	_step(routine, [slots[1], slots[0]], yaw, beat)
+	# Out of the queue's way before turning for the table.
+	_step(routine, [slots[0], stop.served, place[0]],
+			float(place[1]) + rng.randf_range(-0.2, 0.2), beat * SNACK_EAT)
+	_step(routine, [place[0], stop.enter, far], rng.randf() * TAU, beat * SNACK_LEAVE)
+	return routine
+
+
+## Walks `points` and waits at the last, facing `yaw`, `time` seconds in all;
+## a walk too long for it is taken faster.
+static func _step(routine: Routine, points: Array, yaw: float, time: float) -> void:
+	var walk := 0.0
+	for k in points.size() - 1:
+		walk += Vector3(points[k]).distance_to(points[k + 1])
+	var speed := maxf(1.25, walk / (time * 0.8))
+	var before := routine.length
+	routine.walk(points, speed)
+	routine.dwell(points[-1], yaw, maxf(time - (routine.length - before), 0.01))
 
 
 ## Out along a route and back, a while at the far end.

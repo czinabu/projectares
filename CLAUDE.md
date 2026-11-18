@@ -120,6 +120,20 @@ without Caleb, and update the gap list when a PR closes a row.
   for one player and the authority raises its `Actor.toughness` for each
   other player within `boss_party_range` (`Raid._scale_boss`); hits are
   divided by it in `Actor.modify_incoming`.
+- The Engine's inside (DESIGN.md "The Engine's inside"): Frostline's
+  dungeon is part of the one running world, never an instance (Caleb's
+  call), built in the map's drum frame (`engine_frame`, `engine_local`) on
+  a levelled bed whose ground drops away under the Shaft (`_engine_ground`,
+  kept under the hall's floor). Its parts are drawn merged, one mesh per
+  material (`_part`, `_flush_parts`). A dungeon's garrison is "spawn_guard"
+  markers: the `Raid` keeps a bot of the marker's faction posted there
+  (`_spawn_guards`, `_tick_guards`, `is_guard`), outside the armies like a
+  boss, back after `WorldDef.guard_respawn_time`. Inside is sheltered
+  (`WorldDef.sheltered_at`): `Weather.strength_at` is 0 there, so nothing
+  a storm changes reaches in, and `Raid._track_mark` lays no trail; the
+  world's own `cold_at` sets its cold. Squads need room (Caleb's ask): no
+  way narrower than 9 m. A solo player must get through: nothing needs two
+  people. Check by eye with `visual_check.tscn -- <dir> --engine-only`.
 - How harsh death is belongs to the world, not to `Raid`. With
   `WorldDef.keep_gear_on_death` a dead player drops only the backpack and the
   equipped gear returns in the result's `kept`. A gentle world pays for that
@@ -180,12 +194,19 @@ without Caleb, and update the gap list when a PR closes a row.
   holds a site; clients get it from `NetSession`, including whether a site is
   theirs (`Strongpoint.viewer_holds`), and never see another player's key.
   Send bots somewhere with `BotBrain.post_to`, not a second mechanism.
+  An army turning for a new site is a push and is told before it lands
+  (`Raid._note_army_target`: a horn and ring at the site and a war feed
+  line at most every `PUSH_EVERY`, an arrow on the watch map from
+  `Raid.pushes`); clients hear of it through `NetSession._army_push`.
 - Where a player lands is the `Raid`'s call. `Raid.drop_choices(owner)` lists
   what is on offer (quiet, a held strongpoint, beside the fighting) and the
   chosen id goes into `add_player`'s `p_drop`, which falls back to a quiet
   drop if the choice is no longer on offer. Online the client only sends the
   id with `NetSession.deploy(drop)`; a client lists its choices from what the
   server already told it (`Strongpoint.viewer_holds`, war intensity).
+  An arrival with no choice lands at the spawn furthest from everyone,
+  and a fresh player (`WorldDef.fresh_gear_value`) furthest from strong
+  ones (`strong_gear_value`, `Raid._safest_spawn`).
   Arriving in a safe zone is just as fixed: a `p_drop` of
   "from:<destination>" ("home", "arena", "world:<id>") lands you just
   outside the plaza doorway that leads there (`Raid.arrival_point`), the
@@ -226,6 +247,22 @@ without Caleb, and update the gap list when a PR closes a row.
   near them and step out of their way. The people you talk to stand at the
   map's "talker" markers; "talk:<id>" portals make them answer in a speech
   card over their head (`SpeechPanel`, in the world, never on the screen).
+  Every counter (a shop, the clan hall) has a keeper, a talker the
+  counter's portal names in its "keeper" meta, who greets whoever uses it
+  (`PlazaLocals.greet`); a talker's own lines are the marker's "lines" meta
+  (or "reads" "worlds", the dispatcher reading `world_status`); a keeper's
+  marker names its shop ("shop" meta), and the keeper talks about its real
+  stock and the player's own snapshot (`PlazaLocals.stock_lines`: today's
+  piece by the date, an upgrade they can pay for, their salvage), never a
+  price the shop does not charge. The boulevards between the plaza and
+  the districts are places to stop, off the lane (`_build_boulevards`, no
+  signs): their carts are the layout's "stops", each with a cook and
+  customers who keep to one beat (`PlazaLocals.snack`, `SNACK_BEAT`), so
+  no two stand in the same place in the queue or at a table. Nothing
+  marks a portal on the floor (Caleb's call: no glowing pads, no floating
+  ads or signs that do not match where they stand): an arch lights its
+  "Lit" child while you stand in it (`PlazaView._light_arch`), and each
+  district names itself on the building that holds it.
   What they say comes only from what the client already knows:
   `world_status` (Dusk's rumours, Kade on the board) and the account's
   contracts (Rook). Rook's favours are contract jobs of kind "favor"
@@ -245,9 +282,11 @@ without Caleb, and update the gap list when a PR closes a row.
 - Bot armies. A "spawn_bot" marker may name a faction (meta "faction");
   the `Raid` sets it on the bot before `WorldDef.equip_bot`, and `NetSession`
   sends it so a client builds the same soldier. Where
-  `WorldDef.bots_contest_sites` is on, `Raid._tick_orders` gives each faction
-  its orders through `BotBrain.post_to`: a garrison on every site it holds,
-  everyone else against the nearest site it does not. Reinforcements follow
+  `WorldDef.bots_contest_sites` is on, `Raid._tick_orders` has each
+  faction's commander (`WarCommander`, DESIGN.md "Army commanders") give its
+  orders through `BotBrain.post_to`: a garrison on every site it holds and
+  fireteams (`BotBrain.team`) spread over the objectives worth most, never
+  all one way and never a player. Reinforcements follow
   the war: `Raid.bot_target()` is `bot_count` plus a share of
   `WorldDef.war_reinforcements` by `war.intensity`, new bots join the faction
   with the fewest alive, and extra bots are not replaced once it cools.
@@ -281,6 +320,22 @@ without Caleb, and update the gap list when a PR closes a row.
   comes up halfway through the reaction with a bark heard nearby
   (`ActorSkin._update_bark`) before the first shot. Measure with the duel
   bench's `--group 2,3,5` (and `--slots off` to compare).
+  Bots react only to what they sense (DESIGN.md "Enemy senses and squads",
+  Caleb's "everyone converges on me"): sight, a person's noise (shots,
+  `Combat.noise`, told nearest first; footsteps, jets and engines,
+  `BotBrain.noise_of`), a hit and a squadmate's callout (`_call_out`, a
+  snapshot when the spotter raises its gun). What they learn is a place,
+  never live tracking: a lost contact is searched for (`_lost`) and let go.
+  Only a few act on it, through `SquadBoard` claims (static, with an
+  expiry, like the slots): `noise_lookers` go to look at one person's
+  noise, `RING_HUNTERS` army bots may leave their ground to hunt one person
+  (`_may_close`), one bot flanks them, and no two take the same cover. A
+  chase never goes past `leash` beyond a bot's post. A new way to send a bot
+  after a person goes through `_sensed`, never by setting its state.
+  Cover is chosen by the attacker's angle (`_find_cover`), bots peek and
+  move up cover to cover (`_advance`), the slot holder pins a person who
+  ducks (`_suppress`), a badly hurt soldier falls back (`_fall_back`), and
+  a bot runs from a round about to burst (`Gun.live_rounds`, `_think_danger`).
   Melee bots fight like people (DESIGN.md "Melee bots"): held heavies,
   feints (a charge that switches side and lets go as a light) and
   dash-strikes by ring (`BotBrain.RING_HEAVY`, `RING_FEINT`, `RING_DASH`),
@@ -290,6 +345,12 @@ without Caleb, and update the gap list when a PR closes a row.
   (`BotBrain.melee_flinch`, its aim and trigger only, never a player's)
   and gives ground from one (`blade_backoff`). Measure with the duel
   bench's `--melee <blade id>`.
+- The life log (DESIGN.md "Challenge and balance data"): the authority's
+  `Raid` records every finished life (`Raid._log_life`, `LifeLog`): where,
+  how, what killed them and how many bots were after them, to JSON lines
+  under `LifeLog.directory` (`main.gd` sets it; empty writes nothing, as in
+  the tests). It is read only by `tests/life_report.tscn`, never in play.
+  A new thing worth tuning by is a new field there, not a second log.
 - Big battles must stay affordable; measure with
   `godot --headless --path . res://tests/battle_bench.tscn -- --bots 150 --players 32`
   (processor time a tick, against the 16.7 ms budget). Three things keep
@@ -986,18 +1047,26 @@ without Caleb, and update the gap list when a PR closes a row.
   vehicle type sets those anchor points for its model. Check by eye:
   `visual_check.tscn -- <dir> --ride-only` (`RIDE_VEHICLE=<item id>` for
   another vehicle). Every vehicle is that one class, picked by data: the
-  `model` stat picks the greybox body ("bike", "rover", "mech", "jet"),
+  `model` stat picks the body ("bike", "hoverbike", "rover", "mech",
+  "jet"), built by `core/vehicle/vehicle_model.gd` in the sci-fi style the
+  rigs wear (bevelled shells cut into panels, lit seams in the rarity
+  colour, cyan thrusters; glass and glows are material overrides `Look`
+  leaves alone, a lamp a surface glow it hangs a beam on) round the
+  item's own anchors, so a restyle never moves a seat or a hitbox; check
+  them side by side with `visual_check.tscn -- <dir> --vehicles-only`,
   `body_size` its collision box, `pivot_turn` lets a walker turn on the
   spot, `jump_speed` gives it a jump-jet hop, the "hover" tag floats it on
   a cushion ("hoverbike", the Raider: it drifts through turns by `slip`,
   which travels in the ride state and is corrected like `speed`, holds
   level over a gap for `hang_time` and hugs the ground off a ramp, never
-  flying), `passenger_seat` adds a pillion seat behind the rider
-  (`Vehicle.passenger`, `mount(actor, true)`; the seat's interact puts a
-  second player there; a passenger is seated by the same riding pose from
-  the pillion anchors, `Vehicle.ride_anchor`, makes it heavier, the
-  `laden_*` shares, and only the server decides who sits there, sent in the
-  ride state; check anything that asks whether a vehicle is free with
+  flying), `passenger_seat` adds passenger seats
+  (`Vehicle.seats`, by default one pillion behind the rider from the
+  `pillion_*` vars; the rover lists three, so it seats four, Caleb's call;
+  `Vehicle.passengers`, `mount(actor, true)`, which takes the free seat
+  nearest them; the seat's interact puts the next player there; a
+  passenger is seated by the same riding pose from their seat's anchors,
+  `Vehicle.ride_anchor`, each makes it heavier, the `laden_*` shares, and
+  only the server decides who sits where, sent in the ride state; check anything that asks whether a vehicle is free with
   `is_occupied`, never `rider` alone), and the "aircraft" tag flies
   it (`Vehicle._fly`: takes off past `takeoff_speed` with jump, never
   hovers, drops below `stall_speed` or with nobody at the stick, climbs no
@@ -1378,15 +1447,32 @@ without Caleb, and update the gap list when a PR closes a row.
   `room_transform`, so it moves with its room; a display kind's room is
   `HomeBase.KIND_ROOMS`. Ask where something is with `room_at` (and
   `in_armory`, `in_workshop`, `in_garage`), never with coordinates. The
-  plan table in the middle of the hub (`HomeBase.PlanTable`) is the one
-  place to change the plan: using it emits `plan_used` and `main.gd` brings
-  the view in with the bench's view (`BenchView.target` "plan"); the wheel,
-  click and right click work as at the bench (`plan_scroll`, `plan_select`,
-  `plan_back`, `leave_plan`), the hologram over it and its card show the
-  plan as it would be, and only a pick asks for a change
-  (`room_placed`): `Profile.place_room` solo, `NetSession.place_room`
-  online, decided by `StashService.place_room`. A move is free, moves
-  nothing in or out of the stash and is allowed while deployed. A new room
+  plan also picks the hub's shape (`BasePlan.SHAPES`: hall, ring, spine,
+  courtyard; `HomeBase.HUB_SIZES`, `shape_socket`, `in_hub`, `range_from`,
+  `front_half`, `mirror_at`, `deploy_span`, so ask those, never the hall's
+  numbers) and each room's style (`BasePlan.STYLES`, three a room: where
+  its displays, stations and bench stand, `_style_spot`,
+  `style_station_spot`, and what furnishes it, `_furnish_style`; every
+  style lays out every spot its room has, whole and small). A shape change
+  rebuilds the shell (`_build_static`; the wall mirror only moves). The
+  first shape and each room's first style are free; any other is a design
+  unlock (`BaseUpgrades` track "Designs", `is_design`, never counted by
+  `needs_count`), bought once with scrip and free to switch after (Caleb's
+  call). The plan table in the middle of the hub (`HomeBase.PlanTable`) is
+  the one place to change the plan: using it emits `plan_used` and
+  `main.gd` brings the view in with the bench's view (`BenchView.target`
+  "plan"), which mounts the customizer (`core/ui/plan_panel.gd`, a view)
+  on the lectern's screen as a `WorldScreen` (`HomeBase.plan_screen`,
+  forwarded with `WorldScreen.forward_mouse`): tabs for the layout, the
+  rooms and the styles, with whatever it points at shown on the hologram
+  over the table (`plan_preview`, `plan_mark`). Only a pick asks for a
+  change (`plan_change`, `room_placed`; `BasePlan.change` with a socket,
+  "shape" or "style:<room>"): `Profile.place_room` solo,
+  `NetSession.place_room` online, decided by `StashService.place_room`,
+  which checks the unlock is owned. An unlock is bought from the screen
+  with a confirming click (`plan_buy`, `upgrade_requested`) and put in use
+  once owned. A change is free, moves nothing in or out of the stash and is
+  allowed while deployed. A new room
   needs a socket for it, not a spot in the hub. Room names are a plate over
   each doorway (`_name_plate`); the base has no banner and no other signs.
   Helmets sit on the helmet shelf over the armor stands in the gear hall.
@@ -1422,7 +1508,7 @@ without Caleb, and update the gap list when a PR closes a row.
   only while its viewer is in front of it; it shows plain glass until its
   view has drawn, never the noise of an empty one). The hub keeps the deploy
   area (the wall mirror, with room in front to open a portal) along the
-  front wall right of the exit (`HomeBase.DEPLOY_FROM_X`), the plan table in
+  front wall right of the exit (`HomeBase.deploy_span`), the plan table in
   the middle (Caleb's pick) and the rest of the floor clear. The shell is
   steel, never bare rock: plated floors, ribbed wall panels and a ceiling
   grid (`HomeBase._floor`, `_wall`, `_ceiling`; a trim stands off a wall's
@@ -1669,8 +1755,10 @@ without Caleb, and update the gap list when a PR closes a row.
   through `Contracts.jobs()`, never `JOBS` alone, the board offers one daily
   and one weekly per tag beside the general ones, and a tagged job counts
   only a result whose "contract_tag" matches (`Contracts.counts_in`). Stats
-  include `item:<id>` (brought home), `kills:<faction>`, `bosses` and
-  `cache:<source>` (once per fill, `LootContainer.looted_by`).
+  include `item:<id>` (brought home), `kills:<faction>`, `bosses`,
+  `cache:<source>` (once per fill, `LootContainer.looted_by`), `banks` and
+  `hold_seconds` (stood in a site your side holds, `Raid._count_holding`;
+  Ashfront's "warzone" jobs).
 - The player market (DESIGN.md section 10, "Two worlds, one loop"): rules
   once in `core/economy/market.gd` (static, like `Economy`: what trades, the
   price band, fees, the daily cap; Mk3, heavy weapons, artifacts and relics
@@ -1711,7 +1799,11 @@ without Caleb, and update the gap list when a PR closes a row.
 - The race world (`worlds/meridian`, DESIGN.md section 9) is run by `Race`
   (`core/race/race.gd`, a `Raid` subclass from `WorldDef.new_raid`), on a
   map that offers `race_track()` (a `RaceTrack`: the centre line, gates,
-  start slots, `keep_to` lines). Nothing is at stake there:
+  start slots, `keep_to` lines; a map with several offers `race_tracks()`
+  too, read into `Race.circuits`, and a run is on the one nearest the
+  machine got on, `Race.track_near`, with its own grid and gates; each
+  board row carries its "track", and a second track's gantry, arches and
+  board carry the meta "track"). Nothing is at stake there:
   `WorldDef.gear_at_risk` off clears every result's loot and kit lists
   (`Raid._finish_player`) and `Profile.checkout_loadout` takes nothing,
   `weapons_free` off locks weapons and makes `can_damage` refuse, and
@@ -1722,7 +1814,12 @@ without Caleb, and update the gap list when a PR closes a row.
   `Vehicle.held`, gates by `RaceTrack.cross`, laps, the off-track rule, the
   board); a client gets its own run (`NetSession._race_run`,
   `Race.remote_run`) and the board, holds its machine for the lights from
-  that, and asks with `NetSession.race_request`. The lights, splits, board
+  that, and asks with `NetSession.race_request`. Where a road runs over
+  another (Skyhook), `RaceTrack.locate`'s full search counts height and a
+  gate is passed only within `GATE_HEIGHT` of it. The stands, crowd
+  (`Crowd`, `assets/shaders/crowd.gdshader`) and skyline are decoration
+  (`worlds/meridian/stands.gd`, `skyline.gd`), merged into one mesh per
+  material. The lights, splits, board
   text and ghosts are `RaceView`, a view (ghosts on disk in
   `RaceView.GHOST_PATH` only while `Profile.persist`). In a race world the
   watch's contract icon is the race icon (`Hud.race_slot`, `glyph`).

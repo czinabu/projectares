@@ -41,6 +41,8 @@ var account := {}
 var _prompt: Label
 var _notice: Label
 var _notice_left := 0.0
+## The arch lit because you stand in it.
+var _lit_portal: Node3D = null
 
 
 func setup(p_raid: Raid, p_routes := {}, p_status := {}) -> void:
@@ -172,11 +174,13 @@ func _process(delta: float) -> void:
 
 	var portal := portal_at(raid, me.global_position)
 	_prompt.text = prompt_for(portal, routes)
+	_light_arch(portal)
 	if portal != null and Input.is_action_just_pressed("interact"):
 		var destination: String = portal.get_meta("destination", "")
 		if destination.begins_with("talk:"):
 			_talk(destination.trim_prefix("talk:"))
 		elif is_open(destination, routes):
+			_greet(portal)
 			portal_used.emit(destination)
 		else:
 			show_notice("That world is not running on this server.")
@@ -195,6 +199,29 @@ func _talk(id: String) -> void:
 	var job: String = locals.talk(id, world_status, account)
 	if job != "":
 		contract_asked.emit("take", job)
+
+
+## Whoever works the counter says hello (the map's "keeper" meta).
+func _greet(portal: Node3D) -> void:
+	var keeper := str(portal.get_meta("keeper", ""))
+	if keeper != "" and locals != null and is_instance_valid(locals):
+		locals.greet(keeper, world_status, account)
+
+
+## An arch you stand in lights up (its hidden "Lit" child), and goes dark
+## again when you step out. In place of the old glowing pads on the floor.
+func _light_arch(portal: Node3D) -> void:
+	if portal == _lit_portal:
+		return
+	if _lit_portal != null and is_instance_valid(_lit_portal):
+		var old := _lit_portal.get_node_or_null("Lit") as Node3D
+		if old != null:
+			old.visible = false
+	_lit_portal = portal
+	if portal != null:
+		var lit := portal.get_node_or_null("Lit") as Node3D
+		if lit != null:
+			lit.visible = true
 
 
 ## A line shown for a few seconds under the prompt.

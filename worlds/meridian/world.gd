@@ -11,7 +11,7 @@ const MapScript := preload("res://worlds/meridian/map.gd")
 func _init() -> void:
 	id = "meridian"
 	display_name = "Meridian"
-	description = "The racing world. Time trials on Coilrun in stock street machines. Nobody fights, nobody loses gear."
+	description = "The racing world. Time trials on Coilrun and Skyhook in stock street machines. Nobody fights, nobody loses gear."
 	gear_at_risk = false
 	weapons_free = false
 	bot_count = 0

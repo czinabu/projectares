@@ -49,7 +49,43 @@ const UPGRADES := {
 		"adds": "Targets to shoot at with endless ammo.\nNothing there is lost"},
 	"finish": {"title": "Finish", "track": "Headquarters", "price": 1500, "needs_count": 4,
 		"adds": "Wall panels, lighting and trim"},
+	# Designs (`BasePlan.SHAPES` and `STYLES`): another hub shape or another
+	# style for a room, bought at the plan table and free to switch to after.
+	"hub_ring": {"title": "Ring hub", "track": "Designs", "price": 4000,
+		"adds": "An eight-sided rotunda round the plan table"},
+	"hub_spine": {"title": "Spine hub", "track": "Designs", "price": 3000,
+		"adds": "A long gallery, three rooms down each side"},
+	"hub_courtyard": {"title": "Courtyard hub", "track": "Designs", "price": 6000,
+		"adds": "A big lit court under a skylight"},
+	"style_armory_vault": {"title": "Vault armory", "track": "Designs", "price": 1500,
+		"adds": "A double-sided island rack"},
+	"style_armory_gallery": {"title": "Gallery armory", "track": "Designs", "price": 2000,
+		"adds": "Long guns in lit cases"},
+	"style_workshop_island": {"title": "Island workshop", "track": "Designs", "price": 1000,
+		"adds": "The bench in the middle of the room"},
+	"style_workshop_pit": {"title": "Pit workshop", "track": "Designs", "price": 1200,
+		"adds": "A side bench by an inspection pit"},
+	"style_garage_showroom": {"title": "Showroom garage", "track": "Designs", "price": 1800,
+		"adds": "A turntable in the middle of the garage"},
+	"style_garage_lift": {"title": "Lift rack garage", "track": "Designs", "price": 1500,
+		"adds": "Vehicles parked over each other"},
+	"style_ops_war_table": {"title": "War table ops", "track": "Designs", "price": 1500,
+		"adds": "Consoles round a lit map table"},
+	"style_ops_bridge": {"title": "Bridge ops", "track": "Designs", "price": 1500,
+		"adds": "Consoles in a row under a wide screen"},
+	"style_gear_ring": {"title": "Ring gear hall", "track": "Designs", "price": 1500,
+		"adds": "Armor round a lit dais"},
+	"style_gear_lockers": {"title": "Locker gear hall", "track": "Designs", "price": 1200,
+		"adds": "A locker for each suit"},
+	"style_stores_plinths": {"title": "Plinth stores", "track": "Designs", "price": 1000,
+		"adds": "Trophies on lit plinths"},
+	"style_stores_cargo": {"title": "Cargo stores", "track": "Designs", "price": 800,
+		"adds": "Crate stacks and a pallet rack"},
 }
+
+## The track of the design unlocks: they change how the base looks, never
+## what it holds, and never count toward an upgrade's `needs_count`.
+const DESIGNS := "Designs"
 
 
 ## Every upgrade id, in catalog order.
@@ -74,6 +110,11 @@ static func price(id: String) -> int:
 
 static func adds(id: String) -> String:
 	return str(UPGRADES[id].get("adds", "")) if UPGRADES.has(id) else ""
+
+
+## True for a design unlock (a hub shape or a room style, `BasePlan`).
+static func is_design(id: String) -> bool:
+	return UPGRADES.has(id) and str(UPGRADES[id].get("track", "")) == DESIGNS
 
 
 ## False while what the upgrade opens is not built yet.
@@ -116,7 +157,8 @@ static func blocked(owned: Array, id: String) -> String:
 		if need not in owned:
 			return "Needs the %s first." % title(need).to_lower()
 	var count := int(UPGRADES[id].get("needs_count", 0))
-	if owned.size() < count:
+	var built := owned.filter(func(other: Variant) -> bool: return not is_design(str(other)))
+	if built.size() < count:
 		return "Needs any %d upgrades first." % count
 	return ""
 

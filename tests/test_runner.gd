@@ -49,6 +49,7 @@ const ViewMatchTests := preload("res://tests/view_match_tests.gd")
 const GunRoleTests := preload("res://tests/gun_role_tests.gd")
 const GunHandlingTests := preload("res://tests/gun_handling_tests.gd")
 const BotTacticsTests := preload("res://tests/bot_tactics_tests.gd")
+const BotSensesTests := preload("res://tests/bot_senses_tests.gd")
 const MeleeBotTests := preload("res://tests/melee_bot_tests.gd")
 const RecoilTests := preload("res://tests/recoil_tests.gd")
 const HitFeedbackTests := preload("res://tests/hit_feedback_tests.gd")
@@ -69,10 +70,12 @@ const WeatherTests := preload("res://tests/weather_tests.gd")
 const IceTests := preload("res://tests/ice_tests.gd")
 const GridTests := preload("res://tests/grid_tests.gd")
 const WhiteoutTests := preload("res://tests/whiteout_tests.gd")
+const EngineTests := preload("res://tests/engine_tests.gd")
 const RaiderTests := preload("res://tests/raider_tests.gd")
 const HeavyUnitTests := preload("res://tests/heavy_unit_tests.gd")
 const PlaytestFixTests := preload("res://tests/playtest_fix_tests.gd")
 const ExtractionTests := preload("res://tests/extraction_tests.gd")
+const LifeLogTests := preload("res://tests/life_log_tests.gd")
 const InspectTests := preload("res://tests/inspect_tests.gd")
 const RaceTests := preload("res://tests/race_tests.gd")
 const SaveSafetyTests := preload("res://tests/save_safety_tests.gd")
@@ -295,6 +298,7 @@ func _run() -> void:
 	await _test_vehicle_driving()
 	await _test_vehicle_roster()
 	await _test_hoverbike()
+	await _test_rover_crew()
 	await _test_drifting()
 	await _test_vehicle_raids()
 	await _test_vehicle_toys()
@@ -303,6 +307,9 @@ func _run() -> void:
 	await _test_lag_compensation()
 	await _test_extraction()
 	await ExtractionTests.run(self)
+	await _test_life_log()
+	await _test_army_pushes()
+	await _test_fresh_drops()
 	await _test_loadouts()
 	await _test_death()
 	await _test_storm()
@@ -372,6 +379,7 @@ func _run() -> void:
 	await _test_ice()
 	await _test_grid()
 	await _test_whiteout()
+	await _test_engine()
 	await _test_raiders()
 	await _test_heavy_units()
 	await _test_playtest_fixes()
@@ -382,6 +390,7 @@ func _run() -> void:
 	await _test_gun_roles()
 	await _test_gun_handling()
 	await _test_bot_tactics()
+	await _test_bot_senses()
 	await _test_melee_bots()
 	await _test_recoil()
 	await _test_hit_feedback()
@@ -478,6 +487,10 @@ func _test_gun_handling() -> void:
 
 func _test_bot_tactics() -> void:
 	await BotTacticsTests.run(self)
+
+
+func _test_bot_senses() -> void:
+	await BotSensesTests.run(self)
 
 
 func _test_melee_bots() -> void:
@@ -595,6 +608,10 @@ func _test_grid() -> void:
 
 func _test_whiteout() -> void:
 	await WhiteoutTests.run(self)
+
+
+func _test_engine() -> void:
+	await EngineTests.run(self)
 
 
 func _test_cold() -> void:
@@ -755,7 +772,7 @@ func _test_raid_setup_and_movement() -> void:
 	var raid := await _new_raid(42, false)
 	var p := raid.player
 	check(p != null and p.is_player, "player spawns")
-	check(raid.bots.size() == raid.world.bot_count + raid._bosses.size(), "all bots spawn")
+	check(raid.bots.size() == raid.world.bot_count + raid._bosses.size() + raid._guards.size(), "all bots spawn")
 	check(raid.depots.size() >= 2, "map provides depots to bank at")
 	var caches := raid.get_children().filter(func(n: Node) -> bool: return n is LootContainer)
 	check(caches.size() >= 8, "loot caches are placed (%d)" % caches.size())
@@ -1096,6 +1113,18 @@ func _test_combat_and_loot() -> void:
 		var hit := Combat.deal(raid.bots[1], DamageInfo.make(10.0, raid.bots[0], "bullet"))
 		check(not hit, "world rules block scav-on-scav damage")
 	await _end_raid(raid)
+
+
+func _test_life_log() -> void:
+	await LifeLogTests.run(self)
+
+
+func _test_fresh_drops() -> void:
+	await LifeLogTests.fresh_drops(self)
+
+
+func _test_army_pushes() -> void:
+	await LifeLogTests.pushes(self)
 
 
 func _test_extraction() -> void:
@@ -2994,6 +3023,78 @@ func _test_drifting() -> void:
 
 
 ## The lowest point of every mesh under `node`, in world height.
+## The Warden Rover seats four (Caleb's call): a driver, a front passenger
+## and two behind, each climbing in at the seat nearest them.
+func _test_rover_crew() -> void:
+	print("Vehicles: the rover's crew of four")
+	var arena := _vehicle_arena()
+	var rover = VehicleScript.new()
+	rover.setup("rover_warden")
+	arena.add_child(rover)
+	rover.position = Vector3(0, 0.5, 0)
+	await frames(20)
+	check(rover.seats.size() == 3 and rover.get_node_or_null("Model/Pillion") != null
+			and rover.get_node_or_null("Model/Pillion3") != null, "the rover has three passenger seats")
+	var crew: Array[Actor] = []
+	for i in 4:
+		var actor := Actor.new()
+		arena.add_child(actor)
+		crew.append(actor)
+	var seat: Interactable = rover.get_node("Seat")
+	# Each walks up to a different door: front left, rear right, rear left, front right.
+	var doors := [Vector3(-2.2, 0.1, 0.2), Vector3(2.2, 0.1, 1.5), Vector3(-2.2, 0.1, 1.5), Vector3(2.2, 0.1, 0.2)]
+	for i in 4:
+		crew[i].global_position = rover.global_position + Vector3(doors[i])
+		await frames(2)
+		seat.interact(crew[i])
+	check(rover.rider == crew[0] and rover.passenger_count() == 3, "four climb in: a driver and three passengers")
+	check(rover.seat_of(crew[3]) == 0 and rover.seat_of(crew[1]) == 2 and rover.seat_of(crew[2]) == 1,
+			"each passenger takes the seat by the door they came to")
+	var late := Actor.new()
+	arena.add_child(late)
+	late.global_position = rover.global_position + Vector3(2.2, 0.1, 1.5)
+	await frames(2)
+	check(not rover.mount(late, true) and late.vehicle == null and "ridden" in rover.get_prompt(),
+			"a fifth finds no room")
+	await frames(2)
+	var anchors := {}
+	for i in range(1, 4):
+		var anchor: Node3D = rover.ride_anchor(crew[i])
+		anchors[anchor] = true
+		var local: Vector3 = Basis(Vector3.UP, rover.heading).inverse() * (crew[i].global_position - rover.global_position)
+		var spot: Vector3 = rover.seats[rover.seat_of(crew[i])].offset
+		check(local.distance_to(spot) < 0.05, "passenger %d sits on their seat" % i)
+		var grips: Array[Vector3] = anchor.get("grip_points")
+		check(grips.size() == 2 and grips[0].z < anchor.get("seat_point").z and grips[0].y > anchor.get("seat_point").y,
+				"passenger %d has handholds ahead of and above their seat" % i)
+	check(anchors.size() == 3 and not anchors.has(rover), "every passenger's pose is fitted to their own seat")
+	var front: Vector3 = Basis(Vector3.UP, rover.heading).inverse() * (crew[0].global_position - rover.global_position)
+	var back: Vector3 = Basis(Vector3.UP, rover.heading).inverse() * (crew[1].global_position - rover.global_position)
+	check(back.z > front.z + 0.8 and back.y > front.y, "the back seats are behind the front ones, and raised")
+	crew[0].cmd.move = Vector2(0, 1)
+	await frames(240)
+	check(rover.speed > FlightRig.CRUISE_SPEED and rover.speed <= rover.max_speed * pow(rover.laden_speed, 3) + 0.05,
+			"full, it still outruns flight cruise, a little slower (%.1f m/s)" % rover.speed)
+	for actor in crew:
+		check(actor.global_position.distance_to(rover.global_position) < 2.5, "the crew rides along")
+	crew[0].cmd.move = Vector2.ZERO
+	await frames(120)
+	crew[2].cmd.interact_pressed = true
+	await frames(1)
+	crew[2].cmd.interact_pressed = false
+	check(crew[2].vehicle == null and rover.passenger_count() == 2 and rover.rider == crew[0],
+			"F lets one passenger off and the rest stay")
+	var out: Vector3 = Basis(Vector3.UP, rover.heading).inverse() * (crew[2].global_position - rover.global_position)
+	check(out.x < -1.2 and out.z > 0.8, "they step out of their own side, at the back")
+	crew[3].kill("test")
+	await frames(2)
+	check(rover.seat_of(crew[3]) < 0 and rover.passenger_count() == 1, "a passenger's death empties their seat")
+	rover.dismount_all()
+	check(not rover.is_occupied(), "everyone gets out")
+	arena.queue_free()
+	await frames(2)
+
+
 func _lowest_point(node: Node3D) -> float:
 	var low := INF
 	for mesh_node: MeshInstance3D in node.find_children("*", "MeshInstance3D", true, false):
@@ -3078,7 +3179,7 @@ func _test_every_world() -> void:
 		raid.start(world, 99)
 		await frames(3)
 		check(raid.player != null and not raid.player.is_dead, "%s: player spawns" % world.id)
-		check(raid.bots.size() == world.bot_count + raid._bosses.size(), "%s: all bots spawn" % world.id)
+		check(raid.bots.size() == world.bot_count + raid._bosses.size() + raid._guards.size(), "%s: all bots spawn" % world.id)
 		var caches := raid.get_children().filter(func(n: Node) -> bool: return n is LootContainer)
 		if world.gear_at_risk:
 			# Only where gear is at stake is there loot to find and bank (a
@@ -3100,7 +3201,7 @@ func _test_every_world() -> void:
 					"%s: %s is armed and hostile" % [world.id, bot.display_name])
 			break
 		await frames(120)
-		check(raid.clock > 1.0 and raid.bots.size() + raid._bot_respawns.size() == world.bot_count + raid._bosses.size(),
+		check(raid.clock > 1.0 and raid.bots.size() + raid._bot_respawns.size() == world.bot_count + raid._bosses.size() + raid._guards.size(),
 				"%s: the world runs with bots thinking" % world.id)
 		await _end_raid(raid)
 
@@ -4282,7 +4383,7 @@ func _test_online() -> void:
 	raid.start_server(Worlds.get_world("ashfront"), 70)
 	for bot in raid.bots:
 		bot.get_node("Brain").set_physics_process(false)
-	check(raid.player == null and raid.players.is_empty() and raid.bots.size() == raid.world.bot_count + raid._bosses.size(),
+	check(raid.player == null and raid.players.is_empty() and raid.bots.size() == raid.world.bot_count + raid._bosses.size() + raid._guards.size(),
 			"a server raid starts with bots and no players")
 	var a := raid.add_player([], {}, "Alpha")
 	var b := raid.add_player(["rifle_carbine", "blade_scrap", "jetpack_mk1", "plate_light"], {}, "Bravo")

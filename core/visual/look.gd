@@ -2895,6 +2895,8 @@ func _dress_vehicle(vehicle: Node3D) -> void:
 	if model == null or model.has_meta("dressed"):
 		return
 	model.set_meta("dressed", true)
+	# How grimy the model asks to be (`VehicleModel.WEAR`).
+	var wear := float(model.get_meta("wear", 0.7))
 	for node in model.find_children("*", "MeshInstance3D", true, false):
 		var mesh_node := node as MeshInstance3D
 		var source := mesh_node.mesh.surface_get_material(0) as StandardMaterial3D if mesh_node.mesh else null
@@ -2913,4 +2915,4 @@ func _dress_vehicle(vehicle: Node3D) -> void:
 			beam.position = mesh_node.position + Vector3(0, 0, -0.1)
 			model.add_child(beam)
 		else:
-			mesh_node.material_override = _worn(source, 0.7, 0.7)
+			mesh_node.material_override = _worn(source, wear, 0.7)

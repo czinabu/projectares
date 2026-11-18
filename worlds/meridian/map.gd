@@ -11,7 +11,13 @@ extends Node3D
 ## gap with a ramp for wheels and a level lip for a hover float), Tower
 ## Sweep, and the Pylon Chicane back onto the Rail.
 ##
-## Map contract, beyond WorldDef's (see `Race`): `race_track()`; pit bays are
+## North of the pits is the second track, Skyhook (`skyhook.gd`), with its
+## own bays, gantry, arches and board; racers pick a track by walking to its
+## pit row from race control. Round both, decoration only: the stands, the
+## crowd and the rest of the spectacle (`stands.gd`).
+##
+## Map contract, beyond WorldDef's (see `Race`): `race_track()` and
+## `race_tracks()`; pit bays are
 ## "spawn_vehicle" markers whose "loot_source" names the machine; for the
 ## views, Label3D boards in group "race_board", the line's lights in group
 ## "race_light" (meta "index", 0 first), and one node per gate in group
@@ -46,9 +52,14 @@ const LAYOUT_SEED := 7071
 
 const CYAN := Color(0.3, 0.85, 1.0)
 const AMBER := Color(1.0, 0.6, 0.2)
+const SkyhookScript := preload("res://worlds/meridian/skyhook.gd")
+const StandsScript := preload("res://worlds/meridian/stands.gd")
+const SkylineScript := preload("res://worlds/meridian/skyline.gd")
 
 var nav_region: Node3D
 var _track: RaceTrack
+var _skyhook_track: RaceTrack
+var _skyhook: RefCounted
 var _rng := RandomNumberGenerator.new()
 var _art_rng := RandomNumberGenerator.new()
 
@@ -66,8 +77,11 @@ func _ready() -> void:
 	_build_spillway()
 	_build_yard_rubble()
 	_build_pits()
-	_build_gantry()
-	_build_gates()
+	_build_gantry(_track)
+	_build_gates(_track)
+	_skyhook = SkyhookScript.new(self)
+	_skyhook.call("build", race_tracks()[1])
+	_build_race_control()
 	_dress()
 
 
@@ -79,6 +93,13 @@ func race_track() -> RaceTrack:
 		spots.assign(CHECKPOINTS)
 		_track = RaceTrack.build(TRACK_ID, TRACK_NAME, control, TRACK_W, spots, LINE, LAPS)
 	return _track
+
+
+## Coilrun first, then Skyhook.
+func race_tracks() -> Array[RaceTrack]:
+	if _skyhook_track == null:
+		_skyhook_track = SkyhookScript.build_track()
+	return [race_track(), _skyhook_track] as Array[RaceTrack]
 
 
 ## Level salt flats: the road's own height only rises on the Crest.
@@ -388,7 +409,7 @@ func _build_pits() -> void:
 	add_child(pad)
 	# Race control: a sign over the bays saying how a run starts.
 	var sign := Label3D.new()
-	sign.text = "RACE CONTROL\nTake a machine from a bay to start a time trial"
+	sign.text = "RACE CONTROL · COILRUN\nTake a machine from a bay to start a time trial"
 	sign.font_size = 72
 	sign.pixel_size = 0.01
 	sign.modulate = CYAN
@@ -425,59 +446,66 @@ func _build_pits() -> void:
 	add_child(rows)
 
 
-## The gantry over the line: five lights that count a run down.
-func _build_gantry() -> void:
+## The gantry over a track's line: five lights that count a run down. A
+## track other than the first tags them with its id (`tag`).
+func _build_gantry(track: RaceTrack, tag := "", color := Color(0.6, 0.9, 1.0)) -> void:
 	var steel := _metal(Color(0.32, 0.33, 0.38), 0.4)
-	var i: int = _track.gates[0].index
-	var at := _track.points[i]
-	var yaw := _yaw_at(i)
-	var side := _track.side(i)
+	var i: int = track.gates[0].index
+	var at := track.points[i]
+	var yaw := track.heading(i)
+	var side := track.side(i)
 	for s: float in [-1.0, 1.0]:
 		_box(Vector3(1.2, 9, 1.2), at + side * s * (TRACK_W * 0.5 + 1.5) + Vector3(0, 4.5, 0), steel, yaw)
 	_box(Vector3(TRACK_W + 4.2, 1.8, 1.6), at + Vector3(0, 9.2, 0), steel, yaw, false)
 	for k in Race.LIGHTS:
 		var pod := MeshInstance3D.new()
-		pod.name = "Light%d" % k
+		pod.name = "%sLight%d" % [tag.capitalize(), k]
 		pod.add_to_group("race_light")
 		pod.set_meta("index", k)
+		if tag != "":
+			pod.set_meta("track", tag)
 		pod.mesh = SphereMesh.new()
 		pod.mesh.radius = 0.55
 		pod.mesh.height = 1.1
 		pod.mesh.material = _glow(Color(0.15, 0.05, 0.05), 0.2)
-		pod.position = at + side * (-5.0 + k * 2.5) + Vector3(0, 9.2, 0) - _track.forward(i) * 0.85
+		pod.position = at + side * (-5.0 + k * 2.5) + Vector3(0, 9.2, 0) - track.forward(i) * 0.85
 		add_child(pod)
 	var sign := Label3D.new()
-	sign.text = TRACK_NAME.to_upper()
+	sign.text = track.display_name.to_upper()
 	sign.font_size = 160
 	sign.pixel_size = 0.01
-	sign.modulate = Color(0.6, 0.9, 1.0)
-	sign.position = at + Vector3(0, 11.0, 0) - _track.forward(i) * 0.9
+	sign.modulate = color
+	sign.position = at + Vector3(0, 11.0, 0) - track.forward(i) * 0.9
 	sign.rotation.y = yaw
 	add_child(sign)
 
 
-## A hard-light arch over each checkpoint, with its number and a place for
-## the racer's split (`RaceView` writes it).
-func _build_gates() -> void:
-	for g in range(1, _track.gates.size()):
-		var gate: Dictionary = _track.gates[g]
+## A hard-light arch over each of a track's checkpoints, with its number and
+## a place for the racer's split (`RaceView` writes it). A track other than
+## the first tags them with its id (`tag`).
+func _build_gates(track: RaceTrack, tag := "", color := CYAN) -> void:
+	for g in range(1, track.gates.size()):
+		var gate: Dictionary = track.gates[g]
 		var i: int = gate.index
 		var at: Vector3 = gate.at
-		var yaw := _yaw_at(i)
+		var yaw := track.heading(i)
 		var root := Node3D.new()
-		root.name = "Gate%d" % g
+		root.name = "%sGate%d" % [tag.capitalize(), g]
 		root.add_to_group("race_gate")
 		root.set_meta("gate", g)
+		if tag != "":
+			root.set_meta("track", tag)
 		root.position = at
 		root.rotation.y = yaw
 		add_child(root)
-		var frame := _glow(CYAN, 2.5, 0.55)
+		var frame := _glow(color, 2.5, 0.55)
+		var w := track.width
 		for s: float in [-1.0, 1.0]:
-			_arch_part(root, Vector3(0.4, 7, 0.4), Vector3(s * (TRACK_W * 0.5 + 0.8), 3.5, 0), frame)
-		_arch_part(root, Vector3(TRACK_W + 2.0, 0.4, 0.4), Vector3(0, 7, 0), frame)
-		_arch_part(root, Vector3(TRACK_W + 1.2, 6.6, 0.05), Vector3(0, 3.6, 0), _glow(CYAN, 0.6, 0.06))
+			_arch_part(root, Vector3(0.4, 7, 0.4), Vector3(s * (w * 0.5 + 0.8), 3.5, 0), frame)
+		_arch_part(root, Vector3(w + 2.0, 0.4, 0.4), Vector3(0, 7, 0), frame)
+		_arch_part(root, Vector3(w + 1.2, 6.6, 0.05), Vector3(0, 3.6, 0), _glow(color, 0.6, 0.06))
 		var num := Label3D.new()
-		num.text = "CHECKPOINT %d / %d" % [g, _track.gates.size() - 1]
+		num.text = "CHECKPOINT %d / %d" % [g, track.gates.size() - 1]
 		num.font_size = 72
 		num.pixel_size = 0.012
 		num.modulate = Color(0.6, 0.9, 1.0)
@@ -505,6 +533,25 @@ func _arch_part(root: Node3D, size: Vector3, at: Vector3, mat: Material) -> void
 	root.add_child(mesh)
 
 
+## Where racers arrive: a board pointing to each track's pit row, facing
+## the arrival pad.
+func _build_race_control() -> void:
+	var at := Vector3(-166, 0, -42)
+	var dark := _metal(Color(0.12, 0.12, 0.15), 0.2)
+	for x: float in [-4.5, 4.5]:
+		_box(Vector3(0.4, 6.5, 0.4), at + Vector3(x, 3.25, -0.3), dark)
+	_box(Vector3(13, 2.6, 0.3), at + Vector3(0, 5.2, -0.3), dark, 0.0, false)
+	for spec: Array in [["COILRUN · bays by the pit building", AMBER, 5.8],
+			["SKYHOOK · bays to the north", Color(1.0, 0.3, 0.7), 4.6]]:
+		var label := Label3D.new()
+		label.text = spec[0]
+		label.font_size = 64
+		label.pixel_size = 0.01
+		label.modulate = spec[1]
+		label.position = at + Vector3(0, float(spec[2]), -0.1)
+		add_child(label)
+
+
 # --- Decoration only: no collision, nothing the game depends on ----------------------
 
 func _dress() -> void:
@@ -518,7 +565,7 @@ func _dress() -> void:
 	_dress_yard(art)
 	_dress_tower(art)
 	_dress_pylons(art)
-	_dress_horizon(art)
+	_dress_spectacle(art)
 	for i in 6:
 		var lamp := Look.prop("Light_Street_2.glb", 7.0, 0.3)
 		if lamp:
@@ -672,16 +719,133 @@ func _dress_pylons(art: Node3D) -> void:
 		art.add_child(dot)
 
 
-## Mesas far out on the flats, lost in the haze.
-func _dress_horizon(art: Node3D) -> void:
-	var rock := Look.surface("concrete", {"tint": Color(0.7, 0.42, 0.3), "grime": 0.3, "scale": 0.02})
-	for i in 40:
-		var angle := TAU * i / 40.0 + _art_rng.randf_range(-0.05, 0.05)
-		var size := Vector3(_art_rng.randf_range(120, 320), _art_rng.randf_range(40, 160), _art_rng.randf_range(80, 240))
-		var mesa := MeshInstance3D.new()
-		mesa.mesh = BoxMesh.new()
-		mesa.mesh.size = size
-		mesa.mesh.material = rock
-		mesa.position = Vector3(cos(angle), 0, sin(angle)) * _art_rng.randf_range(1300, 1700) + Vector3(0, size.y * 0.5 - 5, 0)
-		mesa.rotation.y = _art_rng.randf() * TAU
-		art.add_child(mesa)
+# --- The spectacle: stands, crowds, the big screen ----------------------------------
+
+## Everything that makes a race an event, decoration only (`stands.gd`):
+## the two-tier Meridian Grandstand along the Rail, stands round Breech
+## Hairpin and the Spillway landing, terraces round the cooling tower, a
+## footbridge over the run to the chicane, viewing barges over the infield,
+## race control's tower and big screen, Skyhook's stand and stilts, and the
+## world round them: mesas, the dead launch works, searchlights and camera
+## drones (`skyline.gd`).
+func _dress_spectacle(art: Node3D) -> void:
+	var st: RefCounted = StandsScript.new(art, LAYOUT_SEED + 1)
+	_dress_grandstand(st)
+	# Round the outside of Breech Hairpin.
+	var hairpin := Vector3(150, 0, 38)
+	st.call("curved_stand", hairpin, 46.0, -1.25, 1.0, 9, 14)
+	st.call("section_sign", "BREECH HAIRPIN", Transform3D(Basis(Vector3.UP, -PI / 2.0), hairpin + Vector3(70, 24, 0)), AMBER)
+	# Both sides of the Spillway's landing.
+	st.call("stand", Transform3D(Basis(Vector3.UP, PI / 2.0), Vector3(88, 0, 282)), 40.0, 12, 1.6, 1.0, 2.0)
+	st.call("stand", Transform3D(Basis(Vector3.UP, -PI / 2.0), Vector3(44, 0, 282)), 40.0, 12, 1.6, 1.0, 2.0)
+	st.call("section_sign", "SPILLWAY", Transform3D(Basis(Vector3.UP, PI), Vector3(66, 16, 306)), AMBER)
+	# Terraces round the cooling tower's foot, open to the north.
+	var tower := Vector3(-60, 0, 330)
+	st.call("curved_stand", tower, 52.0, -0.15 * PI, 1.15 * PI, 16, 8, 1.5, 1.4, 1.5, true)
+	_ring(art, 27.5, 28.6, tower + Vector3(0, 42, 0), Vector3.ZERO, _glow(CYAN, 3.0), 6)
+	_dress_bridge(st)
+	_dress_barges(st)
+	_dress_control_tower(st)
+	_skyhook.call("dress", st)
+	SkylineScript.new(st, LAYOUT_SEED + 2).call("build", race_tracks())
+	st.call("finish")
+
+
+## The Meridian Grandstand: two tiers along the Rail opposite the pits,
+## sky boxes between them, a canopy and the circuit's name on the roof,
+## floodlights behind, and a lit catch fence in front.
+func _dress_grandstand(st: RefCounted) -> void:
+	var xf := Transform3D(Basis(), Vector3(-45, 0, 19))
+	var length := 200.0
+	var lower: float = st.call("stand", xf, length, 18)
+	var deck := 3.0 + 18 * 0.9
+	var boxes := lower + 2.0
+	st.call("box", Vector3(length, 5.0, 4.0), xf * Transform3D(Basis(), Vector3(0, deck + 2.5, boxes)), st.get("dark"))
+	st.call("box", Vector3(length - 2, 3.4, 0.1), xf * Transform3D(Basis(), Vector3(0, deck + 2.6, boxes - 2.05)),
+			st.call("glow", Color(0.5, 0.8, 1.0), 1.4, 0.55))
+	var upper: float = st.call("stand", xf * Transform3D(Basis(), Vector3(0, 0, boxes + 2.0)), length, 16, 1.6, 1.15, deck + 5.0)
+	var top := deck + 5.0 + 16 * 1.15 + 6.0
+	st.call("canopy", xf, length, boxes + 2.0 + upper, top, 6.0)
+	st.call("label", "MERIDIAN CIRCUIT", xf * Transform3D(Basis(Vector3.UP, PI), Vector3(0, top + 6.0, -2.0)), 900, CYAN, 0.03)
+	for x: float in [-length * 0.5 - 6, -length * 0.17, length * 0.17, length * 0.5 + 6]:
+		st.call("mast", xf * Vector3(x, 0, boxes + 40.0), top + 18.0)
+	# The catch fence: lit posts and faint glass between the track and the stand.
+	var fence_z := TRACK_W * 0.5 + 5.5
+	var x := -140.0
+	while x <= 55.0:
+		st.call("box", Vector3(0.3, 5, 0.3), Transform3D(Basis(), Vector3(x, 2.5, fence_z)), st.get("dark"))
+		st.call("box", Vector3(0.32, 0.6, 0.32), Transform3D(Basis(), Vector3(x, 5.1, fence_z)), st.call("glow", CYAN, 4.0))
+		x += 6.0
+	st.call("box", Vector3(196, 4.6, 0.05), Transform3D(Basis(), Vector3(-42.5, 2.4, fence_z)), st.get("glass"))
+
+
+## A footbridge packed with people over the run to the chicane.
+func _dress_bridge(st: RefCounted) -> void:
+	var i := _track.locate(Vector3(-186, 0, 275))
+	var at := _track.points[i]
+	var side := _track.side(i)
+	var fwd := _track.forward(i)
+	var basis := Basis(side, Vector3.UP, side.cross(Vector3.UP).normalized())
+	var xf := Transform3D(basis, at + Vector3(0, 9, 0))
+	var dark: Material = st.get("dark")
+	st.call("box", Vector3(46, 1.2, 6), xf, dark)
+	for s: float in [-1.0, 1.0]:
+		st.call("box", Vector3(46, 0.3, 0.2), xf * Transform3D(Basis(), Vector3(0, -0.5, s * 3.1)), st.call("glow", AMBER, 3.0))
+		st.call("box", Vector3(3, 9, 6), Transform3D(basis, at + side * s * 21.0 + Vector3(0, 4.5, 0)), st.get("steel"))
+		st.call("box", Vector3(46, 1.4, 0.15), xf * Transform3D(Basis(), Vector3(0, 1.3, s * 2.9)), st.get("glass"))
+	st.call("fill_deck", xf * Transform3D(Basis(), Vector3(0, 0.6, 0)), Vector2(20, 2.4), 110, atan2(fwd.x, fwd.z))
+	st.call("label", "PYLON BRIDGE", Transform3D(Basis(Vector3.UP, atan2(-fwd.x, -fwd.z)), at + Vector3(0, 11.5, 0) - fwd * 3.2),
+			400, AMBER, 0.02)
+
+
+## Viewing barges hanging over the infield on lit thrusters, full of people.
+func _dress_barges(st: RefCounted) -> void:
+	var dark: Material = st.get("dark")
+	var jet := _glow(CYAN, 3.0, 0.5)
+	for spec: Array in [[Vector3(40, 34, 120), 0.4], [Vector3(-20, 42, 250), -0.2], [Vector3(160, 30, 140), 1.2],
+			[Vector3(-110, 38, 180), 0.9]]:
+		var xf := Transform3D(Basis(Vector3.UP, spec[1]), spec[0])
+		st.call("box", Vector3(30, 2.5, 12), xf, dark)
+		st.call("box", Vector3(22, 3, 8), xf * Transform3D(Basis(), Vector3(0, -2.6, 0)), st.get("steel"))
+		st.call("box", Vector3(30.2, 0.3, 12.2), xf * Transform3D(Basis(), Vector3(0, -0.6, 0)), st.call("glow", AMBER, 2.5))
+		for s: float in [-1.0, 1.0]:
+			st.call("box", Vector3(30, 1.2, 0.12), xf * Transform3D(Basis(), Vector3(0, 1.9, s * 5.9)), st.get("glass"))
+			for e: float in [-11.0, 11.0]:
+				var cone := MeshInstance3D.new()
+				cone.mesh = CylinderMesh.new()
+				cone.mesh.top_radius = 1.3
+				cone.mesh.bottom_radius = 0.4
+				cone.mesh.height = 5.0
+				cone.mesh.material = jet
+				cone.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+				cone.transform = xf * Transform3D(Basis(), Vector3(e, -5.5, s * 4.0))
+				(st.get("root") as Node3D).add_child(cone)
+		st.call("fill_deck", xf * Transform3D(Basis(), Vector3(0, 1.25, 0)), Vector2(14, 5.3), 120)
+
+
+## Race control's tower over the pits, and the big screen beside it facing
+## the grandstand across the Rail.
+func _dress_control_tower(st: RefCounted) -> void:
+	var dark: Material = st.get("dark")
+	var at := Vector3(-60, 0, -62)
+	st.call("box", Vector3(14, 52, 14), Transform3D(Basis(), at + Vector3(0, 26, 0)), dark)
+	for k in 10:
+		st.call("box", Vector3(14.2, 0.2, 14.2), Transform3D(Basis(), at + Vector3(0, 5 + k * 5, 0)), st.call("glow", CYAN, 1.5))
+	st.call("box", Vector3(26, 6, 22), Transform3D(Basis(), at + Vector3(0, 55, 4)), st.get("steel"))
+	st.call("box", Vector3(26.2, 3.6, 22.2), Transform3D(Basis(), at + Vector3(0, 55, 4)),
+			st.call("glow", Color(0.5, 0.8, 1.0), 1.0, 0.5))
+	var screen := Vector3(-60, 30, -50)
+	st.call("box", Vector3(50, 24, 1.5), Transform3D(Basis(), screen), dark)
+	st.call("box", Vector3(48, 22, 0.1), Transform3D(Basis(), screen + Vector3(0, 0, 0.8)),
+			st.call("glow", Color(0.02, 0.06, 0.1), 1.0))
+	st.call("label", "MERIDIAN  ·  COILRUN  ·  SKYHOOK", Transform3D(Basis(), screen + Vector3(0, 7.5, 0.9)), 300, AMBER, 0.012)
+	# The board's times, shown big for the stand.
+	var rows := Label3D.new()
+	rows.add_to_group("race_board")
+	rows.text = ""
+	rows.font_size = 260
+	rows.pixel_size = 0.014
+	rows.modulate = Color(0.6, 0.9, 1.0)
+	rows.position = screen + Vector3(0, -1.5, 0.9)
+	(st.get("root") as Node3D).add_child(rows)
+

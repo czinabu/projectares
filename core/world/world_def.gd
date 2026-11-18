@@ -41,13 +41,25 @@ extends RefCounted
 ##     A portal that opens a screen (a shop) may have a child Node3D named
 ##     "Screen": a terminal's face, centred on it and facing its +Z, 1.6 by
 ##     0.9 metres. The screen is shown there (`WorldScreen`). A destination
-##     "talk:<id>" is a person to talk to, answered by the view itself.
+##     "talk:<id>" is a person to talk to, answered by the view itself. A
+##     portal at a counter may name its "keeper" (a talker id), who greets
+##     whoever uses it. A portal may have a hidden child Node3D named "Lit"
+##     (an arch's light), shown while a player stands in it. Nothing marks a
+##     portal on the floor: you walk up to a person, a counter or an arch.
 ##   - Marker3D nodes in group "talker" with meta "id", "yaw", "name" and
 ##     "role": where the people you talk to stand
-##     (`core/social/plaza_locals.gd`).
+##     (`core/social/plaza_locals.gd`), and optionally "lines" (what they
+##     say, in turn), "reads" ("worlds": the dispatcher reads `world_status`
+##     out), "color" (their speech card's), "dress" (`Human.random`'s pool,
+##     what they wear for their work) and "shop" (a keeper's shop id: they
+##     talk about its real stock and the player's account,
+##     `PlazaLocals.stock_lines`).
 ##   - optionally a `locals_layout()` method: where the place's locals spend
 ##     their day, as plain data (see `worlds/plaza/map.gd`). Without it the
-##     place has no crowd.
+##     place has no crowd. A "street" ({from, to, lane}) has shoppers walk
+##     its lanes and cross only at doors instead of a "promenade" ring.
+##     "stops" (street carts) get a cook each and customers who queue in
+##     turn, eat at the tables and walk on.
 ##   - a Label3D in group "wanted_board": the most-wanted board, written by
 ##     `PlazaView` from `world_status`.
 ##
@@ -66,6 +78,10 @@ extends RefCounted
 ##     guards) and "boss" (a kind of boss of the world's own, set on the bot
 ##     as meta "boss" before `equip_bot` and `make_warlord`, and sent to
 ##     clients so they build the same one).
+##   - Marker3D nodes in group "spawn_guard": a dungeon's garrison. A bot of
+##     the marker's "faction" stands guard over "radius" metres (10 by
+##     default) round it, outside the armies, and another comes back
+##     `guard_respawn_time` after it dies.
 ## The cold (DESIGN.md section 2, "Frostline"): a world with `cold` over 0
 ## drains its players' body heat (`Actor.body_heat`) by `cold_at` a second
 ## out in the open, and its map may add warmth:
@@ -198,6 +214,15 @@ var spawn_protection := 4.0
 ## a gentler world: the gear they had equipped goes back to their stash and
 ## only the backpack drops.
 var keep_gear_on_death := false
+
+## Keeping fresh players from strong ones (DESIGN.md "Challenge and balance
+## data"): a player who brought less than `fresh_gear_value` of gear (by
+## item value) lands at the arrival point furthest from anyone who brought
+## `strong_gear_value` or more, each of whom counts as
+## `strong_player_wariness` times as near (`Raid._safest_spawn`). 0 is off.
+var fresh_gear_value := 0
+var strong_gear_value := 0
+var strong_player_wariness := 3.0
 ## True when every player here is on one side (a co-op world). Strongpoints
 ## then belong to the players together, not to whoever took them.
 var players_allied := false
@@ -250,6 +275,8 @@ var pod_upgrade_data := 0
 ## Risk zones: seconds before a core boss comes back after it dies, and the
 ## sign-out time while sheltered in a gate outpost (it is the way out there).
 var boss_respawn_time := 360.0
+## Seconds before a guard at a "spawn_guard" marker comes back after it dies.
+var guard_respawn_time := 240.0
 var outpost_sign_out_time := 3.0
 ## A boss made for one player is a wall for none and a pushover for four,
 ## so where this is over 0 it gets tougher with company: each player past
@@ -413,6 +440,12 @@ func bot_skill_range(_bot: Actor, warlord: bool) -> Vector2:
 
 ## The risk zone at a point: 0 the outer ring, 1 the middle, 2 the core, or
 ## -1 for a world without zones.
+## What a bot faction is called in news ("the Legion"), for the war feed's
+## lines about armies. Plain worlds use the faction's own name.
+func faction_title(faction: String) -> String:
+	return "the " + faction.capitalize()
+
+
 func zone_at(_pos: Vector3) -> int:
 	return -1
 
@@ -426,6 +459,13 @@ func zone_name(tier: int) -> String:
 ## (heat, fumes), or 0. The Raid deals it through `Combat.deal`.
 func hazard_at(_pos: Vector3) -> float:
 	return 0.0
+
+
+## Whether a point is sheltered: inside a building or underground, where no
+## storm reaches (`Weather.strength_at` is 0 there) and no trail is laid
+## (`Raid._track_mark`). A world's own `cold_at` decides the cold there.
+func sheltered_at(_pos: Vector3) -> bool:
+	return false
 
 
 ## Body heat a second a player at a point loses out in the open: `cold` by

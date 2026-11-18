@@ -22,12 +22,25 @@ static func run(t: Node) -> void:
 	await _from_the_base(t)
 	_plan_rules(t)
 	await _plan_table(t)
+	_design_rules(t)
+	await _shapes(t)
+	await _styles(t)
+	await _customizer(t)
 
 
 ## The catalog, and what may be bought when.
 static func _rules(t: Node) -> void:
-	t.check(BaseUpgrades.ids().size() == 12 and BaseUpgrades.total_price() == 26600,
-			"twelve upgrades cost 26,600 scrip together")
+	var builds := BaseUpgrades.ids().filter(func(id: String) -> bool: return not BaseUpgrades.is_design(id))
+	var build_price := 0
+	for id: String in builds:
+		build_price += BaseUpgrades.price(id)
+	t.check(builds.size() == 12 and build_price == 26600,
+			"twelve build upgrades cost 26,600 scrip together")
+	var designs := BaseUpgrades.ids().filter(func(id: String) -> bool: return BaseUpgrades.is_design(id))
+	t.check(Array(designs) == Array(BasePlan.unlocks()) and designs.size() == 15,
+			"every other hub shape and room style has one design unlock, and nothing else is a design")
+	t.check(BaseUpgrades.blocked(["hub_ring", "hub_spine", "style_ops_bridge", "style_stores_cargo"], "finish") != "",
+			"design unlocks never count toward the finish")
 	t.check(BaseUpgrades.clean(null).is_empty() and BaseUpgrades.clean("junk").is_empty()
 			and BaseUpgrades.clean(["finish", "no_such", "gear_hall", "gear_hall", 7]) == ["gear_hall", "finish"],
 			"a saved list keeps known upgrades only, once each, in catalog order")
@@ -478,7 +491,7 @@ static func _from_the_base(t: Node) -> void:
 static func _plan_rules(t: Node) -> void:
 	print("Home base plan")
 	t.check(BasePlan.clean(null) == BasePlan.DEFAULT and BasePlan.clean("junk") == BasePlan.DEFAULT
-			and BasePlan.clean(null).keys() == Array(BasePlan.SOCKETS),
+			and BasePlan.clean(null).keys() == Array(BasePlan.SOCKETS) + ["shape", "styles"],
 			"a missing or broken plan is the default one, in socket order")
 	var odd := BasePlan.clean({"W1": "garage", "W2": "garage", "N1": "no_such", "E2": 7})
 	var once := {}
@@ -541,22 +554,12 @@ static func _plan_table(t: Node) -> void:
 	base.plan_used.connect(func() -> void: used[0] += 1)
 	base.room_placed.connect(func(socket: String, room: String) -> void: placed.append([socket, room]))
 	await t._use(base.player)
-	t.check(used[0] == 1 and base.plan_open and not base.plan_picking and base.plan_socket == 0,
-			"using it starts on the first socket")
-	base.plan_scroll(1)
-	base.plan_scroll(1)
-	base.plan_select()
-	t.check(base.plan_picking and base.plan_choice == BasePlan.DEFAULT["N1"] and "‹" in base.plan_card(),
-			"a click on a socket turns through the rooms for it, starting from the one there")
-	base.plan_scroll(1)
-	var choice := base.plan_choice
-	t.check(choice != BasePlan.DEFAULT["N1"] and base.plan_shown()["N1"] == choice and base.base_plan["N1"] == BasePlan.DEFAULT["N1"],
-			"the table shows the room turned to in the socket, without moving anything yet")
-	t.check(base.plan_back() and not base.plan_picking and placed.is_empty(), "a step back drops the choice")
-	base.plan_select()
-	base.plan_scroll(1)
-	base.plan_select()
-	t.check(placed == [["N1", choice]] and not base.plan_picking, "a second click asks to move the room there")
+	t.check(used[0] == 1 and base.plan_open and base.plan_hover.is_empty(), "using it takes the table up")
+	var choice := "garage"
+	base.plan_preview(BasePlan.place(base.base_plan, "N1", choice))
+	t.check(base.plan_shown()["N1"] == choice and base.base_plan["N1"] == BasePlan.DEFAULT["N1"] and placed.is_empty(),
+			"the table shows a room pointed at in its socket, without moving anything yet")
+	t.check(base.plan_change("N1", choice) == "" and placed == [["N1", choice]], "a pick asks to move the room there")
 	var armory_before := base.room_transform("armory")
 	var plan := BasePlan.place(base.base_plan, "N1", choice)
 	base.show_gear(base.stash, base.loadout, null, plan)
@@ -569,7 +572,7 @@ static func _plan_table(t: Node) -> void:
 	t.check(shown != null and base.in_armory(shown.position) and (choice != "armory" or not armory_before.is_equal_approx(base.room_transform("armory"))),
 			"a gun on the rack moves with the armory")
 	base.leave_plan()
-	t.check(not base.plan_open, "stepping away closes the table")
+	t.check(not base.plan_open and base.plan_hover.is_empty(), "stepping away closes the table and drops the preview")
 	base.queue_free()
 	await t.frames(2)
 	var visited := HomeBase.new()
@@ -581,4 +584,236 @@ static func _plan_table(t: Node) -> void:
 	t.check(visited.room_at(visited.socket_transform("W1") * Vector3(0, 0.1, -1.0)) == "garage" and not visited.plan_open,
 			"a visited base stands as its owner laid it out, and its table cannot be used")
 	visited.queue_free()
+	await t.frames(2)
+
+
+## Hub shapes and room styles: what is free, what must be unlocked, and how a
+## change is checked solo and on the server.
+static func _design_rules(t: Node) -> void:
+	print("Home base designs")
+	t.check(BasePlan.unlock_for("shape", "hall") == "" and BasePlan.unlock_for("shape", "ring") == "hub_ring"
+			and BasePlan.unlock_for("style:armory", "rack") == "" and BasePlan.unlock_for("style:armory", "vault") == "style_armory_vault"
+			and BasePlan.unlock_for("W1", "ops") == "", "the hall and each room's first style are free; the rest need an unlock")
+	for room: String in BasePlan.ROOMS:
+		t.check(BasePlan.STYLES.has(room) and BasePlan.styles(room).size() == 3, "%s has three styles" % room)
+	var locked := BasePlan.change(BasePlan.DEFAULT, [], "shape", "ring")
+	t.check(not locked.ok and "ring" in str(locked.error).to_lower(), "a locked shape is refused (%s)" % locked.get("error", ""))
+	var open := BasePlan.change(BasePlan.DEFAULT, ["hub_ring"], "shape", "ring")
+	t.check(open.ok and open.plan["shape"] == "ring" and open.plan["W1"] == BasePlan.DEFAULT["W1"] and BasePlan.DEFAULT["shape"] == "hall",
+			"an unlocked shape is taken up, the rooms keep their sockets, and the plan given never changes")
+	var styled := BasePlan.change(open.plan, ["style_gear_ring"], "style:gear", "ring")
+	t.check(styled.ok and styled.plan["styles"]["gear"] == "ring" and styled.plan["shape"] == "ring",
+			"an unlocked style goes on its room and keeps the rest")
+	t.check(not BasePlan.change(BasePlan.DEFAULT, ["style_gear_ring"], "style:armory", "ring").ok
+			and not BasePlan.change(BasePlan.DEFAULT, [], "shape", "dome").ok
+			and not BasePlan.change(BasePlan.DEFAULT, [], "style:lounge", "rack").ok
+			and not BasePlan.change(BasePlan.DEFAULT, [], "colour", "red").ok,
+			"a style of another room, an unknown shape, room or change is refused")
+	t.check(BasePlan.change(styled.plan, [], "shape", "hall").ok, "going back to a free choice needs nothing")
+	var odd := BasePlan.clean({"shape": "dome", "styles": {"armory": "no_such", "gear": "ring"}})
+	t.check(odd["shape"] == "hall" and odd["styles"]["armory"] == "rack" and odd["styles"]["gear"] == "ring",
+			"an unknown shape or style falls back to the free one; a known one is kept whatever is owned")
+	Profile.reset()
+	Profile.scrip = 10000
+	t.check(not Profile.place_room("shape", "spine").ok and Profile.base_plan["shape"] == "hall", "solo, a locked shape is refused")
+	t.check(Profile.buy_upgrade("hub_spine").ok and Profile.scrip == 7000 and Profile.place_room("shape", "spine").ok
+			and Profile.base_plan["shape"] == "spine", "bought once with scrip, it can be used")
+	t.check(Profile.place_room("shape", "hall").ok and Profile.place_room("shape", "spine").ok and Profile.scrip == 7000,
+			"switching back and forth is free after")
+	var data := Profile.to_dict()
+	Profile.reset()
+	Profile.load_dict(data)
+	t.check(Profile.base_plan["shape"] == "spine" and "hub_spine" in Profile.base_upgrades, "the shape and its unlock survive a save")
+	Profile.reset()
+	var service := Accounts.new()
+	service.persist = false
+	var id: String = service.sign_in("Designer", "a-long-enough-secret-for-tests").account_id
+	t.check(not service.place_room(id, "style:stores", "cargo").ok, "the server refuses a style the account has not unlocked")
+	service.change_scrip(id, 2000)
+	var before: int = service.snapshot(id).scrip
+	t.check(service.buy_upgrade(id, "style_stores_cargo").ok and service.place_room(id, "style:stores", "cargo").ok
+			and service.snapshot(id).base_plan["styles"]["stores"] == "cargo" and service.snapshot(id).scrip == before - 800,
+			"online the unlock is bought from the account's scrip and the style kept on its plan")
+
+
+## Every hub shape stands whole: each socket's room opens off the hub and
+## clear of the others, the corridor and the range, and you can walk in.
+static func _shapes(t: Node) -> void:
+	var base := HomeBase.new()
+	base.show_gear(["rifle_carbine"], {"primary": "rifle_carbine"}, BaseUpgrades.full())
+	t.add_child(base)
+	await t.frames(10)
+	for shape: String in BasePlan.SHAPES:
+		var plan := BasePlan.clean(null)
+		plan["shape"] = shape
+		base.show_gear(base.stash, base.loadout, null, plan)
+		await t.frames(3)
+		t.check(base.hub_shape() == shape and base.room_size == HomeBase.HUB_SIZES[shape], "%s: the hub takes its shape" % shape)
+		var sockets_ok := true
+		for socket: String in BasePlan.SOCKETS:
+			var xf := base.socket_transform(socket)
+			var room: String = base.base_plan[socket]
+			# Just inside the doorway is the room; just outside it the hub.
+			sockets_ok = sockets_ok and base.room_at(xf * Vector3(0, 0.1, -1.0)) == room \
+					and base.in_hub(xf * Vector3(0, 0.1, 1.2)) and not base.in_corridor(xf * Vector3(0, 0.1, -1.0))
+			for other: String in BasePlan.SOCKETS:
+				if other != socket:
+					var far := base.socket_transform(other)
+					sockets_ok = sockets_ok and base.room_at(far * Vector3(0, 0.1, -1.0)) != room
+			# A room's far corners stay clear of the range.
+			for corner: Vector3 in [Vector3(-4.7, 0.1, -9.7), Vector3(4.7, 0.1, -9.7)]:
+				sockets_ok = sockets_ok and not base.in_range(xf * corner)
+		t.check(sockets_ok, "%s: every room opens off the hub, clear of the others and the range" % shape)
+		var spawn := base.spawn_point
+		var mirror := base.mirror_at()
+		var locker := base.station_transform("locker").origin
+		var span := base.deploy_span()
+		t.check(base.in_hub(spawn) and base.in_hub(mirror - Vector3(0, 0, 0.3)) and base.in_hub(locker)
+				and span.y - span.x >= 1.5 and mirror.x > span.x and mirror.x < span.y
+				and base.in_hub(Vector3(0, 0.1, base.room_size.z * 0.5 - 0.5)) and base.in_corridor(Vector3(0, 0.1, -base.room_size.z * 0.5 - 0.5)),
+				"%s: the door, locker, mirror and deploy area stand on its front wall, the corridor behind it" % shape)
+		t.check(base.has_node("Door") and base.range_board != null and base.course_board != null and base.wall_mirror.position.is_equal_approx(mirror),
+				"%s: the door, the range and the course are built for it" % shape)
+		# Walk from the hub into the armory.
+		var walker := base.player
+		var armory_door := base.room_transform("armory")
+		walker.global_position = base.to_global(armory_door * Vector3(0, 0.1, 2.5))
+		walker.velocity = Vector3.ZERO
+		await t.frames(2)
+		var into := -armory_door.basis.z
+		walker.cmd.yaw = atan2(-into.x, -into.z)
+		walker.cmd.move = Vector2(0, 1)
+		await t.frames(90)
+		walker.cmd.move = Vector2.ZERO
+		t.check(base.in_armory(base.to_local(walker.global_position)), "%s: you can walk from the hub into the armory" % shape)
+		# Standing at the far end of the hall, then the shape changes: you
+		# are put back in the hub.
+		walker.global_position = base.to_global(Vector3(0, 0.1, -base.room_size.z * 0.5 + 0.8))
+	var back := BasePlan.clean(null)
+	base.show_gear(base.stash, base.loadout, null, back)
+	await t.frames(3)
+	t.check(base.inside(base.to_local(base.player.global_position)) and base.find_children("Door*", "", false, false).size() == 1,
+			"changing the shape builds one hub, and keeps you inside it")
+	base.queue_free()
+	await t.frames(2)
+
+
+## Every room style lays out every spot its room has inside the room, whole
+## and small, and stands its stations and bench there too.
+static func _styles(t: Node) -> void:
+	var base := HomeBase.new()
+	t.add_child(base)
+	await t.frames(5)
+	var kinds := {}
+	for kind: String in HomeBase.KIND_ROOMS:
+		kinds[kind] = true
+	for room: String in BasePlan.STYLES:
+		for style: String in BasePlan.STYLES[room]:
+			var inside := true
+			var apart := true
+			for whole: bool in [true, false]:
+				if not whole and str(BasePlan.ROOMS[room]["opens"]) == "":
+					continue
+				var depth := base.socket_size.z if whole else base.small_depth
+				var spots: Array[Vector3] = []
+				for kind: String in kinds:
+					if HomeBase.KIND_ROOMS[kind] != room:
+						continue
+					var count := int(BaseLayout.KINDS[kind]["spots"]) if whole else int(BaseLayout.KINDS[kind].get("starter", 0))
+					if kind == "bay" and not whole:
+						count = 2
+					for i in count:
+						var at := base.style_room_spot(kind, i, style, whole).origin
+						inside = inside and absf(at.x) < base.socket_size.x * 0.5 and at.z < 0.0 and at.z > -depth
+						for other in spots:
+							apart = apart and other.distance_to(at) > 0.3
+						spots.append(at)
+				var ids: Array = ["bench"] if room == "workshop" else []
+				for id: String in HomeBase.STATIONS:
+					if HomeBase.STATIONS[id]["room"] == room:
+						ids.append(id)
+				for id: String in ids:
+					var at := base.style_station_spot(room, id, style, whole, Transform3D.IDENTITY).origin
+					if at != Vector3.ZERO:
+						inside = inside and absf(at.x) < base.socket_size.x * 0.5 and at.z < 0.0 and at.z > -depth
+			t.check(inside and apart, "%s in the %s style: every spot stands in the room, apart, whole and small" % [room, style])
+	# A style on: the room is furnished for it and the displays stand there.
+	var stash := ["rifle_carbine", "smg_stinger", "frame_runner", "helm_warden"]
+	var plan := BasePlan.clean(null)
+	plan["styles"]["armory"] = "gallery"
+	plan["styles"]["gear"] = "ring"
+	plan["styles"]["workshop"] = "pit"
+	base.show_gear(stash, {"primary": "rifle_carbine"}, BaseUpgrades.full(), plan)
+	await t.frames(3)
+	var gun := base.display_for("smg_stinger")
+	var cases := base.find_children("Case_*", "", true, false)
+	var bench := base.room_transform("workshop").affine_inverse() * base.bench_transform()
+	t.check(gun != null and base.in_armory(gun.position) and absf(gun.basis.x.y) > 0.9 and cases.size() == 12,
+			"the gallery armory stands each long gun upright in a case of its own")
+	t.check(base.in_workshop(base.bench_transform().origin) and absf(bench.basis.z.x) > 0.9,
+			"the pit workshop stands the bench along its side wall, and the bench goes with it")
+	var frame := base.display_for("frame_runner")
+	t.check(frame != null and base.room_at(frame.position) == "gear" and base.has_node("Room_N1/Dais"),
+			"the ring gear hall stands its armor round the dais")
+	base.queue_free()
+	await t.frames(2)
+
+
+## The customizer on the plan table: its tabs, a preview on the hologram, a
+## pick, an unlock bought with a confirming click and put in use.
+static func _customizer(t: Node) -> void:
+	var base := HomeBase.new()
+	base.show_gear([], {})
+	t.add_child(base)
+	await t.frames(5)
+	base.set_scrip(5000)
+	var placed := []
+	var bought := []
+	base.room_placed.connect(func(key: String, value: String) -> void: placed.append([key, value]))
+	base.upgrade_requested.connect(func(id: String) -> void: bought.append(id))
+	base.use_plan()
+	var view: Node3D = load("res://core/ui/bench_view.gd").new()
+	view.base = base
+	view.target = "plan"
+	base.add_child(view)
+	view.focus()
+	await t.frames(3)
+	var panel: Control = view.panel
+	t.check(panel != null and view.screen != null and view.screen.get_parent() == base.plan_screen(),
+			"the customizer is mounted on the table's screen")
+	t.check(panel.find_child("Tab_layout", true, false) != null and panel.find_child("Shape_ring", true, false) != null
+			and panel.state_of("shape", "hall") == "used" and panel.state_of("shape", "ring") == "locked",
+			"the layout tab shows every shape, the one in use and the ones to unlock")
+	(panel.find_child("Shape_ring", true, false) as Button).mouse_entered.emit()
+	t.check(base.plan_shown()["shape"] == "ring" and base.base_plan["shape"] == "hall", "pointing at a shape shows it on the table")
+	panel.act("shape", "ring")
+	await t.frames(2)
+	t.check(bought.is_empty() and panel.confirming == ["shape", "ring"] and "Confirm" in str((panel.find_child("Action", true, false) as Button).text),
+			"the first click on a locked shape asks to confirm the price")
+	panel.act("shape", "ring")
+	t.check(bought == ["hub_ring"] and placed.is_empty(), "the second click asks to buy its unlock")
+	base.show_gear([], {}, ["hub_ring"])
+	await t.frames(3)
+	t.check(placed == [["shape", "ring"]], "once bought, it is put in use")
+	panel.show_tab("rooms")
+	await t.frames(2)
+	t.check(panel.find_child("Socket_N1", true, false) != null, "the rooms tab draws a doorway for each socket")
+	panel.socket_pick = "N1"
+	panel._refresh()
+	await t.frames(2)
+	(panel.find_child("Room_garage", true, false) as Button).pressed.emit()
+	t.check(placed.back() == ["N1", "garage"], "a room picked for a doorway asks to move it there")
+	panel.show_tab("styles")
+	panel.room_pick = "ops"
+	panel._refresh()
+	await t.frames(2)
+	t.check(panel.find_child("Style_bridge", true, false) != null and panel.state_of("style:ops", "consoles") == "used",
+			"the styles tab shows the room's three styles")
+	panel.socket_pick = "W1"
+	panel.show_tab("rooms")
+	t.check(panel.back() and panel.socket_pick == "" and not panel.back(), "a right click steps back, then leaves")
+	view.leave()
+	t.check(not base.plan_open and view.screen == null, "leaving takes the screen down")
+	await t.frames(2)
+	base.queue_free()
 	await t.frames(2)

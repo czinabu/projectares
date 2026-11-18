@@ -524,8 +524,9 @@ static func _armies(t: Node) -> void:
 	raid.bots.erase(copy)
 	copy.queue_free()
 
-	# Orders: garrisons stay on what their army holds, the rest march on the
-	# nearest site it does not.
+	# Orders: garrisons stay on what their army holds; the commander splits
+	# the rest into fireteams over the objectives worth most, the open site
+	# between the armies first, never all one way.
 	raid._orders_in = 0.0
 	raid._tick_orders(0.1)
 	var middle: Raid.Strongpoint = null
@@ -534,19 +535,33 @@ static func _armies(t: Node) -> void:
 			middle = point
 	var marching := {"legion": 0, "tide": 0}
 	var guarding := {"legion": 0, "tide": 0}
+	var attacking := {"legion": 0, "tide": 0}
+	var teams := {}
 	for bot in raid.bots:
-		var post: Vector3 = (bot.get_node("Brain") as BotBrain).home()
+		var brain := bot.get_node("Brain") as BotBrain
+		var post: Vector3 = brain.home()
+		if brain.team != 0:
+			teams[brain.team] = true
 		if post.distance_to(middle.global_position) < 1.0:
 			marching[bot.faction] += 1
 		else:
 			for point in raid.strongpoints:
-				if point.holder == "faction:" + bot.faction and post.distance_to(point.global_position) < 1.0:
+				if post.distance_to(point.global_position) >= 1.0:
+					continue
+				if point.holder == "faction:" + bot.faction:
 					guarding[bot.faction] += 1
+				elif point.holder != "":
+					attacking[bot.faction] += 1
 	t.check(guarding.legion == 2 * world.garrison_size and guarding.tide == 2 * world.garrison_size,
 			"each army keeps a garrison on the sites it holds")
-	t.check(marching.legion == legion.size() - guarding.legion and marching.tide == tide.size() - guarding.tide
-			and marching.legion > 0, "and sends everyone else against the site between them (%d and %d)"
-			% [marching.legion, marching.tide])
+	t.check(marching.legion + attacking.legion == legion.size() - guarding.legion
+			and marching.tide + attacking.tide == tide.size() - guarding.tide,
+			"and sends everyone else at an objective")
+	t.check(marching.legion > attacking.legion and marching.tide > attacking.tide,
+			"most go for the open site between them (%d and %d)" % [marching.legion, marching.tide])
+	t.check(attacking.legion > 0 and attacking.tide > 0,
+			"but not all one way: some teams push the other army's ground (%d and %d)" % [attacking.legion, attacking.tide])
+	t.check(teams.size() >= 4, "soldiers march in fireteams (%d)" % teams.size())
 
 	# Reinforcements follow the war.
 	t.check(raid.bot_target() == world.bot_count, "a quiet world keeps its usual number of bots")

@@ -85,7 +85,7 @@ signal base_visit_requested(owner_name: String, stash: Array, loadout: Dictionar
 signal portal_travel(destination: String)
 
 const DEFAULT_PORT := 24565
-const PROTOCOL := 47
+const PROTOCOL := 49
 ## Every packet is compressed, both ways. State updates are mostly repeated
 ## numbers, and a big battle sends a player hundreds of them a second. Server
 ## and client must agree, so a change here needs a new PROTOCOL.
@@ -118,6 +118,8 @@ const PROTOCOL := 47
 ## 45: the weather: a storm cell crossing the map (`_weather`).
 ## 47: the home base's plan: `_request_place_room`, and a visited base's
 ## plan in `_base_visit`.
+## 48: a vehicle's ride state lists who sits on each passenger seat (the
+## rover seats four).
 ## Where an out-of-date game gets the latest build: the rolling "latest"
 ## release the Windows client workflow publishes (docs/hosting.md).
 const UPDATE_URL := "https://github.com/czinabu/projectares/releases/tag/latest"
@@ -604,6 +606,9 @@ func _start_server_raid() -> void:
 		for peer in _joined_peers:
 			_ice_holes.rpc_id(peer, holes))
 	raid.grid_called.connect(_on_server_grid_called)
+	raid.army_pushed.connect(func(site: int, from: Vector3, title: String, loud: bool) -> void:
+		for peer in _joined_peers:
+			_army_push.rpc_id(peer, site, from, title, loud))
 	raid.pinged.connect(_on_server_pinged)
 	raid.portal_opened.connect(func(portal: Portal) -> void:
 		for peer in _joined_peers:
@@ -1302,8 +1307,10 @@ func _request_buy_upgrade(upgrade_id: String) -> void:
 	_lobby_answer(peer, result)
 
 
-## Lobby: move a room of your home base into a socket (`BasePlan`). Free,
-## and the server keeps the plan with the account.
+## Lobby: change your home base's plan (`BasePlan.change`): move a room into
+## a socket, or with "shape" or "style:<room>" pick a hub shape or a room
+## style your upgrades unlock. Free, and the server keeps the plan with the
+## account.
 @rpc("any_peer", "call_remote", "reliable")
 func _request_place_room(socket: String, room: String) -> void:
 	if not _allow("lobby"):
@@ -1311,7 +1318,7 @@ func _request_place_room(socket: String, room: String) -> void:
 	var peer := _api.get_remote_sender_id()
 	if not is_server or not _peer_account.has(peer):
 		return
-	var result: Dictionary = await stash.place_room(_peer_account[peer], socket.left(8), room.left(32))
+	var result: Dictionary = await stash.place_room(_peer_account[peer], socket.left(24), room.left(32))
 	_lobby_answer(peer, result)
 
 
@@ -1878,10 +1885,12 @@ func _server_late_tick(_delta: float) -> void:
 				var vehicle: Node3D = _vehicles[id]
 				var rider: Actor = vehicle.get("rider")
 				var rider_id: int = _ids.get(rider, -1) if rider != null else -1
-				var passenger: Actor = vehicle.get("passenger")
+				# Who sits on each passenger seat, in seat order (-1 for empty).
+				var aboard: Array = []
+				for passenger in vehicle.get("passengers"):
+					aboard.append(_ids.get(passenger, -1) if passenger != null else -1)
 				rides.append([id, vehicle.global_position, vehicle.get("heading"), vehicle.get("speed"),
-						rider_id, _applied_seq.get(rider_id, 0),
-						_ids.get(passenger, -1) if passenger != null else -1, vehicle.get("slip")])
+						rider_id, _applied_seq.get(rider_id, 0), aboard, vehicle.get("slip")])
 			for peer in _joined_peers:
 				_vehicle_state.rpc_id(peer, rides)
 	_send_boards()
@@ -2390,7 +2399,8 @@ func buy_upgrade(upgrade_id: String) -> void:
 		_request_buy_upgrade.rpc_id(1, upgrade_id)
 
 
-## Lobby: ask the server to move a room of your home base into a socket.
+## Lobby: ask the server to change your home base's plan (see
+## `_request_place_room`).
 func place_room(socket: String, room: String) -> void:
 	if _is_connected() and not account.is_empty():
 		_request_place_room.rpc_id(1, socket, room)
@@ -2925,7 +2935,7 @@ func _client_move_vehicles() -> void:
 				_ride_entry = entry
 				_correct_ride(vehicle, entry)
 				# Who sits behind is the server's call, like the rider.
-				_seat_from_state(vehicle, "passenger", int(entry[6]), true)
+				_passengers_from_state(vehicle, entry[6])
 			continue
 		var at: Vector3 = entry[1]
 		if vehicle.global_position.distance_to(at) > SNAP_DISTANCE:
@@ -2941,7 +2951,7 @@ func _client_move_vehicles() -> void:
 			_ride_history.clear()
 			_ride_fix = Vector3.ZERO
 			_ride_turn = 0.0
-		_seat_from_state(vehicle, "passenger", int(entry[6]), true)
+		_passengers_from_state(vehicle, entry[6])
 		vehicle.call("_place_rider")
 
 
@@ -2961,6 +2971,26 @@ func _seat_from_state(vehicle: Node3D, seat: String, actor_id: int, behind: bool
 			want.vehicle.call("get_off", want)
 		vehicle.call("mount", want, behind)
 	return true
+
+
+## Puts whoever the server says is on each passenger seat there (`ids`, in
+## seat order, -1 for an empty seat).
+func _passengers_from_state(vehicle: Node3D, ids: Array) -> void:
+	var seated: Array = vehicle.get("passengers")
+	for i in mini(ids.size(), seated.size()):
+		var want: Actor = _actors.get(int(ids[i])) if int(ids[i]) >= 0 else null
+		if want != null and not is_instance_valid(want):
+			want = null
+		var current = seated[i]
+		if current == want:
+			continue
+		if current != null and is_instance_valid(current):
+			vehicle.call("get_off", current)
+		seated[i] = null
+		if want != null:
+			if want.vehicle != null:
+				want.vehicle.call("get_off", want)
+			vehicle.call("mount", want, true, i)
 
 
 ## Compares the server's position for your ride with where this game predicted
@@ -3152,6 +3182,14 @@ func _visor_tag(tagger_id: int, target_id: int, seconds: float) -> void:
 	var target: Actor = _actors.get(target_id)
 	if tagger != null and is_instance_valid(tagger) and target != null and is_instance_valid(target):
 		tagger.visor.add_tag(target, clampf(seconds, 0.0, 30.0))
+
+
+## An army's push on a strongpoint (`Raid.army_pushed`): public news, so
+## every player in the world hears the horn and sees the arrow.
+@rpc("authority", "call_remote", "reliable")
+func _army_push(site: int, from: Vector3, title: String, loud: bool) -> void:
+	if raid != null:
+		raid.note_push(site, from, title.left(40), loud)
 
 
 @rpc("authority", "call_remote", "reliable")
