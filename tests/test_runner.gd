@@ -6123,7 +6123,12 @@ func _test_world_heat() -> void:
 	var busy := raid.status()
 	check(busy.players == 2 and busy.level == "Battle" and busy.bounty == 150 and busy.event != "",
 			"a busy one reports players, war level, top bounty and event: %s" % PlazaView.heat_text(busy))
-	check(not str(busy).contains("Ada") and not busy.has("centre"), "and never who or where anyone is")
+	var outside := busy.duplicate()
+	var wanted: Array = outside.get("wanted", [])
+	outside.erase("wanted")
+	check(not str(outside).contains("Ada") and not busy.has("centre")
+			and wanted.all(func(w: Dictionary) -> bool: return w.keys() == ["name", "clan", "bounty", "marked"]),
+			"and never where anyone is: the only who is the most wanted's name and bounty")
 	check(PlazaView.heat_text({}) == "" and PlazaView.heat_text(empty) == "QUIET   0 players",
 			"the sign is blank until the server speaks, and short when nothing is on")
 	check(PlazaView.heat_text(busy).contains("2 players") and PlazaView.heat_text(busy).contains("Top bounty 150")
