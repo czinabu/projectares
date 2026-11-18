@@ -736,6 +736,9 @@ static func _threat(t: Node) -> void:
 	raid.add_child(hud)
 	await t.frames(5)
 	var bot: Actor = raid.bots[0]
+	# Face open ground, so no wall stands between the eyes and the bot.
+	controller.yaw = t.open_heading(p, 75.0)
+	await t.frames(2)
 	var ahead := Basis(Vector3.UP, controller.yaw) * Vector3(0, 0, -12)
 	bot.global_position = p.global_position + ahead + Vector3(0, 0.2, 0)
 	bot.velocity = Vector3.ZERO
