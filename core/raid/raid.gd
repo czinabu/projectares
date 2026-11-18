@@ -229,6 +229,9 @@ var beacons: Array[Node3D] = []
 ## ready to fight where they spawn and unhurt by the ground.
 static var zone_rules := true
 var _bosses: Array[Dictionary] = []
+## Guards at the map's "spawn_guard" markers (a dungeon's garrison), each
+## { marker, bot, back_in }, outside the armies like the bosses.
+var _guards: Array[Dictionary] = []
 ## Bosses' toughness is counted this often (`_scale_boss`).
 const BOSS_PARTY_EVERY := 1.0
 var _boss_party_left := 0.0
@@ -343,6 +346,7 @@ func start(p_world: WorldDef, p_seed: int = -1, p_kit: Array = [], p_mastery: Di
 	add_player(p_kit, p_mastery, "You", p_owner, p_renown, p_drop, p_insured)
 	_spawn_bots()
 	_spawn_bosses()
+	_spawn_guards()
 	_spawn_map_vehicles()
 
 
@@ -356,6 +360,7 @@ func start_server(p_world: WorldDef, p_seed: int = -1) -> void:
 	armory.setup(self)
 	_spawn_bots()
 	_spawn_bosses()
+	_spawn_guards()
 	_spawn_map_vehicles()
 
 
@@ -474,6 +479,7 @@ func _physics_process(delta: float) -> void:
 	if world.thin_ice:
 		_tick_ice(delta)
 	_tick_bosses(delta)
+	_tick_guards(delta)
 	_tick_strongpoints(delta)
 	_tick_events(delta)
 	_tick_caches(delta)
@@ -1643,6 +1649,44 @@ func _add_boss(marker: Node3D) -> Actor:
 	return bot
 
 
+## A dungeon's garrison: a guard stands at each of the map's "spawn_guard"
+## markers, kept to the ground round it, and comes back
+## `WorldDef.guard_respawn_time` after it dies. Guards are ordinary bots of
+## their marker's faction, outside the armies (`_is_extra`).
+func _spawn_guards() -> void:
+	if world.bot_count <= 0:
+		return
+	for marker in _map_nodes("spawn_guard"):
+		_guards.append({"marker": marker, "bot": _add_guard(marker), "back_in": 0.0})
+
+
+func _add_guard(marker: Node3D) -> Actor:
+	var bot := _add_bot(marker)
+	var brain := bot.get_node_or_null("Brain") as BotBrain
+	if brain != null:
+		brain.post_to(marker.global_position, float(marker.get_meta("radius", 10.0)))
+	return bot
+
+
+func _tick_guards(delta: float) -> void:
+	for guard in _guards:
+		var bot: Variant = guard.bot
+		if bot != null and is_instance_valid(bot) and not (bot as Actor).is_dead:
+			continue
+		if guard.back_in <= 0.0:
+			guard.back_in = world.guard_respawn_time
+			guard.bot = null
+			continue
+		guard.back_in -= delta
+		if guard.back_in <= 0.0:
+			guard.bot = _add_guard(guard.marker)
+
+
+## Whether a bot is one of the map's guards.
+func is_guard(bot: Actor) -> bool:
+	return _guards.any(func(guard: Dictionary) -> bool: return guard.bot == bot)
+
+
 ## A dead boss comes back after `WorldDef.boss_respawn_time`.
 func _tick_bosses(delta: float) -> void:
 	for boss in _bosses:
@@ -1722,7 +1766,7 @@ func _on_linked_hurt(info: DamageInfo, bot: Actor) -> void:
 ## rival raiders. They are never ordered about by the war, and the army
 ## never replaces them.
 func _is_extra(bot: Actor) -> bool:
-	if _event_bots.has(bot) or is_raider(bot):
+	if _event_bots.has(bot) or is_raider(bot) or is_guard(bot):
 		return true
 	for boss in _bosses:
 		if boss.bot == bot:
@@ -2176,6 +2220,10 @@ func _track_mark(body: Node3D, at: Vector3, kind: int, step: float) -> void:
 		if gone.length_squared() < step * step:
 			return
 	if not map.has_method("ground_height"):
+		return
+	# Nothing is laid where the world is sheltered (inside, underground).
+	if world.sheltered_at(at):
+		_last_mark[body] = [at, kind]
 		return
 	var ground := float(map.call("ground_height", at.x, at.z))
 	var low := at.y - ground
