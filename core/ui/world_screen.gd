@@ -149,22 +149,29 @@ func screen_point(origin: Vector3, direction: Vector3) -> Vector2:
 	return Vector2(u * viewport.size.x, v * viewport.size.y)
 
 
+## Sends a mouse event to the screen's viewport where `camera`'s ray through
+## it meets the screen. Returns false if it misses the screen. For a view
+## that moves the camera itself and only wants the screen worked
+## (`BenchView` at the plan table).
+func forward_mouse(mouse: InputEventMouse, camera: Camera3D) -> bool:
+	if viewport == null or camera == null:
+		return false
+	var at := screen_point(camera.project_ray_origin(mouse.position), camera.project_ray_normal(mouse.position))
+	if at.x < 0.0:
+		return false
+	var moved := mouse.duplicate() as InputEventMouse
+	moved.position = at
+	moved.global_position = at
+	viewport.push_input(moved, true)
+	return true
+
+
 func _unhandled_input(event: InputEvent) -> void:
 	if not focused or viewport == null:
 		return
 	if event is InputEventMouse:
-		var camera := get_viewport().get_camera_3d()
-		if camera == null:
-			return
-		var mouse := event as InputEventMouse
-		var at := screen_point(camera.project_ray_origin(mouse.position), camera.project_ray_normal(mouse.position))
-		if at.x < 0.0:
-			return
-		var moved := mouse.duplicate() as InputEventMouse
-		moved.position = at
-		moved.global_position = at
-		viewport.push_input(moved, true)
-		get_viewport().set_input_as_handled()
+		if forward_mouse(event as InputEventMouse, get_viewport().get_camera_3d()):
+			get_viewport().set_input_as_handled()
 	elif event is InputEventKey:
 		viewport.push_input(event.duplicate(), true)
 		if viewport.is_input_handled():

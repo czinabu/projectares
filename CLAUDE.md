@@ -1374,15 +1374,32 @@ without Caleb, and update the gap list when a PR closes a row.
   `room_transform`, so it moves with its room; a display kind's room is
   `HomeBase.KIND_ROOMS`. Ask where something is with `room_at` (and
   `in_armory`, `in_workshop`, `in_garage`), never with coordinates. The
-  plan table in the middle of the hub (`HomeBase.PlanTable`) is the one
-  place to change the plan: using it emits `plan_used` and `main.gd` brings
-  the view in with the bench's view (`BenchView.target` "plan"); the wheel,
-  click and right click work as at the bench (`plan_scroll`, `plan_select`,
-  `plan_back`, `leave_plan`), the hologram over it and its card show the
-  plan as it would be, and only a pick asks for a change
-  (`room_placed`): `Profile.place_room` solo, `NetSession.place_room`
-  online, decided by `StashService.place_room`. A move is free, moves
-  nothing in or out of the stash and is allowed while deployed. A new room
+  plan also picks the hub's shape (`BasePlan.SHAPES`: hall, ring, spine,
+  courtyard; `HomeBase.HUB_SIZES`, `shape_socket`, `in_hub`, `range_from`,
+  `front_half`, `mirror_at`, `deploy_span`, so ask those, never the hall's
+  numbers) and each room's style (`BasePlan.STYLES`, three a room: where
+  its displays, stations and bench stand, `_style_spot`,
+  `style_station_spot`, and what furnishes it, `_furnish_style`; every
+  style lays out every spot its room has, whole and small). A shape change
+  rebuilds the shell (`_build_static`; the wall mirror only moves). The
+  first shape and each room's first style are free; any other is a design
+  unlock (`BaseUpgrades` track "Designs", `is_design`, never counted by
+  `needs_count`), bought once with scrip and free to switch after (Caleb's
+  call). The plan table in the middle of the hub (`HomeBase.PlanTable`) is
+  the one place to change the plan: using it emits `plan_used` and
+  `main.gd` brings the view in with the bench's view (`BenchView.target`
+  "plan"), which mounts the customizer (`core/ui/plan_panel.gd`, a view)
+  on the lectern's screen as a `WorldScreen` (`HomeBase.plan_screen`,
+  forwarded with `WorldScreen.forward_mouse`): tabs for the layout, the
+  rooms and the styles, with whatever it points at shown on the hologram
+  over the table (`plan_preview`, `plan_mark`). Only a pick asks for a
+  change (`plan_change`, `room_placed`; `BasePlan.change` with a socket,
+  "shape" or "style:<room>"): `Profile.place_room` solo,
+  `NetSession.place_room` online, decided by `StashService.place_room`,
+  which checks the unlock is owned. An unlock is bought from the screen
+  with a confirming click (`plan_buy`, `upgrade_requested`) and put in use
+  once owned. A change is free, moves nothing in or out of the stash and is
+  allowed while deployed. A new room
   needs a socket for it, not a spot in the hub. Room names are a plate over
   each doorway (`_name_plate`); the base has no banner and no other signs.
   Helmets sit on the helmet shelf over the armor stands in the gear hall.
@@ -1418,7 +1435,7 @@ without Caleb, and update the gap list when a PR closes a row.
   only while its viewer is in front of it; it shows plain glass until its
   view has drawn, never the noise of an empty one). The hub keeps the deploy
   area (the wall mirror, with room in front to open a portal) along the
-  front wall right of the exit (`HomeBase.DEPLOY_FROM_X`), the plan table in
+  front wall right of the exit (`HomeBase.deploy_span`), the plan table in
   the middle (Caleb's pick) and the rest of the floor clear. The shell is
   steel, never bare rock: plated floors, ribbed wall panels and a ceiling
   grid (`HomeBase._floor`, `_wall`, `_ceiling`; a trim stands off a wall's

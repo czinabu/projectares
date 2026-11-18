@@ -131,15 +131,33 @@ answer in a short line on a card over their head, never a menu:
   (wardrobe, records, mastery bench, trader), the **Gear hall** (armor
   stands, helmets, rigs, chips) and the **Stores** (supplies and trophies).
   A plate over each doorway names its room; there are no other signs.
+- **Designs** (Caleb's call): beyond moving rooms, the hub itself comes in
+  four shapes, each with the same six doorways: the **Hall** (the square
+  hall above, free), the **Ring** (an eight-sided rotunda, every room
+  opening onto the table), the **Spine** (a long gallery, three rooms down
+  each side) and the **Courtyard** (a big court under a skylight, with
+  planters). Each room has three styles that lay out what it holds
+  differently: the armory's wall rack, vault (an island rack) or gallery
+  (long guns in lit cases); the workshop's back bench, island or pit; the
+  garage's bays, showroom (a turntable) or lift rack; ops' consoles, war
+  table or bridge; the gear hall's stands, ring (round a dais) or lockers;
+  the stores' shelves, plinths or cargo. The first of each is free; any
+  other is bought once with scrip at the plan table and is then free to
+  switch to and back. Designs change how the base looks, never what it
+  holds.
 - **The plan table** stands in the middle of the hub: a round table with
-  the base in miniature over it as a hologram. Walk up and use it and the
-  view moves in, like the bench: the wheel turns through the six doorways,
-  a click turns through the rooms for one (shown in the doorway on the
-  table at once), a second click moves that room there, and the room that
-  stood there takes its old place. Moving rooms is free and moves nothing
-  in or out of the stash; everything on show goes with its room. The plan
-  is kept on the account beside the upgrades, and a visited base stands as
-  its owner laid it out.
+  the base in miniature over it as a hologram and a screen on a lectern at
+  its near edge. Walk up and use it and the view moves in over the screen,
+  the hologram beyond it: three tabs, **Layout** (the four shapes with
+  their floor plans), **Rooms** (the hub's plan: click a doorway, then the
+  room to stand there; the room that stood there takes its old place) and
+  **Styles** (each room's three styles, sketched from above). Whatever the
+  mouse points at shows on the hologram at once; a click picks it, and a
+  locked one shows its price and asks once more to confirm before it is
+  bought and put in use. Moving rooms is free and moves nothing in or out
+  of the stash; everything on show goes with its room. The plan is kept on
+  the account beside the upgrades, and a visited base stands as its owner
+  laid it out.
 - **Heavy weapons banked from the PvP world hang on the armory wall** and can
   be stacked there (see section 6).
 - Consoles do what menus would: locker, gunsmith bench (crafting from

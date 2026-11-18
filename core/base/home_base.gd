@@ -59,11 +59,13 @@ signal portal_entered(destination: String)
 ## takes it over.
 signal player_replaced(actor: Actor)
 ## The player used the plan table. Whoever drives the player brings the view
-## to it and works it with `plan_scroll`, `plan_select`, `plan_back` and
-## `leave_plan`, like the bench.
+## to it, mounts the customizer on its screen (`plan_screen`) and steps away
+## with `leave_plan`, like the bench.
 signal plan_used
-## The player moved `room` into `socket` at the plan table (the room there
-## takes its old socket). Whoever owns the account keeps the plan and calls
+## The player picked a change to the plan at the table (`BasePlan.change`):
+## `socket` a socket and `room` the room moved there (the room there takes
+## its old socket), or `socket` "shape" or "style:<room>" and `room` the
+## shape or style. Whoever owns the account keeps the plan and calls
 ## `show_gear` again with it.
 signal room_placed(socket: String, room: String)
 ## A shot hit a plate on the test lane or a target on the firing range.
@@ -79,8 +81,9 @@ const MirrorScript := preload("res://core/visual/mirror.gd")
 const SkinScript := preload("res://core/visual/actor_skin.gd")
 
 # Room tuning.
-## The hub, inside its walls: width (x), height (y) and depth (z). The door
-## out is in the middle of its front wall (+Z).
+## The hub, inside its walls: width (x), height (y) and depth (z), set from
+## its shape (`HUB_SIZES`). The door out is in the middle of its front wall
+## (+Z).
 var room_size := Vector3(23.0, 6.0, 20.0)
 ## Every room off the hub, inside its walls: width (x, along the hub's wall),
 ## height (y) and depth (z, away from the hub). All sockets are this size.
@@ -196,6 +199,26 @@ const DEPLOY_DEPTH := 4.4
 const PLAN_AT := Vector3(0.0, 0.0, 0.0)
 const PLAN_TOP := 1.0
 const PLAN_RADIUS := 1.3
+## The plan table's screen: its size, and where it stands on the lectern at
+## the table's near edge (in the table's space), tipped back to be read.
+const PLAN_SCREEN := Vector2(1.6, 0.9)
+const PLAN_SCREEN_AT := Transform3D(Basis(Vector3.RIGHT, -0.85), Vector3(0.0, 1.0, 1.75))
+## The big pieces of each room style, sketched on the plan table with its
+## displays (`style_sketch`): [centre, size] in the room's own space.
+const STYLE_PIECES := {
+	"vault": [[Vector3(0, 1.6, -5.4), Vector3(0.4, 3.2, 6.4)]],
+	"gallery": [[Vector3(0, 0.5, -4.95), Vector3(1.5, 1.0, 4.1)]],
+	"island": [[Vector3(-0.9, 3.0, -5.4), Vector3(2.4, 0.1, 1.0)]],
+	"pit": [[Vector3(1.4, 0.05, -5.0), Vector3(2.4, 0.1, 4.2)], [Vector3(1.4, 4.1, -5.0), Vector3(3.6, 0.3, 0.3)]],
+	"showroom": [[Vector3(0, 0.05, -4.6), Vector3(3.6, 0.1, 3.6)]],
+	"lift": [[Vector3(-2.3, 2.45, -5.5), Vector3(2.4, 0.12, 4.2)], [Vector3(2.3, 2.45, -5.5), Vector3(2.4, 0.12, 4.2)]],
+	"ring": [[Vector3(0, 0.05, -5.4), Vector3(6.0, 0.1, 6.0)]],
+	"lockers": [[Vector3(0, 0.5, -5.3), Vector3(1.0, 1.0, 4.6)]],
+	"war_table": [[Vector3(0, 0.45, -5.2), Vector3(3.0, 0.9, 2.6)]],
+	"bridge": [[Vector3(0, 3.6, -9.6), Vector3(8.5, 2.0, 0.1)], [Vector3(0, 0.5, -4.4), Vector3(0.7, 1.0, 0.7)]],
+	"plinths": [[Vector3(0, 0.01, -4.9), Vector3(1.2, 0.02, 8.9)]],
+	"cargo": [[Vector3(4.3, 1.5, -5.3), Vector3(0.7, 3.0, 7.6)]],
+}
 ## How high the helmet shelf over the armor stands is.
 const HELMET_SHELF_Y := 3.0
 ## The shelves' heights in the stores (supplies, trophies) and the gear
@@ -213,6 +236,20 @@ const ROOM_COLORS := {
 	"armory": Color(1.0, 0.55, 0.25), "workshop": Color(1.0, 0.78, 0.35), "garage": Color(0.95, 0.8, 0.3),
 	"ops": Color(0.75, 0.55, 1.0), "gear": Color(0.4, 0.75, 1.0), "stores": Color(0.45, 0.9, 0.6),
 }
+
+## Each hub shape's size (`room_size`): the ring's is across its flats.
+const HUB_SIZES := {
+	"hall": Vector3(23.0, 6.0, 20.0), "ring": Vector3(24.0, 7.0, 24.0),
+	"spine": Vector3(10.0, 6.0, 32.0), "courtyard": Vector3(30.0, 8.0, 28.0),
+}
+## Which face of the ring each socket stands on: its bearing from the way
+## out (+Z), turning toward +X. The back face (PI) leads to the range.
+const RING_BEARINGS := {
+	"E2": PI / 4.0, "E1": PI / 2.0, "N2": PI * 0.75, "N1": PI * 1.25, "W1": PI * 1.5, "W2": PI * 1.75,
+}
+
+## How high the lift rack garage's upper vehicles are parked.
+const LIFT_HIGH := 2.5
 
 ## The size of every station's screen, in metres (16:9).
 const SCREEN_SIZE := Vector2(1.6, 0.9)
@@ -269,6 +306,8 @@ var scrip := 0
 var bulkheads: Array[Bulkhead] = []
 ## Everything built from the upgrades, rebuilt when they change.
 var _gated: Array[Node] = []
+## What `_build_static` built for the hub's shape, cleared when it changes.
+var _static_nodes: Array[Node] = []
 ## The gunsmith bench in use. While `bench_open`, `bench_row` is the row the
 ## bench card points at (0 the gun, then each of `Loadout.ATTACHMENT_SLOTS`)
 ## and, while `bench_picking`, the wheel turns through that row's choices
@@ -279,13 +318,12 @@ var bench_open := false
 var bench_row := 0
 var bench_picking := false
 var bench_choice := ""
-## The plan table's state while in use, like the bench's (view only): open,
-## which socket the wheel is on (an index into `BasePlan.SOCKETS`), whether a
-## room is being picked for it, and the room the wheel is on.
+## The plan table's state while in use (view only): open, the plan its
+## screen is pointing at (`plan_preview`, empty for none) and the room it
+## marks on the hologram (`plan_mark`).
 var plan_open := false
-var plan_socket := 0
-var plan_picking := false
-var plan_choice := ""
+var plan_hover := {}
+var plan_focus := ""
 ## The table in the hub.
 var plan_table: PlanTable
 
@@ -500,7 +538,7 @@ class PlanTable:
 	func get_prompt() -> String:
 		if base == null or base.read_only:
 			return "Plan table (not yours)"
-		return "[F] Plan table: move the rooms of your base"
+		return "[F] Plan table: lay out your base"
 
 	func interact(_actor: Actor) -> void:
 		if base and not base.read_only and not base.plan_open:
@@ -522,13 +560,11 @@ class Door:
 
 
 func _ready() -> void:
-	_build_room()
-	_build_range()
-	_build_course()
+	_apply_shape()
 	_display_root.name = "Displays"
 	add_child(_display_root)
-	_build_door()
 	_build_wall_mirror()
+	_build_static()
 	_build_upgrades()
 	_spawn_player()
 	_rebuild()
@@ -549,12 +585,18 @@ func show_gear(p_stash: Array, p_loadout: Dictionary, p_upgrades: Variant = null
 		if fresh != upgrades:
 			upgrades = fresh
 			changed = true
+	var reshaped := false
 	if p_plan != null:
 		var placed := BasePlan.clean(p_plan)
 		if placed != base_plan:
+			reshaped = str(placed["shape"]) != hub_shape()
 			base_plan = placed
 			changed = true
+	if reshaped:
+		_apply_shape()
 	if changed and is_inside_tree():
+		if reshaped:
+			_build_static()
 		_build_upgrades()
 		_keep_player_inside()
 	if is_inside_tree():
@@ -563,6 +605,37 @@ func show_gear(p_stash: Array, p_loadout: Dictionary, p_upgrades: Variant = null
 		# the player's own tick (using a display), and the player is replaced.
 		if suited and suited_kit != suit_kit():
 			suit_up.call_deferred()
+
+
+## Builds the shell that only the hub's shape changes: the hub itself, the
+## corridor, the range and the course behind it and the door out, clearing
+## any built for another shape first. The wall mirror stays (it is handed
+## the camera that draws it) and only moves.
+func _build_static() -> void:
+	for node in _static_nodes:
+		if is_instance_valid(node):
+			if node.get_parent():
+				node.get_parent().remove_child(node)
+			node.queue_free()
+	_static_nodes.clear()
+	targets.clear()
+	range_board = null
+	range_sign = null
+	course_board = null
+	course_stage = -1
+	door = null
+	var before := {}
+	for child in get_children():
+		before[child] = true
+	_build_room()
+	_build_range()
+	_build_course()
+	_build_door()
+	for child in get_children():
+		if not before.has(child):
+			_static_nodes.append(child)
+	if wall_mirror != null:
+		wall_mirror.position = mirror_at()
 
 
 ## After the rooms are built again: a player left standing where no room is
@@ -631,7 +704,7 @@ func station_title(id: String) -> String:
 ## Where the gunsmith bench stands in the base and which way it faces: at the
 ## back of the workshop, wherever the workshop stands.
 func bench_transform() -> Transform3D:
-	return room_transform("workshop") * _spot(BENCH_AT, BENCH_YAW)
+	return room_transform("workshop") * style_spot("workshop", "bench", _spot(BENCH_AT, BENCH_YAW))
 
 
 ## A number with thousands separators: 1200 -> "1,200".
@@ -825,10 +898,19 @@ func display_for(item_id: String) -> Display:
 ## True if `point` (local to the base) is inside the hub or one of the
 ## spaces off it: a room, the corridor, the firing range or the course.
 func inside(point: Vector3) -> bool:
+	return in_hub(point) or room_at(point) != "" or in_corridor(point) or in_range(point) or in_course(point)
+
+
+## True if `point` (local to the base) is on the hub's own floor, whatever
+## its shape.
+func in_hub(point: Vector3) -> bool:
 	var half := room_size * 0.5
-	if absf(point.x) < half.x and absf(point.z) < half.z:
-		return true
-	return room_at(point) != "" or in_corridor(point) or in_range(point) or in_course(point)
+	if absf(point.x) >= half.x or absf(point.z) >= half.z:
+		return false
+	if hub_shape() == "ring":
+		# The rotunda's diagonal walls cut its corners.
+		return absf(point.x) + absf(point.z) < half.x * sqrt(2.0)
+	return true
 
 
 ## The room (`BasePlan.ROOMS` id) whose open space holds `point` (local to the
@@ -851,12 +933,44 @@ func room_transform(room: String) -> Transform3D:
 	return socket_transform(BasePlan.socket_of(base_plan, room))
 
 
-## Where a socket's room stands (see `room_transform`). Two sockets in each
-## side wall, two in the back wall either side of the corridor.
+## Where a socket's room stands (see `room_transform`) in the hub as it is
+## now.
 func socket_transform(socket: String) -> Transform3D:
-	var side_x := room_size.x * 0.5 + 0.5
-	var back_z := room_size.z * 0.5 + 0.5
-	var pair := room_size.z * 0.25
+	return shape_socket(hub_shape(), socket)
+
+
+## Where a socket's room stands in a hub of `shape` (`BasePlan.SHAPES`). The
+## hall and the courtyard: two sockets in each side wall, two in the back wall
+## either side of the corridor. The spine: three down each side. The ring: one
+## on each of its six side faces, the back face the corridor's and the front
+## the way out.
+func shape_socket(shape: String, socket: String) -> Transform3D:
+	var size: Vector3 = HUB_SIZES.get(shape, HUB_SIZES["hall"])
+	match shape:
+		"ring":
+			var bearing: float = RING_BEARINGS.get(socket, 0.0)
+			var out := Vector3(sin(bearing), 0, cos(bearing))
+			return _spot(out * (size.x * 0.5 + 0.5), bearing + PI)
+		"spine":
+			var side_x := size.x * 0.5 + 0.5
+			var step := socket_size.x + 1.0
+			match socket:
+				"N1":
+					return _spot(Vector3(-side_x, 0, -step), PI / 2.0)
+				"W1":
+					return _spot(Vector3(-side_x, 0, 0), PI / 2.0)
+				"W2":
+					return _spot(Vector3(-side_x, 0, step), PI / 2.0)
+				"N2":
+					return _spot(Vector3(side_x, 0, -step), -PI / 2.0)
+				"E1":
+					return _spot(Vector3(side_x, 0, 0), -PI / 2.0)
+				"E2":
+					return _spot(Vector3(side_x, 0, step), -PI / 2.0)
+			return Transform3D.IDENTITY
+	var side_x := size.x * 0.5 + 0.5
+	var back_z := size.z * 0.5 + 0.5
+	var pair := size.z * 0.25
 	var back := corridor.x * 0.5 + 0.25 + socket_size.x * 0.5
 	match socket:
 		"W1":
@@ -872,6 +986,41 @@ func socket_transform(socket: String) -> Transform3D:
 		"N2":
 			return _spot(Vector3(back, 0, -back_z), 0.0)
 	return Transform3D.IDENTITY
+
+
+## The hub's shape now (`BasePlan.SHAPES`).
+func hub_shape() -> String:
+	return str(base_plan.get("shape", "hall"))
+
+
+## A room's style now (`BasePlan.STYLES`).
+func room_style(room: String) -> String:
+	return str(base_plan.get("styles", {}).get(room, BasePlan.default_style(room)))
+
+
+## Half the width of the hub's front wall, which holds the way out, the
+## locker and the deploy area.
+func front_half() -> float:
+	if hub_shape() == "ring":
+		return room_size.x * 0.5 * tan(PI / 8.0)
+	return room_size.x * 0.5
+
+
+## Where the wall mirror hangs: on the front wall right of the door, in the
+## deploy area.
+func mirror_at() -> Vector3:
+	return Vector3(minf(MIRROR_AT.x, front_half() - 1.6), MIRROR_AT.y, room_size.z * 0.5 - 0.16)
+
+
+## The deploy area's span along the front wall, as Vector2(from x, to x).
+func deploy_span() -> Vector2:
+	return Vector2(DEPLOY_FROM_X, minf(DEPLOY_TO_X, front_half() - 0.3))
+
+
+## Takes up the hub's shape from the plan: its size and where you come in.
+func _apply_shape() -> void:
+	room_size = HUB_SIZES.get(hub_shape(), HUB_SIZES["hall"])
+	spawn_point = Vector3(0.0, 0.1, room_size.z * 0.5 - 4.0)
 
 
 ## True if the room is in its whole form: its upgrade is owned (or it has
@@ -894,9 +1043,22 @@ func in_corridor(point: Vector3) -> bool:
 
 
 ## How far behind the hub's middle the range begins: past the back rooms and
-## their back wall.
+## their back wall (the hall and the courtyard), or a short corridor's
+## length behind the hub's back wall (the spine and the ring, whose rooms
+## stand clear of it).
 func range_from() -> float:
+	match hub_shape():
+		"spine":
+			return room_size.z * 0.5 + 3.5
+		"ring":
+			return room_size.z * 0.5 + 4.0
 	return room_size.z * 0.5 + 0.5 + socket_size.z + 0.5
+
+
+## True if the corridor to the range needs walls of its own: no back rooms
+## stand either side of it.
+func _corridor_walled() -> bool:
+	return hub_shape() in ["spine", "ring"]
 
 
 ## True if `point` (local to the base) is inside the garage.
@@ -1043,8 +1205,17 @@ func spot_transform(kind: String, index: int) -> Transform3D:
 ## width). The small form puts what it has on its sealed wall, halfway back.
 func room_spot(kind: String, index: int) -> Transform3D:
 	var room := str(KIND_ROOMS.get(kind, "stores"))
-	var whole := room_open(room)
-	var back := -room_depth(room)
+	return style_room_spot(kind, index, room_style(room), room_open(room))
+
+
+## A spot in its room's own space as the room would lay it out in `style`,
+## whole or in its small form. Each style lays out every spot its room's
+## kinds have (`BaseLayout.KINDS`), whole and small.
+func style_room_spot(kind: String, index: int, style: String, whole: bool) -> Transform3D:
+	var back := -(socket_size.z if whole else small_depth)
+	var styled: Variant = _style_spot(kind, index, style, whole, back)
+	if styled != null:
+		return styled
 	var side := socket_size.x * 0.5
 	var i := float(index)
 	match kind:
@@ -1105,43 +1276,419 @@ func room_spot(kind: String, index: int) -> Transform3D:
 	return _spot(Vector3(-3.0 + 1.1 * i, 1.1, back + 0.4), 0.0)
 
 
+## A spot as a style other than its room's free one lays it out, or null to
+## use the free style's (`style_room_spot`). Room space: the doorway at z 0,
+## the room at negative z back to `back`, its side walls at x of plus and
+## minus half its width.
+func _style_spot(kind: String, index: int, style: String, whole: bool, back: float) -> Variant:
+	var side := socket_size.x * 0.5
+	var i := float(index)
+	match style:
+		"vault":
+			match kind:
+				"rack_guns":
+					# Both faces of the island rack: three across, two high
+					# (one across in the small form's short island).
+					var face := 1.0 if index < (6 if whole else 2) else -1.0
+					var j := index % (6 if whole else 2)
+					var col := float(j % 3) if whole else 0.0
+					var row := float(j / 3) if whole else float(j)
+					var mid := -5.4 if whole else -2.9
+					return _spot(Vector3(face * 0.32, 2.5 - 1.05 * row, mid + 2.0 - 2.0 * col if whole else mid), face * PI / 2.0)
+				"rack_sidearms":
+					var col := float(index % 4)
+					var row := float(index / 4)
+					if not whole:
+						return _spot(Vector3(-1.2 + 2.4 * i, 1.8, back + 0.3), 0.0)
+					return _spot(Vector3(-2.7 + 1.8 * col, 2.3 - 0.9 * row, back + 0.3), 0.0)
+				"rack_melee":
+					var left := index < (3 if whole else 1)
+					var along := float(index % 3) if whole else 0.0
+					return _spot(Vector3((-1.0 if left else 1.0) * (side - 0.3), 1.3, -3.0 - 2.0 * along if whole else -2.6),
+							PI / 2.0 if left else -PI / 2.0)
+		"gallery":
+			match kind:
+				"rack_guns":
+					# Stood upright in lit cases round the walls: left, back, right.
+					var per := 4 if whole else 2
+					var wall := index / per
+					var k := float(index % per)
+					if not whole:
+						wall = 0 if index < 2 else 2
+						k = float(index % 2)
+					match wall:
+						0:
+							return _upright(Vector3(-side + 0.65, 1.55, (-2.2 if whole else -1.8) - (1.7 if whole else 1.6) * k), PI / 2.0)
+						1:
+							return _upright(Vector3(-2.7 + 1.8 * k, 1.55, back + 0.65), 0.0)
+					return _upright(Vector3(side - 0.65, 1.55, (-2.2 if whole else -1.8) - (1.7 if whole else 1.6) * k), -PI / 2.0)
+				"rack_sidearms":
+					# Lying in the glass-topped table in the middle.
+					if not whole:
+						return _flat(Vector3(-0.4 + 0.8 * i, 1.02, -2.8), 0.0)
+					return _flat(Vector3(-0.45 + 0.9 * float(index % 2), 1.02, -3.6 - 0.9 * float(index / 2)), 0.0)
+				"rack_melee":
+					# Upright either side of the way in, facing into the room.
+					var left := index < (3 if whole else 1)
+					var along := float(index % 3) if whole else 0.0
+					return _spot(Vector3((-1.0 if left else 1.0) * (2.6 + 0.8 * along), 1.3, -0.45), PI)
+		"island":
+			pass
+		"showroom":
+			if kind == "bay":
+				if not whole:
+					return _spot(Vector3(0.0 if index == 0 else 3.3, 0.0, -2.6), 0.0)
+				match index:
+					0:
+						return _spot(Vector3(0, 0, -4.6), 0.0)
+					1:
+						return _spot(Vector3(-3.4, 0, -4.6), 0.0)
+					2:
+						return _spot(Vector3(3.4, 0, -4.6), 0.0)
+				return _spot(Vector3(0, 0, -8.3), PI / 2.0)
+		"lift":
+			if kind == "bay":
+				# Two lifts, one vehicle parked under and one over each.
+				var x := (-2.3 + 4.6 * float(index % 2)) if whole else 0.0
+				var high := index >= 2 if whole else index == 1
+				return _spot(Vector3(x, LIFT_HIGH if high else 0.0, -5.5 if whole else -2.6), 0.0)
+		"ring":
+			var centre := Vector3(0, 0, -5.4)
+			match kind:
+				"armor_stand":
+					if not whole:
+						return _spot(Vector3(0, 0, -2.9), 0.0)
+					var angle := TAU * i / 6.0
+					return _spot(centre + Vector3(sin(angle), 0, cos(angle)) * 2.5, angle)
+				"helmet_shelf":
+					if not whole:
+						return _spot(Vector3(-1.3 + 2.6 * i, 1.35, -2.9), 0.0)
+					var angle := TAU * i / 6.0 + PI / 6.0
+					return _spot(centre + Vector3(sin(angle), 0, cos(angle)) * 2.5 + Vector3(0, 1.35, 0), angle)
+				"rig_stand":
+					if not whole:
+						return _spot(Vector3(3.4, 0, -3.4), -PI / 2.0)
+					var at := Vector3((-1.0 if index % 2 == 0 else 1.0) * 3.9, 0, -3.0 if index < 2 else -8.6)
+					return _spot(at, atan2(centre.x - at.x, centre.z - at.z))
+				"chip_case":
+					return _spot(Vector3(-2.375 + 0.95 * i, STORAGE_ROWS["chip_case"], back + 0.4), 0.0)
+				"artifact_case":
+					if not whole:
+						return _spot(Vector3(-3.4, 1.2, -3.4), PI / 2.0)
+					return _spot(Vector3((-1.0 if index == 0 else 1.0) * 3.6, 1.2, -0.9), PI / 2.0 if index == 0 else -PI / 2.0)
+		"lockers":
+			match kind:
+				"armor_stand":
+					if not whole:
+						return _spot(Vector3(-side + 0.75, 0, -2.6), PI / 2.0)
+					var left := index < 3
+					return _spot(Vector3((-1.0 if left else 1.0) * (side - 0.75), 0, -2.4 - 2.2 * float(index % 3)),
+							PI / 2.0 if left else -PI / 2.0)
+				"helmet_shelf":
+					if not whole:
+						return _spot(Vector3(-side + 0.55, 2.45, -2.2 - 0.8 * i), PI / 2.0)
+					var left := index < 3
+					return _spot(Vector3((-1.0 if left else 1.0) * (side - 0.55), 2.45, -2.4 - 2.2 * float(index % 3)),
+							PI / 2.0 if left else -PI / 2.0)
+				"rig_stand":
+					if not whole:
+						return _spot(Vector3(side - 0.75, 0, -2.6), -PI / 2.0)
+					return _spot(Vector3(-3.0 + 2.0 * i, 0, back + 0.8), 0.0)
+				"chip_case":
+					var left := index < 3
+					return _spot(Vector3(-0.32 if left else 0.32, 1.2, -4.0 - 1.1 * float(index % 3)), -PI / 2.0 if left else PI / 2.0)
+				"artifact_case":
+					if not whole:
+						return _spot(Vector3(0, 1.4, back + 0.4), 0.0)
+					return _spot(Vector3(0, 1.2, -3.15 if index == 0 else -7.45), 0.0 if index == 0 else PI)
+		"plinths":
+			match kind:
+				"trophy":
+					var left := index < 4
+					return _spot(Vector3((-1.0 if left else 1.0) * 2.4, 1.15, -2.4 - 1.6 * float(index % 4)),
+							PI / 2.0 if left else -PI / 2.0)
+				"supplies":
+					if not whole:
+						return _spot(Vector3(-2.6 + 2.6 * i, 1.15, -3.0), 0.0)
+		"cargo":
+			match kind:
+				"supplies":
+					var high := index % 2 == 1
+					return _spot(Vector3(-side + 0.75, 1.55 if high else 0.95, -1.4 - (1.4 if whole else 1.2) * i), PI / 2.0)
+				"trophy":
+					return _spot(Vector3(side - 0.6, 1.05 if index < 4 else 2.25, -2.6 - 1.8 * float(index % 4)), -PI / 2.0)
+	return null
+
+
+## A display stood on end: turned a quarter about its facing, so a long gun
+## stands upright in a case.
+func _upright(at: Vector3, yaw: float) -> Transform3D:
+	return Transform3D(Basis.from_euler(Vector3(0.0, yaw, 0.0)) * Basis(Vector3.BACK, PI / 2.0), at)
+
+
+## A display laid flat, facing up, its top toward the back of the room.
+func _flat(at: Vector3, yaw: float) -> Transform3D:
+	return Transform3D(Basis.from_euler(Vector3(0.0, yaw, 0.0)) * Basis(Vector3.RIGHT, -PI / 2.0), at)
+
+
+## Where a station (`STATIONS`) or the bench stands in its room as the
+## room's style puts it: `fallback` (the free style's spot) unless the style
+## moves it. Room space, local +Z toward whoever uses it.
+func style_spot(room: String, id: String, fallback: Transform3D) -> Transform3D:
+	return style_station_spot(room, id, room_style(room), room_open(room), fallback)
+
+
+## `style_spot` for any style, whole or small.
+func style_station_spot(room: String, id: String, style: String, whole: bool, fallback: Transform3D) -> Transform3D:
+	match style:
+		"island":
+			if id == "bench":
+				return _spot(Vector3(-0.9, 0, -5.4), 0.0)
+		"pit":
+			if id == "bench":
+				return _spot(Vector3(-socket_size.x * 0.5 + 0.6, 0, -4.4), PI / 2.0)
+		"war_table":
+			var table := Vector3(0, 0, -5.2 if whole else -3.0)
+			var at: Vector3 = {"wardrobe": Vector3(-3.3, 0, -2.2), "records": Vector3(-3.3, 0, -8.2),
+					"mastery": Vector3(3.3, 0, -8.2), "trader": Vector3(3.3, 0, -2.2)}.get(id, fallback.origin)
+			if not whole:
+				at = Vector3(-3.4 if id == "wardrobe" else 3.4, 0, -1.9)
+			# Facing out from the table: whoever uses one sees the table past it.
+			return _spot(at, atan2(at.x - table.x, at.z - table.z))
+		"bridge":
+			var order := ["wardrobe", "records", "mastery", "trader"]
+			if not whole:
+				return _spot(Vector3(-1.4 if id == "wardrobe" else 1.4, 0, -3.9), 0.0)
+			return _spot(Vector3(-3.3 + 2.2 * float(order.find(id)), 0, -8.3), 0.0)
+	return fallback
+
+
 func _spot(at: Vector3, yaw: float) -> Transform3D:
 	return Transform3D(Basis.from_euler(Vector3(0.0, yaw, 0.0)), at)
 
 
 # --- The room ----------------------------------------------------------------
 
-## The hub: floor, ceiling and walls, with a doorway in its side and back
-## walls for each socket and the corridor to the range, and its lights. The
-## rooms in the sockets are built with the upgrades (`_build_rooms`).
+## The hub in its shape (`hub_shape`): floor, ceiling and walls, with a
+## doorway for each socket and the corridor to the range, its lights and
+## what the shape has of its own (the courtyard's skylight and planters,
+## the spine's runner, the ring's inlay). The rooms in the sockets are built
+## with the upgrades (`_build_rooms`).
 func _build_room() -> void:
+	if hub_shape() == "ring":
+		_build_ring()
+	else:
+		_build_rect()
+	_build_corridor()
+	_build_deploy_area()
+	var ambient := Color(0.62, 0.66, 0.7) if hub_shape() == "courtyard" else Color(0.56, 0.6, 0.66)
+	Look.interior(self, ambient, 1.3)
+
+
+## A rectangular hub (the hall, the spine, the courtyard): its side walls
+## and back wall cut with a doorway wherever a socket stands against them,
+## and the corridor's in the back wall.
+func _build_rect() -> void:
 	var x := room_size.x
 	var y := room_size.y
 	var z := room_size.z
 	_floor(Vector2(x, z), Vector3.ZERO)
 	_ceiling(Vector2(x, z), Vector3.ZERO, y)
 	var door := room_door
-	var pair := z * 0.25
-	# Side walls: a doorway for each socket.
-	for side: float in [-1.0, 1.0]:
-		_wall_run(Vector3(side * (x * 0.5 + 0.25), 0, 0), Vector3(0, 0, 1), z + 1.0,
-				[Vector2(-pair, door.x), Vector2(pair, door.x)], door.y, Vector3(-side, 0, 0))
-	# The back wall: a doorway for each back socket and the corridor between.
-	var back := corridor.x * 0.5 + 0.25 + socket_size.x * 0.5
-	_wall_run(Vector3(0, 0, -z * 0.5 - 0.25), Vector3(1, 0, 0), x,
-			[Vector2(-back, door.x), Vector2(0.0, corridor.x), Vector2(back, door.x)], door.y, Vector3.BACK)
+	var west: Array = []
+	var east: Array = []
+	var back: Array = [Vector2(0.0, corridor.x)]
+	for socket: String in BasePlan.SOCKETS:
+		var xf := socket_transform(socket)
+		var inward := xf.basis.z
+		if inward.x > 0.5:
+			west.append(Vector2(xf.origin.z, door.x))
+		elif inward.x < -0.5:
+			east.append(Vector2(xf.origin.z, door.x))
+		else:
+			back.append(Vector2(xf.origin.x, door.x))
+	_wall_run(Vector3(-(x * 0.5 + 0.25), 0, 0), Vector3(0, 0, 1), z + 1.0, west, door.y, Vector3(1, 0, 0))
+	_wall_run(Vector3(x * 0.5 + 0.25, 0, 0), Vector3(0, 0, 1), z + 1.0, east, door.y, Vector3(-1, 0, 0))
+	_wall_run(Vector3(0, 0, -z * 0.5 - 0.25), Vector3(1, 0, 0), x, back, door.y, Vector3.BACK)
 	# The front wall, whole: the door out stands against it.
 	_wall(Vector3(x + 1.0, y, 0.5), Vector3(0, y * 0.5, z * 0.5 + 0.25), Vector3.FORWARD)
-	_build_corridor()
-	_build_deploy_area()
-	Look.interior(self, Color(0.56, 0.6, 0.66), 1.3)
+	var lamps: Array[Vector3] = []
+	match hub_shape():
+		"spine":
+			_build_spine_runner()
+			var at := -z * 0.5 + 4.0
+			while at < z * 0.5 - 1.0:
+				lamps.append(Vector3(0, y - 1.2, at))
+				at += 6.5
+		"courtyard":
+			_build_courtyard()
+			for corner: Vector3 in [Vector3(-9, 0, -8), Vector3(9, 0, -8), Vector3(-9, 0, 8), Vector3(9, 0, 8)]:
+				lamps.append(corner + Vector3(0, y - 1.5, 0))
+		_:
+			lamps.assign([Vector3(-6, 4.8, -4), Vector3(6, 4.8, -4), Vector3(-6, 4.8, 5), Vector3(6, 4.8, 5), Vector3(0, 4.8, 0.5)])
 	if Look.enabled:
-		# Ceiling lamps over the floor, and a softer wash toward each wall.
-		for at: Vector3 in [Vector3(-6, 4.8, -4), Vector3(6, 4.8, -4), Vector3(-6, 4.8, 5),
-				Vector3(6, 4.8, 5), Vector3(0, 4.8, 0.5)]:
+		for at in lamps:
 			var light := Look.lamp(Color(1.0, 0.9, 0.76), 3.2, 16.0)
 			light.position = at
 			add_child(light)
+
+
+## The spine's floor runner: a dark band down the middle of the gallery with
+## a lit edge either side, and ribs arching over it.
+func _build_spine_runner() -> void:
+	var z := room_size.z
+	var y := room_size.y
+	add_child(_part(Vector3(2.4, 0.012, z - 1.0), Vector3(0, 0.006, 0), Color(0.16, 0.17, 0.19)))
+	for side: float in [-1.0, 1.0]:
+		add_child(_part(Vector3(0.05, 0.016, z - 1.0), Vector3(side * 1.2, 0.008, 0), Color(0.45, 0.9, 1.0), true))
+	var at := -z * 0.5 + 2.75
+	while at < z * 0.5 - 1.0:
+		add_child(_part(Vector3(room_size.x, 0.35, 0.3), Vector3(0, y - 0.45, at), Color(0.2, 0.21, 0.23)))
+		at += 5.25
+
+
+## The courtyard's middle: a skylight over the table, four planters with a
+## tree in each and a lit ring set in the floor round the table.
+func _build_courtyard() -> void:
+	var y := room_size.y
+	var sky := 12.0
+	var frame := Color(0.2, 0.21, 0.23)
+	var light_panel := _part(Vector3(sky, 0.04, sky), Vector3(0, y - 0.3, 0), Color(0.75, 0.88, 1.0), true)
+	light_panel.name = "Skylight"
+	add_child(light_panel)
+	for i in 5:
+		var at := -sky * 0.5 + sky * 0.25 * i
+		add_child(_part(Vector3(0.18, 0.3, sky + 0.2), Vector3(at, y - 0.4, 0), frame))
+		add_child(_part(Vector3(sky + 0.2, 0.3, 0.18), Vector3(0, y - 0.4, at), frame))
+	var soil := Color(0.16, 0.12, 0.09)
+	var leaf := Color(0.22, 0.42, 0.2)
+	for corner: Vector2 in [Vector2(-7.5, -6.5), Vector2(7.5, -6.5), Vector2(-7.5, 6.5), Vector2(7.5, 6.5)]:
+		var at := Vector3(corner.x, 0, corner.y)
+		var planter := _box(Vector3(2.4, 0.7, 2.4), at + Vector3(0, 0.35, 0), _shell("seal"))
+		planter.name = "Planter"
+		add_child(_part(Vector3(2.2, 0.05, 2.2), at + Vector3(0, 0.71, 0), soil))
+		add_child(_part(Vector3(2.44, 0.04, 2.44), at + Vector3(0, 0.6, 0), Color(0.45, 0.9, 1.0), true))
+		add_child(_part(Vector3(0.22, 2.2, 0.22), at + Vector3(0, 1.8, 0), Color(0.3, 0.22, 0.15)))
+		for layer in 3:
+			var wide := 1.9 - 0.45 * layer
+			add_child(_part(Vector3(wide, 0.6, wide), at + Vector3(0, 2.6 + 0.55 * layer, 0), leaf.lightened(0.08 * layer)))
+	var ring := MeshInstance3D.new()
+	ring.name = "FloorRing"
+	var torus := TorusMesh.new()
+	torus.inner_radius = 3.4
+	torus.outer_radius = 3.5
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(0.45, 0.9, 1.0)
+	mat.emission_enabled = true
+	mat.emission = Color(0.45, 0.9, 1.0)
+	torus.material = mat
+	ring.mesh = torus
+	ring.scale = Vector3(1, 0.1, 1)
+	ring.position = Vector3(0, 0.0, 0)
+	add_child(ring)
+	if Look.enabled:
+		var sun := Look.lamp(Color(0.85, 0.92, 1.0), 4.0, 14.0)
+		sun.position = Vector3(0, y - 1.0, 0)
+		add_child(sun)
+
+
+## The ring: an eight-sided rotunda round the plan table. Each face is a
+## straight wall in its own frame, a doorway in each socket's face and the
+## corridor's in the back one; the front face holds the way out. Its floor
+## and ceiling are cut to the eight sides, and a lit inlay rings the table.
+func _build_ring() -> void:
+	var a := room_size.x * 0.5
+	var y := room_size.y
+	var face := 2.0 * a * tan(PI / 8.0)
+	var corner := a / cos(PI / 8.0)
+	var outline := PackedVector2Array()
+	for i in 8:
+		var angle := PI / 8.0 + PI / 4.0 * i
+		outline.append(Vector2(sin(angle), cos(angle)) * corner)
+	var slab := StaticBody3D.new()
+	slab.name = "RingSlabs"
+	slab.collision_layer = Actor.LAYER_WORLD
+	slab.collision_mask = 0
+	for at_y: float in [-0.25, y + 0.25]:
+		var shape := BoxShape3D.new()
+		shape.size = Vector3(a * 2.0, 0.5, a * 2.0)
+		var col := CollisionShape3D.new()
+		col.shape = shape
+		col.position = Vector3(0, at_y, 0)
+		slab.add_child(col)
+	slab.add_child(_poly_slab(outline, 0.0, true, _shell("floor")))
+	slab.add_child(_poly_slab(outline, y, false, _shell("ceiling")))
+	add_child(slab)
+	for i in 8:
+		var bearing := PI / 4.0 * i
+		var out := Vector3(sin(bearing), 0, cos(bearing))
+		var node := Node3D.new()
+		node.name = "RingFace%d" % i
+		node.transform = _spot(out * (a + 0.25), bearing + PI)
+		add_child(node)
+		_into = node
+		if i == 0:
+			_wall(Vector3(face + 0.45, y, 0.5), Vector3(0, y * 0.5, 0), Vector3.BACK)
+		else:
+			var gap := corridor.x if i == 4 else room_door.x
+			_wall_run(Vector3.ZERO, Vector3(1, 0, 0), face + 0.45, [Vector2(0.0, gap)], room_door.y, Vector3.BACK)
+		_into = null
+	# Radial beams under the ceiling and a lit ring over the table.
+	var beam := Color(0.2, 0.21, 0.23)
+	for i in 8:
+		var spoke := Node3D.new()
+		spoke.rotation.y = PI / 8.0 + PI / 4.0 * i
+		spoke.add_child(_part(Vector3(0.2, 0.3, corner - 3.0), Vector3(0, y - 0.15, (corner + 3.0) * 0.5), beam))
+		add_child(spoke)
+	for radius: float in [3.0, 7.5]:
+		var ring := MeshInstance3D.new()
+		var torus := TorusMesh.new()
+		torus.inner_radius = radius - 0.06
+		torus.outer_radius = radius + 0.06
+		torus.rings = 48
+		var mat := StandardMaterial3D.new()
+		mat.albedo_color = Color(0.45, 0.9, 1.0)
+		mat.emission_enabled = true
+		mat.emission = Color(0.45, 0.9, 1.0)
+		torus.material = mat
+		ring.mesh = torus
+		ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		if radius < 5.0:
+			ring.position = Vector3(0, y - 0.35, 0)
+		else:
+			# The floor inlay: flattened into the floor.
+			ring.scale = Vector3(1, 0.1, 1)
+		add_child(ring)
+	if Look.enabled:
+		for i in 6:
+			var angle := TAU * i / 6.0
+			var light := Look.lamp(Color(1.0, 0.9, 0.76), 2.6, 13.0)
+			light.position = Vector3(sin(angle) * 6.5, y - 1.4, cos(angle) * 6.5)
+			add_child(light)
+		var middle := Look.lamp(Color(0.9, 0.95, 1.0), 2.4, 10.0)
+		middle.position = Vector3(0, y - 1.2, 0)
+		add_child(middle)
+
+
+## A flat polygon (`points` as x, z) at height `y`, facing up or down, for a
+## floor or ceiling that is not a rectangle. Only the look: its collision is
+## built beside it.
+func _poly_slab(points: PackedVector2Array, y: float, up: bool, material: Material) -> MeshInstance3D:
+	var tool := SurfaceTool.new()
+	tool.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var normal := Vector3.UP if up else Vector3.DOWN
+	# Both windings: the one facing away is culled, so whichever way round
+	# the points go, the side it faces shows.
+	for i in range(1, points.size() - 1):
+		for tri: Array in [[points[0], points[i], points[i + 1]], [points[0], points[i + 1], points[i]]]:
+			for p: Vector2 in tri:
+				tool.set_normal(normal)
+				tool.set_uv(p * 0.25)
+				tool.add_vertex(Vector3(p.x, y, p.y))
+	var mesh := MeshInstance3D.new()
+	mesh.mesh = tool.commit()
+	mesh.material_override = material
+	return mesh
 
 
 ## A straight wall `length` long through `centre` (on the floor) along unit
@@ -1184,10 +1731,13 @@ func _build_corridor() -> void:
 	# The ceiling starts past the hub's wall, so it never lies along the
 	# lintel over the way in (two faces in one plane shimmer).
 	_ceiling(Vector2(corridor.x, length - 0.5), mid - Vector3(0, 0, 0.25), corridor.y)
-	# Its side walls are the back rooms' walls: panel their faces.
+	# Its side walls are the back rooms' walls (panel their faces), or in a
+	# hub with no back rooms, walls of its own.
 	for side: float in [-1.0, 1.0]:
-		_trim(Vector3(0.25, corridor.y, length - 0.5), Vector3(side * (corridor.x * 0.5 + 0.125), corridor.y * 0.5, mid.z - 0.25),
-				Vector3(-side, 0, 0))
+		var wall_at := Vector3(side * (corridor.x * 0.5 + 0.125), corridor.y * 0.5, mid.z - 0.25)
+		if _corridor_walled():
+			_box(Vector3(0.25, corridor.y, length - 0.5), wall_at, _shell("wall"))
+		_trim(Vector3(0.25, corridor.y, length - 0.5), wall_at, Vector3(-side, 0, 0))
 	if Look.enabled:
 		var light := Look.lamp(Color(1.0, 0.94, 0.85), 2.0, 7.0)
 		light.position = mid + Vector3(0, corridor.y - 0.5, 0)
@@ -1228,15 +1778,17 @@ func _build_rooms() -> void:
 		_keep(node)
 		_into = node
 		_build_shell(room)
-		match room:
-			"armory":
+		match room_style(room):
+			"rack":
 				_furnish_armory()
-			"gear":
+			"stands":
 				_furnish_gear()
-			"stores":
+			"shelves":
 				_furnish_stores()
-			"garage":
+			"bays":
 				_furnish_garage()
+			var style:
+				_furnish_style(room, style)
 		_into = null
 		_keep(_name_plate(BasePlan.title(room), socket_transform(socket), ROOM_COLORS.get(room, Color.WHITE), room_door.y))
 
@@ -1288,6 +1840,262 @@ func _furnish_armory() -> void:
 	for side: float in [-1.0, 1.0]:
 		_target().add_child(_part(Vector3(0.03, 2.5, along), Vector3(side * (w * 0.5 - 0.12), 1.85, -0.6 - along * 0.5), band))
 		_target().add_child(_part(Vector3(0.12, 0.05, along - 0.2), Vector3(side * (w * 0.5 - 0.2), 3.25, -0.6 - along * 0.5), glow, true))
+
+
+## Furnishes a room in a style other than its free one (`BasePlan.STYLES`),
+## into `_into` in the room's own space. The displays stand at the style's
+## spots (`_style_spot`); this builds what they stand on and in.
+func _furnish_style(room: String, style: String) -> void:
+	var whole := room_open(room)
+	var back := -room_depth(room)
+	var side := socket_size.x * 0.5
+	var steel := Color(0.24, 0.25, 0.27)
+	var dark := Color(0.13, 0.13, 0.14)
+	var cyan := Color(0.45, 0.9, 1.0)
+	var warm := Color(1.0, 0.85, 0.6)
+	var amber := Color(1.0, 0.62, 0.22)
+	match style:
+		"vault":
+			# The island rack down the middle, and heavy vault pillars just
+			# inside the way in.
+			var length := 6.4 if whole else 2.8
+			var mid := -5.4 if whole else -2.9
+			var island := _box(Vector3(0.3, 3.2, length), Vector3(0, 1.6, mid), _shell("seal"))
+			island.name = "IslandRack"
+			_target().add_child(_part(Vector3(0.36, 0.05, length + 0.06), Vector3(0, 3.22, mid), Color(0.85, 0.92, 1.0), true))
+			_target().add_child(_part(Vector3(0.9, 0.12, length + 0.4), Vector3(0, 0.06, mid), dark))
+			for face: float in [-1.0, 1.0]:
+				_target().add_child(_part(Vector3(0.03, 2.4, length - 0.3), Vector3(face * 0.165, 1.95, mid), dark))
+			for x: float in [-1.0, 1.0]:
+				_box(Vector3(0.7, socket_size.y, 0.7), Vector3(x * (room_door.x * 0.5 + 0.55), socket_size.y * 0.5, -0.6), _shell("seal"))
+				_target().add_child(_part(Vector3(0.04, 2.6, 0.04), Vector3(x * (room_door.x * 0.5 + 0.18), 1.5, -0.27), amber, true))
+			if whole:
+				_target().add_child(_part(Vector3(side * 2.0 - 0.8, 3.0, 0.03), Vector3(0, 2.0, back + 0.12), dark))
+		"gallery":
+			# A lit glass case for each long gun's spot, and the sidearms'
+			# glass-topped table in the middle.
+			for i in BaseLayout.spots("rack_guns", upgrades):
+				var xf := style_room_spot("rack_guns", i, style, whole)
+				var case := Node3D.new()
+				case.name = "Case_%d" % i
+				case.transform = _spot(xf.origin * Vector3(1, 0, 1), atan2(xf.basis.z.x, xf.basis.z.z))
+				_target().add_child(case)
+				var room_node := _into
+				_into = case
+				_box(Vector3(0.8, 0.5, 0.6), Vector3(0, 0.25, -0.05), _shell("seal"))
+				_into = room_node
+				case.add_child(_part(Vector3(0.82, 0.03, 0.62), Vector3(0, 0.51, -0.05), cyan, true))
+				case.add_child(_glass(Vector3(0.8, 2.2, 0.6), Vector3(0, 1.62, -0.05)))
+				case.add_child(_part(Vector3(0.8, 0.08, 0.6), Vector3(0, 2.76, -0.05), dark))
+				case.add_child(_part(Vector3(0.6, 0.02, 0.4), Vector3(0, 2.71, -0.05), warm, true))
+			var rows := 4 if whole else 1
+			var mid := -4.95 if whole else -2.8
+			var length := 0.9 * rows + 0.5
+			_box(Vector3(1.5, 0.95, length), Vector3(0, 0.475, mid), _shell("seal"))
+			_target().add_child(_glass(Vector3(1.5, 0.04, length), Vector3(0, 1.0, mid)))
+			_target().add_child(_part(Vector3(1.52, 0.03, length + 0.02), Vector3(0, 0.93, mid), cyan, true))
+		"island":
+			# A lamp rig over the bench and a pegboard of lit tool outlines
+			# on the back wall.
+			var bench := style_station_spot(room, "bench", style, whole, Transform3D.IDENTITY)
+			for x: float in [-1.4, 1.4]:
+				_target().add_child(_part(Vector3(0.06, 0.06, 2.4), bench * Vector3(x * 0.6, 3.0, 0), steel))
+				_target().add_child(_part(Vector3(0.04, socket_size.y - 3.0, 0.04), bench * Vector3(x * 0.6, (socket_size.y + 3.0) * 0.5, 0), steel))
+			_target().add_child(_part(Vector3(1.8, 0.04, 0.3), bench * Vector3(0, 2.95, 0), warm, true))
+			_target().add_child(_part(Vector3(side * 2.0 - 1.2, 2.2, 0.04), Vector3(0, 2.1, back + 0.12), Color(0.18, 0.19, 0.21)))
+			for k in 7:
+				var x := -3.0 + 1.0 * k
+				_target().add_child(_part(Vector3(0.08, 0.5 + 0.12 * (k % 3), 0.02), Vector3(x, 2.2, back + 0.15), amber, true))
+				_target().add_child(_part(Vector3(0.3, 0.06, 0.02), Vector3(x, 2.5 + 0.06 * (k % 3), back + 0.15), amber, true))
+			for x: float in [-1.0, 1.0]:
+				_box(Vector3(1.1, 1.0, 0.6), Vector3(x * (side - 0.8), 0.5, back + 0.4), _shell("seal"))
+				_target().add_child(_part(Vector3(1.0, 0.02, 0.01), Vector3(x * (side - 0.8), 0.7, back + 0.71), warm, true))
+		"pit":
+			# An inspection pit plate in the floor with hazard edges, and a
+			# hoist gantry over it.
+			var at := Vector3(1.4, 0, -5.0)
+			_target().add_child(_part(Vector3(2.4, 0.012, 4.2), at + Vector3(0, 0.006, 0), Color(0.06, 0.06, 0.07)))
+			for edge: float in [-1.0, 1.0]:
+				_target().add_child(_part(Vector3(2.5, 0.016, 0.12), at + Vector3(0, 0.008, edge * 2.1), amber, true))
+				_target().add_child(_part(Vector3(0.12, 0.016, 4.3), at + Vector3(edge * 1.2, 0.008, 0), amber, true))
+				_box(Vector3(0.2, 4.0, 0.2), at + Vector3(edge * 1.6, 2.0, 0), _shell("seal"))
+			_target().add_child(_part(Vector3(3.6, 0.3, 0.3), at + Vector3(0, 4.1, 0), steel))
+			_target().add_child(_part(Vector3(0.04, 1.4, 0.04), at + Vector3(0, 3.25, 0), dark))
+			_target().add_child(_part(Vector3(0.3, 0.2, 0.3), at + Vector3(0, 2.5, 0), amber))
+		"showroom":
+			# A turntable under the first bay with a lit rim, and a lit
+			# band round the walls.
+			var bay := style_room_spot("bay", 0, style, whole).origin
+			var table := MeshInstance3D.new()
+			table.name = "Turntable"
+			var disc := CylinderMesh.new()
+			disc.top_radius = 1.8 if whole else 1.5
+			disc.bottom_radius = disc.top_radius
+			disc.height = 0.06
+			var mat := StandardMaterial3D.new()
+			mat.albedo_color = Color(0.12, 0.13, 0.15)
+			disc.material = mat
+			table.mesh = disc
+			table.position = bay + Vector3(0, 0.03, 0)
+			_target().add_child(table)
+			_target().add_child(_ring(disc.top_radius, bay + Vector3(0, 0.065, 0), cyan, 0.04))
+			for x: float in [-1.0, 1.0]:
+				_target().add_child(_part(Vector3(0.03, 0.06, room_depth(room) - 0.6), Vector3(x * (side - 0.05), 3.0, back * 0.5), cyan, true))
+		"lift":
+			# A lift over each pair of bays: four posts and a platform.
+			for x: float in ([-2.3, 2.3] if whole else [0.0]):
+				var at := Vector3(x, 0, -5.5 if whole else -2.6)
+				var deck := _box(Vector3(2.4, 0.12, 4.2), at + Vector3(0, LIFT_HIGH - 0.06, 0), _shell("seal"))
+				deck.name = "LiftDeck"
+				for edge: float in [-1.0, 1.0]:
+					_target().add_child(_part(Vector3(2.42, 0.05, 0.06), at + Vector3(0, LIFT_HIGH - 0.03, edge * 2.1), amber, true))
+					for end: float in [-1.0, 1.0]:
+						_box(Vector3(0.16, LIFT_HIGH + 0.4, 0.16), at + Vector3(edge * 1.3, (LIFT_HIGH + 0.4) * 0.5, end * 2.0), _shell("seal"))
+		"ring":
+			# The lit dais in the middle, the helmets' pedestals round it and
+			# the chip shelf on the back wall.
+			var centre := Vector3(0, 0, -5.4) if whole else Vector3(0, 0, -2.9)
+			var radius := 3.0 if whole else 1.9
+			var dais := MeshInstance3D.new()
+			dais.name = "Dais"
+			var disc := CylinderMesh.new()
+			disc.top_radius = radius
+			disc.bottom_radius = radius
+			disc.height = 0.04
+			var mat := StandardMaterial3D.new()
+			mat.albedo_color = Color(0.16, 0.17, 0.19)
+			disc.material = mat
+			dais.mesh = disc
+			dais.position = centre + Vector3(0, 0.02, 0)
+			_target().add_child(dais)
+			_target().add_child(_ring(radius, centre + Vector3(0, 0.045, 0), cyan, 0.04))
+			for i in BaseLayout.spots("helmet_shelf", upgrades):
+				var at := style_room_spot("helmet_shelf", i, style, whole).origin
+				_box(Vector3(0.36, 1.1, 0.36), Vector3(at.x, 0.55, at.z), _shell("seal"))
+				_target().add_child(_part(Vector3(0.38, 0.03, 0.38), Vector3(at.x, 1.1, at.z), cyan, true))
+			for i in BaseLayout.spots("artifact_case", upgrades):
+				var at := style_room_spot("artifact_case", i, style, whole).origin
+				_box(Vector3(0.5, 0.95, 0.5), Vector3(at.x, 0.475, at.z), _shell("seal"))
+				_target().add_child(_part(Vector3(0.52, 0.03, 0.52), Vector3(at.x, 0.95, at.z), amber, true))
+			if whole:
+				_shelf(Vector3(0, STORAGE_ROWS["chip_case"], back + 0.4), 6.2, false)
+		"lockers":
+			# An open locker round each suit (its helmet on the shelf over
+			# it), alcoves for the rigs and the chips' case down the middle.
+			for i in BaseLayout.spots("armor_stand", upgrades):
+				var xf := style_room_spot("armor_stand", i, style, whole)
+				var locker := Node3D.new()
+				locker.name = "Locker_%d" % i
+				locker.transform = xf
+				locker.add_child(_part(Vector3(1.4, 3.0, 0.05), Vector3(0, 1.5, -0.7), Color(0.18, 0.19, 0.21)))
+				for x: float in [-0.7, 0.7]:
+					locker.add_child(_part(Vector3(0.05, 3.0, 0.9), Vector3(x, 1.5, -0.3), steel))
+				locker.add_child(_part(Vector3(1.4, 0.05, 0.9), Vector3(0, 2.2, -0.3), steel))
+				locker.add_child(_part(Vector3(1.4, 0.03, 0.04), Vector3(0, 2.23, 0.14), cyan, true))
+				locker.add_child(_part(Vector3(1.4, 0.08, 0.9), Vector3(0, 3.0, -0.3), dark))
+				_target().add_child(locker)
+			if whole:
+				for i in BaseLayout.spots("rig_stand", upgrades):
+					var at := style_room_spot("rig_stand", i, style, whole).origin
+					_target().add_child(_part(Vector3(1.7, 3.0, 0.04), Vector3(at.x, 1.5, back + 0.08), Color(0.18, 0.19, 0.21)))
+					_target().add_child(_part(Vector3(1.6, 0.04, 0.04), Vector3(at.x, 2.9, back + 0.12), warm, true))
+				_box(Vector3(1.0, 0.95, 4.6), Vector3(0, 0.475, -5.3), _shell("seal"))
+				_target().add_child(_glass(Vector3(0.9, 0.5, 4.4), Vector3(0, 1.21, -5.3)))
+				_target().add_child(_part(Vector3(1.02, 0.03, 4.62), Vector3(0, 0.96, -5.3), cyan, true))
+			else:
+				_shelf(Vector3(0, 1.4, back + 0.45), 1.2, false)
+		"war_table":
+			# The map table in the middle: a dark top with a lit map on it.
+			var at := Vector3(0, 0, -5.2) if whole else Vector3(0, 0, -3.0)
+			var size := Vector2(3.0, 2.6) if whole else Vector2(1.8, 1.4)
+			_box(Vector3(size.x, 0.9, size.y), at + Vector3(0, 0.45, 0), _shell("seal"))
+			_target().add_child(_part(Vector3(size.x - 0.2, 0.02, size.y - 0.2), at + Vector3(0, 0.91, 0), Color(0.05, 0.12, 0.16), true))
+			for k in 5:
+				var x := -size.x * 0.4 + size.x * 0.2 * k
+				_target().add_child(_part(Vector3(0.02, 0.025, size.y - 0.3), at + Vector3(x, 0.92, 0), Color(0.4, 0.85, 1.0), true))
+			for k in 4:
+				var z := -size.y * 0.35 + size.y * 0.233 * k
+				_target().add_child(_part(Vector3(size.x - 0.3, 0.025, 0.02), at + Vector3(0, 0.92, z), Color(0.4, 0.85, 1.0), true))
+			_target().add_child(_part(Vector3(0.16, 0.03, 0.16), at + Vector3(size.x * 0.15, 0.94, -size.y * 0.1), amber, true))
+			if Look.enabled:
+				var glow := Look.lamp(Color(0.5, 0.85, 1.0), 1.4, 4.0)
+				glow.position = at + Vector3(0, 1.6, 0)
+				_target().add_child(glow)
+		"bridge":
+			# A wide screen over the consoles, a step the consoles stand on
+			# and the commander's chair.
+			var wide := side * 2.0 - 1.0 if whole else 4.6
+			_target().add_child(_part(Vector3(wide + 0.2, 2.1, 0.06), Vector3(0, 3.6, back + 0.08), dark))
+			_target().add_child(_part(Vector3(wide, 1.9, 0.02), Vector3(0, 3.6, back + 0.12), Color(0.04, 0.1, 0.16), true))
+			for k in 6:
+				_target().add_child(_part(Vector3(wide * (0.3 + 0.1 * (k % 3)), 0.02, 0.01), Vector3(-wide * 0.1 * (k % 2), 3.0 + 0.22 * k, back + 0.135), Color(0.4, 0.85, 1.0), true))
+			_target().add_child(_part(Vector3(wide + 0.4, 0.02, 2.0), Vector3(0, 0.01, back + 1.4), Color(0.16, 0.17, 0.19)))
+			_target().add_child(_part(Vector3(wide + 0.4, 0.025, 0.05), Vector3(0, 0.012, back + 2.4), cyan, true))
+			var chair := Vector3(0, 0, -4.4 if whole else -1.6)
+			_box(Vector3(0.7, 0.5, 0.7), chair + Vector3(0, 0.25, 0), _shell("seal"))
+			_target().add_child(_part(Vector3(0.7, 0.9, 0.12), chair + Vector3(0, 0.95, 0.32), dark))
+			_target().add_child(_part(Vector3(0.72, 0.03, 0.13), chair + Vector3(0, 1.4, 0.32), amber, true))
+		"plinths":
+			# A lit plinth for each trophy (each supply in the small form)
+			# down a lit aisle.
+			var kind := "trophy" if whole else "supplies"
+			for i in BaseLayout.spots(kind, upgrades):
+				var at := style_room_spot(kind, i, style, whole).origin
+				_box(Vector3(0.6, 0.95, 0.6), Vector3(at.x, 0.475, at.z), _shell("seal"))
+				_target().add_child(_part(Vector3(0.62, 0.03, 0.62), Vector3(at.x, 0.95, at.z), warm, true))
+			_target().add_child(_part(Vector3(1.2, 0.012, room_depth(room) - 0.8), Vector3(0, 0.006, back * 0.5), Color(0.16, 0.17, 0.19)))
+			for x: float in [-0.6, 0.6]:
+				_target().add_child(_part(Vector3(0.04, 0.016, room_depth(room) - 0.8), Vector3(x, 0.008, back * 0.5), cyan, true))
+			if whole:
+				_shelf(Vector3(0, STORAGE_ROWS["supplies"], back + 0.45), 6.2, false)
+		"cargo":
+			# A crate stack under each supply, and a pallet rack for the
+			# trophies along the right-hand wall.
+			for i in BaseLayout.spots("supplies", upgrades):
+				var at := style_room_spot("supplies", i, style, whole).origin
+				var high := at.y - 0.3
+				var crate := _box(Vector3(1.1, high, 1.1), Vector3(at.x - 0.15, high * 0.5, at.z), _shell("seal"))
+				crate.name = "Crate"
+				_target().add_child(_part(Vector3(1.12, 0.06, 1.12), Vector3(at.x - 0.15, high - 0.25, at.z), amber.darkened(0.3)))
+			if whole:
+				for level: float in [0.75, 1.95]:
+					_target().add_child(_part(Vector3(0.7, 0.06, 7.6), Vector3(side - 0.45, level, -5.3), steel))
+					_target().add_child(_part(Vector3(0.02, 0.02, 7.6), Vector3(side - 0.79, level + 0.03, -5.3), cyan, true))
+				for z: float in [-1.5, -3.5, -5.3, -7.1, -9.1]:
+					_box(Vector3(0.1, 3.0, 0.1), Vector3(side - 0.12, 1.5, z), _shell("seal"))
+					_box(Vector3(0.1, 3.0, 0.1), Vector3(side - 0.78, 1.5, z), _shell("seal"))
+
+
+## A see-through pane `size` big centred on `at`: a case's glass.
+func _glass(size: Vector3, at: Vector3) -> MeshInstance3D:
+	var pane := _part(size, at, Color(0.7, 0.85, 0.95))
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(0.7, 0.85, 0.95, 0.12)
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.roughness = 0.05
+	mat.metallic_specular = 0.9
+	pane.material_override = mat
+	pane.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	return pane
+
+
+## A thin lit ring `radius` across, lying flat at `at`.
+func _ring(radius: float, at: Vector3, color: Color, thick: float) -> MeshInstance3D:
+	var ring := MeshInstance3D.new()
+	var torus := TorusMesh.new()
+	torus.inner_radius = radius - thick
+	torus.outer_radius = radius + thick
+	torus.rings = 48
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = color
+	mat.emission_enabled = true
+	mat.emission = color
+	torus.material = mat
+	ring.mesh = torus
+	ring.scale = Vector3(1, 0.3, 1)
+	ring.position = at
+	ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	return ring
 
 
 ## The gear hall: a low plate the stands stand on along the back wall (and
@@ -1731,8 +2539,9 @@ func _trim(size: Vector3, at: Vector3, inward: Vector3) -> void:
 ## a portal. No sign: the mirror says what it is for.
 func _build_deploy_area() -> void:
 	var wall_z := room_size.z * 0.5
-	var mid_x := (DEPLOY_FROM_X + DEPLOY_TO_X) * 0.5
-	var width := DEPLOY_TO_X - DEPLOY_FROM_X
+	var span := deploy_span()
+	var mid_x := (span.x + span.y) * 0.5
+	var width := span.y - span.x
 	add_child(_part(Vector3(width, 0.012, DEPLOY_DEPTH), Vector3(mid_x, 0.006, wall_z - DEPLOY_DEPTH * 0.5), Color(0.2, 0.21, 0.23)))
 	add_child(_part(Vector3(width, 0.014, 0.05), Vector3(mid_x, 0.007, wall_z - DEPLOY_DEPTH), Color(0.3, 0.31, 0.33)))
 
@@ -1784,7 +2593,10 @@ func _build_stations() -> void:
 ## whoever uses it): its spot in its room's space, wherever that room stands.
 func station_transform(id: String) -> Transform3D:
 	var info: Dictionary = STATIONS[id]
-	return room_transform(str(info["room"])) * _spot(info["at"], info["yaw"])
+	if id == "locker":
+		# By the way out, left of the door, whatever the front wall's width.
+		return _spot(Vector3(-minf(absf(info["at"].x), front_half() - 1.0), 0.0, room_size.z * 0.5 - 0.55), info["yaw"])
+	return room_transform(str(info["room"])) * style_spot(str(info["room"]), id, _spot(info["at"], info["yaw"]))
 
 
 ## A console's cabinet, stripe and screen: a cabinet with a stripe of `color`
@@ -1858,9 +2670,9 @@ func _build_gates() -> void:
 			_add_bulkhead(opens, xf * _spot(Vector3(side - 0.6, 0, -small_depth + 0.45), 0.0), "post")
 	var garage := room_transform("garage")
 	if not owns("bay_second"):
-		var bay := room_spot("bay", 1).origin
+		var bay := room_spot("bay", 1).origin * Vector3(1, 0, 1)
 		_add_bulkhead("bay_second", garage * _spot(bay + Vector3(0, 0, -1.4), 0.0), "hatch")
-	if owns("garage_full"):
+	if owns("garage_full") and room_style("garage") == "bays":
 		# The lift: a turntable under the first bay (the bike on it turns, see `_rebuild`).
 		var lift := Node3D.new()
 		lift.name = "Lift"
@@ -1882,6 +2694,20 @@ func _build_gates() -> void:
 		# On a post beside the table, clear of its edge so the table is
 		# always the thing you look at over it.
 		_add_bulkhead("finish", _spot(PLAN_AT + Vector3(PLAN_RADIUS + 1.6, 0, 1.4), -0.6), "post")
+	elif hub_shape() == "ring":
+		# Lit trim along the top of each face and a light column in each
+		# corner of the rotunda.
+		var trim := Color(0.45, 0.9, 1.0)
+		var a := room_size.x * 0.5
+		var corner := a / cos(PI / 8.0) - 0.2
+		for i in 8:
+			var bearing := PI / 4.0 * i
+			var face := Node3D.new()
+			face.transform = _spot(Vector3(sin(bearing), 0, cos(bearing)) * (a - 0.11), bearing)
+			face.add_child(_part(Vector3(2.0 * a * tan(PI / 8.0), 0.08, 0.05), Vector3(0, room_size.y - 0.2, 0), trim, true))
+			_keep(face)
+			var angle := bearing + PI / 8.0
+			_keep(_part(Vector3(0.12, room_size.y, 0.12), Vector3(sin(angle) * corner, room_size.y * 0.5, cos(angle) * corner), trim, true))
 	else:
 		# Lit trim round the top of the hub and a light column in each corner.
 		var trim := Color(0.45, 0.9, 1.0)
@@ -1994,7 +2820,7 @@ func _build_wall_mirror() -> void:
 	wall_mirror = MirrorScript.new()
 	wall_mirror.name = "WallMirror"
 	wall_mirror.wall_mounted = true
-	wall_mirror.position = MIRROR_AT
+	wall_mirror.position = mirror_at()
 	wall_mirror.rotation.y = MIRROR_YAW
 	add_child(wall_mirror)
 
@@ -2065,7 +2891,8 @@ func _rebuild() -> void:
 		_fill(display)
 		_display_root.add_child(display)
 		displays.append(display)
-		if display.kind == "bay" and display.index == 0 and owns("garage_full"):
+		if display.kind == "bay" and display.index == 0 and (owns("garage_full") and room_style("garage") == "bays"
+				or room_style("garage") == "showroom"):
 			# The lift turns the bike parked on it. View only.
 			var turn := display.create_tween().set_loops()
 			turn.tween_property(display.get_node("Model"), "rotation:y", PI + TAU, lift_turn_time).from(PI)
@@ -2616,11 +3443,15 @@ static func _spec_value(gun: Gun, key: String) -> float:
 # --- The plan table ------------------------------------------------------------
 
 ## The plan table: a round table in the middle of the hub with the base
-## drawn over it in light, one tile per socket in its room's colour, and a
-## card standing at its right that names the sockets and what is in them.
-## Using it takes it up (`use_plan`): the wheel turns through the sockets, a
-## click opens one, the wheel turns through the rooms (shown in place on the
-## tiles as you go) and a click moves the room there (`room_placed`).
+## drawn over it in light (the hub in its shape, a tile per socket in its
+## room's colour with the room's style sketched on it), and a screen on a
+## lectern at its near edge. Using it takes it up (`use_plan`): the view
+## moves in over the lectern and the screen there is the customizer
+## (`core/ui/plan_panel.gd`, mounted by the view): the layout, the rooms and
+## each room's style. Whatever the screen points at is shown on the
+## hologram at once (`plan_preview`); a pick asks for the change
+## (`plan_change`, `room_placed`) or for the unlock (`plan_buy`,
+## `upgrade_requested`).
 func _build_plan_table() -> void:
 	var table := PlanTable.new()
 	table.name = "PlanTable"
@@ -2642,20 +3473,9 @@ func _build_plan_table() -> void:
 	top.mesh = disc
 	top.position = Vector3(0, PLAN_TOP - 0.04, 0)
 	table.add_child(top)
-	var rim := MeshInstance3D.new()
+	var rim := _ring(PLAN_RADIUS, Vector3(0, PLAN_TOP, 0), glow, 0.02)
 	rim.name = "Rim"
-	var ring := TorusMesh.new()
-	ring.inner_radius = PLAN_RADIUS - 0.02
-	ring.outer_radius = PLAN_RADIUS + 0.02
-	var rim_mat := StandardMaterial3D.new()
-	rim_mat.albedo_color = glow
-	rim_mat.emission_enabled = true
-	rim_mat.emission = glow
-	rim_mat.emission_energy_multiplier = 1.2
-	ring.material = rim_mat
-	rim.mesh = ring
-	rim.position = Vector3(0, PLAN_TOP, 0)
-	rim.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	rim.scale = Vector3.ONE
 	table.add_child(rim)
 	var shape := CylinderShape3D.new()
 	shape.radius = PLAN_RADIUS
@@ -2664,6 +3484,24 @@ func _build_plan_table() -> void:
 	col.shape = shape
 	col.position = Vector3(0, PLAN_TOP * 0.5, 0)
 	table.add_child(col)
+	# The lectern at the near edge, its screen tipped back toward whoever
+	# stands at it. At rest the screen says what the table does.
+	var lectern := PLAN_SCREEN_AT.origin
+	table.add_child(_part(Vector3(0.24, lectern.y - 0.2, 0.24), Vector3(0, (lectern.y - 0.2) * 0.5, lectern.z - 0.12), dark))
+	_add_collision(table, Vector3(PLAN_SCREEN.x + 0.1, lectern.y + 0.3, 0.5), Vector3(0, (lectern.y + 0.3) * 0.5, lectern.z - 0.1))
+	var screen := Node3D.new()
+	screen.name = "PlanScreen"
+	screen.transform = PLAN_SCREEN_AT
+	screen.add_child(_part(Vector3(PLAN_SCREEN.x + 0.08, PLAN_SCREEN.y + 0.08, 0.06), Vector3(0, 0, -0.035), dark))
+	screen.add_child(_part(Vector3(PLAN_SCREEN.x + 0.1, 0.02, 0.07), Vector3(0, PLAN_SCREEN.y * 0.5 + 0.05, -0.03), glow, true))
+	var idle := _part(Vector3(PLAN_SCREEN.x, PLAN_SCREEN.y, 0.01), Vector3.ZERO, Color(0.02, 0.06, 0.08), true)
+	idle.name = "Idle"
+	screen.add_child(idle)
+	var hint := _label("BASE PLAN\nLayout  ·  Rooms  ·  Styles", glow.lightened(0.2), 0.1)
+	hint.name = "IdleText"
+	hint.position = Vector3(0, 0, 0.012)
+	screen.add_child(hint)
+	table.add_child(screen)
 	# The table takes up the room in the middle: it stands in the way like
 	# the bench, so it is part of the world too.
 	table.collision_layer = Actor.LAYER_WORLD | Actor.LAYER_INTERACT
@@ -2679,72 +3517,214 @@ func plan_transform() -> Transform3D:
 	return _spot(PLAN_AT, 0.0)
 
 
-## The plan the table shows: the one in use, or while a room is being picked,
-## the plan as it would be with that room moved in.
+## The lectern's screen node, where the customizer is mounted while in use.
+func plan_screen() -> Node3D:
+	if plan_table == null or not is_instance_valid(plan_table):
+		return null
+	return plan_table.get_node_or_null("PlanScreen")
+
+
+## The plan the table shows: the one in use, or what the screen points at
+## (`plan_preview`).
 func plan_shown() -> Dictionary:
-	if plan_open and plan_picking and plan_choice != "":
-		return BasePlan.place(base_plan, BasePlan.SOCKETS[plan_socket], plan_choice)
-	return base_plan
+	return plan_hover if plan_open and not plan_hover.is_empty() else base_plan
 
 
-## Draws the base over the table and the card beside it again, from the plan
-## and the table's state.
+## Shows `plan` on the table's hologram while the table is in use, as a
+## preview: nothing changes until it is picked. An empty plan shows the one
+## in use again.
+func plan_preview(plan: Dictionary) -> void:
+	var shown := {} if plan.is_empty() else BasePlan.clean(plan)
+	if shown == base_plan:
+		shown = {}
+	if shown == plan_hover:
+		return
+	plan_hover = shown
+	_refresh_plan()
+
+
+## Picks a change at the table (see `BasePlan.change`: a socket and a room,
+## "shape" and a hub shape, "style:<room>" and a style). If the base's
+## upgrades allow it, asks for it (`room_placed`) and returns ""; otherwise
+## returns why not (an unlock to buy first: `plan_unlock`).
+func plan_change(key: String, value: String) -> String:
+	if read_only:
+		return "Not your base."
+	var result := BasePlan.change(base_plan, upgrades, key, value)
+	if not result.ok:
+		return str(result.error)
+	if result.plan != base_plan:
+		room_placed.emit(key, value)
+	return ""
+
+
+## What a change still needs unlocking, or "" if it is free or owned.
+func plan_unlock(key: String, value: String) -> String:
+	var id := BasePlan.unlock_for(key, value)
+	return "" if id == "" or owns(id) else id
+
+
+## Asks to buy the unlock a change needs (`upgrade_requested`). Returns ""
+## if asked, or why not.
+func plan_buy(key: String, value: String) -> String:
+	if read_only:
+		return "Not your base."
+	var id := plan_unlock(key, value)
+	if id == "":
+		return "Already yours."
+	var why := upgrade_blocked(id)
+	if why != "":
+		return why
+	upgrade_requested.emit(id)
+	return ""
+
+
+## The hub's outline in a shape, as x, z points round it (local to the base).
+func shape_outline(shape: String) -> PackedVector2Array:
+	var size: Vector3 = HUB_SIZES.get(shape, HUB_SIZES["hall"])
+	var out := PackedVector2Array()
+	if shape == "ring":
+		var corner := size.x * 0.5 / cos(PI / 8.0)
+		for i in 8:
+			var angle := PI / 8.0 + PI / 4.0 * i
+			out.append(Vector2(sin(angle), cos(angle)) * corner)
+		return out
+	var half := Vector2(size.x, size.z) * 0.5
+	for corner: Vector2 in [Vector2(-1, -1), Vector2(1, -1), Vector2(1, 1), Vector2(-1, 1)]:
+		out.append(corner * half)
+	return out
+
+
+## A socket's room's outline in a shape, whole, as x, z points (local to the
+## base).
+func socket_outline(shape: String, socket: String) -> PackedVector2Array:
+	var xf := shape_socket(shape, socket)
+	var half := socket_size.x * 0.5
+	var out := PackedVector2Array()
+	for at: Vector3 in [Vector3(-half, 0, 0), Vector3(half, 0, 0), Vector3(half, 0, -socket_size.z), Vector3(-half, 0, -socket_size.z)]:
+		var p := xf * at
+		out.append(Vector2(p.x, p.z))
+	return out
+
+
+## How far behind the hub's middle the range would begin in a shape (see
+## `range_from`).
+func shape_range_from(shape: String) -> float:
+	var size: Vector3 = HUB_SIZES.get(shape, HUB_SIZES["hall"])
+	match shape:
+		"spine":
+			return size.z * 0.5 + 3.5
+		"ring":
+			return size.z * 0.5 + 4.0
+	return size.z * 0.5 + 0.5 + socket_size.z + 0.5
+
+
+## A sketch of a room laid out in a style, whole, for the table's hologram
+## and the screen's pictures: boxes as [centre, size] in the room's own space
+## (`room_transform`), one for each spot its displays have, for its
+## stations and bench, and for the style's big pieces (`STYLE_PIECES`).
+func style_sketch(room: String, style: String) -> Array:
+	var out: Array = []
+	for kind: String in KIND_ROOMS:
+		if KIND_ROOMS[kind] != room:
+			continue
+		var size := Vector3(2.0, 1.0, 3.2) if kind == "bay" else Vector3(0.55, 0.6, 0.55)
+		if kind in ["rack_guns", "heavy_wall"]:
+			size = Vector3(1.5, 0.4, 0.3)
+		for i in int(BaseLayout.KINDS[kind]["spots"]):
+			var xf := style_room_spot(kind, i, style, true)
+			var turned := absf(xf.basis.z.x) > 0.7
+			out.append([xf.origin + Vector3(0, size.y * 0.5, 0), Vector3(size.z, size.y, size.x) if turned else size])
+	var spots: Array = []
+	if room == "workshop":
+		spots.append(style_station_spot(room, "bench", style, true, _spot(BENCH_AT, BENCH_YAW)))
+	for id: String in STATIONS:
+		if str(STATIONS[id]["room"]) == room:
+			spots.append(style_station_spot(room, id, style, true, _spot(STATIONS[id]["at"], STATIONS[id]["yaw"])))
+	for xf: Transform3D in spots:
+		var turned := absf(xf.basis.z.x) > 0.7
+		out.append([xf.origin + Vector3(0, 0.5, 0), Vector3(0.8, 1.0, 1.8) if turned else Vector3(1.8, 1.0, 0.8)])
+	for piece: Array in STYLE_PIECES.get(style, []):
+		out.append(piece)
+	return out
+
+
+## Draws the base over the table again, from the plan it shows: the hub in
+## its shape, the corridor to the range, and a tile per socket with its
+## room's style sketched on it. The room the screen points at stands out.
 func _refresh_plan() -> void:
 	if plan_table == null or not is_instance_valid(plan_table):
 		return
-	for node_name: String in ["Holo", "Card", "CardText", "CardRoom"]:
-		var old := plan_table.get_node_or_null(node_name)
-		if old:
-			plan_table.remove_child(old)
-			old.queue_free()
+	var old := plan_table.get_node_or_null("Holo")
+	if old:
+		plan_table.remove_child(old)
+		old.queue_free()
 	var shown := plan_shown()
+	var shape := str(shown["shape"])
+	var size: Vector3 = HUB_SIZES.get(shape, HUB_SIZES["hall"])
 	var holo := Node3D.new()
 	holo.name = "Holo"
-	# A miniature of the base: the hub, the corridor and a tile per socket,
-	# centred over the table (the back rooms reach further than the front).
-	var k := (PLAN_RADIUS * 2.0 - 0.5) / (room_size.x + socket_size.z * 2.0 + 1.0)
-	var middle_z := (room_size.z * 0.5 - range_from()) * 0.5
-	holo.position = Vector3(0, PLAN_TOP + 0.2, -middle_z * k)
+	# A miniature of the base, centred over the table and sized to it
+	# whatever the shape: the widest of them across its rooms.
+	var reach := 0.0
+	var far := 0.0
+	for socket: String in BasePlan.SOCKETS:
+		for p in socket_outline(shape, socket):
+			reach = maxf(reach, absf(p.x))
+			far = minf(far, p.y)
+	var from := shape_range_from(shape)
+	far = minf(far, -from)
+	var span := maxf(reach * 2.0, size.z * 0.5 - far)
+	var k := (PLAN_RADIUS * 2.0 - 0.3) / span
+	var middle_z := (size.z * 0.5 + far) * 0.5
+	holo.position = Vector3(0, PLAN_TOP + 0.3, -middle_z * k)
+	holo.scale = Vector3.ONE * k
 	plan_table.add_child(holo)
 	var cyan := Color(0.35, 0.85, 1.0)
-	holo.add_child(_holo(Vector3(room_size.x, 0.3, room_size.z) * k, Vector3.ZERO, cyan, 0.12))
-	var lane := Vector3(corridor.x, 0.4, range_from() - room_size.z * 0.5) * k
-	holo.add_child(_holo(lane, Vector3(0, 0, -(room_size.z * 0.5 + lane.z / k * 0.5) * k), cyan, 0.1))
-	for i in BasePlan.SOCKETS.size():
-		var socket: String = BasePlan.SOCKETS[i]
+	if shape == "ring":
+		var prism := MeshInstance3D.new()
+		var cyl := CylinderMesh.new()
+		cyl.top_radius = size.x * 0.5 / cos(PI / 8.0)
+		cyl.bottom_radius = cyl.top_radius
+		cyl.height = 2.0
+		cyl.radial_segments = 8
+		cyl.rings = 1
+		var probe := _holo(Vector3.ONE, Vector3.ZERO, cyan, 0.12)
+		cyl.material = (probe.mesh as BoxMesh).material
+		probe.free()
+		prism.mesh = cyl
+		prism.rotation.y = PI / 8.0
+		prism.position = Vector3(0, 1.0, 0)
+		prism.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		holo.add_child(prism)
+	else:
+		holo.add_child(_holo(Vector3(size.x, 2.0, size.z), Vector3(0, 1.0, 0), cyan, 0.12))
+	var lane := from - size.z * 0.5
+	holo.add_child(_holo(Vector3(corridor.x, 2.4, lane), Vector3(0, 1.2, -size.z * 0.5 - lane * 0.5), cyan, 0.1))
+	var styles: Dictionary = shown["styles"]
+	for socket: String in BasePlan.SOCKETS:
 		var room: String = shown[socket]
-		var here := plan_open and i == plan_socket
-		var xf := socket_transform(socket)
-		var centre := xf * Vector3(0, 0, -socket_size.z * 0.5)
+		var xf := shape_socket(shape, socket)
 		var color: Color = ROOM_COLORS.get(room, cyan)
-		var lift := 0.06 if here else 0.0
-		var tile := _holo(Vector3(socket_size.x - 0.8, 0.8, socket_size.z - 0.8) * k, centre * k + Vector3(0, lift, 0),
-				Color(1.0, 0.62, 0.22) if here and plan_picking else color, 0.6 if here else 0.28)
-		tile.basis = xf.basis * tile.basis
-		tile.name = "Tile_%s" % socket
-		holo.add_child(tile)
-		var name_label := _label(BasePlan.title(room).to_upper(), color.lightened(0.5), 0.065)
+		var here := room == plan_focus
+		var tile_node := Node3D.new()
+		tile_node.name = "Tile_%s" % socket
+		tile_node.transform = xf
+		holo.add_child(tile_node)
+		var tile := _holo(Vector3(socket_size.x - 0.4, 0.3, socket_size.z - 0.4), Vector3(0, 0.15, -socket_size.z * 0.5),
+				color, 0.55 if here else 0.25)
+		tile_node.add_child(tile)
+		for piece: Array in style_sketch(room, str(styles.get(room, ""))):
+			var box: Vector3 = piece[1]
+			tile_node.add_child(_holo(box * Vector3(1, 1.6, 1), piece[0] * Vector3(1, 1.6, 1) + Vector3(0, 0.3, 0),
+					color.lightened(0.35), 0.7 if here else 0.45))
+		var name_label := _label(BasePlan.title(room).to_upper(), color.lightened(0.5), 1.1)
 		name_label.name = "Name_%s" % socket
 		name_label.outline_size = 4
-		name_label.position = centre * k + Vector3(0, 0.1 + lift, 0)
+		name_label.position = xf * Vector3(0, 5.5, -socket_size.z * 0.5)
 		name_label.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
+		name_label.fixed_size = false
 		holo.add_child(name_label)
-	# The card: standing at the table's right edge, facing the reader.
-	var where := Transform3D(Basis.from_euler(Vector3(0, -0.35, 0)), Vector3(PLAN_RADIUS + 0.35, PLAN_TOP + 0.6, -0.1))
-	var card := _part(Vector3(1.1, 0.8, 0.02), Vector3.ZERO, Color(0.04, 0.07, 0.08))
-	card.name = "Card"
-	card.transform = where
-	plan_table.add_child(card)
-	for column: Array in [["CardText", plan_card(), Vector3(-0.51, 0.37, 0.012)]]:
-		var label := _label(column[1], Color(0.55, 0.95, 1.0), 0.042)
-		label.name = column[0]
-		label.outline_size = 4
-		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-		label.vertical_alignment = VERTICAL_ALIGNMENT_TOP
-		label.width = 1.02 / label.pixel_size
-		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		label.transform = where * Transform3D(Basis.IDENTITY, column[2])
-		plan_table.add_child(label)
 
 
 ## A see-through lit box for the table's hologram.
@@ -2758,103 +3738,33 @@ func _holo(size: Vector3, at: Vector3, color: Color, alpha: float) -> MeshInstan
 	return part
 
 
-## The plan card's text: each socket and its room, the one the wheel is on
-## marked (‹ › while a room is being picked for it), what that room holds
-## and how far it is opened, and in use the controls under them.
-func plan_card() -> String:
-	var shown := plan_shown()
-	var lines: Array[String] = ["BASE PLAN"]
-	for i in BasePlan.SOCKETS.size():
-		var socket: String = BasePlan.SOCKETS[i]
-		var here := plan_open and i == plan_socket
-		var room := BasePlan.title(shown[socket])
-		if here and plan_picking:
-			room = "‹ %s ›" % room
-		lines.append("%s %s:  %s" % ["▶" if here else "   ", BasePlan.SOCKET_NAMES[socket], room])
-	lines.append("")
-	if plan_open:
-		var room: String = shown[BasePlan.SOCKETS[plan_socket]]
-		lines.append("%s: %s" % [BasePlan.title(room), BasePlan.ROOMS[room]["holds"]])
-		var opens := str(BasePlan.ROOMS[room]["opens"])
-		if not room_open(room):
-			lines.append("Half sealed: the %s opens the rest (%s scrip)" % [BaseUpgrades.title(opens).to_lower(),
-					commas(BaseUpgrades.price(opens))])
-		var stored := 0
-		var away := BaseLayout.stored_away(StashRules.equippable(stash) if not read_only else stash, upgrades)
-		for kind: String in KIND_ROOMS:
-			if KIND_ROOMS[kind] == room:
-				stored += int(away.get(kind, 0))
-		if stored > 0:
-			lines.append("%d more owned than fit on show" % stored)
-		lines.append("")
-		lines.append("◎ turn   ● pick   ○ back   Esc leave")
-	else:
-		lines.append("Moving a room is free.")
-	return "\n".join(lines)
-
-
-## Takes up the plan table: the wheel starts on the first socket.
+## Takes up the plan table: the view moves in over it (`plan_used`).
 func use_plan() -> void:
 	if read_only:
 		return
 	plan_open = true
-	plan_socket = 0
-	plan_picking = false
-	plan_choice = ""
+	plan_hover = {}
+	plan_focus = ""
 	plan_used.emit()
 	_refresh_plan()
 
 
-## Steps away from the table. A room turned to but not picked stays where it
-## was.
+## Steps away from the table. A preview not picked goes.
 func leave_plan() -> void:
 	if not plan_open:
 		return
 	plan_open = false
-	plan_picking = false
+	plan_hover = {}
+	plan_focus = ""
 	_refresh_plan()
 
 
-## A notch of the wheel: picking, the next room, shown in the socket at once;
-## otherwise the next socket.
-func plan_scroll(step: int) -> void:
-	if not plan_open or step == 0:
+## Marks a room on the hologram (the one the screen points at), or none.
+func plan_mark(room: String) -> void:
+	if room == plan_focus:
 		return
-	if plan_picking:
-		var rooms := BasePlan.rooms()
-		var at := maxi(rooms.find(plan_choice), 0)
-		plan_choice = rooms[posmod(at + signi(step), rooms.size())]
-	else:
-		plan_socket = posmod(plan_socket + signi(step), BasePlan.SOCKETS.size())
+	plan_focus = room
 	_refresh_plan()
-
-
-## A click: on a socket, start turning through the rooms for it; picking,
-## move the room on show there (the room there takes its old socket).
-func plan_select() -> void:
-	if not plan_open:
-		return
-	var socket: String = BasePlan.SOCKETS[plan_socket]
-	if not plan_picking:
-		plan_picking = true
-		plan_choice = base_plan[socket]
-		_refresh_plan()
-		return
-	var choice := plan_choice
-	plan_picking = false
-	_refresh_plan()
-	if choice != base_plan[socket]:
-		room_placed.emit(socket, choice)
-
-
-## A step back: picking, drop the room on show and return to the sockets.
-## Returns false when there is nothing to step back from (time to leave).
-func plan_back() -> bool:
-	if not plan_open or not plan_picking:
-		return false
-	plan_picking = false
-	_refresh_plan()
-	return true
 
 
 ## A mannequin wearing the frame: the same plates it is worn as

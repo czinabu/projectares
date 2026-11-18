@@ -15,6 +15,11 @@ func _ready() -> void:
 		out_dir = args[0]
 	Profile.persist = false
 	# Before the home-base pass: that pass is most of the runtime.
+	# `--designs-only`: every hub shape and every room style.
+	if "--designs-only" in args:
+		await _design_shots(out_dir)
+		get_tree().quit()
+		return
 	if "--storm-only" in args:
 		await _storm_shots(out_dir)
 		get_tree().quit()
@@ -1138,17 +1143,97 @@ func _base_shots(out_dir: String) -> void:
 		camera.look_at_from_position(from, Vector3(-11.5 if "left" in file else 11.5, 1.4, 0))
 		await _settle(4)
 		await _shot(out_dir.path_join(file))
-	base.use_plan()
-	base.plan_scroll(4)
-	base.plan_select()
-	base.plan_scroll(1)
-	var table := base.global_transform * base.plan_transform()
-	camera.look_at_from_position(table * Vector3(0.75, 2.35, 2.4), table * Vector3(0.75, 1.3, -0.1))
-	camera.fov = 60.0
-	await _settle(6)
-	await _shot(out_dir.path_join("plan_table_in_use.png"))
-	base.leave_plan()
+	await _plan_table_shots(base, out_dir)
+	camera.make_current()
 	camera.fov = 75.0
+	base.queue_free()
+	await _settle(2)
+
+
+## The plan table in use, as the player sees it: the customizer on its
+## screen, with the hologram beyond, on each tab.
+func _plan_table_shots(base: HomeBase, out_dir: String) -> void:
+	base.set_scrip(5200)
+	base.use_plan()
+	var view: Node3D = load("res://core/ui/bench_view.gd").new()
+	view.base = base
+	view.target = "plan"
+	base.add_child(view)
+	view.focus()
+	await _settle(40)
+	await _shot(out_dir.path_join("plan_table_layout.png"))
+	view.panel.shape_pick = "ring"
+	view.panel.base.plan_preview(view.panel.with_change("shape", "ring"))
+	view.panel._refresh()
+	await _settle(6)
+	await _shot(out_dir.path_join("plan_table_layout_ring.png"))
+	view.panel.show_tab("rooms")
+	view.panel.socket_pick = "N1"
+	view.panel._refresh()
+	await _settle(6)
+	await _shot(out_dir.path_join("plan_table_rooms.png"))
+	view.panel.show_tab("styles")
+	view.panel.room_pick = "gear"
+	view.panel.style_pick = "ring"
+	base.plan_preview(view.panel.with_change("style:gear", "ring"))
+	base.plan_mark("gear")
+	view.panel._refresh()
+	await _settle(6)
+	await _shot(out_dir.path_join("plan_table_styles.png"))
+	view.leave()
+	await _settle(2)
+
+
+## Every hub shape (`BasePlan.SHAPES`) from over the door and from above, and
+## every room in every style (`BasePlan.STYLES`), whole and in its small form.
+func _design_shots(out_dir: String) -> void:
+	var base := HomeBase.new()
+	var gear := ["rifle_carbine", "smg_stinger", "dmr_longshot", "shotgun_breacher", "rifle_scrap", "blade_arc",
+			"hammer_breaker", "knife_gutter", "axe_splitter", "spear_lancer", "pistol_machine", "pistol_hand_cannon",
+			"frame_runner", "frame_trooper", "frame_bulwark", "helm_warden", "helm_seeker", "helm_ember", "helm_spotter",
+			"jetpack_mk2", "boots_thruster", "wings_glide", "chip_blink", "chip_barrier", "chip_pulse", "bike_scrapper",
+			"bike_raider", "medkit", "medkit", "scrap_metal", "alloy_ingot", "reactor_core", "lattice_shard"]
+	var worn := {"primary": "dmr_longshot", "frame": "frame_bulwark", "helmet": "helm_warden", "vehicle": "bike_raider"}
+	base.show_gear(gear, worn, BaseUpgrades.full())
+	add_child(base)
+	var camera := Camera3D.new()
+	camera.fov = 75.0
+	base.add_child(camera)
+	camera.make_current()
+	await _settle(20)
+	if "--plan-only" in OS.get_cmdline_user_args():
+		await _plan_table_shots(base, out_dir)
+		base.queue_free()
+		return
+	for shape: String in BasePlan.SHAPES:
+		var plan := BasePlan.clean(null)
+		plan["shape"] = shape
+		base.show_gear(gear, worn, BaseUpgrades.full(), plan)
+		base.player.global_position = base.to_global(base.spawn_point)
+		await _settle(12)
+		var half := base.room_size * 0.5
+		camera.look_at_from_position(Vector3(0, base.room_size.y - 1.0, half.z - 0.8), Vector3(0, 1.0, -half.z * 0.6))
+		await _settle(4)
+		await _shot(out_dir.path_join("shape_%s.png" % shape))
+		camera.look_at_from_position(Vector3(0.01, 42.0, -4.0), Vector3(0, 0, -4.0))
+		await _settle(4)
+		await _shot(out_dir.path_join("shape_%s_top.png" % shape))
+	for room: String in BasePlan.STYLES:
+		for style: String in BasePlan.STYLES[room]:
+			var plan := BasePlan.clean(null)
+			plan["styles"][room] = style
+			for whole: bool in [true, false]:
+				var owned := BaseUpgrades.full()
+				if not whole:
+					owned.erase(str(BasePlan.ROOMS[room]["opens"]))
+				if not whole and str(BasePlan.ROOMS[room]["opens"]) == "":
+					continue
+				base.show_gear(gear, worn, owned, plan)
+				await _settle(10)
+				var xf := base.room_transform(room)
+				camera.look_at_from_position(xf * Vector3(0.0, 3.0, 3.4), xf * Vector3(0.0, 1.0, -6.5 if whole else -4.0))
+				await _settle(4)
+				await _shot(out_dir.path_join("style_%s_%s%s.png" % [room, style, "" if whole else "_small"]))
 	base.queue_free()
 	await _settle(2)
 

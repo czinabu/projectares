@@ -249,10 +249,15 @@ func buy_upgrade(upgrade_id: String) -> Dictionary:
 	return _bank(BaseUpgrades.buy(base_upgrades, scrip, upgrade_id))
 
 
-## Moves a room of the home base into a socket (`BasePlan.place`): the room
-## standing there takes its old socket. Free. Returns {"ok"}.
-func place_room(socket: String, room: String) -> Dictionary:
-	base_plan = BasePlan.place(base_plan, socket, room)
+## Changes the home base's plan (`BasePlan.change`): a room moved into a
+## socket (the room there takes its old socket), or with `key` "shape" or
+## "style:<room>" a hub shape or a room style the base's upgrades unlock.
+## Free. Returns {"ok"} or {"ok": false, "error"}.
+func place_room(key: String, value: String) -> Dictionary:
+	var result := BasePlan.change(base_plan, base_upgrades, key, value)
+	if not result.ok:
+		return result
+	base_plan = result.plan
 	save()
 	return {"ok": true}
 
