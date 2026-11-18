@@ -135,7 +135,10 @@ var shot_carry := 1.0
 ## second, cracking audibly on the way, and at `ice_break_strain` it breaks
 ## through: the vehicle sinks, its riders go into the water, and the hole
 ## stays open for `ice_refreeze` seconds (`Raid._tick_ice`). Off by default.
+## With `ice_keeps_vehicle` the sunk vehicle is not lost: the watch of
+## whoever threw it (else its driver) pulls it back out as a toy.
 var thin_ice := false
+var ice_keeps_vehicle := false
 var ice_holds := 1.0
 var ice_break_strain := 10.0
 var ice_refreeze := 150.0

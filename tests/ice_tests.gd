@@ -80,6 +80,8 @@ static func _breaking(t: Node) -> void:
 			"a heavy vehicle that stays on it breaks through and sinks")
 	t.check(me.vehicle == null and raid.ice_hole_at(me.global_position) >= 0,
 			"its driver is left in the water")
+	t.check(frost.ice_keeps_vehicle and "rover_warden" in raid.stowed_for(me),
+			"and in Frostline their watch pulls the rover back out")
 	await t.frames(3)
 	t.check(me.body_heat == 0.0 and me.shivering, "and the water takes all their body heat")
 	# Out of the hole, the cold goes on as usual.

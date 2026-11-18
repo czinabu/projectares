@@ -129,6 +129,9 @@ func _init() -> void:
 	# The middle of the lake is thin ice: a bike or a person crosses, a
 	# rover or a mech that lingers goes through.
 	thin_ice = true
+	# The gentle world: a vehicle that goes through is pulled back out by
+	# the watch (Caleb's call); the soaking is the price.
+	ice_keeps_vehicle = true
 
 
 func register_items() -> void:

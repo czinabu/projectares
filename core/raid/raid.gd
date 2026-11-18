@@ -1836,7 +1836,26 @@ func _go_through_ice(vehicle: Node3D, opens: bool) -> void:
 		ice_changed.emit()
 	ice_cracked.emit(at, ICE_WARNINGS.size() + 1)
 	_ice_strain.erase(vehicle)
+	# Where the world is gentle about it, the watch pulls the vehicle back
+	# out as a toy: onto the watch of whoever threw it, else its driver's.
+	var keeper: PlayerState = null
+	if world.ice_keeps_vehicle:
+		for state in players:
+			if vehicle in state.parked and not state.finished:
+				keeper = state
+		if keeper == null and not riders.is_empty():
+			keeper = state_for(riders[0])
+		if keeper != null and keeper.finished:
+			keeper = null
+	var id: String = vehicle.get("item_id")
+	if keeper != null:
+		keeper.parked.erase(vehicle)
 	remove_vehicle(vehicle)
+	if keeper != null:
+		keeper.stowed.append(id)
+		if is_instance_valid(keeper.actor):
+			keeper.actor.notice.emit("%s went through the ice. Your watch pulled it back out" % ItemDB.item_name(id))
+			watch_changed.emit(keeper.actor)
 	for k in riders.size():
 		var actor := riders[k]
 		actor.global_position = _stand(at + Vector3(0.8 if k == 0 else -0.8, 0.0, 0.0))
