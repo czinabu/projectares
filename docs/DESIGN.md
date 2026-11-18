@@ -105,6 +105,15 @@ do not match where they stand, no glowing pads, no floating ads):
 - **Residences** to the west: the way home, with Wren the concierge.
 - **The arena** to the southeast with Sola the promoter, and the shuttered
   RC yard to the southwest, kept for the toy arena.
+- **The boulevards** between them are somewhere to stop, never only a
+  walk: halfway out to each district, off the lane, a stop that serves the
+  people going that way. A food court on the way to the civic square (a
+  noodle cart and a grill facing each other across the lane, standing
+  tables), a fountain square on the way to the gates (benches round the
+  water, a coffee kiosk with its tables at the water's edge), and by the
+  residences a tea cart and the residents' bike bay. The diagonals are
+  lined with trees and benches, with a pair of light sculptures where each
+  leaves the plaza. No signs: a cart says what it is by what is on it.
 - Gardens on the diagonals, slim towers with landing decks and skybridges at
   15 m (boot reach; the tops are for wings and jetpacks), rim lookouts and
   the bike loop round the edge, there to roam.
@@ -116,7 +125,7 @@ street, a tiled floor.
 
 ### Locals
 
-The Concourse is lived in (Caleb's call): about fifty people go about their
+The Concourse is lived in (Caleb's call): about ninety people go about their
 day there, strolling the rings round the spire, window shopping down Market
 Row (along the street, crossing at the doors), watching the big screen from
 the tiers, standing about in small
@@ -130,7 +139,12 @@ people.
 Some of them you can talk to. Walk up and press the interact key, and they
 answer in a short line on a card over their head, never a menu. Every
 counter has someone behind it (the shop keepers, the clan hall's clerk) who
-greets you as you trade, and there are Marlo at the gates, Wren at the
+greets you as you trade. A keeper talks about what is really on the
+shelves and what you really have: today's piece (the same for everyone all
+day), something on sale that beats what you wear in a slot and that you can
+pay for, and what your salvage would fetch. Every cart on the boulevards
+has a cook, and its customers queue, order, eat at the tables and walk on,
+taking turns so nobody stands in anyone's place. There are Marlo at the gates, Wren at the
 residences and Sola at the arena, besides:
 
 - **Kade**, the bounty broker at the most-wanted board: how bounties work

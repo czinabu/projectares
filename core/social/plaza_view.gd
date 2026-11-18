@@ -205,7 +205,7 @@ func _talk(id: String) -> void:
 func _greet(portal: Node3D) -> void:
 	var keeper := str(portal.get_meta("keeper", ""))
 	if keeper != "" and locals != null and is_instance_valid(locals):
-		locals.greet(keeper, world_status)
+		locals.greet(keeper, world_status, account)
 
 
 ## An arch you stand in lights up (its hidden "Lit" child), and goes dark

@@ -250,7 +250,15 @@ without Caleb, and update the gap list when a PR closes a row.
   Every counter (a shop, the clan hall) has a keeper, a talker the
   counter's portal names in its "keeper" meta, who greets whoever uses it
   (`PlazaLocals.greet`); a talker's own lines are the marker's "lines" meta
-  (or "reads" "worlds", the dispatcher reading `world_status`). Nothing
+  (or "reads" "worlds", the dispatcher reading `world_status`); a keeper's
+  marker names its shop ("shop" meta), and the keeper talks about its real
+  stock and the player's own snapshot (`PlazaLocals.stock_lines`: today's
+  piece by the date, an upgrade they can pay for, their salvage), never a
+  price the shop does not charge. The boulevards between the plaza and
+  the districts are places to stop, off the lane (`_build_boulevards`, no
+  signs): their carts are the layout's "stops", each with a cook and
+  customers who keep to one beat (`PlazaLocals.snack`, `SNACK_BEAT`), so
+  no two stand in the same place in the queue or at a table. Nothing
   marks a portal on the floor (Caleb's call: no glowing pads, no floating
   ads or signs that do not match where they stand): an arch lights its
   "Lit" child while you stand in it (`PlazaView._light_arch`), and each
