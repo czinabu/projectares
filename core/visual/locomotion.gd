@@ -65,6 +65,25 @@ var overlay_rate := 8.0
 var aim_still_time := 0.3
 var _still := {}
 var _still_delta := 0.0
+## The head looks where its owner aims (the crosshair), the same in both
+## views and for everyone watching, read from the command (`get_aim_dir`),
+## so another player sees where you are looking. The neck takes `look_neck`
+## of the turn and the head the rest; it turns no further than `look_reach`
+## (radians) from the way the chest faces. `look_follow` smooths the aim a
+## little, mostly for remote players whose aim arrives in steps.
+var look_reach := deg_to_rad(70.0)
+var look_neck := 0.45
+var look_follow := 30.0
+var look_rate := 5.0
+var look_weight := 0.0
+## The aim the head follows, in the actor's frame.
+var _look_dir := Vector3.FORWARD
+var _head := -1
+## The way the model faces, in the skeleton's space, and the way the head
+## and chest face in their own bones' space at rest.
+var _model_ahead := Vector3.ZERO
+var _head_ahead := Vector3.ZERO
+var _chest_ahead := Vector3.ZERO
 ## How quickly the velocity the legs follow catches up with the actor's. Online
 ## states land a few times a second; this hides the steps between them.
 var velocity_follow := 14.0
@@ -363,6 +382,11 @@ func setup(def: Dictionary, player: AnimationPlayer, anims: Dictionary) -> void:
 	seated.name = "RidePose"
 	seated.run = _ride_pose
 	skeleton.add_child(seated)
+	_head = skeleton.find_bone(def.get("head", "Head"))
+	var heading := WeaponArm.Hook.new()
+	heading.name = "LookAtAim"
+	heading.run = _look_pose
+	skeleton.add_child(heading)
 
 
 func _bones(names: Array) -> Array[int]:
@@ -554,6 +578,7 @@ func update(delta: float) -> void:
 	stand_legs_weight = move_toward(stand_legs_weight, 1.0 if stand_legs and not _stand_tracks.is_empty() else 0.0,
 			stand_legs_rate * delta)
 	shiver = move_toward(shiver, 1.0 if actor.shivering and not actor.is_dead else 0.0, shiver_ease * delta)
+	_update_look(delta)
 	_shiver_time += delta
 	_update_wind(delta)
 	var shared := ActionPose.of(actor)
@@ -721,6 +746,65 @@ func _wind_pose() -> void:
 		var neck := skeleton.get_bone_global_pose(_neck)
 		neck.basis = Basis(axis, -buffet - lean * 0.45) * neck.basis
 		skeleton.set_bone_global_pose(_neck, neck)
+
+
+## Follows the aim (in the actor's frame) for the head, and eases the look in
+## or out: out while dead or reading the phone (which bends the neck itself).
+func _update_look(delta: float) -> void:
+	var wanted := 0.0 if actor.is_dead else 1.0 - clampf(phone_weight, 0.0, 1.0)
+	look_weight = move_toward(look_weight, wanted, look_rate * delta)
+	var aim := actor.global_basis.orthonormalized().inverse() * actor.get_aim_dir()
+	if aim.length_squared() < 0.0001:
+		return
+	aim = aim.normalized()
+	var follow := 1.0 - exp(-look_follow * delta)
+	# Blended and normalized (not `slerp`, which errors on nearly parallel
+	# directions): the steps are small.
+	var blended := _look_dir.lerp(aim, follow)
+	_look_dir = blended.normalized() if blended.length_squared() > 0.01 else aim
+
+
+## The way `bone` faces now, in the skeleton's space, from the way it faces
+## at rest in its own space (`ahead`).
+func _facing(bone: int, ahead: Vector3) -> Vector3:
+	return (skeleton.get_bone_global_pose(bone).basis.orthonormalized() * ahead).normalized()
+
+
+## Turns the neck and head so the face looks along the aim, kept within
+## `look_reach` of the chest. Works from wherever the body has been put
+## (a crouch, a lean, a seat, flying), so the eyes end up on the aim.
+func _look_pose() -> void:
+	if look_weight <= 0.0 or _head < 0 or _neck < 0 or _spine.is_empty() or actor == null:
+		return
+	var chest := _spine[_spine.size() - 1]
+	if _model_ahead == Vector3.ZERO:
+		# The skin stands the model facing the actor's forward; the head and
+		# chest face that way at rest.
+		var skin := get_parent() as Node3D
+		if skin == null:
+			return
+		var skeleton_in_skin := skin.global_basis.orthonormalized().inverse() * skeleton.global_basis.orthonormalized()
+		_model_ahead = (skeleton_in_skin.inverse() * (skin.basis.orthonormalized().inverse() * Vector3.FORWARD)).normalized()
+		_head_ahead = (skeleton.get_bone_global_rest(_head).basis.orthonormalized().inverse() * _model_ahead).normalized()
+		_chest_ahead = (skeleton.get_bone_global_rest(chest).basis.orthonormalized().inverse() * _model_ahead).normalized()
+	var to_skeleton := skeleton.global_basis.orthonormalized().inverse() * actor.global_basis.orthonormalized()
+	var want := (to_skeleton * _look_dir).normalized()
+	var chest_ahead := _facing(chest, _chest_ahead)
+	var off := chest_ahead.angle_to(want)
+	if off > look_reach and off < PI - 0.01:
+		want = Quaternion(chest_ahead, want).slerp(Quaternion.IDENTITY, 1.0 - look_reach / off) * chest_ahead
+	var w := smoothstep(0.0, 1.0, look_weight)
+	var now := _facing(_head, _head_ahead)
+	if now.dot(want) > 0.99999:
+		return
+	var neck := skeleton.get_bone_global_pose(_neck)
+	var turn := Quaternion.IDENTITY.slerp(Quaternion(now, want), w * look_neck)
+	neck.basis = Basis(turn) * neck.basis
+	skeleton.set_bone_global_pose(_neck, neck)
+	now = _facing(_head, _head_ahead)
+	var head := skeleton.get_bone_global_pose(_head)
+	head.basis = Basis(Quaternion.IDENTITY.slerp(Quaternion(now, want), w)) * head.basis
+	skeleton.set_bone_global_pose(_head, head)
 
 
 ## A landing squat: see `_sink`.
