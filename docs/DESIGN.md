@@ -180,15 +180,22 @@ residences and Sola at the arena, besides:
   table or bridge; the gear hall's stands, ring (round a dais) or lockers;
   the stores' shelves, plinths or cargo. The first of each is free; any
   other is bought once with scrip at the plan table and is then free to
-  switch to and back. Designs change how the base looks, never what it
-  holds.
+  switch to and back. The hub and every room also wear a **finish**, the
+  material of their floors, walls, ceilings and trim, each picked on its
+  own: **Steel** (free), **Gunmetal** (dark blued steel, cold light),
+  **Ceramic** (clean white lab panels), **Brass** (bronzed steel with brass
+  trim) and **Blackout** (matte black with lit strips). A finish is bought
+  once and then goes on any room. Designs change how the base looks, never
+  what it holds.
 - **The plan table** stands in the middle of the hub: a round table with
   the base in miniature over it as a hologram and a screen on a lectern at
   its near edge. Walk up and use it and the view moves in over the screen,
-  the hologram beyond it: three tabs, **Layout** (the four shapes with
+  the hologram beyond it: four tabs, **Layout** (the four shapes with
   their floor plans), **Rooms** (the hub's plan: click a doorway, then the
   room to stand there; the room that stood there takes its old place) and
-  **Styles** (each room's three styles, sketched from above). Whatever the
+  **Styles** (each room's three styles, sketched from above) and
+  **Finishes** (the hub and each room with the finish it wears, every
+  finish as a swatch, and a button to put one on every room at once). Whatever the
   mouse points at shows on the hologram at once; a click picks it, and a
   locked one shows its price and asks once more to confirm before it is
   bought and put in use. Moving rooms is free and moves nothing in or out

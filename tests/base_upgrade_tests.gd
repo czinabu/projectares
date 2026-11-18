@@ -25,6 +25,8 @@ static func run(t: Node) -> void:
 	_design_rules(t)
 	await _shapes(t)
 	await _styles(t)
+	_finish_rules(t)
+	await _finishes(t)
 	await _customizer(t)
 
 
@@ -37,8 +39,8 @@ static func _rules(t: Node) -> void:
 	t.check(builds.size() == 12 and build_price == 26600,
 			"twelve build upgrades cost 26,600 scrip together")
 	var designs := BaseUpgrades.ids().filter(func(id: String) -> bool: return BaseUpgrades.is_design(id))
-	t.check(Array(designs) == Array(BasePlan.unlocks()) and designs.size() == 15,
-			"every other hub shape and room style has one design unlock, and nothing else is a design")
+	t.check(Array(designs) == Array(BasePlan.unlocks()) and designs.size() == 19,
+			"every other hub shape, room style and finish has one design unlock, and nothing else is a design")
 	t.check(BaseUpgrades.blocked(["hub_ring", "hub_spine", "style_ops_bridge", "style_stores_cargo"], "finish") != "",
 			"design unlocks never count toward the finish")
 	t.check(BaseUpgrades.clean(null).is_empty() and BaseUpgrades.clean("junk").is_empty()
@@ -491,7 +493,7 @@ static func _from_the_base(t: Node) -> void:
 static func _plan_rules(t: Node) -> void:
 	print("Home base plan")
 	t.check(BasePlan.clean(null) == BasePlan.DEFAULT and BasePlan.clean("junk") == BasePlan.DEFAULT
-			and BasePlan.clean(null).keys() == Array(BasePlan.SOCKETS) + ["shape", "styles"],
+			and BasePlan.clean(null).keys() == Array(BasePlan.SOCKETS) + ["shape", "styles", "finishes"],
 			"a missing or broken plan is the default one, in socket order")
 	var odd := BasePlan.clean({"W1": "garage", "W2": "garage", "N1": "no_such", "E2": 7})
 	var once := {}
@@ -759,6 +761,94 @@ static func _styles(t: Node) -> void:
 	await t.frames(2)
 
 
+## Finishes: steel is free, the rest are bought once and go on any room or
+## the hub.
+static func _finish_rules(t: Node) -> void:
+	print("Home base finishes")
+	var plan := BasePlan.clean(null)
+	t.check(plan["finishes"].size() == 7 and plan["finishes"].values().all(func(f: String) -> bool: return f == "steel")
+			and plan["finishes"] == BasePlan.DEFAULT["finishes"], "a new base is steel everywhere: the hub and all six rooms")
+	t.check(BasePlan.unlock_for("finish:hub", "steel") == "" and BasePlan.unlock_for("finish:garage", "brass") == "finish_brass"
+			and BasePlan.unlock_for("finish:armory", "brass") == "finish_brass", "steel is free; one unlock per finish, whatever it goes on")
+	for finish: String in BasePlan.FINISHES:
+		t.check(HomeBase.FINISH_LOOKS.has(finish) and BasePlan.FINISHES[finish]["swatch"].size() == 4,
+				"the %s finish has a look and a swatch" % finish)
+	var locked := BasePlan.change(plan, [], "finish:garage", "brass")
+	t.check(not locked.ok and "brass" in str(locked.error).to_lower(), "a finish not unlocked is refused")
+	var one := BasePlan.change(plan, ["finish_brass"], "finish:garage", "brass")
+	var two := BasePlan.change(one.plan, ["finish_brass"], "finish:hub", "brass")
+	t.check(one.ok and two.ok and two.plan["finishes"]["garage"] == "brass" and two.plan["finishes"]["hub"] == "brass"
+			and two.plan["finishes"]["armory"] == "steel" and plan["finishes"]["garage"] == "steel",
+			"once bought it goes on any room and the hub, leaving the rest as they were")
+	t.check(not BasePlan.change(plan, ["finish_brass"], "finish:lounge", "brass").ok
+			and not BasePlan.change(plan, [], "finish:hub", "gold").ok, "an unknown room or finish is refused")
+	var odd := BasePlan.clean({"finishes": {"hub": "gold", "ops": "ceramic"}})
+	t.check(odd["finishes"]["hub"] == "steel" and odd["finishes"]["ops"] == "ceramic" and odd["finishes"]["gear"] == "steel",
+			"an unknown or missing finish is steel")
+	Profile.reset()
+	Profile.scrip = 5000
+	t.check(not Profile.place_room("finish:ops", "ceramic").ok, "solo, a finish not bought is refused")
+	t.check(Profile.buy_upgrade("finish_ceramic").ok and Profile.scrip == 3500 and Profile.place_room("finish:ops", "ceramic").ok
+			and Profile.place_room("finish:hub", "ceramic").ok and Profile.scrip == 3500,
+			"bought once, it goes on as many rooms as you like for free")
+	var data := Profile.to_dict()
+	Profile.reset()
+	Profile.load_dict(data)
+	t.check(Profile.base_plan["finishes"]["ops"] == "ceramic" and Profile.base_plan["finishes"]["hub"] == "ceramic",
+			"the finishes survive a save")
+	Profile.reset()
+
+
+## Each room and the hub are built in their own finish.
+static func _finishes(t: Node) -> void:
+	var base := HomeBase.new()
+	var plan := BasePlan.clean(null)
+	plan["finishes"]["armory"] = "blackout"
+	plan["finishes"]["hub"] = "ceramic"
+	base.show_gear([], {}, BaseUpgrades.full(), plan)
+	t.add_child(base)
+	await t.frames(5)
+	var armory := base.get_node("Room_%s" % BasePlan.socket_of(base.base_plan, "armory"))
+	var garage := base.get_node("Room_%s" % BasePlan.socket_of(base.base_plan, "garage"))
+	var wall_of := func(finish: String) -> Color:
+		return HomeBase.FINISH_LOOKS[finish]["wall"]["tint"] * 0.5
+	t.check(_tints(armory).has(wall_of.call("blackout")) and not _tints(armory).has(wall_of.call("steel")),
+			"the armory is built in blackout")
+	t.check(_tints(garage).has(wall_of.call("steel")) and not _tints(garage).has(wall_of.call("blackout")),
+			"the garage stays steel")
+	var hub_tints := {}
+	for node in base._static_nodes:
+		if is_instance_valid(node):
+			hub_tints.merge(_tints(node))
+	t.check(hub_tints.has(wall_of.call("ceramic")) and not hub_tints.has(wall_of.call("steel")), "the hub is built in ceramic")
+	plan["finishes"]["hub"] = "steel"
+	base.show_gear([], {}, null, plan)
+	await t.frames(2)
+	hub_tints = {}
+	for node in base._static_nodes:
+		if is_instance_valid(node):
+			hub_tints.merge(_tints(node))
+	t.check(hub_tints.has(wall_of.call("steel")) and not hub_tints.has(wall_of.call("ceramic")),
+			"a new finish for the hub builds its shell again")
+	base.queue_free()
+	await t.frames(2)
+
+
+## The colours of every plain material under `node` (headless, `Look`
+## gives each surface a plain one of half its tint).
+static func _tints(node: Node) -> Dictionary:
+	var out := {}
+	for mesh in node.find_children("*", "MeshInstance3D", true, false):
+		var box := (mesh as MeshInstance3D).mesh as BoxMesh
+		if box != null and box.material is StandardMaterial3D:
+			out[(box.material as StandardMaterial3D).albedo_color] = true
+	if node is MeshInstance3D and (node as MeshInstance3D).mesh is BoxMesh:
+		var mat: Variant = ((node as MeshInstance3D).mesh as BoxMesh).material
+		if mat is StandardMaterial3D:
+			out[mat.albedo_color] = true
+	return out
+
+
 ## The customizer on the plan table: its tabs, a preview on the hologram, a
 ## pick, an unlock bought with a confirming click and put in use.
 static func _customizer(t: Node) -> void:
@@ -809,6 +899,22 @@ static func _customizer(t: Node) -> void:
 	await t.frames(2)
 	t.check(panel.find_child("Style_bridge", true, false) != null and panel.state_of("style:ops", "consoles") == "used",
 			"the styles tab shows the room's three styles")
+	panel.show_tab("finishes")
+	await t.frames(2)
+	t.check(panel.find_child("FinishArea_hub", true, false) != null and panel.find_child("Finish_blackout", true, false) != null
+			and panel.state_of("finish:hub", "steel") == "used" and panel.state_of("finish:hub", "gunmetal") == "locked",
+			"the finishes tab lists the hub and the rooms and every finish")
+	base.show_gear([], {}, ["hub_ring", "finish_gunmetal"])
+	await t.frames(2)
+	panel.area_pick = "ops"
+	panel.act("finish:ops", "gunmetal")
+	t.check(placed.back() == ["finish:ops", "gunmetal"], "an owned finish picked for a room asks to put it on")
+	placed.clear()
+	panel.finish_pick = "gunmetal"
+	panel._refresh()
+	await t.frames(2)
+	(panel.find_child("FinishAll", true, false) as Button).pressed.emit()
+	t.check(placed.size() == BasePlan.areas().size(), "one click puts the finish on the hub and every room")
 	panel.socket_pick = "W1"
 	panel.show_tab("rooms")
 	t.check(panel.back() and panel.socket_pick == "" and not panel.back(), "a right click steps back, then leaves")
