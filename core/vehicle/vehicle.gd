@@ -72,6 +72,8 @@ var lean_amount := 0.35
 ## The collision box of anything but the bike (the bike has its capsule),
 ## width, height and length, standing on the ground.
 var body_size := Vector3(0.7, 0.72, 2.0)
+## Tonnes, for what thin ice bears (`WorldDef.ice_holds`).
+var weight := 0.3
 ## Turn rate in radians per second at a standstill. A walker turns on the
 ## spot; wheels cannot (0).
 var pivot_turn := 0.0

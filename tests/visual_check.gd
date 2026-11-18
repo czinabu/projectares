@@ -242,6 +242,14 @@ func _ready() -> void:
 		get_tree().quit()
 		return
 
+	# `-- <output_dir> --ice-only` shows Frostline's lake: the dark thin ice
+	# in its middle from above, and a hole broken through it beside fresh
+	# cracks, close up.
+	if "--ice-only" in args:
+		await _ice_shots(out_dir)
+		get_tree().quit()
+		return
+
 	# `-- <output_dir> --zones-only` shows Ashfront's risk zones: a gate
 	# outpost from the field, and the burning core from its edge.
 	if "--zones-only" in args:
@@ -2036,6 +2044,38 @@ func _track_shots(out_dir: String) -> void:
 	camera.look_at(beacon.global_position + Vector3(0, 2.5, 0))
 	await _settle(20)
 	await _shot(out_dir.path_join("beacon.png"))
+	raid.queue_free()
+
+
+func _ice_shots(out_dir: String) -> void:
+	const FrostMap := preload("res://worlds/frostline/map.gd")
+	var raid := Raid.new()
+	add_child(raid)
+	raid.start(Worlds.get_world("frostline"), 42)
+	for bot in raid.bots:
+		bot.get_node("Brain").set_physics_process(false)
+		bot.set_physics_process(false)
+		bot.global_position = Vector3(500, 0, 500)
+	raid.player.set_physics_process(false)
+	raid.player.visible = false
+	var x := FrostMap.centre(FrostMap.LAKE_Z)
+	var mid := Vector3(x, float(raid.map.call("ground_height", x, FrostMap.LAKE_Z)), FrostMap.LAKE_Z)
+	var camera := Camera3D.new()
+	camera.far = 900.0
+	raid.add_child(camera)
+	camera.make_current()
+	camera.global_position = mid + Vector3(-30.0, 38.0, 70.0)
+	camera.look_at(mid)
+	await _settle(30)
+	await _shot(out_dir.path_join("ice_lake.png"))
+	var hole := mid + Vector3(4.0, 0.0, 6.0)
+	raid.ice_holes.append([hole, raid.clock])
+	raid.ice_changed.emit()
+	raid.ice_cracked.emit(hole + Vector3(7.0, 0.0, 3.0), 2)
+	camera.global_position = hole + Vector3(-5.0, 6.0, 12.0)
+	camera.look_at(hole + Vector3(2.0, 0.0, 1.0))
+	await _settle(20)
+	await _shot(out_dir.path_join("ice_hole.png"))
 	raid.queue_free()
 
 

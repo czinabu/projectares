@@ -316,7 +316,8 @@ func _ready() -> void:
 	# drivable level: no turret, passengers, armor or missiles yet.
 	# `watch_recharge` is the watch's wait after one is thrown (heavier is
 	# slower), `footprint` the clear ground it needs to unpack, and
-	# `bay_scale` how small it parks in the base's garage bay.
+	# `bay_scale` how small it parks in the base's garage bay, and `weight`
+	# (tonnes) whether thin ice bears it (`WorldDef.ice_holds`).
 	register("rover_warden", "Warden Rover", Rarity.RARE, 2400, ["vehicle", "rover"],
 			{"model": "rover", "max_speed": 23.0, "boost_speed": 28.0, "accel": 9.0, "turn_rate": 1.5,
 			"full_turn_speed": 8.0, "brake_decel": 24.0, "lean_amount": -0.06, "rider_lean": 0.2,
@@ -325,7 +326,7 @@ func _ready() -> void:
 			"grip_points": [Vector3(-0.58, 1.27, -0.25), Vector3(-0.22, 1.27, -0.25)] as Array[Vector3],
 			"peg_points": [Vector3(-0.52, 0.86, -0.5), Vector3(-0.28, 0.86, -0.5)] as Array[Vector3],
 			"exit_offset": Vector3(-1.9, 0.1, 0.0), "body_color": Color(0.42, 0.48, 0.32),
-			"footprint": Vector3(2.3, 1.4, 4.4), "watch_recharge": 30.0, "bay_scale": 0.6},
+			"footprint": Vector3(2.3, 1.4, 4.4), "watch_recharge": 30.0, "bay_scale": 0.6, "weight": 3.0},
 			"Armored four-wheeler. Slow to turn and needs open ground, but it shrugs off rough terrain.")
 	register("mech_bulwark", "Bulwark Mech", Rarity.EPIC, 4200, ["vehicle", "walker"],
 			{"model": "mech", "max_speed": 9.0, "boost_speed": 13.0, "accel": 8.0, "turn_rate": 1.2,
@@ -335,7 +336,7 @@ func _ready() -> void:
 			"grip_points": [Vector3(-0.25, 2.5, -0.38), Vector3(0.25, 2.5, -0.38)] as Array[Vector3],
 			"peg_points": [Vector3(-0.16, 2.08, -0.5), Vector3(0.16, 2.08, -0.5)] as Array[Vector3],
 			"exit_offset": Vector3(1.8, 0.1, 0.0), "body_color": Color(0.55, 0.52, 0.45),
-			"footprint": Vector3(2.0, 3.0, 2.0), "watch_recharge": 60.0, "bay_scale": 0.6},
+			"footprint": Vector3(2.0, 3.0, 2.0), "watch_recharge": 60.0, "bay_scale": 0.6, "weight": 6.0},
 			"Compact walker. Slow and heavy, turns on the spot and hops on jump-jets. Its power unit "
 			+ "sits exposed on its back.")
 	register("jet_kestrel", "Kestrel Jet", Rarity.EPIC, 4600, ["vehicle", "aircraft"],
@@ -346,7 +347,7 @@ func _ready() -> void:
 			"grip_points": [Vector3(-0.22, 1.47, -1.05), Vector3(0.22, 1.47, -1.05)] as Array[Vector3],
 			"peg_points": [Vector3(-0.15, 0.9, -1.6), Vector3(0.15, 0.9, -1.6)] as Array[Vector3],
 			"exit_offset": Vector3(1.6, 0.1, -0.5), "body_color": Color(0.6, 0.65, 0.72),
-			"footprint": Vector3(5.0, 1.8, 6.6), "watch_recharge": 60.0, "bay_scale": 0.42},
+			"footprint": Vector3(5.0, 1.8, 6.6), "watch_recharge": 60.0, "bay_scale": 0.42, "weight": 3.5},
 			"Starfighter. Fast across the map and fragile; it cannot hover, and only flies in worlds with open skies.")
 
 	# Blueprints (DESIGN.md section 10). Found in the PvP world and at stake

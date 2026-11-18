@@ -58,6 +58,12 @@ signal portal_entered(actor: Actor, destination: String)
 signal portal_closed(portal: Portal)
 ## A player's contract counters for this life changed (`Actor.tally`).
 signal tally_changed(actor: Actor)
+## Thin ice (`WorldDef.thin_ice`) cracking under a heavy vehicle at `at`:
+## `stage` 1 and 2 are warnings, 3 is the ice giving way. On every machine
+## (a client hears it from `NetSession`), for the view.
+signal ice_cracked(at: Vector3, stage: int)
+## The open holes in the ice changed (`ice_holes`).
+signal ice_changed
 
 ## Bots never start closer to the player than this, so a raid does not open with a fight.
 const MIN_BOT_SPAWN_DISTANCE := 40.0
@@ -213,6 +219,18 @@ var _track_in := 0.0
 var _expire_in := 1.0
 ## Where each body or vehicle last left a mark, and which foot it was.
 var _last_mark := {}
+## Holes broken through thin ice (`WorldDef.thin_ice`), each [where (on the
+## ground), when it opened (`clock`)]. The authority keeps them and clients
+## are sent them. Anyone standing in one is in the water: their body heat
+## is gone. Anything driven into one sinks.
+var ice_holes: Array = []
+const ICE_HOLE_RADIUS := 3.5
+## Shares of `WorldDef.ice_break_strain` at which the ice cracks out loud
+## before it gives way, and how fast strain eases once off the thin ice.
+const ICE_WARNINGS := [0.4, 0.7]
+const ICE_EASE := 2.0
+## How hard each heavy vehicle has been on the thin ice (authority only).
+var _ice_strain := {}
 ## When false, the raid reports results but leaves the stash alone, so a server
 ## never writes to a profile that is not the player's.
 var apply_to_profile := true
@@ -350,6 +368,12 @@ func _setup(p_world: WorldDef, p_seed: int) -> void:
 		var view := TrackView.new()
 		view.raid = self
 		add_child(view)
+	ice_holes.clear()
+	_ice_strain.clear()
+	if world.thin_ice and Look.enabled:
+		var ice := IceView.new()
+		ice.raid = self
+		add_child(ice)
 	_assault_in = world.assault_interval
 	_event_in = world.event_interval
 	_raider_in = world.raider_gap
@@ -386,6 +410,8 @@ func _physics_process(delta: float) -> void:
 	_tick_outposts()
 	_tick_hazards(delta)
 	_tick_cold(delta)
+	if world.thin_ice:
+		_tick_ice(delta)
 	_tick_bosses(delta)
 	_tick_strongpoints(delta)
 	_tick_events(delta)
@@ -1735,6 +1761,111 @@ func _tick_cold(delta: float) -> void:
 			info.position = actor.global_position
 			info.armor_pierce = 1.0
 			Combat.deal(actor, info)
+
+
+## Thin ice (`WorldDef.thin_ice`). A ground vehicle heavier than the ice
+## bears strains it while it stands or drives on it, cracking out loud at
+## `ICE_WARNINGS`, and breaks through at `ice_break_strain`. Anything driven
+## into an open hole sinks too, and anyone standing in one is in the water.
+## Holes freeze over again after `ice_refreeze`. Authority only.
+func _tick_ice(delta: float) -> void:
+	var before := ice_holes.size()
+	ice_holes = ice_holes.filter(func(hole: Array) -> bool: return clock - float(hole[1]) < world.ice_refreeze)
+	if ice_holes.size() != before:
+		ice_changed.emit()
+	for key: Variant in _ice_strain.keys():
+		if not is_instance_valid(key) or key not in vehicles:
+			_ice_strain.erase(key)
+	for vehicle in vehicles.duplicate():
+		if not is_instance_valid(vehicle) or vehicle.hovers or not vehicle.is_on_floor():
+			continue
+		var at: Vector3 = vehicle.global_position
+		if ice_hole_at(at) >= 0:
+			_go_through_ice(vehicle, false)
+			continue
+		var strain: float = _ice_strain.get(vehicle, 0.0)
+		var heavy: float = vehicle.weight / maxf(world.ice_holds, 0.01)
+		if heavy > 1.0 and world.thin_ice_at(at):
+			var was := strain
+			strain += heavy * delta
+			for k in ICE_WARNINGS.size():
+				var mark: float = ICE_WARNINGS[k] * world.ice_break_strain
+				if was < mark and strain >= mark:
+					ice_cracked.emit(_on_ground(at), k + 1)
+			if strain >= world.ice_break_strain:
+				_go_through_ice(vehicle, true)
+				continue
+		else:
+			strain = maxf(0.0, strain - ICE_EASE * delta)
+		if strain > 0.0:
+			_ice_strain[vehicle] = strain
+		else:
+			_ice_strain.erase(vehicle)
+	for state in players:
+		var actor := state.actor
+		if state.finished or not is_instance_valid(actor) or actor.is_dead or actor.vehicle != null:
+			continue
+		if ice_hole_at(actor.global_position) >= 0:
+			actor.body_heat = 0.0
+			actor.warming = false
+			actor.shivering = true
+
+
+## The open hole in the ice at a point (flat distance, near the ground), as
+## an index into `ice_holes`, or -1.
+func ice_hole_at(at: Vector3) -> int:
+	for k in ice_holes.size():
+		var hole: Vector3 = ice_holes[k][0]
+		var off := at - hole
+		if Vector2(off.x, off.z).length() <= ICE_HOLE_RADIUS and absf(off.y) < 1.5:
+			return k
+	return -1
+
+
+## A vehicle breaks through the ice (`opens` a new hole where it stands) or
+## drives into an open one: it sinks, and whoever rode it is in the water.
+func _go_through_ice(vehicle: Node3D, opens: bool) -> void:
+	var at := _on_ground(vehicle.global_position)
+	var riders: Array[Actor] = []
+	for seat in ["rider", "passenger"]:
+		var actor: Actor = vehicle.get(seat)
+		if actor != null and is_instance_valid(actor):
+			riders.append(actor)
+	if opens:
+		ice_holes.append([at, clock])
+		ice_changed.emit()
+	ice_cracked.emit(at, ICE_WARNINGS.size() + 1)
+	_ice_strain.erase(vehicle)
+	remove_vehicle(vehicle)
+	for k in riders.size():
+		var actor := riders[k]
+		actor.global_position = _stand(at + Vector3(0.8 if k == 0 else -0.8, 0.0, 0.0))
+		actor.velocity = Vector3.ZERO
+		actor.notice.emit("Through the ice! Get out of the water")
+
+
+## A point dropped onto the map's open ground, if it has any.
+func _on_ground(at: Vector3) -> Vector3:
+	if map != null and map.has_method("ground_height"):
+		return Vector3(at.x, float(map.call("ground_height", at.x, at.z)), at.z)
+	return at
+
+
+## Open holes packed for the wire: x, y, z and age for each.
+func pack_ice_holes() -> PackedFloat32Array:
+	var out := PackedFloat32Array()
+	for hole: Array in ice_holes:
+		var at: Vector3 = hole[0]
+		out.append_array([at.x, at.y, at.z, clock - float(hole[1])])
+	return out
+
+
+## Takes the open holes the authority sent (see `pack_ice_holes`).
+func unpack_ice_holes(data: PackedFloat32Array) -> void:
+	ice_holes.clear()
+	for k in range(0, data.size() - 3, 4):
+		ice_holes.append([Vector3(data[k], data[k + 1], data[k + 2]), clock - maxf(data[k + 3], 0.0)])
+	ice_changed.emit()
 
 
 ## Lays footprints and wheel tracks down behind everyone on open ground, and

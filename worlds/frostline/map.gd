@@ -37,6 +37,14 @@ const ENGINE_LENGTH := 76.0
 ## The frozen lake where the valley widens.
 const LAKE_Z := -95.0
 const LAKE_RADIUS := Vector2(44.0, 40.0)
+## The middle of the lake is thin ice (`WorldDef.thin_ice`): within this
+## share of its radius a heavy vehicle breaks through. The shore ice holds.
+const THIN_ICE := 0.7
+
+
+## How far out on the lake a point is: 0 at its middle, 1 at its shore.
+static func lake_reach(x: float, z: float) -> float:
+	return Vector2((x - centre(z)) / LAKE_RADIUS.x, (z - LAKE_Z) / LAKE_RADIUS.y).length()
 ## Ramps cut into the walls up to the shelf: which side, where the top is,
 ## and which way along the valley they run down.
 const RAMPS := [
@@ -678,6 +686,20 @@ func _dress_ice(art: Node3D) -> void:
 	lake.scale = Vector3(LAKE_RADIUS.x * 1.02, 1.0, LAKE_RADIUS.y * 1.02)
 	lake.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	art.add_child(lake)
+	# The thin ice in the middle: darker, clearer ice you can see the water
+	# through, so it is read before it is driven onto.
+	var thin := StandardMaterial3D.new()
+	thin.albedo_color = Color(0.13, 0.25, 0.36)
+	thin.roughness = 0.03
+	thin.metallic_specular = 1.0
+	var black := MeshInstance3D.new()
+	black.mesh = disc.duplicate()
+	(black.mesh as CylinderMesh).material = thin
+	(black.mesh as CylinderMesh).radial_segments = 24
+	black.position = lake_at + Vector3(0.0, 0.015, 0.0)
+	black.scale = Vector3(LAKE_RADIUS.x * THIN_ICE, 1.0, LAKE_RADIUS.y * THIN_ICE)
+	black.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	art.add_child(black)
 	for k in 24:
 		var a := _art_rng.randf() * TAU
 		var r := _art_rng.randf_range(0.1, 0.9)

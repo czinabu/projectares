@@ -214,8 +214,9 @@ worlds and a casual or solo one has a steady home.
   hear, snow driven sideways in gusts, drifts streaming off the rims, bodies
   leaning into it and the wind pushing flight rigs off course. Built
   (step 6): footprints and vehicle tracks the server keeps and sends only
-  nearby, and gunshots that carry twice as far. Planned: thin ice that breaks under
-  heavy vehicles; the Wardens as the Engine's defence grid, still running.
+  nearby, and gunshots that carry twice as far. Built (step 7): thin ice in
+  the lake's middle that breaks under heavy vehicles. Planned: the Wardens
+  as the Engine's defence grid, still running.
 - **What you bring home.** New parts (Cryo Core, Glacial Alloy,
   Engine Coil) that Mk2 and Mk3 recipes need, and Frostline blueprints for
   new options only (attachments, cold-weather gear), never a higher Mk of
@@ -228,7 +229,7 @@ worlds and a casual or solo one has a steady home.
 **Order of work**, one PR each: (1) the valley map, (2) the cold, (3) the
 loot role and recipes, (4) warm beacons, (5) whiteouts, after the Ashfront
 weather work, (6) tracks and louder gunshots, (7) thin ice, the defence
-grid and expedition contracts, (8) later, with the PvE dungeons, the
+grid and expedition contracts (in three PRs, thin ice first), (8) later, with the PvE dungeons, the
 Engine's inside. Every number is a placeholder for the playtest.
 
 **What is built.** The valley (step 1): `worlds/frostline/map.gd`, a
@@ -304,6 +305,25 @@ pressed-in prints and pairs of wheel lines that fade as they age, drawn
 within 55 m. Whiteouts (step 5) will wipe them. A shot carries
 `WorldDef.shot_carry` (twice) as far: bots hear it twice as far off
 (`Gun.noise_reach`) and people hear it twice as far too. Numbers are
+placeholders.
+
+Thin ice (step 7, the first part): with `WorldDef.thin_ice` the ground
+where `thin_ice_at` says so (Frostline: the middle of the lake, within 70%
+of its radius, drawn as darker, clearer ice) bears a ground vehicle up to
+`ice_holds` tonnes, its `weight` stat. People on foot, a bike (0.3 t) and
+anything that hovers or flies cross freely. A heavier one strains it by its
+weight over that a second while it stands or drives there: a rover (3 t)
+goes through after about three and a half seconds, a mech (6 t) after under
+two, so a rover can cross the middle at speed but never stop on it. The ice
+cracks out loud twice on the way (at 40% and 70%), white cracks spreading
+under the wheels, and strain eases off again on sound ice. When it gives
+way the vehicle sinks (lost, like any vehicle left behind) and its riders
+are in the water: a hole of open water 3.5 m across, ringed with broken
+plates, that takes all the body heat of anyone standing in it and sinks
+anything driven into it, until it freezes over after `ice_refreeze` (two
+and a half minutes). Only the authority decides it (`Raid._tick_ice`);
+clients are sent the cracks and the open holes (`NetSession._ice_crack`,
+`_ice_holes`) and draw them with `IceView` (view only). Numbers are
 placeholders.
 
 ### PvP world

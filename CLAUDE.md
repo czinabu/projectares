@@ -96,6 +96,15 @@ without Caleb, and update the gap list when a PR closes a row.
   `Raid` only where `Look` is on). A world's air carrying shots further is
   `WorldDef.shot_carry`, which scales both `Gun.noise_reach` (bots) and
   the shot's sound.
+- Thin ice (DESIGN.md "Frostline"): with `WorldDef.thin_ice` the ground
+  where `thin_ice_at` says so bears a ground vehicle up to `ice_holds`
+  tonnes (its `weight` stat; hovering never counts). Only the authority's
+  `Raid._tick_ice` strains it, cracks it (`Raid.ice_cracked`, stages 1 and
+  2 a warning, 3 the break), sinks the vehicle through `remove_vehicle`
+  and opens a hole (`Raid.ice_holes`) that takes the body heat of anyone in
+  it, sinks anything driven into it and freezes over after
+  `ice_refreeze`. Clients get the cracks and holes from `NetSession`
+  (`_ice_crack`, `_ice_holes`) and draw them with `IceView` (view only).
 - How harsh death is belongs to the world, not to `Raid`. With
   `WorldDef.keep_gear_on_death` a dead player drops only the backpack and the
   equipped gear returns in the result's `kept`. A gentle world pays for that
