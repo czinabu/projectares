@@ -92,6 +92,48 @@ const SKINS := {
 		"scenes": ["Stan.glb"], "height": 2.2, "tint": Color(0.62, 0.68, 0.74),
 		"anims": {"idle": "Idle", "walk": "Walk", "run": "Run", "death": "Death", "attack": "Punch"},
 	},
+	# Ashfront's Legion riflemen: people in the army's uniform kit.
+	"legionary": {
+		"people": {"m": ["Swat", "Spacesuit"], "f": ["Soldier", "SciFi"]},
+		"height": 1.8, "tint": Color(0.62, 0.68, 0.8), "grip_bone": "Middle1.R", "arm": HUMAN_ARM, "off_arm": HUMAN_OFF_ARM,
+		"spine": HUMAN_SPINE, "neck": "Neck", "lead_leg": HUMAN_LEAD_LEG, "trail_leg": HUMAN_TRAIL_LEG,
+		"back_bone": "Chest", "hip_bone": "Hips", "feet": HUMAN_FEET,
+		"saturation": 0.55, "brightness": 0.78, "metal": 0.0, "rough": 0.85,
+		"anims": HUMAN_ANIMS,
+	},
+	# Ashfront's Tide riflemen: a rougher militia, still dressed for war.
+	"tide": {
+		"people": {"m": ["Adventurer", "Swat"], "f": ["Adventurer", "Soldier"]},
+		"height": 1.78, "tint": Color(0.86, 0.72, 0.6), "grip_bone": "Middle1.R", "arm": HUMAN_ARM, "off_arm": HUMAN_OFF_ARM,
+		"spine": HUMAN_SPINE, "neck": "Neck", "lead_leg": HUMAN_LEAD_LEG, "trail_leg": HUMAN_TRAIL_LEG,
+		"back_bone": "Chest", "hip_bone": "Hips", "feet": HUMAN_FEET,
+		"saturation": 0.6, "brightness": 0.75, "metal": 0.0, "rough": 0.9,
+		"anims": HUMAN_ANIMS,
+	},
+	# An exo trooper: an ordinary soldier strapped into a mechanical
+	# exoskeleton. The person stays person-sized; the bulk is the suit
+	# ("suit": `ActorSkin._build_exo_suit`: struts down the outside of each
+	# limb, joints, actuators, a spine and shoulder yoke with a roll cage
+	# over the head, a power pack), plus a chest rig ("frame") and a closed
+	# helmet with a visor slit ("helmet") lit in the army's colour.
+	"exo": {
+		"people": {"m": ["Swat"], "f": ["Soldier"]},
+		"height": 1.8, "tint": Color(0.5, 0.52, 0.55), "grip_bone": "Middle1.R", "arm": HUMAN_ARM, "off_arm": HUMAN_OFF_ARM,
+		"spine": HUMAN_SPINE, "neck": "Neck", "lead_leg": HUMAN_LEAD_LEG, "trail_leg": HUMAN_TRAIL_LEG,
+		"back_bone": "Chest", "hip_bone": "Hips", "feet": HUMAN_FEET,
+		"saturation": 0.45, "brightness": 0.72, "metal": 0.0, "rough": 0.8,
+		"anims": HUMAN_ANIMS, "frame": "light", "helmet": "slit", "suit": true,
+	},
+	# The Kiln Walker: a war machine of its own, built in code
+	# ("chassis": `ActorSkin._build_walker`: a low, wide hull with the cannon
+	# in its glacis and the heat vent, the weak spot, in its rear armor, on
+	# two heavy legs) round the scene's walking skeleton, whose own mesh is
+	# hidden ("hide"). Its cannon draws a tracking beam while it aims ("beam").
+	"walker": {
+		"scenes": ["Leela.glb"], "height": 2.75, "hide": ["Leela"],
+		"chassis": "walker", "beam": true,
+		"anims": {"idle": "Idle", "walk": "Walk", "run": "Run", "death": "Death", "attack": "Shoot"},
+	},
 	"stalker": {
 		"scenes": ["Enemy_2Legs_Gun.glb"], "height": 1.7, "tint": Color(0.3, 0.32, 0.38),
 		"anims": {"idle": "Idle", "walk": "Walk", "run": "Run", "death": "Death", "attack": "Attack"},
@@ -895,7 +937,7 @@ func interior(parent: Node3D, ambient: Color, energy: float) -> void:
 ## one kit instead of loose props: "teal" running lights, "orange" furnace
 ## light, "beacon" (a red light that cuts through the haze, never fogged),
 ## "slag" (molten metal), "crack" (a dimmer glow for cracks in the ground),
-## "scorch" (charred ground), "track" (a packed road), "hazard" (orange and black stripes),
+## "scorch" (charred ground), "track" (a packed gravel road), "rut" (a dark wheel rut), "hazard" (orange and black stripes),
 ## "sandbag", "halo" (a glow round a far light), "flash" (a far blast),
 ## "beam" (a searchlight) and "distant" (skyline silhouettes). Cached, so every piece shares one material.
 func trim(kind: String) -> Material:
@@ -920,7 +962,11 @@ func trim(kind: String) -> Material:
 			mat.albedo_color = Color(0.06, 0.045, 0.04)
 			mat.roughness = 1.0
 		"track":
-			mat.albedo_color = Color(0.16, 0.12, 0.1)
+			# Packed gravel: paler and greyer than any dirt, so a road reads.
+			mat.albedo_color = Color(0.2, 0.19, 0.18)
+			mat.roughness = 1.0
+		"rut":
+			mat.albedo_color = Color(0.075, 0.062, 0.055)
 			mat.roughness = 1.0
 		"halo":
 			# A soft glow round a far light, drawn over the haze.

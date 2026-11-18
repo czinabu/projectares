@@ -1746,7 +1746,18 @@ func _dress_roads(art: Node3D) -> void:
 				line.append(a.lerp(b, float(k) / steps))
 		line.append(road[road.size() - 1])
 		lines.append(line)
-	_ground_strips(art, lines, 5.0, Look.trim("track"), 0.03)
+	# A pale bed of packed gravel the dirt never is, so a road reads from the
+	# saddle, and two dark wheel ruts worn down it by the convoys.
+	_ground_strips(art, lines, 6.0, Look.trim("track"), 0.1, false, false)
+	for side: float in [-1.0, 1.0]:
+		var ruts: Array[PackedVector2Array] = []
+		for line in lines:
+			var rut := PackedVector2Array()
+			for i in line.size():
+				var dir := (line[mini(i + 1, line.size() - 1)] - line[maxi(i - 1, 0)]).normalized()
+				rut.append(line[i] + dir.orthogonal() * side * 1.15)
+			ruts.append(rut)
+		_ground_strips(art, ruts, 0.45, Look.trim("rut"), 0.14, false, false)
 	# Each muster's runway: edge lamps down both sides and a hazard bar
 	# across each end, so a pilot can find it and line up on it.
 	for army: String in ARMIES:
@@ -1771,7 +1782,7 @@ func _dress_roads(art: Node3D) -> void:
 
 ## Draws each polyline as short boxes laid on the ground and tipped with it,
 ## in one MultiMesh. `taper` narrows a line toward its far end.
-func _ground_strips(art: Node3D, lines: Array[PackedVector2Array], width: float, material: Material, lift: float, taper := false) -> void:
+func _ground_strips(art: Node3D, lines: Array[PackedVector2Array], width: float, material: Material, lift: float, taper := false, keep_off_runways := true) -> void:
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
 	var box := BoxMesh.new()
@@ -1785,7 +1796,7 @@ func _ground_strips(art: Node3D, lines: Array[PackedVector2Array], width: float,
 			var a := line[i]
 			var b := line[i + 1]
 			var mid := (a + b) * 0.5
-			if _crack_blocked(mid, 0.2):
+			if _crack_blocked(mid, 0.2, keep_off_runways):
 				continue
 			var pa := terrain.on_ground(a.x, a.y)
 			var pb := terrain.on_ground(b.x, b.y)
@@ -1793,8 +1804,10 @@ func _ground_strips(art: Node3D, lines: Array[PackedVector2Array], width: float,
 			var t := float(i) / maxf(line.size() - 1, 1)
 			var w := width * (lerpf(1.0, 0.35, t) if taper else 1.0)
 			var forward := along.normalized()
-			var right := forward.cross(Vector3.UP).normalized()
-			var up := right.cross(forward)
+			# Right-handed (x, y, z), or the box is mirrored and shows its
+			# insides: its top face would be culled.
+			var right := Vector3.UP.cross(forward).normalized()
+			var up := forward.cross(right)
 			var basis := Basis(right * w, up, forward * (along.length() + 0.3))
 			placed.append(Transform3D(basis, (pa + pb) * 0.5 + up * (lift - 0.3)))
 	mm.instance_count = placed.size()
@@ -1806,11 +1819,13 @@ func _ground_strips(art: Node3D, lines: Array[PackedVector2Array], width: float,
 	art.add_child(node)
 
 
-func _crack_blocked(at: Vector2, room := 0.5) -> bool:
+func _crack_blocked(at: Vector2, room := 0.5, keep_off_runways := true) -> bool:
 	for solid in _solids:
 		if at.distance_to(solid["at"]) < float(solid["reach"]) + room:
 			return true
 	# The runways are kept for take-off, so the cracks flow round them.
+	if not keep_off_runways:
+		return false
 	for army: String in ARMIES:
 		var runway := _runway(army)
 		var from: Vector2 = runway["from"]

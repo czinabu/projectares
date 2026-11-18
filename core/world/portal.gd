@@ -112,7 +112,7 @@ static func choices_for(raid: Raid, actor: Actor) -> Array[String]:
 		var out := destinations()
 		out.append(HOME)
 		return out
-	if raid.world.gear_at_risk:
+	if raid.world.portal_home:
 		return [HOME] as Array[String]
 	return []
 

@@ -193,6 +193,12 @@ var redeploy_delay := 3.0
 ## hands out the loadout without taking it out of the stash, and never settles
 ## a result into the stash (see `StashService.deploy`).
 var gear_at_risk := true
+## Off where nobody fights at all (a race world): weapons stay locked for
+## everyone, on every machine, and nothing can be hurt.
+var weapons_free := true
+## Whether the watch's portal opens home from here (a sign-out with a door).
+## The arena has none: you leave it from its panel.
+var portal_home := true
 
 
 ## True where a heavy weapon from the armory wall may be carried into the
@@ -313,12 +319,20 @@ func cold_at(_pos: Vector3) -> float:
 
 
 func can_damage(attacker: Node, target: Node, _info: DamageInfo) -> bool:
-	return attacker != target
+	return attacker != target and weapons_free
 
 
 ## Set up a bot's faction, gear and stats.
 func equip_bot(_bot: Actor, _rng: RandomNumberGenerator) -> void:
 	pass
+
+
+## Whether a bot just equipped may join the world as it is (authority only).
+## Refused, the `Raid` frees it and spawns another from a new seed, so a
+## client only ever hears of the seed that was kept. A world caps its rare
+## kinds here (Ashfront: one walker at each landmark).
+func bot_allowed(_bot: Actor, _raid: Node) -> bool:
+	return true
 
 
 ## A rival raider's kit: item ids exactly as a player's loadout, put on

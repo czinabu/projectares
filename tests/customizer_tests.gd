@@ -179,10 +179,10 @@ static func run(t: Node) -> void:
 	var skins := raid.player.get_children().filter(func(child: Node) -> bool: return child.name.begins_with("Skin"))
 	t.check(skins.size() == 1 and skin.arm != null and skin.arm.grip_bone >= 0,
 			"changing the look leaves one model, which still holds its weapon")
-	var unchosen := raid.bots.filter(func(bot: Actor) -> bool: return bot.get_meta("look", "") == "scavenger")
+	var unchosen := raid.bots.filter(func(bot: Actor) -> bool: return bot.get_meta("look", "") in ["legionary", "tide"])
 	t.check(not unchosen.is_empty() and unchosen[0].get_node_or_null("Skin") != null
 			and unchosen[0].get_node("Skin").find_child("PartHead", true, false) != null,
-			"scavengers are built from parts too")
+			"army soldiers are built from parts too")
 	raid.queue_free()
 	await t.frames(2)
 	Look.enabled = false

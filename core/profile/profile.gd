@@ -211,6 +211,9 @@ func validate_loadout() -> void:
 ## Takes the loadout out of the stash for a raid and returns the full kit:
 ## chosen gear and healing (see `StashRules.checkout`).
 func checkout_loadout(world: WorldDef) -> Array[String]:
+	if not world.gear_at_risk:
+		# Nothing at stake (a race world): the same kit, but nothing leaves.
+		return StashRules.checkout(stash.duplicate(), loadout.duplicate(), world)
 	var kit := StashRules.checkout(stash, loadout, world)
 	save()
 	return kit

@@ -1503,6 +1503,8 @@ func _draw_objectives(p: Actor, ink: Color) -> void:
 	var held: Array[Dictionary] = []
 	held.assign(hud.get("contracts") if hud.get("contracts") is Array else [])
 	var objective := str(hud.get("objective")) if hud.get("objective") != null else ""
+	if str(hud.get("race_line")) not in ["", "<null>"]:
+		objective = str(hud.get("race_line"))
 	var lines := objective_lines(held, p.tally, objective)
 	if lines.is_empty():
 		return

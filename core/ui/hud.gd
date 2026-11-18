@@ -57,6 +57,9 @@ var contracts: Array[Dictionary] = []
 ## The new player's tour objective (`Onboarding.objective`), set by
 ## `main.gd`: a small line on the watch card and the visor glass, "" for none.
 var objective := ""
+## On a race track, the run in one line (`Race.run_line`): the watch card
+## and the visor's objective block show it in the tour's place.
+var race_line := ""
 ## The wrist display.
 var wrist: Wrist
 ## What the helmet draws on its glass in first person, and what its visor
@@ -217,7 +220,9 @@ func _process(delta: float) -> void:
 		life_time += delta
 	var picks := {"weapon": controller.weapon_pick, "artifact": controller.artifact_pick, "portal": controller.portal_pick,
 			"map": controller.map_pick, "standing": controller.standing_pick, "pack": controller.pack_pick,
-			"life_time": life_time} if controller != null else {"life_time": life_time}
+			"race": controller.race_pick, "race_open": controller.watch_open == "contract",
+			"ghost": controller.ghost_on, "life_time": life_time} if controller != null else {"life_time": life_time}
+	race_line = Race.run_line((raid as Race).view_run()) if raid is Race else ""
 	var targets := map_targets(raid, p, ping_spots()) if wrist.raised and not p.is_dead else ([] as Array[Dictionary])
 	if controller != null:
 		controller.map_targets = targets
@@ -238,7 +243,7 @@ func _process(delta: float) -> void:
 	# Your vitals are on the visor's edges in either view (drawn flat in
 	# third person); with no helmet the card carries them in a thin strip.
 	var on_glass := visor != null and (visor.glass_shown() or visor.flat_shown())
-	wrist.objective = objective
+	wrist.objective = race_line if race_line != "" else objective
 	# The map is only worked out while it is the icon being read; opened, it
 	# also rises off the wrist as a tabletop hologram with the ground's relief.
 	var map_open: bool = wrist.raised and focus < slots.size() and slots[focus].id == "map"
@@ -413,7 +418,13 @@ static func watch_slots(p_raid: Raid, p: Actor, picked_toy := 0, pack_name := ""
 	# Mission: the squad portal, the contract, the squad ping, and sign-out
 	# and banking.
 	slots.append(portal_slot(Portal.choices_for(p_raid, p), int(picks.get("portal", 0))))
-	slots.append(contract_slot(jobs, p.tally))
+	# On a race track the contract's place is the time trial's (no job
+	# counts there): the run's line, and restart, ghost and stop to pick.
+	if p_raid is Race:
+		slots.append(race_slot((p_raid as Race).view_run(), int(picks.get("race", 0)), bool(picks.get("race_open", false)),
+				bool(picks.get("ghost", true))))
+	else:
+		slots.append(contract_slot(jobs, p.tally))
 	slots.append(_slot("ping", "", "Ping where you look", ["click"], -1.0, false, false))
 	# A click (or L) starts or cancels the sign-out.
 	if leaving >= 0.0:
@@ -850,6 +861,37 @@ static func contract_slot(held: Array[Dictionary], tally: Dictionary) -> Diction
 	return _slot("contract", str(held.size()), line, [], best_share, false, best_share >= 1.0)
 
 
+## What the race icon offers, in order: back to the grid, the ghost on or
+## off, and stopping the run. `PlayerController.race_actions` turns a pick
+## into one of these.
+const RACE_ACTIONS := ["restart", "ghost", "retire"]
+
+
+## The race icon, in the contract's place on a race track (drawn as a flag,
+## its "glyph"): the run's line and how far round it is, or what each pick
+## does once opened.
+static func race_slot(view: Dictionary, picked: int, opened: bool, ghost_on: bool) -> Dictionary:
+	var at := clampi(picked, 0, RACE_ACTIONS.size() - 1)
+	var line := Race.run_line(view)
+	if opened:
+		match RACE_ACTIONS[at]:
+			"restart":
+				line = "Back to the grid" if not view.is_empty() else "Start a run on this machine"
+			"ghost":
+				line = "Ghost on · best lap" if ghost_on else "Ghost off"
+			"retire":
+				line = "Stop the run and get off"
+	elif line == "":
+		line = "Time trial · take a machine from the pit bays"
+	var value := ""
+	if not view.is_empty():
+		value = "%d/%d" % [int(view.get("lap", 1)), int(view.get("laps", 1))] if str(view.get("phase")) != "done" else "✓"
+	var slot := _slot("contract", value, line, ["wheel", "click"] if opened else ["click"], Race.run_progress(view),
+			false, str(view.get("phase", "")) == "grid", RACE_ACTIONS.size(), at)
+	slot["glyph"] = "race"
+	return slot
+
+
 ## The artifact icon: uses left (or a countdown), a ring while it runs or
 ## recharges, and a click to use it when it is ready.
 static func artifact_slot(relic: Artifact) -> Dictionary:
@@ -1100,12 +1142,8 @@ static func incoming_side(p: Actor) -> int:
 
 
 func _on_hit_confirmed(_target: Actor, info: DamageInfo, lethal: bool) -> void:
-	if lethal:
-		_hit_marker.flash(Color(1.0, 0.25, 0.2), 0.35)
-	elif info.parried or info.blocked:
-		_hit_marker.flash(Color(0.6, 0.75, 1.0), 0.15)
-	else:
-		_hit_marker.flash(Color.WHITE, 0.15)
+	var kind := HitMarker.kind_of(info, lethal)
+	_hit_marker.flash(kind)
 
 
 func _on_player_damaged(info: DamageInfo) -> void:
@@ -1359,14 +1397,47 @@ class ProgressRing:
 class HitMarker:
 	extends Control
 
+	## Each kind of hit has its own look, so a glance says what a hit did:
+	## [color, how long it shows, how big]. A head is gold and larger, a hit
+	## the plates soaked is steel blue, the hit that broke them a wide
+	## cyan, and a kill red and longest.
+	const KINDS := {
+		"hit": [Color.WHITE, 0.15, 1.0],
+		"armor": [Color(0.62, 0.78, 1.0), 0.15, 0.85],
+		"armor_break": [Color(0.35, 0.95, 1.0), 0.3, 1.35],
+		"head": [Color(1.0, 0.82, 0.25), 0.22, 1.3],
+		"guarded": [Color(0.6, 0.75, 1.0), 0.15, 0.75],
+		"kill": [Color(1.0, 0.25, 0.2), 0.35, 1.45],
+	}
+
+	var kind := ""
 	var _left := 0.0
 	var _duration := 0.15
 	var _color := Color.WHITE
+	var _size := 1.0
 
-	func flash(color: Color, duration: float) -> void:
-		_color = color
-		_duration = duration
-		_left = duration
+	## Which `KINDS` entry a confirmed hit shows. A kill outranks a head, a
+	## head outranks plates breaking, and that outranks plates soaking.
+	static func kind_of(info: DamageInfo, lethal: bool) -> String:
+		if lethal:
+			return "kill"
+		if info.parried or info.blocked:
+			return "guarded"
+		if info.headshot:
+			return "head"
+		if info.armor_broke:
+			return "armor_break"
+		if info.armored:
+			return "armor"
+		return "hit"
+
+	func flash(p_kind: String) -> void:
+		var look: Array = KINDS.get(p_kind, KINDS["hit"])
+		kind = p_kind
+		_color = look[0]
+		_duration = look[1]
+		_size = look[2]
+		_left = _duration
 		queue_redraw()
 
 	func _process(delta: float) -> void:
@@ -1380,8 +1451,10 @@ class HitMarker:
 		var c := size * 0.5
 		var color := _color
 		color.a = clampf(_left / _duration, 0.0, 1.0)
+		# The marks spring out a little as they fade.
+		var grow := _size * (1.0 + 0.25 * (1.0 - color.a))
 		for dir: Vector2 in [Vector2(1, 1), Vector2(1, -1), Vector2(-1, 1), Vector2(-1, -1)]:
-			draw_line(c + dir * 7.0, c + dir * 15.0, color, 2.5)
+			draw_line(c + dir * 7.0 * grow, c + dir * 15.0 * grow, color, 2.5 * _size)
 
 ## Three marks around the crosshair for directional melee: which side you are
 ## set to attack or guard, and which side an enemy swing is coming at.
@@ -2434,7 +2507,7 @@ void fragment() {
 				if progress >= 0.0:
 					draw_arc(centre, radius + 11.0, -PI * 0.5, -PI * 0.5 + TAU * clampf(progress, 0.0, 1.0), 40,
 							Color(WARM if slot.alert else INK, 0.95), 4.0, true)
-				_draw_icon(slot.id, centre, radius, color, 3.0 if looked else 2.0)
+				_draw_icon(str(slot.get("glyph", slot.id)), centre, radius, color, 3.0 if looked else 2.0)
 				if slot.value != "":
 					draw_string(font, centre + Vector2(-step * 0.5, radius + 30.0), slot.value,
 							HORIZONTAL_ALIGNMENT_CENTER, step, 20 if looked else 17, color)
@@ -2670,6 +2743,17 @@ void fragment() {
 							Vector2(-0.3, -0.6), Vector2(-0.3, -1)]), c, r, color, width * 0.7)
 					_lines(PackedVector2Array([Vector2(-0.4, 0.15), Vector2(-0.1, 0.5), Vector2(0.45, -0.25)]),
 							c, r, color, width)
+				"race":
+					# A chequered flag on its pole.
+					_lines(PackedVector2Array([Vector2(-0.75, 1.0), Vector2(-0.75, -1.0)]), c, r, color, width)
+					_lines(PackedVector2Array([Vector2(-0.75, -0.95), Vector2(0.85, -0.95), Vector2(0.85, 0.15),
+							Vector2(-0.75, 0.15)]), c, r, color, width * 0.8)
+					for row in 2:
+						for col in 4:
+							if (row + col) % 2 == 0:
+								var cell := Rect2(c + Vector2(-0.75 + col * 0.4, -0.95 + row * 0.55) * r,
+										Vector2(0.4, 0.55) * r)
+								draw_rect(cell, Color(color, color.a * 0.7))
 				"portal":
 					# An upright ring with a swirl inside it.
 					var ring := PackedVector2Array()

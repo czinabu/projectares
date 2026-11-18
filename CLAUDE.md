@@ -53,6 +53,13 @@ without Caleb, and update the gap list when a PR closes a row.
   same raid. Loot reaches the stash mid-life only through a `Depot`
   (`player_banked`). Never add a way to leave that skips `begin_sign_out`:
   a disconnect goes through `remove_player`, which leaves the body standing.
+  A player whose connection dropped gets that body back if they sign in
+  before its countdown ends: `NetSession._on_peer_connected` finds it
+  (`Raid.is_unguarded`) and `Raid.reclaim_player` hands it over, with no
+  deploy; the game reconnects on its own (`Main._on_online_disconnected`,
+  `reconnect_window`). Anything the server sends a body's owner asks
+  `NetSession._owner_peer(actor)`, never a peer id kept from the deploy,
+  because a body outlives the connection that deployed it.
 - Drop-in protection is `Actor.protected_left`, checked in `Combat.deal`.
 - The cold (DESIGN.md "Frostline"): a world with `WorldDef.cold` over 0
   drains each player's `Actor.body_heat` by `WorldDef.cold_at` out in the
@@ -150,7 +157,15 @@ without Caleb, and update the gap list when a PR closes a row.
   everyone else against the nearest site it does not. Reinforcements follow
   the war: `Raid.bot_target()` is `bot_count` plus a share of
   `WorldDef.war_reinforcements` by `war.intensity`, new bots join the faction
-  with the fewest alive, and extra bots are not replaced once it cools. Bots
+  with the fewest alive, and extra bots are not replaced once it cools.
+  A world caps rare kinds with `WorldDef.bot_allowed` (authority only: the
+  `Raid` rolls a turned-away bot again from a new seed, so clients only hear
+  of the kept seed). Ashfront's kinds (meta "kind": soldier, heavy, exo,
+  walker; DESIGN.md "Heavy units") come from the seed in `equip_bot`; a big
+  body is `Actor.set_stand_height` (capsule, hit tests and eyes follow
+  `body_height()`), a weak spot `Actor.rear_damage_mult`, and a gun that
+  must hold a lock first `BotBrain.lock_time` (meta "lock_time"), whose
+  tracking beam every view draws from the held aim (`ActorSkin._update_beam`). Bots
   killing bots only simmer the meter (`WarDirector.report_battle`, capped at
   `battle_ceiling`); only players take it higher. World-event bots
   (`Raid._event_bots`) are outside all of this, and so are rival raiders
@@ -160,6 +175,28 @@ without Caleb, and update the gap list when a PR closes a row.
   (never `equip_bot`). A client builds one from that kit (`spawn_bot`'s
   `kit`), not from the seed. The `Raid` sends them on errands
   (`BotBrain.go_to`) and signs them out; armies never order them.
+  Group fights take turns (Caleb's call, DESIGN.md "Group fights"): only
+  `BotBrain.attack_slots` army bots shoot or swing at one person at a time
+  (`BotBrain.RING_SLOTS`: 1 outer, 2 middle, 3 core; `take_slot`, keyed by
+  the target, held `token_hold` and passed on after `token_beat`). A bot
+  without a slot keeps its gun on the target and holds fire, crouched in
+  cover from the target's eyes (`_find_cover`, a few ray probes every
+  1.5 s) or, past the outer ring, working round a flank. Return fire
+  (`return_fire_time`) and anything inside `point_blank` skip the queue,
+  and bots fighting bots are never rationed (`BotBrain.is_person`). Spotting
+  takes longer far off and against a crouch (`notice_mult`), and the gun
+  comes up halfway through the reaction with a bark heard nearby
+  (`ActorSkin._update_bark`) before the first shot. Measure with the duel
+  bench's `--group 2,3,5` (and `--slots off` to compare).
+  Melee bots fight like people (DESIGN.md "Melee bots"): held heavies,
+  feints (a charge that switches side and lets go as a light) and
+  dash-strikes by ring (`BotBrain.RING_HEAVY`, `RING_FEINT`, `RING_DASH`),
+  and a strike into any opening; they press the same buttons a player
+  does (`_start_attack`, `_carry_charge`). A blade in reach beats a rifle
+  (Caleb's call): an army gunner cut by a blade flinches
+  (`BotBrain.melee_flinch`, its aim and trigger only, never a player's)
+  and gives ground from one (`blade_backoff`). Measure with the duel
+  bench's `--melee <blade id>`.
 - Big battles must stay affordable; measure with
   `godot --headless --path . res://tests/battle_bench.tscn -- --bots 150 --players 32`
   (processor time a tick, against the 16.7 ms budget). Three things keep
@@ -622,6 +659,14 @@ without Caleb, and update the gap list when a PR closes a row.
   may change an actor's velocity by more than its own accelerations in one
   tick (wings catch a fall at `FlightRig.glide_catch_accel` and roll into a
   bank at `glide_bank_rate`; never clamp a velocity straight to its target).
+  Recoil is a pattern you can learn (Caleb's call, DESIGN.md "Recoil"):
+  each gun's `recoil_pattern` ("climb", "climb_right", "climb_left",
+  "sway", "kick") and a kick that builds through a spray
+  (`Gun.recoil_for`, `spray_shot`, counted in `Gun._fire`, so simulated),
+  with only `recoil_jitter` of the side kick left to chance; a new gun
+  names a pattern in its stats. Bots take the same kick into their aim
+  and pull against a share of it by skill (`BotBrain._take_recoil`,
+  `RECOIL_CONTROL`); measure with `gun_bench.tscn -- --recoil`.
   What only the player sees is the controller's job and view only: recoil
   reaching the view over a few frames and settling back
   (`PlayerController._update_recoil`), the view widening with speed
@@ -636,6 +681,17 @@ without Caleb, and update the gap list when a PR closes a row.
   `Actor.sprint_out_time` after the sprint ends (`Actor.sprint_recover`),
   keeping a pull made meanwhile. Light guns are quick and steady on the
   move; a DMR is slow to aim and wild on the run.
+  Feedback is view only (DESIGN.md "Feedback"): each kind of gun has its own
+  voice (the item's `shot_sound`) heard out to `Gun.SHOT_REACH`, a round
+  passing close is heard going by (`Sfx.pass_by`), a round leaves a puff
+  and a wall a mark for a few seconds (`Fx.impact`, at most `Fx.MAX_MARKS`;
+  `Combat.trace` gives the face's `normal`), the hit marker and its sound
+  tell a head, plates soaking it (`DamageInfo.armored`, set by
+  `HealthComponent`), plates breaking (`armor_broke`) and a kill apart
+  (`Hud.HitMarker.kind_of`; online they ride `NetSession._hit_feedback`),
+  and a round jolts the view (`PlayerController.bullet_flinch`), never the
+  aim. Who shot you is not shown: that is the tactical visor's job.
+  Check by eye with `visual_check.tscn -- <dir> --impacts-only`.
 - Helmets are items tagged `helmet` in the `helmet` loadout slot, and data
   like abilities: `Visor` (`core/abilities/visor.gd`, `Actor.visor`) is one
   class whose `mode` stat picks what the visor does ("" plain, "zoom"
@@ -763,7 +819,8 @@ without Caleb, and update the gap list when a PR closes a row.
   it (`Vehicle._fly`: takes off past `takeoff_speed` with jump, never
   hovers, drops below `stall_speed` or with nobody at the stick, climbs no
   higher than `ceiling` over the world's ground). Every vehicle, the jet
-  included, can be thrown in every world (Caleb's call). A vehicle's `watch_recharge` and `footprint` stats
+  included, can be thrown in every world (Caleb's call), except a race
+  world (`WorldDef.vehicle_toys` off), which races its own stock machines. A vehicle's `watch_recharge` and `footprint` stats
   set the watch's wait after a throw and the room it needs to unpack.
 - Toy vehicles: a vehicle a player owns in a world rides on their watch as
   a toy (`Raid.PlayerState.stowed`, read with `Raid.stowed_for`), never in
@@ -821,6 +878,36 @@ without Caleb, and update the gap list when a PR closes a row.
   `Combat.authoritative` is false there, so a client never deals damage, loots,
   or decides an outcome. Anything that changes a result must run on the server
   and reach clients through `NetSession`.
+- Signing in is part of the connection (DESIGN.md section 14): a client
+  sends its version and sign-in through `SceneMultiplayer.auth_callback`
+  (`NetSession._server_auth`, `_client_auth`) and counts as connected only
+  once the server accepts, so an old game or a wrong secret never reaches
+  the session. Who a player is gets decided in one place,
+  `StashService.sign_in_with(credentials)`, by "method": the name and
+  secret, or a token. A sign-in with the secret hands back a token
+  (`NetSession.ticket`, kept per address by `main.gd`) that the game shows
+  the next server instead of the secret, and that every server of one
+  account service accepts; one that has run out is answered `"again":
+  "secret"` on the same connection. A store login (Steam) is a new method
+  there that ends in an account id, never a second path into a session. Both sides' messages always carry "protocol", so any two
+  versions can say which one needs the update; an older game is pointed at
+  `NetSession.UPDATE_URL` from the phone's Servers app. Every connection is
+  encrypted with ENet DTLS (`core/net/server_trust.gd`): a server makes its
+  own certificate on first start, kept beside the accounts, and a game
+  remembers it per address on first use and warns on the Servers app if it
+  changes (never for this computer's own server, nor for official hosts in
+  `ServerTrust.OFFICIAL_HOSTS`, which use real certificates). The secret is
+  only ever sent encrypted; the checks that send none (`probe`, `plain`)
+  are how a game learns a server changed or is from before encryption. `server_relay` is
+  off: clients only talk to the server. Every `any_peer` RPC starts with
+  `_allow(kind)` (`NetSession.RequestLimits`, per player, refilled by server
+  tick), and a new one must too. Server saves that are files (clans, phone
+  records, the JSON fallback) go through `core/account/safe_file.gd`
+  (written whole, then swapped in); accounts are in SQLite (below). The
+  `StashService` keeps rolling backups of the whole save folder
+  (`backup_if_due`, `backup_dir`), the database copied with
+  `AccountStore.backup_to`, never as the live file. An account that cannot
+  be read is never replaced by a new account.
 - Online movement: a client numbers every input and each packet repeats
   every input the server has not received yet (up to
   `NetSession.MAX_INPUTS_PER_PACKET`, packed small by `pack_inputs` so a
@@ -846,13 +933,52 @@ without Caleb, and update the gap list when a PR closes a row.
   so a lagging player hits what was on their screen. A vehicle the local
   player rides is predicted and corrected against `NetSession._ride_history`
   like the player's own actor.
+- The account service (DESIGN.md section 14): official servers share one
+  set of accounts, kept by one headless program, `-- --account-service`
+  (`core/account/account_service.gd`: the same `StashService` on SQLite,
+  with the market's board beside it). A game server started with
+  `--account-url` holds an `AccountLink` (`core/account/account_link.gd`) in
+  `NetSession.stash` instead of a `StashService`; any other server keeps
+  its own accounts and nothing moves between the two kinds. The link offers
+  the `StashService` calls, so a session never asks which it holds: every
+  call that asks the accounts for something is made with `await` (free on
+  a `StashService`, which answers at once), and what follows an `await`
+  checks the player is still there (`NetSession._here`). Never read
+  `_api.get_remote_sender_id()` after one. A new account call goes in
+  `StashService`, `AccountLink` and `AccountService.CALLS` together. The
+  link has three kinds of call: read at once from its copy of the accounts
+  signed in on that server (`snapshot`, `scrip_of`, `showcase`; the service
+  keeps the copy fresh and `account_changed` says when); awaited, giving up
+  as "unanswered" after `ANSWER_TIMEOUT` (sign-in, equip, buy, deploy); and
+  sure, kept and sent again until answered, for what the server alone
+  knows (`bank`, `settle`, `cancel_deploy`, `change_scrip`, `record_arena`).
+  The service does every request once: its receipt is written in the same
+  transaction as its changes (`StashService.begin_hold` / `end_hold`,
+  `AccountStore.write`'s `receipt`), so a new call that changes an account
+  goes in `AccountService.HELD`. The market is the exception (the board has
+  its own file), so a market request is sent once and never again. A
+  deploy belongs to the server that made it (`Account.deployed_by`): only
+  that server banks into it or settles it, a deploy never answered is
+  undone by its own request id (`undo_deploy`), and a game server that
+  starts afresh has its deploys returned. The service never returns a
+  deploy just because it restarted (`returns_lost_deploys` off). Game
+  servers prove the service key (`AccountService.load_key`) and players
+  never reach the service. `SocialService` and `ClanService` are still each
+  game server's own.
 - Online, the server owns each player's stash, loadout and mastery
   (`core/account/stash_service.gd`). A client's kit or picks are never trusted;
   the server gets them from `StashService.deploy` and applies results with
   `StashService.settle`. `NetSession` does both. A client only signs in
   (name plus `Profile.online_secret`) and sends requests (equip, pick, deploy)
   from the lobby; it never sends a kit, and online play never reads or writes
-  the local `Profile` stash, with one exception: one player state. On a
+  the local `Profile` stash, with one exception: one player state.
+  The service keeps accounts in SQLite (`core/account/account_store.gd`,
+  `accounts.sqlite` in its `save_dir`, through `addons/godot-sqlite`): every
+  `_save` is one transaction, and changes to several accounts that must
+  happen together (a trade) go through `StashService.transaction`, never one
+  ledger call after another. Never read or write account files directly;
+  old ones are imported once by `AccountStore.open`. A build without the
+  library falls back to JSON files. On a
   server you host yourself (`main.gd host_and_join`, the base's door) you
   are the player you are at home: the client hands the server your profile
   (`--host-profile`, read once into `StashService.host_profile`, claimed only
@@ -1257,6 +1383,22 @@ without Caleb, and update the gap list when a PR closes a row.
   owner's copy for the watch is `Actor.tally`. Only a sign-out counts, and no
   job may count player kills or reward signing straight out. A new job is a
   `JOBS` entry; a new stat is a `_count` call where the event happens.
+- The player market (DESIGN.md section 10, "Two worlds, one loop"): rules
+  once in `core/economy/market.gd` (static, like `Economy`: what trades, the
+  price band, fees, the daily cap; Mk3, heavy weapons, artifacts and relics
+  never trade), the board in `core/economy/market_service.gd`, shared by
+  every session of a server like the `ClanService` (`NetSession.market`).
+  It moves goods only through six ledger calls on the `StashService`
+  (`count_of`, `scrip_of`, `take_items`, `give_items`, `change_scrip`, and
+  `transaction`, which every listing charge and every sale goes through so
+  no trade is half done); it never writes an account itself. On official
+  servers the board runs inside the account service, beside those accounts
+  (`AccountService.market`), and a session only passes the request on. Listed items are held by the
+  board, its file is written before the accounts' transaction so a crash
+  can lose a listing but never copy one, and
+  a client only asks (`NetSession.market_ask`) from the Exchange kiosk in
+  the plaza and shows `market_state`. Trading needs a safe zone and no
+  deploy; there is no solo market.
 - Furniture (`furniture`, small pieces also `decor`) and clothing
   (`cosmetic`, with an `outfits` stat of customizer outfit ids) are ordinary
   stash items that fit no loadout slot, so they never go on a raid.
@@ -1277,6 +1419,29 @@ without Caleb, and update the gap list when a PR closes a row.
   alone (`ArenaVenue.doors_open`, `barrier_raise`), which the `Arena` hands
   the map every tick (`set_stage`) on every machine, so they need no messages
   of their own. Static venue boxes are merged into one mesh per material.
+
+- The race world (`worlds/meridian`, DESIGN.md section 9) is run by `Race`
+  (`core/race/race.gd`, a `Raid` subclass from `WorldDef.new_raid`), on a
+  map that offers `race_track()` (a `RaceTrack`: the centre line, gates,
+  start slots, `keep_to` lines). Nothing is at stake there:
+  `WorldDef.gear_at_risk` off clears every result's loot and kit lists
+  (`Raid._finish_player`) and `Profile.checkout_loadout` takes nothing,
+  `weapons_free` off locks weapons and makes `can_damage` refuse, and
+  `portal_home` keeps the portal home on offer. Racers bring no vehicle:
+  the machines wait in the pit bays and race on their race profile
+  (`Vehicle.race`, `apply_race_profile`, `ItemDB.RACE_*`), never their
+  combat tuning. Only the authority judges a run (grid, lights,
+  `Vehicle.held`, gates by `RaceTrack.cross`, laps, the off-track rule, the
+  board); a client gets its own run (`NetSession._race_run`,
+  `Race.remote_run`) and the board, holds its machine for the lights from
+  that, and asks with `NetSession.race_request`. The lights, splits, board
+  text and ghosts are `RaceView`, a view (ghosts on disk in
+  `RaceView.GHOST_PATH` only while `Profile.persist`). In a race world the
+  watch's contract icon is the race icon (`Hud.race_slot`, `glyph`).
+  Every machine in a class stays within 3% of the class average round
+  every track: check with
+  `godot --headless --fixed-fps 60 --path . res://tests/race_bench.tscn`
+  and tune the race profiles, never the combat stats.
 
 ## Conventions
 
@@ -1307,6 +1472,7 @@ godot --headless --fixed-fps 60 --path . res://tests/feel_bench.tscn   # how eac
 godot --headless --fixed-fps 60 --path . res://tests/duel_bench.tscn   # how each enemy type fights a reference player (DESIGN.md "Enemy balance")
 godot --headless --path . res://tests/gun_bench.tscn   # every gun's time to kill by range and armor (DESIGN.md "Gun roles")
 godot --path . res://tests/equip_bench.tscn -- --walk   # what an equip costs in the base, and whether you keep moving
+godot --headless --fixed-fps 60 --path . res://tests/race_bench.tscn   # lap times per race machine, flags any 3% off its class
 ```
 
 CI (`.github/workflows/tests.yml`) runs the suite in two tiers. The offline

@@ -19,6 +19,9 @@ const GAITS: Array[String] = ["walk", "run", "run_back", "run_left", "run_right"
 const STANDS: Array[String] = ["idle", "idle_gun", "aim_gun", "idle_melee"]
 
 ## Drawn cloaked now (see `_update_cloak`), and the shared shimmer material.
+## How long a soldier's gun must have been down before raising it barks.
+var bark_calm := 4.0
+var _calm_for := 0.0
 var _cloaked := false
 ## The weapon model being drawn as it materializes (a watch summon), if any.
 var _materializing: Node3D
@@ -286,6 +289,10 @@ var _frame_parts: Array[Node3D] = []
 var _frame_id := ""
 ## The helmet `_helmet` was built for; "" while bare-headed.
 var _helmet_id := ""
+## A walker's tracking beam (`_update_beam`) and how long it has held its aim.
+var _beam: MeshInstance3D
+var _beam_mat: StandardMaterial3D
+var _beam_held := 0.0
 var _flames: Array[Node3D] = []
 var _burst_left := 0.0
 var _spread := 0.0
@@ -413,6 +420,10 @@ func _ready() -> void:
 	_def = def
 	var skeleton := model.find_child("Skeleton3D", true, false) as Skeleton3D
 	_skeleton = skeleton
+	if def.get("chassis", "") == "walker":
+		_build_walker()
+	if def.get("suit", false):
+		_build_exo_suit()
 	# Before the arm, so the arm's hooks run after the legs have turned.
 	locomotion = Locomotion.new()
 	locomotion.name = "Locomotion"
@@ -496,6 +507,9 @@ func _process(delta: float) -> void:
 	if actor == null or not is_instance_valid(actor):
 		return
 	_steady_eyes(delta)
+	if _def.get("beam", false):
+		_update_beam(delta)
+		_aim_cannon()
 	_detail_delta += delta
 	_detail_wait += 1
 	if _detail_wait < _detail_every:
@@ -608,6 +622,7 @@ func _update(delta: float) -> void:
 	_update_breath(delta)
 	_update_materialize()
 	_update_toy(delta)
+	_update_bark(delta)
 	_aim_left = maxf(_aim_left - delta, 0.0)
 	var weapon := actor.get_active_weapon()
 	if phone_up() or toy_up():
@@ -1217,6 +1232,11 @@ static func helmet_light(v: Visor) -> String:
 ## the head under it. Bare-headed, the head shows again.
 func _update_helmet() -> void:
 	var id := actor.visor.item_id if actor.visor.enabled else ""
+	# A skin that comes with its own helmet (an exo trooper's) wears it when
+	# no helmet is worn: lit in the body's colour, the side it fights for.
+	var own: String = _def.get("helmet", "") if id == "" else ""
+	if own != "":
+		id = "skin:" + own
 	if id == _helmet_id and (id == "" or is_instance_valid(_helmet)):
 		return
 	_helmet_id = id
@@ -1230,7 +1250,9 @@ func _update_helmet() -> void:
 	if id == "":
 		return
 	var bone: String = "Head" if _skeleton and _skeleton.find_bone("Head") >= 0 else _def.get("neck", "")
-	_helmet = _hang(build_helmet(actor.visor.mode, actor.visor.glass_color, helmet_size, helmet_shell_color),
+	var mode := actor.visor.mode if own == "" else own
+	var glass := actor.visor.glass_color if own == "" else actor.body_color.lightened(0.2)
+	_helmet = _hang(build_helmet(mode, glass, helmet_size, helmet_shell_color),
 			"Helmet", bone, helmet_offset, Vector3(0.0, _def.get("height", 1.8) * 0.93, 0.0) + helmet_offset)
 
 
@@ -1255,6 +1277,8 @@ static func build_helmet(mode: String, glass: Color, size: Vector3, shell_color:
 	neck.height = 1.0
 	_piece(root, "Neck", neck, shell, Vector3(0, -size.y * 0.45, size.z * 0.06),
 			Vector3(size.x * 0.55, size.y * 0.2, size.z * 0.55))
+	if mode == "slit":
+		return _closed_helm(root, size, plate, _solid(glass, 1.4))
 	# The faceplate: glass over the eyes, wrapped round the front of the shell.
 	var face := SphereMesh.new()
 	face.radius = 0.5
@@ -1311,6 +1335,514 @@ static func build_helmet(mode: String, glass: Color, size: Vector3, shell_color:
 	return root
 
 
+## An exo trooper's closed helmet: a faceplate over the whole front, one
+## narrow slit lit in `slit` across the eyes, a heavy brow over it, cheek
+## guards and a jaw plate. Added to a shell `build_helmet` has made.
+static func _closed_helm(root: Node3D, size: Vector3, plate: Material, slit: Material) -> Node3D:
+	var face := SphereMesh.new()
+	face.radius = 0.5
+	face.height = 1.0
+	_piece(root, "Faceplate", face, plate, Vector3(0, -size.y * 0.06, -size.z * 0.1),
+			Vector3(size.x * 0.98, size.y * 0.66, size.z * 0.86))
+	_piece(root, "Slit", BoxMesh.new(), slit, Vector3(0, size.y * 0.02, -size.z * 0.52),
+			Vector3(size.x * 0.62, size.y * 0.07, 0.02))
+	_piece(root, "Brow", BoxMesh.new(), plate, Vector3(0, size.y * 0.12, -size.z * 0.46),
+			Vector3(size.x * 0.92, 0.04, 0.07))
+	_piece(root, "Jaw", BoxMesh.new(), plate, Vector3(0, -size.y * 0.3, -size.z * 0.38),
+			Vector3(size.x * 0.6, 0.07, 0.1))
+	for side: float in [-1.0, 1.0]:
+		var cheek := _piece(root, "Cheek", BoxMesh.new(), plate,
+				Vector3(side * size.x * 0.42, -size.y * 0.16, -size.z * 0.26), Vector3(0.035, 0.12, 0.13))
+		cheek.rotation.y = side * 0.45
+	return root
+
+
+## An exo trooper's cooling pack, front toward -Z (against the back): a
+## squat housing, two finned radiator stacks standing proud of it and a
+## coolant strip down the middle lit in `lit` (the side it fights for).
+static func build_cooler(color: Color, lit: Color) -> Node3D:
+	var root := Node3D.new()
+	root.name = "CoolerModel"
+	var shell := _solid(color.darkened(0.15), 0.0)
+	var dark := _solid(color.darkened(0.5), 0.0)
+	_piece(root, "Housing", BoxMesh.new(), shell, Vector3(0, 0, 0.02), Vector3(0.34, 0.4, 0.13))
+	_piece(root, "Lid", BoxMesh.new(), shell, Vector3(0, 0.22, 0.0), Vector3(0.3, 0.05, 0.16))
+	for side: float in [-1.0, 1.0]:
+		var stack := CylinderMesh.new()
+		stack.top_radius = 0.5
+		stack.bottom_radius = 0.5
+		stack.height = 1.0
+		_piece(root, "Stack", stack, dark, Vector3(side * 0.12, 0.05, 0.12), Vector3(0.09, 0.44, 0.09))
+		for i in 5:
+			_piece(root, "Fin", stack, shell, Vector3(side * 0.12, -0.12 + i * 0.075, 0.12),
+					Vector3(0.12, 0.012, 0.12))
+	_piece(root, "Coolant", BoxMesh.new(), _solid(lit.lightened(0.25), 1.2), Vector3(0, 0.0, 0.09),
+			Vector3(0.035, 0.28, 0.01))
+	return root
+
+
+## Hangs `part` on `bone` so that, at rest, it sits at `at` (actor space).
+func _hang_at(part: Node3D, holder_name: String, bone_name: String, at: Vector3) -> Node3D:
+	var bone := _skeleton.find_bone(bone_name) if _skeleton else -1
+	var offset := at
+	if bone >= 0:
+		offset = at - _rest_at(bone_name)
+	return _hang(part, holder_name, bone_name if bone >= 0 else "", offset, at)
+
+
+## Where a bone sits at rest, as the actor sees it.
+func _rest_at(bone_name: String) -> Vector3:
+	var bone := _skeleton.find_bone(bone_name)
+	var to_actor := actor.global_transform.affine_inverse()
+	return (to_actor * _skeleton.global_transform * _skeleton.get_bone_global_rest(bone)).origin
+
+
+## The Kiln Walker's own body (Caleb's call: not a stock model), built round
+## the walking skeleton of the skin's scene, whose own mesh is hidden: a low,
+## wide armored hull carried level between two heavy legs, the cannon built
+## into its glacis at the height of the walker's eyes (where the tracking
+## beam starts), the heat vent let into the rear armor (the weak spot: hits
+## from behind or above), hip drums, armored thighs, pistons down the shins
+## and broad splayed feet. Gunmetal, with panels and a lit sensor slit in
+## the army's colour. Faceted low-poly blocks, like the rest of the game.
+## Everything hangs on the bone it moves with, so the walk clip drives it.
+func _build_walker() -> void:
+	if _skeleton == null:
+		return
+	var metal := _solid(Color(0.36, 0.37, 0.39), 0.0)
+	var dark := _solid(Color(0.13, 0.13, 0.14), 0.0)
+	var piston := _solid(Color(0.6, 0.61, 0.62), 0.0)
+	var paint := _solid(actor.body_color.darkened(0.3), 0.0)
+	var lit := _solid(actor.body_color.lightened(0.2), 2.4)
+	var hip := _rest_at("UpperLeg.L")
+	var hull_bone := "Body"
+	var eye := actor.eye_height
+	var top := minf(eye + 0.22, actor.stand_height - 0.02)
+	var low := hip.y - 0.16
+	var mid := hip.y + 0.18
+	var deck := eye - 0.2
+	var hull := Node3D.new()
+	hull.name = "WalkerHull"
+	# Low and wide: the belly flares out to the hull's widest line over the
+	# hips, the casemate slopes in to a deck with a long glacis, and the gun
+	# house on the deck carries the cannon. Each is [left, right, front, back].
+	var belly_lo := [-0.72, 0.72, -0.72, 0.76]
+	var waist := [-0.88, 0.88, -1.05, 0.98]
+	var shoulder := [-0.82, 0.82, -0.5, 0.88]
+	var roof := [-0.62, 0.62, -0.28, 0.7]
+	_block(hull, "Belly", dark, low, belly_lo, mid, waist)
+	_block(hull, "Casemate", metal, mid, waist, deck, shoulder)
+	_block(hull, "GunHouse", metal, deck, shoulder, top, roof)
+	# Where a face is at a height, front or back, on the block it is on.
+	var front_at := func(y: float) -> float:
+		if y < deck:
+			return lerpf(waist[2], shoulder[2], (y - mid) / (deck - mid))
+		return lerpf(shoulder[2], roof[2], (y - deck) / (top - deck))
+	var rake := atan2(shoulder[2] - waist[2], deck - mid)
+	var house_rake := atan2(roof[2] - shoulder[2], top - deck)
+	# A rim round the waist, armored sponsons over the hips and a chin
+	# plate, in the army's colour.
+	_block(hull, "Rim", dark, mid - 0.05, [-0.9, 0.9, -1.07, 1.0], mid + 0.02, [-0.9, 0.9, -1.07, 1.0])
+	for side: float in [-1.0, 1.0]:
+		_block(hull, "Sponson", paint, mid - 0.02, [side * 0.7 - 0.2, side * 0.7 + 0.2, -0.7, 0.75], mid + 0.24,
+				[side * 0.66 - 0.16, side * 0.66 + 0.16, -0.5, 0.62])
+	# Bolt-on armor tiles in rows down the glacis, and side plates down the
+	# casemate's flanks, so its big faces read as armor.
+	var tile := _solid(Color(0.31, 0.32, 0.34), 0.0)
+	for row in 2:
+		var tile_y := lerpf(mid, deck, 0.3 + row * 0.4)
+		var count := 4 - row
+		for i in count:
+			var x := (i - (count - 1) * 0.5) * 0.38
+			var block := _piece(hull, "Tile", BoxMesh.new(), tile,
+					Vector3(x, tile_y, front_at.call(tile_y) - 0.035), Vector3(0.34, 0.2, 0.07))
+			block.rotation.x = rake
+	for side: float in [-1.0, 1.0]:
+		var flank := _piece(hull, "FlankPlate", BoxMesh.new(), tile,
+				Vector3(side * lerpf(waist[1], shoulder[1], 0.5) + side * 0.02, lerpf(mid, deck, 0.5), 0.15),
+				Vector3(0.05, 0.36, 1.1))
+		flank.rotation.z = side * atan2(waist[1] - shoulder[1], deck - mid)
+		_piece(hull, "FlankStripe", BoxMesh.new(), paint,
+				Vector3(side * (lerpf(waist[1], shoulder[1], 0.5) + 0.05), lerpf(mid, deck, 0.5), -0.55),
+				Vector3(0.03, 0.36, 0.18)).rotation.z = side * atan2(waist[1] - shoulder[1], deck - mid)
+	# A sensor slit across the gun house over the cannon, lit in the army's
+	# colour, and a hatch and a stripe of paint on the roof.
+	var slit_y := top - 0.07
+	var slit := _piece(hull, "Slit", BoxMesh.new(), lit, Vector3(0, slit_y, front_at.call(slit_y) - 0.012),
+			Vector3(0.66, 0.045, 0.03))
+	slit.rotation.x = house_rake
+	_piece(hull, "Hatch", BoxMesh.new(), dark, Vector3(0, top + 0.02, 0.22), Vector3(0.44, 0.05, 0.42))
+	_piece(hull, "RoofStripe", BoxMesh.new(), paint, Vector3(0, top + 0.005, -0.12), Vector3(0.96, 0.02, 0.18))
+	# The heat vent, set into the rear armor: an armored frame round a grille
+	# of glowing slats in the Foundry's molten orange, louvers over it, and
+	# two short stacks either side.
+	var vent_y := lerpf(mid, deck, 0.5)
+	var vent_z := lerpf(waist[3], shoulder[3], 0.5)
+	var lean := atan2(shoulder[3] - waist[3], deck - mid)
+	var vent := Node3D.new()
+	vent.name = "Vent"
+	vent.position = Vector3(0, vent_y, vent_z)
+	vent.rotation.x = lean
+	hull.add_child(vent)
+	_piece(vent, "VentFrame", BoxMesh.new(), metal, Vector3(0, 0, 0.01), Vector3(0.96, 0.5, 0.07))
+	_piece(vent, "Grille", BoxMesh.new(), dark, Vector3(0, 0, 0.03), Vector3(0.78, 0.38, 0.05))
+	var glow := _solid(VENT_GLOW, 3.0)
+	for i in 5:
+		_piece(vent, "Slat", BoxMesh.new(), glow, Vector3(0, -0.15 + i * 0.075, 0.06),
+				Vector3(0.7, 0.032, 0.02))
+	_piece(vent, "Louver", BoxMesh.new(), paint, Vector3(0, 0.27, 0.08), Vector3(1.0, 0.06, 0.14))
+	var light := OmniLight3D.new()
+	light.light_color = VENT_GLOW
+	light.light_energy = 1.6
+	light.omni_range = 2.0
+	light.shadow_enabled = false
+	light.position = Vector3(0, 0, 0.35)
+	vent.add_child(light)
+	var tube := CylinderMesh.new()
+	tube.top_radius = 0.5
+	tube.bottom_radius = 0.5
+	tube.height = 1.0
+	tube.radial_segments = 8
+	for side: float in [-1.0, 1.0]:
+		var stack := _piece(hull, "Stack", tube, dark, Vector3(side * 0.6, deck + 0.1, shoulder[3] - 0.08),
+				Vector3(0.14, 0.34, 0.14))
+		stack.rotation.x = 0.3
+		_piece(hull, "StackCap", tube, glow, Vector3(side * 0.6, deck + 0.26, shoulder[3] - 0.03),
+				Vector3(0.11, 0.02, 0.11)).rotation.x = 0.3
+	# The cannon, through the glacis on the line of the walker's eyes: a
+	# mantlet let into the armor, a sleeve, the long barrel and a muzzle
+	# brake. It pitches with the aim (`_aim_cannon`).
+	var gun := Node3D.new()
+	gun.name = "Cannon"
+	gun.position = Vector3(0, eye, front_at.call(eye))
+	hull.add_child(gun)
+	var mantlet := _piece(gun, "Mantlet", BoxMesh.new(), metal, Vector3(0, 0, 0.04), Vector3(0.5, 0.36, 0.34))
+	mantlet.rotation.x = house_rake * 0.5
+	_piece(gun, "MantletPaint", BoxMesh.new(), paint, Vector3(0, 0.0, -0.13), Vector3(0.36, 0.26, 0.04))
+	var sleeve := _piece(gun, "Sleeve", tube, dark, Vector3(0, 0, -0.38), Vector3(0.24, 0.46, 0.24))
+	sleeve.rotation.x = PI * 0.5
+	var barrel := _piece(gun, "Barrel", tube, metal, Vector3(0, 0, -1.0), Vector3(0.17, 1.1, 0.17))
+	barrel.rotation.x = PI * 0.5
+	_piece(gun, "Brake", BoxMesh.new(), dark, Vector3(0, 0, -1.6), Vector3(0.3, 0.2, 0.24))
+	var bore := _piece(gun, "Bore", tube, glow, Vector3(0, 0, -1.725), Vector3(0.09, 0.01, 0.09))
+	bore.rotation.x = PI * 0.5
+	_cannon = gun
+	# Hip drums on the hull's flanks, where the legs hang.
+	var drum := CylinderMesh.new()
+	drum.top_radius = 0.5
+	drum.bottom_radius = 0.5
+	drum.height = 1.0
+	drum.radial_segments = 10
+	for side: float in [-1.0, 1.0]:
+		var x := absf(hip.x) * side
+		var hub := _piece(hull, "HipDrum", drum, dark, Vector3(x + side * 0.14, hip.y, hip.z), Vector3(0.5, 0.3, 0.5))
+		hub.rotation.z = PI * 0.5
+		var cap := _piece(hull, "HipCap", drum, metal, Vector3(x + side * 0.3, hip.y, hip.z), Vector3(0.36, 0.04, 0.36))
+		cap.rotation.z = PI * 0.5
+	_hang_at(hull, "WalkerHull", hull_bone, Vector3.ZERO)
+	# The legs: an armored thigh, a knee drum, a shin with a ram down its
+	# front, a hock drum, a shank and a broad foot with splayed toes.
+	for side: String in ["L", "R"]:
+		var out := Vector3(signf(_rest_at("UpperLeg." + side).x), 0.0, 0.0)
+		_limb("UpperLeg." + side, "MidLeg." + side, Vector3.ZERO, Vector2(0.26, 0.36), metal, 0.0, 1.0)
+		_limb("UpperLeg." + side, "MidLeg." + side, out * 0.15, Vector2(0.06, 0.4), paint, 0.12, 0.85)
+		_limb("MidLeg." + side, "LowerLeg." + side, Vector3.ZERO, Vector2(0.22, 0.26), metal, 0.05, 0.95)
+		_limb("MidLeg." + side, "LowerLeg." + side, Vector3.ZERO, Vector2(0.07, 0.07), piston, 0.1, 0.9, true,
+				Vector3(0, 0, -0.17))
+		_limb("LowerLeg." + side, "FootBack." + side, Vector3.ZERO, Vector2(0.18, 0.2), dark, 0.0, 0.9)
+		_limb("LowerLeg." + side, "FootBack." + side, out * 0.12, Vector2(0.05, 0.05), piston, 0.1, 0.8, true)
+		var knee := _rest_at("MidLeg." + side)
+		var knee_hub := Node3D.new()
+		_piece(knee_hub, "KneeDrum", drum, dark, Vector3.ZERO, Vector3(0.36, 0.34, 0.36)).rotation.z = PI * 0.5
+		_piece(knee_hub, "KneePlate", BoxMesh.new(), paint, Vector3(0, 0.04, -0.17), Vector3(0.26, 0.24, 0.06))
+		_hang_at(knee_hub, "Knee" + side, "MidLeg." + side, knee)
+		var hock := Node3D.new()
+		_piece(hock, "HockDrum", drum, dark, Vector3.ZERO, Vector3(0.26, 0.28, 0.26)).rotation.z = PI * 0.5
+		_hang_at(hock, "Hock" + side, "LowerLeg." + side, _rest_at("LowerLeg." + side))
+		var ankle := _rest_at("FootBack." + side)
+		var foot := Node3D.new()
+		_piece(foot, "Sole", BoxMesh.new(), dark, Vector3(0, 0.05, 0.0), Vector3(0.46, 0.1, 0.62))
+		_piece(foot, "Ankle", BoxMesh.new(), metal, Vector3(0, 0.17, 0.04), Vector3(0.26, 0.18, 0.26))
+		for toe: float in [-1.0, 0.0, 1.0]:
+			var claw := _piece(foot, "Toe", BoxMesh.new(), metal, Vector3(toe * 0.16, 0.06, -0.38),
+					Vector3(0.13, 0.11, 0.28))
+			claw.rotation.y = -toe * 0.3
+		_piece(foot, "Heel", BoxMesh.new(), metal, Vector3(0, 0.06, 0.36), Vector3(0.18, 0.1, 0.2))
+		_hang_at(foot, "Foot" + side, "FootBack." + side, Vector3(ankle.x, 0.0, ankle.z))
+
+
+## The walker's cannon, raised and lowered with the aim (view only).
+var _cannon: Node3D
+
+
+## Pitches the walker's cannon in its mantlet toward where it aims.
+func _aim_cannon() -> void:
+	if _cannon == null or actor.is_dead:
+		return
+	var dir := actor.get_aim_dir()
+	_cannon.rotation.x = clampf(asin(clampf(dir.y, -1.0, 1.0)), -0.25, 0.35)
+
+
+## A faceted block, flat shaded: a bottom face at `y0` and a top face at
+## `y1`, each [left, right, front, back] (actor space, front toward -Z).
+static func _block(root: Node3D, block_name: String, mat: Material, y0: float, lower: Array, y1: float,
+		upper: Array) -> MeshInstance3D:
+	var corners := func(y: float, r: Array) -> Array[Vector3]:
+		return [Vector3(r[0], y, r[2]), Vector3(r[1], y, r[2]), Vector3(r[1], y, r[3]), Vector3(r[0], y, r[3])]
+	var b: Array[Vector3] = corners.call(y0, lower)
+	var t: Array[Vector3] = corners.call(y1, upper)
+	var faces := [[b[0], b[1], b[2], b[3]], [t[3], t[2], t[1], t[0]]]
+	for i in 4:
+		var j := (i + 1) % 4
+		faces.append([b[i], t[i], t[j], b[j]])
+	var centre := Vector3.ZERO
+	for p in b + t:
+		centre += p / 8.0
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for face: Array in faces:
+		var a: Vector3 = face[0]
+		var b1: Vector3 = face[1]
+		var c: Vector3 = face[2]
+		var d: Vector3 = face[3]
+		var normal := (b1 - a).cross(c - a)
+		if normal.length_squared() < 0.000001:
+			normal = (c - a).cross(d - a)
+		var outward := (a + b1 + c + d) * 0.25 - centre
+		var order := [0, 1, 2, 0, 2, 3]
+		# Godot draws clockwise faces as the front.
+		if normal.dot(outward) > 0.0:
+			order = [0, 2, 1, 0, 3, 2]
+		normal = normal.normalized() * signf(normal.dot(outward))
+		for k: int in order:
+			st.set_normal(normal)
+			st.add_vertex(face[k])
+	var mesh := st.commit()
+	mesh.surface_set_material(0, mat)
+	var part := MeshInstance3D.new()
+	part.name = block_name
+	part.mesh = mesh
+	root.add_child(part)
+	return part
+
+
+## A limb segment along a bone, from `from` of the way to its `child` up to
+## `to`, set off by `aside` (actor space, at rest), `size` across (x) and
+## deep (along the leg's swing). A `round` one is a piston, pushed `ahead`.
+func _limb(bone: String, child: String, aside: Vector3, size: Vector2, mat: Material, from: float, to: float,
+		round := false, ahead := Vector3.ZERO) -> void:
+	if _skeleton.find_bone(bone) < 0 or _skeleton.find_bone(child) < 0:
+		return
+	var a := _rest_at(bone)
+	var b := _rest_at(child)
+	var along := b - a
+	var length := along.length() * (to - from)
+	if length < 0.01:
+		return
+	var y := along.normalized()
+	var x := Vector3.RIGHT
+	var z := x.cross(y).normalized()
+	x = y.cross(z).normalized()
+	var root := Node3D.new()
+	var mesh: PrimitiveMesh = BoxMesh.new()
+	if round:
+		var tube := CylinderMesh.new()
+		tube.top_radius = 0.5
+		tube.bottom_radius = 0.5
+		tube.height = 1.0
+		tube.radial_segments = 8
+		mesh = tube
+	var bar := _piece(root, "Limb", mesh, mat, Vector3.ZERO, Vector3.ONE)
+	bar.basis = Basis(x, y, z) * Basis.from_scale(Vector3(size.x, length, size.y))
+	# `ahead` is in the limb's own frame: toward -z is the leg's front.
+	_hang_at(root, "Limb", bone, a + along * ((from + to) * 0.5) + aside + Basis(x, y, z) * ahead)
+
+
+## An exo trooper's suit, round a person of ordinary size: a gunmetal frame
+## down the outside of each arm and leg with a joint at hip, knee, shoulder
+## and elbow, actuators along the front of the thighs and forearms, boot
+## braces, a spine and a shoulder yoke with a roll cage up over the head,
+## and a power pack on the back. Everything hangs on the bone it moves with.
+func _build_exo_suit() -> void:
+	if _skeleton == null:
+		return
+	var frame := _solid(Color(0.28, 0.29, 0.31), 0.0)
+	var joint := _solid(Color(0.12, 0.12, 0.13), 0.0)
+	var piston := _solid(Color(0.62, 0.63, 0.64), 0.0)
+	var paint := _solid(actor.body_color.darkened(0.3), 0.0)
+	for side: String in ["L", "R"]:
+		var hip := _rest_at("UpperLeg." + side)
+		var out := Vector3(signf(hip.x), 0.0, 0.0)
+		var knee := _rest_at("LowerLeg." + side)
+		var foot := _rest_at("Foot." + side)
+		# Legs: heavy thigh and shin bars on the outside, a hip drum, a knee
+		# drum under an actuator housing, a ram down the front of the thigh
+		# and shin, and an armored boot.
+		_strut("UpperLeg." + side, "LowerLeg." + side, out * 0.14, 0.1, frame, 0.05, 0.95)
+		_strut("LowerLeg." + side, "Foot." + side, out * 0.13, 0.09, frame, 0.05, 0.88)
+		_strut("UpperLeg." + side, "LowerLeg." + side, Vector3(0, 0, -0.12), 0.05, piston, 0.2, 0.85, true)
+		_strut("LowerLeg." + side, "Foot." + side, Vector3(0, 0, -0.1), 0.045, piston, 0.12, 0.7, true)
+		_disc("UpperLeg." + side, hip + out * 0.16, 0.1, joint)
+		_disc("LowerLeg." + side, knee + out * 0.15, 0.09, joint)
+		var housing := Node3D.new()
+		_piece(housing, "KneeHousing", BoxMesh.new(), frame, Vector3.ZERO, Vector3(0.16, 0.16, 0.12))
+		_piece(housing, "KneeCap", BoxMesh.new(), paint, Vector3(0, 0.02, -0.065), Vector3(0.12, 0.1, 0.02))
+		_hang_at(housing, "Knee" + side, "LowerLeg." + side, knee + Vector3(0, 0.02, -0.1))
+		var boot := Node3D.new()
+		_piece(boot, "Boot", BoxMesh.new(), frame, Vector3.ZERO, Vector3(0.19, 0.15, 0.34))
+		_piece(boot, "Toe", BoxMesh.new(), joint, Vector3(0, -0.03, -0.18), Vector3(0.17, 0.09, 0.06))
+		_piece(boot, "Brace", BoxMesh.new(), frame, Vector3(out.x * 0.11, 0.1, 0.02), Vector3(0.05, 0.22, 0.18))
+		_hang_at(boot, "Boot" + side, "Foot." + side, foot + Vector3(0, 0.06, -0.04))
+		# Arms: heavy bars on the upper arm and forearm, shoulder and elbow
+		# drums, an elbow housing, a ram along the forearm, and a guard over
+		# the shoulder in the army's colour.
+		var shoulder := _rest_at("UpperArm." + side)
+		var elbow := _rest_at("LowerArm." + side)
+		var arm_out := Vector3(signf(shoulder.x), 0.0, 0.0)
+		_strut("UpperArm." + side, "LowerArm." + side, arm_out * 0.11, 0.08, frame, 0.05, 0.95)
+		_strut("LowerArm." + side, "Wrist." + side, arm_out * 0.1, 0.075, frame, 0.05, 0.92)
+		_strut("LowerArm." + side, "Wrist." + side, Vector3(0, 0.0, -0.08), 0.04, piston, 0.15, 0.85, true)
+		_disc("LowerArm." + side, elbow + arm_out * 0.12, 0.075, joint)
+		_disc("UpperArm." + side, shoulder + arm_out * 0.13, 0.1, joint)
+		var elbow_box := Node3D.new()
+		_piece(elbow_box, "ElbowHousing", BoxMesh.new(), frame, Vector3.ZERO, Vector3(0.12, 0.12, 0.14))
+		_hang_at(elbow_box, "Elbow" + side, "LowerArm." + side, elbow + Vector3(0, 0, 0.07))
+		var guard := Node3D.new()
+		_piece(guard, "Guard", BoxMesh.new(), paint, Vector3.ZERO, Vector3(0.22, 0.08, 0.26))
+		_piece(guard, "Lip", BoxMesh.new(), frame, Vector3(arm_out.x * 0.1, -0.07, 0), Vector3(0.04, 0.14, 0.26))
+		_hang_at(guard, "Guard" + side, "UpperArm." + side, shoulder + arm_out * 0.1 + Vector3(0, 0.12, 0))
+	# The back: a spine from the hips to a yoke over the shoulders, a roll
+	# cage standing over the head, and the power pack between.
+	var hips := _rest_at("Hips")
+	var chest := _rest_at("Chest")
+	var head := _rest_at("Head")
+	var back := Vector3(0, 0, 0.17)
+	var spine := Node3D.new()
+	_piece(spine, "Spine", BoxMesh.new(), frame, Vector3.ZERO, Vector3(0.11, chest.y - hips.y + 0.1, 0.08))
+	_hang_at(spine, "Spine", "Abdomen", Vector3(0, (hips.y + chest.y) * 0.5, hips.z + back.z))
+	var yoke := Node3D.new()
+	var top := head.y + 0.32 - (chest.y + 0.12)
+	_piece(yoke, "Yoke", BoxMesh.new(), frame, Vector3.ZERO, Vector3(0.62, 0.1, 0.12))
+	for x: float in [-0.19, 0.19]:
+		_piece(yoke, "CagePost", BoxMesh.new(), frame, Vector3(x, top * 0.5, 0.0), Vector3(0.07, top, 0.07))
+	_piece(yoke, "CageBar", BoxMesh.new(), paint, Vector3(0, top, -0.06), Vector3(0.45, 0.07, 0.2))
+	_piece(yoke, "Belt", BoxMesh.new(), frame, Vector3(0, -(chest.y - hips.y) - 0.06, -0.02), Vector3(0.48, 0.1, 0.3))
+	_hang_at(yoke, "Yoke", "Chest", Vector3(0, chest.y + 0.12, chest.z + back.z))
+	var pack := build_cooler(Color(0.3, 0.31, 0.33), actor.body_color)
+	pack.scale = Vector3(1.5, 1.25, 1.5)
+	_hang_at(pack, "PowerPack", "Chest", Vector3(0, chest.y - 0.1, chest.z + back.z + 0.14))
+
+
+## A bar along a bone, from the bone at `from` of the way to its `child` up
+## to `to`, set off by `aside` (actor space, at rest) and `thick` across. A
+## `round` one is a piston.
+func _strut(bone: String, child: String, aside: Vector3, thick: float, mat: Material, from: float, to: float,
+		round := false) -> void:
+	if _skeleton.find_bone(bone) < 0 or _skeleton.find_bone(child) < 0:
+		return
+	var a := _rest_at(bone)
+	var b := _rest_at(child)
+	var along := b - a
+	var length := along.length() * (to - from)
+	if length < 0.01:
+		return
+	var y := along.normalized()
+	var x := y.cross(Vector3.FORWARD if absf(y.z) < 0.9 else Vector3.UP).normalized()
+	var root := Node3D.new()
+	var mesh: PrimitiveMesh = BoxMesh.new()
+	if round:
+		var tube := CylinderMesh.new()
+		tube.top_radius = 0.5
+		tube.bottom_radius = 0.5
+		tube.height = 1.0
+		tube.radial_segments = 8
+		mesh = tube
+	var bar := _piece(root, "Strut", mesh, mat, Vector3.ZERO, Vector3(thick, length, thick * 1.2))
+	bar.basis = Basis(x, y, x.cross(y)).orthonormalized() * Basis.from_scale(Vector3(thick, length, thick * 1.2))
+	_hang_at(root, "Strut", bone, a + along * ((from + to) * 0.5) + aside)
+
+
+## A joint: a short drum turned across the body, at `at` on `bone`.
+func _disc(bone: String, at: Vector3, radius: float, mat: Material) -> void:
+	if _skeleton.find_bone(bone) < 0:
+		return
+	var drum := CylinderMesh.new()
+	drum.top_radius = 0.5
+	drum.bottom_radius = 0.5
+	drum.height = 1.0
+	drum.radial_segments = 10
+	var root := Node3D.new()
+	var piece := _piece(root, "Joint", drum, mat, Vector3.ZERO, Vector3(radius * 2.0, 0.045, radius * 2.0))
+	piece.rotation.z = PI * 0.5
+	_hang_at(root, "Joint", bone, at)
+
+
+## The glow of a walker's heat vent, the weak spot on its back: the Foundry's
+## molten orange.
+const VENT_GLOW := Color(1.0, 0.36, 0.08)
+
+
+## A walker's tracking beam, seen by everyone: while its aim is up (the
+## command's held aim) a thin line runs from its cannon along the aim to
+## whatever it meets, faint at first and hot and wide once it has held
+## `lock_time` (the actor's meta, the same the brain waits for), when the
+## cannon fires. Breaking the line of sight drops the aim and the beam.
+func _update_beam(delta: float) -> void:
+	var on := actor.cmd.secondary and not actor.is_dead
+	_beam_held = _beam_held + delta if on else 0.0
+	if _beam == null:
+		_beam = MeshInstance3D.new()
+		_beam.name = "TrackingBeam"
+		var tube := CylinderMesh.new()
+		tube.top_radius = 0.5
+		tube.bottom_radius = 0.5
+		tube.height = 1.0
+		tube.radial_segments = 6
+		tube.rings = 1
+		_beam.mesh = tube
+		_beam_mat = StandardMaterial3D.new()
+		_beam_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		_beam_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		_beam_mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+		_beam_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+		_beam.material_override = _beam_mat
+		_beam.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		_beam.top_level = true
+		add_child(_beam)
+	_beam.visible = on
+	if not on:
+		return
+	var lock: float = actor.get_meta("lock_time", 1.0)
+	var held := clampf(_beam_held / maxf(lock, 0.01), 0.0, 1.0)
+	var from := actor.get_eye_position()
+	var dir := actor.cmd.aim_dir if actor.cmd.aim_dir.length() > 0.5 \
+			else Basis.from_euler(Vector3(actor.cmd.pitch, actor.cmd.yaw, 0.0)) * Vector3.FORWARD
+	var reach := beam_reach
+	if is_inside_tree():
+		var query := PhysicsRayQueryParameters3D.create(from, from + dir * reach,
+				Actor.LAYER_WORLD | Actor.LAYER_ACTORS)
+		query.exclude = [actor.get_rid()]
+		var hit := get_world_3d().direct_space_state.intersect_ray(query)
+		if not hit.is_empty():
+			reach = from.distance_to(hit.position)
+	var width := lerpf(0.012, 0.035, held)
+	var color := Color(0.9, 0.12, 0.04).lerp(Color(1.0, 0.5, 0.12), held)
+	color.a = lerpf(0.25, 0.85, held)
+	if held >= 1.0:
+		# Locked: it flickers as the cannon fires down it.
+		color.a *= 0.75 + 0.25 * sin(_beam_held * 40.0)
+	_beam_mat.albedo_color = color
+	var mid := from + dir * reach * 0.5
+	var basis := Basis.looking_at(dir, Vector3.UP if absf(dir.y) < 0.99 else Vector3.RIGHT)
+	# The tube stands along Y: lay it along the aim (-Z of `looking_at`).
+	basis = basis * Basis(Vector3.RIGHT, PI * 0.5)
+	_beam.global_transform = Transform3D(basis.scaled_local(Vector3(width, reach, width)), mid)
+
+
+## How far a tracking beam reaches when it meets nothing.
+var beam_reach := 90.0
+
+
 ## The colour every frame's plates are drawn in.
 const FRAME_COLOR := Color(0.46, 0.48, 0.45)
 
@@ -1325,6 +1857,11 @@ static func frame_weight(id: String) -> String:
 ## Puts the worn armor frame's plates on the body, rebuilt when another goes on.
 func _update_frame() -> void:
 	var id := actor.frame_id
+	# A skin that comes in its own armor (an exo trooper's) wears plates of
+	# that weight when no frame is worn.
+	var own: String = _def.get("frame", "") if id == "" else ""
+	if own != "":
+		id = "skin:" + own
 	if id == _frame_id and (id == "" or (not _frame_parts.is_empty() and is_instance_valid(_frame_parts[0]))):
 		return
 	_frame_id = id
@@ -1334,7 +1871,7 @@ func _update_frame() -> void:
 	_frame_parts.clear()
 	if id == "" or _skeleton == null:
 		return
-	var weight := frame_weight(id)
+	var weight := frame_weight(id) if own == "" else own
 	var height: float = _def.get("height", 1.8)
 	_frame_parts.append(_hang(build_frame(weight, FRAME_COLOR), "Frame", _def.get("back_bone", ""), frame_offset,
 			Vector3(0.0, height * 0.72, 0.0) + frame_offset))
@@ -2488,3 +3025,18 @@ func _hang(part: Node3D, holder_name: String, bone_name: String, offset: Vector3
 	holder.set_meta("rest", holder.transform)
 	holder.set_meta("up", bone_at.basis.inverse() * Vector3.UP)
 	return attach
+
+
+## A soldier who brings a gun up after a quiet spell calls it out: the tell
+## that comes before its first shot (`BotBrain` raises the aim halfway
+## through its reaction). Read from the command, so every view hears it;
+## only bots (they carry a "zone") bark. View only.
+func _update_bark(delta: float) -> void:
+	if not actor.has_meta("zone") or actor.is_dead:
+		return
+	if not actor.cmd.secondary:
+		_calm_for += delta
+		return
+	if _calm_for >= bark_calm and actor.get_active_weapon() is Gun:
+		Sfx.play("alert", actor.get_eye_position(), -2.0, 45.0)
+	_calm_for = 0.0

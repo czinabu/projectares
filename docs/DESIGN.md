@@ -355,6 +355,42 @@ raider from its kit (`spawn_bot`'s `kit`). Still to come: rooftop caches
 their own, picking up bags, flight across the map (wings and long
 jetpack trips), and a grudge against whoever killed them.
 
+### Heavy units (Caleb's call)
+
+Ashfront is a war of machines, but most fights stay against people. The
+armies' spider walkers are gone; two original heavy units take their place,
+both in the game's own low-poly style, neither a copy of any film's machine.
+
+- **Exo Trooper.** An ordinary soldier strapped into a mechanical
+  exoskeleton, not an enhanced super-soldier (Caleb's call): the person is
+  normal size and the suit gives the bulk, a gunmetal frame down the
+  outside of each limb with drums at the hips, knees, shoulders and
+  elbows, actuator housings and rams, armored boots, a spine and shoulder
+  yoke with a roll cage over the head, and a power pack. The shoulder
+  guards, cage bar and the slit of the closed helmet carry the army's
+  colour, so it reads apart from a soldier at 50 m in a storm. Armor
+  45-70 by ring, more health, a little slower, a support rifle and no
+  blade. One in eight carries a spare Trooper or Bulwark frame.
+- **Kiln Walker.** A rare 3 m war machine on two legs, a body of its own
+  built in code: a low, wide armored hull carried level on two heavy
+  reverse-jointed legs with broad splayed feet, the cannon built into its
+  glacis, the heat vent let into its rear armor, gunmetal with the army's
+  paint on its hip sponsons, thighs and gun mantlet, and a sensor slit lit
+  in the army's colour. Slow on its feet and slow to turn (its aim comes round at 70
+  degrees a second, a soldier's at 200), but its hitscan cannon leads
+  fliers well. Its tell is a thin tracking beam: the cannon fires only
+  after the beam has held a target in sight for a second, so a flier who
+  sees it can break the line. Its heat vent glows the Foundry's molten
+  orange on its back, and hits from behind or from steeply above do double.
+  Beaten by circling it, going over the top, or two players. Middle ring
+  and core only, at most one at each landmark (`WorldDef.bot_allowed`),
+  never a warlord. It drops power cells and alloy, and a core walker has
+  a 15% chance of upgrade data.
+
+Spawn mix by ring (outer, middle, core): exo troopers 9%, 18%, 22%;
+walkers 0%, 4%, 8%; the rest the armies' people, soldiers and blade heavies
+as before. A client builds the same kind from the bot's seed.
+
 ### Enemy balance (targets proposed, for Caleb to confirm)
 
 Every enemy type has a role, and a target for how often a player in a mid
@@ -373,6 +409,10 @@ damage, aim skill) until each type sits in its band, then check by playing.
 | Core heavy | Punishes panic | 55-80% |
 | Rival raider | An equal | 40-60% |
 | Warlord | A squad fight | 10-35% |
+| Outer exo trooper | The tougher soldier | 70-90% |
+| Core exo trooper | Armor that needs a plan | 45-70% |
+| Middle walker | A fight for two players | 15-40% |
+| Core walker | A fight for two players | 10-30% |
 
 A bot at 0.5 is not a person: a good player aims better, uses cover and
 parries on purpose. The reference skill should be set so the bench agrees
@@ -415,9 +455,64 @@ rate, time to kill on a win, and health left. Every row is inside its band.
 | Rival raider | 52% in 10.2 s | 50% in 14.3 s | 63-66% |
 | Warlord | 20% in 5.8 s | 32% in 7.1 s | 32-36% |
 
+**Heavy units (120 duels, seed 7, 12 m and 25 m).** A solo reference
+player stands in front of a walker and trades shots, so these rows are the
+worst case: circling it or hitting the vent from behind does better.
+
+| Enemy | 12 m | 25 m | Health left |
+| --- | --- | --- | --- |
+| Outer exo trooper | 82% in 6.2 s | 74% in 8.5 s | 58-61% |
+| Core exo trooper | 57% in 6.6 s | 51% in 8.1 s | 54-58% |
+| Middle walker | 28% in 8.1 s | 32% in 10.0 s | 56-59% |
+| Core walker | 15% in 6.8 s | 13% in 9.1 s | 45-65% |
+
+At 40 duels these rows swing by about ten points either way, so they were
+tuned at 120.
+
 Raider fights run longer than the others because both sides wear plates and
 stop to use a medkit. A warlord's loss, when the player does win, takes
 about 6-7 s and leaves the player around a third health.
+
+### Group fights (Caleb's call)
+
+One soldier is a fair fight; five that all open up at once is a wall of
+damage nobody can read. Group fights take turns, the way good shooters
+stage them, so numbers mean pressure, not a stun-lock:
+
+- Only so many army bots shoot (or swing) at one person at a time: one in
+  the outer ring, two in the middle, three in the core (`BotBrain.RING_SLOTS`).
+- A turn lasts 2.5-4 s, then passes to the next bot after a half-second
+  beat, and the bot that let go rests a little before asking again.
+- A bot waiting its turn keeps its gun on you but holds fire. It gets into
+  cover from your eyes and crouches there; past the outer ring, with no
+  cover near, it works round your flank instead.
+- A bot you shoot always shoots back for two seconds, and a bot within
+  7 m always fights, so nobody can stand next to one that is "waiting".
+- Bots fighting other bots, and rival raiders, are never rationed: they
+  play like people.
+- Spotting takes longer far away (up to 1.6x at the edge of sight) and
+  against a crouched body (1.3x), and quicker against someone who just
+  shot you.
+- Before its first shot a soldier raises its gun (halfway through its
+  reaction) and barks a short radio call, heard about 45 m away, so the
+  shot never comes out of nowhere.
+
+**Measured (group bench, outer soldiers, 40 runs, 20 m).** The reference
+player stands in the open and does not use cover, so these are the worst
+case; a person who breaks line of sight does much better.
+
+| Fight | Every bot shoots | Taking turns |
+| --- | --- | --- |
+| You against 2 | 28% win, dead in 7.4 s | 35% win, dead in 8.7 s |
+| You against 3 | 0% win, dead in 5.9 s | 2% win, dead in 8.1 s |
+| You against 5 | 0% win, dead in 3.8 s | 0% win, dead in 6.8 s |
+
+Taking turns buys between one and three seconds against a group, which is the time to
+reach cover, heal or leave. Targets (Caleb confirmed): an
+outer pair is winnable in the open (about a third), three or more need
+cover or a plan, and five should take at least six seconds to kill
+someone standing still. The duel rows above stay in their bands with this
+on (one attacker always has a slot).
 
 ### World events
 
@@ -699,6 +794,58 @@ to the eye:
 Re-measured on the duel bench over three seeds: every enemy type wins and
 loses about as often as before (all rows within the bench's noise).
 
+### Recoil (Caleb's call: learnable patterns)
+
+Recoil rewards learning a gun. Each gun climbs and drifts its own fixed way,
+so holding a spray on target is a skill you can practise on the range, and
+only a little is left to chance.
+
+- **The kick builds through a spray.** Shots no more than 0.3 s apart are one
+  spray. Its first shot kicks 65% of the gun's kick, rising to 125% by the
+  ninth, so a short burst is tight and a long one climbs.
+- **Each gun drifts its own way** (`recoil_pattern` in its stats): the
+  carbine climbs and pulls right after a few rounds, the machine pistol
+  pulls left, the scrap rifle and the SMG sway side to side, and every
+  single-shot gun (pistol, hand cannon, DMR, shotgun, power weapons) kicks the
+  same jump every shot. The Storm Cannon climbs straight.
+- **A little chance on top.** 30% of a gun's side kick is random each shot.
+- **Aimed is gentler.** Aiming down sights takes 60% of the kick, as before.
+- **Same in both views.** The aim moves, not the camera; the gun model
+  already jumps in the hand.
+- **Bots feel it too.** The kick goes into their aim and they pull against
+  55% (rookie) to 90% (veteran) of it, settling once they stop firing, so a
+  rookie's long burst climbs off you and a veteran's holds. Their short
+  bursts keep the enemy duel rows in their bands.
+
+`gun_bench.tscn -- --recoil` prints each gun's pattern: the kick of the
+1st, 5th and 10th shot, and how far a 5- and 10-round spray climbs and
+drifts from the hip with no pull against it. With the starting numbers, a
+carbine's 10 rounds climb 5.4 degrees and drift 1.8 degrees right (about
+2 m off at 20 m); an SMG's climb 2.9 degrees, swaying; a hand cannon jumps
+2.6 degrees a shot.
+
+### Feedback
+
+A fight should be read by ear and at a glance, the same in both views:
+
+- Every kind of gun has its own voice: a sharp pistol crack, a fast light
+  SMG, a deep shotgun boom, a long marksman report and the hand cannon's
+  thump. Gunfire carries about 220 m, a suppressed gun about 45 m, and far
+  shots sound duller.
+- A round that passes within a couple of metres of you is heard hissing
+  by, so you know you are being shot at even when it misses.
+- Rounds kick up a puff where they land, a hot spark off a body, and leave
+  a mark on a wall for a few seconds.
+- The hit marker says what the hit did: white for flesh, steel blue when
+  plates soaked it, a wide cyan when the plates broke, gold for a head and
+  red for a kill, each with its own sound.
+- Being shot jolts your view a little, more for a harder round. The aim
+  stays put, so it never costs you a shot.
+
+Who is shooting you is not marked on screen: reading that is the tactical
+visor's strength (section on helmets), so plain helmets get only the sound
+of the shots and their whizz.
+
 ### Goggles
 
 Goggles are the light alternative to a helmet in the same `helmet` slot, and
@@ -786,7 +933,58 @@ combinations are the special moves.
   and turn the whole body, a dash-strike leans in, and a back strike turns
   the blade back past the hip. Same motion in first and third person.
 - **Later:** tight interiors and corners in the worlds where guns are clumsy,
-  and more ammo and reload pressure on guns. Melee bots using the dash-strike.
+  and more ammo and reload pressure on guns.
+
+### Melee bots (Caleb's call: a blade in reach beats a rifle)
+
+The balance is one rule: range belongs to the gun, reach to the blade, and
+the ground between is won by skill (cover, corners, the dash-strike, a timed
+deflect). Bots fight to that rule, and like people:
+
+- **Heavies.** A share of a melee bot's attacks are held heavies, with the
+  charge and windup on show: 5% in the outer ring, 20% in the middle, 30% in
+  the core (`BotBrain.RING_HEAVY`), and 60% into a raised guard or a
+  stagger. An Ashfront heavy's own heavy winds up for 0.9 s and hits a
+  quarter harder, so it is the easiest swing of all to read.
+- **Feints.** In the middle and core rings (15% and 30% of swings,
+  `RING_FEINT`), a bot starts a charge showing one side, switches, and lets
+  go as a quick light from another.
+- **Dash-strikes.** A bot sprinting in from out of reach opens with one
+  (never in the outer ring; 40% of chances in the middle, 70% in the core,
+  at most one try every 3 s, `RING_DASH`).
+- **Openings.** A bot strikes at once into a foe's recovery, a stagger, or
+  its own riposte after a parry, rather than waiting out its tempo.
+- **Cut soldiers flinch.** An army gunner cut by a blade has its gun knocked
+  about 14 degrees off and holds fire for 0.4 s (`BotBrain.melee_flinch`).
+  That is what a cut at arm's length does, and it is what lets a blade win
+  once it arrives. Bots only: a player's aim is never moved, and rival
+  raiders, who play like players, never flinch.
+- **Soldiers give ground.** An army gunner with a blade inside 9 m drops its
+  sights and backs off at a walk, angling away, so reaching it is the
+  challenge.
+
+**Measured (melee bench, `duel_bench.tscn -- --melee blade_scrap`, 40
+fights, seed 11).** The reference fights with the scrap blade only: a
+three-hit combo then a breath, its guard up while it closes on a gunner, and
+the same heavies, feints and dash-strikes. It parries only by reading
+swings at 40%, so a person who parries on purpose does better against the
+heavies.
+
+| Scrap blade against | Start 3 m away | Start 12 m away |
+| --- | --- | --- |
+| Outer soldier | 90% win in 2.9 s | 78% win in 4.4 s |
+| Core soldier | 68% win in 3.3 s | 57% win in 4.4 s |
+| Outer heavy | 35% win | 55% win |
+| Rival raider (gun, no flinch) | 32% win | 20% win |
+
+Before the pass a blade won none of these against soldiers, even from 3 m:
+a rifle killed in 2.6 s while the bot reference swung about once a second.
+The gun duel rows stay in their bands; the outer heavy at 12 m now sits at
+the bottom of its band (72% over 120 duels), the price of its occasional
+heavy.
+
+**Later:** a melee pass on the stances and animations (Caleb), and bands
+for the melee bench once it has been played.
 
 ### Gadgets
 
@@ -1101,7 +1299,14 @@ Two complementary ways to secure loot.
   Landing drops the timer back to the ground rate (time already spent counts).
 - Quitting or disconnecting leaves your body standing for the sign-out time
   (30 seconds after a fight), as today. That wait does not grow for being
-  in the air, and it raises no beacon.
+  in the air, and it raises no beacon. Nobody plays the body meanwhile: it
+  stands still, a hit does not end the countdown, and it can be killed.
+- After a dropped connection the game reconnects on its own. Back before the
+  body's countdown runs out, you are in it again where it stands, with no
+  deploy: the forced countdown ends, and a sign-out you had started yourself
+  carries on with the time it has left (the gap counts), unless the body was
+  in a fight meanwhile. Too late, and the game says how that life ended (home
+  or killed).
 - A gate outpost keeps its short sign-out. It does not switch to the air time.
 
 Decided: the airborne sign-out is 25 seconds and a beacon column, not a rule
@@ -1223,6 +1428,43 @@ shortcuts are invented for our tracks.
 - Weakness-and-counter applies here too: no rig or vehicle should win every
   course.
 
+### The race world: Meridian (Caleb's go-ahead)
+
+Racing's first home is a world of its own, Meridian: salt flats round an old
+power station, reached through the plaza's gates and portals like any world.
+Nothing is at stake there (`gear_at_risk` and `weapons_free` off): you bring
+nothing of your own and take nothing home, and nobody can hurt anybody.
+
+- **Classes.** Every track names a class, and only that class's machines
+  race it. The first is Street: the Scrapper Bike and the Raider Hoverbike.
+  Rovers and mechs, and sky courses for rigs, are classes still to come.
+- **Stock machines, race profiles.** The machines are the track's, waiting
+  in the pit bays, never the rider's own (toys stay on the watch here). Each
+  vehicle item carries a race profile (`ItemDB.RACE_*`, its `race` stat)
+  that replaces its combat tuning on the track, so changing a bike for the
+  warzone never moves a lap time. Ranked racing will use these same stock
+  machines, so a race is decided by the rider.
+- **Balance is measured.** The time-trial bench (`tests/race_bench.tscn`)
+  drives every machine of a class round every track at its limits and
+  flags any whose best lap is more than 3% off the class average. Each
+  machine keeps its character inside that: the Scrapper corners and brakes
+  harder and must take the Spillway's ramp, the Raider is quicker flat out,
+  drifts, and can float over the gap.
+- **Time trials first.** Getting on a bay machine puts you on the grid under
+  five lights; three laps through the checkpoint arches, a lap that leaves
+  the track is timed but not counted, and a machine that falls into the
+  channel is put back at the last checkpoint. Your split is written on each
+  arch, the best laps on the pit board, and your best lap on each machine
+  runs beside you as a ghost of hard light. The watch's contract icon is the
+  race icon here (restart, ghost on or off, stop), and the visor's
+  objective line carries the lap.
+- **Rewards are cosmetic.** For now only the board's times. Scrip and
+  cosmetic rewards come with live races.
+
+The first track is Coilrun, a Street circuit of about 1.6 km: the long
+straight past the pits, the Crest, the Capacitor Yard's esses, the
+Spillway gap and the sweep round the cooling tower.
+
 ## 10. Economy and progression
 
 ### The core rule (Caleb's call)
@@ -1261,6 +1503,66 @@ base level (Mk1)**. Where you look decides how good the find is, not its
 tier: the PvP world has the better weapons and the rarer drops, the PvE
 world has basic gear and materials. Stronger versions are crafted from
 blueprints (below), not found.
+
+### Two worlds, one loop (proposed, Caleb to confirm the numbers)
+
+Players who avoid PvP and players who love it should both feel rewarded,
+without either being forced into the other's world. The split:
+
+| | Frostline (expedition, PvE, no PvP) | Ashfront (warzone, PvPvE) |
+| --- | --- | --- |
+| Death | Keep equipped gear, lose the pack | Full loot |
+| Exclusive rewards | Crafting parts, blueprints, Frostline cosmetics and trophies | Rare and Epic gear, heavy weapons, artifacts, most upgrade data, bounties |
+| Shared rewards | Scrip, contracts, mastery, a capped share of upgrade data | Scrip, contracts, mastery, renown |
+
+**Frostline decides what you can make. Ashfront decides what you can carry
+out that nobody can make.** Frostline has no PvP (Caleb's call): players there
+are allies and the interaction is co-op and trade.
+
+**What each axis means.** Rarity (Common to Relic) is how hard something is
+to find and what it sells for, never raw power. Mk tier is how much was
+invested in it. Mastery is how well you know a gear type (sidegrades only).
+Relic is reserved for prestige items from hard feats in either world.
+
+**Weapon Mk cap.** A Mk2 or Mk3 weapon gains handling, never raw damage:
+magazine, recoil, range and reload speed, about +10% effective in total at
+Mk3 over Mk1. Rigs keep their 15% a tier, in strength only.
+
+**Loot split.** Blueprints and most parts come from Frostline. Ashfront keeps
+a light trickle of common parts and pays scrip, upgrade data, rare gear,
+heavy weapons and artifacts. Frostline's deepest sites pay a capped trickle of
+upgrade data: enough for Mk2 comfortably and Mk3 slowly (about a third to a
+half of the total, about three times the time).
+
+**Player marketplace** (a kiosk in the plaza, server-side only). Tradeable:
+parts, upgrade data, spare blueprint copies, Mk1 and Mk2 gear. Never
+tradeable: Mk3 gear, heavy weapons, artifacts, prestige items, learned
+blueprints. A listing fee and a sale fee drain scrip; price bands and a daily
+trade cap per account guard against dumping and farming. It must ship before
+parts leave Ashfront, or PvP crafters are starved.
+
+What is built (first version): the Exchange, a booth in the plaza's
+arcade with the rules above (5% to list, 10% of each sale, a price band of
+half to three times an item's value, 10 listings and 20 trades a day per
+account, listings home after 7 days). Server-only, shared by every world on
+a server, with the board saved beside the accounts. It moves goods through
+the ledger calls of the accounts store, a listing's charge and each sale as
+one all-or-nothing transaction, so it can move onto the shared account
+service later.
+Missing: buying more than one at a time from the screen, search and
+filters, price history, and the shared account service itself.
+
+**Status without a level.** There is no player level. Renown rank (PvP) stays;
+an expedition standing (surveys, sites cleared, bosses) is added beside it,
+with titles and cosmetics. A profile page shows both beside total mastery and
+gates nothing.
+
+**Safety nets.** Salvage pays back about 30 to 50% of a lost crafted item's
+parts, and one insured item comes back after a death in Ashfront (cost and
+cooldown open).
+
+**Contracts** gain a world tag: expedition and warzone versions of dailies and
+weeklies. The existing rules stay (only a sign-out counts, no player kills).
 
 ### Blueprints and upgrade data
 
@@ -1537,6 +1839,12 @@ Caleb's calls, still open:
   - How much salvage a lost crafted item pays back.
   - Contract and bounty payouts, and how a bounty's size grows.
   - Which prestige vehicles and rigs come from which feats.
+- Two worlds, one loop (section 10), proposed numbers to confirm:
+  - Should Ashfront drop any parts at all, or only scrip and upgrade data?
+  - What share of Mk3's upgrade data may Frostline supply?
+  - Marketplace fees, price bands and the daily trade cap.
+  - Insurance cost and the salvage share.
+  - Whether expedition standing earns titles only, or cosmetics too.
 
 ## 14. Online and servers
 
@@ -1566,10 +1874,35 @@ are never duplicated or lost. Postgres only if one machine stops being
 enough. Not a ready-made backend such as Nakama: it would need a second copy
 of the rules in another language.
 
+Built (accounts and the market): the service is `-- --account-service`
+(`core/account/account_service.gd`) and a game server started with
+`--account-url` reaches it through an `AccountLink`
+(`core/account/account_link.gd`), which offers the `StashService` calls, so
+a session does not know which it holds. A game server proves a shared key
+to the service and players never reach it. Each request carries an id and
+the service writes its receipt in the same transaction as its changes, so a
+request sent again after a lost answer is answered, not done twice. What a
+server alone knows (a finished life, banked loot, a wager paid) is kept and
+sent until answered; what a player is waiting on (equip, buy, deploy) gives
+up after 5 s, and a deploy that was never answered is undone by name. The
+server reads the accounts of the players it has from its own copy, which
+the service keeps fresh. Clans and the phone's social records move over
+with one program per world.
+
+**Sign-in tokens.** Signing in with the name and secret hands the game a
+token, good for 12 hours, that stands for that sign-in. The game shows the
+token, not the secret, to the next server it travels to, and every server
+of one account service accepts it by asking the service. One token per
+account: a new sign-in with the secret replaces it. A token that has run
+out falls back to the secret on the same connection. This is what lets each
+world run as its own program without the secret going to every one.
+
 **Sign-in.** Official servers move to Steam (or Epic) login through
 GodotSteam (MIT), checked on the server with the store's web service. That
 brings account recovery, bans and protection against stolen accounts.
-Friends' servers can keep the name and secret.
+Friends' servers can keep the name and secret. A store login is one more
+"method" of `StashService.sign_in_with` that ends in an account id; nothing
+past that call changes, and the token above is handed out the same way.
 
 Official servers open before the game is on Steam (Caleb's call), once
 connections are encrypted, signing in with the name and secret. A recovery
@@ -1618,6 +1951,9 @@ PvP.
 
 - **Reconnect on its own.** After a drop the game quietly reconnects and
   puts you back in your body; no button (part of reconnecting, step 1).
+  Built: the game retries the same server for 30 s, a sign-in finds the body
+  left standing, and a connection pushed out by a newer sign-in is told so
+  and does not reconnect (section 7, "Sign-out").
 - **Official servers by default.** The base's door and the Servers app go to
   them with no address to type; an address is only for a friend's server.
 - **Always say which account you are on.** The phone and the base name it
