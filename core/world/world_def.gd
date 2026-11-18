@@ -273,12 +273,14 @@ func roll_artifact(rng: RandomNumberGenerator, chance: float) -> String:
 ## PvP rules live here. Called for every hit before damage is applied.
 ## What a world event adds for crafting: a blueprint with chance `chance`,
 ## picked evenly from every item tagged "blueprint", and `data` upgrade data.
+## Expedition blueprints (tag "expedition") are left out: they turn up only
+## where a world lists them in its own loot tables.
 func roll_crafting_loot(rng: RandomNumberGenerator, chance: float, data: int) -> Array[String]:
 	var out: Array[String] = []
 	if chance > 0.0 and rng.randf() < chance:
 		var ids: Array[String] = []
 		for id: String in ItemDB.all_ids():
-			if ItemDB.has_tag(id, "blueprint"):
+			if ItemDB.has_tag(id, "blueprint") and not ItemDB.has_tag(id, "expedition"):
 				ids.append(id)
 		if not ids.is_empty():
 			ids.sort()

@@ -600,9 +600,13 @@ Cell, Signal Core and the Ice Axe. It is cold: out in the open your body
 heat (a snowflake cell on the visor) drains, faster up the valley and up in
 the wind, and once it is gone the cold hurts. Heater huts, the warm vents on
 the floor, the camp fire at the river mouth and any running vehicle warm you
-again. You see your breath, and a chilled body shivers. The rest of its
-redesign (whiteouts, tracks, warm beacons and its crafting parts) is planned
-in DESIGN.md section 2, "Frostline".
+again. You see your breath, and a chilled body shivers. It is where the
+parts for better gear come from: every Mk2 craft needs a Cryo Core and every
+Mk3 Glacial Alloy and an Engine Coil (the coils only on the Engine's back),
+and its own blueprints make new options: the Thermal Frame, which keeps out
+some of the cold, and the Glacier Grip. The rest of its redesign
+(whiteouts, tracks and warm beacons) is planned in DESIGN.md section 2,
+"Frostline".
 
 ## Run the tests
 

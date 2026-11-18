@@ -1371,10 +1371,17 @@ without Caleb, and update the gap list when a PR closes a row.
   ordinary gear. Crafting is done at the fabricator on the gunsmith bench
   (`HomeBase.CraftConsole`, the hub's "craft" section, `craft_panel.gd`):
   `Profile.craft` solo, `NetSession.craft` online, where only
-  `StashService.craft` decides. Blueprints and upgrade data come from the
-  PvP world only (`WorldDef.roll_crafting_loot` and its chances, 0 by
-  default; a world's own loot tables). A new craftable is a recipe row and,
-  if it needs one, a `_blueprint` item. Costs are placeholders.
+  `StashService.craft` decides. Each world has its own job (DESIGN.md
+  "Frostline"): the war's blueprints and most upgrade data come from the PvP
+  world (`WorldDef.roll_crafting_loot` and its chances, 0 by default; a
+  world's own loot tables), while the expedition world pays the parts every
+  Mk2 and Mk3 needs (`Crafting.MK2_PARTS`, `MK3_PARTS`: Cryo Core, Glacial
+  Alloy, Engine Coil), a trickle of upgrade data and its own blueprints,
+  tagged "expedition", which make new options only, never a higher Mk, and
+  which `roll_crafting_loot` never hands out. Cold-weather gear is data: a
+  frame's "insulation" stat keeps out that share of the cold
+  (`Raid.insulation_of`). A new craftable is a recipe row and, if it needs
+  one, a `_blueprint` item. Costs are placeholders.
 - Money (`core/economy/`): the rules live once, in `economy.gd` (static, like
   `StashRules`), shared by `Profile` and `StashService`. Online, `scrip`
   lives on the server's account and only changes there: through

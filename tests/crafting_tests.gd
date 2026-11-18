@@ -24,7 +24,7 @@ static func run(t: Node) -> void:
 ## Everything a Mk2 jetpack takes, and `extra` on top.
 static func _jetpack_parts(extra: Array = []) -> Array[String]:
 	var out: Array[String] = ["upgrade_data", "upgrade_data", "upgrade_data", "power_cell", "power_cell",
-			"alloy_ingot"]
+			"alloy_ingot", "cryo_core"]
 	for id: String in extra:
 		out.append(id)
 	return out
@@ -44,7 +44,7 @@ static func _recipes(t: Node) -> void:
 	var used := true
 	for print_id in Crafting.blueprints():
 		used = used and not Crafting.made_from(print_id).is_empty()
-	t.check(used and Crafting.blueprints().size() == 7, "every blueprint makes something (%d blueprints)"
+	t.check(used and Crafting.blueprints().size() == 9, "every blueprint makes something (%d blueprints)"
 			% Crafting.blueprints().size())
 	# The design's minimum: the higher rig tiers, two guns, the mech and the jet.
 	var rigs := true
@@ -52,6 +52,24 @@ static func _recipes(t: Node) -> void:
 		if ItemDB.has_tag(id, "flight_rig") and int(ItemDB.item_stats(id).get("tier", 1)) > 1:
 			rigs = rigs and Crafting.has_recipe(id) and Crafting.needs(id).has(Crafting.UPGRADE_DATA)
 	t.check(rigs, "every rig above Mk1 is crafted, and takes upgrade data")
+	# Every higher Mk needs the expedition world's parts too (DESIGN.md
+	# "Frostline"), and the expedition's blueprints make new options only.
+	var cold_parts := true
+	for id: String in Crafting.ids():
+		var need := Crafting.needs(id)
+		if need.has(Crafting.UPGRADE_DATA):
+			cold_parts = cold_parts and (need.has("cryo_core") or need.has("engine_coil") and need.has("glacial_alloy"))
+	t.check(cold_parts and Crafting.needs("jetpack_mk3").has("engine_coil") and not Crafting.needs("dmr_longshot").has("cryo_core"),
+			"every Mk2 and Mk3 needs the valley's parts: a Cryo Core for a Mk2, Glacial Alloy and an Engine Coil for a Mk3")
+	var options := true
+	var expedition := 0
+	for print_id in Crafting.blueprints():
+		if ItemDB.has_tag(print_id, "expedition"):
+			expedition += 1
+			for id in Crafting.made_from(print_id):
+				options = options and int(ItemDB.item_stats(id).get("tier", 1)) == 1 \
+						and not Crafting.needs(id).has(Crafting.UPGRADE_DATA)
+	t.check(options and expedition == 2, "the expedition's blueprints make new options, never a higher Mk (%d)" % expedition)
 	t.check(Crafting.needs("jetpack_mk3")[Crafting.UPGRADE_DATA] > Crafting.needs("jetpack_mk2")[Crafting.UPGRADE_DATA]
 			and Crafting.fee("jetpack_mk3") > Crafting.fee("jetpack_mk2"), "a Mk3 costs more data and scrip than a Mk2")
 	t.check(Crafting.has_recipe("mech_bulwark") and Crafting.has_recipe("jet_kestrel")
@@ -78,10 +96,10 @@ static func _rules(t: Node) -> void:
 
 	var parts := _jetpack_parts(["medkit"])
 	var unknown := Crafting.craft(parts, [], 9999, "jetpack_mk2")
-	t.check(not unknown.ok and "Blueprint" in unknown.error and parts.size() == 7,
+	t.check(not unknown.ok and "Blueprint" in unknown.error and parts.size() == 8,
 			"nothing is crafted without its blueprint (%s)" % unknown.error)
 	var poor := Crafting.craft(parts, known, 399, "jetpack_mk2")
-	t.check(not poor.ok and poor.scrip == 399 and parts.size() == 7, "too little scrip crafts nothing")
+	t.check(not poor.ok and poor.scrip == 399 and parts.size() == 8, "too little scrip crafts nothing")
 	var short: Array[String] = ["upgrade_data", "power_cell", "power_cell", "alloy_ingot"]
 	var missing := Crafting.craft(short, known, 9999, "jetpack_mk2")
 	t.check(not missing.ok and "2 more Upgrade Data" in missing.error and short.size() == 4,
@@ -156,26 +174,37 @@ static func _accounts(t: Node) -> void:
 			"dev mode knows every blueprint")
 
 
-## Where blueprints and upgrade data come from: the PvP world only.
+## Where blueprints and upgrade data come from: the war's from the PvP world,
+## the expedition's (and a trickle of data) from the gentle one.
 static func _drops(t: Node) -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 7
 	var pvp: WorldDef = null
 	var gentle := true
+	var gentle_prints := {}
+	var gentle_data := 0
+	var gentle_parts := {}
 	for world: WorldDef in Worlds.raid_worlds():
 		var hands_out := world.warlord_blueprint_chance > 0.0 or world.pod_blueprint_chance > 0.0 \
 				or world.warlord_upgrade_data > 0 or world.pod_upgrade_data > 0
 		if world.keep_gear_on_death:
 			gentle = gentle and not hands_out
-			var found := false
-			for i in 300:
-				for source: String in ["cache", "rooftop", "bot"]:
+			for i in 600:
+				for source: String in ["cache", "rooftop", "relay", "bot"]:
 					for id in world.roll_loot(source, rng):
-						found = found or ItemDB.has_tag(id, "blueprint") or id == Crafting.UPGRADE_DATA
-			gentle = gentle and not found
+						if ItemDB.has_tag(id, "blueprint"):
+							gentle_prints[id] = true
+							gentle = gentle and ItemDB.has_tag(id, "expedition")
+						elif id == Crafting.UPGRADE_DATA:
+							gentle_data += 1
+						elif id in ["cryo_core", "glacial_alloy", "engine_coil"]:
+							gentle_parts[id] = true
 		elif hands_out:
 			pvp = world
-	t.check(pvp != null and gentle, "blueprints and upgrade data come from the full-loot world, never a gentle one")
+	t.check(pvp != null and gentle and gentle_prints.size() == 2,
+			"the war's blueprints come from the full-loot world, and the gentle one finds only its own (%d)" % gentle_prints.size())
+	t.check(gentle_data > 0 and gentle_parts.size() == 3,
+			"the gentle world pays the parts every Mk2 and Mk3 needs, and a trickle of upgrade data (%d)" % gentle_data)
 	if pvp == null:
 		return
 	var prints := {}
@@ -186,15 +215,17 @@ static func _drops(t: Node) -> void:
 				prints[id] = true
 			elif id == Crafting.UPGRADE_DATA:
 				data += 1
-	t.check(prints.size() == 5 and data > 0 and not prints.has("bp_mech_bulwark") and not prints.has("bp_jet_kestrel"),
+	t.check(prints.size() == 5 and data > 0 and not prints.has("bp_mech_bulwark") and not prints.has("bp_jet_kestrel")
+			and not prints.has("bp_frame_thermal"),
 			"rooftops hold rig and gun blueprints and upgrade data, never a vehicle blueprint (%d kinds)" % prints.size())
 	var from_events := {}
 	for i in 400:
 		for id in pvp.roll_crafting_loot(rng, 1.0, 2):
 			from_events[id] = from_events.get(id, 0) + 1
 	t.check(from_events.has("bp_mech_bulwark") and from_events.has("bp_jet_kestrel")
-			and from_events.get(Crafting.UPGRADE_DATA, 0) == 800,
-			"a warlord or a supply pod can carry any blueprint, the mech's and the jet's included, with upgrade data")
+			and from_events.get(Crafting.UPGRADE_DATA, 0) == 800 and not from_events.has("bp_frame_thermal")
+			and not from_events.has("bp_grip_glacier"),
+			"a warlord or a supply pod can carry any of the war's blueprints, the mech's and the jet's included, with upgrade data")
 	t.check(pvp.roll_crafting_loot(rng, 0.0, 0).is_empty(), "a world with the chances at zero hands out nothing")
 
 

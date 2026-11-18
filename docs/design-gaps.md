@@ -27,8 +27,8 @@ rows marked **pre-playtest** come before the friends playtest.
 | Trophies and blueprint pedestals from PvE bosses and arena brackets | Partly | A trophy shelf and a Trophy Case furniture item exist; earned trophies need PvE bosses and arena brackets. Later. |
 | PvE world: quests, dungeons, bosses | Missing, deferred | Until after the friends playtest. Frostline stands in (no PvP, gentle death, basic loot). |
 | Frostline: the valley map (DESIGN.md section 2, "Frostline") | Built | `worlds/frostline/map.gd`: river mouth to glacier head, zones along it, shelf and rim, ramps, heater huts, three strongpoints, the Stilled Engine's outside. |
-| Frostline: body heat, heaters and vents | Built | `Raid._tick_cold`, `WorldDef.cold` and `cold_at`, the map's "warmth" markers and running engines; the visor cell, watch bar, breath, visor frost and shivering. Cold-weather gear that slows the drain is step 3. |
-| Frostline: crafting parts and its own blueprints | Missing | Planned step 3. Mk2 and Mk3 recipes will need a Frostline part. |
+| Frostline: body heat, heaters and vents | Built | `Raid._tick_cold`, `WorldDef.cold` and `cold_at`, the map's "warmth" markers and running engines; the visor cell, watch bar, breath, visor frost and shivering. A frame's `insulation` stat slows the drain (the Thermal Frame). |
+| Frostline: crafting parts and its own blueprints | Built | Cryo Core, Glacial Alloy and Engine Coil in Frostline's loot (Engine Coils only at the relay on the Engine); every Mk2 needs a Cryo Core and every Mk3 Glacial Alloy and an Engine Coil (`Crafting.MK2_PARTS`, `MK3_PARTS`). Two expedition blueprints for new options: the Thermal Frame (keeps out 40% of the cold) and the Glacier Grip. A trickle of upgrade data on the rims and the relay. Missing: a cap on that trickle, more cold-weather gear. |
 | Frostline: warm beacon sign-out | Missing | Planned step 4, through `begin_sign_out`. |
 | Frostline: whiteouts, tracks, louder gunshots, thin ice, the defence grid | Missing | Planned steps 5 to 7. Whiteouts wait for the Ashfront weather work. |
 | Frostline: inside the Stilled Engine | Missing | Planned with the PvE dungeons. |
@@ -166,7 +166,7 @@ rows marked **pre-playtest** come before the friends playtest.
 | Bounties on hot players, paid on extract, tied to the most-wanted board | Partly | Renown, bounties and the Marked exist in the PvP world; payouts in upgrade data and the board are missing. |
 | Safety nets: free Mk1 kit, one insured item, salvage on loss | Partly | The free `starter` scrap kit exists. Insurance and salvage are missing. |
 | Prestige vehicles and rigs from hard feats | Missing | List TBD. |
-| Two worlds, one loop: Frostline as the source of parts and blueprints, Ashfront for upgrade data and rare gear | Missing | Proposed in DESIGN.md section 10. Table moves go through the Frostline world thread. |
+| Two worlds, one loop: Frostline as the source of parts and blueprints, Ashfront for upgrade data and rare gear | Partly | Frostline pays the parts every Mk2 and Mk3 needs, its own blueprints and a trickle of upgrade data; Ashfront keeps the war's blueprints, most upgrade data and rare gear. The rig and gun blueprints still drop in Ashfront (the doc's "blueprints come from Frostline" is not settled). Missing: the expedition standing, salvage and insurance. |
 | Player marketplace (plaza kiosk, server-side, fees, price bands, daily cap) | Partly | The Exchange booth in the plaza (`core/economy/market.gd`, `market_service.gd`, `market_panel.gd`): list, buy one, take down, expiry, fees, price band, daily cap, server-decided and shared by a server's worlds. Missing: buying several at once, search, price history, the shared account service across official servers. |
 | Weapon Mk gains (handling only, about +10% at Mk3) | Missing | Lands after the combat balance work. |
 | Expedition standing and a profile page (no player level) | Missing | A read-out beside renown rank and mastery. |
