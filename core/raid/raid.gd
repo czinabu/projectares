@@ -604,6 +604,7 @@ func _tick_strongpoints(delta: float) -> void:
 		var was_contested := point.contested
 		var loser := point.holder_name
 		var lost_by_player := point.holder_is_player
+		_count_holding(point, inside, delta)
 		if point.tick(delta, present):
 			_on_strongpoint_taken(point, inside, loser, lost_by_player)
 		elif point.contested != was_contested:
@@ -612,6 +613,22 @@ func _tick_strongpoints(delta: float) -> void:
 		if point.contested and present.values().any(func(who: Dictionary) -> bool: return who.player):
 			war.report_clash(point.global_position, delta)
 	_tick_assaults(delta)
+
+
+## Players standing in a site their side holds are holding the line: whole
+## seconds of it count toward "hold_seconds" (Ashfront's hold contracts).
+func _count_holding(point: Strongpoint, inside: Array[Actor], delta: float) -> void:
+	if point.holder == "":
+		return
+	for actor in inside:
+		var state := state_for(actor)
+		if state == null or side_of(actor)[0] != point.holder:
+			continue
+		state.held_for += delta
+		var whole := int(state.held_for)
+		if whole > 0:
+			state.held_for -= whole
+			_count(state, "hold_seconds", whole)
 
 
 func _on_strongpoint_taken(point: Strongpoint, inside: Array[Actor], loser: String, lost_by_player: bool) -> void:
@@ -3104,6 +3121,7 @@ func _on_actor_banked(actor: Actor) -> void:
 		else:
 			actor.inventory.remove_item(id)
 	state.banked.append_array(items)
+	_count(state, "banks")
 	actor.banked_count = state.banked.size()
 	actor.banked_value = ItemDB.total_value(state.banked)
 	banked_changed.emit(actor)
@@ -3456,3 +3474,5 @@ class PlayerState:
 	## kind and how many bots were after them), for the life log.
 	var started := 0.0
 	var end_note := {}
+	## Seconds held in a strongpoint of their side not yet counted.
+	var held_for := 0.0

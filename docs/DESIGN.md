@@ -2191,6 +2191,13 @@ to one JSON-lines file a world a day under `user://life_log` (or
 `--life-log <dir>`), never into a save and never back into play. Safe zones
 and clients keep none.
 
+Goals at every level are the warzone's own contracts (`WorldDef.contract_jobs`
+under the tag "warzone", counted only from Ashfront): dailies from grab and
+go (loot three caches in the outer ring) through the landmarks' caches,
+banking at a depot and a Foundry cache, to holding the line (stand in a
+strongpoint your side holds for three minutes, `hold_seconds`); weeklies
+pay upgrade data for fifteen minutes holding sites or five Foundry caches.
+
 `tests/life_report.tscn` reads a folder of them and prints, by zone, how
 many lives end there, how many die, how long they last and what they carry;
 what does the killing; how many deaths came with three or more bots after

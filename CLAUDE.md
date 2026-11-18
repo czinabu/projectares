@@ -1687,8 +1687,10 @@ without Caleb, and update the gap list when a PR closes a row.
   through `Contracts.jobs()`, never `JOBS` alone, the board offers one daily
   and one weekly per tag beside the general ones, and a tagged job counts
   only a result whose "contract_tag" matches (`Contracts.counts_in`). Stats
-  include `item:<id>` (brought home), `kills:<faction>`, `bosses` and
-  `cache:<source>` (once per fill, `LootContainer.looted_by`).
+  include `item:<id>` (brought home), `kills:<faction>`, `bosses`,
+  `cache:<source>` (once per fill, `LootContainer.looted_by`), `banks` and
+  `hold_seconds` (stood in a site your side holds, `Raid._count_holding`;
+  Ashfront's "warzone" jobs).
 - The player market (DESIGN.md section 10, "Two worlds, one loop"): rules
   once in `core/economy/market.gd` (static, like `Economy`: what trades, the
   price band, fees, the daily cap; Mk3, heavy weapons, artifacts and relics
