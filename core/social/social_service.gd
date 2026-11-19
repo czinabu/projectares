@@ -29,8 +29,13 @@ const INVITE_SECONDS := 120.0
 ## At most this many messages per account in any RATE_WINDOW seconds.
 const RATE_LIMIT := 6
 const RATE_WINDOW := 10.0
-## What an invite can be for: the raid on this server, or the inviter's base.
-const INVITE_KINDS := ["world", "base"]
+## What an invite can be for: the raid on this server, the inviter's base,
+## or the inviter's squad.
+const INVITE_KINDS := ["world", "base", "squad"]
+## Players in a squad at most (DESIGN.md "Squads": you and up to three).
+const MAX_SQUAD := 4
+## The squad's chat: a message sent "to" this goes to everyone in your squad.
+const SQUAD_CHAT := "squad"
 ## Where a player can be. Other places (a social hub, a base) can add theirs.
 const PLACE_NAMES := {"lobby": "In the lobby", "raid": "In a raid", "base": "At home base", "hub": "In the social hub"}
 
@@ -59,6 +64,10 @@ var _online := {}    # account id -> {"name", "where"}
 var _invites := {}   # invite id -> invite Dictionary
 var _sent_times := {} # account id -> [unix seconds of recent messages]
 var _next_id := 1
+## Squads live in memory, like invites: they are about playing together now.
+var _squads := {}     # squad id -> Array[String] of account ids, leader first
+var _squad_of := {}   # account id -> squad id
+var _next_squad := 1
 
 
 ## One account's saved social data.
@@ -128,6 +137,7 @@ func player_offline(account_id: String, seat := "") -> bool:
 		entry["where"] = _where_of(entry.seats)
 		return false
 	_online.erase(account_id)
+	leave_squad(account_id)
 	for invite_id: int in _invites.keys():
 		var invite: Dictionary = _invites[invite_id]
 		if invite.from == account_id or invite.to == account_id:
@@ -162,6 +172,23 @@ static func _where_of(seats: Dictionary) -> String:
 		if str(seats[seat]) != "lobby" or seats.size() == 1:
 			where = str(seats[seat])
 	return where
+
+
+## The world someone is in, by their seat (`seat` is the world id, named by
+## the server that holds it on an account service: "server/world"), or "".
+func world_of(account_id: String) -> String:
+	var seats: Dictionary = _online.get(account_id, {}).get("seats", {})
+	var seat := ""
+	for each: Variant in seats:
+		if str(seats[each]) != "lobby" or seats.size() == 1:
+			seat = str(each)
+	return seat.get_slice("/", seat.get_slice_count("/") - 1)
+
+
+## Whether two players have each saved the other: friends. Only friends and
+## squadmates see which world the other is in, and may join them there.
+func are_friends(account_id: String, other: String) -> bool:
+	return other in _record(account_id).contacts and account_id in _record(other).contacts
 
 
 func is_online(account_id: String) -> bool:
@@ -248,6 +275,8 @@ func send_message(from: String, to: String, text: String, now := -1.0) -> Dictio
 	text = clean_text(text)
 	if text == "":
 		return _fail("Type a message first.")
+	if to == SQUAD_CHAT:
+		return _squad_message(from, text, now)
 	if to == from:
 		return _fail("That is you.")
 	var sender := _record(from)
@@ -256,12 +285,8 @@ func send_message(from: String, to: String, text: String, now := -1.0) -> Dictio
 	if has_blocked(to, from):
 		# Said plainly, so nobody keeps writing into the void.
 		return _fail("%s is not taking your messages." % name_of(to))
-	var recent: Array = _sent_times.get_or_add(from, [])
-	while not recent.is_empty() and now - float(recent[0]) > RATE_WINDOW:
-		recent.pop_front()
-	if recent.size() >= RATE_LIMIT:
+	if not _rate_ok(from, now):
 		return _fail("Slow down a little.")
-	recent.append(now)
 	var receiver := _record(to)
 	var message := {"from": from, "from_name": name_of(from), "to": to, "to_name": name_of(to),
 			"text": text, "time": now}
@@ -276,6 +301,38 @@ func send_message(from: String, to: String, text: String, now := -1.0) -> Dictio
 			record.log.pop_front()
 		_save(record)
 	return {"ok": true, "message": message}
+
+
+## A message to everyone in the sender's squad, kept in each one's log with
+## "to" `SQUAD_CHAT`, so the phone shows the squad as one conversation.
+func _squad_message(from: String, text: String, now: float) -> Dictionary:
+	var members := squad_members(from)
+	if members.size() < 2:
+		return _fail("You are not in a squad.")
+	if not _rate_ok(from, now):
+		return _fail("Slow down a little.")
+	var message := {"from": from, "from_name": name_of(from), "to": SQUAD_CHAT, "to_name": "Squad",
+			"text": text, "time": now, "squad": true}
+	for member: String in members:
+		var record := _record(member)
+		var copy := message.duplicate()
+		copy["id"] = record.next_message
+		record.next_message += 1
+		record.log.append(copy)
+		while record.log.size() > MAX_LOG:
+			record.log.pop_front()
+		_save(record)
+	return {"ok": true, "message": message, "members": members}
+
+
+func _rate_ok(from: String, now: float) -> bool:
+	var recent: Array = _sent_times.get_or_add(from, [])
+	while not recent.is_empty() and now - float(recent[0]) > RATE_WINDOW:
+		recent.pop_front()
+	if recent.size() >= RATE_LIMIT:
+		return false
+	recent.append(now)
+	return true
 
 
 ## Text that is safe to show: no control characters, trimmed, not too long.
@@ -304,6 +361,11 @@ func invite(from: String, to: String, kind: String, world_id := "", now := -1.0)
 		return _fail("%s is not online." % name_of(to))
 	if has_blocked(to, from):
 		return _fail("%s is not taking your invites." % name_of(to))
+	if kind == "squad":
+		if squad_of(to) != "" and squad_of(to) == squad_of(from):
+			return _fail("%s is already in your squad." % name_of(to))
+		if squad_members(from).size() >= MAX_SQUAD:
+			return _fail("Your squad is full.")
 	# A fresh invite replaces an older one of the same kind.
 	for invite_id: int in _invites.keys():
 		var old: Dictionary = _invites[invite_id]
@@ -327,7 +389,70 @@ func answer_invite(account_id: String, invite_id: int, accept: bool, now := -1.0
 	_invites.erase(invite_id)
 	if accept and not _online.has(found.from):
 		return _fail("%s has left the server." % found.from_name)
+	if accept and found.kind == "squad":
+		var joined := join_squad(account_id, str(found.from))
+		if not joined.ok:
+			return joined
 	return {"ok": true, "invite": found, "accepted": accept}
+
+
+# --- Squads ------------------------------------------------------------------
+# A squad is who you play with now (DESIGN.md "Squads"): made by an accepted
+# squad invite, kept in memory and left by leaving it or going offline. A
+# session asks `squad_of` for the key its `Raid` keeps (`Raid.set_squad`), so
+# a squad walks through its portals together, wherever its members are.
+
+## The squad `account_id` is in, or "".
+func squad_of(account_id: String) -> String:
+	return str(_squad_of.get(account_id, ""))
+
+
+## Everyone in `account_id`'s squad, the leader first (none if not in one).
+func squad_members(account_id: String) -> Array[String]:
+	var out: Array[String] = []
+	var squad := squad_of(account_id)
+	if squad != "":
+		out.assign(_squads.get(squad, []))
+	return out
+
+
+## Puts `account_id` in `leader`'s squad, making one if they have none, and
+## takes them out of any squad they were in.
+func join_squad(account_id: String, leader: String) -> Dictionary:
+	if account_id == leader:
+		return _fail("That is you.")
+	var squad := squad_of(leader)
+	if squad != "" and squad == squad_of(account_id):
+		return {"ok": true, "squad": squad}
+	if squad != "" and (_squads[squad] as Array).size() >= MAX_SQUAD:
+		return _fail("That squad is full.")
+	leave_squad(account_id)
+	if squad == "":
+		squad = "s%d" % _next_squad
+		_next_squad += 1
+		_squads[squad] = [leader] as Array[String]
+		_squad_of[leader] = squad
+	(_squads[squad] as Array).append(account_id)
+	_squad_of[account_id] = squad
+	return {"ok": true, "squad": squad}
+
+
+## Takes `account_id` out of their squad; a squad left with one player ends.
+## Returns who was left in it (to tell them).
+func leave_squad(account_id: String) -> Array[String]:
+	var left: Array[String] = []
+	var squad := squad_of(account_id)
+	if squad == "":
+		return left
+	_squad_of.erase(account_id)
+	var members: Array = _squads.get(squad, [])
+	members.erase(account_id)
+	left.assign(members)
+	if members.size() <= 1:
+		for member: String in members:
+			_squad_of.erase(member)
+		_squads.erase(squad)
+	return left
 
 
 ## Open invites sent to `account_id`.
@@ -401,13 +526,31 @@ func snapshot(account_id: String, now := -1.0) -> Dictionary:
 		"messages": record.log.duplicate(true),
 		"invites": invites_for(account_id, now),
 		"news": news(),
+		"squad": _squad_entry(account_id),
 	}
+
+
+## The squad as the phone shows it: its members (the leader first), each
+## with where they are; {} when not in one.
+func _squad_entry(account_id: String) -> Dictionary:
+	var members := squad_members(account_id)
+	if members.is_empty():
+		return {}
+	var shown: Array[Dictionary] = []
+	for member: String in members:
+		shown.append({"id": member, "name": name_of(member), "online": _online.has(member),
+				"where": where(member), "world": world_of(member), "leader": member == members[0]})
+	return {"id": squad_of(account_id), "members": shown}
 
 
 func _contact_entry(record: Record, other: String) -> Dictionary:
 	var online := _online.has(other)
 	var shown: String = _online[other].name if online else str(record.names.get(other, other))
+	# Which world, only to friends and squadmates (`are_friends`).
+	var close := online and (are_friends(record.id, other) or (squad_of(other) != "" and squad_of(other) == squad_of(record.id)))
 	return {"id": other, "name": shown, "online": online, "where": where(other),
+			"world": world_of(other) if close else "", "friend": are_friends(record.id, other),
+			"squad": squad_of(other) != "" and squad_of(other) == squad_of(record.id),
 			"saved": other in record.contacts, "blocked": other in record.blocked}
 
 
@@ -424,6 +567,7 @@ const EVERYONE := "*"
 ##   "invite" [to, kind, world id]
 ##   "answer" [invite id, accept]
 ##   "contact" ["add" / "remove" / "block" / "unblock", other]
+##   "squad" ["leave"]
 ## Returns the call's own answer ("ok", "error", and what it made) plus
 ##   "tell": the account ids whose `snapshot` changed (`EVERYONE` for all), and
 ##   "notices": account id -> lines to show them now.
@@ -449,7 +593,12 @@ func run(action: String, account_id: String, args: Array) -> Dictionary:
 	elif action == "message" and _are(args, [TYPE_STRING, TYPE_STRING]):
 		var to := str(args[0]).left(64)
 		result = send_message(account_id, to, str(args[1]).left(MAX_MESSAGE * 2))
-		if result.ok:
+		if result.ok and to == SQUAD_CHAT:
+			for member: String in result.get("members", []):
+				if member != account_id:
+					tell.append(member)
+					notices[member] = ["[Squad] %s: %s" % [result.message.from_name, result.message.text]]
+		elif result.ok:
 			tell.append(to)
 			notices[to] = ["%s: %s" % [result.message.from_name, result.message.text]]
 	elif action == "invite" and _are(args, [TYPE_STRING, TYPE_STRING, TYPE_STRING]):
@@ -464,6 +613,9 @@ func run(action: String, account_id: String, args: Array) -> Dictionary:
 		if result.ok:
 			notices[str(result.invite.from)] = ["%s %s your invite." % [name_of(account_id),
 					"accepted" if args[1] else "declined"]]
+			if args[1] and result.invite.kind == "squad":
+				# Everyone in the squad sees who is in it now.
+				tell = [EVERYONE]
 	elif action == "contact" and _are(args, [TYPE_STRING, TYPE_STRING]):
 		var other := str(args[1]).left(64)
 		match str(args[0]):
@@ -471,6 +623,13 @@ func run(action: String, account_id: String, args: Array) -> Dictionary:
 			"remove": result = remove_contact(account_id, other)
 			"block": result = block(account_id, other)
 			"unblock": result = unblock(account_id, other)
+	elif action == "squad" and _are(args, [TYPE_STRING]) and str(args[0]) == "leave":
+		var was := squad_of(account_id)
+		var left := leave_squad(account_id)
+		result = {"ok": true} if was != "" else _fail("You are not in a squad.")
+		for member: String in left:
+			tell.append(member)
+			notices[member] = ["%s left the squad." % name_of(account_id)]
 	result["tell"] = tell
 	result["notices"] = notices
 	return result
@@ -478,6 +637,8 @@ func run(action: String, account_id: String, args: Array) -> Dictionary:
 
 ## What an invite says to whoever gets it.
 static func invite_text(made: Dictionary) -> String:
+	if made.get("kind", "") == "squad":
+		return "%s invites you to their squad." % made.get("from_name", "Someone")
 	if made.get("kind", "") == "base":
 		return "%s invites you to their home base." % made.get("from_name", "Someone")
 	var world := Worlds.get_world(str(made.get("world_id", "")))

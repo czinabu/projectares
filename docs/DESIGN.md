@@ -1148,6 +1148,15 @@ take apart one at a time from cover, or cross with a squad. The battle
 bench on Frostline (60 bots, 16 players): 5.2 ms a tick, and 76 stuck
 bot-windows against 107 before step 2, most of them up the glacier head.
 
+**The glacier-head post softened (Caleb's pick, 19 Nov, 30 duels a row).**
+A staggered lock (each Warden after the first waiting 0.2 s longer) moved
+nothing: a fight lasts long enough that the post still shot together,
+because a Warden that is hit fired back out of turn. Now a Warden holds its
+turn even when hit ("holds_turn"; point blank still skips the queue) and
+the glacier head's hit for 21 a shot, not 30. A solo player in the open
+beats a post of three 17-23% of the time, two Wardens 70-83%, and one alone
+every time, with health and the other zones unchanged.
+
 **Ashfront after step 3 (30 duels a row).** Each army's way of fighting is
 `DOCTRINE` in `worlds/ashfront/world.gd`, set on its bots as metas. Legion
 riflemen keep 30 m off and see 48 m, one rifleman in eight to five is a
@@ -1598,6 +1607,7 @@ other places, not only to the worlds).
 | Contract tracker | Your active contracts, on the Mission tab (section 10). |
 | Landing choices | Where to drop back in after dying: the wheel picks one on the death report and a click drops in (number keys and Enter still work). |
 | Squad portal | Opens a portal to a world, the arena, the plaza or home from your base and the plaza, or home from anywhere in a world as a sign-out (above). |
+| Emotes | A carousel on the Status tab: wave, salute, point, cheer, sit, lean, dance and taunt, played on your own body for everyone to see (section 11). |
 | Pack | What you carry, folded into the Summon tab: its fill, worth, heals and scrip, and later your weight tier (section 4). |
 
 Watch skins are cosmetics, shown off in the hub.
@@ -3153,6 +3163,64 @@ players far less than to bots.
 - The phone: people, chat, invites, news, mirror, settings.
 - Clans: one side in a warzone, a tag by the name.
 - Squads of three are the design target for flight pacing.
+
+### Emotes
+
+Eight to start (Caleb's go-ahead, 19 November 2026): wave, salute, point,
+cheer, sit down, lean back (arms folded), dance and a taunt (a beckon, the
+other hand on the hip). They are picked on the watch, since they are
+something you do in the world: the emote icon on the Status tab opens like
+the other carousels, the wheel turns through them and a click plays one (a
+click on the one playing stops it).
+
+- **One body, every view.** An emote is a pose on the one body
+  (`Locomotion.emote_pose`, `_emote_body`), the same in first and third
+  person and to everyone else; first person sits when you sit, because the
+  eyes ride the posed head. Point reaches along where you look.
+- **Synced as a held key.** The emote playing rides in the command
+  (`ActorCommand.emote`), so it predicts, replicates and costs nothing new
+  online; each view times it from when it saw it start, like the inspect.
+- **Ends when you act.** A wave, salute, point, cheer or taunt plays a few
+  seconds; sit, lean and dance hold. Moving, jumping, sprinting, firing,
+  drawing, the phone, the watch, a vehicle or leaving the ground ends one.
+  Starting one puts the weapon in hand away. View only: nothing in the
+  simulation reads an emote, so it never changes a fight.
+- **Later:** emotes earned or bought as cosmetics, emotes for two (a high
+  five), and a voice line or sound for each.
+
+### Shortcut keys
+
+Caleb's ask (19 November 2026): keys that go straight to the watch icon or
+phone app you want, so the social tools are a press away. They only raise
+the same watch or take out the same phone, in the hand, never a menu of
+their own; each is an input action, so the Controls app names whatever it
+is bound to. B raises the watch onto the opened emote wheel and N plays the
+emote last picked (again to stop it); M raises it onto the map; the middle
+mouse button pings where you look with the watch down; Y takes the phone
+out at the squad's chat (Messages with no squad) and U at Contacts (friends,
+the squad and its invites). Each pressed again puts it away. The game has
+no rebinding screen yet; when it gets one these come with the rest.
+
+### Squads and friends
+
+- **Squads.** A squad is who you play with now: a squad invite from the
+  phone's Contacts, and accepting it puts you both in one (up to four; the
+  one who asked leads). It is kept by the server's `SocialService` in memory
+  like invites, so it follows you from world to world and ends when you
+  leave it or go offline. Out in the worlds it is your squad for portals
+  (`Raid.set_squad`), in place of your clan; it is not a side, so it does
+  not stop friendly fire or share strongpoints (clans still do that).
+- **Squad chat.** One conversation for the whole squad in Messages.
+- **Friends** are contacts who saved each other. Only friends and
+  squadmates see which world the other is in (`SocialService.world_of`),
+  and get a Join on Contacts that takes you there the way a squad portal
+  does: from the plaza, the arena or your base, landing at the gate outpost.
+  Out in a world where gear is at stake you sign out first. An accepted
+  world invite goes the same way.
+- **Pings** stay on the watch (Mission tab), marking where you look for your
+  side.
+- **Later:** squadmates marked on the visor and watch map (today that is
+  your clan), a say-nearby line over the head, voice.
 
 ## 12. Roadmap
 

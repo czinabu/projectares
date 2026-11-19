@@ -1231,6 +1231,7 @@ func _setup_phone() -> void:
 	phone.tour_requested.connect(_on_tour_requested)
 	phone.host_requested.connect(_go_online_from_phone.bind(""))
 	phone.join_requested.connect(_go_online_from_phone)
+	phone.join_world_requested.connect(join_world)
 	phone.leave_server_requested.connect(_leave_from_phone)
 	phone.update_restart_requested.connect(_restart_for_update)
 	phone.update_hold = _away_from_quiet
@@ -1544,13 +1545,40 @@ func _apply_settings() -> void:
 
 
 ## Accepted an invite to this server's raid: deploy from the lobby.
-func _on_world_invite_accepted(_invite: Dictionary) -> void:
-	if net == null or raid != null:
-		phone.show_notice("Finish this run first, then deploy from the lobby.")
+func _on_world_invite_accepted(invite: Dictionary) -> void:
+	join_world(str(invite.get("world_id", "")))
+
+
+## Goes to the world `world_id` on this server, where a friend or squadmate
+## is (the phone's Join, or an accepted world invite): from the plaza, the
+## arena or your base the way a squad portal goes (`go_through_portal`),
+## landing with your squad at the gate outpost; to the plaza through the
+## base's door. Out in a world where gear is at stake you sign out first,
+## because there is no way out of a world but a sign-out.
+func join_world(world_id: String) -> void:
+	var world := Worlds.get_world(world_id)
+	if net == null:
+		phone.show_notice("Join a server first, from the Servers app.")
+		return
+	if world == null:
+		phone.show_notice("That world is not running on this server.")
+		return
+	if raid != null and raid.world.id == world_id:
+		phone.show_notice("You are already in %s." % world.display_name)
+		return
+	if raid != null and raid.world.gear_at_risk and not raid.world.safe_zone and not (raid is Arena):
+		phone.show_notice("Sign out first, then join them in %s." % world.display_name)
 		return
 	phone.close()
-	hub.set_online_status("Deploying...")
-	net.deploy()
+	if world.safe_zone:
+		if raid == null and base != null and not base.read_only:
+			_on_base_door()
+		elif raid is Arena:
+			leave_arena()
+		else:
+			phone.show_notice("Head out to %s from your base's door." % world.display_name)
+		return
+	go_through_portal(world_id)
 
 
 ## Accepted an invite to someone's home base.

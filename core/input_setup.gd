@@ -30,11 +30,18 @@ const KEY_ACTIONS := {
 	"check_wrist": KEY_X,
 	"free_look": KEY_E,
 	"inspect": KEY_I,
+	# Shortcuts (Caleb's ask): straight to a watch icon or a phone app.
+	"emote_wheel": KEY_B,
+	"quick_emote": KEY_N,
+	"watch_map": KEY_M,
+	"squad_chat": KEY_Y,
+	"friends": KEY_U,
 }
 
 const MOUSE_ACTIONS := {
 	"fire": MOUSE_BUTTON_LEFT,
 	"alt_fire": MOUSE_BUTTON_RIGHT,
+	"ping": MOUSE_BUTTON_MIDDLE,
 }
 
 
