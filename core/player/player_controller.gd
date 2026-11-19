@@ -299,6 +299,12 @@ var _artifact_click := false
 ## Seconds left of the throw just made: the hand is busy, so the weapon
 ## stays put away and takes no input (`ActionPose.toy_throw_time`).
 var _toy_busy_left := 0.0
+## A mouse button pressed while the watch, the phone or a toy had the hands
+## (or the click that took the mouse back) is theirs until it is let go, so
+## neither its press nor its hold nor its release reaches the weapon
+## (`_hold_back_clicks`).
+var _fire_held_back := false
+var _aim_held_back := false
 var _cam_dist := 0.0
 var _pending_switch := -1
 ## The zoom level asked of a helmet with binoculars. The visor key steps it.
@@ -387,7 +393,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		# gun's, and will not be given back.
 		_kick_held = maxf(0.0, _kick_held - maxf(vertical * turn, 0.0))
 	elif event is InputEventMouseButton and event.pressed and not captured:
+		# The click that takes the mouse back is not a shot or an aim.
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+		_fire_held_back = true
+		_aim_held_back = true
 	elif event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT \
 			and is_instance_valid(actor) and actor.is_dead:
 		click_landing()
@@ -540,7 +549,7 @@ func is_picking_weapons() -> bool:
 ## Fire with the watch up: packs the vehicle being looked at onto the watch,
 ## takes the picked toy into the hand, draws or summons the picked weapon,
 ## uses the artifact, or pings. False if the watch had no use for the
-## click, and it is an ordinary shot.
+## click; it still never shoots (`_hold_back_clicks`).
 func click_watch() -> bool:
 	if pack_target() != null:
 		pack_requested.emit()
@@ -915,6 +924,8 @@ func _physics_process(delta: float) -> void:
 		cmd.free_look = false
 		cmd.primary = false
 		cmd.secondary = false
+		_fire_held_back = _fire_held_back or Input.is_action_pressed("fire")
+		_aim_held_back = _aim_held_back or Input.is_action_pressed("alt_fire")
 		cmd.switch_weapon = -1
 		_visor_level = 0
 		cmd.visor_level = 0
@@ -947,23 +958,7 @@ func _physics_process(delta: float) -> void:
 	cmd.secondary = captured and Input.is_action_pressed("alt_fire")
 	cmd.secondary_pressed = captured and Input.is_action_just_pressed("alt_fire")
 	var busy_hands := cmd.primary_pressed or cmd.secondary_pressed or cmd.sprint or cmd.dash or cmd.slide
-	if not wrist_raised:
-		watch_open = ""
-	elif watch_open != "" and cmd.secondary_pressed:
-		# Right click backs out of an opened icon to the main row.
-		close_watch_icon()
-		cmd.secondary = false
-		cmd.secondary_pressed = false
-	elif watch_open != "":
-		cmd.secondary = false
-	if held_toy != "" or _toy_busy_left > 0.0:
-		_use_toy_hand(cmd)
-	elif watch_takes_fire():
-		# With the watch up and something for it to do, fire works the watch.
-		if cmd.primary_pressed:
-			click_watch()
-		cmd.primary = false
-		cmd.primary_pressed = false
+	_hold_back_clicks(cmd)
 	cmd.reload_pressed = Input.is_action_just_pressed("reload")
 	cmd.interact_pressed = Input.is_action_just_pressed("interact")
 	cmd.heal_pressed = Input.is_action_just_pressed("heal")
@@ -1006,6 +1001,56 @@ func _physics_process(delta: float) -> void:
 		stop_inspect()
 	_tick_inspect(cmd, delta)
 	_tick_emote(cmd, delta)
+
+
+## The mouse buttons with the watch up, the phone out or a toy in the hand
+## (playtest feedback: a pick on the watch fired a round, a right click back
+## brought the sight up). The watch and the toy hand get the press first;
+## then any button that went down while one of them had the hands is held
+## back from the weapon until it is let go, so a click that lowers the watch
+## (an emote, a portal, the helmet) never carries on as a held trigger, and
+## a right click that backs out never aims. Fire and aim never reach the
+## weapon while the watch is up, the same in both views.
+func _hold_back_clicks(cmd: ActorCommand) -> void:
+	var fire_down := cmd.primary
+	var aim_down := cmd.secondary
+	var hands_taken := wrist_raised or phone_out or held_toy != "" or _toy_busy_left > 0.0
+	if hands_taken and fire_down:
+		_fire_held_back = true
+	if hands_taken and aim_down:
+		_aim_held_back = true
+	if not wrist_raised:
+		watch_open = ""
+	elif watch_open != "" and cmd.secondary_pressed:
+		# Right click backs out of an opened icon to the main row.
+		close_watch_icon()
+		cmd.secondary = false
+		cmd.secondary_pressed = false
+	elif watch_open != "":
+		cmd.secondary = false
+	if held_toy != "" or _toy_busy_left > 0.0:
+		_use_toy_hand(cmd)
+	elif watch_takes_fire():
+		# With the watch up and something for it to do, fire works the watch.
+		if cmd.primary_pressed:
+			click_watch()
+		cmd.primary = false
+		cmd.primary_pressed = false
+	if wrist_raised:
+		cmd.primary = false
+		cmd.primary_pressed = false
+		cmd.secondary = false
+		cmd.secondary_pressed = false
+	if not fire_down:
+		_fire_held_back = false
+	elif _fire_held_back:
+		cmd.primary = false
+		cmd.primary_pressed = false
+	if not aim_down:
+		_aim_held_back = false
+	elif _aim_held_back:
+		cmd.secondary = false
+		cmd.secondary_pressed = false
 
 
 ## Starts emote `id` (`Emotes`): the weapon in hand is put away and the body
