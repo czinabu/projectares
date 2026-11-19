@@ -14,6 +14,7 @@ static func run(t: Node) -> void:
 	_shown(t)
 	await _simulated(t)
 	await _watch(t)
+	await _key(t)
 	await _back_on_out_there(t)
 	await _off_in_safe_zones(t)
 
@@ -121,6 +122,36 @@ static func _watch(t: Node) -> void:
 	Loadout.wear_helmet(p, "")
 	icon = Hud.watch_slots(raid, p)[Hud.Wrist.SLOTS.find("helmet")]
 	t.check(icon.empty, "bare-headed the icon is empty")
+	raid.queue_free()
+	await t.frames(2)
+
+
+## It has a key of its own (K, Caleb's ask), shared with nothing else,
+## that does what the watch icon does.
+static func _key(t: Node) -> void:
+	var setup: GDScript = preload("res://core/input_setup.gd")
+	var keys: Dictionary = setup.KEY_ACTIONS
+	t.check(keys.get("helmet", 0) == KEY_K, "the helmet key is K")
+	var sharing: Array[String] = []
+	for action: String in keys:
+		if action != "helmet" and keys[action] == keys.get("helmet", 0):
+			sharing.append(action)
+	t.check(sharing.is_empty(), "no other action shares the helmet key (%s)" % ", ".join(sharing))
+	var raid: Raid = await t._kit_raid(375, _kit("helm_warden"))
+	var p := raid.player
+	var controller := PlayerController.new()
+	controller.setup(p)
+	raid.add_child(controller)
+	await t.frames(2)
+	var press := InputEventKey.new()
+	press.physical_keycode = KEY_K
+	press.pressed = true
+	controller._unhandled_input(press)
+	await t.frames(3)
+	t.check(controller.helmet_off and p.cmd.helmet_off, "pressing it takes the helmet off")
+	controller._unhandled_input(press)
+	await t.frames(3)
+	t.check(not controller.helmet_off and not p.cmd.helmet_off, "and again puts it back on")
 	raid.queue_free()
 	await t.frames(2)
 

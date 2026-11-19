@@ -8,7 +8,7 @@ extends RefCounted
 
 const PlazaMap := preload("res://worlds/plaza/map.gd")
 const WarRoomPanel := preload("res://core/social/war_room_panel.gd")
-const VisualCheck := preload("res://tests/visual_check.gd")
+const VisualCheck := preload("res://tests/visual/war_room.gd")
 
 
 static func run(t: Node) -> void:
@@ -84,13 +84,15 @@ static func _hunted(t: Node) -> void:
 	marked.clan_tag = "ARES"
 	var other := Actor.new()
 	other.display_name = "Bystander"
-	var bar := raid.world.grudge_hunt * Raid.HUNTED_SHARE
 	var faint := Actor.new()
 	faint.display_name = "Passer-by"
-	raid.grudges = {marked: {"legion": bar * 4.0, "tide": bar}, other: {"tide": bar * 2.0}, faint: {"legion": bar * 0.5}}
+	# Grudges past half the hunt bar count; a faint one does not.
+	var bar := raid.world.grudge_hunt
+	raid.grudges = {marked: {"legion": bar * 1.3, "tide": bar * 0.2}, other: {"tide": bar * 0.7},
+			faint: {"legion": bar * 0.1}}
 	var rows := raid.hunted()
 	t.check(rows.size() == 2 and rows[0].name == "Marked One" and rows[0].by == "legion" and rows[0].clan == "ARES"
-			and rows[1].by == "tide", "the hunted list names each player and the army after them, biggest first, and a faint grudge is left off (%s)" % [rows])
+			and rows[1].by == "tide", "the hunted list names each player and the army after them, biggest first (%s)" % [rows])
 	t.check(rows.all(func(row: Dictionary) -> bool: return row.keys().size() == 3), "it says who and by whom, never where")
 	marked.free()
 	other.free()

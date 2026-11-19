@@ -8,9 +8,10 @@ How to use it:
 
 - Before building a feature, read its section here. If the code and this doc
   disagree, the code describes today and this doc describes the target.
-- The rules in `CLAUDE.md` still apply to how anything is built. When a
-  feature here changes one of those rules (for example power weapons becoming
-  storable), update the rule in `CLAUDE.md` in the same PR that builds it.
+- The rules in `CLAUDE.md` and `docs/systems/` still apply to how anything
+  is built. When a feature here changes one of those rules (for example
+  power weapons becoming storable), update the rule where it lives in the
+  same PR that builds it.
 - When Caleb makes a design call, record it here in the same PR.
 - Section 13 lists the decisions still open. Do not settle them silently.
 
@@ -1791,8 +1792,9 @@ of the shots and their whizz.
 A worn helmet can come off and be clipped to the hip, so faces show where
 people meet (the Concourse, a base) and a helmet is still to hand.
 
-- **From the watch.** The Summon tab's helmet icon takes it off or puts it
-  back on with a click. The watch goes down, since the off hand does it.
+- **From the watch or its key.** The Summon tab's helmet icon takes it off
+  or puts it back on with a click, and so does its own key, K (Caleb's
+  ask). The watch goes down, since the off hand does it.
 - **Shown, not swapped.** Both hands lift the helmet off (Caleb's call),
   so a weapon in hand is put away first. The weapon hand lets go as it
   comes down, and the off hand carries it round the body and clips it to the back of the left hip

@@ -1361,7 +1361,9 @@ func _tour_event(event: String) -> void:
 
 
 ## Passes every step whose action is already done: gear on, standing in the
-## plaza, a contract held, out in a world.
+## plaza, a contract held, out in a world. A later step already done passes
+## the ones before it too (`Onboarding.catch_up`), so leaving the base before
+## the test lane never leaves its step stuck on the visor.
 func _tour_check() -> void:
 	if _tour_running() and _tour_settle():
 		_tour_moved()
@@ -1374,7 +1376,7 @@ func _tour_settle() -> bool:
 	while again and _tour_running():
 		again = false
 		for fact in _tour_facts():
-			if Onboarding.notify(Profile.onboarding, fact):
+			if Onboarding.catch_up(Profile.onboarding, fact):
 				moved = true
 				again = true
 	return moved
