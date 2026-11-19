@@ -1,0 +1,14 @@
+# __NAME__
+
+Rules for `worlds/__ID__/` (made by `tools/new_world`). Write each rule the
+world adds here as it is built, the way the other files in `docs/systems/`
+do, and keep DESIGN.md's section for the world in step.
+
+- __NAME__ (DESIGN.md, add its section): what it is and what is at stake.
+  Its map is open ground on a `Terrain` (`worlds/__ID__/map.gd`): players
+  land at the south edge inside a gate outpost, strongpoints hold the
+  middle and a warlord the core (`zone_at`, `MIDDLE_FROM_Z`,
+  `CORE_FROM_Z`). Its enemies are the roster (`ROSTER` in
+  `worlds/__ID__/world.gd`), one row a kind, built by `equip_bot`. Check
+  it with `tests/__ID___tests.gd` and by eye with
+  `visual_check.tscn -- <dir> --__ID__-only`.

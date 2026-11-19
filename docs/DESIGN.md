@@ -2181,7 +2181,7 @@ measures them.
 | Climb | 8 m/s | kicks (about 6 m/s on average) | none of their own |
 | Max height | 40 m | 10 m | their launch height |
 | Hover | 8 s | 1.5 s skim per jump | none |
-| Fuel | Heat: hover 1x (12.5 a second), climb 1.3x, boost 2.5x | 4 charges for kicks and dashes | 25 s of glide stamina |
+| Fuel | Heat: hover 1x (12.5 a second), climb 1.3x, prone boost 0.7x (about 10 s, 170 m a bar) | 4 charges for kicks and dashes | 25 s of glide stamina |
 | Recharge | 4 s on the ground (coasting cools too) | 1 charge per 1.5 s, anywhere | 5 s, on the ground only |
 | Cross Ashfront (550 m) | about 45 s (measured 40) | about 60 s (measured 51) | about 25 s from a 30 m perch (measured 26) |
 | Air aim spread | +10% with the jets lit | +0% mid-dash or skimming low | +50% gliding |
@@ -2199,9 +2199,13 @@ jetpack keeps vertical play. A launch is free, once per time in the air.
 Strengths and weaknesses:
 
 - **Jetpack:** the best high ground and air fights, with an 8 s hover and
-  steady aim. But it is loud, shows on scans at 120 m, only middling for
-  travel, and a held boost overheats it in about 3 s (the Shift press is
-  also an air dash).
+  steady aim. Its prone boost is its travel (Caleb's call): about 10 s and
+  170 m a bar (the Shift press is also an air dash), but no shooting from
+  it. Aim or the trigger brings you upright into a hover first, and the
+  gun waits out the same beat as coming out of a sprint, so a boost is
+  never a fighting stance. Free look (E) holds the boost's heading while
+  you look round, like the wings. It is loud, shows on scans at 120 m and
+  is still slower across the map than wings from height (556 m a flight).
 - **Boots:** the fastest on foot, the only rig with a dodge, quiet, and they
   work anywhere, the Foundry's buildings included. But they top out at
   10 m and are slow over open ground, so jetpacks shoot down at them and
@@ -2266,7 +2270,9 @@ you fall, or climb on held Space. Pressing Shift in the air on a jetpack
 with a boost (Shift or Shift + W) boosts with no hover first: it speeds you
 up head first along the view's heading and the body lies out prone as the
 speed builds, the same body in first and third person; holding Shift keeps
-boosting. Wings are the exception to the mouse only looking: they fly
+boosting, and holding E keeps its heading while you look round. Aim or the
+trigger ends it: the body eases up out of prone into a hover over about
+half a second (never a snap). Wings are the exception to the mouse only looking: they fly
 where you look, like a bird, with momentum (hold E to free look while
 they fly straight on). Turns cost speed and pulling up
 hard in a turn stalls them. Gliding, Shift is a wing boost that thrusts you

@@ -51,5 +51,26 @@ date in the same PR.
   are. No cheats online. Every line
   it touches is marked "DEV MODE". Never build a feature on it; to remove it,
   delete `core/dev/` and every "DEV MODE" line or block, plus
-  `tests/dev_mode_tests.gd`. Dev mode also knows every blueprint
+  `tests/dev_mode_tests.gd`, `tests/dev_tools_tests.gd` and
+  `tests/visual/console.gd`. Dev mode also knows every blueprint
   (`DevMode.top_up_blueprints`).
+- Dev tools (DEV MODE, `core/dev/dev_tools.gd`, added by `Main`): two raw
+  keys read only in an editor or debug run with a window
+  (`DevTools.enabled`), never exported, headless or on a server. F9 records
+  `CAPTURE_SECONDS` of frame timings (frame, process, physics, render CPU
+  and GPU), draw calls, objects and primitives into one JSON under
+  `user://dev` with its summary first, the machine and the graphics
+  settings, so Caleb can send back numbers from his own card; F10 saves a
+  bug snapshot zip there (the screenshot, `Main.report_context`, the
+  settings and the recent logs). They are not input actions, so the
+  Controls app and the key checks leave them out; a new dev key stays off
+  the game's keys (no B, N, M, Y, U, K or middle mouse).
+- The dev console (DEV MODE, Caleb's call: a phone app, never a flat
+  overlay): the phone's Console app (`Phone.console_command`, shown only
+  while `DevMode.active()`) hands `Main` a typed line, and
+  `core/dev/dev_console.gd` runs it on a solo `Raid` (teleport, bots, war
+  heat, storms, events, shells, timers, heal, items, vehicles; `help`
+  lists them). It refuses online, where the server decides, and changes the
+  world only through what the `Raid` itself calls (its spawns, events and
+  weather). A new command is a `COMMANDS` row and its function there. Check
+  by eye with `visual_check.tscn -- <dir> --console-only`.
