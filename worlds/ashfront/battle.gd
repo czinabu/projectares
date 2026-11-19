@@ -714,7 +714,7 @@ class _Baker:
 		if _meshes[pose] != null:
 			return
 		var merged := _merge()
-		if (merged[Mesh.ARRAY_INDEX] as PackedInt32Array).size() >= 3:
+		if merged.size() > Mesh.ARRAY_INDEX and (merged[Mesh.ARRAY_INDEX] as PackedInt32Array).size() >= 3:
 			_meshes[pose] = _far(merged)
 
 	## Every visible mesh on the body, posed, as one mesh coloured per vertex.
@@ -726,9 +726,13 @@ class _Baker:
 		var inv := _actor.global_transform.affine_inverse()
 		for node in _actor.find_children("*", "MeshInstance3D", true, false):
 			var mi := node as MeshInstance3D
-			if mi.mesh == null or not mi.is_visible_in_tree():
+			# A shadow-only copy of the body is not drawn, so it is not baked.
+			if mi.mesh == null or not mi.is_visible_in_tree() \
+					or mi.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY:
 				continue
 			var mesh: Mesh = mi.bake_mesh_from_current_skeleton_pose() if mi.skin != null else mi.mesh
+			if mesh == null:
+				continue
 			var xf := inv * mi.global_transform
 			var turn := Transform3D(xf.basis.inverse().transposed(), Vector3.ZERO)
 			for s in mesh.get_surface_count():
