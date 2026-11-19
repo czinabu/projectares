@@ -399,6 +399,12 @@ func body_turn(melee: MeleeWeapon) -> Vector2:
 	return _pose().body_turn(melee)
 
 
+## True while the clip has the whole body and the arms are left to it: dead,
+## or rolling (`ActionPose.rolling`).
+func _let_go() -> bool:
+	return actor.is_dead or _pose().rolling()
+
+
 func _pose() -> ActionPose:
 	if pose == null or not is_instance_valid(pose):
 		pose = ActionPose.of(actor)
@@ -418,7 +424,7 @@ func step(delta: float) -> void:
 	_steady_dt += delta
 	_hip_dt += delta
 	var melee := actor.get_active_weapon() as MeleeWeapon
-	var holding := melee != null and melee.visual != null and not actor.is_dead
+	var holding := melee != null and melee.visual != null and not _let_go()
 	var reaching := holding and shared.reach_weight > 0.0
 	_weight = shared.reach_weight if holding else move_toward(_weight, 0.0, delta * 9.0)
 	_grip_weight = move_toward(_grip_weight, 1.0 if holding else 0.0, delta * 8.0)
@@ -442,16 +448,16 @@ func step(delta: float) -> void:
 		_turn = shared.toy_turn()
 	var gun := actor.get_active_weapon() as Gun
 	_gun_weight = maxf(shared.reload, shared.inspect_for("gun")) if gun != null and gun.visual != null \
-			and gun.visual.visible and not actor.is_dead else 0.0
+			and gun.visual.visible and not _let_go() else 0.0
 	# The watch takes the left hand off any two-handed hold while it is up.
-	_watch = shared.watch if not actor.is_dead else 0.0
+	_watch = shared.watch if not _let_go() else 0.0
 	_ads = shared.ads if gun != null and gun.visual != null and gun.visual.visible \
-			and not actor.is_dead and override_weight <= 0.001 else 0.0
+			and not _let_go() and override_weight <= 0.001 else 0.0
 	if _ads <= 0.0:
 		_ads_fix = Vector3.ZERO
 	var raised := 0.0
 	_gun_carry = 0.0
-	if gun != null and gun.visual != null and gun.visual.visible and not actor.is_dead and override_weight <= 0.001:
+	if gun != null and gun.visual != null and gun.visual.visible and not _let_go() and override_weight <= 0.001:
 		raised = (1.0 - shared.low) * (1.0 - shared.reload) * (1.0 - shared.inspect_for("gun"))
 		_gun_carry = shared.carry if _weight <= 0.001 else 0.0
 		raised = lerpf(raised, shared.carry_support(gun), _gun_carry)
@@ -476,7 +482,7 @@ func step(delta: float) -> void:
 		reach_ik.influence = maxf(held_by, override_weight)
 	# Cocked for a windup the elbow rides high; thrown through, it drops.
 	_pole.global_position = actor.global_transform * (elbow.lerp(shared.elbow_pole(), _weight) if holding else elbow)
-	if shared.toy > 0.0 and not actor.is_dead:
+	if shared.toy > 0.0 and not _let_go():
 		# A toy vehicle held up or thrown: the hand follows the shared throw,
 		# taking over from any hold, and the elbow rides up as it cocks.
 		var toy_spot := actor.global_transform * shared.toy_hand_point()
@@ -546,7 +552,7 @@ func _face_watch() -> void:
 ## it so the gun's sight comes up onto the line of the eyes.
 func _reach_gun() -> void:
 	var gun := actor.get_active_weapon() as Gun
-	var in_hand := gun != null and gun.visual != null and gun.visual.visible and not actor.is_dead and _wrist >= 0
+	var in_hand := gun != null and gun.visual != null and gun.visual.visible and not _let_go() and _wrist >= 0
 	if in_hand:
 		_hold_at_hip()
 	else:
@@ -1025,7 +1031,7 @@ func _held_wrist(gun: Gun) -> Basis:
 ## still points where the clip and the aim say; only the hand turns on it.
 func _bend_to_grip() -> void:
 	var gun := actor.get_active_weapon() as Gun
-	if gun == null or gun.visual == null or not gun.visual.visible or actor.is_dead or _aim_wrist == null or _wrist < 0:
+	if gun == null or gun.visual == null or not gun.visual.visible or _let_go() or _aim_wrist == null or _wrist < 0:
 		return
 	var weight := 1.0 - override_weight
 	if weight <= 0.0:

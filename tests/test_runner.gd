@@ -2072,6 +2072,39 @@ func _test_directional_melee() -> void:
 	await frames(25)
 	check(foe.stagger_left <= 0.0, "a light on a foe at rest does not stagger them")
 
+	# The evade: with no rig, Alt rolls; a swing landing mid-roll passes
+	# through, and the weapon waits out the roll and a moment after.
+	await frames(60)
+	var rig_on := p.flight.enabled
+	if rig_on:
+		check(p.dodge_style(true) in ["thrust", "jet_step", "flap"], "a rig dodges its own way")
+	p.flight.enabled = false
+	check(p.dodge_style(true) == "roll" and p.dodge_style(false) == "dash", "with no rig the dodge is a roll")
+	p.stamina = p.max_stamina
+	foe.stagger_left = 0.0
+	before = total.call()
+	var from := p.global_position
+	await _foe_swing(foe)
+	await frames(20)
+	p.cmd.move = Vector2(1, 0)
+	p.cmd.dash = true
+	await frames(1)
+	p.cmd.dash = false
+	await frames(3)
+	check(p.dodging() and p.evade_left > 0.0 and p.dodge_shown == "roll", "Alt starts a roll")
+	p.cmd.primary_pressed = true
+	await frames(1)
+	p.cmd.primary_pressed = false
+	check(not blade.is_winding_up(), "no swing comes out of a roll")
+	await frames(20)
+	p.cmd.move = Vector2.ZERO
+	check(is_equal_approx(total.call(), before), "a swing that lands mid-roll passes through")
+	var rolled := Vector2(p.global_position.x - from.x, p.global_position.z - from.z).length()
+	check(rolled > 2.0 and rolled < 5.0, "a roll carries the body a few metres (%.1f m)" % rolled)
+	await frames(40)
+	check(not p.dodging(), "the weapon answers again once the roll is over")
+	p.flight.enabled = rig_on
+
 	# Bullets ignore sides: any guard turns part of one aside.
 	await frames(60)
 	p.cmd.secondary = true

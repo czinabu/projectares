@@ -80,6 +80,9 @@ const THRUST_OUT := -1.6
 const CHOP_RAISED := 1.45
 ## How long a landed strike holds the swing still (view only).
 const HITSTOP := 0.06
+## How long a strike met by a guard holds still, while the two blades meet
+## at one point (`ActionPose.bind`; view only).
+const BIND_HOLD := 0.12
 ## Where the blade is held, relative to the hand, for each guard.
 const GUARD_OFFSET_OVERHEAD := Vector3(-0.25, 0.3, 0.0)
 const GUARD_OFFSET_LEFT := Vector3(-0.5, 0.05, 0.0)
@@ -516,6 +519,15 @@ func _heavy_or_slam() -> void:
 		_start_slam()
 
 
+## The hand is taken from the weapon this tick (a dodge, a stagger): the
+## guard drops and a charge is let go without a swing.
+func drop_aim() -> void:
+	if _blocking:
+		_since_guard = guard_rearm if _guard_paid else 0.0
+	_blocking = false
+	_charge = -1.0
+
+
 func on_holster() -> void:
 	_charge = -1.0
 	_queued = false
@@ -895,16 +907,15 @@ func _strike(amount: float, kind: String) -> void:
 ## the views answer now rather than after the server's word.
 func _contact(other: Actor, at: Vector3) -> void:
 	var outcome := guess_outcome(other)
-	_hitstop_left = HITSTOP
+	_hitstop_left = HITSTOP if outcome == "hit" else BIND_HOLD
 	if _air_lunge and _lunge_left > 0.0:
 		# Arrived: the lunge has done its job.
 		_lunge_left = minf(_lunge_left, 0.0001)
 	var chest := at + Vector3(0.0, Actor.BODY_HEIGHT * 0.6, 0.0)
 	contact.emit(other, outcome, chest)
-	if actor.is_inside_tree():
-		var color := Color(1.0, 0.85, 0.4) if outcome == "parry" \
-				else (Color(0.55, 0.75, 1.0) if outcome == "block" else Color(1.0, 0.45, 0.35))
-		Fx.burst(actor.get_parent(), chest, 0.35, color)
+	if actor.is_inside_tree() and outcome == "hit":
+		# A guard's spark is struck where the blades meet (`ActorSkin`).
+		Fx.burst(actor.get_parent(), chest, 0.35, Color(1.0, 0.45, 0.35))
 
 
 ## What `other`'s guard would do with a strike from this blade right now:
