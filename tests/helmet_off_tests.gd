@@ -86,42 +86,31 @@ static func _simulated(t: Node) -> void:
 	await t.frames(2)
 
 
-## The watch's helmet icon on the Summon tab takes it off and puts it on.
+## The helmet left the watch once it had a key of its own (K, Caleb's
+## call): taking it off takes both hands, and a new helmet goes on the head.
 static func _watch(t: Node) -> void:
-	t.check(Hud.Wrist.TAB_SLOTS["summon"].has("helmet") and Hud.Wrist.SLOTS.has("helmet")
-			and Hud.Wrist.tab_of("helmet") == "summon", "the helmet icon is on the watch's Summon tab")
+	t.check(not Hud.Wrist.SLOTS.has("helmet") and Hud.Wrist.tab_of("helmet") == "",
+			"the helmet is not on the watch")
 	var home := Hud.base_watch_slots("Home base", {})
-	t.check(home.size() == Hud.Wrist.SLOTS.size() and home[Hud.Wrist.SLOTS.find("helmet")].id == "helmet",
-			"at home too")
+	t.check(home.size() == Hud.Wrist.SLOTS.size() and not home.any(func(s: Dictionary) -> bool: return s.id == "helmet"),
+			"nor on the watch at home")
 	var raid: Raid = await t._kit_raid(372, _kit("helm_warden"))
 	var p := raid.player
 	var controller := PlayerController.new()
 	controller.setup(p)
 	raid.add_child(controller)
 	await t.frames(2)
-	var slots := Hud.watch_slots(raid, p)
-	var icon: Dictionary = slots[Hud.Wrist.SLOTS.find("helmet")]
-	t.check(icon.id == "helmet" and not icon.empty and "click" in icon.hints, "worn, a click takes it off")
-	controller.wrist_raised = true
-	controller.watch_focus = Hud.Wrist.SLOTS.find("helmet")
-	controller.watch_focus_moved = true
-	t.check(controller.watch_takes_fire(), "fire works the icon, not the gun")
 	p._draw_weapon(p.weapon_for_key(1))
 	await t.frames(2)
 	t.check(p.get_active_weapon() != null, "with a weapon drawn")
-	t.check(controller.click_watch() and controller.helmet_off and not controller.wrist_raised,
-			"a click sets it off, and the watch goes down for the hand")
+	controller.toggle_helmet()
+	t.check(controller.helmet_off, "the helmet key sets it off")
 	await t.frames(3)
 	t.check(p.get_active_weapon() == null, "it takes both hands, so the weapon is put away first")
 	t.check(p.cmd.helmet_off, "the controller sends it as the held key")
-	icon = Hud.watch_slots(raid, p)[Hud.Wrist.SLOTS.find("helmet")]
-	t.check("put on" in str(icon.detail), "the icon then offers to put it back on")
 	Loadout.wear_helmet(p, "helm_seeker")
 	await t.frames(3)
 	t.check(not controller.helmet_off and not p.cmd.helmet_off, "a new helmet goes on the head")
-	Loadout.wear_helmet(p, "")
-	icon = Hud.watch_slots(raid, p)[Hud.Wrist.SLOTS.find("helmet")]
-	t.check(icon.empty, "bare-headed the icon is empty")
 	raid.queue_free()
 	await t.frames(2)
 

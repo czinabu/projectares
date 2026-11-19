@@ -40,16 +40,14 @@ static func _rules(t: Node) -> void:
 
 
 static func _watch(t: Node) -> void:
-	print("Emotes: the watch")
-	t.check(Hud.Wrist.tab_of("emote") == "status" and "emote" in Hud.Wrist.SLOTS,
-			"the emote icon is on the watch's Status tab")
-	var slot := Hud.emote_slot(2, "point")
-	t.check(slot.id == "emote" and slot.count == Emotes.IDS.size() and slot.index == 2
-			and str(slot.detail).begins_with("Point") and "playing" in str(slot.detail) and "wheel" in slot.hints,
-			"the icon turns through every emote and says which one is playing")
-	var home := Hud.base_watch_slots("Home base", {}, [], 0, null, 1, "")
-	t.check(home.size() == Hud.Wrist.SLOTS.size() and home[Hud.Wrist.SLOTS.find("emote")].id == "emote"
-			and home[Hud.Wrist.SLOTS.find("emote")].index == 1, "the emote icon works at home too")
+	print("Emotes: off the watch")
+	# The emote key's quick wheel does the picking (Caleb's call): the watch
+	# keeps to what you do in action.
+	t.check(Hud.Wrist.tab_of("emote") == "" and not "emote" in Hud.Wrist.SLOTS,
+			"emotes are not on the watch")
+	var home := Hud.base_watch_slots("Home base", {})
+	t.check(home.size() == Hud.Wrist.SLOTS.size() and not home.any(func(s: Dictionary) -> bool: return s.id == "emote"),
+			"nor on the watch at home")
 
 
 static func _controller(t: Node) -> void:
@@ -65,16 +63,8 @@ static func _controller(t: Node) -> void:
 	controller.set_physics_process(false)
 	await t.frames(30)
 	t.check(p.is_on_floor(), "the player stands on the plaza floor")
-	# Up on the watch, onto the emote icon, open it, turn to the salute, click.
-	controller.wrist_raised = true
-	controller.watch_focus_moved = true
-	controller.watch_focus = Hud.Wrist.SLOTS.find("emote")
-	t.check(controller.watch_takes_fire() and controller.click_watch() and controller.watch_open == "emote",
-			"a click opens the emote icon")
-	controller.step_watch(1)
-	t.check(controller.emote_pick == 1, "the wheel turns through the emotes")
-	t.check(controller.click_watch() and controller.emote_playing == "salute" and not controller.wrist_raised,
-			"a click plays the picked emote and lowers the watch")
+	controller.start_emote("salute")
+	t.check(controller.emote_playing == "salute", "an emote starts")
 	var cmd := p.cmd
 	cmd.clear_one_shots()
 	controller._tick_emote(cmd, 0.1)
@@ -105,18 +95,12 @@ static func _controller(t: Node) -> void:
 	cmd.switch_weapon = 0
 	controller._tick_emote(cmd, 0.1)
 	t.check(controller.emote_playing == "", "drawing a weapon ends it")
-	# The shortcut keys: straight onto the emote icon, opened, and down again.
+	# The map key raises the watch straight onto the map, and again lowers it.
 	controller.wrist_raised = false
-	controller.watch_shortcut("emote")
-	t.check(controller.wrist_raised and controller.focused_watch_icon() == "emote" and controller.watch_open == "emote",
-			"the emote key raises the watch straight onto the opened emote wheel")
-	controller.watch_shortcut("emote")
-	t.check(not controller.wrist_raised, "and again lowers it")
 	controller.watch_shortcut("map")
 	t.check(controller.wrist_raised and controller.focused_watch_icon() == "map", "the map key raises it onto the map")
-	controller.watch_shortcut("emote")
-	t.check(controller.wrist_raised and controller.focused_watch_icon() == "emote", "and the emote key moves it over")
-	controller.wrist_raised = false
+	controller.watch_shortcut("map")
+	t.check(not controller.wrist_raised, "and again lowers it")
 	controller.watch_open = ""
 	controller.emote_pick = Emotes.IDS.find("cheer")
 	controller.quick_emote()

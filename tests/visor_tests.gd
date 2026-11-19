@@ -118,12 +118,11 @@ static func _wear(t: Node) -> void:
 	var changes: Array[String] = []
 	p.helmet_changed.connect(func(id: String) -> void: changes.append(id))
 	p.inventory.add_item("helm_seeker")
-	var entries := Hud.weapon_entries(p)
-	var at := entries.map(func(e: Dictionary) -> String: return e.id).find("helm_seeker")
-	t.check(at >= 0 and int(entries[at].index) == -1, "a helmet carried in the pack is on the watch's carousel")
-	var slot := Hud.weapon_slot(raid, p, at)
-	t.check("Seeker Helmet · wear" in str(slot.detail) and "click" in slot.hints,
-			"picked on the carousel, a click puts it on")
+	var at := p.inventory.items.find("helm_seeker")
+	t.check(at >= 0 and Loadout.wearable_from_pack("helm_seeker"), "a helmet carried in the pack is on the watch's pack list")
+	var slot := Hud.pack_slot(p, at, raid)
+	t.check(str(slot.detail).begins_with("Seeker Helmet") and "click" in slot.hints,
+			"picked in the pack list, a click puts it on")
 	p.visor.zoom_level = 1
 	t.check(raid.summon(p, "helm_seeker") == "" and p.visor.mode == "scan" and p.visor.item_id == "helm_seeker"
 			and p.visor.cooldown == 25.0 and p.visor.zoom_level == 0,
@@ -198,8 +197,8 @@ static func _frames(t: Node) -> void:
 			"one frame is worn; a second in a kit is only carried")
 	var changes: Array[String] = []
 	p.frame_changed.connect(func(id: String) -> void: changes.append(id))
-	var ids := Hud.weapon_entries(p).map(func(e: Dictionary) -> String: return e.id)
-	t.check("frame_runner" in ids, "a frame carried in the pack is on the watch's carousel")
+	t.check(Loadout.wearable_from_pack("frame_runner") and "click" in Hud.pack_slot(p, p.inventory.items.find("frame_runner"), raid).hints,
+			"a frame carried in the pack is put on from the watch's pack list")
 	p.health.armor = 40.0
 	t.check(raid.summon(p, "frame_runner") == "" and p.frame_id == "frame_runner"
 			and is_equal_approx(p.health.max_armor, 45.0) and is_equal_approx(p.health.armor, 45.0),

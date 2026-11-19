@@ -69,7 +69,7 @@ var phone_out := false
 ## in on it and reading it from close, so the field of view and the camera
 ## are shown as they are; the phone stays in the hand.
 var phone_preview := false
-## The helmet is off, clipped to the hip (the watch's helmet icon,
+## The helmet is off, clipped to the hip (the helmet key, K,
 ## `toggle_helmet`): a toggle, sent as the held `ActorCommand.helmet_off`.
 ## It goes back on by itself when a new helmet is put on, and when you step
 ## out where people fight (weapons unlocked outside a safe zone or the base:
@@ -264,6 +264,16 @@ var watch_focus_moved := false
 ## The icon opened with a click ("" on the main row): only then does the
 ## wheel turn through what it holds (Caleb's call). A right click closes it.
 var watch_open := ""
+## Three levels (Caleb's call): raised with its key, the watch starts on the
+## tab row, where the wheel turns between the tabs (Summon, Status,
+## Mission) and a click goes into the open one; in a tab the wheel moves
+## across its icons only, and a click opens an icon that holds several
+## things (`watch_open`). A right click backs out one level, and off the
+## tab row it lowers the watch (`back_watch`).
+var watch_tabs := false
+## The icon last looked at on each tab (tab -> `watch_focus`), so turning
+## back to a tab lands where you left it.
+var _tab_focus := {}
 ## Which weapon and which artifact are picked out on the raised watch's
 ## carousel (`Hud.weapon_entries`, `Hud.artifact_entries`), counting from 0.
 var weapon_pick := 0
@@ -443,6 +453,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		wrist_raised = not wrist_raised
 		watch_focus_moved = false
 		watch_open = ""
+		watch_tabs = wrist_raised
 	elif event.is_action_pressed("emote_wheel") and not event.is_echo():
 		open_emote_wheel()
 	elif event.is_action_pressed("watch_map"):
@@ -475,6 +486,7 @@ func watch_shortcut(id: String) -> void:
 		watch_open = ""
 		return
 	wrist_raised = true
+	watch_tabs = false
 	watch_focus = Hud.Wrist.SLOTS.find(id)
 	watch_focus_moved = true
 	watch_open = id if watch_entries(id) > 1 else ""
@@ -627,7 +639,7 @@ func is_watch_on(id: String) -> bool:
 ## True while the card is open on the artifact icon with the attuned artifact
 ## picked out: fire uses it (`ActorCommand.artifact_pressed`).
 func is_on_artifact() -> bool:
-	return is_watch_on("artifact") and actor.artifact.enabled and artifact_pick == 0 and _is_open("artifact")
+	return is_watch_on("artifact") and actor.artifact.enabled and _is_open("artifact")
 
 
 ## Where a squad portal from the watch can lead from here
@@ -669,8 +681,14 @@ func click_watch() -> bool:
 	if pack_target() != null:
 		pack_requested.emit()
 		return true
-	# Two levels (Caleb's call): on the main row a click opens an icon that
-	# holds several things, and only then does the wheel turn through them.
+	if watch_tabs and is_watch_up():
+		# On the tab row a click goes into the open tab, on the icon it
+		# shows (where you last were on it, or where the card opened).
+		watch_tabs = false
+		watch_focus_moved = true
+		return true
+	# On a tab a click opens an icon that holds several things, and only
+	# then does the wheel turn through them.
 	var here := focused_watch_icon()
 	if watch_open == "" and watch_entries(here) > 1:
 		watch_open = here
@@ -685,15 +703,6 @@ func click_watch() -> bool:
 		return true
 	if is_on_artifact():
 		_artifact_click = true
-		return true
-	if is_watch_on("helmet") and actor.visor.enabled:
-		# The off hand takes the helmet, so the watch goes down.
-		toggle_helmet()
-		wrist_raised = false
-		watch_open = ""
-		return true
-	if is_watch_on("ping"):
-		ping_requested.emit()
 		return true
 	if is_on_sign_out():
 		sign_out_requested.emit()
@@ -718,15 +727,6 @@ func click_watch() -> bool:
 		var at := clampi(mission_pick if watch_open == "contract" else 0, 0, missions.size() - 1)
 		GameSettings.cycle_mission(str(missions[at].key))
 		return true
-	if is_watch_on("emote") and _is_open("emote"):
-		var picked: String = Emotes.IDS[clampi(emote_pick, 0, Emotes.IDS.size() - 1)]
-		if picked == emote_playing:
-			stop_emote()
-		else:
-			start_emote(picked)
-		wrist_raised = false
-		watch_open = ""
-		return true
 	if is_watch_on("portal") and not portal_choices().is_empty() and _is_open("portal"):
 		var choices := portal_choices()
 		portal_requested.emit(choices[clampi(portal_pick, 0, choices.size() - 1)])
@@ -738,9 +738,8 @@ func click_watch() -> bool:
 
 ## True while fire works the raised watch instead of the weapon.
 func watch_takes_fire() -> bool:
-	return (watch_open == "" and watch_entries(focused_watch_icon()) > 1) or is_picking_toys() or pack_target() != null or is_picking_weapons() or is_on_artifact() \
-			or is_watch_on("ping") or is_watch_on("portal") or is_watch_on("emote") or is_on_sign_out() \
-			or (is_watch_on("helmet") and actor.visor.enabled) \
+	return (watch_tabs and is_watch_up()) or (watch_open == "" and watch_entries(focused_watch_icon()) > 1) or is_picking_toys() or pack_target() != null or is_picking_weapons() or is_on_artifact() \
+			or is_watch_on("portal") or is_on_sign_out() \
 			or (is_watch_on("map") and not map_targets.is_empty()) \
 			or (watch_open == "standing" and is_watch_on(watch_open)) \
 			or (is_watch_on("pack") and _is_open("pack") and not actor.inventory.items.is_empty()) or is_on_race() \
@@ -856,8 +855,6 @@ func watch_entries(id: String) -> int:
 			return Hud.artifact_entries(actor).size()
 		"portal":
 			return portal_choices().size()
-		"emote":
-			return Emotes.IDS.size()
 		"map":
 			return map_targets.size()
 		"standing":
@@ -880,8 +877,6 @@ func _watch_pick(id: String) -> int:
 			return artifact_pick
 		"portal":
 			return portal_pick
-		"emote":
-			return emote_pick
 		"map":
 			return map_pick
 		"standing":
@@ -903,8 +898,6 @@ func _set_watch_pick(id: String, pick: int) -> void:
 			artifact_pick = pick
 		"portal":
 			portal_pick = pick
-		"emote":
-			emote_pick = pick
 		"map":
 			map_pick = pick
 		"standing":
@@ -918,10 +911,11 @@ func _set_watch_pick(id: String, pick: int) -> void:
 				mission_pick = pick
 
 
-## Moves the watch card's open icon `step` along (`Hud.Wrist.SLOTS`), tab
-## after tab. On an icon that holds several things (weapons, toys,
-## artifacts) the wheel turns through them first, and steps off the icon
-## past the first or last. Stops at the card's ends.
+## Moves the watch card one notch of the wheel (`step` 1 is down, to the
+## right), at the level it is on: an opened icon turns through what it
+## holds, stopping at the list's ends; on the tab row it turns to the next
+## tab, landing on the icon last looked at there; in a tab it moves across
+## that tab's icons and stops at the tab's ends.
 func step_watch(step: int) -> void:
 	if step == 0:
 		return
@@ -936,7 +930,34 @@ func step_watch(step: int) -> void:
 	if not watch_focus_moved and is_browsing_toys():
 		watch_focus = slots.find("vehicle")
 	watch_focus_moved = true
-	watch_focus = clampi(watch_focus + signi(step), 0, slots.size() - 1)
+	var tab := Hud.Wrist.tab_of(slots[watch_focus])
+	if watch_tabs:
+		var tabs: Array = Hud.Wrist.TABS
+		var next: String = tabs[clampi(tabs.find(tab) + signi(step), 0, tabs.size() - 1)]
+		if next != tab:
+			_tab_focus[tab] = watch_focus
+			watch_focus = int(_tab_focus.get(next, slots.find(Hud.Wrist.TAB_SLOTS[next][0])))
+		return
+	var row: Array = Hud.Wrist.TAB_SLOTS[tab]
+	var id: String = row[clampi(row.find(slots[watch_focus]) + signi(step), 0, row.size() - 1)]
+	watch_focus = slots.find(id)
+	_tab_focus[tab] = watch_focus
+
+
+## Right click on the watch: backs out one level. An opened icon closes back
+## to its tab, a tab goes back to the tab row, and the tab row lowers the
+## watch. False if the watch is down.
+func back_watch() -> bool:
+	if not is_watch_up():
+		return false
+	if close_watch_icon():
+		return true
+	if not watch_tabs:
+		watch_tabs = true
+		return true
+	wrist_raised = false
+	watch_tabs = false
+	return true
 
 
 ## The icon the card is on (`Hud.Wrist.SLOTS`): where the wheel put it, or
@@ -955,8 +976,7 @@ func _is_open(id: String) -> bool:
 	return watch_open == id or watch_entries(id) <= 1
 
 
-## Right click on the watch: closes an opened icon back to the main row.
-## False if nothing was open.
+## Closes an opened icon back to its tab's icons. False if nothing was open.
 func close_watch_icon() -> bool:
 	if watch_open == "":
 		return false
@@ -1159,13 +1179,13 @@ func _hold_back_clicks(cmd: ActorCommand) -> void:
 		_aim_held_back = true
 	if not wrist_raised:
 		watch_open = ""
-	elif watch_open != "" and cmd.secondary_pressed:
-		# Right click backs out of an opened icon to the main row.
-		close_watch_icon()
+		watch_tabs = false
+	elif cmd.secondary_pressed:
+		# Right click backs out one level: an opened icon to its tab, a tab
+		# to the tab row, the tab row puts the watch down. Never an aim.
+		back_watch()
 		cmd.secondary = false
 		cmd.secondary_pressed = false
-	elif watch_open != "":
-		cmd.secondary = false
 	if held_toy != "" or _toy_busy_left > 0.0:
 		_use_toy_hand(cmd)
 	elif watch_takes_fire():
@@ -1233,8 +1253,8 @@ func _tick_emote(cmd: ActorCommand, delta: float) -> void:
 	cmd.emote = Emotes.number_of(emote_playing) if emote_playing != "" else 0
 
 
-## Takes the worn helmet off onto the hip, or puts it back on (the watch's
-## helmet icon). It takes both hands (Caleb's call), so a weapon in hand is
+## Takes the worn helmet off onto the hip, or puts it back on (the helmet
+## key, K; it left the watch once it had a key of its own). It takes both hands (Caleb's call), so a weapon in hand is
 ## put away first, as with the holster key. Nothing to do bare-headed.
 func toggle_helmet() -> void:
 	if actor != null and is_instance_valid(actor) and actor.visor.enabled and not actor.is_dead:
