@@ -51,6 +51,10 @@ var _move := 1.0
 var screen: WorldScreen
 var panel: Control
 var _plan_view: SubViewport
+## Set once the player steps away: the view is only queued for freeing, and
+## the rest of that frame must not put the screen back up (a screen left on
+## the lectern would show the freed viewport, solid white).
+var _left := false
 
 
 ## Moves the view in to the bench and starts taking the mouse.
@@ -100,6 +104,8 @@ func _mount_panel() -> void:
 ## the table, and the screen with it, so this runs again whenever the screen
 ## is gone while the plan table is in use.
 func _place_screen() -> bool:
+	if _left:
+		return false
 	var face: Node3D = base.plan_screen()
 	if face == null or _plan_view == null:
 		return false
@@ -132,6 +138,9 @@ func view_transform() -> Transform3D:
 ## Steps away: the base drops anything not picked, the view goes back to the
 ## camera that had it.
 func leave() -> void:
+	if _left:
+		return
+	_left = true
 	if screen != null and is_instance_valid(screen):
 		screen.queue_free()
 	screen = null
@@ -145,7 +154,7 @@ func leave() -> void:
 
 
 func _process(delta: float) -> void:
-	if _camera == null or base == null or not is_instance_valid(base):
+	if _left or _camera == null or base == null or not is_instance_valid(base):
 		return
 	if target == "plan" and panel != null:
 		_screen_up()
@@ -161,7 +170,7 @@ func _process(delta: float) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if base == null or not is_instance_valid(base):
+	if _left or base == null or not is_instance_valid(base):
 		return
 	if target == "plan":
 		if _screen_up():
