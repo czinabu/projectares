@@ -336,25 +336,57 @@ func _dress_when_ready(dress: Callable, id: int) -> void:
 		dress.call(node)
 
 
-## Small things in a map stop being drawn once they are too far away to
-## make out: each mesh fades out at `draw_distance_per_metre` times its
-## size, so a crate goes long before a building does. Big open maps draw
-## hundreds of small props (and their shadows) otherwise. A mesh that
-## already has a visibility range keeps it.
+## Map props are drawn only as far as their size lets anyone make them
+## out: each mesh fades out at `draw_distance_per_metre` times its size, so
+## a crate goes long before a building does. Big open maps draw hundreds of
+## small props (and their shadows) otherwise. A mesh (or a multimesh) that
+## already has a visibility range keeps it as its own. Either is then
+## scaled by the View distance setting (`fit_draw_distance`), so each mesh
+## keeps what it was made with in `DRAW_BASE`: 0 for one drawn as far as
+## the camera sees.
 func _limit_draw_distance(map: Node3D) -> void:
 	if not is_instance_valid(map):
 		return
-	for node in map.find_children("*", "MeshInstance3D", true, false):
-		var mesh := node as MeshInstance3D
-		if mesh.mesh == null or mesh.visibility_range_end > 0.0:
+	for node in map.find_children("*", "GeometryInstance3D", true, false):
+		var shape := node as GeometryInstance3D
+		if not (shape is MeshInstance3D or shape is MultiMeshInstance3D) or shape.has_meta(DRAW_BASE):
 			continue
-		var size := (mesh.global_transform * mesh.get_aabb()).size
-		var reach := maxf(size.x, maxf(size.y, size.z)) * draw_distance_per_metre
-		if reach >= draw_distance_cap:
+		var base := shape.visibility_range_end
+		if base <= 0.0:
+			var mesh := shape as MeshInstance3D
+			if mesh == null or mesh.mesh == null:
+				continue
+			var size := (mesh.global_transform * mesh.get_aabb()).size
+			var reach := maxf(size.x, maxf(size.y, size.z)) * draw_distance_per_metre
+			base = maxf(reach, draw_distance_min) if reach < draw_distance_cap else 0.0
+		shape.set_meta(DRAW_BASE, base)
+	map.add_to_group(GameSettings.DRAWN_MAP_GROUP)
+	fit_draw_distance(map)
+
+
+## The meta `_limit_draw_distance` keeps a mesh's own draw distance in.
+const DRAW_BASE := "draw_base"
+
+
+## Fits a dressed map's draw distances to the View distance setting
+## (`GameSettings.detail_reach`, `big_reach`).
+func fit_draw_distance(map: Node3D) -> void:
+	if not is_instance_valid(map):
+		return
+	var detail := GameSettings.detail_reach()
+	var big := GameSettings.big_reach()
+	for node in map.find_children("*", "GeometryInstance3D", true, false):
+		var shape := node as GeometryInstance3D
+		if not shape.has_meta(DRAW_BASE):
 			continue
-		mesh.visibility_range_end = maxf(reach, draw_distance_min)
-		mesh.visibility_range_end_margin = mesh.visibility_range_end * 0.15
-		mesh.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
+		var base: float = shape.get_meta(DRAW_BASE)
+		var end := base * detail if base > 0.0 else big
+		if big > 0.0:
+			end = minf(end, big)
+		shape.visibility_range_end = end
+		shape.visibility_range_end_margin = end * 0.15
+		if end > 0.0:
+			shape.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
 
 
 ## Merges the plain pieces standing right under `root` (a model built from

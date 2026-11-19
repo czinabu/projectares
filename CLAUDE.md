@@ -845,7 +845,18 @@ without Caleb, and update the gap list when a PR closes a row.
   Shadows (`GameSettings.SHADOWS`: High is the world as made), Render
   scale (FSR 1) and Ambient occlusion; a world's sun and atmosphere take
   them through `GameSettings.fit_sun(sun, reach)` and `fit_atmosphere`,
-  so set a sun's shadow reach only through `fit_sun`.
+  so set a sun's shadow reach only through `fit_sun`. View distance
+  (`GameSettings.VIEW_DISTANCE`, Caleb's ask: a short view spoils it;
+  High is each world as made, Ultra and Medium and Low either side) sets
+  how far the player's camera reaches (`PlayerController._view_far`: the
+  map's "view_far" meta or its planet's far land ring, "horizon_far" from
+  `Planet.atmosphere`, by `view_far_for`), how far map props are drawn
+  (`Look._limit_draw_distance` keeps each mesh's own reach in
+  `Look.DRAW_BASE` and `fit_draw_distance` scales it, live) and mesh
+  detail (`mesh_lod_threshold`). A map gives something a far reach of its
+  own with a visibility range, which the setting scales too; compare by
+  eye with `visual_check.tscn -- <dir> --sightlines-only [levels]`, which
+  writes each shot's draw calls beside it.
 - People are built from parts (`core/visual/human.gd`): an "appearance" names
   a build, four parts and colours. It is cosmetic only and never trusted:
   always pass one through `Look.clean_appearance` / `Look.set_appearance`,

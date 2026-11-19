@@ -309,6 +309,16 @@ func _ready() -> void:
 	# for: a line of soldiers out to 150 m in Ashfront and the home base, with
 	# the settings as saved (`--aa <0-4>` picks the anti-aliasing, `--ink 0|1`
 	# the edge ink on far shapes).
+	# `-- <output_dir> --sightlines-only [level ...]` looks out over every
+	# outdoor world through the player's own camera, in toward the middle
+	# and out to the rim, at each View distance level (`GameSettings.
+	# VIEW_DISTANCE`, all of them by default), and writes the draw calls and
+	# primitives of each shot to sightlines.txt beside the pictures.
+	if "--sightlines-only" in args:
+		await _sightline_shots(out_dir, args)
+		get_tree().quit()
+		return
+
 	if "--graphics-only" in args:
 		await _graphics_shots(out_dir, args)
 		get_tree().quit()
@@ -5003,3 +5013,69 @@ func _arsenal_shots(out_dir: String) -> void:
 func _armed(raid: Raid) -> void:
 	if raid.player != null and raid.player.get_active_weapon() == null:
 		raid.player._draw_weapon(raid.player.weapon_for_key(1))
+
+
+## See `--sightlines-only` in `_ready`.
+func _sightline_shots(out_dir: String, args: PackedStringArray) -> void:
+	var GameSettings: GDScript = load("res://core/settings/game_settings.gd")
+	GameSettings.set("persist", false)
+	var levels: Array = []
+	var has_levels: bool = GameSettings.call("to_dict").has("view_distance")
+	for i in range(args.find("--sightlines-only") + 1, args.size()):
+		if args[i].is_valid_int():
+			levels.append(int(args[i]))
+	if levels.is_empty():
+		levels = range((GameSettings.get("VIEW_DISTANCE") as Array).size()) if has_levels else [-1]
+	var report := PackedStringArray()
+	var worlds: Array = ["ashfront", "frostline", "meridian", "plaza", "arena"]
+	for world_id: String in worlds:
+		for level: int in levels:
+			if level >= 0:
+				GameSettings.call("set_value", "view_distance", level)
+			var raid: Raid
+			if world_id == "arena":
+				var arena := Arena.new()
+				add_child(arena)
+				arena.start_solo(["rifle_carbine"])
+				raid = arena
+			else:
+				raid = Raid.new()
+				add_child(raid)
+				var world := Worlds.social_world() if world_id == "plaza" else Worlds.get_world(world_id)
+				raid.start(world, 42)
+			for bot in raid.bots:
+				bot.get_node("Brain").set_physics_process(false)
+			var controller := PlayerController.new()
+			controller.setup(raid.player)
+			raid.add_child(controller)
+			await _settle(30)
+			var spawn := raid.player.global_position
+			var to_mid := Vector3(-spawn.x, 0.0, -spawn.z)
+			if to_mid.length() < 20.0:
+				to_mid = Vector3(0, 0, -20)
+			raid.player.set_physics_process(false)
+			# From the spawn toward the middle, from halfway in out over the
+			# rim, and from 50 m over the spawn.
+			var half := spawn + to_mid * 0.5
+			for look: Array in [["in", spawn, to_mid, 0.03], ["rim", half, -to_mid, 0.03], ["high", spawn + Vector3(0, 50, 0), to_mid, -0.2]]:
+				var at: Vector3 = look[1]
+				if look[0] == "rim" and raid.map.has_method("ground_height"):
+					at.y = float(raid.map.call("ground_height", at.x, at.z))
+				raid.player.global_position = at
+				var dir: Vector3 = look[2]
+				controller.yaw = atan2(-dir.x, -dir.z)
+				controller.pitch = look[3]
+				await _settle(25)
+				await RenderingServer.frame_post_draw
+				var draws := RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_DRAW_CALLS_IN_FRAME)
+				var prims := RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_PRIMITIVES_IN_FRAME)
+				var name := "%s_%s_%s" % [world_id, look[0], "before" if level < 0 else str(level)]
+				var cam := get_viewport().get_camera_3d()
+				report.append("%s far=%d draws=%d primitives=%d" % [name, int(cam.far) if cam != null else 0, draws, prims])
+				print(report[-1])
+				await _shot(out_dir.path_join(name + ".png"))
+			raid.queue_free()
+			await _settle(5)
+	var file := FileAccess.open(out_dir.path_join("sightlines.txt"), FileAccess.WRITE)
+	if file != null:
+		file.store_string("\n".join(report) + "\n")
