@@ -1655,9 +1655,9 @@ other place too, by way of a sign-out).
   sign-out. A portal home then lands you in your base (online too, rather
   than the plaza); a portal to somewhere else carries straight on from
   there, with the loadout as it now stands at home, landing at the other
-  world's gate outpost, in the arena or in the plaza (an open decision for
-  Caleb was whether carried gear should travel along instead; it banks home
-  first for now, which keeps each world's stakes its own). A squadmate who
+  world's gate outpost, in the arena or in the plaza. Carried gear never
+  travels along (Caleb's call): it banks home first, which keeps each
+  world's stakes and kit rules its own. A squadmate who
   steps into the ring starts their own sign-out through the same door and
   follows.
 - **Opening one:** raise the watch, go to the portal icon on the Mission

@@ -135,5 +135,4 @@ date in the same PR.
   home and then `go_through_portal`, online `_return_to_lobby` joins the
   other world's session with a portal drop (`_onward_route`), the arena's,
   or the plaza's. It never emits `portal_entered`, and no gear goes from
-  one world straight into another (Caleb's open question: gear banks home
-  first, until he says it should travel along).
+  one world straight into another (Caleb's call: it banks home first).
