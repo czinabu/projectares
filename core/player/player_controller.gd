@@ -76,6 +76,9 @@ var phone_preview := false
 ## leaving a gate outpost, a new life in a world), so it only stays off out
 ## there by choice.
 var helmet_off := false
+## The helmet's lamp is switched on (`toggle_lamp`), sent as the held
+## `ActorCommand.lamp`.
+var lamp_on := false
 var _could_fight := false
 var _helmet_seen := ""
 var _helmet_actor: Actor = null
@@ -457,6 +460,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		watch_shortcut("map")
 	elif event.is_action_pressed("helmet"):
 		toggle_helmet()
+	elif event.is_action_pressed("lamp"):
+		toggle_lamp()
 	elif event.is_action_pressed("quick_emote"):
 		quick_emote()
 	elif event.is_action_pressed("ping") and captured and is_instance_valid(actor) and not actor.is_dead:
@@ -1276,6 +1281,14 @@ func toggle_helmet() -> void:
 			_pending_switch = ActorCommand.HOLSTER
 
 
+## Switches the lamp on the helmet's brow on or off (J, Caleb's ask). Kept
+## while the helmet is on the hip, so it lights again when it goes back on.
+## Nothing to switch bare-headed.
+func toggle_lamp() -> void:
+	if actor != null and is_instance_valid(actor) and actor.visor.enabled and not actor.is_dead:
+		lamp_on = not lamp_on
+
+
 ## Sends whether the helmet is off (`helmet_off`), putting it back on by
 ## itself where it should go back on (see `helmet_off`).
 func _keep_helmet(cmd: ActorCommand) -> void:
@@ -1297,10 +1310,12 @@ func _keep_helmet(cmd: ActorCommand) -> void:
 	_could_fight = can_fight
 	if worn == "":
 		helmet_off = false
+		lamp_on = false
 	elif not actor.visor.working():
 		# Nothing to look through: a zoom or thermal left on starts off.
 		_visor_level = 0
 	cmd.helmet_off = helmet_off
+	cmd.lamp = lamp_on
 
 
 ## Starts looking over what is in the hand: the weapon drawn, or a toy

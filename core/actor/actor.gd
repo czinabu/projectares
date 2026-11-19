@@ -515,6 +515,14 @@ func helmet_on_head() -> bool:
 	return visor.working()
 
 
+## True while the lamp on the helmet's brow shines: switched on (the held
+## `ActorCommand.lamp`), the helmet on the head and its wearer alive. On the
+## hip it goes dark and comes back on with the helmet. The beam is drawn by
+## `ActorSkin` (view only).
+func lamp_lit() -> bool:
+	return cmd.lamp and helmet_on_head() and not is_dead
+
+
 ## Fallen out of the world: below its `WorldDef.void_y`. Asked only once
 ## below the highest any world sets, so the walk up the tree is rare.
 func _below_world() -> bool:
