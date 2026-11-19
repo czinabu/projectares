@@ -15,6 +15,7 @@ static func run(t: Node) -> void:
 	_loot(t)
 	await _fouling(t)
 	await _wildlife(t)
+	await _brood_and_lurkers(t)
 	await _clouds(t)
 
 
@@ -46,6 +47,10 @@ static func _settings(t: Node) -> void:
 	t.check(not marsh.can_damage(a, b, hurt), "no beast hurts its own kind")
 	b.faction = "shellback"
 	t.check(marsh.can_damage(a, b, hurt), "but the kinds hunt each other")
+	a.faction = "keeper"
+	b.faction = "broodling"
+	t.check(not marsh.can_damage(a, b, hurt) and not marsh.can_damage(b, a, hurt),
+			"a brood keeper and its broodlings are one kind")
 	a.free()
 	b.free()
 
@@ -252,5 +257,73 @@ static func _clouds(t: Node) -> void:
 	raid.clouds[0].left = 0.1
 	await t.frames(20)
 	t.check(raid.clouds.is_empty(), "and the cloud thins away")
+	raid.queue_free()
+	await t.frames(1)
+
+
+static func _brood_and_lurkers(t: Node) -> void:
+	print("Marsh: lurkers, brood keepers and hives")
+	var marsh := Worlds.get_world("marsh")
+	var raid := Raid.new()
+	t.add_child(raid)
+	raid.start_server(marsh, 21)
+	for bot in raid.bots:
+		bot.process_mode = Node.PROCESS_MODE_DISABLED
+	var lurkers: Array = raid._guards.filter(func(g: Dictionary) -> bool: return g.bot != null and (g.bot as Actor).faction == "lurker")
+	var keepers: Array = raid._guards.filter(func(g: Dictionary) -> bool: return g.bot != null and (g.bot as Actor).faction == "keeper")
+	t.check(lurkers.size() >= 5, "lurkers lie in the pools (%d)" % lurkers.size())
+	t.check(keepers.size() == 4, "a brood keeper guards a hive in each forest but the Matriarch's (%d)" % keepers.size())
+	if lurkers.is_empty() or keepers.is_empty():
+		raid.queue_free()
+		return
+	var map := raid.map
+	var water_y: float = map.get("WATER_Y")
+	var all_wet := lurkers.all(func(g: Dictionary) -> bool:
+		var at: Vector3 = (g.marker as Node3D).global_position
+		return float(map.call("ground_height", at.x, at.z)) < water_y - 0.5)
+	t.check(all_wet, "every lurker's post is deep under the black water")
+	var lurker: Actor = lurkers[0].bot
+	var brain := lurker.get_node("Brain") as BotBrain
+	t.check(brain.lies_low and brain.sight_range < 10.0 and brain.leash < 10.0 and raid._is_extra(lurker),
+			"a lurker lies low, sees only close by and never leaves its pool")
+	lurker.global_position = brain.home()
+	var cmd := ActorCommand.new()
+	brain._patrol(cmd, 0.1)
+	t.check(cmd.crouch and cmd.move == Vector2.ZERO, "at its post with nothing to fight, it lies down and stays still")
+	t.check(float(Look.SKINS["lurker"].get("lurks", 0.0)) > 0.3, "and its body sinks under the water while it lies low")
+	# The hives.
+	var hives: Array = raid._caches.filter(func(c: Dictionary) -> bool: return c.source == "hive")
+	t.check(hives.size() == 4 and hives.all(func(c: Dictionary) -> bool: return (c.container as LootContainer).sealed != ""),
+			"each hive is sealed while its keeper stands")
+	var guard: Dictionary = keepers[0]
+	var keeper: Actor = guard.bot
+	var hive: Dictionary = hives.filter(func(c: Dictionary) -> bool: return c.hive == (guard.marker as Node3D).get_meta("hive"))[0]
+	var box := hive.container as LootContainer
+	var me := raid.add_player(KIT, {}, "Hunter", "hunter")
+	await t.frames(2)
+	var count := box.items.size()
+	box.interact(me)
+	t.check(box.items.size() == count and count > 0, "nobody loots a sealed hive")
+	# Standing near, the hive spills broodlings, up to its cap.
+	me.global_position = (guard.marker as Node3D).global_position + Vector3(6, 0.5, 0)
+	for i in 80:
+		raid._tick_brood(guard, 1.0)
+	var brood: Array = guard.brood
+	t.check(brood.size() == int((guard.marker as Node3D).get_meta("brood_max")) and brood.all(func(b: Actor) -> bool:
+			return b.faction == "broodling" and raid._is_extra(b) and b.stand_height < 1.2),
+			"near a hive its keeper spills broodlings, little stalkers, up to a cap (%d)" % brood.size())
+	t.check(keeper.health.max_health > 400.0 and keeper.health.armor > 0.0 and keeper.stand_height > 2.0,
+			"the keeper is big and armored")
+	keeper.health.apply_damage(DamageInfo.make(99999.0, null, "test"))
+	await t.frames(2)
+	raid._tick_guards(0.1)
+	t.check(box.sealed == "", "once the keeper falls, the hive opens")
+	box.interact(me)
+	t.check(box.items.size() < count, "and can be looted")
+	var spilled := brood.size()
+	raid._tick_brood(guard, 60.0)
+	t.check(brood.size() <= spilled, "a fallen keeper spills nothing more")
+	raid._tick_guards(marsh.guard_respawn_time + 1.0)
+	t.check(box.sealed != "", "and when a new keeper comes, the hive is sealed again")
 	raid.queue_free()
 	await t.frames(1)

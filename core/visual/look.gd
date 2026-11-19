@@ -168,6 +168,23 @@ const SKINS := {
 		"scenes": ["Leela.glb"], "height": 1.6, "hide": ["Leela"], "creature": "shellback", "bare": true,
 		"anims": {"idle": "Idle", "walk": "Walk", "run": "Run", "death": "Death", "attack": "Punch"},
 	},
+	# A lurker: a long, flat ambusher with a lit lure over its snout, which
+	# lies under the black water ("lurks": how far the body sinks while it
+	# lies low, `ActorSkin._update_lurk`).
+	"lurker": {
+		"scenes": ["Leela.glb"], "height": 1.4, "hide": ["Leela"], "creature": "lurker", "bare": true, "lurks": 0.75,
+		"anims": {"idle": "Idle", "walk": "Walk", "run": "Run", "death": "Death", "attack": "Punch"},
+	},
+	# A brood keeper: a hunched giant of the stalkers' kind with its egg
+	# sacs lit on its back, and the broodlings it spills, little stalkers.
+	"brood_keeper": {
+		"scenes": ["Leela.glb"], "height": 2.4, "hide": ["Leela"], "creature": "keeper", "bare": true,
+		"anims": {"idle": "Idle", "walk": "Walk", "run": "Run", "death": "Death", "attack": "Punch"},
+	},
+	"broodling": {
+		"scenes": ["Leela.glb"], "height": 0.9, "hide": ["Leela"], "creature": "stalker", "bare": true,
+		"anims": {"idle": "Idle", "walk": "Walk", "run": "Run", "death": "Death", "attack": "Punch"},
+	},
 	# A bloater: a swollen sac of spores on stubby legs, studded with lit
 	# pustules and trailing tendrils.
 	"bloater": {

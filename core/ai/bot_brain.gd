@@ -251,6 +251,10 @@ var max_hunters := 4
 ## How far past its patrol radius a bot follows anything before it turns
 ## back to its post (a bot that plays like a person, or on an errand, roams).
 var leash := 35.0
+## An ambusher ("lies_low", the marsh's lurkers): with nothing to fight it
+## goes back to its post and lies there crouched and still, never patrols,
+## so it is where it was left when someone comes close.
+var lies_low := false
 ## The ground it fights on (the enemy AI pass, step 4): its kind and how
 ## much slower it is to notice someone there. `set_ground` sets both.
 var ground := ""
@@ -397,6 +401,11 @@ func _ready() -> void:
 	tracker_range = float(actor.get_meta("tracker", 0.0))
 	preys_on_cold = bool(actor.get_meta("preys_on_cold", false))
 	shuns_warmth = bool(actor.get_meta("shuns_warmth", false))
+	lies_low = bool(actor.get_meta("lies_low", false))
+	# How far past its ground a kind follows ("leash"): an ambusher that
+	# never leaves its pool.
+	if actor.has_meta("leash"):
+		leash = float(actor.get_meta("leash"))
 	var ring := int(actor.get_meta("zone", 1))
 	attack_slots = RING_SLOTS[clampi(ring, 0, RING_SLOTS.size() - 1)]
 	max_hunters = RING_HUNTERS[clampi(ring, 0, RING_HUNTERS.size() - 1)]
@@ -539,6 +548,7 @@ func _physics_process(delta: float) -> void:
 		_alert_left -= delta
 		_look_along(cmd, _alert_at - actor.get_eye_position())
 		cmd.secondary = actor.get_active_weapon() is Gun and actor.is_on_floor()
+		cmd.crouch = lies_low
 	elif holding:
 		_stuck_for = 0.0
 	elif has_errand:
@@ -1253,6 +1263,13 @@ func _climb_out(cmd: ActorCommand, delta: float) -> void:
 
 
 func _patrol(cmd: ActorCommand, delta: float) -> void:
+	if lies_low:
+		# Back to its post, then down and still.
+		if _flat_dist(_home) > 1.5:
+			_move_toward(cmd, _home, delta, true)
+		else:
+			cmd.crouch = true
+		return
 	if _wait_left > 0.0:
 		_wait_left -= delta
 		return
