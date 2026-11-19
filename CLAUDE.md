@@ -2200,7 +2200,9 @@ without Caleb, and update the gap list when a PR closes a row.
   merged into one mesh per material (the works per material per block,
   every lit and painted shape in one vertex-coloured material each). The
   works fill the salt out to the dunes (`GROUND_HALF`) and keep off the
-  roads and what `WORKS_KEEP_OUT` lists; a new stand or set piece goes
+  roads (`track_dist`; `race_tests.gd` checks every road point at any
+  height) and what `WORKS_KEEP_OUT` lists, and the view draws out to the
+  map's `VIEW_FAR` (its "view_far" meta); a new stand or set piece goes
   in that list. The lights, splits, board
   text and the ghost being chased are `RaceView`, a view. In a race world the
   watch's contract icon is the race icon (`Hud.race_slot`, `glyph`).
