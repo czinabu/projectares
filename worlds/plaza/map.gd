@@ -277,12 +277,12 @@ func _build_environment() -> void:
 	Look.atmosphere(self, {
 		# A deep dusk over the megacity, warm where the canyon's light comes
 		# up into the haze, so the windows and the traffic carry the sky.
-		"sky_tint": Color(0.52, 0.46, 0.9),
-		"sky_saturation": 0.8,
-		"sky_energy": 0.42,
-		"fog_color": Color(0.3, 0.22, 0.38),
+		"sky_tint": Color(0.55, 0.42, 0.85),
+		"sky_saturation": 0.55,
+		"sky_energy": 0.26,
+		"fog_color": Color(0.42, 0.24, 0.32),
 		"fog_density": 0.0022,
-		"haze_height": 0.3,
+		"haze_height": 0.36,
 		"sun_color": Color(0.75, 0.65, 1.0),
 		"sun_energy": 0.55,
 		"sun_angles": Vector3(-14, 35, 0),
@@ -414,7 +414,7 @@ func _build_towers() -> void:
 			# Lit corners only: the windows are the material's.
 			_add_seams(centre, size, yaw, color, size.y + 1.0)
 			# A bright band where each tier steps in.
-			_part(self, Vector3(w + 0.12, 0.6, w + 0.12), centre + Vector3(0, size.y * 0.5 - 0.3, 0), color, true, yaw)
+			_part(self, Vector3(w + 0.12, 0.25, w + 0.12), centre + Vector3(0, size.y * 0.5 - 0.15, 0), color, true, yaw)
 		_part(self, Vector3(TOWER_SIZE * 0.5 + 0.3, 0.3, TOWER_SIZE * 0.5 + 0.3), at + Vector3(0, tall, 0), color, true)
 		_part(self, Vector3(0.25, tall * 0.12, 0.25), at + Vector3(0, tall * 1.06, 0), color, true)
 		_solid(Vector3(TOWER_SIZE + 8.0, 0.5, TOWER_SIZE + 8.0), at + Vector3(0, DECK_HEIGHT - 0.25, 0), DARK, yaw)
@@ -1536,7 +1536,10 @@ func _build_city_below() -> void:
 		return
 	var city: Node3D = MEGACITY.new(LAYOUT_SEED + 1, RADIUS)
 	add_child(city)
-	city.build()
+	var near: Array = []
+	for i in TOWER_HEIGHTS.size():
+		near.append([_at(TOWER_RING, 360.0 * (i + 0.5) / TOWER_HEIGHTS.size()), TOWER_HEIGHTS[i]])
+	city.build(near)
 
 
 func _dress() -> void:

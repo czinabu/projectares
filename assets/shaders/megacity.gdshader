@@ -17,8 +17,8 @@ uniform vec4 facade_top : source_color = vec4(0.11, 0.13, 0.22, 1.0);
 uniform vec4 warm : source_color = vec4(1.0, 0.78, 0.5, 1.0);
 uniform vec4 cool : source_color = vec4(0.55, 0.85, 1.0, 1.0);
 uniform vec4 accent : source_color = vec4(1.0, 0.35, 0.85, 1.0);
-uniform vec4 haze : source_color = vec4(0.24, 0.2, 0.4, 1.0);
-uniform vec4 haze_low : source_color = vec4(0.55, 0.3, 0.32, 1.0);
+uniform vec4 haze : source_color = vec4(0.2, 0.15, 0.3, 1.0);
+uniform vec4 haze_low : source_color = vec4(0.5, 0.26, 0.28, 1.0);
 uniform float bay = 2.4;
 uniform float storey = 3.6;
 uniform float lit_share = 0.3;
@@ -30,7 +30,7 @@ uniform float band_glow = 2.2;
 uniform float fin_every = 0.0;
 // Distance at which the haze has taken about two thirds of a colour.
 uniform float haze_reach = 700.0;
-uniform float haze_max = 0.88;
+uniform float haze_max = 0.85;
 // Heights (world y) over which the low haze thins out.
 uniform float low_from = -320.0;
 uniform float low_to = 60.0;

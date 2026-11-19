@@ -50,7 +50,7 @@ const UNDERCITY := [260.0, 700.0, 180, -330.0, -45.0]
 ## Air lanes: [radius, height, craft, speed]. Each is flown both ways, the
 ## two streams a few metres apart.
 const LANES := [
-	[290.0, 35.0, 46, 55.0],
+	[290.0, 85.0, 46, 55.0],
 	[340.0, -60.0, 50, 70.0],
 	[420.0, 120.0, 60, 65.0],
 	[520.0, 210.0, 60, 80.0],
@@ -62,6 +62,14 @@ const LANES := [
 	[1700.0, 600.0, 90, 110.0],
 ]
 
+## The near towers' skyways reach out to towers on this ring.
+const TIE_RADIUS := 345.0
+## The monorail round the deck: its ring and the height of its rail.
+const RAIL_RADIUS := 300.0
+const RAIL_HEIGHT := 46.0
+## Its trains: [cars, way round, where they start].
+const TRAINS := [[7, 1.0, 0.0], [6, -1.0, 2.0], [7, 1.0, 3.5], [5, -1.0, 5.2]]
+const TRAIN_SPEED := 32.0
 ## How far the view must draw to see all of it.
 const VIEW_FAR := 3200.0
 
@@ -94,15 +102,20 @@ static func material_for(near := false) -> ShaderMaterial:
 		# that reads against a person.
 		mat.set_shader_parameter("haze_max", 0.5)
 		mat.set_shader_parameter("lit_share", 0.4)
-		mat.set_shader_parameter("band_every", 12.0)
+		mat.set_shader_parameter("band_every", 30.0)
+		mat.set_shader_parameter("band_glow", 1.4)
 		mat.set_shader_parameter("bay", 1.1)
 		mat.set_shader_parameter("storey", 3.0)
 		mat.set_shader_parameter("fin_every", 3.0)
 	return mat
 
 
-func build() -> void:
+## `near` is the map's own near ring, [[position, top], ...]: each is tied
+## to the city past the rail by a skyway high over the deck.
+func build(near: Array = []) -> void:
 	_material = material_for()
+	_ties(near)
+	_monorail()
 	for ring: Array in RINGS:
 		_ring(ring)
 	for spec: Array in LANDMARKS:
@@ -214,6 +227,54 @@ func _tower(at: Vector3, w: float, d: float, top: float, yaw: float) -> void:
 			_crown(at, Vector3(w * 0.5, 0, d * 0.5), top, turn, accent, true)
 	_tops.append([at, top])
 	_maybe_sign(at, w, top, turn)
+
+
+## The middle layer (Caleb's ask): each near tower is tied to a tower of
+## its own just past the rail by a skyway high over the deck, so the deck
+## reads as part of the city rather than an island in front of it.
+func _ties(near: Array) -> void:
+	for spec: Array in near:
+		var from: Vector3 = spec[0]
+		var top: float = spec[1]
+		var out := Vector3(from.x, 0, from.z).normalized()
+		var at := out * TIE_RADIUS
+		var w := rng.randf_range(34.0, 46.0)
+		_placed.append([at, w * 0.75])
+		var anchor_top := rng.randf_range(360.0, 520.0)
+		_tower(at, w, w * 0.9, anchor_top, atan2(out.x, out.z))
+		var y := top * rng.randf_range(0.4, 0.55)
+		var a := from + out * 6.0
+		var b := at - out * (w * 0.5)
+		var span := Vector2(b.x - a.x, b.z - a.z).length()
+		var mid := (a + b) * 0.5 + Vector3(0, y, 0)
+		var turn := Basis(Vector3.UP, atan2(out.x, out.z))
+		_box(Vector3(7.0, 3.5, span), mid, turn)
+		# A girder under it, deep enough to read as built from the ground.
+		_box(Vector3(3.0, 4.0, span), mid + Vector3(0, -3.75, 0), turn)
+		for side: float in [-1.0, 1.0]:
+			_light(Vector3(0.5, 0.5, span), mid + turn * Vector3(side * 3.6, 1.6, 0), turn, CYAN)
+			_light(Vector3(0.4, 0.4, span), mid + turn * Vector3(side * 1.6, -5.6, 0), turn, AMBER)
+		var bays := int(span / 12.0)
+		for k in bays:
+			var z := -span * 0.5 + (k + 0.5) * span / bays
+			_light(Vector3(7.4, 0.3, 0.6), mid + turn * Vector3(0, -1.9, z), turn, CYAN.darkened(0.4))
+
+
+## A monorail on a ring round the deck just past the rail, on pylons from
+## the canyon floor; its trains are flown with the traffic (`_traffic`).
+func _monorail() -> void:
+	var segments := 72
+	for i in segments:
+		var bearing := 360.0 * (i + 0.5) / segments
+		var turn := Basis(Vector3.UP, -deg_to_rad(bearing))
+		var at := _at(RAIL_RADIUS, bearing)
+		var seg := TAU * RAIL_RADIUS / segments + 0.4
+		_box(Vector3(seg, 2.2, 3.0), at + Vector3(0, RAIL_HEIGHT - 2.9, 0), turn)
+		_light(Vector3(seg, 0.3, 0.3), at + Vector3(0, RAIL_HEIGHT - 4.0, 0) + turn * Vector3(0, 0, 1.6), turn, AMBER)
+		if i % 4 == 0:
+			var pylon := RAIL_HEIGHT - 4.0 - FLOOR_Y
+			_box(Vector3(4.0, pylon, 4.0), at + Vector3(0, FLOOR_Y + pylon * 0.5, 0), turn)
+			_box(Vector3(14.0, 2.0, 4.0), at + Vector3(0, RAIL_HEIGHT - 5.0, 0), turn)
 
 
 ## A landmark: a colossal stepped spire over everything, with lit fins up
@@ -424,6 +485,8 @@ func _traffic() -> void:
 	var total := 0
 	for lane: Array in LANES:
 		total += int(lane[2]) * 2
+	for train: Array in TRAINS:
+		total += int(train[0])
 	var multi := MultiMesh.new()
 	multi.transform_format = MultiMesh.TRANSFORM_3D
 	multi.use_colors = true
@@ -436,18 +499,31 @@ func _traffic() -> void:
 	var k := 0
 	for lane: Array in LANES:
 		var color: Color = tails[rng.randi_range(0, tails.size() - 1)]
+		var convoy := 0.0
 		for way: float in [-1.0, 1.0]:
 			for i in int(lane[2]):
-				var size := Vector3(rng.randf_range(2.0, 3.5), rng.randf_range(0.8, 1.4), rng.randf_range(5.0, 9.0))
+				var size := Vector3(rng.randf_range(1.4, 2.2), rng.randf_range(0.6, 1.0), rng.randf_range(3.5, 6.0))
 				multi.set_instance_transform(k, Transform3D(Basis.from_scale(size), Vector3.ZERO))
 				multi.set_instance_color(k, color)
 				var radius: float = lane[0] + way * 7.0
 				var height: float = lane[1] + way * 3.0 + rng.randf_range(-2.0, 2.0)
 				var speed: float = lane[3] * rng.randf_range(0.9, 1.1) * way
-				# Bunched in loose convoys rather than evenly spaced.
-				var phase := rng.randf() * TAU
+				# Bunched in convoys rather than evenly spaced: a few craft
+				# close behind each other, then a gap.
+				if i % 5 == 0:
+					convoy = rng.randf() * TAU
+				var phase := convoy - (i % 5) * 22.0 / float(lane[0]) * way
 				multi.set_instance_custom_data(k, Color(radius, height, speed, phase))
 				k += 1
+	# The monorail's trains: cars nose to tail along the rail, windows lit.
+	for train: Array in TRAINS:
+		for c in int(train[0]):
+			multi.set_instance_transform(k, Transform3D(Basis.from_scale(Vector3(3.0, 3.2, 15.0)), Vector3.ZERO))
+			multi.set_instance_color(k, Color(0.5, 0.95, 1.0, 0.5))
+			var way: float = train[1]
+			var phase: float = train[2] - c * 16.0 / RAIL_RADIUS * way
+			multi.set_instance_custom_data(k, Color(RAIL_RADIUS, RAIL_HEIGHT, TRAIN_SPEED * way, phase))
+			k += 1
 	var node := MultiMeshInstance3D.new()
 	node.name = "Traffic"
 	node.multimesh = multi

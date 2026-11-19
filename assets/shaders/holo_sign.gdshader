@@ -8,7 +8,7 @@ render_mode unshaded, fog_disabled, shadows_disabled;
 uniform vec4 color : source_color = vec4(0.25, 0.9, 1.0, 1.0);
 uniform float glow = 2.2;
 uniform float seed = 0.0;
-uniform vec4 haze : source_color = vec4(0.24, 0.2, 0.4, 1.0);
+uniform vec4 haze : source_color = vec4(0.2, 0.15, 0.3, 1.0);
 uniform float haze_reach = 700.0;
 uniform float haze_max = 0.9;
 
