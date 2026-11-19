@@ -228,6 +228,25 @@ static func _helmet_shelf(t: Node, stash: Array[String]) -> void:
 	t.check(worn != null and worn.equipped and base.inside(worn.position) and worn.has_node("Model/HelmetModel"),
 			"the worn Scav Visor sits on the shelf as the helmet it is")
 	t.check(base.player.visor.enabled and base.player.visor.item_id == "visor_scav", "and you wear it in the room")
+	var facing_out := worn != null
+	for display in base.displays:
+		var helmet := display.get_node_or_null("Model/HelmetModel") as Node3D
+		if helmet != null:
+			# A helmet's front is -Z; it must look the way its display faces.
+			facing_out = facing_out and (-helmet.global_basis.z).dot(display.global_basis.z) > 0.95
+	t.check(facing_out, "every helmet on show faces out toward the room")
+	var plates: Array[Label3D] = []
+	for display in base.displays:
+		var plate := display.get_node_or_null("Plate") as Label3D
+		if plate != null:
+			plates.append(plate)
+	var clear := true
+	for a in plates.size():
+		for b in range(a + 1, plates.size()):
+			var d: Vector3 = plates[a].global_position - plates[b].global_position
+			if Vector2(d.x, d.z).length() < 0.6 and absf(d.y) < 0.45:
+				clear = false
+	t.check(clear, "no two display name plates sit on top of each other")
 	var asked := []
 	base.equip_requested.connect(func(slot: String, id: String) -> void: asked.append([slot, id]))
 	t._face_display(base.player, worn)

@@ -169,7 +169,8 @@ func _show_tag(display: HomeBase.Display, text: String) -> void:
 		tag.visible = false
 		return
 	var plate := display.get_node_or_null("Plate") as Node3D
-	tag.global_position = display.to_global((plate.position if plate else Vector3(0, 1.0, 0)) + Vector3(0, 0.22, 0))
+	var lift: float = float(plate.get_meta("tag_lift", 0.22)) if plate else 0.22
+	tag.global_position = display.to_global((plate.position if plate else Vector3(0, 1.0, 0)) + Vector3(0, lift, 0))
 	tag.text = text
 	tag.visible = true
 
