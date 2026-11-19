@@ -79,7 +79,7 @@ var phone := false
 ## Nothing in the simulation reads it; it travels with the held keys so
 ## everyone sees the item brought up and turned (`ActionPose.inspect`).
 var inspect := false
-## Held: the helmet is off, clipped to the hip (the watch's helmet icon
+## Held: the helmet is off, clipped to the hip (the helmet key, K,
 ## toggles it in the controller). It travels as a held key, so the take off
 ## predicts and everyone sees it; `Actor.helmet_stow` follows it.
 var helmet_off := false

@@ -119,6 +119,12 @@ var race_view: RaceView
 var net: NetSession
 ## The phone every player carries: the game's menu, in the hub and in a raid.
 var phone: CanvasLayer
+## The Mirror app's light in front of the player (`_make_dressing_light`),
+## how bright it is, and how far (radians) a pixel's drag turns the dressing
+## room's view.
+var _dressing_light: OmniLight3D
+var dressing_light_energy := 0.8
+var dressing_turn_per_pixel := 0.008
 ## The mirror standing in front of the player while the phone's Mirror app is
 ## up, else null.
 var mirror: Node3D
@@ -323,6 +329,7 @@ func _process(delta: float) -> void:
 			_tick_ahead(0.5)
 	if controller != null and is_instance_valid(controller) and controller.wrist_raised:
 		_tour_event("watch")
+	_keep_mirror_view()
 
 
 ## Between places the view goes dark at once and the next place fades in
@@ -1229,6 +1236,7 @@ func _setup_phone() -> void:
 	phone.quit_requested.connect(func() -> void: get_tree().quit())
 	phone.set_wardrobe(hub.character)
 	phone.mirror_changed.connect(_on_mirror_changed)
+	phone.dressing_dragged.connect(_on_dressing_dragged)
 	phone.held_changed.connect(_on_phone_held)
 	phone.preview_changed.connect(_on_phone_preview)
 	phone.tour_requested.connect(_on_tour_requested)
@@ -1497,8 +1505,13 @@ func _my_actor() -> Actor:
 	return null
 
 
-## The phone's Mirror app came up or went away. Up, a mirror stands in front
-## of the player, wherever they are; it goes when the app or the phone does.
+## The phone's Mirror app came up or went away. Up, first person gets a
+## mirror standing in front of the player, wherever they are, and third
+## person a dressing room (Caleb's pick): the camera swings round in front
+## of the character (`PlayerController.dressing_room`) with the phone's
+## hologram beside them. Either way a soft light stands in front so the
+## outfit is seen whatever the sun is doing (`dressing_light`). It goes
+## when the app or the phone does.
 func _on_mirror_changed(up: bool) -> void:
 	_put_away_mirror()
 	var me := _my_actor()
@@ -1506,9 +1519,17 @@ func _on_mirror_changed(up: bool) -> void:
 			or controller.actor != me:
 		phone.set_mirror_up(false)
 		return
+	_show_aim(false)
+	_dressing_light = _make_dressing_light(me)
+	if controller.active_view() == PlayerController.ViewMode.THIRD:
+		controller.dressing_room = true
+		controller.dressing_turn = 0.0
+		phone.dressing = true
+		phone.set_mirror_up(false)
+		phone.refresh()
+		return
 	# Level the gaze so the glass is in view. The camera mode stays as it is.
 	controller.pitch = clampf(controller.pitch, -0.15, 0.05)
-	_show_aim(false)
 	mirror = MirrorScript.new()
 	mirror.name = "Mirror"
 	mirror.setup(me, controller.camera)
@@ -1521,9 +1542,45 @@ func _put_away_mirror() -> void:
 	if mirror != null and is_instance_valid(mirror):
 		mirror.queue_free()
 	mirror = null
+	if _dressing_light != null and is_instance_valid(_dressing_light):
+		_dressing_light.queue_free()
+	_dressing_light = null
+	if phone != null:
+		phone.dressing = false
 	if controller != null and is_instance_valid(controller):
 		controller.phone_mirror = null
+		controller.dressing_room = false
 	_show_aim(true)
+
+
+## Switching view with the Mirror app up swaps the mirror for the dressing
+## room or back.
+func _keep_mirror_view() -> void:
+	if phone == null or not phone.mirror_open() or controller == null or not is_instance_valid(controller):
+		return
+	var third := controller.active_view() == PlayerController.ViewMode.THIRD
+	if (mirror != null or phone.dressing) and third != phone.dressing:
+		_on_mirror_changed(true)
+
+
+## A drag beside the phone in the dressing room turns the view round you.
+func _on_dressing_dragged(pixels: float) -> void:
+	if controller != null and is_instance_valid(controller):
+		controller.dressing_turn = wrapf(controller.dressing_turn - pixels * dressing_turn_per_pixel, -PI, PI)
+
+
+## A soft light in front of the character at chest height, view only, so
+## the Mirror app shows the outfit lit even with the sun behind them.
+func _make_dressing_light(me: Actor) -> OmniLight3D:
+	var light := OmniLight3D.new()
+	light.name = "DressingLight"
+	light.light_energy = dressing_light_energy
+	light.omni_range = 4.0
+	light.shadow_enabled = false
+	var ahead := Basis(Vector3.UP, controller.yaw) * Vector3.FORWARD
+	me.get_parent().add_child(light)
+	light.global_position = me.global_position + Vector3.UP * 1.6 + ahead * 1.3
+	return light
 
 
 ## The crosshair (and the melee marks round it) on whichever HUD is up.

@@ -20,6 +20,7 @@ extends Node3D
 ## spores, all view only.
 
 const Flora := preload("res://worlds/marsh/flora.gd")
+const Rootway := preload("res://worlds/marsh/rootway.gd")
 
 const LAYOUT_SEED := 7171
 ## Metres between ground samples, and how many there are along each edge.
@@ -92,6 +93,10 @@ var _giants: MeshInstance3D
 ## `bot_count` markers at the start, so every kind comes early.
 var _bot_spots: Array[Dictionary] = []
 var _weather: Node3D
+## Each Rootway's navigation region (`Rootway.build`), baked with the map's.
+var _rootways: Array[NavigationRegion3D] = []
+## The Rootways' vents and chamber lights (`Rootway.dress`), view only.
+var _rootway_views := {}
 ## The planet the map stands on (`WorldDef.planet_type`), set before it
 ## enters the tree; a map made on its own (as the checks do) takes the marsh.
 var planet: PlanetType
@@ -117,6 +122,8 @@ func _ready() -> void:
 	_build_open()
 	_build_hives()
 	_build_lurkers()
+	var root_floor := Look.surface("ground", {"tint": Color(0.5, 0.46, 0.36), "grime": 0.7, "scale": 0.3})
+	_rootways = Rootway.build(self, root_floor, Rootway.wall_material() if Look.enabled else STALK)
 	_place_bot_spots()
 	_art_rng.seed = LAYOUT_SEED
 	_dress()
@@ -142,6 +149,7 @@ func prepare_shared() -> void:
 		terrain = Terrain.new()
 		terrain.cell = CELL
 		terrain.side = SIDE
+		terrain.holes = Rootway.holes()
 		terrain.shape(_height)
 		_ground_shared["collision"] = terrain.collision_data()
 		_ground_shared["heights"] = terrain.heights
@@ -152,19 +160,32 @@ func prepare_shared() -> void:
 
 func bake_navigation() -> void:
 	if not _shared.has("navmesh"):
-		var navmesh := NavigationMesh.new()
-		navmesh.geometry_parsed_geometry_type = NavigationMesh.PARSED_GEOMETRY_STATIC_COLLIDERS
-		navmesh.geometry_collision_mask = Actor.LAYER_WORLD
-		navmesh.cell_size = 0.5
-		navmesh.cell_height = 0.25
-		navmesh.agent_radius = 0.5
-		navmesh.agent_height = 1.75
-		navmesh.agent_max_climb = 0.5
-		navmesh.agent_max_slope = 42.0
+		var navmesh := _new_navmesh()
 		nav_region.navigation_mesh = navmesh
 		nav_region.bake_navigation_mesh(false)
 		_shared["navmesh"] = navmesh
 	nav_region.navigation_mesh = _shared["navmesh"]
+	for i in _rootways.size():
+		var key := "rootway%d" % i
+		if not _shared.has(key):
+			var navmesh := _new_navmesh()
+			_rootways[i].navigation_mesh = navmesh
+			_rootways[i].bake_navigation_mesh(false)
+			_shared[key] = navmesh
+		_rootways[i].navigation_mesh = _shared[key]
+
+
+func _new_navmesh() -> NavigationMesh:
+	var navmesh := NavigationMesh.new()
+	navmesh.geometry_parsed_geometry_type = NavigationMesh.PARSED_GEOMETRY_STATIC_COLLIDERS
+	navmesh.geometry_collision_mask = Actor.LAYER_WORLD
+	navmesh.cell_size = 0.5
+	navmesh.cell_height = 0.25
+	navmesh.agent_radius = 0.5
+	navmesh.agent_height = 1.75
+	navmesh.agent_max_climb = 0.5
+	navmesh.agent_max_slope = 42.0
+	return navmesh
 
 
 ## The height of the ground at a point on the map.
@@ -187,9 +208,26 @@ func _process(_delta: float) -> void:
 	# giants go into it, as they do in a storm.
 	if camera != null:
 		var close := close_at(camera.global_position.x, camera.global_position.z)
+		# Down a Rootway the air is as close as it gets.
+		if Rootway.inside(camera.global_position):
+			close = 1.0
 		set_meta("close_here", close)
 		if _giants != null:
 			Flora.set_veil(_giants, maxf(close, float(get_meta("weather_here", 0.0))))
+	if not _rootway_views.is_empty():
+		Rootway.animate(_rootway_views, get_meta("keepers", {}), Time.get_ticks_msec() * 0.001)
+
+
+## One of the Rootways' spore vents warns (1), vents (2) or goes quiet (0)
+## (`Raid.purge_changed`, by its place among the map's "purge" markers;
+## view only).
+func show_purge(index: int, state: int) -> void:
+	var vents: Array = _rootway_views.get("vents", [])
+	if index < 0 or index >= vents.size():
+		return
+	var view: Dictionary = vents[index]
+	view.state = state
+	view.since = Time.get_ticks_msec() * 0.001
 
 
 ## How far a point is under a forest's caps, 0 out in the open to 1 well
@@ -252,6 +290,8 @@ func _build_ground() -> void:
 	terrain.name = "Ground"
 	terrain.cell = CELL
 	terrain.side = SIDE
+	# The Rootways' cuts are open ground.
+	terrain.holes = Rootway.holes()
 	_ground_lock.lock()
 	if not _ground_shared.has("heights"):
 		terrain.shape(_height)
@@ -629,7 +669,8 @@ func _dress() -> void:
 
 
 ## The black water: one dark, glossy sheet at the waterline over the whole
-## basin; the ground stands through it wherever it is dry.
+## basin; the ground stands through it wherever it is dry. It is left out
+## over the Rootways' cuts, which go down below it.
 func _dress_water(art: Node3D) -> void:
 	var mat := StandardMaterial3D.new()
 	mat.albedo_color = Color(0.008, 0.014, 0.013, 0.96)
@@ -637,15 +678,59 @@ func _dress_water(art: Node3D) -> void:
 	mat.roughness = 0.22
 	mat.metallic = 0.0
 	mat.metallic_specular = 0.35
-	var plane := PlaneMesh.new()
-	plane.size = Vector2(BASIN * 2.0 + 20.0, BASIN * 2.0 + 20.0)
-	plane.material = mat
+	var reach := BASIN + 10.0
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	st.set_normal(Vector3.UP)
+	for piece in water_pieces(Rect2(-reach, -reach, reach * 2.0, reach * 2.0), Rootway.holes()):
+		var a := Vector3(piece.position.x, 0.0, piece.position.y)
+		var b := Vector3(piece.end.x, 0.0, piece.position.y)
+		var c := Vector3(piece.end.x, 0.0, piece.end.y)
+		var d := Vector3(piece.position.x, 0.0, piece.end.y)
+		for p: Vector3 in [a, b, c, a, c, d]:
+			st.add_vertex(p)
+	st.set_material(mat)
 	var water := MeshInstance3D.new()
 	water.name = "BlackWater"
-	water.mesh = plane
+	water.mesh = st.commit()
 	water.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	water.position = Vector3(0, WATER_Y, 0)
 	art.add_child(water)
+
+
+## `area` less the `holes`, as rectangles: bands across z between the
+## holes' edges, each split along x round the holes it crosses.
+static func water_pieces(area: Rect2, holes: Array[Rect2]) -> Array[Rect2]:
+	var edges: Array[float] = [area.position.y, area.end.y]
+	for hole in holes:
+		edges.append(clampf(hole.position.y, area.position.y, area.end.y))
+		edges.append(clampf(hole.end.y, area.position.y, area.end.y))
+	edges.sort()
+	var out: Array[Rect2] = []
+	for i in edges.size() - 1:
+		var z0 := edges[i]
+		var z1 := edges[i + 1]
+		if z1 - z0 < 0.001:
+			continue
+		var mid := (z0 + z1) * 0.5
+		var cuts: Array[Vector2] = []
+		for hole in holes:
+			if mid > hole.position.y and mid < hole.end.y:
+				cuts.append(Vector2(hole.position.x, hole.end.x))
+		cuts.sort_custom(func(a: Vector2, b: Vector2) -> bool: return a.x < b.x)
+		var x := area.position.x
+		for cut in cuts:
+			if cut.x > x:
+				out.append(Rect2(x, z0, cut.x - x, z1 - z0))
+			x = maxf(x, cut.y)
+		if area.end.x > x:
+			out.append(Rect2(x, z0, area.end.x - x, z1 - z0))
+	return out
+
+
+## Whether (x, z) is in a Rootway's cut, where nothing of the floor grows.
+func in_cut(x: float, z: float) -> bool:
+	return Rootway.in_cut(x, z)
 
 
 ## The giant fungus over the greybox stalks, all of it one mesh for the
@@ -686,6 +771,7 @@ func _dress_stalks(art: Node3D) -> void:
 	_dress_reeds(art)
 	_dress_hives(art)
 	Flora.build_floor(self, art, LAYOUT_SEED + 23)
+	_rootway_views = Rootway.dress(art, LAYOUT_SEED + 31, ground_height)
 
 
 const FUNGUS_SIDES := 14
@@ -841,6 +927,8 @@ func _dress_glowcaps(art: Node3D) -> void:
 			var at := clump + Vector2(_art_rng.randf_range(-0.9, 0.9), _art_rng.randf_range(-0.9, 0.9))
 			var size := _art_rng.randf_range(0.6, 2.2)
 			var basis := Basis(Vector3.UP, _art_rng.randf() * TAU).scaled(Vector3.ONE * size)
+			if in_cut(at.x, at.y):
+				continue
 			spots.append(Transform3D(basis, Vector3(at.x, ground_height(at.x, at.y) - 0.02, at.y)))
 	caps.instance_count = spots.size()
 	for i in spots.size():
@@ -902,7 +990,7 @@ func _dress_moss(art: Node3D) -> void:
 			var foot: Vector3 = stalk.at
 			at = Vector2(foot.x, foot.z) + Vector2.from_angle(_art_rng.randf() * TAU) * (float(stalk.radius) * 1.6 + _art_rng.randf() * 4.0)
 		var ground := ground_height(at.x, at.y)
-		if ground < WATER_Y - 0.1:
+		if ground < WATER_Y - 0.1 or in_cut(at.x, at.y):
 			continue
 		var size := _art_rng.randf_range(0.4, 1.4)
 		var basis := Basis(Vector3.UP, _art_rng.randf() * TAU).scaled(Vector3(size * _art_rng.randf_range(0.8, 1.6), size * 0.6, size))
@@ -1010,7 +1098,7 @@ func _dress_reeds(art: Node3D) -> void:
 		var at := Vector2(_art_rng.randf_range(-BASIN, BASIN), _art_rng.randf_range(-BASIN, BASIN))
 		var ground := ground_height(at.x, at.y)
 		# Only the edge: just under the water to just over it.
-		if ground < WATER_Y - 0.4 or ground > WATER_Y + 0.3:
+		if ground < WATER_Y - 0.4 or ground > WATER_Y + 0.3 or in_cut(at.x, at.y):
 			continue
 		var size := _art_rng.randf_range(0.7, 1.4)
 		var basis := Basis(Vector3.UP, _art_rng.randf() * TAU).scaled(Vector3(size, size * _art_rng.randf_range(0.8, 1.3), size))

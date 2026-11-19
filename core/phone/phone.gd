@@ -35,6 +35,9 @@ signal quit_requested
 ## The Mirror app was opened (true) or left (false). `Main` stands a mirror
 ## in front of the player while it is up (`core/visual/mirror.gd`).
 signal mirror_changed(up: bool)
+## In the dressing room (`dressing`), the mouse dragged this many pixels
+## across off the hologram: `Main` turns the camera round the body.
+signal dressing_dragged(pixels: float)
 ## The phone came up into the hand (true) or went down (false) while it
 ## stays open: the Mirror app lowers it so the mirror shows the whole kit
 ## (`mirror_lowered`). `Main` passes it on as `PlayerController.phone_out`.
@@ -242,6 +245,12 @@ var news_seen := {}
 var wardrobe: CharacterPanel
 ## True while a mirror stands in the world for the Mirror app.
 var mirror_up := false
+## True while the Mirror app is a dressing room instead (third person,
+## Caleb's pick): the camera stands in front of you, the phone stays up with
+## its hologram beside you, and a drag off the hologram turns the view round
+## you (`dressing_dragged`) instead of putting the phone away. Set by `Main`.
+var dressing := false
+var _dragging := false
 ## The choice the Mirror app's keys move (an index of `wardrobe.pick_keys()`).
 var mirror_row := 0
 ## Messages kept on this phone only, offline too: the new player's handler
@@ -308,6 +317,10 @@ var holder: Node3D
 var _device: MeshInstance3D
 ## The material that puts this screen on the handheld's face.
 var _face_mat: StandardMaterial3D
+## Third person: the screen thrown up off the handheld as a hologram beside
+## the character, square to the camera (`HoloScreen`), where it is read and
+## clicked. Null until built.
+var projection: HoloScreen
 ## Without a camera: the screen shown flat.
 var _flat: TextureRect
 ## 0 put away, 1 held up.
@@ -435,6 +448,8 @@ func _input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 		if mirror_open() and _mirror_mouse(mouse as InputEventMouseButton):
 			return
+		if dressing and mirror_open() and _dress_drag(mouse, at.x >= 0.0):
+			return
 		if at.x < 0.0:
 			var button := mouse as InputEventMouseButton
 			if button != null and button.pressed and button.button_index == MOUSE_BUTTON_LEFT:
@@ -452,6 +467,25 @@ func _input(event: InputEvent) -> void:
 		_screen.push_input(event.duplicate(), true)
 		if _screen.is_input_handled():
 			get_viewport().set_input_as_handled()
+
+
+## The dressing room: a left press off the hologram starts turning the view
+## round you, the motion turns it, and letting go ends it. Returns true when
+## the event was the drag's.
+func _dress_drag(mouse: InputEventMouse, on_card: bool) -> bool:
+	var button := mouse as InputEventMouseButton
+	if button != null and button.button_index == MOUSE_BUTTON_LEFT:
+		if button.pressed and not on_card:
+			_dragging = true
+			return true
+		if not button.pressed and _dragging:
+			_dragging = false
+			return true
+	var motion := mouse as InputEventMouseMotion
+	if motion != null and _dragging:
+		dressing_dragged.emit(motion.relative.x)
+		return true
+	return false
 
 
 ## While a view setting's slider previews, the mouse's motion moves it and
@@ -876,6 +910,7 @@ func _set_open(open_now: bool) -> void:
 	var changed := open_now != is_open
 	if not open_now:
 		_end_preview()
+		_dragging = false
 	is_open = open_now
 	_screen.render_target_update_mode = SubViewport.UPDATE_ALWAYS if open_now else SubViewport.UPDATE_WHEN_VISIBLE
 	if open_now:
@@ -1262,6 +1297,10 @@ static func grabber_icon(lit: bool) -> ImageTexture:
 ## headless test, or before your character is built).
 func _build_flat() -> void:
 	_face_mat = Handheld.screen_material(_screen.get_texture())
+	projection = HoloScreen.new()
+	projection.name = "HoloScreen"
+	projection.setup(_screen.get_texture(), Vector2(screen_size))
+	add_child(projection)
 	_flat = TextureRect.new()
 	_flat.name = "Flat"
 	_flat.texture = _screen.get_texture()
@@ -1293,17 +1332,23 @@ func set_holder(actor: Node3D) -> void:
 ## Finds the handheld in the holder's hand and puts this screen on it. With
 ## none (no world, or the phone still coming up) the screen shows flat while
 ## the phone is open, so it can always be used.
-func _hold(_camera: Camera3D) -> void:
+func _hold(camera: Camera3D) -> void:
 	_device = null
 	if holder != null and is_instance_valid(holder) and holder.is_inside_tree():
 		var skin := holder.get_node_or_null("Skin")
 		if skin != null and skin.has_method("handheld"):
 			if skin.phone_screen != _face_mat:
 				skin.set_phone_screen(_face_mat)
-			# Clicks land on the handheld's own face, where the screen is
-			# read in every view.
+			# Clicks land on the handheld's own face, where first person
+			# reads it; third person reads the hologram thrown off it.
 			_device = Handheld.face_of(skin.handheld())
 	_flat.visible = held() and _device == null and not has_hand()
+	if projection != null:
+		var from_behind := camera != null and holder != null and is_instance_valid(holder) \
+				and holder.has_method("get_eye_position") \
+				and camera.global_position.distance_to(holder.get_eye_position()) >= HoloScreen.THIRD_PERSON_AT
+		projection.step(camera, holder if from_behind else null, _device, held() and from_behind and _device != null and _device.is_visible_in_tree(),
+				get_process_delta_time())
 
 
 ## True when the holder has a hand to hold the device in (a dressed
@@ -1328,6 +1373,9 @@ func screen_point(mouse: Vector2) -> Vector2:
 	var camera := get_viewport().get_camera_3d()
 	if camera == null or _device == null or not _device.is_visible_in_tree():
 		return miss
+	if projection != null and projection.showing():
+		var on := projection.card_point(camera.project_ray_origin(mouse), camera.project_ray_normal(mouse))
+		return Vector2(on.x * screen_size.x, on.y * screen_size.y) if on.x >= 0.0 else miss
 	var target := _device
 	var to_local := target.global_transform.affine_inverse()
 	var o := to_local * camera.project_ray_origin(mouse)
@@ -2107,9 +2155,12 @@ func _draw_mirror() -> void:
 	if wardrobe == null:
 		_body.add_child(_label("Your wardrobe is not here.", 15, UiTheme.INK))
 		return
-	_body.add_child(_label("Look ahead: the mirror shows you. Scroll through what you own. Changes save as you go."
-			if mirror_up else "Out in the world a mirror stands in front of you. Changes still save as you go.",
-			14, Color(0.7, 0.7, 0.7)))
+	var line := "Out in the world a mirror stands in front of you. Changes still save as you go."
+	if dressing:
+		line = "The camera faces you. Drag beside the phone to turn round. Changes save as you go."
+	elif mirror_up:
+		line = "Look ahead: the mirror shows you. Scroll through what you own. Changes save as you go."
+	_body.add_child(_label(line, 14, Color(0.7, 0.7, 0.7)))
 	if mirror_up:
 		var lower := _button("Lower the phone to look", set_mirror_lowered.bind(true))
 		lower.focus_mode = Control.FOCUS_NONE
@@ -2516,6 +2567,159 @@ static func _preview(text: String) -> String:
 ## An app on the home screen: a dark chamfered tile with the app's glyph
 ## drawn in thin accent lines, the name below and a count of anything new in
 ## an accent tag. Tap it to open the app.
+## Third person (Caleb's call, replacing the zoom in on the hand): the
+## phone's screen is thrown up off the handheld as a hologram, the way the
+## watch's card rises off the wrist (`Hud.Wrist`). The camera stays where it
+## is, so the world around stays in view. The card stands just past the
+## character from the camera (`behind`), right of the crosshair, `tall` of
+## the view's height and square to the camera so its text reads, on dark
+## glass the world still shows through (`backing`), with light running up
+## to it from the device. View only: your own phone, nobody else sees it.
+class HoloScreen extends Node3D:
+	## Seen from further than this (m) from the eyes, the view is third person.
+	const THIRD_PERSON_AT := 0.7
+	const TINT := Color(0.92, 1.0, 1.0, 0.88)
+	## How tall the card stands, as a share of the view's height.
+	var tall := 0.5
+	## How far (m) past the head, from the camera, it stands.
+	var behind := 0.25
+	## Where its left edge sits, as a share of the view's half width right of
+	## the crosshair, and how high its middle is, as a share of the half
+	## height (Caleb's sketch: close beside the character, its lower edge
+	## about level with the hand).
+	var across := 0.01
+	var lift := 0.2
+	## The light runs from the device to the card's near (left) edge, a
+	## projector's cone opening sideways into it (Caleb's sketch): from its
+	## lower corner up this share of its height.
+	var beam_reach := 0.25
+	var backing := 0.6
+	var open_time := 0.15
+	## 0 down, 1 fully up.
+	var open := 0.0
+	var _card: MeshInstance3D
+	var _beam: MeshInstance3D
+	var _aspect := 0.6
+
+	func setup(texture: Texture2D, pixels: Vector2) -> void:
+		_aspect = pixels.x / maxf(pixels.y, 1.0)
+		_card = MeshInstance3D.new()
+		_card.name = "Card"
+		var quad := QuadMesh.new()
+		quad.size = Vector2.ONE
+		_card.mesh = quad
+		_card.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		var mat := ShaderMaterial.new()
+		var shader := Shader.new()
+		# Depth tested, as the watch's card seen from behind: the body passes
+		# in front of it.
+		shader.code = Hud.Wrist.HOLO_SHADER.replace("DEPTH", "depth_draw_never")
+		mat.shader = shader
+		mat.set_shader_parameter("card", texture)
+		mat.set_shader_parameter("tint", TINT)
+		mat.set_shader_parameter("backing", backing)
+		mat.render_priority = 10
+		_card.material_override = mat
+		_card.top_level = true
+		_card.visible = false
+		add_child(_card)
+		_beam = MeshInstance3D.new()
+		_beam.name = "Beam"
+		_beam.mesh = ImmediateMesh.new()
+		_beam.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		var beam_mat := ShaderMaterial.new()
+		var beam_shader := Shader.new()
+		beam_shader.code = Hud.Wrist.BEAM_SHADER
+		beam_mat.shader = beam_shader
+		_beam.material_override = beam_mat
+		_beam.top_level = true
+		_beam.visible = false
+		add_child(_beam)
+
+	## True while the card is up to be read and clicked.
+	func showing() -> bool:
+		return _card != null and _card.visible and open > 0.5
+
+	## Places the card for `cam` beside `holder`, thrown from the handheld's
+	## face `device`, opening while `wanted` and closing after.
+	func step(cam: Camera3D, holder: Node3D, device: Node3D, wanted: bool, delta: float) -> void:
+		if _card == null:
+			return
+		open = move_toward(open, 1.0 if wanted else 0.0, delta / maxf(open_time, 0.001))
+		if open <= 0.0 or cam == null or holder == null or device == null or not is_instance_valid(device) \
+				or not is_inside_tree():
+			_card.visible = false
+			_beam.visible = false
+			return
+		var view := cam.global_transform
+		var eyes: Vector3 = holder.get_eye_position()
+		var head := view.affine_inverse() * eyes
+		var depth := maxf(-head.z, 0.5) + behind
+		var half_tall := depth * tan(deg_to_rad(cam.fov) * 0.5)
+		var shown := cam.get_viewport().get_visible_rect().size if cam.get_viewport() else Vector2(16.0, 9.0)
+		var half_wide := half_tall * (shown.x / maxf(shown.y, 1.0))
+		var high := 2.0 * half_tall * tall
+		var middle := half_tall * lift
+		var from := device.global_position
+		var size := Vector2(high * _aspect, high)
+		var x := minf(half_wide * across + size.x * 0.5, half_wide * 0.97 - size.x * 0.5)
+		var spot := view * Vector3(x, middle, -depth)
+		var grow := ease(open, -2.0)
+		var at := from.lerp(spot, grow)
+		_card.global_transform = Transform3D(view.basis.orthonormalized().scaled(
+				Vector3(size.x * maxf(grow, 0.05), size.y * maxf(grow, 0.05), 1.0)), at)
+		_card.visible = true
+		(_card.material_override as ShaderMaterial).set_shader_parameter("open", open)
+		_draw_beam(from, size)
+
+	## Light thrown from the device up to the card's lower edge, as the
+	## watch throws it to its card.
+	func _draw_beam(from: Vector3, size: Vector2) -> void:
+		var mesh := _beam.mesh as ImmediateMesh
+		mesh.clear_surfaces()
+		_beam.visible = true
+		_beam.global_transform = Transform3D.IDENTITY
+		(_beam.material_override as ShaderMaterial).set_shader_parameter("open", open)
+		var left := _card.global_transform * Vector3(-0.5, -0.5, 0.0)
+		var right := _card.global_transform * Vector3(-0.5, -0.5 + beam_reach, 0.0)
+		mesh.surface_begin(Mesh.PRIMITIVE_TRIANGLES)
+		mesh.surface_set_uv(Vector2(0.5, 0.0))
+		mesh.surface_add_vertex(from)
+		mesh.surface_set_uv(Vector2(0.0, 1.0))
+		mesh.surface_add_vertex(left)
+		mesh.surface_set_uv(Vector2(1.0, 1.0))
+		mesh.surface_add_vertex(right)
+		mesh.surface_end()
+
+	## Where a ray hits the card, as (0..1, 0..1) across and down its face,
+	## or (-1, -1) for a miss.
+	func card_point(origin: Vector3, direction: Vector3) -> Vector2:
+		var miss := Vector2(-1, -1)
+		if not showing():
+			return miss
+		var to_local := _card.global_transform.affine_inverse()
+		var o := to_local * origin
+		var d := to_local.basis * direction
+		if absf(d.z) < 0.00001:
+			return miss
+		var t := -o.z / d.z
+		if t < 0.0:
+			return miss
+		var p := o + d * t
+		var u := p.x + 0.5
+		var v := 0.5 - p.y
+		if u < 0.0 or u > 1.0 or v < 0.0 or v > 1.0:
+			return miss
+		return Vector2(u, v)
+
+	## The card's corners as the camera sees them, for tests: its share of
+	## the view's height and its middle on screen.
+	func on_screen(cam: Camera3D) -> Rect2:
+		var a := cam.unproject_position(_card.global_transform * Vector3(-0.5, 0.5, 0.0))
+		var b := cam.unproject_position(_card.global_transform * Vector3(0.5, -0.5, 0.0))
+		return Rect2(a, b - a).abs()
+
+
 class AppIcon extends Control:
 	signal tapped
 	var app := ""

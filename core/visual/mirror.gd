@@ -31,8 +31,9 @@ const ALL_LAYERS := 0xFFFFF
 var width := 1.5
 var height := 2.3
 ## How far in front of the viewer it stands, and the least it may when a
-## wall is close.
-var distance := 2.1
+## wall is close. Close enough that you stand large in it (Caleb's feedback:
+## further out you were a small figure in the glass).
+var distance := 1.6
 var min_distance := 1.1
 ## How far to the viewer's left it stands, clear of the phone on the right.
 var side_offset := 0.3
