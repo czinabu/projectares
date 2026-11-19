@@ -719,6 +719,8 @@ func _test_shelling() -> void:
 
 func _test_enemy_ai() -> void:
 	await EnemyAiTests.run(self)
+
+
 func _test_battle() -> void:
 	await BattleTests.run(self)
 
