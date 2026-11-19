@@ -44,6 +44,11 @@ static var _cloak_mat: Material
 ## How long a gun stays raised after the last shot, in seconds, standing or
 ## on the move; after that, moving, it goes back to its carry.
 var aim_hold := 1.5
+## How long it stays raised after aiming is let go without a shot: a tap of
+## aim is not a fight, so the gun goes back to its carry almost at once
+## rather than being held up at the hip, half raised, for `aim_hold`
+## (Caleb's in-between wobble).
+var aim_release_hold := 0.25
 ## Faster than this share of the actor's own walking pace (its walk speed
 ## with the gun's and rig's speed scaling), moving forward, the gun goes into
 ## its sprint carry, fully by the second.
@@ -681,8 +686,8 @@ func _update(delta: float) -> void:
 		# Hands on the phone or a toy: stand as if empty-handed.
 		weapon = null
 	var melee := weapon as MeleeWeapon
-	if weapon is Gun and (actor.cmd.primary or actor.cmd.secondary):
-		_aim_left = aim_hold
+	if weapon is Gun:
+		_hold_up(actor.cmd.primary, actor.cmd.secondary)
 	if locomotion == null:
 		return
 	_update_ride()
@@ -1026,11 +1031,19 @@ func stand_key(weapon: Weapon) -> String:
 		return "idle_gun"
 	if weapon == null or weapon is MeleeWeapon or weapon.visual == null:
 		return "idle"
-	if actor.cmd.primary or actor.cmd.secondary:
-		_aim_left = aim_hold
+	_hold_up(actor.cmd.primary, actor.cmd.secondary)
 	if _aim_left > 0.0 and _anims.has("aim_gun"):
 		return "aim_gun"
 	return "idle_gun" if _anims.has("idle_gun") else "idle"
+
+
+## Keeps a gun raised: `aim_hold` from the trigger, only `aim_release_hold`
+## past letting go of aim.
+func _hold_up(trigger: bool, aiming: bool) -> void:
+	if trigger:
+		_aim_left = aim_hold
+	elif aiming:
+		_aim_left = maxf(_aim_left, aim_release_hold)
 
 
 ## True when a weapon was swapped in without the count changing.

@@ -60,6 +60,9 @@ func focus() -> void:
 	_previous = get_viewport().get_camera_3d()
 	_camera = Camera3D.new()
 	_camera.name = "BenchCamera"
+	# Your own head is left out of it (`PlayerController.screen_view_up`).
+	_camera.set_meta(PlayerController.SCREEN_VIEW, true)
+	_camera.cull_mask = 0xFFFFF & ~(1 << (PlayerController.MirrorScript.HEAD_LAYER - 1))
 	_camera.near = 0.05
 	_camera.top_level = true
 	add_child(_camera)

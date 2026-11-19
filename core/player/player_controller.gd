@@ -42,6 +42,8 @@ enum ViewMode { FIRST, THIRD }
 ## How the melee side is picked: by flicking the mouse, or by the movement keys.
 enum StanceControl { MOUSE, MOVE }
 
+## The meta a station's view camera carries (`screen_view_up`).
+const SCREEN_VIEW := "screen_view"
 const VIEW_NAMES := ["First-person", "Third-person"]
 const STANCE_CONTROL_NAMES := ["mouse flick", "movement keys"]
 const STANCE_CONTROL_HINTS := [
@@ -1032,6 +1034,17 @@ func _live_aim() -> void:
 		motion.live_yaw = yaw
 
 
+## True while a station's own view has the screen (a `WorldScreen` or the
+## bench's view, which set `SCREEN_VIEW` on their camera): they stand about
+## where the head is, so the head is left out of them as in first person,
+## wherever the player stands (Caleb's feedback: it blocked the bench).
+func screen_view_up() -> bool:
+	if not is_inside_tree():
+		return false
+	var current := get_viewport().get_camera_3d()
+	return current != null and current != camera and current.has_meta(SCREEN_VIEW)
+
+
 func _process(delta: float) -> void:
 	if actor == null or not is_instance_valid(actor):
 		return
@@ -1103,7 +1116,7 @@ func _process(delta: float) -> void:
 		actor.body_mesh.visible = true
 	camera.cull_mask = 0xFFFFF & ~(1 << (MirrorScript.HEAD_LAYER - 1)) if first_person else 0xFFFFF
 	if skin != null and skin.has_method("hide_head"):
-		skin.hide_head(first_person)
+		skin.hide_head(first_person or screen_view_up())
 	ActionPose.of(actor).advance(delta)
 	# Aiming down sights the body brings the gun up to its eyes, the same in
 	# both views (`ActionPose.ads`). First person then settles the eye on the

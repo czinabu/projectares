@@ -10,6 +10,8 @@ static func run(t: Node) -> void:
 	await _check_third_person(t)
 	await _check_shown_motion(t)
 	await _check_steady_on_the_run(t)
+	await _check_hip_after_aim_tap(t)
+	await _check_head_out_of_station_views(t)
 
 
 ## The face turns to the aim, up and down, and never further round than
@@ -270,6 +272,124 @@ static func _check_steady_on_the_run(t: Node) -> void:
 					"%s, the raised watch stays in view (%d of %d frames)" % [what, seen[1], counted])
 			t.check(swing.x < 35.0 and swing.y < 35.0,
 					"%s on the move, the raised watch holds still in the view (%.0f mm side, %.0f mm up and down)" % [what, swing.x, swing.y])
+		controller.queue_free()
+		raid.queue_free()
+		await t.frames(3)
+	Look.enabled = false
+
+
+## A station's own view (the bench's, a `WorldScreen`'s) stands about where
+## the head is, so the head is left out of it wherever the player stands
+## (Caleb's feedback: it blocked the bench), and comes back after.
+static func _check_head_out_of_station_views(t: Node) -> void:
+	Look.enabled = true
+	var raid := Raid.new()
+	t.add_child(raid)
+	raid.start(Worlds.get_world("ashfront"), 42, ["rifle_carbine", "blade_scrap"])
+	for bot in raid.bots:
+		bot.get_node("Brain").set_physics_process(false)
+		bot.global_position += Vector3(0, -500, 0)
+	await t.frames(3)
+	var p := raid.player
+	var controller := PlayerController.new()
+	controller.setup(p)
+	raid.add_child(controller)
+	controller.set_physics_process(false)
+	controller.view_mode = PlayerController.ViewMode.THIRD
+	for i in 30:
+		await t.get_tree().process_frame
+	var skin = p.get_node_or_null("Skin")
+	var bit := 1 << (PlayerController.MirrorScript.HEAD_LAYER - 1)
+	var head_out := func() -> bool:
+		return skin != null and not skin._head_hidden.is_empty() \
+				and skin._head_hidden.all(func(v: Variant) -> bool: return is_instance_valid(v) and (v as VisualInstance3D).layers == bit)
+	t.check(not head_out.call(), "third person, the head is drawn")
+	var view: Node3D = load("res://core/ui/bench_view.gd").new()
+	var base := HomeBase.new()
+	base.show_gear([], {})
+	raid.add_child(base)
+	await t.frames(3)
+	view.base = base
+	base.add_child(view)
+	view.focus()
+	await t.get_tree().process_frame
+	await t.get_tree().process_frame
+	var bench_cam: Camera3D = view._camera
+	t.check(bench_cam != null and bench_cam.current and bench_cam.cull_mask & bit == 0 and head_out.call(),
+			"at the bench, the head is left out of the bench's view")
+	view.leave()
+	await t.get_tree().process_frame
+	await t.get_tree().process_frame
+	t.check(controller.camera.current and not head_out.call(), "back from the bench, the head is drawn again")
+	var screen := WorldScreen.new()
+	raid.add_child(screen)
+	screen.focus()
+	await t.get_tree().process_frame
+	await t.get_tree().process_frame
+	t.check(screen._camera != null and screen._camera.cull_mask & bit == 0 and head_out.call(),
+			"working a screen, the head is left out of its view")
+	screen.unfocus()
+	controller.queue_free()
+	raid.queue_free()
+	await t.frames(3)
+	Look.enabled = false
+
+
+## A tap of aim on the move is not a fight: the gun goes back to its carry
+## almost at once instead of staying up at the hip, and a gun held up at
+## the hip on the move (just after a shot) is steadied before the eyes like
+## the carried one (Caleb's in-between wobble).
+static func _check_hip_after_aim_tap(t: Node) -> void:
+	Look.enabled = true
+	for what: String in ["tap", "shot"]:
+		var raid := Raid.new()
+		t.add_child(raid)
+		raid.start(Worlds.get_world("ashfront"), 42, ["rifle_carbine", "blade_scrap"])
+		for bot in raid.bots:
+			bot.get_node("Brain").set_physics_process(false)
+			bot.global_position += Vector3(0, -500, 0)
+		await t.frames(3)
+		var p := raid.player
+		var controller := PlayerController.new()
+		controller.setup(p)
+		raid.add_child(controller)
+		controller.set_physics_process(false)
+		controller.view_mode = PlayerController.ViewMode.FIRST
+		controller.yaw = 1.57
+		var skel := p.find_child("*Skeleton*", true, false) as Skeleton3D
+		var skin = p.get_node_or_null("Skin")
+		var cam := controller.camera
+		var span := [Vector3.INF, -Vector3.INF]
+		var frame := [0]
+		var read := func() -> void:
+			if frame[0] < 155 or frame[0] > 205:
+				return
+			var at := (p.get_active_weapon() as Gun).muzzle_point(p.hand.global_position)
+			var local := cam.global_transform.affine_inverse() * at
+			span[0] = (span[0] as Vector3).min(local)
+			span[1] = (span[1] as Vector3).max(local)
+		skel.skeleton_updated.connect(read)
+		var carried_at := -1.0
+		var since := 0.0
+		for i in 210:
+			frame[0] = i
+			p.cmd.move = Vector2(0, 1)
+			# A held aim let go at 120, or a shot then.
+			p.cmd.secondary = what == "tap" and i >= 117 and i < 120
+			p.cmd.primary = what == "shot" and i == 120
+			await t.get_tree().process_frame
+			if i >= 120:
+				since += t.get_process_delta_time()
+			if what == "tap" and i >= 120 and carried_at < 0.0 and not skin.in_fight(p.get_active_weapon()):
+				carried_at = since
+		skel.skeleton_updated.disconnect(read)
+		var swing: Vector3 = ((span[1] as Vector3) - (span[0] as Vector3)) * 1000.0
+		if what == "tap":
+			t.check(carried_at >= 0.0 and carried_at <= skin.aim_release_hold + 0.1,
+					"a tap of aim on the move leaves the gun out of the fight hold at once (%.2f s)" % carried_at)
+		else:
+			t.check(skin.in_fight(p.get_active_weapon()) and swing.x < 60.0 and swing.y < 60.0,
+					"just after a shot on the run, the gun held up at the hip holds still in the view (%.0f mm side, %.0f mm up and down)" % [swing.x, swing.y])
 		controller.queue_free()
 		raid.queue_free()
 		await t.frames(3)
