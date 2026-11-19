@@ -244,6 +244,27 @@ var spawn_protection := 4.0
 ## a gentler world: the gear they had equipped goes back to their stash and
 ## only the backpack drops.
 var keep_gear_on_death := false
+## Scrip piles (DESIGN.md "Scrip piles", Caleb's call for Ashfront): a dead
+## player or bot drops no gear. What they lost is gone, and a glowing pile
+## of scrip worth what a trader pays for it (`Economy.sell_price`) lies
+## where they fell, with their carried scrip, for whoever runs over it
+## first, beside one bonus item from their pack. Gear then only comes from
+## caches, pods and racks. The rest of these tune it.
+var death_drops_scrip := false
+## A bot's pile is this share of what its pack would sell for, so the war's
+## dead do not flood the world with scrip...
+var bot_pile_share := 0.5
+## ...growing by up to this share again as the war heats up
+## (`war.intensity`), so the big fights pay best. Players' piles never grow.
+var pile_war_bonus := 0.5
+## The bonus item: one pick from the pack, usually something small
+## (medkits, materials, attachments), and with this chance something the
+## dead found this life instead, if they found any gear.
+var pile_found_chance := 0.15
+## How close a body must come to grab a pile, and how far away a visor
+## shows one (`VisorHud.compass_marks`, the "pile" mark).
+var pile_reach := 1.4
+var pile_seen_range := 80.0
 
 ## Keeping fresh players from strong ones (DESIGN.md "Challenge and balance
 ## data"): a player who brought less than `fresh_gear_value` of gear (by

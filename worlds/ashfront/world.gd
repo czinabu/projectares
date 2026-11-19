@@ -125,8 +125,8 @@ const WALKER_CHANCE := [0.0, 0.04, 0.08]
 ## How likely one of the armies' people is a heavy, and its health, by the
 ## risk zone it arrived in: outer ring, middle, core.
 const HEAVY_CHANCE := [0.1, 0.25, 0.4]
-const SOLDIER_HEALTH := [125.0, 135.0, 140.0]
-const HEAVY_HEALTH := [250.0, 260.0, 270.0]
+const SOLDIER_HEALTH := [115.0, 135.0, 140.0]
+const HEAVY_HEALTH := [225.0, 260.0, 270.0]
 ## Army rifles, one round in every zone. Harder than a carbine so a hit gets
 ## through a mid kit's plates, and looser and a little slower. Toward the core
 ## the soldier changes (more health, higher aim skill), not the cartridge.
@@ -258,8 +258,10 @@ func _init() -> void:
 	# The Ashland (DESIGN.md "Planet kit"): its sky, ground and horizon.
 	take_planet("ashland")
 	id = "ashfront"
+	# Deaths drop scrip, not gear (Caleb's call, DESIGN.md "Scrip piles").
+	death_drops_scrip = true
 	display_name = "Ashfront"
-	description = "Open battlefield where two armies fight over the wrecks. Always-on PvP, full loot. Safe only at the gate outposts; the burning core pays best."
+	description = "Open battlefield where two armies fight over the wrecks. Always-on PvP. The fallen drop scrip, not gear. Safe only at the gate outposts; the burning core pays best."
 	# A garrison of four at each of the five landmarks, and patrols between them.
 	# Thirty to an army: two garrisons of four, patrols, and a camp at the rim.
 	bot_count = 60
