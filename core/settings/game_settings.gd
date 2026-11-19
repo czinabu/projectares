@@ -79,6 +79,11 @@ static var ambient_occlusion := true
 ## (`PlanetType.smoke`, `Planet.GroundSmoke`): volumetric fog, so it costs
 ## frame time and can be switched off.
 static var ground_smoke := true
+## The watch's mission log: what the player took off the visor's objective
+## block (a contract's id, or `TOUR_KEY` for the new player's tour). Every
+## mission is tracked until it is picked off. View only.
+static var untracked: Array[String] = []
+const TOUR_KEY := "tour"
 static var _loaded := false
 
 
@@ -113,6 +118,7 @@ static func reset() -> void:
 	render_scale = 0
 	ambient_occlusion = true
 	ground_smoke = true
+	untracked.clear()
 
 
 static func set_value(key: String, value: Variant) -> void:
@@ -147,6 +153,12 @@ static func set_value(key: String, value: Variant) -> void:
 			ambient_occlusion = bool(value)
 		"ground_smoke":
 			ground_smoke = bool(value)
+		"untracked":
+			untracked.clear()
+			if value is Array:
+				for each: Variant in value:
+					if str(each) != "" and str(each) not in untracked:
+						untracked.append(str(each))
 		_:
 			return
 	apply()
@@ -159,7 +171,8 @@ static func to_dict() -> Dictionary:
 			"eye_pullback": eye_pullback,
 			"master_volume": master_volume, "fullscreen": fullscreen, "show_nameplates": show_nameplates,
 			"anti_aliasing": anti_aliasing, "edge_ink": edge_ink, "shadows": shadows,
-			"render_scale": render_scale, "ambient_occlusion": ambient_occlusion, "ground_smoke": ground_smoke}
+			"render_scale": render_scale, "ambient_occlusion": ambient_occlusion, "ground_smoke": ground_smoke,
+			"untracked": untracked.duplicate()}
 
 
 ## Pushes the settings that live outside the game's own nodes: volume, the
@@ -252,6 +265,23 @@ static func fit_atmosphere(atmosphere: WorldEnvironment) -> void:
 
 ## Whether the edge ink is drawn: switched on, and no MSAA, which leaves the
 ## ink no depth to read.
+## Whether mission `key` shows in the visor's objective block.
+static func is_tracked(key: String) -> bool:
+	return key not in untracked
+
+
+## Tracks mission `key` again, or takes it off the visor (the watch's
+## mission log). Returns whether it is tracked now.
+static func toggle_tracked(key: String) -> bool:
+	var keys := untracked.duplicate()
+	if key in keys:
+		keys.erase(key)
+	else:
+		keys.append(key)
+	set_value("untracked", keys)
+	return is_tracked(key)
+
+
 static func ink_shown() -> bool:
 	return edge_ink and ANTI_ALIASING[anti_aliasing][1] == Viewport.MSAA_DISABLED
 

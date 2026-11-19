@@ -166,6 +166,7 @@ static func _views(t: Node) -> void:
 	var home := Hud.base_watch_slots("Base", {}, held)
 	t.check(home.size() == Hud.Wrist.SLOTS.size() and home[Hud.Wrist.SLOTS.find("contract")].value == "2",
 			"the watch at home shows the contracts held too")
+	_mission_log(t, held)
 	var state := Contracts.clean(null, DAY)
 	Contracts.take(state, state.offers[0], DAY)
 	var rows := ContractPanel.rows(state)
@@ -343,3 +344,34 @@ static func _warzone(t: Node) -> void:
 	raid._on_actor_banked(p)
 	t.check(int(p.tally.get("banks", 0)) == 1, "banking loot at a depot counts")
 	await t._end_raid(raid)
+
+
+## The mission log on the watch's contract icon (Caleb's ask): it lists the
+## tour's step and every contract held, and a pick takes one off the visor's
+## objective block or puts it back.
+static func _mission_log(t: Node, held: Array[Dictionary]) -> void:
+	var settings := preload("res://core/settings/game_settings.gd")
+	var was := settings.persist
+	settings.persist = false
+	settings.untracked.clear()
+	var missions := Hud.mission_entries(held, "Hit a plate on the test lane")
+	t.check(missions.size() == 3 and missions[0].tour and missions[0].key == settings.TOUR_KEY
+				and missions[1].key == "cull" and missions[2].key == "ride",
+			"the mission log lists the tour's step first, then each contract held")
+	var shut := Hud.mission_slot(missions, {}, 0, false)
+	var open := Hud.mission_slot(missions, {"rides": 1}, 2, true)
+	t.check(shut.value == "3" and shut.hints == ["click"] and open.hints == ["wheel", "click"] and open.index == 2
+				and open.detail.begins_with("Ride 2 vehicles · 0/2 +1") and open.detail.ends_with("on visor"),
+			"a click opens it, and the wheel turns through each mission with its progress (%s)" % open.detail)
+	var visor := VisorHud.new()
+	t.check(visor.objective_lines(held, {}, "Hit a plate").size() == 3, "everything is tracked on the visor to begin with")
+	t.check(not settings.toggle_tracked("cull") and not settings.toggle_tracked(settings.TOUR_KEY)
+				and Hud.mission_slot(missions, {}, 1, true).detail.ends_with("off visor"),
+			"a pick takes a mission off the visor")
+	var lines := visor.objective_lines(held, {}, "Hit a plate")
+	t.check(lines.size() == 1 and lines[0].title == "Ride 2 vehicles", "and the visor lists only what is tracked")
+	t.check(settings.toggle_tracked("cull") and visor.objective_lines(held, {}, "").size() == 2,
+			"picking it again puts it back")
+	visor.free()
+	settings.untracked.clear()
+	settings.persist = was

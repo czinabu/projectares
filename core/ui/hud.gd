@@ -28,6 +28,7 @@ const Contracts := preload("res://core/economy/contracts.gd")
 const SafetyNets := preload("res://core/economy/safety_nets.gd")
 const SkinScript := preload("res://core/visual/actor_skin.gd")
 const PhoneScript := preload("res://core/phone/phone.gd")
+const GameSettings := preload("res://core/settings/game_settings.gd")
 ## The watch map's risk-zone grid is this many cells a side, how much room
 ## it leaves round what it shows, and the least half width it shows (metres).
 const MAP_GRID := 16
@@ -232,7 +233,12 @@ func _process(delta: float) -> void:
 	var picks := {"weapon": controller.weapon_pick, "artifact": controller.artifact_pick, "portal": controller.portal_pick,
 			"map": controller.map_pick, "standing": controller.standing_pick, "pack": controller.pack_pick,
 			"race": controller.race_pick, "race_open": controller.watch_open == "contract",
-			"ghost": controller.ghost_pick, "life_time": life_time} if controller != null else {"life_time": life_time}
+			"ghost": controller.ghost_pick, "life_time": life_time,
+			"mission": controller.mission_pick, "mission_open": controller.watch_open == "contract"} \
+			if controller != null else {"life_time": life_time}
+	picks["objective"] = objective
+	if controller != null:
+		controller.missions = mission_entries(contracts, objective)
 	race_line = Race.run_line((raid as Race).view_run()) if raid is Race else ""
 	if raid is Race:
 		_guide_to_pits((raid as Race).view_run())
@@ -256,7 +262,7 @@ func _process(delta: float) -> void:
 	# Your vitals are on the visor's edges in either view (drawn flat in
 	# third person); with no helmet the card carries them in a thin strip.
 	var on_glass := visor != null and (visor.glass_shown() or visor.flat_shown())
-	wrist.objective = race_line if race_line != "" else objective
+	wrist.objective = race_line if race_line != "" else (objective if GameSettings.is_tracked(GameSettings.TOUR_KEY) else "")
 	# The map is only worked out while it is the icon being read; opened, it
 	# also rises off the wrist as a tabletop hologram with the ground's relief.
 	var map_open: bool = wrist.raised and focus < slots.size() and slots[focus].id == "map"
@@ -454,7 +460,8 @@ static func watch_slots(p_raid: Raid, p: Actor, picked_toy := 0, pack_name := ""
 		slots.append(race_slot(view, int(picks.get("race", 0)), bool(picks.get("race_open", false)), pick,
 				(p_raid as Race).ghost_shown(pick, str(view.get("track", "")), str(view.get("machine", "")))))
 	else:
-		slots.append(contract_slot(jobs, p.tally))
+		slots.append(mission_slot(mission_entries(jobs, str(picks.get("objective", ""))), p.tally,
+				int(picks.get("mission", 0)), bool(picks.get("mission_open", false))))
 	slots.append(_slot("ping", "", "Ping where you look", ["click"], -1.0, false, false))
 	# A click (or L) starts or cancels the sign-out.
 	if leaving >= 0.0:
@@ -858,7 +865,7 @@ static func base_vehicle_slot(toys: Array[String], picked := 0, packing := false
 ## `portal_pick`) is the one icon used from here: it is how you leave for a
 ## world. The rest is the base's stations' job.
 static func base_watch_slots(base_name: String, loadout: Dictionary, held: Array[Dictionary] = [],
-		portal_pick := 0) -> Array[Dictionary]:
+		portal_pick := 0, objective := "", mission_pick := 0, mission_open := false) -> Array[Dictionary]:
 	var slots: Array[Dictionary] = []
 	var worn: Array[String] = []
 	for slot: String in ["primary", "sidearm", "melee"]:
@@ -881,7 +888,7 @@ static func base_watch_slots(base_name: String, loadout: Dictionary, held: Array
 	slots.append(_slot("map", "", base_name, [], -1.0, false, false))
 	slots.append(_slot("standing", "", "At home", [], -1.0, true, false))
 	slots.append(portal_slot(Portal.from_base(), portal_pick))
-	slots.append(contract_slot(held, {}))
+	slots.append(mission_slot(mission_entries(held, objective), {}, mission_pick, mission_open))
 	slots.append(_slot("ping", "", "No squad here", [], -1.0, true, false))
 	slots.append(_slot("leave", "", "Home", [], -1.0, true, false))
 	return slots
@@ -923,6 +930,53 @@ static func contract_slot(held: Array[Dictionary], tally: Dictionary) -> Diction
 	if held.size() > 1:
 		line += " · %d held" % held.size()
 	return _slot("contract", str(held.size()), line, [], best_share, false, best_share >= 1.0)
+
+
+## The mission log (Caleb's ask): everything you are working on, for the
+## watch's contract icon to turn through. The new player's tour step first
+## (`objective`, key `GameSettings.TOUR_KEY`), then each contract held (its
+## id as the key). Each: {"key", "title", "have", "goal", "stat", "tour"}.
+static func mission_entries(held: Array[Dictionary], objective := "") -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	if objective != "":
+		out.append({"key": GameSettings.TOUR_KEY, "title": objective, "have": 0, "goal": 0, "stat": "", "tour": true})
+	for entry in held:
+		out.append({"key": str(entry.get("id", "")), "title": str(entry.get("title", "")),
+				"have": int(entry.get("have", 0)), "goal": int(entry.get("goal", 1)),
+				"stat": str(entry.get("stat", "")), "tour": false})
+	return out
+
+
+## The contract icon as the mission log: closed, the job nearest done
+## (`contract_slot`) or the tour's step; opened with a click, the wheel turns
+## through every mission (`mission_entries`) and a click takes the picked one
+## off the visor's objective block or puts it back (`GameSettings.untracked`).
+## With only one mission a click toggles it straight away.
+static func mission_slot(entries: Array[Dictionary], tally: Dictionary, picked := 0, opened := false) -> Dictionary:
+	if entries.is_empty():
+		return _slot("contract", "", "No missions", [], -1.0, true, false)
+	var held: Array[Dictionary] = []
+	for entry in entries:
+		if not entry.tour:
+			held.append(entry)
+	var slot := contract_slot(held, tally) if not held.is_empty() \
+			else _slot("contract", "", str(entries[0].title), [], -1.0, false, false)
+	slot["value"] = str(entries.size())
+	slot["count"] = entries.size()
+	var at := clampi(picked, 0, entries.size() - 1)
+	slot["index"] = at
+	if opened or entries.size() == 1:
+		var entry: Dictionary = entries[at if opened else 0]
+		var line := str(entry.title)
+		if not entry.tour:
+			line += " · %d/%d" % [int(entry.have), int(entry.goal)]
+			var now := Contracts.live(str(entry.stat), tally)
+			if now > 0:
+				line += " +%d" % now
+		line += " · on visor" if GameSettings.is_tracked(str(entry.key)) else " · off visor"
+		slot["detail"] = line
+	slot["hints"] = ["wheel", "click"] if opened else ["click"]
+	return slot
 
 
 ## What the race icon offers, in order: a live race (join the next start),

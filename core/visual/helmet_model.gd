@@ -17,7 +17,10 @@ extends RefCounted
 ##   brow, a vented jaw guard and the scan emitter on the crown.
 ## - Warden ("threat", assault): a low dome over a faceplate that juts to a
 ##   prow, a narrow lit slit, cheek plates, neck lames and sensor eyes all
-##   round.
+##   round; seen from behind, panel seams, bolted ear armour under side
+##   rails with a light on one, a loop patch and an IFF strobe on the crown.
+## Worn with an armor frame, every helmet but the scrap visor takes the
+## frame's plate, trim and fabric colours.
 ## - Ember ("thermal"): broad ceramic shell, a thermal lens in the middle of
 ##   the face and glowing heat sinks over the ears.
 ## - "slit": an army exo's closed helm, the Warden's shape in its colours.
@@ -56,14 +59,17 @@ class Kit:
 	var glint: StandardMaterial3D
 	var trim: StandardMaterial3D
 
-	func _init(mode: String, accent: Color, shell: Color) -> void:
+	func _init(mode: String, accent: Color, shell: Color, colors := {}) -> void:
 		var base: Color = PALETTE.get(mode, shell)
 		if mode == "slit":
 			base = shell
 		var rough := 0.85 if mode == "" else 0.62
+		# Worn with an armor frame, the shell takes the frame's colours (its
+		# paint too), so helmet and plates read as one kit.
+		base = colors.get("plate", base)
 		plate = G.mat(base, rough, 0.15 if mode != "" else 0.35)
-		plate2 = G.mat(base.darkened(0.42), 0.7, 0.2)
-		fabric = G.mat(base.darkened(0.3).lerp(Color(0.3, 0.28, 0.24), 0.5), 0.97)
+		plate2 = G.mat(colors.get("plate2", base.darkened(0.42)), 0.7, 0.2)
+		fabric = G.mat(colors.get("fabric", base.darkened(0.3).lerp(Color(0.3, 0.28, 0.24), 0.5)), 0.97)
 		metal = G.mat(Color(0.55, 0.56, 0.57), 0.32, 0.85)
 		rubber = G.mat(Color(0.05, 0.05, 0.055), 0.92)
 		hood = G.mat(Color(0.05, 0.05, 0.055), 0.95)
@@ -88,12 +94,14 @@ const PALETTE := {
 ## The helmet for `mode`, its glass lit in `glass`, sized round a head of
 ## `size`; `shell_color` colours an exo's closed helm ("slit"). `tier` 2
 ## adds the Mk2 trim. The model is merged: what it is made of is listed in
-## its "parts" meta (`GearShapes.has_part`).
-static func build(mode: String, glass: Color, size: Vector3, shell_color: Color, tier := 1) -> Node3D:
+## its "parts" meta (`GearShapes.has_part`). `colors` ("plate", "plate2",
+## "fabric") are the worn frame's (`ActorSkin.helmet_colors`), {} for the
+## helmet's own.
+static func build(mode: String, glass: Color, size: Vector3, shell_color: Color, tier := 1, colors := {}) -> Node3D:
 	var root := Node3D.new()
 	root.name = "HelmetModel"
 	root.scale = Vector3.ONE * FIT * size.x / HEAD.x
-	var m := Kit.new(mode, glass, shell_color)
+	var m := Kit.new(mode, glass, shell_color, colors)
 	_hood(root, m)
 	N = {"": 2.2, "zoom": 2.6, "scan": 2.7, "threat": 3.0, "thermal": 2.6, "slit": 3.0}.get(mode, 2.4)
 	match mode:
@@ -438,5 +446,48 @@ static func _warden(root: Node3D, m: Kit) -> void:
 	var fin := G.box(root, "Part", Vector3(0.018, 0.026, 0.2), m.plate2, Vector3(0, r.y * 0.98, 0.0), 0.006, Basis(Vector3.RIGHT, 0.08))
 	fin.name = "Crest"
 	G.box(root, "Part", Vector3(0.02, 0.005, 0.14), m.dim, Vector3(0, r.y * 0.98 + 0.014, 0.01), 0.001, Basis(Vector3.RIGHT, 0.08))
+	_warden_back(root, m, r, edge)
 
 
+## What a Warden shows from behind and the sides (Caleb's screenshot: it read
+## as a plain dark dome next to the tactical armor): seams cut into the dome,
+## bolted ear armour with accessory rails over it, a light on the right rail,
+## a loop patch and an IFF strobe high on the back. The back of the head at
+## the vitals strip's height (`ActorSkin.vitals_offset`) is left clear.
+static func _warden_back(root: Node3D, m: Kit, r: Vector3, edge: Callable) -> void:
+	# The dome's outside (its shell stands 0.018 off `r`), where these sit.
+	var skin := r + Vector3.ONE * 0.017
+	# Panel seams down the dome, from the crown to the rim.
+	for a: float in [-2.35, -0.95, 0.95, 2.35]:
+		var stop := func(x: float) -> float: return float(edge.call(x)) - 0.05
+		G.add(root, "Seam", hc(skin, G.const_of(G.pol(0.93)), stop, a - 0.02, a + 0.02, 0.004, 1, 8), m.rubber)
+	for side: float in [-1.0, 1.0]:
+		var from := side * 1.2 if side > 0 else -2.1
+		var to := 2.1 if side > 0 else -1.2
+		# Ear armour: a raised plate over each side, in the trim colour.
+		var etop := func(_a: float) -> float: return G.pol(0.22)
+		var ebot := func(_a: float) -> float: return G.pol(-0.5)
+		G.add(root, "EarArmor", hc(skin, etop, ebot, from, to, 0.012, 10, 5, true), m.plate2)
+		var mid := side * 1.65
+		var out := Vector3(sin(mid), 0, -cos(mid))
+		for k in 4:
+			var at := Vector3(sin(mid + (k % 2 - 0.5) * 0.5) * (skin.x + 0.012), r.y * (0.08 - (0.5 if k >= 2 else 0.0)),
+					-cos(mid + (k % 2 - 0.5) * 0.5) * (skin.z + 0.012))
+			G.cyl(root, "Bolt", 0.006, 0.006, m.metal, at, Basis.looking_at(out) * Basis(Vector3.RIGHT, PI * 0.5), 8)
+		# An accessory rail along the top of the ear armour, slotted.
+		var rail_at := Vector3(side * (skin.x + 0.012), r.y * 0.3, r.z * 0.06)
+		G.box(root, "Rail", Vector3(0.014, 0.02, 0.15), m.plate2, rail_at, 0.003, Basis(Vector3.RIGHT, 0.12))
+		for k in 5:
+			G.box(root, "Part", Vector3(0.006, 0.022, 0.008), m.metal,
+					rail_at + Vector3(side * 0.006, 0.0, -0.06 + k * 0.03), 0.001, Basis(Vector3.RIGHT, 0.12))
+	# A light clipped to the right rail, its lens forward.
+	var lamp := Vector3(skin.x + 0.03, r.y * 0.3, -r.z * 0.2)
+	G.box(root, "Lamp", Vector3(0.024, 0.026, 0.05), m.plate2, lamp, 0.005)
+	G.cyl(root, "Part", 0.01, 0.006, m.dim, lamp + Vector3(0, 0, -0.026), Basis(Vector3.RIGHT, PI * 0.5), 12)
+	# A loop patch high on the back, and an IFF strobe on the crown behind the crest.
+	G.add(root, "Patch", hc(skin, G.const_of(G.pol(0.86)), G.const_of(G.pol(0.66)), PI - 0.42, PI + 0.42, 0.005, 6, 2),
+			m.fabric)
+	G.box(root, "Strobe", Vector3(0.03, 0.016, 0.034), m.plate2, Vector3(0, skin.y * 0.88, skin.z * 0.55), 0.005,
+			Basis(Vector3.RIGHT, 0.55))
+	G.box(root, "Part", Vector3(0.016, 0.005, 0.02), m.dim, Vector3(0, skin.y * 0.88 + 0.009, skin.z * 0.55 + 0.004), 0.001,
+			Basis(Vector3.RIGHT, 0.55))

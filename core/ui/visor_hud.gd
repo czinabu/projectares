@@ -45,6 +45,7 @@ extends Control
 ## A view only: it reads `Visor` state and never decides what is revealed.
 
 const Contracts := preload("res://core/economy/contracts.gd")
+const GameSettings := preload("res://core/settings/game_settings.gd")
 
 ## How long the mark for a scan that caught you stays on the glass.
 var felt_time := 2.5
@@ -1863,16 +1864,20 @@ func _draw_signature(p: Actor, ink: Color) -> void:
 
 ## What the objective block lists, in order: {"title", "have", "goal",
 ## "share", "done", "tour"}. The contracts held, nearest done first, with this
-## life's counts on top, then the new player's tour objective.
-func objective_lines(held: Array[Dictionary], tally: Dictionary, objective: String) -> Array[Dictionary]:
+## life's counts on top, then the new player's tour objective. Only what is
+## tracked (the watch's mission log, `GameSettings.is_tracked`).
+func objective_lines(held: Array[Dictionary], tally: Dictionary, objective: String,
+		tour_key := GameSettings.TOUR_KEY) -> Array[Dictionary]:
 	var lines: Array[Dictionary] = []
 	for entry in held:
+		if not GameSettings.is_tracked(str(entry.get("id", ""))):
+			continue
 		var have: int = int(entry.get("have", 0)) + Contracts.live(str(entry.get("stat", "")), tally)
 		var goal: int = maxi(int(entry.get("goal", 1)), 1)
 		lines.append({"title": str(entry.get("title", "")), "have": mini(have, goal), "goal": goal,
 				"share": clampf(float(have) / goal, 0.0, 1.0), "done": have >= goal, "tour": false})
 	lines.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a.share > b.share)
-	if objective != "":
+	if objective != "" and (tour_key == "" or GameSettings.is_tracked(tour_key)):
 		lines.append({"title": objective, "have": 0, "goal": 0, "share": -1.0, "done": false, "tour": true})
 	return lines
 
@@ -1888,9 +1893,11 @@ func _draw_objectives(p: Actor, ink: Color) -> void:
 	var held: Array[Dictionary] = []
 	held.assign(hud.get("contracts") if hud.get("contracts") is Array else [])
 	var objective := str(hud.get("objective")) if hud.get("objective") != null else ""
+	var tour_key := GameSettings.TOUR_KEY
 	if str(hud.get("race_line")) not in ["", "<null>"]:
 		objective = str(hud.get("race_line"))
-	var lines := objective_lines(held, p.tally, objective)
+		tour_key = ""
+	var lines := objective_lines(held, p.tally, objective, tour_key)
 	if lines.is_empty():
 		return
 	var right := size.x - size.y * 0.06 + sway.x

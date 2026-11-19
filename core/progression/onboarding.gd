@@ -134,6 +134,26 @@ static func notify(tour: Dictionary, event: String) -> bool:
 	return true
 
 
+## `fact` is true now (gear on, standing in the plaza, a contract held, out
+## in a world). It finishes the step waiting for it, and also any step
+## further on that waits for it together with every step before that one:
+## a player who walked out to the plaza without trying the test lane is not
+## left told to hit a plate they can no longer reach. Returns true if it moved.
+static func catch_up(tour: Dictionary, fact: String) -> bool:
+	var step := current(tour)
+	if step.is_empty():
+		return false
+	for i in range(index_of(step.id), STEPS.size()):
+		if STEPS[i].event == fact:
+			if i + 1 >= STEPS.size():
+				tour.state = DONE
+				tour.step = ""
+			else:
+				tour.step = STEPS[i + 1].id
+			return true
+	return false
+
+
 static func skip(tour: Dictionary) -> void:
 	tour.state = SKIPPED
 	tour.step = ""
