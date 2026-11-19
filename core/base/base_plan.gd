@@ -22,12 +22,16 @@ extends RefCounted
 ## change is checked (`change`).
 
 ## The hub's sockets, in the order the plan table turns through them.
-const SOCKETS: Array[String] = ["W1", "W2", "N1", "N2", "E1", "E2"]
+## "F1" is the lounge's doorway (DESIGN.md "The lounge"): on the hub's front
+## wall left of the way out in the hall and the courtyard, and off the
+## corridor to the range in the spine and the ring, whose front is the way
+## out.
+const SOCKETS: Array[String] = ["W1", "W2", "N1", "N2", "E1", "E2", "F1"]
 
 ## Where each socket is, said the way a player reads it.
 const SOCKET_NAMES := {
 	"W1": "Left, back", "W2": "Left, front", "N1": "Back, left",
-	"N2": "Back, right", "E1": "Right, back", "E2": "Right, front",
+	"N2": "Back, right", "E1": "Right, back", "E2": "Right, front", "F1": "Front, left",
 }
 
 ## Room id -> its entry:
@@ -42,6 +46,7 @@ const ROOMS := {
 	"ops": {"title": "Ops", "opens": "ops_consoles", "holds": "Wardrobe, records, mastery, trader"},
 	"gear": {"title": "Gear hall", "opens": "gear_hall", "holds": "Armor, helmets, rigs, chips"},
 	"stores": {"title": "Stores", "opens": "trophy_hall", "holds": "Supplies and trophies"},
+	"lounge": {"title": "Lounge", "opens": "lounge", "holds": "Somewhere to sit, and a window out"},
 }
 
 ## The hub's shapes, in the order the plan table lists them:
@@ -54,10 +59,10 @@ const SHAPES := {
 		"sockets": SOCKET_NAMES},
 	"ring": {"title": "Ring", "blurb": "An eight-sided rotunda: every room opens onto the table.", "unlock": "hub_ring",
 		"sockets": {"W1": "Left", "W2": "Left, front", "N1": "Left, back", "N2": "Right, back",
-			"E1": "Right", "E2": "Right, front"}},
+			"E1": "Right", "E2": "Right, front", "F1": "Down the corridor"}},
 	"spine": {"title": "Spine", "blurb": "A long gallery, three rooms down each side.", "unlock": "hub_spine",
 		"sockets": {"W1": "Left, middle", "W2": "Left, front", "N1": "Left, back", "N2": "Right, back",
-			"E1": "Right, middle", "E2": "Right, front"}},
+			"E1": "Right, middle", "E2": "Right, front", "F1": "Down the corridor"}},
 	"courtyard": {"title": "Courtyard", "blurb": "A big lit court under a skylight, with planters.", "unlock": "hub_courtyard",
 		"sockets": SOCKET_NAMES},
 }
@@ -97,6 +102,11 @@ const STYLES := {
 		"plinths": {"title": "Plinths", "blurb": "Trophies on lit plinths down an aisle.", "unlock": "style_stores_plinths"},
 		"cargo": {"title": "Cargo", "blurb": "Crate stacks and a pallet rack.", "unlock": "style_stores_cargo"},
 	},
+	"lounge": {
+		"den": {"title": "Den", "blurb": "A big sofa round a rug, a lamp and plants.", "unlock": ""},
+		"bar": {"title": "Bar", "blurb": "A counter with stools and lit shelves, a booth.", "unlock": "style_lounge_bar"},
+		"quarters": {"title": "Quarters", "blurb": "A curtained bunk, a desk and a small sofa.", "unlock": "style_lounge_quarters"},
+	},
 }
 
 ## The finishes a room or the hub can wear, the first the free one. Bought
@@ -124,10 +134,11 @@ const HUB := "hub"
 
 ## A new account's base.
 const DEFAULT := {"W1": "armory", "W2": "workshop", "N1": "gear", "N2": "stores", "E1": "garage", "E2": "ops",
+	"F1": "lounge",
 	"shape": "hall", "styles": {"armory": "rack", "workshop": "bench", "garage": "bays", "ops": "consoles",
-		"gear": "stands", "stores": "shelves"},
+		"gear": "stands", "stores": "shelves", "lounge": "den"},
 	"finishes": {"hub": "steel", "armory": "steel", "workshop": "steel", "garage": "steel", "ops": "steel",
-		"gear": "steel", "stores": "steel"}}
+		"gear": "steel", "stores": "steel", "lounge": "steel"}}
 
 
 static func rooms() -> Array[String]:
