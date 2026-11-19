@@ -4377,6 +4377,7 @@ func _bind_sheet(out_dir: String, id: String) -> void:
 				tick += 1
 				player.cmd.primary_pressed = false
 				player.cmd.tertiary_pressed = false
+			print("DBGB ", move, " t", tick, " wind ", blade.is_winding_up(), " kind ", blade._windup_kind, " arc ", blade.swing_arc(), " busy ", blade.is_busy(), " stag ", player.stagger_left, " lock ", player.weapons_locked, " foeblk ", guard.is_blocking(), " d ", player.global_position.distance_to(foe.global_position), " bind ", ActionPose.of(player).bind_left)
 			# Film from a few ticks before the contact through the bind.
 			if col == 0:
 				while tick < contact_tick - 4:

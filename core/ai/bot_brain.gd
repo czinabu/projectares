@@ -42,6 +42,16 @@ var guard_reaction := 0.22
 const RING_FEINT := [0.0, 0.15, 0.3]
 const RING_DASH := [0.0, 0.4, 0.7]
 const RING_HEAVY := [0.05, 0.2, 0.3]
+## The rest of a person's melee (DESIGN.md "Melee"): against a raised guard
+## a bot kicks it open (`RING_KICK`), some of its heavies are feints it lets
+## go into a guard part way (`RING_HEAVY_FEINT`), and a heavy it reads
+## coming it may dodge instead of guarding (`RING_DODGE`).
+const RING_KICK := [0.0, 0.25, 0.4]
+const RING_HEAVY_FEINT := [0.0, 0.15, 0.3]
+const RING_DODGE := [0.0, 0.15, 0.3]
+var kick_chance := 0.25
+var heavy_feint_chance := 0.15
+var melee_dodge_chance := 0.15
 ## A blade in reach beats a rifle (Caleb's call): an army bot cut by a
 ## blade flinches, its gun knocked `melee_knock_deg` off and its trigger
 ## held for `melee_flinch` seconds, so once a blade reaches a soldier the
@@ -146,6 +156,8 @@ var _melee_wait := 0.0
 ## A charge in progress: hold the attack button this much longer, then
 ## let go (a heavy turns by itself past `hold_time`).
 var _hold_left := 0.0
+## The heavy under way is a feint: let it go into a guard part way.
+var _feint_heavy := false
 var _dash_wait := 0.0
 var _flinch_left := 0.0
 ## Recoil reaches a bot's aim too (`Gun.recoil_for`): it pulls against
@@ -315,6 +327,9 @@ func _ready() -> void:
 	feint_chance = RING_FEINT[clampi(ring, 0, RING_FEINT.size() - 1)]
 	dash_chance = RING_DASH[clampi(ring, 0, RING_DASH.size() - 1)]
 	heavy_share = RING_HEAVY[clampi(ring, 0, RING_HEAVY.size() - 1)]
+	kick_chance = RING_KICK[clampi(ring, 0, RING_KICK.size() - 1)]
+	heavy_feint_chance = RING_HEAVY_FEINT[clampi(ring, 0, RING_HEAVY_FEINT.size() - 1)]
+	melee_dodge_chance = RING_DODGE[clampi(ring, 0, RING_DODGE.size() - 1)]
 	flanks = ring > 0
 	actor.health.damaged.connect(_on_damaged)
 	actor.heard.connect(_on_heard)
@@ -655,6 +670,13 @@ func _attack_melee(cmd: ActorCommand, blade: MeleeWeapon, delta: float) -> void:
 		cmd.secondary = true
 		return
 
+	if _feint_heavy and blade._windup_kind == "heavy":
+		if blade._windup_left < blade._windup_total * 0.6:
+			cmd.secondary = true
+			_feint_heavy = false
+			_melee_wait = _rng.randf_range(0.2, 0.4)
+		return
+	_feint_heavy = false
 	var foe_blade := target.get_active_weapon() as MeleeWeapon
 	if _guard_against(cmd, blade, foe_blade, dist, delta):
 		return
@@ -675,6 +697,12 @@ func _guard_against(cmd: ActorCommand, blade: MeleeWeapon, foe_blade: MeleeWeapo
 	var threatened := foe_blade != null and foe_blade.threat_dir() >= 0 and dist <= foe_blade.reach * 1.5
 	if threatened and not _threat_seen:
 		_read_left = guard_reaction if _rng.randf() < guard_skill else -1.0
+		# A heavy read in time may be dodged rather than met.
+		if _read_left >= 0.0 and foe_blade._windup_kind == "heavy" and _rng.randf() < melee_dodge_chance \
+				and actor.stamina >= actor.dash_stamina:
+			cmd.dash = true
+			cmd.move = Vector2(_strafe_sign, -0.5)
+			_read_left = -1.0
 	_threat_seen = threatened
 	if not threatened:
 		_read_left = -1.0
@@ -700,11 +728,17 @@ func _start_attack(cmd: ActorCommand, blade: MeleeWeapon, opening: bool) -> void
 	var foe_blade := target.get_active_weapon() as MeleeWeapon
 	if foe_blade != null:
 		guarded = foe_blade.is_blocking()
+	if guarded and actor.stamina >= blade.kick_stamina and _rng.randf() < kick_chance:
+		# A guard held up gets kicked open.
+		cmd.kick_pressed = true
+		return
 	var heavy_odds := heavy_vs_guard if guarded or target.stagger_left > 0.0 else heavy_share
 	if opening and actor.riposte_left > 0.0:
 		heavy_odds = maxf(heavy_odds, 0.5)
 	if actor.stamina >= blade.heavy_stamina and _rng.randf() < heavy_odds:
 		# Hold through the turn into a heavy: its charge and windup show.
+		_feint_heavy = not opening and _rng.randf() < heavy_feint_chance \
+				and actor.stamina >= blade.heavy_stamina + blade.feint_stamina
 		_hold_left = blade.hold_time + 0.05
 		cmd.primary_pressed = true
 		cmd.primary = true
