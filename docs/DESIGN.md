@@ -2228,6 +2228,20 @@ launch works on the skyline (leaning launch towers with holo-ads, gantry
 cranes, a crashed booster stage, power pylons), searchlights sweeping the
 haze and camera drones pacing the racers.
 
+**No bare salt (Caleb's call: too much open space).** The works fill the
+pan between the tracks and the dunes, which close in to about 900 m out
+(`works.gd`). A belt of districts runs all round, each a slice of the
+ring: tank farm, hangar row, container port, cooling plant and launch
+field. Each district has one landmark to steer by (fuel spheres, the
+vehicle assembly hall, a portal crane, twin cooling towers, a rocket still
+on its pad). Buildings stand low near the road and grow taller toward the
+dunes, so every view from the track ends on a skyline. Lit service roads
+run out into the works. Fans' car parks and tent camps sit just outside
+the tracks, and the infield holds a festival with a stage, a big wheel and
+a street of food stalls. Catch fences, hoardings and tyre walls line both
+roads. It is all decoration, merged into a block of meshes per material,
+and nothing stands on a road (`race_tests.gd`, `_test_works`).
+
 ## 10. Economy and progression
 
 ### The core rule (Caleb's call)

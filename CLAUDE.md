@@ -2072,9 +2072,13 @@ without Caleb, and update the gap list when a PR closes a row.
   (`race_bench.tscn -- --tunes`). Where a road runs over
   another (Skyhook), `RaceTrack.locate`'s full search counts height and a
   gate is passed only within `GATE_HEIGHT` of it. The stands, crowd
-  (`Crowd`, `assets/shaders/crowd.gdshader`) and skyline are decoration
-  (`worlds/meridian/stands.gd`, `skyline.gd`), merged into one mesh per
-  material. The lights, splits, board
+  (`Crowd`, `assets/shaders/crowd.gdshader`), skyline and works are
+  decoration (`worlds/meridian/stands.gd`, `skyline.gd`, `works.gd`),
+  merged into one mesh per material (the works per material per block,
+  every lit and painted shape in one vertex-coloured material each). The
+  works fill the salt out to the dunes (`GROUND_HALF`) and keep off the
+  roads and what `WORKS_KEEP_OUT` lists; a new stand or set piece goes
+  in that list. The lights, splits, board
   text and the ghost being chased are `RaceView`, a view. In a race world the
   watch's contract icon is the race icon (`Hud.race_slot`, `glyph`).
   Every machine in a class stays within 3% of the class average round

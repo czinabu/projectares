@@ -61,6 +61,7 @@ static func run(t: Node) -> void:
 	_test_tuning_rules(t)
 	await _test_tuning(t)
 	_test_crowd(t)
+	_test_works(t)
 	_test_ghost_data(t)
 
 
@@ -921,3 +922,30 @@ static func _test_ghost_data(t: Node) -> void:
 			and absf(unpacked.sample(1.05).basis.get_euler().y - 0.5) < 0.01, "a packed ghost plays back the same")
 	t.check(RaceGhost.from_packed("40:") == null and RaceGhost.from_packed("41:AAAA") == null and RaceGhost.from_packed("x") == null
 			and RaceGhost.from_packed(12) == null, "packed junk is refused")
+
+
+## Meridian's works (`works.gd`) fill the salt round the circuits as
+## decoration only: nothing collides, it is drawn in a bounded number of
+## merged blocks, and nothing stands on either road.
+static func _test_works(t: Node) -> void:
+	var map: Node3D = Worlds.get_world("meridian").create_map()
+	var works_script: GDScript = load("res://worlds/meridian/works.gd")
+	var tracks: Array = map.call("race_tracks")
+	var holder := Node3D.new()
+	var consts := (map.get_script() as Script).get_script_constant_map()
+	var works: RefCounted = works_script.new(holder, int(consts["LAYOUT_SEED"]) + 4, consts["WORKS_KEEP_OUT"].duplicate(true))
+	works.call("build", tracks)
+	var root := holder.get_child(0)
+	t.check(root.find_children("*", "CollisionObject3D", true, false).is_empty(), "the works never collide")
+	var meshes := root.find_children("*", "MeshInstance3D", true, false)
+	t.check(meshes.size() > 20 and meshes.size() < 200, "the works are merged into blocks (%d meshes)" % meshes.size())
+	var on_road := 0
+	for node: Node in meshes:
+		var verts: PackedVector3Array = (node as MeshInstance3D).mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
+		for k in range(0, verts.size(), 5):
+			var v := verts[k]
+			if v.y < 3.0 and float(works.call("track_dist", v)) < 13.0 * 0.5 + 1.0:
+				on_road += 1
+	t.check(on_road == 0, "nothing from the works stands on the road (%d points)" % on_road)
+	holder.free()
+	map.free()
