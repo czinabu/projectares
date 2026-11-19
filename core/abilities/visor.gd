@@ -42,6 +42,10 @@ var item_id := ""
 var display_name := "No helmet"
 ## False until a helmet is equipped.
 var enabled := false
+## The helmet is off the head, clipped to the hip (`Actor.helmet_stow`, set
+## by the actor every tick from its command). It is still worn gear, but a
+## visor off the face shows and senses nothing.
+var stowed := false
 
 var mode := ""
 ## The colour of everything the visor draws on its glass.
@@ -125,7 +129,7 @@ func tick(cmd: ActorCommand, delta: float) -> void:
 			tags.erase(target)
 	if charge < 0.0:
 		charge = battery
-	if not enabled or actor == null or actor.is_dead:
+	if not working() or actor == null or actor.is_dead:
 		zoom_level = 0
 		thermal_on = false
 		_end_threat_sense()
@@ -152,7 +156,7 @@ func tick(cmd: ActorCommand, delta: float) -> void:
 
 ## How many settings `ActorCommand.visor_level` has above off for this helmet.
 func levels() -> int:
-	if not enabled:
+	if not working():
 		return 0
 	match mode:
 		"zoom":
@@ -160,6 +164,11 @@ func levels() -> int:
 		"thermal":
 			return 1
 	return 0
+
+
+## True while a helmet is worn on the head: on the hip it does nothing.
+func working() -> bool:
+	return enabled and not stowed
 
 
 func is_zoomed() -> bool:
@@ -180,7 +189,7 @@ func move_mult() -> float:
 
 ## Sends out a scan pulse if the visor is ready. Returns true if it fired.
 func scan() -> bool:
-	if not enabled or mode != "scan" or cooldown_left > 0.0 or actor == null or actor.is_dead:
+	if not working() or mode != "scan" or cooldown_left > 0.0 or actor == null or actor.is_dead:
 		return false
 	cooldown_left = cooldown
 	var origin := actor.global_position + Vector3(0.0, actor.eye_height, 0.0)
@@ -231,7 +240,7 @@ func add_tag(target: Actor, seconds: float) -> void:
 
 ## Starts Threat Sense if the visor is ready. Returns true if it started.
 func sense_threats() -> bool:
-	if not enabled or mode != "threat" or cooldown_left > 0.0 or actor == null or actor.is_dead:
+	if not working() or mode != "threat" or cooldown_left > 0.0 or actor == null or actor.is_dead:
 		return false
 	cooldown_left = cooldown
 	active_left = threat_time
@@ -266,7 +275,7 @@ func is_aimed_at_by(other: Actor) -> bool:
 
 ## The wearer was hit by something at `origin`. A tactical visor shows where.
 func note_hit_from(origin: Vector3) -> void:
-	if enabled and mode == "threat" and actor != null and not actor.is_dead:
+	if working() and mode == "threat" and actor != null and not actor.is_dead:
 		threatened.emit(origin)
 
 

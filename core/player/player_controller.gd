@@ -69,6 +69,16 @@ var phone_out := false
 ## in on it and reading it from close, so the field of view and the camera
 ## are shown as they are; the phone stays in the hand.
 var phone_preview := false
+## The helmet is off, clipped to the hip (the watch's helmet icon,
+## `toggle_helmet`): a toggle, sent as the held `ActorCommand.helmet_off`.
+## It goes back on by itself when a new helmet is put on, and when you step
+## out where people fight (weapons unlocked outside a safe zone or the base:
+## leaving a gate outpost, a new life in a world), so it only stays off out
+## there by choice.
+var helmet_off := false
+var _could_fight := false
+var _helmet_seen := ""
+var _helmet_actor: Actor = null
 ## Crouched by the crouch key: a toggle, sent as the held `ActorCommand.crouch`.
 ## Sprinting, jumping or getting on a vehicle stands you back up.
 var crouch_toggled := false
@@ -552,6 +562,12 @@ func click_watch() -> bool:
 	if is_on_artifact():
 		_artifact_click = true
 		return true
+	if is_watch_on("helmet") and actor.visor.enabled:
+		# The off hand takes the helmet, so the watch goes down.
+		toggle_helmet()
+		wrist_raised = false
+		watch_open = ""
+		return true
 	if is_watch_on("ping"):
 		ping_requested.emit()
 		return true
@@ -596,6 +612,7 @@ func click_watch() -> bool:
 func watch_takes_fire() -> bool:
 	return (watch_open == "" and watch_entries(focused_watch_icon()) > 1) or is_picking_toys() or pack_target() != null or is_picking_weapons() or is_on_artifact() \
 			or is_watch_on("ping") or is_watch_on("portal") or is_watch_on("emote") or is_on_sign_out() \
+			or (is_watch_on("helmet") and actor.visor.enabled) \
 			or (is_watch_on("map") and not map_targets.is_empty()) \
 			or (watch_open == "standing" and is_watch_on(watch_open)) \
 			or (is_watch_on("pack") and _is_open("pack") and not actor.inventory.items.is_empty()) or is_on_race()
@@ -883,10 +900,12 @@ func crouch_key(pressed: bool) -> void:
 func _physics_process(delta: float) -> void:
 	if actor == null or not is_instance_valid(actor) or actor.is_dead:
 		crouch_toggled = false
+		_could_fight = false
 		return
 	var cmd := actor.cmd
 	cmd.clear_one_shots()
 	cmd.phone = phone_out
+	_keep_helmet(cmd)
 	if input_blocked:
 		# Hands on the phone: let go of everything, keep facing the same way.
 		cmd.move = Vector2.ZERO
@@ -1029,6 +1048,43 @@ func _tick_emote(cmd: ActorCommand, delta: float) -> void:
 	if cmd.switch_weapon != -1:
 		_emote_fresh = false
 	cmd.emote = Emotes.number_of(emote_playing) if emote_playing != "" else 0
+
+
+## Takes the worn helmet off onto the hip, or puts it back on (the watch's
+## helmet icon). It takes both hands (Caleb's call), so a weapon in hand is
+## put away first, as with the holster key. Nothing to do bare-headed.
+func toggle_helmet() -> void:
+	if actor != null and is_instance_valid(actor) and actor.visor.enabled and not actor.is_dead:
+		helmet_off = not helmet_off
+		if actor.get_active_weapon() != null and not is_riding():
+			_pending_switch = ActorCommand.HOLSTER
+
+
+## Sends whether the helmet is off (`helmet_off`), putting it back on by
+## itself where it should go back on (see `helmet_off`).
+func _keep_helmet(cmd: ActorCommand) -> void:
+	var worn := actor.visor.item_id if actor.visor.enabled else ""
+	if actor != _helmet_actor:
+		# A new body (a trip, a new life): one that comes with the same
+		# helmet still has it on the hip, already clipped there.
+		_helmet_actor = actor
+		if helmet_off and worn == _helmet_seen and worn != "":
+			actor.helmet_stow = 1.0
+			actor.visor.stowed = true
+			ActionPose.of(actor).helmet = 1.0
+	if worn != _helmet_seen:
+		helmet_off = false
+		_helmet_seen = worn
+	var can_fight := not actor.weapons_locked and not Visor.peaceful(actor)
+	if can_fight and not _could_fight:
+		helmet_off = false
+	_could_fight = can_fight
+	if worn == "":
+		helmet_off = false
+	elif not actor.visor.working():
+		# Nothing to look through: a zoom or thermal left on starts off.
+		_visor_level = 0
+	cmd.helmet_off = helmet_off
 
 
 ## Starts looking over what is in the hand: the weapon drawn, or a toy

@@ -47,7 +47,7 @@ static func _watch(t: Node) -> void:
 	t.check(slot.id == "emote" and slot.count == Emotes.IDS.size() and slot.index == 2
 			and str(slot.detail).begins_with("Point") and "playing" in str(slot.detail) and "wheel" in slot.hints,
 			"the icon turns through every emote and says which one is playing")
-	var home := Hud.base_watch_slots("Home base", {}, [], 0, 1, "")
+	var home := Hud.base_watch_slots("Home base", {}, [], 0, null, 1, "")
 	t.check(home.size() == Hud.Wrist.SLOTS.size() and home[Hud.Wrist.SLOTS.find("emote")].id == "emote"
 			and home[Hud.Wrist.SLOTS.find("emote")].index == 1, "the emote icon works at home too")
 

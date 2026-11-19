@@ -220,6 +220,30 @@ var vitals_offset := Vector3(0.0, 0.05, 0.172)
 var helmet_offset := Vector3(0.0, 0.1, 0.0)
 var helmet_size := Vector3(0.27, 0.31, 0.31)
 var helmet_shell_color := Color(0.22, 0.23, 0.25)
+## A helmet taken off (`Actor.helmet_stow`) is clipped to the belt at the
+## back of the left hip, behind a sheathed blade (`hip_offset`), its face
+## turned back and a little out and its crown tipped out, so its narrow
+## side is against the hip and it stands clear of the body: its middle this
+## far from the "Hips" bone (actor frame), turned by `helmet_clip_turn`
+## (yaw, then the tip out, radians). Both hands lift it off the head, the
+## weapon hand letting go on the way down (`ActionPose.helmet_both`), and
+## the off hand takes it there and back (`ActionPose.helmet_hand`), holding it by its side (`helmet_grip_out`
+## out from its middle, `helmet_grip_drop` under it) and lifting it ahead
+## and out round the body on the way (`helmet_swing_ahead`, `helmet_swing`).
+## One model in every view, as on the head.
+var helmet_clip := Vector3(-0.26, 0.06, 0.19)
+var helmet_clip_turn := Vector2(PI * 0.85, 0.25)
+var helmet_grip_out := 0.13
+## How far below the helmet's middle the wrist goes, so the fingers close
+## round its side rather than reaching over it.
+var helmet_grip_drop := 0.09
+var helmet_swing := 0.08
+var helmet_swing_ahead := 0.4
+## Where a hand hangs before it reaches for the helmet (actor frame, the
+## off hand's side; scaled with the body's height), and how far ahead the
+## reach bows out on its way up.
+var helmet_hand_rest := Vector3(0.21, 1.06, -0.06)
+var helmet_reach_ahead := 0.18
 ## A worn armor frame is plates over the chest (on the "Chest" bone, front
 ## toward -Z), and from medium up a belly plate and shoulder pads (on the
 ## upper arm bones); heavy adds a collar. One model in every view.
@@ -312,7 +336,14 @@ var _rig_id := ""
 var _rig_holders: Array[Node3D] = []
 var _rig_back: Node3D
 var _vitals: Node3D
+## The helmet: `_helmet` is what holds it on the head, `_helmet_clip` on the
+## hip, `_helmet_carry` in the hand between, and `_helmet_model` the one
+## model, moved between them (`_place_helmet`).
 var _helmet: Node3D
+var _helmet_clip: Node3D
+var _helmet_carry: Node3D
+var _helmet_model: Node3D
+var _helmet_at := ""
 ## The body's sun shadow, drawn in one piece (`_update_shadow_body`), and
 ## what it was made from.
 var _shadow_body: MeshInstance3D
@@ -722,8 +753,9 @@ func _gear_shadows(on: bool) -> void:
 	for worn: Variant in _stowed.values():
 		if worn != null and is_instance_valid(worn):
 			holders.append(worn)
-	if _helmet != null and is_instance_valid(_helmet):
-		holders.append(_helmet)
+	for held: Node3D in [_helmet, _helmet_clip, _helmet_carry]:
+		if held != null and is_instance_valid(held):
+			holders.append(held)
 	for part: Variant in _frame_parts:
 		if part != null and is_instance_valid(part):
 			holders.append(part)
@@ -1461,7 +1493,8 @@ static func helmet_light(v: Visor) -> String:
 
 
 ## Puts the worn helmet on the head, rebuilt when another goes on, and hides
-## the head under it. Bare-headed, the head shows again.
+## the head under it. Bare-headed, the head shows again, and so it does with
+## the helmet taken off and clipped to the hip (`_place_helmet`).
 func _update_helmet() -> void:
 	var id := actor.visor.item_id if actor.visor.enabled else ""
 	# A skin that comes with its own helmet (an exo trooper's) wears it when
@@ -1470,15 +1503,18 @@ func _update_helmet() -> void:
 	if own != "":
 		id = "skin:" + own
 	if id == _helmet_id and (id == "" or is_instance_valid(_helmet)):
+		_place_helmet(own == "")
 		return
 	_helmet_id = id
-	if _helmet != null and is_instance_valid(_helmet):
-		_helmet.queue_free()
+	for held: Node3D in [_helmet, _helmet_clip, _helmet_carry]:
+		if held != null and is_instance_valid(held):
+			held.queue_free()
 	_helmet = null
-	if _skeleton != null:
-		for node in _skeleton.get_children():
-			if node is MeshInstance3D and node.get_meta("slot", "") == "head":
-				(node as MeshInstance3D).visible = id == ""
+	_helmet_clip = null
+	_helmet_carry = null
+	_helmet_model = null
+	_helmet_at = ""
+	_show_head(id == "")
 	if id == "":
 		return
 	var bone: String = "Head" if _skeleton and _skeleton.find_bone("Head") >= 0 else _def.get("neck", "")
@@ -1487,8 +1523,160 @@ func _update_helmet() -> void:
 	var tier := actor.visor.tier if own == "" else 1
 	_helmet = _hang(build_helmet(mode, glass, helmet_size, helmet_shell_color, tier),
 			"Helmet", bone, helmet_offset, Vector3(0.0, _def.get("height", 1.8) * 0.93, 0.0) + helmet_offset, true)
+	_helmet_model = _helmet.find_child("HelmetModel", true, false) as Node3D
+	if _helmet_model == null:
+		_helmet_model = _helmet.get_child(0).get_child(0) as Node3D if _helmet is BoneAttachment3D \
+				else _helmet.get_child(0) as Node3D
+	_helmet_at = "head"
+	if own == "":
+		# Somewhere to clip it and something to carry it in, made with it.
+		var clip := Node3D.new()
+		clip.name = "Clip"
+		_helmet_clip = _hang(clip, "HelmetClip", _def.get("hip_bone", ""), helmet_clip,
+				Vector3(0.0, _def.get("height", 1.8) * 0.5, 0.0) + helmet_clip)
+		var holder := _held_part(_helmet_clip)
+		holder.transform = holder.transform * Transform3D(Basis(Vector3.UP, helmet_clip_turn.x)
+				* Basis(Vector3.BACK, -helmet_clip_turn.y), Vector3.ZERO)
+		_helmet_carry = Node3D.new()
+		_helmet_carry.name = "HelmetCarry"
+		add_child(_helmet_carry)
+		_helmet_carry.top_level = true
+		_place_helmet(true)
 	if _detail_every > 1:
 		_gear_shadows(false)
+
+
+## Shows the head's own meshes (the face, the hair), or hides them under a
+## helmet.
+func _show_head(on: bool) -> void:
+	if _skeleton == null:
+		return
+	for node in _skeleton.get_children():
+		if node is MeshInstance3D and node.get_meta("slot", "") == "head":
+			(node as MeshInstance3D).visible = on
+
+
+## Heads in the packs that are headgear, not a face (a helmet and visor, a
+## void suit's hood): with the worn helmet taken off, a face shows instead.
+const HEADGEAR_HEADS := {"m": ["Swat", "Spacesuit"], "f": []}
+
+
+## With the helmet off the head (`_place_helmet`), a person whose head part is
+## itself headgear (`HEADGEAR_HEADS`) shows their build's plain face in its
+## place, so a helmet never comes off another helmet; it goes back once the
+## helmet is on. View only: the appearance is untouched.
+func _bare_face(on: bool) -> void:
+	var build: String = _appearance.get("build", "")
+	if _skeleton == null or build == "":
+		return
+	for node in _skeleton.get_children():
+		var part := node as MeshInstance3D
+		if part == null or part.get_meta("slot", "") != "head":
+			continue
+		if on and not _street.has("head") and _appearance.get("head", "") in HEADGEAR_HEADS.get(build, []):
+			_suit_part(part, "head", Human.STARTER[build][0])
+		elif not on and _street.has("head"):
+			_give_back(part, "head")
+
+
+## Puts back the part `_suit_part` took off `slot`.
+func _give_back(part: MeshInstance3D, slot: String) -> void:
+	var kept: Dictionary = _street[slot]
+	_street.erase(slot)
+	_drop_materials(part)
+	part.mesh = kept["mesh"]
+	part.skin = kept["skin"]
+	var mats: Array = kept["mats"]
+	for i in mats.size():
+		part.set_surface_override_material(i, mats[i])
+		if mats[i] is ShaderMaterial:
+			_materials.append(mats[i])
+
+
+## The node a `_hang` holder keeps its part in (moved and turned with it).
+func _held_part(hung: Node3D) -> Node3D:
+	return hung.get_child(0) as Node3D if hung is BoneAttachment3D else hung
+
+
+## Moves the helmet to where `Actor.helmet_stow` has it as shown
+## (`ActionPose.helmet`): on the head, in the off hand on its way, or on its
+## hip clip, and shows the face while it is off the head. In the hand it is
+## carried from the head's place to the clip's along a swing out round the
+## body, and the hand follows it (`helmet_grip`). View only.
+func _place_helmet(may_stow: bool) -> void:
+	if _helmet_model == null or not is_instance_valid(_helmet_model):
+		return
+	var stow := ActionPose.of(actor).helmet if may_stow and _helmet_clip != null else 0.0
+	var at := ActionPose.helmet_place(stow)
+	if at != _helmet_at:
+		var parent: Node3D = _held_part(_helmet) if at == "head" \
+				else (_held_part(_helmet_clip) if at == "hip" else _helmet_carry)
+		_helmet_model.reparent(parent, false)
+		_helmet_model.transform = Transform3D.IDENTITY
+		if at != "head":
+			# Off the head it is no longer left out of first person with it.
+			_unhide(_helmet_model)
+		_show_head(at != "head")
+		_bare_face(at != "head")
+		_helmet_at = at
+	if at == "hand":
+		_helmet_carry.global_transform = helmet_carried(ActionPose.helmet_carry(stow))
+
+
+## Where the helmet is carried at `carry` (0 at the head, 1 on the clip), in
+## the world: between the two places as the body has them now, swung out
+## ahead and to the left on the way, so it comes forward off the face and
+## passes round the shoulder, not through it.
+func helmet_carried(carry: float) -> Transform3D:
+	var head := _held_part(_helmet).global_transform
+	var clip := _held_part(_helmet_clip).global_transform
+	var out := head.interpolate_with(clip, carry)
+	var left := -actor.global_basis.x.normalized()
+	var ahead := -actor.global_basis.z.normalized()
+	# Lifted forward off the face first, so it passes low through the view.
+	out.origin += (left * helmet_swing + ahead * helmet_swing_ahead) * sin(PI * carry)
+	return out
+
+
+## Where a hand holds the helmet, in the world, or null with none to hold:
+## by its left side (`side` -1, the off hand) or its right (1, the weapon
+## hand), wherever it is (`WeaponArm` reaches for it).
+func helmet_grip(side := -1.0) -> Variant:
+	if _helmet_model == null or not is_instance_valid(_helmet_model) or _helmet_clip == null:
+		return null
+	var stow := ActionPose.of(actor).helmet
+	var place := ActionPose.helmet_place(stow)
+	var middle: Vector3
+	if place == "hand":
+		middle = helmet_carried(ActionPose.helmet_carry(stow)).origin
+	else:
+		middle = _held_part(_helmet if place == "head" else _helmet_clip).global_position
+	return middle + actor.global_basis.x.normalized() * helmet_grip_out * side - actor.global_basis.y.normalized() * helmet_grip_drop
+
+
+## Where a hand reaches on its way to the helmet, in the world: `u` 0 is
+## the hand hanging at its side (`helmet_hand_rest`), 1 on its grip
+## (`helmet_grip`). The way bows out ahead, so the arm comes up in front
+## of the body as a person's does, never out to the side.
+func helmet_reach(side: float, u: float) -> Variant:
+	var grip: Variant = helmet_grip(side)
+	if grip == null:
+		return null
+	var scale := float(_def.get("height", 1.8)) / 1.8
+	var rest := actor.global_transform * (Vector3(helmet_hand_rest.x * side, helmet_hand_rest.y * scale, helmet_hand_rest.z))
+	var ahead := -actor.global_basis.z.normalized()
+	var t := smoothstep(0.0, 1.0, u)
+	return rest.lerp(grip as Vector3, t) + ahead * helmet_reach_ahead * sin(PI * t)
+
+
+## Puts what `hide_head` moved to the head's layer back on its own.
+func _unhide(root: Node) -> void:
+	var bit := 1 << (MirrorScript.HEAD_LAYER - 1)
+	for node in root.find_children("*", "VisualInstance3D", true, false):
+		var visual := node as VisualInstance3D
+		if visual.layers == bit:
+			visual.layers = visual.get_meta("layers_before", 1)
+		_head_hidden.erase(visual)
 
 
 ## The helmet model for a visor `mode` (see `Visor`): a shell of `size` round
@@ -2313,16 +2501,7 @@ func _wear_undersuit(style: Dictionary) -> void:
 			if on and not _street.has(slot) and _appearance.get(slot, "") != outfit:
 				_suit_part(part, slot, outfit)
 			elif not on and _street.has(slot):
-				var kept: Dictionary = _street[slot]
-				_street.erase(slot)
-				_drop_materials(part)
-				part.mesh = kept["mesh"]
-				part.skin = kept["skin"]
-				var mats: Array = kept["mats"]
-				for i in mats.size():
-					part.set_surface_override_material(i, mats[i])
-					if mats[i] is ShaderMaterial:
-						_materials.append(mats[i])
+				_give_back(part, slot)
 	for mat in _materials:
 		mat.set_shader_parameter("suit", 1.0 if on else 0.0)
 		if on:
@@ -2449,7 +2628,7 @@ static func _piece(root: Node3D, piece_name: String, mesh: PrimitiveMesh, mat: M
 
 
 func _update_vitals() -> void:
-	var worn := actor.visor.enabled and not actor.is_dead
+	var worn := actor.visor.working() and not actor.is_dead
 	if not worn:
 		if _vitals:
 			_vitals.visible = false
