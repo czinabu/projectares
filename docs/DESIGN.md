@@ -1571,10 +1571,18 @@ heavies.
 
 | Scrap blade against | Start 3 m away | Start 12 m away |
 | --- | --- | --- |
-| Outer soldier | 90% win in 2.9 s | 78% win in 4.4 s |
-| Core soldier | 68% win in 3.3 s | 57% win in 4.4 s |
-| Outer heavy | 35% win | 55% win |
-| Rival raider (gun, no flinch) | 32% win | 20% win |
+| Outer soldier | 100% win in 2.7 s | 80% win in 4.3 s |
+| Core soldier | 78% win in 3.4 s | 52% win in 5.1 s |
+| Outer heavy | 45% win | 38% win |
+| Rival raider (gun, no flinch) | 38% win | 22% win |
+
+After the timing pass (the table above): the reference times its guard as
+a person does, raising it `BotBrain.guard_lead` before a swing it read
+lands rather than holding it through a heavy's windup, answers a kick it
+reads with a swing, and keeps its guard up between swings only against a
+gun (no held drain there). Against the core heavy at 12 and 25 m it now
+wins about a quarter of its duels (2-10% before), since a bot no longer
+holds a free guard.
 
 Before the pass a blade won none of these against soldiers, even from 3 m:
 a rifle killed in 2.6 s while the bot reference swung about once a second.

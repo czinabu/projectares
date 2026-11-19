@@ -32,6 +32,12 @@ var guard_skill := 0.4
 ## answer). 1 is the default cadence.
 var melee_tempo := 1.0
 var guard_reaction := 0.22
+## A guard read in time goes up this long before the swing lands, as a
+## person times it: inside `MeleeWeapon.timed_window`, give or take
+## `guard_lead_jitter`, so a long heavy is not met by a guard held up (and
+## drained) through its whole windup.
+var guard_lead := 0.28
+var guard_lead_jitter := 0.08
 ## Melee bots fight like people (DESIGN.md "Melee bots"): a share of their
 ## attacks are held heavies (more against a raised guard, which a heavy
 ## breaks), some charges are feints that hang on the charge to draw an
@@ -158,6 +164,10 @@ var _melee_wait := 0.0
 var _hold_left := 0.0
 ## The heavy under way is a feint: let it go into a guard part way.
 var _feint_heavy := false
+var _kick_seen := false
+var _kick_answer := false
+## This read's `guard_lead`, jittered.
+var _lead_now := 0.28
 var _dash_wait := 0.0
 var _flinch_left := 0.0
 ## Recoil reaches a bot's aim too (`Gun.recoil_for`): it pulls against
@@ -681,6 +691,17 @@ func _attack_melee(cmd: ActorCommand, blade: MeleeWeapon, delta: float) -> void:
 	if _guard_against(cmd, blade, foe_blade, dist, delta):
 		return
 
+	# A kick read in time is answered with a swing, which beats it.
+	var kicking := foe_blade != null and foe_blade.is_kicking() and foe_blade._windup_left > 0.0
+	if kicking and not _kick_seen:
+		_kick_answer = _rng.randf() < guard_skill
+	_kick_seen = kicking
+	if kicking and _kick_answer and dist <= blade.reach * 0.9 and not blade.is_busy() \
+			and foe_blade._windup_left > blade.light_windup * 0.6:
+		_kick_answer = false
+		cmd.primary_pressed = true
+		_melee_wait = _rng.randf_range(0.3, 0.5)
+		return
 	# An opening: the foe is recovering from a swing, staggered, or this bot
 	# just parried. Strike now rather than wait out the tempo.
 	var opening := actor.riposte_left > 0.0 or target.stagger_left > 0.0 \
@@ -688,6 +709,12 @@ func _attack_melee(cmd: ActorCommand, blade: MeleeWeapon, delta: float) -> void:
 	var may_swing := _melee_wait <= 0.0 or opening
 	if dist <= blade.reach * 0.9 and may_swing and _seen_time >= reaction_time and not blade.is_busy():
 		_start_attack(cmd, blade, opening)
+		return
+	# Between swings against a gun the guard stays up: rounds cost no held
+	# drain, and each one the guard stops is paid for on its own.
+	if target.get_active_weapon() is Gun and dist <= blade.reach * 1.6 and _guard_delay <= 0.0 \
+			and _seen_time >= reaction_time and not blade.is_winding_up():
+		cmd.secondary = true
 
 
 ## Reads a swing coming from `foe_blade` and keeps the guard up through it.
@@ -697,6 +724,7 @@ func _guard_against(cmd: ActorCommand, blade: MeleeWeapon, foe_blade: MeleeWeapo
 	var threatened := foe_blade != null and foe_blade.threat_dir() >= 0 and dist <= foe_blade.reach * 1.5
 	if threatened and not _threat_seen:
 		_read_left = guard_reaction if _rng.randf() < guard_skill else -1.0
+		_lead_now = guard_lead + _rng.randf_range(-guard_lead_jitter, guard_lead_jitter)
 		# A heavy read in time may be dodged rather than met.
 		if _read_left >= 0.0 and foe_blade._windup_kind == "heavy" and _rng.randf() < melee_dodge_chance \
 				and actor.stamina >= actor.dash_stamina:
@@ -712,6 +740,9 @@ func _guard_against(cmd: ActorCommand, blade: MeleeWeapon, foe_blade: MeleeWeapo
 	_read_left = maxf(0.0, _read_left - delta)
 	if _read_left > 0.0:
 		return false
+	if not blade.is_blocking() and foe_blade._windup_left > _lead_now:
+		# Read, but too early to raise it: wait for the swing.
+		return false
 	cmd.secondary = true
 	return true
 
@@ -723,7 +754,9 @@ func _start_attack(cmd: ActorCommand, blade: MeleeWeapon, opening: bool) -> void
 	if uses_kit:
 		# A person chains the three-hit combo, then breathes.
 		_melee_wait = _rng.randf_range(0.3, 0.45) if blade.combo_step < 2 else _rng.randf_range(0.8, 1.2)
-	_guard_delay = 0.3
+	# Against a blade the guard comes back up as soon as a swing is read;
+	# against a gun a guard straight back up only costs the combo its pace.
+	_guard_delay = 0.75 if target.get_active_weapon() is Gun else 0.3
 	var guarded := false
 	var foe_blade := target.get_active_weapon() as MeleeWeapon
 	if foe_blade != null:
