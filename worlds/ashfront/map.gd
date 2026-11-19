@@ -184,6 +184,12 @@ const SUNSHAFTS := preload("res://worlds/ashfront/sunshafts.gd")
 ## skyline, glowing this much when quiet and in all-out war.
 const GLOW_RING := 560.0
 const GLOW_STRENGTH := Vector2(0.35, 0.75)
+## The Ashland's land past the rim (DESIGN.md "Planet kit"): its rise and
+## ridges near the map, kept under the skyline's floor.
+const FAR_RIM := 26.0
+const FAR_RIDGES := 10.0
+## The planet's rocks stand this far past the field's edge, or further.
+const PROPS_PAST_FIELD := 12.0
 ## Flashes on the horizon a second: when quiet, and in all-out war.
 const FLASH_RATE := Vector2(0.25, 3.0)
 const FLASH_TIME := 0.45
@@ -237,8 +243,10 @@ var _horizon_glow: ShaderMaterial
 ## The distant war heard (view only; null where `Look` is off).
 var _soundscape: Soundscape
 
-@onready var GROUND := Look.surface("ground", {"tint": Color(0.36, 0.29, 0.26), "blend": "asphalt",
-		"blend_amount": 0.45, "grime": 0.6, "saturation": 0.3, "scale": 0.16})
+## The planet the map stands on (`WorldDef.planet_type`), set before it
+## enters the tree; a map made on its own (as the checks do) takes the
+## Ashland.
+var planet: PlanetType
 @onready var WALL := Look.surface("concrete", {"tint": Color(0.45, 0.4, 0.38), "grime": 0.8, "scale": 0.12})
 @onready var COVER_METAL := Look.surface("metal", {"tint": Color(0.7, 0.42, 0.28), "scale": 0.45})
 @onready var WORKS_METAL := Look.surface("metal", {"tint": Color(0.52, 0.48, 0.45), "grime": 0.8, "scale": 0.3})
@@ -248,6 +256,8 @@ var _soundscape: Soundscape
 
 
 func _ready() -> void:
+	if planet == null:
+		planet = PlanetTypes.get_type("ashland")
 	_seed_layout()
 	_build_environment()
 	nav_region = NavigationRegion3D.new()
@@ -348,34 +358,11 @@ func _process(delta: float) -> void:
 
 
 func _build_environment() -> void:
-	# Smouldering, even when it is quiet: a rust-red sky choked with smoke
-	# and a low, dull sun, so the Forge, the cracks and the fires are what
-	# light the field. Haze only toward the horizon; depth fog (fog_density
-	# here is how opaque the far end gets, not an exponential haze) leaves
-	# engagement range clear.
-	Look.atmosphere(self, {
-		"sky_tint": Color(0.62, 0.3, 0.22),
-		"sky_saturation": 0.5,
-		"sky_energy": 0.5,
-		"sky_rotation": 0.2,
-		"fog_color": Color(0.3, 0.15, 0.11),
-		"fog_density": 0.66,
-		"fog_depth_begin": 64.0,
-		"fog_depth_end": 340.0,
-		"fog_depth_curve": 1.3,
-		"fog_height": 1.1,
-		"fog_height_density": 0.05,
-		"haze_height": 0.3,
-		"sun_scatter": 0.3,
-		"sun_color": Color(1.0, 0.55, 0.36),
-		"sun_energy": 1.6,
-		"sun_angles": Vector3(-28, 38, 0),
-		"ambient_color": Color(0.55, 0.43, 0.42),
-		"ambient_energy": 1.65,
-		"exposure": 1.4,
-		"saturation": 0.88,
-		"contrast": 1.18,
-	}, {
+	# The Ashland (DESIGN.md "Planet kit"): smouldering even when it is
+	# quiet, a rust-red sky choked with smoke and a low, dull sun, so the
+	# Forge, the cracks and the fires light the field; its storm mood is
+	# the thick of an ash storm. The war mood is Ashfront's own.
+	Planet.atmosphere(self, planet, {
 		# All-out war: a blood-red and black sky, the horizon closing in and
 		# the sun all but gone, but fog does not start inside 28 m and is not
 		# solid before 120 m, so a fight at 30–50 m stays readable.
@@ -399,26 +386,6 @@ func _build_environment() -> void:
 		"exposure": 1.35,
 		"saturation": 0.72,
 		"contrast": 1.16,
-		"glow": 0.9,
-	}, {
-		# The thick of an ash storm (DESIGN.md "Weather: ash storms"): a body
-		# is a shape at 30 m, faint at 45 m and gone by 70 m (Caleb's pick).
-		# Look.soften_weather keeps it from closing in further.
-		"sky_tint": Color(0.35, 0.18, 0.13),
-		"sky_energy": 0.35,
-		"fog_color": Color(0.36, 0.2, 0.14),
-		"fog_density": 0.985,
-		"fog_depth_begin": 4.0,
-		"fog_depth_end": 55.0,
-		"fog_depth_curve": 0.8,
-		"haze_height": 0.9,
-		"sun_color": Color(1.0, 0.55, 0.35),
-		"sun_energy": 0.5,
-		"ambient_color": Color(0.6, 0.42, 0.36),
-		"ambient_energy": 1.6,
-		"exposure": 1.3,
-		"saturation": 0.75,
-		"contrast": 1.05,
 		"glow": 0.9,
 	})
 	Look.weather(self, "embers", 45.0)
@@ -494,7 +461,7 @@ func _build_ground() -> void:
 	var collision: PackedFloat32Array = _ground_shared["collision"]
 	terrain.heights = _ground_shared["heights"]
 	_ground_lock.unlock()
-	terrain.build(GROUND, collision)
+	terrain.build(Planet.ground_material(planet), collision)
 	nav_region.add_child(terrain)
 	# The rim is too steep to climb, and these stop anyone flying over it.
 	var edge := terrain.extent() * 0.5 - 6.0
@@ -2242,6 +2209,7 @@ func _dress_horizon(art: Node3D) -> void:
 	ring.position = Vector3(0, 110.0, 0)
 	ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	art.add_child(ring)
+	_far_land(art)
 	var floor_y := RIM_HEIGHT - 8.0
 	var at := func(angle_deg: float, reach: float, up := 0.0) -> Vector3:
 		var a := deg_to_rad(angle_deg)
@@ -2337,3 +2305,23 @@ func _plume(at: Vector3, width: float) -> GPUParticles3D:
 	mat.initial_velocity_max = 10.0
 	plume.visibility_aabb = AABB(Vector3(-150, -10, -150), Vector3(300, 260, 300))
 	return plume
+
+
+## Past the rim the Ashland's own land runs on to the horizon, under the
+## skyline and the giants; none of it collides. It is kept low near the
+## map (`FAR_RIM`, `FAR_RIDGES`) so the skyline still stands on it rather
+## than in it. The planet's rocks stand only on the rim's slope and out
+## past it (`FIELD` plus `PROPS_PAST_FIELD`), never where anyone fights.
+func _far_land(art: Node3D) -> void:
+	var recipe := planet.terrain.duplicate()
+	recipe["rim"] = FAR_RIM
+	recipe["ridge_amp"] = FAR_RIDGES
+	recipe["craters"] = 0
+	var land := PlanetTerrain.new(recipe, LAYOUT_SEED)
+	var half := terrain.extent() * 0.5
+	art.add_child(Planet.horizon(planet, land, half))
+	var height_of := func(x: float, z: float) -> float:
+		return terrain.height_at(x, z) if maxf(absf(x), absf(z)) < half else land.height_at(x, z)
+	var clear := func(x: float, z: float) -> bool:
+		return maxf(absf(x), absf(z)) > FIELD + PROPS_PAST_FIELD
+	PlanetProps.scatter(art, planet, height_of, half, LAYOUT_SEED + 3, clear)
