@@ -4375,9 +4375,11 @@ func _bind_sheet(out_dir: String, id: String) -> void:
 					foe.cmd.secondary = true
 				await get_tree().physics_frame
 				tick += 1
-				player.cmd.primary_pressed = false
-				player.cmd.tertiary_pressed = false
-			print("DBGB ", move, " t", tick, " wind ", blade.is_winding_up(), " kind ", blade._windup_kind, " arc ", blade.swing_arc(), " busy ", blade.is_busy(), " stag ", player.stagger_left, " lock ", player.weapons_locked, " foeblk ", guard.is_blocking(), " d ", player.global_position.distance_to(foe.global_position), " bind ", ActionPose.of(player).bind_left)
+				# `physics_frame` comes before the tick runs: a press is
+				# let go only once a tick has seen it.
+				if tick >= 2:
+					player.cmd.primary_pressed = false
+					player.cmd.tertiary_pressed = false
 			# Film from a few ticks before the contact through the bind.
 			if col == 0:
 				while tick < contact_tick - 4:

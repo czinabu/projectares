@@ -95,12 +95,17 @@ var step_rate := 16.0
 var footwork := 0.0
 ## Blades meet at one point (Caleb's call, so a guarded strike reads
 ## clean): a strike met by a guard sets `bind` on both fighters, and for
-## `BIND_TIME` each arm is pulled so the point `bind_share` up its blade
-## lands on `bind_at`, then lets go. View only.
+## `BIND_TIME` each blade turns in the fist to point at `bind_at`
+## (`bind_turn`, `WeaponArm.hold_weapon`) and the arm is pulled so the point
+## `bind_share` up it lands there, then lets go. View only.
 const BIND_TIME := 0.16
-var bind_share := 0.55
+var bind_share := 0.7
 var bind_at := Vector3.ZERO
 var bind_left := 0.0
+## How far the blade is turned onto `bind_at`: in fast, out slower.
+var bind_turn := 0.0
+var bind_turn_in := 30.0
+var bind_turn_out := 7.0
 var _bind_fix := Vector3.ZERO
 ## Each weapon fights its own way (Caleb's call: every attack and guard
 ## matches how the weapon is really used). A technique (`technique`, picked
@@ -747,7 +752,9 @@ func bind(at: Vector3) -> void:
 ## bind lasts (an offset in the aim frame, like `arm_reach`), and eases it
 ## off after.
 func _update_bind(melee: MeleeWeapon, delta: float) -> void:
-	if melee == null or bind_left <= 0.0:
+	var binding := melee != null and bind_left > 0.0
+	bind_turn = move_toward(bind_turn, 1.0 if binding else 0.0, delta * (bind_turn_in if binding else bind_turn_out))
+	if not binding:
 		bind_left = 0.0
 		_bind_fix = _bind_fix.lerp(Vector3.ZERO, 1.0 - exp(-10.0 * delta))
 		return
@@ -777,7 +784,9 @@ static func blade_point(melee: MeleeWeapon, share: float) -> Variant:
 		if top <= 0.0:
 			return null
 		melee.visual.set_meta("blade_top", top)
-	return melee.visual.global_transform * Vector3(0.0, float(melee.visual.get_meta("blade_top")) * share, 0.0)
+	# As drawn, never where a physics tick parked the hand (`shown_global`).
+	var point := melee.visual.global_transform * Vector3(0.0, float(melee.visual.get_meta("blade_top")) * share, 0.0)
+	return shown_global(melee, Transform3D(Basis.IDENTITY, point)).origin
 
 
 ## The carried gun's lag behind the body: a damped spring pulled by how the
@@ -1064,7 +1073,7 @@ static func sight_shown(gun: Gun) -> Vector3:
 ## Where something carried on `gun` (given by its global transform as the
 ## node stands) is drawn this frame, read the same way as the sight: from
 ## the hand as it was posed, never where a physics tick parked it.
-static func shown_global(gun: Gun, global: Transform3D) -> Transform3D:
+static func shown_global(gun: Weapon, global: Transform3D) -> Transform3D:
 	var hand := gun.visual.get_parent() as Node3D
 	if hand == null or not hand.has_meta("shown_local"):
 		return global

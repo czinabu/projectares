@@ -1016,7 +1016,7 @@ func _on_blade_contact(target: Actor, outcome: String, _at: Vector3, blade: Mele
 	ActionPose.of(actor).bind(at)
 	ActionPose.of(target).bind(at)
 	if actor.is_inside_tree():
-		Fx.burst(actor.get_parent(), at, 0.3 if outcome == "block" else 0.45,
+		Fx.burst(actor.get_parent(), at, 0.1 if outcome == "block" else 0.16,
 				Color(1.0, 0.85, 0.4) if outcome == "parry" else Color(0.55, 0.75, 1.0))
 
 

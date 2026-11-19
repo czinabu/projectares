@@ -1131,6 +1131,14 @@ func hold_weapon() -> void:
 		var blade := (actor.hand.global_basis.orthonormalized() * melee.visual.transform.basis.orthonormalized() * Vector3.UP).normalized()
 		var settle := Quaternion(blade, fist)
 		actor.hand.global_basis = Basis(Quaternion.IDENTITY.slerp(settle, _grip_weight)) * actor.hand.global_basis.orthonormalized()
+		if shared and pose.bind_turn > 0.0:
+			# In a bind the blade turns in the fist to point at the meeting
+			# spot, so both blades cross there (`ActionPose.bind`).
+			var to_bind := pose.bind_at - grip
+			if to_bind.length() > 0.05:
+				var along := (actor.hand.global_basis.orthonormalized() * melee.visual.transform.basis.orthonormalized() * Vector3.UP).normalized()
+				var meet := Quaternion(along, to_bind.normalized())
+				actor.hand.global_basis = Basis(Quaternion.IDENTITY.slerp(meet, pose.bind_turn)) * actor.hand.global_basis.orthonormalized()
 	var held := grip_offset
 	# A blade's guard and windup poses shift it off the hand node. The arm
 	# reaches for that spot instead, so take the shift back out here.
