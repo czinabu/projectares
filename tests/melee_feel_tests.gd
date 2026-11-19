@@ -28,7 +28,7 @@ static func run(t: Node) -> void:
 	await t.frames(4)
 	t.check(blade.is_busy(), "the blade is busy right after a swing starts")
 	await _tap(t, p, 1)
-	await t.frames(int((blade.light_windup + blade.light_recover) * 60.0) + int(blade.light_windup * 60.0) + 8)
+	await t.frames(int((blade.light_windup + blade.light_tell + blade.light_recover) * 60.0) + int((blade.light_windup + blade.light_tell) * 60.0) + 8)
 	t.check(hits[0] == 2, "a press made mid-swing is kept and lands as the next cut")
 	t.check(blade.combo_step == 2, "a kept press carries on the combo")
 
@@ -47,9 +47,9 @@ static func run(t: Node) -> void:
 	await t.frames(90)
 	Arsenal._reset(foe)
 	await _tap(t, p, 6)
-	t.check(blade.is_winding_up() and blade._windup_left <= blade.light_windup * blade.light_windup_floor + 0.001,
+	t.check(blade.is_winding_up() and blade._windup_left <= blade.light_windup + blade.light_tell - 0.09,
 			"a tap held for a moment swings sooner")
-	await t.frames(10)
+	await t.frames(int((blade.light_windup + blade.light_tell) * 60.0) + 4)
 	t.check(blade.recover_progress() >= 0.0 and blade.recover_progress() < 1.0,
 			"the recovery after a strike can be seen")
 	await t.frames(60)
@@ -93,7 +93,6 @@ static func run(t: Node) -> void:
 	foe.weapons.clear()
 	foe.equip_weapon(foe_blade)
 	foe.active_weapon_index = 0
-	foe.cmd.stance = MeleeWeapon.Dir.OVERHEAD
 	foe.cmd.secondary = true
 	await t.frames(30)
 	seen.clear()
@@ -105,15 +104,14 @@ static func run(t: Node) -> void:
 	# A heavy being held back shows its side before the windup.
 	await t.frames(30)
 	Arsenal._place(p, foe, 2.0)
-	# A swing to the foe's right comes from its left, at the player's right.
-	foe.cmd.stance = MeleeWeapon.Dir.RIGHT
 	foe.cmd.primary = true
 	foe.cmd.primary_pressed = true
 	await t.frames(1)
 	foe.cmd.primary_pressed = false
 	await t.frames(4)
-	t.check(foe_blade.is_charging() and Hud.incoming_side(p) == MeleeWeapon.Dir.RIGHT,
-			"a heavy being charged warns which side to guard")
+	t.check(foe_blade.is_charging() and foe_blade.threat_dir() >= 0
+			and Hud.incoming_side(p) == MeleeWeapon.mirror(foe_blade.threat_dir()),
+			"a heavy being charged shows the side it comes from")
 	foe.cmd.primary = false
 	await t.frames(60)
 

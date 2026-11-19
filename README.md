@@ -267,7 +267,9 @@ SQLite database, `accounts.sqlite`, plus the clan and phone records).
 
 To feel what a bad connection is like without leaving your desk, start the
 game (not the server) with `-- --lag 120 --loss 10`. That adds 120 ms of delay
-each way and drops 10 percent of your input packets. Your own movement should
+each way and drops 10 percent of your input packets. Add `--jitter 60` to make
+the server's updates arrive unevenly, up to 60 ms late and then several at
+once: other players should still move evenly. Your own movement should
 still feel immediate, and so should riding a bike. Shots are lag compensated:
 aim straight at what you see and the server checks the hit against where the
 target was on your screen. Start a server with `--no-rewind` to feel the

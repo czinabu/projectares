@@ -9,6 +9,8 @@ const Vfx := preload("res://core/visual/vfx.gd")
 const WeaponArm := preload("res://core/visual/weapon_arm.gd")
 const RigModel := preload("res://core/visual/rig_model.gd")
 const HelmetModel := preload("res://core/visual/helmet_model.gd")
+const ArmorModel := preload("res://core/visual/armor_model.gd")
+const Human := preload("res://core/visual/human.gd")
 const Locomotion := preload("res://core/visual/locomotion.gd")
 const Handheld := preload("res://core/phone/handheld.gd")
 const UiTheme := preload("res://core/visual/ui_theme.gd")
@@ -314,6 +316,10 @@ var _helmet: Node3D
 var _frame_parts: Array[Node3D] = []
 ## The frame `_frame_parts` were built for; "" for none.
 var _frame_id := ""
+## The clothes the undersuit replaced, by slot, to give back (`_wear_undersuit`).
+var _street := {}
+## The person this body is dressed as (empty for a skin that is not a person).
+var _appearance := {}
 ## The helmet `_helmet` was built for; "" while bare-headed.
 var _helmet_id := ""
 ## A walker's tracking beam (`_update_beam`) and how long it has held its aim.
@@ -434,6 +440,7 @@ func _ready() -> void:
 		return
 	var model: Node3D = built["model"]
 	_materials = built["materials"]
+	_appearance = built.get("chosen", {})
 	add_child(model)
 	# Pack models face +Z. Actors face -Z.
 	rotation.y = PI
@@ -444,7 +451,7 @@ func _ready() -> void:
 			var found := _find_animation(def["anims"][key])
 			if found != "":
 				_anims[key] = found
-				if key != "death" and key != "attack":
+				if key not in ["death", "attack", "roll", "kick"]:
 					_player.get_animation(found).loop_mode = Animation.LOOP_LINEAR
 		_play("idle")
 		_player.advance(0.0)
@@ -707,7 +714,21 @@ func _update(delta: float) -> void:
 	if actor.is_dead:
 		_play("death")
 		return
-	if melee and melee.is_winding_up() and _attack_left <= 0.0:
+	if actor.dodge_left > 0.0 and actor.dodge_shown == "roll" and _anims.has("roll"):
+		# The evade with no rig: a roll along the ground, the clip timed to it.
+		if _current != "roll":
+			var length := _player.get_animation(_anims["roll"]).length
+			_play("roll", length / maxf(actor.roll_time, 0.05))
+			_player.seek(0.0, true)
+		return
+	if melee and melee.is_kicking() and _current != "kick" and _anims.has("kick"):
+		# The kick is the body's: the clip has the legs, timed to land with it.
+		var kick_time := melee.kick_windup + melee.kick_recover
+		_attack_left = kick_time
+		_current = ""
+		_play("kick", _player.get_animation(_anims["kick"]).length / maxf(kick_time, 0.05))
+		_player.seek(0.0, true)
+	if melee and melee.is_winding_up() and not melee.is_kicking() and _attack_left <= 0.0:
 		_attack_left = 0.6
 		_current = ""
 		_play("attack", 1.3)
@@ -1013,6 +1034,35 @@ func is_airborne() -> bool:
 
 ## A touchdown: starts the landing squat. Called for remote players too,
 ## whose landing this game simulates from their commands.
+## A strike from this body met a guard: both blades are drawn meeting at
+## one point between the two (`ActionPose.bind`), chest high and out on the
+## side the swing comes from, and the spark is struck there. View only.
+func _on_blade_contact(target: Actor, outcome: String, _at: Vector3, blade: MeleeWeapon) -> void:
+	if outcome == "hit" or target == null or not is_instance_valid(target) or not is_instance_valid(actor):
+		return
+	var at := bind_point(actor, target, blade.attack_dir)
+	ActionPose.of(actor).bind(at)
+	ActionPose.of(target).bind(at)
+	if actor.is_inside_tree():
+		Fx.burst(actor.get_parent(), at, 0.1 if outcome == "block" else 0.16,
+				Color(1.0, 0.85, 0.4) if outcome == "parry" else Color(0.55, 0.75, 1.0))
+
+
+## Where two fighters' blades meet for a strike from `dir`: half way between
+## them, chest high, out to the side the swing comes from (higher for one
+## over the top), so every guarded strike meets in the same place.
+static func bind_point(attacker: Actor, defender: Actor, dir: int) -> Vector3:
+	var a := attacker.global_position
+	var b := defender.global_position
+	var across := b - a
+	across.y = 0.0
+	var right := across.normalized().cross(Vector3.UP) if across.length() > 0.01 else attacker.global_basis.x
+	var height := minf(attacker.body_height(), defender.body_height()) * 0.72
+	var side := -MeleeWeapon._side(dir) * 0.22
+	var lift := 0.22 if dir == MeleeWeapon.Dir.OVERHEAD else 0.0
+	return (a + b) * 0.5 + right * side + Vector3(0.0, height + lift, 0.0)
+
+
 func _on_landed(impact_speed: float) -> void:
 	if impact_speed < 1.0 or actor.is_dead or actor.vehicle != null:
 		return
@@ -1088,6 +1138,10 @@ func _dress_weapons() -> void:
 		if gun and not _wired.has(gun):
 			_wired[gun] = true
 			gun.fired.connect(_on_fired.bind(gun))
+		var blade := weapon as MeleeWeapon
+		if blade and not _wired.has(blade):
+			_wired[blade] = true
+			blade.contact.connect(_on_blade_contact.bind(blade))
 		if weapon.visual.has_meta("dressed"):
 			continue
 		weapon.visual.set_meta("dressed", true)
@@ -1364,7 +1418,8 @@ func _update_helmet() -> void:
 ## the head, front toward -Z, glass lit in `glass` and the mode's fitting,
 ## each design its own (`helmet_model.gd`). `tier` 2 adds the Mk2 trim.
 static func build_helmet(mode: String, glass: Color, size: Vector3, shell_color: Color, tier := 1) -> Node3D:
-	return HelmetModel.build(mode, glass, size, shell_color, tier)
+	return HelmetModel.G.cached("helmet:%s:%s:%s:%s:%d" % [mode, glass.to_html(), size, shell_color.to_html(), tier],
+			func() -> Node3D: return HelmetModel.build(mode, glass, size, shell_color, tier))
 
 
 ## An exo trooper's cooling pack, front toward -Z (against the back): a
@@ -1854,47 +1909,54 @@ func _update_beam(delta: float) -> void:
 var beam_reach := 90.0
 
 
-## How heavy a frame looks, from its weight: plate thickness and how far it
-## rides off the body, how far the breastplate wraps and how low it reaches,
-## the belly lames, a back plate (its half-width round the back), shoulder
-## lames and their size, thigh tassets and a gorget's height. Weight reads
-## at a glance (Caleb's armor pass): light is a thin breastplate and nothing
-## more, medium a carrier with caps and a tasset, heavy thick layered plate
-## that broadens the shoulders. A frame's tag picks the row, so a frame
-## moved to another weight tier changes bulk with it.
+## How much a frame covers, from its weight (Caleb's tactical pass): light
+## is a slim carrier, caps, bracers and knee pads; medium the full kit with
+## a cummerbund, pouches, an upper arm plate and a tasset; heavy layered
+## plate with abdominal lames, a gorget, faulds and greaves. "pads" is how
+## many lames hang under each shoulder dome. The shapes are
+## `armor_model.gd`'s; a frame's tag picks the row, so a frame moved to
+## another weight tier changes bulk with it.
 const FRAME_BULK := {
-	"light": {"thick": 0.01, "gap": 0.024, "wrap": 1.05, "low": -0.16, "high": 0.11, "bulge": 0.018,
-			"lames": 0, "back": 0.6, "pads": 0, "pad_r": 0.06, "tassets": 0, "collar": 0.0},
-	"medium": {"thick": 0.014, "gap": 0.02, "wrap": 1.4, "low": -0.17, "high": 0.115, "bulge": 0.014,
-			"lames": 1, "back": 1.05, "pads": 1, "pad_r": 0.066, "tassets": 1, "collar": 0.0},
-	"heavy": {"thick": 0.022, "gap": 0.026, "wrap": 1.75, "low": -0.19, "high": 0.13, "bulge": 0.02,
-			"lames": 2, "back": 1.35, "pads": 3, "pad_r": 0.088, "tassets": 2, "collar": 0.065},
+	"light": {"pads": 1, "tassets": 1, "collar": false, "greaves": false},
+	"medium": {"pads": 2, "tassets": 1, "collar": false, "greaves": false},
+	"heavy": {"pads": 3, "tassets": 2, "collar": true, "greaves": true},
 }
 
-## Each frame's own look on top of its weight: colours, finish and the
-## details that say what it does. Scrap is a rusted plate strapped on with
-## patches bolted over it; the Runner a slim matte plate with cool vents down
-## the spine (it runs cool, dim on thermal); the Trooper an olive carrier
-## with pouches; the Thermal a white shell over a quilted liner with heat
-## coils and a heater pack (bright on thermal); the Bulwark thick gunmetal
-## with a keel, rivets and glowing vents on the back (it runs hot).
+## Each frame's own look on top of its weight: plate, second plate, carrier
+## fabric, straps, the undersuit ("suit"), the lit accent and bare metal,
+## with the details that say what it does. Scrap is rusted plate on a
+## crooked carrier with patches bolted over it; the Runner slate plate with
+## a cool lit back panel (it runs cool, dim on thermal); the Trooper an
+## olive carrier with a radio, admin and hydration pouches; the Thermal a
+## white shell over a quilted liner with heat coils and a heater pack
+## (bright on thermal); the Bulwark dark gunmetal with glowing back vents
+## (it runs hot) and hazard chevrons.
 const FRAME_STYLES := {
-	"scrap": {"shell": Color(0.5, 0.3, 0.17), "trim": Color(0.12, 0.11, 0.1), "accent": Color(0.55, 0.56, 0.54),
-			"glow": Color(0.0, 0.0, 0.0), "metal": 0.45, "rough": 0.9, "details": ["patches", "straps"], "tilt": 0.07},
-	"runner": {"shell": Color(0.34, 0.41, 0.5), "trim": Color(0.1, 0.12, 0.15), "accent": Color(0.2, 0.24, 0.3),
-			"glow": Color(0.3, 0.85, 1.0), "metal": 0.25, "rough": 0.7, "details": ["chevron", "spine"]},
-	"trooper": {"shell": Color(0.35, 0.38, 0.27), "trim": Color(0.18, 0.19, 0.14), "accent": Color(0.27, 0.29, 0.21),
-			"glow": Color(1.0, 0.72, 0.3), "metal": 0.2, "rough": 0.75, "details": ["pouches", "stripe"]},
-	"thermal": {"shell": Color(0.8, 0.82, 0.84), "trim": Color(0.3, 0.33, 0.37), "accent": Color(0.52, 0.56, 0.62),
-			"glow": Color(1.0, 0.45, 0.12), "metal": 0.15, "rough": 0.6, "details": ["quilt", "coils", "heater"]},
-	"bulwark": {"shell": Color(0.4, 0.41, 0.44), "trim": Color(0.11, 0.11, 0.12), "accent": Color(0.85, 0.62, 0.15),
-			"glow": Color(1.0, 0.3, 0.1), "metal": 0.3, "rough": 0.6, "details": ["keel", "rivets", "vents"]},
+	"scrap": {"plate": Color(0.45, 0.28, 0.17), "plate2": Color(0.3, 0.2, 0.14), "fabric": Color(0.3, 0.27, 0.22),
+			"strap": Color(0.14, 0.12, 0.1), "suit": Color(0.11, 0.1, 0.09), "accent": Color(0.85, 0.55, 0.25),
+			"metal": Color(0.45, 0.44, 0.42), "rough": 0.9, "glow": 0.8, "details": ["patches"]},
+	"runner": {"plate": Color(0.48, 0.52, 0.58), "plate2": Color(0.26, 0.29, 0.33), "fabric": Color(0.3, 0.32, 0.35),
+			"strap": Color(0.14, 0.15, 0.17), "suit": Color(0.13, 0.14, 0.16), "accent": Color(0.3, 0.85, 1.0),
+			"metal": Color(0.5, 0.53, 0.56), "details": ["spine"]},
+	"trooper": {"plate": Color(0.36, 0.37, 0.27), "plate2": Color(0.24, 0.25, 0.19), "fabric": Color(0.46, 0.42, 0.31),
+			"strap": Color(0.2, 0.19, 0.15), "suit": Color(0.07, 0.07, 0.065), "accent": Color(1.0, 0.7, 0.28),
+			"metal": Color(0.48, 0.48, 0.46), "details": ["radio", "admin", "hydration"]},
+	"thermal": {"plate": Color(0.54, 0.55, 0.54), "plate2": Color(0.36, 0.38, 0.4), "fabric": Color(0.4, 0.42, 0.45),
+			"strap": Color(0.24, 0.25, 0.27), "suit": Color(0.2, 0.21, 0.23), "accent": Color(1.0, 0.45, 0.12),
+			"metal": Color(0.6, 0.62, 0.64), "rough": 0.78, "details": ["quilt", "coils", "heater"]},
+	"bulwark": {"plate": Color(0.26, 0.27, 0.29), "plate2": Color(0.14, 0.145, 0.155), "fabric": Color(0.19, 0.19, 0.2),
+			"strap": Color(0.08, 0.08, 0.085), "suit": Color(0.045, 0.045, 0.05), "accent": Color(1.0, 0.42, 0.12),
+			"metal": Color(0.62, 0.6, 0.56), "metal_finish": 0.35, "details": ["vents", "chevrons"]},
 }
 
 ## Which look each frame wears; a frame not listed wears its weight's.
 const FRAME_LOOKS := {"plate_light": "scrap", "frame_runner": "runner", "frame_trooper": "trooper",
 		"frame_thermal": "thermal", "frame_bulwark": "bulwark"}
 const WEIGHT_LOOKS := {"light": "runner", "medium": "trooper", "heavy": "bulwark"}
+
+## The outfit whose fitted body, legs and boots a person wears under any
+## frame, by build: its cloth becomes the undersuit (`_wear_undersuit`).
+const SUIT_OUTFITS := {"m": "Swat", "f": "Soldier"}
 
 
 ## How heavy a frame looks: "light", "medium" or "heavy", from its tags. A
@@ -1913,7 +1975,27 @@ static func frame_look(id: String) -> String:
 	return FRAME_LOOKS.get(id, WEIGHT_LOOKS[frame_weight(id)])
 
 
-## Puts the worn armor frame's plates on the body, rebuilt when another goes on.
+## The colours and details a frame is built in: its look's `FRAME_STYLES`
+## row, worn in the armor paint `paint` (`ArmorPaint.paint_style`; "" for
+## the look's own colours).
+static func frame_style(id: String, paint := "") -> Dictionary:
+	return ArmorPaint.paint_style(FRAME_STYLES[frame_look(id)], paint)
+
+
+## The armor paint this body wears on the frame `id`: the one its
+## appearance picked for the frame's look ("" for none, and always none on
+## a skin's own plates).
+func frame_paint(id: String) -> String:
+	if id == "" or id.begins_with("skin:"):
+		return ""
+	var paints: Variant = _appearance.get("paints", {})
+	return str(paints.get(frame_look(id), "")) if typeof(paints) == TYPE_DICTIONARY else ""
+
+
+## Puts the worn armor frame on the body, rebuilt when another goes on: the
+## carrier on the chest, the belt on the hips and a piece on each upper arm,
+## forearm, thigh and shin, every one hung on the bone it moves with, over
+## the undersuit.
 func _update_frame() -> void:
 	var id := actor.frame_id
 	# A skin that comes in its own armor (an exo trooper's) wears plates of
@@ -1921,332 +2003,179 @@ func _update_frame() -> void:
 	var own: String = _def.get("frame", "") if id == "" else ""
 	if own != "":
 		id = "skin:" + own
-	if id == _frame_id and (id == "" or (not _frame_parts.is_empty() and is_instance_valid(_frame_parts[0]))):
+	var paint := frame_paint(id)
+	var key := id + ("|" + paint if paint != "" else "")
+	if key == _frame_id and (id == "" or (not _frame_parts.is_empty() and is_instance_valid(_frame_parts[0]))):
 		return
-	_frame_id = id
-	# Under a frame the body wears its undersuit, its cuff lights in the
-	# frame's own glow (none on scrap).
-	var cuff: Color = FRAME_STYLES[frame_look(id)]["glow"] if id != "" else Color.BLACK
-	for mat in _materials:
-		mat.set_shader_parameter("suit", 1.0 if id != "" else 0.0)
-		if id != "":
-			mat.set_shader_parameter("suit_trim", cuff)
+	_frame_id = key
+	_wear_undersuit(frame_style(id, paint) if id != "" else {})
 	for part in _frame_parts:
 		if is_instance_valid(part):
 			part.queue_free()
 	_frame_parts.clear()
 	if id == "" or _skeleton == null:
 		return
-	var bulk: Dictionary = FRAME_BULK[frame_weight(id)]
 	var height: float = _def.get("height", 1.8)
-	_frame_parts.append(_hang(build_frame(id), "Frame", _def.get("back_bone", ""), frame_offset,
+	_frame_parts.append(_hang(build_frame(id, paint), "Frame", _def.get("back_bone", ""), frame_offset,
 			Vector3(0.0, height * 0.72, 0.0) + frame_offset))
+	var hips: String = _def.get("hip_bone", "")
+	if hips != "" and _skeleton.find_bone(hips) >= 0:
+		_frame_parts.append(_hang(build_belt(id, paint), "Belt", hips, Vector3.ZERO, Vector3.ZERO))
 	for side: String in ["L", "R"]:
 		var out := -1.0 if side == "L" else 1.0
-		if int(bulk["pads"]) > 0:
-			_frame_parts.append(_hang(build_pad(id, out), "Pad" + side, "UpperArm." + side,
-					Vector3(pad_offset.x * out, pad_offset.y, pad_offset.z),
-					Vector3(0.2 * out, height * 0.8, 0.0)))
-		if int(bulk["tassets"]) > 0 and _skeleton.find_bone("UpperLeg." + side) >= 0:
-			# Which way is out for this leg, from where its bone stands.
-			var leg_out := signf(_rest_at("UpperLeg." + side).x)
-			_frame_parts.append(_hang(build_tasset(id, leg_out), "Tasset" + side, "UpperLeg." + side,
-					Vector3.ZERO, Vector3(0.1 * out, height * 0.52, 0.0)))
+		for limb: Array in [["UpperArm", "LowerArm", build_pad(id, out, paint), Vector3(pad_offset.x * out, pad_offset.y, pad_offset.z)],
+				["LowerArm", "Wrist", build_bracer(id, out, paint), Vector3.ZERO],
+				["UpperLeg", "LowerLeg", build_tasset(id, out, paint), Vector3.ZERO],
+				["LowerLeg", "Foot", build_shin(id, out, paint), Vector3.ZERO]]:
+			var piece: Node3D = limb[2]
+			var held := _hang_limb(piece, limb[0] + "." + side, limb[1] + "." + side, limb[3])
+			if held == null:
+				piece.free()
+			else:
+				_frame_parts.append(held)
 
 
-## A frame's plates, front toward -Z, built round the chest bone and shaped
-## to the torso (curved shells bevelled at the edges, never boxes). Its
-## weight (`FRAME_BULK`) sets the bulk and coverage, its look
-## (`FRAME_STYLES`) the colours and the details. `id` is a frame's item id,
-## a weight or "skin:<weight>".
-static func build_frame(id: String) -> Node3D:
-	var root := Node3D.new()
-	root.name = "FrameModel"
-	var bulk: Dictionary = FRAME_BULK[frame_weight(id)]
-	var style: Dictionary = FRAME_STYLES[frame_look(id)]
-	var details: Array = style["details"]
-	var shell := _frame_mat(style, "shell")
-	var trim := _frame_mat(style, "trim")
-	var accent := _frame_mat(style, "accent")
-	var glow := _solid(style["glow"], 1.4)
-	var thick: float = bulk["thick"]
-	var rx := 0.128 + float(bulk["gap"])
-	var rz := 0.108 + float(bulk["gap"])
-	var mid := Vector3(0.0, 0.0, 0.005)
-	var wrap: float = bulk["wrap"]
-	var low: float = bulk["low"]
-	var high: float = bulk["high"]
-	var bulge: float = bulk["bulge"]
-	var span := Vector2(-wrap, wrap)
-	var chest := _plate(root, "Chest", _shell(rx, rz, -wrap, wrap, low, high, thick, bulge, 0.08), shell, mid)
-	# Scrap is strapped on crooked.
-	chest.rotation.z = style.get("tilt", 0.0)
-	# Where the front of the breastplate is, at its middle.
-	var front := mid.z - rz * (1.0 + bulge / rx) - thick
-	# The lower edge of the breastplate, a darker band.
-	_plate(root, "Trim", _shell(rx + 0.002, rz + 0.002, -wrap * 0.92, wrap * 0.92, low - 0.008, low + 0.012,
-			thick + 0.004), trim, mid).rotation.z = chest.rotation.z
-	var belly_r := Vector2(0.114, 0.1) + Vector2.ONE * float(bulk["gap"])
-	if "quilt" in details:
-		# A quilted liner under the plate: puffy rings down the belly.
-		for i in 3:
-			var top := low - 0.004 - i * 0.034
-			_plate(root, "Belly" if i == 0 else "Belly%d" % i,
-					_shell(belly_r.x - 0.004, belly_r.y - 0.004, -PI, PI, top - 0.036, top, 0.012, 0.01), accent, mid)
-	else:
-		# Lames over the belly, narrower than the chest, each just under the last.
-		for i in int(bulk["lames"]):
-			var top := low - 0.02 - i * 0.07
-			_plate(root, "Belly" if i == 0 else "Belly%d" % i,
-					_shell(belly_r.x, belly_r.y, -1.0 - 0.2 * i, 1.0 + 0.2 * i, top - 0.065, top, thick, 0.004), shell, mid)
-	var back: float = bulk["back"]
-	var back_z := mid.z + rz * (1.0 + bulge * 0.6 / rx) + thick
-	if back > 0.0:
-		_plate(root, "Back", _shell(rx, rz, PI - back, PI + back, low, high, thick, bulge * 0.6, 0.08), shell, mid)
-	if float(bulk["collar"]) > 0.0:
-		# A gorget standing round the base of the neck, under the chin.
-		_plate(root, "Collar", _shell(0.1, 0.09, -2.4, 2.4, high - 0.015, high + float(bulk["collar"]), thick, 0.0, -0.3),
-				trim, Vector3(0.0, 0.0, -0.01))
-	# What says which frame it is.
-	if "patches" in details:
-		# Patch plates bolted on over the rust, and rivets at their corners.
-		for p: Array in [[Vector3(0.045, 0.055, 0.0), Vector2(0.075, 0.055), 0.25],
-				[Vector3(-0.055, 0.0, 0.0), Vector2(0.06, 0.05), -0.18]]:
-			var at: Vector3 = p[0] + Vector3(0.0, 0.0, front - 0.004)
-			var size: Vector2 = p[1]
-			var patch := _piece(root, "Patch", BoxMesh.new(), accent, at, Vector3(size.x, size.y, 0.007))
-			patch.rotation.z = p[2]
-			for c: Vector2 in [Vector2(-1, -1), Vector2(1, -1), Vector2(-1, 1), Vector2(1, 1)]:
-				var off := Vector3(c.x * size.x * 0.38, c.y * size.y * 0.36, -0.004).rotated(Vector3.BACK, p[2])
-				_piece(root, "Rivet", SphereMesh.new(), trim, at + off, Vector3.ONE * 0.011)
-	if "straps" in details:
-		# Webbing over the shoulders and round the ribs holds it on.
-		for x: float in [-0.07, 0.07]:
-			var strap := _piece(root, "Strap", BoxMesh.new(), trim, Vector3(x, high + 0.03, front * 0.55),
-					Vector3(0.032, 0.007, 0.13))
-			strap.rotation.x = -0.5
-		_plate(root, "Belt", _shell(rx - 0.004, rz - 0.004, -PI, PI, low + 0.015, low + 0.04, 0.006), trim, mid)
-	if "chevron" in details:
-		# A lit chevron under the breastplate and a seam up its middle.
-		for x: float in [-1.0, 1.0]:
-			var bar := _piece(root, "Chevron", BoxMesh.new(), glow, Vector3(x * 0.032, low + 0.03, front - 0.001),
-					Vector3(0.075, 0.007, 0.005))
-			bar.rotation.z = x * 0.45
-		_plate(root, "Seam", _on_plate(rx, rz, thick, bulge, low, high, span, -0.025, 0.025, low + 0.05, high - 0.02),
-				glow, mid)
-	if "spine" in details:
-		# A segmented spine plate, each segment with a cool vent slit.
-		for i in 4:
-			var top := 0.11 - i * 0.055
-			_plate(root, "Spine", _shell(rx + thick, rz + thick + 0.006, PI - 0.3, PI + 0.3, top - 0.045, top, thick, 0.006),
-					trim, mid)
-			var spine_z := mid.z + (rz + thick + 0.006) * (1.0 + 0.006 / (rx + thick)) + thick
-			_piece(root, "Vent", BoxMesh.new(), glow, Vector3(0.0, top - 0.022, spine_z),
-					Vector3(0.05, 0.006, 0.003))
-	if "pouches" in details:
-		# Magazine pouches across the belly, flaps down.
-		var pz := mid.z - belly_r.y - thick - 0.018
-		for x: float in [-0.068, 0.0, 0.068]:
-			var y := low - 0.06
-			_piece(root, "Pouch", BoxMesh.new(), accent, Vector3(x, y, pz), Vector3(0.056, 0.07, 0.034))
-			_piece(root, "Flap", BoxMesh.new(), trim, Vector3(x, y + 0.03, pz - 0.006), Vector3(0.06, 0.018, 0.03))
-	if "stripe" in details:
-		# A unit stripe on the left of the chest.
-		_plate(root, "Stripe", _on_plate(rx, rz, thick, bulge, low, high, span, -0.75, -0.3, 0.06, 0.075), glow, mid)
-	if "quilt" in details:
-		# A padded collar.
-		_plate(root, "Collar", _shell(0.098, 0.088, -PI, PI, high - 0.01, high + 0.035, 0.016, 0.012, -0.2),
-				accent, Vector3(0.0, 0.0, -0.005))
-	if "coils" in details:
-		# Heat coils glowing across the chest.
-		for i in 3:
-			var y := low + 0.035 + i * 0.03
-			_plate(root, "Coil", _on_plate(rx, rz, thick, bulge, low, high, span, -0.85, 0.85, y, y + 0.007),
-					glow, mid)
-	if "heater" in details:
-		# A heater pack low on the back, its grille lit.
-		_piece(root, "Heater", BoxMesh.new(), shell, Vector3(0.0, low - 0.02, back_z + 0.025),
-				Vector3(0.15, 0.1, 0.05))
-		for i in 3:
-			_piece(root, "Grille", BoxMesh.new(), glow, Vector3(0.0, low - 0.045 + i * 0.025, back_z + 0.051),
-					Vector3(0.11, 0.009, 0.004))
-	if "keel" in details:
-		# A raised ridge down the middle of the breastplate.
-		_plate(root, "Keel", _on_plate(rx, rz, thick + 0.012, bulge, low, high, span, -0.07, 0.07, low + 0.01, high - 0.005),
-				trim, mid)
-	if "rivets" in details:
-		# Rivets along the breastplate's lower edge.
-		for i in 7:
-			var a := lerpf(-wrap * 0.8, wrap * 0.8, i / 6.0)
-			_piece(root, "Rivet", SphereMesh.new(), accent,
-					mid + Vector3((rx + thick + 0.004) * sin(a), low + 0.002, -(rz + thick + 0.004) * cos(a)),
-					Vector3.ONE * 0.014)
-	if "vents" in details and back > 0.0:
-		# Heat vents in the back plate, glowing: it runs hot.
-		for x: float in [-0.045, 0.045]:
-			_piece(root, "VentFrame", BoxMesh.new(), trim, Vector3(x, 0.035, back_z + 0.002), Vector3(0.05, 0.09, 0.008))
-			for i in 4:
-				_piece(root, "Vent", BoxMesh.new(), glow, Vector3(x, 0.0 + i * 0.022, back_z + 0.006),
-						Vector3(0.036, 0.007, 0.004))
-	return root
+## Hangs a limb piece, built standing up its limb (Y from the far joint
+## toward this one, front -Z, +X out on the right) with its origin at the
+## joint, on `bone`, turned along the limb as it stands at rest. Null where
+## the skeleton lacks either bone.
+func _hang_limb(part: Node3D, bone: String, child: String, offset: Vector3) -> Node3D:
+	if _skeleton.find_bone(bone) < 0 or _skeleton.find_bone(child) < 0:
+		return null
+	var at := _rest_at(bone)
+	var up := (at - _rest_at(child)).normalized()
+	var front := Vector3.FORWARD - up * up.dot(Vector3.FORWARD)
+	front = front.normalized() if front.length() > 0.1 else Vector3.FORWARD
+	var held := _hang(part, part.name, bone, offset, at)
+	part.basis = Basis(up.cross(-front).normalized(), up, -front)
+	return held
 
 
-## A strip laid on the breastplate (built by `build_frame` with these
-## numbers): angles `from` to `to` and heights `y0` to `y1`, following the
-## plate's swell, just proud of it.
-static func _on_plate(rx: float, rz: float, thick: float, bulge: float, low: float, high: float, span: Vector2,
-		from: float, to: float, y0: float, y1: float) -> ArrayMesh:
-	var u := Vector2(inverse_lerp(span.x, span.y, from), inverse_lerp(span.x, span.y, to))
-	var v := Vector2(inverse_lerp(low, high, y0), inverse_lerp(low, high, y1))
-	# The plate's flare (0.08) widens it toward its top: follow that too.
-	var widen := 1.0 + 0.08 * ((v.x + v.y) * 0.5 - 0.5)
-	return _shell((rx + thick) * widen, (rz + thick) * widen, from, to, y0, y1, 0.004, bulge, 0.08 * (v.y - v.x), u, v)
+## Under a frame a person wears the fitted undersuit: the body, legs and
+## boots of their build's `SUIT_OUTFITS` (street clothes would bunch out
+## through the plates), every surface below the head drawn as the suit in
+## the look's colour, its cuffs lit in the accent. `style` empty takes it off
+## and gives the clothes back. View only; the appearance is untouched.
+func _wear_undersuit(style: Dictionary) -> void:
+	var on := not style.is_empty()
+	var outfit: String = SUIT_OUTFITS.get(_appearance.get("build", ""), "")
+	if _skeleton != null and outfit != "":
+		for node in _skeleton.get_children():
+			var part := node as MeshInstance3D
+			var slot: String = part.get_meta("slot", "") if part else ""
+			if not slot in ["body", "legs", "feet"]:
+				continue
+			if on and not _street.has(slot) and _appearance.get(slot, "") != outfit:
+				_suit_part(part, slot, outfit)
+			elif not on and _street.has(slot):
+				var kept: Dictionary = _street[slot]
+				_street.erase(slot)
+				_drop_materials(part)
+				part.mesh = kept["mesh"]
+				part.skin = kept["skin"]
+				var mats: Array = kept["mats"]
+				for i in mats.size():
+					part.set_surface_override_material(i, mats[i])
+					if mats[i] is ShaderMaterial:
+						_materials.append(mats[i])
+	for mat in _materials:
+		mat.set_shader_parameter("suit", 1.0 if on else 0.0)
+		if on:
+			mat.set_shader_parameter("suit_color", style["suit"])
+			mat.set_shader_parameter("suit_trim", style["accent"])
 
 
-## A shoulder cap for the side `out` (-1 left, 1 right), curved over the top
-## of the arm from the collarbone to the outside of the shoulder, with more
-## and bigger lames the heavier the frame.
-static func build_pad(id: String, out: float) -> Node3D:
-	var root := Node3D.new()
-	root.name = "PadModel"
-	var bulk: Dictionary = FRAME_BULK[frame_weight(id)]
-	var style: Dictionary = FRAME_STYLES[frame_look(id)]
-	var r: float = bulk["pad_r"]
-	var thick: float = bulk["thick"]
-	var lames: int = maxi(1, bulk["pads"])
-	var length := r * 1.6
-	for i in lames:
-		var mat := _frame_mat(style, "shell" if i == 0 else "trim")
-		if "quilt" in style["details"] and i == 0:
-			mat = _frame_mat(style, "shell")
-		# A band round the arm's front-to-back line: built round Y, then laid on Z.
-		var grow := i * (thick + 0.004)
-		var cap := _plate(root, "Pad" if i == 0 else "Pad%d" % i,
-				_shell(r + grow, r + grow, -0.35, 1.45 - i * 0.25, -length * 0.5, length * 0.5,
-				thick, 0.006), mat, Vector3(0.0, -i * r * 0.45, 0.0))
-		# Round Y the shell runs from -Z; turned so it runs from up, over the
-		# top and down the outside of this shoulder.
-		cap.basis = Basis(Vector3.RIGHT, PI * 0.5)
-		if out < 0.0:
-			cap.basis = Basis(Vector3.UP, PI) * cap.basis
-	if "keel" in style["details"]:
-		# A raised crest along the top of the cap: heavy even in silhouette.
-		var crest := _plate(root, "Crest", _shell(r + thick, r + thick, 0.12, 0.42, -length * 0.55, length * 0.55,
-				thick * 1.6, 0.0), _frame_mat(style, "trim"), Vector3.ZERO)
-		crest.basis = Basis(Vector3.RIGHT, PI * 0.5)
-		if out < 0.0:
-			crest.basis = Basis(Vector3.UP, PI) * crest.basis
-	if "stripe" in style["details"] or "keel" in style["details"]:
-		# A unit stripe (the Trooper) or a hazard band (the Bulwark) round the cap.
-		var band := _plate(root, "Band", _shell(r + thick + 0.001, r + thick + 0.001, 0.15, 1.2, -0.008, 0.008, 0.003),
-				_solid(style["glow"], 1.0) if "stripe" in style["details"] else _frame_mat(style, "accent"), Vector3.ZERO)
-		band.basis = Basis(Vector3.RIGHT, PI * 0.5)
-		if out < 0.0:
-			band.basis = Basis(Vector3.UP, PI) * band.basis
-	return root
+## Puts `outfit`'s `slot` part on in place of `part`'s, keeping the clothes
+## to give back, its cloth worn as undersuit.
+func _suit_part(part: MeshInstance3D, slot: String, outfit: String) -> void:
+	var donor: Node3D = look._instance(Human.outfit_path(_appearance["build"], outfit))
+	if donor == null:
+		return
+	var source := donor.find_child(Human.SLOT_NODES[slot], true, false) as MeshInstance3D
+	if source != null:
+		var mats := []
+		for i in part.mesh.get_surface_count():
+			mats.append(part.get_surface_override_material(i))
+		_street[slot] = {"mesh": part.mesh, "skin": part.skin, "mats": mats}
+		_drop_materials(part)
+		part.mesh = Human.shaped(source.mesh, source.skin) if Human.reshape else source.mesh
+		part.skin = source.skin
+		for i in part.mesh.get_surface_count():
+			part.set_surface_override_material(i, null)
+		for mat in look.dress_surfaces(part, _def, _appearance):
+			if int(mat.get_shader_parameter("surface_kind")) == 0:
+				mat.set_shader_parameter("surface_kind", 2)
+			_materials.append(mat)
+	donor.free()
 
 
-## Thigh tassets for the side `out`, hung from the hip down the front and
-## outside of the thigh, one lame for medium and two overlapping for heavy.
-static func build_tasset(id: String, out: float) -> Node3D:
-	var root := Node3D.new()
-	root.name = "TassetModel"
-	var bulk: Dictionary = FRAME_BULK[frame_weight(id)]
-	var style: Dictionary = FRAME_STYLES[frame_look(id)]
-	var thick: float = bulk["thick"]
-	var r := 0.088 + float(bulk["gap"])
-	for i in int(bulk["tassets"]):
-		# Narrow and long, down the front and outside of the thigh.
-		var top := 0.07 - i * 0.1
-		var from := -0.1 if out > 0.0 else -1.3
-		var to := 1.3 if out > 0.0 else 0.1
-		_plate(root, "Tasset" if i == 0 else "Tasset%d" % i,
-				_shell(r + i * (thick + 0.003), r * 0.95 + i * (thick + 0.003), from, to, top - 0.15, top, thick, 0.006, -0.1),
-				_frame_mat(style, "shell" if i == 0 else "trim"), Vector3.ZERO)
-	return root
+## Lets go of `part`'s materials from the body's list.
+func _drop_materials(part: MeshInstance3D) -> void:
+	for i in part.get_surface_override_material_count():
+		var mat := part.get_surface_override_material(i)
+		if mat is ShaderMaterial:
+			_materials.erase(mat)
 
 
-## A frame material: a style's "shell", "trim" or "accent", in its finish.
-static func _frame_mat(style: Dictionary, part: String) -> StandardMaterial3D:
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = style[part]
-	mat.metallic = style["metal"] if part != "accent" or not "quilt" in style["details"] else 0.0
-	mat.roughness = style["rough"] if part != "accent" else minf(1.0, float(style["rough"]) + 0.15)
-	return mat
+## A frame's carrier and plates, front toward -Z, built round the chest
+## bone (`armor_model.gd`): its weight sets the bulk and coverage, its look
+## (`FRAME_STYLES`, in its armor paint, `frame_style`) the colours and the
+## details. `id` is a frame's item id, a weight or "skin:<weight>". One mesh per material; the named plates are
+## in its "parts" meta (`GearShapes.has_part`).
+static func build_frame(id: String, paint := "") -> Node3D:
+	return _armor("torso", id, 0.0, paint)
 
 
-static func _plate(root: Node3D, piece_name: String, mesh: Mesh, mat: Material, at: Vector3) -> MeshInstance3D:
-	var part := MeshInstance3D.new()
-	part.name = piece_name
-	part.mesh = mesh
-	if mat is BaseMaterial3D:
-		(mat as BaseMaterial3D).cull_mode = BaseMaterial3D.CULL_DISABLED
-	part.material_override = mat
-	part.position = at
-	root.add_child(part)
-	return part
+## The frame's battle belt, built round the hips bone.
+static func build_belt(id: String, paint := "") -> Node3D:
+	return _armor("belt", id, 0.0, paint)
 
 
-## A curved plate: a band of an upright elliptical cylinder of radii `rx`
-## and `rz`, from angle `from` to `to` (0 at -Z, growing toward +X) and
-## height `low` to `high`, `thick` thick and thinning to a bevel at its
-## edges. `bulge` swells its middle out and `flare` widens its top (a
-## negative flare narrows it, for a collar). A strip laid on a bigger plate
-## takes that plate's swell with `u_span` and `v_span`: where its ends fall
-## across the plate and up it, from 0 to 1.
-static func _shell(rx: float, rz: float, from: float, to: float, low: float, high: float, thick: float,
-		bulge := 0.0, flare := 0.0, u_span := Vector2(0.0, 1.0), v_span := Vector2(0.0, 1.0)) -> ArrayMesh:
-	var cols := maxi(4, ceili((to - from) / 0.12))
-	var rows := 5
-	# The bevel runs in this far from each edge, less on a narrow band.
-	var bevel := minf(0.022, 0.3 * minf(high - low, (to - from) * rx))
-	var outer := []
-	var inner := []
-	var normals := []
-	for j in rows + 1:
-		var v := float(j) / rows
-		var row_out := []
-		var row_in := []
-		var row_n := []
-		for i in cols + 1:
-			var u := float(i) / cols
-			var a := lerpf(from, to, u)
-			var grow := 1.0 + flare * (v - 0.5) + bulge * sin(PI * lerpf(v_span.x, v_span.y, v)) \
-					* sin(PI * lerpf(u_span.x, u_span.y, u)) / maxf(rx, 0.01)
-			var at := Vector3(rx * grow * sin(a), lerpf(low, high, v), -rz * grow * cos(a))
-			var n := Vector3(sin(a) / rx, 0.0, -cos(a) / rz).normalized()
-			var edge := minf(minf(u, 1.0 - u) * (to - from) * rx, minf(v, 1.0 - v) * (high - low))
-			var t := thick * lerpf(0.3, 1.0, smoothstep(0.0, bevel, edge))
-			row_in.append(at)
-			row_out.append(at + n * t)
-			row_n.append(n)
-		outer.append(row_out)
-		inner.append(row_in)
-		normals.append(row_n)
-	var st := SurfaceTool.new()
-	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	for j in rows:
-		for i in cols:
-			_shell_quad(st, [outer[j][i], outer[j][i + 1], outer[j + 1][i + 1], outer[j + 1][i]],
-					[normals[j][i], normals[j][i + 1], normals[j + 1][i + 1], normals[j + 1][i]], 1.0)
-			_shell_quad(st, [inner[j][i], inner[j][i + 1], inner[j + 1][i + 1], inner[j + 1][i]],
-					[normals[j][i], normals[j][i + 1], normals[j + 1][i + 1], normals[j + 1][i]], -1.0)
-	# The rims: bottom, top, then the two sides.
-	for i in cols:
-		for j: int in [0, rows]:
-			var down: Vector3 = Vector3.DOWN if j == 0 else Vector3.UP
-			_shell_quad(st, [inner[j][i], inner[j][i + 1], outer[j][i + 1], outer[j][i]], [down, down, down, down], 1.0)
-	for j in rows:
-		for i: int in [0, cols]:
-			var side: Vector3 = (inner[j][mini(i + 1, cols)] - inner[j][maxi(i - 1, 0)]).normalized() * (1.0 if i == cols else -1.0)
-			_shell_quad(st, [inner[j][i], inner[j + 1][i], outer[j + 1][i], outer[j][i]], [side, side, side, side], 1.0)
-	return st.commit()
+## A shoulder pad for the side `out` (-1 left, 1 right): a dome over the
+## shoulder and `FRAME_BULK` "pads" lames down the arm, built standing up
+## the upper arm from the shoulder joint.
+static func build_pad(id: String, out: float, paint := "") -> Node3D:
+	return _armor("pauldron", id, out, paint)
 
 
-static func _shell_quad(st: SurfaceTool, at: Array, n: Array, sign: float) -> void:
-	for k: int in [0, 1, 2, 0, 2, 3]:
-		st.set_normal((n[k] as Vector3) * sign)
-		st.add_vertex(at[k])
+## An elbow pad and bracer for the side `out`, built down the forearm.
+static func build_bracer(id: String, out: float, paint := "") -> Node3D:
+	return _armor("forearm", id, out, paint)
+
+
+## A thigh plate (tassets) for the side `out`, built down the thigh from
+## the hip; the right one carries a drop-leg pouch.
+static func build_tasset(id: String, out: float, paint := "") -> Node3D:
+	return _armor("thigh", id, out, paint)
+
+
+## A knee pad and shin guard (a greave on heavy), built down the shin.
+static func build_shin(id: String, out: float, paint := "") -> Node3D:
+	return _armor("shin", id, out, paint)
+
+
+## A frame's `piece` ("torso", "belt", "pauldron", "forearm", "thigh",
+## "shin") for the side `out`, built once per weight, look and side and
+## shared after (`GearShapes.cached`). `paint` is an armor paint
+## (`ArmorPaint`) or "" for the look's own colours.
+static func _armor(piece: String, id: String, out := 0.0, paint := "") -> Node3D:
+	var weight := frame_weight(id)
+	if not ArmorPaint.PAINTS.has(paint):
+		paint = ""
+	var style := frame_style(id, paint)
+	return ArmorModel.G.cached("%s:%s:%s:%s:%s" % [piece, weight, frame_look(id), out, paint], func() -> Node3D:
+		match piece:
+			"torso":
+				return ArmorModel.torso(weight, style)
+			"belt":
+				return ArmorModel.belt(weight, style)
+			"pauldron":
+				return ArmorModel.pauldron(weight, style, out)
+			"forearm":
+				return ArmorModel.forearm(weight, style, out)
+			"thigh":
+				return ArmorModel.thigh(weight, style, out)
+		return ArmorModel.shin(weight, style, out))
 
 
 static func _solid(color: Color, energy: float) -> StandardMaterial3D:

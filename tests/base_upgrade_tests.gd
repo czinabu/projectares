@@ -103,9 +103,12 @@ static func _test_lane(t: Node, base: HomeBase, p: Actor) -> void:
 	p.cmd.yaw = atan2(-dir.x, -dir.z)
 	p.cmd.pitch = asin(dir.y)
 	p.cmd.aim_dir = dir
-	await t.frames(10)
+	p.cmd.switch_weapon = p.weapon_for_key(1)
+	await t.frames(2)
+	p.cmd.switch_weapon = -1
+	await t.frames(8)
 	var gun := p.get_active_weapon() as Gun
-	t.check(gun != null and gun.reserve_ammo > 0, "the starter kit's gun is in hand in the lane")
+	t.check(gun != null and gun.reserve_ammo > 0, "the starter kit's gun is drawn in the lane")
 	var shots := base.lane_shots
 	p.cmd.primary_pressed = true
 	p.cmd.primary = true
@@ -230,7 +233,8 @@ static func _helmet_shelf(t: Node, stash: Array[String]) -> void:
 		var helmet := display.get_node_or_null("Model/HelmetModel") as Node3D
 		if helmet != null:
 			# A helmet's front is -Z; it must look the way its display faces.
-			facing_out = facing_out and (-helmet.global_basis.z).dot(display.global_basis.z) > 0.95
+			# Normalized: a helmet model is scaled to fit the head.
+			facing_out = facing_out and (-helmet.global_basis.z.normalized()).dot(display.global_basis.z.normalized()) > 0.95
 	t.check(facing_out, "every helmet on show faces out toward the room")
 	var plates: Array[Label3D] = []
 	for display in base.displays:

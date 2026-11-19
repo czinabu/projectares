@@ -272,6 +272,7 @@ static func _card(t: Node) -> void:
 	kit.append("artifact_rewind")
 	var raid: Raid = await t._kit_raid(82, kit)
 	var p := raid.player
+	p._draw_weapon(p.weapon_for_key(1))  # players arrive unarmed
 	p.inventory.add_item("rifle_carbine")
 	p.inventory.add_item("artifact_cloak")
 	p.inventory.add_item("medkit") if ItemDB.has_item("medkit") else null

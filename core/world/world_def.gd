@@ -314,6 +314,11 @@ var warlord_escort := 2
 ## holds one. 0 keeps them out of this world.
 var warlord_artifact_chance := 0.25
 var pod_artifact_chance := 0.05
+## An earned armor paint (DESIGN.md "Armor paints", an item tagged
+## "paint" that no shop sells) a warlord may carry, and the chance it does.
+## "" or 0 keeps it out of this world.
+var warlord_paint := ""
+var warlord_paint_chance := 0.0
 ## Blueprints and upgrade data (DESIGN.md section 10) come from the fights
 ## worth having: the chance that a warlord carries a blueprint and that a
 ## supply pod holds one, and how much upgrade data each always has. 0 keeps
