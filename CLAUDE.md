@@ -1533,7 +1533,21 @@ without Caleb, and update the gap list when a PR closes a row.
   account service accepts; one that has run out is answered `"again":
   "secret"` on the same connection. A store login (Steam) is a new method
   there that ends in an account id, never a second path into a session. Both sides' messages always carry "protocol", so any two
-  versions can say which one needs the update; an older game is pointed at
+  versions can say which one needs the update. `NetSession.PROTOCOL` is
+  the handshake's own version and nothing else's: never raise it for a new
+  or changed message. What a build says once signed in is its manifest
+  (`core/net/net_manifest.gd`, `NetManifest`), read off the code: every
+  `@rpc` method by name, argument types and how it is sent, plus every
+  `WIRE_` constant. A game shows its manifest's digest as it signs in and
+  the server lets in only its own; one turned away is sent the server's
+  manifest and build number, so it says which side is older
+  (`NetSession.outdated`, "either" between builds with no number) and its
+  log names what differs. So a new, removed or changed RPC needs nothing
+  else; a change to what an existing message carries raises (or adds) the
+  `const WIRE_<WHAT>` beside the code that packs it; a script whose
+  constants are the format lists their prefixes in `WIRE_ALSO`
+  (`ActorCommand`'s flag bits); and a script with RPCs or packing of its
+  own goes in `NetManifest.PARTS` once. An older game is pointed at
   `NetSession.UPDATE_URL` from the phone's Servers app. Every connection is
   encrypted with ENet DTLS (`core/net/server_trust.gd`): a server makes its
   own certificate on first start, kept beside the accounts, and a game
